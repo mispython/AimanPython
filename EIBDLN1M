@@ -1,0 +1,188 @@
+//EIBDLN1M JOB MISEIS,CLASS=A,MSGCLASS=A,NOTIFY=&SYSUID                 00000100
+//*                                                                     00000200
+//* SMR 2007-273. DAILY LOANS MOVEMENTS > 1 M.                          00000300
+//*                                                                     00000400
+//EIBDLN1M EXEC SAS609,REGION=8M                                        00000500
+//BRANCHF  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR                     00000600
+//LOAN     DD DSN=SAP.PBB.SASDATA.DAILY(0),DISP=SHR                     00000700
+//LOANX    DD DSN=SAP.PBB.SASDATA.DAILY(-1),DISP=SHR                    00000800
+//CISLN    DD DSN=SAP.PBB.CISBEXT.LN,DISP=SHR                           00000900
+//CISDP    DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR                           00001000
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR                              00001100
+//SASLIST  DD DSN=SAP.PBB.LN1M.DAILY(+1),                               00001200
+//            DISP=(NEW,CATLG,DELETE),                                  00001300
+//            SPACE=(CYL,(1,1),RLSE),UNIT=SYSDA,                        00001400
+//            DCB=(LRECL=133,RECFM=FB,BLKSIZE=0)                        00001500
+//SYSIN    DD *                                                         00001600
+                                                                        00001700
+OPTIONS NOCENTER YEARCUTOFF=1950 NODATE;                                00001800
+                                                                        00001900
+DATA REPTDATE;                                                          00002000
+   SET LOAN.REPTDATE;                                                   00002100
+   REPTPDAT=REPTDATE-1;                                                 00002200
+   CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));                       00002300
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE), Z2.));                      00002400
+   CALL SYMPUT('REPTPDAY',PUT(DAY(REPTPDAT), Z2.));                     00002500
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE), Z2.));                    00002600
+   CALL SYMPUT('REPTPMON',PUT(MONTH(REPTPDAT), Z2.));                   00002610
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));                        00002700
+   CALL SYMPUT('REPTPYEA',PUT(REPTPDAT,YEAR2.));                        00002710
+RUN;                                                                    00002800
+*;                                                                      00002900
+DATA CISNM;                                                             00003000
+   KEEP ACCTNO CUSTNAME SECCUST;                                        00003100
+   SET CISDP.DEPOSIT                                                    00003200
+       CISLN.LOAN;                                                      00003300
+   CUSTNAME=CUSTNAM1;                                                   00003400
+*;                                                                      00003500
+PROC SORT DATA=CISNM OUT=CISNM; BY ACCTNO SECCUST CUSTNAME;             00003600
+PROC SORT DATA=CISNM OUT=CISNM NODUPKEY; BY ACCTNO;                     00003700
+*;                                                                      00003800
+DATA SASC;                                                              00003900
+   SET LOAN.LOAN&REPTMON&REPTDAY;                                       00004000
+   KEEP ACCTNO BRANCH TDI APPRLIMT APPRLIM2 BALANCE CATG;               00004100
+   TDI='C';                                                             00004100
+   IF ACCTYPE='OD'   THEN DO;                                           00004200
+      IF PRODUCT IN (107,173) THEN DELETE;                              00004300
+      CATG='OD';                                                        00004400
+   END;                                                                 00004500
+   IF ACCTYPE='LN'   THEN DO;                                           00004600
+      IF PRODUCT IN (302,350,364,365,506,902,903,910,925,951)           00004700
+                     THEN CATG='RC';  ELSE                              00004800
+      IF PRODUCT IN (128,130,131,132,380,381,700,705,720,725)           00004900
+                     THEN CATG='HP';  ELSE                              00005000
+                          CATG='TL';                                    00005100
+   END;                                                                 00005200
+   IF CATG NE '  ';                                                     00005300
+*;                                                                      00005400
+PROC SORT; BY BRANCH ACCTNO;                                            00005500
+*;                                                                      00005600
+DATA SASC;                                                              00005700
+   DROP BALANCE;                                                        00005800
+   SET SASC; BY BRANCH ACCTNO;                                          00005900
+   IF  FIRST.BRANCH OR FIRST.ACCTNO THEN DO;                            00006000
+       ACCBAL=0.00; LIMTBAL=0;                                          00006100
+   END;                                                                 00006200
+   ACCBAL + BALANCE;                                                    00006300
+   LIMTBAL+ APPRLIMT;                                                   00006400
+   IF  LAST.BRANCH OR LAST.ACCTNO THEN OUTPUT;                          00006500
+*;                                                                      00006600
+DATA SASP;                                                              00006700
+   SET LOANX.LOAN&REPTPMON&REPTPDAY;                                    00006800
+   KEEP ACCTNO BRANCH BALANCE APPRLIMT APPRLIM2 BALANCE CATG TDI;       00006900
+   TDI='P';                                                             00006900
+   IF ACCTYPE='OD'   THEN DO;                                           00007000
+      IF PRODUCT IN (107,173) THEN DELETE;                              00007100
+      CATG='OD';                                                        00007200
+   END;                                                                 00007300
+   IF ACCTYPE='LN'   THEN DO;                                           00007400
+     IF PRODUCT IN (302,350,364,365,506,902,903,910,925,951)            00007500
+                       THEN CATG='RC'; ELSE                             00007600
+     IF PRODUCT IN (128,130,131,132,380,381,700,705,720,725)            00007700
+                       THEN CATG='HP';                                  00007800
+                       ELSE CATG='TL';                                  00007900
+   END;                                                                 00008000
+   IF CATG NE '  ';                                                     00008100
+*;                                                                      00008200
+PROC SORT; BY BRANCH ACCTNO;                                            00008300
+*;                                                                      00008400
+DATA SASP;                                                              00008500
+   DROP BALANCE;                                                        00008600
+   SET SASP; BY BRANCH ACCTNO;                                          00008700
+   IF  FIRST.BRANCH OR FIRST.ACCTNO THEN PACCBAL=0.00;                  00008800
+   PACCBAL + BALANCE;                                                   00008900
+   PLIMBAL + APPRLIMT;                                                  00008900
+   IF  LAST.BRANCH OR LAST.ACCTNO THEN OUTPUT;                          00009000
+*;                                                                      00009100
+DATA SASC;                                                              00009200
+   MERGE SASP SASC; BY BRANCH ACCTNO;                                   00009300
+   IF  ACCBAL=.      THEN  ACCBAL=0.00;                                 00009400
+   IF PACCBAL=.      THEN PACCBAL=0.00;                                 00009500
+   IF LIMTBAL=.      THEN LIMTBAL=0;                                    00009600
+   IF PLIMBAL=.      THEN PLIMBAL=0;                                    00009600
+   MOVEAMTS=(ACCBAL-PACCBAL);                                           00009700
+   MOVEAMT=ABS(ACCBAL-PACCBAL);                                         00009800
+   IF MOVEAMT GE 1000000;                                               00009900
+   IF TDI='P' THEN LIMTBAL=PLIMBAL;                                     00009900
+*;                                                                      00010000
+DATA BRANCH;                                                            00010100
+  INFILE BRANCHF;                                                       00010200
+  INPUT @001 BANK       $1.                                             00010300
+        @002 BRANCH      3.                                             00010400
+        @006 BRNAME     $3.;                                            00010500
+PROC SORT DATA=BRANCH; BY BRANCH;                                       00010600
+*;                                                                      00010700
+DATA SASC;                                                              00010800
+  MERGE BRANCH SASC(IN=A); BY BRANCH;                                   00010900
+  IF A;                                                                 00011000
+PROC SORT; BY ACCTNO;                                                   00011100
+*;                                                                      00011200
+DATA SASC;                                                              00011300
+  MERGE CISNM SASC(IN=A); BY ACCTNO;                                    00011400
+  IF A;                                                                 00011500
+  IF CATG='OD' THEN CATEGORY='OVERDRAFT       '; ELSE                   00011600
+  IF CATG='TL' THEN CATEGORY='TERM LOAN       '; ELSE                   00011700
+  IF CATG='HP' THEN CATEGORY='HIRE PURCHASE   '; ELSE                   00011800
+  IF CATG='RC' THEN CATEGORY='REVOLVING CREDIT';                        00011900
+  IF CATG NE '  ';                                                      00012000
+*;                                                                      00012100
+PROC SORT; BY CATEGORY BRANCH ACCTNO;                                   00012200
+*;                                                                      00012300
+TITLE '--';                                                             00012400
+*;                                                                      00012500
+DATA REPRT;                                                             00012600
+   SET SASC END=EOF; BY CATEGORY BRANCH ACCTNO;                         00012700
+   FILE PRINT HEADER=NEWPAGE;                                           00012800
+                                                                        00012900
+   IF FIRST.CATEGORY THEN PUT _PAGE_;                                   00013000
+                                                                        00013100
+   PUT @002  BRANCH      Z3.                                            00013200
+       @007  BRNAME      $3.                                            00013300
+       @012  CUSTNAME   $40.                                            00013400
+       @054  ACCTNO      10.                                            00013500
+       @066  LIMTBAL    COMMA15.0                                       00013600
+       @083   ACCBAL    COMMA15.2                                       00013700
+       @100  PACCBAL    COMMA15.2                                       00013800
+       @117  MOVEAMTS   COMMA15.2;                                      00013900
+                                                                        00014000
+RETURN;                                                                 00014100
+                                                                        00014200
+NEWPAGE :                                                               00014300
+ PUT @2 'PUBLIC BANK BERHAD - RETAIL BANKING DIVISION';                 00014400
+ PUT @2 'REPORT TITLE : EIBDLN1M';                                      00014500
+ PUT @2 "DAILY MOVEMENT IN BANK'S LOANS/OD ACCOUNTS @ " "&RDATE";       00014600
+ PUT @2 'NET INCREASED/(DECREASED) OF RM1 MILLION & ABOVE PER CUSTOMER';00014700
+ PUT @2 '*';                                                            00014800
+ PUT @2 CATEGORY  $16.;                                                 00014900
+ PUT @2 131*'-';                                                        00015000
+ PUT @2 'BRH  BRH';                                                     00015100
+ PUT @2   'CODE ABBR CUSTOMER NAME'                                     00015200
+     @54  'ACCOUNT NO.   APPROVE LIMIT  CURRENT BALANCE'                00015300
+     @103 'PREVIOUS BAL    NET (INC/DEC)';                              00015400
+ PUT @2 131*'-';                                                        00015500
+RUN;                                                                    00015600
+//******************************************************************
+//* FTP REPORT TO DATAWAREHOUSE SERVER
+//******************************************************************
+//*%OPC SCAN
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*cd TEXTFILE
+//*cd FIN
+//*PUT //SAP.PBB.LN1M.DAILY(+1)  LN1M%ODD.%OMM..TXT
+//*EOB
+//******************************************************************
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//******************************************************************
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd BBRS-BBR/LN1M
+PUT //SAP.PBB.LN1M.DAILY(+1)  LN1M%ODD.%OMM..TXT
+EOB
