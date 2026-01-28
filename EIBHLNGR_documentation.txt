@@ -1,0 +1,394 @@
+# SAS to Python Conversion Documentation
+## Loan Extended to Non-Resident/Foreign Entities Report
+
+## Overview
+This program generates three reports analyzing loans extended to non-resident and foreign entities, categorized by whether they have guarantees or not.
+
+## Program Purpose
+**Report Type**: Loan Analysis by Customer Type and Guarantee Status  
+**Target**: Non-resident/Foreign entities with customer codes >= 80  
+**Classification**: Foreign Banking Institutions vs Non-Foreign Banking Institutions
+
+## Input Files
+
+### 1. Report Date File
+- **Path**: `input/loan_reptdate.parquet`
+- **Description**: Contains the report date
+- **Columns**: 
+  - `REPTDATE` (date): The report date
+
+### 2. Loan Data File
+- **Path**: `input/loan_{MM}4.parquet` (dynamically constructed based on report month)
+- **Example**: `input/loan_014.parquet` for January (month 01)
+- **Description**: Monthly loan data snapshot
+- **Columns**:
+  - `ACCTNO` (int64): Account number
+  - `NOTENO` (string): Note number
+  - `PRODUCT` (string/int): Product code
+  - `CUSTCD` (string): Customer code (FISS classification)
+  - `PAIDIND` (string): Paid-off indicator
+  - `EIR_ADJ` (float64): EIR adjustment amount
+  - `BAL_AFT_EIR` (float64): Balance after EIR adjustment
+
+### 3. Collateral/Guarantee File
+- **Path**: `input/coll_collater.parquet`
+- **Description**: Collateral and guarantee information
+- **Columns**:
+  - `ACCTNO` (int64): Account number
+  - `NOTENO` (string): Note number
+  - `CCOLLNO` (string): Collateral number
+  - `CDOLARV` (float64): Collateral value in dollars
+  - `CGUARNAT` (string): Guarantee nature code
+
+## Output Files
+
+### 1. Foreign Banking Institutions Report
+- **Path**: `/mnt/user-data/outputs/lngrfbi_report.txt`
+- **Description**: Summary of loans to foreign banking institutions (CUSTCD < 85)
+- **Format**: Text file with ASA carriage control
+
+### 2. Non-Foreign Banking Institutions Report
+- **Path**: `/mnt/user-data/outputs/lnngrfbi_report.txt`
+- **Description**: Summary of loans to non-foreign banking entities (CUSTCD >= 85)
+- **Format**: Text file with ASA carriage control
+
+### 3. Customer Detail List Report
+- **Path**: `/mnt/user-data/outputs/custlist_report.txt`
+- **Description**: Detailed list of all loans to foreign entities
+- **Format**: Text file with ASA carriage control
+
+## Business Logic
+
+### Customer Type Classification (CUSTCD Format)
+
+The program uses FISS customer codes to classify foreign entities:
+
+| Code | Description |
+|------|-------------|
+| 80 | NON-RESIDENTS/FOREIGN ENTITIES |
+| 81 | FOREIGN BANKING INSTITUTIONS |
+| 82 | AFFILIATES ABROAD |
+| 83 | G7 COUNTRIES |
+| 84 | FOREIGN BANK IN OTHER COUNTRIES |
+| 85 | FOREIGN NON-BANK ENTITIES |
+| 86 | FOREIGN BUSINESS ENTERPRISES |
+| 87 | MICRO |
+| 88 | SMALL |
+| 89 | MEDIUM |
+| 90 | FOREIGN GOVERNMENTS |
+| 91 | FOREIGN CENTRAL BANKS |
+| 92 | FOREIGN DIPLOMATIC REPRESENTATION IN MALAYSIA |
+| 95 | FOREIGN INDIVIDUALS |
+| 96 | FOREIGN EMPLOYED/STUDIED IN MALAYSIA |
+| 98 | FOREIGN NON COMMERCIAL INTERNATIONAL ORGANISATION IN MALAYSIA |
+| 99 | FOREIGN OTHER ENTITIES NIE |
+
+### Loan Filtering Criteria
+
+Loans are included if they meet ALL of the following:
+1. **Not fully paid**: `PAIDIND NOT IN ('P', 'C')` OR `EIR_ADJ IS NOT NULL`
+2. **Foreign entity**: `CUSTCD >= 80` (numeric comparison)
+
+### Guarantee Classification
+
+Guarantees are identified by:
+- **Collateral value**: `CDOLARV > 0`
+- **Guarantee nature codes**: `CGUARNAT IN ('01', '02', '03', '04', '05', '06', '07')`
+
+Accounts are classified as:
+- **GUARANTEE_IND = 'Y'**: Has valid guarantee matching above criteria
+- **GUARANTEE_IND = 'N'**: No guarantee or doesn't match criteria
+
+### Institutional Split Logic
+
+The program creates two separate datasets:
+
+#### Foreign Banking Institutions (CUSTCD < 85)
+- Includes codes: 80, 81, 82, 83, 84
+- Each record is output twice:
+  1. With original CUSTCD
+  2. With CUSTCD = '81' (aggregate category)
+
+#### Non-Foreign Banking Institutions (CUSTCD >= 85)
+- Includes codes: 85, 86, 87, 88, 89, 90, 91, 92, 95, 96, 98, 99
+- Each record is output twice:
+  1. With original CUSTCD
+  2. With CUSTCD = '85' (aggregate category)
+
+This duplication allows for both detailed and aggregate reporting.
+
+## Processing Steps
+
+### Step 1: Report Date Processing
+1. Read report date from parquet file
+2. Calculate previous half-year period (6 months back, end of month)
+3. Extract date components:
+   - `REPTMON`: Report month (zero-padded 2 digits)
+   - `REPTMMMYY`: Report month/year (e.g., "JAN26")
+   - `REPTYEAR`: Report year (2 digits)
+   - `RDATE`: Full date (e.g., "28JAN2026")
+
+### Step 2: Load Loan Data
+1. Construct filename using report month: `loan_{REPTMON}4.parquet`
+2. Filter for non-paid loans OR loans with EIR adjustments
+3. Filter for foreign entities (CUSTCD >= 80)
+4. Keep relevant columns
+
+### Step 3: Load Guarantee Data
+1. Read collateral file
+2. Filter for valid guarantees:
+   - Positive collateral value (`CDOLARV > 0`)
+   - Valid guarantee nature codes (01-07)
+3. Set `GUARANTEE_IND = 'Y'`
+
+### Step 4: Join Loan and Guarantee Data
+1. Left join loans with guarantees on ACCTNO and NOTENO
+2. Preserves all loans, adds guarantee info where available
+
+### Step 5: Create Outstanding Balance Dataset
+1. Get distinct loan records
+2. Set `GUARANTEE_IND` to 'Y' or 'N' based on join result
+3. Prepare for aggregation
+
+### Step 6: Aggregate by Customer Code and Guarantee
+1. Sum `BAL_AFT_EIR` by CUSTCD and GUARANTEE_IND
+2. Creates base for further processing
+
+### Step 7: Split into Two Categories
+1. **Foreign Banking** (CUSTCD < 85):
+   - Create record with original CUSTCD
+   - Create duplicate with CUSTCD = '81'
+2. **Non-Foreign Banking** (CUSTCD >= 85):
+   - Create record with original CUSTCD
+   - Create duplicate with CUSTCD = '85'
+
+### Step 8-9: Summarize by Institution Type
+1. Sum balances by CUSTCD:
+   - `BAL_GUAR`: Total guaranteed balance
+   - `BAL_NON_GUAR`: Total non-guaranteed balance
+   - `BAL_AFT_EIR`: Total outstanding balance
+2. Add customer type descriptions
+3. Sort by CUSTCD
+
+### Step 10: Prepare Customer Detail List
+1. Merge loan-guarantee data with outstanding balance data
+2. Add customer type descriptions
+3. Sort by ACCTNO, NOTENO
+
+### Steps 11-13: Generate Reports
+Generate three formatted reports with ASA carriage control.
+
+## Report Formats
+
+### Summary Reports (Foreign & Non-Foreign Banking Institutions)
+
+**Header:**
+```
+PUBLIC BANK BERHAD
+LOAN EXTENDED TO NON-RESIDENT/FOREIGN ENTITIES ACCORDING TO GUARANTEE OR NON GUARANTEE @ {REPTMMMYY}
+
+CODE  TYPE                                              GUARANTEE O/S BALANCE  NON GUARANTEE O/S BALANCE  TOTAL OUTSTANDING
+------------------------------------------------------------------------------------------------------------------------------------
+```
+
+**Data Line Format:**
+| Column | Width | Format | Description |
+|--------|-------|--------|-------------|
+| CODE | 6 | Left-aligned | Customer code |
+| TYPE | 50 | Left-aligned | Customer type description |
+| GUARANTEE O/S BALANCE | 22 | Right-aligned, 18.2 | Guaranteed outstanding balance |
+| NON GUARANTEE O/S BALANCE | 28 | Right-aligned, 18.2 | Non-guaranteed outstanding balance |
+| TOTAL OUTSTANDING | 22 | Right-aligned, 18.2 | Total outstanding balance |
+
+### Customer Detail List Report
+
+**Header:**
+```
+PUBLIC BANK BERHAD
+SUMMARY DETAILS ON LOAN EXTENDED TO NON-RESIDENT/FOREIGN ENTITIES ACCORDING TO GUARANTEE OR NON GUARANTEE @ {REPTMMMYY}
+
+ACCTNO      NOTENO    PRODUCT   BAL_AFT_EIR         CUSTFISS  PAIDIND   CCOLLNO     CGUARNAT  GUARANTEE_IND
+------------------------------------------------------------------------------------------------------------------------------------
+```
+
+**Data Line Format:**
+| Column | Width | Format | Description |
+|--------|-------|--------|-------------|
+| ACCTNO | 12 | Left-aligned | Account number |
+| NOTENO | 10 | Left-aligned | Note number |
+| PRODUCT | 10 | Left-aligned | Product code |
+| BAL_AFT_EIR | 20 | Right-aligned, 18.2 | Balance after EIR |
+| CUSTFISS | 10 | Left-aligned | Customer FISS code |
+| PAIDIND | 10 | Left-aligned | Paid indicator |
+| CCOLLNO | 12 | Left-aligned | Collateral number |
+| CGUARNAT | 10 | Left-aligned | Guarantee nature |
+| GUARANTEE_IND | 15 | Left-aligned | Guarantee indicator (Y/N) |
+
+## ASA Carriage Control
+
+All reports use ASA carriage control characters:
+- **'1'**: Form feed (new page) - used for headers
+- **' '**: Single space (normal line advance) - used for data lines
+
+## Key Differences: SAS vs Python
+
+### Technology Stack
+- **SAS**: PROC FORMAT, DATA steps, PROC SQL, PROC SUMMARY, PROC REPORT
+- **Python**: DuckDB for SQL operations, native Python for formatting
+
+### Date Handling
+- **SAS**: INTNX function for date calculations
+- **Python**: dateutil.relativedelta for month arithmetic
+
+### Formatting
+- **SAS**: PROC FORMAT with VALUE statements
+- **Python**: Python dictionary for lookup
+
+### Aggregation
+- **SAS**: PROC SUMMARY with CLASS statement
+- **Python**: DuckDB GROUP BY with SUM aggregation
+
+### Report Generation
+- **SAS**: PROC REPORT with automatic formatting
+- **Python**: Manual formatting with precise column control
+
+### Duplication Logic
+- **SAS**: Multiple OUTPUT statements in DATA step
+- **Python**: UNION ALL in SQL
+
+## Data Quality Notes
+
+1. **NULL Handling**: Missing guarantee indicators default to 'N'
+2. **Customer Code Validation**: Must be >= 80 to be included
+3. **Guarantee Criteria**: Strict validation on collateral value and nature code
+4. **Balance Aggregation**: Sums are performed at multiple levels
+5. **Duplication**: Intentional duplication for aggregate categories (81 and 85)
+
+## Dependencies
+
+### Python Packages
+- `duckdb`: SQL analytics engine
+- `python-dateutil`: Date arithmetic
+- `pathlib`: File path handling
+
+### Installation
+```bash
+pip install duckdb python-dateutil
+```
+
+## Usage
+
+### Basic Execution
+```bash
+python loan_foreign_entities_report.py
+```
+
+### Prerequisites
+1. Input parquet files must exist:
+   - `input/loan_reptdate.parquet`
+   - `input/loan_{MM}4.parquet` (where MM = report month)
+   - `input/coll_collater.parquet`
+2. Parquet files must have matching column schemas
+3. Output directory must be writable
+
+### Expected Console Output
+```
+Step 1: Processing report date...
+Report Date: 28JAN2026
+Report Month: 01
+Report Period: JAN26
+Previous Half: 28JUL2025
+
+Step 2: Loading and filtering loan data...
+Loan records loaded: X,XXX
+
+Step 3: Loading collateral/guarantee data...
+Guarantee records loaded: X,XXX
+
+Step 4: Joining loan and guarantee data...
+Joined records: X,XXX
+
+Step 5: Creating outstanding balance dataset...
+Outstanding balance records: X,XXX
+
+Step 6: Summarizing by customer code and guarantee...
+Customer/Guarantee summary records: XXX
+
+Step 7: Splitting into foreign banking and non-foreign banking institutions...
+
+Step 8: Summarizing foreign banking institutions...
+Foreign banking institution summary: XX records
+
+Step 9: Summarizing non-foreign banking institutions...
+Non-foreign banking institution summary: XX records
+
+Step 10: Preparing customer detail list...
+Customer detail records: X,XXX
+
+Step 11: Generating foreign banking institutions report...
+Foreign banking institutions report: /mnt/user-data/outputs/lngrfbi_report.txt
+
+Step 12: Generating non-foreign banking institutions report...
+Non-foreign banking institutions report: /mnt/user-data/outputs/lnngrfbi_report.txt
+
+Step 13: Generating customer detail list report...
+Customer detail list report: /mnt/user-data/outputs/custlist_report.txt
+
+======================================================================
+REPORT GENERATION COMPLETE
+======================================================================
+
+Generated Reports:
+  1. Foreign Banking Institutions: /mnt/user-data/outputs/lngrfbi_report.txt
+  2. Non-Foreign Banking Institutions: /mnt/user-data/outputs/lnngrfbi_report.txt
+  3. Customer Detail List: /mnt/user-data/outputs/custlist_report.txt
+
+Conversion complete!
+```
+
+## Performance Considerations
+
+1. **DuckDB Optimization**: Uses efficient SQL for aggregations
+2. **Memory Management**: Processes data in manageable chunks
+3. **File I/O**: Minimal file operations, in-memory processing
+4. **No Unnecessary Sorts**: DuckDB handles ordering in GROUP BY operations
+
+## Testing Recommendations
+
+1. Verify customer code filtering (>= 80)
+2. Check guarantee classification logic
+3. Validate duplication for aggregate categories
+4. Compare balance totals with source data
+5. Verify report formatting and alignment
+6. Test with various date periods
+7. Confirm ASA carriage control characters
+
+## Troubleshooting
+
+### Common Issues
+
+1. **File Not Found**
+   - Check loan file exists with correct month: `loan_{MM}4.parquet`
+   - Verify all input files in `input/` directory
+
+2. **No Records in Report**
+   - Verify CUSTCD values >= 80 exist in data
+   - Check PAIDIND and EIR_ADJ filtering criteria
+   - Confirm guarantee nature codes are in valid range
+
+3. **Incorrect Totals**
+   - Review duplication logic (records output twice)
+   - Verify aggregation levels match requirements
+
+4. **Format Issues**
+   - Check column widths match specifications
+   - Verify decimal places (18.2 format)
+   - Confirm ASA carriage control in first position
+
+## Maintenance Notes
+
+1. **Customer Code Updates**: Add new codes to CUSTDESC dictionary
+2. **Guarantee Codes**: Update valid CGUARNAT list if business rules change
+3. **File Naming**: Adjust INPUT_LOAN_DATA pattern if convention changes
+4. **Column Widths**: Modify format_number() calls for different layouts
+5. **Report Titles**: Update titles if wording changes
