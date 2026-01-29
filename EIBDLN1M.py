@@ -10,19 +10,18 @@ import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
 
-
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 # Input paths
-INPUT_LOAN_REPTDATE = "input/loan_reptdate.parquet"
-INPUT_CISDP_DEPOSIT = "input/cisdp_deposit.parquet"
-INPUT_CISLN_LOAN = "input/cisln_loan.parquet"
-INPUT_BRANCH_FILE = "input/branch.txt"
+INPUT_LOAN_REPTDATE = "input/EIBDLN1M/loan_reptdate.parquet"
+INPUT_CISDP_DEPOSIT = "input/EIBDLN1M/cisdp_deposit.parquet"
+INPUT_CISLN_LOAN = "input/EIBDLN1M/cisln_loan.parquet"
+INPUT_BRANCH_FILE = "input/EIBDLN1M/branch.txt"
 
 # Input loan data paths (will be constructed dynamically based on report date)
-INPUT_LOAN_CURRENT = "input/loan_{month}{day}.parquet"  # e.g., loan_0128.parquet
-INPUT_LOANX_PREVIOUS = "input/loanx_{month}{day}.parquet"  # e.g., loanx_0127.parquet
+INPUT_LOAN_CURRENT = "input/EIBDLN1M/loan_{month}{day}.parquet"  # e.g., loan_0128.parquet
+INPUT_LOANX_PREVIOUS = "input/EIBDLN1M/loanx_{month}{day}.parquet"  # e.g., loanx_0127.parquet
 
 # Output path - will/need to be changed
 OUTPUT_REPORT = "C:/mnt/user-data/outputs/EIBDLN1M_report.txt"
