@@ -16,9 +16,9 @@ from pathlib import Path
 # PATH CONFIGURATION
 # ============================================================================
 # Input paths
-INPUT_LOAN_REPTDATE = "input/loan_reptdate.parquet"
-INPUT_LOAN_DATA = "input/loan_{month}4.parquet"  # e.g., loan_014.parquet
-INPUT_COLL_COLLATER = "input/coll_collater.parquet"
+INPUT_LOAN_REPTDATE = "input/EIBHLNGR/loan_reptdate.parquet"
+INPUT_LOAN_DATA = "input/EIBHLNGR/loan_{month}4.parquet"  # e.g., loan_014.parquet
+INPUT_COLL_COLLATER = "input/EIBHLNGR/coll_collater.parquet"
 
 # Output paths
 OUTPUT_FOREIGN_BKINST = "/mnt/user-data/outputs/lngrfbi_report.txt"
