@@ -36,14 +36,14 @@ Up to 5 limits per account are supported.
 
 3. Branch Code Formatting
 Converts numeric branch codes to 3-digit strings with leading zeros:
-pythonBRANCH   →   BRN
+BRANCH   →   BRN
 1        →   '001'
 45       →   '045'
 123      →   '123'
 
 
 4. Balance Sign Handling
-pythonif CURBAL < 0:
+if CURBAL < 0:
     BALANCE = (-1) * CURBAL  # Convert to positive
     CRI = NULL
 else:
@@ -51,18 +51,18 @@ else:
     CRI = 'CR'  # Mark as credit balance
 ```
 
-### 5. **Filtering Criteria**
+5. Filtering Criteria
 
-**Current Accounts:**
+Current Accounts:
 - DEPTYPE IN ('D', 'N')
 - APPRLIMT > 1
 - ODPLAN: 100-105 (PBB) or 106 (PIBB)
 
-**Overdraft Records:**
+Overdraft Records:
 - APPRLIMT > 1
 - LMTTYPE IN ('Y', 'A')
 
-### 6. **Report Format with Branch Subtotals**
+6. Report Format with Branch Subtotals
 ```
   P U B L I C   B A N K   B E R H A D
   REPORT TITLE: ACCOUNTS WITH OD LIMITS
@@ -72,24 +72,24 @@ BRN ACCOUNT NO NAME OF CUSTOMER          BASE OD    OUSTANDING      APPROVED    
                                           RATE ST    BALANCE         LIMIT
 ------------------------------------------------------------------------------------------------------------------------------------
 001 1234567890 ABC COMPANY SDN BHD       5.50 OK     1,234,567.89    10,000,000.00   5,000,000.00  5.50 ABC
-                                                                                       3,000,000.00  6.00 XYZ
+                                                                                     3,000,000.00  6.00 XYZ
 
                          -------------------------------------------------
                          TOTAL APPROVED LIMITS  =         10,000,000.00
 
-                         TOTAL ACCOUNTS         =                  1
+                         TOTAL ACCOUNTS         =                     1
 
                          TOTAL OPERATIVE LIMITS =          8,000,000.00
                          -------------------------------------------------
 ```
 
-### 7. **Calculated Fields**
+7. Calculated Fields
 
-- **LIMITS**: Sum of LIMIT1 through LIMIT5 (operative limits)
-- **NOACCT**: Counter for number of accounts (always 1 per row)
-- **BALANCE**: Absolute value of CURBAL with sign indicator
+- LIMITS: Sum of LIMIT1 through LIMIT5 (operative limits)
+- NOACCT: Counter for number of accounts (always 1 per row)
+- BALANCE: Absolute value of CURBAL with sign indicator
 
-## 📊 Processing Steps:
+Processing Steps:
 ```
 1. Read REPTDATE → Format as DD/MM/YY
            ↓
