@@ -1,0 +1,107 @@
+//EIBWPSCH JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB33042
+/*JOBPARM S=S1M2
+//**********************************************************************
+//* EXTRACTION OF WEEKLY LOAN SCHEDULE PAYMENT TO WAREHOUSE
+//**********************************************************************
+//* ESMR 2013-1326(JKA) : STORE THE LOANS SCHEDULE PAYMENT BETWEEN
+//*                     : 01ST - 08TH
+//*                     : 09TH - 15TH
+//*                     : 16TH - 22ND
+//*                     : 23RD - MONTH END
+//**********************************************************************
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PBB.LNPYWFTP,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PBB.LNPAYSCH.WEEK,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//*
+//CREATE  EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.PBB.LNPYWFTP,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+//            SPACE=(CYL,(300,200),RLSE),UNIT=(SYSDA,8)
+//*
+//EIBWPSCH  EXEC SAS609
+//LN        DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//PAYFILE   DD DSN=RBP2.SAS.B033.PAYSFILE,DISP=SHR
+//PAY       DD DSN=SAP.PBB.LNPAYSCH.WEEK,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(500,200),RLSE),UNIT=(SYSDA,5)
+//SYSIN     DD *
+
+OPTIONS NOCENTER YEARCUTOFF=1950 LS=132;
+
+
+DATA PAY.REPTDATE;
+   SET LN.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN (8)  DO; WK = '01'; END;
+      WHEN(15)  DO; WK = '02'; END;
+      WHEN(22)  DO; WK = '03'; END;
+      OTHERWISE DO; WK = '04'; END;
+   END;
+   CALL SYMPUT('NOWK',PUT(WK,$2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+RUN;
+
+DATA LNPAY(DROP=DD MM YY EFFDAT);
+   INFILE PAYFILE MISSOVER;
+   INPUT @001 ACCTNO      PD6.
+         @007 NOTENO      PD3.
+         @011 EFFDAT      PD6.
+         @018 PAYTYPE      $1.
+         @019 NOPAY       PD3.
+         @022 PAYAMT      PD8.2
+         @054 SCHFREQ      $1.
+         @061 PAYMAINTAIN PD6.
+         ;
+   DD = INPUT(SUBSTR(PUT(EFFDAT,Z11.),10,2),2.);
+   MM = INPUT(SUBSTR(PUT(EFFDAT,Z11.),8,2),2.);
+   YY = INPUT(SUBSTR(PUT(EFFDAT,Z11.),1,4),4.);
+   PAYDAY = DD;
+   IF DD IN (31,99) THEN DO;
+      IF MM IN (1,3,5,7,8,10,12) THEN DO;
+         DD = 31;
+      END;
+      ELSE IF MM IN (2) THEN DO;
+         IF MOD(YY,4) = 0 THEN DD = 29;
+         ELSE DD = 28;
+      END;
+      ELSE DO;
+         DD = 30;
+      END;
+   END;
+   ELSE IF DD IN (30,29) THEN DO;
+      IF MM IN (2) THEN DO;
+         IF MOD(YY,4) = 0 THEN DD = 29;
+         ELSE DD = 28;
+      END;
+   END;
+   EFFDATE = MDY(MM,DD,YY);
+   IF PAYMAINTAIN > 0 THEN
+      PAYMAINTAIN=INPUT(SUBSTR(PUT(PAYMAINTAIN,Z11.),1,8),MMDDYY8.);
+RUN;
+
+PROC SORT DATA=LN.LNNOTE OUT=LNNOTE(KEEP=ACCTNO NOTENO);
+ /* WHERE PAIDIND NE 'P'; BY ACCTNO NOTENO; */
+BY ACCTNO NOTENO;
+RUN;
+PROC SORT DATA=LNPAY; BY ACCTNO NOTENO; RUN;
+DATA PAY.LNPAY&NOWK;
+   MERGE LNNOTE(IN=A) LNPAY(IN=B);
+   BY ACCTNO NOTENO;
+   IF A;
+   IF NOPAY > 0;
+RUN;
+
+PROC PRINT DATA=PAY.LNPAY&NOWK (OBS=50);
+   FORMAT EFFDATE DATE8.; RUN;
+
+FILENAME TRANFILE 'SAP.PBB.LNPYWFTP' DISP=OLD;
+   PROC CPORT LIBRARY=PAY FILE=TRANFILE;
+RUN;
+
