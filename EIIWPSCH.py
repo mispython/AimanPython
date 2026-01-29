@@ -279,12 +279,12 @@ if processed_records:
     # con.execute("CREATE TABLE lnpay AS SELECT * FROM processed_records")
     # print(f"Processed payment records: {len(processed_records):,}")
 
-    df_pay = pd.DataFrame(processed_records)
+    df_payI = pd.DataFrame(processed_records)
 
     # Register DataFrame with DuckDB
-    con.register("lnpay", df_pay)
+    con.register("lnpay", df_payI)
 
-    print(f"Payment records processed: {len(df_pay):,}")
+    print(f"Processed payment records: {len(df_payI):,}")
 else:
     # Create empty table with correct schema
     con.execute("""
