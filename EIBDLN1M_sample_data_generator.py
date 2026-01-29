@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Configuration
-OUTPUT_DIR = Path("input")
+OUTPUT_DIR = Path("input/EIBDLN1M")
 REPORT_DATE = datetime(2026, 1, 28)
 NUM_CUSTOMERS = 1000
 NUM_BRANCHES = 50
@@ -235,7 +235,7 @@ print(f"  {OUTPUT_DIR / 'branch.txt'}")
 print(f"  {OUTPUT_DIR / f'loan_{month}{day}.parquet'}")
 print(f"  {OUTPUT_DIR / f'loanx_{prev_month}{prev_day}.parquet'}")
 
-print(f"\nYou can now run: python eibdln1m_converter.py")
+print(f"\nYou can now run: EIBDLN1M.py")
 print("=" * 70)
 
 # Close connection
