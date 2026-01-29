@@ -6,6 +6,7 @@ Generates synthetic test data in the required parquet and text formats
 
 import duckdb
 import random
+import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -97,6 +98,7 @@ print(f"   Created: {output_file}")
 # ============================================================================
 print("\n4. Generating current period loan data...")
 
+
 # Helper function to randomly select products
 def get_random_product(acctype):
     if acctype == 'OD':
@@ -104,6 +106,7 @@ def get_random_product(acctype):
     else:  # LN
         all_products = RC_PRODUCTS + HP_PRODUCTS + TL_PRODUCTS
         return random.choice(all_products)
+
 
 # Create mixed account types
 od_count = NUM_CUSTOMERS // 4
@@ -115,7 +118,7 @@ for i in range(NUM_CUSTOMERS):
     branch = random.choice(branches)
     acctype = 'OD' if i < od_count else 'LN'
     product = get_random_product(acctype)
-    
+
     # Generate realistic balances
     if acctype == 'OD':
         apprlimt = random.randint(100000, 50000000)
@@ -123,9 +126,9 @@ for i in range(NUM_CUSTOMERS):
     else:
         apprlimt = random.randint(50000, 100000000)
         balance = random.randint(0, apprlimt)
-    
+
     apprlim2 = apprlimt * random.uniform(0.8, 1.2)
-    
+
     accounts.append({
         'ACCTNO': acctno,
         'BRANCH': branch,
@@ -136,7 +139,9 @@ for i in range(NUM_CUSTOMERS):
         'BALANCE': float(balance)
     })
 
-con.execute("CREATE TABLE current_loans AS SELECT * FROM accounts")
+# con.execute("CREATE TABLE current_loans AS SELECT * FROM accounts")
+df_accounts = pd.DataFrame(accounts)
+con.execute("CREATE TABLE current_loans AS SELECT * FROM df_accounts")
 
 # Save to dated file
 month = f"{REPORT_DATE.month:02d}"
@@ -161,7 +166,7 @@ num_large_movements = int(NUM_CUSTOMERS * MOVEMENT_THRESHOLD_PERCENT)
 
 for i, acc in enumerate(accounts):
     prev_balance = acc['BALANCE']
-    
+
     # Create large movement for selected accounts
     if i < num_large_movements:
         # Generate movement >= 1M
@@ -175,7 +180,7 @@ for i, acc in enumerate(accounts):
         # Small random movement for others
         movement = random.uniform(-500000, 500000)
         prev_balance = max(0, acc['BALANCE'] - movement)
-    
+
     previous_accounts.append({
         'ACCTNO': acc['ACCTNO'],
         'BRANCH': acc['BRANCH'],
@@ -186,7 +191,9 @@ for i, acc in enumerate(accounts):
         'BALANCE': float(prev_balance)
     })
 
-con.execute("CREATE TABLE previous_loans AS SELECT * FROM previous_accounts")
+# con.execute("CREATE TABLE previous_loans AS SELECT * FROM previous_accounts")
+df_prev_accounts = pd.DataFrame(previous_accounts)
+con.execute("CREATE TABLE previous_loans AS SELECT * FROM df_prev_accounts")
 
 output_file = OUTPUT_DIR / f"loanx_{prev_month}{prev_day}.parquet"
 con.execute(f"COPY previous_loans TO '{output_file}' (FORMAT PARQUET)")
@@ -195,9 +202,9 @@ print(f"   Created: {output_file} ({NUM_CUSTOMERS} accounts)")
 # ============================================================================
 # 6. Generate Summary Statistics
 # ============================================================================
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("SAMPLE DATA GENERATION COMPLETE")
-print("="*70)
+print("=" * 70)
 
 # Calculate statistics
 stats = con.execute("""
@@ -229,7 +236,7 @@ print(f"  {OUTPUT_DIR / f'loan_{month}{day}.parquet'}")
 print(f"  {OUTPUT_DIR / f'loanx_{prev_month}{prev_day}.parquet'}")
 
 print(f"\nYou can now run: python eibdln1m_converter.py")
-print("="*70)
+print("=" * 70)
 
 # Close connection
 con.close()
