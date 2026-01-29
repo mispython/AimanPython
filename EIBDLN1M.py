@@ -6,6 +6,7 @@ Net Increased/(Decreased) of RM1 Million & Above Per Customer
 """
 
 import duckdb
+import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -23,8 +24,8 @@ INPUT_BRANCH_FILE = "input/branch.txt"
 INPUT_LOAN_CURRENT = "input/loan_{month}{day}.parquet"  # e.g., loan_0128.parquet
 INPUT_LOANX_PREVIOUS = "input/loanx_{month}{day}.parquet"  # e.g., loanx_0127.parquet
 
-# Output path
-OUTPUT_REPORT = "/mnt/user-data/outputs/eibdln1m_report.txt"
+# Output path - will/need to be changed
+OUTPUT_REPORT = "C:/mnt/user-data/outputs/EIBDLN1M_report.txt"
 
 
 # ============================================================================
@@ -251,12 +252,26 @@ with open(INPUT_BRANCH_FILE, 'r') as f:
             brname = line[5:8]
             branch_data.append({'BRANCH': branch, 'BANK': bank, 'BRNAME': brname})
 
+# branch_df = con.execute("""
+#     SELECT * FROM branch_data
+#     ORDER BY BRANCH
+# """).df()
+#
+# con.register('branch', branch_df)
+
+# Convert Python list → pandas DataFrame
+branch_df = pd.DataFrame(branch_data)
+
+# Register DataFrame as DuckDB table
+con.register('branch', branch_df)
+
+# Optional: enforce ordering like SAS
 branch_df = con.execute("""
-    SELECT * FROM branch_data
+    SELECT *
+    FROM branch
     ORDER BY BRANCH
 """).df()
 
-con.register('branch', branch_df)
 print(f"Branch data loaded: {len(branch_df)} records")
 
 
