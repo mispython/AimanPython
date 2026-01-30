@@ -1,4 +1,15 @@
-if 5 <= day <= 10:    NOWK = '1'
+📦 Delivered File:
+foreign_exchange_transaction_report.py - Complete conversion of EIMNOSTE report
+🎯 Program Overview:
+This program processes nostro account foreign exchange transactions from two sources and generates a comprehensive summary report.
+Two Data Sources:
+
+Walker File (wknost.dat) - Fixed-width text format
+Deposit File (dpnost.dat) - Fixed-width with packed decimal fields
+
+🔑 Key Features:
+1. Week Determination (Different from previous programs!)
+pythonif 5 <= day <= 10:    NOWK = '1'
 elif 11 <= day <= 18: NOWK = '2'
 elif 19 <= day <= 25: NOWK = '3'
 else:                 NOWK = '4'
@@ -73,4 +84,4 @@ USD      001   BANK A                         OUTWARD TT           C            
                                                                                       -----------------  -----------------
 
               TOTAL                                                                     1,469,135.78      6,666,555.55
-                                                                                      =================  =================
+                                                                                      =
