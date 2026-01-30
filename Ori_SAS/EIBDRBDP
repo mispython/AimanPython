@@ -1,0 +1,47 @@
+//EIBDRBDP JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB22447
+/*JOBPARM S=S1M1
+//*-------------------------------------------------------------------
+//* PROGRAM  : EIBDRBDP
+//* ESMR     : 2010-2431 (AAB)
+//* DESC     : REASONS FOR RM FD & FCY FD WITHDRAWALS OVER-THE-COUNTER
+//*-------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DD01     DD DSN=SAP.PBB.EIBDRB01,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD02     DD DSN=SAP.PBB.EIBDRB2A,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD03     DD DSN=SAP.PBB.EIBDRB2B,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*---------------------------------------------------------------
+//* EIBDRB01 - DAILY TOTAL OUTSTANDING BALANCE/ACCOUNT ON FCY FD
+//*---------------------------------------------------------------
+//EIBDRB01 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB.DAILY(0),DISP=SHR
+//WALK     DD DSN=SAP.PBB.DAILY.WALKER(0),DISP=SHR
+//MISFD    DD DSN=SAP.PBB.FCYFD,DISP=SHR
+//STORE    DD DSN=SAP.PBB.DP.SASDATA,DISP=OLD
+//SASLIST  DD DSN=SAP.PBB.EIBDRB01,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=300,RECFM=FB,BLKSIZE=3000)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBDRB01),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBDRB02 - DAILY FD WITHDRAWALS OVER-THE-COUNTER BY BRANCH
+//*---------------------------------------------------------------
+//EIBDRB02  EXEC SAS609
+//DEPOSIT   DD DSN=SAP.PBB.MNITB.DAILY(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//MIS       DD DSN=SAP.PBB.DP.SASDATA,DISP=SHR
+//RMWDRAW   DD DSN=SAP.PBB.EIBDRB2A,
+//             DISP=(NEW,CATLG,DELETE),
+//             SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//             DCB=(LRECL=360,RECFM=FB,BLKSIZE=36000)
+//FCYWDRAW  DD DSN=SAP.PBB.EIBDRB2B,
+//             DISP=(NEW,CATLG,DELETE),
+//             SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//             DCB=(LRECL=360,RECFM=FB,BLKSIZE=36000)
+//SYSIN     DD DSN=SAP.BNM.PROGRAM(EIBDRB02),DISP=SHR
