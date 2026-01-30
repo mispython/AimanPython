@@ -39,9 +39,8 @@ pythonif CURBAL < 0:
 else:
     BALANCE = CURBAL
     CRI = 'CR'  # Mark as credit balance
-```
 
-### 5. **Filtering Criteria** ###
+### 5. Filtering Criteria ###
 
 **Current Accounts:**
 - DEPTYPE IN ('D', 'N')
@@ -52,8 +51,8 @@ else:
 - APPRLIMT > 1
 - LMTTYPE IN ('Y', 'A')
 
-### 6. **Report Format with Branch Subtotals** ###
-```
+### 6. Report Format with Branch Subtotals ###
+
   P U B L I C   B A N K   B E R H A D
   REPORT TITLE: ACCOUNTS WITH OD LIMITS
   REPORT AS AT 15/01/26
@@ -71,7 +70,6 @@ BRN ACCOUNT NO NAME OF CUSTOMER          BASE OD    OUSTANDING      APPROVED    
 
                          TOTAL OPERATIVE LIMITS =          8,000,000.00
                          -------------------------------------------------
-```
 
 ### 7. **Calculated Fields** ###
 
@@ -80,7 +78,7 @@ BRN ACCOUNT NO NAME OF CUSTOMER          BASE OD    OUSTANDING      APPROVED    
 - **BALANCE**: Absolute value of CURBAL with sign indicator
 
 ## 📊 Processing Steps: ##
-```
+
 1. Read REPTDATE → Format as DD/MM/YY
            ↓
 2. Filter Current Accounts → DEPTYPE, APPRLIMT, ODPLAN
