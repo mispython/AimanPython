@@ -8,6 +8,7 @@ import polars as pl
 from datetime import datetime
 from pathlib import Path
 import random
+import sys
 
 
 def create_sample_reptdate():
@@ -135,7 +136,9 @@ def main():
     # Step 2: Run the report
     print("\n2. Running report generation...")
     import subprocess
-    result = subprocess.run(['python3', 'dmmisri3_report.py'],
+    # result = subprocess.run(['python3', 'dmmisri3_report.py'],
+    #                         capture_output=True, text=True)
+    result = subprocess.run([sys.executable, 'dmmisri3_report.py'],
                             capture_output=True, text=True)
 
     if result.returncode == 0:
