@@ -13,7 +13,6 @@ pythonif 5 <= day <= 10:    NOWK = '1'
 elif 11 <= day <= 18: NOWK = '2'
 elif 19 <= day <= 25: NOWK = '3'
 else:                 NOWK = '4'
-```
 
 ### 2. **Walker File Processing**
 - Fixed-width text format
@@ -50,7 +49,7 @@ else:                 NOWK = '4'
 - Formatted with proper alignment
 
 ### 6. **Data Processing Flow**
-```
+
 1. Read REPTDATE → Determine Week (1-4)
            ↓
 2. Read Walker File → Map transaction codes → Add descriptions
@@ -66,22 +65,21 @@ else:                 NOWK = '4'
 7. Generate Report → Agent subtotals → Grand total
            ↓
 8. Create SFTP script for file transfer
-```
 
-## 📊 Report Format:
-```
+
+## 📊 Report Format: ##
+
                         REPORT ID : EIMNOSTE
          REPORT ON FOREIGN EXCHANGE TRANSACTION AS AT 15/01/26
 
-CURRENCY AGENT NAME                           TRANSACTION          DEBIT(D)/ NO OF    FOREIGN           RM
-CODE     NO                                   DESCRIPTION          CREDIT(C) TRANS    AMOUNT            AMOUNT
+CURRENCY AGENT NAME                           TRANSACTION          DEBIT(D)/ NO OF      FOREIGN            RM
+CODE     NO                                   DESCRIPTION          CREDIT(C) TRANS      AMOUNT             AMOUNT
                                                                             ACTION
 ------------------------------------------------------------------------------------------------------------------------------------
-USD      001   BANK A                         OUTWARD TT           C            5      1,234,567.89      5,678,901.23
-              BANK A                         INWARD DD            D            2        234,567.89        987,654.32
+USD      001   BANK A                         OUTWARD TT           C            5        1,234,567.89      5,678,901.23
+               BANK A                         INWARD DD            D            2          234,567.89        987,654.32
                                                                                       -----------------  -----------------
                                                                                          1,469,135.78      6,666,555.55
                                                                                       -----------------  -----------------
-
-              TOTAL                                                                     1,469,135.78      6,666,555.55
-                                                                                      =
+              TOTAL                                                                 =    1,469,135.78      6,666,555.55
+                                                                                      
