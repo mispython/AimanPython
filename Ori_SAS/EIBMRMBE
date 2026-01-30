@@ -1,0 +1,440 @@
+//EIBMRMBE JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      00010000
+/*JOBPARM S=S1M1                                                        00020000
+//**********************************************************************00030000
+//* AUTOMATE REPORTS FOR RENMINBI EXPOSURES AND TRANSACTIONS            00040000
+//* AND TRANSACTIONS IN MALAYSIA FROM SEPTEMBER 2014 ONWARDS.           00050000
+//* REPORT : RMB_EXPOSURES_MMYY                                         00060000
+//* ESMR   : 2014-2350 (SKP)                                            00090000
+//* ESMR   : 2024-2750 (JKA)                                            00100009
+//**********************************************************************00120000
+//*                                                                     00130000
+//DELETE  EXEC PGM=IEFBR14                                              00140000
+//DEL01    DD DSN=SAP.PBB.RMB.EXPOSUR.TEXT,                             00150002
+//            DISP=(MOD,DELETE,DELETE),                                 00160000
+//            SPACE=(CYL,(0))                                           00170000
+//*                                                                     00310000
+//EIBMRMBE EXEC SAS609                                                  00320001
+//MNITB    DD DSN=SAP.PBB.MNITB(0),DISP=SHR                             00330001
+//FCY      DD DSN=SAP.BNM.MONTHEND.FCDATAWH,DISP=SHR                    00360002
+//BTRWH    DD DSN=SAP.PBB.BTDATAWH,DISP=SHR                             00361003
+//REPORT1  DD DSN=SAP.PBB.RMB.EXPOSUR.TEXT,                             00363002
+//            DISP=(NEW,CATLG,DELETE),                                  00363102
+//            DCB=(RECFM=FB,LRECL=260,BLKSIZE=0),                       00364002
+//            SPACE=(TRK,(5,5)),UNIT=SYSDA                              00365002
+//SASLIST  DD SYSOUT=X                                                  00460000
+//SYSIN    DD *                                                         00470000
+                                                                        00480000
+OPTIONS YEARCUTOFF=1950 NOCENTER;                                       00490000
+DATA REPTDATE;                                                          00500000
+   SET MNITB.REPTDATE;                                                  00510001
+   SELECT;                                                              00520001
+      WHEN(1 <=DAY(REPTDATE)<= 8)  CALL SYMPUT('NOWK', PUT('1', $1.));  00530001
+      WHEN(9 <=DAY(REPTDATE)<= 15) CALL SYMPUT('NOWK', PUT('2', $1.));  00540001
+      WHEN(16<=DAY(REPTDATE)<= 22) CALL SYMPUT('NOWK', PUT('3', $1.));  00550001
+      OTHERWISE                    CALL SYMPUT('NOWK', PUT('4', $1.));  00560001
+   END;                                                                 00570001
+   CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR2.));                      00580001
+   CALL SYMPUT('REPTYR1', PUT(REPTDATE, YEAR4.));                       00581002
+   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));                   00590001
+   CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));                     00600001
+   CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));                       00610001
+   CALL SYMPUT('REPTDT',REPTDATE);                                      00620001
+RUN;                                                                    00770000
+                                                                        00771002
+%LET FIELD=(KEEP=CATEGORY GROUP BNKINSTI CORPORATE RETAIL FORBNKINSTI   00780002
+                 FORNONBNK);                                            00781002
+                                                                        00782002
+  LIBNAME BNM  "SAP.PBB.D&REPTYR1" DISP=SHR;                            00783002
+                                                                        00784002
+ /* ESMR 2024-2705 */                                                   00785003
+DATA BTRAD &FIELD;                                                      00786011
+   SET BTRWH.BTRAD&REPTMON&NOWK&REPTYEAR;                               00787003
+   FORMAT GROUP CATEGORY $5.;                                           00787107
+   IF LIABCODE IN ('FFS','FFU','FCS','FCU','FFL','FTL','FTI') AND       00787203
+      FORCURR = 'CNY';                                                  00787311
+                                                                        00787407
+      CATEGORY='BTAC';                                                  00787508
+      GROUP='FCYBT';                                                    00787612
+                                                                        00787711
+      TRXAMT = SUM(TRANXMT,INTAMT);                                     00787811
+                                                                        00787911
+      IF CUSTCD IN (01,02,03,12,07) THEN DO;                            00788011
+         BNKINSTI = TRXAMT;                                             00788111
+      END;                                                              00788211
+      ELSE IF CUSTCD IN (20,17,30,31,32,33,34,35,36,37,38,39,40,45,04,  00788311
+                         05,06,60,61,62,63,64,41,42,43,44,46,47,48,49,  00788411
+                         51,52,53,54,57,59,75,70,71,72,73,74,66,67,68,  00788511
+                         69) THEN DO;                                   00788611
+         CORPORATE = TRXAMT;                                            00788711
+      END;                                                              00788811
+      ELSE IF CUSTCD IN (77,78,79) THEN DO;                             00788911
+         RETAIL = TRXAMT;                                               00789011
+      END;                                                              00789111
+      ELSE IF CUSTCD IN (81,82,83,84) THEN DO;                          00789211
+         FORBNKINSTI = TRXAMT;                                          00789311
+      END;                                                              00789411
+      ELSE IF CUSTCD IN (85,86,87,88,89,90,91,92,95,96,98,99) THEN DO;  00789511
+         FORNONBNK = TRXAMT;                                            00789711
+      END;                                                              00789811
+RUN;                                                                    00790703
+                                                                        00790809
+ /* TABLE 1 ITEM 3 */                                                   00796001
+DATA FCY &FIELD;                                                        00800002
+   FORMAT CATEGORY GROUP $5.;                                           00801015
+   SET FCY.FCY&REPTMON&NOWK&REPTYEAR;                                   00810001
+   FORMAT GROUP CATEGORY $5.;                                           00811002
+   IF PRODUCT IN (360,350,351,352,353,354,355,356,357,358) THEN DO;     00820001
+      IF CURCODE='CNY' THEN DO;                                         00830001
+         CATEGORY='DPAC';                                               00830102
+         GROUP='FCYFD';                                                 00830201
+         IF CUSTCD IN (01,02,03,12,07) THEN DO;                         00831001
+            BNKINSTI=FORBAL;                                            00831201
+         END;                                                           00832001
+         ELSE IF CUSTCD IN (20,17,30,31,32,33,34,35,36,37,38,39,40,     00833001
+                            45,04,05,06,60,61,62,63,64,41,42,43,44,     00834001
+                            46,47,48,49,51,52,53,54,57,59,75,70,71,     00835001
+                            72,73,74,66,67,68,69) THEN DO;              00836002
+            CORPORATE=FORBAL;                                           00838001
+         END;                                                           00839001
+         ELSE IF CUSTCD IN (77,78,79) THEN DO;                          00839101
+            RETAIL=FORBAL;                                              00839301
+         END;                                                           00839401
+         ELSE IF CUSTCD IN (81,82,83,84) THEN DO;                       00839501
+            FORBNKINSTI=FORBAL;                                         00839701
+         END;                                                           00839801
+         ELSE IF CUSTCD IN (85,86,87,88,89,90,91,92,95,96,98,99)        00839901
+         THEN DO;                                                       00840001
+            FORNONBNK=FORBAL;                                           00840101
+         END;                                                           00840201
+      END;                                                              00841001
+   END;                                                                 00850001
+   ELSE DO;                                                             00860001
+      IF CURCODE='CNY' THEN DO;                                         00870001
+         CATEGORY='DPAC';                                               00870102
+         GROUP='FCYDD';                                                 00870201
+         IF CUSTCD IN (01,02,03,12,07) THEN DO;                         00870301
+            BNKINSTI=FORBAL;                                            00870401
+         END;                                                           00870501
+         ELSE IF CUSTCD IN (20,17,30,31,32,33,34,35,36,37,38,39,40,     00870601
+                            45,04,05,06,60,61,62,63,64,41,42,43,44,     00870701
+                            46,47,48,49,51,52,53,54,57,59,75,70,71,     00870801
+                            72,73,74,66,67,68,69) THEN DO;              00870902
+            CORPORATE=FORBAL;                                           00871001
+         END;                                                           00871101
+         ELSE IF CUSTCD IN (77,78,79) THEN DO;                          00871201
+            RETAIL=FORBAL;                                              00871301
+         END;                                                           00871401
+         ELSE IF CUSTCD IN (81,82,83,84) THEN DO;                       00871501
+            FORBNKINSTI=FORBAL;                                         00871601
+         END;                                                           00871701
+         ELSE IF CUSTCD IN (85,86,87,88,89,90,91,92,95,96,98,99)        00871801
+         THEN DO;                                                       00871901
+            FORNONBNK=FORBAL;                                           00872001
+         END;                                                           00872101
+      END;                                                              00873001
+   END;                                                                 00880001
+RUN;                                                                    00890001
+                                                                        00900001
+DATA TABLE1;                                                            01132002
+   SET FCY BTRAD;                                                       01133013
+   CORPRETAIL=SUM(CORPORATE,RETAIL);                                    01134002
+   TOTAL_A=SUM(BNKINSTI,CORPRETAIL);                                    01135002
+   TOTAL_F=SUM(FORBNKINSTI,FORNONBNK);                                  01136002
+   TOTAL=SUM(TOTAL_A,TOTAL_F);                                          01137002
+RUN;                                                                    01138002
+                                                                        01139002
+PROC SUMMARY DATA=TABLE1 NWAY;                                          01140002
+CLASS CATEGORY GROUP;                                                   01150002
+VAR TOTAL TOTAL_A BNKINSTI CORPRETAIL CORPORATE RETAIL                  01160002
+TOTAL_F FORBNKINSTI FORNONBNK;                                          01170002
+OUTPUT OUT=SUMCOM1 SUM=;                                                01180002
+RUN;                                                                    01190002
+                                                                        01200002
+PROC SUMMARY DATA=SUMCOM1 NWAY;                                         01210002
+VAR TOTAL TOTAL_A BNKINSTI CORPRETAIL CORPORATE RETAIL                  01220002
+TOTAL_F FORBNKINSTI FORNONBNK;                                          01230002
+OUTPUT OUT=SUMCOM2 SUM=;                                                01240002
+RUN;                                                                    01250002
+                                                                        01260002
+DATA SUMCOM;                                                            01270002
+   FORMAT CATEGORY $5.;                                                 01280002
+   SET SUMCOM1 SUMCOM2(IN=A);                                           01290002
+   IF A THEN DO;                                                        01300002
+     CATEGORY='TOTAL';GROUP='TOTAL';                                    01310002
+   END;                                                                 01311002
+RUN;                                                                    01320002
+                                                                        01330002
+DATA CAT;                                                               01340002
+   FORMAT CATEGORY GROUP $5.;                                           01350002
+   NO=1;CATEGORY='BTAC';GROUP='FCYBT';OUTPUT;                           01360017
+   NO=2;CATEGORY='DPAC';GROUP='FCYFD';OUTPUT;                           01390017
+   NO=3;CATEGORY='DPAC';GROUP='FCYDD';OUTPUT;                           01400017
+   NO=4;CATEGORY='TOTAL';GROUP='TOTAL';OUTPUT;                          01420017
+RUN;                                                                    01430002
+                                                                        01440002
+PROC SORT DATA=CAT;BY CATEGORY GROUP;RUN;                               01450002
+PROC SORT DATA=SUMCOM;BY CATEGORY GROUP;RUN;                            01460002
+                                                                        01470002
+DATA SUMTABLE1;                                                         01480002
+   MERGE CAT(IN=A) SUMCOM(IN=B);BY CATEGORY GROUP;                      01490002
+   IF A;                                                                01500002
+RUN;                                                                    01510002
+                                                                        01520002
+PROC SORT DATA=SUMTABLE1;BY NO CATEGORY GROUP;RUN;                      01530002
+                                                                        01540002
+DATA _NULL_;                                                            01550002
+   SET SUMTABLE1;                                                       01560013
+   IF CORPORATE=. THEN CORPORATE=0;                                     01570002
+   IF RETAIL=. THEN RETAIL=0;                                           01580002
+   IF CORPRETAIL=. THEN CORPRETAIL=0;                                   01590002
+   IF BNKINSTI=. THEN BNKINSTI=0;                                       01600002
+   IF FORBNKINSTI=. THEN FORBNKINSTI=0;                                 01610002
+   IF FORNONBNK=. THEN FORNONBNK=0;                                     01620002
+   IF TOTAL_A=. THEN TOTAL_A=0;                                         01630002
+   IF TOTAL_F=. THEN TOTAL_F=0;                                         01640002
+   IF TOTAL=. THEN TOTAL=0;                                             01650002
+   FILE REPORT1;                                                        01660002
+   IF _N_ = 1 THEN DO;                                                  01670002
+      PUT @001  'TABLE 1 - STATEMENT OF FINANCIAL POSITION';            01680002
+      PUT @001  ' ';                                                    01690002
+      PUT @001  220*'-';                                                01700002
+      PUT @001  '|'                                                     01710002
+          @031  '|'                                                     01720002
+          @052  '|'                                                     01730002
+          @094  'RESIDENT'                                              01731002
+          @157  '|'                                                     01740002
+          @178  'NON RESIDENT'                                          01741002
+          @220  '|';                                                    01750002
+      PUT @001  '|'                                                     01760002
+          @031  '|'                                                     01770002
+          @052  '|'                                                     01780002
+          @053  104*'-'                                                 01790002
+          @157  '|'                                                     01800002
+          @158  62*'-'                                                  01810002
+          @220  '|';                                                    01820002
+      PUT @001  '|'                                                     01830002
+          @031  '|'                                                     01840002
+          @052  '|'                                                     01850002
+          @073  '|'                                                     01860002
+          @094  '|'                                                     01870002
+          @157  '|'                                                     01880002
+          @178  '| FOREIGN  '                                           01890002
+          @199  '| FOREIGN  '                                           01900002
+          @220  '|';                                                    01910002
+      PUT @001  '|'                                                     01920002
+          @031  '|'                                                     01930002
+          @052  '|'                                                     01940002
+          @073  '|'                                                     01950002
+          @094  '|   NON-BANK ENTITY  '                                 01960002
+          @157  '| TOTAL(F) '                                           01970002
+          @178  '| BANKING '                                            01980002
+          @199  '| NON-BANK '                                           01990002
+          @220  '|';                                                    02000002
+      PUT @001  '|'                                                     02010002
+          @031  '| TOTAL=TOTAL(A)'                                      02020002
+          @052  '| TOTAL(A) '                                           02030002
+          @073  '| BANKING '                                            02040002
+          @094  '|'                                                     02050002
+          @157  '| =(G)+(H)'                                            02060002
+          @178  '| INSTITUTION(G)'                                      02070002
+          @199  '| ENTITY (H)'                                          02080002
+          @220  '|';                                                    02090002
+      PUT @001  '| ITEM '                                               02100002
+          @031  '| + TOTAL(F)'                                          02110002
+          @052  '| = (B) + (C)'                                         02120002
+          @073  '| INSTITUTION(B)'                                      02130002
+          @094  '|'                                                     02140002
+          @095  62*'-'                                                  02150002
+          @157  '|---------------------'                                02160002
+          @178  '|---------------------'                                02170002
+          @199  '|---------------------'                                02180002
+          @220  '|';                                                    02190002
+      PUT @001  '|'                                                     02200002
+          @031  '|'                                                     02210002
+          @052  '|'                                                     02220002
+          @073  '|'                                                     02230002
+          @094  '| TOTAL(C)'                                            02240002
+          @115  '| CORPOTATE(D)'                                        02250002
+          @136  '| RETAIL(E)'                                           02260002
+          @157  '|'                                                     02270002
+          @178  '|'                                                     02280002
+          @199  '|'                                                     02290002
+          @220  '|';                                                    02300002
+      PUT @001  '|'                                                     02310002
+          @031  '|'                                                     02320002
+          @052  '|'                                                     02330002
+          @073  '|'                                                     02340002
+          @094  '| = (D) + (E)'                                         02350002
+          @115  '|'                                                     02360002
+          @136  '|'                                                     02370002
+          @157  '|'                                                     02380002
+          @178  '|'                                                     02390002
+          @199  '|'                                                     02400002
+          @220  '|';                                                    02410002
+      PUT @001  '|'                                                     02420002
+          @002  29*'-'                                                  02430002
+          @031  '|--------------------'                                 02440002
+          @052  '|--------------------'                                 02450002
+          @073  '|--------------------'                                 02460002
+          @094  '|--------------------'                                 02470002
+          @115  '|--------------------'                                 02480002
+          @136  '|--------------------'                                 02490002
+          @157  '|--------------------'                                 02500002
+          @178  '|--------------------'                                 02510002
+          @199  '|--------------------'                                 02520002
+          @220  '|';                                                    02530002
+   END;                                                                 02540002
+                                                                        02550002
+   IF CATEGORY='BTAC' AND GROUP='FCYBT' THEN DO;                        03910011
+      PUT @001  '| TOTAL ASSETS'                                        03911004
+          @031  '|'                                                     03912004
+          @052  '|'                                                     03913004
+          @073  '|'                                                     03914004
+          @094  '|'                                                     03915004
+          @115  '|'                                                     03916004
+          @136  '|'                                                     03917004
+          @157  '|'                                                     03918004
+          @178  '|'                                                     03919004
+          @199  '|'                                                     03919104
+          @220  '|';                                                    03919204
+      PUT @001  '|'                                                     03919304
+          @031  '|'                                                     03919404
+          @052  '|'                                                     03919504
+          @073  '|'                                                     03919604
+          @094  '|'                                                     03919704
+          @115  '|'                                                     03919804
+          @136  '|'                                                     03919904
+          @157  '|'                                                     03920004
+          @178  '|'                                                     03920104
+          @199  '|'                                                     03920204
+          @220  '|';                                                    03920304
+      PUT @001  '| - LOANS/FINANCING AND'                               03920405
+          @031  '|'                                                     03920506
+          @052  '|'                                                     03920606
+          @073  '|'                                                     03920704
+          @094  '|'                                                     03920804
+          @115  '|'                                                     03920904
+          @136  '|'                                                     03921004
+          @157  '|'                                                     03921104
+          @178  '|'                                                     03921204
+          @199  '|'                                                     03921304
+          @220  '|';                                                    03921404
+      PUT @001  '|   RECEIVABLES'                                       03921506
+          @031  '|'                                                     03921606
+          @052  '|'                                                     03921706
+          @073  '|'                                                     03921806
+          @094  '|'                                                     03921906
+          @115  '|'                                                     03922006
+          @136  '|'                                                     03922106
+          @157  '|'                                                     03922206
+          @178  '|'                                                     03922306
+          @199  '|'                                                     03922406
+          @220  '|';                                                    03922506
+      PUT @001  '|   (NET OF PROVISION)'                                03922606
+          @031  '|' TOTAL        COMMA20.2                              03922716
+          @052  '|' TOTAL_A      COMMA20.2                              03922816
+          @073  '|' BNKINSTI     COMMA20.2                              03922916
+          @094  '|' CORPRETAIL   COMMA20.2                              03923016
+          @115  '|' CORPORATE    COMMA20.2                              03923116
+          @136  '|' RETAIL       COMMA20.2                              03923216
+          @157  '|' TOTAL_F      COMMA20.2                              03923316
+          @178  '|' FORBNKINSTI  COMMA20.2                              03923416
+          @199  '|' FORNONBNK    COMMA20.2                              03923516
+          @220  '|';                                                    03923606
+      PUT @001  220*'-';                                                03923705
+   END;                                                                 03923807
+   IF CATEGORY='BTTOTAL' AND GROUP='BTTOTAL' THEN DO;                   03923907
+      PUT @001  '| TOTAL'                                               03924007
+          @031  '|' TOTAL        COMMA20.2                              03924107
+          @052  '|' TOTAL_A      COMMA20.2                              03924207
+          @073  '|' BNKINSTI     COMMA20.2                              03924307
+          @094  '|' CORPRETAIL   COMMA20.2                              03924407
+          @115  '|' CORPORATE    COMMA20.2                              03924507
+          @136  '|' RETAIL       COMMA20.2                              03924607
+          @157  '|' TOTAL_F      COMMA20.2                              03924707
+          @178  '|' FORBNKINSTI  COMMA20.2                              03924807
+          @199  '|' FORNONBNK    COMMA20.2                              03924907
+          @220  '|';                                                    03925007
+      PUT @001  220*'-';                                                03925107
+   END;                                                                 03925207
+                                                                        03925307
+   IF CATEGORY='DPAC' AND GROUP='FCYFD' THEN DO;                        03925407
+      PUT @001  '| DEPOSITS ACCEPTED'                                   03926003
+          @031  '|'                                                     03930002
+          @052  '|'                                                     03940002
+          @073  '|'                                                     03950002
+          @094  '|'                                                     03960002
+          @115  '|'                                                     03970002
+          @136  '|'                                                     03980002
+          @157  '|'                                                     03990002
+          @178  '|'                                                     04000002
+          @199  '|'                                                     04010002
+          @220  '|';                                                    04020002
+      PUT @001  '|'                                                     04030002
+          @031  '|'                                                     04040002
+          @052  '|'                                                     04050002
+          @073  '|'                                                     04060002
+          @094  '|'                                                     04070002
+          @115  '|'                                                     04080002
+          @136  '|'                                                     04090002
+          @157  '|'                                                     04100002
+          @178  '|'                                                     04110002
+          @199  '|'                                                     04120002
+          @220  '|';                                                    04130002
+      PUT @001  '|'                                                     04140002
+          @005  '- FX FIXED DEPOSITS'                                   04150002
+          @031  '|' TOTAL        COMMA20.2                              04160002
+          @052  '|' TOTAL_A      COMMA20.2                              04170002
+          @073  '|' BNKINSTI     COMMA20.2                              04180002
+          @094  '|' CORPRETAIL   COMMA20.2                              04190002
+          @115  '|' CORPORATE    COMMA20.2                              04200002
+          @136  '|' RETAIL       COMMA20.2                              04210002
+          @157  '|' TOTAL_F      COMMA20.2                              04220002
+          @178  '|' FORBNKINSTI  COMMA20.2                              04230002
+          @199  '|' FORNONBNK    COMMA20.2                              04240002
+          @220  '|';                                                    04250002
+   END;                                                                 04260002
+                                                                        04270002
+   IF CATEGORY='DPAC' AND GROUP='FCYDD' THEN DO;                        04280002
+      PUT @001  '|'                                                     04290002
+          @005  '- FX DEMAND DEPOSITS'                                  04300002
+          @031  '|' TOTAL        COMMA20.2                              04310002
+          @052  '|' TOTAL_A      COMMA20.2                              04320002
+          @073  '|' BNKINSTI     COMMA20.2                              04330002
+          @094  '|' CORPRETAIL   COMMA20.2                              04340002
+          @115  '|' CORPORATE    COMMA20.2                              04350002
+          @136  '|' RETAIL       COMMA20.2                              04360002
+          @157  '|' TOTAL_F      COMMA20.2                              04370002
+          @178  '|' FORBNKINSTI  COMMA20.2                              04380002
+          @199  '|' FORNONBNK    COMMA20.2                              04390002
+          @220  '|';                                                    04400002
+      PUT @001  '|'                                                     04401003
+          @002  29*'-'                                                  04402003
+          @031  '|--------------------'                                 04403003
+          @052  '|--------------------'                                 04404003
+          @073  '|--------------------'                                 04405003
+          @094  '|--------------------'                                 04406003
+          @115  '|--------------------'                                 04407003
+          @136  '|--------------------'                                 04408003
+          @157  '|--------------------'                                 04409003
+          @178  '|--------------------'                                 04409103
+          @199  '|--------------------'                                 04409203
+          @220  '|';                                                    04409303
+   END;                                                                 04410002
+                                                                        04810002
+   IF CATEGORY='TOTAL' AND GROUP='TOTAL' THEN DO;                       04820002
+      PUT @001  '| TOTAL'                                               04830002
+          @031  '|' TOTAL        COMMA20.2                              04840002
+          @052  '|' TOTAL_A      COMMA20.2                              04850002
+          @073  '|' BNKINSTI     COMMA20.2                              04860002
+          @094  '|' CORPRETAIL   COMMA20.2                              04870002
+          @115  '|' CORPORATE    COMMA20.2                              04880002
+          @136  '|' RETAIL       COMMA20.2                              04890002
+          @157  '|' TOTAL_F      COMMA20.2                              04900002
+          @178  '|' FORBNKINSTI  COMMA20.2                              04910002
+          @199  '|' FORNONBNK    COMMA20.2                              04920002
+          @220  '|';                                                    04930002
+      PUT @001  220*'-';                                                04940002
+   END;                                                                 04950002
+RUN;                                                                    04970002
+                                                                        04980002
