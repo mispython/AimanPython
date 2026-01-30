@@ -1,0 +1,78 @@
+//EIIMRPTC JOB MISEIS,EIBMRPTC,COND=(4,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//*-------------------------------------------------------------------
+//*  RE-SCHEDULE CA/SA/FD CLOSED A/C EXTRACTION WEF JUN2015
+//*  - DISCONTINUE FROM EIIMRPT1 AND RUN UNDER NEW JOB EIIMRPTC
+//*-------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DD3      DD DSN=SAP.PIBB.OPCL.CURR,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,0)
+//DD4      DD DSN=SAP.PIBB.OPCL.FD,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,0)
+//DD5      DD DSN=SAP.PIBB.OPCL.SAVG,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,0)
+//*
+//EIIMDPN1 EXEC SAS609
+//BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//DEPOSIT  DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//MIS      DD DSN=SAP.PIBB.OPCL.SASDATA,DISP=OLD
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST  DD DSN=SAP.PIBB.OPCL.SAVG,
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0,DSORG=PS),              00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMDPN1),DISP=SHR
+//*
+//EIIMDPN2 EXEC SAS609
+//BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//DEPOSIT  DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//MIS      DD DSN=SAP.PIBB.OPCL.SASDATA,DISP=OLD
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST  DD DSN=SAP.PIBB.OPCL.CURR,
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0,DSORG=PS),              00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMDPN2),DISP=SHR
+//*
+//EIIMDPN3 EXEC SAS609
+//BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//DEPOSIT  DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//FD       DD DSN=SAP.PIBB.MNIFD(0),DISP=SHR
+//MIS      DD DSN=SAP.PIBB.OPCL.SASDATA,DISP=OLD
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST  DD DSN=SAP.PIBB.OPCL.FD,
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0,DSORG=PS),              00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMDPN3),DISP=SHR
+//*******************************************************************
+//* FTP HOST DATASETS TO PBB DATAWAREHOUSE SERVER
+//******************************************************************
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*cd TextFile/Fin
+//*PUT //SAP.PIBB.OPCL.SAVG   IOPCLSAVG.TXT
+//*PUT //SAP.PIBB.OPCL.CURR   IOPCLCURR.TXT
+//*PUT //SAP.PIBB.OPCL.FD     IOPCLFDAC.TXT
+//*EOB
+/*
+//*******************************************************************
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//******************************************************************
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd "FD-BNM REPORTING/ITEPS/ITEPS_MAIN/ITEPS_SUB"
+PUT //SAP.PIBB.OPCL.SAVG   IOPCLSAVG.TXT
+PUT //SAP.PIBB.OPCL.CURR   IOPCLCURR.TXT
+PUT //SAP.PIBB.OPCL.FD     IOPCLFDAC.TXT
+EOB
+/*
