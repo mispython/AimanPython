@@ -5,7 +5,7 @@ STATEMENT OF FINANCIAL POSITION
 Generates a formatted report showing CNY (Chinese Yuan) financial position
 broken down by resident/non-resident and customer categories.
 
-This Python script converts the SAS program for generating Table 1 reports.
+Generating Table 1 reports.
 """
 
 import duckdb
