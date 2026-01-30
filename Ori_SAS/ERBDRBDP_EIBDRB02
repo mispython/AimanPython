@@ -1,0 +1,231 @@
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;
+%INC PGM(PBBELF);
+
+DATA REPTDATE;
+   SET DEPOSIT.REPTDATE;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RPTDATE',PUT(REPTDATE,8.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA WDRAW;
+   SET MIS.FDWDRW&REPTMON;
+   WHERE REPTDATE EQ &RPTDATE;
+   TYPE     = 1;
+   BRABBR   = PUT(BRANCH,BRCHCD.);
+   REGION   = PUT(BRANCH,REGNEW.);
+RUN;
+
+%MACRO RMGROUP;
+DATA WDRAW1 WDRAW2 WDRAW3 WDRAW4;
+   SET WDRAW;
+   IF CURCODE EQ 'MYR' THEN DO;
+    IF PRODCD NE 394;
+      IF ACCTTYPE='C' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW1;
+         ELSE
+            OUTPUT WDRAW3;
+      END;
+      ELSE IF ACCTTYPE='I' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW2;
+         ELSE
+            OUTPUT WDRAW4;
+      END;
+   END;
+RUN;
+%MEND;
+
+%MACRO FCYGROUP;
+DATA WDRAW1 WDRAW2 WDRAW3 WDRAW4;
+   SET WDRAW;
+   IF CURCODE NE 'MYR' THEN DO;
+      IF ACCTTYPE='C' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW1;
+         ELSE
+            OUTPUT WDRAW3;
+      END;
+      ELSE IF ACCTTYPE='I' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW2;
+         ELSE
+            OUTPUT WDRAW4;
+      END;
+   END;
+RUN;
+%MEND;
+
+%MACRO MAINPROC;
+%DO J=1 %TO 4;
+
+PROC SORT DATA=WDRAW&J;BY BRANCH;
+DATA FDRAW&J;
+   SET WDRAW&J;BY BRANCH;
+   KEEP BRANCH BRABBR REGION RSONCODE C1 C2 C3 C4 C5 C6 C7 C8 C9
+        C10 C11 C12 C13 C14 C15 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10
+        A11 A12 A13 A14 A15 C16 A16 TOT_CNT TOT_AMT TYPE;
+
+   IF FIRST.BRANCH THEN DO;
+      C1=0; C2=0; C3=0; C4=0; C5=0; C6=0; C7=0; C8=0;  C9=0;
+      C10=0; C11=0; C12=0; C13=0; C14=0; C15=0; A1=0;  A2=0;
+      A3=0; A4=0; A5=0; A6=0; A7=0; A8=0; A9=0; A10=0; A11=0;
+      A12=0; A13=0; A14=0; A15=0; C16=0; A16=0; TOT_CNT=0; TOT_AMT=0;
+   END;
+
+   %DO I=1 %TO 16;
+      IF RSONCODE = 'W' || PUT(&I, Z2.) THEN DO;
+         C&I+1;
+         A&I+TRANAMT;
+       END;
+   %END;
+   TOT_CNT+1;
+   TOT_AMT+TRANAMT;
+   IF LAST.BRANCH THEN OUTPUT;
+RUN;
+
+PROC SUMMARY DATA=FDRAW&J;
+   CLASS TYPE;
+   VAR C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 C11 C12 C13 C14 C15 C16
+       A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14 A15 A16
+       TOT_CNT TOT_AMT;
+   OUTPUT OUT=TOTAL&J
+          SUM=RC1 RC2 RC3 RC4 RC5 RC6 RC7 RC8 RC9 RC10 RC11 RC12 RC13
+          RC14 RC15 RC16 RA1 RA2 RA3 RA4 RA5 RA6 RA7 RA8 RA9 RA10 RA11
+          RA12 RA13 RA14 RA15 RA16 GTC GTA;
+RUN;
+
+DATA TOTAL&J;
+   SET TOTAL&J;
+   FORMAT PC1 PC2 PC3 PC4 PC5 PC6 PC7 PC8 PC9 PC10 PC11 PC12 PC13
+          PC14 PC15 PC16 PA1 PA2 PA3 PA4 PA5 PA6 PA7 PA8 PA9 PA10 PA11
+          PA12 PA13 PA14 PA15 PA16 PGTC PGTA 3.;
+
+   %DO I=1 %TO 16;
+      PC&I=(RC&I/GTC)*100;   PA&I =(RA&I/GTA)*100;
+      PGTC+PC&I;             PGTA+PA&I;
+   %END;
+RUN;
+
+%END;
+%MEND;
+
+%MACRO REPORT;
+%DO J=1 %TO 4;
+%IF &J=1 %THEN %DO;
+DATA _NULL_;
+    FILE &OUTPUT;
+    PUT @1 'REPORT ID : EIBDRB01';
+    PUT @1 'TITLE : DAILY SUMMARY REPORT ON REASONS FOR ' "&RTITLE "
+           'OVER-THE-COUNTER BASED ON RECEIPTS BY BRANCH';
+    PUT @1 'REPORTING DATE : ' "&RDATE";
+    PUT @1 ' ';
+    PUT @1 '(A) INDIVIDUAL CUSTOMER (CUSTOMER CODE: 77,78,95 AND 96)';
+%END;
+%IF &J=3 %THEN %DO;
+DATA _NULL_;
+    FILE &OUTPUT MOD;
+    PUT @1 ' ';
+    PUT @1 '(B) NON-INDIVIDUAL CUSTOMER';
+%END;
+DATA _NULL_;
+  SET FDRAW&J;
+  FORMAT A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14 A15 A16 TOT_AMT
+         COMMA16.;
+  FILE &OUTPUT MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @1  ' ';
+    PUT @4  "&&HDR&J";
+    PUT @4  'BRCH' ';'  'BRCH'  ';'  'REGION' ';;;;;;;;;;;;;;;'
+            'BY REASON CODE';
+    PUT @4  'CODE' ';'  'ABBR'  ';'           ';'
+            'W01'  ';'  'W01'   ';'  'W02'    ';'  'W02'      ';'
+            'W03'  ';'  'W03'   ';'  'W04'    ';'  'W04'      ';'
+            'W05'  ';'  'W05'   ';'  'W06'    ';'  'W06'      ';'
+            'W07'  ';'  'W07'   ';'  'W08'    ';'  'W08'      ';'
+            'W09'  ';'  'W09'   ';'  'W10'    ';'  'W10'      ';'
+            'W11'  ';'  'W11'   ';'  'W12'    ';'  'W12'      ';'
+            'W13'  ';'  'W13'   ';'  'W14'    ';'  'W14'      ';'
+            'W15'  ';'  'W15'   ';'  'W16'    ';'  'W16'      ';'
+            'TOTAL'  ';'  'TOTAL';
+    PUT @4  ';'    ';'          ';'
+            'NO.'  ';'  'RM'    ';'  'NO.'    ';'  'RM'  ';'
+            'NO.'  ';'  'RM'    ';'  'NO.'    ';'  'RM'  ';'
+            'NO.'  ';'  'RM'    ';'  'NO.'    ';'  'RM'  ';'
+            'NO.'  ';'  'RM'    ';'  'NO.'    ';'  'RM'  ';'
+            'NO.'  ';'  'RM'    ';'  'NO.'    ';'  'RM'  ';'
+            'NO.'  ';'  'RM'    ';'  'NO.'    ';'  'RM'  ';'
+            'NO.'  ';'  'RM'    ';'  'NO.'    ';'  'RM'  ';'
+            'NO.'  ';'  'RM'    ';'  'NO.'    ';'  'RM'  ';'
+            'NO.'  ';'  'RM'    ;
+  END;
+    PUT @4  BRANCH ';'  BRABBR  ';'  REGION   ';'
+            C1     ';'  A1  ';'  C2  ';'  A2  ';'  C3  ';'  A3  ';'
+            C4     ';'  A4  ';'  C5  ';'  A5  ';'  C6  ';'  A6  ';'
+            C7     ';'  A7  ';'  C8  ';'  A8  ';'  C9  ';'  A9  ';'
+            C10    ';'  A10 ';'  C11 ';'  A11 ';'  C12 ';'  A12 ';'
+            C13    ';'  A13 ';'  C14 ';'  A14 ';'  C15 ';'  A15 ';'
+            C16    ';'  A16 ';'
+            TOT_CNT  ';'  TOT_AMT;
+RUN;
+
+DATA _NULL_;
+  SET TOTAL&J;
+  FORMAT RA1 RA2 RA3 RA4 RA5 RA6 RA7 RA8 RA9 RA10 RA11
+         RA12 RA13 RA14 RA15 RA16 GTA COMMA16.;
+  FILE &OUTPUT MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @4  ';'        'TOTAL'        ';'       ';'
+             RC1  ';'  RA1  ';'  RC2  ';'  RA2  ';'  RC3  ';'  RA3  ';'
+             RC4  ';'  RA4  ';'  RC5  ';'  RA5  ';'  RC6  ';'  RA6  ';'
+             RC7  ';'  RA7  ';'  RC8  ';'  RA8  ';'  RC9  ';'  RA9  ';'
+             RC10 ';'  RA10 ';'  RC11 ';'  RA11 ';'  RC12 ';'  RA12 ';'
+             RC13 ';'  RA13 ';'  RC14 ';'  RA14 ';'  RC15 ';'  RA15 ';'
+             RC16 ';'  RA16 ';'
+             GTC  ';'  GTA;
+    PUT @4  ';'        '% COMPOSITION'     ';'       ';'
+             PC1  ';'  PA1  ';'  PC2  ';'  PA2  ';'  PC3  ';'  PA3  ';'
+             PC4  ';'  PA4  ';'  PC5  ';'  PA5  ';'  PC6  ';'  PA6  ';'
+             PC7  ';'  PA7  ';'  PC8  ';'  PA8  ';'  PC9  ';'  PA9  ';'
+             PC10 ';'  PA10 ';'  PC11 ';'  PA11 ';'  PC12 ';'  PA12 ';'
+             PC13 ';'  PA13 ';'  PC14 ';'  PA14 ';'  PC15 ';'  PA15 ';'
+             PC16 ';'  PA16 ';'
+             PGTC ';'  PGTA;
+  END;
+RUN;
+%END;
+%MEND;
+
+OPTIONS NOCENTER NONUMBER NODATE MISSING=0;
+
+%LET HDR1=(I) PBB;
+%LET HDR2=(II) PIBB;
+%LET HDR3=(I) PBB;
+%LET HDR4=(II) PIBB;
+
+*+--------------------------------------------------------------+
+ |  GENERATE REPORT FOR RM FIXED DEPOSIT                        |
+ +--------------------------------------------------------------+;
+DATA _NULL_;
+   CALL SYMPUT('RTITLE',PUT('FD WITHDRAWALS (PBB&PIBB)',$25.));
+   CALL SYMPUT('OUTPUT',PUT('RMWDRAW',$7.));
+RUN;
+
+%RMGROUP;
+%MAINPROC;
+%REPORT;
+
+*+--------------------------------------------------------------+
+ |   GENERATE REPORT FOR FCY FIXED DEPOSIT                      |
+ +--------------------------------------------------------------+;
+DATA _NULL_;
+   CALL SYMPUT('RTITLE',PUT('FCY FD WITHDRAWALS',$18.));
+   CALL SYMPUT('OUTPUT',PUT('FCYWDRAW',$8.));
+RUN;
+
+%FCYGROUP;
+%MAINPROC;
+%REPORT;
