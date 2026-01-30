@@ -53,28 +53,28 @@ The report displays data in the following format:
 ```
 TABLE 1 - STATEMENT OF FINANCIAL POSITION
 
-|                              |                     | RESIDENT                                                                 | NON RESIDENT                               |
-|                              |                     |--------------------------------------------------------------------------|--------------------------------------------|
-|                              |                     |              |                |        NON-BANK ENTITY                   | TOTAL(F)    | FOREIGN        | FOREIGN     |
-|                              |                     |              |                |                                          | =(G)+(H)    | BANKING        | NON-BANK    |
-|                              | TOTAL=TOTAL(A)      | TOTAL(A)     | BANKING        |                                          |             | INSTITUTION(G) | ENTITY (H)  |
-| ITEM                         | + TOTAL(F)          | = (B) + (C)  | INSTITUTION(B) |                                          |             |                |             |
-|                              |                     |              |                | TOTAL(C)    | CORPORATE(D) | RETAIL(E)   |             |                |             |
-|                              |                     |              |                | = (D) + (E) |              |             |             |                |             |
-|------------------------------|---------------------|--------------|----------------|-------------|--------------|-------------|-------------|----------------|-------------|
-| TOTAL ASSETS                 |                     |              |                |             |              |             |             |                |             |
-|                              |                     |              |                |             |              |             |             |                |             |
-| - LOANS/FINANCING AND        |                     |              |                |             |              |             |             |                |             |
-|   RECEIVABLES                |                     |              |                |             |              |             |             |                |             |
-|   (NET OF PROVISION)         |        XXX,XXX.XX   | XXX,XXX.XX   | XXX,XXX.XX     | XXX,XXX.XX  | XXX,XXX.XX   | XXX,XXX.XX  | XXX,XXX.XX  | XXX,XXX.XX     | XXX,XXX.XX  |
-|------------------------------|---------------------|--------------|----------------|-------------|--------------|-------------|-------------|----------------|-------------|
-| DEPOSITS ACCEPTED            |                     |              |                |             |              |             |             |                |             |
-|                              |                     |              |                |             |              |             |             |                |             |
-|    - FX FIXED DEPOSITS       |        XXX,XXX.XX   | XXX,XXX.XX   | XXX,XXX.XX     | XXX,XXX.XX  | XXX,XXX.XX   | XXX,XXX.XX  | XXX,XXX.XX  | XXX,XXX.XX     | XXX,XXX.XX  |
-|    - FX DEMAND DEPOSITS      |        XXX,XXX.XX   | XXX,XXX.XX   | XXX,XXX.XX     | XXX,XXX.XX  | XXX,XXX.XX   | XXX,XXX.XX  | XXX,XXX.XX  | XXX,XXX.XX     | XXX,XXX.XX  |
-|------------------------------|---------------------|--------------|----------------|-------------|--------------|-------------|-------------|----------------|-------------|
-| TOTAL                        |        XXX,XXX.XX   | XXX,XXX.XX   | XXX,XXX.XX     | XXX,XXX.XX  | XXX,XXX.XX   | XXX,XXX.XX  | XXX,XXX.XX  | XXX,XXX.XX     | XXX,XXX.XX  |
-|------------------------------|---------------------|--------------|----------------|-------------|--------------|-------------|-------------|----------------|-------------|
+|                              |                     | RESIDENT                                                     | NON RESIDENT                  |
+|                              |                     |------------------------------------------------------------ |-------------------------------|
+|                              |                     |          |          |   NON-BANK ENTITY              | TOTAL(F)  | FOREIGN   | FOREIGN   |
+|                              |                     |          |          |                                | =(G)+(H)  | BANKING   | NON-BANK  |
+|                              | TOTAL=TOTAL(A)      | TOTAL(A) | BANKING  |                                |           | INSTITUTION(G) | ENTITY (H)  |
+| ITEM                         | + TOTAL(F)          | = (B) + (C) | INSTITUTION(B) |                                |           |           |           |
+|                              |                     |          |          | TOTAL(C)  | CORPORATE(D) | RETAIL(E)  |           |           |           |
+|                              |                     |          |          | = (D) + (E) |            |            |           |           |           |
+|------------------------------|---------------------|----------|----------|-----------|------------|------------|-----------|-----------|-----------|
+| TOTAL ASSETS                 |                     |          |          |           |            |            |           |           |           |
+|                              |                     |          |          |           |            |            |           |           |           |
+| - LOANS/FINANCING AND        |                     |          |          |           |            |            |           |           |           |
+|   RECEIVABLES                |                     |          |          |           |            |            |           |           |           |
+|   (NET OF PROVISION)         |        XXX,XXX.XX   | XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX|
+|------------------------------|---------------------|----------|----------|-----------|------------|------------|-----------|-----------|-----------|
+| DEPOSITS ACCEPTED            |                     |          |          |           |            |            |           |           |           |
+|                              |                     |          |          |           |            |            |           |           |           |
+|    - FX FIXED DEPOSITS       |        XXX,XXX.XX   | XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX|
+|    - FX DEMAND DEPOSITS      |        XXX,XXX.XX   | XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX|
+|------------------------------|---------------------|----------|----------|-----------|------------|------------|-----------|-----------|-----------|
+| TOTAL                        |        XXX,XXX.XX   | XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX| XXX,XXX.XX|
+|------------------------------|---------------------|----------|----------|-----------|------------|------------|-----------|-----------|-----------|
 ```
 
 ## Data Classification
@@ -307,13 +307,13 @@ All NULL values in numeric columns are replaced with 0.00 to ensure proper total
 
 ## Troubleshooting
 
-| Issue             | Solution                                      |
-|-------------------|-----------------------------------------------|
-| FileNotFoundError | Verify input files exist with correct naming  |
-| Empty report      | Check BTRAD and FCY files contain CNY records |
-| Incorrect totals  | Verify customer code classifications          |
-| Format issues     | Check column widths match specifications      |
-  
+| Issue | Solution |
+|-------|----------|
+| FileNotFoundError | Verify input files exist with correct naming |
+| Empty report | Check BTRAD and FCY files contain CNY records |
+| Incorrect totals | Verify customer code classifications |
+| Format issues | Check column widths match specifications |
+
 ## Verification
 
 To verify the conversion:
