@@ -41,7 +41,7 @@ else:
     CRI = 'CR'  # Mark as credit balance
 ```
 
-### 5. **Filtering Criteria**
+### 5. **Filtering Criteria** ###
 
 **Current Accounts:**
 - DEPTYPE IN ('D', 'N')
@@ -52,7 +52,7 @@ else:
 - APPRLIMT > 1
 - LMTTYPE IN ('Y', 'A')
 
-### 6. **Report Format with Branch Subtotals**
+### 6. **Report Format with Branch Subtotals** ###
 ```
   P U B L I C   B A N K   B E R H A D
   REPORT TITLE: ACCOUNTS WITH OD LIMITS
@@ -73,13 +73,13 @@ BRN ACCOUNT NO NAME OF CUSTOMER          BASE OD    OUSTANDING      APPROVED    
                          -------------------------------------------------
 ```
 
-### 7. **Calculated Fields**
+### 7. **Calculated Fields** ###
 
 - **LIMITS**: Sum of LIMIT1 through LIMIT5 (operative limits)
 - **NOACCT**: Counter for number of accounts (always 1 per row)
 - **BALANCE**: Absolute value of CURBAL with sign indicator
 
-## 📊 Processing Steps:
+## 📊 Processing Steps: ##
 ```
 1. Read REPTDATE → Format as DD/MM/YY
            ↓
