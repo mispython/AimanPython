@@ -2,7 +2,7 @@
 """
 File Name: ERBDRBDP_EIBDRB01
 FCY FD Report Generator
-Converts SAS program for generating daily total outstanding balance/account on FCY FD & Foreign Companies
+Generating daily total outstanding balance/account on FCY FD & Foreign Companies
 """
 
 import duckdb
