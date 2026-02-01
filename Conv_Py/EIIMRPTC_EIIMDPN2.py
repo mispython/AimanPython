@@ -1,6 +1,8 @@
 """
-SAS to Python Conversion: Islamic Bank Current Account Opened/Closed Report
+File Name: EIIMRPTC_EIIMDPN2
+Islamic Bank Current Account Opened/Closed Report
 Generates monthly report on current account activity with cumulative tracking.
+
 Produces two outputs:
   - MIS/CURRCmm.parquet  : detail extract of accounts closed this month
   - MIS/CURRFmm.parquet  : branch x product summary with YTD cumulative columns
@@ -11,6 +13,7 @@ import duckdb
 import polars as pl
 from datetime import datetime, timedelta
 from pathlib import Path
+
 
 # ============================================================================
 # CONFIGURATION – all paths declared up front
@@ -37,6 +40,7 @@ OUTPUT_REPORT         = OUTPUT_REPORT_DIR / "CURRENT_ACCOUNT_REPORT.txt"
 PAGE_LENGTH = 60
 ASA_NEW_PAGE = '1'
 ASA_SPACE    = ' '
+
 
 # ============================================================================
 # PRODUCT FILTER – pre-built frozen set for O(1) membership test
@@ -67,6 +71,7 @@ _DNBFISME_RETAIN = frozenset({
     '35','37','38','39','40','45'
 })
 
+
 # ============================================================================
 # HELPER – load DDCUSTCD format mapping
 # ============================================================================
@@ -92,6 +97,7 @@ def derive_custfiss(product: int, custcode) -> str:
     # OTHERWISE: PUT(CUSTCODE, DDCUSTCD.)
     return DDCUSTCD_MAP.get(int(custcode), str(custcode)) if custcode is not None else ''
 
+
 # ============================================================================
 # HELPER – numeric-to-date parsers (match SAS INPUT/SUBSTR behaviour)
 # ============================================================================
@@ -116,6 +122,7 @@ def _parse_bdate(val) -> object | None:
         return datetime.strptime(s, '%m%d%Y')
     except (ValueError, OverflowError):
         return None
+
 
 # ============================================================================
 # STEP 1 – Read REPTDATE, derive macro-variable equivalents
@@ -143,6 +150,7 @@ REPTMON1= f"{MM1:02d}"
 RDAY    = reptdate_dt.day
 
 print(f"  Reporting date : {RDATE}   month={REPTMON}   prev={REPTMON1}")
+
 
 # ============================================================================
 # STEP 2 – Load CURRENT, apply branch remaps + product filter
@@ -207,6 +215,7 @@ curr_raw = curr_raw.with_columns(
       .alias('BCLOSE'),
 )
 
+
 # ============================================================================
 # STEP 3 – Extract CURRC (closed-account detail this month)
 # ============================================================================
@@ -258,6 +267,7 @@ currc_path = str(OUTPUT_CURRC_TEMPLATE).format(mon=REPTMON)
 currc_df.write_parquet(currc_path)
 print(f"  CURRC rows: {len(currc_df)}  →  {currc_path}")
 
+
 # ============================================================================
 # STEP 4 – PROC SUMMARY: aggregate by BRANCH + PRODUCT
 # ============================================================================
@@ -274,6 +284,7 @@ curr_summary = curr_raw.group_by(['BRANCH', 'PRODUCT']).agg([
 ])
 
 print(f"  Summary rows: {len(curr_summary)}")
+
 
 # ============================================================================
 # STEP 5 – %PROCESS macro: cumulative merge or January initialisation
@@ -342,6 +353,7 @@ else:
         (pl.col('OPENMH')  - pl.col('CLOSEMH')).alias('NETCHGYR'),
     ])
 
+
 # ============================================================================
 # STEP 6 – Save CURRF (cumulative summary for next month)
 # ============================================================================
@@ -349,6 +361,7 @@ else:
 currf_path = str(OUTPUT_CURRF_TEMPLATE).format(mon=REPTMON)
 curr_final.write_parquet(currf_path)
 print(f"\nStep 6: CURRF saved  →  {currf_path}  ({len(curr_final)} rows)")
+
 
 # ============================================================================
 # STEP 7 – Aggregate by BRANCH for the report
@@ -377,6 +390,7 @@ totals = report_data.select([
 ])
 
 print(f"  Report branches: {len(report_data)}")
+
 
 # ============================================================================
 # STEP 8 – Write formatted report (PROC TABULATE equivalent)
@@ -486,6 +500,7 @@ with open(OUTPUT_REPORT, 'w') as f:
     f.write(f"{ASA_SPACE}{line}\n")
 
 print(f"  Report written  →  {OUTPUT_REPORT}")
+
 
 # ============================================================================
 # SUMMARY
