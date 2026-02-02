@@ -4,7 +4,7 @@
 This document describes the conversion of the EIEMCRLS SAS program to Python, maintaining exact functional and formatting equivalence.
 
 ## Program Purpose
-EIQPROM2 generates automailing listings for reinstatement of loans, processing loan data to create:
+EIEMCRLS generates automailing listings for reinstatement of loans, processing loan data to create:
 - Physical mail output files (EMCPBB, EMCPIB)
 - Email statement files (EMLPBB, EMLPIB) 
 - Email index files (EMXPBB, EMXPIB)
@@ -306,7 +306,7 @@ python3 eiqprom2.py
 
 Expected console output:
 ```
-Starting EIQPROM2 processing...
+Starting EIEMCRLS processing...
 Report Date: 31/01/25
 Report Month: 01
 
@@ -345,7 +345,7 @@ Step 4: Generating report...
   Total pages: 18
 
 ======================================================================
-EIQPROM2 processing completed successfully!
+EIEMCRLS processing completed successfully!
 ======================================================================
 ```
 
