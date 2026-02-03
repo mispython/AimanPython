@@ -1,0 +1,282 @@
+//EIIDNLF3 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M,NOTIFY=&SYSUID
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PIBB.NLF.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(10,20))
+//*
+//EIIDNLF3  EXEC SAS609
+//STORE    DD DSN=SAP.PIBB.NLF.LN.DAILY,DISP=OLD
+//NLF      DD DSN=SAP.PIBB.NLF.TEXT,
+//             DISP=(MOD,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=320,BLKSIZE=32000),
+//             SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)
+//SASLIST   DD SYSOUT=X
+//SYSIN     DD *
+
+OPTIONS NOCENTER;
+
+DATA LOAN;
+   SET STORE.FINALSUM;
+   PROD = SUBSTR(BNMCODE,1,7);
+   INDNON = SUBSTR(BNMCODE,6,2);
+   IF PROD IN ('9321109','9521109') THEN DESC = 'NONRMFL';
+   IF PROD IN ('9321209','9521209') THEN DESC = 'NONRMRC';
+   IF PROD IN ('9321309','9521309') THEN DESC = 'NONRMOD';
+   IF PROD IN ('9321909','9521909') THEN DESC = 'NONRMOT';
+   IF PROD IN ('9321408','9521408') THEN DESC = 'INDRMHL';
+   IF PROD IN ('9321508','9521508') THEN DESC = 'INDRMCC';
+   IF PROD IN ('9321308','9521308') THEN DESC = 'INDRMOD';
+   IF PROD IN ('9321908','9521908') THEN DESC = 'INDRMOT';
+   IF PROD IN ('9322100','9522100') THEN DESC = 'MISRMCH';
+   IF PROD IN ('9322200','9522200') THEN DESC = 'MISRMSR';
+   IF PROD IN ('9322900','9522900') THEN DESC = 'MISRMOT';
+   IF PROD IN ('9421109','9621109') THEN DESC = 'NONFXFL';
+   IF PROD IN ('9421209','9621209') THEN DESC = 'NONFXRC';
+   IF PROD IN ('9421309','9621309') THEN DESC = 'NONFXOD';
+   IF PROD IN ('9421909','9621909') THEN DESC = 'NONFXOT';
+   IF PROD IN ('9421408','9621408') THEN DESC = 'INDFXHL';
+   IF PROD IN ('9421508','9621508') THEN DESC = 'INDFXCC';
+   IF PROD IN ('9421308','9621308') THEN DESC = 'INDFXOD';
+   IF PROD IN ('9421908','9621908') THEN DESC = 'INDFXOT';
+   IF PROD IN ('9422100','9622100') THEN DESC = 'MISFXCH';
+   IF PROD IN ('9422200','9622200') THEN DESC = 'MISFXSR';
+   IF PROD IN ('9422900','9622900') THEN DESC = 'MISFXOT';
+   AMOUNT = ROUND(AMOUNT,1000.)/1000;
+RUN;
+PROC TRANSPOSE DATA=LOAN OUT=LOAN
+   (RENAME=(COL1=WEEK COL2=MONTH COL3=QTR COL4=HALFYR COL5=YEAR
+            COL6=LAST));
+   BY PROD DESC;
+   VAR AMOUNT;
+RUN;
+
+DATA STORE;
+   SET LOAN;
+   IF PROD IN ('9321109','9521109') THEN DO;
+      DESC = 'NONRMFL';
+      ITEM = 'A1.01';
+      ITEM4= '- FIXED TERM FINANCING  ';
+   END;
+   IF PROD IN ('9321209','9521209') THEN DO;
+      DESC = 'NONRMRC';
+      ITEM = 'A1.02';
+      ITEM4= '- REVOLVING FINANCING  ';
+   END;
+   IF PROD IN ('9321309','9521309') THEN DO;
+      DESC = 'NONRMOD';
+      ITEM = 'A1.03';
+      ITEM4= '- CASH LINE FACILITY';
+   END;
+   IF PROD IN ('9321909','9521909') THEN DO;
+      DESC = 'NONRMOT';
+      ITEM = 'A1.04';
+      ITEM4= '- OTHERS';
+   END;
+   IF PROD IN ('9321408','9521408') THEN DO;
+      DESC = 'INDRMHL';
+      ITEM = 'A1.05';
+      ITEM4= '- HOUSING FINANCING';
+   END;
+  /*  IF PROD IN ('9321508','9521508') THEN DO;
+      DESC = 'INDRMCC';
+      ITEM = 'A1.06';
+      ITEM4= '- CREDIT CARDS';
+   END; */
+   IF PROD IN ('9321308','9521308') THEN DO;
+      DESC = 'INDRMOD';
+      ITEM = 'A1.07';
+      ITEM4= '- CASH LINE FACILITY';
+   END;
+   IF PROD IN ('9321908','9521908') THEN DO;
+      DESC = 'INDRMOT';
+      ITEM = 'A1.08';
+      ITEM4= '- OTHERS';
+   END;
+   IF PROD IN ('9322100','9522100') THEN DO;
+      DESC = 'MISRMCH';
+      ITEM = 'A1.09';
+      ITEM4= '- CASH HOLDINGS';
+   END;
+   IF PROD IN ('9322200','9522200') THEN DO;
+      DESC = 'MISRMSR';
+      ITEM = 'A1.10';
+      ITEM4= '- SRR';
+   END;
+   IF PROD IN ('9322900','9522900') THEN DO;
+      DESC = 'MISRMOT';
+      ITEM = 'A1.11';
+      ITEM4= '- OTHER ASSETS';
+   END;
+   IF PROD IN ('9421109','9621109') THEN DO;
+      DESC = 'NONFXFL';
+      ITEM = 'B1.01';
+      ITEM4= '- FIXED TERM FINANCING  ';
+   END;
+   IF PROD IN ('9421209','9621209') THEN DO;
+      DESC = 'NONFXRC';
+      ITEM = 'B1.02';
+      ITEM4= '- REVOLVING FINANCING  ';
+   END;
+   IF PROD IN ('9421309','9621309') THEN DO;
+      DESC = 'NONFXOD';
+      ITEM = 'B1.03';
+      ITEM4= '- CASH LINE FACILITY';
+   END;
+   IF PROD IN ('9421909','9621909') THEN DO;
+      DESC = 'NONFXOT';
+      ITEM = 'B1.04';
+      ITEM4= '- OTHERS';
+   END;
+   IF PROD IN ('9421408','9621408') THEN DO;
+      DESC = 'INDFXHL';
+      ITEM = 'B1.05';
+      ITEM4= '- HOUSING FINANCING';
+   END;
+  /* IF PROD IN ('9421508','9621508') THEN DO;
+      DESC = 'INDFXCC';
+      ITEM = 'B1.06';
+      ITEM4= '- CREDIT CARDS';
+   END; */
+   IF PROD IN ('9421308','9621308') THEN DO;
+      DESC = 'INDFXOD';
+      ITEM = 'B1.07';
+      ITEM4= '- CASH LINE FACILITY';
+   END;
+   IF PROD IN ('9421908','9621908') THEN DO;
+      DESC = 'INDFXOT';
+      ITEM = 'B1.08';
+      ITEM4= '- OTHERS';
+   END;
+   IF PROD IN ('9422100','9622100') THEN DO;
+      DESC = 'MISFXCH';
+      ITEM = 'B1.09';
+      ITEM4= '- CASH HOLDINGS';
+   END;
+   IF PROD IN ('9422200','9622200') THEN DO;
+      DESC = 'MISFXSR';
+      ITEM = 'B1.10';
+      ITEM4= '- SRR';
+   END;
+   IF PROD IN ('9422900','9622900') THEN DO;
+      DESC = 'MISFXOT';
+      ITEM = 'B1.11';
+      ITEM4= '- OTHER ASSETS';
+   END;
+   BALANCE = SUM(WEEK,MONTH,QTR,HALFYR,YEAR,LAST);
+   INDNON = SUBSTR(PROD,6,2);
+RUN;
+
+PROC SORT DATA=STORE OUT=STORE.NOTERMP1;
+  BY DESCENDING INDNON;
+  WHERE SUBSTR(PROD,1,2) = '93' AND ITEM NE ' ';
+PROC PRINT;
+
+PROC SORT DATA=STORE OUT=STORE.NOTERMP2;
+  BY DESCENDING INDNON;
+  WHERE SUBSTR(PROD,1,2) = '95' AND ITEM NE ' ';
+PROC PRINT;
+
+PROC SORT DATA=STORE OUT=STORE.NOTEFXP1;
+  BY DESCENDING INDNON;
+  WHERE SUBSTR(PROD,1,2) = '94' AND ITEM NE ' ';
+PROC PRINT;
+
+PROC SORT DATA=STORE OUT=STORE.NOTEFXP2;
+  BY DESCENDING INDNON;
+  WHERE SUBSTR(PROD,1,2) = '96' AND ITEM NE ' ';
+PROC PRINT;
+
+*------------------------------------------------*
+*  REPORTS                                       *
+*------------------------------------------------*;
+*  RM - PART1                                    *
+*------------------------------------------------*;
+OPTIONS MISSING=0;
+DATA REPORT;
+   SET STORE.NOTERMP1;
+   ITEM2 = 'LOAN :';
+   IF INDNON = '08' THEN      ITEM3 = 'INDIVIDUALS    ';
+   ELSE IF INDNON = '09' THEN ITEM3 = 'NON-INDIVIDUALS';
+RUN;
+PROC PRINT;
+RUN;
+DATA _NULL_;
+  SET REPORT;
+  FILE NLF;;
+  IF _N_ = 1 THEN DO;
+   PUT @1 ' ';
+   PUT @1 'BREAKDOWN BY BEHAVIOURAL MATURITY PROFILE - RINGGIT PART 1-RM';
+   PUT @1 ' ';
+   PUT @1 'INFLOW(ASSETS)';
+   PUT @1 'ON BALANCE SHEET';
+   PUT       '    '             ';'
+             '    '             ';'
+             '    '             ';'
+             '    '             ';'
+             'UP TO 1 WK '      ';'
+             '>1 WK - 1 MTH'    ';'
+             '>1 MTH - 3 MTHS'  ';'
+             '>3 MTHS - 6 MTHS' ';'
+             '>6 MTHS - 1 YR'   ';'
+             '>1 YEAR'          ';'
+             'TOTAL'            ';' ;
+  END;
+    PUT      ITEM             ';'
+             ITEM2            ';'
+             ITEM3            ';'
+             ITEM4            ';'
+             WEEK             ';'
+             MONTH            ';'
+             QTR              ';'
+             HALFYR           ';'
+             YEAR             ';'
+             LAST             ';'
+             BALANCE          ';' ;
+RUN;
+
+*------------------------------------------------*;
+*  RM - PART2                                    *
+*------------------------------------------------*;
+OPTIONS MISSING=0;
+DATA REPORT;
+   SET STORE.NOTERMP2;
+   ITEM2 = 'LOAN :';
+   IF INDNON = '08' THEN      ITEM3 = 'INDIVIDUALS    ';
+   ELSE IF INDNON = '09' THEN ITEM3 = 'NON-INDIVIDUALS';
+RUN;
+PROC PRINT;
+RUN;
+DATA _NULL_;
+  SET REPORT;
+  FILE NLF;;
+  IF _N_ = 1 THEN DO;
+   PUT @1 ' ';
+   PUT @1 'BREAKDOWN BY BEHAVIOURAL MATURITY PROFILE - RINGGIT PART 2-RM';
+   PUT @1 ' ';
+   PUT @1 'INFLOW(ASSETS)';
+   PUT @1 'ON BALANCE SHEET';
+   PUT       '    '             ';'
+             '    '             ';'
+             '    '             ';'
+             '    '             ';'
+             'UP TO 1 WK '      ';'
+             '>1 WK - 1 MTH'    ';'
+             '>1 MTH - 3 MTHS'  ';'
+             '>3 MTHS - 6 MTHS' ';'
+             '>6 MTHS - 1 YR'   ';'
+             '>1 YEAR'          ';'
+             'TOTAL'            ';' ;
+  END;
+    PUT      ITEM             ';'
+             ITEM2            ';'
+             ITEM3            ';'
+             ITEM4            ';'
+             WEEK             ';'
+             MONTH            ';'
+             QTR              ';'
+             HALFYR           ';'
+             YEAR             ';'
+             LAST             ';'
+             BALANCE          ';' ;
+RUN;
