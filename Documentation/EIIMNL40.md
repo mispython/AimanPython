@@ -1,17 +1,17 @@
-"BNM Liquidity Loans - Python Conversion"
-""Overview""
+# BNM Liquidity Loans - Python Conversion
+
+## Overview
 This is a simplified version of the BNM liquidity framework loan processing program (compared to EIBWLIQ2). It processes loan data directly from the report date without complex run-off date calculations.
 
-""Key Features:""
+## Key Features:
+### 1. Complete Python Implementation (bnm_liquidity_loans.py)
+- Processes loan repayment schedules
+- Calculates maturity profiles by time buckets
+- Handles performing vs non-performing classification
+- Excludes FCY (foreign currency) products in output
 
-"""1. Complete Python Implementation (bnm_liquidity_loans.py)""
-Processes loan repayment schedules
-Calculates maturity profiles by time buckets
-Handles performing vs non-performing classification
-Excludes FCY (foreign currency) products in output
 
-
-"""2. Main Differences from EIBWLIQ2:"""
+### 2. Main Differences from EIBWLIQ2:
 Simpler Date Logic: Uses REPTDATE directly instead of calculating RUNOFFDT
 Same Payment Processing: Identical payment schedule logic
 FCY Exclusion: Foreign currency products excluded from final output
