@@ -3,7 +3,6 @@
 File Name: EIIMNL40
 BNM Liquidity Framework - Final Reporting
 Creates behavioral maturity profile reports
-Converted from SAS to Python
 """
 
 import polars as pl
