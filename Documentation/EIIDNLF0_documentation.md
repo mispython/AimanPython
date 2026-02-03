@@ -1,10 +1,10 @@
-# EIBWLIQ2 - BNM Liquidity Framework Documentation
+# EIIDNLF0 - BNM Liquidity Framework Documentation
 
 ## Overview
 This program processes loan data to generate BNM (Bank Negara Malaysia) Liquidity Framework reports showing contractual run-offs by maturity profile as of end of month.
 
 ## Program Purpose
-EIBWLIQ2 analyzes loan portfolios and calculates:
+EIIDNLF0 analyzes loan portfolios and calculates:
 1. **Loan repayment schedules** based on payment frequency
 2. **Maturity profiles** categorized by time remaining
 3. **Customer segmentation** (Financial Institutions vs Others)
@@ -536,7 +536,7 @@ python-dateutil>=2.8.0
 ## Execution
 
 ```bash
-python3 eibwliq2.py
+python3 eiidnlf0.py
 ```
 
 Expected output structure with record counts and processing steps clearly indicated.
