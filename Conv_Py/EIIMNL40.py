@@ -3,7 +3,6 @@
 File Name: EIIMNL40
 BNM Liquidity Framework - Loan Processing (Simplified)
 Processes loan data for maturity profile reporting
-Converted from SAS to Python
 """
 
 import duckdb
