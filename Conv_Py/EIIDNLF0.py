@@ -3,7 +3,6 @@
 File Name: EIIDNLF0
 Report Name: EIBWLIQ2 - BNM Liquidity Framework
 Contractual Run-offs as of End of Month
-Converted from SAS to Python
 """
 
 import duckdb
