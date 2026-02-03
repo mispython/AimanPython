@@ -3,7 +3,6 @@
 File Name: EIIDNLF1
 Overdraft Liquidity Calculation for BNM Reporting
 Calculates OD liquidity using 48-week rolling minimum methodology
-Converted from SAS to Python
 """
 
 import duckdb
