@@ -1,4 +1,4 @@
-# eibmtcof - SAS to Python Conversion: LCR Concentration of Funding Report
+# EIBMTCOF - SAS to Python Conversion: LCR Concentration of Funding Report
 
 ## Overview
 
