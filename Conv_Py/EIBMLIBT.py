@@ -1,7 +1,6 @@
 """
 File Name: EIBMLIBT
 Loan Maturity Profile Processor (BT)
-Converts SAS program X_EIBMLIBT to Python using DuckDB and Polars.
 """
 
 from __future__ import annotations
