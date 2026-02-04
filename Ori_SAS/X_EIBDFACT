@@ -1,0 +1,138 @@
+//EIBDFACT JOB MISEIS,EIBMRPT1,COND=(4,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID,USER=OPCC
+/*JOBPARM S=S1M1
+//*
+//* DAILY PBIF FOR NLF
+//*
+//EIBDFACT EXEC SAS609,REGION=48M
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//PBIF     DD DSN=SAP.PBB.PBIF.SASDATA(0),DISP=SHR
+//MECHRG   DD DSN=SAP.PBB.PBIF.MECHRG(0),DISP=SHR
+//BNM      DD DSN=SAP.PBB.NLF.LN.DAILY,DISP=OLD
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1950;
+*;
+%INC PGM(PBBELF,PBBDPFMT);
+*;
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0.1 = '01'   /*  UP TO 1 WK       */
+      0.1-1   = '02'   /*  >1 WK - 1 MTH    */
+      1-3     = '03'   /*  >1 MTH - 3 MTHS  */
+      3-6     = '04'   /*  >3 - 6 MTHS      */
+      6-12    = '05'   /*  >6 MTHS - 1 YR   */
+      OTHER   = '06';  /*  > 1 YEAR         */
+*;
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE NEXT BLDATE                *
+*------------------------------------------------*;
+%MACRO NXTBLDT;
+      DD = DAY(MATDTE);
+      MM = MONTH(MATDTE) + FREQ;
+      YY = YEAR(MATDTE);
+      IF MM > 12 THEN DO;
+         MM = MM - 12; YY + 1;
+      END;
+   IF MM = 2 THEN
+      IF MOD(YY,4) = 0 THEN D2 = 29;
+      ELSE D2 = 28;
+   IF DD > LDAY(MM) THEN DD = LDAY(MM);
+   MATDTE = MDY(MM,DD,YY);
+%MEND NXTBLDT;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE REMAIN MONTH               *
+*------------------------------------------------*;
+%MACRO REMMTH;
+   MDYR  = YEAR(MATDTE);
+   MDMTH = MONTH(MATDTE);
+   MDDAY = DAY(MATDTE);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+   IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+*;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE;
+   SET PBIF.REPTDATE;
+   REPTQ='N';
+   IF DAY(REPTDATE+1)=1 THEN REPTQ='Y';
+   SELECT(DAY(REPTDATE));
+      WHEN  (8) CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTQ',PUT(REPTQ,$1.));
+   CALL SYMPUT('RDATX',PUT(REPTDATE,Z5.));
+   CALL SYMPUT('REPTYR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+   CALL SYMPUT('MDATE',PUT(REPTDATE,Z5.));
+RUN;
+*;
+*----------------------------------------------------------------*
+*  BREAKDOWN BY MATURITY PROFILE (PART 1 & 2 - RM)               *
+*----------------------------------------------------------------*;
+*;
+
+%MACRO RDAL;
+    %IF "&REPTQ" NE "Y" %THEN %DO; %INC PGM(RDALPBIF); %END;
+                        %ELSE %DO; %INC PGM(RDLMPBIF); %END;
+%MEND;
+*;
+%RDAL;
+*;
+DATA PBIF;
+   %DCLVAR
+   SET PBIF;
+   RPYR  =&REPTYR;
+   RPMTH =&REPTMON;
+   RPDAY =&REPTDAY;
+   IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   DAYS=MATDTE-&RDATX;
+
+   IF DAYS < 8  THEN REMMTH = 0.1;
+   ELSE DO;
+      %REMMTH
+   END;
+   IF CUSTCX IN ('77','78','95','96') THEN CUST = '08';
+   ELSE CUST = '09';
+   AMOUNT=BALANCE;
+   BNMCODE = '95211'||CUST||PUT(REMMTH,REMFMT.)||'0000Y';OUTPUT;
+   BNMCODE = '93211'||CUST||PUT(REMMTH,REMFMT.)||'0000Y';OUTPUT;
+*;
+*------------------------------------------------*
+*  SUMMARISE AND CONSOLIDATE                     *
+*------------------------------------------------*;
+PROC SUMMARY DATA=PBIF NWAY;
+   CLASS BNMCODE;
+   VAR AMOUNT;
+   OUTPUT OUT=BNM.PBIF(DROP=_TYPE_ _FREQ_) SUM=;
+RUN;
+PROC PRINT DATA=BNM.PBIF;RUN;
