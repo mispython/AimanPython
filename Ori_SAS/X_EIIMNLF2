@@ -1,0 +1,129 @@
+//EIIMNLF2 JOB MIS,'MIS',COND=(4,LT),CLASS=A,
+//         MSGCLASS=X,NOTIFY=&SYSUID
+/*JOBPARM S=S1M1
+//*
+//EIIMNLF2 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//LOAN     DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
+//WALK     DD DSN=SAP.FDP.APPL.PIBB.DAILY.NLF(0),DISP=SHR
+//BNM      DD DSN=SAP.PIBB.NLF.LN.DAILY,DISP=OLD
+//SYSIN    DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 NOCENTER;
+
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE (KEEP=REPTDATE);
+  SET LOAN.REPTDATE;
+  SELECT(DAY(REPTDATE));
+    WHEN (8) WK = '1';
+    WHEN(15) WK = '2';
+    WHEN(22) WK = '3';
+    OTHERWISE WK = '0';
+  END;
+  SREPTDATE = MDY(MONTH(REPTDATE)+1,1,YEAR(REPTDATE));
+  PRVRPTDATE= SREPTDATE -1 ;
+  IF REPTDATE= PRVRPTDATE THEN WK = '4';
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('RDAT1',PUT(REPTDATE,Z5.));
+  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+RUN;
+DATA REPTDATE;SET REPTDATE;XXX=&NOWK;RUN;
+PROC PRINT DATA=REPTDATE;RUN;
+
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0.1 = '01'   /*  UP TO 1 WK       */
+      0.1-1   = '02'   /*  >1 WK - 1 MTH    */
+      1-3     = '03'   /*  >1 MTH - 3 MTHS  */
+      3-6     = '04'   /*  >3 - 6 MTHS      */
+      6-12    = '05'   /*  >6 MTHS - 1 YR   */
+      OTHER   = '06'   /*  > 1 YEAR         */
+      ;
+RUN;
+*----------------------------------------------*
+* READ WALKER FILE                             *
+*----------------------------------------------*;
+DATA WALK(KEEP=DESC REPTDATE AMOUNT);
+ INFILE WALK FIRSTOBS=1;
+ INPUT @2   DESC          $19.
+       @21  DD              2.
+       @24  MM              2.
+       @27  YY              2.
+       @42  AMOUNT    COMMA20.2
+       ;
+ REPTDATE = MDY(MM,DD,YY);
+ IF REPTDATE= &RDAT1 THEN OUTPUT WALK;
+RUN;
+*----------------------------------------------*
+* CASH HOLDINGS                                *
+*----------------------------------------------*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC = '39110';
+   OUTPUT OUT=CASH (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA CASH(KEEP=BNMCODE AMOUNT);
+   SET CASH;
+   BNMCODE = '932210001'||'0000Y';OUTPUT;
+   BNMCODE = '952210001'||'0000Y';OUTPUT;
+RUN;
+PROC PRINT DATA=CASH;TITLE 'CASH HOLDINGS';RUN;
+
+*----------------------------------------------*
+* SRR                                          *
+*----------------------------------------------*;
+DATA DEFAULT(DROP=N);
+  N=1;
+  DO WHILE(N<7);
+     AMOUNT = 0;
+     BNMCODE = COMPRESS('93222000'||N||'0000Y');OUTPUT;
+     BNMCODE = COMPRESS('95222000'||N||'0000Y');OUTPUT;
+     N+1;
+END;
+PROC SORT DATA=DEFAULT;BY BNMCODE;RUN;
+*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC = '32110';
+   OUTPUT OUT=SRR (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA SRR(KEEP=BNMCODE AMOUNT);
+   SET SRR;
+   BNMCODE = '932220006'||'0000Y';OUTPUT;
+   BNMCODE = '952220006'||'0000Y';OUTPUT;
+RUN;
+*;
+DATA SRR;
+   MERGE DEFAULT(IN=A) SRR;
+   BY BNMCODE;
+   IF A;
+RUN;
+*;
+PROC PRINT DATA=SRR;TITLE 'SRR';RUN;
+
+DATA BNM.GLSET;
+   SET CASH SRR;
+RUN;
+PROC PRINT DATA=BNM.GLSET;RUN;
+
+*----------------------------------------------*
+* CONSOLIDATION                                *
+*----------------------------------------------*;
+DATA BNM.FINAL;
+   SET BNM.NOTE BNM.CALC BNM.GLSET;
+RUN;
+
+PROC SORT DATA=BNM.FINAL;
+BY BNMCODE;
+RUN;
+
+PROC SUMMARY DATA=BNM.FINAL NWAY;
+   CLASS BNMCODE;
+   VAR AMOUNT;
+   OUTPUT OUT=BNM.FINALSUM (DROP=_TYPE_ _FREQ_) SUM=;
+*;
