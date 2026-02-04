@@ -1,0 +1,307 @@
+//EIBMNLF2 JOB MIS,'MIS',COND=(4,LT),CLASS=A,
+//         MSGCLASS=X,NOTIFY=&SYSUID
+/*JOBPARM S=S1M1
+//*
+//EIBMNLF2 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//WALK     DD DSN=SAP.FDP.APPL.DAILY.NLF(0),DISP=SHR
+//BNM      DD DSN=SAP.PBB.NLF.LN.DAILY,DISP=OLD
+//SYSIN    DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 NOCENTER;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE (KEEP=REPTDATE);
+  SET LOAN.REPTDATE;
+  SELECT(DAY(REPTDATE));
+    WHEN (8) WK = '1';
+    WHEN(15) WK = '2';
+    WHEN(22) WK = '3';
+    OTHERWISE WK = '0';
+  END;
+  SREPTDATE = MDY(MONTH(REPTDATE)+1,1,YEAR(REPTDATE));
+  PRVRPTDATE= SREPTDATE -1 ;
+  IF REPTDATE= PRVRPTDATE THEN WK = '4';
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('RDAT1',PUT(REPTDATE,Z5.));
+  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+RUN;
+
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0.1 = '01'   /*  UP TO 1 WK       */
+      0.1-1   = '02'   /*  >1 WK - 1 MTH    */
+      1-3     = '03'   /*  >1 MTH - 3 MTHS  */
+      3-6     = '04'   /*  >3 - 6 MTHS      */
+      6-12    = '05'   /*  >6 MTHS - 1 YR   */
+      OTHER   = '06'   /*  > 1 YEAR         */
+      ;
+RUN;
+*----------------------------------------------*
+* READ WALKER FILE                             *
+*----------------------------------------------*;
+DATA WALK(KEEP=DESC REPTDATE AMOUNT);
+ INFILE WALK FIRSTOBS=1;
+ INPUT @2   DESC          $19.
+       @21  DD              2.
+       @24  MM              2.
+       @27  YY              2.
+       @42  AMOUNT    COMMA20.2
+       ;
+ REPTDATE = MDY(MM,DD,YY);
+ IF REPTDATE= &RDAT1 THEN OUTPUT WALK;
+RUN;
+*----------------------------------------------*
+* FLOOR STOCKING                               *
+*----------------------------------------------*;
+DATA DEFAULT(DROP=N);
+  N=1;
+  DO WHILE(N<7);
+     AMOUNT = 0;
+     BNMCODE = COMPRESS('93219090'||N||'0000Y');OUTPUT;
+     BNMCODE = COMPRESS('95219090'||N||'0000Y');OUTPUT;
+     N+1;
+END;
+PROC SORT DATA=DEFAULT;BY BNMCODE;RUN;
+*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC='ML34170';
+   OUTPUT OUT=FS(DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA FS(KEEP=BNMCODE AMOUNT);
+   SET FS;
+   BNMCODE = '932190905'||'0000Y';OUTPUT;
+   BNMCODE = '952190905'||'0000Y';OUTPUT;
+RUN;
+*;
+DATA FS;
+   MERGE DEFAULT(IN=A) FS;
+   BY BNMCODE;
+   IF A;
+RUN;
+*;
+PROC PRINT DATA=FS;TITLE 'FLOOR STOCKING';RUN;
+
+*----------------------------------------------*
+* HIRE PURCHASE AGENCY                         *
+*----------------------------------------------*;
+DATA DEFAULT(DROP=N);
+  N=1;
+  DO WHILE(N<7);
+     AMOUNT = 0;
+     BNMCODE = COMPRESS('93211090'||N||'0000Y');OUTPUT;
+     BNMCODE = COMPRESS('95211090'||N||'0000Y');OUTPUT;
+     N+1;
+END;
+PROC SORT DATA=DEFAULT;BY BNMCODE;RUN;
+*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC = 'ML34111';
+   OUTPUT OUT=HP(DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA HP(KEEP=BNMCODE AMOUNT);
+   SET HP;
+   BNMCODE = '932110906'||'0000Y';OUTPUT;
+   BNMCODE = '952110906'||'0000Y';OUTPUT;
+RUN;
+*;
+DATA HP;
+   MERGE DEFAULT(IN=A) HP;
+   BY BNMCODE;
+   IF A;
+RUN;
+*;
+PROC PRINT DATA=HP;TITLE 'HIRE PURCHASE AGENCY';RUN;
+
+*----------------------------------------------*
+* CASH HOLDINGS                                *
+*----------------------------------------------*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC = '39110';
+   OUTPUT OUT=CASH (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA CASH(KEEP=BNMCODE AMOUNT);
+   SET CASH;
+   BNMCODE = '932210001'||'0000Y';OUTPUT;
+   BNMCODE = '952210001'||'0000Y';OUTPUT;
+RUN;
+PROC PRINT DATA=CASH;TITLE 'CASH HOLDINGS';RUN;
+
+*----------------------------------------------*
+* SRR                                          *
+*----------------------------------------------*;
+DATA DEFAULT(DROP=N);
+  N=1;
+  DO WHILE(N<7);
+     AMOUNT = 0;
+     BNMCODE = COMPRESS('93222000'||N||'0000Y');OUTPUT;
+     BNMCODE = COMPRESS('95222000'||N||'0000Y');OUTPUT;
+     N+1;
+END;
+PROC SORT DATA=DEFAULT;BY BNMCODE;RUN;
+*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC = '32110';
+   OUTPUT OUT=SRR (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA SRR(KEEP=BNMCODE AMOUNT);
+   SET SRR;
+   BNMCODE = '932220006'||'0000Y';OUTPUT;
+   BNMCODE = '952220006'||'0000Y';OUTPUT;
+RUN;
+*;
+DATA SRR;
+   MERGE DEFAULT(IN=A) SRR;
+   BY BNMCODE;
+   IF A;
+RUN;
+*;
+PROC PRINT DATA=SRR;TITLE 'SRR';RUN;
+
+*----------------------------------------------*
+* OTHER ASSETS (SHARES HELD)                   *
+*----------------------------------------------*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC = 'F137010SH';
+   OUTPUT OUT=OTH (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA OTH(KEEP=BNMCODE AMOUNT);
+   SET OTH;
+   BNMCODE = '932290001'||'0000Y';OUTPUT;
+   BNMCODE = '952290001'||'0000Y';OUTPUT;
+RUN;
+PROC PRINT DATA=OTH;TITLE 'OTHER ASSETS';RUN;
+
+*----------------------------------------------*
+* FCY - FIXED LOAN                             *
+*----------------------------------------------*;
+DATA DEFAULT(DROP=N);
+  N=1;
+  DO WHILE(N<7);
+     AMOUNT = 0;
+     BNMCODE = COMPRESS('94211090'||N||'0000Y');OUTPUT;
+     BNMCODE = COMPRESS('96211090'||N||'0000Y');OUTPUT;
+     N+1;
+END;
+PROC SORT DATA=DEFAULT;BY BNMCODE;RUN;
+*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC IN ('F13460081BCB','F13460064FLB');
+   OUTPUT OUT=FCYFL (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA FCYFL(KEEP=BNMCODE AMOUNT);
+   SET FCYFL;
+   BNMCODE = '942110906'||'0000Y';OUTPUT;
+   BNMCODE = '962110906'||'0000Y';OUTPUT;
+RUN;
+*;
+DATA FCYFL;
+   MERGE DEFAULT(IN=A) FCYFL;
+   BY BNMCODE;
+   IF A;
+RUN;
+*;
+PROC PRINT DATA=FCYFL;TITLE 'FCY - FL';RUN;
+
+*----------------------------------------------*
+* FCY - RC                                     *
+*----------------------------------------------*;
+DATA DEFAULT(DROP=N);
+  N=1;
+  DO WHILE(N<7);
+     AMOUNT = 0;
+     BNMCODE = COMPRESS('94212090'||N||'0000Y');OUTPUT;
+     BNMCODE = COMPRESS('96212090'||N||'0000Y');OUTPUT;
+     N+1;
+END;
+PROC SORT DATA=DEFAULT;BY BNMCODE;RUN;
+*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC IN ('F134600RC');
+   OUTPUT OUT=FCYRC (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA FCYRC(KEEP=BNMCODE AMOUNT);
+   SET FCYRC;
+   BNMCODE = '942120906'||'0000Y';OUTPUT;
+   BNMCODE = '962120906'||'0000Y';OUTPUT;
+RUN;
+*;
+DATA FCYRC;
+   MERGE DEFAULT(IN=A) FCYRC;
+   BY BNMCODE;
+   IF A;
+RUN;
+*;
+PROC PRINT DATA=FCYRC;TITLE 'FCY - RC';RUN;
+
+*----------------------------------------------*
+* FCY - CASH HOLDINGS                          *
+*----------------------------------------------*;
+DATA DEFAULT(DROP=N);
+  N=1;
+  DO WHILE(N<7);
+     AMOUNT = 0;
+     BNMCODE = COMPRESS('94221000'||N||'0000Y');OUTPUT;
+     BNMCODE = COMPRESS('96221000'||N||'0000Y');OUTPUT;
+     N+1;
+END;
+PROC SORT DATA=DEFAULT;BY BNMCODE;RUN;
+*;
+PROC SUMMARY DATA=WALK NWAY;
+   CLASS REPTDATE;
+   VAR AMOUNT;
+   WHERE DESC IN ('F139610FXNC');
+   OUTPUT OUT=FCYCASH (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA FCYCASH(KEEP=BNMCODE AMOUNT);
+   SET FCYCASH;
+   BNMCODE = '942210001'||'0000Y';OUTPUT;
+   BNMCODE = '962210001'||'0000Y';OUTPUT;
+RUN;
+*;
+DATA FCYCASH;
+   MERGE DEFAULT(IN=A) FCYCASH;
+   BY BNMCODE;
+   IF A;
+RUN;
+*;
+PROC PRINT DATA=FCYCASH;TITLE 'FCY - CASH HOLDINGS';RUN;
+
+DATA BNM.GLSET;
+   SET FS HP CASH SRR OTH FCYFL FCYCASH FCYRC;
+RUN;
+PROC PRINT DATA=BNM.GLSET;RUN;
+
+*----------------------------------------------*
+* CONSOLIDATION                                *
+*----------------------------------------------*;
+DATA BNM.FINAL;
+   SET BNM.NOTE BNM.CALC BNM.PBIF BNM.BT BNM.GLSET;
+RUN;
+
+PROC SORT DATA=BNM.FINAL;
+BY BNMCODE;
+RUN;
+
+PROC SUMMARY DATA=BNM.FINAL NWAY;
+   CLASS BNMCODE;
+   VAR AMOUNT;
+   OUTPUT OUT=BNM.FINALSUM (DROP=_TYPE_ _FREQ_) SUM=;
+*;
