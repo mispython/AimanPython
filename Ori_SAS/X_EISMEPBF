@@ -1,0 +1,279 @@
+//EISMEPBF JOB MISEIS,EIBMRPT1,COND=(4,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID,USER=OPCC
+/*JOBPARM S=S1M1
+//*
+//* LIQUIDITY PART 1 2.
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.SMELN.PBIFLIQ,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//EISMEPBF EXEC SAS609,REGION=48M
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//PBIF     DD DSN=SAP.PBB.PBIF.SASDATA(0),DISP=SHR
+//MECHRG   DD DSN=SAP.PBB.PBIF.MECHRG(0),DISP=SHR
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//PBIFLIQ  DD DSN=SAP.PBB.SMELN.PBIFLIQ,
+//            DISP=(MOD,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=256,BLKSIZE=28160),
+//            SPACE=(CYL,(5,2)),UNIT=SYSDA
+//SYSIN    DD *
+*+--------------------------------------------------------------+
+ |  PROGRAM : EISMEPBF                                          |
+ |  DATE    : 05.09.12                                          |
+ |  REPORT  : NEW LIQUIDITY FRAMEWORK FOR PBIF(SME ONLY)        |
+ |                                                              |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950;
+*;
+%INC PGM(PBBELF,PBBDPFMT);
+*;
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0.255 = 'UP TO 1 WK'
+      0.255-1   = '>1 WK - 1 MTH'
+      1-3       = '>1 MTH - 3 MTHS'
+      3-6       = '>3 - 6 MTHS'
+      6-9       = '>6 - 9 MTHS'
+      9-12      = '>9 MTHS - 1 YR'
+      OTHER     = '> 1 YEAR';
+*;
+   VALUE $ITEMF
+     'A1.01'  = 'A1.01  LOANS: CORP - FIXED TERM LOANS'
+     'A1.02'  = 'A1.02  LOANS: CORP - REVOLVING LOANS'
+     'A1.03'  = 'A1.03  LOANS: CORP - OVERDRAFTS'
+     'A1.04'  = 'A1.04  LOANS: CORP - OTHERS'
+     'A1.05'  = 'A1.05  LOANS: IND  - HOUSING LOANS'
+     'A1.07'  = 'A1.07  LOANS: IND  - OVERDRAFTS'
+     'A1.08'  = 'A1.08  LOANS: IND  - OTHERS'
+     'A1.08A' = 'A1.08A LOANS: IND  - REVOLVING LOANS'
+     'A1.12'  = 'A1.12  DEPOSITS: CORP - FIXED'
+     'A1.13'  = 'A1.13  DEPOSITS: CORP - SAVINGS'
+     'A1.14'  = 'A1.14  DEPOSITS: CORP - CURRENT'
+     'A1.15'  = 'A1.15  DEPOSITS: IND  - FIXED'
+     'A1.16'  = 'A1.16  DEPOSITS: IND  - SAVINGS'
+     'A1.17'  = 'A1.17  DEPOSITS: IND  - CURRENT'
+     'A1.25'  = 'A1.25  UNDRAWN OD FACILITIES GIVEN'
+     'A1.28'  = 'A1.28  UNDRAWN PORTION OF OTHER C/F GIVEN'
+     'A2.01'  = 'A2.01  INTERBANK LENDING/DEPOSITS'
+     'A2.02'  = 'A2.02  REVERSE REPO'
+     'A2.03'  = 'A2.03  DEBT SEC: GOVT PP/BNM BILLS/CAG'
+     'A2.04'  = 'A2.04  DECT SEC: FIN INST PAPERS'
+     'A2.05'  = 'A2.05  DEBT SEC: TRADE PAPERS'
+     'A2.06'  = 'A2.06  CORP DEBT: GOVT-GUARANTEED'
+     'A2.08'  = 'A2.08  CORP DEBT: NON-GUARANTEED'
+     'A2.09'  = 'A2.09  FX EXCHG CONTRACTS RECEIVABLE'
+     'A2.14'  = 'A2.14  INTERBANK BORROWINGS/DEPOSITS'
+     'A2.15'  = 'A2.15  INTERBANK REPOS'
+     'A2.16'  = 'A2.16  NON-INTERBANK REPOS'
+     'A2.17'  = 'A2.17  NIDS ISSUED'
+     'A2.18'  = 'A2.18  BAS PAYABLE'
+     'A2.19'  = 'A2.19  FX EXCHG CONTRACTS PAYABLE'
+     'B1.12'  = 'B1.12  DEPOSITS: CORP - FIXED'
+     'B1.15'  = 'B1.15  DEPOSITS: IND  - FIXED'
+     'B2.01'  = 'B2.01  INTERBANK LENDING/DEPOSITS'
+     'B2.09'  = 'B2.09  FX EXCHG CONTRACTS RECEIVABLE'
+     'B2.14'  = 'B2.14  INTERBANK BORROWINGS/DEPOSITS'
+     'B2.19'  = 'B2.19  FX EXCHG CONTRACTS PAYABLE';
+*;
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE NEXT BLDATE                *
+*------------------------------------------------*;
+%MACRO NXTBLDT;
+      DD = DAY(MATDTE);
+      MM = MONTH(MATDTE) + FREQ;
+      YY = YEAR(MATDTE);
+      IF MM > 12 THEN DO;
+         MM = MM - 12; YY + 1;
+      END;
+   IF MM = 2 THEN
+      IF MOD(YY,4) = 0 THEN D2 = 29;
+      ELSE D2 = 28;
+   IF DD > LDAY(MM) THEN DD = LDAY(MM);
+   MATDTE = MDY(MM,DD,YY);
+%MEND NXTBLDT;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE REMAIN MONTH               *
+*------------------------------------------------*;
+%MACRO REMMTH;
+   MDYR  = YEAR(MATDTE);
+   MDMTH = MONTH(MATDTE);
+   MDDAY = DAY(MATDTE);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+   IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+*;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE;
+   SET PBIF.REPTDATE;
+   REPTQ='N';
+   IF DAY(REPTDATE+1)=1 THEN REPTQ='Y';
+   SELECT(DAY(REPTDATE));
+      WHEN  (8) CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTQ',PUT(REPTQ,$1.));
+   CALL SYMPUT('RDATX',PUT(REPTDATE,Z5.));
+   CALL SYMPUT('REPTYR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+   CALL SYMPUT('MDATE',PUT(REPTDATE,Z5.));
+RUN;
+*;
+*----------------------------------------------------------------*
+*  BREAKDOWN BY MATURITY PROFILE (PART 1 & 2 - RM)               *
+*----------------------------------------------------------------*;
+*;
+
+%MACRO RDAL;
+    %IF "&REPTQ" NE "Y" %THEN %DO; %INC PGM(RSMEPBIF); %END;
+                        %ELSE %DO; %INC PGM(RSMMPBIF); %END;
+%MEND;
+*;
+%RDAL;
+*;
+DATA PBIF;
+   LENGTH ITEM $6;
+   %DCLVAR
+   SET PBIF;
+   RPYR  =&REPTYR;
+   RPMTH =&REPTMON;
+   RPDAY =&REPTDAY;
+   IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   DAYS=MATDTE-&RDATX;
+
+   IF DAYS < 8  THEN REMMTH = 0.1;
+   ELSE DO;
+      %REMMTH
+   END;
+   IF CUSTCX IN ('77','78','95','96') THEN ITEM = 'A1.08';
+                                      ELSE ITEM = 'A1.04';
+   AMOUNT=BALANCE;
+   PART = '2-RM'; OUTPUT;
+   PART = '1-RM'; OUTPUT;
+*------------------------------------------------*
+*  UNDRAWN PORTION -PART 2-RM                    *
+*------------------------------------------------*;
+   ITEM='A1.28';
+   AMOUNT=(INLIMIT-BALANCE);
+   IF AMOUNT < 0 THEN AMOUNT=0.00;
+   PART = '2-RM'; OUTPUT;
+RUN;
+*;
+*------------------------------------------------*
+*  SUMMARISE AND CONSOLIDATE                     *
+*------------------------------------------------*;
+PROC SUMMARY DATA=PBIF NWAY;
+   CLASS PART ITEM REMMTH;
+   VAR AMOUNT;
+   OUTPUT OUT=PBIF(DROP=_TYPE_ _FREQ_) SUM=;
+*----------------------------------------------------------------*
+*  PRODUCE REPORTS                                               *
+*----------------------------------------------------------------*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'NEW LIQUIDITY FRAMEWORK (FACTORING) AS AT' &RDATE;
+*;
+*;
+DATA PBIF;
+   SET PBIF;
+   PERIOD=PUT(REMMTH,REMFMT.);
+   IF PERIOD='UP TO 1 WK' THEN AMTWEEK=AMOUNT;
+   IF PERIOD='>1 WK - 1 MTH' THEN AMTMONTH=AMOUNT;
+   IF PERIOD='>1 MTH - 3 MTHS' THEN AMTQUAT=AMOUNT;
+   IF PERIOD='>3 - 6 MTHS' THEN AMTHALF=AMOUNT;
+   IF PERIOD='>6 - 9 MTHS' THEN AMTMHF=AMOUNT;
+   IF PERIOD='>9 MTHS - 1 YR' THEN AMTYEAR=AMOUNT;
+   IF PERIOD='> 1 YEAR' THEN AMTYEARS=AMOUNT;
+RUN;
+PROC SUMMARY DATA=PBIF NWAY;
+CLASS ITEM;
+VAR AMTWEEK AMTMONTH AMTQUAT AMTHALF AMTMHF AMTYEAR AMTYEARS;
+WHERE PART = '1-RM' AND ITEM NOT IN ('B1.12','B1.15');
+OUTPUT OUT=PBIF1 SUM=;
+RUN;
+PROC SUMMARY DATA=PBIF NWAY;
+CLASS ITEM;
+VAR AMTWEEK AMTMONTH AMTQUAT AMTHALF AMTMHF AMTYEAR AMTYEARS;
+WHERE PART = '2-RM' AND ITEM NOT IN ('B1.12','B1.15');
+OUTPUT OUT=PBIF2 SUM=;
+RUN;
+DATA _NULL_;
+   SET PBIF1;
+   FILE PBIFLIQ;
+   DESC = PUT(ITEM,$ITEMF.);
+   TOTALAMT = SUM(AMTWEEK,AMTMONTH,AMTQUAT,AMTHALF,AMTMHF,
+                  AMTYEAR,AMTYEARS);
+   IF _N_ = 1 THEN DO;
+   PUT @001 "PUBLIC BANK BERHAD";
+   PUT @001 'NEW LIQUIDITY FRAMEWORK (SME LOAN) AS AT '"&RDATE";
+   PUT @001 'BREAKDOWN BY BEHAVIOURAL MATURITY PROFILE (PART 1-RM)';
+   PUT @001 'CORE (NON-TRADING) BANKING ACTIVITIES' ';'
+            'UP TO 1 WK' ';' '>1 WK - 1 MTH' ';'
+            '>1 MTH - 3 MTHS' ';' '>3 - 6 MTHS' ';'
+            '>6 - 9 MTHS' ';' '9 - 12 MTHS' ';'
+            '> 1 YEAR' ';' 'TOTAL';
+   END;
+   PUT @001 DESC ';' AMTWEEK ';' AMTMONTH ';' AMTQUAT ';' AMTHALF
+            ';' AMTMHF ';' AMTYEAR ';' AMTYEARS ';' TOTALAMT;
+RUN;
+DATA _NULL_;
+   SET PBIF2;
+   FILE PBIFLIQ;
+   DESC = PUT(ITEM,$ITEMF.);
+   TOTALAMT = SUM(AMTWEEK,AMTMONTH,AMTQUAT,AMTHALF,AMTMHF,
+                  AMTYEAR,AMTYEARS);
+   IF _N_ = 1 THEN DO;
+   PUT @001 " ";
+   PUT @001 "PUBLIC BANK BERHAD";
+   PUT @001 'NEW LIQUIDITY FRAMEWORK (SME LOAN) AS AT '"&RDATE";
+   PUT @001 'BREAKDOWN BY PURE CONTRACTUAL MATURITY PROFILE '
+            '(PART 2-RM)';
+   PUT @001 'CORE (NON-TRADING) BANKING ACTIVITIES' ';'
+            'UP TO 1 WK' ';' '>1 WK - 1 MTH' ';'
+            '>1 MTH - 3 MTHS' ';' '>3 - 6 MTHS' ';'
+            '>6 - 9 MTHS' ';' '9 - 12 MTHS' ';'
+            '> 1 YEAR' ';' 'TOTAL';
+   END;
+   PUT @001 DESC ';' AMTWEEK ';' AMTMONTH ';' AMTQUAT ';' AMTHALF
+            ';' AMTMHF ';' AMTYEAR ';' AMTYEARS ';' TOTALAMT;
+RUN;
+
+//******************************************************************
+//* FTP HOST DATASETS TO PBB DATAWAREHOUSE SERVER
+//******************************************************************
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*CD TEXTFILE
+//*CD RISKMGT
+//*PUT //SAP.PBB.SMELN.PBIFLIQ SMEPBIF.TXT
+//*EOB
