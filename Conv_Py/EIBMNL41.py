@@ -2,7 +2,6 @@
 """
 File Name: EIBMNL41
 BNM Maturity Profile Calculation for Various Products
-Converts SAS program to Python using DuckDB and Polars
 Handles PBCARD, Overdraft (Corporate/Individual), and SMC (Corporate/Individual)
 """
 
