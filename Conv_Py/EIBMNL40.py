@@ -4,7 +4,7 @@ File Name: EIBMNL40
 BNM Loan Maturity Profile Processing
 PBB
 
-* Same file program as EIIMNLF0
+*Same file program as EIIMNLF0
 """
 
 import duckdb
