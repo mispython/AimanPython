@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EIBMNL40
+For EIBMNL40
 Sample Test Data Generator for BNM Note Conversion
 Creates synthetic data to test the Python conversion
 """
