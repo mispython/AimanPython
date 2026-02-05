@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+For EIBMNL42
 Sample Test Data Generator for BNM GL Set and Consolidation
 Creates synthetic WALK file and prerequisite data
 """
