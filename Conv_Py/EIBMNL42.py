@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-For EIBMNL42
+File Name: EIBMNL42
 BNM GL Set and Final Consolidation
 Processes WALK file for various GL accounts and consolidates all BNM outputs
 """
