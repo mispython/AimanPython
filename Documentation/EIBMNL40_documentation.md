@@ -1,4 +1,4 @@
-# EIBMNL40 - BNM Loan Maturity Profile Processing - Python Conversion
+# EIBMNL40: BNM Loan Maturity Profile Processing - Python Conversion
 
 ## Overview
 This Python script converts a SAS program that processes loan data for Bank Negara Malaysia (BNM) reporting. The program calculates maturity profiles for different types of loans and generates summary reports by BNM code.
