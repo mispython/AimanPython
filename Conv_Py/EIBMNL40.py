@@ -2,7 +2,9 @@
 """
 File Name: EIBMNL40
 BNM Loan Maturity Profile Processing
-Converts SAS program to Python using DuckDB and Polars
+PBB
+
+* Same file program as EIIMNLF0
 """
 
 import duckdb
