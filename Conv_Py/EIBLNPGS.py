@@ -2,7 +2,6 @@
 """
 File Name: EIBLNPGS
 Non-Performing Government Scheme Loan Processing
-Converts SAS program to Python using DuckDB and Polars
 """
 
 import duckdb
