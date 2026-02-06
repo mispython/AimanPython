@@ -1,0 +1,101 @@
+//INPLOBA6 JOB MISEIS,CLASS=A,MSGCLASS=X,NOTIFY=&SYSUID,REGION=64M      JOB51378
+/*JOBPARM S=S1M1
+//NPLOBAL  EXEC SAS609
+//NPLX     DD DSN=SAP.PIBB.NPL.HP.SASDATA.YEAREND,DISP=OLD
+//NPL      DD DSN=SAP.PIBB.NPL.HP.SASDATA,DISP=OLD
+//*NPLTXT  DD DSN=SAP.PIBB.NPL.HP.TEXT,DISP=SHR
+//SYSIN    DD *
+
+*------------------------------------------------*
+*  EIFMNP03  (TO KEEP EXTRA UHC)                 *
+*------------------------------------------------*;
+PROC SORT DATA=NPLX.IIS; BY ACCTNO NOTENO; RUN;
+PROC SORT DATA=NPLX.SP2; BY ACCTNO NOTENO; RUN;
+*;
+DATA NPL.NPLOBAL;
+   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME BORSTAT DAYS IIS
+        OI LOANSTAT UHC SP;
+   LENGTH LOANSTAT 2;
+   RETAIN LOANSTAT 3;
+   MERGE NPLX.IIS NPLX.SP2;
+   BY ACCTNO NOTENO;
+   RENAME IIS=IISP OI=OIP UHC=UHCP SP=SPP2;
+RUN;
+
+     /*
+DATA HCOBAL;
+   INFILE NPLTXT;
+   INPUT @001 NTBRCH    3.
+         @005 ACCTNO   10.
+         @016 NOTENO    5.
+         @022 IISP     16.2
+         @039 OIP      16.2
+         @056 SPP2     16.2
+         ;
+RUN;
+
+PROC SORT; BY ACCTNO NOTENO; RUN;
+*------------------------------------------------*
+*  EIFMNP04                                      *
+*------------------------------------------------*;
+PROC SORT DATA=NPLX.SP OUT=SP (KEEP=ACCTNO NOTENO SP RENAME=SP=SPP);
+   BY ACCTNO NOTENO;
+*;
+      */
+*------------------------------------------------*
+*  EIFMNP05                                      *
+*------------------------------------------------*;
+PROC SORT DATA=NPLX.SP1 OUT=SP1 (KEEP=ACCTNO NOTENO SP RENAME=SP=SPP1);
+   BY ACCTNO NOTENO;
+*;
+
+*------------------------------------------------*
+*  EIFMNP06                                      *
+*------------------------------------------------*;
+PROC SORT DATA=NPLX.SP2 OUT=SP2 (KEEP=ACCTNO NOTENO SP RENAME=SP=SPP2);
+   BY ACCTNO NOTENO;
+*;
+
+*------------------------------------------------*
+*  EIFMNP07 TO KEEP EXTRA LOANTYPE               *
+*------------------------------------------------*;
+DATA AQ;
+   KEEP ACCTNO NOTENO NPL CURBAL LOANTYPE;
+   ARRAY VBL NPL CURBALP;
+   SET NPLX.AQ;
+   * CURBALP = NPL + UHC - OI;   /* NPL = CURBAL - UHC + OI    */
+   * CURBALP = CURBAL;           /* <= THIS WAY ALSO SAME      */
+   DO OVER VBL;
+      IF VBL = . THEN VBL = 0;
+   END;
+   RENAME NPL=NETBALP CURBAL=CURBALP;
+PROC SORT;
+   BY ACCTNO NOTENO;
+*;
+
+*------------------------------------------------*
+*  COMBINE ALL INTO NPL.NPLOBAL                  *
+*------------------------------------------------*;
+DATA ALL;
+   MERGE SP1 SP2 AQ; BY ACCTNO NOTENO;
+   IF SPP1=.        THEN SPP1=0.00;
+   IF NETBALP=.     THEN NETBALP=0.00;
+   IF CURBALP=.     THEN CURBALP=0.00;
+   LOANTYPE=700;
+RUN;
+*;
+DATA NPL.NPLOBAL;
+   MERGE ALL NPL.NPLOBAL;
+   BY ACCTNO NOTENO;
+   EXIST = 'Y';
+   IF NTBRCH GT 0 AND LOANTYPE GT 0;
+RUN;
+PROC SORT DATA=NPL.NPLOBAL NODUP; BY ACCTNO; RUN;
+*;
+
+PROC SQL;
+   DELETE * FROM NPL.WAQ;
+   DELETE * FROM NPL.WIIS;
+   DELETE * FROM NPL.WSP2;
+QUIT;
+
