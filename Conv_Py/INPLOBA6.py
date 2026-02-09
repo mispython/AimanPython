@@ -107,6 +107,7 @@ def main() -> None:
         )
         .rename({"NPL": "NETBALP", "CURBAL": "CURBALP"})
         .select(["ACCTNO", "NOTENO", "NETBALP", "CURBALP"])
+        .unique(subset=["ACCTNO", "NOTENO"], keep="first")
     )
 
     all_df = (
