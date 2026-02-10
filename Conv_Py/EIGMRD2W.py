@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
+File Name: EIGMRD2W
 ALM Walker Data Extraction and Conversion
 Reads Walker ALM file, validates date, and splits into multiple datasets
-Python conversion of SAS EIGMRD2W program
 """
 
 import polars as pl
