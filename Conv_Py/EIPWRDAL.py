@@ -17,7 +17,7 @@ import sys
 # ============================================================================
 
 # Input paths
-INPUT_BASE_PATH = Path("/data/input")
+INPUT_BASE_PATH = Path("./data/input")
 LOAN_PATH = INPUT_BASE_PATH / "loan"
 PBCS_PATH = INPUT_BASE_PATH / "pbcs"
 BNM_BASE_PATH = INPUT_BASE_PATH / "bnm/d2025"
