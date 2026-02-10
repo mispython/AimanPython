@@ -18,7 +18,7 @@ from typing import Dict, Tuple
 # ============================================================================
 
 # Base paths
-BASE_PATH = Path("/data")
+BASE_PATH = Path("./data")
 INPUT_PATH = BASE_PATH / "input"
 OUTPUT_PATH = BASE_PATH / "output"
 PROGRAM_PATH = INPUT_PATH / "programs"
