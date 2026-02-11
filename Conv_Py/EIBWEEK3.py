@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-File Name: EIBWEEK3.
+File Name: EIBWEEK3
 
 Implemented assumptions:
 - All SAS input datasets are available as parquet files.
