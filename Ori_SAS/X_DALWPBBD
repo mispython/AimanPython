@@ -1,0 +1,127 @@
+/* PROGRAM NAME  : DALWPBBD                                     */
+/* INVOKE BY JOB : EIBWEEK1-3                                   */
+/* DATE MODIFIED : 10-7-2001                                    */
+/* SMR/OTHERS    : JS DATED 11/7/01                             */
+/* CHANGES MADE  : ADDITIONAL FIELDS TO BE KEPT                 */
+/*                 &ACE IS IN PBBDPFMT - ADDED 177 PRODUCT INTO */
+/*                 MAPPING                                      */
+/* OBJECTIVE     : PBB DEPOSIT MANIPULATION EXTRACTED FROM      */
+/*                 SAP.PBB.MNITB                                */
+
+%INC PGM(PBBDPFMT);
+
+/***********************************************************/
+/** MANIPULATE THE EXTRACTED THE SAVING AND CURRENT       **/
+/** ACCOUNTS DATABASE                                     **/
+/***********************************************************/
+
+%LET SAVG1=(KEEP=BRANCH PRODUCT OPENIND CUSTCODE NAME ACCTNO
+                 CURBAL INTPAYBL COSTCTR DNBFISME CURCODE);
+
+%LET SAVG2=(KEEP=BRANCH PRODUCT CUSTCD STATECD PRODCD NAME ACCTNO
+                 CURBAL INTPAYBL AMTIND COSTCTR DNBFISME CURCODE);
+
+%LET CURN1=(KEEP=BRANCH PRODUCT OPENIND CUSTCODE NAME ACCTNO
+                 CURBAL INTPAYBL ODINTACC COSTCTR SECTOR DNBFISME
+                 CURCODE INTRATE BILLERIND);
+
+%LET CURN2=(KEEP=BRANCH PRODUCT CUSTCD STATECD PRODCD NAME ACCTNO
+                 CURBAL INTPAYBL AMTIND ODINTACC COSTCTR SECTOR
+                 DNBFISME CURCODE INTRATE BILLERIND);
+
+DATA BNM.SAVG&REPTMON&NOWK &SAVG2;
+  LENGTH CUSTCD $2. PRODCD $5. STATECD $1. AMTIND $1. ;
+  SET DEPOSIT.SAVING &SAVG1;
+  IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
+  /****************************************************/
+  /** APPLY THE FORMAT                               **/
+  /****************************************************/
+  CUSTCD=PUT(CUSTCODE, SACUSTCD.);
+  STATECD=PUT(BRANCH, STATECD.);
+  PRODCD=PUT(PRODUCT, SAPROD.);
+  AMTIND=PUT(PRODUCT, SADENOM.);
+RUN;
+
+DATA BNM.CURN&REPTMON&NOWK &CURN2
+     BNM.FCY&REPTMON&NOWK &CURN2;
+  LENGTH CUSTCD $2. PRODCD $5. STATECD $1. AMTIND $1.;
+  SET DEPOSIT.CURRENT &CURN1;
+  IF OPENIND NOT IN ('B','C','P') AND
+     CURBAL GE 0;
+  STATECD=PUT(BRANCH, STATECD.);
+  PRODCD=PUT(PRODUCT, CAPROD.);
+  AMTIND=PUT(PRODUCT, CADENOM.);
+  /****************************************************/
+  /** IF VOSTRO ACCOUNT THEN THE COUNTER PARTY CODE        **/
+  /** WILL BE TAKEN AS EITHER CB '02' OR '81' BASED        **/
+  /** ON THE PRODUCT CODE :                                **/
+  /**              104 = VOSTRO LOCAL                      **/
+  /**              105 = VOSTRO FOREIGN                    **/
+  /****************************************************/
+  SELECT(PRODUCT);
+     WHEN(104) CUSTCD='02';
+     WHEN(105) CUSTCD='81';
+     OTHERWISE CUSTCD=PUT(CUSTCODE, DDCUSTCD.);
+  END;
+  /*****************************************************/
+  /** IF ACE PRODUCTS THEN CHECK BALANCE              **/
+  /**   ELSE TREAT LIKE OTHER CURRENT ACCOUNT PRODUCT **/
+  /*****************************************************/
+  IF PRODUCT IN &ACE THEN DO;
+        INTPAYBL = 0;
+        PRODCD=PUT(PRODUCT, CAPROD.);
+        AMTIND=PUT(PRODUCT, CADENOM.);
+        OUTPUT BNM.CURN&REPTMON&NOWK;
+  END;
+  ELSE IF 400 <= PRODUCT <= 444 OR PRODUCT IN (450:454) THEN DO;
+     IF CUSTCD IN ('77','78','95') THEN DO;
+        IF SECTOR IN (4,5) THEN SECTOR = 1;
+        ELSE IF SECTOR NOT IN (1,2,3,4,5) THEN SECTOR = 1;
+     END;
+     ELSE DO;
+        IF SECTOR IN (1,2,3) THEN SECTOR = 4;
+        ELSE IF SECTOR NOT IN (1,2,3,4,5) THEN SECTOR = 4;
+     END;
+     OUTPUT BNM.FCY&REPTMON&NOWK;
+  END;
+  ELSE DO;
+     OUTPUT BNM.CURN&REPTMON&NOWK;
+  END;
+RUN;
+
+PROC SORT DATA=CISDP.DEPOSIT OUT=CISDP(KEEP=ACCTNO CUSTNO);
+   BY ACCTNO;
+*;
+DATA BNM.FCY&REPTMON&NOWK;
+   MERGE BNM.FCY&REPTMON&NOWK(IN=A) CISDP;
+   BY ACCTNO;
+   IF A;
+*;
+PROC APPEND DATA=BNM.FCY&REPTMON&NOWK(DROP=CUSTNO)
+            BASE=BNM.CURN&REPTMON&NOWK; RUN;
+
+/***********************************************************/
+/** SUMMAZISE THE DATASET AT BRANCH LEVEL - FOR RDAL      **/
+/***********************************************************/
+PROC DATASETS LIB=BNM NOLIST; DELETE DEPT&REPTMON&NOWK; RUN;
+
+PROC SUMMARY DATA=BNM.SAVG&REPTMON&NOWK NWAY;
+CLASS BRANCH STATECD PRODCD CUSTCD AMTIND;
+VAR CURBAL INTPAYBL;
+OUTPUT OUT=DEPT
+       SUM=CURBAL INTPAYBL;
+RUN;
+
+PROC APPEND DATA=DEPT BASE=BNM.DEPT&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE DEPT; RUN;
+
+PROC SUMMARY DATA=BNM.CURN&REPTMON&NOWK NWAY MISSING;
+CLASS BRANCH STATECD PRODCD CUSTCD SECTOR AMTIND;
+VAR CURBAL INTPAYBL;
+OUTPUT OUT=DEPT
+       SUM=CURBAL INTPAYBL;
+RUN;
+
+PROC APPEND DATA=DEPT BASE=BNM.DEPT&REPTMON&NOWK FORCE; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE DEPT; RUN;
+
