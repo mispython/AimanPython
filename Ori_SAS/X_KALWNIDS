@@ -1,0 +1,49 @@
+*;
+DATA K3TB1;
+  SET BNMK.K3TBL&REPTMON&NOWK;
+*;
+PROC SUMMARY DATA=K3TB1 NWAY;
+CLASS UTSMN; VAR UTAMOC;
+OUTPUT OUT=K3X (DROP=_TYPE_ _FREQ_) SUM=TTAMOC;
+*;
+PROC SORT DATA=K3TB1; BY UTSMN;
+*;
+DATA K3TABI;
+  MERGE K3X K3TB1; BY UTSMN;
+  UTDPX=(UTAMOC/TTAMOC)*UTDPF;
+  IF UTDPX < 0  THEN UTDPX=(-1)*UTDPX;
+  AMOUNT = UTAMOC - UTDPX;
+  IF SUBSTR(UTSMN,1,1)='I';
+  AMTIND='I';
+*;
+DATA K3TABI;
+  LENGTH BNMCODE $14.;
+  SET K3TABI;
+  BNMCODE=' ';
+  IF  UTCTP IN ('BB','BQ','BM','BN','BG','BR','BF','BH','BZ',
+                'BU','AD','BT','BV','BS','AC','DD','CG','CA',
+                'CB','CC','CD','CF','BW','BA','BE','DA',
+                'DB','DC','EC','EA','FA','EB','CE','GA','BJ');
+     SELECT(UTCTP);
+        WHEN('BB')      BNMCODE='4215002000000Y';
+        WHEN('BJ')      BNMCODE='4215007000000Y';
+        WHEN('BQ')      BNMCODE='4215011000000Y';
+        WHEN('BM')      BNMCODE='4215012000000Y';
+        WHEN('BN')      BNMCODE='4215013000000Y';
+        WHEN('BG')      BNMCODE='4215017000000Y';
+        WHEN('BR','BF','BH','BZ','BU','AD','BT','BV','BS','BN')
+                        BNMCODE='4215020000000Y';
+        WHEN('AC','DD','CG','CA','CB','CC','CD','CF')
+                        BNMCODE='4215060000000Y';
+        WHEN('DA')      BNMCODE='4215071000000Y';
+        WHEN('DB')      BNMCODE='4215072000000Y';
+        WHEN('DC')      BNMCODE='4215074000000Y';
+        WHEN('EC','EA') BNMCODE='4215076000000Y';
+        WHEN('FA')      BNMCODE='4215079000000Y';
+        WHEN('BW','BA','BE')
+                        BNMCODE='4215081000000Y';
+        WHEN('EB','CE','GA')
+                        BNMCODE='4215085000000Y';
+     END;
+  IF BNMCODE ^= ' ' THEN OUTPUT;
+RUN;
