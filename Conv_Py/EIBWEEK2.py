@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-File Name: X_EIBWEEK2
+File Name: EIBWEEK2
 
 Assumptions implemented:
 - All input datasets are parquet.
