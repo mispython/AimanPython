@@ -1,0 +1,267 @@
+ ********************************************************************;
+ **  PROGRAM  : FALWPBBP                                            *;
+ **  FUNCTION : TO PROCESS FDWKLY TO PRODUCE BIC ITEMS FOR RDAL I   *;
+ **  DATE     : 24.04.99                                            *;
+ ********************************************************************;
+*;
+PROC DATASETS LIB=BNM NOLIST;
+   DELETE FALW&REPTMON&NOWK;
+RUN;
+ ********************************************************************;
+ ** RM FD ACCEPTED BY CUSTOMER CODE                                 *;
+ ********************************************************************;
+*;
+DATA FDWKLY;
+   SET BNM.UMA BNM.FDWKLY;
+*;
+PROC SUMMARY DATA = FDWKLY NWAY;
+   CLASS STATE BIC CUSTCODE AMTIND;
+   VAR CURBAL;
+   OUTPUT OUT = ALW
+          SUM = AMOUNT;
+*;
+DATA ALWDEPT (KEEP=BNMCODE AMOUNT AMTIND);
+   LENGTH BNMCODE $14.;
+   SET ALW;
+   IF AMOUNT = . THEN AMOUNT = 0;
+   SELECT(CUSTCODE);
+   WHEN('01') DO;
+       BNMCODE = BIC||'01000000Y'; OUTPUT;
+   END;
+   WHEN('10','02','03','11','12','07','17','57','75') DO;
+       BNMCODE = BIC||CUSTCODE||'000000Y'; OUTPUT;
+   END;
+   WHEN('20','13','30','31',
+        '04','05','06','32','33','34','35',
+        '36','37','38','39','40','45') DO;
+       BNMCODE = BIC||'20000000Y'; OUTPUT;
+   END;
+   WHEN('60','61','62','63','64','65','66','67','68','69',
+        '41','42','43','44','46','47','48','49','51',
+        '52','53','54','59') DO;
+       BNMCODE = BIC||'60000000Y'; OUTPUT;
+   END;
+   WHEN('70','71','72','73','74') DO;
+       BNMCODE = BIC||CUSTCODE||'000000Y'; OUTPUT;
+   END;
+   WHEN('76','77','78') DO;
+       BNMCODE = BIC||'76000000Y'; OUTPUT;
+   END;
+   WHEN('79') DO;
+       BNMCODE = BIC||'79000000Y'; OUTPUT;
+   END;
+   WHEN('81','82','83','84') DO;
+       BNMCODE = BIC||'81000000Y'; OUTPUT;
+   END;
+   WHEN('85','86','87','88','89','90','91','92','95','96','98',
+        '99') DO;
+       BNMCODE = BIC||'85000000Y'; OUTPUT;
+   END;
+   OTHERWISE;
+   END;
+RUN;
+*;
+/*****************************************************************/
+/** SUMMARY BY CUSTOMER CODE                                    **/
+/*****************************************************************/
+PROC SUMMARY DATA = ALWDEPT NWAY;
+   CLASS BNMCODE AMTIND;
+   VAR AMOUNT;
+   OUTPUT OUT = ALWDEPT (DROP=_TYPE_ _FREQ_)
+          SUM =;
+RUN;
+*;
+PROC APPEND DATA=ALWDEPT BASE=BNM.FALW&REPTMON&NOWK; RUN;
+*;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWDEPT; RUN;
+*;
+/***********************************************************/
+/** RM INTEREST PAYABLE NIE TO NON-RESIDENTS              **/
+/***********************************************************/
+PROC SUMMARY DATA=BNM.FDWKLY NWAY;
+CLASS BIC CUSTCODE AMTIND;
+VAR INTPAY;
+OUTPUT OUT=ALW
+       SUM=AMOUNT;
+RUN;
+
+DATA ALWDEPT (KEEP=BNMCODE AMOUNT AMTIND);
+  LENGTH BNMCODE $14.;
+  SET ALW;
+  IF CUSTCODE IN ('80','81','82','83','84','85','86','87','88','89',
+                  '90','91','92','95','96','98','99') THEN DO;
+     IF BIC IN ('42130','42133') THEN BNMCODE='4911080000000Y';
+     ELSE IF BIC IN ('42132','42199') THEN BNMCODE='4929980000000Y';
+     IF BNMCODE ^= ' ' THEN OUTPUT;
+  END;
+  ELSE DO;
+     IF BIC IN ('42130','42133') THEN BNMCODE='4911050000000Y';
+     ELSE IF BIC IN ('42132','42199') THEN BNMCODE='4929950000000Y';
+     IF BNMCODE ^= ' ' THEN OUTPUT;
+  END;
+RUN;
+
+PROC APPEND DATA=ALWDEPT BASE=BNM.FALW&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWDEPT; RUN;
+
+/*********************************************************************/
+/* RM FD ACCEPTED BY ORIGINAL MATURITY                               */
+/* NOTE : TAKE BOTH 'O' AND 'D' OPENIND BECAUSE                      */
+/*        ORIGINAL MATURITY = OVERDUE + REMAINING MATURITY           */
+/*             'O' & 'D'    =  'D'    +      'O'                     */
+/*********************************************************************/
+PROC SUMMARY DATA = BNM.FDWKLY NWAY;
+     CLASS BIC OPENIND TERM INTPLAN CUSTCODE AMTIND;
+     VAR CURBAL;
+     WHERE BIC IN ('42130','42132','42133','42199');
+     OUTPUT OUT = ALW
+            SUM = AMOUNT;
+RUN;
+
+DATA ALWDEPT (KEEP=BNMCODE AMTIND AMOUNT);
+   LENGTH BNMCODE $14.;
+   SET ALW;
+
+   IF 272<=INTPLAN<=295 THEN OM=PUT(INTPLAN,RMFDORGMT.);
+   ELSE OM=PUT(TERM,FDORGMT.);
+   SELECT(CUSTCODE);
+   WHEN('01','02','03','11','12','79','57','75') DO;
+      BNMCODE=BIC||CUSTCODE||OM||'0000Y'; OUTPUT;
+   END;
+   WHEN('20','13','17','30','31',
+        '04','05','06','32','33','34','35',
+        '36','37','38','39','40','45') DO;
+      BNMCODE = BIC||'20'||OM||'0000Y'; OUTPUT;
+   END;
+   WHEN('60','61','62','63','64','65','66','67','68','69',
+        '41','42','43','44','46','47','48','49','51',
+        '52','53','54','59') DO;
+      BNMCODE = BIC||'60'||OM||'0000Y'; OUTPUT;
+   END;
+   WHEN('70','71','72','73','74') DO;
+      BNMCODE = BIC||'70'||OM||'0000Y'; OUTPUT;
+   END;
+   WHEN('76','77','78') DO;
+      BNMCODE = BIC||'76'||OM||'0000Y'; OUTPUT;
+   END;
+   WHEN('80','81','82','83','84','85','86','87','88','89','90','91',
+        '92','95','96','98','99') DO;
+      BNMCODE = BIC||'80'||OM||'0000Y'; OUTPUT;
+   END;
+   OTHERWISE;
+   END;
+   /*
+   IF OPENIND='D' THEN DO;
+      OM='51';
+      BNMCODE=SUBSTR(BNMCODE,1,7)||OM||'0000Y'; OUTPUT;
+   END;
+   */
+RUN;
+*;
+PROC SUMMARY DATA=ALWDEPT NWAY;
+CLASS BNMCODE AMTIND;
+VAR   AMOUNT;
+OUTPUT OUT=ALWDEPT (DROP=_TYPE_ _FREQ_)
+       SUM=AMOUNT;
+RUN;
+*;
+PROC APPEND DATA=ALWDEPT BASE=BNM.FALW&REPTMON&NOWK; RUN;
+*;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWDEPT; RUN;
+*;
+/*********************************************************************/
+/* RM FD ACCEPTED BY REMAINING MATURITY                              */
+/* FX FD REMAINING MATURITY                                          */
+/* BIC - '42630' (ESMR2014-510)                                      */
+/*********************************************************************/
+*;
+%MACRO DCLVAR;
+   RETAIN RD1-RD12 FD1-FD12 31 RD2 FD2 28 RD4 RD6 RD9 RD11
+          FD4 FD6 FD9 FD11 30 RPYR RPMTH RPDAY;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY FDDAYS FD1-FD12;
+%MEND DCLVAR;
+*;
+%MACRO REMMTH;
+   FDYR  = YEAR(FDDATE);
+   FDMTH = MONTH(FDDATE);
+   FDDAY = DAY(FDDATE);
+   IF FDMTH = 2 THEN
+      IF MOD(FDYR,4) = 0 THEN FD2 = 29;
+      ELSE FD2 = 28;
+   IF FDDAY > RPDAYS(RPMTH) THEN FDDAY=RPDAYS(RPMTH);
+   REMY = FDYR - RPYR;
+   REMM = FDMTH - RPMTH;
+   REMD = FDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+
+DATA ALW (KEEP=BIC CUSTCODE REMMTH CURBAL AMTIND);
+   %DCLVAR;
+   SET BNM.FDWKLY;
+   WHERE BIC IN ('42130','42132','42133','42199','42630');
+   IF _N_ = 1 THEN DO;
+      REPTDATE = INPUT("&RDATE",DDMMYY8.);
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF RPMTH = 2 THEN
+         IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+         ELSE RD2 = 28;
+   END;
+   /* IF OPENIND='O'; */
+      FDDATE = INPUT(PUT(MATDATE,Z8.),YYMMDD8.);
+      %REMMTH;
+RUN;
+
+PROC SUMMARY DATA=ALW NWAY;
+   CLASS BIC CUSTCODE REMMTH AMTIND;
+   VAR   CURBAL;
+   OUTPUT OUT=ALW SUM=AMOUNT;
+RUN;
+
+DATA ALWDEPT (KEEP=BNMCODE AMTIND AMOUNT);
+   LENGTH BNMCODE $14.;
+   SET ALW;
+
+   RM=PUT(REMMTH,FDRMMT.);
+
+   SELECT(CUSTCODE);
+   WHEN('01','02','11','12','79','03','57','75') DO;
+      BNMCODE=BIC||CUSTCODE||RM||'0000Y'; OUTPUT;
+   END;
+   WHEN('20','13','17','30','31',
+        '04','05','06','32','33','34','35',
+        '36','37','38','39','40','45') DO;
+       BNMCODE = BIC||'20'||RM||'0000Y'; OUTPUT;
+   END;
+   WHEN('60','61','62','63','64','65','66','67','68','69',
+        '41','42','43','44','46','47','48','49','51',
+        '52','53','54','59') DO;
+      BNMCODE = BIC||'60'||RM||'0000Y'; OUTPUT;
+   END;
+   WHEN('70','71','72','73','74') DO;
+      BNMCODE = BIC||'70'||RM||'0000Y'; OUTPUT;
+   END;
+   WHEN('76','77','78') DO;
+      BNMCODE = BIC||'76'||RM||'0000Y'; OUTPUT;
+   END;
+   WHEN('80','81','82','83','84','85','86','87','88','89','90','91',
+        '92','95','96','98','99') DO;
+      BNMCODE = BIC||'80'||RM||'0000Y'; OUTPUT;
+   END;
+   OTHERWISE;
+   END;
+RUN;
+*;
+PROC APPEND DATA=ALWDEPT BASE=BNM.FALW&REPTMON&NOWK; RUN;
+*;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWDEPT; RUN;
+*;
+/*********************************************************************/
+/** CONSOLIDATE BY CUSTOMER CODE                                    **/
+/*********************************************************************/
+*;
+PROC SORT DATA=BNM.FALW&REPTMON&NOWK;
+  BY BNMCODE;
+*;
