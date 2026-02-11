@@ -1,0 +1,11 @@
+/** PROGRAM : WISDPBBF                            **/
+/** DATE    : 14/05/97                            **/
+/** PURPOSE : TO LIST THE SET_ID FROM RDAL1 TO BE **/
+/**           USED FOR MIS REPORTING              **/
+
+DATA SETITEMS;
+INPUT SET_ID $ 1-14 ;
+CARDS;
+R139111CASH
+;
+RUN;
