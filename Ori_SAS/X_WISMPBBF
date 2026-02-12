@@ -1,0 +1,16 @@
+/** PROGRAM : WISMPBBF                            **/
+/** DATE    : 14/05/97                            **/
+/** PURPOSE : TO LIST THE SET_ID FROM RDAL1 AND   **/
+/**           RDAL2 USED FOR MIS REPORTING        **/
+
+DATA SETITEMS;
+INPUT SET_ID $ 1-14 ;
+CARDS;
+R142150NIDI
+R142170WT
+R142510FDA
+R1423001DEPA
+R249299OL
+R249170IIS
+;
+RUN;
