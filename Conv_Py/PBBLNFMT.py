@@ -585,11 +585,13 @@ __all__ = [
     'format_collcd',
     'format_riskcd',
     'format_busind',
+    
     # Helper functions
     'is_more_plan',
     'is_hire_purchase',
     'is_islamic_product',
     'is_fcy_product',
+    
     # Product lists
     'MORE_PLAN',
     'MORE_ISLAM',
