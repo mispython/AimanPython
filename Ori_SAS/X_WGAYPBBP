@@ -1,0 +1,382 @@
+/*****************************************************/
+/*  PROGRAMME : WGAYPBBP                             */
+/*  DATE      : 14.04.97                             */
+/*  FUNCTION  : RGAC REPORT                          */
+/*  AMENDED   : 16.09.97                             */
+/*              TO PROVIDE VARIANCE FOR RGAC ITEMS   */
+/*                                                   */
+/*****************************************************/
+
+%INC PGM(WGAYPBBF);
+
+PROC FORMAT CNTLIN=WGAY;
+RUN;
+
+PROC SORT DATA=GAY.RGR115 OUT=RGR115 NODUPKEYS;
+BY SET_ID;
+RUN;
+
+/******************************************************************/
+/* CREATES TABLE RGR913 WHICH COMBINES RGR115 AND RGR913          */
+/*   RGR115 HAS SET_ID, USERCD                                    */
+/*   RGR913 HAS ACCT_NO, SET_ID                                   */
+/******************************************************************/
+
+PROC SQL;
+  CREATE TABLE RGR913 AS
+  SELECT T1.SET_ID, T1.USERCD, T2.ACCT_NO FROM
+  RGR115 T1, GAY.RGR913 T2
+  WHERE T1.SET_ID = T2.SET_ID;
+QUIT;
+
+/******************************************************************/
+/* CREATES GAYGL WHICH COMBINES TABLE RGR913 AND RGGL4000         */
+/*   RGGL4000 HAS ACCT_NO, ACKIND, GLAMT                          */
+/******************************************************************/
+
+PROC SQL;
+  CREATE TABLE BNM.GAYGL&REPTMON&NOWK AS
+  SELECT T1.SET_ID, T1.USERCD,
+         T2.ACCT_NO, T2.GLAMT,
+         SUBSTR(T2.ACCT_NO, 8, 5) AS ACK FROM
+  RGR913 T1, GAY.RGGL4000 T2
+  WHERE T1.ACCT_NO = T2.ACCT_NO
+    AND T2.ACKIND = 'N';
+QUIT;
+
+PROC SUMMARY DATA=BNM.GAYGL&REPTMON&NOWK NWAY;
+CLASS SET_ID USERCD ACK;
+VAR GLAMT;
+OUTPUT OUT=GAYGL&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=GLAMT;
+RUN;
+
+PROC SUMMARY DATA=GAY.RGGL4100 NWAY;
+CLASS ACCT_NO ACKIND;
+VAR JEAMT;
+OUTPUT OUT=RGGL4100 (DROP=_TYPE_ _FREQ_)
+       SUM=JEAMT;
+RUN;
+
+/******************************************************************/
+/* CREATES GAYJE WHICH COMBINES TABLE RGR913 AND RGGL4100         */
+/*   RGGL4100 HAS ACCT_NO, EFFDATE, JEAMT, ACKIND                 */
+/******************************************************************/
+
+PROC SQL;
+  CREATE TABLE BNM.GAYJE&REPTMON&NOWK AS
+  SELECT T1.SET_ID, T1.USERCD,
+         T2.ACCT_NO, T2.JEAMT,
+         SUBSTR(T2.ACCT_NO, 8, 5) AS ACK FROM
+  RGR913 T1, RGGL4100 T2
+  WHERE T1.ACCT_NO = T2.ACCT_NO
+    AND T2.ACKIND = 'N';
+QUIT;
+
+PROC SUMMARY DATA=BNM.GAYJE&REPTMON&NOWK NWAY;
+CLASS SET_ID USERCD ACK;
+VAR JEAMT;
+OUTPUT OUT=GAYJE&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=JEAMT;
+RUN;
+
+/******************************************************************/
+/* CREATES GAY WHICH COMBINES GAYGL AND GAYJE FOR RGAC REPORT     */
+/******************************************************************/
+
+DATA BNM.GAY&REPTMON&NOWK (KEEP=BNMCODE SET_ID AMOUNT);
+  LENGTH SET_ID $14. BNMCODE $14. ;
+  MERGE GAYGL&REPTMON&NOWK
+        GAYJE&REPTMON&NOWK;
+  BY SET_ID USERCD ACK;
+  CURBAL=SUM(GLAMT, JEAMT);
+  IF FIRST.SET_ID THEN AMOUNT=0;
+  SELECT(USERCD);
+    WHEN('6666') IF CURBAL < 0 THEN CURBAL=0;
+    WHEN('7777') IF CURBAL > 0 THEN CURBAL=0;
+    WHEN('8888') DO;
+                 IF CURBAL > 0 THEN CURBAL=0;
+                 ELSE CURBAL=(-1)*CURBAL;
+                 END;
+    WHEN('9999') CURBAL=(-1)*CURBAL;
+    OTHERWISE;
+  END;
+  AMOUNT+CURBAL;
+  BNMCODE=PUT(SET_ID, $BNMCODE.);
+  IF LAST.SET_ID;
+RUN;
+
+PROC SUMMARY DATA=BNM.GAY&REPTMON&NOWK NWAY;
+CLASS BNMCODE;
+VAR AMOUNT;
+OUTPUT OUT=BNM.GAY&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=AMOUNT;
+RUN;
+
+PROC SORT DATA=BNM.GAY&REPTMON&NOWK(RENAME=(BNMCODE=ITCODE))
+          OUT=BNM.GAY&REPTMON&NOWK;
+BY ITCODE;
+RUN;
+
+PROC SORT DATA=WGAY(RENAME=(LABEL=ITCODE))
+          OUT=WGAY(KEEP=ITCODE) NODUPKEYS;
+BY ITCODE;
+RUN;
+
+DATA BNM.GAY&REPTMON&NOWK (KEEP=ITCODE FLAG AMOUNT);
+  MERGE WGAY (IN=A)
+        BNM.GAY&REPTMON&NOWK (IN=B);
+  BY ITCODE;
+  IF A AND NOT B THEN AMOUNT=0;
+  FLAG='E';
+RUN;
+
+DATA BNM.CAY&REPTMON&NOWK (KEEP=ITCODE FLAG AMOUNT);
+  SET BNM.GAY&REPTMON&NOWK;
+RUN;
+
+OPTIONS NOCENTER NONUMBER NODATE;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'REPORT ON GLOBAL ASSETS AND CAPITAL';
+TITLE3 'REPORT DATE : ' &RDATE ;
+TITLE4;
+PROC PRINT DATA=BNM.GAY&REPTMON&NOWK;
+VAR ITCODE AMOUNT;
+FORMAT AMOUNT COMMA25.2;
+RUN;
+
+/******************************************************************/
+/* THIS PART IS FOR CURRENT CYCLE'S FIGURE FOR VARIANCE REPORT    */
+/******************************************************************/
+
+DATA CURRGAY (KEEP=SET_ID USERCD ACK CURBAL);
+  LENGTH SET_ID $14.;
+  MERGE GAYGL&REPTMON&NOWK
+        GAYJE&REPTMON&NOWK;
+  BY SET_ID USERCD ACK;
+  CURBAL=SUM(GLAMT, JEAMT);
+  SELECT(USERCD);
+    WHEN('6666') IF CURBAL < 0 THEN CURBAL=0;
+    WHEN('7777') IF CURBAL > 0 THEN CURBAL=0;
+    WHEN('8888') DO;
+                 IF CURBAL > 0 THEN CURBAL=0;
+                 ELSE CURBAL=(-1)*CURBAL;
+                 END;
+    WHEN('9999') CURBAL=(-1)*CURBAL;
+    OTHERWISE;
+  END;
+RUN;
+
+PROC SORT DATA=CURRGAY
+          OUT=CURRGAY;
+   BY ACK;
+RUN;
+
+PROC SORT DATA=GAY.RGR901 (RENAME=(SEG_VAL=ACK SEG_DESC=DESC))
+  OUT=RGR901 NODUPKEYS;
+  BY ACK;
+RUN;
+
+DATA CURRGAY (KEEP=SET_ID USERCD ACK DESC CURBAL);
+   MERGE CURRGAY (IN=A)
+         RGR901  (IN=B);
+   BY ACK;
+   IF A;
+RUN;
+
+PROC SORT DATA=CURRGAY
+          OUT=CURRGAY;
+   BY SET_ID USERCD ACK;
+RUN;
+
+PROC DATASETS LIB=WORK NOLIST;
+  DELETE RGR115 RGR913 RGGL4100 RGR901;
+RUN;
+
+PROC DATASETS LIB=BNM NOLIST;
+  DELETE GAYGL&REPTMON&NOWK
+         GAYJE&REPTMON&NOWK;
+RUN;
+
+/******************************************************************/
+/* STILL ON VARIANCE REPORT LOGIC. THIS TIME TO GET PREVIOUS      */
+/* CYCLE'S FIGURE, COMBINE CURRENT AND PREVIOUS VALUES BEFORE     */
+/* PRINTING OUT VARIANCE REPORT.                                  */
+/******************************************************************/
+
+PROC SORT DATA=GAY2.RGR115 OUT=RGR115 NODUPKEYS;
+BY SET_ID;
+RUN;
+
+/******************************************************************/
+/* CREATES TABLE RGR913 WHICH COMBINES RGR115 AND RGR913          */
+/*   RGR115 HAS SET_ID, USERCD                                    */
+/*   RGR913 HAS ACCT_NO, SET_ID                                   */
+/******************************************************************/
+
+PROC SQL;
+  CREATE TABLE RGR913 AS
+  SELECT T1.SET_ID, T1.USERCD, T2.ACCT_NO FROM
+  RGR115 T1, GAY2.RGR913 T2
+  WHERE T1.SET_ID = T2.SET_ID;
+QUIT;
+
+/******************************************************************/
+/* CREATES GAYGL WHICH COMBINES TABLE RGR913 AND RGGL4000         */
+/*   RGGL4000 HAS ACCT_NO, ACKIND, GLAMT                          */
+/******************************************************************/
+
+PROC SQL;
+  CREATE TABLE BNM.GAYGL&REPTMON&NOWK AS
+  SELECT T1.SET_ID, T1.USERCD,
+         T2.ACCT_NO, T2.GLAMT,
+         SUBSTR(T2.ACCT_NO, 8, 5) AS ACK FROM
+  RGR913 T1, GAY2.RGGL4000 T2
+  WHERE T1.ACCT_NO = T2.ACCT_NO
+    AND T2.ACKIND = 'N';
+QUIT;
+
+PROC SUMMARY DATA=BNM.GAYGL&REPTMON&NOWK NWAY;
+CLASS SET_ID USERCD ACK;
+VAR GLAMT;
+OUTPUT OUT=GAYGL&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=GLAMT;
+RUN;
+
+PROC SUMMARY DATA=GAY2.RGGL4100 NWAY;
+CLASS ACCT_NO ACKIND;
+VAR JEAMT;
+OUTPUT OUT=RGGL4100 (DROP=_TYPE_ _FREQ_)
+       SUM=JEAMT;
+RUN;
+
+/******************************************************************/
+/* CREATES GAYJE WHICH COMBINES TABLE RGR913 AND RGGL4100         */
+/*   RGGL4100 HAS ACCT_NO, EFFDATE, JEAMT, ACKIND                 */
+/******************************************************************/
+
+PROC SQL;
+  CREATE TABLE BNM.GAYJE&REPTMON&NOWK AS
+  SELECT T1.SET_ID, T1.USERCD,
+         T2.ACCT_NO, T2.JEAMT,
+         SUBSTR(T2.ACCT_NO, 8, 5) AS ACK FROM
+  RGR913 T1, RGGL4100 T2
+  WHERE T1.ACCT_NO = T2.ACCT_NO
+    AND T2.ACKIND = 'N';
+QUIT;
+
+PROC SUMMARY DATA=BNM.GAYJE&REPTMON&NOWK NWAY;
+CLASS SET_ID USERCD ACK;
+VAR JEAMT;
+OUTPUT OUT=GAYJE&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=JEAMT;
+RUN;
+
+DATA PREVGAY (KEEP=SET_ID USERCD ACK PREVBAL);
+  LENGTH SET_ID $14.;
+  MERGE GAYGL&REPTMON&NOWK
+        GAYJE&REPTMON&NOWK;
+  BY SET_ID USERCD ACK;
+  PREVBAL=SUM(GLAMT, JEAMT);
+  SELECT(USERCD);
+    WHEN('6666') IF PREVBAL < 0 THEN PREVBAL=0;
+    WHEN('7777') IF PREVBAL > 0 THEN PREVBAL=0;
+    WHEN('8888') DO;
+                 IF PREVBAL > 0 THEN PREVBAL=0;
+                 ELSE PREVBAL=(-1)*PREVBAL;
+                 END;
+    WHEN('9999') PREVBAL=(-1)*PREVBAL;
+    OTHERWISE;
+  END;
+RUN;
+
+PROC SORT DATA=PREVGAY
+          OUT=PREVGAY;
+   BY ACK;
+RUN;
+
+PROC SORT DATA=GAY2.RGR901 (RENAME=(SEG_VAL=ACK SEG_DESC=DESC))
+  OUT=RGR901 NODUPKEYS;
+  BY ACK;
+RUN;
+
+DATA PREVGAY (KEEP=SET_ID USERCD ACK DESC PREVBAL);
+   MERGE PREVGAY (IN=A)
+         RGR901  (IN=B);
+   BY ACK;
+   IF A;
+RUN;
+
+PROC SORT DATA=PREVGAY
+          OUT=PREVGAY;
+   BY SET_ID USERCD ACK;
+RUN;
+
+DATA TOTVGAY (KEEP=SET_ID USERCD ACK DESC CURBAL PREVBAL);
+  MERGE CURRGAY (IN=A)
+        PREVGAY (IN=B);
+  BY SET_ID USERCD ACK;
+  IF A AND NOT B THEN PREVBAL = 0;
+  IF B AND NOT A THEN CURBAL = 0;
+RUN;
+
+PROC SORT DATA=TOTVGAY
+          OUT=TOTVGAY;
+   BY SET_ID USERCD ACK;
+RUN;
+
+TITLE;
+DATA _NULL_;
+  SET TOTVGAY;
+  BY SET_ID USERCD ACK;
+  FILE PRINT HEADER = NEWPAGE;
+
+  IF FIRST.SET_ID THEN DO;
+     SETAMT1 = 0;
+     SETAMT2 = 0;
+     SETAMT3 = 0;
+  END;
+
+  VARIANCE = CURBAL - PREVBAL;
+  SETAMT1+CURBAL;
+  SETAMT2+PREVBAL;
+  SETAMT3+VARIANCE;
+
+  PUT @1 SET_ID 12. @15 USERCD 8. @25 ACK  8.
+      @35 DESC      @70 CURBAL COMMA18.2
+      @90 PREVBAL COMMA18.2 @110 VARIANCE COMMA18.2;
+
+  IF LAST.SET_ID THEN DO;
+     PUT @70 '---------------------------------------'
+         @110 '--------------------';
+     PUT @70 SETAMT1 COMMA18.2 @90 SETAMT2 COMMA18.2
+         @110 SETAMT3 COMMA18.2;
+     PUT @70 '======================================='
+         @110 '=====================';
+     PUT; PUT;
+     PUT;
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @1   'PROGRAM-ID : WGAYPBBP'
+        @40  &SDESC
+        @118 'PAGE NO.: ' PAGECNT;
+    PUT @39  "VARIANCE REPORT FOR RGAC FOR &RDATE";
+    PUT; PUT;
+    PUT @1   'SET ID'
+        @14  'USERCD'
+        @25  'ACK'
+        @35  'DESCRIPTION'
+        @73  'CURRENT BALANCE'
+        @92  'PREVIOUS BALANCE'
+        @120 'VARIANCE';
+    PUT @1   '----------------------------------------'
+        @41  '----------------------------------------'
+        @81  '----------------------------------------'
+        @121 '------------';
+    PUT; PUT;
+  RETURN;
+RUN;
+
