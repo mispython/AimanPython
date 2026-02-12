@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""
+Program: WGAYPBBF
+
+Purpose:
+- Build the WGAY format table from the in-stream CARDS data.
+- Persist the output as parquet for downstream processing.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import polars as pl
+
+# =============================================================================
+# CONFIGURATION (defined early)
+# =============================================================================
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+OUTPUT_DIR = DATA_DIR / "parquet"
+OUTPUT_FILE = OUTPUT_DIR / "WGAY.parquet"
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# =============================================================================
+# WGAY rows from SAS CARDS section
+# Columns follow SAS INPUT positions:
+#   START   $ 1-14
+#   LABEL   $ 15-28
+#   FMTNAME $ 30-37
+#   TYPE    $ 38
+# =============================================================================
+WGAY_ROWS: list[tuple[str, str, str, str]] = [
+    ("C-53912", "3912000000000G", "BNMCODE", "C"),
+    ("C-39110", "3911000000000G", "BNMCODE", "C"),
+    ("C-39610", "3961000000000G", "BNMCODE", "C"),
+    ("C-32110", "3211001000000G", "BNMCODE", "C"),
+    ("C-32120", "3212001000000G", "BNMCODE", "C"),
+    ("C-37200", "3720000000000G", "BNMCODE", "C"),
+    ("C-37250", "3725000000000G", "BNMCODE", "C"),
+    ("C-30309", "3030900000000G", "BNMCODE", "C"),
+    ("C-32140", "3214013000000G", "BNMCODE", "C"),
+    ("C-33140", "3314013000000G", "BNMCODE", "C"),
+    ("C-37500", "3750000000000G", "BNMCODE", "C"),
+    ("C-37030", "3703000000000G", "BNMCODE", "C"),
+    ("C-37040", "3704000000000G", "BNMCODE", "C"),
+    ("C-30325", "3032500000000G", "BNMCODE", "C"),
+    ("C-30327", "3032700000000G", "BNMCODE", "C"),
+    ("C-30331", "3033100000000G", "BNMCODE", "C"),
+    ("C-30333", "3033300000000G", "BNMCODE", "C"),
+    ("C-30339", "3033900000000G", "BNMCODE", "C"),
+    ("C-30342", "3034200000000G", "BNMCODE", "C"),
+    ("C-37070", "3707000000000G", "BNMCODE", "C"),
+    ("C-30355", "3035500000000G", "BNMCODE", "C"),
+    ("C-30357", "3035700000000G", "BNMCODE", "C"),
+    ("C-30359", "3035900000000G", "BNMCODE", "C"),
+    ("C-30369", "3036900000000G", "BNMCODE", "C"),
+    ("C-41101", "4110100000000G", "BNMCODE", "C"),
+    ("C-41102", "4110200000000G", "BNMCODE", "C"),
+    ("C-41103", "4110300000000G", "BNMCODE", "C"),
+    ("C-41104", "4110400000000G", "BNMCODE", "C"),
+    ("C-41105", "4110500000000G", "BNMCODE", "C"),
+    ("C-41107", "4110700000000G", "BNMCODE", "C"),
+    ("C-49160", "4916000000000G", "BNMCODE", "C"),
+    ("C-54120", "5412000000000G", "BNMCODE", "C"),
+    ("C-34152", "3415200000000G", "BNMCODE", "C"),
+    ("C-38250", "3825000000000G", "BNMCODE", "C"),
+    ("C-00000", "3000901000000G", "BNMCODE", "C"),
+    ("C-00001", "3000971000000G", "BNMCODE", "C"),
+    ("C-38200", "3820000000000G", "BNMCODE", "C"),
+    ("C-37270", "3727000000000G", "BNMCODE", "C"),
+    ("C-38270", "3827000000000G", "BNMCODE", "C"),
+    ("C-37280", "3728000000000G", "BNMCODE", "C"),
+    ("C-38280", "3828000000000G", "BNMCODE", "C"),
+    ("C-11111", "3000913000000G", "BNMCODE", "C"),
+    ("C-11112", "3000917000000G", "BNMCODE", "C"),
+    ("C-38500", "3850000000000G", "BNMCODE", "C"),
+    ("C-38030", "3803000000000G", "BNMCODE", "C"),
+    ("C-38040", "3804000000000G", "BNMCODE", "C"),
+    ("C-30311", "3031110000000G", "BNMCODE", "C"),
+    ("C-22222", "3000910000000G", "BNMCODE", "C"),
+]
+
+
+def build_wgay_df() -> pl.DataFrame:
+    """Create the WGAY format dataset equivalent to the SAS DATA step output."""
+    return pl.DataFrame(
+        WGAY_ROWS,
+        schema=["START", "LABEL", "FMTNAME", "TYPE"],
+        orient="row",
+    )
+
+
+def main() -> None:
+    wgay_df = build_wgay_df()
+    wgay_df.write_parquet(OUTPUT_FILE)
+    print(f"WGAY format dataset written to: {OUTPUT_FILE}")
+    print(f"Row count: {wgay_df.height}")
+
+
+if __name__ == "__main__":
+    main()
