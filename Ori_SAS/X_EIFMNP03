@@ -1,0 +1,892 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIFMNP03                                          |
+ |  DATE    : 12.03.98                                          |
+ |  MODIFY  : ESMR 2004-720, 2004-579, 2006-1048                |
+ |  REPORT  : MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH   |
+ |            ENDING                                            |
+ +--------------------------------------------------------------+;
+OPTIONS NOCENTER YEARCUTOFF=1950;
+*;
+%INC PGM(PBBLNFMT);
+%INC PGM(PBBELF);
+*;
+PROC FORMAT;
+   VALUE LNTYP 128,130,983             = 'HPD AITAB'
+               700,705,380,381,993,996,
+               720,725                 = 'HPD CONVENTIONAL'
+               200-299                 = 'HOUSING LOANS'
+               OTHER   = 'OTHERS';
+*;
+*------------------------------------------------*
+*  MACRO FOR CALCULATING NEXT BLDATE             *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30;
+   ARRAY LDAY D1-D12;
+%MEND DCLVAR;
+*;
+%MACRO NXTBLDT;
+   DD = DAY(ISSDTE);
+   MM = MONTH(BLDATE) + 1;
+   YY = YEAR(BLDATE);
+   IF MM > 12 THEN DO;
+      MM = 1; YY + 1;
+   END;
+   IF MM = 2 THEN
+      IF MOD(YY,4) = 0 THEN D2 = 29;
+      ELSE D2 = 28;
+   IF DD > LDAY(MM) THEN DD = LDAY(MM);
+   BLDATE = MDY(MM,DD,YY);
+%MEND NXTBLDT;
+*;
+  /*
+*------------------------------------------------*
+*  MACRO FOR CALCULATING OVERDUE INTEREST        *
+*------------------------------------------------*;
+%MACRO OVINT(I);
+   IF LOANTYPE = 705 THEN DO;
+      IF NOTETERM > 12 THEN TERM = 12;
+      ELSE TERM = NOTETERM;
+      TRATE = NOTETERM*INTRATE;
+      APR = TRATE*(300*TERM+TRATE)/
+            ((NOTETERM*TRATE)+(150*TERM*(NOTETERM+1)))*12/TERM;
+      RATE = (APR+1)/100;
+   END;
+   ELSE RATE = 8/100;
+   BILAMT = BILPAY;
+   BILAMTL = ORGBAL-BILPAY*(NOTETERM-1);
+   OITEMP = 0; BLDTE = BLDATE;
+   DO REMMTH = REMMTH&I TO REMMTH2 BY -1;
+      IF REMMTH = 0 THEN AMT = BILAMTL;
+      ELSE AMT = BILAMT;
+      %NXTBLDT
+      OITEMP + AMT*RATE*(REPTDATE-BLDATE)/365;
+   END;
+   BLDATE = BLDTE;
+%MEND OVINT;
+*; */
+DATA REPTDATE;
+   SET NPL.REPTDATE;
+   IF MONTH(REPTDATE) = 1 THEN MM1 = 12;
+   ELSE MM1 = MONTH(REPTDATE)-1;
+   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('PREVMON',PUT(MM1,Z2.));
+RUN;
+*;
+*------------------------------------------------*
+*  MERGE WITH WRITTEN OFF ACCOUNT                *
+*------------------------------------------------*;
+PROC SORT DATA=NPL.LOAN&REPTMON;BY ACCTNO;
+PROC SORT DATA=NPL.WIIS;BY ACCTNO;
+DATA LOANWOFF;
+   MERGE NPL.LOAN&REPTMON NPL.WIIS (IN=AA DROP=NOTENO NTBRCH);
+   BY ACCTNO;
+   IF LOANTYPE IN (380,381) THEN FEEAMT = FEETOT2;
+   IF AA THEN WRITEOFF = 'Y';ELSE WRITEOFF = 'N';
+   IF LOANTYPE IN (983,993) THEN WDOWNIND = 'N';
+   IF IISP = . THEN IISP = 0;
+   IF OIP = . THEN OIP = 0;
+   IF EARNTERM IN (0,.) THEN EARNTERM = NOTETERM;
+RUN;
+*------------------------------------------------*
+*  CALCULATE IIS FOR EXISTING NPL ACCOUNTS       *
+*------------------------------------------------*;
+DATA LOAN1;
+   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME NETPROC CURBAL BORSTAT DAYS
+        IIS UHC NETBAL IISP SUSPEND RECOVER RECC IISPW OIP OISUSP OI
+        OIRECV OIRECC OIW TOTIIS LOANTYP EXIST COSTCTR PENDBRH USER5
+        WDOWNIND RESCHEIND ACCRUAL;
+   LENGTH LOANTYP $20;
+   RETAIN STMTH 1 STYR;
+   %DCLVAR
+  * SET NPL.LOAN&REPTMON;
+   SET LOANWOFF;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      STYR = YEAR(REPTDATE);
+   END;
+   IF EXIST = 'Y';
+   IIS = 0; SUSPEND = 0; UHC = 0; OI = 0; OISUSP = 0; RECOVER = 0;
+   OIRECV = 0; OIRECC=0; OIW = 0;
+   IF IISP = . THEN IISP = 0;
+   IF OIP = . THEN OIP = 0;
+   IF IISPW = . THEN IISPW = 0;
+   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
+   IF BLDATE > 0 & TERMCHG > 0 THEN DO;
+      IF DAYS >  89 | BORSTAT IN ('F','R','I')
+      OR (USER5 = 'N' AND LOANTYPE NOT IN (983,993)) THEN DO;
+         REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
+                   MONTH(BLDATE) - MONTH(ISSDTE) + 1);
+         REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
+                   MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
+         REMMTHS = EARNTERM - ((STYR - YEAR(ISSDTE))*12 +
+                   STMTH - MONTH(ISSDTE) + 1);
+         IF REMMTH2 < 0 THEN REMMTH2 = 0;
+         IF LOANTYPE IN (128,130) THEN REMMTH1 = REMMTH1 - 3;
+         ELSE REMMTH1 = REMMTH1 - 1;
+         IF REMMTH1 >= REMMTH2 THEN DO;
+            DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
+               IIS + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+            END;
+         END;
+       *  OI = FEETOT2;
+         OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
+         DO REMMTH = REMMTHS TO REMMTH2 BY -1;
+            SUSPEND + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+         END;
+         IF LOANTYPE NOT IN (128,130) THEN DO;
+       OISUSP = SUM(FEEAMT,(-1)*FEEAMTA,FEEAMT5);
+         END;
+         IF REMMTH2 > 0 THEN
+            UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+      END;
+   END;
+   ELSE IF DAYS >  89 | BORSTAT IN ('F','R','I')
+   OR (USER5 = 'N' AND LOANTYPE NOT IN (983,993)) THEN DO;
+       OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
+       OISUSP = SUM(FEEAMT,(-1)*FEEAMTA,FEEAMT5);
+   END;
+   IF CURBAL = . THEN CURBAL = 0;
+   NETBAL = CURBAL - UHC;
+   IF NETBAL <= IISP THEN
+      IF DAYS >  89 | BORSTAT IN ('F','R','I')
+      OR USER5 = 'N' THEN
+         IIS = NETBAL;
+   IF BORSTAT = 'W' THEN DO;
+      IISPW = IISP; OIW = OIP;
+   END;
+   ELSE DO;
+      RECOVER = IISP + SUSPEND - IIS;
+      IF RECOVER < 0 THEN DO;
+         SUSPEND = SUSPEND - RECOVER;
+         RECOVER = 0;
+      END;
+      IF RECOVER > IISP THEN DO;
+         RECC = RECOVER - IISP;
+         RECOVER = IISP;
+      END;
+      IF LOANTYPE NOT IN (128,130) THEN DO;
+         OIRECV = OIP - OI;
+         IF OIRECV < 0 THEN DO;
+            OISUSP = OISUSP - OIRECV;
+            OIRECV = 0;
+         END;
+         IF OISUSP LT 0 THEN OIRECV = OIRECV - OISUSP;
+         IF OIRECV > OIP THEN DO;
+            OIRECC = OIRECV - OIP;
+            OIRECV = OIP;
+         END;
+      END;
+   END;
+   IF TERMCHG = 0 THEN DO;
+      IF BORSTAT IN ('R') THEN NETEXP = CURBAL - IISP - MARKETVL;
+         ELSE NETEXP = CURBAL - IISP;
+      IF (NETEXP > 0 & DAYS > 89) | BORSTAT IN ('R') THEN DO;
+         IIS = RECOVER; RECOVER = 0;
+         OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);OIRECV = 0;
+      END;
+   END;
+   IF LOANTYPE IN (720,725) THEN IIS = ACCRUAL;
+   OISUSP = OIRECV + OIRECC + OIW - OIP + OI;
+   IF OISUSP LT 0 THEN OIRECV = OIRECV - OISUSP;
+   IF OIRECV > OIP THEN DO;
+      OIRECC = OIRECV - OIP;
+      OIRECV = OIP;
+   END;
+   OISUSP = OIRECV + OIRECC + OIW - OIP + OI;
+   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+   LOANTYP = PUT(LOANTYPE,LNTYP.);
+   IF WRITEOFF = 'Y' THEN DO;
+      SUSPEND = WSUSPEND;
+      OISUSP  = WOISUSP;
+      IF WDOWNIND ^= 'Y' THEN DO;
+         RECOVER = WRECOVER;
+         RECC    = WRECC;
+         OIRECV  = WOIRECV;
+         OIRECC  = WOIRECC;
+         IIS = 0;
+         IISPW   = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC);
+         OI = 0;
+         OIW     = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC);
+      END;
+      ELSE DO;
+         OISUSP  = WOISUSP;
+         IISPW   = WIISPW;
+         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+         IF IIS < 0 THEN RECOVER = 0;
+         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+         OIW     = WOIW;
+         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+         IF OI < 0 THEN DO;
+            OIRECV = 0;
+            OIRECC = 0;
+         END;
+         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+      END;
+      IF OIP = . THEN OIP = 0;IF IISP = . THEN IISP = 0;
+      IF SUSPEND = . THEN SUSPEND = 0;IF OISUSP = . THEN OISUSP = 0;
+      IF RECOVER = . THEN RECOVER = 0;IF OIRECV = . THEN OIRECV = 0;
+      IF RECC = . THEN RECC = 0;IF OIRECC = . THEN OIRECC = 0;
+   END;
+   TOTIIS = IIS + OI;
+
+ IF RESCHEIND = 'Y' THEN DO;
+      SUSPEND = WSUSPEND;
+      OISUSP  = WOISUSP;
+      RECOVER = WRECOVER;
+      RECC    = WRECC;
+      OIRECV  = WOIRECV;
+      OIRECC  = WOIRECC;
+      IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+      OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+      TOTIIS = IIS + OI;
+      END;
+*;
+*------------------------------------------------*
+*  CALCULATE IIS FOR CURRENT NPL ACCOUNTS        *
+*------------------------------------------------*;
+DATA LOAN2;
+   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME NETPROC CURBAL BORSTAT DAYS
+        IIS UHC NETBAL IISP SUSPEND RECOVER RECC IISPW OIP OISUSP OI
+        OIRECV OIRECC OIW TOTIIS LOANTYP EXIST COSTCTR PENDBRH USER5
+        WDOWNIND RESCHEIND ACCRUAL;
+   LENGTH LOANTYP $20;
+   %DCLVAR
+   SET LOANWOFF;
+ * SET NPL.LOAN&REPTMON;
+   IF _N_ = 1 THEN SET REPTDATE;
+   IF EXIST ^= 'Y';
+   IIS = 0; UHC = 0; OI = 0;
+   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
+   IF BLDATE > 0 & TERMCHG > 0 OR (USER5 = 'N' AND
+   LOANTYPE NOT IN (983,993)) THEN DO;
+      REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
+                MONTH(BLDATE) - MONTH(ISSDTE) + 1);
+      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
+                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
+      IF REMMTH2 < 0 THEN REMMTH2 = 0;
+      IF LOANTYPE IN (128,130) THEN
+           REMMTH1 = REMMTH1 - 3;
+      ELSE REMMTH1 = REMMTH1 - 1;
+      IF REMMTH1 >= REMMTH2 THEN DO;
+         DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
+            IIS + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+         END;
+      END;
+      IF REMMTH2 > 0 THEN
+         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+   END;
+   ELSE DO;
+      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
+                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
+      IF REMMTH2 < 0 THEN REMMTH2 = 0;
+      IF REMMTH2 > 0 THEN
+         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+   END;
+   OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
+   IF LOANTYPE IN (720,725) THEN IIS = ACCRUAL;
+   SUSPEND = IIS;
+   OISUSP = OI;
+   NETBAL = CURBAL - UHC;
+   IF WRITEOFF = 'Y' THEN DO;
+      SUSPEND = WSUSPEND;
+      OISUSP  = WOISUSP;
+      IF WDOWNIND ^= 'Y' THEN DO;
+         RECOVER = WRECOVER;
+         RECC    = WRECC;
+         OIRECV  = WOIRECV;
+         OIRECC  = WOIRECC;
+         IIS = 0;
+         IISPW   = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC);
+         OI = 0;
+         OIW     = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC);
+      END;
+      ELSE DO;
+         OISUSP  = WOISUSP;
+         IISPW   = WIISPW;
+         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+         IF IIS < 0 THEN RECOVER = 0;
+         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+         OIW     = WOIW;
+         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+         IF OI < 0 THEN DO;
+            OIRECV = 0;
+            OIRECC = 0;
+         END;
+         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+      END;
+      IF OIP = . THEN OIP = 0;IF IISP = . THEN IISP = 0;
+      IF SUSPEND = . THEN SUSPEND = 0;IF OISUSP = . THEN OISUSP = 0;
+      IF RECOVER = . THEN RECOVER = 0;IF OIRECV = . THEN OIRECV = 0;
+      IF RECC = . THEN RECC = 0;IF OIRECC = . THEN OIRECC = 0;
+   END;
+   TOTIIS = IIS + OI;
+   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+   LOANTYP = PUT(LOANTYPE,LNTYP.);
+
+ IF RESCHEIND = 'Y' THEN DO;
+      SUSPEND = WSUSPEND;
+      OISUSP  = WOISUSP;
+      RECOVER = WRECOVER;
+      RECC    = WRECC;
+      OIRECV  = WOIRECV;
+      OIRECC  = WOIRECC;
+      IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+      OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+      TOTIIS = IIS + OI;
+      END;
+*;
+*------------------------------------------------*
+*  COMPARE PREVIOUS MONTH NPL ACCOUNTS (MAY 05)  *
+*------------------------------------------------*;
+%MACRO MONTHLY;
+   %IF "&REPTMON" EQ "01" %THEN %DO;
+      DATA LOAN1;
+         SET LOAN1;
+         IISPCUM = 0;
+         OIPCUM = 0;
+         POI = 0;
+      RUN;
+      DATA LOAN2;
+         SET LOAN2;
+         IISPCUM = 0;
+         OIPCUM = 0;
+         POI = 0;
+      RUN;
+   %END;
+   %ELSE %DO;
+      PROC SORT DATA=NPL.IIS&PREVMON (DROP=POI
+         RENAME=(DAYS=PDAYS SUSPEND=PSUSPEND OISUSP=POISUSP
+                 IISP=PIISP OIP=POIP OI=POI RECC=PRECC
+                 OIRECC=POIRECC RECOVER=PRECOVER OIRECV=POIRECV))
+         OUT=IISPREV NODUPKEY;
+      BY ACCTNO NOTENO; RUN;
+
+      DATA IISPREV;
+         SET IISPREV;
+             IF LOANTYPE IN (128,130,131,132,380,381,390,
+                             700,705,720,725,983,993,996)
+             AND PAIDIND='P' THEN DO;
+             %INC PGM(NPLNTB);
+             END;
+         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+         IF PDAYS = . THEN PDAYS = 0;
+         IF PSUSPEND = . THEN PSUSPEND = 0;
+         IF POISUSP = . THEN POISUSP = 0;
+         IF PIISP = . THEN PIISP = 0;
+         IF POIP = . THEN POIP = 0;
+         IF POI = . THEN POI = 0;
+      RUN;
+      ********************
+      *** EXISTING NPL ***
+      ********************;
+      PROC SORT DATA=LOAN1; BY ACCTNO; RUN;
+      DATA LOAN1(DROP=PDAYS PSUSPEND POISUSP PIISP POIP PRECC
+                 POIRECC PRECOVER POIRECV);
+         MERGE IISPREV(IN=B) LOAN1(IN=A);
+         BY ACCTNO;
+         IF ((A AND B) OR (B AND NOT A)) AND EXIST = 'Y';
+
+         *** A/C SETTLE FOR EXISTING NPL ***;
+         IF ((B AND NOT A) OR (CURBAL LE 0 AND POI LE 0)) AND
+            BORSTAT NOT IN ('F','I','R','W','S') THEN DO;
+            IISP=PIISP;
+            RECOVER=IISP;
+            SUSPEND=PSUSPEND;
+            RECC=SUSPEND;
+            OIP=POIP;
+            OIRECV=OIP;
+            OISUSP=POISUSP;
+            OIRECC=OISUSP;
+            CURBAL=0;
+            NETBAL=0;
+            DAYS=0;
+            OI  = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+            IIS = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+            TOTIIS = IIS + OI;
+            OUTPUT;
+         END;
+         ELSE DO;
+            IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN DO;
+               OUTPUT;
+            END;
+            ELSE DO;
+               IF (A AND B) THEN DO;
+                  *** CONTINUE PERFORMING ***;
+                  IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
+                     SUSPEND=IIS;
+                  IF USER5 = 'N' AND IIS < IISP THEN DO;
+                     SUSPEND = 0;
+                     RECOVER = IISP - IIS;
+                  RECC = 0;
+                  END;
+                  IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                     SUSPEND = IIS - IISP;
+                     RECOVER = 0;
+                     RECC = 0;
+                  END;
+                  IF USER5 = 'N' AND IISP = 0 THEN DO;
+                     SUSPEND = IIS;
+                     RECC = IIS - SUSPEND;
+                  END;
+                  IF USER5 = 'N' AND OI < OIP THEN DO;
+                     OISUSP = 0;
+                     OIRECV = OIP - OI;
+                     OIRECC = 0;
+                  END;
+                  IF USER5 = 'N' AND OI >= OIP THEN DO;
+                     OISUSP = OI - OIP;
+                     OIRECV = 0;
+                     OIRECC = 0;
+                  END;
+                  IF USER5 = 'N' AND OIP = 0 THEN DO;
+                     OISUSP = OI;
+                     OIRECC = OI - OISUSP;
+                  END;
+                  OUTPUT;
+                  END;
+                  *** TURN PERFORMING ***;
+                  IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        SUSPEND = PSUSPEND;
+                        RECC    = PSUSPEND;
+                        OISUSP  = POISUSP;
+                        OIRECC  = POISUSP;
+                        TOTIIS = IIS + OI;
+                     END;
+                     IF USER5 = 'N' AND IIS < IISP THEN DO;
+                        SUSPEND = 0;
+                        RECOVER = IISP - IIS;
+                        RECC = 0;
+                     END;
+                     IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                        SUSPEND = IIS - IISP;
+                        RECOVER = 0;
+                        RECC = 0;
+                     END;
+                     IF USER5 = 'N' AND IISP = 0 THEN DO;
+                        SUSPEND = IIS;
+                        RECC = IIS - SUSPEND;
+                     END;
+                     IF USER5 = 'N' AND OI < OIP THEN DO;
+                        OISUSP = 0;
+                        OIRECV = OIP - OI;
+                        OIRECC = 0;
+                     END;
+                     IF USER5 = 'N' AND OI >= OIP THEN DO;
+                        OISUSP = OI - OIP;
+                        OIRECV = 0;
+                        OIRECC = 0;
+                     END;
+                     IF USER5 = 'N' AND OIP = 0 THEN DO;
+                        OISUSP = OI;
+                        OIRECC = OI - OISUSP;
+                     END;
+                     OUTPUT;
+                  END;
+                  *** TURN NPL FR PERFORMING ***;
+                  IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        RECC = PRECC;
+                        RECOVER = PRECOVER;
+                        SUSPEND = SUM(IIS,IISP,(-1)*RECOVER,RECC);
+                        IF SUSPEND < 0 THEN DO;
+                           RECOVER = SUM(RECOVER,(-1)*SUSPEND);
+                           SUSPEND = 0;
+                           IF RECOVER GT IISP THEN DO;
+                              RECC = SUM(RECC,RECOVER-IISP);
+                           END;
+                        END;
+                        OIRECC = POIRECC;
+                        OIRECV = POIRECV;
+                        OISUSP = SUM(OI,OIP,(-1)*OIRECV,OIRECC);
+                        IF OISUSP < 0 THEN DO;
+                           OIRECV = SUM(OIRECV,(-1)*OISUSP);
+                           OISUSP = 0;
+                           IF OIRECV GT OIP THEN DO;
+                              OIRECC = SUM(OIRECC,OIRECV-OIP);
+                           END;
+                        END;
+                        TOTIIS = IIS + OI;
+                     END;
+                     IF USER5 = 'N' AND IIS < IISP THEN DO;
+                        SUSPEND = 0;
+                        RECOVER = IISP - IIS;
+                        RECC = 0;
+                     END;
+                     IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                        SUSPEND = IIS - IISP;
+                        RECOVER = 0;
+                        RECC = 0;
+                     END;
+                     IF USER5 = 'N' AND IISP = 0 THEN DO;
+                        SUSPEND = IIS;
+                        RECC = IIS - SUSPEND;
+                     END;
+                     IF USER5 = 'N' AND OI < OIP THEN DO;
+                        OISUSP = 0;
+                        OIRECV = OIP - OI;
+                        OIRECC = 0;
+                     END;
+                     IF USER5 = 'N' AND OI >= OIP THEN DO;
+                        OISUSP = OI - OIP;
+                        OIRECV = 0;
+                        OIRECC = 0;
+                     END;
+                     IF USER5 = 'N' AND OIP = 0 THEN DO;
+                        OISUSP = OI;
+                        OIRECC = OI - OISUSP;
+                     END;
+                     OUTPUT;
+                  END;
+                  *** CONTINUE NPL ***;
+                  IF DAYS GE 90 AND PDAYS GE 90 THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        RECOVER = PRECOVER;
+                        RECC = PRECC;
+                        SUSPEND = SUM(IIS,(-1)*IISP,RECOVER,RECC);
+                        IF SUSPEND < 0 THEN DO;
+                           RECOVER = SUM(RECOVER,(-1)*SUSPEND);
+                           SUSPEND = 0;
+                           IF RECOVER GT IISP THEN DO;
+                              RECC = SUM(RECC,RECOVER,(-1)*IISP);
+                           END;
+                        END;
+                        OIRECV = POIRECV;
+                        OIRECC = POIRECC;
+                        OISUSP = SUM(OI,(-1)*OIP,OIRECV, OIRECC);
+                        IF OISUSP < 0 THEN DO;
+                           OIRECV = SUM(OIRECV,(-1)*OISUSP);
+                           OISUSP = 0;
+                           IF OIRECV  GT OIP THEN DO;
+                              OIRECC = SUM(OIRECC,OIRECV,(-1)*OIP);
+                           END;
+                        END;
+                        TOTIIS = IIS + OI;
+                     END;
+                     OUTPUT;
+                  END;
+               END;
+            END;
+         END;
+      RUN;
+      *******************
+      *** CURRENT NPL ***
+      *******************;
+      PROC SORT DATA=NPL.PLOAN&REPTMON OUT=PLOAN
+         (KEEP=ACCTNO NOTENO CURBAL DAYS BORSTAT NTBRCH COSTCTR);
+         BY ACCTNO;
+      RUN;
+      DATA IISPREV;
+         MERGE IISPREV(IN=A) PLOAN(IN=B);
+         BY ACCTNO;
+         IF PIISP EQ 0 AND POIP EQ 0 AND EXIST NE 'Y';
+         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+      RUN;
+
+      PROC SORT DATA=LOAN2; BY ACCTNO NOTENO; RUN;
+      DATA LOAN2(DROP=PDAYS PSUSPEND POISUSP PIISP POIP PRECC
+                 POIRECC PRECOVER POIRECV);
+         MERGE IISPREV(IN=B) LOAN2(IN=A);
+         BY ACCTNO;
+         IF (B AND NOT A) THEN DO;
+            *** A/C SETTLE FOR EXISTING NPL ***;
+               IISP=PIISP;
+               RECOVER=IISP;
+               SUSPEND=PSUSPEND;
+               RECC=SUSPEND;
+               OIP=POIP;
+               OIRECV=OIP;
+               OISUSP=POISUSP;
+               OIRECC=OISUSP;
+               CURBAL=0;
+               NETBAL=0;
+               DAYS=0;
+               OI  = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+              IIS = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+               TOTIIS = IIS + OI;
+               OUTPUT;
+         END;
+
+         *** NEW NPL FOR THE MTH ***;
+         IF (A AND NOT B) AND
+            (DAYS GE 90 OR BORSTAT IN ('F','I','R','W') OR USER5='N')
+            THEN OUTPUT;
+
+         IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN OUTPUT;
+         IF (A AND B) AND BORSTAT NOT IN ('W') THEN DO;
+            *** CONTINUE PERFORMING ***;
+            IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
+               IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                  SUSPEND = PSUSPEND;
+                  RECC    = PSUSPEND;
+                  OISUSP  = POISUSP;
+                  OIRECC  = POISUSP;
+                  TOTIIS = IIS + OI;
+               END;
+               IF USER5 = 'N' AND IIS < IISP THEN DO;
+                  SUSPEND = 0;
+                  RECOVER = IISP - IIS;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                  SUSPEND = IIS - IISP;
+                  RECOVER = 0;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IISP = 0 THEN DO;
+                  SUSPEND = IIS;
+                  RECC = IIS - SUSPEND;
+               END;
+               IF USER5 = 'N' AND OI < OIP THEN DO;
+                  OISUSP = 0;
+                  OIRECV = OIP - OI;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OI >= OIP THEN DO;
+                  OISUSP = OI - OIP;
+                  OIRECV = 0;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OIP = 0 THEN DO;
+                  OISUSP = OI;
+                  OIRECC = OI - OISUSP;
+               END;
+               ELSE DO;
+                  SUSPEND = SUM(SUSPEND,RECC);
+                  OISUSP = SUM(OISUSP,OIRECC);
+               END;
+              OUTPUT;
+            END;
+
+            *** TURN PERFORMING FR NPL ***;
+            IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
+               IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                  SUSPEND = PSUSPEND;
+                  RECC    = PSUSPEND;
+                  OISUSP  = POISUSP;
+                  OIRECC  = POISUSP;
+                  OI  = SUM(OIP,OISUSP,(-1)*OIRECV,
+                            (-1)*OIRECC,(-1)*OIW);
+                  IIS = SUM(IISP,SUSPEND,(-1)*RECOVER,
+                            (-1)*RECC,(-1)*IISPW);
+                  TOTIIS = IIS + OI;
+               END;
+               IF USER5 = 'N' AND IIS < IISP THEN DO;
+                  SUSPEND = 0;
+                  RECOVER = IISP - IIS;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                  SUSPEND = IIS - IISP;
+                  RECOVER = 0;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IISP = 0 THEN DO;
+                  SUSPEND = IIS;
+                  RECC = IIS - SUSPEND;
+               END;
+               IF USER5 = 'N' AND OI < OIP THEN DO;
+                  OISUSP = 0;
+                  OIRECV = OIP - OI;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OI >= OIP THEN DO;
+                  OISUSP = OI - OIP;
+                  OIRECV = 0;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OIP = 0 THEN DO;
+                  OISUSP = OI;
+                  OIRECC = OI - OISUSP;
+               END;
+               OUTPUT;
+            END;
+
+            *** TURN NPL FR PERFORMING ***;
+            IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
+               IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                  RECC    = SUM(RECC,PRECC);
+                  SUSPEND = SUM(SUSPEND,RECC);
+                  OIRECC  = SUM(OIRECC,POIRECC);
+                  OISUSP  = SUM(OISUSP,OIRECC);
+                  TOTIIS = IIS + OI;
+               END;
+               IF USER5 = 'N' AND IIS < IISP THEN DO;
+                  SUSPEND = 0;
+                  RECOVER = IISP - IIS;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                  SUSPEND = IIS - IISP;
+                  RECOVER = 0;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IISP = 0 THEN DO;
+                  SUSPEND = IIS;
+                  RECC = IIS - SUSPEND;
+               END;
+               IF USER5 = 'N' AND OI < OIP THEN DO;
+                  OISUSP = 0;
+                  OIRECV = OIP - OI;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OI >= OIP THEN DO;
+                  OISUSP = OI - OIP;
+                  OIRECV = 0;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OIP = 0 THEN DO;
+                  OISUSP = OI;
+                  OIRECC = OI - OISUSP;
+               END;
+               OUTPUT;
+            END;
+
+            *** CONTINUE NPL ***;
+            IF DAYS GE 90 AND PDAYS GE 90 THEN DO;
+               IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                  RECC    = SUM(RECC,PRECC);
+                  SUSPEND = SUM(SUSPEND,RECC);
+                  OIRECC  = SUM(OIRECC,POIRECC);
+                  OISUSP  = SUM(OISUSP,OIRECC);
+                  TOTIIS = IIS + OI;
+               END;
+               OUTPUT;
+            END;
+         END;
+      RUN;
+   %END;
+%MEND MONTHLY;
+%MONTHLY;
+
+*------------------------------------------------*
+*  COMBINE EXISTING & CURRENT NPL ACCOUNTS       *
+*------------------------------------------------*;
+DATA LOAN3 NPL.IIS&REPTMON NPL.IIS;
+   SET LOAN1 LOAN2;
+   LENGTH RISK $13;
+   IF DAYS > 364 OR BORSTAT = 'W' THEN RISK = 'BAD';
+   ELSE IF DAYS > 273 THEN RISK = 'DOUBTFUL';
+   ELSE IF DAYS > 182 THEN RISK = 'SUBSTANDARD 2';
+   ELSE IF DAYS < 90 AND USER5='N' THEN RISK = 'SUBSTANDARD-1';
+   ELSE RISK = 'SUBSTANDARD-1';
+   WHERE (COSTCTR < 3000 OR COSTCTR > 3999) AND
+          COSTCTR NOT IN (4043,4048) AND
+          COSTCTR NE .;
+RUN;
+PROC SORT DATA=LOAN3 NODUPKEY;BY ACCTNO NOTENO;RUN;
+PROC SORT DATA=NPL.IIS&REPTMON NODUPKEY;BY ACCTNO NOTENO;RUN;
+PROC SORT DATA=NPL.IIS NODUPKEY;BY ACCTNO NOTENO;RUN;
+*------------------------------------------------*
+*  PRODUCE REPORTS                               *
+*------------------------------------------------*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+%LET TBL1=(EXISTING);
+%LET TBL2=(CURRENT);
+%LET TBL3=(EXISTING AND CURRENT);
+%LET TTL=MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH ENDING;
+*;
+%MACRO TBLS;
+   %DO I = 3 %TO 3;
+      PROC TABULATE DATA=LOAN&I FORMAT=COMMA15.2 MISSING NOSEPS;
+         CLASS LOANTYP RISK BRANCH;
+         VAR CURBAL UHC NETBAL IISP SUSPEND RECOVER RECC IISPW IIS
+             OIP OISUSP OIRECV OIRECC OIW OI TOTIIS;
+         TABLE LOANTYP=' ',
+               RISK=' '*(BRANCH=' ' ALL='SUB-TOTAL') ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*
+               (CURBAL='CURRENT BAL (A)'
+                UHC='UNEARNED HIRING CHARGES (B)'
+                NETBAL='NET BAL (A-B=C)')
+               SUM='MOVEMENTS OF INTEREST IN SUSPENSE'*
+               (IISP='OPENING BAL FOR FINANCIAL YEAR (D)'
+                SUSPEND='INTEREST SUSPENDED DURING THE PERIOD (E)'
+                RECOVER='WRITTEN BACK TO PROFIT & LOSS (F)'
+                RECC='REVERSAL OF CURRENT YEAR IIS (G)'
+                IISPW='WRITTEN OFF (H)'
+                IIS='IIS CLOSING BAL (D+E-F-G-H=I)')
+               SUM='MOVEMENTS OF OVERDUE INTEREST'*
+               (OIP='OPENING BAL FOR FINANCIAL YEAR (J)'
+                OISUSP='OI SUSPENDED DURING THE PERIOD (K)'
+                OIRECV='WRITTEN BACK TO PROFIT & LOSS (L)'
+                OIRECC='REVERSAL OF CURRENT YEAR OI (M)'
+                OIW='WRITTEN OFF (N)'
+                OI='OI CLOSING BAL (J+K-L-M-N=O)')
+               SUM=' '*TOTIIS='TOTAL CLOSING BAL AS AT RPT DATE (I+O)'
+               / BOX='RISK        BRANCH' RTS=29;
+         TABLE LOANTYP=' ', BRANCH=' ' ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*
+               (CURBAL='CURRENT BAL (A)'
+                UHC='UNEARNED HIRING CHARGES (B)'
+                NETBAL='NET BAL (A-B=C)')
+               SUM='MOVEMENTS OF INTEREST IN SUSPENSE'*
+               (IISP='OPENING BAL FOR FINANCIAL YEAR (D)'
+                SUSPEND='INTEREST SUSPENDED DURING THE PERIOD (E)'
+                RECOVER='WRITTEN BACK TO PROFIT & LOSS (F)'
+                RECC='REVERSAL OF CURRENT YEAR IIS (G)'
+                IISPW='WRITTEN OFF (H)'
+                IIS='IIS CLOSING BAL (D+E-F-G-H=I)')
+               SUM='MOVEMENTS OF OVERDUE INTEREST'*
+               (OIP='OPENING BAL FOR FINANCIAL YEAR (J)'
+                OISUSP='OI SUSPENDED DURING THE PERIOD (K)'
+                OIRECV='WRITTEN BACK TO PROFIT & LOSS (L)'
+                OIRECC='REVERSAL OF CURRENT YEAR OI (M)'
+                OIW='WRITTEN OFF (N)'
+                OI='OI CLOSING BAL (J+K-L-M-N=O)')
+               SUM=' '*TOTIIS='TOTAL CLOSING BAL AS AT RPT DATE (I+O)'
+               / BOX='BRANCH' RTS=9;
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE2 &TTL &RDATE &&TBL&I;
+   %END;
+%MEND TBLS;
+*;
+%MACRO DTLS;
+   %DO I = 3 %TO 3;
+      PROC SORT DATA=LOAN&I;
+         BY LOANTYP BRANCH RISK DAYS ACCTNO;
+*;
+        PROC PRINT LABEL N;
+
+         FORMAT NETPROC CURBAL UHC NETBAL IISP SUSPEND RECOVER
+                RECC IISPW IIS OIP OISUSP OIRECV OIRECC OIW OI
+                TOTIIS COMMA15.2;
+         LABEL ACCTNO  = 'MNI ACCOUNT NO'
+               DAYS    = 'NO OF DAYS PAST DUE'
+               BORSTAT = 'BORROWER''S STATUS'
+               NETPROC = 'LIMIT'
+               CURBAL  = 'CURRENT BAL (A)'
+               UHC     = 'UNEARNED HIRING CHARGES (B)'
+               NETBAL  = 'NET BAL (A-B=C)'
+               IISP    = 'OPENING BAL FOR FINANCIAL YEAR (D)'
+               SUSPEND = 'INTEREST SUSPENDED DURING THE PERIOD (E)'
+               RECOVER = 'WRITTEN BACK TO PROFIT & LOSS (F)'
+               RECC    = 'REVERSAL OF CURRENT YEAR IIS (G)'
+               IISPW   = 'WRITTEN OFF (H)'
+               IIS     = 'IIS CLOSING BAL (D+E-F-G-H=I)'
+               OIP     = 'OPENING BAL FOR FINANCIAL YEAR (J)'
+               OISUSP  = 'OI SUSPENDED DURING THE PERIOD (K)'
+               OIRECV  = 'WRITTEN BACK TO PROFIT & LOSS (L)'
+               OIRECC  = 'REVERSAL OF CURRENT YEAR OI (M)'
+               OIW     = 'WRITTEN OFF (N)'
+               OI      = 'OI CLOSING BAL (J+K-L-M-N=O)'
+               TOTIIS  = 'TOTAL CLOSING BAL AS AT RPT DATE (I+O)';
+         VAR ACCTNO NAME DAYS BORSTAT NETPROC CURBAL UHC NETBAL
+             IISP SUSPEND RECOVER RECC IISPW IIS OIP OISUSP OIRECV
+             OIRECC OIW OI TOTIIS;
+         BY LOANTYP BRANCH RISK;
+         PAGEBY BRANCH;
+         SUMBY RISK;
+         SUM NETPROC CURBAL UHC NETBAL IISP SUSPEND RECOVER
+             RECC IISPW IIS OIP OISUSP OIRECV OIRECC OIW OI TOTIIS;
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE2 &TTL &RDATE &&TBL&I;
+   %END;
+%MEND DTLS;
+*;
+%TBLS;
+    /* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS */
+%DTLS;
