@@ -1,0 +1,863 @@
+/** PROGRAM : KALWPBBP                       **/
+/** DATE    : 1/12/96                        **/
+/** REPORT  : RDAL PART I  (KAPITI ITEMS )   **/
+/** REPORT  : RDIR PART I  (KAPITI ITEMS )   **/
+/** MODIFIED: 28/12/01 TAKE OUT BIC 4261085  **/
+
+/** READING THE INPUT FILE **/
+/** FOR BNM TBL 1 & 3      **/
+/** INCLUDE THE FORMAT FILE **/
+/** AND CREATE THE FORMAT   **/
+%INC PGM(KALWPBBF,PBBELF);
+%LET AMTIND='I';
+
+PROC DATASETS LIB=BNM NOLIST;
+  DELETE KALW&REPTMON&NOWK;
+RUN;
+
+/***********************************************************/
+/**                                                       **/
+/** REPORT ON DOMESTIC ASSETS AND LIABILITIES - PART I    **/
+/**                                                       **/
+/***********************************************************/
+DATA K1TABL (KEEP=BRANCH BNMCODE AMOUNT AMTIND) K1DTL;
+  LENGTH BNMCODE $14. AMTIND $1.;
+  SET BNMK.K1TBL&REPTMON&NOWK (RENAME=(GWBALC=AMOUNT));
+  BRANCH=INPUT(SUBSTR(GWAB, 1, 4), 4.);
+  BNMCODE=' ';
+  AMTIND=&AMTIND;
+
+  IF GWCCY EQ 'MYR' AND GWMVT EQ 'P' AND GWMVTS EQ 'M'
+     AND (GWDLP IN ('FDA','FDB','FDL','FDS','LC','LO') OR
+          SUBSTR(GWDLP, 2, 2) IN ('XI','XT'))
+  THEN LINK DP32000;
+   /*
+  IF GWCCY EQ 'MYR' AND GWMVT EQ 'P' AND GWMVTS EQ 'M'
+     AND GWDLP IN ('BCI','BCD') THEN LINK PM42199;
+  */
+  BNMCODE = ' ';
+  IF GWCCY EQ 'MYR' AND GWMVT EQ 'P' AND GWMVTS EQ 'M'
+     AND GWDLP IN ('BCS','BCT','BCW','BQD')  THEN LINK DP42190;
+
+  BNMCODE=' ';
+  IF GWDLP IN (' ','LO','LS','LF','LOW','LSW','LSC','LOC','LOI','LSI')
+              OR GWACT EQ 'CN'
+  THEN DO;
+       LINK AF33000; BNMCODE=' ';
+       LINK LN34000; BNMCODE=' ';
+  END;
+
+  BNMCODE=' ';
+  LINK MA39000;
+
+  BNMCODE=' ';
+  IF SUBSTR(GWDLP, 2, 2) IN ('MI', 'MT')
+     AND GWCCY EQ 'MYR'
+     AND GWMVT EQ 'P'
+     AND GWMVTS EQ 'M'
+  THEN LINK DA42160;
+
+  BNMCODE=' ';
+  IF GWDLP IN ('FDA', 'FDB', 'FDS', 'FDL', 'BO', 'BF')
+     OR GWDLP EQ ' '
+  THEN LINK DA42600;
+
+  /* LWU'S @20/7/2000: TO BE TAKEN FR WALKER INSTEAD */
+  /* IF GWDLP IN (' ', 'BO', 'BF') THEN LINK AT43000;  */
+  BNMCODE=' ';
+  IF GWDLP IN ('BF','BOW','BSW','BOI','BFI','BSC','BOC') THEN
+     LINK AT43000;
+
+  BNMCODE=' ';
+  LINK ML49000;
+
+  BNMCODE=' ';
+  IF GWOCY='XAU' THEN DELETE;
+  IF GWDLP IN ('FXS', 'FXO', 'FXF', 'SF1', 'SF2', 'TS1', 'TS2',
+               'FBP',
+               'FF1', 'FF2')
+  THEN LINK FX57000;
+RETURN;
+
+DP32000:
+  IF GWDLP IN ('FDA','FDB','FDL','FDS') THEN DO;
+     IF NOT ('BA' <= GWCTP <= 'BZ') AND GWCNAL='MY' AND
+        GWCCY='MYR' AND GWMVT='P' AND GWMVTS='M' THEN
+        BNMCODE='3213020000000Y';
+     ELSE SELECT(GWCTP);
+          WHEN('BB') BNMCODE='3213002000000Y';
+          WHEN('BQ') BNMCODE='3213011000000Y';
+          WHEN('BM') BNMCODE='3213012000000Y';
+          OTHERWISE;
+        END;
+  END;
+  IF SUBSTR(GWDLP, 2, 2) IN ('XI', 'XT') THEN DO;
+     IF NOT ('BA' <= GWCTP <= 'BZ') AND GWCNAL='MY' AND
+        GWCCY='MYR' AND GWMVT='P' AND GWMVTS='M' THEN
+        BNMCODE='3250020000000Y';
+     ELSE SELECT(GWCTP);
+          WHEN('BB') BNMCODE='3250002000000Y';
+          WHEN('BI') BNMCODE='3250003000000Y';
+          WHEN('BQ') BNMCODE='3250011000000Y';
+          WHEN('BM') BNMCODE='3250012000000Y';
+          WHEN('BN') DO;
+             BNMCODE='3250013000000Y'; OUTPUT;
+             BNMCODE='3250020000000Y';
+          END;
+          WHEN('BG') DO;
+             BNMCODE='3250017000000Y'; OUTPUT;
+             BNMCODE='3250020000000Y';
+          END;
+          WHEN('BA','BW','BE') BNMCODE='3250081000000Y';
+          OTHERWISE;
+     END;
+  END;
+  IF GWDLP EQ 'LC' AND GWCTP EQ 'BN' THEN
+     BNMCODE='3214013000000Y';
+IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+AF33000:
+  IF GWDLP IN ('LO', 'LS', 'LF','LOW','LSW','LSC','LOC','LOI',
+               'LSI') THEN DO;
+      IF GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+         SELECT(GWCTP);
+            WHEN('BC') BNMCODE='3314001000000Y';
+            WHEN('BB') BNMCODE='3314002000000Y';
+            WHEN('BI') BNMCODE='3314003000000Y';
+            WHEN('BQ') BNMCODE='3314011000000Y';
+            WHEN('BM') BNMCODE='3314012000000Y';
+            WHEN('BN') BNMCODE='3314020000000Y';
+            WHEN('BG') DO;
+               BNMCODE='3314017000000Y';
+            END;
+            WHEN('BA','BW') DO;
+              IF GWDLP IN ('LO','LS') THEN DO;
+                 LINK COUNTMON;
+                 IF NUMMONTH <= 12 THEN BNMCODE='3314081100000Y';
+              END;
+              IF GWDLP='LF' THEN DO;
+                LINK COUNTMON;
+                IF NUMMONTH > 12 THEN BNMCODE='3314081200000Y';
+              END;
+            END;
+            OTHERWISE;
+         END;
+
+      IF GWCCY NE 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+      SELECT(GWCTP);
+        WHEN('BC') BNMCODE='3364001000000Y';
+        WHEN('BB') BNMCODE='3364002000000Y';
+        WHEN('BI') BNMCODE='3364003000000Y';
+        WHEN('BM') BNMCODE='3364012000000Y';
+        WHEN('BJ') BNMCODE='3364007000000Y';
+        WHEN('BA','BW','BE') DO;
+          IF GWDLP='LF' THEN DO;
+             LINK COUNTMON;
+             IF NUMMONTH > 12 THEN BNMCODE='3364081200000Y';
+          END;
+        END;
+        OTHERWISE;
+      END;
+  END;
+
+  IF GWDLP IN ('LS','LF', 'LO') AND
+     GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' AND
+     GWCTP = 'BN' THEN DO;
+     LINK COUNTMON;
+     IF NUMMONTH <= 12 THEN DO;
+     *  BNMCODE='3314013000000Y'; OUTPUT;
+     *  BNMCODE='3314020000000Y';
+     END;
+  END;
+  IF BNMCODE NE ' ' THEN OUTPUT;
+
+RETURN;
+
+LN34000:
+  IF GWDLP IN ('LO', 'LS', 'LF')
+     AND GWCCY NE 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M'
+     AND NOT('BA' <= GWCTP <= 'BZ')
+     AND GWSAC NE 'UF' AND GWCNAL='MY'
+  THEN BNMCODE='3460015000000Y';
+  IF GWDLP IN ('LO', 'LS', 'LF')
+     AND GWCCY NE 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M'
+     AND GWSAC EQ 'UF'
+  THEN BNMCODE='3460085000000Y';
+IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+MA39000:
+/*IF GWDLP=' ' AND GWAN='099999'
+     AND GWCCY NE 'MYR'
+     AND AMOUNT < 0 THEN BNMCODE='3961100000000Y';REQUESTED OUT 4/4/97*/
+     /*
+  IF GWDIAC NE 0
+     AND GWCCY NE 'MYR'
+     AND GWMVT = 'P'
+     AND GWMVTS = 'M' THEN DO; BNMCODE='3968000000000Y';
+                               AMOUNT=GWDIAC;
+                           END;
+  IF GWDLP=' ' AND GWACT='CN'
+     AND GWCTP = 'BB'
+     AND GWCCY NE 'MYR'
+     AND AMOUNT < 0 THEN BNMCODE='3969900000000Y'; OUT ON 18/03/97 */
+
+IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+DA42160:
+  BNMCODE='4216060000000Y';
+  IF GWC2R = '57'         THEN BNMCODE='4216057000000Y'; ELSE
+  IF GWC2R = '75'         THEN BNMCODE='4216075000000Y'; ELSE
+  IF GWCTP IN ('BP','BC') THEN BNMCODE='4216001000000Y'; ELSE
+  IF GWCTP='BB'           THEN BNMCODE='4216002000000Y'; ELSE
+  IF GWCTP='BI'           THEN BNMCODE='4216003000000Y'; ELSE
+  IF GWCTP='BJ'           THEN BNMCODE='4216007000000Y'; ELSE
+  IF GWCTP='BQ'           THEN BNMCODE='4216011000000Y'; ELSE
+  IF GWCTP='BM'           THEN BNMCODE='4216012000000Y'; ELSE
+  IF GWCTP='BN'           THEN BNMCODE='4216013000000Y'; ELSE
+  IF GWCTP='BG'           THEN BNMCODE='4216017000000Y'; ELSE
+  IF GWCTP IN ('BR','BF','BH','BZ','BU','AD',
+               'BT','BV','BS')
+                          THEN BNMCODE='4216020000000Y'; ELSE
+  IF GWCTP='DA'           THEN BNMCODE='4216071000000Y'; ELSE
+  IF GWCTP='DB'           THEN BNMCODE='4216072000000Y'; ELSE
+  IF GWCTP='DC'           THEN BNMCODE='4216074000000Y'; ELSE
+  IF GWCTP IN ('EA','EC') THEN BNMCODE='4216076000000Y'; ELSE
+  IF GWCTP='FA'           THEN BNMCODE='4216079000000Y'; ELSE
+  IF GWCTP IN ('BW','BA','BE')
+                          THEN BNMCODE='4216081000000Y'; ELSE
+  IF GWCTP IN ('CE','EB','GA')
+                          THEN BNMCODE='4216085000000Y';
+  IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+DA42600:
+  IF GWDLP EQ ' ' AND GWACT EQ 'CV'
+     AND NOT('BA' <= GWCTP <= 'BZ')
+     AND GWC2R NOT IN ('57','75')
+     AND GWCNAL EQ 'MY'
+     AND GWSAC NE 'UF'
+     AND GWCCY NE 'MYR'
+  THEN BNMCODE='4261060000000Y';
+  IF GWDLP IN ('FDA','FDB','FDL','FDS','BO','BF')
+     AND GWCCY NE 'MYR'
+     AND NOT('BA' <= GWCTP <= 'BZ')
+     AND GWC2R NOT IN ('57','75')
+     AND GWCNAL EQ 'MY'
+     AND GWMVT EQ 'P'
+     AND GWMVTS EQ 'M'
+     AND GWSAC NE 'UF'
+  THEN BNMCODE='4263060000000Y';
+  IF GWDLP IN ('FDA','FDB','FDL','FDS','BO','BF')
+     AND GWCCY NE 'MYR'
+     AND GWCTP EQ 'BM'
+     AND GWCNAL EQ 'MY'
+     AND GWMVT EQ 'P'
+     AND GWMVTS EQ 'M'
+     AND SUBSTR(GWSHN,1,3) = 'FCY'
+  THEN BNMCODE='4263012000000Y';
+  IF GWDLP EQ ' ' AND GWACT EQ 'CV'
+     AND GWCNAL NE 'MY'
+     AND GWSAC EQ 'UO'
+     AND GWCCY NE 'MYR'
+     AND GWAN  NE '000612'
+     AND GWAS  NE '344'
+  THEN BNMCODE='4263081000000Y';
+  /* IF (GWDLP=' ' AND AMOUNT > 0
+      AND GWSAC EQ 'UF'
+      AND GWCCY NE 'MYR') OR
+     (GWDLP IN ('FDA','FDB','FDL','FDS','BO','BF')
+      AND GWCCY NE 'MYR' AND GWCTP = 'CE' AND GWMVT = 'P'
+      AND GWMVTS = 'M' AND GWSAC ='UF')
+  THEN BNMCODE='4261085000000Y';  */
+  IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+AT43000:
+   IF GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+      SELECT(GWCTP);
+       WHEN('BW') DO;BNMCODE='4364008110000Y';OUTPUT;END;
+       WHEN('BC') DO;BNMCODE='4314001000000Y';OUTPUT;END;
+       WHEN('BB') DO;BNMCODE='4314002000000Y';OUTPUT;END;
+       WHEN('BI') DO;BNMCODE='4314003000000Y';OUTPUT;END;
+       WHEN('BM') DO;BNMCODE='4314012000000Y';OUTPUT;END;
+       WHEN('BN') DO;BNMCODE='4314020000000Y';OUTPUT;END;
+       WHEN('BG') DO;BNMCODE='4314017000000Y';OUTPUT;END;
+       WHEN('BA') DO;BNMCODE='4314081000000Y';OUTPUT;END;
+       OTHERWISE;
+   END;
+
+   IF GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+      SELECT(GWCTP);
+       WHEN('BC','BP') DO;
+          LINK COUNTMON;
+          IF NUMMONTH <= 12 THEN BNMCODE='4314001100000Y';
+          ELSE BNMCODE='4314001200000Y';OUTPUT;
+       END;
+       WHEN('BB') DO;
+          LINK COUNTMON;
+          IF NUMMONTH <= 12 THEN BNMCODE='4314002100000Y';
+          ELSE BNMCODE='4314002200000Y';OUTPUT;
+       END;
+       WHEN('BI') DO;
+          LINK COUNTMON;
+          IF NUMMONTH <= 12 THEN BNMCODE='4314003100000Y';
+          ELSE BNMCODE='4314003200000Y';OUTPUT;
+       END;
+       WHEN('BM') DO;
+          LINK COUNTMON;
+          IF NUMMONTH <= 12 THEN BNMCODE='4314012100000Y';
+          ELSE BNMCODE='4314012200000Y';OUTPUT;
+       END;
+       WHEN('BG') DO;
+          LINK COUNTMON;
+          IF NUMMONTH <= 12 THEN BNMCODE='4314017100000Y';
+          ELSE BNMCODE='4314017200000Y';OUTPUT;
+       END;
+       WHEN('AD','BF','BH','BN','BR','BS','BT','BU','BV','BZ') DO;
+          LINK COUNTMON;
+          IF NUMMONTH <= 12 THEN BNMCODE='4314020100000Y';
+          ELSE BNMCODE='4314020200000Y';OUTPUT;
+       END;
+       WHEN('BA','BE') DO;
+          LINK COUNTMON;
+          IF NUMMONTH <= 12 THEN BNMCODE='4314081100000Y';
+          ELSE BNMCODE='4314081200000Y';OUTPUT;
+       END;
+       OTHERWISE;
+   END;
+
+   IF GWCCY NE 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+     SELECT(GWCTP);
+       WHEN('BC','BP') DO;BNMCODE='4364001000000Y';OUTPUT;END;
+       WHEN('BB') DO;BNMCODE='4364002000000Y';OUTPUT;END;
+       WHEN('BI') DO;BNMCODE='4364003000000Y';OUTPUT;END;
+       WHEN('BM') DO;BNMCODE='4364012000000Y';OUTPUT;END;
+       WHEN('BJ') DO;BNMCODE='4364007000000Y';OUTPUT;END;
+       WHEN('BA') DO;BNMCODE='4364081000000Y';OUTPUT;END;
+       OTHERWISE;
+     END;
+
+   IF GWCCY NE 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+     SELECT(GWCTP);
+       WHEN('BC','BP') DO;
+          LINK COUNTMON;
+          IF NUMMMONTH <= 12 THEN BNMCODE='4364001100000Y';
+          ELSE BNMCODE='4364001200000Y';OUTPUT;
+       END;
+       WHEN('BB') DO;
+          LINK COUNTMON;
+          IF NUMMMONTH <= 12 THEN BNMCODE='4364002100000Y';
+          ELSE BNMCODE='4364002200000Y';OUTPUT;
+       END;
+       WHEN('BI') DO;
+          LINK COUNTMON;
+          IF NUMMMONTH <= 12 THEN BNMCODE='4364003100000Y';
+          ELSE BNMCODE='4364003200000Y';OUTPUT;
+       END;
+       WHEN('BJ') DO;
+          LINK COUNTMON;
+          IF NUMMMONTH <= 12 THEN BNMCODE='4364007100000Y';
+          ELSE BNMCODE='4364007200000Y';OUTPUT;
+       END;
+       WHEN('BM') DO;
+          LINK COUNTMON;
+          IF NUMMMONTH <= 12 THEN BNMCODE='4364012100000Y';
+          ELSE BNMCODE='4364012200000Y';OUTPUT;
+       END;
+       WHEN('BA','BE') DO;
+          LINK COUNTMON;
+          IF NUMMMONTH <= 12 THEN BNMCODE='4364081100000Y';
+          ELSE BNMCODE='4364081200000Y';OUTPUT;
+       END;
+       OTHERWISE;
+     END;
+
+   /*IF BNMCODE NE ' ' THEN OUTPUT; */
+     /*
+  IF GWDLP IN ('BO', 'BF') THEN DO;
+      IF NOT ('BA' <= GWCTP <= 'BZ') AND GWCNAL='MY' AND
+         GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+         BNMCODE='4314020000000Y';
+      IF GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+      SELECT(GWCTP);
+        WHEN('BC') BNMCODE='4314001000000Y';
+        WHEN('BB') BNMCODE='4314002000000Y';
+        WHEN('BI') BNMCODE='4314003000000Y';
+        WHEN('BQ') BNMCODE='4314011000000Y';
+        WHEN('BM') BNMCODE='4314012000000Y';
+        WHEN('BN') DO;
+           BNMCODE='4314013000000Y'; OUTPUT;
+           BNMCODE='4314020000000Y';
+        END;
+        WHEN('BG') DO;
+           BNMCODE='4314017000000Y'; OUTPUT;
+           BNMCODE='4314020000000Y';
+        END;
+        WHEN('BA','BW','BE') DO;
+          LINK COUNTMON;
+          IF NUMMONTH <= 12 THEN BNMCODE='4314081100000Y';
+          ELSE BNMCODE='4314081200000Y';
+        END;
+        OTHERWISE;
+      END;
+
+      IF GWCCY NE 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+        SELECT(GWCTP);
+          WHEN('BW') BNMCODE='4364008110000Y';
+          WHEN('BB') BNMCODE='4364002000000Y';
+          WHEN('BI') BNMCODE='4364003000000Y';
+          WHEN('BM') BNMCODE='4364012000000Y';
+          OTHERWISE;
+        END;
+ END;
+   */
+RETURN;
+
+AT42000:
+   IF GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+      SELECT(GWCTP);
+       WHEN('BB') BNMCODE='4213302000000Y';
+       WHEN('BI') BNMCODE='4213303000000Y';
+       WHEN('BJ') BNMCODE='4213307000000Y';
+       WHEN('BM') BNMCODE='4213312000000Y';
+       WHEN('BN') BNMCODE='4213320000000Y';
+       WHEN('BG') BNMCODE='4213317000000Y';
+       OTHERWISE;
+   END;
+
+   IF GWCCY NE 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+      SELECT(GWCTP);
+       WHEN('BB') BNMCODE='4263302000000Y';
+       WHEN('BI') BNMCODE='4263303000000Y';
+       WHEN('BJ') BNMCODE='4263307000000Y';
+       WHEN('BM') BNMCODE='4263312000000Y';
+       WHEN('BN') BNMCODE='4263320000000Y';
+       OTHERWISE;
+   END;
+   IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+ML49000:
+  IF (GWCCY EQ 'MYR' AND GWSAC EQ 'UO' AND GWCIAC NE 0
+      AND GWMVT EQ 'P' AND GWMVTS EQ 'M') OR
+     (GWCCY EQ 'MYR' AND GWCNAL NE 'MY' AND GWCIAC NE 0
+      AND GWMVT EQ 'P' AND GWMVTS EQ 'M') THEN DO;
+     BNMCODE='4911080000000Y';
+     AMOUNT=GWCIAC;
+  END;
+  IF GWCCY NE 'MYR' AND GWSAC NE 'UO' AND GWCIAC NE 0
+     AND GWCNAL EQ 'MY' AND GWMVT EQ 'P' AND GWMVTS EQ 'M' THEN DO;
+     BNMCODE='4961050000000Y';
+     AMOUNT=GWCIAC;
+  END;
+  IF (GWSAC EQ 'UO' OR GWCNAL NE 'MY')
+     AND GWCCY NE 'MYR' AND GWCIAC NE 0
+     AND GWMVT EQ 'P' AND GWMVTS EQ 'M' THEN DO;
+     BNMCODE='4961080000000Y';
+     AMOUNT=GWCIAC;
+  END;
+IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+FX57000:
+  IF GWCCY='JPY' THEN DO;
+     AMOUNT=GWBALA * GWEXR;
+  END;
+  ELSE DO;
+     AMOUNT=GWBALA * GWEXR;
+  END;
+  IF GWOCY EQ 'MYR' AND GWMVT EQ 'P' AND GWMVTS EQ 'P' THEN
+  SELECT(GWDLP);
+    WHEN('FXS') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='5711001000000Y';
+                  WHEN('BB') BNMCODE='5711002000000Y';
+                  WHEN('BI') BNMCODE='5711003000000Y';
+                  WHEN('BJ') BNMCODE='5711007000000Y';
+                  WHEN('BM') BNMCODE='5711012000000Y';
+                  WHEN('BA','BE') BNMCODE='5711081000000Y';
+                  OTHERWISE DO;
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL EQ 'MY' THEN
+                       BNMCODE='5711015000000Y';
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL NOT IN (' ','MY') THEN
+                       BNMCODE='5711085000000Y';
+                  END;
+                END;
+    WHEN('FXO','FXF','FBP') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='5712001000000Y';
+                  WHEN('BB') BNMCODE='5712002000000Y';
+                  WHEN('BI') BNMCODE='5712003000000Y';
+                  WHEN('BJ') BNMCODE='5712007000000Y';
+                  WHEN('BM') BNMCODE='5712012000000Y';
+                  WHEN('BA','BE') BNMCODE='5712081000000Y';
+                  OTHERWISE DO;
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL EQ 'MY' THEN
+                       BNMCODE='5712015000000Y';
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL NOT IN (' ','MY') THEN
+                       BNMCODE='5712085000000Y';
+                  END;
+                END;
+    WHEN('SF1','SF2','TS1','TS2','FF1','FF2') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='5713001000000Y';
+                  WHEN('BB') BNMCODE='5713002000000Y';
+                  WHEN('BI') BNMCODE='5713003000000Y';
+                  WHEN('BJ') BNMCODE='5713007000000Y';
+                  WHEN('BM') BNMCODE='5713012000000Y';
+                  WHEN('BA','BE') BNMCODE='5713081000000Y';
+                  OTHERWISE DO;
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL EQ 'MY' THEN
+                       BNMCODE='5713015000000Y';
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL NOT IN (' ','MY') THEN
+                       BNMCODE='5713085000000Y';
+                  END;
+                END;
+    OTHERWISE;
+  END;
+
+  IF GWOCY EQ 'MYR' AND GWMVT EQ 'P' AND GWMVTS EQ 'S' THEN
+  SELECT(GWDLP);
+    WHEN('FXS') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='5741001000000Y';
+                  WHEN('BB') BNMCODE='5741002000000Y';
+                  WHEN('BI') BNMCODE='5741003000000Y';
+                  WHEN('BJ') BNMCODE='5741007000000Y';
+                  WHEN('BM') BNMCODE='5741012000000Y';
+                  WHEN('BA','BE') BNMCODE='5741081000000Y';
+                  OTHERWISE DO;
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL EQ 'MY' THEN
+                       BNMCODE='5741015000000Y';
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL NOT IN (' ','MY') THEN
+                       BNMCODE='5741085000000Y';
+                  END;
+                END;
+    WHEN('FXO','FXF','FBP') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='5742001000000Y';
+                  WHEN('BB') BNMCODE='5742002000000Y';
+                  WHEN('BI') BNMCODE='5742003000000Y';
+                  WHEN('BJ') BNMCODE='5742007000000Y';
+                  WHEN('BM') BNMCODE='5742012000000Y';
+                  WHEN('BA','BE') BNMCODE='5742081000000Y';
+                  OTHERWISE DO;
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL EQ 'MY' THEN
+                       BNMCODE='5742015000000Y';
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL NOT IN (' ','MY') THEN
+                       BNMCODE='5742085000000Y';
+                  END;
+                END;
+    WHEN('SF1','SF2','TS1','TS2','FF1','FF2') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='5743001000000Y';
+                  WHEN('BB') BNMCODE='5743002000000Y';
+                  WHEN('BI') BNMCODE='5743003000000Y';
+                  WHEN('BJ') BNMCODE='5743007000000Y';
+                  WHEN('BM') BNMCODE='5743012000000Y';
+                  WHEN('BA','BE') BNMCODE='5743081000000Y';
+                  OTHERWISE DO;
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL EQ 'MY' THEN
+                       BNMCODE='5743015000000Y';
+                    IF GWCTP NOT IN ('BA','BB','BC','BE','BI',
+                                      'BJ','BM','BW')
+                       AND GWCNAL NOT IN (' ','MY') THEN
+                       BNMCODE='5743085000000Y';
+                  END;
+                END;
+    OTHERWISE;
+  END;
+IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+PM42199:
+
+     IF ('04'<=GWC2R<='06')  THEN        BNMCODE='4219920000000Y';
+     IF ('30'<=GWC2R<='40')  THEN        BNMCODE='4219920000000Y';
+     IF GWC2R IN ('13','20','45') THEN   BNMCODE='4219920000000Y';
+     IF ('41'<=GWC2R<='44')  THEN        BNMCODE='4219960000000Y';
+     IF ('46'<=GWC2R<='49')  THEN        BNMCODE='4219960000000Y';
+     IF ('51'<=GWC2R<='54')  THEN        BNMCODE='4219960000000Y';
+     IF ('60'<=GWC2R<='64')  THEN        BNMCODE='4219960000000Y';
+     IF ('86'<=GWC2R<='99')  THEN        BNMCODE='4219985000000Y';
+     IF GWC2R IN ('59')      THEN        BNMCODE='4219960000000Y';
+
+     ELSE SELECT(GWC2R);
+        WHEN('01','02','11')             BNMCODE='4219902000000Y';
+        WHEN('03')                       BNMCODE='4219903000000Y';
+        WHEN('07')                       BNMCODE='4219907000000Y';
+        WHEN('12')                       BNMCODE='4219912000000Y';
+        WHEN('17')                       BNMCODE='4219917000000Y';
+        WHEN('57')                       BNMCODE='4219957000000Y';
+        WHEN('71')                       BNMCODE='4219971000000Y';
+        WHEN('72')                       BNMCODE='4219972000000Y';
+        WHEN('73')                       BNMCODE='4219973000000Y';
+        WHEN('74')                       BNMCODE='4219974000000Y';
+        WHEN('75')                       BNMCODE='4219975000000Y';
+        WHEN('77','78')                  BNMCODE='4219976000000Y';
+        WHEN('79')                       BNMCODE='4219979000000Y';
+        WHEN('82','83','84')             BNMCODE='4219981000000Y';
+        OTHERWISE;
+        END;
+
+     IF BNMCODE='           ' THEN DO;
+        IF GWCTP IN ('BB','BQ','BC','BP')
+                                    THEN BNMCODE='4219902000000Y';
+        IF GWCTP IN ('BJ')          THEN BNMCODE='4219907000000Y';
+        IF GWCTP IN ('BM','BN')
+                                    THEN BNMCODE='4219912000000Y';
+        IF GWCTP IN ('BF','BH','BR','BS','BT','BU','BV','BZ')
+                                    THEN BNMCODE='4219920000000Y';
+        IF GWCTP IN ('BG')          THEN BNMCODE='4219917000000Y';
+        IF GWCTP IN ('AC','AD','CA','CB','CD','CF','CG','DD','CC')
+                                    THEN BNMCODE='4219960000000Y';
+        IF GWCTP IN ('DA')          THEN BNMCODE='4219971000000Y';
+        IF GWCTP IN ('DB')          THEN BNMCODE='4219972000000Y';
+        IF GWCTP IN ('DC')          THEN BNMCODE='4219974000000Y';
+        IF GWCTP IN ('EA','EC','EJ')
+                                    THEN BNMCODE='4219976000000Y';
+        IF GWCTP IN ('FA')          THEN BNMCODE='4219990000000Y';
+        IF GWCTP IN ('BA','BE','BW')
+                                    THEN BNMCODE='4219981000000Y';
+        IF GWCTP IN ('EB','CE','GA')
+                                    THEN BNMCODE='4219985000000Y';
+     END;
+     IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+DP42190:                                 /* 2012-465 BCS CISA-I */
+     SELECT(GWC2R);
+        WHEN('01')                       BNMCODE='4219001000000Y';
+        WHEN('02')                       BNMCODE='4219002000000Y';
+        WHEN('03')                       BNMCODE='4219003000000Y';
+        WHEN('07')                       BNMCODE='4219007000000Y';
+        WHEN('12')                       BNMCODE='4219012000000Y';
+        WHEN('17')                       BNMCODE='4219017000000Y';
+        WHEN('13','20','45')             BNMCODE='4219020000000Y';
+        WHEN('57')                       BNMCODE='4219057000000Y';
+        WHEN('59')                       BNMCODE='4219060000000Y';
+        WHEN('71')                       BNMCODE='4219071000000Y';
+        WHEN('72')                       BNMCODE='4219072000000Y';
+        WHEN('73')                       BNMCODE='4219073000000Y';
+        WHEN('74')                       BNMCODE='4219074000000Y';
+        WHEN('75')                       BNMCODE='4219075000000Y';
+        WHEN('77','78')                  BNMCODE='4219076000000Y';
+        WHEN('79')                       BNMCODE='4219079000000Y';
+        WHEN('82','83','84')             BNMCODE='4219081000000Y';
+        OTHERWISE;
+     END;
+
+     IF ('04'<=GWC2R<='06')  THEN        BNMCODE='4219020000000Y';
+     IF ('30'<=GWC2R<='40')  THEN        BNMCODE='4219020000000Y';
+     IF ('41'<=GWC2R<='44')  THEN        BNMCODE='4219060000000Y';
+     IF ('46'<=GWC2R<='49')  THEN        BNMCODE='4219060000000Y';
+     IF ('51'<=GWC2R<='54')  THEN        BNMCODE='4219060000000Y';
+     IF ('61'<=GWC2R<='64')  THEN        BNMCODE='4219060000000Y';
+     IF ('66'<=GWC2R<='69')  THEN        BNMCODE='4219060000000Y';
+     IF ('86'<=GWC2R<='99')  THEN        BNMCODE='4219085000000Y';
+
+     IF BNMCODE='           ' THEN DO;
+        IF GWCTP IN ('BB','BQ','BC','BP')
+                                    THEN BNMCODE='4219002000000Y';
+        IF GWCTP IN ('BJ')          THEN BNMCODE='4219007000000Y';
+        IF GWCTP IN ('BM','BN')
+                                    THEN BNMCODE='4219012000000Y';
+        IF GWCTP IN ('BF','BH','BR','BS','BT','BU','BV','BZ')
+                                    THEN BNMCODE='4219020000000Y';
+        IF GWCTP IN ('BG')          THEN BNMCODE='4219017000000Y';
+        IF GWCTP IN ('AC','AD','CA','CB','CD','CF','CG','DD','CC')
+                                    THEN BNMCODE='4219060000000Y';
+        IF GWCTP IN ('DA')          THEN BNMCODE='4219071000000Y';
+        IF GWCTP IN ('DB')          THEN BNMCODE='4219072000000Y';
+        IF GWCTP IN ('DC')          THEN BNMCODE='4219074000000Y';
+        IF GWCTP IN ('EA','EC','EJ')
+                                    THEN BNMCODE='4219076000000Y';
+        IF GWCTP IN ('FA')          THEN BNMCODE='4219090000000Y';
+        IF GWCTP IN ('BA','BE','BW')
+                                    THEN BNMCODE='4219081000000Y';
+        IF GWCTP IN ('EB','CE','GA')
+                                    THEN BNMCODE='4219085000000Y';
+        END;
+        IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+COUNTMON:
+  IF GWSDT NE 0 AND GWMDT NE 0 AND GWMDT GE GWSDT;
+  FOLMONTH=GWSDT; NUMMONTH=0;
+  DO UNTIL(GWMDT <= FOLMONTH);
+     NUMMONTH+1;
+     NEXTDAY=DAY(GWSDT);
+     NEXTMON=MONTH(FOLMONTH)+1;
+     NEXTYEAR=YEAR(FOLMONTH);
+     IF NEXTMON > 12 THEN DO;
+        NEXTMON = NEXTMON-12; NEXTYEAR=NEXTYEAR+1; END;
+     IF NEXTDAY IN (29,30,31) AND NEXTMON EQ 2 THEN
+       FOLMONTH=MDY(3,1,NEXTYEAR)-1;
+     ELSE IF NEXTDAY EQ 31
+          AND NEXTMON IN (4,6,9,11) THEN
+       FOLMONTH=MDY(NEXTMON, 30, NEXTYEAR);
+     ELSE IF NEXTDAY EQ 30 AND MONTH(GWSDT) IN (4,6,9,11)
+          AND NEXTMON IN (1,3,5,7,8,10,12) THEN
+       FOLMONTH=MDY(NEXTMON, 31, NEXTYEAR);
+     ELSE
+       FOLMONTH=MDY(NEXTMON, NEXTDAY, NEXTYEAR);
+  END;
+RETURN;
+RUN;
+
+DATA K3TABL (KEEP=BNMCODE AMOUNT AMTIND) K3DTL;
+  LENGTH BNMCODE $14. AMTIND $1.;
+  SET BNMK.K3TBL&REPTMON&NOWK;
+  BNMCODE=' ';
+  AMTIND=&AMTIND;
+  AMOUNT = UTAMOC - UTDPF + UTAICT;
+  IF UTSTY IN ('IFD','ILD','ISD','IZD','IDC','IDP') AND
+     UTREF IN ('PFD','PLD','PSD','PZD','PDC') THEN DO;
+     SELECT(UTCTP);
+     WHEN('BB','BQ') BNMCODE='4215002000000Y';
+     WHEN('BI') BNMCODE='4215003000000Y';
+     WHEN('BJ') BNMCODE='4215007000000Y';
+     WHEN('BM') BNMCODE='4215012000000Y';
+     WHEN('BR','BF','BH','BZ','BU','AD','BT','BV','BS','BN')
+     BNMCODE='4215020000000Y';
+     WHEN('BN') BNMCODE='4215013000000Y';
+     WHEN('BG') BNMCODE='4215017000000Y';
+     WHEN('DA') BNMCODE='4215071000000Y';
+     WHEN('DB') BNMCODE='4215072000000Y';
+     WHEN('DC') BNMCODE='4215074000000Y';
+     WHEN('EC','EA') BNMCODE='4215076000000Y';
+     WHEN('FA') BNMCODE='4215079000000Y';
+     WHEN('BA','BW','BE') BNMCODE='4215081000000Y';
+     WHEN('EB','CE','GA') BNMCODE='4215085000000Y';
+     WHEN('AC','DD','CG','CF','CA','CB','CC','CD')
+     BNMCODE='4215060000000Y';
+     OTHERWISE DO;
+     IF NOT('BA' <= UTCTP <= 'BZ') THEN
+        BNMCODE='4215060000000Y';
+     END;
+     END;
+  END;
+
+  IF BNMCODE ^= ' ' THEN OUTPUT;
+RUN;
+*;
+DATA K3TABL;
+  SET K3TABL;
+*;
+DATA NIDTBL (KEEP=BNMCODE AMOUNT AMTIND);
+   LENGTH BNMCODE $14. AMTIND $1.;
+   SET NID.RNID&REPTDAY;
+   WHERE NIDSTAT = 'N' AND CURBAL > 0;
+   AMTIND = &AMTIND;
+   AMOUNT = CURBAL;
+   /* BY CUSTOMER TYPE */
+   IF CUSTCD IN (02,03,12,07,17,57,71,72,73,74,75,79) THEN DO;
+      BNMCODE='42150'||CUSTCD||'000000Y'; OUTPUT;
+   END;
+   IF CUSTCD IN (04:06,13,20,30:40,45) THEN DO;
+      BNMCODE='4215020000000Y'; OUTPUT;
+   END;
+   IF CUSTCD IN (41:44,46:49,51:54,59,61:69) THEN DO;
+      BNMCODE='4215060000000Y'; OUTPUT;
+   END;
+   IF CUSTCD IN (77,78) THEN DO;
+      BNMCODE='4215076000000Y'; OUTPUT;
+   END;
+   IF CUSTCD IN (82:84) THEN DO;
+      BNMCODE='4215081000000Y'; OUTPUT;
+   END;
+   IF CUSTCD IN (86:99) THEN DO;
+      BNMCODE='4215085000000Y'; OUTPUT;
+   END;
+   KEEP BNMCODE AMTIND AMOUNT;
+RUN;
+
+%MACRO AL;
+   %IF &NOWK=4 %THEN
+       %DO;
+         DATA KALW&REPTMON&NOWK (DROP=BRANCH);
+           SET K1TABL
+               K3TABL
+               NIDTBL;
+         RUN;
+       %END;
+   %ELSE
+       %DO;
+         DATA KALW&REPTMON&NOWK (DROP=BRANCH);
+           SET K1TABL
+               K3TABL
+               NIDTBL;
+         RUN;
+      %END;
+%MEND AL;
+
+%AL;
+
+PROC APPEND DATA=KALW&REPTMON&NOWK BASE=BNM.KALW&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE KALW&REPTMON&NOWK; RUN;
+*;
+%LET IREP=('01','02','11','12','81');
+%LET NREP=('13','17','20','60','71','72','74','76','79','85');
+*;
+DATA K3TBL3;
+  LENGTH BNMCODE $14.;
+  KEEP AMTIND BNMCODE AMOUNT;
+  SET BNMK.K3TBL&REPTMON&NOWK;
+  AMTIND='D';
+  IF UTREF='RRS' AND UTSTY='MGS' AND UTDLP='MSS';
+  IF ISSDT > REPTDATE  THEN DELETE;
+  AMOUNT=(UTPCP*UTFCV)*0.01;
+  AMOUNT=SUM(AMOUNT,UTAICT); /* SALES PROCEEDS */
+  CUST=PUT(UTCTP,$CTYPE.);
+  IF CUST IN &NREP THEN ITEM='A2.16'; ELSE
+  IF CUST IN &IREP THEN ITEM='A2.15';
+  IF CUST NE '  ';
+  BNMCODE='42160'||CUST||'000000Y';
+*;
+/***********************************************************/
+/** FINAL CONSOLIDATION                                   **/
+/***********************************************************/
+PROC SUMMARY DATA=BNM.KALW&REPTMON&NOWK NWAY;
+CLASS BNMCODE AMTIND;
+VAR AMOUNT;
+OUTPUT OUT=BNM.KALW&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=AMOUNT;
+RUN;
+
+DATA BNM.KALW&REPTMON&NOWK;
+   SET BNM.KALW&REPTMON&NOWK;
+   AMOUNT=ABS(AMOUNT);
+RUN;
+
+OPTIONS NOCENTER NONUMBER NODATE;
+TITLE1 &SDESC;
+TITLE2 'REPORT ON DOMESTIC ASSETS AND LIABILITIES PART I - KAPITI';
+TITLE3 'REPORT DATE : ' &RDATE;
+TITLE4;
+PROC PRINT DATA=BNM.KALW&REPTMON&NOWK;
+FORMAT AMOUNT COMMA30.2;
+RUN;
