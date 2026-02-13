@@ -1,0 +1,19 @@
+//EIAWOF05  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//**********************************************************************
+//* UPDATE LATEST PROGRAM FROM EIFMNP06
+//**********************************************************************
+//LABEL    OUTPUT CLASS=A,
+//         NAME='CIK ROSEDAH',
+//         ROOM='22TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='HP CREDIT CONTROL DEPARTMENT',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//**********************************************************************
+//EIAWOF05 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP06),DISP=SHR
