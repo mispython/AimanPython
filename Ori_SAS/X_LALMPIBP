@@ -1,0 +1,3912 @@
+ /***********************************************************/
+ /**                                                       **/
+ /** REPORT ON DOMESTIC ASSETS AND LIABILITIES - PART II   **/
+ /**                                                       **/
+ /***********************************************************/
+
+%INC PGM(PBBLNFMT);
+
+DATA LOAN&REPTMON&NOWK;
+   SET BNM.LOAN&REPTMON&NOWK;
+   WHERE PAIDIND NOT IN ('P','C') OR EIR_ADJ NE . ;
+
+PROC DATASETS LIB=BNM NOLIST;
+   DELETE LALM&REPTMON&NOWK;
+RUN;
+
+ /**********************************************************/
+ /** PRE GEN MAIN LNCOMM & LNNOTE FOR LATER MERGE         **/
+ /** DO NOT CHANGE KEY                                    **/
+ /** CAN ADD VARIABLE BUT DO IMPACT ANALYSIS              **/
+ /**********************************************************/
+
+PROC SORT DATA=LOAN.LNCOMM
+   OUT=M_LNCOMM(KEEP=ACCTNO COMMNO CUSEDAMT);
+   BY ACCTNO COMMNO; RUN;
+PROC SORT DATA=LOAN.LNNOTE
+   OUT=M_LNNOTE(KEEP=ACCTNO COMMNO CJFEE BALANCE);
+   BY ACCTNO COMMNO; RUN;
+
+ /**********************************************************/
+ /** NON-PERFORMING LOANS (NPL)                           **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BAL_AFT_EIR;
+CLASS AMTIND RISKCD;
+WHERE SUBSTR(PRODCD, 1, 2) = '34' AND
+      RISKCD NE ' ';
+OUTPUT OUT=ALQ
+       SUM=AMOUNT;
+RUN;
+
+DATA ALQLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALQ;
+
+  BNMCODE=RISKCD||'00000000Y';
+RUN;
+
+PROC APPEND DATA=ALQLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALQ ALQLOAN; RUN;
+
+ /**********************************************************/
+ /** NON-PERFORMING LOANS (NPL) - BY CUSTOMER AND         **/
+ /**                            - BY SECTORIAL CODE       **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK;
+VAR BAL_AFT_EIR;
+CLASS AMTIND SECTORCD CUSTCD;
+WHERE SUBSTR(PRODCD, 1, 2) = '34' AND
+      RISKCD NE ' ';
+OUTPUT OUT=ALQ
+       SUM=AMOUNT;
+RUN;
+
+DATA ALQLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALQ;
+
+  IF _TYPE_ = 6 THEN DO;
+     SELECT;
+       WHEN(SECTORCD IN ('0410','0420','0430','9999')) DO;
+         BNMCODE='349000000'||SECTORCD||'Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='01') DO;
+         BNMCODE='3490000000100Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='02') DO;
+         BNMCODE='3490000000200Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='031') DO;
+         BNMCODE='3490000000310Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='032') DO;
+         BNMCODE='3490000000320Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='1') DO;
+         BNMCODE='3490000001000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='2') DO;
+         BNMCODE='3490000002000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='3') DO;
+         BNMCODE='3490000003000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='4') DO;
+         BNMCODE='3490000004000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='5') DO;
+         BNMCODE='349000000'||SECTORCD||'Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='61') DO;
+         BNMCODE='3490000006100Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='62') DO;
+         BNMCODE='3490000006200Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='63') DO;
+         BNMCODE='3490000006300Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='7') DO;
+         BNMCODE='3490000007000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='81') DO;
+         BNMCODE='3490000008100Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='82') DO;
+         BNMCODE='3490000008200Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='831') DO;
+         BNMCODE='3490000008310Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='832') DO;
+         BNMCODE='3490000008320Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='833') DO;
+         BNMCODE='3490000008330Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2) IN ('90','91','92','93',
+                                     '94','95','96','97',
+                                     '98')) DO;
+         BNMCODE='3490000009000Y'; OUTPUT;
+       END;
+       OTHERWISE DO;
+         BNMCODE='3490000009999Y'; OUTPUT;
+       END;
+     END;
+  END;
+
+  IF _TYPE_=7 THEN DO;
+     IF CUSTCD IN ('61','66') THEN
+     SELECT;
+       WHEN(SECTORCD IN ('0430','9999')) DO;
+         BNMCODE='349006100'||SECTORCD||'Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='01') DO;
+         BNMCODE='3490061000100Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='02') DO;
+         BNMCODE='3490061000200Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='031') DO;
+         BNMCODE='3490061000310Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='032') DO;
+         BNMCODE='3490061000320Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='1') DO;
+         BNMCODE='3490061001000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='2') DO;
+         BNMCODE='3490061002000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='3') DO;
+         BNMCODE='3490061003000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='4') DO;
+         BNMCODE='3490061004000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='5') DO;
+         BNMCODE='3490061005000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='61') DO;
+         BNMCODE='3490061006100Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='62') DO;
+         BNMCODE='3490061006200Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='63') DO;
+         BNMCODE='3490061006300Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 1)='7') DO;
+         BNMCODE='3490061007000Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='831') DO;
+         BNMCODE='3490061008310Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='832') DO;
+         BNMCODE='3490061008320Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='833') DO;
+         BNMCODE='3490061008330Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2) IN ('90','91','92','93',
+                                     '94','95','96','97',
+                                     '98')) DO;
+         BNMCODE='3490061009000Y'; OUTPUT;
+       END;
+       OTHERWISE DO;
+         BNMCODE='3490061009999Y'; OUTPUT;
+       END;
+     END;
+
+     IF CUSTCD IN ('77') THEN
+     SELECT;
+       WHEN(SECTORCD IN ('0410','0420','0430')) DO;
+         BNMCODE='34900'||CUSTCD||'00'||SECTORCD||'Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='01') DO;
+         BNMCODE='34900'||CUSTCD||'000100Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 2)='02') DO;
+         BNMCODE='34900'||CUSTCD||'000200Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='031') DO;
+         BNMCODE='34900'||CUSTCD||'000310Y'; OUTPUT;
+       END;
+       WHEN(SUBSTR(SECTORCD, 1, 3)='032') DO;
+         BNMCODE='34900'||CUSTCD||'000320Y'; OUTPUT;
+       END;
+       OTHERWISE DO;
+         BNMCODE='34900'||CUSTCD||'009999Y'; OUTPUT;
+       END;
+     END;
+   END;
+RUN;
+
+PROC APPEND DATA=ALQLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALQ ALQLOAN; RUN;
+
+ /**********************************************************/
+ /** GROSS LOAN - BY APPROVED LIMIT                       **/
+ /**********************************************************/
+DATA LNAA;
+     SET LOAN&REPTMON&NOWK;
+     IF  PRODUCT IN (150,151) AND ACCTYPE='OD' THEN DELETE;
+     IF (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120');
+    * IF PRODUCT IN (128,130,131,132) THEN APPRLIM2=APPRLIMT;
+RUN;
+
+ PROC SORT DATA=LNAA OUT=TEMP NODUPKEY;
+    BY ACCTNO COMMNO NOTENO;RUN;
+
+ PROC SQL;
+ CREATE TABLE AFFACCT(KEEP=ACCTNO COMMNO NOTENO COUNT)
+ AS SELECT TEMP1.ACCTNO,
+           TEMP1.COMMNO,
+           TEMP1.NOTENO,
+          (COUNT(TEMP1.ACCTNO)) AS COUNT
+      FROM TEMP AS TEMP1
+    GROUP BY TEMP1.ACCTNO, TEMP1.COMMNO;
+
+PROC SORT DATA=AFFACCT;
+   BY ACCTNO COMMNO;WHERE COUNT > 1 AND COMMNO > 0;RUN;
+PROC SORT DATA=LOAN.LNCOMM OUT=LNCOMM(KEEP=ACCTNO COMMNO CCURAMT);
+   BY ACCTNO COMMNO;RUN;
+
+DATA AFFACCT(DROP=COMMNO);
+   MERGE AFFACCT(IN=A) LNCOMM(IN=B);
+   BY ACCTNO COMMNO;
+   IF A;
+RUN;
+
+PROC SORT DATA=AFFACCT;
+   BY ACCTNO NOTENO;RUN;
+
+PROC SORT DATA=LNAA;
+   BY ACCTNO NOTENO;RUN;
+
+DATA LOAN;
+   MERGE LNAA(IN=A) AFFACCT(IN=B);
+   BY ACCTNO NOTENO;
+   IF ((2500000000<=ACCTNO<=2599999999 OR
+        2850000000<=ACCTNO<=2859999999) AND 40000<=NOTENO<=49999) OR
+        PRODUCT = 444
+      THEN APPRLIM2=APPRLIM2ORI;
+   IF A & B THEN DO;
+      IF PRODCD IN ('34114','34115','34117','34120','34149','34600',
+                    '34190','34690') THEN DO;
+         APPRLIM2=CCURAMT;
+         IF SUBSTR(PRODCD, 1, 3) EQ '346' THEN
+           APPRLIM2=APPRLIM2*FORATE;
+      END;
+   END;
+   BIC=PUT(APPRLIM2, APPRLIMT.);
+RUN;
+DATA LOAN;
+    SET LOAN;
+    IF BALANCE = . AND EIR_ADJ NE 0 THEN APPRLIM2 = 0;
+RUN;
+
+PROC SUMMARY DATA=LOAN;
+VAR BAL_AFT_EIR;
+CLASS AMTIND APPRLIM2 CUSTCD;
+FORMAT APPRLIM2 APPRLIMT.;
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+  ALMLIMT=PUT(APPRLIM2, APPRLIMT.);
+
+  IF _TYPE_=6 THEN DO;
+     BNMCODE=ALMLIMT||'00000000Y'; OUTPUT;
+  END;
+
+  IF _TYPE_=7 THEN DO;
+     SELECT(CUSTCD);
+       WHEN('41','42','43',
+            '44','46','47',
+            '48','49','51',
+            '52','53','54') DO;
+         BNMCODE=ALMLIMT||CUSTCD||'000000Y'; OUTPUT;
+         IF CUSTCD IN ('41','42','43') THEN DO;
+            BNMCODE=ALMLIMT||'66000000Y'; OUTPUT;
+         END;
+         IF CUSTCD IN ('44','46','47') THEN DO;
+            BNMCODE=ALMLIMT||'67000000Y'; OUTPUT;
+         END;
+         IF CUSTCD IN ('48','49','51') THEN DO;
+            BNMCODE=ALMLIMT||'68000000Y'; OUTPUT;
+         END;
+         IF CUSTCD IN ('52','53','54') THEN DO;
+            BNMCODE=ALMLIMT||'69000000Y'; OUTPUT;
+         END;
+       END;
+       OTHERWISE;
+     END;
+     IF CUSTCD IN ('61','41','42','43') THEN DO;
+        BNMCODE=ALMLIMT||'61000000Y'; OUTPUT;
+     END;
+     ELSE IF CUSTCD IN ('77') THEN DO;
+        BNMCODE=ALMLIMT||'77000000Y'; OUTPUT;
+     END;
+  END;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST;
+DELETE ALM ALMLOAN LOAN AFFACCT TEMP LNAA LNCOMM;RUN;
+
+ /**********************************************************/
+ /** GROSS LOAN - BY COLLATERAL TYPE                      **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK;
+VAR BAL_AFT_EIR;
+CLASS AMTIND COLLCD CUSTCD;
+WHERE SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120';
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  IF _TYPE_=6 AND COLLCD IN ('30560','30570','30580') THEN DO;
+        BNMCODE=COLLCD||'00000000Y'; OUTPUT;
+  END;
+  ELSE IF _TYPE_=7 AND COLLCD ^ IN ('30560','30570','30580') THEN
+     SELECT(CUSTCD);
+        WHEN('10','02','03','11','12') DO;
+           BNMCODE=COLLCD||'10000000Y'; OUTPUT;
+        END;
+        WHEN('20','13','17','30','32','33',
+             '34','35','36','37','38','39','40') DO;
+          BNMCODE=COLLCD||'20000000Y'; OUTPUT;
+        END;
+        WHEN('04','05','06') DO;
+          BNMCODE=COLLCD||CUSTCD||'000000Y'; OUTPUT;
+          BNMCODE=COLLCD||'20000000Y'; OUTPUT;
+        END;
+        WHEN('60','62','63','44','46','47','48','49','51') DO;
+          BNMCODE=COLLCD||'60000000Y'; OUTPUT;
+        END;
+        WHEN('61','41','42','43') DO;
+          BNMCODE=COLLCD||'61000000Y'; OUTPUT;
+          BNMCODE=COLLCD||'60000000Y'; OUTPUT;
+        END;
+        WHEN('64','52','53','54','75','57','59') DO;
+          BNMCODE=COLLCD||'64000000Y'; OUTPUT;
+          BNMCODE=COLLCD||'60000000Y'; OUTPUT;
+        END;
+        WHEN('70','71','72','73','74') DO;
+          BNMCODE=COLLCD||'70000000Y'; OUTPUT;
+        END;
+        WHEN('76','78') DO;
+          BNMCODE=COLLCD||'76000000Y'; OUTPUT;
+        END;
+        WHEN('77') DO;
+          BNMCODE=COLLCD||'77000000Y'; OUTPUT;
+          BNMCODE=COLLCD||'76000000Y'; OUTPUT;
+        END;
+        WHEN('79') DO;
+          BNMCODE=COLLCD||'79000000Y'; OUTPUT;
+        END;
+        WHEN('80','81','82','83','84','85','86','87','88','89',
+             '90','91','92','95','96','98','99') DO;
+          BNMCODE=COLLCD||'80000000Y'; OUTPUT;
+          IF CUSTCD IN ('86','87','88','89') THEN DO;
+            BNMCODE=COLLCD||'86000000Y'; OUTPUT;
+          END;
+        END;
+        OTHERWISE;
+     END;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** GROSS LOAN - NO OF UTILISED LOAN ACCOUNTS            **/
+ /**********************************************************/
+
+DATA TEMPLOAN TEMPLOANBT;
+   SET BNM.LOAN&REPTMON&NOWK;
+   IF (2850000000<=ACCTNO<=2859999999 AND 40000<=NOTENO<=49999) OR
+       PRODUCT = 444
+      THEN OUTPUT TEMPLOANBT;ELSE OUTPUT TEMPLOAN;
+RUN;
+
+PROC SORT DATA=TEMPLOANBT NODUPKEY;BY ACCTNO;RUN;
+
+DATA TEMPLOAN;
+   SET TEMPLOAN TEMPLOANBT;
+RUN;
+
+PROC SORT DATA=TEMPLOAN;BY ACCTNO COMMNO; RUN;
+
+DATA TEMPLOAN;
+MERGE TEMPLOAN(IN=A) M_LNCOMM(IN=B);
+BY ACCTNO COMMNO;
+IF A;
+RUN;
+
+DATA B80510;
+   SET TEMPLOAN;
+   IF  PRODUCT IN (150,151) AND ACCTYPE='OD' THEN DELETE;
+   IF (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120') AND
+      PAIDIND NOT IN ('P','C');
+  * IF PRODUCT IN (128,130,131,132) THEN APPRLIM2=APPRLIMT;
+   FORMAT BALX 14.2;
+   XIND=' ';
+   IF BALANCE=-.00 THEN XIND='Y';
+   BALX=ROUND(BALANCE,.01);
+   IF BALX IN (0.00,-0.00)  THEN XIND='Y';
+   IF PAIDIND='P' OR XIND='Y' THEN DELETE;
+   IF ACCTYPE='LN' THEN DO;
+      IF (RLEASAMT^=0.00 AND PAIDIND NOT IN ('P','C') AND
+          BALANCE>0 AND CJFEE^=BALANCE) OR
+         (RLEASAMT =0.00 AND PAIDIND NOT IN ('P','C') AND
+          BALANCE>0 AND PRODUCT IN (600:699)) OR
+         (RLEASAMT =0.00 AND PAIDIND NOT IN ('P','C') AND
+          BALANCE>0 AND COMMNO>0 AND CUSEDAMT>0);
+   END;
+   IF PRODCD IN ('34170','34190','34690') THEN UNQ = 1; *17-513/1477;
+   ELSE                                        UNQ = _N_;
+*;
+PROC SUMMARY DATA=B80510;
+CLASS AMTIND APPRLIM2 CUSTCD;
+FORMAT APPRLIM2 LOANSIZE.;
+OUTPUT OUT=ALM;
+RUN;
+
+PROC SORT DATA=B80510 NODUPKEY; BY ACCTNO COMMNO UNQ; RUN;
+DATA BNM.B80510; SET B80510; RUN;
+
+PROC SUMMARY DATA=B80510;
+CLASS AMTIND APPRLIM2 CUSTCD;
+FORMAT APPRLIM2 LOANSIZE.;
+OUTPUT OUT=ALM2;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM(IN=A) ALM2(IN=B);
+  IF (A AND _TYPE_ NE 5) OR (B AND _TYPE_=5);
+  LOANSIZE=PUT(APPRLIM2, LOANSIZE.);
+  _FREQ_=_FREQ_*1000;
+  RENAME _FREQ_=AMOUNT;
+  /* AMOUNT WILL REMAIN DURING CONVERSION TO TEXT WHERE AMOUNT
+     IS REPORTABLE TO NEAREST '000  */
+
+
+  IF _TYPE_=5 THEN DO;
+       IF CUSTCD IN ('10','02','03','11','12') THEN DO;
+          BNMCODE='8051010000000Y'; OUTPUT;
+       END;
+       IF CUSTCD IN ('20','13','17','04','05','06','30','32','33',
+            '34','35','36','37','38','39','40') THEN DO;
+          BNMCODE='8051020000000Y'; OUTPUT;
+       END;
+       IF CUSTCD IN ('61','41','42','43') THEN DO;
+          BNMCODE='8051061000000Y'; OUTPUT;
+          IF CUSTCD IN ('41','42','43') THEN DO;
+             BNMCODE='80510'||CUSTCD||'000000Y'; OUTPUT;
+             BNMCODE='8051066000000Y'; OUTPUT;
+             BNMCODE='80500'||CUSTCD||'000000'||'Y'; OUTPUT;
+          END;
+       END;
+       IF CUSTCD IN ('62','44','46','47') THEN DO;
+          BNMCODE='8051062000000Y'; OUTPUT;
+          IF CUSTCD IN ('44','46','47') THEN DO;
+             BNMCODE='80510'||CUSTCD||'000000Y'; OUTPUT;
+             BNMCODE='8051067000000Y'; OUTPUT;
+             BNMCODE='80500'||CUSTCD||'000000'||'Y'; OUTPUT;
+          END;
+       END;
+       IF CUSTCD IN ('63','48','49','51') THEN DO;
+          BNMCODE='8051063000000Y'; OUTPUT;
+          IF CUSTCD IN ('48','49','51') THEN DO;
+             BNMCODE='80510'||CUSTCD||'000000Y'; OUTPUT;
+             BNMCODE='8051068000000Y'; OUTPUT;
+             BNMCODE='80500'||CUSTCD||'000000'||'Y'; OUTPUT;
+          END;
+       END;
+       IF CUSTCD IN ('64','52','53','54','75','57','59') THEN DO;
+          BNMCODE='8051064000000Y'; OUTPUT;
+          IF CUSTCD IN ('52','53','54') THEN DO;
+             BNMCODE='80510'||CUSTCD||'000000Y'; OUTPUT;
+             BNMCODE='8051069000000Y'; OUTPUT;
+             BNMCODE='80500'||CUSTCD||'000000'||'Y'; OUTPUT;
+          END;
+       END;
+       IF CUSTCD IN ('41','42','43','44','46','47','48','49','51',
+            '52','53','54') THEN DO;
+          BNMCODE='8051065000000Y'; OUTPUT;
+       END;
+       IF CUSTCD IN ('70','71','72','73','74') THEN DO;
+          BNMCODE='8051070000000Y'; OUTPUT;
+          BNMCODE='8050070000000Y'; OUTPUT;
+       END;
+       IF CUSTCD IN ('77') THEN DO;
+          BNMCODE='8051077000000Y'; OUTPUT;
+          BNMCODE='8050077000000Y'; OUTPUT;
+       END;
+       IF CUSTCD IN ('78') THEN DO;
+          BNMCODE='8051078000000Y'; OUTPUT;
+          BNMCODE='8050078000000Y'; OUTPUT;
+       END;
+       IF CUSTCD IN ('79') THEN DO;
+          BNMCODE='8051079000000Y'; OUTPUT;
+          BNMCODE='8050079000000Y'; OUTPUT;
+       END;
+       IF CUSTCD IN ('80','81','82','83','84','85','86','87','88','89',
+                     '90','91','92','95','96','98','99') THEN DO;
+          BNMCODE='8051080000000Y'; OUTPUT;
+          BNMCODE='8050080000000Y'; OUTPUT;
+       END;
+  END;
+  IF _TYPE_=6 THEN DO;
+     BNMCODE=LOANSIZE||'00000000Y'; OUTPUT;
+  END;
+
+  IF _TYPE_=7 THEN DO;
+     SELECT(CUSTCD);
+       WHEN('77') DO;
+         BNMCODE=LOANSIZE||'77000000Y'; OUTPUT;
+       END;
+       WHEN('61','41','42','43') DO;
+         BNMCODE=LOANSIZE||'61000000Y'; OUTPUT;
+       END;
+       OTHERWISE;
+     END;
+     IF CUSTCD IN ('41','42','43','44','46','47','48','49','51',
+                   '52','53','54') THEN DO;
+         BNMCODE=LOANSIZE||CUSTCD||'000000Y'; OUTPUT;
+     END;
+  END;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN TEMPLOAN; RUN;
+
+ /**********************************************************/
+ /** SMR A330-NO OF UTILISED / UNUTILISED CURRENT ACCTS   **/
+ /**********************************************************/
+DATA CURROD CURRUOD;
+  LENGTH CUSTCD $2. AMTIND $1.;
+  SET DEPOSIT.CURRENT;
+  IF  OPENIND NOT IN ('B','C','P') AND APPRLIMT > 1;
+  IF  (160<=PRODUCT<=165) THEN AMTIND='I';
+  ELSE                         AMTIND='D';
+  CUSTCD=PUT(CUSTCODE,ODCUSTCD.);
+  IF  PRODUCT=104 THEN CUSTCD='02';
+  IF  PRODUCT=105 THEN CUSTCD='81';
+  IF  CURBAL GE 0 THEN OUTPUT CURRUOD; /* UNUTILISED */
+  ELSE                 OUTPUT CURROD;  /* UTILISED   */
+*;
+ /**********************************************************/
+ /** LOAN - BY CUSTOMER CODE AND BY PURPOSE CODE          **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK;
+VAR BAL_AFT_EIR;
+CLASS AMTIND CUSTCD FISSPURP;
+WHERE SUBSTR(PRODCD, 1, 2) = '34';
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALM1;
+   SET ALM;
+   IF FISSPURP IN ('0220','0230','0210','0211','0212') THEN DO;
+      FISSPURP = '0200';
+      OUTPUT;
+   END;
+DATA ALM;
+   SET ALM ALM1;
+RUN;
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  IF _TYPE_=7 THEN DO;
+        SELECT(CUSTCD);
+           WHEN('79') DO;
+             BNMCODE='34000'||CUSTCD||'00'||FISSPURP||'Y'; OUTPUT;
+           END;
+           WHEN('10','02','03','11','12') DO;
+             BNMCODE='340001000'||FISSPURP||'Y'; OUTPUT;
+           END;
+           WHEN('20','13','17','30','31','32','33','34','35',
+                '37','38','39','40','04','05','40','45',
+                '06') DO;
+                IF CUSTCD IN ('04','05','06') THEN DO;
+                   BNMCODE='34000'||CUSTCD||'00'||FISSPURP||'Y'; OUTPUT;
+                END;
+             BNMCODE='340002000'||FISSPURP||'Y'; OUTPUT;
+           END;
+           WHEN('61','41','42','43') DO;
+             BNMCODE='340006100'||FISSPURP||'Y'; OUTPUT;
+           END;
+           WHEN('62','44','46','47') DO;
+             BNMCODE='340006200'||FISSPURP||'Y'; OUTPUT;
+           END;
+           WHEN('63','48','49','51') DO;
+             BNMCODE='340006300'||FISSPURP||'Y'; OUTPUT;
+           END;
+           WHEN('64','57','75','59','52','53','54') DO;
+             BNMCODE='340006400'||FISSPURP||'Y'; OUTPUT;
+           END;
+           WHEN('71','72','73','74') DO;
+             BNMCODE='340007000'||FISSPURP||'Y'; OUTPUT;
+           END;
+          OTHERWISE;
+        END;
+     IF '81'<=CUSTCD<='99'  THEN DO;
+             BNMCODE='3400080'||'00'||FISSPURP||'Y'; OUTPUT;
+     END;
+     ELSE IF CUSTCD IN ('77','78') THEN DO;
+             BNMCODE='34000'||CUSTCD||'00'||FISSPURP||'Y'; OUTPUT;
+             BNMCODE='3400076'||'00'||FISSPURP||'Y'; OUTPUT;
+     END;
+     ELSE IF CUSTCD IN ('41','42','43','44','46','47','48','49','51',
+          '52','53','54') THEN DO;
+             BNMCODE='34000'||CUSTCD||'00'||FISSPURP||'Y'; OUTPUT;
+     END;
+  END;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** LOAN - BY CUSTOMER CODE AND BY SECTOR CODE           **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BAL_AFT_EIR;
+CLASS AMTIND CUSTCD SECTORCD;
+WHERE SUBSTR(PRODCD, 1, 2) = '34' AND SECTORCD NE '0410';
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+   /**NEW SECTOR MAPPING **/
+DATA ALM;
+   SET ALM;
+   SECTA = PUT(SECTORCD,$NEWSECT.);
+   SECVALID = PUT(SECTORCD,$VALIDSE.);
+
+   IF SECTA NE '    ' THEN SECTCD = SECTA;
+   ELSE SECTCD = SECTORCD;
+
+DATA ALM;
+   SET ALM;
+   IF SECVALID = 'INVALID' THEN DO;
+   IF SUBSTR(SECTCD,1,1) = '1' THEN DO; SECTCD = '1400';  END;
+   IF SUBSTR(SECTCD,1,1) = '2' THEN DO; SECTCD = '2900';  END;
+   IF SUBSTR(SECTCD,1,1) = '3' THEN DO; SECTCD = '3919';  END;
+   IF SUBSTR(SECTCD,1,1) = '4' THEN DO; SECTCD = '4010';  END;
+   IF SUBSTR(SECTCD,1,1) = '5' THEN DO; SECTCD = '5999';  END;
+   IF SUBSTR(SECTCD,1,2) = '61' THEN DO; SECTCD = '6120'; END;
+   IF SUBSTR(SECTCD,1,2) = '62' THEN DO; SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,2) = '63' THEN DO; SECTCD = '6310'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('64','65','66','67','68','69') THEN DO;
+   SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,1) = '7' THEN DO; SECTCD = '7199'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('81','82') THEN DO;
+      SECTCD = '8110';  END;
+   IF SUBSTR(SECTCD,1,2)IN ('83','84','85','86','87','88','89') THEN DO;
+      SECTCD = '8999';  END;
+   IF SUBSTR(SECTCD,1,2) = '91' THEN DO; SECTCD = '9101';  END;
+   IF SUBSTR(SECTCD,1,2) = '92' THEN DO; SECTCD = '9410';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('93','94','95') THEN DO;
+      SECTCD = '9499';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('96','97','98','99') THEN DO;
+      SECTCD = '9999';  END;
+   END;
+
+RUN;
+DATA ALM2;
+   SET ALM;
+
+   IF SECTCD IN ('1111','1112','1113','1114','1115','1116',
+      '1117','1119','1120','1130','1140','1150')
+      THEN DO;
+           IF SECTCD IN ('1111','1113','1115','1117','1119',
+                         '1112','1114','1116') THEN DO;
+              SECTORCD = '1110'; OUTPUT; END;
+      SECTORCD = '1100'; OUTPUT; END;
+   IF SECTCD IN ('2210','2220')
+      THEN DO; SECTORCD = '2200';
+      OUTPUT;END;
+   IF SECTCD IN ('2301','2302','2303') THEN DO;
+      SECTORCD = '2300'; OUTPUT;
+      IF SECTCD IN ('2303') THEN DO; SECTORCD = '2302';
+      OUTPUT; END;
+   END;
+   IF SECTCD IN ('3110','3115','3111','3112','3113','3114') THEN DO;
+      IF SECTCD IN ('3110','3113','3114','3111','3112','3115')
+         THEN DO; SECTORCD = '3100'; OUTPUT; END;
+      IF SECTCD IN ('3115','3111','3112')
+         THEN DO; SECTORCD = '3110'; OUTPUT; END;
+   END;
+      IF SECTCD IN ('3211','3212','3219')
+         THEN DO; SECTORCD = '3210'; OUTPUT; END;
+      IF SECTCD IN ('3221','3222')
+         THEN DO; SECTORCD = '3220'; OUTPUT; END;
+      IF SECTCD IN ('3231','3232')
+         THEN DO; SECTORCD = '3230'; OUTPUT; END;
+      IF SECTCD IN ('3241','3242')
+         THEN DO; SECTORCD = '3240'; OUTPUT; END;
+      IF SECTCD IN ('3270','3280','3290','3271','3272','3273',
+                    '3311','3312','3313')
+         THEN DO;
+            IF SECTCD IN ('3270','3280','3290','3271','3272','3273')
+               THEN DO; SECTORCD = '3260'; OUTPUT; END;
+            IF SECTCD IN ('3271','3272','3273')
+               THEN DO; SECTORCD = '3270'; OUTPUT; END;
+            IF SECTCD IN ('3311','3312','3313')
+               THEN DO; SECTORCD = '3310';OUTPUT; END;
+      END;
+      IF SECTCD IN ('3431','3432','3433')
+         THEN DO; SECTORCD = '3430'; OUTPUT; END;
+      IF SECTCD IN ('3551','3552')
+         THEN DO; SECTORCD = '3550'; OUTPUT; END;
+      IF SECTCD IN ('3611','3619')
+         THEN DO; SECTORCD = '3610'; OUTPUT; END;
+      IF SECTCD IN ('3710','3720','3730','3721','3731','3732')
+         THEN DO; SECTORCD = '3700'; OUTPUT;
+            IF SECTCD IN ('3721')
+                THEN DO; SECTORCD = '3720'; OUTPUT; END;
+            IF SECTCD IN ('3731','3732')
+                THEN DO; SECTORCD = '3730'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('3811','3813','3814','3819')
+         THEN DO; SECTORCD = '3800'; OUTPUT; END;
+   IF SECTCD IN ('3813','3814','3819')
+      THEN DO; SECTORCD = '3812';
+      OUTPUT; END;
+   IF SECTCD IN ('3832','3834','3835','3833')
+      THEN DO;
+         SECTORCD = '3831';
+         OUTPUT;
+         IF SECTCD IN ('3833') THEN DO; SECTORCD = '3832';
+         OUTPUT; END;
+   END;
+   IF SECTCD IN ('3842','3843','3844')
+      THEN DO; SECTORCD = '3841';
+      OUTPUT; END;
+   IF SECTCD IN ('3851','3852','3853')
+      THEN DO; SECTORCD = '3850';
+      OUTPUT; END;
+   IF SECTCD IN ('3861','3862','3863','3864','3865','3866')
+      THEN DO; SECTORCD = '3860';
+      OUTPUT; END;
+   IF SECTCD IN ('3871','3872','3872')
+      THEN DO; SECTORCD = '3870';
+      OUTPUT; END;
+   IF SECTCD IN ('3891','3892','3893','3894')
+      THEN DO; SECTORCD = '3890';
+      OUTPUT; END;
+   IF SECTCD IN ('3911','3919')
+      THEN DO; SECTORCD = '3910';
+      OUTPUT; END;
+   IF SECTCD IN ('3951','3952','3953','3954','3955','3956','3957')
+      THEN DO; SECTORCD = '3950'; OUTPUT;
+         IF SECTCD IN ('3952','3953')
+            THEN DO; SECTORCD = '3951';OUTPUT; END;
+         IF SECTCD IN ('3955','3956','3957')
+            THEN DO; SECTORCD = '3954'; OUTPUT; END;
+      END;
+   IF SECTCD IN ('5001','5002','5003','5004','5005','5006','5008')
+      THEN DO; SECTORCD = '5010';
+      OUTPUT; END;
+   IF SECTCD IN ('6110','6120','6130')
+      THEN DO; SECTORCD = '6100';
+      OUTPUT; END;
+   IF SECTCD IN ('6310','6320')
+      THEN DO; SECTORCD = '6300';
+      OUTPUT; END;
+      IF SECTCD IN ('7111','7112','7117','7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7110';
+         OUTPUT; END;
+      IF SECTCD IN ('7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7112';
+         OUTPUT;
+      END;
+      IF SECTCD IN ('7112','7114')
+         THEN DO; SECTORCD = '7113'; OUTPUT; END;
+      IF SECTCD IN ('7116')
+         THEN DO; SECTORCD = '7115'; OUTPUT; END;
+   IF SECTCD IN ('7121','7122','7123','7124')
+      THEN DO; SECTORCD = '7120';
+      OUTPUT;
+      IF SECTCD IN ('7124')
+         THEN DO; SECTORCD = '7123'; OUTPUT; END;
+      IF SECTCD IN ('7122')
+         THEN DO; SECTORCD = '7121'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('7131','7132','7133','7134')
+      THEN DO; SECTORCD = '7130';
+      OUTPUT; END;
+   IF SECTCD IN ('7191','7192','7193','7199')
+      THEN DO; SECTORCD = '7190';
+      OUTPUT; END;
+   IF SECTCD IN ('7210','7220')
+      THEN DO; SECTORCD = '7200';
+      OUTPUT; END;
+   IF SECTCD IN ('8110','8120','8130')
+      THEN DO; SECTORCD = '8100';
+      OUTPUT; END;
+   IF SECTCD IN ('8310','8330','8340','8320','8331','8332',
+                 '8321','8333')
+      THEN DO; SECTORCD = '8300';
+      OUTPUT;
+      IF SECTCD IN ('8320','8331','8332','8321','8333')
+         THEN DO; SECTORCD = '8330'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('8321')
+      THEN DO; SECTORCD = '8320';
+      OUTPUT; END;
+   IF SECTCD IN ('8333')
+      THEN DO; SECTORCD = '8332';
+      OUTPUT; END;
+   IF SECTCD IN('8420','8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8400';
+      OUTPUT;
+   IF SECTCD IN ('8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8410';
+      OUTPUT; END;
+   END;
+   IF SUBSTR(SECTCD,1,2) = '89'
+      THEN DO; SECTORCD = '8900'; OUTPUT;
+      IF SECTCD IN ('8910','8911','8912','8913','8914')
+          THEN DO;
+         IF SECTCD IN('8911','8912','8913','8914') THEN DO;
+            SECTORCD = '8910'; OUTPUT; END;
+         IF SECTCD IN ('8910')
+         THEN DO; SECTORCD = '8914';OUTPUT; END;
+      END;
+      IF SECTCD IN ('8921','8922','8920')
+         THEN DO;
+         IF SECTCD IN ('8921','8922') THEN DO;
+            SECTORCD = '8920'; OUTPUT; END;
+         IF SECTCD IN ('8920')
+            THEN DO; SECTORCD = '8922'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('8931','8932')
+          THEN DO; SECTORCD = '8930';OUTPUT; END;
+      IF SECTCD IN ('8991','8999')
+         THEN DO; SECTORCD = '8990'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('9101','9102','9103')
+      THEN DO; SECTORCD = '9100';
+      OUTPUT; END;
+   IF SECTCD IN ('9201','9202','9203')
+      THEN DO; SECTORCD = '9200';
+      OUTPUT; END;
+   IF SECTCD IN ('9311','9312','9313','9314')
+      THEN DO; SECTORCD = '9300';
+      OUTPUT; END;
+   IF SUBSTR(SECTCD,1,2) = '94'
+      THEN DO; SECTORCD = '9400';
+      OUTPUT;
+      IF SECTCD IN ('9433','9434','9435','9432','9431',
+                    '9440','9450') THEN DO;
+          IF SECTCD IN ('9433','9434','9435') THEN DO;
+            SECTORCD = '9432'; OUTPUT; END;
+          SECTORCD = '9430'; OUTPUT;
+      END;
+      IF SECTCD IN ('9410','9420')
+         THEN DO; SECTORCD = '9499'; OUTPUT; END;
+   END;
+RUN;
+DATA ALM;
+    SET ALM(IN=A) ALM2;
+    IF A THEN SECTORCD = SECTCD;
+DATA ALMA;
+  SET ALM;
+   IF SECTORCD IN ('1100','1200','1300','1400')
+      THEN DO; SECTORCD = '1000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('2100','2200','2300','2400','2900')
+      THEN DO; SECTORCD = '2000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('3100','3120','3210','3220','3230','3240',
+                      '3250','3260','3310','3430','3550','3610',
+                      '3700','3800','3825','3831','3841','3850',
+                      '3860','3870','3890','3910','3950','3960')
+      THEN DO; SECTORCD = '3000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('4010','4020','4030')
+      THEN DO; SECTORCD = '4000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('5010','5020','5030','5040','5050','5999')
+      THEN DO; SECTORCD = '5000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('6100','6300')
+      THEN DO; SECTORCD = '6000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('7110','7120','7130','7190','7200')
+      THEN DO; SECTORCD = '7000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('8100','8300','8400','8900')
+      THEN DO; SECTORCD = '8000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('9100','9200','9300','9400','9500','9600')
+      THEN DO; SECTORCD = '9000'; OUTPUT; END;
+RUN;
+DATA ALM;
+   SET ALM ALMA;
+   IF SECTORCD EQ '    ' THEN SECTORCD = '9999';
+RUN;
+   /*** NEW SECTOR MAPPING END ***/
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+     IF CUSTCD IN ('41','42','43','44','46','47','48','49','51',
+          '52','53','54') THEN DO;
+             BNMCODE='34000'||CUSTCD||'00'||SECTORCD||'Y'; OUTPUT;
+     END;
+        SELECT(CUSTCD);
+           WHEN('61','41','42','43') DO;
+             BNMCODE='340006100'||SECTORCD||'Y'; OUTPUT;
+           END;
+           WHEN('62','44','46','47') DO;
+             BNMCODE='340006200'||SECTORCD||'Y'; OUTPUT;
+           END;
+           WHEN('63','48','49','51') DO;
+             BNMCODE='340006300'||SECTORCD||'Y'; OUTPUT;
+           END;
+           WHEN('64','57','75','59','52','53','54') DO;
+             BNMCODE='340006400'||SECTORCD||'Y'; OUTPUT;
+           END;
+           WHEN('71','72','73','74') DO;
+             BNMCODE='340007000'||SECTORCD||'Y'; OUTPUT;
+           END;
+           WHEN('79') DO;
+             BNMCODE='340007900'||SECTORCD||'Y'; OUTPUT;
+           END;
+           WHEN('20','13','17','30','31','32','33','34','35',
+                '37','38','39','40','04','05','40','45',
+                '06') DO;
+                IF CUSTCD IN ('04','05','06') THEN DO;
+                   BNMCODE='34000'||CUSTCD||'00'||SECTORCD||'Y';OUTPUT;
+                END;
+             BNMCODE='340002000'||SECTORCD||'Y'; OUTPUT;
+           END;
+           WHEN('10','02','03','11','12') DO;
+             BNMCODE='340001000'||SECTORCD||'Y'; OUTPUT;
+           END;
+          OTHERWISE;
+        END;
+     IF '81'<=CUSTCD<='99'  THEN DO;
+             BNMCODE='3400080'||'00'||SECTORCD||'Y'; OUTPUT;
+     END;
+     IF '81'<=CUSTCD<='99' THEN DO;
+             IF SECTORCD = '9700' THEN DO;
+                BNMCODE='3400085'||'009700'||'Y'; OUTPUT;
+             END;
+             ELSE IF SECTORCD IN ('1000','2000','3000','4000','5000',
+                '6000','7000','8000','9000','9999') THEN DO;
+                BNMCODE='3400085'||'009999'||'Y'; OUTPUT;
+             END;
+
+     END;
+     IF CUSTCD IN ('95','96') THEN DO;
+             IF SECTORCD IN ('1000','2000','3000','4000','5000',
+                '6000','7000','8000','9000','9999','9700') THEN DO;
+                BNMCODE='3400095'||'000000'||'Y'; OUTPUT;
+             END;
+             BNMCODE='3400095'||'00'||SECTORCD||'Y'; OUTPUT;
+     END;
+     ELSE IF CUSTCD IN ('77','78') THEN DO;
+             BNMCODE='3400076'||'00'||SECTORCD||'Y'; OUTPUT;
+             BNMCODE='34000'||CUSTCD||'00'||SECTORCD||'Y'; OUTPUT;
+     END;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** LOAN - SME BY CUSTOMER CODE AND BY STATE CODE        **/
+ /**********************************************************/
+
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK;
+VAR BAL_AFT_EIR;
+CLASS CUSTCD STATECD AMTIND;
+WHERE SUBSTR(PRODCD, 1, 2) = '34' AND
+      CUSTCD IN ('41','42','43','44','46','47','48','49','51',
+                 '52','53','54');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  IF _TYPE_=7 THEN DO;
+         BNMCODE='34000'||CUSTCD||'000000'||STATECD; OUTPUT;
+  END;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** RM LOANS                                             **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BAL_AFT_EIR;
+CLASS AMTIND PRODCD;
+WHERE SUBSTR(PRODCD, 1, 3) IN ('341','342','343','344');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  WHERE PRODCD IN ('34190', '34230', '34299');
+  BNMCODE=PRODCD||'00000000Y'; OUTPUT;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** RM LOANS - OVERDRAFT LOANS BY CUSTOMER CODE          **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BAL_AFT_EIR;
+CLASS AMTIND PRODCD;
+WHERE PRODCD IN ('34180','34240');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+  BNMCODE='3418000000000Y';
+  IF PRODCD='34240' THEN BNMCODE='3424000000000Y';
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** RM LOANS - BY CUSTOMER AND MATURITY CODE             **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BAL_AFT_EIR;
+CLASS AMTIND ORIGMT CUSTCD;
+WHERE SUBSTR(PRODCD, 1, 3) IN ('341','342','343','344');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  IF _TYPE_=7 THEN DO;
+     IF ORIGMT IN ('10','12','13','14','15','16','17') THEN
+     SELECT(CUSTCD);
+       WHEN('81','82','83','84') DO;
+         BNMCODE='3410081100000Y'; OUTPUT;
+       END;
+       WHEN('85','86','87','88','89','90','91','92','95',
+            '96','98','99') DO;
+         BNMCODE='3410085100000Y'; OUTPUT;
+       END;
+       OTHERWISE;
+     END;
+
+     IF ORIGMT IN ('20','21','22','23','24','25','26',
+                   '30','31','32','33') THEN
+     SELECT(CUSTCD);
+       WHEN('81') DO;
+         BNMCODE='3410081200000Y'; OUTPUT;
+       END;
+       WHEN('85','86','87','88','89','90','91','92','95',
+            '96','98','99') DO;
+         BNMCODE='3410085200000Y'; OUTPUT;
+       END;
+       OTHERWISE;
+     END;
+   END;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** RM TERM LOAN - BY CUSTOMER AND SECTORAL CODE         **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK;
+VAR BAL_AFT_EIR;
+CLASS AMTIND PRODCD FISSPURP;
+WHERE PRODCD IN ('34111', '34112', '34113', '34114',
+                 '34115', '34116', '34117', '34120', '34149');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  IF _TYPE_=6 THEN DO;
+     BNMCODE=PRODCD||'00000000Y'; OUTPUT;
+  END;
+  ELSE IF _TYPE_=7 THEN DO;
+     IF PRODCD='34111' THEN DO;
+       IF SUBSTR(FISSPURP,1,3) IN ('043') THEN DO;
+          BNMCODE='3411100000430Y'; OUTPUT;
+       END;
+       IF SUBSTR(FISSPURP,1,3) IN ('021') THEN DO;
+          BNMCODE='3411100000210Y'; OUTPUT;
+       END;
+     END;
+  END;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** RM TERM LOAN - BY ORIGINAL MATURITY                  **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BAL_AFT_EIR;
+CLASS AMTIND ORIGMT;
+WHERE PRODCD IN ('34111', '34112', '34113', '34114',
+                 '34115', '34116', '34117', '34120', '34149');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  SELECT(ORIGMT);
+    WHEN('10','12','13','14','15','16','17') DO;
+      BNMCODE='3411000100000Y'; OUTPUT;
+    END;
+    WHEN('21','22','23','24','25','26','31','32','33') DO;
+      BNMCODE='3411000'||ORIGMT||'0000Y'; OUTPUT;
+    END;
+    OTHERWISE;
+  END;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** RM TERM LOAN - BY REMAINING MATURITY                  **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BAL_AFT_EIR;
+CLASS AMTIND REMAINMT;
+WHERE PRODCD IN ('34111', '34112', '34113', '34114',
+                 '34115', '34116', '34117', '34120', '34149');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  SELECT(REMAINMT);
+    WHEN('51','52','53','54','55','56','57') DO;
+      BNMCODE='3411000500000Y'; OUTPUT;
+    END;
+    WHEN('61','62','63','64','71','72','73') DO;
+      BNMCODE='3411000'||REMAINMT||'0000Y'; OUTPUT;
+    END;
+    OTHERWISE;
+  END;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /**                                                      **/
+ /**                    UTILISED LOAN                     **/
+ /**                        AND                           **/
+ /**                   UNUTILISED LOAN                    **/
+ /**                                                      **/
+ /**********************************************************/
+ /**********************************************************/
+ /** GROSS LOAN - TOTAL APPROVED LIMIT                    **/
+ /**********************************************************/
+
+DATA LNA;
+     SET LOAN&REPTMON&NOWK
+         BNM.ULOAN&REPTMON&NOWK(RENAME=APPRLIMT=APPRLIM2);
+     IF  PRODUCT IN (150,151) AND ACCTYPE='OD' THEN DELETE;
+     IF (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120'
+         OR PRODUCT = 973) AND
+        PAIDIND NOT IN ('P','C');
+
+     AMTIND ='I';
+RUN;
+*;
+PROC SUMMARY DATA=LNA NWAY;
+CLASS AMTIND; VAR APPRLIM2;
+OUTPUT OUT=ALM SUM=AMOUNT;
+RUN;
+*;
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+  BNMCODE='8150000000000Y'; OUTPUT;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM UALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** GROSS LOAN - NO OF UNUTILISED LOAN ACCOUNTS          **/
+ /**********************************************************/
+PROC SORT DATA=LOAN&REPTMON&NOWK  OUT=TEMPLOAN;
+   BY ACCTNO COMMNO; RUN;
+PROC SORT DATA=BNM.ULOAN&REPTMON&NOWK OUT=TEMPULOAN;
+   BY ACCTNO COMMNO; RUN;
+
+DATA TEMPLOAN;
+   SET TEMPLOAN;
+   IF (2850000000<=ACCTNO<=2859999999 AND 40000<=NOTENO<=49999) OR
+       PRODUCT = 444
+      THEN DELETE;
+RUN;
+
+DATA TEMPLOAN;
+MERGE TEMPLOAN(IN=A) M_LNCOMM(IN=B);
+BY ACCTNO COMMNO;
+IF A;
+IF ^(PRODUCT IN (150,151,152,181,30,31,32,33,34) & ACCTYPE='OD')
+    AND (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120' OR
+    PRODUCT = 973)
+    AND RLEASAMT EQ 0;
+IF ACCTYPE='LN' AND COMMNO>0 AND CUSEDAMT>0 THEN
+    DELETE;
+IF ACCTYPE='LN' AND 600<=PRODUCT<=699 THEN
+    DELETE;
+RUN;
+
+DATA BNM.B80200; SET TEMPLOAN; RUN;
+
+DATA TEMPULOAN;
+MERGE TEMPULOAN(IN=A) M_LNCOMM(IN=B) M_LNNOTE(IN=C);
+BY ACCTNO COMMNO;
+IF A;
+IF PRODUCT NOT IN (150,151,152,181) AND
+    (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120' OR
+     PRODUCT = 973)
+    AND RLEASAMT EQ 0;
+IF ACCTYPE='LN' AND COMMNO>0 AND CUSEDAMT>0 THEN
+    DELETE;
+IF ACCTYPE='LN' AND 600<=PRODUCT<=699 THEN
+    DELETE;
+RUN;
+
+PROC SUMMARY DATA=TEMPLOAN NWAY;
+CLASS AMTIND CUSTCD;
+OUTPUT OUT=ALM;
+RUN;
+
+PROC SUMMARY DATA=TEMPULOAN NWAY;
+CLASS AMTIND CUSTCD;
+OUTPUT OUT=UALM;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM
+      UALM;
+  _FREQ_=_FREQ_*1000;
+  RENAME _FREQ_=AMOUNT;
+
+  BNMCODE='8020000000000Y'; OUTPUT;
+
+  IF CUSTCD IN ('61','41','42','43') THEN DO;
+      BNMCODE='8020061000000Y'; OUTPUT;
+  END;
+   IF CUSTCD IN ('41','42','43','44','46','47','48','49','51'
+            '52','53','54') THEN DO;
+      BNMCODE='8020065000000Y'; OUTPUT;
+      BNMCODE='80500'||CUSTCD||'000000'||'Y'; OUTPUT;
+  END;
+   IF CUSTCD IN ('70','71','72','73','74') THEN DO;
+      BNMCODE='8050070000000Y'; OUTPUT;
+       END;
+   IF CUSTCD IN ('77','78','79') THEN DO;
+      BNMCODE='80500'||CUSTCD||'000000'||'Y'; OUTPUT;
+   END;
+   IF '81'<=CUSTCD<='99'  THEN DO;
+      BNMCODE='8050080000000Y'; OUTPUT;
+   END;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST;
+DELETE ALM UALM ALMLOAN TEMPLOAN TEMPULOAN; RUN;
+
+DATA ALM;
+   SET BNM.LALM&REPTMON&NOWK;
+   IF BNMCODE = '8020065000000Y' THEN BNMCODE = '8050065000000Y';
+   IF BNMCODE = '8020061000000Y' THEN BNMCODE = '8050061000000Y';
+   IF BNMCODE = '8051065000000Y' THEN BNMCODE = '8050065000000Y';
+   IF BNMCODE = '8051061000000Y' THEN BNMCODE = '8050061000000Y';
+RUN;
+PROC SUMMARY DATA=ALM NWAY;
+WHERE BNMCODE IN ('8050065000000Y', '8050061000000Y');
+CLASS BNMCODE AMTIND;
+VAR AMOUNT;
+OUTPUT OUT=ALMLOAN(KEEP=BNMCODE AMTIND AMOUNT) SUM=;
+RUN;
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM UALM ALMLOAN; RUN;
+ /**********************************************************/
+ /** GROSS LOAN - UNDRAWN PORTION BY ORIGINAL MATURITY    **/
+ /**********************************************************/
+*;
+  /********   MANIPULATION FOR RC ******************/
+PROC SORT DATA=BNM.LOAN&REPTMON&NOWK OUT=ALM;
+   WHERE PAIDIND NOT IN ('P','C');
+   BY ACCTNO NOTENO;
+RUN;
+*;
+PROC SORT DATA=LOAN.LNCOMM OUT=LNCOMM;
+   BY ACCTNO COMMNO;
+*;
+PROC SORT DATA=ALM OUT=ALMCOM;
+   WHERE COMMNO > 0;
+   BY ACCTNO COMMNO;
+*;
+DATA APPR;
+   MERGE ALMCOM(IN=A) LNCOMM;
+   BY ACCTNO COMMNO;
+   IF A & PRODCD = '34190' THEN DO;
+      IF FIRST.ACCTNO OR FIRST.COMMNO THEN OUTPUT;
+   END;
+   ELSE IF A THEN OUTPUT;
+*;
+PROC SORT DATA=ALM OUT=ALMNOCOM;
+   WHERE COMMNO <= 0;
+   BY ACCTNO COMMNO;
+*;
+PROC SORT DATA=ALMNOCOM;
+   BY ACCTNO APPRLIM2;
+*;
+DATA APPR1 DUP;
+   SET ALMNOCOM;
+   BY ACCTNO APPRLIM2;
+   IF PRODCD = '34190' THEN DO;
+      IF FIRST.ACCTNO OR FIRST.APPRLIM2 THEN
+      OUTPUT APPR1;
+      ELSE DO;
+         DUPLI=1;
+         OUTPUT DUP;
+      END;
+   END;
+*;
+PROC SORT DATA=DUP OUT=DUPLI;
+   WHERE BALANCE >= APPRLIM2;
+   BY ACCTNO APPRLIM2;
+RUN;
+
+DATA APPR1;
+   MERGE ALMNOCOM(IN=A) DUPLI(IN=B KEEP=ACCTNO APPRLIM2 DUPLI);
+   BY ACCTNO APPRLIM2;
+   IF PRODCD = '34190' THEN DO;
+      IF DUPLI = 1 THEN DO;
+         IF BALANCE >= APPRLIM2 THEN OUTPUT;
+      END;
+      ELSE IF FIRST.ACCTNO OR FIRST.APPRLIM2 THEN OUTPUT;
+   END;
+   ELSE OUTPUT;
+RUN;
+DATA ALM;
+   SET APPR APPR1;
+*;
+PROC SORT; BY ACCTNO;
+        /********  END ************/
+PROC SUMMARY DATA=ALM;
+VAR UNDRAWN;
+CLASS AMTIND PRODCD ORIGMT FISSPURP;
+WHERE (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120');
+OUTPUT OUT=ALMX
+       SUM=AMOUNT;
+RUN;
+
+PROC SUMMARY DATA=BNM.ULOAN&REPTMON&NOWK;
+VAR UNDRAWN;
+CLASS AMTIND PRODCD ORIGMT FISSPURP;
+WHERE ((3000<=COSTCTR<=3999) OR COSTCTR IN (4043,4048)) AND
+      (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120');
+OUTPUT OUT=UALMX
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALMX
+      UALMX;
+
+  IF _TYPE_ = 9 THEN DO;
+           BNMCODE='562000000'||FISSPURP||'Y'; OUTPUT;
+      IF FISSPURP IN ('0220','0230','0210','0211','0212') THEN
+      DO; BNMCODE='5620000000200Y'; OUTPUT; END;
+  END;
+  IF _TYPE_ = 14 THEN DO;
+     IF PRODCD IN ('34311', '34312', '34313', '34314',
+                   '34315', '34316', '34320', '34349',
+                   '34111', '34112', '34113', '34114',
+                   '34115', '34116', '34117', '34120',
+                   '34149') THEN
+       SELECT(ORIGMT);
+         WHEN('10','12','13','14','15','16','17') DO;
+           BNMCODE='5621000100000Y'; OUTPUT;
+         END;
+         WHEN('20','21','22','23','24','25','26','31','32','33') DO;
+           BNMCODE='5621000200000Y'; OUTPUT;
+         END;
+         OTHERWISE;
+       END;
+     ELSE DO;
+     IF PRODCD IN ('34180','34380') THEN
+       SELECT(ORIGMT);
+         WHEN('10','12','13','14','15','16','17') DO;
+           BNMCODE='5622000100000Y'; OUTPUT;
+         END;
+         OTHERWISE;
+       END;
+     ELSE
+       SELECT(ORIGMT);
+         WHEN('10','12','13','14','15','16','17') DO;
+           BNMCODE='5629900100000Y'; OUTPUT;
+         END;
+         WHEN('20','21','22','23','24','25','26','31','32','33') DO;
+           BNMCODE='5629900200000Y'; OUTPUT;
+         END;
+         OTHERWISE;
+       END;
+     END;
+  END;
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+*;
+PROC SUMMARY DATA=ALM NWAY;
+VAR UNDRAWN;
+CLASS AMTIND PRODCD ORIGMT SECTORCD;
+WHERE (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120')
+      AND SECTORCD NE '0410';
+OUTPUT OUT=ALMX
+       SUM=AMOUNT;
+RUN;
+
+PROC SUMMARY DATA=BNM.ULOAN&REPTMON&NOWK NWAY;
+VAR UNDRAWN;
+CLASS AMTIND PRODCD ORIGMT SECTORCD;
+WHERE (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120')
+      AND ((3000<=COSTCTR<=3999) OR COSTCTR IN (4043,4048))
+      AND SECTORCD NE '0410';
+OUTPUT OUT=UALMX
+       SUM=AMOUNT;
+RUN;
+   /**NEW SECTOR MAPPING **/
+DATA ALM;
+   SET ALMX UALMX;
+   SECTA = PUT(SECTORCD,$NEWSECT.);
+   SECVALID = PUT(SECTORCD,$VALIDSE.);
+
+   IF SECTA NE '    ' THEN SECTCD = SECTA;
+   ELSE SECTCD = SECTORCD;
+
+DATA ALM;
+   SET ALM;
+   IF SECVALID = 'INVALID' THEN DO;
+   IF SUBSTR(SECTCD,1,1) = '1' THEN DO; SECTCD = '1400';  END;
+   IF SUBSTR(SECTCD,1,1) = '2' THEN DO; SECTCD = '2900';  END;
+   IF SUBSTR(SECTCD,1,1) = '3' THEN DO; SECTCD = '3919';  END;
+   IF SUBSTR(SECTCD,1,1) = '4' THEN DO; SECTCD = '4010';  END;
+   IF SUBSTR(SECTCD,1,1) = '5' THEN DO; SECTCD = '5999';  END;
+   IF SUBSTR(SECTCD,1,2) = '61' THEN DO; SECTCD = '6120'; END;
+   IF SUBSTR(SECTCD,1,2) = '62' THEN DO; SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,2) = '63' THEN DO; SECTCD = '6310'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('64','65','66','67','68','69') THEN DO;
+   SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,1) = '7' THEN DO; SECTCD = '7199'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('81','82') THEN DO;
+      SECTCD = '8110';  END;
+   IF SUBSTR(SECTCD,1,2)IN ('83','84','85','86','87','88','89') THEN DO;
+      SECTCD = '8999';  END;
+   IF SUBSTR(SECTCD,1,2) = '91' THEN DO; SECTCD = '9101';  END;
+   IF SUBSTR(SECTCD,1,2) = '92' THEN DO; SECTCD = '9410';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('93','94','95') THEN DO;
+      SECTCD = '9499';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('96','97','98','99') THEN DO;
+      SECTCD = '9999';  END;
+   END;
+
+RUN;
+DATA ALM2;
+   SET ALM;
+
+   IF SECTCD IN ('1111','1112','1113','1114','1115','1116',
+      '1117','1119','1120','1130','1140','1150')
+      THEN DO;
+           IF SECTCD IN ('1111','1113','1115','1117','1119',
+                         '1112','1114','1116') THEN DO;
+              SECTORCD = '1110'; OUTPUT; END;
+      SECTORCD = '1100'; OUTPUT; END;
+   IF SECTCD IN ('2210','2220')
+      THEN DO; SECTORCD = '2200';
+      OUTPUT;END;
+   IF SECTCD IN ('2301','2302','2303') THEN DO;
+      SECTORCD = '2300'; OUTPUT;
+      IF SECTCD IN ('2303') THEN DO; SECTORCD = '2302';
+      OUTPUT; END;
+   END;
+   IF SECTCD IN ('3110','3115','3111','3112','3113','3114') THEN DO;
+      IF SECTCD IN ('3110','3113','3114','3111','3112','3115')
+         THEN DO; SECTORCD = '3100'; OUTPUT; END;
+      IF SECTCD IN ('3115','3111','3112')
+         THEN DO; SECTORCD = '3110'; OUTPUT; END;
+   END;
+      IF SECTCD IN ('3211','3212','3219')
+         THEN DO; SECTORCD = '3210'; OUTPUT; END;
+      IF SECTCD IN ('3221','3222')
+         THEN DO; SECTORCD = '3220'; OUTPUT; END;
+      IF SECTCD IN ('3231','3232')
+         THEN DO; SECTORCD = '3230'; OUTPUT; END;
+      IF SECTCD IN ('3241','3242')
+         THEN DO; SECTORCD = '3240'; OUTPUT; END;
+      IF SECTCD IN ('3270','3280','3290','3271','3272','3273',
+                    '3311','3312','3313')
+         THEN DO;
+            IF SECTCD IN ('3270','3280','3290','3271','3272','3273')
+               THEN DO; SECTORCD = '3260'; OUTPUT; END;
+            IF SECTCD IN ('3271','3272','3273')
+               THEN DO; SECTORCD = '3270'; OUTPUT; END;
+            IF SECTCD IN ('3311','3312','3313')
+               THEN DO; SECTORCD = '3310';OUTPUT; END;
+      END;
+      IF SECTCD IN ('3431','3432','3433')
+         THEN DO; SECTORCD = '3430'; OUTPUT; END;
+      IF SECTCD IN ('3551','3552')
+         THEN DO; SECTORCD = '3550'; OUTPUT; END;
+      IF SECTCD IN ('3611','3619')
+         THEN DO; SECTORCD = '3610'; OUTPUT; END;
+      IF SECTCD IN ('3710','3720','3730','3721','3731','3732')
+         THEN DO; SECTORCD = '3700'; OUTPUT;
+            IF SECTCD IN ('3721')
+                THEN DO; SECTORCD = '3720'; OUTPUT; END;
+            IF SECTCD IN ('3731','3732')
+                THEN DO; SECTORCD = '3730'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('3811','3813','3814','3819')
+         THEN DO; SECTORCD = '3800'; OUTPUT; END;
+   IF SECTCD IN ('3813','3814','3819')
+      THEN DO; SECTORCD = '3812';
+      OUTPUT; END;
+   IF SECTCD IN ('3832','3834','3835','3833')
+      THEN DO;
+         SECTORCD = '3831';
+         OUTPUT;
+         IF SECTCD IN ('3833') THEN DO; SECTORCD = '3832';
+         OUTPUT; END;
+   END;
+   IF SECTCD IN ('3842','3843','3844')
+      THEN DO; SECTORCD = '3841';
+      OUTPUT; END;
+   IF SECTCD IN ('3851','3852','3853')
+      THEN DO; SECTORCD = '3850';
+      OUTPUT; END;
+   IF SECTCD IN ('3861','3862','3863','3864','3865','3866')
+      THEN DO; SECTORCD = '3860';
+      OUTPUT; END;
+   IF SECTCD IN ('3871','3872','3872')
+      THEN DO; SECTORCD = '3870';
+      OUTPUT; END;
+   IF SECTCD IN ('3891','3892','3893','3894')
+      THEN DO; SECTORCD = '3890';
+      OUTPUT; END;
+   IF SECTCD IN ('3911','3919')
+      THEN DO; SECTORCD = '3910';
+      OUTPUT; END;
+   IF SECTCD IN ('3951','3952','3953','3954','3955','3956','3957')
+      THEN DO; SECTORCD = '3950'; OUTPUT;
+         IF SECTCD IN ('3952','3953')
+            THEN DO; SECTORCD = '3951';OUTPUT; END;
+         IF SECTCD IN ('3955','3956','3957')
+            THEN DO; SECTORCD = '3954'; OUTPUT; END;
+      END;
+   IF SECTCD IN ('5001','5002','5003','5004','5005','5006','5008')
+      THEN DO; SECTORCD = '5010';
+      OUTPUT; END;
+   IF SECTCD IN ('6110','6120','6130')
+      THEN DO; SECTORCD = '6100';
+      OUTPUT; END;
+   IF SECTCD IN ('6310','6320')
+      THEN DO; SECTORCD = '6300';
+      OUTPUT; END;
+      IF SECTCD IN ('7111','7112','7117','7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7110';
+         OUTPUT; END;
+      IF SECTCD IN ('7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7112';
+         OUTPUT;
+      END;
+      IF SECTCD IN ('7112','7114')
+         THEN DO; SECTORCD = '7113'; OUTPUT; END;
+      IF SECTCD IN ('7116')
+         THEN DO; SECTORCD = '7115'; OUTPUT; END;
+   IF SECTCD IN ('7121','7122','7123','7124')
+      THEN DO; SECTORCD = '7120';
+      OUTPUT;
+      IF SECTCD IN ('7124')
+         THEN DO; SECTORCD = '7123'; OUTPUT; END;
+      IF SECTCD IN ('7122')
+         THEN DO; SECTORCD = '7121'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('7131','7132','7133','7134')
+      THEN DO; SECTORCD = '7130';
+      OUTPUT; END;
+   IF SECTCD IN ('7191','7192','7193','7199')
+      THEN DO; SECTORCD = '7190';
+      OUTPUT; END;
+   IF SECTCD IN ('7210','7220')
+      THEN DO; SECTORCD = '7200';
+      OUTPUT; END;
+   IF SECTCD IN ('8110','8120','8130')
+      THEN DO; SECTORCD = '8100';
+      OUTPUT; END;
+   IF SECTCD IN ('8310','8330','8340','8320','8331','8332',
+                 '8321','8333')
+      THEN DO; SECTORCD = '8300';
+      OUTPUT;
+      IF SECTCD IN ('8320','8331','8332','8321','8333')
+         THEN DO; SECTORCD = '8330'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('8321')
+      THEN DO; SECTORCD = '8320';
+      OUTPUT; END;
+   IF SECTCD IN ('8333')
+      THEN DO; SECTORCD = '8332';
+      OUTPUT; END;
+   IF SECTCD IN('8420','8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8400';
+      OUTPUT;
+   IF SECTCD IN ('8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8410';
+      OUTPUT; END;
+   END;
+   IF SUBSTR(SECTCD,1,2) = '89'
+      THEN DO; SECTORCD = '8900'; OUTPUT;
+      IF SECTCD IN ('8910','8911','8912','8913','8914')
+          THEN DO;
+         IF SECTCD IN('8911','8912','8913','8914') THEN DO;
+            SECTORCD = '8910'; OUTPUT; END;
+         IF SECTCD IN ('8910')
+         THEN DO; SECTORCD = '8914';OUTPUT; END;
+      END;
+      IF SECTCD IN ('8921','8922','8920')
+         THEN DO;
+         IF SECTCD IN ('8921','8922') THEN DO;
+            SECTORCD = '8920'; OUTPUT; END;
+         IF SECTCD IN ('8920')
+            THEN DO; SECTORCD = '8922'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('8931','8932')
+          THEN DO; SECTORCD = '8930';OUTPUT; END;
+      IF SECTCD IN ('8991','8999')
+         THEN DO; SECTORCD = '8990'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('9101','9102','9103')
+      THEN DO; SECTORCD = '9100';
+      OUTPUT; END;
+   IF SECTCD IN ('9201','9202','9203')
+      THEN DO; SECTORCD = '9200';
+      OUTPUT; END;
+   IF SECTCD IN ('9311','9312','9313','9314')
+      THEN DO; SECTORCD = '9300';
+      OUTPUT; END;
+   IF SUBSTR(SECTCD,1,2) = '94'
+      THEN DO; SECTORCD = '9400';
+      OUTPUT;
+      IF SECTCD IN ('9433','9434','9435','9432','9431',
+                    '9440','9450') THEN DO;
+          IF SECTCD IN ('9433','9434','9435') THEN DO;
+            SECTORCD = '9432'; OUTPUT; END;
+          SECTORCD = '9430'; OUTPUT;
+      END;
+      IF SECTCD IN ('9410','9420')
+         THEN DO; SECTORCD = '9499'; OUTPUT; END;
+   END;
+RUN;
+DATA ALM;
+    SET ALM(IN=A) ALM2;
+    IF A THEN SECTORCD = SECTCD;
+DATA ALMA;
+  SET ALM;
+   IF SECTORCD IN ('1100','1200','1300','1400')
+      THEN DO; SECTORCD = '1000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('2100','2200','2300','2400','2900')
+      THEN DO; SECTORCD = '2000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('3100','3120','3210','3220','3230','3240',
+                      '3250','3260','3310','3430','3550','3610',
+                      '3700','3800','3825','3831','3841','3850',
+                      '3860','3870','3890','3910','3950','3960')
+      THEN DO; SECTORCD = '3000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('4010','4020','4030')
+      THEN DO; SECTORCD = '4000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('5010','5020','5030','5040','5050','5999')
+      THEN DO; SECTORCD = '5000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('6100','6300')
+      THEN DO; SECTORCD = '6000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('7110','7120','7130','7190','7200')
+      THEN DO; SECTORCD = '7000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('8100','8300','8400','8900')
+      THEN DO; SECTORCD = '8000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('9100','9200','9300','9400','9500','9600')
+      THEN DO; SECTORCD = '9000'; OUTPUT; END;
+RUN;
+DATA ALM;
+   SET ALM ALMA;
+   IF SECTORCD EQ '    ' THEN SECTORCD = '9999';
+RUN;
+   /*** NEW SECTOR MAPPING END ***/
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+  IF   PRODCD='34240' THEN BNMCODE='562990000'||SECTORCD||'Y';
+  ELSE BNMCODE='562000000'||SECTORCD||'Y'; OUTPUT;
+RUN;
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM UALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** GROSS LOAN - APPLICATION APPROVED DURING THE MONTH   **/
+ /**              (NUMBER OF APPLICATIONS)                **/
+ /**********************************************************/
+PROC SUMMARY DATA=BNM.LOAN&REPTMON&NOWK;
+CLASS AMTIND CUSTCD;
+WHERE (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120') AND
+      MONTH(APPRDATE)=MONTH(INPUT("&RDATE", DDMMYY8.)) AND
+      YEAR(APPRDATE)=YEAR(INPUT("&RDATE", DDMMYY8.)) AND
+      PAIDIND NOT IN ('P','C');
+OUTPUT OUT=ALM;
+RUN;
+
+PROC SUMMARY DATA=BNM.ULOAN&REPTMON&NOWK;
+CLASS AMTIND CUSTCD;
+WHERE ((3000<=COSTCTR<=3999) OR COSTCTR IN (4043,4048)) AND
+      (SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120') AND
+      MONTH(APPRDATE)=MONTH(INPUT("&RDATE", DDMMYY8.)) AND
+      YEAR(APPRDATE)=YEAR(INPUT("&RDATE", DDMMYY8.));
+OUTPUT OUT=UALM;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM
+      UALM;
+  _FREQ_=_FREQ_*1000;
+  RENAME _FREQ_=AMOUNT;
+
+  IF _TYPE_=3 THEN DO;
+     SELECT(CUSTCD);
+       WHEN('61','66') DO;
+         BNMCODE='8015061000000Y'; OUTPUT;
+       END;
+       WHEN('77') DO;
+         BNMCODE='8015077000000Y'; OUTPUT;
+       END;
+       OTHERWISE;
+     END;
+  END;
+RUN;
+
+   /*
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+   */
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM UALM ALMLOAN; RUN;
+
+ /***********************************************************/
+ /** SPECIAL PURPOSE ITEMS FOR ISLAMIC LOANS (30701-30799) **/
+ /***********************************************************/
+ /* REVISE INACTIVE PRODUCT */
+DATA INACT_LN;
+   SET LOAN&REPTMON&NOWK;
+   IF 650<=PRODUCT<=699 THEN DO;
+      CENSUS0=LEFT(CENSUS);
+      PRODUCT = SUBSTR(CENSUS0,1,3);
+      BAL_AFT_EIR = WRITE_DOWN_BAL;
+   END;
+   IF PRODCD = '54120' THEN DELETE;  /* 2021-4575 */
+RUN;
+
+PROC SUMMARY DATA=INACT_LN NWAY;
+CLASS PRODUCT;
+VAR BAL_AFT_EIR;
+OUTPUT OUT=ALM SUM=AMOUNT;
+WHERE ACCTNO < 3000000000 OR ACCTNO > 3999999999;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+  AMTIND='I';
+  IF PRODUCT IN (110:120,122,124,126,127,129,139,140:145,147:151,156,
+                 157,158,164,165,170,173,174,179,181,183,194,
+                 196,403,404,405,440,441,442,443,445,446,
+                 461,462,463,466,467,469,470,674,675)
+  THEN BNMCODE='3070100000000Y';
+  IF PRODUCT IN (180,193) THEN BNMCODE='3070200000000Y';
+  IF PRODUCT IN (103,104,107,108,128,130,131,132)
+  THEN BNMCODE='3070300000000Y';
+  IF PRODUCT IN (159,186,189,190,471:498,676,677,691:695,851:860,
+                 195,197,686,689)
+  THEN BNMCODE='3070400000000Y';
+  IF PRODUCT IN (102,105,106,152,153,154,155,175,176,177,178,187,188,
+                 191,400,401,402,406:417,423,424,425,426,464,465,468,
+                 668,669,670,690,144,419,420,672,673,418,422,427,428,
+                 429,430,431,432,433)
+  THEN BNMCODE='3070500000000Y';
+  IF PRODUCT IN (134,135,136,138,146,160,161,162,163,169,182,184,185,
+                 421,444,447,448,434,435,436,437,438,439,137,133,172,
+                 192,199,685,696)
+  THEN BNMCODE='3079900000000Y';
+  IF BNMCODE NE ' ';
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+CLASS PRODUCT;
+VAR BALANCE;
+OUTPUT OUT=ALM SUM=AMOUNT;
+WHERE 3000000000<=ACCTNO<=3999999999;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+  AMTIND='I';
+  IF PRODUCT IN (22,32,70,73,95,166,183,184,185,187,188,47,48,49,15,16)
+  THEN BNMCODE='3070100000000Y';
+  IF PRODUCT IN (169) THEN BNMCODE='3070400000000Y';
+  IF PRODUCT IN (186) THEN BNMCODE='3070500000000Y';
+  IF PRODUCT IN (33,60:64,66,67,71,92,93,96,97,160:165,167,168,182,74,
+                 46,75,76,94,13,14,17,18,19,7,8,5,6,23:25,81,20,21)
+  THEN BNMCODE='3079900000000Y';
+  IF BNMCODE NE ' ';
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /* INACTIVE PRODUCT USE CENSUS0(ORIGINAL PRODUCT) FOR ISLAMIC CONCEPT
+    MAPPING. ALL MAINTAIN IN 1 PLACE, NOT LONGER SEPERATE MAPPING FOR
+    INACTIVE PRODUCT ESMR 2020-3325 */ /*
+
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+CLASS PRODUCT CENSUS;
+VAR WRITE_DOWN_BAL;
+OUTPUT OUT=ALM SUM=AMOUNT;
+RUN;
+
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  FORMAT CENSUS0 $8.;
+  SET ALM;
+  CENSUS0=LEFT(CENSUS);
+  AMTIND='I';
+  IF PRODUCT=650 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('110','111','112','113','114','115',
+     '116','124','140') THEN BNMCODE='3070100000000Y';
+  END;
+  IF PRODUCT=651 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('117','118','119','139','141','142',
+     '145','147','150','151','156') THEN BNMCODE='3070100000000Y';
+  END;
+  IF PRODUCT=652 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('135','136')
+     THEN BNMCODE='3079900000000Y';
+  END;
+  IF PRODUCT=653 AND SUBSTR(CENSUS0,1,3)='138'
+     THEN BNMCODE='3079900000000Y';
+  IF PRODUCT=654 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('120','122','194','195','196')
+     THEN BNMCODE='3070100000000Y';
+  END;
+  IF PRODUCT=655 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('143','148','149','157','403',
+     '461','462','463') THEN BNMCODE='3070100000000Y';
+     IF SUBSTR(CENSUS0,1,3)='160' THEN BNMCODE='3079900000000Y';
+  END;
+  IF PRODUCT=656 AND SUBSTR(CENSUS0,1,3)='127'
+     THEN BNMCODE='3070100000000Y';
+  IF PRODUCT=657 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('126','158','164','179','404')
+     THEN BNMCODE='3070100000000Y';
+  END;
+  IF PRODUCT=658 AND SUBSTR(CENSUS0,1,3)='129'
+     THEN BNMCODE='3070100000000Y';
+  IF PRODUCT=659 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('165','405')
+     THEN BNMCODE='3070100000000Y';
+  END;
+  IF PRODUCT=660 AND SUBSTR(CENSUS0,1,3)='146'
+     THEN BNMCODE='3079900000000Y';
+  IF PRODUCT=661 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('170','172')
+     THEN BNMCODE='3070100000000Y';
+  END;
+  IF PRODUCT=662 THEN DO;
+     IF SUBSTR(CENSUS0,1,3)='144' THEN BNMCODE='3070100000000Y';
+     IF SUBSTR(CENSUS0,1,3)='162' THEN BNMCODE='3079900000000Y';
+  END;
+  IF PRODUCT=663 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('161','163','169')
+     THEN BNMCODE='3079900000000Y';
+     IF SUBSTR(CENSUS0,1,3)='159' THEN BNMCODE='3070400000000Y';
+  END;
+  IF PRODUCT=664 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('152','175','400','409','410','412',
+     '413','414') THEN BNMCODE='3070500000000Y';
+  END;
+  IF PRODUCT=665 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('153','176','401','406','411')
+     THEN BNMCODE='3070500000000Y';
+  END;
+  IF PRODUCT=666 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('154','177','402','407')
+     THEN BNMCODE='3070500000000Y';
+  END;
+  IF PRODUCT=667 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('155','178','408')
+     THEN BNMCODE='3070500000000Y';
+  END;
+  IF PRODUCT=671 AND SUBSTR(CENSUS0,1,3)='421'
+     THEN BNMCODE='3079900000000Y';
+  IF PRODUCT=680 AND SUBSTR(CENSUS0,1,3)='182'
+     THEN BNMCODE='3079900000000Y';
+  IF PRODUCT=681 AND SUBSTR(CENSUS0,1,3)='181'
+     THEN BNMCODE='3070100000000Y';
+  IF PRODUCT=682 AND SUBSTR(CENSUS0,1,3)='182'
+     THEN BNMCODE='3070100000000Y';
+  IF PRODUCT=683 AND SUBSTR(CENSUS0,1,3)='193'
+     THEN BNMCODE='3070200000000Y';
+  IF PRODUCT=684 AND SUBSTR(CENSUS0,1,3)='186'
+     THEN BNMCODE='3070400000000Y';
+  IF PRODUCT=685 AND SUBSTR(CENSUS0,1,3)='184'
+     THEN BNMCODE='3079900000000Y';
+  IF PRODUCT=686 THEN DO;
+     IF SUBSTR(CENSUS0,1,3)='180' THEN BNMCODE='3070200000000Y';
+     IF SUBSTR(CENSUS0,1,3)='185' THEN BNMCODE='3079900000000Y';
+  END;
+  IF PRODUCT=687 THEN DO;
+     IF SUBSTR(CENSUS0,1,3) IN ('187','188')
+     THEN BNMCODE='3070500000000Y';
+  END;
+  IF PRODUCT=688 AND SUBSTR(CENSUS0,1,3)='189'
+     THEN BNMCODE='3070400000000Y';
+  IF PRODUCT=689 AND SUBSTR(CENSUS0,1,3)='190'
+     THEN BNMCODE='3070400000000Y';
+  IF BNMCODE NE ' ';
+RUN;
+
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+  */
+ /***********************************************************/
+ /** GROSS LOANS BY TYPE OF REPRICING                      **/
+ /***********************************************************/
+*;
+   /****** HARDCODE A/C 8126505534 TO '30595' -- MXM ********/
+DATA LOAN OD;
+   SET LOAN&REPTMON&NOWK;
+   IF  ACCTNO = 8126505534 THEN NTINDEX = 999;
+   IF  SUBSTR(PRODCD, 1, 2) = '34' OR SUBSTR(PRODCD,1,2)='54';
+   IF 650<=PRODUCT<=699 THEN DO;
+      CENSUS0=LEFT(CENSUS);
+      PRODUCT = SUBSTR(CENSUS0,1,3);
+   END;
+   IF  ACCTYPE='OD' THEN OUTPUT OD;
+                    ELSE OUTPUT LOAN;
+RUN;
+   /***  END ****/
+*;
+DATA LIMIT;
+     SET LMTE.OVERDFT;
+     IF LMTAMT > 1 AND APPRLIMT > 1;
+     LIDX='Z';
+     IF LMTINDEX IN (18,19,38,39) THEN LIDX='A';
+     IF LMTINDEX IN (1,30) THEN LIDX='B';
+     IF LMTINDEX=0 THEN LIDX='C';
+PROC SORT DATA=LIMIT OUT=LIMIT; BY ACCTNO LIDX;
+PROC SORT DATA=LIMIT OUT=LIMIT NODUPKEY; BY ACCTNO;
+DATA LIMIT;
+     SET LIMIT;
+     BNMCODE='3059700000000Y';
+     IF LIDX='B'   THEN BNMCODE='3059500000000Y';
+     IF LIDX='C'   THEN BNMCODE='3059300000000Y';
+PROC SORT; BY ACCTNO;
+*;
+DATA OD;
+    SET OD;
+    IF BALANCE NE 0;
+PROC SORT; BY ACCTNO;
+*;
+DATA OD;
+   LENGTH BNMCODE $14.;
+   MERGE LIMIT(IN=A) OD(IN=B); BY ACCTNO;
+   IF A AND B THEN OUTPUT;
+   IF B AND NOT A THEN DO;
+       BNMCODE='3059500000000Y';
+       OUTPUT;
+   END;
+*;
+PROC SUMMARY DATA=OD NWAY MISSING;
+CLASS BNMCODE AMTIND;
+VAR   BALANCE;
+OUTPUT OUT=ALMOD  (DROP=_TYPE_ _FREQ_)
+       SUM=AMOUNT;
+RUN;
+*;
+PROC APPEND DATA=ALMOD BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+*;
+PROC SUMMARY DATA=LOAN NWAY MISSING;
+CLASS PRODCD PRODUCT CENSUS AMTIND NTINDEX COSTFUND CFINDEX;
+VAR   BAL_AFT_EIR;
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+*;
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+  IF PRODCD NOT IN ('34180','34380','34240')
+  THEN DO;
+     BIC = PUT(PRODUCT,LNRATE.);
+     IF PRODCD = '54120' THEN BIC = '30591'; /* SMR 2021-4114 */
+     IF BIC = '30593' THEN DO;
+        IF NTINDEX = 1 THEN BIC = '30595'; ELSE
+        IF NTINDEX IN (38,39) THEN BIC = '30597';
+     END;
+     IF BIC = '30591' THEN DO;
+        IF NTINDEX > 0 THEN BIC = '30595';
+        IF NTINDEX IN (38,39) THEN BIC = '30597';
+     END;
+     IF BIC = '30596' THEN DO;
+        IF COSTFUND <= 0 THEN DO;
+           IF NTINDEX > 0 THEN BIC='30595';
+           ELSE BIC = '30593';
+           IF NTINDEX IN (38,39) THEN BIC = '30597';
+        END;
+     END;
+     IF BIC = '30597' THEN DO;
+        IF NTINDEX = 30 AND PRODUCT IN (144,170) THEN BIC='30595';
+        IF NTINDEX = 1 THEN BIC = '30595';
+        ELSE IF NTINDEX = 0 THEN BIC = '30593';
+        IF NTINDEX IN (38,39) THEN BIC = '30597';
+     END;
+  END;
+
+  IF PRODUCT IN (102,103,104,105,106,107,108) THEN DO;
+     IF NTINDEX IN (1,30)  THEN BIC='30595'; ELSE
+     IF NTINDEX IN (38,39) THEN BIC='30597';
+     ELSE                      BIC='30593';
+  END;
+  IF PRODUCT IN (120,122,126,127,129,134,135,136,137,138,143,146,149,
+                 153,154,155,157,158,159,160,161,162,163,164,
+                 165,169,176,177,178,179,181,182,183,184,185,
+                 186,187,188,189,190,191,192,193,194,195,196,197,199,
+                 401,402,403,404,405,406,407,408,411,416,417,
+                 419,420,422,424,425,426,429,430,441,442,443,444,
+                 447,461,462,463,464,465,467,468,469,470,471,475,
+                 476,477,478,480,481,485,487,488,490,491,492,
+                 493,495,496,497,498,676,691,693,694,695,696,
+                 482,483,652,653,654,655,656,657,658,659,
+                 660,663,665,666,667,668,669,670,672,673,674,
+                 675,680,681,682,683,684,685,686,687,688,689,690,133)
+     THEN DO;
+     IF  NTINDEX = 0           THEN BIC='30593';
+     IF  NTINDEX > 0           THEN BIC='30595';
+     IF  NTINDEX IN (38,39)    THEN BIC='30597';
+     IF COSTFUND > 0           THEN BIC='30596';
+     IF  CFINDEX = 997         THEN BIC='30593';
+  END;
+  IF PRODUCT IN (150,151,152,156,175,400,409,410,412,413,414,445,446,
+                 415,423,431,432,433,440,466,472,473,474,479,484,486,
+                 489,494,650,651,664,677,692)
+                 THEN DO;
+     IF NTINDEX > 0            THEN BIC='30595';
+     IF NTINDEX = 0            THEN BIC='30591';
+     IF NTINDEX IN (38,39)     THEN BIC = '30597';
+  END;
+  IF PRODUCT IN (661,662) THEN DO;
+     BIC='30597';
+     IF NTINDEX=0 THEN BIC='30593'; ELSE
+     IF NTINDEX=1 THEN BIC='30595'; ELSE
+     IF NTINDEX IN (38,39) THEN BIC = '30597';
+  END;
+  IF PRODUCT IN (147,148,173,174,180) THEN DO;
+     BIC='30595';
+     IF PRODUCT IN (147,173) AND NTINDEX=0     THEN BIC='30591';
+     IF PRODUCT IN (148,174,180) AND NTINDEX=0 THEN BIC='30593';
+     IF PRODUCT IN (174,180) AND COSTFUND>0    THEN BIC='30596';
+  END;
+  IF PRODUCT IN (418,421,427,428,671,434,435,436,437,438,439,448,172)
+     THEN DO;
+     IF NTINDEX IN (1,30) THEN BIC='30595'; ELSE
+     IF NTINDEX=0         THEN BIC='30593';
+     ELSE                      BIC='30597';
+  END;
+  IF PRODUCT IN (851,852,853,854,855,856,857,858,859,860) THEN DO;
+     IF COSTFUND>0   THEN BIC='30596';
+     ELSE                 BIC='30597';
+  END;
+
+  IF PRODUCT=169 AND CENSUS IN (169.01,169.02,169.03,169.04) THEN DO;
+     IF NTINDEX = 1 THEN BIC='30595'; ELSE
+     IF NTINDEX = 0 THEN BIC='30593';
+     ELSE                BIC='30597';
+  END;
+  IF CFINDEX IN (927,928,929,930,931,932,933) THEN BIC='30597';
+  IF NTINDEX = 52 THEN BIC='30597';
+
+  IF BIC ^= ' ';
+     BNMCODE=BIC||'00000000Y'; OUTPUT;
+*;
+PROC SUMMARY DATA=ALMLOAN NWAY;
+CLASS BNMCODE AMTIND;
+VAR   AMOUNT;
+OUTPUT OUT=ALMLOAN (DROP=_FREQ_ _TYPE_)
+       SUM=;
+RUN;
+*;
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+*;
+ /**********************************************************/
+ /** LOAN - BY SECTOR CODE                                **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BAL_AFT_EIR;
+CLASS SECTORCD AMTIND;
+WHERE SUBSTR(PRODCD, 1, 2) = '34' AND SECTORCD NE '0410';
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+   /**NEW SECTOR MAPPING **/
+DATA ALM;
+   SET ALM;
+   SECTA = PUT(SECTORCD,$NEWSECT.);
+   SECVALID = PUT(SECTORCD,$VALIDSE.);
+
+   IF SECTA NE '    ' THEN SECTCD = SECTA;
+   ELSE SECTCD = SECTORCD;
+
+DATA ALM;
+   SET ALM;
+   IF SECVALID = 'INVALID' THEN DO;
+   IF SUBSTR(SECTCD,1,1) = '1' THEN DO; SECTCD = '1400';  END;
+   IF SUBSTR(SECTCD,1,1) = '2' THEN DO; SECTCD = '2900';  END;
+   IF SUBSTR(SECTCD,1,1) = '3' THEN DO; SECTCD = '3919';  END;
+   IF SUBSTR(SECTCD,1,1) = '4' THEN DO; SECTCD = '4010';  END;
+   IF SUBSTR(SECTCD,1,1) = '5' THEN DO; SECTCD = '5999';  END;
+   IF SUBSTR(SECTCD,1,2) = '61' THEN DO; SECTCD = '6120'; END;
+   IF SUBSTR(SECTCD,1,2) = '62' THEN DO; SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,2) = '63' THEN DO; SECTCD = '6310'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('64','65','66','67','68','69') THEN DO;
+   SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,1) = '7' THEN DO; SECTCD = '7199'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('81','82') THEN DO;
+      SECTCD = '8110';  END;
+   IF SUBSTR(SECTCD,1,2)IN ('83','84','85','86','87','88','89') THEN DO;
+      SECTCD = '8999';  END;
+   IF SUBSTR(SECTCD,1,2) = '91' THEN DO; SECTCD = '9101';  END;
+   IF SUBSTR(SECTCD,1,2) = '92' THEN DO; SECTCD = '9410';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('93','94','95') THEN DO;
+      SECTCD = '9499';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('96','97','98','99') THEN DO;
+      SECTCD = '9999';  END;
+   END;
+
+RUN;
+DATA ALM2;
+   SET ALM;
+
+   IF SECTCD IN ('1111','1112','1113','1114','1115','1116',
+      '1117','1119','1120','1130','1140','1150')
+      THEN DO;
+           IF SECTCD IN ('1111','1113','1115','1117','1119',
+                         '1112','1114','1116') THEN DO;
+              SECTORCD = '1110'; OUTPUT; END;
+      SECTORCD = '1100'; OUTPUT; END;
+   IF SECTCD IN ('2210','2220')
+      THEN DO; SECTORCD = '2200';
+      OUTPUT;END;
+   IF SECTCD IN ('2301','2302','2303') THEN DO;
+      SECTORCD = '2300'; OUTPUT;
+      IF SECTCD IN ('2303') THEN DO; SECTORCD = '2302';
+      OUTPUT; END;
+   END;
+   IF SECTCD IN ('3110','3115','3111','3112','3113','3114') THEN DO;
+      IF SECTCD IN ('3110','3113','3114','3111','3112','3115')
+         THEN DO; SECTORCD = '3100'; OUTPUT; END;
+      IF SECTCD IN ('3115','3111','3112')
+         THEN DO; SECTORCD = '3110'; OUTPUT; END;
+   END;
+      IF SECTCD IN ('3211','3212','3219')
+         THEN DO; SECTORCD = '3210'; OUTPUT; END;
+      IF SECTCD IN ('3221','3222')
+         THEN DO; SECTORCD = '3220'; OUTPUT; END;
+      IF SECTCD IN ('3231','3232')
+         THEN DO; SECTORCD = '3230'; OUTPUT; END;
+      IF SECTCD IN ('3241','3242')
+         THEN DO; SECTORCD = '3240'; OUTPUT; END;
+      IF SECTCD IN ('3270','3280','3290','3271','3272','3273',
+                    '3311','3312','3313')
+         THEN DO;
+            IF SECTCD IN ('3270','3280','3290','3271','3272','3273')
+               THEN DO; SECTORCD = '3260'; OUTPUT; END;
+            IF SECTCD IN ('3271','3272','3273')
+               THEN DO; SECTORCD = '3270'; OUTPUT; END;
+            IF SECTCD IN ('3311','3312','3313')
+               THEN DO; SECTORCD = '3310';OUTPUT; END;
+      END;
+      IF SECTCD IN ('3431','3432','3433')
+         THEN DO; SECTORCD = '3430'; OUTPUT; END;
+      IF SECTCD IN ('3551','3552')
+         THEN DO; SECTORCD = '3550'; OUTPUT; END;
+      IF SECTCD IN ('3611','3619')
+         THEN DO; SECTORCD = '3610'; OUTPUT; END;
+      IF SECTCD IN ('3710','3720','3730','3721','3731','3732')
+         THEN DO; SECTORCD = '3700'; OUTPUT;
+            IF SECTCD IN ('3721')
+                THEN DO; SECTORCD = '3720'; OUTPUT; END;
+            IF SECTCD IN ('3731','3732')
+                THEN DO; SECTORCD = '3730'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('3811','3813','3814','3819')
+         THEN DO; SECTORCD = '3800'; OUTPUT; END;
+   IF SECTCD IN ('3813','3814','3819')
+      THEN DO; SECTORCD = '3812';
+      OUTPUT; END;
+   IF SECTCD IN ('3832','3834','3835','3833')
+      THEN DO;
+         SECTORCD = '3831';
+         OUTPUT;
+         IF SECTCD IN ('3833') THEN DO; SECTORCD = '3832';
+         OUTPUT; END;
+   END;
+   IF SECTCD IN ('3842','3843','3844')
+      THEN DO; SECTORCD = '3841';
+      OUTPUT; END;
+   IF SECTCD IN ('3851','3852','3853')
+      THEN DO; SECTORCD = '3850';
+      OUTPUT; END;
+   IF SECTCD IN ('3861','3862','3863','3864','3865','3866')
+      THEN DO; SECTORCD = '3860';
+      OUTPUT; END;
+   IF SECTCD IN ('3871','3872','3872')
+      THEN DO; SECTORCD = '3870';
+      OUTPUT; END;
+   IF SECTCD IN ('3891','3892','3893','3894')
+      THEN DO; SECTORCD = '3890';
+      OUTPUT; END;
+   IF SECTCD IN ('3911','3919')
+      THEN DO; SECTORCD = '3910';
+      OUTPUT; END;
+   IF SECTCD IN ('3951','3952','3953','3954','3955','3956','3957')
+      THEN DO; SECTORCD = '3950'; OUTPUT;
+         IF SECTCD IN ('3952','3953')
+            THEN DO; SECTORCD = '3951';OUTPUT; END;
+         IF SECTCD IN ('3955','3956','3957')
+            THEN DO; SECTORCD = '3954'; OUTPUT; END;
+      END;
+   IF SECTCD IN ('5001','5002','5003','5004','5005','5006','5008')
+      THEN DO; SECTORCD = '5010';
+      OUTPUT; END;
+   IF SECTCD IN ('6110','6120','6130')
+      THEN DO; SECTORCD = '6100';
+      OUTPUT; END;
+   IF SECTCD IN ('6310','6320')
+      THEN DO; SECTORCD = '6300';
+      OUTPUT; END;
+      IF SECTCD IN ('7111','7112','7117','7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7110';
+         OUTPUT; END;
+      IF SECTCD IN ('7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7112';
+         OUTPUT;
+      END;
+      IF SECTCD IN ('7112','7114')
+         THEN DO; SECTORCD = '7113'; OUTPUT; END;
+      IF SECTCD IN ('7116')
+         THEN DO; SECTORCD = '7115'; OUTPUT; END;
+   IF SECTCD IN ('7121','7122','7123','7124')
+      THEN DO; SECTORCD = '7120';
+      OUTPUT;
+      IF SECTCD IN ('7124')
+         THEN DO; SECTORCD = '7123'; OUTPUT; END;
+      IF SECTCD IN ('7122')
+         THEN DO; SECTORCD = '7121'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('7131','7132','7133','7134')
+      THEN DO; SECTORCD = '7130';
+      OUTPUT; END;
+   IF SECTCD IN ('7191','7192','7193','7199')
+      THEN DO; SECTORCD = '7190';
+      OUTPUT; END;
+   IF SECTCD IN ('7210','7220')
+      THEN DO; SECTORCD = '7200';
+      OUTPUT; END;
+   IF SECTCD IN ('8110','8120','8130')
+      THEN DO; SECTORCD = '8100';
+      OUTPUT; END;
+   IF SECTCD IN ('8310','8330','8340','8320','8331','8332',
+                 '8321','8333')
+      THEN DO; SECTORCD = '8300';
+      OUTPUT;
+      IF SECTCD IN ('8320','8331','8332','8321','8333')
+         THEN DO; SECTORCD = '8330'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('8321')
+      THEN DO; SECTORCD = '8320';
+      OUTPUT; END;
+   IF SECTCD IN ('8333')
+      THEN DO; SECTORCD = '8332';
+      OUTPUT; END;
+   IF SECTCD IN('8420','8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8400';
+      OUTPUT;
+   IF SECTCD IN ('8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8410';
+      OUTPUT; END;
+   END;
+   IF SUBSTR(SECTCD,1,2) = '89'
+      THEN DO; SECTORCD = '8900'; OUTPUT;
+      IF SECTCD IN ('8910','8911','8912','8913','8914')
+          THEN DO;
+         IF SECTCD IN('8911','8912','8913','8914') THEN DO;
+            SECTORCD = '8910'; OUTPUT; END;
+         IF SECTCD IN ('8910')
+         THEN DO; SECTORCD = '8914';OUTPUT; END;
+      END;
+      IF SECTCD IN ('8921','8922','8920')
+         THEN DO;
+         IF SECTCD IN ('8921','8922') THEN DO;
+            SECTORCD = '8920'; OUTPUT; END;
+         IF SECTCD IN ('8920')
+            THEN DO; SECTORCD = '8922'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('8931','8932')
+          THEN DO; SECTORCD = '8930';OUTPUT; END;
+      IF SECTCD IN ('8991','8999')
+         THEN DO; SECTORCD = '8990'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('9101','9102','9103')
+      THEN DO; SECTORCD = '9100';
+      OUTPUT; END;
+   IF SECTCD IN ('9201','9202','9203')
+      THEN DO; SECTORCD = '9200';
+      OUTPUT; END;
+   IF SECTCD IN ('9311','9312','9313','9314')
+      THEN DO; SECTORCD = '9300';
+      OUTPUT; END;
+   IF SUBSTR(SECTCD,1,2) = '94'
+      THEN DO; SECTORCD = '9400';
+      OUTPUT;
+      IF SECTCD IN ('9433','9434','9435','9432','9431',
+                    '9440','9450') THEN DO;
+          IF SECTCD IN ('9433','9434','9435') THEN DO;
+            SECTORCD = '9432'; OUTPUT; END;
+          SECTORCD = '9430'; OUTPUT;
+      END;
+      IF SECTCD IN ('9410','9420')
+         THEN DO; SECTORCD = '9499'; OUTPUT; END;
+   END;
+RUN;
+DATA ALM;
+    SET ALM(IN=A) ALM2;
+    IF A THEN SECTORCD = SECTCD;
+DATA ALMA;
+  SET ALM;
+   IF SECTORCD IN ('1100','1200','1300','1400')
+      THEN DO; SECTORCD = '1000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('2100','2200','2300','2400','2900')
+      THEN DO; SECTORCD = '2000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('3100','3120','3210','3220','3230','3240',
+                      '3250','3260','3310','3430','3550','3610',
+                      '3700','3800','3825','3831','3841','3850',
+                      '3860','3870','3890','3910','3950','3960')
+      THEN DO; SECTORCD = '3000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('4010','4020','4030')
+      THEN DO; SECTORCD = '4000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('5010','5020','5030','5040','5050','5999')
+      THEN DO; SECTORCD = '5000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('6100','6300')
+      THEN DO; SECTORCD = '6000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('7110','7120','7130','7190','7200')
+      THEN DO; SECTORCD = '7000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('8100','8300','8400','8900')
+      THEN DO; SECTORCD = '8000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('9100','9200','9300','9400','9500','9600')
+      THEN DO; SECTORCD = '9000'; OUTPUT; END;
+RUN;
+DATA ALM;
+   SET ALM ALMA;
+   IF SECTORCD EQ '    ' THEN SECTORCD = '9999';
+RUN;
+   /*** NEW SECTOR MAPPING END ***/
+DATA ALMLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+  IF SECTORCD NE '    ' THEN DO;
+     BNMCODE='340000000'||SECTORCD||'Y'; OUTPUT;
+  END;
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMLOAN; RUN;
+
+ /**********************************************************/
+ /** DISBURSEMENT, REPAYMENT, APPROVAL - BY PURPOSE CODE  **/
+ /**********************************************************/
+PROC SORT DATA=BNM1.LNWOF&REPTMON&NOWK OUT=LNWOF;BY ACCTNO NOTENO;RUN;
+PROC SORT DATA=BNM1.LNWOD&REPTMON&NOWK OUT=LNWOD;BY ACCTNO NOTENO;RUN;
+PROC SORT DATA=BNM1.LNWOF&REPTMON2&NOWK OUT=PLNWOF;BY ACCTNO NOTENO;RUN;
+PROC SORT DATA=BNM1.LNWOD&REPTMON2&NOWK OUT=PLNWOD;BY ACCTNO NOTENO;RUN;
+
+DATA LOANT&REPTMON&NOWK;
+   MERGE PLNWOF PLNWOD LNWOF LNWOD
+         BNM1.LOAN&REPTMON2&NOWK SASD.LOAN&REPTMON;
+   BY ACCTNO NOTENO;
+RUN;
+PROC SORT; BY ACCTNO NOTENO;
+
+DATA DISPAY;
+   SET DISPAY.IDISBURN&REPTMON DISPAY.IREPAYN&REPTMON
+       DAILY.EXCLUDE_&REPTDAY;
+RUN;
+*;
+PROC SORT DATA=DISPAY; BY ACCTNO NOTENO;
+PROC SUMMARY DATA=DISPAY NWAY;
+   BY ACCTNO NOTENO;
+   VAR DISBURSE REPAID10;
+OUTPUT OUT=DISBURSE SUM=;
+RUN;
+
+PROC SORT DATA=FORATE.FORATEBKP OUT=FORATE;
+   BY CURCODE DESCENDING REPTDATE;
+   WHERE REPTDATE<= &TDATE;
+RUN;
+PROC SORT DATA=FORATE NODUPKEY; BY CURCODE; RUN;
+
+DATA FOFMT;
+  LENGTH START $3. LABEL $13.7 FMTNAME $6. TYPE $1.;
+  SET FORATE;
+  START = CURCODE;
+  LABEL = SPOTRATE;
+  FMTNAME = 'FORATE';
+  TYPE = 'C';
+RUN;
+PROC FORMAT CNTLIN=FOFMT;RUN;
+*;
+DATA LOANT&REPTMON&NOWK(COMPRESS=YES RENAME=(REPAID=REPAID_EAL
+                                             REPAID10=REPAID));
+   MERGE LOANT&REPTMON&NOWK(IN=A) DISBURSE(IN=B);
+   BY ACCTNO NOTENO;
+   IF A & B;
+   FORATE   = PUT(CCY,$FORATE.);
+   IF PRODUCT GE 851 AND PRODUCT LT 900 THEN DO;
+      IF CCY NE 'MYR' THEN DO;
+         DISBURSE = DISBURSE*FORATE;
+         REPAID10 = REPAID10*FORATE;
+      END;
+   END;
+   IF REPAID   <= 0 THEN REPAID   = 0;
+   IF REPAID10 <= 0 THEN REPAID10 = 0;
+RUN;
+PROC SORT DATA=LOANT&REPTMON&NOWK OUT=DISPAY
+(KEEP=ACCTNO NOTENO FISSPURP PRODUCT BALANCE
+      PRODCD CUSTCD AMTIND SECTORCD DISBURSE REPAID BRANCH);
+   BY ACCTNO NOTENO CUSTCD FISSPURP SECTORCD;
+   WHERE SUBSTR(PRODCD,1,3) IN ('341','342','343','344','346') OR
+        PRODUCT IN (225,226,698,699,983);
+RUN;
+*;
+PROC SORT DATA=BNM1.LOAN&REPTMON2&NOWK OUT=ALM1
+(KEEP=ACCTNO NOTENO FISSPURP PRODUCT NOTETERM BALANCE PRODCD CUSTCD
+      AMTIND SECTORCD BRANCH CCY FORATE);
+   BY ACCTNO NOTENO;
+   WHERE SUBSTR(PRODCD,1,3) IN ('341','342','343','344','346') OR
+         PRODUCT IN (225,226);
+RUN;
+*;
+PROC SORT DATA=BNM1.LOAN&REPTMON&NOWK OUT=ALM
+(KEEP=ACCTNO NOTENO FISSPURP PRODUCT NOTETERM EARNTERM BALANCE CURBAL
+      APPRDATE APPRLIM2 PRODCD CUSTCD AMTIND SECTORCD BRANCH
+      CCY FORATE);
+   BY ACCTNO NOTENO;
+   WHERE SUBSTR(PRODCD,1,3) IN ('341','342','343','344','346') OR
+         PRODUCT IN (225,226);
+RUN;
+*;
+PROC SORT DATA=LNHIST.LNHIST OUT=LNHIST(KEEP=ACCTNO NOTENO) NODUPKEY;
+   BY ACCTNO NOTENO;
+   WHERE TRANCODE EQ 400 AND RATECHG NE 0;
+RUN;
+*;
+PROC SORT DATA=LOAN.LNNOTE(KEEP=ACCTNO NOTENO DELQCD)
+           OUT=LNNOTE; BY ACCTNO NOTENO;
+DATA ALM;
+   MERGE ALM(IN=A) LNNOTE(IN=B KEEP=ACCTNO NOTENO DELQCD);
+   BY ACCTNO NOTENO;
+   IF A;
+RUN;
+DATA ALM;
+   MERGE ALM(IN=A) LNHIST(IN=B);
+   BY ACCTNO NOTENO;
+   IF A AND B THEN
+      IF DELQCD = ' ' & ISSDTE < &SDATE THEN RATECHG = 'Y';
+   IF A AND NOT B  THEN RATECHG = 'N';
+   IF A;
+RUN;
+*;
+DATA ALM;
+   KEEP FISSPURP DISBURSE REPAID APPRLIM2 ROLLOVER PRODUCT LASTBAL
+        AMTIND CUSTCD SECTORCD PRODCD BALANCE ACCTNO NOTENO BRANCH
+        CCY FORATE DELQCD;
+   MERGE ALM1(IN=A RENAME=(BALANCE=LASTBAL NOTETERM=LASTNOTE))
+         ALM(IN=B);
+   BY ACCTNO NOTENO;
+   /* REVISE CRITERIA VIA ESMR 2011-2865
+   IF PRODUCT=167 THEN DO;
+      IF LASTBAL   < 0 THEN LASTBAL=0;
+      IF BALANCE   < 0 THEN BALANCE=0;
+   END;
+
+   IF PRODCD IN ('34190','34690') & NOTETERM ^= EARNTERM &
+      NOTETERM ^= LASTNOTE THEN ROLLOVER = BALANCE;
+   */
+   IF PRODCD IN ('34190','34690') & RATECHG = 'Y' THEN
+        ROLLOVER = CURBAL;
+   ELSE ROLLOVER = 0;
+   DISBURSE = 0; REPAID = 0;
+*;
+DATA ALM;
+   MERGE ALM(IN=A) DISPAY(IN=B);
+   BY ACCTNO NOTENO;
+RUN;
+DATA ALM;
+   MERGE DISPAY.ROLLOVER&REPTMON(IN=A) ALM(IN=B DROP=ROLLOVER);
+   BY ACCTNO NOTENO;
+RUN;
+
+DATA ALM;
+   SET ALM;
+   IF DISBURSE <= 0 AND REPAID <= 0 AND ROLLOVER <= 0 THEN DELETE;
+RUN;
+
+
+PROC SUMMARY DATA=ALM NWAY;
+CLASS FISSPURP CUSTCD AMTIND;
+VAR   ROLLOVER;
+OUTPUT OUT=ALM1 (DROP=_TYPE_) SUM=;
+WHERE ROLLOVER > 0.00;
+RUN;
+*;
+DATA ALM2;
+   KEEP BNMCODE AMTIND AMOUNT;
+   LENGTH BNMCODE $14.;
+   SET ALM1;
+   AMOUNT=_FREQ_ * 1000;
+   BNMCODE='8015000000000Y';
+*;
+PROC APPEND DATA=ALM2 BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM2; RUN;
+*;
+DATA ALM2;
+   KEEP BNMCODE AMTIND AMOUNT;
+   LENGTH BNMCODE $14.;
+   SET ALM1;
+   AMOUNT=_FREQ_ * 1000;
+   IF CUSTCD='41'  THEN BNMCODE='8015041000000Y'; ELSE
+   IF CUSTCD='42'  THEN BNMCODE='8015042000000Y'; ELSE
+   IF CUSTCD='43'  THEN BNMCODE='8015043000000Y'; ELSE
+   IF CUSTCD='44'  THEN BNMCODE='8015044000000Y'; ELSE
+   IF CUSTCD='46'  THEN BNMCODE='8015046000000Y'; ELSE
+   IF CUSTCD='47'  THEN BNMCODE='8015047000000Y'; ELSE
+   IF CUSTCD='48'  THEN BNMCODE='8015048000000Y'; ELSE
+   IF CUSTCD='49'  THEN BNMCODE='8015049000000Y'; ELSE
+   IF CUSTCD='51'  THEN BNMCODE='8015051000000Y'; ELSE
+   IF CUSTCD='52'  THEN BNMCODE='8015052000000Y'; ELSE
+   IF CUSTCD='53'  THEN BNMCODE='8015053000000Y'; ELSE
+   IF CUSTCD='54'  THEN BNMCODE='8015054000000Y'; ELSE
+   IF CUSTCD='77'  THEN BNMCODE='8015077000000Y'; ELSE
+   /* IF CUSTCD IN ('41','42','43','61')
+                   THEN BNMCODE='8015061000000Y'; ELSE
+   */
+   IF FISSPURP='0211' THEN BNMCODE='8020000000211Y'; ELSE
+   IF FISSPURP='0212' THEN BNMCODE='8020000000212Y';
+   OUTPUT;
+   IF CUSTCD IN ('41','42','43','61')
+                   THEN DO ;BNMCODE='8015061000000Y';
+   OUTPUT;
+   END;
+RUN;
+*;
+PROC APPEND DATA=ALM2 BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM1 ALM2; RUN;
+*;
+PROC SUMMARY DATA=ALM NWAY;
+CLASS FISSPURP AMTIND;
+VAR DISBURSE REPAID APPRLIM2 ROLLOVER;
+OUTPUT OUT=ALMLOAN (DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+*;
+DATA ALMLOAN1;
+   SET ALMLOAN;
+   IF FISSPURP IN ('0220','0230','0210','0211','0212') THEN DO;
+      FISSPURP = '0200';
+      OUTPUT;
+   END;
+DATA ALMLOAN;
+   SET ALMLOAN ALMLOAN1;
+RUN;
+DATA ALMLOAN;
+   KEEP BNMCODE AMTIND AMOUNT;
+   LENGTH BNMCODE $14.;
+
+   SET ALMLOAN;
+   BNMCODE = '683400000'||FISSPURP||'Y';
+   AMOUNT = DISBURSE; OUTPUT;
+   BNMCODE = '783400000'||FISSPURP||'Y';
+   AMOUNT = REPAID; OUTPUT;
+   BNMCODE = '821520000'||FISSPURP||'Y';
+   AMOUNT = ROLLOVER; OUTPUT;
+RUN;
+*;
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALMLOAN ALM1 UALM; RUN;
+     /*** NEW REQUEST TO REPORT SMI FIGURE ***/
+
+PROC SUMMARY DATA=ALM NWAY;
+CLASS FISSPURP CUSTCD AMTIND;
+VAR DISBURSE REPAID APPRLIM2 ROLLOVER;
+OUTPUT OUT=ALMSMI (DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+*;
+DATA ALMSMI1;
+   SET ALMSMI;
+   IF FISSPURP IN ('0220','0230','0210','0211','0212') THEN DO;
+      FISSPURP = '0200';
+      OUTPUT;
+   END;
+DATA ALMSMI;
+   SET ALMSMI ALMSMI1;
+RUN;
+DATA ALMSMI;
+   KEEP BNMCODE AMTIND AMOUNT;
+   LENGTH BNMCODE $14.;
+
+   SET ALMSMI;
+   IF CUSTCD IN ('41','42','43','44','46','47','48','49','51'
+            '52','53','54','77','78','79') THEN DO;
+      BNMCODE='68340'||CUSTCD||'00'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='78340'||CUSTCD||'00'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='82152'||CUSTCD||'00'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('61','41','42','43','62','44','46','47','64',
+                 '63','48','49','51','57','59','75','52','53','54')
+                  THEN DO;
+      BNMCODE='683406000'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406000'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+   END;
+   IF CUSTCD IN ('02','03','11','12') THEN DO;
+      BNMCODE='683401000'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783401000'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821521000'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('20','13','17','30','32','33','34','35',
+                 '36','37','38','39','40','04','05','06') THEN DO;
+      BNMCODE='683402000'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783402000'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821522000'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('71','72','73','74') THEN DO;
+      BNMCODE='683407000'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783407000'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821527000'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('77','78') THEN DO;
+      BNMCODE='683407600'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783407600'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821527600'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('81','82','83','84','85','86','87','88','89','90','91',
+                 '92','95','96','98','99') THEN DO;
+      BNMCODE='683408000'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783408000'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821528000'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('41','42','43','61') THEN DO;
+      BNMCODE='683406100'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406100'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526100'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('62','44','46','47') THEN DO;
+      BNMCODE='683406200'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406200'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526200'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('63','48','49','51') THEN DO;
+      BNMCODE='683406300'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406300'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526300'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('64','52','53','54','59','75','57') THEN DO;
+      BNMCODE='683406400'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406400'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526400'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('41','42','43','44','46','47','48','49','51'
+            '52','53','54') THEN DO;
+      BNMCODE = '683406500'||FISSPURP||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406500'||FISSPURP||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526500'||FISSPURP||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+RUN;
+PROC APPEND DATA=ALMSMI BASE=BNM.LALM&REPTMON&NOWK; RUN;
+ /**********************************************************/
+ /** DISBURSEMENT, REPAYMENT, APPROVAL - BY SECTORIAL CODE**/
+ /**********************************************************/
+DATA ALMX;
+  SET ALM;
+PROC SUMMARY DATA=ALM NWAY;
+CLASS SECTORCD AMTIND;
+VAR DISBURSE REPAID APPRLIM2 ROLLOVER;
+OUTPUT OUT=ALM (DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+*;
+   /**NEW SECTOR MAPPING **/
+DATA ALM;
+   SET ALM;
+   SECTA = PUT(SECTORCD,$NEWSECT.);
+   SECVALID = PUT(SECTORCD,$VALIDSE.);
+
+   IF SECTA NE '    ' THEN SECTCD = SECTA;
+   ELSE SECTCD = SECTORCD;
+
+DATA ALM;
+   SET ALM;
+   IF SECVALID = 'INVALID' THEN DO;
+   IF SUBSTR(SECTCD,1,1) = '1' THEN DO; SECTCD = '1400';  END;
+   IF SUBSTR(SECTCD,1,1) = '2' THEN DO; SECTCD = '2900';  END;
+   IF SUBSTR(SECTCD,1,1) = '3' THEN DO; SECTCD = '3919';  END;
+   IF SUBSTR(SECTCD,1,1) = '4' THEN DO; SECTCD = '4010';  END;
+   IF SUBSTR(SECTCD,1,1) = '5' THEN DO; SECTCD = '5999';  END;
+   IF SUBSTR(SECTCD,1,2) = '61' THEN DO; SECTCD = '6120'; END;
+   IF SUBSTR(SECTCD,1,2) = '62' THEN DO; SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,2) = '63' THEN DO; SECTCD = '6310'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('64','65','66','67','68','69') THEN DO;
+   SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,1) = '7' THEN DO; SECTCD = '7199'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('81','82') THEN DO;
+      SECTCD = '8110';  END;
+   IF SUBSTR(SECTCD,1,2)IN ('83','84','85','86','87','88','89') THEN DO;
+      SECTCD = '8999';  END;
+   IF SUBSTR(SECTCD,1,2) = '91' THEN DO; SECTCD = '9101';  END;
+   IF SUBSTR(SECTCD,1,2) = '92' THEN DO; SECTCD = '9410';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('93','94','95') THEN DO;
+      SECTCD = '9499';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('96','97','98','99') THEN DO;
+      SECTCD = '9999';  END;
+   END;
+
+RUN;
+DATA ALM2;
+   SET ALM;
+
+   IF SECTCD IN ('1111','1112','1113','1114','1115','1116',
+      '1117','1119','1120','1130','1140','1150')
+      THEN DO;
+           IF SECTCD IN ('1111','1113','1115','1117','1119',
+                         '1112','1114','1116') THEN DO;
+              SECTORCD = '1110'; OUTPUT; END;
+      SECTORCD = '1100'; OUTPUT; END;
+   IF SECTCD IN ('2210','2220')
+      THEN DO; SECTORCD = '2200';
+      OUTPUT;END;
+   IF SECTCD IN ('2301','2302','2303') THEN DO;
+      SECTORCD = '2300'; OUTPUT;
+      IF SECTCD IN ('2303') THEN DO; SECTORCD = '2302';
+      OUTPUT; END;
+   END;
+   IF SECTCD IN ('3110','3115','3111','3112','3113','3114') THEN DO;
+      IF SECTCD IN ('3110','3113','3114','3111','3112','3115')
+         THEN DO; SECTORCD = '3100'; OUTPUT; END;
+      IF SECTCD IN ('3115','3111','3112')
+         THEN DO; SECTORCD = '3110'; OUTPUT; END;
+   END;
+      IF SECTCD IN ('3211','3212','3219')
+         THEN DO; SECTORCD = '3210'; OUTPUT; END;
+      IF SECTCD IN ('3221','3222')
+         THEN DO; SECTORCD = '3220'; OUTPUT; END;
+      IF SECTCD IN ('3231','3232')
+         THEN DO; SECTORCD = '3230'; OUTPUT; END;
+      IF SECTCD IN ('3241','3242')
+         THEN DO; SECTORCD = '3240'; OUTPUT; END;
+      IF SECTCD IN ('3270','3280','3290','3271','3272','3273',
+                    '3311','3312','3313')
+         THEN DO;
+            IF SECTCD IN ('3270','3280','3290','3271','3272','3273')
+               THEN DO; SECTORCD = '3260'; OUTPUT; END;
+            IF SECTCD IN ('3271','3272','3273')
+               THEN DO; SECTORCD = '3270'; OUTPUT; END;
+            IF SECTCD IN ('3311','3312','3313')
+               THEN DO; SECTORCD = '3310';OUTPUT; END;
+      END;
+      IF SECTCD IN ('3431','3432','3433')
+         THEN DO; SECTORCD = '3430'; OUTPUT; END;
+      IF SECTCD IN ('3551','3552')
+         THEN DO; SECTORCD = '3550'; OUTPUT; END;
+      IF SECTCD IN ('3611','3619')
+         THEN DO; SECTORCD = '3610'; OUTPUT; END;
+      IF SECTCD IN ('3710','3720','3730','3721','3731','3732')
+         THEN DO; SECTORCD = '3700'; OUTPUT;
+            IF SECTCD IN ('3721')
+                THEN DO; SECTORCD = '3720'; OUTPUT; END;
+            IF SECTCD IN ('3731','3732')
+                THEN DO; SECTORCD = '3730'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('3811','3813','3814','3819')
+         THEN DO; SECTORCD = '3800'; OUTPUT; END;
+   IF SECTCD IN ('3813','3814','3819')
+      THEN DO; SECTORCD = '3812';
+      OUTPUT; END;
+   IF SECTCD IN ('3832','3834','3835','3833')
+      THEN DO;
+         SECTORCD = '3831';
+         OUTPUT;
+         IF SECTCD IN ('3833') THEN DO; SECTORCD = '3832';
+         OUTPUT; END;
+   END;
+   IF SECTCD IN ('3842','3843','3844')
+      THEN DO; SECTORCD = '3841';
+      OUTPUT; END;
+   IF SECTCD IN ('3851','3852','3853')
+      THEN DO; SECTORCD = '3850';
+      OUTPUT; END;
+   IF SECTCD IN ('3861','3862','3863','3864','3865','3866')
+      THEN DO; SECTORCD = '3860';
+      OUTPUT; END;
+   IF SECTCD IN ('3871','3872','3872')
+      THEN DO; SECTORCD = '3870';
+      OUTPUT; END;
+   IF SECTCD IN ('3891','3892','3893','3894')
+      THEN DO; SECTORCD = '3890';
+      OUTPUT; END;
+   IF SECTCD IN ('3911','3919')
+      THEN DO; SECTORCD = '3910';
+      OUTPUT; END;
+   IF SECTCD IN ('3951','3952','3953','3954','3955','3956','3957')
+      THEN DO; SECTORCD = '3950'; OUTPUT;
+         IF SECTCD IN ('3952','3953')
+            THEN DO; SECTORCD = '3951';OUTPUT; END;
+         IF SECTCD IN ('3955','3956','3957')
+            THEN DO; SECTORCD = '3954'; OUTPUT; END;
+      END;
+   IF SECTCD IN ('5001','5002','5003','5004','5005','5006','5008')
+      THEN DO; SECTORCD = '5010';
+      OUTPUT; END;
+   IF SECTCD IN ('6110','6120','6130')
+      THEN DO; SECTORCD = '6100';
+      OUTPUT; END;
+   IF SECTCD IN ('6310','6320')
+      THEN DO; SECTORCD = '6300';
+      OUTPUT; END;
+      IF SECTCD IN ('7111','7112','7117','7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7110';
+         OUTPUT; END;
+      IF SECTCD IN ('7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7112';
+         OUTPUT;
+      END;
+      IF SECTCD IN ('7112','7114')
+         THEN DO; SECTORCD = '7113'; OUTPUT; END;
+      IF SECTCD IN ('7116')
+         THEN DO; SECTORCD = '7115'; OUTPUT; END;
+   IF SECTCD IN ('7121','7122','7123','7124')
+      THEN DO; SECTORCD = '7120';
+      OUTPUT;
+      IF SECTCD IN ('7124')
+         THEN DO; SECTORCD = '7123'; OUTPUT; END;
+      IF SECTCD IN ('7122')
+         THEN DO; SECTORCD = '7121'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('7131','7132','7133','7134')
+      THEN DO; SECTORCD = '7130';
+      OUTPUT; END;
+   IF SECTCD IN ('7191','7192','7193','7199')
+      THEN DO; SECTORCD = '7190';
+      OUTPUT; END;
+   IF SECTCD IN ('7210','7220')
+      THEN DO; SECTORCD = '7200';
+      OUTPUT; END;
+   IF SECTCD IN ('8110','8120','8130')
+      THEN DO; SECTORCD = '8100';
+      OUTPUT; END;
+   IF SECTCD IN ('8310','8330','8340','8320','8331','8332',
+                 '8321','8333')
+      THEN DO; SECTORCD = '8300';
+      OUTPUT;
+      IF SECTCD IN ('8320','8331','8332','8321','8333')
+         THEN DO; SECTORCD = '8330'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('8321')
+      THEN DO; SECTORCD = '8320';
+      OUTPUT; END;
+   IF SECTCD IN ('8333')
+      THEN DO; SECTORCD = '8332';
+      OUTPUT; END;
+   IF SECTCD IN('8420','8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8400';
+      OUTPUT;
+   IF SECTCD IN ('8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8410';
+      OUTPUT; END;
+   END;
+   IF SUBSTR(SECTCD,1,2) = '89'
+      THEN DO; SECTORCD = '8900'; OUTPUT;
+      IF SECTCD IN ('8910','8911','8912','8913','8914')
+          THEN DO;
+         IF SECTCD IN('8911','8912','8913','8914') THEN DO;
+            SECTORCD = '8910'; OUTPUT; END;
+         IF SECTCD IN ('8910')
+         THEN DO; SECTORCD = '8914';OUTPUT; END;
+      END;
+      IF SECTCD IN ('8921','8922','8920')
+         THEN DO;
+         IF SECTCD IN ('8921','8922') THEN DO;
+            SECTORCD = '8920'; OUTPUT; END;
+         IF SECTCD IN ('8920')
+            THEN DO; SECTORCD = '8922'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('8931','8932')
+          THEN DO; SECTORCD = '8930';OUTPUT; END;
+      IF SECTCD IN ('8991','8999')
+         THEN DO; SECTORCD = '8990'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('9101','9102','9103')
+      THEN DO; SECTORCD = '9100';
+      OUTPUT; END;
+   IF SECTCD IN ('9201','9202','9203')
+      THEN DO; SECTORCD = '9200';
+      OUTPUT; END;
+   IF SECTCD IN ('9311','9312','9313','9314')
+      THEN DO; SECTORCD = '9300';
+      OUTPUT; END;
+   IF SUBSTR(SECTCD,1,2) = '94'
+      THEN DO; SECTORCD = '9400';
+      OUTPUT;
+      IF SECTCD IN ('9433','9434','9435','9432','9431',
+                    '9440','9450') THEN DO;
+          IF SECTCD IN ('9433','9434','9435') THEN DO;
+            SECTORCD = '9432'; OUTPUT; END;
+          SECTORCD = '9430'; OUTPUT;
+      END;
+      IF SECTCD IN ('9410','9420')
+         THEN DO; SECTORCD = '9499'; OUTPUT; END;
+   END;
+RUN;
+DATA ALM;
+    SET ALM(IN=A) ALM2;
+    IF A THEN SECTORCD = SECTCD;
+DATA ALMA;
+  SET ALM;
+   IF SECTORCD IN ('1100','1200','1300','1400')
+      THEN DO; SECTORCD = '1000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('2100','2200','2300','2400','2900')
+      THEN DO; SECTORCD = '2000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('3100','3120','3210','3220','3230','3240',
+                      '3250','3260','3310','3430','3550','3610',
+                      '3700','3800','3825','3831','3841','3850',
+                      '3860','3870','3890','3910','3950','3960')
+      THEN DO; SECTORCD = '3000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('4010','4020','4030')
+      THEN DO; SECTORCD = '4000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('5010','5020','5030','5040','5050','5999')
+      THEN DO; SECTORCD = '5000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('6100','6300')
+      THEN DO; SECTORCD = '6000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('7110','7120','7130','7190','7200')
+      THEN DO; SECTORCD = '7000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('8100','8300','8400','8900')
+      THEN DO; SECTORCD = '8000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('9100','9200','9300','9400','9500','9600')
+      THEN DO; SECTORCD = '9000'; OUTPUT; END;
+RUN;
+DATA ALM;
+   SET ALM ALMA;
+   IF SECTORCD EQ '    ' THEN SECTORCD = '9999';
+RUN;
+   /*** NEW SECTOR MAPPING END ***/
+DATA ALMLOAN;
+   KEEP BNMCODE AMTIND AMOUNT;
+   LENGTH BNMCODE $14.;
+
+   SET ALM;
+   BNMCODE = '683400000'||SECTORCD||'Y';
+   AMOUNT = DISBURSE; OUTPUT;
+   BNMCODE = '783400000'||SECTORCD||'Y';
+   AMOUNT = REPAID; OUTPUT;
+   BNMCODE = '821520000'||SECTORCD||'Y';
+   AMOUNT = ROLLOVER; OUTPUT;
+RUN;
+*;
+PROC APPEND DATA=ALMLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+     /*** NEW REQUEST TO REPORT SMI FIGURE ***/
+PROC SUMMARY DATA=ALMX NWAY;
+CLASS SECTORCD CUSTCD AMTIND;
+VAR DISBURSE REPAID APPRLIM2 ROLLOVER;
+OUTPUT OUT=ALM(DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+*;
+   /**NEW SECTOR MAPPING **/
+DATA ALM;
+   SET ALM;
+   SECTA = PUT(SECTORCD,$NEWSECT.);
+   SECVALID = PUT(SECTORCD,$VALIDSE.);
+
+   IF SECTA NE '    ' THEN SECTCD = SECTA;
+   ELSE SECTCD = SECTORCD;
+
+DATA ALM;
+   SET ALM;
+   IF SECVALID = 'INVALID' THEN DO;
+   IF SUBSTR(SECTCD,1,1) = '1' THEN DO; SECTCD = '1400';  END;
+   IF SUBSTR(SECTCD,1,1) = '2' THEN DO; SECTCD = '2900';  END;
+   IF SUBSTR(SECTCD,1,1) = '3' THEN DO; SECTCD = '3919';  END;
+   IF SUBSTR(SECTCD,1,1) = '4' THEN DO; SECTCD = '4010';  END;
+   IF SUBSTR(SECTCD,1,1) = '5' THEN DO; SECTCD = '5999';  END;
+   IF SUBSTR(SECTCD,1,2) = '61' THEN DO; SECTCD = '6120'; END;
+   IF SUBSTR(SECTCD,1,2) = '62' THEN DO; SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,2) = '63' THEN DO; SECTCD = '6310'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('64','65','66','67','68','69') THEN DO;
+   SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,1) = '7' THEN DO; SECTCD = '7199'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('81','82') THEN DO;
+      SECTCD = '8110';  END;
+   IF SUBSTR(SECTCD,1,2)IN ('83','84','85','86','87','88','89') THEN DO;
+      SECTCD = '8999';  END;
+   IF SUBSTR(SECTCD,1,2) = '91' THEN DO; SECTCD = '9101';  END;
+   IF SUBSTR(SECTCD,1,2) = '92' THEN DO; SECTCD = '9410';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('93','94','95') THEN DO;
+      SECTCD = '9499';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('96','97','98','99') THEN DO;
+      SECTCD = '9999';  END;
+   END;
+
+RUN;
+DATA ALM2;
+   SET ALM;
+
+   IF SECTCD IN ('1111','1112','1113','1114','1115','1116',
+      '1117','1119','1120','1130','1140','1150')
+      THEN DO;
+           IF SECTCD IN ('1111','1113','1115','1117','1119',
+                         '1112','1114','1116') THEN DO;
+              SECTORCD = '1110'; OUTPUT; END;
+      SECTORCD = '1100'; OUTPUT; END;
+   IF SECTCD IN ('2210','2220')
+      THEN DO; SECTORCD = '2200';
+      OUTPUT;END;
+   IF SECTCD IN ('2301','2302','2303') THEN DO;
+      SECTORCD = '2300'; OUTPUT;
+      IF SECTCD IN ('2303') THEN DO; SECTORCD = '2302';
+      OUTPUT; END;
+   END;
+   IF SECTCD IN ('3110','3115','3111','3112','3113','3114') THEN DO;
+      IF SECTCD IN ('3110','3113','3114','3111','3112','3115')
+         THEN DO; SECTORCD = '3100'; OUTPUT; END;
+      IF SECTCD IN ('3115','3111','3112')
+         THEN DO; SECTORCD = '3110'; OUTPUT; END;
+   END;
+      IF SECTCD IN ('3211','3212','3219')
+         THEN DO; SECTORCD = '3210'; OUTPUT; END;
+      IF SECTCD IN ('3221','3222')
+         THEN DO; SECTORCD = '3220'; OUTPUT; END;
+      IF SECTCD IN ('3231','3232')
+         THEN DO; SECTORCD = '3230'; OUTPUT; END;
+      IF SECTCD IN ('3241','3242')
+         THEN DO; SECTORCD = '3240'; OUTPUT; END;
+      IF SECTCD IN ('3270','3280','3290','3271','3272','3273',
+                    '3311','3312','3313')
+         THEN DO;
+            IF SECTCD IN ('3270','3280','3290','3271','3272','3273')
+               THEN DO; SECTORCD = '3260'; OUTPUT; END;
+            IF SECTCD IN ('3271','3272','3273')
+               THEN DO; SECTORCD = '3270'; OUTPUT; END;
+            IF SECTCD IN ('3311','3312','3313')
+               THEN DO; SECTORCD = '3310';OUTPUT; END;
+      END;
+      IF SECTCD IN ('3431','3432','3433')
+         THEN DO; SECTORCD = '3430'; OUTPUT; END;
+      IF SECTCD IN ('3551','3552')
+         THEN DO; SECTORCD = '3550'; OUTPUT; END;
+      IF SECTCD IN ('3611','3619')
+         THEN DO; SECTORCD = '3610'; OUTPUT; END;
+      IF SECTCD IN ('3710','3720','3730','3721','3731','3732')
+         THEN DO; SECTORCD = '3700'; OUTPUT;
+            IF SECTCD IN ('3721')
+                THEN DO; SECTORCD = '3720'; OUTPUT; END;
+            IF SECTCD IN ('3731','3732')
+                THEN DO; SECTORCD = '3730'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('3811','3813','3814','3819')
+         THEN DO; SECTORCD = '3800'; OUTPUT; END;
+   IF SECTCD IN ('3813','3814','3819')
+      THEN DO; SECTORCD = '3812';
+      OUTPUT; END;
+   IF SECTCD IN ('3832','3834','3835','3833')
+      THEN DO;
+         SECTORCD = '3831';
+         OUTPUT;
+         IF SECTCD IN ('3833') THEN DO; SECTORCD = '3832';
+         OUTPUT; END;
+   END;
+   IF SECTCD IN ('3842','3843','3844')
+      THEN DO; SECTORCD = '3841';
+      OUTPUT; END;
+   IF SECTCD IN ('3851','3852','3853')
+      THEN DO; SECTORCD = '3850';
+      OUTPUT; END;
+   IF SECTCD IN ('3861','3862','3863','3864','3865','3866')
+      THEN DO; SECTORCD = '3860';
+      OUTPUT; END;
+   IF SECTCD IN ('3871','3872','3872')
+      THEN DO; SECTORCD = '3870';
+      OUTPUT; END;
+   IF SECTCD IN ('3891','3892','3893','3894')
+      THEN DO; SECTORCD = '3890';
+      OUTPUT; END;
+   IF SECTCD IN ('3911','3919')
+      THEN DO; SECTORCD = '3910';
+      OUTPUT; END;
+   IF SECTCD IN ('3951','3952','3953','3954','3955','3956','3957')
+      THEN DO; SECTORCD = '3950'; OUTPUT;
+         IF SECTCD IN ('3952','3953')
+            THEN DO; SECTORCD = '3951';OUTPUT; END;
+         IF SECTCD IN ('3955','3956','3957')
+            THEN DO; SECTORCD = '3954'; OUTPUT; END;
+      END;
+   IF SECTCD IN ('5001','5002','5003','5004','5005','5006','5008')
+      THEN DO; SECTORCD = '5010';
+      OUTPUT; END;
+   IF SECTCD IN ('6110','6120','6130')
+      THEN DO; SECTORCD = '6100';
+      OUTPUT; END;
+   IF SECTCD IN ('6310','6320')
+      THEN DO; SECTORCD = '6300';
+      OUTPUT; END;
+      IF SECTCD IN ('7111','7112','7117','7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7110';
+         OUTPUT; END;
+      IF SECTCD IN ('7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7112';
+         OUTPUT;
+      END;
+      IF SECTCD IN ('7112','7114')
+         THEN DO; SECTORCD = '7113'; OUTPUT; END;
+      IF SECTCD IN ('7116')
+         THEN DO; SECTORCD = '7115'; OUTPUT; END;
+   IF SECTCD IN ('7121','7122','7123','7124')
+      THEN DO; SECTORCD = '7120';
+      OUTPUT;
+      IF SECTCD IN ('7124')
+         THEN DO; SECTORCD = '7123'; OUTPUT; END;
+      IF SECTCD IN ('7122')
+         THEN DO; SECTORCD = '7121'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('7131','7132','7133','7134')
+      THEN DO; SECTORCD = '7130';
+      OUTPUT; END;
+   IF SECTCD IN ('7191','7192','7193','7199')
+      THEN DO; SECTORCD = '7190';
+      OUTPUT; END;
+   IF SECTCD IN ('7210','7220')
+      THEN DO; SECTORCD = '7200';
+      OUTPUT; END;
+   IF SECTCD IN ('8110','8120','8130')
+      THEN DO; SECTORCD = '8100';
+      OUTPUT; END;
+   IF SECTCD IN ('8310','8330','8340','8320','8331','8332',
+                 '8321','8333')
+      THEN DO; SECTORCD = '8300';
+      OUTPUT;
+      IF SECTCD IN ('8320','8331','8332','8321','8333')
+         THEN DO; SECTORCD = '8330'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('8321')
+      THEN DO; SECTORCD = '8320';
+      OUTPUT; END;
+   IF SECTCD IN ('8333')
+      THEN DO; SECTORCD = '8332';
+      OUTPUT; END;
+   IF SECTCD IN('8420','8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8400';
+      OUTPUT;
+   IF SECTCD IN ('8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8410';
+      OUTPUT; END;
+   END;
+   IF SUBSTR(SECTCD,1,2) = '89'
+      THEN DO; SECTORCD = '8900'; OUTPUT;
+      IF SECTCD IN ('8910','8911','8912','8913','8914')
+          THEN DO;
+         IF SECTCD IN('8911','8912','8913','8914') THEN DO;
+            SECTORCD = '8910'; OUTPUT; END;
+         IF SECTCD IN ('8910')
+         THEN DO; SECTORCD = '8914';OUTPUT; END;
+      END;
+      IF SECTCD IN ('8921','8922','8920')
+         THEN DO;
+         IF SECTCD IN ('8921','8922') THEN DO;
+            SECTORCD = '8920'; OUTPUT; END;
+         IF SECTCD IN ('8920')
+            THEN DO; SECTORCD = '8922'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('8931','8932')
+          THEN DO; SECTORCD = '8930';OUTPUT; END;
+      IF SECTCD IN ('8991','8999')
+         THEN DO; SECTORCD = '8990'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('9101','9102','9103')
+      THEN DO; SECTORCD = '9100';
+      OUTPUT; END;
+   IF SECTCD IN ('9201','9202','9203')
+      THEN DO; SECTORCD = '9200';
+      OUTPUT; END;
+   IF SECTCD IN ('9311','9312','9313','9314')
+      THEN DO; SECTORCD = '9300';
+      OUTPUT; END;
+   IF SUBSTR(SECTCD,1,2) = '94'
+      THEN DO; SECTORCD = '9400';
+      OUTPUT;
+      IF SECTCD IN ('9433','9434','9435','9432','9431',
+                    '9440','9450') THEN DO;
+          IF SECTCD IN ('9433','9434','9435') THEN DO;
+            SECTORCD = '9432'; OUTPUT; END;
+          SECTORCD = '9430'; OUTPUT;
+      END;
+      IF SECTCD IN ('9410','9420')
+         THEN DO; SECTORCD = '9499'; OUTPUT; END;
+   END;
+RUN;
+DATA ALM;
+    SET ALM(IN=A) ALM2;
+    IF A THEN SECTORCD = SECTCD;
+DATA ALMA;
+  SET ALM;
+   IF SECTORCD IN ('1100','1200','1300','1400')
+      THEN DO; SECTORCD = '1000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('2100','2200','2300','2400','2900')
+      THEN DO; SECTORCD = '2000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('3100','3120','3210','3220','3230','3240',
+                      '3250','3260','3310','3430','3550','3610',
+                      '3700','3800','3825','3831','3841','3850',
+                      '3860','3870','3890','3910','3950','3960')
+      THEN DO; SECTORCD = '3000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('4010','4020','4030')
+      THEN DO; SECTORCD = '4000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('5010','5020','5030','5040','5050','5999')
+      THEN DO; SECTORCD = '5000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('6100','6300')
+      THEN DO; SECTORCD = '6000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('7110','7120','7130','7190','7200')
+      THEN DO; SECTORCD = '7000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('8100','8300','8400','8900')
+      THEN DO; SECTORCD = '8000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('9100','9200','9300','9400','9500','9600')
+      THEN DO; SECTORCD = '9000'; OUTPUT; END;
+RUN;
+DATA ALM;
+   SET ALM ALMA;
+   IF SECTORCD EQ '    ' THEN SECTORCD = '9999';
+RUN;
+   /*** NEW SECTOR MAPPING END ***/
+
+DATA ALMSMI;
+   KEEP BNMCODE AMTIND AMOUNT;
+   LENGTH BNMCODE $14.;
+
+   SET ALM;
+   IF CUSTCD IN ('41','42','43','44','46','47','48','49','51'
+            '52','53','54','77','78','79') THEN DO;
+      BNMCODE='68340'||CUSTCD||'00'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='78340'||CUSTCD||'00'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='82152'||CUSTCD||'00'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('61','41','42','43','62','44','46','47','64',
+                 '63','48','49','51','57','59','75','52','53','54')
+                  THEN DO;
+      BNMCODE='683406000'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406000'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+   END;
+   IF CUSTCD IN ('02','03','11','12') THEN DO;
+      BNMCODE='683401000'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783401000'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821521000'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('20','13','17','30','32','33','34','35',
+                 '36','37','38','39','40','04','05','06') THEN DO;
+      BNMCODE='683402000'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783402000'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821522000'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('71','72','73','74') THEN DO;
+      BNMCODE='683407000'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783407000'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821527000'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('81','82','83','84','85','86','87','88','89','90','91',
+                 '92','95','96','98','99') & SECTORCD NE '9999' THEN DO;
+      BNMCODE='683408000'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783408000'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821528000'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('81','82','83','84','85','86','87','88','89','90','91',
+                 '92','95','96','98','99') & SECTORCD NE '9999' THEN DO;
+      BNMCODE='683408500'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783408500'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821528500'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF SECTORCD IN ('1000','2000','3000','4000','5000'
+      '6000','7000','8000','9000','9999','9700') THEN DO;
+   IF CUSTCD IN ('81','82','83','84','85','86','87','88','89','90','91',
+                 '92','95','96','98','99') THEN DO;
+      BNMCODE='6834080000000'||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='7834080000000'||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='8215280000000'||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('81','82','83','84','85','86','87','88','89','90','91',
+                 '92','95','96','98','99') THEN DO;
+      BNMCODE='6834085000000'||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='7834085000000'||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='8215285000000'||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('81','82','83','84','85','86','87','88','89','90','91',
+                 '92','98','99') THEN DO;
+      BNMCODE='6834085009999'||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='7834085009999'||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='8215285009999'||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('81','82','83','84','85','86','87','88','89','90','91',
+                 '92','98','99') THEN DO;
+      BNMCODE='6834080009999'||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='7834080009999'||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='8215280009999'||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('95','96') THEN DO;
+      BNMCODE='6834095000000'||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='7834095000000'||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='8215295000000'||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('95','96') & SECTORCD NE '9999' THEN DO;
+      BNMCODE='683409500'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783409500'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821529500'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('77','78') THEN DO;
+      BNMCODE='683407600'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783407600'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821527600'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('77','78') THEN DO;
+      BNMCODE='6834076000000'||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='7834076000000'||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='8215276000000'||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   END;
+   IF CUSTCD IN ('41','42','43','61') THEN DO;
+      BNMCODE='683406100'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406100'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526100'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('62','44','46','47') THEN DO;
+      BNMCODE='683406200'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406200'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526200'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('63','48','49','51') THEN DO;
+      BNMCODE='683406300'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406300'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526300'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('64','52','53','54','59','75','57') THEN DO;
+      BNMCODE='683406400'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406400'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526400'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+   IF CUSTCD IN ('41','42','43','44','46','47','48','49','51'
+            '52','53','54') THEN DO;
+      BNMCODE = '683406500'||SECTORCD||'Y';
+      AMOUNT = DISBURSE; OUTPUT;
+      BNMCODE='783406500'||SECTORCD||'Y';
+      AMOUNT = REPAID; OUTPUT;
+      BNMCODE='821526500'||SECTORCD||'Y';
+      AMOUNT = ROLLOVER; OUTPUT;
+   END;
+RUN;
+PROC APPEND DATA=ALMSMI BASE=BNM.LALM&REPTMON&NOWK; RUN;
+ /**********************************************************/
+ /** LOAN - BY STATE CODE AND BY SECTOR CODE - 9700       **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BAL_AFT_EIR;
+CLASS SECTORCD STATECD AMTIND;
+WHERE SUBSTR(PRODCD, 1, 2) = '34' AND SECTORCD NE '0410';
+OUTPUT OUT=ALQ
+       SUM=AMOUNT;
+RUN;
+
+   /**NEW SECTOR MAPPING **/
+DATA ALQ;
+   SET ALQ;
+   SECTA = PUT(SECTORCD,$NEWSECT.);
+   SECVALID = PUT(SECTORCD,$VALIDSE.);
+
+   IF SECTA NE '    ' THEN SECTCD = SECTA;
+   ELSE SECTCD = SECTORCD;
+
+DATA ALQ;
+   SET ALQ;
+   IF SECVALID = 'INVALID' THEN DO;
+   IF SUBSTR(SECTCD,1,1) = '1' THEN DO; SECTCD = '1400';  END;
+   IF SUBSTR(SECTCD,1,1) = '2' THEN DO; SECTCD = '2900';  END;
+   IF SUBSTR(SECTCD,1,1) = '3' THEN DO; SECTCD = '3919';  END;
+   IF SUBSTR(SECTCD,1,1) = '4' THEN DO; SECTCD = '4010';  END;
+   IF SUBSTR(SECTCD,1,1) = '5' THEN DO; SECTCD = '5999';  END;
+   IF SUBSTR(SECTCD,1,2) = '61' THEN DO; SECTCD = '6120'; END;
+   IF SUBSTR(SECTCD,1,2) = '62' THEN DO; SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,2) = '63' THEN DO; SECTCD = '6310'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('64','65','66','67','68','69') THEN DO;
+   SECTCD = '6130'; END;
+   IF SUBSTR(SECTCD,1,1) = '7' THEN DO; SECTCD = '7199'; END;
+   IF SUBSTR(SECTCD,1,2) IN ('81','82') THEN DO;
+      SECTCD = '8110';  END;
+   IF SUBSTR(SECTCD,1,2)IN ('83','84','85','86','87','88','89') THEN DO;
+      SECTCD = '8999';  END;
+   IF SUBSTR(SECTCD,1,2) = '91' THEN DO; SECTCD = '9101';  END;
+   IF SUBSTR(SECTCD,1,2) = '92' THEN DO; SECTCD = '9410';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('93','94','95') THEN DO;
+      SECTCD = '9499';  END;
+   IF SUBSTR(SECTCD,1,2) IN ('96','97','98','99') THEN DO;
+      SECTCD = '9999';  END;
+   END;
+
+RUN;
+DATA ALQ2;
+   SET ALQ;
+
+   IF SECTCD IN ('1111','1112','1113','1114','1115','1116',
+      '1117','1119','1120','1130','1140','1150')
+      THEN DO;
+           IF SECTCD IN ('1111','1113','1115','1117','1119',
+                         '1112','1114','1116') THEN DO;
+              SECTORCD = '1110'; OUTPUT; END;
+      SECTORCD = '1100'; OUTPUT; END;
+   IF SECTCD IN ('2210','2220')
+      THEN DO; SECTORCD = '2200';
+      OUTPUT;END;
+   IF SECTCD IN ('2301','2302','2303') THEN DO;
+      SECTORCD = '2300'; OUTPUT;
+      IF SECTCD IN ('2303') THEN DO; SECTORCD = '2302';
+      OUTPUT; END;
+   END;
+   IF SECTCD IN ('3110','3115','3111','3112','3113','3114') THEN DO;
+      IF SECTCD IN ('3110','3113','3114','3111','3112','3115')
+         THEN DO; SECTORCD = '3100'; OUTPUT; END;
+      IF SECTCD IN ('3115','3111','3112')
+         THEN DO; SECTORCD = '3110'; OUTPUT; END;
+   END;
+      IF SECTCD IN ('3211','3212','3219')
+         THEN DO; SECTORCD = '3210'; OUTPUT; END;
+      IF SECTCD IN ('3221','3222')
+         THEN DO; SECTORCD = '3220'; OUTPUT; END;
+      IF SECTCD IN ('3231','3232')
+         THEN DO; SECTORCD = '3230'; OUTPUT; END;
+      IF SECTCD IN ('3241','3242')
+         THEN DO; SECTORCD = '3240'; OUTPUT; END;
+      IF SECTCD IN ('3270','3280','3290','3271','3272','3273',
+                    '3311','3312','3313')
+         THEN DO;
+            IF SECTCD IN ('3270','3280','3290','3271','3272','3273')
+               THEN DO; SECTORCD = '3260'; OUTPUT; END;
+            IF SECTCD IN ('3271','3272','3273')
+               THEN DO; SECTORCD = '3270'; OUTPUT; END;
+            IF SECTCD IN ('3311','3312','3313')
+               THEN DO; SECTORCD = '3310';OUTPUT; END;
+      END;
+      IF SECTCD IN ('3431','3432','3433')
+         THEN DO; SECTORCD = '3430'; OUTPUT; END;
+      IF SECTCD IN ('3551','3552')
+         THEN DO; SECTORCD = '3550'; OUTPUT; END;
+      IF SECTCD IN ('3611','3619')
+         THEN DO; SECTORCD = '3610'; OUTPUT; END;
+      IF SECTCD IN ('3710','3720','3730','3721','3731','3732')
+         THEN DO; SECTORCD = '3700'; OUTPUT;
+            IF SECTCD IN ('3721')
+                THEN DO; SECTORCD = '3720'; OUTPUT; END;
+            IF SECTCD IN ('3731','3732')
+                THEN DO; SECTORCD = '3730'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('3811','3813','3814','3819')
+         THEN DO; SECTORCD = '3800'; OUTPUT; END;
+   IF SECTCD IN ('3813','3814','3819')
+      THEN DO; SECTORCD = '3812';
+      OUTPUT; END;
+   IF SECTCD IN ('3832','3834','3835','3833')
+      THEN DO;
+         SECTORCD = '3831';
+         OUTPUT;
+         IF SECTCD IN ('3833') THEN DO; SECTORCD = '3832';
+         OUTPUT; END;
+   END;
+   IF SECTCD IN ('3842','3843','3844')
+      THEN DO; SECTORCD = '3841';
+      OUTPUT; END;
+   IF SECTCD IN ('3851','3852','3853')
+      THEN DO; SECTORCD = '3850';
+      OUTPUT; END;
+   IF SECTCD IN ('3861','3862','3863','3864','3865','3866')
+      THEN DO; SECTORCD = '3860';
+      OUTPUT; END;
+   IF SECTCD IN ('3871','3872','3872')
+      THEN DO; SECTORCD = '3870';
+      OUTPUT; END;
+   IF SECTCD IN ('3891','3892','3893','3894')
+      THEN DO; SECTORCD = '3890';
+      OUTPUT; END;
+   IF SECTCD IN ('3911','3919')
+      THEN DO; SECTORCD = '3910';
+      OUTPUT; END;
+   IF SECTCD IN ('3951','3952','3953','3954','3955','3956','3957')
+      THEN DO; SECTORCD = '3950'; OUTPUT;
+         IF SECTCD IN ('3952','3953')
+            THEN DO; SECTORCD = '3951';OUTPUT; END;
+         IF SECTCD IN ('3955','3956','3957')
+            THEN DO; SECTORCD = '3954'; OUTPUT; END;
+      END;
+   IF SECTCD IN ('5001','5002','5003','5004','5005','5006','5008')
+      THEN DO; SECTORCD = '5010';
+      OUTPUT; END;
+   IF SECTCD IN ('6110','6120','6130')
+      THEN DO; SECTORCD = '6100';
+      OUTPUT; END;
+   IF SECTCD IN ('6310','6320')
+      THEN DO; SECTORCD = '6300';
+      OUTPUT; END;
+      IF SECTCD IN ('7111','7112','7117','7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7110';
+         OUTPUT; END;
+      IF SECTCD IN ('7113','7114','7115','7116')
+         THEN DO; SECTORCD = '7112';
+         OUTPUT;
+      END;
+      IF SECTCD IN ('7112','7114')
+         THEN DO; SECTORCD = '7113'; OUTPUT; END;
+      IF SECTCD IN ('7116')
+         THEN DO; SECTORCD = '7115'; OUTPUT; END;
+   IF SECTCD IN ('7121','7122','7123','7124')
+      THEN DO; SECTORCD = '7120';
+      OUTPUT;
+      IF SECTCD IN ('7124')
+         THEN DO; SECTORCD = '7123'; OUTPUT; END;
+      IF SECTCD IN ('7122')
+         THEN DO; SECTORCD = '7121'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('7131','7132','7133','7134')
+      THEN DO; SECTORCD = '7130';
+      OUTPUT; END;
+   IF SECTCD IN ('7191','7192','7193','7199')
+      THEN DO; SECTORCD = '7190';
+      OUTPUT; END;
+   IF SECTCD IN ('7210','7220')
+      THEN DO; SECTORCD = '7200';
+      OUTPUT; END;
+   IF SECTCD IN ('8110','8120','8130')
+      THEN DO; SECTORCD = '8100';
+      OUTPUT; END;
+   IF SECTCD IN ('8310','8330','8340','8320','8331','8332',
+                 '8321','8333')
+      THEN DO; SECTORCD = '8300';
+      OUTPUT;
+      IF SECTCD IN ('8320','8331','8332','8321','8333')
+         THEN DO; SECTORCD = '8330'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('8321')
+      THEN DO; SECTORCD = '8320';
+      OUTPUT; END;
+   IF SECTCD IN ('8333')
+      THEN DO; SECTORCD = '8332';
+      OUTPUT; END;
+   IF SECTCD IN('8420','8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8400';
+      OUTPUT;
+   IF SECTCD IN ('8411','8412','8413','8414','8415','8416')
+      THEN DO; SECTORCD = '8410';
+      OUTPUT; END;
+   END;
+   IF SUBSTR(SECTCD,1,2) = '89'
+      THEN DO; SECTORCD = '8900'; OUTPUT;
+      IF SECTCD IN ('8910','8911','8912','8913','8914')
+          THEN DO;
+         IF SECTCD IN('8911','8912','8913','8914') THEN DO;
+            SECTORCD = '8910'; OUTPUT; END;
+         IF SECTCD IN ('8910')
+         THEN DO; SECTORCD = '8914';OUTPUT; END;
+      END;
+      IF SECTCD IN ('8921','8922','8920')
+         THEN DO;
+         IF SECTCD IN ('8921','8922') THEN DO;
+            SECTORCD = '8920'; OUTPUT; END;
+         IF SECTCD IN ('8920')
+            THEN DO; SECTORCD = '8922'; OUTPUT; END;
+      END;
+      IF SECTCD IN ('8931','8932')
+          THEN DO; SECTORCD = '8930';OUTPUT; END;
+      IF SECTCD IN ('8991','8999')
+         THEN DO; SECTORCD = '8990'; OUTPUT; END;
+   END;
+   IF SECTCD IN ('9101','9102','9103')
+      THEN DO; SECTORCD = '9100';
+      OUTPUT; END;
+   IF SECTCD IN ('9201','9202','9203')
+      THEN DO; SECTORCD = '9200';
+      OUTPUT; END;
+   IF SECTCD IN ('9311','9312','9313','9314')
+      THEN DO; SECTORCD = '9300';
+      OUTPUT; END;
+   IF SUBSTR(SECTCD,1,2) = '94'
+      THEN DO; SECTORCD = '9400';
+      OUTPUT;
+      IF SECTCD IN ('9433','9434','9435','9432','9431',
+                    '9440','9450') THEN DO;
+          IF SECTCD IN ('9433','9434','9435') THEN DO;
+            SECTORCD = '9432'; OUTPUT; END;
+          SECTORCD = '9430'; OUTPUT;
+      END;
+      IF SECTCD IN ('9410','9420')
+         THEN DO; SECTORCD = '9499'; OUTPUT; END;
+   END;
+RUN;
+DATA ALQ;
+    SET ALQ(IN=A) ALQ2;
+    IF A THEN SECTORCD = SECTCD;
+DATA ALQA;
+  SET ALQ;
+   IF SECTORCD IN ('1100','1200','1300','1400')
+      THEN DO; SECTORCD = '1000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('2100','2200','2300','2400','2900')
+      THEN DO; SECTORCD = '2000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('3100','3120','3210','3220','3230','3240',
+                      '3250','3260','3310','3430','3550','3610',
+                      '3700','3800','3825','3831','3841','3850',
+                      '3860','3870','3890','3910','3950','3960')
+      THEN DO; SECTORCD = '3000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('4010','4020','4030')
+      THEN DO; SECTORCD = '4000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('5010','5020','5030','5040','5050','5999')
+      THEN DO; SECTORCD = '5000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('6100','6300')
+      THEN DO; SECTORCD = '6000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('7110','7120','7130','7190','7200')
+      THEN DO; SECTORCD = '7000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('8100','8300','8400','8900')
+      THEN DO; SECTORCD = '8000'; OUTPUT; END;
+   ELSE IF SECTORCD IN ('9100','9200','9300','9400','9500','9600')
+      THEN DO; SECTORCD = '9000'; OUTPUT; END;
+RUN;
+DATA ALQ;
+   SET ALQ ALQA;
+   IF SECTORCD EQ '    ' THEN SECTORCD = '9999';
+RUN;
+   /*** NEW SECTOR MAPPING END ***/
+DATA ALQLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALQ;
+         IF SECTORCD = '9700' THEN DO;
+         BNMCODE='340000000'||SECTORCD||STATECD; OUTPUT;
+         END;
+
+RUN;
+PROC APPEND DATA=ALQLOAN BASE=BNM.LALM&REPTMON&NOWK; RUN;
+ /***********************************************************/
+ /** FINAL CONSOLIDATION                                   **/
+ /***********************************************************/
+PROC SUMMARY DATA=BNM.LALM&REPTMON&NOWK NWAY;
+CLASS BNMCODE AMTIND;
+VAR AMOUNT;
+OUTPUT OUT=BNM.LALM&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=AMOUNT;
+RUN;
+
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 &SDESC;
+TITLE2 'REPORT ON DOMESTIC ASSETS AND LIABILITIES PART II - M&I LOAN';
+TITLE3 'REPORT DATE : ' &RDATE;
+TITLE4;
+PROC PRINT DATA=BNM.LALM&REPTMON&NOWK;
+FORMAT AMOUNT COMMA25.2;
+RUN;
+*;
+ /**********************************************/
+ /*  AGING REPORT FOR FINANCIAL ACCOUNTING     */
+ /**********************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+CLASS PRODCD REMAINMT AMTIND;
+VAR   BAL_AFT_EIR;
+OUTPUT OUT=LNAGING SUM=AMOUNT;
+WHERE PRODCD IN ('34111','34112','34113','34114','34115','34116',
+                 '34117','34120','34230','34149');
+
+DATA LNAGING (KEEP=BNMCODE AMOUNT LNTYPE);
+   LENGTH BNMCODE $14. LNTYPE $1.;
+
+   SET LNAGING;
+   IF AMTIND='D' THEN DO;
+      IF PRODCD='34230' THEN LNTYPE='S';       /* STAFF */
+      ELSE LNTYPE='T';                         /* TERM  */
+   END;
+   ELSE LNTYPE='I';                            /* SPTF  */
+
+   SELECT(REMAINMT);
+     WHEN('51','52','53','54','55','56','57') DO;
+       BNMCODE='3411000500000Y'; OUTPUT;
+     END;
+     WHEN('61','62','63','64','71','72','73') DO;
+       BNMCODE='3411000'||REMAINMT||'0000Y'; OUTPUT;
+     END;
+     OTHERWISE;
+   END;
+
+PROC SUMMARY DATA=LNAGING NWAY;
+CLASS BNMCODE LNTYPE;
+VAR   AMOUNT;
+OUTPUT OUT=LNAGING SUM= ;
+RUN;
+
+TITLE1 'REPORT ID: LALMPBBP';
+TITLE2 &SDESC;
+TITLE3 'FINANCIAL ACCOUNTING, FINANCE DIVISION';
+TITLE4 'AGING OF STAFF LOANS AS AT ' &RDATE;
+
+PROC PRINT DATA=LNAGING;
+VAR BNMCODE AMOUNT;
+SUM AMOUNT;
+WHERE LNTYPE='S';
+FORMAT AMOUNT COMMA18.2;
+RUN;
+
+TITLE4 'AGING OF TERM LOANS AS AT ' &RDATE;
+
+PROC PRINT DATA=LNAGING;
+VAR BNMCODE AMOUNT;
+SUM AMOUNT;
+WHERE LNTYPE='T';
+FORMAT AMOUNT COMMA18.2;
+RUN;
+
+TITLE4 'AGING OF SPTF LOANS AS AT ' &RDATE;
+
+PROC PRINT DATA=LNAGING;
+VAR BNMCODE AMOUNT;
+SUM AMOUNT;
+WHERE LNTYPE='I';
+FORMAT AMOUNT COMMA18.2;
+RUN;
+
