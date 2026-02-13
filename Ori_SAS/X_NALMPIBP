@@ -1,0 +1,179 @@
+/** PROGRAM : NALMPIBP                            **/
+/** DATE    : 06/07/12                            **/
+/** REPORT  : RDAL PART I  (NSRS KAPITI ITEMS )   **/
+/** REPORT  : RDIR PART I  (NSRS KAPITI ITEMS )   **/
+
+%INC PGM(KALWPBBF,PBBELF);
+%LET AMTIND='I';
+
+PROC DATASETS LIB=BNM NOLIST;
+  DELETE NALM&REPTMON&NOWK;
+RUN;
+
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY 0;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+
+*------------------------------------------------*
+*  MACRO TO CALCULATE REMAIN MONTH               *
+*------------------------------------------------*;
+%MACRO REMMTH;
+   RPYR  = YEAR(REPTDATE);
+   RPMTH = MONTH(REPTDATE);
+   RPDAY = DAY(REPTDATE);
+   IF RPMTH = 2 THEN
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+      ELSE RD2 = 28;
+   MDYR  = YEAR(GWMDT);
+   MDMTH = MONTH(GWMDT);
+   MDDAY = DAY(GWMDT);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+   IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+
+/***********************************************************/
+/**                                                       **/
+/** REPORT ON DOMESTIC ASSETS AND LIABILITIES - PART I    **/
+/**                                                       **/
+/***********************************************************/
+DATA K1TABL (KEEP=BRANCH BNMCODE AMOUNT AMTIND);
+  LENGTH BNMCODE $14. AMTIND $1.;
+  %DCLVAR
+  SET BNMK.K1TBL&REPTMON&NOWK (RENAME=(GWBALC=AMOUNT));
+  BRANCH=INPUT(SUBSTR(GWAB, 1, 4), 4.);
+  BNMCODE=' ';
+  AMTIND=&AMTIND;
+
+  IF GWCCY EQ 'MYR' AND GWMVT EQ 'P' AND GWMVTS EQ 'M'
+     AND (GWDLP IN ('FDA','FDB','FDL','FDS','LC','LO') OR
+          SUBSTR(GWDLP, 2, 2) IN ('XI','XT'))
+  THEN LINK DP32000;
+
+  BNMCODE=' ';
+  IF GWDLP IN (' ','LO','LS','LF','LOW','LSW','LSC','LOC','LOI','LSI')
+              OR GWACT EQ 'CN'
+  THEN LINK AF33000;
+RETURN;
+
+DP32000:
+  IF SUBSTR(GWDLP, 2, 2) IN ('XI', 'XT') THEN DO;
+     IF GWMDT = . THEN DELETE;
+     %REMMTH
+     IF GWCCY = 'MYR' AND REMMTH > 3 THEN
+        SELECT(GWCTP);
+           WHEN('BC','BP')      BNMCODE='3250001000000F';
+           WHEN('BB')           BNMCODE='3250002000000F';
+           WHEN('BI')           BNMCODE='3250003000000F';
+           WHEN('BM')           BNMCODE='3250012000000F';
+           WHEN('BG')           BNMCODE='3250017000000F';
+           WHEN('AD','BF','BH',
+                'BN','BR','BS',
+                'BT','BU','BV',
+                'BZ')           BNMCODE='3250020000000F';
+           WHEN('AC','CA','CB',
+                'CC','CD','CF',
+                'CG','DD')      BNMCODE='3250006000000F';
+           WHEN('DA','DB','DC') BNMCODE='3250007000000F';
+           WHEN('EA','EC','EJ') BNMCODE='3250007600000F';
+           WHEN('FA')           BNMCODE='3250007900000F';
+           WHEN('BA','BE')      BNMCODE='3250008100000F';
+           WHEN('CE','EB','GA') BNMCODE='3250008500000F';
+           OTHERWISE;
+        END;
+  END;
+  IF BNMCODE NE ' ' THEN OUTPUT;
+
+  BNMCODE = ' ';
+  IF SUBSTR(GWDLP, 2, 2) IN ('XI', 'XT') THEN DO;
+     IF GWCCY = 'MYR' AND REMMTH > 3 THEN
+        SELECT(GWCTP);
+           WHEN('BB')           BNMCODE='3280002000000F';
+           WHEN('BI')           BNMCODE='3280003000000F';
+           WHEN('BM')           BNMCODE='3280012000000F';
+           WHEN('AD','BF','BH',
+                'BN','BR','BS',
+                'BT','BU','BV',
+                'BZ')           BNMCODE='3280020000000F';
+           WHEN('BA','BE')      BNMCODE='3280008100000F';
+           OTHERWISE;
+        END;
+  END;
+  IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+
+AF33000:
+  IF GWDLP IN ('LOW','LSW','LSC','LOC','LOI','LSI') THEN DO;
+      IF GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+         SELECT(GWCTP);
+            WHEN('BC','BP')      BNMCODE='3314001100000F';
+            WHEN('BB')           BNMCODE='3314002100000F';
+            WHEN('BI')           BNMCODE='3314003100000F';
+            WHEN('BM')           BNMCODE='3314012100000F';
+            WHEN('BG')           BNMCODE='3314017100000F';
+            WHEN('AD','BF','BH',
+                 'BN','BR','BS',
+                 'BT','BU','BV',
+                 'BZ')           BNMCODE='3314020100000F';
+            WHEN('BA','BE')      BNMCODE='3314081100000F';
+            OTHERWISE;
+         END;
+
+      IF GWCCY NE 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M' THEN
+         SELECT(GWCTP);
+            WHEN('BC','BP')      BNMCODE='3364001100000F';
+            WHEN('BB')           BNMCODE='3364002100000F';
+            WHEN('BI')           BNMCODE='3364003100000F';
+            WHEN('BJ')           BNMCODE='3364007100000F';
+            WHEN('BM')           BNMCODE='3364012100000F';
+            WHEN('BA','BE')      BNMCODE='3364081100000F';
+            OTHERWISE;
+         END;
+  END;
+  IF BNMCODE NE ' ' THEN OUTPUT;
+RETURN;
+RUN;
+
+DATA NALM&REPTMON&NOWK (DROP=BRANCH);
+  SET K1TABL;
+RUN;
+
+PROC APPEND DATA=NALM&REPTMON&NOWK BASE=BNM.NALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE NALM&REPTMON&NOWK; RUN;
+
+/***********************************************************/
+/** FINAL CONSOLIDATION                                   **/
+/***********************************************************/
+PROC SUMMARY DATA=BNM.NALM&REPTMON&NOWK NWAY;
+CLASS BNMCODE AMTIND;
+VAR AMOUNT;
+OUTPUT OUT=BNM.NALM&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=AMOUNT;
+RUN;
+
+DATA BNM.NALM&REPTMON&NOWK;
+   SET BNM.NALM&REPTMON&NOWK;
+   AMOUNT=ABS(AMOUNT);
+RUN;
+
+OPTIONS NOCENTER NONUMBER NODATE;
+TITLE1 &SDESC;
+TITLE2 'REPORT ON DOMESTIC ASSETS AND LIABILITIES PART I - KAPITI';
+TITLE3 'REPORT DATE : ' &RDATE;
+TITLE4;
+PROC PRINT DATA=BNM.NALM&REPTMON&NOWK;
+FORMAT AMOUNT COMMA30.2;
+RUN;
