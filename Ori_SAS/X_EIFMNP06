@@ -1,0 +1,670 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIFMNP06                                          |
+ |  DATE    : 18.03.98                                          |
+ |  MODIFY  : ESMR 2004-720, 2004-579, 2006-1048, 2006-1281     |
+ |  REPORT  : MOVEMENTS OF SPECIFIC PROVISION FOR THE MONTH     |
+ |            ENDING (BASED ON DEPRECIATED PURCHASE PRICE       |
+ |            FOR UNSCHEDULED GOODS)                            |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950;
+*;
+%INC PGM(PBBLNFMT);
+%INC PGM(PBBELF);
+*;
+PROC FORMAT;
+   VALUE LNTYP 128,130,983             = 'HPD AITAB'
+               700,705,993,996,380,381,
+               720,725                 = 'HPD CONVENTIONAL'
+               200-299                 = 'HOUSING LOANS'
+               OTHER   = 'OTHERS';
+*;
+DATA REPTDATE;
+   SET NPL.REPTDATE;
+   IF MONTH(REPTDATE) = 1 THEN MM1 = 12;
+   ELSE MM1 = MONTH(REPTDATE)-1;
+   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('PREVMON',PUT(MM1,Z2.));
+RUN;
+*------------------------------------------------*
+*  MERGE WITH WRITTEN OFF ACCOUNT                *
+*------------------------------------------------*;
+PROC SORT DATA=NPL.LOAN&REPTMON;BY ACCTNO;
+PROC SORT DATA=NPL.WSP2;BY ACCTNO;
+PROC SORT DATA=NPL.IIS&REPTMON (KEEP=ACCTNO IIS) OUT=IIS;
+   BY ACCTNO;
+DATA LOANWOFF;
+   MERGE NPL.LOAN&REPTMON NPL.WSP2 (IN=AA DROP=NOTENO NTBRCH);
+   BY ACCTNO;
+   IF LOANTYPE IN (983,993) THEN WDOWNIND = 'N';
+ /*  IF BB THEN HARDCODE = 'N';ELSE HARDCODE = 'N'; */
+   IF AA THEN WRITEOFF='Y'; ELSE WRITEOFF='N';
+   IF EARNTERM IN (0,.) THEN EARNTERM = NOTETERM;
+*;
+DATA LOANWOFF;
+   MERGE LOANWOFF(IN=A) IIS;
+   BY ACCTNO;
+   IF A;
+RUN;
+*;
+
+*------------------------------------------------*
+*  CALCULATE SP FOR EXISTING NPL ACCOUNTS        *
+*------------------------------------------------*;
+DATA LOAN1;
+   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME DAYS BORSTAT NETPROC CURBAL
+        UHC NETBAL IIS OSPRIN MARKETVL NETEXP SPP2 SPPL RECOVER
+        SPPW SP LOANTYP VINNO CENSUS7 OTHERFEE EXIST COSTCTR USER5
+        PENDBRH WDOWNIND RESCHEIND;
+   LENGTH LOANTYP $20;
+   RETAIN STMTH 1 STYR;
+   SET LOANWOFF;
+ * SET NPL.LOAN&REPTMON;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      STYR = YEAR(REPTDATE);
+   END;
+   IF EXIST = 'Y';
+   UHC = 0;
+   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
+   IF BLDATE > 0 & TERMCHG > 0 THEN DO;
+      IF DAYS > 89 | BORSTAT IN ('F','R','I') OR USER5 = 'N' THEN DO;
+         REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
+                   MONTH(BLDATE) - MONTH(ISSDTE) + 1);
+         REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
+                   MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
+         REMMTHS = EARNTERM - ((STYR - YEAR(ISSDTE))*12 +
+                   STMTH - MONTH(ISSDTE) + 1);
+         IF REMMTH2 < 0 THEN REMMTH2 = 0;
+         IF LOANTYPE IN (128,130) THEN
+              REMMTH1 = REMMTH1 - 3;
+         ELSE REMMTH1 = REMMTH1 - 1;
+   /*    IF REMMTH1 >= REMMTH2 THEN
+            DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
+               IS = 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+               IF REMMTH > REMMTHS THEN IISPREV + IS;
+               ELSE IIS + IS;
+            END;    */
+         IF REMMTH2 > 0 THEN
+            UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+      END;
+   END;
+ *  IF TERMCHG = 0 THEN IISPREV = IISP;
+   IF CURBAL = . THEN CURBAL = 0;
+   NETBAL = CURBAL - UHC;
+   OSPRIN = CURBAL - UHC - IIS;
+   IF LOANTYPE IN (380,381) THEN OTHERFEE = SUM(FEEAMT,(-1)*FEETOT2);
+   ELSE OTHERFEE = SUM(FEEAMT8,(-1)*FEETOT2,FEEAMTA,(-1)*FEEAMT5);
+   IF OTHERFEE < 0 THEN OTHERFEE = 0;
+   IF LOANTYPE IN (983,993) THEN OTHERFEE = 0;
+   IF APPVALUE > 0 & (LOANTYPE IN (705,128,700,130,380,381,720,725)
+      | CENSUS7 = '9') &
+      (DAYS > 89 OR USER5 = 'N') &
+      BORSTAT NOT IN ('F','R','I','Y','W')
+      AND LOANTYPE NOT IN (983,993) THEN DO;
+      AGE = INT(YEAR(REPTDATE) - YEAR(ISSDTE) +
+            (MONTH(REPTDATE) - MONTH(ISSDTE)) / 12);
+      IF CENSUS7 ^='9' THEN
+         MARKETVL = APPVALUE - APPVALUE * AGE * 0.2;
+      IF HARDCODE = 'Y' THEN DO;
+         MARKETVL = WREALVL;
+      END;
+      IF MARKETVL < 0 THEN MARKETVL = 0;
+      IF DAYS > 273 THEN NETEXP = OSPRIN + OTHERFEE;
+      ELSE NETEXP = OSPRIN + OTHERFEE - MARKETVL;
+  /*  IF LOANTYPE IN (128,130) THEN NETEXP = OSPRIN - MARKETVL;
+      ELSE DO;
+         IF DAYS > 273 THEN NETEXP = OSPRIN;
+         ELSE NETEXP = OSPRIN - MARKETVL;
+      END; */
+      SELECT;
+         WHEN (DAYS>364) SP = NETEXP;
+         WHEN (DAYS>273) SP = NETEXP / 2;
+         WHEN (DAYS> 89) SP = NETEXP * 0.2;
+         WHEN (DAYS< 90) SP = NETEXP * 0.2;
+         OTHERWISE SP = 0;
+      END;
+   END;
+   ELSE DO;
+      IF BORSTAT NOT IN ('R') THEN MARKETVL = 0;
+      IF HARDCODE = 'Y' THEN DO;
+         MARKETVL = WREALVL;
+      END;
+      NETEXP = OSPRIN + OTHERFEE - MARKETVL;
+      IF DAYS > 364 OR BORSTAT IN ('F','R','I','W') THEN
+         SP = NETEXP;
+      ELSE IF DAYS > 273 THEN SP = NETEXP / 2;
+      ELSE IF DAYS > 89 AND BORSTAT = 'Y' THEN SP = NETEXP / 5;
+      ELSE SP = 0;
+   END;
+   IF SP < 0 THEN SP = 0;
+   SPPL = SP - SPP2;
+   IF SPPL < 0 THEN SPPL = 0;
+   IF HARDCODE = 'Y' THEN DO;
+      IF WSPPL NE . THEN SPPL = WSPPL;
+      IF WSP NE . THEN SP = WSP;
+   END;
+   IF BORSTAT = 'W' THEN DO;
+      SPPW = SPP2;
+      SP   = 0;
+      MARKETVL = 0;
+   END;
+   ELSE RECOVER = SPP2 - SP;
+   IF RECOVER < 0 THEN RECOVER = 0;
+   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+   LOANTYP = PUT(LOANTYPE,LNTYP.);
+   IF WRITEOFF = 'Y' THEN DO;
+      SPPL = WSPPL;
+      OTHERFEE = 0;
+      IF WDOWNIND ^= 'Y' THEN DO;
+         RECOVER = WRECOVER;
+         SP   = 0;
+         SPPW = SUM(SPP2,SPPL,(-1)*RECOVER);
+      END;
+      ELSE DO;
+         SPPW = WSPPW;
+         IF NETEXP <= 0 THEN RECOVER = 0;
+         SP = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
+         IF NETEXP <=0 AND SP > 0 THEN DO;
+            RECOVER = SP;
+            SP = 0;
+         END;
+      END;
+   END;
+ IF RESCHEIND = 'Y' THEN DO;
+      SPLL    = WSPLL;
+      RECOVER = WRECOVER;
+      SPPW    = WSPPW;
+      SP      = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
+      END;
+*;
+*------------------------------------------------*
+*  CALCULATE SP FOR CURRENT NPL ACCOUNTS         *
+*------------------------------------------------*;
+DATA LOAN2;
+   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME DAYS BORSTAT NETPROC CURBAL
+        UHC NETBAL IIS OSPRIN MARKETVL NETEXP SPP2 SPPL RECOVER
+        SPPW SP LOANTYP VINNO CENSUS7 OTHERFEE EXIST COSTCTR USER5
+        PENDBRH WDOWNIND RESCHEIND;
+   LENGTH LOANTYP $20;
+   RETAIN STMTH 1 STYR;
+   SET LOANWOFF;
+ * SET NPL.LOAN&REPTMON;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      STYR = YEAR(REPTDATE);
+   END;
+   IF EXIST ^= 'Y';
+ * IF DAYS > 182 OR BORSTAT NOT IN (' ','S');
+   UHC = 0;
+   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
+   IF BLDATE > 0 & TERMCHG > 0 THEN DO;
+      REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
+                MONTH(BLDATE) - MONTH(ISSDTE) + 1);
+      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
+                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
+      REMMTHS = EARNTERM - ((STYR - YEAR(ISSDTE))*12 +
+                STMTH - MONTH(ISSDTE) + 1);
+      IF REMMTH2 < 0 THEN REMMTH2 = 0;
+      IF LOANTYPE IN (128,130) THEN
+           REMMTH1 = REMMTH1 - 3;
+      ELSE REMMTH1 = REMMTH1 - 1;
+  /*    IF REMMTH1 >= REMMTH2 THEN
+         DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
+            IS = 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+            IF REMMTH > REMMTHS THEN IISPREV + IS;
+            ELSE IIS + IS;
+         END;      */
+      IF REMMTH2 > 0 THEN
+         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+   END;
+   ELSE DO;
+      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
+                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
+      IF REMMTH2 < 0 THEN REMMTH2 = 0;
+      IF REMMTH2 > 0 THEN
+         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+   END;
+   NETBAL = CURBAL - UHC;
+   OSPRIN = CURBAL - UHC - IIS;
+   IF LOANTYPE IN (380,381) THEN OTHERFEE = SUM(FEEAMT,(-1)*FEETOT2);
+   ELSE OTHERFEE = SUM(FEEAMT8,(-1)*FEETOT2,FEEAMTA,(-1)*FEEAMT5);
+   IF OTHERFEE < 0 THEN OTHERFEE = 0;
+   IF LOANTYPE IN (983,993) THEN OTHERFEE = 0;
+   IF APPVALUE > 0 & (LOANTYPE IN (705,130,700,128,380,381,720,725) |
+      CENSUS7 = '9') &
+      (DAYS > 89 OR USER5 = 'N') &
+      BORSTAT NOT IN ('F','R','I','Y','W')
+      AND LOANTYPE NOT IN (983,993) THEN DO;
+      AGE = INT(YEAR(REPTDATE) - YEAR(ISSDTE) +
+            (MONTH(REPTDATE) - MONTH(ISSDTE)) / 12);
+      IF CENSUS7 ^= '9' THEN
+         MARKETVL = APPVALUE - APPVALUE * AGE * 0.2;
+      IF HARDCODE = 'Y' THEN DO;
+         MARKETVL = WREALVL;
+      END;
+      IF MARKETVL < 0 THEN MARKETVL = 0;
+      IF DAYS > 273 THEN NETEXP = OSPRIN + OTHERFEE;
+      ELSE NETEXP = OSPRIN + OTHERFEE - MARKETVL;
+ /*   IF LOANTYPE IN (705,130) THEN NETEXP = OSPRIN - MARKETVL;
+      ELSE DO;
+         IF DAYS > 273 THEN NETEXP = OSPRIN;
+         ELSE NETEXP = OSPRIN - MARKETVL;
+      END; */
+      SELECT;
+         WHEN (DAYS>364) SP = NETEXP;
+         WHEN (DAYS>273) SP = NETEXP / 2;
+         WHEN (DAYS> 89) SP = NETEXP * 0.2;
+         WHEN (DAYS< 90) SP = NETEXP * 0.2;
+         OTHERWISE SP = 0;
+      END;
+   END;
+   ELSE DO;
+      IF BORSTAT NOT IN ('R') THEN MARKETVL = 0;
+      IF HARDCODE = 'Y' THEN DO;
+         MARKETVL = WREALVL;
+      END;
+      NETEXP = OSPRIN + OTHERFEE - MARKETVL;
+      IF DAYS > 364 OR BORSTAT IN ('F','R','I','W') THEN
+         SP = NETEXP;
+      ELSE IF DAYS > 273 THEN SP = NETEXP / 2;
+      ELSE IF DAYS > 89 AND BORSTAT = 'Y' THEN SP = NETEXP / 5;
+      ELSE SP = 0;
+   END;
+   IF SP < 0 THEN SP = 0;
+   SPPL = SP;
+   IF HARDCODE = 'Y' THEN DO;
+      IF WSPPL NE . THEN SPPL = WSPPL;
+      IF WSP NE . THEN SP = WSP;
+   END;
+   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+   LOANTYP = PUT(LOANTYPE,LNTYP.);
+   IF WRITEOFF = 'Y' THEN DO;
+      SPPL = WSPPL;
+      OTHERFEE = 0;
+      IF WDOWNIND ^= 'Y' THEN DO;
+         RECOVER = WRECOVER;
+         SP   = 0;
+         SPPW = SUM(SPP2,SPPL,(-1)*RECOVER);
+      END;
+      ELSE DO;
+         SPPW = WSPPW;
+         IF NETEXP <= 0 THEN RECOVER = 0;
+         SP = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
+         IF NETEXP <=0 AND SP > 0 THEN DO;
+            RECOVER = SP;
+            SP = 0;
+         END;
+      END;
+   END;
+
+ IF RESCHEIND = 'Y' THEN DO;
+      SPLL    = WSPLL;
+      RECOVER = WRECOVER;
+      SPPW    = WSPPW;
+      SP      = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
+      END;
+*;
+*------------------------------------------------*
+*  COMPARE PREVIOUS MONTH NPL ACCOUNTS (JUL 05)  *
+*------------------------------------------------*;
+%MACRO MONTHLY;
+   %IF "&REPTMON" EQ "01" %THEN %DO;
+      DATA LOAN1;
+         SET LOAN1;
+         SPPLCUM = 0;
+      RUN;
+      DATA LOAN2;
+         SET LOAN2;
+         SPPLCUM = 0;
+      RUN;
+   %END;
+   %ELSE %DO;
+      PROC SORT DATA=NPL.SP2&PREVMON
+         (RENAME=(DAYS=PDAYS SPP2=PSPP2 SPPL=PSPPL SP=PSP
+                  RECOVER=PRECOVER BORSTAT=PBORSTAT))
+         OUT=SP2PREV NODUPKEY;
+      BY ACCTNO NOTENO; RUN;
+
+      DATA SP2PREV;
+         SET SP2PREV;
+             IF LOANTYPE IN (128,130,131,132,380,381,390,
+                             700,705,720,725,983,993,996)
+             AND PAIDIND='P' THEN DO;
+             %INC PGM(NPLNTB);
+             END;
+         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+         IF PDAYS = . THEN PDAYS = 0;
+         IF PSPP2 = . THEN PSPP2 = 0;
+         IF PSPPL = . THEN PSPPL = 0;
+         IF PSP = . THEN PSP = 0;
+         IF PRECOVER = . THEN PRECOVER = 0;
+      RUN;
+      ********************
+      *** EXISTING NPL ***
+      ********************;
+      PROC SORT DATA=LOAN1; BY ACCTNO; RUN;
+      DATA LOAN1(DROP=PDAYS PSPPL PSP PSPP2 PRECOVER PBORSTAT);
+         MERGE SP2PREV(IN=B) LOAN1(IN=A);
+         BY ACCTNO;
+         IF ((A AND B) OR (B AND NOT A)) AND EXIST = 'Y';
+
+         *** A/C SETTLE FOR EXISTING NPL ***;
+         IF ((B AND NOT A) OR (CURBAL LE 0 AND PSP LE 0)) AND
+            BORSTAT NOT IN ('F','I','R','W','S') THEN DO;
+            SPPL=PSPPL;
+            RECOVER=SUM(PSPP2,PSPPL);
+            CURBAL=0;
+            NETBAL=0;
+            UHC=0;
+            IIS=0;
+            MARKETVL=0;
+            OSPRIN = SUM(CURBAL,(-1)*UHC,(-1)*IIS);
+            NETEXP = SUM(OSPRIN,(-1)*MARKETVL);
+            DAYS=0;
+            SP = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
+            OUTPUT;
+         END;
+         ELSE DO;
+            IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN DO;
+               OUTPUT;
+            END;
+            ELSE DO;
+               IF (A AND B) THEN DO;
+                  *** CONTINUE PERFORMING ***;
+                  IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        SPPL=PSPPL;
+                        RECOVER=SUM(PSPP2,PSPPL);
+                     END;
+                     IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
+                        SPPL=0;
+                        RECOVER = SPP2 - SP;
+                     END;
+                     IF USER5 = 'N' AND SPP2 < SP THEN DO;
+                        SPPL = SP-SPP2;
+                        RECOVER = 0;
+                     END;
+                     OUTPUT;
+                  END;
+                  *** TURN PERFORMING ***;
+                  IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        IIS=0;
+                        IF USER5 NE 'N' THEN MARKETVL=0;
+                        OSPRIN = SUM(CURBAL,(-1)*UHC,(-1)*IIS);
+                        NETEXP = SUM(OSPRIN,(-1)*MARKETVL);
+                        SPPL = PSPPL;
+                        RECOVER = SUM(PSPP2,PSPPL);
+                     END;
+                     IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
+                        SPPL=0;
+                        RECOVER = SPP2 - SP;
+                     END;
+                     IF USER5 = 'N' AND SPP2 < SP THEN DO;
+                        SPPL = SP-SPP2;
+                        RECOVER = 0;
+                     END;
+                     OUTPUT;
+                  END;
+                  *** TURN NPL FR PERFORMING ***;
+                  IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        SPPL = SUM(SP,PSPPL);
+                        RECOVER = SUM(PSPPL,PSPP2);
+                     END;
+                     IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
+                        SPPL=0;
+                        RECOVER = SPP2 - SP;
+                     END;
+                     IF USER5 = 'N' AND SPP2 < SP THEN DO;
+                        SPPL = SP-SPP2;
+                        RECOVER = 0;
+                     END;
+                     OUTPUT;
+                  END;
+                  *** CONTINUE NPL ***;
+                  IF DAYS GE 90 AND PDAYS GE 90 THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        SPPL = SUM(SP,(-1)*PSPP2);
+                        IF SPPL LT 0 THEN DO;
+                           RECOVER = SPPL*(-1);
+                           SPPL = 0;
+                        END;
+                     END;
+                     OUTPUT;
+                  END;
+               END;
+            END;
+         END;
+      RUN;
+      *******************
+      *** CURRENT NPL ***
+      *******************;
+      PROC SORT DATA=NPL.PLOAN&REPTMON OUT=PLOAN
+         (KEEP=ACCTNO NOTENO CURBAL DAYS BORSTAT NTBRCH COSTCTR);
+         BY ACCTNO;
+      RUN;
+      DATA SP2PREV;
+         MERGE SP2PREV(IN=A) PLOAN(IN=B);
+         BY ACCTNO;
+         IF PSPP2 EQ 0 AND EXIST NE 'Y' ;
+         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+      RUN;
+
+      PROC SORT DATA=LOAN2; BY ACCTNO NOTENO; RUN;
+      DATA LOAN2(DROP=PDAYS PSPPL PSP PSPP2 PRECOVER PBORSTAT);
+         MERGE SP2PREV(IN=B) LOAN2(IN=A);
+         BY ACCTNO;
+
+         IF (B AND NOT A) THEN DO;
+            *** A/C SETTLE FOR EXISTING NPL ***;
+               SPPL=PSPPL;
+               RECOVER=SUM(PSPP2,PSPPL);
+               CURBAL=0;
+               NETBAL=0;
+               UHC=0;
+               IIS=0;
+               MARKETVL=0;
+               OSPRIN = SUM(CURBAL,(-1)*UHC,(-1)*IIS);
+               NETEXP = SUM(OSPRIN,(-1)*MARKETVL);
+               DAYS=0;
+               SP = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
+               OUTPUT;
+            END;
+
+         *** NEW NPL FOR THE MTH ***;
+         IF (A AND NOT B) AND
+            (DAYS GE 90 OR BORSTAT IN ('F','I','R','W') OR USER5='N')
+            THEN OUTPUT;
+
+         IF (A AND B) THEN DO;
+            IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN DO;
+               OUTPUT;
+            END;
+            ELSE DO;
+               *** CONTINUE PERFORMING ***;
+               IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
+                  IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                     SPPL=PSPPL;
+                     RECOVER=PRECOVER;
+                  END;
+                  IF BORSTAT IN ('F','I','R') THEN DO;
+                     RECOVER = PRECOVER;
+                     SPPL = SUM(SP,RECOVER);
+                  END;
+                  IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
+                     SPPL=0;
+                     RECOVER = SPP2 - SP;
+                  END;
+                  IF USER5 = 'N' AND SPP2 < SP THEN DO;
+                     SPPL = SP-SPP2;
+                     RECOVER = 0;
+                  END;
+                  OUTPUT;
+               END;
+
+               *** TURN PERFORMING ***;
+               IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
+                  IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                     IIS=0;
+                     MARKETVL=0;
+                     OSPRIN = SUM(CURBAL,(-1)*UHC,(-1)*IIS);
+                     NETEXP = SUM(OSPRIN,(-1)*MARKETVL);
+                     SPPL    = PSPPL;
+                     RECOVER = PSPPL;
+                  END;
+                  IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
+                     SPPL=0;
+                     RECOVER = SPP2 - SP;
+                  END;
+                  IF USER5 = 'N' AND SPP2 < SP THEN DO;
+                     SPPL = SP-SPP2;
+                     RECOVER = 0;
+                  END;
+                  OUTPUT;
+               END;
+
+               *** TURN NPL FR PERFORMING ***;
+               IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
+                  IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                     SPPL = SUM(SP,PSPPL);
+                     RECOVER = PSPPL;
+                  END;
+                  IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
+                     SPPL=0;
+                     RECOVER = SPP2 - SP;
+                  END;
+                  IF USER5 = 'N' AND SPP2 < SP THEN DO;
+                     SPPL = SP-SPP2;
+                     RECOVER = 0;
+                  END;
+                  OUTPUT;
+               END;
+
+               *** CONTINUE NPL ***;
+               IF (DAYS GE 90 AND PDAYS GE 90) THEN DO;
+                  RECOVER = PRECOVER;
+                  SPPL = SUM(SP,RECOVER);
+                  OUTPUT;
+               END;
+            END;
+         END;
+      RUN;
+   %END;
+%MEND MONTHLY;
+%MONTHLY;
+*------------------------------------------------*
+*  COMBINE EXISTING & CURRENT NPL ACCOUNTS       *
+*------------------------------------------------*;
+DATA LOAN3 NPL.SP2&REPTMON NPL.SP2;
+   SET LOAN1 LOAN2;
+   LENGTH RISK $13;
+   IF DAYS > 364 OR BORSTAT = 'W' THEN RISK = 'BAD';
+   ELSE IF DAYS > 273 THEN RISK = 'DOUBTFUL';
+   ELSE IF DAYS > 182 THEN RISK = 'SUBSTANDARD 2';
+   ELSE IF DAYS < 90 AND USER5 ='N' THEN RISK = 'SUBSTANDARD-1';
+   ELSE RISK = 'SUBSTANDARD-1';
+   WHERE (COSTCTR < 3000 OR COSTCTR > 3999) AND
+          COSTCTR NOT IN (4043,4048) AND
+          COSTCTR NE .;
+
+RUN;
+PROC SORT DATA=LOAN3 NODUPKEY;BY ACCTNO NOTENO;RUN;
+*------------------------------------------------*
+*  PRODUCE REPORTS                               *
+*------------------------------------------------*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+%LET TBL1=(EXISTING);
+%LET TBL2=(CURRENT);
+%LET TBL3=(EXISTING AND CURRENT);
+%LET TTL=MOVEMENTS OF SPECIFIC PROVISION FOR THE MONTH ENDING;
+*;
+%MACRO TBLS;
+   %DO I = 3 %TO 3;
+      PROC TABULATE DATA=LOAN&I FORMAT=COMMA14.2 MISSING NOSEPS;
+         CLASS LOANTYP RISK BRANCH;
+         VAR CURBAL UHC NETBAL IIS OSPRIN MARKETVL NETEXP
+             SPP2 SPPL RECOVER SPPW SP OTHERFEE;
+         TABLE LOANTYP=' ',
+               RISK=' '*(BRANCH=' ' ALL='SUB-TOTAL') ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*(CURBAL='CURRENT BAL (A)'
+                        UHC='UNEARNED HIRING CHARGES (B)'
+                        NETBAL='NET BAL (A-B=C)'
+                        IIS='IIS (E)'
+                        OSPRIN='PRINCIPAL OUTSTANDING (C-E=F)'
+                        OTHERFEE = 'OTHER FEES'
+                        MARKETVL='REALISABLE VALUE (G)'
+                        NETEXP='NET EXPOSURE (F-G=H)'
+                        SPP2='OPENING BAL FOR FINANCIAL YEAR (I)'
+                        SPPL='PROVISION MADE AGAINST PROFIT & LOSS (J)'
+                        RECOVER='WRITTEN BACK TO PROFIT & LOSS (K)'
+                        SPPW='WRITTEN OFF AGAINST PROVISION (L)'
+                        SP='CLOSING BAL AS AT RPT DATE (I+J-K-L)')
+               / BOX='RISK        BRANCH' RTS=29;
+         TABLE LOANTYP=' ', BRANCH=' ' ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*(CURBAL='CURRENT BAL (A)'
+                        UHC='UNEARNED HIRING CHARGES (B)'
+                        NETBAL='NET BAL (A-B=C)'
+                        IIS='IIS (E)'
+                        OSPRIN='PRINCIPAL OUTSTANDING (C-E=F)'
+                        OTHERFEE = 'OTHER FEES'
+                        MARKETVL='REALISABLE VALUE (G)'
+                        NETEXP='NET EXPOSURE (F-G=H)'
+                        SPP2='OPENING BAL FOR FINANCIAL YEAR (I)'
+                        SPPL='PROVISION MADE AGAINST PROFIT & LOSS (J)'
+                        RECOVER='WRITTEN BACK TO PROFIT & LOSS (K)'
+                        SPPW='WRITTEN OFF AGAINST PROVISION (L)'
+                        SP='CLOSING BAL AS AT RPT DATE (I+J-K-L)')
+               / BOX='BRANCH' RTS=9;
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE2 &TTL &RDATE &&TBL&I;
+         ** TITLE3 '(BASED ON DEPRECIATED PP FOR UNSCHEDULED GOODS)';
+   %END;
+%MEND TBLS;
+*;
+%MACRO DTLS;
+   %DO I = 3 %TO 3;
+      PROC SORT DATA=LOAN&I;
+         BY LOANTYP BRANCH RISK DAYS ACCTNO;
+*;
+      PROC PRINT LABEL N;
+         FORMAT NETPROC CURBAL UHC NETBAL IIS OSPRIN MARKETVL
+                NETEXP SPP2 SPPL RECOVER SPPW SP OTHERFEE COMMA14.2;
+         LABEL ACCTNO   = 'MNI ACCOUNT NO'
+               VINNO    = 'AA NUMBER'
+               DAYS     = 'NO OF DAYS PAST DUE'
+               BORSTAT  = 'BORROWER''S STATUS'
+               NETPROC  = 'LIMIT'
+               CURBAL   = 'CURRENT BAL (A)'
+               UHC      = 'UNEARNED HIRING CHARGES (B)'
+               NETBAL   = 'NET BAL (A-B=C)'
+               IIS      = 'IIS (E)'
+               OSPRIN   = 'PRINCIPAL OUTSTANDING (C-E=F)'
+               OTHERFEE = 'OTHER FEES'
+               MARKETVL = 'REALISABLE VALUE (G)'
+               NETEXP   = 'NET EXPOSURE (F-G=H)'
+               SPP2     = 'OPENING BAL FOR FINANCIAL YEAR (I)'
+               SPPL     = 'PROVISION MADE AGAINST PROFIT & LOSS (J)'
+               RECOVER  = 'WRITTEN BACK TO PROFIT & LOSS (K)'
+               SPPW     = 'WRITTEN OFF AGAINST PROVISION (L)'
+               SP       = 'CLOSING BAL AS AT RPT DATE (I+J-K-L)';
+         VAR ACCTNO NAME VINNO DAYS BORSTAT NETPROC CURBAL UHC
+             NETBAL OTHERFEE
+             IIS OSPRIN MARKETVL NETEXP SPP2 SPPL RECOVER SPPW SP;
+         BY LOANTYP BRANCH RISK;
+         PAGEBY BRANCH;
+         SUMBY RISK;
+         SUM NETPROC CURBAL UHC NETBAL IIS OSPRIN MARKETVL
+             NETEXP SPP2 SPPL RECOVER SPPW SP OTHERFEE;
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE2 &TTL &RDATE &&TBL&I;
+         ** TITLE3 '(BASED ON DEPRECIATED PP FOR UNSCHEDULED GOODS)';
+   %END;
+%MEND DTLS;
+*;
+%TBLS;
+  /* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS */
+%DTLS;
