@@ -1,0 +1,224 @@
+ ********************************************************************;
+ **  PROGRAM  : FALMPBBP                                            *;
+ **  FUNCTION : TO PROCESS FDMTHLY TO PRODUCE BIC ITEMS FOR RDAL II *;
+ **             FOR PBB                                             *;
+ ********************************************************************;
+OPTIONS YEARCUTOFF=1950;
+*;
+PROC DATASETS LIB=BNM NOLIST;
+   DELETE FALM&REPTMON&NOWK;
+RUN;
+*;
+ ********************************************************************;
+ ** RM FD ACCEPTED BY CUSTOMER CODE AND STATE                       *;
+ ********************************************************************;
+*;
+PROC SUMMARY DATA = BNM.FDMTHLY NWAY;
+     CLASS BIC STATE CUSTCODE AMTIND;
+     VAR CURBAL;
+     WHERE BIC IN ('42130','42132','42133','42199') AND
+           ACCTTYPE NOT IN (397,398);
+     OUTPUT OUT = ALM
+            SUM = AMOUNT;
+RUN;
+
+DATA ALMDEPT (KEEP=BNMCODE AMTIND AMOUNT);
+     LENGTH BNMCODE $14.;
+     SET ALM;
+
+     SELECT(CUSTCODE);
+     WHEN('01','79','07','17','57','75') DO;
+        IF CUSTCODE='01' THEN DO;
+           IF BIC = '42130' AND STATE = 'B' THEN STATE = 'W';
+           BNMCODE=BIC||CUSTCODE||'000000'||STATE; OUTPUT;
+        END;
+        ELSE IF CUSTCODE ^= '01' THEN DO;
+           BNMCODE=BIC||CUSTCODE||'000000'||STATE; OUTPUT;
+        END;
+     END;
+     WHEN('10','02','03','11','12') DO;
+         BNMCODE = BIC||'10000000'||STATE; OUTPUT;
+     END;
+     WHEN('20','13','30','31',
+          '04','05','06','32','33','34','35',
+          '36','37','38','39','40','45') DO;
+         BNMCODE = BIC||'20000000'||STATE; OUTPUT;
+     END;
+     WHEN('60','61','62','63','64','65','66','67','68','69',
+            '41','42','43','44','46','47','48','49','51',
+            '52','53','54','59') DO;
+         BNMCODE = BIC||'60000000'||STATE; OUTPUT;
+     END;
+     WHEN('70','71','72','73','74') DO;
+         BNMCODE = BIC||'70000000'||STATE; OUTPUT;
+     END;
+     WHEN('76','77','78') DO;
+         BNMCODE = BIC||'76000000'||STATE; OUTPUT;
+     END;
+     WHEN('80','81','82','83','84','85','86','87','88','89','90',
+          '91','92','95','96','98','99') DO;
+         BNMCODE = BIC||'80000000'||STATE; OUTPUT;
+     END;
+     OTHERWISE;
+     END;
+RUN;
+
+PROC SUMMARY DATA = ALMDEPT NWAY;
+     CLASS BNMCODE AMTIND;
+     VAR AMOUNT;
+     OUTPUT OUT = ALMDEPT (DROP=_TYPE_ _FREQ_)
+            SUM = AMOUNT;
+RUN;
+*;
+PROC APPEND DATA=ALMDEPT BASE=BNM.FALM&REPTMON&NOWK; RUN;
+*;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWDEPT; RUN;
+*;
+/*********************************************************************/
+/* NO OF FD ACCOUNTS BY STATE                                        */
+/*********************************************************************/
+
+  PROC SUMMARY DATA = BNM.FDMTHLY NWAY;
+     CLASS BIC STATE AMTIND;
+     OUTPUT OUT = ALM;
+RUN;
+
+DATA ALMDEPT (KEEP=BNMCODE AMTIND AMOUNT);
+     LENGTH BNMCODE $14.;
+     SET ALM;
+
+     AMOUNT=_FREQ_*1000;
+/*   IF BIC IN ('42132','42199') THEN DO;
+        BNMCODE = '8023200000000'||STATE; OUTPUT;
+     END;
+     ELSE IF BIC='42130' THEN DO;
+        BNMCODE = '8023000000000'||STATE; OUTPUT;
+     END; */
+     IF BIC='42133' THEN DO;
+        BNMCODE = '8023300000000Y'; OUTPUT;
+     END;
+RUN;
+*;
+PROC APPEND DATA=ALMDEPT BASE=BNM.FALM&REPTMON&NOWK; RUN;
+*;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWDEPT; RUN;
+*;
+ ********************************************************************;
+ ** FX FD FCY DEPOSIT ACCEPTED BY PURPOSE                           *;
+ ********************************************************************;
+*;
+PROC SUMMARY DATA = BNM.FDMTHLY NWAY;
+     WHERE BIC = '42630';
+     CLASS BIC CUSTCODE PURPOSE AMTIND;
+     VAR CURBAL;
+     OUTPUT OUT = ALM
+            SUM = AMOUNT;
+RUN;
+
+DATA ALMDEPT EXCEPT;
+     LENGTH BNMCODE $14.;
+     SET ALM;
+
+     SELECT(CUSTCODE);
+     WHEN('76','77','78') DO;
+        IF PURPOSE IN ('1','2') THEN DO;
+           BNMCODE='4260076009997Y'; OUTPUT; END;
+        ELSE IF PURPOSE='3' THEN DO;
+           BNMCODE='4260076009999Y'; OUTPUT; END;
+     END;
+     WHEN('95','96') DO;
+        IF PURPOSE IN ('1','2') THEN DO;
+           BNMCODE='4260095009997Y'; OUTPUT; END;
+        ELSE IF PURPOSE='3' THEN DO;
+           BNMCODE='4260095009999Y'; OUTPUT; END;
+     END;
+     WHEN('80','81','82','83','84','85','86','87','88','89','90','91',
+          '92','93','94','97','98','99') DO;
+        IF PURPOSE = '4' THEN DO;
+           BNMCODE='4260086009998Y'; OUTPUT; END;
+        ELSE IF PURPOSE='5' THEN DO;
+           BNMCODE='4260086009999Y'; OUTPUT; END;
+     END;
+     OTHERWISE DO;
+        IF PURPOSE = '4' THEN DO
+           BNMCODE='4260060009998Y';OUTPUT; END;
+        ELSE IF PURPOSE = '5' THEN DO;
+           BNMCODE='4260060009999Y';OUTPUT; END;
+     END;
+     END;
+RUN;
+PROC SUMMARY DATA = ALMDEPT NWAY;
+     CLASS BNMCODE AMTIND;
+     VAR AMOUNT;
+     OUTPUT OUT = ALMDEPT (DROP=_TYPE_ _FREQ_)
+            SUM = AMOUNT;
+RUN;
+*;
+PROC APPEND DATA=ALMDEPT BASE=BNM.FALM&REPTMON&NOWK; RUN;
+*;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWDEPT; RUN;
+*;
+/*********************************************************************/
+/* REPORT ON DOMESTIC INTEREST RATES PART II - WEIGHTED AVERATE RATE */
+/*********************************************************************/
+ /*
+DATA ALM (KEEP = BRANCH ACCTNO CURBAL TERM RATE LSTMATDT ORGDATE);
+   SET BNM.FDMTHLY;
+   IF BIC = '42130' AND OPENIND = 'O' THEN DO;
+      IF MONTH(LSTMATDT)=MONTH(INPUT("&RDATE",DDMMYY8.)) AND
+         YEAR(LSTMATDT)=YEAR(INPUT("&RDATE",DDMMYY8.)) THEN OUTPUT;
+   END;    */
+     /*
+      IF TERM=1 THEN FDMATDT=(INPUT(PUT(MATDATE,Z8.),YYMMDD8.))-1;
+         MATURITY DATE IS UPDATED 1 DAY BEFORE IT'S MATURITY AFTER
+         THE EOD RUN. MINUS 1 DAY FROM MATURITY DATE IS TO ENSURE
+         THAT THOSE 1 MONTH-TERM CDS DEPOSITED/RENEWED ON THE 1ST
+         OF THE MONTH ARE EXTRACTED
+         EG. MATDT = 1/1/00
+             AFTER EOD @31/12/00, MATDT = 1/2/00
+RUN;  */
+ /**
+PROC SUMMARY DATA=ALM NWAY;
+CLASS TERM RATE;
+VAR   CURBAL;
+OUTPUT OUT=ALMDEPT SUM=;
+
+DATA ALMDEPT;
+   SET ALMDEPT;
+   OM=PUT(TERM,FDORGMT.);
+   WAMT=(RATE*CURBAL)/100;
+   IF OM='30' THEN OM='26';
+   BNMCODE='8420500'||OM||'0000Y';
+RUN;
+*;
+PROC SUMMARY DATA=ALMDEPT NWAY;
+CLASS BNMCODE;
+VAR WAMT CURBAL;
+OUTPUT OUT=ALMDEPT (DROP=_TYPE_ _FREQ_)
+       SUM=;
+*;
+DATA ALMDEPT;
+   SET ALMDEPT;
+   AMOUNT=(WAMT/CURBAL)*100;
+RUN;
+*;
+PROC SORT DATA=BNMCD.FDDEPT OUT=ALMDEDB; BY BNMCODE;
+*;
+DATA ALMDEPT;
+   MERGE ALMDEDB ALMDEPT; BY BNMCODE;
+*;
+PROC SORT DATA=ALMDEPT; BY BNMCODE;
+*;
+OPTIONS NOCENTER NONUMBER NODATE;
+TITLE1 &SDESC;
+TITLE2 'REPORT ON DOMESTIC INTEREST RATE - PART II (FD)';
+TITLE3 'REPORTING DATE :' &RDATE;
+TITLE4;
+PROC PRINT DATA=ALMDEPT;
+VAR BNMCODE AMOUNT;
+FORMAT AMOUNT 5.2;
+RUN;
+*;
+DATA BNMCD.FDDEPT;
+     SET ALMDEPT;
+*;  **/
