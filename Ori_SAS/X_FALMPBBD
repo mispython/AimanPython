@@ -1,0 +1,59 @@
+/*********************************************************************/
+/**  PROGRAM  : FALMPBBD                                            **/
+/**  FUNCTION : ADDING IN FOREIGN RATE IN THE OUTPUT                **/
+/**  DATE     : 24.05.11                                            **/
+/**  AMENDED  :                                                     **/
+/*********************************************************************/
+OPTIONS YEARCUTOFF=1950;
+
+%INC PGM(PBBDPFMT);
+DATA BNM.FDMTHLY
+     (KEEP=BRANCH ACCTNO STATE CUSTCODE OPENIND CURBAL TERM NAME AMTIND
+           ORGDATE MATDATE RATE RENEWAL INTPLAN INTPAY INTDATE BIC
+           LASTACTV LSTMATDT PURPOSE FORATE ACCTTYPE)
+     BNM.FDWKLY
+     (KEEP=BRANCH ACCTNO CUSTCODE NAME AMTIND MATDATE ACCTTYPE
+           OPENIND CURBAL BIC INTPAY STATE FORATE TERM INTPLAN);
+     LENGTH STATE $1. CUSTCODE $2. BIC $5.;
+     LSTMATDT=0;
+     SET FD.FD;
+     IF CURCODE NE 'MYR' THEN DO;
+      INTPAY = ROUND(INTPAY * FORATE,.01);
+     END;
+     STATE = PUT(BRANCH, STATECD.);
+     BIC = PUT(INTPLAN, FDPROD.);
+     IF LMATDATE ^= 0 THEN
+     LSTMATDT=INPUT(SUBSTR(PUT(LMATDATE,Z11.),1,8),MMDDYY8.);
+     AMTIND = PUT(INTPLAN, FDDENOM.);
+     IF BIC IN ('42130','42630') THEN CUSTCODE = PUT(CUSTCD, FDCUSTCD.);
+        ELSE CUSTCODE = PUT(CUSTCD, IFDCUSCD.);
+     IF BIC = '42630' THEN DO;
+        IF CUSTCODE IN ('77','78','95') THEN DO;
+           IF PURPOSE NOT IN ('1','2','3') THEN PURPOSE=1;
+        END;
+        ELSE DO;
+           IF PURPOSE NOT IN ('4','5') THEN PURPOSE=4;
+        END;
+     END;
+     IF ACCTTYPE IN (302,315,394,396) THEN BIC='42133'; ELSE
+     IF ACCTTYPE IN (397,398) THEN BIC='42199';
+     IF OPENIND = 'D' OR OPENIND = 'O' THEN OUTPUT;
+RUN;
+
+DATA BNM.UMA
+     (KEEP=BRANCH ACCTNO CUSTCODE NAME AMTIND
+           OPENIND CURBAL BIC STATE);
+     LENGTH STATE $1. CUSTCODE $2. BIC $5.;
+     SET DEPOSIT.UMA(RENAME=(CUSTCODE=CUSTCD));
+     IF PRODUCT = 297 THEN DO;
+        CUSTCODE = PUT(CUSTCD, FDCUSTCD.);
+        AMTIND = 'D';
+     END;
+     ELSE DO;
+        CUSTCODE = PUT(CUSTCD, IFDCUSCD.);
+        AMTIND = 'I';
+     END;
+     STATE = PUT(BRANCH, STATECD.);
+     BIC='42199';
+     IF OPENIND = 'O' OR OPENIND = 'D' THEN OUTPUT;
+RUN;
