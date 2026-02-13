@@ -1,0 +1,246 @@
+/***********************************************************/
+/**                                                       **/
+/** REPORT ON DOMESTIC ASSETS AND LIABILITIES - PART II   **/
+/**                                                       **/
+/***********************************************************/
+OPTIONS YEARCUTOFF=1950;
+
+PROC DATASETS LIB=BNM NOLIST;
+   DELETE DALM&REPTMON&NOWK;
+RUN;
+
+/***********************************************************/
+/** RM  DEMAND DEPOSIT - BY CUSTOMER AND STATE CODE       **/
+/***********************************************************/
+
+DATA ALW;
+   SET BNM.CURN&REPTMON&NOWK;
+   IF  PRODUCT IN &CURX;
+   IF  PRODUCT IN (63,163) THEN DELETE;
+*;
+PROC SUMMARY DATA=ALW NWAY;
+CLASS PRODCD CUSTCD STATECD AMTIND;
+VAR   CURBAL;
+OUTPUT OUT=ALM
+      SUM=AMOUNT;
+RUN;
+
+DATA ALMDEPT (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+     SELECT(CUSTCD);
+       WHEN('79','07','17','57','75') DO;
+         BNMCODE='42110'||CUSTCD||'000000'||STATECD;
+         OUTPUT;
+       END;
+       WHEN('10','02','03','11','12') DO;
+         BNMCODE='4211010000000'||STATECD; OUTPUT;
+       END;
+       WHEN('20','13','30','31',
+            '04','05','06','32','33','34','35',
+            '36','37','38','39','40') DO;
+         BNMCODE='4211020000000'||STATECD; OUTPUT;
+       END;
+       WHEN('60','61','62','63','64','65','45',
+            '41','42','43','44','46','47','48','49','51',
+            '52','53','54','59') DO;
+         BNMCODE='4211060000000'||STATECD; OUTPUT;
+       END;
+       WHEN('70','71','72','73','74') DO;
+         BNMCODE='4211070000000'||STATECD; OUTPUT;
+       END;
+       WHEN('76','77','78') DO;
+         BNMCODE='4211076000000'||STATECD; OUTPUT;
+       END;
+       WHEN('80','81','82','83','84','85','86','87','88','89','90',
+            '91','92','95','96','98','99') DO;
+         BNMCODE='4211080000000'||STATECD; OUTPUT;
+       END;
+       OTHERWISE;
+     END;
+RUN;
+
+PROC APPEND DATA=ALMDEPT BASE=BNM.DALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMDEPT; RUN;
+
+/***********************************************************/
+/** RM  SAVING DEPOSIT - BY CUSTOMER AND STATE CODE       **/
+/***********************************************************/
+PROC SUMMARY DATA=BNM.DEPT&REPTMON&NOWK NWAY;
+CLASS PRODCD CUSTCD STATECD AMTIND;
+VAR CURBAL;
+WHERE PRODCD IN ('42120','42320');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMDEPT (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+     SELECT(CUSTCD);
+       WHEN('20','13','30','31','45',
+            '04','05','06','32','33','34','35',
+            '36','37','38','39','40') DO;
+         BNMCODE='4212020000000'||STATECD; OUTPUT;
+       END;
+       WHEN('76','77','78') DO;
+         BNMCODE='4212076000000'||STATECD; OUTPUT;
+       END;
+       WHEN('79','07','17','57','75') DO;
+         BNMCODE='42120'||CUSTCD||'000000'||STATECD; OUTPUT;
+       END;
+       WHEN('80','81','82','83','84','85','86','87','88','89','90',
+            '91','92','95','96','98','99') DO;
+         BNMCODE='4212080000000'||STATECD; OUTPUT;
+         IF CUSTCD IN ('86','87','88','89') THEN DO;
+            BNMCODE='4212086000000'||STATECD; OUTPUT;
+         END;
+       END;
+       OTHERWISE;
+     END;
+RUN;
+
+PROC APPEND DATA=ALMDEPT BASE=BNM.DALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMDEPT; RUN;
+
+/***********************************************************/
+/** RM DEMAND DEPOSIT - NO OF ACCOUNTS BY STATE CODE      **/
+/***********************************************************/
+  /* PROC SUMMARY DATA=CURR293 NWAY;
+CLASS PRODCD STATECD AMTIND;
+VAR _FREQ_;
+WHERE PRODCD IN ('42110','42310');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMDEPT (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  AMOUNT=AMOUNT*1000;
+  BNMCODE='8021000000000'||STATECD;
+RUN;
+
+PROC APPEND DATA=ALMDEPT BASE=BNM.DALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMDEPT; RUN;    */
+
+/***********************************************************/
+/** RM SAVING DEPOSIT - NO OF ACCOUNTS BY STATE CODE      **/
+/***********************************************************/
+ /* PROC SUMMARY DATA=SAVE293 NWAY;
+CLASS PRODCD STATECD AMTIND;
+VAR _FREQ_;
+WHERE PRODCD IN ('42120','42320');
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+
+DATA ALMDEPT (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+
+  AMOUNT=AMOUNT*1000;
+  BNMCODE='8022000000000'||STATECD; OUTPUT;
+RUN;
+
+PROC APPEND DATA=ALMDEPT BASE=BNM.DALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMDEPT; RUN;    */
+
+/***********************************************************/
+/** FX DEMAND DEPOSIT - NO OF ACCOUNTS BY PURPOSE         **/
+/***********************************************************/
+*;       /*
+PROC SUMMARY DATA=BNM.FCY&REPTMON&NOWK NWAY;
+WHERE CUSTNO NE .;
+CLASS CUSTNO PRODCD CUSTCD SECTOR AMTIND;
+VAR CURBAL;
+WHERE PRODCD IN ('42610') AND SECTOR IN (1,2,3,4,5) AND CUSTNO NE .;
+OUTPUT OUT=ALM
+       SUM=CURBAL;
+RUN;
+DATA ALM2;
+SET BNM.FCY&REPTMON&NOWK;
+WHERE PRODCD IN ('42610') AND SECTOR IN (1,2,3,4,5) AND CUSTNO EQ .;
+RUN;
+DATA ALM;
+   SET ALM ALM2;
+RUN;
+PROC SUMMARY DATA=ALM NWAY;
+CLASS PRODCD CUSTCD SECTOR AMTIND;
+VAR CURBAL;
+OUTPUT OUT=ALM
+       SUM=AMOUNT;
+RUN;
+DATA ALMDEPT (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALM;
+  AMOUNT=_FREQ_*1000;
+     IF (0 < CUSTCD < 80) AND CUSTCD NOT IN (77,78) THEN DO;
+       IF SECTOR IN (4,5) THEN DO;
+         IF SECTOR=4 THEN DO;
+            BNMCODE='8060060009998Y'; OUTPUT;
+         END;
+         ELSE IF SECTOR=5 THEN DO;
+            BNMCODE='8060060009999Y'; OUTPUT;
+         END;
+         BNMCODE='8060060000000Y'; OUTPUT;
+       END;
+     END;
+     ELSE IF CUSTCD IN (77,78) THEN DO;
+       IF SECTOR IN (1,2,3) THEN DO;
+         IF SECTOR IN (1,2) THEN DO;
+            BNMCODE='8060076009997Y'; OUTPUT;
+         END;
+         ELSE IF SECTOR=3 THEN DO;
+            BNMCODE='8060076009999Y'; OUTPUT;
+         END;
+         BNMCODE='8060076000000Y'; OUTPUT;
+       END;
+     END;
+     ELSE IF (80 <= CUSTCD < 99) AND CUSTCD NOT IN (95) THEN DO;
+       IF SECTOR IN (4,5) THEN DO;
+         IF SECTOR=4 THEN DO;
+            BNMCODE='8060086009998Y'; OUTPUT;
+         END;
+         ELSE IF SECTOR=5 THEN DO;
+            BNMCODE='8060086009999Y'; OUTPUT;
+         END;
+         BNMCODE='8060086000000Y'; OUTPUT;
+       END;
+     END;
+     ELSE IF CUSTCD = 95 THEN DO;
+       IF SECTOR IN (1,2,3) THEN DO;
+         IF SECTOR IN (1,2) THEN DO;
+            BNMCODE='8060095009997Y'; OUTPUT;
+         END;
+         ELSE IF SECTOR = 3 THEN DO;
+            BNMCODE='8060095009999Y'; OUTPUT;
+         END;
+         BNMCODE='8060095000000Y'; OUTPUT;
+       END;
+     END;
+     ELSE;
+RUN;
+PROC APPEND DATA=ALMDEPT BASE=BNM.DALM&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALM ALMDEPT; RUN;      */
+
+/***********************************************************/
+/** FINAL CONSOLIDATION                                   **/
+/***********************************************************/
+PROC SUMMARY DATA=BNM.DALM&REPTMON&NOWK NWAY;
+CLASS BNMCODE AMTIND;
+VAR AMOUNT;
+OUTPUT OUT=BNM.DALM&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=AMOUNT;
+RUN;
+
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE2 'REPORT ON DOMESTIC ASSETS AND LIABILITIES PART II-M&I DEPOSIT';
+TITLE3 'REPORT DATE : ' &RDATE;
+TITLE4;
+PROC PRINT DATA=BNM.DALM&REPTMON&NOWK;
+FORMAT AMOUNT COMMA25.2;
+RUN;
+
