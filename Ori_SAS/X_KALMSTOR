@@ -1,0 +1,29 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : KALMSTOR                                          |
+ |  ESMR    : 2017-1320                                         |
+ |  REPORT  : STORE OUTPUT FOR OTAL COMMITMENTS & CONTIGENCIES  |
+ |            AND MONTHLY PURCHASES & SALES                     |
+ +--------------------------------------------------------------+;
+DATA DEPOBACK.K1TBL&REPTMON;
+   SET K1DTL K1MDTL;
+   DROP D1-D12 RD1-RD12 MD1-MD12 RPYR RPMTH RPDAY;
+RUN;
+
+DATA DEPOBACK.K2TBL&REPTMON;
+   SET K2DTL;
+RUN;
+
+DATA DEPOBACK.K3TBL&REPTMON;
+   SET K3DTL;
+RUN;
+
+%MACRO EXEC;
+   %IF "&AMTIND" = "'D'" %THEN %DO;
+
+DATA DEPOBACK.DCITBL&REPTMON;
+   SET DCIDTL DCIMDTL;
+RUN;
+
+   %END;
+%MEND EXEC;
+%EXEC;
