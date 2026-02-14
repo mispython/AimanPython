@@ -1,0 +1,30 @@
+//EIAWOF10 JOB MISEIS,EIFMNPL,COND=(0,LT),CLASS=A,MSGCLASS=X,           JOB14062
+//         NOTIFY=&SYSUID
+//* *******************************************************
+//* MERGE THE NEW HARDCODE DATA WITH EXISTING HARDCODE DATA
+//* *******************************************************
+//EIAWOF10 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPLA     DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=SHR
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD *
+OPTION NOCENTER;
+ /*********************************************************************/
+ /* SP                                                                */
+ /*********************************************************************/
+DATA NPL.WSP2;
+     SET NPLA.WSP2 NPL.TSP2;
+RUN;
+PROC SORT; BY ACCTNO;
+
+DATA NPL.WIIS;
+     SET NPLA.WIIS NPL.TIIS;
+RUN;
+PROC SORT; BY ACCTNO;
+
+DATA NPL.WAQ;
+     SET NPLA.WAQ NPL.TAQ;
+RUN;
+PROC SORT; BY ACCTNO;
+
