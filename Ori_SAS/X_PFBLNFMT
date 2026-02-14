@@ -1,1 +1,823 @@
+/*****************************************************************/
+/* TAKE NOTE : ANY AMENDMENTS TO PRODUCTS MAPPING, THESE FORMATS */
+/* ARE AFFECTED : LNDENOM, LNPROD, LNTYPE & LNRATE              */
+/*****************************************************************/
 
+PROC FORMAT;
+   VALUE LNDENOM  /* PRODUCT DENOMINATION OF DOMESTIC OR ISLAM */
+     100,101,102,105,106,110,
+     112,113,114,116,117,118,
+     126,
+     115,120,121,170,127     = 'I'  /* ISLAMIC PRODUCTS */
+     OTHER                   = 'D'; /* DOMESTIC PRODUCTS */
+
+   VALUE LNPROD
+     5        = '34230' /* STAFF LOAN - HOUSING LOAN           */
+     6        = '34230' /* STAFF LOAN - HOUSING LOAN (ALTERNATE) */
+     10       = '34230' /* STAFF LOAN - SPECIAL LOAN SCHEME    */
+     15       = '34231' /* STAFF LOAN - CAR LOAN               */
+     20       = '34231' /* STAFF LOAN - MOTORCYCLE LOAN        */
+  /* PRODUCT 15,20 MAP TO 34231 TO IDENTIFY AS STAFF HP A/C TO
+     ACCOMODATE BIC 87151 WHICH EXCLUDES HP A/C                */
+     100      = '34120' /* ABBA NORMAL HOUSING FINANCING       */
+     101      = '34120' /* ABBA MULTI TIER RATE (SERVICE PROFIT)*/
+     102      = '34120' /* ABBA MULTI TIER RATE (SERVICE INSTLMNT)*/
+     105      = '34149' /* ABBA UNIT TRUST SCHEME              */
+     106      = '54129' /* ABBA UNIT TRUST SCHEME TO CAGAMAS   */
+     110, 115 = '34111' /* AITAB - GOODS FINANCING             */
+     112, 114 = '34120' /* HOME 4/5 ABBA - CONSTRUCTION        */
+     113, 116 = '34120' /* HOME 4/5 ABBA - COMPL.PROPERTY      */
+     117, 118 = '34120' /* ABBA MORE PLAN- CONSTR./COMPL.PROP. */
+     120      = '34149' /* ABBA ASSET FINANCING                */
+     121      = '54129' /* ABBA ASSET FINANCING SOLD TO CAGAMAS*/
+     126      = '34120' /* ABBA SWIFT LOAN - PROP UNDER CONSTR */
+     127      = '34120' /* ABBA SWIFT LOAN - FIXED LOAN        */
+     170      = '34149' /* BNM/SPTF 3F FOOD FUND               */
+     200, 201 = '34120' /* PRESCRIBED RATE HOUSING LOAN        */
+     204, 205 = '34120' /* NORMAL HOUSING LOAN                 */
+     206      = '34120' /* NORMAL HOUSING LOAN (PROPERTY>RM150K)*/
+     210      = '34120' /* HOUSING LOAN SOLD TO CAGAMAS        */
+     227,230  = '34120' /* HOME 1/2 (PRESCRIBED RATE)          */
+     228,231  = '34120' /* HOME 1/2 (NON-PRESCRIBED RATE)      */
+     234      = '34120' /* MORE PLAN                           */
+     235      = '34120' /* MORE PLAN 2                         */
+     236      = '34120' /* MORE PLAN 3                         */
+     237      = '34120' /* HOME PLAN 6 (PRESCRIBED RATE)       */
+     238      = '34120' /* HOME PLAN 6 (NON-PRESCRIBED RATE)   */
+     239      = '34120' /* HOME PLAN 7 (PRESCRIBED RATE)       */
+     240      = '34120' /* HOME PLAN 7 (NON-PRESCRIBED RATE)   */
+     241      = '34120' /* HOME PLAN 8                         */
+     242      = '34120' /* MORE PLAN 4                         */
+     300      = '34149' /* FIXED LOAN                          */
+     304, 305 = '34149' /* FIXED LOAN                          */
+     307      = '54129' /* FIXED LOAN SOLD TO CAGAMAS          */
+     310      = '34117' /* UNSECURED / PERSONAL LOAN           */
+     315      = '34190' /* SHARE LOAN (QSL/RSL)                */
+     325      = '34170' /* FLOOR STOCKING                      */
+     330, 320 = '34190' /* REVOLVING CREDIT                    */
+     359      = '34149' /* CONVENTIONAL SWIFT (FIXED) LOANS    */
+     504, 505 = '34149' /* FIXED LOAN UNDER NPGS               */
+     506      = '34149' /* SEGS SERVICING INSTALMENT           */
+     509      = '34190' /* FIXED LOAN UNDER NPGS-REVOVLING     */
+     510      = '34149' /* TABUNG USAHAWAN KECIL (TUK)         */
+     511      = '34190' /* FSMI2 SERVICING INTEREST            */
+     515      = '34149' /* FSMI2 INSTALLMENT                   */
+     555, 556 = '34149' /* SPECIAL FUND FOR TOURISM            */
+     559, 560 = '34149' /* NEW ENTREPRENEUR FUND               */
+     564, 565 = '34149' /* FUND FOR FOOD                       */
+     569      = '34114' /* BRIDGING LOAN - FSLMH               */
+     570, 571 = '34149' /* FUND FOR SMI (FSMI)                 */
+     574, 575 = '34149' /* REHABILITATION FUND FOR SMI (RFSMI) */
+     700,705,750 = '34111' /* HIRE PURCHASE                    */
+     709,710  = '54124' /* HIRE PURCHASE SOLD TO CAGAMAS       */
+     752, 760 = '34111' /* HIRE PURCHASE                       */
+     770, 775 = '34113' /* BLOCK DISCOUNTING                   */
+     799      = '34112' /* LEASING                             */
+     900, 901 = '34149' /* CL - FIXED LOAN                     */
+     902      = '34149' /* CL - FIXED LOAN                     */
+     910      = '54129' /* CL - FIXED LOAN SOLD TO CAGAMAS     */
+     911, 913 = '34190' /* CL - REVOLVING CREDIT               */
+     912      = '34149' /* CL - SHARE LOAN TERM                */
+     920      = '34114' /* CL - BRIDGING LOAN                  */
+     930      = '34149' /* CL - UNSECURED BUSINESS LOAN        */
+     932,933  = '34116' /* CL - FACTORING                      */
+     950, 952 = '34115' /* CL - SYNDICATED FIXED LOAN          */
+     951, 953 = '34190' /* CL - SYNDICATED REVOLVING CREDIT    */
+     981      = 'N'     /* ABBA HOUSE FINANCING WRITTEN OFF    */
+     982      = 'N'     /* ABBA FIXED LOANS WRITTEN OFF        */
+     983      = 'N'     /* AITAB FINANCING WRITTEN OFF         */
+     984      = 'M'     /* ABBA HOUSE FINANCING WRITTEN DOWN   */
+     985      = 'M'     /* ABBA FIXED LOANS WRITTEN DOWN       */
+     991      = 'N'     /* HOUSING LOANS WRITTEN OFF           */
+     992      = 'N'     /* FIXED LOANS WRITTEN OFF             */
+     993      = 'N'     /* HIRE PUCHASE WRITTEN OFF            */
+     994      = 'M'     /* HOUSING LOANS WRITTEN DOWN          */
+     995      = 'M'     /* FIXED LOANS WRITTEN DOWN            */
+     996      = 'M'     /* HIRE PURCHASE WRITTEN DOWN          */
+     OTHER = '34149';
+
+   VALUE CMPROD
+     100,101,120,150,170,180 = '34190'  /* DEFAULT AS 34190 */
+     OTHER                   = ' ';
+
+   VALUE LNRATE
+     113,116,118,
+     100,101,102,200,201,
+     237,239                 = '30591'  /* FIXED RATE - HOUSE LOAN */
+     110,115,700,705,709,
+     710,750,752,760     = '30592'  /* FIXED RATE - HP */
+     105,106,120,121,170,
+     127,
+     510,511,515,555,556,
+     559,560,564,565,569,
+     570,571,574,575,
+     770,775,799         = '30593'  /* FIXED RATE - OTHERS */
+     112,114,117,
+     126,
+     227,228,230,231,234,
+     235,236,238,240-242,
+     204-206,300,304,359,
+     305,307,310,315,320,
+     325,330,504-506,509,
+     900,901,902,910,920,
+     911-913,930,932,950,
+     951-953             = '30595'  /* FLOATING RATE - BLR */
+     5,6,10,15,20        = '30597'  /* FLOATING RATE - OTHER */
+     OTHER               = '30595';
+
+   VALUE LNTYPE                 /* LOAN CATEGORIES */
+     15,20,110,115,700,
+     705,709,710,750,752,
+     760,770,775,799      = 'HP' /* HP ACCOUNTS */
+
+     200,204,300,315,320,
+     325,330,504,509,
+     511,555,
+     559,564,570,574,
+     900,911,913,932,933,
+     951,953              = 'BL' /* BULLET REPY. LOAN */
+
+     5,6,10,100,101,102,105,
+     170,201,205,206,210,
+     304,305,307,310,505,
+     506,510,515,556,569,
+     560,565,571,575,
+     901,902,910,912,920,
+     930,950,952          = 'OL' /* OTHER LOANS */
+     OTHER                = ' ';
+
+   VALUE PRDFMT
+      300,304,305,307,310,504-506,555,556,
+      559,510,511,515,569,570,571,574,575,
+      560,564,565,799,900,901,902,910,912,359,
+      920,930,932,933,950,952  = 'FL'  /* FIXED LOANS (CONV)        */
+      126,
+      105,106,120,121,170,127  = 'FL'  /* FIXED LOANS (ABBA)        */
+      700,705,709,710          = 'FL'  /* HP DIRECT                 */
+      750,752,760              = 'FL'  /* HP AGENCY                 */
+      770,775                  = 'FL'  /* HP BLOCK DISCOUNTING      */
+      110,115                  = 'FL'  /* HP (AITAB)                */
+      325                      = 'FS'  /* FLOOR STOCKING            */
+      112,113,114,116,117,118,
+      100,101,102              = 'HL'  /* HOUSING LOANS (ABBA)      */
+      227,228,230,231,234,
+      200,201,204,205,206,210  = 'HL'  /* HOUSING LOANS (CONV)      */
+      5                        = 'SL'  /* STAFF HOUSING LOANS       */
+      15,20                    = 'SL'  /* STAFF CAR LOANS           */
+      10                       = 'SL'  /* STAFF SPECIAL LOAN SCHEME */
+      315,320,330,509,911,913,
+      951,953                  = 'RC'  /* REVOLVING CREDIT          */
+      OTHER = ' ';
+
+   VALUE LOCUSTCD
+     1   = '11'      /* BANK NEGARA MALAYSIA                     */
+     2   = '02'      /* COMMERCIAL BANKS                         */
+     3   = '03'      /* ISLAMIC BANKS                            */
+     4   = '04'      /* SUBSIDIARY STOCKBROKING COMPANIES        */
+     5   = '05'      /* ASSOCIATE STOCKBROKING COMPANIES         */
+     6   = '06'      /* OTHER STOCKBROKING COMPANIES             */
+     10  = '11'      /* DOMESTIC BANKING INSTITUTIONS            */
+     11  = '11'      /* FINANCE COMPANIES                        */
+     12  = '12'      /* MERCHANT BANKS                           */
+     13  = '13'      /* DISCOUNT HOUSES                          */
+     15  = '79'      /* DOMESTIC NON-BANK ENTITIES               */
+     17  = '17'      /* CAGAMAS BERHAD                           */
+     20  = '30'      /* DOMESTIC NON-BANK FINANCIAL INSTITUTIONS */
+     30  = '30'      /* DOMESTIC OTHER NBFI                      */
+     31  = '31'      /* SAVINGS INSTITUTIONS                     */
+     32  = '32'      /* CREDIT CARD COMPANIES                    */
+     33  = '33'      /* DEVELOPMENT FINANCE INSTITUTIONS         */
+     34  = '34'      /* BUILDING SOCIETIES                       */
+     35  = '35'      /* CO-OPERATIVE SOCIETIES                   */
+     36  = '06'      /* STOCKBROKING COMPANIES                   */
+     37  = '37'      /* COMMODITY BROKERS                        */
+     38  = '38'      /* CREDIT & LEASING COMPANIES               */
+     39  = '39'      /* UNIT TRUST COMPANIES                     */
+     40  = '40'      /* INSURANCE AND INSURANCE RELATED COMPANIES*/
+     46  = '46'      /* DANAHARTA  (TO BE UNDER '45')            */
+     47  = '47'      /* DANAMODAL  (TO BE UNDER '45')            */
+     50  = '79'      /* RESIDENTS/DOMESTIC ENTITIES              */
+     57  = '57'      /* PETRONAS                                 */
+     59  = '59'      /* OTHER GOVERNMENT CONTROLLED DBE NIE      */
+     60  = '62'      /* DOMESTIC BUSINESS ENTERPRISES (DBE)      */
+     61  = '61'      /* BUMIPUTRA CONTROLLED DBE                 */
+     62  = '62'      /* NON-BUMIPUTRA CONTROLLED DBE             */
+     63  = '63'      /* NON-RESIDENT CONTROLLED DBE              */
+     64  = '64'      /* GOVERNMENT CONTROLLED DBE                */
+     65  = '67'      /* SMALL MEDIUM INDUSTRIES (SMI)            */
+     66  = '66'      /* BUMIPUTRA CONTROLLED SMI                 */
+     67  = '67'      /* NON-BUMIPUTRA CONTROLLED SMI             */
+     68  = '68'      /* NON-RESIDENT CONTROLLED SMI              */
+     69  = '69'      /* GOVERNMENT CONTROLLED SMI                */
+     70  = '71'      /* GOVERNMENT                               */
+     71  = '71'      /* FEDERAL GOVERNMENT                       */
+     72  = '72'      /* STATE GOVERNMENT                         */
+     73  = '73'      /* LOCAL GOVERNMENT                         */
+     74  = '74'      /* STATUTORY AUTHORITIES                    */
+     75  = '75'      /* NFPE                                     */
+     76  = '78'      /* INDIVIDUALS                              */
+     77  = '77'      /* BUMIPUTRA                                */
+     78  = '78'      /* NON-BUMIPUTRA                            */
+     79  = '79'      /* DOMESTIC OTHER ENTITIES NIE              */
+     80  = '86'      /* NON-RESIDENTS/FOREIGN ENTITIES           */
+     81  = '81'      /* FOREIGN BANKING INSTITUTIONS             */
+     82  = '82'      /* AFFILIATES ABROAD                        */
+     83  = '83'      /* G7 COUNTRIES                             */
+     84  = '84'      /* FOREIGN BANKS IN OTHER COUNTRIES         */
+     85  = '86'      /* FOREIGN NON-BANK ENTITIES                */
+     86  = '86'      /* FOREIGN BUSINESS ENTERPRISES             */
+     90  = '90'      /* FOREIGN GOVERNMENTS                      */
+     91  = '91'      /* FOREIGN CENTRAL BANKS                    */
+     92  = '92'      /* FRGN DIPLOMATIC REPRESENTATION IN M'SIA  */
+     95  = '95'      /* FOREIGN INDIVIDUALS                      */
+     96  = '96'      /* FOREIGNERS EMPLOYED/STUDYING IN M'SIA    */
+     98  = '98'      /* FOREIGN NON-COMMERCIAL INTERNATIONAL     */
+                     /* ORGANIZATION IN M'SIA                    */
+     99  = '99'      /* FOREIGN OTHER ENTITIES NIE               */
+     OTHER = '79';
+
+   VALUE LNCUSTCD
+     1   = '01'      /* BANK NEGARA MALAYSIA                     */
+     2   = '02'      /* COMMERCIAL BANKS                         */
+     3   = '03'      /* ISLAMIC BANKS                            */
+     4   = '04'      /* SUBSIDIARY STOCKBROKING COMPANIES        */
+     5   = '05'      /* ASSOCIATE STOCKBROKING COMPANIES         */
+     6   = '06'      /* OTHER STOCKBROKING COMPANIES             */
+     10  = '10'      /* DOMESTIC BANKING INSTITUTIONS            */
+     11  = '11'      /* FINANCE COMPANIES                        */
+     12  = '12'      /* MERCHANT BANKS                           */
+     13  = '13'      /* DISCOUNT HOUSES                          */
+     15  = '15'      /* DOMESTIC NON-BANK ENTITIES               */
+     17  = '17'      /* CAGAMAS BERHAD                           */
+     20  = '20'      /* DOMESTIC NON-BANK FINANCIAL INSTITUTIONS */
+     30  = '30'      /* DOMESTIC OTHER NBFI                      */
+     32  = '32'      /* CREDIT CARD COMPANIES                    */
+     33  = '33'      /* DEVELOPMENT FINANCE INSTITUTIONS         */
+     34  = '34'      /* BUILDING SOCIETIES                       */
+     35  = '35'      /* CO-OPERATIVE SOCIETIES                   */
+     36  = '36'      /* STOCKBROKING COMPANIES                   */
+     37  = '37'      /* COMMODITY BROKERS                        */
+     38  = '38'      /* CREDIT & LEASING COMPANIES               */
+     39  = '39'      /* UNIT TRUST COMPANIES                     */
+     40  = '40'      /* INSURANCE AND INSURANCE RELATED COMPANIES*/
+     50  = '50'      /* RESIDENTS/DOMESTIC ENTITIES              */
+     57  = '57'      /* PETRONAS                                 */
+     59  = '59'      /* OTHER GOVERNMENT CONTROLLED DBE NIE      */
+     60  = '60'      /* DOMESTIC BUSINESS ENTERPRISES (DBE)      */
+     61  = '61'      /* BUMIPUTRA CONTROLLED DBE                 */
+     62  = '62'      /* NON-BUMIPUTRA CONTROLLED DBE             */
+     63  = '63'      /* NON-RESIDENT CONTROLLED DBE              */
+     64  = '64'      /* GOVERNMENT CONTROLLED DBE                */
+     65  = '65'      /* SMALL MEDIUM INDUSTRIES (SMI)            */
+     66  = '66'      /* BUMIPUTRA CONTROLLED SMI                 */
+     67  = '67'      /* NON-BUMIPUTRA CONTROLLED SMI             */
+     68  = '68'      /* NON-RESIDENT CONTROLLED SMI              */
+     69  = '69'      /* GOVERNMENT CONTROLLED SMI                */
+     70  = '70'      /* GOVERNMENT                               */
+     71  = '71'      /* FEDERAL GOVERNMENT                       */
+     72  = '72'      /* STATE GOVERNMENT                         */
+     73  = '73'      /* LOCAL GOVERNMENT                         */
+     74  = '74'      /* STATUTORY AUTHORITIES                    */
+     75  = '75'      /* NFPE                                     */
+     76  = '76'      /* INDIVIDUALS                              */
+     77  = '77'      /* BUMIPUTRA                                */
+     78  = '78'      /* NON-BUMIPUTRA                            */
+     79  = '79'      /* DOMESTIC OTHER ENTITIES NIE              */
+     80  = '80'      /* NON-RESIDENTS/FOREIGN ENTITIES           */
+     81  = '81'      /* FOREIGN BANKING INSTITUTIONS             */
+     85  = '85'      /* FOREIGN NON-BANK ENTITIES                */
+     86  = '86'      /* FOREIGN BUSINESS ENTERPRISES             */
+     90  = '90'      /* FOREIGN GOVERNMENTS                      */
+     91  = '91'      /* FOREIGN CENTRAL BANKS                    */
+     92  = '92'      /* FRGN DIPLOMATIC REPRESENTATION IN M'SIA  */
+     95  = '95'      /* FOREIGN INDIVIDUALS                      */
+     96  = '96'      /* FOREIGNERS EMPLOYED/STUDYING IN M'SIA    */
+     98  = '98'      /* FOREIGN NON-COMMERCIAL INTERNATIONAL     */
+                     /* ORGANIZATION IN M'SIA                    */
+     99  = '99'      /* FOREIGN OTHER ENTITIES NIE               */
+     OTHER = '79' ;
+
+   VALUE $RISKCD
+     '2','02','002','0002' = '34902'   /* SUBSTANDARD        */
+     '3','03','003','0003' = '34903'   /* DOUBTFUL           */
+     '4','04','004','0004' = '34904'   /* BAD                */
+     OTHER = ' ';
+  /* '1','01','001','0001' = '34902'      CLOSE ATTENTATION  */
+
+   VALUE LNORMT
+     LOW - 1    = '12'
+     1   - 2    = '13'
+     2   - 3    = '14'
+     3   - 6    = '15'
+     6   - 9    = '16'
+     9   - 12   = '17'
+     12  - 15   = '21'
+     15  - 18   = '22'
+     18  - 24   = '23'
+     24  - 36   = '24'
+     36  - 48   = '25'
+     48  - 60   = '26'
+     60  - 120  = '31'
+     120 - 180  = '32'
+     180 - HIGH = '33';
+
+   VALUE LNRMMT
+     LOW - 0    = '51'
+     0   - 1    = '52'
+     1   - 2    = '53'
+     2   - 3    = '54'
+     3   - 6    = '55'
+     6   - 9    = '56'
+     9   - 12   = '57'
+     12  - 24   = '61'
+     24  - 36   = '62'
+     36  - 48   = '63'
+     48  - 60   = '64'
+     60  - 120  = '71'
+     120 - 180  = '72'
+     180 - HIGH = '73';
+
+  VALUE $STATECD
+     '1','01','001','0001','00001','000001' = 'J'
+     '2','02','002','0002','00002','000002' = 'K'
+     '3','03','003','0003','00003','000003' = 'D'
+     '4','04','004','0004','00004','000004' = 'M'
+     '5','05','005','0005','00005','000005' = 'N'
+     '6','06','006','0006','00006','000006' = 'C'
+     '7','07','007','0007','00007','000007' = 'P'
+     '8','08','008','0008','00008','000008' = 'A'
+     '9','09','009','0009','00009','000009' = 'R'
+     '10','010','0010','00010','000010'     = 'S'
+     '11','011','0011','00011','000011'     = 'Q'
+     '12','012','0012','00012','000012'     = 'B'
+     '13','013','0013','00013','000013'     = 'T'
+     '14','014','0014','00014','000014'     = 'W'
+     '15','015','0015','00015','000015'     = 'L'
+     OTHER                                  = 'B';
+
+   VALUE APPRLIMT
+     LOW      -< 100000   = '30511'
+     100000   -< 500000   = '30512'
+     500000   -< 1000000  = '30513'
+     1000000  -< 5000000  = '30514'
+     5000000  -< 20000000 = '30515'
+     20000000 -< 50000000 = '30516'
+     50000000 -  HIGH     = '30519';
+
+   VALUE LOANSIZE
+     LOW      -< 100000   = '80511'
+     100000   -< 500000   = '80512'
+     500000   -< 1000000  = '80513'
+     1000000  -< 5000000  = '80514'
+     5000000  -< 20000000 = '80515'
+     20000000 -< 50000000 = '80516'
+     50000000 -  HIGH     = '80519';
+
+   VALUE $SECTCD
+     '0100'   = '0111'
+     '0110'   = '0111'
+     '0111'   = '0111'
+     '0112'   = '0112'
+     '0119'   = '0119'
+     '0120'   = '0121'
+     '0121'   = '0121'
+     '0122'   = '0122'
+     '0129'   = '0129'
+     '0130'   = '0132'
+     '0131'   = '0131'
+     '0132'   = '0132'
+     '0139'   = '0139'
+     '0200'   = '0210'
+     '0210'   = '0210'
+     '0211'   = '0211'
+     '0212'   = '0212'
+     '0220'   = '0220'
+     '0230'   = '0230'
+     '0300'   = '0329'
+     '0310'   = '0315'
+     '0311'   = '0311'
+     '0312'   = '0312'
+     '0313'   = '0313'
+     '0314'   = '0314'
+     '0315'   = '0315'
+     '0316'   = '0316'
+     '0320'   = '0329'
+     '0321'   = '0321'
+     '0322'   = '0322'
+     '0323'   = '0323'
+     '0324'   = '0324'
+     '0329'   = '0329'
+     '0400'   = '0410'
+     '0410'   = '0410'
+     '0420'   = '0420'
+     '0430'   = '0430'
+     '1000'   = '1119'
+     '1100'   = '1119'
+     '1110'   = '1119'
+     '1111'   = '1111'
+     '1112'   = '1112'
+     '1113'   = '1113'
+     '1114'   = '1114'
+     '1115'   = '1115'
+     '1116'   = '1116'
+     '1117'   = '1117'
+     '1118'   = '1118'
+     '1119'   = '1119'
+     '1120'   = '1120'
+     '1130'   = '1130'
+     '1200'   = '1220'
+     '1210'   = '1210'
+     '1220'   = '1220'
+     '1300'   = '1309'
+     '1301'   = '1301'
+     '1302'   = '1302'
+     '1309'   = '1309'
+     '1400'   = '1400'
+     '2000'   = '2909'
+     '2100'   = '2100'
+     '2200'   = '2200'
+     '2300'   = '2301'
+     '2301'   = '2301'
+     '2302'   = '2302'
+     '2303'   = '2303'
+     '2900'   = '2909'
+     '2901'   = '2901'
+     '2902'   = '2902'
+     '2903'   = '2903'
+     '2909'   = '2909'
+     '3000'   = '3909'
+     '3100'   = '3129'
+     '3110'   = '3129'
+     '3111'   = '3111'
+     '3112'   = '3112'
+     '3113'   = '3113'
+     '3114'   = '3114'
+     '3115'   = '3115'
+     '3116'   = '3116'
+     '3117'   = '3117'
+     '3118'   = '3118'
+     '3119'   = '3119'
+     '3121'   = '3121'
+     '3122'   = '3122'
+     '3123'   = '3123'
+     '3124'   = '3124'
+     '3125'   = '3125'
+     '3129'   = '3129'
+     '3130'   = '3131'
+     '3131'   = '3131'
+     '3132'   = '3132'
+     '3133'   = '3133'
+     '3134'   = '3134'
+     '3140'   = '3140'
+     '3150'   = '3159'
+     '3151'   = '3151'
+     '3152'   = '3152'
+     '3153'   = '3153'
+     '3159'   = '3159'
+     '3200'   = '3219'
+     '3210'   = '3219'
+     '3211'   = '3211'
+     '3212'   = '3212'
+     '3213'   = '3213'
+     '3214'   = '3214'
+     '3215'   = '3215'
+     '3219'   = '3219'
+     '3220'   = '3220'
+     '3230'   = '3231'
+     '3231'   = '3231'
+     '3232'   = '3232'
+     '3233'   = '3233'
+     '3240'   = '3240'
+     '3300'   = '3311'
+     '3310'   = '3311'
+     '3311'   = '3311'
+     '3312'   = '3312'
+     '3319'   = '3319'
+     '3320'   = '3320'
+     '3400'   = '3411'
+     '3410'   = '3411'
+     '3411'   = '3411'
+     '3412'   = '3412'
+     '3419'   = '3419'
+     '3420'   = '3420'
+     '3500'   = '3560'
+     '3510'   = '3511'
+     '3511'   = '3511'
+     '3512'   = '3512'
+     '3513'   = '3513'
+     '3520'   = '3521'
+     '3521'   = '3521'
+     '3522'   = '3522'
+     '3523'   = '3523'
+     '3529'   = '3529'
+     '3530'   = '3531'
+     '3531'   = '3531'
+     '3540'   = '3540'
+     '3550'   = '3551'
+     '3551'   = '3551'
+     '3559'   = '3559'
+     '3560'   = '3560'
+     '3600'   = '3699'
+     '3610'   = '3610'
+     '3620'   = '3620'
+     '3690'   = '3699'
+     '3691'   = '3691'
+     '3692'   = '3692'
+     '3693'   = '3693'
+     '3699'   = '3699'
+     '3700'   = '3710'
+     '3710'   = '3710'
+     '3720'   = '3720'
+     '3800'   = '3819'
+     '3810'   = '3819'
+     '3811'   = '3811'
+     '3812'   = '3812'
+     '3813'   = '3813'
+     '3819'   = '3819'
+     '3820'   = '3829'
+     '3821'   = '3821'
+     '3822'   = '3822'
+     '3823'   = '3823'
+     '3824'   = '3824'
+     '3825'   = '3825'
+     '3829'   = '3829'
+     '3830'   = '3839'
+     '3831'   = '3831'
+     '3832'   = '3832'
+     '3833'   = '3833'
+     '3839'   = '3839'
+     '3840'   = '3849'
+     '3841'   = '3841'
+     '3842'   = '3842'
+     '3843'   = '3843'
+     '3844'   = '3844'
+     '3845'   = '3845'
+     '3849'   = '3849'
+     '3850'   = '3851'
+     '3851'   = '3851'
+     '3852'   = '3852'
+     '3853'   = '3853'
+     '3900'   = '3909'
+     '3901'   = '3901'
+     '3902'   = '3902'
+     '3903'   = '3903'
+     '3909'   = '3909'
+     '4000'   = '4101'
+     '4100'   = '4101'
+     '4101'   = '4101'
+     '4102'   = '4102'
+     '4103'   = '4103'
+     '4200'   = '4200'
+     '5000'   = '5009'
+     '5001'   = '5001'
+     '5002'   = '5002'
+     '5003'   = '5003'
+     '5004'   = '5004'
+     '5005'   = '5005'
+     '5006'   = '5006'
+     '5009'   = '5009'
+     '6000'   = '6150'
+     '6100'   = '6111'
+     '6110'   = '6111'
+     '6111'   = '6111'
+     '6112'   = '6112'
+     '6113'   = '6113'
+     '6114'   = '6114'
+     '6115'   = '6115'
+     '6116'   = '6116'
+     '6117'   = '6117'
+     '6118'   = '6118'
+     '6119'   = '6119'
+     '6120'   = '6121'
+     '6121'   = '6121'
+     '6130'   = '6139'
+     '6131'   = '6131'
+     '6132'   = '6132'
+     '6133'   = '6133'
+     '6134'   = '6134'
+     '6139'   = '6139'
+     '6140'   = '6149'
+     '6141'   = '6141'
+     '6142'   = '6142'
+     '6143'   = '6143'
+     '6144'   = '6144'
+     '6145'   = '6145'
+     '6146'   = '6146'
+     '6147'   = '6147'
+     '6148'   = '6148'
+     '6149'   = '6149'
+     '6150'   = '6150'
+     '6200'   = '6250'
+     '6210'   = '6211'
+     '6211'   = '6211'
+     '6212'   = '6212'
+     '6213'   = '6213'
+     '6214'   = '6214'
+     '6215'   = '6215'
+     '6216'   = '6216'
+     '6217'   = '6217'
+     '6218'   = '6218'
+     '6219'   = '6219'
+     '6221'   = '6221'
+     '6222'   = '6222'
+     '6230'   = '6231'
+     '6231'   = '6231'
+     '6240'   = '6249'
+     '6241'   = '6241'
+     '6242'   = '6242'
+     '6243'   = '6243'
+     '6249'   = '6249'
+     '6250'   = '6250'
+     '6300'   = '6310'
+     '6310'   = '6310'
+     '6320'   = '6320'
+     '7000'   = '7199'
+     '7100'   = '7111'
+     '7110'   = '7111'
+     '7111'   = '7111'
+     '7112'   = '7112'
+     '7113'   = '7113'
+     '7114'   = '7114'
+     '7115'   = '7115'
+     '7116'   = '7116'
+     '7120'   = '7121'
+     '7121'   = '7121'
+     '7122'   = '7122'
+     '7123'   = '7123'
+     '7130'   = '7131'
+     '7131'   = '7131'
+     '7132'   = '7132'
+     '7190'   = '7199'
+     '7191'   = '7191'
+     '7192'   = '7192'
+     '7199'   = '7199'
+     '7200'   = '7210'
+     '7210'   = '7210'
+     '7220'   = '7220'
+     '8000'   = '8100'
+     '8100'   = '8100'
+     '8200'   = '8200'
+     '8300'   = '8310'
+     '8310'   = '8310'
+     '8320'   = '8329'
+     '8321'   = '8321'
+     '8322'   = '8322'
+     '8323'   = '8323'
+     '8324'   = '8324'
+     '8325'   = '8325'
+     '8329'   = '8329'
+     '8330'   = '8330'
+     '9000'   = '9100'
+     '9100'   = '9100'
+     '9200'   = '9200'
+     '9300'   = '9310'
+     '9310'   = '9310'
+     '9320'   = '9320'
+     '9330'   = '9331'
+     '9331'   = '9331'
+     '9332'   = '9332'
+     '9340'   = '9340'
+     '9350'   = '9350'
+     '9390'   = '9399'
+     '9391'   = '9391'
+     '9399'   = '9399'
+     '9400'   = '9490'
+     '9410'   = '9411'
+     '9411'   = '9411'
+     '9412'   = '9412'
+     '9413'   = '9413'
+     '9414'   = '9414'
+     '9415'   = '9415'
+     '9420'   = '9420'
+     '9490'   = '9490'
+     '9500'   = '9599'
+     '9510'   = '9515'
+     '9511'   = '9511'
+     '9512'   = '9512'
+     '9513'   = '9513'
+     '9514'   = '9514'
+     '9515'   = '9515'
+     '9520'   = '9520'
+     '9530'   = '9530'
+     '9590'   = '9599'
+     '9591'   = '9591'
+     '9592'   = '9592'
+     '9599'   = '9599'
+     '9600'   = '9600'
+     OTHER    = '9999';
+
+   VALUE $COLLCD
+     '99'      = '30570' /* OTHER SECURITIES                      */
+     'B1'      = '30570' /* BONDS                                 */
+     'B2'      = '30540' /* UNIT TRUST                            */
+     'B3', 'B4'= '30570' /* SAVINGS ACCOUNT & FD RECEIPTS         */
+     'C1'      = '30560' /* VACANT RESIDENTIAL LAND/SEMI PERMANENT*/
+     'C2'      = '30560' /* VACANT COMMERCIAL LAND                */
+     'C3'      = '30560' /* VACANT INDUSTRIAL LAND                */
+     'C4'      = '30560' /* CULTIVATED AGRICULTURE LAND           */
+     'C5'      = '30560' /* VACANT AGRICULTURE LAND               */
+     'C6'      = '30560' /* VACANT RESIDENTIAL LOTS               */
+     'D1','D2','D3','D4','D5','D6','D7' = '30560'
+      /* RESIDENTIAL/NON-RESIDENTIAL PROPERTY */
+     'F1'      = '30570' /* INDIVIDUAL GUARANTEE                  */
+     'F2'      = '30570' /* DIRECTOR(S) GUARANTEE                 */
+     'F3'      = '30570' /* CORPORATE GUARANTEE                   */
+     'G1','G2' = '30570' /* BLOCK DISCOUNTING                     */
+     'HA','HB','HC','HD','HE','HF'      = '30570' /* CAR          */
+     'HG','HH','HI','HJ','HK','HL','HM' = '30570' /* CAR          */
+     'HN','HO' = '30570' /* MOTORCYCLE                            */
+     'HP'      = '30570' /* PLANT & MACHINERY                     */
+     'HQ','HR','HS','HT' = '30570' /* CONSUMER DURABLES           */
+     'J1'      = '30520' /* QUOTED SHARES                         */
+     'J2'      = '30530' /* UNQUOTED SHARES                       */
+     'J3'      = '30570' /* OTHER MARKETABLE SECURITIES           */
+     'L1','L2','L3','L4','L5','L6','L7','L8','M1' = '30580'
+      /* UNSECURED */
+     'C7'      = '30560' /* VACANT SHOP/OFFICE LOTS               */
+     'C8'      = '30560' /* VACANT FACTORY/INDUSTRIAL LOTS        */
+     'C9'      = '30560' /* KAMPUNG LAND/VACANT LAND (UNSPECIFIED)*/
+     'AA','AB','AC','AD','AE','AF','AG','AH','AI','AJ','AK','AL'
+               = '30570' /* ASSIGNMENT                            */
+     'E1','E2','E3','E4' = '30570'  /* DEBENTURE                  */
+     'F4'      = '30570' /* CGC GUARANTEE                         */
+     'F5'      = '30570' /* GUARANTEE BY APPROVED FINANCIAL INST. */
+     'F6'      = '30570' /* GUARANTEE - OTHERS                    */
+     'K1'      = '30570' /* POWER OF ATTORNEY                     */
+     OTHER     = '30570';
+
+   VALUE $SECTA
+     '0110'-'0139' = '0100' /* SECURITIES                 */
+     '0210'-'0230' = '0200' /* TRANSPORT VEHICLES         */
+     '0311'        = '0311' /* RESIDE PROP COST <=25K     */
+     '0312'        = '0312' /* RESIDE PROP COST >25K-60K  */
+     '0313'        = '0313' /* RESIDE PROP COST >60K-100K */
+     '0314'        = '0314' /* RESIDE PROP COST >100K-150K*/
+     '0315'        = '0315' /* RESIDE PROP COST >150K-250K*/
+     '0316'        = '0316' /* RESIDE PROP COST >250K     */
+     '0321'        = '0321' /* PURCH IND BUILD & FACTORIES*/
+     '0322'        = '0322' /* PURCH OF LAND ONLY         */
+     '0323'        = '0323' /* PURCH OF COMMERCIAL COMPLEX*/
+     '0324'        = '0324' /* PURCH OF SHOPHOUSES        */
+     '0329'        = '0329' /* PURCH OTH NRESIDE PROP     */
+     '0410'        = '0410' /* PERSONAL USES              */
+     '0420'        = '0420' /* CREDIT CARD                */
+     '0430'        = '0430' /* CONSUMER DURABLES          */
+     '1100'-'1400' = '1000' /* AGRICULTURE, HUNTING,
+                               FORESTRY & FISHING         */
+     '2100'-'2909' = '2000' /* MINING & QUARRYING         */
+     '3100'-'3909' = '3000' /* MANUFACTURING              */
+     '4100'-'4200' = '4000' /* ELEC, GAS & WATER SUPPLY   */
+     '5001'        = '5001' /* GEN INCL CIVIL ENGINE CONT */
+     '5002'        = '5002' /* SPECIAL TRADE CONTRACTORS  */
+     '5003'        = '5003' /* INDUST BUILD & FACTORIES   */
+     '5004'        = '5004' /* CONSTRUCT INFRASTRUCTURE   */
+     '5005'        = '5005' /* CONSTRUCT COMMERCIAL COMPL */
+     '5006'        = '5006' /* CONSTRUCT RESIDENTIAL      */
+     '5009'        = '5009' /* CONSTRUCTION NEC           */
+     '7100'-'7220' = '7000' /* TRANSPORT, STORAGE & COMM  */
+     '9100'-'9600' = '9000' /* COMMUNITY, SOCIAL &
+                               PERSONAL SERVICES          */
+     '9999'        = '9999' /* SECTORS NEC                */
+     OTHER         = ' ';
+
+   VALUE $SECTB
+     '0210'        = '0210' /* PASSENGER CARS             */
+     '0211'        = '0211' /* NEW VEHICLES               */
+     '0212'        = '0212' /* USED VEHICLES              */
+     '6110'-'6150' = '6100' /* WHOLESALE TRADE            */
+     '6210'-'6250' = '6200' /* RETAIL TRADE               */
+     '6310'-'6320' = '6300' /* RESTAURANTS & HOTELS       */
+     '8100'        = '8100' /* FINANCIAL SERVICES         */
+     '8200'        = '8200' /* INSURANCE                  */
+     '8310'        = '8310' /* REAL ESTATE                */
+     '8321'-'8329' = '8320' /* BUSINESS SERVICES          */
+     '8330'        = '8330' /* EQUIPMENT RENTAL           */
+     OTHER         = ' ';
+
+   VALUE ARRCLASS
+       1    =  '0 - < 1 MTH   '
+       2    =  '1 - < 2 MTH   '
+       3    =  '2 - < 3 MTH   '
+       4    =  '3 - < 4 MTH   '
+       5    =  '4 - < 5 MTH   '
+       6    =  '5 - < 6 MTH   '
+       7    =  '6 - < 7 MTH   '
+       8    =  '7 - < 8 MTH   '
+       9    =  '8 - < 9 MTH   '
+      10    =  '9 - < 12 MTH  '
+      11    =  '12 - < 18 MTH '
+      12    =  '18 - < 24 MTH '
+      13    =  '24 - < 36 MTH '
+      14    =  '36 MTH & ABOVE'
+      15    =  'DEFICIT       ';
+
+RUN;
+%LET HP=(110,115,700,705,983,993);      /* HP PRODUCTS CODES */
+%LET HPD=(110,115,700,705);             /* HP DIRECT */
+%LET HOMEIS=(112,113,114,116);          /* HOME PLAN ISLAMIC */
+%LET HOMECV=(227,228,230,231,237,238,239,240,
+             241);                      /* HOME PLAN CONVENTIONAL */
+%LET MOREIS=(117,118);                  /* MORE PLAN ISLAMIC */
+%LET MORECV=(234,235,236,242);          /* MORE PLAN CONVENTIONAL */
+%LET SWIFTIS=(126,127,167);             /* ABBA SWIFT PLAN */
+%LET SWIFTCV=(359);                     /* SWIFT PLAN CONVENTIONAL */
