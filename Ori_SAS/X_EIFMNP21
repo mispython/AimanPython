@@ -1,0 +1,138 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIFMNP21                                          |
+ |  DATE    : 18.03.98                                          |
+ |  FUNCTION: REPTS TO FLAT FILE FOR DOWNLOADING BY ACCOUNTS,PFB|
+ |  REPORTS : 1. MOVEMENTS OF INTEREST IN SUSPENSE              |
+ |            2. MOVEMENTS OF SPECIFIC PROVISION                |
+ |               - BASED ON PURCHASE PRICE LESS DEPRECIATION    |
+ |               - BASED ON DEPRECIATED PP FOR UNSCHED GOODS    |
+ +--------------------------------------------------------------+;
+DATA REPTDATE;
+   SET NPL.REPTDATE;
+   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+RUN;
+*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+PROC PRINTTO PRINT=OUTFL NEW;
+*;
+%LET TBL1=(EXISTING);
+%LET TBL2=(CURRENT);
+%LET TBL3=(EXISTING AND CURRENT);
+*;
+*------------------------------------------------------------*
+|  MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH           |
+*------------------------------------------------------------*;
+%LET TTL=MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH ENDING;
+*;
+%MACRO TBLS1;
+   %DO I = 3 %TO 3;
+      PROC TABULATE DATA=NPL.IIS FORMAT=COMMA14.2 MISSING NOSEPS;
+         CLASS LOANTYP RISK BRANCH;
+         VAR CURBAL UHC NETBAL IISP SUSPEND RECOVER RECC IISPW IIS
+             OIP OISUSP OIRECV OIRECC OIW OI TOTIIS;
+         TABLE LOANTYP=' ', BRANCH=' ' ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*
+               (CURBAL='CURRENT BAL (A)'
+                UHC='UNEARNED HIRING CHARGES (B)'
+                NETBAL='NET BAL (A-B=C)')
+               SUM='MOVEMENTS OF INTEREST IN SUSPENSE'*
+               (IISP='OPENING BAL FOR FINANCIAL YEAR (D)'
+                SUSPEND='INTEREST SUSPENDED DURING THE PERIOD (E)'
+                RECOVER='WRITTEN BACK TO PROFIT & LOSS (F)'
+                RECC='REVERSAL OF CURRENT YEAR IIS (G)'
+                IISPW='WRITTEN OFF (H)'
+                IIS='IIS CLOSING BAL (D+E-F-G-H=I)')
+               SUM='MOVEMENTS OF OVERDUE INTEREST'*
+               (OIP='OPENING BAL FOR FINANCIAL YEAR (J)'
+                OISUSP='OI SUSPENDED DURING THE PERIOD (K)'
+                OIRECV='WRITTEN BACK TO PROFIT & LOSS (L)'
+                OIRECC='REVERSAL OF CURRENT YEAR OI (M)'
+                OIW='WRITTEN OFF (N)'
+                OI='OI CLOSING BAL (J+K-L-M-N=O)')
+               SUM=' '*TOTIIS='TOTAL CLOSING BAL AS AT RPT DATE (I+O)'
+               / BOX='BRANCH' RTS=9;
+         TITLE1 'PUBLIC BANK - (NPL FROM 6 MONTHS & ABOVE)';
+         TITLE2 &TTL &RDATE &&TBL&I;
+   %END;
+%MEND TBLS1;
+%TBLS1
+*;
+*------------------------------------------------------------*
+|  MOVEMENTS OF SPECIFIC PROVISION FOR THE MONTH             |
+*------------------------------------------------------------*;
+%LET TTL=MOVEMENTS OF SPECIFIC PROVISION FOR THE MONTH ENDING;
+*;
+%MACRO TBLS2;
+   %DO I = 3 %TO 3;
+      PROC TABULATE DATA=NPL.SP1 FORMAT=COMMA14.2 MISSING NOSEPS;
+         CLASS LOANTYP RISK BRANCH;
+         VAR CURBAL UHC NETBAL IIS OSPRIN MARKETVL NETEXP
+             SPP1 SPPL RECOVER SPPW SP;
+         TABLE LOANTYP=' ',
+               RISK=' '*(BRANCH=' ' ALL='SUB-TOTAL') ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*(CURBAL='CURRENT BAL (A)'
+                        UHC='UNEARNED HIRING CHARGES (B)'
+                        NETBAL='NET BAL (A-B=C)'
+                        IIS='IIS (E)'
+                        OSPRIN='PRINCIPAL OUTSTANDING (C-E=F)'
+                        MARKETVL='REALISABLE VALUE (G)'
+                        NETEXP='NET EXPOSURE (F-G=H)'
+                        SPP1='OPENING BAL FOR FINANCIAL YEAR (I)'
+                        SPPL='PROVISION MADE AGAINST PROFIT & LOSS (J)'
+                        RECOVER='WRITTEN BACK TO PROFIT & LOSS (K)'
+                        SPPW='WRITTEN OFF AGAINST PROVISION (L)'
+                        SP='CLOSING BAL AS AT RPT DATE (I+J-K-L)')
+               / BOX='RISK        BRANCH' RTS=26;
+         TITLE1 'PUBLIC BANK - (NPL FROM 6 MONTHS & ABOVE)';
+         TITLE2 &TTL &RDATE &&TBL&I;
+         TITLE3 '(BASED ON PURCHASE PRICE LESS DEPRECIATION)';
+   %END;
+%MEND TBLS2;
+%TBLS2
+*;
+%MACRO TBLS3;
+   %DO I = 3 %TO 3;
+      PROC TABULATE DATA=NPL.SP2 FORMAT=COMMA14.2 MISSING NOSEPS;
+         CLASS LOANTYP RISK BRANCH;
+         VAR CURBAL UHC NETBAL IIS OSPRIN MARKETVL NETEXP
+             SPP2 SPPL RECOVER SPPW SP;
+         TABLE LOANTYP=' ',
+               RISK=' '*(BRANCH=' ' ALL='SUB-TOTAL') ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*(CURBAL='CURRENT BAL (A)'
+                        UHC='UNEARNED HIRING CHARGES (B)'
+                        NETBAL='NET BAL (A-B=C)'
+                        IIS='IIS (E)'
+                        OSPRIN='PRINCIPAL OUTSTANDING (C-E=F)'
+                        MARKETVL='REALISABLE VALUE (G)'
+                        NETEXP='NET EXPOSURE (F-G=H)'
+                        SPP2='OPENING BAL FOR FINANCIAL YEAR (I)'
+                        SPPL='PROVISION MADE AGAINST PROFIT & LOSS (J)'
+                        RECOVER='WRITTEN BACK TO PROFIT & LOSS (K)'
+                        SPPW='WRITTEN OFF AGAINST PROVISION (L)'
+                        SP='CLOSING BAL AS AT RPT DATE (I+J-K-L)')
+               / BOX='RISK        BRANCH' RTS=26;
+         TABLE LOANTYP=' ', BRANCH=' ' ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*(CURBAL='CURRENT BAL (A)'
+                        UHC='UNEARNED HIRING CHARGES (B)'
+                        NETBAL='NET BAL (A-B=C)'
+                        IIS='IIS (E)'
+                        OSPRIN='PRINCIPAL OUTSTANDING (C-E=F)'
+                        MARKETVL='REALISABLE VALUE (G)'
+                        NETEXP='NET EXPOSURE (F-G=H)'
+                        SPP2='OPENING BAL FOR FINANCIAL YEAR (I)'
+                        SPPL='PROVISION MADE AGAINST PROFIT & LOSS (J)'
+                        RECOVER='WRITTEN BACK TO PROFIT & LOSS (K)'
+                        SPPW='WRITTEN OFF AGAINST PROVISION (L)'
+                        SP='CLOSING BAL AS AT RPT DATE (I+J-K-L)')
+               / BOX='BRANCH' RTS=9;
+         TITLE1 'PUBLIC BANK - (NPL FROM 6 MONTHS & ABOVE)';
+         TITLE2 &TTL &RDATE &&TBL&I;
+         TITLE3 '(BASED ON DEPRECIATED PP FOR UNSCHEDULED GOODS)';
+   %END;
+%MEND TBLS3;
+%TBLS3
