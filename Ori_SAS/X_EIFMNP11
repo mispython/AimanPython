@@ -1,0 +1,45 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIFMNP11                                          |
+ |  DATE    : 30.06.99                                          |
+ |  REPORT  : TOP 20 NPL ACCOUNTS WITH IIS OR SP CLOSING > 0    |
+ +--------------------------------------------------------------+;
+DATA REPTDATE;
+   SET NPL.REPTDATE;
+   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
+RUN;
+*;
+PROC SORT DATA=NPL.IIS OUT=IIS
+   (KEEP=BRANCH RISK ACCTNO NAME DAYS BORSTAT CURBAL UHC NETBAL OI IIS);
+   BY ACCTNO;
+*;
+PROC SORT DATA=NPL.SP OUT=SP (KEEP=ACCTNO SP);
+   BY ACCTNO;
+*;
+DATA TOP20;
+   MERGE IIS SP;
+   BY ACCTNO;
+   IF IIS > 0 OR SP > 0;
+   NETBAL = NETBAL + OI;
+*;
+*------------------------------------------------*
+*  PRODUCE REPORTS                               *
+*------------------------------------------------*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+*;
+PROC SORT DATA=TOP20;
+   BY DESCENDING NETBAL;
+*;
+PROC PRINT DATA=TOP20 (OBS=20) LABEL N;
+   FORMAT CURBAL UHC NETBAL COMMA14.2;
+   LABEL ACCTNO  = 'MNI ACCOUNT NO'
+         DAYS    = 'NO OF DAYS PAST DUE'
+         BORSTAT = 'BORROWER''S STATUS'
+         CURBAL  = 'CURRENT BALANCE'
+         UHC     = 'UNEARNED HIRING CHARGES'
+         NETBAL  = 'NET BAL + OI';
+   VAR BRANCH RISK ACCTNO NAME DAYS BORSTAT CURBAL UHC OI NETBAL;
+   SUM CURBAL UHC OI NETBAL;
+   TITLE1 'PUBLIC FINANCE BERHAD';
+   TITLE2 'TOP 20 NON PERFORMING ACCOUNTS BASED ON NETBAL + OI' &RDATE;
+/*
+//
