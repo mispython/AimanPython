@@ -1,0 +1,988 @@
+OPTIONS NOCENTER SORTDEV=3390 YEARCUTOFF=1950 ERROR=1
+        COMPRESS=YES;
+
+DATA _NULL_;
+  SET LNNOTE.REPTDATE;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+   ELSE MM1 = MM;
+   SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+   CALL SYMPUT('NOWK',PUT(WK,$1.));
+   CALL SYMPUT('REPTDATE',REPTDATE);
+   CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+   CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+   CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+   CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+   CALL SYMPUT('BTYPE',PUT('PBB',$3.));
+ RUN;
+
+%INC PGM(PBBLNFMT);
+*;
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE NEXT BLDATE                *
+*------------------------------------------------*;
+%MACRO NXTBLDT;
+   IF PAYFREQ = '6' THEN DO;
+      DD = DAY(BLDATE) + 14;
+      MM = MONTH(BLDATE);
+      YY = YEAR(BLDATE);
+      IF MM = 2 THEN
+         IF MOD(YY,4) = 0 THEN D2 = 29;
+         ELSE D2 = 28;
+      IF DD > LDAY(MM) THEN DO;
+         DD = DD - LDAY(MM);
+         MM + 1;
+         IF MM > 12 THEN DO;
+            MM = MM - 12; YY + 1;
+         END;
+      END;
+   END;
+   ELSE DO;
+      DD = DAY(ISSDTE);
+      MM = MONTH(BLDATE) + FREQ;
+      YY = YEAR(BLDATE);
+      IF MM > 12 THEN DO;
+         MM = MM - 12; YY + 1;
+      END;
+   END;
+   IF MM = 2 THEN
+      IF MOD(YY,4) = 0 THEN D2 = 29;
+      ELSE D2 = 28;
+   IF DD > LDAY(MM) THEN DD = LDAY(MM);
+   BLDATE = MDY(MM,DD,YY);
+%MEND NXTBLDT;
+%MACRO REMMTH;
+   RPYR  = YEAR(&REPTDATE);
+   RPMTH = MONTH(&REPTDATE);
+   RPDAY = DAY(&REPTDATE);
+   IF RPMTH = 2 THEN
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+      ELSE RD2 = 28;
+*;
+   MDYR  = YEAR(MATDT);
+   MDMTH = MONTH(MATDT);
+   MDDAY = DAY(MATDT);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+   IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+PROC FORMAT;
+   VALUE SLNPRDF
+      227,228,
+      230,231,
+      232,233                      = '  1.HOME 1YR FIX'
+      237,238                      = '  1.HOME 3YRS FIX'
+      239,240                      = '  1.HOME 5YRS FIX'
+      241,243                      = '  1.HOME 1YR FIX'
+      234                          = '  1.MORE 1YR FIX'
+      235                          = '  1.MORE 3YRS FIX'
+      236                          = '  1.MORE 5YRS FIX'
+      242                          = '  1.MORE 1YR FIX'
+      380,381                      = '  2.HIRE PURCHASE'
+      390                          = '  9.LEASING'
+      209,210,211,212,214,215,
+      204,205,200,201,219,220,
+      225,226,245,246,247,
+      213,216,217,218,244          = '  1.OTHER HOUSING'
+      248,249                      = '  1.HOME SAVE'
+      309,310,904,905              = '  5.BRIDGING'
+      417                          = '  5.BRIDGING LOAN'
+      300,301,900,901,530,362      = '  6.FIXED TIER'
+      1-100                        = ' 10.STAFF'
+      359,906,363,348,349,351      = '  3.SWIFT'
+      360,908                      = '  6.FIXED LOAN'
+      361,907                      = '  4.SMILAX'
+      531,500,516,520,574          = ' 12.FUNDED BNM'
+      124,145,150,151,152,156,175,
+      400,409,410,412,413,414,415  = ' 11.HOUSE-I'
+      110-118,139,140              = ' 11.HOUSE-I'
+      120,149,153,157,176,181,401,
+      187,403,406,416,461          = ' 11.TERM-I'
+      194-196                      = ' 11.CONSUMER-I'
+      185,186,193                  = ' 11.SYNDICATE-I'
+      146,184                      = ' 11.REVOLVING CREDIT-I'
+      180,183                      = ' 11.ABBA SYNDICATE(FIXED)'
+      127,126,154,158,177,179,402,
+      404,407                      = ' 11.SWIFT-I'
+      129,155,165,178,405,408      = ' 11.SMILAX-I'
+      137                          = ' 11.ABBA OTH TERM'
+      135,136,138,169              = ' 11.ABBA PERSONAL'
+      197,170                      = ' 11.ABBA OTH TERM'
+      122                          = ' 11.ABBA UNIT TRST'
+      141,142                      = ' 11.ABBA HOUSE BFR'
+      143                          = ' 11.ABBA TERM BFR'
+      182                          = ' 11.ABBA SYN.BULLET(FIXED)'
+      159                          = ' 11.ISLAMIC FINANCING CGC'
+      160,162,163,164              = ' 11.ABBA OD'
+      851-855                      = ' 11.FCY FINANCING-I'
+      856-860                      = ' 11.FCY FINANCING-I'
+      564,565,569                  = ' 12.FUNDED BNM'
+      561                          = ' 12.FUNDED BNM'
+      559,560,567                  = ' 12.FUNDED BNM'
+      555,556                      = ' 12.FUNDED BNM'
+      566,568,570,573,575,909      = ' 12.FUNDED BNM'
+      521,522,523,528              = ' 13.CGC'
+      517                          = ' 13.CGC'
+      527                          = ' 13.CGC'
+      524,525,512                  = ' 13.CGC'
+      526,532,533                  = ' 13.CGC'
+      910,350,925,302,902,903,951  = '  8.REVOLVING CRDT'
+      914,915,919,920,950          = '  7.SYNDICATED'
+      345                          = '  6.FIXED LOAN'
+      304,303,305,307              = '  6.FIXED LOAN'
+      355                          = '  6.FIXED LOAN'
+      356                          = '  6.FIXED LOAN'
+      504,505,509,510,515          = '  6.FIXED LOAN'
+      325                          = '  6.FIXED LOAN'
+      357                          = '  6.FIXED LOAN'
+      518,519,529                  = '  6.FIXED LOAN'
+      335                          = '  6.FIXED LOAN'
+      358                          = '  6.FIXED LOAN'
+      320                          = '  6.FIXED LOAN'
+      391                          = '  6.FIXED LOAN'
+      330,364,365,506,340          = '  6.FIXED LOAN'
+      131,132                      = ' 14.AITAB VARIABLE'
+      720,725                      = ' 15.HP VARIABLE'
+      315                          = '  7.CORPORATE FIXED'
+      800,801,805,807,809,811,813,
+      802,803,806,808,810,812,814  = ' 16.FCY LOANS'
+      804                          = ' 18.FCY SYNDICATE'
+      600-686                      = ' 27.OTHERS'
+      912                          = ' 27.OTHERS'
+      OTHER                        = ' 27.OTHERS';
+
+
+
+   VALUE LNPRDF
+      227,228                      = '  1.HOME PLAN 1'
+      230,231                      = '  1.HOME PLAN 2'
+      232,233                      = '  1.HOME PLAN 3'
+      237,238                      = '  1.HOME PLAN 6'
+      239,240                      = '  1.HOME PLAN 7'
+      241,243                      = '  1.HOME PLAN 8'
+      234                          = '  1.MORE PLAN 1'
+      235                          = '  1.MORE PLAN 2'
+      236                          = '  1.MORE PLAN 3'
+      242                          = '  1.MORE PLAN 4'
+      380,381                      = '  2.HIRE PURCHASE'
+      390                          = '  3.LEASING'
+      209,210,211,212,214,215      = '  1.HOME OWN BEF 5'
+      204,205,200,201,219,220,
+      225,226,245,246,247,
+      213,216,217,218,244          = '  1.OTHER HOUSING'
+      248                          = '  1.HOME SAVE'
+      249                          = '  1.HOME SAVE-II'
+      309,310,904,905              = '  6.BRIDGING'
+      417                          = '  6.BRIDGING LOAN'
+      300,301,900,901,530,362,364,
+      365,506,340                  = '  7.FIXED'
+      1-100                        = '  4.STAFF'
+      359,906,363,348,351          = '  5.SWIFT'
+      349                          = '  5.SHOP SAVE-II'
+      360,908                      = ' 17.BLOCK DISC'
+      361,907                      = '  9.SMILAX'
+      531                          = ' 11.SRGF'
+      500,516,520,574              = ' 15.FUNDED BNM'
+      160,162,163,164              = ' 12.ABBA OD'
+      124,145,150,151,152,156,175,
+      400,409,410,412,413,414,415  = ' 12.HOUSE-I'
+      146,184                      = ' 12.REVOLVING CREDIT-I'
+      110-118,139,140              = ' 12.HOUSE-I'
+      120,149,153,157,176,181,401,
+      187,403,406,416,461          = ' 12.TERM-I'
+      194-196                      = ' 12.CONSUMER-I'
+      185,186,193                  = ' 12.SYNDICATE-I'
+      180,183                      = ' 12.ABBA SYNDICATE(FIXED)'
+      127,126,154,158,177,179,402,
+      404,407                      = ' 12.SWIFT-I'
+      129,155,165,178,405,408      = ' 12.SMILAX-I'
+      137                          = ' 12.ABBA OTHR PLAN'
+      135,136,138,169              = ' 12.ABBA PERSONAL'
+      197,170                      = ' 12.ABBA OTHER'
+      122                          = ' 12.ABBA UNIT TRST'
+      141,142                      = ' 12.ABBA HOUSE BFR'
+      143                          = ' 12.ABBA TERM BFR'
+      182                          = ' 12.ABBA SYN.BULLET(FIXED)'
+      159                          = ' 12.ISLAMIC FINANCING CGC'
+      851-855                      = ' 12.FCY MURABAHAH TERM-I'
+      856-860                      = ' 12.FCY MURABAHAH RC-I'
+      650,651                      = ' 12.W/OFF BBA HOUSE FIN-I'
+      652,653                      = ' 12.W/OFF BAE FIN-I'
+      654,655                      = ' 12.W/OFF BBA TERM-I'
+      656,657                      = ' 12.W/OFF BBA SWIFT-I'
+      658,659                      = ' 12.W/OFF BBA SMILAX-I'
+      660                          = ' 12.W/OFF RETAIL RC FAC-I'
+      661,662                      = ' 12.W/OFF BNM FUNDED FIN-I'
+      663                          = ' 12.W/OFF CGC GTEE FAC-I'
+      664                          = ' 12.W/OFF HOME EQUITY FIN-I'
+      665                          = ' 12.W/OFF TERM EQUITY FIN-I'
+      666                          = ' 12.W/OFF SWIFT EQUITY FIN-I'
+      667                          = ' 12.W/OFF SMILAX EQUITY FIN-I'
+      680                          = ' 12.W/OFF CORP BAE FIN-I'
+      681,682                      = ' 12.W/OFF CORP BBA TERM FIN-I'
+      683                          = ' 12.W/OFF CORP IJARAH FIN-I'
+      684                          = ' 12.W/OFF CORP TAWARRUQ FIN-I'
+      685                          = ' 12.W/OFF CORP RC FAC-I'
+      686                          = ' 12.W/OFF CORP SYND FIN-I'
+      564,565                      = ' 13.FUND FOR FOOD'
+      561                          = ' 13.L&MCOST HOUSE'
+      559,560,567                  = ' 13.NEF LOAN'
+      555,556                      = ' 14.SFT LOAN'
+      566,568,570,573,909          = ' 15.SMI'
+      569                          = ' 15.SFSMI2'
+      575                          = ' 15.FL/SRF FOR FLOOD'
+      521,522,523,528              = ' 16.CGC TUK'
+      517                          = ' 16.CGC ASL'
+      527                          = ' 16.CGC NEF'
+      524,525,512                  = ' 16.CGC FSMI'
+      526                          = ' 16.CGC FFF'
+      910,350,925,302,902,903,951  = ' 10.REVOLVING CRDT'
+      914,915,919,920,950          = '  8.SYNDICATED'
+      345                          = ' 18.(MISC)CONTRACT'
+      304,305                      = ' 18.(MISC)FLASH'
+      355                          = ' 18.(MISC)PB EXEC'
+      356                          = ' 18.(MISC)HOME FURNH'
+      504,505,509,510,515          = ' 18.(MISC)PRIN GUARAN'
+      325                          = ' 18.(MISC)PROF.ADVAN'
+      357                          = ' 18.(MISC)SHARE'
+      518,519,529                  = ' 18.(MISC)SLS-FIXED'
+      335                          = ' 18.(MISC)UNIT TRUST'
+      358                          = ' 18.(MISC)UNIFLEX'
+      320                          = ' 18.(MISC)UNSECURED'
+      391                          = ' 18.(MISC)CON.DURABLE'
+      330                          = ' 18.(MISC)QUICK CASH'
+      303                          = ' 18.PERSONAL LOAN SECURED'
+      307                          = ' 18.PERSONAL LOAN / PLUS'
+      131,132                      = ' 19.AITAB VARIABLE'
+      532,533                      = ' 13.CGC MISC'
+      720,725                      = ' 20.HP VARIABLE'
+      315                          = '  6.CORPORATE FIXED'
+      800,801,805,807,809,811,813  = ' 22.FCY TERM LOANS'
+      802,803,806,808,810,812,814  = ' 23.FCY REVOLV CRDT'
+      804                          = ' 24.FCY SYNDICATE'
+      600                          = ' 25.W/OFF HOUSING'
+      601                          = ' 25.W/OFF RETAIL TERM'
+      602                          = ' 25.W/OFF RETAIL SWIFT'
+      603                          = ' 25.W/OFF RETAIL SMILAX'
+      604                          = ' 25.W/OFF RETAIL RC'
+      605                          = ' 25.W/OFF RETAIL RC SWIFT'
+      606                          = ' 25.W/OFF RETAIL CGC GTEE'
+      607                          = ' 25.W/OFF BNM FUNDED'
+      608                          = ' 25.W/OFF BRIDGING'
+      609                          = ' 25.W/OFF PERSONAL'
+      631                          = ' 25.W/OFF CORP TERM'
+      632                          = ' 25.W/OFF CORP SWIFT'
+      633                          = ' 25.W/OFF CORP SMILAX'
+      634                          = ' 25.W/OFF CORP RC'
+      635                          = ' 25.W/OFF CORP SYNDICATE'
+      636                          = ' 25.W/OFF CORP BNM FUNDED'
+      637                          = ' 25.W/OFF BRIDGING'
+      912                          = ' 26.MEDIUM TERM'
+      OTHER                        = ' 27.OTHERS';
+
+   VALUE ODPRDF
+      60-64,160-166                = ' 12.ABBA OD'
+      OTHER                        = '  1.CONV OD';
+
+   VALUE SODPRDF
+      60-64,160-166                = ' 11.ABBA OD'
+      OTHER                        = '  1.CONV OD';
+
+   VALUE SUBTYPF
+      5   = 'PRINCIPAL'
+      5.5 = 'WAREMM(MTH)'
+      11  = 'INSTALMENT '
+      12  = 'REPRICING  '
+      13  = 'NO-REPRICE'
+      6   = 'UNEARN INT'
+      7   = 'ACCRUED INT'
+      8   = 'FEE AMOUNT'
+      9   = 'IL'
+      9.5 = 'IL PRINCIPAL';
+*;
+   VALUE REMFMT
+      LOW-0.255 = ' UP TO 1WK'
+      0.255-1   = '>  1 WK-1MTH'
+      1-2     = '>  1-2 MTHS'
+      2-3     = '>  2-3 MTHS'
+      3-4     = '>  3-4 MTHS'
+      4-5     = '>  4-5 MTHS'
+      5-6     = '>  5-6 MTHS'
+      6-7     = '>  6-7 MTHS'
+      7-8     = '>  7-8 MTHS'
+      8-9     = '>  8-9 MTHS'
+      9-10    = '>  9-10 MTHS'
+      10-11   = '> 10-11 MTHS'
+      11-12   = '> 11-12 MTHS'
+      12-13   = '> 12-13 MTHS'
+      13-14   = '> 13-14 MTHS'
+      14-15   = '> 14-15 MTHS'
+      15-16   = '> 15-16 MTHS'
+      16-17   = '> 16-17 MTHS'
+      17-18   = '> 17-18 MTHS'
+      18-19   = '> 18-19 MTHS'
+      19-20   = '> 19-20 MTHS'
+      20-21   = '> 20-21 MTHS'
+      21-22   = '> 21-22 MTHS'
+      22-23   = '> 22-23 MTHS'
+      23-24   = '> 23-24 MTHS'
+      24-36   = '>2-3 YRS    '
+      36-48   = '>3-4 YRS    '
+      48-60   = '>4-5 YRS    '
+      60-HIGH = '>5 YRS      '
+      OTHER   = '  ';
+*;
+
+     VALUE    $RATEFMT   '30591','30592','30593' = 'FIXED RATE'
+                         '30595','30596','30597' = 'FLOATING RATE';
+
+DATA PROVISIO;
+   INFILE PROV;
+   INPUT @0013 ACCTNO     10.
+         @0010 APCODE      3.
+         @0043 NOTENO     10.
+         @0081 CLASSIFI   $1.
+         @0082 ARREARS    $3.
+         @0085 CURBAL     17.2
+         @0102 INTERDUE   17.2
+         @0119 FEEAMT     16.2;
+   ILPRIN= CURBAL;
+   ILBAL = SUM(CURBAL,INTERDUE,FEEAMT);
+   ILIND = 1;
+   KEEP ACCTNO NOTENO ILPRIN ILBAL ILIND APCODE;
+RUN;
+PROC SORT DATA=PROVISIO NODUP; BY ACCTNO NOTENO;
+WHERE ILBAL > 0;
+RUN;
+DATA OD;
+   SET OD.OVERDFT;
+ *  WHERE LMTENDDT NE . AND LMTENDDT > 0 AND PRODUCT = 30;
+     WHERE LMTENDDT NE . AND LMTENDDT > 0;
+   LMTEND = INPUT(SUBSTR(PUT(LMTENDDT,Z11.),1,8),MMDDYY8.);
+   IF LMTEND = . THEN DELETE;
+PROC PRINT;
+WHERE ACCTNO = 2036194027;
+
+PROC SORT DATA=OD OUT=OD (KEEP=ACCTNO LMTEND LMTENDDT RISKCODE)
+   NODUPKEYS;
+   BY ACCTNO;
+*;
+
+PROC SORT DATA=BNM.LOAN&REPTMON&NOWK OUT=LOAN
+   (KEEP=ACCTNO NOTENO CURBAL PAYAMT BALANCE FEEAMT INTAMT INTEARN
+         PRODCD  ACCTYPE AMTIND PRODUCT PAYFREQ COSTFUND INTEARN2
+         INTEARN3 INTRATE ISSDTE EXPRDATE CENSUS NTINT NTINDEX BLDATE
+         RISKRTE);
+   BY ACCTNO NOTENO;
+ *  WHERE PRODUCT IN (30);
+  WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520);
+PROC PRINT;
+WHERE ACCTNO = 2036194027;
+PROC SORT DATA=LNNOTE.LNNOTE OUT=LNNOTE (KEEP=ACCTNO NOTENO NTINT
+                                     PAYEFFDT NTINDEX LOANTYPE CENSUS);
+   BY ACCTNO NOTENO;
+  *  WHERE LOANTYPE IN (30);
+   WHERE LOANTYPE NOT IN (700,705,380,381,128,130,500,520);
+       *   LOANTYPE IN (350,910,925,302,902,903,951);
+*;
+PROC PRINT;
+WHERE ACCTNO = 2036194027;
+PROC SORT DATA=LNNOTE.PEND OUT=PEND(KEEP=ACCTNO NOTENO RATEOVER RELDTE);
+   BY ACCTNO NOTENO;
+*;
+DATA REALPEND SECOND THIRD REPRPEND;
+   SET PEND;
+   BY ACCTNO NOTENO;
+   IF RATEOVER > 0 THEN DO;
+      IF FIRST.ACCTNO OR FIRST.NOTENO THEN DO;
+      REALISDT = INPUT(SUBSTR(RELDTE,6,4)||SUBSTR(RELDTE,2,4),MMDDYY8.);
+      OUTPUT REALPEND;
+      END;
+      ELSE IF LAST.ACCTNO OR LAST.NOTENO THEN DO;
+      REALISD3 = INPUT(SUBSTR(RELDTE,6,4)||SUBSTR(RELDTE,2,4),MMDDYY8.);
+      RATEOVE3 = RATEOVER;
+      OUTPUT THIRD;
+      END;
+      ELSE DO;
+      REALISD2 = INPUT(SUBSTR(RELDTE,6,4)||SUBSTR(RELDTE,2,4),MMDDYY8.);
+      RATEOVE2 = RATEOVER;
+         OUTPUT SECOND;
+      END;
+   END;
+   ELSE DO;
+      REPRICDT = INPUT(SUBSTR(RELDTE,6,4)||
+                       SUBSTR(RELDTE,2,4),MMDDYY8.);
+      OUTPUT REPRPEND;
+   END;
+*;
+PROC SORT DATA=REPRPEND NODUPKEYS;
+   BY ACCTNO NOTENO;
+*;
+DATA REALPEN2;
+   UPDATE REALPEND SECOND(KEEP=ACCTNO NOTENO RATEOVE2 REALISD2);
+   BY ACCTNO NOTENO;
+RUN;
+DATA REALPEN2;
+   UPDATE REALPEN2 THIRD(KEEP=ACCTNO NOTENO RATEOVE3 REALISD3);
+   BY ACCTNO NOTENO;
+RUN;
+DATA PENDFIN;
+   UPDATE REALPEN2 REPRPEND(KEEP=ACCTNO NOTENO REPRICDT);
+   BY ACCTNO NOTENO;
+RUN;
+DATA LNNOTE;
+   MERGE LNNOTE (IN=A) PENDFIN (IN=B);
+   BY ACCTNO NOTENO;
+   IF B THEN PENDIND = 'Y';
+   IF PAYEFFDT NOT IN (.,0) THEN
+  PAYCY=SUBSTR(PUT(PAYEFFDT,Z11.),1,4);
+  PAYMM=SUBSTR(PUT(PAYEFFDT,Z11.),8,2);
+  PAYDD=SUBSTR(PUT(PAYEFFDT,Z11.),10,2);
+  IF PAYMM EQ 2 AND PAYDD > 29 THEN DO;
+     PAYDD=28;
+     IF MOD(PAYCY,4)=0 THEN PAYDD=29;
+  END;
+
+  IF PAYMM NE 2 AND PAYDD > 31 THEN DO;
+     IF PAYMM IN (01,03,05,07,08,10,12)  THEN PAYDD=31; ELSE
+     IF PAYMM IN (04,06,09,11)           THEN PAYDD=30; ELSE
+  END;
+  PAYEFDT=MDY(PAYMM,PAYDD,PAYCY);
+*;
+DATA LOAN;
+   MERGE LOAN (IN=A) OD (IN=B);
+   BY ACCTNO;
+   IF A ;
+   IF ACCTYPE = 'OD' THEN NOTENO = 0;
+*;
+DATA LOAN&REPTMON&NOWK;
+   MERGE LOAN (IN=A) LNNOTE(IN=C);
+   BY ACCTNO NOTENO;
+   IF NTINDEX IN(1,18,30,997) OR (ACCTYPE = 'OD' AND AMTIND ^= 'I') THEN
+         INTTYPE = 'BLR';
+   ELSE IF NTINDEX ^= 1 OR (ACCTYPE = 'OD' AND AMTIND = 'I') THEN
+         INTTYPE = 'FIX';
+   ELSE INTTYPE = 'OTH';
+   IF PRODUCT IN (350,910,925,302,902,903,951) THEN INTTYPE = 'FIX';
+   IF A AND LOANTYPE NOT IN (700,705,128,130,380,381,500,520);
+   IF PAYFREQ IN ('5','9',' ') OR PRODUCT IN (350,910,925,302,902,
+   903,951) THEN DO;
+        REPRICDT = PAYEFDT;
+   END;
+*;
+PROC SORT DATA=LOAN&REPTMON&NOWK; BY ACCTNO NOTENO;
+   WHERE (SUBSTR(PRODCD,1,2) IN ('34','54') AND LOANTYPE NOT IN
+      (700,705,128,130,380,381,500,520)) OR LOANTYPE IN
+      (131,132,720,725);
+RUN;
+  /*
+PROC PRINT DATA=PROVISIO;
+WHERE APCODE = 30;
+SUM ILBAL;
+  */
+
+DATA START(COMPRESS=YES);
+   LENGTH PLAN $1. CENSUSX $6.;
+   MERGE LOAN&REPTMON&NOWK (IN=A) PROVISIO(IN=B);
+   BY ACCTNO NOTENO;
+   IF A;
+   /* SMR07-272 */
+   /* SMR07-272 */
+   %DCLVAR;
+   IF ACCTYPE='LN' THEN DO;
+      IF PUT(PRODUCT,LNPROD.) = 'N' THEN DELETE;
+      PRODTYP=PUT(PRODUCT,LNPRDF.);
+      PRODBIG=PUT(PRODUCT,SLNPRDF.);
+      IF LOANTYPE IN (900,901) THEN DO;
+         IF NTINDEX = '1' THEN DO;
+            PRODTYP='  6.FIXED CORPORATE BLR';
+            PRODBIG='  7.FIXED CORPORATE BLR';
+         END;
+         ELSE IF COSTFUND = 0 & (PAYFREQ = '5' OR PAYAMT = 0) THEN DO;
+            PRODTYP='  6.FIXED CORPORATE BULLET(FIXED RATE)';
+            PRODBIG='  7.FIXED CORPORATE BULLET(FIXED RATE)';
+            REPRICDT = EXPRDATE;
+         END;
+         ELSE IF COSTFUND NE 0 & (PAYFREQ = '5' OR PAYAMT = 0) THEN DO;
+            PRODTYP='  6.FIXED COF BULLET(FIXED RATE)';
+            PRODBIG='  7.FIXED COF BULLET(FIXED RATE)';
+            REPRICDT = EXPRDATE;
+         END;
+         ELSE DO;
+            PRODTYP='  6.CORPORATE FIXED';
+            PRODBIG='  7.CORPORATE FIXED';
+         END;
+      END;
+
+      IF LOANTYPE IN (244,245) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','3') THEN DO
+            PRODTYP = '  1.HOME PLAN 1';
+            PRODBIG = '  1.HOME 1YR FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) = '1' THEN DO
+            PRODTYP = '  1.HOME PLAN 6';
+            PRODBIG = '  1.HOME 3YRS FIX';END;
+         IF SUBSTR(CENSUSX,6,1) = '2' THEN DO
+            PRODTYP = '  1.HOME PLAN 7';
+            PRODBIG = '  1.HOME 5YRS FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) = '4' THEN DO
+            PRODTYP = '  1.HOME PLAN 8';
+            PRODBIG = '  1.HOME 1YR FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) IN ('5','6') THEN DO
+            PRODTYP = '  1.OTHER HOUSING';
+            PRODBIG = '  1.OTHER HOUSING'; END;
+      END;
+      IF LOANTYPE IN (246,247) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','1','4') THEN DO
+            PRODTYP = '  1.HOME PLAN 1';
+            PRODBIG = '  1.HOME 1YR FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) = '2' THEN DO
+            PRODTYP = '  1.HOME PLAN 6';
+            PRODBIG = '  1.HOME 3YRS FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) = '3' THEN DO
+            PRODTYP = '  1.HOME PLAN 7';
+            PRODBIG = '  1.HOME 5YRS FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) = '5' THEN DO
+            PRODTYP = '  1.HOME PLAN 8';
+            PRODBIG = '  1.HOME 1YR FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) IN ('6','7') THEN DO
+            PRODTYP = '  1.OTHER HOUSING';
+            PRODBIG = '  1.OTHER HOUSING'; END;
+      END;
+      IF LOANTYPE IN (234,235) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','3') THEN DO
+            PRODTYP = '  1.MORE PLAN 1';
+            PRODBIG = '  1.MORE 1YR FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) = '1' THEN DO
+            PRODTYP = '  1.MORE PLAN 2';
+            PRODBIG = '  1.MORE 3YRS FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) = '2' THEN DO
+            PRODTYP = '  1.MORE PLAN 3';
+            PRODBIG = '  1.MORE 5YRS FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) = '4' THEN DO
+            PRODTYP = '  1.MORE PLAN 4';
+            PRODBIG = '  1.MORE 1YR FIX'; END;
+         IF SUBSTR(CENSUSX,6,1) IN ('5','6') THEN DO
+            PRODTYP = '  1.OTHER HOUSING';
+            PRODBIG = '  1.OTHER HOUSING'; END;
+      END;
+      IF LOANTYPE IN (248) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','1','2','3','4') THEN DO
+            PRODTYP = '  1.HOME SAVE';
+            PRODBIG = '  1.HOME SAVE'; END;
+         END;
+      IF LOANTYPE IN (301) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','1','2','4') THEN DO
+            PRODTYP = '  7.FIXED';
+            PRODBIG = '  6.FIXED TIER'; END;
+      END;
+      IF LOANTYPE IN (320) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','1','2') THEN DO
+            PRODTYP = '  7.FIXED';
+            PRODBIG = '  6.FIXED TIER'; END;
+      END;
+      IF LOANTYPE IN (359,363) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','1','2','3','4','5') THEN DO
+            PRODTYP = '  5.SWIFT';
+            PRODBIG = '  3.SWIFT'; END;
+      END;
+      IF LOANTYPE IN (574) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','1') THEN DO
+            PRODTYP = ' 15.FUNDED BNM';
+            PRODBIG = ' 12.FUNDED BNM'; END;
+      END;
+      IF LOANTYPE IN (527,512) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','1') THEN DO
+            PRODTYP = ' 16.CGC NEF';
+            PRODBIG = ' 13.CGC'; END;
+      END;
+      IF LOANTYPE IN (524) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','1') THEN DO
+            PRODTYP = ' 16.CGC FSMI';
+            PRODBIG = ' 13.CGC'; END;
+      END;
+      IF LOANTYPE IN (510,531,532,533) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN ('0','1','2','3') THEN DO
+            PRODTYP = ' 13.CGC MISC';
+            PRODBIG = ' 13.CGC'; END;
+      END;
+      IF LOANTYPE IN (350) THEN DO;
+         CENSUSX = LEFT(CENSUS);
+         IF SUBSTR(CENSUSX,6,1) IN('0','1','2') THEN DO
+            PRODTYP = ' 10.REVOLVING CRDT';
+            PRODBIG = '  8.REVOLVING CRDT'; END;
+      END;
+      IF PRODBIG = '  1.OTHER HOUSING' AND NTINDEX = 2 THEN
+         PRODBIG = '  1.OTHER PRESCRB';
+      IF NTINT NE 'A' THEN DO;
+         ACRINT=SUM(BALANCE,(-1)*CURBAL,(-1)*FEEAMT);
+         UNEARN = 0;
+      END;
+      ELSE DO;  * CURBAL = SUM(CURBAL,(-1)*INTAMT);
+         ACRINT = INTEARN;
+         UNEARN = SUM(INTAMT,(-1)*INTEARN2,INTEARN3);
+      END;
+      MATDT = EXPRDATE;
+      IF REPRICDT > 0 THEN EXPRDATE = REPRICDT;
+   END;
+   ELSE DO;
+      IF PUT(PRODUCT,ODPROD.) = 'N' THEN DELETE;
+      PRODTYP = PUT(PRODUCT,ODPRDF.);
+      PRODBIG = PUT(PRODUCT,SODPRDF.);
+      EXPRDATE = LMTEND;
+      RISKRTE = RISKCODE;
+      CURBAL = BALANCE;
+      ACRINT = 0;
+      FEEAMT = 0;
+      MATDT = EXPRDATE;
+   END;
+   IF ILIND IN (1) THEN DO;
+      REMMTH1 = '     TOTAL';
+      SUBTYP = 9;
+      AMOUNT= ILBAL;
+      YIELD = 0;
+      IF AMOUNT = . THEN AMOUNT = 0;
+      OUTPUT;
+      REMMTH1 = '     TOTAL';
+      SUBTYP = 9.5;
+      AMOUNT= ILPRIN;
+      YIELD = 0;
+      IF AMOUNT = . THEN AMOUNT = 0;
+      OUTPUT;
+   END;
+   REMMTH1 = '     TOTAL';
+   SUBTYP = 7; AMOUNT = ACRINT; YIELD = 0; OUTPUT;
+   SUBTYP = 8; AMOUNT = FEEAMT; YIELD = 0; OUTPUT;
+   SUBTYP = 6; AMOUNT = UNEARN; YIELD = 0; OUTPUT;
+   %REMMTH;
+    /***  NEW REQUIREMENT TO SLOT IN BUCKET ****/
+   IF REMMTH < 0 THEN REMMTH = 0.1;
+   REMMTH1 = PUT(REMMTH,REMFMT.);
+   IF ILIND = 1 THEN DO;
+      SUBTYP = 9;
+      AMOUNT=ILBAL;
+      YIELD = 0;
+      IF AMOUNT = . THEN AMOUNT = 0;
+      OUTPUT;
+      SUBTYP = 9.5;
+      AMOUNT=ILPRIN;
+      AMOUNT = 0;
+      YIELD = 0;
+      IF AMOUNT = . THEN AMOUNT = 0;
+      OUTPUT;
+   END;
+   SUBTYP = 5.5;
+         IF (PRODUCT IN (600:609,631:637,650:699) AND ACCTYPE='LN') THEN
+         AMOUNT = 0;
+         ELSE AMOUNT = SUM(CURBAL,(-1)*ILPRIN);
+
+         YIELD = AMOUNT*REMMTH;
+
+      IF INTTYPE = 'BLR' THEN REMMTH1 = ' UP TO 1WK';
+      OUTPUT;
+   SUBTYP = 5;
+         AMOUNT = CURBAL;
+         YIELD = AMOUNT*INTRATE;
+      OUTPUT;
+   /*** END ****/
+   REMMTH1 = '     TOTAL';
+   SUBTYP = 5.5;
+         IF (PRODUCT IN (600:609,631:637,650:699) AND ACCTYPE='LN') THEN
+         AMOUNT = 0;
+         ELSE AMOUNT = SUM(CURBAL,(-1)*ILPRIN);
+         YIELD = AMOUNT*REMMTH;
+
+      OUTPUT;
+   SUBTYP = 5;
+         AMOUNT = CURBAL;
+         YIELD = AMOUNT*INTRATE;
+   OUTPUT;
+   /*  CONVERT PAYFREQ CODE TO MONTHS  */
+ IF ILIND NE 1 THEN DO;
+   SELECT (PAYFREQ);
+      WHEN ('1') FREQ = 1;
+      WHEN ('2') FREQ = 3;
+      WHEN ('3') FREQ = 6;
+      WHEN ('4') FREQ = 12;
+      OTHERWISE;
+   END;
+   IF PAYFREQ IN ('5','9',' ') OR PRODUCT IN (350,910,925,302,902,
+   903,951) THEN DO;
+        BLDATE = EXPRDATE;
+   END;
+   ELSE IF BLDATE = . THEN DO;
+      BLDATE = ISSDTE;
+      DO WHILE (BLDATE <= &REPTDATE);
+         %NXTBLDT
+      END;
+   END;
+   IF BLDATE > EXPRDATE | CURBAL <= PAYAMT THEN BLDATE = EXPRDATE;
+   TOTBAL = SUM(CURBAL,-1*(ILPRIN)) ;
+   IF ACCTYPE EQ 'LN' THEN SUBTYP = 11;
+   DO WHILE (BLDATE <= EXPRDATE);
+      MATDT = BLDATE;
+      %REMMTH
+      REMMTH1 = PUT(REMMTH,REMFMT.);
+      IF (BLDATE = EXPRDATE) THEN
+         LEAVE;
+      AMOUNT = PAYAMT;
+      YIELD = AMOUNT * INTRATE;
+      OUTPUT;
+      CURBAL = CURBAL - PAYAMT;
+      IF CURBAL <= PAYAMT THEN AMOUNT = CURBAL;
+      %NXTBLDT
+      IF BLDATE > EXPRDATE | CURBAL <= PAYAMT THEN BLDATE = EXPRDATE;
+   END;
+   IF REPRICDT NE . OR PRODUCT IN (350,910,925,302,902,903,951)
+   OR INTTYPE='BLR' THEN DO;
+      IF (PRODUCT IN (600:609,631:637,650:699) AND ACCTYPE='LN') THEN
+          AMOUNT = 0;
+      ELSE AMOUNT = TOTBAL;
+      YIELD = AMOUNT*INTRATE;
+      SUBTYP = 12;
+   END;
+   ELSE IF REPRICDT EQ . AND NTINDEX NE 1 THEN DO;
+      IF (PRODUCT IN (600:609,631:637,650:699) AND ACCTYPE='LN') THEN
+          AMOUNT = 0;
+      ELSE AMOUNT = TOTBAL;
+      YIELD = AMOUNT*INTRATE;
+      SUBTYP = 13;
+   END;
+   IF INTTYPE = 'BLR' THEN REMMTH1 = ' UP TO 1WK';
+   OUTPUT;
+ END;
+RUN;
+PROC SUMMARY DATA=START MISSING NWAY;
+   WHERE INTTYPE = 'FIX';
+   CLASS PRODTYP PRODUCT NTINDEX SUBTYP REMMTH1;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=FIX (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA FIX;
+   SET FIX;
+   * IF SUBTYP NOT IN (6,7,8,9,12,13);
+   WAYLD = YIELD / AMOUNT;
+*;
+PROC SUMMARY DATA=START MISSING NWAY;
+   WHERE INTTYPE = 'BLR';
+   CLASS PRODTYP PRODUCT NTINDEX SUBTYP REMMTH1;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=BLR (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA BLR;
+   SET BLR;
+  *  IF SUBTYP NOT IN (6,7,8,9,12,13);
+   WAYLD = YIELD / AMOUNT;
+*;
+  /* TOTAL FOR INSTALMENT & REPRICING */
+
+PROC SUMMARY DATA=FIX MISSING NWAY;
+   WHERE SUBTYP IN (11,12,13);
+   CLASS PRODTYP PRODUCT NTINDEX SUBTYP;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=FIX2 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA FIX2;
+   SET FIX2;
+   WAYLD = YIELD / AMOUNT;
+   REMMTH1 = '     TOTAL';
+*;
+DATA FIX2;
+   SET FIX FIX2;
+   IF REMMTH1 NE '          ';
+   GRANDTOT = 'GRAND TOTAL';
+   IF REMMTH1 NE '     TOTAL' AND SUBTYP = 13 THEN DO;
+      AMOUNT = 0;
+      WAYLD = 0;
+   END;
+*;
+PROC SUMMARY DATA=BLR MISSING NWAY;
+   WHERE SUBTYP IN (11,12,13);
+   CLASS PRODTYP PRODUCT NTINDEX SUBTYP;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=BLR2 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA BLR2;
+   SET BLR2;
+   WAYLD = YIELD / AMOUNT;
+   REMMTH1 = '     TOTAL';
+   IF REMMTH1 NE '          ';
+*;
+DATA BLR2;
+   SET BLR BLR2;
+   IF REMMTH1 NE '          ';
+   GRANDTOT = 'GRAND TOTAL';
+   IF REMMTH1 NE '     TOTAL' AND SUBTYP = 13 THEN DO;
+      AMOUNT = 0;
+      WAYLD = 0;
+   END;
+*;
+  /* GRAND TOTAL  */
+PROC SORT DATA=FIX2;
+   BY GRANDTOT SUBTYP REMMTH1 NTINDEX;
+*;
+PROC SORT DATA=BLR2;
+   BY GRANDTOT SUBTYP REMMTH1 NTINDEX;
+*;
+PROC SUMMARY DATA=FIX2 MISSING NWAY;
+   CLASS GRANDTOT SUBTYP REMMTH1 NTINDEX;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=FIX3 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA RM4XSMMR.FIX3;
+   SET FIX2 FIX3;
+   WAYLD = YIELD / AMOUNT;
+   IF PRODTYP = '      ' THEN DO;
+      PRODTYP = 'GRAND TOTAL';
+   END;
+*;
+PROC SUMMARY DATA=BLR2 MISSING NWAY;
+   CLASS GRANDTOT SUBTYP REMMTH1 NTINDEX;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=BLR3 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA RM4XSMMR.BLR3;
+   SET BLR2 BLR3;
+      WAYLD = YIELD / AMOUNT;
+   IF PRODTYP = '      ' THEN DO;
+      PRODTYP = 'GRAND TOTAL';
+   END;
+*;
+*------------------------------------------------*
+*  PRODUCE REPORTS                               *
+*------------------------------------------------*;
+  /* MORE SUMMARY */
+
+PROC SUMMARY DATA=START MISSING NWAY;
+   WHERE INTTYPE = 'FIX';
+   CLASS PRODBIG SUBTYP REMMTH1 NTINDEX;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=FIX (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA FIX;
+   SET FIX;
+   WAYLD = YIELD / AMOUNT;
+*;
+PROC SUMMARY DATA=START MISSING NWAY;
+   WHERE INTTYPE = 'BLR';
+   CLASS PRODBIG SUBTYP REMMTH1 NTINDEX;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=BLR (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA BLR;
+   SET BLR;
+   WAYLD = YIELD / AMOUNT;
+*;
+  /* TOTAL FOR INSTALMENT & REPRICING */
+
+PROC SUMMARY DATA=FIX MISSING NWAY;
+   WHERE SUBTYP IN (11,12,13);
+   CLASS PRODBIG SUBTYP NTINDEX;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=FIX2 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA FIX2;
+   SET FIX2;
+   WAYLD = YIELD / AMOUNT;
+   REMMTH1 = '     TOTAL';
+*;
+DATA FIX2;
+   SET FIX FIX2;
+   IF REMMTH1 NE '          ';
+   GRANDTOT = 'GRAND TOTAL';
+   IF REMMTH1 NE '     TOTAL' AND SUBTYP = 13 THEN DO;
+      AMOUNT = 0;
+      WAYLD = 0;
+   END;
+*;
+PROC SUMMARY DATA=BLR MISSING NWAY;
+   WHERE SUBTYP IN (11,12,13);
+   CLASS PRODBIG SUBTYP NTINDEX;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=BLR2 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA BLR2;
+   SET BLR2;
+   WAYLD = YIELD / AMOUNT;
+   REMMTH1 = '     TOTAL';
+   IF REMMTH1 NE '          ';
+*;
+DATA BLR2;
+   SET BLR BLR2;
+   IF REMMTH1 NE '          ';
+   GRANDTOT = 'GRAND TOTAL';
+   IF REMMTH1 NE '     TOTAL' AND SUBTYP = 13 THEN DO;
+      AMOUNT = 0;
+      WAYLD = 0;
+   END;
+*;
+  /* GRAND TOTAL  */
+PROC SORT DATA=FIX2;
+   BY GRANDTOT SUBTYP REMMTH1 NTINDEX;
+*;
+PROC SORT DATA=BLR2;
+   BY GRANDTOT SUBTYP REMMTH1 NTINDEX;
+*;
+PROC SUMMARY DATA=FIX2 MISSING NWAY;
+   CLASS GRANDTOT SUBTYP REMMTH1 NTINDEX;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=FIX3 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA RM4XSMMR.FIX3_SUMMR;
+   SET FIX2 FIX3;
+   WAYLD = YIELD / AMOUNT;
+   IF PRODBIG = '      ' THEN DO;
+      PRODBIG = 'GRAND TOTAL';
+   END;
+PROC SUMMARY DATA=BLR2 MISSING NWAY;
+   CLASS GRANDTOT SUBTYP REMMTH1 NTINDEX;
+   VAR AMOUNT YIELD;
+   OUTPUT OUT=BLR3 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA RM4XSMMR.BLR3_SUMMR;
+   SET BLR2 BLR3;
+      WAYLD = YIELD / AMOUNT;
+   IF PRODBIG = '      ' THEN DO;
+      PRODBIG = 'GRAND TOTAL';
+   END;
+RUN;
+*;
