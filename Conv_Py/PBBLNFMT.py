@@ -14,6 +14,10 @@ from typing import Dict, Any, List, Tuple, Optional
 # This module provides format mapping functions equivalent to SAS PROC FORMAT
 # These formats are used throughout the loan and deposit processing system
 
+# Product list macros from SAS %LET declarations (used by converted programs)
+MOREPLAN_PRODUCTS = (116, 119, 234, 235, 236, 242)
+MOREISLM_PRODUCTS = (116, 119)
+
 # ============================================================================
 # OVERDRAFT DENOMINATION FORMAT
 # ============================================================================
