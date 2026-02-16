@@ -1,0 +1,205 @@
+/***************************************************************/
+/*   OWNER : FINANCE DIVISION, PBB                             */
+/*   REPORT ON BALANCES OF EXTERNAL ACCOUNTS BY BRANCH ON      */
+/*   MONTHLY BASIS. SOURCES : SAVINGS, CURRENT, OD, FD & LOANS */
+/***************************************************************/
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+*;
+%LET CUSTCDE=('80','81','82','83','84','85','86','87','88','89',
+              '90','91','92','93','94','95','96','98','99');
+*;
+DATA REPTDATE (KEEP=REPTDATE);
+   REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+                  PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+   SELECT(DAY(REPTDATE));
+     WHEN (8)  DO; SDD = 1;  WK = '1'; END;
+     WHEN(15)  DO; SDD = 9;  WK = '2'; END;
+     WHEN(22)  DO; SDD = 16; WK = '3'; END;
+     OTHERWISE DO; SDD = 23; WK = '4'; END;
+   END;
+   CALL SYMPUT('NOWK',PUT(WK,$1.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+%INC PGM(PBBDPFMT);
+*;
+/***************************************************************/
+/*   SAVINGS DEPOSIT                                           */
+/***************************************************************/
+DATA SAVING  (KEEP=BRANCH ACCTNO NAME PRODCD CUSTCODE CURBAL LEDGBAL
+                   FLOATSAV);
+   SET DEPOSIT.SAVING;
+   IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
+   IF PRODUCT ^IN &ACE;
+   FLOATSAV=LEDGBAL-CURBAL;
+   IF CUSTCODE IN &CUSTCDE;
+      PRODCD=PUT(PRODUCT, SAPROD.);
+      IF PRODCD IN ('42120','42320') THEN PRODCD='42120';
+
+PROC SORT DATA=SAVING; BY BRANCH; RUN;
+*;
+/***************************************************************/
+/*   CURRENT & VOSTRO                                          */
+/***************************************************************/
+DATA CURRENT (KEEP=BRANCH ACCTNO NAME PRODCD CUSTCODE CURBAL FLOATCUR
+                   LEDGBAL)
+     VOSTRO  (KEEP=BRANCH ACCTNO NAME PRODCD CUSTCODE CURBAL FLOATCUR
+                   LEDGBAL)
+     ODACCTS (KEEP=BRANCH ACCTNO NAME PRODCD CUSTCODE CURBAL FLOATOD
+                   LEDGBAL);
+   SET DEPOSIT.CURRENT;
+   IF OPENIND NOT IN ('B','C','P') THEN DO;
+      IF CURBAL GE 0 THEN DO;
+         FLOATCUR=LEDGBAL-CURBAL;
+         PRODCD=PUT(PRODUCT, CAPROD.);
+         IF CUSTCODE IN &CUSTCDE THEN DO;
+            IF PRODCD IN ('42110','42310') THEN DO;
+               PRODCD='42110'; OUTPUT CURRENT;
+            END;
+            ELSE;
+            IF PRODCD='43110' THEN DO;
+               OUTPUT VOSTRO;
+            END;
+         END;
+      END;
+      ELSE DO;
+         FLOATOD=LEDGBAL-CURBAL;
+         IF CUSTCODE IN &CUSTCDE THEN DO;
+            OUTPUT ODACCTS;
+         END;
+      END;
+   END;
+
+PROC SORT DATA=CURRENT; BY BRANCH ACCTNO; RUN;
+*;
+PROC SORT DATA=VOSTRO; BY BRANCH ACCTNO; RUN;
+*;
+PROC SORT DATA=ODACCTS; BY ACCTNO; RUN;
+*;
+/***************************************************************/
+/*   FIXED DEPOSITS                                            */
+/***************************************************************/
+DATA FD;
+   KEEP BRANCH ACCTNO NAME BIC CUSTCD CURBAL LEDGBAL;
+
+   SET FD.FD;
+   IF OPENIND = 'D' OR OPENIND = 'O';
+   LEDGBAL=0;
+   IF CUSTCD IN &CUSTCDE;
+   BIC = PUT(INTPLAN, FDPROD.);
+
+PROC SORT DATA=FD; BY BRANCH ACCTNO; RUN;
+*;
+TITLE1 'REPORT ID : EIBMBEXT';
+TITLE2 'PUBLIC BANK BERHAD, FINANCE DIVISION (BOP)';
+TITLE3 'BALANCES OF EXTERNAL ACCOUNT BY BRANCH AS AT ' &RDATE;
+*;
+DATA BOP&REPTMON;
+   SET CURRENT
+       VOSTRO
+       SAVING
+       FD (RENAME=(CUSTCD=CUSTCODE BIC=PRODCD));
+   BY BRANCH;
+RUN;
+
+PROC FORMAT;
+   VALUE $PRODCD
+      '42110' = '42110-85'
+      '42120' = '42120-85'
+      '42130' = '42130-81+85'
+      '42132' = '42132-81+85'
+      '43110' = '43110-02';
+RUN;
+*;
+TITLE4 'REPORT ON SUMMARY TOTAL BY BRANCH';
+PROC TABULATE DATA=BOP&REPTMON NOSEPS;
+   CLASS BRANCH PRODCD;
+   VAR CURBAL;
+   TABLE BRANCH=' ' ALL,(PRODCD=' ' ALL)*CURBAL=' '*F=COMMA15.2
+         /RTS=8 BOX='BRANCH' MISSTEXT='0';
+   KEYLABEL SUM=' ' ALL='TOTAL' N=' ';
+   FORMAT PRODCD $PRODCD.;
+RUN;
+*;
+/***************************************************************/
+/*   OVERDRAFT FROM LOANS DATASET                              */
+/***************************************************************/
+*;
+DATA OD;
+   SET BNM1.LOAN&REPTMON&NOWK;
+   WHERE ACCTYPE='OD' &
+         CUSTCD IN &CUSTCDE;
+RUN;
+*;
+PROC SORT DATA=OD;
+BY ACCTNO;
+*;
+DATA ODFLT;                         /* TO GET OC FLOATS */
+   MERGE OD          (IN=A)
+         ODACCTS     (IN=B);
+   BY ACCTNO;
+
+   IF A AND B THEN DO;
+      OUTPUT;
+   END;
+RUN;
+*;
+PROC SORT DATA=ODFLT; BY BRANCH ACCTNO; RUN;
+*;
+PROC SUMMARY DATA=ODFLT NWAY;
+   CLASS BRANCH;
+   VAR   BALANCE FLOATOD;
+   OUTPUT OUT=OD (RENAME=(CUSTCD=CUSTCODE) DROP=_TYPE_ _FREQ_)
+          SUM=;
+RUN;
+*;
+DATA BOP&REPTMON;
+   SET CURRENT
+       VOSTRO
+       SAVING;
+RUN;
+*;
+PROC SUMMARY DATA=BOP&REPTMON NWAY;
+CLASS BRANCH;
+VAR   FLOATSAV FLOATCUR LEDGBAL CURBAL;
+OUTPUT OUT=BOP&REPTMON
+       SUM=;
+RUN;
+*;
+DATA BOP;
+   MERGE BOP&REPTMON (IN=A)
+         OD          (IN=B);
+   BY BRANCH;
+
+   IF A AND NOT B THEN DO;             /* SAV, CA & FD : CURBAL >= 0 */
+      BALANCE=0;
+      FLOATOD=0;
+   END;
+   ELSE IF B AND NOT A THEN DO;        /* OD : CURBAL < 0 */
+      CURBAL=0; LEDGBAL=0; FLOATSAV=0;
+   END;
+RUN;
+*;
+DATA BOP1;                             /* GET TOTAL FLOAT FOR CA */
+   SET BOP;
+   FLTCA = FLOATCUR + FLOATOD;
+RUN;
+*;
+/***************************************************************/
+/*   REPORT ON SUMMARY OF OD, FLOAT CHEQUES & LEDGER BALANCE   */
+/***************************************************************/
+TITLE4 'REPORT ON SUMMARY OF OD, FLOAT CHEQUES & LEDGER BALANCE';
+PROC TABULATE DATA=BOP1 NOSEPS;
+   CLASS BRANCH;
+   VAR   BALANCE LEDGBAL FLOATSAV FLTCA;
+   TABLE BRANCH=' ' ALL='TOTAL',
+         BALANCE='OD BALANCE'*F=COMMA15.2
+         FLOATSAV='FLOAT CHEQUE (SA)'*F=COMMA15.2
+         FLTCA='FLOAT CHEQUE (CA)'*F=COMMA15.2
+         LEDGBAL='LEDGER BALANCE'*F=COMMA15.2
+         /RTS=8 BOX='BRANCH' MISSTEXT='0';
+   KEYLABEL SUM=' ' N=' ';
+RUN;
