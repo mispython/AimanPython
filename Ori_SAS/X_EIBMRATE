@@ -1,0 +1,172 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBMRATE                                          |
+ |  DATE    : 02ND.JUNE.2000                                    |
+ |  REPORT  : DEPOSITS, AVERAGE RATE ON ALL FIXED DEPOSIT       |
+ |            PRODUCTS ON MONTHLY BASIS....                     |
+ |   TO EXCLUDE ISLAMIC FD, ALSO TO IGNORE THE UNUPDATED PRODUCT|
+ |   AS REQUESTED BY KELLY, REFER TO EMAIL FROM MS. WU LEE CHOO |
+ |   DATED ON 20JULY 2001.                                      |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER MISSING=0;
+*;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE;
+   SET FD.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN (8)  CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTYRS',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+DATA SDESC;
+   SET BNM.SDESC;
+   CALL SYMPUT('SDESC',PUT(SDESC,$36.));
+RUN;
+*;
+*-------------------------------------------------*
+*  FIXED DEPOSITS FOR ALL FOUR WEEKLY EXTRACTIONS *
+*-------------------------------------------------*;
+DATA FD;
+   SET FD.FD FD1.FD FD2.FD FD3.FD;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF INTPLAN IN (370,371,372) THEN DO;
+      ITEM = 'N1';
+   END;
+   ELSE IF INTPLAN IN (360,361,362,363,364,365,366)  THEN DO;
+      ITEM = 'N2';
+   END;
+   ELSE IF INTPLAN IN (320,321,322,323,324,325,326,327,328,329,330,
+                       331)     THEN DO;
+      ITEM = 'N3';
+   END;
+   ELSE IF INTPLAN IN (420,421,422,423,424,425,426,427,428,429,430,
+                       431)     THEN DO;
+      ITEM = 'S1';
+   END;
+   ELSE IF INTPLAN IN (460)   THEN DO;
+      ITEM = 'S2';
+   END;
+   ELSE IF INTPLAN IN (400,401,402,403,404,405,406,407,408,409,
+                       410,411,412,413,414,415,416,417,418,419,
+                       600,601,602,603,604,605,606,607,608,609,
+                       610,611,612,613,614,615,616,617,618,619,
+                       620,621,622,623,624,625,626,627,628,629,
+                       630,631,632,633,634,635,636,637,638,639)
+                                THEN DO;
+      ITEM = 'S3';
+   END;
+   ELSE IF INTPLAN IN (300,301,302,303,304,305,306,307,308,309,
+                       310,311,312,313,314,315,316,317,318,319,
+                       373,374,375,376,377,378,379,380,381,382,
+                       383,384,
+                       500,501,502,503,504,505,506,507,508,509,
+                       510,511,512,513,514,515,516,517,518,519,
+                       520,521,522,523,524,525,526,527,528,529,
+                       530,531,532,533,534,535,536,537,538,539)
+                                THEN DO;
+      ITEM = 'N4';
+   END;
+IF ITEM NE '  '  THEN OUTPUT;  /* AS REQUESTED BY KELLY ON 20JUL2001 */
+  /* IF CURBAL NE 0   THEN OUTPUT; */
+  /* IF CURBAL NE 0 AND RATE NE 0  THEN OUTPUT;   */
+*;
+PROC SORT  DATA=FD; BY BRANCH ITEM;
+*;
+DATA WRITE;
+   SET FD END=EOF; BY BRANCH ITEM;
+   FILE PRINT HEADER=NEWPAGE;
+   FORMAT DESC  $32.;
+   DATE = TODAY();
+
+   SELECT(ITEM);
+      WHEN ('N1')  DESC = 'POWERINVEST';
+      WHEN ('N2')  DESC = 'PBB GOLDEN 50 PLUS';
+      WHEN ('N3')  DESC = 'FIXED DEPOSIT LIFE';
+      WHEN ('N4')  DESC = 'FIXED DEPOSIT NORMAL';
+      WHEN ('S1')  DESC = 'STAFF FIXED DEPOSIT LIFE';
+      WHEN ('S2')  DESC = 'STAFF FIXED DEPOSIT GOLDEN 50+';
+      WHEN ('S3')  DESC = 'STAFF FIXED DEPOSIT NORMAL';
+   END;
+
+   INTEREST = (RATE * CURBAL) / 100;
+   AMTITEM  + CURBAL;
+   INTITEM  + INTEREST;
+   AMTBRCH  + CURBAL;
+   INTBRCH  + INTEREST;
+   AMTBANK  + CURBAL;
+   INTBANK  + INTEREST;
+
+   IF LAST.ITEM   THEN DO;
+      AVGRATE = (INTITEM / AMTITEM) * 100;
+      AMTITEM = AMTITEM / 4;
+      INTITEM = INTITEM / 4;
+      PUT @003 BRANCH         3.
+          @012 DESC         $32.
+          @052 AMTITEM  COMMA18.2
+          @075 INTITEM  COMMA18.2
+          @102 AVGRATE        8.5;
+      AMTITEM  = 0;
+      INTITEM  = 0;
+   END;
+
+   IF LAST.BRANCH  THEN DO;
+      AVGRATE = (INTBRCH / AMTBRCH) * 100;
+      AMTBRCH = AMTBRCH / 4;
+      INTBRCH = INTBRCH / 4;
+      PUT @002 120*'-'
+         /@030 'BRANCH TOTAL : '
+          @052 AMTBRCH  COMMA18.2
+          @075 INTBRCH  COMMA18.2
+          @102 AVGRATE        8.5//;
+      AMTBRCH  = 0;
+      INTBRCH  = 0;
+   END;
+
+   IF EOF  THEN DO;
+      AVGRATE = (INTBANK / AMTBANK) * 100;
+      AMTBANK = AMTBANK / 4;
+      INTBANK = INTBANK / 4;
+      PUT @002 120*'='
+         /@030 'COMPANY TOTAL : '
+          @052 AMTBANK  COMMA18.2
+          @075 INTBANK  COMMA18.2
+          @102 AVGRATE        8.5;
+   END;
+RETURN;
+
+ NEWPAGE :
+   PAGECNT+1;
+   PUT   /@043 &SDESC
+          @110 'PAGE NO : ' PAGECNT
+         /@020 'AVERAGE RATE ON ALL FIXED DEPOSIT PRODUCTS ON MONTHLY'
+          @074 'BASIS AS AT : '"&RDATE"
+          @110 'DATE    : ' DATE DDMMYY8.
+         /@030 '(METHOD BY : AVERAGE OF 4 WEEKLY EXTRACTIONS)'
+        //@002 'BRANCH'
+          @012 'FIXED DEPOSIT PRODUCTS'
+          @060 'AMOUNTS'
+          @078 'INTEREST / YEAR'
+          @100 'AVERAGE INTEREST'
+    OVERPRINT @002 '______'
+              @012 '______________________'
+              @060 '_______'
+              @078 '_______________'
+              @100 '________________'//;
+  RETURN;
+/*
+//
