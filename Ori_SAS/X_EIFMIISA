@@ -1,0 +1,292 @@
+//EIFMIISA JOB MISEIS,EIFMIISA,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+/*JOBPARM  S=S1M1
+//* *******************************************************
+//* ESMR 2004-720 &2004-579
+//* *******************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PFB.NPL.GLFILE,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(1,1))
+//*
+//CREATE   EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.PFB.NPL.GLFILE,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=324,BLKSIZE=27864),
+//            SPACE=(CYL,(1,1),RLSE),UNIT=SYSDA
+//*
+//EIBMIIS0 EXEC SAS609,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=SHR
+//LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//GLFILE   DD DSN=SAP.PFB.NPL.GLFILE,DISP=OLD
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SORTWK04 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SORTWK05 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT1)
+ /********************************************************************/
+ /* PROCESS & CREATE INTERFACE FILE FOR GL WALKER                    */
+ /********************************************************************/
+
+OPTIONS YEARCUTOFF=1950 NOCENTER;
+DATA _NULL_;
+   SET LOAN.REPTDATE;
+   MM1 = MONTH(REPTDATE)-1;
+   IF MM1= 0 THEN MM1 = 12;
+   DT = TODAY();
+   TM = TIME();
+   DATENOW=PUT(YEAR(DT),Z4.)||PUT(MONTH(DT),Z2.)||PUT(DAY(DT),Z2.);
+   TIMENOW=PUT(HOUR(TM),Z2.)||PUT(MINUTE(TM),Z2.)||PUT(SECOND(TM),Z2.);
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('PREVMON',PUT(MM1,Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
+   CALL SYMPUT('REPTDAT',REPTDATE);
+   CALL SYMPUT('NOWK',PUT('4',$1.));
+   CALL SYMPUT('RPTDTE',PUT(DATENOW,8.));
+   CALL SYMPUT('RPTTIME',PUT(TIMENOW,6.));
+   CALL SYMPUT('CURDAY',PUT(DAY(DT),Z2.));
+   CALL SYMPUT('CURMTH',PUT(MONTH(DT),Z2.));
+   CALL SYMPUT('CURYR',PUT(YEAR(DT),Z4.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));
+   CALL SYMPUT('RPTYR',PUT(YEAR(REPTDATE),Z4.));
+   CALL SYMPUT('RPTDY',PUT(DAY(REPTDATE), Z2.));
+RUN;
+PROC SORT DATA=NPL.IIS OUT=NPLIIS NODUPKEYS;
+   BY ACCTNO NOTENO;
+RUN;
+PROC SORT DATA=LOAN.LNNOTE OUT=LNNOTE;
+   BY ACCTNO NOTENO;
+RUN;
+DATA NPLIIS;
+   MERGE NPLIIS(IN=A) LNNOTE(KEEP=ACCTNO NOTENO COSTCTR);
+   BY ACCTNO NOTENO;
+   IF A;
+   IF COSTCTR = 1146 THEN COSTCTR = 146;
+RUN;
+PROC SORT; BY COSTCTR;
+RUN;
+DATA GLPROC(KEEP=COSTCTR ARID JDESC ASIGN AVALUE);
+   SET NPLIIS END=EOF; BY COSTCTR;
+   FORMAT   ARID  $8. AVALUE  14.2 JDESC $60.;
+
+   IF SUBSTR(LOANTYP,1,8) = 'HPD CONV' THEN DO;
+      IF SUSPEND NE 0 AND SUSPEND NE . THEN DO;
+         ARID = 'ISHPDTE';
+         JDESC = 'HPD CONV INTEREST SUSPENDED DURING THE PERIOD (E)';
+         AVALUE   = SUSPEND;
+         OUTPUT GLPROC;
+      END;
+      IF RECOVER NE 0 AND RECOVER NE . THEN DO;
+         ARID = 'ISWHPDF';
+         AVALUE   = RECOVER;
+         JDESC = 'HPD CONV WRITTEN BACK TO PROFIT & LOSS (F)';
+         OUTPUT GLPROC;
+      END;
+      IF RECC NE 0 AND RECC NE . THEN DO;
+         ARID = 'ISHPDRG';
+         AVALUE   = RECC;
+         JDESC = 'HPD CONV REVERSAL OF CURRENT YEAR IIS (G)';
+         OUTPUT GLPROC;
+      END;
+      IF OISUSP NE 0 AND OISUSP NE . THEN DO;
+         ARID = 'ISHPDTK';
+         JDESC = 'HPD CONV OI SUSPENDED DURING THE PERIOD (K)';
+         AVALUE   = OISUSP;
+         OUTPUT GLPROC;
+      END;
+      IF OIRECV NE 0 AND OIRECV NE . THEN DO;
+         ARID = 'ISWHPDL';
+         AVALUE   = OIRECV;
+         JDESC = 'HPD CONV WRITTEN BACK TO PROFIT & LOSS (L)';
+         OUTPUT GLPROC;
+      END;
+      IF OIRECC NE 0 AND OIRECC NE . THEN DO;
+         ARID = 'ISHPDRM';
+         AVALUE   = OIRECC;
+         JDESC = 'HPD CONV REVERSAL OF CURRENT YEAR IIS (M)';
+         OUTPUT GLPROC;
+      END;
+   END;
+   ELSE DO;
+      IF SUSPEND NE 0 AND SUSPEND NE . THEN DO;
+         ARID = 'ISAITAE';
+         JDESC = 'HPD AITAB INTEREST SUSPENDED DURING THE PERIOD (E)';
+         AVALUE   = SUSPEND;
+         OUTPUT GLPROC;
+      END;
+      IF RECOVER NE 0 AND RECOVER NE . THEN DO;
+         ARID = 'ISAITWF';
+         AVALUE   = RECOVER;
+         JDESC = 'HPD AITAB WRITTEN BACK TO PROFIT & LOSS (F)';
+         OUTPUT GLPROC;
+      END;
+      IF RECC NE 0 AND RECC NE . THEN DO;
+         ARID = 'ISAITRG';
+         AVALUE   = RECC;
+         JDESC = 'HPD AITAB REVERSAL OF CURRENT YEAR IIS (G)';
+         OUTPUT GLPROC;
+      END;
+      IF OISUSP NE 0 AND OISUSP NE . THEN DO;
+         ARID = 'ISAITAK';
+         JDESC = 'HPD AITAB OI SUSPENDED DURING THE PERIOD (K)';
+         AVALUE   = OISUSP;
+         OUTPUT GLPROC;
+      END;
+      IF OIRECV NE 0 AND OIRECV NE . THEN DO;
+         ARID = 'ISAITWL';
+         AVALUE   = OIRECV;
+         JDESC = 'HPD AITAB WRITTEN BACK TO PROFIT & LOSS (L)';
+         OUTPUT GLPROC;
+      END;
+      IF OIRECC NE 0 AND OIRECC NE . THEN DO;
+         ARID = 'ISAITRM';
+         AVALUE   = OIRECC;
+         JDESC = 'HPD AITAB REVERSAL OF CURRENT YEAR IIS (M)';
+         OUTPUT GLPROC;
+      END;
+   END;
+RUN;
+
+PROC SUMMARY DATA=GLPROC NWAY;
+     CLASS COSTCTR ARID JDESC;
+     VAR AVALUE;
+     OUTPUT OUT=GLPROC (DROP=_TYPE_ _FREQ_)
+                    SUM=;
+RUN;
+PROC SORT DATA=GLPROC;
+   BY COSTCTR ARID;
+
+DATA GLINTER;
+   FILE GLFILE;
+   IF TRN=0 THEN DO;
+      PUT @1   'INTFIISF'
+          @9   '0'
+          @18  "&RPTYR"
+          @22  "&REPTMON"
+          @24  "&RPTDY"
+          @26  "&RPTDTE"
+          @34  "&RPTTIME";
+      PUT @1   'INTFIISF'
+          @9   '9'
+          @18  "&RPTYR"
+          @22  "&REPTMON"
+          @24  "&RPTDY"
+          @26  "&RPTDTE"
+          @34  "&RPTTIME"
+          @40  '+'
+          @41  '0000000000000000'
+          @57  '-'
+          @58  '0000000000000000'
+          @74  '+'
+          @75  '0000000000000000'
+          @91  '-'
+          @92  '0000000000000000'
+          @108 '000000000'     ;
+   END;
+   RETAIN TRN;
+
+   SET GLPROC NOBS=TRN END=EOF;
+   BY COSTCTR ARID;
+   AVALUE = ROUND(AVALUE,.01);
+   IF AVALUE < 0 THEN DO;
+      AVALUE   = AVALUE * -1;
+      ASIGN = '-';
+   END;
+   ELSE ASIGN = '+';
+   FILE GLFILE;
+   FORMAT    BRHAMT   17.2     BRHAMTO   $16.     AMTTOTC    17.2
+             AMTTOTD  17.2     AMTTOTCO  $16.     AMTTOTDO   $16.
+             ASIGN  $1.;
+   IF _N_=1 THEN DO;
+      CNT = 0;
+      AMTTOTC = 0;
+      AMTTOTD = 0;
+      PUT @1   'INTFIISF'
+          @9   '0'
+          @18  "&RPTYR"
+          @22  "&REPTMON"
+          @24  "&RPTDY"
+          @26  "&RPTDTE"
+          @34  "&RPTTIME";
+   END;
+
+   IF FIRST.ARID THEN DO;
+      BRHAMT = 0;
+   END;
+
+   BRHAMT + AVALUE;
+   IF ASIGN = '-' THEN
+      AMTTOTC + AVALUE;
+   ELSE
+      AMTTOTD + AVALUE;
+
+   IF LAST.ARID THEN DO;
+      CNT + 1;
+      TEMPAMT1 = PUT(BRHAMT, Z17.2);
+      BRHAMTO  = COMPRESS(TEMPAMT1,'.');
+      PUT @1   'INTFIISF'
+          @9   '1'
+          @10  ARID       $8.
+          @18  'PBBH'              /* CHANGE WHEN MOVE TO PRODUCTION */
+          @22  COSTCTR     Z4.
+          @71  'MYR'         @;
+      IF SUBSTR(ARID,6,3) EQ 'COR' THEN DO;
+      PUT @77  "&CURYR"
+          @81  "&CURMTH"
+          @83  "&CURDAY"     @;
+      END;
+      ELSE DO;
+      PUT @77  "&RPTYR"
+          @81  "&REPTMON"
+          @83  "&RPTDY"     @;
+      END;
+      PUT @85  ASIGN      $1.
+          @86  BRHAMTO    $16.
+          @102 JDESC      $60.
+          @162 ARID       $8.
+          @172 'IISL'
+          @252 '+'
+          @253 '0000000000000000'
+          @273 '+'
+          @274 '000000000000000'   @;
+      IF SUBSTR(ARID,6,3) EQ 'COR' THEN DO;
+      PUT @297  "&CURYR"
+          @301  "&CURMTH"
+          @303  "&CURDAY"     @;
+      END;
+      ELSE DO;
+      PUT @297 "&RPTYR"
+          @301 "&REPTMON"
+          @303 "&RPTDY"       @;
+      END;
+      PUT @307 '+'
+          @308 '0000000000000000' ;
+   END;
+
+   IF EOF THEN DO;
+      TEMPAMT1  = PUT(AMTTOTC, Z17.2);
+      AMTTOTCO  = COMPRESS(TEMPAMT1,'.');
+      TEMPAMT2  = PUT(AMTTOTD, Z17.2);
+      AMTTOTDO  = COMPRESS(TEMPAMT2,'.');
+      PUT @1   'INTFIISF'
+          @9   '9'
+          @18  "&RPTYR"
+          @22  "&REPTMON"
+          @24  "&RPTDY"
+          @26  "&RPTDTE"
+          @34  "&RPTTIME"
+          @40  '+'
+          @41  AMTTOTDO    $16.
+          @57  '-'
+          @58  AMTTOTCO    $16.
+          @74  '+'
+          @75  '0000000000000000'
+          @91  '-'
+          @92  '0000000000000000'
+          @108 CNT         Z9. ;
+   END;
+   RETURN;
+RUN;
+
