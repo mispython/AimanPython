@@ -1,0 +1,338 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EXCEPTIONAL REPORT ON NEW PRODUCT CODE..          |
+ |  DATE    : 13.01.2000                                        |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER MISSING=0;
+*;
+DATA DATES;
+  SET SASDATA.REPTDATE;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  CALL SYMPUT('NOWK',    PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',   PUT(WK1,$1.));
+  CALL SYMPUT('RDATE',   PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('SDATE',   PUT(SDATE,DDMMYY8.));
+  CALL SYMPUT('UDATE',   MDY(MM,DAY(REPTDATE),YEAR(REPTDATE)));
+  CALL SYMPUT('REPTMON', PUT(MM,Z2.));
+  CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+RUN;
+*;
+PROC FORMAT;
+   VALUE SAPROD
+      200-204 = 'SA'
+      150-152 = 'SA'
+      177     = 'SA'
+      181     = 'SA'
+      212-215 = 'SA'
+      OTHER   = 'UNKNOWN';
+*;
+   VALUE FDPROD
+      300-303 = 'FD'
+      OTHER   = 'UNKNOWN';
+*;
+   VALUE FDPRODCD
+      300-331 = 'CD'
+      340-359 = 'CD'
+      360-366 = 'CD'
+      370-372 = 'CD'
+      373-384 = 'CD'
+      400-428 = 'CD'
+      448-469 = 'CD'
+      500-539 = 'CD'
+      580-639 = 'CD'
+      OTHER   = 'UNKNOWN';
+*;
+   VALUE CAPROD
+      100-136 = 'CA'
+      140-152 = 'CA'
+      154-155 = 'CA'
+      156-158 = 'CA'
+      160-165 = 'CA'
+      170-176 = 'CA'
+      180-182 = 'CA'
+      OTHER   = 'UNKNOWN';
+*;
+   VALUE LNPROD
+      4-7,10,15,20,25-34,60-63 = 'LN'
+      70-78                    = 'LN'
+      100-103,110-116,117,118  = 'LN'
+      120-125,127,129,135,136  = 'LN'
+      170,180,181,182,194,195  = 'LN'
+      200,201,204,205,209-212  = 'LN'
+      214,215,219,220,225-234  = 'LN'
+      300,301,304,305,309,310  = 'LN'
+      315,320,325,330,335,340  = 'LN'
+      345,350,355,356-361      = 'LN'
+      380,381,390,391          = 'LN'
+      500,504,505,509,510      = 'LN'
+      515-528,555,556,559      = 'LN'
+      560,561,564-568          = 'LN'
+      570,573,900,901          = 'LN'
+      904,905,910,914,915,919  = 'LN'
+      920,925                  = 'LN'
+      OTHER   = 'UNKNOWN';
+*;
+   VALUE ODPROD
+      100-128 = 'OD'
+      130-136 = 'OD'
+      140-152 = 'OD'
+      154-158 = 'OD'
+      160-165 = 'OD'
+      170-173 = 'OD'
+      180     = 'OD'
+      OTHER   = 'UNKNOWN';
+*;
+DATA AAA (KEEP=BRANCH ACCTNO NAME OPENDT CURBAL PRODUCT);
+  SET DEPOSIT.SAVING;
+  IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0
+  THEN DO;
+     DEPTYPE1 = PUT(PRODUCT,SAPROD.);
+     IF DEPTYPE1 = 'UNKNOWN' THEN OUTPUT;
+  END;
+*;
+PROC SORT DATA=AAA; BY PRODUCT BRANCH ACCTNO;
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'REPORT ID : EIBMEXCP';
+TITLE3 'EXCEPTIONAL REPORT ON SAVING ACCOUNTS AS AT : ' &RDATE;
+*;
+PROC PRINT DATA=AAA; BY PRODUCT;
+PAGEBY PRODUCT;
+
+DATA BBB (KEEP=BRANCH ACCTNO NAME OPENDT CURBAL PRODUCT);
+  SET DEPOSIT.CURRENT;
+  IF OPENIND NOT IN ('B','C','P')
+  THEN DO;
+     DEPTYPE1 = PUT(PRODUCT,CAPROD.);
+     IF DEPTYPE1 = 'UNKNOWN' THEN OUTPUT;
+  END;
+*;
+PROC SORT DATA=BBB; BY PRODUCT BRANCH ACCTNO;
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'REPORT ID : EIBMEXCP';
+TITLE3 'EXCEPTIONAL REPORT ON CURRENT ACCOUNTS AS AT : ' &RDATE;
+*;
+PROC PRINT DATA=BBB; BY PRODUCT;
+PAGEBY PRODUCT;
+*;
+DATA CCC (KEEP=BRANCH ACCTNO NAME OPENDT CURBAL PRODUCT);
+  SET DEPOSIT.FD;
+  IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0
+  THEN DO;
+     DEPTYPE1 = PUT(PRODUCT,FDPROD.);
+     IF DEPTYPE1 = 'UNKNOWN' THEN OUTPUT;
+  END;
+*;
+PROC SORT DATA=CCC; BY PRODUCT BRANCH ACCTNO;
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'REPORT ID : EIBMEXCP';
+TITLE3 'EXCEPTIONAL REPORT ON FIXED DEPOSITS AS AT : ' &RDATE;
+*;
+PROC PRINT DATA=CCC; BY PRODUCT;
+PAGEBY PRODUCT;
+*;
+*+--------------------------------------------------------------+
+ |  PROGRAM : EXCEPTIONAL REPORT ON NEW PRODUCT CODE..          |
+ |  DATE    : 13.01.2000                                        |
+ |  FUNCTION: ON FIXED DEPOSIT CDS.............                 |
+ +--------------------------------------------------------------+;
+*;
+DATA DDD (KEEP=BRANCH ACCTNO CDNO NAME ORGDATE MATDATE CURBAL INTPLAN);
+  SET FD.FD;
+  IF OPENIND IN ('O', 'D')
+  THEN DO;
+     DEPTYPE1 = PUT(INTPLAN,FDPRODCD.);
+     IF DEPTYPE1 = 'UNKNOWN' THEN OUTPUT;
+  END;
+*;
+PROC SORT DATA=DDD; BY INTPLAN BRANCH ACCTNO CDNO;
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'REPORT ID : EIBMEXCP';
+TITLE3 'EXCEPTIONAL REPORT ON FIXED DEPOSITS CD LEVELS AS AT : ' &RDATE;
+*;
+PROC PRINT DATA=DDD; BY INTPLAN;
+PAGEBY INTPLAN;
+*;
+*+--------------------------------------------------------------+
+ |  PROGRAM : EXCEPTIONAL REPORT ON NEW PRODUCT CODE..          |
+ |  DATE    : 13.01.2000                                        |
+ |  FUNCTION: ON LOAN ACCOUNTS..............                    |
+ +--------------------------------------------------------------+;
+*;
+DATA EEE (KEEP=ACCBRCH ACCTNO NOTENO NAME CURBAL LOANTYPE GRANTDT
+               NOTEMAT);
+  SET LOAN.LNNOTE;
+  IF REVERSED NE 'Y' AND NOTENO NE .  AND PAIDIND NE 'P'
+  THEN DO;
+     TYPELOAN = PUT(LOANTYPE,LNPROD.);
+     IF TYPELOAN = 'UNKNOWN'  THEN OUTPUT;
+  END;
+*;
+PROC SORT DATA=EEE; BY LOANTYPE ACCBRCH ACCTNO;
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'REPORT ID : EIBMEXCP';
+TITLE3 'EXCEPTIONAL REPORT ON LOANS ACCOUNTS AS AT : ' &RDATE;
+*;
+PROC PRINT DATA=EEE; BY LOANTYPE;
+PAGEBY LOANTYPE;
+*;
+*+--------------------------------------------------------------+
+ |  PROGRAM : EXCEPTIONAL REPORT ON SECTOR & BY CUSTOMER CODE   |
+ |            ON RAW EXTRACTED MNI LOAN DATASET..               |
+ |  DATE    : 18.03.2000                                        |
+ |  FUNCTION: ON LOAN ACCOUNTS..............                    |
+ +--------------------------------------------------------------+;
+*;
+DATA FFF (KEEP=BRANCH ACCTNO NOTENO NAME CURBAL LOANTYPE GRANTDT
+               NOTEMAT CUSTCODE SECTOR);
+  SET LOAN.LNNOTE;
+  IF (REVERSED NE 'Y') AND (NOTENO NE .)  AND (PAIDIND NE 'P')
+  THEN DO;
+     IF SECTOR = '0131'  THEN DO;
+        IF CUSTCODE NOT IN (00,76,77,78)
+           THEN OUTPUT;
+     END; ELSE
+     IF SECTOR = '0132'  THEN DO;
+        IF CUSTCODE IN (4,5,6,36,80,81,82,83,84,85,86,90,91,92,
+                        95,96,98,99)
+           THEN OUTPUT;
+     END; ELSE
+     IF SECTOR IN ('0200','0210','0410','0420','0430')  THEN DO;
+        IF CUSTCODE NOT IN (77,78,80,81,82,83,84,85,86,90,91,92,
+                        95,96,98,99)
+           THEN OUTPUT;
+     END; ELSE
+     IF SECTOR IN ('1000','2000','3000','4000','5000','6100','6200',
+                   '6300','7000')  THEN DO;
+        IF CUSTCODE NOT IN (61,62,63,64,65,66,67,68,69,75,57,59,80,81,
+                            82,83,84,85,86,90,91,92,95,96,98,99)
+           THEN OUTPUT;
+     END; ELSE
+     IF SECTOR = '8100'           THEN DO;
+        IF CUSTCODE NOT IN (1,2,3,4,5,6,10,11,12,13,15,17,20,30,
+                            31,32,33,34,35,36,37,38,39,40,45,80,81,
+                            82,83,84,85,86,90,91,92,95,96,98,99)
+           THEN OUTPUT;
+     END; ELSE
+     IF SECTOR = '8200'           THEN DO;
+        IF CUSTCODE NOT IN (1,2,4,5,6,13,15,17,20,30,31,32,33,
+                            34,35,36,37,38,39,40,45,80,81,
+                            82,83,84,85,86,90,91,92,95,96,98,99)
+           THEN OUTPUT;
+     END; ELSE
+     IF SECTOR IN ('8310','8320','8330')  THEN DO;
+        IF CUSTCODE NOT IN (61,62,63,64,65,75,57,59,
+                            80,81,82,83,84,85,86,90,91,92,95,96,98,99)
+           THEN OUTPUT;
+     END; ELSE
+     IF SECTOR IN ('8000','9999')  THEN DO;
+        IF CUSTCODE NOT IN (61,62,63,64,65,66,67,68,69,75,57,59,70,79,
+                            80,81,82,83,84,85,86,90,91,92,95,96,98,99)
+           THEN OUTPUT;
+     END;
+     RENAME ACCBRCH=BRANCH;
+  END;
+*;
+PROC SORT DATA=FFF; BY BRANCH LOANTYPE ACCTNO;
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 'LIST OF INVALID CODES OF LOANS BY CUSTOMER & BY SECTOR';
+TITLE2 'REPORT ID : EIBMEXCP';
+TITLE3 'PRESENTLY MAINTAINED IN THE M&I SYSTEM AS AT : '                &RDATE;
+*;
+PROC PRINT DATA=FFF; BY BRANCH;
+PAGEBY BRANCH;
+*;
+*+--------------------------------------------------------------+
+ |  PROGRAM : EXCEPTIONAL REPORT ON NEW PRODUCT CODE..          |
+ |  DATE    : 13.01.2000                                        |
+ |  FUNCTION: ON OD ACCOUNTS.......                             |
+ +--------------------------------------------------------------+;
+*;
+DATA GGG (KEEP=BRANCH ACCTNO NAME CUSTCODE SECTORCD CURBAL PRODUCT);
+  SET SASDATA.LOAN&REPTMON&NOWK;
+  IF ACCTYPE = 'OD'
+  THEN DO;
+     DEPTYPE1 = PUT(PRODUCT,ODPROD.);
+     IF DEPTYPE1 = 'UNKNOWN'  THEN OUTPUT;
+  END;
+*;
+PROC SORT DATA=GGG; BY PRODUCT BRANCH ACCTNO;
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'REPORT ID : EIBMEXCP';
+TITLE3 'EXCEPTIONAL REPORT ON OD ACCOUNTS ON SASDATA AS AT : ' &RDATE;
+*;
+PROC PRINT DATA=GGG; BY PRODUCT;
+PAGEBY PRODUCT;
+*+--------------------------------------------------------------+
+ |  PROGRAM : EXCEPTIONAL REPORT ON SECTOR CODE & CUSTOMER-CODE.|
+ |  DATE    : 13.01.2000                                        |
+ |  FUNCTION: ON LOAN ACCOUNTS..............                    |
+ +--------------------------------------------------------------+;
+*;
+*;
+DATA HHH (KEEP=ACCBRCH ACCTNO NOTENO NAME CURBAL LOANTYPE GRANTDT
+               NOTEMAT CUSTCODE SECTOR);
+  SET LOAN.LNNOTE;
+  IF REVERSED NE 'Y' AND NOTENO NE .  AND PAIDIND NE 'P'
+  THEN DO;
+     IF CUSTCODE IN  (02,03,11,12,13,17,30,31,32,33,34,35,04,05,
+                      06,37,38,39,46,47)  THEN DO;
+        IF SECTOR IN ('0200','0410','0420','0430','1000','2000',
+                      '3000','4000','5000','6000','7000',
+                      '8200','8300','9000','9999')
+           THEN OUTPUT;
+     END; ELSE
+     IF CUSTCODE = 40  THEN DO;
+        IF SECTOR IN ('0200','0410','0420','0430','1000','2000',
+                      '3000','4000','5000','6000','7000','8300',
+                      '9000','9999')
+           THEN OUTPUT;
+     END; ELSE
+     IF CUSTCODE = 79  THEN DO;
+        IF SECTOR IN (0200,0410,0420,0430,1000,2000,3000,4000,
+                      5000,6000,7000,8000)
+           THEN OUTPUT;
+     END; ELSE
+     IF CUSTCODE IN  (71,72,73,74)   THEN DO;
+        IF SECTOR IN ('0200','0410','0420','0430','1000','2000',
+                      '3000','4000','5000','6000','7000','8000',
+                      '9200','9300','9400','9500','9600')
+           THEN OUTPUT;
+     END;
+  END;
+*;
+PROC SORT DATA=HHH; BY ACCBRCH LOANTYPE ACCTNO;
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'REPORT ID : EIBMEXCP';
+TITLE3 'EXCEPTIONAL REPORT ON CUSTCODE ON LOANS ACCTS AS AT : ' &RDATE;
+*;
+PROC PRINT DATA=HHH; BY ACCBRCH;
+PAGEBY ACCBRCH;
+
