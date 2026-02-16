@@ -1,0 +1,493 @@
+//EIBMRPT1 JOB MISEIS,EIBMRPT1,COND=(4,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID,USER=OPCC
+/*JOBPARM S=S1M2
+//PRINT1   OUTPUT CLASS=R,
+//         NAME='THE MANAGER',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='STATISTICS',
+//         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//PRINT2   OUTPUT CLASS=R,
+//         NAME='MS YEE CHUI ENG',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='STATISTICS',
+//         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//PRINT4   OUTPUT CLASS=R,
+//         NAME='THE MANAGER',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='FIN & TREA OPERATION',
+//         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//PRINT5   OUTPUT CLASS=R,
+//         NAME='MR TIEW SWEE SENG',
+//         ROOM='28TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='ALM DEPT',
+//         ADDRESS=('TREASURY DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//PRINT6   OUTPUT CLASS=R,
+//         NAME='ATTN: CIK NORAEAN ADAM',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='SYSTEMS AND BNM REPORTING',
+//         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//*
+//PRINT9   OUTPUT CLASS=R,
+//         NAME='MISS KELLY CHOY',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='FINANCE DIVISION',
+//         ADDRESS=('FINANCIAL ACCOUNTING','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//PRINT10  OUTPUT CLASS=R,
+//         NAME='EN NOR HISHAM NORDIN',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PB',
+//         DEPT='FINANCE DIVISION',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//PRINT11  OUTPUT CLASS=R,
+//         NAME='MS CHIN SIM YEE',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PB',
+//         DEPT='MANAGEMENT ACCOUNTING',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//PRINT13  OUTPUT CLASS=R,
+//         NAME='MR WONG WEE HONG',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PB',
+//         DEPT='FINANCE DIVISION',
+//         ADDRESS=('MANAGEMENT ACCTG','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//*
+//PRINT14  OUTPUT CLASS=R,
+//         NAME='EN SAIFUL ADZLIM ARIFF',
+//         ROOM='24TH FLOOR',
+//         BUILDING='MENARA PB',
+//         DEPT='RISK MANAGEMENT DIVISION',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//*
+//*---------------------------------------------------------------------
+//*  WEIGHTED AVERAGE RATE FOR ALL ISLAMIC PRODUCTS........
+//*  - TO DISCONTINUE PRINTING REPORTS AS REQUESTED:
+//*    MOHD FADZLI MOHD YUSOFF - DATED 06/07/2004 - RHA
+//*---------------------------------------------------------------------
+//*EIBMIWAR EXEC SAS609,REGION=0M,WORK='395000,390000'
+//*RATE     DD DSN=RBP2.B033.WADIAH.RATE.SORT,DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//*DEPOSIT  DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//*BNMTBL3   DD DSN=SAP.PBB.KAPITI3(0),DISP=SHR
+//*SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT2)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMIWAR),DISP=SHR
+//*
+//****************************************************************      00050003
+//*  TO GENERATE BRANCH DEPOSIT POSITION AS AT MONTH END.               00060003
+//*  DOWNLOAD TO RPTS AND COLD FOR BRANCH TO VIEW AND MONITOR..         00070003
+//*  CONTACT  MIS YIP LH OF PRODUCT DEVELOPMENT AND RESEARCH FOR        00080003
+//*  FURTHER INFO...LN6                                                 00090003
+//****************************************************************      00100003
+//****************************************************************      00171007
+//* DELETE OUTPUT DATASETS                                              00171107
+//****************************************************************      00171207
+//DELETE   EXEC PGM=IEFBR14                                             00171313
+//DD1      DD DSN=SAP.PBB.PDRRPT.COLD,                                  00171413
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,                      00171513
+//            SPACE=(CYL,1,RLSE)                                        00171613
+//*                                                                     00171707
+//EIBMBPOS  EXEC SAS609,REGION=64M,WORK='350000,350000'                 00180014
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR                            00200008
+//FD        DD DSN=SAP.PBB.MNIFD(0),DISP=SHR                            00210008
+//BRHFILE   DD DSN=RBP2.B033.PBB.BRANCH,DISP=SHR                        00220003
+//KAPITI5   DD DSN=SAP.PBB.KAPITI5(0),DISP=SHR                          00230003
+//LOAN      DD DSN=SAP.PBB.MNILN(0),DISP=SHR                            00250008
+//SASDATA   DD DSN=SAP.PBB.SASDATA,DISP=SHR                             00260003
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR                             00270003
+//SASLIST   DD DSN=SAP.PBB.PDRRPT.COLD,                                 00290013
+//             DISP=(NEW,CATLG,DELETE),                                 00300013
+//             DCB=(RECFM=FBA,LRECL=133,BLKSIZE=0,DSORG=PS),            00310013
+//             SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                        00320013
+//SASLOG    DD SYSOUT=X                                                 00330003
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMBPOS),DISP=SHR
+//*
+//*------------------------------------------------------------------
+//* EXCEPTIONAL REPORTS ON DEPOSIT AND LOAN EXTRACTIONS...
+//*------------------------------------------------------------------
+//*EIBMEXCP EXEC SAS609,REGION=6M,WORK='120000,20000'
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*DEPOSIT  DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//*SASDATA  DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT1)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMEXCP),DISP=SHR
+//*
+//*------------------------------------------------------------------
+//* EIBMNRCC - BNM REPORT FOR EALIS2 NRCC - CUSTCODE 63,68
+//* REQUEST BY NORAEAN - 16/09/09
+//*------------------------------------------------------------------
+//*EIBMNRCC EXEC SAS609,REGION=6M,WORK='120000,20000'
+//*LOAN1    DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//*LOAN2    DD DSN=SAP.PBB.MNILN(-4),DISP=SHR
+//*TRBL     DD DSN=SAP.PBB.MNITRBL,DISP=SHR
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT6)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMNRCC),DISP=SHR
+//*
+//*********************************************************************
+//*    REPORT  : DEPOSITS, BY TIME TO MATURITY FOR ALCO
+//*              (WEIGHTED AVERAGE COST BY MATURITY PROFILE)
+//*********************************************************************
+//EIBMRM01 EXEC SAS609,REGION=6M,WORK='120000,80000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//BNM      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRM01),DISP=SHR
+//*
+//*********************************************************************
+//*    REPORT  : FD-BY INDIVIDUAL AND NON-INDIVIDUAL, BY TIME
+//*              TO MATURITY FOR ALCO  - PART 1
+//*              (WEIGHTED AVERAGE COST BY MATURITY PROFILE)
+//*********************************************************************
+//EIBMRM02 EXEC SAS609,REGION=6M,WORK='120000,80000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRM02),DISP=SHR
+//*
+//*********************************************************************
+//*    REPORT  : FD-BY INDIVIDUAL AND NON-INDIVIDUAL, BY TIME
+//*              TO MATURITY FOR ALCO  - PART 2.
+//*              (WEIGHTED AVERAGE COST BY MATURITY PROFILE)
+//*********************************************************************
+//EIBMRM03 EXEC SAS609,REGION=6M,WORK='120000,80000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRM03),DISP=SHR
+//*
+//*********************************************************************
+//*   REPORT  : LOANS & ADVANCES, BY TIME TO MATURITY FOR ALCO
+//*             (WEIGHTED AVERAGE YIELD BY MATURITY PROFILE)
+//*********************************************************************
+//EIBMRM04 EXEC SAS609,REGION=6M,WORK='120000,80000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//BNM      DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRM04),DISP=SHR
+//*
+//*********************************************************************
+//*   AVERAGE RATE ON ALL FIXED DEPOSIT PRODUCTS ON MONTHLY BASIS
+//*   IE., ON 8TH, 15TH, 22TH AND MONTH-END EXTRACTIONS.....
+//*********************************************************************
+//*EIBMRATE EXEC SAS609,REGION=48M
+//*BNM      DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*FD1      DD DSN=SAP.PBB.MNIFD(-1),DISP=SHR
+//*FD2      DD DSN=SAP.PBB.MNIFD(-2),DISP=SHR
+//*FD3      DD DSN=SAP.PBB.MNIFD(-3),DISP=SHR
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT4),COPIES=2
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRATE),DISP=SHR
+//*********************************************************************
+//*   BALANCES OF EXTERNAL ACCOUNT BY BRANCH
+//*********************************************************************
+//*EIBMBEXT EXEC SAS609,REGION=6M,WORK='120000,80000'
+//*BNM      DD DSN=&&TEMP,DISP=(NEW,PASS),
+//*            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//*            SPACE=(CYL,(300,50)),UNIT=SYSDA
+//*DEPOSIT  DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*BNM1     DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT1)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMBEXT),DISP=SHR
+//*********************************************************************
+//*   OPEN CLOSED ACCOUNT
+//*********************************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DD4      DD DSN=SAP.PBB.OPCL.SAVG,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(5,1))
+//DD5      DD DSN=SAP.PBB.OPCL.CURR,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(5,1))
+//DD6      DD DSN=SAP.PBB.EIMALIMT.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(5,1))
+//DD7      DD DSN=SAP.PBB.OPCL.FD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(5,1))
+//*
+//* SMR 2008-1057
+//* ALL ACCTS (PIBB+PBB)
+//*
+//EIBMDPSA EXEC SAS609
+//BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//DEPOSIT  DD DSN=SAP.PBB.MNITB.MTH,DISP=SHR
+//MIS      DD DSN=SAP.PBB.OPCL.SASDATA,DISP=OLD
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.OPCL.SAVG,
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0,DSORG=PS),              00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMDPSA),DISP=SHR
+//*
+//EIBMDPCA EXEC SAS609
+//BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//DEPOSIT  DD DSN=SAP.PBB.MNITB.MTH,DISP=SHR
+//MIS      DD DSN=SAP.PBB.OPCL.SASDATA,DISP=OLD
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.OPCL.CURR,
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0,DSORG=PS),              00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMDPCA),DISP=SHR
+//*
+//EIBMDPFQ EXEC SAS609
+//BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//DEPOSIT  DD DSN=SAP.PBB.MNITB.MTH,DISP=SHR
+//FD       DD DSN=SAP.PBB.MNIFD.MTH,DISP=SHR
+//MIS      DD DSN=SAP.PBB.OPCL.SASDATA,DISP=OLD
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.OPCL.FD,
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0,DSORG=PS),              00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMDPFQ),DISP=SHR
+//*
+//*------------------------------------------------------------------
+//* MONTHLY REPORT ON MORE PLAN LOANS - PURPOSE OTHERS
+//*------------------------------------------------------------------
+//EIBMCLAS  EXEC SAS609
+//BNM       DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//LOAN      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD SYSOUT=X
+//SYSIN     DD DSN=SAP.BNM.PROGRAM(EIBMCLAS),DISP=SHR
+//*------------------------------------------------------------------
+//* EXTRACTION FOR ISLAMIC PRODUCTS (204,215)
+//*------------------------------------------------------------------
+//EIBMISL2  EXEC SAS609
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT9)
+//SYSIN     DD DSN=SAP.BNM.PROGRAM(EIBMISL2),DISP=SHR
+//*------------------------------------------------------------------
+//* MAX & MIN LENDING RATE BY SECTOR FOR HP (D) DISBURSED FOR THE MTH
+//* REMOVE BY ESMR 2007-329 BY NEW JOB EIBMHPMX RUN ON 3RD MTHLY.
+//*------------------------------------------------------------------
+//*EIMHPMAX  EXEC SAS609
+//*LOAN      DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//*NOTE      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//*PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT10)
+//*SYSIN     DD DSN=SAP.BNM.PROGRAM(EIMHPMAX),DISP=SHR
+//*------------------------------------------------------------------
+//* GROSS LOAN APPROVED LIMIT
+//*------------------------------------------------------------------
+//EIMALIMT EXEC SAS609
+//LOAN     DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//BRHFILE  DD DSN=RBP2.B033.PBB.BRANCH,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIMALIMT.TEXT,
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0,DSORG=PS),              00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIMALIMT),DISP=SHR
+//*------------------------------------------------------------------
+//* NUMBER OF ACCOUNTS FOR LOANS *DISCONTINUE EMSR 2018-1682
+//*------------------------------------------------------------------
+//*EIBM619L EXEC SAS609
+//*LOAN     DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT13)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBM619L),DISP=SHR
+//*------------------------------------------------------------------
+//* NUMBER OF ACCOUNTS FOR DEPOSIT *DISCONTINUE EMSR 2018-1682
+//*------------------------------------------------------------------
+//*EIBM619D EXEC SAS609
+//*BNM      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//*LOAN     DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT13)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBM619D),DISP=SHR
+//***********************************************************
+//* TIME TO MATURITY REPORT FOR FCY FD. SMR 2005-1085.
+//* EIBMFC01 - BY REMAINING MATURITY
+//****************************************************************      00100003
+//* 2007-690 - SOFTCOPY RPT OF EIBMFC01 INTO RISKMGMT FOLDER (RHA)      00171007
+//***********************************************************
+//*EIBMFC01 EXEC SAS609
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT14)
+//*SASLIST  DD DSN=SAP.PBB.RISKMGMT.FCYRPT(+1),
+//*            DISP=(NEW,CATLG,DELETE),
+//*            SPACE=(TRK,(1,1),RLSE),
+//*            UNIT=SYSDA,
+//*            DCB=(LRECL=132,RECFM=FBA,BLKSIZE=0,BUFNO=30)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMFC01),DISP=SHR
+//***********************************************************
+//* EIBMFC02 - BY ORIGINAL MATURITY
+//***********************************************************
+//*DELETE   EXEC PGM=IEFBR14
+//*DD1      DD DSN=SAP.PBB.EIBMFC02.TXT,
+//*            DISP=(MOD,DELETE,DELETE),
+//*            SPACE=(CYL,(5,1))
+//*
+//*EIBMFC02 EXEC SAS609
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*SASLIST  DD DSN=SAP.PBB.EIBMFC02.TXT,
+//*            DISP=(NEW,CATLG,DELETE),                                 00300013
+//*            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0,DSORG=PS),             00310013
+//*            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                        00320013
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMFC02),DISP=SHR
+//***********************************************************
+//* EIBMFC03 - BY ORIGINAL MATURITY
+//***********************************************************
+//*DELETE   EXEC PGM=IEFBR14
+//*DD1      DD DSN=SAP.PBB.EIBMFC03.TXT,
+//*            DISP=(MOD,DELETE,DELETE),
+//*            SPACE=(CYL,(5,1))
+//*
+//*EIBMFC03 EXEC SAS609
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*SASLIST  DD DSN=SAP.PBB.EIBMFC03.TXT,
+//*            DISP=(NEW,CATLG,DELETE),                                 00300013
+//*            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0,DSORG=PS),             00310013
+//*            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                        00320013
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMFC03),DISP=SHR
+//*
+//***********************************************************
+//* EIBMRM1X -  DEPOSITS, BY TIME TO MATURITY FOR ALCO
+//***********************************************************
+//*DELETE   EXEC PGM=IEFBR14
+//*DD1      DD DSN=SAP.PBB.EIBMRM1X.TXT,
+//*            DISP=(MOD,DELETE,DELETE),
+//*            SPACE=(TRK,(1,10))
+//*CREATE   EXEC PGM=IEFBR14
+//*CRT01    DD DSN=SAP.PBB.EIBMRM1X.TXT,
+//*            DISP=(NEW,CATLG,DELETE),
+//*            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//*            SPACE=(CYL,(10,20),RLSE),UNIT=SYSDA
+//*EIBMRM1X EXEC SAS609,REGION=6M,WORK='120000,80000'
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*BNM      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//*TEMP     DD DSN=SAP.PBB.EIBMRM1X.TXT,DISP=OLD
+//*SASLIST  DD SYSOUT=X
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRM1X),DISP=SHR
+//***********************************************************
+//* EIBMRM2X -  FD-BY INDIVIDUAL AND NON-INDIVIDUAL, BY TIME
+//*             TO MATURITY FOR ALCO
+//***********************************************************
+//*DELETE   EXEC PGM=IEFBR14
+//*DD1      DD DSN=SAP.PBB.EIBMRM2X.TXT,
+//*            DISP=(MOD,DELETE,DELETE),
+//*            SPACE=(TRK,(1,10))
+//*CREATE   EXEC PGM=IEFBR14
+//*CRT01    DD DSN=SAP.PBB.EIBMRM2X.TXT,
+//*            DISP=(NEW,CATLG,DELETE),
+//*            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//*            SPACE=(CYL,(10,20),RLSE),UNIT=SYSDA
+//*EIBMRM2X EXEC SAS609,REGION=6M,WORK='120000,80000'
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*TEMP     DD DSN=SAP.PBB.EIBMRM2X.TXT,DISP=OLD
+//*SASLIST  DD SYSOUT=X
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRM2X),DISP=SHR
+//***********************************************************
+//* EIBMRM3X -  FD-BY INDIVIDUAL AND NON-INDIVIDUAL, BY TIME
+//*             TO MATURITY FOR ALCO
+//***********************************************************
+//*DELETE   EXEC PGM=IEFBR14
+//*DD1      DD DSN=SAP.PBB.EIBMRM3X.TXT,
+//*            DISP=(MOD,DELETE,DELETE),
+//*            SPACE=(TRK,(1,10))
+//*CREATE   EXEC PGM=IEFBR14
+//*CRT01    DD DSN=SAP.PBB.EIBMRM3X.TXT,
+//*            DISP=(NEW,CATLG,DELETE),
+//*            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//*            SPACE=(CYL,(10,20),RLSE),UNIT=SYSDA
+//*EIBMRM3X EXEC SAS609,REGION=6M,WORK='120000,80000'
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//*TEMP     DD DSN=SAP.PBB.EIBMRM3X.TXT,DISP=OLD
+//*SASLIST  DD SYSOUT=X
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRM3X),DISP=SHR
+//***********************************************************
+//* EIBMRM4X -  REPRICING GAP
+//***********************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.EIBMRM4X.SUMMR,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//EIBMRM4X EXEC SAS609,WORKSPC='300,300'
+//BNM       DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//OD        DD DSN=SAP.PBB.MNILIMT(0),DISP=SHR
+//PROV      DD DSN=SAP.PBB.CCRIS2.PROVISIO,DISP=SHR
+//LNNOTE    DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//RM4XSMMR  DD DSN=SAP.PBB.EIBMRM4X.SUMMR,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(20,20),RLSE),UNIT=(SYSDA,5)
+//SASLIST   DD SYSOUT=X
+//SORTWK01  DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK02  DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK03  DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRM4X),DISP=SHR
+//******************************************************************
+//* FTP HOST DATASETS TO PBB DATAWAREHOUSE SERVER
+//******************************************************************
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*CD TEXTFILE
+//*CD RISKMGT
+//*PUT //SAP.PBB.RISKMGMT.FCYRPT(+1) RISKMFCY.TXT
+//*PUT //SAP.PBB.EIBMFC02.TXT EIBMFC02.TXT
+//*PUT //SAP.PBB.EIBMFC03.TXT EIBMFC03.TXT
+//*PUT //SAP.PBB.EIBMRM1X.TXT EIBMRM1X.TXT
+//*PUT //SAP.PBB.EIBMRM2X.TXT EIBMRM2X.TXT
+//*PUT //SAP.PBB.EIBMRM3X.TXT EIBMRM3X.TXT
+//*EOB
+//******************************************************************
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//******************************************************************
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*CD "RMD-ALM/IRR"
+//*PUT //SAP.PBB.RISKMGMT.FCYRPT(+1) RISKMFCY.TXT
+//*PUT //SAP.PBB.EIBMFC02.TXT EIBMFC02.TXT
+//*PUT //SAP.PBB.EIBMFC03.TXT EIBMFC03.TXT
+//*PUT //SAP.PBB.EIBMRM1X.TXT EIBMRM1X.TXT
+//*PUT //SAP.PBB.EIBMRM2X.TXT EIBMRM2X.TXT
+//*PUT //SAP.PBB.EIBMRM3X.TXT EIBMRM3X.TXT
+//*EOB
