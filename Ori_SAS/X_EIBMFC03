@@ -1,0 +1,201 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBMFC03                                          |
+ |  DATE    : 21.10.05                                          |
+ |  REPORT  : FD-BY INDIVIDUAL AND NON-INDIVIDUAL, BY TIME      |
+ |            TO MATURITY FOR  FOREIGN CURRENCIES               |
+ |            (WEIGHTED AVERAGE COST BY MATURITY PROFILE)       |
+ +--------------------------------------------------------------+;
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER MISSING=0;
+*;
+%INC PGM(PBBDPFMT);
+*;
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0   = '       '
+      0-1     = '>0-1 MTH'
+      1-2     = '>1-2 MTHS'
+      2-3     = '>2-3 MTHS'
+      3-4     = '>3-4 MTHS'
+      4-5     = '>4-5 MTHS'
+      5-6     = '>5-6 MTHS'
+      6-7     = '>6-7 MTHS'
+      7-8     = '>7-8 MTHS'
+      8-9     = '>8-9 MTHS'
+      9-10    = '>9-10 MTHS'
+      10-11   = '>10-11 MTHS'
+      11-12   = '>11-12 MTHS'
+      12-24   = '>1-2 YRS'
+      24-36   = '>2-3 YRS'
+      36-48   = '>3-4 YRS'
+      48-60   = '>4-5 YRS'
+      91      = ' 1 MONTH'
+      92      = ' 3 MONTHS'
+      93      = ' 6 MONTHS'
+      94      = ' 9 MONTHS'
+      95      = '12 MONTHS'
+      96      = '15 MONTHS'
+      97      = 'ABOVE 15 MONTHS'
+      99      = 'OVERDUE FD'
+      OTHER   = '>5 YRS';
+*;
+   VALUE $SUBTTL
+     'A'   = 'REMAINING MATURITY'
+     'B'   = 'OVERDUE FD'
+     'C'   = 'NEW FD FOR THE MONTH'
+     'D'   = 'SAVING ACCOUNTS'
+     'E'   = 'NON INTEREST BEARING'
+     'F'   = 'INTEREST BEARING'
+     'G'   = 'HOUSNG DEVELOPER ACC'
+     'Z'   = 'TOTAL               ';
+*;
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE REMAIN MONTH               *
+*------------------------------------------------*;
+%MACRO REMMTH;
+   MDYR  = YEAR(MATDT);
+   MDMTH = MONTH(MATDT);
+   MDDAY = DAY(MATDT);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+   IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+*;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE;
+   SET FD.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN (8)  CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTYRS',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+*------------------------------------------------*
+*  FIXED DEPOSITS                                *
+*------------------------------------------------*;
+DATA FD;
+   LENGTH PRODTYP $16 SUBTYP $12  SUBTTL  $1.;
+   RETAIN PRODTYP 'FIXED DEPOSIT';
+   %DCLVAR
+   SET FD.FD;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   BIC=PUT(INTPLAN,FDPROD.);
+
+   IF BIC='42630';
+
+   IF CUSTCD IN (77,78,95,96)
+   THEN TYPE='  INDIVIDUALS  '; ELSE TYPE='NON-INDIVIDUALS';
+   IF (470<=INTPLAN<=475) OR INTPLAN=560
+   THEN SUBTYP='USD';            ELSE SUBTYP='OTH';
+
+   MATDT=INPUT(PUT(MATDATE,Z8.),YYMMDD8.);
+
+   IF OPENIND='O' OR OPENIND='D' AND CURBAL > 0   THEN DO;
+      IF OPENIND='D' OR MATDT < REPTDATE THEN DO;
+         SUBTTL ='B';
+         REMMTH =99;
+         COST = CURBAL * RATE;
+         RENAME CURBAL=AMOUNT;
+         OUTPUT FD;
+      END;
+      ELSE DO;
+         %REMMTH
+         SUBTTL ='A';
+         COST = CURBAL * RATE;
+         RENAME CURBAL=AMOUNT;
+         OUTPUT FD;
+         IF ((TERM - REMMTH)  < 1 )  THEN DO;
+            SUBTTL='C';
+            COST  = CURBAL * RATE;
+            RENAME CURBAL=AMOUNT;
+            REMMTH= TERM - 0.5;
+            IF REMMTH <= 1   THEN REMMTH = 91; ELSE
+            IF REMMTH <= 3   THEN REMMTH = 92; ELSE
+            IF REMMTH <= 6   THEN REMMTH = 93; ELSE
+            IF REMMTH <= 9   THEN REMMTH = 94; ELSE
+            IF REMMTH <= 12  THEN REMMTH = 95; ELSE
+            IF REMMTH <= 15  THEN REMMTH = 96; ELSE
+            IF REMMTH >  15  THEN REMMTH = 97;
+            OUTPUT FD;
+         END;
+      END;
+   END;
+*;
+*------------------------------------------------*
+*  SUMMARISE FOR CALCULATION OF WT AV COST       *
+*------------------------------------------------*;
+*;
+PROC SUMMARY DATA=FD  NWAY;
+   FORMT  REMMTH REMFMT.;
+   CLASS  TYPE PRODTYP SUBTYP SUBTTL REMMTH;
+   VAR    AMOUNT COST;
+   OUTPUT OUT=FD1 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=FD  NWAY;
+   CLASS  TYPE PRODTYP SUBTYP;
+   VAR    AMOUNT COST;
+   OUTPUT OUT=FD2 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA FD2;
+   SET FD2;
+   REMMTH=-1;
+   SUBTTL='Z';
+   PRODTYP='TOTAL';
+*;
+DATA DEP;
+   SET FD1 FD2;
+   WACOST = COST / AMOUNT;
+   AMOUNT = ROUND(AMOUNT/1000);
+*;
+*------------------------------------------------*
+*  PRODUCE REPORTS                               *
+*------------------------------------------------*;
+TITLE1 &SDESC;
+TITLE2 'TIME TO MATURITY AS AT' &RDATE;
+TITLE3 'RISK MANAGEMENT REPORT : EIBMFC03';
+TITLE4 'RM DENOMINATION FOR FOREIGN CURRENCIES';
+*;
+PROC TABULATE DATA=DEP MISSING NOSEPS;
+   FORMAT SUBTTL $SUBTTL.;
+   FORMAT REMMTH REMFMT.;
+   CLASS PRODTYP SUBTTL SUBTYP TYPE REMMTH;
+   VAR AMOUNT WACOST;
+   TABLE PRODTYP=' '*SUBTTL=' '*REMMTH=' ',
+         ((SUBTYP=' ') ALL='TOTAL')*
+         ((TYPE=' ')*SUM=' '*
+         (AMOUNT='BAL OUSTANDING (RM''000)'*F=COMMA12.
+          WACOST='W.A. COST %'*F=COMMA12.2))
+        / BOX='FIXED DEPOSIT' RTS=65 CONDENSE;
+/*
