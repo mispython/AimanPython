@@ -47,6 +47,16 @@ try:
 except ImportError:
     EIFMNP07 = None
 
+try:
+    import EIFMNP21
+except ImportError:
+    EIFMNP21 = None
+
+try:
+    import EIFMNP22
+except ImportError:
+    EIFMNP22 = None
+
 # Output file paths for reports
 OUTPUT_IIS_TEXT = "SAP.PBB.IIS.TEXT"
 OUTPUT_SP_TEXT = "SAP.PBB.SP.TEXT"
@@ -88,13 +98,13 @@ def delete_existing_files():
             print(f"  Not found (OK): {filepath}")
 
 
-def execute_step(step_name, module, description):
+def execute_step(step_name, module_or_callable, description):
     """
     Execute a processing step and handle errors
 
     Args:
         step_name: Name of the step (e.g., "EIFMNP03")
-        module: Python module to execute
+        module_or_callable: Python module with main() or callable to execute
         description: Description of what the step does
 
     Returns:
@@ -105,13 +115,16 @@ def execute_step(step_name, module, description):
     print(f"PURPOSE: {description}")
     print("=" * 80)
 
-    if module is None:
+    if module_or_callable is None:
         print(f"Warning: {step_name} module not available. Skipping...")
         return False
 
     try:
         start_time = datetime.now()
-        module.main()
+        if callable(module_or_callable):
+            module_or_callable()
+        else:
+            module_or_callable.main()
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
@@ -123,6 +136,32 @@ def execute_step(step_name, module, description):
         import traceback
         traceback.print_exc()
         return False
+
+
+def run_eifmnp21():
+    """
+    Execute EIFMNP21 and direct OUTFL output to SAP.PFB.NPL01.TEXT.
+    """
+    EIFMNP21.OUTPUT_REPORT_TXT = Path(OUTPUT_NPL01_TEXT)
+    EIFMNP21.main()
+
+
+def run_eifmnp22():
+    """
+    Execute EIFMNP22 with arguments aligned to EIFMNPL0 output DD mapping.
+    """
+    original_argv = sys.argv[:]
+    try:
+        sys.argv = [
+            "EIFMNP22.py",
+            "--output-report",
+            OUTPUT_NPL02_TEXT,
+            "--npl-loan-dir",
+            ".",
+        ]
+        EIFMNP22.main()
+    finally:
+        sys.argv = original_argv
 
 
 def main():
@@ -187,15 +226,18 @@ def main():
     print("-" * 80)
 
     # Step 5: Execute EIFMNP21 - NPL Report 1
-    # Note: EIFMNP21 and EIFMNP22 modules need to be created separately
-    print("\n" + "-" * 80)
-    print("NOTE: EIFMNP21 - NPL Report 1 (to be implemented)")
-    print("-" * 80)
+    results['EIFMNP21'] = execute_step(
+        "EIFMNP21",
+        run_eifmnp21 if EIFMNP21 is not None else None,
+        "NPL Report 1 - IIS/SP tabulation text file"
+    )
 
     # Step 6: Execute EIFMNP22 - NPL Report 2
-    print("\n" + "-" * 80)
-    print("NOTE: EIFMNP22 - NPL Report 2 (to be implemented)")
-    print("-" * 80)
+    results['EIFMNP22'] = execute_step(
+        "EIFMNP22",
+        run_eifmnp22 if EIFMNP22 is not None else None,
+        "Outstanding balance for PC/FEE receivable"
+    )
 
     # Note: SFTP transfer disabled
     print("\n" + "-" * 80)
@@ -249,7 +291,9 @@ def main():
     all_critical_steps_passed = (
             results.get('EIFMNP03', False) and
             results.get('EIFMNP06', False) and
-            results.get('EIFMNP07', False)
+            results.get('EIFMNP07', False) and
+            results.get('EIFMNP21', False) and
+            results.get('EIFMNP22', False)
     )
 
     print("=" * 80)
