@@ -1,0 +1,392 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBMRM01                                          |
+ |  DATE    : 14.07.99                                          |
+ |  REPORT  : DEPOSITS, BY TIME TO MATURITY FOR ALCO            |
+ |            (WEIGHTED AVERAGE COST BY MATURITY PROFILE)       |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER MISSING=0;
+*;
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0   = '       '
+      0-1     = '>0-1 MTH'
+      1-2     = '>1-2 MTHS'
+      2-3     = '>2-3 MTHS'
+      3-4     = '>3-4 MTHS'
+      4-5     = '>4-5 MTHS'
+      5-6     = '>5-6 MTHS'
+      6-7     = '>6-7 MTHS'
+      7-8     = '>7-8 MTHS'
+      8-9     = '>8-9 MTHS'
+      9-10    = '>9-10 MTHS'
+      10-11   = '>10-11 MTHS'
+      11-12   = '>11-12 MTHS'
+      12-24   = '>1-2 YRS'
+      24-36   = '>2-3 YRS'
+      36-48   = '>3-4 YRS'
+      48-60   = '>4-5 YRS'
+      91      = ' 1 MONTH'
+      92      = ' 3 MONTHS'
+      93      = ' 6 MONTHS'
+      94      = ' 9 MONTHS'
+      95      = '12 MONTHS'
+      96      = '15 MONTHS'
+      97      = 'ABOVE 15 MONTHS'
+      99      = 'OVERDUE FD'
+      OTHER   = '>5 YRS';
+*;
+   VALUE $SUBTTL
+     'A'   = 'REMAINING MATURITY'
+     'B'   = 'OVERDUE FD'
+     'C'   = 'NEW FD FOR THE MONTH'
+     'D'   = 'SAVING ACCOUNTS'
+     'E'   = 'NON INTEREST BEARING'
+     'F'   = 'INTEREST BEARING'
+     'G'   = 'HOUSNG DEVELOPER ACC'
+     'H'   = 'PORTION FROM ACE ACC';
+*;
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE REMAIN MONTH               *
+*------------------------------------------------*;
+%MACRO REMMTH;
+   MDYR  = YEAR(MATDT);
+   MDMTH = MONTH(MATDT);
+   MDDAY = DAY(MATDT);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+   IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+*;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE;
+   SET BNM.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN (8)  CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTYRS',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+*------------------------------------------------*
+*  FIXED DEPOSITS                                *
+*------------------------------------------------*;
+DATA FD (KEEP=PRODTYP SUBTYP SUBTTL REMMTH TERM AMOUNT COST MATDT
+              INTDATE INTPLAN OPENIND REPTDATE RATE ACCTNO CDNO)
+     TD (KEEP=PRODTYP SUBTYP SUBTTL REMMTH TERM AMOUNT COST MATDT
+              INTDATE INTPLAN OPENIND REPTDATE RATE ACCTNO CDNO)
+     FDN(KEEP=PRODTYP SUBTYP SUBTTL REMMTH TERM AMOUNT COST MATDT
+              INTDATE INTPLAN OPENIND REPTDATE RATE ACCTNO CDNO);
+   LENGTH PRODTYP $16 SUBTYP $12  SUBTTL  $1.;
+   RETAIN PRODTYP 'FIXED DEPOSIT';
+   %DCLVAR
+   SET FD.FD;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+
+   IF OPENIND = 'O' OR OPENIND = 'D' AND CURBAL > 0   THEN DO;
+      MATDT = INPUT(PUT(MATDATE,Z8.),YYMMDD8.);
+      IF OPENIND = 'D' OR MATDT < REPTDATE THEN DO;
+         SUBTTL = 'B';
+         REMMTH = 99;
+         IF (340 <= INTPLAN <= 359)   OR
+            (448 <= INTPLAN <= 459)   OR
+            (461 <= INTPLAN <= 469)   OR
+            (580 <= INTPLAN <= 599)   THEN DO;
+            SUBTYP = 'SPTF';
+            STAFF = 'N';
+            IF (448 <= INTPLAN <= 459)   OR
+               (461 <= INTPLAN <= 469)   THEN
+               STAFF = 'Y';
+         END;
+         ELSE DO;
+            SUBTYP = 'CONVENTIONAL';
+            IF 400 <= INTPLAN <=419  | 420 <= INTPLAN <= 449  |
+               INTPLAN = 460   THEN STAFF = 'Y';  ELSE
+            STAFF = 'N';
+         END;
+         COST = CURBAL * RATE;
+         RENAME CURBAL=AMOUNT;
+         OUTPUT TD;
+      END;
+      ELSE DO;
+         %REMMTH
+         IF (340 <= INTPLAN <= 359)   OR
+            (448 <= INTPLAN <= 459)   OR
+            (461 <= INTPLAN <= 469)   OR
+            (580 <= INTPLAN <= 599)   THEN DO;
+            SUBTYP = 'SPTF';
+            STAFF = 'N';
+            IF (448 <= INTPLAN <= 459)   OR
+               (461 <= INTPLAN <= 469)   THEN
+               STAFF = 'Y';
+         END;
+         ELSE DO;
+            SUBTYP = 'CONVENTIONAL';
+            IF 400 <= INTPLAN <=419  | 420 <= INTPLAN <= 449  |
+               INTPLAN = 460   THEN STAFF = 'Y';  ELSE
+            STAFF = 'N';
+         END;
+         SUBTTL = 'A';
+         COST = CURBAL * RATE;
+         RENAME CURBAL=AMOUNT;
+         OUTPUT FD;
+         IF ((TERM - REMMTH)  < 1 )  THEN DO;
+            IF (340 <= INTPLAN <= 359)   OR
+               (448 <= INTPLAN <= 459)   OR
+               (461 <= INTPLAN <= 469)   OR
+               (580 <= INTPLAN <= 599)   THEN DO;
+               SUBTYP = 'SPTF';
+               STAFF = 'N';
+               IF (448 <= INTPLAN <= 459)   OR
+                  (461 <= INTPLAN <= 469)   THEN
+                  STAFF = 'Y';
+            END;
+            ELSE DO;
+               SUBTYP = 'CONVENTIONAL';
+               IF 400 <= INTPLAN <=419  | 420 <= INTPLAN <= 449  |
+                  INTPLAN =460   THEN STAFF = 'Y';  ELSE
+                  STAFF = 'N';
+            END;
+            SUBTTL = 'C';
+            COST = CURBAL * RATE;
+            RENAME CURBAL=AMOUNT;
+            REMMTH = TERM - 0.5;
+            IF REMMTH <= 1   THEN REMMTH = 91; ELSE
+            IF REMMTH <= 3   THEN REMMTH = 92; ELSE
+            IF REMMTH <= 6   THEN REMMTH = 93; ELSE
+            IF REMMTH <= 9   THEN REMMTH = 94; ELSE
+            IF REMMTH <= 12  THEN REMMTH = 95; ELSE
+            IF REMMTH <= 15  THEN REMMTH = 96; ELSE
+            IF REMMTH >  15  THEN REMMTH = 97;
+            OUTPUT FDN;
+         END;
+      END;
+   END;
+*;
+     DATA PRINT;
+        SET FD;
+        IF REMMTH > 47  AND SUBTYP = 'SPTF';
+     PROC PRINT DATA=PRINT;
+*------------------------------------------------*
+*  SAVINGS                                       *
+*------------------------------------------------*;
+DATA SA (KEEP=PRODTYP SUBTYP SUBTTL AMOUNT COST REMMTH);
+   LENGTH PRODTYP $16 SUBTYP $12  SUBTTL  $1.;
+   RETAIN PRODTYP 'SAVINGS DEPOSIT' REMMTH 0;
+   SET BNM.SAVING;
+   SUBTTL = 'D';
+   IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0  THEN DO;
+      IF PRODUCT IN (204,214,215) THEN DO;
+         SUBTYP = 'SPTF';
+         IF PRODUCT IN (215)  THEN STAFF = 'Y';
+         ELSE STAFF = 'N';
+      END;
+      ELSE DO;
+         SUBTYP = 'CONVENTIONAL';
+         IF PRODUCT IN (201, 151, 181)  THEN STAFF = 'Y';
+         ELSE STAFF = 'N';
+      END;
+      COST = CURBAL * 0.04 * 100;
+      RENAME CURBAL=AMOUNT;
+   END;
+*;
+*------------------------------------------------*
+*  CURRENT                                       *
+*------------------------------------------------*;
+DATA CA  (KEEP=PRODTYP SUBTYP SUBTTL AMOUNT COST REMMTH)
+     CAG (KEEP=PRODTYP SUBTYP SUBTTL AMOUNT COST REMMTH)
+     CAH (KEEP=PRODTYP SUBTYP SUBTTL AMOUNT COST REMMTH)
+     CAS (KEEP=PRODTYP SUBTYP SUBTTL AMOUNT COST REMMTH);
+   LENGTH PRODTYP $16 SUBTYP $12  SUBTTL   $1.;
+   RETAIN REMMTH 0;
+   SET BNM.CURRENT;
+   IF OPENIND NOT IN ('B','C','P') AND (CURBAL > 0) AND
+      PRODUCT NOT IN (107, 126, 127, 128, 129, 130, 140, 141, 142,
+      144, 145, 146, 147, 148, 171, 172, 173,
+      104, 105, 131, 132, 133, 134, 135, 136, 143, 149)  THEN DO;
+      IF PRODUCT = 101     THEN DO;
+         SUBTYP = 'CONVENTIONAL';
+         PRODTYP = 'DEMAND DEPOSIT';
+         SUBTTL  = 'F';
+         STAFF  = 'N';
+         COST = CURBAL * 0.04 * 100 ;
+         RENAME CURBAL=AMOUNT;
+         OUTPUT CAG;
+      END;  ELSE
+      IF PRODUCT = 103     THEN DO;
+         SUBTYP = 'CONVENTIONAL';
+         PRODTYP = 'OTHER DEPOSITS';
+         SUBTTL  = 'G';
+         STAFF  = 'N';
+         COST = CURBAL * 0.04 * 100 ;
+         RENAME CURBAL=AMOUNT;
+         OUTPUT CAH;
+      END;  ELSE
+      IF PRODUCT IN (150,151,152)   THEN DO;
+         SUBTYP = 'CONVENTIONAL';
+         STAFF  = 'N';
+         IF PRODUCT = 151  THEN STAFF = 'Y';   ELSE STAFF = 'N';
+         IF CURBAL LE 5000    THEN DO;
+            PRODTYP = 'DEMAND DEPOSIT';
+            SUBTTL  = 'E';
+            COST = CURBAL * 0.04 * 100 ;
+            RENAME CURBAL=AMOUNT;
+            OUTPUT CA;
+         END;
+         ELSE DO;
+            CURBAL = CURBAL - 5000;
+            PRODTYP = 'SAVINGS DEPOSIT';
+            SUBTTL  = 'H';
+            COST = CURBAL * 0.04 * 100;
+            RENAME CURBAL=AMOUNT;
+            OUTPUT CAS;
+            CURBAL = 5000;
+            PRODTYP = 'DEMAND DEPOSIT';
+            SUBTTL  = 'E';
+            COST = CURBAL * 0.04 * 100;
+            RENAME CURBAL=AMOUNT;
+            OUTPUT CA;
+         END;
+      END;  ELSE
+      IF PRODUCT IN (160,161,162,163,164,182) THEN DO;
+         SUBTYP = 'SPTF';
+         PRODTYP = 'DEMAND DEPOSIT';
+         SUBTTL  = 'E';
+         IF PRODUCT IN(164,182)  THEN STAFF = 'Y';  ELSE
+            STAFF  = 'N';
+         COST = CURBAL * 0.04 * 100;
+         RENAME CURBAL=AMOUNT;
+         OUTPUT CA;
+      END;
+      ELSE DO;
+         SUBTYP = 'CONVENTIONAL';
+         PRODTYP = 'DEMAND DEPOSIT';
+         SUBTTL  = 'E';
+         IF PRODUCT IN (106,180,181)  THEN STAFF = 'Y';
+         ELSE STAFF = 'N';
+         COST = CURBAL * 0.04 * 100;
+         RENAME CURBAL=AMOUNT;
+         OUTPUT CA;
+      END;
+   END;
+*;
+*------------------------------------------------*
+*  SUMMARISE FOR CALCULATION OF WT AV COST       *
+*------------------------------------------------*;
+*;
+PROC SUMMARY DATA=TD  NWAY;
+   FORMAT REMMTH REMFMT.;
+   FORMAT SUBTTL $SUBTTL.;
+   CLASS PRODTYP SUBTYP SUBTTL REMMTH;
+   VAR AMOUNT COST;
+   OUTPUT OUT=TD (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=FD  NWAY;
+   FORMAT REMMTH REMFMT.;
+   FORMAT SUBTTL $SUBTTL.;
+   CLASS PRODTYP SUBTYP SUBTTL REMMTH;
+   VAR AMOUNT COST;
+   OUTPUT OUT=FD (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=FDN NWAY;
+   FORMAT REMMTH REMFMT.;
+   FORMAT SUBTTL $SUBTTL.;
+   CLASS PRODTYP SUBTYP SUBTTL REMMTH;
+   VAR AMOUNT COST;
+   OUTPUT OUT=FDN(DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=SA NWAY;
+   FORMAT REMMTH REMFMT.;
+   FORMAT SUBTTL $SUBTTL.;
+   CLASS PRODTYP SUBTYP SUBTTL REMMTH;
+   VAR AMOUNT COST;
+   OUTPUT OUT=SA(DROP=_TYPE_ _FREQ_) SUM=;
+*;
+*;
+PROC SUMMARY DATA=CA NWAY;
+   FORMAT REMMTH REMFMT.;
+   FORMAT SUBTTL $SUBTTL.;
+   CLASS PRODTYP SUBTYP SUBTTL REMMTH;
+   VAR AMOUNT COST;
+   OUTPUT OUT=CA(DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=CAG NWAY;
+   FORMAT REMMTH REMFMT.;
+   FORMAT SUBTTL $SUBTTL.;
+   CLASS PRODTYP SUBTYP SUBTTL REMMTH;
+   VAR AMOUNT COST;
+   OUTPUT OUT=CAG(DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=CAH NWAY;
+   FORMAT REMMTH REMFMT.;
+   FORMAT SUBTTL $SUBTTL.;
+   CLASS PRODTYP SUBTYP SUBTTL REMMTH;
+   VAR AMOUNT COST;
+   OUTPUT OUT=CAH(DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=CAS NWAY;
+   FORMAT REMMTH REMFMT.;
+   FORMAT SUBTTL $SUBTTL.;
+   CLASS PRODTYP SUBTYP SUBTTL REMMTH;
+   VAR AMOUNT COST;
+   OUTPUT OUT=CAS(DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA DEP;
+   SET TD FD FDN SA CA CAG CAH CAS;
+*;
+DATA DEP;
+   SET DEP;
+   IF SUBTYP IN ('SPTF','CONVENTIONAL') THEN
+      WACOST = COST / AMOUNT;
+      AMOUNT = ROUND(AMOUNT/1000);
+*;
+*------------------------------------------------*
+*  PRODUCE REPORTS                               *
+*------------------------------------------------*;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'TIME TO MATURITY AS AT' &RDATE;
+TITLE3 'RISK MANAGEMENT REPORT : EIBMRM01';
+TITLE4 'RM DENOMINATION';
+*;
+PROC TABULATE DATA=DEP MISSING NOSEPS;
+   FORMAT SUBTTL $SUBTTL.;
+   FORMAT REMMTH REMFMT.;
+   CLASS PRODTYP SUBTTL SUBTYP REMMTH;
+   VAR AMOUNT WACOST;
+   TABLE PRODTYP=' '*SUBTTL=' '*REMMTH=' ' ALL='TOTAL',
+         (SUBTYP=' ')*SUM=' '*
+         (AMOUNT='BAL OUSTANDING (RM''000)'*F=COMMA12.
+          WACOST='W.A. COST %'*F=COMMA12.2)
+         / BOX='DEPOSITS' RTS=65 CONDENSE;
+/*
+//
