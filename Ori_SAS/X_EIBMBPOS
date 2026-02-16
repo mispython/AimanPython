@@ -1,0 +1,328 @@
+OPTIONS NOCENTER YEARCUTOFF=1950 NODATE NONUMBER LS=132 PS=65;          00360000
+*;                                                                      00370000
+DATA REPTDATE;                                                          00391000
+   SET LOAN.REPTDATE;                                                   00392002
+   SELECT(DAY(REPTDATE));                                               00393000
+      WHEN (8)  CALL SYMPUT('NOWK',PUT('1',$1.));                       00394000
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));                       00395000
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));                       00396000
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));                       00397000
+   END;                                                                 00398000
+   CALL SYMPUT('REPTYRS',PUT(REPTDATE,YEAR2.));                         00399000
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));                        00399100
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));                     00399200
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));                       00399300
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));                         00399400
+RUN;                                                                    00399500
+*;                                                                      00399600
+DATA SAVING                                                             00399700
+     PBSAVE;                                                            00399800
+   FORMAT ITEM  GROUP  CATG  $25.;                                      00399900
+   SET DEPOSIT.SAVING;                                                  00400000
+   IF OPENIND NOT IN ('B','C','P','Z');                                 00430000
+   ITEM  = ' ';                                                         00440000
+   CATG  = '(A) SAVINGS ACCOUNTS';                                      00450000
+   GROUP = '(1) DEPOSIT PRODUCTS';                                      00460000
+   IF PRODUCT IN (200,201) THEN DO;                                     00470000
+      ITEM = '1 PLUS SAVING ACCOUNTS';                                  00480000
+      OUTPUT SAVING;                                                    00490000
+   END; ELSE                                                            00500000
+   IF PRODUCT = 202 THEN DO;                                            00510000
+      ITEM = '2 YOUNG ACHIEVER S/A';                                    00520000
+      OUTPUT SAVING;                                                    00530000
+   END; ELSE                                                            00540000
+   IF PRODUCT = 212 THEN DO;                                            00550000
+      ITEM = '3 WISE SAVING ACCOUNTS';                                  00560000
+      OUTPUT SAVING;                                                    00570000
+   END; ELSE                                                            00580000
+   IF PRODUCT = 203 THEN DO;                                            00590000
+      ITEM = '4 50 PLUS SAVING ACCOUNTS';                               00600000
+      OUTPUT SAVING;                                                    00610000
+   END; ELSE                                                            00620000
+   IF PRODUCT = 205 THEN DO;                                            00621002
+      ITEM = '5 BASIC SAVING ACCOUNTS';                                 00622002
+      OUTPUT SAVING;                                                    00623002
+   END; ELSE                                                            00624002
+   IF PRODUCT = 206 THEN DO;                                            00625002
+      ITEM = '6 BASIC 55 SAVING ACCOUNTS';                              00626002
+      OUTPUT SAVING;                                                    00627002
+   END; ELSE                                                            00628002
+   IF PRODUCT = 213 THEN DO;                                            00630000
+      ITEM = '7 PB SAVELINK ACCOUNTS';                                  00640002
+      OUTPUT SAVING;                                                    00650000
+   END;                                                                 00660000
+   IF USER3 IN ('2','4')  THEN DO;                                      00670000
+      GROUP = '(2) PB PREMIUM CLUB';                                    00680000
+      CATG  = '(A) CLUB MEMBERS ON :';                                  00690000
+      ITEM  = '2 SAVING ACCOUNTS';                                      00700000
+      OUTPUT PBSAVE;                                                    00710000
+   END;                                                                 00720000
+RUN;                                                                    00730000
+*;                                                                      00740000
+DATA CURRENT                                                            00750000
+     PBCURR;                                                            00760000
+   FORMAT ITEM  GROUP  CATG  $25.;                                      00770000
+   SET DEPOSIT.CURRENT;                                                 00780000
+   IF OPENIND NOT IN ('B','C','P');                                     00800000
+   ITEM  = ' ';                                                         00810000
+   CATG  = '(B) CURRENT ACCOUNTS';                                      00820000
+   GROUP = '(1) DEPOSIT PRODUCTS';                                      00830000
+   IF PRODUCT IN (100,102,106,180) THEN DO;                             00840000
+      ITEM = '1A PLUS ACCOUNTS (CREDIT)';                               00850000
+      IF CURBAL LT 0  THEN DO;                                          00860000
+         ITEM = '1B PLUS ACCOUNTS (DEBIT)';                             00861000
+      END;                                                              00862000
+      OUTPUT CURRENT;                                                   00863000
+   END; ELSE                                                            00864000
+   IF PRODUCT IN (150,151,152,181) THEN DO;                             00865000
+      ITEM = '2 ACE ACCOUNTS';                                          00866000
+      OUTPUT CURRENT;                                                   00867000
+   END; ELSE                                                            00868000
+   IF PRODUCT IN (90) THEN DO;                                          00868102
+      ITEM = '3 BASIC CURRENT ACOUNTS';                                 00868202
+      OUTPUT CURRENT;                                                   00868302
+   END;                                                                 00868402
+   IF PRODUCT IN (91) THEN DO;                                          00868502
+      ITEM = '4 BASIC 55 CURRENT ACOUNTS';                              00868602
+      OUTPUT CURRENT;                                                   00868702
+   END;                                                                 00868802
+   IF PRODUCT IN (156,157,158) THEN DO;                                 00869000
+      ITEM = '5 PB CURRENTLINK ACOUNTS';                                00870002
+      OUTPUT CURRENT;                                                   00880000
+   END;                                                                 00890000
+   IF PRODUCT IN (150,151,152,100,102,160,162) & USER3 IN ('2','4')     00900000
+      THEN DO;                                                          00910000
+      GROUP = '(2) PB PREMIUM CLUB';                                    00920000
+      CATG  = '(A) CLUB MEMBERS ON :';                                  00930000
+      ITEM  = '1 CURRENT ACCOUNTS';                                     00940000
+      OUTPUT PBCURR;                                                    00950000
+   END;                                                                 00960000
+RUN;                                                                    00970000
+*;                                                                      00980002
+*-------------------------------------------------*                     00990000
+*  FIXED DEPOSITS FOR ALL FOUR WEEKLY EXTRACTIONS *                     01000000
+*-------------------------------------------------*;                    01010000
+DATA FD(RENAME=(INTPLAN=PRODUCT));                                      01020000
+   FORMAT ITEM  GROUP  CATG $25.;                                       01030000
+   SET FD.FD;                                                           01040000
+   ITEM  = ' ';                                                         01050000
+   CATG  = '(C) FIXED DEPOSIT ACCOUNT';                                 01060000
+   GROUP = '(1) DEPOSIT PRODUCTS';                                      01070000
+   IF OPENIND NOT IN ('B','C','P');                                     01080000
+   IF INTPLAN IN (360,361,362,363,364,365,366,460)  THEN DO;            01090000
+      ITEM = '3 PB GOLDEN 50 PLUS';                                     01100000
+   END;                                                                 01110000
+   ELSE IF INTPLAN IN (320,321,322,323,324,325,326,327,328,329,330,     01120000
+                       331,420,421,422,423,424,425,426,427,428,429,     01121000
+                       429,430,431)     THEN DO;                        01122000
+      ITEM = '2 FIXED DEPOSIT LIFE';                                    01123000
+   END;                                                                 01124000
+   ELSE IF INTPLAN IN (400,401,402,403,404,405,406,407,408,409,         01125000
+                       410,411,412,413,414,415,416,417,418,419,         01126000
+                       600,601,602,603,604,605,606,607,608,609,         01127000
+                       610,611,612,613,614,615,616,617,618,619,         01128000
+                       620,621,622,623,624,625,626,627,628,629,         01129000
+                       630,631,632,633,634,635,636,637,638,639,         01130000
+                       300,301,302,303,304,305,306,307,308,309,         01140000
+                       310,311,312,313,314,315,316,317,318,319,         01150000
+                       373,374,375,376,377,378,379,380,381,382,         01151001
+                       383,384,                                         01152001
+                       500,501,502,503,504,505,506,507,508,509,         01160000
+                       510,511,512,513,514,515,516,517,518,519,         01170000
+                       520,521,522,523,524,525,526,527,528,529,         01180000
+                       530,531,532,533,534,535,536,537,538,539)         01190000
+                                THEN DO;                                01200000
+      ITEM = '1 PLUS FIXED DEPOSIT';                                    01210000
+   END;                                                                 01220000
+   IF ITEM NE '  '   THEN OUTPUT;                                       01230000
+*;                                                                      01240000
+PROC SORT DATA=FD; BY BRANCH ITEM ACCTNO CDNO;                          01250000
+*;                                                                      01260000
+DATA FDSORT;                                                            01270000
+   SET FD; BY BRANCH ITEM ACCTNO CDNO;                                  01280000
+   IF FIRST.ACCTNO THEN DO;                                             01290000
+      AMOUNT = 0;                                                       01300000
+      NOOFCD = 0;                                                       01310000
+   END;                                                                 01320000
+                                                                        01330000
+   AMOUNT + CURBAL;                                                     01340000
+   NOOFCD + 1;                                                          01350000
+                                                                        01360000
+   IF LAST.ACCTNO  THEN OUTPUT;                                         01370000
+*;                                                                      01380000
+PROC SORT DATA=LOAN.LNNOTE OUT=LOAN(DROP=SECTOR) NODUPKEY;              01390000
+     BY ACCTNO NOTENO;                                                  01400000
+     WHERE REVERSED NE 'Y'  AND PAIDIND NE 'P'  AND NOTENO NE .  AND    01410000
+           ((NOTENO LT 100) OR (20000 <= NOTENO <= 29999)  OR           01420000
+           ((30000 <= NOTENO <= 39999) AND (FLAG1 = 'F')))  AND         01430000
+           LOANTYPE IN (110,111,112,113,114,115,116,200,201,204,205,    01440000
+           209,210,211,212,214,215,225,226,227,228,230,231,232,233,     01450000
+           234) AND RISKRATE NOT IN ('1','2','3','4')  AND              01460000
+           CUSTCODE IN (77,78,95,96) AND                                01470000
+           ORGTYPE IN ('E','M','N','S');                                01480000
+*;                                                                      01490000
+PROC SORT DATA=SASDATA.LOAN&REPTMON&NOWK OUT=SLOAN(DROP=SECTOR)         01500002
+     NODUPKEY;                                                          01501002
+     BY ACCTNO NOTENO;                                                  01510000
+     WHERE (PRODUCT IN (200,201,204,205,209,210,211                     01520000
+           212,214,215,225,226,227,228,230,231,232,233,234) AND         01530000
+           (APPRLIMT GE 150000))  OR                                    01540000
+           (PRODUCT IN (110,111,112,113,114,115,116) AND                01550000
+           (NETPROC GE 150000));                                        01560000
+*;                                                                      01570000
+DATA PBLOAN;                                                            01580000
+   MERGE LOAN(IN=A) SLOAN(IN=B); BY ACCTNO NOTENO;                      01590000
+   IF A AND B;                                                          01600000
+*;                                                                      01610000
+DATA PBLOANS(RENAME=(BALANCE=LEDGBAL));                                 01620000
+   SET PBLOAN; BY ACCTNO NOTENO;                                        01630000
+   GROUP = '(2) PB PREMIUM CLUB';                                       01640000
+   CATG  = '(A) CLUB MEMBERS ON :';                                     01650000
+   ITEM  = '3 HOUSING LOANS';                                           01660000
+RUN;                                                                    01670000
+*;                                                                      01680002
+DATA PBPREM;                                                            01690000
+   SET PBSAVE PBCURR PBLOANS;                                           01700000
+RUN;                                                                    01701000
+*;                                                                      01702302
+DATA KAPITI5;                                                           01703000
+   FORMAT BRANCI   $3.   BRANCH  3.  ITEM  $25.  CATG $25. GROUP  $25.; 01704000
+   INFILE KAPITI5;                                                      01705000
+   INPUT @001 CARDIN     $20.                                           01706000
+         @021 ISSUEDT     $8.                                           01707000
+         @021 IYEAR       $4.                                           01708000
+         @025 IMONTH      $2.                                           01709000
+         @027 IDAYS       $2.                                           01710000
+         @029 EXPIREDT    $8.                                           01720000
+         @029 EYEAR       $4.                                           01730000
+         @033 EMONTH      $2.                                           01740000
+         @035 EDAYS       $2.                                           01750000
+         @037 CARDSTAT    $4.                                           01760000
+         @041 SERVICEN    $8.                                           01770000
+         @049 SERVICES    $4.                                           01780000
+         @053 LASTLOG     $8.                                           01790000
+         @053 LYEAR       $4.                                           01800000
+         @057 LMONTH      $2.                                           01810000
+         @059 LDAYS       $2.                                           01820000
+         @061 ADDRESS1   $40.                                           01830000
+         @101 ADDRESS2   $40.                                           01840000
+         @141 LEGALID    $16.                                           01850000
+         @157 LEGALTYP    $4.                                           01860000
+         @161 CUSTNAME   $40.                                           01870000
+         @201 REMARK1    $40.                                           01880000
+         @201 PBBORPFB    $3.                                           01890000
+         @209 BRANCHES   $30.                                           01900000
+         @241 REMARK2    $40.                                           01910000
+         @281 ACCTNO     $20.                                           01920000
+         @301 ACCTTYPE    $2.                                           01930000
+         @303 PRIACIND    $1.;                                          01940000
+   AMT = 0;                                                             01950000
+   BRANCI = RIGHT(COMPRESS(BRANCHES,'ABCDEFGHIJKLMNOPQRSTUVWXYZ ():/'));01960000
+   BRANCH = BRANCI;                                                     01970000
+   GROUP = '(3) SERVICES';                                              01980000
+   CATG  = '(A) PB TELEBANKING';                                        01990000
+   ITEM  = '1 SUBSCRIBERS';                                             02000000
+   IF PBBORPFB = 'PBB'  AND BRANCH LT 500 THEN OUTPUT;                  02010000
+RUN;                                                                    02020000
+*;                                                                      02030000
+PROC SORT DATA=KAPITI5; BY BRANCH ACCTNO;                               02040000
+*;                                                                      02050002
+PROC SUMMARY DATA=SAVING NWAY;                                          02060000
+   CLASS BRANCH GROUP CATG ITEM;                                        02070000
+   VAR CURBAL;                                                          02080000
+   OUTPUT OUT=SAVING (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_)               02090000
+          SUM=AMOUNT;                                                   02100000
+RUN;                                                                    02110000
+*;                                                                      02120000
+PROC SUMMARY DATA=CURRENT NWAY;                                         02121000
+   CLASS BRANCH GROUP CATG ITEM;                                        02122000
+   VAR CURBAL;                                                          02123000
+   OUTPUT OUT=CURRENT (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_)              02124000
+          SUM=AMOUNT;                                                   02125000
+RUN;                                                                    02126000
+*;                                                                      02127002
+PROC SUMMARY DATA=FDSORT NWAY;                                          02127100
+   CLASS BRANCH GROUP CATG ITEM;                                        02127200
+   VAR NOOFCD AMOUNT CURBAL;                                            02127300
+   OUTPUT OUT=FD (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_)                   02127400
+          SUM=NOOFCD AMOUNT AMOUNT1;                                    02127500
+RUN;                                                                    02127600
+*;                                                                      02127702
+PROC SUMMARY DATA=PBPREM NWAY;                                          02127800
+   CLASS BRANCH GROUP CATG ITEM;                                        02127900
+   VAR CURBAL;                                                          02128000
+   OUTPUT OUT=PBPREM (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_)               02129000
+          SUM=AMOUNT;                                                   02129100
+RUN;                                                                    02129200
+*;                                                                      02129302
+PROC SUMMARY DATA=KAPITI5 NWAY;                                         02129400
+   CLASS BRANCH GROUP CATG ITEM;                                        02129500
+   VAR AMT;                                                             02129600
+   OUTPUT OUT=TELEBANK (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_)             02129700
+          SUM=AMOUNT;                                                   02129800
+RUN;                                                                    02129900
+*;                                                                      02130000
+DATA PDRDATA;                                                           02130100
+   SET SAVING CURRENT FD PBPREM TELEBANK;                               02130200
+*;                                                                      02130302
+*;                                                                      02130602
+PROC SORT DATA=PDRDATA; BY BRANCH GROUP CATG ITEM;                      02130700
+*;                                                                      02130800
+TITLE ' ';                                                              02130900
+*;                                                                      02131000
+DATA WRITE;                                                             02131100
+   SET PDRDATA END=EOF; BY BRANCH GROUP CATG ITEM;                      02131200
+   FILE PRINT HEADER=NEWPAGE;                                           02131300
+   DATE = TODAY();                                                      02132000
+                                                                        02133000
+   IF FIRST.BRANCH    THEN DO;                                          02134000
+      IF _N_ NE 1   THEN PUT _PAGE_;                                    02135000
+    END;                                                                02136000
+                                                                        02137000
+   IF FIRST.GROUP     THEN DO;                                          02138000
+      PUT  //@001 GROUP;                                                02139000
+    END;                                                                02140000
+                                                                        02150000
+   IF FIRST.CATG      THEN DO;                                          02160000
+      PUT  //@005 CATG;                                                 02170000
+    END;                                                                02180000
+                                                                        02190000
+    IF ITEM  = '3 HOUSING LOANS'  THEN AMOUNT = 0.00;                   02200000
+                                                                        02210000
+    AACCNT  + NOACCT;                                                   02220000
+    AFDCNT  + NOOFCD;                                                   02230000
+    ATOTOL  + AMOUNT;                                                   02240000
+    BACCNT  + NOACCT;                                                   02250000
+    BFDCNT  + NOOFCD;                                                   02260000
+    BTOTOL  + AMOUNT;                                                   02270000
+                                                                        02280000
+    PUT   @009 ITEM                                                     02290000
+          @043 NOACCT   COMMA7.                                         02300000
+          @067 NOOFCD   COMMA7.                                         02310000
+          @083 AMOUNT  COMMA18.2;                                       02320000
+                                                                        02330000
+   IF LAST.BRANCH    THEN DO;                                           02340000
+      BACCNT   = 0;                                                     02410000
+      BFDCNT   = 0;                                                     02420000
+      BTOTOL   = 0;                                                     02430000
+   END;                                                                 02440000
+                                                                        02450000
+RETURN;                                                                 02550000
+                                                                        02560000
+NEWPAGE :                                                               02570000
+   PAGECNT+1;                                                           02580000
+   PUT   @001 'REPORT NAME : BR-DEP-POS :  BRANCH : ' BRANCH  3.        02590000
+         @050 'P U B L I C   B A N K   B E R H A D'                     02600000
+         @110 'DATE : ' DATE DDMMYY8.                                   02610000
+        /@051 'PRODUCTS POSITION AS AT : '"&RDATE"                      02620000
+        /@039 'NO. OF ACCOUNTS/'                                        02630000
+        /@006 'PRODUCT TYPES'                                           02640000
+         @037 'MEMBERS/SUBSCRIBERS'                                     02650000
+         @063 'NO OF RECEIPTS'                                          02660000
+         @085 'AMOUNT OUTSTANDING (RM)'                                 02670000
+    OVERPRINT @006 '_____________'                                      02680000
+              @037 '___________________'                                02690000
+              @063 '______________'                                     02700000
+              @085 '______________________'/;                           02710000
+  RETURN;                                                               02720000
+*;                                                                      02730000
