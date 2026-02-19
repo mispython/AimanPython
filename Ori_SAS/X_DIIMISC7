@@ -1,0 +1,357 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : DIIMISC7                                          |
+ |  DATE    : 23.03.10                                          |
+ |  SMR     : 2010-00000775                                     |
+ |  REPORT  : PIBB AL-MUDHARABAH FD ACCOUNT                     |
+ |            PERIOD 19-MAR-10 TO 15-JUN-10                     |
+ +--------------------------------------------------------------+;
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE MISSING=0 LINESIZE=132;
+
+DATA REPTDATE (KEEP=REPTDATE);
+  SET DEPOSIT.REPTDATE;
+  REPTFQ='Y';
+  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('REPTFQ',PUT(REPTFQ,$1.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+*+--------------------------------------------------------------+
+ |  TDBAL : GET TO DATE BALANCE (OLD)                           |
+ +--------------------------------------------------------------+;
+%MACRO TDBAL;
+*;
+PROC SORT DATA=DYIBUA
+           OUT=DYIBUAO (KEEP=BRCH MTH FDI FDINO FDINO2);
+   BY BRANCH;
+RUN;
+*;
+PROC TABULATE DATA=DYIBUAO NOSEPS;
+   FORMAT MTH FDFMT.;
+   CLASS BRCH MTH;
+   VAR FDI FDINO FDINO2;
+   TABLE BRCH=' ' ALL='TOTAL', SUM='TODATE BALANCE'*
+         (FDINO='NO OF A/C'*F=COMMA9.
+          FDINO2='NO OF RECEIPT'*F=COMMA9.
+          FDI=' '*F=COMMA14.2*(MTH=' ' ALL='TOTAL'))
+         / BOX='BRANCH NO/CODE' RTS=10;
+RUN;
+*;
+%MEND TDBAL;
+*;
+*+--------------------------------------------------------------+
+ |  AVG : GET DAILY AVERAGE BALANCE (OLD)                       |
+ +--------------------------------------------------------------+;
+*;
+%MACRO AVG;
+   %IF "&N" NE "0" %THEN %DO;
+      PROC SUMMARY DATA=DYIBUA1 NWAY;
+         CLASS BRCH MTH;
+         VAR FDI FDINO FDINO2;
+         OUTPUT OUT=DYIBUA1O SUM=;
+      RUN;
+*;
+      DATA DYIBUA1O;
+         KEEP BRCH MTH FDI FDINO FDINO2;
+         ARRAY VBL FDI FDINO FDINO2;
+         RETAIN DAYS;
+         SET DYIBUA1O;
+         IF _N_ = 1 THEN DAYS = DAY(&EDATE);
+         DO OVER VBL;
+            IF VBL NE . THEN VBL = VBL / DAYS;
+         END;
+      RUN;
+*;
+      PROC TABULATE DATA=DYIBUA1O NOSEPS;
+         FORMAT MTH FDFMT.;
+         CLASS BRCH MTH;
+         VAR FDI FDINO FDINO2;
+         TABLE BRCH=' ' ALL='TOTAL', SUM='DAILY AVERAGE'*
+               (FDINO='NO OF A/C'*F=COMMA9.
+                FDINO2='NO OF RECEIPT'*F=COMMA9.
+                FDI=' '*F=COMMA14.2*(MTH=' ' ALL='TOTAL'))
+               / BOX='BRANCH NO/CODE' RTS=10;
+      RUN;
+   %END;
+%MEND AVG;
+*;
+*+--------------------------------------------------------------+
+ |  TDBAL : GET TO DATE BALANCE (NEW)                           |
+ +--------------------------------------------------------------+;
+%MACRO TDBAL1;
+*;
+PROC SORT DATA=DYIBUA
+           OUT=DYIBUAN (KEEP=BRCH MTH FDI FDINO FDINO2 CUSTCD);
+   BY BRANCH;
+RUN;
+*;
+PROC TABULATE DATA=DYIBUAN NOSEPS;
+   FORMAT MTH FDFMT. CUSTCD CDFMT.;
+   CLASS BRCH MTH CUSTCD;
+   VAR FDI FDINO FDINO2;
+   TABLE CUSTCD=' ',BRCH=' ' ALL='TOTAL', SUM='TODATE BALANCE'*
+         (FDINO='NO OF A/C'*F=COMMA9.
+          FDINO2='NO OF RECEIPT'*F=COMMA9.
+          FDI=' '*F=COMMA14.2*(MTH=' ' ALL='TOTAL'))
+         / BOX='BRANCH NO/CODE' RTS=10;
+RUN;
+*;
+%MEND TDBAL1;
+*;
+*+--------------------------------------------------------------+
+ |  AVG : GET DAILY AVERAGE BALANCE                             |
+ +--------------------------------------------------------------+;
+*;
+%MACRO AVG1;
+   %IF "&N" NE "0" %THEN %DO;
+      PROC SUMMARY DATA=DYIBUA1 NWAY;
+         CLASS BRCH MTH CUSTCD;
+         VAR FDI FDINO FDINO2;
+         OUTPUT OUT=DYIBUA1N SUM=;
+      RUN;
+*;
+      DATA DYIBUA1N;
+         KEEP BRCH MTH FDI FDINO FDINO2 CUSTCD;
+         ARRAY VBL FDI FDINO FDINO2;
+         RETAIN DAYS;
+         SET DYIBUA1N;
+         IF _N_ = 1 THEN DAYS = DAY(&EDATE);
+         DO OVER VBL;
+            IF VBL NE . THEN VBL = VBL / DAYS;
+         END;
+      RUN;
+*;
+      PROC TABULATE DATA=DYIBUA1N NOSEPS;
+         FORMAT MTH FDFMT. CUSTCD CDFMT.;
+         CLASS BRCH MTH CUSTCD;
+         VAR FDI FDINO FDINO2;
+         TABLE CUSTCD=' ',BRCH=' ' ALL='TOTAL', SUM='DAILY AVERAGE'*
+               (FDINO='NO OF A/C'*F=COMMA9.
+                FDINO2='NO OF RECEIPT'*F=COMMA9.
+                FDI=' '*F=COMMA14.2*(MTH=' ' ALL='TOTAL'))
+               / BOX='BRANCH NO/CODE' RTS=10;
+      RUN;
+   %END;
+%MEND AVG1;
+*;
+*+--------------------------------------------------------------+
+ |  DIBMIS02 : MAIN PROGRAM                                     |
+ +--------------------------------------------------------------+;
+%MACRO DIBMIS02;
+*;
+%INC PGM(PBMISFMT);
+*;
+PROC FORMAT;
+   VALUE FDFMT
+    01  = '1 MONTH'
+    02  = '2 MONTHS'
+    03  = '3 MONTHS'
+    04  = '4 MONTHS'
+    05  = '5 MONTHS'
+    06  = '6 MONTHS'
+    07  = '7 MONTHS'
+    08  = '8 MONTHS'
+    09  = '9 MONTHS'
+    10  = '10 MONTHS'
+    11  = '11 MONTHS'
+    12  = '12 MONTHS'
+    13  = '13 MONTHS'
+    14  = '14 MONTHS'
+    15  = '15 MONTHS'
+    16  = '16 MONTHS'
+    17  = '17 MONTHS'
+    18  = '18 MONTHS'
+    19  = '19 MONTHS'
+    20  = '20 MONTHS'
+    21  = '21 MONTHS'
+    22  = '22 MONTHS'
+    23  = '23 MONTHS'
+    24  = '24 MONTHS'
+    25  = '25 MONTHS'
+    26  = '26 MONTHS'
+    27  = '27 MONTHS'
+    28  = '28 MONTHS'
+    29  = '29 MONTHS'
+    30  = '30 MONTHS'
+    31  = '31 MONTHS'
+    32  = '32 MONTHS'
+    33  = '33 MONTHS'
+    34  = '34 MONTHS'
+    35  = '35 MONTHS'
+    36  = '36 MONTHS'
+    37  = '37 MONTHS'
+    38  = '38 MONTHS'
+    39  = '39 MONTHS'
+    40  = '40 MONTHS'
+    41  = '41 MONTHS'
+    42  = '42 MONTHS'
+    43  = '43 MONTHS'
+    44  = '44 MONTHS'
+    45  = '45 MONTHS'
+    46  = '46 MONTHS'
+    47  = '47 MONTHS'
+    48  = '48 MONTHS'
+    49  = '49 MONTHS'
+    50  = '50 MONTHS'
+    51  = '51 MONTHS'
+    52  = '52 MONTHS'
+    53  = '53 MONTHS'
+    54  = '54 MONTHS'
+    55  = '55 MONTHS'
+    56  = '56 MONTHS'
+    57  = '57 MONTHS'
+    58  = '58 MONTHS'
+    59  = '59 MONTHS'
+    60  = '60 MONTHS'
+    OTHER = ' ';
+
+   VALUE CDFMT
+  77,78,95,96 = 'RETAIL'
+        OTHER = 'CORPORATE';
+RUN;
+*;
+*+--------------------------------------------------------------+
+ |  DETERMINE REPORTING PERIOD                                  |
+ +--------------------------------------------------------------+;
+*;
+DATA _NULL_;
+ RPDATE=INPUT("&RDATE", DDMMYY8.);
+    STRTDTE = MDY(MONTH(RPDATE),1,YEAR(RPDATE));
+ CALL SYMPUT('SDATE',PUT(STRTDTE,8.));
+ CALL SYMPUT('EDATE',PUT(RPDATE,8.));
+ CALL SYMPUT('RPDATE',PUT(RPDATE,8.));
+RUN;
+*;
+DATA CX;
+  SDATE = &SDATE;
+  EDATE = &EDATE;
+  RPDATE = &RPDATE;
+*+--------------------------------------------------------------+
+ |  SEPARATE DATA INTO DAILY AND MTHLY AVERAGE                  |
+ +--------------------------------------------------------------+;
+*;
+DATA DYIBUA
+     DYIBUA1;
+   SET MIS.DYIBUS&REPTMON;
+   BRCHCD = PUT(BRANCH,BRCHCD.);
+   BRCH   = PUT(BRANCH,Z3.)||'/'||BRCHCD;
+   SELECT (INTPLAN);
+      WHEN(340,448,660,720) MTH=01;
+      WHEN(352,449,661,721) MTH=02;
+      WHEN(341,450,662,722) MTH=03;
+      WHEN(353,451,663,723) MTH=04;
+      WHEN(354,452,664,724) MTH=05;
+      WHEN(342,453,665,725) MTH=06;
+      WHEN(355,454,666,726) MTH=07;
+      WHEN(356,455,667,727) MTH=08;
+      WHEN(343,456,668,728) MTH=09;
+      WHEN(357,457,669,729) MTH=10;
+      WHEN(358,458,670,730) MTH=11;
+      WHEN(344,459,671,731) MTH=12;
+      WHEN(588,461,672,732) MTH=13;
+      WHEN(589,462,673,733) MTH=14;
+      WHEN(345,463,674,734) MTH=15;
+      WHEN(590,675)         MTH=16;
+      WHEN(591,676)         MTH=17;
+      WHEN(346,464,677,735) MTH=18;
+      WHEN(592,678)         MTH=19;
+      WHEN(593,679)         MTH=20;
+      WHEN(347,465,680,736) MTH=21;
+      WHEN(594,681)         MTH=22;
+      WHEN(595,682)         MTH=23;
+      WHEN(348,466,683,737) MTH=24;
+      WHEN(596,684)         MTH=25;
+      WHEN(597,685)         MTH=26;
+      WHEN(359,686)         MTH=27;
+      WHEN(598,687)         MTH=28;
+      WHEN(599,688)         MTH=29;
+      WHEN(540,580,689)     MTH=30;
+      WHEN(690)             MTH=31;
+      WHEN(691)             MTH=32;
+      WHEN(541,581,692)     MTH=33;
+      WHEN(693)             MTH=34;
+      WHEN(694)             MTH=35;
+      WHEN(349,467,695,738) MTH=36;
+      WHEN(696)             MTH=37;
+      WHEN(697)             MTH=38;
+      WHEN(542,582,698)     MTH=39;
+      WHEN(699)             MTH=40;
+      WHEN(700)             MTH=41;
+      WHEN(543,583,701)     MTH=42;
+      WHEN(702)             MTH=43;
+      WHEN(703)             MTH=44;
+      WHEN(544,584,704)     MTH=45;
+      WHEN(705)             MTH=46;
+      WHEN(706)             MTH=47;
+      WHEN(350,468,707,739) MTH=48;
+      WHEN(708)             MTH=49;
+      WHEN(709)             MTH=50;
+      WHEN(545,585,710)     MTH=51;
+      WHEN(711)             MTH=52;
+      WHEN(712)             MTH=53;
+      WHEN(546,586,713)     MTH=54;
+      WHEN(714)             MTH=55;
+      WHEN(715)             MTH=56;
+      WHEN(547,587,716)     MTH=57;
+      WHEN(717)             MTH=58;
+      WHEN(718)             MTH=59;
+      WHEN(351,719,740)     MTH=60;
+      OTHERWISE MTH=0;
+   END;
+   IF REPTDATE = &EDATE THEN OUTPUT DYIBUA;
+   IF &SDATE <= REPTDATE <= &EDATE THEN OUTPUT DYIBUA1;
+
+RUN;
+*;
+TITLE1 'REPORT ID : DIIMISC7 (OLD)';
+TITLE2 'PUBLIC ISLAMIC BANK BERHAD - IBU';
+TITLE3 'NEW PBB & PFB AL-MUDHARABAH FD ACCOUNT AFTER PRIVATISATION';
+TITLE4 '(19-MAR-10 TO 15-JUN-10) AS AT ' &RDATE;
+*;
+%TDBAL;
+*;
+*+--------------------------------------------------------------+
+ |  CHK IF AVG DAILY BALANCE DATA AVAILABLE  (OLD)              |
+ +--------------------------------------------------------------+;
+*;
+DATA _NULL_;
+   SET DYIBUA1 (OBS=1) NOBS=N;
+   CALL SYMPUT('N',PUT(N,8.));
+RUN;
+*;
+%AVG
+*;
+TITLE1 'REPORT ID : DIIMISC7 (NEW)';
+TITLE2 'PUBLIC ISLAMIC BANK BERHAD - IBU';
+TITLE3 'NEW PBB & PFB AL-MUDHARABAH FD ACCOUNT AFTER PRIVATISATION';
+TITLE4 '(19-MAR-10 TO 15-JUN-10) AS AT ' &RDATE;
+*;
+%TDBAL1;
+*;
+*+--------------------------------------------------------------+
+ |  CHK IF AVG DAILY BALANCE DATA AVAILABLE  (NEW)              |
+ +--------------------------------------------------------------+;
+*;
+PROC CONTENTS DATA=DYIBUA1 NOPRINT
+              OUT =NUMOBS(KEEP=NOBS);
+RUN;
+DATA _NULL_;
+   SET NUMOBS (OBS=1);
+   CALL SYMPUT('N',NOBS);
+RUN;
+*;
+%AVG1
+*;
+%MEND DIBMIS02;
+*;
+*+--------------------------------------------------------------+
+ |  CHKRPTDT : CHECK RPT DATE (ONLY EXE. ON 22ND & MTHEND)      |
+ +--------------------------------------------------------------+;
+*;
+%MACRO CHKRPTDT;
+   %IF "&REPTFQ" EQ "Y" %THEN %DO;
+      %DIBMIS02;
+   %END;
+%MEND CHKRPTDT;
+*;
+%CHKRPTDT;
