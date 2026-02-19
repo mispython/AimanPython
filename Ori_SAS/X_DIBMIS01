@@ -1,0 +1,145 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : DIBMIS01                                          |
+ |  REPORT  : REPORT ON ISLAMIC SAVINGS/CURRENT ACCOUNTS        |
+ |  NOTE    : REVAMP ON 23-03-09                                |
+ +--------------------------------------------------------------+;
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE MISSING=0;
+*;
+%INC PGM(PBMISFMT);
+*;
+DATA REPTDATE (KEEP=REPTDATE);
+  SET DEPOSIT.REPTDATE;
+  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('EDATE',PUT(REPTDATE,Z5.));
+RUN;
+*;
+*+--------------------------------------------------------------+
+ |  TDBAL : GET TO DATE BALANCE                                 |
+ +--------------------------------------------------------------+;
+%MACRO TDBAL;
+*;
+DATA DYIBU (KEEP=BRCH COUNT AMOUNT LBL1 LBL2);
+   SET DYIBU;
+   RETAIN LBL2 1;
+   COUNT = SAINO; AMOUNT = SAI;  LBL1 = 1; OUTPUT;
+   COUNT = CAINO; AMOUNT = CAI;  LBL1 = 2; OUTPUT;
+   COUNT = CAI96; AMOUNT = CA96; LBL1 = 3; OUTPUT;
+   COUNT = MBSNO; AMOUNT = MBS;  LBL1 = 4; OUTPUT;
+RUN;
+*;
+%MEND TDBAL;
+*;
+*+--------------------------------------------------------------+
+ |  AVGBAL : GET AVERAGE BALANCE                                |
+ |           SUM OF ALL TRX BALANCES WITHIN THE REPORTING PERIOD|
+ |           DIVIDED BY THE NUMBER OF REPORTING DAYS            |
+ +--------------------------------------------------------------+;
+%MACRO AVGBAL;
+*;
+  %IF "&N" NE 0 %THEN
+    %DO;
+*;
+      PROC SUMMARY DATA=DYIBU1 NWAY;
+        CLASS BRCH;
+        VAR SAI CAI CAIG CAIH SAINO CAINO CAIGNO CAIHNO
+            CA96 CAI96 MBS MBSNO;
+        OUTPUT OUT=DYIBU1 SUM=;
+      RUN;
+*;
+      DATA DYIBU1;
+        KEEP BRCH COUNT AMOUNT LBL1 LBL2;
+        ARRAY VBL SAI CAI CAIG CAIH SAINO CAINO CAIGNO CAIHNO
+              CA96 CAI96 MBS MBSNO;
+        RETAIN DAYS;
+        SET DYIBU1;
+
+        IF _N_ = 1 THEN DAYS = DAY(&EDATE);
+
+        DO OVER VBL;
+         IF VBL NE . THEN VBL = VBL / DAYS;
+        END;
+
+        COUNT = SAINO;  AMOUNT = SAI;  LBL1 = 1; LBL2 = 2; OUTPUT;
+        COUNT = CAINO;  AMOUNT = CAI;  LBL1 = 2; LBL2 = 2; OUTPUT;
+        COUNT = CAIGNO; AMOUNT = CAIG; LBL1 = 2; LBL2 = 3; OUTPUT;
+        COUNT = CAIHNO; AMOUNT = CAIH; LBL1 = 2; LBL2 = 4; OUTPUT;
+        COUNT = CAI96;  AMOUNT = CA96; LBL1 = 3; LBL2 = 2; OUTPUT;
+        COUNT = MBSNO;  AMOUNT = MBS;  LBL1 = 4; LBL2 = 2; OUTPUT;
+      RUN;
+*;
+      PROC APPEND BASE=DYIBU DATA=DYIBU1; RUN;
+*;
+    %END;
+*;
+%MEND AVGBAL;
+*;
+*+--------------------------------------------------------------+
+ |  DIBMIS01 : MAIN PROGRAM                                     |
+ +--------------------------------------------------------------+;
+%MACRO DIBMIS01;
+*;
+%INC PGM(PBMISFMT);
+*;
+PROC FORMAT;
+   VALUE LBLA  1 = 'SAVINGS'
+               2 = 'CURRENT'
+               3 = 'MUDHARABAH CA'
+               4 = 'MBSA';
+*;
+   VALUE LBLB  1 = 'TODATE BALANCE'
+               2 = 'DAILY AVERAGE'
+               3 = 'DAILY AVERAGE (GOVT)'
+               4 = 'DAILY AVERAGE (HOUSING DEVELOPER)';
+RUN;
+*;
+DATA DYIBU
+     DYIBU1;
+   SET MIS.DYIBU&REPTMON;
+   CAI  =SUM(CAI,CAIG,CAIH,CA96);
+   CAINO=SUM(CAINO,CAIGNO,CAIHNO,CAI96);
+   BRCHCD = PUT(BRANCH,BRCHCD.);
+   BRCH   = PUT(BRANCH,Z3.)||'/'||BRCHCD;
+   IF REPTDATE  EQ &EDATE                THEN OUTPUT DYIBU;
+   IF REPTDATE  LE &EDATE                THEN OUTPUT DYIBU1;
+RUN;
+
+%TDBAL;
+*;
+DATA _NULL_;
+   SET DYIBU1 (OBS=1) NOBS=N;
+   CALL SYMPUT('N',PUT(N,8.));
+RUN;
+*;
+%AVGBAL;
+*;
+TITLE1 'REPORT ID : DIBMIS01';
+TITLE2 'PUBLIC BANK BERHAD - IBU';
+TITLE3 'AL-WADIAH SAVINGS/CURRENT ACCOUNT';
+TITLE4 'AS AT ' &RDATE;
+*;
+PROC TABULATE DATA=DYIBU MISSING NOSEPS;
+  FORMAT LBL1 LBLA. LBL2 LBLB.;
+  CLASS BRCH LBL1 LBL2;
+  VAR COUNT AMOUNT;
+  TABLE BRCH=' ' ALL='TOTAL', LBL1=' '*LBL2=' '*SUM=' '*
+       (COUNT='NO OF A/C'*F=COMMA9.
+        AMOUNT='O/S BALANCE'*F=COMMA14.2)
+        / BOX='BRANCH NO/CODE' RTS=10;
+
+RUN;
+*;
+%MEND DIBMIS01;
+*;
+*+--------------------------------------------------------------+
+ |  CHKRPTDT : CHECK RPT DATE (ONLY EXE. ON 22ND & MTHEND)      |
+ +--------------------------------------------------------------+;
+*;
+%MACRO CHKRPTDT;
+
+      %DIBMIS01;
+
+%MEND CHKRPTDT;
+*;
+%CHKRPTDT;
