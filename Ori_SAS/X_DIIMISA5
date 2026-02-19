@@ -3,7 +3,7 @@
  |  DATE    : 31.03.09                                          |
  |  SMR     : 2009-00000416                                     |
  |  REPORT  : NEW PBB & PFB AL-MUDHARABAH FD ACCOUNT            |
- |            PERIOD (16-SEP-08 UNTIL 15-MAR-09)                |
+ |            PERIOD 16-MAR-09 ONWARDS                          |
  +--------------------------------------------------------------+;
 *;
 OPTIONS YEARCUTOFF=1950 NOCENTER NODATE MISSING=0 LINESIZE=132;
@@ -178,11 +178,11 @@ DATA _NULL_;
  CALL SYMPUT('EDATE',PUT(RPDATE,8.));
  CALL SYMPUT('RPDATE',PUT(RPDATE,8.));
 RUN;
+*;
 DATA CX;
   SDATE = &SDATE;
   EDATE = &EDATE;
   RPDATE = &RPDATE;
-*;
 *+--------------------------------------------------------------+
  |  SEPARATE DATA INTO DAILY AND MTHLY AVERAGE                  |
  +--------------------------------------------------------------+;
@@ -190,7 +190,7 @@ DATA CX;
 DATA DYIBUA
      DYIBUA1;
    %DCLVAR;
-   SET MIS.DYIBUZ&REPTMON;
+   SET MIS.DYIBUX&REPTMON;
       RPYR  = YEAR(REPTDATE);
       RPMTH = MONTH(REPTDATE);
       RPDAY = DAY(REPTDATE);
@@ -207,10 +207,10 @@ DATA DYIBUA
 
 RUN;
 *;
-TITLE1 'REPORT ID : DIBMISA6';
+TITLE1 'REPORT ID : DIBMISA5';
 TITLE2 'PUBLIC ISLAMIC BANK BERHAD - IBU';
 TITLE3 'NEW PBB & PFB AL-MUDHARABAH FD ACCOUNT AFTER PRIVATISATION';
-TITLE4 '(16-SEP-08 UNTIL 15-MAR-09) AS AT ' &RDATE;
+TITLE4 '(16-MAR-09 ONWARDS) AS AT ' &RDATE;
 *;
 %TDBAL;
 *;
