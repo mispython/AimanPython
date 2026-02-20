@@ -1,0 +1,26 @@
+OPTIONS NOCENTER NODATE NONUMBER;
+PROC FORMAT;
+  VALUE DPFMT         200 = '001'
+                      202 = '002'
+                      203 = '003'
+                      212 = '004'
+                  150,152 = '005'
+                      204 = '006'
+                      213 = '007'
+                      214 = '008';
+DATA SAVING;
+  SET ADDR.AUT;
+  LENGTH USRCD 2.; USRCD = 2;
+  FORMAT BRANCH Z3. ACCTNO $10.;
+  IF     PRODUCT IN (100,102,150,152,156,157,160,162,
+                     200,202,203,204,212,213,214);
+  IF USER3='3'    THEN USRCD=4;
+  IF USER3='6'    THEN USRCD=7;
+  PROD = PUT(PRODUCT,DPFMT.);
+*;
+PROC SORT ; BY ACCTNO;
+*;
+DATA _NULL_;
+  SET SAVING;
+  FILE CARD;
+  PUT @1 'D033' BRANCH @8 ACCTNO @18 '380' +2 'USRCD3' +2 '='USRCD;
