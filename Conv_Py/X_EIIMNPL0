@@ -1,0 +1,64 @@
+//EIIMNPL0  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID,USER=OPCC
+/*JOBPARM S=S1M1
+//* *******************************************************
+//* ESMR 2004-720 &2004-579
+//* *******************************************************
+//LABEL    OUTPUT CLASS=K,
+//         NAME='THE MANAGER',
+//         ROOM='22TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='HP CREDIT CONTROL DEPARTMENT',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//**********************************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DD01     DD DSN=SAP.PIBB.IIS.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD02     DD DSN=SAP.PIBB.SP.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD03     DD DSN=SAP.PIBB.AQ.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//**********************************************************************
+//EIFMNP03 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.HP.SASDATA,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.IIS.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=133,RECFM=VB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMNP03),DISP=SHR
+//**********************************************************************
+//* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS
+//* EIFMNP04 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//* PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//* NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=OLD
+//* SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//* SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP04),DISP=SHR
+//**********************************************************************
+//* SMR 2009-1486 TSY4.
+//**********************************************************************
+//*EIFMNP05 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*NPL      DD DSN=SAP.PIBB.NPL.HP.SASDATA,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMNP05),DISP=SHR
+//**********************************************************************
+//EIFMNP06 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.HP.SASDATA,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.SP.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=133,RECFM=VB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMNP06),DISP=SHR
+//**********************************************************************
+//EIFMNP07 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.HP.SASDATA,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.AQ.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=133,RECFM=VB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMNP07),DISP=SHR
