@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program : KALQPBBP
+Program : KALQPIBP
 Date    : 11/12/96
 Purpose : RDAL PART III (KAPITI ITEMS)
           Deposit from Non-Resident (Remaining Maturity)
