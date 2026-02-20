@@ -1,0 +1,102 @@
+/** PROGRAM : KALQPBBP                       **/
+/** DATE    : 11/12/96                       **/
+/** REPORT  : RDAL PART III (KAPITI ITEMS )  **/
+
+/** READING THE INPUT FILE **/
+/** INCLUDE THE FORMAT FILE **/
+/** AND CREATE THE FORMAT   **/
+%INC PGM(KALMPBBF);
+%LET AMTIND='I';
+
+PROC DATASETS LIB=BNM NOLIST;
+  DELETE KALQ&REPTMON&NOWK;
+RUN;
+
+/***********************************************************/
+/**                                                       **/
+/** REPORT ON DOMESTIC ASSETS AND LIABILITIES - PART II   **/
+/**                                                       **/
+/***********************************************************/
+%MACRO DCLVAR;
+   RETAIN RD1-RD12 ND1-ND12 31 RD2 ND2 28 RD4 RD6 RD9 RD11
+          ND4 ND6 ND9 ND11 30 RPYR RPMTH RPDAY;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY NDDAYS ND1-ND12;
+%MEND DCLVAR;
+*;
+%MACRO REMMTH;
+   NDYR  = YEAR(NDDATE);
+   NDMTH = MONTH(NDDATE);
+   NDDAY = DAY(NDDATE);
+   IF NDMTH = 2 THEN
+      IF MOD(NDYR,4) = 0 THEN ND2 = 29;
+      ELSE ND2 = 28;
+   IF NDDAY = NDDAYS(NDMTH) THEN NDDAY=RPDAYS(RPMTH);
+   REMY = NDYR - RPYR;
+   REMM = NDMTH - RPMTH;
+   REMD = NDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+
+/*************************************************/
+/*  DEPOSIT FR NON-RESIDENT (REMAINING MATURITY) */
+/*************************************************/
+DATA K1TABL (KEEP=BNMCODE AMOUNT AMTIND);
+  LENGTH BNMCODE $14. AMTIND $1.;
+
+  %DCLVAR;
+  SET BNMK.K1TBL&REPTMON&NOWK
+      (RENAME=(GWBALC=AMOUNT));
+
+  AMTIND=&AMTIND;
+
+  IF _N_ = 1 THEN DO;
+     REPTDATE = INPUT("&RDATE",DDMMYY8.);
+     RPYR  = YEAR(REPTDATE);
+     RPMTH = MONTH(REPTDATE);
+     RPDAY = DAY(REPTDATE);
+     IF RPMTH = 2 THEN
+        IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+        ELSE RD2 = 28;
+  END;
+
+  IF GWMVT EQ 'P' AND GWMVTS EQ 'M';
+     IF GWDLP IN ('FDA','FDB','FDL','FDS') THEN BIC='42000';
+     ELSE IF GWDLP IN ('BF','BO') THEN BIC='48000';
+
+     IF BIC ^= ' ';
+        NDDATE=GWMDT;
+        %REMMTH;
+
+        IF GWNANC='00001' AND GWACT='CV' THEN RM='51';
+        ELSE RM=PUT(REMMTH,KREMMTH.);
+
+        IF GWSAC='UO' AND GWACT='CV' AND SUBSTR(GWAN,1,1)='0' AND
+        (GWCNAP='MY' OR GWAN='000418') THEN DO;
+           BNMCODE=BIC||'82'||RM||'0000Y'; OUTPUT; END;
+        ELSE IF NOT('BA' <= GWCTP <= 'BZ') AND GWCNAL^='MY' AND
+        GWSAC='UF' THEN DO;
+           BNMCODE=BIC||'85'||RM||'0000Y'; OUTPUT;
+        END;
+
+        IF BNMCODE=' ';
+           IF GWCNAL^='MY';
+              SELECT(GWCNAP);
+                 WHEN('CA','FR','IT','DE','JP','US','GB') DO;
+                    BNMCODE=BIC||'83'||RM||'0000Y'; OUTPUT;
+                 END;
+                 OTHERWISE DO;
+                    BNMCODE=BIC||'84'||RM||'0000Y'; OUTPUT;
+                 END;
+              END;
+
+PROC SUMMARY DATA=K1TABL NWAY;
+   CLASS BNMCODE AMTIND;
+   VAR   AMOUNT;
+   OUTPUT OUT=K1TABL  SUM=AMOUNT;
+RUN;
+PROC PRINT; RUN;
+
+PROC APPEND DATA=K1TABL BASE=BNM.KALQ&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE K1TABL; RUN;
+
