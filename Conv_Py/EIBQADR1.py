@@ -5,9 +5,6 @@ PURPOSE : PRINT NAME LABELS FOR ADDR.NEW (NEW MEMBERS) IN POSTCODE ORDER, 3-UP L
           INPUT: ADDR.SAVINGS, ADDR.NEW                     
           OUTPUT: PRINT (LABEL REPORT .txt WITH ASA CC)
 """
-# +--------------------------------------------------------------+
-
-# +--------------------------------------------------------------+
 
 import duckdb
 import polars as pl
