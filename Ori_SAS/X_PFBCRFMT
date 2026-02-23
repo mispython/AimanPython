@@ -1,0 +1,318 @@
+/*****************************************************************/
+/* BNM TAXANOMY AND DATA DEFINITION FOR CCRIS ENHANCEMENT        */
+/* CWK ESMR 2012-1132 21JUNE12                                   */
+/* ESMR DESC:FACCODE 902 AND FUNDSCHEME REVISE                   */
+/* MFM ESMR 2012-3641                                            */
+/* ESMR DESC:UPDATE ALL APPROVED CREDIT AS CANCELLED BY CUSTOMER */
+/*****************************************************************/
+
+PROC FORMAT;
+   VALUE FACCODE    /* FACILITY CODE BY PRODUCT */
+     146,184,302,350,351,364,365,506,
+     604,605,634,660,685,802,803,856,
+     857-860,903,910,925,951,806,808,
+     810,812,814,190,689,695,495,192,
+     195,697,817,818                     = 34210
+     110-119,124,139-142,145,147,150,
+     151,152,156,173,175,200,201,204,
+     205,209-220,225-228,230-249,400,
+     600,650,651,664,981,984,991,994,
+     409,410,250,423,486,489,494,479,
+     484,472-474,440,677,692,412,413,
+     253,254-260,431,432,433,445,446     = 34320
+     390,799                             = 34341
+     360,770,775,908                     = 34363
+     309,310,608,637,904,905,919,920     = 34364
+     004-007,015,020,025-034,060-063,
+     070-078,100,101,108,102-105         = 34371
+     120,122,126,127,129,143,144,148,
+     149,153-155,157-165,169,170,172,
+     174,176-183,185,186,193,194,300,
+     301,304,305,315,316,335,345,348,
+     349,356-359,361-363,401,402,500,
+     504,505,509,510,512,515-533,555,
+     556,559-561,564-570,573,601-603,
+     606,607,631-633,635,636,654-659,
+     661-663,665-667,681-684,686,800,
+     801,804,851-855,900,901,902,906,
+     907,909,914,915,950,982,187,687,
+     985,992,995,403,404,405,411,462,
+     463,805,807,809,811,813,188,189,
+     688,406,407,320,609,916,368,418,
+     425,429,430,918,485,487,676,691,
+     488,480-481,471,476,478,442,694,
+     434,435,437,438,436,576,421,577,
+     321,322,444,447,448,922,578,134,
+     137,133,197,199,696,815,816,574,
+     427,428,439                         = 34391
+     135,136,138,325,330,340,355,
+     391,464,465,652,653,668,669,
+     680,303,306,307,308,311,367,313,
+     369,419,420,469,470,672,673,674,
+     675,468,424,426,490-493,496-498,
+     482-483,475,477,441,443,693,422     = 34392
+     678,679,698,699                     = 34333
+     OTHER                               = 0;
+
+   VALUE ODFACCODE
+     030-033,050-058,060-071,085-091,
+     093-097,100-106,108-123,125,135,
+     137,138,150-164,166-170,174-176,
+     179-182,189,190,192-198,183,184,
+     187,188,045,046,092,040,013-019,
+     075-076,003-012,020-025,081,082     = 34110
+     059,124,191                         = 34111
+     034,133,134,177,178,77,78           = 34220
+     OTHER                               = 0;
+
+   VALUE FACNAME    /* FACILITY CODE LISTING */
+     34333 = 'PURCHASE OF PASSENGER CARS'
+     34334 = 'OTHER HIRE PURCHASE RECEIVABLES'
+     34341 = 'LEASING RECEIVABLES'
+     34363 = 'BLOCK DISCOUNTING RECEIVABLES'
+     34364 = 'BRIDGING LOANS/FINANCING'
+     34450 = 'FACTORING RECEIVABLE'
+     34392 = 'PERSONAL LOANS/FINANCING'
+     34320 = 'HOUSING LOANS/FINANCING'
+     34391 = 'OTHER TERM LOANS/FINANCING'
+     34471 = 'EXPORT, CUSTOMER LIABILITIES FOR BANKERS ACCEPTANCE'
+     34472 = 'IMPORT, CUSTOMER LIABILITIES FOR BANKERS ACCEPTANCE'
+     34475 = 'PURCHASE/SALES, CUSTOMER LIABILITIES FOR BA'              E
+     34473 = 'EXPORT, OWN BANKERS ACCEPTANCE BILLS DISCOUNTED'
+     34474 = 'IMPORT, OWN BANKERS ACCEPTANCE BILLS DISCOUNTED'
+     34476 = 'PURCHASE/SALES, OWN BA BILLS DISCOUNTED'
+     34479 = 'OTHER TRADE BILLS DISCOUNTED'
+     34440 = 'TRUST RECEIPTS'
+     34460 = 'FLOOR STOCKING LOANS/FINANCING'
+     34530 = 'EXPORT CREDIT REFINANCING'
+     34480 = 'OTHER TRADE FACILITIES'
+     34110 = 'OVERDRAFT'
+     34120 = 'TEMPORARY OVERDRAFT'
+     34210 = 'REVOLVING CREDIT'
+     34510 = 'CREDIT CARD'
+     34520 = 'CHARGE CARD'
+     34220 = 'SHARE MARGIN FINANCING'
+     34371 = 'STAFF LOANS/FINANCING'
+     34540 = 'MULTI-OPTION FACILITY'
+     34111 = 'OUTPORT CHEQUE PURCHASED'
+     34610 = 'PROJECT FINANCING'
+     34620 = 'EQUITY FINANCING'
+     34630 = 'PAWNBROKING'
+     34640 = 'BENEVOLENT CREDIT'
+     34651 = 'PEMBIAYAAN MIKRO - FINANCIAL INSTITUTION OWN FUND'
+     34652 = 'PEMBIAYAAN MIKRO - MICRO ENTERPRISE FUND'
+     39999 = 'OTHER LOANS/FINANCING'
+     34810 = 'LETTER OF CREDIT'
+     34820 = 'STANDBY LETTER OF CREDIT'
+     34831 = 'FINANCIAL GUARANTEE - TRADE'
+     34832 = 'FINANCIAL GUARANTEE - NON-TRADE'
+     34840 = 'PERFORMANCE GUARANTEE'
+     34850 = 'SHIPPING GUARANTEE'
+     34860 = 'FORWARD FOREIGN EXCHANGE'
+     34899 = 'OTHER OFF-BALANCE SHEET FACILITIES'
+     OTHER = 'NOT APPLICABLE';
+
+   VALUE FUNDSCH    /* FUND SCHEME BY PRODUCT */
+     170,555,556,559,560,427,561,564,
+     566,567,569,573,909,418             = '20'
+     437,565                             = '24'
+     438                                 = '25'
+     578                                 = '27'
+     435,576                             = '29'
+     421,577                             = '30'
+     160,161                             = '63'
+     428,439,574                         = '64'
+     575,169,434,448,144,172,301,320,
+     510,531,568,570                     = '  '
+     OTHER                               = '00';
+
+   VALUE FSCHEMEC   /* FUND SCHEME BY CENSUS  */
+     301.00,301.03,301.04,301.05,301.06,
+     301.07,301.08,301.10,301.11,301.12,
+     301.16,301.18,301.19,301.20,301.21,
+     301.22,301.23,301.24,301.25,301.26,
+     320.00,320.02,320.03,320.04,510.02,
+     448.07,448.08,448.09,448.10,448.11,
+     169.00,169.05                       = '00'
+     169.03,169.04,568.00,568.01,434.10,
+     434.11                              = '20'
+     575.02,575.03,575.05,169.01,169.02,
+     434.00,434.01,434.03,144.01,144.02  = '22'
+     575.04,434.02,575.11,434.08         = '23'
+     568.02,568.04,568.05,568.06,568.07,
+     568.08,568.09,568.10,568.11,568.12,
+     568.14,568.15,568.16,568.17,568.18,
+     568.19,568.20,568.21,568.22,568.25,
+     568.26,568.27,568.28,568.29         = '25'
+     172.10,172.11,570.03,570.04,570.08,
+     570.09,570.12,570.13                = '26'
+     448.00,448.01,448.02,448.03,448.05,
+     448.06,448.12,448.13                = '27'
+     172.03,172.04,172.07,172.08,172.12,
+     172.13,570.01,570.02,570.05,570.06,
+     570.07,570.10,570.11                = '28'
+     144.00,434.06,434.07,434.09,434.12,
+     434.13,434.14,434.15,434.16,434.17,
+     434.18,434.19,531.02,575.00,575.01,
+     575.08,575.10,575.12,575.13,575.14,
+     575.15,575.16,575.17,575.18,575.19,
+     575.20,575.21,575.22                = '61'
+     434.04,434.05,575.06,575.07,575.09  = '62'
+     301.01,320.01,510.03                = '63'
+     OTHER                               = '  '
+     ;
+
+   VALUE SYND       /* SYNDICATED BY PRODUCT */
+     180,185,186,804,914,915,919,920,
+     925,950,951                         = 'Y'
+     OTHER                               = 'N';
+
+   VALUE ODFUNDSCH    /* FUND SCHEME BY PRODUCT */
+     17,187,188,14,35,37                 = '25'
+     169                                 = '63'
+     OTHER                               = '00';
+
+   VALUE ODFACILITY   /* OD FACILITY BY PRODUCT */
+     124,165,191,187,188                 = '34111'
+     34,133,134,177,178,77,78            = '34220'
+     OTHER                               = '34110';
+
+   VALUE FCONCEPT   /* FINANCING CONCEPT BY PRODUCT */
+     118,119,122,124,126,139,
+     145,147,148,170,173,174,
+     462,463,469,470,674,675             = 10
+     668,669,672,673                     = 14
+     128,130-132,983,103,104,108         = 16
+     133-137,138,160-163,169,172,182,
+     159,185,427,428,434,435,437,
+     438,439,436,465,421,444,447,448,192 = 26
+     186,190,471-498                     = 28
+     152-155,175-178,187,188,102,105,
+     400-402,406,407,409,410,144,
+     411,412-416,191,417,418-420,422-426,
+     429,430-433,464,468,106,697         = 29
+     110-117,120,127,129,140-143,146,
+     149-151,156-158,164,165,179,183,181,
+     189,194,403,404,440-443,461,466,
+     467,445,446,851-860,405,184,195,197 = 36
+     193,180                             = 45
+     199,696                             = 22
+     OTHER                               = 99;
+
+   VALUE ODFCONCEPT
+     060-064,066,067,097,
+     164,165                             = 11
+     169                                 = 12
+     17-19,46,071,075,076,094,095,167,
+     185,14,13,7,8,22,5,6,020,021,187,188 = 26
+     045,081,023-025                     = 28
+     093,096,160,161,162,163,182,092,74  = 31
+     047,073,166,168,183,184,15,16,70    = 36
+     OTHER                               = 99;
+
+   VALUE FINCEPT    /* FINANCING CONCEPT LISTING */
+     10    = 'BAI BITHAMAN AJIL'
+     11    = 'QARD'
+     12    = 'MURABAHAH'
+     13    = 'ISTISNA'
+     14    = 'MUSYARAKAH'
+     15    = 'IJARAH MUNTAHIAH BIT TAMLIK'
+     16    = 'IJARAH THUMMA AL-BAI'
+     17    = 'BAI UL TAKJIRI'
+     18    = 'IJARAH'
+     19    = 'BAI AL-DAYN'
+     20    = 'MUDHARABAH'
+     21    = 'RAHNU'
+     22    = 'WAKALAH'
+     23    = 'KAFALAH'
+     24    = 'SARF'
+     25    = 'HIWALAH'
+     26    = 'BAI INNAH'
+     27    = 'BAI AS-SALAM'
+     28    = 'TAWARRUQ'
+     29    = 'SHIRKAH MUTANAQISAH'
+     36    = 'OTHER MURABAHAH'
+     49    = 'OTHER ISLAMIC FINANCING CONCEPT'
+     OTHER = 'NOT APPLICABLE';
+
+   VALUE $CPURPHP
+      '5','05','C7','C9','D1','D3','D4',
+     'D6'                                = '3110'
+     'C8','D2','D5'                      = '3120'
+      '4','04','E2','E3'                 = '3200'
+     '83','D7','D8','D9','E1','E5','E6'  = '3300'
+     '84'                                = '3900'
+     '22'                                = '4100'
+     '79'                                = '5100'
+     '63','80','81','82'                 = '5200'
+     OTHER                               = '5100';
+
+   VALUE LNPRODC
+     5        = '34322' /* STAFF LOAN - HOUSING LOAN           */
+     10       = '34312' /* STAFF LOAN - FESTIVE ADVANCES       */
+     15       = '34312' /* STAFF LOAN - CAR LOAN               */
+     20       = '34312' /* STAFF LOAN - MOTORCYCLE LOAN        */
+     112,113,114,116,117,118,
+     100,102  = '34322' /* TIER 1 ABBA HOUSING LOAN            */
+     101,210  = '34322' /* HOUSING LOAN SOLD TO CAGAMAS        */
+     105      = '34312' /* ABBA UNIT TRUST SCHEME              */
+     110, 115 = '34332' /* AITAB - GOODS FINANCING             */
+     133      = '34391' /* GENERIC BAE TERM FINANCING-I        */
+     172      = '34391' /* BAE BNM/FSMI                        */
+     200, 201 = '34321' /* PRIORITY SECTOR HOUSING LOAN        */
+     227,228,230,231,234,
+     204, 205 = '34322' /* NORMAL HOUSING LOAN                 */
+     206      = '34322' /* NORMAL HOUSING LOAN(PROPERTY>RM150K)*/
+     300      = '34312' /* FIXED LOAN                          */
+     304, 305 = '34312' /* FIXED LOAN                          */
+     307      = '34312' /* FIXED LOAN SOLD TO CAGAMAS          */
+     310      = '34312' /* UNSECURED LOAN                      */
+     315      = '34210' /* QUICK CASH LOAN                     */
+     325      = '34460' /* FLOOR STOCKING                      */
+     320, 330 = '34210' /* REVOLVING CREDIT                    */
+     421      = '34391' /* BAE GOVERNMENT FINANCING-I          */
+     434      = '34391' /* BAE BNM SPECIAL RELIEF FACILITY-I   */
+     435      = '34391' /* BAE BNM SPECIAL RELIEF FACILITY-I   */
+     436      = '34391' /* BAE GOV GUARANTEE SCHEMES-I         */
+     437      = '34391' /* BAE BNM SPECIAL RELIEF FACILITY-I   */
+     438      = '34391' /* BAE BNM SPECIAL RELIEF FACILITY-I   */
+     439      = '34652' /* BAE BNM SPECIAL RELIEF FACILITY-I   */
+     500      = '34149' /* LOAN FUND FOR HAWKER PETTY TRADER   */
+                        /* 1994 (LFHPT)                        */
+     504, 505 = '34312' /* FIXED LOAN UNDER NPGS               */
+     509, 510 = '34210' /* FIXED LOAN UNDER NPGS-BLK GUARANTEE */
+                        /* SCHEME                              */
+     555, 556 = '34312' /* SPECIAL FUND FOR TOURISM            */
+     559, 560 = '34312' /* NEW ENTREPRENEUR FUND               */
+     564, 565 = '34312' /* FUND FOR FOOD                       */
+     576      = '34391' /* FL/BNM SME ADF                      */
+     700,705,709,710,750 = '34332' /* HIRE PURCHASE            */
+     752, 760 = '34332' /* HIRE PURCHASE                       */
+     770, 775 = '34360' /* BLOCK DISCOUNTING                   */
+     799      = '34312' /* LEASING                             */
+     900, 901 = '34312' /* CBL - FIXED LOAN                    */
+     902      = '34312' /* CBL - FIXED LOAN                    */
+     910      = '34312' /* CBL - FIXED LOAN SOLD TO CAGAMAS    */
+     911, 913 = '34210' /* CBL - REVOLVING CREDIT              */
+     912      = '34312' /* CBL - SHARE LOAN TERM               */
+     920      = '34351' /* BRIDGING LOAN                       */
+     930      = '34312' /* CBL - UNSECURED BUSINESS LOAN       */
+     950      = '34311' /* CBL - SYNDICATED FIXED LOAN         */
+     951      = '34220' /* CBL - SYNDICATED REVOLVING CREDIT   */
+     952      = '34352' /* CBL - SYNDICATED BRIDGING LOAN      */
+     960, 961 = '34450' /* CBL - FACTORING                     */
+     OTHER = '34710';
+
+VALUE $PURPHP
+  '3110'        = '3110'
+  '3120'        = '3120'
+  '3200'        = '3200'
+  '3201'        = '3201'
+  '3300'        = '3300'
+  '3900'        = '3900'
+  '3901'        = '3901'
+  '4100'        = '4100'
+  '5100'        = '5100'
+  '5200'        = '5200'
+  OTHER         = '3120';
+RUN;
