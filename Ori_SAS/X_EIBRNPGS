@@ -1,0 +1,1329 @@
+//EIBRNPGS JOB MISEIS,EIBRNPGS,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DDS2T    DD DSN=SAP.PBB.SCS2.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDS2R    DD DSN=SAP.PBB.SCS2.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDS3T    DD DSN=SAP.PBB.SCS3.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDS3R    DD DSN=SAP.PBB.SCS3.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDH4T    DD DSN=SAP.PBB.SCH4.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDH4R    DD DSN=SAP.PBB.SCH4.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDH5T    DD DSN=SAP.PBB.SCH5.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDH5R    DD DSN=SAP.PBB.SCH5.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDH6T    DD DSN=SAP.PBB.SCH6.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDH6R    DD DSN=SAP.PBB.SCH6.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDH7T    DD DSN=SAP.PBB.SCH7.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDH7R    DD DSN=SAP.PBB.SCH7.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDF5T    DD DSN=SAP.PBB.SCF5.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDF5R    DD DSN=SAP.PBB.SCF5.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDF6T    DD DSN=SAP.PBB.SCF6.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DDF6R    DD DSN=SAP.PBB.SCF6.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD51T    DD DSN=SAP.PBB.SC51.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD51R    DD DSN=SAP.PBB.SC51.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD53T    DD DSN=SAP.PBB.SC53.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD53R    DD DSN=SAP.PBB.SC53.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD63T    DD DSN=SAP.PBB.SC63.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD63R    DD DSN=SAP.PBB.SC63.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD64T    DD DSN=SAP.PBB.SC64.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD64R    DD DSN=SAP.PBB.SC64.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD65T    DD DSN=SAP.PBB.SC65.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD65R    DD DSN=SAP.PBB.SC65.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD70T    DD DSN=SAP.PBB.SC70.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD70R    DD DSN=SAP.PBB.SC70.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD72T    DD DSN=SAP.PBB.SC72.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD72R    DD DSN=SAP.PBB.SC72.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD81T    DD DSN=SAP.PBB.SC81.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD81R    DD DSN=SAP.PBB.SC81.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD83T    DD DSN=SAP.PBB.SC83.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD83R    DD DSN=SAP.PBB.SC83.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD85T    DD DSN=SAP.PBB.SC85.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD85R    DD DSN=SAP.PBB.SC85.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD1ZT    DD DSN=SAP.PBB.SC1Z.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD1ZR    DD DSN=SAP.PBB.SC1Z.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD3ZT    DD DSN=SAP.PBB.SC3Z.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD3ZR    DD DSN=SAP.PBB.SC3Z.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD2ZT    DD DSN=SAP.PBB.SC2Z.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD2ZR    DD DSN=SAP.PBB.SC2Z.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD4ZT    DD DSN=SAP.PBB.SC4Z.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD4ZR    DD DSN=SAP.PBB.SC4Z.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD5ST    DD DSN=SAP.PBB.SC5S.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD5SR    DD DSN=SAP.PBB.SC5S.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD6ST    DD DSN=SAP.PBB.SC6S.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD6SR    DD DSN=SAP.PBB.SC6S.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD1HT    DD DSN=SAP.PBB.SC1H.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD1HR    DD DSN=SAP.PBB.SC1H.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD2HT    DD DSN=SAP.PBB.SC2H.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD2HR    DD DSN=SAP.PBB.SC2H.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD3HT    DD DSN=SAP.PBB.SC3H.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD3HR    DD DSN=SAP.PBB.SC3H.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD4HT    DD DSN=SAP.PBB.SC4H.TEXT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//DD4HR    DD DSN=SAP.PBB.SC4H.REPT,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0))
+//*
+//EIBRNPGS EXEC SAS609
+//MNILN    DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//NPGS     DD DSN=SAP.PBB.NPGS.SASDATA,DISP=OLD
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SC51T    DD DSN=SAP.PBB.SC51.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC51R    DD DSN=SAP.PBB.SC51.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC53T    DD DSN=SAP.PBB.SC53.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC53R    DD DSN=SAP.PBB.SC53.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC63T    DD DSN=SAP.PBB.SC63.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC63R    DD DSN=SAP.PBB.SC63.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC64T    DD DSN=SAP.PBB.SC64.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC64R    DD DSN=SAP.PBB.SC64.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC65T    DD DSN=SAP.PBB.SC65.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC65R    DD DSN=SAP.PBB.SC65.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SCS2T    DD DSN=SAP.PBB.SCS2.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SCS2R    DD DSN=SAP.PBB.SCS2.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SCS3T    DD DSN=SAP.PBB.SCS3.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SCS3R    DD DSN=SAP.PBB.SCS3.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SCH4T    DD DSN=SAP.PBB.SCH4.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SCH4R    DD DSN=SAP.PBB.SCH4.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SCH5T    DD DSN=SAP.PBB.SCH5.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SCH5R    DD DSN=SAP.PBB.SCH5.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SCH6T    DD DSN=SAP.PBB.SCH6.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SCH6R    DD DSN=SAP.PBB.SCH6.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SCH7T    DD DSN=SAP.PBB.SCH7.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SCH7R    DD DSN=SAP.PBB.SCH7.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SCF5T    DD DSN=SAP.PBB.SCF5.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SCF5R    DD DSN=SAP.PBB.SCF5.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SCF6T    DD DSN=SAP.PBB.SCF6.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SCF6R    DD DSN=SAP.PBB.SCF6.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC85T    DD DSN=SAP.PBB.SC85.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC85R    DD DSN=SAP.PBB.SC85.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC70T    DD DSN=SAP.PBB.SC70.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC70R    DD DSN=SAP.PBB.SC70.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC72T    DD DSN=SAP.PBB.SC72.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC72R    DD DSN=SAP.PBB.SC72.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC81T    DD DSN=SAP.PBB.SC81.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC81R    DD DSN=SAP.PBB.SC81.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC83T    DD DSN=SAP.PBB.SC83.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC83R    DD DSN=SAP.PBB.SC83.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC1ZT    DD DSN=SAP.PBB.SC1Z.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC1ZR    DD DSN=SAP.PBB.SC1Z.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC3ZT    DD DSN=SAP.PBB.SC3Z.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC3ZR    DD DSN=SAP.PBB.SC3Z.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC2ZT    DD DSN=SAP.PBB.SC2Z.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC2ZR    DD DSN=SAP.PBB.SC2Z.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC4ZT    DD DSN=SAP.PBB.SC4Z.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC4ZR    DD DSN=SAP.PBB.SC4Z.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC5ST    DD DSN=SAP.PBB.SC5S.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC5SR    DD DSN=SAP.PBB.SC5S.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC6ST    DD DSN=SAP.PBB.SC6S.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC6SR    DD DSN=SAP.PBB.SC6S.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC1HT    DD DSN=SAP.PBB.SC1H.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC1HR    DD DSN=SAP.PBB.SC1H.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC2HT    DD DSN=SAP.PBB.SC2H.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC2HR    DD DSN=SAP.PBB.SC2H.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC3HT    DD DSN=SAP.PBB.SC3H.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC3HR    DD DSN=SAP.PBB.SC3H.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SC4HT    DD DSN=SAP.PBB.SC4H.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=VB,BLKSIZE=0)
+//SC4HR    DD DSN=SAP.PBB.SC4H.REPT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(2,2),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1940 SORTDEV=3390
+        NONUMBER NODATE NOCENTER;
+*;
+DATA REPTDATE (KEEP=REPTDATE);
+  SET MNILN.REPTDATE;
+  MM =MONTH(REPTDATE);
+  MM1=MM - 1;
+  IF MM1 = 0 THEN MM1 = 12;
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('NDATE',PUT(REPTDATE,Z5.));
+RUN;
+*;
+DATA NPGS.NPLA;
+  SET NPGS.DPNPGS&REPTMON
+      NPGS.LNNPGS&REPTMON
+      NPGS.BTNPGS&REPTMON;
+  IF  CVAR13 NE '         ';
+  NDATE =CVAR13;
+  STATUS=CVAR12;
+  KEEP CVAR01 CVAR06 STATUS NDATE;
+*;
+DATA DP70;
+  SET NPGS.DPNPGS&REPTMON;
+  IF  CVAR02 IN ('70','71','XX','YY');
+  IF  CVAR05 > '01JAN07'D;
+  IF  CVAR01 IN (70000162,70323600,70327400,70355700,
+                 70342100,70344500,70351440,70366400,70372400)
+      THEN DELETE;
+DATA LN70;
+  SET NPGS.LNNPGS&REPTMON;
+  IF  CVAR02 IN ('70','71','XX','YY');
+  IF  CVAR05 > '01JAN07'D;
+DATA NPGS;
+  SET DP70 LN70;
+  IF  NATGUAR='06' AND CINSTCL='18';
+  IF  CVAR02='XX' THEN CVAR02='  ';
+  IF  CVAR02='YY' THEN CVAR02='  ';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+*;
+DATA SC70T;
+  SET NPGS;
+  FILE SC70T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+*;
+PROC   PRINTTO PRINT=SC70R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=70) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA DP72;
+  SET NPGS.DPNPGS&REPTMON;
+  IF  CVAR02='72';
+  IF  CVAR05 GT 17167;
+  IF  CVAR06='3131612218' THEN DELETE;
+DATA XX72;
+  SET NPGS.LNNPGS&REPTMON
+      NPGS.BTNPGS&REPTMON;
+  IF  CVAR02='72';
+DATA NPGS;
+  SET DP72 XX72;
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+*;
+DATA SC72T;
+  SET NPGS;
+  FILE SC72T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+
+PROC    PRINTTO PRINT=SC72R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=72) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA NPGS;
+  SET NPGS.BTNPGS&REPTMON
+      NPGS.LNNPGS&REPTMON
+      NPGS.DPNPGS&REPTMON;
+  IF  CVAR02='51';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+DATA SC51T;
+  SET NPGS;
+  FILE SC51T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+*;
+PROC    PRINTTO PRINT=SC51R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=51) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA NPGS;
+  SET NPGS.BTNPGS&REPTMON
+      NPGS.LNNPGS&REPTMON
+      NPGS.DPNPGS&REPTMON;
+  IF  CVAR02='53';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+DATA SC53T;
+  SET NPGS;
+  FILE SC53T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+*;
+PROC    PRINTTO PRINT=SC53R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=53) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  IF  CVAR02='63';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+*;
+DATA SC63T;
+  SET NPGS;
+  FILE SC63T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+*;
+PROC    PRINTTO PRINT=SC63R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=63) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  IF  CVAR02='64';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+DATA SC64T;
+  SET NPGS;
+  FILE SC64T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+PROC    PRINTTO PRINT=SC64R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=64) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA NPGS;
+  SET NPGS.DPNPGS&REPTMON
+      NPGS.LNNPGS&REPTMON
+      NPGS.BTNPGS&REPTMON;
+  IF  CVAR02='65';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+*;
+DATA SC65T;
+  SET NPGS;
+  FILE SC65T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+*;
+PROC    PRINTTO PRINT=SC65R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=65) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA NPGS;
+  SET NPGS.DPNPGS&REPTMON
+      NPGS.LNNPGS&REPTMON
+      NPGS.BTNPGS&REPTMON;
+  IF  CVAR02='85';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+*;
+DATA SC85T;
+  SET NPGS;
+  FILE SC85T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+*;
+PROC    PRINTTO PRINT=SC85R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=85) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  IF  CVAR02='81';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+*;
+DATA SC81T;
+  SET NPGS;
+  FILE SC81T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+*;
+PROC    PRINTTO PRINT=SC81R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=81) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  IF  CVAR02='83';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3  THEN CVAR12='   ';
+PROC SORT; BY CVAR01 CVAR06;
+*;
+DATA SC83T;
+  SET NPGS;
+  FILE SC83T;
+  PUT  @001 CVAR01   10.       ';'
+       @012 CVAR02   $2.       ';'
+       @015 CVAR03   $15.      ';'
+       @031 CVAR04   $50.      ';'
+       @082 CVAR05   DDMMYY10. ';'
+       @093 CVARXX   $10.
+       @103 CVAR06   10.       ';'
+       @114 CVAR07   $2.       ';'
+       @117 CVAR08   13.2      ';'
+       @131 CVAR09   13.2      ';'
+       @145 CVAR10   13.2      ';'
+       @159 CVAR11   5.        ';'
+       @165 CVAR12    $3.      ';'
+       @169 CVAR13    $10.     ';'
+       @180 CVAR14    $4.      ';'
+       @185 CVAR15    $5.      ';'
+       ;
+*;
+PROC    PRINTTO PRINT=SC83R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=83) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+*;
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  IF  CVAR02='S2';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+  IF  CVAR12 = ' ' THEN CVAR12='AP';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SCS2T;
+  SET NPGS;
+  FILE SCS2T;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+RUN;
+PROC    PRINTTO PRINT=SCS2R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=S2) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  IF  CVAR02='S3';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+  IF  CVAR12 = ' ' THEN CVAR12='AP';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SCS3T;
+  SET NPGS;
+  FILE SCS3T;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SCS3R;
+ TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=S3) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+ /* ESMR 2018-248 */
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'TL';
+  IF  CVAR02='H4';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+  IF  CVAR12 = ' ' THEN CVAR12='AP';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SCH4T;
+  SET NPGS;
+  FILE SCH4T;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+RUN;
+PROC    PRINTTO PRINT=SCH4R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=H4) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'TF';
+  IF  CVAR02='H5';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+  IF  CVAR12 = ' ' THEN CVAR12='AP';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SCH5T;
+  SET NPGS;
+  FILE SCH5T;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SCH5R;
+ TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=H5) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+ /* SMR 2020-1197 */
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'FL';
+  IF  CVAR02='H6';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+  IF CVAR12='   '  THEN CVAR13='          ';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SCH6T;
+  SET NPGS;
+  FILE SCH6T;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+RUN;
+PROC    PRINTTO PRINT=SCH6R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=H6) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'TF';
+  IF  CVAR02='H7';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+  IF  CVAR12='   '  THEN CVAR13='          ';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SCH7T;
+  SET NPGS;
+  FILE SCH7T;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SCH7R;
+ TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=H7) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+ /* SMR 2020-2839 */
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'FL';
+  IF  CVAR02='F5';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SCF5T;
+  SET NPGS;
+  FILE SCF5T;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR10   13.2      ';'
+      @145 CVAR09   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+RUN;
+PROC    PRINTTO PRINT=SCF5R;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'DETAIL OF ACCTS (SCH=F5) FOR SUBMISSION TO CGC @' &RDATE;
+%INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'TF';
+  IF  CVAR02='F6';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPF';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SCF6T;
+  SET NPGS;
+  FILE SCF6T;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR10   13.2      ';'
+      @145 CVAR09   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SCF6R;
+ TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=F6) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+ /* SMR 2021-2790 */
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'FL';
+  IF  CVAR02='1Z';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPL';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC1ZT;
+  SET NPGS;
+  FILE SC1ZT;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC1ZR;
+ TITLE1 'PUBLIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=1Z) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'FL';
+  IF  CVAR02='3Z';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPL';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC3ZT;
+  SET NPGS;
+  FILE SC3ZT;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC3ZR;
+ TITLE1 'PUBLIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=3Z) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'TF';
+  IF  CVAR02='2Z';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPF';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC2ZT;
+  SET NPGS;
+  FILE SC2ZT;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC2ZR;
+ TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=2Z) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'TF';
+  IF  CVAR02='4Z';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPF';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC4ZT;
+  SET NPGS;
+  FILE SC4ZT;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC4ZR;
+ TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=4Z) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'FL';
+  IF  CVAR02='5S';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPL';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC5ST;
+  SET NPGS;
+  FILE SC5ST;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC5SR;
+ TITLE1 'PUBLIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=5S) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'TF';
+  IF  CVAR02='6S';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPL';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC6ST;
+  SET NPGS;
+  FILE SC6ST;
+  PUT @001 CVAR01   10.       ';'
+      @012 CVAR02   $2.       ';'
+      @015 CVAR03   $15.      ';'
+      @031 CVAR04   $50.      ';'
+      @082 CVAR05   DDMMYY10. ';'
+      @093 CVARXX   $10.
+      @103 CVAR06   10.       ';'
+      @114 CVAR07   $2.       ';'
+      @117 CVAR08   13.2      ';'
+      @131 CVAR09   13.2      ';'
+      @145 CVAR10   13.2      ';'
+      @159 CVAR11   5.        ';'
+      @165 CVAR12    $3.      ';'
+      @169 CVAR13    $10.     ';'
+      @180 CVAR14    $4.      ';'
+      @185 CVAR15    $5.      ';'
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC6SR;
+ TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=6S) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+ /* SMR 2022-1594 */
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'FL';
+  IF  CVAR02='1H';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPL';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC1HT;
+  SET NPGS;
+  FORMAT CVAR05 DDMMYY10. CVAR08 CVAR09 CVAR10 COMMA20.2;
+  FILE SC1HT DLM=';' DSD;
+  PUT @1   CVAR01
+           CVAR02
+           CVAR03
+           CVAR04
+           CVAR05
+           CVAR06
+           CVAR07
+           CVAR08
+           CVAR09
+           CVAR10
+           CVAR11
+           CVAR12
+           CVAR13
+           CVAR14
+           CVAR15
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC1HR;
+ TITLE1 'PUBLIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=1H) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'FL';
+  IF  CVAR02='3H';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPL';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC3HT;
+  SET NPGS;
+  FORMAT CVAR05 DDMMYY10. CVAR08 CVAR09 CVAR10 COMMA20.2;
+  FILE SC3HT DSD DLM=';';
+  PUT @1   CVAR01
+           CVAR02
+           CVAR03
+           CVAR04
+           CVAR05
+           CVAR06
+           CVAR07
+           CVAR08
+           CVAR09
+           CVAR10
+           CVAR11
+           CVAR12
+           CVAR13
+           CVAR14
+           CVAR15
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC3HR;
+ TITLE1 'PUBLIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=3H) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'TL';
+  IF  CVAR02='2H';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPF';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC2HT;
+  SET NPGS;
+  FORMAT CVAR05 DDMMYY10. CVAR08 CVAR09 CVAR10 COMMA20.2;
+  FILE SC2HT DSD DLM=';';
+  PUT  @1  CVAR01
+           CVAR02
+           CVAR03
+           CVAR04
+           CVAR05
+           CVAR06
+           CVAR07
+           CVAR08
+           CVAR09
+           CVAR10
+           CVAR11
+           CVAR12
+           CVAR13
+           CVAR14
+           CVAR15
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC2HR;
+ TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=2H) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
+
+DATA NPGS;
+  SET NPGS.LNNPGS&REPTMON;
+  CVAR07 = 'TL';
+  IF  CVAR02='4H';
+  IF  NATGUAR='06' AND CINSTCL='18';
+  CVARXX='          ';
+  IF  CVAR11 < 3   THEN CVAR12='   ';
+                   ELSE CVAR12= 'NPF';
+RUN;
+PROC SORT; BY CVAR01 CVAR06; RUN;
+DATA SC4HT;
+  SET NPGS;
+  FORMAT CVAR05 DDMMYY10. CVAR08 CVAR09 CVAR10 COMMA20.2;
+  FILE SC4HT DSD DLM=';';
+  PUT  @1  CVAR01
+           CVAR02
+           CVAR03
+           CVAR04
+           CVAR05
+           CVAR06
+           CVAR07
+           CVAR08
+           CVAR09
+           CVAR10
+           CVAR11
+           CVAR12
+           CVAR13
+           CVAR14
+           CVAR15
+      ;
+ RUN;
+ PROC    PRINTTO PRINT=SC4HR;
+ TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
+ TITLE2 'DETAIL OF ACCTS (SCH=4H) FOR SUBMISSION TO CGC @' &RDATE;
+ %INC PGM(NPGSRPT);
