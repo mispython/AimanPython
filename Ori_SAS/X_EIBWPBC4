@@ -1,0 +1,567 @@
+//EIBWPBC4  JOB 224T,'EIBWCCR4',CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//          NOTIFY=&SYSUID,REGION=64M
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBIF.CCRIS1.CCRISIND,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD2      DD DSN=SAP.PBIF.CCRIS1.CCRISCOR,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD3      DD DSN=SAP.PBIF.CCRIS1.CCRISOWN,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD4      DD DSN=SAP.PBIF.CCRIS1.DATE,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//SAS6094  EXEC SAS609
+//BNM      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//LIMIT    DD DSN=SAP.PBB.MNILIMT(0),DISP=SHR
+//DEPOSIT  DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//CISDP    DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
+//CISLN    DD DSN=SAP.PBB.CISBEXT.LN,DISP=SHR
+//CISOWN   DD DSN=SAP.PBB.CISBOWN,DISP=SHR
+//CISREL   DD DSN=SAP.PBB.CISBREL,DISP=SHR
+//PBIF     DD DSN=SAP.PBB.PBIF.SASDATA(0),DISP=SHR
+//SASLIST   DD SYSOUT=A
+//OUTPUT1   DD DSN=SAP.PBIF.CCRIS1.CCRISIND,
+//          DISP=(NEW,CATLG),
+//          SPACE=(CYL,(300,150),RLSE),
+//          UNIT=(SYSDA,5),
+//          DCB=(LRECL=1700,RECFM=FB,BLKSIZE=0,BUFNO=10)
+//OUTPUT2   DD DSN=SAP.PBIF.CCRIS1.CCRISCOR,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(80,50),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=700,RECFM=FB,BLKSIZE=0,BUFNO=10)
+//OUTPUT3   DD DSN=SAP.PBIF.CCRIS1.CCRISOWN,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(20,10),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=600,RECFM=FB,BLKSIZE=0,BUFNO=10)
+//OUTDATE   DD DSN=SAP.PBIF.CCRIS1.DATE,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(1,1),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=80,RECFM=FB,BLKSIZE=0,BUFNO=10)
+//SORTWK01  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK02  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK03  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK04  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SYSIN     DD *
+
+PROC FORMAT;
+   VALUE $PROF
+     '001'  = 'ACCOUNTANT'
+     '002'  = 'ARCHITECT'
+     '003'  = 'BANKER'
+     '004'  = 'OFFICE/BUSINESS EXEC'
+     '005'  = 'CLERICAL/NONCLERICAL'
+     '006'  = 'DIRECTOR'
+     '007'  = 'DOCTOR'
+     '008'  = 'DENTIST'
+     '009'  = 'ENGINEER'
+     '010'  = 'GOVERNMENT SERVANTS'
+     '011'  = 'FACTORY WORKER'
+     '012'  = 'HOUSEWIFE'
+     '013'  = 'LAWYER'
+     '014'  = 'MECHANICS'
+     '015'  = 'SELF EMPLOYED'
+     '016'  = 'STUDENT'
+     '017'  = 'TEACHER/LECTURER'
+     '018'  = 'TECHNICIAN'
+     '019'  = 'SURVEYOR'
+     '020'  = 'OTHER PROFESSIONAL'
+     '021'  = 'ALL OTHERS'
+     '022'  = 'NO AVAILABLE'
+     '   '  = 'NO AVAILABLE';
+*;
+DATA DATES;
+   SET PBIF.REPTDATE;
+   SELECT(DAY(REPTDATE));
+   WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+   WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+   WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+     OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+   END;
+   MM = MONTH(REPTDATE);
+   IF WK = '1' THEN DO;
+      MM1 = MM - 1;
+      IF MM1 = 0 THEN MM1 = 12;
+   END;
+   ELSE MM1 = MM;
+   DAYS = DAY(REPTDATE);
+   MONTHS = MONTH(REPTDATE);
+   YEARS = YEAR(REPTDATE);
+   SDATE = MDY(MONTHS,DAYS,YEARS);
+   CALL SYMPUT('NOWK',PUT(WK,$1.));
+   CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+   CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+   CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTYEA2',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('SDATE',PUT(SDATE,Z5.));
+   FILE OUTDATE;
+      PUT @0001 DAYS       Z2.
+          @0003 '/'
+          @0004 MONTHS     Z2.
+          @0006 '/'
+          @0007 YEARS       4.;
+RUN;
+*;
+PROC PRINT DATA=DATES;
+DATA PBIF;
+     SET PBIF.CLIEN&REPTYEA2&REPTMON&REPTDAY;
+     IF ENTITY='PBBH';
+     IF BRANCH > 0;
+*;
+PROC SORT; BY ACCTNO;
+*;
+PROC SORT DATA=BNM.LNACCT OUT=BTACC; BY ACCTNO;
+*;
+DATA PBIF;
+     MERGE PBIF(IN=A) BTACC(IN=B); BY ACCTNO;
+     IF A AND B;
+     NOTENO=0; PAIDIND=' '; REVERSED=' ';
+*;
+PROC SORT DATA=CISREL.RELATION OUT=RELATION(KEEP=ACCTNO SPOUSE1
+     SPOUSE1I SPOUSE1D CUSTNO);
+     BY CUSTNO ACCTNO;
+*;
+PROC SORT DATA=CISLN.LOAN OUT=CISLOAN(DROP=BRANCH); BY CUSTNO ACCTNO;
+     WHERE CACCCODE NOT IN ('013','014','016','017','018','019',
+     '021','022','023','024','025','027');
+*;
+DATA LOANA;
+   MERGE RELATION CISLOAN(IN=A); BY CUSTNO ACCTNO;
+   IF A;
+*;
+PROC SORT DATA=LOANA; BY ACCTNO;
+*;
+DATA LOAN;
+   SET PBIF;
+*;
+PROC SORT; BY ACCTNO;
+*;
+DATA LOAN;
+   MERGE LOAN(IN=A) LOANA(IN=B); BY ACCTNO;
+   IF A AND B;
+*;
+DATA LOANNEW (KEEP=ACCTNO NOCUSTOM);
+   SET LOAN; BY ACCTNO;
+   NOCUSTOM + 1;
+   IF LAST.ACCTNO   THEN DO;
+      OUTPUT LOANNEW;
+      NOCUSTOM = 0;
+   END;
+*;
+DATA LOAN;
+   MERGE LOAN(IN=A) LOANNEW(IN=B); BY ACCTNO;
+   IF A AND B;
+   APCODE=000;
+*;
+DATA INDLOAN
+     CORLOAN;
+   ARRAY TAXOLD(17) $ 1 TAXOLD1-TAXOLD17;
+   ARRAY TAXOLT(17) $ 1 TAXOLT1-TAXOLT17;
+   ARRAY TAXNEW(17) $ 1 TAXNEW1-TAXNEW17;
+   ARRAY TAXNET(17) $ 1 TAXNET1-TAXNET17;
+   SET LOAN;
+   ACTY='LN';
+   IF (REVERSED NE 'Y') AND (NOTENO NE .) /* AND (PAIDIND NE 'P') */
+   THEN DO;
+      IF OLDIC = '  '   AND INDORG = 'I'   THEN DO;
+            IF CACCCODE IN ('000','020') AND SECCUST = '901'  THEN DO;
+               IF NEWICIND = 'IC'   THEN OLDIC = NEWIC;
+         END;
+      END;
+      IF INPUT(OLDIC,$20.) IN ('0','.')   THEN OLDIC = ' ';
+      IF OLDIC = NEWIC   THEN NEWIC = '  ';
+      IF OLDIC = ' '  AND NEWIC NE ' '  THEN DO;
+         OLDIC = NEWIC;
+         NEWIC = ' ';
+      END;
+      IF OLDIC NE ' '   THEN DO;
+         OLDIC = UPCASE(OLDIC);
+         CHECK = '0123456789AKP';
+         X = VERIFY(OLDIC,CHECK);
+         IF X GT 0  THEN DO;
+            J = 0;
+            DO I = 1 TO 17;
+               TAXOLT(I) = ' ';
+            END;
+            DO I = 1 TO 17;
+               TAXOLD(I) = SUBSTR(OLDIC,I,1);
+               IF ('0' <= TAXOLD(I) <= '9')  OR
+                  ('A' <= TAXOLD(I) <= 'Z')
+               THEN DO;
+                  J + 1;
+                  TAXOLT(J) = TAXOLD(I);
+               END;
+            END;
+            OLDIC = TAXOLT(1)  || TAXOLT(2)  || TAXOLT(3)  ||
+                    TAXOLT(4)  || TAXOLT(5)  || TAXOLT(6)  ||
+                    TAXOLT(7)  || TAXOLT(8)  || TAXOLT(9)  ||
+                    TAXOLT(10) || TAXOLT(11) || TAXOLT(12) ||
+                    TAXOLT(13) || TAXOLT(14) || TAXOLT(15) ||
+                    TAXOLT(16) || TAXOLT(17);
+         END;
+      END;
+      IF NEWIC = '-N/A-               '         THEN NEWIC = ' ';
+      ELSE IF NEWIC = 'N/A                 '    THEN NEWIC = ' ';
+      ELSE IF INPUT(NEWIC,$17.) IN ('0','.')    THEN NEWIC = ' ';
+      IF NEWIC NE ' ' THEN DO;
+         NEWIC = UPCASE(NEWIC);
+         CHECK = '0123456789';
+         Y = VERIFY(NEWIC,CHECK);
+         IF Y GT 0  THEN DO;
+            J = 0;
+            DO I = 1 TO 17;
+               TAXNET(I) = ' ';
+            END;
+            DO I = 1 TO 17;
+               TAXNEW(I) = SUBSTR(NEWIC,I,1);
+               IF ('0' <= TAXNEW(I) <= '9')  OR
+                  ('A' <= TAXNEW(I) <= 'Z')
+               THEN DO;
+                  J + 1;
+                  TAXNET(J) = TAXNEW(I);
+               END;
+            END;
+            NEWIC = TAXNET(1)  || TAXNET(2)  || TAXNET(3)  ||
+                    TAXNET(4)  || TAXNET(5)  || TAXNET(6)  ||
+                    TAXNET(7)  || TAXNET(8)  || TAXNET(9)  ||
+                    TAXNET(10) || TAXNET(11) || TAXNET(12) ||
+                    TAXNET(13) || TAXNET(14) || TAXNET(15) ||
+                    TAXNET(16) || TAXNET(17);
+         END;
+      END;
+   /* REPLACE OLDIC WITH NEWIC IF OLDIC HAS TRUNCATED VALUE */
+      IF OLDIC NE NEWIC THEN DO;
+      IF SUBSTR(OLDIC,1,7)=SUBSTR(NEWIC,1,7) OR
+         SUBSTR(OLDIC,1,8)=SUBSTR(NEWIC,1,8) OR
+         SUBSTR(OLDIC,1,9)=SUBSTR(NEWIC,1,9) OR
+         SUBSTR(OLDIC,1,10)=SUBSTR(NEWIC,1,10)
+         THEN OLDIC=' ';
+      END;
+      IF OLDIC = '  '    THEN DO;
+         OLDIC = NEWIC;
+         NEWIC = '  ';
+      END;
+
+      NEWIC = LEFT(NEWIC);
+      IF INDORG = 'I' THEN DO;
+         IF CACCCODE NOT IN ('001','002','013','016','017',
+             '018','019','021','022','023','024','025','027')
+                                           THEN OUTPUT INDLOAN;
+      END;
+      ELSE OUTPUT CORLOAN;
+   END;
+RUN;
+*;
+DATA ALLLOAN;
+   SET CORLOAN INDLOAN;
+*;
+PROC DATASETS LIB=WORK;
+DELETE LOAN;
+RUN;
+*;
+DATA INDCCRIS;
+  SET INDLOAN;
+  PROFESS = PUT(OCCUPAT,$PROF.);
+  BASICGC = 11;
+  FICODE  = CACCCODE;
+  NAMEKEY = '  ';
+  DISTRICT = ' ';
+  RESIDENT='R';
+  BUMI = '9';
+  IF CUSTCODE > 80   THEN RESIDENT='N';
+
+  IF CUSTCODE IN (41,42,43,77)  THEN BUMI='1';
+  IF CUSTCODE IN (44,46,47,78)  THEN BUMI='2';
+  IF CUSTCODE IN (52,53,54)     THEN BUMI='3';
+
+  IF BUMI='9' THEN DO;
+     IF CUSTCDX IN (41,42,43,77)  THEN BUMI='1';
+     IF CUSTCDX IN (44,46,47,78)  THEN BUMI='2';
+     IF CUSTCDX IN (52,53,54)     THEN BUMI='3';
+  END;
+  IF CUSTCODE IN (48,49,51)     THEN BUMI='9';
+  IF CTRY = ' '                 THEN COUNTRY = 'MY';
+  NATIONAL=CITIZEN;
+  PHONE3   = ' ';
+  PHONE4   = ' ';
+  IF MAILSTAT NOT IN ('01','02','03','04','05','06','07','08',
+                      '09','10','11','12','13','14','15','16')
+                       THEN MAILSTAT = '00';
+  IF GENDER = 'M'      THEN GENDER = 'L';    ELSE
+  IF GENDER = 'F'      THEN GENDER = 'P';    ELSE
+     GENDER = 'R';
+  IF MARITAL IN ('M','P','W')   THEN MARITAL = 'M';    ELSE
+  IF MARITAL IN ('S','D')       THEN MARITAL = 'S';    ELSE
+     MARITAL = 'U';
+
+  IF SPOUSE1I NE ' '  THEN DO;
+     SPOUSE1I = COMPRESS(SPOUSE1I,'=`&-/@#*+:().,"%�!$?_ ');
+     SPOUSE1I = COMPRESS(SPOUSE1I,"'");
+  END;
+  IF SPOUSE1D NE ' '  THEN DO;
+     SPOUSE1D = COMPRESS(SPOUSE1D,'=`&-/@#*+:().,"%�!$?_ ');
+     SPOUSE1D = COMPRESS(SPOUSE1D,"'");
+  END;
+  IF SPOUSE1I = ' ' AND SPOUSE1D = ' '  THEN SPOUSE1 = ' ';
+  CUSTNAME = COMPRESS(CUSTNAME,'\');
+
+  FILE OUTPUT1;
+     PUT @0001 FICODE     $3.
+         @0007 BRANCH     Z3.
+         @0010 APCODE     Z3.
+         @0013 CUSTNO     20.
+         @0033 ACCTNO     10.
+         @0043 NAMEKEY  $140.
+         @0183 CUSTNAME $150.
+         @0333 NEWIC     $20.
+         @0353 OLDIC     $20.
+         @0373 DOBDD       2.
+         @0375 DOBMM       2.
+         @0377 DOBCC       2.
+         @0379 DOBYY       2.
+         @0381 GENDER     $1.
+         @0382 NATIONAL   $2.
+         @0384 MARITAL    $1.
+         @0385 BUMI       $1.
+         @0386 BASICGC     2.
+         @0388 LSTMNTDD    2.
+         @0390 LSTMNTMM    2.
+         @0392 LSTMNTCC    2.
+         @0394 LSTMNTYY    2.
+         @0396 ADDRLN1   $40.
+         @0436 ADDRLN2   $40.
+         @0476 ADDRLN3   $40.
+         @0516 ADDRLN4   $40.
+         @0556 LSTCHGDD    2.
+         @0558 LSTCHGMM    2.
+         @0560 LSTCHGCC    2.
+         @0562 LSTCHGYY    2.
+         @0564 COUNTRY    $2.
+         @0566 MAILCODE    5.
+         @0571 DISTRICT  $20.
+         @0591 MAILSTAT  $20.
+         @0611 PRIPHONE  $20.
+         @0631 SECPHONE  $20.
+         @0651 PHONE3    $20.
+         @0671 PHONE4    $20.
+         @0691 SPOUSE1  $150.
+         @0841 SPOUSE1I  $20.
+         @0861 SPOUSE1D  $20.
+         @1451 EMPLNAME $150.
+         @1601 PROFESS   $60.
+         @1661 EMPLDD      2.
+         @1663 EMPLMM      2.
+         @1665 EMPLCC      2.
+         @1667 EMPLYY      2.
+         @1669 RESIDENT   $1.
+         @1670 COSTCTR     4.
+         ;
+*;
+DATA CORCCRIS;
+  SET CORLOAN;
+  FICODE =CACCCODE;
+  NAMEKEY= '  ';
+  DISTRICT= ' ';
+  PHONE3  = ' ';
+  PHONE4  = ' ';
+  REGCOUTY= 'MY';
+  BUMI=' ';
+  IF CUSTCODE IN (41,42,43,61,66)   THEN BUMI='1';
+  IF CUSTCODE IN (44,46,47,62,67)   THEN BUMI='2';
+  IF CUSTCODE IN (52,53,54,57,59,64,69,75,68,0)
+                                    THEN BUMI='3';
+  IF CUSTCODE IN (1,35,71,72,73,74,79,82,83,84,86,
+                  90,91,92,98,99)   THEN BUMI='9';
+  RESIDENT='R';
+  IF CUSTCODE > 80 THEN RESIDENT='N';
+  IF CTRY = ' '    THEN COUNTRY = 'MY';
+
+  NRCC=9;
+  IF CUSTCODE IN (63,68) THEN NRCC=2;
+  IF MAILSTAT NOT IN ('01','02','03','04','05','06','07','08',
+                      '09','10','11','12','13','14','15','16')
+                       THEN MAILSTAT = '00';
+  BASICGC=91;
+  IF CUSTCODE IN (99)           THEN BASICGC = 91;    ELSE
+  IF CUSTCODE IN (98)           THEN BASICGC = 51;    ELSE
+  IF CUSTCODE IN (79)           THEN BASICGC = 43;    ELSE
+  IF CUSTCODE IN (35)           THEN BASICGC = 42;    ELSE
+  IF CUSTCODE IN (01,74)        THEN BASICGC = 34;    ELSE
+  IF CUSTCODE IN (73)           THEN BASICGC = 33;    ELSE
+  IF CUSTCODE IN (72)           THEN BASICGC = 32;    ELSE
+  IF CUSTCODE IN (71,90,91,92)  THEN BASICGC = 31;
+
+  IF ACTY='LN' THEN DO;
+     IF CUSTCODE IN (79,98,99)             AND ORGTYPE='T'
+        THEN BASICGC = 41;
+     IF CUSTCODE IN (40,41,42,43,44,46,47,48,49,51,52,53,54,68,
+                  61,62,66,67,86)          AND ORGTYPE='I'
+        THEN BASICGC=21; ELSE
+     IF CUSTCODE IN (40,41,42,43,44,46,47,48,49,51,52,53,54,68,
+                  61,62,66,67,86)          AND ORGTYPE='P'
+        THEN BASICGC=22; ELSE
+     IF CUSTCODE IN (40,41,42,43,44,46,47,48,49,51,52,53,54,68,
+                  61,62,66,67,86)          AND ORGTYPE='L'
+        THEN BASICGC=23; ELSE
+     IF CUSTCODE IN (2,3,4,5,6,11,12,13,17,20,30,31,32,33,34,37,38,39,
+                   40,41,42,43,44,46,47,48,49,51,52,53,54,61,62,66,67,
+                   68,57,59,63,64,69,75,82,83,84) AND ORGTYPE='C'
+        THEN BASICGC=24;
+  END;
+  ELSE DO;
+  IF ACTY='OD' THEN DO;
+     IF SPOUSE1 EQ ' ';
+     IF CUSTCODE IN (79,98,99)             AND PURPOSE='J'
+        THEN BASICGC = 41;
+     IF CUSTCODE IN (40,41,42,43,44,46,47,48,49,51,52,53,54,68,
+                     61,62,66,67,86)       AND PURPOSE='7'
+        THEN BASICGC=21;                   ELSE
+     IF CUSTCODE IN (40,41,42,43,44,46,47,48,49,51,52,53,54,68,
+                     61,62,66,67,86)       AND PURPOSE='8'
+        THEN BASICGC=22;                   ELSE
+     IF CUSTCODE IN (40,41,42,43,44,46,47,48,49,51,52,53,54,68,
+                     61,62,66,67,86)       AND PURPOSE='I'
+        THEN BASICGC=23;                   ELSE
+     IF CUSTCODE IN (2,3,4,5,6,11,12,13,17,20,30,31,32,33,34,37,38,
+                39,40,41,42,43,44,46,47,48,49,51,52,53,54,61,62,66,
+                67,68,57,59,63,64,69,75,82,83,84)
+                  AND PURPOSE IN ('9','A','E')
+        THEN BASICGC=24;
+  END;
+  END;
+  IF CACCCODE IN ('017','012')                 THEN BASICGC=24;
+  IF BASICGC IN (31,32,33,34,41,42,43,51,91)   THEN BUMI='9';
+  IF CITIZEN='MY' AND BASICGC=24 AND CUSTCODE NE 63
+                                               THEN NRCC=1;
+  IF BASICGC IN (23,41,42,43,51,91)    THEN DO;
+     IF BUSSREG = ' '  THEN BUSSREG = NEWIC;
+     IF NEWIC = ' '    THEN BUSSREG = OLDIC;
+  END;
+  IF BUSSREG = ' '  THEN BUSSREG = NEWIC;
+  IF BUSSREG = ' '  THEN BUSSREG = OLDIC;
+  IF BUSSREG = ' '  AND NOCUSTOM EQ 1  THEN BUSSREG = GUAREND;
+  IF ORGTYPE = 'C'  AND BUSSREG NE ' ' OR BASICGC = 24  THEN DO;
+     TRIMLEN = LENGTH(TRIM(BUSSREG));
+     IF TRIMLEN <= 7   THEN DO;
+        VLEFT  = SUBSTR(TRIM(BUSSREG),1,TRIMLEN-1);
+        VRIGHT = SUBSTR(TRIM(BUSSREG),TRIMLEN,1);
+        VNUMIC = INPUT(VLEFT,6.);
+        IF VNUMIC =.  THEN VNEWA = VLEFT;
+        ELSE VNEWA = PUT(VNUMIC,Z6.);
+        BUSSREG = TRIM(VNEWA) || TRIM(VRIGHT);
+     END;
+  END;  ELSE
+  IF ORGTYPE IN ('I','P')  AND  BUSSREG NE ' '  AND
+     BASICGC IN (21,22,23) THEN DO;
+     TRIMLEN = LENGTH(TRIM(BUSSREG));
+     IF TRIMLEN <= 10   THEN DO;
+        VLEFT  = SUBSTR(TRIM(BUSSREG),1,TRIMLEN-1);
+        VRIGHT = SUBSTR(TRIM(BUSSREG),TRIMLEN,1);
+        VNUMIC = INPUT(VLEFT,9.);
+        IF VNUMIC =.  THEN VNEWA = VLEFT;
+        ELSE VNEWA = PUT(VNUMIC,Z9.);
+        BUSSREG = TRIM(VNEWA) || TRIM(VRIGHT);
+     END;
+  END;
+  CUSTNAME = COMPRESS(CUSTNAME,'\');
+  FILE OUTPUT2;
+     PUT @0001 FICODE     $3.
+         @0007 BRANCH     Z3.
+         @0010 APCODE     Z3.
+         @0013 CUSTNO     20.
+         @0033 ACCTNO     10.
+         @0043 NAMEKEY  $140.
+         @0183 CUSTNAME $150.
+         @0333 BUSSREG   $20.
+         @0353 DOBDD       2.
+         @0355 DOBMM       2.
+         @0357 DOBCC       2.
+         @0359 DOBYY       2.
+         @0361 REGCOUTY   $2.
+         @0363 BUMI       $1.
+         @0364 NRCC        1.
+         @0365 BASICGC     2.
+         @0367 LSTMNTDD    2.
+         @0369 LSTMNTMM    2.
+         @0371 LSTMNTCC    2.
+         @0373 LSTMNTYY    2.
+         @0375 ADDRLN1   $40.
+         @0415 ADDRLN2   $40.
+         @0455 ADDRLN3   $40.
+         @0495 ADDRLN4   $40.
+         @0535 LSTCHGDD    2.
+         @0537 LSTCHGMM    2.
+         @0539 LSTCHGCC    2.
+         @0541 LSTCHGYY    2.
+         @0543 COUNTRY    $2.
+         @0545 MAILCODE    5.
+         @0550 DISTRICT  $20.
+         @0570 MAILSTAT  $20.
+         @0590 PRIPHONE  $20.
+         @0610 SECPHONE  $20.
+         @0630 PHONE3    $20.
+         @0650 PHONE4    $20.
+         @0670 RESIDENT   $1.
+         @0671 COSTCTR     4.
+         ;
+*;
+PROC DATASETS LIB=WORK;
+DELETE CORCCRIS;
+RUN;
+*;
+DATA CCRISOWN;
+  SET ALLLOAN;
+*;
+DATA OWNER;
+  SET CISLN.OWNER CISDP.OWNER;
+  OUTPUT;
+*;
+PROC SORT DATA=CCRISOWN; BY CUSTNO;
+PROC SORT DATA=OWNER; BY OWNER;
+*;
+DATA CORPOWN;
+ MERGE CCRISOWN(IN=A)
+       OWNER(IN=B DROP=CUSTNO RENAME=(OWNER=CUSTNO));
+ BY CUSTNO;
+ IF A AND B;
+ IF ((RELATCD1='049' AND RELATCD2='049') OR
+     (RELATCD1='050' AND RELATCD2='050')) AND
+    INDORG='O' THEN OUTPUT;
+*;
+DATA CCRISOWN;
+  SET CORPOWN;
+  FICODI=' ';
+  NAMEKEY  = '  ';
+  CUSTNAME = COMPRESS(CUSTNAME,'\');
+  IF OLDIC = ' '   THEN DO;
+     OLDIC = NEWIC;
+     NEWIC = '  ';
+  END;
+  FILE OUTPUT3;
+     PUT @0001 FICODI     $6.
+         @0007 BRANCH     Z3.
+         @0010 APCODE     Z3.
+         @0013 CUSTNO     20.
+         @0033 ACCTNO     10.
+         @0043 NAMEKEY  $140.
+         @0183 CUSTNAME $150.
+         @0333 OLDIC     $20.
+         @0353 OWNERNAM $150.
+         @0503 OWNERID1  $20.
+         @0523 OWNERID2  $20.
+         @0543 OWNERDD    $2.
+         @0545 OWNERMM    $2.
+         @0547 OWNERCC    $2.
+         @0549 OWNERYY    $2.
+         @0551 COSTCTR     4.
+         ;
+*;
