@@ -1,0 +1,816 @@
+//EIBMODLT JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB02003
+/*JOBPARM S=S1M1
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.BANK.ODLIST.RPS
+//DD2      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.BANK.ODLIST.TEXT
+//DD3      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PIBB.ODLIST.RPS
+//DD4      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PIBB.ODLIST.TEXT
+//*
+//EIBMODLT  EXEC SAS609,REGION=64M,WORK='6000,6000'
+//CONFIG   DD DISP=SHR,DSN=SYS3.SAS.V609.CNTL(BATCHXA)
+//ODLST    DD DSN=SAP.BANK.ODLIST.RPS,DISP=(NEW,CATLG),
+//            SPACE=(CYL,(30,30)),
+//            DCB=(RECFM=FB,LRECL=136,BLKSIZE=13600)
+//ODLSD    DD DSN=SAP.BANK.ODLIST.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(50,50)),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0)
+//DEPOSIT  DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//LOAN     DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1950 SORTDEV=3390;
+OPTIONS NODATE NONUMBER;
+TITLE;
+
+PROC FORMAT;
+   VALUE BANKFMT 33='PBB'
+                 134='PFB';
+RUN;
+
+DATA _NULL_;
+   SET DEPOSIT.REPTDATE;
+   SELECT(DAY(REPTDATE));
+     WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+     WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+     WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+     OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+   END;
+   CALL SYMPUT('NOWK',PUT(WK,$1.));
+   CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+RUN;
+
+PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK
+     OUT=LOAN (KEEP=ACCTNO SECTORCD FISSPURP);
+
+   BY ACCTNO;
+
+DATA ODRAFT;
+   SET DEPOSIT.CURRENT;
+   IF CURBAL < 0 AND CUSTCODE NE 81;
+   BALANCE = (-1)*CURBAL;
+RUN;
+PROC SORT DATA=ODRAFT; BY ACCTNO;
+*;
+DATA ODRAFT1;
+   MERGE ODRAFT(IN=A) LOAN(IN=B);
+   BY ACCTNO;
+   IF A AND B;
+RUN;
+DATA ODRAFT2;
+  SET ODRAFT1;
+  IF CUSTCD NOT IN ('77','78','95','96') AND
+    (SUBSTR(SECTORCD,1,1) = '5' OR SECTORCD = '8310') THEN OUTPUT;
+RUN;
+PROC SORT DATA=ODRAFT1;
+   BY BRANCH FISSPURP ACCTNO;
+RUN;
+PROC SORT DATA=ODRAFT2;
+   BY BRANCH SECTORCD ACCTNO;
+RUN;
+
+DATA ODLD;
+  SET ODRAFT1;
+  FILE ODLSD;
+  PUT  @01  BRANCH    3.
+       @04  ACCTNO   10.
+       @14  APPRLIMT COMMA15.2
+       @31  BALANCE  COMMA15.2;
+*;
+DATA _NULL_;
+  SET ODRAFT1;
+  BY BRANCH FISSPURP ACCTNO;
+  FILE ODLST;
+  LENGTH BRH1 $1. BRH2 $2. BRH3 $3. BRNO $4.;
+  RETAIN LINECNT PAGECNT;
+
+  IF FIRST.BRANCH THEN DO;
+     PAGECNT=0;
+     BRCHAMT=0;
+     LINK NEWPAGE;
+  END;
+
+  IF FIRST.FISSPURP THEN DO;
+     BNMAMT=0;
+  END;
+
+  BRCHAMT+BALANCE;
+  BNMAMT+BALANCE;
+
+  PUT @1 'P001'
+      @5 ACCTNO 12. @19 NAME
+      @52 APPRLIMT COMMA18.2 @72 BALANCE COMMA15.2
+      @95 FISSPURP $4.-R  @105 SECTORCD $4. -R @111 CUSTCODE 4.
+      @117 STATE $6.-R
+      @125 FLATRATE COMMA8.2;
+  PUT @1 'P001'
+      @5 LIMIT1 COMMA15.2 @22 LIMIT2 COMMA15.2
+      @40 LIMIT3 COMMA15.2 @58 LIMIT4 COMMA15.2
+      @76 LIMIT5 COMMA15.2 @94 RATE1 COMMA6.2
+      @101 RATE2 COMMA6.2  @108 RATE3 COMMA6.2
+      @115 RATE4 COMMA6.2  @122 RATE5 COMMA6.2;
+  PUT @1 'P001'
+      @95 COL1
+      @102 COL2           @109 COL3
+      @116 COL4           @123 COL5;
+  LINECNT +3;
+
+  IF LINECNT > 55 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.FISSPURP THEN DO;
+     PUT @1 'P001'
+         @72 '---------------';
+     PUT @1 'P001'
+         @37 'SUBTOTAL FOR FISS PURPOSE ' FISSPURP @72 BNMAMT COMMA15.2;
+     PUT @1 'P001'
+         @72 '===============';
+     PUT @1 'P001';
+     LINECNT +4;
+  END;
+
+  IF LINECNT > 55 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     PUT @1 'P001'
+         @72 '---------------';
+     PUT @1 'P001'
+         @37 'GRAND TOTAL ' @72 BRCHAMT COMMA15.2;
+     PUT @1 'P001'
+         @72 '===============';
+     PUT @1 'P001';
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @1 'E255';
+    IF FIRST.BRANCH THEN DO;
+       SELECT;
+         WHEN(BRANCH < 10) DO;
+            BRH1 = BRANCH;  BRNO = 'BR0'||TRIM(BRH1);
+         END;
+         WHEN(BRANCH < 100) DO;
+            BRH2 = BRANCH;  BRNO = 'BR'||TRIM(BRH2);
+         END;
+         WHEN(BRANCH > 99)  DO;
+            BRH3 = BRANCH;  BRNO = 'B'||TRIM(BRH3);
+         END;
+         OTHERWISE;
+       END;
+       PUT @1 'P000PBBEDPPBBEDP' @133 BRNO;
+    END;
+    PUT @1   'P000REPORT NO :  ODLIST'
+        @44  'P U B L I C   B A N K   B E R H A D'
+        @122 'PAGE NO : ' PAGECNT;
+    PUT @1   'P001BRANCH    :  ' @22 BRANCH Z3.
+       @32 "OD LISTING FOR FISS PURPOSE CODE (FOR ALL CUSTCODES) &RDATE"
+    PUT @1 'P001';
+    PUT @1 'P001';
+    PUT @1 'P001'
+        @62  'APPROVED'
+        @76  'OUTSTANDING'
+        @89  'FISS PURPOSE'
+        @103  'SECTOR'
+        @111 'CUST'
+        @118 'STATE';
+    PUT @1 'P001'
+        @10  'A/C NO.'
+        @19  'NAME OF CUSTOMER'
+        @65  'LIMIT'
+        @80  'BALANCE'
+        @95  'CODE'
+        @105 'CODE'
+        @111 'CODE'
+        @119 'CODE'
+        @124 'FLAT RATE';
+    PUT @1 'P001'
+        @14  'LIMIT1'
+        @31  'LIMIT2'
+        @49  'LIMIT3'
+        @67  'LIMIT4'
+        @85  'LIMIT5'
+        @95  'RATE1'
+        @102 'RATE2'
+        @109 'RATE3'
+        @116 'RATE4'
+        @123 'RATE5';
+    PUT @1 'P001'
+        @95  'COLL1'
+        @102 'COLL2'
+        @109 'COLL3'
+        @116 'COLL4'
+        @123 'COLL5';
+    PUT @1 'P001'
+        @5   '------------------------------'
+        @35  '------------------------------'
+        @65  '------------------------------'
+        @95  '------------------------------'
+        @125 '----------';
+    PUT @1 'P001';
+    PUT @1 'P001';
+    LINECNT = 13;
+  RETURN;
+RUN;
+DATA _NULL_;
+  SET ODRAFT2;
+  BY BRANCH SECTORCD ACCTNO;
+  FILE ODLST MOD;
+  LENGTH BRH1 $1. BRH2 $2. BRH3 $3. BRNO $4.;
+  RETAIN LINECNT PAGECNT;
+
+  IF FIRST.BRANCH THEN DO;
+     PAGECNT=0;
+     BRCHAMT=0;
+     LINK NEWPAGE;
+  END;
+
+  IF FIRST.SECTORCD THEN DO;
+     BNMAMT=0;
+  END;
+
+  BRCHAMT+BALANCE;
+  BNMAMT+BALANCE;
+
+  PUT @1 'P001'
+      @5 ACCTNO 12. @19 NAME
+      @52 APPRLIMT COMMA18.2 @72 BALANCE COMMA15.2
+      @95 FISSPURP $4.-R  @105 SECTORCD $4. -R @111 CUSTCODE 4.
+      @117 STATE $6.-R
+      @125 FLATRATE COMMA8.2;
+  PUT @1 'P001'
+      @5 LIMIT1 COMMA15.2 @22 LIMIT2 COMMA15.2
+      @40 LIMIT3 COMMA15.2 @58 LIMIT4 COMMA15.2
+      @76 LIMIT5 COMMA15.2 @94 RATE1 COMMA6.2
+      @101 RATE2 COMMA6.2  @108 RATE3 COMMA6.2
+      @115 RATE4 COMMA6.2  @122 RATE5 COMMA6.2;
+  PUT @1 'P001'
+      @95 COL1
+      @102 COL2           @109 COL3
+      @116 COL4           @123 COL5;
+  LINECNT +3;
+
+  IF LINECNT > 55 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.SECTORCD THEN DO;
+     PUT @1 'P001'
+         @72 '---------------';
+     PUT @1 'P001'
+         @37 'SUBTOTAL FOR SECTOR ' SECTORCD @72 BNMAMT COMMA15.2;
+     PUT @1 'P001'
+         @72 '===============';
+     PUT @1 'P001';
+     LINECNT +4;
+  END;
+
+  IF LINECNT > 55 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     PUT @1 'P001'
+         @72 '---------------';
+     PUT @1 'P001'
+         @37 'GRAND TOTAL ' @72 BRCHAMT COMMA15.2;
+     PUT @1 'P001'
+         @72 '===============';
+     PUT @1 'P001';
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @1 'E255';
+    IF FIRST.BRANCH THEN DO;
+       SELECT;
+         WHEN(BRANCH < 10) DO;
+            BRH1 = BRANCH;  BRNO = 'BR0'||TRIM(BRH1);
+         END;
+         WHEN(BRANCH < 100) DO;
+            BRH2 = BRANCH;  BRNO = 'BR'||TRIM(BRH2);
+         END;
+         WHEN(BRANCH > 99)  DO;
+            BRH3 = BRANCH;  BRNO = 'B'||TRIM(BRH3);
+         END;
+         OTHERWISE;
+       END;
+       PUT @1 'P000PBBEDPPBBEDP' @133 BRNO;
+    END;
+    PUT @1   'P000REPORT NO :  ODLIST'
+        @44  'P U B L I C   B A N K   B E R H A D'
+        @122 'PAGE NO : ' PAGECNT;
+    PUT @1   'P001BRANCH    :  ' @22 BRANCH Z3.
+        @36  'OD LISTING BY CONSTRUCTION (SECTCODE 5001-5999) AND';
+ PUT @31 "REAL ESTATE (SECTCODE 8310) FOR NON-INDI. CUSTOMER FOR &RDATE"
+    PUT @1 'P001';
+    PUT @1 'P001';
+    PUT @1 'P001'
+        @62  'APPROVED'
+        @76  'OUTSTANDING'
+        @89  'FISS PURPOSE'
+        @103 'SECTOR'
+        @111 'CUST'
+        @118 'STATE';
+    PUT @1 'P001'
+        @10  'A/C NO.'
+        @19  'NAME OF CUSTOMER'
+        @65  'LIMIT'
+        @80  'BALANCE'
+        @95  'CODE'
+        @105 'CODE'
+        @111 'CODE'
+        @119 'CODE'
+        @124 'FLAT RATE';
+    PUT @1 'P001'
+        @14  'LIMIT1'
+        @31  'LIMIT2'
+        @49  'LIMIT3'
+        @67  'LIMIT4'
+        @85  'LIMIT5'
+        @95  'RATE1'
+        @102 'RATE2'
+        @109 'RATE3'
+        @116 'RATE4'
+        @123 'RATE5';
+    PUT @1 'P001'
+        @95  'COLL1'
+        @102 'COLL2'
+        @109 'COLL3'
+        @116 'COLL4'
+        @123 'COLL5';
+    PUT @1 'P001'
+        @5   '------------------------------'
+        @35  '------------------------------'
+        @65  '------------------------------'
+        @95  '------------------------------'
+        @125 '----------';
+    PUT @1 'P001';
+    PUT @1 'P001';
+    LINECNT = 13;
+  RETURN;
+RUN;
+//*
+//STEP01  EXEC PGM=IEFBR14
+//DELETE1  DD DSN=RBP2.B033.ODLISTR1.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//DELETE2  DD DSN=RBP2.B033.ODLISTR2.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//DELETE3  DD DSN=RBP2.B033.ODLISTR3.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//DELETE4  DD DSN=RBP2.B033.ODLISTR4.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//DELETE5  DD DSN=RBP2.B033.ODLISTR5.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//*---------------------------------------------------------------------
+//*--> TO INSERT CONTROL CHARACTER FOR RPS
+//*---------------------------------------------------------------------
+//*TEP02   EXEC PGM=SPLIBRC1                              FOR 137 LRECL
+//STEP02   EXEC PGM=SPLIB136                              FOR 138 LRECL
+//STEPLIB  DD DSN=RMDS.OPC.LOADLIB,DISP=SHR
+//SYSPRINT DD SYSOUT=*
+//SYSOUT   DD SYSOUT=*
+//SYSUDUMP DD SYSOUT=*
+//SYSABOUT DD SYSOUT=*
+//INFILE   DD DSN=SAP.BANK.ODLIST.RPS,DISP=SHR
+//OUTFILE  DD DUMMY
+//OUTFIL5  DD DSN=RBP2.B033.ODLISTR1.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//OUTFIL1  DD DSN=RBP2.B033.ODLISTR2.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//OUTFIL2  DD DSN=RBP2.B033.ODLISTR3.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//OUTFIL3  DD DSN=RBP2.B033.ODLISTR4.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//OUTFIL4  DD DSN=RBP2.B033.ODLISTR5.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//INFIL1   DD DSN=RMDS.OPC.BANKCODE(KLREGION),DISP=SHR
+//INFIL2   DD DSN=RMDS.OPC.BANKCODE(BGREGION),DISP=SHR
+//INFIL3   DD DSN=RMDS.OPC.BANKCODE(JBREGION),DISP=SHR
+//INFIL4   DD DSN=RMDS.OPC.BANKCODE(SBREGION),DISP=SHR
+//INFIL5   DD DSN=RMDS.OPC.BANKCODE(PPREGION),DISP=SHR
+//INFIL6   DD DSN=RMDS.OPC.BANKCODE(TTREGION),DISP=SHR
+//******************************************************
+//* FOR PIBB
+//******************************************************
+//EIBMODLI  EXEC SAS609,REGION=64M,WORK='6000,6000'
+//CONFIG   DD DISP=SHR,DSN=SYS3.SAS.V609.CNTL(BATCHXA)
+//ODLSTI   DD DSN=SAP.PIBB.ODLIST.RPS,DISP=(NEW,CATLG),
+//            SPACE=(CYL,(30,30)),
+//            DCB=(RECFM=FB,LRECL=136,BLKSIZE=13600)
+//ODLSDI   DD DSN=SAP.PIBB.ODLIST.TEXT,DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(50,50)),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0)
+//DEPOSIT  DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//LOAN     DD DSN=SAP.PIBB.SASDATA,DISP=SHR
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1950 SORTDEV=3390;
+OPTIONS NODATE NONUMBER;
+TITLE;
+
+PROC FORMAT;
+   VALUE BANKFMT 33='PBB'
+                 134='PFB';
+RUN;
+
+DATA _NULL_;
+   SET DEPOSIT.REPTDATE;
+   SELECT(DAY(REPTDATE));
+     WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+     WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+     WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+     OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+   END;
+   CALL SYMPUT('NOWK',PUT(WK,$1.));
+   CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+RUN;
+
+PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK
+     OUT=LOAN (KEEP=ACCTNO SECTORCD FISSPURP);
+
+   BY ACCTNO;
+
+DATA ODRAFT;
+   SET DEPOSIT.CURRENT;
+   IF CURBAL < 0 AND CUSTCODE NE 81;
+   BALANCE = (-1)*CURBAL;
+RUN;
+PROC SORT DATA=ODRAFT; BY ACCTNO;
+*;
+DATA ODRAFT1;
+   MERGE ODRAFT(IN=A) LOAN(IN=B);
+   BY ACCTNO;
+   IF A AND B;
+RUN;
+DATA ODRAFT2;
+  SET ODRAFT1;
+  IF CUSTCD NOT IN ('77','78','95','96') AND
+    (SUBSTR(SECTORCD,1,1) = '5' OR SECTORCD = '8310') THEN OUTPUT;
+RUN;
+PROC SORT DATA=ODRAFT1;
+   BY BRANCH FISSPURP ACCTNO;
+RUN;
+PROC SORT DATA=ODRAFT2;
+   BY BRANCH SECTORCD ACCTNO;
+RUN;
+
+DATA ODLD;
+  SET ODRAFT1;
+  FILE ODLSDI;
+  PUT  @01  BRANCH    3.
+       @04  ACCTNO   10.
+       @14  APPRLIMT COMMA15.2
+       @31  BALANCE  COMMA15.2;
+*;
+DATA _NULL_;
+  SET ODRAFT1;
+  BY BRANCH FISSPURP ACCTNO;
+  FILE ODLSTI;
+  LENGTH BRH1 $1. BRH2 $2. BRH3 $3. BRNO $4.;
+  RETAIN LINECNT PAGECNT;
+
+  IF FIRST.BRANCH THEN DO;
+     PAGECNT=0;
+     BRCHAMT=0;
+     LINK NEWPAGE;
+  END;
+
+  IF FIRST.FISSPURP THEN DO;
+     BNMAMT=0;
+  END;
+
+  BRCHAMT+BALANCE;
+  BNMAMT+BALANCE;
+
+  PUT @1 'P001'
+      @5 ACCTNO 12. @19 NAME
+      @52 APPRLIMT COMMA18.2 @72 BALANCE COMMA15.2
+      @95 FISSPURP $4.-R  @105 SECTORCD $4. -R @111 CUSTCODE 4.
+      @117 STATE $6.-R
+      @125 FLATRATE COMMA8.2;
+  PUT @1 'P001'
+      @5 LIMIT1 COMMA15.2 @22 LIMIT2 COMMA15.2
+      @40 LIMIT3 COMMA15.2 @58 LIMIT4 COMMA15.2
+      @76 LIMIT5 COMMA15.2 @94 RATE1 COMMA6.2
+      @101 RATE2 COMMA6.2  @108 RATE3 COMMA6.2
+      @115 RATE4 COMMA6.2  @122 RATE5 COMMA6.2;
+  PUT @1 'P001'
+      @95 COL1
+      @102 COL2           @109 COL3
+      @116 COL4           @123 COL5;
+  LINECNT +3;
+
+  IF LINECNT > 55 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.FISSPURP THEN DO;
+     PUT @1 'P001'
+         @72 '---------------';
+     PUT @1 'P001'
+         @37 'SUBTOTAL FOR FISS PURPOSE ' FISSPURP @72 BNMAMT COMMA15.2;
+     PUT @1 'P001'
+         @72 '===============';
+     PUT @1 'P001';
+     LINECNT +4;
+  END;
+
+  IF LINECNT > 55 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     PUT @1 'P001'
+         @72 '---------------';
+     PUT @1 'P001'
+         @37 'GRAND TOTAL ' @72 BRCHAMT COMMA15.2;
+     PUT @1 'P001'
+         @72 '===============';
+     PUT @1 'P001';
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @1 'E255';
+    IF FIRST.BRANCH THEN DO;
+       SELECT;
+         WHEN(BRANCH < 10) DO;
+            BRH1 = BRANCH;  BRNO = 'BR0'||TRIM(BRH1);
+         END;
+         WHEN(BRANCH < 100) DO;
+            BRH2 = BRANCH;  BRNO = 'BR'||TRIM(BRH2);
+         END;
+         WHEN(BRANCH > 99)  DO;
+            BRH3 = BRANCH;  BRNO = 'B'||TRIM(BRH3);
+         END;
+         OTHERWISE;
+       END;
+       PUT @1 'P000PBBEDPPBBEDP' @133 BRNO;
+    END;
+    PUT @1   'P000REPORT NO :  ODLIST'
+        @44  'P U B L I C   I S L A M I C  B A N K   B E R H A D'
+        @122 'PAGE NO : ' PAGECNT;
+    PUT @1   'P001BRANCH    :  ' @22 BRANCH Z3.
+       @32 "OD LISTING FOR FISS PURPOSE CODE (FOR ALL CUSTCODES) &RDATE"
+    PUT @1 'P001';
+    PUT @1 'P001';
+    PUT @1 'P001'
+        @62  'APPROVED'
+        @76  'OUTSTANDING'
+        @89  'FISS PURPOSE'
+        @103  'SECTOR'
+        @111 'CUST'
+        @118 'STATE';
+    PUT @1 'P001'
+        @10  'A/C NO.'
+        @19  'NAME OF CUSTOMER'
+        @65  'LIMIT'
+        @80  'BALANCE'
+        @95  'CODE'
+        @105 'CODE'
+        @111 'CODE'
+        @119 'CODE'
+        @124 'FLAT RATE';
+    PUT @1 'P001'
+        @14  'LIMIT1'
+        @31  'LIMIT2'
+        @49  'LIMIT3'
+        @67  'LIMIT4'
+        @85  'LIMIT5'
+        @95  'RATE1'
+        @102 'RATE2'
+        @109 'RATE3'
+        @116 'RATE4'
+        @123 'RATE5';
+    PUT @1 'P001'
+        @95  'COLL1'
+        @102 'COLL2'
+        @109 'COLL3'
+        @116 'COLL4'
+        @123 'COLL5';
+    PUT @1 'P001'
+        @5   '------------------------------'
+        @35  '------------------------------'
+        @65  '------------------------------'
+        @95  '------------------------------'
+        @125 '----------';
+    PUT @1 'P001';
+    PUT @1 'P001';
+    LINECNT = 13;
+  RETURN;
+RUN;
+DATA _NULL_;
+  SET ODRAFT2;
+  BY BRANCH SECTORCD ACCTNO;
+  FILE ODLSTI MOD;
+  LENGTH BRH1 $1. BRH2 $2. BRH3 $3. BRNO $4.;
+  RETAIN LINECNT PAGECNT;
+
+  IF FIRST.BRANCH THEN DO;
+     PAGECNT=0;
+     BRCHAMT=0;
+     LINK NEWPAGE;
+  END;
+
+  IF FIRST.SECTORCD THEN DO;
+     BNMAMT=0;
+  END;
+
+  BRCHAMT+BALANCE;
+  BNMAMT+BALANCE;
+
+  PUT @1 'P001'
+      @5 ACCTNO 12. @19 NAME
+      @52 APPRLIMT COMMA18.2 @72 BALANCE COMMA15.2
+      @95 FISSPURP $4.-R  @105 SECTORCD $4. -R @111 CUSTCODE 4.
+      @117 STATE $6.-R
+      @125 FLATRATE COMMA8.2;
+  PUT @1 'P001'
+      @5 LIMIT1 COMMA15.2 @22 LIMIT2 COMMA15.2
+      @40 LIMIT3 COMMA15.2 @58 LIMIT4 COMMA15.2
+      @76 LIMIT5 COMMA15.2 @94 RATE1 COMMA6.2
+      @101 RATE2 COMMA6.2  @108 RATE3 COMMA6.2
+      @115 RATE4 COMMA6.2  @122 RATE5 COMMA6.2;
+  PUT @1 'P001'
+      @95 COL1
+      @102 COL2           @109 COL3
+      @116 COL4           @123 COL5;
+  LINECNT +3;
+
+  IF LINECNT > 55 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.SECTORCD THEN DO;
+     PUT @1 'P001'
+         @72 '---------------';
+     PUT @1 'P001'
+         @37 'SUBTOTAL FOR SECTOR ' SECTORCD @72 BNMAMT COMMA15.2;
+     PUT @1 'P001'
+         @72 '===============';
+     PUT @1 'P001';
+     LINECNT +4;
+  END;
+
+  IF LINECNT > 55 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     PUT @1 'P001'
+         @72 '---------------';
+     PUT @1 'P001'
+         @37 'GRAND TOTAL ' @72 BRCHAMT COMMA15.2;
+     PUT @1 'P001'
+         @72 '===============';
+     PUT @1 'P001';
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @1 'E255';
+    IF FIRST.BRANCH THEN DO;
+       SELECT;
+         WHEN(BRANCH < 10) DO;
+            BRH1 = BRANCH;  BRNO = 'BR0'||TRIM(BRH1);
+         END;
+         WHEN(BRANCH < 100) DO;
+            BRH2 = BRANCH;  BRNO = 'BR'||TRIM(BRH2);
+         END;
+         WHEN(BRANCH > 99)  DO;
+            BRH3 = BRANCH;  BRNO = 'B'||TRIM(BRH3);
+         END;
+         OTHERWISE;
+       END;
+       PUT @1 'P000PBBEDPPBBEDP' @133 BRNO;
+    END;
+    PUT @1   'P000REPORT NO :  ODLIST'
+        @44  'P U B L I C   I S L A M I C  B A N K   B E R H A D'
+        @122 'PAGE NO : ' PAGECNT;
+    PUT @1   'P001BRANCH    :  ' @22 BRANCH Z3.
+        @36  'OD LISTING BY CONSTRUCTION (SECTCODE 5001-5999) AND';
+ PUT @31 "REAL ESTATE (SECTCODE 8310) FOR NON-INDI. CUSTOMER FOR &RDATE"
+    PUT @1 'P001';
+    PUT @1 'P001';
+    PUT @1 'P001'
+        @62  'APPROVED'
+        @76  'OUTSTANDING'
+        @89  'FISS PURPOSE'
+        @103 'SECTOR'
+        @111 'CUST'
+        @118 'STATE';
+    PUT @1 'P001'
+        @10  'A/C NO.'
+        @19  'NAME OF CUSTOMER'
+        @65  'LIMIT'
+        @80  'BALANCE'
+        @95  'CODE'
+        @105 'CODE'
+        @111 'CODE'
+        @119 'CODE'
+        @124 'FLAT RATE';
+    PUT @1 'P001'
+        @14  'LIMIT1'
+        @31  'LIMIT2'
+        @49  'LIMIT3'
+        @67  'LIMIT4'
+        @85  'LIMIT5'
+        @95  'RATE1'
+        @102 'RATE2'
+        @109 'RATE3'
+        @116 'RATE4'
+        @123 'RATE5';
+    PUT @1 'P001'
+        @95  'COLL1'
+        @102 'COLL2'
+        @109 'COLL3'
+        @116 'COLL4'
+        @123 'COLL5';
+    PUT @1 'P001'
+        @5   '------------------------------'
+        @35  '------------------------------'
+        @65  '------------------------------'
+        @95  '------------------------------'
+        @125 '----------';
+    PUT @1 'P001';
+    PUT @1 'P001';
+    LINECNT = 13;
+  RETURN;
+RUN;
+//*
+//STEP03  EXEC PGM=IEFBR14
+//DELETE1  DD DSN=RBP2.B051.ODLISTR1.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//DELETE2  DD DSN=RBP2.B051.ODLISTR2.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//DELETE3  DD DSN=RBP2.B051.ODLISTR3.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//DELETE4  DD DSN=RBP2.B051.ODLISTR4.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//DELETE5  DD DSN=RBP2.B051.ODLISTR5.RPS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(TRK,(1,1),RLSE)
+//*---------------------------------------------------------------------
+//*--> TO INSERT CONTROL CHARACTER FOR RPS
+//*---------------------------------------------------------------------
+//*TEP02   EXEC PGM=SPLIBRC1                              FOR 137 LRECL
+//STEP04   EXEC PGM=SPLIB136                              FOR 138 LRECL
+//STEPLIB  DD DSN=RMDS.OPC.LOADLIB,DISP=SHR
+//SYSPRINT DD SYSOUT=*
+//SYSOUT   DD SYSOUT=*
+//SYSUDUMP DD SYSOUT=*
+//SYSABOUT DD SYSOUT=*
+//INFILE   DD DSN=SAP.PIBB.ODLIST.RPS,DISP=SHR
+//OUTFILE  DD DUMMY
+//OUTFIL5  DD DSN=RBP2.B051.ODLISTR1.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//OUTFIL1  DD DSN=RBP2.B051.ODLISTR2.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//OUTFIL2  DD DSN=RBP2.B051.ODLISTR3.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//OUTFIL3  DD DSN=RBP2.B051.ODLISTR4.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//OUTFIL4  DD DSN=RBP2.B051.ODLISTR5.RPS,DISP=(NEW,CATLG,DELETE),
+//         UNIT=(SYSDA,5),SPACE=(CYL,(50,50),RLSE),
+//         DCB=(RECFM=FBA,LRECL=138,BLKSIZE=0)
+//INFIL1   DD DSN=RMDS.OPC.BANKCODE(KLREGION),DISP=SHR
+//INFIL2   DD DSN=RMDS.OPC.BANKCODE(BGREGION),DISP=SHR
+//INFIL3   DD DSN=RMDS.OPC.BANKCODE(JBREGION),DISP=SHR
+//INFIL4   DD DSN=RMDS.OPC.BANKCODE(SBREGION),DISP=SHR
+//INFIL5   DD DSN=RMDS.OPC.BANKCODE(PPREGION),DISP=SHR
+//INFIL6   DD DSN=RMDS.OPC.BANKCODE(TTREGION),DISP=SHR
