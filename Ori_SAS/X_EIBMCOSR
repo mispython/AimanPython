@@ -1,0 +1,791 @@
+//EIBMCOSR  JOB MISEIS,CLASS=A,MSGCLASS=A,NOTIFY=&SYSUID
+//*
+//PRINT1   OUTPUT CLASS=R,
+//         NAME='ATTN: MR TING CHEE FAI',
+//         ROOM='22TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='CASH & CHANNEL MANAGEMENT',
+//         ADDRESS=('RETAIL BANKING DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//PRINT2   OUTPUT CLASS=R,
+//         NAME='ATTN: MR MICHEAL CHEONG',
+//         ROOM='GROUND FLOOR',
+//         BUILDING='IT & T, BANGI',
+//         DEPT='ITD',
+//         DEST=S1.RMT5
+//*
+//DELETE    EXEC PGM=IEFBR14
+//DEL01     DD DSN=SAP.PBB.COST01.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0,0))
+//DEL01     DD DSN=SAP.PBB.COST02.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0,0))
+//DEL02     DD DSN=SAP.PBB.COST.EXCEPT.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0,0))
+//*
+//EIBMCOSR  EXEC SAS609
+//COST      DD DSN=SAP.PBB.CORP.COST,DISP=SHR
+//COSTXT01  DD DSN=SAP.PBB.COST01.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             UNIT=SYSDA,SPACE=(CYL,(3,2)),
+//             DCB=(RECFM=FB,LRECL=27000,BLKSIZE=27000)
+//COSTXT02  DD DSN=SAP.PBB.COST02.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             UNIT=SYSDA,SPACE=(CYL,(3,2)),
+//             DCB=(RECFM=FB,LRECL=27000,BLKSIZE=27000)
+//COSTEXP   DD DSN=SAP.PBB.COST.EXCEPT.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             UNIT=SYSDA,SPACE=(CYL,(3,2)),
+//             DCB=(RECFM=FB,LRECL=27000,BLKSIZE=27000)
+//SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT1,*.PRINT2)
+//SYSIN     DD *
+
+OPTIONS NOCENTER NONUMBER NODATE YEARCUTOFF=1950 LINESIZE=132;
+TITLE;
+
+DATA REPTDATE;
+   SET COST.REPTDATE;
+   IF MONTH(REPTDATE) GT 6 THEN DO;
+      MM1 = MONTH(REPTDATE) - 6;
+      YY1 = YEAR(REPTDATE);
+   END;
+   ELSE DO;
+      MM1 = 1;
+      YY1 = YEAR(REPTDATE);
+   END;
+   *** SRPTDATE = MDY(MM1,1,YY1);
+   SRPTDATE = MDY(MONTH(REPTDATE),1,YEAR(REPTDATE));
+   CALL SYMPUT('NOOFDAY',PUT(DAY(REPTDATE),2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+   CALL SYMPUT('SDATE',PUT(SRPTDATE,DDMMYY8.));
+   CALL SYMPUT('SMON',MONTH(SRPTDATE));
+   CALL SYMPUT('EMON',MONTH(REPTDATE));
+RUN;
+
+*** COST RATE ***;
+%MACRO COSTRT;
+   %DO I = &SMON %TO &EMON;
+      %IF &I = &SMON %THEN %DO;
+         %IF &I <=9 %THEN %DO;
+            DATA RATE; SET COST.RATE0&I; RUN;
+         %END;
+         %ELSE %DO;
+            DATA RATE; SET COST.RATE&I; RUN;
+         %END;
+      %END;
+      %ELSE %DO;
+         %IF &I <=9 %THEN %DO;
+            PROC APPEND DATA=COST.RATE0&I BASE=RATE; RUN;
+         %END;
+         %ELSE %DO;
+            PROC APPEND DATA=COST.RATE&I BASE=RATE; RUN;
+         %END;
+      %END;
+   %END;
+   PROC SORT DATA=RATE; BY TRANDT; RUN;
+%MEND;
+
+
+*** 1. STOCK BANKING ***;
+%MACRO STOCKBK;
+   %DO I = &SMON %TO &EMON;
+      %IF &I = &SMON %THEN %DO;
+         %IF &I <=9 %THEN %DO;
+            DATA STBK; SET COST.STBK0&I; RUN;
+         %END;
+         %ELSE %DO;
+            DATA STBK; SET COST.STBK&I; RUN;
+         %END;
+      %END;
+      %ELSE %DO;
+         %IF &I <=9 %THEN %DO;
+            PROC APPEND DATA=COST.STBK0&I BASE=STBK; RUN;
+         %END;
+         %ELSE %DO;
+            PROC APPEND DATA=COST.STBK&I BASE=STBK; RUN;
+         %END;
+      %END;
+   %END;
+%MEND;
+
+*** 2. DEPOSIT COLLECTION ***;
+%MACRO DEPCOLL;
+   %DO I = &SMON %TO &EMON;
+      %IF &I = &SMON %THEN %DO;
+         %IF &I <=9 %THEN %DO;
+            DATA DPCOL; SET COST.DPCOL0&I; RUN;
+         %END;
+         %ELSE %DO;
+            DATA DPCOL; SET COST.DPCOL&I; RUN;
+         %END;
+      %END;
+      %ELSE %DO;
+         %IF &I <=9 %THEN %DO;
+            PROC APPEND DATA=COST.DPCOL0&I BASE=DPCOL; RUN;
+         %END;
+         %ELSE %DO;
+            PROC APPEND DATA=COST.DPCOL&I BASE=DPCOL; RUN;
+         %END;
+      %END;
+   %END;
+%MEND;
+
+*** 3. DEPOSIT ECP/FDS    ***;
+%MACRO DEPECP;
+   %DO I = &SMON %TO &EMON;
+      %IF &I = &SMON %THEN %DO;
+         %IF &I <=9 %THEN %DO;
+            DATA DPECP; SET COST.DPECP0&I; RUN;
+         %END;
+         %ELSE %DO;
+            DATA DPECP; SET COST.DPECP&I; RUN;
+         %END;
+      %END;
+      %ELSE %DO;
+         %IF &I <=9 %THEN %DO;
+            PROC APPEND DATA=COST.DPECP0&I BASE=DPECP; RUN;
+         %END;
+         %ELSE %DO;
+            PROC APPEND DATA=COST.DPECP&I BASE=DPECP; RUN;
+         %END;
+      %END;
+   %END;
+%MEND;
+
+*** 4. DEPOSIT DDS   ***;
+%MACRO DEPDDS;
+   %DO I = &SMON %TO &EMON;
+      %IF &I = &SMON %THEN %DO;
+         %IF &I <=9 %THEN %DO;
+            DATA DPDDS; SET COST.DPDDS0&I; RUN;
+         %END;
+         %ELSE %DO;
+            DATA DPDDS; SET COST.DPDDS&I; RUN;
+         %END;
+      %END;
+      %ELSE %DO;
+         %IF &I <=9 %THEN %DO;
+            PROC APPEND DATA=COST.DPDDS0&I BASE=DPDDS; RUN;
+         %END;
+         %ELSE %DO;
+            PROC APPEND DATA=COST.DPDDS&I BASE=DPDDS; RUN;
+         %END;
+      %END;
+   %END;
+%MEND;
+
+*** 5. DEPOSIT MISC  ***;
+%MACRO DEPMISC;
+   %DO I = &SMON %TO &EMON;
+      %IF &I = &SMON %THEN %DO;
+         %IF &I <=9 %THEN %DO;
+            DATA DPMISC; SET COST.DPMISC0&I; RUN;
+         %END;
+         %ELSE %DO;
+            DATA DPMISC; SET COST.DPMISC&I; RUN;
+         %END;
+      %END;
+      %ELSE %DO;
+         %IF &I <=9 %THEN %DO;
+            PROC APPEND DATA=COST.DPMISC0&I BASE=DPMISC; RUN;
+         %END;
+         %ELSE %DO;
+            PROC APPEND DATA=COST.DPMISC&I BASE=DPMISC; RUN;
+         %END;
+      %END;
+   %END;
+%MEND;
+
+
+*** MAIN PROCESS ***;
+%MACRO PROCESS;
+
+     %COSTRT;
+     %STOCKBK;
+     %DEPCOLL;
+     %DEPECP;
+     %DEPDDS;
+     %DEPMISC;
+
+     DATA TOTSUM;
+        SET STBK DPCOL DPECP DPDDS DPMISC;
+     RUN;
+     PROC SORT DATA=TOTSUM; BY TRANDT; RUN;
+     DATA EXCEPT;
+        SET TOTSUM;
+        IF SVTYPE NOT IN ('FDSIBG','FDSIBK','ECP','DDS','EBK',
+                          'TEL','ATM','OTC','ESI','PREATM',
+                          'PRESMS','FPXCOL','FPXPYM','STM',
+                          'PREEBK','MTN','MIS','PAG','CDT',
+                          'CDM','MBK');
+     RUN;
+
+     DATA TOTSUM;
+        MERGE TOTSUM(IN=A) RATE(IN=B);
+        BY TRANDT;
+        IF A;
+        SELECT (SVTYPE);
+           WHEN('FDSIBG') DO;
+              CNTFDS   = COUNT;
+              COSFDS   = COUNT * MISCRATE;
+           END;
+           WHEN('FDSIBK') DO;
+              CNTFDS   = COUNT;
+              COSFDS   = COUNT * MISCRATE;
+           END;
+           WHEN('ECP') DO;
+              CNTECP   = COUNT;
+              COSECP   = COUNT * MISCRATE;
+           END;
+           WHEN('DDS') DO;
+              CNTDDS   = COUNT;
+              COSDDS   = COUNT * DEBRATE;
+           END;
+           WHEN('EBK') DO;
+              CNTEBK   = COUNT;
+              COSEBK   = COUNT * PBERATE;
+           END;
+           WHEN('TEL') DO;
+              CNTTEL   = COUNT;
+              COSTEL   = COUNT * TELERATE;
+           END;
+           WHEN('ATM') DO;
+              CNTATM   = COUNT;
+              COSATM   = COUNT * ATMRATE;
+           END;
+           WHEN('OTC') DO;
+              CNTOTC   = COUNT;
+              COSOTC   = COUNT * OTCRATE;
+           END;
+           WHEN('ESI') DO;
+              CNTESI   = COUNT;
+              COSESI   = COUNT * MISCRATE;
+           END;
+           WHEN('PREATM') DO;
+              CNTMISC  = COUNT;
+              COSMISC  = COUNT * MISCRATE;
+           END;
+           WHEN('PRESMS') DO;
+              CNTMISC  = COUNT;
+              COSMISC  = COUNT * MISCRATE;
+           END;
+           WHEN('PREEBK') DO;
+              CNTMISC  = COUNT;
+              COSMISC  = COUNT * MISCRATE;
+           END;
+           WHEN('FPXCOL') DO;
+              CNTFPXCO = COUNT;
+              COSFPXCO = COUNT * MISCRATE;
+           END;
+           WHEN('FPXPYM') DO;
+              CNTFPXPY = COUNT;
+              COSFPXPY = COUNT * MISCRATE;
+           END;
+           WHEN('PAG') DO;
+              CNTPAG = COUNT;
+              COSPAG = COUNT * MISCRATE;
+           END;
+           WHEN('CDT') DO;
+              CNTCDT = COUNT;
+              COSCDT = COUNT * MISCRATE;
+           END;
+           WHEN('CDM') DO;
+              CNTCDM = COUNT;
+              COSCDM = COUNT * MISCRATE;
+           END;
+           WHEN('MBK') DO;
+              CNTMBK = COUNT;
+              COSMBK = COUNT * MISCRATE;
+           END;
+           WHEN('STM','MTN','MIS') DO;
+              CNTMISC  = COUNT;
+              COSMISC  = COUNT * MISCRATE;
+           END;
+           OTHERWISE;
+        END;
+        TOTFEE = SUM(FEEAMT1, FEEAMT2);
+     RUN;
+
+     PROC SORT DATA=COST.NAME OUT=NAME NODUPKEYS; BY ACCTNO; RUN;
+     PROC SORT DATA=TOTSUM; BY ACCTNO; RUN;
+
+     *** A/C NOT FOUND IN CONTROL FILE (ESMR) ***;
+     DATA MISSNAME;
+        MERGE TOTSUM(IN=A) NAME(IN=B);
+        BY ACCTNO;
+        IF A AND NOT B;
+     RUN;
+
+     DATA TOTSUM;
+        MERGE TOTSUM(IN=A) NAME(IN=B);
+        BY ACCTNO;
+        IF A;
+     RUN;
+
+     PROC SORT DATA=TOTSUM; BY NMABBR; RUN;
+     PROC MEANS DATA=TOTSUM NWAY NOPRINT;
+        BY NMABBR;
+        VAR CNTOTC COSOTC CNTATM COSATM CNTEBK COSEBK
+            CNTTEL COSTEL CNTDDS COSDDS CNTECP COSECP
+            CNTFDS COSFDS CNTESI COSESI CNTPAG COSPAG
+            CNTCDT COSCDT CNTCDM COSCDM
+            CNTFPXCO COSFPXCO CNTFPXPY COSFPXPY
+            CNTMBK COSMBK CNTMISC COSMISC TOTFEE;
+        OUTPUT OUT=TOTSUM(DROP=_TYPE_ _FREQ_) SUM=;
+     RUN;
+
+%MEND;
+%PROCESS;
+
+
+*** ESMR ***;
+%MACRO ESMRDTL;
+   DATA ESMR;
+      SET COST.ESMR;
+      IF EXPDT GE INPUT("&SDATE", DDMMYY8.);
+   RUN;
+
+   PROC SORT DATA=RATE; BY TRANDT; RUN;
+   PROC SORT DATA=ESMR; BY TRANDT; RUN;
+   DATA ESMR;
+      MERGE ESMR(IN=A) RATE(IN=B);
+      BY TRANDT;
+      IF A;
+      THISDATE = INPUT("&SDATE", DDMMYY8.);
+      MTHCOUNT = ((YEAR(EXPDT)    * 12 + MONTH(EXPDT)   )  -
+                  (YEAR(THISDATE) * 12 + MONTH(THISDATE))) + 1 ;
+      COSESMR = (MANDAY * MANRATE) / 60;
+   RUN;
+
+   %DO I = &SMON %TO &EMON;
+      DATA ESMR1;
+         SET ESMR;
+         IF MTHCOUNT GE &I;
+      RUN;
+      %IF &I = 1 %THEN %DO;
+         DATA ESMR2; SET ESMR1; RUN;
+      %END;
+      %ELSE %DO;
+         PROC APPEND DATA=ESMR1 BASE=ESMR2; RUN;
+      %END;
+   %END;
+
+   PROC SORT DATA=COST.NAME OUT=NAME NODUPKEYS; BY ACCTNO; RUN;
+   PROC SORT DATA=ESMR2; BY ACCTNO; RUN;
+
+   *** A/C NOT FOUND IN CONTROL FILE (ESMR) ***;
+   DATA MISSACC;
+      MERGE ESMR2(IN=A) NAME(IN=B);
+      BY ACCTNO;
+      IF A AND NOT B;
+   RUN;
+   DATA MISSNAME; SET MISSACC MISSNAME; RUN;
+
+   DATA ESMR2;
+      MERGE ESMR2(IN=A) NAME(IN=B);
+      BY ACCTNO;
+      IF A AND B;
+   RUN;
+
+   PROC SORT DATA=ESMR2; BY NMABBR; RUN;
+   PROC MEANS DATA=ESMR2 NWAY NOPRINT;
+      BY NMABBR;
+      VAR COSESMR;
+      OUTPUT OUT=ESMR2(DROP=_TYPE_ _FREQ_) SUM=;
+   RUN;
+
+%MEND;
+%ESMRDTL;
+
+
+*** OTHER COST ***;
+%MACRO OTHERDTL;
+   DATA OTHCOST;
+      SET COST.OTHCOST;
+      IF CTYPE = 'DC' OR (CTYPE = 'HW' AND
+         EXPDT GE INPUT("&SDATE", DDMMYY8.) AND
+         TRANDT LE INPUT("&RDATE", DDMMYY8.));
+   RUN;
+   DATA OTHCOST;
+      SET OTHCOST;
+      THISDATE = INPUT("&SDATE", DDMMYY8.);
+      IF CTYPE = 'HW' THEN DO;
+         MTHCOUNT = ((YEAR(EXPDT)    * 12 + MONTH(EXPDT)   )  -
+                    (YEAR(THISDATE) * 12 + MONTH(THISDATE))) + 1 ;
+         HWARE = ORICOST / 60;
+      END;
+      IF CTYPE = 'DC' THEN DO;
+         DATACOMM = ORICOST / 12;
+      END;
+   RUN;
+
+   %DO I = &SMON %TO &EMON;
+      DATA OTHCOST1;
+         SET OTHCOST;
+         IF MTHCOUNT GE &I OR CTYPE = 'DC';
+      RUN;
+      %IF &I = 1 %THEN %DO;
+         DATA OTHCOST2; SET OTHCOST1; RUN;
+      %END;
+      %ELSE %DO;
+         PROC APPEND DATA=OTHCOST1 BASE=OTHCOST2; RUN;
+      %END;
+   %END;
+
+   PROC SORT DATA=COST.NAME OUT=NAME NODUPKEYS; BY ACCTNO; RUN;
+   PROC SORT DATA=OTHCOST2; BY ACCTNO; RUN;
+
+   *** A/C NOT FOUND IN CONTROL FILE (ESMR) ***;
+   DATA MISSACC;
+      MERGE OTHCOST2(IN=A) NAME(IN=B);
+      BY ACCTNO;
+      IF A AND NOT B;
+   RUN;
+   DATA MISSNAME; SET MISSACC MISSNAME; RUN;
+
+   DATA OTHCOST2;
+      MERGE OTHCOST2(IN=A) NAME(IN=B);
+      BY ACCTNO;
+      IF A AND B;
+   RUN;
+
+   PROC SORT DATA=OTHCOST2; BY NMABBR; RUN;
+   PROC MEANS DATA=OTHCOST2 NWAY NOPRINT;
+      BY NMABBR;
+      VAR HWARE DATACOMM;
+      OUTPUT OUT=OTHCOST2(DROP=_TYPE_ _FREQ_) SUM=;
+   RUN;
+%MEND;
+%OTHERDTL;
+
+
+*** TO CALCULATE FLOAT AMT ***;
+%MACRO DEPBAL;
+   %DO I = &SMON %TO &EMON;
+      %IF &I = &SMON %THEN %DO;
+         %IF &I <=9 %THEN %DO;
+            DATA DPBAL; SET COST.DPBAL0&I; RUN;
+         %END;
+         %ELSE %DO;
+            DATA DPBAL; SET COST.DPBAL&I; RUN;
+         %END;
+      %END;
+      %ELSE %DO;
+         %IF &I <=9 %THEN %DO;
+            PROC APPEND DATA=COST.DPBAL0&I BASE=DPBAL; RUN;
+         %END;
+         %ELSE %DO;
+            PROC APPEND DATA=COST.DPBAL&I BASE=DPBAL; RUN;
+         %END;
+      %END;
+   %END;
+
+   PROC SORT DATA=RATE; BY TRANDT; RUN;
+   PROC SORT DATA=DPBAL; BY TRANDT; RUN;
+   DATA DPBAL;
+      MERGE DPBAL(IN=A) RATE(KEEP=TRANDT FLOAT);
+      BY TRANDT;
+      IF A;
+      YY=&REPTYEAR;
+      FLOAMT = 0;
+      IF MOD(YY,4)=0 THEN DAYYR = 366; ELSE DAYYR = 365;
+      IF AVGBAL GT 0 THEN DO;
+         FLOAMT = SUM((( (AVGBAL*(FLOAT/100))
+                  * (&NOOFDAY/DAYYR) )),(-1)*INTRSTPD);
+      END;
+   RUN;
+
+   PROC SORT DATA=COST.NAME OUT=NAME NODUPKEYS; BY ACCTNO; RUN;
+   PROC SORT DATA=DPBAL; BY ACCTNO; RUN;
+
+   *** A/C NOT FOUND IN CONTROL FILE (ESMR) ***;
+   DATA MISSACC;
+      MERGE DPBAL(IN=A) NAME(IN=B);
+      BY ACCTNO;
+      IF A AND NOT B;
+   RUN;
+   DATA MISSNAME; SET MISSACC MISSNAME; RUN;
+
+   DATA DPBAL;
+      MERGE DPBAL(IN=A) NAME(IN=B);
+      BY ACCTNO;
+      IF A AND B;
+   RUN;
+
+   PROC SORT DATA=DPBAL; BY NMABBR; RUN;
+   PROC MEANS DATA=DPBAL NWAY NOPRINT;
+      BY NMABBR;
+      VAR FLOAMT;
+      OUTPUT OUT=DPBAL(DROP=_TYPE_ _FREQ_) SUM=;
+   RUN;
+%MEND;
+%DEPBAL;
+
+
+*** GRAND TOTAL ***;
+PROC SORT DATA=COST.NAME OUT=NAME NODUPKEYS; BY NMABBR; RUN;
+PROC SORT DATA=TOTSUM; BY NMABBR; RUN;
+PROC SORT DATA=ESMR2; BY NMABBR; RUN;
+DATA TOTSUM;
+   MERGE TOTSUM(IN=A) ESMR2(IN=B) OTHCOST2
+         DPBAL(KEEP=NMABBR FLOAMT)
+         NAME(KEEP=CUSTNAME NMABBR);
+   BY NMABBR;
+   IF A OR B;
+   TODIRECT = SUM(HWARE, DATACOMM, COSESMR);
+   TOCNT    = SUM(CNTOTC, CNTATM, CNTEBK,   CNTTEL,   CNTDDS, CNTECP,
+                  CNTFDS, CNTESI, CNTFPXCO, COSFPXPY, CNTMISC,
+                  CNTPAG, CNTCDT, CNTCDM, CNTMBK);
+   TOCOST   = SUM(COSOTC, COSATM, COSEBK,   COSTEL,   COSDDS, COSECP,
+                  COSFDS, COSESI, COSFPXCO, COSFPXPY, COSMISC,
+                  COSPAG, COSCDT, COSCDM, COSMBK);
+   PROFIT   = SUM(SUM(TOTFEE,FLOAMT),-1*(SUM(TODIRECT,TOCOST)));
+   TRANDT=INPUT("&RDATE", DDMMYY8.);
+RUN;
+
+PROC SORT DATA=TOTSUM; BY TRANDT; RUN;
+DATA TOTSUM;
+   MERGE TOTSUM(IN=A) RATE(IN=B);
+   BY TRANDT;
+   IF A;
+        IF CNTOTC   = . THEN CNTOTC   = 0;
+        IF CNTATM   = . THEN CNTATM   = 0;
+        IF CNTEBK   = . THEN CNTEBK   = 0;
+        IF CNTTEL   = . THEN CNTTEL   = 0;
+        IF CNTDDS   = . THEN CNTDDS   = 0;
+        IF CNTECP   = . THEN CNTECP   = 0;
+        IF CNTFDS   = . THEN CNTFDS   = 0;
+        IF CNTESI   = . THEN CNTESI   = 0;
+        IF CNTPAG   = . THEN CNTPAG   = 0;
+        IF CNTCDT   = . THEN CNTCDT   = 0;
+        IF CNTCDM   = . THEN CNTCDM   = 0;
+        IF CNTMBK   = . THEN CNTMBK   = 0;
+        IF CNTFPXCO = . THEN CNTFPXCO = 0;
+        IF CNTFPXPY = . THEN CNTFPXPY = 0;
+        IF CNTMISC  = . THEN CNTMISC  = 0;
+
+        IF COSOTC   = . THEN COSOTC    = 0;
+        IF COSATM   = . THEN COSATM    = 0;
+        IF COSEBK   = . THEN COSEBK    = 0;
+        IF COSTEL   = . THEN COSTEL    = 0;
+        IF COSDDS   = . THEN COSDDS    = 0;
+        IF COSECP   = . THEN COSECP    = 0;
+        IF COSFDS   = . THEN COSFDS    = 0;
+        IF COSESI   = . THEN COSESI    = 0;
+        IF COSPAG   = . THEN COSPAG    = 0;
+        IF COSCDT   = . THEN COSCDT    = 0;
+        IF COSCDM   = . THEN COSCDM    = 0;
+        IF COSMBK   = . THEN COSMBK    = 0;
+        IF COSFPXCO = . THEN COSFPXCO  = 0;
+        IF COSFPXPY = . THEN COSFPXPY  = 0;
+        IF COSMISC  = . THEN COSMISC   = 0;
+
+        IF TOTFEE   = . THEN TOTFEE    = 0;
+        IF TODIRECT = . THEN TODIRECT  = 0;
+        IF TOCNT    = . THEN TOCNT     = 0;
+        IF TOCOST   = . THEN TOCOST    = 0;
+        IF PROFIT   = . THEN PROFIT    = 0;
+RUN;
+PROC SORT DATA=TOTSUM; BY CUSTNAME; RUN;
+
+*** OUTPUT TEXT FILE ***;
+DATA _NULL_;
+   SET TOTSUM;
+   FILE COSTXT01;
+   IF _N_ = 1  THEN DO;
+      PUT @1                      ';' ';'
+             'SETUP/DIRECT COST'  ';' ';' ';' ';'
+             'TOTAL OPERATING'    ';'
+             'INCOME(RM)'         ';' ';'
+             'PROFIT/'            ';'
+             ;
+      PUT @1 'CORPORATE NAME'  ';'
+             'TOTAL TXN VOL'   ';'
+             'H/W & SYS /SW'   ';'
+             'DATA COMM'       ';'
+             'PROGRAMMING'     ';'
+             'TOTAL COST'      ';'
+             'COST(RM)'        ';'
+             'TOTAL'           ';'
+             'FLOAT'           ';'
+             'LOSS(RM)'        ';'
+             ;
+   END;
+   PUT @1 CUSTNAME  ';'
+          TOCNT     ';'
+          HWARE     15.2 ';'
+          DATACOMM  15.2 ';'
+          COSESMR   15.2 ';'
+          TODIRECT  15.2 ';'
+          TOCOST    15.2 ';'
+          TOTFEE    15.2 ';'
+          FLOAMT    15.2 ';'
+          PROFIT    15.2 ';'
+          ;
+RUN;
+
+*-------------------------------------*
+* REPORT FORMAT                       *
+*-------------------------------------*;
+%MACRO PRNRPT1;
+   IF _N_ = 1 THEN DO;
+      PAGECNT=0;
+      LINK NEWPAGE;
+      TCNTOTC=0;   TCNTATM=0;  TCNTEBK=0;   TCNTTEL=0;    TCNTDDS=0;
+      TCNTECP=0;   TCNTFDS=0;  TCNTESI=0;   TCNTFPXCO=0;  TCNTFPXPY=0;
+      TCNTPAG=0;   TCNTCDT=0;  TCNTCDM=0;   TCNTMISC=0;   TTOCNT=0;
+      TCNTMBK=0;
+      TCOSOTC=0;   TCOSATM=0;  TCOSEBK=0;   TCOSTEL=0;    TCOSDDS=0;
+      TCOSECP=0;   TCOSFDS=0;  TCOSESI=0;   TCOSFPXCO=0;  TCOSFPXPY=0;
+      TCOSPAG=0;   TCOSCDT=0;  TCOSCDM=0;   TCOSMISC=0;   TTOCOST=0;
+      TCOSMBK=0;
+   END;
+
+   PUT @001  CUSTNAME  $30.
+       @032  CNTOTC    COMMA9.   @042  COSOTC    COMMA14.2
+       @057  CNTATM    COMMA9.   @067  COSATM    COMMA14.2
+       @082  CNTEBK    COMMA9.   @092  COSEBK    COMMA14.2
+       @107  CNTTEL    COMMA9.   @117  COSTEL    COMMA14.2
+      /@032  CNTDDS    COMMA9.   @042  COSDDS    COMMA14.2
+       @057  CNTECP    COMMA9.   @067  COSECP    COMMA14.2
+       @082  CNTFDS    COMMA9.   @092  COSFDS    COMMA14.2
+       @107  CNTESI    COMMA9.   @117  COSESI    COMMA14.2
+      /@032  CNTPAG    COMMA9.   @042  COSPAG    COMMA14.2
+       @057  CNTCDT    COMMA9.   @067  COSCDT    COMMA14.2
+       @082  CNTCDM    COMMA9.   @092  COSCDM    COMMA14.2
+       @107  CNTFPXCO  COMMA9.   @117  COSFPXCO  COMMA14.2
+      /@032  CNTFPXPY  COMMA9.   @042  COSFPXPY  COMMA14.2
+       @057  CNTMISC   COMMA9.   @067  COSMISC   COMMA14.2
+       @082  CNTMBK    COMMA9.   @092  COSMBK    COMMA14.2
+       @107  TOCNT     COMMA9.   @117  TOCOST    COMMA14.2
+      /@001
+      ;
+   LINECNT + 5;
+   TCNTOTC+CNTOTC;      TCNTATM+CNTATM;
+   TCNTEBK+CNTEBK;      TCNTTEL+CNTTEL;
+   TCNTDDS+CNTDDS;      TCNTECP+CNTECP;
+   TCNTFDS+CNTFDS;      TCNTESI+CNTESI;
+   TCNTPAG+CNTPAG;      TCNTCDT+CNTCDT;
+   TCNTCDM+CNTCDM;      TCNTMBK+CNTMBK;
+   TCNTFPXCO+CNTFPXCO;  TCNTFPXPY+CNTFPXPY;
+   TCNTMISC+CNTMISC;    TTOCNT+TOCNT;
+
+   TCOSOTC+COSOTC;      TCOSATM+COSATM;
+   TCOSEBK+COSEBK;      TCOSTEL+COSTEL;
+   TCOSDDS+COSDDS;      TCOSECP+COSECP;
+   TCOSFDS+COSFDS;      TCOSESI+COSESI;
+   TCOSPAG+COSPAG;      TCOSCDT+COSCDT;
+   TCOSCDM+COSCDM;      TCOSMBK+COSMBK;
+   TCOSFPXCO+COSFPXCO;  TCOSFPXPY+COSFPXPY;
+   TCOSMISC+COSMISC;    TTOCOST+TOCOST;
+
+   IF LINECNT > 56 THEN DO;
+      LINK NEWPAGE;
+   END;
+
+   IF LAST THEN DO;
+      IF LINECNT > 50 THEN DO;
+         LINK NEWPAGE;
+      END;
+      PUT @001 '---------------------------------------------'
+          @046 '---------------------------------------------'
+          @091 '----------------------------------------'
+         /@001 'GRAND TOTAL'
+          @032  TCNTOTC    COMMA9.   @042  TCOSOTC    COMMA14.2
+          @057  TCNTATM    COMMA9.   @067  TCOSATM    COMMA14.2
+          @082  TCNTEBK    COMMA9.   @092  TCOSEBK    COMMA14.2
+          @107  TCNTTEL    COMMA9.   @117  TCOSTEL    COMMA14.2
+         /@032  TCNTDDS    COMMA9.   @042  TCOSDDS    COMMA14.2
+          @057  TCNTECP    COMMA9.   @067  TCOSECP    COMMA14.2
+          @082  TCNTFDS    COMMA9.   @092  TCOSFDS    COMMA14.2
+          @107  TCNTESI    COMMA9.   @117  TCOSESI    COMMA14.2
+         /@032  TCNTPAG    COMMA9.   @042  TCOSPAG    COMMA14.2
+          @057  TCNTCDT    COMMA9.   @067  TCOSCDT    COMMA14.2
+          @082  TCNTCDM    COMMA9.   @092  TCOSCDM    COMMA14.2
+          @107  TCNTFPXCO  COMMA9.   @117  TCOSFPXCO  COMMA14.2
+         /@032  TCNTFPXPY  COMMA9.   @042  TCOSFPXPY  COMMA14.2
+          @057  TCNTMISC   COMMA9.   @067  TCOSMISC   COMMA14.2
+          @082  TCNTMBK    COMMA9.   @092  TCOSMBK    COMMA14.2
+          @107  TTOCNT     COMMA9.   @117  TTOCOST    COMMA14.2
+         /@001 '---------------------------------------------'
+          @046 '---------------------------------------------'
+          @091 '----------------------------------------'
+          ;
+   END;
+   RETURN;
+
+   NEWPAGE:
+     PUT _PAGE_;
+     PAGECNT+1;
+     LINECNT=9;
+     PUT @001 'PUBLIC BANK BERHAD - TRANSACTION VOLUMN & COST ANALYSIS '
+              'REPORT FROM ' "&SDATE" ' TO ' "&RDATE"
+         @120 'PAGE NO.: ' PAGECNT
+        /@034 'OTC (' OTCRATE 4.2 ')'
+         @059 'ATM-GIRO (' ATMRATE 4.2 ')'
+         @084 'PB EBANK (' PBERATE 4.2 ')'
+         @109 'TELEBANKING (' TELERATE 4.2 ')'
+        /@034 'DIRECT DEBIT (' DEBRATE 4.2 ')'
+         @059 'ECP (' MISCRATE 4.2 ')'
+         @084 'FDS (' MISCRATE 4.2 ')'
+         @109 'ESI (' MISCRATE 4.2 ')'
+        /@034 'PAG (' MISCRATE 4.2 ')'
+         @059 'CDT (' MISCRATE 4.2 ')'
+         @084 'CDM (' MISCRATE 4.2 ')'
+         @109 'FPX COLLECTION (' MISCRATE 4.2 ')'
+        /@034 'FPX PAYMENT (' MISCRATE 4.2 ')'
+         @059 'MISC (' MISCRATE 4.2 ')'
+         @084 'MBK (' MISCRATE 4.2 ')'
+         @109 'TOTAL '
+        /@001 '---------------------------------------------'
+         @046 '---------------------------------------------'
+         @091 '----------------------------------------'
+        /@001 'CORPORATE NAME'
+         @034 'TRX VOL'
+         @052 'COST'
+         @059 'TRX VOL'
+         @077 'COST'
+         @084 'TRX VOL'
+         @102 'COST'
+         @109 'TRX VOL'
+         @127 'COST'
+        /@001 '---------------------------------------------'
+         @046 '---------------------------------------------'
+         @091 '----------------------------------------'
+         ;
+   RETURN;
+%MEND;
+
+DATA _NULL_;
+  SET TOTSUM END=LAST;
+  BY CUSTNAME;
+  FILE PRINT;
+  %PRNRPT1;
+RUN;
+
+    *** MISSING OF A/C NUMBER ***;
+PROC SORT DATA=MISSNAME NODUPKEY; BY ACCTNO; RUN;
+PROC PRINT DATA=MISSNAME;
+    VAR ACCTNO;
+    TITLE  'PUBLIC  BANK  BERHAD';
+    TITLE2 'MISSSING ACCOUNT NAME FROM PARAMETER (ESMR)';
+RUN;
+
+
+    *** EXCEPTION OF TRANSACTION TYPE ***;
+PROC PRINTTO PRINT=COSTEXP NEW;
+PROC PRINT DATA=EXCEPT;
+    FORMAT TRANDT DATE8.;
+    VAR ACCTNO SVTYPE AMOUNT FEEAMT1 FEEAMT2 TRANDT;
+    TITLE  'PUBLIC  BANK  BERHAD';
+    TITLE2 'EXCEPTION REPORTS ON UNKNOW TRANSACTION TYPE FROM '
+           "&SDATE" ' TO ' "RDATE";
+RUN;
+
+
