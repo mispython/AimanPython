@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 """
 Program : EIIWCCR6
 Function: CCRIS Enhancement - Generate CCRIS submission files from BNM/ELDS data.
@@ -32,10 +32,6 @@ from PBBLNFMT import (
     format_statecd, format_apprlimt, format_loansize,
     format_mthpass, format_lnormt, format_lnrmmt,
     format_collcd, format_riskcd, format_busind,
-
-    # format_lntype, format_product, format_purpose,
-    # format_prisec, format_prisecd, format_secsec,
-    # format_secseccd, format_othsec, format_othseccd,
 )
 
 # ---------------------------------------------------------------------------
