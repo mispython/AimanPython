@@ -1,0 +1,916 @@
+//EIBWCC5L  JOB 224T,'EIBWCCR5',CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//          NOTIFY=&SYSUID
+/*JOBPARM S=S1M1
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.CCRIS2.COLLATER,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD1E     DD DSN=SAP.PBB.CCRIS2.COLLATER.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD2      DD DSN=SAP.PBB.CCRIS2.CMTORVEH,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD2E     DD DSN=SAP.PBB.CCRIS2.CMTORVEH.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD3      DD DSN=SAP.PBB.CCRIS2.COTHVEHI,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD3E     DD DSN=SAP.PBB.CCRIS2.COTHVEHI.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD4      DD DSN=SAP.PBB.CCRIS2.CPLANTMA,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD4E     DD DSN=SAP.PBB.CCRIS2.CPLANTMA.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD5      DD DSN=SAP.PBB.CCRIS2.CCONCESS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD5E     DD DSN=SAP.PBB.CCRIS2.CCONCESS.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD6      DD DSN=SAP.PBB.CCRIS2.CFINASST,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD6E     DD DSN=SAP.PBB.CCRIS2.CFINASST.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD7      DD DSN=SAP.PBB.CCRIS2.COTHASST,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD7E     DD DSN=SAP.PBB.CCRIS2.COTHASST.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD8      DD DSN=SAP.PBB.CCRIS2.CFINGUAR,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD8E     DD DSN=SAP.PBB.CCRIS2.CFINGUAR.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD9      DD DSN=SAP.PBB.CCRIS2.CPROPETY,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD9E     DD DSN=SAP.PBB.CCRIS2.CPROPETY.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD10     DD DSN=SAP.PBB.CCRIS2.DCCMS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD10E    DD DSN=SAP.PBB.CCRIS2.DCCMS.ELDS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//SAS6094  EXEC SAS609
+//BTRD     DD DSN=SAP.PBB.BTRADE.SASDATA,DISP=SHR
+//BNM      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//COLL     DD DSN=SAP.PBB.MNICOL(0),DISP=SHR
+//CCRISP   DD DSN=SAP.PBB.CCRIS.SPLIT,DISP=SHR
+//COLLATER  DD DSN=SAP.PBB.CCRIS2.COLLATER,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(140,80),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//COLLATEX  DD DSN=SAP.PBB.CCRIS2.COLLATER.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(140,80),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//DCCMS     DD DSN=SAP.PBB.CCRIS2.DCCMS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(140,80),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//DCCMX     DD DSN=SAP.PBB.CCRIS2.DCCMS.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(140,80),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//CPROPETY  DD DSN=SAP.PBB.CCRIS2.CPROPETY,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(50,30),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=1200,RECFM=FB,BLKSIZE=0)
+//CPROPETX  DD DSN=SAP.PBB.CCRIS2.CPROPETY.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(50,30),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=1200,RECFM=FB,BLKSIZE=0)
+//CMTORVEH  DD DSN=SAP.PBB.CCRIS2.CMTORVEH,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(50,30),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=400,RECFM=FB,BLKSIZE=0)
+//CMTORVEX  DD DSN=SAP.PBB.CCRIS2.CMTORVEH.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(50,30),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=400,RECFM=FB,BLKSIZE=0)
+//COTHVEHI  DD DSN=SAP.PBB.CCRIS2.COTHVEHI,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(30,20),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=400,RECFM=FB,BLKSIZE=0)
+//COTHVEHX  DD DSN=SAP.PBB.CCRIS2.COTHVEHI.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(30,20),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=400,RECFM=FB,BLKSIZE=0)
+//CPLANTMA  DD DSN=SAP.PBB.CCRIS2.CPLANTMA,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(20,10),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=400,RECFM=FB,BLKSIZE=0)
+//CPLANTMX  DD DSN=SAP.PBB.CCRIS2.CPLANTMA.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(20,10),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=400,RECFM=FB,BLKSIZE=0)
+//CCONCESS  DD DSN=SAP.PBB.CCRIS2.CCONCESS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(30,20),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//CCONCESX  DD DSN=SAP.PBB.CCRIS2.CCONCESS.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(30,20),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//CFINASST  DD DSN=SAP.PBB.CCRIS2.CFINASST,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(30,20),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//CFINASSX  DD DSN=SAP.PBB.CCRIS2.CFINASST.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(30,20),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//COTHASST  DD DSN=SAP.PBB.CCRIS2.COTHASST,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(30,20),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//COTHASSX  DD DSN=SAP.PBB.CCRIS2.COTHASST.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(30,20),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=200,RECFM=FB,BLKSIZE=0)
+//CFINGUAR  DD DSN=SAP.PBB.CCRIS2.CFINGUAR,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(50,30),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=500,RECFM=FB,BLKSIZE=0)
+//CFINGUAX  DD DSN=SAP.PBB.CCRIS2.CFINGUAR.ELDS,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(50,30),RLSE),
+//          UNIT=SYSDA,
+//          DCB=(LRECL=500,RECFM=FB,BLKSIZE=0)
+//SASLIST   DD SYSOUT=A
+//SORTWK01  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK02  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK03  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK04  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK05  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK06  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK07  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK08  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK09  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SORTWK10  DD UNIT=SYSDA,SPACE=(CYL,800)
+//SYSIN     DD *
+
+OPTIONS YEARCUTOFF=1950 NONUMBER NODATE NOCENTER MISSING=0 COMPRESS=Y;
+
+DATA DATES;
+   SET BNM.REPTDATE;
+   SELECT(DAY(REPTDATE));
+   WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+   WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+   WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+     OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+   END;
+   MM = MONTH(REPTDATE);
+   IF WK = '1' THEN DO;
+      MM1 = MM - 1;
+      IF MM1 = 0 THEN MM1 = 12;
+   END;
+   ELSE MM1 = MM;
+   IF WK = '4' THEN MM2 = MM;
+   ELSE DO MM2 = MM - 1 ;
+      IF MM2 = 0 THEN MM2 = 12;
+   END;
+   DAYS = DAY(REPTDATE);
+   MONTHS = MONTH(REPTDATE);
+   YEARS = YEAR(REPTDATE);
+   SDATE = MDY(MONTHS,1,YEARS);
+   CALL SYMPUT('NOWK',PUT(WK,$1.));
+   CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+   CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+   CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+   CALL SYMPUT('REPTMON2',PUT(MM2,Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('SDATE',PUT(SDATE,Z5.));
+   CALL SYMPUT('MDATE',PUT(REPTDATE,Z5.));
+RUN;
+*;
+PROC PRINT DATA=DATES;
+*;
+%LET ALP=('A','B','C','D','E','F','G','H','I','J','K','L','M',
+          'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+          '1','2','3','4','5','6','7','8','9','0',' ');
+*;
+PROC SORT DATA=BTRD.MAST&REPTDAY&REPTMON OUT=BTRD; BY ACCTNO;
+PROC SORT DATA=BNM.LNACCT                OUT=BTRL; BY ACCTNO;
+*;
+DATA BTRL;
+     MERGE BTRD(IN=A) BTRL(IN=B); BY ACCTNO;
+     IF A AND ACCTNO > 0 AND SETTLED NE 'S';
+     BRANCH=FICODE;
+     LOANTYPE=000;
+     IF RETAILID='C'  THEN LOANTYPE=999;
+*;
+PROC SORT DATA=BTRL;    BY ACCTNO;
+PROC SORT DATA=CCRISP.ELDS    OUT=ELDS;    BY ACCTNO; RUN;
+PROC SORT DATA=CCRISP.OVERDFS OUT=OVERDFS; BY ACCTNO;
+PROC SORT DATA=CCRISP.LOAN  OUT=LOAN(DROP=FDACCTNO);  BY ACCTNO NOTENO;
+RUN;
+DATA CCOLLAT;
+  SET COLL.COLLATER;
+  IF COLLATERAL_EFF_DT NOT IN (.,0) THEN
+     EFF_DX = INPUT(SUBSTR(PUT(COLLATERAL_EFF_DT,Z11.),1,8),MMDDYY8.);
+  IF COLLATERAL_START_DT NE '00000000' THEN
+     START_DX = INPUT(PUT(COLLATERAL_START_DT,Z8.),DDMMYY8.);
+  IF EFF_DX >= '01JUL2018'D & START_DX IN (.,0) THEN DELETE; *18-2830;
+RUN;
+PROC SORT; BY ACCTNO NOTENO;
+*;
+DATA LOAN;
+  MERGE LOAN(IN=A DROP=SPOTRATE)    CCOLLAT(IN=B DROP=BRANCH);
+  BY ACCTNO NOTENO;
+  IF A AND B;
+*;
+DATA OVERDFS;
+  MERGE OVERDFS(IN=A) CCOLLAT(IN=B);  BY ACCTNO;
+  IF A AND B;
+  IF APPRLIMT IN (.,0) AND ODSTATUS NOT IN ('NI','RI') THEN DELETE;
+*;
+DATA BTRL;
+  MERGE BTRL(IN=A)    CCOLLAT(IN=B);     BY ACCTNO;
+  IF A AND B;
+  BRANCH=FICODE;
+*;
+DATA ELDS;
+  MERGE ELDS(IN=A DROP=SPOTRATE)
+        CCOLLAT(IN=B DROP=BRANCH AANO NOTENO);
+  BY ACCTNO;
+  IF A AND B;
+  IF UCOLL='Y' AND AADATE >= &SDATE;
+*;
+DATA COLLATER;
+   SET LOAN OVERDFS BTRL ELDS;
+   IF  NOTENO=.  THEN NOTENO=0;
+*;
+PROC SORT DATA=COLLATER; BY AANO; RUN;
+
+DATA COLLATER;
+   MERGE COLLATER(IN=A) CCRISP.SUMM1;
+   BY AANO;
+   IF A;
+RUN;
+PROC SORT DATA=COLLATER; BY ACCTNO NOTENO;
+*;
+DATA CPROPETY
+     CMTORVEH
+     COTHVEHI
+     CPLANTMA
+     CCONCESS
+     CFINASST
+     COTHASST
+     CFINGUAR
+     DCCMS;
+   SET COLLATER; BY ACCTNO;
+   IF PURGEIND ^= 'N';
+
+   BKDATE=&MDATE-&REPTDAY;
+   BKMTH =MONTH(BKDATE);
+   BKYYR =YEAR(BKDATE);
+   BKDAY =DAY(BKDATE);
+
+   COLLREF  = CCOLLNO;
+   IF BRANCH  = 0  THEN BRANCH=NTBRCH;
+   IF BRANCH  = 0  THEN BRANCH=ACCBRCH;
+   APCODE = LOANTYPE;
+   FICODE = BRANCH;
+   IF CCLASSC IN ('001','006','007','014','016','024',
+                  '112','113','114','115','116','117',
+                  '025','026','046','048','049','147','149')
+                                       THEN COLLATER = '29';  ELSE
+   IF CCLASSC IN ('000','011','012','013','017','018',
+                  '019','021','027','028','029','030','124',
+                  '031','105','106')   THEN COLLATER = '70';  ELSE
+   IF CCLASSC IN ('002','003','041','042','043','058',
+                  '059','067','068','069','070','111','123',
+                  '071','072','078','079','084','107')
+                                       THEN COLLATER = '90';  ELSE
+   IF CCLASSC IN ('004','005','127','128','129','142','143',
+                  '131','132','133','134','135','136','137',
+                  '138','139','141')
+                                       THEN COLLATER = '30';  ELSE
+   IF CCLASSC IN ('032','033','034','035','036','037',
+                  '038','039','040','044','050','051',
+                  '052','053','054','055','056','057',
+                  '118','119','121','122',
+                  '060','061','062')   THEN COLLATER = '10';  ELSE
+   IF CCLASSC IN ('065','066','075','076','082','083',
+                  '093','094','095','096','097','098',
+                  '101','102','103','104')
+                                       THEN COLLATER = '40';  ELSE
+   IF CCLASSC IN ('063','064','073','074','080','081')
+                                       THEN COLLATER = '60';  ELSE
+   IF CCLASSC IN ('010','085','086','087','088','089','090',
+                  '125','126','144',
+                  '091','092')         THEN COLLATER = '50';  ELSE
+   IF CCLASSC IN ('009','022','023')   THEN COLLATER = '00';  ELSE
+   IF CCLASSC IN ('008')               THEN COLLATER = '21';  ELSE
+   IF CCLASSC IN ('045','047')         THEN COLLATER = '22';  ELSE
+   IF CCLASSC IN ('015')               THEN COLLATER = '23';  ELSE
+   IF CCLASSC IN ('020')               THEN COLLATER = '80';  ELSE
+   IF CCLASSC IN ('108','109')         THEN COLLATER = '81';  ELSE
+   IF CCLASSC IN ('077')               THEN COLLATER = '99';
+
+   IF SUBSTR(CISSUER,1,3)='KLM' OR
+      SUBSTR(CISSUER,1,2)='UT'         THEN COLLATER = '23';
+
+   COLLVAL  = CDOLARV * 100;
+   COLLVALX = CDOLARVX* 100;
+   IF CGUARNAT NE '06' AND CURCODE IN ('  ','MYR') THEN COLLVALX=0;
+
+   IF COLLATER EQ '  ' THEN DELETE;
+
+   IF COLLATER='10' THEN DO;
+      IF VERIFY(CPRDISDT,'0123456789')=0 THEN OUTPUT DCCMS;
+   END;
+
+   IF COLLATER='10' THEN DO;
+      IF VERIFY(CPRDISDT,'0123456789')=1;
+   END;
+
+   IF CINSTCL IN ('19','20') THEN CINSTCL = '35'; *18-359;
+
+   IF APCODE IN (800:899) AND
+      2000000000<=ACCTNO<=2999999999 THEN FICODE=904;
+
+   IF APCODE IN (800:899) AND
+      8000000000<=ACCTNO<=8999999999 THEN FICODE=904;
+
+   IF SUCCAUCPC > 0 THEN ACTUAL_SALE_VALUE = SUCCAUCPC;
+   IF ACTUAL_SALE_VALUE IN (.,0) THEN ACTUAL_SALE_VALUE = 0;
+   IF CPRFORSV          IN (.,0) THEN CPRFORSV          = 0;
+   IF CPRESVAL          IN (.,0) THEN CPRESVAL          = 0;
+
+   IF COLLATERAL_START_DT < 0 THEN COLLATERAL_START_DT = 0;
+
+   IF UCOLL = 'Y' THEN FILE COLLATEX;
+   ELSE                FILE COLLATER;
+     PUT @0001 FICODE      9.
+         @0010 APCODE      3.
+         @0013 ACCTNO     10.
+         @0043 NOTENO     10.
+         @0073 COLLREF    11.
+         @0103 COLLATER   $2.
+         @0105 COLLVAL   Z16.
+         @0121 OLDBRH      5.
+         @0126 COSTCTR     4.
+         @0130 AANO      $13.
+         @0143 FACILITY    5.
+         @0148 FACCODE     5.
+         @0154 CGEXAMTG   15.2
+         @0170 COLLATERAL_START_DT Z8.
+         @0178 COLLATERAL_END_DT   $8.
+         ;
+      IF CCLASSC IN ('001','006','007','014','016','024',
+                     '112','113','114','115','116','117',
+                     '025','026','046','048','049','147','149')
+                                               THEN OUTPUT CFINASST;
+      IF CCLASSC IN ('000','011','012','013','017','018',
+                     '019','021','027','028','029','030','124',
+                     '031','105','106')        THEN OUTPUT CFINGUAR;
+      IF CCLASSC IN ('002','003','041','042','043','058','123',
+                     '059','067','068','069','070','111',
+                     '071','072','078','079','084','107')
+                                               THEN OUTPUT COTHASST;
+      IF CCLASSC IN ('004','005','127','128','129','142','143',
+                     '131','132','133','134','135','136','137',
+                     '138','139','141')
+                                               THEN OUTPUT CMTORVEH;
+      IF CCLASSC IN ('032','033','034','035','036','037',
+                     '038','039','040','044','050','051',
+                     '118','119','121','122',
+                     '052','053','054','055','056','057','060',
+                     '061','062')              THEN OUTPUT CPROPETY;
+      IF CCLASSC IN ('065','066','075','076','082','083',
+                     '093','094','095','096','097','098',
+                     '101','102','103','104')  THEN OUTPUT COTHVEHI;
+      IF CCLASSC IN ('063','064','073','074','080','081')
+                                               THEN OUTPUT CPLANTMA;
+      IF CCLASSC IN ('010','085','086','087','088','089',
+                     '125','126','144',
+                     '090','091','092')        THEN OUTPUT CCONCESS;
+*;
+DATA _NULL_;
+   SET DCCMS;
+   IF UCOLL = 'Y' THEN FILE DCCMX;
+   ELSE                FILE DCCMS;
+     PUT @0001 FICODE      9.
+         @0013 ACCTNO     10.
+         @0043 NOTENO     10.
+         @0073 COLLREF    11.
+         @0103 COLLATER   $2.
+         @0105 COSTCTR     4.
+         @0130 AANO      $13.
+         @0143 FACILITY    5.
+         @0148 CPRDISDT    8.
+         @0156 FACCODE     5.
+         ;
+RUN;
+
+PROC DATASETS LIB=WORK;
+DELETE LOAN OVERDFS CCOLLAT;
+RUN;
+*;
+DATA CPROPETY;       /* FOR COLLATERAL PROPERTY FILE  */
+   SET CPROPETY;
+   CPRFORSV = CPRFORSV * 100;
+   CPRESVAL = CPRESVAL * 100;
+   LTABTAUCPC = LTABTAUCPC * 100;
+   SUCCAUCPC  = SUCCAUCPC * 100;
+
+   FORMAT VTDD VTMM 2. VTYY 4.;
+   VTDD=SUBSTR(CPRVALDT,1,2);
+   VTMM=SUBSTR(CPRVALDT,3,2);
+   VTYY=SUBSTR(CPRVALDT,5,4);
+
+   IF &REPTDAY IN (8,15,22) THEN DO;
+      IF VTMM > BKMTH AND VTYY GE BKYYR THEN DO;
+         VTMM=BKMTH; VTYY=BKYYR; VTDD=BKDAY;
+      END;
+   END;
+
+   IF LANDAREA IN ('0','  ')  THEN LANDNREA='0000';
+                              ELSE LANDNREA=LANDAREA*1;
+
+   FORMAT CPRPAR1C CPRPAR2C CPRPAR3C CPRPAR4C $40.;
+   CPRPAR1C=CPRPARC1;
+   CPRPAR2C=CPRPARC2;
+   CPRPAR3C=CPRPARC3;
+   CPRPAR4C=CPRPARC4;
+
+   IF  SUBSTR(CPRPARC1,1,1) NOT IN &ALP
+       THEN CPRPAR1C=SUBSTR(CPRPARC1,2,39);
+   IF  SUBSTR(CPRPARC2,1,1) NOT IN &ALP
+       THEN CPRPAR2C=SUBSTR(CPRPARC2,2,39);
+   IF  SUBSTR(CPRPARC3,1,1) NOT IN &ALP
+       THEN CPRPAR3C=SUBSTR(CPRPARC3,2,39);
+   IF  SUBSTR(CPRPARC4,1,1) NOT IN &ALP
+       THEN CPRPAR4C=SUBSTR(CPRPARC4,2,39);
+*;
+PROC SORT DATA=CPROPETY; BY ACCTNO NOTENO DESCENDING CPRPARC1;
+*;
+DATA CPROPETY;
+   SET CPROPETY;
+
+   IF CPLOCAT  NOT IN &ALP THEN CPLOCAT=' ';
+   IF OWNOCUPY NOT IN &ALP THEN OWNOCUPY=' ';
+   IF SUBSTR(CPOSCODE,1,1) NOT IN ('0','1','2','3','4','5','6',
+                                   '7','8','9')
+                           THEN CPOSCODE='     ';
+   IF SUBSTR(BLTNAREA,1,1) NOT IN ('0','1','2','3','4','5','6',
+                                   '7','8','9')
+                           THEN BLTNAREA='    ';
+   IF BLTNUNIT NOT IN &ALP THEN BLTNUNIT = ' ';
+   IF LANDUNIT NOT IN &ALP THEN LANDUNIT = ' ';
+   IF SUBSTR(CPSTATE,2,1) NOT IN ('0','1','2','3','4','5','6',
+                                   '7','8','9')
+                           THEN CPSTATE='  ';
+
+   *****************************************************
+   *  READ DATA FROM CMS (PRIMARY) & ELDS (SECONDARY)  *
+   *  ESMR 2011-4011                                   *
+   *****************************************************;
+   CLHSENO = CPHSENO;   /* HOUSE NO */
+   CLJLNNM = CPRPAR2C;  /* JALAN */
+   CLBLDNM = CPBUILNO;  /* BUILDING NAME */
+   IF CPHSENO  IN ('',' ') THEN CLHSENO = ADDRB02;
+   IF CPRPAR2C IN ('',' ') THEN CLJLNNM = ADDRB03;
+
+   ************************
+   *    ESMR 2012-2277    *
+   ************************;
+   IF OPENIND  IN ('B','C','P') OR PAIDIND  EQ 'P' THEN
+      ACCTSTAT = 'S';
+
+   FRDD = SUBSTR(PUT(INPUT(FIREDATE,8.),Z8.),1,2);
+   FRMM = SUBSTR(PUT(INPUT(FIREDATE,8.),Z8.),3,2);
+   FRYY = SUBSTR(PUT(INPUT(FIREDATE,8.),Z8.),5,4);
+   FIREDATEX = COMPRESS(FRYY||'-'||FRMM||'-'||FRDD);
+   CPOLYNUM  = COMPRESS(CPOLYNUM,'=`&/\@#*+:().,"%�!$?_ ''');
+
+   /* REVISED CRITERIA FOR ESMR 2013-616
+   IF ACCTSTAT EQ 'S' OR
+      CDOLARV  EQ 0.00 OR
+      CPRPROPD IN (10,11,15,25,31,32,33,34,35,36,37,38,39) OR
+      PRABANDT NE '00000000' OR
+      CPRDISDT NE ' ' OR
+      CPRSTAT  EQ 'N' OR
+      PAIDIND  EQ 'P' OR
+      INSURER NOT IN ('01','15','95','98','99') THEN
+   DO;
+      INSURER   = ' ';
+      CPOLYNUM  = ' ';
+      FIREDATEX = ' ';
+      SUMINSUR  = .;
+   END;
+   */
+
+   IF UCOLL = 'Y' THEN FILE CPROPETX;
+   ELSE                FILE CPROPETY;
+     PUT @0001 FICODE      9.
+         @0010 APCODE      3.
+         @0013 ACCTNO     10.
+         @0023 CCOLLNO    11.
+         @0036 NOTENO      5.
+         @0043 CINSTCL    $2.
+         @0045 CPRRANKC   $1.
+         @0046 CPRSHARE   $1.
+         @0047 CPRLANDU   $2.
+         @0049 CPRPROPD   $2.
+         @0051 CPRPAR1C  $40.
+         @0091 CPRPAR2C  $40.
+         @0131 CPRPAR3C  $40.
+         @0171 CPRPAR4C  $30.
+         @0201 CPRFORSV  Z16.
+         @0217 CPRESVAL  Z16.
+         @0233 VTDD       Z2.
+         @0235 VTMM       Z2.
+         @0237 VTYY       Z4.
+         @0241 CPRVALU1  $40.
+         @0281 CPRVALU2  $40.
+         @0321 CPRVALU3  $20.
+         @0341 CPRABNDT   Z8.
+         @0349 NAME1OWN  $40.
+         @0389 OWNOCUPY   $1.
+         @0394 LANDAREA   $4.
+         @0398 OLDBRH     Z5.
+         @0403 CPLOCAT    $1.
+         @0404 CPOSCODE   $5.
+         @0409 BLTNAREA   $4.
+         @0413 COSTCTR     4.
+     /*  @0417 MASTTLNO  $20.
+         @0437 MASTTLMD  $20. 2016-1859*/
+         @0417 TTLPARTCLR $1.
+         @0457 MASTOWNR  $40.
+         @0497 TTLENO    $40.
+         @0537 TTLMUKIM  $40.
+         @0577 HOLDEXPD   $1.
+         @0578 EXPDATE    $8.
+         @0586 DEVNAME   $40.
+         @0626 PRJCTNAM  $40.
+         @0666 CPSTATE     2.
+         @0668 BLTNUNIT   $1.
+         @0669 LANDUNIT   $1.
+         @0670 AANO      $13.
+         @0683 FACILITY    5.
+         @0688 ADLREFNO   25.
+         @0713 DEVNAME    60.
+         @0773 FACCODE     5.
+         @0779 CPRSTAT    $1.
+         @0788 CLHSENO   $11.  /* HOUSE NO        */
+         @0800 CLJLNNM   $60.  /* JALAN NAME      */
+         @0860 CLBLDNM   $60.  /* BUILDING NAME   */
+         @0920 INSURER    $2.  /* INSURER CODE    */
+         @0923 CPOLYNUM  $16.  /* POLICY NUMBER   */
+         @0940 FIREDATEX $10.  /* EXPIRY DATE     */
+         @0951 SUMINSUR   16.  /* SUM INSURED     */
+         @0968 CPRPARC3  $40.
+         @1009 CPRPARC4  $40.  /* 2016-978     */
+         @1050 CTRYCODE   $2.  /* COUNTRY CODE */
+         @1052 AUCIND     $1. /* AUCTION INDICATOR */
+         @1053 AUCCOMDT   $8. /* AUCTION COMMENCEMENT DATE */
+         @1061 NOAUC       2. /* NO. OF AUCTION */
+         @1063 AUCSUCCIND $1. /* AUC SUCCESSFUL INDICATOR */
+         @1064 LTABTAUCPC 10. /* LAST ABORTED AUCTION PRICE */
+         @1074 SUCCAUCDT  $8. /* SUCCESSFUL AUC DATE */
+         @1082 SUCCAUCPC  10. /* SUCCESSFUL AUC PRICE */
+         @1093 CPTOWNN   $20. /*  PROPERTY TOWN NAME */
+         @1113 ACTUAL_SALE_VALUE  16.2
+         @1130 PROPERTY_IND       $1.
+         ;
+*;
+PROC DATASETS LIB=WORK;
+DELETE CPROPETY;
+RUN;
+*;
+DATA CMTORVEH;      /* COLLATERAL MOTOR VEHICLE   */
+   SET CMTORVEH;
+   IF UCOLL = 'Y' THEN FILE CMTORVEX;
+   ELSE                FILE CMTORVEH;
+     PUT @0001 FICODE      9.
+         @0010 APCODE      3.
+         @0013 ACCTNO     10.
+         @0023 CCOLLNO    11.
+         @0036 NOTENO      5.
+         @0043 CINSTCL    $2.
+         @0045 CHPMAKE   $40.
+         @0085 CHPENGIN  $20.
+         @0105 CHPCHASS  $20.
+         @0125 CHPVEHNO  $12.
+         @0137 OLDBRH      5.
+         @0142 COSTCTR     4.
+         @0146 AANO      $13.
+         @0159 FACILITY    5.
+         @0164 FACCODE     5.
+         @0170 LU_ADD1           $40.
+         @0210 LU_ADD2           $40.
+         @0250 LU_ADD3           $40.
+         @0290 LU_ADD4           $40.
+         @0330 LU_TOWN_CITY      $20.
+         @0350 LU_POSTCODE        $5.
+         @0355 LU_STATE_CD        $2.
+         @0357 LU_COUNTRY_CD      $2.
+         ;
+*;
+PROC DATASETS LIB=WORK;
+DELETE CMTORVEH;
+RUN;
+*;
+DATA COTHVEHI;      /* COLLATERAL OTHER VEHICLE/CARRIER   */
+   SET COTHVEHI;
+
+   FORMAT VTDD VTMM 2. VTYY 4.;
+   VTDD=SUBSTR(COVVALDT,1,2);
+   VTMM=SUBSTR(COVVALDT,3,2);
+   VTYY=SUBSTR(COVVALDT,5,4);
+
+   IF &REPTDAY IN (8,15,22) THEN DO;
+      IF VTMM > BKMTH AND VTYY GE BKYYR THEN DO;
+         VTMM=BKMTH; VTYY=BKYYR; VTDD=BKDAY;
+      END;
+   END;
+
+  IF UCOLL = 'Y' THEN FILE COTHVEHX;
+  ELSE                FILE COTHVEHI;
+     PUT @0001 FICODE      9.
+         @0010 APCODE      3.
+         @0013 ACCTNO     10.
+         @0023 CCOLLNO    11.
+         @0036 NOTENO      5.
+         @0043 CINSTCL    $2.
+         @0045 COVDESCR   $2.
+         @0047 VTDD       Z2.
+         @0049 VTMM       Z2.
+         @0051 VTYY       Z4.
+         @0055 OLDBRH      5.
+         @0060 COSTCTR     4.
+         @0064 AANO      $13.
+         @0077 FACILITY    5.
+         @0082 FACCODE     5.
+         @0127 ACTUAL_SALE_VALUE  16.2
+         @0144 LU_ADD1           $40.
+         @0184 LU_ADD2           $40.
+         @0224 LU_ADD3           $40.
+         @0264 LU_ADD4           $40.
+         @0304 LU_TOWN_CITY      $20.
+         @0324 LU_POSTCODE        $5.
+         @0329 LU_STATE_CD        $2.
+         @0331 LU_COUNTRY_CD      $2.
+         ;
+*;
+PROC DATASETS LIB=WORK;
+DELETE COTHVEHI;
+RUN;
+*;
+DATA CPLANTMA;      /* COLLATERAL PLANT AND MACHINERY     */
+   SET CPLANTMA;
+   CPMDESC1 = SUBSTR(CPMDESCR,2,1);
+
+   FORMAT VTDD VTMM 2. VTYY 4.;
+   VTDD=SUBSTR(CPMVALDT,1,2);
+   VTMM=SUBSTR(CPMVALDT,3,2);
+   VTYY=SUBSTR(CPMVALDT,5,4);
+
+   IF &REPTDAY IN (8,15,22) THEN DO;
+      IF VTMM > BKMTH AND VTYY GE BKYYR THEN DO;
+         VTMM=BKMTH; VTYY=BKYYR; VTDD=BKDAY;
+      END;
+   END;
+
+   IF UCOLL = 'Y' THEN FILE CPLANTMX;
+   ELSE                FILE CPLANTMA;
+     PUT @0001 FICODE      9.
+         @0010 APCODE      3.
+         @0013 ACCTNO     10.
+         @0023 CCOLLNO    11.
+         @0036 NOTENO      5.
+         @0043 CINSTCL    $2.
+         @0045 CPMDESC1   $1.
+         @0046 VTDD       Z2.
+         @0048 VTMM       Z2.
+         @0050 VTYY       Z4.
+         @0054 OLDBRH      5.
+         @0059 COSTCTR     4.
+         @0063 AANO      $13.
+         @0076 FACILITY    5.
+         @0081 FACCODE     5.
+         @0127 ACTUAL_SALE_VALUE  16.2
+         @0144 CPRFORSV           16.2
+         @0160 LU_ADD1           $40.
+         @0200 LU_ADD2           $40.
+         @0240 LU_ADD3           $40.
+         @0280 LU_ADD4           $40.
+         @0320 LU_TOWN_CITY      $20.
+         @0340 LU_POSTCODE        $5.
+         @0345 LU_STATE_CD        $2.
+         @0347 LU_COUNTRY_CD      $2.
+         ;
+*;
+PROC DATASETS LIB=WORK;
+DELETE CPLANTMA;
+RUN;
+*;
+DATA CCONCESS;      /* COLLATERAL CONCESSION & CONTRACTUAL RIGHTS  */
+   SET CCONCESS;
+   CCCDESC1 = SUBSTR(CCCDESCR,2,1);
+
+   FORMAT VTDD VTMM 2. VTYY 4.;
+   VTDD=SUBSTR(CCCVALDT,1,2);
+   VTMM=SUBSTR(CCCVALDT,3,2);
+   VTYY=SUBSTR(CCCVALDT,5,4);
+
+   IF &REPTDAY IN (8,15,22) THEN DO;
+      IF VTMM > BKMTH AND VTYY GE BKYYR THEN DO;
+         VTMM=BKMTH; VTYY=BKYYR; VTDD=BKDAY;
+      END;
+   END;
+
+   IF UCOLL = 'Y' THEN FILE CCONCESX;
+   ELSE                FILE CCONCESS;
+     PUT @0001 FICODE      9.
+         @0010 APCODE      3.
+         @0013 ACCTNO     10.
+         @0023 CCOLLNO    11.
+         @0036 NOTENO      5.
+         @0043 CINSTCL    $2.
+         @0045 CCCDESC1   $1.
+         @0046 VTDD       Z2.
+         @0048 VTMM       Z2.
+         @0050 VTYY       Z4.
+         @0054 OLDBRH      5.
+         @0059 COSTCTR     4.
+         @0063 AANO      $13.
+         @0076 FACILITY    5.
+         @0081 FACCODE     5.
+         ;
+*;
+PROC DATASETS LIB=WORK;
+DELETE CCONCESS;
+RUN;
+*;
+DATA CFINASST;      /* COLLATERAL OTHER FINANCIAL ASSETS  */
+   SET CFINASST;
+
+   FORMAT VTDD VTMM 2. VTYY 4.;
+   VTDD=SUBSTR(CFDVALDT,1,2);
+   VTMM=SUBSTR(CFDVALDT,3,2);
+   VTYY=SUBSTR(CFDVALDT,5,4);
+
+   IF &REPTDAY IN (8,15,22) THEN DO;
+      IF VTMM > BKMTH AND VTYY GE BKYYR THEN DO;
+         VTMM=BKMTH; VTYY=BKYYR; VTDD=BKDAY;
+      END;
+   END;
+
+   IF CCLASSC = '147' THEN DO;
+      CINSTCL = '27';
+      CFDDESCR = '21';
+   END;
+
+   IF UCOLL = 'Y' THEN FILE CFINASSX;
+   ELSE                FILE CFINASST;
+     PUT @0001 FICODE      9.
+         @0010 APCODE      3.
+         @0013 ACCTNO     10.
+         @0023 CCOLLNO    11.
+         @0036 NOTENO      5.
+         @0043 CINSTCL    $2.
+         @0045 CFDDESCR   $2.
+         @0047 VTDD       Z2.
+         @0049 VTMM       Z2.
+         @0051 VTYY       Z4.
+         @0055 OLDBRH      5.
+         @0060 COSTCTR     4.
+         @0064 CURCODE    $3.
+         @0067 COLLVALX   Z16.
+         @0083 FDACCTNO    10.
+         @0093 FDCDNO      10.
+         @0103 AANO       $13.
+         @0116 FACILITY     5.
+         @0121 FACCODE      5.
+         @0127 ACTUAL_SALE_VALUE  16.2
+         @0144 CPRFORSV           16.2
+         ;
+*;
+PROC DATASETS LIB=WORK;
+DELETE CFINASST;
+RUN;
+*;
+DATA COTHASST;      /* COLLATERAL OTHER ASSETS  */
+   SET COTHASST;
+   CDEBDESC = SUBSTR(CDEBDESC,2,1);
+
+   FORMAT VTDD VTMM 2. VTYY 4.;
+   VTDD=SUBSTR(CDEBVALD,1,2);
+   VTMM=SUBSTR(CDEBVALD,3,2);
+   VTYY=SUBSTR(CDEBVALD,5,4);
+
+   IF &REPTDAY IN (8,15,22) THEN DO;
+      IF VTMM > BKMTH AND VTYY GE BKYYR THEN DO;
+         VTMM=BKMTH; VTYY=BKYYR; VTDD=BKDAY;
+      END;
+   END;
+
+   IF UCOLL = 'Y' THEN FILE COTHASSX;
+   ELSE                FILE COTHASST;
+     PUT @0001 FICODE      9.
+         @0010 APCODE      3.
+         @0013 ACCTNO     10.
+         @0023 CCOLLNO    11.
+         @0036 NOTENO      5.
+         @0043 CINSTCL    $2.
+         @0045 CDEBDESC   $1.
+         @0046 VTDD       Z2.
+         @0048 VTMM       Z2.
+         @0050 VTYY       Z4.
+         @0054 OLDBRH      5.
+         @0059 COSTCTR     4.
+         @0063 AANO       $13.
+         @0076 FACILITY     5.
+         @0081 FACCODE      5.
+         @0093 CPRESVAL                    16.2
+         @0110 DEBENTURE_REALISABLE_VALUE  16.2
+         @0127 ACTUAL_SALE_VALUE           16.2
+         ;
+*;
+PROC DATASETS LIB=WORK;
+DELETE COTHASST;
+RUN;
+*;
+DATA CFINGUAR;      /* COLLATERAL FINANCIAL GUARANTEES  */
+   FORMAT CGEFFDAT1 CGEXPDAT1 DDMMYYN.;
+   SET CFINGUAR;
+   CGUARNA1 = SUBSTR(CGUARNAT,2,1);
+   CGEFFDAT1=CGEFFDAT;
+   CGEXPDAT1=CGEXPDAT;
+
+   IF UCOLL = 'Y' THEN FILE CFINGUAX;
+   ELSE                FILE CFINGUAR;
+     PUT @0001 FICODE      9.
+         @0010 APCODE      3.
+         @0013 ACCTNO     10.
+         @0023 CCOLLNO    11.
+         @0036 NOTENO      5.
+         @0043 CINSTCL    $2.
+         @0045 CGUARNA1   $1.
+         @0046 CGUARNAM  $40.
+         @0196 CGUARID   $20.
+         @0216 CGUARCTY   $2.
+         @0218 OLDBRH      5.
+         @0223 COSTCTR     4.
+         @0227 CGCGSR      3.
+         @0230 CGCGUR      3.
+         @0233 AANO       $13.
+         @0246 FACILITY     5.
+         @0251 CURCODE     $3.
+         @0254 COLLVALX   Z16.
+         @0270 FACCODE      5.
+         @0275 CGUARLG    $40.
+         @0315 CGEFFDAT1    8.
+         @0323 CGEXPDAT1    8.
+         @0331 CGEXAMTG  15.2
+         @0347 GFEERS     6.2
+         @0354 GFEERU     6.2
+         @0361 GFAMTS    15.2
+         @0377 GFAMTU    15.2
+         @0393 GCAMTS    15.2
+         @0409 GCAMTU    15.2
+         @0427 GUARANTOR_ENTITY_TYPE       $2.
+         @0430 GUARANTOR_BIRTH_REGISTER_DT $8.
+         @0439 BNMASSIGNID                $12.
+         @0451 CUSTNO                      11.
+         @0462 NEW_SSM_ID_NO              $12.
+         ;
+*;
+PROC CONTENTS DATA=WORK._ALL_ NODS;
+*;
