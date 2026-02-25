@@ -1,0 +1,194 @@
+//EIBMFDEC JOB MISEIS,EIBMFD1M,COND=(4,LT),CLASS=A,MSGCLASS=X,          00000100
+//         NOTIFY=&SYSUID                                               00000200
+//*DELETE   EXEC PGM=IEFBR14                                            00000300
+//*DD1      DD DSN=SAP.PBB.FD1ME.COLD,                                  00000400
+//*            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,                     00000500
+//*            SPACE=(CYL,1,RLSE)                                       00000600
+//*                                                                     00000700
+//*--------------------------------------------------------------       00000800
+//*  RUN ON 16TH OF EVERY MONTH AFTER EIBWFALE.                         00000900
+//*--------------------------------------------------------------       00001000
+//EIBMFDEC  EXEC SAS609                                                 00001100
+//FD        DD DSN=SAP.PBB.MNIFD(0),DISP=SHR                            00001200
+//BRANCHFL  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR                    00001300
+//CISFD     DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR                         00001400
+//RATEFLE   DD DSN=RBP2.B033.WADIAH.RATE,DISP=SHR                       00001500
+//*SASLIST   DD DSN=SAP.PBB.FD1ME.COLD,DISP=(NEW,CATLG,DELETE)          00001600
+//SASLIST   DD DSN=&&COLD,DISP=(NEW,DELETE,DELETE),                     00001700
+//             SPACE=(CYL,(50,30),RLSE),                                00001800
+//             UNIT=(SYSDA,5),                                          00001900
+//             DCB=(LRECL=150,RECFM=FBA,BLKSIZE=0)                      00002000
+//SYSIN     DD *                                                        00002100
+                                                                        00002200
+OPTIONS YEARCUTOFF=1990 NOCENTER NODATE NONUMBER;                       00002300
+*;                                                                      00002400
+DATA REPTDATE;                                                          00002500
+     SET FD.REPTDATE;                                                   00002600
+     CALL SYMPUT('REPTDT',PUT(REPTDATE,DDMMYY10.));                     00002700
+RUN;                                                                    00002800
+*;                                                                      00002900
+DATA FD;                                                                00003000
+     SET FD.FD;                                                         00003100
+     IF (01<=CUSTCD<=63) OR (80<=CUSTCD<=99) OR                         00003200
+        CUSTCD=75;                                                      00003300
+                                                                        00003400
+     IF OPENIND  NOT IN ('B','C','P')           AND                     00003500
+        ACCTTYPE IN (300,301,303)               AND                     00003600
+        CURBAL > 0;                                                     00003700
+                                                                        00003800
+     DEPDTE=INPUT(SUBSTR(PUT(DEPODTE,Z11.),1,8),MMDDYY8.);              00003900
+     MATDTE=INPUT(SUBSTR(PUT(MATDATE,Z8.),1,8),YYMMDD8.);               00004000
+     IF LMATDATE > 0  THEN                                              00004100
+     LMATDT=INPUT(SUBSTR(PUT(LMATDATE,Z11.),1,8),MMDDYY8.);             00004200
+     ELSE LMATDT=DEPDTE;                                                00004300
+                                                                        00004400
+     IF PENDINT=.    THEN PENDINT=0;                                    00004500
+     IF PENDINT > 0  THEN DELETE;                                       00004600
+                                                                        00004700
+     OLDPLN=INTPLAN;                                                    00004800
+                                                                        00004900
+     IF  INTPLAN=373  THEN INTPLAN=300; ELSE                            00005000
+     IF  INTPLAN=374  THEN INTPLAN=312; ELSE                            00005100
+     IF  INTPLAN=375  THEN INTPLAN=301; ELSE                            00005200
+     IF  INTPLAN=376  THEN INTPLAN=313; ELSE                            00005300
+     IF  INTPLAN=377  THEN INTPLAN=314; ELSE                            00005400
+     IF  INTPLAN=378  THEN INTPLAN=302; ELSE                            00005500
+     IF  INTPLAN=379  THEN INTPLAN=315; ELSE                            00005600
+     IF  INTPLAN=380  THEN INTPLAN=316; ELSE                            00005700
+     IF  INTPLAN=381  THEN INTPLAN=303; ELSE                            00005800
+     IF  INTPLAN=382  THEN INTPLAN=317; ELSE                            00005900
+     IF  INTPLAN=383  THEN INTPLAN=318; ELSE                            00006000
+     IF  INTPLAN=384  THEN INTPLAN=304; ELSE                            00006100
+     IF  INTPLAN=385  THEN INTPLAN=305; ELSE                            00006200
+     IF  INTPLAN=386  THEN INTPLAN=306; ELSE                            00006300
+     IF  INTPLAN=387  THEN INTPLAN=307; ELSE                            00006400
+     IF  INTPLAN=388  THEN INTPLAN=308; ELSE                            00006500
+     IF  INTPLAN=389  THEN INTPLAN=309; ELSE                            00006600
+     IF  INTPLAN=390  THEN INTPLAN=310; ELSE                            00006700
+     IF  INTPLAN=391  THEN INTPLAN=311;                                 00006800
+*;                                                                      00006900
+DATA CUSTM;                                                             00007000
+  KEEP ACCTNO CUSTNAME;                                                 00007100
+  SET  CISFD.DEPOSIT;                                                   00007200
+  IF   SECCUST='901';                                                   00007300
+*;                                                                      00007400
+PROC SORT DATA=CUSTM NODUPKEY; BY ACCTNO; RUN;                          00007500
+*;                                                                      00007600
+DATA FD;                                                                00007700
+  MERGE FD(IN=A) CUSTM; BY ACCTNO;                                      00007800
+  IF A;                                                                 00007900
+*;                                                                      00008000
+PROC SORT; BY INTPLAN;                                                  00008100
+*;                                                                      00008200
+DATA RATE;                                                              00008300
+  INFILE RATEFLE;                                                       00008400
+  INPUT @04  INTPLAN    3.                                              00008500
+        @16  RATE     5.3                                               00008600
+        @21  TDATE      8.;                                             00008700
+  EDATE=INPUT(SUBSTR(PUT(TDATE,Z8.),1,8),YYMMDD8.);                     00008800
+*;                                                                      00008900
+PROC SORT DATA=RATE; BY INTPLAN DESCENDING EDATE; RUN;                  00009000
+*;                                                                      00009100
+DATA RATE;                                                              00009200
+  SET RATE; BY INTPLAN;                                                 00009300
+  IF  FIRST.INTPLAN THEN REC=1;                                         00009400
+      OUTPUT; REC+1;                                                    00009500
+  IF  LAST.INTPLAN  THEN REC=0;                                         00009600
+*;                                                                      00009700
+DATA RATEA (KEEP=INTPLAN RATE)                                          00009800
+     RATEB (KEEP=INTPLAN EDATE);                                        00009900
+  SET RATE;                                                             00010000
+  IF (1<=REC<=5) THEN DO;                                               00010100
+      OUTPUT RATEA;                                                     00010200
+      OUTPUT RATEB;                                                     00010300
+  END;                                                                  00010400
+*;                                                                      00010500
+PROC TRANSPOSE DATA=RATEA OUT=RATEA; BY INTPLAN;                        00010600
+VAR  RATE; RUN;                                                         00010700
+*;                                                                      00010800
+DATA RATEA;                                                             00010900
+ DROP COL1 COL2 COL3 COL4 COL5;                                         00011000
+ SET RATEA;                                                             00011100
+     IF COL2=.    THEN COL2=COL1;                                       00011200
+     IF COL3=.    THEN COL3=COL1;                                       00011300
+     IF COL4=.    THEN COL4=COL1;                                       00011400
+     IF COL5=.    THEN COL5=COL1;                                       00011500
+     RATE01=COL1; RATE02=COL2; RATE03=COL3;                             00011600
+     RATE04=COL4; RATE05=COL5;                                          00011700
+*;                                                                      00011800
+PROC TRANSPOSE DATA=RATEB OUT=RATEB; BY INTPLAN;                        00011900
+VAR  EDATE; RUN;                                                        00012000
+*;                                                                      00012100
+DATA RATES;                                                             00012200
+     DROP _NAME_;                                                       00012300
+     MERGE RATEA RATEB; BY INTPLAN;                                     00012400
+*;                                                                      00012500
+PROC SORT; BY INTPLAN;                                                  00012600
+*;                                                                      00012700
+DATA FD;                                                                00012800
+    MERGE RATES FD(IN=A); BY INTPLAN;                                   00012900
+    IF A;                                                               00013000
+    IF  LMATDT > COL1  THEN NR=RATE01;   ELSE                           00013100
+    IF  LMATDT > COL2  THEN NR=RATE02;   ELSE                           00013200
+    IF  LMATDT > COL3  THEN NR=RATE03;   ELSE                           00013300
+    IF  LMATDT > COL4  THEN NR=RATE04;   ELSE                           00013400
+    IF  LMATDT > COL5  THEN NR=RATE05;                                  00013500
+    IF  NR=.           THEN NR=RATE01;                                  00013600
+                                                                        00013700
+    IF  RATE GE NR;                                                     00013800
+    INTPLAN=OLDPLN;                                                     00013900
+                                                                        00014000
+PROC SORT; BY BRANCH ACCTNO MATDTE;                                     00014100
+*;                                                                      00014200
+TITLE1 '  ';                                                            00014300
+TITLE2 '  ';                                                            00014400
+TITLE3 '  ';                                                            00014500
+TITLE4 '  ';                                                            00014600
+*;                                                                      00014700
+DATA WRITE;                                                             00014800
+   SET FD END=EOF; BY BRANCH ACCTNO MATDTE;                             00014900
+   FILE PRINT HEADER=NEWPAGE;                                           00015000
+   FORMAT LMATDT MATDTE DDMMYY10. BRXH $3.;                             00015100
+   BRXH=BRANCH;                                                         00015200
+   IF FIRST.BRANCH  THEN PUT _PAGE_;                                    00015300
+   PUT   @002 ACCTNO       10.                                          00015400
+         @014 CUSTNAME    $30.                                          00015500
+         @042 CDNO         10.                                          00015600
+         @055 RATE        8.3                                           00015700
+         @065 TERM          4.                                          00015800
+         @072 INTPLAN       3.                                          00015900
+         @078 LMATDT                                                    00016000
+         @090 MATDTE;                                                   00016100
+RETURN;                                                                 00016200
+                                                                        00016300
+NEWPAGE :                                                               00016400
+   PAGECNT+1;                                                           00016500
+   PUT    @001 'REPORT NO : FDEXNSME'                                   00016600
+          @051 'P U B L I C  B A N K  B H D'                            00016700
+          @111 'PAGE'                                                   00016800
+          @126 ':' PAGECNT;                                             00016900
+                                                                        00017000
+   PUT    @001 'PROGRAM ID: EIBMFDEC'                                   00017100
+          @041 'EXCEPTION FD RATE ON NON-SME & NON-RESIDENT ACCTS '     00017200
+          @111 'REPORT DATE:' "&REPTDT";                                00017300
+                                                                        00017400
+   PUT    @001 'BRANCH ID : '                                           00017500
+          @013  BRXH;                                                   00017600
+                                                                        00017700
+   PUT    @002 '        ';                                              00017800
+   PUT    @002 'ACCOUNT '                                               00017900
+          @046 'RECEIPT '                                               00018000
+          @058 'OFFERED       INTR  DEPOSIT     MATURITY';              00018100
+                                                                        00018200
+   PUT    @002 'NUMBER  '                                               00018300
+          @014 'NAME OF CUSTOMER '                                      00018400
+          @046 'NUMBER'                                                 00018500
+          @058 'RATE    TERM  PLAN  DATE        DATE ';                 00018600
+                                                                        00018700
+   PUT    @002 '=========='                                             00018800
+          @014 '============================='                          00018900
+          @046 '======='                                                00019000
+          @058 '====    ====  ====  ==========  ==========';            00019100
+                                                                        00019200
+  RETURN;                                                               00019300
+*;                                                                      00019400
