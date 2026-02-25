@@ -1,0 +1,127 @@
+ /***********************************************************/
+ /**                                                       **/
+ /** REPORT ON DOMESTIC ASSETS AND LIABILITIES - PART I    **/
+ /**                                                       **/
+ /***********************************************************/
+%INC PGM(PBBLNFMT);
+%INC PGM(L124PBBD);
+
+PROC DATASETS LIB=BNM NOLIST;
+   DELETE LALW&REPTMON&NOWK
+          LALM&REPTMON&NOWK
+          LALQ&REPTMON&NOWK;
+RUN;
+
+DATA LOAN&REPTMON&NOWK;
+   SET BNM.L124&REPTMON&NOWK;
+*;
+DATA ULOAN&REPTMON&NOWK;
+   SET BNM.UL124&REPTMON&NOWK;
+*;
+ /***********************************************************/
+ /** RM LOANS - BY CUSTOMER CODE                           **/
+ /***********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+CLASS CUSTCD PRODCD AMTIND;
+VAR BALANCE;
+WHERE SUBSTR(PRODCD, 1, 3) IN ('341','342','343','344');
+OUTPUT OUT=ALW
+       SUM=AMOUNT;
+RUN;
+
+DATA ALWLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALW;
+
+  SELECT(CUSTCD);
+    WHEN('02','03','11','12','71','72','73','74','79') DO;
+      BNMCODE='34100'||CUSTCD||'000000Y'; OUTPUT;
+    END;
+    WHEN('20','13','17','30','32','33','34','35',
+         '36','37','38','39','40','04','05','06') DO;
+      BNMCODE='3410020000000Y'; OUTPUT;
+      IF CUSTCD IN ('13','17') THEN DO;
+         BNMCODE='34100'||CUSTCD||'000000Y'; OUTPUT;
+      END;
+    END;
+    WHEN('41','42','43',
+         '44','46','47',
+         '48','49','51',
+         '52','53','54',
+         '60','61','62','63','64','65',
+         '59','75','57') DO;
+      BNMCODE='3410060000000Y'; OUTPUT;
+    END;
+    WHEN('76','77','78') DO;
+      BNMCODE='3410076000000Y'; OUTPUT;
+    END;
+    WHEN('81','82','83','84') DO;
+      BNMCODE='3410081000000Y'; OUTPUT;
+    END;
+    WHEN('85','86','90','91','92','95','96','98','99') DO;
+      BNMCODE='3410085000000Y'; OUTPUT;
+    END;
+    OTHERWISE;
+  END;
+RUN;
+
+PROC APPEND DATA=ALWLOAN BASE=BNM.LALW&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWLOAN; RUN;
+
+ /**********************************************************/
+ /** GROSS LOAN - BY APPROVED LIMIT                       **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+CLASS PRODCD AMTIND;
+VAR BALANCE;
+WHERE SUBSTR(PRODCD, 1, 2) EQ '34' OR PRODCD EQ '54120';
+OUTPUT OUT=ALW
+       SUM=AMOUNT;
+RUN;
+
+DATA ALWLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALW;
+  BNMCODE='3051000000000Y';
+RUN;
+
+PROC APPEND DATA=ALWLOAN BASE=BNM.LALW&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWLOAN; RUN;
+
+ /**********************************************************/
+ /** LOANS SOLD TO CAGAMAS BERHAD WITH RECOURSE           **/
+ /**********************************************************/
+PROC SUMMARY DATA=LOAN&REPTMON&NOWK NWAY;
+VAR BALANCE;
+CLASS PRODCD AMTIND;
+WHERE PRODUCT IN (124,145);
+OUTPUT OUT=ALW
+       SUM=AMOUNT;
+RUN;
+
+DATA ALWLOAN (KEEP=BNMCODE AMTIND AMOUNT);
+  LENGTH BNMCODE $14.;
+  SET ALW;
+  BNMCODE='7511100000000Y';
+RUN;
+
+PROC APPEND DATA=ALWLOAN BASE=BNM.LALW&REPTMON&NOWK; RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE ALW ALWLOAN; RUN;
+*;
+PROC SUMMARY DATA=BNM.LALW&REPTMON&NOWK NWAY;
+CLASS BNMCODE AMTIND;
+VAR AMOUNT;
+OUTPUT OUT=BNM.LALW&REPTMON&NOWK (DROP=_TYPE_ _FREQ_)
+       SUM=AMOUNT;
+RUN;
+*;
+  /*
+OPTIONS NOCENTER NODATE NONUMBER;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'REPORT ON DOMESTIC ASSETS AND LIABILITIES PART I - M&I LOAN';
+TITLE3 'REPORT DATE : ' &RDATE;
+TITLE4;
+PROC PRINT DATA=BNM.LALW&REPTMON&NOWK;
+FORMAT AMOUNT COMMA25.2;
+RUN;
+   */
