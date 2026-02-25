@@ -1,0 +1,350 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : KALWE                                             |
+ |  DATE    : 01.11.99                                          |
+ |  REPORT  : TO EXTRACT DATA FROM KAPITI TABLE 1 & 3 (WEEKLY)  |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950;
+*;
+DATA BNMK.K1TBL&REPTMON&NOWK;
+   RETAIN REPTDATE;
+   INFILE BNMTBL1 DELIMITER = '|' DSD MISSOVER;
+   IF _N_=1 THEN INPUT REPTDATE: YYMMDD8. ; ELSE
+   INPUT  GWAB   : $4.
+          GWAN   : $6.
+          GWAS   : $3.
+          GWAPP  : $2.
+          GWACS  : $1.
+          GWBALA : 15.2
+          GWBALC : 15.2
+          GWPAIA : 15.2
+          GWPAIC : 15.2
+          GWSHN  : $15.
+          GWCTP  : $2.
+          GWACT  : $2.
+          GWACD  : $2.
+          GWSAC  : $2.
+          GWNANC : $5.
+          GWCNAL : $2.
+          GWCCY  : $3.
+          GWCNAR : $2.
+          GWCNAP : $2.
+          GWDIAA : 15.2
+          GWDIAC : 15.2
+          GWCIAA : 15.2
+          GWCIAC : 15.2
+          GWRATD : 11.6
+          GWRATC : 11.6
+          GWDIPA : 17.2
+          GWDIPC : 17.2
+          GWCIPA : 17.2
+          GWCIPC : 17.2
+          GWPL1D : $2.
+          GWPL2D : $2.
+          GWPL1C : $2.
+          GWPL2C : $2.
+          GWPALA : 17.2
+          GWPALC : 17.2
+          GWDLP  : $3.
+          GWDLR  : $13.
+          GWSDT  : 8.
+          GWRDT  : 8.
+          GWRRT  : 5.
+          GWPDT  : 8.
+          GWPRT  : 5.
+          GWPCM  : 3.
+          GWMOTC : $4.
+          GWMRTC : $4.
+          GWMRT  : 5.
+          GWMDT  : 8.
+          GWMCM  : 3.
+          GWMWM  : 3.
+          GWMVT  : $1.
+          GWMVTS : $1.
+          GWSRC  : $2.
+          GWUC1  : $3.
+          GWUC2  : $3.
+          GWC2R  : $3.
+          GWAMAP : 15.2
+          GWEXR  : 13.7
+          GWOPT  : $1.
+          GWOCY  : $3.
+          GWCBD  : YYMMDD8.
+          ;
+   LABEL GWAB = 'BRANCH'
+         GWAN = 'BASIC NUMBER'
+         GWAS = 'ACCOUNT SUFFIX'
+         GWBALA = 'BALANCE - ORIGINAL CURRENCY'
+         GWBALC = 'BALANCE - LOCAL CURRENCY'
+         GWSHN = 'ACCOUNT SHORT NAME'
+         GWCTP = 'CUSTOMER TYPE'
+         GWACT = 'A/C TYPE'
+         GWACD = 'ANALYSIS CODE'
+         GWSAC = 'SUNDRY ANALYSIS CODE'
+         GWCNAL = 'RESIDENCE COUNTRY'
+         GWCCY = 'CCY'
+         GWDIAC = 'DR INT ACC - LOCAL CURRENCY'
+         GWCIAC = 'CR INT ACC - LOCAL CURRENCY'
+         GWDLP = 'DEAL TYPE'
+         GWDLR = 'DEAL REFERENCE'
+         GWSDT = 'START DATE'
+         GWMDT = 'MATURITY DATE'
+         GWMVT = 'MOVEMENT TYPE'
+         GWMVTS = 'MOVEMENT SUB-TYPE'
+         GWC2R = 'CUSTFISS'
+         GWOCY = 'OTHER CURRENCY MNEMONIC'
+         GWEXR = 'TRANSACTED FX/RM RATES'
+         GWCBD = 'CURRENT BUSINESS DATE';
+   IF GWSDT NE 0 THEN GWSDT=INPUT(PUT(GWSDT,Z8.),YYMMDD8.);
+   IF GWMDT NE 0 THEN GWMDT=INPUT(PUT(GWMDT,Z8.),YYMMDD8.);
+   FORMAT GWSDT GWMDT YYMMDD8.;
+RUN;
+
+DATA BNMK.K3TBL&REPTMON&NOWK;
+   RETAIN REPTDATE;
+   INFILE BNMTBL3 DELIMITER = '|' DSD MISSOVER;
+   IF _N_=1 THEN INPUT REPTDATE : YYMMDD8.; ELSE
+   INPUT UTSTY : $3.
+         UTREF : $16.
+         UTDLP : $3.
+         UTDLR : $13.
+         UTSMN : $16.
+         UTCUS : $6.
+         UTCLC : $3.
+         UTCTP : $2.
+         UTFCV : 15.2
+         UTIDT : $10.
+         UTLCD : $10.
+         UTNCD : $10.
+         UTMDT : $10.
+         UTCBD : $10.
+         UTCPR : 13.7
+         UTQDS : 13.7
+         UTPCP : 13.7
+         UTAMOC : 15.2
+         UTDPF : 15.2
+         UTAICT : 15.2
+         UTAICY : 15.2
+         UTAIT : 15.2
+         UTDPET : 15.2
+         UTDPEY : 15.2
+         UTDPE : 15.2
+         UTASN : 7.
+         UTOSD : $10.
+         UTCA2 : $2.
+         UTSAC : $2.
+         UTCNAP : $2.
+         UTCNAR : $2.
+         UTCNAL : $2.
+         UTCCY : $3.
+         UTAMTS : 15.2
+         ;
+   LABEL UTSTY  = 'SECURITY TYPE'
+         UTREF  = 'PORTFOLIO REFERENCE'
+         UTDLP  = 'DEAL PREFIX'
+         UTDLR  = 'DEAL REFERENCE'
+         UTSMN  = 'SECURITY MNEMONIC'
+         UTCUS  = 'CUSTOMER NAME'
+         UTCLC  = 'CUSTOMER LOCATION'
+         UTCTP  = 'CUSTOMER TYPE'
+         UTFCV  = 'FACE VALUE'
+         UTIDT  = 'ISSUE DATE'
+         UTLCD  = 'LAST COUPON DATE'
+         UTNCD  = 'NEXT COUPON DATE'
+         UTMDT  = 'MATURITY DATE'
+         UTCBD  = 'CURRENT BUSINESS DATE'
+         UTCPR  = 'COUPON RATE'
+         UTQDS  = 'DISCOUNT RATE'
+         UTPCP  = 'DEAL CAPITAL PRICE'
+         UTAMOC = 'CURRENT AMOUNT OWNED'
+         UTDPF  = 'DISCOUNT/PREMIUM UNEARNED'
+         UTAICT = 'ACTUAL INT ACCRUED COUPON TO DATE'
+         UTAICY = 'ACTUAL INT ACCRUED COUPON TO YESTERDAY'
+         UTAIT  = 'ACTUAL INT ACCRUED P&L TODAY'
+         UTDPET = 'DISCOUNT/PREMIUM UNEARNED TODAY'
+         UTDPEY = 'DISCOUNT/PREMIUM UNEARNED YESTERDAY'
+         UTDPE  = 'DISCOUNT/PREMIUM P&L TODAY'
+         UTASN  = 'ASSET NUMBER'
+         UTOSD  = 'OWNERSHIP SETTLEMENT DATE'
+         UTCA2  = 'ANALYSIS CODE'
+         UTSAC  = 'SUNDRY ANALYSIS CODE'
+         UTCNAP = 'PARENT COUNTRY'
+         UTCNAR = 'RISK COUNTRY'
+         UTCNAL = 'RESIDENCE COUNTRY'
+         UTCCY  = 'CURRENCY CODE'
+         UTAMTS = 'PURCHASE PROCEEDS';
+
+   IF SUBSTR(UTDLP,2,2) IN ('RT','RI') THEN DELETE;
+   IF UTMDT NE ' ' THEN MATDT = INPUT(UTMDT,DDMMYY10.);
+   IF UTOSD NE ' ' THEN ISSDT = INPUT(UTOSD,DDMMYY10.);
+   IF UTCBD NE ' ' THEN REPTDATE = INPUT(UTCBD,DDMMYY10.);
+   IF UTCBD NE ' ' THEN DDATE    = INPUT(UTCBD,DDMMYY10.);
+   IF UTIDT NE ' ' THEN XDATE    = INPUT(UTIDT,DDMMYY10.);
+   FORMAT MATDT ISSDT REPTDATE YYMMDD8.;
+   IF UTSTY = 'IZD' THEN UTCPR = UTQDS;
+   IF UTSTY IN ('IFD','ILD','ISD','IZD') THEN DO;
+      IF XDATE > DDATE THEN DELETE;
+   END;
+RUN;
+
+DATA BNMK.KWTBL&REPTMON&NOWK;
+   RETAIN REPTDATE;
+   INFILE BNMTBLW DELIMITER = '|' DSD MISSOVER;
+   IF _N_=1 THEN INPUT REPTDATE : YYMMDD8. ; ELSE
+   INPUT  GWAB   : $4.
+          GWAN   : $6.
+          GWAS   : $3.
+          GWAPP  : $2.
+          GWACS  : $1.
+          GWBALA : 15.2
+          GWBALC : 15.2
+          GWPAIA : 15.2
+          GWPAIC : 15.2
+          GWSHN  : $15.
+          GWCTP  : $2.
+          GWACT  : $2.
+          GWACD  : $2.
+          GWSAC  : $2.
+          GWNANC : $5.
+          GWCNAL : $2.
+          GWCCY  : $3.
+          GWCNAR : $2.
+          GWCNAP : $2.
+          GWDIAA : 15.2
+          GWDIAC : 15.2
+          GWCIAA : 15.2
+          GWCIAC : 15.2
+          GWRATD : 11.7
+          GWRATC : 11.7
+          GWDIPA : 17.2
+          GWDIPC : 17.2
+          GWCIPA : 17.2
+          GWCIPC : 17.2
+          GWPL1D : $2.
+          GWPL2D : $2.
+          GWPL1C : $2.
+          GWPL2C : $2.
+          GWPALA : 17.2
+          GWPALC : 17.2
+          GWDLP  : $3.
+          GWDLR  : $13.
+          GWSDT  : 8.
+          GWRDT  : 8.
+          GWRRT  : 5.
+          GWPDT  : 8.
+          GWPRT  : 5.
+          GWPCM  : 3.
+          GWMOTC : $4.
+          GWMRTC : $4.
+          GWMRT  : 5.
+          GWMDT  : 8.
+          GWMCM  : 3.
+          GWMWM  : 3.
+          GWMVT  : $1.
+          GWMVTS : $1.
+          GWSRC  : $2.
+          GWUC1  : $3.
+          GWUC2  : $3.
+          GWC2R  : $3.
+          GWAMAP : 15.2
+          GWEXR  : 13.7
+          GWOPT  : $1.
+          GWOCY  : $3.
+          GWCBD  : YYMMDD8.
+          ;
+   LABEL GWAB = 'BRANCH'
+         GWAN = 'BASIC NUMBER'
+         GWAS = 'ACCOUNT SUFFIX'
+         GWBALA = 'BALANCE - ORIGINAL CURRENCY'
+         GWBALC = 'BALANCE - LOCAL CURRENCY'
+         GWSHN = 'ACCOUNT SHORT NAME'
+         GWCTP = 'CUSTOMER TYPE'
+         GWACT = 'A/C TYPE'
+         GWACD = 'ANALYSIS CODE'
+         GWSAC = 'SUNDRY ANALYSIS CODE'
+         GWCNAL = 'RESIDENCE COUNTRY'
+         GWCCY = 'CCY'
+         GWDIAC = 'DR INT ACC - LOCAL CURRENCY'
+         GWCIAC = 'CR INT ACC - LOCAL CURRENCY'
+         GWDLP = 'DEAL TYPE'
+         GWDLR = 'DEAL REFERENCE'
+         GWSDT = 'START DATE'
+         GWMDT = 'MATURITY DATE'
+         GWMVT = 'MOVEMENT TYPE'
+         GWMVTS = 'MOVEMENT SUB-TYPE'
+         GWC2R = 'CUSTFISS'
+         GWOCY = 'OTHER CURRENCY MNEMONIC'
+         GWEXR = 'TRANSACTED FX/RM RATES'
+         GWCBD = 'CURRENT BUSINESS DATE';
+   IF GWSDT NE 0 THEN GWSDT=INPUT(PUT(GWSDT,Z8.),YYMMDD8.);
+   IF GWMDT NE 0 THEN GWMDT=INPUT(PUT(GWMDT,Z8.),YYMMDD8.);
+   FORMAT GWSDT GWMDT YYMMDD8.;
+RUN;
+
+DATA DCIWTB;
+   RETAIN REPTDATE;
+   INFILE DCIWTBL DELIMITER = '|' MISSOVER DSD FIRSTOBS=1;
+   IF _N_=1 THEN INPUT @65 REPTDATE DDMMYY10. ; ELSE
+   INPUT DCDLP  :    $3.
+         DCDLR  :   $13.
+         DCCUS  :    $6.
+         DCCLC  :    $3.
+         DCBCCY :    $3.
+         DCBAMT :   17.2
+         C8SPT  :   7.7
+         DCACCY :    $3.
+         DCCTRD :    DDMMYY10.
+         DCMTYD :    DDMMYY10.
+         GFCTP  :    $2.
+         GFC2R1 :    $2.
+         GFCUN  :   $35.
+         GFCNAL :    $2.
+         DCTRNT :    $1.
+         DCBSI  :    $1.
+         ODGRP  :    $6.
+         GFSAC  :    $2.
+         STATUS :    $2.
+         OPTYPE :    $4.
+         STKRATE :    9.
+         ;
+   LABEL DCDLP  = 'DEAL TYPE'
+         DCDLR  = 'DEAL REFERENCE'
+         DCCUS  = 'CUSTOMER NAME'
+         DCCLC  = 'CUSTOMER LOCATION'
+         DCBCCY = 'BASE CURRENCY'
+         DCBAMT = 'BASE AMOUNT'
+         C8SPT  = 'SPOT RATE'
+         DCACCY = 'ALTERNATE CURRENCY'
+         DCCTRD = 'CONTRACT DATE'
+         DCMTYD = 'MATURITY DATE'
+         GFCTP  = 'CUSTOMER TYPE'
+         GFC2R  = 'FISS CODE'
+         GFCUN  = 'CUSTOMER LONG NAME'
+         GFCNAL = 'RESIDENCE COUNTRY'
+         DCTRNT = 'TRANSACTION TYPE'
+         DCBSI  = 'BUY/SELL'
+         ODGRP  = 'CUSTOMER GROUP'
+         GFSAC  = 'SUNDRY ANALYSIS CODE'
+         STATUS = 'STATUS INDICATOR'
+         OPTYPE = 'OPTION TYPE'
+         STKRATE = 'STRIKE RATE'
+         ;
+   GFC2R  = INPUT(GFC2R1,5.);
+RUN;
+PROC SORT; BY DCDLR; RUN;
+
+DATA DCIWH (KEEP=DCDLR GFCUN GFC2R);
+   SET DCIWH.DCI&REPTMON&NOWK;
+   RENAME CUSTICKETNO = DCDLR
+          CUSTNAME    = GFCUN
+          CUSTCODE    = GFC2R
+          ;
+RUN;
+PROC SORT; BY DCDLR; RUN;
+
+DATA BNMK.DCIWTB&REPTMON&NOWK;
+   MERGE DCIWTB(IN=A) DCIWH;
+   BY DCDLR;
+   IF A;
+   IF DCBCCY='MYR' THEN C8SPT=1;
+RUN;
+
