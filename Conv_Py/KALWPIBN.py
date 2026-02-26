@@ -1,0 +1,620 @@
+#!/usr/bin/env python3
+"""
+Program : KALWPIBN (ISLAMIC)
+Date    : 06/01/2015
+Report  : RDIR PART I  (KAPITI ITEMS)
+          QUOTED RATES ON NIDS, OWN BAS
+          (BNM TABLE 3)
+
+Notes:
+  - Islamic version - NO REPOS section (only BA/NIDS processing).
+  - Processes instruments: IDC/IDP (NIDS) and ABP/ABS (BAS).
+  - Uses local NSRSFDORGMT format (1-3 months => '14'), distinct from KALWPBBN (1-3 => '13').
+  - Additional UTDLP filter: IDC/IDP must NOT be IN ('IOP','IUP');
+                              ABP/ABS must be IN ('IOP','IUP').
+  - No merge with previous period dataset (standalone processing).
+  - Diagnostic PROC PRINT for K3TBLA and K3TBLB before summary.
+  - Outputs report via PROC PRINTTO (NSRSTXT) grouped by GROUP.
+  - Also writes permanent datasets BNMK.K3TBLA and BNMK.K3TBLB (with extra columns).
+"""
+
+import os
+import duckdb
+import polars as pl
+from datetime import datetime, date
+
+# ==============================================================================
+# PATH CONFIGURATION
+# ==============================================================================
+
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+INPUT_DIR  = os.path.join(BASE_DIR, "input")
+OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Runtime parameters (replace with actual values or pass via CLI/config)
+REPTMON  = "202301"   # Reporting month YYYYMM
+NOWK     = "01"       # Week number
+RDATE    = "31/01/2023"
+SDESC    = "PUBLIC BANK BERHAD"
+PDATE    = date(2023, 1, 31)   # Filter: records with start date > PDATE
+
+# %LET AMTIND='D';
+AMTIND = "D"
+
+# Page length for ASA report (default 60 lines per page)
+PAGE_LENGTH = 60
+
+# Input parquet paths
+K3TBL_PARQUET = os.path.join(INPUT_DIR, f"K3TBL{REPTMON}{NOWK}.parquet")
+
+# Output paths
+K3TBLA_OUT_PARQUET  = os.path.join(OUTPUT_DIR, f"K3TBLA{REPTMON}{NOWK}.parquet")  # BNMK.K3TBLA
+K3TBLB_OUT_PARQUET  = os.path.join(OUTPUT_DIR, f"K3TBLB{REPTMON}{NOWK}.parquet")  # BNMK.K3TBLB
+K3TBE_OUT_PARQUET   = os.path.join(OUTPUT_DIR, f"K3TBE{REPTMON}{NOWK}.parquet")   # BNMK.K3TBE
+NSRSTXT_OUT         = os.path.join(OUTPUT_DIR, f"KALWPIBN_{REPTMON}{NOWK}_report.txt")  # PROC PRINTTO PRINT=NSRSTXT
+K3TBLA_DIAG_TXT     = os.path.join(OUTPUT_DIR, f"KALWPIBN_{REPTMON}{NOWK}_K3TBLA_diag.txt")  # PROC PRINT DATA=K3TBLA
+K3TBLB_DIAG_TXT     = os.path.join(OUTPUT_DIR, f"KALWPIBN_{REPTMON}{NOWK}_K3TBLB_diag.txt")  # PROC PRINT DATA=K3TBLB
+
+
+# ==============================================================================
+# PROC FORMAT: NSRSFDORGMT  (KALWPIBN Islamic version: 1-3 months => '14')
+#
+#  LOW - 1   = '12'   /* ORG. MAT. <= 1 MTH      */
+#    1 - 3   = '14'   /* ORG. MAT. >1 - 3 MTHS   */   <-- differs from KALWPBBN ('13')
+#    3 - 6   = '15'   /* ORG. MAT. >3 - 6 MTHS   */
+#    6 - 9   = '16'   /* ORG. MAT. >6 - 9 MTHS   */
+#    9 - 12  = '17'   /* ORG. MAT. >9 - 12 MTHS  */
+#   12 - 15  = '21'   /* ORG. MAT. >12 - 15 MTHS */
+#   15 - 18  = '22'   /* ORG. MAT. >15 - 18 MTHS */
+#   18 - 24  = '23'   /* ORG. MAT. >18 - 24 MTHS */
+#   24 - 36  = '24'   /* ORG. MAT. >24 - 36 MTHS */
+#   36 - 48  = '25'   /* ORG. MAT. >36 - 48 MTHS */
+#   48 - 60  = '26'   /* ORG. MAT. >48 - 60 MTHS */
+#   60 - HIGH = '30'; /* ORG. MAT. > 60 MTHS     */
+# ==============================================================================
+
+def nsrsfdorgmt_format(remmth: float | None) -> str:
+    """Apply NSRSFDORGMT (KALWPIBN Islamic version) format to remaining months value."""
+    if remmth is None:
+        return ''
+    if remmth <= 1:
+        return '12'
+    elif remmth <= 3:
+        return '14'   # KALWPIBN Islamic: 1-3 mths => '14'
+    elif remmth <= 6:
+        return '15'
+    elif remmth <= 9:
+        return '16'
+    elif remmth <= 12:
+        return '17'
+    elif remmth <= 15:
+        return '21'
+    elif remmth <= 18:
+        return '22'
+    elif remmth <= 24:
+        return '23'
+    elif remmth <= 36:
+        return '24'
+    elif remmth <= 48:
+        return '25'
+    elif remmth <= 60:
+        return '26'
+    else:
+        return '30'
+
+
+# ==============================================================================
+# PROC FORMAT: $NIDSDESC
+# '14' = 'ORG. MAT. >1 - 3 MTHS'   (Islamic: '14' instead of '13')
+# '15' = 'ORG. MAT. >3 - 6 MTHS'
+# '16' = 'ORG. MAT. >6 - 9 MTHS'
+# '17' = 'ORG. MAT. >9 - 12 MTHS'
+# ==============================================================================
+
+NIDSDESC: dict[str, str] = {
+    '14': 'ORG. MAT. >1 - 3 MTHS',
+    '15': 'ORG. MAT. >3 - 6 MTHS',
+    '16': 'ORG. MAT. >6 - 9 MTHS',
+    '17': 'ORG. MAT. >9 - 12 MTHS',
+}
+
+# ==============================================================================
+# PROC FORMAT: $BASDESC
+# '12' = 'ORG. MAT. <= 1 MTH'
+# '14' = 'ORG. MAT. >1 - 3 MTHS'   (Islamic: '14' instead of '15')
+# '15' = 'ORG. MAT. >3 - 6 MTHS'   (Islamic: '15' instead of '16')
+# ==============================================================================
+
+BASDESC: dict[str, str] = {
+    '12': 'ORG. MAT. <= 1 MTH',
+    '14': 'ORG. MAT. >1 - 3 MTHS',
+    '15': 'ORG. MAT. >3 - 6 MTHS',
+}
+
+# ==============================================================================
+# PROC FORMAT: $SBBADESC  (defined in SAS but not used in KALWPIBN report body)
+# '11' = 'OVERNIGHT'
+# '18' = '> OVERNIGHT TO 1 WK'
+# '19' = '> 1 TO 2 WKS'
+# '27' = '> 2 TO 3 WKS'
+# '28' = '> 3 TO 4 WKS'
+# ==============================================================================
+
+SBBADESC: dict[str, str] = {
+    '11': 'OVERNIGHT',
+    '18': '> OVERNIGHT TO 1 WK',
+    '19': '> 1 TO 2 WKS',
+    '27': '> 2 TO 3 WKS',
+    '28': '> 3 TO 4 WKS',
+}
+
+
+# ==============================================================================
+# MACRO DCLVAR - Day arrays used in REMMTH calculation
+# RETAIN D1-D12 31, D4 D6 D9 D11 30
+#        RD1-RD12 MD1-MD12 31, RD2 MD2 28, RD4 RD6 RD9 RD11 MD4 MD6 MD9 MD11 30
+# RPDAYS is the array used in REMMTH (= RD1-RD12)
+# ==============================================================================
+
+RPDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]  # RD1-RD12
+
+
+# ==============================================================================
+# MACRO REMMTH - Calculate remaining months to maturity
+# ==============================================================================
+
+def calc_remmth(matdte: date, issdte: date) -> float:
+    """
+    Replicates SAS %REMMTH macro.
+    REMMTH = (MDYR - RPYR)*12 + (MDMTH - RPMTH) + (MDDAY - RPDAY) / RPDAYS[RPMTH]
+    RPDAYS is the retained array RD1-RD12 (0-indexed by RPMTH-1).
+    """
+    mdyr  = matdte.year
+    mdmth = matdte.month
+    mdday = matdte.day
+
+    rpyr  = issdte.year
+    rpmth = issdte.month
+    rpday = issdte.day
+
+    remy = mdyr  - rpyr
+    remm = mdmth - rpmth
+    remd = mdday - rpday
+
+    # RPDAYS(RPMTH) is 1-based in SAS, 0-based here
+    rpdays_val = RPDAYS[rpmth - 1]
+
+    remmth = remy * 12 + remm + remd / rpdays_val
+    return remmth
+
+
+# ==============================================================================
+# HELPER: parse date string in DDMMYY10 format (DD/MM/YYYY or DDMMYYYY)
+# ==============================================================================
+
+def parse_ddmmyy10(val) -> date | None:
+    """Parse SAS DDMMYY10. informat: 'DD/MM/YYYY'."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d%m%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+# ==============================================================================
+# QUOTED RATES ON BA (BANKERS ACCEPTANCE) AND NIDS  (Islamic instruments only)
+# PROC SORT DATA=BNMKD.K3TBL&REPTMON&NOWK OUT=K3TBL; BY UTDLR EXTDATE;
+# PROC SORT DATA=K3TBL NODUPKEY; BY UTDLR;
+# DATA K3TBLA (KEEP=BNMCODE AMOUNT OMTH WAMT AMTIND)
+#      K3TBLB (KEEP=BNMCODE AMOUNT OMTH WAMT AMTIND)
+#      BNMK.K3TBLA (KEEP=BNMCODE AMOUNT OMTH WAMT AMTIND ORIYY ORIMM ORIDD)
+#      BNMK.K3TBLB (KEEP=BNMCODE AMOUNT OMTH WAMT AMTIND ORIYY ORIMM ORIDD);
+#
+# Instruments:
+#   IDC/IDP  => NIDS (K3TBLA), filter: UTDLP NOT IN ('IOP','IUP')
+#   ABP/ABS  => BAS  (K3TBLB), filter: UTDLP IN ('IOP','IUP')
+# ==============================================================================
+
+def process_k3tbl(con: duckdb.DuckDBPyConnection) -> tuple[pl.DataFrame, pl.DataFrame,
+                                                            pl.DataFrame, pl.DataFrame]:
+    """
+    Process K3TBL (Islamic instruments) to generate:
+      k3tbla      - IDC/IDP instruments (NIDS, for summary)
+      k3tblb      - ABP/ABS instruments (BAS, for summary)
+      k3tbla_full - BNMK.K3TBLA permanent dataset (adds ORIYY/ORIMM/ORIDD)
+      k3tblb_full - BNMK.K3TBLB permanent dataset (adds ORIYY/ORIMM/ORIDD)
+    PROC SORT BY UTDLR EXTDATE then NODUPKEY BY UTDLR (keep first by EXTDATE).
+    """
+    k3tbl = con.execute(f"""
+        SELECT *
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY UTDLR ORDER BY EXTDATE ASC) AS rn
+            FROM read_parquet('{K3TBL_PARQUET}')
+        )
+        WHERE rn = 1
+    """).pl()
+
+    rows_a      = []   # for K3TBLA (summary columns only)
+    rows_b      = []   # for K3TBLB (summary columns only)
+    rows_a_full = []   # for BNMK.K3TBLA (includes ORIYY/ORIMM/ORIDD)
+    rows_b_full = []   # for BNMK.K3TBLB (includes ORIYY/ORIMM/ORIDD)
+
+    for row in k3tbl.iter_rows(named=True):
+        issdt = row.get("ISSDT")
+        if isinstance(issdt, str):
+            issdt = parse_ddmmyy10(issdt)
+        if issdt is None or issdt <= PDATE:
+            continue
+
+        utsty = str(row.get("UTSTY", ""))
+        utdlp = str(row.get("UTDLP", ""))
+
+        # IF UTSTY IN ('IDC','IDP','ABP','ABS');
+        if utsty not in ("IDC", "IDP", "ABP", "ABS"):
+            continue
+
+        amount = row.get("UTFCV")
+        utqds  = row.get("UTQDS")
+        if amount is None or utqds is None:
+            continue
+
+        wamt = (utqds * amount) / 100
+
+        matdte = parse_ddmmyy10(row.get("UTMDT"))
+        issdte = parse_ddmmyy10(row.get("UTOSD"))
+
+        if matdte is None or issdte is None:
+            continue
+
+        rpyr  = issdte.year
+        rpmth = issdte.month
+        rpday = issdte.day
+
+        if utsty in ("IDC", "IDP"):
+            # IF UTDLP NOT IN ('IOP','IUP');
+            if utdlp in ("IOP", "IUP"):
+                continue
+
+            # %REMMTH macro then OMTH=PUT(REMMTH,NSRSFDORGMT.)
+            remmth = calc_remmth(matdte, issdte)
+            omth = nsrsfdorgmt_format(remmth)
+
+            if wamt is not None and omth in ("14", "15", "16", "17"):
+                bnmcode = f"8430600{omth}0000Y"
+                rec = {
+                    "BNMCODE": bnmcode,
+                    "AMOUNT":  amount,
+                    "OMTH":    omth,
+                    "WAMT":    wamt,
+                    "AMTIND":  AMTIND,
+                }
+                rows_a.append(rec)
+                # BNMK.K3TBLA: ORIYY/ORIMM/ORIDD not computed for IDC/IDP path
+                rows_a_full.append({**rec, "ORIYY": None, "ORIMM": None, "ORIDD": None})
+
+        elif utsty in ("ABP", "ABS"):
+            # IF UTDLP IN ('IOP','IUP');
+            if utdlp not in ("IOP", "IUP"):
+                continue
+
+            matdd = matdte.day
+            matmm = matdte.month
+            matyy = matdte.year
+
+            oridd = matdd - rpday
+            orimm = matmm - rpmth
+            oriyy = matyy - rpyr
+
+            if oriyy >= 1:
+                orimm = orimm + 12
+
+            omth = None
+            if   (orimm == 1 and oridd <= 0) or (orimm == 0 and oridd > 0):
+                omth = "12"
+            elif (orimm == 2 and oridd <= 0) or (orimm == 1 and oridd > 0):
+                omth = "14"
+            elif (orimm == 3 and oridd <= 0) or (orimm == 2 and oridd > 0):
+                omth = "14"
+            elif (orimm == 4 and oridd <= 0) or (orimm == 3 and oridd > 0):
+                omth = "15"
+            elif (orimm == 5 and oridd <= 0) or (orimm == 4 and oridd > 0):
+                omth = "15"
+            elif (orimm == 6 and oridd <= 0) or (orimm == 5 and oridd > 0):
+                omth = "15"
+
+            if wamt is not None and omth in ("12", "14", "15"):
+                bnmcode = f"8430700{omth}0000Y"
+                rec = {
+                    "BNMCODE": bnmcode,
+                    "AMOUNT":  amount,
+                    "OMTH":    omth,
+                    "WAMT":    wamt,
+                    "AMTIND":  AMTIND,
+                }
+                rows_b.append(rec)
+                rows_b_full.append({**rec, "ORIYY": oriyy, "ORIMM": orimm, "ORIDD": oridd})
+
+    schema_ab = {
+        "BNMCODE": pl.Utf8, "AMOUNT": pl.Float64, "OMTH": pl.Utf8,
+        "WAMT": pl.Float64, "AMTIND": pl.Utf8,
+    }
+    schema_full = {
+        "BNMCODE": pl.Utf8, "AMOUNT": pl.Float64, "OMTH": pl.Utf8,
+        "WAMT": pl.Float64, "AMTIND": pl.Utf8,
+        "ORIYY": pl.Int64, "ORIMM": pl.Int64, "ORIDD": pl.Int64,
+    }
+
+    k3tbla      = pl.DataFrame(rows_a,      schema=schema_ab)   if rows_a      else pl.DataFrame(schema=schema_ab)
+    k3tblb      = pl.DataFrame(rows_b,      schema=schema_ab)   if rows_b      else pl.DataFrame(schema=schema_ab)
+    k3tbla_full = pl.DataFrame(rows_a_full, schema=schema_full) if rows_a_full else pl.DataFrame(schema=schema_full)
+    k3tblb_full = pl.DataFrame(rows_b_full, schema=schema_full) if rows_b_full else pl.DataFrame(schema=schema_full)
+
+    return k3tbla, k3tblb, k3tbla_full, k3tblb_full
+
+
+# ==============================================================================
+# PROC PRINT DATA=K3TBLA; RUN;
+# PROC PRINT DATA=K3TBLB; RUN;
+# Diagnostic prints written to separate text files.
+# ==============================================================================
+
+def format_diag_print(df: pl.DataFrame, title: str) -> str:
+    """
+    Replicates a basic SAS PROC PRINT output with ASA carriage control.
+    Used for the diagnostic PROC PRINT DATA=K3TBLA and K3TBLB steps.
+    """
+    lines:      list[str] = []
+    line_count: int       = 0
+    page_num:   int       = 0
+
+    col_names = df.columns
+
+    def emit_header() -> None:
+        nonlocal line_count, page_num
+        page_num += 1
+        lines.append(f"1{title}")
+        lines.append(f" ")
+        # Column headers
+        header = " OBS    " + "  ".join(f"{c:<14}" for c in col_names)
+        lines.append(f" {header}")
+        lines.append(f" ")
+        line_count = 4
+
+    emit_header()
+
+    for obs_idx, row in enumerate(df.iter_rows(named=True), start=1):
+        parts = []
+        for col in col_names:
+            val = row.get(col)
+            if val is None:
+                parts.append(f"{'':>14}")
+            elif isinstance(val, float):
+                parts.append(f"{val:>14.4f}")
+            else:
+                parts.append(f"{str(val):<14}")
+        data_line = f" {obs_idx:<6d}  " + "  ".join(parts)
+        lines.append(data_line)
+        line_count += 1
+
+        if line_count >= PAGE_LENGTH:
+            emit_header()
+
+    return "\n".join(lines) + "\n"
+
+
+# ==============================================================================
+# PROC SUMMARY DATA=K3TBL3 NWAY;
+#   CLASS BNMCODE AMTIND; VAR AMOUNT WAMT; OUTPUT OUT=K3TBL3 SUM=BALANCE WAMT;
+# DATA K3TBL3 (KEEP=BNMCODE AMOUNT AMTIND);
+#   AMOUNT=(WAMT/BALANCE)*100;
+# ==============================================================================
+
+def summarize_and_compute(k3tbl3: pl.DataFrame) -> pl.DataFrame:
+    """Replicates PROC SUMMARY NWAY + weighted average rate computation."""
+    summary = (
+        k3tbl3
+        .group_by(["BNMCODE", "AMTIND"])
+        .agg([
+            pl.col("AMOUNT").sum().alias("BALANCE"),
+            pl.col("WAMT").sum().alias("WAMT"),
+        ])
+    )
+    summary = summary.with_columns(
+        (pl.col("WAMT") / pl.col("BALANCE") * 100).alias("AMOUNT")
+    ).select(["BNMCODE", "AMOUNT", "AMTIND"])
+
+    return summary
+
+
+# ==============================================================================
+# PROC SORT DATA=K3TBL3; BY BNMCODE;
+# DATA K3TBL3; SET K3TBL3; BY BNMCODE;
+#   AMOUNT=ROUND(AMOUNT,0.0001);
+#   FORMAT AMOUNT 7.4;
+#   IF SUBSTR(BNMCODE,1,5) = '84306' THEN GROUP/DESCRIPTION = ...
+#   ELSE IF SUBSTR(BNMCODE,1,5) = '84307' ...
+# Note: KALWPIBN does NOT merge with a previous period K3TBE dataset.
+# ==============================================================================
+
+def enrich(k3tbl3: pl.DataFrame) -> pl.DataFrame:
+    """
+    Sort by BNMCODE, round AMOUNT, and add GROUP/DESCRIPTION columns.
+    KALWPIBN has no merge with previous period (no K3TBE input).
+    """
+    # PROC SORT DATA=K3TBL3; BY BNMCODE;
+    enriched = k3tbl3.sort("BNMCODE")
+
+    # AMOUNT=ROUND(AMOUNT,0.0001); FORMAT AMOUNT 7.4;
+    enriched = enriched.with_columns(
+        (pl.col("AMOUNT") * 10000).round(0) / 10000
+    )
+
+    # Add GROUP and DESCRIPTION based on BNMCODE prefix (SUBSTR(BNMCODE,1,5))
+    groups: list[str] = []
+    descs:  list[str] = []
+    for row in enriched.iter_rows(named=True):
+        bnmcode  = str(row.get("BNMCODE", "") or "")
+        prefix   = bnmcode[:5]
+        # SUBSTR(BNMCODE,8,2) is SAS 1-based chars 8-9 => Python [7:9]
+        omth_key = bnmcode[7:9]
+
+        if prefix == "84306":
+            groups.append("QUOTED RATES ON NIDS/INIDS ISSUED")
+            descs.append(NIDSDESC.get(omth_key, ""))
+        elif prefix == "84307":
+            groups.append("QUOTED RATES ON OWN BAS/IBAS")
+            descs.append(BASDESC.get(omth_key, ""))
+        else:
+            groups.append("")
+            descs.append("")
+
+    enriched = enriched.with_columns([
+        pl.Series("GROUP",       groups),
+        pl.Series("DESCRIPTION", descs),
+    ])
+
+    return enriched
+
+
+# ==============================================================================
+# PROC PRINTTO PRINT=NSRSTXT NEW; RUN;
+# PROC PRINT DATA=K3TBL3; BY GROUP;
+#   VAR BNMCODE DESCRIPTION AMTIND AMOUNT;
+# OPTIONS NOCENTER NONUMBER NODATE;
+# TITLE1 &SDESC;
+# TITLE2 'REPORT ON DOMESTIC INTEREST RATE - PART I (KAPITI)';
+# TITLE3 'REPORTING DATE :' &RDATE;
+# TITLE4;
+# ==============================================================================
+
+def format_report(df: pl.DataFrame) -> str:
+    """
+    Generate report text matching SAS PROC PRINT BY GROUP output with ASA carriage control.
+    ASA control chars: '1' = new page, ' ' = single space, '0' = double space.
+    Page length = 60 lines.
+    """
+    lines:      list[str] = []
+    line_count: int       = 0
+    page_num:   int       = 0
+
+    def emit_page_header() -> None:
+        nonlocal line_count, page_num
+        page_num += 1
+        # '1' = ASA form feed (new page) on first char of line
+        lines.append(f"1{SDESC}")
+        lines.append(f" REPORT ON DOMESTIC INTEREST RATE - PART I (KAPITI)")
+        lines.append(f" REPORTING DATE : {RDATE}")
+        lines.append(f" ")
+        lines.append(f" ")
+        lines.append(f" {'BNMCODE':<16}  {'DESCRIPTION':<30}  {'AMTIND':<6}  {'AMOUNT':>7}")
+        lines.append(f" ")
+        line_count = 7
+
+    def check_page_break() -> None:
+        if line_count >= PAGE_LENGTH:
+            emit_page_header()
+
+    # Sort by GROUP then BNMCODE to replicate BY GROUP processing
+    df_sorted = df.sort(["GROUP", "BNMCODE"])
+
+    current_group: str | None = None
+
+    # First page header
+    emit_page_header()
+
+    for row in df_sorted.iter_rows(named=True):
+        group       = str(row.get("GROUP",       "") or "")
+        bnmcode     = str(row.get("BNMCODE",     "") or "")
+        description = str(row.get("DESCRIPTION", "") or "")
+        amtind      = str(row.get("AMTIND",      "") or "")
+        amount      = row.get("AMOUNT")
+
+        # BY GROUP break: emit group header line
+        if group != current_group:
+            if current_group is not None:
+                # '0' = ASA double space before new group separator
+                lines.append("0")
+                line_count += 1
+                check_page_break()
+            lines.append(f" GROUP={group}")
+            lines.append(f" ")
+            line_count += 2
+            check_page_break()
+            current_group = group
+
+        amount_str = f"{amount:7.4f}" if amount is not None else f"{'':>7}"
+        data_line  = (
+            f" {bnmcode:<16}  {description:<30}  {amtind:<6}  {amount_str:>7}"
+        )
+        lines.append(data_line)
+        line_count += 1
+        check_page_break()
+
+    return "\n".join(lines) + "\n"
+
+
+# ==============================================================================
+# MAIN
+# ==============================================================================
+
+def main():
+    print("Running KALWPIBN (Islamic) ...")
+
+    con = duckdb.connect()
+
+    # -- QUOTED RATES ON BA AND NIDS (Islamic instruments IDC/IDP/ABP/ABS) --
+    # Also produces permanent BNMK.K3TBLA / BNMK.K3TBLB with extra columns
+    k3tbla, k3tblb, k3tbla_full, k3tblb_full = process_k3tbl(con)
+
+    con.close()
+
+    # PROC PRINT DATA=K3TBLA; RUN;
+    diag_a = format_diag_print(k3tbla, "K3TBLA DIAGNOSTIC PRINT")
+    with open(K3TBLA_DIAG_TXT, "w", encoding="utf-8") as f:
+        f.write(diag_a)
+    print(f"Diagnostic K3TBLA print written to: {K3TBLA_DIAG_TXT}")
+
+    # PROC PRINT DATA=K3TBLB; RUN;
+    diag_b = format_diag_print(k3tblb, "K3TBLB DIAGNOSTIC PRINT")
+    with open(K3TBLB_DIAG_TXT, "w", encoding="utf-8") as f:
+        f.write(diag_b)
+    print(f"Diagnostic K3TBLB print written to: {K3TBLB_DIAG_TXT}")
+
+    # DATA K3TBL3; SET K3TBLA K3TBLB;
+    k3tbla_union = k3tbla.select(["BNMCODE", "AMOUNT", "WAMT", "AMTIND"])
+    k3tblb_union = k3tblb.select(["BNMCODE", "AMOUNT", "WAMT", "AMTIND"])
+
+    k3tbl3 = pl.concat([k3tbla_union, k3tblb_union], how="vertical")
+
+    # PROC SUMMARY + weighted average rate
+    k3tbl3 = summarize_and_compute(k3tbl3)
+
+    # PROC SORT + enrich with GROUP/DESCRIPTION (no K3TBE merge in KALWPIBN)
+    k3tbl3 = enrich(k3tbl3)
+
+    # PROC PRINTTO PRINT=NSRSTXT NEW; PROC PRINT DATA=K3TBL3; BY GROUP;
+    report_text = format_report(k3tbl3)
+    with open(NSRSTXT_OUT, "w", encoding="utf-8") as f:
+        f.write(report_text)
+    print(f"Report (NSRSTXT) written to: {NSRSTXT_OUT}")
+
+    # DATA BNMK.K3TBE&REPTMON&NOWK; SET K3TBL3;
+    k3tbl3.write_parquet(K3TBE_OUT_PARQUET)
+    print(f"Output dataset K3TBE written to: {K3TBE_OUT_PARQUET}")
+
+    # BNMK.K3TBLA and BNMK.K3TBLB permanent datasets
+    k3tbla_full.write_parquet(K3TBLA_OUT_PARQUET)
+    print(f"Output dataset K3TBLA written to: {K3TBLA_OUT_PARQUET}")
+
+    k3tblb_full.write_parquet(K3TBLB_OUT_PARQUET)
+    print(f"Output dataset K3TBLB written to: {K3TBLB_OUT_PARQUET}")
+
+
+if __name__ == "__main__":
+    main()
