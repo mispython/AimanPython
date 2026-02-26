@@ -1,0 +1,167 @@
+DATA K1TBX;
+  LENGTH BNMCODE $5.;
+  SET BNMK.K1TBL&REPTMON&NOWK (RENAME=(GWMDT=MATDT));
+  IF GWCCY='JPY' THEN DO;
+     AMOUNT=GWBALA * GWEXR;
+  END;
+  ELSE DO;
+     AMOUNT=GWBALA * GWEXR;
+  END;
+  IF  GWMVT = 'P';
+  IF  GWOCY='XAU'  THEN DELETE;
+  IF  GWCCY='XAU'  THEN DELETE;
+  BNMCODE=' ';
+  IF GWDLP IN ('FXS','FXO','FXF','SF1','SF2','TS1','TS2',
+               'FBP','FF1','FF2');
+
+DATA K1TBX1;
+  SET K1TBX;
+  IF  GWOCY='XAT'  THEN DELETE;
+  IF  GWCCY='XAT'  THEN DELETE;
+  IF GWOCY EQ 'MYR' AND GWMVT EQ 'P' AND GWMVTS EQ 'P' THEN
+  SELECT(GWDLP);
+    WHEN('FXS') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='57100';
+                  WHEN('BB') BNMCODE='57100';
+                  WHEN('BI') BNMCODE='57100';
+                  WHEN('BM') BNMCODE='57100';
+                  WHEN('BA','BE') BNMCODE='57100';
+                  OTHERWISE DO;
+                    IF NOT('BA' <= GWCTP <= 'BZ')
+                       AND GWCNAL EQ 'MY' AND GWSAC NE 'UF' THEN
+                       BNMCODE='57100';
+                    IF GWSAC EQ 'UF' THEN
+                       BNMCODE='57100';
+                  END;
+                END;
+    WHEN('FBP') IF GWCCY NE 'MYR' THEN  BNMCODE='57100';
+    WHEN('FXO','FXF') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='57100';
+                  WHEN('BB') BNMCODE='57100';
+                  WHEN('BI') BNMCODE='57100';
+                  WHEN('BM') BNMCODE='57100';
+                  WHEN('BA','BE') BNMCODE='57100';
+                  OTHERWISE DO;
+                    IF NOT('BA' <= GWCTP <= 'BZ')
+                       AND GWCNAL EQ 'MY' AND GWSAC NE 'UF' THEN
+                       BNMCODE='57100';
+                    IF GWSAC EQ 'UF' THEN
+                       BNMCODE='57100';
+                  END;
+                END;
+    WHEN('SF1','SF2','TS1','TS2','FF1','FF2') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='57100';
+                  WHEN('BB') BNMCODE='57100';
+                  WHEN('BI') BNMCODE='57100';
+                  WHEN('BM') BNMCODE='57100';
+                  WHEN('BA','BE') BNMCODE='57100';
+                  OTHERWISE DO;
+                    IF NOT('BA' <= GWCTP <= 'BZ')
+                       AND GWCNAL EQ 'MY' AND GWSAC NE 'UF' THEN
+                       BNMCODE='57100';
+                    IF GWSAC EQ 'UF' THEN
+                       BNMCODE='57100';
+                  END;
+                END;
+    OTHERWISE;
+  END;
+
+  IF GWOCY EQ 'MYR' AND GWMVT EQ 'P' AND GWMVTS EQ 'S' THEN
+  SELECT(GWDLP);
+    WHEN('FXS') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='57400';
+                  WHEN('BB') BNMCODE='57400';
+                  WHEN('BI') BNMCODE='57400';
+                  WHEN('BM') BNMCODE='57400';
+                  WHEN('CE') BNMCODE='57400';
+                  WHEN('BA','BE') BNMCODE='57400';
+                  OTHERWISE DO;
+                    IF NOT('BA' <= GWCTP <= 'BZ')
+                       AND GWCNAL EQ 'MY' AND GWSAC NE 'UF' THEN
+                       BNMCODE='57400';
+                    IF GWSAC EQ 'UF' THEN
+                       BNMCODE='57400';
+                  END;
+                END;
+    WHEN('FXO','FXF') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='57400';
+                  WHEN('BB') BNMCODE='57400';
+                  WHEN('BI') BNMCODE='57400';
+                  WHEN('BM') BNMCODE='57400';
+                  WHEN('BA','BE') BNMCODE='57400';
+                  OTHERWISE DO;
+                    IF NOT('BA' <= GWCTP <= 'BZ')
+                       AND GWCNAL EQ 'MY' AND GWSAC NE 'UF' THEN
+                       BNMCODE='57400';
+                    IF GWCTP='CE'    THEN BNMCODE='57400';
+                    IF GWSAC EQ 'UF' THEN
+                       BNMCODE='57400';
+                  END;
+                END;
+    WHEN('SF1','SF2','TS1','TS2','FF1','FF2') IF GWCCY NE 'MYR' THEN
+                SELECT(GWCTP);
+                  WHEN('BC') BNMCODE='57400';
+                  WHEN('BB') BNMCODE='57400';
+                  WHEN('BI') BNMCODE='57400';
+                  WHEN('BM') BNMCODE='57400';
+                  WHEN('BA','BE') BNMCODE='57400';
+                  OTHERWISE DO;
+                    IF NOT('BA' <= GWCTP <= 'BZ')
+                       AND GWCNAL EQ 'MY' AND GWSAC NE 'UF' THEN
+                       BNMCODE='57400';
+                    IF GWSAC EQ 'UF' THEN
+                       BNMCODE='57400';
+                  END;
+                END;
+    OTHERWISE;
+  END;
+  IF BNMCODE NE ' ' THEN OUTPUT;
+*;
+DATA K1TBX2;
+  SET K1TBX;
+  AMOUNT=GWBALC;
+  IF GWCCY NE 'MYR' AND GWOCY NE 'MYR'
+     AND GWMVT EQ 'P' AND GWMVTS EQ 'P' AND GWCTP NE 'BW' THEN
+     SELECT(GWDLP);
+       WHEN('FXS')             BNMCODE='57600';
+       WHEN('FXO','FXF')       BNMCODE='57600';
+       WHEN('SF2','FF1','FF2') BNMCODE='57600';
+       WHEN('SF1','TS1','TS2') BNMCODE='57600';
+       OTHERWISE;
+     END;
+  IF BNMCODE NE ' ' THEN OUTPUT;
+*;
+DATA K1TBX;
+  KEEP PART ITEM AMOUNT AMTUSD AMTSGD MATDT AMTHKD;
+  SET K1TBX1 K1TBX2;
+  IF  AMOUNT < 0 THEN AMOUNT=ABS(AMOUNT);
+  AMTHKD=0.00;
+  AMTUSD=0.00; AMTSGD=0.00;
+  IF  GWCCY='USD'  THEN AMTUSD=AMOUNT;
+  IF  GWCCY='SGD'  THEN AMTSGD=AMOUNT;
+  IF  BNMCODE='57100' THEN DO;
+      PART='96'; ITEM='711';
+      OUTPUT;
+      AMTUSD=0.00; AMTSGD=0.00;
+      PART='95'; ITEM='911';
+      OUTPUT;
+  END;
+  IF  BNMCODE='57400' THEN DO;
+      PART='96'; ITEM='911';
+      OUTPUT;
+      AMTUSD=0.00; AMTSGD=0.00;
+      PART='95'; ITEM='711';
+      OUTPUT;
+  END;
+  IF  BNMCODE='57600' THEN DO;
+      PART='96'; ITEM='711'; OUTPUT;
+      AMTUSD=0.00; AMTSGD=0.00;
+      IF  GWOCY='USD'  THEN AMTUSD=AMOUNT;
+      IF  GWOCY='SGD'  THEN AMTSGD=AMOUNT;
+      PART='96'; ITEM='911'; OUTPUT;
+  END;
