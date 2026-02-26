@@ -10,6 +10,7 @@ Amendment history:
 - Formats affected  : SADENOM, SAPROD (Savings)
                       FDDENOM, FDPROD (Fixed Deposits)
                       CADENOM, CAPROD (Current Accounts)
+                      FDORGMT (Fixed Deposit Original Term in Months)
 
 IMPORTANT: Any amendments to product mappings affect the formats listed above.
 """
@@ -584,6 +585,66 @@ class FCYTermFormat:
 
 
 # ============================================================================
+# FORMAT: FDORGMT - Fixed Deposit Original Term in Months
+# Maps a computed remaining-months value (REMMTH) to a 2-character BNM
+# bucket code used in BNMCODE construction across KAPITI reports.
+#
+# Bucket codes and their meaning:
+#   '11' : overnight / 1 day
+#   '12' : > 1 day  to <= 1 month
+#   '13' : > 1 month to <= 2 months
+#   '14' : > 2 months to <= 3 months
+#   '15' : > 3 months to <= 6 months
+#   '16' : > 6 months to <= 9 months
+#   '17' : > 9 months to <= 12 months
+#   '35' : > 12 months to <= 18 months
+#   '36' : > 18 months to <= 24 months
+#   '37' : > 24 months
+#
+# Note: KALWPBBS / KALWPIBS filter for codes IN ('14','15','16','17') for
+#       IFD/ILD/ISD/IZD instruments (K3TBLA) and IN ('12','13','14','35','36','37')
+#       for PBA instruments (K3TBLB), so only the above buckets are relevant.
+# ============================================================================
+
+def fdorgmt_format(remmth: Optional[float]) -> str:
+    """
+    Apply FDORGMT format to a remaining-months value (REMMTH).
+
+    Maps the computed remaining term in months to a 2-character BNM bucket
+    code used in constructing BNMCODE values in the KAPITI reports.
+
+    Args:
+        remmth: Remaining months to maturity (float), as computed by %REMMTH macro.
+
+    Returns:
+        2-character string bucket code, or empty string if remmth is None.
+    """
+    if remmth is None:
+        return ''
+
+    if remmth <= 0:
+        return '11'                  # overnight / same day
+    elif remmth <= 1:
+        return '12'                  # up to 1 month
+    elif remmth <= 2:
+        return '13'                  # up to 2 months
+    elif remmth <= 3:
+        return '14'                  # up to 3 months
+    elif remmth <= 6:
+        return '15'                  # up to 6 months
+    elif remmth <= 9:
+        return '16'                  # up to 9 months
+    elif remmth <= 12:
+        return '17'                  # up to 12 months
+    elif remmth <= 18:
+        return '35'                  # up to 18 months
+    elif remmth <= 24:
+        return '36'                  # up to 24 months
+    else:
+        return '37'                  # over 24 months
+
+
+# ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
 
@@ -646,3 +707,7 @@ if __name__ == '__main__':
     print(f"CAPROD(104) = {CAProductFormat.format(104)}")  # 42110
     print(f"ACE Products: {ProductLists.ACE_PRODUCTS}")
     print(f"FCY Products: {ProductLists.FCY_PRODUCTS}")
+    print(f"FDORGMT(2.5) = {fdorgmt_format(2.5)}")   # 14
+    print(f"FDORGMT(5.0) = {fdorgmt_format(5.0)}")   # 15
+    print(f"FDORGMT(8.0) = {fdorgmt_format(8.0)}")   # 16
+    print(f"FDORGMT(11.0) = {fdorgmt_format(11.0)}") # 17
