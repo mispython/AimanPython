@@ -1700,7 +1700,7 @@ def main():
     unote_df = process_unote(macro)
     unote_sum = summarise_bnm(unote_df)
 
-    # X_EIIMRLFM variant does not include DCI block from EIBMRLFM.
+    # EIIMRLFM variant does not include DCI block from EIBMRLFM.
     print("Processing NID...")
     nid_df, lcr_nid = process_nid(macro)
     nid_sum = summarise_bnm(nid_df)
