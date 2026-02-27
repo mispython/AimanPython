@@ -1,7 +1,7 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
 PROGRAM : EIIMRLFM
-DATE    : 25.05.98
+DATE    : 05.07.13
 REPORT  : FISS - NEW LIQUIDITY FRAMEWORK (PIBB)
 MODIFY  : 13.08.04 (SMR-A520)
 """
@@ -21,6 +21,9 @@ import polars as pl
 from datetime import date, timedelta
 from calendar import monthrange
 from pathlib import Path
+
+# NOTE: This program follows EIBMRLFM structure, but logic is adapted to EIIMRLFM
+# (notably FCY list and exclusion of DCI/VOSTRO blocks that are not present in EIIMRLFM).
 
 # ===========================================================================
 # PATH CONFIGURATION
@@ -43,9 +46,7 @@ LCR_FD_PARQUET     = DATA_DIR / "LCR_FD.parquet"
 LCR_SA_PARQUET     = DATA_DIR / "LCR_SA.parquet"
 LCR_CA_PARQUET     = DATA_DIR / "LCR_CA.parquet"
 LCR_FCYCA_PARQUET  = DATA_DIR / "LCR_FCYCA.parquet"
-LCR_DCI_PARQUET    = DATA_DIR / "LCR_DCI.parquet"
 LCR_NID_PARQUET    = DATA_DIR / "LCR_NID.parquet"
-LCR_VOSTRO_PARQUET = DATA_DIR / "LCR_VOSTRO.parquet"
 LCR_K1TBL_PARQUET  = DATA_DIR / "LCR_K1TBL.parquet"
 LCR_K3TBL_PARQUET  = DATA_DIR / "LCR_K3TBL.parquet"
 
@@ -860,16 +861,6 @@ def process_ca(macro: dict) -> tuple:
             'PRODUCT': product, 'REMMTH': 0.1, 'REM30D': 0.0,
             'INTRATE': intrate, 'BILLERIND': billerind
         })
-
-    # VOSTRO: WHERE PRODUCT IN (104,105,147)
-    con2 = duckdb.connect()
-    vostro = con2.execute(
-        f"SELECT BRANCH, ACCTNO, CURBAL AS AMOUNT, CURCODE, CUSTCD, PRODUCT "
-        f"FROM read_parquet('{ca_parquet}') WHERE PRODUCT IN (104,105,147)"
-    ).pl()
-    con2.close()
-    if len(vostro) > 0:
-        vostro.write_parquet(str(LCR_VOSTRO_PARQUET))
 
     ca_df  = pl.DataFrame(output_ca)  if output_ca  else _empty_bnm_df()
     lcr_df = pl.DataFrame(output_lcr) if output_lcr else pl.DataFrame()
@@ -1709,12 +1700,7 @@ def main():
     unote_df = process_unote(macro)
     unote_sum = summarise_bnm(unote_df)
 
-    print("Processing DCI...")
-    dci_df, lcr_dci = process_dci(macro)
-    dci_sum = summarise_bnm(dci_df)
-    if len(lcr_dci) > 0:
-        lcr_dci.write_parquet(str(LCR_DCI_PARQUET))
-
+    # X_EIIMRLFM variant does not include DCI block from EIBMRLFM.
     print("Processing NID...")
     nid_df, lcr_nid = process_nid(macro)
     nid_sum = summarise_bnm(nid_df)
@@ -1723,10 +1709,10 @@ def main():
 
     # -----------------------------------------------------------------------
     # SUMMARISE AND CONSOLIDATE
-    # DATA NOTE; SET NOTE FD SA CA UNOTE FCYCA DCI NID;
+    # DATA NOTE; SET NOTE FD SA CA UNOTE FCYCA NID;
     # -----------------------------------------------------------------------
     all_parts = [df for df in [note_sum, fd_sum, sa_sum, ca_sum,
-                                unote_sum, fcyca_sum, dci_sum, nid_sum]
+                                unote_sum, fcyca_sum, nid_sum]
                  if len(df) > 0]
     if all_parts:
         note_combined = pl.concat(all_parts, how='diagonal')
