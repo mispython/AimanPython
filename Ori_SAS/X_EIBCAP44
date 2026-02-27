@@ -1,0 +1,37 @@
+DATA REPTDATE;
+   SET LOAN.REPTDATE;
+   SELECT;
+   WHEN(1<= DAY(REPTDATE)<= 8) DO;
+        WK = '1';
+     END;
+     WHEN(9<= DAY(REPTDATE)<= 15) DO;
+        WK = '2';
+     END;
+     WHEN(16<= DAY(REPTDATE)<= 22) DO;
+        WK = '3';
+     END;
+     OTHERWISE DO;
+        WK = '4';
+     END;
+   END;
+
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('NOWK',PUT(WK,$1.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+RUN;
+
+DATA _NULL_;
+   SET NPL.CAP&REPTMON&REPTYEAR
+       NPL.CAP_STAFF&REPTMON&REPTYEAR;
+   FILE CCRIS;
+   IF CAP > 0 ;
+   PUT @001 ACCTNO  10.
+       @012 NOTENO  Z5.
+       @018 BRANCH  Z5.
+       @024 CAP     20.2
+       @045 AANO    $CHAR13.
+       @059 PD      6.2
+       @066 LGD     6.2
+       ;
+RUN;
