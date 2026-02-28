@@ -1,0 +1,114 @@
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER MISSING=0;             00010000
+                                                                        00020000
+%INC PGM(PBBELF);                                                       00030002
+                                                                        00040000
+DATA A;                                                                 00050000
+   INFILE INFIL01;                                                      00060000
+   FILE OUTFIL01;                                                       00070000
+   RETAIN BRCH '   ' CACIND 0 CAC '000';                                00080000
+   LENGTH BRCHNUM 3.;                                                   00090000
+   INPUT @1 LINE1 $CHAR134. @27 BRCHTAG $8. @;                          00100000
+      IF BRCHTAG = 'BRANCH :' THEN DO;                                  00110000
+         INPUT @36 BRANCH $3. ;                                         00120000
+         BRCHNUM = BRANCH;                                              00130000
+         CAC = PUT(BRCHNUM,CACBRCH.);                                   00140000
+         IF CAC ^= '000' THEN CACIND = 1;                               00150000
+         ELSE CACIND = 0;                                               00160000
+         BRNO = 'B'||TRIM(CAC);                                         00170000
+         IF CACIND = 1 THEN DO;                                         00180000
+                IF CAC = '911' THEN FILE OUTFIL01;                      00190001
+                IF CAC = '912' THEN FILE OUTFIL02;                      00200001
+                IF CAC = '916' THEN FILE OUTFIL03;                      00210001
+                IF CAC = '915' THEN FILE OUTFIL04;                      00220001
+                IF CAC = '914' THEN FILE OUTFIL05;                      00230001
+                IF CAC = '913' THEN FILE OUTFIL06;                      00240001
+             IF BRCH NE BRANCH THEN BRCH = BRANCH;                      00250000
+             PUT @1 'E255';                                             00260000
+             PUT @1 'P000REPORT NO :  SINPLRPS REPORTS';                00270003
+             LINK NEWPAGE;                                              00280000
+         END;                                                           00290000
+      END;                                                              00300000
+                                                                        00310000
+   ELSE DO;                                                             00320000
+      IF CAC = '911' THEN FILE OUTFIL01;                                00330001
+      IF CAC = '912' THEN FILE OUTFIL02;                                00340001
+      IF CAC = '916' THEN FILE OUTFIL03;                                00350001
+      IF CAC = '915' THEN FILE OUTFIL04;                                00360001
+      IF CAC = '914' THEN FILE OUTFIL05;                                00370001
+      IF CAC = '913' THEN FILE OUTFIL06;                                00380001
+      IF CACIND = 1 THEN DO ;                                           00390000
+         INPUT;                                                         00400000
+         PUT @1 'P001'  @5 _INFILE_;                                    00410000
+      END;                                                              00420000
+   END;                                                                 00430000
+   RETURN;                                                              00440000
+   NEWPAGE:                                                             00450000
+   PUT @1 'P001' @5 LINE1 $CHAR134.;                                    00460000
+   RETURN;                                                              00470000
+RUN;                                                                    00480000
+DATA _NULL_;                                                            00490000
+   FILE OUTFIL0X;                                                       00500000
+   IF _N_ = 1 THEN DO;                                                  00510000
+      PUT @1 'E255';                                                    00520000
+      PUT @1 'P000PBBEDPPBBEDP' @133 'B911';                            00530001
+      PUT @1 'P000REPORT NO :  SINPLRPS REPORTS';                       00540003
+   END;                                                                 00550000
+   INFILE OUTFIL01 FIRSTOBS=3;                                          00560000
+   INPUT;                                                               00570000
+   PUT _INFILE_;                                                        00580000
+RUN;                                                                    00590000
+DATA _NULL_;                                                            00600000
+   FILE OUTFIL0X;                                                       00610000
+   IF _N_ = 1 THEN DO;                                                  00620000
+      PUT @1 'E255';                                                    00630000
+      PUT @1 'P000PBBEDPPBBEDP' @133 'B912';                            00640001
+      PUT @1 'P000REPORT NO :  SINPLRPS REPORTS';                       00650003
+   END;                                                                 00660000
+   INFILE OUTFIL02 FIRSTOBS=3;                                          00670000
+   INPUT;                                                               00680000
+   PUT _INFILE_;                                                        00690000
+RUN;                                                                    00700000
+DATA _NULL_;                                                            00710000
+   FILE OUTFIL0X;                                                       00720000
+   IF _N_ = 1 THEN DO;                                                  00730000
+      PUT @1 'E255';                                                    00740000
+      PUT @1 'P000PBBEDPPBBEDP' @133 'B916';                            00750001
+      PUT @1 'P000REPORT NO :  SINPLRPS REPORTS';                       00760003
+   END;                                                                 00770000
+   INFILE OUTFIL03 FIRSTOBS=3;                                          00780000
+   INPUT;                                                               00790000
+   PUT _INFILE_;                                                        00800000
+RUN;                                                                    00810000
+DATA _NULL_;                                                            00820000
+   FILE OUTFIL0X;                                                       00830000
+   IF _N_ = 1 THEN DO;                                                  00840000
+      PUT @1 'E255';                                                    00850000
+      PUT @1 'P000PBBEDPPBBEDP' @133 'B915';                            00860001
+      PUT @1 'P000REPORT NO :  SINPLRPS REPORTS';                       00870003
+   END;                                                                 00880000
+   INFILE OUTFIL04 FIRSTOBS=3;                                          00890000
+   INPUT;                                                               00900000
+   PUT _INFILE_;                                                        00910000
+RUN;                                                                    00920000
+DATA _NULL_;                                                            00930000
+   FILE OUTFIL0X;                                                       00940000
+   IF _N_ = 1 THEN DO;                                                  00950000
+      PUT @1 'E255';                                                    00960000
+      PUT @1 'P000PBBEDPPBBEDP' @133 'B914';                            00970001
+      PUT @1 'P000REPORT NO :  SINPLRPS REPORTS';                       00980003
+   END;                                                                 00990000
+   INFILE OUTFIL05 FIRSTOBS=3;                                          01000000
+   INPUT;                                                               01010000
+   PUT _INFILE_;                                                        01020000
+RUN;                                                                    01030000
+DATA _NULL_;                                                            01040000
+   FILE OUTFIL0X;                                                       01050000
+   IF _N_ = 1 THEN DO;                                                  01060000
+      PUT @1 'E255';                                                    01070000
+      PUT @1 'P000PBBEDPPBBEDP' @133 'B913';                            01080001
+      PUT @1 'P000REPORT NO :  SINPLRPS REPORTS';                       01090003
+   END;                                                                 01100000
+   INFILE OUTFIL06 FIRSTOBS=3;                                          01110000
+   INPUT;                                                               01120000
+   PUT _INFILE_;                                                        01130000
+RUN;                                                                    01140000
