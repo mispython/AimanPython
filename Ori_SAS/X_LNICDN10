@@ -1,0 +1,192 @@
+*+---------------------------------------------------------------+      00010001
+ |  PROGRAM  : LNICDN10                                          |      00020002
+ |  FUNCTION : DETAILS FOR BORSTAT F/I/R & (S & NOTENO=98010)    |      00030002
+ |             HP ONLY                                           |      00040001
+ |             (A MONTHLY REPORT)                                |      00050001
+ |  MODIFY (ESMR) : 2006-1048                                    |      00051002
+ +---------------------------------------------------------------+;     00060001
+%INC PGM(PBBLNFMT);                                                     00070002
+%INC PGM(PBBELF);                                                       00080002
+                                                                        00090001
+TITLE;                                                                  00100001
+OPTIONS NONUMBER NODATE NOCENTER;                                       00110001
+                                                                        00120001
+DATA BRHDATA;                                                           00130001
+   INFILE BRHFILE LRECL=80;                                             00140001
+   INPUT @2 BRANCH  3.                                                  00150001
+         @6 BRHCODE $3.;                                                00160001
+RUN;                                                                    00170001
+                                                                        00180001
+DATA LOANTEM2;                                                          00190001
+   FORMAT  TYPE  $23.;                                                  00200001
+   SET BNM.LOANTEMP;                                                    00210001
+   CENSUS9 = SUBSTR(PUT(CENSUS,8.2),7,1);                               00220001
+   IF ARREAR > 4 OR BORSTAT = 'R' OR BORSTAT = 'I'                      00230001
+      OR BORSTAT = 'F' OR CENSUS9 = '9' THEN DO;                        00240002
+      IF (PRODUCT IN &HPD AND BORSTAT = 'F') THEN DO;                   00250001
+         CAT  = 'A';                                                    00260001
+         TYPE = '(DEFICIT)';                                            00270001
+         OUTPUT;                                                        00280001
+      END;                                                              00290001
+      IF PRODUCT IN &HPD AND BORSTAT = 'I' THEN DO;                     00300001
+         CAT  = 'B';                                                    00310001
+         TYPE = '(IRREGULAR)';                                          00320001
+         OUTPUT;                                                        00330001
+      END;                                                              00340001
+      IF PRODUCT IN &HPD AND BORSTAT = 'R' THEN DO;                     00350001
+         CAT  = 'C';                                                    00360001
+         TYPE = '(REPOSSESSED)';                                        00370001
+         OUTPUT;                                                        00380001
+      END;                                                              00390001
+      /*                                                                00391002
+      IF PRODUCT IN &HPD AND BORSTAT = 'T' THEN DO;                     00400001
+         CAT  = 'D';                                                    00410001
+         TYPE = '(TOTAL LOSS INSURANCE CLAMIN)';                        00420001
+         OUTPUT;                                                        00430001
+      END;                                                              00440001
+      */                                                                00441002
+   END;                                                                 00450001
+   IF PRODUCT IN &HPD AND                                               00460001
+      BORSTAT = 'S' AND NOTENO GE 98010 THEN DO;                        00470001
+      CAT  = 'E';                                                       00480001
+      TYPE = 'RESTRUCTURED';                                            00490001
+      OUTPUT;                                                           00500001
+   END;                                                                 00510001
+RUN;                                                                    00520001
+PROC SORT DATA=LOANTEM2; BY BRANCH; RUN;                                00530001
+                                                                        00540001
+DATA LOANTEM2;                                                          00550001
+  MERGE LOANTEM2(IN=PRESENT) BRHDATA;                                   00560001
+  BY BRANCH;                                                            00570001
+  IF PRESENT=1 THEN OUTPUT;                                             00580001
+RUN;                                                                    00590001
+                                                                        00600001
+*-------------------------------------*                                 00610001
+* MERGER WITH HARD CODE DATA          *                                 00620001
+*-------------------------------------*;                                00630001
+PROC SORT DATA=LOAN.LNNOTE OUT=LOAN                                     00640001
+     (KEEP=ACCTNO NOTENO ISSUEDT ORGBAL CURBAL);                        00650001
+     BY ACCTNO NOTENO;                                                  00660001
+RUN;                                                                    00670001
+PROC SORT DATA=LOANTEM2 OUT=LOANTEM2;                                   00680001
+     BY ACCTNO NOTENO;                                                  00690001
+RUN;                                                                    00700001
+DATA LOANTEM2;                                                          00710001
+     MERGE LOANTEM2(IN=A) LOAN;                                         00720001
+     BY ACCTNO NOTENO;                                                  00730001
+     IF A;                                                              00740001
+     ISTLPAID = (ORGBAL - CURBAL);                                      00750001
+     ISSDTE = INPUT(SUBSTR(PUT(ISSUEDT,Z11.),1,8),MMDDYY8.);            00760001
+     CAC = PUT(BRANCH,CACNAME.);                                        00770001
+     BRABBR = PUT(BRANCH,BRCHCD.);                                      00780001
+RUN;                                                                    00790001
+                                                                        00800001
+*-------------------------------------*                                 00810001
+* REPORT FORMAT                       *                                 00820001
+*-------------------------------------*;                                00830001
+%MACRO PRNRPT;                                                          00840001
+   IF _N_=1 THEN DO;                                                    00850001
+      TOTBRBAL=0;                                                       00860001
+      TOTBRPD=0;                                                        00870001
+      TOTBRAC=0;                                                        00880001
+   END;                                                                 00890001
+                                                                        00900001
+   IF FIRST.BRANCH THEN DO;                                             00910001
+      PAGECNT=0;                                                        00920001
+      BRBAL=0;                                                          00930001
+      BRPD=0;                                                           00940001
+      BRAC=0;                                                           00950001
+      LINK NEWPAGE;                                                     00960001
+   END;                                                                 00970001
+                                                                        00980001
+   IF FIRST.CAT THEN DO;                                                00990001
+      PAGECNT=0;                                                        01000001
+      BRBAL=0;                                                          01010001
+      BRPD=0;                                                           01020001
+      BRAC=0;                                                           01030001
+      IF NOT FIRST.BRANCH THEN DO;                                      01040001
+         LINK NEWPAGE;                                                  01050001
+      END;                                                              01060001
+   END;                                                                 01070001
+                                                                        01080001
+   PUT @1   ACCTNO              @12  NOTENO                             01090001
+       @18  NAME $24.           @45  PRODUCT 3.                         01100001
+       @51  ISSDTE DDMMYY8.     @60  BLDATE DDMMYY8.                    01110001
+       @70  DAYDIFF COMMA5.     @80  BALANCE COMMA14.2                  01120001
+       @100 ISTLPAID COMMA14.2;                                         01130001
+                                                                        01140001
+   LINECNT + 1;                                                         01150001
+   BRBAL + BALANCE;                                                     01160001
+   BRPD + ISTLPAID;                                                     01170001
+   BRAC + 1;                                                            01180001
+   TOTBRBAL + BALANCE;                                                  01190001
+   TOTBRPD + ISTLPAID;                                                  01200001
+   TOTBRAC + 1;                                                         01210001
+                                                                        01220001
+   IF LINECNT > 56 THEN DO;                                             01230001
+      LINK NEWPAGE;                                                     01240001
+   END;                                                                 01250001
+                                                                        01260001
+   IF LAST.CAT THEN DO;                                                 01270001
+      PUT @1   '----------------------------------------'               01280001
+          @41  '----------------------------------------'               01290001
+          @81  '----------------------------------------'               01300001
+         /@1   'CATEGORY TOTAL'        @29  'NO OF A/C : '              01310001
+          @38   BRAC   COMMA10.        @80  BRBAL COMMA14.2             01320001
+          @100  BRPD   COMMA14.2                                        01330001
+         /@1   '----------------------------------------'               01340001
+          @41  '----------------------------------------'               01350001
+          @81  '----------------------------------------';              01360001
+      BRBAL = 0;                                                        01370001
+      BRPD = 0;                                                         01380001
+      BRAC = 0;                                                         01390001
+   END;                                                                 01400001
+   IF LAST.BRANCH THEN DO;                                              01410001
+      PUT @1   ' ';                                                     01420001
+      PUT @1   'BRANCH TOTAL'          @29  'NO OF A/C : '              01430001
+          @38   TOTBRAC   COMMA10.     @80  TOTBRBAL COMMA14.2          01440001
+          @100  TOTBRPD   COMMA14.2                                     01450001
+         /@1   '========================================'               01460001
+          @41  '========================================'               01470001
+          @81  '========================================';              01480001
+   END;                                                                 01490001
+   RETURN;                                                              01500001
+                                                                        01510001
+   NEWPAGE:                                                             01520001
+     PUT _PAGE_;                                                        01530001
+     PAGECNT+1;                                                         01540001
+     LINECNT=7;                                                         01550001
+     PUT @1   'PUBLIC   BANK    BERHAD - BRANCH : ' BRANCH 3.           01560002
+         @40  '(' BRABBR $3. ')'                                        01570001
+         @110 'PAGE NO.: ' PAGECNT                                      01580001
+        /@1   'DETAIL OF ACCOUNTS BY BRANCH - '                         01590001
+         @32  TYPE $23. " AS AT " "&RDATE"                              01600001
+        /@1   'PROGRAM-ID : LNICDN10'                                   01610003
+        /@1   ' '                                                       01620001
+        /@13  'NOTE'             @51  '  ISSUE'                         01630001
+         @60  '  BILL'           @70  'DAYS IN'                         01640001
+        /@1   'ACCTNO'           @13  '  NO'                            01650001
+         @18  'NAME'             @43  'PRODUCT'                         01660001
+         @51  '  DATE'           @60  '  DATE'                          01670001
+         @70  'ARREARS'          @87  'BALANCE'                         01680001
+         @99  'INSTALMENT PAID'                                         01690001
+        /@1   '----------------------------------------'                01700001
+         @41  '----------------------------------------'                01710001
+         @81  '----------------------------------------';               01720001
+   RETURN;                                                              01730001
+%MEND;                                                                  01740001
+                                                                        01750001
+*-------------------------------------*                                 01760001
+* OUTPUT FOR RPS                      *                                 01770001
+*-------------------------------------*;                                01780001
+PROC SORT DATA=LOANTEM2 OUT=LOANTEM2;                                   01790001
+  BY BRANCH CAT ACCTNO;                                                 01800001
+RUN;                                                                    01810001
+                                                                        01820001
+DATA _NULL_;                                                            01830001
+  SET LOANTEM2 END=LAST;                                                01840001
+  BY BRANCH CAT;                                                        01850001
+  FILE OUTHP;                                                           01860001
+  %PRNRPT;                                                              01870001
+RUN;                                                                    01880001
+                                                                        01890001
