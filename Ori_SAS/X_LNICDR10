@@ -1,0 +1,248 @@
+*+---------------------------------------------------------------+
+ |  PROGRAM  : LNICDR10                                          |
+ |  DATE     : 01.07.98                                          |
+ |  FUNCTION : DETAILS FOR NPL ACCOUNTS FOR CCD PFB.             |
+ |             (A MONTHLY REPORT)                                |
+ +---------------------------------------------------------------+
+ |  MODIFIED (ESMR) : 2006-1048                                  |
+ +---------------------------------------------------------------+;
+ %INC PGM(PFBLNFMT);
+
+ TITLE;
+ OPTIONS NONUMBER NODATE;
+
+PROC SORT DATA=BNM.LOANTEMP OUT=LOAN;
+  BY BRANCH ARREAR2;
+RUN;
+
+ DATA BRHDATA;
+   INFILE BRHFILE LRECL=80;
+   INPUT @2 BRANCH  3.
+         @6 BRHCODE $3.;
+ RUN;
+
+*+---------------------------------------------------------------+
+ |  THIS PART IS FOR HP DIRECT, IE PRODUCT CODE 700 & 705        |
+ +---------------------------------------------------------------+;
+*+----------------------------------------------------------------+
+ |  THIS PART IS FOR HOUSING LOAN AND FIXED LOAN PRODUCT CODE     |
+ |  (HOUSING/LOAN = 200 TO 299), &                                |
+ |  (FIXED/LOAN = 300 TO 499, 504 TO 550, 555 TO 599, 900 TO 980).|
+ +----------------------------------------------------------------+;
+
+DATA LOAN1;
+  FORMAT  TYPE  $53.;
+  SET LOAN;
+  IF BALANCE > 0 AND BORSTAT NE 'Z' AND
+     (ARREAR2 > 0  OR BORSTAT = 'R' OR BORSTAT = 'I' OR
+     BORSTAT = 'F');
+  IF (PRODUCT = 110 OR PRODUCT = 115)             OR
+     (PRODUCT = 700 OR PRODUCT = 705)             OR
+     (PRODUCT GE 200 AND PRODUCT LE 299)          OR
+     (PRODUCT GE 300 AND PRODUCT LE 499)          OR
+     (PRODUCT GE 504 AND PRODUCT LE 550)          OR
+     (PRODUCT GE 555 AND PRODUCT LE 599)          OR
+     (PRODUCT GE 900 AND PRODUCT LE 980)          OR
+     (PRODUCT=126)                                OR
+     (PRODUCT IN (100,101,102,105,106,120,121,127))   THEN DO;
+        IF BORSTAT = 'F' THEN ARREAR2 = 15;
+           ARREARS=PUT(ARREAR2, ARRCLASS.);
+           BLDATE2 =PUT(BLDATE,MMDDYY8.);
+    /*  IF (PRODUCT = 700 OR PRODUCT = 705) AND
+           ARREAR2 GT 6                     THEN DO;
+           CAT  = 'A';
+           TYPE = 'OUTSTANDING LOANS CLASSIFIED AS NPL(HPD-C) AS AT : ';
+           OUTPUT;
+        END;  */
+    /*  IF (PRODUCT = 110 OR PRODUCT = 115) AND
+           ARREAR2 GT 6                     THEN DO;
+           CAT  = 'B';
+           TYPE = 'OUTSTANDING LOANS CLASSIFIED AS NPL(AITAB) AS AT : ';
+           OUTPUT;
+        END;  */
+        IF (PRODUCT GE 200 AND PRODUCT LE 299) AND
+           ARREAR2 GT 2                     THEN DO;
+           CAT  = 'D';
+           TYPE = 'HOUSING LOAN (CONV) - 2 MTHS AND ABOVE AS AT : ';
+           OUTPUT;
+        END;
+        IF ((PRODUCT GE 300 AND PRODUCT LE 499)   OR
+            (PRODUCT GE 504 AND PRODUCT LE 550)   OR
+            (PRODUCT GE 555 AND PRODUCT LE 599)   OR
+            (PRODUCT GE 900 AND PRODUCT LE 980))   AND
+           ARREAR2 GT 2                     THEN DO;
+           CAT  = 'E';
+           TYPE = 'FIXED LOAN (CONV) - 2 MTHS AND ABOVE AS AT : ';
+           OUTPUT;
+        END;
+    /*  IF PRODUCT = 310  AND ARREAR2 GT 6   THEN DO;
+           CAT  = 'F';
+           TYPE = 'OUTSTANDING LOANS CLASSIFIED AS NPL(USL) AS AT : ';
+           OUTPUT;
+        END;  */
+    /*  IF PRODUCT = 315  AND ARREAR2 GT 6   THEN DO;
+           CAT  = 'G';
+           TYPE =
+             'OUTSTANDING LOANS CLASSIFIED AS NPL(QCL/RSL) AS AT : ';
+           OUTPUT;
+        END;  */
+        IF PRODUCT = 330  AND ARREAR2 GT 6   THEN DO;
+           CAT  = 'H';
+           TYPE =
+             'OUTSTANDING LOANS CLASSIFIED AS NPL(PSIF/PSIL) AS AT : ';
+           OUTPUT;
+        END;
+        IF (PRODUCT = 504 OR PRODUCT = 505 OR PRODUCT = 509)   THEN DO;
+           CAT  = 'I';
+           TYPE = 'NEW PRINCIPAL GUARANTEE SCHEME (NPGS) AS AT : ';
+           OUTPUT;
+        END;
+        IF PRODUCT = 510    THEN DO;
+           CAT  = 'J';
+           TYPE = 'TABUNG USAHAWAN KECIL (TUK) AS AT : ';
+           OUTPUT;
+        END;
+    /*  IF ((PRODUCT GE 200 AND PRODUCT LE 299)   OR
+            (PRODUCT GE 300 AND PRODUCT LE 499)   OR
+            (PRODUCT GE 504 AND PRODUCT LE 550)   OR
+            (PRODUCT GE 555 AND PRODUCT LE 599)   OR
+            (PRODUCT GE 900 AND PRODUCT LE 980))   AND
+           ARREAR2  GT 6                         THEN DO;
+           CAT  = 'K';
+           TYPE =
+           'OUTSTANDING LOANS CLASSIFIED AS NPL(HL&FL) AS AT : ';
+           OUTPUT;
+        END;  */
+        IF PRODUCT IN (100,101,102,112,113,114,116,117,118)
+                                           THEN DO;
+           CAT  = 'L';
+           TYPE = 'OUTSTANDING ABBA HSE LOAN CLASSIFY AS NPL AS AT : ';
+           OUTPUT;
+        END;
+        IF PRODUCT IN (105,106,120,121,126,127)    THEN DO;
+           CAT  = 'M';
+           TYPE = 'OUTSTANDING ABBA UNIT TRUST CLASSIFY AS NPL AS AT : ';
+           OUTPUT;
+        END;
+  END;
+RUN;
+
+PROC SORT DATA=LOAN1; BY BRANCH;
+
+DATA LOAN1;
+  MERGE LOAN1(IN=PRESENT) BRHDATA;
+  BY BRANCH;
+  IF PRESENT=1 THEN OUTPUT LOAN1;
+RUN;
+
+PROC SORT DATA=LOAN1 OUT=LOAN1;
+  BY CAT BRANCH ARREAR2;
+RUN;
+
+DATA _NULL_;
+  SET LOAN1 END=LAST;
+  BY CAT BRANCH ARREAR2;
+  FILE OUTFILE;
+
+  IF _N_=1 THEN DO;
+     TOTAL=0;
+  END;
+
+  IF FIRST.CAT    THEN DO;
+     PAGECNT=0;
+     BRHARR=0;
+     BRHAMT=0;
+     LINK NEWPAGE;
+  END;
+
+  IF FIRST.BRANCH THEN DO;
+     PAGECNT=0;
+     BRHAMT=0;
+     IF NOT FIRST.CAT THEN DO;
+        LINK NEWPAGE;
+     END;
+  END;
+
+  IF FIRST.ARREAR2 THEN DO;
+     BRHARR=0;
+  END;
+
+  PUT  @1   BRHCODE
+       @5   ACCTNO           @16  NAME
+       @41  NOTENO           @49  PRODUCT
+       @58  BORSTAT          @68  BLDATE2
+       @78  DAYDIFF          @84  ARREARS
+       @100 BALANCE COMMA17.2;
+  LINECNT + 1;
+  BRHARR + BALANCE;
+  BRHAMT + BALANCE;
+  TOTAL + BALANCE;
+
+  IF LINECNT > 56 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.ARREAR2 THEN DO;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @5   'SUBTOTAL'         @100 BRHARR  COMMA17.2;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+     LINECNT + 4;
+  END;
+
+  IF LINECNT > 56 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @5   'BRANCH TOTAL'      @100 BRHAMT COMMA17.2;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+  END;
+
+  IF LAST.CAT   THEN DO;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @5   'GRAND TOTAL'       @100 TOTAL COMMA17.2;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+     TOTAL = 0;
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PUT _PAGE_;
+    PAGECNT+1;
+    LINECNT=5;
+    PUT @1   'PROGRAM-ID : LNICDR10 - BRANCH : ' BRANCH  3.
+        @43  'P U B L I C   F I N A N C E   B E R H A D'
+        @118 'PAGE NO.: ' PAGECNT;
+    PUT @41  TYPE   $53.
+        @94  "&RDATE";
+    PUT @1   ' ';
+    PUT @1   'BRH'
+        @5   'ACCTNO'           @16 'NAME'
+        @41  'NOTENO'           @49 'PRODUCT'
+        @58  'BORSTATS'         @68 'BILL DATE'
+        @78  'DAYS'             @84 'ARREARS'
+        @110 'BALANCE';
+    PUT @1   '----------------------------------------'
+        @41  '----------------------------------------'
+        @81  '----------------------------------------'
+        @121 '----------';
+  RETURN;
+RUN;
+
+PROC DATASETS LIB=WORK NOLIST; DELETE LOAN1; RUN;
