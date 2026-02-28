@@ -1,0 +1,226 @@
+*+---------------------------------------------------------------+
+ |  PROGRAM  : LNICDW10                                          |
+ |  FUNCTION : DETAILS FOR WRITTEN-OFF A/CS FOR 983 & 993        |
+ |             HP ONLY                                           |
+ |             (A MONTHLY REPORT)                                |
+ +---------------------------------------------------------------+
+%INC PGM(PBBLNFMT);
+%INC PGM(PBBELF);
+
+TITLE;
+OPTIONS NONUMBER NODATE NOCENTER;
+
+DATA BRHDATA;
+   INFILE BRHFILE LRECL=80;
+   INPUT @2 BRANCH  3.
+         @6 BRHCODE $3.;
+RUN;
+
+*+---------------------------------------------------------------+
+ |  THIS PART IS FOR HP PRODUCT CODE 983 & 993                   |
+ +---------------------------------------------------------------+;
+DATA LOAN1;
+  FORMAT  CATGY  $10.;
+  SET BNM.LOANTEMP;
+  IF PRODUCT IN (983,993,678,679,698,699);
+  IF BORSTAT NE 'E';
+  SELECT(BORSTAT);
+     WHEN ('F') CATGY = 'DEFICIT';
+     WHEN ('I') CATGY = 'IRREGULAR';
+     WHEN ('R') CATGY = 'REPO';
+     WHEN ('T') CATGY = 'TOT LOSS';
+     WHEN ('E') CATGY = 'B.STATUS=E';
+     OTHERWISE CATGY = 'NON REPO';
+  END;
+  * BALANCE = SUM(BALANCE, FEEDUE);
+RUN;
+PROC SORT DATA=LOAN1; BY BRANCH; RUN;
+
+DATA LOAN1;
+  MERGE LOAN1(IN=PRESENT) BRHDATA;
+  BY BRANCH;
+  IF PRESENT=1 THEN OUTPUT LOAN1;
+RUN;
+PROC SORT DATA=LOAN1;BY ACCTNO NOTENO; RUN;
+*;
+DATA LNNOTE(KEEP=ACCTNO NOTENO MODELDES);
+  SET LOAN.LNNOTE;
+RUN;
+PROC SORT DATA=LNNOTE; BY ACCTNO NOTENO; RUN;
+*;
+DATA LOAN1;
+  MERGE LOAN1(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO;
+  IF A;
+RUN;
+
+*-------------------------------------*
+* MERGER WITH HARD CODE DATA          *
+*-------------------------------------*;
+PROC SORT DATA=LOAN1; BY ACCTNO; RUN;
+PROC SORT DATA=WOFF.HPWOFF OUT=HPWOFF; BY ACCTNO; RUN;
+
+DATA LOAN1;
+  MERGE LOAN1(IN=A) HPWOFF;
+  BY ACCTNO;
+  TOTWOFF = SUM(SPALLOW, IIS);
+  IF CAPBAL > 0 THEN TOTWOFF = CAPBAL; /* WEF Q3-2014 REPLACE IIS/SP */
+  CAC = PUT(BRANCH,CACNAME.);
+  BRABBR = PUT(BRANCH,BRCHCD.);
+  IF A;
+RUN;
+
+*-------------------------------------*
+* REPORT FORMAT                       *
+*-------------------------------------*;
+%MACRO PRNRPT;
+  IF _N_=1 THEN DO;
+     TOTBRBAL=0;
+     TOTBRSA=0;
+     TOTBRIIS=0;
+     TOTBRWOF=0;
+     TOTBRAC=0;
+  END;
+
+  IF FIRST.BRANCH THEN DO;
+     PAGECNT=0;
+     BRBAL=0;
+     BRSA=0;
+     BRIIS=0;
+     BRWOFF=0;
+     BRAC=0;
+     LINK NEWPAGE;
+  END;
+
+  IF FIRST.CATGY THEN DO;
+     PAGECNT=0;
+     BRBAL=0;
+     BRSA=0;
+     BRIIS=0;
+     BRWOFF=0;
+     BRAC=0;
+     IF NOT FIRST.BRANCH THEN DO;
+        LINK NEWPAGE;
+     END;
+  END;
+
+  PUT  @1   ACCTNO              @12  NOTENO
+       @18  NAME $24.           @43  ISSDTE DDMMYY8.
+       @52  DAYDIFF  5.         @58  BALANCE 12.2
+       @71  WOFFDT              @80  SPALLOW 10.2
+       @91  IIS 10.2            @102 TOTWOFF 12.2
+       @115  LASTRAN   DDMMYY8. @124 LSTTRNCD $3.
+       @128  MODELDES  $6.;
+
+  LINECNT + 1;
+  BRBAL + BALANCE;
+  BRSA + SPALLOW;
+  BRIIS + IIS;
+  BRWOFF + TOTWOFF;
+  BRAC + 1;
+  TOTBRBAL + BALANCE;
+  TOTBRSA + SPALLOW;
+  TOTBRIIS + IIS;
+  TOTBRWOF + TOTWOFF;
+  TOTBRAC + 1;
+
+  IF LINECNT > 56 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  IF LAST.CATGY THEN DO;
+     PUT  @41  91*'-';
+     PUT  @1   'CATEGORY TOTAL'     @29   'NO OF A/C : '
+          @43   BRAC   8.           @59   BRBAL 12.2
+          @82   BRSA   10.2         @93   BRIIS 10.2
+          @107  BRWOFF 12.2;
+     PUT  @41  91*'-';
+     PUT;
+  END;
+
+  IF LAST.BRANCH  THEN DO;
+     PUT  @1   'BRANCH TOTAL'          @29  'NO OF A/C : '
+          @41   TOTBRAC   10.          @59  TOTBRBAL 12.2
+          @82   TOTBRSA   10.2         @93  TOTBRIIS 10.2
+          @107  TOTBRWOF  12.2;
+     PUT  @41  91*'-';
+     PUT;
+     TOTBRBAL = 0;
+     TOTBRSA = 0;
+     TOTBRIIS = 0;
+     TOTBRWOF = 0;
+     TOTBRAC = 0;
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PUT _PAGE_;
+    PAGECNT+1;
+    LINECNT=6;
+    PUT @1   'PROGRAM-ID : LNICDW10 - BRANCH : ' BRANCH  3.
+        @38  '(' BRABBR $3. ')'
+        @45  'P U B L I C   B A N K   B E R H A D'
+        @110 'PAGE NO.: ' PAGECNT;
+    PUT @040 'WRITTEN OFF A/C FOR HP(983,993,678,679,698,699) '
+              CATGY   $10. " AS AT " "&RDATE";
+    PUT @1   ' ';
+    PUT @12  'NOTE                           ISSUE'
+        @71  'WRITTEN   SPECIFIC  INT.IN     TOT.WOFF'
+        @115 'LASTTRAN TRN  AKPK';
+    PUT @01  'ACCTNO     NUM   NAME                     DATE'
+        @52  'DAYS    BALANCE    -OFF DT   ALLOW(A)'
+        @091 'SUSP.(B)   (A+B) / CAP  DATE     CDE   TAG';
+    PUT @1   134*'-';
+  RETURN;
+%MEND;
+
+*-------------------------------------*
+* OUTPUT FOR RPS                      *
+*-------------------------------------*;
+PROC SORT DATA=LOAN1 OUT=LOAN2;
+  BY BRANCH CATGY DESCENDING BALANCE;
+RUN;
+
+DATA _NULL_;
+  SET LOAN2 END=LAST;
+  BY BRANCH CATGY;
+  FILE OUTWOFF;
+  %PRNRPT;
+RUN;
+
+*-------------------------------------*
+* DETAIL REPORT FOR NON CAC BRANCH
+*-------------------------------------*;
+PROC SORT DATA=LOAN1 OUT=LOAN2;
+  WHERE SUBSTR(CAC,1,3) = 'NON';
+  BY BRANCH CATGY DESCENDING BALANCE;
+
+DATA _NULL_;
+  SET LOAN2 END=LAST;
+  BY BRANCH CATGY;
+  FILE PRINT;
+  %PRNRPT;
+RUN;
+
+*-------------------------------------*
+* SUMMARY REPORT
+*-------------------------------------*;
+PROC SORT DATA=LOAN1 OUT=LOAN2;
+   BY CAC;
+
+PROC TABULATE DATA=LOAN2 MISSING;
+   BY CAC;
+   CLASS BRABBR CATGY;
+   VAR BALANCE;
+   TABLE BRABBR=' ' ALL='TOTAL',
+         (CATGY=' ' ALL='TOTAL')*
+         (BALANCE=' ')*
+         (N='NO.OF A/C'*F=COMMA6. SUM='AMOUNT(RM)'*F=COMMA15.2)
+         / BOX='BRANCH' RTS=7;
+   TITLE1 'REPORT NO : LNICDW10';
+   TITLE2 'PUBLIC BANK BERHAD';
+   TITLE3 'SUMMARY ON WRITTEN OFF A/C FOR HP(983,993,678,679,698,699)'
+          ' AS AT' &RDATE ;
+   TITLE4;
+RUN;
+
+PROC DATASETS LIB=WORK NOLIST; DELETE LOAN1 LOAN2; RUN;
