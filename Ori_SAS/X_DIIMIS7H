@@ -1,0 +1,258 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : DIIMIS7H                                          |
+ |  DATE    : 15.08.2014                                        |
+ |  SMR     : 2014-1832                                         |
+ |  REPORT  : ISLAMIC TERM DEPOSIT ACCOUNT (ODD DAYS TENURE)    |
+ +--------------------------------------------------------------+;
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE MISSING=0 LINESIZE=132;
+
+DATA REPTDATE (KEEP=REPTDATE);
+  SET DEPOSIT.REPTDATE;
+  REPTFQ='Y';
+  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('REPTFQ',PUT(REPTFQ,$1.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+*+--------------------------------------------------------------+
+ |  TDBAL : GET TO DATE BALANCE (OLD)                           |
+ +--------------------------------------------------------------+;
+%MACRO TDBAL;
+*;
+PROC SORT DATA=DYIBUA
+           OUT=DYIBUAO (KEEP=BRCH MTH FDI FDINO FDINO2);
+   BY BRANCH;
+RUN;
+*;
+PROC TABULATE DATA=DYIBUAO NOSEPS;
+   FORMAT MTH FDFMT.;
+   CLASS BRCH MTH;
+   VAR FDI FDINO FDINO2;
+   TABLE BRCH=' ' ALL='TOTAL', SUM='TODATE BALANCE'*
+         (FDINO='NO OF A/C'*F=COMMA9.
+          FDINO2='NO OF RECEIPT'*F=COMMA9.
+          FDI=' '*F=COMMA14.2*(MTH=' ' ALL='TOTAL'))
+         / BOX='BRANCH NO/CODE' RTS=10;
+RUN;
+*;
+%MEND TDBAL;
+*;
+*+--------------------------------------------------------------+
+ |  AVG : GET DAILY AVERAGE BALANCE (OLD)                       |
+ +--------------------------------------------------------------+;
+*;
+%MACRO AVG;
+   %IF "&N" NE "0" %THEN %DO;
+      PROC SUMMARY DATA=DYIBUA1 NWAY;
+         CLASS BRCH MTH;
+         VAR FDI FDINO FDINO2;
+         OUTPUT OUT=DYIBUA1O SUM=;
+      RUN;
+*;
+      DATA DYIBUA1O;
+         KEEP BRCH MTH FDI FDINO FDINO2;
+         ARRAY VBL FDI FDINO FDINO2;
+         RETAIN DAYS;
+         SET DYIBUA1O;
+         IF _N_ = 1 THEN DAYS = DAY(&EDATE);
+         DO OVER VBL;
+            IF VBL NE . THEN VBL = VBL / DAYS;
+         END;
+      RUN;
+*;
+      PROC TABULATE DATA=DYIBUA1O NOSEPS;
+         FORMAT MTH FDFMT.;
+         CLASS BRCH MTH;
+         VAR FDI FDINO FDINO2;
+         TABLE BRCH=' ' ALL='TOTAL', SUM='DAILY AVERAGE'*
+               (FDINO='NO OF A/C'*F=COMMA9.
+                FDINO2='NO OF RECEIPT'*F=COMMA9.
+                FDI=' '*F=COMMA14.2*(MTH=' ' ALL='TOTAL'))
+               / BOX='BRANCH NO/CODE' RTS=10;
+      RUN;
+   %END;
+%MEND AVG;
+*;
+*+--------------------------------------------------------------+
+ |  TDBAL : GET TO DATE BALANCE (NEW)                           |
+ +--------------------------------------------------------------+;
+%MACRO TDBAL1;
+*;
+PROC SORT DATA=DYIBUA
+           OUT=DYIBUAN (KEEP=BRCH MTH FDI FDINO FDINO2 CUSTCD);
+   BY BRANCH;
+RUN;
+*;
+PROC TABULATE DATA=DYIBUAN NOSEPS;
+   FORMAT MTH FDFMT. CUSTCD CDFMT.;
+   CLASS BRCH MTH CUSTCD;
+   VAR FDI FDINO FDINO2;
+   TABLE CUSTCD=' ',BRCH=' ' ALL='TOTAL', SUM='TODATE BALANCE'*
+         (FDINO='NO OF A/C'*F=COMMA9.
+          FDINO2='NO OF RECEIPT'*F=COMMA9.
+          FDI=' '*F=COMMA14.2*(MTH=' ' ALL='TOTAL'))
+         / BOX='BRANCH NO/CODE' RTS=10;
+RUN;
+*;
+%MEND TDBAL1;
+*;
+*+--------------------------------------------------------------+
+ |  AVG : GET DAILY AVERAGE BALANCE                             |
+ +--------------------------------------------------------------+;
+*;
+%MACRO AVG1;
+   %IF "&N" NE "0" %THEN %DO;
+      PROC SUMMARY DATA=DYIBUA1 NWAY;
+         CLASS BRCH MTH CUSTCD;
+         VAR FDI FDINO FDINO2;
+         OUTPUT OUT=DYIBUA1N SUM=;
+      RUN;
+*;
+      DATA DYIBUA1N;
+         KEEP BRCH MTH FDI FDINO FDINO2 CUSTCD;
+         ARRAY VBL FDI FDINO FDINO2;
+         RETAIN DAYS;
+         SET DYIBUA1N;
+         IF _N_ = 1 THEN DAYS = DAY(&EDATE);
+         DO OVER VBL;
+            IF VBL NE . THEN VBL = VBL / DAYS;
+         END;
+      RUN;
+*;
+      PROC TABULATE DATA=DYIBUA1N NOSEPS;
+         FORMAT MTH FDFMT. CUSTCD CDFMT.;
+         CLASS BRCH MTH CUSTCD;
+         VAR FDI FDINO FDINO2;
+         TABLE CUSTCD=' ',BRCH=' ' ALL='TOTAL', SUM='DAILY AVERAGE'*
+               (FDINO='NO OF A/C'*F=COMMA9.
+                FDINO2='NO OF RECEIPT'*F=COMMA9.
+                FDI=' '*F=COMMA14.2*(MTH=' ' ALL='TOTAL'))
+               / BOX='BRANCH NO/CODE' RTS=10;
+      RUN;
+   %END;
+%MEND AVG1;
+*;
+*+--------------------------------------------------------------+
+ |  DIBMIS02 : MAIN PROGRAM                                     |
+ +--------------------------------------------------------------+;
+%MACRO DIBMIS02;
+*;
+%INC PGM(PBMISFMT);
+*;
+PROC FORMAT;
+   VALUE FDFMT
+      01    = '30 DAYS'
+      02    = '31-60 DAYS'
+      03    = '61-90 DAYS'
+      04    = '91-120 DAYS'
+      05    = '121-150 DAYS'
+      06    = '151-180 DAYS'
+      07    = '181-210 DAYS'
+      08    = '211-240 DAYS'
+      09    = '241-270 DAYS'
+      10    = '271-300 DAYS'
+      11    = '301-330 DAYS'
+      12    = '331-366 DAYS'
+      OTHER = ' ';
+
+   VALUE CDFMT
+  77,78,95,96 = 'RETAIL'
+        OTHER = 'CORPORATE';
+RUN;
+*;
+*+--------------------------------------------------------------+
+ |  DETERMINE REPORTING PERIOD                                  |
+ +--------------------------------------------------------------+;
+*;
+DATA _NULL_;
+ RPDATE=INPUT("&RDATE", DDMMYY8.);
+    STRTDTE = MDY(MONTH(RPDATE),1,YEAR(RPDATE));
+ CALL SYMPUT('SDATE',PUT(STRTDTE,8.));
+ CALL SYMPUT('EDATE',PUT(RPDATE,8.));
+ CALL SYMPUT('RPDATE',PUT(RPDATE,8.));
+RUN;
+*;
+DATA CX;
+  SDATE = &SDATE;
+  EDATE = &EDATE;
+  RPDATE = &RPDATE;
+*+--------------------------------------------------------------+
+ |  SEPARATE DATA INTO DAILY AND MTHLY AVERAGE                  |
+ +--------------------------------------------------------------+;
+*;
+DATA DYIBUA
+     DYIBUA1;
+   SET MIS.DYIBUH&REPTMON;
+   BRCHCD = PUT(BRANCH,BRCHCD.);
+   BRCH   = PUT(BRANCH,Z3.)||'/'||BRCHCD;
+   SELECT (INTPLAN);
+      WHEN(272) MTH=01;
+      WHEN(273) MTH=02;
+      WHEN(274) MTH=03;
+      WHEN(275) MTH=04;
+      WHEN(276) MTH=05;
+      WHEN(277) MTH=06;
+      WHEN(278) MTH=07;
+      WHEN(279) MTH=08;
+      WHEN(280) MTH=09;
+      WHEN(281) MTH=10;
+      WHEN(282) MTH=11;
+      WHEN(283) MTH=12;
+      OTHERWISE MTH=0;
+   END;
+
+   IF REPTDATE = &EDATE THEN OUTPUT DYIBUA;
+   IF &SDATE <= REPTDATE <= &EDATE THEN OUTPUT DYIBUA1;
+
+RUN;
+*;
+TITLE1 'REPORT ID : DIIMIS7H (OLD)';
+TITLE2 'PUBLIC ISLAMIC BANK BERHAD - PIBB';
+TITLE3 'ISLAMIC TERM DEPOSIT ACCOUNT(ODD TENURE)';
+TITLE4 '(01-JULY-14 ONWARDS) AS AT ' &RDATE;
+*;
+%TDBAL;
+*;
+*+--------------------------------------------------------------+
+ |  CHK IF AVG DAILY BALANCE DATA AVAILABLE  (OLD)              |
+ +--------------------------------------------------------------+;
+*;
+DATA _NULL_;
+   SET DYIBUA1 (OBS=1) NOBS=N;
+   CALL SYMPUT('N',PUT(N,8.));
+RUN;
+*;
+%AVG
+*;
+TITLE1 'REPORT ID : DIIMIS7H (NEW)';
+TITLE2 'PUBLIC ISLAMIC BANK BERHAD - PIBB';
+TITLE3 'ISLAMIC TERM DEPOSIT ACCOUNT(ODD TENURE)';
+TITLE4 '(01-JULY-2014 ONWARDS) AS AT ' &RDATE;
+*;
+%TDBAL1;
+*;
+*+--------------------------------------------------------------+
+ |  CHK IF AVG DAILY BALANCE DATA AVAILABLE  (NEW)              |
+ +--------------------------------------------------------------+;
+*;
+DATA _NULL_;
+   SET DYIBUA1 (OBS=1) NOBS=N;
+   CALL SYMPUT('N',PUT(N,8.));
+RUN;
+*;
+%AVG1
+*;
+%MEND DIBMIS02;
+*;
+*+--------------------------------------------------------------+
+ |  CHKRPTDT : CHECK RPT DATE (ONLY EXE. ON 22ND & MTHEND)      |
+ +--------------------------------------------------------------+;
+*;
+%MACRO CHKRPTDT;
+   %IF "&REPTFQ" EQ "Y" %THEN %DO;
+      %DIBMIS02;
+   %END;
+%MEND CHKRPTDT;
+*;
+%CHKRPTDT;
