@@ -1,0 +1,612 @@
+OPTIONS YEARCUTOFF=1990 NOCENTER NODATE NONUMBER;
+TITLE;
+
+DATA FD;
+  INFILE DEPOSIT LRECL=1693;
+  INPUT @3   BANKNO   PD2.
+        @24  REPTNO   PD3.
+        @27  FMTCODE  PD2. @;
+  IF BANKNO = 33 AND REPTNO = 4001 AND FMTCODE = 1 THEN
+  DO;
+     INPUT  @106 BRANCH   PD4.
+            @110 ACCTNO   PD6.
+            @116 STATEC   $6.
+            @124 CUSTCD   PD3.
+            @134 NAME     $15.
+            @149 CDNO     PD6.
+            @155 OPENIND  $1.
+            @156 CURBAL   PD6.2
+            @174 ORGDATE  PD5.
+            @179 MATDATE  PD5.
+            @189 RATE     PD3.3
+            @203 ACCTTYPE PD2.
+            @205 TERM     PD2.
+            @208 INTPLAN  PD2.
+            @211 RENEWAL  $1.
+            @218 INTPAY   PD6.2
+            @230 INTDATE  PD5.
+            @240 LASTACTV PD5.
+            @392 LMATDATE PD6.;
+     IF OPENIND IN ('D','O')       AND
+        ((340 <= INTPLAN <= 359)   OR
+         (448 <= INTPLAN <= 459)   OR
+         (461 <= INTPLAN <= 469)   OR
+         (580 <= INTPLAN <= 599))  THEN OUTPUT;
+  END;
+*;
+DATA REPTDATE;
+   INFILE DEPOSIT  LRECL=1692 OBS=1;
+   INPUT @106 TBDATE PD6.;
+   REPDATE=INPUT(SUBSTR(PUT(TBDATE, Z11.), 1, 8), MMDDYY8.);
+   CALL SYMPUT('RDATE',PUT(REPDATE,DDMMYY6.));
+RUN;
+*;
+DATA BRHDATA;
+   INFILE BRHFILE LRECL=80;
+   INPUT @2 BRANCH  3.
+         @6 BRHCODE $3.;
+RUN;
+*;
+PROC SORT DATA=FD;
+   BY BRANCH;
+RUN;
+*;
+DATA TBMERG1;
+   MERGE FD(IN=PRESENT) BRHDATA;
+   BY BRANCH;
+   IF PRESENT=1;
+RUN;
+*;
+PROC SORT DATA=TBMERG1;
+   BY ACCTNO;
+RUN;
+*;
+DATA TBMERG1;
+   SET TBMERG1 END=EOF;
+   BY ACCTNO;
+   SELECT (INTPLAN);
+      WHEN(340,448) MTH=01;
+      WHEN(352,449) MTH=02;
+      WHEN(341,450) MTH=03;
+      WHEN(353,451) MTH=04;
+      WHEN(354,452) MTH=05;
+      WHEN(342,453) MTH=06;
+      WHEN(355,454) MTH=07;
+      WHEN(356,455) MTH=08;
+      WHEN(343,456) MTH=09;
+      WHEN(357,457) MTH=10;
+      WHEN(358,458) MTH=11;
+      WHEN(344,459) MTH=12;
+      WHEN(588,461) MTH=13;
+      WHEN(589,462) MTH=14;
+      WHEN(345,463) MTH=15;
+      WHEN(590)     MTH=16;
+      WHEN(591)     MTH=17;
+      WHEN(346,464) MTH=18;
+      WHEN(592)     MTH=19;
+      WHEN(593)     MTH=20;
+      WHEN(347,465) MTH=21;
+      WHEN(594)     MTH=22;
+      WHEN(595)     MTH=23;
+      WHEN(348,466) MTH=24;
+      WHEN(596)     MTH=25;
+      WHEN(597)     MTH=26;
+      WHEN(359)     MTH=27;
+      WHEN(598)     MTH=28;
+      WHEN(599)     MTH=29;
+      WHEN(580)     MTH=30;
+      WHEN(581)     MTH=33;
+      WHEN(349,467) MTH=36;
+      WHEN(582)     MTH=39;
+      WHEN(583)     MTH=42;
+      WHEN(584)     MTH=45;
+      WHEN(350,468) MTH=48;
+      WHEN(585)     MTH=51;
+      WHEN(586)     MTH=54;
+      WHEN(587)     MTH=57;
+      WHEN(351)     MTH=60;
+      OTHERWISE MTH=0;
+  END;
+  IF FIRST.ACCTNO THEN DO;
+     IF CUSTCD = 77 THEN BACCTNO+1;
+     ELSE  NBACCTNO+1;
+  END;
+  IF EOF THEN DO;
+     CALL SYMPUT('BACCTNO', BACCTNO);
+     CALL SYMPUT('NBACCTNO', NBACCTNO);
+  END;
+RUN;
+*;
+PROC SORT DATA=TBMERG1;
+  BY MTH BRANCH ACCTNO;
+RUN;
+*;
+DATA RPT(KEEP=BACCTOT BRCPTOT BBRHAMT NACCTOT NRCPTOT NBRHAMT
+              TACCTOT TRCPTOT TBRHAMT BRANCH BRHCODE);
+  SET TBMERG1 END=EOF;
+  BY MTH BRANCH ACCTNO;
+  FILE PRINT HEADER=NEWPAGE;
+
+  IF FIRST.MTH THEN DO;
+     PUT _PAGE_;
+     LTACCTOT=0;
+     LTRCPTOT=0;
+     LTBRHAMT=0;
+     LBACCTOT=0;
+     LBRCPTOT=0;
+     LBBRHAMT=0;
+     LNACCTOT=0;
+     LNRCPTOT=0;
+     LNBRHAMT=0;
+  END;
+
+  IF FIRST.BRANCH THEN DO;
+     BACCTOT=0;
+     BRCPTOT=0;
+     BBRHAMT=0;
+     NACCTOT=0;
+     NRCPTOT=0;
+     NBRHAMT=0;
+     TACCTOT=0;
+     TRCPTOT=0;
+     TBRHAMT=0;
+  END;
+
+  IF FIRST.ACCTNO THEN DO;
+     IF CUSTCD = 77 THEN
+        BACCTOT+1;
+     ELSE
+        NACCTOT+1;
+  END;
+
+  IF CUSTCD = 77 THEN DO;
+     BRCPTOT+1;
+     BBRHAMT+CURBAL;
+  END;
+  ELSE DO;
+     NRCPTOT+1;
+     NBRHAMT+CURBAL;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     TACCTOT=BACCTOT+NACCTOT;
+     TRCPTOT=BRCPTOT+NRCPTOT;
+     TBRHAMT=BBRHAMT+NBRHAMT;
+     LTACCTOT+TACCTOT;
+     LTRCPTOT+TRCPTOT;
+     LTBRHAMT+TBRHAMT;
+     LBACCTOT+BACCTOT;
+     LBRCPTOT+BRCPTOT;
+     LBBRHAMT+BBRHAMT;
+     LNACCTOT+NACCTOT;
+     LNRCPTOT+NRCPTOT;
+     LNBRHAMT+NBRHAMT;
+     PUT @2   BRANCH Z3.
+         @11  BRHCODE
+         @17  BACCTOT COMMA9.
+         @28  BRCPTOT COMMA9.
+         @39  BBRHAMT COMMA15.2
+         @56  NACCTOT COMMA9.
+         @67  NRCPTOT COMMA9.
+         @78  NBRHAMT COMMA15.2
+         @95  TACCTOT COMMA9.
+         @106 TRCPTOT COMMA9.
+         @117 TBRHAMT COMMA15.2;
+     OUTPUT;
+  END;
+
+  IF LAST.MTH THEN DO;
+     PUT //@17  '=========  =========  ==============='
+         @56  '=========  =========  ==============='
+         @95  '=========  =========  ==============='
+        /@05 'T O T A L'
+         @17  LBACCTOT COMMA9.
+         @28  LBRCPTOT COMMA9.
+         @39  LBBRHAMT COMMA15.2
+         @56  LNACCTOT COMMA9.
+         @67  LNRCPTOT COMMA9.
+         @78  LNBRHAMT COMMA15.2
+         @95  LTACCTOT COMMA9.
+         @106 LTRCPTOT COMMA9.
+         @117 LTBRHAMT COMMA15.2
+        /@17  '=========  =========  ==============='
+         @56  '=========  =========  ==============='
+         @95  '=========  =========  ===============';
+  END;
+RETURN;
+
+NEWPAGE :
+  PAGECNT+1;
+  REPDT=INPUT("&RDATE",DDMMYY6.);
+  PUT @1   'REPORT NO.  : EIBMFDIS - 1'
+      @50  'P U B L I C   B A N K   B E R H A D'
+      @110 'REPORT DATE : ' REPDT DDMMYY8.
+     /@48  'AL-MUDHARABAH GENERAL INVESTMENT (MGIA)'
+      @110 'PAGE NO.   : ' PAGECNT
+     /@1  'FD TENURE: ' MTH Z2. @15 'MONTHS'
+      @40  'MONTHLY MUDHARABAH GENERAL INVESTMENT POSITION REPORT'
+     /@1  '                <<<<<     B U M I P U T R A     >>>>>'
+      @56 '<<<<< N O N   B U M I P U T R A >>>>>'
+      @95 '<<<<<         T O T A L         >>>>>'
+     /@1  'BRANCH  BRANCH  NO. OF     NO. OF     CLOSING'
+      @56 'NO. OF     NO. OF     CLOSING'
+      @95 'NO. OF     NO. OF     CLOSING'
+     /@1  'NUMBER  CODE    ACCOUNTS   RECEIPTS   BALANCE'
+      @56 'ACCOUNTS   RECEIPTS   BALANCE'
+      @95 'ACCOUNTS   RECEIPTS   BALANCE'
+     /@1  '------  ------  ---------  ---------  ---------------'
+      @56 '---------  ---------  ---------------'
+      @95 '---------  ---------  ---------------';
+RETURN;
+RUN;
+*;
+PROC SORT DATA=RPT;
+  BY BRANCH;
+RUN;
+
+DATA _NULL_;
+  SET RPT END=EOF;
+  BY BRANCH;
+  FILE PRINT HEADER=NEWPAGE;
+
+  IF FIRST.BRANCH THEN DO;
+     FTACCTOT=0;
+     FTRCPTOT=0;
+     FTBRHAMT=0;
+     FBACCTOT=0;
+     FBRCPTOT=0;
+     FBBRHAMT=0;
+     FNACCTOT=0;
+     FNRCPTOT=0;
+     FNBRHAMT=0;
+  END;
+
+  FBACCTOT+BACCTOT;
+  FBRCPTOT+BRCPTOT;
+  FBBRHAMT+BBRHAMT;
+  FNACCTOT+NACCTOT;
+  FNRCPTOT+NRCPTOT;
+  FNBRHAMT+NBRHAMT;
+  FTACCTOT+TACCTOT;
+  FTRCPTOT+TRCPTOT;
+  FTBRHAMT+TBRHAMT;
+
+  IF LAST.BRANCH THEN DO;
+     GBACCTOT+FBACCTOT;
+     GBRCPTOT+FBRCPTOT;
+     GBBRHAMT+FBBRHAMT;
+     GNACCTOT+FNACCTOT;
+     GNRCPTOT+FNRCPTOT;
+     GNBRHAMT+FNBRHAMT;
+     GTACCTOT+FTACCTOT;
+     GTRCPTOT+FTRCPTOT;
+     GTBRHAMT+FTBRHAMT;
+     PUT @2   BRANCH Z3.
+         @11  BRHCODE
+         @17  FBACCTOT COMMA9.
+         @28  FBRCPTOT COMMA9.
+         @39  FBBRHAMT COMMA15.2
+         @56  FNACCTOT COMMA9.
+         @67  FNRCPTOT COMMA9.
+         @78  FNBRHAMT COMMA15.2
+         @95  FTACCTOT COMMA9.
+         @106 FTRCPTOT COMMA9.
+         @117 FTBRHAMT COMMA15.2;
+  END;
+
+  IF EOF THEN DO;
+     PUT //@17  '=========  =========  ==============='
+         @56  '=========  =========  ==============='
+         @95  '=========  =========  ==============='
+        /@05 'GRAND TOTAL'
+         @17  GBACCTOT COMMA9.
+         @28  GBRCPTOT COMMA9.
+         @39  GBBRHAMT COMMA15.2
+         @56  GNACCTOT COMMA9.
+         @67  GNRCPTOT COMMA9.
+         @78  GNBRHAMT COMMA15.2
+         @95  GTACCTOT COMMA9.
+         @106 GTRCPTOT COMMA9.
+         @117 GTBRHAMT COMMA15.2
+        /@17  '=========  =========  ==============='
+         @56  '=========  =========  ==============='
+         @95  '=========  =========  ===============';
+     BACCTNO=&BACCTNO;
+     NBACCTNO=&NBACCTNO;
+     PUT //@5 'T O T A L  BUMIPUTRA ACCOUNTS     = ' BACCTNO
+          /@5 '           NON-BUMIPUTRA ACCOUNTS = ' NBACCTNO;
+  END;
+RETURN;
+
+NEWPAGE :
+  REPDT=INPUT("&RDATE",DDMMYY6.);
+  PAGECNT+1;
+  PUT @1   'REPORT NO.  : EIBMFDIS - 2'
+      @50  'P U B L I C   B A N K   B E R H A D'
+      @110 'REPORT DATE : ' REPDT DDMMYY8.
+     /@48  'AL-MUDHARABAH GENERAL INVESTMENT (MGIA)'
+      @110 'PAGE NO.   : ' PAGECNT
+     /@1  'BY BRANCHES '
+      @40  'MONTHLY MUDHARABAH GENERAL INVESTMENT POSITION REPORT'
+     /@1  '                <<<<<     B U M I P U T R A     >>>>>'
+      @56 '<<<<< N O N   B U M I P U T R A >>>>>'
+      @95 '<<<<<         T O T A L         >>>>>'
+     /@1  'BRANCH  BRANCH  NO. OF     NO. OF     CLOSING'
+      @56 'NO. OF     NO. OF     CLOSING'
+      @95 'NO. OF     NO. OF     CLOSING'
+     /@1  'NUMBER  CODE    ACCOUNTS   RECEIPTS   BALANCE'
+      @56 'ACCOUNTS   RECEIPTS   BALANCE'
+      @95 'ACCOUNTS   RECEIPTS   BALANCE'
+     /@1  '------  ------  ---------  ---------  ---------------'
+      @56 '---------  ---------  ---------------'
+      @95 '---------  ---------  ---------------';
+RETURN;
+RUN;
+*;
+PROC SORT DATA=TBMERG1;
+   BY ACCTNO;
+RUN;
+*;
+DATA STAFFIFD;
+   SET TBMERG1 END=EOF;
+   BY ACCTNO;
+   IF (448 <= INTPLAN <= 459)   OR
+      (461 <= INTPLAN <= 469);
+      SELECT (INTPLAN);
+         WHEN(448) MTH=01;
+         WHEN(449) MTH=02;
+         WHEN(450) MTH=03;
+         WHEN(451) MTH=04;
+         WHEN(452) MTH=05;
+         WHEN(453) MTH=06;
+         WHEN(454) MTH=07;
+         WHEN(455) MTH=08;
+         WHEN(456) MTH=09;
+         WHEN(457) MTH=10;
+         WHEN(458) MTH=11;
+         WHEN(459) MTH=12;
+         WHEN(461) MTH=13;
+         WHEN(462) MTH=14;
+         WHEN(463) MTH=15;
+         WHEN(464) MTH=18;
+         WHEN(465) MTH=21;
+         WHEN(466) MTH=24;
+         WHEN(467) MTH=36;
+         WHEN(468) MTH=48;
+         OTHERWISE MTH=0;
+     END;
+     IF FIRST.ACCTNO THEN DO;
+        IF CUSTCD = 77 THEN BACCTNO+1;
+        ELSE  NBACCTNO+1;
+     END;
+     IF EOF THEN DO;
+        CALL SYMPUT('BACCTNO', BACCTNO);
+        CALL SYMPUT('NBACCTNO', NBACCTNO);
+     END;
+RUN;
+*;
+PROC SORT DATA=STAFFIFD;
+  BY MTH BRANCH ACCTNO;
+RUN;
+*;
+DATA RPT1(KEEP=BACCTOT BRCPTOT BBRHAMT NACCTOT NRCPTOT NBRHAMT
+              TACCTOT TRCPTOT TBRHAMT BRANCH BRHCODE);
+  SET STAFFIFD END=EOF;
+  BY MTH BRANCH ACCTNO;
+  FILE PRINT HEADER=NEWPAGE;
+
+  IF FIRST.MTH THEN DO;
+     PUT _PAGE_;
+     LTACCTOT=0;
+     LTRCPTOT=0;
+     LTBRHAMT=0;
+     LBACCTOT=0;
+     LBRCPTOT=0;
+     LBBRHAMT=0;
+     LNACCTOT=0;
+     LNRCPTOT=0;
+     LNBRHAMT=0;
+  END;
+
+  IF FIRST.BRANCH THEN DO;
+     BACCTOT=0;
+     BRCPTOT=0;
+     BBRHAMT=0;
+     NACCTOT=0;
+     NRCPTOT=0;
+     NBRHAMT=0;
+     TACCTOT=0;
+     TRCPTOT=0;
+     TBRHAMT=0;
+  END;
+
+  IF FIRST.ACCTNO THEN DO;
+     IF CUSTCD = 77 THEN
+        BACCTOT+1;
+     ELSE
+        NACCTOT+1;
+  END;
+
+  IF CUSTCD = 77 THEN DO;
+     BRCPTOT+1;
+     BBRHAMT+CURBAL;
+  END;
+  ELSE DO;
+     NRCPTOT+1;
+     NBRHAMT+CURBAL;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     TACCTOT=BACCTOT+NACCTOT;
+     TRCPTOT=BRCPTOT+NRCPTOT;
+     TBRHAMT=BBRHAMT+NBRHAMT;
+     LTACCTOT+TACCTOT;
+     LTRCPTOT+TRCPTOT;
+     LTBRHAMT+TBRHAMT;
+     LBACCTOT+BACCTOT;
+     LBRCPTOT+BRCPTOT;
+     LBBRHAMT+BBRHAMT;
+     LNACCTOT+NACCTOT;
+     LNRCPTOT+NRCPTOT;
+     LNBRHAMT+NBRHAMT;
+     PUT @2   BRANCH Z3.
+         @11  BRHCODE
+         @17  BACCTOT COMMA9.
+         @28  BRCPTOT COMMA9.
+         @39  BBRHAMT COMMA15.2
+         @56  NACCTOT COMMA9.
+         @67  NRCPTOT COMMA9.
+         @78  NBRHAMT COMMA15.2
+         @95  TACCTOT COMMA9.
+         @106 TRCPTOT COMMA9.
+         @117 TBRHAMT COMMA15.2;
+     OUTPUT;
+  END;
+
+  IF LAST.MTH THEN DO;
+     PUT //@17  '=========  =========  ==============='
+         @56  '=========  =========  ==============='
+         @95  '=========  =========  ==============='
+        /@05 'T O T A L'
+         @17  LBACCTOT COMMA9.
+         @28  LBRCPTOT COMMA9.
+         @39  LBBRHAMT COMMA15.2
+         @56  LNACCTOT COMMA9.
+         @67  LNRCPTOT COMMA9.
+         @78  LNBRHAMT COMMA15.2
+         @95  LTACCTOT COMMA9.
+         @106 LTRCPTOT COMMA9.
+         @117 LTBRHAMT COMMA15.2
+        /@17  '=========  =========  ==============='
+         @56  '=========  =========  ==============='
+         @95  '=========  =========  ===============';
+  END;
+RETURN;
+
+NEWPAGE :
+  PAGECNT+1;
+  REPDT=INPUT("&RDATE",DDMMYY6.);
+  PUT @1   'REPORT NO.  : EIBMFDIS - 3'
+      @50  'P U B L I C   B A N K   B E R H A D'
+      @110 'REPORT DATE : ' REPDT DDMMYY8.
+     /@48  'STAFF AL-MUDHARABAH GENERAL INVESTMENT (MGIA)'
+      @110 'PAGE NO.   : ' PAGECNT
+     /@1  'FD TENURE: ' MTH Z2. @15 'MONTHS'
+      @40 'MONTHLY MUDHARABAH GENERAL INVESTMENT POSITION REPORT'
+     /@1  '                <<<<<     B U M I P U T R A     >>>>>'
+      @56 '<<<<< N O N   B U M I P U T R A >>>>>'
+      @95 '<<<<<         T O T A L         >>>>>'
+     /@1  'BRANCH  BRANCH  NO. OF     NO. OF     CLOSING'
+      @56 'NO. OF     NO. OF     CLOSING'
+      @95 'NO. OF     NO. OF     CLOSING'
+     /@1  'NUMBER  CODE    ACCOUNTS   RECEIPTS   BALANCE'
+      @56 'ACCOUNTS   RECEIPTS   BALANCE'
+      @95 'ACCOUNTS   RECEIPTS   BALANCE'
+     /@1  '------  ------  ---------  ---------  ---------------'
+      @56 '---------  ---------  ---------------'
+      @95 '---------  ---------  ---------------';
+RETURN;
+RUN;
+*;
+PROC SORT DATA=RPT1;
+  BY BRANCH;
+RUN;
+
+DATA _NULL_;
+  SET RPT1 END=EOF;
+  BY BRANCH;
+  FILE PRINT HEADER=NEWPAGE;
+
+  IF FIRST.BRANCH THEN DO;
+     FTACCTOT=0;
+     FTRCPTOT=0;
+     FTBRHAMT=0;
+     FBACCTOT=0;
+     FBRCPTOT=0;
+     FBBRHAMT=0;
+     FNACCTOT=0;
+     FNRCPTOT=0;
+     FNBRHAMT=0;
+  END;
+
+  FBACCTOT+BACCTOT;
+  FBRCPTOT+BRCPTOT;
+  FBBRHAMT+BBRHAMT;
+  FNACCTOT+NACCTOT;
+  FNRCPTOT+NRCPTOT;
+  FNBRHAMT+NBRHAMT;
+  FTACCTOT+TACCTOT;
+  FTRCPTOT+TRCPTOT;
+  FTBRHAMT+TBRHAMT;
+
+  IF LAST.BRANCH THEN DO;
+     GBACCTOT+FBACCTOT;
+     GBRCPTOT+FBRCPTOT;
+     GBBRHAMT+FBBRHAMT;
+     GNACCTOT+FNACCTOT;
+     GNRCPTOT+FNRCPTOT;
+     GNBRHAMT+FNBRHAMT;
+     GTACCTOT+FTACCTOT;
+     GTRCPTOT+FTRCPTOT;
+     GTBRHAMT+FTBRHAMT;
+     PUT @2   BRANCH Z3.
+         @11  BRHCODE
+         @17  FBACCTOT COMMA9.
+         @28  FBRCPTOT COMMA9.
+         @39  FBBRHAMT COMMA15.2
+         @56  FNACCTOT COMMA9.
+         @67  FNRCPTOT COMMA9.
+         @78  FNBRHAMT COMMA15.2
+         @95  FTACCTOT COMMA9.
+         @106 FTRCPTOT COMMA9.
+         @117 FTBRHAMT COMMA15.2;
+  END;
+
+  IF EOF THEN DO;
+     PUT //@17  '=========  =========  ==============='
+         @56  '=========  =========  ==============='
+         @95  '=========  =========  ==============='
+        /@05 'GRAND TOTAL'
+         @17  GBACCTOT COMMA9.
+         @28  GBRCPTOT COMMA9.
+         @39  GBBRHAMT COMMA15.2
+         @56  GNACCTOT COMMA9.
+         @67  GNRCPTOT COMMA9.
+         @78  GNBRHAMT COMMA15.2
+         @95  GTACCTOT COMMA9.
+         @106 GTRCPTOT COMMA9.
+         @117 GTBRHAMT COMMA15.2
+        /@17  '=========  =========  ==============='
+         @56  '=========  =========  ==============='
+         @95  '=========  =========  ===============';
+     BACCTNO=&BACCTNO;
+     NBACCTNO=&NBACCTNO;
+     PUT //@5 'T O T A L  BUMIPUTRA ACCOUNTS     = ' BACCTNO
+          /@5 '           NON-BUMIPUTRA ACCOUNTS = ' NBACCTNO;
+  END;
+RETURN;
+
+NEWPAGE :
+  REPDT=INPUT("&RDATE",DDMMYY6.);
+  PAGECNT+1;
+  PUT @1   'REPORT NO.  : EIBMFDIS - 4'
+      @50  'P U B L I C   B A N K   B E R H A D'
+      @110 'REPORT DATE : ' REPDT DDMMYY8.
+     /@48  'STAFF AL-MUDHARABAH GENERAL INVESTMENT (MGIA)'
+      @110 'PAGE NO.   : ' PAGECNT
+     /@1  'BY BRANCHES '
+      @40  'MONTHLY MUDHARABAH GENERAL INVESTMENT POSITION REPORT'
+     /@1  '                <<<<<     B U M I P U T R A     >>>>>'
+      @56 '<<<<< N O N   B U M I P U T R A >>>>>'
+      @95 '<<<<<         T O T A L         >>>>>'
+     /@1  'BRANCH  BRANCH  NO. OF     NO. OF     CLOSING'
+      @56 'NO. OF     NO. OF     CLOSING'
+      @95 'NO. OF     NO. OF     CLOSING'
+     /@1  'NUMBER  CODE    ACCOUNTS   RECEIPTS   BALANCE'
+      @56 'ACCOUNTS   RECEIPTS   BALANCE'
+      @95 'ACCOUNTS   RECEIPTS   BALANCE'
+     /@1  '------  ------  ---------  ---------  ---------------'
+      @56 '---------  ---------  ---------------'
+      @95 '---------  ---------  ---------------';
+RETURN;
+RUN;
