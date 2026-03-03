@@ -1,0 +1,1014 @@
+/***********************************************************/
+/*  PROGRAM : DALMPBB3                                     */
+/*  REPORT  : ACE REPORT FOR PRODUCT DEVELOPMENT           */
+/*  DATE    : 05.12.97                                     */
+/*  MANIPULATE THE EXTRACTED SAVINGS AND CURRENT ACCOUNT   */
+/*  DATA SETS.                                             */
+/*  MODIFIED ON 18TH JULY 2000 TO INCLUDE BONUSLINK SAVING */
+/*  AND BONUSLINK CURRENT ACCOUNTS....                     */
+/***********************************************************/
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 NOCENTER LS=132;
+
+%INC PGM(PBBDPFMT);
+
+DATA _NULL_;
+  SET DEPOSIT.REPTDATE (OBS=1);
+  SELECT(DAY(REPTDATE));
+    WHEN(8) CALL SYMPUT('NOWK', PUT('1', $1.));
+    WHEN(15) CALL SYMPUT('NOWK', PUT('2', $2.));
+    WHEN(22) CALL SYMPUT('NOWK', PUT('3', $3.));
+    OTHERWISE CALL SYMPUT('NOWK', PUT('4', $4.));
+  END;
+  CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
+  CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+  CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+  CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+  MTH = MONTH(REPTDATE) - 1;
+  IF MTH = 0 THEN MTH = 12;
+  CALL SYMPUT('PREMON', PUT(MTH, Z2.));
+RUN;
+
+DATA SAVG (KEEP=CURBAL RACE)
+     BONUS(KEEP=CURBAL RACE)
+     BASIC(KEEP=CURBAL RACE)
+     BASIC55(KEEP=CURBAL RACE)
+     BONUC(KEEP=CURBAL RACE);
+  SET DEPOSIT.CURRENT DEPOSIT.SAVING;
+  IF  OPENIND NOT IN ('B','C','P');
+
+  /****************************************************/
+  /*  IF ACE PRODUCTS THEN CHECK BALANCE              */
+  /*    ELSE TREAT LIKE OTHER CURRENT ACCOUNT PRODUCT */
+  /****************************************************/
+  IF DEPTYPE IN ('D','N') AND
+     PRODUCT IN (150,151,152,181)    THEN OUTPUT SAVG;
+  ELSE IF PRODUCT IN (90)            THEN OUTPUT BASIC;
+  ELSE IF PRODUCT IN (91)            THEN OUTPUT BASIC55;
+  ELSE IF PRODUCT IN (156,157,158)   THEN OUTPUT BONUC;
+  ELSE IF PRODUCT IN (213)           THEN OUTPUT BONUS;
+RUN;
+
+/***********************************************************/
+/** SUMMAZISE THE DATASET AT DEPOSIT RANGE - ACE ACCOUNTS **/
+/***********************************************************/
+
+DATA SAVG2;
+  SET SAVG END=LAST;
+  SELECT;
+    WHEN (CURBAL < 0) DO;
+      NOACC0+1;
+      RANGE0+CURBAL;
+    END;
+    WHEN (CURBAL = 0) DO;
+      NOACCX+1;
+      RANGEX+CURBAL;
+    END;
+    WHEN (CURBAL > 0 AND CURBAL <= 5) DO;
+      NOACC1+1;
+      RANGE1+CURBAL;
+    END;
+    WHEN (CURBAL > 5 AND CURBAL <= 10) DO;
+      NOACC2+1;
+      RANGE2+CURBAL;
+    END;
+    WHEN (CURBAL > 10 AND CURBAL <= 50) DO;
+      NOACC3+1;
+      RANGE3+CURBAL;
+    END;
+    WHEN (CURBAL > 50 AND CURBAL <= 100) DO;
+      NOACC4+1;
+      RANGE4+CURBAL;
+    END;
+    WHEN (CURBAL > 100 AND CURBAL <= 500) DO;
+      NOACC5+1;
+      RANGE5+CURBAL;
+    END;
+    WHEN (CURBAL > 500 AND CURBAL <= 1000) DO;
+      NOACC6+1;
+      RANGE6+CURBAL;
+    END;
+    WHEN (CURBAL > 1000 AND CURBAL <= 1500) DO;
+      NOACC7+1;
+      RANGE7+CURBAL;
+    END;
+    WHEN (CURBAL > 1500 AND CURBAL <= 2000) DO;
+      NOACC8+1;
+      RANGE8+CURBAL;
+    END;
+    WHEN (CURBAL > 2000 AND CURBAL <= 2500) DO;
+      NOACC9+1;
+      RANGE9+CURBAL;
+    END;
+    WHEN (CURBAL > 2500 AND CURBAL <= 3000) DO;
+      NOACC10+1;
+      RANGE10+CURBAL;
+    END;
+    WHEN (CURBAL > 3000 AND CURBAL <= 3500) DO;
+      NOACC11+1;
+      RANGE11+CURBAL;
+    END;
+    WHEN (CURBAL > 3500 AND CURBAL <= 4000) DO;
+      NOACC12+1;
+      RANGE12+CURBAL;
+    END;
+    WHEN (CURBAL > 4000 AND CURBAL <= 4500) DO;
+      NOACC13+1;
+      RANGE13+CURBAL;
+    END;
+    WHEN (CURBAL > 4500 AND CURBAL <= 5000) DO;
+      NOACC14+1;
+      RANGE14+CURBAL;
+    END;
+    WHEN (CURBAL > 5000 AND CURBAL <= 6000) DO;
+      NOACC15+1;
+      RANGE15+CURBAL;
+    END;
+    WHEN (CURBAL > 6000 AND CURBAL <= 7000) DO;
+      NOACC16+1;
+      RANGE16+CURBAL;
+    END;
+    WHEN (CURBAL > 7000 AND CURBAL <= 8000) DO;
+      NOACC17+1;
+      RANGE17+CURBAL;
+    END;
+    WHEN (CURBAL > 8000 AND CURBAL <= 9000) DO;
+      NOACC18+1;
+      RANGE18+CURBAL;
+    END;
+    WHEN (CURBAL > 9000 AND CURBAL <= 10000) DO;
+      NOACC19+1;
+      RANGE19+CURBAL;
+    END;
+    WHEN (CURBAL > 10000 AND CURBAL <= 15000) DO;
+      NOACC20+1;
+      RANGE20+CURBAL;
+    END;
+    WHEN (CURBAL > 15000 AND CURBAL <= 20000) DO;
+      NOACC21+1;
+      RANGE21+CURBAL;
+    END;
+    WHEN (CURBAL > 20000 AND CURBAL <= 25000) DO;
+      NOACC22+1;
+      RANGE22+CURBAL;
+    END;
+    WHEN (CURBAL > 25000 AND CURBAL <= 30000) DO;
+      NOACC23+1;
+      RANGE23+CURBAL;
+    END;
+    WHEN (CURBAL > 30000 AND CURBAL <= 35000) DO;
+      NOACC24+1;
+      RANGE24+CURBAL;
+    END;
+    WHEN (CURBAL > 35000 AND CURBAL <= 40000) DO;
+      NOACC25+1;
+      RANGE25+CURBAL;
+    END;
+    WHEN (CURBAL > 40000 AND CURBAL <= 45000) DO;
+      NOACC26+1;
+      RANGE26+CURBAL;
+    END;
+    WHEN (CURBAL > 45000 AND CURBAL <= 50000) DO;
+      NOACC27+1;
+      RANGE27+CURBAL;
+    END;
+    WHEN (CURBAL > 50000 AND CURBAL <= 55000) DO;
+      NOACC28+1;
+      RANGE28+CURBAL;
+    END;
+    WHEN (CURBAL > 55000 AND CURBAL <= 60000) DO;
+      NOACC29+1;
+      RANGE29+CURBAL;
+    END;
+    WHEN (CURBAL > 60000 AND CURBAL <= 65000) DO;
+      NOACC30+1;
+      RANGE30+CURBAL;
+    END;
+    WHEN (CURBAL > 65000 AND CURBAL <= 70000) DO;
+      NOACC31+1;
+      RANGE31+CURBAL;
+    END;
+    WHEN (CURBAL > 70000 AND CURBAL <= 75000) DO;
+      NOACC32+1;
+      RANGE32+CURBAL;
+    END;
+    WHEN (CURBAL > 75000 AND CURBAL <= 80000) DO;
+      NOACC33+1;
+      RANGE33+CURBAL;
+    END;
+    WHEN (CURBAL > 80000 AND CURBAL <= 85000) DO;
+      NOACC34+1;
+      RANGE34+CURBAL;
+    END;
+    WHEN (CURBAL > 85000 AND CURBAL <= 90000) DO;
+      NOACC35+1;
+      RANGE35+CURBAL;
+    END;
+    WHEN (CURBAL > 90000 AND CURBAL <= 95000) DO;
+      NOACC36+1;
+      RANGE36+CURBAL;
+    END;
+    WHEN (CURBAL > 95000 AND CURBAL <= 100000) DO;
+      NOACC37+1;
+      RANGE37+CURBAL;
+    END;
+    WHEN (CURBAL > 100000 AND CURBAL <= 150000) DO;
+      NOACC38+1;
+      RANGE38+CURBAL;
+    END;
+    WHEN (CURBAL > 150000 AND CURBAL <= 200000) DO;
+      NOACC39+1;
+      RANGE39+CURBAL;
+    END;
+    WHEN (CURBAL > 200000 AND CURBAL <= 300000) DO;
+      NOACC40+1;
+      RANGE40+CURBAL;
+    END;
+    WHEN (CURBAL > 300000 AND CURBAL <= 400000) DO;
+      NOACC41+1;
+      RANGE41+CURBAL;
+    END;
+    WHEN (CURBAL > 400000 AND CURBAL <= 500000) DO;
+      NOACC42+1;
+      RANGE42+CURBAL;
+    END;
+    WHEN (CURBAL > 500000 AND CURBAL <= 510000) DO;
+      NOACC43+1;
+      RANGE43+CURBAL;
+    END;
+    WHEN (CURBAL > 510000 AND CURBAL <= 600000) DO;
+      NOACC44+1;
+      RANGE44+CURBAL;
+    END;
+    WHEN (CURBAL > 600000 AND CURBAL <= 700000) DO;
+      NOACC45+1;
+      RANGE45+CURBAL;
+    END;
+    WHEN (CURBAL > 700000 AND CURBAL <= 800000) DO;
+      NOACC46+1;
+      RANGE46+CURBAL;
+    END;
+    WHEN (CURBAL > 800000 AND CURBAL <= 900000) DO;
+      NOACC47+1;
+      RANGE47+CURBAL;
+    END;
+    WHEN (CURBAL > 900000 AND CURBAL <= 1000000) DO;
+      NOACC48+1;
+      RANGE48+CURBAL;
+    END;
+    WHEN (CURBAL > 1000000 AND CURBAL <= 1100000) DO;
+      NOACC49+1;
+      RANGE49+CURBAL;
+    END;
+    WHEN (CURBAL > 1100000 AND CURBAL <= 1200000) DO;
+      NOACC50+1;
+      RANGE50+CURBAL;
+    END;
+    WHEN (CURBAL > 1200000 AND CURBAL <= 1300000) DO;
+      NOACC51+1;
+      RANGE51+CURBAL;
+    END;
+    WHEN (CURBAL > 1300000 AND CURBAL <= 1400000) DO;
+      NOACC52+1;
+      RANGE52+CURBAL;
+    END;
+    WHEN (CURBAL > 1400000 AND CURBAL <= 1500000) DO;
+      NOACC53+1;
+      RANGE53+CURBAL;
+    END;
+    WHEN (CURBAL > 1500000 AND CURBAL <= 1510000) DO;
+      NOACC54+1;
+      RANGE54+CURBAL;
+    END;
+    WHEN (CURBAL > 1510000 AND CURBAL <= 1550000) DO;
+      NOACC55+1;
+      RANGE55+CURBAL;
+    END;
+    WHEN (CURBAL > 1550000 AND CURBAL <= 1600000) DO;
+      NOACC56+1;
+      RANGE56+CURBAL;
+    END;
+    WHEN (CURBAL > 1600000 AND CURBAL <= 1700000) DO;
+      NOACC57+1;
+      RANGE57+CURBAL;
+    END;
+    WHEN (CURBAL > 1700000 AND CURBAL <= 1800000) DO;
+      NOACC58+1;
+      RANGE58+CURBAL;
+    END;
+    WHEN (CURBAL > 1800000 AND CURBAL <= 1900000) DO;
+      NOACC59+1;
+      RANGE59+CURBAL;
+    END;
+    WHEN (CURBAL > 1900000 AND CURBAL <= 2000000) DO;
+      NOACC60+1;
+      RANGE60+CURBAL;
+    END;
+    WHEN (CURBAL > 2000000 AND CURBAL <= 3000000) DO;
+      NOACC61+1;
+      RANGE61+CURBAL;
+    END;
+    WHEN (CURBAL > 3000000 AND CURBAL <= 3510000) DO;
+      NOACC62+1;
+      RANGE62+CURBAL;
+    END;
+    WHEN (CURBAL > 3510000 AND CURBAL <= 3550000) DO;
+      NOACC63+1;
+      RANGE63+CURBAL;
+    END;
+    WHEN (CURBAL > 3550000 AND CURBAL <= 4000000) DO;
+      NOACC64+1;
+      RANGE64+CURBAL;
+    END;
+    WHEN (CURBAL > 4000000 AND CURBAL <= 5000000) DO;
+      NOACC65+1;
+      RANGE65+CURBAL;
+    END;
+    WHEN (CURBAL > 5000000 AND CURBAL <= 10000000) DO;
+      NOACC66+1;
+      RANGE66+CURBAL;
+    END;
+    WHEN (CURBAL > 10000000) DO;
+      NOACC67+1;
+      RANGE67+CURBAL;
+    END;
+    OTHERWISE;
+  END;
+  IF LAST THEN DO;
+     OUTPUT;
+  END;
+RUN;
+
+PROC DATASETS LIB=WORK NOLIST; DELETE SAVG; RUN;
+OPTIONS NODATE NONUMBER NOCENTER;
+TITLE;
+DATA _NULL_;
+  SET SAVG2;
+  FILE PRINT HEADER=NEWPAGE;
+
+  TOTACC = SUM(NOACC0,NOACCX,NOACC1,NOACC2,NOACC3,NOACC4,NOACC5,NOACC6,
+               NOACC7,NOACC8,NOACC9,NOACC10,NOACC11,NOACC12,NOACC13,
+               NOACC14,NOACC15,NOACC16,NOACC17,NOACC18,NOACC19,
+               NOACC20,NOACC21,NOACC22,NOACC23,NOACC24,NOACC25,
+               NOACC26,NOACC27,NOACC28,NOACC29,NOACC30,NOACC31,
+               NOACC32,NOACC33,NOACC34,NOACC35,NOACC36,NOACC37,
+               NOACC38,NOACC39,NOACC40,NOACC41,NOACC42,NOACC43,
+               NOACC44,NOACC45,NOACC46,NOACC47,NOACC48,
+               NOACC49,NOACC50,NOACC51,NOACC52,NOACC53,NOACC54,
+               NOACC55,NOACC56,NOACC57,NOACC58,NOACC59,NOACC60,
+               NOACC61,NOACC62,NOACC63,NOACC64,NOACC65,NOACC66,
+               NOACC67);
+  TOTAMT = SUM(OF RANGE0-RANGE67);
+
+  PUT @1   ' 0)       RM NEGATIVE BALANCE    '
+      @45  NOACC0 COMMA11.0       @56  RANGE0 COMMA18.2;
+  PUT @1   ' 1)       ZERO BALANCE           '
+      @45  NOACCX COMMA11.0       @56  RANGEX COMMA18.2;
+  PUT @1   ' 2)      ABOVE RM0.00 -        RM5.00'
+      @45  NOACC1 COMMA11.0       @56  RANGE1 COMMA18.2;
+  PUT @1   ' 3)      ABOVE RM5.00 -        RM10.00'
+      @45  NOACC2 COMMA11.0       @56  RANGE2 COMMA18.2;
+  PUT @1   ' 4)      ABOVE RM10.00 -       RM50.00'
+      @45  NOACC3 COMMA11.0       @56  RANGE3 COMMA18.2;
+  PUT @1   ' 5)      ABOVE RM50.00 -       RM100.00'
+      @45  NOACC4 COMMA11.0       @56  RANGE4 COMMA18.2;
+  PUT @1   ' 6)     ABOVE  RM100.00 -      RM500.00'
+      @45  NOACC5 COMMA11.0       @56  RANGE5 COMMA18.2;
+  PUT @1   ' 7)     ABOVE RM500.00 -      RM1000.00'
+      @45  NOACC6 COMMA11.0       @56  RANGE6 COMMA18.2;
+  PUT @1   ' 8)    ABOVE RM1000.00 -      RM1500.00'
+      @45  NOACC7 COMMA11.0       @56  RANGE7 COMMA18.2;
+  PUT @1   ' 9)    ABOVE RM1500.00 -      RM2000.00'
+      @45  NOACC8 COMMA11.0       @56  RANGE8 COMMA18.2;
+  PUT @1   '10)    ABOVE RM2000.00 -      RM2500.00'
+      @45  NOACC9 COMMA11.0       @56  RANGE9 COMMA18.2;
+  PUT @1   '11)    ABOVE RM2500.00 -      RM3000.00'
+      @45  NOACC10 COMMA11.0      @56  RANGE10 COMMA18.2;
+  PUT @1   '12)    ABOVE RM3000.00 -      RM3500.00'
+      @45  NOACC11 COMMA11.0      @56  RANGE11 COMMA18.2;
+  PUT @1   '13)    ABOVE RM3500.00 -      RM4000.00'
+      @45  NOACC12 COMMA11.0      @56  RANGE12 COMMA18.2;
+  PUT @1   '14)    ABOVE RM4000.00 -      RM4500.00'
+      @45  NOACC13 COMMA11.0      @56  RANGE13 COMMA18.2;
+  PUT @1   '15)    ABOVE RM4500.00 -      RM5000.00'
+      @45  NOACC14 COMMA11.0      @56  RANGE14 COMMA18.2;
+  PUT @1   '16)    ABOVE RM5000.00 -      RM6000.00'
+      @45  NOACC15 COMMA11.0      @56  RANGE15 COMMA18.2;
+  PUT @1   '17)    ABOVE RM6000.00 -      RM7000.00'
+      @45  NOACC16 COMMA11.0      @56  RANGE16 COMMA18.2;
+  PUT @1   '18)    ABOVE RM7000.00 -      RM8000.00'
+      @45  NOACC17 COMMA11.0      @56  RANGE17 COMMA18.2;
+  PUT @1   '19)    ABOVE RM8000.00 -      RM9000.00'
+      @45  NOACC18 COMMA11.0      @56  RANGE18 COMMA18.2;
+  PUT @1   '20)    ABOVE RM9000.00 -    RM10,000.00'
+      @45  NOACC19 COMMA11.0      @56  RANGE19 COMMA18.2;
+  PUT @1   '21)  ABOVE RM10,000.00 -    RM15,000.00'
+      @45  NOACC20 COMMA11.0      @56  RANGE20 COMMA18.2;
+  PUT @1   '22)  ABOVE RM15,000.00 -    RM20,000.00'
+      @45  NOACC21 COMMA11.0      @56  RANGE21 COMMA18.2;
+  PUT @1   '23)  ABOVE RM20,000.00 -    RM25,000.00'
+      @45  NOACC22 COMMA11.0      @56  RANGE22 COMMA18.2;
+  PUT @1   '24)  ABOVE RM25,000.00 -    RM30,000.00'
+      @45  NOACC23 COMMA11.0      @56  RANGE23 COMMA18.2;
+  PUT @1   '25)  ABOVE RM30,000.00 -    RM35,000.00'
+      @45  NOACC24 COMMA11.0      @56  RANGE24 COMMA18.2;
+  PUT @1   '26)  ABOVE RM35,000.00 -    RM40,000.00'
+      @45  NOACC25 COMMA11.0      @56  RANGE25 COMMA18.2;
+  PUT @1   '27)  ABOVE RM40,000.00 -    RM45,000.00'
+      @45  NOACC26 COMMA11.0      @56  RANGE26 COMMA18.2;
+  PUT @1   '28)  ABOVE RM45,000.00 -    RM50,000.00'
+      @45  NOACC27 COMMA11.0      @56  RANGE27 COMMA18.2;
+  PUT @1   '29)  ABOVE RM50,000.00 -    RM55,000.00'
+      @45  NOACC28 COMMA11.0      @56  RANGE28 COMMA18.2;
+  PUT @1   '30)  ABOVE RM55,000.00 -    RM60,000.00'
+      @45  NOACC29 COMMA11.0      @56  RANGE29 COMMA18.2;
+  PUT @1   '31)  ABOVE RM60,000.00 -    RM65,000.00'
+      @45  NOACC30 COMMA11.0      @56  RANGE30 COMMA18.2;
+  PUT @1   '32)  ABOVE RM65,000.00 -    RM70,000.00'
+      @45  NOACC31 COMMA11.0      @56  RANGE31 COMMA18.2;
+  PUT @1   '33)  ABOVE RM70,000.00 -    RM75,000.00'
+      @45  NOACC32 COMMA11.0      @56  RANGE32 COMMA18.2;
+  PUT @1   '34)  ABOVE RM75,000.00 -    RM80,000.00'
+      @45  NOACC33 COMMA11.0      @56  RANGE33 COMMA18.2;
+  PUT @1   '35)  ABOVE RM80,000.00 -    RM85,000.00'
+      @45  NOACC34 COMMA11.0      @56  RANGE34 COMMA18.2;
+  PUT @1   '36)  ABOVE RM85,000.00 -    RM90,000.00'
+      @45  NOACC35 COMMA11.0      @56  RANGE35 COMMA18.2;
+  PUT @1   '37)  ABOVE RM90,000.00 -    RM95,000.00'
+      @45  NOACC36 COMMA11.0      @56  RANGE36 COMMA18.2;
+  PUT @1   '38)  ABOVE RM95,000.00 -   RM100,000.00'
+      @45  NOACC37 COMMA11.0      @56  RANGE37 COMMA18.2;
+  PUT @1   '39) ABOVE RM100,000.00 -   RM150,000.00'
+      @45  NOACC38 COMMA11.0      @56  RANGE38 COMMA18.2;
+  PUT @1   '40) ABOVE RM150,000.00 -   RM200,000.00'
+      @45  NOACC39 COMMA11.0      @56  RANGE39 COMMA18.2;
+  PUT @1   '41) ABOVE RM200,000.00 -   RM300,000.00'
+      @45  NOACC40 COMMA11.0      @56  RANGE40 COMMA18.2;
+  PUT @1   '42) ABOVE RM300,000.00 -   RM400,000.00'
+      @45  NOACC41 COMMA11.0      @56  RANGE41 COMMA18.2;
+  PUT @1   '43) ABOVE RM400,000.00 -   RM500,000.00'
+      @45  NOACC42 COMMA11.0      @56  RANGE42 COMMA18.2;
+  PUT @1   '44) ABOVE RM500,000.00 -   RM510,000.00'
+      @45  NOACC43 COMMA11.0      @56  RANGE43 COMMA18.2;
+  PUT @1   '45) ABOVE RM510,000.00 -   RM600,000.00'
+      @45  NOACC44 COMMA11.0      @56  RANGE44 COMMA18.2;
+  PUT @1   '46) ABOVE RM600,000.00 -   RM700,000.00'
+      @45  NOACC45 COMMA11.0      @56  RANGE45 COMMA18.2;
+  PUT @1   '47) ABOVE RM700,000.00 -   RM800,000.00'
+      @45  NOACC46 COMMA11.0      @56  RANGE46 COMMA18.2;
+  PUT @1   '48) ABOVE RM800,000.00 -   RM900,000.00'
+      @45  NOACC47 COMMA11.0      @56  RANGE47 COMMA18.2;
+  PUT @1   '49) ABOVE RM900,000.00 -   RM1,000,000.00'
+      @45  NOACC48 COMMA11.0      @56  RANGE48 COMMA18.2;
+  PUT @1   '50) ABOVE RM1,000,000.00 - RM1,100,000.00'
+      @45  NOACC49 COMMA11.0      @56  RANGE49 COMMA18.2;
+  PUT @1   '51) ABOVE RM1,100,000.00 - RM1,200,000.00'
+      @45  NOACC50 COMMA11.0      @56  RANGE50 COMMA18.2;
+  PUT @1   '52) ABOVE RM1,200,000.00 - RM1,300,000.00'
+      @45  NOACC51 COMMA11.0      @56  RANGE51 COMMA18.2;
+  PUT @1   '53) ABOVE RM1,300,000.00 - RM1,400,000.00'
+      @45  NOACC52 COMMA11.0      @56  RANGE52 COMMA18.2;
+  PUT @1   '54) ABOVE RM1,400,000.00 - RM1,500,000.00'
+      @45  NOACC53 COMMA11.0      @56  RANGE53 COMMA18.2;
+  PUT @1   '55) ABOVE RM1,500,000.00 - RM1,510,000.00'
+      @45  NOACC54 COMMA11.0      @56  RANGE54 COMMA18.2;
+  PUT @1   '56) ABOVE RM1,510,000.00 - RM1,550,000.00'
+      @45  NOACC55 COMMA11.0      @56  RANGE55 COMMA18.2;
+  PUT @1   '57) ABOVE RM1,550,000.00 - RM1,600,000.00'
+      @45  NOACC56 COMMA11.0      @56  RANGE56 COMMA18.2;
+  PUT @1   '58) ABOVE RM1,600,000.00 - RM1,700,000.00'
+      @45  NOACC57 COMMA11.0      @56  RANGE57 COMMA18.2;
+  PUT @1   '59) ABOVE RM1,700,000.00 - RM1,800,000.00'
+      @45  NOACC58 COMMA11.0      @56  RANGE58 COMMA18.2;
+  PUT @1   '60) ABOVE RM1,800,000.00 - RM1,900,000.00'
+      @45  NOACC59 COMMA11.0      @56  RANGE59 COMMA18.2;
+  PUT @1   '61) ABOVE RM1,900,000.00 - RM2,000,000.00'
+      @45  NOACC60 COMMA11.0      @56  RANGE60 COMMA18.2;
+  PUT @1   '62) ABOVE RM2,000,000.00 - RM3,000,000.00'
+      @45  NOACC61 COMMA11.0      @56  RANGE61 COMMA18.2;
+  PUT @1   '63) ABOVE RM3,000,000.00 - RM3,510,000.00'
+      @45  NOACC62 COMMA11.0      @56  RANGE62 COMMA18.2;
+  PUT @1   '64) ABOVE RM3,510,000.00 - RM3,550,000.00'
+      @45  NOACC63 COMMA11.0      @56  RANGE63 COMMA18.2;
+  PUT @1   '65) ABOVE RM3,550,000.00 - RM4,000,000.00'
+      @45  NOACC64 COMMA11.0      @56  RANGE64 COMMA18.2;
+  PUT @1   '66) ABOVE RM4,000,000.00 - RM5,000,000.00'
+      @45  NOACC65 COMMA11.0      @56  RANGE65 COMMA18.2;
+  PUT @1   '67) ABOVE RM5,000,000.00 - RM10,000,000.00'
+      @45  NOACC66 COMMA11.0      @56  RANGE66 COMMA18.2;
+  PUT @1   '68) ABOVE RM10,000,000.00'
+      @45  NOACC67 COMMA11.0      @56  RANGE67 COMMA18.2;
+
+  PUT @1  '-----------------------------------------'
+      @41 '-----------------------------------------'
+      @81 '-------------------------';
+  PUT @1   '    TOTAL              '
+      @45  TOTACC  COMMA11.0      @56  TOTAMT  COMMA18.2;
+  PUT @1  '-----------------------------------------'
+      @41 '-----------------------------------------'
+      @81 '-------------------------';
+
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @1   'PROGRAM-ID : DALMPBB3'
+        @40  'P U B L I C   B A N K   B E R H A D';
+    PUT @37  "BREAKDOWN OF ACE ACCOUNTS AS AT &RDATE";
+    PUT;
+    PUT @60  'OUTSTANDING BALANCE';
+    PUT @5   'DEPOSIT RANGE'
+        @48  'NO OF ACCT'
+        @63  'TOTAL (RM)';
+    PUT; PUT;
+  RETURN;
+RUN;
+*;
+
+/*********************************************************************/
+/** SUMMAZISE PROCESS                                                */
+/*********************************************************************/
+%MACRO GENDATA;
+   DATA RPTDATA;
+      SET RPTDATA END=LAST;
+      SELECT;
+         WHEN (CURBAL < 0) DO;
+         NOACC0+1;
+         CABAL0+CURBAL;
+         RANGE0+CURBAL;
+      END;
+      WHEN (CURBAL >= 0 AND CURBAL <= 5) DO;
+         NOACC1+1;
+         CABAL1+CURBAL;
+         RANGE1+CURBAL;
+      END;
+      WHEN (CURBAL > 5 AND CURBAL <= 10) DO;
+         NOACC2+1;
+         CABAL2+CURBAL;
+         RANGE2+CURBAL;
+      END;
+      WHEN (CURBAL > 10 AND CURBAL <= 50) DO;
+         NOACC3+1;
+         CABAL3+CURBAL;
+         RANGE3+CURBAL;
+      END;
+      WHEN (CURBAL > 50 AND CURBAL <= 100) DO;
+         NOACC4+1;
+         CABAL4+CURBAL;
+         RANGE4+CURBAL;
+      END;
+      WHEN (CURBAL > 100 AND CURBAL <= 500) DO;
+         NOACC5+1;
+         CABAL5+CURBAL;
+         RANGE5+CURBAL;
+      END;
+      WHEN (CURBAL > 500 AND CURBAL <= 1000) DO;
+         NOACC6+1;
+         CABAL6+CURBAL;
+         RANGE6+CURBAL;
+      END;
+      WHEN (CURBAL > 1000 AND CURBAL <= 1500) DO;
+         NOACC7+1;
+         CABAL7+CURBAL;
+         RANGE7+CURBAL;
+      END;
+      WHEN (CURBAL > 1500 AND CURBAL <= 2000) DO;
+         NOACC8+1;
+         CABAL8+CURBAL;
+         RANGE8+CURBAL;
+      END;
+      WHEN (CURBAL > 2000 AND CURBAL <= 2500) DO;
+         NOACC9+1;
+         CABAL9+CURBAL;
+         RANGE9+CURBAL;
+      END;
+      WHEN (CURBAL > 2500 AND CURBAL <= 3000) DO;
+         NOACC10+1;
+         CABAL10+CURBAL;
+         RANGE10+CURBAL;
+      END;
+      WHEN (CURBAL > 3000 AND CURBAL <= 3500) DO;
+         NOACC11+1;
+         CABAL11+CURBAL;
+         RANGE11+CURBAL;
+      END;
+      WHEN (CURBAL > 3500 AND CURBAL <= 4000) DO;
+         NOACC12+1;
+         CABAL12+CURBAL;
+         RANGE12+CURBAL;
+      END;
+      WHEN (CURBAL > 4000 AND CURBAL <= 4500) DO;
+         NOACC13+1;
+         CABAL13+CURBAL;
+         RANGE13+CURBAL;
+      END;
+      WHEN (CURBAL > 4500 AND CURBAL <= 5000) DO;
+         NOACC14+1;
+         CABAL14+CURBAL;
+         RANGE14+CURBAL;
+      END;
+      WHEN (CURBAL > 5000 AND CURBAL <= 6000) DO;
+         NOACC15+1;
+         CABAL15+CURBAL;
+         RANGE15+CURBAL;
+      END;
+      WHEN (CURBAL > 6000 AND CURBAL <= 7000) DO;
+         NOACC16+1;
+         CABAL16+CURBAL;
+         RANGE16+CURBAL;
+      END;
+      WHEN (CURBAL > 7000 AND CURBAL <= 8000) DO;
+         NOACC17+1;
+         CABAL17+CURBAL;
+         RANGE17+CURBAL;
+      END;
+      WHEN (CURBAL > 8000 AND CURBAL <= 9000) DO;
+         NOACC18+1;
+         CABAL18+CURBAL;
+         RANGE18+CURBAL;
+      END;
+      WHEN (CURBAL > 9000 AND CURBAL <= 10000) DO;
+         NOACC19+1;
+         CABAL19+CURBAL;
+         RANGE19+CURBAL;
+      END;
+      WHEN (CURBAL > 10000 AND CURBAL <= 15000) DO;
+         NOACC20+1;
+         CABAL20+CURBAL;
+         RANGE20+CURBAL;
+      END;
+      WHEN (CURBAL > 15000 AND CURBAL <= 20000) DO;
+         NOACC21+1;
+         CABAL21+CURBAL;
+         RANGE21+CURBAL;
+      END;
+      WHEN (CURBAL > 20000 AND CURBAL <= 25000) DO;
+         NOACC22+1;
+         CABAL22+CURBAL;
+         RANGE22+CURBAL;
+      END;
+      WHEN (CURBAL > 25000 AND CURBAL <= 30000) DO;
+         NOACC23+1;
+         CABAL23+CURBAL;
+         RANGE23+CURBAL;
+      END;
+      WHEN (CURBAL > 30000 AND CURBAL <= 35000) DO;
+         NOACC24+1;
+         CABAL24+CURBAL;
+         RANGE24+CURBAL;
+      END;
+      WHEN (CURBAL > 35000 AND CURBAL <= 40000) DO;
+         NOACC25+1;
+         CABAL25+CURBAL;
+         RANGE25+CURBAL;
+      END;
+      WHEN (CURBAL > 40000 AND CURBAL <= 45000) DO;
+         NOACC26+1;
+         CABAL26+CURBAL;
+         RANGE26+CURBAL;
+      END;
+      WHEN (CURBAL > 45000 AND CURBAL <= 50000) DO;
+         NOACC27+1;
+         CABAL27+CURBAL;
+         RANGE27+CURBAL;
+      END;
+      WHEN (CURBAL > 50000 AND CURBAL <= 55000) DO;
+         NOACC28+1;
+         CABAL28+CURBAL;
+         RANGE28+CURBAL;
+      END;
+      WHEN (CURBAL > 55000 AND CURBAL <= 60000) DO;
+         NOACC29+1;
+         CABAL29+CURBAL;
+         RANGE29+CURBAL;
+      END;
+      WHEN (CURBAL > 60000 AND CURBAL <= 65000) DO;
+         NOACC30+1;
+         CABAL30+CURBAL;
+         RANGE30+CURBAL;
+      END;
+      WHEN (CURBAL > 65000 AND CURBAL <= 70000) DO;
+         NOACC31+1;
+         CABAL31+CURBAL;
+         RANGE31+CURBAL;
+      END;
+      WHEN (CURBAL > 70000 AND CURBAL <= 75000) DO;
+         NOACC32+1;
+         CABAL32+CURBAL;
+         RANGE32+CURBAL;
+      END;
+      WHEN (CURBAL > 75000 AND CURBAL <= 80000) DO;
+         NOACC33+1;
+         CABAL33+CURBAL;
+         RANGE33+CURBAL;
+      END;
+      WHEN (CURBAL > 80000 AND CURBAL <= 85000) DO;
+         NOACC34+1;
+         CABAL34+CURBAL;
+         RANGE34+CURBAL;
+      END;
+      WHEN (CURBAL > 85000 AND CURBAL <= 90000) DO;
+         NOACC35+1;
+         CABAL35+CURBAL;
+         RANGE35+CURBAL;
+      END;
+      WHEN (CURBAL > 90000 AND CURBAL <= 95000) DO;
+         NOACC36+1;
+         CABAL36+CURBAL;
+         RANGE36+CURBAL;
+      END;
+      WHEN (CURBAL > 95000 AND CURBAL <= 100000) DO;
+         NOACC37+1;
+         CABAL37+CURBAL;
+         RANGE37+CURBAL;
+      END;
+      WHEN (CURBAL > 100000 AND CURBAL <= 150000) DO;
+         NOACC38+1;
+         CABAL38+CURBAL;
+         RANGE38+CURBAL;
+      END;
+      WHEN (CURBAL > 150000 AND CURBAL <= 200000) DO;
+         NOACC39+1;
+         CABAL39+CURBAL;
+         RANGE39+CURBAL;
+      END;
+      WHEN (CURBAL > 200000 AND CURBAL <= 300000) DO;
+         NOACC40+1;
+         CABAL40+CURBAL;
+         RANGE40+CURBAL;
+      END;
+      WHEN (CURBAL > 300000 AND CURBAL <= 500000) DO;
+         NOACC41+1;
+         CABAL41+CURBAL;
+         RANGE41+CURBAL;
+      END;
+      WHEN (CURBAL > 500000 AND CURBAL <= 1000000) DO;
+         NOACC42+1;
+         CABAL42+CURBAL;
+         RANGE42+CURBAL;
+      END;
+      WHEN (CURBAL > 1000000 AND CURBAL <= 2000000) DO;
+         NOACC43+1;
+         CABAL43+CURBAL;
+         RANGE43+CURBAL;
+      END;
+      WHEN (CURBAL > 2000000 AND CURBAL <= 3000000) DO;
+         NOACC44+1;
+         CABAL44+CURBAL;
+         RANGE44+CURBAL;
+      END;
+      WHEN (CURBAL > 3000000 AND CURBAL <= 4000000) DO;
+         NOACC45+1;
+         CABAL45+CURBAL;
+         RANGE45+CURBAL;
+      END;
+      WHEN (CURBAL > 4000000 AND CURBAL <= 5000000) DO;
+         NOACC46+1;
+         CABAL46+CURBAL;
+         RANGE46+CURBAL;
+      END;
+      WHEN (CURBAL > 5000000 AND CURBAL <= 10000000) DO;
+         NOACC47+1;
+         CABAL47+CURBAL;
+         RANGE47+CURBAL;
+      END;
+      WHEN (CURBAL > 10000000) DO;
+         NOACC48+1;
+         CABAL48+CURBAL;
+         RANGE48+CURBAL;
+      END;
+      OTHERWISE;
+      END;
+      IF LAST THEN DO;
+         OUTPUT;
+      END;
+   RUN;
+
+   PROC DATASETS LIB=WORK NOLIST; DELETE SAVG; RUN;
+   OPTIONS NODATE NONUMBER NOCENTER;
+
+   DATA _NULL_;
+      SET RPTDATA;
+      FILE PRINT HEADER=NEWPAGE;
+
+      TOTACC = SUM(NOACC0,NOACC1,NOACC2,NOACC3,NOACC4,NOACC5,NOACC6,
+               NOACC7,NOACC8,NOACC9,NOACC10,NOACC11,NOACC12,NOACC13,
+               NOACC14,NOACC15,NOACC16,NOACC17,NOACC18,NOACC19,
+               NOACC20,NOACC21,NOACC22,NOACC23,NOACC24,NOACC25,
+               NOACC26,NOACC27,NOACC28,NOACC29,NOACC30,NOACC31,
+               NOACC32,NOACC33,NOACC34,NOACC35,NOACC36,NOACC37,
+               NOACC44,NOACC45,NOACC46,NOACC47,NOACC48,
+               NOACC38,NOACC39,NOACC40,NOACC41,NOACC42,NOACC43);
+      TOTCA  = SUM(CABAL0,CABAL1,CABAL2,CABAL3,CABAL4,CABAL5,CABAL6,
+               CABAL7,CABAL8,CABAL9,CABAL10,CABAL11,
+               CABAL12,CABAL13,CABAL14,CABAL15,CABAL16,CABAL17,
+               CABAL18,CABAL19,CABAL20,CABAL21,CABAL22,CABAL23,
+               CABAL24,CABAL25,CABAL26,CABAL27,CABAL28,CABAL29,
+               CABAL30,CABAL31,CABAL32,CABAL33,CABAL34,CABAL35,
+               CABAL36,CABAL37,CABAL38,CABAL39,CABAL40,CABAL41,
+               CABAL44,CABAL45,CABAL46,CABAL47,CABAL48,
+               CABAL42,CABAL43);
+      TOTAMT = SUM(TOTCA);
+
+      PUT @1   ' 1)       $NEGATIVE BALANCE    '
+          @38  NOACC0 COMMA11.0       @60  CABAL0 COMMA18.2
+                                      @90  RANGE0 COMMA18.2;
+      PUT @1   ' 2)       $0.00 -         $5.00'
+          @38  NOACC1 COMMA11.0       @60  CABAL1 COMMA18.2
+                                      @90  RANGE1 COMMA18.2;
+      PUT @1   ' 3)       $5.01 -        $10.00'
+          @38  NOACC2 COMMA11.0       @60  CABAL2 COMMA18.2
+                                      @90  RANGE2 COMMA18.2;
+      PUT @1   ' 4)      $10.01 -        $50.00'
+          @38  NOACC3 COMMA11.0       @60  CABAL3 COMMA18.2
+                                      @90  RANGE3 COMMA18.2;
+      PUT @1   ' 5)      $50.01 -       $100.00'
+          @38  NOACC4 COMMA11.0       @60  CABAL4 COMMA18.2
+                                      @90  RANGE4 COMMA18.2;
+      PUT @1   ' 6)     $100.01 -       $500.00'
+          @38  NOACC5 COMMA11.0       @60  CABAL5 COMMA18.2
+                                      @90  RANGE5 COMMA18.2;
+      PUT @1   ' 7)     $500.01 -      $1000.00'
+          @38  NOACC6 COMMA11.0       @60  CABAL6 COMMA18.2
+                                      @90  RANGE6 COMMA18.2;
+      PUT @1   ' 8)    $1000.01 -      $1500.00'
+          @38  NOACC7 COMMA11.0       @60  CABAL7 COMMA18.2
+                                      @90  RANGE7 COMMA18.2;
+      PUT @1   ' 9)    $1500.01 -      $2000.00'
+          @38  NOACC8 COMMA11.0       @60  CABAL8 COMMA18.2
+                                      @90  RANGE8 COMMA18.2;
+      PUT @1   '10)    $2000.01 -      $2500.00'
+          @38  NOACC9 COMMA11.0       @60  CABAL9 COMMA18.2
+                                      @90  RANGE9 COMMA18.2;
+      PUT @1   '11)    $2500.01 -      $3000.00'
+          @38  NOACC10 COMMA11.0      @60  CABAL10 COMMA18.2
+                                      @90  RANGE10 COMMA18.2;
+      PUT @1   '12)    $3000.01 -      $3500.00'
+          @38  NOACC11 COMMA11.0      @60  CABAL11 COMMA18.2
+                                      @90  RANGE11 COMMA18.2;
+      PUT @1   '13)    $3500.01 -      $4000.00'
+          @38  NOACC12 COMMA11.0      @60  CABAL12 COMMA18.2
+                                      @90  RANGE12 COMMA18.2;
+      PUT @1   '14)    $4000.01 -      $4500.00'
+          @38  NOACC13 COMMA11.0      @60  CABAL13 COMMA18.2
+                                      @90  RANGE13 COMMA18.2;
+      PUT @1   '15)    $4500.01 -      $5000.00'
+          @38  NOACC14 COMMA11.0      @60  CABAL14 COMMA18.2
+                                      @90  RANGE14 COMMA18.2;
+      PUT @1   '16)    $5000.01 -      $6000.00'
+          @38  NOACC15 COMMA11.0      @60  CABAL15 COMMA18.2
+                                      @90  RANGE15 COMMA18.2;
+      PUT @1   '17)    $6000.01 -      $7000.00'
+          @38  NOACC16 COMMA11.0      @60  CABAL16 COMMA18.2
+                                      @90  RANGE16 COMMA18.2;
+      PUT @1   '18)    $7000.01 -      $8000.00'
+          @38  NOACC17 COMMA11.0      @60  CABAL17 COMMA18.2
+                                      @90  RANGE17 COMMA18.2;
+      PUT @1   '19)    $8000.01 -      $9000.00'
+          @38  NOACC18 COMMA11.0      @60  CABAL18 COMMA18.2
+                                      @90  RANGE18 COMMA18.2;
+      PUT @1   '20)    $9000.01 -    $10,000.00'
+          @38  NOACC19 COMMA11.0      @60  CABAL19 COMMA18.2
+                                      @90  RANGE19 COMMA18.2;
+      PUT @1   '21)  $10,000.01 -    $15,000.00'
+          @38  NOACC20 COMMA11.0      @60  CABAL20 COMMA18.2
+                                      @90  RANGE20 COMMA18.2;
+      PUT @1   '22)  $15,000.01 -    $20,000.00'
+          @38  NOACC21 COMMA11.0      @60  CABAL21 COMMA18.2
+                                      @90  RANGE21 COMMA18.2;
+      PUT @1   '23)  $20,000.01 -    $25,000.00'
+          @38  NOACC22 COMMA11.0      @60  CABAL22 COMMA18.2
+                                      @90  RANGE22 COMMA18.2;
+      PUT @1   '24)  $25,000.01 -    $30,000.00'
+          @38  NOACC23 COMMA11.0      @60  CABAL23 COMMA18.2
+                                      @90  RANGE23 COMMA18.2;
+      PUT @1   '25)  $30,000.01 -    $35,000.00'
+          @38  NOACC24 COMMA11.0      @60  CABAL24 COMMA18.2
+                                      @90  RANGE24 COMMA18.2;
+      PUT @1   '26)  $35,000.01 -    $40,000.00'
+          @38  NOACC25 COMMA11.0      @60  CABAL25 COMMA18.2
+                                      @90  RANGE25 COMMA18.2;
+      PUT @1   '27)  $40,000.01 -    $45,000.00'
+          @38  NOACC26 COMMA11.0      @60  CABAL26 COMMA18.2
+                                      @90  RANGE26 COMMA18.2;
+      PUT @1   '28)  $45,000.01 -    $50,000.00'
+          @38  NOACC27 COMMA11.0      @60  CABAL27 COMMA18.2
+                                      @90  RANGE27 COMMA18.2;
+      PUT @1   '29)  $50,000.01 -    $55,000.00'
+          @38  NOACC28 COMMA11.0      @60  CABAL28 COMMA18.2
+                                      @90  RANGE28 COMMA18.2;
+      PUT @1   '30)  $55,000.01 -    $60,000.00'
+          @38  NOACC29 COMMA11.0      @60  CABAL29 COMMA18.2
+                                      @90  RANGE29 COMMA18.2;
+      PUT @1   '31)  $60,000.01 -    $65,000.00'
+          @38  NOACC30 COMMA11.0      @60  CABAL30 COMMA18.2
+                                      @90  RANGE30 COMMA18.2;
+      PUT @1   '32)  $65,000.01 -    $70,000.00'
+          @38  NOACC31 COMMA11.0      @60  CABAL31 COMMA18.2
+                                      @90  RANGE31 COMMA18.2;
+      PUT @1   '33)  $70,000.01 -    $75,000.00'
+          @38  NOACC32 COMMA11.0      @60  CABAL32 COMMA18.2
+                                      @90  RANGE32 COMMA18.2;
+      PUT @1   '34)  $75,000.01 -    $80,000.00'
+          @38  NOACC33 COMMA11.0      @60  CABAL33 COMMA18.2
+                                      @90  RANGE33 COMMA18.2;
+      PUT @1   '35)  $80,000.01 -    $85,000.00'
+          @38  NOACC34 COMMA11.0      @60  CABAL34 COMMA18.2
+                                      @90  RANGE34 COMMA18.2;
+      PUT @1   '36)  $85,000.01 -    $90,000.00'
+          @38  NOACC35 COMMA11.0      @60  CABAL35 COMMA18.2
+                                      @90  RANGE35 COMMA18.2;
+      PUT @1   '37)  $90,000.01 -    $95,000.00'
+          @38  NOACC36 COMMA11.0      @60  CABAL36 COMMA18.2
+                                      @90  RANGE36 COMMA18.2;
+      PUT @1   '38)  $95,000.01 -   $100,000.00'
+          @38  NOACC37 COMMA11.0      @60  CABAL37 COMMA18.2
+                                      @90  RANGE37 COMMA18.2;
+      PUT @1   '39) $100,000.01 -   $150,000.00'
+          @38  NOACC38 COMMA11.0      @60  CABAL38 COMMA18.2
+                                      @90  RANGE38 COMMA18.2;
+      PUT @1   '40) $150,000.01 -   $200,000.00'
+          @38  NOACC39 COMMA11.0      @60  CABAL39 COMMA18.2
+                                      @90  RANGE39 COMMA18.2;
+      PUT @1   '41) $200,000.01 -   $300,000.00'
+          @38  NOACC40 COMMA11.0      @60  CABAL40 COMMA18.2
+                                      @90  RANGE40 COMMA18.2;
+      PUT @1   '42) $300,000.01 -   $500,000.00'
+          @38  NOACC41 COMMA11.0      @60  CABAL41 COMMA18.2
+                                      @90  RANGE41 COMMA18.2;
+      PUT @1   '43) $500,000.01 - $1,000,000.00'
+          @38  NOACC42 COMMA11.0      @60  CABAL42 COMMA18.2
+                                      @90  RANGE42 COMMA18.2;
+
+      PUT @1   '44) $1,000,000.01 - $2,000,000.00'
+          @38  NOACC43 COMMA11.0      @60  CABAL43 COMMA18.2
+                                      @90  RANGE43 COMMA18.2;
+      PUT @1   '45) $2,000,000.01 - $3,000,000.00'
+          @38  NOACC44 COMMA11.0      @60  CABAL44 COMMA18.2
+                                      @90  RANGE44 COMMA18.2;
+      PUT @1   '46) $3,000,000.01 - $4,000,000.00'
+          @38  NOACC45 COMMA11.0      @60  CABAL45 COMMA18.2
+                                      @90  RANGE45 COMMA18.2;
+      PUT @1   '47) $4,000,000.01 - $5,000,000.00'
+          @38  NOACC46 COMMA11.0      @60  CABAL46 COMMA18.2
+                                      @90  RANGE46 COMMA18.2;
+      PUT @1   '48) $5,000,000.01 - $10,000,000.00'
+          @38  NOACC47 COMMA11.0      @60  CABAL47 COMMA18.2
+                                      @90  RANGE47 COMMA18.2;
+      PUT @1   '49) ABOVE $10,000,000.00'
+          @38  NOACC48 COMMA11.0      @60  CABAL48 COMMA18.2
+                                      @90  RANGE48 COMMA18.2;
+      PUT @1  '-----------------------------------------'
+          @41 '-----------------------------------------'
+          @81 '-------------------------';
+      PUT @1   '    TOTAL              '
+          @38  TOTACC  COMMA11.0      @60  TOTCA   COMMA18.2
+                                      @90  TOTAMT  COMMA18.2;
+      PUT @1  '-----------------------------------------'
+          @41 '-----------------------------------------'
+          @81 '-------------------------';
+
+      RETURN;
+
+      NEWPAGE:
+         PAGECNT+1;
+         PUT @1   'PROGRAM-ID : DALMPBB3'
+             @40  'P U B L I C   B A N K   B E R H A D';
+         PUT @37 "&RPTITLE" "&RDATE";
+         PUT;
+         PUT @7   'DEPOSIT RANGE'
+             @40  'NO OF ACCOUNT'
+             @62  'AMOUNT OUTSTANDING (RM)'
+             @102 'TOTAL';
+         PUT; PUT;
+      RETURN;
+   RUN;
+%MEND;
+
+/*********************************************************************/
+/** SUMMAZISE THE DATASET AT DEPOSIT RANGE - BONUSLINK CURRENT ACCTS */
+/*********************************************************************/
+DATA RPTDATA;
+   SET BONUC END=LAST;
+   CALL SYMPUT('RPTITLE','BREAKDOWN OF PB CURRENTLINK A/C AS AT ');
+RUN;
+%GENDATA;
+
+/*********************************************************************/
+/** SUMMAZISE THE DATASET AT DEPOSIT RANGE - BASIC CURRENT ACCTS     */
+/*********************************************************************/
+DATA RPTDATA;
+   SET BASIC END=LAST;
+   CALL SYMPUT('RPTITLE','BREAKDOWN OF BASIC CURRENT A/C AS AT ');
+RUN;
+%GENDATA;
+
+/*********************************************************************/
+/** SUMMAZISE THE DATASET AT DEPOSIT RANGE - BASIC 55 CURRENT ACCTS  */
+/*********************************************************************/
+DATA RPTDATA;
+   SET BASIC55 END=LAST;
+   CALL SYMPUT('RPTITLE','BREAKDOWN OF BASIC 55 CURRENT A/C AS AT ');
+RUN;
+%GENDATA;
+
