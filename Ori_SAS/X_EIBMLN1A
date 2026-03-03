@@ -1,0 +1,314 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBMLN1A                                          |
+ |  DATE    : 30.11.01 (SMR A295)                               |
+ |  REPORT  : UNDRAWN TERM LOAN/OVERDRAFT/LOAN OTHERS BY        |
+ |            COLLATERALS                                       |
+ |  NOTE    : EXCLUDE - VOSTRO 104,105 ('33110')                |
+ |            N/A - NORMAL HL SOLD TO CAGAMAS 225,226 ('54120') |
+ |            OTHER LOANS - RC 350,910,925 ('34190')            |
+ |                        - STAFF LOANS 4-33 ('34230')          |
+ +--------------------------------------------------------------+;
+%MACRO COLL;
+   SELECT (LIABCODE);
+      WHEN ('07','12','13','14','21','24','48','49') DO;
+         TYP=1;
+      END;
+      WHEN ('17','26','29') DO;
+         TYP=2;
+      END;
+      WHEN ('06','11','16','30','18','27','03') DO;
+         TYP=3;
+      END;
+      WHEN ('25') DO;
+         TYP=4;
+      END;
+      WHEN ('50') DO;
+         TYP=5;
+      END;
+      WHEN ('15','08','42') DO;
+         TYP=6;
+      END;
+      OTHERWISE DO;
+         TYP=7;
+      END;
+   END;
+%MEND COLL;
+*;
+DATA _NULL_;
+   SET BNM.REPTDATE;
+   SELECT (DAY(REPTDATE));
+      WHEN (8)  CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+DATA DESC;
+   SET BNM.SDESC;
+   CALL SYMPUT('SDESC',PUT(SDESC,$26.));
+RUN;
+*;
+  /********   MANIPULATION FOR RC ******************/
+PROC SORT DATA=BNM.LOAN&REPTMON&NOWK OUT=ALW;
+   BY ACCTNO NOTENO;
+RUN;
+*;
+PROC SORT DATA=BNM1.LNCOMM OUT=LNCOMM;
+   BY ACCTNO COMMNO;
+*;
+PROC SORT DATA=ALW OUT=ALWCOM;
+   WHERE COMMNO > 0;
+   BY ACCTNO COMMNO;
+*;
+DATA APPR;
+   MERGE ALWCOM(IN=A) LNCOMM;
+   BY ACCTNO COMMNO;
+   IF A & PRODCD = '34190' THEN DO;
+      IF FIRST.ACCTNO OR FIRST.COMMNO THEN OUTPUT;
+   END;
+   ELSE IF A THEN OUTPUT;
+*;
+PROC SORT DATA=ALW OUT=ALWNOCOM;
+   WHERE COMMNO <= 0;
+   BY ACCTNO COMMNO;
+*;
+PROC SORT DATA=ALWNOCOM;
+   BY ACCTNO APPRLIM2;
+*;
+DATA APPR1 DUP;
+   SET ALWNOCOM;
+   BY ACCTNO APPRLIM2;
+   IF PRODCD = '34190' THEN DO;
+      IF FIRST.ACCTNO OR FIRST.APPRLIM2 THEN
+      OUTPUT APPR1;
+      ELSE DO;
+         DUPLI=1;
+         OUTPUT DUP;
+      END;
+   END;
+*;
+PROC SORT DATA=DUP OUT=DUPLI;
+   WHERE BALANCE >= APPRLIM2;
+   BY ACCTNO APPRLIM2;
+RUN;
+
+DATA APPR1;
+   MERGE ALWNOCOM(IN=A) DUPLI(IN=B KEEP=ACCTNO APPRLIM2 DUPLI);
+   BY ACCTNO APPRLIM2;
+   IF PRODCD = '34190' THEN DO;
+      IF DUPLI = 1 THEN DO;
+         IF BALANCE >= APPRLIM2 THEN OUTPUT;
+      END;
+      ELSE IF FIRST.ACCTNO OR FIRST.APPRLIM2 THEN OUTPUT;
+   END;
+   ELSE OUTPUT;
+RUN;
+DATA LOAN;
+   SET APPR APPR1;
+PROC SORT; BY ACCTNO;
+        /********  END ************/
+DATA LOAN;
+   KEEP ACCTNO NOTENO CUSTCODE PRODUCT ACCTYPE EXPRDATE ORIGMT
+        PRODCD  BRANCH CURBAL INTAMT NETPROC LIABCODE TYP
+        LOANSTAT APPVALUE FEEAMT BALANCE CLOSEDTE APPRLIMT
+        ISSDTE RLEASAMT APPRLIM2 ACCTYPE COL1 AMTIND  UNDRAWN
+        COL2 SECTORCD;
+
+   SET LOAN;
+   IF ACCTYPE='OD' THEN DO;
+      LIAB1=SUBSTR(COL1,1,2);
+      LIAB2=SUBSTR(COL1,4,2);
+      LIAB3=SUBSTR(COL2,1,2);
+      LIAB4=SUBSTR(COL2,4,2);
+      IF LIAB1 NE ' '  THEN LIABCODE=LIAB1; ELSE
+      IF LIAB2 NE ' '  THEN LIABCODE=LIAB2; ELSE
+      IF LIAB3 NE ' '  THEN LIABCODE=LIAB3; ELSE
+      IF LIAB4 NE ' '  THEN LIABCODE=LIAB4; ELSE
+         LIABCODE = ' ';
+   END;
+
+   %COLL;
+
+RUN;
+*;
+
+PROC SORT DATA=BNM.ULOAN&REPTMON&NOWK OUT=ULOAN; BY ACCTNO COMMNO; RUN;
+PROC SORT DATA=BNM1.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO; RUN;
+DATA MRGULOAN;
+  MERGE ULOAN(IN=A) LNCOMM;
+  BY ACCTNO COMMNO;
+  IF A THEN OUTPUT;
+RUN;
+*;
+DATA ULOAN;
+  SET MRGULOAN (RENAME=(CCOLLTRL=LIABCODE));
+  %COLL;
+RUN;
+*;
+DATA LOAN1(KEEP=BRANCH TYP REMMTH UNDRAWN AMTIND ACCTNO LIABCODE)
+     LOAN2(KEEP=BRANCH TYP REMMTH UNDRAWN AMTIND ACCTNO LIABCODE)
+     LOAN3(KEEP=BRANCH TYP REMMTH UNDRAWN AMTIND ACCTNO LIABCODE);
+   SET LOAN ULOAN;
+   BY ACCTNO;
+   IF _N_ = 1 THEN SET BNM.REPTDATE;
+   IF ACCTYPE = 'OD' THEN REMMTH = 1;
+   ELSE DO;
+    * IF EXPRDATE - REPTDATE < 366 THEN REMMTH = 1;
+      IF ORIGMT < '20' THEN REMMTH = 1;
+      ELSE REMMTH = 13;
+   END;
+   IF SUBSTR(PRODCD,1,2) = '34' OR PRODCD = '54120';
+
+   IF ACCTYPE = 'OD' THEN DO;
+      OUTPUT LOAN1;               /* LOAN1 - OD */
+   END;  /*
+   ELSE IF PRODCD IN ('34190') THEN DO;
+      IF FIRST.ACCTNO THEN OUTPUT LOAN2;
+   END;    */
+   ELSE IF PRODCD IN ('34190','34230','54120') THEN DO;
+      OUTPUT LOAN2;
+   END;                           /* LOAN2 - UND. LOAN OTHERS */
+   ELSE DO;
+      OUTPUT LOAN3;               /* LOAN3 - UND. TERM LOANS */
+   END;
+RUN;
+*;
+OPTIONS NOCENTER NODATE NUMBER MISSING=0;
+*;
+%LET TBL1=UNDRAWN OVERDRAFT FACILITIES;
+%LET TBL2=UNDRAWN LOAN OTHERS;
+%LET TBL3=UNDRAWN TERM LOANS;
+*;
+PROC FORMAT;
+   VALUE TYPFMT
+      1 = 'PBB OWN FIXED DEPOSIT, 30308 (0%)'
+      2 = 'DISCOUNT HOUSE/CAGAMAS, 30314 (10%)'
+      3 = 'FIN INST FIXED DEPOSIT/GUARANTEE, 30332 (20%)'
+      4 = 'STATUTORY BODIES, 30336 (20%)'
+      5 = 'FIRST CHARGE, 30342 (50%)'
+      6 = 'SHARES/UNIT TRUSTS, 30360 (100%)'
+      7 = 'OTHERS, 30360 (100%)';
+*;
+TITLE1 'REPORT ID: EIBMLNA1';
+TITLE2 &SDESC     '    DATE : ' "&RDATE";
+*;
+%MACRO BNKTBL1;
+   %DO I = 1 %TO 3;
+        PROC TABULATE DATA=LOAN&I FORMAT=13.2 MISSING NOSEPS;
+           FORMAT TYP TYPFMT.;
+           WHERE REMMTH NE 1;
+           CLASS BRANCH REMMTH TYP;
+           VAR UNDRAWN;
+           TABLE (BRANCH=' ' ALL='TOTAL'),
+                 (TYP=' ' ALL='TOTAL') *UNDRAWN=' '*SUM=' '
+                 / BOX='BRANCH' RTS=8;
+           TITLE3 &&TBL&I ' WITH ORIGINAL MATURITY MORE THAN 1 YEAR';
+           TITLE4 '(CONVENTIONAL + ISLAMIC)';
+   %END;
+%MEND BNKTBL1;
+*;
+%MACRO ISLTBL1;
+   %DO I = 1 %TO 3;
+        PROC TABULATE DATA=LOAN&I FORMAT=13.2 MISSING NOSEPS;
+           FORMAT TYP TYPFMT.;
+           WHERE REMMTH NE 1 AND AMTIND = 'I';
+           CLASS BRANCH REMMTH TYP;
+           VAR UNDRAWN;
+           TABLE (BRANCH=' ' ALL='TOTAL'),
+                 (TYP=' ' ALL='TOTAL') *UNDRAWN=' '*SUM=' '
+                 / BOX='BRANCH' RTS=8;
+           TITLE3 &&TBL&I ' WITH ORIGINAL MATURITY MORE THAN 1 YEAR';
+           TITLE4 '(ISLAMIC)';
+   %END;
+%MEND ISLTBL1;
+*;
+%MACRO BNKTBL2;
+   %DO I = 2 %TO 3;
+        PROC TABULATE DATA=LOAN&I FORMAT=13.2 MISSING NOSEPS;
+           FORMAT TYP TYPFMT.;
+           WHERE REMMTH EQ 1;
+           CLASS BRANCH REMMTH TYP;
+           VAR UNDRAWN;
+           TABLE (BRANCH=' ' ALL='TOTAL'),
+                 (TYP=' ' ALL='TOTAL') *UNDRAWN=' '*SUM=' '
+                 / BOX='BRANCH' RTS=8;
+           TITLE3 &&TBL&I ' WITH ORIGINAL MATURITY UP TO 1 YEAR';
+           TITLE4 '(CONVENTIONAL + ISLAMIC)';
+   %END;
+%MEND BNKTBL2;
+*;
+%MACRO ISLTBL2;
+   %DO I = 1 %TO 3;
+        PROC TABULATE DATA=LOAN&I FORMAT=13.2 MISSING NOSEPS;
+           FORMAT TYP TYPFMT.;
+           WHERE REMMTH EQ 1 AND AMTIND = 'I';
+           CLASS BRANCH REMMTH TYP;
+           VAR UNDRAWN;
+           TABLE (BRANCH=' ' ALL='TOTAL'),
+                 (TYP=' ' ALL='TOTAL') *UNDRAWN=' '*SUM=' '
+                 / BOX='BRANCH' RTS=8;
+           TITLE3 &&TBL&I ' WITH ORIGINAL MATURITY UP TO 1 YEAR';
+           TITLE4 '(ISLAMIC)';
+   %END;
+%MEND ISLTBL2;
+*;
+%MACRO BNKTBL3;
+   %DO I = 1 %TO 3;
+        PROC TABULATE DATA=LOAN&I FORMAT=COMMA17.2 MISSING NOSEPS;
+           CLASS BRANCH REMMTH;
+           VAR UNDRAWN;
+           TABLE (BRANCH=' ' ALL='TOTAL'),
+                 UNDRAWN=' '*SUM='TOTAL'
+                 / BOX='BRANCH' RTS=8;
+           TITLE3 'TOTAL ' &&TBL&I;
+           TITLE4 '(CONVENTIONAL+ISLAMIC)';
+   %END;
+%MEND BNKTBL3;
+*;
+%MACRO ISLTBL3;
+   %DO I = 1 %TO 3;
+        PROC TABULATE DATA=LOAN&I FORMAT=COMMA17.2 MISSING NOSEPS;
+           WHERE AMTIND = 'I';
+           CLASS BRANCH REMMTH;
+           VAR UNDRAWN;
+           TABLE (BRANCH=' ' ALL='TOTAL'),
+                 UNDRAWN=' '*SUM='TOTAL'
+                 / BOX='BRANCH' RTS=8;
+           TITLE3 'TOTAL ' &&TBL&I;
+           TITLE4 '(ISLAMIC)';
+   %END;
+%MEND ISLTBL3;
+*;
+*+--------------------------------------------------------------+
+ |  CONVENTIONAL & ISLAMIC : ORIGINAL MATURITY > 1 YEAR         |
+ +--------------------------------------------------------------+;
+%BNKTBL1;
+*;
+*+--------------------------------------------------------------+
+ |  ISLAMIC : ORIGINAL MATURITY > 1 YEAR                        |
+ +--------------------------------------------------------------+;
+%ISLTBL1;
+*;
+*+--------------------------------------------------------------+
+ |  CONVENTIONAL & ISLAMIC : ORIGINAL MATURITY <= 1 YEAR        |
+ +--------------------------------------------------------------+;
+%BNKTBL2;
+*;
+*+--------------------------------------------------------------+
+ |  ISLAMIC : ORIGINAL MATURITY <= 1 YEAR                       |
+ +--------------------------------------------------------------+;
+%ISLTBL2;
+*;
+*+--------------------------------------------------------------+
+ |  SUMMARY - CONVENTIONAL + ISLAMIC                            |
+ +--------------------------------------------------------------+;
+%BNKTBL3;
+*;
+*+--------------------------------------------------------------+
+ |  SUMMARY - ISLAMIC                                           |
+ +--------------------------------------------------------------+;
+%ISLTBL3;
+*;
