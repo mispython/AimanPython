@@ -1,0 +1,175 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBBPBCR                                          |
+ |  DATE    : 24.04.2000                                        |
+ |  REPORT  : 1. LISTING OF PB PREMIUM CLUB MEMBERS             |
+ |            2. PROFILE ON PB PREMIUM CLUB                     |
+ |  ESMR NO : 2006-1225
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1930 NOCENTER NODATE NONUMBER MISSING=0;
+*;
+%INC PGM(PBBELF);
+*;
+PROC FORMAT;
+   VALUE SAPROD
+      200   = 'PLUS'
+      201   = 'STAFF'
+      202   = 'YAA'
+      203   = '50PLUS'
+      204   = 'AL-WADIAH'
+      212   = 'WISE'
+      213   = 'PB SAVELINK'
+      214   = 'MUDHARABAH BESTARI'
+      156   = 'PB CURRENTLINK'
+      157   = 'PB CURRENTLINK EXT'
+      100   = 'PLUS CURRENT'
+      102   = 'EXT CURRENT'
+      150   = 'ACE NORMAL'
+      151   = 'ACE STAFF'
+      152   = 'ACE EXTERNAL'
+      160   = 'AL-WADIAH CA'
+      162   = 'AL-WADIAH EXT'
+      OTHER = 'UNKNOWN';
+*;
+   VALUE EXIST
+      1     = 'NEW'
+      OTHER = 'EXISTING';
+*;
+   VALUE $SAPURP
+      '1'     = 'PERSONAL'
+      '2'     = 'JOINT'
+      '5','6' = 'ON-BEHALF'
+      OTHER   = 'UNKNOWN';
+*;
+   VALUE $RACE
+      '1'     = 'MALAY'
+      '2'     = 'CHINESE'
+      '3'     = 'INDIAN'
+      OTHER   = 'OTHERS';
+*;
+   VALUE BALRGE    LOW-30000   = ' RM   30,000 AND BELOW'
+                 30000-50000   = '>RM   30,000-RM   50,000'
+                 50000-75000   = '>RM   50,000-RM   75,000'
+                 75000-100000  = '>RM   75,000-RM  100,000'
+                100000-250000  = '>RM  100,000-RM  250,000'
+                250000-500000  = '>RM  250,000-RM  500,000'
+                500000-750000  = '>RM  500,000-RM  750,000'
+                750000-1000000 = '>RM  750,000-RM1,000,000'
+               1000000-HIGH    = '>RM1,000,000 & ABOVE';
+*;
+DATA _NULL_;
+   SET DEPOSIT.REPTDATE;
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));
+RUN;
+*;
+DATA SAVG;
+   KEEP BRANCH ACCTNO NAME PURPOSE PRODUCT AVGAMT RACE LEDGBAL EXISTING;
+   SET DEPOSIT.SAVING;
+   IF USER3 IN ('2','4','7') AND
+      OPENIND NOT IN ('B','C','P','Z');
+   IF INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.) GE MDY(11,18,98)
+      THEN EXISTING = 1;
+*;
+DATA CURN;
+   KEEP BRANCH ACCTNO NAME PURPOSE PRODUCT AVGAMT RACE LEDGBAL EXISTING;
+   SET DEPOSIT.CURRENT;
+   IF PRODUCT IN (150,151,152,100,102,156,157,160,162) &
+      USER3 IN ('2','4','7') AND
+      OPENIND NOT IN ('B','C','P');
+   IF INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.) GE MDY(11,18,98)
+      THEN EXISTING = 1;
+*;
+DATA SAVG;
+   DROP BRANCH;
+   SET SAVG CURN;
+   RANGE = PUT(LEDGBAL,BALRGE.);
+   BRCH = PUT(BRANCH,Z3.)||'/'||PUT(BRANCH,BRCHCD.);
+   RENAME BRCH=BRANCH;
+*;
+PROC SORT DATA=SAVG;
+   BY BRANCH NAME;
+*;
+*------------------------------------------------*
+*  LISTING OF PB PREMIUM CLUB MEMBERS AS AT      *
+*------------------------------------------------*;
+  /*
+TITLE1 'REPORT NO : EIBBPBCR';
+TITLE2 'PUBLIC BANK BERHAD';
+TITLE3 'LISTING OF PB PREMIUM CLUB MEMBERS AS AT ' &RDATE;
+PROC PRINT LABEL NOOBS N;
+   WHERE AVGAMT >= 30000;
+   FORMAT PURPOSE $SAPURP. PRODUCT SAPROD. AVGAMT COMMA16.2;
+   LABEL BRANCH   = 'BRANCH CODE'
+         ACCTNO   = 'ACCOUNT NO.'
+         NAME     = 'CUSTOMER NAME'
+         PURPOSE  = 'TYPE OF ACCOUNT'
+         PRODUCT  = 'PRODUCT TYPE'
+         AVGAMT   = 'YTD AVERAGE BALANCE (RM)';
+   VAR BRANCH ACCTNO NAME PURPOSE PRODUCT AVGAMT;
+   TITLE4 'YTD AVERAGE BALANCE OF RM30K & ABOVE';
+*;
+PROC PRINT LABEL NOOBS N;
+   WHERE AVGAMT < 30000;
+   FORMAT PURPOSE $SAPURP. PRODUCT SAPROD. AVGAMT COMMA16.2;
+   LABEL BRANCH   = 'BRANCH CODE'
+         ACCTNO   = 'ACCOUNT NO.'
+         NAME     = 'CUSTOMER NAME'
+         PURPOSE  = 'TYPE OF ACCOUNT'
+         PRODUCT  = 'PRODUCT TYPE'
+         AVGAMT   = 'YTD AVERAGE BALANCE (RM)';
+   VAR BRANCH ACCTNO NAME PURPOSE PRODUCT AVGAMT;
+   TITLE4 'YTD AVERAGE BALANCE BELOW RM30K';
+  */
+*;
+*------------------------------------------------*
+*  PROFILE ON PB PREMIUM CLUB AS AT              *
+*------------------------------------------------*;
+TITLE1 'REPORT NO : EIBBPBCR'
+       '         PUBLIC BANK BERHAD - PROFILE ON PB PREMIUM CLUB AT AT'
+                               &RDATE;
+TITLE2 'PROGRAM   :';
+TITLE3 'BRANCH NO :';
+TITLE4;
+*;
+PROC PRINTTO PRINT=COLD1 NEW; RUN;
+
+PROC TABULATE DATA=SAVG MISSING NOSEPS;
+   FORMAT PURPOSE $SAPURP. RACE $RACE.;
+   CLASS RANGE PURPOSE RACE;
+   VAR LEDGBAL;
+   TABLE RANGE=' ' ALL='TOTAL',
+         LEDGBAL=' '*(N='NO OF ACCOUNT'*F=COMMA7.
+                      PCTN='%'*F=COMMA6.2
+                      SUM='O/S BALANCE'*F=COMMA16.2
+                      PCTSUM='%'*F=COMMA6.2
+                      MEAN='AVERAGE AMOUNT PER A/C'*F=COMMA14.2)
+         N=' '*F=COMMA9.*(PURPOSE='ACCOUNT TYPE' RACE)
+         / BOX='DEPOSIT RANGE' RTS=35;
+PROC PRINTTO; RUN;
+*;
+*------------------------------------------------*
+*  PROFILE ON PB PREMIUM CLUB BY PRODUCT         *
+*------------------------------------------------*;
+TITLE1 'REPORT NO : EIBBPBCR        PBB - PROFILE ON PB PREMIUM CLUB'
+' BY PRODUCT AS AT'                                             &RDATE;
+TITLE2 'PROGRAM   :';
+TITLE3 'BRANCH NO :';
+TITLE4;
+*;
+PROC PRINTTO PRINT=COLD2 NEW; RUN;
+*;
+PROC TABULATE DATA=SAVG MISSING NOSEPS;
+   FORMAT PRODUCT SAPROD. EXISTING EXIST.;
+   CLASS PRODUCT EXISTING;
+   VAR LEDGBAL;
+   TABLE PRODUCT=' ' ALL='TOTAL',
+         LEDGBAL=' '*(N=' '*F=COMMA9.*(EXISTING='NO OF ACCOUNT')
+                      N='TOTAL NO OF ACCOUNT'*F=COMMA7.
+                      PCTN='%'*F=COMMA6.2
+                      SUM=' '*F=COMMA16.2*(EXISTING='O/S AMOUNT')
+                      SUM='TOTAL O/S AMOUNT'*F=COMMA16.2
+                      PCTSUM='%'*F=COMMA6.2
+                      MEAN='AVERAGE AMOUNT PER A/C'*F=COMMA14.2)
+         / BOX='TYPE OF ACCOUNT' RTS=18;
+*;
+PROC PRINTTO; RUN;
+*;
