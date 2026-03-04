@@ -1,0 +1,20 @@
+trigger: none
+
+pool:
+  name: DWH-BGNVMBLD108
+
+resources:
+  repositories:
+    - repository: sharedTemplates
+      type: git
+      name: 'MIS/pipeline-templates'
+      ref: refs/heads/main
+
+steps:
+- template: templates/Pipeline-GitDiff.yml@sharedTemplates
+  parameters:
+    sonarProjectKey: 'MIS_MIS_AZiHuZxBe6JhXmPgx7c1'
+    cliSources: '.'
+    SonarQubeEndPoint: 'SonarQube'
+    scannerMode: 'cli'
+    configMode: 'manual'
