@@ -18,3 +18,14 @@ steps:
     SonarQubeEndPoint: 'SonarQube'
     scannerMode: 'cli'
     configMode: 'manual'
+
+------------------------------
+
+parameters:
+  sonarProjectKey: 'MIS_MIS_AZiHuZxBe6JhXmPgx7c1'
+  cliSources: '.'
+  SonarQubeEndPoint: 'SonarQube'
+  scannerMode: 'cli'
+  configMode: 'manual'
+  extraProperties: |
+    sonar.python.version=3.12
