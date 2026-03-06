@@ -16,7 +16,7 @@ from datetime import datetime, date
 # ---------------------------------------------------------------------------
 # DEPENDENCY: PBBDPFMT – product lists and format definitions
 # ---------------------------------------------------------------------------
-from PBBDPFMT_ import ProductLists
+from PBBDPFMT import ProductLists
 
 # ---------------------------------------------------------------------------
 # PATH CONFIGURATION
