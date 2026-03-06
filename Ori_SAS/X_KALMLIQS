@@ -1,0 +1,221 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : KALMLIQS                                          |
+ |  DATE    : 22.07.98                                          |
+ |  REPORT  : NEW LIQUIDITY FRAMEWORK (KAPITI FOR PART 2 & 3)   |
+ +--------------------------------------------------------------+
+ |  DATE MODIFIED : 31-12-2001 (WBL)                            |
+ |  SMR/OTHERS    : JS                                          |
+ |  CHANGES MADE  : INCLUDE INTEREST RECEIVABLE FOR INVESTMENT  |
+ |                  STOCK : ITEM A2.03 & A2.04 (EMAIL 28/12/01) |
+ +--------------------------------------------------------------+;
+*;
+*----------------------------------------------------------------*
+*  BREAKDOWN BY PURE CONTRACTUAL MATURITY PROFILE (PART 2)       *
+*----------------------------------------------------------------*;
+DATA K1TBL (KEEP=PART ITEM MATDT AMOUNT);
+   LENGTH ITEM $6;
+   SET BNMK.K1TBL&REPTMON&NOWK (RENAME=(GWMDT=MATDT GWBALC=AMOUNT));
+   IF GWMVT = 'P';
+   IF GWOCY='XAU' THEN DELETE;
+   IF GWCCY='XAU' THEN DELETE;
+   IF GWCCY  = 'MYR' THEN DO;
+      PART = '2-RM';
+      IF GWMVTS = 'M' THEN DO;
+         IF GWDLP IN ('BCD','BCI','BCS') THEN DO;
+            ITEM = 'A2.16'; OUTPUT;
+         END;
+         IF SUBSTR(GWCTP,1,1) = 'B' THEN
+            SELECT (GWDLP);
+               WHEN ('LO','LC','LF','LS','LOI','LSI','LSC','LSW',
+                     'FDA','FDB','FDS','FDL') DO;
+                  AMOUNT=ABS(AMOUNT);
+                  ITEM = 'A2.01'; OUTPUT;
+               END;
+               WHEN ('BO','BF','BOI','BFI','BSC','BSW') DO;
+                  ITEM = 'A2.14'; OUTPUT;
+               END;
+               OTHERWISE;
+            END;
+         SELECT (SUBSTR(GWDLP,2,2));
+            WHEN ('MI','MT') DO;
+               CUST=PUT(GWCTP,$CTYPE.);
+               IF CUST IN &IREP  THEN ITEM = 'A2.15';
+                                 ELSE ITEM = 'A2.16';
+               OUTPUT;
+            END;
+            WHEN ('XI','XT') DO;
+               ITEM = 'A2.02'; OUTPUT;
+            END;
+            OTHERWISE;
+         END;
+      END;
+      ELSE IF GWDLP IN ('FXS','FXO','FXF','TS1','TS2','SF1','SF2',
+         'FF1','FF2') THEN DO;
+         IF GWMVTS = 'P' THEN ITEM = 'A2.09';
+         ELSE IF GWMVTS = 'S' THEN ITEM = 'A2.19';
+         OUTPUT;
+      END;
+   END;
+*;
+   ELSE DO;
+      PART = '2-F$';
+      IF GWMVTS = 'M' THEN DO;
+         IF SUBSTR(GWCTP,1,1) = 'B' THEN
+            SELECT (GWDLP);
+               WHEN ('LO','LC','LS','LF','LOI','LSI','LSC','LOC',
+                     'FDA','FDB','FDS','FDL','LOW','LSW') DO;
+                  ITEM = 'B2.01'; OUTPUT;
+               END;
+               WHEN ('BC','BF','BO','BSC','BOC','BOW','BSW') DO;
+                  IF SUBSTR(GWSHN,1,6) ^= 'FCY-FD' THEN DO;
+                     ITEM = 'B2.14'; OUTPUT;
+                  END;
+               END;
+               OTHERWISE;
+            END;
+      END;
+      ELSE IF GWDLP IN ('FXS','FXO','FXF','TS1','TS2','SF1','SF2',
+         'FF1','FF2') AND GWACT NOT IN ('RV','RW') THEN DO;
+         IF GWMVTS = 'P' THEN ITEM = 'B2.09';
+         ELSE IF GWMVTS = 'S' THEN ITEM = 'B2.19';
+         OUTPUT;
+      END;
+   END;
+*;
+DATA K3TBL (KEEP=PART ITEM MATDT AMOUNT);
+   LENGTH ITEM $6;
+   SET BNMK.K3TBL&REPTMON&NOWK;
+   PART = '2-RM';
+   AMOUNT = UTAMOC - UTDPF;
+   IF UTSTY='IDC' THEN AMOUNT = UTAMOC + UTDPF;
+ * IF UTREF IN ('INV','TRD','TAP') THEN DO;
+   IF UTREF IN ('IAFSLIQ','AFSLIQ','AFSBOND','INV','DRI','DLG','AFS')
+      THEN DO;
+      SELECT (UTSTY);
+         WHEN ('CB1','CB2','CF1','CF2','CNT','MGS','MTB','BNB','BNN',
+               'ITB','SAC','BMN','BMC','BMF','SCD',
+               'CMB','MGI','SMC') DO;
+            ITEM = 'A2.03';
+            IF &INST='PBB' THEN DO;
+               AMOUNT = AMOUNT + UTAICT;
+            END;
+            OUTPUT;
+         END;
+
+         WHEN ('SDC') DO;
+            ITEM = 'A2.04';
+            IF &INST='PBB' THEN DO;
+               AMOUNT = (UTAMOC*(UTPCP/100))+UTDPEY+UTDPE;
+            END;
+            OUTPUT;
+         END;
+         WHEN ('LDC') DO;
+            ITEM = 'A2.04';
+            IF &INST='PBB' THEN DO;
+               AMOUNT = AMOUNT + UTAICT;
+            END;
+            OUTPUT;
+         END;
+
+         WHEN ('SLD','SSD') DO;
+            ITEM = 'A2.04';
+            IF &INST='PBB' THEN DO;
+               AMOUNT = (UTAMOC*(UTPCP/100))+UTAICY+UTAIT;
+            END;
+            OUTPUT;
+         END;
+
+         WHEN ('SFD','SZD') DO;
+            ITEM = 'A2.04';
+            IF &INST='PBB' THEN DO;
+               AMOUNT = AMOUNT + UTAICT;
+            END;
+            OUTPUT;
+         END;
+
+         WHEN ('SBA') DO;
+            IF UTDLP NOT IN ('MOS','MSS') THEN DO;
+               ITEM = 'A2.05'; OUTPUT;
+            END;
+         END;
+         WHEN ('ISB','DHB','KHA') DO;
+            ITEM = 'A2.06'; OUTPUT;
+         END;
+         WHEN ('DBD') DO;
+            ITEM = 'A2.07'; OUTPUT;
+         END;
+         WHEN ('DMB','DBD','GRL','MTL','RUL','IBZ','DBZ') DO;
+            ITEM = 'A2.08'; OUTPUT;
+         END;
+         WHEN ('PBA') DO;
+            IF UTDLP IN ('MOS','MSS') THEN DO;
+               ITEM = 'A2.18'; OUTPUT;
+            END;
+         END;
+         OTHERWISE;
+      END;
+   END;
+   ELSE IF UTREF IN ('PFD','PLD','PSD','PZD','PDC') THEN DO;
+      IF UTSTY IN ('IFD','ILD','ISD','IZD','IDC','IDP','IZP') THEN DO;
+         ITEM = 'A2.17'; OUTPUT;
+      END;
+   END;
+*  ELSE IF UTREF IN ('IINV','ITRD','ITAP') THEN DO;
+   ELSE IF UTREF IN ('IINV','IDRI','IDLG') THEN DO;
+
+      IF UTSTY IN ('SBA') AND UTDLP IN ('IOP') THEN DO;
+         ITEM='A2.05'; OUTPUT;
+      END;
+      ELSE
+      IF UTSTY IN ('SDC') THEN DO;
+         ITEM = 'A2.04';
+         IF &INST='PBB' THEN DO;
+            AMOUNT = (UTAMOC*(UTPCP/100))+UTDPEY+UTDPE;
+         END;
+         OUTPUT;
+      END;
+      IF UTSTY IN ('LDC') THEN DO;
+         ITEM = 'A2.04';
+         IF &INST='PBB' THEN DO;
+            AMOUNT = AMOUNT + UTAICT;
+         END;
+         OUTPUT;
+      END;
+      ELSE
+      IF UTSTY IN ('SLD','SSD') THEN DO;
+         ITEM = 'A2.04';
+         IF &INST='PBB' THEN DO;
+            AMOUNT = (UTAMOC*(UTPCP/100))+UTAICY+UTAIT;
+         END;
+         OUTPUT;
+      END;
+      ELSE
+      IF UTSTY IN ('SFD','SZD') THEN DO;
+         ITEM = 'A2.04';
+         IF &INST='PBB' THEN DO;
+            AMOUNT = AMOUNT + UTAICT;
+         END;
+         OUTPUT;
+      END;
+
+      ELSE IF UTSTY IN ('CB1','CB2','CF1','CF2','CNT','MGI',
+                        'ITB','SAC','BMN','BMC','BMF','SCD',
+                        'MGS','MTB','BNB','BNN','CMB','SMC') THEN DO;
+          ITEM = 'A2.03';
+          IF &INST='PBB' THEN DO;
+             AMOUNT = AMOUNT + UTAICT;
+          END;
+          OUTPUT;
+      END;
+      ELSE IF UTSTY IN ('ISB','DHB','KHA') THEN DO;
+         ITEM = 'A2.06'; OUTPUT;
+      END;
+      ELSE IF UTSTY IN ('IBZ','DBZ') THEN DO;
+         ITEM = 'A2.08'; OUTPUT;
+      END;
+   END;
+   IF UTSTY='SIP' THEN DO;
+      AMOUNT=ABS(AMOUNT);
+      ITEM = 'A2.01'; OUTPUT;
+   END;
+*;
