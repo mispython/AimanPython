@@ -1,0 +1,255 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBWLQP2                                          |
+ |  DATE    : 29.07.2005                                        |
+ |  REPORT  : NEW LIQUIDITY FRAMEWORK (PART 2-RM LOANS)         |
+ |            CONTRACTUAL RUN-OFFS AS OF END OF THE MONTH       |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950;
+%INC PGM(PBBLNFMT,PBBDPFMT);
+%LET FCY=(800,801,802,803,804,805,806,851,852,853,854,855,856,857,858,
+          859,860,807,808,809,810,811,812,813,814);
+*;
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0.255 = 'UP TO 1 WK'
+      0.255-1   = '>1 WK - 1 MTH'
+      OTHER     = '>1 MTH';
+*;
+   VALUE $ITEMF
+     'A2.01'  = 'A2.01  LOANS: CORP - FIXED TERM LOANS'
+     'A2.02'  = 'A2.02  LOANS: CORP - REVOLVING LOANS'
+     'A2.04'  = 'A2.04  LOANS: CORP - OTHERS'
+     'A2.05'  = 'A2.05  LOANS: IND  - HOUSING LOANS'
+     'A2.08'  = 'A2.08  LOANS: IND  - OTHERS'
+     'A2.08A' = 'A2.08A LOANS: IND  - REVOLVING LOANS'
+     'B1.01'  = 'B1.01  LOANS: NON-INDIVIDUALS - FIXED TERM LOANS'
+     'B1.02'  = 'B1.02  LOANS: NON-INDIVIDUALS - REVOLVING LOANS'
+     ;
+*;
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE NEXT BLDATE                *
+*------------------------------------------------*;
+%MACRO NXTBLDT;
+   IF PAYFREQ = '6' THEN DO;
+      DD = DAY(BLDATE) + 14;
+      MM = MONTH(BLDATE);
+      YY = YEAR(BLDATE);
+      IF MM = 2 THEN
+         IF MOD(YY,4) = 0 THEN D2 = 29;
+         ELSE D2 = 28;
+      IF DD > LDAY(MM) THEN DO;
+         DD = DD - LDAY(MM);
+         MM + 1;
+         IF MM > 12 THEN DO;
+            MM = MM - 12; YY + 1;
+         END;
+      END;
+   END;
+   ELSE DO;
+      DD = DAY(ISSDTE);
+      MM = MONTH(BLDATE) + FREQ;
+      YY = YEAR(BLDATE);
+      IF MM > 12 THEN DO;
+         MM = MM - 12; YY + 1;
+      END;
+   END;
+   IF MM = 2 THEN
+      IF MOD(YY,4) = 0 THEN D2 = 29;
+      ELSE D2 = 28;
+   IF DD > LDAY(MM) THEN DD = LDAY(MM);
+   BLDATE = MDY(MM,DD,YY);
+%MEND NXTBLDT;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE REMAIN MONTH               *
+*------------------------------------------------*;
+%MACRO REMMTH;
+   MDYR  = YEAR(MATDT);
+   MDMTH = MONTH(MATDT);
+   MDDAY = DAY(MATDT);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+   IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+*;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE;
+   SET BNM.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN  (8) CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+*------------------------------------------------*
+*  DETERMINE RUN-OFF DATE                        *
+*------------------------------------------------*;
+DATA _NULL_;
+   %DCLVAR
+   SET BNM.REPTDATE;
+   RPYR  = YEAR(REPTDATE);
+   RPMTH = MONTH(REPTDATE);
+   RPDAY = DAY(REPTDATE);
+   IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   RUNOFFDT = MDY(RPMTH,RPDAYS(RPMTH),RPYR);
+   CALL SYMPUT('RUNOFFDT',PUT(RUNOFFDT,8.));
+RUN;
+*----------------------------------------------------------------*
+*  BREAKDOWN BY MATURITY PROFILE (PART 1 & 2 - RM)               *
+*----------------------------------------------------------------*;
+*------------------------------------------------*
+*  LOANS - FL/HL USE REPAYMENT DATE              *
+*        - OD/RC USE EXPIRY DATE                 *
+*------------------------------------------------*;
+PROC SORT DATA=BNM1.LOAN&REPTMON&NOWK OUT=NOTEX; BY ACCTNO;
+WHERE PAIDIND NOT IN ('P','C');
+*;
+DATA NOTE (KEEP=PART ITEM REMMTH AMOUNT);
+   LENGTH ITEM $6;
+   %DCLVAR
+   SET NOTEX;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(&RUNOFFDT);
+      RPMTH = MONTH(&RUNOFFDT);
+      RPDAY = DAY(&RUNOFFDT);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF SUBSTR(PRODCD,1,2) = '34' OR PRODUCT IN (225,226);
+   IF ACCTYPE = 'LN';
+   PROD = PUT(PRODUCT,LIQPFMT.);
+   IF PRODUCT NOT IN &FCY THEN DO;
+   IF CUSTCD IN ('77','78','95','96') THEN
+      SELECT (PROD);
+         WHEN ('HL') ITEM = 'A2.05';
+         WHEN ('RC') ITEM = 'A2.08A';
+         OTHERWISE   ITEM = 'A2.08';
+      END;
+   ELSE SELECT (PROD);
+      WHEN ('FL','HL') ITEM = 'A2.01';
+      WHEN ('RC') ITEM = 'A2.02';
+      OTHERWISE   ITEM = 'A2.04';
+   END;
+   END;
+   IF PRODUCT = 100 THEN
+      ITEM = 'A2.05'; /* HARDCODE BY MAZNI */
+
+   IF BLDATE > 0 THEN DAYS = REPTDATE - BLDATE;
+   IF EXPRDATE <= &RUNOFFDT THEN REMMTH = .;
+   ELSE IF EXPRDATE - &RUNOFFDT < 8 THEN REMMTH = 0.1;
+   ELSE DO;
+
+      SELECT (PAYFREQ);
+         WHEN ('1') FREQ = 1;
+         WHEN ('2') FREQ = 3;
+         WHEN ('3') FREQ = 6;
+         WHEN ('4') FREQ = 12;
+         OTHERWISE;
+      END;
+      IF PAYFREQ IN ('5','9',' ') OR PRODUCT IN (350,910,925) THEN
+         BLDATE = EXPRDATE;
+      ELSE IF BLDATE <= 0 THEN DO;
+         BLDATE = ISSDTE;
+         DO WHILE (BLDATE <= REPTDATE);
+            %NXTBLDT
+         END;
+      END;
+      IF PAYAMT < 0 THEN PAYAMT = 0;
+      IF BLDATE > EXPRDATE | BALANCE <= PAYAMT THEN BLDATE = EXPRDATE;
+      DO WHILE (BLDATE <= EXPRDATE);
+         IF BLDATE <= &RUNOFFDT THEN REMMTH = .;
+         ELSE IF BLDATE - &RUNOFFDT < 8 THEN REMMTH = 0.1;
+         ELSE DO;
+            MATDT = BLDATE;
+            %REMMTH
+         END;
+         IF REMMTH > 1 OR BLDATE = EXPRDATE THEN LEAVE;
+         AMOUNT = PAYAMT;
+         BALANCE = BALANCE - PAYAMT;
+         IF DAYS > 89 OR LOANSTAT ^= 1 THEN REMMTH = 0.1;
+         IF PRODUCT IN &FCY THEN DO;
+            IF PROD='FL' THEN ITEM='B1.01';
+            IF PROD='RC' THEN ITEM='B1.02';
+            PART = '2-FC'; OUTPUT;
+         END;
+         ELSE DO;
+            PART = '2-RM'; OUTPUT;
+         END;
+         %NXTBLDT
+         IF BLDATE > EXPRDATE | BALANCE <= PAYAMT THEN
+            BLDATE = EXPRDATE;
+      END;
+   END;
+   AMOUNT = BALANCE;
+   IF DAYS > 89 OR LOANSTAT ^= 1 THEN REMMTH = 0.1;
+   IF PRODUCT IN &FCY THEN DO;
+      IF PROD='FL' THEN ITEM='B1.01';
+      IF PROD='RC' THEN ITEM='B1.02';
+      PART = '2-FC'; OUTPUT;
+   END;
+   ELSE DO;
+      PART = '2-RM'; OUTPUT;
+   END;
+*------------------------------------------------*
+*  SUMMARISE AND CONSOLIDATE                     *
+*------------------------------------------------*;
+PROC SUMMARY DATA=NOTE NWAY;
+   CLASS PART ITEM REMMTH;
+   VAR AMOUNT;
+   OUTPUT OUT=NOTE(DROP=_TYPE_ _FREQ_) SUM=;
+*;
+*----------------------------------------------------------------*
+*  PRODUCE REPORTS                                               *
+*----------------------------------------------------------------*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+TITLE1 &SDESC;
+TITLE2 'NEW LIQUIDITY FRAMEWORK AS AT' &RDATE;
+TITLE3 '(CONTRACTUAL RUN-OFF)';
+*;
+PROC TABULATE DATA=NOTE MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS ITEM REMMTH;
+   VAR AMOUNT;
+   TABLE ITEM=' ',
+         (REMMTH=' ' ALL='TOTAL')*
+         (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+         / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+   WHERE PART = '2-RM';
+   TITLE4 'BREAKDOWN BY BEHAVIOURAL MATURITY PROFILE (PART 2-RM)';
+*;
+PROC TABULATE DATA=NOTE MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS ITEM REMMTH;
+   VAR AMOUNT;
+   TABLE ITEM=' ',
+         (REMMTH=' ' ALL='TOTAL')*
+         (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+         / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+   WHERE PART = '2-FC';
+   TITLE4 'BREAKDOWN BY PURE CONTRACTUAL MATURITY PROFILE (PART 2-FCY)';
+*;
