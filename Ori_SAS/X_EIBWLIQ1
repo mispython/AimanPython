@@ -1,0 +1,731 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBWLIQ1                                          |
+ |  DATE    : 25.05.98                                          |
+ |  REPORT  : NEW LIQUIDITY FRAMEWORK                           |
+ |            (TO RUN ON 22ND OF THE MONTH)                     |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950;
+*;
+%INC PGM(PBBLNFMT,PBBELF,PBBDPFMT);
+%LET FCY=(800,801,802,803,804,805,806,851,852,853,854,855,856,857,858,
+          859,860,807,808,809,810,811,812,813,814);
+*;
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0.255 = 'UP TO 1 WK'
+      0.255-1   = '>1 WK - 1 MTH'
+      1-3       = '>1 MTH - 3 MTHS'
+      3-6       = '>3 - 6 MTHS'
+      6-12      = '>6 MTHS - 1 YR'
+      OTHER     = '> 1 YEAR';
+*;
+   VALUE $ITEMF
+     'A1.01'  = 'A1.01  LOANS: CORP - FIXED TERM LOANS'
+     'A1.02'  = 'A1.02  LOANS: CORP - REVOLVING LOANS'
+     'A1.03'  = 'A1.03  LOANS: CORP - OVERDRAFTS'
+     'A1.04'  = 'A1.04  LOANS: CORP - OTHERS'
+     'A1.04A' = 'A1.04A LOANS: CORP - SHARE FINANCING'
+     'A1.05'  = 'A1.05  LOANS: IND  - HOUSING LOANS'
+     'A1.07'  = 'A1.07  LOANS: IND  - OVERDRAFTS'
+     'A1.08'  = 'A1.08  LOANS: IND  - OTHERS'
+     'A1.08A' = 'A1.08A LOANS: IND  - REVOLVING LOANS'
+     'A1.08B' = 'A1.08B LOANS: IND  - SHARE FINANCING'
+     'A1.12A' = 'A1.12A DEPOSITS: CORP - GID'
+     'A1.12'  = 'A1.12  DEPOSITS: CORP - FIXED'
+     'A1.13'  = 'A1.13  DEPOSITS: CORP - SAVINGS'
+     'A1.14'  = 'A1.14  DEPOSITS: CORP - CURRENT'
+     'A1.15'  = 'A1.15  DEPOSITS: IND  - FIXED'
+     'A1.15A' = 'A1.15A DEPOSITS: IND  - GID'
+     'A1.16'  = 'A1.16  DEPOSITS: IND  - SAVINGS'
+     'A1.17'  = 'A1.17  DEPOSITS: IND  - CURRENT'
+     'A1.20'  = 'A1.20  SHAREHOLDER FUND & OTHER LIABILITIES'
+     'A1.25'  = 'A1.25  UNDRAWN OD FACILITIES GIVEN'
+     'A1.26'  = 'A1.26  UNDRAWN PORTION FOR RC FACILITIES'
+     'A1.28'  = 'A1.28  UNDRAWN PORTION OF OTHER C/F GIVEN'
+     'A1.28A' = 'A1.28A UNDRAWN MARGIN FINANCING          '
+     'A2.01'  = 'A2.01  INTERBANK LENDING/DEPOSITS'
+     'A2.02'  = 'A2.02  REVERSE REPO'
+     'A2.03'  = 'A2.03  DEBT SEC: GOVT PP/BNM BILLS/CAG'
+     'A2.04'  = 'A2.04  DECT SEC: FIN INST PAPERS'
+     'A2.05'  = 'A2.05  DEBT SEC: TRADE PAPERS'
+     'A2.06'  = 'A2.06  CORP DEBT: GOVT-GUARANTEED'
+     'A2.08'  = 'A2.08  CORP DEBT: NON-GUARANTEED'
+     'A2.09'  = 'A2.09  FX EXCHG CONTRACTS RECEIVABLE'
+     'A2.14'  = 'A2.14  INTERBANK BORROWINGS/DEPOSITS'
+     'A2.15'  = 'A2.15  INTERBANK REPOS'
+     'A2.16'  = 'A2.16  NON-INTERBANK REPOS'
+     'A2.17'  = 'A2.17  NIDS ISSUED'
+     'A2.18'  = 'A2.18  BAS PAYABLE'
+     'A2.19'  = 'A2.19  FX EXCHG CONTRACTS PAYABLE'
+     'B1.01'  = 'B1.01  LOANS: NON-INDIVIDUALS - FIXED TERM LOANS'
+     'B1.02'  = 'B1.02  LOANS: NON-INDIVIDUALS - REVOLVING LOANS'
+     'B1.12'  = 'B1.12  DEPOSITS: CORP - FIXED (ALL CCY)'
+     'B1.13'  = 'B1.13  DEPOSITS: CORP - CURRENT (ALL CCY)'
+     'B1.15'  = 'B1.15  DEPOSITS: IND  - FIXED (ALL CCY)'
+     'B1.16'  = 'B1.16  DEPOSITS: IND  - CURRENT (ALL CCY)'
+     'B1.17'  = 'B1.17  DEPOSITS: CORP - FIXED ($USD)'
+     'B1.18'  = 'B1.18  DEPOSITS: IND  - FIXED ($USD)'
+     'B1.19'  = 'B1.19  DEPOSITS: CORP - FIXED ($SGD)'
+     'B1.20'  = 'B1.20  DEPOSITS: IND  - FIXED ($SGD)'
+     'B1.21'  = 'B1.21  DEPOSITS: CORP - CURRENT ($USD)'
+     'B1.22'  = 'B1.22  DEPOSITS: IND  - CURRENT ($USD)'
+     'B1.23'  = 'B1.23  DEPOSITS: CORP - CURRENT ($SGD)'
+     'B1.24'  = 'B1.24  DEPOSITS: IND  - CURRENT ($SGD)'
+     'B1.25'  = 'B1.25  DEPOSITS: CORP - FIXED ($HKD)'
+     'B1.26'  = 'B1.26  DEPOSITS: IND  - FIXED ($HKD)'
+     'B1.27'  = 'B1.27  DEPOSITS: CORP - CURRENT ($HKD)'
+     'B1.28'  = 'B1.28  DEPOSITS: IND  - CURRENT ($HKD)'
+     'B1.29'  = 'B1.29  DEPOSITS: CORP - FIXED   ($AUD)'
+     'B1.30'  = 'B1.30  DEPOSITS: IND  - FIXED   ($AUD)'
+     'B1.31'  = 'B1.31  DEPOSITS: CORP - CURRENT ($AUD)'
+     'B1.32'  = 'B1.32  DEPOSITS: IND  - CURRENT ($AUD)'
+     'B2.01'  = 'B2.01  INTERBANK LENDING/DEPOSITS'
+     'B2.09'  = 'B2.09  FX EXCHG CONTRACTS RECEIVABLE'
+     'B2.14'  = 'B2.14  INTERBANK BORROWINGS/DEPOSITS'
+     'B2.19'  = 'B2.19  FX EXCHG CONTRACTS PAYABLE'
+     'B2.26'  = 'B2.26  UNDRAWN PORTION FOR RC FACILITIES'
+     'B2.28'  = 'B2.28  UNDRAWN PORTION OF OTHER C/F GIVEN'
+     ;
+*;
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE NEXT BLDATE                *
+*------------------------------------------------*;
+%MACRO NXTBLDT;
+   IF PAYFREQ = '6' THEN DO;
+      DD = DAY(BLDATE) + 14;
+      MM = MONTH(BLDATE);
+      YY = YEAR(BLDATE);
+      IF MM = 2 THEN
+         IF MOD(YY,4) = 0 THEN D2 = 29;
+         ELSE D2 = 28;
+      IF DD > LDAY(MM) THEN DO;
+         DD = DD - LDAY(MM);
+         MM + 1;
+         IF MM > 12 THEN DO;
+            MM = MM - 12; YY + 1;
+         END;
+      END;
+   END;
+   ELSE DO;
+      DD = DAY(ISSDTE);
+      MM = MONTH(BLDATE) + FREQ;
+      YY = YEAR(BLDATE);
+      IF MM > 12 THEN DO;
+         MM = MM - 12; YY + 1;
+      END;
+   END;
+   IF MM = 2 THEN
+      IF MOD(YY,4) = 0 THEN D2 = 29;
+      ELSE D2 = 28;
+   IF DD > LDAY(MM) THEN DD = LDAY(MM);
+   BLDATE = MDY(MM,DD,YY);
+%MEND NXTBLDT;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE REMAIN MONTH               *
+*------------------------------------------------*;
+%MACRO REMMTH;
+   MDYR  = YEAR(MATDT);
+   MDMTH = MONTH(MATDT);
+   MDDAY = DAY(MATDT);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+   IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+*;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE;
+   SET BNM.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN  (8) CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+*----------------------------------------------------------------*
+*  BREAKDOWN BY MATURITY PROFILE (PART 1 & 2 - RM)               *
+*----------------------------------------------------------------*;
+*------------------------------------------------*
+*  LOANS - FL/HL USE REPAYMENT DATE              *
+*        - OD/RC USE EXPIRY DATE                 *
+*------------------------------------------------*;
+PROC SORT DATA=BNM1.LOAN&REPTMON&NOWK OUT=NOTEX; BY ACCTNO;
+WHERE PAIDIND NOT IN ('P','C');
+*;
+DATA NOTE (KEEP=PART ITEM REMMTH AMOUNT);
+   LENGTH ITEM $6;
+   %DCLVAR
+   SET NOTEX;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF SUBSTR(PRODCD,1,2) = '34' OR PRODUCT IN (225,226);
+   IF ACCTYPE = 'OD' THEN DO;
+      IF PRODUCT IN (151,152,181) THEN DELETE;
+      REMMTH = 0.1;
+      AMOUNT = BALANCE;
+      PART = '2-RM';
+      IF CUSTCD IN ('77','78','95','96') THEN
+           ITEM = 'A1.07';
+      ELSE ITEM = 'A1.03';
+      IF PRODCD='34240' THEN DO;
+         IF CUSTCD IN ('77','78','95','96') THEN ITEM='A1.08B';
+                                            ELSE ITEM='A1.04A';
+      END;
+      OUTPUT;
+   END;
+*;
+   IF ACCTYPE = 'LN';
+   PROD = PUT(PRODUCT,LIQPFMT.);
+   IF PRODUCT NOT IN &FCY THEN DO;
+   IF CUSTCD IN ('77','78','95','96') THEN
+      SELECT (PROD);
+         WHEN ('HL') ITEM = 'A1.05';
+         WHEN ('RC') ITEM = 'A1.08A';
+         OTHERWISE   ITEM = 'A1.08';
+      END;
+   ELSE SELECT (PROD);
+      WHEN ('FL','HL') ITEM = 'A1.01';
+      WHEN ('RC') ITEM = 'A1.02';
+      OTHERWISE   ITEM = 'A1.04';
+   END;
+   END;
+   IF PRODUCT = 100 THEN
+      ITEM = 'A1.05'; /* HARDCODE BY MAZNI */
+
+   IF BLDATE > 0 THEN DAYS = REPTDATE - BLDATE;
+   IF EXPRDATE - REPTDATE < 8 THEN REMMTH = 0.1;
+   ELSE DO;
+      /*  CONVERT PAYFREQ CODE TO MONTHS  */
+      SELECT (PAYFREQ);
+         WHEN ('1') FREQ = 1;
+         WHEN ('2') FREQ = 3;
+         WHEN ('3') FREQ = 6;
+         WHEN ('4') FREQ = 12;
+         OTHERWISE;
+      END;
+      IF PAYFREQ IN ('5','9',' ') OR PRODUCT IN (350,910,925) THEN
+         BLDATE = EXPRDATE;
+      ELSE IF BLDATE <= 0 THEN DO;
+         BLDATE = ISSDTE;
+         DO WHILE (BLDATE <= REPTDATE);
+            %NXTBLDT
+         END;
+      END;
+      IF PAYAMT < 0 THEN PAYAMT = 0;
+      IF BLDATE > EXPRDATE | BALANCE <= PAYAMT THEN BLDATE = EXPRDATE;
+      DO WHILE (BLDATE <= EXPRDATE);
+         MATDT = BLDATE;
+         %REMMTH
+         IF REMMTH > 12 OR BLDATE = EXPRDATE THEN LEAVE;
+         IF REMMTH > 0.255 AND (BLDATE-REPTDATE) < 8
+                                             THEN REMMTH=0.255;
+         AMOUNT = PAYAMT;
+         BALANCE = BALANCE - PAYAMT;
+         IF PRODUCT IN &FCY THEN DO;
+            IF PROD='FL' THEN ITEM='B1.01';
+            IF PROD='RC' THEN ITEM='B1.02';
+            PART = '2-FC'; OUTPUT;
+         END;
+         ELSE DO;
+            PART = '2-RM'; OUTPUT;
+         END;
+         IF DAYS > 89 OR LOANSTAT ^= 1 THEN REMMTH = 13;
+         IF PRODUCT IN &FCY THEN DO;
+            IF PROD='FL' THEN ITEM='B1.01';
+            IF PROD='RC' THEN ITEM='B1.02';
+            PART = '1-FC'; OUTPUT;
+         END;
+         ELSE DO;
+            PART = '1-RM'; OUTPUT;
+         END;
+         %NXTBLDT
+         IF BLDATE > EXPRDATE | BALANCE <= PAYAMT THEN
+            BLDATE = EXPRDATE;
+      END;
+   END;
+   AMOUNT = BALANCE;
+   IF PRODUCT IN &FCY THEN DO;
+      IF PROD='FL' THEN ITEM='B1.01';
+      IF PROD='RC' THEN ITEM='B1.02';
+      PART = '2-FC'; OUTPUT;
+   END;
+   ELSE DO;
+      PART = '2-RM'; OUTPUT;
+   END;
+
+   IF DAYS > 89 OR LOANSTAT ^= 1 THEN REMMTH = 13;
+   IF PRODUCT IN &FCY THEN DO;
+      IF PROD='FL' THEN ITEM='B1.01';
+      IF PROD='RC' THEN ITEM='B1.02';
+      PART = '1-FC'; OUTPUT;
+   END;
+   ELSE DO;
+      PART = '1-RM'; OUTPUT;
+   END;
+*;
+*------------------------------------------------*
+*  FIXED DEPOSITS                                *
+*------------------------------------------------*;
+DATA FD (KEEP=BIC PART ITEM REMMTH AMOUNT);
+   LENGTH ITEM $6;
+   %DCLVAR
+   SET FD.FD;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF CURBAL > 0;
+   MATDT = INPUT(PUT(MATDATE,Z8.),YYMMDD8.);
+   IF OPENIND = 'D' OR MATDT - REPTDATE < 8 THEN REMMTH = 0.1;
+   ELSE DO;
+      %REMMTH
+   END;
+   AMOUNT=CURBAL;
+   BIC= PUT(INTPLAN, FDPROD.);
+   IF BIC NE '42630' THEN DO;
+      PART='2-RM';
+      IF BIC='42132' THEN DO;
+         IF CUSTCD IN (77,78,95,96) THEN ITEM = 'A1.15A';
+         ELSE ITEM = 'A1.12A';
+      END;
+      ELSE DO;
+         IF CUSTCD IN (77,78,95,96) THEN ITEM = 'A1.15';
+         ELSE ITEM = 'A1.12';
+      END;
+      IF ACCTTYPE IN (315,394) THEN DO;
+         IF CUSTCD IN (77,78,95,96) THEN ITEM = 'A1.15';
+         ELSE ITEM = 'A1.12';
+      END;
+      OUTPUT;
+   END;
+   ELSE DO;
+      PART='2-F$';
+      IF CUSTCD IN (77,78,95,96) THEN DO;
+         ITEM='B1.15'; OUTPUT;
+         IF INTPLAN IN (429,470,471,472,473,474,475,540,560,
+                        751,752,753,754) THEN DO;
+            ITEM='B1.18'; OUTPUT;                    END;
+         IF INTPLAN IN (432,488,489,490,491,492,493,543,563) THEN DO;
+            ITEM='B1.20'; OUTPUT;                    END;
+         IF INTPLAN IN (435,546,554,555,556,557,558,559,566) THEN DO;
+            ITEM='B1.26'; OUTPUT;                    END;
+         IF INTPLAN IN (431,542,562,482,483,484,485,486,487,
+                        759,760,761,762) THEN DO;
+            ITEM='B1.30'; OUTPUT;                    END;
+      END;
+      ELSE DO;
+         ITEM='B1.12';  OUTPUT;
+         IF INTPLAN IN (429,470,471,472,473,474,475,540,560,
+                        751,752,753,754) THEN DO;
+            ITEM='B1.17'; OUTPUT;                    END;
+         IF INTPLAN IN (432,488,489,490,491,492,493,543,563) THEN DO;
+            ITEM='B1.19'; OUTPUT;                    END;
+         IF INTPLAN IN (435,546,554,555,556,557,558,559,566) THEN DO;
+            ITEM='B1.25'; OUTPUT;                    END;
+         IF INTPLAN IN (431,542,562,482,483,484,485,486,487,
+                        759,760,761,762) THEN DO;
+            ITEM='B1.29'; OUTPUT;                    END;
+      END;
+   END;
+*;
+*------------------------------------------------*
+*  SAVINGS                                       *
+*------------------------------------------------*;
+DATA SA (KEEP=PART ITEM REMMTH AMOUNT);
+   RETAIN PART '2-RM' REMMTH 0.1;
+   LENGTH ITEM $6;
+   SET BNM.SAVG&REPTMON&NOWK;
+   IF  PRODCD='N' THEN DELETE;
+   IF CUSTCD IN ('77','78','95','96') THEN ITEM = 'A1.16';
+   ELSE ITEM = 'A1.13';
+   RENAME CURBAL=AMOUNT;
+*;
+*------------------------------------------------*
+*  CURRENT                                       *
+*------------------------------------------------*;
+DATA CA (KEEP=PART ITEM REMMTH AMOUNT);
+   RETAIN PART '2-RM' REMMTH 0.1;
+   LENGTH ITEM $6;
+   SET BNM.CURN&REPTMON&NOWK;
+   IF  PRODUCT IN &CURX OR PRODUCT IN (53,63,103);
+   IF SUBSTR(PRODCD,1,3) IN ('421','423');
+   IF CUSTCD IN ('77','78','95','96') THEN ITEM = 'A1.17';
+   ELSE ITEM = 'A1.14';
+   RENAME CURBAL=AMOUNT;
+*;
+%LET PROD=(400,401,402,403,404,405,406,407,408,409,410,440,441,442,
+           442,443,444);
+*;
+DATA FCYCX;
+   RETAIN PART '2-F$' REMMTH 0.1;
+   LENGTH ITEM $6;
+   SET DEPOSIT.CURRENT;
+   AMOUNT=CURBAL;
+   IF  PRODUCT IN &PROD THEN DO;
+       IF CUSTCODE IN (77,78,95,96) THEN ITEM='B1.16';
+                                    ELSE ITEM='B1.13';
+       OUTPUT;
+   END;
+   IF  PRODUCT IN (400,402,403,406,440) THEN DO;
+       IF  CUSTCODE IN (77,78,95,96) THEN DO;
+           IF PRODUCT=400 THEN  ITEM='B1.22'; ELSE
+           IF PRODUCT=403 THEN  ITEM='B1.24'; ELSE
+           IF PRODUCT=406 THEN  ITEM='B1.28'; ELSE
+           IF PRODUCT=402 THEN  ITEM='B1.32'; ELSE
+           IF PRODUCT=440 THEN  ITEM='B1.22';
+       END;
+       ELSE DO;
+           IF PRODUCT=400 THEN  ITEM='B1.21'; ELSE
+           IF PRODUCT=403 THEN  ITEM='B1.23'; ELSE
+           IF PRODUCT=406 THEN  ITEM='B1.27'; ELSE
+           IF PRODUCT=402 THEN  ITEM='B1.31'; ELSE
+           IF PRODUCT=440 THEN  ITEM='B1.21';
+       END;
+       OUTPUT;
+   END;
+*;
+DATA FCYCA;
+   KEEP PART ITEM REMMTH AMOUNT;
+   SET FCYCX;
+*;
+*------------------------------------------------*
+*  UNDRAWN PORTION                               *
+*------------------------------------------------*;
+*;
+DATA ALW;
+     SET BNM1.LOAN&REPTMON&NOWK;
+     IF ACCTYPE='OD' AND
+        PRODUCT IN (151,152,181) THEN DELETE;
+     IF PAIDIND NOT IN ('P','C');
+PROC SORT;  BY ACCTNO NOTENO;
+RUN;
+*;
+PROC SORT DATA=LOAN.LNCOMM OUT=LNCOMM;
+   BY ACCTNO COMMNO;
+*;
+PROC SORT DATA=ALW OUT=ALWCOM;
+   WHERE COMMNO > 0;
+   BY ACCTNO COMMNO;
+*;
+DATA APPR;
+   MERGE ALWCOM(IN=A) LNCOMM;
+   BY ACCTNO COMMNO;
+   IF A & PRODCD IN ('34190','34690') THEN DO;
+      IF FIRST.ACCTNO OR FIRST.COMMNO THEN OUTPUT;
+   END;
+   ELSE IF A THEN OUTPUT;
+*;
+PROC SORT DATA=ALW OUT=ALWNOCOM;
+   WHERE COMMNO <= 0;
+   BY ACCTNO COMMNO;
+*;
+PROC SORT DATA=ALWNOCOM;
+   BY ACCTNO APPRLIM2;
+*;
+DATA APPR1 DUP;
+   SET ALWNOCOM;
+   BY ACCTNO APPRLIM2;
+   IF PRODCD IN ('34190','34690') THEN DO;
+      IF FIRST.ACCTNO OR FIRST.APPRLIM2 THEN
+      OUTPUT APPR1;
+      ELSE DO;
+         DUPLI=1;
+         OUTPUT DUP;
+      END;
+   END;
+*;
+PROC SORT DATA=DUP OUT=DUPLI;
+   WHERE BALANCE >= APPRLIM2;
+   BY ACCTNO APPRLIM2;
+RUN;
+
+DATA APPR1;
+   MERGE ALWNOCOM(IN=A) DUPLI(IN=B KEEP=ACCTNO APPRLIM2 DUPLI);
+   BY ACCTNO APPRLIM2;
+   IF PRODCD IN ('34190','34690') THEN DO;
+      IF DUPLI = 1 THEN DO;
+         IF BALANCE >= APPRLIM2 THEN OUTPUT;
+      END;
+      ELSE IF FIRST.ACCTNO OR FIRST.APPRLIM2 THEN OUTPUT;
+   END;
+   ELSE OUTPUT;
+RUN;
+*;
+DATA NOTEX;
+   SET APPR APPR1;
+PROC SORT; BY ACCTNO;
+*;
+DATA UNOTEX;
+     SET BNM1.ULOAN&REPTMON&NOWK;
+     IF  (3000000000<=ACCTNO<=3999999999) AND
+         PRODUCT IN (151,152,181) AND ACCTYPE='OD' THEN DELETE;
+PROC SORT; BY ACCTNO;
+*;
+DATA UNOTE (KEEP=PART ITEM REMMTH AMOUNT);
+   RETAIN PART '2-RM';
+   LENGTH ITEM $6;
+   %DCLVAR
+   SET NOTEX UNOTEX;
+   BY ACCTNO;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF SUBSTR(PRODCD,1,2) = '34' OR PRODUCT IN (225,226);
+   IF ACCTYPE = 'LN' THEN MATDT = EXPRDATE;
+   ELSE MATDT = APPRDATE + 365;
+   IF MATDT - REPTDATE < 8 THEN REMMTH = 0.1;
+   ELSE DO;
+      %REMMTH
+   END;
+   IF ACCTYPE = 'LN' THEN DO;
+      ITEM = 'A1.28';
+      IF PRODCD = '34190' THEN ITEM = 'A1.26';
+      IF PRODCD = '34690' THEN ITEM = 'B2.26';
+      IF PRODCD = '34600' THEN ITEM = 'B2.28';
+   END;
+   ELSE DO;
+      ITEM = 'A1.25';
+      IF PRODCD='34240' THEN ITEM = 'A1.28A';
+   END;
+   RENAME UNDRAWN=AMOUNT;
+   IF PRODCD IN ('34600','34690') THEN PART ='2-FC';
+   OUTPUT;
+*;
+*------------------------------------------------*
+*  SUMMARISE AND CONSOLIDATE                     *
+*------------------------------------------------*;
+PROC SUMMARY DATA=NOTE NWAY;
+   CLASS PART ITEM REMMTH;
+   VAR AMOUNT;
+   OUTPUT OUT=NOTE (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=FD NWAY;
+   CLASS PART ITEM REMMTH;
+   VAR AMOUNT;
+   OUTPUT OUT=FD (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=SA NWAY;
+   CLASS PART ITEM REMMTH;
+   VAR AMOUNT;
+   OUTPUT OUT=SA (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=CA NWAY;
+   CLASS PART ITEM REMMTH;
+   VAR AMOUNT;
+   OUTPUT OUT=CA (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=FCYCA NWAY;
+   CLASS PART ITEM REMMTH;
+   VAR AMOUNT;
+   OUTPUT OUT=FCYCA (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=UNOTE NWAY;
+   CLASS PART ITEM REMMTH;
+   VAR AMOUNT;
+   OUTPUT OUT=UNOTE (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA NOTE;
+   SET NOTE FD SA CA FCYCA UNOTE;
+*;
+*----------------------------------------------------------------*
+*  KAPITI ITEMS FOR PART 2 & 3                                   *
+*----------------------------------------------------------------*;
+%LET INST = 'PBB';
+%LET IREP=('01','02','11','12','81');
+%LET NREP=('13','17','20','60','71','72','74','76','79','85');
+%INC PGM(KALMLIQS);
+%INC PGM(KALMLIQ1);
+*;
+DATA KTBL (KEEP=PART ITEM REMMTH AMOUNT);
+   %DCLVAR
+   SET K1TBL K3TBL;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF ITEM ^= ' ';
+   IF MATDT - REPTDATE < 8 THEN REMMTH = 0.1;
+   ELSE DO;
+      %REMMTH
+   END;
+*;
+*----------------------------------------------------------------*
+*  DISTRIBUTION PROFILE OF CUSTOMER DEPOSITS (PART 3)            *
+*----------------------------------------------------------------*;
+*------------------------------------------------*
+*  NON-INTERBANK REPOS                           *
+*------------------------------------------------*;
+DATA K1TBL;
+   KEEP CAT NAME AMOUNT;
+   LENGTH CAT $20 NAME $24;
+   SET BNMK.K1TBL&REPTMON&NOWK (RENAME=(GWBALC=AMOUNT GWSHN=NAME));
+   IF GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M';
+   IF SUBSTR(GWCTP,1,1) ^= 'B' AND SUBSTR(GWDLP,2,2) IN ('MI','MT');
+   CAT = 'NON-INTERBANK REPOS';
+*;
+*------------------------------------------------*
+*  NON-INTERBANK NIDS                            *
+*------------------------------------------------*;
+DATA K3TBL;
+   KEEP CAT NAME AMOUNT;
+   LENGTH CAT $20 NAME $24;
+   SET BNMK.K3TBL&REPTMON&NOWK;
+   IF SUBSTR(UTCTP,1,1) ^= 'B' AND
+      UTREF IN ('PFD','PLD','PSD','PZD') AND
+      UTSTY IN ('IFD','ILD','ISD','IZD','IZP');
+   AMOUNT = UTAMOC - UTDPF;
+   NAME = UTCUS || UTCLC;
+   CAT = 'NON-INTERBANK NIDS';
+*;
+PROC APPEND BASE=K1TBL DATA=K3TBL;
+*;
+PROC SUMMARY DATA=K1TBL NWAY;
+   CLASS CAT NAME;
+   VAR AMOUNT;
+   OUTPUT OUT=K1TBL (DROP=_TYPE_ _FREQ_) SUM=;
+RUN;
+*;
+*----------------------------------------------------------------*
+*  PRODUCE REPORTS                                               *
+*----------------------------------------------------------------*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+TITLE1 &SDESC;
+TITLE2 'NEW LIQUIDITY FRAMEWORK AS AT' &RDATE;
+*;
+PROC TABULATE DATA=NOTE MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS ITEM REMMTH;
+   VAR AMOUNT;
+   TABLE ITEM=' ',
+         (REMMTH=' ' ALL='TOTAL')*
+         (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+         / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+   WHERE PART = '1-RM' AND ITEM NOT IN ('B1.12','B1.15');
+   TITLE4 'BREAKDOWN BY BEHAVIOURAL MATURITY PROFILE (PART 1-RM)';
+*;
+PROC TABULATE DATA=NOTE MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS ITEM REMMTH;
+   VAR AMOUNT;
+   TABLE ITEM=' ',
+         (REMMTH=' ' ALL='TOTAL')*
+         (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+         / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+   WHERE PART = '2-RM' AND ITEM NOT IN ('B2.26','B2.28');
+   TITLE4 'BREAKDOWN BY PURE CONTRACTUAL MATURITY PROFILE (PART 2-RM)';
+*;
+PROC TABULATE DATA=NOTE MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS ITEM REMMTH;
+   VAR AMOUNT;
+   TABLE ITEM=' ',
+         (REMMTH=' ' ALL='TOTAL')*
+         (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+         / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+   WHERE PART = '2-F$';
+   TITLE4 'BREAKDOWN BY PURE CONTRACTUAL MATURITY PROFILE (PART 2-F$)';
+*;
+PROC TABULATE DATA=KTBL MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS PART ITEM REMMTH;
+   VAR AMOUNT;
+   TABLE PART, ITEM=' ',
+         (REMMTH=' ' ALL='TOTAL')*
+         (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+         / BOX='TREASURY AND CAPITAL MARKET ACTIVITIES' RTS=45 CONDENSE;
+   TITLE4 'BREAKDOWN BY PURE CONTRACTUAL MATURITY PROFILE';
+RUN;
+DATA FCYFD;
+   SET NOTE;
+   WHERE PART='2-F$';
+   IF ITEM='B1.13'             THEN BICCODE='9631309010000Y';
+   IF ITEM='B1.16'             THEN BICCODE='9631308010000Y';
+   IF ITEM = 'B1.12'      THEN DO;
+      IF REMMTH <=  0.255      THEN BICCODE='9631109010000Y';
+      IF 0.255 < REMMTH <= 1   THEN BICCODE='9631109020000Y';
+      IF 1 < REMMTH  <= 3      THEN BICCODE='9631109030000Y';
+      IF 3 < REMMTH  <= 6      THEN BICCODE='9631109040000Y';
+      IF 6 < REMMTH  <=12      THEN BICCODE='9631109050000Y';
+      IF 12< REMMTH            THEN BICCODE='9631109060000Y';
+   END;
+   IF ITEM = 'B1.15'      THEN DO;
+      IF REMMTH <= 0.255       THEN BICCODE='9631108010000Y';
+      IF 0.255 < REMMTH <= 1   THEN BICCODE='9631108020000Y';
+      IF 1 < REMMTH <= 3       THEN BICCODE='9631108030000Y';
+      IF 3 < REMMTH <= 6       THEN BICCODE='9631108040000Y';
+      IF 6 < REMMTH <=12       THEN BICCODE='9631108050000Y';
+      IF 12< REMMTH            THEN BICCODE='9631108060000Y';
+   END;
+*;
+PROC SUMMARY DATA=FCYFD NWAY;
+   CLASS BICCODE;
+   VAR AMOUNT;
+OUTPUT OUT=FCYFD SUM=;
+RUN;
+PROC PRINT DATA=FCYFD;
+  VAR BICCODE AMOUNT;
+  SUM AMOUNT;
+RUN;
+*;
+PROC TABULATE DATA=NOTE MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS ITEM REMMTH;
+   VAR AMOUNT;
+   TABLE ITEM=' ',
+         (REMMTH=' ' ALL='TOTAL')*
+         (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+         / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+   WHERE PART = '1-FC';
+   TITLE4 'BREAKDOWN BY BEHAVIOURAL MATURITY PROFILE (PART 1-FCY)';
+*;
+PROC TABULATE DATA=NOTE MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS ITEM REMMTH;
+   VAR AMOUNT;
+   TABLE ITEM=' ',
+         (REMMTH=' ' ALL='TOTAL')*
+         (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+         / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+   WHERE PART = '2-FC';
+   TITLE4 'BREAKDOWN BY PURE CONTRACTUAL MATURITY PROFILE (PART 2-FCY)';
+RUN;
