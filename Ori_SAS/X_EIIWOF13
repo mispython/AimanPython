@@ -1,0 +1,32 @@
+//EIIWOF13  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//*
+//LABEL    OUTPUT CLASS=K,
+//         NAME='CIK ROSEDAH',
+//         ROOM='22TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='HP CREDIT CONTROL DEPARTMENT',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//**********************************************************************
+//EIFMNP03 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMNP03),DISP=SHR
+//**********************************************************************
+//EIFMNP06 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMNP06),DISP=SHR
+//**********************************************************************
+//EIFMNP07 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMNP07),DISP=SHR
+//**********************************************************************
+//*
+//
