@@ -1,5 +1,5 @@
 """
-File Name: EIIMRPTC_EIIMDPN3
+File Name: EIIMDPN3
 Islamic Bank FD Account Opened/Closed Report
 Generates a monthly report on fixed-deposit account activity with cumulative year-to-date tracking.
 
