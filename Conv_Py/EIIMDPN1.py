@@ -1,6 +1,6 @@
 #!usr/bin/env python 3
 """
-File Name: EIIMRPTC_EIIMDPN1
+File Name: EIIMDPN1
 Islamic Bank Savings Account Opened/Closed Report
 Generates monthly report on savings account activity with cumulative tracking
 """
