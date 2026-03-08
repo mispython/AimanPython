@@ -1,489 +1,568 @@
 #!/usr/bin/env python3
 """
-File Name: EIBDLNEX
-Loan Data Processing with Foreign Exchange Rates
+Program  : EIBDLNEX.py
+Purpose  : Daily Loan Extraction (ESMR 06-1428).
+           Orchestrates the full daily loan extraction pipeline:
+             1. Reads REPTDATE from DATEFILE and derives &RDATE macro.
+             2. Writes REPTDATE to LOAN / NAME / ILOAN / INAME libraries.
+             3. Calls EIBLNOTE (loan data preparation) and EIBLNEXT (routing).
+             4. Applies FX spot-rate lookup via FORATE (SAP.PBB.FCYCA).
+             5. Merges LNWOF write-down data into LOAN.LNNOTE:
+                  - Overrides LOANTYPE with PRODUCT / ORICODE if present.
+                  - Overrides CENSUS   with CENSUS_TRT if present.
+                  - Attaches SPOTRATE for non-MYR accounts.
+             6. Same merge for ILOAN.LNNOTE via ILNWOF (ESMR2011-3853).
 
-1. Processes loan note data (conventional and Islamic)
-2. Updates product codes and census tracts from write-off data
-3. Applies foreign exchange rates for non-MYR currencies
+           Dependencies:
+             EIBLNOTE  - Loan data preparation (builds working datasets)
+             EIBLNEXT  - Routes working datasets into LOAN / ILOAN libraries
+             FORATE    - FX rate table (SAP.PBB.FCYCA -> FORATE.FORATEBKP)
 
-The program handles both conventional (PBB) and Islamic (PIBB) loan data.
+           Scheduling note:
+             In the original JCL the %OPC conditional runs a weekly "copy
+             from prior period" branch on days 08, 15, 22, and last calendar
+             day of month.  That branch (PROC COPY) is replicated here as a
+             straight parquet copy using shutil; the daily branch (EIBLNOTE +
+             EIBLNEXT + enrichment) runs otherwise.
 """
 
+# ============================================================================
+# STANDARD LIBRARY IMPORTS
+# ============================================================================
+import shutil
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Optional
+
+# ============================================================================
+# THIRD-PARTY IMPORTS
+# ============================================================================
 import duckdb
 import polars as pl
-from datetime import datetime, timedelta
-from pathlib import Path
-import sys
 
 # ============================================================================
-# Configuration and Path Setup
+# DEPENDENCY IMPORTS
+# %INC PGM(EIBLNOTE)
+# %INC PGM(EIBLNEXT)
 # ============================================================================
-
-# Input/Output paths
-INPUT_DIR = Path("input")
-OUTPUT_DIR = Path("output")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Input files - Conventional (PBB)
-LNNOTE_FILE = INPUT_DIR / "lnnote.parquet"
-LNWOF_FILE = INPUT_DIR / "lnwof.parquet"
-
-# Input files - Islamic (PIBB)
-ILNNOTE_FILE = INPUT_DIR / "ilnnote.parquet"
-ILNWOF_FILE = INPUT_DIR / "ilnwof.parquet"
-
-# Foreign exchange rate file
-FXRATE_FILE = INPUT_DIR / "foratebkp.parquet"
-
-# Optional: Date file (for conditional processing)
-DATEFILE = INPUT_DIR / "datefile.txt"
-
-# Output files
-LNNOTE_OUTPUT = OUTPUT_DIR / "lnnote_updated.parquet"
-ILNNOTE_OUTPUT = OUTPUT_DIR / "ilnnote_updated.parquet"
-FXRATE_OUTPUT = OUTPUT_DIR / "fxrate_current.parquet"
-
-# Processing flag (simulates OPC conditional logic)
-# Set to True to always process, False to check date file
-ALWAYS_RUN = True
-
+from EIBLNOTE import (
+    build_feplan,
+    build_feepo,
+    build_loand,
+    build_rnrhpmor,
+    build_lnnote,
+    enrich_lnnote_with_rate,
+    build_oldnote,
+    enrich_lnnote_with_oldnote,
+    build_lnacct,
+    build_lnacc4,
+    build_lncomm,
+    build_hpcomp,
+    build_lnname,
+    build_liab,
+    build_name8,
+    build_name9,
+    build_lnrate,
+    build_pend,
+    NPL_DIR   as EIBLNOTE_NPL_DIR,
+    LOAN_DIR  as EIBLNOTE_LOAN_DIR,
+    ILOAN_DIR as EIBLNOTE_ILOAN_DIR,
+)
+from EIBLNEXT import (
+    split_lnnote,
+    split_lnacct,
+    split_lnacc4,
+    filter_liab,
+    filter_pend,
+    filter_lncomm,
+    filter_name8,
+    filter_name9,
+    filter_lnname,
+    LOAN_DIR  as EIBLNEXT_LOAN_DIR,
+    ILOAN_DIR as EIBLNEXT_ILOAN_DIR,
+    NAME_DIR  as EIBLNEXT_NAME_DIR,
+    INAME_DIR as EIBLNEXT_INAME_DIR,
+)
 
 # ============================================================================
-# Date Processing Functions
+# PATH CONFIGURATION
 # ============================================================================
+BASE_DIR    = Path(".")
 
-def check_run_date():
+# Input source paths
+DATE_DIR    = BASE_DIR / "data" / "pibb" / "date"        # DATEFILE
+FORATE_DIR  = BASE_DIR / "data" / "pibb" / "forate"      # FORATE.FORATEBKP (SAP.PBB.FCYCA)
+LNWOF_DIR   = BASE_DIR / "data" / "pibb" / "lnwof"       # SAP.PBB.LOANWOF
+ILNWOF_DIR  = BASE_DIR / "data" / "pibb" / "ilnwof"      # SAP.PIBB.LOANWOF
+
+# Working / output library paths (mirrors EIBLNOTE / EIBLNEXT)
+NPL_DIR     = EIBLNOTE_NPL_DIR
+LOAN_DIR    = EIBLNEXT_LOAN_DIR
+ILOAN_DIR   = EIBLNEXT_ILOAN_DIR
+NAME_DIR    = EIBLNEXT_NAME_DIR
+INAME_DIR   = EIBLNEXT_INAME_DIR
+
+# "Prior period" libraries (WLOAN / WILOAN / WNAME / WINAME in JCL)
+WLOAN_DIR   = BASE_DIR / "data" / "pibb" / "wloan"
+WILOAN_DIR  = BASE_DIR / "data" / "pibb" / "wiloan"
+WNAME_DIR   = BASE_DIR / "data" / "pibb" / "wname"
+WINAME_DIR  = BASE_DIR / "data" / "pibb" / "winame"
+
+for _d in [LOAN_DIR, ILOAN_DIR, NAME_DIR, INAME_DIR, NPL_DIR]:
+    _d.mkdir(parents=True, exist_ok=True)
+
+# ============================================================================
+# HELPERS
+# ============================================================================
+def _read(path: Path) -> pl.DataFrame:
+    """Read a parquet file; return empty DataFrame if not found."""
+    if not path.exists():
+        return pl.DataFrame()
+    return duckdb.connect().execute(
+        f"SELECT * FROM read_parquet('{path}')"
+    ).pl()
+
+
+def _parse_z11_mmddyy(val) -> Optional[date]:
     """
-    Check if processing should run based on date file
-    Simulates OPC conditional logic: run on 8th, 15th, 22nd, or last day of month
-    Returns: True if should run, False otherwise
+    Replicates: INPUT(SUBSTR(PUT(val,Z11.),1,8),MMDDYY8.)
+    Zero-pad to 11, take first 8 chars, parse as MMDDYY.
     """
-    if ALWAYS_RUN:
-        return True
-
-    if not DATEFILE.exists():
-        print("Warning: Date file not found, defaulting to run=True")
-        return True
-
+    if val is None or val == 0:
+        return None
     try:
-        with open(DATEFILE, 'r') as f:
-            line = f.readline().strip()
-            # Extract date from first 11 characters (format varies)
-            # EXTDATE format: typically MMDDYYYYHHMMSS or similar
-            if len(line) >= 8:
-                date_str = line[0:8]
-                # Try parsing as MMDDYYYY
-                try:
-                    reptdate = datetime.strptime(date_str, '%m%d%Y')
-                except:
-                    # Try DDMMYYYY
-                    try:
-                        reptdate = datetime.strptime(date_str, '%d%m%Y')
-                    except:
-                        print(f"Warning: Could not parse date from: {date_str}")
-                        return True
+        s = str(int(val)).zfill(11)[:8]
+        return date(int(s[4:8]), int(s[0:2]), int(s[2:4]))
+    except Exception:
+        return None
 
-                day = reptdate.day
 
-                # Check if it's 8th, 15th, 22nd, or last day of month
-                last_day = (reptdate.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-
-                if day in [8, 15, 22] or day == last_day.day:
-                    print(f"Run date check: {reptdate.date()} (day {day}) - PROCESS")
-                    return True
-                else:
-                    print(f"Run date check: {reptdate.date()} (day {day}) - SKIP")
-                    return False
-    except Exception as e:
-        print(f"Warning: Error checking date file: {e}")
-        return True
-
-    return True
+def _copy_parquet_dir(src_dir: Path, dst_dir: Path) -> None:
+    """
+    Replicates PROC COPY IN=src OUT=dst: copies all *.parquet files from
+    src_dir into dst_dir (creates dst_dir if missing).
+    """
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    for src_file in src_dir.glob("*.parquet"):
+        shutil.copy2(src_file, dst_dir / src_file.name)
 
 
 # ============================================================================
-# Foreign Exchange Rate Processing
+# STEP 0: Read REPTDATE and derive &RDATE macro
+# DATA LOAN.REPTDATE NAME.REPTDATE ILOAN.REPTDATE INAME.REPTDATE;
+#   INFILE DATEFILE LRECL=80 OBS=1;
+#   INPUT @01 EXTDATE 11.;
+#   REPTDATE = INPUT(SUBSTR(PUT(EXTDATE,Z11.),1,8),MMDDYY8.);
+#   CALL SYMPUT('RDATE', REPTDATE);
 # ============================================================================
-
-def process_fx_rates():
+def read_reptdate() -> Optional[date]:
     """
-    Process foreign exchange rates
-    1. Filter rates <= yesterday
-    2. Get most recent rate per currency
-    3. Create format lookup (simulates PROC FORMAT)
-    Returns: DataFrame with CURCODE and SPOTRATE
+    Read EXTDATE from DATEFILE (first record only), derive REPTDATE via
+    MMDDYY8. parsing, and return it as a Python date (= &RDATE macro).
+    Also writes REPTDATE to all four output libraries.
     """
-    if not FXRATE_FILE.exists():
-        print(f"Warning: FX rate file not found: {FXRATE_FILE}")
-        return pl.DataFrame({'CURCODE': [], 'SPOTRATE': []})
+    datefile = DATE_DIR / "datefile.parquet"
+    if not datefile.exists():
+        print("WARNING: DATEFILE not found; RDATE will be None.")
+        return None
 
-    print("\n1. Processing FX rates...")
+    df = duckdb.connect().execute(
+        f"SELECT EXTDATE FROM read_parquet('{datefile}') LIMIT 1"
+    ).pl()
 
-    # Read FX rate backup data
-    fxrate_df = pl.read_parquet(FXRATE_FILE)
+    if df.is_empty():
+        print("WARNING: DATEFILE is empty; RDATE will be None.")
+        return None
 
-    # Filter: REPTDATE <= TODAY()-1 (yesterday)
-    yesterday = datetime.now().date() - timedelta(days=1)
-    fxrate_df = fxrate_df.filter(pl.col('REPTDATE').cast(pl.Date) <= yesterday)
+    extdate  = df["EXTDATE"][0]
+    reptdate = _parse_z11_mmddyy(extdate)
+    print(f"REPTDATE = {reptdate}")
 
-    # Sort by CURCODE and REPTDATE descending (most recent first)
-    fxrate_df = fxrate_df.sort(['CURCODE', 'REPTDATE'], descending=[False, True])
+    # Write REPTDATE record to all four libraries
+    reptdate_df = pl.DataFrame({"REPTDATE": [reptdate]})
+    for lib_dir in (LOAN_DIR, NAME_DIR, ILOAN_DIR, INAME_DIR):
+        lib_dir.mkdir(parents=True, exist_ok=True)
+        reptdate_df.write_parquet(str(lib_dir / "reptdate.parquet"))
 
-    # Keep only most recent rate per currency (NODUPKEY equivalent)
-    fxrate_df = fxrate_df.unique(subset=['CURCODE'], keep='first')
-
-    # Select only needed columns
-    fxrate_df = fxrate_df.select(['CURCODE', 'SPOTRATE'])
-
-    print(f"   Found {len(fxrate_df)} currency rates")
-
-    # Save current FX rates
-    fxrate_df.write_parquet(FXRATE_OUTPUT)
-
-    return fxrate_df
-
-
-def create_fx_lookup(fxrate_df):
-    """
-    Create FX rate lookup dictionary (simulates PROC FORMAT)
-    Returns: dict mapping CURCODE to SPOTRATE
-    """
-    fx_lookup = {}
-    for row in fxrate_df.iter_rows(named=True):
-        fx_lookup[row['CURCODE']] = row['SPOTRATE']
-
-    return fx_lookup
+    return reptdate
 
 
 # ============================================================================
-# Loan Note Processing - Conventional (PBB)
+# STEP 1 (weekly branch): PROC COPY from prior-period libraries
+# PROC COPY IN=WLOAN  OUT=LOAN;
+# PROC COPY IN=WILOAN OUT=ILOAN;
+# PROC COPY IN=WNAME  OUT=NAME;
+# PROC COPY IN=WINAME OUT=INAME;
 # ============================================================================
-
-def process_conventional_loans(fx_lookup):
+def weekly_copy() -> None:
     """
-    Process conventional loan notes (PBB)
-    Updates: LOANTYPE (from PRODUCT/ORICODE), CENSUS (from CENSUS_TRT), SPOTRATE
+    Replicate PROC COPY from prior-period (W*) libraries into current
+    output libraries.  Runs when today is on a scheduled weekly date
+    (8th, 15th, 22nd, or last calendar day of the month).
     """
-    print("\n2. Processing conventional loans (PBB)...")
+    print("Weekly branch: copying prior-period datasets...")
+    _copy_parquet_dir(WLOAN_DIR,  LOAN_DIR)
+    _copy_parquet_dir(WILOAN_DIR, ILOAN_DIR)
+    _copy_parquet_dir(WNAME_DIR,  NAME_DIR)
+    _copy_parquet_dir(WINAME_DIR, INAME_DIR)
+    print("Weekly copy completed.")
 
-    if not LNNOTE_FILE.exists():
-        print(f"   Warning: LNNOTE file not found: {LNNOTE_FILE}")
-        return
 
-    # Read loan note data
-    lnnote = pl.read_parquet(LNNOTE_FILE)
-    print(f"   LNNOTE records: {len(lnnote)}")
+# ============================================================================
+# STEP 2 (daily branch): EIBLNOTE + EIBLNEXT pipeline
+# %INC PGM(EIBLNOTE);
+# %INC PGM(EIBLNEXT);
+# ============================================================================
+def run_eiblnote(rdate: Optional[date]) -> None:
+    """Execute the full EIBLNOTE pipeline (loan data preparation)."""
+    print("Running EIBLNOTE pipeline...")
 
-    # Read write-off data if exists
-    if LNWOF_FILE.exists():
-        lnwof = pl.read_parquet(LNWOF_FILE)
-        lnwof = lnwof.select(['ACCTNO', 'NOTENO', 'WRITE_DOWN_BAL', 'PRODUCT',
-                              'CENSUS_TRT', 'ORICODE'])
-        print(f"   LNWOF records: {len(lnwof)}")
+    # ---- FEPLAN ----
+    print("Building FEPLAN...")
+    feplan = build_feplan()
+    feplan.write_parquet(str(NPL_DIR / "feplan.parquet"))
+    print(f"FEPLAN: {len(feplan):,} rows")
 
-        # Merge with write-off data (LEFT JOIN, keep all LNNOTE records)
-        lnnote = lnnote.join(lnwof, on=['ACCTNO', 'NOTENO'], how='left', suffix='_WOF')
+    # ---- FEEPO ----
+    print("Building FEEPO...")
+    feepo = build_feepo(feplan)
+    feepo.write_parquet(str(NPL_DIR / "feepo.parquet"))
+    print(f"FEEPO: {len(feepo):,} rows")
+
+    # ---- LOAND ----
+    print("Building LOAND...")
+    loand = build_loand()
+    loand.write_parquet(str(NPL_DIR / "loand.parquet"))
+    print(f"LOAND: {len(loand):,} rows")
+
+    # ---- RNRHPMOR ----
+    print("Building RNRHPMOR...")
+    rnrhpmor = build_rnrhpmor()
+    rnrhpmor.write_parquet(str(NPL_DIR / "rnrhpmor.parquet"))
+    print(f"RNRHPMOR: {len(rnrhpmor):,} rows")
+
+    # ---- LNRATE ----
+    print("Building LNRATE...")
+    lnrate = build_lnrate(rdate)
+    lnrate.write_parquet(str(NPL_DIR / "lnrate.parquet"))
+    lnrate.write_parquet(str(EIBLNOTE_LOAN_DIR  / "lnrate.parquet"))
+    lnrate.write_parquet(str(EIBLNOTE_ILOAN_DIR / "lnrate.parquet"))
+    print(f"LNRATE: {len(lnrate):,} rows")
+
+    # ---- PEND ----
+    print("Building PEND...")
+    pend = build_pend(lnrate)
+    pend.write_parquet(str(NPL_DIR / "pend.parquet"))
+    print(f"PEND: {len(pend):,} rows")
+
+    # ---- LNNOTE (initial merge) ----
+    print("Building LNNOTE (initial merge)...")
+    lnnote = build_lnnote(loand, feepo, rnrhpmor, rdate)
+
+    # ---- Enrich LNNOTE with USURYIDX rate ----
+    lnnote = enrich_lnnote_with_rate(lnnote, lnrate)
+
+    # ---- OLDNOTE ----
+    print("Building OLDNOTE...")
+    oldnote = build_oldnote(lnnote)
+    oldnote.write_parquet(str(NPL_DIR / "oldnote.parquet"))
+    print(f"OLDNOTE: {len(oldnote):,} rows")
+
+    # ---- Final LNNOTE enrichment with OLDNOTE ----
+    print("Enriching LNNOTE with OLDNOTE...")
+    lnnote = enrich_lnnote_with_oldnote(lnnote, oldnote)
+    lnnote.write_parquet(str(NPL_DIR / "lnnote.parquet"))
+    print(f"LNNOTE: {len(lnnote):,} rows")
+
+    # ---- LNACCT ----
+    print("Building LNACCT...")
+    lnacct = build_lnacct()
+    lnacct.write_parquet(str(NPL_DIR / "lnacct.parquet"))
+    print(f"LNACCT: {len(lnacct):,} rows")
+
+    # ---- LNACC4 ----
+    print("Building LNACC4...")
+    lnacc4 = build_lnacc4()
+    lnacc4.write_parquet(str(NPL_DIR / "lnacc4.parquet"))
+    print(f"LNACC4: {len(lnacc4):,} rows")
+
+    # ---- LNCOMM ----
+    print("Building LNCOMM...")
+    lncomm = build_lncomm()
+    lncomm.write_parquet(str(NPL_DIR / "lncomm.parquet"))
+    print(f"LNCOMM: {len(lncomm):,} rows")
+
+    # ---- HPCOMP ----
+    print("Building HPCOMP...")
+    hpcomp = build_hpcomp()
+    hpcomp.write_parquet(str(EIBLNOTE_LOAN_DIR  / "hpcomp.parquet"))
+    hpcomp.write_parquet(str(EIBLNOTE_ILOAN_DIR / "hpcomp.parquet"))
+    print(f"HPCOMP: {len(hpcomp):,} rows")
+
+    # ---- LNNAME ----
+    print("Building LNNAME...")
+    lnname = build_lnname()
+    lnname.write_parquet(str(NPL_DIR / "lnname.parquet"))
+    print(f"LNNAME: {len(lnname):,} rows")
+
+    # ---- LIAB ----
+    print("Building LIAB...")
+    liab = build_liab()
+    liab.write_parquet(str(NPL_DIR / "liab.parquet"))
+    print(f"LIAB: {len(liab):,} rows")
+
+    # ---- NAME8 ----
+    print("Building NAME8...")
+    name8 = build_name8()
+    name8.write_parquet(str(NPL_DIR / "name8.parquet"))
+    print(f"NAME8: {len(name8):,} rows")
+
+    # ---- NAME9 ----
+    print("Building NAME9...")
+    name9 = build_name9()
+    name9.write_parquet(str(NPL_DIR / "name9.parquet"))
+    print(f"NAME9: {len(name9):,} rows")
+
+    print("EIBLNOTE pipeline completed.")
+
+
+def run_eiblnext() -> tuple[pl.DataFrame, pl.DataFrame]:
+    """
+    Execute the full EIBLNEXT pipeline (routing into LOAN / ILOAN).
+    Returns (loan_lnnote, iloan_lnnote) for downstream enrichment.
+    """
+    print("Running EIBLNEXT pipeline...")
+
+    print("Splitting LNNOTE...")
+    loan_lnnote, iloan_lnnote = split_lnnote()
+
+    print("Splitting LNACCT...")
+    split_lnacct()
+
+    print("Splitting LNACC4...")
+    split_lnacc4()
+
+    print("Filtering LIAB...")
+    filter_liab(loan_lnnote, iloan_lnnote)
+
+    print("Filtering PEND...")
+    filter_pend(loan_lnnote, iloan_lnnote)
+
+    print("Filtering LNCOMM...")
+    filter_lncomm(loan_lnnote, iloan_lnnote)
+
+    print("Filtering NAME8...")
+    filter_name8(loan_lnnote, iloan_lnnote)
+
+    print("Filtering NAME9...")
+    filter_name9(loan_lnnote, iloan_lnnote)
+
+    print("Filtering LNNAME...")
+    filter_lnname(loan_lnnote, iloan_lnnote)
+
+    print("EIBLNEXT pipeline completed.")
+    return loan_lnnote, iloan_lnnote
+
+
+# ============================================================================
+# STEP 3: Build FX rate lookup table
+# PROC SORT DATA=FORATE.FORATEBKP OUT=FXRATE;
+#   BY CURCODE DESCENDING REPTDATE;
+#   WHERE REPTDATE <= TODAY()-1;
+# PROC SORT DATA=FXRATE(KEEP=SPOTRATE CURCODE) NODUPKEY; BY CURCODE;
+# DATA FOFMT; ... PROC FORMAT CNTLIN=FOFMT;
+# ============================================================================
+def build_fxrate() -> dict[str, float]:
+    """
+    Read FORATE.FORATEBKP, filter REPTDATE <= yesterday, keep the most
+    recent SPOTRATE per CURCODE.
+    Returns a dict {curcode: spotrate} replicating the $FORATE. format.
+    """
+    foratebkp = FORATE_DIR / "foratebkp.parquet"
+    if not foratebkp.exists():
+        print("WARNING: FORATE.FORATEBKP not found; SPOTRATE will not be applied.")
+        return {}
+
+    yesterday = date.today() - timedelta(days=1)
+
+    df = duckdb.connect().execute(
+        f"""
+        SELECT CURCODE, SPOTRATE, REPTDATE
+        FROM read_parquet('{foratebkp}')
+        WHERE REPTDATE <= DATE '{yesterday}'
+        ORDER BY CURCODE, REPTDATE DESC
+        """
+    ).pl()
+
+    if df.is_empty():
+        return {}
+
+    # NODUPKEY by CURCODE -> keep first (most recent) per CURCODE
+    df = df.unique(subset=["CURCODE"], keep="first")
+
+    # Build {curcode: spotrate} dict (replicates $FORATE. character format)
+    return {
+        str(row["CURCODE"]).strip(): float(row["SPOTRATE"] or 0)
+        for row in df.iter_rows(named=True)
+        if row.get("CURCODE") and row.get("SPOTRATE") is not None
+    }
+
+
+# ============================================================================
+# STEP 4: Merge LNWOF into LOAN.LNNOTE (ESMR2011-3795)
+# DATA LNNOTE; SET LOAN.LNNOTE;
+# DATA LNWOF(KEEP=ACCTNO NOTENO WRITE_DOWN_BAL PRODUCT CENSUS_TRT ORICODE);
+#   SET LNWOF.LNWOF;
+# DATA LOAN.LNNOTE(DROP=PRODUCT CENSUS_TRT);
+#   MERGE LNNOTE(IN=A) LNWOF(IN=B); BY ACCTNO NOTENO;
+#   IF PRODUCT NOT IN (.,0) THEN LOANTYPE=PRODUCT;
+#   IF ORICODE NOT IN (.,0) THEN LOANTYPE=ORICODE;
+#   IF CENSUS_TRT NOT IN (.,0) THEN CENSUS=CENSUS_TRT;
+#   IF A;
+#   IF CURCODE NE 'MYR' THEN SPOTRATE = PUT(CURCODE,$FORATE.)*1;
+# ============================================================================
+def enrich_lnnote_with_lnwof(
+    lnnote: pl.DataFrame,
+    lnwof_path: Path,
+    fxrate: dict[str, float],
+    out_path: Path,
+) -> pl.DataFrame:
+    """
+    Merge LNNOTE (left) with LNWOF on ACCTNO/NOTENO.
+    Apply LOANTYPE override from PRODUCT/ORICODE, CENSUS from CENSUS_TRT,
+    and attach SPOTRATE for non-MYR accounts.
+    Writes result to out_path and returns the enriched DataFrame.
+    """
+    lnwof_df = _read(lnwof_path)
+
+    if not lnwof_df.is_empty():
+        # Keep only required LNWOF columns
+        keep_cols = [c for c in ("ACCTNO", "NOTENO", "WRITE_DOWN_BAL",
+                                  "PRODUCT", "CENSUS_TRT", "ORICODE")
+                     if c in lnwof_df.columns]
+        lnwof_slim = lnwof_df.select(keep_cols)
+        df = lnnote.join(lnwof_slim, on=["ACCTNO", "NOTENO"], how="left")
     else:
-        print("   Warning: LNWOF file not found, skipping write-off updates")
-        # Add placeholder columns
-        lnnote = lnnote.with_columns([
-            pl.lit(None).cast(pl.Int64).alias('PRODUCT'),
-            pl.lit(None).cast(pl.Float64).alias('CENSUS_TRT'),
-            pl.lit(None).cast(pl.Int64).alias('ORICODE')
-        ])
+        df = lnnote
+        # Ensure expected columns exist as nulls
+        for col in ("PRODUCT", "CENSUS_TRT", "ORICODE", "WRITE_DOWN_BAL"):
+            if col not in df.columns:
+                df = df.with_columns(pl.lit(None).alias(col))
 
-    # Update LOANTYPE from PRODUCT
-    # IF PRODUCT NOT IN (.,0) THEN LOANTYPE=PRODUCT
-    lnnote = lnnote.with_columns([
-        pl.when(
-            (pl.col('PRODUCT').is_not_null()) &
-            (pl.col('PRODUCT') != 0)
-        )
-        .then(pl.col('PRODUCT'))
-        .otherwise(pl.col('LOANTYPE'))
-        .alias('LOANTYPE')
-    ])
+    rows = []
+    for row in df.iter_rows(named=True):
+        r = dict(row)
 
-    # Update LOANTYPE from ORICODE (overwrites PRODUCT if ORICODE exists)
-    # IF ORICODE NOT IN (.,0) THEN LOANTYPE=ORICODE
-    lnnote = lnnote.with_columns([
-        pl.when(
-            (pl.col('ORICODE').is_not_null()) &
-            (pl.col('ORICODE') != 0)
-        )
-        .then(pl.col('ORICODE'))
-        .otherwise(pl.col('LOANTYPE'))
-        .alias('LOANTYPE')
-    ])
+        # IF PRODUCT NOT IN (.,0) THEN LOANTYPE=PRODUCT
+        product = r.get("PRODUCT")
+        if product is not None and product != 0:
+            r["LOANTYPE"] = product
 
-    # Update CENSUS from CENSUS_TRT
-    # IF CENSUS_TRT NOT IN (.,0) THEN CENSUS=CENSUS_TRT
-    lnnote = lnnote.with_columns([
-        pl.when(
-            (pl.col('CENSUS_TRT').is_not_null()) &
-            (pl.col('CENSUS_TRT') != 0)
-        )
-        .then(pl.col('CENSUS_TRT'))
-        .otherwise(pl.col('CENSUS'))
-        .alias('CENSUS')
-    ])
+        # IF ORICODE NOT IN (.,0) THEN LOANTYPE=ORICODE
+        oricode = r.get("ORICODE")
+        if oricode is not None and oricode != 0:
+            r["LOANTYPE"] = oricode
 
-    # Apply FX rates for non-MYR currencies
-    # IF CURCODE NE 'MYR' THEN SPOTRATE = PUT(CURCODE,$FORATE.)*1
-    def get_spotrate(curcode):
-        """Get spotrate from FX lookup"""
-        if curcode == 'MYR' or curcode is None:
-            return None
-        return fx_lookup.get(curcode, None)
+        # IF CENSUS_TRT NOT IN (.,0) THEN CENSUS=CENSUS_TRT
+        census_trt = r.get("CENSUS_TRT")
+        if census_trt is not None and census_trt != 0:
+            r["CENSUS"] = census_trt
 
-    # Create SPOTRATE column for non-MYR
-    lnnote = lnnote.with_columns([
-        pl.when(pl.col('CURCODE') != 'MYR')
-        .then(
-            pl.col('CURCODE').map_elements(
-                lambda x: get_spotrate(x),
-                return_dtype=pl.Float64
-            )
-        )
-        .otherwise(pl.col('SPOTRATE') if 'SPOTRATE' in lnnote.columns else None)
-        .alias('SPOTRATE')
-    ])
+        # IF CURCODE NE 'MYR' THEN SPOTRATE = PUT(CURCODE,$FORATE.)*1
+        curcode = (r.get("CURCODE") or "").strip()
+        if curcode and curcode != "MYR":
+            r["SPOTRATE"] = fxrate.get(curcode)
+        else:
+            r.setdefault("SPOTRATE", None)
 
-    # Drop temporary columns (PRODUCT, CENSUS_TRT from merge)
-    columns_to_drop = []
-    if 'PRODUCT' in lnnote.columns:
-        columns_to_drop.append('PRODUCT')
-    if 'CENSUS_TRT' in lnnote.columns:
-        columns_to_drop.append('CENSUS_TRT')
-    if 'ORICODE' in lnnote.columns:
-        columns_to_drop.append('ORICODE')
+        # DROP=PRODUCT CENSUS_TRT
+        r.pop("PRODUCT", None)
+        r.pop("CENSUS_TRT", None)
 
-    if columns_to_drop:
-        lnnote = lnnote.drop(columns_to_drop)
+        rows.append(r)
 
-    # Save updated loan notes
-    lnnote.write_parquet(LNNOTE_OUTPUT)
-    print(f"   ✓ Updated LNNOTE saved to {LNNOTE_OUTPUT}")
-    print(f"   Final records: {len(lnnote)}")
-
-    return lnnote
+    result = pl.DataFrame(rows) if rows else pl.DataFrame()
+    result.write_parquet(str(out_path))
+    print(f"{out_path.name}: {len(result):,} rows")
+    return result
 
 
 # ============================================================================
-# Loan Note Processing - Islamic (PIBB)
+# SCHEDULING HELPER: determine if today is a "weekly copy" day
+# //*%OPC COMP=(&OCDATE..EQ.(08,15,22,&OCLASTC))
+# Weekly branch fires on the 8th, 15th, 22nd, or last calendar day of month.
 # ============================================================================
-
-def process_islamic_loans(fx_lookup):
+def _is_weekly_copy_day(run_date: Optional[date] = None) -> bool:
     """
-    Process Islamic loan notes (PIBB)
-    Updates: LOANTYPE (from PRODUCT/ORICODE), CENSUS (from CENSUS_TRT), SPOTRATE
+    Return True if run_date (defaults to today) falls on a scheduled weekly
+    copy day: 8th, 15th, 22nd, or the last day of the month.
     """
-    print("\n3. Processing Islamic loans (PIBB)...")
-
-    if not ILNNOTE_FILE.exists():
-        print(f"   Warning: ILNNOTE file not found: {ILNNOTE_FILE}")
-        return
-
-    # Read Islamic loan note data
-    ilnnote = pl.read_parquet(ILNNOTE_FILE)
-    print(f"   ILNNOTE records: {len(ilnnote)}")
-
-    # Read Islamic write-off data if exists
-    if ILNWOF_FILE.exists():
-        ilnwof = pl.read_parquet(ILNWOF_FILE)
-        ilnwof = ilnwof.select(['ACCTNO', 'NOTENO', 'WRITE_DOWN_BAL', 'PRODUCT',
-                                'CENSUS_TRT', 'ORICODE'])
-        print(f"   ILNWOF records: {len(ilnwof)}")
-
-        # Merge with write-off data (LEFT JOIN, keep all ILNNOTE records)
-        ilnnote = ilnnote.join(ilnwof, on=['ACCTNO', 'NOTENO'], how='left', suffix='_WOF')
+    d = run_date or date.today()
+    # Last day of month: next month's 1st day minus one day
+    if d.month == 12:
+        last_day = date(d.year + 1, 1, 1) - timedelta(days=1)
     else:
-        print("   Warning: ILNWOF file not found, skipping write-off updates")
-        # Add placeholder columns
-        ilnnote = ilnnote.with_columns([
-            pl.lit(None).cast(pl.Int64).alias('PRODUCT'),
-            pl.lit(None).cast(pl.Float64).alias('CENSUS_TRT'),
-            pl.lit(None).cast(pl.Int64).alias('ORICODE')
-        ])
-
-    # Update LOANTYPE from PRODUCT
-    ilnnote = ilnnote.with_columns([
-        pl.when(
-            (pl.col('PRODUCT').is_not_null()) &
-            (pl.col('PRODUCT') != 0)
-        )
-        .then(pl.col('PRODUCT'))
-        .otherwise(pl.col('LOANTYPE'))
-        .alias('LOANTYPE')
-    ])
-
-    # Update LOANTYPE from ORICODE (overwrites PRODUCT if ORICODE exists)
-    ilnnote = ilnnote.with_columns([
-        pl.when(
-            (pl.col('ORICODE').is_not_null()) &
-            (pl.col('ORICODE') != 0)
-        )
-        .then(pl.col('ORICODE'))
-        .otherwise(pl.col('LOANTYPE'))
-        .alias('LOANTYPE')
-    ])
-
-    # Update CENSUS from CENSUS_TRT
-    ilnnote = ilnnote.with_columns([
-        pl.when(
-            (pl.col('CENSUS_TRT').is_not_null()) &
-            (pl.col('CENSUS_TRT') != 0)
-        )
-        .then(pl.col('CENSUS_TRT'))
-        .otherwise(pl.col('CENSUS'))
-        .alias('CENSUS')
-    ])
-
-    # Apply FX rates for non-MYR currencies
-    def get_spotrate(curcode):
-        """Get spotrate from FX lookup"""
-        if curcode == 'MYR' or curcode is None:
-            return None
-        return fx_lookup.get(curcode, None)
-
-    # Create SPOTRATE column for non-MYR
-    ilnnote = ilnnote.with_columns([
-        pl.when(pl.col('CURCODE') != 'MYR')
-        .then(
-            pl.col('CURCODE').map_elements(
-                lambda x: get_spotrate(x),
-                return_dtype=pl.Float64
-            )
-        )
-        .otherwise(pl.col('SPOTRATE') if 'SPOTRATE' in ilnnote.columns else None)
-        .alias('SPOTRATE')
-    ])
-
-    # Drop temporary columns
-    columns_to_drop = []
-    if 'PRODUCT' in ilnnote.columns:
-        columns_to_drop.append('PRODUCT')
-    if 'CENSUS_TRT' in ilnnote.columns:
-        columns_to_drop.append('CENSUS_TRT')
-    if 'ORICODE' in ilnnote.columns:
-        columns_to_drop.append('ORICODE')
-
-    if columns_to_drop:
-        ilnnote = ilnnote.drop(columns_to_drop)
-
-    # Save updated Islamic loan notes
-    ilnnote.write_parquet(ILNNOTE_OUTPUT)
-    print(f"   ✓ Updated ILNNOTE saved to {ILNNOTE_OUTPUT}")
-    print(f"   Final records: {len(ilnnote)}")
-
-    return ilnnote
+        last_day = date(d.year, d.month + 1, 1) - timedelta(days=1)
+    return d.day in (8, 15, 22, last_day.day)
 
 
 # ============================================================================
-# Summary and Validation
+# MAIN
 # ============================================================================
-
-def generate_summary(lnnote, ilnnote, fx_lookup):
-    """
-    Generate processing summary
-    """
-    print("\n" + "=" * 80)
-    print("PROCESSING SUMMARY")
-    print("=" * 80)
-
-    if lnnote is not None:
-        print(f"\nConventional Loans (PBB):")
-        print(f"  Total records: {len(lnnote):,}")
-
-        # Count non-MYR records
-        non_myr = lnnote.filter(pl.col('CURCODE') != 'MYR')
-        print(f"  Non-MYR records: {len(non_myr):,}")
-
-        # Count records with updated LOANTYPE
-        if 'LOANTYPE' in lnnote.columns:
-            with_loantype = lnnote.filter(pl.col('LOANTYPE').is_not_null())
-            print(f"  Records with LOANTYPE: {len(with_loantype):,}")
-
-        # Count records with updated CENSUS
-        if 'CENSUS' in lnnote.columns:
-            with_census = lnnote.filter(pl.col('CENSUS').is_not_null())
-            print(f"  Records with CENSUS: {len(with_census):,}")
-
-    if ilnnote is not None:
-        print(f"\nIslamic Loans (PIBB):")
-        print(f"  Total records: {len(ilnnote):,}")
-
-        # Count non-MYR records
-        non_myr = ilnnote.filter(pl.col('CURCODE') != 'MYR')
-        print(f"  Non-MYR records: {len(non_myr):,}")
-
-        # Count records with updated LOANTYPE
-        if 'LOANTYPE' in ilnnote.columns:
-            with_loantype = ilnnote.filter(pl.col('LOANTYPE').is_not_null())
-            print(f"  Records with LOANTYPE: {len(with_loantype):,}")
-
-        # Count records with updated CENSUS
-        if 'CENSUS' in ilnnote.columns:
-            with_census = ilnnote.filter(pl.col('CENSUS').is_not_null())
-            print(f"  Records with CENSUS: {len(with_census):,}")
-
-    print(f"\nForeign Exchange Rates:")
-    print(f"  Currencies loaded: {len(fx_lookup)}")
-    if len(fx_lookup) > 0:
-        print(f"  Sample rates:")
-        for i, (cur, rate) in enumerate(list(fx_lookup.items())[:5]):
-            print(f"    {cur}: {rate:.6f}")
-        if len(fx_lookup) > 5:
-            print(f"    ... and {len(fx_lookup) - 5} more")
-
-
-# ============================================================================
-# Main Execution
-# ============================================================================
-
 def main():
-    """Main execution function"""
-    try:
-        print("Loan Data Processing with FX Rates")
-        print("=" * 80)
+    print("EIBDLNEX started.")
 
-        # Check if processing should run (OPC conditional logic)
-        if not check_run_date():
-            print("\nProcessing skipped based on date criteria")
-            print("Set ALWAYS_RUN = True to override")
-            return
+    # ---- Determine run branch ----
+    # DATA _NULL_; CALL SYMPUT('RUN','N'); -> default
+    # //*%OPC COMP=(&OCDATE..EQ.(08,15,22,&OCLASTC)) -> set to 'Y' on weekly days
+    run_flag = "Y" if _is_weekly_copy_day() else "N"
+    print(f"RUN flag = {run_flag}")
 
-        print("\nStarting loan data processing...")
+    if run_flag == "Y":
+        # ---- Weekly branch: PROC COPY from prior-period libraries ----
+        weekly_copy()
+    else:
+        # ---- Daily branch ----
 
-        # Step 1: Process FX rates
-        fxrate_df = process_fx_rates()
-        fx_lookup = create_fx_lookup(fxrate_df)
+        # Read REPTDATE -> &RDATE
+        rdate = read_reptdate()
 
-        # Step 2: Process conventional loans
-        lnnote = process_conventional_loans(fx_lookup)
+        # %INC PGM(EIBLNOTE)
+        run_eiblnote(rdate)
 
-        # Step 3: Process Islamic loans
-        ilnnote = process_islamic_loans(fx_lookup)
+        # %INC PGM(EIBLNEXT)
+        _loan_lnnote, _iloan_lnnote = run_eiblnext()
 
-        # Step 4: Generate summary
-        generate_summary(lnnote, ilnnote, fx_lookup)
+    # ---- FX rate table (runs regardless of branch) ----
+    print("Building FX rate table...")
+    fxrate = build_fxrate()
+    print(f"FX rates loaded: {len(fxrate)} currencies")
 
-        print("\n" + "=" * 80)
-        print("✓ Loan Data Processing Complete!")
-        print("\nGenerated files:")
-        if LNNOTE_OUTPUT.exists():
-            print(f"  - {LNNOTE_OUTPUT}")
-        if ILNNOTE_OUTPUT.exists():
-            print(f"  - {ILNNOTE_OUTPUT}")
-        if FXRATE_OUTPUT.exists():
-            print(f"  - {FXRATE_OUTPUT}")
+    # ---- Enrich LOAN.LNNOTE with LNWOF (ESMR2011-3795) ----
+    print("Enriching LOAN.LNNOTE with LNWOF...")
+    loan_lnnote_path = LOAN_DIR / "lnnote.parquet"
+    loan_lnnote      = _read(loan_lnnote_path)
+    if not loan_lnnote.is_empty():
+        enrich_lnnote_with_lnwof(
+            loan_lnnote,
+            lnwof_path = LNWOF_DIR  / "lnwof.parquet",
+            fxrate     = fxrate,
+            out_path   = loan_lnnote_path,
+        )
 
-    except Exception as e:
-        print(f"\n✗ Error: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    # ---- Enrich ILOAN.LNNOTE with ILNWOF (ESMR2011-3853) ----
+    print("Enriching ILOAN.LNNOTE with ILNWOF...")
+    iloan_lnnote_path = ILOAN_DIR / "lnnote.parquet"
+    iloan_lnnote      = _read(iloan_lnnote_path)
+    if not iloan_lnnote.is_empty():
+        enrich_lnnote_with_lnwof(
+            iloan_lnnote,
+            lnwof_path = ILNWOF_DIR / "ilnwof.parquet",
+            fxrate     = fxrate,
+            out_path   = iloan_lnnote_path,
+        )
+
+    print("EIBDLNEX completed successfully.")
 
 
 if __name__ == "__main__":
