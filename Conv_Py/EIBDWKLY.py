@@ -1,381 +1,231 @@
 #!/usr/bin/env python3
 """
-File Name: EIBDWKLY
-Loan and Deposit Data Processing with Dual Date Validation
+Program  : EIBDWKLY.py
+Purpose  : Orchestrator — run after EIBDLNEX (ESMR: 06-1428).
+           Reads REPTDATE from LOAN.REPTDATE and DEPOSIT.REPTDATE,
+           validates both extraction dates against the report date,
+           then invokes LALWPBBD and LALWEIRC sequentially.
 
-1. Validates both loan and deposit extraction dates match report date
-2. Executes LALWPBBD (loan processing) if validation passes
-3. Executes LALWEIRC (EIR calculation) if validation passes
-4. Aborts with error code 77 if any date mismatch
+           Run condition: both LOAN.REPTDATE and DEPOSIT.REPTDATE must equal
+           BNM.REPTDATE (same report date).
+           Aborts with exit code 77 if either date does not match.
 
-ESMR: 06-1428
-Run after: EIBDLNEX
+           Commented-out steps preserved from original JCL:
+             %INC PGM(LALBDBAL)  — disabled SMR2016-1430
+             %INC PGM(LALWPBBU)  — disabled (no SMR reference)
+
+           Dependencies:
+             LALWPBBD  - Loan + OD manipulation
+             LALWEIRC  - EIR adjustment merge + write-down
 """
 
-import polars as pl
-from pathlib import Path
+# ============================================================================
+# STANDARD LIBRARY IMPORTS
+# ============================================================================
 import sys
-import subprocess
+import logging
+from datetime import date
+from pathlib import Path
 
 # ============================================================================
-# Configuration and Path Setup
+# THIRD-PARTY IMPORTS
 # ============================================================================
+import polars as pl
 
-# Input/Output paths
-INPUT_DIR = Path("input")
-OUTPUT_DIR = Path("output")
+# ============================================================================
+# DEPENDENCY IMPORTS
+# ============================================================================
+from LALWPBBD import main as lalwpbbd_main
+from LALWEIRC import main as lalweirc_main
+# from LALBDBAL import main as lalbdbal_main  # SMR2016-1430 — disabled
+# from LALWPBBU import main as lalwpbbu_main  # disabled
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+BASE_DIR   = Path(".")
+DATA_DIR   = BASE_DIR / "data"
+OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Input files
-LOAN_REPTDATE_FILE = INPUT_DIR / "loan_reptdate.parquet"
-DEPOSIT_REPTDATE_FILE = INPUT_DIR / "deposit_reptdate.parquet"
+# Input parquet paths
+LOAN_REPTDATE_PATH    = DATA_DIR / "loan"    / "reptdate.parquet"   # LOAN.REPTDATE
+DEPOSIT_REPTDATE_PATH = DATA_DIR / "deposit" / "reptdate.parquet"   # DEPOSIT.REPTDATE
+BNM_REPTDATE_PATH     = DATA_DIR / "bnm"     / "reptdate.parquet"   # BNM.REPTDATE (output)
 
-# Output files
-REPTDATE_OUTPUT = OUTPUT_DIR / "reptdate.parquet"
-
-# External programs to include
-LALWPBBD_SCRIPT = Path("lalwpbbd_processing.py")
-LALWEIRC_SCRIPT = Path("lalweirc_processing.py")
-
-# Exit codes
-EXIT_SUCCESS = 0
-EXIT_DATE_MISMATCH = 77
+# ============================================================================
+# LOGGING
+# ============================================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Date Processing Functions
+# DATA BNM.REPTDATE — derive macro variables from LOAN.REPTDATE
 # ============================================================================
-
-def process_reptdate():
+def load_reptdate() -> tuple[date, str, str, str, str, str, str, int]:
     """
-    Process REPTDATE from LOAN to extract macro variables
-    Returns: dict with macro variables
+    Read LOAN.REPTDATE and derive all macro variables:
+      NOWK, REPTMON, REPTYEAR, REPTYR, RDATE, SDATE, TDATE (SAS integer date).
+    Also writes BNM.REPTDATE parquet.
+    Returns (reptdate, nowk, reptmon, reptyear, reptyr, rdate, sdate, tdate).
+
+    Mirrors:
+      DATA BNM.REPTDATE; SET LOAN.REPTDATE;
+        WK=DAY(REPTDATE); MM=MONTH(REPTDATE);
+        CALL SYMPUT('NOWK',PUT(WK,Z2.));
+        CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+        CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+        CALL SYMPUT('REPTYR',PUT(REPTDATE,YEAR2.));
+        CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+        CALL SYMPUT('SDATE',PUT(REPTDATE,DDMMYY8.));
+        CALL SYMPUT('TDATE',PUT(REPTDATE,Z5.));
     """
-    if not LOAN_REPTDATE_FILE.exists():
-        raise FileNotFoundError(f"LOAN REPTDATE file not found: {LOAN_REPTDATE_FILE}")
+    df       = pl.read_parquet(LOAN_REPTDATE_PATH)
+    reptdate: date = df["REPTDATE"][0]
 
-    print("Processing REPTDATE from LOAN...")
+    wk       = reptdate.day
+    mm       = reptdate.month
+    nowk     = f"{wk:02d}"
+    reptmon  = f"{mm:02d}"
+    reptyear = str(reptdate.year)
+    reptyr   = reptdate.strftime("%y")         # two-digit year — YEAR2. format
+    rdate    = reptdate.strftime("%d/%m/%Y")   # DDMMYY8. — DD/MM/YYYY
+    sdate    = rdate
+    # SAS date integer: days since 01-JAN-1960 — PUT(REPTDATE,Z5.)
+    tdate    = (reptdate - date(1960, 1, 1)).days
 
-    # Read REPTDATE from LOAN
-    df = pl.read_parquet(LOAN_REPTDATE_FILE)
-
-    if len(df) == 0:
-        raise ValueError("LOAN REPTDATE file is empty")
-
-    reptdate = df['REPTDATE'][0]
-
-    # Extract date components
-    wk = reptdate.day
-    mm = reptdate.month
-    year = reptdate.year
-
-    # Format macro variables
-    nowk = f"{wk:02d}"  # Z2. format
-    reptmon = f"{mm:02d}"  # Z2. format
-    reptyear = str(year)  # YEAR4. format
-    reptyr = str(year)[-2:]  # YEAR2. format (last 2 digits)
-    rdate = f"{reptdate.day:02d}/{reptdate.month:02d}/{year}"  # DDMMYY8.
-    sdate = rdate  # Same as RDATE
-    tdate = f"{year}{mm:02d}{wk:02d}"[2:]  # Z5. format (YMMDD)
-
-    # Save REPTDATE to output (BNM.REPTDATE)
-    df.write_parquet(REPTDATE_OUTPUT)
-
-    return {
-        'NOWK': nowk,
-        'REPTMON': reptmon,
-        'REPTYEAR': reptyear,
-        'REPTYR': reptyr,
-        'RDATE': rdate,
-        'SDATE': sdate,
-        'TDATE': tdate,
-        'reptdate_obj': reptdate
-    }
-
-
-def get_loan_date():
-    """
-    Get loan extraction date from LOAN.REPTDATE
-    Returns: loan date string in DDMMYY8 format
-    """
-    if not LOAN_REPTDATE_FILE.exists():
-        raise FileNotFoundError(f"LOAN REPTDATE file not found: {LOAN_REPTDATE_FILE}")
-
-    # Read REPTDATE from LOAN
-    df = pl.read_parquet(LOAN_REPTDATE_FILE)
-
-    if len(df) == 0:
-        raise ValueError("LOAN REPTDATE file is empty")
-
-    reptdate = df['REPTDATE'][0]
-
-    # Format as DDMMYY8
-    loan_date = f"{reptdate.day:02d}/{reptdate.month:02d}/{reptdate.year}"
-
-    return loan_date
-
-
-def get_deposit_date():
-    """
-    Get deposit extraction date from DEPOSIT.REPTDATE
-    Returns: deposit date string in DDMMYY8 format
-    """
-    if not DEPOSIT_REPTDATE_FILE.exists():
-        raise FileNotFoundError(f"DEPOSIT REPTDATE file not found: {DEPOSIT_REPTDATE_FILE}")
-
-    # Read REPTDATE from DEPOSIT
-    df = pl.read_parquet(DEPOSIT_REPTDATE_FILE)
-
-    if len(df) == 0:
-        raise ValueError("DEPOSIT REPTDATE file is empty")
-
-    reptdate = df['REPTDATE'][0]
-
-    # Format as DDMMYY8
-    deposit_date = f"{reptdate.day:02d}/{reptdate.month:02d}/{reptdate.year}"
-
-    return deposit_date
-
-
-# ============================================================================
-# Processing Functions
-# ============================================================================
-
-def execute_lalwpbbd():
-    """
-    Execute LALWPBBD processing script
-    Equivalent to: %INC PGM(LALWPBBD);
-    """
-    if not LALWPBBD_SCRIPT.exists():
-        print(f"Warning: LALWPBBD script not found: {LALWPBBD_SCRIPT}")
-        print("Skipping LALWPBBD processing")
-        return
-
-    print(f"\nExecuting LALWPBBD processing...")
-    print("=" * 80)
-
-    # Execute LALWPBBD script
-    result = subprocess.run(
-        ['python3', str(LALWPBBD_SCRIPT)],
-        capture_output=True,
-        text=True
+    log.info(
+        "REPTDATE=%s  NOWK=%s  REPTMON=%s  REPTYEAR=%s  REPTYR=%s  RDATE=%s",
+        reptdate, nowk, reptmon, reptyear, reptyr, rdate,
     )
 
-    if result.returncode == 0:
-        print(result.stdout)
-        print("=" * 80)
-        print("✓ LALWPBBD processing completed successfully")
+    # Write BNM.REPTDATE
+    df.write_parquet(BNM_REPTDATE_PATH)
+    log.info("BNM.REPTDATE written: %s", BNM_REPTDATE_PATH)
+
+    return reptdate, nowk, reptmon, reptyear, reptyr, rdate, sdate, tdate
+
+
+# ============================================================================
+# DATA _NULL_ — read LOAN.REPTDATE to derive &LOAN macro variable
+# ============================================================================
+def load_loan_date() -> str:
+    """
+    Read LOAN.REPTDATE to get the loan extraction date formatted as DDMMYY8.
+    Mirrors:
+      DATA _NULL_; SET LOAN.REPTDATE;
+        CALL SYMPUT('LOAN', PUT(REPTDATE,DDMMYY8.));
+    """
+    df        = pl.read_parquet(LOAN_REPTDATE_PATH)
+    loan_date: date = df["REPTDATE"][0]
+    return loan_date.strftime("%d/%m/%Y")
+
+
+# ============================================================================
+# DATA _NULL_ — read DEPOSIT.REPTDATE to derive &DEPOSIT macro variable
+# ============================================================================
+def load_deposit_date() -> str:
+    """
+    Read DEPOSIT.REPTDATE to get the deposit extraction date formatted as DDMMYY8.
+    Mirrors:
+      DATA _NULL_; SET DEPOSIT.REPTDATE;
+        CALL SYMPUT('DEPOSIT', PUT(REPTDATE,DDMMYY8.));
+    """
+    df           = pl.read_parquet(DEPOSIT_REPTDATE_PATH)
+    deposit_date: date = df["REPTDATE"][0]
+    return deposit_date.strftime("%d/%m/%Y")
+
+
+# ============================================================================
+# %MACRO PROCESS — validate dates and invoke downstream programs
+# ============================================================================
+def process(loan: str, deposit: str, rdate: str,
+            reptdate: date, nowk: str, reptmon: str,
+            reptyr: str, tdate: int, sdate: str) -> None:
+    """
+    Mirrors %MACRO PROCESS:
+      If LOAN == RDATE AND DEPOSIT == RDATE:
+        - Invoke LALWPBBD
+        - Invoke LALWEIRC
+        - (LALBDBAL disabled — SMR2016-1430)
+        - (LALWPBBU disabled)
+        - Clean up work datasets (no-op in Python)
+      Else:
+        - Log mismatch message(s) and abort with exit code 77.
+    """
+    if loan == rdate and deposit == rdate:
+        log.info(
+            "Extraction dates match report date (%s). Proceeding.", rdate
+        )
+
+        # %INC PGM(LALWPBBD)
+        lalwpbbd_main(
+            reptmon=reptmon,
+            nowk=nowk,
+            reptdate=reptdate,
+            sdate=sdate,
+        )
+
+        # %INC PGM(LALWEIRC)
+        lalweirc_main(
+            reptmon=reptmon,
+            nowk=nowk,
+            reptyr=reptyr,
+        )
+
+        # /* %INC PGM(LALBDBAL); SMR2016-1430 */
+        # lalbdbal_main(reptmon=reptmon, nowk=nowk)
+
+        # /* %INC PGM(LALWPBBU); */
+        # lalwpbbu_main(reptmon=reptmon, nowk=nowk, tdate=tdate)
+
+        # PROC DATASETS LIB=WORK KILL NOLIST — work cleanup (no-op in Python)
+        log.info("Work dataset cleanup skipped (in-memory processing).")
+
     else:
-        print(result.stderr)
-        print("=" * 80)
-        raise RuntimeError(f"LALWPBBD processing failed with code {result.returncode}")
-
-
-def execute_lalweirc():
-    """
-    Execute LALWEIRC processing script
-    Equivalent to: %INC PGM(LALWEIRC);
-    """
-    if not LALWEIRC_SCRIPT.exists():
-        print(f"Warning: LALWEIRC script not found: {LALWEIRC_SCRIPT}")
-        print("Skipping LALWEIRC processing")
-        return
-
-    print(f"\nExecuting LALWEIRC processing...")
-    print("=" * 80)
-
-    # Execute LALWEIRC script
-    result = subprocess.run(
-        ['python3', str(LALWEIRC_SCRIPT)],
-        capture_output=True,
-        text=True
-    )
-
-    if result.returncode == 0:
-        print(result.stdout)
-        print("=" * 80)
-        print("✓ LALWEIRC processing completed successfully")
-    else:
-        print(result.stderr)
-        print("=" * 80)
-        raise RuntimeError(f"LALWEIRC processing failed with code {result.returncode}")
+        if loan != rdate:
+            log.warning("THE LOAN EXTRACTION IS NOT DATED %s", rdate)
+        if deposit != rdate:
+            log.warning("THE DEPOSIT EXTRACTION IS NOT DATED %s", rdate)
+        log.error("THE JOB IS NOT DONE !!")
+        # DATA A; ABORT 77; — abort with return code 77
+        sys.exit(77)
 
 
 # ============================================================================
-# Main Processing Logic
+# MAIN
 # ============================================================================
+def main() -> None:
+    log.info("EIBDWKLY started.")
 
-def validate_dates(loan_date, deposit_date, rdate):
-    """
-    Validate that both loan and deposit extraction dates match report date
-    Returns: (all_match, loan_match, deposit_match)
-    """
-    loan_match = (loan_date == rdate)
-    deposit_match = (deposit_date == rdate)
-    all_match = loan_match and deposit_match
+    # ----------------------------------------------------------------
+    # DATA BNM.REPTDATE — load and derive macro variables
+    # ----------------------------------------------------------------
+    reptdate, nowk, reptmon, reptyear, reptyr, rdate, sdate, tdate = load_reptdate()
 
-    print(f"\nDate Validation:")
-    print(f"  LOAN extraction:    {loan_date}")
-    print(f"  DEPOSIT extraction: {deposit_date}")
-    print(f"  Expected (RDATE):   {rdate}")
-    print()
+    # ----------------------------------------------------------------
+    # DATA _NULL_ — load LOAN extraction date
+    # ----------------------------------------------------------------
+    loan    = load_loan_date()
+    log.info("LOAN extraction date    : %s  |  RDATE: %s", loan, rdate)
 
-    if loan_match:
-        print(f"  ✓ LOAN date matches")
-    else:
-        print(f"  ✗ LOAN date does NOT match")
+    # ----------------------------------------------------------------
+    # DATA _NULL_ — load DEPOSIT extraction date
+    # ----------------------------------------------------------------
+    deposit = load_deposit_date()
+    log.info("DEPOSIT extraction date : %s  |  RDATE: %s", deposit, rdate)
 
-    if deposit_match:
-        print(f"  ✓ DEPOSIT date matches")
-    else:
-        print(f"  ✗ DEPOSIT date does NOT match")
+    # ----------------------------------------------------------------
+    # %PROCESS — validate dates and run downstream programs
+    # ----------------------------------------------------------------
+    process(loan, deposit, rdate, reptdate, nowk, reptmon, reptyr, tdate, sdate)
 
-    return all_match, loan_match, deposit_match
-
-
-def process_conditional(macro_vars):
-    """
-    Process data conditionally based on dual date validation
-    Equivalent to %MACRO PROCESS logic
-    """
-    print("\n" + "=" * 80)
-    print("CONDITIONAL PROCESSING")
-    print("=" * 80)
-
-    # Get extraction dates
-    loan_date = get_loan_date()
-    deposit_date = get_deposit_date()
-    rdate = macro_vars['RDATE']
-
-    # Validate dates
-    all_match, loan_match, deposit_match = validate_dates(loan_date, deposit_date, rdate)
-
-    # Check if both dates match
-    if all_match:
-        print("\n✓ All dates match - proceeding with processing")
-        print("-" * 80)
-
-        # Step 1: Execute LALWPBBD
-        print("\n1. Executing LALWPBBD processing...")
-        execute_lalwpbbd()
-
-        # Step 2: Execute LALWEIRC
-        print("\n2. Executing LALWEIRC processing...")
-        execute_lalweirc()
-
-        # Note: LALBDBAL and LALWPBBU are commented out in original
-        # SMR2016-1430
-
-        print("\n" + "=" * 80)
-        print("✓ All processing completed successfully")
-        print("=" * 80)
-
-        return EXIT_SUCCESS
-    else:
-        print("\n✗ Date validation failed - aborting processing")
-        print("-" * 80)
-
-        # Print specific error messages
-        if not loan_match:
-            print(f"  THE LOAN EXTRACTION IS NOT DATED {rdate}")
-        if not deposit_match:
-            print(f"  THE DEPOSIT EXTRACTION IS NOT DATED {rdate}")
-
-        print("  THE JOB IS NOT DONE !!")
-        print("=" * 80)
-
-        return EXIT_DATE_MISMATCH
-
-
-# ============================================================================
-# Summary Functions
-# ============================================================================
-
-def generate_summary(macro_vars):
-    """
-    Generate processing summary
-    """
-    print("\n" + "=" * 80)
-    print("PROCESSING SUMMARY")
-    print("=" * 80)
-
-    print(f"\nDate Information:")
-    print(f"  Week (NOWK): {macro_vars['NOWK']}")
-    print(f"  Month (REPTMON): {macro_vars['REPTMON']}")
-    print(f"  Year 4-digit (REPTYEAR): {macro_vars['REPTYEAR']}")
-    print(f"  Year 2-digit (REPTYR): {macro_vars['REPTYR']}")
-    print(f"  Report Date (RDATE): {macro_vars['RDATE']}")
-    print(f"  Start Date (SDATE): {macro_vars['SDATE']}")
-    print(f"  Timestamp (TDATE): {macro_vars['TDATE']}")
-
-    print(f"\nGenerated Files:")
-    if REPTDATE_OUTPUT.exists():
-        size = REPTDATE_OUTPUT.stat().st_size
-        print(f"  - {REPTDATE_OUTPUT} ({size:,} bytes)")
-
-    # Check for processing outputs
-    processing_outputs = []
-
-    # LALWPBBD outputs
-    lalwpbbd_files = list(OUTPUT_DIR.glob("lalwpbbd_*.parquet"))
-    processing_outputs.extend(lalwpbbd_files)
-
-    # LALWEIRC outputs
-    lalweirc_files = list(OUTPUT_DIR.glob("lalweirc_*.parquet"))
-    processing_outputs.extend(lalweirc_files)
-
-    if processing_outputs:
-        print(f"\n  Processing outputs:")
-        for file in sorted(processing_outputs):
-            size = file.stat().st_size
-            print(f"    - {file.name} ({size:,} bytes)")
-
-
-# ============================================================================
-# Main Execution
-# ============================================================================
-
-def main():
-    """Main execution function"""
-    try:
-        print("EIBDWKLY - Loan and Deposit Processing with Dual Date Validation")
-        print("=" * 80)
-        print("ESMR: 06-1428")
-        print("Run after: EIBDLNEX")
-        print("=" * 80)
-
-        # Step 1: Process REPTDATE and extract macro variables
-        print("\n1. Processing REPTDATE and extracting macro variables...")
-        macro_vars = process_reptdate()
-
-        print(f"\n   Macro Variables:")
-        print(f"     NOWK (day): {macro_vars['NOWK']}")
-        print(f"     REPTMON (month): {macro_vars['REPTMON']}")
-        print(f"     REPTYEAR (year 4-digit): {macro_vars['REPTYEAR']}")
-        print(f"     REPTYR (year 2-digit): {macro_vars['REPTYR']}")
-        print(f"     RDATE (formatted): {macro_vars['RDATE']}")
-        print(f"     SDATE (formatted): {macro_vars['SDATE']}")
-        print(f"     TDATE (timestamp): {macro_vars['TDATE']}")
-
-        # Step 2: Process conditionally based on dual date validation
-        exit_code = process_conditional(macro_vars)
-
-        # Step 3: Generate summary (only if successful)
-        if exit_code == EXIT_SUCCESS:
-            generate_summary(macro_vars)
-
-        # Exit with appropriate code
-        if exit_code != EXIT_SUCCESS:
-            print(f"\n✗ Program exiting with code {exit_code}")
-            sys.exit(exit_code)
-
-        print("\n✓ Program completed successfully")
-
-    except Exception as e:
-        print(f"\n✗ Error: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    log.info("EIBDWKLY completed successfully.")
 
 
 if __name__ == "__main__":
