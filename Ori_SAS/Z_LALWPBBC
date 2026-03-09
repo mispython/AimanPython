@@ -1,5 +1,5 @@
 /* PROGRAM NAME  : LALWPBBC                               */
-/* INVOKE BY JOB : PBBWKLY                                */
+/* INVOKE BY JOB : PBBWKLX                                */
 /* DATE MODIFIED : 26-10-2008                             */
 %INC PGM(PBBDPFMT,PBBLNFMT);
 %LET ABBA=(110,111,113,115,116,120,127,140,141,142,143);
