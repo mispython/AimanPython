@@ -6,6 +6,10 @@ Purpose  : Process PBIF (Public Bank Islamic Financing) client data -
              disbursements, repayments, undrawn amounts, and derive
              next billing date (MATDTE) based on FREQ and STDATES.
            Output: PBIF dataset (deduplicated by CLIENTNO, MATDTE).
+
+           Note   : This module is included (%INC PGM(RDLMPBIF)) by a calling
+                    program when REPTQ='Y' (last day of month / quarter-end).
+                    Callable via main() with date parameters passed from caller.
 """
 
 # ============================================================================
@@ -23,48 +27,26 @@ import duckdb
 import polars as pl
 from pathlib import Path
 from datetime import date, datetime
+from typing import Optional
 from dateutil.relativedelta import relativedelta
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 
-BASE_DIR        = Path("/data")
-PBIF_DIR        = BASE_DIR / "pbif"
-REPTDATE_FILE   = BASE_DIR / "reptdate.parquet"   # SET REPTDATE (used in DATA PBIF second step)
+BASE_DIR        = Path(".")
+PBIF_DIR        = BASE_DIR / "data" / "pbif"
+REPTDATE_FILE   = BASE_DIR / "data" / "bnm" / "reptdate.parquet"
 
 # Dynamic input: PBIF.CLIEN&REPTYEAR&REPTMON&REPTDAY
 # These are resolved at runtime from REPTDATE
-MECHRG_FILE     = BASE_DIR / "mechrg.txt"         # INFILE MECHRG (fixed-width text)
+MECHRG_FILE     = BASE_DIR / "data" / "mechrg.txt"   # INFILE MECHRG (fixed-width text)
 
 OUTPUT_DIR      = BASE_DIR / "output"
-OUTPUT_PBIF     = OUTPUT_DIR / "pbif.parquet"      # PBIF dataset output
+OUTPUT_PBIF     = OUTPUT_DIR / "pbif.parquet"          # default; overridden in main()
 OUTPUT_REPORT   = OUTPUT_DIR / "rdlmpbif_report.txt"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# ============================================================================
-# MACRO VARIABLES (resolved from REPTDATE at runtime)
-# ============================================================================
-
-con = duckdb.connect()
-
-reptdate_df = con.execute(
-    f"SELECT * FROM read_parquet('{REPTDATE_FILE}')"
-).pl()
-row_rep = reptdate_df.row(0, named=True)
-
-REPTDATE_VAL: date = row_rep["REPTDATE"]
-if isinstance(REPTDATE_VAL, datetime):
-    REPTDATE_VAL = REPTDATE_VAL.date()
-
-REPTYEAR = f"{REPTDATE_VAL.year}"
-REPTMON  = f"{REPTDATE_VAL.month:02d}"
-REPTDAY  = f"{REPTDATE_VAL.day:02d}"
-
-# MDATE: used to filter MECHRG rows (PDATE = &MDATE)
-# In the original SAS this is set externally; default to REPTDATE
-MDATE = REPTDATE_VAL
 
 # ============================================================================
 # DAYS-IN-MONTH ARRAYS  (%MACRO DCLVAR)
@@ -107,18 +89,8 @@ def next_billing_date(matdte: date, freq: int) -> date:
 
 
 # ============================================================================
-# STEP 1: DATA PBIF
-#   SET PBIF.CLIEN&REPTYEAR&REPTMON&REPTDAY
-#   IF ENTITY='PBBH'
-#   Derive APPRLIMX, PRODCD, FISSPURP, AMTIND, CUSTFISS, CUSTCX
+# CUSTFISS remapping (mirrors IF/ELSE IF chain in SAS)
 # ============================================================================
-
-clien_file = PBIF_DIR / f"clien{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
-
-pbif_raw = con.execute(
-    f"SELECT * FROM read_parquet('{clien_file}') WHERE ENTITY = 'PBBH'"
-).pl()
-
 
 def remap_custfiss(custcd) -> str:
     """
@@ -144,6 +116,13 @@ def remap_custfiss(custcd) -> str:
     return c
 
 
+# ============================================================================
+# STEP 1: DATA PBIF
+#   SET PBIF.CLIEN&REPTYEAR&REPTMON&REPTDAY
+#   IF ENTITY='PBBH'
+#   Derive APPRLIMX, PRODCD, FISSPURP, AMTIND, CUSTFISS, CUSTCX
+# ============================================================================
+
 def build_pbif_step1(df: pl.DataFrame) -> pl.DataFrame:
     """
     Apply DATA PBIF step 1 transformations:
@@ -167,8 +146,6 @@ def build_pbif_step1(df: pl.DataFrame) -> pl.DataFrame:
         out.append(r)
     return pl.DataFrame(out) if out else pl.DataFrame()
 
-
-pbif = build_pbif_step1(pbif_raw).sort("CLIENTNO")
 
 # ============================================================================
 # STEP 2: DATA MECHRG
@@ -237,8 +214,6 @@ def read_mechrg(filepath: Path, mdate: date) -> pl.DataFrame:
     )
 
 
-mechrg = read_mechrg(MECHRG_FILE, MDATE)
-
 # ============================================================================
 # STEP 3: MERGE PBIF(IN=A) MECHRG; BY CLIENTNO
 #   IF A
@@ -256,11 +231,6 @@ mechrg = read_mechrg(MECHRG_FILE, MDATE)
 #   UNDRAWN = INLIMIT - BALANCE
 #   IF FIU=0.00 THEN DELETE
 # ============================================================================
-
-pbif_merged = (
-    pbif.join(mechrg, on="CLIENTNO", how="left")
-)
-
 
 def apply_balance_logic(df: pl.DataFrame) -> pl.DataFrame:
     """
@@ -335,8 +305,6 @@ def apply_balance_logic(df: pl.DataFrame) -> pl.DataFrame:
     return pl.DataFrame(out) if out else pl.DataFrame()
 
 
-pbif = apply_balance_logic(pbif_merged)
-
 # ============================================================================
 # PROC PRINT (intermediate diagnostic print — replicated as text output)
 #   VAR BRANCH CLIENTNO BALANCE CUSTCX FISSPURP INLIMIT UNDRAWN
@@ -363,37 +331,37 @@ def fmt_val(val, width: int = 14) -> str:
         return str(val).rjust(width)
 
 
-print_lines: list[str] = []
+def write_proc_print(pbif: pl.DataFrame, report_path: Path) -> None:
+    """Write intermediate diagnostic PROC PRINT to text file."""
+    print_lines: list[str] = []
 
-# Header
-available_cols = [c for c in PRINT_COLS if c in pbif.columns]
-print_lines.append(" " + "  ".join(f"{c:>14}" for c in available_cols))
-print_lines.append(" " + "-" * (16 * len(available_cols)))
+    available_cols = [c for c in PRINT_COLS if c in pbif.columns]
+    print_lines.append(" " + "  ".join(f"{c:>14}" for c in available_cols))
+    print_lines.append(" " + "-" * (16 * len(available_cols)))
 
-totals: dict[str, float] = {c: 0.0 for c in SUM_COLS}
+    totals: dict[str, float] = {c: 0.0 for c in SUM_COLS}
 
-for row in pbif.iter_rows(named=True):
-    cells = "  ".join(fmt_val(row.get(c)) for c in available_cols)
-    print_lines.append(f" {cells}")
-    for c in SUM_COLS:
-        if c in row and row[c] is not None:
-            try:
-                totals[c] += float(row[c])
-            except (TypeError, ValueError):
-                pass
+    for row in pbif.iter_rows(named=True):
+        cells = "  ".join(fmt_val(row.get(c)) for c in available_cols)
+        print_lines.append(f" {cells}")
+        for c in SUM_COLS:
+            if c in row and row[c] is not None:
+                try:
+                    totals[c] += float(row[c])
+                except (TypeError, ValueError):
+                    pass
 
-# SUM row
-print_lines.append(" " + "-" * (16 * len(available_cols)))
-sum_cells = "  ".join(
-    fmt_val(totals.get(c, "")) if c in SUM_COLS else " " * 14
-    for c in available_cols
-)
-print_lines.append(f" {sum_cells}")
+    # SUM row
+    print_lines.append(" " + "-" * (16 * len(available_cols)))
+    sum_cells = "  ".join(
+        fmt_val(totals.get(c, "")) if c in SUM_COLS else " " * 14
+        for c in available_cols
+    )
+    print_lines.append(f" {sum_cells}")
 
-with open(OUTPUT_REPORT, "w", encoding="utf-8") as f:
-    f.write("\n".join(print_lines) + "\n")
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(print_lines) + "\n")
 
-print(f"Intermediate print written to: {OUTPUT_REPORT}")
 
 # ============================================================================
 # STEP 4: DATA PBIF (second pass)
@@ -406,73 +374,136 @@ print(f"Intermediate print written to: {OUTPUT_REPORT}")
 #     IF STDATES > 0: start at STDATES, advance by FREQ until > REPTDATE
 # ============================================================================
 
-def compute_matdte(row: dict, reptdate: date) -> date:
+def compute_matdte(df: pl.DataFrame, reptdate: date) -> pl.DataFrame:
     """
-    Replicate MATDTE derivation:
-      FREQ = 6 if INLIMIT >= 1000000 else 12
-      MATDTE = REPTDATE
-      IF STDATES > 0:
-        MATDTE = STDATES
-        DO WHILE (MATDTE <= REPTDATE):
-          %NXTBLDT  (advance by FREQ months)
+    DATA PBIF (DROP CUSTCD):
+      FREQ = 6 if INLIMIT >= 1000000 else 12.
+      MATDTE = REPTDATE.
+      IF STDATES > 0: MATDTE = STDATES; advance while MATDTE <= REPTDATE.
+    PROC SORT NODUPKEY; BY CLIENTNO MATDTE;
     """
-    inlimit = float(row.get("INLIMIT") or 0.0)
-    freq    = 6 if inlimit >= 1000000.0 else 12
+    pbif_rows = df.to_dicts()
+    step2_rows = []
 
-    stdates = row.get("STDATES")
-    matdte  = reptdate
+    for r in pbif_rows:
+        # DROP CUSTCD
+        r.pop("CUSTCD", None)
 
-    if stdates is not None and stdates != 0:
-        # Convert STDATES to date if necessary
-        if isinstance(stdates, datetime):
-            stdates = stdates.date()
-        elif isinstance(stdates, (int, float)) and stdates > 0:
-            # SAS date numeric: days since 01-Jan-1960
-            try:
-                from datetime import timedelta
-                sas_epoch = date(1960, 1, 1)
-                stdates = sas_epoch + timedelta(days=int(stdates))
-            except (TypeError, ValueError, OverflowError):
-                stdates = reptdate
+        inlimit = float(r.get("INLIMIT") or 0.0)
+        freq    = 6 if inlimit >= 1_000_000.0 else 12
 
-        matdte = stdates
-        # DO WHILE (MATDTE <= REPTDATE): advance by FREQ
-        while matdte <= reptdate:
-            matdte = next_billing_date(matdte, freq)
+        stdates = r.get("STDATES")
+        matdte  = reptdate
 
-    return matdte
+        if stdates is not None and stdates != 0:
+            # Convert STDATES to date if necessary
+            if isinstance(stdates, datetime):
+                stdates = stdates.date()
+            elif isinstance(stdates, (int, float)) and stdates > 0:
+                # SAS date numeric: days since 01-Jan-1960
+                try:
+                    from datetime import timedelta
+                    sas_epoch = date(1960, 1, 1)
+                    stdates   = sas_epoch + timedelta(days=int(stdates))
+                except (TypeError, ValueError, OverflowError):
+                    stdates   = reptdate
 
+            matdte = stdates
+            # DO WHILE (MATDTE <= REPTDATE): advance by FREQ
+            safety = 0
+            while matdte <= reptdate:
+                matdte = next_billing_date(matdte, freq)
+                safety += 1
+                if safety > 1000:
+                    break   # guard against infinite loop
 
-pbif_rows = pbif.to_dicts()
-step2_rows = []
+        r["MATDTE"] = matdte
+        r["FREQ"]   = freq
+        step2_rows.append(r)
 
-for r in pbif_rows:
-    # DROP CUSTCD
-    r.pop("CUSTCD", None)
+    out = pl.DataFrame(step2_rows) if step2_rows else pl.DataFrame()
 
-    matdte = compute_matdte(r, REPTDATE_VAL)
-    r["MATDTE"] = matdte
-    r["FREQ"]   = 6 if float(r.get("INLIMIT") or 0.0) >= 1000000.0 else 12
-    step2_rows.append(r)
+    # PROC SORT DATA=PBIF OUT=PBIF NODUPKEY; BY CLIENTNO MATDTE
+    if not out.is_empty():
+        out = (
+            out.sort(["CLIENTNO", "MATDTE"])
+               .unique(subset=["CLIENTNO", "MATDTE"], keep="first")
+        )
+    return out
 
-pbif_step2 = pl.DataFrame(step2_rows) if step2_rows else pl.DataFrame()
-
-# ============================================================================
-# PROC SORT DATA=PBIF OUT=PBIF NODUPKEY; BY CLIENTNO MATDTE
-# ============================================================================
-
-if not pbif_step2.is_empty():
-    pbif_final = (
-        pbif_step2.sort(["CLIENTNO", "MATDTE"])
-                  .unique(subset=["CLIENTNO", "MATDTE"], keep="first")
-    )
-else:
-    pbif_final = pbif_step2
 
 # ============================================================================
-# WRITE OUTPUT PARQUET
+# MAIN — callable by EIBDFACT (and standalone)
 # ============================================================================
 
-pbif_final.write_parquet(OUTPUT_PBIF)
-print(f"PBIF dataset written to: {OUTPUT_PBIF}")
-print(f"Rows: {len(pbif_final)}")
+def main(reptdate: Optional[date] = None,
+         reptyear: Optional[str]  = None,
+         reptmon:  Optional[str]  = None,
+         reptday:  Optional[str]  = None,
+         mdate:    Optional[date] = None) -> pl.DataFrame:
+    """
+    Entry point for RDLMPBIF — called by EIBDFACT when REPTQ='Y'
+    (quarter-end / last-day-of-month path).
+    If date parameters are not supplied, reads from REPTDATE_FILE.
+    Returns enriched PBIF dataframe.
+    """
+    con = duckdb.connect()
+
+    if reptdate is None:
+        reptdate_df  = con.execute(
+            f"SELECT * FROM read_parquet('{REPTDATE_FILE}')"
+        ).pl()
+        row_rep      = reptdate_df.row(0, named=True)
+        reptdate_val = row_rep["REPTDATE"]
+        if isinstance(reptdate_val, datetime):
+            reptdate_val = reptdate_val.date()
+        reptdate = reptdate_val
+        reptyear = f"{reptdate.year}"
+        reptmon  = f"{reptdate.month:02d}"
+        reptday  = f"{reptdate.day:02d}"
+
+    if mdate is None:
+        mdate = reptdate
+
+    # ----------------------------------------------------------------
+    # STEP 1: Load and filter PBIF.CLIEN<REPTYEAR><REPTMON><REPTDAY>
+    # ----------------------------------------------------------------
+    clien_file = PBIF_DIR / f"clien{reptyear}{reptmon}{reptday}.parquet"
+    pbif_raw   = con.execute(
+        f"SELECT * FROM read_parquet('{clien_file}') WHERE ENTITY = 'PBBH'"
+    ).pl()
+
+    pbif = build_pbif_step1(pbif_raw).sort("CLIENTNO")
+
+    # ----------------------------------------------------------------
+    # STEP 2: Load and aggregate MECHRG
+    # ----------------------------------------------------------------
+    mechrg = read_mechrg(MECHRG_FILE, mdate)
+
+    # ----------------------------------------------------------------
+    # STEP 3: Merge PBIF + MECHRG; apply balance logic
+    # ----------------------------------------------------------------
+    pbif_merged = pbif.join(mechrg, on="CLIENTNO", how="left")
+    pbif        = apply_balance_logic(pbif_merged)
+
+    # ----------------------------------------------------------------
+    # PROC PRINT (intermediate diagnostic)
+    # ----------------------------------------------------------------
+    write_proc_print(pbif, OUTPUT_REPORT)
+
+    # ----------------------------------------------------------------
+    # STEP 4: Compute MATDTE; deduplicate
+    # ----------------------------------------------------------------
+    pbif_final = compute_matdte(pbif, reptdate)
+
+    # ----------------------------------------------------------------
+    # Write output parquet
+    # ----------------------------------------------------------------
+    out_path = OUTPUT_DIR / f"PBIF{reptyear}{reptmon}{reptday}.parquet"
+    pbif_final.write_parquet(out_path)
+
+    return pbif_final
+
+
+if __name__ == "__main__":
+    main()
