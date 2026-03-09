@@ -32,10 +32,12 @@ import polars as pl
 
 # ============================================================================
 # DEPENDENCY IMPORTS
-# Note: %INC PGM(PBBLNFMT) — format functions used upstream; no direct calls
-# required here except for any format lookups added by implementer.
+# Note: %INC PGM(PBBLNFMT) appears in the SAS header as a global include.
+#       Examining this program's logic: it applies fixed constants ('30591', '0470',
+#       'D') and a local CUSTFISS remap — none of which are PBBLNFMT format functions.
+#       The PBBLNFMT include is inherited from the calling job's global context in SAS
+#       but no PBBLNFMT functions are directly invoked in this program's code.
 # ============================================================================
-# from PBBLNFMT import ...
 
 # ============================================================================
 # PATH CONFIGURATION
