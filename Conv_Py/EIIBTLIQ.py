@@ -1,435 +1,498 @@
 #!/usr/bin/env python3
 """
-File Name: EIIBTLIQ
-Report: Breakdown by Maturity Profile (Trade Bills) with Undrawn Portion
+Program  : EIIBTLIQ.py
+Purpose  : IBT loan maturity profile breakdown (Part 1 & 2 — RM).
+           Produces SASLIST report of BNM BNMCODE/AMOUNT buckets for
+           IBT trade bills (utilised + undrawn), then FTPs result.
+
+           Reads  : BNM1.REPTDATE                 (parquet)
+                    BNM1.IBTRAD<REPTMON><NOWK>    (parquet)
+                    BNM1.IBTMAST<REPTMON><NOWK>   (parquet, undrawn/OV)
+
+           Writes : output/EIIBTLIQ.txt           — SASLIST report (LRECL=80)
+
+           Dependencies: PBBLNFMT, PBBELF (included in SAS source;
+                         format functions used upstream in BNM1 datasets)
+
+           FTP stub: uploads EIIBTLIQ.txt to
+                     DRR: "FD-BNM REPORTING/PIBB/BNM RPTG"
 """
 
-from __future__ import annotations
-
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+# ============================================================================
+# STANDARD LIBRARY IMPORTS
+# ============================================================================
+import logging
+from datetime import date
 from pathlib import Path
-from typing import Iterable
+from typing import Optional
 
-import duckdb
+# ============================================================================
+# THIRD-PARTY IMPORTS
+# ============================================================================
 import polars as pl
 
+# ============================================================================
+# DEPENDENCY IMPORTS
+# Note: %INC PGM(PBBLNFMT,PBBELF) appears in the SAS header.
+#
+# PBBLNFMT: BNM1.IBTRAD is already formatted upstream. The PRDFMT value map
+#           (VALUE PRDFMT ... HL/RC/FL) is defined locally in the SAS program itself
+#           and is NOT from PBBLNFMT — it is reproduced as prdfmt() below.
+#
+# PBBELF: defines EL/ELI BNMCODE tables for deposit reporting. This program
+#           only constructs BNMCODE strings inline using string concatenation.
+#           No PBBELF lookup functions are called here.
+# ============================================================================
 
-# =============================================================================
+# ============================================================================
 # PATH CONFIGURATION
-# =============================================================================
+# ============================================================================
+BASE_DIR   = Path(".")
+DATA_DIR   = BASE_DIR / "data"
+OUTPUT_DIR = BASE_DIR / "output"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-BASE_INPUT_DIR = Path("input")
-BASE_OUTPUT_DIR = Path("output")
-BASE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+BNM1_DATA_DIR = DATA_DIR / "bnm1"
+SASLIST_PATH  = OUTPUT_DIR / "EIIBTLIQ.txt"
 
-REPTDATE_FILE = BASE_INPUT_DIR / "reptdate.parquet"
-IBTRAD_TEMPLATE = BASE_INPUT_DIR / "ibtrad_{reptmon}{nowk}.parquet"
-IBTMAST_TEMPLATE = BASE_INPUT_DIR / "ibtmast_{reptmon}{nowk}.parquet"
+# ============================================================================
+# CONSTANTS — calendar day counts per month (31/30/28 defaults; Feb adjusted)
+# Mirrors: RETAIN D1-D12 31 D4 D6 D9 D11 30 RD1-RD12 MD1-MD12 31 RD2 MD2 28
+# ============================================================================
+_BASE_LDAY = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
-OUTPUT_REPORT = BASE_OUTPUT_DIR / "EIIBTLIQ.txt"
+# REMFMT: remaining months → bucket code
+# LOW–0.1='01', 0.1–1='02', 1–3='03', 3–6='04', 6–12='05', OTHER='06'
+def remfmt(months: float) -> str:
+    if months <= 0.1:    return '01'   # UP TO 1 WK
+    elif months <= 1:    return '02'   # >1 WK – 1 MTH
+    elif months <= 3:    return '03'   # >1 MTH – 3 MTHS
+    elif months <= 6:    return '04'   # >3 – 6 MTHS
+    elif months <= 12:   return '05'   # >6 MTHS – 1 YR
+    else:                return '06'   # > 1 YEAR
 
+# PRDFMT: product → category
+_HL_PRODUCTS = {
+    4, 5, 6, 7, 31, 32, 100, 101, 102, 103, 110, 111, 112, 113, 114, 115,
+    116, 170, 200, 201, 204, 205, 209, 210, 211, 212, 214, 215, 219, 220,
+    225, 226, 227, 228, 229, 230, 231, 232, 233, 234
+}
+_RC_PRODUCTS = {350, 910, 925}
 
-# =============================================================================
-# DATA STRUCTURES
-# =============================================================================
+def prdfmt(product: int) -> str:
+    if product in _HL_PRODUCTS: return 'HL'
+    if product in _RC_PRODUCTS: return 'RC'
+    return 'FL'
 
-
-@dataclass(frozen=True)
-class ReportDates:
-    reptdate: date
-    reptmon: str
-    nowk: str
-    rdate_str: str
-
-
-# =============================================================================
-# DATE AND FORMAT HELPERS
-# =============================================================================
-
-
-def compute_week(day: int) -> str:
-    if 1 <= day <= 8:
-        return "1"
-    if 9 <= day <= 15:
-        return "2"
-    if 16 <= day <= 22:
-        return "3"
-    return "4"
-
-
-def is_leap_year(year: int) -> bool:
-    return year % 4 == 0
-
-
-def days_in_month(year: int) -> list[int]:
-    feb_days = 29 if is_leap_year(year) else 28
-    return [31, feb_days, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-
-
-def to_date(value) -> date | None:
-    if value is None:
-        return None
-    if isinstance(value, date) and not isinstance(value, datetime):
-        return value
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, str):
-        return date.fromisoformat(value)
-    if isinstance(value, (int, float)):
-        if value <= 0:
-            return None
-        base = date(1960, 1, 1)
-        return base + timedelta(days=int(value))
-    return None
+# ============================================================================
+# LOGGING
+# ============================================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger(__name__)
 
 
-def remfmt(remmth: float) -> str:
-    if remmth <= 0.1:
-        return "01"
-    if remmth <= 1:
-        return "02"
-    if remmth <= 3:
-        return "03"
-    if remmth <= 6:
-        return "04"
-    if remmth <= 12:
-        return "05"
-    return "06"
+# ============================================================================
+# HELPER: leap-year aware days-in-month array (D1–D12)
+# ============================================================================
+def lday_array(year: int) -> list[int]:
+    d = _BASE_LDAY.copy()
+    if year % 4 == 0:
+        d[1] = 29
+    return d
 
 
-def load_report_dates() -> ReportDates:
-    if not REPTDATE_FILE.exists():
-        raise FileNotFoundError(f"Missing REPTDATE file: {REPTDATE_FILE}")
-
-    df = pl.read_parquet(REPTDATE_FILE)
-    if df.is_empty():
-        raise ValueError("REPTDATE parquet is empty.")
-
-    reptdate = to_date(df["REPTDATE"][0])
-    if reptdate is None:
-        raise ValueError("Invalid REPTDATE value.")
-
-    reptmon = f"{reptdate.month:02d}"
-    nowk = compute_week(reptdate.day)
-    rdate_str = f"{reptdate.day:02d}/{reptdate.month:02d}/{str(reptdate.year)[-2:]}"
-    return ReportDates(
-        reptdate=reptdate,
-        reptmon=reptmon,
-        nowk=nowk,
-        rdate_str=rdate_str,
-    )
+# ============================================================================
+# HELPER: derive week code from day-of-month (SELECT WHEN logic)
+# ============================================================================
+def derive_nowk(day: int) -> str:
+    if   day == 8:  return '1'
+    elif day == 15: return '2'
+    elif day == 22: return '3'
+    else:           return '4'
 
 
-# =============================================================================
-# BUSINESS LOGIC
-# =============================================================================
+# ============================================================================
+# HELPER: %REMMTH macro — remaining months from REPTDATE to MATDT
+# ============================================================================
+def calc_remmth(matdt: date, reptdate: date) -> float:
+    """
+    %MACRO REMMTH:
+      REMY  = MDYR  - RPYR
+      REMM  = MDMTH - RPMTH
+      REMD  = MDDAY - RPDAY  (capped to days-in-month of reptdate month)
+      REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH)
+    """
+    rpyr   = reptdate.year
+    rpmth  = reptdate.month
+    rpday  = reptdate.day
+
+    mdyr   = matdt.year
+    mdmth  = matdt.month
+    mdday  = matdt.day
+
+    # RPDAYS array — days in reptdate month (leap-year aware)
+    rpdays = lday_array(rpyr)
+    rpdays_mth = rpdays[rpmth - 1]
+
+    # MDDAYS array — cap MDDAY to days in matdt month
+    mddays = lday_array(mdyr)
+    if mdday > mddays[mdmth - 1]:
+        mdday = mddays[mdmth - 1]
+    # Cap MDDAY to RPDAYS of reptdate month
+    if mdday > rpdays_mth:
+        mdday = rpdays_mth
+
+    remy  = mdyr  - rpyr
+    remm  = mdmth - rpmth
+    remd  = mdday - rpday
+
+    return remy * 12 + remm + remd / rpdays_mth
 
 
-def nxtbldt(
-    bldate: date,
-    issdte: date,
-    payfreq: str,
-    freq: int,
-) -> date:
-    if payfreq == "6":
+# ============================================================================
+# HELPER: %NXTBLDT macro — advance BLDATE by payment frequency
+# (EIIBTLIQ variant: PAYFREQ='6' → biweekly; otherwise monthly intervals)
+# ============================================================================
+def next_bldate(bldate: date, issdte: date, payfreq: str, freq: int) -> date:
+    """
+    %MACRO NXTBLDT (EIIBTLIQ version):
+      IF PAYFREQ='6': DD = DAY(BLDATE)+14, advance by fortnight.
+      ELSE: DD=DAY(ISSDTE), MM=MONTH(BLDATE)+FREQ, advance monthly.
+    End-of-month capping applied.
+    """
+    from datetime import date as _date
+    import calendar
+
+    lday = lday_array(bldate.year)
+
+    if payfreq == '6':
         dd = bldate.day + 14
         mm = bldate.month
         yy = bldate.year
-        month_days = days_in_month(yy)
-        if dd > month_days[mm - 1]:
-            dd -= month_days[mm - 1]
+        # Leap-year Feb adjustment
+        lday = lday_array(yy)
+        if dd > lday[mm - 1]:
+            dd -= lday[mm - 1]
             mm += 1
             if mm > 12:
-                mm -= 12
-                yy += 1
+                mm -= 12; yy += 1
     else:
         dd = issdte.day
         mm = bldate.month + freq
         yy = bldate.year
         if mm > 12:
-            mm -= 12
-            yy += 1
+            mm -= 12; yy += 1
 
-    month_days = days_in_month(yy)
-    if dd > month_days[mm - 1]:
-        dd = month_days[mm - 1]
-    return date(yy, mm, dd)
-
-
-def remmth(
-    matdt: date,
-    rpy: int,
-    rpmth: int,
-    rpday: int,
-    rpd_days: list[int],
-) -> float:
-    mdyr = matdt.year
-    mdmth = matdt.month
-    mdday = matdt.day
-    if mdday > rpd_days[rpmth - 1]:
-        mdday = rpd_days[rpmth - 1]
-    remy = mdyr - rpy
-    remm = mdmth - rpmth
-    remd = mdday - rpday
-    return remy * 12 + remm + remd / rpd_days[rpmth - 1]
+    # Feb leap-year re-check
+    lday = lday_array(yy)
+    if dd > lday[mm - 1]:
+        dd = lday[mm - 1]
+    try:
+        return _date(yy, mm, dd)
+    except ValueError:
+        return _date(yy, mm, lday[mm - 1])
 
 
-def build_note_summary(df: pl.DataFrame, reptdate: date) -> pl.DataFrame:
-    rpy = reptdate.year
-    rpmth = reptdate.month
-    rpday = reptdate.day
-    rpd_days = days_in_month(rpy)
+# ============================================================================
+# STEP 1: Load BNM1.REPTDATE
+# ============================================================================
+def load_reptdate() -> tuple[date, str, str, str, str]:
+    """
+    DATA REPTDATE; SET BNM1.REPTDATE;
+    SELECT(DAY): NOWK=1/2/3/4.
+    Returns (reptdate, nowk, reptmon, reptday, rdate).
+    """
+    df       = pl.read_parquet(BNM1_DATA_DIR / "reptdate.parquet")
+    reptdate: date = df["REPTDATE"][0]
+
+    nowk    = derive_nowk(reptdate.day)
+    reptmon = f"{reptdate.month:02d}"
+    reptday = f"{reptdate.day:02d}"
+    rdate   = reptdate.strftime("%d/%m/%Y")
+
+    log.info("REPTDATE=%s NOWK=%s REPTMON=%s RDATE=%s",
+             reptdate, nowk, reptmon, rdate)
+    return reptdate, nowk, reptmon, reptday, rdate
+
+
+# ============================================================================
+# STEP 2: Build NOTE — maturity cashflow buckets from BNM1.IBTRAD
+# ============================================================================
+def build_note(ibtrad_df: pl.DataFrame, reptdate: date) -> pl.DataFrame:
+    """
+    DATA NOTE (KEEP=BNMCODE AMOUNT):
+      Filter PRODCD starts with '34' OR PRODUCT IN (225,226).
+      CUST: '08' for retail (CUSTCD 77/78/95/96), else '09'.
+      PROD: prdfmt(PRODUCT).
+      ITEM based on CUST/PROD.
+      Payment schedule loop — generate BNMCODE and AMOUNT per cashflow bucket.
+    """
+    rpyr   = reptdate.year
+    rpmth  = reptdate.month
+    rpday  = reptdate.day
 
     rows = []
+    for r in ibtrad_df.to_dicts():
+        prodcd  = str(r.get("PRODCD",  "") or "")
+        product = int(r.get("PRODUCT", 0) or 0)
 
-    for row in df.iter_rows(named=True):
-        prodcd = str(row.get("PRODCD") or "").strip()
-        product = row.get("PRODUCT")
-        if not (prodcd.startswith("34") or product in (225, 226)):
+        if not (prodcd[:2] == "34" or product in (225, 226)):
             continue
 
-        custcd = str(row.get("CUSTCD") or "").strip()
-        cust = "08" if custcd in {"77", "78", "95", "96"} else "09"
-        prod = "BT"
-        if custcd in {"77", "78", "95", "96"}:
+        custcd   = str(r.get("CUSTCD",   "") or "")
+        balance  = float(r.get("BALANCE", 0) or 0)
+        payamt   = float(r.get("PAYAMT",  0) or 0)
+        exprdate = r.get("EXPRDATE")
+        bldate   = r.get("BLDATE")
+        issdte   = r.get("ISSDTE")
+
+        if payamt < 0:
+            payamt = 0
+
+        cust = "08" if custcd in ("77", "78", "95", "96") else "09"
+        prod = prdfmt(product)
+
+        # ITEM selection
+        if custcd in ("77", "78", "95", "96"):
             item = "214" if prod == "HL" else "219"
         else:
-            if prod == "FL":
-                item = "211"
-            elif prod == "RC":
-                item = "212"
-            else:
-                item = "219"
+            if prod == "FL":  item = "211"
+            elif prod == "RC": item = "212"
+            else:              item = "219"
 
-        bldate = to_date(row.get("BLDATE"))
-        issdte = to_date(row.get("ISSDTE"))
-        exprdate = to_date(row.get("EXPRDATE"))
-        balance = float(row.get("BALANCE") or 0)
-        payamt = float(row.get("PAYAMT") or 0)
-
+        # DAYS — days past since last bill date
         days = 0
-        if bldate is not None:
+        if bldate and bldate > date(1960, 1, 1):
             days = (reptdate - bldate).days
 
-        if exprdate is not None and (exprdate - reptdate).days < 8:
-            remmth_value = 0.1
-        else:
-            payfreq = "3"
-            freq = 6
-            if product in (350, 910, 925):
-                if exprdate is not None:
-                    bldate = exprdate
-            elif bldate is None:
-                if issdte is None:
-                    continue
-                bldate = issdte
-                while bldate <= reptdate:
-                    bldate = nxtbldt(bldate, issdte, payfreq, freq)
+        # EXPRDATE guard
+        if not exprdate or exprdate <= date(1960, 1, 1):
+            continue
 
-            if payamt < 0:
-                payamt = 0
-            if exprdate is not None and (bldate > exprdate or balance <= payamt):
+        # Near-maturity: < 8 days remaining
+        if (exprdate - reptdate).days < 8:
+            remmth = 0.1
+            # Final output
+            bnmcode = f"95{item}{cust}{remfmt(remmth)}0000Y"
+            rows.append({"BNMCODE": bnmcode, "AMOUNT": balance})
+            if days > 89: remmth = 13
+            bnmcode = f"93{item}{cust}{remfmt(remmth)}0000Y"
+            rows.append({"BNMCODE": bnmcode, "AMOUNT": balance})
+            continue
+
+        # PAYFREQ hardcoded to '3' in EIIBTLIQ (PAYFREQ='3' → FREQ=6 months)
+        payfreq = "3"
+        freq    = 6   # WHEN('3') FREQ=6
+
+        # RC/OV: BLDATE = EXPRDATE directly
+        if product in (350, 910, 925):
+            bldate = exprdate
+        elif not bldate or bldate <= date(1960, 1, 1):
+            bldate = issdte if issdte else reptdate
+            while bldate <= reptdate:
+                bldate = next_bldate(bldate, issdte or reptdate, payfreq, freq)
+
+        if bldate > exprdate or balance <= payamt:
+            bldate = exprdate
+
+        # Amortisation loop
+        bal_remain = balance
+        while bldate <= exprdate:
+            matdt  = bldate
+            remmth = calc_remmth(matdt, reptdate)
+
+            if remmth > 12 or bldate == exprdate:
+                break
+
+            amount      = payamt
+            bal_remain -= payamt
+
+            bnmcode = f"95{item}{cust}{remfmt(remmth)}0000Y"
+            rows.append({"BNMCODE": bnmcode, "AMOUNT": amount})
+
+            rm_out = 13 if days > 89 else remmth
+            bnmcode = f"93{item}{cust}{remfmt(rm_out)}0000Y"
+            rows.append({"BNMCODE": bnmcode, "AMOUNT": amount})
+
+            bldate = next_bldate(bldate, issdte or reptdate, payfreq, freq)
+            if bldate > exprdate or bal_remain <= payamt:
                 bldate = exprdate
 
-            remmth_value = 0.1
-            while exprdate is not None and bldate <= exprdate:
-                matdt = bldate
-                remmth_value = remmth(matdt, rpy, rpmth, rpday, rpd_days)
-                if remmth_value > 12 or bldate == exprdate:
-                    break
-
-                rows.append(
-                    {
-                        "BNMCODE": f"95{item}{cust}{remfmt(remmth_value)}0000Y",
-                        "AMOUNT": payamt,
-                    }
-                )
-
-                remmth_for_93 = 13 if days > 89 else remmth_value
-                rows.append(
-                    {
-                        "BNMCODE": f"93{item}{cust}{remfmt(remmth_for_93)}0000Y",
-                        "AMOUNT": payamt,
-                    }
-                )
-
-                balance -= payamt
-                bldate = nxtbldt(bldate, issdte, payfreq, freq)
-                if bldate > exprdate or balance <= payamt:
-                    bldate = exprdate
-
-        rows.append(
-            {
-                "BNMCODE": f"95{item}{cust}{remfmt(remmth_value)}0000Y",
-                "AMOUNT": balance,
-            }
-        )
-
-        remmth_for_93 = 13 if days > 89 else remmth_value
-        rows.append(
-            {
-                "BNMCODE": f"93{item}{cust}{remfmt(remmth_for_93)}0000Y",
-                "AMOUNT": balance,
-            }
-        )
+        # Final balance bucket
+        remmth  = calc_remmth(exprdate, reptdate)
+        bnmcode = f"95{item}{cust}{remfmt(remmth)}0000Y"
+        rows.append({"BNMCODE": bnmcode, "AMOUNT": bal_remain})
+        rm_out  = 13 if days > 89 else remmth
+        bnmcode = f"93{item}{cust}{remfmt(rm_out)}0000Y"
+        rows.append({"BNMCODE": bnmcode, "AMOUNT": bal_remain})
 
     if not rows:
-        return pl.DataFrame({"BNMCODE": [], "AMOUNT": []})
+        return pl.DataFrame(schema={"BNMCODE": pl.Utf8, "AMOUNT": pl.Float64})
 
-    note_df = pl.DataFrame(rows)
-    return note_df.group_by("BNMCODE").agg(pl.col("AMOUNT").sum())
+    df = pl.DataFrame(rows)
+    return (
+        df.group_by("BNMCODE")
+          .agg(pl.col("AMOUNT").sum())
+          .sort("BNMCODE")
+    )
 
 
-def build_undrawn_summary(df: pl.DataFrame, reptdate: date) -> pl.DataFrame:
-    rpy = reptdate.year
-    rpmth = reptdate.month
-    rpday = reptdate.day
-    rpd_days = days_in_month(rpy)
+# ============================================================================
+# STEP 3: Build UNOTE — undrawn portion from BNM1.IBTMAST (SUBACCT='OV')
+# ============================================================================
+def build_unote(ibtmast_df: pl.DataFrame, reptdate: date) -> pl.DataFrame:
+    """
+    PROC SORT DATA=BNM1.IBTMAST WHERE SUBACCT='OV' AND CUSTCD NE ' ' AND DCURBAL NE .;
+    DATA UNOTE (KEEP=BNMCODE AMOUNT):
+      MATDT = EXPRDATE;
+      ITEM='429'; REMMTH from %REMMTH macro.
+      BNMCODE='95'||ITEM||'00'||REMFMT.||'0000Y';
+      RENAME DUNDRAWN=AMOUNT.
+    """
+    df = ibtmast_df.filter(
+        (pl.col("SUBACCT") == "OV") &
+        (pl.col("CUSTCD") != " ") &
+        pl.col("DCURBAL").is_not_null()
+    ).sort("ACCTNO")
 
     rows = []
-    for row in df.iter_rows(named=True):
-        subacct = str(row.get("SUBACCT") or "").strip()
-        custcd = str(row.get("CUSTCD") or "").strip()
-        dcurbal = row.get("DCURBAL")
-        if subacct != "OV" or not custcd or dcurbal is None:
+    for r in df.to_dicts():
+        exprdate  = r.get("EXPRDATE")
+        dundrawn  = float(r.get("DUNDRAWN", 0) or 0)
+
+        if not exprdate or exprdate <= date(1960, 1, 1):
             continue
 
-        exprdate = to_date(row.get("EXPRDATE"))
-        if exprdate is None:
-            continue
-
+        item = "429"
         matdt = exprdate
-        if (matdt - reptdate).days < 8:
-            remmth_value = 0.1
-        else:
-            remmth_value = remmth(matdt, rpy, rpmth, rpday, rpd_days)
 
-        amount = float(row.get("DUNDRAWN") or 0)
-        rows.append(
-            {
-                "BNMCODE": f"95{'429'}00{remfmt(remmth_value)}0000Y",
-                "AMOUNT": amount,
-            }
-        )
+        if (matdt - reptdate).days < 8:
+            remmth = 0.1
+        else:
+            remmth = calc_remmth(matdt, reptdate)
+
+        bnmcode = f"95{item}00{remfmt(remmth)}0000Y"
+        rows.append({"BNMCODE": bnmcode, "AMOUNT": dundrawn})
 
     if not rows:
-        return pl.DataFrame({"BNMCODE": [], "AMOUNT": []})
+        return pl.DataFrame(schema={"BNMCODE": pl.Utf8, "AMOUNT": pl.Float64})
 
-    unote_df = pl.DataFrame(rows)
-    return unote_df.group_by("BNMCODE").agg(pl.col("AMOUNT").sum())
-
-
-# =============================================================================
-# REPORT GENERATION (ASA CARRIAGE CONTROL)
-# =============================================================================
-
-
-def write_report_section(
-    handle,
-    title: str | None,
-    summary_df: pl.DataFrame,
-    page_length: int = 60,
-    start_new_page: bool = False,
-) -> int:
-    line_count = 0
-
-    def emit_line(text: str, new_page: bool = False) -> None:
-        nonlocal line_count
-        control = " "
-        if new_page or line_count >= page_length:
-            control = "1"
-            line_count = 0
-        handle.write(f"{control}{text}\n")
-        line_count += 1
-
-    if start_new_page:
-        emit_line("", new_page=True)
-
-    if title:
-        emit_line(title, new_page=not start_new_page)
-    else:
-        emit_line("", new_page=not start_new_page)
-
-    emit_line("BNMCODE".ljust(20) + "AMOUNT".rjust(20))
-    emit_line("-" * 40)
-
-    if summary_df.is_empty():
-        emit_line("NO DATA")
-        emit_line("-" * 40)
-        emit_line("TOTAL".ljust(20) + f"{0:>20,.2f}")
-        return line_count
-
-    sorted_df = summary_df.sort("BNMCODE")
-    for row in sorted_df.iter_rows(named=True):
-        bnmcode = str(row["BNMCODE"])
-        amount = float(row["AMOUNT"])
-        emit_line(f"{bnmcode:<20}{amount:>20,.2f}")
-
-    total_amount = sorted_df.select(pl.col("AMOUNT").sum()).item(0, 0)
-    emit_line("-" * 40)
-    emit_line(f"{'TOTAL':<20}{total_amount:>20,.2f}")
-    return line_count
+    df_out = pl.DataFrame(rows)
+    return (
+        df_out.group_by("BNMCODE")
+              .agg(pl.col("AMOUNT").sum())
+              .sort("BNMCODE")
+    )
 
 
-def write_report(
-    note_summary: pl.DataFrame,
-    undrawn_summary: pl.DataFrame,
-    report_dates: ReportDates,
-) -> None:
-    OUTPUT_REPORT.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_REPORT, "w") as handle:
-        write_report_section(
-            handle,
-            title=None,
-            summary_df=note_summary,
-            start_new_page=True,
-        )
+# ============================================================================
+# STEP 4: Write SASLIST report (LRECL=80)
+# ============================================================================
+def write_saslist(note: pl.DataFrame, unote: pl.DataFrame,
+                  rdate: str, path: Path) -> None:
+    """
+    PROC PRINT; SUM AMOUNT; — produces tabular listing with sum.
+    Writes to SASLIST (LRECL=80, RECFM=FB).
+    Title for UNOTE: 'UNDRAWN PORTION FOR TRADE BILLS AS AT &RDATE'.
+    """
+    lines = []
 
-        title = f"UNDRAWN PORTION FOR TRADE BILLS AS AT {report_dates.rdate_str}"
-        write_report_section(
-            handle,
-            title=title,
-            summary_df=undrawn_summary,
-            start_new_page=True,
-        )
+    def format_section(title: str, df: pl.DataFrame) -> list[str]:
+        sec = [title, "", f"{'BNMCODE':<20}  {'AMOUNT':>20}", "-" * 44]
+        total = 0.0
+        for r in df.sort("BNMCODE").to_dicts():
+            bnmcode = str(r.get("BNMCODE", "") or "")
+            amount  = float(r.get("AMOUNT",  0) or 0)
+            total  += amount
+            sec.append(f"{bnmcode:<20}  {amount:>20.2f}")
+        sec.append("-" * 44)
+        sec.append(f"{'SUM':<20}  {total:>20.2f}")
+        sec.append("")
+        return sec
+
+    lines += format_section("MATURITY PROFILE — UTILISED (NOTE)", note)
+    lines += format_section(
+        f"UNDRAWN PORTION FOR TRADE BILLS AS AT {rdate}", unote
+    )
+
+    # Pad to LRECL=80
+    with open(path, "w", encoding="latin-1") as f:
+        for line in lines:
+            f.write(line[:80].ljust(80) + "\n")
+    log.info("SASLIST written: %s", path)
 
 
-# =============================================================================
-# MAIN EXECUTION
-# =============================================================================
+# ============================================================================
+# FTP STUB — upload EIIBTLIQ.txt to DRR
+# ============================================================================
+def ftp_output(path: Path) -> None:
+    """
+    //RUNSFTP EXEC COZBATCH
+    cd "FD-BNM REPORTING/PIBB/BNM RPTG"
+    PUT //SAP.PIBB.NLFBT.TEXT  EIIBTLIQ.TXT
+
+    Requires paramiko + DRR credentials. Stub only — enable when configured.
+    """
+    log.warning(
+        "FTP stub: upload %s to DRR 'FD-BNM REPORTING/PIBB/BNM RPTG' as EIIBTLIQ.TXT"
+        " — configure paramiko credentials to activate.", path
+    )
+    # import paramiko
+    # ...
 
 
-def load_parquet(path: Path) -> pl.DataFrame:
-    if not path.exists():
-        raise FileNotFoundError(f"Missing input parquet: {path}")
-    con = duckdb.connect()
-    return con.execute(f"SELECT * FROM '{path.as_posix()}'").pl()
-
-
+# ============================================================================
+# MAIN
+# ============================================================================
 def main() -> None:
-    report_dates = load_report_dates()
+    log.info("EIIBTLIQ started.")
 
-    ibtrad_file = IBTRAD_TEMPLATE.with_name(
-        IBTRAD_TEMPLATE.name.format(
-            reptmon=report_dates.reptmon,
-            nowk=report_dates.nowk,
-        )
-    )
-    ibtmast_file = IBTMAST_TEMPLATE.with_name(
-        IBTMAST_TEMPLATE.name.format(
-            reptmon=report_dates.reptmon,
-            nowk=report_dates.nowk,
-        )
-    )
+    # ----------------------------------------------------------------
+    # Load BNM1.REPTDATE
+    # ----------------------------------------------------------------
+    reptdate, nowk, reptmon, reptday, rdate = load_reptdate()
 
-    ibtrad_df = load_parquet(ibtrad_file)
-    ibtmast_df = load_parquet(ibtmast_file)
+    # ----------------------------------------------------------------
+    # Load BNM1.IBTRAD
+    # ----------------------------------------------------------------
+    ibtrad_path = BNM1_DATA_DIR / f"IBTRAD{reptmon}{nowk}.parquet"
+    ibtrad_df   = pl.read_parquet(ibtrad_path)
+    log.info("IBTRAD rows: %d", len(ibtrad_df))
 
-    note_summary = build_note_summary(ibtrad_df, report_dates.reptdate)
-    undrawn_summary = build_undrawn_summary(ibtmast_df, report_dates.reptdate)
+    # ----------------------------------------------------------------
+    # Build NOTE (maturity cashflow buckets)
+    # ----------------------------------------------------------------
+    note = build_note(ibtrad_df, reptdate)
+    log.info("NOTE buckets: %d", len(note))
 
-    write_report(note_summary, undrawn_summary, report_dates)
+    # ----------------------------------------------------------------
+    # Load BNM1.IBTMAST (undrawn OV accounts)
+    # ----------------------------------------------------------------
+    ibtmast_path = BNM1_DATA_DIR / f"IBTMAST{reptmon}{nowk}.parquet"
+    ibtmast_df   = pl.read_parquet(ibtmast_path)
+    log.info("IBTMAST rows: %d", len(ibtmast_df))
+
+    # ----------------------------------------------------------------
+    # Build UNOTE (undrawn portion)
+    # ----------------------------------------------------------------
+    unote = build_unote(ibtmast_df, reptdate)
+    log.info("UNOTE buckets: %d", len(unote))
+
+    # ----------------------------------------------------------------
+    # Write SASLIST report
+    # ----------------------------------------------------------------
+    write_saslist(note, unote, rdate, SASLIST_PATH)
+
+    # ----------------------------------------------------------------
+    # FTP stub
+    # ----------------------------------------------------------------
+    ftp_output(SASLIST_PATH)
+
+    log.info("EIIBTLIQ completed.")
 
 
 if __name__ == "__main__":
