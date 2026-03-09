@@ -1,0 +1,1002 @@
+/* PROGRAM NAME  : LALWPBBD                               */
+/* INVOKE BY JOB : PBBWKLY                                */
+/* DATE MODIFIED : 10-7-2001                              */
+/* SMR/OTHERS    : JS DATED 11/7/01                       */
+/* CHANGES MADE  : ADDITIONAL 4 FIELDS TO BE KEPT         */
+/*                 FOR PRODUCT 177 & TUK REPORT CHANGES   */
+/* OBJECTIVE     : PBB LOANS MANIPULATION EXTRATED FROM   */
+/*                 SAP.PBB.MNILN                          */
+
+%INC PGM(PBBDPFMT,PBBLNFMT);
+
+/***********************************************************/
+/** MANIPULATE THE EXTRACTED LOAN AND OVERDRAFT DATABASE  **/
+/** (UTILISED ACCOUNT)                                    **/
+/***********************************************************/
+*;
+%LET LOAN=(KEEP=BRANCH ACCTNO NAME PRODUCT CUSTCD PRODCD LIABCODE
+                SECTORMA BALMNI COSTFUND REMAINMH COSTCTR CJFEE
+                SECTORCD APPRDATE ORIGMT COLLCD STATECD RISKCD APPRLIM2
+                BALANCE CURBAL REMAINMT RLEASAMT APPRLIMT UNDRAWN
+                BLDATE SECURE NOTENO NOTETERM EARNTERM EXPRDATE PAYTYPE
+                BILPAY PAYAMT PAYFREQ INTRATE RISKRTE LOANSTAT ODSTAT
+                CLOSEDTE INTAMT ACCRUYTD INTPDYTD ACCRUEOP TOTPDEOP
+                APPVALUE MARKETVL BILLTYPE USURYIDX AMTIND CUSTCODE
+                RATE1 RATE2 LIMIT1 LIMIT2 COL1 COL2 TODRATE FLATRATE
+                BASERATE ODPLAN SPREAD INTEARN FEEAMT ISSDTE BIGX
+                ORGCODE ACCRUAL FEEAMT4 NTINDEX BILTOT AVGAMT CGCREF
+                CUSTIDNO ACCTYIND INTEARN4 REBATE NETPROC BORSTAT
+                PAIDIND INTEARN2 INTEARN3 ODINTACC HSTPRIN COMMNO
+                CENSUS RESTBALC APPRLMTACCT NTINT REBATEI CENSUST
+                NEWSEC CENSUS4 FISSPURP COLLDESC SECTOLD FLAG3 PAYIND
+                REMAINMX ORIGMX NXBILDT NXTBIL ASSMDATE CURCODE
+                CFINDEX WRITE_DOWN_BAL OLDNOTEDAYARR OLDNOTEBLDATE
+                PURPOSES DNBFISME CRISPURP VB FRELEAS ESCRACCT
+                SIACCTNO ABM_HL IA_LRU ASCORE_PERM ASCORE_LTST
+                UNEARNED1 UNEARNED2 UNEARNED FDACCTNO FDCERTNO
+                CCRIS_INSTLAMT INDUSTRIAL_SECTOR_CD SECTORCD_ORI
+                INVALID_LOC STATE ASCORE_COMM INFEE SCH_REPAY_TERM);
+
+    *** DEPOSIT ***;
+PROC SORT DATA=DEPOSIT.CURRENT OUT=CURRENT; BY ACCTNO;
+RUN;
+DATA CURRENT;
+   MERGE CURRENT(IN=A) BNM.SME08(KEEP=ACCTNO NOTENO SECTOLD);
+   BY ACCTNO;
+   IF A;
+RUN;
+DATA BNM.OVDFT&REPTMON&NOWK &LOAN;
+
+  LENGTH CUSTCD ORIGMT REMAINMT $2. PRODCD COLLCD $5. SECTORCD $4.
+         REMAINMH 5. INVALID_LOC $1.
+         STATECD $1. RISKRTE 2. AMTIND $1. PURPOSES $4.;
+  SET CURRENT;
+
+  ****************************************************
+  ** COMPUTE THE CURRENT BALANCE                    **
+  ****************************************************;
+  ** IF CURBAL LT 0; **;
+  IF OPENIND NOT IN ('B','C','P') AND CURBAL LT 0;
+  BALANCE=(-1)*CURBAL;
+  *** STR - REQUESTED BY RAYMOND(MIS) EXCLUDE ODINTACC ***;
+  *** BALMNI = BALANCE;
+  *** END - REQUESTED BY RAYMOND(MIS) ***;
+
+  IF ODINTACC > 0 THEN BALANCE = SUM(BALANCE,ODINTACC);
+  IF RATE1 > 0 THEN
+  INTRATE = RATE1;
+  ELSE INTRATE = TODRATE;  *** FOR OD WITHOUT LIMIT *;
+  /*
+  IF PRODUCT IN (150,151,152,181)  THEN DO;
+     BALANCE=0;
+     BALMNI=BALANCE;
+  END;
+  */
+  APPRDATE=INPUT(SUBSTR(PUT(OPENDT, Z11.), 1, 8), MMDDYY8.);
+  ****************************************************
+  ** APPLY THE FORMAT                               **
+  ****************************************************;
+  SECTORCD=PUT(PUT(SECTOR, Z4.), $SECTCD.);
+  IF STATE IN &POSTCD THEN DO;
+     STATECD = PUT(STATE, $STATEPOST.);
+  END;
+  ELSE IF PRODUCT IN &FCY AND STATE IN &COUNTRYCD THEN DO;
+     STATECD = 'Z';
+  END;
+  ELSE DO;
+     STATECD = PUT(STATE, $STATECD.);
+     IF PRODUCT IN &FCY THEN DO;
+        IF STATE IN('00','99','099','0099','00099','000099')
+        THEN STATECD='Z';
+     END;
+  END;
+
+  IF STATECD = ' ' THEN DO;
+     INVALID_LOC = 'Y';
+     STATECD = PUT(BRANCH, STATECD.);
+  END;
+  PRODCD=PUT(PRODUCT, ODPROD.);
+  AMTIND=PUT(PRODUCT, ODDENOM.);
+  ***** NEW PURPOSE MAPPING *********;
+  PURPOSES = PUT(PUT(CCRICODE,Z4.),$4.);
+  IF SECTOLD NE '    ' THEN DO;
+     FISSPURP = PUT(SECTOLD,$FISSPUR.);
+     IF SECTOLD IN ('0410','0430') AND
+        CUSTCD NOT IN ('77','78','95','96') THEN DO;
+        IF CUSTCD IN ('61','41','42','43') THEN CUSTCD = '77';
+        ELSE IF CUSTCD IN ('62','44','46','47','63','48','49',
+                      '51','57','75','59','52','53','54','45',
+                      '20','30','32','33','34','35','36',
+                      '37','38','39','40') THEN CUSTCD = '78';
+     END;
+     /*
+     ELSE IF SECTORCD IN ('0211','0212','0220','0230') AND
+             CUSTCD NOT IN ('77','78','95','96') THEN
+             SECTORCD ='9999';
+             */
+  END;
+  IF APPRDATE <'08APR06'D THEN DO;
+     IF '0110' <=SECTORCD <= '0430' THEN
+        FISSPURP = PUT(SECTORCD,$FISSPUR.);
+     * ELSE IF '1111' <= SECTORCD<= '9600' THEN FISSPURP = '0470';
+     ELSE FISSPURP = PUT(PURPOSES,$CRISCD.);
+     IF CUSTCD IN ('77','78','95','96') AND
+        3000000000<ACCTNO<4000000000 THEN FISSPURP = '0410';
+  END;
+  ELSE FISSPURP = PUT(PURPOSES,$CRISCD.);
+  IF FISSPURP >= '1111' THEN FISSPURP = PUT(PURPOSES,$CRISCD.);
+  IF PRODUCT=34 THEN FISSPURP='0110';
+  ****************************************************
+  ** IF VOSTRO ACCOUNT THEN THE COUNTER PARTY CODE  **
+  ** WILL BE TAKEN AS EITHER CB '02' OR '81' BASED  **
+  ** ON THE PRODUCT CODE :                          **
+  **        104 = VOSTRO LOCAL                      **
+  **        105 = VOSTRO FOREIGN                    **
+  ****************************************************;
+  SELECT(PRODUCT);
+    WHEN(104) CUSTCD='02';
+    WHEN(105) CUSTCD='81';
+    OTHERWISE CUSTCD=PUT(CUSTCODE, ODCUSTCD.);
+  END;
+
+  ****************************************************
+  *  THIS MAPPING OF CUSTCD ('77','78') WILL BE USED *
+  *  TILL BNM ALLOWS THESE CUSTCD WITH BUSINESS      *
+  *  SECTOR CODES IN FISS ONLY AFTER Y2K             *
+  *  (REFER TO LWU E-MAIL (9-6-1999))                *
+  ****************************************************;
+  *******************************************
+  *    AS PER WIP'S E-MAIL DATED 13/7/99    *
+  *******************************************;
+  *******************************************
+  *    AS PER WIP'S E-MAIL DATED 01/9/99    *
+  *******************************************;
+
+  ****************************************************
+  ** OVERDRAFT APPROVAL DATE - AT THE MOMENT, THERE **
+  ** IS NO FIELD IN THE DATABASE KEEPING THE DATE   **
+  ** WHEN A LIMIT IS APPROVED.                      **
+  ****************************************************;
+  IF CLOSEDT > 0 THEN
+     CLOSEDTE=INPUT(SUBSTR(PUT(CLOSEDT,Z11.), 1, 8), MMDDYY8.);
+
+  **********************************************************
+  ** ORIGINAL MATURITY FOR OVERDRAFT IS ALWAYS <= 1 YEAR  **
+  ** WE ASSIGN CODE='10'                                  **
+  **********************************************************;
+  ORIGMT='10';
+  REMAINMH=0;
+  **********************************************************
+  ** REMAINING MATURITY FOR OVERDRAFT IS NOT APPLICABLE   **
+  ** WE ASSIGN CODE='50' (<= 1 YEAR)                      **
+  **********************************************************;
+  REMAINMT='50';
+
+  **********************************************************
+  ** AT THE MOMENT, WE TAKE THE COLLATERAL TYPE FOR ALL   **
+  ** OD ACCOUNTS AS '30570' (OTHER FORMS OF COLLATERAL)   **
+  **********************************************************;
+  COLLCD='30570';
+
+  **********************************************************
+  ** NON-PERFORMING OD ACCOUNT                            **
+  ** DD-ACCT-USER-4 (BY MR SIEW)                          **
+  **********************************************************;
+  RISKCD=PUT(RISKCODE, $RISKCD.);
+  RISKRTE=INPUT(RISKCODE,1.);
+
+  **********************************************************
+  ** RELEASE AMOUNT = BALANCE                             **
+  ** UNDRAWN PORTION = APPROVED LIMIT - RELEASE AMOUNT    **
+  **********************************************************;
+  RLEASAMT = BALANCE;
+  APPRLIM2 = APPRLIMT;
+  UNDRAWN = SUM(APPRLIMT, (-1)*RLEASAMT);
+  IF UNDRAWN LT 0 THEN UNDRAWN=0;
+  IF PRODUCT=167 AND BALANCE < 0
+     THEN UNDRAWN=APPRLIMT;
+*;
+ *** STR - REQUESTED BY RAYMOND(MIS) EXCLUDE ODINTACC ***;
+     BALMNI = BALANCE;
+ *** END - REQUESTED BY RAYMOND(MIS) ***;
+RUN;
+
+DATA BNM.NOTE&REPTMON&NOWK &LOAN;
+  SET BNM.NOTE&REPTMON&NOWK;
+RUN;
+
+DATA BNM.LOAN&REPTMON&NOWK;
+  LENGTH NAME $24 ;
+  SET BNM.NOTE&REPTMON&NOWK (IN=A)
+      BNM.OVDFT&REPTMON&NOWK(IN=B);
+
+  DNBFI_ORI=DNBFISME;
+  IF CUSTCD NOT IN (04,05,06,30,31,32,33,34,35,37,38,39,40,45)
+     THEN DNBFISME = '0';
+  IF A THEN ACCTYPE='LN';ELSE ACCTYPE='OD';
+  /***** 2022-3846 & 2022-3850 *****/
+  IF INFEE > 0 THEN DO;
+     FEEAMT  = SUM(FEEAMT,-INFEE);
+     ACCRUAL = SUM(ACCRUAL,INFEE);
+  END;
+RUN;
+
+
+PROC DATASETS LIB=BNM NOLIST;
+  DELETE NOTE&REPTMON&NOWK
+         OVDFT&REPTMON&NOWK;
+RUN;
+
+
+ ***********************************************************
+ ** MANIPULATE THE EXTRACTED LOAN AND OVERDRAFT DATABASE  **
+ ** (UNUTILISED ACCOUNT - CURRENT BALANCE = 0)            **
+ ***********************************************************;
+
+%LET ULOAN=(KEEP=BRANCH ACCTNO NAME CUSTCD PRODUCT PRODCD RLEASAMT
+            SECTORCD APPRDATE ORIGMT APPRLIMT UNDRAWN EXPRDATE
+            CUSTCODE COMMNO AMTIND FISSPURP COSTCTR CURCODE
+            CRISPURP CCRICODE INDUSTRIAL_SECTOR_CD SECTORCD_ORI);
+
+DATA BNM.UOD&REPTMON&NOWK &ULOAN;
+
+  LENGTH CUSTCD ORIGMT $2. PRODCD $5 SECTORCD $4. AMTIND $1.
+         PURPOSES $4.;
+  SET CURRENT;
+
+  ****************************************************
+  ** COMPUTE THE CURRENT BALANCE                    **
+  ****************************************************;
+  ** IF CURBAL GE 0 AND APPRLIMT GT 0;
+  IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0 AND APPRLIMT GT 0;
+
+  ****************************************************
+  ** APPLY THE FORMAT                               **
+  ****************************************************;
+  SECTORCD=PUT(PUT(SECTOR, Z4.), $SECTCD.);
+  PRODCD=PUT(PRODUCT, ODPROD.);
+  AMTIND=PUT(PRODUCT, ODDENOM.);
+  APPRDATE=INPUT(SUBSTR(PUT(OPENDT, Z11.), 1, 8), MMDDYY8.);
+  ***** NEW PURPOSE MAPPING *********;
+  PURPOSES = PUT(PUT(CCRICODE,Z4.),$4.);
+  IF SECTOLD NE '    ' THEN DO;
+     FISSPURP = PUT(SECTOLD,$FISSPUR.);
+     IF SECTOLD IN ('0410','0430') AND
+        CUSTCD NOT IN ('77','78','95','96') THEN DO;
+        IF CUSTCD IN ('61','41','42','43') THEN CUSTCD = '77';
+        ELSE IF CUSTCD IN ('62','44','46','47','63','48','49',
+                      '51','57','75','59','52','53','54','45',
+                      '20','30','32','33','34','35','36',
+                      '37','38','39','40') THEN CUSTCD = '78';
+     END; /*
+     ELSE IF SECTOLD IN ('0211','0212','0220','0230') AND
+             CUSTCD NOT IN ('77','78','95','96') THEN
+             SECTORCD ='9999';
+             */
+  END;
+  IF APPRDATE <'08APR06'D THEN DO;
+     IF '0110' <=SECTORCD <= '0430' THEN
+        FISSPURP = PUT(SECTORCD,$FISSPUR.);
+     * IF '1111' <= SECTORCD<= '9600' THEN FISSPURP = '0470';
+     ELSE FISSPURP = PUT(PURPOSES,$CRISCD.);
+     IF CUSTCD IN ('77','78','95','96') AND
+        3000000000<ACCTNO<4000000000 THEN FISSPURP = '0410';
+  END;
+  ELSE FISSPURP = PUT(PURPOSES,$CRISCD.);
+  IF PRODUCT=34 THEN FISSPURP='0110';
+  ****************************************************
+  ** IF VOSTRO ACCOUNT THEN THE COUNTER PARTY CODE  **
+  ** WILL BE TAKEN AS EITHER CB '02' OR '81' BASED  **
+  ** ON THE PRODUCT CODE :                          **
+  **        104 = VOSTRO LOCAL                      **
+  **        105 = VOSTRO FOREIGN                    **
+  ****************************************************;
+  SELECT(PRODUCT);
+    WHEN(104) CUSTCD='02';
+    WHEN(105) CUSTCD='81';
+    OTHERWISE CUSTCD=PUT(CUSTCODE, ODCUSTCD.);
+  END;
+
+  ****************************************************
+  *  THIS MAPPING OF CUSTCD ('77','78') WILL BE USED *
+  *  TILL BNM ALLOWS THESE CUSTCD WITH BUSINESS      *
+  *  SECTOR CODES IN FISS ONLY AFTER Y2K             *
+  *  (REFER TO LWU E-MAIL (9-6-1999))                *
+  ****************************************************;
+
+  ****************************************************
+  ** OVERDRAFT APPROVAL DATE                        **
+  ****************************************************;
+
+  **********************************************************
+  ** ORIGINAL MATURITY FOR OVERDRAFT IS ALWAYS <= 1 YEAR  **
+  ** WE ASSIGN CODE='10'                                  **
+  **********************************************************;
+  ORIGMT='10';
+
+  **********************************************************
+  ** RELEASE AMOUNT = BALANCE                             **
+  ** UNDRAWN PORTION = APPROVED LIMIT - RELEASE AMOUNT    **
+  **********************************************************;
+  RLEASAMT = 0;
+  APPRLIM2 = APPRLIMT;
+  UNDRAWN = APPRLIMT;
+RUN;
+PROC DATASETS LIB=WORK NOLIST;
+   DELETE CURRENT;
+RUN;
+DATA BNM.UNOTE&REPTMON&NOWK &ULOAN;
+   SET BNM.UNOTE&REPTMON&NOWK;
+RUN;
+
+DATA BNM.ULOAN&REPTMON&NOWK;
+  LENGTH NAME $24 ;
+  SET BNM.UNOTE&REPTMON&NOWK (IN=A)
+      BNM.UOD&REPTMON&NOWK   (IN=B);
+  IF A THEN ACCTYPE='LN';
+  ELSE ACCTYPE='OD';
+RUN;
+
+PROC DATASETS LIB=BNM NOLIST;
+  DELETE UNOTE&REPTMON&NOWK
+         UOD&REPTMON&NOWK;
+RUN;
+
+PROC DATASETS LIB=WORK NOLIST;
+  DELETE LNCOMM LNCOMM2 LNNOTE UNOTE&REPTMON&NOWK
+         UCOMM&REPTMON&NOWK;
+RUN;
+*;
+PROC SORT DATA=BNM.LOAN&REPTMON&NOWK OUT=LOAN;
+   BY ACCTNO NOTENO;
+*;
+PROC SORT DATA=LOAN.LNNOTE(KEEP=ACCTNO NOTENO SECTOR CRISPURP)
+   OUT=LNNOTE;
+   BY ACCTNO NOTENO;
+DATA OVDFT(KEEP=ACCTNO SECTOR CCRICODE);
+  SET DEPOSIT.CURRENT(RENAME=(SECTOR=SECT));
+  ** IF CURBAL LT 0;
+  IF OPENIND NOT IN ('B','C','P') AND CURBAL LT 0;
+  SECTOR=PUT(SECT,$4.);
+*;
+PROC SORT DATA=OVDFT; BY ACCTNO;
+*;
+DATA LOAN;
+  MERGE LOAN (IN=A) OVDFT;
+  BY ACCTNO; IF A;
+RUN;
+PROC DATASETS LIB=WORK NOLIST;
+   DELETE OVDFT;
+RUN;
+
+DATA LN&REPTMON&NOWK;
+   MERGE LOAN(IN=A) LNNOTE;
+   BY ACCTNO NOTENO;
+   IF A;
+RUN;
+PROC DATASETS LIB=WORK NOLIST;
+   DELETE LOAN LNNOTE;
+RUN;
+DATA LOAN&REPTMON&NOWK (DROP=SECTORX SECTORC);
+   FORMAT SECTOR $4.;
+   SET LN&REPTMON&NOWK (RENAME=(SECTOR=SECTORC));
+   SECTORX = SECTORC*1;
+   SECTORZ = PUT(SECTORX,Z4.);
+   IF ACCTYPE = 'LN' AND ISSDTE <'01APR06'D THEN
+      SECTORZZ = PUT(SECTORZ,$RVRSE.);
+   IF SECTORZZ NE '    ' THEN SECTORCD = SECTORZZ;
+   ELSE                       SECTORCD = PUT(SECTORZ, $SECTCD.);
+   IF SECTORZZ NE '    ' THEN SECTOR = SECTORZZ;
+   ELSE SECTOR = SECTORZ;
+RUN;
+DATA LOAN&REPTMON&NOWK;
+   SET LOAN&REPTMON&NOWK;
+   SECVALID = PUT(SECTOR,$VALIDSE.);
+   IF SECVALID = 'INVALID' THEN DO;
+   IF SUBSTR(SECTOR,1,1) = '1' THEN DO; SECTORCD = '1400'; END;
+   IF SUBSTR(SECTOR,1,1) = '2' THEN DO; SECTORCD = '2900'; END;
+   IF SUBSTR(SECTOR,1,1) = '3' THEN DO; SECTORCD = '3919'; END;
+   IF SUBSTR(SECTOR,1,1) = '4' THEN DO; SECTORCD = '4010'; END;
+   IF SUBSTR(SECTOR,1,1) = '5' THEN DO; SECTORCD = '5999'; END;
+   IF SUBSTR(SECTOR,1,2) = '61' THEN DO; SECTORCD = '6120'; END;
+   IF SUBSTR(SECTOR,1,2) = '62' THEN DO; SECTORCD = '6130'; END;
+   IF SUBSTR(SECTOR,1,2) = '63' THEN DO; SECTORCD = '6310'; END;
+   IF SUBSTR(SECTOR,1,2) IN ('64','65','66','67','68','69') THEN DO;
+   SECTORCD = '6130'; END;
+   IF SUBSTR(SECTOR,1,1) = '7' THEN DO; SECTORCD = '7199'; END;
+   IF SUBSTR(SECTOR,1,2) IN ('81','82') THEN DO;
+      SECTORCD = '8110'; END;
+   IF SUBSTR(SECTOR,1,2)IN ('83','84','85','86','87','88','89') THEN DO;
+      SECTORCD = '8999'; END;
+   IF SUBSTR(SECTOR,1,2) = '91' THEN DO; SECTORCD = '9101'; END;
+   IF SUBSTR(SECTOR,1,2) = '92' THEN DO; SECTORCD = '9410'; END;
+   IF SUBSTR(SECTOR,1,2) IN ('93','94','95') THEN DO;
+      SECTORCD = '9499'; END;
+   IF SUBSTR(SECTOR,1,2) IN ('96','97','98','99') THEN DO;
+      SECTORCD = '9999'; END;
+   END;
+   FISSPORI = FISSPURP;
+RUN;
+DATA BNM.LOAN&REPTMON&NOWK (DROP=SECTORX SECTORC);
+   FORMAT SECTOR $4.;
+   SET LOAN&REPTMON&NOWK(RENAME=(SECTOR=SECTORC));
+   SECTORX = SECTORC*1;
+   SECTOR = PUT(SECTORX,Z4.);
+   IF FISSPURP > '1000' THEN FISSPURP = PUT(CRISPURP,$CRISCD.);
+     NEWSEC = SUBSTR(COLLDESC,38,2);
+     CENSUS4 = SUBSTR(PUT(CENSUS,7.2),4,1);
+  IF FISSPURP = '3100' THEN DO;
+     IF NEWSEC = 'N' THEN FISSPURP = '0211';
+     ELSE IF CENSUS4 = '1' THEN FISSPURP = '0211';
+     ELSE FISSPURP = '0212';
+  END;
+   IF CUSTCD IN ('77','78') AND '1111' <= SECTOR <= '9999'
+      AND SECTOR NE '9700' THEN DO;
+       IF CUSTCD = '77' THEN CUSTCD = '41';
+       IF CUSTCD = '78' THEN CUSTCD = '44';
+   END;
+   IF CUSTCD NOT IN (
+   '01','02','03','11','12','20','13','17','30','31','32','33','34',
+   '35','36','37','38','39','40','45','04','05','06','80','81','82',
+   '83','84','85','86','87','88','90') AND
+   SECTOR IN ('8110','8120','8130') THEN SECTORCD = '9999';
+
+   IF CUSTCD IN ('77','78','95','96') & '0111'<=SECTOR<='0430' THEN
+      SECTORCD='0410';
+  IF CUSTCD NOT IN ('77','78','95','96') AND SECTORCD < '1111' THEN DO;
+  SELECT(CUSTCD);
+     WHEN('02','03','04','05','06','11','12','13','17','30','31',
+          '32','33','34','35','37','38','39','45')
+           SECTORCD='8110';
+     WHEN('40') SECTORCD = '8130';
+     WHEN('79') SECTORCD = '9203';
+     WHEN('71','72','73','74') SECTORCD = '9101';
+     OTHERWISE SECTORCD = '9999';
+  END;
+  END;
+   IF FISSPURP IN ('0410','0430') & CUSTCD NOT IN('77','78','95','96')
+      AND '1111' <= SECTORCD <= '9999' THEN FISSPURP='0990';
+  IF CUSTCD IN ('79','61','62','63','75','57','59','41',
+                '42','43','44','46','47','48','49',
+                '51','52','53','54')
+     AND SECTORCD IN ('8110','8120','8130') THEN SECTORCD='9999';
+  IF CUSTCD IN ('02','03','04','05','06','11','12','13','17','30',
+                '31','32','33','34','35','37','38','39','40','45')
+  AND SECTORCD NOT IN ('8110','8120','8130') THEN SECTORCD = '8110';
+  IF CUSTCD IN ('71','72','73','74') AND
+      SUBSTR(SECTORCD,1,2) ^ IN ('91','92','93','94','95','96',
+        '97','98','99') THEN SECTORCD = '9101';
+  IF CUSTCD IN ('77','78') AND '1111'<=SECTORCD<='9999'
+     AND SECTORCD NE '9700' THEN DO;
+     IF CUSTCD = '77' THEN CUSTCD = '41';
+     ELSE IF CUSTCD = '78' THEN CUSTCD = '44';
+  END;
+  IF CUSTCD IN ('01','02','03','11','12','20','13','17','30',
+                '31','32','33','34','35','36',
+                '37','38','39','40','45','04','05','06','61',
+                '41','42','43','62','44','46','47','63','48',
+                '49','51','57','75','59','52','53','54','66',
+                '67','68','69') AND CRISPURP IN ('4300','4100')
+                                  THEN FISSPURP = '0990';
+  IF CUSTCD = '79' THEN DO;
+     IF SECTORCD NOT IN ('9203','9420','9440') THEN SECTORCD = '9203';
+  END;
+  IF PRODUCT IN &FCY THEN DO;
+     IF CUSTCD IN ('86','90','91','92','95','96','98','99') AND
+     '1000'<=SECTOR<='9999' AND SECTOR NE '9700' THEN CUSTCD = '86';
+  END;
+  ELSE DO;
+  IF CUSTCD IN ('82','83','84','86','90','91','95','96','98','99') AND
+     '1000'<=SECTOR<='9999' AND SECTOR NE '9700' THEN CUSTCD = '86';
+  END;
+  IF CUSTCD IN ('77','78','95','96') THEN DO;
+     IF 3000000000<ACCTNO<4000000000 THEN DO;
+        IF (CRISPURP = '    ' AND  CCRICODE = .  AND SECTOLD EQ '    ' )
+        OR FISSPURP IN ('0390','0440','0470') THEN FISSPURP = '0410';
+     END;
+     ELSE IF PRODUCT IN &HP THEN DO;
+        IF (CRISPURP = '    ' AND  CCRICODE = .  AND SECTOLD EQ '    ' )
+        OR FISSPURP IN ('0390','0440','0470') THEN FISSPURP = '0212';
+     END;
+     ELSE DO;
+        IF (CRISPURP = '    ' AND  CCRICODE = .  AND SECTOLD EQ '    ' )
+        OR FISSPURP IN ('0390','0440','0470') THEN FISSPURP = '0410';
+     END;
+     IF FISSPURP IN ('0110','0120','0131','0132','0139',
+        '0210','0220','0230','0200','0211','0212','0311','0312','0313',
+        '0314','0315','0316','0321','0322','0323','0324','0325','0326',
+        '0327','0328','0329','0410','0420','0430','0990') THEN
+        SECTORCD = '9700';
+  END;
+  IF PRODCD = '34111' & FISSPURP NOT IN ('0211','0212','0200','0210',
+  '0390','0430')
+  THEN FISSPURP = '0212';
+  IF PRODCD = '34230' THEN DO;
+     IF CUSTCD IN ('77','78','95','96') THEN SECTORCD = '9700';
+     ELSE IF CUSTCD IN ('61','41','42','43','64','52','53','54')THEN DO;
+        CUSTCD = '77';
+        SECTORCD = '9700';
+     END;
+     ELSE IF CUSTCD IN ('62','44','46','47') THEN DO;
+        CUSTCD = '78';
+        SECTORCD = '9700';
+     END;
+     ELSE SECTORCD = '9700';
+  END;
+   SECTPORI = SECTORCD;
+   IF 3000000000<ACCTNO<4000000000 THEN DO;
+      IF CCRICODE NOT IN (0,.) THEN
+         CRISPURP = PUT(PUT(CCRICODE,Z4.),$4.);
+      ELSE                  CRISPURP = PURPOSES;
+   END;
+   DROP PURPOSES;
+RUN;
+PROC SORT DATA=BNM.ULOAN&REPTMON&NOWK OUT=LOAN;
+   BY ACCTNO ;
+*;
+DATA ULOAN&REPTMON&NOWK (DROP=SECTORX SECTORC);
+   FORMAT SECTOR $4.;
+   SET LOAN (RENAME=(SECTORCD=SECTORC));
+   IF ACCTYPE = 'OD' THEN DO;
+      SECTORCD=PUT(SECTORC,$4.);
+   END;
+   SECTORX = SECTORC*1;
+   SECTORZ = PUT(SECTORX,Z4.);
+   IF ACCTYPE = 'LN' AND ISSDTE <'01APR06'D THEN
+      SECTORZZ = PUT(SECTORZ,$RVRSE.);
+   IF SECTORZZ NE '    ' THEN SECTORCD = SECTORZZ;
+   ELSE                       SECTORCD = SECTORZ;
+   IF SECTORZZ NE '    ' THEN SECTOR = SECTORZZ;
+   ELSE SECTOR = SECTORZ;
+RUN;
+DATA ULOAN&REPTMON&NOWK;
+   SET ULOAN&REPTMON&NOWK;
+   SECVALID = PUT(SECTOR,$VALIDSE.);
+   IF SECVALID = 'INVALID' THEN DO;
+   IF SUBSTR(SECTOR,1,1) = '1' THEN DO; SECTORCD = '1400'; END;
+   IF SUBSTR(SECTOR,1,1) = '2' THEN DO; SECTORCD = '2900'; END;
+   IF SUBSTR(SECTOR,1,1) = '3' THEN DO; SECTORCD = '3919'; END;
+   IF SUBSTR(SECTOR,1,1) = '4' THEN DO; SECTORCD = '4010'; END;
+   IF SUBSTR(SECTOR,1,1) = '5' THEN DO; SECTORCD = '5999'; END;
+   IF SUBSTR(SECTOR,1,2) = '61' THEN DO; SECTORCD = '6120'; END;
+   IF SUBSTR(SECTOR,1,2) = '62' THEN DO; SECTORCD = '6130'; END;
+   IF SUBSTR(SECTOR,1,2) = '63' THEN DO; SECTORCD = '6310'; END;
+   IF SUBSTR(SECTOR,1,2) IN ('64','65','66','67','68','69') THEN DO;
+   SECTORCD = '6130'; END;
+   IF SUBSTR(SECTOR,1,1) = '7' THEN DO; SECTORCD = '7199'; END;
+   IF SUBSTR(SECTOR,1,2) IN ('81','82') THEN DO;
+      SECTORCD = '8110'; END;
+   IF SUBSTR(SECTOR,1,2)IN ('83','84','85','86','87','88','89') THEN DO;
+      SECTORCD = '8999'; END;
+   IF SUBSTR(SECTOR,1,2) = '91' THEN DO; SECTORCD = '9101'; END;
+   IF SUBSTR(SECTOR,1,2) = '92' THEN DO; SECTORCD = '9410'; END;
+   IF SUBSTR(SECTOR,1,2) IN ('93','94','95') THEN DO;
+      SECTORCD = '9499'; END;
+   IF SUBSTR(SECTOR,1,2) IN ('96','97','98','99') THEN DO;
+      SECTORCD = '9999'; END;
+   END;
+   FISSPORI = FISSPURP;
+RUN;
+DATA ULOAN&REPTMON&NOWK (DROP=SECTORX SECTORC);
+   FORMAT SECTOR $4.;
+   SET ULOAN&REPTMON&NOWK(RENAME=(SECTOR=SECTORC));
+   SECTORX = SECTORC*1;
+   SECTOR = PUT(SECTORX,Z4.);
+   IF CUSTCD IN ('77','78') AND '1111' <= SECTOR <= '9999'
+      AND SECTOR NE '9700' THEN DO;
+       IF CUSTCD = '77' THEN CUSTCD = '41';
+    IF CUSTCD = '78' THEN CUSTCD = '44';
+   END;
+   IF CUSTCD NOT IN (
+   '01','02','03','11','12','20','13','17','30','31','32','33','34',
+   '35','36','37','38','39','40','45','04','05','06','80','81','82',
+   '83','84','85','86','87','88','90') AND
+   SECTOR IN ('8110','8120','8130') THEN SECTORCD = '9999';
+
+   IF CUSTCD IN ('77','78','95','96') & '0111'<=SECTOR<='0430' THEN
+      SECTORCD='0410';
+  IF CUSTCD NOT IN ('77','78','95','96') AND SECTORCD < '1111' THEN DO;
+  SELECT(CUSTCD);
+     WHEN('02','03','04','05','06','11','12','13','17','30','31',
+          '32','33','34','35','37','38','39','45')
+           SECTORCD='8110';
+     WHEN('40') SECTORCD = '8130';
+     WHEN('79') SECTORCD = '9203';
+     WHEN('71','72','73','74') SECTORCD = '9101';
+     OTHERWISE SECTORCD = '9999';
+  END;
+  END;
+  IF CUSTCD IN ('79','61','62','63','75','57','59','41',
+                '42','43','44','46','47','48','49',
+                '51','52','53','54')
+     AND SECTORCD IN ('8110','8120','8130') THEN SECTORCD='9999';
+  IF CUSTCD IN ('02','03','04','05','06','11','12','13','17','30',
+                '31','32','33','34','35','37','38','39','40','45')
+  AND SECTORCD NOT IN ('8110','8120','8130') THEN SECTORCD = '8110';
+  IF CUSTCD IN ('71','72','73','74') AND
+      SUBSTR(SECTORCD,1,2) ^ IN ('91','92','93','94','95','96',
+        '97','98','99') THEN SECTORCD = '9101';
+  IF CUSTCD IN ('77','78') AND '1111'<=SECTORCD<='9999'
+     AND SECTORCD NE '9700' THEN DO;
+     IF CUSTCD = '77' THEN CUSTCD = '41';
+     ELSE IF CUSTCD = '78' THEN CUSTCD = '44';
+  END;
+  IF CUSTCD IN ('01','02','03','11','12','20','13','17','30',
+                '31','32','33','34','35','36',
+                '37','38','39','40','45','04','05','06','61',
+                '41','42','43','62','44','46','47','63','48',
+                '49','51','57','75','59','52','53','54','66',
+                '67','68','69') AND CRISPURP IN ('4300','4100')
+                                  THEN FISSPURP = '0990';
+  IF CUSTCD = '79' THEN DO;
+     IF SECTORCD NOT IN ('9203','9420','9440') THEN SECTORCD = '9203';
+  END;
+  IF PRODUCT IN &FCY THEN DO;
+     IF CUSTCD IN ('86','90','91','92','98','99','95','96') AND
+     '1000'<=SECTOR<='9999' AND SECTOR NE '9700' THEN CUSTCD = '86';
+  END;
+  ELSE DO;
+  IF CUSTCD IN ('82','83','84','86','90','91','98','99','95','96') AND
+     '1000'<=SECTOR<='9999' AND SECTOR NE '9700' THEN CUSTCD = '86';
+  END;
+  IF CUSTCD IN ('77','78','95','96') THEN DO;
+     IF 3000000000<ACCTNO<4000000000 THEN DO;
+        IF (CRISPURP = '    ' AND  CCRICODE = .  AND SECTOLD EQ '    ' )
+        OR FISSPURP IN ('0390','0440','0470') THEN FISSPURP = '0410';
+     END;
+     ELSE IF PRODUCT IN &HP THEN DO;
+        IF (CRISPURP = '    ' AND  CCRICODE = .  AND SECTOLD EQ '    ' )
+        OR FISSPURP IN ('0390','0440','0470') THEN FISSPURP = '0212';
+     END;
+     ELSE DO;
+        IF (CRISPURP = '    ' AND  CCRICODE = .  AND SECTOLD EQ '    ' )
+        OR FISSPURP IN ('0390','0440','0470') THEN FISSPURP = '0410';
+     END;
+     IF FISSPURP IN ('0110','0120','0131','0132','0139',
+        '0210','0220','0230','0200','0211','0212','0311','0312','0313',
+        '0314','0315','0316','0321','0322','0323','0324','0325','0326',
+        '0327','0328','0329','0410','0420','0430','0990') THEN
+        SECTORCD = '9700';
+  END;
+  IF PRODCD = '34111' & FISSPURP NOT IN ('0211','0212','0200','0210',
+  '0390','0430')
+  THEN FISSPURP = '0212';
+  IF PRODCD = '34230' THEN DO;
+     IF CUSTCD IN ('77','78','95','96') THEN SECTORCD = '9700';
+     ELSE IF CUSTCD IN ('61','41','42','43','64','52','53','54')THEN DO;
+        CUSTCD = '77';
+        SECTORCD = '9700';
+     END;
+     ELSE IF CUSTCD IN ('62','44','46','47') THEN DO;
+        CUSTCD = '78';
+        SECTORCD = '9700';
+     END;
+     ELSE SECTORCD = '9700';
+  END;
+   SECTPORI = SECTORCD;
+RUN;
+PROC SORT DATA=ULOAN&REPTMON&NOWK OUT=ULOAN&REPTMON&NOWK; BY ACCTNO;
+PROC SORT DATA=BNM.LOAN&REPTMON&NOWK(KEEP=ACCTNO FISSPURP)
+     OUT=LOAN&REPTMON&NOWK NODUPKEYS; BY ACCTNO;
+DATA BNM.ULOAN&REPTMON&NOWK (DROP=SECTOR SECTORZZ SECTORZ SECVALID);
+   MERGE ULOAN&REPTMON&NOWK(IN=A) LOAN&REPTMON&NOWK;
+   BY ACCTNO;
+   IF FISSPURP > '1000' THEN FISSPURP = '0990';
+   IF SECTORCD = '    ' THEN SECTORCD = '9999';
+   IF A;
+   SECTORCD_ORI = SECTORCD; *18-2652;
+   IF INDUSTRIAL_SECTOR_CD NE '' & LENGTH(INDUSTRIAL_SECTOR_CD)=5 &
+      INDUSTRIAL_SECTOR_CD > 0 THEN
+      SECTORCD = PUT(INDUSTRIAL_SECTOR_CD,$INDSECT.);
+   IF CUSTCD IN ('77','78','95','96') THEN SECTORCD = '9700';
+RUN;
+  * MODIFIED ON 30/03/07 - (ESMR 2007-67)  *;
+DATA INDLOAN INDOD LOANS;
+   SET BNM.LOAN&REPTMON&NOWK;
+   IF ACCTYPE = 'OD' AND APPRDATE > '01JAN07'D  THEN OUTPUT INDOD;
+   ELSE IF ACCTYPE = 'LN' AND ISSDTE > '01JAN07'D THEN  OUTPUT INDLOAN;
+   ELSE OUTPUT LOANS;
+RUN;
+DATA LOANS;
+  SET LOANS;
+  IF CUSTCD IN ('41','42','43','44','46','47','48','49','51',
+                '52','53','54','60','61','62','63','64','65',
+                '59','75','57') AND
+     SECTORCD = '9700' THEN SECTORCD = '9999';
+RUN;
+PROC SORT DATA=INDOD; BY ACCTNO;
+RUN;
+PROC SORT DATA=INDLOAN; BY ACCTNO NOTENO;
+RUN;
+DATA CISCA;
+   SET CISCADP.DEPOSIT;
+   WHERE 3000000000< ACCTNO <4000000000
+   AND SECCUST NE '902';
+   KEEP ACCTNO SECCUST NEWICIND BUSSIND;
+RUN;
+PROC SORT DATA=CISCA NODUPKEYS; BY ACCTNO;
+RUN;
+DATA LNINDOD;
+   MERGE INDOD(IN=A) CISCA(IN=B);
+   BY ACCTNO;
+   IF A;
+   IF NEWICIND IN ('BC','IC','ML','PL') THEN DO;
+     /*  REMOVE FROM ESMR 2024-357
+      CUSTORI = CUSTCD;
+      IF CUSTCD NOT IN ('77','78') THEN DO;
+
+        IF CUSTCD IN ('41','42','43','61','52','53','54','69','75','57',
+                     '59','71','72','73','74') THEN CUSTCD = '77';
+        ELSE CUSTCD = '78';
+      END; */
+      /* ESMR 2014-261: TO MAINTAIN ORIGINAL FISSPURP
+      IF FISSPORI IN ('0390','0440','0460','0470') THEN FISSPURP='0470';
+      ELSE FISSPURP = FISSPORI;
+      END;
+      ELSE DO ;
+      IF FISSPORI IN ('0390','0440','0460','0470') THEN FISSPURP='0470';
+      ELSE FISSPURP = FISSPORI;
+      END;
+      */
+      FISSPURP = FISSPORI;
+      SECTORCD = '9700';
+   END;
+   IF NEWICIND = 'PP' THEN DO;
+      CUSTORI = CUSTCD;
+      IF CUSTCD IN ('95','96') THEN FISSPURP = FISSPORI;
+      ELSE DO;
+         CUSTCD = '95';
+         IF 20<=CUSTCD<=99 THEN DO;
+            /* ESMR 2014-261: TO MAINTAIN ORIGINAL FISSPURP
+            IF FISSPORI IN ('0390','0440','0460','0470') THEN DO;
+               IF 3000000000<ACCTNO<4000000000 THEN FISSPURP='0470';
+               ELSE FISSPURP='0990';
+            END;
+            ELSE FISSPURP = FISSPORI;
+            */
+            FISSPURP = FISSPORI;
+         END;
+      END;
+      SECTORCD = '9700';
+   END;
+   IF NEWICIND IN ('BR','CI','PC','SA') OR
+      BUSSIND  IN ('BR','CI','PC','SA') THEN DO;
+      /* IF NEWICIND IN ('BC','IC','ML','PL')
+         THEN CUSTCD = CUSTORI; REMOVE FROM ESMR 2024-357  */
+      IF CUSTCD IN ('77','78','95','96') THEN DO;
+         IF CUSTCD IN ('77') THEN DO;
+            CUSTCD = '61';
+            IF FISSPORI IN ('0410','0420','0430') THEN DO;
+               IF 3000000000<ACCTNO<4000000000 THEN FISSPURP='0470';
+               ELSE FISSPURP='0990';
+            END;
+            ELSE DO;
+               FISSPURP = FISSPORI;
+            END;
+            IF SECTORCD IN ('0410','9700') THEN SECTORCD = '9999';
+            ELSE SECTORCD = SECTPORI;
+         END;
+         IF CUSTCD IN ('95','96') THEN DO;
+            CUSTCD = '86';
+            IF FISSPORI IN ('0410','0420','0430') THEN DO;
+               IF 3000000000<ACCTNO<4000000000 THEN FISSPURP='0470';
+               ELSE FISSPURP='0990';
+               SECTORCD = '9999';
+            END;
+            ELSE DO;
+               FISSPURP = FISSPORI;
+               SECTORCD = SECTPORI;
+            END;
+         END;
+         IF CUSTCD IN ('78') THEN DO;
+            CUSTCD = '62';
+            IF FISSPORI IN ('0410','0420','0430') THEN DO;
+               IF 3000000000<ACCTNO<4000000000 THEN FISSPURP='0470';
+               ELSE FISSPURP='0990';
+            END;
+            ELSE DO;
+               FISSPURP = FISSPORI;
+            END;
+            IF SECTORCD IN ('0410','9700') THEN SECTORCD = '9999';
+            ELSE SECTORCD = SECTPORI;
+         END;
+      END;
+      ELSE SECTORCD = SECTPORI;
+         IF CUSTCD IN ('41','42','43','44','46','47','48','49','51',
+                       '52','53','54','60','61','62','63','64','65',
+                       '59','75','57') AND
+                 SECTORCD = '9700' THEN SECTORCD = '9999';
+         IF SECTORCD < '1111' THEN SECTORCD = '9999';
+   END;
+RUN;
+DATA CISLN;
+   SET CISCALN.LOAN;
+   IF SECCUST NE '902';
+   KEEP ACCTNO SECCUST NEWICIND BUSSIND;
+RUN;
+PROC SORT DATA=CISLN NODUPKEYS; BY ACCTNO;
+RUN;
+DATA LNINDLN;
+   MERGE INDLOAN(IN=A) CISLN(IN=B);
+   BY ACCTNO;
+   IF A;
+   IF NEWICIND IN ('BC','IC','ML','PL') THEN DO;
+     /* REMOVE FROM ESMR 2024-357
+      CUSTORI = CUSTCD;
+      IF CUSTCD NOT IN ('77','78') THEN DO;
+
+        IF CUSTCD IN ('41','42','43','61','52','53','54','69','75','57',
+                     '59','71','72','73','74') THEN CUSTCD = '77';
+        ELSE CUSTCD = '78';
+      END; */
+      /* ESMR 2014-261: TO MAINTAIN ORIGINAL FISSPURP
+      IF FISSPORI IN ('0390','0440','0460','0470') THEN FISSPURP='0470';
+      ELSE FISSPURP = FISSPORI;
+      END;
+      ELSE DO ;
+      IF FISSPORI IN ('0390','0440','0460','0470') THEN FISSPURP='0470';
+      ELSE FISSPURP = FISSPORI;
+      END;
+      */
+      FISSPURP = FISSPORI;
+      SECTORCD = '9700';
+   END;
+   IF NEWICIND = 'PP' THEN DO;
+      CUSTORI = CUSTCD;
+      IF CUSTCD IN ('95','96') THEN FISSPURP = FISSPORI;
+      ELSE DO;
+         CUSTCD = '95';
+         IF 20<=CUSTCD<=99 THEN DO;
+            /* ESMR 2014-0261: TO MAINTAIN ORIGINAL FISSPURP
+            IF FISSPORI IN ('0390','0440','0460','0470') THEN DO;
+               IF 3000000000<ACCTNO<4000000000 THEN FISSPURP='0470';
+               ELSE FISSPURP='0990';
+            END;
+            ELSE FISSPURP = FISSPORI;
+            */
+            FISSPURP = FISSPORI;
+         END;
+      END;
+      SECTORCD = '9700';
+   END;
+   IF NEWICIND IN ('BR','CI','PC','SA') OR
+      BUSSIND  IN ('BR','CI','PC','SA') THEN DO;
+      /* IF NEWICIND IN ('BC','IC','ML','PL','PP')
+         THEN CUSTCD = CUSTORI; REMOVE FROM ESMR 2024-357  */
+      IF CUSTCD IN ('77','78','95','96') THEN DO;
+         IF CUSTCD IN  ('77') THEN DO;
+            CUSTCD = '61';
+            IF FISSPORI IN ('0410','0420','0430') THEN DO;
+               IF 3000000000<ACCTNO<4000000000 THEN FISSPURP='0470';
+               ELSE FISSPURP='0990';
+            END;
+            ELSE DO;
+               FISSPURP = FISSPORI;
+            END;
+            IF SECTORCD IN ('0410','9700') THEN SECTORCD = '9999';
+            ELSE SECTORCD = SECTPORI;
+         END;
+         IF CUSTCD IN ('95','96') THEN DO;
+            CUSTCD = '86';
+            IF FISSPORI IN ('0410','0420','0430') THEN DO;
+               IF 3000000000<ACCTNO<4000000000 THEN FISSPURP='0470';
+               ELSE FISSPURP='0990';
+               SECTORCD = '9999';
+            END;
+            ELSE DO;
+               FISSPURP = FISSPORI;
+               SECTORCD = SECTPORI;
+            END;
+         END;
+         IF CUSTCD IN ('78') THEN DO;
+            CUSTCD = '62';
+            IF FISSPORI IN ('0410','0420','0430') THEN DO;
+               IF 3000000000<ACCTNO<4000000000 THEN FISSPURP='0470';
+               ELSE FISSPURP='0990';
+            END;
+            ELSE DO;
+               FISSPURP = FISSPORI;
+            END;
+            IF SECTORCD IN ('0410','9700') THEN SECTORCD = '9999';
+            ELSE SECTORCD = SECTPORI;
+
+         END;
+      END;
+      ELSE SECTORCD = SECTPORI;
+         IF CUSTCD IN ('41','42','43','44','46','47','48','49','51',
+                       '52','53','54','60','61','62','63','64','65',
+                       '59','75','57') AND
+                 SECTORCD = '9700' THEN SECTORCD = '9999';
+         IF SECTORCD < '1111' THEN SECTORCD = '9999';
+
+
+   END;
+   IF PRODUCT IN &HP AND ISSDTE >= '01OCT09'D THEN DO;
+      IF LIABCODE IN ('C7','D1','D4','C9','D3','D6') THEN
+         FISSPURP='0211';
+      ELSE IF LIABCODE IN ('C8','D2','D5') THEN FISSPURP = '0212';
+      ELSE IF LIABCODE IN ('D7','D9','E2','E5','E6','D8','E1','E3')
+         THEN FISSPURP = '0200';
+      ELSE IF LIABCODE IN ('63') THEN FISSPURP = '0390';
+      ELSE IF LIABCODE IN ('22') THEN DO;
+         IF CRISPURP = '4100' THEN FISSPURP = '0430';
+         ELSE IF CRISPURP = '5100' THEN FISSPURP = '0390';
+         ELSE FISSPURP = '0200';
+      END;
+    END;
+RUN;
+*;
+PROC FORMAT LIB=FORATE CNTLOUT=FOFMT; RUN;
+PROC FORMAT CNTLIN=FOFMT; RUN;
+*;
+DATA BNM.LOAN&REPTMON&NOWK(COMPRESS=YES);
+   SET LOANS LNINDOD LNINDLN;
+   IF  ACCTNO=8954892013 THEN DO;
+       BALANCE=SUM(CURBAL,ACCRUAL,FEEAMT);
+       APPRLIM2=APPRLIMT;
+   END;
+   IF PRODUCT GE 800 AND PRODUCT LT 900 THEN DO;
+             FORATE   = LEFT(PUT(CURCODE,$FORATE.));
+             FCYBAL   = BALANCE;
+             BALANCE  = BALANCE*FORATE;
+             BALMNI   = BALMNI *FORATE;
+             CURBAL   = CURBAL*FORATE;
+             FEEAMT   = FEEAMT*FORATE;
+             ACCRUAL  = ACCRUAL*FORATE;
+             UNDRAWN  = UNDRAWN*FORATE;
+             APPR2FCY = APPRLIM2;
+             APPRLIM2 = APPRLIM2*FORATE;
+    END;
+    /* ESMR 2020-1452 */
+    APPRLIM2ORI=APPRLIM2;
+    IF ((2500000000<=ACCTNO<=2599999999 OR
+         2850000000<=ACCTNO<=2859999999) AND 40000<=NOTENO<=49999) OR
+         PRODUCT IN (321,444)
+        THEN APPRLIM2=0;
+   RENAME CURCODE = CCY; /* FOR FCY LOAN  */
+   /* ESMR2014-791 */
+   IF PRODUCT IN (128,130,131,132,380,381,700,705,720,725,750,752,
+      760,983,993) THEN DO;
+      IF CRISPURP='3110' THEN FISSPURP='0211';
+      IF CRISPURP='3120' THEN FISSPURP='0212';
+      IF CRISPURP IN ('3200','3201','3300','3900','3901')
+         THEN FISSPURP='0200';
+      IF CRISPURP='4100' THEN FISSPURP='0430';
+      IF CRISPURP IN ('5100','5200') THEN FISSPURP='0390';
+      IF PRODCD = '34111' & FISSPURP NOT IN ('0211',
+      '0212','0200','0210', '0390','0430')
+        THEN FISSPURP = '0212';
+   END;
+   SECTORCD_ORI = SECTORCD;
+   IF INDUSTRIAL_SECTOR_CD NE '' & LENGTH(INDUSTRIAL_SECTOR_CD)=5 &
+      INDUSTRIAL_SECTOR_CD > 0 THEN
+      SECTORCD = PUT(INDUSTRIAL_SECTOR_CD,$INDSECT.);
+   IF CUSTCD IN ('77','78','95','96') THEN SECTORCD = '9700';
+RUN;
+
+DATA BNM.LOAN&REPTMON&NOWK
+     BNM.LNWOD&REPTMON&NOWK
+     BNM.LNWOF&REPTMON&NOWK;
+  SET BNM.LOAN&REPTMON&NOWK;
+  IF ACCTYPE='LN' THEN DO;
+     IF ACCTNO < 2999999999 THEN OUTPUT BNM.LOAN&REPTMON&NOWK;
+     IF ACCTNO > 8000000000 THEN DO;
+        IF PRODCD='M'       THEN OUTPUT BNM.LNWOD&REPTMON&NOWK;
+        ELSE IF PRODCD='N'  THEN OUTPUT BNM.LNWOF&REPTMON&NOWK;
+                            ELSE OUTPUT BNM.LOAN&REPTMON&NOWK;
+     END;
+  END;
+  ELSE DO;
+     OUTPUT BNM.LOAN&REPTMON&NOWK;
+  END;
+RUN;
+
+PROC SORT DATA=BNM.LOAN&REPTMON&NOWK; BY ACCTNO NOTENO;
+RUN;
+DATA BNM.ULOAN&REPTMON&NOWK(DROP=FORATE COMPRESS=YES);
+   SET BNM.ULOAN&REPTMON&NOWK;
+   IF PRODUCT GE 800 AND PRODUCT LT 900 THEN DO;
+             FORATE   = LEFT(PUT(CURCODE,$FORATE.));
+             UNDRAWN  = UNDRAWN*FORATE;
+    END;
+RUN;
