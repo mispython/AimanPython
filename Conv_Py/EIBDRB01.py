@@ -1,6 +1,6 @@
 #!usr/bin/env python 3
 """
-File Name: ERBDRBDP_EIBDRB01
+File Name: EIBDRB01
 FCY FD Report Generator
 Generating daily total outstanding balance/account on FCY FD & Foreign Companies
 """
