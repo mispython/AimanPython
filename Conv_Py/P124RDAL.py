@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program  : P124RDAL
+Program  : P124RDAL.py
 Purpose  : Report on Domestic Assets and Liabilities - Part I (Cagamas/L124).
            - Loads BIC reference codes (weekly or monthly depending on NOWK).
            - Merges with BNM.ALW summary data.
@@ -12,97 +12,66 @@ Purpose  : Report on Domestic Assets and Liabilities - Part I (Cagamas/L124).
 Dependency: PBBLNFMT  - format/mapping functions
             PBBWRDLF  - weekly  ITCODE reference list -> PBBRDAL.parquet
             PBBMRDLF  - monthly ITCODE reference list -> PBBRDAL.parquet
-            L124PBBD  - produces BNM.L124/UL124 (via LALWP124 upstream)
 """
 
+import math
 import polars as pl
 import duckdb
 from pathlib import Path
-import datetime
 
 # ---------------------------------------------------------------------------
-# Dependency: PBBLNFMT  (%INC PGM(PBBLNFMT))
+# Dependency: PBBLNFMT (%INC PGM(PBBLNFMT))
+# Note: format_lnprod and format_lndenom are imported as part of the standard
+#       %INC PGM(PBBLNFMT) inclusion, but they are not directly called within this
+#       program. They are available in the session for reference consistency.
 # ---------------------------------------------------------------------------
 from PBBLNFMT import (
     format_lnprod,
     format_lndenom,
 )
 
-# ---------------------------------------------------------------------------
-# Dependency: PBBWRDLF  (%MACRO WEEKLY -> %INC PGM(PBBWRDLF))
-# Produces output/PBBRDAL.parquet from weekly ITCODE list.
-# ---------------------------------------------------------------------------
-from PBBWRDLF import main as run_pbbwrdlf
-
-# ---------------------------------------------------------------------------
-# Dependency: PBBMRDLF  (%MACRO MONTHLY -> %INC PGM(PBBMRDLF))
-# Produces output/PBBRDAL.parquet from monthly ITCODE list.
-# ---------------------------------------------------------------------------
-from PBBMRDLF import main as run_pbbmrdlf
-
-# ---------------------------------------------------------------------------
-# Dependency: L124PBBD - REPTDATE_PATH and get_reptmon_nowk
-# ---------------------------------------------------------------------------
-from L124PBBD import get_reptmon_nowk, REPTDATE_PATH
-
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 
-BASE_DIR      = Path("/data/sap")
+BASE_DIR         = Path("/data/sap")
 
-# BNM library paths
-BNM_PATH      = BASE_DIR / "pbb/bnm"                           # BNM library
-LOAN_PATH     = BASE_DIR / "pbb/mniln/lnnote.parquet"          # LOAN.LNNOTE
+# BNM library path
+BNM_PATH         = BASE_DIR / "pbb/bnm"                        # BNM library
 
-# PBBRDAL reference output (produced by PBBWRDLF or PBBMRDLF)
-PBBRDAL_PATH  = Path(__file__).resolve().parent / "output" / "PBBRDAL.parquet"
+# LOAN.LNNOTE
+LOAN_PATH        = BASE_DIR / "pbb/mniln/lnnote.parquet"
+
+# PBBRDAL reference output (produced by PBBWRDLF or PBBMRDLF at import time)
+PBBRDAL_PATH     = Path(__file__).resolve().parent / "output" / "PBBRDAL.parquet"
 
 # RDAL output text file (semicolon-delimited)
 RDAL_OUTPUT_PATH = BASE_DIR / "pbb/rdal/rdal.txt"
 
 # ============================================================================
+# GLOBAL MACRO VARIABLE EQUIVALENTS
+# These correspond to SAS global macro variables (&REPTMON, &NOWK, &REPTDAY,
+# &REPTYEAR) that are pre-defined in the SAS session environment before this
+# program runs. They are not derived inside this program.
+# OPTIONS YEARCUTOFF=1950 applies (2-digit years >= 50 -> 19xx, else 20xx).
+# ============================================================================
+
+REPTMON  = '03'    # Reporting month  (Z2. format, e.g. '03' for March)
+NOWK     = '4'     # Week number within month ('1', '2', '3', '4')
+REPTDAY  = '31'    # Reporting day    (Z2. format)
+REPTYEAR = '2026'  # Reporting year   (YEAR4. format)
+
+# ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
-def get_reptdate_info(reptdate_parquet: Path) -> tuple:
-    """
-    Read REPTDATE and return (reptmon, nowk, reptday, reptyear, rdate_str).
-    YEARCUTOFF=1950 applies (2-digit years >= 50 -> 19xx, else 20xx).
-    """
-    con = duckdb.connect()
-    df  = con.execute(
-        f"SELECT REPTDATE FROM read_parquet('{reptdate_parquet}') LIMIT 1"
-    ).fetchdf()
-    con.close()
-
-    reptdate = df['REPTDATE'].iloc[0]
-    if hasattr(reptdate, 'date'):
-        reptdate = reptdate.date()
-
-    day      = reptdate.day
-    reptmon  = reptdate.strftime('%m')          # Z2.
-    reptyear = reptdate.strftime('%Y')          # YEAR4.
-    reptday  = reptdate.strftime('%d')          # Z2.
-    rdate    = reptdate.strftime('%d/%m/%y')    # DDMMYY8.
-
-    if day == 8:
-        nowk = '1'
-    elif day == 15:
-        nowk = '2'
-    elif day == 22:
-        nowk = '3'
-    else:
-        nowk = '4'
-
-    return reptmon, nowk, reptday, reptyear, rdate
-
-
 def round_div1000(value) -> int:
-    """ROUND(AMOUNT/1000) equivalent - Python round() uses banker's rounding; use standard."""
+    """
+    Equivalent to SAS ROUND(AMOUNT/1000).
+    Uses standard rounding (round half away from zero), not banker's rounding.
+    """
     if value is None:
         return 0
-    import math
     return int(math.floor(float(value) / 1000.0 + 0.5))
 
 
@@ -110,21 +79,22 @@ def round_div1000(value) -> int:
 # %MACRO MRGBIC
 # ============================================================================
 
-def macro_mrgbic(
-    pbbrdal_df: pl.DataFrame,
-    alw_df: pl.DataFrame,
-) -> pl.DataFrame:
+def macro_mrgbic(pbbrdal_df: pl.DataFrame, alw_df: pl.DataFrame) -> pl.DataFrame:
     """
     %MACRO MRGBIC:
-    1. Derive AMTIND from ITCODE[1] (0-based index 1 = SAS SUBSTR(ITCODE,2,1)).
-    2. Set AMOUNT=0 for the reference frame.
-    3. Merge ALW (left) with PBBRDAL1 (right) by ITCODE, AMTIND.
-    4. Apply AMOUNT resolution rules.
-    5. Remove unwanted ITCODE ranges.
+    DATA PBBRDAL1:
+      - Derive AMTIND: IF SUBSTR(ITCODE,2,1)='0' THEN AMTIND=' ' ELSE AMTIND='D'
+      - Set AMOUNT=0
+    MERGE ALW (RENAME AMOUNT->AMT1, IN=A)
+          PBBRDAL1 (RENAME AMOUNT->AMT2, IN=B)
+    BY ITCODE AMTIND;
+      - A AND B     -> AMOUNT=AMT1
+      - NOT A AND B -> AMOUNT=AMT2
+      - A AND NOT B -> AMOUNT=AMT1
+    Remove unwanted ITCODE ranges.
     """
 
-    # DATA PBBRDAL1: IF SUBSTR(ITCODE,2,1)='0' THEN AMTIND=' ' ELSE AMTIND='D'
-    # AMOUNT=0
+    # DATA PBBRDAL1
     pbbrdal1 = pbbrdal_df.with_columns([
         pl.when(pl.col('ITCODE').str.slice(1, 1) == '0')
           .then(pl.lit(' '))
@@ -133,24 +103,22 @@ def macro_mrgbic(
         pl.lit(0.0).alias('AMOUNT'),
     ])
 
-    # PROC SORT: BY ITCODE AMTIND (sort both sides for merge)
+    # PROC SORT DATA=PBBRDAL1; BY ITCODE AMTIND
     pbbrdal1 = pbbrdal1.sort(['ITCODE', 'AMTIND'])
-    alw_df   = alw_df.sort(['ITCODE', 'AMTIND'])
 
-    # MERGE ALW (RENAME AMOUNT->AMT1, IN=A) PBBRDAL1 (RENAME AMOUNT->AMT2, IN=B)
+    # PROC SORT DATA=BNM.ALW&REPTMON&NOWK OUT=ALW; BY ITCODE AMTIND
+    alw_df = alw_df.sort(['ITCODE', 'AMTIND'])
+
+    # MERGE ALW (RENAME=(AMOUNT=AMT1) IN=A) PBBRDAL1 (RENAME=(AMOUNT=AMT2) IN=B)
     # BY ITCODE AMTIND
-    # Full outer join, then apply rules:
-    #   A AND B     -> AMOUNT = AMT1
-    #   NOT A AND B -> AMOUNT = AMT2
-    #   A AND NOT B -> AMOUNT = AMT1
     merged = alw_df.rename({'AMOUNT': 'AMT1'}).join(
         pbbrdal1.rename({'AMOUNT': 'AMT2'}),
         on=['ITCODE', 'AMTIND'],
-        how='outer',
+        how='full',
         suffix='_R',
     )
 
-    # Resolve AMOUNT: A AND B or A AND NOT B -> AMT1; NOT A AND B -> AMT2
+    # IF A AND B / NOT A AND B / A AND NOT B -> resolve AMOUNT
     merged = merged.with_columns(
         pl.when(pl.col('AMT1').is_not_null())
           .then(pl.col('AMT1'))
@@ -158,17 +126,16 @@ def macro_mrgbic(
           .alias('AMOUNT')
     )
 
-    # Keep only rows that exist in either dataset (all rows after outer join)
-    # Drop helper columns
+    # Drop merge helper columns
     drop_cols = [c for c in merged.columns if c in ('AMT1', 'AMT2')]
     merged = merged.drop(drop_cols)
 
     # REMOVE UNWANTED ITEMS:
-    # NOT ('30221' <= SUBSTR(ITCODE,1,5) <= '30228')
-    # NOT ('30231' <= SUBSTR(ITCODE,1,5) <= '30238')
-    # NOT ('30091' <= SUBSTR(ITCODE,1,5) <= '30098')
-    # NOT ('40151' <= SUBSTR(ITCODE,1,5) <= '40158')
-    # SUBSTR(ITCODE,1,5) NOT IN ('NSSTS')
+    # IF NOT ('30221' <= SUBSTR(ITCODE,1,5) <= '30228') &
+    #    NOT ('30231' <= SUBSTR(ITCODE,1,5) <= '30238') &
+    #    NOT ('30091' <= SUBSTR(ITCODE,1,5) <= '30098') &
+    #    NOT ('40151' <= SUBSTR(ITCODE,1,5) <= '40158') &
+    #    SUBSTR(ITCODE,1,5) NOT IN ('NSSTS');
     rdal = merged.filter(
         ~(
             ((pl.col('ITCODE').str.slice(0, 5) >= '30221') & (pl.col('ITCODE').str.slice(0, 5) <= '30228')) |
@@ -188,27 +155,25 @@ def macro_mrgbic(
 
 def main():
     # -----------------------------------------------------------------------
-    # Derive date variables
+    # %GET_BICS:
+    # %IF "&NOWK" EQ "4" %THEN %MONTHLY; %ELSE %WEEKLY;
+    # Importing the module executes its module-level code, which writes
+    # PBBRDAL.parquet — equivalent to %INC PGM(PBBWRDLF/PBBMRDLF) in SAS.
     # -----------------------------------------------------------------------
-    reptmon, nowk, reptday, reptyear, rdate = get_reptdate_info(REPTDATE_PATH)
-
-    # -----------------------------------------------------------------------
-    # %GET_BICS: IF NOWK=4 -> MONTHLY else WEEKLY, then MRGBIC
-    # -----------------------------------------------------------------------
-    if nowk == '4':
+    if NOWK == '4':
         # %MONTHLY -> %INC PGM(PBBMRDLF)
-        run_pbbmrdlf()
+        import PBBMRDLF  # noqa: F401
     else:
-        # %WEEKLY  -> %INC PGM(PBBWRDLF)
-        run_pbbwrdlf()
+        # %WEEKLY -> %INC PGM(PBBWRDLF)
+        import PBBWRDLF  # noqa: F401
 
-    # Load PBBRDAL reference (produced above)
+    # Load PBBRDAL reference (produced by import above)
     pbbrdal_df = pl.read_parquet(PBBRDAL_PATH)
 
     # Load BNM.ALW&REPTMON&NOWK
-    alw_path = BNM_PATH / f"alw{reptmon}{nowk}.parquet"
-    con      = duckdb.connect()
-    alw_df   = con.execute(f"SELECT * FROM read_parquet('{alw_path}')").pl()
+    alw_path = BNM_PATH / f"alw{REPTMON}{NOWK}.parquet"
+    con = duckdb.connect()
+    alw_df = con.execute(f"SELECT * FROM read_parquet('{alw_path}')").pl()
     con.close()
 
     # %MRGBIC
@@ -216,10 +181,11 @@ def main():
 
     # -----------------------------------------------------------------------
     # DATA CAG: SET LOAN.LNNOTE
-    # IF LOANTYPE IN (124,145); PRODCD='34120'; AMTIND='I'
+    # IF LOANTYPE IN (124,145)
+    # PRODCD='34120'; AMTIND='I'
     # IF PZIPCODE IN (...); ITCODE='7511100000000Y'
     # -----------------------------------------------------------------------
-    con2    = duckdb.connect()
+    con2 = duckdb.connect()
     loan_df = con2.execute(f"SELECT * FROM read_parquet('{LOAN_PATH}')").pl()
     con2.close()
 
@@ -241,7 +207,8 @@ def main():
         .with_columns(pl.lit('7511100000000Y').alias('ITCODE'))
     )
 
-    # PROC SUMMARY DATA=CAG NWAY; CLASS ITCODE AMTIND; VAR BALANCE;
+    # PROC SUMMARY DATA=CAG NWAY;
+    # CLASS ITCODE AMTIND; VAR BALANCE;
     # OUTPUT OUT=CAG (DROP=_FREQ_ _TYPE_) SUM=AMOUNT;
     cag_summary = (
         cag_df
@@ -250,7 +217,7 @@ def main():
     )
 
     # DATA RDAL: SET RDAL CAG;
-    # IF SUBSTR(ITCODE,1,3) IN ('331','421','426','431') THEN DELETE
+    # IF SUBSTR(ITCODE,1,3) IN ('331','421','426','431') THEN DELETE;
     rdal_df = pl.concat([rdal_df, cag_summary], how='diagonal')
     rdal_df = rdal_df.filter(
         ~pl.col('ITCODE').str.slice(0, 3).is_in(['331', '421', '426', '431'])
@@ -261,7 +228,7 @@ def main():
 
     # -----------------------------------------------------------------------
     # DATA AL OB SP: SET RDAL
-    # Split into three datasets based on AMTIND and ITCODE prefix rules
+    # Split rows into AL, OB, SP based on AMTIND and ITCODE prefix rules
     # -----------------------------------------------------------------------
     al_rows = []
     ob_rows = []
@@ -270,7 +237,6 @@ def main():
     for row in rdal_df.to_dicts():
         itcode = str(row.get('ITCODE', '') or '')
         amtind = str(row.get('AMTIND', '') or '')
-        amount = float(row.get('AMOUNT', 0) or 0)
 
         it1   = itcode[0:1]    # SUBSTR(ITCODE,1,1)
         it3   = itcode[0:3]    # SUBSTR(ITCODE,1,3)
@@ -278,23 +244,32 @@ def main():
         it5   = itcode[0:5]    # SUBSTR(ITCODE,1,5)
         it2_1 = itcode[1:2]    # SUBSTR(ITCODE,2,1)
 
+        # IF AMTIND ^= ' ' THEN DO;
         if amtind != ' ':
-            if it3 in ('307',):
+            # IF SUBSTR(ITCODE,1,3) IN ('307') THEN OUTPUT SP;
+            if it3 == '307':
                 sp_rows.append(row)
+            # ELSE IF SUBSTR(ITCODE,1,5) IN ('40190') THEN OUTPUT SP;
             elif it5 == '40190':
                 sp_rows.append(row)
+            # ELSE IF SUBSTR(ITCODE,1,4) = 'SSTS' THEN DO;
+            #    ITCODE = '4017000000000Y'; OUTPUT SP;
             elif it4 == 'SSTS':
-                # ITCODE = '4017000000000Y'
                 new_row = dict(row)
                 new_row['ITCODE'] = '4017000000000Y'
                 sp_rows.append(new_row)
+            # ELSE IF SUBSTR(ITCODE,1,1) ^= '5' THEN DO;
             elif it1 != '5':
+                # IF SUBSTR(ITCODE,1,3) IN ('685','785') THEN OUTPUT SP;
                 if it3 in ('685', '785'):
                     sp_rows.append(row)
+                # ELSE OUTPUT AL;
                 else:
                     al_rows.append(row)
+            # ELSE OUTPUT OB;
             else:
                 ob_rows.append(row)
+        # ELSE IF SUBSTR(ITCODE,2,1)='0' THEN OUTPUT SP;
         elif it2_1 == '0':
             sp_rows.append(row)
 
@@ -307,52 +282,56 @@ def main():
 
     # -----------------------------------------------------------------------
     # Write RDAL output text file
-    # FILE RDAL (new) then MOD for OB and SP sections
+    # FILE RDAL    -> new file for AL section
+    # FILE RDAL MOD -> append for OB and SP sections
     # -----------------------------------------------------------------------
     RDAL_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    phead = f"RDAL{reptday}{reptmon}{reptyear}"
+    # PHEAD='RDAL'||"&REPTDAY"||"&REPTMON"||"&REPTYEAR"
+    phead = f"RDAL{REPTDAY}{REPTMON}{REPTYEAR}"
 
     with open(RDAL_OUTPUT_PATH, 'w', encoding='utf-8', newline='\n') as f:
 
         # -------------------------------------------------------------------
         # DATA _NULL_: SET AL; BY ITCODE AMTIND
-        # FILE RDAL (new file)
-        # PUT @1 PHEAD  (on _N_=1)
-        # PUT @1 'AL'   (on _N_=1)
-        # Accumulate AMOUNTD / AMOUNTI per ITCODE, write on LAST.ITCODE
+        # FILE RDAL (new)
+        # IF _N_=1: PUT @1 PHEAD; PUT @1 'AL'; AMOUNTD=0; AMOUNTI=0;
+        # RETAIN AMOUNTD AMOUNTI;
+        # AMOUNT=ROUND(AMOUNT/1000);
+        # IF AMTIND='D' THEN AMOUNTD+AMOUNT;
+        # ELSE IF AMTIND='I' THEN AMOUNTI+AMOUNT;
+        # IF LAST.ITCODE: AMOUNTD=AMOUNTD+AMOUNTI;
+        #    PUT @1 ITCODE +(-1) ';' AMOUNTD +(-1) ';' AMOUNTI;
+        #    AMOUNTD=0; AMOUNTI=0;
         # -------------------------------------------------------------------
         al_sorted = al_df.sort(['ITCODE', 'AMTIND'])
         al_recs   = al_sorted.to_dicts()
 
-        first_al = True
-        amountd  = 0
-        amounti  = 0
+        first_al    = True
+        amountd     = 0
+        amounti     = 0
         prev_itcode = None
 
-        for i, row in enumerate(al_recs):
+        for row in al_recs:
             itcode = str(row.get('ITCODE', '') or '')
             amtind = str(row.get('AMTIND', '') or '')
             amount = float(row.get('AMOUNT', 0) or 0)
 
             if first_al:
-                # PUT @1 PHEAD
                 f.write(phead + '\n')
-                # PUT @1 'AL'
                 f.write('AL\n')
                 amountd  = 0
                 amounti  = 0
                 first_al = False
 
-            # Flush previous ITCODE group on change
+            # Flush on LAST.ITCODE (group change)
             if prev_itcode is not None and itcode != prev_itcode:
                 amountd = amountd + amounti
-                # PUT @1 ITCODE +(-1) ';' AMOUNTD +(-1) ';' AMOUNTI
                 f.write(f"{prev_itcode};{amountd};{amounti}\n")
                 amountd = 0
                 amounti = 0
 
-            # RETAIN AMOUNTD AMOUNTI; accumulate
+            # AMOUNT=ROUND(AMOUNT/1000)
             amt_rounded = round_div1000(amount)
             if amtind == 'D':
                 amountd += amt_rounded
@@ -361,7 +340,7 @@ def main():
 
             prev_itcode = itcode
 
-        # Flush last group for AL
+        # Flush final ITCODE group for AL
         if prev_itcode is not None:
             amountd = amountd + amounti
             f.write(f"{prev_itcode};{amountd};{amounti}\n")
@@ -369,7 +348,13 @@ def main():
         # -------------------------------------------------------------------
         # DATA _NULL_: SET OB; BY ITCODE AMTIND
         # FILE RDAL MOD
-        # PUT @1 'OB' (on _N_=1)
+        # IF _N_=1: PUT @1 'OB'; AMOUNTD=0; AMOUNTI=0;
+        # RETAIN AMOUNTD AMOUNTI;
+        # IF AMTIND='D' THEN AMOUNTD+ROUND(AMOUNT/1000);
+        # ELSE IF AMTIND='I' THEN AMOUNTI+ROUND(AMOUNT/1000);
+        # IF LAST.ITCODE: AMOUNTD=AMOUNTD+AMOUNTI;
+        #    PUT @1 ITCODE +(-1) ';' AMOUNTD +(-1) ';' AMOUNTI;
+        #    AMOUNTD=0; AMOUNTI=0;
         # -------------------------------------------------------------------
         ob_sorted = ob_df.sort(['ITCODE', 'AMTIND'])
         ob_recs   = ob_sorted.to_dicts()
@@ -403,19 +388,25 @@ def main():
 
             prev_itcode = itcode
 
+        # Flush final ITCODE group for OB
         if prev_itcode is not None:
             amountd = amountd + amounti
             f.write(f"{prev_itcode};{amountd};{amounti}\n")
 
         # -------------------------------------------------------------------
-        # DATA _NULL_: SET SP; BY ITCODE  (already sorted)
+        # PROC SORT DATA=SP OUT=SP; BY ITCODE  (already sorted above)
+        #
+        # DATA _NULL_: SET SP; BY ITCODE
         # FILE RDAL MOD
-        # PUT @1 'SP' (on _N_=1)
-        # Accumulate AMOUNTD (all amounts combined), write on LAST.ITCODE
+        # IF _N_=1: PUT @1 'SP'; AMOUNTD=0;
+        # AMOUNTD+AMOUNT;
+        # IF LAST.ITCODE: AMOUNTD=ROUND(AMOUNTD/1000);
+        #    PUT @1 ITCODE +(-1) ';' AMOUNTD +(-1);
+        #    AMOUNTD=0;
         # -------------------------------------------------------------------
-        sp_recs  = sp_df.to_dicts()
-        first_sp = True
-        amountd  = 0
+        sp_recs     = sp_df.to_dicts()
+        first_sp    = True
+        amountd     = 0.0
         prev_itcode = None
 
         for row in sp_recs:
@@ -424,22 +415,21 @@ def main():
 
             if first_sp:
                 f.write('SP\n')
-                amountd  = 0
+                amountd  = 0.0
                 first_sp = False
 
             if prev_itcode is not None and itcode != prev_itcode:
-                amountd = round_div1000(amountd)
-                # PUT @1 ITCODE +(-1) ';' AMOUNTD +(-1)
-                f.write(f"{prev_itcode};{amountd}\n")
-                amountd = 0
+                # AMOUNTD=ROUND(AMOUNTD/1000) on LAST.ITCODE
+                f.write(f"{prev_itcode};{round_div1000(amountd)}\n")
+                amountd = 0.0
 
             # AMOUNTD+AMOUNT (accumulate raw, round only on LAST.ITCODE)
             amountd += amount
             prev_itcode = itcode
 
+        # Flush final ITCODE group for SP
         if prev_itcode is not None:
-            amountd = round_div1000(amountd)
-            f.write(f"{prev_itcode};{amountd}\n")
+            f.write(f"{prev_itcode};{round_div1000(amountd)}\n")
 
     print(f"RDAL output written to: {RDAL_OUTPUT_PATH}")
 
