@@ -1,6 +1,6 @@
 # !/usr/bin/env python3
 """
-Program Name: EIMBNM01
+Program Name: EIMBNM01.py
 Purpose: Public Bank Berhad - Monthly Loan Summary Reports (M&I)
          Generates multiple PROC PRINT reports covering:
          - All Loans (disbursement, repayment, outstanding) incl. Factoring
@@ -17,6 +17,24 @@ ESMR: 2009-0744
 ESMR: 2013-813 (JKA)
 ESMR: 2015-606 (TBC)
 ESMR: 2016-678 (NSA)
+
+Dependencies:
+  %INC PGM(PBBLNFMT):
+    The SAS source includes PBBLNFMT as suite-wide boilerplate. Reviewing
+        the actual code in EIMBNM01, none of PBBLNFMT's converted functions
+        (format_lnprod, format_lndenom, format_lnprod, format_odcustcd, etc.)
+        are directly called anywhere in this program.
+    The formats actually used here for sector classification — format_fisstype
+        and format_fissgroup — are NOT in PBBLNFMT.py. They are sourced
+        from RDL2PBIF instead (see below).
+    Therefore, no import from PBBLNFMT is needed or correct here.
+
+  %INC PGM(RDL2PBIF):
+    RDL2PBIF.py defines three functions that are directly used in this program:
+      - build_pbif()        -> called in main() to build the PBIF factoring dataset
+      - format_fisstype()   -> called when assigning sectype to sector-breakdown rows
+      - format_fissgroup()  -> called when assigning secgroup to sector-breakdown rows
+    All three are present in RDL2PBIF.py and correctly imported below.
 """
 
 import os
@@ -27,10 +45,10 @@ from typing import Optional
 import duckdb
 import polars as pl
 
-# %INC PGM(PBBLNFMT)
-from PBBLNFMT import format_lnprod, format_lndenom  # (placeholder)
-
-# %INC PGM(RDL2PBIF) — inline via imported function
+# %INC PGM(RDL2PBIF) — build_pbif constructs the PBIF factoring dataset;
+#   format_fisstype and format_fissgroup are the FISS sector classification
+#   helpers used throughout the sector-breakdown sections of this program.
+#   All three are defined at module level in RDL2PBIF.py.
 from RDL2PBIF import build_pbif, format_fisstype, format_fissgroup
 
 # =============================================================================
@@ -389,15 +407,15 @@ def merge_loan_cl_fee(loan_df: pl.DataFrame, cl_fee: pl.DataFrame) -> pl.DataFra
 # BUILD ALM (All Loans Master)
 # =============================================================================
 
-def build_alm(loan_raw: pl.DataFrame) -> tuple:
+def build_alm(loan_raw: pl.DataFrame) -> pl.DataFrame:
     """
     MERGE LOAN(RENAME BALANCE->ORIBAL, BAL_AFT_EIR->BALANCE) LNCOMM;
     BY ACCTNO COMMNO; IF A;
     Filters, NOACCT logic, ALMBT split.
-    Returns (alm_df, almbt_df)
+    Returns alm_df (ALM + ALMBT concatenated as in SAS DATA ALM: SET ALM ALMBT)
     """
     if loan_raw.is_empty():
-        return pl.DataFrame(), pl.DataFrame()
+        return pl.DataFrame()
 
     lncomm = load_parquet(LOAN_LNCOMM_PARQUET)
     if not lncomm.is_empty():
@@ -594,6 +612,7 @@ def apply_prodesc(df: pl.DataFrame) -> pl.DataFrame:
 
 # =============================================================================
 # BUILD BTRADE DATASET
+# Uses format_fisstype() and format_fissgroup() from RDL2PBIF (imported above).
 # =============================================================================
 
 def build_btrade(rv: dict) -> tuple:
@@ -951,7 +970,7 @@ def main():
     # /***********************/
     # /*   FACTORING LOANS   */
     # /***********************/
-    # %INC PGM(RDL2PBIF);
+    # %INC PGM(RDL2PBIF) — build_pbif() imported from RDL2PBIF
     pbif_df = build_pbif(
         reptdate  = rv['reptdate'],
         reptyear  = rv['reptyear'],
@@ -1272,6 +1291,7 @@ def main():
     # /******************************************************/
     # /*   FACTORING DATA SECTORS & SUB-SECTORS BREAKDOWN   */
     # /******************************************************/
+    # format_fisstype() and format_fissgroup() imported from RDL2PBIF
     if not pbif_df.is_empty():
         pbifsec_rows = pbif_df.to_dicts()
         for row in pbifsec_rows:
@@ -1292,6 +1312,7 @@ def main():
     # /*******************************************************************/
     # /* M&I COMMERCIAL RETAIL LOANS BY SECTORS & SUB-SECTORS BREAKDOWN  */
     # /*******************************************************************/
+    # format_fisstype() and format_fissgroup() imported from RDL2PBIF
     comsec_df = pl.DataFrame()
     if not alm2_df.is_empty():
         comsec_rows = []
@@ -1314,6 +1335,7 @@ def main():
     # /*******************************************************/
     # /*  RETAIL BILLS BY SECTORS AND SUB-SECTORS BREAKDOWN  */
     # /*******************************************************/
+    # format_fisstype() and format_fissgroup() imported from RDL2PBIF
     mast1_df = pl.DataFrame()
     almbt_sec_df = pl.DataFrame()
     if not mast_bt_df.is_empty():
