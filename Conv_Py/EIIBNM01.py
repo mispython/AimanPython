@@ -1,6 +1,6 @@
 # !/usr/bin/env python3
 """
-Program Name: EIIBNM01
+Program Name: EIIBNM01.py
 Purpose: Public Islamic Bank Berhad - Monthly Loan Summary Reports
          Generates multiple PROC PRINT reports covering:
          - All Loans (disbursement, repayment, outstanding)
@@ -18,6 +18,22 @@ ESMR: 2015-1190 (TBC)
 ESMR: 2015-1044 (TBC)
 ESMR: 2016-630 (NSA)
 ESMR: 2016-579 (TBC)
+
+Dependencies:
+  %INC PGM(PBBLNFMT):
+    The SAS source uses three formats from PBBLNFMT:
+      - LIQPFMT   -> PUT(PRODUCT, LIQPFMT.)  classifies products as FL/HL/RC
+      - $FISSTYPE  -> PUT(SECTORCD, $FISSTYPE.)  maps sector code to type string
+      - $FISSGROUP -> PUT(SECTORCD, $FISSGROUP.) maps sector code to group letter
+
+    None of these three formats are present in the converted PBBLNFMT.py
+        (which covers ODDENOM, LNDENOM, LNPROD, CUSTCD, STATECD, APPRLIMT,
+        LOANSIZE, MTHPASS, LNORMT, LNRMMT, COLLCD, RISKCD, BUSIND).
+    They are implemented locally below (liqpfmt, format_fisstype,
+        format_fissgroup) with approximations based on contextual usage.
+
+    format_lnprod and format_lndenom ARE present in PBBLNFMT.py but are
+        NOT used anywhere in this program, so they are not imported.
 """
 
 import os
@@ -25,12 +41,10 @@ import sys
 from datetime import date, timedelta
 import calendar
 from typing import Optional
+import math
 
 import duckdb
 import polars as pl
-
-# %INC PGM(PBBLNFMT)
-from PBBLNFMT import format_lnprod, format_lndenom  # (placeholder - not directly used here)
 
 # =============================================================================
 # PATH CONFIGURATION
@@ -77,6 +91,87 @@ SME_CUSTCDS   = DBE_CUSTCDS | FBE_CUSTCDS
 INDIV_CUSTCDS = {'77','78','95','96'}
 
 # =============================================================================
+# FORMAT: LIQPFMT  (local approximation — not present in PBBLNFMT.py)
+#         Used as PUT(PRODUCT, LIQPFMT.) to classify products as 'FL', 'HL', 'RC'.
+#         Approximated from product range patterns in PBBLNFMT.LNPROD_MAP and
+#         contextual ITEM-derivation logic throughout the SAS suite.
+# =============================================================================
+
+_LIQPFMT_HL = frozenset([
+    110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
+    139, 140, 141, 142, 147, 173, 225, 226,
+    400, 409, 410, 412, 413, 414, 415, 423, 431, 432, 433, 440,
+    466, 472, 473, 474, 479, 484, 486, 489, 494,
+    600, 638, 650, 651, 664, 677, 911,
+    *range(200, 249), *range(250, 261),
+])
+
+_LIQPFMT_RC = frozenset([
+    146, 184, 192, 195, 196, 302, 350, 351, 364, 365,
+    495, 506, 604, 605, 634, 641, 660, 685, 689,
+    802, 803, 806, 808, 810, 812, 814, 817, 818,
+    856, 857, 858, 859, 860,
+    902, 903, 910, 917, 925, 951,
+])
+
+
+def liqpfmt(product: int) -> str:
+    """
+    Approximate LIQPFMT format: classify product as 'HL', 'RC', or 'FL'.
+    LIQPFMT is absent from PBBLNFMT.py; implemented locally.
+    """
+    if product in _LIQPFMT_HL:
+        return 'HL'
+    if product in _LIQPFMT_RC:
+        return 'RC'
+    return 'FL'
+
+
+# =============================================================================
+# FORMAT: $FISSTYPE  (local approximation — not present in PBBLNFMT.py)
+# Used as PUT(SECTORCD, $FISSTYPE.) to map FISS sector code to type string.
+# Approximated from standard BNM FISS sector classification scheme.
+# =============================================================================
+
+def format_fisstype(sectorcd) -> str:
+    """$FISSTYPE. format — map FISS sector code to type string."""
+    if sectorcd is None:
+        return ''
+    s = str(sectorcd).strip().zfill(4)
+    prefix = s[:2]
+    mapping = {
+        '01': 'AGRICULTURE', '02': 'MINING',     '03': 'MANUFACTURING',
+        '04': 'ELECTRICITY', '05': 'WATER',       '06': 'CONSTRUCTION',
+        '07': 'WHOLESALE',   '08': 'TRANSPORT',   '09': 'FINANCE',
+        '10': 'REAL ESTATE', '11': 'EDUCATION',   '12': 'HEALTH',
+        '13': 'ARTS',        '14': 'OTHER SVC',   '15': 'GOVERNMENT',
+        '16': 'HOUSEHOLD',   '17': 'EXTRA-TERR',  '18': 'UNKNOWN',
+    }
+    return mapping.get(prefix, 'OTHERS')
+
+
+# =============================================================================
+# FORMAT: $FISSGROUP  (local approximation — not present in PBBLNFMT.py)
+# Used as PUT(SECTORCD, $FISSGROUP.) to map FISS sector code to group letter.
+# Approximated from standard BNM FISS sector classification scheme.
+# =============================================================================
+
+def format_fissgroup(sectorcd) -> str:
+    """$FISSGROUP. format — map FISS sector code to group string."""
+    if sectorcd is None:
+        return ''
+    s = str(sectorcd).strip().zfill(4)
+    prefix2 = s[:2]
+    grp_map = {
+        '01': 'A', '02': 'B', '03': 'C', '04': 'D', '05': 'D',
+        '06': 'E', '07': 'F', '08': 'G', '09': 'H', '10': 'I',
+        '11': 'J', '12': 'K', '13': 'L', '14': 'M', '15': 'N',
+        '16': 'O', '17': 'P',
+    }
+    return grp_map.get(prefix2, 'Z')
+
+
+# =============================================================================
 # ASA CARRIAGE CONTROL & REPORT UTILITIES
 # =============================================================================
 
@@ -120,46 +215,6 @@ class ReportWriter:
         for ln in self.lines:
             fh.write(ln + '\n')
         self.lines = []
-
-
-# =============================================================================
-# FISS FORMAT HELPERS
-# (Equivalent to $FISSTYPE. and $FISSGROUP. SAS formats from PBBLNFMT)
-# Sector code -> type / group mapping (abbreviated representative set)
-# Full mapping would come from PBBLNFMT; these cover the key ranges used here.
-# =============================================================================
-
-def format_fisstype(sectorcd) -> str:
-    """$FISSTYPE. format — map FISS sector code to type string."""
-    if sectorcd is None:
-        return ''
-    s = str(sectorcd).strip().zfill(4)
-    # Representative mappings from FISS sector classification
-    prefix = s[:2]
-    mapping = {
-        '01': 'AGRICULTURE', '02': 'MINING',     '03': 'MANUFACTURING',
-        '04': 'ELECTRICITY', '05': 'WATER',       '06': 'CONSTRUCTION',
-        '07': 'WHOLESALE',   '08': 'TRANSPORT',   '09': 'FINANCE',
-        '10': 'REAL ESTATE', '11': 'EDUCATION',   '12': 'HEALTH',
-        '13': 'ARTS',        '14': 'OTHER SVC',   '15': 'GOVERNMENT',
-        '16': 'HOUSEHOLD',   '17': 'EXTRA-TERR',  '18': 'UNKNOWN',
-    }
-    return mapping.get(prefix, 'OTHERS')
-
-
-def format_fissgroup(sectorcd) -> str:
-    """$FISSGROUP. format — map FISS sector code to group string."""
-    if sectorcd is None:
-        return ''
-    s = str(sectorcd).strip().zfill(4)
-    prefix2 = s[:2]
-    grp_map = {
-        '01': 'A', '02': 'B', '03': 'C', '04': 'D', '05': 'D',
-        '06': 'E', '07': 'F', '08': 'G', '09': 'H', '10': 'I',
-        '11': 'J', '12': 'K', '13': 'L', '14': 'M', '15': 'N',
-        '16': 'O', '17': 'P',
-    }
-    return grp_map.get(prefix2, 'Z')
 
 
 # =============================================================================
@@ -519,6 +574,8 @@ def build_alm(loan_df: pl.DataFrame, rv: dict) -> pl.DataFrame:
 
 # =============================================================================
 # APPLY PRODESC, SECTTYPE, SECTGROUP
+# Uses liqpfmt(), format_fisstype(), format_fissgroup() — all defined locally
+# above since they are absent from PBBLNFMT.py.
 # =============================================================================
 
 def apply_prodesc(df: pl.DataFrame) -> pl.DataFrame:
@@ -534,7 +591,7 @@ def apply_prodesc(df: pl.DataFrame) -> pl.DataFrame:
         scd     = row.get('sectorcd')
 
         p = product
-        pd = prodesc = ''
+        prodesc = ''
 
         if p in {135,136,138,419,420,422,424,426,464,465,468,469,470,
                  441,443,475,477,482,483,490,491,492,493,496,497,498,
@@ -564,6 +621,7 @@ def apply_prodesc(df: pl.DataFrame) -> pl.DataFrame:
 
 # =============================================================================
 # BUILD BTRADE DATASET
+# Uses liqpfmt(), format_fisstype(), format_fissgroup() — all defined locally.
 # =============================================================================
 
 def build_btrade(rv: dict) -> tuple:
@@ -683,7 +741,7 @@ def build_btrade(rv: dict) -> tuple:
         pl.col('balance').cast(pl.Float64)  if 'balance'  in almbt_df.columns else pl.lit(0.0).alias('balance'),
     ])
 
-    # DATA ALMBT: apply SECTTYPE/SECTGROUP/PRODESC
+    # DATA ALMBT: apply SECTTYPE/SECTGROUP/PRODESC using local format functions
     rows = almbt_df.to_dicts()
     for row in rows:
         scd      = row.get('sectorcd')
@@ -791,7 +849,9 @@ def print_table(df: pl.DataFrame, rw: ReportWriter,
         rw.write_line(' ' + line)
         for c in NUM_COLS:
             v = row.get(c)
-            if v is not None and not (isinstance(v, float) and v != v):
+            # if v is not None and not (isinstance(v, float) and v != val):
+            # if v is not None and not (isinstance(v, float) and v != v):
+            if v is not None and not (isinstance(v, float) and math.isnan(v)):
                 tot[c] += float(v)
 
     # SUM line
@@ -916,7 +976,9 @@ def main():
     # -------------------------------------------------------------------------
     # Build ALM (all loans master)
     # -------------------------------------------------------------------------
-    alm_df = build_alm(loan_df, rv)
+    # alm_df = build_alm(loan_df, rv)
+    # return alm_df
+    alm_df, almbt_df = build_alm(loan_df, rv)
 
     # Merge DISPAY into ALM (sorted by ACCTNO NOTENO)
     dispay_keep = [c for c in ['acctno','noteno','fisspurp','product','dnbfisme',
@@ -950,16 +1012,27 @@ def main():
         pl.when(pl.col('disburse') > 0).then(pl.lit(1)).otherwise(pl.lit(0)).alias('disbno'),
     ]) if not alm_df.is_empty() else alm_df
 
-    # Apply PRODESC
+    # Apply PRODESC — uses liqpfmt(), format_fisstype(), format_fissgroup() locally
     alm_df = apply_prodesc(alm_df)
 
     # -------------------------------------------------------------------------
     # PROC SUMMARY ALM -> ALMLOAN (by PRODESC)
     # -------------------------------------------------------------------------
+    # agg_vars = [c for c in NUM_COLS if c in alm_df.columns]
+    # if not alm_df.is_empty() and agg_vars:
+    #     almloan_df = alm_df.group_by('prodesc').agg(
+    #         [pl.col(c).sum() for c in agg_vars]
+    #     )
+    # else:
+    #     almloan_df = pl.DataFrame()
+
     agg_vars = [c for c in NUM_COLS if c in alm_df.columns]
+
     if not alm_df.is_empty() and agg_vars:
-        almloan_df = alm_df.group_by('prodesc').agg(
-            [pl.col(c).sum() for c in agg_vars]
+        almloan_df = (
+            alm_df
+            .group_by('prodesc')
+            .agg([pl.col(c).sum().alias(c) for c in agg_vars])
         )
     else:
         almloan_df = pl.DataFrame()
@@ -973,7 +1046,7 @@ def main():
     # Split ALMLOAN into non-HFSC and ALMHFSC
     # -------------------------------------------------------------------------
     if not almloan_df.is_empty():
-        almhfsc_df = almloan_df.filter(pl.col('prodesc') == 'HOUSE FINANCING SOLD TO CAGAMAS')
+        almhfsc_df   = almloan_df.filter(pl.col('prodesc') == 'HOUSE FINANCING SOLD TO CAGAMAS')
         almloan_main = almloan_df.filter(pl.col('prodesc') != 'HOUSE FINANCING SOLD TO CAGAMAS')
     else:
         almhfsc_df   = pl.DataFrame()
@@ -1301,9 +1374,6 @@ def main():
     # -------------------------------------------------------------------------
     # PROC TABULATE: RETAIL BILLS BY SECTOR
     # -------------------------------------------------------------------------
-    # PROC SUMMARY MAST by SECTGROUP SECTTYPE -> MASTSEC (NOACCT)
-    # PROC SUMMARY ALMBT by SECTGROUP SECTTYPE -> ALMBTSEC (BALANCE)
-    # MERGE MASTSEC + ALMBTSEC -> ALMBTSEC; PRODESC='TOTAL COMMERCIAL RETAILS'
     mastsec_df = pl.DataFrame(); almbtsec_df = pl.DataFrame()
     if not mast_df.is_empty():
         sg_key = [c for c in ['sectgroup','secttype'] if c in mast_df.columns]
