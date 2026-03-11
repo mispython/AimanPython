@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program : LALMP124.py
+Program : LALMP124.py (converted from X_LALMP124)
 Purpose : Report on Domestic Assets and Liabilities - Part II
           Builds BNM.LALM&REPTMON&NOWK by aggregating loan data
           across multiple dimensions (NPL, customer, sector, collateral,
@@ -8,9 +8,16 @@ Purpose : Report on Domestic Assets and Liabilities - Part II
           and appending each block into the target LALM parquet dataset.
 
 Dependencies:
-  - PBBLNFMT.py  : format functions (format_apprlimt, format_loansize,
-                   format_riskcd, format_lnormt, format_lnrmmt)
-  - SECTMAP.py   : sector code mapping / rollup (main() applied in-process)
+  - PBBLNFMT.py : format functions for loan processing.
+                  %INC PGM(PBBLNFMT) in the original SAS makes all formats
+                  globally available; relevant functions are explicitly
+                  imported here.
+  - SECTMAP.py  : sector code mapping / rollup.
+                  process_sectmap(df) is the single entry-point function
+                  equivalent to %INC PGM(SECTMAP) in the SAS source.
+                  It runs the full normalise → expand → rollup pipeline
+                  and returns the combined ALM+ALMA dataset with SECTORCD
+                  updated.
 """
 
 import os
@@ -19,32 +26,37 @@ import polars as pl
 from datetime import date, datetime
 
 # ── Dependency imports from PBBLNFMT ─────────────────────────────────────────
-from PBBLNFMT import (
-    format_apprlimt,
-    format_loansize,
-    format_riskcd,
-    format_lnormt,
-    format_lnrmmt,
+# %INC PGM(PBBLNFMT) is present in the original SAS source.
+# Only functions directly referenced in this program are imported.
+# format_riskcd, format_collcd, format_statecd, format_mthpass, format_ndays,
+#   format_busind are available in PBBLNFMT and used for FORMAT statements that
+#   influence how CLASS variables are reported; they are applied via their
+#   respective format_* functions on demand in each section below.
+from PBBLNFMT_clau import (
+    format_apprlimt,    # FORMAT APPRLIM2 APPRLIMT.  (Sections 3, 5)
+    format_loansize,    # FORMAT APPRLIM2 LOANSIZE.  (Section 5)
+    format_riskcd,      # FORMAT RISKCD              (Sections 1–2)
+    format_lnormt,      # FORMAT ORIGMT  LNORMT.     (Sections 11, 13)
+    format_lnrmmt,      # FORMAT REMAINMT LNRMMT.    (Section 14)
+    format_collcd,      # FORMAT COLLCD              (Section 4)
+    format_statecd,     # FORMAT STATECD             (Section 8)
+    format_busind,      # FORMAT BUSIND              (Section 7)
+    format_mthpass,     # FORMAT MTHPASS             (Sections 1–2)
+    format_ndays,       # FORMAT NDAYS               (Sections 1–2)
 )
 
-# ── Dependency: SECTMAP is invoked as a function on a DataFrame ───────────────
-# SECTMAP.py exposes step functions; we call them in sequence here.
-from SECTMAP import (
-    step1_map_sectors,
-    step2_invalid_fallback,
-    step3_alm2_expansion,
-    step4_merge_alm_alm2,
-    step5_alma_rollup,
-    step6_final_alm,
-)
+# ── Dependency: SECTMAP exposes a single entry-point function ─────────────────
+# process_sectmap(df) is the equivalent of %INC PGM(SECTMAP) in SAS.
+# Returns the combined ALM + ALMA dataset with SECTORCD normalised and
+#   expanded through the full hierarchy rollup pipeline.
+from SECTMAP import process_sectmap
 
 
 # ── Path configuration ────────────────────────────────────────────────────────
-BASE_DIR   = os.environ.get("BASE_DIR", "/data")
-BNM_DIR    = os.path.join(BASE_DIR, "bnm")
-BNM1_DIR   = os.path.join(BASE_DIR, "bnm1")
-LOAN_DIR   = os.path.join(BASE_DIR, "loan")
-INPUT_DIR  = os.path.join(BASE_DIR, "input")
+BASE_DIR  = os.environ.get("BASE_DIR", "/data")
+BNM_DIR   = os.path.join(BASE_DIR, "bnm")
+BNM1_DIR  = os.path.join(BASE_DIR, "bnm1")
+LOAN_DIR  = os.path.join(BASE_DIR, "loan")
 
 REPTMON   = os.environ.get("REPTMON",  "")   # e.g. "202401"
 NOWK      = os.environ.get("NOWK",     "")   # e.g. "01"
@@ -53,16 +65,17 @@ RDATE_STR = os.environ.get("RDATE",    "")   # DDMMYYYY e.g. "31012024"
 SDATE_STR = os.environ.get("SDATE",    "")   # DDMMYYYY e.g. "23012024"
 
 # Input parquet paths
-LOAN_PARQUET      = os.path.join(BNM_DIR,  f"LOAN{REPTMON}{NOWK}.parquet")
-LOAN1_PARQUET     = os.path.join(BNM1_DIR, f"LOAN{REPTMON}{NOWK1}.parquet")
-ULOAN_PARQUET     = os.path.join(BNM_DIR,  f"ULOAN{REPTMON}{NOWK}.parquet")
-LNCOMM_PARQUET    = os.path.join(LOAN_DIR, "LNCOMM.parquet")
+LOAN_PARQUET   = os.path.join(BNM_DIR,  f"LOAN{REPTMON}{NOWK}.parquet")
+LOAN1_PARQUET  = os.path.join(BNM1_DIR, f"LOAN{REPTMON}{NOWK1}.parquet")
+ULOAN_PARQUET  = os.path.join(BNM_DIR,  f"ULOAN{REPTMON}{NOWK}.parquet")
+LNCOMM_PARQUET = os.path.join(LOAN_DIR, "LNCOMM.parquet")
 
 # Output / working parquet path
-LALM_PARQUET      = os.path.join(BNM_DIR,  f"LALM{REPTMON}{NOWK}.parquet")
+LALM_PARQUET   = os.path.join(BNM_DIR,  f"LALM{REPTMON}{NOWK}.parquet")
 
 os.makedirs(BNM_DIR,  exist_ok=True)
 os.makedirs(BNM1_DIR, exist_ok=True)
+
 
 # ── Date parsing helpers ──────────────────────────────────────────────────────
 def parse_ddmmyyyy(s: str) -> date:
@@ -72,6 +85,7 @@ def parse_ddmmyyyy(s: str) -> date:
 RDATE = parse_ddmmyyyy(RDATE_STR) if RDATE_STR else date.today()
 SDATE = parse_ddmmyyyy(SDATE_STR) if SDATE_STR else date.today()
 
+
 # ── DuckDB connection (shared) ────────────────────────────────────────────────
 con = duckdb.connect()
 
@@ -79,16 +93,14 @@ con = duckdb.connect()
 # ── Helper: append rows to LALM parquet ──────────────────────────────────────
 def append_to_lalm(new_df: pl.DataFrame) -> None:
     """Append new_df (BNMCODE, AMTIND, AMOUNT) to LALM parquet."""
-    schema = {"BNMCODE": pl.Utf8, "AMTIND": pl.Utf8, "AMOUNT": pl.Float64}
-    cols   = ["BNMCODE", "AMTIND", "AMOUNT"]
-
+    cols = ["BNMCODE", "AMTIND", "AMOUNT"]
     if new_df.is_empty():
         return
-
-    new_df = new_df.select(cols).cast({"BNMCODE": pl.Utf8,
-                                        "AMTIND":  pl.Utf8,
-                                        "AMOUNT":  pl.Float64})
-
+    new_df = new_df.select(cols).cast({
+        "BNMCODE": pl.Utf8,
+        "AMTIND":  pl.Utf8,
+        "AMOUNT":  pl.Float64,
+    })
     if os.path.exists(LALM_PARQUET):
         existing = con.execute(
             f"SELECT BNMCODE, AMTIND, AMOUNT FROM read_parquet('{LALM_PARQUET}')"
@@ -96,23 +108,19 @@ def append_to_lalm(new_df: pl.DataFrame) -> None:
         combined = pl.concat([existing, new_df], how="diagonal")
     else:
         combined = new_df
-
     combined.write_parquet(LALM_PARQUET)
 
 
 # ── Helper: apply SECTMAP pipeline to a DataFrame with SECTORCD column ────────
 def apply_sectmap(df: pl.DataFrame) -> pl.DataFrame:
     """
-    %INC PGM(SECTMAP)  – runs all 6 SECTMAP steps in-process.
-    Input df must contain a SECTORCD column.
-    Returns df with SECTORCD updated (intermediate columns dropped).
+    Equivalent of %INC PGM(SECTMAP) in the SAS source.
+    Delegates to process_sectmap() from SECTMAP.py, which runs the full
+    normalisation → expansion → rollup pipeline (inlining $NEWSECT./$VALIDSE.
+    format logic) and returns the combined ALM + ALMA dataset with SECTORCD
+    updated.  Intermediate helper columns added by SECTMAP are dropped.
     """
-    df = step1_map_sectors(df)
-    df = step2_invalid_fallback(df)
-    alm2_rows = step3_alm2_expansion(df)
-    df = step4_merge_alm_alm2(df, alm2_rows)
-    alma_rows = step5_alma_rollup(df)
-    df = step6_final_alm(df, alma_rows)
+    df = process_sectmap(df)
     for col in ("SECTA", "SECVALID", "SECTCD"):
         if col in df.columns:
             df = df.drop(col)
@@ -125,7 +133,7 @@ def apply_apprlimt_fmt(df: pl.DataFrame, col: str = "APPRLIM2") -> pl.DataFrame:
     return df.with_columns(
         pl.col(col).map_elements(
             lambda v: format_apprlimt(float(v)) if v is not None else "",
-            return_dtype=pl.Utf8
+            return_dtype=pl.Utf8,
         ).alias("ALMLIMT")
     )
 
@@ -135,7 +143,7 @@ def apply_loansize_fmt(df: pl.DataFrame, col: str = "APPRLIM2") -> pl.DataFrame:
     return df.with_columns(
         pl.col(col).map_elements(
             lambda v: format_loansize(float(v)) if v is not None else "",
-            return_dtype=pl.Utf8
+            return_dtype=pl.Utf8,
         ).alias("LOANSIZE")
     )
 
@@ -143,8 +151,7 @@ def apply_loansize_fmt(df: pl.DataFrame, col: str = "APPRLIM2") -> pl.DataFrame:
 # ── Step 0 : Build LOAN1 from BNM1.LOAN&REPTMON&NOWK1  ───────────────────────
 # DATA LOAN1; SET BNM1.LOAN&REPTMON&NOWK1;
 #   IF PRODUCT IN (124,145);
-#   PRODCD='34120';  AMTIND='I';
-
+#   PRODCD='34120'; AMTIND='I';
 def build_loan1() -> pl.DataFrame:
     df = con.execute(f"""
         SELECT * FROM read_parquet('{LOAN1_PARQUET}')
@@ -191,23 +198,17 @@ def section_npl_simple():
 # SECTION 2 : NPL – BY CUSTOMER AND SECTORIAL CODE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _npl_sector_bnmcode(prefix9: str, sectorcd: str) -> str | None:
+def _npl_sector_bnmcode(prefix9: str, sectorcd: str) -> str:
     """
     Build BNMCODE for _TYPE_=6 NPL-by-sector block.
-    prefix9 is the first 9 characters of the BNMCODE (e.g. '349000000').
-    Returns None if no match (OTHERWISE branch uses prefix9 + '9999Y').
+    prefix9 is the first 9 characters (e.g. '349000000').
+    Falls through to OTHERWISE → prefix9 + '9999Y'.
     """
     sc = sectorcd or ""
     p1 = sc[:1]; p2 = sc[:2]; p3 = sc[:3]
 
     if sc in ("0410","0420","0430","9999"):
         return f"{prefix9}{sc}Y"
-    elif p2 == "01":
-        return f"{prefix9[:-3]}000100Y".replace(prefix9[:-3], prefix9[:-3]) if len(prefix9) == 9 else None
-    # Inline the lookup table for clarity
-    SECTOR_MAP_T6 = {
-        "01": "0100", "02": "0200",
-    }
     if p2 == "01":   return f"{prefix9}0100Y"
     if p2 == "02":   return f"{prefix9}0200Y"
     if p3 == "031":  return f"{prefix9}0310Y"
@@ -237,11 +238,7 @@ def section_npl_by_cust_sector():
     _TYPE_=6 (AMTIND+SECTORCD) and _TYPE_=7 (AMTIND+SECTORCD+CUSTCD).
     """
     alq = con.execute(f"""
-        SELECT AMTIND, SECTORCD, CUSTCD, SUM(BALANCE) AS AMOUNT,
-               -- _TYPE_ emulated:
-               -- 6 = grouped by AMTIND+SECTORCD (CUSTCD=NULL)
-               -- 7 = grouped by AMTIND+SECTORCD+CUSTCD
-               1 AS _dummy
+        SELECT AMTIND, SECTORCD, CUSTCD, SUM(BALANCE) AS AMOUNT
         FROM read_parquet('{LOAN_PARQUET}')
         WHERE LEFT(PRODCD, 2) = '34'
           AND RISKCD IS NOT NULL AND TRIM(RISKCD) <> ''
@@ -261,16 +258,14 @@ def section_npl_by_cust_sector():
         # _TYPE_=6 : CUSTCD is NULL (AMTIND+SECTORCD grouping)
         if custcd is None:
             bc = _npl_sector_bnmcode("349000000", sectorcd)
-            if bc:
-                rows.append({"BNMCODE": bc, "AMTIND": amtind, "AMOUNT": amount})
+            rows.append({"BNMCODE": bc, "AMTIND": amtind, "AMOUNT": amount})
 
         # _TYPE_=7 : all three present
         else:
             custcd = str(custcd).strip()
             if custcd in ("61", "66"):
                 bc = _npl_sector_bnmcode("349006100", sectorcd)
-                if bc:
-                    rows.append({"BNMCODE": bc, "AMTIND": amtind, "AMOUNT": amount})
+                rows.append({"BNMCODE": bc, "AMTIND": amtind, "AMOUNT": amount})
 
             if custcd == "77":
                 sc = sectorcd or ""
@@ -333,9 +328,9 @@ def section_gross_loan_by_apprlim():
                          "AMTIND": amtind, "AMOUNT": amount})
         # _TYPE_=7
         else:
-            custcd = str(custcd).strip()
-            sme_grp1 = ("41","42","43","44","46","47","48","49","51","52","53","54")
-            if custcd in sme_grp1:
+            custcd  = str(custcd).strip()
+            sme_grp = ("41","42","43","44","46","47","48","49","51","52","53","54")
+            if custcd in sme_grp:
                 rows.append({"BNMCODE": f"{almlimt}{custcd}000000Y",
                              "AMTIND": amtind, "AMOUNT": amount})
                 if custcd in ("41","42","43"):
@@ -371,6 +366,7 @@ def section_gross_loan_by_collateral():
     PROC SUMMARY by AMTIND, COLLCD, CUSTCD.
     _TYPE_=6  AND COLLCD IN ('30560','30570','30580') → COLLCD||'00000000Y'
     _TYPE_=7  AND COLLCD NOT IN those → CUSTCD-based routing.
+    format_collcd (PBBLNFMT) applied via FORMAT COLLCD in original SAS.
     """
     alm = con.execute(f"""
         SELECT AMTIND, COLLCD, CUSTCD, SUM(BALANCE) AS AMOUNT
@@ -497,50 +493,28 @@ def section_utilised_loan_count():
             if custcd in ("10","02","03","11","12"):
                 rows.append({"BNMCODE": "8051010000000Y", "AMTIND": amtind, "AMOUNT": amount})
             if custcd in ("20","13","17","04","05","06","30","32","33",
-                           "34","35","36","37","38","39","40"):
+                          "34","35","36","37","38","39","40"):
                 rows.append({"BNMCODE": "8051020000000Y", "AMTIND": amtind, "AMOUNT": amount})
             if custcd in ("61","41","42","43"):
                 rows.append({"BNMCODE": "8051061000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                if custcd in ("41","42","43"):
-                    rows.append({"BNMCODE": f"80510{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                    rows.append({"BNMCODE": "8051066000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                    rows.append({"BNMCODE": f"80500{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
             if custcd in ("62","44","46","47"):
                 rows.append({"BNMCODE": "8051062000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                if custcd in ("44","46","47"):
-                    rows.append({"BNMCODE": f"80510{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                    rows.append({"BNMCODE": "8051067000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                    rows.append({"BNMCODE": f"80500{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
             if custcd in ("63","48","49","51"):
                 rows.append({"BNMCODE": "8051063000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                if custcd in ("48","49","51"):
-                    rows.append({"BNMCODE": f"80510{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                    rows.append({"BNMCODE": "8051068000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                    rows.append({"BNMCODE": f"80500{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
-            if custcd in ("64","52","53","54","75","57","59"):
+            if custcd in ("64","52","53","54","57","75","59"):
                 rows.append({"BNMCODE": "8051064000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                if custcd in ("52","53","54"):
-                    rows.append({"BNMCODE": f"80510{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                    rows.append({"BNMCODE": "8051069000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                    rows.append({"BNMCODE": f"80500{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
             if custcd in ("41","42","43","44","46","47","48","49","51","52","53","54"):
                 rows.append({"BNMCODE": "8051065000000Y", "AMTIND": amtind, "AMOUNT": amount})
-            if custcd in ("70","71","72","73","74"):
+                rows.append({"BNMCODE": f"80510{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
+            if custcd in ("71","72","73","74"):
                 rows.append({"BNMCODE": "8051070000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                rows.append({"BNMCODE": "8050070000000Y", "AMTIND": amtind, "AMOUNT": amount})
-            if custcd == "77":
-                rows.append({"BNMCODE": "8051077000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                rows.append({"BNMCODE": "8050077000000Y", "AMTIND": amtind, "AMOUNT": amount})
-            if custcd == "78":
-                rows.append({"BNMCODE": "8051078000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                rows.append({"BNMCODE": "8050078000000Y", "AMTIND": amtind, "AMOUNT": amount})
+            if custcd in ("77","78"):
+                rows.append({"BNMCODE": "8051076000000Y", "AMTIND": amtind, "AMOUNT": amount})
+                rows.append({"BNMCODE": f"80510{custcd}000000Y", "AMTIND": amtind, "AMOUNT": amount})
             if custcd == "79":
                 rows.append({"BNMCODE": "8051079000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                rows.append({"BNMCODE": "8050079000000Y", "AMTIND": amtind, "AMOUNT": amount})
-            if custcd in ("80","81","82","83","84","85","86","90","91","92",
-                           "95","96","98","99"):
+            if "81" <= custcd <= "99":
                 rows.append({"BNMCODE": "8051080000000Y", "AMTIND": amtind, "AMOUNT": amount})
-                rows.append({"BNMCODE": "8050080000000Y", "AMTIND": amtind, "AMOUNT": amount})
 
         # _TYPE_=6: AMTIND+APPRLIM2 (CUSTCD is NULL)
         elif apprlim2 is not None and custcd is None:
@@ -629,15 +603,12 @@ def section_loan_by_cust_purpose():
 
         # Additional ranges (outside SELECT block)
         if "81" <= custcd <= "99":
-            rows.append({"BNMCODE": f"3400080{custcd[:2]}{fisspurp}Y".replace(
-                f"3400080{custcd[:2]}", f"3400080"+"00"),
+            rows.append({"BNMCODE": "3400080" + "00" + fisspurp + "Y",
                          "AMTIND": amtind, "AMOUNT": amount})
-            # Correct form:
-            rows[-1]["BNMCODE"] = f"3400080" + "00" + fisspurp + "Y"
         if custcd in ("77","78"):
             rows.append({"BNMCODE": f"34000{custcd}00{fisspurp}Y",
                          "AMTIND": amtind, "AMOUNT": amount})
-            rows.append({"BNMCODE": f"3400076" + "00" + fisspurp + "Y",
+            rows.append({"BNMCODE": "3400076" + "00" + fisspurp + "Y",
                          "AMTIND": amtind, "AMOUNT": amount})
         elif custcd in ("41","42","43","44","46","47","48","49","51","52","53","54"):
             rows.append({"BNMCODE": f"34000{custcd}00{fisspurp}Y",
@@ -714,25 +685,25 @@ def section_loan_by_cust_sector():
 
         # Additional range-based rules (outside SELECT)
         if "81" <= custcd <= "99":
-            rows.append({"BNMCODE": f"3400080" + "00" + sectorcd + "Y",
+            rows.append({"BNMCODE": "3400080" + "00" + sectorcd + "Y",
                          "AMTIND": amtind, "AMOUNT": amount})
             if sectorcd == "9700":
-                rows.append({"BNMCODE": "3400085" + "009700" + "Y",
+                rows.append({"BNMCODE": "3400085009700Y",
                              "AMTIND": amtind, "AMOUNT": amount})
             elif sectorcd in ("1000","2000","3000","4000","5000",
                               "6000","7000","8000","9000","9999"):
-                rows.append({"BNMCODE": "3400085" + "009999" + "Y",
+                rows.append({"BNMCODE": "3400085009999Y",
                              "AMTIND": amtind, "AMOUNT": amount})
 
         if custcd in ("95","96"):
             if sectorcd in ("1000","2000","3000","4000","5000",
                             "6000","7000","8000","9000","9999","9700"):
-                rows.append({"BNMCODE": "3400095" + "000000" + "Y",
+                rows.append({"BNMCODE": "3400095000000Y",
                              "AMTIND": amtind, "AMOUNT": amount})
-            rows.append({"BNMCODE": f"3400095" + "00" + sectorcd + "Y",
+            rows.append({"BNMCODE": "3400095" + "00" + sectorcd + "Y",
                          "AMTIND": amtind, "AMOUNT": amount})
         elif custcd in ("77","78"):
-            rows.append({"BNMCODE": f"3400076" + "00" + sectorcd + "Y",
+            rows.append({"BNMCODE": "3400076" + "00" + sectorcd + "Y",
                          "AMTIND": amtind, "AMOUNT": amount})
             rows.append({"BNMCODE": f"34000{custcd}00{sectorcd}Y",
                          "AMTIND": amtind, "AMOUNT": amount})
@@ -748,7 +719,9 @@ def section_loan_by_cust_sector():
 def section_sme_by_state():
     """
     PROC SUMMARY by CUSTCD, STATECD, AMTIND where PRODCD[:2]='34'
-    and CUSTCD in SME set. _TYPE_=7 → BNMCODE = '34000'||CUSTCD||'000000'||STATECD.
+    and CUSTCD in SME set.
+    _TYPE_=7 → BNMCODE = '34000'||CUSTCD||'000000'||STATECD.
+    format_statecd (PBBLNFMT) applied via FORMAT STATECD in original SAS.
     """
     sme_set = ("41","42","43","44","46","47","48","49","51","52","53","54")
     alm = con.execute(f"""
@@ -806,7 +779,7 @@ def section_rm_loans():
 
 def section_rm_overdraft():
     """
-    PROC SUMMARY NWAY by AMTIND, PRODCD where PRODCD='34180'.
+    PROC SUMMARY NWAY by AMTIND where PRODCD='34180'.
     BNMCODE = '3418000000000Y'.
     """
     alm = con.execute(f"""
@@ -832,6 +805,7 @@ def section_rm_by_cust_maturity():
     PROC SUMMARY NWAY by AMTIND, ORIGMT, CUSTCD where PRODCD[:3] IN ('341'…).
     _TYPE_=7: short-term (ORIGMT '10'-'17') and long-term ('20'-'33') for
     foreign CUSTCD groups → specific BNMCODE.
+    format_lnormt (PBBLNFMT) applied via FORMAT ORIGMT LNORMT. in original SAS.
     """
     alm = con.execute(f"""
         SELECT AMTIND, ORIGMT, CUSTCD, SUM(BALANCE) AS AMOUNT
@@ -922,6 +896,7 @@ def section_term_loan_by_origmt():
     """
     PROC SUMMARY NWAY by AMTIND, ORIGMT where specific PRODCDs.
     SELECT(ORIGMT): short → '3411000100000Y'; others → '3411000'||ORIGMT||'0000Y'.
+    format_lnormt (PBBLNFMT) applied via FORMAT ORIGMT LNORMT. in original SAS.
     """
     target_prods = ("34111","34112","34113","34114","34115","34116","34117","34120","34149")
     alm = con.execute(f"""
@@ -957,6 +932,7 @@ def section_term_loan_by_remainmt():
     """
     PROC SUMMARY NWAY by AMTIND, REMAINMT where specific PRODCDs.
     SELECT(REMAINMT): short → '3411000500000Y'; others → '3411000'||REMAINMT||'0000Y'.
+    format_lnrmmt (PBBLNFMT) applied via FORMAT REMAINMT LNRMMT. in original SAS.
     """
     target_prods = ("34111","34112","34113","34114","34115","34116","34117","34120","34149")
     alm = con.execute(f"""
@@ -968,9 +944,9 @@ def section_term_loan_by_remainmt():
 
     rows = []
     for row in alm.iter_rows(named=True):
-        amtind  = row["AMTIND"]  or ""
+        amtind   = row["AMTIND"]  or ""
         remainmt = (row["REMAINMT"] or "").strip()
-        amount  = row["AMOUNT"]
+        amount   = row["AMOUNT"]
 
         if remainmt in ("51","52","53","54","55","56","57"):
             rows.append({"BNMCODE": "3411000500000Y",
@@ -1112,8 +1088,8 @@ def _build_appr_dataset(loan_df: pl.DataFrame) -> pl.DataFrame:
     loan_sorted = loan_df.sort(["ACCTNO","NOTENO"])
 
     # Split on COMMNO
-    almcom    = loan_sorted.filter(pl.col("COMMNO") > 0).sort(["ACCTNO","COMMNO"])
-    almnocom  = loan_sorted.filter(pl.col("COMMNO") <= 0).sort(["ACCTNO","COMMNO"])
+    almcom   = loan_sorted.filter(pl.col("COMMNO") > 0).sort(["ACCTNO","COMMNO"])
+    almnocom = loan_sorted.filter(pl.col("COMMNO") <= 0).sort(["ACCTNO","COMMNO"])
 
     # Merge ALMCOM with LNCOMM
     if not lncomm_df.is_empty():
@@ -1125,7 +1101,7 @@ def _build_appr_dataset(loan_df: pl.DataFrame) -> pl.DataFrame:
             rows = []
             seen: set = set()
             for r in df.iter_rows(named=True):
-                key = (r["ACCTNO"], r["COMMNO"])
+                key    = (r["ACCTNO"], r["COMMNO"])
                 prodcd = (r.get("PRODCD") or "").strip()
                 if prodcd == "34190":
                     if key not in seen:
@@ -1140,8 +1116,8 @@ def _build_appr_dataset(loan_df: pl.DataFrame) -> pl.DataFrame:
 
     # ALMNOCOM deduplication for PRODCD='34190'
     almnocom_sorted = almnocom.sort(["ACCTNO","APPRLIM2"])
-    appr1_rows = []
-    dup_rows   = []
+    appr1_rows: list = []
+    dup_rows:   list = []
     seen_acct_appr: set = set()
 
     for r in almnocom_sorted.iter_rows(named=True):
@@ -1161,7 +1137,7 @@ def _build_appr_dataset(loan_df: pl.DataFrame) -> pl.DataFrame:
                 if (d.get("BALANCE") or 0) >= (d.get("APPRLIM2") or 0)]
     dup_keys = {(d["ACCTNO"], d.get("APPRLIM2")) for d in dup_filt}
 
-    appr1_final = []
+    appr1_final: list = []
     for r in almnocom_sorted.iter_rows(named=True):
         prodcd = (r.get("PRODCD") or "").strip()
         key    = (r["ACCTNO"], r.get("APPRLIM2"))
@@ -1177,7 +1153,7 @@ def _build_appr_dataset(loan_df: pl.DataFrame) -> pl.DataFrame:
         else:
             appr1_final.append(r)
 
-    appr1 = pl.DataFrame(appr1_final) if appr1_final else almnocom.clear()
+    appr1     = pl.DataFrame(appr1_final) if appr1_final else almnocom.clear()
     alm_final = pl.concat([appr, appr1], how="diagonal").sort(["ACCTNO"])
     return alm_final
 
@@ -1188,10 +1164,8 @@ def section_undrawn_by_maturity():
     _TYPE_=9  (AMTIND+FISSPURP): purpose-based BNMCODE.
     _TYPE_=14 (AMTIND+PRODCD+ORIGMT+FISSPURP): maturity-based BNMCODE.
     """
-    loan_df  = con.execute(f"SELECT * FROM read_parquet('{LOAN_PARQUET}')").pl()
-    uloan_df = con.execute(f"SELECT * FROM read_parquet('{ULOAN_PARQUET}')").pl()
-
-    alm_rc = _build_appr_dataset(loan_df)
+    loan_df = con.execute(f"SELECT * FROM read_parquet('{LOAN_PARQUET}')").pl()
+    alm_rc  = _build_appr_dataset(loan_df)
 
     # PROC SUMMARY by AMTIND, PRODCD, ORIGMT, FISSPURP; VAR UNDRAWN
     almx = con.execute("""
@@ -1224,7 +1198,7 @@ def section_undrawn_by_maturity():
     for row in combined.iter_rows(named=True):
         amtind   = row["AMTIND"]   or ""
         prodcd   = row.get("PRODCD")
-        origmt   = (row.get("ORIGMT") or "").strip()
+        origmt   = (row.get("ORIGMT")   or "").strip()
         fisspurp = (row.get("FISSPURP") or "").strip()
         amount   = row["AMOUNT"]
 
@@ -1277,6 +1251,7 @@ def section_undrawn_by_maturity():
     """).pl()
 
     combined2 = pl.concat([almx2, ualmx2], how="diagonal")
+    # %INC PGM(SECTMAP)
     combined2 = apply_sectmap(combined2)
 
     sec_rows = []
@@ -1338,7 +1313,7 @@ def section_approvals_count():
         else:
             custcd = str(custcd).strip()
             # _TYPE_=3
-            if custcd in ("61","66"):
+            if custcd in ("61", "66"):
                 rows.append({"BNMCODE": "8015061000000Y", "AMTIND": amtind, "AMOUNT": amount})
             elif custcd == "77":
                 rows.append({"BNMCODE": "8015077000000Y", "AMTIND": amtind, "AMOUNT": amount})
@@ -1407,10 +1382,10 @@ def section_gross_loan_repricing():
 
     rows = []
     for row in alm.iter_rows(named=True):
-        product  = row["PRODUCT"]
-        amtind   = row["AMTIND"]  or ""
-        ntindex  = row.get("NTINDEX") or 0
-        amount   = row["AMOUNT"]
+        product = row["PRODUCT"]
+        amtind  = row["AMTIND"]  or ""
+        ntindex = row.get("NTINDEX") or 0
+        amount  = row["AMOUNT"]
 
         bic = "     "
         if product in (124,145):
@@ -1450,6 +1425,7 @@ def section_loan_by_sector():
         GROUP BY SECTORCD, AMTIND
     """).pl()
 
+    # %INC PGM(SECTMAP)
     alm = apply_sectmap(alm)
 
     rows = []
@@ -1472,7 +1448,7 @@ def section_loan_by_sector():
 def _compute_disburse_repaid(
     alm1_df: pl.DataFrame,
     alm_df:  pl.DataFrame,
-    key_cols: list[str],
+    key_cols: list,
 ) -> pl.DataFrame:
     """
     Merge previous period (ALM1=A) with current period (ALM=B) by key_cols.
@@ -1486,14 +1462,14 @@ def _compute_disburse_repaid(
     sdate = SDATE
 
     for row in merged.iter_rows(named=True):
-        apprdate  = row.get("APPRDATE")
-        apprlim2  = row.get("APPRLIM2") or 0.0
-        balance   = row.get("BALANCE")  or 0.0
-        lastbal   = row.get("LASTBAL")  or None
-        prodcd    = (row.get("PRODCD")  or "").strip()
-        noteterm  = row.get("NOTETERM")
-        earnterm  = row.get("EARNTERM")
-        lastnote  = row.get("LASTNOTE")
+        apprdate = row.get("APPRDATE")
+        apprlim2 = row.get("APPRLIM2") or 0.0
+        balance  = row.get("BALANCE")  or 0.0
+        lastbal  = row.get("LASTBAL")
+        prodcd   = (row.get("PRODCD")  or "").strip()
+        noteterm = row.get("NOTETERM")
+        earnterm = row.get("EARNTERM")
+        lastnote = row.get("LASTNOTE")
 
         if apprdate and isinstance(apprdate, date):
             if apprdate > rdate:
@@ -1537,8 +1513,8 @@ def section_disbursement_by_purpose(loan1_df: pl.DataFrame):
     Merges LOAN1 (previous period) with LOAN (current) and ULOAN.
     Outputs BNMCODE patterns for 683/783/821 prefixes.
     """
-    keep_cols = ["ACCTNO","NOTENO","FISSPURP","PRODUCT","NOTETERM",
-                 "BALANCE","PRODCD","CUSTCD","AMTIND","SECTORCD"]
+    keep_cols   = ["ACCTNO","NOTENO","FISSPURP","PRODUCT","NOTETERM",
+                   "BALANCE","PRODCD","CUSTCD","AMTIND","SECTORCD"]
     prod_filter = ("341","342","343","344")
     prod_list   = (225,226)
 
@@ -1568,15 +1544,16 @@ def section_disbursement_by_purpose(loan1_df: pl.DataFrame):
     )
 
     # ULOAN
-    uloan_df = con.execute(f"SELECT * FROM read_parquet('{ULOAN_PARQUET}')").pl()
+    uloan_df   = con.execute(f"SELECT * FROM read_parquet('{ULOAN_PARQUET}')").pl()
     uloan_filt = uloan_df.filter(
         (pl.col("APPRDATE") >= pl.lit(SDATE)) &
         (pl.col("APPRDATE") <= pl.lit(RDATE))
     )
 
     if not uloan_filt.is_empty():
-        alm_work = pl.concat([alm_work, uloan_filt.select(alm_work.columns)],
-                             how="diagonal")
+        alm_work = pl.concat(
+            [alm_work, uloan_filt.select(alm_work.columns)], how="diagonal"
+        )
 
     # PROC SUMMARY NWAY by FISSPURP, AMTIND
     summary = (
@@ -1696,6 +1673,7 @@ def section_disbursement_by_sector(loan1_df: pl.DataFrame):
         ])
     )
 
+    # %INC PGM(SECTMAP)
     summary = apply_sectmap(summary)
 
     rows = []
@@ -1724,9 +1702,14 @@ def section_disbursement_by_sector(loan1_df: pl.DataFrame):
             pl.col("ROLLOVER").sum(),
         ])
     )
+    # %INC PGM(SECTMAP) – applied to SMI sector grouping as well
     smi_summary = apply_sectmap(smi_summary)
     _emit_smi_rows(smi_summary, key_col="SECTORCD")
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 22/23 SMI HELPER
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def _emit_smi_rows(df: pl.DataFrame, key_col: str):
     """
@@ -1837,6 +1820,7 @@ def section_loan_by_state_sector():
         GROUP BY SECTORCD, STATECD, AMTIND
     """).pl()
 
+    # %INC PGM(SECTMAP)
     alq = apply_sectmap(alq)
 
     rows = []
@@ -1877,6 +1861,7 @@ def final_consolidation():
 
 def main():
     # %INC PGM(PBBLNFMT) – formats imported at module level above
+    # %INC PGM(SECTMAP)  – process_sectmap imported at module level above
 
     # Build LOAN1 (previous period, products 124/145)
     loan1_df = build_loan1()
