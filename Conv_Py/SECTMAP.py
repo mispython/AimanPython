@@ -3,12 +3,17 @@
 Program : SECTMAP.py
 Purpose : Sector code mapping and hierarchy expansion for ALM dataset.
           Designed to be imported (%INC equivalent) by orchestrator programs.
-          Applies NEWSECT / VALIDSE format lookups (from PBBLNFMT) to
-            normalise SECTORCD, then expands each sector code into its full
-            parent-rollup chain (ALM2), and finally aggregates to top-level
-            single-digit sector groups (ALMA).
+          Applies NEWSECT / VALIDSE format lookups to normalise SECTORCD,
+              then expands each sector code into its full parent-rollup chain
+              (ALM2), and finally aggregates to top-level single-digit sector
+              groups (ALMA).
 
-Dependencies : PBBLNFMT.py  (format_newsect, format_validse)
+Note    : The original SAS program does not %INC PBBLNFMT. The $NEWSECT.
+              and $VALIDSE. formats are assumed to be available in the SAS
+              session (loaded separately by the orchestrator).
+          Accordingly, this Python module does NOT import from PBBLNFMT;
+              instead the equivalent format logic is inlined below as
+              private helpers, consistent with how SAS resolves formats at runtime.
 
 Usage (orchestrator) :
   from SECTMAP import process_sectmap
@@ -17,10 +22,8 @@ Usage (orchestrator) :
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 import polars as pl
-
-from PBBLNFMT import format_newsect, format_validse
 
 # ---------------------------------------------------------------------------
 # Path configuration
@@ -31,16 +34,138 @@ from PBBLNFMT import format_newsect, format_validse
 
 
 # =============================================================================
+# INLINE FORMAT EQUIVALENTS
+#   The SAS session makes $NEWSECT. and $VALIDSE. available via PROC FORMAT
+#   (defined in PBBLNFMT). Since this program does not %INC PBBLNFMT, the
+#   equivalent logic is reproduced here as private module-level helpers.
+# =============================================================================
+
+# ----------------------------------------------------------------------------
+# $NEWSECT. – new sector code normalisation map
+# ----------------------------------------------------------------------------
+def _build_newsect_map() -> Dict[str, str]:
+    m: Dict[str, str] = {}
+    for k in ['1111', '1113', '1115', '1117', '1119', '1200', '1300', '1400',
+              '2100', '2301', '2303', '2400', '2900',
+              '3115', '3113', '3114', '3120', '3250', '3271', '3272', '3273',
+              '3280', '3290', '3825', '3710', '3721', '3731', '3732',
+              '3811', '3813', '3814', '3819', '3833', '3834', '3835',
+              '3911', '3919', '3952', '3953', '3955', '3956', '3957', '3960',
+              '5001', '5002', '5003', '5004', '5005', '5006', '5008',
+              '5020', '5030', '5040', '5050', '5999',
+              '6110', '6120', '6130',
+              '7111', '7114', '7116', '7117', '7122', '7124', '7131', '7132',
+              '7133', '7134', '7191', '7192', '7193', '7199', '7210', '7220',
+              '8310', '8321', '8331', '8333', '8340',
+              '8411', '8412', '8413', '8414', '8415', '8416', '8420',
+              '8911', '8912', '8913', '8921', '8931', '8932', '8991', '8999',
+              '9431', '9433', '9434', '9500', '9600', '9999']:
+        m[k] = k
+    for k in ['2210', '2220']:
+        m[k] = '2200'
+    for k in ['3211', '3212', '3219']:
+        m[k] = '3210'
+    for k in ['3221', '3222']:
+        m[k] = '3220'
+    for k in ['3231', '3232']:
+        m[k] = '3230'
+    for k in ['3241', '3242']:
+        m[k] = '3240'
+    for k in ['3311', '3312', '3313']:
+        m[k] = '3310'
+    for k in ['3431', '3432', '3433']:
+        m[k] = '3430'
+    for k in ['3551', '3552']:
+        m[k] = '3550'
+    for k in ['3611', '3619']:
+        m[k] = '3610'
+    for k in ['3842', '3843', '3844']:
+        m[k] = '3841'
+    for k in ['3851', '3852', '3853']:
+        m[k] = '3850'
+    for k in ['3861', '3862', '3863', '3864', '3865', '3866']:
+        m[k] = '3860'
+    for k in ['3871', '3872', '3873']:
+        m[k] = '3870'
+    for k in ['3891', '3892', '3893', '3894']:
+        m[k] = '3890'
+    for k in ['4010', '4020', '4030']:
+        m[k] = '4000'
+    for k in ['6310', '6320']:
+        m[k] = '6300'
+    for k in ['8110', '8120', '8130']:
+        m[k] = '8100'
+    for k in ['9101', '9102', '9103']:
+        m[k] = '9100'
+    for k in ['9201', '9202', '9203']:
+        m[k] = '9200'
+    for k in ['9311', '9312', '9313', '9314']:
+        m[k] = '9300'
+    return m
+
+
+_NEWSECT_MAP: Dict[str, str] = _build_newsect_map()
+
+
+def _newsect(code: str) -> str:
+    """Equivalent of PUT(code, $NEWSECT.) – returns '' when no match."""
+    return _NEWSECT_MAP.get(code.strip(), '')
+
+
+# ----------------------------------------------------------------------------
+# $VALIDSE. – valid sector code check
+# ----------------------------------------------------------------------------
+_VALIDSE_SET: frozenset = frozenset({
+    '1111', '1112', '1113', '1114', '1115', '1116', '1117', '1119',
+    '1120', '1130', '1140', '1150', '1200', '1300', '1400',
+    '2100', '2210', '2220', '2301', '2302', '2303', '2400', '2900',
+    '3110', '3111', '3112', '3113', '3114', '3115', '3120',
+    '3211', '3212', '3219', '3221', '3222', '3231', '3232',
+    '3241', '3242', '3250', '3271', '3272', '3273', '3280', '3290',
+    '3311', '3312', '3313', '3431', '3432', '3433', '3551', '3552',
+    '3611', '3619', '3710', '3720', '3721', '3731', '3732',
+    '3811', '3813', '3814', '3819', '3825',
+    '3832', '3833', '3834', '3835',
+    '3842', '3843', '3844', '3851', '3852', '3853',
+    '3861', '3862', '3863', '3864', '3865', '3866',
+    '3871', '3872', '3873', '3891', '3892', '3893', '3894',
+    '3911', '3919', '3952', '3953', '3955', '3956', '3957', '3960',
+    '4010', '4020', '4030',
+    '5001', '5002', '5003', '5004', '5005', '5006', '5008',
+    '5020', '5030', '5040', '5050', '5999',
+    '6110', '6120', '6130', '6310', '6320',
+    '7111', '7112', '7113', '7114', '7115', '7116', '7117',
+    '7121', '7122', '7123', '7124',
+    '7131', '7132', '7133', '7134',
+    '7191', '7192', '7193', '7199', '7210', '7220',
+    '8110', '8120', '8130',
+    '8310', '8320', '8321', '8331', '8332', '8333', '8340',
+    '8411', '8412', '8413', '8414', '8415', '8416', '8420',
+    '8910', '8911', '8912', '8913', '8914',
+    '8920', '8921', '8922', '8931', '8932', '8991', '8999',
+    '9101', '9102', '9103', '9201', '9202', '9203',
+    '9311', '9312', '9313', '9314',
+    '9410', '9420', '9430', '9431', '9432', '9433', '9434', '9435',
+    '9440', '9450', '9499', '9500', '9600', '9700', '9999',
+})
+
+
+def _validse(code: str) -> str:
+    """Equivalent of PUT(code, $VALIDSE.) – returns 'VALID' or 'INVALID'."""
+    return 'VALID' if code.strip() in _VALIDSE_SET else 'INVALID'
+
+
+# =============================================================================
 # STEP 1 – apply_newsect_validse
 #   Replicates the first two DATA ALM steps:
-#     1. Derive SECTA via PUT(SECTORCD, $NEWSECT.)
-#        and SECVALID via PUT(SECTORCD, $VALIDSE.)
+#     1. Derive SECTA  via PUT(SECTORCD, $NEWSECT.)
+#        and SECVALID  via PUT(SECTORCD, $VALIDSE.)
 #     2. Assign SECTCD = SECTA if SECTA is non-blank, else SECTORCD.
 #     3. For INVALID codes apply prefix-based fallback mapping.
 # =============================================================================
 
-# Prefix-based fallback rules applied when SECVALID = 'INVALID'
-# Each entry: (prefix_len, prefix_value, replacement_sectcd)
+# Prefix-based fallback rules applied when SECVALID = 'INVALID'.
+# Each entry: (prefix_len, prefix_value, replacement_sectcd).
 # Rules are evaluated in the order listed, matching the SAS IF sequence.
 _INVALID_FALLBACK: List[Tuple[int, str, str]] = [
     (1, '1',  '1400'),
@@ -93,21 +218,18 @@ def apply_newsect_validse(df: pl.DataFrame) -> pl.DataFrame:
     Expects column SECTORCD (str).
     Returns DataFrame with SECTCD column added/updated.
     """
-    # Derive SECTA and SECVALID via Python equivalents of SAS PUT formats
-    secta_list:   List[str] = []
+    secta_list:    List[str] = []
     secvalid_list: List[str] = []
-    sectcd_list:  List[str] = []
+    sectcd_list:   List[str] = []
 
-    sectorcd_col: List[str] = df["SECTORCD"].to_list()
-
-    for sectorcd in sectorcd_col:
-        raw = (sectorcd or "").strip()
-        secta   = format_newsect(raw)
-        secvalid = format_validse(raw)
+    for sectorcd in df["SECTORCD"].to_list():
+        raw      = (sectorcd or "").strip()
+        secta    = _newsect(raw)
+        secvalid = _validse(raw)
         secta_list.append(secta)
         secvalid_list.append(secvalid)
 
-        # SECTCD assignment: use SECTA if non-blank, else SECTORCD
+        # SECTCD = SECTA if non-blank, else original SECTORCD
         sectcd = secta if secta.strip() != "" else raw
 
         # Apply prefix-based fallback for INVALID codes
@@ -116,29 +238,26 @@ def apply_newsect_validse(df: pl.DataFrame) -> pl.DataFrame:
 
         sectcd_list.append(sectcd)
 
-    df = df.with_columns([
-        pl.Series("SECTA",   secta_list),
+    return df.with_columns([
+        pl.Series("SECTA",    secta_list),
         pl.Series("SECVALID", secvalid_list),
-        pl.Series("SECTCD",  sectcd_list),
+        pl.Series("SECTCD",   sectcd_list),
     ])
-    return df
 
 
 # =============================================================================
 # STEP 2 – expand_alm2
-#   Replicates DATA ALM2 – each SECTCD value emits one or more rows with
-#   different SECTORCD values representing the rollup hierarchy.
-#   The SAS logic uses OUTPUT to emit multiple rows; we replicate that here
-#   by collecting (SECTCD, SECTORCD) pairs for each input row, then
-#   concatenating back to the base DataFrame.
+#   Replicates DATA ALM2 SET ALM.
+#   Each SECTCD value can emit one or more rows (via SAS OUTPUT) where
+#   SECTORCD is replaced by a parent rollup value.
+#   Rows that produce no OUTPUT are absent from ALM2.
 # =============================================================================
 
 def _expand_row(sectcd: str) -> List[str]:
     """
-    Given a SECTCD value return the list of SECTORCD values that DATA ALM2
-        would OUTPUT for that code (in the same sequence as SAS).
-    Returns an empty list when SECTCD does not match any IF block (i.e. no
-        OUTPUT is produced for that row in ALM2).
+    Return the list of SECTORCD values that DATA ALM2 would OUTPUT for a
+    given SECTCD value, in the same sequence as the SAS program.
+    Returns an empty list when SECTCD matches no IF block.
     """
     outputs: List[str] = []
 
@@ -369,25 +488,23 @@ def _expand_row(sectcd: str) -> List[str]:
 def expand_alm2(df: pl.DataFrame) -> pl.DataFrame:
     """
     Replicate DATA ALM2 SET ALM.
-    For each row in df, produce zero-or-more expansion rows where SECTORCD
-    is replaced by the parent rollup value.  Rows that produce no OUTPUT in
-    the SAS step are dropped (they do not appear in ALM2).
+    For each row, produce zero-or-more expansion rows where SECTORCD is
+    replaced by the parent rollup value.
+    Rows that produce no OUTPUT in SAS are absent from the result.
     Returns the expanded DataFrame (equivalent to dataset ALM2).
     """
     rows: List[dict] = []
     base_cols = df.columns
-    records = df.to_dicts()
+    records   = df.to_dicts()
 
     for rec in records:
         sectcd = (rec.get("SECTCD") or "").strip()
-        expanded_sectorcd_values = _expand_row(sectcd)
-        for sectorcd_val in expanded_sectorcd_values:
+        for sectorcd_val in _expand_row(sectcd):
             new_rec = dict(rec)
             new_rec["SECTORCD"] = sectorcd_val
             rows.append(new_rec)
 
     if not rows:
-        # Return empty frame with same schema
         return df.clear()
 
     return pl.from_dicts(rows, schema={c: df[c].dtype for c in base_cols})
@@ -399,32 +516,28 @@ def expand_alm2(df: pl.DataFrame) -> pl.DataFrame:
 #     DATA ALM;
 #       SET ALM(IN=A) ALM2;
 #       IF A THEN SECTORCD = SECTCD;
-#   i.e. stack original ALM (with SECTORCD overridden to SECTCD) on top of
-#   ALM2 rows, producing the combined ALM dataset.
+#   Stack original ALM (SECTORCD overridden to SECTCD) on top of ALM2 rows.
 # =============================================================================
 
 def merge_alm_alm2(alm: pl.DataFrame, alm2: pl.DataFrame) -> pl.DataFrame:
     """
     Combine original ALM rows (SECTORCD := SECTCD) with ALM2 expansion rows.
     """
-    # For original ALM rows: SECTORCD = SECTCD  (IN=A flag behaviour)
     alm_updated = alm.with_columns(
         pl.col("SECTCD").alias("SECTORCD")
     )
-    combined = pl.concat([alm_updated, alm2], how="diagonal")
-    return combined
+    return pl.concat([alm_updated, alm2], how="diagonal")
 
 
 # =============================================================================
 # STEP 4 – expand_alma
-#   Replicates DATA ALMA SET ALM:
-#   Each SECTORCD value that belongs to one of the top-level groups emits a
-#   new row with SECTORCD replaced by the single-digit group code (1000–9000).
-#   Rows whose SECTORCD does not appear in any group are suppressed (no OUTPUT).
+#   Replicates DATA ALMA SET ALM.
+#   Each SECTORCD belonging to a top-level group emits one new row with
+#   SECTORCD replaced by the single-digit group code (1000–9000).
+#   Rows whose SECTORCD does not match any group are suppressed.
 # =============================================================================
 
-# Mapping: member SECTORCD -> top-level group code
-_ALMA_MAP: dict[str, str] = {}
+_ALMA_MAP: Dict[str, str] = {}
 _ALMA_GROUPS: List[Tuple[str, List[str]]] = [
     ('1000', ['1100', '1200', '1300', '1400']),
     ('2000', ['2100', '2200', '2300', '2400', '2900']),
@@ -447,7 +560,7 @@ for _group_code, _members in _ALMA_GROUPS:
 def expand_alma(df: pl.DataFrame) -> pl.DataFrame:
     """
     Replicate DATA ALMA SET ALM.
-    Emits one row per matching SECTORCD with the group-level SECTORCD value.
+    Emit one row per matching SECTORCD with the group-level SECTORCD value.
     Rows without a matching group are suppressed.
     """
     rows: List[dict] = []
@@ -511,7 +624,7 @@ def process_sectmap(alm_df: pl.DataFrame) -> pl.DataFrame:
         Final combined ALM + ALMA dataset with normalised and expanded
         SECTORCD hierarchy, matching the SAS SECTMAP output.
     """
-    # Step 1 – normalise SECTORCD → SECTCD using NEWSECT / VALIDSE formats
+    # Step 1 – normalise SECTORCD -> SECTCD using inlined $NEWSECT. / $VALIDSE.
     alm = apply_newsect_validse(alm_df)
 
     # Step 2 – produce ALM2 (hierarchy expansion rows)
