@@ -32,7 +32,7 @@ from datetime import date, datetime
 #   format_busind are available in PBBLNFMT and used for FORMAT statements that
 #   influence how CLASS variables are reported; they are applied via their
 #   respective format_* functions on demand in each section below.
-from PBBLNFMT_clau import (
+from PBBLNFMT import (
     format_apprlimt,    # FORMAT APPRLIM2 APPRLIMT.  (Sections 3, 5)
     format_loansize,    # FORMAT APPRLIM2 LOANSIZE.  (Section 5)
     format_riskcd,      # FORMAT RISKCD              (Sections 1–2)
