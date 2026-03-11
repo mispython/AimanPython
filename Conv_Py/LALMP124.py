@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program : LALMP124.py (converted from X_LALMP124)
+Program : LALMP124.py
 Purpose : Report on Domestic Assets and Liabilities - Part II
           Builds BNM.LALM&REPTMON&NOWK by aggregating loan data
           across multiple dimensions (NPL, customer, sector, collateral,
