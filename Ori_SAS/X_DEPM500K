@@ -1,0 +1,186 @@
+OPTIONS NODATE NONUMBER NOCENTER MISSING=0;                             00080000
+*;                                                                      00090000
+%INC PGM(PBBDPFMT,PBMISFMT);                                            00100000
+*;                                                                      00110000
+DATA REPTDATE;                                                          00120000
+    SET BNM.REPTDATE;                                                   00130000
+    CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));                    00140000
+    CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));                       00150000
+    CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));                        00160000
+RUN;                                                                    00170000
+                                                                        00180000
+LIBNAME MIS "SAP.PIBB.MIS.D&REPTYEAR" DISP=SHR;                         00181011
+*;                                                                      00190000
+TITLE1 'REPORT ID: DEPM500K';                                           00200002
+TITLE2 'PUBLIC ISLAMIC BANK BERHAD';                                    00210000
+                                                                        00220000
+%MACRO SAVING;                                                          00230000
+DATA _NULL_;                                                            00240000
+  CALL SYMPUT('SDMVNT', N);                                             00250000
+  SET MIS.SDMVNT&REPTMON NOBS=N;                                        00260000
+RUN;                                                                    00270000
+                                                                        00280000
+%IF &SDMVNT EQ 0 %THEN %DO;                                             00290000
+  TITLE3 'SAVING DEPOSITS MOVEMENT OF 500K AND ABOVE';                  00300000
+  TITLE4 'IN THE MONTH OF ' &REPTMON '/' &REPTYEAR;                     00310000
+  TITLE5;                                                               00320000
+    DATA _NULL_;                                                        00330000
+      FILE PRINT;                                                       00340000
+      PUT;PUT;                                                          00350000
+      PUT @5 '************************************************';        00360000
+      PUT @5 'NO CUSTOMER WITH MOVEMENT OF 500K      AND ABOVE';        00370000
+      PUT @5 "IN THE MONTH OF &REPTMON/&REPTYEAR";                      00380000
+      PUT @5 '************************************************';        00390000
+    RUN;                                                                00400000
+%END;                                                                   00410000
+%ELSE %DO;                                                              00420000
+PROC REPORT DATA=MIS.SDMVNT&REPTMON NOWD HEADLINE SPLIT='*';            00430000
+  COLUMN ACCTNO NAME OLDBAL NEWBAL CHANGE;                              00440000
+  DEFINE ACCTNO  / FORMAT=20.  'ACCOUNT NUMBER';                        00450000
+  DEFINE NAME    / FORMAT=$25. 'NAME OF CUSTOMER';                      00460000
+  DEFINE OLDBAL  / ANALYSIS SUM FORMAT=COMMA16.2                        00470000
+                               'LAST MONTH BALANCE';                    00480000
+  DEFINE NEWBAL  / ANALYSIS SUM FORMAT=COMMA16.2                        00490000
+                               'THIS MONTH BALANCE';                    00500000
+  DEFINE CHANGE  / COMPUTED FORMAT=14.1                                 00510000
+                   'INCREASE/*DECREASE*(RM MILLION)';                   00520000
+  COMPUTE CHANGE;                                                       00530000
+  CHANGE =(INT(ROUND(SUM(NEWBAL.SUM, (-1)*                              00540000
+           *OLDBAL.SUM),100000)/100000))/10;                            00550000
+  ENDCOMP;                                                              00560000
+  RBREAK AFTER / PAGE;                                                  00570000
+  TITLE3 'SAVING DEPOSITS MOVEMENT OF 500K AND ABOVE';                  00580001
+  TITLE4 'IN THE MONTH OF ' &REPTMON '/' &REPTYEAR;                     00590000
+  TITLE5;                                                               00600000
+RUN;                                                                    00610000
+%END;                                                                   00620000
+%MEND SAVING;                                                           00630000
+%SAVING;                                                                00640000
+*;                                                                      00650000
+%MACRO DEMDDEPT;                                                        00660000
+DATA CRMOVE ODMOVE;                                                     00670000
+  LENGTH BRCH $6.;                                                      00680000
+  SET MIS.DDMVNT&REPTMON;                                               00690000
+  BRCH=PUT(BRANCH, BRCHCD.);                                            00700000
+  IF OLDBAL < 0 AND NEWBAL >= 0 THEN DO;                                00710000
+     MOVEMENT = ROUND((0 + OLDBAL)*0.000001,.01);                       00720000
+     OUTPUT ODMOVE;                                                     00730000
+     MOVEMENT = ROUND((0 + NEWBAL)*0.000001,.01);                       00740000
+     IF NEWBAL > 0  THEN OUTPUT CRMOVE;                                 00750000
+   END;                                                                 00760000
+   ELSE                                                                 00770000
+   IF OLDBAL >= 0 AND NEWBAL < 0 THEN DO;                               00780000
+      MOVEMENT = ROUND((0 - OLDBAL)*0.000001,.01);                      00790000
+      IF OLDBAL > 0 THEN OUTPUT CRMOVE;                                 00800000
+      MOVEMENT = ROUND((0 - NEWBAL)*0.000001,.01);                      00810000
+      OUTPUT ODMOVE;                                                    00820000
+   END;                                                                 00830000
+   ELSE                                                                 00840000
+   IF (OLDBAL < 0 AND NEWBAL < 0) THEN DO;                              00850000
+      MOVEMENT = ROUND((OLDBAL-NEWBAL)*0.000001,.01);                   00860000
+      OUTPUT ODMOVE;                                                    00870000
+   END;                                                                 00880000
+   ELSE DO;                                                             00890000
+      MOVEMENT = ROUND((NEWBAL - OLDBAL)*0.000001,.01);                 00900000
+      OUTPUT CRMOVE;                                                    00910000
+     END;                                                               00920000
+RUN;                                                                    00930000
+PROC SORT DATA=CRMOVE; BY ACCTNO; RUN;                                  00930102
+*;                                                                      00930207
+DATA CISCADP(KEEP=ACCTNO CUSTNAME);                                     00930308
+   SET CISCADP.DEPOSIT;                                                 00930407
+   IF SECCUST = 901;                                                    00930507
+RUN;                                                                    00930607
+PROC SORT DATA=CISCADP; BY ACCTNO;RUN;                                  00930708
+*;                                                                      00930902
+DATA CRMOVE;                                                            00931002
+   MERGE CRMOVE(IN=A) CISCADP(IN=B); BY ACCTNO;                         00932008
+   IF A;                                                                00933002
+RUN;                                                                    00934002
+*;                                                                      00935002
+DATA BRHDATA;                                                           00936002
+  INFILE BRHFILE LRECL=80;                                              00937002
+  INPUT @2 BRANCH   3.                                                  00938002
+        @6 BRABBR  $3.;                                                 00939002
+RUN;                                                                    00939102
+PROC SORT DATA=BRHDATA; BY BRANCH; RUN;                                 00939202
+PROC SORT DATA=CRMOVE; BY BRANCH; RUN;                                  00939302
+*;                                                                      00939402
+DATA CRMOVE;                                                            00939502
+   MERGE CRMOVE(IN=A) BRHDATA(IN=B);                                    00939602
+   BY BRANCH;                                                           00939702
+   IF A;                                                                00939802
+RUN;                                                                    00939902
+                                                                        00940000
+DATA _NULL_;                                                            00950000
+  CALL SYMPUT('CRMOVE', N);                                             00960000
+  CALL SYMPUT('ODMOVE', M);                                             00970000
+  SET CRMOVE NOBS=N;                                                    00980000
+  SET ODMOVE NOBS=M;                                                    00990000
+RUN;                                                                    01000000
+                                                                        01010000
+TITLE3 'DEMAND DEPOSITS CREDIT MOVEMENT OF 500K AND ABOVE';             01020001
+TITLE4 'IN THEIR CURRENT ACCOUNTS';                                     01030000
+TITLE5 'IN THE MONTH OF ' &REPTMON '/' &REPTYEAR;                       01040000
+TITLE6;                                                                 01050000
+                                                                        01060000
+%IF &CRMOVE EQ 0 %THEN %DO;                                             01070000
+    DATA _NULL_;                                                        01080000
+      FILE PRINT;                                                       01090000
+      PUT;PUT;                                                          01100000
+      PUT @5 '********************************************************';01110000
+      PUT @5 'NO CUSTOMER WITH CREDIT MOVEMENT OF 500K      AND ABOVE'; 01120001
+      PUT @5 "IN THE MONTH OF &REPTMON/&REPTYEAR";                      01130000
+      PUT @5 '********************************************************';01140000
+    RUN;                                                                01150000
+%END;                                                                   01160000
+%ELSE %DO;                                                              01170000
+PROC REPORT DATA=CRMOVE NOWD HEADLINE SPLIT='*';                        01180000
+  COLUMN BRANCH BRCH ACCTNO CUSTNAME OLDBAL NEWBAL MOVEMENT;            01190006
+  DEFINE BRANCH   / DISPLAY FORMAT=6.   'BRANCH';                       01200006
+  DEFINE BRCH     / DISPLAY FORMAT=$6.  'BRABBR';                       01200106
+  DEFINE ACCTNO   / DISPLAY FORMAT=20.  'ACCOUNT NUMBER';               01210000
+  DEFINE CUSTNAME / DISPLAY FORMAT=$40. 'NAME OF CUSTOMER';             01220005
+  DEFINE OLDBAL   / ANALYSIS SUM FORMAT=COMMA16.2                       01230000
+                                        'LAST MONTH BALANCE';           01240000
+  DEFINE NEWBAL   / ANALYSIS SUM FORMAT=COMMA16.2                       01250000
+                                        'THIS MONTH BALANCE';           01260000
+  DEFINE MOVEMENT / ANALYSIS FORMAT=10.1                                01270000
+                            'INCREASE/*DECREASE*(RM MILLION)';          01280000
+  RBREAK AFTER / PAGE DUL OL SUMMARIZE;                                 01290000
+RUN;                                                                    01300000
+%END;                                                                   01310000
+                                                                        01320000
+TITLE3 'DEMAND DEPOSITS OD MOVEMENT OF 500K      AND ABOVE';            01330001
+TITLE4 'IN THEIR CURRENT ACCOUNTS';                                     01340000
+TITLE5 'IN THE MONTH OF ' &REPTMON '/' &REPTYEAR;                       01350000
+TITLE6;                                                                 01360000
+                                                                        01370000
+%IF &ODMOVE EQ 0 %THEN %DO;                                             01380000
+    DATA _NULL_;                                                        01390000
+      FILE PRINT;                                                       01400000
+      PUT;PUT;                                                          01410000
+      PUT @5 '***************************************************';     01420000
+      PUT @5 'NO CUSTOMER WITH OD MOVEMENT OF 500K      AND ABOVE';     01430001
+      PUT @5 "IN THE MONTH OF &REPTMON/&REPTYEAR";                      01440000
+      PUT @5 '***************************************************';     01450000
+    RUN;                                                                01460000
+%END;                                                                   01470000
+%ELSE %DO;                                                              01480000
+PROC REPORT DATA=ODMOVE NOWD HEADLINE SPLIT='*';                        01490000
+  COLUMN BRCH ACCTNO NAME OLDBAL NEWBAL MOVEMENT;                       01500000
+  DEFINE BRCH    / DISPLAY FORMAT=$6.  'BRANCH';                        01510000
+  DEFINE ACCTNO  / DISPLAY FORMAT=20.  'ACCOUNT NUMBER';                01520000
+  DEFINE NAME    / DISPLAY FORMAT=$25. 'NAME OF CUSTOMER';              01530000
+  DEFINE OLDBAL  / ANALYSIS SUM FORMAT=COMMA16.2                        01540000
+                            'LAST MONTH BALANCE';                       01550000
+  DEFINE NEWBAL  / ANALYSIS SUM FORMAT=COMMA16.2                        01560000
+                            'THIS MONTH BALANCE';                       01570000
+  DEFINE MOVEMENT / ANALYSIS FORMAT=10.1                                01580000
+                    'INCREASE/*DECREASE*(RM MILLION)';                  01590000
+  RBREAK AFTER / PAGE DUL OL SUMMARIZE;                                 01600000
+RUN;                                                                    01610000
+%END;                                                                   01620000
+*;                                                                      01630000
+%MEND DEMDDEPT;                                                         01640000
+%DEMDDEPT;                                                              01650000
