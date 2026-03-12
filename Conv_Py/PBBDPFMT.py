@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Program : PBBDPFMT
-Function: product mapping and format definitions for banking deposit products
-            and customer codes used across multiple SAS programs.
+Program : PBBDPFMT.py
+Function: Product mapping and format definitions for banking deposit products
+          and customer codes used across multiple SAS programs.
 
 Amendment history:
 - 11/05/04 RHA-A497 : Add product 182 (STAFF AL-WADIAH CA), 166 (CASH LINE FACILITY)
@@ -13,662 +13,2908 @@ Amendment history:
                       FDORGMT (Fixed Deposit Original Term in Months)
 
 IMPORTANT: Any amendments to product mappings affect the formats listed above.
+
+SMR Amendment History (from original SAS):
+- SMR 2006-411  MAA3 15-05-06 MERGER 212->165, 229->151
+- SMR 2006-866  MAA3 15-07-06 MERGER 223->024
+- SMR 2006-1145 NPH  08-09-06 MERGE BRANCH 246 -> 146
+- SMR 2010-3206 AAB  10-01-11 MERGE BRANCH 200 -> 122
+- SMR 2006-1296 TGX  16-10-06 UNIT TRUST FD(368-372)
+- SMR 2007-0989 RHA  27-07-07 NEW BRANCH (BBT -268)
+- SMR 2007-1535 RHA  24-12-07 NEW BRANCH (MKA -269)
+- SMR 2008-0820 MAA3 1-08-08  NEW BRANCH (BPI -270)
+- SMR 2009-0679 HHH   9-07-09 NEW BRANCH (LHA -273)
+- SMR 2009-0785 HHH  21-08-09 NEW BRANCH (JPI -278)
+- SMR 2010-1070 NRA  15-04-10 NEW BRANCH (PTJ -279)
+- SMR 2010-1462 AAB  12-08-10 NEW BRANCH (KDA -280)
+- SMR 2010-2450 AAB  07-01-11 NEW BRANCH (PLT -281)
+- SMR 2010-3952 AAB  11-02-11 NEW BRANCH (PSE -283)
+- SMR 2010-4187 AAB  14-03-11 NEW BRANCH (PTT -282)
+- SMR 2012-2172 AAB  18-09-12 NEW BRANCH (BSP -284)
+- SMR 2012-2172 CWK  05-10-12 NEW BRANCH (BMC -285)
+- SMR 2012-2172 CWK  09-11-12 NEW BRANCH (BMC -286)
+- SMR 2011-1889 SKP  21-10-11 NEW FCY PRODUCT 440-444
+- SMR 2011-3893 SKP           WOF PRODUCT 32,33
+- SMR 2012-1088 CWK           OD  PRODUCT 133,134
+- SMR 2012-3575 SKP           NEW RMFD PRODUCT 300,INTPLAN 399
+- SMR 2013-34   JKA  15-02-13 NEW BRANCH (SUA-287)
+- SMR 2013-1407 JKA  16-07-13 NEW BRANCH (SPT-288)
+- SMR 2013-1408 NFJ  29-08-13 NEW BRANCH (TEE-289)
+- SMR 2013-502  MFM  13-03-13 NEW OD PRODUCT 184
+- SMR 2013-2100 SKP           NEW BRANCH (IPJ-702)
+- SMR 2014-83   RST  22-01-14 NEW INTEREST PLAN 747, 748
+- SMR 2014-85   NFJ  29-01-14 REMOVE INTEREST PLAN 640-659
+- SMR 2014-40   NFJ  07-02-14 NEW BRANCH (TDY-290)
+- SMR 2014-367  RST  25-02-14 NEW INTEREST PLAN 749, 750
+- SMR 2014-1932 SKP           NEW INTEREST PLAN 778,779
+- SMR 2014-1973 SKP           NEW INTEREST PLAN 862,863
+- SMR 2014-2223 TBC  18-09-14 NEW INTEREST PLAN 860,861
+- SMR 2014-2587 NFJ  28-10-14 NEW INT PLAN 854,855,858,859
+- SMR 2015-1588 TBC  10-06-15 NEW INT PLAN 850,851,852,853
+- SMR 2015-1190 TBC  23-05-15 NEW OD PRODUCT 185,186
+- SMR 2015-1842 HHH  06-07-15 NEW INT PLAN 891,892,893,894
+- SMR 2015-2841 NNR  21-10-15 NEW INT PLAN 333,334,335,336
+- SMR 2015-2679 TBC  28-10-15 NEW OD PRODUCT 72 413
+- SMR 2015-2790 LAC  19-11-15 NEW INT PLAN 895,896,897,898
+- SMR 2016-579  TBC  12-05-16 NEW OD PRODUCT 73
+- SMR 2016-1134 TBC  01-08-16 NEW SA PRODUCT 210
+- SMR 2016-2765 IFA  15-08-16 NEW SA PRODUCT 218
+- SMR 2016-2771 CWK  15-08-16 NEW CA PRODUCT 92
+- SMR 2016-2905 NFJ  09-08-16 UPD INTPLAN 778,779,862,863,895,337,338,339
+- SMR 2016-4627 TBC  14-12-16 RM CA 20 AND FCYCA 420:431
+- SMR 2016-4623              RM CA 21 AND FCYCA 450:454
+- SMR 2016-3894 TBC  09-11-16 PB UNION PAY PRODUCT 216
+- SMR 2017-65   CWK  23-01-17 NEW CA PRODUCT 77,78
+- SMR 2016-1621 MFM  21-02-17 NEW CA PRODUCT 40
+- SMR 2017-2496 TBC  20-06-17 EXCLUDE PRODUCT 482
+- SMR 2017-2401 TBC  22-06-17 FD & TDI 985,986,987,988
+- SMR 2017-2150 TBC  22-06-17 STEPUP FD/FD-I 968:984
+- SMR 2017-4237 SAM  07-11-17 FD RUSH FD/FD-I 900,901,902,993
+- SMR 2017-1646/1645 IFA 22-11-17 NEW BRANCH 292,291
+- SMR 2018-0138 SAM  19-01-18 NEW CA PRODUCT 42,43
+- SMR 2018-0254 SAM  25-01-18 PLUS FD 895,337,904,905,994,995,996,997
+                               & TDI   338,339,599,659,229,230,231,232
+- SMR 2018-2875 TBC  24-07-18 UPDATE INTPLAN 438
+- SMR 2018-3988 TBC  27-09-18 INTPLAN 379,380,381,382
+- SMR 2018-40   TBC  07-11-18 FCYCA 432:434
+- SMR 2018-3434 IFA  14-12-18 NEW BRANCH (BJL -296)
+- SMR 2019-1150 TBC  21-03-19 INTPLAN 447,540,541,559,568
+- SMR 2019-1148 TBC  22-03-19 INTPLAN 475,481,542,543,555 & 557
+- SMR 2019-0098 IFA  22-07-19 CST(187) MERGE WITH MIRI(050)
+- SMR 2019-3347 IFA  03-09-19 INT PLAN 575 PB RCB CAMPAIGN
+- SMR 2019-3358 skp  26-09-19 INT PLAN 575 PB RCB CAMPAIGN
+- SMR 2017-4296 IFA  23-11-17 ISLAMIC NEW CA PRODUCT 45
+- SMR 2020-2060 IFA  23-06-20 INT PLAN 575 RCB CENTRE
 """
 
 from typing import Dict, List, Optional, Set, Tuple
-from enum import Enum
 
 
 # ============================================================================
-# PRODUCT LISTS AND SETS
+# MACRO VARIABLE EQUIVALENTS
 # ============================================================================
 
-class ProductLists:
-    """Container for product groupings used across deposit products."""
+# ACE PRODUCTS CODES
+ACE: Set[int] = {40, 42, 43, 150, 151, 152, 181}
 
-    # ACE (Account & Card Enhancement) Products
-    ACE_PRODUCTS: Set[int] = {40, 42, 43, 150, 151, 152, 181}
+# FCY (Foreign Currency) products - EIBWFCWH
+FCY: Set[int] = {350, 351, 352, 353, 354, 355, 356, 357, 358, 360, 361, 362}
 
-    # FCY (Foreign Currency) Facility Products
-    FCY_PRODUCTS: Set[int] = {350, 351, 352, 353, 354, 355, 356, 357, 358, 360, 361, 362}
+# Current Account Product Codes (CURX)
+CURX: Set[int] = {
+    3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+    20, 21, 22, 23, 24, 25, 26, 27, 35, 36, 37, 38, 39, 40, 41, 42, 43,
+    45, 46, 47, 48, 49, 50, 51, 55, 56, 57, 58, 60, 61, 62, 63, 64,
+    65, 66, 67, 68, 69, 70, 71, 73, 74, 75, 76, 77, 78, 81, 82, 83, 84, 85,
+    86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 100, 101, 102, 106, 108,
+    109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123,
+    124, 125, 131, 132, 133, 134, 135, 137, 138, 150, 151, 152, 153, 154, 155,
+    156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170,
+    174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188,
+    189, 190, 191, 192, 193, 194, 195, 196, 197, 198,
+}
 
-    # Current Account Product Codes (CURX)
-    CURX_PRODUCTS: Set[int] = {
-        # Standard accounts
-        3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-        20, 21, 22, 23, 24, 25, 26, 27, 35, 36, 37, 38, 39, 40, 41, 42, 43,
-        45, 46, 47, 48, 49, 50, 51, 55, 56, 57, 58, 60, 61, 62, 63, 64,
-        65, 66, 67, 68, 69, 70, 71, 73, 74, 75, 76, 77, 78, 81, 82, 83, 84, 85,
-        86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 100, 101, 102, 106, 108,
-        109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123,
-        124, 125, 131, 132, 133, 134, 135, 137, 138, 150, 151, 152, 153, 154, 155,
-        156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170,
-        174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188,
-        189, 190, 191, 192, 193, 194, 195, 196, 197, 198
-    }
+# Aliases matching the existing converted file's class-based names
+ACE_PRODUCTS: Set[int] = ACE
+FCY_PRODUCTS: Set[int] = FCY
+CURX_PRODUCTS: Set[int] = CURX
 
 
 # ============================================================================
-# FORMAT: SADENOM - Savings Account Denomination (Islamic or Domestic)
+# FORMAT: SADENOM — Savings Account Denomination (Islamic or Domestic)
 # ============================================================================
 
-class SADenomFormat:
-    """Savings Account Denomination Format.
+_SADENOM_ISLAMIC: Set[int] = {204, 207, 214, 215, 218, 220, 221, 222, 223}
+
+
+def sadenom_format(product_code: Optional[int]) -> str:
+    """
+    Apply SADENOM format to product code.
     Maps savings product codes to Islamic (I) or Domestic (D) classification.
-    """
-
-    ISLAMIC_PRODUCTS: Set[int] = {204, 207, 214, 215, 218, 220, 221, 222, 223}
-
-    @staticmethod
-    def format(product_code: Optional[int]) -> str:
-        """
-        Apply SADENOM format to product code.
-
-        Args:
-            product_code: Product code to format
-
-        Returns:
-            'I' for Islamic products, 'D' for Domestic, empty string if None
-        """
-        if product_code is None:
-            return ''
-
-        return 'I' if product_code in SADenomFormat.ISLAMIC_PRODUCTS else 'D'
-
-
-# ============================================================================
-# FORMAT: SAPROD - Savings Account Product Code
-# ============================================================================
-
-class SAProductFormat:
-    """Savings Account Product Format.
-    Maps product codes to BNM account codes for General Ledger reporting.
-    """
-
-    MAPPINGS: Dict[int, str] = {
-        100: 'N',  # GIRO
-        126: 'N',  # PFB REMITTANCES BC NORM
-        127: 'N',  # PFB - SHARE PUBLIC
-        128: 'N',  # PFB - BC - SHARE BUMI
-        129: 'N',  # PFB - DD
-        140: 'N',  # SI-CLEARING ACCOUNT-PFB
-        141: 'N',  # ATM-PISA CLEARING ACCT-PFB
-        142: 'N',  # ATM-LOAN CLEARING ACCT-PFB
-        200: '42120',  # NORMAL SAVINGS
-        201: '42120',  # STAFF SAVINGS
-        202: '42120',  # YOUNG ACHIEVER ACCOUNT
-        203: '42120',  # 50 PLUS SAVINGS
-        204: '42320',  # ISLAMIC BANKING AL-WADIAH
-        205: '42120',  # BASIC SAVING A/C
-        206: '42120',  # BASIC 55 SAVING A/C
-        207: '42120',  # AL WADIAH SAVINGS
-        208: '42120',  # PB BRIGHT STAR
-        210: '42120',  # PB MYSALARY
-        211: 'N',  # ATM-FD CLRG.
-        212: '42120',  # WISE
-        213: '42120',  # PB SAVELINK
-        214: '42320',  # MUDHARABAH SAVINGS
-        215: '42320',  # ALWADIAH SAVINGS (STAFF)
-        216: '42120',  # PB UNIONPAY SAVINGS
-        218: '42120',  # PB MYSALARY SAVINGS ACCOUNT-I
-        220: '42120',  # (CM) SAVINGS ACC-I
-        221: '42120',  # (CM) BASIC SA-I
-        222: '42120',  # (CM) PB MYSALARY SA-I
-        223: '42120',  # (CM) FORU2SAVE SA-I
-        227: '42120',  # MONEYPLUS SA (STAFF)
-        228: '42120',  # MONEYPLUS SA
-        297: 'N',  # UMA1
-        298: 'N',  # UMA3
-        480: 'N',  # PB GOLD INVESTMENT
-        481: 'N',  # PB GOLD INVESTMENT -STAFF
-        482: 'N',  # CORP GOLD INVESTMENT ACCOUNT
-        483: 'N',  # EGOLD INVESTMENT ACCOUNT (NON-STAFF)
-        484: 'N',  # EGOLD INVESTMENT ACCOUNT (STAFF)
-    }
-
-    @staticmethod
-    def format(product_code: Optional[int]) -> str:
-        """
-        Apply SAPROD format to product code.
-
-        Args:
-            product_code: Product code to format
-
-        Returns:
-            BNM account code or default '42120' for savings
-        """
-        if product_code is None:
-            return '42120'
-
-        return SAProductFormat.MAPPINGS.get(product_code, '42120')
-
-
-# ============================================================================
-# FORMAT: FDDENOM - Fixed Deposit Denomination (Islamic or Domestic)
-# ============================================================================
-
-class FDDenomFormat:
-    """Fixed Deposit Denomination Format.
-    Maps FD product codes to Islamic (I) or Domestic (D) classification.
-    """
-
-    ISLAMIC_RANGES: List[Tuple[int, int]] = [
-        (229, 232), (272, 283), (334, 336), (338, 339), (340, 359),
-        (379, 382), (386, 394), (453, 459), (461, 469), (542, 544),
-        (580, 593), (595, 599), (603, 607), (609, 611), (620, 627),
-        (640, 659), (660, 719), (726, 731), (736, 740), (780, 839),
-        (851, 853), (856, 863), (893, 894), (896, 897), (902, 903),
-        (914, 940), (941, 967), (987, 988), (991, 993)
-    ]
-
-    ISLAMIC_SINGLES: Set[int] = {
-        422, 424, 426, 428, 475, 481, 487, 489, 491, 493, 495, 497, 499, 555, 557, 575, 777
-    }
-
-    @staticmethod
-    def _is_in_range(code: int, ranges: List[Tuple[int, int]]) -> bool:
-        """Check if code falls within any range."""
-        return any(start <= code <= end for start, end in ranges)
-
-    @staticmethod
-    def format(product_code: Optional[int]) -> str:
-        """
-        Apply FDDENOM format to product code.
-
-        Args:
-            product_code: Product code to format
-
-        Returns:
-            'I' for Islamic products, 'D' for Domestic, empty string if None
-        """
-        if product_code is None:
-            return ''
-
-        is_islamic = (
-                FDDenomFormat._is_in_range(product_code, FDDenomFormat.ISLAMIC_RANGES) or
-                product_code in FDDenomFormat.ISLAMIC_SINGLES
-        )
-
-        return 'I' if is_islamic else 'D'
-
-
-# ============================================================================
-# FORMAT: FDPROD - Fixed Deposit Product Code
-# ============================================================================
-
-class FDProductFormat:
-    """Fixed Deposit Product Format.
-    Maps FD product codes to BNM account codes for General Ledger reporting.
-    Comprehensive mapping with over 500 product codes.
-    """
-
-    MAPPINGS: Dict[int, str] = {
-        229: '42133', 230: '42133', 231: '42133', 232: '42133',
-        233: '42130', 234: '42130', 235: '42130', 236: '42130',
-        237: '42130', 238: '42130', 239: '42130', 240: '42130',
-        241: '42130', 242: '42130', 243: '42130', 244: '42130',
-        245: '42130', 246: '42130', 247: '42130', 248: '42130',
-        249: '42130', 250: '42130', 251: '42130', 252: '42130',
-        253: '42130', 254: '42130', 255: '42130', 256: '42130',
-        257: '42130', 258: '42130', 259: '42130',
-        260: '42130', 261: '42130', 262: '42130', 263: '42130',
-        264: '42130', 265: '42130', 266: '42130', 267: '42130',
-        268: '42130', 269: '42130', 270: '42130', 271: '42130',
-        272: '42133', 273: '42133', 274: '42133', 275: '42133',
-        276: '42133', 277: '42133', 278: '42133', 279: '42133',
-        280: '42133', 281: '42133', 282: '42133', 283: '42133',
-        284: '42130', 285: '42130', 286: '42130', 287: '42130',
-        288: '42130', 289: '42130', 290: '42130', 291: '42130',
-        292: '42130', 293: '42130', 294: '42130', 295: '42130',
-        300: '42130', 301: '42130', 302: '42130', 303: '42130',
-        304: '42130', 305: '42130', 306: '42130', 307: '42130',
-        308: '42130', 309: '42130', 310: '42130', 311: '42130',
-        312: '42130', 313: '42130', 314: '42130', 315: '42130',
-        316: '42130', 317: '42130', 318: '42130', 319: '42130',
-        320: '42130', 321: '42130', 322: '42130', 323: '42130',
-        324: '42130', 325: '42130', 326: '42130', 327: '42130',
-        328: '42130', 329: '42130', 330: '42130', 331: '42130',
-        332: '42130', 333: '42130',
-        334: '42133', 335: '42133', 336: '42133',
-        337: '42130', 338: '42133', 339: '42133',
-        340: '42132', 341: '42132', 342: '49999', 343: '42132',
-        344: '42132', 345: '49999', 346: '42132', 347: '42132',
-        348: '49999', 349: '42132', 350: '42132', 351: '42132',
-        352: '42132', 353: '42132', 354: '42132', 355: '42132',
-        356: '42132', 357: '42132', 358: '42132', 359: '42132',
-        360: '42130', 361: '42130', 362: '42130', 363: '42130',
-        364: '42130', 365: '42130', 366: '42130',
-        368: '42130', 369: '42130', 370: '42130', 371: '42130',
-        372: '42130', 373: '42130', 374: '42130', 375: '42130',
-        376: '42130', 377: '42130', 378: '42130',
-        379: '42133', 380: '42133', 381: '42133', 382: '42133',
-        383: '42130', 384: '42130', 385: '42130',
-        386: '42133', 387: '42133', 388: '42133', 389: '42133',
-        390: '42133', 391: '42133', 392: '42133', 393: '42133',
-        394: '42133',
-        395: '42130', 396: '42130', 397: '42130', 398: '42130',
-        399: '42130',
-        400: '42130', 401: '42130', 402: '42130', 403: '42130',
-        404: '42130', 405: '42130', 406: '42130', 407: '42130',
-        408: '42130', 409: '42130', 410: '42130', 411: '42130',
-        412: '42130', 413: '42130', 414: '42130', 415: '42130',
-        416: '42130', 417: '42130', 418: '42130', 419: '42130',
-        420: '42130', 421: '42630', 422: '42133', 423: '42630',
-        424: '42133', 425: '42630', 426: '42133', 427: '42630',
-        428: '42133', 429: '42630', 430: '42630', 431: '42630',
-        432: '42630', 433: '42630', 434: '42630', 435: '42630',
-        436: '42630', 437: '42630', 438: '42130', 439: '42630',
-        440: '42630', 441: '42630', 442: '42630', 443: '42630',
-        444: '42630', 445: '42130', 446: '42630', 447: '42130',
-        448: '42130', 449: '42130', 450: '42130', 451: '42130',
-        452: '42130',
-        453: '42132', 454: '42132', 455: '42132', 456: '42132',
-        457: '42132', 458: '42132', 459: '42132',
-        460: '42130',
-        461: '42132', 462: '42132', 463: '42132', 464: '42132',
-        465: '42132', 466: '42132', 467: '42132', 468: '42132',
-        469: '42132',
-        470: '42630', 471: '42630', 472: '42630', 473: '42630',
-        474: '42630', 475: '42133', 476: '42630', 477: '42630',
-        478: '42630', 479: '42630', 480: '42630', 481: '42133',
-        482: '42630', 483: '42630', 484: '42630', 485: '42630',
-        486: '42630', 487: '42133', 488: '42630', 489: '42133',
-        490: '42630', 491: '42133', 492: '42630', 493: '42133',
-        494: '42630', 495: '42133', 496: '42630', 497: '42133',
-        498: '42630', 499: '42133',
-        500: '42130', 501: '42130', 502: '42130', 503: '42130',
-        504: '42130', 505: '42130', 506: '42130', 507: '42130',
-        508: '42130', 509: '42130', 510: '42130', 511: '42130',
-        512: '42130', 513: '42130', 514: '42130', 515: '42130',
-        516: '42130', 517: '42130', 518: '42130', 519: '42130',
-        520: '42130', 521: '42130', 522: '42130', 523: '42130',
-        524: '42130', 525: '42130', 526: '42130', 527: '42130',
-        528: '42130', 529: '42130', 530: '42130', 531: '42130',
-        532: '42130', 533: '42130', 534: '42130', 535: '42130',
-        536: '42130', 537: '42130', 538: '42130', 539: '42130',
-        540: '42130', 541: '42130',
-        542: '42133', 543: '42133', 544: '42133',
-        545: '42130', 546: '42130', 547: '42130',
-        548: '42630', 550: '42630', 551: '42130', 552: '42630',
-        553: '42130', 554: '42630', 555: '42133', 556: '42630',
-        557: '42133', 558: '42630', 559: '42130', 560: '42630',
-        561: '42630', 562: '42630', 563: '42630', 564: '42630',
-        565: '42630', 566: '42630', 567: '42630', 568: '42130',
-        569: '42630', 570: '42130', 571: '42630', 572: '42130',
-        573: '42630', 574: '42630', 575: '42133', 576: '42630',
-        577: '42130', 578: '42630', 579: '42630',
-        580: '42132', 581: '42132', 582: '42132', 583: '42132',
-        584: '42132', 585: '42132', 586: '42132', 587: '42132',
-        588: '42132', 589: '42132', 590: '42132', 591: '42132',
-        592: '42132', 593: '42132',
-        594: '42130', 595: '42132', 596: '42132', 597: '42133',
-        598: '42133', 599: '42133',
-        600: '42130', 601: '42130', 602: '42130',
-        603: '42133', 604: '42133', 605: '42133', 606: '42133',
-        607: '42133', 608: '42130', 609: '42133', 610: '42133',
-        611: '42133',
-        612: '42130', 613: '42130', 614: '42130', 615: '42130',
-        616: '42130', 617: '42130', 618: '42130', 619: '42130',
-        620: '42133', 621: '42133', 622: '42133', 623: '42133',
-        624: '42133', 625: '42133', 626: '42133', 627: '42133',
-        628: '42130', 629: '42130', 630: '42130', 631: '42130',
-        632: '42130', 633: '42130', 634: '42130', 635: '42130',
-        636: '42130', 637: '42130', 638: '42130', 639: '42130',
-        640: '42133', 641: '42133', 642: '42133', 643: '42133',
-        644: '42133', 645: '42133', 646: '42133', 647: '42133',
-        648: '42133', 649: '42133', 650: '42133', 651: '42133',
-        652: '42133', 653: '42133', 654: '42133', 655: '42133',
-        656: '42133', 657: '42133', 658: '42133', 659: '42133',
-        660: '42132', 661: '42132', 662: '42132', 663: '42132',
-        664: '42132', 665: '42132', 666: '42132', 667: '42132',
-        668: '42132', 669: '42132', 670: '42132', 671: '42132',
-        672: '42132', 673: '42132', 674: '42132', 675: '42132',
-        676: '42132', 677: '42132', 678: '42132', 679: '42132',
-        680: '42132', 681: '42132', 682: '42132', 683: '42132',
-        684: '42132', 685: '42132', 686: '42132', 687: '42132',
-        688: '42132', 689: '42132', 690: '42132', 691: '42132',
-        692: '42132', 693: '42132', 694: '42132', 695: '42132',
-        696: '42132', 697: '42132', 698: '42132', 699: '42132',
-        700: '42132', 701: '42132', 702: '42132', 703: '42132',
-        704: '42132', 705: '42132', 706: '42132', 707: '42132',
-        708: '42132', 709: '42132', 710: '42132', 711: '42132',
-        712: '42132', 713: '42132', 714: '42132', 715: '42132',
-        716: '42132', 717: '42132', 718: '42132', 719: '42132',
-        720: '42130', 721: '42130', 722: '42130', 723: '42130',
-        724: '42130', 725: '42130',
-        726: '42133', 727: '42133', 728: '42133', 729: '42133',
-        730: '42133', 731: '42133',
-        732: '42130', 733: '42130', 734: '42130', 735: '42130',
-        736: '42133', 737: '42133', 738: '42133', 739: '42133',
-        740: '42133', 741: '42130', 742: '42130', 743: '42130',
-        744: '42130', 745: '42130', 746: '42130', 747: '42130',
-        748: '42130', 749: '42130', 750: '42130',
-        751: '42630', 752: '42630', 753: '42630', 754: '42630',
-        755: '42630', 756: '42630', 757: '42630', 758: '42630',
-        759: '42630', 760: '42630', 761: '42630', 762: '42630',
-        763: '42630', 764: '42630', 765: '42630', 766: '42630',
-        767: '42630', 768: '42630', 769: '42630', 770: '42630',
-        771: '42630', 772: '42630', 773: '42630', 774: '42630',
-        775: '42130', 776: '42130', 777: '42133', 778: '42130',
-        779: '42130', 780: '42133', 781: '42133', 782: '42133',
-        783: '42133', 784: '42133', 785: '42133', 786: '42133',
-        787: '42133', 788: '42133', 789: '42133', 790: '42133',
-        791: '42133', 792: '42133', 793: '42133', 794: '42133',
-        795: '42133', 796: '42133', 797: '42133', 798: '42133',
-        799: '42133', 800: '42133', 801: '42133', 802: '42133',
-        803: '42133', 804: '42133', 805: '42133', 806: '42133',
-        807: '42133', 808: '42133', 809: '42133', 810: '42133',
-        811: '42133', 812: '42133', 813: '42133', 814: '42133',
-        815: '42133', 816: '42133', 817: '42133', 818: '42133',
-        819: '42133', 820: '42133', 821: '42133', 822: '42133',
-        823: '42133', 824: '42133', 825: '42133', 826: '42133',
-        827: '42133', 828: '42133', 829: '42133', 830: '42133',
-        831: '42133', 832: '42133', 833: '42133', 834: '42133',
-        835: '42133', 836: '42133', 837: '42133', 838: '42133',
-        839: '42133',
-        850: '42130', 851: '49999', 852: '49999', 853: '49999',
-        854: '42130', 855: '42130', 856: '42133', 857: '42133',
-        858: '42133', 859: '42133', 860: '42133', 861: '42133',
-        862: '42133', 863: '42133',
-        864: '42130', 865: '42130', 866: '42130', 867: '42130',
-        868: '42130', 869: '42130', 870: '42130', 871: '42130',
-        872: '42130', 873: '42130', 874: '42130', 875: '42130',
-        876: '42130', 877: '42130', 878: '42130', 879: '42130',
-        880: '42130', 881: '42130', 882: '42130', 883: '42130',
-        884: '42130', 885: '42130', 886: '42130', 887: '42130',
-        888: '42130', 889: '42130', 890: '42130',
-        891: '42130', 892: '42130', 893: '42133', 894: '42133',
-        895: '42130', 896: '42133', 897: '42133', 898: '42130',
-        899: '42130', 900: '42130', 901: '42130', 902: '42133',
-        903: '42133', 904: '42130', 905: '42130',
-        914: '42133', 915: '42133', 916: '42133', 917: '42133',
-        918: '42133', 919: '42133', 920: '42133', 921: '42133',
-        922: '42133', 923: '42133', 924: '42133', 925: '42133',
-        926: '42133', 927: '42133', 928: '42133', 929: '42133',
-        930: '42133', 931: '42133', 932: '42133', 933: '42133',
-        934: '42133', 935: '42133', 936: '42133', 937: '42133',
-        938: '42133', 939: '42133', 940: '42133',
-        941: '42133', 942: '42133', 943: '42133', 944: '42133',
-        945: '42133', 946: '42133', 947: '42133', 948: '42133',
-        949: '42133', 950: '42133', 951: '42133', 952: '42133',
-        953: '42133', 954: '42133', 955: '42133', 956: '42133',
-        957: '42133', 958: '42133', 959: '42133', 960: '42133',
-        961: '42133', 962: '42133', 963: '42133', 964: '42133',
-        965: '42133', 966: '42133', 967: '42133',
-        968: '42130', 969: '42130', 970: '42130', 971: '42130',
-        972: '42130', 973: '42130', 974: '42130', 975: '42130',
-        976: '42130', 977: '42130', 978: '42130', 979: '42130',
-        980: '42130', 981: '42130', 982: '42130', 983: '42130',
-        984: '42130', 985: '42130', 986: '42130', 987: '42133',
-        988: '42133', 989: '42130', 990: '42130', 991: '42133',
-        992: '42133', 993: '42133', 994: '42130', 995: '42130',
-        996: '42130', 997: '42130',
-    }
-
-    @staticmethod
-    def format(product_code: Optional[int]) -> str:
-        """
-        Apply FDPROD format to product code.
-
-        Args:
-            product_code: Product code to format
-
-        Returns:
-            BNM account code or default '42130' for FDs
-        """
-        if product_code is None:
-            return '42130'
-
-        return FDProductFormat.MAPPINGS.get(product_code, '42130')
-
-
-# ============================================================================
-# FORMAT: CADENOM - Current Account Denomination (Islamic or Domestic)
-# ============================================================================
-
-class CADenomFormat:
-    """Current Account Denomination Format.
-    Maps current account product codes to Islamic (I) or Domestic (D) classification.
-    """
-
-    ISLAMIC_PRODUCTS: Set[int] = {
-        7, 8, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 32, 33,
-        45, 46, 47, 48, 49, 60, 61, 62, 63, 64, 66, 67, 70, 71, 73, 74,
-        75, 76, 80, 81, 92, 93, 96, 97, 160, 161, 162, 163, 164, 165, 166,
-        167, 168, 169, 182, 183, 184, 185, 186, 187, 188, 321
-    }
-
-    @staticmethod
-    def format(product_code: Optional[int]) -> str:
-        """
-        Apply CADENOM format to product code.
-
-        Args:
-            product_code: Product code to format
-
-        Returns:
-            'I' for Islamic products, 'D' for Domestic, empty string if None
-        """
-        if product_code is None:
-            return ''
-
-        return 'I' if product_code in CADenomFormat.ISLAMIC_PRODUCTS else 'D'
-
-
-# ============================================================================
-# FORMAT: CAPROD - Current Account Product Code
-# ============================================================================
-
-class CAProductFormat:
-    """Current Account Product Format.
-    Maps current account product codes to BNM account codes.
-    This is a simplified mapping; see full SAS code for complete list.
-    """
-
-    MAPPINGS: Dict[int, str] = {
-        3: '42110', 4: '42110', 5: '42110', 6: '42110',
-        7: '42110', 8: '42110', 9: '42110', 10: '42110',
-        11: '42110', 12: '42110', 13: '42110', 14: '42110',
-        15: '42110', 16: '42110', 17: '42110', 18: '42110',
-        19: '42110', 20: '42110', 21: '42110', 23: '42110',
-        24: '42110', 25: '42110', 26: '42110', 27: '42110',
-        32: '42110', 33: '42110', 35: '42110', 36: '42110',
-        37: '42110', 38: '42110', 39: '42110', 40: '42110',
-        41: '42110', 42: '42110', 43: '42110', 45: '42110',
-        46: '42110', 47: '42110', 48: '42110', 49: '42110',
-        50: '42110', 51: '42110', 55: '42110', 56: '42110',
-        57: '42110', 58: '42110', 60: '42110', 61: '42110',
-        62: '42110', 63: '42110', 64: '42110', 65: '42110',
-        66: '42110', 67: '42110', 68: '42110', 69: '42110',
-        70: '42110', 71: '42110', 73: '42110', 74: '42110',
-        75: '42110', 76: '42110', 77: '42110', 78: '42110',
-        81: '42110', 82: '42110', 83: '42110', 84: '42110',
-        85: '42110', 86: '42110', 87: '42110', 88: '42110',
-        89: '42110', 90: '42110', 91: '42110', 92: '42110',
-        93: '42110', 94: '42110', 95: '42110', 96: '42110',
-        97: '42110', 100: '42110', 101: '42110', 102: '42110',
-        104: '42110', 105: '42110', 106: '42110', 108: '42110',
-        109: '42110', 110: '42110', 111: '42110', 112: '42110',
-        113: '42110', 114: '42110', 115: '42110', 116: '42110',
-        117: '42110', 118: '42110', 119: '42110', 120: '42110',
-        121: '42110', 122: '42110', 123: '42110', 124: '42110',
-        125: '42110', 131: '42110', 132: '42110', 133: '42110',
-        134: '42110', 135: '42110', 137: '42110', 138: '42110',
-        150: '42110', 151: '42110', 152: '42110', 153: '42110',
-        154: '42110', 155: '42110', 156: '42110', 157: '42110',
-        158: '42110', 159: '42110', 160: '42110', 161: '42110',
-        162: '42110', 163: '42110', 164: '42110', 165: '42110',
-        166: '42310', 167: '42110', 168: '42110', 169: '42110',
-        170: '42110', 174: '42110', 175: '42110', 176: '42110',
-        177: '42110', 178: '42110', 179: '42110', 180: '42110',
-        181: '42110', 182: '42110', 183: '42110', 184: '42110',
-        185: '42110', 186: '42110', 187: '42110', 188: '42110',
-        189: '42110', 190: '42110', 191: '42110', 192: '42110',
-        193: '42110', 194: '42110', 195: '42110', 196: '42110',
-        197: '42110', 198: '42110',
-    }
-
-    @staticmethod
-    def format(product_code: Optional[int]) -> str:
-        """
-        Apply CAPROD format to product code.
-
-        Args:
-            product_code: Product code to format
-
-        Returns:
-            BNM account code or default '42110' for current accounts
-        """
-        if product_code is None:
-            return '42110'
-
-        return CAProductFormat.MAPPINGS.get(product_code, '42110')
-
-
-# ============================================================================
-# FORMAT: FCYTERM - Foreign Currency Term (INVALUE format)
-# ============================================================================
-
-class FCYTermFormat:
-    """Foreign Currency Term Mapping based on Interest Plan.
-    Maps interest plan codes to FCY term lengths in months.
-    """
-
-    # Term in months: 1
-    TERM_1_MONTH: Set[int] = {
-        470, 471, 476, 477, 482, 483, 488, 494, 548, 554,
-        429, 433, 437, 421, 567, 574, 439, 751, 755, 756, 759, 762, 767, 771
-    }
-
-    # Term in months: 3
-    TERM_3_MONTHS: Set[int] = {
-        472, 473, 478, 479, 484, 485, 490, 496, 550, 551, 556,
-        569, 576, 440, 441, 423, 752, 757, 760, 763, 768, 772, 430, 434
-    }
-
-    # Term in months: 6
-    TERM_6_MONTHS: Set[int] = {
-        474, 480, 486, 492, 498, 552, 553, 558,
-        571, 578, 579, 442, 443, 425, 753, 761, 764, 765, 769, 773, 431, 435, 758
-    }
-
-    # Term in months: 12
-    TERM_12_MONTHS: Set[int] = {
-        444, 446, 545, 546, 547, 560, 561, 562, 563, 564, 565, 566,
-        573, 427, 754, 766, 770, 774, 432, 436
-    }
-
-    @staticmethod
-    def format(intplan_code: Optional[int]) -> Optional[int]:
-        """
-        Apply FCYTERM format to interest plan code.
-
-        Args:
-            intplan_code: Interest plan code
-
-        Returns:
-            Term length in months (1, 3, 6, 12) or None if not found
-        """
-        if intplan_code is None:
-            return None
-
-        if intplan_code in FCYTermFormat.TERM_1_MONTH:
-            return 1
-        elif intplan_code in FCYTermFormat.TERM_3_MONTHS:
-            return 3
-        elif intplan_code in FCYTermFormat.TERM_6_MONTHS:
-            return 6
-        elif intplan_code in FCYTermFormat.TERM_12_MONTHS:
-            return 12
-        else:
-            return None
-
-
-# ============================================================================
-# FORMAT: FDORGMT - Fixed Deposit Original Term in Months
-# Maps a computed remaining-months value (REMMTH) to a 2-character BNM
-# bucket code used in BNMCODE construction across KAPITI reports.
-#
-# Bucket codes and their meaning:
-#   '11' : overnight / 1 day
-#   '12' : > 1 day  to <= 1 month
-#   '13' : > 1 month to <= 2 months
-#   '14' : > 2 months to <= 3 months
-#   '15' : > 3 months to <= 6 months
-#   '16' : > 6 months to <= 9 months
-#   '17' : > 9 months to <= 12 months
-#   '35' : > 12 months to <= 18 months
-#   '36' : > 18 months to <= 24 months
-#   '37' : > 24 months
-#
-# Note: KALWPBBS / KALWPIBS filter for codes IN ('14','15','16','17') for
-#       IFD/ILD/ISD/IZD instruments (K3TBLA) and IN ('12','13','14','35','36','37')
-#       for PBA instruments (K3TBLB), so only the above buckets are relevant.
-# ============================================================================
-
-def fdorgmt_format(remmth: Optional[float]) -> str:
-    """
-    Apply FDORGMT format to a remaining-months value (REMMTH).
-
-    Maps the computed remaining term in months to a 2-character BNM bucket
-    code used in constructing BNMCODE values in the KAPITI reports.
 
     Args:
-        remmth: Remaining months to maturity (float), as computed by %REMMTH macro.
+        product_code: Savings product code.
 
     Returns:
-        2-character string bucket code, or empty string if remmth is None.
+        'I' for Islamic products, 'D' for Domestic, '' if None.
+    """
+    if product_code is None:
+        return ''
+    return 'I' if product_code in _SADENOM_ISLAMIC else 'D'
+
+
+# ============================================================================
+# FORMAT: SAPROD — Savings Account Product Code
+# ============================================================================
+
+_SAPROD_MAPPINGS: Dict[int, str] = {
+    100: 'N',      # GIRO              PFB 207
+    126: 'N',      # PFB REMITTANCES BC NORM
+    127: 'N',      # PFB - SHARE PUBLIC
+    128: 'N',      # PFB - BC - SHARE BUMI
+    129: 'N',      # PFB - DD
+    140: 'N',      # SI-CLEARING ACCOUNT-PFB
+    141: 'N',      # ATM-PISA CLEARING ACCT-PFB
+    142: 'N',      # ATM-LOAN CLEARING ACCT-PFB
+    200: '42120',  # NORMAL SAVINGS
+    201: '42120',  # STAFF SAVINGS
+    202: '42120',  # YOUNG ACHIEVER ACCOUNT
+    203: '42120',  # 50 PLUS SAVINGS
+    204: '42320',  # ISLAMIC BANKING AL-WADIAH
+    205: '42120',  # BASIC SAVING A/C
+    206: '42120',  # BASIC 55 SAVING A/C
+    207: '42120',  # AL WADIAH SAVINGS
+    208: '42120',  # PB BRIGHT STAR
+    210: '42120',  # PB MYSALARY
+    211: 'N',      # ATM-FD CLRG.      PFB 211
+    212: '42120',  # WISE
+    213: '42120',  # PB SAVELINK
+    214: '42320',  # MUDHARABAH SAVINGS
+    215: '42320',  # ALWADIAH SAVINGS (STAFF)
+    216: '42120',  # PB UNIONPAY SAVINGS
+    218: '42120',  # PB MYSALARY SAVINGS ACCOUNT-I
+    220: '42120',  # (CM) SAVINGS ACC-I
+    221: '42120',  # (CM) BASIC SA-I
+    222: '42120',  # (CM) PB MYSALARY SA-I
+    223: '42120',  # (CM) FORU2SAVE SA-I
+    227: '42120',  # MONEYPLUS SA (STAFF)
+    228: '42120',  # MONEYPLUS SA
+    297: 'N',      # UMA1
+    298: 'N',      # UMA3
+    480: 'N',      # PB GOLD INVESTMENT
+    481: 'N',      # PB GOLD INVESTMENT -STAFF
+    482: 'N',      # CORP GOLD INVESTMENT ACCOUNT
+    483: 'N',      # EGOLD INVESTMENT ACCOUNT (NON-STAFF)
+    484: 'N',      # EGOLD INVESTMENT ACCOUNT (STAFF)
+}
+
+
+def saprod_format(product_code: Optional[int]) -> str:
+    """
+    Apply SAPROD format to product code.
+    Maps savings product codes to BNM account codes.
+
+    Args:
+        product_code: Savings product code.
+
+    Returns:
+        BNM account code string, or default '42120' for all other savings codes.
+    """
+    if product_code is None:
+        return '42120'
+    return _SAPROD_MAPPINGS.get(product_code, '42120')
+
+
+# ============================================================================
+# FORMAT: FDDENOM — Fixed Deposit Denomination (Islamic or Domestic)
+# ============================================================================
+
+_FDDENOM_ISLAMIC_RANGES: List[Tuple[int, int]] = [
+    (229, 232), (272, 283), (334, 336), (338, 339), (340, 359),
+    (379, 382), (386, 394), (453, 459), (461, 469), (542, 544),
+    (580, 593), (595, 599), (603, 607), (609, 611), (620, 627),
+    (640, 659), (660, 719), (726, 731), (736, 740), (780, 839),
+    (851, 853), (856, 863), (893, 894), (896, 897), (902, 903),
+    (914, 940), (941, 967), (987, 988), (991, 993),
+]
+
+_FDDENOM_ISLAMIC_SINGLES: Set[int] = {
+    422, 424, 426, 428, 475, 481, 487, 489, 491, 493, 495, 497, 499,
+    555, 557, 575, 777,
+}
+
+
+def fddenom_format(product_code: Optional[int]) -> str:
+    """
+    Apply FDDENOM format to product code.
+    Maps FD product codes to Islamic (I) or Domestic (D) classification.
+
+    Args:
+        product_code: FD product code.
+
+    Returns:
+        'I' for Islamic products, 'D' for Domestic, '' if None.
+    """
+    if product_code is None:
+        return ''
+    is_islamic = (
+        any(start <= product_code <= end for start, end in _FDDENOM_ISLAMIC_RANGES)
+        or product_code in _FDDENOM_ISLAMIC_SINGLES
+    )
+    return 'I' if is_islamic else 'D'
+
+
+# ============================================================================
+# FORMAT: FDPROD — Fixed Deposit Product Code
+# ============================================================================
+
+_FDPROD_MAPPINGS: Dict[int, str] = {
+    229: '42133',  # PB FD / TD-I - 3-MONTHS NON-STAFF (INDV)
+    230: '42133',  # PB FD / TD-I - 3-MONTHS STAFF
+    231: '42133',  # PB FD / TD-I - 8-MONTHS NON-STAFF (INDV)
+    232: '42133',  # PB FD / TD-I - 8-MONTHS STAFF
+    233: '42130',  # EFD - 1 MTH
+    234: '42130',  # EFD - 2 MTH
+    235: '42130',  # PB EFD NORMAL - 3 MONTHS
+    236: '42130',  # EFD - 4 MTH
+    237: '42130',  # EFD - 5 MTH
+    238: '42130',  # PB EFD NORMAL - 6 MONTHS
+    239: '42130',  # EFD - 7 MTH
+    240: '42130',  # EFD - 8 MTH
+    241: '42130',  # EFD - 9 MTH
+    242: '42130',  # EFD - 10 MTH
+    243: '42130',  # EFD - 11 MTH
+    244: '42130',  # EFD - 12 MTH
+    245: '42130',  # EFD - 13 MTH
+    246: '42130',  # EFD - 14 MTH
+    247: '42130',  # EFD - 15 MTH
+    248: '42130',  # EFD - 16 MTH
+    249: '42130',  # EFD - 17 MTH
+    250: '42130',  # EFD - 18 MTH
+    251: '42130',  # EFD - 19 MTH
+    252: '42130',  # EFD - 20 MTH
+    253: '42130',  # EFD - 21 MTH
+    254: '42130',  # EFD - 22 MTH
+    255: '42130',  # EFD - 23 MTH
+    256: '42130',  # EFD - 24 MTH
+    257: '42130',  # EFD - 36 MTH
+    258: '42130',  # EFD - 48 MTH
+    259: '42130',  # EFD - 60 MTH
+    260: '42130',  # FD GOLDEN 50 - 1 MTH
+    261: '42130',  # FD GOLDEN 50 - 2 MTH
+    262: '42130',  # FD GOLDEN 50 - 3 MTH
+    263: '42130',  # FD GOLDEN 50 - 4 MTH
+    264: '42130',  # FD GOLDEN 50 - 5 MTH
+    265: '42130',  # FD GOLDEN 50 - 6 MTH
+    266: '42130',  # FD GOLDEN 50 - 7 MTH
+    267: '42130',  # FD GOLDEN 50 - 8 MTH
+    268: '42130',  # FD GOLDEN 50 - 9 MTH
+    269: '42130',  # FD GOLDEN 50 - 10 MTH
+    270: '42130',  # FD GOLDEN 50 - 11 MTH
+    271: '42130',  # FD GOLDEN 50 - 12 MTH
+    272: '42133',  # FD SHORT-TERM TD-I - 30 DAYS
+    273: '42133',  # FD SHORT-TERM TD-I - 31-60 DAYS
+    274: '42133',  # FD SHORT-TERM TD-I - 61-90 DAYS
+    275: '42133',  # FD SHORT-TERM TD-I - 91-120 DAYS
+    276: '42133',  # FD SHORT-TERM TD-I - 121-150 DAYS
+    277: '42133',  # FD SHORT-TERM TD-I - 151-180 DAYS
+    278: '42133',  # FD SHORT-TERM TD-I - 181-210 DAYS
+    279: '42133',  # FD SHORT-TERM TD-I - 211-240 DAYS
+    280: '42133',  # FD SHORT-TERM TD-I - 241-270 DAYS
+    281: '42133',  # FD SHORT-TERM TD-I - 271-300 DAYS
+    282: '42133',  # FD SHORT-TERM TD-I - 301-330 DAYS
+    283: '42133',  # FD SHORT-TERM TD-I - 331-366 DAYS
+    284: '42130',  # PLUS FD - 30 DAYS
+    285: '42130',  # PLUS FD - 31-60 DAYS
+    286: '42130',  # PLUS FD - 61-90 DAYS
+    287: '42130',  # PLUS FD - 91-120 DAYS
+    288: '42130',  # PLUS FD - 121-150 DAYS
+    289: '42130',  # PLUS FD - 151-180 DAYS
+    290: '42130',  # PLUS FD - 181-210 DAYS
+    291: '42130',  # PLUS FD - 211-240 DAYS
+    292: '42130',  # PLUS FD - 241-270 DAYS
+    293: '42130',  # PLUS FD - 271-300 DAYS
+    294: '42130',  # PLUS FD - 301-330 DAYS
+    295: '42130',  # PLUS FD - 331-365/366 DAYS
+    300: '42130',  # NORMAL FD - 1 MONTH
+    301: '42130',  # NORMAL FD - 3 MONTHS
+    302: '42130',  # NORMAL FD - 6 MONTHS
+    303: '42130',  # NORMAL FD - 9 MONTHS
+    304: '42130',  # NORMAL FD - 12 MONTHS
+    305: '42130',  # NORMAL FD - 15 MONTHS
+    306: '42130',  # NORMAL FD - 18 MONTHS
+    307: '42130',  # NORMAL FD - 21 MONTHS
+    308: '42130',  # NORMAL FD - 24 MONTHS
+    309: '42130',  # NORMAL FD - 36 MONTHS
+    310: '42130',  # NORMAL FD - 48 MONTHS
+    311: '42130',  # EFD NON-STAFF
+    312: '42130',  # EFD STAFF
+    313: '42130',  # FD BONUS - 4 MONTHS
+    314: '42130',  # NORMAL FD - 5 MONTHS
+    315: '42130',  # NORMAL FD - 7 MONTHS
+    316: '42130',  # NORMAL FD - 8 MONTHS
+    317: '42130',  # NORMAL FD - 10 MONTHS
+    318: '42130',  # NORMAL FD - 11 MONTHS
+    319: '42130',  # NORMAL FD - 27 MONTHS
+    320: '42130',  # FD LIFE - 1 MONTHS
+    321: '42130',  # FD LIFE - 3 MONTHS
+    322: '42130',  # FD LIFE - 6 MONTHS
+    323: '42130',  # FD LIFE - 9 MONTHS
+    324: '42130',  # FD LIFE - 12 MONTHS
+    325: '42130',  # FD LIFE - 15 MONTHS
+    326: '42130',  # FD LIFE - 18 MONTHS
+    327: '42130',  # FD LIFE - 21 MONTHS
+    328: '42130',  # FD LIFE - 24 MONTHS
+    329: '42130',  # FD LIFE - 36 MONTHS
+    330: '42130',  # FD LIFE - 48 MONTHS
+    331: '42130',  # FD LIFE - 60 MONTHS
+    332: '42130',  # FD LIFE - 2 MONTH-PFB
+    333: '42130',  # FD BONUS - 4 MONTHS
+    334: '42133',  # PB eTDi - 3 MONTHS
+    335: '42133',  # PB eTDi - 6 MONTHS
+    336: '42133',  # PB eTDi - 9 MONTHS
+    337: '42130',  # PLUS FD STAFF (6MTH)
+    338: '42133',  # TDI REWARD - 6 MONTHS (N-STAFF)
+    339: '42133',  # TDI REWARD - 6 MONTHS (STAFF)
+    340: '42132',  # FD MUDH - 1 MONTH
+    341: '42132',  # FD MUDH - 3 MONTHS
+    342: '49999',  # TERM INVESTMENT ACCT-I (3 MTH)
+    343: '42132',  # FD MUDH - 9 MONTHS
+    344: '42132',  # FD MUDH - 12 MONTHS
+    345: '49999',  # TERM INVESTMENT ACCT-I (6 MTH)
+    346: '42132',  # FD MUDH - 18 MONTHS
+    347: '42132',  # FD MUDH - 21 MONTHS
+    348: '49999',  # TERM INVESTMENT ACCT-I (9 MTH)
+    349: '42132',  # FD MUDH - 36 MONTHS
+    350: '42132',  # FD MUDH - 48 MONTHS
+    351: '42132',  # FD MUDH - 60 MONTHS
+    352: '42132',  # FD MUDH - 2 MONTHS
+    353: '42132',  # FD MUDH - 4 MONTHS
+    354: '42132',  # FD MUDH - 5 MONTHS
+    355: '42132',  # FD MUDH - 7 MONTHS
+    356: '42132',  # FD MUDH - 8 MONTHS
+    357: '42132',  # FD MUDH - 10 MONTHS
+    358: '42132',  # FD MUDH - 11 MONTHS
+    359: '42132',  # FD MUDH - 27 MONTHS
+    360: '42130',  # FD GOLDEN 50 - 15 MTH
+    361: '42130',  # FD GOLDEN 50 - 18 MTH
+    362: '42130',  # FD GOLDEN 50 - 21 MTH
+    363: '42130',  # FD GOLDEN 50 - 24 MTH
+    364: '42130',  # FD GOLDEN 50 - 36 MTH
+    365: '42130',  # FD GOLDEN 50 - 48 MTH
+    366: '42130',  # FD GOLDEN 50 - 60 MTH
+    368: '42130',  # PB RCB PREMIER - 6 MTH
+    369: '42130',  # UNIT TRUST FD-3 MTH
+    370: '42130',  # UNIT TRUST FD-6 MTH
+    371: '42130',  # PB RCB PREMIER - 12 MTH
+    372: '42130',  # UNIT TRUST FD-12 MTHS
+    373: '42130',  # PB RCB PREMIER - 6 MTH
+    374: '42130',  # PB RCB PREMIER - 12 MTH
+    375: '42130',  # PB FD / TD-I - 3-MONTHS NON-STAFF (INDV)
+    376: '42130',  # PB FD / TD-I - 3-MONTHS STAFF
+    377: '42130',  # PB FD / TD-I - 8-MONTHS NON-STAFF (INDV)
+    378: '42130',  # PB FD / TD-I - 8-MONTHS STAFF
+    379: '42133',  # PB SPECIAL2 TD-I NON STAFF - 6 MONTHS
+    380: '42133',  # PB SPECIAL2 TD-I STAFF - 6 MONTHS
+    381: '42133',  # PB RCB FD / TD-I - 3-MTHS NON-STAFF (INDV)
+    382: '42133',  # PB RCB FD / TD-I - 8-MTHS NON-STAFF (INDV)
+    383: '42130',  # PB 3-MONTH RCB FD/TD-I - 03 MONTHS
+    384: '42130',  # PB RCB PREMIER FD - 12 MONTHS
+    385: '42130',  # PLUS FD - 15 MONTHS
+    386: '42133',  # PB 3-MONTH RCB FD/TD-I - 03 MONTHS
+    387: '42133',  # PB RCB PREMIER TD-I - 12 MONTHS
+    388: '42133',  # PB RCB PREMIER HY TD-I N-STAFF R5:1  6MTH
+    389: '42133',  # PB RCB PREMIER HY TD-I N-STAFF R5:1 12MTH
+    390: '42133',  # PB RCB PREMIER HY TD-I N-STAFF R2:1  6MTH
+    391: '42133',  # PB RCB PREMIER HY TD-I N-STAFF R2:1 12MTH
+    392: '42133',  # TD-I - 03 MONTHS
+    393: '42133',  # TD-I - 06 MONTHS
+    394: '42133',  # TD-I - 12 MONTHS
+    395: '42130',  # TWIN HAPPINESS FD CAMPAIGN - 12 MTH
+    396: '42130',  # FD PB WONDER - 7 MONTHS
+    397: '42130',  # TWIN HAPPINESS FD CAMPAIGN - 12 MTH-STAFF
+    398: '42130',  # FD PB WONDER - 7 MTHS-STAFF
+    399: '42130',  # PB FORTUNE-6 MONTHS
+    400: '42130',  # NORMAL FD - 1 MONTH (S)
+    401: '42130',  # NORMAL FD - 3 MONTHS (S)
+    402: '42130',  # NORMAL FD - 6 MONTHS (S)
+    403: '42130',  # NORMAL FD - 9 MONTHS (S)
+    404: '42130',  # NORMAL FD - 12 MONTHS (S)
+    405: '42130',  # NORMAL FD - 15 MONTHS (S)
+    406: '42130',  # NORMAL FD - 18 MONTHS (S)
+    407: '42130',  # NORMAL FD - 21 MONTHS (S)
+    408: '42130',  # NORMAL FD - 24 MONTHS (S)
+    409: '42130',  # NORMAL FD - 36 MONTHS (S)
+    410: '42130',  # NORMAL FD - 48 MONTHS (S)
+    411: '42130',  # NORMAL FD - 60 MONTHS (S)
+    412: '42130',  # NORMAL FD - 2 MONTHS (S)
+    413: '42130',  # FD BONUS - 4 MONTHS
+    414: '42130',  # NORMAL FD - 5 MONTHS (S)
+    415: '42130',  # NORMAL FD - 7 MONTHS (S)
+    416: '42130',  # NORMAL FD - 8 MONTHS (S)
+    417: '42130',  # NORMAL FD - 10 MONTHS (S)
+    418: '42130',  # NORMAL FD - 11 MONTHS (S)
+    419: '42130',  # NORMAL FD - 27 MONTHS (S)
+    420: '42130',  # FD LIFE - 1 MONTH (S)
+    421: '42630',  # CNY - 1 MTH CATEGORY I
+    422: '42133',  # PB eTDi NORMAL - 3 MONTHS
+    423: '42630',  # CNY - 3 MTHS CATEGORY I
+    424: '42133',  # PB eTDi NORMAL STAFF - 3 MONTHS
+    425: '42630',  # CNY - 6 MTHS CATEGORY I
+    426: '42133',  # PB eTDi NORMAL - 6 MONTHS
+    427: '42630',  # CNY - 12 MTHS CATEGORY I
+    428: '42133',  # PB eTDi NORMAL STAFF - 6 MONTHS
+    429: '42630',  # SWISS FRANC (CHF) 1MTH
+    430: '42630',  # SWISS FRANC (CHF) 3MTH
+    431: '42630',  # SWISS FRANC (CHF) 6MTH
+    432: '42630',  # SWISS FRANC (CHF) 12MTH
+    433: '42630',  # THAI BAHT (THB) 1MTH
+    434: '42630',  # THAI BAHT (THB) 3MTH
+    435: '42630',  # THAI BAHT (THB) 6MTH
+    436: '42630',  # THAI BAHT (THB) 12MTH
+    437: '42630',  # PB FCY FD POWER(CAD) 1MTH
+    438: '42130',  # PB JOURNEY GOLDEN SAVERS2 - 50FD - 3-MTH
+    439: '42630',  # ZAR 1 MONTH CAT II
+    440: '42630',  # ZAR 3 MONTHS CAT I
+    441: '42630',  # ZAR 3 MONTHS CAT II
+    442: '42630',  # ZAR 6 MONTHS CAT I
+    443: '42630',  # ZAR 6 MONTHS CAT II
+    444: '42630',  # ZAR 12 MONTHS CAT I
+    445: '42130',  # PB FD BONANZA - 3 MONTH
+    446: '42630',  # CAD 12 MONTHS CAT I
+    447: '42130',  # PB PB RCB TOP RATE FD CAMPAIGN
+    448: '42130',  # PB EFD - 3 MONTH (S)
+    449: '42130',  # PB EFD - 6 MONTH (S)
+    450: '42130',  # PB EFD - 9 MONTH (S)
+    451: '42130',  # PB EFD - 12 MONTH (S)
+    452: '42130',  # PB EFD - 15 MONTH (S)
+    453: '42132',  # FD MUDH - 6 MONTH (S)
+    454: '42132',  # FD MUDH - 7 MONTH (S)
+    455: '42132',  # FD MUDH - 8 MONTH (S)
+    456: '42132',  # FD MUDH - 9 MONTH (S)
+    457: '42132',  # FD MUDH - 10 MONTH (S)
+    458: '42132',  # FD MUDH - 11 MONTH (S)
+    459: '42132',  # FD MUDH - 12 MONTH (S)
+    460: '42130',  # FD GOLDEN 50 - 15 MTH (S)
+    461: '42132',  # FD MUDH - 13 MONTH (S)
+    462: '42132',  # FD MUDH - 14 MONTH (S)
+    463: '42132',  # FD MUDH - 15 MONTH (S)
+    464: '42132',  # FD MUDH - 18 MONTH (S)
+    465: '42132',  # FD MUDH - 21 MONTH (S)
+    466: '42132',  # FD MUDH - 24 MONTH (S)
+    467: '42132',  # FD MUDH - 36 MONTH (S)
+    468: '42132',  # FD MUDH - 48 MONTH (S)
+    469: '42132',  # FD MUDH - 60 MONTH (S)
+    470: '42630',  # FD FCY USD* - 1 MONTH(S)
+    471: '42630',  # FD FCY USD  - 1 MONTH(S)
+    472: '42630',  # FD FCY USD* - 3 MONTH(S)
+    473: '42630',  # FD FCY USD  - 3 MONTH(S)
+    474: '42630',  # FD FCY USD* - 6 MONTH(S)
+    475: '42133',  # PB RCB TOP RATE TD-I-NON-STAFF - 3 MONTH(S)
+    476: '42630',  # FD FCY GBP* - 1 MONTH(S)
+    477: '42630',  # FD FCY GBP  - 1 MONTH(S)
+    478: '42630',  # FD FCY GBP* - 3 MONTH(S)
+    479: '42630',  # FD FCY GBP  - 3 MONTH(S)
+    480: '42630',  # FD FCY GBP* - 6 MONTH(S)
+    481: '42133',  # PB RCB TOP RATE TD-I-NON-STAFF - 6 MONTH(S)
+    482: '42630',  # FD FCY AUD* - 1 MONTH(S)
+    483: '42630',  # FD FCY AUD  - 1 MONTH(S)
+    484: '42630',  # FD FCY AUD* - 3 MONTH(S)
+    485: '42630',  # FD FCY AUD  - 3 MONTH(S)
+    486: '42630',  # FD FCY AUD* - 6 MONTH(S)
+    487: '42133',  # PB eTDi NORMAL - 9 MONTHS
+    488: '42630',  # FD FCY SGD* - 1 MONTH(S)
+    489: '42133',  # PB eTDi NORMAL STAFF - 9 MONTHS
+    490: '42630',  # FD FCY SGD* - 3 MONTH(S)
+    491: '42133',  # PB eTDi - 3 MONTHS
+    492: '42630',  # FD FCY SGD* - 6 MONTH(S)
+    493: '42133',  # PB eTDi - 6 MONTHS
+    494: '42630',  # FD FCY JPY* - 1 MONTH(S)
+    495: '42133',  # PB eTDi - 9 MONTHS
+    496: '42630',  # FD FCY JPY* - 3 MONTH(S)
+    497: '42133',  # PB eTDi - 12 MONTHS
+    498: '42630',  # FD FCY JPY* - 6 MONTH(S)
+    499: '42133',  # PB eTDi - 15 MONTHS
+    500: '42130',  # NORMAL FD - 30 MONTHS
+    501: '42130',  # NORMAL FD - 33 MONTHS
+    502: '42130',  # NORMAL FD - 39 MONTHS
+    503: '42130',  # NORMAL FD - 42 MONTHS
+    504: '42130',  # NORMAL FD - 45 MONTHS
+    505: '42130',  # NORMAL FD - 51 MONTHS
+    506: '42130',  # NORMAL FD - 54 MONTHS
+    507: '42130',  # NORMAL FD - 57 MONTHS
+    508: '42130',  # NORMAL FD - 13 MONTHS
+    509: '42130',  # NORMAL FD - 14 MONTHS
+    510: '42130',  # NORMAL FD - 16 MONTHS
+    511: '42130',  # NORMAL FD - 17 MONTHS
+    512: '42130',  # NORMAL FD - 19 MONTHS
+    513: '42130',  # NORMAL FD - 20 MONTHS
+    514: '42130',  # NORMAL FD - 22 MONTHS
+    515: '42130',  # NORMAL FD - 23 MONTHS
+    516: '42130',  # NORMAL FD - 25 MONTHS
+    517: '42130',  # NORMAL FD - 26 MONTHS
+    518: '42130',  # NORMAL FD - 28 MONTHS
+    519: '42130',  # NORMAL FD - 29 MONTHS
+    520: '42130',  # NORMAL FD - 31 MONTHS
+    521: '42130',  # NORMAL FD - 32 MONTHS
+    522: '42130',  # NORMAL FD - 34 MONTHS
+    523: '42130',  # NORMAL FD - 35 MONTHS
+    524: '42130',  # NORMAL FD - 37 MONTHS
+    525: '42130',  # NORMAL FD - 38 MONTHS
+    526: '42130',  # NORMAL FD - 40 MONTHS
+    527: '42130',  # NORMAL FD - 41 MONTHS
+    528: '42130',  # NORMAL FD - 43 MONTHS
+    529: '42130',  # NORMAL FD - 44 MONTHS
+    530: '42130',  # NORMAL FD - 46 MONTHS
+    531: '42130',  # NORMAL FD - 47 MONTHS
+    532: '42130',  # NORMAL FD - 49 MONTHS
+    533: '42130',  # NORMAL FD - 50 MONTHS
+    534: '42130',  # NORMAL FD - 52 MONTHS
+    535: '42130',  # NORMAL FD - 53 MONTHS
+    536: '42130',  # NORMAL FD - 55 MONTHS
+    537: '42130',  # NORMAL FD - 56 MONTHS
+    538: '42130',  # NORMAL FD - 58 MONTHS
+    539: '42130',  # NORMAL FD - 59 MONTHS
+    540: '42130',  # PB JOURNEY JUNIOR SAVERS 3-4M(NS,NON-APP)
+    541: '42130',  # PB JOURNEY JUNIOR SAVERS 3-4M(NS,APP USR)
+    542: '42133',  # PB TOP RATE TD-I NON-STAFF - 3 MONTH(S)
+    543: '42133',  # PB TOP RATE TD-I STAFF - 3 MONTH(S)
+    544: '42133',  # PIBB 13-MTH TERM DEPOSIT-I CAMP STAFF
+    545: '42130',  # PB INSURE REWARDS CAMPAIGN
+    546: '42130',  # PB INSURE REWARDS CAMPAIGN
+    547: '42130',  # PB INSURE REWARDS CAMPAIGN
+    548: '42630',  # FD FCY EUR* - 1 MONTH(S)
+    550: '42630',  # FD FCY EUR* - 3 MONTH(S)
+    551: '42130',  # PB RCB INVITATION (6-MTH) -NON STAFF(INDV)
+    552: '42630',  # FD FCY EUR* - 6 MONTH(S)
+    553: '42130',  # PB JOURNEY GOLDEN SAVERS2 - 50FD - 6-MTH
+    554: '42630',  # FD FCY HKD* - 1 MONTH(S)
+    555: '42133',  # PB TOP RATE TD-I NON-STAFF - 6 MONTH(S)
+    556: '42630',  # FD FCY HKD* - 3 MONTH(S)
+    557: '42133',  # PB TOP RATE TD-I STAFF - 6 MONTH(S)
+    558: '42630',  # FD FCY HKD* - 6 MONTH(S)
+    559: '42130',  # PB JOURNEY GOLDEN SAVERS2 - 50FD - 9-MTH
+    560: '42630',  # FD FCY USD - 12 MONTH(S)
+    561: '42630',  # FD FCY GBP - 12 MONTH(S)
+    562: '42630',  # FD FCY AUD - 12 MONTH(S)
+    563: '42630',  # FD FCY SGD - 12 MONTH(S)
+    564: '42630',  # FD FCY JPY - 12 MONTH(S)
+    565: '42630',  # FD FCY EUR - 12 MONTH(S)
+    566: '42630',  # FD FCY HKD - 12 MONTH(S)
+    567: '42630',  # FD FCY NZG - 1 MONTH(S) CAT I
+    568: '42130',  # PB JJS 2(6 MTH)-NON STAFF(INDV)
+    569: '42630',  # FD FCY NZG - 3 MONTH(S) CAT I
+    570: '42130',  # PB EFD NORMAL - 9 MONTHS
+    571: '42630',  # FD FCY NZG - 6 MONTH(S) CAT I
+    572: '42130',  # PB EFD NORMAL STAFF - 9 MONTHS
+    573: '42630',  # FD FCY NZG - 12 MONTH(S)
+    574: '42630',  # CAD 1 MONTHS CAT I
+    575: '42133',  # PIBB 13-MTH TERM DEPOSIT-I CAMP N-STAFF
+    576: '42630',  # CAD 3 MONTHS CAT I
+    577: '42130',  # PB ENTERPRISE FD 6 MONTHS
+    578: '42630',  # CAD 6 MONTHS CAT I
+    579: '42630',  # CAD 6 MONTHS CAT II
+    580: '42132',  # FD MUDH - 30 MONTHS
+    581: '42132',  # FD MUDH - 33 MONTHS
+    582: '42132',  # FD MUDH - 39 MONTHS
+    583: '42132',  # FD MUDH - 42 MONTHS
+    584: '42132',  # FD MUDH - 45 MONTHS
+    585: '42132',  # FD MUDH - 51 MONTHS
+    586: '42132',  # FD MUDH - 54 MONTHS
+    587: '42132',  # FD MUDH - 57 MONTHS
+    588: '42132',  # FD MUDH - 13 MONTHS
+    589: '42132',  # FD MUDH - 14 MONTHS
+    590: '42132',  # FD MUDH - 16 MONTHS
+    591: '42132',  # FD MUDH - 17 MONTHS
+    592: '42132',  # FD MUDH - 19 MONTHS
+    593: '42132',  # FD MUDH - 20 MONTHS
+    594: '42130',  # PB JOURNEY GOLDEN SAVERS 3-50FD 3M
+    595: '42132',  # FD MUDH - 23 MONTHS
+    596: '42132',  # FD MUDH - 25 MONTHS
+    597: '42133',  # TDI
+    598: '42133',  # TDI
+    599: '42133',  # TDI NONSTAFF (12MTH)
+    600: '42130',  # NORMAL FD - 30 MONTHS (S)
+    601: '42130',  # NORMAL FD - 33 MONTHS (S)
+    602: '42130',  # NORMAL FD - 39 MONTHS (S)
+    603: '42133',  # UT+3M TD-i (2:1)
+    604: '42133',  # UT+8M TD-i (2:1)
+    605: '42133',  # UT+3M TD-i (5:1)
+    606: '42133',  # UT+8M TD-i (5:1)
+    607: '42133',  # ExcelLink+3M TD-i (2:1)
+    608: '42130',  # NORMAL FD - 13 MONTHS (S)
+    609: '42133',  # ExcelLink+8M TD-i (2:1)
+    610: '42133',  # ExcelLink+3M TD-i (5:1)
+    611: '42133',  # ExcelLink+8M TD-i (5:1)
+    612: '42130',  # NORMAL FD - 19 MONTHS (S)
+    613: '42130',  # NORMAL FD - 20 MONTHS (S)
+    614: '42130',  # NORMAL FD - 22 MONTHS (S)
+    615: '42130',  # NORMAL FD - 23 MONTHS (S)
+    616: '42130',  # NORMAL FD - 25 MONTHS (S)
+    617: '42130',  # NORMAL FD - 26 MONTHS (S)
+    618: '42130',  # NORMAL FD - 28 MONTHS (S)
+    619: '42130',  # NORMAL FD - 29 MONTHS (S)
+    620: '42133',  # UT+3M TD-i (2:1)
+    621: '42133',  # UT+8M TD-i (2:1)
+    622: '42133',  # UT+3M TD-i (5:1)
+    623: '42133',  # UT+8M TD-i (5:1)
+    624: '42133',  # ExcelLink+3M TD-i (2:1)
+    625: '42133',  # ExcelLink+8M TD-i (2:1)
+    626: '42133',  # ExcelLink+3M TD-i (5:1)
+    627: '42133',  # ExcelLink+8M TD-i (5:1)
+    628: '42130',  # NORMAL FD - 43 MONTHS (S)
+    629: '42130',  # NORMAL FD - 44 MONTHS (S)
+    630: '42130',  # NORMAL FD - 46 MONTHS (S)
+    631: '42130',  # NORMAL FD - 47 MONTHS (S)
+    632: '42130',  # NORMAL FD - 49 MONTHS (S)
+    633: '42130',  # NORMAL FD - 50 MONTHS (S)
+    634: '42130',  # NORMAL FD - 52 MONTHS (S)
+    635: '42130',  # NORMAL FD - 53 MONTHS (S)
+    636: '42130',  # NORMAL FD - 55 MONTHS (S)
+    637: '42130',  # NORMAL FD - 56 MONTHS (S)
+    638: '42130',  # NORMAL FD - 58 MONTHS (S)
+    639: '42130',  # NORMAL FD - 59 MONTHS (S)
+    640: '42133',  # FD STAFF TD-I 1 MONTH(S)
+    641: '42133',  # FD STAFF TD-I 2 MONTH(S)
+    642: '42133',  # FD STAFF TD-I 3 MONTH(S)
+    643: '42133',  # FDI BONUS - 4 MONTHS
+    644: '42133',  # FD STAFF TD-I 5 MONTH(S)
+    645: '42133',  # FD STAFF TD-I 6 MONTH(S)
+    646: '42133',  # FD STAFF TD-I 7 MONTH(S)
+    647: '42133',  # FD STAFF TD-I 8 MONTH(S)
+    648: '42133',  # FD STAFF TD-I 9 MONTH(S)
+    649: '42133',  # FD STAFF TD-I 10 MONTH(S)
+    650: '42133',  # FD STAFF TD-I 11 MONTH(S)
+    651: '42133',  # FD STAFF TD-I 12 MONTH(S)
+    652: '42133',  # FD STAFF TD-I 15 MONTH(S)
+    653: '42133',  # FD STAFF TD-I 18 MONTH(S)
+    654: '42133',  # FD STAFF TD-I 21 MONTH(S)
+    655: '42133',  # FD STAFF TD-I 24 MONTH(S)
+    656: '42133',  # FD STAFF TD-I 36 MONTH(S)
+    657: '42133',  # FD STAFF TD-I 48 MONTH(S)
+    658: '42133',  # FD STAFF TD-I 60 MONTH(S)
+    659: '42133',  # TDI STAFF (12MTH)
+    660: '42132',  # FD MUDH - 1     PFB 340
+    661: '42132',  # FD MUDH - 2         341
+    662: '42132',  # FD MUDH - 3         342
+    663: '42132',  # FD MUDH - 4         343
+    664: '42132',  # FD MUDH - 5         344
+    665: '42132',  # FD MUDH - 6         342
+    666: '42132',  # FD MUDH - 7         342
+    667: '42132',  # FD MUDH - 8         342
+    668: '42132',  # FD MUDH - 9         343
+    669: '42132',  # FD MUDH - 10        343
+    670: '42132',  # FD MUDH - 11        343
+    671: '42132',  # FD MUDH - 12        344
+    672: '42132',  # FD MUDH - 13        344
+    673: '42132',  # FD MUDH - 14        344
+    674: '42132',  # FD MUDH - 15        345
+    675: '42132',  # FD MUDH - 16        345
+    676: '42132',  # FD MUDH - 17        345
+    677: '42132',  # FD MUDH - 18        346
+    678: '42132',  # FD MUDH - 19        346
+    679: '42132',  # FD MUDH - 20        346
+    680: '42132',  # FD MUDH - 21        347
+    681: '42132',  # FD MUDH - 22        348
+    682: '42132',  # FD MUDH - 23        348
+    683: '42132',  # FD MUDH - 24        348
+    684: '42132',  # FD MUDH - 25        348
+    685: '42132',  # FD MUDH - 26        348
+    686: '42132',  # FD MUDH - 27        348
+    687: '42132',  # FD MUDH - 28        348
+    688: '42132',  # FD MUDH - 29        348
+    689: '42132',  # FD MUDH - 30        348
+    690: '42132',  # FD MUDH - 31        348
+    691: '42132',  # FD MUDH - 32        348
+    692: '42132',  # FD MUDH - 33        348
+    693: '42132',  # FD MUDH - 34        348
+    694: '42132',  # FD MUDH - 35        348
+    695: '42132',  # FD MUDH - 36        349
+    696: '42132',  # FD MUDH - 37        349
+    697: '42132',  # FD MUDH - 38        349
+    698: '42132',  # FD MUDH - 39        349
+    699: '42132',  # FD MUDH - 40        349
+    700: '42132',  # FD MUDH - 41        349
+    701: '42132',  # FD MUDH - 42        349
+    702: '42132',  # FD MUDH - 43        349
+    703: '42132',  # FD MUDH - 44        349
+    704: '42132',  # FD MUDH - 45        349
+    705: '42132',  # FD MUDH - 46        349
+    706: '42132',  # FD MUDH - 47        349
+    707: '42132',  # FD MUDH - 48        350
+    708: '42132',  # FD MUDH - 49        350
+    709: '42132',  # FD MUDH - 50        350
+    710: '42132',  # FD MUDH - 51        350
+    711: '42132',  # FD MUDH - 52        350
+    712: '42132',  # FD MUDH - 53        350
+    713: '42132',  # FD MUDH - 54        350
+    714: '42132',  # FD MUDH - 55        350
+    715: '42132',  # FD MUDH - 56        350
+    716: '42132',  # FD MUDH - 57        350
+    717: '42132',  # FD MUDH - 58        350
+    718: '42132',  # FD MUDH - 59        350
+    719: '42132',  # FD MUDH - 60        351
+    720: '42130',  # POWERINVEST FD   CAMPAIGN R2:1  3MTH
+    721: '42130',  # POWERINVEST FD   CAMPAIGN R2:1  6MTH
+    722: '42130',  # POWERINVEST FD   CAMPAIGN R2:1 12MTH
+    723: '42130',  # POWERINVEST FD   CAMPAIGN R5:1  3MTH
+    724: '42130',  # POWERINVEST FD   CAMPAIGN R5:1  6MTH
+    725: '42130',  # POWERINVEST FD   CAMPAIGN R5:1 12MTH
+    726: '42133',  # POWERINVEST TD-I CAMPAIGN R2:1  3MTH
+    727: '42133',  # POWERINVEST TD-I CAMPAIGN R2:1  6MTH
+    728: '42133',  # POWERINVEST TD-I CAMPAIGN R2:1 12MTH
+    729: '42133',  # POWERINVEST TD-I CAMPAIGN R5:1  3MTH
+    730: '42133',  # POWERINVEST TD-I CAMPAIGN R5:1  6MTH
+    731: '42133',  # POWERINVEST TD-I CAMPAIGN R5:1 12MTH
+    732: '42130',  # PB PREMIER HY FD   N-STAFF R2:1  6MTH
+    733: '42130',  # PB PREMIER HY FD   N-STAFF R2:1 12MTH
+    734: '42130',  # PB PREMIER HY FD   N-STAFF R5:1  6MTH
+    735: '42130',  # PB PREMIER HY FD   N-STAFF R5:1 12MTH
+    736: '42133',  # PB PREMIER HY TD-I N-STAFF R2:1  6MTH
+    737: '42133',  # PB PREMIER HY TD-I N-STAFF R2:1 12MTH
+    738: '42133',  # PB PREMIER HY TD-I N-STAFF R5:1  6MTH
+    739: '42133',  # PB PREMIER HY TD-I N-STAFF R5:1 12MTH
+    740: '42133',  # RCB ELITE - 12
+    741: '42130',  # PB PROSPERITY RATES - 3 MONTHS
+    742: '42130',  # PB PROSPERITY RATES - 6 MONTHS
+    743: '42130',  # PB PROSPERITY RATES - 9 MONTHS
+    744: '42130',  # PB PROSPERITY RATES - 12 MONTHS
+    745: '42130',  # PB SUPER FD RATES (NON-STAFF) - 1 MONTH(S)
+    746: '42130',  # PB SUPER FD RATES (STAFF)     - 1 MONTH(S)
+    747: '42130',  # PB SUPER FD RATES (NON-STAFF) - 1 MONTH(S)
+    748: '42130',  # PB SUPER FD RATES (STAFF)     - 1 MONTH(S)
+    749: '42130',  # PB RCB FD / TD-I - 3-MTHS NON-STAFF (INDV)
+    750: '42130',  # PB RCB FD / TD-I - 8-MTHS NON-STAFF (INDV)
+    751: '42630',  # FD FCY USD* -  1 MONTH(S)
+    752: '42630',  # FD FCY USD* -  3 MONTH(S)
+    753: '42630',  # FD FCY USD* -  6 MONTH(S)
+    754: '42630',  # FD FCY USD* - 12 MONTH(S)
+    755: '42630',  # FD FCY GBP* -  1 MONTH(S)
+    756: '42630',  # FD FCY USD* -  1 MONTH(S)
+    757: '42630',  # FD FCY USD* -  3 MONTH(S)
+    758: '42630',  # FD FCY USD* -  6 MONTH(S)
+    759: '42630',  # FD FCY GBP* -  1 MONTH(S)
+    760: '42630',  # FD FCY GBP* -  3 MONTH(S)
+    761: '42630',  # FD FCY GBP* -  6 MONTH(S)
+    762: '42630',  # FD FCY AUD* -  1 MONTH(S)
+    763: '42630',  # FD FCY AUD* -  3 MONTH(S)
+    764: '42630',  # FD FCY AUD* -  6 MONTH(S)
+    765: '42630',  # FD FCY EUR* -  6 MONTH(S)
+    766: '42630',  # FD FCY EUR* - 12 MONTH(S)
+    767: '42630',  # FD FCY NZD* -  1 MONTH(S)
+    768: '42630',  # FD FCY NZD* -  3 MONTH(S)
+    769: '42630',  # FD FCY NZD* -  6 MONTH(S)
+    770: '42630',  # FD FCY NZD* - 12 MONTH(S)
+    771: '42630',  # FD FCY CNY* -  1 MONTH(S)
+    772: '42630',  # FD FCY CNY* -  3 MONTH(S)
+    773: '42630',  # FD FCY CNY* -  6 MONTH(S)
+    774: '42630',  # FD FCY CNY* - 12 MONTH(S)
+    775: '42130',  # PB 3-MONTH FD/TD-I - 3 MONTH(S)
+    776: '42130',  # PB 3-MONTH FD/TD-I(STAFF) - 3 MONTH(S)
+    777: '42133',  # PB 3-MONTH FD/TD-I - 3 MONTH(S)
+    778: '42130',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    779: '42130',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    780: '42133',  # FD TD-I & TD-I FI - 1 MONTH(S)
+    781: '42133',  # FD TD-I & TD-I FI - 2 MONTH(S)
+    782: '42133',  # FD TD-I & TD-I FI - 3 MONTH(S)
+    783: '42133',  # FDI BONUS - 4 MONTHS
+    784: '42133',  # FD TD-I & TD-I FI - 5 MONTH(S)
+    785: '42133',  # FD TD-I & TD-I FI - 6 MONTH(S)
+    786: '42133',  # FD TD-I & TD-I FI - 7 MONTH(S)
+    787: '42133',  # FD TD-I & TD-I FI - 8 MONTH(S)
+    788: '42133',  # FD TD-I & TD-I FI - 9 MONTH(S)
+    789: '42133',  # FD TD-I & TD-I FI - 10 MONTH(S)
+    790: '42133',  # FD TD-I & TD-I FI - 11 MONTH(S)
+    791: '42133',  # FD TD-I & TD-I FI - 12 MONTH(S)
+    792: '42133',  # FD TD-I & TD-I FI - 13 MONTH(S)
+    793: '42133',  # FD TD-I & TD-I FI - 14 MONTH(S)
+    794: '42133',  # FD TD-I & TD-I FI - 15 MONTH(S)
+    795: '42133',  # FD TD-I & TD-I FI - 16 MONTH(S)
+    796: '42133',  # FD TD-I & TD-I FI - 17 MONTH(S)
+    797: '42133',  # FD TD-I & TD-I FI - 18 MONTH(S)
+    798: '42133',  # FD TD-I & TD-I FI - 19 MONTH(S)
+    799: '42133',  # FD TD-I & TD-I FI - 20 MONTH(S)
+    800: '42133',  # FD TD-I & TD-I FI - 21 MONTH(S)
+    801: '42133',  # FD TD-I & TD-I FI - 22 MONTH(S)
+    802: '42133',  # FD TD-I & TD-I FI - 23 MONTH(S)
+    803: '42133',  # FD TD-I & TD-I FI - 24 MONTH(S)
+    804: '42133',  # FD TD-I & TD-I FI - 25 MONTH(S)
+    805: '42133',  # FD TD-I & TD-I FI - 26 MONTH(S)
+    806: '42133',  # FD TD-I & TD-I FI - 27 MONTH(S)
+    807: '42133',  # FD TD-I & TD-I FI - 28 MONTH(S)
+    808: '42133',  # FD TD-I & TD-I FI - 29 MONTH(S)
+    809: '42133',  # FD TD-I & TD-I FI - 30 MONTH(S)
+    810: '42133',  # FD TD-I & TD-I FI - 31 MONTH(S)
+    811: '42133',  # FD TD-I & TD-I FI - 32 MONTH(S)
+    812: '42133',  # FD TD-I & TD-I FI - 33 MONTH(S)
+    813: '42133',  # FD TD-I & TD-I FI - 34 MONTH(S)
+    814: '42133',  # FD TD-I & TD-I FI - 35 MONTH(S)
+    815: '42133',  # FD TD-I & TD-I FI - 36 MONTH(S)
+    816: '42133',  # FD TD-I & TD-I FI - 37 MONTH(S)
+    817: '42133',  # FD TD-I & TD-I FI - 38 MONTH(S)
+    818: '42133',  # FD TD-I & TD-I FI - 39 MONTH(S)
+    819: '42133',  # FD TD-I & TD-I FI - 40 MONTH(S)
+    820: '42133',  # FD TD-I & TD-I FI - 41 MONTH(S)
+    821: '42133',  # FD TD-I & TD-I FI - 42 MONTH(S)
+    822: '42133',  # FD TD-I & TD-I FI - 43 MONTH(S)
+    823: '42133',  # FD TD-I & TD-I FI - 44 MONTH(S)
+    824: '42133',  # FD TD-I & TD-I FI - 45 MONTH(S)
+    825: '42133',  # FD TD-I & TD-I FI - 46 MONTH(S)
+    826: '42133',  # FD TD-I & TD-I FI - 47 MONTH(S)
+    827: '42133',  # FD TD-I & TD-I FI - 48 MONTH(S)
+    828: '42133',  # FD TD-I & TD-I FI - 49 MONTH(S)
+    829: '42133',  # FD TD-I & TD-I FI - 50 MONTH(S)
+    830: '42133',  # FD TD-I & TD-I FI - 51 MONTH(S)
+    831: '42133',  # FD TD-I & TD-I FI - 52 MONTH(S)
+    832: '42133',  # FD TD-I & TD-I FI - 53 MONTH(S)
+    833: '42133',  # FD TD-I & TD-I FI - 54 MONTH(S)
+    834: '42133',  # FD TD-I & TD-I FI - 55 MONTH(S)
+    835: '42133',  # FD TD-I & TD-I FI - 56 MONTH(S)
+    836: '42133',  # FD TD-I & TD-I FI - 57 MONTH(S)
+    837: '42133',  # FD TD-I & TD-I FI - 58 MONTH(S)
+    838: '42133',  # FD TD-I & TD-I FI - 59 MONTH(S)
+    839: '42133',  # FD TD-I & TD-I FI - 60 MONTH(S)
+    850: '42130',  # PLUS FD NEW RCB SIGN-UP - 4 MONTH(S)
+    851: '49999',  # TERM INVESTMENT ACCT-I (3 MTH)
+    852: '49999',  # TERM INVESTMENT ACCT-I (6 MTH)
+    853: '49999',  # TERM INVESTMENT ACCT-I (9 MTH)
+    854: '42130',  # PLUS FD CAMPAIGN NON-STAFF - 3 MONTH(S)
+    855: '42130',  # PLUS FD CAMPAIGN STAFF - 3 MONTH(S)
+    856: '42133',  # PB TD-I REWARD CAMPAIGN (NON-STAFF)
+    857: '42133',  # PB TD-I REWARD CAMPAIGN (STAFF)
+    858: '42133',  # FD TD-I NON-STAFF - 3 MONTH(S)
+    859: '42133',  # FD TD-I STAFF - 3 MONTH(S)
+    860: '42133',  # PB FD RUSH CAMPAIGN NON-STAFF - 4 MONTH(S)
+    861: '42133',  # PB FD RUSH CAMPAIGN STAFF     - 4 MONTH(S)
+    862: '42133',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    863: '42133',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    864: '42130',  # EFD STAFF            - 1 MTH
+    865: '42130',  # EFD STAFF            - 2 MTH
+    866: '42130',  # PB EFD NORMAL STAFF  - 3 MONTHS
+    867: '42130',  # EFD STAFF            - 4 MTH
+    868: '42130',  # EFD STAFF            - 5 MTH
+    869: '42130',  # PB EFD NORMAL STAFF  - 6 MONTHS
+    870: '42130',  # EFD STAFF            - 7 MTH
+    871: '42130',  # EFD STAFF            - 8 MTH
+    872: '42130',  # EFD STAFF            - 9 MTH
+    873: '42130',  # EFD STAFF            - 10 MTH
+    874: '42130',  # EFD STAFF            - 11 MTH
+    875: '42130',  # EFD STAFF            - 12 MTH
+    876: '42130',  # EFD STAFF            - 13 MTH
+    877: '42130',  # EFD STAFF            - 14 MTH
+    878: '42130',  # EFD STAFF            - 15 MTH
+    879: '42130',  # EFD STAFF            - 16 MTH
+    880: '42130',  # EFD STAFF            - 17 MTH
+    881: '42130',  # EFD STAFF            - 18 MTH
+    882: '42130',  # EFD STAFF            - 19 MTH
+    883: '42130',  # EFD STAFF            - 20 MTH
+    884: '42130',  # EFD STAFF            - 21 MTH
+    885: '42130',  # EFD STAFF            - 22 MTH
+    886: '42130',  # EFD STAFF            - 23 MTH
+    887: '42130',  # EFD STAFF            - 24 MTH
+    888: '42130',  # EFD STAFF            - 36 MTH
+    889: '42130',  # EFD STAFF            - 48 MTH
+    890: '42130',  # EFD STAFF            - 60 MTH
+    891: '42130',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    892: '42130',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    893: '42133',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    894: '42133',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    895: '42130',  # PLUS FD NONSTAFF (6MTH)
+    896: '42133',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    897: '42133',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    898: '42130',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    899: '42130',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    900: '42130',  # PB JOURNEY GOLDEN SAVERS 3-50FD 6M
+    901: '42130',  # PB JOURNEY GOLDEN SAVERS 3-50FD 9M
+    902: '42133',  # PB TD-I REWARD CAMPAIGN - NON STAFF(3MTH)
+    903: '42133',  # PB 3-MONTH FD/TD-I(STAFF) - 3 MONTH(S)
+    904: '42130',  # PLUS FD NONSTAFF (12MTH)
+    905: '42130',  # PLUS FD STAFF  (12MTH)
+    914: '42133',  # PB ETD-I NON-STAFF   - 1  MONTH
+    915: '42133',  # PB ETD-I NON-STAFF   - 2  MONTH
+    916: '42133',  # PB ETD-I NON-STAFF   - 3  MONTH
+    917: '42133',  # PB ETD-I NON-STAFF   - 4  MONTH
+    918: '42133',  # PB ETD-I NON-STAFF   - 5  MONTH
+    919: '42133',  # PB ETD-I NON-STAFF   - 6  MONTH
+    920: '42133',  # PB ETD-I NON-STAFF   - 7  MONTH
+    921: '42133',  # PB ETD-I NON-STAFF   - 8  MONTH
+    922: '42133',  # PB ETD-I NON-STAFF   - 9  MONTH
+    923: '42133',  # PB ETD-I NON-STAFF   - 10 MONTH
+    924: '42133',  # PB ETD-I NON-STAFF   - 11 MONTH
+    925: '42133',  # PB ETD-I NON-STAFF   - 12 MONTH
+    926: '42133',  # PB ETD-I NON-STAFF   - 13 MONTH
+    927: '42133',  # PB ETD-I NON-STAFF   - 14 MONTH
+    928: '42133',  # PB ETD-I NON-STAFF   - 15 MONTH
+    929: '42133',  # PB ETD-I NON-STAFF   - 16 MONTH
+    930: '42133',  # PB ETD-I NON-STAFF   - 17 MONTH
+    931: '42133',  # PB ETD-I NON-STAFF   - 18 MONTH
+    932: '42133',  # PB ETD-I NON-STAFF   - 19 MONTH
+    933: '42133',  # PB ETD-I NON-STAFF   - 20 MONTH
+    934: '42133',  # PB ETD-I NON-STAFF   - 21 MONTH
+    935: '42133',  # PB ETD-I NON-STAFF   - 22 MONTH
+    936: '42133',  # PB ETD-I NON-STAFF   - 23 MONTH
+    937: '42133',  # PB ETD-I NON-STAFF   - 24 MONTH
+    938: '42133',  # PB ETD-I NON-STAFF   - 36 MONTH
+    939: '42133',  # PB ETD-I NON-STAFF   - 48 MONTH
+    940: '42133',  # PB ETD-I NON-STAFF   - 60 MONTH
+    941: '42133',  # PB ETD-I STAFF       - 1  MONTH
+    942: '42133',  # PB ETD-I STAFF       - 2  MONTH
+    943: '42133',  # PB ETD-I STAFF       - 3  MONTH
+    944: '42133',  # PB ETD-I STAFF       - 4  MONTH
+    945: '42133',  # PB ETD-I STAFF       - 5  MONTH
+    946: '42133',  # PB ETD-I STAFF       - 6  MONTH
+    947: '42133',  # PB ETD-I STAFF       - 7  MONTH
+    948: '42133',  # PB ETD-I STAFF       - 8  MONTH
+    949: '42133',  # PB ETD-I STAFF       - 9  MONTH
+    950: '42133',  # PB ETD-I STAFF       - 10 MONTH
+    951: '42133',  # PB ETD-I STAFF       - 11 MONTH
+    952: '42133',  # PB ETD-I STAFF       - 12 MONTH
+    953: '42133',  # PB ETD-I STAFF       - 13 MONTH
+    954: '42133',  # PB ETD-I STAFF       - 14 MONTH
+    955: '42133',  # PB ETD-I STAFF       - 15 MONTH
+    956: '42133',  # PB ETD-I STAFF       - 16 MONTH
+    957: '42133',  # PB ETD-I STAFF       - 17 MONTH
+    958: '42133',  # PB ETD-I STAFF       - 18 MONTH
+    959: '42133',  # PB ETD-I STAFF       - 19 MONTH
+    960: '42133',  # PB ETD-I STAFF       - 20 MONTH
+    961: '42133',  # PB ETD-I STAFF       - 21 MONTH
+    962: '42133',  # PB ETD-I STAFF       - 22 MONTH
+    963: '42133',  # PB ETD-I STAFF       - 23 MONTH
+    964: '42133',  # PB ETD-I STAFF       - 24 MONTH
+    965: '42133',  # PB ETD-I STAFF       - 36 MONTH
+    966: '42133',  # PB ETD-I STAFF       - 48 MONTH
+    967: '42133',  # PB ETD-I STAFF       - 60 MONTH
+    968: '42130',  # PB EFD CAMPAIGN - 3 MONTHS
+    969: '42130',  # PB EFD CAMPAIGN - 6 MONTHS
+    970: '42130',  # PB EFD CAMPAIGN - 9 MONTHS
+    971: '42130',  # PB EFD VIA FPX CAMPAIGN 4 MONTHS
+    972: '42130',  # PB EFD VIA FPX 1 MONTHS (NON-STAFF)
+    973: '42130',  # PB EFD VIA FPX 2 MONTHS (NON-STAFF)
+    974: '42130',  # PB EFD VIA FPX 3 MONTHS (NON-STAFF)
+    975: '42130',  # PB EFD CAMPAIGN - 18 MONTHS
+    976: '42130',  # PB EFD CAMPAIGN - 19 MONTHS
+    977: '42130',  # PB EFD CAMPAIGN - 20 MONTHS
+    978: '42130',  # PB EFD CAMPAIGN - 21 MONTHS
+    979: '42130',  # PB EFD CAMPAIGN - 22 MONTHS
+    980: '42130',  # PB EFD CAMPAIGN - 23 MONTHS
+    981: '42130',  # PB EFD CAMPAIGN - 24 MONTHS
+    982: '42130',  # PB EFD CAMPAIGN - 36 MONTHS
+    983: '42130',  # PB EFD CAMPAIGN - 48 MONTHS
+    984: '42130',  # PB EFD CAMPAIGN - 60 MONTHS
+    985: '42130',  # PB SUPER FIXED DEPOSIT - NON-STAFF(12MTH)
+    986: '42130',  # PB SUPER FIXED DEPOSIT - STAFF(12MTH)
+    987: '42133',  # PB TD-I - NON-STAFF(12MTH)
+    988: '42133',  # PB TD-I - STAFF(12MTH)
+    989: '42130',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    990: '42130',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    991: '42133',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    992: '42133',  # RCB BDAY MONTH PRIVILEGES NON STAFF(INDV)
+    993: '42133',  # PB TD-I REWARD CAMPAIGN - STAFF(3MTH)
+    994: '42130',  # PLUS FD NONSTAFF (6MTH)
+    995: '42130',  # PB JOURNEY GOLDEN ASSIST-50FD-3MTH-NSTAFF
+    996: '42130',  # PB JOURNEY GOLDEN ASSIST-50FD-6MTH-NSTAFF
+    997: '42130',  # PB JOURNEY GOLDEN ASSIST-50FD-9MTH-NSTAFF
+}
+
+
+def fdprod_format(product_code: Optional[int]) -> str:
+    """
+    Apply FDPROD format to product code.
+    Maps FD product codes to BNM account codes.
+
+    Args:
+        product_code: FD product code.
+
+    Returns:
+        BNM account code string, or default '42130' for all other FD codes.
+    """
+    if product_code is None:
+        return '42130'
+    return _FDPROD_MAPPINGS.get(product_code, '42130')
+
+
+# ============================================================================
+# FORMAT: FDPRODD — Fixed Deposit Product Code (Simplified/Alternative)
+# ============================================================================
+
+_FDPRODD_MAPPINGS: Dict[int, str] = {
+    300: '42130',  # FD NORMAL
+    301: '42130',  # FD LIFE
+    302: '42132',  # FD AL MUDHARABAH
+    303: '42130',  # FD GOLDEN 50
+    311: '42130',  # PB EFD
+    312: '42130',  # PB EFD
+    313: '42133',  # PB ETD-I (NON-STAFF)
+    314: '42133',  # PB ETD-I (STAFF)
+    315: '42132',  # FD ISTISMAR
+    316: '42133',  # FD TERM (TD-I)
+    393: '42133',  # FD TERM (TD-I FI)
+    394: '42132',  # FD ISTISMAR
+}
+
+
+def fdprodd_format(product_code: Optional[int]) -> str:
+    """
+    Apply FDPRODD format to product code (simplified FD product mapping).
+
+    Args:
+        product_code: FD product code.
+
+    Returns:
+        BNM account code string, or default '42130' for others.
+    """
+    if product_code is None:
+        return '42130'
+    return _FDPRODD_MAPPINGS.get(product_code, '42130')
+
+
+# ============================================================================
+# FORMAT: FDPRD — Fixed Deposit Product Type Classification
+# Maps product ranges to type codes: 'N' (Normal), 'L' (Life), 'M' (MGIA/Mudharabah)
+# ============================================================================
+
+def fdprd_format(product_code: Optional[int]) -> str:
+    """
+    Apply FDPRD format to product code.
+    Classifies FD products into type codes.
+
+    Type codes:
+        'N' : FD NORMAL   (300-319, 400-419, 368-394, 500-539, 600-639, 741-744, 445)
+        'L' : FD LIFE     (320-339, 420-428, 540-547)
+        'M' : FD MGIA     (340-359, 453-459, 461-469, 580-599, 660-740)
+        ' ' : Other
+
+    Args:
+        product_code: FD product code.
+
+    Returns:
+        Single character type code, or ' ' if not matched.
+    """
+    if product_code is None:
+        return ' '
+
+    # FD NORMAL
+    if (300 <= product_code <= 319 or
+            400 <= product_code <= 419 or
+            368 <= product_code <= 394 or
+            500 <= product_code <= 539 or
+            600 <= product_code <= 639 or
+            741 <= product_code <= 744 or
+            product_code == 445):
+        return 'N'
+
+    # FD LIFE
+    if (320 <= product_code <= 339 or
+            420 <= product_code <= 428 or
+            540 <= product_code <= 547):
+        return 'L'
+
+    # FD MGIA / FD MGIA-PFB
+    if (340 <= product_code <= 359 or
+            453 <= product_code <= 459 or
+            461 <= product_code <= 469 or
+            580 <= product_code <= 599 or
+            660 <= product_code <= 740):
+        return 'M'
+
+    return ' '
+
+
+# ============================================================================
+# FORMAT: FCYTERM — Foreign Currency Term based on Interest Plan (INVALUE)
+# ============================================================================
+
+_FCYTERM_1_MONTH: Set[int] = {
+    470, 471, 476, 477, 482, 483, 488, 494, 548, 554,
+    429, 433, 437, 421, 567, 574, 439, 751, 755, 756, 759,
+    762, 767, 771,
+}
+
+_FCYTERM_3_MONTHS: Set[int] = {
+    472, 473, 478, 479, 484, 485, 490, 496, 550, 551, 556,
+    569, 576, 440, 441, 423, 752, 757, 760, 763, 768, 772,
+    430, 434,
+}
+
+_FCYTERM_6_MONTHS: Set[int] = {
+    474, 480, 486, 492, 498, 552, 553, 558,
+    571, 578, 579, 442, 443, 425, 753, 761, 764, 765, 769, 773,
+    431, 435, 758,
+}
+
+_FCYTERM_12_MONTHS: Set[int] = {
+    444, 446, 545, 546, 547, 560, 561, 562, 563, 564, 565, 566,
+    573, 427, 754, 766, 770, 774, 432, 436,
+}
+
+
+def fcyterm_format(intplan_code: Optional[int]) -> Optional[int]:
+    """
+    Apply FCYTERM invalue format to interest plan code.
+    Maps FCY interest plan codes to term lengths in months.
+
+    Args:
+        intplan_code: Interest plan code.
+
+    Returns:
+        Term in months (1, 3, 6, or 12), or None if not matched.
+    """
+    if intplan_code is None:
+        return None
+    if intplan_code in _FCYTERM_1_MONTH:
+        return 1
+    if intplan_code in _FCYTERM_3_MONTHS:
+        return 3
+    if intplan_code in _FCYTERM_6_MONTHS:
+        return 6
+    if intplan_code in _FCYTERM_12_MONTHS:
+        return 12
+    return None
+
+
+# ============================================================================
+# FORMAT: CADENOM — Current Account Denomination (Islamic or Domestic)
+# ============================================================================
+
+_CADENOM_ISLAMIC: Set[int] = {
+    7, 8, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 32, 33,
+    45, 46, 47, 48, 49, 60, 61, 62, 63, 64, 66, 67, 70, 71, 73, 74,
+    75, 76, 80, 81, 92, 93, 96, 97, 160, 161, 162, 163, 164, 165, 166,
+    167, 168, 169, 182, 183, 184, 185, 186, 187, 188, 321,
+}
+
+
+def cadenom_format(product_code: Optional[int]) -> str:
+    """
+    Apply CADENOM format to product code.
+    Maps current account product codes to Islamic (I) or Domestic (D).
+
+    Args:
+        product_code: CA product code.
+
+    Returns:
+        'I' for Islamic products, 'D' for Domestic, '' if None.
+    """
+    if product_code is None:
+        return ''
+    return 'I' if product_code in _CADENOM_ISLAMIC else 'D'
+
+
+# ============================================================================
+# FORMAT: CAPROD — Current Account Product Code
+# ============================================================================
+
+_CAPROD_MAPPINGS: Dict[int, str] = {
+    3:   '42110',  # OD/GGSM2
+    4:   '42110',  # OD/GGSM2-FOCUS
+    5:   '42110',  # CLF-I BAE GOVERN.GUARANTEE SCM MADANI
+    6:   '42110',  # CLF-I BAE GOVERN.GUARANTEE SCM MADANI-FOCUS
+    7:   '42110',  # CLF-i/PGGS-i(NEW FINANCING)
+    8:   '42110',  # CLF-i/PGGS-i(ADDITIONAL WORKING CAPITAL)
+    9:   '42110',  # PGGS-NEW FINACING
+    10:  '42110',  # PGGS-ADDITIONAL WORKING CAPITAL
+    11:  '42110',  # OD/GGSM
+    12:  '42110',  # OD/GGSM-FOCUS
+    13:  '42110',  # BAE CASH LINE FACILITY-I (BAE CLF-i)
+    14:  '42110',  # CLF-I/ BAE BNM SME AES-I (FLD)
+    15:  '42110',  # CASHLINE FACILITY-I/ SWIFT
+    16:  '42110',  # CASHLINE FACILITY-I/ SWIFT EXTRA
+    17:  '42110',  # CLF-I/ BAE BNM SME AES-I
+    18:  '42110',  # CLF-I/ WCGS-I EXPORT
+    19:  '42110',  # CLF-I/ WCGS-I WOMEN
+    20:  '42110',  # CLF-I/ BAE GGSM2
+    21:  '42110',  # CLF-I/ BAE GGSM2-Focus
+    22:  '42110',  # CLF-I BOOSTER(CASH LINE FACILITY-I BOOSTER)
+    23:  '42110',  # (CM) PCA-I
+    24:  '42110',  # (CM) PCA-I ENTERPRISE
+    25:  '42110',  # (CM) CURRENT ACC-I
+    26:  '42110',  # OD/WCGS EXPORT
+    27:  '42110',  # OD/WCGS IMPORT
+    30:  '34180',  # OD WRITE OFF (RETAIL)
+    31:  '34180',  # OD WRITE OFF (CORPORATE)
+    32:  '34180',  # RETAIL CLF-I WRITE OFF
+    33:  '34180',  # CORP CLF-I WRITE OFF
+    34:  '34240',  # RETAIL PB SHARE LINK WRITE OFF
+    35:  '42110',  # BNM SME(FLD)
+    36:  '42110',  # WCGS START-UP
+    37:  '42110',  # BNM SME
+    38:  '42110',  # BNM AGRICULTURAL
+    39:  '42110',  # BNM DISASTER RELIEF
+    40:  '42110',  # ACE ENTERPRISE
+    41:  '42110',  # CASH MANAGEMENT COLLECTION ACCOUNT
+    42:  '42110',  # PREMIER ACE-NORMAL
+    43:  '42110',  # PREMIER ACE-EXTERNAL
+    45:  '42110',  # COMM MURABAHAH CASH LINE FAC(CM CLF-I)
+    46:  '42110',  # CASH LINE FACILITY-I/WCGS-I START UP
+    47:  '42110',  # CASH LINE FACILITY-I/BNM SME
+    48:  '42110',  # CASH LINE FACILITY-I/BNM SME AGRICULTURAL
+    49:  '42110',  # CASH LINE FACILITY-I/BNM DISASTER RELIEF
+    50:  '42110',  # CORP NORMAL CURRENT ACCOUNT
+    51:  '42110',  # CORP GOVERNMENT ACCOUNT
+    52:  '42110',  # CORP EXTERNAL ACCOUNT
+    53:  '42180',  # CORP HOUSING DEVELOPER
+    54:  '42110',  # CORP BLOCK DISCOUNT
+    55:  '42110',  # CORP SWIFT
+    56:  '42110',  # CORP OCP
+    57:  '42110',  # CORP OD/OC
+    58:  '42110',  # CORP SMILAX OD
+    59:  '42110',  # CORP LOCAL CHEQUE PURCHASED
+    60:  '42310',  # CORP AL-WADIAH CURRENT A/C
+    61:  '42310',  # CORP AL-WADIAH GOVERNMENT
+    62:  '42310',  # CORP AL-WADIAH EXTERNAL A/C
+    63:  '42180',  # CORP AL-WADIAH HOUSING DEV
+    64:  '42310',  # CORP AL-WADIAH OUTWARD CHEQUE PURCHASE
+    65:  '42110',  # CORP OD/OC
+    66:  '42110',  # CURRENT ACCOUNT BY FI-I (NPB)
+    67:  '42110',  # CURRENT ACCOUNT BY FI-I (PB)
+    68:  '42110',  # CURRENT ACCOUNT BY FIN. INST. (NIB)
+    69:  '42110',  # CURRENT ACCOUNT BY FIN. INST. (IB)
+    70:  '42110',  # CORP CLF-I
+    71:  '42110',  # CORP PLUS CLF-I
+    72:  '42199',  # CURRENT A/C BY COMMERCIAL FI (NIB)
+    73:  '42110',  # CLF-I/NEF2
+    74:  '42310',  # CASH MANAGEMENT COLLECTION ACCOUNT-I
+    75:  '42110',  # CLF/APGS-I
+    76:  '42110',  # CLF/IPGS-I
+    77:  '42110',  # SHARELINK INDIVIDUAL
+    78:  '42110',  # CORPORATE SHARELINK
+    79:  '42199',  # UMA3
+    80:  '42199',  # UMA3
+    81:  '42110',  # EPLUS CA (NORMAL)
+    82:  '42110',  # EPLUS CA (EXTERNAL)
+    83:  '42110',  # EPLUS CA (STAFF)
+    84:  '42110',  # EPLUS CA (STAFF REL)
+    85:  '42110',  # OD PB TRADEPLUS (SME)
+    86:  '42110',  # OD PB TRADEPLUS (LARGE ENTERPRISES)
+    87:  '42110',  # WORKING CAPITAL GUARANTEE SCHEME
+    88:  '42110',  # INDUS RESTRUC LN GUARANTEE SCHEME (IRLGS)
+    89:  '42110',  # MAH SING OVERDRAFT
+    90:  '42110',  # BASIC CURRENT A/C
+    91:  '42110',  # BASIC 55 CURRENT A/C
+    92:  '42110',  # PCA-I ENTERPRISE
+    93:  '42110',  # AL WADIAH CURRENT
+    94:  '42110',  # WORKING CAPITAL GUARANTEE SCHEME-I
+    95:  '42110',  # INDUSTRY RESTRUCT. LOAN GUARANTEE SCHEME-I
+    96:  '42110',  # MUDHARABAH CURRENT
+    97:  '42110',  # MUDHARABAH CURRENT ACCT-I (S)
+    98:  'N',      # RM DEMAND DEPOSIT
+    100: '42110',  # NORMAL CURRENT ACCOUNT
+    101: '42110',  # GOVERNMENT ACCOUNT
+    102: '42110',  # EXTERNAL ACCOUNT
+    103: '42180',  # HOUSING DEVELOPER
+    104: '43110',  # VOSTRO LOCAL
+    105: '43110',  # VOSTRO FOREIGN
+    106: '42110',  # STAFF CURRENT ACCOUNT
+    107: 'N',      # PBCS
+    108: '42110',  # CGC
+    109: '42110',  # SLS
+    110: '42110',  # BLOCK DISCOUNT
+    111: '42110',  # R/C
+    112: '42110',  # PGS
+    113: '42110',  # SHARE MARGIN
+    114: '42110',  # NEF
+    115: '42110',  # PAS
+    116: '42110',  # HRS
+    117: '42110',  # AUSTRALIAN
+    118: '42110',  # CAIS
+    119: '42110',  # HOS (<25K - 100K)
+    120: '42110',  # HOS (>100K - 200K)
+    121: '42110',  # HICOM SHARE
+    122: '42110',  # SFFS
+    123: '42110',  # PETRONAS
+    124: '42110',  # OCP
+    125: '42110',  # OD/OC
+    126: 'N',      # NORMAL BANKERS CHEQUE
+    127: 'N',      # MIDF BANKERS CHEQUE
+    128: 'N',      # MIH BANKERS CHEQUE
+    129: 'N',      # DD NORMAL
+    130: 'N',      # USD C/A
+    131: '42110',  # GBP C/A
+    132: '42110',  # AUD C/A
+    133: '42110',  # PB SHARELINK - NON MARGIN
+    134: '42110',  # CORPORATE SHARELINK - NON MARGIN
+    135: '42110',  # EMC CODO DEALERS
+    136: 'N',      # HKD C/A
+    137: '42110',  # 5 HOME PLAN OD LEGEL FEE
+    138: '42110',  # MORE PLAN OD LEGEL FEE
+    139: 'N',      # HP COLLECTION ACCOUNT
+    140: 'N',      # SI-CLEARING ACCOUNT
+    141: 'N',      # ATM-PISA CLEARING ACCT
+    142: 'N',      # ATM-LOAN CLEARING ACCT
+    143: 'N',      # ATM-FD CLEARING ACCT
+    144: 'N',      # DD SHARE PUBLIC
+    145: 'N',      # DD SHARE BUMI
+    146: 'N',      # IBT COLLECTION ACCT
+    147: 'N',      # HO INTERBANK SETTLEMENT A/C
+    148: 'N',      # INTERBANK GIRO & MEPS CASH COLL
+    149: 'N',      # BNM BONDS COLLECTION ACCOUNT
+    150: '42110',  # ACE NORMAL
+    151: '42110',  # ACE STAFF
+    152: '42110',  # ACE EXTERNAL
+    153: '42110',  # OD LIFE EXTERNAL
+    154: '42110',  # MORE PLAN
+    155: '42110',  # 5 HOME PLAN
+    156: '42110',  # PB CURRENTLINK
+    157: '42110',  # EXTERNAL PB CURRENTLINK
+    158: '42110',  # STAFF PB CURRENTLINK
+    159: '42110',  # GLOBAL OD/OC - RETAIL
+    160: '42310',  # AL-WADIAH CURRENT A/C
+    161: '42310',  # AL-WADIAH GOVERNMENT
+    162: '42310',  # AL-WADIAH EXTERNAL A/C
+    163: '42180',  # AL-WADIAH HOUSING DEV
+    164: '42310',  # AL-WADIAH STAFF A/C
+    165: '42310',  # AL-WADIAH OCP
+    166: '42110',  # CASH LINE FACILITY
+    167: '42110',  # CLF-I BAE ENHANCER-I
+    168: '42110',  # PLUS CASH LINE FAC-I
+    169: '42110',  # CLF-I MURABAHAH ENHANCER-I
+    170: '42110',  # CASH LINE FACILITY-1
+    171: 'N',      # MYR OVERNIGHT A/C
+    172: 'N',      # MYR OVERNIGHT A/C
+    173: 'N',      # MYR OVERNIGHT A/C
+    174: '42110',  # SHARE SERVICES A/C
+    175: '42110',  # SHARE MARGIN  A/C
+    176: '42110',  # SMILAX OD
+    177: '42110',  # PBB SHARELINK SETTLEMENT A/C
+    178: '42110',  # PBB SHARELINK CORP.
+    180: '42110',  # STAFF REL - NORMAL C/A
+    181: '42110',  # STAFF REL - ACE A/C
+    182: '42310',  # STAFF REL - AL WADIAH
+    183: '42110',  # CASH LINE FACILITY-I (SSME)
+    184: '42110',  # CASH LINE FACILITY-I (UNIFLEX-I)
+    185: '42110',  # CLF-I SERVICES SECTOR (SSGS-I)
+    186: '42110',  # CLF-I FLOOD RELIEF FINANCIANG (FRFGS-I)
+    187: '42110',  # CLF-I FSMI2 - FREE LEGAL DOCUMENTATION
+    188: '42110',  # CLF-I FSMI2 - NON FREE LEGAL DOCUMENTATION
+    190: '42110',  # OD SME PORTFOLIO G'TEE CGC
+    191: '42110',  # LOCAL CHEQUE PURCHASED
+    192: '42110',  # MORE PLAN FIXED 3
+    193: '42110',  # MORE PLAN FIXED 5
+    194: '42110',  # 5 HOME PLAN FIXED 3
+    195: '42110',  # 5 HOME PLAN FIXED 5
+    196: '42110',  # SWIFT PLAN FREE LEGAL DOC
+    197: '42110',  # WORKING CAPITAL FOR CAR DEALERS
+    198: '42110',  # FINANCE/REFINANCING PRIME CUSTOMERS
+    320: 'N',      # RETAIL NEGOTIABLE INSTRUMENTS OF DEPOSIT
+    321: 'N',      # RETAIL NEGOTIABLE ISLAMIC DEBT CERTIFICATE
+    400: '42610',  # USD CURRENT ACCOUNT
+    401: '42610',  # GBP CURRENT ACCOUNT
+    402: '42610',  # AUD CURRENT ACCOUNT
+    403: '42610',  # SGD CURRENT ACCOUNT
+    404: '42610',  # JPY CURRENT ACCOUNT
+    405: '42610',  # CNY CURRENT ACCOUNT
+    406: '42610',  # HKD CURRENT ACCOUNT
+    407: '42610',  # EUR CURRENT ACCOUNT
+    408: '42610',  # CHF CURRENT ACCOUNT
+    409: '42610',  # NZD CURRENT ACCOUNT
+    410: '42610',  # THB CURRENT ACCOUNT
+    411: '42610',  # CAD CURRENT ACCOUNT
+    413: '42699',  # USD BY COMMERCIAL FI (IB)
+    420: '42610',  # USD TRADE
+    421: '42610',  # GBP TRADE
+    422: '42610',  # AUD TRADE
+    423: '42610',  # SGD TRADE
+    424: '42610',  # JPY TRADE
+    425: '42610',  # CNY TRADE
+    426: '42610',  # HKD TRADE
+    427: '42610',  # EUR TRADE
+    428: '42610',  # CHF TRADE
+    429: '42610',  # NZD TRADE
+    430: '42610',  # THB TRADE
+    431: '42610',  # CAD TRADE
+    432: '42610',  # THB SUB SNA - TRADE
+    433: '42610',  # IDR SUB SNA - TRADE
+    434: '42610',  # THB SUB SNA - INVESTMENT
+    440: '42610',  # USD QARDH CURRENT ACCOUNT-I
+    441: '42610',  # GBP QARDH CURRENT ACCOUNT-I
+    442: '42610',  # AUD QARDH CURRENT ACCOUNT-I
+    443: '42610',  # EUR QARDH CURRENT ACCOUNT-I
+    444: '42610',  # NZD QARDH CURRENT ACCOUNT-I
+    450: '42610',  # USD QCA-I TRADE
+    451: '42610',  # GBP QCA-I TRADE
+    452: '42610',  # AUD QCA-I TRADE
+    453: '42610',  # EUR QCA-I TRADE
+    454: '42610',  # NZD QCA-I TRADE
+    473: 'N',      # COLLECTION ACCT
+    474: 'N',      # COLLECTION ACCT
+    475: 'N',      # COLLECTION ACCT
+    476: 'N',      # COLLECTION ACCT
+    477: 'N',      # COLLECTION ACCT
+    478: 'N',      # COLLECTION ACCT
+    479: 'N',      # COLLECTION ACCT
+    549: 'N',      # GENERAL MASTER COLLECTION
+    550: 'N',      # MYR MASTER NOTE
+}
+
+
+def caprod_format(product_code: Optional[int]) -> str:
+    """
+    Apply CAPROD format to product code.
+    Maps current account product codes to BNM account codes.
+
+    Args:
+        product_code: CA product code.
+
+    Returns:
+        BNM account code string, or default '42110' for all other CA codes.
+    """
+    if product_code is None:
+        return '42110'
+    return _CAPROD_MAPPINGS.get(product_code, '42110')
+
+
+# ============================================================================
+# FORMAT: DPCUSTCD — Deposit Customer Code (Current/FD general)
+# ============================================================================
+
+_DPCUSTCD_MAPPINGS: Dict[int, str] = {
+    1:  '01',   # BANK NEGARA MALAYSIA
+    2:  '02',   # COMMERCIAL BANKS
+    3:  '03',   # ISLAMIC BANKS
+    4:  '04',   # SUBSIDIARY STOCKBROKING COMPANIES
+    5:  '05',   # ASSOCIATE STOCKBROKING COMPANIES
+    6:  '06',   # OTHER STOCKBROKING COMPANIES
+    10: '10',   # DOMESTIC BANKING INSTITUTIONS
+    11: '11',   # FINANCE COMPANIES
+    12: '12',   # MERCHANT BANKS
+    13: '13',   # DISCOUNT HOUSES
+    15: '15',   # DOMESTIC NON-BANK ENTITIES
+    17: '17',   # CAGAMAS BERHAD
+    20: '20',   # DOMESTIC NON-BANK FINANCIAL INSTITUTIONS
+    30: '30',   # DOMESTIC OTHER NBFI
+    31: '31',   # SAVINGS INSTITUTIONS
+    32: '32',   # CREDIT CARD COMPANIES
+    33: '33',   # DEVELOPMENT FINANCE INSTITUTIONS
+    34: '34',   # BUILDING SOCIETIES
+    35: '35',   # CO-OPERATIVE SOCIETIES
+    36: '36',   # STOCKBROKING COMPANIES
+    37: '37',   # COMMODITY BROKERS
+    38: '38',   # CREDIT & LEASING COMPANIES
+    39: '39',   # UNIT TRUST COMPANIES
+    40: '40',   # INSURANCE AND INSURANCE RELATED COMPANIES
+    41: '41',   # DBE - BUMI CONTROLLED SME - MICRO
+    42: '42',   # DBE - BUMI CONTROLLED SME - SMALL
+    43: '43',   # DBE - BUMI CONTROLLED SME - MEDIUM
+    44: '44',   # DBE - NON-BUMI CONTROLLED SME - MICRO
+    45: '45',   # REHABILITATION INSTITUTIONS
+    46: '46',   # DBE - NON-BUMI CONTROLLED SME - SMALL
+    47: '47',   # DBE - NON-BUMI CONTROLLED SME - MEDIUM
+    48: '48',   # DBE - NON-RESIDENT CONTROL SME - MICRO
+    49: '49',   # DBE - NON-RESIDENT CONTROL SME - SMALL
+    51: '51',   # DBE - NON-RESIDENT CONTROL SME - MEDIUM
+    52: '52',   # DBE - GOVERNMENT CONTROLLED SME - MICRO
+    53: '53',   # DBE - GOVERNMENT CONTROLLED SME - SMALL
+    54: '54',   # DBE - GOVERNMENT CONTROLLED SME - MEDIUM
+    50: '50',   # RESIDENTS/DOMESTIC ENTITIES
+    57: '57',   # PETRONAS
+    59: '59',   # OTHER GOVERNMENT CONTROLLED DBE NIE
+    60: '60',   # DOMESTIC BUSINESS ENTERPRISES (DBE)
+    61: '61',   # BUMIPUTRA CONTROLLED DBE
+    62: '62',   # NON-BUMIPUTRA CONTROLLED DBE
+    63: '63',   # NON-RESIDENT CONTROLLED DBE
+    64: '64',   # GOVERNMENT CONTROLLED DBE
+    65: '65',   # SMALL MEDIUM INDUSTRIES (SMI)
+    66: '66',   # BUMIPUTRA CONTROLLED SMI
+    67: '67',   # NON-BUMIPUTRA CONTROLLED SMI
+    68: '68',   # NON-RESIDENT CONTROLLED SMI
+    69: '69',   # GOVERNMENT CONTROLLED SMI
+    70: '70',   # GOVERNMENT
+    71: '71',   # FEDERAL GOVERNMENT
+    72: '72',   # STATE GOVERNMENT
+    73: '73',   # LOCAL GOVERNMENT
+    74: '74',   # STATUTORY AUTHORITIES
+    75: '75',   # NFPE
+    76: '76',   # INDIVIDUALS
+    77: '77',   # BUMIPUTRA
+    78: '78',   # NON-BUMIPUTRA
+    79: '79',   # DOMESTIC OTHER ENTITIES NIE
+    80: '80',   # NON-RESIDENTS/FOREIGN ENTITIES
+    81: '81',   # FOREIGN BANKING INSTITUTIONS
+    82: '82',   # AFFILIATES ABROAD
+    83: '83',   # G7 COUNTRIES
+    84: '84',   # FOREIGN BANKS IN OTHER COUNTRIES
+    85: '85',   # FOREIGN NON-BANK ENTITIES
+    86: '86',   # FOREIGN BUSINESS ENTERPRISES
+    87: '87',   # FOREIGN BUSINESS ENTERPRISES - MICRO
+    88: '88',   # FOREIGN BUSINESS ENTERPRISES - SMALL
+    89: '89',   # FOREIGN BUSINESS ENTERPRISES - MEDIUM
+    90: '90',   # FOREIGN GOVERNMENTS
+    91: '91',   # FOREIGN CENTRAL BANKS
+    92: '92',   # FRGN DIPLOMATIC REPRESENTATION IN M'SIA
+    95: '95',   # FOREIGN INDIVIDUALS
+    96: '96',   # FOREIGNERS EMPLOYED/STUDYING IN M'SIA
+    98: '98',   # FOREIGN NON-COMMERCIAL INTERNATIONAL ORGANIZATION IN M'SIA
+    99: '99',   # FOREIGN OTHER ENTITIES NIE
+}
+
+
+def dpcustcd_format(cust_code: Optional[int]) -> str:
+    """
+    Apply DPCUSTCD format to customer code.
+
+    Args:
+        cust_code: Customer code.
+
+    Returns:
+        2-character BNM customer code string, or default '78'.
+    """
+    if cust_code is None:
+        return '78'
+    return _DPCUSTCD_MAPPINGS.get(cust_code, '78')
+
+
+# ============================================================================
+# FORMAT: SACUSTCD — Savings Account Customer Code
+# ============================================================================
+
+_SACUSTCD_MAPPINGS: Dict[int, str] = {
+    1:  '30',   # BANK NEGARA MALAYSIA
+    2:  '30',   # COMMERCIAL BANKS
+    3:  '30',   # ISLAMIC BANKS
+    4:  '04',   # SUBSIDIARY STOCKBROKING COMPANIES
+    5:  '05',   # ASSOCIATE STOCKBROKING COMPANIES
+    6:  '06',   # OTHER STOCKBROKING COMPANIES
+    10: '30',   # DOMESTIC BANKING INSTITUTIONS
+    11: '30',   # FINANCE COMPANIES
+    12: '30',   # MERCHANT BANKS
+    13: '30',   # DISCOUNT HOUSES
+    15: '78',   # DOMESTIC NON-BANK ENTITIES
+    17: '30',   # CAGAMAS BERHAD
+    20: '30',   # DOMESTIC NON-BANK FINANCIAL INSTITUTIONS
+    30: '30',   # DOMESTIC OTHER NBFI
+    31: '31',   # SAVINGS INSTITUTIONS
+    32: '32',   # CREDIT CARD COMPANIES
+    33: '33',   # DEVELOPMENT FINANCE INSTITUTIONS
+    34: '34',   # BUILDING SOCIETIES
+    35: '35',   # CO-OPERATIVE SOCIETIES
+    36: '06',   # STOCKBROKING COMPANIES
+    37: '37',   # COMMODITY BROKERS
+    38: '38',   # CREDIT & LEASING COMPANIES
+    39: '39',   # UNIT TRUST COMPANIES
+    40: '40',   # INSURANCE AND INSURANCE RELATED COMPANIES
+    41: '41',   # DBE - BUMI CONTROLLED SME - MICRO
+    42: '42',   # DBE - BUMI CONTROLLED SME - SMALL
+    43: '43',   # DBE - BUMI CONTROLLED SME - MEDIUM
+    44: '44',   # DBE - NON-BUMI CONTROLLED SME - MICRO
+    45: '45',   # REHABILITATION INSTITUTIONS
+    46: '46',   # DBE - NON-BUMI CONTROLLED SME - SMALL
+    47: '47',   # DBE - NON-BUMI CONTROLLED SME - MEDIUM
+    48: '48',   # DBE - NON-RESIDENT CONTROL SME - MICRO
+    49: '49',   # DBE - NON-RESIDENT CONTROL SME - SMALL
+    50: '78',   # RESIDENTS/DOMESTIC ENTITIES
+    51: '51',   # DBE - NON-RESIDENT CONTROL SME - MEDIUM
+    52: '52',   # DBE - GOVERNMENT CONTROLLED SME - MICRO
+    53: '53',   # DBE - GOVERNMENT CONTROLLED SME - SMALL
+    54: '54',   # DBE - GOVERNMENT CONTROLLED SME - MEDIUM
+    57: '78',   # PETRONAS
+    59: '78',   # OTHER GOVERNMENT CONTROLLED DBE NIE
+    60: '78',   # DOMESTIC BUSINESS ENTERPRISES (DBE)
+    61: '78',   # BUMIPUTRA CONTROLLED DBE
+    62: '78',   # NON-BUMIPUTRA CONTROLLED DBE
+    63: '78',   # NON-RESIDENT CONTROLLED DBE
+    64: '78',   # GOVERNMENT CONTROLLED DBE
+    65: '78',   # SMALL MEDIUM INDUSTRIES (SMI)
+    66: '78',   # BUMIPUTRA CONTROLLED SMI
+    67: '78',   # NON-BUMIPUTRA CONTROLLED SMI
+    68: '78',   # NON-RESIDENT CONTROLLED SMI
+    69: '78',   # GOVERNMENT CONTROLLED SMI
+    70: '78',   # GOVERNMENT
+    71: '78',   # FEDERAL GOVERNMENT
+    72: '78',   # STATE GOVERNMENT
+    73: '78',   # LOCAL GOVERNMENT
+    74: '78',   # STATUTORY AUTHORITIES
+    75: '78',   # NFPE
+    76: '78',   # INDIVIDUALS
+    77: '77',   # BUMIPUTRA
+    78: '78',   # NON-BUMIPUTRA
+    79: '79',   # DOMESTIC OTHER ENTITIES NIE
+    80: '86',   # NON-RESIDENTS/FOREIGN ENTITIES
+    81: '86',   # FOREIGN BANKING INSTITUTIONS
+    82: '86',   # AFFILIATES ABROAD
+    83: '86',   # G7 COUNTRIES
+    84: '86',   # FOREIGN BANKS IN OTHER COUNTRIES
+    85: '86',   # FOREIGN NON-BANK ENTITIES
+    86: '86',   # FOREIGN BUSINESS ENTERPRISES
+    87: '87',   # FOREIGN BUSINESS ENTERPRISES - MICRO
+    88: '88',   # FOREIGN BUSINESS ENTERPRISES - SMALL
+    89: '89',   # FOREIGN BUSINESS ENTERPRISES - MEDIUM
+    90: '90',   # FOREIGN GOVERNMENTS
+    91: '91',   # FOREIGN CENTRAL BANKS
+    92: '92',   # FRGN DIPLOMATIC REPRESENTATION IN M'SIA
+    95: '95',   # FOREIGN INDIVIDUALS
+    96: '96',   # FOREIGNERS EMPLOYED/STUDYING IN M'SIA
+    98: '98',   # FOREIGN NON-COMMERCIAL INTERNATIONAL ORGANIZATION IN M'SIA
+    99: '99',   # FOREIGN OTHER ENTITIES NIE
+}
+
+
+def sacustcd_format(cust_code: Optional[int]) -> str:
+    """
+    Apply SACUSTCD format to customer code.
+
+    Args:
+        cust_code: Customer code.
+
+    Returns:
+        2-character BNM customer code string, or default '78'.
+    """
+    if cust_code is None:
+        return '78'
+    return _SACUSTCD_MAPPINGS.get(cust_code, '78')
+
+
+# ============================================================================
+# FORMAT: FDCUSTCD — Fixed Deposit Customer Code
+# ============================================================================
+
+_FDCUSTCD_MAPPINGS: Dict[int, str] = {
+    1:  '01',   # BANK NEGARA MALAYSIA
+    2:  '02',   # COMMERCIAL BANKS
+    3:  '03',   # ISLAMIC BANKS
+    4:  '04',   # SUBSIDIARY STOCKBROKING COMPANIES
+    5:  '05',   # ASSOCIATE STOCKBROKING COMPANIES
+    6:  '06',   # OTHER STOCKBROKING COMPANIES
+    10: '02',   # DOMESTIC BANKING INSTITUTIONS
+    11: '11',   # FINANCE COMPANIES
+    12: '12',   # MERCHANT BANKS
+    13: '13',   # DISCOUNT HOUSES
+    15: '62',   # DOMESTIC NON-BANK ENTITIES
+    17: '17',   # CAGAMAS BERHAD
+    20: '30',   # DOMESTIC NON-BANK FINANCIAL INSTITUTIONS
+    30: '30',   # DOMESTIC OTHER NBFI
+    31: '31',   # SAVINGS INSTITUTIONS
+    32: '32',   # CREDIT CARD COMPANIES
+    33: '33',   # DEVELOPMENT FINANCE INSTITUTIONS
+    34: '34',   # BUILDING SOCIETIES
+    35: '35',   # CO-OPERATIVE SOCIETIES
+    36: '06',   # STOCKBROKING COMPANIES
+    37: '37',   # COMMODITY BROKERS
+    38: '38',   # CREDIT & LEASING COMPANIES
+    39: '39',   # UNIT TRUST COMPANIES
+    40: '40',   # INSURANCE AND INSURANCE RELATED COMPANIES
+    41: '41',   # DBE - BUMI CONTROLLED SME - MICRO
+    42: '42',   # DBE - BUMI CONTROLLED SME - SMALL
+    43: '43',   # DBE - BUMI CONTROLLED SME - MEDIUM
+    44: '44',   # DBE - NON-BUMI CONTROLLED SME - MICRO
+    45: '45',   # REHABILITATION INSTITUTIONS
+    46: '46',   # DBE - NON-BUMI CONTROLLED SME - SMALL
+    47: '47',   # DBE - NON-BUMI CONTROLLED SME - MEDIUM
+    48: '48',   # DBE - NON-RESIDENT CONTROL SME - MICRO
+    49: '49',   # DBE - NON-RESIDENT CONTROL SME - SMALL
+    50: '78',   # RESIDENTS/DOMESTIC ENTITIES
+    51: '51',   # DBE - NON-RESIDENT CONTROL SME - MEDIUM
+    52: '52',   # DBE - GOVERNMENT CONTROLLED SME - MICRO
+    53: '53',   # DBE - GOVERNMENT CONTROLLED SME - SMALL
+    54: '54',   # DBE - GOVERNMENT CONTROLLED SME - MEDIUM
+    57: '57',   # PETRONAS
+    59: '59',   # OTHER GOVERNMENT CONTROLLED DBE NIE
+    60: '62',   # DOMESTIC BUSINESS ENTERPRISES (DBE)
+    61: '61',   # BUMIPUTRA CONTROLLED DBE
+    62: '62',   # NON-BUMIPUTRA CONTROLLED DBE
+    63: '63',   # NON-RESIDENT CONTROLLED DBE
+    64: '64',   # GOVERNMENT CONTROLLED DBE
+    65: '67',   # SMALL MEDIUM INDUSTRIES (SMI)
+    66: '66',   # BUMIPUTRA CONTROLLED SMI
+    67: '67',   # NON-BUMIPUTRA CONTROLLED SMI
+    68: '68',   # NON-RESIDENT CONTROLLED SMI
+    69: '69',   # GOVERNMENT CONTROLLED SMI
+    70: '71',   # GOVERNMENT
+    71: '71',   # FEDERAL GOVERNMENT
+    72: '72',   # STATE GOVERNMENT
+    73: '73',   # LOCAL GOVERNMENT
+    74: '74',   # STATUTORY AUTHORITIES
+    75: '75',   # NFPE
+    76: '78',   # INDIVIDUALS
+    77: '77',   # BUMIPUTRA
+    78: '78',   # NON-BUMIPUTRA
+    79: '79',   # DOMESTIC OTHER ENTITIES NIE
+    80: '86',   # NON-RESIDENTS/FOREIGN ENTITIES
+    81: '84',   # FOREIGN BANKING INSTITUTIONS
+    82: '82',   # AFFILIATES ABROAD
+    83: '83',   # G7 COUNTRIES
+    84: '84',   # FOREIGN BANKS IN OTHER COUNTRIES
+    85: '86',   # FOREIGN NON-BANK ENTITIES
+    86: '86',   # FOREIGN BUSINESS ENTERPRISES
+    87: '87',   # FOREIGN BUSINESS ENTERPRISES - MICRO
+    88: '88',   # FOREIGN BUSINESS ENTERPRISES - SMALL
+    89: '89',   # FOREIGN BUSINESS ENTERPRISES - MEDIUM
+    90: '90',   # FOREIGN GOVERNMENTS
+    91: '91',   # FOREIGN CENTRAL BANKS
+    92: '92',   # FRGN DIPLOMATIC REPRESENTATION IN M'SIA
+    95: '95',   # FOREIGN INDIVIDUALS
+    96: '96',   # FOREIGNERS EMPLOYED/STUDYING IN M'SIA
+    98: '98',   # FOREIGN NON-COMMERCIAL INTERNATIONAL ORGANIZATION IN M'SIA
+    99: '99',   # FOREIGN OTHER ENTITIES NIE
+}
+
+
+def fdcustcd_format(cust_code: Optional[int]) -> str:
+    """
+    Apply FDCUSTCD format to customer code.
+
+    Args:
+        cust_code: Customer code.
+
+    Returns:
+        2-character BNM customer code string, or default '78'.
+    """
+    if cust_code is None:
+        return '78'
+    return _FDCUSTCD_MAPPINGS.get(cust_code, '78')
+
+
+# ============================================================================
+# FORMAT: IFDCUSCD — Islamic Fixed Deposit Customer Code
+# (Same mapping as FDCUSTCD)
+# ============================================================================
+
+def ifdcuscd_format(cust_code: Optional[int]) -> str:
+    """
+    Apply IFDCUSCD format to customer code.
+    Same mappings as FDCUSTCD.
+
+    Args:
+        cust_code: Customer code.
+
+    Returns:
+        2-character BNM customer code string, or default '78'.
+    """
+    return fdcustcd_format(cust_code)
+
+
+# ============================================================================
+# FORMAT: DDCUSTCD — Demand Deposit Customer Code
+# ============================================================================
+
+_DDCUSTCD_MAPPINGS: Dict[int, str] = {
+    1:  '01',   # BANK NEGARA MALAYSIA
+    2:  '30',   # COMMERCIAL BANKS
+    3:  '30',   # ISLAMIC BANKS
+    4:  '04',   # SUBSIDIARY STOCKBROKING COMPANIES
+    5:  '05',   # ASSOCIATE STOCKBROKING COMPANIES
+    6:  '06',   # OTHER STOCKBROKING COMPANIES
+    10: '30',   # DOMESTIC BANKING INSTITUTIONS
+    11: '30',   # FINANCE COMPANIES
+    12: '12',   # MERCHANT BANKS
+    13: '13',   # DISCOUNT HOUSES
+    15: '62',   # DOMESTIC NON-BANK ENTITIES
+    17: '17',   # CAGAMAS BERHAD
+    20: '30',   # DOMESTIC NON-BANK FINANCIAL INSTITUTIONS
+    30: '30',   # DOMESTIC OTHER NBFI
+    31: '31',   # SAVINGS INSTITUTIONS
+    32: '32',   # CREDIT CARD COMPANIES
+    33: '33',   # DEVELOPMENT FINANCE INSTITUTIONS
+    34: '34',   # BUILDING SOCIETIES
+    35: '35',   # CO-OPERATIVE SOCIETIES
+    36: '06',   # STOCKBROKING COMPANIES
+    37: '37',   # COMMODITY BROKERS
+    38: '38',   # CREDIT & LEASING COMPANIES
+    39: '39',   # UNIT TRUST COMPANIES
+    40: '40',   # INSURANCE AND INSURANCE RELATED COMPANIES
+    41: '41',   # DBE - BUMI CONTROLLED SME - MICRO
+    42: '42',   # DBE - BUMI CONTROLLED SME - SMALL
+    43: '43',   # DBE - BUMI CONTROLLED SME - MEDIUM
+    44: '44',   # DBE - NON-BUMI CONTROLLED SME - MICRO
+    45: '45',   # REHABILITATION INSTITUTIONS
+    46: '46',   # DBE - NON-BUMI CONTROLLED SME - SMALL
+    47: '47',   # DBE - NON-BUMI CONTROLLED SME - MEDIUM
+    48: '48',   # DBE - NON-RESIDENT CONTROL SME - MICRO
+    49: '49',   # DBE - NON-RESIDENT CONTROL SME - SMALL
+    50: '78',   # RESIDENTS/DOMESTIC ENTITIES
+    51: '51',   # DBE - NON-RESIDENT CONTROL SME - MEDIUM
+    52: '52',   # DBE - GOVERNMENT CONTROLLED SME - MICRO
+    53: '53',   # DBE - GOVERNMENT CONTROLLED SME - SMALL
+    54: '54',   # DBE - GOVERNMENT CONTROLLED SME - MEDIUM
+    57: '57',   # PETRONAS
+    59: '59',   # OTHER GOVERNMENT CONTROLLED DBE NIE
+    60: '62',   # DOMESTIC BUSINESS ENTERPRISES (DBE)
+    61: '61',   # BUMIPUTRA CONTROLLED DBE
+    62: '62',   # NON-BUMIPUTRA CONTROLLED DBE
+    63: '63',   # NON-RESIDENT CONTROLLED DBE
+    64: '64',   # GOVERNMENT CONTROLLED DBE
+    65: '44',   # SMALL MEDIUM INDUSTRIES (SMI)
+    66: '41',   # BUMIPUTRA CONTROLLED SMI
+    67: '44',   # NON-BUMIPUTRA CONTROLLED SMI
+    68: '48',   # NON-RESIDENT CONTROLLED SMI
+    69: '52',   # GOVERNMENT CONTROLLED SMI
+    70: '71',   # GOVERNMENT
+    71: '71',   # FEDERAL GOVERNMENT
+    72: '72',   # STATE GOVERNMENT
+    73: '73',   # LOCAL GOVERNMENT
+    74: '74',   # STATUTORY AUTHORITIES
+    75: '75',   # NFPE
+    76: '78',   # INDIVIDUALS
+    77: '77',   # BUMIPUTRA
+    78: '78',   # NON-BUMIPUTRA
+    79: '79',   # DOMESTIC OTHER ENTITIES NIE
+    80: '86',   # NON-RESIDENTS/FOREIGN ENTITIES
+    81: '86',   # FOREIGN BANKING INSTITUTIONS
+    82: '86',   # AFFILIATES ABROAD
+    83: '86',   # G7 COUNTRIES
+    84: '86',   # FOREIGN BANK IN OTHER COUNTRIES
+    85: '86',   # FOREIGN NON-BANK ENTITIES
+    86: '86',   # FOREIGN BUSINESS ENTERPRISES
+    87: '87',   # FOREIGN BUSINESS ENTERPRISES - MICRO
+    88: '88',   # FOREIGN BUSINESS ENTERPRISES - SMALL
+    89: '89',   # FOREIGN BUSINESS ENTERPRISES - MEDIUM
+    90: '90',   # FOREIGN GOVERNMENTS
+    91: '91',   # FOREIGN CENTRAL BANKS
+    92: '92',   # FRGN DIPLOMATIC REPRESENTATION IN M'SIA
+    95: '95',   # FOREIGN INDIVIDUALS
+    96: '96',   # FOREIGNERS EMPLOYED/STUDYING IN M'SIA
+    98: '98',   # FOREIGN NON-COMMERCIAL INTERNATIONAL ORGANIZATION IN M'SIA
+    99: '99',   # FOREIGN OTHER ENTITIES NIE
+}
+
+
+def ddcustcd_format(cust_code: Optional[int]) -> str:
+    """
+    Apply DDCUSTCD format to customer code.
+
+    Args:
+        cust_code: Customer code.
+
+    Returns:
+        2-character BNM customer code string, or default '79'.
+    """
+    if cust_code is None:
+        return '79'
+    return _DDCUSTCD_MAPPINGS.get(cust_code, '79')
+
+
+# ============================================================================
+# FORMAT: STATECD — Branch State Code Mapping
+# ============================================================================
+
+_STATECD_MAPPINGS: Dict[int, str] = {
+    1:   'W',  # HEAD OFFICE (HOE)
+    2:   'W',  # JALAN SULTAN SULAIMAN (JSS)
+    3:   'W',  # JALAN RAJA CHULAN (JRC)
+    4:   'M',  # MELAKA (MLK)
+    5:   'A',  # IPOH MAIN OFFICE (IMO)
+    6:   'P',  # P. PINANG (PPG)
+    7:   'J',  # JOHOR BAHRU (JBU)
+    8:   'C',  # KUANTAN (KTN)
+    9:   'A',  # JALAN YANG KALSOM (JYK)
+    10:  'K',  # ALOR SETAR (ASR)
+    11:  'K',  # GURUN (GRN)
+    12:  'D',  # PASIR PUTEH (PPH)
+    13:  'D',  # KOTA BHARU (KBU)
+    14:  'D',  # TANAH MERAH (TMH)
+    15:  'W',  # KEPONG (KPG)
+    16:  'N',  # NILAI (NLI)
+    17:  'N',  # TAMPIN (TPN)
+    18:  'B',  # PJ NEW TOWN (PJN)
+    19:  'B',  # DAMANSARA UTAMA (DUA)
+    20:  'B',  # TAMAN CHI LIUNG (TCL)
+    21:  'J',  # BATU PAHAT (BPT)
+    22:  'B',  # SEMENYIH (SMY)
+    23:  'A',  # KEMUNTING (KMT)
+    24:  'N',  # RASAH (RSH)
+    25:  'B',  # SHAH ALAM (SAM)
+    26:  'W',  # SERI PETALING (SPG)
+    27:  'P',  # NIBONG TEBAL (NTL)
+    28:  'J',  # MUAR (MUA)
+    29:  'W',  # JALAN RAJA LAUT (JRL)
+    30:  'T',  # K. TRENGGANU (KTU)
+    31:  'B',  # SEKINCHAN (SKC)
+    32:  'Q',  # KUCHING (KCG)
+    33:  'S',  # KOTA KINABALU (KKU)
+    34:  'R',  # KANGAR (KGR)
+    35:  'B',  # SERI SETIA (SSA)
+    36:  'B',  # SS2 (SS2)
+    37:  'J',  # TMN SENTOSA (TSA)
+    38:  'W',  # JALAN KELANG LAMA (JKL)
+    39:  'N',  # KUALA KELAWANG (KKG)
+    40:  'W',  # JALAN SG BESI (JSB)
+    41:  'W',  # JALAN IPOH (JIH)
+    42:  'P',  # BUKIT MERTAJAM (BMM)
+    43:  'B',  # BANTING (BTG)
+    44:  'S',  # TAWAU (TWU)
+    45:  'N',  # SEREMBAN (SRB)
+    46:  'B',  # AMPANG (APG)
+    47:  'J',  # SEGAMAT (SGM)
+    48:  'C',  # MENTAKAB (MTK)
+    49:  'A',  # JELAPANG (JLP)
+    50:  'Q',  # MIRI (MRI)
+    51:  'A',  # SERI MANJUNG (SMG)
+    52:  'J',  # ULU TIRAM (UTM)
+    53:  'W',  # TMN MALURI (TMI)
+    54:  'P',  # BANDAR BAYAN BARU (BBB)
+    55:  'L',  # LABUAN
+    56:  'B',  # KAJANG (KJG)
+    57:  'K',  # SUNGAI PETANI (SPI)
+    58:  'Q',  # SIBU (SBU)
+    59:  'J',  # PONTIAN KECIL (PKL)
+    60:  'P',  # BAGAN AJAM (BAM)
+    61:  'J',  # KULAI (KLI)
+    62:  'S',  # SANDAKAN (SDK)
+    63:  'N',  # GEMAS (GMS)
+    64:  'N',  # PORT DICKSON (PDN)
+    65:  'N',  # BAHAU (BHU)
+    66:  'W',  # BUKIT DAMANSARA (BDA)
+    67:  'A',  # CHEMOR (CMR)
+    68:  'P',  # SIMPANG AMPAT (SAT)
+    69:  'B',  # BATANG KALI (BKI)
+    70:  'K',  # POKOK SENA (PSA)
+    71:  'C',  # BRINCHANG (BCG)
+    72:  'S',  # PAPAR (PPR)
+    73:  'B',  # SUNGAI PELEK (SPK)
+    74:  'K',  # SIK (SIK)
+    75:  'J',  # CHAAH (CAH)
+    76:  'A',  # PANTAI REMIS (PRS)
+    77:  'K',  # PULAU LANGKAWI (PLI)
+    78:  'B',  # SUBANG JAYA (SJA)
+    79:  'J',  # MASAI (MSI)
+    80:  'A',  # MENGLEMBU (MLB)
+    81:  'B',  # SUNGAI BULOH (SBH)
+    82:  'D',  # MACHANG (MCG)
+    83:  'W',  # JALAN BUKIT BINTANG (JBB)
+    84:  'D',  # PASIR MAS (PMS)
+    85:  'A',  # SUNGAI SIPUT (SST)
+    86:  'K',  # CHANGLUN (CLN)
+    87:  'J',  # MERSING (MSG)
+    88:  'K',  # KULIM (KUM)
+    89:  'J',  # TAMPOI (TPI)
+    90:  'Q',  # BINTULU (BTL)
+    91:  'J',  # KLUANG (KUG)
+    92:  'B',  # KLANG (KLG)
+    93:  'J',  # ENDAU (EDU)
+    94:  'W',  # SETAPAK (STP)
+    95:  'A',  # TELUK INTAN (TIN)
+    96:  'B',  # SERI GOMBAK (SGK)
+    97:  'W',  # JALAN TUN H S LEE (HSL)
+    98:  'J',  # TMN CENTURY (TCY)
+    # 101  = 'W'  # KAMPUNG BARU (KBR) — commented out in original SAS
+    102: 'J',  # PARIT RAJA (PRJ)
+    103: 'W',  # JINJANG (JJG)
+    104: 'K',  # KUALA KETIL (KKL)
+    105: 'J',  # KOTA TINGGI (KTI)
+    106: 'T',  # CHUKAI (CKI)
+    107: 'P',  # JELUTONG (JLT)
+    108: 'A',  # BAGAN SERAI (BSI)
+    109: 'B',  # K. SELANGOR (KSR)
+    110: 'J',  # TMN JOHOR JAYA (TJJ)
+    111: 'M',  # AIR KEROH (AKH)
+    112: 'S',  # LIDO (LDO)
+    113: 'C',  # TEMERLOH (TML)
+    114: 'P',  # BANDAR BARU AIR ITAM (BBA)
+    115: 'S',  # KENINGAU (KNG)
+    116: 'C',  # TRIANG (TRI)
+    117: 'D',  # KUALA KRAI (KKI)
+    118: 'B',  # TMN MELAWATI (TMW)
+    119: 'A',  # BERCHAM N/V (BNV)
+    120: 'B',  # PANDAN INDAH (PIH)
+    121: 'P',  # PRAI (PRA)
+    122: 'B',  # SRI KEMBANGAN (SKN)
+    123: 'A',  # IPOH GARDEN (IGN)
+    124: 'B',  # SECTION 14 (S14)
+    125: 'B',  # KELANA JAYA (KJA)
+    126: 'P',  # PULAU TIKUS (PTS)
+    127: 'B',  # TMN SERI MUDA (TSM)
+    128: 'W',  # SEGAMBUT (SGB)
+    129: 'W',  # BANGSAR (BSR)
+    130: 'Q',  # JLN TUN ABANG HAJI OPENG (JTO)
+    131: 'B',  # TMN MAYANG (TMG)
+    133: 'B',  # PORT KLANG (PKG)
+    134: 'D',  # RANTAU PANJANG (RPG)
+    135: 'B',  # BANDAR SUNWAY (BSY)
+    136: 'W',  # TMN CHERAS (TCS)
+    137: 'A',  # JALAN PASIR PUTEH (JPP)
+    138: 'W',  # WANGSA MAJU (WMU)
+    139: 'C',  # JERANTUT (JRT)
+    140: 'S',  # CITY PARADE (CPE)
+    141: 'W',  # SENTUL (STL)
+    142: 'S',  # KOTA BELUD (KBD)
+    143: 'S',  # LAHAD DATU (LDU)
+    144: 'J',  # KAHANG (KHG)
+    145: 'B',  # BDR SRI DAMANSARA (BSD)
+    146: 'A',  # PUSING (PSG)
+    147: 'J',  # PEKAN NENAS (PNS)
+    148: 'B',  # PJ OLD TOWN (PJO)
+    149: 'S',  # BEAUFORT (BFT)
+    150: 'P',  # LEBOH MACALLUM (LMM)
+    151: 'W',  # SELAYANG (SLY)
+    152: 'A',  # AYER TAWAR (ATR)
+    153: 'B',  # USJ (USJ)
+    154: 'P',  # BDR SEBERANG JAYA (BSJ)
+    155: 'B',  # TMN TAMING JAYA (TTJ)
+    156: 'M',  # TMN MELAKA RAYA (TMR)
+    157: 'B',  # BDR PUCHONG JAYA (BPJ)
+    158: 'A',  # SIMPANG PULAI (SPL)
+    159: 'P',  # RELAU (RLU)
+    160: 'M',  # MASJID TANAH (MTH)
+    161: 'S',  # DONGGONGON (DGG)
+    162: 'B',  # SEA PARK (SEA)
+    163: 'W',  # JALAN KUCHAI LAMA (JKA)
+    164: 'P',  # KEPALA BATAS (KBS)
+    165: 'M',  # TENGKERA (TKA)
+    166: 'J',  # PASIR GUDANG (PGG)
+    167: 'B',  # BANDAR BUKIT BERUNTUNG (BBG)
+    168: 'W',  # KUALA LUMPUR CITY MAIN (KLC)
+    169: 'W',  # CHANGKAT THAMBI DOLLAH (CTD)
+    170: 'B',  # PANDAN JAYA (PJA)
+    171: 'P',  # JALAN MACALLISTER (JMR)
+    172: 'M',  # TAMAN MALIM JAYA (TMJ)
+    173: 'B',  # SUNGAI CHUA (SCA)
+    174: 'J',  # BANDAR BARU PERMAS JAYA (BBP)
+    175: 'Q',  # LIMBANG (LBG)
+    176: 'J',  # TAMAN PERLING (TPG)
+    177: 'P',  # JALAN RAJA UDA (JRU)
+    178: 'W',  # MEDAN IDAMAN (MIN)
+    179: 'W',  # OVERSEAS UNION GARDEN (OUG)
+    180: 'B',  # KAMPUNG BARU SUBANG (KBG)
+    183: 'Q',  # JALAN CENTRAL, SIBU (JCL)
+    184: 'Q',  # JALAN PENRISSEN, KUCHING (JPN)
+    185: 'Q',  # JALAN TUN HJ OPENG, KUCHING (JTO)
+    186: 'Q',  # JALAN TUN ZAIDI, KUCHING (JTZ)
+    # 187  = 'Q'  # CHINA STREET, MIRI (CST) — commented out in original SAS
+    188: 'Q',  # PELITA, MIRI (PLT)
+    189: 'Q',  # BATU NIAH (BNH)
+    190: 'Q',  # BINTANGOR (BTR)
+    191: 'Q',  # KAPIT (KPT)
+    192: 'Q',  # MARUDI (MRD)
+    193: 'Q',  # MUKAH (MKH)
+    194: 'Q',  # SARIKEI (SRK)
+    195: 'W',  # BINTANG WALK BRANCH, KL (BWK)
+    196: 'W',  # JALAN HANG LEKIU (JHL)
+    197: 'W',  # TIONG NAM BRANCH, KL (TNM)
+    198: 'W',  # TAMAN DESA, JLN KELANG LAMA (TDA)
+    199: 'B',  # JALAN TAPAH, KLANG (JTH)
+    # 200  = 'B'  # JALAN SK10/4, SERI KEMBANGAN (JSK) — commented out in original SAS
+    201: 'B',  # PANDAMARAN, KLANG (PDA)
+    202: 'B',  # RAWANG (RWG)
+    203: 'B',  # SUNGAI JAROM (SJM)
+    204: 'P',  # BUTTERWORTH (BTW)
+    205: 'P',  # SUNGAI NIBONG (SNG)
+    206: 'P',  # TAMAN BUKIT MAS (TBM)
+    207: 'A',  # JALAN BERCHAM, IPOH (JBM)
+    208: 'A',  # JALAN SULTAN IDRIS SHAH, IPOH (JSI)
+    209: 'A',  # SITIAWAN (STW)
+    210: 'A',  # TANJUNG MALIM (TMM)
+    211: 'A',  # TANJUNG PIANDANG (TPD)
+    214: 'J',  # JALAN GEREJA, JOHOR BARU (JGA)
+    215: 'J',  # JALAN KUKUP, PONTIAN KECHIL (JKP)
+    216: 'J',  # SKUDAI (SKI)
+    217: 'J',  # T. MUNSHI IBRAHIM, TAMPOI (TMB)
+    220: 'C',  # GENTING HIGHLANDS BRANCH (GHS)
+    221: 'B',  # TAMAN SENTOSA, KLANG (TSK)
+    222: 'J',  # TAMAN DESA CEMERLANG (TDC), ULU TIRAM
+    224: 'J',  # JALAN ABDULLAH, MUAR
+    225: 'B',  # TAMAN INDAH, SELANGOR
+    226: 'W',  # JALAN PASAR, KUALA LUMPUR
+    227: 'B',  # KAMPONG BARU, SG. BULOH, SELANGOR
+    228: 'S',  # INANAM, KOTA KINABALU
+    230: 'W',  # SALAK SOUTH, KUALA LUMPUR
+    231: 'M',  # BATU BERENDAM, MELAKA
+    232: 'W',  # TAMAN MIDAH, KUALA LUMPUR
+    233: 'C',  # BENTONG, PAHANG
+    234: 'J',  # SIMPANG RENGAM, JOHORE
+    235: 'B',  # SABAK BERNAM, SELANGOR
+    237: 'C',  # KUALA LIPIS (KLS)
+    238: 'K',  # JALAN KOTA, ALOR SETAR (JKT)
+    239: 'C',  # KEMAYAN, PAHANG (KMY)
+    240: 'B',  # KAPAR, SELANGOR (KAP)
+    241: 'B',  # DAMANSARA JAYA, SELANGOR (DJA)
+    242: 'J',  # TANGKAK JOHOR (TKK)
+    243: 'A',  # KUALA KANGSAR PERAK (KKR)
+    244: 'A',  # GUNUNG RAPAT IPOH PERAK (GRT)
+    245: 'A',  # BIDOR PERAK (BDR)
+    246: 'A',  # BATU GAJAH PERAK (BGH)
+    247: 'J',  # BUKIT PASIR MUAR JOHOR (BPR)
+    248: 'W',  # BUKIT PASIR MUAR JOHOR (JTS)
+    249: 'A',  # TAIPING PERAK (TAI)
+    250: 'B',  # TAMAN ENG ANN KELANG SELANGOR (TEA)
+    251: 'A',  # KAMPAR PERAK (KPR)
+    252: 'B',  # TAMAN MUDA AMPANG SELANGOR (TMA)
+    253: 'P',  # JALAN TANJONG TOKONG P.PINANG (JTT)
+    254: 'N',  # KUALA PILAH NEGERI SEMBILAN (KPH)
+    256: 'A',  # PARIT BUNTAR PERAK (PBR)
+    257: 'C',  # RAUB PAHANG (RAU)
+    258: 'K',  # JITRA KEDAH (JTA)
+    259: 'Q',  # SRI AMAN SARAWAK (SAN)
+    260: 'T',  # KUALA DUNGUN TERENGGANU (KDN)
+    261: 'D',  # GUA MUSANG KELANTAN (GMG)
+    262: 'W',  # TAMAN CONNAUGHT KUALA LUMPUR (TCT)
+    263: 'C',  # BENTA PAHANG (BTA)
+    264: 'C',  # JALAN BESERAH PAHANG (JBH)
+    265: 'P',  # JALAN AIR ITAM PENANG (JAI)
+    266: 'P',  # JALAN DATUK KERAMAT PENANG (JDK)
+    267: 'W',  # TMN TUN DR ISMAIL WILAYAH (TDI)
+    268: 'B',  # BANDAR BUKIT TINGGI (BBT)
+    269: 'W',  # MONT KIARA (MKA)
+    270: 'B',  # BANDAR PUTERI PUCHONG (BPI)
+    273: 'Q',  # LI HUA SARAWAK (LHA)
+    274: 'Q',  # STUTONG, SARAWAK (STG)
+    275: 'Q',  # MEDAN SENTRAL, SARAWAK (MSL)
+    276: 'S',  # JALAN APAS, SABAH (JAS)
+    277: 'D',  # WAKAF SIKU (WSU)
+    278: 'S',  # JALAN PANTAI SABAH (JPI)
+    279: 'W',  # PUTRAJAYA (PTJ)
+    280: 'B',  # KOTA DAMANSARA (KDA)
+    281: 'Q',  # PELITA (PLT)
+    282: 'S',  # PUTATAN (PTT)
+    283: 'S',  # PRIMA SQUARE (PSE)
+    284: 'W',  # BANDAR SRI PERMAISURI (BSP)
+    285: 'B',  # BANDAR MAHKOTA CHERAS (BMC)
+    286: 'J',  # BUKIT INDAH BRANCH (BIH)
+    287: 'J',  # SUTERA UTAMA BRANCH (SUA)
+    288: 'W',  # STARPARC POINT BRANCH (SPT)
+    289: 'B',  # TAMANEQUINE BRANCH (TEE)
+    290: 'J',  # TAMAN DAYA (TDY)
+    291: 'B',  # BANDAR SUNGAI LONG
+    292: 'W',  # BANDAR MENJALARA (BMJ)
+    293: 'B',  # BANDAR SETIA ALAM (BSA)
+    294: 'B',  # KOTA KEMUNING (KKM)
+    295: 'B',  # BANDAR KINRARA (BKR)
+    296: 'W',  # BUKIT JALIL (BJL)
+    701: 'W',  # KAMPUNG BARU (IKB) ISLAMIC: 090810
+    702: 'W',  # PUTRAJAYA BRANCH (IPJ)
+    703: 'D',  # ISLAMIC WAKAF SIKU (IWS)
+    704: 'K',  # ISLAMIC JALAN KOTA (IJK)
+    800: 'N',
+    801: 'P',
+    802: 'W',
+    803: 'S',
+    804: 'J',
+    805: 'J',
+    806: 'K',
+    807: 'M',
+    808: 'P',
+    809: 'A',
+    811: 'W',
+    812: 'W',
+    813: 'Q',
+    814: 'B',
+    815: 'B',
+    816: 'B',
+    817: 'P',
+    818: 'W',
+    819: 'C',
+    820: 'B',
+    821: 'W',
+    822: 'W',
+    823: 'A',
+    824: 'K',
+    825: 'B',
+    826: 'P',
+    827: 'D',
+}
+
+
+def statecd_format(branch_code: Optional[int]) -> str:
+    """
+    Apply STATECD format to branch code.
+    Maps branch codes to single-character state codes.
+
+    Args:
+        branch_code: Branch numeric code.
+
+    Returns:
+        Single character state code, or default 'B'.
+    """
+    if branch_code is None:
+        return 'B'
+    return _STATECD_MAPPINGS.get(branch_code, 'B')
+
+
+# ============================================================================
+# FORMAT: FDORGMT — Fixed Deposit Original Term in Months
+# Maps a maturity months value to a 2-character BNM bucket code.
+#
+# Note: This format in the SAS source uses different bucket codes
+# than the fdorgmt_format function from the partial conversion.
+# The SAS FDORGMT format maps:
+#   LOW-1    = '12'  ORG. MAT. <= 1 MTH
+#   1-2      = '13'  ORG. MAT. >1-2 MTHS
+#   2-3      = '14'  ORG. MAT. >2-3 MTHS
+#   3-6      = '15'  ORG. MAT. >3-6 MTHS
+#   6-9      = '16'  ORG. MAT. >6-9 MTHS
+#   9-12     = '17'  ORG. MAT. >9-12 MTHS
+#   12-15    = '21'  ORG. MAT. >12-15 MTHS
+#   15-18    = '22'  ORG. MAT. >15-18 MTHS
+#   18-24    = '23'  ORG. MAT. >18-24 MTHS
+#   24-36    = '24'  ORG. MAT. >24-36 MTHS
+#   36-48    = '25'  ORG. MAT. >36-48 MTHS
+#   48-60    = '26'  ORG. MAT. >48-60 MTHS
+#   60-HIGH  = '30'  ORG. MAT. > 60 MTHS
+# ============================================================================
+
+def fdorgmt_format(orgmth: Optional[float]) -> str:
+    """
+    Apply FDORGMT format to original maturity months value.
+
+    Maps the original term in months to a 2-character BNM bucket code
+    used for fixed deposit reporting.
+
+    Args:
+        orgmth: Original term in months (float).
+
+    Returns:
+        2-character string bucket code, or '' if orgmth is None.
+    """
+    if orgmth is None:
+        return ''
+
+    if orgmth <= 1:
+        return '12'   # ORG. MAT. <= 1 MTH
+    elif orgmth <= 2:
+        return '13'   # ORG. MAT. >1-2 MTHS
+    elif orgmth <= 3:
+        return '14'   # ORG. MAT. >2-3 MTHS
+    elif orgmth <= 6:
+        return '15'   # ORG. MAT. >3-6 MTHS
+    elif orgmth <= 9:
+        return '16'   # ORG. MAT. >6-9 MTHS
+    elif orgmth <= 12:
+        return '17'   # ORG. MAT. >9-12 MTHS
+    elif orgmth <= 15:
+        return '21'   # ORG. MAT. >12-15 MTHS
+    elif orgmth <= 18:
+        return '22'   # ORG. MAT. >15-18 MTHS
+    elif orgmth <= 24:
+        return '23'   # ORG. MAT. >18-24 MTHS
+    elif orgmth <= 36:
+        return '24'   # ORG. MAT. >24-36 MTHS
+    elif orgmth <= 48:
+        return '25'   # ORG. MAT. >36-48 MTHS
+    elif orgmth <= 60:
+        return '26'   # ORG. MAT. >48-60 MTHS
+    else:
+        return '30'   # ORG. MAT. > 60 MTHS
+
+
+# ============================================================================
+# FORMAT: FDRMMT — Fixed Deposit Remaining Maturity in Months
+# ============================================================================
+
+def fdrmmt_format(remmth: Optional[float]) -> str:
+    """
+    Apply FDRMMT format to remaining maturity months value.
+
+    Maps remaining term in months to a 2-character BNM bucket code.
+
+    Bucket codes:
+        '51' : Overdue (< 0)
+        '52' : <= 1 month
+        '53' : > 1 to <= 2 months
+        '54' : > 2 to <= 3 months
+        '55' : > 3 to <= 6 months
+        '56' : > 6 to <= 9 months
+        '57' : > 9 to <= 12 months
+        '61' : > 12 to <= 24 months (1-2 years)
+        '62' : > 24 to <= 36 months (2-3 years)
+        '63' : > 36 to <= 48 months (3-4 years)
+        '64' : > 48 to <= 60 months (4-5 years)
+        '70' : > 60 months (> 5 years)
+
+    Args:
+        remmth: Remaining months to maturity (float).
+
+    Returns:
+        2-character string bucket code, or '' if remmth is None.
     """
     if remmth is None:
         return ''
 
     if remmth <= 0:
-        return '11'                  # overnight / same day
+        return '51'   # REM. MAT. OVERDUE
     elif remmth <= 1:
-        return '12'                  # up to 1 month
+        return '52'   # REM. MAT. <= 1 MTH
     elif remmth <= 2:
-        return '13'                  # up to 2 months
+        return '53'   # REM. MAT. > 1-2 MTHS
     elif remmth <= 3:
-        return '14'                  # up to 3 months
+        return '54'   # REM. MAT. > 2-3 MTHS
     elif remmth <= 6:
-        return '15'                  # up to 6 months
+        return '55'   # REM. MAT. > 3-6 MTHS
     elif remmth <= 9:
-        return '16'                  # up to 9 months
+        return '56'   # REM. MAT. > 6-9 MTHS
     elif remmth <= 12:
-        return '17'                  # up to 12 months
-    elif remmth <= 18:
-        return '35'                  # up to 18 months
+        return '57'   # REM. MAT. > 9-12 MTHS
     elif remmth <= 24:
-        return '36'                  # up to 24 months
+        return '61'   # REM. MAT. > 1-2 YEARS
+    elif remmth <= 36:
+        return '62'   # REM. MAT. > 2-3 YEARS
+    elif remmth <= 48:
+        return '63'   # REM. MAT. > 3-4 YEARS
+    elif remmth <= 60:
+        return '64'   # REM. MAT. > 4-5 YEARS
     else:
-        return '37'                  # over 24 months
+        return '70'   # REM. MAT. > 5 YEARS
+
+
+# ============================================================================
+# FORMAT: RMFDORGMT — RMFD Original Maturity bucket (by product code)
+# Maps RMFD product codes to their original maturity bucket code.
+# ============================================================================
+
+_RMFDORGMT_MAPPINGS: Dict[int, str] = {
+    272: '12', 284: '12',  # 30 DAYS
+    273: '13', 285: '13',  # 31-60 DAYS
+    274: '14', 286: '14',  # 61-90 DAYS
+    275: '15', 276: '15', 277: '15', 287: '15', 288: '15', 289: '15',  # 91-180 DAYS
+    278: '16', 279: '16', 280: '16', 290: '16', 291: '16', 292: '16',  # 181-270 DAYS
+    281: '17', 282: '17', 283: '17', 293: '17', 294: '17', 295: '17',  # 271-366 DAYS
+}
+
+
+def rmfdorgmt_format(product_code: Optional[int]) -> str:
+    """
+    Apply RMFDORGMT format to RMFD product code.
+    Maps RMFD product codes to original maturity bucket codes.
+
+    Args:
+        product_code: RMFD product code.
+
+    Returns:
+        2-character bucket code string, or '' if not found.
+    """
+    if product_code is None:
+        return ''
+    return _RMFDORGMT_MAPPINGS.get(product_code, '')
+
+
+# ============================================================================
+# INVALUE: SDRANGE — Savings Deposit Balance Range (upper-bound bucketing)
+# ============================================================================
+
+def sdrange_format(balance: Optional[float]) -> Optional[float]:
+    """
+    Apply SDRANGE invalue format to a savings deposit balance.
+    Returns the upper-bound bucket value for the balance.
+
+    Args:
+        balance: Savings deposit balance.
+
+    Returns:
+        Upper-bound bucket value (float), or None if balance is None.
+    """
+    if balance is None:
+        return None
+
+    breakpoints = [
+        5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
+        3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
+        15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
+        55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
+        95000, 100000, 150000, 200000, 300000, 500000,
+        1000000, 2000000, 3000000, 4000000, 5000000, 10000000,
+    ]
+
+    for bp in breakpoints:
+        if balance <= bp:
+            return float(bp)
+    return 10000001.0
+
+
+# ============================================================================
+# INVALUE: S1RANGE — Savings Balance Range variant 1 (upper-bound bucketing)
+# ============================================================================
+
+def s1range_format(balance: Optional[float]) -> Optional[float]:
+    """
+    Apply S1RANGE invalue format to a balance value.
+    Returns the upper-bound bucket value for the balance.
+
+    Args:
+        balance: Balance amount.
+
+    Returns:
+        Upper-bound bucket value (float), or None if balance is None.
+    """
+    if balance is None:
+        return None
+
+    breakpoints = [
+        5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
+        3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
+        15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
+        55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
+        95000, 100000, 150000, 200000, 300000, 350000, 360000,
+        500000, 510000, 550000, 850000, 860000, 1000000,
+        2000000, 3000000, 4000000, 5000000, 10000000,
+    ]
+
+    for bp in breakpoints:
+        if balance <= bp:
+            return float(bp)
+    return 10000001.0
+
+
+# ============================================================================
+# INVALUE: S2RANGE — Savings Balance Range variant 2 (upper-bound bucketing)
+# ============================================================================
+
+def s2range_format(balance: Optional[float]) -> Optional[float]:
+    """
+    Apply S2RANGE invalue format to a balance value.
+    Returns the upper-bound bucket value for the balance.
+
+    Args:
+        balance: Balance amount.
+
+    Returns:
+        Upper-bound bucket value (float), or None if balance is None.
+    """
+    if balance is None:
+        return None
+
+    # Include 0 as the first breakpoint (LOW-0 = 0)
+    if balance <= 0:
+        return 0.0
+
+    breakpoints = [
+        5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
+        3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
+        15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
+        55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
+        95000, 100000, 150000, 200000, 300000, 350000, 360000,
+        500000, 510000, 550000, 600000, 700000, 800000, 850000,
+        860000, 900000, 1000000, 1100000, 1200000, 1300000, 1400000,
+        1500000, 1600000, 1700000, 1800000, 1900000, 2000000,
+        3000000, 4000000, 5000000, 10000000,
+    ]
+
+    for bp in breakpoints:
+        if balance <= bp:
+            return float(bp)
+    return 10000001.0
+
+
+# ============================================================================
+# INVALUE: DDRANGE — Demand Deposit Balance Range (upper-bound bucketing)
+# ============================================================================
+
+def ddrange_format(balance: Optional[float]) -> Optional[float]:
+    """
+    Apply DDRANGE invalue format to a demand deposit balance.
+    Returns the upper-bound bucket value for the balance.
+
+    Args:
+        balance: Demand deposit balance.
+
+    Returns:
+        Upper-bound bucket value (float), or None if balance is None.
+    """
+    if balance is None:
+        return None
+
+    breakpoints = [
+        1000, 2000, 2500, 3000, 5000, 10000, 20000, 30000, 40000,
+        50000, 75000, 100000, 150000, 200000, 250000, 500000,
+        1000000, 2000000, 3000000, 4000000, 5000000,
+    ]
+
+    for bp in breakpoints:
+        if balance <= bp:
+            return float(bp)
+    return 5000001.0
+
+
+# ============================================================================
+# FORMAT: $RACE — Race Code Passthrough
+# ============================================================================
+
+def race_format(race_code: Optional[str]) -> str:
+    """
+    Apply $RACE format to race code string.
+    Passes through valid codes '0'-'3'; all others return '0'.
+
+    Args:
+        race_code: Single character race code string.
+
+    Returns:
+        Race code '0', '1', '2', or '3'; default '0'.
+    """
+    if race_code is None:
+        return '0'
+    if race_code in ('0', '1', '2', '3'):
+        return race_code
+    return '0'
+
+
+# ============================================================================
+# FORMAT: BRANCHCD — Branch Code to Branch Name
+# ============================================================================
+
+_BRANCHCD_MAPPINGS: Dict[int, str] = {
+    1:   'HEAD OFFICE',
+    2:   'JLN SULTAN SULAIMAN',
+    3:   'JLN RAJA CHULAN',
+    4:   'MELAKA',
+    5:   'IPOH MAIN OFFICE',
+    6:   'PENANG',
+    7:   'JOHOR BAHRU',
+    8:   'KUANTAN',
+    9:   'JLN YANG KALSOM',
+    10:  'ALOR SETAR',
+    11:  'GURUN',
+    12:  'PASIR PUTEH',
+    13:  'KOTA BHARU',
+    14:  'TANAH MERAH',
+    15:  'KEPUNG',
+    16:  'NILAI',
+    17:  'TAMPIN',
+    18:  'PJ NEW TOWN',
+    19:  'DAMANSARA UTAMA',
+    20:  'TMN CHI LIUNG',
+    21:  'BATU PAHAT',
+    22:  'SEMENYIH',
+    23:  'KAMUNTING',
+    24:  'RASAH',
+    25:  'SHAH ALAM',
+    26:  'SERI PETALING',
+    27:  'NIBONG TEBAL',
+    28:  'MUAR',
+    29:  'JLN RAJA LAUT',
+    30:  'KUALA TRENGGANU',
+    31:  'SEKINCHAN',
+    32:  'WISMA SABERKAS (WSS)',
+    33:  'KOTA KINABALU',
+    34:  'KANGAR',
+    35:  'SERI SETIA',
+    36:  'S S 2',
+    37:  'TMN SENTOSA',
+    38:  'JLN KELANG LAMA',
+    39:  'KUALA KELAWANG',
+    40:  'JLN SUNGEI BESI',
+    41:  'JLN IPOH',
+    42:  'BKT MERTAJAM',
+    43:  'BANTING',
+    44:  'TAWAU',
+    45:  'SEREMBAN',
+    46:  'AMPANG',
+    47:  'SEGAMAT',
+    48:  'MENTAKAB',
+    49:  'JELAPANG',
+    50:  'MIRI',
+    51:  'SERI MANJUNG',
+    52:  'ULU TIRAM',
+    53:  'TMN MALURI',
+    54:  'BDR BAYAN BARU',
+    55:  'LABUAN',
+    56:  'KAJANG',
+    57:  'SG PETANI',
+    58:  'SIBU',
+    59:  'PONTIAN KECIL',
+    60:  'BAGAN AJAM',
+    61:  'KULAI',
+    62:  'SANDAKAN',
+    63:  'GEMAS',
+    64:  'PORT DICKSON',
+    65:  'BAHAU',
+    66:  'BKT DAMANSARA',
+    67:  'CHEMOR',
+    68:  'SIMPANG AMPAT',
+    69:  'BATANG KALI',
+    70:  'POKOK SENA',
+    71:  'BRINCHANG',
+    72:  'PAPAR',
+    73:  'SG PELEK',
+    74:  'SIK',
+    75:  'CHAAH',
+    76:  'PANTAI REMIS',
+    77:  'PULAU LANGKAWI',
+    78:  'SUBANG JAYA',
+    79:  'MASAI',
+    80:  'MENGLEMBU',
+    81:  'SG BULOH',
+    82:  'MACHANG',
+    83:  'JLN BUKIT BINTANG',
+    84:  'PASIR MAS',
+    85:  'SG SIPUT',
+    86:  'CHANGLUN',
+    87:  'MERSING',
+    88:  'KULIM',
+    89:  'TAMPOI',
+    90:  'BINTULU',
+    91:  'KLUANG',
+    92:  'KLANG',
+    93:  'ENDAU',
+    94:  'SETAPAK',
+    95:  'TELUK INTAN',
+    96:  'SERI GOMBAK',
+    97:  'JLN TUN H S LEE',
+    98:  'TMN CENTURY',
+    101: 'KAMPONG BAHRU',
+    102: 'PARIT RAJA',
+    103: 'JINJANG',
+    104: 'KUALA KETIL',
+    105: 'KOTA TINGGI',
+    106: 'CHUKAI',
+    107: 'JELUTONG',
+    108: 'BAGAN SERAI',
+    109: 'KUALA SELANGOR',
+    110: 'TMN JOHOR JAYA',
+    111: 'AIR KEROH',
+    112: 'LIDO',
+    113: 'TEMERLOH',
+    114: 'BANDAR BARU AIR ITAM',
+    115: 'KENINGAU',
+    116: 'TRIANG',
+    117: 'KUALA KRAI',
+    118: 'TMN MELAWATI',
+    120: 'PANDAN INDAH',
+    121: 'PRAI',
+    122: 'SERI KEMBANGAN',
+    123: 'IPOH GARDEN',
+    124: 'SECTION 14',
+    125: 'KELANA JAYA',
+    126: 'PULAU TIKUS',
+    127: 'TMN SERI MUDA',
+    128: 'SEGAMBUT',
+    129: 'BANGSAR',
+    130: 'PADUNGAN',
+    131: 'TMN MAYANG',
+    133: 'PORT KLANG',
+    134: 'RANTAU PANJANG',
+    135: 'BDR SUNWAY',
+    136: 'TMN CHERAS',
+    137: 'JLN PASIR PUTEH',
+    138: 'WANGSA MAJU',
+    139: 'JERANTUT',
+    140: 'CITY PARADE',
+    141: 'SENTUL',
+    142: 'KOTA BELUD',
+    143: 'LAHAD DATU',
+    144: 'KAHANG',
+    145: 'BDR SRI DAMANSARA',
+    146: 'PUSING',
+    147: 'PEKAN NENAS',
+    148: 'PJ OLD TOWN',
+    149: 'BEAUFORT',
+    150: 'LEBOH MACALLUM',
+    151: 'SELAYANG',
+    152: 'AIR TAWAR',
+    153: 'USJ',
+    154: 'BDR SEBERANG JAYA',
+    155: 'TMN TAMING JAYA',
+    156: 'TMN MELAKA RAYA',
+    157: 'BDR PUCHONG JAYA',
+    158: 'SIMPANG PULAI',
+    159: 'RELAU',
+    160: 'MASJID TANAH',
+    161: 'DONGGONGON',
+    162: 'SEA PARK',
+    163: 'JLN KUCHAI LAMA',
+    164: 'KEPALA BATAS',
+    165: 'TENGKERA',
+    166: 'PASIR GUDANG',
+    167: 'BKT BERUNTUNG',
+    168: 'KLCITY MAIN',
+    169: 'CKT THAMBI DOLLAH',
+    170: 'PANDAN JAYA',
+    171: 'JLN MACALLISTER',
+    172: 'TMN MALIM JAYA',
+    173: 'SG CHUA',
+    174: 'BDR BARU PERMAS JAYA',
+    175: 'LIMBANG',
+    176: 'TMN PERLING',
+    177: 'JLN RAJA UDA',
+    178: 'MEDAN IDAMAN',
+    179: 'OVERSEAS UNION GDN',
+    180: 'KG BARU SUBANG',
+    183: 'JLN CENTRAL, SIBU',
+    184: 'JLN PENRISSEN, KUCHING',
+    185: 'KUCHING CITY (KCY)',
+    186: 'JLN TUN ZAIDI, KUCHING',
+    # 187: 'CHINA STREET, MIRI'  — commented out in original SAS
+    188: 'PELITA, MIRI',
+    189: 'BATU NIAH',
+    190: 'BINTANGOR',
+    191: 'KAPIT',
+    192: 'MARUDI',
+    193: 'MUKAH',
+    194: 'SARIKEI',
+    195: 'BINTANG WALK, KL',
+    196: 'JLN HANG LEKIU',
+    197: 'TIONG NAM, KL',
+    198: 'TMN DESA,JLN KELANG LAMA',
+    199: 'JLN TAPAH,KLANG',
+    # 200: 'JLN SK10/4,SERI KEMBANGAN'  — commented out in original SAS
+    201: 'PANDAMARAN, KLANG',
+    202: 'RAWANG',
+    203: 'SG JAROM',
+    204: 'BUTTERWORTH',
+    205: 'SG NIBONG',
+    206: 'TAMAN BUKIT MAS',
+    207: 'BERCHAM (BCM)',
+    208: 'JLN SULTAN IDRIS SHAH, IPOH',
+    209: 'SITIAWAN',
+    210: 'TANJUNG MALIM',
+    211: 'TANJUNG PIANDANG',
+    214: 'JLN GEREJA, JOHOR BARU',
+    215: 'JLN KUKUP, PONTIAN KECHIL',
+    216: 'SKUDAI',
+    217: 'TMN MUNSHI IBRAHIM, TAMPOI',
+    220: 'GENTING HIGHLANDS, PAHANG',
+    221: 'TMN SENTOSA, KLANG',
+    222: 'TMN DESA CEMERLANG,JOHOR',
+    224: 'JLN ABDULLAH, MUAR',
+    225: 'TMN INDAH, SELANGOR',
+    226: 'JLN PASAR, KUALA LUMPUR',
+    228: 'INANAM, KOTA KINABALU',
+    230: 'SALAK SOUTH, KUALA LUMPUR',
+    231: 'BATU BERENDAM, MELAKA',
+    232: 'TMN MIDAH, KUALA LUMPUR',
+    233: 'BENTONG',
+    234: 'SIMPANG RENGAM',
+    235: 'SABAK BERNAM, SELANGOR',
+    237: 'KUALA LIPIS, PAHANG',
+    238: 'JALAN KOTA, KEDAH',
+    239: 'KEMAYAN, PAHANG',
+    240: 'KAPAR, SELANGOR',
+    241: 'DAMANSARA JAYA, SELANGOR',
+    242: 'TANGKAK JOHOR',
+    243: 'KUALA KANGSAR PERAK',
+    244: 'GUNUNG RAPAT IPOH PERAK',
+    245: 'BIDOR PERAK',
+    247: 'BUKIT PASIR MUAR JOHOR',
+    248: 'JLN TUN SAMBANTHAN KL',
+    249: 'TAIPING PERAK',
+    250: 'TAMAN ENG ANN SELANGOR',
+    251: 'KAMPAR PERAK',
+    252: 'TAMAN MUDA SELANGOR',
+    253: 'JLN TANJONG TOKONG P.PINANG',
+    254: 'KUALA PILAH N. SEMBILAN',
+    256: 'PARIT BUNTAR PERAK',
+    257: 'RAUB PAHANG',
+    258: 'JITRA KEDAH',
+    259: 'SRI AMAN SARAWAK',
+    260: 'KUALA DUNGUN TERENGGANU',
+    261: 'GUA MUSANG KELANTAN',
+    262: 'TAMAN CONNAUGHT CHERAS',
+    263: 'BENTA PAHANG',
+    264: 'JALAN BESERAH PAHANG',
+    265: 'JALAN AIR ITAM PENANG',
+    266: 'JALAN DATUK KERAMAT PENANG',
+    267: 'TMN TUN DR ISMAIL WILAYAH',
+    268: 'BANDAR BUKIT TINGGI',
+    269: 'MONT KIARA',
+    270: 'BANDAR PUTERI PUCHONG',
+    273: 'LI HUA SARAWAK',
+    274: 'STUTONG SARAWAK',
+    275: 'MEDAN SENTRAL SARAWAK',
+    276: 'JALAN APAS SABAH',
+    277: 'WAKAF SIKU KELANTAN',
+    278: 'JALAN PANTAI SABAH',
+    279: 'PUTRAJAYA',
+    280: 'KOTA DAMANSARA',
+    281: 'PELITA',
+    282: 'PUTATAN',
+    283: 'PRIMA SQUARE',
+    284: 'BANDAR SRI PERMAISURI',
+    285: 'BANDAR MAHKOTA CHERAS',
+    286: 'BUKIT INDAH BRANCH',
+    287: 'SUTERA UTAMA',
+    288: 'STARPARC POINT',
+    289: 'TAMAN EQUINE',
+    290: 'TAMAN DAYA',
+    291: 'BANDAR SUNGAI LONG',
+    292: 'BANDAR MENJALARA',
+    293: 'BANDAR SETIA ALAM',
+    294: 'KOTA KEMUNING',
+    295: 'BANDAR KINRARA',
+    296: 'BUKIT JALIL',
+    702: 'PUTRAJAYA',
+    703: 'ISLAMIC WAKAF SIKU',
+    704: 'ISLAMIC JALAN KOTA',
+}
+
+
+def branchcd_format(branch_code: Optional[int]) -> str:
+    """
+    Apply BRANCHCD format to branch code.
+    Maps branch numeric codes to branch name strings.
+
+    Args:
+        branch_code: Branch numeric code.
+
+    Returns:
+        Branch name string, or default 'OTHER'.
+    """
+    if branch_code is None:
+        return 'OTHER'
+    return _BRANCHCD_MAPPINGS.get(branch_code, 'OTHER')
+
+
+# ============================================================================
+# BACKWARD-COMPATIBLE CLASS WRAPPERS
+# (Retained to avoid breaking existing programs that use the class-based API
+#  from the partially converted file.)
+# ============================================================================
+
+class ProductLists:
+    """Container for product groupings used across deposit products."""
+    ACE_PRODUCTS: Set[int] = ACE
+    FCY_PRODUCTS: Set[int] = FCY
+    CURX_PRODUCTS: Set[int] = CURX
+
+
+class SADenomFormat:
+    ISLAMIC_PRODUCTS: Set[int] = _SADENOM_ISLAMIC
+
+    @staticmethod
+    def format(product_code: Optional[int]) -> str:
+        return sadenom_format(product_code)
+
+
+class SAProductFormat:
+    MAPPINGS: Dict[int, str] = _SAPROD_MAPPINGS
+
+    @staticmethod
+    def format(product_code: Optional[int]) -> str:
+        return saprod_format(product_code)
+
+
+class FDDenomFormat:
+    ISLAMIC_RANGES: List[Tuple[int, int]] = _FDDENOM_ISLAMIC_RANGES
+    ISLAMIC_SINGLES: Set[int] = _FDDENOM_ISLAMIC_SINGLES
+
+    @staticmethod
+    def format(product_code: Optional[int]) -> str:
+        return fddenom_format(product_code)
+
+
+class FDProductFormat:
+    MAPPINGS: Dict[int, str] = _FDPROD_MAPPINGS
+
+    @staticmethod
+    def format(product_code: Optional[int]) -> str:
+        return fdprod_format(product_code)
+
+
+class CADenomFormat:
+    ISLAMIC_PRODUCTS: Set[int] = _CADENOM_ISLAMIC
+
+    @staticmethod
+    def format(product_code: Optional[int]) -> str:
+        return cadenom_format(product_code)
+
+
+class CAProductFormat:
+    MAPPINGS: Dict[int, str] = _CAPROD_MAPPINGS
+
+    @staticmethod
+    def format(product_code: Optional[int]) -> str:
+        return caprod_format(product_code)
+
+
+class FCYTermFormat:
+    TERM_1_MONTH: Set[int] = _FCYTERM_1_MONTH
+    TERM_3_MONTHS: Set[int] = _FCYTERM_3_MONTHS
+    TERM_6_MONTHS: Set[int] = _FCYTERM_6_MONTHS
+    TERM_12_MONTHS: Set[int] = _FCYTERM_12_MONTHS
+
+    @staticmethod
+    def format(intplan_code: Optional[int]) -> Optional[int]:
+        return fcyterm_format(intplan_code)
 
 
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
 
-def get_format(format_name: str) -> Optional[object]:
+def get_format(format_name: str):
     """
-    Get format class by name.
+    Get format function or class by name.
 
     Args:
         format_name: Name of format (e.g., 'SADENOM', 'SAPROD', 'FDDENOM', etc.)
 
     Returns:
-        Format class or None if not found
+        Format class or None if not found.
     """
     formats = {
-        'SADENOM': SADenomFormat,
-        'SAPROD': SAProductFormat,
-        'FDDENOM': FDDenomFormat,
-        'FDPROD': FDProductFormat,
-        'CADENOM': CADenomFormat,
-        'CAPROD': CAProductFormat,
-        'FCYTERM': FCYTermFormat,
-        'PRODUCTS': ProductLists,
+        'SADENOM':   SADenomFormat,
+        'SAPROD':    SAProductFormat,
+        'FDDENOM':   FDDenomFormat,
+        'FDPROD':    FDProductFormat,
+        'CADENOM':   CADenomFormat,
+        'CAPROD':    CAProductFormat,
+        'FCYTERM':   FCYTermFormat,
+        'PRODUCTS':  ProductLists,
     }
-
     return formats.get(format_name.upper())
 
 
@@ -677,20 +2923,17 @@ def apply_format(format_name: str, value: Optional[int]) -> str:
     Apply a named format to a value.
 
     Args:
-        format_name: Name of format to apply
-        value: Value to format
+        format_name: Name of format to apply.
+        value: Value to format.
 
     Returns:
-        Formatted value or empty string if value is None
+        Formatted value or empty string if value is None.
     """
     format_class = get_format(format_name)
-
     if format_class is None:
         return ''
-
     if hasattr(format_class, 'format'):
         return format_class.format(value)
-
     return ''
 
 
@@ -699,15 +2942,45 @@ def apply_format(format_name: str, value: Optional[int]) -> str:
 # ============================================================================
 
 if __name__ == '__main__':
-    # Example format applications
     print("Format Examples:")
-    print(f"SADENOM(200) = {SADenomFormat.format(200)}")  # D
-    print(f"SADENOM(204) = {SADenomFormat.format(204)}")  # I
-    print(f"SAPROD(200) = {SAProductFormat.format(200)}")  # 42120
-    print(f"CAPROD(104) = {CAProductFormat.format(104)}")  # 42110
-    print(f"ACE Products: {ProductLists.ACE_PRODUCTS}")
-    print(f"FCY Products: {ProductLists.FCY_PRODUCTS}")
+    print(f"SADENOM(200) = {sadenom_format(200)}")    # D
+    print(f"SADENOM(204) = {sadenom_format(204)}")    # I
+    print(f"SAPROD(200)  = {saprod_format(200)}")     # 42120
+    print(f"SAPROD(204)  = {saprod_format(204)}")     # 42320
+    print(f"FDDENOM(229) = {fddenom_format(229)}")    # I
+    print(f"FDDENOM(233) = {fddenom_format(233)}")    # D
+    print(f"FDPROD(229)  = {fdprod_format(229)}")     # 42133
+    print(f"FDPRD(300)   = {fdprd_format(300)}")      # N
+    print(f"FDPRD(340)   = {fdprd_format(340)}")      # M
+    print(f"FDPRD(320)   = {fdprd_format(320)}")      # L
+    print(f"CAPROD(104)  = {caprod_format(104)}")     # 43110
+    print(f"CAPROD(166)  = {caprod_format(166)}")     # 42110
+    print(f"CADENOM(60)  = {cadenom_format(60)}")     # I
+    print(f"CADENOM(50)  = {cadenom_format(50)}")     # D
+    print(f"FCYTERM(470) = {fcyterm_format(470)}")    # 1
+    print(f"FCYTERM(472) = {fcyterm_format(472)}")    # 3
+    print(f"FDORGMT(0.5) = {fdorgmt_format(0.5)}")   # 12
+    print(f"FDORGMT(1.5) = {fdorgmt_format(1.5)}")   # 13
     print(f"FDORGMT(2.5) = {fdorgmt_format(2.5)}")   # 14
     print(f"FDORGMT(5.0) = {fdorgmt_format(5.0)}")   # 15
     print(f"FDORGMT(8.0) = {fdorgmt_format(8.0)}")   # 16
-    print(f"FDORGMT(11.0) = {fdorgmt_format(11.0)}") # 17
+    print(f"FDORGMT(11.0)= {fdorgmt_format(11.0)}")  # 17
+    print(f"FDORGMT(13.0)= {fdorgmt_format(13.0)}")  # 21
+    print(f"FDORGMT(20.0)= {fdorgmt_format(20.0)}")  # 23
+    print(f"FDORGMT(61.0)= {fdorgmt_format(61.0)}")  # 30
+    print(f"FDRMMT(0.0)  = {fdrmmt_format(0.0)}")    # 51
+    print(f"FDRMMT(0.5)  = {fdrmmt_format(0.5)}")    # 52
+    print(f"FDRMMT(13.0) = {fdrmmt_format(13.0)}")   # 61
+    print(f"DPCUSTCD(77) = {dpcustcd_format(77)}")   # 77
+    print(f"SACUSTCD(77) = {sacustcd_format(77)}")   # 77
+    print(f"FDCUSTCD(70) = {fdcustcd_format(70)}")   # 71
+    print(f"DDCUSTCD(65) = {ddcustcd_format(65)}")   # 44
+    print(f"STATECD(5)   = {statecd_format(5)}")     # A
+    print(f"BRANCHCD(5)  = {branchcd_format(5)}")    # IPOH MAIN OFFICE
+    print(f"SDRANGE(750) = {sdrange_format(750)}")   # 1000.0
+    print(f"DDRANGE(1500)= {ddrange_format(1500)}")  # 2000.0
+    print(f"RACE('1')    = {race_format('1')}")      # 1
+    print(f"RACE('9')    = {race_format('9')}")      # 0
+    print(f"RMFDORGMT(272)= {rmfdorgmt_format(272)}") # 12
+    print(f"ACE Products: {ACE}")
+    print(f"FCY Products: {FCY}")
