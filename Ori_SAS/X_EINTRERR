@@ -1,0 +1,46 @@
+//EINTRERR JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M,NOTIFY=&SYSUID      JOB17305
+/*JOBPARM S=S1M1
+//*---------------------------------------------------------------------
+//* DUPLICATION CHECK (LOAN INTRADAY FILES)
+//*---------------------------------------------------------------------
+//VERIFY   EXEC SAS609
+//LOAN     DD DSN=SAP.LOAN.FIX.LATE,DISP=SHR
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD *
+
+OPTIONS NOCENTER NODATE NONUMBER;
+
+%MACRO EXEC(DSN);
+
+   PROC CONTENTS DATA=LOAN.&DSN OUT=TEMP NOPRINT; RUN;
+   PROC APPEND DATA=TEMP(OBS=1) BASE=DUPERR; RUN;
+
+%MEND EXEC;
+%EXEC(RNR);
+%EXEC(RNRMOR);
+%EXEC(RNRHP);
+%EXEC(RNRHPMOR);
+%EXEC(AKPK);
+
+TITLE 'DUPLICATION CHECK - LOAN INTRADAY FILES';
+
+DATA _NULL_;
+   SET DUPERR END=EOF;
+   STATUS = 'ERROR';
+   IF NOBS= 0 THEN STATUS = 'OK';
+   FILE SASLIST;
+   PUT @01 MEMNAME
+       @09 ':' NOBS     5.
+       @16 '( ' STATUS ')'
+       ;
+   FREQCN+NOBS;
+   IF EOF AND FREQCN > 0 THEN DO;
+      PUTLOG    '+--------+--------+-------+-------+--------+-------+';
+      PUTLOG    '|  ERROR MESSAGE(S) STATUS                         |';
+      PUTLOG    '+--------+--------+-------+-------+--------+-------+';
+      PUTLOG    '|  DUPLICATE FOUND !! SET TO COMPLETE &            |';
+      PUTLOG    '|     EMAIL SASLIST OUTPUT TO LOANS & SAS-TEAM     |';
+      PUTLOG    '+========+========+=======+=======+========+=======+';
+      ABORT ABEND 77;
+   END;
+RUN;
