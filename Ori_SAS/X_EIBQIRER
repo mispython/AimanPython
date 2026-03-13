@@ -1,0 +1,799 @@
+*+--------------------------------------------------------------+       ----+
+ |  PROGRAM : EIBQIRER                                          |
+ |  DATE    : 30.10.2001                                        |
+ |  REPORT  : NEW LIQUIDITY FRAMEWORK FOR PUBLIC BANK           |
+ +--------------------------------------------------------------+
+ |  DATE MODIFIED :                                             |
+ |  SMR/OTHERS    :                                             |
+ |  CHANGES MADE  :                                             |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950;
+*;
+%INC PGM(PBBLNFMT);
+*;
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0.1 = 'UP TO 1 WEEK'
+      0.1-1   = '>1 WK - 1 MTH'
+      1-3     = '>1 MTH - 3 MTHS'
+      3-6     = '>3 - 6 MTHS'
+      6-12    = '>6 - 12 MTHS'
+      12-24   = '>1 - 2 YEARS'
+      24-36   = '>2 - 3 YEARS'
+      36-48   = '>3 - 4 YEARS'
+      48-60   = '>4 - 5 YEARS'
+      60-84   = '>5 - 7 YEARS'
+      84-120  = '>7 - 10 YEARS'
+      120-180 = '>10 - 15 YEARS'
+      OTHER   = 'OVER 15 YEARS';
+*;
+   VALUE $ITEMF
+     'A1.01'  = 'A1.01  FCYFD USD'
+     'A1.02'  = 'A1.02  FCY DEPOSITS USD'
+     'A1.03'  = 'A1.03  FCY BORROWING USD'
+     'A1.04'  = 'A1.04  FCY LENDING USD'
+     'A1.05'  = 'A1.05  FX PURCHASES USD'
+     'A1.06'  = 'A1.06  FX SALES USD'
+     'A2.01'  = 'A1.01  FCYFD OTHER CCY'
+     'A2.02'  = 'A2.02  FCY DEPOSITS OTHER CCY'
+     'A2.03'  = 'A2.03  FCY BORROWING OTHER CCY'
+     'A2.04'  = 'A2.04  FCY LENDING OTHER CCY'
+     'A2.05'  = 'A2.05  FX PURCHASES OTHER CCY'
+     'A2.06'  = 'A2.06  FX SALES OTHER CCY'
+     'B1.01'  = 'B1.01  DEPOSIT PLACED : SLD'
+     'B1.02'  = 'B1.02  DEPOSIT PLACED : SSD'
+     'B1.03'  = 'B1.03  DEPOSIT PLACED : SZD'
+     'C1.01'  = 'C1.01  DEBT SECURITIES HELD : SBA'
+     'C1.02'  = 'C1.02  DEBT SECURITIES HELD : CB1'
+     'C1.03'  = 'C1.03  DEBT SECURITIES HELD : MGS'
+     'C1.04'  = 'C1.04  DEBT SECURITIES HELD : BNB'
+     'C1.05'  = 'C1.05  DEBT SECURITIES HELD : CNT'
+     'C1.06'  = 'C1.06  DEBT SECURITIES HELD : DHB'
+     'C1.07'  = 'C1.07  DEBT SECURITIES HELD : DMB'
+     'C1.08'  = 'C1.08  DEBT SECURITIES HELD : GRL'
+     'C1.09'  = 'C1.09  DEBT SECURITIES HELD : MTN'
+     'C1.10'  = 'C1.10  DEBT SECURITIES HELD : GNL'
+     'C1.11'  = 'C1.11  DEBT SECURITIES HELD : RUL'
+     'C1.12'  = 'C1.12  DEBT SECURITIES HELD : MTB'
+     'C1.13'  = 'C1.13  DEBT SECURITIES HELD : CBB'
+     'C1.14'  = 'C1.14  DEBT SECURITIES HELD : IDS'
+     'C1.15'  = 'C1.15  DEBT SECURITIES HELD : DBD'
+     'C1.16'  = 'C1.16  DEBT SECURITIES HELD : PBA'
+     'C1.17'  = 'C1.17  DEBT SECURITIES HELD : MGI'
+     'C1.18'  = 'C1.18  DEBT SECURITIES HELD : BNN'
+     'C1.19'  = 'C1.19  DEBT SECURITIES HELD : KHA'
+     'C1.20'  = 'C1.20  DEBT SECURITIES HELD : ISB'
+     'C1.21'  = 'C1.21  DEBT SECURITIES HELD : PNB'
+     'D1.01'  = 'D1.01  FLOATING RATE : FRN'
+     'E1.01'  = 'E1.01  LIABILITIES : SSD'
+     'E1.02'  = 'E1.02  LIABILITIES : SZNID'
+     'F1.01'  = 'F1.01  MYR BORROWING CONVENTIONAL'
+     'G1.01'  = 'G1.01  MYR LENDING CONVENTIONAL'
+     'H1.01'  = 'H1.01  FX PURCHASE MYR CONVENTIONAL'
+     'I1.01'  = 'I1.01  FX SALES MYR CONVENTIONAL'
+     'B2.01'  = 'B2.01  DEPOSIT PLACED : SLD'
+     'B2.02'  = 'B2.02  DEPOSIT PLACED : SSD'
+     'B2.03'  = 'B2.03  DEPOSIT PLACED : SZD'
+     'C2.01'  = 'C2.01  DEBT SECURITIES HELD : SBA'
+     'C2.02'  = 'C2.02  DEBT SECURITIES HELD : CB1'
+     'C2.03'  = 'C2.03  DEBT SECURITIES HELD : MGS'
+     'C2.04'  = 'C2.04  DEBT SECURITIES HELD : BNB'
+     'C2.05'  = 'C2.05  DEBT SECURITIES HELD : CNT'
+     'C2.06'  = 'C2.06  DEBT SECURITIES HELD : DHB'
+     'C2.07'  = 'C2.07  DEBT SECURITIES HELD : DMB'
+     'C2.08'  = 'C2.08  DEBT SECURITIES HELD : GRL'
+     'C2.09'  = 'C2.09  DEBT SECURITIES HELD : MTN'
+     'C2.10'  = 'C2.10  DEBT SECURITIES HELD : GNL'
+     'C2.11'  = 'C2.11  DEBT SECURITIES HELD : RUL'
+     'C2.12'  = 'C2.12  DEBT SECURITIES HELD : MTB'
+     'C2.13'  = 'C2.13  DEBT SECURITIES HELD : CBB'
+     'C2.14'  = 'C2.14  DEBT SECURITIES HELD : IDS'
+     'C2.15'  = 'C2.15  DEBT SECURITIES HELD : DBD'
+     'C2.16'  = 'C2.16  DEBT SECURITIES HELD : PBA'
+     'C2.17'  = 'C2.17  DEBT SECURITIES HELD : MGI'
+     'C2.18'  = 'C2.18  DEBT SECURITIES HELD : BNN'
+     'C2.19'  = 'C2.19  DEBT SECURITIES HELD : KHA'
+     'C2.20'  = 'C2.20  DEBT SECURITIES HELD : ISB'
+     'C2.21'  = 'C2.21  DEBT SECURITIES HELD : PNB'
+     'D2.01'  = 'D2.01  FLOATING RATE : FRN'
+     'E2.01'  = 'E2.01  LIABILITIES : SSD'
+     'E2.02'  = 'E2.02  LIABILITIES : SZNID'
+     'F2.01'  = 'F2.01  MYR BORROWING ISLAMIC'
+     'G2.01'  = 'G2.01  MYR LENDING ISLAMIC'
+     'H2.01'  = 'H2.01  FX PURCHASE MYR ISLAMIC'
+     'I2.01'  = 'I2.01  FX SALES MYR ISLAMIC';
+*;
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE REMAIN MONTH               *
+*------------------------------------------------*;
+%MACRO REMMTH;
+   RPYR  = YEAR(REPTDATE);
+   RPMTH = MONTH(REPTDATE);
+   RPDAY = DAY(REPTDATE);
+   IF RPMTH = 2 THEN
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+      ELSE RD2 = 28;
+*;
+   MDYR  = YEAR(MATDT);
+   MDMTH = MONTH(MATDT);
+   MDDAY = DAY(MATDT);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+ /*  IF RPDAY = RPDAYS(RPMTH) AND MDDAY = MDDAYS(MDMTH) AND
+      MDDAY < RPDAY THEN MDDAY = RPDAY;    */
+ *    IF MDDAY = MDDAYS(MDMTH) AND MDDAY < RPDAYS(RPMTH) THEN
+ *       MDDAY = RPDAYS(RPMTH);
+      IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+%MEND REMMTH;
+*;
+DATA REPTDATE;
+  INFILE BNMTBL1 OBS=1;
+  INPUT @50 REPTDATE YYMMDD6.;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+RUN;
+*;
+*+--------------------------------------------------------------+
+ |  PROGRAM : KALME                                             |
+ |  DATE    : 22.07.98                                          |
+ |  REPORT  : TO EXTRACT DATA FROM KAPITI TABLE 1 & 3           |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950;
+*;
+DATA K1TBL;
+   RETAIN REPTDATE;
+   INFILE BNMTBL1;
+   IF _N_=1 THEN INPUT @50 REPTDATE YYMMDD6. ; ELSE
+   INPUT @1   GWAB   $4.
+         @5   GWAN   $6.
+         @11  GWAS   $3.
+         @14  GWAPP  $2.
+         @17  GWBALA PD8.2
+         @25  GWBALC PD8.2
+         @49  GWSHN  $15.
+         @64  GWCTP  $2.
+         @66  GWACT  $2.
+         @68  GWACD  $2.
+         @70  GWSAC  $2.
+         @77  GWCNAL $2.
+         @79  GWCCY  $3.
+         @94  GWDIAC PD8.2
+         @110 GWCIAC PD8.2
+         @192 GWDLP  $3.
+         @195 GWDLR  $13.
+         @208 GWSDT  PD5.
+         @242 GWMDT  PD5.
+         @251 GWMVT  $1.
+         @252 GWMVTS $1.
+         @280 GWOCY  $3.
+         @284 GWCBD  YYMMDD6.;
+   LABEL GWAB = 'BRANCH'
+         GWAN = 'BASIC NUMBER'
+         GWAS = 'ACCOUNT SUFFIX'
+         GWAPP = 'ACCOUNT TYPE'
+         GWBALA = 'BALANCE - ORIGINAL CURRENCY'
+         GWBALC = 'BALANCE - LOCAL CURRENCY'
+         GWSHN = 'ACCOUNT SHORT NAME'
+         GWCTP = 'CUSTOMER TYPE'
+         GWACT = 'A/C TYPE'
+         GWACD = 'ANALYSIS CODE'
+         GWSAC = 'SUNDRY ANALYSIS CODE'
+         GWCNAL = 'RESIDENCE COUNTRY'
+         GWCCY = 'CCY'
+         GWDIAC = 'DR INT ACC - LOCAL CURRENCY'
+         GWCIAC = 'CR INT ACC - LOCAL CURRENCY'
+         GWDLP = 'DEAL TYPE'
+         GWDLR = 'DEAL REFERENCE'
+         GWSDT = 'START DATE'
+         GWMDT = 'MATURITY DATE'
+         GWMVT = 'MOVEMENT TYPE'
+         GWMVTS = 'MOVEMENT SUB-TYPE'
+         GWOCY = 'OTHER CURRENCY MNEMONIC'
+         GWCBD = 'CURRENT BUSINESS DATE';
+   IF GWSDT NE 0 THEN GWSDT=INPUT(PUT(GWSDT,Z8.),YYMMDD8.);
+   IF GWMDT NE 0 THEN GWMDT=INPUT(PUT(GWMDT,Z8.),YYMMDD8.);
+   FORMAT GWSDT GWMDT YYMMDD8.;
+RUN;
+*;
+DATA K3TBL;
+   RETAIN REPTDATE;
+   INFILE BNMTBL3;
+   IF _N_=1 THEN INPUT @24 REPTDATE YYMMDD6.; ELSE
+   INPUT @1   UTSTY  $3.
+         @4   UTREF  $16.
+         @20  UTDLP  $3.
+         @23  UTDLR  $13.
+         @36  UTSMN  $16.
+         @52  UTCUS  $6.
+         @58  UTCLC  $3.
+         @61  UTCTP  $2.
+         @63  UTFCV  PD8.2
+         @71  UTIDT  $10.
+         @81  UTLCD  $10.
+         @91  UTNCD  $10.
+         @101 UTMDT  $10.
+         @111 UTCBD  $10.
+         @121 UTCPR  PD7.7
+         @128 UTQDS  PD7.7
+         @135 UTPCP  PD7.7
+         @142 UTAMOC PD8.2
+         @150 UTDPF  PD8.2
+         @158 UTAICT PD8.2
+         @166 UTAICY PD8.2
+         @174 UTAIT  PD8.2
+         @182 UTDPET PD8.2
+         @190 UTDPEY PD8.2
+         @198 UTDPE  PD8.2
+         @206 UTASN  PD4.
+         @210 UTOSD  $10.
+         @220 UTCA2  $2.
+         @222 UTSAC  $2.
+         @224 UTCNAP $2.
+         @226 UTCNAR $2.
+         @228 UTCNAL $2.;
+   LABEL UTSTY  = 'SECURITY TYPE'
+         UTREF  = 'PORTFOLIO REFERENCE'
+         UTDLP  = 'DEAL PREFIX'
+         UTDLR  = 'DEAL REFERENCE'
+         UTSMN  = 'SECURITY MNEMONIC'
+         UTCUS  = 'CUSTOMER NAME'
+         UTCLC  = 'CUSTOMER LOCATION'
+         UTCTP  = 'CUSTOMER TYPE'
+         UTFCV  = 'FACE VALUE'
+         UTIDT  = 'ISSUE DATE'
+         UTLCD  = 'LAST COUPON DATE'
+         UTNCD  = 'NEXT COUPON DATE'
+         UTMDT  = 'MATURITY DATE'
+         UTCBD  = 'CURRENT BUSINESS DATE'
+         UTCPR  = 'COUPON RATE'
+         UTQDS  = 'DISCOUNT RATE'
+         UTPCP  = 'DEAL CAPITAL PRICE'
+         UTAMOC = 'CURRENT AMOUNT OWNED'
+         UTDPF  = 'DISCOUNT/PREMIUM UNEARNED'
+         UTAICT = 'ACTUAL INT ACCRUED COUPON TO DATE'
+         UTAICY = 'ACTUAL INT ACCRUED COUPON TO YESTERDAY'
+         UTAIT  = 'ACTUAL INT ACCRUED P&L TODAY'
+         UTDPET = 'DISCOUNT/PREMIUM UNEARNED TODAY'
+         UTDPEY = 'DISCOUNT/PREMIUM UNEARNED YESTERDAY'
+         UTDPE  = 'DISCOUNT/PREMIUM P&L TODAY'
+         UTASN  = 'ASSET NUMBER'
+         UTOSD  = 'OWNERSHIP SETTLEMENT DATE'
+         UTCA2  = 'ANALYSIS CODE'
+         UTSAC  = 'SUNDRY ANALYSIS CODE'
+         UTCNAP = 'PARENT COUNTRY'
+         UTCNAR = 'RISK COUNTRY'
+         UTCNAL = 'RESIDENCE COUNTRY';
+   IF UTMDT NE ' ' THEN MATDT = INPUT(UTMDT,YYMMDD10.);
+   IF UTOSD NE ' ' THEN ISSDT = INPUT(UTOSD,YYMMDD10.);
+ /*  IF UTCBD NE ' ' THEN REPTDATE = INPUT(UTCBD,YYMMDD10.);   */
+   FORMAT MATDT ISSDT REPTDATE YYMMDD8.;
+RUN;
+*;
+*----------------------------------------------------------------*
+*  BREAKDOWN BY PURE CONTRACTUAL MATURITY PROFILE (PART 3)       *
+*----------------------------------------------------------------*;
+DATA K1TBL1 (KEEP=TYPE CAT AMOUNT MATDT ITEM MONEY);
+   LENGTH ITEM $6;
+   FORMAT TYPE $12.;
+   SET K1TBL (RENAME=(GWMDT=MATDT GWBALC=AMOUNT));
+   TYPE = 'FOREX';
+   AMOUNT = ABS(AMOUNT);
+   MONEY  = AMOUNT;
+   IF GWDLP IN ('BF ','BO ') AND GWCCY IN ('USD') AND
+      SUBSTR(GWCTP,1,1) NE 'B'  THEN DO;
+      ITEM = 'A1.01';
+      CAT  = 'FCYFD USD';
+   END; ELSE
+   IF GWDLP IN ('BF ','BO ') AND GWCCY NOT IN ('USD','MYR') AND
+      SUBSTR(GWCTP,1,1) NE 'B'  THEN DO;
+      ITEM = 'A2.01';
+      CAT  = 'FCYFD OTHER CCY';
+   END; ELSE
+   IF GWDLP IN ('BF ','BO ') AND
+      (SUBSTR(GWCTP,1,1) EQ 'B')  AND GWCCY = 'USD'     THEN DO;
+      ITEM = 'A1.03';
+      CAT  = 'FCY BORROWING USD';
+   END; ELSE
+   IF GWDLP IN ('BF ','BO ') AND
+      (SUBSTR(GWCTP,1,1) EQ 'B')  AND GWCCY NOT IN ('USD','MYR')
+                             THEN DO;
+      ITEM = 'A2.03';
+      CAT  = 'FCY BORROWING OTHER CCY';
+   END; ELSE
+   IF GWDLP IN ('FDA','FDB','FDS','FDL','LC ','LF ','LO ','LS ') AND
+      GWCCY = 'USD'                THEN DO;
+      ITEM = 'A1.04';
+      CAT  = 'FCY LENDING USD';
+   END; ELSE
+   IF GWDLP IN ('FDA','FDB','FDS','FDL','LC ','LF ','LO ','LS ') AND
+      GWCCY NOT IN ('USD','MYR')                THEN DO;
+      ITEM = 'A2.04';
+      CAT  = 'FCY LENDING OTHER CCY';
+   END; ELSE
+   IF GWAPP = 'FX'  AND GWCCY = 'USD'  AND GWMVTS = 'P'  AND
+      GWACT NOT IN ('RV','RW')   THEN DO;
+      ITEM = 'A1.05';
+      CAT  = 'FX PURCHASES USD';
+   END; ELSE
+   IF GWAPP = 'FX'  AND GWCCY NOT IN ('USD','MYR')   AND
+      GWMVTS = 'P'  AND GWACT NOT IN ('RV','RW')     THEN DO;
+      ITEM = 'A2.05';
+      CAT  = 'FX PURCHASES OTHER CCY';
+   END; ELSE
+   IF GWAPP = 'FX'  AND GWCCY = 'USD'  AND GWMVTS = 'S'  AND
+      GWACT NOT IN ('RV','RW')   THEN DO;
+      ITEM = 'A1.06';
+      CAT  = 'FX SALES USD';
+   END; ELSE
+   IF GWAPP = 'FX'  AND GWCCY NOT IN ('USD','MYR')   AND
+      GWMVTS = 'S'  AND GWACT NOT IN ('RV','RW')     THEN DO;
+      ITEM = 'A2.06';
+      CAT  = 'FX SALES OTHER CCY';
+   END; ELSE
+   IF GWDLP IN ('BF ','BFI','BO ','BOI') AND GWAB = '1000' AND
+      SUBSTR(GWCTP,1,1) EQ 'B' AND GWCCY = 'MYR'  THEN DO;
+      TYPE = 'CONVENTIONAL';
+      ITEM = 'F1.01';
+      CAT  = 'MYR BORROWING CONVENTIONAL';
+   END; ELSE
+   IF GWDLP IN ('BF ','BFI','BO ','BOI') AND GWAB = '2000'  AND
+      SUBSTR(GWCTP,1,1) EQ 'B' AND GWCCY = 'MYR'  THEN DO;
+      TYPE = 'ISLAMIC';
+      ITEM = 'F2.01';
+      CAT  = 'MYR BORROWING ISLAMIC';
+   END; ELSE
+   IF GWDLP IN ('FDA','FDB','FDS','FDL','LC ','LF ','LO ',
+      'LOI','LS ','LSI')  AND GWAB = '1000'  AND
+      SUBSTR(GWCTP,1,1) EQ 'B'  AND GWCCY = 'MYR'  THEN DO;
+      TYPE = 'CONVENTIONAL';
+      ITEM = 'G1.01';
+      CAT  = 'MYR LENDING CONVENTIONAL';
+   END; ELSE
+   IF GWDLP IN ('FDA','FDB','FDS','FDL','LC ','LF ','LO ',
+      'LOI','LS ','LSI') AND GWAB = '2000'  AND
+      SUBSTR(GWCTP,1,1) EQ 'B'  AND GWCCY = 'MYR'  THEN DO;
+      TYPE = 'ISLAMIC';
+      ITEM = 'G2.01';
+      CAT  = 'MYR LENDING ISLAMIC';
+   END; ELSE
+   IF GWAPP = 'FX'  AND GWCCY IN ('MYR')   AND  GWAB = '1000'  AND
+      GWMVTS = 'P'  AND GWACT NOT IN ('RV','RW')     THEN DO;
+      TYPE = 'CONVENTIONAL';
+      ITEM = 'H1.01';
+      CAT  = 'FX PURCHASES MYR CONVENTIONAL';
+   END; ELSE
+   IF GWAPP = 'FX'  AND GWCCY IN ('MYR')   AND  GWAB = '2000'  AND
+      GWMVTS = 'P'  AND GWACT NOT IN ('RV','RW')     THEN DO;
+      TYPE = 'ISLAMIC';
+      ITEM = 'H2.01';
+      CAT  = 'FX PURCHASES MYR ISLAMIC';
+   END; ELSE
+   IF GWAPP = 'FX'  AND GWCCY IN ('MYR')   AND  GWAB = '1000'  AND
+      GWMVTS = 'S'  AND GWACT NOT IN ('RV','RW')     THEN DO;
+      TYPE = 'CONVENTIONAL';
+      ITEM = 'I1.01';
+      CAT  = 'FX SALES MYR CONVENTIONAL';
+   END; ELSE
+   IF GWAPP = 'FX'  AND GWCCY IN ('MYR')   AND  GWAB = '2000'  AND
+      GWMVTS = 'S'  AND GWACT NOT IN ('RV','RW')     THEN DO;
+      TYPE = 'ISLAMIC';
+      ITEM = 'I2.01';
+      CAT  = 'FX SALES MYR ISLAMIC';
+   END;
+*;
+DATA K3TBL1 (KEEP=TYPE CAT AMOUNT MATDT ITEM REPTDATE MONEY);
+   LENGTH ITEM $6;
+   FORMAT TYPE $12.;
+   SET K3TBL;
+*  IF UTREF IN ('INV','TRD','TAP') THEN DO;
+   IF UTREF IN ('INV','DRI','DLG') THEN DO;
+      TYPE = 'CONVENTIONAL';
+      SELECT (UTSTY);
+         WHEN ('SLD') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'B1.01';
+            CAT  = 'DEPOSIT PLACED';
+         END;
+         WHEN ('SSD') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'B1.02';
+            CAT  = 'DEPOSIT PLACED';
+         END;
+         WHEN ('SZD') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'B1.03';
+            CAT  = 'DEPOSIT PLACED';
+         END;
+         WHEN ('SBA') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.01';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('CB1') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C1.02';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('MGS') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C1.03';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('BNB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.04';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('CNT') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.05';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('DHB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.06';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('DMB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.07';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('GRL') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.08';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('MTN') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.09';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('GNL') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.10';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('RUL') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.11';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('MTB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.12';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('CBB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.13';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('IDS') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.14';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('DBD') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C1.15';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('PNB') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C1.21';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('PBA') DO;
+            IF UTDLP = 'MOP'  THEN DO;
+               AMOUNT = UTAMOC - UTDPF;
+               ITEM = 'C1.16';
+               CAT  = 'DEBT SECURITIES HELD';
+            END;
+         END;
+         WHEN ('MGI') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C1.17';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('BNN') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.18';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('KHA') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C1.19';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('ISB') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C1.20';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('FRN') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'D1.01';
+            CAT  = 'FLOATING RATE';
+         END;
+         OTHERWISE   DO;
+            ITEM = ' ';
+            CAT  = ' ';
+         END;
+      END;
+      AMOUNT = ABS(AMOUNT);
+      MONEY  = AMOUNT;
+      IF ITEM NE ' '   THEN OUTPUT;
+   END;
+   IF UTREF IN ('PZD','PSD') THEN DO;
+      TYPE = 'CONVENTIONAL';
+      SELECT (UTSTY);
+         WHEN ('ISD') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'E1.01';
+            CAT  = 'LIABILITIES';
+         END;
+         WHEN ('IZD') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'E1.02';
+            CAT  = 'LIABILITIES';
+         END;
+         OTHERWISE   DO;
+            ITEM = ' ';
+            CAT  = ' ';
+         END;
+      END;
+      AMOUNT = ABS(AMOUNT);
+      MONEY  = AMOUNT;
+      IF ITEM NE ' '   THEN OUTPUT;
+   END;
+*  IF UTREF IN ('IINV','ITRD','ITAP') THEN DO;
+   IF UTREF IN ('IINV','IDRI','IDLG') THEN DO;
+      TYPE = 'ISLAMIC';
+      SELECT (UTSTY);
+         WHEN ('SLD') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'B2.01';
+            CAT  = 'DEPOSIT PLACED';
+         END;
+         WHEN ('SSD') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'B2.02';
+            CAT  = 'DEPOSIT PLACED';
+         END;
+         WHEN ('SZD') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'B2.03';
+            CAT  = 'DEPOSIT PLACED';
+         END;
+         WHEN ('SBA') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.01';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('CB1') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C2.02';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('MGS') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C2.03';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('BNB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.04';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('CNT') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.05';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('DHB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.06';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('DMB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.07';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('GRL') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.08';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('MTN') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.09';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('GNL') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.10';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('RUL') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.11';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('MTB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.12';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('CBB') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.13';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('IDS') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.14';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('DBD') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C2.15';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('PNB') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C2.21';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('PBA') DO;
+            IF UTDLP = 'MOP'  THEN DO;
+               AMOUNT = UTAMOC - UTDPF;
+               ITEM = 'C2.16';
+               CAT  = 'DEBT SECURITIES HELD';
+            END;
+         END;
+         WHEN ('MGI') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C2.17';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('BNN') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.18';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('KHA') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'C2.19';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('ISB') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'C2.20';
+            CAT  = 'DEBT SECURITIES HELD';
+         END;
+         WHEN ('FRN') DO;
+            AMOUNT = (UTAMOC - UTDPF) + UTAICT;
+            ITEM = 'D2.01';
+            CAT  = 'FLOATING RATE';
+         END;
+         OTHERWISE   DO;
+            ITEM = ' ';
+            CAT  = ' ';
+         END;
+      END;
+      AMOUNT = ABS(AMOUNT);
+      MONEY  = AMOUNT;
+      IF ITEM NE ' '   THEN OUTPUT;
+   END;
+   IF UTREF IN ('IPZD','IPSD') THEN DO;
+      TYPE = 'ISLAMIC';
+      SELECT (UTSTY);
+         WHEN ('ISD') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'E2.01';
+            CAT  = 'LIABILITIES';
+         END;
+         WHEN ('IZD') DO;
+            AMOUNT = UTAMOC - UTDPF;
+            ITEM = 'E2.02';
+            CAT  = 'LIABILITIES';
+         END;
+         OTHERWISE   DO;
+            ITEM = ' ';
+            CAT  = ' ';
+         END;
+      END;
+      AMOUNT = ABS(AMOUNT);
+      MONEY  = AMOUNT;
+      IF ITEM NE ' '   THEN OUTPUT;
+   END;
+*;
+*----------------------------------------------------------------*
+*  BREAKDOWN BY PURE CONTRACTUAL MATURITY PROFILE (PART 3)       *
+*----------------------------------------------------------------*;
+*;
+DATA KTBL (KEEP= TYPE CAT ITEM REMMTH AMOUNT MONEY);
+   %DCLVAR
+   SET K1TBL1 K3TBL1;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF ITEM ^= ' ';
+   IF MATDT - REPTDATE < 8 THEN REMMTH = 0.1;
+   ELSE DO;
+      %REMMTH
+   END;
+*;
+*----------------------------------------------------------------*
+*  PRODUCE REPORTS                                               *
+*----------------------------------------------------------------*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+TITLE1 'PUBLIC BANK BERHAD              REPORT NO : EIBQIRER';
+TITLE2 'TREASURY PROCESSING';
+TITLE3 'VALUE OF CONTRACT CLASSIFIED BY REMAINING PERIOD TO MATURITY/NEXT REPRIC
+ING DATE';
+*;
+PROC TABULATE DATA=KTBL MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS TYPE CAT ITEM REMMTH;
+   VAR AMOUNT;
+   TABLE (TYPE), ITEM=' ' ALL='TOTAL',
+         (REMMTH='CONTRACT VALUES OVER REMAINING PERIOD'
+          ALL='TOTAL')*
+         (SUM=' '*AMOUNT=' '*F=COMMA18.)
+         / BOX='ITEMS' RTS=45 CONDENSE;
+   TITLE4 'QUARTERLY INTEREST RATE EXPOSURE REPORT AS AT ' &RDATE;
+*;
+PROC TABULATE DATA=KTBL MISSING NOSEPS;
+   FORMAT REMMTH REMFMT. ITEM $ITEMF.;
+   CLASS TYPE CAT ITEM REMMTH;
+   VAR MONEY;
+   TABLE (ALL), ITEM=' ' ALL='TOTAL',
+         (REMMTH='CONTRACT VALUES OVER REMAINING PERIOD'
+          ALL='TOTAL')*
+         (SUM=' '*MONEY=' '*F=COMMA18.)
+         / BOX='ITEMS' RTS=45 CONDENSE;
+   TITLE4 'QUARTERLY INTEREST RATE EXPOSURE REPORT AS AT ' &RDATE;
+*;
