@@ -1,0 +1,100 @@
+//EIBQRPTS JOB MISEIS,EIBQOD01,CLASS=A,MSGCLASS=X,NOTIFY=&SYSUID,
+//        USER=OPCC
+/*JOBPARM S=S1M2
+//*********************************************************************
+//PRINT1   OUTPUT CLASS=K,
+//         NAME='THE MANAGER',
+//         ROOM='14TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='CREDIT REVIEW & REHABILITATION',
+//         ADDRESS=('CREDIT EVALUATION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG, KL','TEL : 2476485'),
+//         DEST=LOCAL
+//PRINT2   OUTPUT CLASS=R,
+//         NAME='MS.RUBIAH',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='STATISTICS',
+//         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//PRINT3   OUTPUT CLASS=R,
+//         NAME='MR. LOO KAM TOH',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='TREASURY ACCOUNTING',
+//         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//*PRINT8   OUTPUT CLASS=R,
+//*         NAME='MS LIM POH LAN',
+//*         ROOM='21ST FLOOR',
+//*         BUILDING='MENARA PBB',
+//*         DEPT='RETAIL BANKING-CONSUMER BKG',
+//*         ADDRESS=('MENARA PUBLIC BANK',
+//*         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//*         DEST=S1.LOCAL
+//**********************************************************************
+//DELETE   EXEC PGM=IEFBR14
+//*
+//DD1      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PBB.ODEXLIST.COLD
+//*CONFIG  DD DISP=SHR,DSN=SYS3.SAS.V609.CNTL(BATCHXA)
+//**********************************************************************
+//SAS609   EXEC SAS609,REGION=6M,WORK='120000,8000'
+//DEPOSIT  DD DSN=SAP.PBB.MNILIMT(0),DISP=SHR
+//LOAN     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//ODEXLIST DD DSN=SAP.PBB.ODEXLIST.COLD,DISP=(NEW,CATLG),
+//            SPACE=(CYL,(10,20)),
+//            DCB=(RECFM=FBA,LRECL=140,BLKSIZE=0)
+//SASLIST  DD SYSOUT=*
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT1)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBQODLS),DISP=SHR
+//*
+//**********************************************************************
+//*  BANKING INSTITUTIONS EXPOSURE TO MOVEMENT IN INTEREST RATE RISK
+//*  STOP EFF FR. JAN 05 (REFER TO E-SMR 2005-39)
+//**********************************************************************
+//*SAS609   EXEC SAS609,WORK='120000,8000'
+//*BNM       DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//*PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*OD        DD DSN=SAP.PBB.MNILIMT(0),DISP=SHR
+//*SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT2)
+//*SYSIN     DD DSN=SAP.BNM.PROGRAM(EIBQLNRT),DISP=SHR
+/*
+//*------------------------------------------------------------------
+//* AGEING REPORT ON INTEREST RATE EXPOSURE REPORT.
+//* STOP EFF FR. JAN 05 (REFER TO E-SMR 2005-39)
+//*------------------------------------------------------------------
+//*EIFQIRER EXEC SAS609,WORK='120000,80000'
+//*PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*BNMTBL1   DD DSN=SAP.PBB.KAPITI1(0),DISP=SHR
+//*BNMTBL3   DD DSN=SAP.PBB.KAPITI3(0),DISP=SHR
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT3)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBQIRER),DISP=SHR
+//*---------------------------------------------------------
+//* DMMISR12- REPORT ON WISE ACCTS BY STATE AND AGE RANGE
+//*---------------------------------------------------------
+//*DELETE  EXEC PGM=IEFBR14
+//*DEL01   DD DSN=SAP.PBB.WISE.COLD,
+//*           DISP=(MOD,DELETE,DELETE),
+//*           UNIT=SYSDA,SPACE=(CYL,1,RLSE)
+//*DEL02   DD DSN=SAP.PBB.YAA.COLD,
+//*           DISP=(MOD,DELETE,DELETE),
+//*           UNIT=SYSDA,SPACE=(CYL,1,RLSE)
+//*DMMISR12 EXEC SAS609
+//*PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*BNM      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT8)
+//*COLD1    DD DSN=SAP.PBB.WISE.COLD,DISP=(NEW,CATLG,DELETE),
+//*            SPACE=(CYL,(50,30),RLSE),
+//*            UNIT=(SYSDA,5),
+//*            DCB=(LRECL=134,RECFM=FBA,BLKSIZE=0,BUFNO=10)
+//*COLD2    DD DSN=SAP.PBB.YAA.COLD,DISP=(NEW,CATLG,DELETE),
+//*            SPACE=(CYL,(50,30),RLSE),
+//*            UNIT=(SYSDA,5),
+//*            DCB=(LRECL=134,RECFM=FBA,BLKSIZE=0,BUFNO=10)
+//*SYSIN    DD DSN=SAP.BNM.PROGRAM(DMMISR12),DISP=SHR
+//*---------------------------------------------------------
+/*
