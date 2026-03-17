@@ -328,7 +328,7 @@ def load_dates(bnm_dir: Path) -> dict:
 # MAIN
 # ---------------------------------------------------------------------------
 
-def main():
+def run_eibdcc5l_pipeline():
     logger.info("Starting EIBDCC5L")
 
     # --- Date context ---
@@ -340,7 +340,6 @@ def main():
     bkmth      = ctx["bkmth"]
     bkyyr      = ctx["bkyyr"]
     bkday      = ctx["bkday"]
-    # mdate_sas  = ctx["mdate_sas"]
     logger.info(f"REPTDATE={ctx['reptdate']} WK={ctx['nowk']} REPTYEAR={reptyear}")
 
     # PROC PRINT DATA=DATES (informational only)
@@ -1337,6 +1336,11 @@ def main():
     # PROC CONTENTS DATA=WORK._ALL_ NODS (informational only)
 
     logger.info("EIBDCC5L completed successfully.")
+
+
+def main():
+    """Entry point kept intentionally small; heavy logic lives in pipeline helper."""
+    run_eibdcc5l_pipeline()
 
 
 if __name__ == "__main__":
