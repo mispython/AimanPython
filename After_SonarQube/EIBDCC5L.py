@@ -1,6 +1,6 @@
 # !/usr/bin/env python3
 """
-Program : EIBDCC5L.py
+Program : EIBDCC5L
 Purpose : Generate CCRIS Daily Collateral submission files for PBB (Public Bank Berhad).
           Produces:
             - COLLATER  (LRECL=200)  : Collateral master
@@ -241,9 +241,8 @@ def get_output_targets(cclassc: str) -> list[str]:
 def clamp_valuation_date(vtdd: int, vtmm: int, vtyy: int,
                           reptday: int, bkmth: int, bkyyr: int, bkday: int) -> tuple[int, int, int]:
     """Apply valuation date clamping logic for weeks 1/2/3."""
-    if reptday in (8, 15, 22):
-        if vtmm > bkmth and vtyy >= bkyyr:
-            return bkday, bkmth, bkyyr
+    if reptday in (8, 15, 22) and vtmm > bkmth and vtyy >= bkyyr:
+        return bkday, bkmth, bkyyr
     return vtdd, vtmm, vtyy
 
 
@@ -341,7 +340,7 @@ def main():
     bkmth      = ctx["bkmth"]
     bkyyr      = ctx["bkyyr"]
     bkday      = ctx["bkday"]
-    mdate_sas  = ctx["mdate_sas"]
+    # mdate_sas  = ctx["mdate_sas"]
     logger.info(f"REPTDATE={ctx['reptdate']} WK={ctx['nowk']} REPTYEAR={reptyear}")
 
     # PROC PRINT DATA=DATES (informational only)
@@ -512,7 +511,7 @@ def main():
     # Main processing loop - classify and route records
     # ===========================================================================
     collater_lines: list[str] = []
-    dccms_lines:    list[str] = []
+    # dccms_lines:    list[str] = []
     cpropety_rows:  list[dict] = []
     cmtorveh_rows:  list[dict] = []
     cothvehi_rows:  list[dict] = []
@@ -564,7 +563,7 @@ def main():
 
         # CISSUER override
         cissuer = safe_str(row.get("CISSUER", ""))
-        if cissuer[:3] == "KLM" or cissuer[:2] == "UT":
+        if cissuer.startswith(("KLM", "UT")):
             collater_type = "23"
 
         row["COLLATER_TYPE"] = collater_type
@@ -732,7 +731,11 @@ def main():
             return -1 if ka < kb else 1
         pa = safe_str(a.get("CPRPARC1", ""))
         pb = safe_str(b.get("CPRPARC1", ""))
-        return 1 if pa < pb else (-1 if pa > pb else 0)  # descending
+        if pa < pb:
+            return 1
+        if pa > pb:
+            return -1
+        return 0
     cpropety_rows.sort(key=cmp_to_key(cmp_cpropety))
 
     with open(CPROPETY_FILE, "w", encoding="latin-1") as f:
@@ -806,12 +809,12 @@ def main():
             cljlnnm  = cprpar2c if cprpar2c.strip() else addrb03
             clbldnm  = safe_str(row.get("CPBUILNO", ""))
 
-            # ESMR 2012-2277: ACCTSTAT
-            openind = safe_str(row.get("OPENIND", ""))
-            paidind = safe_str(row.get("PAIDIND", ""))
-            acctstat = ""
-            if openind in ("B", "C", "P") or paidind == "P":
-                acctstat = "S"
+            # # ESMR 2012-2277: ACCTSTAT
+            # openind = safe_str(row.get("OPENIND", ""))
+            # paidind = safe_str(row.get("PAIDIND", ""))
+            # acctstat = ""
+            # if openind in ("B", "C", "P") or paidind == "P":
+            #     acctstat = "S"
 
             # FIREDATE processing
             firedate_raw = safe_str(row.get("FIREDATE", "")).strip().ljust(8)[:8]
