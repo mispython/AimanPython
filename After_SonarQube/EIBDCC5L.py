@@ -420,7 +420,7 @@ def _load_ccollat() -> tuple[dict[tuple, dict], dict[int, dict]]:
 def _parse_eff_dx(row: dict) -> Optional[date]:
     """Parse COLLATERAL_EFF_DT into a date, or return None."""
     coll_eff_dt = row.get("COLLATERAL_EFF_DT")
-    if coll_eff_dt is not None and safe_float(coll_eff_dt, 0) != 0.0:
+    if coll_eff_dt is not None and safe_int(coll_eff_dt, 0) != 0:
         return date_from_z11_mmddyyyy(coll_eff_dt)
     return None
 
