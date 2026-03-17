@@ -1,6 +1,6 @@
 # !/usr/bin/env python3
 """
-Program : EIBDCC5L
+Program : EIBDCC5L.py
 Purpose : Generate CCRIS Daily Collateral submission files for PBB (Public Bank Berhad).
           Produces:
             - COLLATER  (LRECL=200)  : Collateral master
