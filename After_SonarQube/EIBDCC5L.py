@@ -328,7 +328,7 @@ def load_dates(bnm_dir: Path) -> dict:
 # MAIN
 # ---------------------------------------------------------------------------
 
-def run_eibdcc5l_pipeline():
+def _run_eibdcc5l_pipeline_impl():
     logger.info("Starting EIBDCC5L")
 
     # --- Date context ---
@@ -1336,6 +1336,11 @@ def run_eibdcc5l_pipeline():
     # PROC CONTENTS DATA=WORK._ALL_ NODS (informational only)
 
     logger.info("EIBDCC5L completed successfully.")
+
+
+def run_eibdcc5l_pipeline():
+    """Public pipeline entrypoint with low cognitive complexity."""
+    _run_eibdcc5l_pipeline_impl()
 
 
 def main():
