@@ -139,47 +139,52 @@ def read_packed_decimal_file(filepath):
     return records
 
 
+def _extract_effdate_parts(effdat_packed):
+    """Extract the year, month, and day from the packed effective date."""
+    effdat_str = f"{int(effdat_packed):011d}"
+    year = int(effdat_str[0:4])
+    month = int(effdat_str[7:9])
+    day = int(effdat_str[9:11])
+    return year, month, day
+
+
+def _normalize_effdate_day(year, month, day):
+    """Normalize special day values to the last valid day of the month."""
+    if day not in {29, 30, 31, 99}:
+        return day
+
+    if month == 2:
+        is_leap_year = year % 4 == 0
+        return 29 if is_leap_year else 28
+
+    if day in {31, 99}:
+        return 31 if month in {1, 3, 5, 7, 8, 10, 12} else 30
+
+    return day
+
+
 def process_effdate(effdat_packed):
     """
-    Process effective date from packed decimal YYYYMMDD format
+    Process effective date from packed decimal YYYYMMDD format.
     Returns tuple: (day, month, year, adjusted_day, effdate)
     """
-    if not effdat_packed or effdat_packed == 0:
+    if not effdat_packed:
         return None, None, None, None, None
 
-    # Convert packed decimal to YYYYMMDD string (11 chars with leading zeros)
-    effdat_str = f"{int(effdat_packed):011d}"
-
-    # Extract components
-    yy = int(effdat_str[0:4])  # First 4 digits
-    mm = int(effdat_str[7:9])  # Positions 8-9 (0-based: 7-9)
-    dd = int(effdat_str[9:11])  # Positions 10-11 (0-based: 9-11)
-
-    payday = dd
-
-    # Adjust day for special values (31, 99, 30, 29)
-    if dd in (31, 99):
-        if mm in (1, 3, 5, 7, 8, 10, 12):
-            dd = 31
-        elif mm == 2:
-            if yy % 4 == 0:
-                dd = 29
-            else:
-                dd = 28
-        else:
-            dd = 30
-    elif dd in (30, 29):
-        if mm == 2 and yy % 4 == 0:
-            dd = 29
-        else:
-            dd = 28
-
-    # Create date
     try:
-        effdate = datetime(yy, mm, dd)
-        return payday, mm, yy, dd, effdate
+        year, month, day = _extract_effdate_parts(effdat_packed)
     except (ValueError, TypeError):
-        return payday, mm, yy, dd, None
+        return None, None, None, None, None
+
+    payday = day
+    adjusted_day = _normalize_effdate_day(year, month, day)
+
+    try:
+        effdate = datetime(year, month, adjusted_day)
+    except (ValueError, TypeError):
+        effdate = None
+
+    return payday, month, year, adjusted_day, effdate
 
 
 def process_paymaintain(paymaintain_packed):
