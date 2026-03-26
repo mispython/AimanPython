@@ -9,7 +9,7 @@ Purpose: Generate Loan Listing Reports for PBB (Public Bank Berhad) and PIBB (Pu
 
 import duckdb
 import polars as pl
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import math
 import os
 
@@ -47,6 +47,7 @@ BANK_FMT = {33: 'PBB', 134: 'PFB'}
 REPORT_LINE_PREFIX = 'P001'
 AMOUNT_SINGLE_SEPARATOR = '---------------'
 AMOUNT_DOUBLE_SEPARATOR = '==============='
+PAGE_LINE_THRESHOLD = 55
 
 
 def is_nan_float(value):
@@ -63,7 +64,7 @@ def fmt_ddmmyy8(d):
         return ''
     if isinstance(d, (int, float)):
         # SAS date (days since 1960-01-01)
-        d = date(1960, 1, 1) + __import__('datetime').timedelta(days=int(d))
+        d = date(1960, 1, 1) + timedelta(days=int(d))
     return d.strftime('%d/%m/%y')
 
 def fmt_comma15_2(val):
@@ -126,7 +127,7 @@ def get_report_vars(reptdate_parquet):
 
     # Convert to Python date
     if isinstance(reptdate_val, (int, float)):
-        reptdate = date(1960, 1, 1) + __import__('datetime').timedelta(days=int(reptdate_val))
+        reptdate = date(1960, 1, 1) + timedelta(days=int(reptdate_val))
     elif isinstance(reptdate_val, str):
         reptdate = datetime.strptime(reptdate_val, '%Y-%m-%d').date()
     else:
@@ -601,50 +602,136 @@ def write_grand_total(f, brchamt, line_width=136):
     write_blank_p001(f, line_width)
 
 # =============================================================================
-# WRITE RPS REPORT - FISS PURPOSE (LNNOTE1)
+# GROUPED REPORT WRITER — DECOMPOSED HELPERS
+# (Extracted from _write_lnlist_grouped to satisfy SonarQube Cognitive
+#  Complexity ≤ 15.  Each helper owns exactly one responsibility that was
+#  previously an if-block nested inside the main for-loop.)
+# =============================================================================
+
+def _derive_group_status(current_row, next_row, previous_branch, previous_group, group_field):
+    """
+    Determine boundary flags for the current row relative to its neighbours.
+    Returns a plain tuple so the caller stays flat (no nested conditionals).
+    """
+    branch      = current_row['branch']
+    group_value = current_row[group_field]
+
+    is_first_branch = branch != previous_branch
+    is_first_group  = is_first_branch or (group_value != previous_group)
+    is_last_branch  = (next_row is None) or (next_row['branch'] != branch)
+    is_last_group   = (
+        (next_row is None)
+        or (next_row[group_field] != group_value)
+        or (next_row['branch'] != branch)
+    )
+    return branch, group_value, is_first_branch, is_first_group, is_last_branch, is_last_group
+
+
+def _start_new_page(f, pagecnt, branch, bankno, rdate, is_first_page,
+                    bank_title, line_width, newpage_writer):
+    """
+    Call the appropriate newpage_writer and return the updated (pagecnt, linecnt).
+    Centralising this avoids repeating the call at every page-overflow site.
+    """
+    pagecnt = newpage_writer(
+        f, pagecnt, branch, bankno, rdate, is_first_page, bank_title, line_width
+    )
+    return pagecnt, 11          # header occupies ~11 lines
+
+
+def _handle_branch_open(f, pagecnt, branch, bankno, rdate,
+                        bank_title, line_width, newpage_writer):
+    """
+    Actions taken when entering a new branch:
+      - reset page counter and branch accumulator
+      - emit the first page header for this branch
+    Returns (pagecnt, linecnt, brchamt).
+    """
+    pagecnt = 0
+    brchamt = 0.0
+    pagecnt, linecnt = _start_new_page(
+        f, pagecnt, branch, bankno, rdate, True,
+        bank_title, line_width, newpage_writer
+    )
+    return pagecnt, linecnt, brchamt
+
+
+def _handle_page_overflow(f, pagecnt, linecnt, branch, bankno, rdate,
+                          bank_title, line_width, newpage_writer):
+    """
+    Emit a new page header when the current page is full.
+    Returns (pagecnt, linecnt) unchanged if the page is not yet full.
+    """
+    if linecnt > PAGE_LINE_THRESHOLD:
+        pagecnt, linecnt = _start_new_page(
+            f, pagecnt, branch, bankno, rdate, False,
+            bank_title, line_width, newpage_writer
+        )
+    return pagecnt, linecnt
+
+
+def _handle_group_close(f, pagecnt, linecnt, group_value, bnmamt,
+                        branch, bankno, rdate, bank_title, line_width,
+                        newpage_writer, subtotal_writer):
+    """
+    Actions taken when the last row of a group has been written:
+      - emit the group subtotal (4 lines)
+      - check for page overflow after subtotal
+    Returns (pagecnt, linecnt).
+    """
+    subtotal_writer(f, group_value, bnmamt, line_width)
+    linecnt += 4
+    pagecnt, linecnt = _handle_page_overflow(
+        f, pagecnt, linecnt, branch, bankno, rdate,
+        bank_title, line_width, newpage_writer
+    )
+    return pagecnt, linecnt
+
+
+def _handle_branch_close(f, pagecnt, linecnt, brchamt,
+                         branch, bankno, rdate, bank_title, line_width,
+                         newpage_writer):
+    """
+    Actions taken when the last row of a branch has been written:
+      - emit the branch grand total (4 lines)
+      - check for page overflow after grand total
+    Returns (pagecnt, linecnt).
+    """
+    write_grand_total(f, brchamt, line_width)
+    linecnt += 4
+    pagecnt, linecnt = _handle_page_overflow(
+        f, pagecnt, linecnt, branch, bankno, rdate,
+        bank_title, line_width, newpage_writer
+    )
+    return pagecnt, linecnt
+
+# =============================================================================
+# WRITE RPS REPORT — SHARED GROUPED WRITER
 # =============================================================================
 
 def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width,
                           group_field, newpage_writer, subtotal_writer):
     """
     Shared writer for grouped RPS output (FISS purpose / Sector code variants).
+
+    Cognitive Complexity is kept below 15 by delegating every conditional
+    branch to a dedicated module-level helper (_handle_branch_open,
+    _handle_page_overflow, _handle_group_close, _handle_branch_close).
+    The for-loop body is a flat sequence of calls with no nesting.
     """
-    n = len(rows)
-
-    def _is_page_full(current_line_count):
-        return current_line_count > 55
-
-    def _start_new_page(handle, current_page_count, branch, bankno, is_first_page):
-        next_page_count = newpage_writer(
-            handle, current_page_count, branch, bankno, rdate, is_first_page, bank_title, line_width
-        )
-        return next_page_count, 11
-
-    def _derive_group_status(current_row, next_row, previous_branch, previous_group):
-        branch = current_row['branch']
-        group_value = current_row[group_field]
-
-        is_first_branch = branch != previous_branch
-        is_first_group = is_first_branch or (group_value != previous_group)
-        is_last_branch = (next_row is None) or (next_row['branch'] != branch)
-        is_last_group = (
-                (next_row is None)
-                or (next_row[group_field] != group_value)
-                or (next_row['branch'] != branch)
-        )
-        return branch, group_value, is_first_branch, is_first_group, is_last_branch, is_last_group
+    n           = len(rows)
+    linecnt     = 0
+    pagecnt     = 0
+    brchamt     = 0.0
+    bnmamt      = 0.0
+    prev_branch = None
+    prev_group  = None
 
     with open(output_path, mode, encoding='ascii', errors='replace') as f:
-        linecnt  = 0
-        pagecnt  = 0
-        brchamt  = 0.0
-        bnmamt   = 0.0
-        prev_branch = None
-        prev_group  = None
-
         for idx, row in enumerate(rows):
-            balance = row['balance'] if row['balance'] is not None else 0.0
+            balance  = row['balance'] if row['balance'] is not None else 0.0
             next_row = rows[idx + 1] if idx + 1 < n else None
+            bankno   = row['bankno']
 
             (
                 branch,
@@ -653,15 +740,13 @@ def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width
                 is_first_group,
                 is_last_branch,
                 is_last_group,
-            ) = _derive_group_status(
-                row, next_row, prev_branch, prev_group
-            )
+            ) = _derive_group_status(row, next_row, prev_branch, prev_group, group_field)
 
-            bankno = row['bankno']
             if is_first_branch:
-                pagecnt = 0
-                brchamt = 0.0
-                pagecnt, linecnt = _start_new_page(f, pagecnt, branch, bankno, True)
+                pagecnt, linecnt, brchamt = _handle_branch_open(
+                    f, pagecnt, branch, bankno, rdate,
+                    bank_title, line_width, newpage_writer
+                )
 
             if is_first_group:
                 bnmamt = 0.0
@@ -672,22 +757,27 @@ def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width
             write_data_row(f, row, line_width)
             linecnt += 1
 
-            if _is_page_full(linecnt):
-                pagecnt, linecnt = _start_new_page(f, pagecnt, branch, bankno, False)
+            pagecnt, linecnt = _handle_page_overflow(
+                f, pagecnt, linecnt, branch, bankno, rdate,
+                bank_title, line_width, newpage_writer
+            )
 
             if is_last_group:
-                subtotal_writer(f, group_value, bnmamt, line_width)
-                linecnt += 4
-
-            if _is_page_full(linecnt):
-                pagecnt, linecnt = _start_new_page(f, pagecnt, branch, bankno, False)
+                pagecnt, linecnt = _handle_group_close(
+                    f, pagecnt, linecnt, group_value, bnmamt,
+                    branch, bankno, rdate, bank_title, line_width,
+                    newpage_writer, subtotal_writer
+                )
 
             if is_last_branch:
-                write_grand_total(f, brchamt, line_width)
-                linecnt += 4
+                pagecnt, linecnt = _handle_branch_close(
+                    f, pagecnt, linecnt, brchamt,
+                    branch, bankno, rdate, bank_title, line_width,
+                    newpage_writer
+                )
 
             prev_branch = branch
-            prev_group = group_value
+            prev_group  = group_value
 
 # =============================================================================
 # WRITE RPS REPORT - FISS PURPOSE (LNNOTE1)
