@@ -639,18 +639,20 @@ def _start_new_page(f, pagecnt, branch, bankno, rdate, is_first_page,
     return pagecnt, 11          # header occupies ~11 lines
 
 
-def _handle_branch_open(f, pagecnt, branch, bankno, rdate,
+def _handle_branch_open(f, branch, bankno, rdate,
                         bank_title, line_width, newpage_writer):
     """
     Actions taken when entering a new branch:
-      - reset page counter and branch accumulator
+      - reset page counter to 0 and branch accumulator to 0.0
       - emit the first page header for this branch
     Returns (pagecnt, linecnt, brchamt).
+    pagecnt is always reset to 0 on a branch boundary, so it is not accepted
+    as a parameter — receiving a value that is immediately discarded would
+    trigger a SonarQube 'variable introduced but initial value unused' warning.
     """
-    pagecnt = 0
     brchamt = 0.0
     pagecnt, linecnt = _start_new_page(
-        f, pagecnt, branch, bankno, rdate, True,
+        f, 0, branch, bankno, rdate, True,
         bank_title, line_width, newpage_writer
     )
     return pagecnt, linecnt, brchamt
@@ -744,7 +746,7 @@ def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width
 
             if is_first_branch:
                 pagecnt, linecnt, brchamt = _handle_branch_open(
-                    f, pagecnt, branch, bankno, rdate,
+                    f, branch, bankno, rdate,
                     bank_title, line_width, newpage_writer
                 )
 
