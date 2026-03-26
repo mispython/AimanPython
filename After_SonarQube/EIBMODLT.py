@@ -624,66 +624,17 @@ def write_odlst_fiss(odraft1: pl.DataFrame, rdate: str, output_path: str,
     Write OD RPS report grouped by BRANCH / FISSPURP / ACCTNO.
     Each record produces 3 output lines. Equivalent to the first DATA _NULL_ block.
     """
-    rows = odraft1.to_dicts()
-    n = len(rows)
-
-    with open(output_path, mode, encoding='ascii', errors='replace') as f:
-        linecnt       = 0
-        pagecnt       = 0
-        brchamt       = 0.0
-        bnmamt        = 0.0
-        prev_branch   = None
-        prev_fisspurp = None
-
-        for idx, row in enumerate(rows):
-            branch   = row['branch']
-            fisspurp = row['fisspurp']
-            balance  = row['balance'] if row['balance'] is not None else 0.0
-
-            is_first_branch   = (branch != prev_branch)
-            is_first_fisspurp = is_first_branch or (fisspurp != prev_fisspurp)
-
-            is_last_branch   = (idx == n - 1) or (rows[idx + 1]['branch'] != branch)
-            is_last_fisspurp = (idx == n - 1) or \
-                               (rows[idx + 1]['fisspurp'] != fisspurp) or \
-                               (rows[idx + 1]['branch'] != branch)
-
-            if is_first_branch:
-                pagecnt = 0
-                brchamt = 0.0
-                pagecnt = write_newpage_fiss(f, pagecnt, branch, rdate,
-                                             True, bank_title, width)
-                linecnt = LINECNT_START
-
-            if is_first_fisspurp:
-                bnmamt = 0.0
-
-            brchamt += balance
-            bnmamt  += balance
-
-            write_data_rows(f, row, width)
-            linecnt += 3
-
-            if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_fiss(f, pagecnt, branch, rdate,
-                                             False, bank_title, width)
-                linecnt = LINECNT_START
-
-            if is_last_fisspurp:
-                write_subtotal_fiss(f, fisspurp, bnmamt, width)
-                linecnt += 4
-
-            if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_fiss(f, pagecnt, branch, rdate,
-                                             False, bank_title, width)
-                linecnt = LINECNT_START
-
-            if is_last_branch:
-                write_grand_total(f, brchamt, width)
-                # Note: SAS does not increment LINECNT after LAST.BRANCH grand total
-
-            prev_branch   = branch
-            prev_fisspurp = fisspurp
+    write_odlst_grouped(
+        frame=odraft1,
+        rdate=rdate,
+        output_path=output_path,
+        bank_title=bank_title,
+        group_col='fisspurp',
+        write_newpage_fn=write_newpage_fiss,
+        write_subtotal_fn=write_subtotal_fiss,
+        mode=mode,
+        width=width
+    )
 
 # =============================================================================
 # WRITE RPS REPORT — SECTOR CODE (ODRAFT2)
@@ -695,66 +646,88 @@ def write_odlst_sector(odraft2: pl.DataFrame, rdate: str, output_path: str,
     Write OD RPS report grouped by BRANCH / SECTORCD / ACCTNO.
     Each record produces 3 output lines. Equivalent to the second DATA _NULL_ block (FILE ODLST MOD).
     """
-    rows = odraft2.to_dicts()
-    n = len(rows)
+    write_odlst_grouped(
+        frame=odraft2,
+        rdate=rdate,
+        output_path=output_path,
+        bank_title=bank_title,
+        group_col='sectorcd',
+        write_newpage_fn=write_newpage_sector,
+        write_subtotal_fn=write_subtotal_sector,
+        mode=mode,
+        width=width
+    )
+
+
+def write_odlst_grouped(
+        frame: pl.DataFrame,
+        rdate: str,
+        output_path: str,
+        bank_title: str,
+        group_col: str,
+        write_newpage_fn,
+        write_subtotal_fn,
+        mode: str,
+        width: int
+):
+    """Shared writer for BRANCH / <group_col> / ACCTNO report layouts."""
+    rows = frame.to_dicts()
+    total_rows = len(rows)
 
     with open(output_path, mode, encoding='ascii', errors='replace') as f:
-        linecnt        = 0
-        pagecnt        = 0
-        brchamt        = 0.0
-        bnmamt         = 0.0
-        prev_branch    = None
-        prev_sectorcd  = None
+        linecnt = 0
+        pagecnt = 0
+        brchamt = 0.0
+        group_amt = 0.0
+        prev_branch = None
+        prev_group = None
 
         for idx, row in enumerate(rows):
-            branch   = row['branch']
-            sectorcd = row['sectorcd']
-            balance  = row['balance'] if row['balance'] is not None else 0.0
+            branch = row['branch']
+            group_value = row[group_col]
+            balance = row['balance'] if row['balance'] is not None else 0.0
 
-            is_first_branch   = (branch != prev_branch)
-            is_first_sectorcd = is_first_branch or (sectorcd != prev_sectorcd)
+            next_row = rows[idx + 1] if idx + 1 < total_rows else None
+            is_new_branch = branch != prev_branch
+            is_new_group = is_new_branch or (group_value != prev_group)
+            is_last_branch_row = (next_row is None) or (next_row['branch'] != branch)
+            is_last_group_row = (
+                    (next_row is None) or
+                    (next_row['branch'] != branch) or
+                    (next_row[group_col] != group_value)
+            )
 
-            is_last_branch   = (idx == n - 1) or (rows[idx + 1]['branch'] != branch)
-            is_last_sectorcd = (idx == n - 1) or \
-                               (rows[idx + 1]['sectorcd'] != sectorcd) or \
-                               (rows[idx + 1]['branch'] != branch)
-
-            if is_first_branch:
+            if is_new_branch:
                 pagecnt = 0
                 brchamt = 0.0
-                pagecnt = write_newpage_sector(f, pagecnt, branch, rdate,
-                                               True, bank_title, width)
+                pagecnt = write_newpage_fn(f, pagecnt, branch, rdate, True, bank_title, width)
                 linecnt = LINECNT_START
 
-            if is_first_sectorcd:
-                bnmamt = 0.0
+            if is_new_group:
+                group_amt = 0.0
 
             brchamt += balance
-            bnmamt  += balance
-
+            group_amt += balance
             write_data_rows(f, row, width)
             linecnt += 3
 
             if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_sector(f, pagecnt, branch, rdate,
-                                               False, bank_title, width)
+                pagecnt = write_newpage_fn(f, pagecnt, branch, rdate, False, bank_title, width)
                 linecnt = LINECNT_START
 
-            if is_last_sectorcd:
-                write_subtotal_sector(f, sectorcd, bnmamt, width)
+            if is_last_group_row:
+                write_subtotal_fn(f, group_value, group_amt, width)
                 linecnt += 4
 
             if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_sector(f, pagecnt, branch, rdate,
-                                               False, bank_title, width)
+                pagecnt = write_newpage_fn(f, pagecnt, branch, rdate, False, bank_title, width)
                 linecnt = LINECNT_START
 
-            if is_last_branch:
+            if is_last_branch_row:
                 write_grand_total(f, brchamt, width)
-                # Note: SAS does not increment LINECNT after LAST.BRANCH grand total
 
-            prev_branch   = branch
-            prev_sectorcd = sectorcd
+            prev_branch = branch
+            prev_group = group_value
 
 # =============================================================================
 # MAIN: PBB SECTION
