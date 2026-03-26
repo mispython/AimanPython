@@ -610,6 +610,30 @@ def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width
     Shared writer for grouped RPS output (FISS purpose / Sector code variants).
     """
     n = len(rows)
+
+    def _is_page_full(current_line_count):
+        return current_line_count > 55
+
+    def _start_new_page(handle, current_page_count, branch, bankno, is_first_page):
+        next_page_count = newpage_writer(
+            handle, current_page_count, branch, bankno, rdate, is_first_page, bank_title, line_width
+        )
+        return next_page_count, 11
+
+    def _derive_group_status(current_row, next_row, previous_branch, previous_group):
+        branch = current_row['branch']
+        group_value = current_row[group_field]
+
+        is_first_branch = branch != previous_branch
+        is_first_group = is_first_branch or (group_value != previous_group)
+        is_last_branch = (next_row is None) or (next_row['branch'] != branch)
+        is_last_group = (
+                (next_row is None)
+                or (next_row[group_field] != group_value)
+                or (next_row['branch'] != branch)
+        )
+        return branch, group_value, is_first_branch, is_first_group, is_last_branch, is_last_group
+
     with open(output_path, mode, encoding='ascii', errors='replace') as f:
         linecnt  = 0
         pagecnt  = 0
@@ -619,28 +643,25 @@ def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width
         prev_group  = None
 
         for idx, row in enumerate(rows):
-            branch = row['branch']
-            group_value = row[group_field]
             balance = row['balance'] if row['balance'] is not None else 0.0
             next_row = rows[idx + 1] if idx + 1 < n else None
 
-            is_first_branch = branch != prev_branch
-            is_first_group = is_first_branch or (group_value != prev_group)
-            is_last_branch = (next_row is None) or (next_row['branch'] != branch)
-            is_last_group = (
-                (next_row is None)
-                or (next_row[group_field] != group_value)
-                or (next_row['branch'] != branch)
+            (
+                branch,
+                group_value,
+                is_first_branch,
+                is_first_group,
+                is_last_branch,
+                is_last_group,
+            ) = _derive_group_status(
+                row, next_row, prev_branch, prev_group
             )
 
             bankno = row['bankno']
             if is_first_branch:
                 pagecnt = 0
                 brchamt = 0.0
-                pagecnt = newpage_writer(
-                    f, pagecnt, branch, bankno, rdate, True, bank_title, line_width
-                )
-                linecnt = 11
+                pagecnt, linecnt = _start_new_page(f, pagecnt, branch, bankno, True)
 
             if is_first_group:
                 bnmamt = 0.0
@@ -651,21 +672,15 @@ def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width
             write_data_row(f, row, line_width)
             linecnt += 1
 
-            if linecnt > 55:
-                pagecnt = newpage_writer(
-                    f, pagecnt, branch, bankno, rdate, False, bank_title, line_width
-                )
-                linecnt = 11
+            if _is_page_full(linecnt):
+                pagecnt, linecnt = _start_new_page(f, pagecnt, branch, bankno, False)
 
             if is_last_group:
                 subtotal_writer(f, group_value, bnmamt, line_width)
                 linecnt += 4
 
-            if linecnt > 55:
-                pagecnt = newpage_writer(
-                    f, pagecnt, branch, bankno, rdate, False, bank_title, line_width
-                )
-                linecnt = 11
+            if _is_page_full(linecnt):
+                pagecnt, linecnt = _start_new_page(f, pagecnt, branch, bankno, False)
 
             if is_last_branch:
                 write_grand_total(f, brchamt, line_width)
