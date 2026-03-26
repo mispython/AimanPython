@@ -672,62 +672,101 @@ def write_odlst_grouped(
 ):
     """Shared writer for BRANCH / <group_col> / ACCTNO report layouts."""
     rows = frame.to_dicts()
-    total_rows = len(rows)
+    states = _initial_grouped_writer_state()
 
     with open(output_path, mode, encoding='ascii', errors='replace') as f:
-        linecnt = 0
-        pagecnt = 0
-        brchamt = 0.0
-        group_amt = 0.0
-        prev_branch = None
-        prev_group = None
-
         for idx, row in enumerate(rows):
-            branch = row['branch']
-            group_value = row[group_col]
-            balance = row['balance'] if row['balance'] is not None else 0.0
-
-            next_row = rows[idx + 1] if idx + 1 < total_rows else None
-            is_new_branch = branch != prev_branch
-            is_new_group = is_new_branch or (group_value != prev_group)
-            is_last_branch_row = (next_row is None) or (next_row['branch'] != branch)
-            is_last_group_row = (
-                    (next_row is None) or
-                    (next_row['branch'] != branch) or
-                    (next_row[group_col] != group_value)
+            markers = _compute_row_markers(rows, idx, row, group_col, states)
+            _prepare_new_sections(
+                f, states, markers, rdate, bank_title, width, write_newpage_fn
             )
 
-            if is_new_branch:
-                pagecnt = 0
-                brchamt = 0.0
-                pagecnt = write_newpage_fn(f, pagecnt, branch, rdate, True, bank_title, width)
-                linecnt = LINECNT_START
+            _write_detail_row(f, row, states, markers['balance'], width)
+            _handle_page_break(f, states, markers['branch'], rdate, bank_title, width, write_newpage_fn)
+            _write_group_footer_if_needed(f, states, markers, width, write_subtotal_fn)
+            _handle_page_break(f, states, markers['branch'], rdate, bank_title, width, write_newpage_fn)
+            _write_branch_footer_if_needed(f, states, markers, width)
+            _update_previous_keys(states, markers)
 
-            if is_new_group:
-                group_amt = 0.0
 
-            brchamt += balance
-            group_amt += balance
-            write_data_rows(f, row, width)
-            linecnt += 3
+def _initial_grouped_writer_state():
+    return {
+        'linecnt': 0,
+        'pagecnt': 0,
+        'brchamt': 0.0,
+        'group_amt': 0.0,
+        'prev_branch': None,
+        'prev_group': None,
+    }
 
-            if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_fn(f, pagecnt, branch, rdate, False, bank_title, width)
-                linecnt = LINECNT_START
+def _compute_row_markers(rows, idx, row, group_col, states):
+    branch = row['branch']
+    group_value = row[group_col]
+    balance = row['balance'] if row['balance'] is not None else 0.0
+    next_row = rows[idx + 1] if idx + 1 < len(rows) else None
 
-            if is_last_group_row:
-                write_subtotal_fn(f, group_value, group_amt, width)
-                linecnt += 4
+    is_new_branch = branch != states['prev_branch']
+    is_new_group = is_new_branch or (group_value != states['prev_group'])
+    is_last_branch_row = (next_row is None) or (next_row['branch'] != branch)
+    is_last_group_row = (
+            (next_row is None)
+            or (next_row['branch'] != branch)
+            or (next_row[group_col] != group_value)
+    )
 
-            if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_fn(f, pagecnt, branch, rdate, False, bank_title, width)
-                linecnt = LINECNT_START
+    return {
+        'branch': branch,
+        'group_value': group_value,
+        'balance': balance,
+        'is_new_branch': is_new_branch,
+        'is_new_group': is_new_group,
+        'is_last_branch_row': is_last_branch_row,
+        'is_last_group_row': is_last_group_row,
+    }
 
-            if is_last_branch_row:
-                write_grand_total(f, brchamt, width)
 
-            prev_branch = branch
-            prev_group = group_value
+def _prepare_new_sections(f, states, markers, rdate, bank_title, width, write_newpage_fn):
+    if markers['is_new_branch']:
+        states['pagecnt'] = 0
+        states['brchamt'] = 0.0
+        states['pagecnt'] = write_newpage_fn(
+            f, states['pagecnt'], markers['branch'], rdate, True, bank_title, width
+        )
+        states['linecnt'] = LINECNT_START
+
+    if markers['is_new_group']:
+        states['group_amt'] = 0.0
+
+
+def _write_detail_row(f, row, states, balance, width):
+    states['brchamt'] += balance
+    states['group_amt'] += balance
+    write_data_rows(f, row, width)
+    states['linecnt'] += 3
+
+
+def _handle_page_break(f, states, branch, rdate, bank_title, width, write_newpage_fn):
+    if states['linecnt'] > LINECNT_MAX:
+        states['pagecnt'] = write_newpage_fn(
+            f, states['pagecnt'], branch, rdate, False, bank_title, width
+        )
+        states['linecnt'] = LINECNT_START
+
+
+def _write_group_footer_if_needed(f, states, markers, width, write_subtotal_fn):
+    if markers['is_last_group_row']:
+        write_subtotal_fn(f, markers['group_value'], states['group_amt'], width)
+        states['linecnt'] += 4
+
+
+def _write_branch_footer_if_needed(f, states, markers, width):
+    if markers['is_last_branch_row']:
+        write_grand_total(f, states['brchamt'], width)
+
+
+def _update_previous_keys(states, markers):
+    states['prev_branch'] = markers['branch']
+    states['prev_group'] = markers['group_value']
 
 # =============================================================================
 # MAIN: PBB SECTION
