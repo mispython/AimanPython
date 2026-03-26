@@ -186,6 +186,39 @@ def format_data_row(row: dict, columns: list) -> str:
 
 
 # ============================================================================
+# REPORT GENERATION — MODULE-LEVEL HELPERS
+# (Extracted from generate_report to keep its Cognitive Complexity ≤ 15.
+#  Each helper owns one responsibility that previously added nesting cost
+#  inside the main function.)
+# ============================================================================
+
+def _accumulate_balance(row: dict) -> float:
+    """
+    Safely extract a BALANCE value from a data row dict.
+    Extracted from generate_report to remove the try/except at depth-3
+    (inside for-row inside for-fisspurp inside for-branch), which was
+    costing +4 in Cognitive Complexity due to the ExceptHandler nesting penalty.
+    Returns 0.0 on missing, None, or non-numeric values.
+    """
+    try:
+        return float(row.get('BALANCE', 0) or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _write_report_lines(lines: list, output_path: Path) -> None:
+    """
+    Write all accumulated ASA report lines to the output file.
+    Extracted from generate_report to remove the with/for nesting block
+    (with open → for line), which was costing +2 in Cognitive Complexity
+    at depth-1 due to the for loop sitting inside the with statement.
+    """
+    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
+        for line in lines:
+            f.write(line + '\n')
+
+
+# ============================================================================
 # REPORT GENERATION
 # ============================================================================
 
@@ -288,10 +321,7 @@ def generate_report(
             for row in fp_df.to_dicts():
                 check_page_break(1)
                 emit(asa_newline(), format_data_row(row, columns))
-                try:
-                    fp_bal_sum += float(row.get('BALANCE', 0) or 0)
-                except (ValueError, TypeError):
-                    pass
+                fp_bal_sum += _accumulate_balance(row)
 
             branch_bal_sum += fp_bal_sum
 
@@ -319,11 +349,7 @@ def generate_report(
         emit(asa_newline(), build_compute_line(grand_txt, balance_str))
         emit(asa_newline(), build_separator_line(25, 51))
 
-    # Write output file
-    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
-        for line in lines:
-            f.write(line + '\n')
-
+    _write_report_lines(lines, output_path)
     print(f"Report written to: {output_path}")
 
 
