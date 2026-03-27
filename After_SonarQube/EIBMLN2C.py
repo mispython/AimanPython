@@ -188,6 +188,171 @@ def format_data_row(row: dict, columns: list) -> str:
     return line.rstrip()
 
 
+def safe_float(value) -> float:
+    """Safely convert a value to float; return 0.0 if conversion fails."""
+    try:
+        return float(value or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def build_compute_line(pos_25: int, pos_63: int, prefix_text: str, suffix_value: str) -> str:
+    """Build a compute line aligned to fixed 1-based report positions."""
+    line = ' ' * pos_25 + prefix_text
+    return line.ljust(pos_63) + suffix_value
+
+
+def emit_page_header(
+        emit,
+        title1: str,
+        title2: str,
+        title3: str,
+        title4: str,
+        hdr_row1: str,
+        hdr_row2: str,
+):
+    """Emit one full page header block."""
+    emit(asa_newpage(), title1)
+    emit(asa_newline(), title2)
+    emit(asa_newline(), title3)
+    emit(asa_newline(), title4)
+    emit(asa_newline(), '')
+    emit(asa_newline(), hdr_row1)
+    emit(asa_newline(), hdr_row2)
+    emit(asa_newline(), '-' * len(hdr_row1.rstrip()))
+    emit(asa_newline(), '')
+
+
+def emit_total_block(
+        check_page_break,
+        emit,
+        pos_25: int,
+        pos_63: int,
+        text_prefix: str,
+        code_value: str,
+        balance_sum: float,
+):
+    """Emit separator + total line + separator block."""
+    check_page_break(3)
+    emit(asa_newline(), build_separator_line(25, 51))
+    balance_str = fmt_numeric(balance_sum, 13, 2)
+    total_text = f"{text_prefix}{code_value}"
+    emit(asa_newline(), build_compute_line(pos_25, pos_63, total_text, balance_str))
+    emit(asa_newline(), build_separator_line(25, 51))
+
+
+def process_sector_rows(sc_df: pl.DataFrame, columns: list, check_page_break, emit) -> float:
+    """Emit sector detail rows and return sector balance sum."""
+    sc_bal_sum = 0.0
+    for row in sc_df.to_dicts():
+        check_page_break(1)
+        emit(asa_newline(), format_data_row(row, columns))
+        sc_bal_sum += safe_float(row.get('BALANCE', 0))
+    return sc_bal_sum
+
+
+def process_branch(
+        branch_df: pl.DataFrame,
+        columns: list,
+        subtotal_prefix: str,
+        pos_25: int,
+        pos_63: int,
+        check_page_break,
+        emit,
+) -> float:
+    """Process one branch: emit rows and sector subtotals; return branch total."""
+    branch_bal_sum = 0.0
+    sectorcds = branch_df['SECTORCD'].unique(maintain_order=True).to_list()
+
+    for sectorcd in sectorcds:
+        sc_df = branch_df.filter(pl.col('SECTORCD') == sectorcd)
+        sc_bal_sum = process_sector_rows(sc_df, columns, check_page_break, emit)
+        branch_bal_sum += sc_bal_sum
+
+        sc_str = fmt_char(sectorcd, 4)
+        emit_total_block(
+            check_page_break=check_page_break,
+            emit=emit,
+            pos_25=pos_25,
+            pos_63=pos_63,
+            text_prefix=subtotal_prefix,
+            code_value=sc_str,
+            balance_sum=sc_bal_sum,
+        )
+
+    return branch_bal_sum
+
+
+def generate_report_common(
+    lnnote_df: pl.DataFrame,
+    columns: list,
+    title1: str,
+    title2: str,
+    title3: str,
+    title4: str,
+    output_path: Path,
+    subtotal_prefix: str,
+):
+    """Shared report generation logic for PBB and PIBB."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if lnnote_df.is_empty():
+        output_path.write_text('')
+        return
+
+    df_sorted = lnnote_df.sort(['BRANCH', 'SECTORCD'])
+    hdr_row1, hdr_row2 = build_header_rows(columns)
+
+    lines      = []
+    line_count = 0
+    pos_25 = 24  # 0-based index for @025
+    pos_63 = 62  # 0-based index for @063
+
+    def emit(asa: str, content: str):
+        nonlocal line_count
+        lines.append(asa + pad_line(content, LRECL))
+        if asa != '+':
+            line_count += 1
+
+    def page_break_if_needed(needed: int = 1):
+        nonlocal line_count
+        if line_count + needed > PAGE_LINES:
+            emit_page_header(emit, title1, title2, title3, title4, hdr_row1, hdr_row2)
+            line_count = 9
+
+    emit_page_header(emit, title1, title2, title3, title4, hdr_row1, hdr_row2)
+    line_count = 9
+
+    branches = df_sorted['BRANCH'].unique(maintain_order=True).to_list()
+    for branch in branches:
+        branch_df = df_sorted.filter(pl.col('BRANCH') == branch)
+        branch_bal_sum = process_branch(
+            branch_df=branch_df,
+            columns=columns,
+            subtotal_prefix=subtotal_prefix,
+            pos_25=pos_25,
+            pos_63=pos_63,
+            check_page_break=page_break_if_needed,
+            emit=emit,
+        )
+
+        emit_total_block(
+            check_page_break=page_break_if_needed,
+            emit=emit,
+            pos_25=pos_25,
+            pos_63=pos_63,
+            text_prefix='GRAND TOTAL FOR BRANCH   ',
+            code_value=fmt_integer(branch, 3, zero_padded=True),
+            balance_sum=branch_bal_sum,
+        )
+
+    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
+        for line in lines:
+            f.write(line + '\n')
+
+    print(f"Report written to: {output_path}")
+
+
 # ============================================================================
 # REPORT GENERATION - PBB
 # ============================================================================
@@ -213,108 +378,16 @@ def generate_report_pbb(
       @025 = position 25 in content (0-based index 24)
       @063 = position 63 in content (0-based index 62)
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if lnnote_df.is_empty():
-        output_path.write_text('')
-        return
-
-    # Sort: BY BRANCH then SECTORCD then natural order
-    df_sorted = lnnote_df.sort(['BRANCH', 'SECTORCD'])
-
-    hdr_row1, hdr_row2 = build_header_rows(columns)
-
-    lines      = []
-    line_count = 0
-
-    POS_25 = 24   # 0-based index for @025
-    POS_63 = 62   # 0-based index for @063
-
-    def emit(asa: str, content: str):
-        nonlocal line_count
-        padded = pad_line(content, LRECL)
-        lines.append(asa + padded)
-        if asa != '+':
-            line_count += 1
-
-    def check_page_break(needed: int = 1):
-        if line_count + needed > PAGE_LINES:
-            emit_page_header()
-
-    def emit_page_header():
-        nonlocal line_count
-        emit(asa_newpage(), title1)
-        emit(asa_newline(), title2)
-        emit(asa_newline(), title3)
-        emit(asa_newline(), title4)
-        emit(asa_newline(), '')
-        emit(asa_newline(), hdr_row1)
-        emit(asa_newline(), hdr_row2)
-        underline = '-' * len(hdr_row1.rstrip())
-        emit(asa_newline(), underline)
-        # HEADSKIP
-        emit(asa_newline(), '')
-        line_count = 9
-
-    def build_compute_line(prefix_text: str, suffix_value: str) -> str:
-        line = ' ' * POS_25 + prefix_text
-        line = line.ljust(POS_63) + suffix_value
-        return line
-
-    emit_page_header()
-
-    branches = df_sorted['BRANCH'].unique(maintain_order=True).to_list()
-
-    for branch in branches:
-        branch_df      = df_sorted.filter(pl.col('BRANCH') == branch)
-        branch_bal_sum = 0.0
-
-        sectorcds = branch_df['SECTORCD'].unique(maintain_order=True).to_list()
-
-        for sectorcd in sectorcds:
-            sc_df      = branch_df.filter(pl.col('SECTORCD') == sectorcd)
-            sc_bal_sum = 0.0
-
-            for row in sc_df.to_dicts():
-                check_page_break(1)
-                emit(asa_newline(), format_data_row(row, columns))
-                try:
-                    sc_bal_sum += float(row.get('BALANCE', 0) or 0)
-                except (ValueError, TypeError):
-                    pass
-
-            branch_bal_sum += sc_bal_sum
-
-            # BREAK AFTER SECTORCD compute block
-            # LINE @025 51*'-'
-            # LINE @025 'SUBTOTAL FOR SECTOR   ' SECTOR $4. @063 BALANCE.SUM 13.2
-            # LINE @025 51*'-'
-            # Note: SAS source uses variable name SECTOR (not SECTORCD) in LINE stmt
-            check_page_break(3)
-            emit(asa_newline(), build_separator_line(25, 51))
-            sc_str       = fmt_char(sectorcd, 4)
-            balance_str  = fmt_numeric(sc_bal_sum, 13, 2)
-            subtotal_txt = 'SUBTOTAL FOR SECTOR   ' + sc_str
-            emit(asa_newline(), build_compute_line(subtotal_txt, balance_str))
-            emit(asa_newline(), build_separator_line(25, 51))
-
-        # BREAK AFTER BRANCH compute block
-        # LINE @025 51*'-'
-        # LINE @025 'GRAND TOTAL FOR BRANCH   ' BRANCH Z3. @063 BALANCE.SUM 13.2
-        # LINE @025 51*'-'
-        check_page_break(3)
-        emit(asa_newline(), build_separator_line(25, 51))
-        branch_str  = fmt_integer(branch, 3, zero_padded=True)
-        balance_str = fmt_numeric(branch_bal_sum, 13, 2)
-        grand_txt   = 'GRAND TOTAL FOR BRANCH   ' + branch_str
-        emit(asa_newline(), build_compute_line(grand_txt, balance_str))
-        emit(asa_newline(), build_separator_line(25, 51))
-
-    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
-        for line in lines:
-            f.write(line + '\n')
-
-    print(f"Report written to: {output_path}")
+    generate_report_common(
+        lnnote_df=lnnote_df,
+        columns=columns,
+        title1=title1,
+        title2=title2,
+        title3=title3,
+        title4=title4,
+        output_path=output_path,
+        subtotal_prefix='SUBTOTAL FOR SECTOR   ',
+    )
 
 
 # ============================================================================
@@ -322,13 +395,13 @@ def generate_report_pbb(
 # ============================================================================
 
 def generate_report_pibb(
-    lnnote_df: pl.DataFrame,
-    columns: list,
-    title1: str,
-    title2: str,
-    title3: str,
-    title4: str,
-    output_path: Path,
+        lnnote_df: pl.DataFrame,
+        columns: list,
+        title1: str,
+        title2: str,
+        title3: str,
+        title4: str,
+        output_path: Path,
 ):
     """
     Generate PIBB Loan listing report (EIBMLN2C) with ASA carriage control.
@@ -337,111 +410,20 @@ def generate_report_pibb(
     PIBB groups/breaks by SECTORCD (DEFINE SECTORCD / ORDER).
     Break compute uses: 'SUBTOTAL FOR SECTOR     ' SECTORCD $4.
 
-    Subtotal/Grand total lines use 1-based column positions:
+        Subtotal/Grand total lines use 1-based column positions:
       @025 = position 25 in content (0-based index 24)
       @063 = position 63 in content (0-based index 62)
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if lnnote_df.is_empty():
-        output_path.write_text('')
-        return
-
-    # Sort: BY BRANCH then SECTORCD then natural order
-    df_sorted = lnnote_df.sort(['BRANCH', 'SECTORCD'])
-
-    hdr_row1, hdr_row2 = build_header_rows(columns)
-
-    lines      = []
-    line_count = 0
-
-    POS_25 = 24   # 0-based index for @025
-    POS_63 = 62   # 0-based index for @063
-
-    def emit(asa: str, content: str):
-        nonlocal line_count
-        padded = pad_line(content, LRECL)
-        lines.append(asa + padded)
-        if asa != '+':
-            line_count += 1
-
-    def check_page_break(needed: int = 1):
-        if line_count + needed > PAGE_LINES:
-            emit_page_header()
-
-    def emit_page_header():
-        nonlocal line_count
-        emit(asa_newpage(), title1)
-        emit(asa_newline(), title2)
-        emit(asa_newline(), title3)
-        emit(asa_newline(), title4)
-        emit(asa_newline(), '')
-        emit(asa_newline(), hdr_row1)
-        emit(asa_newline(), hdr_row2)
-        underline = '-' * len(hdr_row1.rstrip())
-        emit(asa_newline(), underline)
-        # HEADSKIP
-        emit(asa_newline(), '')
-        line_count = 9
-
-    def build_compute_line(prefix_text: str, suffix_value: str) -> str:
-        line = ' ' * POS_25 + prefix_text
-        line = line.ljust(POS_63) + suffix_value
-        return line
-
-    emit_page_header()
-
-    branches = df_sorted['BRANCH'].unique(maintain_order=True).to_list()
-
-    for branch in branches:
-        branch_df      = df_sorted.filter(pl.col('BRANCH') == branch)
-        branch_bal_sum = 0.0
-
-        sectorcds = branch_df['SECTORCD'].unique(maintain_order=True).to_list()
-
-        for sectorcd in sectorcds:
-            sc_df      = branch_df.filter(pl.col('SECTORCD') == sectorcd)
-            sc_bal_sum = 0.0
-
-            for row in sc_df.to_dicts():
-                check_page_break(1)
-                emit(asa_newline(), format_data_row(row, columns))
-                try:
-                    sc_bal_sum += float(row.get('BALANCE', 0) or 0)
-                except (ValueError, TypeError):
-                    pass
-
-            branch_bal_sum += sc_bal_sum
-
-            # BREAK AFTER SECTORCD compute block
-            # LINE @025 51*'-'
-            # LINE @025 'SUBTOTAL FOR SECTOR     ' SECTORCD $4. @063 BALANCE.SUM 13.2
-            # LINE @025 51*'-'
-            check_page_break(3)
-            emit(asa_newline(), build_separator_line(25, 51))
-            sc_str       = fmt_char(sectorcd, 4)
-            balance_str  = fmt_numeric(sc_bal_sum, 13, 2)
-            subtotal_txt = 'SUBTOTAL FOR SECTOR     ' + sc_str
-            emit(asa_newline(), build_compute_line(subtotal_txt, balance_str))
-            emit(asa_newline(), build_separator_line(25, 51))
-
-        # BREAK AFTER BRANCH compute block
-        # LINE @025 51*'-'
-        # LINE @025 'GRAND TOTAL FOR BRANCH   ' BRANCH Z3. @063 BALANCE.SUM 13.2
-        # LINE @025 51*'-'
-        check_page_break(3)
-        emit(asa_newline(), build_separator_line(25, 51))
-        branch_str  = fmt_integer(branch, 3, zero_padded=True)
-        balance_str = fmt_numeric(branch_bal_sum, 13, 2)
-        grand_txt   = 'GRAND TOTAL FOR BRANCH   ' + branch_str
-        emit(asa_newline(), build_compute_line(grand_txt, balance_str))
-        emit(asa_newline(), build_separator_line(25, 51))
-
-    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
-        for line in lines:
-            f.write(line + '\n')
-
-    print(f"Report written to: {output_path}")
+    generate_report_common(
+        lnnote_df=lnnote_df,
+        columns=columns,
+        title1=title1,
+        title2=title2,
+        title3=title3,
+        title4=title4,
+        output_path=output_path,
+        subtotal_prefix='SUBTOTAL FOR SECTOR     ',
+    )
 
 
 # ============================================================================
@@ -472,7 +454,6 @@ def run_pbb():
     generate_report_pbb(
         lnnote_df=lnnote2_df,
         columns=COLUMNS_PBB,
-        rdate=rdate,
         title1=title1,
         title2=title2,
         title3=title3,
@@ -509,7 +490,6 @@ def run_pibb():
     generate_report_pibb(
         lnnote_df=lnnote2_df,
         columns=COLUMNS_PIBB,
-        rdate=rdate,
         title1=title1,
         title2=title2,
         title3=title3,
