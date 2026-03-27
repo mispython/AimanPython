@@ -82,7 +82,7 @@ print("Step 2: Processing loan data...")
 # Read previous and current month loan data
 try:
     loan_prev = pl.read_parquet(SAS_LOAN_PREV_FILE).drop('BALANCE').rename({'BAL_AFT_EIR': 'BALANCE'})
-except (FileNotFoundError, OSError, pl.exceptions.PolarsError) as exc:
+except (OSError, pl.exceptions.PolarsError) as exc:
     print(f"Previous month file unavailable ({SAS_LOAN_PREV_FILE}): {exc}. Continuing with current month only.")
     loan_prev = pl.DataFrame()
 
