@@ -22,13 +22,13 @@ def eibaabba():
     
     # Week determination with SDD (Starting Day of Data)
     if reptday == 8:
-        sdd, wk, wk1 = 1, '1', '4'
+        sdd, wk, _ = 1, '1', '4'
     elif reptday == 15:
-        sdd, wk, wk1 = 9, '2', '1'
+        sdd, wk, _ = 9, '2', '1'
     elif reptday == 22:
-        sdd, wk, wk1 = 16, '3', '2'
+        sdd, wk, _ = 16, '3', '2'
     else:
-        sdd, wk, wk1 = 23, '4', '3'
+        sdd, wk, _ = 23, '4', '3'
     
     mm = reptdate.month
     
@@ -36,17 +36,16 @@ def eibaabba():
     nowk = wk
     reptmon = f"{mm:02d}"
     reptyear = str(reptdate.year)
-    reptday_str = f"{reptdate.day:02d}"
     sdate = f"{reptdate.day:02d}{mm:02d}"
     
-    print(f"EIBAABBA - Account Analysis Report")
+    print("EIBAABBA - Account Analysis Report")
     print(f"Date: {sdate}, Week: {wk}, SDD: {sdd}")
     
     # Helper function to read datasets
     def read_dataset(path, file_name):
         try:
             return pl.read_parquet(path / file_name)
-        except:
+        except (TypeError, ValueError):
             return pl.DataFrame()
     
     # 1. Process ABBA data (main loan notes)
@@ -86,7 +85,7 @@ def eibaabba():
             sdate_dt = datetime.strptime(sdate_str + reptyear[-2:], "%d%m%y")
             age_days = (sdate_dt - bdate).days
             return round(age_days / 365)
-        except:
+        except (TypeError, ValueError):
             return 0
     
     abba_df = abba_df.with_columns(
@@ -154,7 +153,7 @@ def eibaabba():
                 elif days > 59: return 2
                 elif days > 30: return 1
                 else: return 0
-            except:
+            except (TypeError, ValueError):
                 return 0
         
         sasb_df = sasb_df.with_columns(
@@ -334,16 +333,15 @@ def eibaabba_simple():
         wk, sdd = '4', 23
     
     reptmon = f"{reptdate.month:02d}"
-    reptyear = str(reptdate.year)
     sdate = f"{reptdate.day:02d}{reptdate.month:02d}"
     
-    print(f"EIBAABBA - Account Analysis")
+    print("EIBAABBA - Account Analysis")
     print(f"Date: {sdate}, Week: {wk}, SDD: {sdd}")
     
     # Read main data
     try:
         abba_df = pl.read_parquet(base / "MNILN/LNNOTE.parquet")
-    except:
+    except (TypeError, ValueError):
         print("No LNNOTE data")
         return
     
@@ -372,7 +370,7 @@ def eibaabba_simple():
         sasb_df = pl.read_parquet(base / f"SASD/LOAN{reptmon}{wk}.parquet")
         sasb_df = sasb_df.select(["ACCTNO", "NOTENO", "BALANCE"])
         abba_df = abba_df.join(sasb_df, on=["ACCTNO", "NOTENO"], how="left")
-    except:
+    except (TypeError, ValueError):
         abba_df = abba_df.with_columns(pl.lit(0.0).alias("BALANCE"))
     
     # Add customer data if available
@@ -380,7 +378,7 @@ def eibaabba_simple():
         cis_df = pl.read_parquet(base / "CISLN/LOAN.parquet")
         cis_df = cis_df.select(["ACCTNO", "CUSTNAME", "GENDER"])
         abba_df = abba_df.join(cis_df, on="ACCTNO", how="left")
-    except:
+    except (TypeError, ValueError):
         abba_df = abba_df.with_columns(
             pl.lit("").alias("CUSTNAME"),
             pl.lit("").alias("GENDER")
