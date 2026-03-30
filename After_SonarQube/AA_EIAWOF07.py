@@ -56,7 +56,7 @@ def parse_mmddyyyy(date_str):
         day = int(date_str[2:4])
         year = int(date_str[4:8])
         return datetime(year, month, day).date()
-    except:
+    except (TypeError, ValueError):
         return None
 
 def setup_date_variables():
