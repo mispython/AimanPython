@@ -1,0 +1,45 @@
+//EIDETULN JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M,NOTIFY=&SYSUID      JOB58595
+/*JOBPARM S=S1M1
+//*---------------------------------------------------------------------
+//* CREATING CONTROL FILE FOR DETICA AML SOLUTION
+//* BANK CONTROL - LOAN SEGMENT
+//*---------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DEL1     DD DSN=SAP.PBB.BCLNSAPR.UNLOAD,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(TRK,(0))
+//*---------------------------------------------------------------------
+//* UNLOAD DATABASE BCLNSAPR
+//*---------------------------------------------------------------------
+//ULBCFXC  EXEC PGM=DFSRRC00,
+//         PARM=(ULU,DFSURGU0,BCLNSAPR,,,,,,,,,,,N,N)
+//STEPLIB  DD DSN=IMSP.I1R0.RESLIB,DISP=SHR
+//         DD DSN=IMS.SYS.RESLIB,DISP=SHR
+//DFSRESLB DD DSN=IMS.SYS.RESLIB,DISP=SHR
+//IMS      DD DSN=IMSP.I1R0.DBDLIB,DISP=SHR
+//SYSPRINT DD SYSOUT=*
+//DFSURGU1 DD DSN=SAP.PBB.BCLNSAPR.UNLOAD.VB,
+//            DISP=(NEW,CATLG,DELETE),UNIT=(SYSDA,2),
+//            DCB=BUFNO=80,
+//            SPACE=(CYL,(100,50),RLSE)
+//BCLNSAPR DD DSN=IMSRBP2.IB330P.BCLNSAPR,DISP=SHR
+//BCLNSAIX DD DSN=IMSRBP2.IB330P.BCLNSAI1,DISP=SHR
+//DFSVSAMP DD DSN=RBP2.IB330P.CONTROL(IBAMS#00),DISP=SHR
+//*--------------------------------------------------------------------
+//* FORMATTING DATASET
+//*--------------------------------------------------------------------
+//FIXBLCK  EXEC PGM=SORT
+//SORTIN   DD DISP=SHR,DSN=SAP.PBB.BCLNSAPR.UNLOAD.VB
+//SORTOUT  DD DSN=SAP.PBB.BCLNSAPR.UNLOAD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(100,50),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=1000,BLKSIZE=0,RECFM=FB)
+//SYSOUT   DD SYSOUT=*
+//SYSIN    DD *
+ SORT FIELDS=COPY
+ OUTFIL CONVERT,OUTREC=(5,1000)
+//*--------------------------------------------------------------------
+//* DELETE TEMPORARY DATASET
+//*--------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DEL1     DD DSN=SAP.PBB.BCLNSAPR.UNLOAD.VB,
+//            DISP=(MOD,DELETE,DELETE),SPACE=(TRK,(0))
