@@ -135,6 +135,9 @@ ASA_SINGLE = " "   # advance 1 line
 ASA_DOUBLE = "0"   # advance 2 lines (blank line effect)
 ASA_PAGE   = "1"   # advance to new page
 
+LINE_LEN = 150     # LRECL from JCL DCB
+PAGE_LEN = 60      # default page length (lines per page)
+
 def _asa_line(asa_char: str, content: str = "", lrecl: int = 150) -> str:
     """Prepend ASA carriage control character; pad/truncate to lrecl+1 total."""
     line = asa_char + f"{content:<{lrecl}}"
@@ -200,43 +203,43 @@ def _fmt_6(val) -> str:
     except Exception:
         return str(val)[:6].rjust(6)
 
-# ---------- Write report ----------
-LINE_LEN = 150   # LRECL from JCL DCB
-PAGE_LEN = 60    # default page length (lines per page)
+def _write_line(f, asa: str, content: str = "", lrecl: int = LINE_LEN) -> None:
+    """Write one ASA-prefixed fixed-width line to the open file handle."""
+    f.write(_asa_line(asa, content, lrecl) + "\n")
 
+# ---------- Write report ----------
 with REPORT_PATH.open("w", encoding="utf-8", newline="\n") as f:
 
     line_count = 0
 
-    def _write(asa: str, content: str = ""):
-        """Write one ASA line and track line count for pagination."""
-        nonlocal line_count
-        f.write(_asa_line(asa, content, LINE_LEN) + "\n")
-        line_count += 1
-
     # IF _N_=1 THEN DO — header block (first row of TRANBAIA after sort)
     # PUT @001 ' ';
-    _write(ASA_SINGLE, "")
+    _write_line(f, ASA_SINGLE, "")
+    line_count += 1
 
     # PUT @001 'TOTAL PREMIUM (RM) : ' @022 TOTAL;
     # TOTAL is printed with SAS default BEST12. format
     buf = [" "] * LINE_LEN
     _put(buf, 1,  "TOTAL PREMIUM (RM) : ")
     _put(buf, 22, _fmt_best12(TOTAL_value))
-    _write(ASA_SINGLE, "".join(buf).rstrip())
+    _write_line(f, ASA_SINGLE, "".join(buf).rstrip())
+    line_count += 1
 
     # PUT @001 ' ';
-    _write(ASA_SINGLE, "")
+    _write_line(f, ASA_SINGLE, "")
+    line_count += 1
 
     # PUT @001 'TOTAL NUMBER OF TRANSACTION : ' @031 TOTCN;
     # TOTCN printed with SAS default BEST12. format
     buf = [" "] * LINE_LEN
     _put(buf, 1,  "TOTAL NUMBER OF TRANSACTION : ")
     _put(buf, 31, _fmt_best12(TOTCN_value))
-    _write(ASA_SINGLE, "".join(buf).rstrip())
+    _write_line(f, ASA_SINGLE, "".join(buf).rstrip())
+    line_count += 1
 
     # PUT @001 ' ';
-    _write(ASA_SINGLE, "")
+    _write_line(f, ASA_SINGLE, "")
+    line_count += 1
 
     # Column headings at fixed positions
     buf = [" "] * LINE_LEN
@@ -248,7 +251,8 @@ with REPORT_PATH.open("w", encoding="utf-8", newline="\n") as f:
     _put(buf, 76, "BLSTAT")
     _put(buf, 84, "INSTID")
     _put(buf, 100, "BLFREQ")
-    _write(ASA_SINGLE, "".join(buf).rstrip())
+    _write_line(f, ASA_SINGLE, "".join(buf).rstrip())
+    line_count += 1
 
     # Detail lines
     # SAS PUT positions/widths:
@@ -277,7 +281,8 @@ with REPORT_PATH.open("w", encoding="utf-8", newline="\n") as f:
         _put(buf, 76,  _fmt_left(row.get("BLSTAT"),   2))
         _put(buf, 84,  _fmt_left(row.get("INSTID"),   15))
         _put(buf, 100, _fmt_left(row.get("BLFREQ"),   1))
-        _write(asa, "".join(buf).rstrip())
+        _write_line(f, asa, "".join(buf).rstrip())
+        line_count += 1
 
 print(f"[OK] Monthly parquet  : {MONTHLY_PATH}")
 print(f"[OK] Totals parquet   : {TRANBAIA_OUT}")
