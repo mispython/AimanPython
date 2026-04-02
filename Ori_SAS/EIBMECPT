@@ -1,0 +1,146 @@
+//EIBMECPT JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB39367
+/*JOBPARM S=S1M1
+//**********************************************************************
+//* ESMR      : 2015-57 (JKA)
+//* REQUESTER : DING BOON NYEE,RETAIL FINANCIAL SERVICES - 21767930
+//* DESC      : CREATE ECP TRANSACTION DATASET & FTP TO SAS WAREHOUSE
+//**********************************************************************
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PBB.ECPTRN.ETRNFTP,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PBB.ECPCIS.ECISFTP,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//*
+//CREATE  EXEC PGM=IEFBR14
+//CRT01   DD DSN=SAP.PBB.ECPTRN.ETRNFTP,
+//           DISP=(NEW,CATLG,DELETE),
+//           DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+//           SPACE=(CYL,(500,200),RLSE),UNIT=(SYSDA,5)
+//CRT02   DD DSN=SAP.PBB.ECPCIS.ECISFTP,
+//           DISP=(NEW,CATLG,DELETE),
+//           DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+//           SPACE=(CYL,(500,200),RLSE),UNIT=(SYSDA,5)
+//*
+//EIBMECPT  EXEC SAS609
+//DPECPT    DD DSN=RBP2.BKUP.B033.DP.PBECP.MTHLYSRC(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//ECPOUT    DD DSN=SAP.PBB.ECPTRAN,DISP=OLD
+//SYSIN     DD *
+
+OPTIONS YEARCUTOFF=1950 NOCENTER;
+
+DATA REPTDATE;
+   REPTDATE=TODAY()-1;
+   SELECT;
+        WHEN(1<= DAY(REPTDATE)<= 8) DO;
+           NOWK=1;
+          END;
+          WHEN(9<= DAY(REPTDATE)<= 15) DO;
+            NOWK=2;
+          END;
+          WHEN(16<= DAY(REPTDATE)<= 22) DO;
+            NOWK=3;
+          END;
+          OTHERWISE DO;
+             NOWK=4;
+          END;
+   END;
+
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+   CALL SYMPUT('REPTDT', REPTDATE);
+   CALL SYMPUT('RDATE', REPTDATE);
+   CALL SYMPUT('NOWK',PUT(NOWK, Z1.));
+RUN;
+
+%LET TRN  = (KEEP=ACCTNO SERIAL TRANDATE BENEBANKBIC BENEACCTNO
+                  AMOUNT PAYORCORP PAYDESC PAYORCORPREF BENEREF
+                  STATUS RSONDESC);
+
+%LET CIS  = (KEEP=ACCTNO SERIAL BENENAME BNAD BENEID BENEIDIND
+                  MOBIPHON EMAILADD);
+DATA ECP;
+
+   INFILE DPECPT;
+   INPUT @0001 ACCTNO        11.      /* FUNDING ACCOUNT NO.    */
+         @0012 SERIAL        $16.     /* UNIQUE ID              */
+         @0092 TRANYY        4.       /* PAYMENT YEAR           */
+         @0097 TRANMM        2.       /* PAYMENT MONTH          */
+         @0100 TRANDD        2.       /* PAYMENT DAY            */
+         @0110 AMOUNT        PD9.2    /* PAYMENT AMOUNT         */
+         @0129 PAYORCORPREF  $16.     /* PAYOR CORP REF NO.     */
+         @0145 PAYORCORP     $80.     /* PAYOR CORP NAME        */
+         @0225 BENEBANKBIC   $11.     /* RCVE BANK / BNFCRY BIC */
+         @0257 BENEREF       $16.     /* BNFCRY REF NO.         */
+         @0273 BENENAME      $120.    /* BNFCRY NAME            */
+         @0393 BENEACCTNO    $35.     /* BNFCRY ACCT NO.        */
+         @0428 BENEID        $18.     /* BNFCRY ID NO.          */
+         @0446 BENEIDIND     $2.      /* BNFCRY ID TYPE         */
+         @0492 BNAD          $160.    /* BNFCRY ADDRESS         */
+         @0747 PAYDESC       $140.    /* PAYMENT DESC           */
+         @0930 STATUS        $2.      /* TRAN STATUS            */
+         @0932 RSONDESC      $40.     /* REASON OF REJECTION    */
+         @1085 MOBIPHON      $16.     /* MOBILE NUMBER          */
+         @1101 EMAILADD      $50.     /* EMAIL ADDRESS          */
+         ;
+     REPTDATE = &RDATE ;
+     TRANDATE = MDY(TRANMM,TRANDD,TRANYY);
+     FORMAT TRANDATE YYMMDD10.;
+
+     DROP TRANYY TRANMM TRANDD;
+RUN;
+
+ %MACRO APPENDWKLY;
+  %IF %SYSFUNC(EXIST(ECPOUT.ECP&REPTMON&NOWK))
+  %THEN %DO;
+   DATA ECPOUT.ECP&REPTMON&NOWK;
+     SET ECPOUT.ECP&REPTMON&NOWK;
+     IF REPTDATE EQ "&REPTDT" THEN DELETE;
+   RUN;
+     PROC APPEND DATA=ECP
+                 BASE=ECPOUT.ECP&REPTMON&NOWK;
+  %END;
+  %ELSE %DO;
+    DATA ECPOUT.ECP&REPTMON&NOWK;
+     SET ECP;
+   RUN;
+
+ %END;
+ %MEND;
+ %APPENDWKLY;
+
+ DATA ECP&REPTMON&NOWK&REPTYEAR &CIS;
+   SET ECPOUT.ECP&REPTMON&NOWK;
+ RUN;
+
+ DATA ECPTRAN&REPTMON&NOWK&REPTYEAR &TRN;
+   SET ECPOUT.ECP&REPTMON&NOWK;
+ RUN;
+ *;
+FILENAME TRANFILE 'SAP.PBB.ECPTRN.ETRNFTP' DISP=OLD;
+PROC CPORT LIBRARY=WORK FILE=TRANFILE;
+SELECT ECPTRAN&REPTMON&NOWK&REPTYEAR; RUN;
+
+FILENAME TRANFILE 'SAP.PBB.ECPCIS.ECISFTP' DISP=OLD;
+PROC CPORT LIBRARY=WORK FILE=TRANFILE;
+SELECT ECP&REPTMON&NOWK&REPTYEAR; RUN;
+ *;
+//******************************************************************
+//* FTP HOST DATASETS TO EDW
+//******************************************************************
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(EDW#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=binary
+lzopts linerule=$lr
+cd /stgsrcsys/host/ftpfiles
+PUT //SAP.PBB.ECPTRN.ETRNFTP   ETRNFTP
+PUT //SAP.PBB.ECPCIS.ECISFTP   ECISFTP
+lzopts mode=text
+cd /stgsrcsys/host/control
+put //SAP.DAY.CONTROL          EIBMECPT.TXT
+EOB
+/*
