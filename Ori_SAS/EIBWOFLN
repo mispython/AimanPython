@@ -1,0 +1,77 @@
+//EIBWOFLN JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB02003
+/*JOBPARM S=S1M1
+//*
+//EIBWOFLN EXEC SAS609,OPTIONS='COMPRESS=YES'
+//LN01     DD DISP=SHR,DSN=RBP2.B033.WDWO.MIS
+//LN02     DD DISP=SHR,DSN=RBP2.B033.LN.WO.MISFIL2(0)
+//LNWOF    DD DSN=SAP.PBB.LOANWOF(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(400,200),RLSE),UNIT=(SYSDA,8)
+//WOMV     DD DSN=SAP.PBB.LNWOMOV(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(400,200),RLSE),UNIT=(SYSDA,8)
+//ILNWOF   DD DSN=SAP.PIBB.LOANWOF(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(400,200),RLSE),UNIT=(SYSDA,8)
+//IWOMV    DD DSN=SAP.PIBB.LNWOMOV(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(400,200),RLSE),UNIT=(SYSDA,8)
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK04 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK05 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SYSIN    DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950;
+
+DATA LNWOF.LNWOF ILNWOF.ILNWOF;
+   INFILE LN01;
+   INPUT @002  ACCTNO         10.   /* ACCOUNT NUMBER       */
+         @013  NOTENO          5.   /* NOTE NUMBER          */
+         @019  PRODUCT         3.   /* PRODUCT CODE         */
+         @023  CENSUS_TRT      6.2  /* CENSUS TRACT         */
+         @031  PAYMENT        15.2  /* TOTAL PAYMENT        */
+         @050  WRITE_DOWN_BAL 15.2  /* WRITE DOWN BALANCE   */
+         @067  NBDR           15.2  /* NET BAD DEBT RECOVER */
+         @084  RC             15.2  /* TOTAL RECOVERY COST  */
+         @101  NAI            15.2  /* NON ACCRUAL INTEREST */
+         @118  ORICODE         3.   /* ORI PRODUCT CODE     */
+         @121  IISR           15.2  /* TOTAL IISR           */
+         @140  COSTCTR         4.   /* COST CENTER          */
+         @145  REFNOTENO       5.   /* REFERENCE OLD NOTENO */
+         ;
+   IF (3000<=COSTCTR<=4999) THEN OUTPUT ILNWOF.ILNWOF;
+   ELSE                          OUTPUT LNWOF.LNWOF;
+RUN;
+
+DATA WOMV.WOMOVE IWOMV.IWOMOVE;
+   INFILE LN02;
+   INPUT @002  ACCTNO        10.
+         @015  NOTENO         5.
+         @030  PRODUCT        3.
+         @043  ORIPRODUCT     6.2  /* CENSUS TRACT             */
+         @055  PAYMENT       15.2  /* PAYMENT RECEIVED         */
+         @072  WDB_BFR_PAY   15.2  /* WDB BFR PAYMENT RECEIVED */
+         @089  WDB_AFT_PAY   15.2  /* WDB AFT PAYMENT RECEIVED */
+         @106  PAY_WDB       15.2  /* PAYMENT TO WDB           */
+         @130  BDR_BFR_PAY   15.2  /* BDR BFR PAYMENT RECEIVED */
+         @155  PAY_BDR       15.2  /* NET BDR                  */
+         @175  BDR_AFT_PAY   15.2  /* BDR AFT PAYMENT RECEIVED */
+         @195  RC            15.2  /* TOTAL RECOVERY COST      */
+         @215  NAI           15.2  /* NON-ACCRUAL INTEREST     */
+         @230  TRYR           4.   /* TRANSACTION DATE (YEAR)  */
+         @234  TRMM           2.   /* TRANSACTION DATE (MONTH) */
+         @236  TRDD           2.   /* TRANSACTION DATE (DAY)   */
+         @238  COSTCTR        4.   /* COST CENTER              */
+         ;
+   TRANDATE = MDY(TRMM,TRDD,TRYR);
+   DROP TRYR TRMM TRDD;
+   IF (3000<=COSTCTR<=4999) THEN OUTPUT IWOMV.IWOMOVE;
+   ELSE                          OUTPUT WOMV.WOMOVE;
+RUN;
+
