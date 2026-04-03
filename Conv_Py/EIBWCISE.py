@@ -1,14 +1,9 @@
-# =============================================================================
-# Program  : EIBWCISE
-# Purpose  : Extract Directors' Info from CIS flat file into MNICS library
-# Date     : 26.03.99
-# =============================================================================
-# Notes on conversion:
-#   - CIS DD (RBP2.B033.CIS01SAS.FILE(0)) is a mainframe flat file read via
-#     INFILE/INPUT in SAS.  It is retained as a fixed-width .txt file and
-#     parsed here using byte-offset slicing — NOT read_parquet.
-#   - MNICS output datasets are written as Parquet files.
-# =============================================================================
+# !/usr/bin/env python3
+"""
+Program  : EIBWCISE.py
+Purpose  : Extract Directors' Info from CIS flat file into MNICS library
+Date     : 26.03.99
+"""
 
 from pathlib import Path
 from datetime import date
