@@ -1,0 +1,65 @@
+//EIBWSMSS JOB MSGCLASS=X,MSGLEVEL=(2,1),REGION=64M
+/*JOBPARM S=S1M1
+//**********************************************************************
+//* SIGNATURE MANAGEMENT SYSTEM (MODE OF OPERATION FOR SA/CA/FD)
+//* ESMR 2017-00002332
+//* ESMR 2018-488 (ESIGNATURE FIELD)
+//**********************************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PBB.SMS.SIGNAFTP,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//*
+//CREATE   EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.PBB.SMS.SIGNAFTP,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+//            SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)
+//*
+//EIBWSMSS EXEC SAS609
+//SMSTXT   DD DSN=SAP.PBB.SIGNATUR,DISP=SHR
+//SIGNA    DD DSN=SAP.PBB.SMS.SIGNATUR,DISP=OLD
+//SYSIN    DD *
+
+OPTIONS NOCENTER YEARCUTOFF=1950 COMPRESS=Y;
+
+DATA SIGNA.SMSACC;
+   INFILE SMSTXT;
+   INPUT @001  ACCTNO      10.
+         @011  ESIGNATURE  $1.
+         @012  CONDIMODE   $UPCASE20.
+         ;
+   IF CONDIMODE NOT IN ( 'ANY 1 OF 1 TO SIGN',
+                         'ANY 1 OF 2 TO SIGN',
+                         'ANY 1 OF 3 TO SIGN',
+                         'ANY 1 OF 4 TO SIGN',
+                         'ANY 2 OF 2 TO SIGN',
+                         'ANY 2 OF 3 TO SIGN',
+                         'ANY 2 OF 4 TO SIGN',
+                         'ANY 3 OF 3 TO SIGN',
+                         'ANY 3 OF 4 TO SIGN',
+                         'ANY 4 OF 4 TO SIGN',
+                         ' ' ) THEN
+      CONDIMODE='OTHERS';
+RUN;
+PROC SORT DATA=SIGNA.SMSACC NODUPKEY; BY ACCTNO; RUN;
+
+PROC DATASETS LIBRARY=SIGNA;
+   MODIFY SMSACC;
+      INDEX CREATE ACCTNO;
+RUN;
+
+FILENAME TRANFILE 'SAP.PBB.SMS.SIGNAFTP' DISP=OLD;
+PROC CPORT LIBRARY=SIGNA FILE=TRANFILE; RUN;
+//*----------------------------------------------------------------
+//* FTP TO SAS DATAWAREHOUSE
+//*----------------------------------------------------------------
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(EDW#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=binary
+lzopts linerule=$lr
+cd /stgsrcsys/host/zip
+PUT //SAP.PBB.SMS.SIGNAFTP   SIGNAMS
+EOB
+/*
