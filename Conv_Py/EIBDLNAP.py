@@ -1,11 +1,21 @@
-from __future__ import annotations
-import polars as pl
-from pathlib import Path
-from datetime import date
+#!/usr/bin/env python3
+"""
+Program  : EIBDLNAP.py
+Purpose  : Append daily LOAN snapshot into monthly rolling dataset
+           APP.LOAN<MM> for use by EIMDISRP.
+           On the 1st of month: replace monthly file with today's snapshot.
+           On all other days:   remove today's rows from the base, append
+           today's snapshot, sort DESC DATE, deduplicate by ACCTNO/NOTENO.
+"""
 
-# ----------------------------
-# BASE PATHS (adjust as needed)
-# ----------------------------
+from __future__ import annotations
+from pathlib import Path
+from datetime import date, timedelta
+import polars as pl
+
+# --------------------------------------------------------------------------
+# Paths
+# --------------------------------------------------------------------------
 BASE_INPUT_PATH  = Path("INPUT")
 BASE_OUTPUT_PATH = Path("OUTPUT")
 BASE_OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
@@ -15,76 +25,103 @@ SASD_DIR = BASE_INPUT_PATH  / "SASD"   # SAP.PBB.SASDATA.DAILY(0)
 APP_DIR  = BASE_OUTPUT_PATH / "APP"    # SAP.PBB.STORE.SASDATA
 APP_DIR.mkdir(parents=True, exist_ok=True)
 
-# --------------------------------
-# SAS date (days since 1960-01-01)
-# --------------------------------
-SAS_EPOCH = date(1960, 1, 1)
+# --------------------------------------------------------------------------
+# SAS date helper  (days since 1960-01-01 → Python date)
+# --------------------------------------------------------------------------
+_SAS_EPOCH = date(1960, 1, 1)
+
 def sas_to_py(n: int) -> date:
-    return SAS_EPOCH.fromordinal(SAS_EPOCH.toordinal() + int(n))
+    return _SAS_EPOCH + timedelta(days=int(n))
 
-# ==============================================================
-# OPTIONS ... (no-ops)
-# ==============================================================
+# =============================================================================
+# DATA REPTDATE;
+#   SET SASD.REPTDATE;
+#   CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR2.));
+#   CALL SYMPUT('REPTMON',  PUT(MONTH(REPTDATE), Z2.));
+#   CALL SYMPUT('REPTDAY',  PUT(DAY(REPTDATE),   Z2.));
+#   CALL SYMPUT('REPTDATE', REPTDATE);
+#   CALL SYMPUT('NOWK',     PUT('4',$1.));
+# =============================================================================
+REPTDATE_val = int(
+    pl.read_parquet(SASD_DIR / "REPTDATE.parquet")
+    .select(pl.col("REPTDATE").first())
+    .item()
+)
 
-# ==============================================================
-# DATA REPTDATE;  -> macros REPTYEAR REPTMON REPTDAY REPTDATE NOWK='4'
-# ==============================================================
-rept_fp = SASD_DIR / "REPTDATE.parquet"
-REPTDATE_val = int(pl.read_parquet(rept_fp).select(pl.col("REPTDATE").first()).item())
+_dt      = sas_to_py(REPTDATE_val)
+REPTYEAR = f"{_dt.year  % 100:02d}"
+REPTMON  = f"{_dt.month     :02d}"
+REPTDAY  = f"{_dt.day       :02d}"
+REPTDATE = REPTDATE_val          # keep as SAS numeric integer
+NOWK     = "4"                   # not used downstream (mirrors SAS &NOWK)
 
-_dt = sas_to_py(REPTDATE_val)
-REPTYEAR = f"{_dt.year % 100:02d}"
-REPTMON  = f"{_dt.month:02d}"
-REPTDAY  = f"{_dt.day:02d}"
-REPTDATE = REPTDATE_val  # keep SAS numeric
-NOWK     = "4"           # not used later (as in SAS)
+# =============================================================================
+# %MACRO APPEND
+# =============================================================================
 
-# ==============================================================
-# %MACRO APPEND; ... %APPEND;
-#   If REPTDAY="01": create fresh APP.LOAN&REPTMON from daily
-#   Else: delete same DATE in base, append daily, sort, dedup by keys
-# ==============================================================
+KEEP_COLS = [
+    "ACCTNO", "NOTENO", "FISSPURP", "PRODUCT", "BALANCE", "CENSUS",
+    "DNBFISME", "PRODCD", "CUSTCD", "AMTIND", "SECTORCD", "BRANCH",
+    "ACCTYPE", "CCY", "FORATE",
+]
 
-# filenames
-base_fp = APP_DIR / f"LOAN{REPTMON}.parquet"
+# Resolve file paths
+base_fp = APP_DIR  / f"LOAN{REPTMON}.parquet"
 day_fp  = SASD_DIR / f"LOAN{REPTMON}{REPTDAY}.parquet"
 
-KEEP_COLS = ["ACCTNO","NOTENO","FISSPURP","PRODUCT","BALANCE","CENSUS","DNBFISME",
-             "PRODCD","CUSTCD","AMTIND","SECTORCD","BRANCH","ACCTYPE","CCY","FORATE"]
-
-# load daily + add DATE=&REPTDATE (SAS numeric)
-DAILY = pl.read_parquet(day_fp).select([c for c in KEEP_COLS if c in pl.read_parquet(day_fp).columns])
-if "DATE" not in DAILY.columns:
-    DAILY = DAILY.with_columns(pl.lit(REPTDATE).alias("DATE"))
-else:
-    DAILY = DAILY.with_columns(pl.lit(REPTDATE).alias("DATE"))
+# Load daily snapshot once; select only the KEEP columns that are present,
+# then unconditionally add DATE = &REPTDATE (SAS numeric).
+_day_raw = pl.read_parquet(day_fp)
+DAILY = (
+    _day_raw
+    .select([c for c in KEEP_COLS if c in _day_raw.columns])
+    .with_columns(pl.lit(REPTDATE).alias("DATE"))
+)
 
 if REPTDAY == "01":
-    # FIRST DAY OF MONTH → overwrite month dataset with just today's rows
+    # ------------------------------------------------------------------
+    # %IF "&REPTDAY" EQ "01" — first day of month:
+    #   DATA APP.LOAN&REPTMON;
+    #     SET SASD.LOAN&REPTMON&REPTDAY (KEEP=...);
+    #     DATE = &REPTDATE;
+    # Overwrite monthly dataset with today's snapshot only.
+    # ------------------------------------------------------------------
     DAILY.write_parquet(base_fp)
     total_rows = DAILY.height
     added_rows = DAILY.height
+
 else:
-    # load base (if exists) and drop rows with same DATE
+    # ------------------------------------------------------------------
+    # %ELSE — mid-month day:
+    #   1. Remove rows where DATE = &REPTDATE from the base.
+    #   2. Append today's DAILY snapshot.
+    #   3. PROC SORT BY ACCTNO NOTENO DESCENDING DATE.
+    #   4. PROC SORT NODUPKEY BY ACCTNO NOTENO  (keep latest DATE).
+    # ------------------------------------------------------------------
     BASE = None
     if base_fp.exists():
         BASE = pl.read_parquet(base_fp)
         if "DATE" in BASE.columns:
             BASE = BASE.filter(pl.col("DATE") != REPTDATE)
 
-    # stack BASE + DAILY (schema-union like FORCE)
+    # DATA LOAN2; SET APP.LOAN&REPTMON LOAN;
     LOAN2 = DAILY if BASE is None else pl.concat([BASE, DAILY], how="diagonal_relaxed")
 
-    # sort BY ACCTNO NOTENO DESCENDING DATE
-    LOAN2 = LOAN2.sort(by=["ACCTNO","NOTENO","DATE"], descending=[False, False, True])
+    # PROC SORT DATA=LOAN2; BY ACCTNO NOTENO DESCENDING DATE;
+    LOAN2 = LOAN2.sort(["ACCTNO", "NOTENO", "DATE"], descending=[False, False, True])
 
-    # NODUPKEY BY ACCTNO NOTENO (keep first -> latest DATE)
-    LOAN2 = LOAN2.unique(subset=["ACCTNO","NOTENO"], keep="first")
+    # PROC SORT DATA=LOAN2 NODUPKEY; BY ACCTNO NOTENO;
+    LOAN2 = LOAN2.unique(subset=["ACCTNO", "NOTENO"], keep="first")
 
-    # write back
+    # DATA APP.LOAN&REPTMON; SET LOAN2;
     LOAN2.write_parquet(base_fp)
     total_rows = LOAN2.height
     added_rows = DAILY.height
 
-# --- short summary ---
-print(f"EIBDLNAP OK | LOAN{REPTMON} +={added_rows} rows | total={total_rows} | REPTDATE={REPTDATE} REPTDAY={REPTDAY}")
+# --------------------------------------------------------------------------
+# Summary
+# --------------------------------------------------------------------------
+print(
+    f"EIBDLNAP OK | LOAN{REPTMON} +={added_rows} rows | "
+    f"total={total_rows} | REPTDATE={REPTDATE} REPTDAY={REPTDAY}"
+)
