@@ -1,0 +1,44 @@
+//EIBWCISE JOB MISEIS,EIBWCISE,CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID,USER=OPCC
+/*JOBPARM S=S1M2
+//SAS609   EXEC SAS609,REGION=8M,WORK='120000,8000'
+//CIS      DD DSN=RBP2.B033.CIS01SAS.FILE(0),DISP=SHR
+//*IS      DD DSN=RBP2.B033.CIS01SAS.FILE1,DISP=SHR
+//*        DD DSN=RBP2.B033.CIS01SAS.FILE2,DISP=SHR
+//*        DD DSN=RBP2.B033.CIS01SAS.FILE3,DISP=SHR
+//*        DD DSN=RBP2.B033.CIS01SAS.FILE4,DISP=SHR
+//*        DD DSN=RBP2.B033.CIS01SAS.FILE5,DISP=SHR
+//*        DD DSN=RBP2.B033.CIS01SAS.FILE6,DISP=SHR
+//*        DD DSN=RBP2.B033.CIS01SAS.FILE7,DISP=SHR
+//*        DD DSN=RBP2.B033.CIS01SAS.FILE8,DISP=SHR
+//MNICS    DD DSN=SAP.PBB.MNICS(+1),DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(200,100),RLSE),UNIT=(SYSDA,5)
+//SYSIN    DD *
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBWCISE                                          |
+ |  DATE    : 26.03.99                                          |
+ |  REPORT  : EXTRACT DIRECTORS' INFO FROM CIS                  |
+ +--------------------------------------------------------------+;
+DATA MNICS.REPTDATE;
+   REPTDATE = TODAY();
+*;
+DATA CIS;
+   DROP NUM ACCTN;
+   RETAIN NUM '0123456789';
+   INFILE CIS;
+   INPUT @2   ACCTN    $10. @;
+   IF VERIFY(ACCTN,NUM) ^= 0 THEN DELETE;
+   ACCTNO = INPUT(ACCTN,10.);
+   INPUT @21  NAME     $40.
+         @61  PP_ALIAS $20.
+         @81  SIC      5.
+         @86  SEX      $1.
+         @87  DIRNIC   $20.
+         @107 DIROIC   $9.
+         @116 DIRNAME  $40.;
+*;
+PROC SORT DATA=CIS OUT=MNICS.CIS;
+   BY ACCTNO;
+/*
+//
