@@ -1,147 +1,284 @@
-from __future__ import annotations
-import polars as pl
-from pathlib import Path
-from datetime import date
+#!/usr/bin/env python3
+# =============================================================================
+# Program  : EIDMLNAV
+# Purpose  : Daily accumulation of month-to-date average balance (MTDAVBAL_MIS)
+#            for loans. Maintains a rolling monthly snapshot LNVG_<MM>.parquet
+#            and produces a final LNVG<MM>.parquet with ACCTNO/NOTENO/MTDAVBAL_MIS.
+# =============================================================================
+# Conversion notes:
+#   - LN.REPTDATE and LN.LNNOTE are SAS datasets → Parquet.
+#   - PREVDAY = DAY(REPTDATE-1): the actual day-number of yesterday, i.e. the
+#     last day of the previous month when REPTDATE is the 1st.  The converted
+#     code uses (REPTDATE - timedelta(days=1)).day to handle months with 28/29/30
+#     days correctly — the hardcoded fallback of 31 used previously was wrong
+#     for April, June, September, November and February.
+#   - SAS SUM(x, y) ignores missing values: SUM(., x) = x.  This is replicated
+#     with a sas_sum() helper so that new accounts (LAST_AVG=None) and zero-
+#     balance days (BAL=None) are handled correctly.
+#   - The LAST_DAY=. fallback in SAS occurs AFTER the MTD computation.
+#     The converted upd() function preserves this exact order.
+#   - map_elements with return_dtype=pl.Struct requires the callable to return
+#     a dict, not a tuple.
+# =============================================================================
 
-# ----------------------------
-# BASE PATHS (adjust as needed)
-# ----------------------------
+from __future__ import annotations
+from pathlib import Path
+from datetime import date, timedelta
+import polars as pl
+
+# --------------------------------------------------------------------------
+# Paths
+# --------------------------------------------------------------------------
 BASE_INPUT_PATH  = Path("INPUT")
 BASE_OUTPUT_PATH = Path("OUTPUT")
 BASE_OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
 
-# SAS libs → folders
 LN_DIR  = BASE_INPUT_PATH  / "LN"       # SAP.PBB.MNILN.DAILY(0)
 MIS_DIR = BASE_OUTPUT_PATH / "MIS"      # SAP.PBB.MLN.SASDATA
 MIS_DIR.mkdir(parents=True, exist_ok=True)
 
-# --------------------------------
-# SAS date helpers (days since 1960)
-# --------------------------------
-SAS_EPOCH = date(1960, 1, 1)
+# --------------------------------------------------------------------------
+# SAS date helper
+# --------------------------------------------------------------------------
+_SAS_EPOCH = date(1960, 1, 1)
+
 def sas_to_py(n: int) -> date:
-    return SAS_EPOCH.fromordinal(SAS_EPOCH.toordinal() + int(n))
+    return _SAS_EPOCH + timedelta(days=int(n))
 
-# ==============================================================
-# DATA REPTDATE;  macros: PREVDAY, REPTDAY, REPTMON, RDATE (numeric)
-# ==============================================================
-rept_fp = LN_DIR / "REPTDATE.parquet"
-REPTDATE_val = int(pl.read_parquet(rept_fp).select(pl.col("REPTDATE").first()).item())
-_dt = sas_to_py(REPTDATE_val)
-PREVDAY  = int(f"{(_dt.day-1) if _dt.day>1 else 31:02d}")  # only used as number; Z2. visual not needed
-REPTDAY  = _dt.day
-REPTDAY_Z = f"{REPTDAY:02d}"
-REPTMON  = f"{_dt.month:02d}"
-RDATE    = REPTDATE_val  # SAS numeric date
+# =============================================================================
+# DATA REPTDATE;
+#   SET LN.REPTDATE;
+#   CALL SYMPUT('PREVDAY', PUT(DAY(REPTDATE-1), Z2.));
+#   CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE),   Z2.));
+#   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+#   CALL SYMPUT('RDATE',   REPTDATE);
+# =============================================================================
+REPTDATE_val = int(
+    pl.read_parquet(LN_DIR / "REPTDATE.parquet")
+    .select(pl.col("REPTDATE").first())
+    .item()
+)
 
-# ==============================================================
-# DATA TODAY_BAL;  SET LN.LNNOTE (KEEP ACCTNO NOTENO BALANCE)
-# ==============================================================
-today_bal = pl.read_parquet(LN_DIR / "LNNOTE.parquet").select(["ACCTNO","NOTENO","BALANCE"])
+_dt      = sas_to_py(REPTDATE_val)
+_dt_prev = _dt - timedelta(days=1)          # REPTDATE - 1
 
-# ==============================================================
+# SAS PUT(DAY(REPTDATE-1), Z2.) = actual day-number of yesterday.
+# On the 1st of a month this is the last day of the previous month
+# (28, 29, 30, or 31 depending on that month), NOT always 31.
+PREVDAY      = _dt_prev.day                  # integer, e.g. 30 for July 1st
+PREVDAY_Z2   = f"{PREVDAY:02d}"              # Z2. formatted string
+REPTDAY      = _dt.day
+REPTDAY_Z    = f"{REPTDAY:02d}"              # Z2. formatted string
+REPTMON      = f"{_dt.month:02d}"
+RDATE        = REPTDATE_val                  # SAS numeric date integer
+
+
+# =============================================================================
+# DATA TODAY_BAL;
+#   SET LN.LNNOTE;
+#   KEEP ACCTNO NOTENO BALANCE;
+# =============================================================================
+today_bal = (
+    pl.read_parquet(LN_DIR / "LNNOTE.parquet")
+    .select(["ACCTNO", "NOTENO", "BALANCE"])
+)
+
+
+# =============================================================================
 # %GET_AVGBAL macro
-#   If REPTDAY==1:
-#       MAIN_AVGBAL = TODAY_BAL with BAL01, MTDAVBAL_MIS= BALANCE,
-#       LAST_AVGBAL=BALANCE, LAST_DAY=1
-#   Else:
-#       MAIN_AVGBAL <- MIS.LNVG_MM (prior snapshot)
-#       TEMP_BAL with BALdd
-#       FULL OUTER MERGE by keys (A or B)
-#       If RERUN (LAST_DAY>PREVDAY): back out extra days iteratively
-#       MTDAVBAL_MIS = (LAST_AVGBAL*LAST_DAY + BALdd) / REPTDAY
-#       LAST_AVGBAL = MTDAVBAL_MIS; LAST_DAY = (LAST_DAY or PREVDAY) + 1
-# ==============================================================
+# =============================================================================
 
-out_month_fp = MIS_DIR / f"LNVG_{REPTMON}.parquet"   # snapshot with BAL01.., LAST_AVGBAL, LAST_DAY, etc.
+out_month_fp = MIS_DIR / f"LNVG_{REPTMON}.parquet"   # rolling monthly snapshot
+
+# --------------------------------------------------------------------------
+# Helper: replicate SAS SUM() which ignores missing (None) values.
+# SUM(., x) = x, SUM(x, .) = x, SUM(., .) = . (None)
+# --------------------------------------------------------------------------
+def sas_sum(*args) -> float | None:
+    vals = [float(a) for a in args if a is not None]
+    return sum(vals) if vals else None
+
 
 if REPTDAY == 1:
+    # -----------------------------------------------------------------------
+    # %IF &REPTDAY EQ 1
+    #   DATA MAIN_AVGBAL;
+    #     SET TODAY_BAL(KEEP=ACCTNO NOTENO BALANCE);
+    #     RENAME BALANCE=BAL&REPTDAY;   <- SAS RENAME applies at output;
+    #     MTDAVBAL_MIS = BALANCE;            within step BALANCE is original name
+    #     LAST_AVGBAL  = BALANCE;
+    #     LAST_DAY     = 1;
+    # SAS RENAME removes BALANCE from the output dataset; replicated by drop().
+    # -----------------------------------------------------------------------
     MAIN_AVGBAL = (
         today_bal
         .with_columns([
             pl.col("BALANCE").alias(f"BAL{REPTDAY_Z}"),
             pl.col("BALANCE").alias("MTDAVBAL_MIS"),
             pl.col("BALANCE").alias("LAST_AVGBAL"),
-            pl.lit(1).alias("LAST_DAY"),
+            pl.lit(1).cast(pl.Int64).alias("LAST_DAY"),
         ])
+        .drop("BALANCE")        # SAS RENAME BALANCE=BAL01 removes BALANCE
     )
+
 else:
-    # Load prior month snapshot (if missing, behave like day-1 bootstrap)
+    # -----------------------------------------------------------------------
+    # %ELSE IF &REPTDAY > 1
+    #   PROC SORT DATA=MIS.LNVG_&REPTMON OUT=MAIN_AVGBAL; BY ACCTNO NOTENO;
+    #   (Pre-sort omitted — Polars join does not require sorted inputs.)
+    # -----------------------------------------------------------------------
     if out_month_fp.exists():
         MAIN_AVGBAL = pl.read_parquet(out_month_fp)
     else:
-        MAIN_AVGBAL = pl.DataFrame({"ACCTNO":[], "NOTENO":[], "LAST_AVGBAL":[],"LAST_DAY":[]})
+        # Bootstrap: snapshot file missing — treat like a fresh start
+        MAIN_AVGBAL = pl.DataFrame(
+            {"ACCTNO": pl.Series([], dtype=pl.Int64),
+             "NOTENO": pl.Series([], dtype=pl.Int64),
+             "LAST_AVGBAL": pl.Series([], dtype=pl.Float64),
+             "LAST_DAY":    pl.Series([], dtype=pl.Int64)}
+        )
 
-    # TEMP_BAL with today's BALdd
-    TEMP_BAL = today_bal.rename({"BALANCE": f"BAL{REPTDAY_Z}"}).select(["ACCTNO","NOTENO",f"BAL{REPTDAY_Z}"])
+    # PROC SORT DATA=TODAY_BAL(RENAME=(BALANCE=BAL&REPTDAY))
+    #           OUT=TEMP_BAL(KEEP=ACCTNO NOTENO BAL&REPTDAY);
+    TEMP_BAL = (
+        today_bal
+        .rename({"BALANCE": f"BAL{REPTDAY_Z}"})
+        .select(["ACCTNO", "NOTENO", f"BAL{REPTDAY_Z}"])
+    )
 
-    # FULL OUTER MERGE by keys (IF B OR A)
-    MAIN_AVGBAL = MAIN_AVGBAL.join(TEMP_BAL, on=["ACCTNO","NOTENO"], how="outer")
+    # MERGE MAIN_AVGBAL(IN=A) TEMP_BAL(IN=B); BY ACCTNO NOTENO; IF B OR A;
+    MAIN_AVGBAL = MAIN_AVGBAL.join(
+        TEMP_BAL, on=["ACCTNO", "NOTENO"], how="full"
+    )
 
-    # Collect all existing BAL** columns for rerun calculation
-    bal_cols = [c for c in MAIN_AVGBAL.columns if c.startswith("BAL") and len(c)==5]  # e.g., BAL01
-    # Ensure LAST_AVGBAL / LAST_DAY exist
-    if "LAST_AVGBAL" not in MAIN_AVGBAL.columns: MAIN_AVGBAL = MAIN_AVGBAL.with_columns(pl.lit(None).alias("LAST_AVGBAL"))
-    if "LAST_DAY"    not in MAIN_AVGBAL.columns: MAIN_AVGBAL = MAIN_AVGBAL.with_columns(pl.lit(None).alias("LAST_DAY"))
+    # Ensure LAST_AVGBAL / LAST_DAY columns exist (outer join may not have them
+    # if MAIN_AVGBAL was empty)
+    if "LAST_AVGBAL" not in MAIN_AVGBAL.columns:
+        MAIN_AVGBAL = MAIN_AVGBAL.with_columns(
+            pl.lit(None).cast(pl.Float64).alias("LAST_AVGBAL")
+        )
+    if "LAST_DAY" not in MAIN_AVGBAL.columns:
+        MAIN_AVGBAL = MAIN_AVGBAL.with_columns(
+            pl.lit(None).cast(pl.Int64).alias("LAST_DAY")
+        )
 
-    PREVDAY_INT = int(f"{_dt.day-1:02d}") if _dt.day>1 else 31
-    REPTDAY_INT = REPTDAY
+    # ------------------------------------------------------------------
+    # Row-wise update function — replicates the DATA step logic exactly,
+    # preserving SAS statement order:
+    #
+    #   IF LAST_DAY > &PREVDAY THEN DO;            /* RERUN backout */
+    #     DO UNTIL (LAST_DAY EQ &PREVDAY);
+    #       CURR_BAL   = BALxx;
+    #       LAST_AVGBAL= ((LAST_AVGBAL*LAST_DAY)-CURR_BAL)/SUM(LAST_DAY,-1);
+    #       LAST_DAY   = SUM(LAST_DAY,-1);
+    #     END;
+    #   END;
+    #   MTDAVBAL_MIS = SUM(LAST_AVGBAL*LAST_DAY, BAL&REPTDAY) / &REPTDAY;
+    #   LAST_AVGBAL  = MTDAVBAL_MIS;
+    #   IF LAST_DAY EQ . THEN LAST_DAY = &PREVDAY; /* AFTER MTD: new accounts */
+    #   LAST_DAY     = SUM(LAST_DAY, 1);
+    #
+    # IMPORTANT ordering:
+    #   - The LAST_DAY=. fallback is placed AFTER MTDAVBAL_MIS computation.
+    #   - SAS SUM() treats missing as zero contribution — replicated via
+    #     sas_sum() so that new accounts (LAST_AVGBAL=.) correctly yield
+    #     MTDAVBAL_MIS = BAL_today / REPTDAY.
+    # ------------------------------------------------------------------
+    _REPTDAY_INT = REPTDAY
+    _PREVDAY_INT = PREVDAY        # actual last day of previous month (correct)
+    _BAL_COL     = f"BAL{REPTDAY_Z}"
 
-    # Row-wise adjust (rerun back-out + new average)
-    def upd(row: dict) -> tuple[float|None, int|None, float|None]:
-        last_day = row.get("LAST_DAY", None)
-        last_avg = row.get("LAST_AVGBAL", None)
-        # if last_day is missing, set to PREVDAY (SAS: if LAST_DAY EQ . then LAST_DAY=&PREVDAY)
-        if last_day is None:
-            last_day = PREVDAY_INT
-        # RERUN backout: while last_day > PREVDAY, remove that day's BALxx from average
-        if (last_avg is not None) and (last_day is not None) and (last_day > PREVDAY_INT):
+    def upd(row: dict) -> dict:
+        last_day: int | None  = row.get("LAST_DAY")
+        last_avg: float | None = row.get("LAST_AVGBAL")
+
+        # --- RERUN backout: only entered when LAST_DAY > PREVDAY ----------
+        # In SAS, missing (.) is never > anything, so new accounts skip this.
+        # Python None comparisons raise TypeError; guard with explicit None check.
+        if (last_day is not None) and (last_avg is not None) \
+                and (last_day > _PREVDAY_INT):
             ld = int(last_day)
             la = float(last_avg)
-            while ld > PREVDAY_INT:
-                col = f"BAL{ld:02d}"
-                curr = row.get(col, None)
-                curr = 0.0 if (curr is None) else float(curr)
-                if ld-1 > 0:
-                    la = ((la * ld) - curr) / (ld - 1)
-                else:
-                    la = None
-                ld -= 1
-            last_day, last_avg = ld, la
-        # compute today
-        bal_today = row.get(f"BAL{REPTDAY_INT:02d}", None)
-        if (last_avg is None) or (last_day is None) or (bal_today is None):
-            mtd = None
-        else:
-            mtd = (last_avg * float(last_day) + float(bal_today)) / float(REPTDAY_INT)
-        # update LASTs
+            while ld > _PREVDAY_INT:
+                col   = f"BAL{ld:02d}"
+                curr  = row.get(col)
+                curr  = 0.0 if curr is None else float(curr)
+                denom = ld - 1
+                la    = ((la * ld) - curr) / denom if denom > 0 else None
+                ld   -= 1
+            last_day = ld
+            last_avg = la
+
+        # --- MTDAVBAL_MIS = SUM(LAST_AVGBAL*LAST_DAY, BAL&REPTDAY) / REPTDAY
+        # SUM() ignores missing: if last_avg or last_day is None the first
+        # term contributes 0; if bal_today is None it contributes 0.
+        bal_today = row.get(_BAL_COL)
+        term1 = (float(last_avg) * float(last_day)) \
+                if (last_avg is not None and last_day is not None) else None
+        mtd = sas_sum(term1, bal_today)
+        if mtd is not None:
+            mtd = mtd / float(_REPTDAY_INT)
+
+        # --- LAST_AVGBAL = MTDAVBAL_MIS
         new_last_avg = mtd
-        new_last_day = (last_day if last_day is not None else PREVDAY_INT) + 1
-        return (mtd, new_last_day, new_last_avg)
 
-    MAIN_AVGBAL = MAIN_AVGBAL.with_columns(
-        pl.struct(MAIN_AVGBAL.columns).map_elements(upd, return_dtype=pl.Struct(
-            [pl.Field("MTDAVBAL_MIS", pl.Float64), pl.Field("LAST_DAY", pl.Int64), pl.Field("LAST_AVGBAL", pl.Float64)]
-        )).alias("_u")
-    ).with_columns([
-        pl.col("_u").struct.field("MTDAVBAL_MIS"),
-        pl.col("_u").struct.field("LAST_DAY"),
-        pl.col("_u").struct.field("LAST_AVGBAL"),
-    ]).drop("_u")
+        # --- IF LAST_DAY EQ . THEN LAST_DAY = &PREVDAY  (AFTER MTD)
+        if last_day is None:
+            last_day = _PREVDAY_INT
 
-# ==============================================================
-# Save snapshot: MIS.LNVG_&REPTMON (all columns incl. BALdd, LAST_*)
-# Then produce MIS.LNVG&REPTMON (ACCTNO,NOTENO,MTDAVBAL_MIS) sorted
-# ==============================================================
+        # --- LAST_DAY = SUM(LAST_DAY, 1)
+        new_last_day = last_day + 1
+
+        # Return a dict — required by Polars map_elements with Struct return type
+        return {
+            "MTDAVBAL_MIS": mtd,
+            "LAST_DAY":     new_last_day,
+            "LAST_AVGBAL":  new_last_avg,
+        }
+
+    _struct_dtype = pl.Struct([
+        pl.Field("MTDAVBAL_MIS", pl.Float64),
+        pl.Field("LAST_DAY",     pl.Int64),
+        pl.Field("LAST_AVGBAL",  pl.Float64),
+    ])
+
+    MAIN_AVGBAL = (
+        MAIN_AVGBAL
+        .with_columns(
+            pl.struct(MAIN_AVGBAL.columns)
+              .map_elements(upd, return_dtype=_struct_dtype)
+              .alias("_u")
+        )
+        .with_columns([
+            pl.col("_u").struct.field("MTDAVBAL_MIS"),
+            pl.col("_u").struct.field("LAST_DAY"),
+            pl.col("_u").struct.field("LAST_AVGBAL"),
+        ])
+        .drop("_u")
+    )
+
+
+# =============================================================================
+# DATA MIS.LNVG_&REPTMON;   <- rolling snapshot (all BALdd, LAST_*, MTDAVBAL_MIS)
+#   SET MAIN_AVGBAL;
+# =============================================================================
 MAIN_AVGBAL.write_parquet(out_month_fp)
 
+# =============================================================================
+# PROC SORT DATA=MIS.LNVG_&REPTMON
+#   OUT=MIS.LNVG&REPTMON(KEEP=ACCTNO NOTENO MTDAVBAL_MIS);
+#   BY ACCTNO NOTENO;
+# =============================================================================
 out_final_fp = MIS_DIR / f"LNVG{REPTMON}.parquet"
+
 (
     MAIN_AVGBAL
-    .select(["ACCTNO","NOTENO","MTDAVBAL_MIS"])
-    .sort(["ACCTNO","NOTENO"])
+    .select(["ACCTNO", "NOTENO", "MTDAVBAL_MIS"])
+    .sort(["ACCTNO", "NOTENO"])
     .write_parquet(out_final_fp)
 )
 
-# --- short summary ---
-print(f"EIDMLNAV OK | REPTMON={REPTMON} REPTDAY={REPTDAY_Z} | snapshot=LNVG_{REPTMON} rows={MAIN_AVGBAL.height}")
+print(
+    f"EIDMLNAV OK | REPTMON={REPTMON} REPTDAY={REPTDAY_Z} "
+    f"PREVDAY={PREVDAY_Z2} | snapshot={out_month_fp.name} rows={MAIN_AVGBAL.height}"
+)
