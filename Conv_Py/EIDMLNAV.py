@@ -1,25 +1,10 @@
 #!/usr/bin/env python3
-# =============================================================================
-# Program  : EIDMLNAV
-# Purpose  : Daily accumulation of month-to-date average balance (MTDAVBAL_MIS)
-#            for loans. Maintains a rolling monthly snapshot LNVG_<MM>.parquet
-#            and produces a final LNVG<MM>.parquet with ACCTNO/NOTENO/MTDAVBAL_MIS.
-# =============================================================================
-# Conversion notes:
-#   - LN.REPTDATE and LN.LNNOTE are SAS datasets → Parquet.
-#   - PREVDAY = DAY(REPTDATE-1): the actual day-number of yesterday, i.e. the
-#     last day of the previous month when REPTDATE is the 1st.  The converted
-#     code uses (REPTDATE - timedelta(days=1)).day to handle months with 28/29/30
-#     days correctly — the hardcoded fallback of 31 used previously was wrong
-#     for April, June, September, November and February.
-#   - SAS SUM(x, y) ignores missing values: SUM(., x) = x.  This is replicated
-#     with a sas_sum() helper so that new accounts (LAST_AVG=None) and zero-
-#     balance days (BAL=None) are handled correctly.
-#   - The LAST_DAY=. fallback in SAS occurs AFTER the MTD computation.
-#     The converted upd() function preserves this exact order.
-#   - map_elements with return_dtype=pl.Struct requires the callable to return
-#     a dict, not a tuple.
-# =============================================================================
+"""
+Program  : EIDMLNAV.py
+Purpose  : Daily accumulation of month-to-date average balance (MTDAVBAL_MIS)
+           for loans. Maintains a rolling monthly snapshot LNVG_<MM>.parquet
+           and produces a final LNVG<MM>.parquet with ACCTNO/NOTENO/MTDAVBAL_MIS.
+"""
 
 from __future__ import annotations
 from pathlib import Path
