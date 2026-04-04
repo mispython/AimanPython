@@ -1,22 +1,8 @@
 #!/usr/bin/env python3
 """
-Program : EIBWCATR
+Program : EIBWCATR.py
 Purpose : CIS Weekly Deposit – transpose multi-party ICNO/NAME into a single
           keyed row per account and write DEPOSIT.CISDEPWK.parquet.
-
-Conversion notes
-----------------
-* All input files (DPTRBL1..10, DPTRBORG, DPTRB999) are mainframe fixed-width
-  flat files read via SAS INFILE/INPUT.  They are retained as .txt files and
-  parsed here with byte-offset slicing (1-based SAS column → 0-based Python
-  slice).  They must NOT be read as Parquet.
-* Output DEPOSIT.CISDEPWK is a SAS dataset → written as Parquet.
-* DEP9 and DEP10 are read and would have been printed in SAS but are NOT
-  included in the final SET statement; they are loaded here for parity.
-* TRANS01 is NOT deduplicated by NODUPKEYS – only TRANORG and TRAN999 are.
-* KEYNAME for the single-party streams (TRANS01, TRANORG, TRAN999) is the raw
-  NAME value, not COMPBL(NAME).  COMPBL is applied only in make_trans()
-  (multi-party streams).
 """
 
 import struct
