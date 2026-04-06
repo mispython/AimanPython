@@ -1,13 +1,22 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Program: EIICAPS3.py
 Purpose: PIBB(STAFF) MOVEMENT OF CAP BY CATEGORY AS AT
 """
 
+# NOTE: The original SAS program includes PBBELF via %INC PGM(PBBELF),
+#       which defines branch/region/customer-type format mappings and BNM code
+#       lookup tables (e.g. format_brchcd, format_regioff, format_ctype, etc.).
+#       However, none of those functions or lookup tables are actually invoked
+#       anywhere in this program — the PBBELF include is standard boilerplate
+#       carried across many jobs in this system.
+#       Therefore, no import from PBBELF is required here.
+# from PBBELF import (format_brchcd, format_regioff, format_ctype, ...)
+
 import duckdb
 import polars as pl
 import os
-from datetime import date, timedelta
+from datetime import date
 
 # ─────────────────────────────────────────────
 # PATH CONFIGURATION
