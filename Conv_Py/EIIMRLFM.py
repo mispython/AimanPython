@@ -11,21 +11,21 @@ OPTIONS YEARCUTOFF=1950  (handled via Python date parsing with 2-digit year offs
 
 PBBLNFMT: provides LIQPFMT format — PUT(PRODUCT, LIQPFMT.) — actively used in the NOTE
           data step to map product code to loan category (HL, FL, RC, etc.).
-          Imported below as fmt_liqpfmt().
+          Imported below as format_liqpfmt().
 
 PBBDPFMT: provides FDPROD format — PUT(INTPLAN, FDPROD.) — actively used in the FD
           data step to derive BIC codes ('42630','42132','42133','49999').
           Also provides DDCUSTCD format — PUT(CUSTCODE, DDCUSTCD.) — used in FCYCA.
-          Imported below as fmt_fdprod() and fmt_ddcustcd().
+          Imported below as fdprod_format() and ddcustcd_format().
 
 PBBELF:   %INC'd at session level. No PBBELF-specific format or macro is directly
           called by name in this program's logic. Its definitions may be consumed
           indirectly by KALMLIQ/KALMLIFE sub-programs. Not imported here.
 """
 
-from PBBLNFMT import fmt_liqpfmt    # LIQPFMT format: product -> HL/FL/RC/etc.
-from PBBDPFMT import fmt_fdprod     # FDPROD  format: intplan -> BIC code string
-from PBBDPFMT import fmt_ddcustcd   # DDCUSTCD format: custcode -> 2-char string
+from PBBLNFMT import format_liqpfmt    # LIQPFMT format: product -> HL/FL/RC/etc.
+from PBBDPFMT import fdprod_format     # FDPROD  format: intplan -> BIC code string
+from PBBDPFMT import ddcustcd_format   # DDCUSTCD format: custcode -> 2-char string
 
 import sys
 import os
@@ -476,7 +476,7 @@ def process_loans(macro: dict) -> pl.DataFrame:
             continue
 
         # PROD = PUT(PRODUCT, LIQPFMT.) — from PBBLNFMT
-        prod = fmt_liqpfmt(product)
+        prod = format_liqpfmt(product)
         if custcd_raw in ('77', '78', '95', '96'):
             if prod == 'HL':
                 item = '214'
@@ -696,7 +696,7 @@ def process_fd(macro: dict) -> tuple:
         cdno    = row.get('CDNO')
 
         # BIC = PUT(INTPLAN, FDPROD.) — from PBBDPFMT
-        bic = fmt_fdprod(intplan)
+        bic = fdprod_format(intplan)
 
         if bic == '42630':
             # FCY FD
@@ -842,7 +842,7 @@ def process_ca(macro: dict) -> tuple:
 def process_fcyca(macro: dict) -> tuple:
     """
     Process FCY Current accounts.
-    DDCUSTCD format from PBBDPFMT applied via fmt_ddcustcd().
+    DDCUSTCD format from PBBDPFMT applied via ddcustcd_format().
     """
     current_parquet = DATA_DIR / "CURRENT.parquet"
     con = duckdb.connect()
@@ -862,7 +862,7 @@ def process_fcyca(macro: dict) -> tuple:
     for row in fcyca_raw.iter_rows(named=True):
         custcode  = row.get('CUSTCODE') or 0
         # CUSTCD = PUT(CUSTCODE, DDCUSTCD.) — from PBBDPFMT
-        custcd    = fmt_ddcustcd(custcode)
+        custcd    = ddcustcd_format(custcode)
         curbal    = row.get('CURBAL') or 0.0
         product   = row.get('PRODUCT') or 0
         curcode   = str(row.get('CURCODE') or '').strip()
