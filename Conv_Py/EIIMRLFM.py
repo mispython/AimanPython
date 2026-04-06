@@ -4,24 +4,24 @@ PROGRAM : EIIMRLFM.py
 DATE    : 05.07.13
 REPORT  : FISS - NEW LIQUIDITY FRAMEWORK (PIBB)
 MODIFY  : 13.08.04 (SMR-A520)
+
+OPTIONS YEARCUTOFF=1950  (handled via Python date parsing with 2-digit year offset)
+
+%INC PGM(PBBLNFMT,PBBELF,PBBDPFMT)
+
+PBBLNFMT: provides LIQPFMT format — PUT(PRODUCT, LIQPFMT.) — actively used in the NOTE
+          data step to map product code to loan category (HL, FL, RC, etc.).
+          Imported below as fmt_liqpfmt().
+
+PBBDPFMT: provides FDPROD format — PUT(INTPLAN, FDPROD.) — actively used in the FD
+          data step to derive BIC codes ('42630','42132','42133','49999').
+          Also provides DDCUSTCD format — PUT(CUSTCODE, DDCUSTCD.) — used in FCYCA.
+          Imported below as fmt_fdprod() and fmt_ddcustcd().
+
+PBBELF:   %INC'd at session level. No PBBELF-specific format or macro is directly
+          called by name in this program's logic. Its definitions may be consumed
+          indirectly by KALMLIQ/KALMLIFE sub-programs. Not imported here.
 """
-
-# OPTIONS YEARCUTOFF=1950  (handled via Python date parsing with 2-digit year offset)
-
-# %INC PGM(PBBLNFMT,PBBELF,PBBDPFMT)
-#
-# PBBLNFMT: provides LIQPFMT format — PUT(PRODUCT, LIQPFMT.) — actively used in the NOTE
-#           data step to map product code to loan category (HL, FL, RC, etc.).
-#           Imported below as fmt_liqpfmt().
-#
-# PBBDPFMT: provides FDPROD format — PUT(INTPLAN, FDPROD.) — actively used in the FD
-#           data step to derive BIC codes ('42630','42132','42133','49999').
-#           Also provides DDCUSTCD format — PUT(CUSTCODE, DDCUSTCD.) — used in FCYCA.
-#           Imported below as fmt_fdprod() and fmt_ddcustcd().
-#
-# PBBELF:   %INC'd at session level. No PBBELF-specific format or macro is directly
-#           called by name in this program's logic. Its definitions may be consumed
-#           indirectly by KALMLIQ/KALMLIFE sub-programs. Not imported here.
 
 from PBBLNFMT import fmt_liqpfmt    # LIQPFMT format: product -> HL/FL/RC/etc.
 from PBBDPFMT import fmt_fdprod     # FDPROD  format: intplan -> BIC code string
