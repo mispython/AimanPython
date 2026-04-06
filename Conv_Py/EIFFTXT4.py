@@ -1,11 +1,19 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
-Program: EIFFTXT4
+Program: EIFFTXT4.py
 Purpose: ESMR 2013-705 (SEND FILE TO LNS) - 2ND EXTRACTION CAP
          Merge WOFFTXT with CAP data, write fixed-width output file,
-            and produce a listing report of accounts for bad debt writing-off.
+         and produce a listing report of accounts for bad debt writing-off.
          Source: NPL (PBB) library
 """
+
+# NOTE: The original SAS program includes PBBLNFMT via %INC PGM(PBBLNFMT),
+#       which defines format mappings for loan/OD products (e.g. format_lndenom,
+#       format_lnprod, format_delqdes, etc.).  However, none of those format
+#       functions are actually invoked anywhere in this program — the PBBLNFMT
+#       include is standard boilerplate carried across many jobs in this system.
+#       Therefore, no import from PBBLNFMT is required here.
+# from PBBLNFMT import (format_lndenom, format_lnprod, format_delqdes, ...)
 
 import duckdb
 import polars as pl
@@ -229,7 +237,7 @@ with open(WOFFTEXT_PATH, "w", encoding="utf-8") as fout:
 woff_df = pl.DataFrame(woff_rows) if woff_rows else text_df.clone()
 
 # ─────────────────────────────────────────────
-# PROC PRINT equivalent – listing report
+# PROC PRINT equivalent – listing report with ASA carriage control characters
 # VAR BRANCH NAME ACCTNO NOTENO BORSTAT IIS OI TOTIIS SP TOTAL CURBAL
 #     PREVBAL PAYMENT MATDATE LOANTYPE INTAMT POSTNTRN
 #     MARKETVL INTEARN4 DAYS LASTTRA1 LSTTRNCD MTHPDUE BALANCE
@@ -245,7 +253,8 @@ PRINT_VARS = [
 ]
 SUM_VARS = ["IIS", "OI", "TOTIIS", "SP", "TOTAL", "CURBAL", "PREVBAL", "PAYMENT", "BALANCE"]
 
-PAGE_LEN  = 60
+# Page length: 60 lines per page (default, not specified in SAS)
+PAGE_LEN   = 60
 PAGE_WIDTH = 200
 
 # Column widths for the report
@@ -257,6 +266,7 @@ COL_WIDTHS = {
     "INTEARN4": 14, "DAYS": 6, "LASTTRA1": 10, "LSTTRNCD": 8,
     "MTHPDUE": 7, "BALANCE": 14,
 }
+
 
 def fmt_report_val(val, col: str) -> str:
     w = COL_WIDTHS.get(col, 10)
@@ -272,12 +282,19 @@ def fmt_report_val(val, col: str) -> str:
     return str(val)[:w].ljust(w)
 
 
+# ASA carriage control characters:
+#   '1' = skip to new page (form feed)
+#   ' ' = single space (advance one line before printing)
+#   '0' = double space (advance two lines before printing)
+#   '+' = no advance (overprint)
 output_lines: list[str] = []
 line_count = 0
 
-def emit(cc: str, content: str = "") -> None:
+
+def emit(asa_cc: str, content: str = "") -> None:
+    """Append a line with ASA carriage control character prefix."""
     global line_count
-    output_lines.append(cc + content)
+    output_lines.append(asa_cc + content)
     line_count += 1
     if line_count >= PAGE_LEN:
         line_count = 0
@@ -285,8 +302,9 @@ def emit(cc: str, content: str = "") -> None:
 
 def emit_page_header() -> None:
     global line_count
-    emit("1", "LISTING OF ACCOUNTS FOR BAD DEBT WRITING-OFF EXERCISE")
-    emit(" ", f"AS AT {RDATE}")
+    line_count = 0
+    emit("1", "LISTING OF ACCOUNTS FOR BAD DEBT WRITING-OFF EXERCISE")  # TITLE1 – '1' = new page
+    emit(" ", f"AS AT {RDATE}")                                           # TITLE2
     emit(" ", "")
     hdr = "  ".join(c.ljust(COL_WIDTHS.get(c, 10)) for c in PRINT_VARS)
     emit(" ", hdr)
@@ -317,7 +335,7 @@ for row in woff_df.iter_rows(named=True):
             except Exception:
                 pass
 
-# SUM row
+# SUM row separator and totals
 sep = "-" * sum(COL_WIDTHS.get(c, 10) + 2 for c in PRINT_VARS)
 emit(" ", sep)
 sum_parts = []
