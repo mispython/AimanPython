@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-File Name: EIEMCRLS
+File Name: EIEMCRLS.py
 Report ID: EIQPROM2
 Automailing Listing for Reinstatement of Loan
 """
@@ -507,5 +507,5 @@ def write_report_with_asa():
 write_report_with_asa()
 
 print("\n" + "=" * 70)
-print("EIQPROM2 processing completed successfully!")
+print("EIEMCRLS processing completed successfully!")
 print("=" * 70)
