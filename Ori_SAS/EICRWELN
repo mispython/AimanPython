@@ -1,0 +1,1840 @@
+//EICRWELN JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M,NOTIFY=&SYSUID
+//*--------------------------------------------------------------------
+//* CRMS_eLDS (Weekly)
+//*--------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DD01     DD DSN=SAP.ELDS.CRMS.ELNFTPW,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//CREATE   EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.ELDS.CRMS.ELNFTPW,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+//            SPACE=(CYL,(200,200),RLSE),UNIT=(SYSDA,5)
+//*
+//EICRWELN EXEC SAS609
+//ELDSAA1  DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN01W.TEXT(0)
+//ELDSAA2  DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN02W.TEXT(0)
+//ELDSAA3  DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN03W.TEXT(0)
+//ELDSAA4  DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN04W.TEXT(0)
+//ELDSAA5  DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN05W.TEXT(0)
+//ELDSAA6  DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN06W.TEXT(0)
+//ELDSAA7  DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN07W.TEXT(0)
+//ELDSAA8  DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN08W.TEXT(0)
+//ELDSAA9  DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN09W.TEXT(0)
+//ELDSAA10 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN10W.TEXT(0)
+//ELDSAA11 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN11W.TEXT(0)
+//ELDSAA12 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN12W.TEXT(0)
+//ELDSAA13 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN13W.TEXT(0)
+//ELDSAA14 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN14W.TEXT(0)
+//ELDSAA15 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN15W.TEXT(0)
+//ELDSAA16 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN16W.TEXT(0)
+//ELDSAA17 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN17W.TEXT(0)
+//ELDSAA18 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN18W.TEXT(0)
+//ELDSAA19 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN19W.TEXT(0)
+//ELDSAA20 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN20W.TEXT(0)
+//ELDSAA21 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN21W.TEXT(0)
+//ELDSAA22 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN22W.TEXT(0)
+//ELDSAA23 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN23W.TEXT(0)
+//ELDSAA24 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN24W.TEXT(0)
+//ELDSAA25 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN25W.TEXT(0)
+//ELDSAA26 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN26W.TEXT(0)
+//ELDSAA27 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN27W.TEXT(0)
+//ELDSAA28 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN28W.TEXT(0)
+//ELDSAA29 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN29W.TEXT(0)
+//ELDSAA30 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN30W.TEXT(0)
+//ELDSAA31 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN31W.TEXT(0)
+//ELDSAA32 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN32W.TEXT(0)
+//ELDSAA33 DD DISP=SHR,DSN=SAP.ELDS.CRMS.ELN33W.TEXT(0)
+//ELN      DD DISP=OLD,DSN=SAP.ELDS.CRMS.ELN.SASDATA.WEEKLY
+//TRANFILE DD DISP=OLD,DSN=SAP.ELDS.CRMS.ELNFTPW
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1950 NOCENTER COMPRESS=Y;
+
+DATA REPTDATE;
+   INFILE ELDSAA1 OBS=1;
+   INPUT @53 REPTDATE  DDMMYY10.;
+   CALL SYMPUT('DSNDT',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RPTDT',PUT(REPTDATE,YYMMDDN8.));
+RUN;
+
+DATA ELNA1(DROP=DD MM YY DD1 MM1 YY1 CRRBRCH CRRCOD
+                DD2 MM2 YY2 DD3 MM3 YY3 DD4 MM4 YY4
+                DD5 MM5 YY5 DD6 MM6 YY6 DD7 MM7 YY7);
+   INFILE ELDSAA1 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @1    AANO      $UPCASE13.
+         @17   NAME      $UPCASE60.
+         @95   BRANCH            4.
+         @102  CUSTCODE          4.
+         @109  SECTOR            4.
+         @116  STATE             3.
+         @122  PRODUCT           3.
+         @128  PRICING           5.2
+         @136  DD                2.
+         @139  MM                2.
+         @142  YY                4.
+         @149  AMOUNT      COMMA15.
+         @167  NOEMPLO           4.
+         @174  SECURITY          1.
+         @178  ADVANCES         $1.
+         @182  PRODESC         $30.
+         @215  PRESRATE         $7.
+         @225  INSTRLF          $3.
+         @231  COMPLETE        $11.
+         @245  SMENAME1        $60.
+         @308  SMENAME2        $60.
+         @371  DD1               2.
+         @374  MM1               2.
+         @377  YY1               4.
+         @384  APVDES1         $25.
+         @412  APVNME1         $60.
+         @475  DD2               2.
+         @478  MM2               2.
+         @481  YY2               4.
+         @488  APVDES2         $25.
+         @516  APVNME2         $60.
+         @579  DD3               2.
+         @582  MM3               2.
+         @585  YY3               4.
+         @592  PCODCRIS         $4.   /* PURPOSE CODE CCRIS        */
+         @599  PCODFISS         $4.   /* PURPOSE CODE FISS         */
+         @606  TURNOVR1    COMMA11.
+         @620  SMESIZE           2.
+         @631  CRRSCORE         $3.
+         @637  SPAAMT      COMMA11.
+         @651  EXEMPIND         $1.
+         @655  ELDSPROD         $2.
+         @660  DD4               2.
+         @663  MM4               2.
+         @666  YY4               4.
+         @673  ICREASON         $9.
+         @685  MAKE            $20.
+         @708  YEARMADE          4.
+         @715  VECHAGE         $30.
+         @748  RATE             10.8
+         @761  TERM              3.
+         @767  CASHPRIC    COMMA15.2
+         @785  ACCTNO           10.   /* MNI LOAN A/C NO           */
+         @798  INTEARN2         15.2
+         @816  TRANBR           $3.   /* TRANSFER BR ABBR          */
+         @822  TRANBRNO          3.   /* TRANSFER BR NO            */
+         @828  TRANREG          $4.   /* TRANSFER REGION           */
+         @835  LOBE             $3.   /* LOBE INDICATOR            */
+         @841  DD5               2.   /* LOBE DATE OF FULL DOC.    */
+         @844  MM5               2.
+         @847  YY5               4.
+         @854  DD6               2.   /* LOBE DATE APR             */
+         @857  MM6               2.
+         @860  YY6               4.
+         @867  DD7               2.   /* LOBE DATE LO              */
+         @870  MM7               2.
+         @873  YY7               4.
+         @880  MARGIN           $6.   /* MARGIN OF ADVANCE         */
+         @889  PMAGNNO          $8.   /* PUBLIC MUTUAL AGENT CODE  */
+         @900  PMAGNNM   $UPCASE50.   /* PUBLIC MUTUAL AGENT NAME  */
+         @953  GINCOME     COMMA11.   /* GROSS INCOME              */
+         @967  PRITYPE          $5.   /* TYPE OF PRICING           */
+         @975  PRIRATE           5.2  /* INTEREST RATE             */
+         @983  STATUS    $UPCASE30.
+         @1016 CRRBRCH         $10.   /* CRR BRANCH                */
+         @1029 CRRCOD          $10.   /* CRR HEAD OFFICE           */
+         @1042 NEWIC     $UPCASE17.   /* NEW IC - REPLACE @80      */
+         @1065 HDLGFEE         $15.   /* HANDLING FEE - GST        */
+         @1083 HPPREMLIFE      $15.   /* HP PREMIUM LIFE           */
+         @1101 AACRTDBY        $60.   /* AA CREATED BY (MOBILE)    */
+         @1164 AACRTDTM        $15.   /* AA CREATED TIME (MOBILE)  */
+         @1182 AASBMTDBY       $60.   /* AA SUBMITTED BY (MOBILE)  */
+         @1245 AASBMTDTM       $15.   /* AA SUBMITTED TIME (MOBILE)*/
+         @1263 CRRGRADE         $5.   /* CRR GRADE                 */
+         @1271 SECTORCODE       $6.   /* SECTOR CODE               */
+         @1280 SECTORDESC     $200.   /* SECTOR CODE DESCRIPTION   */
+         @1483 SUBSECTOR1     $160.   /* DESCRIPTION SUBSECTOR CODE*/
+         @1646 SUBSECTOR2     $160.   /* DESCRIPTION SUBSECTOR CODE*/
+         ;
+   LENGTH CRRGRADE $5.;
+   IF CRRCOD NE '' THEN CRRGRADE = COMPRESS(CRRCOD);
+   ELSE                 CRRGRADE = COMPRESS(CRRBRCH);
+
+   *AADATE   = MDY(MM,DD,YY);
+   LODATE   = MDY(MM1,DD1,YY1);
+   APVDTE1  = MDY(MM2,DD2,YY2);
+   APVDTE2  = MDY(MM3,DD3,YY3);
+   ICDATE   = MDY(MM4,DD4,YY4);
+   LOBEFUDT = MDY(MM5,DD5,YY5);
+   LOBEAPDT = MDY(MM6,DD6,YY6);
+   LOBELODT = MDY(MM7,DD7,YY7);
+   AADATE   = ICDATE;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA2;
+   INFILE ELDSAA2 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @1    AANO       $UPCASE13.
+         @17   REFTYPE          $70.
+         @90   NMREF1     $UPCASE60.
+         @153  NMREF2     $UPCASE60.
+         @216  CPARTY      $UPCASE3.  /* CONNECTED PARTIES         */
+         @222  CPSTAFF    $UPCASE50.  /* CP STAFF NAME             */
+         @275  CPDITOR     $UPCASE3.  /* CP BOARD DIRECTOR         */
+         @281  CPSTFID     $UPCASE5.  /* CP STAFF ID               */
+         @289  CPBRHO     $UPCASE11.  /* CP BRANCH/HO              */
+         @303  CPBRID      $UPCASE3.  /* CP BRANCH ID              */
+         @309  CPHQDIV    $UPCASE30.  /* CP HO DIVISION            */
+         @342  CPRELAT   $UPCASE100.  /* CP RELATIVES              */
+         @445  CPRELAS   $UPCASE100.  /* CP RELATIONSHIP           */
+         @548  NEWESIT     $UPCASE8.  /* NEW/EXISTING              */
+         @559  AMTAPPLY     COMMA15.  /* AMOUNT APPLIED            */
+         @577  LNTERM             3.  /* LOAN TERMS                */
+         @583  APPRIC    $UPCASE200.  /* APPLIED PRICING           */
+         @786  AVPRIC    $UPCASE200.  /* APPROVED PRICING          */
+         @989  REINPROD    $UPCASE1.  /* ADDTIONAL FACILITIES      */
+         @993  STATUS2    $UPCASE30.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA3;
+   INFILE ELDSAA3 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @1    AANO       $UPCASE13.  /* AA NUM                    */
+         @17   MAANO      $UPCASE13.  /* MAIN AA NUM               */
+         @33   APVBY       $UPCASE2.  /* APPBRHO                   */
+         @38   MRTAIND    $UPCASE15.  /* MRTA INDICATOR            */
+         @56   NOMRTA      $UPCASE2.  /* MRTA NO OF POLICY         */
+         @61   MRTAPREM     COMMA15.0 /* TOTAL PREMIUM MRTA        */
+         @79   MRTAOPT    $UPCASE15.  /* FINANCE OPTION MRTA       */
+         @97   MRTAINS    $UPCASE30.  /* MRTA INSURANCE COMPAN     */
+         @130  ODLFIN     $UPCASE15.  /* FINANCE OPTION ODL        */
+         @148  ODLPREM      COMMA15.0 /* TOTAL PREMIUM ODL         */
+         @166  ODLINS     $UPCASE30.  /* ODL INSURANCE COMPANY     */
+         @199  MRPAFIN    $UPCASE15.  /* FINANCE OPTION MRPA       */
+         @217  MRPAPREM     COMMA15.0 /* TOTAL PREMIUM MRPA        */
+         @235  MRPAINS    $UPCASE30.  /* MRPA INSURANCE COMPAN     */
+         @268  BLDIND      $UPCASE3.  /* BLDTA INDICATOR           */
+         @274  BLOIND      $UPCASE3.  /* BLOLTA INDICATOR          */
+         @280  BLDCASE     $UPCASE2.  /* BLDTA NO OF INSURANCE     */
+         @285  BLOCASE     $UPCASE2.  /* BLOLTA NO OF INSURANC     */
+         @290  BLDPREM      COMMA15.2 /* BLDTA TOTAL PREMIUM       */
+         @308  BLOPREM      COMMA15.2 /* BLOLTA TOTAL PREMIUM      */
+         @326  BLDINS     $UPCASE30.  /* BLDTA INSURANCE COMPA     */
+         @359  BLOINS     $UPCASE30.  /* BLOLTA INSURANCE COMP     */
+         @392  CCIND       $UPCASE3.  /* CRECARD INDICATOR         */
+         @398  CCREA     $UPCASE200.  /* REASON FOR NO CRECARD     */
+         @601  REFINANC    $UPCASE1.  /* REFINANCE                 */
+         @605  SECTCD2     $UPCASE8.  /* SECCODE2                  */
+         @616  FDTAIND     $UPCASE3.  /* FBLDTA INDICATOR          */
+         @622  FOTAIND     $UPCASE3.  /* FBLOLTA INDICATOR         */
+         @628  FDTANUM     $UPCASE2.  /* NO. INS POL FOR FBLDTA    */
+         @633  FOTANUM     $UPCASE2.  /* NO. INS POL FOR FBLODLTA  */
+         @638  FBLDTAP      COMMA15.2 /* PREM AMT FOR FBLDTA       */
+         @656  FBLOLTAP     COMMA15.2 /* PREM AMT FOR FBLODLTA     */
+         @674  FDTAINS    $UPCASE30.  /* INS CO. INDI FOR BLDTA    */
+         @707  FOTAINS    $UPCASE30.  /* INS CO. INDI FOR BLOLTA   */
+         @740  HPDTAIND    $UPCASE3.  /* HPDTA INDICATIOR          */
+         @746  HPDTASUM   $UPCASE12.  /* HPDTA SUM INSURED         */
+         @761  HPDTAPRE   $UPCASE12.  /* HPDTA GROSS PREMIUM       */
+         @776  HPDTAINS    $UPCASE2.  /* HPDTA PERIOD INSURED      */
+         @781  COLLCODE    $UPCASE2.  /* COLLATERAL CODE           */
+         @786  STATUS3    $UPCASE30.  /* STATUS                    */
+         @819  REFAMT     $UPCASE15.  /* REFINANCING AMOUNT        */
+         @837  BUSID      $UPCASE15.  /* BUSINESS ID               */
+         @855  FACGPTYPE   $UPCASE1.  /* FACILITY GROUP TYPE       */
+         @859  BUSTYPEID   $UPCASE2.  /* BUSINESS TYPE ID          */
+         @864  APPAMTWSC  $UPCASE15.  /* APP AMOUNT(W'THOUT SC)    */
+         @882  FACCODE     $UPCASE5.  /* FACILITY CODE NSRS        */
+         @890  ABMHL       $UPCASE1.  /* ABM HOUSING LOAN<500K     */
+         @894  FACNAME    $UPCASE60.  /* FACILITY NAME             */
+         @957  AP1GRADE          $2.  /* AP1 GRADE                 */
+         @962  AP2GRADE          $2.  /* AP2 GRADE                 */
+         @967  SMESIZE3          $1.  /* SMESIZE3                  */
+         @971  FACCODE2         $10.  /* FACILITY CODE             */
+         @984  GREENTCO          $1.  /* GREENTECHCO               */
+         @988  BIOTCO            $1.  /* BIOTECHCO                 */
+         @992  SMEIP             $1.  /* SMEIPRIGHTS               */
+         @996  SME1INCR          $1.  /* SME1INNOCERT              */
+         @1000 SMEMSC            $1.  /* SMEMSCSTATUS              */
+         @1004 STRUPCO           $1.  /* STARTUPCO                 */
+         @1008 PURLNMOD          $1.  /* PURPLOANMOD               */
+         @1012 RRTYPE            $1.  /* REINSTATEMENT INDICATOR   */
+         @1016 VB                $1.  /* VULNERABLE BORROWERS      */
+         @1020 PRESCSTATE         2.  /* PRESCRIBE STATE           */
+         @1025 CCRIS_STATUS      $1.  /* CCRIS STATUS              */
+         @1029 CRRSCRBRANCH COMMA10.  /* CRR Score Latest          */
+         @1042 ASCGRADEBRANCH   $10.  /* ASCORE Grade Branch       */
+         @1055 ASCGRADEHO       $10.  /* ASCORE Grade HO           */
+         @1068 ASCSCORE     COMMA10.  /* ASCORE Score              */
+         @1081 ASCPD            $10.  /* ASCORE PD                 */
+         @1094 ASCSEQ           $40.  /* ASCORE SEQ                */
+         @1137 ASCPROXY          $1.  /* ASCORE Proxy              */
+         @1141 ASCSCOREID       $50.  /* ASCORE Score ID           */
+         @1194 ASCDEBT      COMMA10.  /* ASCORE DEBT               */
+         @1207 ASCINCOME    COMMA15.  /* ASCORE INCOME             */
+         @1225 ASCDSR       COMMA10.  /* ASCORE DSR                */
+         @1238 ASCCRLIMIT   COMMA15.  /* ASCORE CREDIT LMIT        */
+         @1256 ASCSECURITY  COMMA15.  /* ASCORE SECURITY           */
+         @1274 ASCMA        COMMA10.  /* ASCORE MA                 */
+         @1287 ASCGRADELATEST   $10.  /* ASCORE GRADE              */
+         @1300 ASCDSR10YR       $10.  /* ASCORE DSR 10 Yr          */
+         @1313 ASCEXLGLACT       $3.  /* ASCORE ExistingLegalAction*/
+         @1319 ASCUNSATISCCRIS   $3.  /* ASCORE UnsatisfactoryCCRIS*/
+         @1325 ASCRESCHEAKPK     $3.  /* ASCORE RescheduleAKPK     */
+         @1331 ASCOUTSTANDGLG    $3.  /* ASCORE OutstandingLG      */
+         @1337 ASCSPECATTN       $3.  /* ASCORE SpecialAttention   */
+         @1343 FINALGRADE        $7.  /* FINAL GRADE               */
+         @1353 POBNEW            $3.
+         @1359 POBPRIME          $3.
+         @1365 POBSETUP          $3.
+         @1371 POBDORMANT        $3.
+         @1377 POBSPV            $3.
+         @1383 POBNONPROORG      $3.
+         @1389 POBMANUTEXT       $3.
+         @1395 POBMAINCORE       $3.
+         @1401 POBPROXY          $1.
+         @1405 POBRELACC    COMMA15.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA4;
+   INFILE ELDSAA4 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @1    MAANO       $UPCASE13.
+         @70   APVBY       $UPCASE10.
+         @83   AGEC                3.
+         @89   COUNTRY     $UPCASE55.
+         @147  ICPP        $UPCASE33.
+         @183  MARRIED     $UPCASE10.
+         @196  JOB         $UPCASE40.
+         @239  RENT        $UPCASE20.
+         @262  YEARSS            $20.
+         @285  YESNO              $1.
+         @289  DOBB                2.
+         @292  DOMM                2.
+         @295  DOYY                4.
+         @302  GENDER             $1.
+         @306  SALARY        COMMA15.
+         @324  EXPEND        COMMA15.
+         @342  EXPEND1       COMMA15.
+         @360  EXPEND2       COMMA15.
+         @378  EXPEND3       COMMA15.
+         @396  BALANCE       COMMA15.
+         @414  EMPNAME     $UPCASE60.
+         @477  EMPLOCAT   $UPCASE200.
+       /*@680  EMPNATUR    $UPCASE10. */
+         @693  OWNBUS       $UPCASE3. /* OWN BUSINESS              */
+         @699  DOCSIGH      $UPCASE3. /* DOCUMENTARY EVID SIGHTED  */
+         @705  IDTYPE       $UPCASE2. /* TYPE OF ID                */
+         @710  GAINEMP     $UPCASE20. /* GAINFULLY/SELF EMPLOYED   */
+         @733  ORGTYPE     $UPCASE95. /* ORGANISATION TYPE         */
+         @831  GUARANT      $UPCASE3. /* GUARANTOR                 */
+         @837  BRISCTOS    $UPCASE20. /* BRIS/CTOS-GUARANTOR CRR   */
+         @860  CCRISDC     $UPCASE30. /* CCRIS/DCHEQS-GUARANTORCCR */
+         @893  LEGALAC      $UPCASE3. /* EXISTING LEGAL ACTION     */
+         @899  TOLSCORE     $UPCASE4. /* GUARANTOR CRR TOTAL SCORE */
+         @906  CRRVAL       $UPCASE3. /* GUARANTOR CRR VALUE       */
+         @912  CRRGRD       $UPCASE2. /* GUARANTOR CRR GRADE       */
+         @917  CTHOUSE     $UPCASE11. /* CONTACT NUMBER (HOUSE)    */
+         @931  CTOFFICE    $UPCASE11. /* CONTACT NUMBER (OFFICE)   */
+         @945  CTMOBILE    $UPCASE11. /* CONTACT NUMBER (MOBILE)   */
+         @959  EMAIL       $UPCASE60. /* EMAIL                     */
+         @1022 BSICSLRY    $UPCASE15. /* BASIC SALARY              */
+         @1040 FIXALLWN    $UPCASE15. /* FIXED ALLOWANCE           */
+         @1058 VRINCOME    $UPCASE15. /* VARIABLE INCOME           */
+         @1076 NVINCOME    $UPCASE15. /* NET VARIABLE INCOME       */
+         @1094 COMMISN     $UPCASE15. /* COMMISION                 */
+         @1112 OTALLW      $UPCASE15. /* OVERTIME/ALLOWANCES       */
+         @1130 FEE         $UPCASE15. /* FEE                       */
+         @1148 INTRSTMT    $UPCASE15. /* DIVIDEND/INTEREST STATEMENT*/
+         @1166 NONCTRBN    $UPCASE15. /* NON-CONTRACTUAL BONUS     */
+         @1184 L1YRTAXR    $UPCASE15. /* LATEST 1 YEAR TAX RETURNS */
+         @1202 CASA1       $UPCASE15. /* CASA STATEMENT-6 MTH @20% */
+         @1220 CASA2       $UPCASE15. /* CASA STATEMENT-6 MTH @5%  */
+         @1238 OTHINCOM    $UPCASE15. /* OTHER INCOME              */
+         @1256 RENTAL      $UPCASE15. /* RENTAL, ETC               */
+         @1274 PENSION     $UPCASE15. /* PENSIONS/ANNUITIES ETC    */
+         @1292 OVSINCOM    $UPCASE15. /* OVERSEA INCOME            */
+         @1310 TOTGROSI    $UPCASE15. /* TOTAL GROSS SUBSTANTIATED */
+         @1328 STADEDUC    $UPCASE15. /* STATUTORY DEDUCTIONS      */
+         @1346 TAX         $UPCASE15. /* TAX                       */
+         @1364 EMPLEPF     $UPCASE15. /* EMPLOYEE'S EPF            */
+         @1382 SOCSO       $UPCASE15. /* SOCSO                     */
+         @1400 ZAKAT       $UPCASE15. /* ZAKAT                     */
+         @1418 TSTADEDC    $UPCASE15. /* TOTAL STATUTORY DEDUCTION */
+         @1436 TNETINCM    $UPCASE15. /* TOTAL NET INCOME AFTER SD */
+         @1454 NETINCOM    $UPCASE15. /* NET INCOME                */
+         @1472 NDISPINC    $UPCASE15. /* NET DISPOSABLE INCOME     */
+         @1490 HPDTAIND     $UPCASE3. /* HPDTA/HPRTT INDICATOR     */
+         @1496 RESSTAT      $UPCASE3. /* PR STATUS                 */
+         @1502 RESSTATIDTYP $UPCASE2. /* PR STATUS ID TYPE         */
+         @1507 RESSTATID   $UPCASE33. /* PR STATUS ID              */
+         @1543 RACE         $UPCASE1. /* RACE                      */
+         @1547 CUSTLOC     $UPCASE10. /* LOCATION OF CUSTOMER      */
+         @1560 RELATION    $UPCASE33. /* RELATIONSHIP              */
+         @1596 APPLNTTYPE   $UPCASE3. /* APPL.CHARGOR/PROPOSER?    */
+         @1695 JOBTYPE      $UPCASE3. /* CONTRACT/TEMPORARY/PART   */
+         @1701 BUMICOM     $UPCASE20. /* BUMI/NON-BUMI COMPANY     */
+         @1724 LOCEMPCNTRY $UPCASE50. /* LOCATION OF EMPLOYER'S    */
+         @1777 GUARACCTNO         15. /* GUARANTOR ACCT NUMBER     */
+         @1795 OCCTYPE     $UPCASE20. /* OCCUPATION TYPE           */
+         @1844 JOBNATURE  $UPCASE150. /* NATURE OF JOB             */
+         @1997 YRSERPREVEMP        2. /* YR OF SERVICE WTH PRE EMP */
+         @2002 GAPEMPPRECUR        3. /* EMP GAP BTW CUR N PREV EMP*/
+         @2008 POSTCODER    $UPCASE7. /* POSTCODE (RESIDENTIAL)   */
+         @2018 CITYR       $UPCASE47. /* CITY (RESIDENTIAL)       */
+         @2068 STATER      $UPCASE47. /* STATE (RESIDENTIAL)      */
+         @2118 POSTCODEE    $UPCASE7. /* POSTCODE (EMPLOYER)      */
+         @2128 CITYE       $UPCASE47. /* CITY (EMPLOYER)          */
+         @2178 STATEE      $UPCASE47. /* STATE (EMPLOYER)         */
+         @2228 BNMSTRDINCDOC $UPCASE3.
+         @2234 DEVEPF      $UPCASE60.
+         @2297 DEVCASE     $UPCASE60.
+         @2360 DEVOTHS     $UPCASE60.
+         @2423 DEVPAYSLIP36 $UPCASE15.
+         @2441 DEVPAYSLIPYN $UPCASE1.
+         @2445 DSR                 8.
+         @2456 JOINTINC      COMMA15.
+         @2474 JOINTINCHN  $UPCASE40.
+         @2517 JOINTDSR            8.
+         @2528 GROSSINCAMEND COMMA15.
+         @2546 DSRAMEND            8.
+         @2557 ASCSCORE      COMMA10.
+         @2570 ASCPD             $10.
+         @2583 ASCSEQ            $40.
+         @2626 ASCPROXY           $1.
+         @2630 ASCSCOREID        $50.
+         @2683 ASCDEBT       COMMA10.
+         @2696 ASCINCOME     COMMA15.
+         @2714 ASCDSR        COMMA10.
+         @2727 ASCCRLIMIT    COMMA15.
+         @2745 ASCSECURITY   COMMA15.
+         @2763 ASCMA         COMMA10.
+         @2776 ASCGRADELATEST    $10.
+         @2789 FINALGRADE         $7.
+         @2799 APPLNAME   $UPCASE150. /* LONG NAME                 */
+         @2952 APPTGI        COMMA15.
+         @2970 APPTGIA       COMMA15.
+         @2988 CYSIYEAR            2.
+         @2993 CYSIMON             2.
+         @2998 PYSIMON             2.
+         @3003 YRSIMON             2.
+         @3008 EMPNATUR    $UPCASE200.
+         ;
+   DBIRTH=MDY(DOMM,DOBB,DOYY);
+   DROP DOMM DOBB DOYY;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA5; /* CRR */
+   INFILE ELDSAA5 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                 */
+         @17   DEBTSR     $UPCASE40.  /* DEBT SERVICE RATIO         */
+         @60   NETWRTH5   $UPCASE30.  /* NET WORTH                  */
+         @93   ADVMARG    $UPCASE30.  /* MAARGIN OF ADVANCE         */
+         @126  YRGDCBOR   $UPCASE50.  /* YR GOOD CONDUCT-BOR.       */
+         @179  YRGDCRBO   $UPCASE50.  /* YR GOOD CONDUCT-REL BOR    */
+         @232  YRBUSSI    $UPCASE40.  /* YR IN BUSINESS             */
+         @275  MGMEXPR    $UPCASE40.  /* MANAGEMENT EXPERIENCE      */
+         @318  TYPEIND    $UPCASE30.  /* TYPE OF INDUSTRY           */
+         @351  TURNOVR5   $UPCASE30.  /* TURNOVER GROWTH            */
+         @384  NETPROFT   $UPCASE30.  /* NET PROFIT MARGIN          */
+         @417  ACIDTSTR   $UPCASE30.  /* ACID TEST RATIO            */
+         @450  LEVRATN    $UPCASE30.  /* LEVERAGE RATION            */
+         @483  INTCOVRA   $UPCASE30.  /* INT COVERAGE RATIO         */
+         @516  COLLPERD   $UPCASE30.  /* COLLECTION PERIOD          */
+         @549  CASHFLOW   $UPCASE75.  /* CURR YEAR NET OP CASH      */
+         @627  ACCONDUC   $UPCASE75.  /* CCRIS SRCH-UNSAT.COND      */
+         @705  RACCONDU   $UPCASE75.  /* CCRIS SRCH-UNSAT COND REL  */
+         @783  CREDITBAL  $UPCASE30.  /* AVG FOR LAST 3 MTH         */
+         @816  MTHDEPO    $UPCASE30.  /* AVG MTHLY DEP TO TURNOVR   */
+         @849  MTHPRFT    $UPCASE30.  /* AVG MTHLY PROFIT TO TURN   */
+         @882  OWNERSH    $UPCASE30.  /* HOME/BUSS PREMISE OWNRSHP  */
+         @915  INCLVLPA   $UPCASE30.  /* INCOME LEVEL PER ANNUM     */
+         @948  CONDUCT    $UPCASE30.  /* CONDUCT OF ACCOUNT         */
+         @981  FIRSTAA     $UPCASE5.  /* 1ST AA CRR                 */
+         @989  CRRTOTSC    $UPCASE5.  /* CRR TOTAL SCORE            */
+         @997  DSR         $UPCASE5.  /* DSR                        */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA6; /* FINANCIAL COMPUTATION */
+   INFILE ELDSAA6 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                 */
+         @17   FINDD              2.  /* DAY (FINANCIAL END)        */
+         @20   FINMM              2.  /* MTH (FINANCIAL END)        */
+         @23   FINYY              4.  /* MTH (FINANCIAL END)        */
+         @30   AUMDIND           $1.  /* AUD/UNAUD/MGM/DRAFT IND    */
+         @34   TURNOVR6     COMMA15.  /* TURNOVER                   */
+         @52   PRETAXPR     COMMA15.  /* PRE TAX PROFIT             */
+         @70   PAIDUP       COMMA15.  /* PAID UP CAPITAL            */
+         @88   NETWRTH6     COMMA15.  /* NETWORTH                   */
+         @106  TOTASST      COMMA15.  /* TOTAL CURRENT ASSETS       */
+         @124  TOTLIAB      COMMA15.  /* TOTAL CURRENT LIAB         */
+         @142  NETWRKC      COMMA15.  /* NET WORKING CAPITAL        */
+         @160  STOCKTN      COMMA15.  /* STOCK TURNOVER DAYS        */
+         @178  COLLECTP     COMMA15.  /* COLLECTION PERIOD          */
+         @196  PAYPERIO     COMMA15.  /* PAY PERIOD                 */
+         @214  SALESGR    $UPCASE15.  /* SALES GROWTH (%)           */
+         @232  GROSSMA    $UPCASE15.  /* GROSS PROFIT MARG(%)       */
+         @250  NETMARG    $UPCASE15.  /* NET PROFIT MARGIN          */
+         @268  CURRATIO          15.2 /* CURRENT RATIO              */
+         @286  GEARG             15.2 /* GEARING                    */
+         @304  LEVERG            15.2 /* LEVERAGE                   */
+         @322  GROPRO     $UPCASE15.  /* GROSS PROFIT               */
+         @340  DEFLIA     $UPCASE15.  /* DEFERRED LIABILITY         */
+         @358  NOPECASH   $UPCASE15.  /* NET OPERATING CASHFLOW     */
+         @376  LNGLIA     $UPCASE15.  /* LONG TERM LIABILITY        */
+         @394  ENBFINT    $UPCASE15.  /* EARNING B4 INTEREST& TAX   */
+         @412  INTEXP     $UPCASE15.  /* INTEREST EXPENSES          */
+         @430  STOCK      $UPCASE15.  /* STOCK                      */
+         @448  TRADEB     $UPCASE15.  /* TRADE DEBTORS              */
+         @466  LOANDIC    $UPCASE15.  /* LOAN DIRECTOR              */
+         @484  INTCOMP    $UPCASE15.  /* INTER COMPANY LOAN         */
+         @502  ACTRATIO   $UPCASE15.  /* ACID TEST RATIO            */
+         @520  DEEQRATIO  $UPCASE15.  /* DEBT/EQUITY RATIO          */
+         @538  INTCOVRAT  $UPCASE15.  /* INTEREST COVERAGE RATIO    */
+         @556  LNFRDIR    $UPCASE15.  /* LOAN FROM DIRECTOR         */
+         @574  REVALRSV   $UPCASE15.  /* REVALUATION RESERVE        */
+         @592  UNSTFYADT $UPCASE120.  /* UNSATISFACTORY AUDITOR     */
+         @715  EXTORDGL   $UPCASE15.  /* EXTRAORDINARY GAIN/LOSS    */
+         @733  DEVEXP     $UPCASE15.  /* DEVELOPMENT EXPENDITURE    */
+         @751  TANGNET      COMMA15.
+         @769  NETWORKCAP   COMMA15.
+         @787  EDITDA       COMMA15.
+         @805  DEPRECIAT    COMMA15.
+         @823  AMORTISTN    COMMA15.
+         @841  TOTLOANCOM   COMMA15.
+         @859  TOTINTLOAN   COMMA15.
+         @877  PD           COMMA15.
+         @895  PCTLE        COMMA15.
+         @913  OPSTOCK      COMMA15.
+         @931  CLOSTOCK     COMMA15.
+         @949  PURCHASES    COMMA15.
+         @967  COSTOFGOOD   COMMA15.
+         @985  WORKCAPREQ   COMMA15.
+         @1003 TRACDTOR     COMMA15.
+         @1021 TOTTGBLE     COMMA15.
+         @1039 TOTLIAB2     COMMA15.
+         @1057 AUDITOR    $UPCASE30.
+         @1090 ADTORREGNO $UPCASE10.
+         @1103 DSR          COMMA15.
+         ;
+   CURRATIO = ROUND(CURRATIO,.01);
+   FYREND=MDY(FINMM,FINDD,FINYY);
+   DROP FINMM FINDD FINYY;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA7; /* SECURITY */
+   INFILE ELDSAA7 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                 */
+         @17   AANOSEC7   $UPCASE13.  /* AA NO                      */
+         @33   INDNEWE     $UPCASE8.  /* NEW / EXISTING IND         */
+         @92   LANDAREA          $9.  /* LAND AREA                  */
+         @104  LNAREAUN    $UPCASE8.  /* LAND AREA UNIT             */
+         @115  BUILTUP           $9.  /* BUILT UP                   */
+         @127  BLTUPUN     $UPCASE8.  /* BUILT UP UNIT              */
+         @138  FREELEAS    $UPCASE9.  /* FREEHOLD/LEASEHOLD         */
+         @150  USEDSA     $UPCASE18.  /* CURRENTLY USED AS          */
+         @171  LNUSDCAT   $UPCASE20.  /* LAND USE CATEGORY          */
+         @194  SDD                2.  /* SALES & PURCH. DD          */
+         @197  SMM                2.  /* SPA MM                     */
+         @200  SYY                4.  /* SPA YY                     */
+         @207  SPAPRCE      COMMA15.  /* SPA PRICE                  */
+         @225  CMVALUE      COMMA15.  /* CUR MARKET VAL (RM)?       */
+         @243  FSVALUE      COMMA15.  /* FORCE SALE VAL (RM)?       */
+         @261  VALUERI    $UPCASE12.  /* VALUER INDICATOR           */
+         @276  VALUENM    $UPCASE40.  /* VALUER NAME                */
+         @319  VDD                2.  /* VALUATION DD               */
+         @322  VMM                2.  /* VALUATION MM               */
+         @325  VYY                4.  /* VALUATION YY               */
+         @332  APPRDEV           $3.  /* APPROVED DEV./PRO/PHA      */
+         @338  ADLREFNO   $UPCASE25.  /* DEVELOPER'S NAME           */
+         @366  DEVNAME    $UPCASE60.  /* DEVELOPER'S NAME           */
+         @429  PROJNAME   $UPCASE60.  /* PROJECT NAME               */
+         @492  ADD                2.  /* ADL APPROVED DATE          */
+         @495  AMM                2.  /* ADL APPROVED DATE          */
+         @498  AYY                4.  /* ADL APPROVED DATE          */
+         @505  EDD                2.  /* EXPIRY APPROVED DATE       */
+         @508  EMM                2.  /* EXPIRY APPROVED DATE       */
+         @511  EYY                4.  /* EXPIRY APPROVED DATE       */
+         @518  EXDD               2.  /* EXTENDED APPROVED DATE     */
+         @521  EXMM               2.  /* EXTENDED APPROVED DATE     */
+         @524  EXYY               4.  /* EXTENDED APPROVED DATE     */
+         @531  SELLCMV            1.  /* SELLING PRICE IS CMV       */
+         @535  SELLCROS           1.  /* SELLING PRICE CROSS CHECK  */
+         @539  NOAGREE            1.  /* NUMBER OF AGREEMENT        */
+         @543  MARCMV      $UPCASE3.  /* MARGIN AGAINST CMV(%)      */
+         @549  ADDRESS1   $UPCASE10.  /* HSE/LOT NO/TITLE NO        */
+         @562  ADDRESS2   $UPCASE30.  /* BUILDING                   */
+         @595  ADDRESS3   $UPCASE40.  /* JLN / ST                   */
+         @638  ADDRESS4   $UPCASE40.  /* TMN / SEK / PREC           */
+         @681  ADDRESS5   $UPCASE30.  /* ADDRESS CONTINUATION       */
+         @714  ADDRESS6    $UPCASE5.  /* POSTCODE                   */
+         @722  LOCPROP    $UPCASE40.  /* MUKIM/DAERAH               */
+         @765  PCTCOMP            3.  /* PERCENTAGE COMPLETION      */
+         @771  AREALOC    $UPCASE30.  /* AREA LOCATION              */
+         @804  ACCTNOC1          10.  /* ACCOUNT NO                 */
+         @817  ACCTNOC2          10.  /* ACCOUNT NO 2               */
+         @830  ACCTAPP     $UPCASE1.  /* PRIMARY ACCOUNT APP        */
+         @834  CCOLLNO    $UPCASE11.  /* COLLATERAL NO.             */
+         @848  CCLASSC     $UPCASE3.  /* SECURITY CLASS CODE        */
+         @854  CINSTCL     $UPCASE2.  /* INSTRUMENT OF CLAIM        */
+         @859  TTLPART    $UPCASE12.  /* TITLE PARTICULARS          */
+         @874  TTLENO     $UPCASE40.  /* TITLE NO                   */
+         @917  MASTOWNR   $UPCASE40.  /* NAME OF MAST.TTL.OWN       */
+         @960  TTLID      $UPCASE15.  /* ID NO.MAST.TTL.OWNER       */
+         @978  EXPDATE    $UPCASE10.  /* FREE/LEASE EXP DATE        */
+         @991  CTRYSTAT    $UPCASE3.  /* CURRENCY                   */
+         @997  CPRCHARG   $UPCASE15.  /* AMOUNT OF CHARGE           */
+        @1015  CPRSHARE    $UPCASE3.  /* SHARED                     */
+        @1021  INSURER     $UPCASE2.  /* INSURER                    */
+        @1026  CPOLYNUM   $UPCASE16.  /* POLICY NO                  */
+        @1045  FIREDATE   $UPCASE10.  /* EXPIRY DATE                */
+        @1058  SUMINSUR   $UPCASE15.  /* SUM INSURED                */
+        @1076  QUITRENT    $UPCASE4.  /* LATEST QUIT RENT           */
+        @1083  ASSESSDT    $UPCASE4.  /* LATEST ASSESSMENT          */
+        @1090  CROSSCHRG   $UPCASE3.  /* PROPERTY CROSS CHARGE      */
+        @1096  ENCUMBER    $UPCASE1.
+        @1100  ENCUMTRN   $UPCASE40.
+        @1143  PROTYPPO    $UPCASE1.
+        @1147  STDDESG     $UPCASE1.
+        @1151  VIND2       $UPCASE1.
+        @1155  VNAME      $UPCASE40.
+        @1198  PVRPOLICY   $UPCASE1.
+        @1202  PVRWAIVE    $UPCASE1.
+        @1206  PVRREASON   $UPCASE1.
+        @1210  PVRWVERRES  $UPCASE1.
+        @1214  PROPERT   $UPCASE100.  /* TYPE / DESC OF PROPERTY    */
+        ;
+   SPADT=MDY(SMM,SDD,SYY);
+   VALUEDT =MDY(VMM,VDD,VYY);
+   ADLAPRDT=MDY(AMM,ADD,AYY);
+   EXPAPRDT=MDY(EMM,EDD,EYY);
+   EXTAPRDT=MDY(EXMM,EXDD,EXYY);
+   DROP SMM SDD SYY VDD VMM VYY AMM ADD AYY EDD EMM EYY EXMM EXDD EXYY;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA8; /* MAIN FORM & SUB FORM */
+   INFILE ELDSAA8 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO           */
+         @17   CISNO             15.  /* CIS NO               */
+         @35   ACCTNO1          $15.  /* ACCOUNT NO 1         */
+         @53   ACCTNO2          $15.  /* ACCOUNT NO 2         */
+         @71   CUSTSNCE         $10.  /* CUSTOMER SINCE       */
+         @84   CUSTSNCB         $10.  /* CUSTOMER SINCE -BORR */
+         @97   INCDD              2.  /* DD   OF INCORP.      */
+         @100  INCMM              2.  /* MM   OF INCORP.      */
+         @103  INCYY              4.  /* YY   OF INCORP.      */
+         @110  CAPEMPL      COMMA15.  /* CAPITAL EMPLOYED     */
+         @128  SHAREFND     COMMA15.  /* SHAREHOLDERS FUND    */
+         @146  AVGMTH1    $UPCASE20.  /* AVERAGE MTH DEP 1    */
+         @169  AVGMTH2    $UPCASE20.  /* AVERAGE MTH DEP 2    */
+         @192  AVGMTH3D   $UPCASE20.  /* AVERAGE MTH DEP 3    */
+         @215  AVGDAY1    $UPCASE20.  /* AVERAGE DAILY BAL 1  */
+         @238  AVGDAY2    $UPCASE20.  /* AVERAGE DAILY BAL 2  */
+         @261  AVGDAY3    $UPCASE20.  /* AVERAGE DAILY BAL 3  */
+         @284  PMARGIN            3.  /* PERCENTAGE OF MARGIN */
+         @290  XDD                2.  /* APPLICATION DATE     */
+         @293  XMM                2.
+         @296  XYY                4.
+         @303  RECONAME   $UPCASE60.  /* NAME OF RECOMMENDED  */
+         @366  COMPLIBY   $UPCASE60.  /* COMPLIANCE CHECKLIST BY  */
+         @429  CDD                2.  /* COMPLIANCE CHECKLIST DATE*/
+         @432  CMM                2.  /* COMPLIANCE CHECKLIST DATE*/
+         @435  CYY                4.  /* COMPLIANCE CHECKLIST DATE*/
+         @442  COMPLIGR   $UPCASE15.  /* COMPLIANCE CHCKLST GRADE */
+         @460  STAFFREF   $UPCASE10.  /* REFERRING STAFF'S ID     */
+         @473  STAFFLOA    $UPCASE3.  /* STAFF LOAN INDICATOR     */
+         @479  STAFFNAME  $UPCASE50.  /* STAFF LOAN-NAME          */
+         @532  STAFFID     $UPCASE5.  /* STAFF LOAN-ID            */
+         @540  STAFFBRAN  $UPCASE11.  /* STAFF LOAN-BRANCH/HO     */
+         @554  STAFFBRID   $UPCASE3.  /* STAFF LOAN-BRANCH ID     */
+         @560  STAFFDIV   $UPCASE30.  /* STAFF LOAN-HO DIVISION   */
+         @593  STRTDLOA    $UPCASE3.  /* STAFF RTD LOAN INDICATOR */
+         @599  STRTDNAME  $UPCASE50.  /* STAFF RTD LOAN-NAME      */
+         @652  STRTDID     $UPCASE5.  /* STAFF RTD LOAN-ID        */
+         @660  STRTDBRAN  $UPCASE11.  /* STAFF RTD LOAN-BRANCH/HO */
+         @674  STRTDBRID   $UPCASE3.  /* STAFF RTD LOAN-BRANCH ID */
+         @680  STRTDHO    $UPCASE30.  /* STAFF RTD LOAN-HO DIVISIO*/
+         @713  STRTDREL  $UPCASE100.  /* STAFF RTD LOAN-RELATIVE  */
+         @816  STRTDSHIP $UPCASE100.  /* STAFF RTD LOAN-RELATIONSH*/
+         @919  REGION      $UPCASE4.  /* REGION                   */
+         @926  BEPTOT     $UPCASE15.  /* BEP-TOTAL                */
+         @944  ACCTNO3    $UPCASE15.  /* ACCOUNT NO 3 (OD)        */
+         @962  ADDPERILS  $UPCASE15.  /* ADDITIONAL PERILS(COVER) */
+         @980  SUMCOVER   $UPCASE20.  /* SUM COVERED              */
+         @1003 CVDD               2.  /* STARTDT COVER -DAY       */
+         @1006 CVMM               2.  /* STARTDT COVER -MONTH     */
+         @1009 CVYY               4.  /* STARTDT COVER -YEAR      */
+         @1016 EDDD               2.  /* ENDDT COVER -DAY         */
+         @1019 EDMM               2.  /* ENDDT COVER -MONTH       */
+         @1022 EDYY               4.  /* ENDDT COVER -YEAR        */
+         @1029 APPRLVL           $1.  /* APPROVING LEVEL          */
+         @1033 HRCIND            $1.  /* HRC INDICATOR            */
+         @1037 DESGRECO         $30.  /* DESIGNATION OF RCMD PARTY*/
+         @1070 EXRATIO           $6.  /* BPS% EXEMPTED RATION     */
+         @1079 FRMBANKMTH         2.  /* CUST SINCE BANKING(MTH)  */
+         @1084 FRMBORRMTH         2.  /* CUST SINCE BORROWING(MTH)*/
+         @1089 REFID1           $20.  /* REFERRAL ID1             */
+         @1107 REFID2           $20.  /* REFERRAL ID2             */
+          ;
+   APPLDATE=MDY(XMM,XDD,XYY);
+   INCRDT=MDY(INCMM,INCDD,INCYY);
+   COMPLIDT=MDY(CMM,CDD,CYY);
+   STARTDT=MDY(CVMM,CVDD,CVYY);
+   ENDDT=MDY(EDMM,EDDD,EDYY);
+   DROP INCDD INCMM INCYY XMM XDD XYY CDD CMM CYY;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA9;
+   INFILE ELDSAA9 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @001  MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @017  AA1        $UPCASE13.  /* EXISTING AA1              */
+         @033  AA2        $UPCASE13.  /* EXISTING AA2              */
+         @049  AA3        $UPCASE13.  /* EXISTING AA3              */
+         @065  AA4        $UPCASE13.  /* EXISTING AA4              */
+         @081  AA5        $UPCASE13.  /* EXISTING AA5              */
+         @097  AA6        $UPCASE13.  /* EXISTING AA6              */
+         @113  AA7        $UPCASE13.  /* EXISTING AA7              */
+         @129  AA8        $UPCASE13.  /* EXISTING AA8              */
+         @145  AA9        $UPCASE13.  /* EXISTING AA9              */
+         @161  AA10       $UPCASE13.  /* EXISTING AA10             */
+         @177  AA11       $UPCASE13.  /* EXISTING AA11             */
+         @193  AA12       $UPCASE13.  /* EXISTING AA12             */
+         @209  AA13       $UPCASE13.  /* EXISTING AA13             */
+         @225  AA14       $UPCASE13.  /* EXISTING AA14             */
+         @241  AA15       $UPCASE13.  /* EXISTING AA15             */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA10; /* MISE 2-AA */
+   INFILE ELDSAA10 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   APPL        $UPCASE6.  /* APPEAL                    */
+         @26   LINEBUS    $UPCASE60.  /* LINE OF BUSINESS          */
+         @89   BUSSNCE     $UPCASE4.  /* BUSINESS SINCE            */
+         @96   PLCEBUS     $UPCASE6.  /* PLACE OF BUSINESS         */
+         @105  EXPSNCE     $UPCASE4.  /* EXPERIENCE SINCE          */
+         @112  MRGADVE     $UPCASE6.  /* HOE-MARGIN OF ADVANCE     */
+         @121  OVRCRD1     $UPCASE1.  /* OVERRIDE CREDIT1          */
+         @125  OVRCRD2     $UPCASE1.  /* OVERRIDE CREDIT2          */
+         @129  OVRCRD3     $UPCASE1.  /* OVERRIDE CREDIT3          */
+         @133  OVRCRD4     $UPCASE1.  /* OVERRIDE CREDIT4          */
+         @137  OVRCRD5     $UPCASE1.  /* OVERRIDE CREDIT5          */
+         @141  OVRCRD6     $UPCASE1.  /* OVERRIDE CREDIT6          */
+         @145  OVRCRD7     $UPCASE1.  /* OVERRIDE CREDIT7          */
+         @149  OVRCRD8     $UPCASE1.  /* OVERRIDE CREDIT8          */
+         @153  OVRCRD9     $UPCASE1.  /* OVERRIDE CREDIT9          */
+         @157  OVRCRD10    $UPCASE1.  /* OVERRIDE CREDIT10         */
+         @161  OVRCRD11    $UPCASE1.  /* OVERRIDE CREDIT11         */
+         @165  OVRCRD12    $UPCASE1.  /* OVERRIDE CREDIT12         */
+         @169  OVRCRD13    $UPCASE1.  /* OVERRIDE CREDIT13         */
+         @173  OVROTH    $UPCASE150.  /* OVERRIDE CREDIT-BASIS/OTH */
+         @326  GRPCODE    $UPCASE55.  /* BASIC GROUP CODE          */
+         @384  AGGSAVE     $UPCASE3.  /* AGG SAVINGS/FD/CA/AVG     */
+         @390  AGGTRST     $UPCASE3.  /* AGGREGATE UNIT TRUST      */
+         @396  AGGSHRE     $UPCASE3.  /* AGGREGATE QUOTED SHARES   */
+         @402  CABRISCK   $UPCASE20.  /* CON ACCT:RST BRIS/CTOS    */
+         @425  CACCRSCK   $UPCASE30.  /* CON ACCT:RST CCRIS CHK    */
+         @458  CADCHQCK   $UPCASE30.  /* CON ACCT:RST DCHEQS       */
+         @491  CALGLACT    $UPCASE3.  /* CON ACCT:RST EXT LEGAL    */
+         @497  CAOTAS      $UPCASE3.  /* CON ACCT:OTAS             */
+         @503  CACOBF      $UPCASE3.  /* CON ACCT:COBF             */
+         @509  CADCHEQS    $UPCASE3.  /* CON ACCT:DCHEQS           */
+         @515  CACCRIS     $UPCASE3.  /* CON ACCT:CCRIS            */
+         @521  CACRSFIY   $UPCASE15.  /* CCRIS PBB/OTR FI LOAN(Y)  */
+         @539  CACRSFIN    $UPCASE3.  /* CCRIS PBB/OTR FI LOAN(N)  */
+         @545  CACRSPB     $UPCASE3.  /* CN ACCT:CCRIS(PBB LOAN)   */
+         @551  CACRSPBY   $UPCASE15.  /* CN ACCT:CCRIS(PBB LOAN)Y  */
+         @569  RABRISCK   $UPCASE20.  /* REL ACCT:RLT BRIS/CTOS    */
+         @592  RACCRIS    $UPCASE30.  /* REL ACCT:RLT CCRIS CHK    */
+         @625  RADCHQCK   $UPCASE30.  /* REL ACCT:RSL DCHEQS CHK   */
+         @658  RALGLACT    $UPCASE3.  /* REL ACCT:RSL LEGAL ACT    */
+         @664  RAOTAS      $UPCASE3.  /* REL ACCT:OTAS             */
+         @670  RACOBF      $UPCASE3.  /* REL ACCT:COBF             */
+         @676  RADCHEQS    $UPCASE3.  /* REL ACCT:DCHEQS           */
+         @682  RACRSFI     $UPCASE3.  /* REL ACCT:CCRIS(PBB/OTH)   */
+         @688  RACRSFIY   $UPCASE15.  /* REL ACCT:CCRIS(PBB/OTH)Y  */
+         @706  RACRSFIN    $UPCASE3.  /* REL ACCT:CCRIS(PBB/OTH)N  */
+         @712  RACRSPB     $UPCASE3.  /* REL ACCT:CCRIS(PBB)       */
+         @718  RACRSPBY   $UPCASE15.  /* REL ACCT:CCRIS(PBB)YES    */
+         @736  CMV        $UPCASE15.  /* CMV(TOTAL)                */
+         @754  DDASST     $UPCASE15.  /* DEED OF DEBEN-ASSETS      */
+         @772  DDDEBVAL   $UPCASE15.  /* DEED OF DEBEN-NET DBT VL  */
+         @790  BGAMNT     $UPCASE15.  /* SBLC/BG-AMOUNT            */
+         @808  BGDRADV     $UPCASE6.  /* SBLC/BG:DIRECT ADVANCES   */
+         @817  BGTOTADV    $UPCASE6.  /* SBLC/BG:TOTAL ADVANCES    */
+         @826  MRGNEMB     $UPCASE3.  /* MARGIN OF EMBARKING       */
+         @832  FDAMNT     $UPCASE15.  /* FIXED DEPOSIT RECEIPTS    */
+         @850  APLMARGIN   $UPCASE6.  /* APPEAL MARGIN OF ADVANCE  */
+         @859  CUSTTYPE   $UPCASE40.  /* TYPE OF CUSTOMER          */
+         @902  STAFFLNCOV  $UPCASE3.  /* CONVERSION FROM STAFF LN  */
+         @908  ERMNAME    $UPCASE50.  /* EARMARKING ACCOUNT NAME   */
+         @961  ERMACNO    $UPCASE15.  /* EARMARKING ACCOUNT NO.    */
+         @979  ERMAMT     $UPCASE20.  /* EARMARKING ACCOUNT AMOUN  */
+         @1002 REPCONTRY   $UPCASE2.  /* REPORTING COUNTRY         */
+         @1007 ECM3RES    $UPCASE15.  /* ECM3RES                   */
+         @1025 ECM8RES    $UPCASE15.  /* ECM8RES                   */
+         @1043 RESSTAT     $UPCASE1.  /* RESIDENCY STATUS          */
+         @1047 OVERCCR1          $1.  /* OVERALL CRR               */
+         @1051 CREDEXCP          $1.  /* CREDIT EXCEPTION          */
+         @1055 CTRCODE     $UPCASE3.
+         @1061 CTRCDDESC $UPCASE100.
+         @1164 CABCTOS   $UPCASE100.
+         @1267 RABCTOS   $UPCASE100.
+         @1370 FIN030RM   $UPCASE15.
+         @1388 FIN030      $UPCASE5.
+         @1396 FIN3160RM  $UPCASE15.
+         @1414 FIN3160     $UPCASE5.
+         @1422 FIN6190RM  $UPCASE15.
+         @1440 FIN6190     $UPCASE5.
+         @1448 FIN90RM    $UPCASE15.
+         @1466 FIN90       $UPCASE5.
+         @1474 FIN060RM   $UPCASE15.
+         @1492 FIN060      $UPCASE5.
+         @1500 FIN61120RM $UPCASE15.
+         @1518 FIN61120    $UPCASE5.
+         @1526 FIN121180RM $UPCASE15.
+         @1544 FIN121180   $UPCASE5.
+         @1552 FIN180RM   $UPCASE15.
+         @1570 FIN180      $UPCASE5.
+         @1578 TOTALRM    $UPCASE15.
+         @1596 TOTAL       $UPCASE5.
+         @1604 CONDOFACC   $UPCASE1.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA11; /* HP */
+   INFILE ELDSAA11 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   PRODTYPE   $UPCASE50.  /* PRODUCT TYPE              */
+         @70   BRHVALUE   $UPCASE20.  /* BRANCH VALUATION          */
+         @93   TOTCOST    $UPCASE20.  /* TOTAL COST                */
+         @116  TOTDEPO    $UPCASE20.  /* TOTAL DEPOSIT             */
+         @139  FISCHK     $UPCASE10.  /* FIS CHECKINGS             */
+         @152  SNLCHK     $UPCASE10.  /* SNL CHECKINGS             */
+         @165  CTOS       $UPCASE10.  /* CTOS                      */
+         @178  BRIS       $UPCASE10.  /* BRIS                      */
+         @191  FRAUDLS    $UPCASE10.  /* FRADULENT LIST            */
+         @204  PVLCHK     $UPCASE10.  /* PVL CHECKING              */
+         @217  CCRISCHK   $UPCASE10.  /* CCRIS CHECKING            */
+         @230  GNTORID    $UPCASE10.  /* GRTR'ID MATCHED IN CCRIS  */
+         @243  OUTCRDT     $UPCASE3.  /* REC OF OUTSTANDING CRDIT  */
+         @249  ODEXC1     $UPCASE15.  /* FREQNCY OF OD EXCESS 1    */
+         @267  ODEXC2     $UPCASE15.  /* FREQNCY OF OD EXCESS 2    */
+         @285  ODEXC3     $UPCASE15.  /* FREQNCY OF OD EXCESS 3    */
+         @303  OUTCHQ1    $UPCASE15.  /* OUTWARD CHEQUES RETURN 1  */
+         @321  OUTCHQ2    $UPCASE15.  /* OUTWARD CHEQUES RETURN 2  */
+         @339  OUTCHQ3    $UPCASE15.  /* OUTWARD CHEQUES RETURN 3  */
+         @357  CRDTBLNC   $UPCASE15.  /* AVR DAILY CREDIT BALANCE  */
+         @375  BALFD      $UPCASE15.  /* BAL OF SA/FD AMOUNT       */
+         @393  BSTOTAL    $UPCASE15.  /* BNK STATEMENT ALY:TOTAL   */
+         @411  HPLIAB     $UPCASE20.  /* AGGREGATE HP LIAB         */
+         @434  EXTLIAB    $UPCASE20.  /* AGG OTH EXS LIABILITIES   */
+         @457  CRDTLMT    $UPCASE20.  /* OVERALL CREDIT LIMIT      */
+         @480  APPNAME    $UPCASE60.  /* APPLICANT NAME            */
+         @543  APPIDNO    $UPCASE30.  /* APPLICANT ID NO           */
+         @576  APPSA      $UPCASE20.  /* APPLICANT SAVING A/C      */
+         @599  APPCA      $UPCASE20.  /* APPLICANT CURRENT A/C     */
+         @622  APPFD      $UPCASE20.  /* APPLICANT FIXED DEPOSIT   */
+         @645  APPASB     $UPCASE20.  /* APPLICANT ASB             */
+         @668  APPAWSB    $UPCASE20.  /* APPLICANT AWSB            */
+         @691  APPUT      $UPCASE20.  /* APPLICANT UNIT TRUST      */
+         @714  APPNBQS    $UPCASE20.  /* APP.NON-BLOCK QUOTED SHR  */
+         @737  APPINV     $UPCASE20.  /* APP.INVESTMENT (@80% CMV) */
+         @760  APPTDP     $UPCASE20.  /* APPLICANT TOTAL DEPOSIT   */
+         @783  GR1NAME    $UPCASE60.  /* GUARANTOR 1 NAME          */
+         @846  GR1IDNO    $UPCASE20.  /* GUARANTOR 1 ID NO         */
+         @869  GR1SA      $UPCASE20.  /* GUARANTOR 1 SAVING A/C    */
+         @892  GR1CA      $UPCASE20.  /* GUARANTOR 1 CURRENT A/C   */
+         @915  GR1FD      $UPCASE20.  /* GUARANTOR 1 FIXED DEPOSIT */
+         @938  GR1ASB     $UPCASE20.  /* GUARANTOR 1 ASB           */
+         @961  GR1AWSB    $UPCASE20.  /* GUARANTOR 1 AWSB          */
+         @984  GR1UT      $UPCASE20.  /* GUARANTOR 1 UNIT TRUST    */
+         @1007 GR1NBQS    $UPCASE20.  /* G.1 NON-BLOCK QUOTED SHR  */
+         @1030 GR1INV     $UPCASE20.  /* G.1 INVESTMENT (@80% CMV) */
+         @1053 GR1TDP     $UPCASE20.  /* GUARANTOR 1 TOTAL DEPOSIT */
+         @1076 GR2NAME    $UPCASE60.  /* GUARANTOR 2 NAME          */
+         @1139 GR2IDNO    $UPCASE20.  /* GUARANTOR 2 ID NO         */
+         @1162 GR2SA      $UPCASE20.  /* GUARANTOR 2 SAVING A/C    */
+         @1185 GR2CA      $UPCASE20.  /* GUARANTOR 2 CURRENT A/C   */
+         @1208 GR2FD      $UPCASE20.  /* GUARANTOR 2 FIXED DEPOSIT */
+         @1231 GR2ASB     $UPCASE20.  /* GUARANTOR 2 ASB           */
+         @1254 GR2AWSB    $UPCASE20.  /* GUARANTOR 2 AWSB          */
+         @1277 GR2UT      $UPCASE20.  /* GUARANTOR 2 UNIT TRUST    */
+         @1300 GR2NBQS    $UPCASE20.  /* G.2 NON-BLOCK QUOTED SHR  */
+         @1323 GR2INV     $UPCASE20.  /* G.2 INVESTMENT (@80% CMV) */
+         @1346 GR2TDP     $UPCASE20.  /* GUARANTOR 2 TOTAL DEPOSIT */
+         @1369 GR3NAME    $UPCASE60.  /* GUARANTOR 3 NAME          */
+         @1432 GR3IDNO    $UPCASE20.  /* GUARANTOR 3 ID NO         */
+         @1455 GR3SA      $UPCASE20.  /* GUARANTOR 3 SAVING A/C    */
+         @1478 GR3CA      $UPCASE20.  /* GUARANTOR 3 CURRENT A/C   */
+         @1501 GR3FD      $UPCASE20.  /* GUARANTOR 3 FIXED DEPOSIT */
+         @1524 GR3ASB     $UPCASE20.  /* GUARANTOR 3 ASB           */
+         @1547 GR3AWSB    $UPCASE20.  /* GUARANTOR 3 AWSB          */
+         @1570 GR3UT      $UPCASE20.  /* GUARANTOR 3 UNIT TRUST    */
+         @1593 GR3NBQS    $UPCASE20.  /* G.3 NON-BLOCK QUOTED SHR  */
+         @1616 GR3INV     $UPCASE20.  /* G.3 INVESTMENT (@80% CMV) */
+         @1639 GR3TDP     $UPCASE20.  /* GUARANTOR 3 TOTAL DEPOSIT */
+         @1662 EWP        $UPCASE20.  /* EXTENDED WARANTY PERIOD   */
+         @1685 INTSDYAMT  $UPCASE20.  /* INTEREST SUBSIDY AMOUNT   */
+         @1708 CASAIND    $UPCASE20.  /* CA SA INDICATOR           */
+         @1721 RNOTCASA   $UPCASE20.  /* REASON 4 NOT TAKEUP CASA  */
+         @1774 EIR         $UPCASE5.  /* EFFECTIVE INTEREST RATE   */
+         @1782 PREINST    $UPCASE15.  /* PREPAID INSTALMENTS       */
+         @1800 CASHDEP    $UPCASE15.  /* CASH DEPOSITS             */
+         @1818 OTHDEP     $UPCASE15.  /* OTHER DEPOSITS            */
+         @1836 INSCOMP    $UPCASE50.  /* INSURANCE COMPANY         */
+         @1889 INSCOMPADD $UPCASE200. /* INSURANCE COMPANY ADDRESS */
+         @2092 POLICYTYP  $UPCASE15.  /* TYPE OF POLICY            */
+         @2110 COVERNT    $UPCASE20.  /* COVER NOTE NO.            */
+         @2133 POLICYNO   $UPCASE20.  /* POLICY NO.                */
+         @2156 INSURAMT     COMMA15.  /* AMOUNT INSURED            */
+         @2174 EXPDT      $UPCASE10.  /* EXPIRY DATE               */
+         @2187 IDENVSCRIS $UPCASE10.  /* APPLICANT IN CCRIS DB     */
+         @2200 OSCREDIT    $UPCASE3.  /* APPLICANT ON OUTSTAND CR  */
+         @2206 INTRATE    $UPCASE30.  /* INTEREST RATE/INSTALMENT1 */
+         @2239 FDPLEDAMT  $UPCASE20.  /* FD PLEDGE AMOUNT          */
+         @2262 PLEDDURLN   $UPCASE3.  /* WHOLE HP TENURE           */
+         @2268 MTHINSTMNT   COMMA15.  /* MONTHLY INSTALMENT        */
+         @2286 FNLINSTMNT   COMMA15.  /* FINAL INSTALMENT          */
+         @2304 APPVLEVL         $40.  /* APPROVAL LEVEL            */
+         @2347 ENDORSED   $UPCASE60.  /* EIR/EFR ENDORSED BY       */
+         @2410 CONFIRMED  $UPCASE60.  /* EIR/EFR CONFIRMED BY      */
+         @2473 REMARK    $UPCASE100.  /* EIR/EFR Remark            */
+         @2576 DATE        DDMMYY10.  /* EIR/EFR Date              */
+         @2589 HANDFEETOT        18.  /* Handling Fee Total        */
+         @2607 HANDFEEGST        18.  /* Handling Fee Gst          */
+         ;
+   APPIDNO = SCAN(APPIDNO,1,',');
+   GR1IDNO = SCAN(GR1IDNO,1,',');
+   GR2IDNO = SCAN(GR2IDNO,1,',');
+   GR3IDNO = SCAN(GR3IDNO,1,',');
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA12;
+   INFILE ELDSAA12 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   FNAME      $UPCASE50.  /* FULL NAME                 */
+         @70   PROP       $UPCASE15.  /* PROPERTY                  */
+         @88   SHRES      $UPCASE15.  /* SHARES                    */
+         @106  UTRSTS     $UPCASE15.  /* UNIT TRUST                */
+         @124  SAVING     $UPCASE15.  /* SAVINGS/FD/CA             */
+         @142  OTHERS     $UPCASE15.  /* OTHERS                    */
+         @160  TOTASET    $UPCASE15.  /* TOTAL ASSETS              */
+         @178  TOTLIAB1   $UPCASE15.  /* TOTAL LIABILITIES         */
+         @196  BANK1      $UPCASE33.  /* ACCT FIN:NAME OF BANK 1   */
+         @232  TYPEACCT1  $UPCASE33.  /* ACCT FIN:TYPE ACCT 1      */
+         @268  ACCTNOF1   $UPCASE33.  /* ACCT FIN:ACCT NO.1        */
+         @304  TYPEFAC1   $UPCASE33.  /* ACCT FIN:TYPE FACILITY 1  */
+         @340  LMTAPP1    $UPCASE15.  /* ACCT FIN:LIMIT APPROVED 1 */
+         @358  BALANCE1   $UPCASE33.  /* ACCT FIN:BALANCE(RM)DATE1 */
+         @394  BANK2      $UPCASE33.  /* ACCT FIN:NAME OF BANK 2   */
+         @430  TYPEACCT2  $UPCASE33.  /* ACCT FIN:TYPE ACCT 2      */
+         @466  ACCTNOF2   $UPCASE33.  /* ACCT FIN:ACCT NO.2        */
+         @502  TYPEFAC2   $UPCASE33.  /* ACCT FIN:TYPE FACILITY 2  */
+         @538  LMTAPP2    $UPCASE15.  /* ACCT FIN:LIMIT APPROVED 2 */
+         @556  BALANCE2   $UPCASE33.  /* ACCT FIN:BALANCE(RM)DATE2 */
+         @592  OORACC1     $UPCASE7.  /* ACCT FIN:OWN/RELATED ACC1 */
+         @602  OORACC2     $UPCASE7.  /* ACCT FIN:OWN/RELATED ACC2 */
+         @612  TBANK1     $UPCASE33.  /* ACCT OTH:NAME OF BANK 1   */
+         @648  TOORACC1    $UPCASE7.  /* ACCT OTH:OWN/RELATED ACC1 */
+         @658  TTYPEACC1  $UPCASE33.  /* ACCT OTH:TYPE ACC 1       */
+         @694  TACCTNOF1  $UPCASE33.  /* ACCT OTH:ACCOUNT NO 1     */
+         @730  TTYPEFAC1  $UPCASE33.  /* ACCT OTH:TYPE FACILITY 1  */
+         @766  TLMTAPP1   $UPCASE15.  /* ACCT OTH:LIMIT APPROVED 1 */
+         @784  TBALANCE1  $UPCASE33.  /* ACCT OTH:BALANCE(RM)DATE1 */
+         @820  TBANK2     $UPCASE33.  /* ACCT OTH:NAME OF BANK 2   */
+         @856  TOORACC2    $UPCASE7.  /* ACCT OTH:OWN/RELATED ACC2 */
+         @866  TTYPEACC2  $UPCASE33.  /* ACCT OTH:TYPE ACC 2       */
+         @902  TACCTNOF2  $UPCASE33.  /* ACCT OTH:ACCOUNT NO 2     */
+         @938  TTYPEFAC2  $UPCASE33.  /* ACCT OTH:TYPE FACILITY 2  */
+         @974  TLMTAPP2   $UPCASE15.  /* ACCT OTH:LIMIT APPROVED 2 */
+         @992  TBALANCE2  $UPCASE33.  /* ACCT OTH:BALANCE(RM)DATE2 */
+         @1028 CADBCR     $UPCASE15.  /* ASSETS: CA (ADB CR)       */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA13;
+   INFILE ELDSAA13 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   EXTACCTNO  $UPCASE14.  /* EXISTING AA/ACCT NO.      */
+         @34   TYPE       $UPCASE40.  /* TYPE                      */
+         @77   FACILITY1  $UPCASE30.  /* FACILITY                  */
+         @110  LIMIT      $UPCASE20.  /* LIMIT                     */
+         @133  NEWAA      $UPCASE20.  /* NEW/CHANGE                */
+         @156  TOTAL      $UPCASE20.  /* TOTAL/AMOUNT FINANCED     */
+         @179  OUTSTND   $UPCASE150.  /* OUTSTANDING               */
+         @332  OUTDATE    $UPCASE10.  /* OUTSTANDING @ DATE        */
+         @345  PRICE     $UPCASE150.  /* PRICING                   */
+         @498  CNDACCT    $UPCASE20.  /* CONDUCT OF ACCOUNT        */
+         @521  FFSFSPSUS   $UPCASE5.
+         @529  STATUSOFR   $UPCASE5.
+         @537  FACTYPE     $UPCASE1.
+         @541  FACCODE    $UPCASE10.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA14;
+   INFILE ELDSAA14 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   BACCTNO   $UPCASE100.  /* BOR/CST/BRACH/ACCT NO.    */
+         @120  FACILITY2 $UPCASE120.  /* FACILITY                  */
+         @243  OPLMT     $UPCASE110.  /* APPROVED OPERATIVE LIMIT  */
+         @356  NATSEC    $UPCASE110.  /* NATURE OF SECURITY & CMV  */
+         @469  PRICE1    $UPCASE180.  /* PRICING                   */
+         @652  CONACCT    $UPCASE75.  /* CONDUCT OF ACCOUNT        */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA15;
+   INFILE ELDSAA15 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   SHREAC     $UPCASE30.  /* NAME SHR CNTR/UNIT TRST   */
+         @50   STCKCOD           10.  /* STOCK CODE                */
+         @63   SHRENO            12.  /* NO. OF SHARE/UNITS        */
+         @78   QUOPRC            20.  /* QTD PRC/UNT BUY'G PRC     */
+         @101  QUODATE           10.  /* QTD PRC/UNT BUY'G PRC DT  */
+         @114  MRKTVAL           30.  /* MARKET VALUE              */
+         @147  MRKTDATE          10.  /* MARKET VALUE DATE         */
+          ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA16;
+   INFILE ELDSAA16 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   OTHSCR     $UPCASE50.  /* OTHER SECURITIES          */
+         @70   ACCTNO16   $UPCASE16.  /* A/C NO.                   */
+         @89   AMOUNT1      COMMA15.  /* AMOUNT                    */
+         @107  DESC      $UPCASE100.  /* DESCRIPTION               */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA17;
+   INFILE ELDSAA17 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   CRRFRM     $UPCASE20.  /* CRR FORM                  */
+         @40   TOTSCRT            4.  /* TOL SCORE FOR TOL SCRTY   */
+         @47   TOTOVCRR           4.  /* TOL SCORE FOR OVR CRR     */
+         @54   ORGDECRR           4.  /* ORI DENOMINATOR FOR CRR   */
+         @61   EXTSCR             4.  /* EXACT VALUE OVERALL CRR   */
+         @68   GRDCRR      $UPCASE4.  /* GRADE FOR OVERALL CRR     */
+         @75   ORGDECCR           4.  /* ORI DENOMINATOR FOR CUST  */
+         @82   EXTVLCCR           4.  /* EXACT VALUE FOR CCR       */
+         @89   GRDCCR      $UPCASE4.  /* GRADE FOR CCR             */
+         @96   GRDSECR            1.  /* GRADE FOR SECURITY RATING */
+         @100  TOTCRD       COMMA15.  /* TOTAL CREDIT LIMIT        */
+         @118  TOTSCVAL     COMMA15.  /* TOTAL SECURITY VALUE      */
+         @136  MA                 6.2 /* M/A                       */
+         @145  TOTLOAN      COMMA15.  /* EXACT VALUE FR TOL LOAN   */
+         @163  GEAR               5.2 /* EXACT VALUE FOR GEARING   */
+         @171  GRRNGE     $UPCASE40.  /* GEARING : RANGE           */
+         @214  GRSCR              3.  /* GEARING : SCORE           */
+         @220  GRWGT              3.  /* GEARING : WEIGHT          */
+         @226  GRTOTSCR           3.  /* GEARING : TOTAL SCORE     */
+         @232  BBRNGE     $UPCASE50.  /* BORROWER BORROWING:RANGE  */
+         @285  BBSCR              3.  /* BORROWER BORROWING:SCORE  */
+         @291  BBWGT              3.  /* BORROWER BORROWING:WEIGHT */
+         @297  BBTOTSC            3.  /* BORROWER BORROWING:TOL SC */
+         @303  BBYY               4.  /* BORROWER BORROWING:YEAR   */
+         @310  BBMM       $UPCASE10.  /* BORROWER BORROWING:MONTH  */
+         @323  ACRNGE1    $UPCASE50.  /* ACCOUNT BORROWING:RANGE   */
+         @376  ACSCR1             3.  /* ACCOUNT BORROWING:SCORE   */
+         @382  ACWGT1             3.  /* ACCOUNT BORROWING:WEIGHT  */
+         @388  ACTOTSC1           3.  /* ACCOUNT BORROWING:TOL SC  */
+         @394  ACYY               4.  /* ACCOUNT BORROWING:YEAR    */
+         @401  ACMM       $UPCASE10.  /* ACCOUNT BORROWING:MONTH   */
+         @414  NWRNGE     $UPCASE30.  /* NET WORTH:RANGE           */
+         @447  NWSCR              3.  /* NET WORTH:SCORE           */
+         @453  NWWGT              3.  /* NET WORTH:WEIGHT          */
+         @459  NWTOTSC            3.  /* NET WORTH:TOTAL SCORE     */
+         @465  AGERNGE    $UPCASE30.  /* AGE-YEARS:RANGE           */
+         @498  AGESCR             3.  /* AGE-YEARS:SCORE           */
+         @504  AGEWGT             3.  /* AGE-YEARS:WEIGHT          */
+         @510  AGETOTSC           3.  /* AGE-YEARS:TOTAL SCORE     */
+         @516  TSRNGE    $UPCASE290.  /* TYPE OF SECURITY:RANGE    */
+         @809  TSSCR              3.  /* TYPE OF SECURITY:SCORE    */
+         @815  TSWGT              3.  /* TYPE OF SECURITY:WEIGHT   */
+         @821  TSTOTSC            3.  /* TYPE OF SECURITY:TOL SC   */
+         @827  DSDSR              8.  /* DEBT SER RATIO:EXT VALUE  */
+         @838  DSRNGE     $UPCASE40.  /* DEBT SERVICE RATIO:RANGE  */
+         @881  DSSCR              3.  /* DEBT SERVICE RATIO:SCORE  */
+         @887  DSWGT              3.  /* DEBT SERVICE RATIO:WEIGHT */
+         @893  DSTOTSC            3.  /* DEBT SERVICE RATIO:TOL SC */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA18;
+   INFILE ELDSAA18 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   BARNGE     $UPCASE75.  /* BORROWERS ACCOUNT:RANGE   */
+         @95   BATOTSC            3.  /* BORROWER ACCOUNT:TOL SC   */
+         @101  RARNGE     $UPCASE75.  /* RELATED ACCOUNT:RANGE     */
+         @179  RATOTSC            3.  /* RELATED ACCOUNT:TOTAL SC  */
+         @185  ILRNGE     $UPCASE30.  /* INCOME LEVEL:RANGE        */
+         @218  ILSCR              3.  /* INCOME LEVEL:SCORE        */
+         @224  ILWGT              3.  /* INCOME LEVEL:WEIGHT       */
+         @230  ILTOTSC            3.  /* INCOME LEVEL:TOTAL SCORE  */
+         @236  YBRNGE     $UPCASE40.  /* YEAR OF BUSINESS:RANGE    */
+         @279  YBSCR              3.  /* YEAR OF BUSINESS:SCORE    */
+         @285  YBWGT              3.  /* YEAR OF BUSINESS:WEIGHT   */
+         @291  YBTOTSC            3.  /* YEAR OF BUSINESS:TOL SC   */
+         @297  YBYY        $UPCASE4.  /* YEAR OF BUSINESS:YEAR     */
+         @304  YBMM       $UPCASE10.  /* YEAR OF BUSINESS:MONTH    */
+         @317  MERNGE     $UPCASE40.  /* MNGM EXPERIENCE:RANGE     */
+         @360  MESCR              3.  /* MNGM EXPERIENCE:SCORE     */
+         @366  MEWGT              3.  /* MNGMT EXPERIENCE:WEIGHT   */
+         @372  METOTSC            3.  /* MNGMT EXPERIENCE:TOL SC   */
+         @378  TIRNGE     $UPCASE30.  /* TYPE OF INDUSTRY:RANGE    */
+         @411  TISCR              3.  /* TYPE OF INDUSTRY:SCORE    */
+         @417  TIWGT              3.  /* TYPE OF INDUSTRY:WEIGHT   */
+         @423  TITTOTSC           3.  /* TYPE OF INDUSTRY:TOL SC   */
+         @429  TIBNMCD     $UPCASE4.  /* TYPE OF INDUSTRY:BNM CODE */
+         @436  TGVAL              5.  /* TURNOVER GROWTH:VALUE     */
+         @444  TGRNGE     $UPCASE30.  /* TURNOVER GROWTH:RANGE     */
+         @477  TGSCR              3.  /* TURNOVER GROWTH:SCORE     */
+         @483  TGWGT              3.  /* TURNOVER GROWTH:WEIGHT    */
+         @489  TGTOTSC            3.  /* TURNOVER GROWTH:TOTAL SC  */
+         @495  NPVAL              5.  /* NET PROFIT:VALUE          */
+         @503  NPRNGE     $UPCASE30.  /* NET PROFIT:RANGE          */
+         @536  NPSCR              3.  /* NET PROFIT:SCORE          */
+         @542  NPWGT              3.  /* NET PROFIT:WEIGHT         */
+         @548  NPTOTSC            3.  /* NET PROFIT:TOTAL SCORE    */
+         @554  ATVAL              9.  /* ACID TEST RATIO:VALUE     */
+         @566  ATRNGE     $UPCASE30.  /* ACID TEST RATIO:RANGE     */
+         @599  ATSCR              3.  /* ACID TEST RATIO:SCORE     */
+         @605  ATWGT              3.  /* ACID TEST RATIO: WEIGHT   */
+         @611  ATTOTSC            3.  /* ACID TEST RATIO:TOL SC    */
+         @617  LRVAL              5.  /* LEVERAGE RATIO:VALUE      */
+         @625  LRRNGE     $UPCASE30.  /* LEVERAGE RATIO:RANGE      */
+         @658  LRSCR              3.  /* LEVERAGE RATIO:SCORE      */
+         @664  LRWGT              3.  /* LEVERAGE RATIO:WEIGHT     */
+         @670  LRTOTSC            3.  /* LEVERAGE RATIO:TOTAL SC   */
+         @676  ICVAL              5.  /* INTEREST COGE RT:VALUE    */
+         @684  ICRNGE     $UPCASE30.  /* INTEREST COGE RT:RANGE    */
+         @717  ICSCR              3.  /* INTEREST COGE RT:SCORE    */
+         @723  ICWGT              3.  /* INTEREST COGE RT:WEIGHT   */
+         @729  ICTOTSC            3.  /* INTEREST COGE RT:TOL SC   */
+         @735  ACVAL              6.  /* AVG COLL PERIOD:VALUE     */
+         @744  ACRNGE2    $UPCASE30.  /* AVG COLL PERIOD:RANGE     */
+         @777  ACSCR2             3.  /* AVG COLL PERIOD:SCORE     */
+         @783  ACWGT2             3.  /* AVG COLL PERIOD:WEIGH     */
+         @789  ACTOTSC2           3.  /* AVG COLL PERIOD:TOL SC    */
+         @795  OPRNGE     $UPCASE75.  /* OPERATING CASHFLOW:RANGE  */
+         @873  OPSCR              3.  /* OPERATING CASHFLOW:SCORE  */
+         @879  OPWGT              3.  /* OPERATING CASHFLOW:WEIGHT */
+         @885  OPTOTSC            3.  /* OPERATING CASHFLOW:TOL SC */
+         @891  BERNGE     $UPCASE40.  /* BUSINESS EXP:RANGE        */
+         @934  BESCR              3.  /* BUSINESS EXP:SCORE        */
+         @940  BEWGT              3.  /* BUSINESS EXP:WEIGHT       */
+         @946  BETOTSC            3.  /* BUSINESS EXP:TOTAL SC     */
+         @952  BEYY        $UPCASE4.  /* BUSINESS EXP:YEAR         */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA19;
+   INFILE ELDSAA19 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   CBRNGE     $UPCASE30.  /* AVG CREDIT BALANCES:RANGE */
+         @50   CBSCR       $UPCASE3.  /* AVG CREDIT BALANCES:SCORE */
+         @56   CBWGT       $UPCASE3.  /* AVG CREDIT BALANCES:WEIGHT*/
+         @62   CBTOTSC     $UPCASE3.  /* AVG CREDIT BALANCES:TOL SC*/
+         @68   ADRNGE     $UPCASE30.  /* AVG AMT DEPOSITED:RANGE   */
+         @101  ADSCR       $UPCASE3.  /* AVG AMT DEPOSITED:SCORE   */
+         @107  ADWGT       $UPCASE3.  /* AVG AMT DEPOSITED:WEIGHT  */
+         @113  ADTOTSC     $UPCASE3.  /* AVG AMT DEPOSITED:TOL SC  */
+         @119  PORNGE     $UPCASE60.  /* PREMISES OWNERSHIP:RANGE  */
+         @182  POSCR       $UPCASE3.  /* PREMISES OWNERSHIP:SCORE  */
+         @188  POWGT       $UPCASE3.  /* PREMISES OWNERSHIP:WEIGHT */
+         @194  POTOTSC     $UPCASE3.  /* PREMISES OWNERSHIP:TOL SC */
+         @200  MDEXTVL    $UPCASE11.  /* EXT VAL FOR AVG MON DEPO  */
+         @214  MTEXTVAL   $UPCASE11.  /* EXT VAL FOR AVG MON TUR   */
+         @228  MDRNGE     $UPCASE30.  /* AVG MON DEPOSITS:RANGE    */
+         @261  MDSCR       $UPCASE3.  /* AVG MON DEPOSITS:SCORE    */
+         @267  MDWGT       $UPCASE3.  /* AVG MON DEPOSITS:WEIGHT   */
+         @273  MDTOTSC     $UPCASE3.  /* AVG MONDEPOSITS:TOL SC    */
+         @279  MPEXTVL    $UPCASE11.  /* EXT VAL FR AVG MON PROFIT */
+         @293  MIEXTVAL   $UPCASE11.  /* EXT VAL FR AVG MON INSTAL */
+         @307  MPRNGE     $UPCASE30.  /* AVG MONTHLY PROFIT:RANGE  */
+         @340  MPSCR       $UPCASE3.  /* AVG MONTHLY PROFIT:SCORE  */
+         @346  MPWGT       $UPCASE3.  /* AVG MONTHLY PROFIT:WEIGHT */
+         @352  MPTOTSC     $UPCASE3.  /* AVG MONTHLY PROFIT:TOL SC */
+         @358  OCRNGE      $UPCASE5.  /* OCCUPATION:RANGE          */
+         @366  OCSCR       $UPCASE3.  /* OCCUPATION:SCORE          */
+         @372  OCWHT       $UPCASE3.  /* OCCUPATION:WEIGHT         */
+         @378  OCTOTSC     $UPCASE3.  /* OCCUPATION:TOTAL SCORE    */
+         @384  SGRNGE     $UPCASE20.  /* SCH/UNSCH GOODS:RANGE     */
+         @407  SGSCR       $UPCASE3.  /* SCH/UNSCH GOODS:SCORE     */
+         @413  SGWGT       $UPCASE3.  /* SCH/UNSCH GOODS:WEIGHT    */
+         @419  SGTOTSC     $UPCASE3.  /* SCH/UNSCH GOODS:TOL SCORE */
+         @425  TVRNGE     $UPCASE50.  /* TYPE OF VEHICLE:RANGE     */
+         @478  TVSCR       $UPCASE3.  /* TYPE OF VEHICLE:SCORE     */
+         @484  TVWGT       $UPCASE3.  /* TYPE OF VEHICLE:WEIGHT    */
+         @490  TVTOTSC     $UPCASE3.  /* TYPE OF VEHICLE:TOTAL SC  */
+         @496  TRRNGE     $UPCASE30.  /* TRACK RECORDS:RANGE       */
+         @529  TRSCR       $UPCASE3.  /* TRACK RECORDS:SCORE       */
+         @535  TRWGT       $UPCASE3.  /* TRACK RECORDS:WEIGHT      */
+         @541  TRTOTSC     $UPCASE3.  /* TRACK RECORDS:TOTAL SCORE */
+         @547  TRYY        $UPCASE4.  /* TRACK RECORDS:YEAR        */
+         @554  TRPRD      $UPCASE10.  /* TRACKS RECORDS:PERIOD     */
+         @567  CARNGE     $UPCASE40.  /* ACCT WITH OTHER FI: RANGE */
+         @610  CASCR       $UPCASE3.  /* ACCT WITH OTHER FI:SCORE  */
+         @616  CAWGT       $UPCASE3.  /* ACCT WITH OTHER FI:WEIGHT */
+         @622  CATOTSC     $UPCASE3.  /* ACCT WITH OTHER FI:TOL SC */
+         @628  LSRNGE     $UPCASE60.  /* LIQUIDITY OF SEC:RANGE    */
+         @691  LSSCR       $UPCASE3.  /* LIQUIDITY OF SEC:SCORE    */
+         @697  LSWGT       $UPCASE3.  /* LIQUIDITY OF SEC:WEIGHT   */
+         @703  LSTOTSC     $UPCASE3.  /* LIQUIDITY OF SEC:TOL SC   */
+         @709  MSRNGE     $UPCASE20.  /* MARGIN OF ADV(SG):RANGE   */
+         @732  MSSCR       $UPCASE3.  /* MARGIN OF ADV(SG):SCORE   */
+         @738  MSWGT       $UPCASE3.  /* MARGIN OF ADV(SG):WEIGHT  */
+         @744  MSTOTSC     $UPCASE3.  /* MARGIN OF ADV(UG):TOT SC  */
+         @750  MURNGE     $UPCASE20.  /* MARGIN OF ADV(UG):RANGE   */
+         @773  MUSCR       $UPCASE3.  /* MARGIN OF ADV(UG):SCORE   */
+         @779  MUWGT       $UPCASE3.  /* MARGIN OF ADV(UG):WEIGHT  */
+         @785  MUTOTSC     $UPCASE3.  /* MARGIN OF ADV(UG):TOL SC  */
+         @791  CARNGE1    $UPCASE30.  /* CONDUCT OF ACCT:RANGE     */
+         @824  CASCR1      $UPCASE3.  /* CONDUCT OF ACCT:SCORE     */
+         @830  CAWGT1      $UPCASE3.  /* CONDUCT OF ACCT:WEIGHT    */
+         @836  CATOTSC1    $UPCASE3.  /* CONDUCT OF ACCT:TOT SCORE */
+         @842  MSTRNGE     $UPCASE5.  /* MNGMNT STRENGHT:RANGE     */
+         @850  MSTSCR      $UPCASE3.  /* MNGMNT STRENGHT:SCORE     */
+         @856  MSTWGT      $UPCASE3.  /* MNGMNT STRENGHT:WEIGHT    */
+         @862  MSTTOSC     $UPCASE3.  /* MNGMNT STRENGHT:TOL SCORE */
+         @868  GARNGE     $UPCASE20.  /* GROWTH IN NET ASS:RANGE   */
+         @891  GASCR       $UPCASE3.  /* GROWTH IN NET ASS:SCORE   */
+         @897  GAWGT       $UPCASE3.  /* GROWTH IN NET ASS:WEIGHT  */
+         @903  GATOTSC     $UPCASE3.  /* GROWTH IN NET ASS:TOT SC  */
+         @909  CRRNGE     $UPCASE20.  /* CURRENT RATIO:RANGE       */
+         @932  CRSCR       $UPCASE3.  /* CURRENT RATIO:SCORE       */
+         @938  CRWGT       $UPCASE3.  /* CURRENT RATIO:WEIGHT      */
+         @944  CRTOTSC     $UPCASE3.  /* CURRENT RATIO:TOTAL SCORE */
+         @950  DCRNGE     $UPCASE15.  /* DEBT COVER RATIO:RANGE    */
+         @968  DCSCR       $UPCASE3.  /* DEBT COVER RATIO:SCORE    */
+         @974  DCWGT       $UPCASE3.  /* DEBT COVER RATIO:WEIGHT   */
+         @980  DCTOTSC     $UPCASE3.  /* DEBT COVER RATIO:TOL SC   */
+         @986  TORNGE      $UPCASE5.  /* TURNOVER:RANGE            */
+         @994  TOSCR       $UPCASE3.  /* TURNOVER:SCORE            */
+         @1000 TOWGT       $UPCASE3.  /* TURNOVER:WEIGHT           */
+         @1006 TOTOTSC     $UPCASE3.  /* TURNOVER:TOTAL SCORE      */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA20;
+   INFILE ELDSAA20 FIRSTOBS=2 TRUNCOVER END=EOF;
+   INPUT @01   MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @17   MARNGE     $UPCASE80.  /* MARGIN OF ADVANCE: RANGE  */
+         @100  MASCR       $UPCASE3.  /* MARGIN OF ADVANCE: SCORE  */
+         @106  MAWGT       $UPCASE3.  /* MARGIN OF ADVANCE: WEIGHT */
+         @112  MATOTSC     $UPCASE3.  /* MARGIN OF ADVANCE:TOLSCORE*/
+         @118  MARNGE2    $UPCASE30.  /* MARGIN OF ADVANCE 2:RANGE */
+         @151  MASCR2      $UPCASE3.  /* MARGIN OF ADVANCE 2:SCORE */
+         @157  MAWGT2      $UPCASE3.  /* MARGIN OF ADVANCE 2:WEIGHT*/
+         @163  MATOTSC2    $UPCASE3.  /* MARGIN OF ADVANCE 2:TSCORE*/
+         @169  NCRNGE     $UPCASE80.  /* NETCASHFLOW(AUD):RANGE    */
+         @252  NCTOTSC     $UPCASE3.  /* NETCASHFLOW(AUD):TOL SCORE*/
+         @258  CRRBRANCH   $UPCASE5.  /* CRR BRANCH                */
+         @266  CRRCOD      $UPCASE5.  /* CRR COD/HEAD OFFICE       */
+         @274  ASGIRANGE  $UPCASE30.  /* ANNUAL GROSS INCOME:RANGE */
+         @307  ASGISCORE   $UPCASE3.  /* ANNUAL GROSS INCOME:SCORE */
+         @313  ASGIWEIGHT  $UPCASE3.  /* ANNUAL GROSS INCOME:WEIGHT*/
+         @319  ASGITSCORE  $UPCASE3.  /* ANNUAL GROSS INCOME:TSCORE*/
+         @325  TYINRANGE  $UPCASE50.  /* TYPE OF INCOME:RANGE      */
+         @378  TYINSCORE   $UPCASE3.  /* TYPE OF INCOME:SCORE      */
+         @384  TYINWEIGHT  $UPCASE3.  /* TYPE OF INCOME:WEIGHT     */
+         @390  TYINTSCORE  $UPCASE3.  /* TYPE OF INCOME:TOT SCORE  */
+         @396  NTJBRANGE  $UPCASE90.  /* NATURAL OF JOB:RANGE      */
+         @489  NTJBSCORE   $UPCASE3.  /* NATURAL OF JOB:SCORE      */
+         @495  NTJBWEIGHT  $UPCASE3.  /* NATURAL OF JOB:WEIGHT     */
+         @501  NTJBTSCORE  $UPCASE3.  /* NATURAL OF JOB:TOT SCORE  */
+         @507  FINRANGE   $UPCASE30.  /* FINANCIAL RESOURCE:RANGE  */
+         @540  FINSCORE    $UPCASE3.  /* FINANCIAL RESOURCE:SCORE  */
+         @546  FINWEIGHT   $UPCASE3.  /* FINANCIAL RESOURCE:WEIGHT */
+         @552  FINTSCORE   $UPCASE3.  /* FINANCIAL RESOURCE:TSCORE */
+         @558  UTILRANGE  $UPCASE30.  /* UTILIZATION RATE CC:RANGE */
+         @591  UTILSCORE   $UPCASE3.  /* UTILIZATION RATE CC:SCORE */
+         @597  UTILWEIGHT  $UPCASE3.  /* UTILIZATION RATE CC:WEIGHT*/
+         @603  UTILTSCORE  $UPCASE3.  /* UTILIZATION RATE CC:TSCORE*/
+         @609  TLPLRANGE  $UPCASE30.  /* TOL OUTSTND BAL PL:RANGE  */
+         @642  TLPLSCORE   $UPCASE3.  /* TOL OUTSTND BAL PL:SCORE  */
+         @648  TLPLWEIGHT  $UPCASE3.  /* TOL OUTSTND BAL PL:WEIGHT */
+         @654  TLPLTSCORE  $UPCASE3.  /* TOL OUTSTND BAL PL:TSCORE */
+         @660  AUDITOPN    $UPCASE1.  /* ADVERSE AUDITOR OPINION   */
+         @664  EMPAUDITOR  $UPCASE1.  /* EMPHASIS OF MATTER BY AUD */
+         @668  AUDLIST     $UPCASE1.  /* AUD UNDER PBB REFER TO HO */
+         @672  LOSSINCUR1  $UPCASE1.  /* LOSSES INCURR FOR 2 YEARS */
+         @676  LOSSINCUR2  $UPCASE1.  /* LOSS INCURR MST RECENT YR */
+         @680  NEGCFLOW    $UPCASE1.  /* NEGATIVE CASHFLOW         */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA21; /* HP2 NEW - BSA=BANK STATEMENT ANALYSIS */
+   INFILE ELDSAA21 FIRSTOBS=2 MISSOVER END=EOF;
+   INPUT @001  MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @017  BANKBRC1   $UPCASE60.  /* BSN:BANK NAME& BRANCH 1   */
+         @080  BANKBRC2   $UPCASE60.  /* BSN:BANK NAME& BRANCH 2   */
+         @143  BANKBRC3   $UPCASE60.  /* BSN:BANK NAME& BRANCH 3   */
+         @206  NAMEACC1   $UPCASE60.  /* BSN:NAME OF ACCT HOLDER1  */
+         @269  NAMEACC2   $UPCASE60.  /* BSN:NAME OF ACCT HOLDER2  */
+         @332  NAMEACC3   $UPCASE60.  /* BSN:NAME OF ACCT HOLDER3  */
+         @395  PERIODF1   $UPCASE10.  /* BSN:PERIOD FROM 1         */
+         @408  PERIODT1   $UPCASE10.  /* BSN:PERIOD TO 1           */
+         @421  PERIODF2   $UPCASE10.  /* BSN:PERIOD FROM 2         */
+         @434  PERIODT2   $UPCASE10.  /* BSN:PERIOD TO 2           */
+         @447  PERIODF3   $UPCASE10.  /* BSN:PERIOD FROM 3         */
+         @460  PERIODT3   $UPCASE10.  /* BSN:PERIOD TO 3           */
+         @473  PERCENS1    $UPCASE5.  /* BSN:PERCENTAGE OF SHARE1  */
+         @481  PERCENS2    $UPCASE5.  /* BSN:PERCENTAGE OF SHARE2  */
+         @489  PERCENS3    $UPCASE5.  /* BSN:PERCENTAGE OF SHARE3  */
+         @497  BALUT      $UPCASE20.  /* BSN:BALANCE OF UNITTRUST  */
+         @520  MODEL      $UPCASE20.  /* MODEL                     */
+         @543  CATEGORY   $UPCASE15.  /* CATEGORY                  */
+         @561  GOODS      $UPCASE15.  /* GOODS TO BE USE           */
+         @579  COLLACODE  $UPCASE70.  /* COLLATERAL CODE           */
+         @652  BDM         $UPCASE7.  /* BDM                       */
+         @662  VEHMAKE    $UPCASE20.  /* GOODS:VEHICLE MAKE        */
+         @685  VEHRLIST    $UPCASE3.  /* GOODS:VEHICLE REFER LIST  */
+         @691  AGEVEH     $UPCASE30.  /* GOODS:AGE OF VEHICLE      */
+         @724  VERIFIAP    $UPCASE3.  /* GOODS:VERIFICATION OF AP  */
+         @730  APHOLDER   $UPCASE40.  /* GOODS:AP HOLDER           */
+         @773  PEKEMA      $UPCASE3.  /* GOODS:PEKEMA MEMBER       */
+         @779  NOPEKEMA   $UPCASE40.  /* GOODS:IF NOT PEKEMA       */
+         @822  COLLCOND   $UPCASE25.  /* GOODS:COLLATERAL COND.    */
+         @850  EQUIPTYP   $UPCASE30.  /* GOODS:EQUIPMENT TYPE      */
+         @883  CLASSIFI   $UPCASE20.  /* GOODS:CLASSIFICATION      */
+         @906  CASHDEAL    $UPCASE3.  /* GOODS:CASH DEAL           */
+         @912  YEARMADE    $UPCASE4.  /* GOODS:YEAR MADE           */
+         @919  REGNO      $UPCASE25.  /* GOODS:REGISTRATION NO.    */
+         @947  LGBOOKNO   $UPCASE10.  /* GOODS:LOG BOOK NUMBER     */
+         @960  ENGINENO   $UPCASE20.  /* GOODS:ENGINE NO.          */
+         @983  CHASSIS    $UPCASE20.  /* GOODS:CHASSIS/SERIAL NO   */
+         @1006 CC          $UPCASE5.  /* GOODS:CUBIC CAPACITY      */
+         @1014 REGDATE    $UPCASE10.  /* GOODS:REGISTRATION DATE   */
+         @1027 NEWVHTNC    $UPCASE1.  /* GOODS:NEW VEH.TERMS&COND  */
+         @1031 COLOUR     $UPCASE15.  /* GOODS:COLOUR              */
+         @1049 FUELTYPE   $UPCASE15.  /* GOODS:FUEL TYPE           */
+         @1067 TYPOARRG    $UPCASE6.  /* GOODS:TYPE OF ARRANGEMEN  */
+         @1076 ROADTEXP    $UPCASE3.  /* GOODS:ROADTAX EXPIRED     */
+         @1082 RDTEXPREM  $UPCASE60.  /* GOODS:ROADTAX EXP.REMARK  */
+         @1145 REGCDSS     $UPCASE3.  /* GOODS:REG.CARD SAMB       */
+         @1151 REGCDSSRM  $UPCASE60.  /* GOODS:REG.CARD SAMB REMK  */
+         @1214 DLNAME     $UPCASE60.  /* GOODS:SELLER/DEALER NAME  */
+         @1277 DLIDTYPE   $UPCASE30.  /* GOODS:SELLER/DLR ID TYPE  */
+         @1310 DLID       $UPCASE40.  /* GOODS:SELLER/DEALER ID    */
+         @1353 DLREGSS     $UPCASE3.  /* GOODS:S/D REG BIZ SBH&SW  */
+         @1359 LRNAME     $UPCASE40.  /* GOODS:LAST REG.OWNR NAME  */
+         @1402 LRIDTYPE   $UPCASE30.  /* GOODS:'' REG.OWNR ID TYP  */
+         @1435 LRID       $UPCASE40.  /* GOODS:'' REG.OWNR ID      */
+         @1478 ROREGSS     $UPCASE3.  /* GOODS:'' REG BIZ SBH&SWK  */
+         @1484 RELLRAPP   $UPCASE40.  /* GOODS:RELATION OF LR-APP  */
+         @1527 SRCBSNS    $UPCASE20.  /* GOODS:SOURCE OF BUSINESS  */
+         @1550 DLCODE     $UPCASE15.  /* GOODS:DEALER'S CODE       */
+         @1568 TYPEODL    $UPCASE50.  /* GOODS:TYPE OF DEALER      */
+         @1621 SRCVEH     $UPCASE40.  /* GOODS:SOURCE OF VEHICLE   */
+         @1664 SLNAME     $UPCASE40.  /* GOODS:SALESMAN NAME       */
+         @1707 SLIDTYPE   $UPCASE10.  /* GOODS:SALESMAN ID TYPE    */
+         @1720 SLID       $UPCASE40.  /* GOODS:SALESMAN ID         */
+         @1763 GDTBKA    $UPCASE120.  /* GOODS:GOODS 2 BE KEPT AT  */
+         @1886 STATE      $UPCASE20.  /* GOODS:STATE               */
+         @1909 VEHSPEC    $UPCASE60.  /* VEHICLE SPEC              */
+         @1972 VEHREFLIST  $UPCASE3.  /* VEHICLE REFERLIST         */
+         @1978 AACRTDBY   $UPCASE60.  /* AACREATEDBY(MOBILE)       */
+         @2041 AACRTDTM   $UPCASE60.  /* AACREATEDTIME(MOBILE)     */
+         @2104 AASBMTBY   $UPCASE60.  /* AASUBMITTEDBY(MOBILE)     */
+         @2167 AASBMTTM   $UPCASE60.  /* AASUBMITTEDTIME(MOBILE)   */
+         @2230 AASBMISN    $UPCASE5.  /* TatAASUBMiSSION           */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA22; /* SOLE PROPRIETOR'S / PARTNERS'/ DIRECTORS'*/
+   INFILE ELDSAA22 FIRSTOBS=2 MISSOVER END=EOF;
+   INPUT @001  MAANO      $UPCASE13.  /* MAIN AA NO                */
+         @080  TYPEIDENT   $UPCASE2.  /* TYPE OF IDENTIFICATION    */
+         @085  IDNO       $UPCASE50.  /* ID NO.                    */
+         @138  MONINCOME  $UPCASE20.  /* MONTHLY INCOME            */
+         @161  DOB        $UPCASE10.  /* DATE OF BIRTH             */
+         @174  READDRESS $UPCASE150.  /* RESIDENTIAL ADDRESS       */
+         @327  NATION     $UPCASE55.  /* NATIONALITY               */
+         @385  POHELD     $UPCASE15.  /* POSITION HELD             */
+         @403  PERCENSHA   $UPCASE5.  /* PERCENTAGE OF SHAREHOLDING*/
+         @411  AGE         $UPCASE3.  /* AGE                       */
+         @417  OCCUPATION $UPCASE40.  /* OCCUPATION                */
+         @460  PLML       $UPCASE10.  /* PL/ML                     */
+         @473  INCOMEPA   $UPCASE15.  /* INCOME P.A                */
+         @491  NETWORTH   $UPCASE45.  /* ESTIMATED NETWORTH        */
+         @539  APPOINTDT  $UPCASE10.  /* DATE OF APPOINTMENT       */
+         @552  SPPSIBITYPE $UPCASE3.
+         @557  SPPSIBINUM $UPCASE12.
+         @572  DSR         $UPCASE8.
+         @583  GROSSINC   $UPCASE15.
+         @601  DSRAMEND    $UPCASE8.
+         @612  APPNAME   $UPCASE150.  /* LONG NAME                 */
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA23; /* APPEAL */
+   INFILE ELDSAA23 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR13.
+         AANO                :  $CHAR13.
+         APPL_ST             :   $CHAR6.
+         FACILITY            :  $CHAR68.
+         LIMIT               :  COMMA14.
+         BNM_EIR             :   $CHAR6.
+         PRICING             : $CHAR262.
+         SYMBOL_SC           :   $CHAR1.
+         STATUS              :   $CHAR9.
+         APRV_NAME1          :  $CHAR45.
+         APRV_DESG1          :  $CHAR39.
+         STATUS_DT1          : DDMMYY10.
+         APRV_NAME2          :  $CHAR45.
+         APRV_DESG2          :  $CHAR39.
+         STATUS_DT2          : DDMMYY10.
+         APP_REJ_DT          : DDMMYY10.
+         RETURN_DT           : DDMMYY10.
+         CR_COM_MEET_DT      : DDMMYY10.
+         NOT_VETOED_BY_BOARD : DDMMYY10.
+         APRV_LEV            :   $CHAR1.
+         PROCESS_OFFICER     :  $CHAR33.
+         HOE_MARGIN          :   $CHAR6.
+         EARMARKING_MARGIN   :   $CHAR2.
+         APPEALNO            :   $CHAR2.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA24; /* CRR AA */
+   INFILE ELDSAA24 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR13.
+         CRR_FORM            :  $CHAR17.
+         CRR_LEVEL           :   $CHAR9.
+         CRR_ITEM            :  $CHAR12.
+         CRR_FACTOR          : $CHAR400.
+         CRR_VALUE           : $CHAR120.
+         CRR_RANGE           : $CHAR550.
+         CRR_SCORE           :   $CHAR3.
+         CRR_WEIGHT          :   $CHAR8.
+         CRR_TOTSCORE        :   $CHAR8.
+         CRR_GRADE           :   $CHAR5.
+         CRR_SUBSECSCORE     :   $CHAR8.
+         CRR_DENOMINATOR     :   $CHAR8.
+         CRR_PERCENT         :   $CHAR8.
+         CRR_OWNER           : $CHAR150.
+         CRR_CATEGORY        :  $CHAR50.
+         CMV                 :  $CHAR12.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA25; /* APP_STATUS_AA */
+   INFILE ELDSAA25 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR13.
+         APP_ST              : $CHAR100.
+         APP_ACTION          : $CHAR100.
+         APP_BYWHO           :  $CHAR60.
+         APP_DT              : DDMMYY10.
+         APP_TIME            :  $CHAR11.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA26; /* SUPPORT_FACTOR_AA */
+   INFILE ELDSAA26 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR13.
+         FIELD               :  $CHAR18.
+         VALUE               : $CHAR500.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA27; /* LOANREPAYMENT_AA */
+   INFILE ELDSAA27 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR14.
+         NAME                : $CHAR100.
+         ID                  :  $CHAR25.
+         BORROWERTYPE        :  $CHAR20.
+         NEWIND              :  $CHAR40.
+         FACILITY            :  $CHAR35.
+         LIMIT               :  COMMA12.
+         INTEREST_RT         :   COMMA5.
+         TENURE              :  $CHAR26.
+         DERIVED_INSTALMENT  :  COMMA16.2
+         ACTUAL_INSTALMENT   :  COMMA16.2
+         BNMINCDOC           :   $CHAR3.
+         DEVEPF              :  $CHAR60.
+         DEVCASA             :  $CHAR60.
+         DEVOTHS             :  $CHAR60.
+         DEVPAY              :        8.
+         DEVPAY2             :   $CHAR1.
+         DEVPAY3             :   $CHAR1.
+         DEVPAY4             :   $CHAR1.
+         DEVPAY5             :   $CHAR1.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA28; /* ACC_CONDUCT_AA */
+   INFILE ELDSAA28 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR13.
+         NAME                :  $CHAR90.
+         ID                  :  $CHAR13.
+         BRRWERTYPE          :   $CHAR9.
+         SINCEDT             :  $CHAR21.
+         ACCNATURE           :   $CHAR7.
+         ACCHOLDER           :   $CHAR5.
+         ODLIMIT             :  COMMA15.
+         AMD                 :  COMMA15.
+         ADB                 :  $CHAR30.
+         EXCESSFREQ          :  $CHAR14.
+         CHQRTRN             :   $CHAR2.
+         ACCACTVTY           :   $CHAR8.
+         CACONDUCT           :  $CHAR14.
+         REPAYMENT           :  $CHAR14.
+         BTCONDUCT           :  $CHAR14.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA29; /* REASON_AA */
+   INFILE ELDSAA29 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR13.
+         REASONFOR           :  $CHAR45.
+         REASON              : $CHAR294.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA30;
+   INFILE ELDSAA30 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR32.
+         CATEGORY            :  $CHAR20.
+         LISTNO              :   $CHAR5.
+         DESC                : $CHAR300.
+         VALUE               :   $CHAR6.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA31;
+   INFILE ELDSAA31 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR13.
+         NAMEOFCOMP          : $CHAR150.
+         TYPEOFID            :   $CHAR2.
+         IDNO                :  $CHAR20.
+         COUNTRY             :  $CHAR55.
+         DATEOFREG           :  $CHAR10.
+         SECCODE             :   $CHAR7.
+         ADDRESS             : $CHAR200.
+         CONTACTNOHSE        :  $CHAR10.
+         CONTACTNOOFF        :  $CHAR10.
+         CONTACTNOMOB        :  $CHAR11.
+         CONTACTNOOVER       :  $CHAR20.
+         NEWINCORPCOMP       :   $CHAR3.
+         PRIMEMOVER          :   $CHAR3.
+         GUARANTOR           :   $CHAR3.
+         PROMOTER            :   $CHAR3.
+         HOLDCOMP            :   $CHAR3.
+         CCRISREP            :   $CHAR3.
+         BUSSDESC            :  $CHAR60.
+         BUSSSINCE           :   $CHAR4.
+         PROXY               :   $CHAR3.
+         NAMEOFPRIME         :  $CHAR60.
+         RACE                :   $CHAR7.
+         EXPSINCE            :   $CHAR4.
+         APPBUSS             :   $CHAR3.
+         GOODCOND            :   $CHAR3.
+         MONTH               :   $CHAR9.
+         YEAR                :   $CHAR4.
+         GOODCOND2           :   $CHAR3.
+         MONTH2              :   $CHAR9.
+         YEAR2               :   $CHAR4.
+         PXACC               :  $CHAR20.
+         PXACCDES            : $CHAR100.
+         PXRLTDACC           :  $CHAR20.
+         PXRLTDACCDES        : $CHAR100.
+         DPXACC              :  $CHAR26.
+         DPXRLTDACC          :  $CHAR26.
+         EPXACC              :   $CHAR3.
+         EPXACCDES           : $CHAR100.
+         EPXRLTDACC          :   $CHAR3.
+         EPXRLTDACCDES       : $CHAR100.
+         CRRSCORE            :   $CHAR3.
+         CRRGRADE            :   $CHAR5.
+         DEBTOR              :  $CHAR15.
+         RM030               :  $CHAR15.
+         PCT030              :   $CHAR5.
+         RM3160              :  $CHAR15.
+         PCT3160             :   $CHAR5.
+         RM6190              :  $CHAR15.
+         PCT6190             :   $CHAR5.
+         RM90                :  $CHAR15.
+         PCT90               :   $CHAR5.
+         RM060               :  $CHAR15.
+         PCT060              :   $CHAR5.
+         RM61120             :  $CHAR15.
+         PCT61120            :   $CHAR5.
+         RM121180            :  $CHAR15.
+         PCT121180           :   $CHAR5.
+         RM180               :  $CHAR15.
+         PCT180              :   $CHAR5.
+         TOTALRM             :  $CHAR15.
+         TOTALPCT            :   $CHAR5.
+         ADAUOPI             :   $CHAR3.
+         EMMATAUD            :   $CHAR3.
+         AUDUNDPBB           :   $CHAR3.
+         CONDOFCA            :  $CHAR15.
+         CONDREPAY           :  $CHAR15.
+         CONDTRDBIL          :  $CHAR15.
+         BRISCTOS            :  $CHAR45.
+         BRISCTOSDES         : $CHAR100.
+         CCRIS               :  $CHAR60.
+         DCHEQS              :  $CHAR60.
+         EXLGLACT            :  $CHAR35.
+         EXLGLACTDES         : $CHAR100.
+         SOURCE              :  $CHAR17.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA32;
+   INFILE ELDSAA32 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR13.
+         NAMEOFCOMP          : $CHAR150.
+         TYPEOFID            :   $CHAR2.
+         IDNO                :  $CHAR20.
+         FINYRENDED          :  $CHAR10.
+         AUMD                :   $CHAR1.
+         AUDITOR             :  $CHAR30.
+         AUDITORREGNO        :  $CHAR10.
+         TURNOVER            :  COMMA15.
+         PRETAXNET           :  COMMA15.
+         PAIDUPCAP           :  COMMA15.
+         NETWORTH            :  COMMA15.
+         TOTCURRASS          :  COMMA15.
+         TOTCURRLIAB         :  COMMA15.
+         NETWORKCAP          :  COMMA15.
+         STOCKTURN           :  COMMA15.
+         COLLPERIOD          :  COMMA15.
+         PAYPERIOD           :  COMMA15.
+         SALESGWTH           :  $CHAR15.
+         GROSSPRO            :  $CHAR15.
+         NETPROMRGN          :  $CHAR15.
+         CURRRATIO           :  COMMA15.
+         GEARING             :  COMMA15.
+         LEVERAGE            :  COMMA15.
+         DSR                 :  COMMA15.
+         CTURNOVER           :  COMMA15.
+         CGROSSPRO           :  COMMA15.
+         CPRETAX             :  COMMA15.
+         CEXGAINLOSS         :  COMMA15.
+         CPAIDUPCAP          :  COMMA15.
+         CNETWORTH           :  COMMA15.
+         CTANGNET            :  COMMA15.
+         CREVAREVER          :  COMMA15.
+         CCURRASSET          :  COMMA15.
+         CCURRLIAB           :  COMMA15.
+         CDEFFLIAB           :  COMMA15.
+         CNETOPCASH          :  COMMA15.
+         CNETWORKCAP         :  COMMA15.
+         CLNGTERMLIAB        :  COMMA15.
+         CEBITDA             :  COMMA15.
+         CEBIT               :  COMMA15.
+         CDEPRECIAT          :  COMMA15.
+         CAMORTISTN          :  COMMA15.
+         CINTEXPENSE         :  COMMA15.
+         CTOTCOMM            :  COMMA15.
+         CTOTINTBRG          :  COMMA15.
+         COPENSTOCK          :  COMMA15.
+         CCLSSTOCK           :  COMMA15.
+         CSTOCK              :  COMMA15.
+         CPURCHASES          :  COMMA15.
+         CCOSTGOOD           :  COMMA15.
+         CWORKCAPREQ         :  COMMA15.
+         CTRDDBT             :  COMMA15.
+         CTRDCRDT            :  COMMA15.
+         CLNTODRCTOR         :  COMMA15.
+         CLNFRMDRCTOR        :  COMMA15.
+         CINTERCOMPLN        :  COMMA15.
+         CTOTTANGASS         :  COMMA15.
+         CTOTLIAB            :  COMMA15.
+         CDEVEXP             :  COMMA15.
+         SOURCE              :  $CHAR17.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+DATA ELNA33;
+   INFILE ELDSAA33 FIRSTOBS=2 DLM=',' MISSOVER DSD END=EOF;
+   INPUT MAANO               :  $CHAR13.
+         NAMEOFCOMP          : $CHAR150.
+         TYPEOFID            :   $CHAR2.
+         IDNO                :  $CHAR20.
+         BANKSINCE           :  $CHAR10.
+         ODLIMIT             :  $CHAR15.
+         AMD                 :  $CHAR15.
+         ADBNO               :  $CHAR15.
+         ADBCRDR             :   $CHAR2.
+         FREQOFEXCES         :  $CHAR10.
+         NOOFCHEQUE          :  $CHAR10.
+         ACTOFACC            :   $CHAR8.
+         SOURCE              :  $CHAR17.
+         ;
+   IF NOT EOF THEN OUTPUT;
+RUN;
+
+PROC SORT DATA=ELNA1  OUT=ELN.ELNA1_&DSNDT  NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA2  OUT=ELN.ELNA2_&DSNDT  NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA3  OUT=ELN.ELNA3_&DSNDT  NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA4  OUT=ELN.ELNA4_&DSNDT  NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA5  OUT=ELN.ELNA5_&DSNDT  NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA6  OUT=ELN.ELNA6_&DSNDT  NODUP; BY MAANO; RUN;
+DATA ELN.ELNA6_&DSNDT;
+   LENGTH SEQNO 2;
+   SET ELN.ELNA6_&DSNDT;
+   BY MAANO;
+   IF FIRST.MAANO THEN SEQNO=1;
+   ELSE                SEQNO+1;
+RUN;
+PROC SORT DATA=ELNA7  OUT=ELN.ELNA7_&DSNDT  NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA8  OUT=ELN.ELNA8_&DSNDT  NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA9  OUT=ELN.ELNA9_&DSNDT  NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA10 OUT=ELN.ELNA10_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA11 OUT=ELN.ELNA11_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA12 OUT=ELN.ELNA12_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA13 OUT=ELN.ELNA13_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA14 OUT=ELN.ELNA14_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA15 OUT=ELN.ELNA15_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA16 OUT=ELN.ELNA16_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA17 OUT=ELN.ELNA17_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA18 OUT=ELN.ELNA18_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA19 OUT=ELN.ELNA19_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA20 OUT=ELN.ELNA20_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA21 OUT=ELN.ELNA21_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA22 OUT=ELN.ELNA22_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA23 OUT=ELN.APPEAL_AA_&DSNDT NODUP;
+   BY _ALL_;
+RUN;
+PROC SORT DATA=ELNA24 OUT=ELN.CRR_AA_&DSNDT NODUP;
+   BY _ALL_;
+RUN;
+PROC SORT DATA=ELNA25 OUT=ELN.APP_STATUS_AA_&DSNDT NODUP;
+   BY _ALL_;
+RUN;
+PROC SORT DATA=ELNA26 OUT=ELN.SUPPORT_FACTOR_AA_&DSNDT NODUP;
+   BY _ALL_;
+RUN;
+PROC SORT DATA=ELNA27 OUT=ELN.LOANREPAYMENT_AA_&DSNDT NODUP;
+   BY _ALL_;
+RUN;
+PROC SORT DATA=ELNA28 OUT=ELN.ACC_CONDUCT_AA_&DSNDT NODUP;
+   BY _ALL_;
+RUN;
+PROC SORT DATA=ELNA29 OUT=ELN.REASON_AA_&DSNDT NODUP;
+   BY _ALL_;
+RUN;
+PROC SORT DATA=ELNA30 OUT=ELN.ELNA30_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA31 OUT=ELN.ELNA31_&DSNDT NODUP; BY _ALL_; RUN;
+PROC SORT DATA=ELNA32 OUT=ELN.ELNA32_&DSNDT NODUP;
+BY MAANO IDNO SOURCE; RUN;
+DATA ELN.ELNA32_&DSNDT;
+   FORMAT SEQNO 2.;
+   SET ELN.ELNA32_&DSNDT;
+   BY MAANO IDNO SOURCE;
+   IF FIRST.MAANO THEN SEQNO=1;
+   IF FIRST.IDNO THEN SEQNO=1;
+   IF FIRST.SOURCE THEN SEQNO=1;
+   ELSE      SEQNO+1;
+RUN;
+PROC SORT DATA=ELNA33 OUT=ELN.ELNA33_&DSNDT NODUP; BY _ALL_; RUN;
+
+PROC DATASETS LIB=WORK KILL NOLIST; RUN;
+PROC DATASETS NOLIST;
+   COPY IN=ELN OUT=WORK;
+      SELECT ELNA1_&DSNDT
+             ELNA2_&DSNDT
+             ELNA3_&DSNDT
+             ELNA4_&DSNDT
+             ELNA6_&DSNDT
+             ELNA7_&DSNDT
+             ELNA8_&DSNDT
+             ELNA10_&DSNDT
+             ELNA12_&DSNDT
+             ELNA13_&DSNDT
+             ELNA15_&DSNDT
+             ELNA16_&DSNDT
+             ELNA17_&DSNDT
+             ELNA22_&DSNDT
+             APPEAL_AA_&DSNDT
+             CRR_AA_&DSNDT
+             APP_STATUS_AA_&DSNDT
+             SUPPORT_FACTOR_AA_&DSNDT
+             LOANREPAYMENT_AA_&DSNDT
+             ACC_CONDUCT_AA_&DSNDT
+             REASON_AA_&DSNDT
+             ELNA30_&DSNDT
+             ELNA31_&DSNDT
+             ELNA32_&DSNDT
+             ELNA33_&DSNDT
+             ;
+   CHANGE ELNA1_&DSNDT  = ELNA1_&RPTDT
+          ELNA2_&DSNDT  = ELNA2_&RPTDT
+          ELNA3_&DSNDT  = ELNA3_&RPTDT
+          ELNA4_&DSNDT  = ELNA4_&RPTDT
+          ELNA6_&DSNDT  = ELNA6_&RPTDT
+          ELNA7_&DSNDT  = ELNA7_&RPTDT
+          ELNA8_&DSNDT  = ELNA8_&RPTDT
+          ELNA10_&DSNDT = ELNA10_&RPTDT
+          ELNA12_&DSNDT = ELNA12_&RPTDT
+          ELNA13_&DSNDT = ELNA13_&RPTDT
+          ELNA15_&DSNDT = ELNA15_&RPTDT
+          ELNA16_&DSNDT = ELNA16_&RPTDT
+          ELNA17_&DSNDT = ELNA17_&RPTDT
+          ELNA22_&DSNDT = ELNA22_&RPTDT
+          APPEAL_AA_&DSNDT         = APPEAL_AA_&RPTDT
+          CRR_AA_&DSNDT            = CRR_AA_&RPTDT
+          APP_STATUS_AA_&DSNDT     = APP_STATUS_AA_&RPTDT
+          SUPPORT_FACTOR_AA_&DSNDT = SUPPORT_FACTOR_AA_&RPTDT
+          LOANREPAYMENT_AA_&DSNDT  = LOANREPAYMENT_AA_&RPTDT
+          ACC_CONDUCT_AA_&DSNDT    = ACC_CONDUCT_AA_&RPTDT
+          REASON_AA_&DSNDT         = REASON_AA_&RPTDT
+          ELNA30_&DSNDT = ELNA30_&RPTDT
+          ELNA31_&DSNDT = ELNA31_&RPTDT
+          ELNA32_&DSNDT = ELNA32_&RPTDT
+          ELNA33_&DSNDT = ELNA33_&RPTDT
+          ;
+RUN;
+
+PROC CPORT LIBRARY=WORK FILE=TRANFILE; RUN;
+
+//*------------------------------------------------------
+//* FTP TO EDW
+//*------------------------------------------------------
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(EDW#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=binary
+lzopts linerule=$lr
+cd /stgsrcsys/host/crmsftp
+put //SAP.ELDS.CRMS.ELNFTPW   ELNFTPW
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd /stgsrcsys/host/control
+put //SAP.CRMS.DAY.CONTROL    ELNFTPW.TXT
+EOB
+/*
