@@ -1,0 +1,251 @@
+//EIBWSIBC JOB MISEIS,CLASS=A,MSGCLASS=A,NOTIFY=&SYSUID
+//******************************************************
+//* SMR 2008-147 - ELDS FOLDER
+//* SET JOBS AFTER EXTERNAL DEPENDENCY FTPEL31D
+//*                                    FTPEL31C
+//*                                    FTPEL31B
+//*                                    FTPEL31A
+//******************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PBB.SIBC.SBDATAWH.SBFTP,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//CREATE   EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.PBB.SIBC.SBDATAWH.SBFTP,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+//            SPACE=(CYL,(200,200),RLSE),UNIT=(SYSDA,5)
+//*
+//EIBWSIBC EXEC SAS609
+//ELDSTXT  DD DSN=SAP.PBB.ELDS.BNMSIBC1.TEXT(0),DISP=SHR
+//ELDSTX2  DD DSN=SAP.PBB.ELDS.BNMSIBC2.TEXT(0),DISP=SHR
+//BRH      DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//ELDS2    DD DSN=SAP.PBB.SIBC.SBDATAWH,DISP=OLD
+//ELDS1    DD DSN=&&SIBC,
+//             DISP=(NEW,DELETE,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(5,10),RLSE),UNIT=SYSDA
+//SYSIN    DD *
+
+OPTIONS NOCENTER YEARCUTOFF=1950;
+
+DATA REPTDATE;
+   SELECT;
+      WHEN(8 <= DAY(TODAY()) <= 14) DO;
+         REPTDATE=INPUT('08'||PUT(MONTH(TODAY()), Z2.)||
+                  PUT(YEAR(TODAY()), 4.), DDMMYY8.);
+         WK      ='1';
+      END;
+      WHEN(15 <= DAY(TODAY()) <= 21) DO;
+         REPTDATE=INPUT('15'||PUT(MONTH(TODAY()), Z2.)||
+                  PUT(YEAR(TODAY()), 4.), DDMMYY8.);
+         WK      ='2';
+      END;
+      WHEN(22 <= DAY(TODAY()) <= 27) DO;
+         REPTDATE=INPUT('22'||PUT(MONTH(TODAY()), Z2.)||
+                  PUT(YEAR(TODAY()), 4.), DDMMYY8.);
+         WK      ='3';
+      END;
+      OTHERWISE DO;
+         REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+                  PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+         WK      ='4';
+      END;
+   END;
+   CALL SYMPUT('NOWK',PUT(WK,$1.));
+   CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+RUN;
+
+
+DATA BRH (DROP=BRSTAT);
+   INFILE BRH;
+   INPUT @02  BRANCH   3.
+         @06  BRCD    $3.
+         @50  BRSTAT  $1.
+         ;
+   IF BRSTAT = 'C' THEN DELETE;
+RUN;
+
+DATA ELDSDT1(DROP=DD MM YY);
+   INFILE ELDSTXT OBS=1;
+   INPUT @053 DD          2.
+         @056 MM          2.
+         @059 YY          4.;
+   ELDSDT1 = MDY(MM,DD,YY);
+RUN;
+
+DATA _NULL_;
+  SET ELDSDT1;
+  CALL SYMPUT('ELDSDT1', PUT(ELDSDT1, DDMMYY8.));
+RUN;
+
+DATA ELDSDT2(DROP=DD MM YY);
+   INFILE ELDSTX2 OBS=1;
+   INPUT @053 DD          2.
+         @056 MM          2.
+         @059 YY          4.;
+   ELDSDT2 = MDY(MM,DD,YY);
+RUN;
+PROC PRINT; FORMAT ELDSDT2 DATE8. ;RUN;
+
+DATA _NULL_;
+  SET ELDSDT2;
+  CALL SYMPUT('ELDSDT2', PUT(ELDSDT2, DDMMYY8.));
+RUN;
+
+     DATA ELN1;
+        INFILE ELDSTXT FIRSTOBS=2 TRUNCOVER;
+        INPUT @001 AANO      $UPCASE13.
+              @080 BRCD      $3.
+              @087 FACCODE   $10.
+              @100 FACILI    $30.         /* FACILITIES    */
+              @133 AMOUNTX   COMMA15.     /* TOTAL APPLIED */
+              @151 BNMEFF    $8.          /* BNM EFFECTIVE */
+              @162 APPRIC    $UPCASE200.  /* PRICING APPLIED */
+              @365 AMTAPPLY  COMMA15.     /* TOTAL APPLIED APPR */
+              @383 AVPRIC    $UPCASE200.  /* PRICING  APPR */
+              @586 PRICING   $8.          /* BNM EFF APPR */
+              @597 NEWIC     $12.
+              @612 CPARTY    $3.         /* CONNECTD PARTY */
+              @618 LNTYPE    $UPCASE15.  /* LOAN TYPE      */
+              @636 GINCOME   COMMA15.    /* GROSS INCOME   */
+              @651 SPAAMT    COMMA15.
+              @666 CPRELAT   $UPCASE100. /* CP RELATIVES    */
+              @766 CPRELAS   $UPCASE100. /* CP RELATNSHIP   */
+              @890 CPSTAFF   $UPCASE50.  /* CP STAFF NAME   */
+              @940 CPDITOR   $UPCASE3.   /* BOARD DIRECTORS */
+              @943 CPSTFID   $UPCASE5.   /* CP STAFF ID     */
+              @948 CPBRHO    $UPCASE11.  /* CP BRANCH HO    */
+              @992 STATUS    $UPCASE25.
+              ;
+     RUN;
+     DATA ELN2;
+        INFILE ELDSTX2 FIRSTOBS=2 TRUNCOVER;
+        INPUT @001 AANO      $UPCASE13.
+              @017 DD         2.
+              @020 MM         2.
+              @023 YY         4.
+              @030 FELIMIT   COMMA15.
+              @048 TRLIMIT   COMMA15.
+              @066 CUSTCODE     4.
+              @073 SECTOR       4.
+              @080 PCODCRIS     4.
+              @087 PCODFISS     4.
+              @094 SMESIZE      3.
+              @100 NOEMPLO      4.
+              @107 TURNOVER  COMMA11.
+              @121 SDD         2.
+              @124 SMM         2.
+              @127 SYY         4.
+              @134 BDD         2.
+              @137 BMM         2.
+              @140 BYY         4.
+              @147 RDD         2.
+              @150 RMM         2.
+              @153 RYY         4.
+              @160 IDD         2.
+              @163 IMM         2.
+              @166 IYY         4.
+              @173 LDD         2.
+              @176 LMM         2.
+              @179 LYY         4.
+              @186 ADD         2.  /* DATE APPLIED/ACCEPTED BY.. */
+              @189 AMM         2.
+              @192 AYY         4.
+              @199 PDD         2.  /* APVDTE1 */
+              @202 PMM         2.
+              @205 PYY         4.
+              @212 APVBY       $UPCASE60. /* APPROVED BY (1) */
+              @275 P2DD        2.         /* APVDTE2 */
+              @278 P2MM        2.
+              @281 P2YY        4.
+              @288 APVBY2      $UPCASE60.  /* APPROVED BY (2)  */
+              @348 APVDES1     $UPCASE25.  /* APPROVED (1) DES */
+              @373 APVDES2     $UPCASE25.  /* APPROVED (2) DES */
+              @398 REASONS     $UPCASE200. /* IMMATER. REASONS */
+              @598 ICREASON    $UPCASE9.   /* REASON CODE      */
+              @622 DD4         2.          /* CONFIRM DATE */
+              @625 MM4         2.
+              @628 YY4         4.
+              @635 SMENAME1    $UPCASE60.  /* SIE 1 */
+              @695 SMENAME2    $UPCASE60.  /* SIE 2 */
+              @755 TRANBR      $3.         /* TRANSFER BR ABBR */
+              @758 TRANBRNO    3.          /* TRANSFER BR NO */
+              @761 TRANREG    $4.          /* TRANSFER REGION */
+              @780 ADVANCES   $1.
+              @784 PRODUCT    $3.
+              @790 STATE      $3.
+              @796 EXSTLMT    COMMA15. /* EXISTING LIMIT */
+              @814 CHNGLMT    COMMA15. /* LIMIT AFTER CHANGE */
+              @832 GREENTCO   $1.        /* GREEN TECH COMPANIES */
+              @836 BIOTCO     $1.        /* BIOTECH COMPANIES    */
+              @840 SMEIP      $1.        /* SME WITH IP RIGHTS   */
+              @844 SME1INCR   $1.        /* SME WITH 1-INNOCERT  */
+              @848 SMEMSC     $1.        /* SME WITH MSC STATUS  */
+              @852 STRUPCO_2YR $1.       /* START-UP COMPANIES   */
+              @856 STATUS     $UPCASE25.
+              @884 CTRY_INCORP $UPCASE2. /* COUNTRY IF INCORPORATION*/
+              @908 STRUPCO_3YR $2.       /* START-UP CO (3 YEARS)*/
+              @913 HDD         2.
+              @916 HMM         2.
+              @919 HYY         4.
+              @926 NAME        $UPCASE150.
+              @1079 LN_UTILISE_LOCAT_CD $2. /* LOC LOAN UTILISATION */
+              @1084 NEW_BUSS_REG_ID 12.
+              @1099 CLIMATE_PRIN_TAXONOMY_CLASS $5.
+              @1107 SOURCE_INCOME_CURRENCY_CD   $3.
+              @1113 GRP_ANNL_SALES_FINANCIAL_DT DDMMYY10.
+              @1126 GRP_ANNL_SALES_AMT          COMMA25.
+              ;
+        AMOUNT=CHNGLMT;
+        AADATE = MDY(AMM,ADD,AYY);
+        SBDATE = MDY(SMM,SDD,SYY);   /* SUBMISSION DATE */
+        DPDATE = MDY(RMM,RDD,RYY);   /* DESPATCH   DATE */
+        IDDATE = MDY(IMM,IDD,IYY);   /* DECISION   DATE */
+        LODATE = MDY(LMM,LDD,LYY);   /* LOLR       DATE */
+        CMDATE = MDY(MM4,DD4,YY4);   /* CONFIRM    DATE */
+        APVDTE1= MDY(PMM,PDD,PYY);
+        APVDTE2= MDY(P2MM,P2DD,P2YY);
+        BR_FULL_DOC_RECEIVE_DT = MDY(BMM,BDD,BYY); /* BR RECEIVE DT */
+        HOE_FULL_DOC_RECEIVE_DT = MDY(HMM,HDD,HYY); /* HO RECEIVE DT */
+
+        DROP MM DD YY SMM SDD SYY RMM RDD RYY IMM IDD IYY
+             P2MM P2DD P2YY PMM PDD PYY
+             DD4 MM4 YY4 LMM LDD LYY AMM ADD AYY PMM PDD PYY
+             BMM BDD BYY HMM HDD HYY;
+     RUN;
+     PROC SORT DATA=ELN1 OUT=ELN1; BY AANO STATUS;
+     PROC SORT DATA=ELN2 OUT=ELN2; BY AANO STATUS;
+
+     DATA SIBC;
+          MERGE ELN1 ELN2; BY AANO STATUS;
+          IF STATUS='APPLIED' THEN DO;
+             IF AMOUNT IN (.,0) THEN AMOUNT=AMOUNTX;
+          END;
+          DROP AMOUNTX CHNGLMT;
+
+     PROC SORT DATA=SIBC NODUPKEY; BY AANO STATUS;
+
+     PROC SORT; BY BRCD;
+     PROC SORT DATA=BRH; BY BRCD;
+
+     DATA SIBC;
+          MERGE SIBC(IN=A) BRH; BY BRCD;
+          IF A;
+          DROP BRCD;
+
+     PROC SORT DATA=SIBC OUT=ELDS1.SIBC&REPTMON&REPTYEAR&NOWK;
+     BY   AANO STATUS;
+
+     DATA ELDS2.SIBC&REPTMON&REPTYEAR&NOWK;
+          SET ELDS1.SIBC&REPTMON&REPTYEAR&NOWK;
+     /*
+     PROC PRINT;
+     FORMAT AADATE SBDATE DPDATE IDDATE LODATE CMDATE
+            APVDTE1 APVDTE2 DDMMYY10.;
+     */
+     FILENAME TRANFILE 'SAP.PBB.SIBC.SBDATAWH.SBFTP' DISP=OLD;
+     PROC CPORT LIBRARY=ELDS1 FILE=TRANFILE;
+     RUN;
