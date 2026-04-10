@@ -1,0 +1,112 @@
+//EIQBILEX JOB MISEIS,EIFWLNEX,CLASS=A,MSGCLASS=A,NOTIFY=&SYSUID
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0)),
+//            DSN=SAP.PBB.BLDATAWH.BILFTP
+//DEL02    DD DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0)),
+//            DSN=SAP.PBB.MNIBILL.EDW
+//*
+//CREATE  EXEC PGM=IEFBR14
+//CRT01    DD DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+//            SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5),
+//            DSN=SAP.PBB.BLDATAWH.BILFTP
+//*
+//EIQBILEX EXEC SAS609
+//BILFILE  DD DISP=SHR,DSN=RBP2.B033.BILLFILE.MIS(0)
+//BILL     DD DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(500,500)),UNIT=(SYSDA,5),
+//            DSN=SAP.PBB.MNIBILL.EDW
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(200,200))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(200,200))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(200,200))
+//SORTWK04 DD UNIT=SYSDA,SPACE=(CYL,(200,200))
+//SORTWK05 DD UNIT=SYSDA,SPACE=(CYL,(200,200))
+//SYSIN     DD *
+
+OPTIONS NOCENTER YEARCUTOFF=1950;
+
+DATA _NULL_;
+   INFILE BILFILE END=EOF;
+   INPUT @1 FHFT    $2. @;
+   IF _N_=1 OR EOF THEN DO;
+      IF      FHFT = 'HT' THEN
+         INPUT @3 LNBIL_DTE DDMMYY8.;
+      ELSE IF FHFT = 'FT' THEN
+         INPUT @3 LNBIL_OBS      15.;
+   END;
+
+   RETAIN LNBIL_DTE LNBIL_OBS;
+
+   SAS_DTE = TODAY()-1; SAS_OBS = SUM(_N_,-2); /* EXCLUDE FH&FT */
+
+   FORMAT LNBIL_DTE SAS_DTE DDMMYY10. LNBIL_OBS SAS_OBS  Z15.;
+   IF EOF;
+   IF LNBIL_DTE ^= SAS_DTE OR LNBIL_OBS ^= SAS_OBS OR _N_ = 1 OR
+      FHFT NOT IN ('HT','FT') THEN DO;
+      PUTLOG    'DSN=' "RBP2.B033.BILLFILE.MIS(0)";
+      PUTLOG    '+--------+--------+-------+-------+--------+-------+';
+      PUTLOG    '|  ERROR MESSAGE(S) STATUS                         |';
+      PUTLOG    '+--------+--------+-------+-------+--------+-------+';
+      IF LNBIL_DTE ^= SAS_DTE     THEN DO;
+         PUTLOG '|  File Header   : ERROR!!                         |';
+         PUTLOG '|      ' LNBIL_DTE=  '<> '  SAS_DTE =           '  |';
+      END;
+      IF LNBIL_OBS ^= SAS_OBS     THEN DO;
+         PUTLOG '|  File Footer   : ERROR!!                         |';
+         PUTLOG '|      ' LNBIL_OBS=  '<> '  SAS_OBS =           '  |';
+      END;
+      IF FHFT NOT IN ('HT','FT') OR _N_ = 1 THEN DO;
+         PUTLOG '|  Header/Footer : INCOMPLETE!!                    |';
+         PUTLOG '|      NO FOOTER. PLEASE CONTACT LN & SAS-TEAM     |';
+      END;
+      PUTLOG    '|                                                  |';
+      PUTLOG    '+========+========+=======+=======+========+=======+';
+      ABORT ABEND 77;
+   END;
+RUN;
+
+DATA BILL.STG_LN_BILL(DROP=ACCTCHK);
+   INFILE BILFILE FIRSTOBS=2;
+   INPUT @001 ACCTCHK   PD6. @;
+
+   IF ACCTCHK NE .;
+   INPUT @001 ACCTNO    PD6.
+         @007 NOTENO    PD3.
+         @010 BLDATE    PD6.
+         @016 BLPDDATE  PD6.
+         @022 DAYSLATE  PD2.
+         @024 PRODUCT   PD2.
+         @026 COSTCTR   PD4.
+         @030 BILL_AMT  PD8.2
+         @038 BILL_AMT_PRIN    PD8.2
+         @046 BILL_AMT_INT     PD8.2
+         @054 BILL_AMT_ESCROW  PD8.2
+         @062 BILL_AMT_FEE     PD8.2
+         @070 BILL_NOT_PAY_AMT PD8.2
+         @078 BILL_NOT_PAY_AMT_PRIN    PD8.2
+         @086 BILL_NOT_PAY_AMT_INT     PD8.2
+         @094 BILL_NOT_PAY_AMT_ESCROW  PD8.2
+         @102 BILL_NOT_PAY_AMT_FEE     PD8.2
+         ;
+RUN;
+
+FILENAME TRANFILE 'SAP.PBB.BLDATAWH.BILFTP' DISP=OLD;
+PROC CPORT LIBRARY=BILL FILE=TRANFILE;
+RUN;
+
+//******************************************************************
+//* FTP HOST DATASETS TO EDW
+//******************************************************************
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(EDW#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=binary
+lzopts linerule=$lr
+cd /stgsrcsys/host/ftpfiles
+put //SAP.PBB.BLDATAWH.BILFTP        BILFTP
+cd /stgsrcsys/host/control
+put //SAP.DAY.CONTROL          FTPBILWH.TXT
+EOB
