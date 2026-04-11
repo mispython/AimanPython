@@ -1,0 +1,166 @@
+//EIIMRPTS JOB MISEIS,EIBMRPT1,COND=(4,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID TYPRUN=SCAN
+//*
+//PRINT1   OUTPUT CLASS=R,
+//         NAME='SAIFUL ADZLIM ARIFF',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='RISK MANAGEMENT',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//*
+//PRINT9   OUTPUT CLASS=R,
+//         NAME='MS JOSEPHINE NG',
+//         ROOM='11TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='HR ADMINISTRATION',
+//         ADDRESS=('HUMAN RESOURCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT32
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PIBB.EIIMRM01.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//DD2      DD DSN=SAP.PIBB.EIIMRM02.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//DD3      DD DSN=SAP.PIBB.EIIMRM03.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//DD4      DD DSN=SAP.PIBB.EIIMRM04.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//DD5      DD DSN=SAP.PIBB.EIBWSTAF,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//DD6      DD DSN=SAP.PIBB.EIIMLN03,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//DD7      DD DSN=SAP.PIBB.M4LOAN,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//DD8      DD DSN=SAP.PIBB.EIFMLN03,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//*
+//CREATE   EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.PIBB.EIIMRM01.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//CRT02    DD DSN=SAP.PIBB.EIIMRM02.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//CRT03    DD DSN=SAP.PIBB.EIIMRM03.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//CRT04    DD DSN=SAP.PIBB.EIIMRM04.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//CRT05    DD DSN=SAP.PIBB.EIBWSTAF,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//CRT06    DD DSN=SAP.PIBB.EIIMLN03,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//CRT07    DD DSN=SAP.PIBB.M4LOAN,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=50,BLKSIZE=0),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//CRT08    DD DSN=SAP.PIBB.EIFMLN03,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//*********************************************************************
+//* REPORT : DEPOSITS, BY TIME TO MATURITY FOR ALCO
+//*          (WEIGHTED AVERAGE COST BY MATURITY PROFILE)
+//*********************************************************************
+//EIIMRM01 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//FD       DD DSN=SAP.PIBB.MNIFD(0),DISP=SHR
+//BNM      DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//TEMP     DD DSN=SAP.PIBB.EIIMRM01.TEXT,DISP=OLD
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRM01),DISP=SHR
+//*********************************************************************
+//* REPORT : FD-BY INDIVIDUAL AND NON-INDIVIDUAL, BY TIME
+//*          TO MATURITY FOR ALCO  - PART 1
+//*          (WEIGHTED AVERAGE COST BY MATURITY PROFILE)
+//*********************************************************************
+//EIIMRM02 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//FD       DD DSN=SAP.PIBB.MNIFD(0),DISP=SHR
+//TEMP     DD DSN=SAP.PIBB.EIIMRM02.TEXT,DISP=OLD
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRM02),DISP=SHR
+//*********************************************************************
+//* REPORT : FD-BY INDIVIDUAL AND NON-INDIVIDUAL, BY TIME
+//*          TO MATURITY FOR ALCO  - PART 2.
+//*          (WEIGHTED AVERAGE COST BY MATURITY PROFILE)
+//*********************************************************************
+//EIIMRM03 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//FD       DD DSN=SAP.PIBB.MNIFD(0),DISP=SHR
+//TEMP     DD DSN=SAP.PIBB.EIIMRM03.TEXT,DISP=OLD
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRM03),DISP=SHR
+//*********************************************************************
+//* REPORT : LOANS & ADVANCES, BY TIME TO MATURITY FOR ALCO
+//*          (WEIGHTED AVERAGE YIELD BY MATURITY PROFILE)
+//*********************************************************************
+//EIIMRM04 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//OD       DD DSN=SAP.PIBB.MNILIMT(0),DISP=SHR
+//BNM      DD DSN=SAP.PIBB.SASDATA,DISP=SHR
+//TEMP     DD DSN=SAP.PIBB.EIIMRM04.TEXT,DISP=OLD
+//LNNOTE   DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRM04),DISP=SHR
+//*------------------------------------------------------------------
+//* WEEKLY LISTING FOR STAFF NEW LOAN AND PAID LOAN
+//*------------------------------------------------------------------
+//EIIWSTAF EXEC SAS609
+//MNILN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//IMNILN    DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
+//PAY       DD DSN=SAP.PBB.LNPAYSCH.WEEK,DISP=SHR
+//IPAY      DD DSN=SAP.PIBB.LNPAYSCH.WEEK,DISP=SHR
+//SASLIST   DD DSN=SAP.PIBB.EIIWSTAF(+1),
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=133,BLKSIZE=0),
+//             SPACE=(CYL,(10,5),RLSE),UNIT=SYSDA
+//SYSIN     DD DSN=SAP.BNM.PROGRAM(EIIWSTAF),DISP=SHR
+//*------------------------------------------------------------------
+//* WEIGHTED AVERAGE LENDING RATE ON LOAN (RDIR II)
+//*------------------------------------------------------------------
+//EIIMLN03 EXEC SAS609
+//BNM      DD DSN=SAP.PIBB.SASDATA,DISP=SHR
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//ODGP3    DD DSN=SAP.PIBB.MNILIMT(0),DISP=SHR
+//M4LOAN   DD DSN=SAP.PIBB.M4LOAN,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.EIIMLN03,DISP=OLD
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMLN03),DISP=SHR
+//*------------------------------------------------------------------
+//* WEIGHTED AVERAGE LENDING RATE ON HPD (RDIR II)
+//*------------------------------------------------------------------
+//EIFMLN03 EXEC SAS609
+//BNM      DD DSN=SAP.PIBB.SASDATA,DISP=SHR
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST  DD DSN=SAP.PIBB.EIFMLN03,DISP=OLD
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMLN03),DISP=SHR
+//*-------------------------------------------------------------------
+//*--> TO PRINT REPORT
+//*-------------------------------------------------------------------
+//*PRINTS   EXEC PGM=IEBGENER
+//*SYSPRINT DD SYSOUT=X
+//*SYSUT1   DD DSN=SAP.PIBB.EIBWSTAF,DISP=SHR
+//*SYSUT2   DD SYSOUT=(,),OUTPUT=(*.PRINT9)
+//*SORTDIAG DD SYSOUT=X
+//*SYSIN    DD *
+//*
