@@ -1,0 +1,187 @@
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER MISSING=0;
+
+%INC PGM(PBBLNFMT);
+
+PROC FORMAT;
+
+   VALUE $LNFMT
+    'P1' = 'PRESCRIBED RATE (HOUSING LOANS)'
+    'P2' = 'PRESCRIBED RATE (BNM FUNDED LOANS)'
+    'P3' = 'NON-PRESCRIBED RATE (HOUSING LOANS)'
+    'P4' = 'NON-PRESCRIBED RATE (OTHER LOANS)';
+*;
+DATA _NULL_;
+   SET BNM.REPTDATE;
+   SELECT (DAY(REPTDATE));
+      WHEN (8)  CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+DATA DESC;
+   SET BNM.SDESC;
+   CALL SYMPUT('SDESC',PUT(SDESC,$26.));
+*;
+*+--------------------------------------------------------------+
+ |  EXCLUDE STAFF LOANS                                         |
+ |  DETERMINE PRESCRIBED/NON-PRESCRIBED RATES                   |
+ +--------------------------------------------------------------+;
+DATA GP3;
+   SET ODGP3.GP3;
+   RISKRTE=INPUT(RISKCODE,1.);
+   IF RISKRTE < 1 THEN LOANSTAT = 1;
+RUN;
+DATA LOAN;
+  SET BNM.LOAN&REPTMON&NOWK;
+  IF  PRODUCT IN (124,145) AND PRODCD='54120' THEN DELETE;
+RUN;
+*;
+PROC SORT DATA=LOAN; BY ACCTNO; RUN;
+PROC SORT DATA=GP3 OUT=GP3; BY ACCTNO; RUN;
+*;
+DATA LOAN (KEEP=LOANTYP PRODCD LOANSTAT INTRATE BALANCE BRHNO);
+   MERGE LOAN(IN=A) GP3 (KEEP=ACCTNO LOANSTAT);
+   BY ACCTNO;
+   IF A;
+   BRHNO=BRANCH;
+
+   IF PRODCD='34111'  THEN DELETE;
+   IF SUBSTR(PRODCD,1,2) = '34';
+   IF ACCTYPE='OD'      THEN DO;
+      LOANTYP = 'P4';
+      IF PRODUCT IN (93,162)       THEN DELETE;
+      IF PRODUCT=119               THEN LOANTYP='P1';
+      ELSE IF PRODUCT IN (120,137,138,154,155,192,193,194,195)
+                                   THEN LOANTYP='P3';
+      ELSE IF PRODUCT IN (73,187,188,47,48,49,17,14)
+                                   THEN LOANTYP='P2';
+      IF RISKRTE < 1               THEN LOANSTAT = 1;
+   END;
+   IF ACCTYPE='LN'      THEN DO;
+      IF PRODUCT IN (225,226) THEN DO;
+         IF INTRATE <= 9 OR SPREAD <= 1.75 THEN LOANTYP = 'P1';
+         ELSE LOANTYP = 'P3';
+      END;
+      ELSE LOANTYP = PUT(PRODUCT,LN03FMT.);
+      IF PRODUCT IN (668,669,670,672,673,674,675,690,851:860,
+                     671,676,677,691:695)
+      THEN DELETE;
+      IF PRODUCT=169 AND CENSUS IN (169.01,169.02,169.03,169.04)
+         THEN LOANTYP = 'P2';
+   END;
+   IF LOANTYP ^='SL';
+*;
+*+--------------------------------------------------------------+
+ |  EXCLUDE PENALTY RATES AND LOANS UNDER LITIGATION            |
+ +--------------------------------------------------------------+;
+PROC SUMMARY DATA=LOAN NWAY;
+   CLASS LOANTYP INTRATE;
+   VAR BALANCE;
+   OUTPUT OUT=ALM SUM=;
+   WHERE LOANSTAT = 1;
+*;
+DATA ALM (KEEP=LOANTYP INTRATE BALANCE PRODUCT);
+   SET ALM;
+   PRODUCT = INTRATE * BALANCE;
+*;
+PROC PRINT;
+   FORMAT LOANTYP $LNFMT. BALANCE PRODUCT COMMA18.2;
+   BY LOANTYP;
+   PAGEBY LOANTYP;
+   SUMBY LOANTYP;
+   SUM BALANCE PRODUCT;
+   TITLE1 'REPORT ID : EIIMLN03';
+   TITLE2 &SDESC;
+   TITLE3 'WEIGHTED AVERAGE LENDING RATE AS AT ' "&RDATE";
+*;
+*+--------------------------------------------------------------+
+ |  PRESCRIBED RATES                                            |
+ |  INCLUDE PENALTY RATES AND LOANS UNDER LITIGATION            |
+ +--------------------------------------------------------------+;
+PROC SUMMARY DATA=LOAN NWAY;
+   CLASS LOANTYP INTRATE;
+   VAR BALANCE;
+   OUTPUT OUT=ALM SUM=;
+   WHERE LOANTYP IN ('P1','P2');
+*;
+DATA ALM (KEEP=LOANTYP INTRATE BALANCE PRODUCT);
+   SET ALM;
+   PRODUCT = INTRATE * BALANCE;
+*;
+PROC PRINT;
+   FORMAT LOANTYP $LNFMT. BALANCE PRODUCT COMMA18.2;
+   BY LOANTYP;
+   PAGEBY LOANTYP;
+   SUMBY LOANTYP;
+   SUM BALANCE PRODUCT;
+   TITLE3 'WEIGHTED AVERAGE LENDING RATE (PRESCRIBED) AS AT ' "&RDATE";
+   TITLE4 '(INCLUDES ACCOUNTS WITH PENALTY RATES & UNDER LITIGATION)';
+*;
+PROC SUMMARY DATA=ALM NWAY;
+   CLASS INTRATE;
+   VAR BALANCE PRODUCT;
+   OUTPUT OUT=ALM (DROP=_FREQ_ _TYPE_) SUM=;
+*;
+PROC PRINT;
+   FORMAT BALANCE PRODUCT COMMA18.2;
+   SUM BALANCE PRODUCT;
+   TITLE3 'WEIGHTED AVERAGE LENDING RATE (PRESCRIBED) AS AT ' "&RDATE";
+   TITLE4 '(INCLUDES ACCOUNTS WITH PENALTY RATES & UNDER LITIGATION)';
+*;
+*+--------------------------------------------------------------+
+ |  OUTPUT TO FLAT FILE FOR SRS                                 |
+ |  - EXCLUDE STAFF LOANS                                       |
+ |  - EXCLUDE PENALTY RATES AND LOANS UNDER LITIGATION          |
+ +--------------------------------------------------------------+;
+*------------------------------------------------*
+*  PRESCRIBED RATES (SRS ACC TYPE 1)             *
+*------------------------------------------------*;
+PROC SUMMARY DATA=LOAN NWAY;
+   CLASS INTRATE;
+   VAR BALANCE;
+   OUTPUT OUT=ALM SUM=;
+   WHERE LOANSTAT = 1 & LOANTYP IN ('P1','P2');
+*;
+*------------------------------------------------*
+*  PRESCRIBED & NON-PRESCRIBED (SRS ACC TYPE 4)  *
+*------------------------------------------------*;
+PROC SUMMARY DATA=LOAN NWAY;
+   CLASS INTRATE;
+   VAR BALANCE;
+   OUTPUT OUT=ALM1 SUM=;
+   WHERE LOANSTAT = 1 & PRODCD NE '34111';
+*------------------------------------------------*
+*  PRESCRIBED RATES (SRS ACC TYPE 9)             *
+*------------------------------------------------*;
+PROC SUMMARY DATA=LOAN NWAY;
+CLASS BRHNO INTRATE;
+VAR BALANCE;
+OUTPUT OUT=LOAN SUM=;
+RUN;
+*;
+*------------------------------------------------*
+*  OUTPUT FLAT FILE                              *
+*------------------------------------------------*;
+DATA _NULL_;
+   FILE M4LOAN;
+   SET ALM(IN=A) ALM1(IN=B) LOAN END=EOF;
+   IF _N_ = 1 THEN
+      PUT @1 "&REPTYEAR" "&REPTMON" "&REPTDAY";
+   INTRATE = ROUND(INTRATE*100);
+   BALANCE = ROUND(BALANCE*100);
+   IF A THEN
+        PUT @1 '001' 'M4 0000' '01' INTRATE Z4. BALANCE Z15.;
+   ELSE
+   IF B THEN
+        PUT @1 '001' 'M4 0000' '04' INTRATE Z4. BALANCE Z15.;
+   ELSE
+        PUT @1 BRHNO Z3. 'M4 0000' '09' INTRATE Z4. BALANCE Z15.;
+   IF EOF THEN PUT @1 'EOF';
+*;
