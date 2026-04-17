@@ -32,3 +32,138 @@ SAP#OD#LOAN#LIST (EIBXLNLC)^
 SAP#OD#LOAN#LIST (EIBMLN1C)^					
 SAP#OD#LOAN#LIST (EIBMLN2C)^					
 SAP#ODLIMIT#RPT (EIBMODLM)^					
+
+
+
+>>>>>>>>>> #UAT#EJS#AII1 <<<<<<<<<<
+
+
+1) Login to SAS Data Integration Studio 4.9 using "sasdemo_edw" id
+
+2) Click "Shared Data" folder.
+
+3) Create and deploy the new jobs inside the below folders in "Shared Data" 
+
+
+   n) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBDNLF0.py
+EIBDNLF1.py
+EIBDFACT.py
+EIBDLIBT.py
+EIBDNLF2.py
+EIBDNLF3.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP#NLF#DLY#LN 
+
+
+   o) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBMNLF0.py
+EIBMNLF1.py
+EIBDFACT.py
+EIBMLIBT.py
+EIBMNLF2.py
+EIBMNLF3.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP#NLF#PBBLNMTH 
+
+
+   p) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBMNL40.py
+EIBMNL41.py
+EIBMFAC4.py
+EIBMLIB4.py
+EIBMNL42.py
+EIBMNL43.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP#NLF#4TH 
+
+
+   q) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIIMNLF0.py
+EIIMNLF1.py
+EIIMNLF2.py
+EIIMNLF3.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP#NLFPIBBLNMTH 
+
+
+   r) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIMNOSTE.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP#NOSTRO#RPT 
+
+
+   s) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+NPLOBAL6.py
+INPLOBA6.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP#NPLOBAL#YEAR 
+
+
+   t) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBMODLT.py
+EIBMLNLT.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP#OD#LN#LIST 
+
+
+   u) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBXODLC.py
+EIBMOD1C.py
+EIBMOD2C.py
+EIBXLNLC.py
+EIBMLN1C.py
+EIBMLN2C.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP#OD#LOAN#LIST 
+
+
+   v) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBMODLM.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP#ODLIMIT#RPT 
