@@ -249,3 +249,10 @@ EIBMSCRP.py
 EIBMSCRR.py
         Location : /Shared Data/Python/MIS Deployed Jobs
         Host Application Reference : SAPMTHRPT02 
+
+
+4) Deploy the job above into new flow based on attachment > Job_Deployment.xlsx
+
+5) Login to SAS Management Console using using "sasdemo_edw" id , deploy and schedule with below triggering event:
+
+    a) Kinldy refer attachment > Job_Deployment.xlsx
