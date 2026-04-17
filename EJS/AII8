@@ -67,3 +67,140 @@ SAPBNMPBBMKAP (EIIMCLCA)^
 SAPBNMQUART#PBB (EIBQQTR1)^					
 SAPBNMQUART#PBB (EIIQQTR1)^					
 SAPBNMQUART#PBB (EIPWRDAL)^					
+
+
+
+>>>>>>>>>> #EJS#UAT#AII8 <<<<<<<<<<
+
+
+1) Login to SAS Data Integration Studio 4.9 using "sasdemo_edw" id
+
+2) Click "Shared Data" folder.
+
+3) Create and deploy the new jobs inside the below folders in "Shared Data" 
+
+
+   a) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBWDALE.py
+EIBMDALE.py
+EIBWWKLY.py
+EIBMRPTS.py
+EIBMFDS2.py
+EIBMFDC3.py
+EIMAR301.py
+EIMAR201.py
+EIMAR101.py
+EIBWHP01.py
+EIBWHP02.py
+EIBWHP03.py
+EIBWHP04.py
+EIBMODLT.py
+EIBMLNLT.py
+EIMAR202.py
+EIMAR102.py
+EIMAR103.py
+EIMAR104.py
+EIBWFALE.py
+EIBDLNSA.py
+EIBMIISX.py
+EIBMFALE.py
+EIBXFCFD.py
+EIBRFCFD.py
+EIFMNPLE.py
+EIFFCCD2.py
+EIIFCCD2.py
+EIMPBIF1.py
+EIBMCOSX.py
+EIIMRPTS.py
+EIIMTOP5.py
+EIBWFCFD.py
+EIBMLCRC.py
+EIBMCOLE.py
+EIBMDPDE.py
+EIBMDSAS.py
+EIBMCRMA.py
+EIBM0958.py
+EIBM0959.py
+EIBM0961.py
+EIBM0962.py
+EIBM0946.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPBNMMMNI 
+
+
+   b) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBMISLX.py
+EIBMNPL0.py
+EIBMIISA.py
+EIBMFD1M.py
+EIBMFDI3.py
+EIBMFDC3.py
+EIBMCOLR.py
+DMMISRI3.py
+EIBTCOSX.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPBNMMMNI1 
+
+
+   c) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIFMNPL0.py
+EIFMIISA.py
+EIMGLSPA.py
+EIFMNPLP.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPBNMMMNI2 
+
+
+   d) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBMRPT1.py
+EIIMRPT1.py
+EIIMBPOS.py
+EIBMLIQI.py
+EIBMCLSA.py
+EIBMCLFD.py
+EIBMCLCA.py
+EIIMCLSA.py
+EIIMCLFD.py
+EIIMCLCA.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPBNMPBBMKAP 
+
+
+   e) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBQQTR1.py
+EIIQQTR1.py
+EIPWRDAL.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPBNMQUART#PBB 
+
+
+4) Deploy the job above into new flow based on attachment > Job_Deployment.xlsx
+
+5) Login to SAS Management Console using using "sasdemo_edw" id , deploy and schedule with below triggering event:
+
+    a) Kindly refer attachment > Job_Deployment.xlsx
