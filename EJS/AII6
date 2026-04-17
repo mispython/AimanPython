@@ -31,3 +31,154 @@ SAPWOFFPART2 (EIAWOF14)^
 SAPWOFFPART2 (EIAWOFHD)^					
 SAP2ND#MISSINGAA (EIMMISAA)^					
 SAP27TH#BMCTAPE (EIBMBMCX)^					
+
+
+
+>>>>>>>>>> #EJS#UAT#AII6 <<<<<<<<<<
+
+
+1) Login to SAS Data Integration Studio 4.9 using "sasdemo_edw" id
+
+2) Click "Shared Data" folder.
+
+3) Create and deploy the new jobs inside the below folders in "Shared Data" 
+
+
+   a) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIIFTXT1.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPWOFFILNS1 
+
+
+   b) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIIFTXT2.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPWOFFILNS2 
+
+
+   c) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIIWOF02.py
+EIIWOF03.py
+EIIWOF04.py
+EIIWOF05.py
+EIIWOF06.py
+EIIWOF07.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPWOFFIPART1 
+
+
+   d) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIIWOF09.py
+EIIWOF10.py
+EIIWOF12.py
+EIIWOF13.py
+EIIWOF14.py
+EIIWOFHD.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPWOFFIPART2 
+
+
+   e) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIFFTXT1.py
+EIFFTXT5.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPWOFFLNS1 
+
+
+   f) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIFFTXT2.py
+EIFFTXT5.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPWOFFLNS2 
+
+
+   g) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIAWOF01.py
+EIAWOF02.py
+EIAWOF03.py
+EIAWOF04.py
+EIAWOF05.py
+EIAWOF06.py
+EIAWOF07.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPWOFFPART1 
+
+
+   h) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIAWOF09.py
+EIAWOF10.py
+EIAWOF12.py
+EIAWOF13.py
+EIAWOF14.py
+EIAWOFHD.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAPWOFFPART2 
+
+
+   i) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIMMISAA.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP2ND#MISSINGAA 
+
+
+   j) Python/MIS Deployed Jobs
+
+        Right Click Deploy : Deploy a job for scheduling box pop-up choose
+        Batch Server : SASEDW - Python MIS Batch Server
+        Deployment Directory : Python MIS Jobs
+        Deployed Job Name : -
+EIBMBMCX.py
+        Location : /Shared Data/Python/MIS Deployed Jobs
+        Host Application Reference : SAP27TH#BMCTAPE 
+
+
+4) Deploy the job above into new flow based on attachment > Job_Deployment.xlsx
+
+5) Login to SAS Management Console using using "sasdemo_edw" id , deploy and schedule with below triggering event:
+
+    a) Kindly refer attachment > Job_Deployment.xlsx
