@@ -3,21 +3,19 @@
 Program  : EIIDNLF0.py
 Purpose  : NLF Report - Contractual Run-offs as of End of Month (Run-Off Format).
            Reads REPTDATE from LOAN.REPTDATE and LOAN1.REPTDATE, loads loan data
-            from BNM1.LOANmmdd, computes maturity run-off schedule per loan,
-            assigns BNMCODE per maturity bucket, adds EIR adjustments, injects
-            DEFAULT zero-amount rows for all expected BNMCODE combinations, and
-            summarises by BNMCODE into BNM.NOTE output parquet.
+           from BNM1.LOANmmdd, computes maturity run-off schedule per loan,
+           assigns BNMCODE per maturity bucket, adds EIR adjustments, injects
+           DEFAULT zero-amount rows for all expected BNMCODE combinations, and
+           summarises by BNMCODE into BNM.NOTE output parquet.
+
+           Replicates JCL job EIIDNLF0 / SAS program EIIDNLF0 (EIBWLIQ2/EIBWLQP2).
 
            Dependencies:
              %INC PGM(PBBLNFMT) ->
-               LIQPFMT format is used via PUT(PRODUCT, LIQPFMT.) to classify
-               products as 'FL', 'HL', 'RC', 'OD' etc.
-               LIQPFMT is NOT present in the attached PBBLNFMT.py conversion.
-               It is likely defined in a separate SAS format library in the
-               original suite. A local approximation (liqpfmt()) is implemented
-               below based on contextual usage in this program.
-               All other PBBLNFMT formats (format_lndenom, format_lnprod, etc.)
-               are not directly called here.
+               format_liqpfmt() is imported from PBBLNFMT and used via
+               PUT(PRODUCT, LIQPFMT.) to classify products as 'FL', 'HL',
+               'RC', or 'FS'. All other PBBLNFMT formats (format_lndenom,
+               format_lnprod, etc.) are not directly called here.
              %INC PGM(PBBDPFMT) ->
                Included as suite-wide boilerplate. No formats from PBBDPFMT
                are directly invoked in this program. No import needed.
@@ -38,6 +36,12 @@ from pathlib import Path
 # ============================================================================
 import duckdb
 import polars as pl
+
+# ============================================================================
+# DEPENDENCY IMPORTS
+# ============================================================================
+# %INC PGM(PBBLNFMT)
+from PBBLNFMT import format_liqpfmt
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -130,55 +134,6 @@ def remfmt(remmth) -> str:
         return '05'
     else:
         return '06'
-
-
-# ============================================================================
-# FORMAT: LIQPFMT  (approximated from contextual usage)
-# Used as PUT(PRODUCT, LIQPFMT.) to classify products for ITEM derivation.
-# LIQPFMT is not present in PBBLNFMT.py; defined here based on the SAS
-# program's branching logic which expects values: 'HL', 'FL', 'RC', 'OD'.
-#
-# Mapping derived from PBBLNFMT.PRDFMT-equivalent and standard product ranges:
-#   Housing Loans (HL): 110-119,139-142,147,173,200-248,400,409,410,412-415,
-#                       423,431-433,440,466,472-474,479,484,486,489,494,
-#                       600,638,650,651,664,677,911 and Islamic HL
-#   Revolving Credit (RC): 146,184,192,195,196,302,350,351,364,365,506,495,
-#                          604,605,634,641,660,685,689,802-818,856-860,
-#                          902,903,910,917,925,951
-#   Floor/Leasing/Other -> 'FL'
-# The SAS suite uses '34' prefix PRODCD as the primary filter; LIQPFMT
-# provides a secondary classification. Products 225,226 are treated as HL
-# per the filter condition and PRDFMT patterns in PBBLNFMT.
-# ============================================================================
-
-_LIQPFMT_HL = frozenset([
-    110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
-    139, 140, 141, 142, 147, 173, 225, 226,
-    400, 409, 410, 412, 413, 414, 415, 423, 431, 432, 433, 440,
-    466, 472, 473, 474, 479, 484, 486, 489, 494,
-    600, 638, 650, 651, 664, 677, 911,
-    *range(200, 249), *range(250, 261),
-])
-
-_LIQPFMT_RC = frozenset([
-    146, 184, 192, 195, 196, 302, 350, 351, 364, 365,
-    495, 506, 604, 605, 634, 641, 660, 685, 689,
-    802, 803, 806, 808, 810, 812, 814, 817, 818,
-    856, 857, 858, 859, 860,
-    902, 903, 910, 917, 925, 951,
-])
-
-
-def liqpfmt(product: int) -> str:
-    """
-    Approximate LIQPFMT format: classify product as 'HL', 'RC', or 'FL'.
-    See module docstring for sourcing notes.
-    """
-    if product in _LIQPFMT_HL:
-        return 'HL'
-    if product in _LIQPFMT_RC:
-        return 'RC'
-    return 'FL'
 
 
 # ============================================================================
@@ -312,7 +267,15 @@ def payfreq_to_freq(payfreq: str) -> int:
 # ============================================================================
 
 def derive_item(prod_type: str, cust: str, product: int) -> str:
-    """Derive ITEM code from product classification, customer type, and product."""
+    """
+    Derive ITEM code from product classification, customer type, and product.
+    prod_type is the return value of format_liqpfmt(): 'HL', 'RC', 'FS', or 'FL'.
+    'FS' (Floor Stocking) has no explicit SAS SELECT branch so falls to OTHERWISE -> '219'
+    for cust='08', and to '211' branch only for 'FL'/'HL' for cust='09' (FS -> '219').
+    individual (08): HL -> '214', else -> '219'
+    other      (09): FL/HL -> '211', RC -> '212', else (FS/other) -> '219'
+    PRODUCT = 100 -> ITEM = '212' (hardcoded - ABBA HL Financing)
+    """
     if cust == '08':
         item = '214' if prod_type == 'HL' else '219'
     else:
@@ -403,8 +366,7 @@ def process_loans(df: pl.DataFrame, env: dict, runoffdt: date) -> pl.DataFrame:
         if acctype != 'LN':
             continue
 
-        prod_type = liqpfmt(product)
-        item = derive_item(prod_type, cust, product)
+        prod_type = format_liqpfmt(product)
 
         if payamt < 0:
             payamt = 0
@@ -602,8 +564,7 @@ def build_eir_adj(path: Path) -> pl.DataFrame:
         custcd    = str(r.get("CUSTCD", "") or "").strip()
         cust      = '08' if custcd in ('77', '78', '95', '96') else '09'
         product   = int(r.get("PRODUCT", 0) or 0)
-        prod_type = liqpfmt(product)
-        item      = derive_item(prod_type, cust, product)
+        prod_type = format_liqpfmt(product)
         amount    = float(eir_adj)
 
         output_rows.append({"BNMCODE": f"95{item}{cust}060000Y", "AMOUNT": amount})
