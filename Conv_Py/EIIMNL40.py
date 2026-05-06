@@ -3,19 +3,20 @@
 Program  : EIIMNL40.py
 Purpose  : INLF Report - Monthly-End Format (EIBMRLFM).
            Reads REPTDATE from LOAN.REPTDATE, loads loan data from
-            BNM1.LOANmmww (month + week number), computes maturity run-off
-            schedule per loan using REPTDATE as the base date, assigns BNMCODE
-            per maturity bucket, adds inline EIR_ADJ rows, adjusts revolving
-            credit, injects DEFAULT zero-amount rows, and summarises by BNMCODE
-            into BNM.NOTE output parquet.
+           BNM1.LOANmmww (month + week number), computes maturity run-off
+           schedule per loan using REPTDATE as the base date, assigns BNMCODE
+           per maturity bucket, adds inline EIR_ADJ rows, adjusts revolving
+           credit, injects DEFAULT zero-amount rows, and summarises by BNMCODE
+           into BNM.NOTE output parquet.
+
+           Replicates JCL job EIIMNL40 / SAS program EIIMNLF0.
 
            Dependencies:
              %INC PGM(PBBLNFMT) ->
-               LIQPFMT format is used via PUT(PRODUCT, LIQPFMT.) to classify
-               products as 'FL', 'HL', 'RC'. LIQPFMT is not present in the
-               attached PBBLNFMT.py conversion; a local approximation is
-               implemented below (same as EIIDNLF0). All other PBBLNFMT
-               formats are not directly called here.
+               format_liqpfmt() is imported from PBBLNFMT and used via
+               PUT(PRODUCT, LIQPFMT.) to classify products as 'FL', 'HL',
+               'RC', or 'FS'. All other PBBLNFMT formats (format_lndenom,
+               format_lnprod, etc.) are not directly called here.
              %INC PGM(PBBELF) ->
                Included as suite-wide boilerplate. No formats from PBBELF
                are directly invoked in this program. No import needed.
@@ -36,6 +37,12 @@ from pathlib import Path
 # ============================================================================
 import duckdb
 import polars as pl
+
+# ============================================================================
+# DEPENDENCY IMPORTS
+# ============================================================================
+# %INC PGM(PBBLNFMT)
+from PBBLNFMT import format_liqpfmt
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -121,42 +128,6 @@ def remfmt(remmth: float) -> str:
         return '05'
     else:
         return '06'
-
-
-# ============================================================================
-# FORMAT: LIQPFMT  (approximated - same definition as EIIDNLF0)
-# Used via PUT(PRODUCT, LIQPFMT.) to classify products as 'FL', 'HL', 'RC'.
-# LIQPFMT is absent from the attached PBBLNFMT.py; implemented locally.
-# ============================================================================
-
-_LIQPFMT_HL = frozenset([
-    110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
-    139, 140, 141, 142, 147, 173, 225, 226,
-    400, 409, 410, 412, 413, 414, 415, 423, 431, 432, 433, 440,
-    466, 472, 473, 474, 479, 484, 486, 489, 494,
-    600, 638, 650, 651, 664, 677, 911,
-    *range(200, 249), *range(250, 261),
-])
-
-_LIQPFMT_RC = frozenset([
-    146, 184, 192, 195, 196, 302, 350, 351, 364, 365,
-    495, 506, 604, 605, 634, 641, 660, 685, 689,
-    802, 803, 806, 808, 810, 812, 814, 817, 818,
-    856, 857, 858, 859, 860,
-    902, 903, 910, 917, 925, 951,
-])
-
-
-def liqpfmt(product: int) -> str:
-    """
-    Approximate LIQPFMT format: classify product as 'HL', 'RC', or 'FL'.
-    See module docstring for sourcing notes.
-    """
-    if product in _LIQPFMT_HL:
-        return 'HL'
-    if product in _LIQPFMT_RC:
-        return 'RC'
-    return 'FL'
 
 
 # ============================================================================
@@ -247,7 +218,14 @@ def payfreq_to_freq(payfreq: str) -> int:
 # ============================================================================
 
 def derive_item(prod_type: str, cust: str) -> str:
-    """Derive ITEM code from product classification and customer type."""
+    """
+    Derive ITEM code from product classification and customer type.
+    prod_type is the return value of format_liqpfmt(): 'HL', 'RC', 'FS', or 'FL'.
+    'FS' (Floor Stocking) has no explicit SAS SELECT branch so falls to OTHERWISE -> '219'.
+    individual (08): HL -> '214', else (RC/FL/FS/other) -> '219'
+    other      (09): FL/HL -> '211', RC -> '212', else (FS/other) -> '219'
+    Note: No PRODUCT=100 override in this program (differs from EIIDNLF0).
+    """
     if cust == '08':
         return '214' if prod_type == 'HL' else '219'
     else:
@@ -359,8 +337,7 @@ def process_loans(df: pl.DataFrame, env: dict) -> pl.DataFrame:
             output_rows.append({"BNMCODE": bnmcode, "AMOUNT": amount})
             # OD records: EIR_ADJ emitted after OD output if applicable
             if not eir_is_missing:
-                prod_type = liqpfmt(product)
-                item_eir  = derive_item(prod_type, cust)
+                prod_type = format_liqpfmt(product)
                 output_rows.append({"BNMCODE": f"95{item_eir}{cust}060000Y", "AMOUNT": float(eir_adj)})
                 output_rows.append({"BNMCODE": f"93{item_eir}{cust}060000Y", "AMOUNT": float(eir_adj)})
             continue
@@ -372,8 +349,7 @@ def process_loans(df: pl.DataFrame, env: dict) -> pl.DataFrame:
         if acctype != 'LN':
             continue
 
-        prod_type = liqpfmt(product)
-        item      = derive_item(prod_type, cust)
+        prod_type = format_liqpfmt(product)
 
         if payamt < 0:
             payamt = 0
