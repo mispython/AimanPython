@@ -1,22 +1,24 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Program : EIBMTOP5
 Purpose : Produce report of PB Subsidiaries under Top 50 Corporate Depositors.
           Extracts current account (CA) and fixed deposit (FD) records for
-            specific CIS customer numbers, merges with deposit master data,
-            and produces a grouped PROC PRINT-style report with subtotals.
+          specific CIS customer numbers, merges with deposit master data,
+          and produces a grouped PROC PRINT-style report with subtotals.
 
 Dependencies:
   %INC PGM(PBBLNFMT) -> loan format definitions
   %INC PGM(PBBELF)   -> EL/ELI BNM code definitions
   %INC PGM(PBBDPFMT) -> deposit product format definitions
-  Note: None of the above format modules' functions are directly invoked in
-        this program; they are loaded into the SAS session for potential use.
+
+  NOTE: All three modules above are loaded into the SAS session via %INC at
+  the session level. However, no PUT(var, fmt.) call referencing any function
+  from PBBLNFMT, PBBELF, or PBBDPFMT appears anywhere in the body of this
+  program. Therefore, no live imports from these modules are made here.
 """
 
 import os
-import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import duckdb
 import polars as pl
@@ -44,10 +46,10 @@ FD2TEXT_OUT = os.path.join(OUTPUT_DIR, "FD2TEXT.txt")
 # OPTIONS YEARCUTOFF=1950
 YEARCUTOFF = 1950
 
-# Page length  (OPTIONS PS=60)
+# Page length (SAS default PS=60 unless overridden)
 PAGE_LENGTH = 60
 
-# Line size  (OPTIONS LS=132)
+# Line size (SAS default LS=132 unless overridden)
 LINE_SIZE = 132
 
 # ==============================================================================
@@ -55,7 +57,7 @@ LINE_SIZE = 132
 # IF CUSTNO IN (53227,169990,170108,3562038,3721354);
 # ==============================================================================
 
-REPORT_CUSTNOS: set[int] = {53227, 169990, 170108, 3562038, 3721354}
+REPORT_CUSTNOS: set = {53227, 169990, 170108, 3562038, 3721354}
 
 # ==============================================================================
 # PRODUCT EXCLUSIONS
@@ -63,22 +65,25 @@ REPORT_CUSTNOS: set[int] = {53227, 169990, 170108, 3562038, 3721354}
 # FD: PRODUCT NOT IN (350,351,352,353,354,355,356,357)
 # ==============================================================================
 
-CA_EXCL_PRODUCTS: set[int] = {400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410}
-FD_EXCL_PRODUCTS: set[int] = {350, 351, 352, 353, 354, 355, 356, 357}
+CA_EXCL_PRODUCTS: set = {400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410}
+FD_EXCL_PRODUCTS: set = {350, 351, 352, 353, 354, 355, 356, 357}
 
 # ==============================================================================
-# HELPERS
+# SAS DATE EPOCH
 # ==============================================================================
 
 SAS_EPOCH = date(1960, 1, 1)
 
+
+# ==============================================================================
+# HELPERS
+# ==============================================================================
 
 def sas_date_to_python(val) -> date | None:
     """Convert SAS internal date integer (days since 1960-01-01) to Python date."""
     if val is None:
         return None
     try:
-        from datetime import timedelta
         return SAS_EPOCH + timedelta(days=int(val))
     except (TypeError, ValueError):
         return None
@@ -139,15 +144,14 @@ def derive_macros(reptdate: date) -> dict:
         "REPTDAY":  f"{reptdate.day:02d}",
         # DDMMYY8. format: DD/MM/YY  (8 characters)
         "RDATE":    reptdate.strftime("%d/%m/%y"),
-        # Full 4-digit year version used in report titles for clarity
-        "RDATE_FULL": reptdate.strftime("%d/%m/%Y"),
     }
 
 
 def format_comma16_2(val) -> str:
     """
-    FORMAT CURBAL COMMA16.2  — 16-character field with 2 decimal places,
-    comma-thousands separator, right-justified.
+    FORMAT CURBAL COMMA16.2
+    16-character field with 2 decimal places, comma-thousands separator,
+    right-justified.
     SAS COMMA16.2: width 16 including sign, commas and decimal point.
     """
     if val is None:
@@ -156,9 +160,7 @@ def format_comma16_2(val) -> str:
         fval = float(val)
     except (TypeError, ValueError):
         return " " * 16
-    # Format with commas and 2 decimal places
     formatted = f"{fval:,.2f}"
-    # Right-justify within width 16
     return formatted.rjust(16)
 
 
@@ -196,8 +198,8 @@ def build_caorg(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
     """).pl()
 
     # MERGE CA(IN=A) CISCA; BY ACCTNO; IF A
-    # Left join: keep all CA rows; bring in matching CISCA columns
-    # Determine which columns come from CISCA vs CA to handle overlaps
+    # Left join: keep all CA rows; bring in matching CISCA columns.
+    # IN=A means the row must exist in CA (which is the left side of the join).
     cisca_cols = set(cisca.columns)
     ca_cols    = set(ca.columns)
     overlap    = cisca_cols & ca_cols - {"ACCTNO"}
@@ -258,9 +260,8 @@ def build_fdorg(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
     """).pl()
 
     # MERGE CISFD FD(IN=A); BY ACCTNO; IF A
-    # Note: order is CISFD first, FD(IN=A) — so IN=A flag is for FD.
-    # Keep rows where FD has a match (IN=A means must exist in FD).
-    # Left join FD with CISFD to get CISFD columns only where ACCTNO matches.
+    # Note: order is CISFD first, FD(IN=A) — IN=A flag applies to FD.
+    # Keep rows where FD has a match; left join FD with CISFD.
     cisfd_cols = set(cisfd.columns)
     fd_cols    = set(fd.columns)
     overlap    = cisfd_cols & fd_cols - {"ACCTNO"}
@@ -299,9 +300,8 @@ def build_data1(caorg: pl.DataFrame, fdorg: pl.DataFrame) -> pl.DataFrame:
     Combine FDORG and CAORG (vertical stack), filter by CUSTNO,
     sort by CUSTNO then ACCTNO.
     """
-    # Align schemas for vertical concat: use common columns + fill missing with null
-    fd_cols = set(fdorg.columns)
-    ca_cols = set(caorg.columns)
+    fd_cols  = set(fdorg.columns)
+    ca_cols  = set(caorg.columns)
     all_cols = fd_cols | ca_cols
 
     def align(df: pl.DataFrame, target_cols: set) -> pl.DataFrame:
@@ -313,6 +313,7 @@ def build_data1(caorg: pl.DataFrame, fdorg: pl.DataFrame) -> pl.DataFrame:
     fdorg_aligned = align(fdorg, all_cols)
     caorg_aligned = align(caorg, all_cols)
 
+    # SET FDORG CAORG — FDORG rows come first, then CAORG
     combined = pl.concat([fdorg_aligned, caorg_aligned], how="vertical")
 
     # IF CUSTNO IN (53227,169990,170108,3562038,3721354)
@@ -348,14 +349,13 @@ def build_data1(caorg: pl.DataFrame, fdorg: pl.DataFrame) -> pl.DataFrame:
 # SPLIT='*' means column headers split on '*' across two lines.
 # BY CUSTNO prints a group header and subtotal per CUSTNO.
 # SUM CURBAL prints a running subtotal per group and grand total at end.
-# Column widths based on SAS PROC PRINT defaults and LS=132.
 # ==============================================================================
 
 # Column display order: VAR BRANCH ACCTNO CUSTNAME CUSTNO CUSTCODE CURBAL PRODUCT
 VAR_ORDER = ["BRANCH", "ACCTNO", "CUSTNAME", "CUSTNO", "CUSTCODE", "CURBAL", "PRODUCT"]
 
-# Labels with SPLIT='*': line 1 / line 2
-COL_LABELS: dict[str, tuple[str, str]] = {
+# Labels with SPLIT='*': (line1, line2)
+COL_LABELS: dict = {
     "BRANCH":   ("BRANCH", "CODE"),
     "ACCTNO":   ("MNI NO", ""),
     "CUSTNAME": ("DEPOSITOR", ""),
@@ -365,8 +365,8 @@ COL_LABELS: dict[str, tuple[str, str]] = {
     "PRODUCT":  ("PRODUCT", ""),
 }
 
-# Column widths (characters) — based on data types and SAS defaults
-COL_WIDTHS: dict[str, int] = {
+# Column widths (characters) — based on data types and SAS PROC PRINT defaults
+COL_WIDTHS: dict = {
     "BRANCH":   8,
     "ACCTNO":   14,
     "CUSTNAME": 30,
@@ -405,12 +405,12 @@ def format_report(data1: pl.DataFrame, rdate: str) -> str:
     - FORMAT CURBAL COMMA16.2
     - Page length = 60 lines
     """
-    lines:      list[str] = []
-    line_count: int       = 0
-    page_num:   int       = 0
+    lines:      list = []
+    line_count: int  = 0
+    page_num:   int  = 0
 
-    # Build separator line
-    sep_width = sum(COL_WIDTHS[c] + 2 for c in VAR_ORDER) + 4  # leading OBS col
+    # Separator line width
+    sep_width = sum(COL_WIDTHS[c] + 2 for c in VAR_ORDER) + 7  # leading OBS col
     sep_line  = "-" * min(sep_width, LINE_SIZE)
 
     def emit_page_header() -> None:
@@ -461,8 +461,6 @@ def format_report(data1: pl.DataFrame, rdate: str) -> str:
         if custno != current_custno:
             # Emit subtotal for previous group
             if current_custno is not None:
-                sub_line = "  -----" + "  " * (len(VAR_ORDER) - 2)
-                # Place subtotal under CURBAL column
                 sub_parts = "       "
                 for col in VAR_ORDER:
                     if col == "CURBAL":
@@ -477,9 +475,10 @@ def format_report(data1: pl.DataFrame, rdate: str) -> str:
                 check_page_break()
 
                 grand_total += group_total
-                group_total = 0.0
+                group_total  = 0.0
 
             # Group header: BY CUSTNO=value
+            # ASA '0' = double space before line
             lines.append(f"0CUSTNO={custno}")
             line_count += 1
             check_page_break()
@@ -496,7 +495,7 @@ def format_report(data1: pl.DataFrame, rdate: str) -> str:
         # Build data line: OBS + all VAR columns
         data_parts = f"  {obs_idx:<4d} "
         for col in VAR_ORDER:
-            cell = _col_val(row, col)
+            cell  = _col_val(row, col)
             right = (col == "CURBAL")
             data_parts += "  " + _pad(cell, COL_WIDTHS[col], right_align=right)
 
@@ -531,7 +530,6 @@ def format_report(data1: pl.DataFrame, rdate: str) -> str:
         else:
             gt_parts += "  " + " " * COL_WIDTHS[col]
     lines.append(f" {gt_parts}")
-    line_count += 1
 
     return "\n".join(lines) + "\n"
 
@@ -546,7 +544,8 @@ def main() -> None:
 
     Main entry point:
       1. Read REPTDATE and derive macro variables.
-      2. %INC PGM(PBBLNFMT,PBBELF,PBBDPFMT)  -- format modules loaded (no direct calls here).
+      2. %INC PGM(PBBLNFMT,PBBELF,PBBDPFMT)
+         -- Format modules loaded at session level; no direct calls in this program.
       3. Build CAORG (current accounts).
       4. Build FDORG (fixed deposits).
       5. Combine and filter to DATA1.
@@ -562,34 +561,14 @@ def main() -> None:
     reptdate = read_reptdate(con)
     mvars    = derive_macros(reptdate)
 
-    rdate    = mvars["RDATE"]       # DD/MM/YY  (DDMMYY8.)
+    rdate = mvars["RDATE"]   # DD/MM/YY  (DDMMYY8.)
     print(f"  REPTDATE={reptdate}  NOWK={mvars['NOWK']}  RDATE={rdate}")
 
     # ------------------------------------------------------------------
     # %INC PGM(PBBLNFMT,PBBELF,PBBDPFMT);
     # Format definitions are available via the imported modules.
-    # No format functions are directly invoked in this program.
-
-    # Placeholder for PBBLNFMT,PBBELF,PBBDPFMT
-    # from PBBLNFMT import (
-    #     format_oddenom, format_lndenom, format_lnprod,
-    #     format_odcustcd, format_locustcd, format_lncustcd,
-    #     format_statecd, format_apprlimt, format_loansize,
-    #     format_mthpass, format_lnormt, format_lnrmmt,
-    #     format_collcd, format_riskcd, format_busind,
-    # )
-    #
-    # from PBBELF import (
-    #     format_brchcd, format_cacbrch, format_cacname,
-    #     format_regioff, format_regnew, format_ctype,
-    #     format_brchrvr,
-    # )
-    #
-    # from PBBDPFMT import (
-    #     SADenomFormat, SAProductFormat, FDDenomFormat,
-    #     FDProductFormat, CADenomFormat, CAProductFormat,
-    #     FCYTermFormat, ProductLists, fdorgmt_format,
-    # )
+    # No format functions from these modules are directly invoked in
+    # this program — the %INC is a session-level load only.
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
@@ -622,6 +601,8 @@ def main() -> None:
 
     # ------------------------------------------------------------------
     # PROC PRINTTO PRINT=FD2TEXT NEW;
+    # TITLE1 'PUBLIC BANK BERHAD      PROGRAM-ID: EIBMTOP5';
+    # TITLE2 'PB SUBSIDIARIES UNDER TOP 50 CORP DEPOSITORS @ ' "&RDATE";
     # PROC PRINT DATA=DATA1 SPLIT='*'; BY CUSTNO; SUM CURBAL;
     # ------------------------------------------------------------------
     print("  Generating report ...")
