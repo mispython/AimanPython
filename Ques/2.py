@@ -177,54 +177,111 @@ FIELD_SPECS = [
     ("EMAILADD",   1101,    50, "str"),
 ]
 
+SOURCE_ENCODING = "cp037"          # Mainframe EBCDIC. Change to "latin-1"/"utf-8" only if the source is not EBCDIC.
+PAD_BYTE = " ".encode(SOURCE_ENCODING)
+RECORD_LENGTH = max(start + length - 1 for _, start, length, _ in FIELD_SPECS)
+
+
+def decode_text(raw: bytes, encoding: str = SOURCE_ENCODING) -> str:
+    """Decode a fixed-width text field and remove fixed-width padding only."""
+    return raw.decode(encoding, errors="replace").rstrip()
+
+
+def decode_zoned_number(raw: bytes, encoding: str = SOURCE_ENCODING) -> int:
+    """Decode ordinary numeric fields stored as display digits in EBCDIC/ASCII."""
+    text = decode_text(raw, encoding).strip()
+    return int(text) if text else 0
+
+
+def iter_fixed_width_records(filepath: Path, record_length: int):
+    """
+    Yield complete logical records from a mainframe extract.
+
+    This keeps the DATA-step-style fixed-position parsing reusable for other
+    converted programs.  Mainframe FB files usually do not contain newline
+    delimiters, so iterating with ``for raw_line in fh`` can accidentally read
+    the whole file as one huge line.  We support the common transfer forms:
+      * newline-delimited records after text/binary transfer,
+      * VB records with a 4-byte RDW prefix, and
+      * FB records concatenated every LRECL bytes.
+    """
+    data = filepath.read_bytes()
+    if not data:
+        return
+
+    split_lines = data.splitlines()
+    line_sample = [line for line in split_lines[:20] if line]
+    if (
+        len(split_lines) > 1
+        and line_sample
+        and all(record_length - 10 <= len(line) <= record_length for line in line_sample)
+    ):
+        for line in split_lines:
+            if line:
+                yield line.ljust(record_length, PAD_BYTE)[:record_length]
+        return
+
+    pos = 0
+    rdw_records = []
+    while pos + 4 <= len(data):
+        rdw_length = int.from_bytes(data[pos:pos + 2], byteorder="big")
+        if rdw_length < 4 or pos + rdw_length > len(data):
+            rdw_records = []
+            break
+        rdw_records.append(data[pos + 4:pos + rdw_length])
+        pos += rdw_length
+
+    if rdw_records and pos == len(data):
+        for record in rdw_records:
+            if record:
+                yield record.ljust(record_length, PAD_BYTE)[:record_length]
+        return
+
+    for pos in range(0, len(data), record_length):
+        record = data[pos:pos + record_length]
+        if record:
+            yield record.ljust(record_length, PAD_BYTE)[:record_length]
+
 def parse_ecp_flat_file(filepath: Path, reptdate_val: date) -> pl.DataFrame:
     """
     Read the ECP mainframe flat file and return a Polars DataFrame.
     Equivalent of the DATA ECP / INFILE DPECPT INPUT ... step.
     """
     rows = []
-    with open(filepath, "rb") as fh:
-        for raw_line in fh:
-            # Strip newline bytes only; preserve all other bytes for slicing
-            line = raw_line.rstrip(b"\r\n")
-            if len(line) == 0:
-                continue
+    for line in iter_fixed_width_records(filepath, RECORD_LENGTH):
+        record: dict = {}
+        for (name, start1, length, ftype) in FIELD_SPECS:
+            s = start1 - 1  # 0-based start
+            e = s + length
+            chunk = line[s:e]
 
-            record: dict = {}
-            for (name, start1, length, ftype) in FIELD_SPECS:
-                s = start1 - 1          # 0-based start
-                e = s + length
-                chunk = line[s:e] if len(line) >= e else line[s:] + b" " * (e - len(line))
+            if ftype == "str":
+                record[name] = decode_text(chunk)
+            elif ftype == "num":
+                try:
+                    record[name] = decode_zoned_number(chunk)
+                except ValueError:
+                    record[name] = 0
+            elif ftype == "pd":
+                try:
+                    record[name] = decode_packed_decimal(chunk, decimal_places=2)
+                except Exception:
+                    record[name] = 0.0
 
-                if ftype == "str":
-                    record[name] = chunk.decode("cp037", errors="replace").rstrip()
-                    # cp037 = EBCDIC code page common on IBM mainframes;
-                    # adjust to cp1047 / latin-1 if the source encoding differs.
-                elif ftype == "num":
-                    try:
-                        record[name] = int(chunk.decode("cp037", errors="replace").strip() or "0")
-                    except ValueError:
-                        record[name] = 0
-                elif ftype == "pd":
-                    try:
-                        record[name] = decode_packed_decimal(chunk, decimal_places=2)
-                    except Exception:
-                        record[name] = 0.0
+        # TRANDATE = MDY(TRANMM, TRANDD, TRANYY)  FORMAT YYMMDD10.
+        try:
+            trandate = date(record["TRANYY"], record["TRANMM"], record["TRANDD"])
+        except (ValueError, KeyError):
+            trandate = None
 
-            # TRANDATE = MDY(TRANMM, TRANDD, TRANYY)  FORMAT YYMMDD10.
-            try:
-                trandate = date(record["TRANYY"], record["TRANMM"], record["TRANDD"])
-            except (ValueError, KeyError):
-                trandate = None
+        record["TRANDATE"] = trandate
+        record["REPTDATE"] = reptdate_val
 
-            record["TRANDATE"] = trandate
-            record["REPTDATE"] = reptdate_val
+        # DROP TRANYY TRANMM TRANDD
+        for drop_col in ("TRANYY", "TRANMM", "TRANDD"):
+            record.pop(drop_col, None)
 
-            # DROP TRANYY TRANMM TRANDD
-            for drop_col in ("TRANYY", "TRANMM", "TRANDD"):
-                record.pop(drop_col, None)
-
-            rows.append(record)
+        rows.append(record)
 
     if not rows:
         # Return empty DataFrame with correct schema
@@ -242,6 +299,25 @@ def parse_ecp_flat_file(filepath: Path, reptdate_val: date) -> pl.DataFrame:
         return pl.DataFrame(schema=schema)
 
     return pl.DataFrame(rows)
+
+
+def write_output_file(df: pl.DataFrame, filepath: Path) -> None:
+    """Write a DataFrame using the format implied by the file extension."""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    suffix = filepath.suffix.lower()
+
+    if suffix == ".parquet":
+        df.write_parquet(filepath)
+    elif suffix == ".csv":
+        df.write_csv(filepath)
+    elif suffix == ".txt":
+        # Text output is for human comparison, so write decoded character data
+        # instead of binary/parquet bytes.  A pipe delimiter is safer than comma
+        # for names, addresses, and descriptions that may contain punctuation.
+        df.write_csv(filepath, separator="|")
+    else:
+        raise ValueError(f"Unsupported output extension for {filepath}. Use .parquet, .csv, or .txt")
+
 
 # =============================================================================
 # READ DAILY ECP FLAT FILE
@@ -299,10 +375,10 @@ ecp_trn: pl.DataFrame = weekly_combined.select(
 # WRITE OUTPUT PARQUET FILES
 # (replaces PROC CPORT LIBRARY=WORK FILE=TRANFILE / ECISFTP transport writes)
 # =============================================================================
-ecp_trn.write_parquet(ETRNFTP_FILE)
+write_output_file(ecp_trn, ETRNFTP_FILE)
 print(f"[EIBMECPT] TRN file written : {ETRNFTP_FILE}  ({len(ecp_trn)} rows)")
 
-ecp_cis.write_parquet(ECISFTP_FILE)
+write_output_file(ecp_cis, ECISFTP_FILE)
 print(f"[EIBMECPT] CIS file written : {ECISFTP_FILE}  ({len(ecp_cis)} rows)")
 
 # =============================================================================
