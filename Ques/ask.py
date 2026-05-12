@@ -1,3 +1,8 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py", line 215, in <module>
+    ctcs_out.write_parquet(str(CTCS_MON_PQ))
+NameError: name 'CTCS_MON_PQ' is not defined
+================================
 def _resolve_reptdate(
     source_date: Optional[date] = None,
     today: Optional[date] = None,
