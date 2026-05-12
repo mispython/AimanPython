@@ -37,8 +37,8 @@ REPTDATE_PQ  = INPUT_DIR / "REPTDATE.parquet"
 
 # SAP.PBB.EPCU.CTCS.TXT(0) -- the weekly flat-file input
 # TXTFILE_PATH = os.environ.get("TXTFILE_PATH",
-#                os.path.join(INPUT_DIR, "CTCS_TXT.txt"))
-TXTFILE_PATH = INPUT_DIR / "CTCS_TXT.txt"
+#                os.path.join(INPUT_DIR, "EPCU_CTCS.txt"))
+TXTFILE_PATH = INPUT_DIR / "EPCU_CTCS.txt"
 
 # CTCS.CTCS&REPTMON -- monthly accumulator (parquet)
 # The output path is determined at runtime once REPTMON is known.
