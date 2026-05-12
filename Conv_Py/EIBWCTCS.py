@@ -10,6 +10,8 @@ Purpose  : WEEKLY CTCS (Cheque Transaction Confirmation System) FILE ACCUMULATIO
              - If FILEDAY == '08' (first week): overwrite the monthly store.
              - Otherwise: remove any rows already dated &RDATE, then prepend
                the new records (mimicking the SAS SET CTCS CTCS.CTCS&REPTMON).
+
+Tested: 5 May 2026
 """
 
 # ============================================================================
@@ -18,22 +20,25 @@ Purpose  : WEEKLY CTCS (Cheque Transaction Confirmation System) FILE ACCUMULATIO
 import os
 import sys
 from datetime import date, timedelta
-
+from pathlib import Path
 import duckdb
 import polars as pl
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-INPUT_DIR  = os.environ.get("INPUT_DIR",  "input")
-OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "output")
+BASE_DIR = Path("C:/Users/aiman/Desktop/SAS_Python_Migration/DUMMY/EIBWCTCS")
+
+INPUT_DIR  = BASE_DIR / "input"
+OUTPUT_DIR = BASE_DIR / "output"
 
 # LOAN.REPTDATE parquet (contains single REPTDATE row)
-REPTDATE_PQ  = os.path.join(INPUT_DIR, "REPTDATE.parquet")
+REPTDATE_PQ  = INPUT_DIR / "REPTDATE.parquet"
 
 # SAP.PBB.EPCU.CTCS.TXT(0) -- the weekly flat-file input
-TXTFILE_PATH = os.environ.get("TXTFILE_PATH",
-               os.path.join(INPUT_DIR, "CTCS_TXT.txt"))
+# TXTFILE_PATH = os.environ.get("TXTFILE_PATH",
+#                os.path.join(INPUT_DIR, "CTCS_TXT.txt"))
+TXTFILE_PATH = INPUT_DIR / "CTCS_TXT.txt"
 
 # CTCS.CTCS&REPTMON -- monthly accumulator (parquet)
 # The output path is determined at runtime once REPTMON is known.
@@ -50,7 +55,38 @@ def _load(path: str) -> pl.DataFrame:
 # DERIVE MACRO VARIABLES FROM LOAN.REPTDATE
 # ============================================================================
 _rd_df = _load(REPTDATE_PQ)
-_reptdate_val: date = _rd_df["REPTDATE"][0]
+
+
+def _coerce_reptdate(value) -> date:
+    """
+    Normalize REPTDATE coming from parquet.
+
+    Expected values:
+      - Python date/datetime-like (already usable)
+      - SAS numeric date (days since 1960-01-01)
+      - ISO/date-like string
+    """
+    if isinstance(value, date):
+        return value
+
+    if isinstance(value, int):
+        # SAS date numeric = days since 1960-01-01
+        return date(1960, 1, 1) + timedelta(days=value)
+
+    if isinstance(value, str):
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+            try:
+                from datetime import datetime
+                return datetime.strptime(value.strip(), fmt).date()
+            except ValueError:
+                continue
+
+    raise TypeError(
+        f"Unsupported REPTDATE type/value: {type(value).__name__} ({value!r})"
+    )
+
+
+_reptdate_val: date = _coerce_reptdate(_rd_df["REPTDATE"][0])
 
 REPTDAY   = f"{_reptdate_val.day:02d}"
 REPTMON   = f"{_reptdate_val.month:02d}"
