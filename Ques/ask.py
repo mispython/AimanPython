@@ -1,3 +1,26 @@
+def _resolve_reptdate(
+    source_date: Optional[date] = None,
+    today: Optional[date] = None,
+) -> date:
+    """Return the source/header report date, or yesterday if none is supplied."""
+    if source_date is not None:
+        return source_date
+
+    run_date = today or datetime.now().date()
+    return run_date - timedelta(days=1)
+
+_reptdate_val: date = _resolve_reptdate(source_date=_tdate)
+
+REPTDAY   = f"{_reptdate_val.day:02d}"
+REPTMON   = f"{_reptdate_val.month:02d}"
+REPTYEAR  = str(_reptdate_val.year)[-2:]
+# &RDATE   = PUT(REPTDATE, Z5.) -- zero-padded 5-digit SAS date number
+# Reproduced as DDMMYY8. string for comparison (used as &REPTDATE too)
+RDATE_STR = _reptdate_val.strftime("%d/%m/%y")    # DDMMYY8. format
+
+# Monthly accumulator path
+CTCS_MON_PQ = os.path.join(OUTPUT_DIR, f"CTCS{REPTMON}.parquet")
+
 source /sas/python/virt_edw_dev/bin/activate
 /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py
 [sas_edw_dev@svdwh004 Data_Warehouse]$ source /sas/python/virt_edw_dev/bin/activate
@@ -18,18 +41,3 @@ def _resolve_reptdate(today: date | None = None) -> date:
     run_date = today or datetime.now().date()
     return run_date - timedelta(days=1)
 ==================================
-
-# COMMON REPTDATE REPLACEMENT BLOCK START
-# DERIVE MACRO VARIABLES WITHOUT LOAN.REPTDATE / REPTDATE.parquet
-#
-# Original SAS program (Ori_SAS/EIBWCTCS) reads LOAN.REPTDATE and derives
-# REPTDAY, REPTMON, REPTYEAR, RDATE, and REPTDATE macro variables.
-#
-# Converted programs can reuse this block to avoid a REPTDATE.parquet input:
-#   1. Delete the REPTDATE parquet path/read lines.
-#   2. Paste this block where the old REPTDATE DATA step was converted.
-#   3. Keep the downstream variable names unchanged.
-#
-# Note: do not do datetime.now().strftime("%d%m%y") - 1 because strftime()
-# returns text. Subtract one day from the date/datetime first, then format it.
-# COMMON REPTDATE REPLACEMENT BLOCK END
