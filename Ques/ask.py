@@ -1,3 +1,12 @@
+source /sas/python/virt_edw_dev/bin/activate
+/sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py
+[sas_edw_dev@svdwh004 Data_Warehouse]$ source /sas/python/virt_edw_dev/bin/activate
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py", line 88, in <module>
+    def _resolve_reptdate(today: date | None = None) -> date:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+
 def _resolve_reptdate(today: date | None = None) -> date:
     """Return the report date for data generated today but dated yesterday."""
     run_date = today or datetime.now().date()
