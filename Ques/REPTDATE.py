@@ -74,3 +74,31 @@ REPTDAY = _default_values.reptday            # zero-padded day   (Z2.)
 REPTDT = _default_values.reptdt              # raw SAS date integer equivalent (used for filter)
 RDATE = _default_values.rdate                # date object used in DATA ECP step
 NOWK = _default_values.nowk                  # zero-padded 1-digit week number (Z1.)
+
+
+
+# =============================================================================
+# NOTE - put these on main programs
+# =============================================================================
+# # If 2-digit SAS-style year
+# from REPTDATE import get_reptdate_values
+
+# reptdate_values = get_reptdate_values()
+
+# REPTYEAR = reptdate_values.reptyear
+# REPTMON = reptdate_values.reptmon
+# REPTDAY = reptdate_values.reptday
+# NOWK = reptdate_values.nowk
+
+# # If 4-digit SAS-style year
+# from REPTDATE import get_reptdate_values
+
+# reptdate_values = get_reptdate_values(year_format="%Y")
+
+# REPTYEAR = reptdate_values.reptyear
+# REPTMON = reptdate_values.reptmon
+# REPTDAY = reptdate_values.reptday
+# NOWK = reptdate_values.nowk
+
+# # Can also import the constants directly
+# from REPTDATE import reptdate, REPTYEAR, REPTMON, REPTDAY, REPTDT, RDATE, NOWK
