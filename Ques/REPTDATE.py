@@ -74,5 +74,3 @@ REPTDAY = _default_values.reptday            # zero-padded day   (Z2.)
 REPTDT = _default_values.reptdt              # raw SAS date integer equivalent (used for filter)
 RDATE = _default_values.rdate                # date object used in DATA ECP step
 NOWK = _default_values.nowk                  # zero-padded 1-digit week number (Z1.)
-RDATE    = reptdate                          # date object used in DATA ECP step
-NOWK     = f"{nowk:01d}"                     # zero-padded 1-digit week number (Z1.)
