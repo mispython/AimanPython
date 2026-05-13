@@ -1,3 +1,5 @@
+[EIBMECPT] WARNING: file size 18343077 not divisible by candidates (1150, 1151, 1152). Using LRECL=1150 -- output may be misaligned.
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py", line 215, in <module>
     ctcs_out.write_parquet(str(CTCS_MON_PQ))
