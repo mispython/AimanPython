@@ -1,3 +1,10 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMECPT_refine.py", line 147, in <module>
+    def _decode_ebcdic_int(raw: bytes) -> int | None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ 
+
+============================================
 def _decode_ebcdic_int(raw: bytes) -> int | None:
     """Decode an EBCDIC numeric field, returning None when it is not numeric."""
     decoded = raw.decode(STR_ENCODING, errors="replace").strip()
