@@ -1,4 +1,4 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Program  : EIBMECPT.py
 Purpose  : Create ECP Transaction Dataset & export to SAS Warehouse
@@ -14,7 +14,6 @@ Note     : The FTP steps (PUT to EDW) in the original JCL are out of scope
 import os
 from pathlib import Path
 from datetime import date
-from typing import Optional
 import polars as pl
 import duckdb
 from REPTDATE import get_reptdate_values
@@ -35,6 +34,9 @@ ECISFTP_FILE = OUTPUT_DIR / "ECISFTP.parquet"
 # Weekly ECP Parquet store (equivalent of ECPOUT library)
 ECPOUT_DIR = OUTPUT_DIR / "ECPOUT"
 
+# Input flat file path
+DPECPT_FILE = INPUT_DIR / "DPECPT.txt"
+
 # Ensure directories exist
 ECPOUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -43,25 +45,14 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # DATE / WEEK DERIVATION  (equivalent of DATA REPTDATE step)
 # =============================================================================
 # REPTDATE = TODAY() - 1  (SAS: OPTIONS YEARCUTOFF=1950)
-reptdate: date = date.today() - timedelta(days=1)
+reptdate_values = get_reptdate_values()
 
-day_of_month = reptdate.day
-if 1 <= day_of_month <= 8:
-    nowk = 1
-elif 9 <= day_of_month <= 15:
-    nowk = 2
-elif 16 <= day_of_month <= 22:
-    nowk = 3
-else:
-    nowk = 4
-
-# Macro variable equivalents
-REPTYEAR = reptdate.strftime("%y")           # 2-digit year  (PUT(REPTDATE,YEAR2.))
-REPTMON  = reptdate.strftime("%m")           # zero-padded month (Z2.)
-REPTDAY  = reptdate.strftime("%d")           # zero-padded day   (Z2.)
-REPTDT   = reptdate.toordinal()              # raw SAS date integer equivalent (used for filter)
-RDATE    = reptdate                          # date object used in DATA ECP step
-NOWK     = f"{nowk:01d}"                     # zero-padded 1-digit week number (Z1.)
+REPTYEAR = reptdate_values.reptyear          # 2-digit year  (PUT(REPTDATE,YEAR2.))
+REPTMON  = reptdate_values.reptmon           # zero-padded month (Z2.)
+REPTDAY  = reptdate_values.reptday           # zero-padded day   (Z2.)
+REPTDT   = reptdate_values.reptdt            # raw SAS date integer equivalent (used for filter)
+RDATE    = reptdate_values.rdate             # date object used in DATA ECP step
+NOWK     = reptdate_values.nowk              # zero-padded 1-digit week number (Z1.)
 
 # Weekly dataset name  (e.g.  ECP0312  for March week 1, year 2025)
 WEEKLY_NAME = f"ECP{REPTMON}{NOWK}"         # e.g. ECP031
@@ -71,7 +62,7 @@ WEEKLY_FILE = ECPOUT_DIR / f"{WEEKLY_NAME}.parquet"
 TRN_WORK_NAME = f"ECPTRAN{REPTMON}{NOWK}{REPTYEAR}"
 CIS_WORK_NAME = f"ECP{REPTMON}{NOWK}{REPTYEAR}"
 
-print(f"[EIBMECPT] reptdate={reptdate}  REPTMON={REPTMON}  NOWK={NOWK}  REPTYEAR={REPTYEAR}")
+print(f"[EIBMECPT] reptdate={RDATE}  REPTMON={REPTMON}  NOWK={NOWK}  REPTYEAR={REPTYEAR}")
 print(f"[EIBMECPT] Weekly store : {WEEKLY_FILE}")
 print(f"[EIBMECPT] TRN output   : {ETRNFTP_FILE}")
 print(f"[EIBMECPT] CIS output   : {ECISFTP_FILE}")
@@ -99,6 +90,7 @@ def decode_packed_decimal(raw: bytes, decimal_places: int = 2) -> float:
     Last nibble: 0xC = positive, 0xD = negative, 0xF = unsigned positive.
     """
     digits = ""
+    sign_nibble = 0xC
     for i, byte in enumerate(raw):
         high = (byte >> 4) & 0x0F
         low  = byte & 0x0F
