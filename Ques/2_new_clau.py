@@ -82,7 +82,7 @@ NOWK     = f"{nowk:01d}"                     # zero-padded 1-digit week number (
 WEEKLY_NAME = f"ECP{REPTMON}{NOWK}"         # e.g. ECP031
 # WEEKLY_FILE = ECPOUT_DIR / f"{WEEKLY_NAME}.parquet"
 # WEEKLY_FILE = ECPOUT_DIR / f"{WEEKLY_NAME}.csv"
-WEEKLY_FILE = ECPOUT_DIR / f"{WEEKLY_NAME}.parquet"
+WEEKLY_FILE = ECPOUT_DIR / f"{WEEKLY_NAME}.txt"
 
 # Work dataset names  (e.g. ECPTRAN0312YY, ECP0312YY)
 TRN_WORK_NAME = f"ECPTRAN{REPTMON}{NOWK}{REPTYEAR}"
