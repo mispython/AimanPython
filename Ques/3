@@ -1,3 +1,58 @@
+def _safe_date(year: int, month: int, day: int):
+    """Return a Python date or None when source fields are not a valid date.
+
+    SAS date functions produce a missing value for invalid components.  Using
+    None gives Polars a null date instead of raising a ComputeError for values
+    such as (0, 0, 0).
+    """
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+ICLRGORI_SCHEMA = {
+    "BNKTYPE": pl.Utf8,
+    "BNKCODE": pl.Int64,
+    "YY": pl.Int64,
+    "MM": pl.Int64,
+    "DD": pl.Int64,
+    "CLRGDT": pl.Date,
+    "CHKNUM": pl.Utf8,
+    "PAYBANK": pl.Int64,
+    "MICRPAY": pl.Int64,
+    "ACCTNO": pl.Int64,
+    "TRXCODE": pl.Utf8,
+    "AMOUNT": pl.Float64,
+    "PREBANK": pl.Int64,
+    "MICRPRE": pl.Int64,
+    "CHKTYPE": pl.Int64,
+    "BRCODE": pl.Int64,
+    "UICCODE": pl.Utf8,
+}
+
+BR_SCHEMA = {
+    "MICRPAY": pl.Int64,
+    "BRANCH": pl.Int64,
+}
+
+ICLRGUIC_SCHEMA = {
+    "CHKNUM": pl.Utf8,
+    "MICRPAY": pl.Int64,
+    "ACCTNO": pl.Int64,
+    "TRXCODE": pl.Utf8,
+    "TRXAMT": pl.Float64,
+    "MICR": pl.Int64,
+    "REJECT": pl.Utf8,
+    "TRXIND": pl.Utf8,
+    "TRXTYPE": pl.Utf8,
+    "YY2": pl.Int64,
+    "MM2": pl.Int64,
+    "DD2": pl.Int64,
+    "DRDATE": pl.Date,
+    "UICCODE": pl.Utf8,
+}
+
 # Ques/3.py uses a 4-digit year in its output file names, so pass "%Y" here.
 reptdate_values = get_reptdate_values(year_format="%Y")
 
