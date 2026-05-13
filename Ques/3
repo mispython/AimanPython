@@ -9,3 +9,17 @@ REPTDAY  = reptdate_values.reptday           # zero-padded day   (Z2.)
 REPTDT   = reptdate_values.reptdt            # raw SAS date integer equivalent (used for filter)
 RDATE    = reptdate_values.rdate             # date object used in DATA ECP step
 NOWK     = reptdate_values.nowk              # zero-padded 1-digit week number (Z1.)
+
+
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMDPIC_refine.py", line 234, in <module>
+    ICLRGORI = ICLRGORI.with_columns(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ComputeError: Invalid date components (0, 0, 0) supplied
