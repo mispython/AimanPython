@@ -25,26 +25,40 @@ import duckdb
 # =============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-# Input flat file  (mainframe fixed-width, RECFM=FB LRECL=1150+)
+# Input flat file (mainframe fixed-width, RECFM=FB LRECL=1150)
 INPUT_DIR = BASE_DIR / "input/uat" / "DP_PBECP_20260511"
 
-# Output Parquet files (equivalent of SAP.PBB.ECPTRN.ETRNFTP / ECISFTP)
-OUTPUT_DIR      = BASE_DIR / "output" / "EIBMECPT"
-ETRNFTP_FILE    = OUTPUT_DIR / "ETRNFTP.txt"
-ECISFTP_FILE    = OUTPUT_DIR / "ECISFTP.txt"
+# Output files (equivalent of SAP.PBB.ECPTRN.ETRNFTP / ECISFTP)
+OUTPUT_DIR   = BASE_DIR / "output" / "EIBMECPT"
+ETRNFTP_FILE = OUTPUT_DIR / "ETRNFTP.txt"
+ECISFTP_FILE = OUTPUT_DIR / "ECISFTP.txt"
 
 # Weekly ECP Parquet store (equivalent of ECPOUT library)
-ECPOUT_DIR      = OUTPUT_DIR / "ECPOUT"
+ECPOUT_DIR = OUTPUT_DIR / "ECPOUT"
 
-# Mainframe logical record length (RECFM=FB LRECL=1150).
-# The rightmost defined field ends at byte 1150 (1-based: @1101 + 50 chars).
-# When mainframe datasets are transferred via FTP in text/ASCII mode the
-# transfer process appends a line-feed (0x0A, 1 byte) or CRLF (0x0D 0x0A,
-# 2 bytes) after every record.  _detect_lrecl() inspects the raw file to
-# determine which variant is present so that fh.read(effective_lrecl)
-# always consumes exactly one complete record plus its separator, keeping
-# every subsequent read correctly aligned.
-LRECL_CONTENT = 1150   # bytes of actual record content (no separator)
+# ---------------------------------------------------------------------------
+# FILE ENCODING NOTE
+# ---------------------------------------------------------------------------
+# The input file was transferred from the mainframe via FTP in TEXT mode.
+# Text-mode FTP converts EBCDIC character bytes to ASCII/latin-1 in-place,
+# so all string fields arrive as latin-1 (Windows-1252 / cp1252) encoded
+# bytes — confirmed by WinSCP reporting "Encoding: 1252 (ANSI)".
+#
+# The AMOUNT field (PD9.2, packed-decimal) is pure binary and is NOT touched
+# by the text-mode conversion; it must still be decoded with the packed-
+# decimal BCD algorithm.
+#
+# IMPORTANT: because text-mode FTP also converts the EBCDIC newline character
+# (0x25) to an ASCII line-feed (0x0A), AND because packed-decimal bytes
+# inside the AMOUNT field can equal 0x0A by coincidence, the file contains
+# far more line-feed bytes than there are logical records.  It is therefore
+# impossible to read this file line-by-line reliably.  Instead the file is
+# opened in binary mode and consumed as fixed-length chunks of exactly
+# LRECL_CONTENT bytes (plus a one-byte LF separator if present), determined
+# once at startup by _detect_lrecl().
+# ---------------------------------------------------------------------------
+LRECL_CONTENT = 1150        # bytes of record content (no separator)
+STR_ENCODING  = "latin-1"   # encoding for all string fields after FTP conversion
 
 # Ensure directories exist
 ECPOUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -74,8 +88,8 @@ REPTDT   = reptdate.toordinal()              # raw SAS date integer equivalent (
 RDATE    = reptdate                          # date object used in DATA ECP step
 NOWK     = f"{nowk:01d}"                     # zero-padded 1-digit week number (Z1.)
 
-# Weekly dataset name  (e.g.  ECP0312  for March week 1, year 2025)
-WEEKLY_NAME = f"ECP{REPTMON}{NOWK}"         # e.g. ECP031
+# Weekly dataset name  (e.g. ECP0312 for March week 1)
+WEEKLY_NAME = f"ECP{REPTMON}{NOWK}"
 WEEKLY_FILE = ECPOUT_DIR / f"{WEEKLY_NAME}.parquet"
 
 # Work dataset names  (e.g. ECPTRAN0312YY, ECP0312YY)
@@ -108,13 +122,13 @@ def decode_packed_decimal(raw: bytes, decimal_places: int = 2) -> float:
     """
     Decode a mainframe packed-decimal (BCD) byte string.
     Last nibble: 0xC = positive, 0xD = negative, 0xF = unsigned positive.
-    sign_nibble is initialised to 0xF before the loop so it is always
-    defined even when raw is empty or contains a single byte.
+    This field is NOT affected by the text-mode FTP encoding conversion and
+    remains raw binary in the transferred file.
     """
     if not raw:
         return 0.0
 
-    sign_nibble = 0xF   # default: unsigned positive (safe fallback)
+    sign_nibble = 0xF   # default: unsigned positive
     digits = ""
     for i, byte in enumerate(raw):
         high = (byte >> 4) & 0x0F
@@ -127,7 +141,7 @@ def decode_packed_decimal(raw: bytes, decimal_places: int = 2) -> float:
             sign_nibble = low
 
     value = int(digits) / (10 ** decimal_places) if digits else 0.0
-    if sign_nibble == 0xD:          # negative
+    if sign_nibble == 0xD:      # negative
         value = -value
     return value
 
@@ -136,33 +150,29 @@ def decode_packed_decimal(raw: bytes, decimal_places: int = 2) -> float:
 # =============================================================================
 def _detect_lrecl(filepath: Path, content_len: int) -> int:
     """
-    Inspect the raw binary file to determine the effective record length,
-    accounting for any line-feed or CRLF separator appended by FTP text-mode
-    transfer.
+    Determine the effective per-record read size, accounting for any LF or
+    CRLF byte(s) appended after each record by a text-mode FTP transfer.
 
-    Strategy:
-      1. Read the first content_len bytes — the expected content of record 1.
-      2. Peek at the next 1-2 bytes.
-         - If next bytes are 0x0D 0x0A (CRLF) → effective = content_len + 2
-         - If next byte is 0x0A (LF)           → effective = content_len + 1
-         - Otherwise                            → effective = content_len
-      3. Validate by confirming file_size % effective_lrecl == 0.
-         If not, try the remaining candidates before falling back.
+    Peeks at the byte(s) immediately following the first content_len bytes:
+      - 0x0D 0x0A  =>  CRLF separator  =>  effective = content_len + 2
+      - 0x0A       =>  LF separator    =>  effective = content_len + 1
+      - other      =>  no separator    =>  effective = content_len
 
-    Returns the effective record length (content bytes + separator bytes).
+    Validates against file_size % candidate == 0. Falls back by trying all
+    three candidates before accepting a non-divisible last resort.
     """
     file_size = filepath.stat().st_size
 
     with open(filepath, "rb") as fh:
-        fh.read(content_len)        # consume first record's content bytes
-        peek = fh.read(2)           # inspect the bytes that follow
+        fh.read(content_len)
+        peek = fh.read(2)
 
     if len(peek) >= 2 and peek[0] == 0x0D and peek[1] == 0x0A:
-        candidate = content_len + 2    # CRLF separator
+        candidate = content_len + 2
     elif len(peek) >= 1 and peek[0] == 0x0A:
-        candidate = content_len + 1    # LF separator
+        candidate = content_len + 1
     else:
-        candidate = content_len        # no separator (pure binary FB)
+        candidate = content_len
 
     sep_labels = {
         content_len:     "none (pure binary FB)",
@@ -176,7 +186,6 @@ def _detect_lrecl(filepath: Path, content_len: int) -> int:
               f"records={file_size // candidate})")
         return candidate
 
-    # Fallback: try all three candidates in order
     for alt in [content_len, content_len + 1, content_len + 2]:
         if file_size % alt == 0:
             print(f"[EIBMECPT] Fallback LRECL={alt} "
@@ -184,46 +193,37 @@ def _detect_lrecl(filepath: Path, content_len: int) -> int:
                   f"records={file_size // alt})")
             return alt
 
-    # Last resort: trust the content length and warn
-    print(f"[EIBMECPT] WARNING: file size {file_size} is not divisible by any "
-          f"candidate LRECL ({content_len}, {content_len+1}, {content_len+2}). "
-          f"Proceeding with LRECL={content_len} — output may be misaligned.")
+    print(f"[EIBMECPT] WARNING: file size {file_size} not divisible by candidates "
+          f"({content_len}, {content_len+1}, {content_len+2}). "
+          f"Using LRECL={content_len} — output may be misaligned.")
     return content_len
 
 # =============================================================================
-# EBCDIC CONTROL-CHARACTER SANITISER
+# CONTROL-CHARACTER SANITISER
 # =============================================================================
-# After decoding EBCDIC to Unicode some bytes map to ASCII control characters
-# (e.g. EBCDIC 0x25 → U+000A line-feed, 0x0D → U+000D carriage-return in
-# cp037).  If these survive into the DataFrame and are then written via
-# write_csv() they appear as literal newlines in the output file, splitting
-# a single data row across multiple physical lines.  _sanitise() strips all
-# C0 control characters (U+0000–U+001F) and DEL (U+007F) from decoded strings.
-_CTRL_TABLE = dict.fromkeys(range(0x00, 0x20), None)   # U+0000–U+001F → delete
-_CTRL_TABLE[0x7F] = None                                # DEL → delete
+# Text-mode FTP converts the EBCDIC newline (0x25) to ASCII LF (0x0A).
+# Some filler or padding bytes in string fields may therefore decode to LF,
+# CR, or other control characters.  If written as-is into the CSV output
+# they would split a single data row across multiple physical lines.
+# All C0 control characters (U+0000-U+001F) and DEL (U+007F) are stripped.
+_CTRL_TABLE = dict.fromkeys(range(0x00, 0x20), None)
+_CTRL_TABLE[0x7F] = None
 
 def _sanitise(value: str) -> str:
-    """Strip ASCII/C0 control characters from a decoded EBCDIC string."""
+    """Strip C0 control characters and DEL from a decoded string field."""
     return value.translate(_CTRL_TABLE)
 
 # =============================================================================
 # FIXED-WIDTH FLAT FILE READER  (equivalent of DATA ECP / INFILE DPECPT step)
-# Column positions are 1-based in SAS → converted to 0-based slicing in Python.
-# LRECL is at least 1150 bytes based on the widest field @1101 + 50 chars.
-#
-# The file is read as a binary stream using fixed-length fh.read(effective_lrecl)
-# calls.  Reading line-by-line with rstrip() would corrupt byte offsets because
-# EBCDIC bytes whose numeric value coincides with ASCII 0x0D or 0x0A can appear
-# legitimately inside record content and would be misinterpreted as line endings.
-# =============================================================================
+# Column positions are 1-based in SAS => converted to 0-based slicing in Python.
 #
 # SAS INPUT statement field map:
-#   @0001  ACCTNO        11.       numeric  11 bytes (chars '0'-'9')
+#   @0001  ACCTNO        11.       numeric  11 bytes
 #   @0012  SERIAL        $16.      char     16 bytes
 #   @0092  TRANYY        4.        numeric   4 bytes (year)
 #   @0097  TRANMM        2.        numeric   2 bytes (month)
 #   @0100  TRANDD        2.        numeric   2 bytes (day)
-#   @0110  AMOUNT        PD9.2     packed    9 bytes
+#   @0110  AMOUNT        PD9.2     packed    9 bytes  <- raw binary, NOT latin-1
 #   @0129  PAYORCORPREF  $16.      char     16 bytes
 #   @0145  PAYORCORP     $80.      char     80 bytes
 #   @0225  BENEBANKBIC   $11.      char     11 bytes
@@ -238,17 +238,16 @@ def _sanitise(value: str) -> str:
 #   @0932  RSONDESC      $40.      char     40 bytes
 #   @1085  MOBIPHON      $16.      char     16 bytes
 #   @1101  EMAILADD      $50.      char     50 bytes
-#
-# Note: All @positions are 1-based; Python slices use [pos-1 : pos-1+length].
+# =============================================================================
 
 FIELD_SPECS = [
-    # (field_name,    start_1based, length, type)  type: 'num'|'str'|'pd'
+    # (field_name,    start_1based, length, type)   type: 'num' | 'str' | 'pd'
     ("ACCTNO",        1,    11, "num"),
     ("SERIAL",       12,    16, "str"),
     ("TRANYY",       92,     4, "num"),
     ("TRANMM",       97,     2, "num"),
     ("TRANDD",      100,     2, "num"),
-    ("AMOUNT",      110,     9, "pd"),    # packed-decimal PD9.2
+    ("AMOUNT",      110,     9, "pd"),   # packed-decimal -- raw binary, not text
     ("PAYORCORPREF",129,    16, "str"),
     ("PAYORCORP",   145,    80, "str"),
     ("BENEBANKBIC", 225,    11, "str"),
@@ -270,10 +269,10 @@ def parse_ecp_flat_file(filepath: Path, reptdate_val: date) -> pl.DataFrame:
     Read the ECP mainframe flat file and return a Polars DataFrame.
     Equivalent of the DATA ECP / INFILE DPECPT INPUT ... step.
 
-    The effective record length (including any FTP-added separator) is
-    determined once by _detect_lrecl().  Each call to fh.read(effective_lrecl)
-    consumes exactly one record; only the first LRECL_CONTENT bytes are sliced
-    for field extraction — trailing separator byte(s) are silently discarded.
+    The file is opened in binary mode and read in fixed-length chunks of
+    effective_lrecl bytes (determined by _detect_lrecl).  String fields are
+    decoded as latin-1 (the result of a text-mode FTP EBCDIC->ASCII conversion).
+    The AMOUNT packed-decimal field is decoded directly from its raw bytes.
     """
     effective_lrecl = _detect_lrecl(filepath, LRECL_CONTENT)
 
@@ -282,29 +281,27 @@ def parse_ecp_flat_file(filepath: Path, reptdate_val: date) -> pl.DataFrame:
         while True:
             raw = fh.read(effective_lrecl)
             if not raw:
-                break                       # end of file
+                break
             if len(raw) < LRECL_CONTENT:
-                # Partial final block — pad with EBCDIC spaces (0x40)
-                raw = raw + b"\x40" * (LRECL_CONTENT - len(raw))
+                # Partial final block -- pad with ASCII spaces
+                raw = raw + b"\x20" * (LRECL_CONTENT - len(raw))
 
-            # Only the content portion is parsed; separator bytes (if any)
-            # sit beyond index LRECL_CONTENT and are never accessed.
+            # Only the content portion is parsed; trailing separator byte(s)
+            # beyond index LRECL_CONTENT are silently discarded.
             record_bytes = raw[:LRECL_CONTENT]
 
             record: dict = {}
             for (name, start1, length, ftype) in FIELD_SPECS:
-                s = start1 - 1          # 0-based start
+                s = start1 - 1
                 e = s + length
                 chunk = record_bytes[s:e]
 
                 if ftype == "str":
-                    # Decode EBCDIC (IBM Code Page 037 is standard US mainframe;
-                    # adjust to cp1047 if the source system uses a variant).
-                    raw_str = chunk.decode("cp037", errors="replace").rstrip()
+                    raw_str = chunk.decode(STR_ENCODING, errors="replace").rstrip()
                     record[name] = _sanitise(raw_str)
                 elif ftype == "num":
                     try:
-                        decoded = chunk.decode("cp037", errors="replace").strip()
+                        decoded = chunk.decode(STR_ENCODING, errors="replace").strip()
                         record[name] = int(decoded) if decoded else 0
                     except ValueError:
                         record[name] = 0
@@ -330,7 +327,6 @@ def parse_ecp_flat_file(filepath: Path, reptdate_val: date) -> pl.DataFrame:
             rows.append(record)
 
     if not rows:
-        # Return empty DataFrame with correct schema
         schema = {
             "ACCTNO": pl.Int64, "SERIAL": pl.Utf8, "TRANDATE": pl.Date,
             "REPTDATE": pl.Date, "AMOUNT": pl.Float64,
@@ -354,7 +350,7 @@ ecp_daily: pl.DataFrame = parse_ecp_flat_file(INPUT_DIR, RDATE)
 print(f"[EIBMECPT] Records read from flat file: {len(ecp_daily)}")
 
 # =============================================================================
-# %MACRO APPENDWKLY — Append / initialise weekly ECP Parquet store
+# %MACRO APPENDWKLY -- Append / initialise weekly ECP Parquet store
 # =============================================================================
 # Equivalent logic:
 #   IF EXIST(ECPOUT.ECP&REPTMON&NOWK) THEN
@@ -363,36 +359,32 @@ print(f"[EIBMECPT] Records read from flat file: {len(ecp_daily)}")
 #     Create new dataset from today's data
 
 if WEEKLY_FILE.exists():
-    # Load existing weekly store
     weekly_existing: pl.DataFrame = pl.read_parquet(WEEKLY_FILE)
 
     # Remove rows for the current reptdate (idempotent re-run safety)
     # SAS: IF REPTDATE EQ "&REPTDT" THEN DELETE;
     weekly_existing = weekly_existing.filter(pl.col("REPTDATE") != RDATE)
 
-    # Append today's records
     weekly_combined: pl.DataFrame = pl.concat(
         [weekly_existing, ecp_daily], how="diagonal_relaxed"
     )
 else:
-    # First run for this week — create from today's data
     weekly_combined = ecp_daily.clone()
 
-# Persist updated weekly store
 weekly_combined.write_parquet(WEEKLY_FILE)
 print(f"[EIBMECPT] Weekly store updated: {WEEKLY_FILE}  ({len(weekly_combined)} rows)")
 
 # =============================================================================
-# CIS SUBSET  — DATA ECP&REPTMON&NOWK&REPTYEAR (KEEP=... CIS cols)
-#               equivalent of PROC CPORT SELECT ECP&REPTMON&NOWK&REPTYEAR
+# CIS SUBSET  -- DATA ECP&REPTMON&NOWK&REPTYEAR (KEEP=... CIS cols)
+#                equivalent of PROC CPORT SELECT ECP&REPTMON&NOWK&REPTYEAR
 # =============================================================================
 ecp_cis: pl.DataFrame = weekly_combined.select(
     [c for c in CIS_COLS if c in weekly_combined.columns]
 )
 
 # =============================================================================
-# TRN SUBSET  — DATA ECPTRAN&REPTMON&NOWK&REPTYEAR (KEEP=... TRN cols)
-#               equivalent of PROC CPORT SELECT ECPTRAN&REPTMON&NOWK&REPTYEAR
+# TRN SUBSET  -- DATA ECPTRAN&REPTMON&NOWK&REPTYEAR (KEEP=... TRN cols)
+#                equivalent of PROC CPORT SELECT ECPTRAN&REPTMON&NOWK&REPTYEAR
 # =============================================================================
 ecp_trn: pl.DataFrame = weekly_combined.select(
     [c for c in TRN_COLS if c in weekly_combined.columns]
@@ -402,16 +394,12 @@ ecp_trn: pl.DataFrame = weekly_combined.select(
 # WRITE OUTPUT TEXT FILES
 # (replaces PROC CPORT LIBRARY=WORK FILE=TRANFILE / ECISFTP transport writes)
 #
-# Outputs are pipe-delimited UTF-8 text files.  Date columns are cast to
-# string (ISO YYYY-MM-DD) before writing.  The _sanitise() step applied
-# during parsing ensures no embedded control characters reach the CSV writer,
-# preventing data rows from being split across multiple physical lines.
+# Pipe-delimited UTF-8 text files. Date columns cast to ISO YYYY-MM-DD string.
+# _sanitise() during parsing guarantees no embedded control characters remain,
+# so write_csv() will never split a logical row across multiple physical lines.
 # =============================================================================
 def write_txt(df: pl.DataFrame, filepath: Path) -> None:
-    """
-    Write a Polars DataFrame to a pipe-delimited UTF-8 text file.
-    Date columns are formatted as YYYY-MM-DD (ISO, matching SAS YYMMDD10.).
-    """
+    """Write a Polars DataFrame to a pipe-delimited UTF-8 text file."""
     cast_exprs = [
         pl.col(c).cast(pl.Utf8) if df[c].dtype == pl.Date else pl.col(c)
         for c in df.columns
@@ -429,9 +417,9 @@ print(f"[EIBMECPT] CIS file written : {ECISFTP_FILE}  ({len(ecp_cis)} rows)")
 # FTP / SFTP STEPS (out of scope for Python conversion)
 # ---------------------------------------------------------------------------
 # The original JCL RUNSFTP step PUT the following datasets to EDW via SFTP:
-#   PUT //SAP.PBB.ECPTRN.ETRNFTP  → /stgsrcsys/host/ftpfiles/ETRNFTP
-#   PUT //SAP.PBB.ECPCIS.ECISFTP  → /stgsrcsys/host/ftpfiles/ECISFTP
-#   PUT //SAP.DAY.CONTROL         → /stgsrcsys/host/control/EIBMECPT.TXT
+#   PUT //SAP.PBB.ECPTRN.ETRNFTP  -> /stgsrcsys/host/ftpfiles/ETRNFTP
+#   PUT //SAP.PBB.ECPCIS.ECISFTP  -> /stgsrcsys/host/ftpfiles/ECISFTP
+#   PUT //SAP.DAY.CONTROL         -> /stgsrcsys/host/control/EIBMECPT.TXT
 # These transfers must be handled by the operations scheduler / SFTP utility
 # using ETRNFTP_FILE and ECISFTP_FILE produced above as source files.
 # =============================================================================
