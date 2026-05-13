@@ -11,6 +11,7 @@ Traceback (most recent call last):
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
     return wrap_df(ldf.collect(engine, callback))
 polars.exceptions.ComputeError: Invalid date components (0, 0, 0) supplied
+polars.exceptions.ColumnNotFoundError: unable to find column "YEAR"; valid columns: ["BNKTYPE", "BNKCODE", "YY", "MM", "DD", "CHKNUM", "PAYBANK", "MICRPAY", "ACCTNO", "TRXCODE", "AMOUNT", "PREBANK", "MICRPRE", "CHKTYPE", "BRCODE", "UICCODE"]
 
 =======================================
 
