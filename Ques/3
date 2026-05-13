@@ -11,3 +11,22 @@ Traceback (most recent call last):
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
     return wrap_df(ldf.collect(engine, callback))
 polars.exceptions.ComputeError: Invalid date components (0, 0, 0) supplied
+
+=======================================
+
+ICLRGORI = ICLRGORI.with_columns(
+    pl.when(
+        (pl.col("YEAR") > 0) &
+        (pl.col("MONTH") > 0) &
+        (pl.col("DAY") > 0)
+    )
+    .then(
+        pl.date(
+            pl.col("YEAR"),
+            pl.col("MONTH"),
+            pl.col("DAY")
+        )
+    )
+    .otherwise(None)
+    .alias("NEW_DATE")
+)
