@@ -9,6 +9,7 @@ Date     : 09-10-08 (HHH)
 Entity   : Public Bank Berhad (PBB)
 """
 
+import os
 from pathlib import Path
 from datetime import date
 
@@ -61,50 +62,148 @@ ICLRGFTP_FILE = OUTPUT_DIR  / f"ICLRGNEW_ICLRGFTP_{REPTMON}{NOWK}{REPTYEAR}.parq
 # FIXED-WIDTH FLAT FILE PARSERS
 # All @positions are 1-based in SAS; Python uses 0-based slicing [pos-1 : pos-1+len].
 # =============================================================================
+# The production feeds are fixed-width byte records.  Some environments deliver
+# them as EBCDIC (cp037) while UAT/debug copies are often ASCII/UTF-8.  Do not
+# hard-code one codec and silently turn parse failures into zero; that creates
+# meaningless rows and can multiply joins on MICRPAY=0.
+DEFAULT_ENCODINGS = ("utf-8", "cp037", "latin1")
+FILE_ENCODING = os.getenv("EIBMDPIC_ENCODING", "auto").strip().lower()
+MAX_PARSE_ERROR_RATE = float(os.getenv("EIBMDPIC_MAX_PARSE_ERROR_RATE", "0.20"))
+PREVIEW_ROWS = int(os.getenv("EIBMDPIC_PREVIEW_ROWS", "10"))
 
-def _slice_str(line: bytes, start1: int, length: int) -> str:
-    """Extract a character field from a fixed-width byte line (1-based start)."""
+
+def _read_sample_lines(filepath: Path, limit: int = 50) -> list[bytes]:
+    """Read non-empty sample records for encoding detection and validation."""
+    sample = []
+    with open(filepath, "rb") as fh:
+        for raw_line in fh:
+            line = raw_line.rstrip(b"\r\n")
+            if line:
+                sample.append(line)
+            if len(sample) >= limit:
+                break
+    return sample
+
+
+def _chunk(line: bytes, start1: int, length: int) -> bytes:
+    """Extract raw bytes from a fixed-width record using SAS 1-based positions."""
     s = start1 - 1
-    chunk = line[s: s + length]
-    return chunk.decode("cp037", errors="replace").rstrip()
+    return line[s: s + length]
 
 
-def _slice_num(line: bytes, start1: int, length: int) -> int:
-    """Extract a zoned-decimal / display numeric field (1-based start)."""
-    s = start1 - 1
-    chunk = line[s: s + length]
-    try:
-        return int(chunk.decode("cp037", errors="replace").strip() or "0")
-    except ValueError:
-        return 0
+def _decode_chunk(line: bytes, start1: int, length: int, encoding: str) -> str:
+    return _chunk(line, start1, length).decode(encoding, errors="replace")
 
 
-def _slice_num_float(line: bytes, start1: int, length: int,
-                     decimals: int = 0) -> float:
+def _slice_str(line: bytes, start1: int, length: int, encoding: str) -> str | None:
+    """Extract a character field; all-blank fields remain null, not empty strings."""
+    value = _decode_chunk(line, start1, length, encoding).strip()
+    return value or None
+
+
+def _parse_num(raw: str) -> int | None:
+    raw = raw.strip()
+    if not raw:
+        return None
+    if raw.isdigit() or (raw.startswith(("+", "-")) and raw[1:].isdigit()):
+        return int(raw)
+    return None
+
+
+def _slice_num(line: bytes, start1: int, length: int, encoding: str) -> int | None:
+    """Extract a display numeric field; invalid values remain null, not zero."""
+    return _parse_num(_decode_chunk(line, start1, length, encoding))
+
+
+def _slice_num_float(
+    line: bytes, start1: int, length: int, encoding: str, decimals: int = 0
+) -> float | None:
     """
     Extract a display numeric with implied decimals (e.g. SAS 10.2 informat).
-    SAS 10.2 means 10-char field with 2 implied decimal places.
+    Invalid values remain null so bad layouts/codecs are visible in validation.
     """
-    s = start1 - 1
-    chunk = line[s: s + length]
-    raw = chunk.decode("cp037", errors="replace").strip()
+    raw = _decode_chunk(line, start1, length, encoding).strip()
+    if not raw:
+        return None
     try:
         value = float(raw)
     except ValueError:
-        value = 0.0
+        return None
     # If SAS informat specifies implied decimals and no decimal point in data
     if "." not in raw and decimals:
         value /= 10 ** decimals
     return value
 
 
-def _safe_date(year: int, month: int, day: int):
+def _choose_encoding(filepath: Path, numeric_fields: tuple[tuple[int, int], ...]) -> str:
+    """Pick the codec that makes fixed-width numeric fields look most valid."""
+    if FILE_ENCODING != "auto":
+        return FILE_ENCODING
+
+    sample_lines = _read_sample_lines(filepath)
+    if not sample_lines:
+        return DEFAULT_ENCODINGS[0]
+
+    best_encoding = DEFAULT_ENCODINGS[0]
+    best_score = -1
+    for encoding in DEFAULT_ENCODINGS:
+        score = 0
+        for line in sample_lines:
+            for start1, length in numeric_fields:
+                raw = _decode_chunk(line, start1, length, encoding).strip()
+                if not raw or raw.isdigit() or (raw.startswith(("+", "-")) and raw[1:].isdigit()):
+                    score += 1
+        if score > best_score:
+            best_encoding = encoding
+            best_score = score
+    return best_encoding
+
+
+def _print_parse_quality(name: str, df: pl.DataFrame, key_columns: list[str]) -> None:
+    """Print null/duplicate quality checks so bad input is obvious immediately."""
+    print(f"[{name}] rows parsed: {len(df)}")
+    if df.is_empty():
+        return
+    for column in key_columns:
+        null_count = df.select(pl.col(column).is_null().sum()).item()
+        if null_count:
+            print(f"[{name}] WARNING: {column} has {null_count:,} null values")
+
+
+def _reject_bad_parse(name: str, df: pl.DataFrame, required_columns: list[str]) -> None:
+    """Fail fast when required fixed-width fields cannot be parsed reliably."""
+    if df.is_empty():
+        return
+    for column in required_columns:
+        null_count = df.select(pl.col(column).is_null().sum()).item()
+        error_rate = null_count / len(df)
+        if error_rate > MAX_PARSE_ERROR_RATE:
+            raise ValueError(
+                f"{name}: {column} is null in {null_count:,}/{len(df):,} rows "
+                f"({error_rate:.1%}). Check file encoding/layout, or set "
+                "EIBMDPIC_ENCODING to utf-8, cp037, or latin1."
+            )
+
+
+def _dedupe_lookup(df: pl.DataFrame, dataset: str, key: str) -> pl.DataFrame:
+    """Drop null lookup keys and keep one row per key to avoid Cartesian joins."""
+    before = len(df)
+    cleaned = df.filter(pl.col(key).is_not_null()).unique(key, keep="first")
+    removed = before - len(cleaned)
+    if removed:
+        print(f"[{dataset}] WARNING: removed {removed:,} null/duplicate {key} lookup rows")
+    return cleaned
+
+
+def _safe_date(year: int | None, month: int | None, day: int | None):
     """Return a Python date or None when source fields are not a valid date.
 
     SAS date functions produce a missing value for invalid components.  Using
     None gives Polars a null date instead of raising a ComputeError for values
     such as (0, 0, 0).
     """
+    if year is None or month is None or day is None:
+        return None
     try:
         return date(year, month, day)
     except ValueError:
@@ -178,37 +277,44 @@ def parse_rptfile2(filepath: Path) -> pl.DataFrame:
     Read RPTFILE2 (INWARD.SAS.KL) fixed-width flat file.
     Returns a DataFrame with raw columns and nullible CLRGDT.
     """
+    encoding = _choose_encoding(
+        filepath,
+        ((3, 2), (5, 4), (9, 2), (11, 2), (21, 2), (23, 7), (30, 10)),
+    )
+    print(f"[ICLRGORI] reading {filepath} with encoding={encoding}")
     rows = []
     with open(filepath, "rb") as fh:
         for raw_line in fh:
             line = raw_line.rstrip(b"\r\n")
             if not line:
                 continue
-            yy = _slice_num(line,   5,  4)
-            mm = _slice_num(line,   9,  2)
-            dd = _slice_num(line,  11,  2)
+            yy = _slice_num(line,   5,  4, encoding)
+            mm = _slice_num(line,   9,  2, encoding)
+            dd = _slice_num(line,  11,  2, encoding)
             rows.append({
-                "BNKTYPE": _slice_str(line,   1,  2),
-                "BNKCODE": _slice_num(line,   3,  2),
+                "BNKTYPE": _slice_str(line,   1,  2, encoding),
+                "BNKCODE": _slice_num(line,   3,  2, encoding),
                 "YY":      yy,
                 "MM":      mm,
                 "DD":      dd,
                 "CLRGDT": _safe_date(yy, mm, dd),
-                "CHKNUM":  _slice_str(line,  15,  6),
-                "PAYBANK": _slice_num(line,  21,  2),
-                "MICRPAY": _slice_num(line,  23,  7),
-                "ACCTNO":  _slice_num(line,  30, 10),
-                "TRXCODE": _slice_str(line,  40,  2),
-                "AMOUNT":  _slice_num_float(line, 42, 10, decimals=2),
-                "PREBANK": _slice_num(line,  52,  2),
-                "MICRPRE": _slice_num(line,  54,  7),
-                "CHKTYPE": _slice_num(line,  61,  2),
-                "BRCODE":  _slice_num(line,  63,  5),
-                "UICCODE": _slice_str(line,  68, 30),
+                "CHKNUM":  _slice_str(line,  15,  6, encoding),
+                "PAYBANK": _slice_num(line,  21,  2, encoding),
+                "MICRPAY": _slice_num(line,  23,  7, encoding),
+                "ACCTNO":  _slice_num(line,  30, 10, encoding),
+                "TRXCODE": _slice_str(line,  40,  2, encoding),
+                "AMOUNT":  _slice_num_float(line, 42, 10, encoding, decimals=2),
+                "PREBANK": _slice_num(line,  52,  2, encoding),
+                "MICRPRE": _slice_num(line,  54,  7, encoding),
+                "CHKTYPE": _slice_num(line,  61,  2, encoding),
+                "BRCODE":  _slice_num(line,  63,  5, encoding),
+                "UICCODE": _slice_str(line,  68, 30, encoding),
             })
     df = pl.DataFrame(rows) if rows else pl.DataFrame(schema=ICLRGORI_SCHEMA)
     if not df.is_empty():
         df = df.with_columns(pl.col("CLRGDT").cast(pl.Date))
+    _print_parse_quality("ICLRGORI", df, ["MICRPAY", "UICCODE", "CLRGDT"])
+    _reject_bad_parse("ICLRGORI", df, ["MICRPAY", "UICCODE", "CLRGDT"])
     return df
 
 # -----------------------------------------------------------------------------
@@ -220,6 +326,8 @@ def parse_rptfile2(filepath: Path) -> pl.DataFrame:
 # -----------------------------------------------------------------------------
 def parse_brhcode(filepath: Path) -> pl.DataFrame:
     """Read BRHCODE fixed-width flat file. Returns MICRPAY, BRANCH."""
+    encoding = _choose_encoding(filepath, ((7, 7), (17, 3)))
+    print(f"[BR] reading {filepath} with encoding={encoding}")
     rows = []
     with open(filepath, "rb") as fh:
         for raw_line in fh:
@@ -227,10 +335,13 @@ def parse_brhcode(filepath: Path) -> pl.DataFrame:
             if not line:
                 continue
             rows.append({
-                "MICRPAY": _slice_num(line,  7, 7),
-                "BRANCH":  _slice_num(line, 17, 3),
+                "MICRPAY": _slice_num(line,  7, 7, encoding),
+                "BRANCH":  _slice_num(line, 17, 3, encoding),
             })
-    return pl.DataFrame(rows) if rows else pl.DataFrame(schema=BR_SCHEMA)
+    df = pl.DataFrame(rows) if rows else pl.DataFrame(schema=BR_SCHEMA)
+    _print_parse_quality("BR", df, ["MICRPAY", "BRANCH"])
+    _reject_bad_parse("BR", df, ["MICRPAY", "BRANCH"])
+    return df
 
 # -----------------------------------------------------------------------------
 # DATA ICLRGUIC — INFILE RPTFILE
@@ -258,37 +369,44 @@ def parse_rptfile_pbb(filepath: Path) -> pl.DataFrame:
     Read RPTFILE (CCIPS.HOSTDR.KL.CTCS) fixed-width flat file for PBB.
     Filters to RCRDTYPE == 2. Returns DataFrame with DRDATE computed.
     """
+    encoding = _choose_encoding(
+        filepath,
+        ((1, 2), (9, 7), (16, 10), (28, 10), (38, 7), (59, 4), (63, 2), (65, 2)),
+    )
+    print(f"[ICLRGUIC] reading {filepath} with encoding={encoding}")
     rows = []
     with open(filepath, "rb") as fh:
         for raw_line in fh:
             line = raw_line.rstrip(b"\r\n")
             if not line:
                 continue
-            rcrdtype = _slice_num(line, 1, 2)
+            rcrdtype = _slice_num(line, 1, 2, encoding)
             if rcrdtype != 2:
                 continue
-            yy2 = _slice_num(line,  59,  4)
-            mm2 = _slice_num(line,  63,  2)
-            dd2 = _slice_num(line,  65,  2)
+            yy2 = _slice_num(line,  59,  4, encoding)
+            mm2 = _slice_num(line,  63,  2, encoding)
+            dd2 = _slice_num(line,  65,  2, encoding)
             rows.append({
-                "CHKNUM":  _slice_str(line,   3,  6),
-                "MICRPAY": _slice_num(line,   9,  7),
-                "ACCTNO":  _slice_num(line,  16, 10),
-                "TRXCODE": _slice_str(line,  26,  2),
-                "TRXAMT":  _slice_num_float(line, 28, 10, decimals=2),
-                "MICR":    _slice_num(line,  38,  7),
-                "REJECT":  _slice_str(line,  45,  2),
-                "TRXIND":  _slice_str(line,  57,  1),
-                "TRXTYPE": _slice_str(line,  58,  1),
+                "CHKNUM":  _slice_str(line,   3,  6, encoding),
+                "MICRPAY": _slice_num(line,   9,  7, encoding),
+                "ACCTNO":  _slice_num(line,  16, 10, encoding),
+                "TRXCODE": _slice_str(line,  26,  2, encoding),
+                "TRXAMT":  _slice_num_float(line, 28, 10, encoding, decimals=2),
+                "MICR":    _slice_num(line,  38,  7, encoding),
+                "REJECT":  _slice_str(line,  45,  2, encoding),
+                "TRXIND":  _slice_str(line,  57,  1, encoding),
+                "TRXTYPE": _slice_str(line,  58,  1, encoding),
                 "YY2": yy2,
                 "MM2": mm2,
                 "DD2": dd2,
                 "DRDATE": _safe_date(yy2, mm2, dd2),
-                "UICCODE": _slice_str(line,  70, 30),
+                "UICCODE": _slice_str(line,  70, 30, encoding),
             })
     df = pl.DataFrame(rows) if rows else pl.DataFrame(schema=ICLRGUIC_SCHEMA)
     if not df.is_empty():
         df = df.with_columns(pl.col("DRDATE").cast(pl.Date))
+    _print_parse_quality("ICLRGUIC", df, ["UICCODE", "DRDATE"])
+    _reject_bad_parse("ICLRGUIC", df, ["UICCODE"])
     return df
 
 # =============================================================================
@@ -303,12 +421,13 @@ ICLRGORI = parse_rptfile2(RPTFILE2)
 # PROC SORT; BY MICRPAY  — removed.
 # =============================================================================
 BR = parse_brhcode(BRHCODE)
+BR = _dedupe_lookup(BR, "BR", "MICRPAY")
 
 # =============================================================================
 # DATA ICLRG1 — MERGE ICLRGORI(IN=A) BR(IN=B); BY MICRPAY; IF A AND B;
 # Both A and B must match → inner join on MICRPAY.
 # =============================================================================
-ICLRG1 = ICLRGORI.join(
+ICLRG1 = ICLRGORI.filter(pl.col("MICRPAY").is_not_null()).join(
     BR,
     on="MICRPAY",
     how="inner",
@@ -334,6 +453,7 @@ print(f"ICLRGD written: {ICLRGD_FILE}  ({len(ICLRGD)} rows)")
 # PROC SORT BY UICCODE  — removed; Polars left join does not require pre-sort.
 # =============================================================================
 ICLRGUIC = parse_rptfile_pbb(RPTFILE)
+ICLRGUIC = _dedupe_lookup(ICLRGUIC, "ICLRGUIC", "UICCODE"
 
 # =============================================================================
 # DATA ICLRG5 — MERGE ICLRGD(IN=A) ICLRGUIC; BY UICCODE; IF A;
@@ -375,5 +495,5 @@ print("[EIBMDPIC] Program completed successfully.")
 
 # To show data - For testing purposes only
 print("\n ========== PREVIEW ========== \n")
-print(ICLRGD)
-print(ICLRGNEW)
+print(ICLRGD.head(PREVIEW_ROWS))
+print(ICLRGNEW.head(PREVIEW_ROWS))
