@@ -2,8 +2,6 @@ import polars as pl
 from datetime import date
 from pathlib import Path
 
-from REPTDATE import get_reptdate_values
-
 def eiqbnmr1():
     base = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
     sas_path = base / "input/uat/ln05126.sas7bdat"
@@ -28,16 +26,9 @@ def eiqbnmr1():
     sme_custcd = ['41','42','43','44','46','47','48','49',
                  '51','52','53','54','66','67','68','69']
     
-    reptdate_values = get_reptdate_values(year_format="%Y")
-
-    # Macro variable equivalents
-    reptdate = reptdate_values.reptdate
-    REPTYEAR = reptdate_values.reptyear          # 4-digit year for this program's file names
-    REPTMON  = reptdate_values.reptmon           # zero-padded month (Z2.)
-    REPTDAY  = reptdate_values.reptday           # zero-padded day   (Z2.)
-    REPTDT   = reptdate_values.reptdt            # raw SAS date integer equivalent (used for filter)
-    RDATE    = reptdate_values.rdate             # date object used in DATA ECP step
-    NOWK     = reptdate_values.nowk              # zero-padded 1-digit week number (Z1.)
+    # REPTDATE processing
+    reptdate_df = pl.read_parquet(sas_path / "REPTDATE.parquet")
+    reptdate = reptdate_df["REPTDATE"][0]
     
     # Week determination
     reptday = reptdate.day
