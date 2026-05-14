@@ -1,12 +1,11 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 234, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 242, in <module>
     eiqbnmr1()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 204, in eiqbnmr1
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 210, in eiqbnmr1
     loan_df = _load_loan_data()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 92, in _load_loan_data
-    loan_df = _read_sas7bdat(SAS_PATH)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 71, in _read_sas7bdat
-    return pl.from_pandas(pandas_df)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/convert/general.py", line 715, in from_pandas
-    raise TypeError(msg)
-TypeError: expected pandas DataFrame or Series, got 'pandas.io.sas.sas7bdat.SAS7BDATReader'            
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 99, in _load_loan_data
+    _require_columns(loan_df, REQUIRED_LOAN_COLUMNS, SAS_PATH)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 85, in _require_columns
+    raise ValueError(f"{source} is missing required column(s): {missing_text}")
+ValueError: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/uat/ln05126.sas7bdat is missing required column(s): ACCTYPE, CUSTCD
