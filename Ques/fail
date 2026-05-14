@@ -1,14 +1,12 @@
-Hi Amin,
-
-Why the number of observation is different?
-
-
-                              Number of Observations in Common: 82501.                                                              
-                              Number of Observations in B.ECPTRAN05121 but not in A.ETRNFTP8: 574431.                               
-                              Number of Observations in A.ETRNFTP8 but not in B.ECPTRAN05121: 52591.                                
-                              Number of Duplicate Observations found in A.ETRNFTP8: 48274.                                          
-                              Total Number of Observations Read from B.ECPTRAN05121: 656932.                                        
-                              Total Number of Observations Read from A.ETRNFTP8: 135092.                                            
-                                                                                                                                    
-                              Number of Observations with Some Compared Variables Unequal: 72138.                                   
-                              Number of Observations with All Compared Variables Equal: 10363.             
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 234, in <module>
+    eiqbnmr1()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 204, in eiqbnmr1
+    loan_df = _load_loan_data()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 92, in _load_loan_data
+    loan_df = _read_sas7bdat(SAS_PATH)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 71, in _read_sas7bdat
+    return pl.from_pandas(pandas_df)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/convert/general.py", line 715, in from_pandas
+    raise TypeError(msg)
+TypeError: expected pandas DataFrame or Series, got 'pandas.io.sas.sas7bdat.SAS7BDATReader'            
