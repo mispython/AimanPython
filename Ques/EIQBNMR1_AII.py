@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from pathlib import Path
 
 import pandas as pd
@@ -7,7 +9,7 @@ from REPTDATE import get_reptdate_values
 
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_DIR = BASE_DIR / "input" / "uat"
+INPUT_DIR  = BASE_DIR / "input" / "uat"
 OUTPUT_DIR = BASE_DIR / "output" / "EIQBNMR1"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -20,12 +22,12 @@ reptdate_values = get_reptdate_values(year_format="%Y")
 
 REPTDATE = reptdate_values.reptdate
 REPTYEAR = reptdate_values.reptyear
-REPTMON = reptdate_values.reptmon
-REPTDAY = reptdate_values.reptday
-NOWK = reptdate_values.nowk
-RDATE = REPTDATE.strftime("%d/%m/%y")
+REPTMON  = reptdate_values.reptmon
+REPTDAY  = reptdate_values.reptday
+NOWK     = reptdate_values.nowk
+RDATE    = REPTDATE.strftime("%d/%m/%y")
 
-REPORT_FILE = OUTPUT_DIR / f"EIQBNMR1_{REPTYEAR}{REPTMON}{REPTDAY}.txt"
+REPORT_FILE  = OUTPUT_DIR / f"EIQBNMR1_{REPTYEAR}{REPTMON}{REPTDAY}.txt"
 SUMMARY_FILE = OUTPUT_DIR / f"EIQBNMR1_{REPTYEAR}{REPTMON}{REPTDAY}_summary.csv"
 
 # SAS macro-list equivalents
@@ -64,7 +66,7 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
 
-    pandas_df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+    pandas_df = pd.read_sas(path, format="sas7bdat", encoding="latin1", chunksize=100)
     pandas_df.columns = [str(column).upper() for column in pandas_df.columns]
     return pl.from_pandas(pandas_df)
 
@@ -222,5 +224,13 @@ def eiqbnmr1() -> None:
     print(f"Report written: {REPORT_FILE}")
     print(f"Summary written: {SUMMARY_FILE}")
 
+    # To show data - For testing purposes only
+    print("\n ========== PREVIEW ========== \n")
+    print(REPORT_FILE)
+    print(SUMMARY_FILE)
+
+
 if __name__ == "__main__":
     eiqbnmr1()
+    print("[EIIMDPIC] Program completed successfully.")
+    
