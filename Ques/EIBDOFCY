@@ -1,0 +1,209 @@
+//EIBDOFCY JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB33290
+/*JOBPARM S=S1M2
+//*-------------------------------------------------------------------
+//* PROGRAM  : EIBDOFCY
+//* ESMR     : 2010-1782 (AAB)
+//* DESC     : OUTSTANDING FCY LOAN, CA AND FD (INDIV AND NON-INDIV)
+//*-------------------------------------------------------------------
+//DELETE    EXEC PGM=IEFBR14
+//DD01      DD DSN=SAP.PBB.EIBDOFCY.DAILY,
+//             DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//             SPACE=(CYL,1,RLSE)
+//*-------------------------------------------------------------------
+//EIBDOFCY  EXEC SAS609
+//LOAN      DD DSN=SAP.PBB.MNILN.DAILY(0),DISP=SHR
+//DEPO      DD DSN=SAP.PBB.MNITB.DAILY(0),DISP=SHR
+//OUTFCY    DD DSN=SAP.PBB.EIBDOFCY.DAILY,
+//             DISP=(NEW,CATLG,DELETE),
+//             SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//             DCB=(LRECL=250,RECFM=FB,BLKSIZE=0)
+//SYSIN     DD *
+
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER MISSING=0;
+
+DATA REPTDATE;
+   SET DEPO.REPTDATE;
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));
+RUN;
+
+DATA FD;
+   SET DEPO.FD;
+   WHERE CURCODE NE 'MYR';
+   IF CUSTCODE IN ('77','78','95','96') THEN DO;
+      IND    = 'A';     /* INDFD  */
+      IFDBAL = CURBAL;
+   END;
+   ELSE DO;
+      IND    = 'B';     /* COPRFD */
+      CFDBAL = CURBAL;
+   END;
+   KEEP IND CURCODE CURBAL IFDBAL CFDBAL;
+RUN;
+PROC SORT; BY IND CURCODE; RUN;
+
+PROC SUMMARY DATA=FD NWAY;
+   BY IND CURCODE;
+   VAR CURBAL IFDBAL CFDBAL;
+   OUTPUT OUT=FD SUM=;
+RUN;
+
+DATA CURR;
+   SET DEPO.CURRENT;
+   WHERE CURCODE NE 'MYR';
+   IF CUSTCODE IN ('77','78','95','96') THEN DO;
+      IND    = 'C';     /* INDCA  */
+      ICABAL = CURBAL;
+   END;
+   ELSE DO;
+      IND    = 'D';     /* COPRCA */
+      CCABAL = CURBAL;
+   END;
+   KEEP IND CURCODE CURBAL ICABAL CCABAL;
+RUN;
+PROC SORT; BY IND CURCODE; RUN;
+
+PROC SUMMARY DATA=CURR NWAY;
+   BY IND CURCODE;
+   VAR CURBAL ICABAL CCABAL;
+   OUTPUT OUT=CURR SUM=;
+RUN;
+
+DATA LOAN;
+   SET LOAN.LNNOTE;
+   WHERE CURCODE NE 'MYR';
+   IF CUSTCODE IN ('77','78','95','96') THEN DO;
+      IND    = 'E';     /* INDLN  */
+      ILNBAL = CURBAL;
+   END;
+   ELSE DO;
+      IND    = 'F';     /* COPRLN */
+      CLNBAL = CURBAL;
+   END;
+   KEEP IND CURCODE CURBAL ILNBAL CLNBAL;
+RUN;
+PROC SORT; BY IND CURCODE; RUN;
+
+PROC SUMMARY DATA=LOAN NWAY;
+   BY IND CURCODE;
+   VAR CURBAL ILNBAL CLNBAL;
+   OUTPUT OUT=LOAN SUM=;
+RUN;
+
+DATA FCY;
+   SET FD CURR LOAN;
+   BY IND;
+   DLM='05'X;
+   FILE OUTFCY;
+   IF _N_ = 1 THEN DO;
+      PUT @1  'REPORT ID : EIBDOFCY'
+           /  'PUBLIC BANK BERHAD'
+           /  "OUTSTANDING FCY LOAN AND DEPOSITS AS AT &RDATE"
+           /
+           ;
+   END;
+   IF FIRST.IND THEN DO;
+      NOBS = 0;
+      SELECT(IND);
+         WHEN('A') DO;
+            PUT @1   'INDIVIDUAL - FCY FIXED DEPOSIT';
+         END;
+         WHEN('B') DO;
+            PUT @1// 'NON INDIVIDUAL - FCY FIXED DEPOSIT';
+         END;
+         WHEN('C') DO;
+            PUT @1// 'INDIVIDUAL - FCY CURRENT';
+         END;
+         WHEN('D') DO;
+            PUT @1// 'NON INDIVIDUAL - FCY CURRENT';
+         END;
+         WHEN('E') DO;
+            PUT @1// 'INDIVIDUAL - FCY LOAN';
+         END;
+         WHEN('F') DO;
+            PUT @1// 'NON INDIVIDUAL - FCY LOAN';
+         END;
+         OTHERWISE;
+      END;
+      PUT @01/  'OBS'  DLM+(-1)  'CURCODE'         DLM+(-1)
+                'FREQ' DLM+(-1)  'CURRENT BALANCE' DLM+(-1);
+   END;
+   NOBS+1;
+   PUT @01 NOBS           3.     DLM+(-1)
+           CURCODE       $3.     DLM+(-1)
+           _FREQ_        10.     DLM+(-1)
+           CURBAL   COMMA20.2
+       ;
+RUN;
+PROC SORT; BY CURCODE; RUN;
+
+PROC SUMMARY DATA=FCY NWAY;
+   BY CURCODE;
+   VAR IFDBAL CFDBAL ICABAL CCABAL ILNBAL CLNBAL CURBAL;
+   OUTPUT OUT=FCY SUM=;
+RUN;
+
+DATA _NULL_;
+   SET FCY END=LAST;
+   DLM='05'X;
+   FILE OUTFCY MOD;
+   IF _N_ = 1 THEN DO;
+      PUT @1 / / "SUMMARY OF OUTSTANDING FCY LOAN AND DEPOSITS"
+             / / 'NOBS'          DLM+(-1)  'CURCODE'      DLM+(-1)
+                 'FCYFD-INDIV'   DLM+(-1)  'FCYFD-CORP'   DLM+(-1)
+                 'FCYCA-INDIV'   DLM+(-1)  'FCYCA-CORP'   DLM+(-1)
+                 'FCYLN-INDIV'   DLM+(-1)  'FCYLN-CORP'   DLM+(-1);
+   END;
+   PUT @1  _N_            3.     DLM+(-1)
+           CURCODE       $3.     DLM+(-1)
+           IFDBAL   COMMA20.2    DLM+(-1)
+           CFDBAL   COMMA20.2    DLM+(-1)
+           ICABAL   COMMA20.2    DLM+(-1)
+           CCABAL   COMMA20.2    DLM+(-1)
+           ILNBAL   COMMA20.2    DLM+(-1)
+           CLNBAL   COMMA20.2
+           ;
+   TOTIFD+IFDBAL; TOTCFD+CFDBAL;
+   TOTICA+ICABAL; TOTCCA+CCABAL;
+   TOTILN+ILNBAL; TOTCLN+CLNBAL;
+   IF LAST THEN
+      PUT @1                     DLM+(-1)
+              'TOTAL'            DLM+(-1)
+              TOTIFD  COMMA20.2  DLM+(-1)
+              TOTCFD  COMMA20.2  DLM+(-1)
+              TOTICA  COMMA20.2  DLM+(-1)
+              TOTCCA  COMMA20.2  DLM+(-1)
+              TOTILN  COMMA20.2  DLM+(-1)
+              TOTCLN  COMMA20.2
+              ;
+RUN;
+
+//*------------------------------------------------------
+//* FTP TO SAS DATAWAREHOUSE
+//*------------------------------------------------------
+//*%OPC SCAN
+//*%OPC SETVAR TODD=(ODD - 61CD)
+//*%OPC SETVAR TOMM=(OMM - 61CD)
+//*%OPC SETVAR TOYYYY=(OYYYY - 61CD)
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*cd TextFile/TD/PBB/CFTWG
+//*put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+//*- rm OutstandingFCY_%TODD.%TOMM.%TOYYYY..xls
+//*EOB
+/*
+//*----------------------------------------------------------
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//*----------------------------------------------------------
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd TD/INTERBANK/CFTWG
+put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+EOB
+/*
