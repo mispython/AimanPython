@@ -1,1 +1,13 @@
 (case when (3000000000<=ACCTNO<=3999999999) then 'OD' else 'LN' end) as ACCTYPE length = 8,
+
+
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 280, in <module>
+    eiqbnmr1()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 248, in eiqbnmr1
+    loan_df = _load_loan_data()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 118, in _load_loan_data
+    loan_df = _read_sas7bdat(SAS_PATH)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIQBNMR1_AII.py", line 77, in _read_sas7bdat
+    pandas_df = next(reader)
+TypeError: 'DataFrame' object is not an iterator
