@@ -1,10 +1,11 @@
-"""
-Program : EIBDOFCY.py
-Purpose : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv)
-"""
+# =============================================================================
+# Program  : EIBDOFCY
+# ESMR     : 2010-1782 (AAB)
+# Desc     : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv)
+# =============================================================================
 
 import polars as pl
-import duckdb
+import pandas as pd                                              # + ADDED: required for pd.read_sas()
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
@@ -12,12 +13,41 @@ from REPTDATE import get_reptdate_values
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-base            = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-depo_fd_path    = base / "input/uat/fd260513.sas7bdat"
-depo_ca_path    = base / "input/uat/ca260513.sas7bdat"
-loan_path       = base / "input/uat/ln260513.sas7bdat"
-output_path     = base / "output/EIBDOFCY"
+base        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+output_path = base / "output/EIBDOFCY"
 output_path.mkdir(parents=True, exist_ok=True)
+
+# + ADDED: Declare all input file paths here (replaces duckdb parquet reads)
+FD_PATH   = base / "input/uat/fd260513.sas7bdat"               # DEPO.FD   (SET DEPO.FD)
+CURR_PATH = base / "input/uat/ca260513.sas7bdat"               # DEPO.CURRENT (SET DEPO.CURRENT)
+LOAN_PATH = base / "input/uat/ln260513.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE)
+
+# + ADDED: Required column sets for early validation per input file
+REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
+REQUIRED_CURR_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
+REQUIRED_LOAN_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
+
+
+# =============================================================================
+# + ADDED: Helper — read one .sas7bdat and return a Polars DataFrame
+#          (mirrors _read_sas7bdat() in EIQBNMR1.py)
+# =============================================================================
+def _read_sas7bdat(path: Path) -> pl.DataFrame:
+    """Read one .sas7bdat file and return a Polars DataFrame."""
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required input file: {path}")
+    pandas_df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+    pandas_df.columns = [str(c).upper().strip() for c in pandas_df.columns]
+    return pl.from_pandas(pandas_df)
+
+
+# + ADDED: Helper — fail early with a clear message if columns are missing
+#          (mirrors _require_columns() in EIQBNMR1.py)
+def _require_columns(df: pl.DataFrame, required: set[str], source: Path) -> None:
+    """Fail early with a clear message if the SAS file lacks needed columns."""
+    missing = sorted(required.difference(df.columns))
+    if missing:
+        raise ValueError(f"{source} is missing required column(s): {', '.join(missing)}")
 
 # =============================================================================
 # REPORT DATE DERIVATION
@@ -36,10 +66,15 @@ RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
 # =============================================================================
-fd_raw = duckdb.execute(
-    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{depo_fd_path}')"
-    " WHERE CURCODE <> 'MYR'"
-).pl()
+# + CHANGED: Read .sas7bdat via _read_sas7bdat() instead of duckdb/parquet
+_fd_raw = _read_sas7bdat(FD_PATH)
+_require_columns(_fd_raw, REQUIRED_FD_COLUMNS, FD_PATH)
+fd_raw = (
+    _fd_raw
+    .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
 
 fd_df = (
     fd_raw
@@ -75,10 +110,15 @@ fd_summary.write_parquet(output_path / "FD.parquet")
 # =============================================================================
 # DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
 # =============================================================================
-curr_raw = duckdb.execute(
-    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{depo_ca_path}')"
-    " WHERE CURCODE <> 'MYR'"
-).pl()
+# + CHANGED: Read .sas7bdat via _read_sas7bdat() instead of duckdb/parquet
+_curr_raw = _read_sas7bdat(CURR_PATH)
+_require_columns(_curr_raw, REQUIRED_CURR_COLUMNS, CURR_PATH)
+curr_raw = (
+    _curr_raw
+    .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
 
 curr_df = (
     curr_raw
@@ -114,10 +154,15 @@ curr_summary.write_parquet(output_path / "CURR.parquet")
 # =============================================================================
 # DATA LOAN  (SET LOAN.LNNOTE; WHERE CURCODE NE 'MYR')
 # =============================================================================
-loan_raw = duckdb.execute(
-    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{loan_path}')"
-    " WHERE CURCODE <> 'MYR'"
-).pl()
+# + CHANGED: Read .sas7bdat via _read_sas7bdat() instead of duckdb/parquet
+_loan_raw = _read_sas7bdat(LOAN_PATH)
+_require_columns(_loan_raw, REQUIRED_LOAN_COLUMNS, LOAN_PATH)
+loan_raw = (
+    _loan_raw
+    .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
 
 loan_df = (
     loan_raw
@@ -311,5 +356,33 @@ with open(outfcy_path, "a", encoding="utf-8") as f:
         f"{totiln:>20,.2f}{DLM}"
         f"{totcln:>20,.2f}\n"
     )
+
+# =============================================================================
+# //* FTP TO SAS DATAWAREHOUSE
+# //*%OPC SCAN
+# //*%OPC SETVAR TODD=(ODD - 61CD)
+# //*%OPC SETVAR TOMM=(OMM - 61CD)
+# //*%OPC SETVAR TOYYYY=(OYYYY - 61CD)
+# //*RUNSFTP  EXEC COZBATCH
+# //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+# //*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# //*lzopts linerule=$lr
+# //*cd TextFile/TD/PBB/CFTWG
+# //*put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+# //*- rm OutstandingFCY_%TODD.%TOMM.%TOYYYY..xls
+# //*EOB
+# =============================================================================
+
+# =============================================================================
+# //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# //*%OPC SCAN
+# //RUNSFTP  EXEC COZBATCH
+# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+# //lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# //lzopts linerule=$lr
+# //cd TD/INTERBANK/CFTWG
+# //put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+# //EOB
+# =============================================================================
 
 print(f"EIBDOFCY completed — report date {RDATE}, output: {outfcy_path}")
