@@ -102,13 +102,40 @@ def _normalise_common_columns(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+# def _load_loan_data() -> pl.DataFrame:
+#     """Load LN/OD rows from the single loan SAS dataset."""
+#     loan_df = _read_sas7bdat(SAS_PATH)
+#     _require_columns(loan_df, REQUIRED_LOAN_COLUMNS, SAS_PATH)
+#     return _normalise_common_columns(loan_df).with_columns(
+#         pl.col("ACCTYPE").cast(pl.Utf8).str.strip_chars().alias("ACCTYPE"),
+#         pl.col("PRODUCT").cast(pl.Int64, strict=False).alias("PRODUCT"),
+#     )
+
+
 def _load_loan_data() -> pl.DataFrame:
     """Load LN/OD rows from the single loan SAS dataset."""
+
     loan_df = _read_sas7bdat(SAS_PATH)
+
     _require_columns(loan_df, REQUIRED_LOAN_COLUMNS, SAS_PATH)
+
     return _normalise_common_columns(loan_df).with_columns(
-        pl.col("ACCTYPE").cast(pl.Utf8).str.strip_chars().alias("ACCTYPE"),
+
+        # Convert ACCTNO safely
+        pl.col("ACCTNO").cast(pl.Int64, strict=False).alias("ACCTNO"),
+
+        # PRODUCT cleanup
         pl.col("PRODUCT").cast(pl.Int64, strict=False).alias("PRODUCT"),
+
+        # Derive ACCTYPE from ACCTNO
+        pl.when(
+            (pl.col("ACCTNO") >= 3000000000)
+            & (pl.col("ACCTNO") <= 3999999999)
+        )
+        .then(pl.lit("OD"))
+        .otherwise(pl.lit("LN"))
+        .alias("ACCTYPE")
+
     )
 
 
@@ -127,8 +154,10 @@ def _load_bt_data() -> pl.DataFrame:
 def _split_by_customer_type(df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Return corporate and SME subsets using the SAS CUSTCD lists."""
     return (
-        df.filter(pl.col("CUSTCD").is_in(CORP_CUSTCD)),
-        df.filter(pl.col("CUSTCD").is_in(SME_CUSTCD)),
+        # df.filter(pl.col("CUSTCD").is_in(CORP_CUSTCD)),
+        # df.filter(pl.col("CUSTCD").is_in(SME_CUSTCD)),
+        df.filter(pl.col("CUSTCODE").is_in(CORP_CUSTCD)),
+        df.filter(pl.col("CUSTCODE").is_in(SME_CUSTCD)),,
     )
 
 
