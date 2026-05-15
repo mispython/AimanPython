@@ -1,8 +1,7 @@
-# =============================================================================
-# Program  : EIBDOFCY
-# ESMR     : 2010-1782 (AAB)
-# Desc     : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv)
-# =============================================================================
+"""
+Program : EIBDOFCY.py
+Purpose : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv)
+"""
 
 import polars as pl
 import duckdb
@@ -13,10 +12,11 @@ from REPTDATE import get_reptdate_values
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-base        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-depo_path   = base / "input/uat/DEPO"
-loan_path   = base / "input/uat/LOAN"
-output_path = base / "output/EIBDOFCY"
+base            = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+depo_fd_path    = base / "input/uat/fd260513.sas7bdat"
+depo_ca_path    = base / "input/uat/ca260513.sas7bdat"
+loan_path       = base / "input/uat/ln260513.sas7bdat"
+output_path     = base / "output/EIBDOFCY"
 output_path.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
@@ -37,7 +37,7 @@ RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
 # =============================================================================
 fd_raw = duckdb.execute(
-    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{depo_path / 'FD.parquet'}')"
+    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{depo_fd_path}')"
     " WHERE CURCODE <> 'MYR'"
 ).pl()
 
@@ -76,7 +76,7 @@ fd_summary.write_parquet(output_path / "FD.parquet")
 # DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
 # =============================================================================
 curr_raw = duckdb.execute(
-    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{depo_path / 'CURRENT.parquet'}')"
+    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{depo_ca_path}')"
     " WHERE CURCODE <> 'MYR'"
 ).pl()
 
@@ -115,7 +115,7 @@ curr_summary.write_parquet(output_path / "CURR.parquet")
 # DATA LOAN  (SET LOAN.LNNOTE; WHERE CURCODE NE 'MYR')
 # =============================================================================
 loan_raw = duckdb.execute(
-    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{loan_path / 'LNNOTE.parquet'}')"
+    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{loan_path}')"
     " WHERE CURCODE <> 'MYR'"
 ).pl()
 
@@ -311,33 +311,5 @@ with open(outfcy_path, "a", encoding="utf-8") as f:
         f"{totiln:>20,.2f}{DLM}"
         f"{totcln:>20,.2f}\n"
     )
-
-# =============================================================================
-# //* FTP TO SAS DATAWAREHOUSE
-# //*%OPC SCAN
-# //*%OPC SETVAR TODD=(ODD - 61CD)
-# //*%OPC SETVAR TOMM=(OMM - 61CD)
-# //*%OPC SETVAR TOYYYY=(OYYYY - 61CD)
-# //*RUNSFTP  EXEC COZBATCH
-# //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
-# //*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-# //*lzopts linerule=$lr
-# //*cd TextFile/TD/PBB/CFTWG
-# //*put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
-# //*- rm OutstandingFCY_%TODD.%TOMM.%TOYYYY..xls
-# //*EOB
-# =============================================================================
-
-# =============================================================================
-# //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
-# //*%OPC SCAN
-# //RUNSFTP  EXEC COZBATCH
-# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
-# //lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-# //lzopts linerule=$lr
-# //cd TD/INTERBANK/CFTWG
-# //put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
-# //EOB
-# =============================================================================
 
 print(f"EIBDOFCY completed — report date {RDATE}, output: {outfcy_path}")
