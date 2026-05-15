@@ -1,11 +1,11 @@
-# =============================================================================
-# Program  : EIBDOFCY
-# ESMR     : 2010-1782 (AAB)
-# Desc     : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv)
-# =============================================================================
+"""
+Program  : EIBDOFCY.py
+ESMR     : 2010-1782 (AAB)
+Desc     : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv)
+"""
 
 import polars as pl
-import pandas as pd                                              # + ADDED: required for pd.read_sas()
+import pandas as pd             # + ADDED: required for pd.read_sas()
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
@@ -18,9 +18,12 @@ output_path = base / "output/EIBDOFCY"
 output_path.mkdir(parents=True, exist_ok=True)
 
 # + ADDED: Declare all input file paths here (replaces duckdb parquet reads)
-FD_PATH   = base / "input/uat/fd260513.sas7bdat"               # DEPO.FD   (SET DEPO.FD)
-CURR_PATH = base / "input/uat/ca260513.sas7bdat"               # DEPO.CURRENT (SET DEPO.CURRENT)
-LOAN_PATH = base / "input/uat/ln260513.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE)
+FD_PATH         = base / "input/uat/fd260513.sas7bdat"               # DEPO.FD   (SET DEPO.FD) - MYR
+FD_FCY_PATH     = base / "input/uat/fdFCY.sas7bdat"               # DEPO.FD   (SET DEPO.FD) - FCY
+CURR_PATH       = base / "input/uat/ca260513.sas7bdat"               # DEPO.CURRENT (SET DEPO.CURRENT) - MYR
+CURR_FCY_PATH   = base / "input/uat/caFCY.sas7bdat"               # DEPO.CURRENT (SET DEPO.CURRENT) - FCY
+LOAN_PATH       = base / "input/uat/ln260513.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE) - MYR
+LOAN_FCY_PATH   = base / "input/uat/lnFCY.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE) - FCY
 
 # + ADDED: Required column sets for early validation per input file
 REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
@@ -36,8 +39,23 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read one .sas7bdat file and return a Polars DataFrame."""
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
-    pandas_df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
-    pandas_df.columns = [str(c).upper().strip() for c in pandas_df.columns]
+    
+    pandas_df = pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="latin1",
+    )
+    
+    pandas_df.columns = [
+        str(column).upper().strip()
+        for column in pandas_df.columns
+    ]
+
+    # For testing purposes
+    print("\nDEBUG COLUMN NAMES:")
+    print(pandas_df.columns.tolist())
+    print(pandas_df.head(10))
+    
     return pl.from_pandas(pandas_df)
 
 
@@ -106,6 +124,7 @@ fd_summary = (
 )
 
 fd_summary.write_parquet(output_path / "FD.parquet")
+fd_summary.write_parquet(output_path / "FD.csv")
 
 # =============================================================================
 # DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
@@ -150,6 +169,7 @@ curr_summary = (
 )
 
 curr_summary.write_parquet(output_path / "CURR.parquet")
+curr_summary.write_parquet(output_path / "CURR.csv")
 
 # =============================================================================
 # DATA LOAN  (SET LOAN.LNNOTE; WHERE CURCODE NE 'MYR')
@@ -194,6 +214,7 @@ loan_summary = (
 )
 
 loan_summary.write_parquet(output_path / "LOAN.parquet")
+loan_summary.write_parquet(output_path / "LOAN.csv")
 
 # =============================================================================
 # DATA FCY  (SET FD CURR LOAN; BY IND; FILE OUTFCY;)
@@ -263,7 +284,8 @@ with open(outfcy_path, "w", encoding="utf-8") as f:
             f"{curbal:>20,.2f}\n"
         )
 
-fcy_combined.write_parquet(output_path / "FCY.parquet")
+fcy_combined.write_parquet(output_path / "FCY_combined.parquet")
+fcy_combined.write_parquet(output_path / "FCY_combined.csv")
 
 # =============================================================================
 # PROC SUMMARY DATA=FCY NWAY; BY CURCODE;
@@ -284,7 +306,8 @@ fcy_currency_summary = (
     .sort("CURCODE")
 )
 
-fcy_currency_summary.write_parquet(output_path / "FCY.parquet")
+fcy_currency_summary.write_parquet(output_path / "FCY_CURR_sum.parquet")
+fcy_currency_summary.write_parquet(output_path / "FCY_CURR_sum.csv")
 
 # =============================================================================
 # DATA _NULL_  (SET FCY END=LAST; FILE OUTFCY MOD;)
@@ -356,33 +379,5 @@ with open(outfcy_path, "a", encoding="utf-8") as f:
         f"{totiln:>20,.2f}{DLM}"
         f"{totcln:>20,.2f}\n"
     )
-
-# =============================================================================
-# //* FTP TO SAS DATAWAREHOUSE
-# //*%OPC SCAN
-# //*%OPC SETVAR TODD=(ODD - 61CD)
-# //*%OPC SETVAR TOMM=(OMM - 61CD)
-# //*%OPC SETVAR TOYYYY=(OYYYY - 61CD)
-# //*RUNSFTP  EXEC COZBATCH
-# //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
-# //*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-# //*lzopts linerule=$lr
-# //*cd TextFile/TD/PBB/CFTWG
-# //*put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
-# //*- rm OutstandingFCY_%TODD.%TOMM.%TOYYYY..xls
-# //*EOB
-# =============================================================================
-
-# =============================================================================
-# //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
-# //*%OPC SCAN
-# //RUNSFTP  EXEC COZBATCH
-# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
-# //lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-# //lzopts linerule=$lr
-# //cd TD/INTERBANK/CFTWG
-# //put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
-# //EOB
-# =============================================================================
 
 print(f"EIBDOFCY completed — report date {RDATE}, output: {outfcy_path}")
