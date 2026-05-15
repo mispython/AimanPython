@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
-
+import duckdb
 import pandas as pd
 import polars as pl
 
@@ -58,16 +58,30 @@ SME_CUSTCD = {
 }
 
 
-REQUIRED_LOAN_COLUMNS = {"ACCTYPE", "PRODUCT", "CUSTCD", "BALANCE"}
-REQUIRED_BT_COLUMNS = {"ACCTNO", "CUSTCD", "BALANCE"}
+# REQUIRED_LOAN_COLUMNS = {"ACCTYPE", "PRODUCT", "CUSTCD", "BALANCE"}
+# REQUIRED_BT_COLUMNS = {"ACCTNO", "CUSTCD", "BALANCE"}
+REQUIRED_LOAN_COLUMNS = {"ACCTYPE", "PRODUCT", "CUSTCODE", "BALANCE"}
+REQUIRED_BT_COLUMNS = {"ACCTNO", "CUSTCODE", "BALANCE"}
 
 def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read one .sas7bdat file and return a Polars DataFrame."""
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
 
-    pandas_df = pd.read_sas(path, format="sas7bdat", encoding="latin1", chunksize=100)
-    pandas_df.columns = [str(column).upper() for column in pandas_df.columns]
+    reader = pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="latin1",
+        chunksize = 1000          # For testing purposes
+    )
+    pandas_df = next(reader)
+    pandas_df.columns = [str(column).upper().strip() for column in pandas_df.columns]
+    
+    # For testing purposes
+    print("\nDEBUG COLUMN NAMES:")
+    # print(pandas_df.columns.tolist())
+    print(pandas_df.head(10))
+
     return pl.from_pandas(pandas_df)
 
 
@@ -82,7 +96,8 @@ def _require_columns(df: pl.DataFrame, required: set[str], source: Path) -> None
 def _normalise_common_columns(df: pl.DataFrame) -> pl.DataFrame:
     """Normalise source values used by the report filters and summary."""
     return df.with_columns(
-        pl.col("CUSTCD").cast(pl.Utf8).str.strip_chars().alias("CUSTCD"),
+        # pl.col("CUSTCD").cast(pl.Utf8).str.strip_chars().alias("CUSTCD"),
+        pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars().alias("CUSTCODE"),
         pl.col("BALANCE").cast(pl.Float64).fill_null(0.0).alias("BALANCE"),
     )
 
@@ -226,11 +241,13 @@ def eiqbnmr1() -> None:
 
     # To show data - For testing purposes only
     print("\n ========== PREVIEW ========== \n")
-    print(REPORT_FILE)
-    print(SUMMARY_FILE)
-
+    with open(REPORT_FILE, "r", encoding="utf-8") as report:
+        print(report.read())
+    
+    print("\n ========== PREVIEW ========== \n")
+    print(pl.read_csv(SUMMARY_FILE))
 
 if __name__ == "__main__":
     eiqbnmr1()
-    print("[EIIMDPIC] Program completed successfully.")
+    print("[EIQBNMR1] Program completed successfully.")
     
