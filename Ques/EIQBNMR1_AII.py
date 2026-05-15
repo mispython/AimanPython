@@ -60,7 +60,7 @@ SME_CUSTCD = {
 
 # REQUIRED_LOAN_COLUMNS = {"ACCTYPE", "PRODUCT", "CUSTCD", "BALANCE"}
 # REQUIRED_BT_COLUMNS = {"ACCTNO", "CUSTCD", "BALANCE"}
-REQUIRED_LOAN_COLUMNS = {"ACCTYPE", "PRODUCT", "CUSTCODE", "BALANCE"}
+REQUIRED_LOAN_COLUMNS = {"ACCTNO", "PRODUCT", "CUSTCODE", "BALANCE"}
 REQUIRED_BT_COLUMNS = {"ACCTNO", "CUSTCODE", "BALANCE"}
 
 def _read_sas7bdat(path: Path) -> pl.DataFrame:
@@ -68,14 +68,25 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
 
-    reader = pd.read_sas(
+    pandas_df = pd.read_sas(
         path,
         format="sas7bdat",
         encoding="latin1",
-        chunksize = 1000          # For testing purposes
     )
-    pandas_df = next(reader)
-    pandas_df.columns = [str(column).upper().strip() for column in pandas_df.columns]
+
+    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
+    # reader = pd.read_sas(
+    #     path,
+    #     format="sas7bdat",
+    #     encoding="latin1",
+    #     chunksize = 10000          
+    # )
+    # pandas_df = next(reader)
+
+    pandas_df.columns = [
+        str(column).upper().strip()
+        for column in pandas_df.columns
+    ]
     
     # For testing purposes
     print("\nDEBUG COLUMN NAMES:")
@@ -97,7 +108,11 @@ def _normalise_common_columns(df: pl.DataFrame) -> pl.DataFrame:
     """Normalise source values used by the report filters and summary."""
     return df.with_columns(
         # pl.col("CUSTCD").cast(pl.Utf8).str.strip_chars().alias("CUSTCD"),
-        pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars().alias("CUSTCODE"),
+        pl.col("CUSTCODE")
+        .cast(pl.Int64, strict=False)
+        .cast(pl.Utf8)
+        .str.strip_chars()
+        .alias("CUSTCODE"),
         pl.col("BALANCE").cast(pl.Float64).fill_null(0.0).alias("BALANCE"),
     )
 
@@ -135,8 +150,9 @@ def _load_loan_data() -> pl.DataFrame:
         .then(pl.lit("OD"))
         .otherwise(pl.lit("LN"))
         .alias("ACCTYPE")
-
+        
     )
+
 
 
 def _load_bt_data() -> pl.DataFrame:
@@ -153,11 +169,11 @@ def _load_bt_data() -> pl.DataFrame:
 
 def _split_by_customer_type(df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Return corporate and SME subsets using the SAS CUSTCD lists."""
-    return (
+    return(
         # df.filter(pl.col("CUSTCD").is_in(CORP_CUSTCD)),
         # df.filter(pl.col("CUSTCD").is_in(SME_CUSTCD)),
         df.filter(pl.col("CUSTCODE").is_in(CORP_CUSTCD)),
-        df.filter(pl.col("CUSTCODE").is_in(SME_CUSTCD)),,
+        df.filter(pl.col("CUSTCODE").is_in(SME_CUSTCD)),
     )
 
 
@@ -246,6 +262,14 @@ def _write_report(lines: list[str]) -> None:
 def eiqbnmr1() -> None:
     """Run the EIQBNMR1 report from the two required SAS input files."""
     loan_df = _load_loan_data()
+
+    # DEBUGGING
+    print("\n========== LOAN DEBUG ==========\n")
+    print(
+        loan_df.select(
+            ["ACCTNO", "ACCTYPE", "CUSTCODE", "PRODUCT", "BALANCE"]
+        ).head(20)
+    )
     bt_df = _load_bt_data()
 
     lncorp_df, lnsme_df = _filter_ln(loan_df)
