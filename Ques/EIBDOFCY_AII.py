@@ -1,0 +1,343 @@
+# =============================================================================
+# Program  : EIBDOFCY
+# ESMR     : 2010-1782 (AAB)
+# Desc     : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv)
+# =============================================================================
+
+import polars as pl
+import duckdb
+from pathlib import Path
+
+from REPTDATE import get_reptdate_values
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+base        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+depo_path   = base / "input/uat/DEPO"
+loan_path   = base / "input/uat/LOAN"
+output_path = base / "output/EIBDOFCY"
+output_path.mkdir(parents=True, exist_ok=True)
+
+# =============================================================================
+# REPORT DATE DERIVATION
+# (Replaces: DATA REPTDATE; SET DEPO.REPTDATE; CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY10.));)
+# REPTDATE is derived as TODAY() - 1; RDATE formatted as DD/MM/YYYY (DDMMYY10.)
+# =============================================================================
+reptdate_values = get_reptdate_values(year_format="%Y")
+
+REPTDATE = reptdate_values.reptdate
+REPTYEAR = reptdate_values.reptyear
+REPTMON  = reptdate_values.reptmon
+REPTDAY  = reptdate_values.reptday
+NOWK     = reptdate_values.nowk
+RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
+
+# =============================================================================
+# DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
+# =============================================================================
+fd_raw = duckdb.execute(
+    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{depo_path / 'FD.parquet'}')"
+    " WHERE CURCODE <> 'MYR'"
+).pl()
+
+fd_df = (
+    fd_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("A")).otherwise(pl.lit("B"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("IFDBAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CFDBAL"),
+    ])
+    .select(["IND", "CURCODE", "CURBAL", "IFDBAL", "CFDBAL"])
+)
+
+# PROC SUMMARY DATA=FD NWAY; BY IND CURCODE; VAR CURBAL IFDBAL CFDBAL; OUTPUT OUT=FD SUM=;
+fd_summary = (
+    fd_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("IFDBAL").sum(),
+        pl.col("CFDBAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
+
+fd_summary.write_parquet(output_path / "FD.parquet")
+
+# =============================================================================
+# DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
+# =============================================================================
+curr_raw = duckdb.execute(
+    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{depo_path / 'CURRENT.parquet'}')"
+    " WHERE CURCODE <> 'MYR'"
+).pl()
+
+curr_df = (
+    curr_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("C")).otherwise(pl.lit("D"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("ICABAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CCABAL"),
+    ])
+    .select(["IND", "CURCODE", "CURBAL", "ICABAL", "CCABAL"])
+)
+
+# PROC SUMMARY DATA=CURR NWAY; BY IND CURCODE; VAR CURBAL ICABAL CCABAL; OUTPUT OUT=CURR SUM=;
+curr_summary = (
+    curr_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("ICABAL").sum(),
+        pl.col("CCABAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
+
+curr_summary.write_parquet(output_path / "CURR.parquet")
+
+# =============================================================================
+# DATA LOAN  (SET LOAN.LNNOTE; WHERE CURCODE NE 'MYR')
+# =============================================================================
+loan_raw = duckdb.execute(
+    f"SELECT CUSTCODE, CURCODE, CURBAL FROM read_parquet('{loan_path / 'LNNOTE.parquet'}')"
+    " WHERE CURCODE <> 'MYR'"
+).pl()
+
+loan_df = (
+    loan_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("E")).otherwise(pl.lit("F"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("ILNBAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CLNBAL"),
+    ])
+    .select(["IND", "CURCODE", "CURBAL", "ILNBAL", "CLNBAL"])
+)
+
+# PROC SUMMARY DATA=LOAN NWAY; BY IND CURCODE; VAR CURBAL ILNBAL CLNBAL; OUTPUT OUT=LOAN SUM=;
+loan_summary = (
+    loan_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("ILNBAL").sum(),
+        pl.col("CLNBAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
+
+loan_summary.write_parquet(output_path / "LOAN.parquet")
+
+# =============================================================================
+# DATA FCY  (SET FD CURR LOAN; BY IND; FILE OUTFCY;)
+# Produces the detailed section of OUTFCY.txt
+# =============================================================================
+
+# Combine all three summary datasets (diagonal concat fills missing cols with null)
+fcy_combined = pl.concat(
+    [fd_summary, curr_summary, loan_summary],
+    how="diagonal"
+).sort(["IND", "CURCODE"])
+
+DLM = "\x05"   # '05'X
+
+# IND group ordering matches SAS SET order: A B C D E F
+_IND_HEADERS = {
+    "A": "INDIVIDUAL - FCY FIXED DEPOSIT",
+    "B": "NON INDIVIDUAL - FCY FIXED DEPOSIT",
+    "C": "INDIVIDUAL - FCY CURRENT",
+    "D": "NON INDIVIDUAL - FCY CURRENT",
+    "E": "INDIVIDUAL - FCY LOAN",
+    "F": "NON INDIVIDUAL - FCY LOAN",
+}
+
+outfcy_path = output_path / "OUTFCY.txt"
+
+with open(outfcy_path, "w", encoding="utf-8") as f:
+
+    # _N_ = 1 block  (first record written to FILE OUTFCY)
+    f.write(f"REPORT ID : EIBDOFCY\n")
+    f.write(f"PUBLIC BANK BERHAD\n")
+    f.write(f"OUTSTANDING FCY LOAN AND DEPOSITS AS AT {RDATE}\n")
+    f.write("\n")
+
+    prev_ind  = None
+    nobs      = 0
+
+    for row in fcy_combined.iter_rows(named=True):
+        ind = row["IND"]
+
+        # FIRST.IND block
+        if ind != prev_ind:
+            nobs     = 0
+            prev_ind = ind
+
+            if ind == "A":
+                # PUT @1  'INDIVIDUAL - FCY FIXED DEPOSIT';
+                f.write(f"{_IND_HEADERS[ind]}\n")
+            else:
+                # PUT @1// '<header>';  (two blank lines before header)
+                f.write(f"\n\n{_IND_HEADERS[ind]}\n")
+
+            # PUT @01/ 'OBS' DLM+(-1) 'CURCODE' DLM+(-1) 'FREQ' DLM+(-1) 'CURRENT BALANCE' DLM+(-1);
+            # The / before OBS produces one blank line (moves to next line)
+            f.write(f"\n")
+            f.write(f"OBS{DLM}CURCODE{DLM}FREQ{DLM}CURRENT BALANCE{DLM}\n")
+
+        nobs += 1
+        freq   = row.get("_FREQ_") or 0
+        curbal = row.get("CURBAL") or 0.0
+
+        # PUT @01 NOBS 3. DLM+(-1) CURCODE $3. DLM+(-1) _FREQ_ 10. DLM+(-1) CURBAL COMMA20.2;
+        f.write(
+            f"{nobs:3d}{DLM}"
+            f"{str(row['CURCODE']):3s}{DLM}"
+            f"{freq:10d}{DLM}"
+            f"{curbal:>20,.2f}\n"
+        )
+
+fcy_combined.write_parquet(output_path / "FCY.parquet")
+
+# =============================================================================
+# PROC SUMMARY DATA=FCY NWAY; BY CURCODE;
+# VAR IFDBAL CFDBAL ICABAL CCABAL ILNBAL CLNBAL CURBAL; OUTPUT OUT=FCY SUM=;
+# =============================================================================
+fcy_currency_summary = (
+    fcy_combined
+    .group_by("CURCODE")
+    .agg([
+        pl.col("IFDBAL").sum(),
+        pl.col("CFDBAL").sum(),
+        pl.col("ICABAL").sum(),
+        pl.col("CCABAL").sum(),
+        pl.col("ILNBAL").sum(),
+        pl.col("CLNBAL").sum(),
+        pl.col("CURBAL").sum(),
+    ])
+    .sort("CURCODE")
+)
+
+fcy_currency_summary.write_parquet(output_path / "FCY.parquet")
+
+# =============================================================================
+# DATA _NULL_  (SET FCY END=LAST; FILE OUTFCY MOD;)
+# Appends the summary section to OUTFCY.txt
+# =============================================================================
+totifd = 0.0
+totcfd = 0.0
+totica = 0.0
+totcca = 0.0
+totiln = 0.0
+totcln = 0.0
+
+with open(outfcy_path, "a", encoding="utf-8") as f:
+
+    rows = fcy_currency_summary.iter_rows(named=True)
+    n    = 0
+
+    for row in rows:
+        n += 1
+
+        if n == 1:
+            # PUT @1 / / "SUMMARY OF OUTSTANDING FCY LOAN AND DEPOSITS"
+            #        / / 'NOBS' DLM+(-1) ... ;
+            # Two '/' before the heading = two blank lines before it
+            f.write("\n\n")
+            f.write("SUMMARY OF OUTSTANDING FCY LOAN AND DEPOSITS\n")
+            f.write("\n")
+            f.write(
+                f"NOBS{DLM}CURCODE{DLM}"
+                f"FCYFD-INDIV{DLM}FCYFD-CORP{DLM}"
+                f"FCYCA-INDIV{DLM}FCYCA-CORP{DLM}"
+                f"FCYLN-INDIV{DLM}FCYLN-CORP\n"
+            )
+
+        ifdbal = row.get("IFDBAL") or 0.0
+        cfdbal = row.get("CFDBAL") or 0.0
+        icabal = row.get("ICABAL") or 0.0
+        ccabal = row.get("CCABAL") or 0.0
+        ilnbal = row.get("ILNBAL") or 0.0
+        clnbal = row.get("CLNBAL") or 0.0
+
+        # PUT @1 _N_ 3. DLM+(-1) CURCODE $3. DLM+(-1) IFDBAL COMMA20.2 DLM+(-1) ...
+        f.write(
+            f"{n:3d}{DLM}"
+            f"{str(row['CURCODE']):3s}{DLM}"
+            f"{ifdbal:>20,.2f}{DLM}"
+            f"{cfdbal:>20,.2f}{DLM}"
+            f"{icabal:>20,.2f}{DLM}"
+            f"{ccabal:>20,.2f}{DLM}"
+            f"{ilnbal:>20,.2f}{DLM}"
+            f"{clnbal:>20,.2f}\n"
+        )
+
+        totifd += ifdbal
+        totcfd += cfdbal
+        totica += icabal
+        totcca += ccabal
+        totiln += ilnbal
+        totcln += clnbal
+
+    # IF LAST THEN PUT ...  (grand totals line)
+    f.write(
+        f"   {DLM}"
+        f"TOT{DLM}"
+        f"{totifd:>20,.2f}{DLM}"
+        f"{totcfd:>20,.2f}{DLM}"
+        f"{totica:>20,.2f}{DLM}"
+        f"{totcca:>20,.2f}{DLM}"
+        f"{totiln:>20,.2f}{DLM}"
+        f"{totcln:>20,.2f}\n"
+    )
+
+# =============================================================================
+# //* FTP TO SAS DATAWAREHOUSE
+# //*%OPC SCAN
+# //*%OPC SETVAR TODD=(ODD - 61CD)
+# //*%OPC SETVAR TOMM=(OMM - 61CD)
+# //*%OPC SETVAR TOYYYY=(OYYYY - 61CD)
+# //*RUNSFTP  EXEC COZBATCH
+# //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+# //*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# //*lzopts linerule=$lr
+# //*cd TextFile/TD/PBB/CFTWG
+# //*put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+# //*- rm OutstandingFCY_%TODD.%TOMM.%TOYYYY..xls
+# //*EOB
+# =============================================================================
+
+# =============================================================================
+# //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# //*%OPC SCAN
+# //RUNSFTP  EXEC COZBATCH
+# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+# //lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# //lzopts linerule=$lr
+# //cd TD/INTERBANK/CFTWG
+# //put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+# //EOB
+# =============================================================================
+
+print(f"EIBDOFCY completed — report date {RDATE}, output: {outfcy_path}")
