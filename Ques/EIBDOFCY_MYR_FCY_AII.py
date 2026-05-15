@@ -19,11 +19,10 @@ output_path.mkdir(parents=True, exist_ok=True)
 
 # + ADDED: Declare all input file paths here (replaces duckdb parquet reads)
 FD_PATH         = base / "input/uat/fd260513.sas7bdat"               # DEPO.FD   (SET DEPO.FD) - MYR
-FD_FCY_PATH     = base / "input/uat/fdFCY.sas7bdat"               # DEPO.FD   (SET DEPO.FD) - FCY
+FD_FCY_PATH     = base / "input/uat/fd260513.sas7bdat"               # DEPO.FD   (SET DEPO.FD) - FCY
 CURR_PATH       = base / "input/uat/ca260513.sas7bdat"               # DEPO.CURRENT (SET DEPO.CURRENT) - MYR
-CURR_FCY_PATH   = base / "input/uat/caFCY.sas7bdat"               # DEPO.CURRENT (SET DEPO.CURRENT) - FCY
-LOAN_PATH       = base / "input/uat/ln260513.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE) - MYR
-LOAN_FCY_PATH   = base / "input/uat/lnFCY.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE) - FCY
+CURR_FCY_PATH   = base / "input/uat/ca260513.sas7bdat"               # DEPO.CURRENT (SET DEPO.CURRENT) - FCY
+LOAN_PATH       = base / "input/uat/ln260513.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
 # + ADDED: Required column sets for early validation per input file
 REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
