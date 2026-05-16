@@ -23,10 +23,10 @@ output_path.mkdir(parents=True, exist_ok=True)
 #               also source for FCY current account (DATA FCYCA; SET DP.FCY...
 #               RENAME=(CURBALRM=CURBAL PRODUCT=PRODUCT_CODE MTDAVBAL=MTDAVBAL_FCY))
 #               No separate CURR_FCY_PATH — FCY CA data resides in this same file.
-#               NOTE: FD_FCY_PATH is date-stamped; declared after REPTDATE derivation below.
 # CURR_PATH   : DEPO.CURRENT — current account (.sas7bdat); MYR rows only
 # LN_PATH     : LOAN.LNNOTE  — loan (.sas7bdat); uses CCY (not CURCODE); FCY filtered from same file
 FD_PATH     = base / "input/uat/fd260513.sas7bdat"             # DEPO.FD      (SET DEPO.FD)
+FD_FCY_PATH = base / "input/uat/fcyfd260513.sas7bdat"          # DP.FCY<REPTYEAR><REPTMON><REPTDAY>
 CURR_PATH   = base / "input/uat/ca260513.sas7bdat"             # DEPO.CURRENT (SET DEPO.CURRENT)
 LN_PATH     = base / "input/uat/ln260513.sas7bdat"             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
@@ -72,10 +72,6 @@ REPTMON  = reptdate_values.reptmon
 REPTDAY  = reptdate_values.reptday
 NOWK     = reptdate_values.nowk
 RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
-
-# FD_FCY_PATH resolved here — filename is date-stamped using REPTYEAR/REPTMON/REPTDAY
-# mirrors SAS macro: DP.FCY&REPTYEAR&REPTMON&REPTDAY
-FD_FCY_PATH = Path("/dwh/dpd_fcy/FCYFD") / f"fcy{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
 
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
