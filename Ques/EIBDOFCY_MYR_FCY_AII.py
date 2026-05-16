@@ -6,7 +6,6 @@
 
 import polars as pl
 import pandas as pd                                              # required for pd.read_sas()
-import duckdb
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
@@ -19,14 +18,15 @@ output_path = base / "output/EIBDOFCY"
 output_path.mkdir(parents=True, exist_ok=True)
 
 # Input file paths
-# FD_PATH   : DEPO.FD       — MYR fixed deposit (.sas7bdat); FCY FD filtered from same file
-# FD_FCY_PATH: DP.FCY&REPTYEAR&REPTMON&REPTDAY — FCY fixed deposit AND FCY current account
-#              (DATA FCYCA; SET DP.FCY...(RENAME=(CURBALRM=CURBAL PRODUCT=PRODUCT_CODE
-#               MTDAVBAL=MTDAVBAL_FCY)); sourced from /dwh/dpd_fcy/FCYFD parquet)
-# CURR_PATH : DEPO.CURRENT  — MYR current account (.sas7bdat); no separate FCY CA file
-# LN_PATH   : LOAN.LNNOTE   — loan; uses CCY (not CURCODE) for currency; FCY filtered from same file
-FD_PATH     = base / "input/uat/fd260513.sas7bdat"             # DEPO.FD   (SET DEPO.FD)
-FD_FCY_PATH = Path("/dwh/dpd_fcy/FCYFD")                       # DP.FCY<REPTYEAR><REPTMON><REPTDAY>
+# FD_PATH     : DEPO.FD      — fixed deposit (.sas7bdat); FCY FD filtered by CURCODE != 'MYR'
+# FD_FCY_PATH : DP.FCY&REPTYEAR&REPTMON&REPTDAY — FCY deposit file (.sas7bdat);
+#               also source for FCY current account (DATA FCYCA; SET DP.FCY...
+#               RENAME=(CURBALRM=CURBAL PRODUCT=PRODUCT_CODE MTDAVBAL=MTDAVBAL_FCY))
+#               No separate CURR_FCY_PATH — FCY CA data resides in this same file.
+#               NOTE: FD_FCY_PATH is date-stamped; declared after REPTDATE derivation below.
+# CURR_PATH   : DEPO.CURRENT — current account (.sas7bdat); MYR rows only
+# LN_PATH     : LOAN.LNNOTE  — loan (.sas7bdat); uses CCY (not CURCODE); FCY filtered from same file
+FD_PATH     = base / "input/uat/fd260513.sas7bdat"             # DEPO.FD      (SET DEPO.FD)
 CURR_PATH   = base / "input/uat/ca260513.sas7bdat"             # DEPO.CURRENT (SET DEPO.CURRENT)
 LN_PATH     = base / "input/uat/ln260513.sas7bdat"             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
@@ -72,6 +72,10 @@ REPTMON  = reptdate_values.reptmon
 REPTDAY  = reptdate_values.reptday
 NOWK     = reptdate_values.nowk
 RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
+
+# FD_FCY_PATH resolved here — filename is date-stamped using REPTYEAR/REPTMON/REPTDAY
+# mirrors SAS macro: DP.FCY&REPTYEAR&REPTMON&REPTDAY
+FD_FCY_PATH = Path("/dwh/dpd_fcy/FCYFD") / f"fcy{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
 
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
@@ -120,24 +124,17 @@ fd_summary.write_parquet(output_path / "FD.parquet")
 # =============================================================================
 # DATA FCYCA  (SET DP.FCY<REPTYEAR><REPTMON><REPTDAY>
 #                  (IN=A RENAME=(CURBALRM=CURBAL PRODUCT=PRODUCT_CODE MTDAVBAL=MTDAVBAL_FCY)))
-# FCY current account — sourced from FD_FCY_PATH parquet (DWH path /dwh/dpd_fcy/FCYFD).
-# No separate CURR_FCY_PATH exists; the FCY CA data lives in the same FCY FD parquet.
-# CURBALRM is renamed to CURBAL per the SAS RENAME= option.
+# FCY current account — sourced from FD_FCY_PATH (.sas7bdat).
+# No separate CURR_FCY_PATH exists; the FCY CA data resides in this same file.
+# CURBALRM is the source column name in the file; renamed to CURBAL per SAS RENAME= option.
 # =============================================================================
-_fcy_raw = duckdb.execute(
-    f"SELECT CUSTCODE, CURCODE, CURBALRM AS CURBAL "
-    f"FROM read_parquet('{FD_FCY_PATH}/*.parquet') "
-    f"WHERE CURCODE <> 'MYR'"
-).pl()
-_require_columns(
-    _fcy_raw.rename({"CURBAL": "CURBALRM"}) if "CURBAL" in _fcy_raw.columns else _fcy_raw,
-    {"CUSTCODE", "CURCODE", "CURBAL"},
-    FD_FCY_PATH,
-)
-
+_fcy_raw = _read_sas7bdat(FD_FCY_PATH)
+_require_columns(_fcy_raw, REQUIRED_FD_FCY_COLUMNS, FD_FCY_PATH)
 curr_fcy_raw = (
     _fcy_raw
     .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
+    .rename({"CURBALRM": "CURBAL"})                             # RENAME=(CURBALRM=CURBAL)
+    .filter(pl.col("CURCODE") != "MYR")
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
