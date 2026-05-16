@@ -31,9 +31,13 @@ CURR_PATH   = base / "input/uat/ca260513.sas7bdat"             # DEPO.CURRENT (S
 LN_PATH     = base / "input/uat/ln260513.sas7bdat"             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
 # Required column sets for early validation per input file
-REQUIRED_FD_COLUMNS     = {"CUSTCODE", "CURCODE", "CURBAL"}
-REQUIRED_FD_FCY_COLUMNS = {"CUSTCODE", "CURCODE", "CURBALRM"}  # CURBALRM renamed to CURBAL
-REQUIRED_CURR_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
+# FD_PATH     : no CURCODE column — all records are MYR; CURCODE added as literal downstream
+# FD_FCY_PATH : has CURCODE; balance column is already CURBAL (no rename required)
+# CURR_PATH   : no CURCODE column — all records are MYR; CURCODE added as literal downstream
+# LN_PATH     : uses CCY (not CURCODE) to identify currency
+REQUIRED_FD_COLUMNS     = {"CUSTCODE", "CURBAL"}
+REQUIRED_FD_FCY_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
+REQUIRED_CURR_COLUMNS   = {"CUSTCODE", "CURBAL"}
 REQUIRED_LN_COLUMNS     = {"CUSTCODE", "CCY",     "CURBAL"}    # loan uses CCY, not CURCODE
 
 
@@ -75,14 +79,18 @@ RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
-# FCY fixed deposit — sourced from MYR/FCY combined FD file, FCY rows only
+# FD_PATH contains no CURCODE column — all records are MYR fixed deposits.
+# FCY FD records are sourced separately from FD_FCY_PATH.
+# CURCODE added as literal 'MYR' for downstream consistency.
 # =============================================================================
 _fd_raw = _read_sas7bdat(FD_PATH)
 _require_columns(_fd_raw, REQUIRED_FD_COLUMNS, FD_PATH)
 fd_raw = (
     _fd_raw
-    .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") != "MYR")
+    .with_columns([
+        pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars(),
+        pl.lit("MYR").alias("CURCODE"),                         # no CURCODE in file; all records are MYR
+    ])
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
@@ -122,15 +130,14 @@ fd_summary.write_parquet(output_path / "FD.parquet")
 #                  (IN=A RENAME=(CURBALRM=CURBAL PRODUCT=PRODUCT_CODE MTDAVBAL=MTDAVBAL_FCY)))
 # FCY current account — sourced from FD_FCY_PATH (.sas7bdat).
 # No separate CURR_FCY_PATH exists; the FCY CA data resides in this same file.
-# CURBALRM is the source column name in the file; renamed to CURBAL per SAS RENAME= option.
+# The actual dataset column is already named CURBAL (no rename required).
+# All records in this file are FCY; CURCODE is present and identifies the currency.
 # =============================================================================
 _fcy_raw = _read_sas7bdat(FD_FCY_PATH)
 _require_columns(_fcy_raw, REQUIRED_FD_FCY_COLUMNS, FD_FCY_PATH)
 curr_fcy_raw = (
     _fcy_raw
     .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .rename({"CURBALRM": "CURBAL"})                             # RENAME=(CURBALRM=CURBAL)
-    .filter(pl.col("CURCODE") != "MYR")
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
@@ -152,14 +159,17 @@ curr_fcy_df = (
 
 # =============================================================================
 # DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE EQ 'MYR')
-# MYR current account — sourced from CURR_PATH (.sas7bdat), MYR rows only
+# CURR_PATH contains no CURCODE column — all records are MYR current accounts.
+# CURCODE added as literal 'MYR' for downstream consistency.
 # =============================================================================
 _curr_raw = _read_sas7bdat(CURR_PATH)
 _require_columns(_curr_raw, REQUIRED_CURR_COLUMNS, CURR_PATH)
 curr_myr_raw = (
     _curr_raw
-    .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") == "MYR")
+    .with_columns([
+        pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars(),
+        pl.lit("MYR").alias("CURCODE"),                         # no CURCODE in file; all records are MYR
+    ])
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
