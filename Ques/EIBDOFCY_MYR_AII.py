@@ -1,11 +1,11 @@
-"""
-Program  : EIBDOFCY.py
-ESMR     : 2010-1782 (AAB)
-Desc     : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv)
-"""
+# =============================================================================
+# Program  : EIBDOFCY_MYR
+# ESMR     : 2010-1782 (AAB)
+# Desc     : Outstanding MYR Loan, CA and FD (Indiv and Non-Indiv) — MYR only
+# =============================================================================
 
 import polars as pl
-import pandas as pd             # + ADDED: required for pd.read_sas()
+import pandas as pd                                              # required for pd.read_sas()
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
@@ -17,52 +17,42 @@ base        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 output_path = base / "output/EIBDOFCY"
 output_path.mkdir(parents=True, exist_ok=True)
 
-# + ADDED: Declare all input file paths here (replaces duckdb parquet reads)
-FD_PATH         = base / "input/uat/fd260513.sas7bdat"               # DEPO.FD   (SET DEPO.FD) - MYR
-CURR_PATH       = base / "input/uat/ca260513.sas7bdat"               # DEPO.CURRENT (SET DEPO.CURRENT) - MYR
-LOAN_PATH       = base / "input/uat/ln260513.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE) - MYR
+# Input file paths
+# FD_PATH   : DEPO.FD      — fixed deposit (.sas7bdat); MYR rows only (CURCODE == 'MYR')
+# CURR_PATH : DEPO.CURRENT — current account (.sas7bdat); MYR rows only (CURCODE == 'MYR')
+# LN_PATH   : LOAN.LNNOTE  — loan (.sas7bdat); uses CCY (not CURCODE); MYR rows only (CCY == 'MYR')
+#             No FCY path — this program processes MYR only; no foreign currency data is read.
+FD_PATH   = base / "input/uat/fd260513.sas7bdat"               # DEPO.FD   (SET DEPO.FD)
+CURR_PATH = base / "input/uat/ca260513.sas7bdat"               # DEPO.CURRENT (SET DEPO.CURRENT)
+LN_PATH   = base / "input/uat/ln260513.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
-# + ADDED: Required column sets for early validation per input file
+# Required column sets for early validation per input file
 REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
 REQUIRED_CURR_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
-REQUIRED_LOAN_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
+REQUIRED_LN_COLUMNS   = {"CUSTCODE", "CCY",     "CURBAL"}      # loan uses CCY, not CURCODE
 
 
 # =============================================================================
-# + ADDED: Helper — read one .sas7bdat and return a Polars DataFrame
-#          (mirrors _read_sas7bdat() in EIQBNMR1.py)
+# Helper — read one .sas7bdat and return a Polars DataFrame
+# (mirrors _read_sas7bdat() in EIQBNMR1.py)
 # =============================================================================
 def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read one .sas7bdat file and return a Polars DataFrame."""
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
-    
-    pandas_df = pd.read_sas(
-        path,
-        format="sas7bdat",
-        encoding="latin1",
-    )
-    
-    pandas_df.columns = [
-        str(column).upper().strip()
-        for column in pandas_df.columns
-    ]
-
-    # For testing purposes
-    print("\nDEBUG COLUMN NAMES:")
-    print(pandas_df.columns.tolist())
-    print(pandas_df.head(10))
-    
+    pandas_df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+    pandas_df.columns = [str(c).upper().strip() for c in pandas_df.columns]
     return pl.from_pandas(pandas_df)
 
 
-# + ADDED: Helper — fail early with a clear message if columns are missing
-#          (mirrors _require_columns() in EIQBNMR1.py)
+# Helper — fail early with a clear message if columns are missing
+# (mirrors _require_columns() in EIQBNMR1.py)
 def _require_columns(df: pl.DataFrame, required: set[str], source: Path) -> None:
     """Fail early with a clear message if the SAS file lacks needed columns."""
     missing = sorted(required.difference(df.columns))
     if missing:
         raise ValueError(f"{source} is missing required column(s): {', '.join(missing)}")
+
 
 # =============================================================================
 # REPORT DATE DERIVATION
@@ -79,15 +69,15 @@ NOWK     = reptdate_values.nowk
 RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 
 # =============================================================================
-# DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
+# DATA FD  (SET DEPO.FD; WHERE CURCODE EQ 'MYR')
+# MYR fixed deposit only — no foreign currency processed in this program
 # =============================================================================
-# + CHANGED: Read .sas7bdat via _read_sas7bdat() instead of duckdb/parquet
 _fd_raw = _read_sas7bdat(FD_PATH)
 _require_columns(_fd_raw, REQUIRED_FD_COLUMNS, FD_PATH)
 fd_raw = (
     _fd_raw
     .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") != "MYR")
+    .filter(pl.col("CURCODE") == "MYR")
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
@@ -120,19 +110,18 @@ fd_summary = (
     .sort(["IND", "CURCODE"])
 )
 
-fd_summary.write_parquet(output_path / "FD.parquet")
-fd_summary.write_parquet(output_path / "FD.csv")
+fd_summary.write_parquet(output_path / "FD_MYR.parquet")
 
 # =============================================================================
-# DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
+# DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE EQ 'MYR')
+# MYR current account only — no foreign currency processed in this program
 # =============================================================================
-# + CHANGED: Read .sas7bdat via _read_sas7bdat() instead of duckdb/parquet
 _curr_raw = _read_sas7bdat(CURR_PATH)
 _require_columns(_curr_raw, REQUIRED_CURR_COLUMNS, CURR_PATH)
 curr_raw = (
     _curr_raw
     .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") != "MYR")
+    .filter(pl.col("CURCODE") == "MYR")
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
@@ -165,19 +154,21 @@ curr_summary = (
     .sort(["IND", "CURCODE"])
 )
 
-curr_summary.write_parquet(output_path / "CURR.parquet")
-curr_summary.write_parquet(output_path / "CURR.csv")
+curr_summary.write_parquet(output_path / "CURR_MYR.parquet")
 
 # =============================================================================
-# DATA LOAN  (SET LOAN.LNNOTE; WHERE CURCODE NE 'MYR')
+# DATA LOAN  (SET LOAN.LNNOTE; WHERE CCY EQ 'MYR')
+# MYR loan only — loan table uses CCY (not CURCODE) to identify currency.
+# No foreign currency processed in this program.
+# CCY is aliased to CURCODE for downstream consistency.
 # =============================================================================
-# + CHANGED: Read .sas7bdat via _read_sas7bdat() instead of duckdb/parquet
-_loan_raw = _read_sas7bdat(LOAN_PATH)
-_require_columns(_loan_raw, REQUIRED_LOAN_COLUMNS, LOAN_PATH)
+_loan_raw = _read_sas7bdat(LN_PATH)
+_require_columns(_loan_raw, REQUIRED_LN_COLUMNS, LN_PATH)
 loan_raw = (
     _loan_raw
     .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") != "MYR")
+    .filter(pl.col("CCY") == "MYR")
+    .rename({"CCY": "CURCODE"})                                 # align to CURCODE for consistency
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
@@ -210,16 +201,15 @@ loan_summary = (
     .sort(["IND", "CURCODE"])
 )
 
-loan_summary.write_parquet(output_path / "LOAN.parquet")
-loan_summary.write_parquet(output_path / "LOAN.csv")
+loan_summary.write_parquet(output_path / "LOAN_MYR.parquet")
 
 # =============================================================================
-# DATA FCY  (SET FD CURR LOAN; BY IND; FILE OUTFCY;)
-# Produces the detailed section of OUTFCY.txt
+# DATA MYR  (SET FD CURR LOAN; BY IND; FILE OUTMYR;)
+# Produces the detailed section of OUTMYR.txt
 # =============================================================================
 
 # Combine all three summary datasets (diagonal concat fills missing cols with null)
-fcy_combined = pl.concat(
+myr_combined = pl.concat(
     [fd_summary, curr_summary, loan_summary],
     how="diagonal"
 ).sort(["IND", "CURCODE"])
@@ -228,28 +218,28 @@ DLM = "\x05"   # '05'X
 
 # IND group ordering matches SAS SET order: A B C D E F
 _IND_HEADERS = {
-    "A": "INDIVIDUAL - FCY FIXED DEPOSIT",
-    "B": "NON INDIVIDUAL - FCY FIXED DEPOSIT",
-    "C": "INDIVIDUAL - FCY CURRENT",
-    "D": "NON INDIVIDUAL - FCY CURRENT",
-    "E": "INDIVIDUAL - FCY LOAN",
-    "F": "NON INDIVIDUAL - FCY LOAN",
+    "A": "INDIVIDUAL - MYR FIXED DEPOSIT",
+    "B": "NON INDIVIDUAL - MYR FIXED DEPOSIT",
+    "C": "INDIVIDUAL - MYR CURRENT",
+    "D": "NON INDIVIDUAL - MYR CURRENT",
+    "E": "INDIVIDUAL - MYR LOAN",
+    "F": "NON INDIVIDUAL - MYR LOAN",
 }
 
-outfcy_path = output_path / "OUTFCY.txt"
+outmyr_path = output_path / "OUTMYR.txt"
 
-with open(outfcy_path, "w", encoding="utf-8") as f:
+with open(outmyr_path, "w", encoding="utf-8") as f:
 
-    # _N_ = 1 block  (first record written to FILE OUTFCY)
-    f.write(f"REPORT ID : EIBDOFCY\n")
-    f.write(f"PUBLIC BANK BERHAD\n")
-    f.write(f"OUTSTANDING FCY LOAN AND DEPOSITS AS AT {RDATE}\n")
+    # _N_ = 1 block  (first record written to FILE OUTMYR)
+    f.write("REPORT ID : EIBDOFCY\n")
+    f.write("PUBLIC BANK BERHAD\n")
+    f.write(f"OUTSTANDING MYR LOAN AND DEPOSITS AS AT {RDATE}\n")
     f.write("\n")
 
     prev_ind  = None
     nobs      = 0
 
-    for row in fcy_combined.iter_rows(named=True):
+    for row in myr_combined.iter_rows(named=True):
         ind = row["IND"]
 
         # FIRST.IND block
@@ -258,7 +248,7 @@ with open(outfcy_path, "w", encoding="utf-8") as f:
             prev_ind = ind
 
             if ind == "A":
-                # PUT @1  'INDIVIDUAL - FCY FIXED DEPOSIT';
+                # PUT @1  'INDIVIDUAL - MYR FIXED DEPOSIT';
                 f.write(f"{_IND_HEADERS[ind]}\n")
             else:
                 # PUT @1// '<header>';  (two blank lines before header)
@@ -266,7 +256,7 @@ with open(outfcy_path, "w", encoding="utf-8") as f:
 
             # PUT @01/ 'OBS' DLM+(-1) 'CURCODE' DLM+(-1) 'FREQ' DLM+(-1) 'CURRENT BALANCE' DLM+(-1);
             # The / before OBS produces one blank line (moves to next line)
-            f.write(f"\n")
+            f.write("\n")
             f.write(f"OBS{DLM}CURCODE{DLM}FREQ{DLM}CURRENT BALANCE{DLM}\n")
 
         nobs += 1
@@ -281,15 +271,14 @@ with open(outfcy_path, "w", encoding="utf-8") as f:
             f"{curbal:>20,.2f}\n"
         )
 
-fcy_combined.write_parquet(output_path / "FCY_combined.parquet")
-fcy_combined.write_parquet(output_path / "FCY_combined.csv")
+myr_combined.write_parquet(output_path / "MYR.parquet")
 
 # =============================================================================
-# PROC SUMMARY DATA=FCY NWAY; BY CURCODE;
-# VAR IFDBAL CFDBAL ICABAL CCABAL ILNBAL CLNBAL CURBAL; OUTPUT OUT=FCY SUM=;
+# PROC SUMMARY DATA=MYR NWAY; BY CURCODE;
+# VAR IFDBAL CFDBAL ICABAL CCABAL ILNBAL CLNBAL CURBAL; OUTPUT OUT=MYR SUM=;
 # =============================================================================
-fcy_currency_summary = (
-    fcy_combined
+myr_currency_summary = (
+    myr_combined
     .group_by("CURCODE")
     .agg([
         pl.col("IFDBAL").sum(),
@@ -303,12 +292,11 @@ fcy_currency_summary = (
     .sort("CURCODE")
 )
 
-fcy_currency_summary.write_parquet(output_path / "FCY_CURR_sum.parquet")
-fcy_currency_summary.write_parquet(output_path / "FCY_CURR_sum.csv")
+myr_currency_summary.write_parquet(output_path / "MYR_summary.parquet")
 
 # =============================================================================
-# DATA _NULL_  (SET FCY END=LAST; FILE OUTFCY MOD;)
-# Appends the summary section to OUTFCY.txt
+# DATA _NULL_  (SET MYR END=LAST; FILE OUTMYR MOD;)
+# Appends the summary section to OUTMYR.txt
 # =============================================================================
 totifd = 0.0
 totcfd = 0.0
@@ -317,26 +305,25 @@ totcca = 0.0
 totiln = 0.0
 totcln = 0.0
 
-with open(outfcy_path, "a", encoding="utf-8") as f:
+with open(outmyr_path, "a", encoding="utf-8") as f:
 
-    rows = fcy_currency_summary.iter_rows(named=True)
-    n    = 0
+    n = 0
 
-    for row in rows:
+    for row in myr_currency_summary.iter_rows(named=True):
         n += 1
 
         if n == 1:
-            # PUT @1 / / "SUMMARY OF OUTSTANDING FCY LOAN AND DEPOSITS"
+            # PUT @1 / / "SUMMARY OF OUTSTANDING MYR LOAN AND DEPOSITS"
             #        / / 'NOBS' DLM+(-1) ... ;
             # Two '/' before the heading = two blank lines before it
             f.write("\n\n")
-            f.write("SUMMARY OF OUTSTANDING FCY LOAN AND DEPOSITS\n")
+            f.write("SUMMARY OF OUTSTANDING MYR LOAN AND DEPOSITS\n")
             f.write("\n")
             f.write(
                 f"NOBS{DLM}CURCODE{DLM}"
-                f"FCYFD-INDIV{DLM}FCYFD-CORP{DLM}"
-                f"FCYCA-INDIV{DLM}FCYCA-CORP{DLM}"
-                f"FCYLN-INDIV{DLM}FCYLN-CORP\n"
+                f"MYRFD-INDIV{DLM}MYRFD-CORP{DLM}"
+                f"MYRCA-INDIV{DLM}MYRCA-CORP{DLM}"
+                f"MYRLN-INDIV{DLM}MYRLN-CORP\n"
             )
 
         ifdbal = row.get("IFDBAL") or 0.0
@@ -377,4 +364,32 @@ with open(outfcy_path, "a", encoding="utf-8") as f:
         f"{totcln:>20,.2f}\n"
     )
 
-print(f"EIBDOFCY completed — report date {RDATE}, output: {outfcy_path}")
+# =============================================================================
+# //* FTP TO SAS DATAWAREHOUSE
+# //*%OPC SCAN
+# //*%OPC SETVAR TODD=(ODD - 61CD)
+# //*%OPC SETVAR TOMM=(OMM - 61CD)
+# //*%OPC SETVAR TOYYYY=(OYYYY - 61CD)
+# //*RUNSFTP  EXEC COZBATCH
+# //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+# //*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# //*lzopts linerule=$lr
+# //*cd TextFile/TD/PBB/CFTWG
+# //*put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+# //*- rm OutstandingFCY_%TODD.%TOMM.%TOYYYY..xls
+# //*EOB
+# =============================================================================
+
+# =============================================================================
+# //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# //*%OPC SCAN
+# //RUNSFTP  EXEC COZBATCH
+# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+# //lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# //lzopts linerule=$lr
+# //cd TD/INTERBANK/CFTWG
+# //put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+# //EOB
+# =============================================================================
+
+print(f"EIBDOFCY_MYR completed — report date {RDATE}, output: {outmyr_path}")
