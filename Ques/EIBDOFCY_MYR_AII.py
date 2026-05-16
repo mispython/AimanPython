@@ -27,9 +27,13 @@ CURR_PATH = base / "input/uat/ca260513.sas7bdat"               # DEPO.CURRENT (S
 LN_PATH   = base / "input/uat/ln260513.sas7bdat"               # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
 # Required column sets for early validation per input file
-REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
-REQUIRED_CURR_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
-REQUIRED_LN_COLUMNS   = {"CUSTCODE", "CCY",     "CURBAL"}      # loan uses CCY, not CURCODE
+# Required column sets for early validation per input file
+# FD_PATH   : no CURCODE column — all records are MYR; CURCODE added as literal downstream
+# CURR_PATH : no CURCODE column — all records are MYR; CURCODE added as literal downstream
+# LN_PATH   : uses CCY (not CURCODE) to identify currency
+REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURBAL"}
+REQUIRED_CURR_COLUMNS = {"CUSTCODE", "CURBAL"}
+REQUIRED_LN_COLUMNS   = {"CUSTCODE", "CCY",   "CURBAL"}        # loan uses CCY, not CURCODE
 
 
 # =============================================================================
@@ -70,14 +74,17 @@ RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE EQ 'MYR')
-# MYR fixed deposit only — no foreign currency processed in this program
+# FD_PATH contains no CURCODE column — all records are MYR fixed deposits.
+# CURCODE added as literal 'MYR' for downstream consistency.
 # =============================================================================
 _fd_raw = _read_sas7bdat(FD_PATH)
 _require_columns(_fd_raw, REQUIRED_FD_COLUMNS, FD_PATH)
 fd_raw = (
     _fd_raw
-    .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") == "MYR")
+    .with_columns([
+        pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars(),
+        pl.lit("MYR").alias("CURCODE"),                         # no CURCODE in file; all records are MYR
+    ])
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
@@ -114,14 +121,17 @@ fd_summary.write_parquet(output_path / "FD_MYR.parquet")
 
 # =============================================================================
 # DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE EQ 'MYR')
-# MYR current account only — no foreign currency processed in this program
+# CURR_PATH contains no CURCODE column — all records are MYR current accounts.
+# CURCODE added as literal 'MYR' for downstream consistency.
 # =============================================================================
 _curr_raw = _read_sas7bdat(CURR_PATH)
 _require_columns(_curr_raw, REQUIRED_CURR_COLUMNS, CURR_PATH)
 curr_raw = (
     _curr_raw
-    .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") == "MYR")
+    .with_columns([
+        pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars(),
+        pl.lit("MYR").alias("CURCODE"),                         # no CURCODE in file; all records are MYR
+    ])
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
