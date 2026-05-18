@@ -102,3 +102,19 @@ _duckdb.BinderException: Binder Error: No function matches the given name and ar
 
 LINE 15:         CASE WHEN SIGN = 'D' THEN -FORCUR ELSE FORCUR END AS FORCUR,
                                            ^
+
+======================
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMNOSTE.py
+Step 1: Deriving report date...
+  Report Date : 17/05/26
+  Week        : 2
+  Year        : 26  Month : 05  Day : 17
+  File Date   : 170526
+
+Step 2: Reading Walker file...
+  Walker records loaded: 5,382
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMNOSTE.py", line 262, in <module>
+    output_wak = str(OUTPUT_WAK_DATASET).format(year=REPTYEAR, month=REPTMON)
+KeyError: 'week'
