@@ -9,8 +9,6 @@ Purpose : Report on Accounts with Overdraft Limits
 
 import duckdb
 import polars as pl
-import pandas as pd
-from datetime import datetime
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
@@ -21,21 +19,26 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # Input paths - Public Bank
-INPUT_PBB_REPTDATE = "input/deposit_reptdate.parquet"
-INPUT_PBB_CURRENT  = "input/ca05226.sas7bdat"
-INPUT_PBB_OVERDFT  = "input/lm05226.sas7bdat"
+INPUT_PBB_CURRENT  = BASE_DIR / "input/ca05226.sas7bdat"
+INPUT_PBB_OVERDFT  = BASE_DIR / "input/lm05226.sas7bdat"
 
 # Input paths - Islamic Bank
-INPUT_PIBB_REPTDATE = "input/deposit_reptdate_pibb.parquet"
-INPUT_PIBB_CURRENT  = "input/ica05226.sas7bdat"
-INPUT_PIBB_OVERDFT  = "input/lm05226.sas7bdat"
+INPUT_PIBB_CURRENT  = BASE_DIR / "input/ica05226.sas7bdat"
+INPUT_PIBB_OVERDFT  = BASE_DIR / "input/lm05226.sas7bdat"
 
 # Output paths
-OUTPUT_PBB_REPORT  = "/output/PBB_ODLIMIT_REPORT.txt"
-OUTPUT_PIBB_REPORT = "/output/PIBB_ODLIMIT_REPORT.txt"
+OUTPUT_PBB_REPORT  = BASE_DIR / "output/PBB_ODLIMIT_REPORT.txt"
+OUTPUT_PIBB_REPORT = BASE_DIR / "output/PIBB_ODLIMIT_REPORT.txt"
 
 # Report configuration
 PAGE_SIZE = 50  # PS=50 in OPTIONS
+
+
+# ============================================================================
+# REPORT DATE (from REPTDATE module - no reptdate.parquet file is read)
+# ============================================================================
+reptdate_values = get_reptdate_values()
+REPORT_DATE = reptdate_values.reptdate.strftime('%d/%m/%y')
 
 
 # ============================================================================
@@ -45,7 +48,7 @@ con = duckdb.connect(database=':memory:')
 
 
 # ============================================================================
-# FUNCTION TO GENERATE REPORT
+# HELPER FUNCTIONS
 # ============================================================================
 
 def _build_odplan_condition(odplan_filter):
@@ -55,15 +58,15 @@ def _build_odplan_condition(odplan_filter):
 
 
 def _safe_float(value):
-    return float(value) if value else 0.0
+    return float(value) if value is not None else 0.0
 
 
 def _safe_int(value):
-    return int(value) if value else 0
+    return int(value) if value is not None else 0
 
 
 def _safe_text(value, length):
-    return str(value)[:length] if value else ''
+    return str(value)[:length] if value is not None else ''
 
 
 def _get_report_titles(is_islamic):
@@ -80,16 +83,20 @@ def _get_report_titles(is_islamic):
     )
 
 
-def _read_report_date(reptdate_file):
-    reptdate_df = con.execute(f"""
-        SELECT * FROM read_parquet('{reptdate_file}')
-        LIMIT 1
-    """).fetchdf()
-    reptdate = reptdate_df['REPTDATE'].iloc[0]
-    return reptdate.strftime('%d/%m/%y')
+def _load_sas_table(filepath, table_name):
+    """Load a .sas7bdat file into DuckDB via Polars."""
+    try:
+        import pyreadstat
+        df_pd, meta = pyreadstat.read_sas7bdat(str(filepath))
+        df_pl = pl.from_pandas(df_pd)
+    except ImportError:
+        raise ImportError("pyreadstat is required to read .sas7bdat files.")
+    con.register(table_name, df_pl.to_pandas())
+    return df_pl
 
 
 def _load_current_accounts(current_file, odplan_filter):
+    _load_sas_table(current_file, 'current_raw')
     odplan_condition = _build_odplan_condition(odplan_filter)
     current = con.execute(f"""
         SELECT
@@ -97,12 +104,12 @@ def _load_current_accounts(current_file, odplan_filter):
             CASE
                 WHEN CURBAL < 0 THEN (-1) * CURBAL
                 ELSE CURBAL
-            END as BALANCE,
+            END AS BALANCE,
             CASE
                 WHEN CURBAL >= 0 THEN 'CR'
                 ELSE NULL
-            END as CRI
-        FROM read_parquet('{current_file}')
+            END AS CRI
+        FROM current_raw
         WHERE DEPTYPE IN ('D', 'N')
           AND APPRLIMT > 1
           AND {odplan_condition}
@@ -112,7 +119,8 @@ def _load_current_accounts(current_file, odplan_filter):
 
 
 def _load_overdraft_data(overdft_file):
-    ovdr = con.execute(f"""
+    _load_sas_table(overdft_file, 'ovdr_raw')
+    ovdr = con.execute("""
         SELECT
             ACCTNO,
             BRANCH,
@@ -123,7 +131,7 @@ def _load_overdraft_data(overdft_file):
             NAME,
             APPRLIMT,
             ODSTATUS
-        FROM read_parquet('{overdft_file}')
+        FROM ovdr_raw
         WHERE APPRLIMT > 1
           AND LMTTYPE IN ('Y', 'A')
     """).df()
@@ -135,7 +143,7 @@ def _pivot_overdraft_limits():
     odmerg = con.execute("""
         WITH ranked AS (
             SELECT *,
-                ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY LMTAMT DESC) as RCNT
+                ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY LMTAMT DESC) AS RCNT
             FROM ovdr
         ),
         limited AS (
@@ -143,26 +151,26 @@ def _pivot_overdraft_limits():
         )
         SELECT
             ACCTNO,
-            MAX(BRANCH) as BRANCH,
-            MAX(LMTBASER) as LMTBASER,
-            MAX(NAME) as NAME,
-            MAX(ODSTATUS) as ODSTATUS,
-            MAX(APPRLIMT) as APPRLIMT,
-            MAX(CASE WHEN RCNT = 1 THEN LMTAMT END) as LIMIT1,
-            MAX(CASE WHEN RCNT = 1 THEN LMTRATE END) as RATE1,
-            MAX(CASE WHEN RCNT = 1 THEN LMTCOLL END) as COLL1,
-            MAX(CASE WHEN RCNT = 2 THEN LMTAMT END) as LIMIT2,
-            MAX(CASE WHEN RCNT = 2 THEN LMTRATE END) as RATE2,
-            MAX(CASE WHEN RCNT = 2 THEN LMTCOLL END) as COLL2,
-            MAX(CASE WHEN RCNT = 3 THEN LMTAMT END) as LIMIT3,
-            MAX(CASE WHEN RCNT = 3 THEN LMTRATE END) as RATE3,
-            MAX(CASE WHEN RCNT = 3 THEN LMTCOLL END) as COLL3,
-            MAX(CASE WHEN RCNT = 4 THEN LMTAMT END) as LIMIT4,
-            MAX(CASE WHEN RCNT = 4 THEN LMTRATE END) as RATE4,
-            MAX(CASE WHEN RCNT = 4 THEN LMTCOLL END) as COLL4,
-            MAX(CASE WHEN RCNT = 5 THEN LMTAMT END) as LIMIT5,
-            MAX(CASE WHEN RCNT = 5 THEN LMTRATE END) as RATE5,
-            MAX(CASE WHEN RCNT = 5 THEN LMTCOLL END) as COLL5
+            MAX(BRANCH) AS BRANCH,
+            MAX(LMTBASER) AS LMTBASER,
+            MAX(NAME) AS NAME,
+            MAX(ODSTATUS) AS ODSTATUS,
+            MAX(APPRLIMT) AS APPRLIMT,
+            MAX(CASE WHEN RCNT = 1 THEN LMTAMT END) AS LIMIT1,
+            MAX(CASE WHEN RCNT = 1 THEN LMTRATE END) AS RATE1,
+            MAX(CASE WHEN RCNT = 1 THEN LMTCOLL END) AS COLL1,
+            MAX(CASE WHEN RCNT = 2 THEN LMTAMT END) AS LIMIT2,
+            MAX(CASE WHEN RCNT = 2 THEN LMTRATE END) AS RATE2,
+            MAX(CASE WHEN RCNT = 2 THEN LMTCOLL END) AS COLL2,
+            MAX(CASE WHEN RCNT = 3 THEN LMTAMT END) AS LIMIT3,
+            MAX(CASE WHEN RCNT = 3 THEN LMTRATE END) AS RATE3,
+            MAX(CASE WHEN RCNT = 3 THEN LMTCOLL END) AS COLL3,
+            MAX(CASE WHEN RCNT = 4 THEN LMTAMT END) AS LIMIT4,
+            MAX(CASE WHEN RCNT = 4 THEN LMTRATE END) AS RATE4,
+            MAX(CASE WHEN RCNT = 4 THEN LMTCOLL END) AS COLL4,
+            MAX(CASE WHEN RCNT = 5 THEN LMTAMT END) AS LIMIT5,
+            MAX(CASE WHEN RCNT = 5 THEN LMTRATE END) AS RATE5,
+            MAX(CASE WHEN RCNT = 5 THEN LMTCOLL END) AS COLL5
         FROM limited
         GROUP BY ACCTNO
     """).df()
@@ -181,25 +189,25 @@ def _merge_current_with_overdraft():
             o.NAME,
             o.ODSTATUS,
             o.APPRLIMT,
-            COALESCE(o.LIMIT1, 0) as LIMIT1,
-            COALESCE(o.RATE1, 0.0) as RATE1,
+            COALESCE(o.LIMIT1, 0) AS LIMIT1,
+            COALESCE(o.RATE1, 0.0) AS RATE1,
             o.COLL1,
-            COALESCE(o.LIMIT2, 0) as LIMIT2,
-            COALESCE(o.RATE2, 0.0) as RATE2,
+            COALESCE(o.LIMIT2, 0) AS LIMIT2,
+            COALESCE(o.RATE2, 0.0) AS RATE2,
             o.COLL2,
-            COALESCE(o.LIMIT3, 0) as LIMIT3,
-            COALESCE(o.RATE3, 0.0) as RATE3,
+            COALESCE(o.LIMIT3, 0) AS LIMIT3,
+            COALESCE(o.RATE3, 0.0) AS RATE3,
             o.COLL3,
-            COALESCE(o.LIMIT4, 0) as LIMIT4,
-            COALESCE(o.RATE4, 0.0) as RATE4,
+            COALESCE(o.LIMIT4, 0) AS LIMIT4,
+            COALESCE(o.RATE4, 0.0) AS RATE4,
             o.COLL4,
-            COALESCE(o.LIMIT5, 0) as LIMIT5,
-            COALESCE(o.RATE5, 0.0) as RATE5,
+            COALESCE(o.LIMIT5, 0) AS LIMIT5,
+            COALESCE(o.RATE5, 0.0) AS RATE5,
             o.COLL5,
             (COALESCE(o.LIMIT1, 0) + COALESCE(o.LIMIT2, 0) +
              COALESCE(o.LIMIT3, 0) + COALESCE(o.LIMIT4, 0) +
-             COALESCE(o.LIMIT5, 0)) as LIMITS,
-            1 as NOACCT
+             COALESCE(o.LIMIT5, 0)) AS LIMITS,
+            1 AS NOACCT
         FROM current c
         INNER JOIN odmerg o ON c.ACCTNO = o.ACCTNO
     """).df()
@@ -214,7 +222,7 @@ def _format_branch_codes():
                 WHEN BRANCH < 10 THEN '00' || CAST(BRANCH AS VARCHAR)
                 WHEN BRANCH < 100 THEN '0' || CAST(BRANCH AS VARCHAR)
                 ELSE CAST(BRANCH AS VARCHAR)
-            END as BRN
+            END AS BRN
         FROM ovdrm
         ORDER BY BRN, ACCTNO
     """).df()
@@ -233,6 +241,7 @@ def _write_branch_subtotal(report_file, branch_total_limit, branch_account_count
 
 
 def _write_branch_header(report_file, title1, title2, report_date, od_label):
+    # ASA carriage control: '1' = new page
     report_file.write('1')
     report_file.write(f"  {title1}\n")
     report_file.write(f"   {title2}\n")
@@ -314,16 +323,15 @@ def _write_report_file(brnref, output_file, is_islamic, report_date):
             )
 
 
-def generate_od_report(reptdate_file, current_file, overdft_file,
+def generate_od_report(current_file, overdft_file,
                        output_file, is_islamic=False, odplan_filter=None):
     """
-    Generate overdraft limit report
+    Generate overdraft limit report.
 
     Args:
-        reptdate_file: Path to report date parquet file
-        current_file: Path to current accounts parquet file
-        overdft_file: Path to overdraft parquet file
-        output_file: Path to output report file
+        current_file: Path to current accounts .sas7bdat file
+        overdft_file: Path to overdraft .sas7bdat file
+        output_file: Path to output report .txt file
         is_islamic: Boolean indicating if this is Islamic bank report
         odplan_filter: List of ODPLAN codes or single value
     """
@@ -331,35 +339,32 @@ def generate_od_report(reptdate_file, current_file, overdft_file,
     print(f"Generating {'Islamic Bank CLF-i' if is_islamic else 'Public Bank OD'} Limits Report")
     print(f"{'=' * 70}")
 
-    print("\nStep 1: Reading report date...")
-    report_date = _read_report_date(reptdate_file)
-    print(f"Report Date: {report_date}")
+    print(f"\nReport Date: {REPORT_DATE}")
 
-    print("\nStep 2: Processing current accounts...")
+    print("\nStep 1: Processing current accounts...")
     current = _load_current_accounts(current_file, odplan_filter)
     print(f"Current accounts: {len(current):,}")
 
-    print("\nStep 3: Processing overdraft data...")
+    print("\nStep 2: Processing overdraft data...")
     ovdr = _load_overdraft_data(overdft_file)
     print(f"Overdraft records: {len(ovdr):,}")
 
-    print("\nStep 4: Pivoting limits (up to 5 per account)...")
+    print("\nStep 3: Pivoting limits (up to 5 per account)...")
     odmerg = _pivot_overdraft_limits()
     print(f"Accounts with pivoted limits: {len(odmerg):,}")
 
-    print("\nStep 5: Merging current accounts with overdraft data...")
+    print("\nStep 4: Merging current accounts with overdraft data...")
     ovdrm = _merge_current_with_overdraft()
     print(f"Merged records: {len(ovdrm):,}")
 
-    print("\nStep 6: Formatting branch codes...")
+    print("\nStep 5: Formatting branch codes...")
     brnref = _format_branch_codes()
     print(f"Final records with branch codes: {len(brnref):,}")
 
-    print("\nStep 7: Generating report...")
-    _write_report_file(brnref, output_file, is_islamic, report_date)
+    print("\nStep 6: Generating report...")
+    _write_report_file(brnref, output_file, is_islamic, REPORT_DATE)
     print(f"Report saved: {output_file}")
 
-    # Statictics
     print("\nReport Statistics:")
     print(f"  Total Accounts: {len(brnref):,}")
     print(f"  Total Branches: {brnref['BRN'].nunique()}")
@@ -383,7 +388,6 @@ print("=" * 70)
 
 try:
     generate_od_report(
-        reptdate_file=INPUT_PBB_REPTDATE,
         current_file=INPUT_PBB_CURRENT,
         overdft_file=INPUT_PBB_OVERDFT,
         output_file=OUTPUT_PBB_REPORT,
@@ -400,7 +404,6 @@ except Exception as e:
 
 try:
     generate_od_report(
-        reptdate_file=INPUT_PIBB_REPTDATE,
         current_file=INPUT_PIBB_CURRENT,
         overdft_file=INPUT_PIBB_OVERDFT,
         output_file=OUTPUT_PIBB_REPORT,
@@ -414,13 +417,6 @@ except Exception as e:
 # ============================================================================
 # SUMMARY
 # ============================================================================
-print("\n" + "=" * 70)
-print("REPORT GENERATION COMPLETE")
-print("=" * 70)
-print("\nGenerated Reports:")
-print(f"  1. Public Bank OD Limits: {OUTPUT_PBB_REPORT}")
-print(f"  2. Islamic Bank CLF-i Limits: {OUTPUT_PIBB_REPORT}")
-print("\nConversion complete!")
-
-# Close DuckDB connection
 con.close()
+
+print(f"\nGenerated Reports:\n  1. Public Bank OD Limits    : {OUTPUT_PBB_REPORT}\n  2. Islamic Bank CLF-i Limits: {OUTPUT_PIBB_REPORT}")
