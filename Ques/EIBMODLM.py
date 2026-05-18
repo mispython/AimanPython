@@ -9,6 +9,7 @@ Purpose : Report on Accounts with Overdraft Limits
 
 import duckdb
 import polars as pl
+import pandas as pd
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
@@ -18,17 +19,21 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
+INPUT_DIR  = BASE_DIR / "input" / "uat"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLM"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 # Input paths - Public Bank
-INPUT_PBB_CURRENT  = BASE_DIR / "input/ca05226.sas7bdat"
-INPUT_PBB_OVERDFT  = BASE_DIR / "input/lm05226.sas7bdat"
+INPUT_PBB_CURRENT = INPUT_DIR / "ca05226.sas7bdat"
+INPUT_PBB_OVERDFT = INPUT_DIR / "lm05226.sas7bdat"
 
 # Input paths - Islamic Bank
-INPUT_PIBB_CURRENT  = BASE_DIR / "input/ica05226.sas7bdat"
-INPUT_PIBB_OVERDFT  = BASE_DIR / "input/lm05226.sas7bdat"
+INPUT_PIBB_CURRENT = INPUT_DIR / "ica05226.sas7bdat"
+INPUT_PIBB_OVERDFT = INPUT_DIR / "lm05226.sas7bdat"
 
 # Output paths
-OUTPUT_PBB_REPORT  = BASE_DIR / "output/PBB_ODLIMIT_REPORT.txt"
-OUTPUT_PIBB_REPORT = BASE_DIR / "output/PIBB_ODLIMIT_REPORT.txt"
+OUTPUT_PBB_REPORT  = OUTPUT_DIR / "PBB_ODLIMIT_REPORT.txt"
+OUTPUT_PIBB_REPORT = OUTPUT_DIR / "PIBB_ODLIMIT_REPORT.txt"
 
 # Report configuration
 PAGE_SIZE = 50  # PS=50 in OPTIONS
@@ -38,7 +43,12 @@ PAGE_SIZE = 50  # PS=50 in OPTIONS
 # REPORT DATE (from REPTDATE module - no reptdate.parquet file is read)
 # ============================================================================
 reptdate_values = get_reptdate_values()
-REPORT_DATE = reptdate_values.reptdate.strftime('%d/%m/%y')
+REPTDATE   = reptdate_values.reptdate
+REPTYEAR   = reptdate_values.reptyear
+REPTMON    = reptdate_values.reptmon
+REPTDAY    = reptdate_values.reptday
+NOWK       = reptdate_values.nowk
+REPORT_DATE = REPTDATE.strftime('%d/%m/%y')
 
 
 # ============================================================================
@@ -50,6 +60,28 @@ con = duckdb.connect(database=':memory:')
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+def _read_sas7bdat(path: Path) -> pl.DataFrame:
+    """Read one .sas7bdat file and return a Polars DataFrame."""
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required input file: {path}")
+
+    pandas_df = pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="latin1",
+    )
+
+    pandas_df.columns = [
+        str(col).upper().strip()
+        for col in pandas_df.columns
+    ]
+
+    print(f"\nDEBUG COLUMN NAMES [{path.name}]:")
+    print(pandas_df.head(10))
+
+    return pl.from_pandas(pandas_df)
+
 
 def _build_odplan_condition(odplan_filter):
     if isinstance(odplan_filter, list):
@@ -83,20 +115,10 @@ def _get_report_titles(is_islamic):
     )
 
 
-def _load_sas_table(filepath, table_name):
-    """Load a .sas7bdat file into DuckDB via Polars."""
-    try:
-        import pyreadstat
-        df_pd, meta = pyreadstat.read_sas7bdat(str(filepath))
-        df_pl = pl.from_pandas(df_pd)
-    except ImportError:
-        raise ImportError("pyreadstat is required to read .sas7bdat files.")
-    con.register(table_name, df_pl.to_pandas())
-    return df_pl
-
-
-def _load_current_accounts(current_file, odplan_filter):
-    _load_sas_table(current_file, 'current_raw')
+def _load_current_accounts(current_file: Path, odplan_filter) -> pd.DataFrame:
+    """Load and filter current accounts from .sas7bdat."""
+    current_df = _read_sas7bdat(current_file)
+    con.register('current_raw', current_df.to_pandas())
     odplan_condition = _build_odplan_condition(odplan_filter)
     current = con.execute(f"""
         SELECT
@@ -118,8 +140,10 @@ def _load_current_accounts(current_file, odplan_filter):
     return current
 
 
-def _load_overdraft_data(overdft_file):
-    _load_sas_table(overdft_file, 'ovdr_raw')
+def _load_overdraft_data(overdft_file: Path) -> pd.DataFrame:
+    """Load and filter overdraft data from .sas7bdat."""
+    ovdr_df = _read_sas7bdat(overdft_file)
+    con.register('ovdr_raw', ovdr_df.to_pandas())
     ovdr = con.execute("""
         SELECT
             ACCTNO,
@@ -139,7 +163,7 @@ def _load_overdraft_data(overdft_file):
     return ovdr
 
 
-def _pivot_overdraft_limits():
+def _pivot_overdraft_limits() -> pd.DataFrame:
     odmerg = con.execute("""
         WITH ranked AS (
             SELECT *,
@@ -178,7 +202,7 @@ def _pivot_overdraft_limits():
     return odmerg
 
 
-def _merge_current_with_overdraft():
+def _merge_current_with_overdraft() -> pd.DataFrame:
     ovdrm = con.execute("""
         SELECT
             c.ACCTNO,
@@ -215,7 +239,7 @@ def _merge_current_with_overdraft():
     return ovdrm
 
 
-def _format_branch_codes():
+def _format_branch_codes() -> pd.DataFrame:
     return con.execute("""
         SELECT *,
             CASE
@@ -258,7 +282,7 @@ def _write_branch_header(report_file, title1, title2, report_date, od_label):
     report_file.write(' ' + '-' * 132 + '\n')
 
 
-def _build_detail_line(row):
+def _build_detail_line(row) -> str:
     line = ' '
     line += f"{_safe_text(row['BRN'], 3):<3} "
     line += f"{_safe_int(row['ACCTNO']):<10} "
@@ -274,23 +298,23 @@ def _build_detail_line(row):
     return line
 
 
-def _build_limit2_line(row):
+def _build_limit2_line(row) -> str:
     if not row['LIMIT2'] or row['LIMIT2'] <= 0:
         return ''
     limit2 = _safe_float(row['LIMIT2'])
-    rate2 = _safe_float(row['RATE2'])
-    coll2 = _safe_text(row['COLL2'], 5)
+    rate2  = _safe_float(row['RATE2'])
+    coll2  = _safe_text(row['COLL2'], 5)
     return ' ' + ' ' * 105 + f"{limit2:>11,.2f} {rate2:>5.2f} {coll2:<5}\n"
 
 
-def _write_report_file(brnref, output_file, is_islamic, report_date):
+def _write_report_file(brnref: pd.DataFrame, output_file: Path, is_islamic: bool, report_date: str):
     title1, title2, od_label = _get_report_titles(is_islamic)
     current_brn = None
     branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
 
-    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_file, 'w') as report_file:
+    with open(output_file, 'w', encoding='utf-8') as report_file:
         for _, row in brnref.iterrows():
             branch_changed = row['BRN'] != current_brn
             if branch_changed:
@@ -310,9 +334,9 @@ def _write_report_file(brnref, output_file, is_islamic, report_date):
             if extra_line:
                 report_file.write(extra_line)
 
-            branch_totals["approved"] += _safe_float(row['APPRLIMT'])
+            branch_totals["approved"]  += _safe_float(row['APPRLIMT'])
             branch_totals["operative"] += _safe_float(row['LIMITS'])
-            branch_totals["accounts"] += 1
+            branch_totals["accounts"]  += 1
 
         if current_brn is not None:
             _write_branch_subtotal(
@@ -323,22 +347,26 @@ def _write_report_file(brnref, output_file, is_islamic, report_date):
             )
 
 
-def generate_od_report(current_file, overdft_file,
-                       output_file, is_islamic=False, odplan_filter=None):
+def generate_od_report(
+    current_file: Path,
+    overdft_file: Path,
+    output_file: Path,
+    is_islamic: bool = False,
+    odplan_filter=None,
+):
     """
     Generate overdraft limit report.
 
     Args:
-        current_file: Path to current accounts .sas7bdat file
-        overdft_file: Path to overdraft .sas7bdat file
-        output_file: Path to output report .txt file
-        is_islamic: Boolean indicating if this is Islamic bank report
-        odplan_filter: List of ODPLAN codes or single value
+        current_file:   Path to current accounts .sas7bdat file
+        overdft_file:   Path to overdraft .sas7bdat file
+        output_file:    Path to output report .txt file
+        is_islamic:     Boolean indicating if this is Islamic bank report
+        odplan_filter:  List of ODPLAN codes or single value
     """
     print(f"\n{'=' * 70}")
     print(f"Generating {'Islamic Bank CLF-i' if is_islamic else 'Public Bank OD'} Limits Report")
     print(f"{'=' * 70}")
-
     print(f"\nReport Date: {REPORT_DATE}")
 
     print("\nStep 1: Processing current accounts...")
@@ -366,11 +394,16 @@ def generate_od_report(current_file, overdft_file,
     print(f"Report saved: {output_file}")
 
     print("\nReport Statistics:")
-    print(f"  Total Accounts: {len(brnref):,}")
-    print(f"  Total Branches: {brnref['BRN'].nunique()}")
+    print(f"  Total Accounts : {len(brnref):,}")
+    print(f"  Total Branches : {brnref['BRN'].nunique()}")
     if len(brnref) > 0:
-        print(f"  Total Approved Limits: {brnref['APPRLIMT'].sum():,.2f}")
-        print(f"  Total Operative Limits: {brnref['LIMITS'].sum():,.2f}")
+        print(f"  Total Approved Limits  : {brnref['APPRLIMT'].sum():,.2f}")
+        print(f"  Total Operative Limits : {brnref['LIMITS'].sum():,.2f}")
+
+    print(f"\n========== PREVIEW: {output_file.name} ==========\n")
+    with open(output_file, 'r', encoding='utf-8') as f:
+        print(f.read())
+    print(f"========== END PREVIEW ==========\n")
 
 
 # ============================================================================
@@ -392,7 +425,7 @@ try:
         overdft_file=INPUT_PBB_OVERDFT,
         output_file=OUTPUT_PBB_REPORT,
         is_islamic=False,
-        odplan_filter=[100, 101, 102, 103, 104, 105]
+        odplan_filter=[100, 101, 102, 103, 104, 105],
     )
 except Exception as e:
     print(f"\nError generating Public Bank report: {e}")
@@ -408,7 +441,7 @@ try:
         overdft_file=INPUT_PIBB_OVERDFT,
         output_file=OUTPUT_PIBB_REPORT,
         is_islamic=True,
-        odplan_filter=106
+        odplan_filter=106,
     )
 except Exception as e:
     print(f"\nError generating Islamic Bank report: {e}")
@@ -419,4 +452,10 @@ except Exception as e:
 # ============================================================================
 con.close()
 
-print(f"\nGenerated Reports:\n  1. Public Bank OD Limits    : {OUTPUT_PBB_REPORT}\n  2. Islamic Bank CLF-i Limits: {OUTPUT_PIBB_REPORT}")
+print("\n" + "=" * 70)
+print("REPORT GENERATION COMPLETE")
+print("=" * 70)
+print("\nGenerated Reports:")
+print(f"  1. Public Bank OD Limits     : {OUTPUT_PBB_REPORT}")
+print(f"  2. Islamic Bank CLF-i Limits : {OUTPUT_PIBB_REPORT}")
+print("\nConversion complete!")
