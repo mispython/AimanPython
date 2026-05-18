@@ -39,3 +39,66 @@ Traceback (most recent call last):
 _duckdb.ParserException: Parser Error: syntax error at or near "DESC"
 
 LINE 3:         SBC, NBR, DESC, FORCUR, SIGN, RMCUR,
+
+=============================
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMNOSTE.py
+Step 1: Deriving report date...
+  Report Date : 17/05/26
+  Week        : 2
+  Year        : 26  Month : 05  Day : 17
+  File Date   : 170526
+
+Step 2: Reading Walker file...
+  Walker records loaded: 5,382
+  Walker dataset saved : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIMNOSTE/wak_2605.parquet
+
+Step 3: Reading Deposit file...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMNOSTE.py", line 273, in <module>
+    deposit_df = con.execute(f"""
+_duckdb.BinderException: Binder Error: No function matches the given name and argument types '-(VARCHAR)'. You might need to add explicit type casts.
+        Candidate functions:
+        -(TINYINT) -> TINYINT
+        -(TINYINT, TINYINT) -> TINYINT
+        -(SMALLINT) -> SMALLINT
+        -(SMALLINT, SMALLINT) -> SMALLINT
+        -(INTEGER) -> INTEGER
+        -(INTEGER, INTEGER) -> INTEGER
+        -(BIGINT) -> BIGINT
+        -(BIGINT, BIGINT) -> BIGINT
+        -(HUGEINT) -> HUGEINT
+        -(HUGEINT, HUGEINT) -> HUGEINT
+        -(FLOAT) -> FLOAT
+        -(FLOAT, FLOAT) -> FLOAT
+        -(DOUBLE) -> DOUBLE
+        -(DOUBLE, DOUBLE) -> DOUBLE
+        -(DECIMAL) -> DECIMAL
+        -(DECIMAL, DECIMAL) -> DECIMAL
+        -(UTINYINT) -> UTINYINT
+        -(UTINYINT, UTINYINT) -> UTINYINT
+        -(USMALLINT) -> USMALLINT
+        -(USMALLINT, USMALLINT) -> USMALLINT
+        -(UINTEGER) -> UINTEGER
+        -(UINTEGER, UINTEGER) -> UINTEGER
+        -(UBIGINT) -> UBIGINT
+        -(UBIGINT, UBIGINT) -> UBIGINT
+        -(UHUGEINT) -> UHUGEINT
+        -(UHUGEINT, UHUGEINT) -> UHUGEINT
+        -(BIGNUM) -> BIGNUM
+        -(BIGNUM, BIGNUM) -> BIGNUM
+        -(DATE, DATE) -> BIGINT
+        -(DATE, INTEGER) -> DATE
+        -(TIMESTAMP, TIMESTAMP) -> INTERVAL
+        -(INTERVAL, INTERVAL) -> INTERVAL
+        -(DATE, INTERVAL) -> TIMESTAMP
+        -(TIME, INTERVAL) -> TIME
+        -(TIMESTAMP, INTERVAL) -> TIMESTAMP
+        -(TIME WITH TIME ZONE, INTERVAL) -> TIME WITH TIME ZONE
+        -(INTERVAL) -> INTERVAL
+        -(TIMESTAMP WITH TIME ZONE, INTERVAL) -> TIMESTAMP WITH TIME ZONE
+        -(TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE) -> INTERVAL
+
+
+LINE 15:         CASE WHEN SIGN = 'D' THEN -FORCUR ELSE FORCUR END AS FORCUR,
+                                           ^
