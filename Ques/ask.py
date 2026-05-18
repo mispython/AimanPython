@@ -1,3 +1,38 @@
+CASE
+    WHEN YY IS NOT NULL
+     AND MM IS NOT NULL
+     AND DD IS NOT NULL
+    THEN MAKE_DATE(
+        CASE WHEN YY < 50 THEN 2000 + YY ELSE 1900 + YY END,
+        MM,
+        DD
+    )
+END AS STARTDT,
+
+CASE
+    WHEN YY1 IS NOT NULL
+     AND MM1 IS NOT NULL
+     AND DD1 IS NOT NULL
+    THEN MAKE_DATE(
+        CASE WHEN YY1 < 50 THEN 2000 + YY1 ELSE 1900 + YY1 END,
+        MM1,
+        DD1
+    )
+END AS ENDDT,
+
+CASE
+    WHEN YY2 IS NOT NULL
+     AND MM2 IS NOT NULL
+     AND DD2 IS NOT NULL
+    THEN MAKE_DATE(
+        CASE WHEN YY2 < 50 THEN 2000 + YY2 ELSE 1900 + YY2 END,
+        MM2,
+        DD2
+    )
+END AS TRXDT,
+
+============================
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMECPT_refine.py", line 147, in <module>
     def _decode_ebcdic_int(raw: bytes) -> int | None:
