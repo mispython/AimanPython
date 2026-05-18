@@ -302,7 +302,7 @@ deposit_records = []
 try:
     with open(INPUT_DPNOST, 'rb') as f:
         while True:
-            line = f.read(200)  # LRECL=200
+            line = f.read(200)
 
             if not line or len(line) < 85:
                 break
@@ -712,7 +712,7 @@ print(f"Week: {NOWK}")
 print(f"Total Transactions: {len(allrec):,}")
 print(f"Summary Records: {len(summary):,}")
 
-print(f"\nGenerated Files:")
+print("\nGenerated Files:")
 print(f"  1. Report Date: {OUTPUT_REPTDATE}")
 print(f"  2. Walker Dataset: {output_wak}")
 print(f"  3. Deposit Dataset: {output_dp}")
@@ -730,7 +730,7 @@ if len(summary) > 0:
         FROM summary
     """).fetchone()
 
-    print(f"\nTransaction Summary:")
+    print("\nTransaction Summary:")
     print(f"  Total Foreign Amount: {totals[0]:,.2f}" if totals[0] else "  Total Foreign Amount: 0.00")
     print(f"  Total RM Amount: {totals[1]:,.2f}" if totals[1] else "  Total RM Amount: 0.00")
     print(f"  Number of Currencies: {totals[2]}")
