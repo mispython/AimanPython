@@ -52,12 +52,6 @@ REPORT_DATE = REPTDATE.strftime('%d/%m/%y')
 
 
 # ============================================================================
-# INITIALIZE DUCKDB CONNECTION
-# ============================================================================
-con = duckdb.connect(database=':memory:')
-
-
-# ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
@@ -83,25 +77,25 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     return pl.from_pandas(pandas_df)
 
 
-def _build_odplan_condition(odplan_filter):
+def _build_odplan_condition(odplan_filter) -> str:
     if isinstance(odplan_filter, list):
         return f"ODPLAN IN ({','.join(map(str, odplan_filter))})"
     return f"ODPLAN = {odplan_filter}"
 
 
-def _safe_float(value):
+def _safe_float(value) -> float:
     return float(value) if value is not None else 0.0
 
 
-def _safe_int(value):
+def _safe_int(value) -> int:
     return int(value) if value is not None else 0
 
 
-def _safe_text(value, length):
+def _safe_text(value, length) -> str:
     return str(value)[:length] if value is not None else ''
 
 
-def _get_report_titles(is_islamic):
+def _get_report_titles(is_islamic) -> tuple:
     if is_islamic:
         return (
             'P U B L I C   I S L A M I C  B A N K   B E R H A D',
@@ -115,7 +109,22 @@ def _get_report_titles(is_islamic):
     )
 
 
-def _load_current_accounts(current_file: Path, odplan_filter) -> pd.DataFrame:
+def _clear_registered_tables(con: duckdb.DuckDBPyConnection) -> None:
+    """Drop all stale registered tables from a previous run to avoid
+    cross-contamination between the PBB and PIBB report passes."""
+    for table in ('current_raw', 'ovdr_raw', 'current', 'ovdr', 'odmerg', 'ovdrm'):
+        try:
+            con.execute(f"DROP VIEW IF EXISTS {table}")
+            con.execute(f"DROP TABLE IF EXISTS {table}")
+        except Exception:
+            pass
+
+
+def _load_current_accounts(
+    con: duckdb.DuckDBPyConnection,
+    current_file: Path,
+    odplan_filter,
+) -> pd.DataFrame:
     """Load and filter current accounts from .sas7bdat."""
     current_df = _read_sas7bdat(current_file)
     con.register('current_raw', current_df.to_pandas())
@@ -140,7 +149,10 @@ def _load_current_accounts(current_file: Path, odplan_filter) -> pd.DataFrame:
     return current
 
 
-def _load_overdraft_data(overdft_file: Path) -> pd.DataFrame:
+def _load_overdraft_data(
+    con: duckdb.DuckDBPyConnection,
+    overdft_file: Path,
+) -> pd.DataFrame:
     """Load and filter overdraft data from .sas7bdat."""
     ovdr_df = _read_sas7bdat(overdft_file)
     con.register('ovdr_raw', ovdr_df.to_pandas())
@@ -162,7 +174,7 @@ def _load_overdraft_data(overdft_file: Path) -> pd.DataFrame:
     return ovdr
 
 
-def _pivot_overdraft_limits() -> pd.DataFrame:
+def _pivot_overdraft_limits(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     odmerg = con.execute("""
         WITH ranked AS (
             SELECT *,
@@ -200,7 +212,7 @@ def _pivot_overdraft_limits() -> pd.DataFrame:
     return odmerg
 
 
-def _merge_current_with_overdraft() -> pd.DataFrame:
+def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     ovdrm = con.execute("""
         SELECT
             c.ACCTNO,
@@ -236,7 +248,7 @@ def _merge_current_with_overdraft() -> pd.DataFrame:
     return ovdrm
 
 
-def _format_branch_codes() -> pd.DataFrame:
+def _format_branch_codes(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     return con.execute("""
         SELECT *,
             CASE
@@ -249,7 +261,12 @@ def _format_branch_codes() -> pd.DataFrame:
     """).df()
 
 
-def _write_branch_subtotal(report_file, branch_total_limit, branch_account_count, branch_total_operative):
+def _write_branch_subtotal(
+    report_file,
+    branch_total_limit: float,
+    branch_account_count: int,
+    branch_total_operative: float,
+) -> None:
     report_file.write(' \n')
     report_file.write(' ' + ' ' * 25 + '-' * 49 + '\n')
     report_file.write(' ' + ' ' * 25 + f"TOTAL APPROVED LIMITS  = {branch_total_limit:>20,.2f}\n")
@@ -261,7 +278,13 @@ def _write_branch_subtotal(report_file, branch_total_limit, branch_account_count
     report_file.write(' \n')
 
 
-def _write_branch_header(report_file, title1, title2, report_date, od_label):
+def _write_branch_header(
+    report_file,
+    title1: str,
+    title2: str,
+    report_date: str,
+    od_label: str,
+) -> None:
     # ASA carriage control: '1' = new page
     report_file.write('1')
     report_file.write(f"  {title1}\n")
@@ -303,7 +326,12 @@ def _build_limit2_line(row) -> str:
     return ' ' + ' ' * 80 + f"{limit2:>11,.2f} {rate2:>5.2f} {coll2:<5}\n"
 
 
-def _write_report_file(brnref: pd.DataFrame, output_file: Path, is_islamic: bool, report_date: str):
+def _write_report_file(
+    brnref: pd.DataFrame,
+    output_file: Path,
+    is_islamic: bool,
+    report_date: str,
+) -> None:
     title1, title2, od_label = _get_report_titles(is_islamic)
     current_brn = None
     branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
@@ -349,7 +377,7 @@ def generate_od_report(
     output_file: Path,
     is_islamic: bool = False,
     odplan_filter=None,
-):
+) -> bool:
     """
     Generate overdraft limit report (no NAME column variant).
 
@@ -359,47 +387,64 @@ def generate_od_report(
         output_file:    Path to output report .txt file
         is_islamic:     Boolean indicating if this is Islamic bank report
         odplan_filter:  List of ODPLAN codes or single value
+
+    Returns:
+        True if the report was generated successfully, False otherwise.
     """
     print(f"\n{'=' * 70}")
     print(f"Generating {'Islamic Bank CLF-i' if is_islamic else 'Public Bank OD'} Limits Report")
     print(f"{'=' * 70}")
     print(f"\nReport Date: {REPORT_DATE}")
 
-    print("\nStep 1: Processing current accounts...")
-    current = _load_current_accounts(current_file, odplan_filter)
-    print(f"Current accounts: {len(current):,}")
+    # Create a fresh DuckDB connection per report run to avoid stale
+    # registered tables from the previous run contaminating this one.
+    con = duckdb.connect(database=':memory:')
 
-    print("\nStep 2: Processing overdraft data...")
-    ovdr = _load_overdraft_data(overdft_file)
-    print(f"Overdraft records: {len(ovdr):,}")
+    try:
+        print("\nStep 1: Processing current accounts...")
+        current = _load_current_accounts(con, current_file, odplan_filter)
+        print(f"Current accounts: {len(current):,}")
 
-    print("\nStep 3: Pivoting limits (up to 5 per account)...")
-    odmerg = _pivot_overdraft_limits()
-    print(f"Accounts with pivoted limits: {len(odmerg):,}")
+        print("\nStep 2: Processing overdraft data...")
+        ovdr = _load_overdraft_data(con, overdft_file)
+        print(f"Overdraft records: {len(ovdr):,}")
 
-    print("\nStep 4: Merging current accounts with overdraft data...")
-    ovdrm = _merge_current_with_overdraft()
-    print(f"Merged records: {len(ovdrm):,}")
+        print("\nStep 3: Pivoting limits (up to 5 per account)...")
+        odmerg = _pivot_overdraft_limits(con)
+        print(f"Accounts with pivoted limits: {len(odmerg):,}")
 
-    print("\nStep 5: Formatting branch codes...")
-    brnref = _format_branch_codes()
-    print(f"Final records with branch codes: {len(brnref):,}")
+        print("\nStep 4: Merging current accounts with overdraft data...")
+        ovdrm = _merge_current_with_overdraft(con)
+        print(f"Merged records: {len(ovdrm):,}")
 
-    print("\nStep 6: Generating report...")
-    _write_report_file(brnref, output_file, is_islamic, REPORT_DATE)
-    print(f"Report saved: {output_file}")
+        print("\nStep 5: Formatting branch codes...")
+        brnref = _format_branch_codes(con)
+        print(f"Final records with branch codes: {len(brnref):,}")
 
-    print("\nReport Statistics:")
-    print(f"  Total Accounts : {len(brnref):,}")
-    print(f"  Total Branches : {brnref['BRN'].nunique()}")
-    if len(brnref) > 0:
-        print(f"  Total Approved Limits  : {brnref['APPRLIMT'].sum():,.2f}")
-        print(f"  Total Operative Limits : {brnref['LIMITS'].sum():,.2f}")
+        print("\nStep 6: Generating report...")
+        _write_report_file(brnref, output_file, is_islamic, REPORT_DATE)
+        print(f"Report saved: {output_file}")
 
-    print(f"\n========== PREVIEW: {output_file.name} ==========\n")
-    with open(output_file, 'r', encoding='utf-8') as f:
-        print(f.read())
-    print(f"========== END PREVIEW ==========\n")
+        print("\nReport Statistics:")
+        print(f"  Total Accounts : {len(brnref):,}")
+        print(f"  Total Branches : {brnref['BRN'].nunique()}")
+        if len(brnref) > 0:
+            print(f"  Total Approved Limits  : {brnref['APPRLIMT'].sum():,.2f}")
+            print(f"  Total Operative Limits : {brnref['LIMITS'].sum():,.2f}")
+
+        print(f"\n========== PREVIEW: {output_file.name} ==========\n")
+        with open(output_file, 'r', encoding='utf-8') as f:
+            print(f.read())
+        print(f"========== END PREVIEW ==========\n")
+
+        return True
+
+    except Exception as e:
+        print(f"\n[ERROR] Report generation failed: {e}")
+        return False
+
+    finally:
+        con.close()
 
 
 # ============================================================================
@@ -410,48 +455,51 @@ print("=" * 70)
 print("OVERDRAFT LIMITS REPORT GENERATION")
 print("=" * 70)
 
+results = {}
 
 # ============================================================================
 # PART 1: PUBLIC BANK - OD LIMITS (ODPLAN 100-105)
 # ============================================================================
 
-try:
-    generate_od_report(
-        current_file=INPUT_PBB_CURRENT,
-        overdft_file=INPUT_PBB_OVERDFT,
-        output_file=OUTPUT_PBB_REPORT,
-        is_islamic=False,
-        odplan_filter=[100, 101, 102, 103, 104, 105],
-    )
-except Exception as e:
-    print(f"\nError generating Public Bank report: {e}")
-
+results["PBB"] = generate_od_report(
+    current_file=INPUT_PBB_CURRENT,
+    overdft_file=INPUT_PBB_OVERDFT,
+    output_file=OUTPUT_PBB_REPORT,
+    is_islamic=False,
+    odplan_filter=[100, 101, 102, 103, 104, 105],
+)
 
 # ============================================================================
 # PART 2: PUBLIC ISLAMIC BANK - CLF-i LIMITS (ODPLAN 106)
 # ============================================================================
 
-try:
-    generate_od_report(
-        current_file=INPUT_PIBB_CURRENT,
-        overdft_file=INPUT_PIBB_OVERDFT,
-        output_file=OUTPUT_PIBB_REPORT,
-        is_islamic=True,
-        odplan_filter=106,
-    )
-except Exception as e:
-    print(f"\nError generating Islamic Bank report: {e}")
-
+results["PIBB"] = generate_od_report(
+    current_file=INPUT_PIBB_CURRENT,
+    overdft_file=INPUT_PIBB_OVERDFT,
+    output_file=OUTPUT_PIBB_REPORT,
+    is_islamic=True,
+    odplan_filter=106,
+)
 
 # ============================================================================
 # SUMMARY
 # ============================================================================
-con.close()
 
 print("\n" + "=" * 70)
-print("REPORT GENERATION COMPLETE")
+print("GENERATED REPORTS:")
 print("=" * 70)
-print("\nGenerated Reports:")
-print(f"  1. Public Bank OD Limits     : {OUTPUT_PBB_REPORT}")
-print(f"  2. Islamic Bank CLF-i Limits : {OUTPUT_PIBB_REPORT}")
-print("\nConversion complete!")
+
+if results["PBB"]:
+    print(f"  1. Public Bank OD Limits     : {OUTPUT_PBB_REPORT}")
+else:
+    print(f"  1. Public Bank OD Limits     : [FAILED]")
+
+if results["PIBB"]:
+    print(f"  2. Islamic Bank CLF-i Limits : {OUTPUT_PIBB_REPORT}")
+else:
+    print(f"  2. Islamic Bank CLF-i Limits : [FAILED]")
+
+if all(results.values()):
+    print("\nREPORT GENERATION COMPLETE")
+else:
+    print("\nREPORT GENERATION COMPLETED WITH ERRORS — review output above.")
