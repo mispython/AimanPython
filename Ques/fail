@@ -118,3 +118,47 @@ Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMNOSTE.py", line 262, in <module>
     output_wak = str(OUTPUT_WAK_DATASET).format(year=REPTYEAR, month=REPTMON)
 KeyError: 'week'
+
+====================
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMNOSTE.py
+Step 1: Deriving report date...
+  Report Date : 17/05/26
+  Week        : 2
+  Year        : 26  Month : 05  Day : 17
+  File Date   : 170526
+
+Step 2: Reading Walker file...
+  Walker records loaded: 5,382
+  Walker dataset saved : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIMNOSTE/wak_2605.parquet
+
+Step 3: Reading Deposit file...
+
+    column_name column_type null   key default extra
+0       ACCTNO     INTEGER  YES  None    None  None
+1      AGENTNO     VARCHAR  YES  None    None  None
+2         NAME     INTEGER  YES  None    None  None
+3        TRIND     VARCHAR  YES  None    None  None
+4       TRTYPE     VARCHAR  YES  None    None  None
+5         SIGN     INTEGER  YES  None    None  None
+6       FORCUR     VARCHAR  YES  None    None  None
+7        RMCUR     VARCHAR  YES  None    None  None
+8           YY     INTEGER  YES  None    None  None
+9           MM     INTEGER  YES  None    None  None
+10          DD     INTEGER  YES  None    None  None
+11         YY1     INTEGER  YES  None    None  None
+12         MM1     INTEGER  YES  None    None  None
+13         DD1     INTEGER  YES  None    None  None
+14     CURCODE     INTEGER  YES  None    None  None
+15     BILLIND     VARCHAR  YES  None    None  None
+16         YY2     INTEGER  YES  None    None  None
+17         MM2     INTEGER  YES  None    None  None
+18         DD2     INTEGER  YES  None    None  None
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMNOSTE.py", line 280, in <module>
+    deposit_df = con.execute(f"""
+_duckdb.BinderException: Binder Error: Referenced column "STARTDT" not found in FROM clause!
+Candidate bindings: "TRIND", "TRTYPE", "AGENTNO", "CURCODE"
+
+LINE 28:         "STARTDT",
+                 ^
