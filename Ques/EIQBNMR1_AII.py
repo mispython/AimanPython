@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+Program: EQIBNMR1.py
+"""
 
 from pathlib import Path
 import duckdb
@@ -6,6 +9,8 @@ import pandas as pd
 import polars as pl
 
 from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+from output_date import build_output_file
 
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
@@ -14,8 +19,10 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIQBNMR1"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # These are the only input files for this Python version of EIQBNMR1.
-SAS_PATH = INPUT_DIR / "ln05126.sas7bdat"
-BTSAS_PATH = INPUT_DIR / "btrad04426.sas7bdat"
+# SAS_PATH = INPUT_DIR / "ln05126.sas7bdat"
+# BTSAS_PATH = INPUT_DIR / "btrad04426.sas7bdat"
+SAS_PATH = get_latest_file(INPUT_DIR, "ln")
+BTSAS_PATH = get_latest_file(INPUT_DIR, "btrad")
 
 # REPORT DATE DERIVATION  (shared equivalent of SAS DATA REPTDATE step)
 reptdate_values = get_reptdate_values(year_format="%Y")
@@ -68,6 +75,7 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
 
+    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<<<
     pandas_df = pd.read_sas(
         path,
         format="sas7bdat",
