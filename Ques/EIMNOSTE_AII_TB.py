@@ -520,41 +520,50 @@ def _write_page_header(fh, rdate: str) -> int:
     fh.write(f"REPORT ON FOREIGN EXCHANGE TRANSACTION AS AT {rdate}\n")
     fh.write(" \n")
 
-    fh.write(
-        f" {'CURRENCY':<{CURCODE_W}} "
-        f"{'AGENT':<{AGENTNO_W}} "
-        f"{'NAME':<{NAME_W}} "
-        f"{'TRANSACTION':<{TRDESC_W}} "
-        f"{'DEBIT(D)/':<{SIGN_W}}"
-        f"{'':<{GAP1_W}}"
-        f"{'NO OF':>{NOTRAN_W}} "
-        f"{'FOREIGN':>{FORCUR_W}} "
-        f"{'RM':>{RMCUR_W}}\n"
-    )
+# ─────────────────────────────────────────────────────────────
+# HEADER LINE 1 (top)
+# ─────────────────────────────────────────────────────────────
+fh.write(
+    f" {'':<{CURCODE_W}} "
+    f"{'':<{AGENTNO_W}} "
+    f"{'':<{NAME_W}} "
+    f"{'':<{TRDESC_W}} "
+    f"{'':<{SIGN_W}}"
+    f"{'':<{GAP1_W}}"
+    f"{'NO OF':>{NOTRAN_W}} "
+    f"{'':>{FORCUR_W}} "
+    f"{'':>{RMCUR_W}}\n"
+)
 
-    fh.write(
-        f" {'CODE':<{CURCODE_W}} "
-        f"{'NO':<{AGENTNO_W}} "
-        f"{'':<{NAME_W}} "
-        f"{'DESCRIPTION':<{TRDESC_W}} "
-        f"{'CREDIT(C)':<{SIGN_W}}"
-        f"{'':<{GAP1_W}}"
-        f"{'TRANS':>{NOTRAN_W}} "
-        f"{'AMOUNT':>{FORCUR_W}} "
-        f"{'AMOUNT':>{RMCUR_W}}\n"
-    )
+# ─────────────────────────────────────────────────────────────
+# HEADER LINE 2 (middle)
+# ─────────────────────────────────────────────────────────────
+fh.write(
+    f" {'CURRENCY':<{CURCODE_W}} "
+    f"{'AGENT':<{AGENTNO_W}} "
+    f"{'':<{NAME_W}} "
+    f"{'TRANSACTION':<{TRDESC_W}} "
+    f"{'DEBIT(D)/':<{SIGN_W}}"
+    f"{'':<{GAP1_W}}"
+    f"{'TRANS':>{NOTRAN_W}} "
+    f"{'FOREIGN':>{FORCUR_W}} "
+    f"{'RM':>{RMCUR_W}}\n"
+)
 
-    fh.write(
-        f" {'':<{CURCODE_W}} "
-        f"{'':<{AGENTNO_W}} "
-        f"{'':<{NAME_W}} "
-        f"{'':<{TRDESC_W}} "
-        f"{'':<{SIGN_W}}"
-        f"{'':<{GAP1_W}}"
-        f"{'ACTION':>{NOTRAN_W}} "
-        f"{'':>{FORCUR_W}} "
-        f"{'':>{RMCUR_W}}\n"
-    )
+# ─────────────────────────────────────────────────────────────
+# HEADER LINE 3 (bottom)
+# ─────────────────────────────────────────────────────────────
+fh.write(
+    f" {'CODE':<{CURCODE_W}} "
+    f"{'NO':<{AGENTNO_W}} "
+    f"{'NAME':<{NAME_W}} "
+    f"{'DESCRIPTION':<{TRDESC_W}} "
+    f"{'CREDIT(C)':<{SIGN_W}}"
+    f"{'':<{GAP1_W}}"
+    f"{'ACTION':>{NOTRAN_W}} "
+    f"{'AMOUNT':>{FORCUR_W}} "
+    f"{'AMOUNT':>{RMCUR_W}}\n"
+)
 
     fh.write(f" {'-' * 132}\n")
 
