@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+from output_date import build_output_file
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -28,7 +30,7 @@ INPUT_DPNOST = INPUT_DIR / "NOSCBNK.parquet"   # Deposit file (Parquet)
 # Output paths
 OUTPUT_WAK_DATASET = OUTPUT_DIR / "wak_{year}{month}.parquet"
 OUTPUT_DP_DATASET  = OUTPUT_DIR / "dp_{year}{month}.parquet"
-OUTPUT_REPORT      = OUTPUT_DIR / "EIMNOSTE_report.txt"
+OUTPUT_REPORT      = build_output_file(OUTPUT_DIR, "EIMNOSTE_report").with_suffix(".txt")
 OUTPUT_SFTP_SCRIPT = OUTPUT_DIR / "sftp_commands.txt"
 
 # Report configuration
@@ -225,7 +227,7 @@ con.register("walker_raw", df_walker)
 # Add TRDESC via DuckDB CASE expression
 walker_df = con.execute("""
     SELECT
-        SBC, NBR, DESC, FORCUR, SIGN, RMCUR,
+        SBC, NBR, "DESC", FORCUR, SIGN, RMCUR,
         AGENTNO, CURCODE, TRANCODE, NAME, TRXDT, PREFFDT,
         CASE TRANCODE
             WHEN '001' THEN 'OUTWARD DD'
@@ -270,6 +272,14 @@ print(f"  Walker dataset saved : {output_wak}")
 # ============================================================================
 print("\nStep 3: Reading Deposit file...")
 
+print("\n",
+    con.execute(f"""
+        DESCRIBE
+        SELECT * FROM read_parquet('{INPUT_DPNOST}')
+        LIMIT 5
+    """).fetchdf(), "\n"
+)
+
 deposit_df = con.execute(f"""
     WITH filtered AS (
         SELECT *
@@ -284,13 +294,51 @@ deposit_df = con.execute(f"""
         TRTYPE,
         SIGN,
         -- Apply sign to amounts
-        CASE WHEN SIGN = 'D' THEN -FORCUR ELSE FORCUR END AS FORCUR,
-        CASE WHEN SIGN = 'D' THEN -RMCUR  ELSE RMCUR  END AS RMCUR,
+        CASE 
+            WHEN SIGN = 'D' 
+            THEN -COALESCE(TRY_CAST(FORCUR AS DOUBLE), 0)
+            ELSE  COALESCE(TRY_CAST(FORCUR AS DOUBLE), 0)
+        END AS FORCUR,
+
+        CASE 
+            WHEN SIGN = 'D' 
+            THEN -COALESCE(TRY_CAST(RMCUR AS DOUBLE), 0)
+            ELSE  COALESCE(TRY_CAST(RMCUR AS DOUBLE), 0) 
+        END AS RMCUR,
         CURCODE,
         BILLIND,
-        STARTDT,
-        ENDDT,
-        TRXDT,
+        CASE
+            WHEN YY IS NOT NULL
+            AND MM IS NOT NULL
+            AND DD IS NOT NULL
+            THEN MAKE_DATE(
+                CASE WHEN YY < 50 THEN 2000 + YY ELSE 1900 + YY END,
+                MM,
+                DD
+            )
+        END AS STARTDT,
+
+        CASE
+            WHEN YY1 IS NOT NULL
+            AND MM1 IS NOT NULL
+            AND DD1 IS NOT NULL
+            THEN MAKE_DATE(
+                CASE WHEN YY1 < 50 THEN 2000 + YY1 ELSE 1900 + YY1 END,
+                MM1,
+                DD1
+            )
+        END AS ENDDT,
+
+        CASE
+            WHEN YY2 IS NOT NULL
+            AND MM2 IS NOT NULL
+            AND DD2 IS NOT NULL
+            THEN MAKE_DATE(
+                CASE WHEN YY2 < 50 THEN 2000 + YY2 ELSE 1900 + YY2 END,
+                MM2,
+                DD2
+            )
+        END AS TRXDT,
         CASE
             WHEN BILLIND IN ('L','X','I','O','G') THEN
                 CASE BILLIND
