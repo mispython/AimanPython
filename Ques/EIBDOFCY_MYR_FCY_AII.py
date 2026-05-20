@@ -1,40 +1,50 @@
-# =============================================================================
-# Program  : EIBDOFCY_MYR_FCY_ALL
-# ESMR     : 2010-1782 (AAB)
-# Desc     : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv) — MYR + FCY
-# =============================================================================
+"""
+Program : EIBDOFCY_MYR_FCY.py
+Purpose : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv) — MYR + FCY
+"""
 
 import polars as pl
-import pandas as pd                                              # required for pd.read_sas()
+import pandas as pd                 # required for pd.read_sas()
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+from output_date import build_output_file
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 base        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+input_path  = base / "input/uat"
 output_path = base / "output/EIBDOFCY"
 output_path.mkdir(parents=True, exist_ok=True)
 
-# Input file paths
-# FD_PATH     : DEPO.FD      — fixed deposit (.sas7bdat); FCY FD filtered by CURCODE != 'MYR'
-# FD_FCY_PATH : DP.FCY&REPTYEAR&REPTMON&REPTDAY — FCY deposit file (.sas7bdat);
-#               also source for FCY current account (DATA FCYCA; SET DP.FCY...
-#               RENAME=(CURBALRM=CURBAL PRODUCT=PRODUCT_CODE MTDAVBAL=MTDAVBAL_FCY))
-#               No separate CURR_FCY_PATH — FCY CA data resides in this same file.
-# CURR_PATH   : DEPO.CURRENT — current account (.sas7bdat); MYR rows only
-# LN_PATH     : LOAN.LNNOTE  — loan (.sas7bdat); uses CCY (not CURCODE); FCY filtered from same file
-FD_PATH     = base / "input/uat/fd260513.sas7bdat"             # DEPO.FD      (SET DEPO.FD)
-FD_FCY_PATH = base / "input/uat/fcyfd260513.sas7bdat"          # DP.FCY<REPTYEAR><REPTMON><REPTDAY>
-CURR_PATH   = base / "input/uat/ca260513.sas7bdat"             # DEPO.CURRENT (SET DEPO.CURRENT)
-LN_PATH     = base / "input/uat/ln260513.sas7bdat"             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
+# >>>>> Input file paths <<<<<
+"""
+FD_PATH     : DEPO.FD      — fixed deposit (.sas7bdat); FCY FD filtered by CURCODE != 'MYR'
+FD_FCY_PATH : DP.FCY&REPTYEAR&REPTMON&REPTDAY — FCY deposit file (.sas7bdat);
+              also source for FCY current account (DATA FCYCA; SET DP.FCY...
+              RENAME=(CURBALRM=CURBAL PRODUCT=PRODUCT_CODE MTDAVBAL=MTDAVBAL_FCY))
+              No separate CURR_FCY_PATH — FCY CA data resides in this same file.
+CURR_PATH   : DEPO.CURRENT — current account (.sas7bdat); MYR rows only
+LN_PATH     : LOAN.LNNOTE  — loan (.sas7bdat); uses CCY (not CURCODE); FCY filtered from same file
+"""
+# FD_PATH     = input_path / "fd260513.sas7bdat"             # DEPO.FD      (SET DEPO.FD)
+# FD_FCY_PATH = input_path / "fcyfd260513.sas7bdat"          # DP.FCY<REPTYEAR><REPTMON><REPTDAY>
+# CURR_PATH   = input_path / "ca260513.sas7bdat"             # DEPO.CURRENT (SET DEPO.CURRENT)
+LN_PATH     = input_path / "ln260513.sas7bdat"             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
+FD_PATH     = get_latest_file(input_path, "fd" )            # DEPO.FD      (SET DEPO.FD)
+FD_FCY_PATH = get_latest_file(input_path, "fcyfd" )         # DP.FCY<REPTYEAR><REPTMON><REPTDAY>
+CURR_PATH   = get_latest_file(input_path, "ca")             # DEPO.CURRENT (SET DEPO.CURRENT)
+# LN_PATH     = get_latest_file(input_path, "ln")             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
-# Required column sets for early validation per input file
-# FD_PATH     : no CURCODE column — all records are MYR; CURCODE added as literal downstream
-# FD_FCY_PATH : has CURCODE; balance column is already CURBAL (no rename required)
-# CURR_PATH   : no CURCODE column — all records are MYR; CURCODE added as literal downstream
-# LN_PATH     : uses CCY (not CURCODE) to identify currency
+# >>>>> Required column sets for early validation per input file <<<<<
+"""
+FD_PATH     : no CURCODE column — all records are MYR; CURCODE added as literal downstream
+FD_FCY_PATH : has CURCODE; balance column is already CURBAL (no rename required)
+CURR_PATH   : no CURCODE column — all records are MYR; CURCODE added as literal downstream
+LN_PATH     : uses CCY (not CURCODE) to identify currency
+"""
 REQUIRED_FD_COLUMNS     = {"CUSTCODE", "CURBAL"}
 REQUIRED_FD_FCY_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
 REQUIRED_CURR_COLUMNS   = {"CUSTCODE", "CURBAL"}
@@ -49,13 +59,32 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read one .sas7bdat file and return a Polars DataFrame."""
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
-    pandas_df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
-    pandas_df.columns = [str(c).upper().strip() for c in pandas_df.columns]
+    
+    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<<<
+    pandas_df = pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="latin1",
+    )
+
+    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
+    # reader = pd.read_sas(
+    #     path,
+    #     format="sas7bdat",
+    #     encoding="latin1",
+    #     chunksize = 10000          
+    # )
+    # pandas_df = next(reader)
+
+    pandas_df.columns = [
+        str(c).upper().strip()
+        for c in pandas_df.columns
+    ]
+
     return pl.from_pandas(pandas_df)
 
 
 # Helper — fail early with a clear message if columns are missing
-# (mirrors _require_columns() in EIQBNMR1.py)
 def _require_columns(df: pl.DataFrame, required: set[str], source: Path) -> None:
     """Fail early with a clear message if the SAS file lacks needed columns."""
     missing = sorted(required.difference(df.columns))
@@ -124,6 +153,7 @@ fd_summary = (
 )
 
 fd_summary.write_parquet(output_path / "FD.parquet")
+fd_summary.write_csv(output_path / "FD.csv")
 
 # =============================================================================
 # DATA FCYCA  (SET DP.FCY<REPTYEAR><REPTMON><REPTDAY>
@@ -204,6 +234,7 @@ curr_summary = (
 )
 
 curr_summary.write_parquet(output_path / "CURR.parquet")
+curr_summary.write_csv(output_path / "CURR.csv")
 
 # =============================================================================
 # DATA LOAN  (SET LOAN.LNNOTE; WHERE CCY NE 'MYR')
@@ -251,6 +282,7 @@ loan_summary = (
 )
 
 loan_summary.write_parquet(output_path / "LOAN.parquet")
+loan_summary.write_csv(output_path / "LOAN.csv")
 
 # =============================================================================
 # DATA FCY  (SET FD CURR LOAN; BY IND; FILE OUTFCY;)
@@ -276,6 +308,7 @@ _IND_HEADERS = {
 }
 
 outfcy_path = output_path / "OUTFCY.txt"
+outfcy_path = output_path / "OUTFCY.csv"
 
 with open(outfcy_path, "w", encoding="utf-8") as f:
 
@@ -321,6 +354,7 @@ with open(outfcy_path, "w", encoding="utf-8") as f:
         )
 
 fcy_combined.write_parquet(output_path / "FCY.parquet")
+fcy_combined.write_csv(output_path / "FCY.csv")
 
 # =============================================================================
 # PROC SUMMARY DATA=FCY NWAY; BY CURCODE;
@@ -342,6 +376,7 @@ fcy_currency_summary = (
 )
 
 fcy_currency_summary.write_parquet(output_path / "FCY_summary.parquet")
+fcy_currency_summary.write_csv(output_path / "FCY_summary.csv")
 
 # =============================================================================
 # DATA _NULL_  (SET FCY END=LAST; FILE OUTFCY MOD;)
@@ -413,32 +448,4 @@ with open(outfcy_path, "a", encoding="utf-8") as f:
         f"{totcln:>20,.2f}\n"
     )
 
-# =============================================================================
-# //* FTP TO SAS DATAWAREHOUSE
-# //*%OPC SCAN
-# //*%OPC SETVAR TODD=(ODD - 61CD)
-# //*%OPC SETVAR TOMM=(OMM - 61CD)
-# //*%OPC SETVAR TOYYYY=(OYYYY - 61CD)
-# //*RUNSFTP  EXEC COZBATCH
-# //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
-# //*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-# //*lzopts linerule=$lr
-# //*cd TextFile/TD/PBB/CFTWG
-# //*put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
-# //*- rm OutstandingFCY_%TODD.%TOMM.%TOYYYY..xls
-# //*EOB
-# =============================================================================
-
-# =============================================================================
-# //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
-# //*%OPC SCAN
-# //RUNSFTP  EXEC COZBATCH
-# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
-# //lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-# //lzopts linerule=$lr
-# //cd TD/INTERBANK/CFTWG
-# //put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
-# //EOB
-# =============================================================================
-
-print(f"EIBDOFCY_MYR_FCY_ALL completed — report date {RDATE}, output: {outfcy_path}")
+print(f"\n EIBDOFCY_MYR_FCY completed — report date {RDATE}, output: {outfcy_path} \n")
