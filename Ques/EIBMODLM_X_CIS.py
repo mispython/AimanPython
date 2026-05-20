@@ -16,30 +16,34 @@ import pandas as pd
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+from output_date import build_output_file
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_DIR  = BASE_DIR / "input" / "uat"
+INPUT_DIR  = BASE_DIR / "input" / "prod"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLM"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Input paths - Public Bank
-INPUT_PBB_CURRENT  = INPUT_DIR / "ca05226.sas7bdat"
-INPUT_PBB_OVERDFT  = INPUT_DIR / "lm05226.sas7bdat"
+INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR, "ca")       # File name example - ca05226.sas7bdat
+INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR, "lm")       # File name example - lm05226.sas7bdat
 
 # Input paths - Islamic Bank
-INPUT_PIBB_CURRENT = INPUT_DIR / "ica05226.sas7bdat"
-INPUT_PIBB_OVERDFT = INPUT_DIR / "lm05226.sas7bdat"
+INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR, "ica")     # File name example - ica05226.sas7bdat
+INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")     # File name example - ilm05226.sas7bdat
 
 # Shared customer name lookup file (ACCTNO -> CUSTNAME mapped as NAME)
-INPUT_CUSTNAME     = INPUT_DIR / "cisr1ca05226.sas7bdat"
+INPUT_CUSTNAME     = get_latest_file(INPUT_DIR, "cisr1ca")  # File name example - cisr1ca05226.sas7bdat
 
 # Output paths
-OUTPUT_PBB_REPORT  = OUTPUT_DIR / "PBB_ODLIMIT_REPORT.txt"
-OUTPUT_PIBB_REPORT = OUTPUT_DIR / "PIBB_ODLIMIT_REPORT.txt"
+OUTPUT_PBB_REPORT  = build_output_file(OUTPUT_DIR, "PBB_ODLIMIT_REPORT").with_suffix(".txt")
+OUTPUT_PIBB_REPORT = build_output_file(OUTPUT_DIR, "PIBB_ODLIMIT_REPORT").with_suffix(".txt")
+# Output example: OUTPUT_PBB_REPORT -> PBB_ODLIMIT_REPORT_180526.txt
+# Output example: OUTPUT_PIBB_REPORT -> PIBB_ODLIMIT_REPORT_180526.txt
 
 # Report configuration
 PAGE_SIZE = 50  # PS=50 in OPTIONS
@@ -55,7 +59,6 @@ REPTMON     = reptdate_values.reptmon
 REPTDAY     = reptdate_values.reptday
 NOWK        = reptdate_values.nowk
 REPORT_DATE = REPTDATE.strftime('%d/%m/%y')
-
 
 # ============================================================================
 # INPUT FILE EXISTENCE CHECK — fail fast before any processing
@@ -97,6 +100,7 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     ]
 
     print(f"\nDEBUG COLUMN NAMES [{path.name}]:")
+    # print(pandas_df.columns.tolist())
     print(pandas_df.head(10))
 
     return pl.from_pandas(pandas_df)
@@ -338,11 +342,11 @@ def _write_branch_header(
     od_label: str,
 ) -> None:
     # ASA carriage control: '1' = new page
-    report_file.write('1')
-    report_file.write(f"  {title1}\n")
-    report_file.write(f"   {title2}\n")
-    report_file.write(f"   REPORT AS AT {report_date}\n")
-    report_file.write('   \n')
+    # report_file.write('1')
+    report_file.write(f" {title1}\n")
+    report_file.write(f" {title2}\n")
+    report_file.write(f" REPORT AS AT {report_date}\n")
+    report_file.write(' \n')
     report_file.write(
         f" BRN ACCOUNT NO NAME OF CUSTOMER          BASE {od_label:>5} OUSTANDING      "
         "APPROVED        LIMIT1      RATE1 COLL1    LIMIT2      RATE2 COLL2    LIMIT3      RATE3 COLL3\n"
