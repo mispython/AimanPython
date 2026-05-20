@@ -5,8 +5,8 @@ Purpose : Report on Accounts with Overdraft Limits
           Generates two reports:
             1. Public Bank Berhad - Accounts with OD Limits (ODPLAN 100-105)
             2. Public Islamic Bank Berhad - Accounts with CLF-i Limits (ODPLAN 106)
-          NAME column is resolved by joining lm05226.sas7bdat ACCTNO against
-          cisr1ca05226.sas7bdat ACCTNO and taking CUSTNAME as NAME.
+          NAME column is resolved by joining lm{month}{week}{year}.sas7bdat ACCTNO
+          against cisr1ca{month}{week}{year}.sas7bdat ACCTNO and taking CUSTNAME as NAME.
           Accounts with no matching CUSTNAME will show a blank NAME field.
 """
 
