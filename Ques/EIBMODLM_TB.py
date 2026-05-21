@@ -22,22 +22,31 @@ from output_date import build_output_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
+# Testing Path
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
 INPUT_DIR  = BASE_DIR / "input" / "prod"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLM"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Production Path
+# INPUT_DIR  = Path("/dwh")
+# OUTPUT_DIR = Path("/host/mis/output/report") / "EIBMODLM"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Input paths - Public Bank
-INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR, "ca")       # File name example - ca05226.sas7bdat
-INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR, "lm")       # File name example - lm05226.sas7bdat
+INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR, "ca")
+INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR, "lm")
+# INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR / "dp_ca", "ca")       # File name example - ca05226.sas7bdat
+# INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR / "dp_lm", "lm")       # File name example - lm05226.sas7bdat
 
 # Input paths - Islamic Bank
-INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR, "ica")     # File name example - ica05226.sas7bdat
-INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")     # File name example - ilm05226.sas7bdat
+INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR, "ica")
+INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")
+# INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR / "idp_ca", "ica")      # File name example - ica05226.sas7bdat
+# INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR / "idp_lm", "ilm")      # File name example - ilm05226.sas7bdat
 
 # Shared customer name lookup file (ACCTNO -> CUSTNAME mapped as NAME)
-INPUT_CUSTNAME     = get_latest_file(INPUT_DIR, "cisr1ca")  # File name example - cisr1ca05226.sas7bdat
+INPUT_CUSTNAME     = get_latest_file(INPUT_DIR, "cisr1ca")
+# INPUT_CUSTNAME     = get_latest_file(INPUT_DIR / "rsd_cis", "cisr1ca")  # File name example - cisr1ca05226.sas7bdat
 
 # Output paths
 OUTPUT_PBB_REPORT  = build_output_file(OUTPUT_DIR, "PBB_ODLIMIT_REPORT").with_suffix(".txt")
@@ -88,16 +97,29 @@ if _missing:
 
 def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read one .sas7bdat file and return a Polars DataFrame."""
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required input file: {path}")
+    
+    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<<<
     pandas_df = pd.read_sas(
         path,
         format="sas7bdat",
         encoding="latin1",
     )
 
-    pandas_df.columns = [
-        str(col).upper().strip()
-        for col in pandas_df.columns
-    ]
+    # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
+    reader = pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="latin1",
+        chunksize = 1000
+    )
+    pandas_df = next(reader)
+
+    # pandas_df.columns = [
+    #     str(col).upper().strip()
+    #     for col in pandas_df.columns
+    # ]
 
     print(f"\nDEBUG COLUMN NAMES [{path.name}]:")
     # print(pandas_df.columns.tolist())
@@ -330,16 +352,16 @@ def _write_branch_subtotal(
 
     report_file.write("\n")
 
-    report_file.write(" " * (total_width - 55) + "-" * 55 + "\n")
+    report_file.write(" " * 7 + "-" * 49 + "\n")
 
     report_file.write(
         f"{'TOTAL APPROVED LIMITS =':>{label_width}} "
-        f"{branch_total_limit:>{value_width},.2f}\n"
+        f"{branch_total_limit:>{value_width},.2f}\n\n"
     )
 
     report_file.write(
         f"{'TOTAL ACCOUNTS =':>{label_width}} "
-        f"{branch_account_count:>{value_width},}\n"
+        f"{branch_account_count:>{value_width},}\n\n"
     )
 
     report_file.write(
@@ -347,7 +369,7 @@ def _write_branch_subtotal(
         f"{branch_total_operative:>{value_width},.2f}\n"
     )
 
-    report_file.write(" " * (total_width - 55) + "-" * 55 + "\n\n")
+    report_file.write(" " * 7 + "-" * 49 + "\n\n")
 
 
 def _write_branch_header(
@@ -360,35 +382,61 @@ def _write_branch_header(
 
     line_width = 170
 
-    report_file.write(f" {title1}\n")
-    report_file.write(f" {title2}\n")
-    report_file.write(f" REPORT AS AT {report_date}\n")
-    report_file.write("\n")
+    report_file.write(f"1  {title1}\n")
+    report_file.write(f"   {title2}\n")
+    report_file.write(f"   REPORT AS AT {report_date}\n")
+    report_file.write("\n\n")
+
+    # # HEADER LINE 1
+    # report_file.write(
+    #     f"{'BRN':<4}"
+    #     f"{'ACCOUNT NO':<12}"
+    #     f"{'NAME OF CUSTOMER':<27}"
+    #     f"{'BASE':>6}"
+    #     f"{od_label:>5}"
+    #     f"{'OUTSTANDING':>15}"
+    #     f"{'APPROVED':>15}"
+    #     f"{'LIMIT1':>15}"
+    #     f"{'RATE1':>8}"
+    #     f"{'COLL1':>8}"
+    #     f"{'LIMIT2':>15}"
+    #     f"{'RATE2':>8}"
+    #     f"{'COLL2':>8}\n"
+    # )
+
+    # # HEADER LINE 2
+    # report_file.write(
+    #     f"{'':<43}"
+    #     f"{'RATE':>6}"
+    #     f"{'ST':>5}"
+    #     f"{'BALANCE':>15}"
+    #     f"{'LIMIT':>15}\n"
+    # )
 
     # HEADER LINE 1
+    report_file.write(
+        f"{'':<43}"
+        f"{'BASE':>6}"
+        f"{od_label:>5}"
+        f"{'OUTSTANDING':>15}"
+        f"{'APPROVED':>15}\n"
+    )
+
+    # HEADER LINE 2
     report_file.write(
         f"{'BRN':<4}"
         f"{'ACCOUNT NO':<12}"
         f"{'NAME OF CUSTOMER':<27}"
-        f"{'BASE':>6}"
-        f"{od_label:>5}"
-        f"{'OUTSTANDING':>15}"
-        f"{'APPROVED':>15}"
+        f"{'RATE':>6}"
+        f"{'ST':>5}"
+        f"{'BALANCE':>15}"
+        f"{'LIMIT':>15}"
         f"{'LIMIT1':>15}"
         f"{'RATE1':>8}"
         f"{'COLL1':>8}"
         f"{'LIMIT2':>15}"
         f"{'RATE2':>8}"
         f"{'COLL2':>8}\n"
-    )
-
-    # HEADER LINE 2
-    report_file.write(
-        f"{'':<49}"
-        f"{'RATE':>6}"
-        f"{'ST':>5}"
-        f"{'BALANCE':>15}"
-        f"{'LIMIT':>15}\n"
     )
 
     report_file.write("-" * line_width + "\n")
@@ -416,7 +464,7 @@ def _build_limit2_line(row) -> str:
         return ''
 
     return (
-        f"{'':<92}"
+        f"{'':<115}"
         f"{_safe_float(row['LIMIT2']):>15,.2f}"
         f"{_safe_float(row['RATE2']):>8.2f}"
         f"{_safe_text(row['COLL2'], 5):>8}\n"
