@@ -385,32 +385,6 @@ def _write_branch_header(
     report_file.write(f"   {title2}\n")
     report_file.write(f"   REPORT AS AT {report_date}\n\n\n")
 
-    # # HEADER LINE 1
-    # report_file.write(
-    #     f"{'BRN':<4}"
-    #     f"{'ACCOUNT NO':<12}"
-    #     f"{'NAME OF CUSTOMER':<27}"
-    #     f"{'BASE':>6}"
-    #     f"{od_label:>5}"
-    #     f"{'OUTSTANDING':>15}"
-    #     f"{'APPROVED':>15}"
-    #     f"{'LIMIT1':>15}"
-    #     f"{'RATE1':>8}"
-    #     f"{'COLL1':>8}"
-    #     f"{'LIMIT2':>15}"
-    #     f"{'RATE2':>8}"
-    #     f"{'COLL2':>8}\n"
-    # )
-
-    # # HEADER LINE 2
-    # report_file.write(
-    #     f"{'':<43}"
-    #     f"{'RATE':>6}"
-    #     f"{'ST':>5}"
-    #     f"{'BALANCE':>15}"
-    #     f"{'LIMIT':>15}\n"
-    # )
-
     # TOP HEADER
     report_file.write(
         f"{'':<46}"
@@ -501,27 +475,27 @@ def _write_report_file(
                 branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
                 _write_branch_header(report_file, title1, title2, report_date, od_label)
                 report_file.write(f" BRN={current_brn}\n\n")
+                report_file.write(
+                    f"{'':<5}"
+                    f"{'RATE2':>8}"
+                    f"{'COLL2':>8}"
+                    f"{'LIMIT3':>15}"
+                    f"{'RATE3':>8}"
+                    f"{'COLL3':>8}"
+                    f"{'LIMIT4':>15}"
+                    f"{'RATE4':>8}"
+                    f"{'COLL4':>8}"
+                    f"{'LIMIT5':>15}"
+                    f"{'RATE5':>8}"
+                    f"{'COLL5':>8}\n"
+                )
+
+                report_file.write("-" * 118 + "\n")
 
             display_brn = row['BRN'] if row['BRN'] != last_detail_brn else ''
             last_detail_brn = row['BRN']
 
-            report_file.write(_build_detail_line(row))
-            report_file.write(
-                f"{'':<5}"
-                f"{'RATE2':>8}"
-                f"{'COLL2':>8}"
-                f"{'LIMIT3':>15}"
-                f"{'RATE3':>8}"
-                f"{'COLL3':>8}"
-                f"{'LIMIT4':>15}"
-                f"{'RATE4':>8}"
-                f"{'COLL4':>8}"
-                f"{'LIMIT5':>15}"
-                f"{'RATE5':>8}"
-                f"{'COLL5':>8}\n"
-            )
-
-            report_file.write("-" * 118 + "\n")
+            report_file.write(_build_detail_line(row, display_brn))
             report_file.write(_build_continuation_line(row))
                   
             # extra_line = _build_limit2_line(row)
