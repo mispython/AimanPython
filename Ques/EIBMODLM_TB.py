@@ -432,7 +432,7 @@ def _build_detail_line(row, display_brn) -> str:
 def _build_continuation_line(row) -> str:
 
     return (
-        f"{'':<5}"
+        f"{'':<4}"
         f"{_safe_float(row['RATE2']):>8.2f}"
         f"{_safe_text(row['COLL2'], 5):>8}"
         f"{_safe_float(row['LIMIT3']):>15,.2f}"
