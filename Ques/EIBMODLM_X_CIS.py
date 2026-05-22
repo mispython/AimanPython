@@ -348,7 +348,6 @@ def _write_branch_subtotal(
 
     label_width = 26
     value_width = 20
-    # total_width = 170
 
     report_file.write("\n")
 
@@ -379,6 +378,7 @@ def _write_branch_header(
     title2: str,
     report_date: str,
     od_label: str,
+    branch_code: str,
 ) -> None:
 
     line_width = 170
@@ -386,7 +386,8 @@ def _write_branch_header(
     report_file.write(f"1  {title1}\n")
     report_file.write(f"   {title2}\n")
     report_file.write(f"   REPORT AS AT {report_date}\n")
-    report_file.write("\n\n")
+    report_file.write(f" BRN={branch_code}\n")
+    report_file.write("\n")
 
     # # HEADER LINE 1
     # report_file.write(
@@ -418,7 +419,7 @@ def _write_branch_header(
     report_file.write(
         f"{'':<43}"
         f"{'BASE':>6}"
-        f"{od_label:>5}"
+        f"{od_label:<5}"
         f"{'OUTSTANDING':>15}"
         f"{'APPROVED':>15}\n"
     )
@@ -446,7 +447,7 @@ def _build_detail_line(row) -> str:
         f"{_safe_text(row['BRN'], 3):<4}"
         f"{_safe_int(row['ACCTNO']):<12}"
         f"{_safe_text(row['NAME'], 25):<27}"
-        f"{_safe_float(row['LMTBASER']):>6.2f}"
+        f"{_safe_float(row['LMTBASER']):<6.2f}"
         f"{_safe_text(row['ODSTATUS'], 2):>5}"
         f"{_safe_float(row['BALANCE']):>15,.2f}"
         f"{_safe_float(row['APPRLIMT']):>15,.2f}"
@@ -474,7 +475,6 @@ def _write_secondary_header(report_file) -> None:
 
 
 def _build_secondary_line(row) -> str:
-
     return (
         f"{_safe_float(row['RATE2']):>8.2f}"
         f"{_safe_text(row['COLL2'], 5):>8}"
@@ -508,8 +508,7 @@ def _write_report_file(
             if branch_changed:
                 if current_brn is not None:
                     report_file.write("\n")
-                    _write_branch_header(report_file, title1, title2, report_date, od_label)
-                    report_file.write(f" BRN={current_brn}\n\n")
+                    _write_branch_header(report_file, title1, title2, report_date, od_label, current_brn)
                     _write_secondary_header(report_file)
                     prev_rows = brnref[brnref['BRN'] == current_brn]
                     for _, prev_row in prev_rows.iterrows():
@@ -522,8 +521,7 @@ def _write_report_file(
                     )
                 current_brn = row['BRN']
                 branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
-                _write_branch_header(report_file, title1, title2, report_date, od_label)
-                report_file.write(f" BRN={current_brn}\n\n")
+                _write_branch_header(report_file, title1, title2, report_date, od_label, current_brn)
 
             report_file.write(_build_detail_line(row))
 
@@ -533,8 +531,7 @@ def _write_report_file(
 
         if current_brn is not None:
             report_file.write("\n")
-            _write_branch_header(report_file, title1, title2, report_date, od_label)
-            report_file.write(f" BRN={current_brn}\n\n")
+            _write_branch_header(report_file, title1, title2, report_date, od_label, current_brn)
             _write_secondary_header(report_file)
             last_rows = brnref[brnref['BRN'] == current_brn]
             for _, last_row in last_rows.iterrows():
