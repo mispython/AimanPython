@@ -255,7 +255,8 @@ def _load_overdraft_data(
             COALESCE(c.NAME, '') AS NAME
         FROM ovdr_raw o
         LEFT JOIN custname_lookup c
-            ON o.ACCTNO = c.ACCTNO
+            ON REGEXP_REPLACE(CAST(o.ACCTNO AS VARCHAR), '\\.0+$', '') =
+               REGEXP_REPLACE(CAST(c.ACCTNO AS VARCHAR), '\\.0+$', '')
         WHERE o.APPRLIMT > 1
           AND o.LMTTYPE IN ('Y', 'A')
     """).df()
@@ -443,7 +444,7 @@ def _write_branch_header(
         f"{'ACCOUNT NO':<12}"
         f"{'NAME OF CUSTOMER':<27}"
         f"{'RATE':>6}"
-        f"{'ST':>5}"
+        f"{'ST':<5}"
         f"{'BALANCE':>15}"
         f"{'LIMIT':>15}"
         f"{'LIMIT1':>15}"
