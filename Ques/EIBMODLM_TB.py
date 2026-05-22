@@ -107,19 +107,19 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
         encoding="latin1",
     )
 
-    # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
-    reader = pd.read_sas(
-        path,
-        format="sas7bdat",
-        encoding="latin1",
-        chunksize = 1000
-    )
-    pandas_df = next(reader)
+    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
+    # reader = pd.read_sas(
+    #     path,
+    #     format="sas7bdat",
+    #     encoding="latin1",
+    #     chunksize = 1000
+    # )
+    # pandas_df = next(reader)
 
-    # pandas_df.columns = [
-    #     str(col).upper().strip()
-    #     for col in pandas_df.columns
-    # ]
+    pandas_df.columns = [
+        str(col).upper().strip()
+        for col in pandas_df.columns
+    ]
 
     print(f"\nDEBUG COLUMN NAMES [{path.name}]:")
     # print(pandas_df.columns.tolist())
