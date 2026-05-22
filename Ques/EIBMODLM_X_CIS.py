@@ -146,6 +146,19 @@ def _safe_text(value, length) -> str:
     return str(value)[:length] if value is not None else ''
 
 
+def _format_brn(value) -> str:
+    """Format branch code safely as 3-digit string without decimal suffix."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if text.endswith(".0"):
+        text = text[:-2]
+    digits = ''.join(ch for ch in text if ch.isdigit())
+    if digits:
+        return digits.zfill(3)[-3:]
+    return text[:3]
+
+
 def _get_report_titles(is_islamic) -> tuple:
     if is_islamic:
         return (
@@ -444,11 +457,12 @@ def _write_branch_header(
 def _build_detail_line(row) -> str:
 
     return (
-        f"{_safe_text(row['BRN'], 3):<4}"
+        # f"{_safe_text(row['BRN'], 3):<4}"
+        f"{_format_brn(row['BRN']):<4}"
         f"{_safe_int(row['ACCTNO']):<12}"
         f"{_safe_text(row['NAME'], 25):<27}"
         f"{_safe_float(row['LMTBASER']):<6.2f}"
-        f"{_safe_text(row['ODSTATUS'], 2):>5}"
+        f"{_safe_text(row['ODSTATUS'], 2):<5}"
         f"{_safe_float(row['BALANCE']):>15,.2f}"
         f"{_safe_float(row['APPRLIMT']):>15,.2f}"
         f"{_safe_float(row['LIMIT1']):>15,.2f}"
@@ -490,6 +504,13 @@ def _build_secondary_line(row) -> str:
     )
 
 
+def _write_secondary_table(report_file, branch_rows: pd.DataFrame) -> None:
+    report_file.write("\n")
+    _write_secondary_header(report_file)
+    for _, branch_row in branch_rows.iterrows():
+        report_file.write(_build_secondary_line(branch_row))
+
+
 def _write_report_file(
     brnref: pd.DataFrame,
     output_file: Path,
@@ -507,12 +528,8 @@ def _write_report_file(
             branch_changed = row['BRN'] != current_brn
             if branch_changed:
                 if current_brn is not None:
-                    report_file.write("\n")
-                    _write_branch_header(report_file, title1, title2, report_date, od_label, current_brn)
-                    _write_secondary_header(report_file)
                     prev_rows = brnref[brnref['BRN'] == current_brn]
-                    for _, prev_row in prev_rows.iterrows():
-                        report_file.write(_build_secondary_line(prev_row))
+                    _write_secondary_table(report_file, prev_rows)
                     _write_branch_subtotal(
                         report_file,
                         branch_totals["approved"],
@@ -530,12 +547,8 @@ def _write_report_file(
             branch_totals["accounts"]  += 1
 
         if current_brn is not None:
-            report_file.write("\n")
-            _write_branch_header(report_file, title1, title2, report_date, od_label, current_brn)
-            _write_secondary_header(report_file)
             last_rows = brnref[brnref['BRN'] == current_brn]
-            for _, last_row in last_rows.iterrows():
-                report_file.write(_build_secondary_line(last_row))
+            _write_secondary_table(report_file, last_rows)
             _write_branch_subtotal(
                 report_file,
                 branch_totals["approved"],
