@@ -22,22 +22,31 @@ from output_date import build_output_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
+# Testing Path
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
 INPUT_DIR  = BASE_DIR / "input" / "prod"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLM"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Production Path
+# INPUT_DIR  = Path("/dwh")
+# OUTPUT_DIR = Path("/host/mis/output/report") / "EIBMODLM"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Input paths - Public Bank
-INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR, "ca")       # File name example - ca05226.sas7bdat
-INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR, "lm")       # File name example - lm05226.sas7bdat
+INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR, "ca")
+INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR, "lm")
+# INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR / "dp_ca", "ca")       # File name example - ca05226.sas7bdat
+# INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR / "dp_lm", "lm")       # File name example - lm05226.sas7bdat
 
 # Input paths - Islamic Bank
-INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR, "ica")     # File name example - ica05226.sas7bdat
-INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")     # File name example - ilm05226.sas7bdat
+INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR, "ica")
+INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")
+# INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR / "idp_ca", "ica")      # File name example - ica05226.sas7bdat
+# INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR / "idp_lm", "ilm")      # File name example - ilm05226.sas7bdat
 
 # Shared customer name lookup file (ACCTNO -> CUSTNAME mapped as NAME)
-INPUT_CUSTNAME     = get_latest_file(INPUT_DIR, "cisr1ca")  # File name example - cisr1ca05226.sas7bdat
+INPUT_CUSTNAME     = get_latest_file(INPUT_DIR, "cisr1ca")
+# INPUT_CUSTNAME     = get_latest_file(INPUT_DIR / "rsd_cis", "cisr1ca")  # File name example - cisr1ca05226.sas7bdat
 
 # Output paths
 OUTPUT_PBB_REPORT  = build_output_file(OUTPUT_DIR, "PBB_ODLIMIT_REPORT").with_suffix(".txt")
@@ -88,16 +97,29 @@ if _missing:
 
 def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read one .sas7bdat file and return a Polars DataFrame."""
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required input file: {path}")
+    
+    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<<<
     pandas_df = pd.read_sas(
         path,
         format="sas7bdat",
         encoding="latin1",
     )
 
-    pandas_df.columns = [
-        str(col).upper().strip()
-        for col in pandas_df.columns
-    ]
+    # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
+    reader = pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="latin1",
+        chunksize = 1000
+    )
+    pandas_df = next(reader)
+
+    # pandas_df.columns = [
+    #     str(col).upper().strip()
+    #     for col in pandas_df.columns
+    # ]
 
     print(f"\nDEBUG COLUMN NAMES [{path.name}]:")
     # print(pandas_df.columns.tolist())
@@ -323,15 +345,32 @@ def _write_branch_subtotal(
     branch_account_count: int,
     branch_total_operative: float,
 ) -> None:
-    report_file.write(' \n')
-    report_file.write(' ' + ' ' * 25 + '-' * 49 + '\n')
-    report_file.write(' ' + ' ' * 25 + f"TOTAL APPROVED LIMITS  = {branch_total_limit:>20,.2f}\n")
-    report_file.write(' \n')
-    report_file.write(' ' + ' ' * 25 + f"TOTAL ACCOUNTS         = {branch_account_count:>6}\n")
-    report_file.write(' \n')
-    report_file.write(' ' + ' ' * 25 + f"TOTAL OPERATIVE LIMITS = {branch_total_operative:>20,.2f}\n")
-    report_file.write(' ' + ' ' * 25 + '-' * 49 + '\n')
-    report_file.write(' \n')
+
+    label_width = 26
+    value_width = 20
+    # total_width = 170
+
+    report_file.write("\n")
+
+    subtotal_line = " " * 26 + "-" * 49
+    report_file.write(subtotal_line + "\n")
+
+    report_file.write(
+        f"{'TOTAL APPROVED LIMITS =':>{label_width}} "
+        f"{branch_total_limit:>{value_width},.2f}\n\n"
+    )
+
+    report_file.write(
+        f"{'TOTAL ACCOUNTS =':>{label_width}} "
+        f"{branch_account_count:>{value_width},}\n\n"
+    )
+
+    report_file.write(
+        f"{'TOTAL OPERATIVE LIMITS =':>{label_width}} "
+        f"{branch_total_operative:>{value_width},.2f}\n"
+    )
+
+    report_file.write(subtotal_line + "\n\n")
 
 
 def _write_branch_header(
@@ -341,46 +380,114 @@ def _write_branch_header(
     report_date: str,
     od_label: str,
 ) -> None:
-    # ASA carriage control: '1' = new page
-    # report_file.write('1')
-    report_file.write(f" {title1}\n")
-    report_file.write(f" {title2}\n")
-    report_file.write(f" REPORT AS AT {report_date}\n")
-    report_file.write(' \n')
+
+    line_width = 170
+
+    report_file.write(f"1  {title1}\n")
+    report_file.write(f"   {title2}\n")
+    report_file.write(f"   REPORT AS AT {report_date}\n")
+    report_file.write("\n\n")
+
+    # # HEADER LINE 1
+    # report_file.write(
+    #     f"{'BRN':<4}"
+    #     f"{'ACCOUNT NO':<12}"
+    #     f"{'NAME OF CUSTOMER':<27}"
+    #     f"{'BASE':>6}"
+    #     f"{od_label:>5}"
+    #     f"{'OUTSTANDING':>15}"
+    #     f"{'APPROVED':>15}"
+    #     f"{'LIMIT1':>15}"
+    #     f"{'RATE1':>8}"
+    #     f"{'COLL1':>8}"
+    #     f"{'LIMIT2':>15}"
+    #     f"{'RATE2':>8}"
+    #     f"{'COLL2':>8}\n"
+    # )
+
+    # # HEADER LINE 2
+    # report_file.write(
+    #     f"{'':<43}"
+    #     f"{'RATE':>6}"
+    #     f"{'ST':>5}"
+    #     f"{'BALANCE':>15}"
+    #     f"{'LIMIT':>15}\n"
+    # )
+
+    # HEADER LINE 1
     report_file.write(
-        f" BRN ACCOUNT NO NAME OF CUSTOMER          BASE {od_label:>5} OUSTANDING      "
-        "APPROVED        LIMIT1      RATE1 COLL1    LIMIT2      RATE2 COLL2    LIMIT3      RATE3 COLL3\n"
+        f"{'':<43}"
+        f"{'BASE':>6}"
+        f"{od_label:>5}"
+        f"{'OUTSTANDING':>15}"
+        f"{'APPROVED':>15}\n"
     )
+
+    # HEADER LINE 2
     report_file.write(
-        "                                           RATE ST   BALANCE          "
-        "LIMIT                                                                     \n"
+        f"{'BRN':<4}"
+        f"{'ACCOUNT NO':<12}"
+        f"{'NAME OF CUSTOMER':<27}"
+        f"{'RATE':>6}"
+        f"{'ST':>5}"
+        f"{'BALANCE':>15}"
+        f"{'LIMIT':>15}"
+        f"{'LIMIT1':>15}"
+        f"{'RATE1':>8}"
+        f"{'COLL1':>8}\n"
     )
-    report_file.write(' ' + '-' * 132 + '\n')
+
+    report_file.write("-" * line_width + "\n")
 
 
 def _build_detail_line(row) -> str:
-    line = ' '
-    line += f"{_safe_text(row['BRN'], 3):<3} "
-    line += f"{_safe_int(row['ACCTNO']):<10} "
-    line += f"{_safe_text(row['NAME'], 25):<25} "
-    line += f"{_safe_float(row['LMTBASER']):>5.2f} "
-    line += f"{_safe_text(row['ODSTATUS'], 5):<5} "
-    line += f"{_safe_float(row['BALANCE']):>12,.2f} "
-    line += f"{_safe_text(row['CRI'], 2):<2} "
-    line += f"{_safe_float(row['APPRLIMT']):>12,.2f} "
-    line += f"{_safe_float(row['LIMIT1']):>11,.2f} "
-    line += f"{_safe_float(row['RATE1']):>5.2f} "
-    line += f"{_safe_text(row['COLL1'], 5):<5}\n"
-    return line
+
+    return (
+        f"{_safe_text(row['BRN'], 3):<4}"
+        f"{_safe_int(row['ACCTNO']):<12}"
+        f"{_safe_text(row['NAME'], 25):<27}"
+        f"{_safe_float(row['LMTBASER']):>6.2f}"
+        f"{_safe_text(row['ODSTATUS'], 2):>5}"
+        f"{_safe_float(row['BALANCE']):>15,.2f}"
+        f"{_safe_float(row['APPRLIMT']):>15,.2f}"
+        f"{_safe_float(row['LIMIT1']):>15,.2f}"
+        f"{_safe_float(row['RATE1']):>8.2f}"
+        f"{_safe_text(row['COLL1'], 5):>8}\n"
+    )
 
 
-def _build_limit2_line(row) -> str:
-    if not row['LIMIT2'] or row['LIMIT2'] <= 0:
-        return ''
-    limit2 = _safe_float(row['LIMIT2'])
-    rate2  = _safe_float(row['RATE2'])
-    coll2  = _safe_text(row['COLL2'], 5)
-    return ' ' + ' ' * 105 + f"{limit2:>11,.2f} {rate2:>5.2f} {coll2:<5}\n"
+def _write_secondary_header(report_file) -> None:
+    report_file.write(
+        f"{'RATE2':>8}"
+        f"{'COLL2':>8}"
+        f"{'LIMIT3':>15}"
+        f"{'RATE3':>8}"
+        f"{'COLL3':>8}"
+        f"{'LIMIT4':>15}"
+        f"{'RATE4':>8}"
+        f"{'COLL4':>8}"
+        f"{'LIMIT5':>15}"
+        f"{'RATE5':>8}"
+        f"{'COLL5':>8}\n"
+    )
+    report_file.write("-" * 119 + "\n")
+
+
+def _build_secondary_line(row) -> str:
+
+    return (
+        f"{_safe_float(row['RATE2']):>8.2f}"
+        f"{_safe_text(row['COLL2'], 5):>8}"
+        f"{_safe_float(row['LIMIT3']):>15,.2f}"
+        f"{_safe_float(row['RATE3']):>8.2f}"
+        f"{_safe_text(row['COLL3'], 5):>8}"
+        f"{_safe_float(row['LIMIT4']):>15,.2f}"
+        f"{_safe_float(row['RATE4']):>8.2f}"
+        f"{_safe_text(row['COLL4'], 5):>8}"
+        f"{_safe_float(row['LIMIT5']):>15,.2f}"
+        f"{_safe_float(row['RATE5']):>8.2f}"
+        f"{_safe_text(row['COLL5'], 5):>8}\n"
+    )
 
 
 def _write_report_file(
@@ -400,6 +507,13 @@ def _write_report_file(
             branch_changed = row['BRN'] != current_brn
             if branch_changed:
                 if current_brn is not None:
+                    report_file.write("\n")
+                    _write_branch_header(report_file, title1, title2, report_date, od_label)
+                    report_file.write(f" BRN={current_brn}\n\n")
+                    _write_secondary_header(report_file)
+                    prev_rows = brnref[brnref['BRN'] == current_brn]
+                    for _, prev_row in prev_rows.iterrows():
+                        report_file.write(_build_secondary_line(prev_row))
                     _write_branch_subtotal(
                         report_file,
                         branch_totals["approved"],
@@ -409,17 +523,22 @@ def _write_report_file(
                 current_brn = row['BRN']
                 branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
                 _write_branch_header(report_file, title1, title2, report_date, od_label)
+                report_file.write(f" BRN={current_brn}\n\n")
 
             report_file.write(_build_detail_line(row))
-            extra_line = _build_limit2_line(row)
-            if extra_line:
-                report_file.write(extra_line)
 
             branch_totals["approved"]  += _safe_float(row['APPRLIMT'])
             branch_totals["operative"] += _safe_float(row['LIMITS'])
             branch_totals["accounts"]  += 1
 
         if current_brn is not None:
+            report_file.write("\n")
+            _write_branch_header(report_file, title1, title2, report_date, od_label)
+            report_file.write(f" BRN={current_brn}\n\n")
+            _write_secondary_header(report_file)
+            last_rows = brnref[brnref['BRN'] == current_brn]
+            for _, last_row in last_rows.iterrows():
+                report_file.write(_build_secondary_line(last_row))
             _write_branch_subtotal(
                 report_file,
                 branch_totals["approved"],
