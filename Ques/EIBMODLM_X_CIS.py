@@ -403,32 +403,6 @@ def _write_branch_header(
     report_file.write(f" BRN={_format_brn(branch_code)}\n")
     report_file.write("\n")
 
-    # # HEADER LINE 1
-    # report_file.write(
-    #     f"{'BRN':<4}"
-    #     f"{'ACCOUNT NO':<12}"
-    #     f"{'NAME OF CUSTOMER':<27}"
-    #     f"{'BASE':>6}"
-    #     f"{od_label:>5}"
-    #     f"{'OUTSTANDING':>15}"
-    #     f"{'APPROVED':>15}"
-    #     f"{'LIMIT1':>15}"
-    #     f"{'RATE1':>8}"
-    #     f"{'COLL1':>8}"
-    #     f"{'LIMIT2':>15}"
-    #     f"{'RATE2':>8}"
-    #     f"{'COLL2':>8}\n"
-    # )
-
-    # # HEADER LINE 2
-    # report_file.write(
-    #     f"{'':<43}"
-    #     f"{'RATE':>6}"
-    #     f"{'ST':>5}"
-    #     f"{'BALANCE':>15}"
-    #     f"{'LIMIT':>15}\n"
-    # )
-
     # HEADER LINE 1
     report_file.write(
         f"{'':<43}"
