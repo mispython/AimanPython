@@ -8,7 +8,11 @@ def _write_secondary_table(
     branch_code: str,
 ) -> None:
     report_file.write("\n")
-    _write_branch_header(report_file, title1, title2, report_date, od_label, branch_code)
+    report_file.write(f"1  {title1}\n")
+    report_file.write(f"   {title2}\n")
+    report_file.write(f"   REPORT AS AT {report_date}\n")
+    report_file.write(f" BRN={_format_brn(branch_code)}\n")
+    report_file.write("\n")
     _write_secondary_header(report_file)
     for _, branch_row in branch_rows.iterrows():
         report_file.write(_build_secondary_line(branch_row))
