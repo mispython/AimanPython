@@ -399,7 +399,7 @@ def _write_branch_header(
     report_file.write(f"1  {title1}\n")
     report_file.write(f"   {title2}\n")
     report_file.write(f"   REPORT AS AT {report_date}\n")
-    report_file.write(f" BRN={branch_code}\n")
+    report_file.write(f" BRN={_format_brn(branch_code)}\n")
     report_file.write("\n")
 
     # # HEADER LINE 1
