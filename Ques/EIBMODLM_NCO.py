@@ -438,7 +438,7 @@ def _build_detail_line(row, show_brn: bool = True) -> str:
     return (
         f"{' ' * 3}{brn_value:<5}"
         f"{_safe_int(row['ACCTNO']):<12}"
-        f"{_safe_text(row['NAME'], 25):<27}"
+        f"{_safe_text(row['NAME'], 24):<27}"
         f"{_safe_float(row['LMTBASER']):<6.2f}"
         f"{_safe_text(row['ODSTATUS'], 2):<5}"
         f"{_safe_float(row['BALANCE']):>15,.2f}"
@@ -521,31 +521,52 @@ def _write_report_file(
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_file, 'w', encoding='utf-8') as report_file:
+        line_count = 0
+
+        def _write_text(text: str) -> None:
+            nonlocal line_count
+            parts = text.splitlines(keepends=True)
+            if not parts and text:
+                parts = [text]
+            for part in parts:
+                if line_count >= PAGE_SIZE:
+                    report_file.write('\f\n')
+                    line_count = 0
+                report_file.write(part)
+                if part.endswith('\n'):
+                    line_count += 1
+
+        class _PagedWriter:
+            def write(self, text: str) -> None:
+                _write_text(text)
+
+        paged_file = _PagedWriter()
+              
         for _, row in brnref.iterrows():
             branch_changed = row['BRN'] != current_brn
             if branch_changed:
                 if current_brn is not None:
                     _write_branch_subtotal(
-                        report_file,
+                        paged_file,
                         branch_totals["approved"],
                         branch_totals["accounts"],
                         branch_totals["operative"],
                     )
                     prev_rows = brnref[brnref['BRN'] == current_brn]
                     _write_secondary_table(
-                        report_file, prev_rows, title1, title2, report_date, od_label, current_brn
+                        paged_file, prev_rows, title1, title2, report_date, od_label, current_brn
                     )
                     _write_branch_subtotal(
-                        report_file,
+                        paged_file,
                         branch_totals["approved"],
                         branch_totals["accounts"],
                         branch_totals["operative"],
                     )
                 current_brn = row['BRN']
                 branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
-                _write_branch_header(report_file, title1, title2, report_date, od_label, current_brn)
+                _write_branch_header(paged_file, title1, title2, report_date, od_label, current_brn)
 
-            report_file.write(_build_detail_line(row, show_brn=branch_changed))
+            paged_file.write(_build_detail_line(row, show_brn=branch_changed))
 
             branch_totals["approved"]  += _safe_float(row['APPRLIMT'])
             branch_totals["operative"] += _safe_float(row['LIMITS'])
@@ -553,17 +574,17 @@ def _write_report_file(
 
         if current_brn is not None:
             _write_branch_subtotal(
-                report_file,
+                paged_file,
                 branch_totals["approved"],
                 branch_totals["accounts"],
                 branch_totals["operative"],
             )
             last_rows = brnref[brnref['BRN'] == current_brn]
             _write_secondary_table(
-                report_file, last_rows, title1, title2, report_date, od_label, current_brn
+                paged_file, last_rows, title1, title2, report_date, od_label, current_brn
             )
             _write_branch_subtotal(
-                report_file,
+                paged_file,
                 branch_totals["approved"],
                 branch_totals["accounts"],
                 branch_totals["operative"],
