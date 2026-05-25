@@ -391,19 +391,16 @@ def _build_title_lines(
     title2: str,
     report_date: str,
     branch_code: str,
-    compact: bool = False,
 ) -> list[str]:
-    lines = [
+    return [
         f"1  {title1}\n",
         f"   {title2}\n",
         f"   REPORT AS AT {report_date}\n",
+        "\n",
+        "\n",
+        f" BRN={_format_brn(branch_code)}\n",
+        "\n",
     ]
-    if not compact:
-        lines.extend(["\n", "\n"])
-    lines.append(f" BRN={_format_brn(branch_code)}\n")
-    if not compact:
-        lines.append("\n")
-    return lines
 
 
 def _build_primary_header_lines(od_label: str) -> list[str]:
@@ -507,15 +504,24 @@ def _write_report_file(
 
             fixed_primary = len(title_lines) + len(primary_header_lines)
             fixed_secondary = len(title_lines) + len(secondary_header_lines)
-            rows_per_page = PAGE_SIZE - max(fixed_primary, fixed_secondary)
-            if rows_per_page <= 0:
+            if PAGE_SIZE <= max(fixed_primary, fixed_secondary):
                 raise ValueError(
                     f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
                 )
 
             rows = list(branch_rows.iterrows())
-            for chunk_start in range(0, len(rows), rows_per_page):
-                chunk = rows[chunk_start:chunk_start + rows_per_page]
+            row_idx = 0
+            while row_idx < len(rows):
+                primary_capacity = PAGE_SIZE - (len(title_lines) + len(primary_header_lines))
+                secondary_capacity = PAGE_SIZE - (len(title_lines) + len(secondary_header_lines))
+                rows_this_chunk = min(primary_capacity, secondary_capacity)
+
+                if rows_this_chunk <= 0:
+                    raise ValueError(
+                        f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
+                )
+
+                chunk = rows[row_idx:row_idx + rows_this_chunk]
 
                 primary_data_lines = [
                     _build_detail_line(row, show_brn=(idx == 0))
@@ -540,6 +546,8 @@ def _write_report_file(
                     secondary_data_lines,
                     add_form_feed,
                 )
+
+                row_idx += len(chunk)
                   
             _write_branch_subtotal(
                 report_file,
