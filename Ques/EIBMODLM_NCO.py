@@ -386,24 +386,25 @@ def _write_branch_subtotal(
     report_file.write(subtotal_line + "\n\n")
 
 
-def _write_branch_header(
-    report_file,
+def _build_title_lines(
     title1: str,
     title2: str,
     report_date: str,
-    od_label: str,
     branch_code: str,
-) -> None:
-    
+) -> list[str]:
+    return [
+        f"1  {title1}\n",
+        f"   {title2}\n",
+        f"   REPORT AS AT {report_date}\n",
+        "\n",
+        "\n",
+        f" BRN={_format_brn(branch_code)}\n",
+        "\n",
+    ]
+
+
+def _build_primary_header_lines(od_label: str) -> list[str]:
     table_indent = " " * 3
-
-    report_file.write(f"1  {title1}\n")
-    report_file.write(f"   {title2}\n")
-    report_file.write(f"   REPORT AS AT {report_date}\n\n\n")
-    report_file.write(f" BRN={_format_brn(branch_code)}\n")
-    report_file.write("\n")
-
-    # HEADER LINE 1
     header_line_1 = (
         f"{'':<44}"
         f"{'BASE':>4}"
@@ -411,9 +412,6 @@ def _write_branch_header(
         f"{'OUTSTANDING':>15}"
         f"{'APPROVED':>19}"
     )
-    report_file.write(f"{table_indent}{header_line_1}\n")
-
-    # HEADER LINE 2
     header_line_2 = (
         f"{'BRN':<5}"
         f"{'ACCOUNT NO':<12}"
@@ -427,9 +425,30 @@ def _write_branch_header(
         f"{'COLL1':>8}"
         f"{'LIMIT2':>15}"
     )
-    report_file.write(f"{table_indent}{header_line_2}\n")
+    return [
+        f"{table_indent}{header_line_1}\n",
+        f"{table_indent}{header_line_2}\n",
+        f"{table_indent}{'-' * len(header_line_2)}\n",
+    ]
 
-    report_file.write(f"{table_indent}{'-' * len(header_line_2)}\n")
+
+def _paginate_section(report_file, title_lines: list[str], header_lines: list[str], data_lines: list[str], add_form_feed: bool) -> bool:
+    fixed_lines = title_lines + header_lines
+    fixed_count = len(fixed_lines)
+    if fixed_count >= PAGE_SIZE:
+        raise ValueError(f"PAGE_SIZE={PAGE_SIZE} is too small for report title/header lines ({fixed_count}).")
+
+    data_per_page = PAGE_SIZE - fixed_count
+    for i in range(0, len(data_lines), data_per_page):
+        if add_form_feed:
+            report_file.write("\f\n")
+        for line in fixed_lines:
+            report_file.write(line)
+        for line in data_lines[i:i + data_per_page]:
+            report_file.write(line)
+        add_form_feed = True
+
+    return add_form_feed
 
 
 def _build_detail_line(row, show_brn: bool = True) -> str:
@@ -450,29 +469,6 @@ def _build_detail_line(row, show_brn: bool = True) -> str:
         f"{_safe_float(row['LIMIT2']):>15,.2f}\n"
     )
 
-
-def _write_secondary_header(report_file) -> None:
-
-    table_indent = " " * 3
-
-    header_secondary = (
-        f"{'RATE2':>8}"
-        f"{'COLL2':>8}"
-        f"{'LIMIT3':>15}"
-        f"{'RATE3':>8}"
-        f"{'COLL3':>8}"
-        f"{'LIMIT4':>15}"
-        f"{'RATE4':>8}"
-        f"{'COLL4':>8}"
-        f"{'LIMIT5':>15}"
-        f"{'RATE5':>8}"
-        f"{'COLL5':>8}"
-    )
-    report_file.write(f"{header_secondary}\n")
-
-    report_file.write(f"{table_indent}{'-' * len(header_secondary)}\n")
-
-
 def _build_secondary_line(row) -> str:
     return (
         f"{_safe_float(row['RATE2']):>8.2f}"
@@ -488,26 +484,6 @@ def _build_secondary_line(row) -> str:
         f"{_safe_text(row['COLL5'], 5):>8}\n"
     )
 
-
-def _write_secondary_table(
-    report_file,
-    branch_rows: pd.DataFrame,
-    title1: str,
-    title2: str,
-    report_date: str,
-    od_label: str,
-    branch_code: str,
-) -> None:
-    report_file.write(f"1  {title1}\n")
-    report_file.write(f"   {title2}\n")
-    report_file.write(f"   REPORT AS AT {report_date}\n\n\n")
-    report_file.write(f" BRN={_format_brn(branch_code)}\n")
-    report_file.write("\n\n")
-    _write_secondary_header(report_file)
-    for _, branch_row in branch_rows.iterrows():
-        report_file.write(_build_secondary_line(branch_row))
-
-
 def _write_report_file(
     brnref: pd.DataFrame,
     output_file: Path,
@@ -515,80 +491,46 @@ def _write_report_file(
     report_date: str,
 ) -> None:
     title1, title2, od_label = _get_report_titles(is_islamic)
-    current_brn = None
-    branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
-
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_file, 'w', encoding='utf-8') as report_file:
-        line_count = 0
+        add_form_feed = False
 
-        def _write_text(text: str) -> None:
-            nonlocal line_count
-            parts = text.splitlines(keepends=True)
-            if not parts and text:
-                parts = [text]
-            for part in parts:
-                if line_count >= PAGE_SIZE:
-                    report_file.write('\f\n')
-                    line_count = 0
-                report_file.write(part)
-                if part.endswith('\n'):
-                    line_count += 1
+        for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
+            title_lines = _build_title_lines(title1, title2, report_date, brn_code)
+            primary_header_lines = _build_primary_header_lines(od_label)
+            primary_data_lines = []
+            for idx, (_, row) in enumerate(branch_rows.iterrows()):
+                primary_data_lines.append(_build_detail_line(row, show_brn=(idx == 0)))
 
-        class _PagedWriter:
-            def write(self, text: str) -> None:
-                _write_text(text)
+            add_form_feed = _paginate_section(
+                paged_file,
+                title_lines,
+                primary_header_lines,
+                primary_data_lines,
+                add_form_feed,
+            )
 
-        paged_file = _PagedWriter()
-              
-        for _, row in brnref.iterrows():
-            branch_changed = row['BRN'] != current_brn
-            if branch_changed:
-                if current_brn is not None:
-                    _write_branch_subtotal(
-                        paged_file,
-                        branch_totals["approved"],
-                        branch_totals["accounts"],
-                        branch_totals["operative"],
-                    )
-                    prev_rows = brnref[brnref['BRN'] == current_brn]
-                    _write_secondary_table(
-                        paged_file, prev_rows, title1, title2, report_date, od_label, current_brn
-                    )
-                    _write_branch_subtotal(
-                        paged_file,
-                        branch_totals["approved"],
-                        branch_totals["accounts"],
-                        branch_totals["operative"],
-                    )
-                current_brn = row['BRN']
-                branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
-                _write_branch_header(paged_file, title1, title2, report_date, od_label, current_brn)
-
-            paged_file.write(_build_detail_line(row, show_brn=branch_changed))
-
-            branch_totals["approved"]  += _safe_float(row['APPRLIMT'])
-            branch_totals["operative"] += _safe_float(row['LIMITS'])
-            branch_totals["accounts"]  += 1
-
-        if current_brn is not None:
+            secondary_header_lines = [
+                f"{'RATE2':>8}{'COLL2':>8}{'LIMIT3':>15}{'RATE3':>8}{'COLL3':>8}{'LIMIT4':>15}{'RATE4':>8}{'COLL4':>8}{'LIMIT5':>15}{'RATE5':>8}{'COLL5':>8}\n",
+                f"{' ' * 3}{'-' * 102}\n",
+            ]
+            secondary_data_lines = [_build_secondary_line(row) for _, row in branch_rows.iterrows()]
+            add_form_feed = _paginate_section(
+                report_file,
+                title_lines,
+                secondary_header_lines,
+                secondary_data_lines,
+                add_form_feed,
+            )
+                  
             _write_branch_subtotal(
                 paged_file,
-                branch_totals["approved"],
-                branch_totals["accounts"],
-                branch_totals["operative"],
+                float(branch_rows['APPRLIMT'].sum()),
+                int(len(branch_rows)),
+                float(branch_rows['LIMITS'].sum()),
             )
-            last_rows = brnref[brnref['BRN'] == current_brn]
-            _write_secondary_table(
-                paged_file, last_rows, title1, title2, report_date, od_label, current_brn
-            )
-            _write_branch_subtotal(
-                paged_file,
-                branch_totals["approved"],
-                branch_totals["accounts"],
-                branch_totals["operative"],
-            )
+
 
 
 def generate_od_report(
