@@ -391,16 +391,19 @@ def _build_title_lines(
     title2: str,
     report_date: str,
     branch_code: str,
+    compact: bool = False,
 ) -> list[str]:
-    return [
+    lines = [
         f"1  {title1}\n",
         f"   {title2}\n",
         f"   REPORT AS AT {report_date}\n",
-        "\n",
-        "\n",
-        f" BRN={_format_brn(branch_code)}\n",
-        "\n",
     ]
+    if not compact:
+        lines.extend(["\n", "\n"])
+    lines.append(f" BRN={_format_brn(branch_code)}\n")
+    if not compact:
+        lines.append("\n")
+    return lines
 
 
 def _build_primary_header_lines(od_label: str) -> list[str]:
@@ -498,12 +501,13 @@ def _write_report_file(
         add_form_feed = False
 
         for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
-            title_lines = _build_title_lines(title1, title2, report_date, brn_code)
+            title_lines_full = _build_title_lines(title1, title2, report_date, brn_code, compact=False)
+            title_lines_compact = _build_title_lines(title1, title2, report_date, brn_code, compact=True)
             primary_header_lines = _build_primary_header_lines(od_label)
             secondary_header_lines = _build_secondary_header_lines()
 
-            fixed_primary = len(title_lines) + len(primary_header_lines)
-            fixed_secondary = len(title_lines) + len(secondary_header_lines)
+            fixed_primary = len(title_lines_compact) + len(primary_header_lines)
+            fixed_secondary = len(title_lines_compact) + len(secondary_header_lines)
             rows_per_page = PAGE_SIZE - max(fixed_primary, fixed_secondary)
             if rows_per_page <= 0:
                 raise ValueError(
@@ -511,8 +515,9 @@ def _write_report_file(
                 )
 
             rows = list(branch_rows.iterrows())
-            for chunk_start in range(0, len(rows), rows_per_page):
+            for chunk_idx, chunk_start in enumerate(range(0, len(rows), rows_per_page)):
                 chunk = rows[chunk_start:chunk_start + rows_per_page]
+                primary_title_lines = title_lines_full if chunk_idx == 0 else title_lines_compact
 
                 primary_data_lines = [
                     _build_detail_line(row, show_brn=(idx == 0))
@@ -520,19 +525,20 @@ def _write_report_file(
                 ]
                 add_form_feed = _write_page(
                     report_file,
-                    title_lines,
+                    primary_title_lines,
                     primary_header_lines,
                     primary_data_lines,
                     add_form_feed,
                 )
 
+                secondary_title_lines = title_lines_compact
                 secondary_data_lines = [
                     _build_secondary_line(row)
                     for _, row in chunk
                 ]
                 add_form_feed = _write_page(
                     report_file,
-                    title_lines,
+                    secondary_title_lines,
                     secondary_header_lines,
                     secondary_data_lines,
                     add_form_feed,
