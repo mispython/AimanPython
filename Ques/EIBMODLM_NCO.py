@@ -361,29 +361,29 @@ def _write_branch_subtotal(
 ) -> None:
 
     label_width = 26
-    value_width = 20
+    value_width = 22
 
     report_file.write("\n")
 
-    subtotal_line = " " * 27 + "-" * 47
+    subtotal_line = " " * 26 + "-" * 49
     report_file.write(subtotal_line + "\n")
 
     report_file.write(
-        f"{' ' * 27}{'TOTAL APPROVED LIMITS  =':<{label_width}} "
+        f"{' ' * 26}{'TOTAL APPROVED LIMITS  =':<{label_width}} "
         f"{branch_total_limit:>{value_width},.2f}\n\n"
     )
 
     report_file.write(
-        f"{' ' * 27}{'TOTAL ACCOUNTS         =':<{label_width}} "
+        f"{' ' * 26}{'TOTAL ACCOUNTS         =':<{label_width}} "
         f"{branch_account_count:>{value_width},}\n\n"
     )
 
     report_file.write(
-        f"{' ' * 27}{'TOTAL OPERATIVE LIMITS =':<{label_width}} "
+        f"{' ' * 26}{'TOTAL OPERATIVE LIMITS =':<{label_width}} "
         f"{branch_total_operative:>{value_width},.2f}\n"
     )
 
-    report_file.write(subtotal_line + "\n\n")
+    report_file.write(subtotal_line + "\n")
 
 
 def _build_title_lines(
@@ -410,23 +410,23 @@ def _build_primary_header_lines(od_label: str) -> list[str]:
     table_indent = " " * 3
     header_line_1 = (
         f"{'':<44}"
-        f"{'BASE':>4}"
+        f"{'BASE':>5}"
         f"{' ' * 2}{od_label:<5}"
-        f"{'OUTSTANDING':>15}"
-        f"{'APPROVED':>19}"
+        f"{'OUTSTANDING':>14}"
+        f"{'APPROVED':>18}"
     )
     header_line_2 = (
         f"{'BRN':<5}"
         f"{'ACCOUNT NO':<12}"
         f"{'NAME OF CUSTOMER':<27}"
-        f"{'RATE':>4}"
+        f"{'RATE':>5}"
         f"{' ' * 2}{'ST':<5}"
-        f"{'BALANCE':>15}"
-        f"{'LIMIT':>19}"
-        f"{'LIMIT1':>15}"
-        f"{'RATE1':>8}"
-        f"{'COLL1':>8}"
-        f"{'LIMIT2':>15}"
+        f"{'BALANCE':>14}"
+        f"{'LIMIT':>18}"
+        f"{'LIMIT1':>14}"
+        f"{'RATE1':>7}"
+        f"{'COLL1':>7}"
+        f"{'LIMIT2':>14}"
     )
     return [
         f"{table_indent}{header_line_1}\n",
@@ -437,8 +437,8 @@ def _build_primary_header_lines(od_label: str) -> list[str]:
 
 def _build_secondary_header_lines() -> list[str]:
     return [
-        f"{' ' * 3}{'RATE2':>5}{'COLL2':>7}{'LIMIT3':>14}{'RATE3':>7}{'COLL3':>7}{'LIMIT4':>14}{'RATE4':>7}{'COLL4':>7}{'LIMIT5':>14}{'RATE5':>7}{'COLL5':>7}\n",
-        f"{' ' * 3}{'-' * 102}\n",
+        f"\n{' ' * 3}{'RATE2':>5}{'COLL2':>7}{'LIMIT3':>14}{'RATE3':>7}{'COLL3':>7}{'LIMIT4':>14}{'RATE4':>7}{'COLL4':>7}{'LIMIT5':>14}{'RATE5':>7}{'COLL5':>7}\n",
+        f"{' ' * 3}{'-' * 96}\n",
     ]
 
 
@@ -449,7 +449,7 @@ def _write_page(report_file, title_lines: list[str], header_lines: list[str], da
             f"PAGE_SIZE={PAGE_SIZE} exceeded: page has {len(page_lines)} lines."
         )
     if add_form_feed:
-        report_file.write("\f\n")
+        report_file.write("\f")
     for line in page_lines:
         report_file.write(line)
     return True
@@ -461,31 +461,31 @@ def _build_detail_line(row, show_brn: bool = True) -> str:
     return (
         f"{' ' * 3}{brn_value:<5}"
         f"{_safe_int(row['ACCTNO']):<12}"
-        f"{_safe_text(row['NAME'], 24):<27}"
-        f"{_safe_float(row['LMTBASER']):<6.2f}"
-        f"{_safe_text(row['ODSTATUS'], 2):<5}"
-        f"{_safe_float(row['BALANCE']):>15,.2f}"
+        f"{_safe_text(row['NAME'], 24):<25}"
+        f"{_safe_float(row['LMTBASER']):>7.2f}"
+        f"{' ' * 2}{_safe_text(row['ODSTATUS'], 2):<5}"
+        f"{_safe_float(row['BALANCE']):>14,.2f}"
         f"{' ' * 2}{_safe_text(row['CRI'], 2):<2}"
-        f"{_safe_float(row['APPRLIMT']):>15,.2f}"
-        f"{_safe_float(row['LIMIT1']):>15,.2f}"
-        f"{_safe_float(row['RATE1']):>8.2f}"
-        f"{_safe_text(row['COLL1'], 5):>8}"
-        f"{_safe_float(row['LIMIT2']):>15,.2f}\n"
+        f"{_safe_float(row['APPRLIMT']):>14,.2f}"
+        f"{_safe_float(row['LIMIT1']):>14,.2f}"
+        f"{_safe_float(row['RATE1']):>7.2f}"
+        f"{_safe_text(row['COLL1'], 5):>7}"
+        f"{_safe_float(row['LIMIT2']):>14,.2f}\n"
     )
 
 def _build_secondary_line(row) -> str:
     return (
-        f"{_safe_float(row['RATE2']):>8.2f}"
-        f"{_safe_text(row['COLL2'], 5):>8}"
-        f"{_safe_float(row['LIMIT3']):>15,.2f}"
-        f"{_safe_float(row['RATE3']):>8.2f}"
-        f"{_safe_text(row['COLL3'], 5):>8}"
-        f"{_safe_float(row['LIMIT4']):>15,.2f}"
-        f"{_safe_float(row['RATE4']):>8.2f}"
-        f"{_safe_text(row['COLL4'], 5):>8}"
-        f"{_safe_float(row['LIMIT5']):>15,.2f}"
-        f"{_safe_float(row['RATE5']):>8.2f}"
-        f"{_safe_text(row['COLL5'], 5):>8}\n"
+        f"{' ' * 3}{_safe_float(row['RATE2']):>5.2f}"
+        f"{_safe_text(row['COLL2'], 5):>7}"
+        f"{_safe_float(row['LIMIT3']):>14,.2f}"
+        f"{_safe_float(row['RATE3']):>7.2f}"
+        f"{_safe_text(row['COLL3'], 5):>7}"
+        f"{_safe_float(row['LIMIT4']):>14,.2f}"
+        f"{_safe_float(row['RATE4']):>7.2f}"
+        f"{_safe_text(row['COLL4'], 5):>7}"
+        f"{_safe_float(row['LIMIT5']):>14,.2f}"
+        f"{_safe_float(row['RATE5']):>7.2f}"
+        f"{_safe_text(row['COLL5'], 5):>7}\n"
     )
 
 def _write_report_file(
@@ -501,36 +501,21 @@ def _write_report_file(
         add_form_feed = False
 
         for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
-            title_lines_full = _build_title_lines(title1, title2, report_date, brn_code, compact=False)
-            title_lines_compact = _build_title_lines(title1, title2, report_date, brn_code, compact=True)
+            title_lines = _build_title_lines(title1, title2, report_date, brn_code)
             primary_header_lines = _build_primary_header_lines(od_label)
             secondary_header_lines = _build_secondary_header_lines()
 
-            min_primary_fixed = min(
-                len(title_lines_full) + len(primary_header_lines),
-                len(title_lines_compact) + len(primary_header_lines),
-            )
-            min_secondary_fixed = len(title_lines_compact) + len(secondary_header_lines)
-            if PAGE_SIZE <= max(min_primary_fixed, min_secondary_fixed):
+            fixed_primary = len(title_lines) + len(primary_header_lines)
+            fixed_secondary = len(title_lines) + len(secondary_header_lines)
+            rows_per_page = PAGE_SIZE - max(fixed_primary, fixed_secondary)
+            if rows_per_page <= 0:
                 raise ValueError(
                     f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
                 )
 
             rows = list(branch_rows.iterrows())
-            row_idx = 0
-            chunk_idx = 0
-            while row_idx < len(rows):
-                primary_title_lines = title_lines_full if chunk_idx == 0 else title_lines_compact
-                primary_capacity = PAGE_SIZE - (len(primary_title_lines) + len(primary_header_lines))
-                secondary_capacity = PAGE_SIZE - (len(title_lines_compact) + len(secondary_header_lines))
-                rows_this_chunk = min(primary_capacity, secondary_capacity)
-
-                if rows_this_chunk <= 0:
-                    raise ValueError(
-                        f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
-                    )
-
-                chunk = rows[row_idx:row_idx + rows_this_chunk]
+            for chunk_start in range(0, len(rows), rows_per_page):
+                chunk = rows[chunk_start:chunk_start + rows_per_page]
 
                 primary_data_lines = [
                     _build_detail_line(row, show_brn=(idx == 0))
@@ -538,7 +523,7 @@ def _write_report_file(
                 ]
                 add_form_feed = _write_page(
                     report_file,
-                    primary_title_lines,
+                    title_lines,
                     primary_header_lines,
                     primary_data_lines,
                     add_form_feed,
@@ -550,17 +535,14 @@ def _write_report_file(
                 ]
                 add_form_feed = _write_page(
                     report_file,
-                    title_lines_compact,
+                    title_lines,
                     secondary_header_lines,
                     secondary_data_lines,
                     add_form_feed,
                 )
-
-                row_idx += len(chunk)
-                chunk_idx += 1
                   
             _write_branch_subtotal(
-                paged_file,
+                report_file,
                 float(branch_rows['APPRLIMT'].sum()),
                 int(len(branch_rows)),
                 float(branch_rows['LIMITS'].sum()),
