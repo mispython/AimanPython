@@ -432,23 +432,24 @@ def _build_primary_header_lines(od_label: str) -> list[str]:
     ]
 
 
-def _paginate_section(report_file, title_lines: list[str], header_lines: list[str], data_lines: list[str], add_form_feed: bool) -> bool:
-    fixed_lines = title_lines + header_lines
-    fixed_count = len(fixed_lines)
-    if fixed_count >= PAGE_SIZE:
-        raise ValueError(f"PAGE_SIZE={PAGE_SIZE} is too small for report title/header lines ({fixed_count}).")
+def _build_secondary_header_lines() -> list[str]:
+    return [
+        f"{' ' * 3}{'RATE2':>5}{'COLL2':>7}{'LIMIT3':>14}{'RATE3':>7}{'COLL3':>7}{'LIMIT4':>14}{'RATE4':>7}{'COLL4':>7}{'LIMIT5':>14}{'RATE5':>7}{'COLL5':>7}\n",
+        f"{' ' * 3}{'-' * 102}\n",
+    ]
 
-    data_per_page = PAGE_SIZE - fixed_count
-    for i in range(0, len(data_lines), data_per_page):
-        if add_form_feed:
-            report_file.write("\f\n")
-        for line in fixed_lines:
-            report_file.write(line)
-        for line in data_lines[i:i + data_per_page]:
-            report_file.write(line)
-        add_form_feed = True
 
-    return add_form_feed
+def _write_page(report_file, title_lines: list[str], header_lines: list[str], data_lines: list[str], add_form_feed: bool) -> bool:
+    page_lines = title_lines + header_lines + data_lines
+    if len(page_lines) > PAGE_SIZE:
+        raise ValueError(
+            f"PAGE_SIZE={PAGE_SIZE} exceeded: page has {len(page_lines)} lines."
+        )
+    if add_form_feed:
+        report_file.write("\f\n")
+    for line in page_lines:
+        report_file.write(line)
+    return True
 
 
 def _build_detail_line(row, show_brn: bool = True) -> str:
@@ -499,30 +500,43 @@ def _write_report_file(
         for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
             title_lines = _build_title_lines(title1, title2, report_date, brn_code)
             primary_header_lines = _build_primary_header_lines(od_label)
-            primary_data_lines = []
-            for idx, (_, row) in enumerate(branch_rows.iterrows()):
-                primary_data_lines.append(_build_detail_line(row, show_brn=(idx == 0)))
+            secondary_header_lines = _build_secondary_header_lines()
 
-            add_form_feed = _paginate_section(
-                paged_file,
-                title_lines,
-                primary_header_lines,
-                primary_data_lines,
-                add_form_feed,
-            )
+            fixed_primary = len(title_lines) + len(primary_header_lines)
+            fixed_secondary = len(title_lines) + len(secondary_header_lines)
+            rows_per_page = PAGE_SIZE - max(fixed_primary, fixed_secondary)
+            if rows_per_page <= 0:
+                raise ValueError(
+                    f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
+                )
 
-            secondary_header_lines = [
-                f"{'RATE2':>8}{'COLL2':>8}{'LIMIT3':>15}{'RATE3':>8}{'COLL3':>8}{'LIMIT4':>15}{'RATE4':>8}{'COLL4':>8}{'LIMIT5':>15}{'RATE5':>8}{'COLL5':>8}\n",
-                f"{' ' * 3}{'-' * 102}\n",
-            ]
-            secondary_data_lines = [_build_secondary_line(row) for _, row in branch_rows.iterrows()]
-            add_form_feed = _paginate_section(
-                report_file,
-                title_lines,
-                secondary_header_lines,
-                secondary_data_lines,
-                add_form_feed,
-            )
+            rows = list(branch_rows.iterrows())
+            for chunk_start in range(0, len(rows), rows_per_page):
+                chunk = rows[chunk_start:chunk_start + rows_per_page]
+
+                primary_data_lines = [
+                    _build_detail_line(row, show_brn=(idx == 0))
+                    for idx, (_, row) in enumerate(chunk)
+                ]
+                add_form_feed = _write_page(
+                    report_file,
+                    title_lines,
+                    primary_header_lines,
+                    primary_data_lines,
+                    add_form_feed,
+                )
+
+                secondary_data_lines = [
+                    _build_secondary_line(row)
+                    for _, row in chunk
+                ]
+                add_form_feed = _write_page(
+                    report_file,
+                    title_lines,
+                    secondary_header_lines,
+                    secondary_data_lines,
+                    add_form_feed,
+                )
                   
             _write_branch_subtotal(
                 paged_file,
