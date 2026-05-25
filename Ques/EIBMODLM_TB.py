@@ -445,9 +445,12 @@ def _write_page(report_file, title_lines: list[str], header_lines: list[str], da
         raise ValueError(
             f"PAGE_SIZE={PAGE_SIZE} exceeded: page has {len(page_lines)} lines."
         )
-    if add_form_feed:
-        report_file.write("\f")
-    for line in page_lines:
+    if add_form_feed and page_lines:
+        report_file.write("\f" + page_lines[0])
+        remaining_lines = page_lines[1:]
+    else:
+        remaining_lines = page_lines
+    for line in remaining_lines:
         report_file.write(line)
     return True
 
