@@ -506,18 +506,31 @@ def _write_report_file(
             primary_header_lines = _build_primary_header_lines(od_label)
             secondary_header_lines = _build_secondary_header_lines()
 
-            fixed_primary = len(title_lines_compact) + len(primary_header_lines)
-            fixed_secondary = len(title_lines_compact) + len(secondary_header_lines)
-            rows_per_page = PAGE_SIZE - max(fixed_primary, fixed_secondary)
-            if rows_per_page <= 0:
+            min_primary_fixed = min(
+                len(title_lines_full) + len(primary_header_lines),
+                len(title_lines_compact) + len(primary_header_lines),
+            )
+            min_secondary_fixed = len(title_lines_compact) + len(secondary_header_lines)
+            if PAGE_SIZE <= max(min_primary_fixed, min_secondary_fixed):
                 raise ValueError(
                     f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
                 )
 
             rows = list(branch_rows.iterrows())
-            for chunk_idx, chunk_start in enumerate(range(0, len(rows), rows_per_page)):
-                chunk = rows[chunk_start:chunk_start + rows_per_page]
+            row_idx = 0
+            chunk_idx = 0
+            while row_idx < len(rows):
                 primary_title_lines = title_lines_full if chunk_idx == 0 else title_lines_compact
+                primary_capacity = PAGE_SIZE - (len(primary_title_lines) + len(primary_header_lines))
+                secondary_capacity = PAGE_SIZE - (len(title_lines_compact) + len(secondary_header_lines))
+                rows_this_chunk = min(primary_capacity, secondary_capacity)
+
+                if rows_this_chunk <= 0:
+                    raise ValueError(
+                        f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
+                    )
+
+                chunk = rows[row_idx:row_idx + rows_this_chunk]
 
                 primary_data_lines = [
                     _build_detail_line(row, show_brn=(idx == 0))
@@ -531,18 +544,20 @@ def _write_report_file(
                     add_form_feed,
                 )
 
-                secondary_title_lines = title_lines_compact
                 secondary_data_lines = [
                     _build_secondary_line(row)
                     for _, row in chunk
                 ]
                 add_form_feed = _write_page(
                     report_file,
-                    secondary_title_lines,
+                    title_lines_compact,
                     secondary_header_lines,
                     secondary_data_lines,
                     add_form_feed,
                 )
+
+                row_idx += len(chunk)
+                chunk_idx += 1
                   
             _write_branch_subtotal(
                 paged_file,
