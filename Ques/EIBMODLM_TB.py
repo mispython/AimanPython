@@ -501,20 +501,21 @@ def _write_report_file(
         add_form_feed = False
 
         for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
-            title_lines = _build_title_lines(title1, title2, report_date, brn_code)
             primary_header_lines = _build_primary_header_lines(od_label)
             secondary_header_lines = _build_secondary_header_lines()
-
-            fixed_primary = len(title_lines) + len(primary_header_lines)
-            fixed_secondary = len(title_lines) + len(secondary_header_lines)
-            if PAGE_SIZE <= max(fixed_primary, fixed_secondary):
-                raise ValueError(
-                    f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
-                )
 
             rows = list(branch_rows.iterrows())
             row_idx = 0
             while row_idx < len(rows):
+                title_lines = _build_title_lines(title1, title2, report_date, brn_code)
+
+                fixed_primary = len(title_lines) + len(primary_header_lines)
+                fixed_secondary = len(title_lines) + len(secondary_header_lines)
+                if PAGE_SIZE <= max(fixed_primary, fixed_secondary):
+                    raise ValueError(
+                        f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
+                    )
+
                 primary_capacity = PAGE_SIZE - (len(title_lines) + len(primary_header_lines))
                 secondary_capacity = PAGE_SIZE - (len(title_lines) + len(secondary_header_lines))
                 rows_this_chunk = min(primary_capacity, secondary_capacity)
