@@ -146,6 +146,19 @@ def _safe_text(value, length) -> str:
     return str(value)[:length] if value is not None else ''
 
 
+def _format_brn(value) -> str:
+    """Format branch code safely as 3-digit string without decimal suffix."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if text.endswith(".0"):
+        text = text[:-2]
+    digits = ''.join(ch for ch in text if ch.isdigit())
+    if digits:
+        return digits.zfill(3)[-3:]
+    return text[:3]
+
+
 def _get_report_titles(is_islamic) -> tuple:
     if is_islamic:
         return (
@@ -242,7 +255,8 @@ def _load_overdraft_data(
             COALESCE(c.NAME, '') AS NAME
         FROM ovdr_raw o
         LEFT JOIN custname_lookup c
-            ON o.ACCTNO = c.ACCTNO
+            ON REGEXP_REPLACE(CAST(o.ACCTNO AS VARCHAR), '\\.0+$', '') =
+               REGEXP_REPLACE(CAST(c.ACCTNO AS VARCHAR), '\\.0+$', '')
         WHERE o.APPRLIMT > 1
           AND o.LMTTYPE IN ('Y', 'A')
     """).df()
@@ -346,130 +360,130 @@ def _write_branch_subtotal(
     branch_total_operative: float,
 ) -> None:
 
-    label_width = 35
-    value_width = 20
-    total_width = 170
+    label_width = 26
+    value_width = 22
 
     report_file.write("\n")
 
-    report_file.write(" " * 7 + "-" * 49 + "\n")
+    subtotal_line = " " * 26 + "-" * 49
+    report_file.write(subtotal_line + "\n")
 
     report_file.write(
-        f"{'TOTAL APPROVED LIMITS =':>{label_width}} "
+        f"{' ' * 26}{'TOTAL APPROVED LIMITS  =':<{label_width}} "
         f"{branch_total_limit:>{value_width},.2f}\n\n"
     )
 
     report_file.write(
-        f"{'TOTAL ACCOUNTS =':>{label_width}} "
+        f"{' ' * 26}{'TOTAL ACCOUNTS         =':<{label_width}} "
         f"{branch_account_count:>{value_width},}\n\n"
     )
 
     report_file.write(
-        f"{'TOTAL OPERATIVE LIMITS =':>{label_width}} "
+        f"{' ' * 26}{'TOTAL OPERATIVE LIMITS =':<{label_width}} "
         f"{branch_total_operative:>{value_width},.2f}\n"
     )
 
-    report_file.write(" " * 7 + "-" * 49 + "\n\n")
+    report_file.write(subtotal_line + "\n")
 
 
-def _write_branch_header(
-    report_file,
+def _build_title_lines(
     title1: str,
     title2: str,
     report_date: str,
-    od_label: str,
-) -> None:
+    branch_code: str,
+) -> list[str]:
+    return [
+        f"1  {title1}\n",
+        f"   {title2}\n",
+        f"   REPORT AS AT {report_date}\n",
+        "\n",
+        "\n",
+        f" BRN={_format_brn(branch_code)}\n",
+        "\n",
+    ]
 
-    line_width = 170
 
-    report_file.write(f"1  {title1}\n")
-    report_file.write(f"   {title2}\n")
-    report_file.write(f"   REPORT AS AT {report_date}\n")
-    report_file.write("\n\n")
-
-    # # HEADER LINE 1
-    # report_file.write(
-    #     f"{'BRN':<4}"
-    #     f"{'ACCOUNT NO':<12}"
-    #     f"{'NAME OF CUSTOMER':<27}"
-    #     f"{'BASE':>6}"
-    #     f"{od_label:>5}"
-    #     f"{'OUTSTANDING':>15}"
-    #     f"{'APPROVED':>15}"
-    #     f"{'LIMIT1':>15}"
-    #     f"{'RATE1':>8}"
-    #     f"{'COLL1':>8}"
-    #     f"{'LIMIT2':>15}"
-    #     f"{'RATE2':>8}"
-    #     f"{'COLL2':>8}\n"
-    # )
-
-    # # HEADER LINE 2
-    # report_file.write(
-    #     f"{'':<43}"
-    #     f"{'RATE':>6}"
-    #     f"{'ST':>5}"
-    #     f"{'BALANCE':>15}"
-    #     f"{'LIMIT':>15}\n"
-    # )
-
-    # HEADER LINE 1
-    report_file.write(
-        f"{'':<43}"
-        f"{'BASE':>6}"
-        f"{od_label:>5}"
-        f"{'OUTSTANDING':>15}"
-        f"{'APPROVED':>15}\n"
+def _build_primary_header_lines(od_label: str) -> list[str]:
+    table_indent = " " * 3
+    header_line_1 = (
+        f"{'':<44}"
+        f"{'BASE':>5}"
+        f"{' ' * 2}{od_label:<5}"
+        f"{'OUTSTANDING':>14}"
+        f"{'APPROVED':>18}"
     )
-
-    # HEADER LINE 2
-    report_file.write(
-        f"{'BRN':<4}"
+    header_line_2 = (
+        f"{'BRN':<5}"
         f"{'ACCOUNT NO':<12}"
         f"{'NAME OF CUSTOMER':<27}"
-        f"{'RATE':>6}"
-        f"{'ST':>5}"
-        f"{'BALANCE':>15}"
-        f"{'LIMIT':>15}"
-        f"{'LIMIT1':>15}"
-        f"{'RATE1':>8}"
-        f"{'COLL1':>8}"
-        f"{'LIMIT2':>15}"
-        f"{'RATE2':>8}"
-        f"{'COLL2':>8}\n"
+        f"{'RATE':>5}"
+        f"{' ' * 2}{'ST':<5}"
+        f"{'BALANCE':>14}"
+        f"{'LIMIT':>18}"
+        f"{'LIMIT1':>14}"
+        f"{'RATE1':>7}"
+        f"{'COLL1':>7}"
+        f"{'LIMIT2':>14}"
     )
+    return [
+        f"{table_indent}{header_line_1}\n",
+        f"{table_indent}{header_line_2}\n",
+        f"{table_indent}{'-' * len(header_line_2)}\n",
+    ]
 
-    report_file.write("-" * line_width + "\n")
+
+def _build_secondary_header_lines() -> list[str]:
+    return [
+        f"\n{' ' * 3}{'RATE2':>5}{'COLL2':>7}{'LIMIT3':>14}{'RATE3':>7}{'COLL3':>7}{'LIMIT4':>14}{'RATE4':>7}{'COLL4':>7}{'LIMIT5':>14}{'RATE5':>7}{'COLL5':>7}\n",
+        f"{' ' * 3}{'-' * 96}\n",
+    ]
 
 
-def _build_detail_line(row) -> str:
+def _write_page(report_file, title_lines: list[str], header_lines: list[str], data_lines: list[str], add_form_feed: bool) -> bool:
+    page_lines = title_lines + header_lines + data_lines
+    if len(page_lines) > PAGE_SIZE:
+        raise ValueError(
+            f"PAGE_SIZE={PAGE_SIZE} exceeded: page has {len(page_lines)} lines."
+        )
+    if add_form_feed:
+        report_file.write("\f")
+    for line in page_lines:
+        report_file.write(line)
+    return True
+
+
+def _build_detail_line(row, show_brn: bool = True) -> str:
+    brn_value = _format_brn(row['BRN']) if show_brn else ""
 
     return (
-        f"{_safe_text(row['BRN'], 3):<4}"
+        f"{' ' * 3}{brn_value:<5}"
         f"{_safe_int(row['ACCTNO']):<12}"
-        f"{_safe_text(row['NAME'], 25):<27}"
-        f"{_safe_float(row['LMTBASER']):>6.2f}"
-        f"{_safe_text(row['ODSTATUS'], 2):>5}"
-        f"{_safe_float(row['BALANCE']):>15,.2f}"
-        f"{_safe_float(row['APPRLIMT']):>15,.2f}"
-        f"{_safe_float(row['LIMIT1']):>15,.2f}"
-        f"{_safe_float(row['RATE1']):>8.2f}"
-        f"{_safe_text(row['COLL1'], 5):>8}\n"
+        f"{_safe_text(row['NAME'], 24):<25}"
+        f"{_safe_float(row['LMTBASER']):>7.2f}"
+        f"{' ' * 2}{_safe_text(row['ODSTATUS'], 2):<5}"
+        f"{_safe_float(row['BALANCE']):>14,.2f}"
+        f"{' ' * 2}{_safe_text(row['CRI'], 2):<2}"
+        f"{_safe_float(row['APPRLIMT']):>14,.2f}"
+        f"{_safe_float(row['LIMIT1']):>14,.2f}"
+        f"{_safe_float(row['RATE1']):>7.2f}"
+        f"{_safe_text(row['COLL1'], 5):>7}"
+        f"{_safe_float(row['LIMIT2']):>14,.2f}\n"
     )
 
-
-def _build_limit2_line(row) -> str:
-
-    if not row['LIMIT2'] or row['LIMIT2'] <= 0:
-        return ''
-
+def _build_secondary_line(row) -> str:
     return (
-        f"{'':<115}"
-        f"{_safe_float(row['LIMIT2']):>15,.2f}"
-        f"{_safe_float(row['RATE2']):>8.2f}"
-        f"{_safe_text(row['COLL2'], 5):>8}\n"
+        f"{' ' * 3}{_safe_float(row['RATE2']):>5.2f}"
+        f"{_safe_text(row['COLL2'], 5):>7}"
+        f"{_safe_float(row['LIMIT3']):>14,.2f}"
+        f"{_safe_float(row['RATE3']):>7.2f}"
+        f"{_safe_text(row['COLL3'], 5):>7}"
+        f"{_safe_float(row['LIMIT4']):>14,.2f}"
+        f"{_safe_float(row['RATE4']):>7.2f}"
+        f"{_safe_text(row['COLL4'], 5):>7}"
+        f"{_safe_float(row['LIMIT5']):>14,.2f}"
+        f"{_safe_float(row['RATE5']):>7.2f}"
+        f"{_safe_text(row['COLL5'], 5):>7}\n"
     )
-
 
 def _write_report_file(
     brnref: pd.DataFrame,
@@ -478,43 +492,70 @@ def _write_report_file(
     report_date: str,
 ) -> None:
     title1, title2, od_label = _get_report_titles(is_islamic)
-    current_brn = None
-    branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
-
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_file, 'w', encoding='utf-8') as report_file:
-        for _, row in brnref.iterrows():
-            branch_changed = row['BRN'] != current_brn
-            if branch_changed:
-                if current_brn is not None:
-                    _write_branch_subtotal(
-                        report_file,
-                        branch_totals["approved"],
-                        branch_totals["accounts"],
-                        branch_totals["operative"],
-                    )
-                current_brn = row['BRN']
-                branch_totals = {"approved": 0.0, "operative": 0.0, "accounts": 0}
-                _write_branch_header(report_file, title1, title2, report_date, od_label)
-                report_file.write(f" BRN={current_brn}\n\n")
+        add_form_feed = False
 
-            report_file.write(_build_detail_line(row))
-            extra_line = _build_limit2_line(row)
-            if extra_line:
-                report_file.write(extra_line)
+        for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
+            title_lines = _build_title_lines(title1, title2, report_date, brn_code)
+            primary_header_lines = _build_primary_header_lines(od_label)
+            secondary_header_lines = _build_secondary_header_lines()
 
-            branch_totals["approved"]  += _safe_float(row['APPRLIMT'])
-            branch_totals["operative"] += _safe_float(row['LIMITS'])
-            branch_totals["accounts"]  += 1
+            fixed_primary = len(title_lines) + len(primary_header_lines)
+            fixed_secondary = len(title_lines) + len(secondary_header_lines)
+            if PAGE_SIZE <= max(fixed_primary, fixed_secondary):
+                raise ValueError(
+                    f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
+                )
 
-        if current_brn is not None:
+            rows = list(branch_rows.iterrows())
+            row_idx = 0
+            while row_idx < len(rows):
+                primary_capacity = PAGE_SIZE - (len(title_lines) + len(primary_header_lines))
+                secondary_capacity = PAGE_SIZE - (len(title_lines) + len(secondary_header_lines))
+                rows_this_chunk = min(primary_capacity, secondary_capacity)
+
+                if rows_this_chunk <= 0:
+                    raise ValueError(
+                        f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
+                )
+
+                chunk = rows[row_idx:row_idx + rows_this_chunk]
+
+                primary_data_lines = [
+                    _build_detail_line(row, show_brn=(idx == 0))
+                    for idx, (_, row) in enumerate(chunk)
+                ]
+                add_form_feed = _write_page(
+                    report_file,
+                    title_lines,
+                    primary_header_lines,
+                    primary_data_lines,
+                    add_form_feed,
+                )
+
+                secondary_data_lines = [
+                    _build_secondary_line(row)
+                    for _, row in chunk
+                ]
+                add_form_feed = _write_page(
+                    report_file,
+                    title_lines,
+                    secondary_header_lines,
+                    secondary_data_lines,
+                    add_form_feed,
+                )
+
+                row_idx += len(chunk)
+                  
             _write_branch_subtotal(
                 report_file,
-                branch_totals["approved"],
-                branch_totals["accounts"],
-                branch_totals["operative"],
+                float(branch_rows['APPRLIMT'].sum()),
+                int(len(branch_rows)),
+                float(branch_rows['LIMITS'].sum()),
             )
+
 
 
 def generate_od_report(
