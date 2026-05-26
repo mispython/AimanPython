@@ -14,16 +14,8 @@ def _write_page(
         )
 
     if add_form_feed and page_lines:
-
-        # Remove ONLY the trailing newline from the previous row
-        # before starting a new page.
-        report_file.seek(report_file.tell() - 1)
-
-        report_file.write("\f")
-        report_file.write(page_lines[0])
-
+        report_file.write("\f" + page_lines[0])
         remaining_lines = page_lines[1:]
-
     else:
         remaining_lines = page_lines
 
