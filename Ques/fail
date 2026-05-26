@@ -1,97 +1,135 @@
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00       
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00       
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00       
-1  P U B L I C   I S L A M I C  B A N K   B E R H A D
-   REPORT TITLE: ACCOUNTS WITH CLF-i LIMITS
-   REPORT AS AT 24/05/26
+def _pivot_overdraft_limits(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """
+    FIXED VERSION:
+    - Removes unstable ordering (LMTAMT DESC issue)
+    - Makes RCNT deterministic like SAS (input order style)
+    """
+
+    odmerg = con.execute("""
+        WITH ranked AS (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY ACCTNO
+                       ORDER BY ACCTNO, LMTAMT
+                   ) AS RCNT
+            FROM ovdr
+        ),
+        limited AS (
+            SELECT * FROM ranked WHERE RCNT <= 5
+        )
+        SELECT
+            ACCTNO,
+            MAX(BRANCH)   AS BRANCH,
+            MAX(LMTBASER) AS LMTBASER,
+            MAX(NAME)     AS NAME,
+            MAX(ODSTATUS) AS ODSTATUS,
+            MAX(APPRLIMT) AS APPRLIMT,
+
+            MAX(CASE WHEN RCNT = 1 THEN LMTAMT END) AS LIMIT1,
+            MAX(CASE WHEN RCNT = 1 THEN LMTRATE END) AS RATE1,
+            MAX(CASE WHEN RCNT = 1 THEN LMTCOLL END) AS COLL1,
+
+            MAX(CASE WHEN RCNT = 2 THEN LMTAMT END) AS LIMIT2,
+            MAX(CASE WHEN RCNT = 2 THEN LMTRATE END) AS RATE2,
+            MAX(CASE WHEN RCNT = 2 THEN LMTCOLL END) AS COLL2,
+
+            MAX(CASE WHEN RCNT = 3 THEN LMTAMT END) AS LIMIT3,
+            MAX(CASE WHEN RCNT = 3 THEN LMTRATE END) AS RATE3,
+            MAX(CASE WHEN RCNT = 3 THEN LMTCOLL END) AS COLL3,
+
+            MAX(CASE WHEN RCNT = 4 THEN LMTAMT END) AS LIMIT4,
+            MAX(CASE WHEN RCNT = 4 THEN LMTRATE END) AS RATE4,
+            MAX(CASE WHEN RCNT = 4 THEN LMTCOLL END) AS COLL4,
+
+            MAX(CASE WHEN RCNT = 5 THEN LMTAMT END) AS LIMIT5,
+            MAX(CASE WHEN RCNT = 5 THEN LMTRATE END) AS RATE5,
+            MAX(CASE WHEN RCNT = 5 THEN LMTCOLL END) AS COLL5
+
+        FROM limited
+        GROUP BY ACCTNO
+    """).df()
+
+    con.register('odmerg', odmerg)
+    return odmerg
 
 
- BRN=704
 
-                                                BASE  CLF-i   OUTSTANDING          APPROVED
-   BRN  ACCOUNT NO  NAME OF CUSTOMER            RATE  ST          BALANCE             LIMIT        LIMIT1  RATE1  COLL1        LIMIT2
-   ----------------------------------------------------------------------------------------------------------------------------------
-   704  3820623408  CBT STAR CONSTRUCTION SD    6.47  AC       159,213.83        506,800.00    506,800.00   6.97  50 50          0.00
-        3821331006  MERGER TREND SDN. BHD.      6.47  AC       597,983.14        800,000.00    800,000.00   6.97  35 35          0.00
-        3821333809  MGM VENTURES SDN. BHD.      6.47  AC           520.14  CR    100,000.00    100,000.00   7.97  00 35          0.00
-        3981402426  LIM CHOON NGAN              2.75  AC        15,447.22         30,000.00     30,000.00   6.97  35 35          0.00
-        3981403130  NTS ENGINEERING             6.47  AC     1,321,983.98  CR    172,000.00    172,000.00   6.97  35 A5          0.00
-1  P U B L I C   I S L A M I C  B A N K   B E R H A D
-   REPORT TITLE: ACCOUNTS WITH CLF-i LIMITS
-   REPORT AS AT 24/05/26
+def _write_report_file(
+    brnref: pd.DataFrame,
+    output_file: Path,
+    is_islamic: bool,
+    report_date: str,
+) -> None:
 
+    title1, title2, od_label = _get_report_titles(is_islamic)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
- BRN=704
+    with open(output_file, 'w', encoding='utf-8') as report_file:
+        add_form_feed = False
 
+        # IMPORTANT: stable ordering like SAS
+        brnref = brnref.sort_values(["BRN", "ACCTNO"])
 
-   RATE2  COLL2        LIMIT3  RATE3  COLL3        LIMIT4  RATE4  COLL4        LIMIT5  RATE5  COLL5
-   ------------------------------------------------------------------------------------------------
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00       
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00       
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00       
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00       
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00       
+        for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
 
-                          -------------------------------------------------
-                          TOTAL APPROVED LIMITS  =            41,909,732.00
+            rows = list(branch_rows.iterrows())
+            total_rows = len(rows)
 
-                          TOTAL ACCOUNTS         =                      125
+            row_idx = 0
 
-                          TOTAL OPERATIVE LIMITS =            48,167,778.00
-                          -------------------------------------------------
+            while row_idx < total_rows:
 
+                title_lines = _build_title_lines(
+                    title1, title2, report_date, brn_code
+                )
 
+                primary_header_lines = _build_primary_header_lines(od_label)
+                secondary_header_lines = _build_secondary_header_lines()
 
+                fixed_primary = len(title_lines) + len(primary_header_lines)
+                fixed_secondary = len(title_lines) + len(secondary_header_lines)
 
+                capacity = PAGE_SIZE - max(fixed_primary, fixed_secondary)
 
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00                                         
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00                                         
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00                                         
-1  P U B L I C   I S L A M I C  B A N K   B E R H A D                                                                                
-   REPORT TITLE: ACCOUNTS WITH CLF-i LIMITS                                                                                          
-   REPORT AS AT 30/04/26                                                                                                             
-                                                                                                                                     
-                                                                                                                                     
- BRN=704                                                                                                                             
-                                                                                                                                     
-                                                BASE  CLF-i    OUSTANDING          APPROVED                                          
-   BRN  ACCOUNT NO  NAME OF CUSTOMER            RATE  ST          BALANCE             LIMIT        LIMIT1  RATE1  COLL1        LIMIT2
-   ----------------------------------------------------------------------------------------------------------------------------------
-   704  3820623408  CBT STAR CONSTRUCTION SB    6.47  AC       159,213.83        506,800.00    506,800.00   6.97  50 50          0.00
-        3821331006  MERGER TREND SDN. BHD.      6.47  AC       597,983.14        800,000.00    800,000.00   6.97  35 35          0.00
-        3821333809  MGM VENTURES SDN. BHD.      6.47  AC           520.14  CR    100,000.00    100,000.00   7.97  00 35          0.00
-        3981402426  LIM CHOON NGAN              2.75  AC        15,447.22         30,000.00     30,000.00   6.97  35 35          0.00
-        3981403130  NTS ENGINEERING             6.47  AC     1,321,983.98  CR    172,000.00    172,000.00   6.97  35 A5          0.00
-                                                                                                                                     
-                          -------------------------------------------------                                                          
-                          TOTAL APPROVED LIMITS  =            41,909,732.00                                                          
-                                                                                                                                     
-                          TOTAL ACCOUNTS         =                      125                                                          
-                                                                                                                                     
-                          TOTAL OPERATIVE LIMITS =            40,398,896.00                                                          
-                          -------------------------------------------------                                                          
-                                                                                                                                     
-1  P U B L I C   I S L A M I C  B A N K   B E R H A D                                                                                
-   REPORT TITLE: ACCOUNTS WITH CLF-i LIMITS                                                                                          
-   REPORT AS AT 30/04/26                                                                                                             
-                                                                                                                                     
-                                                                                                                                     
- BRN=704                                                                                                                             
-                                                                                                                                     
-                                                                                                                                     
-   RATE2  COLL2        LIMIT3  RATE3  COLL3        LIMIT4  RATE4  COLL4        LIMIT5  RATE5  COLL5                                  
-   ------------------------------------------------------------------------------------------------                                  
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00                                         
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00                                         
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00                                         
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00                                         
-    0.00                 0.00   0.00                 0.00   0.00                 0.00   0.00                                         
-                                                                                                                                     
-                          -------------------------------------------------                                                          
-                          TOTAL APPROVED LIMITS  =            41,909,732.00                                                          
-                                                                                                                                     
-                          TOTAL ACCOUNTS         =                      125                                                          
-                                                                                                                                     
-                          TOTAL OPERATIVE LIMITS =            40,398,896.00                                                          
-                          -------------------------------------------------                                                          
-                                                                                                                                     
+                chunk = rows[row_idx: row_idx + capacity]
+                is_last_chunk = (row_idx + capacity) >= total_rows
+
+                data_lines = []
+
+                # 🔥 IMPORTANT FIX: ONE ROW = FULL LINE
+                for idx, (_, row) in enumerate(chunk):
+                    data_lines.append(_build_detail_line(row))
+
+                # PRIMARY PAGE
+                add_form_feed = _write_page(
+                    report_file,
+                    title_lines,
+                    primary_header_lines,
+                    data_lines,
+                    add_form_feed,
+                )
+
+                # SECONDARY EXTENSION (same rows, same order)
+                secondary_lines = [
+                    _build_secondary_line(row)
+                    for _, row in chunk
+                ]
+
+                add_form_feed = _write_page(
+                    report_file,
+                    title_lines,
+                    secondary_header_lines,
+                    secondary_lines,
+                    add_form_feed,
+                )
+
+                # SUBTOTAL (ONLY ONCE — FIXED)
+                if is_last_chunk:
+                    _write_branch_subtotal(
+                        report_file,
+                        float(branch_rows['APPRLIMT'].sum()),
+                        int(len(branch_rows)),
+                        float(branch_rows['LIMITS'].sum()),
+                    )
+
+                row_idx += len(chunk)
