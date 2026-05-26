@@ -1,25 +1,93 @@
-def _write_page(
-    report_file,
-    title_lines: list[str],
-    header_lines: list[str],
-    data_lines: list[str],
-    add_form_feed: bool,
-) -> bool:
+def _write_report_file(
+    brnref: pd.DataFrame,
+    output_file: Path,
+    is_islamic: bool,
+    report_date: str,
+) -> None:
 
-    page_lines = title_lines + header_lines + data_lines
+    title1, title2, od_label = _get_report_titles(is_islamic)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    if len(page_lines) > PAGE_SIZE:
-        raise ValueError(
-            f"PAGE_SIZE={PAGE_SIZE} exceeded: page has {len(page_lines)} lines."
-        )
+    with open(output_file, 'w', encoding='utf-8') as report_file:
+        add_form_feed = False
 
-    if add_form_feed and page_lines:
-        report_file.write("\f" + page_lines[0])
-        remaining_lines = page_lines[1:]
-    else:
-        remaining_lines = page_lines
+        for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
 
-    for line in remaining_lines:
-        report_file.write(line)
+            primary_header_lines = _build_primary_header_lines(od_label)
+            secondary_header_lines = _build_secondary_header_lines()
 
-    return True
+            rows = list(branch_rows.iterrows())
+            row_idx = 0
+
+            while row_idx < len(rows):
+
+                title_lines = _build_title_lines(
+                    title1, title2, report_date, brn_code
+                )
+
+                fixed_primary = len(title_lines) + len(primary_header_lines)
+                fixed_secondary = len(title_lines) + len(secondary_header_lines)
+
+                primary_capacity = PAGE_SIZE - fixed_primary
+                secondary_capacity = PAGE_SIZE - fixed_secondary
+
+                rows_this_chunk = min(primary_capacity, secondary_capacity)
+
+                if rows_this_chunk <= 0:
+                    raise ValueError(
+                        f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
+                    )
+
+                chunk = rows[row_idx:row_idx + rows_this_chunk]
+
+                # ======================================================
+                # PRIMARY TABLE PAGE
+                # ======================================================
+                primary_data_lines = [
+                    _build_detail_line(row, show_brn=(idx == 0))
+                    for idx, (_, row) in enumerate(chunk)
+                ]
+
+                add_form_feed = _write_page(
+                    report_file,
+                    title_lines,
+                    primary_header_lines,
+                    primary_data_lines,
+                    add_form_feed,
+                )
+
+                # ✔ SUBTOTAL AFTER PRIMARY TABLE
+                _write_branch_subtotal(
+                    report_file,
+                    float(branch_rows['APPRLIMT'].sum()),
+                    int(len(branch_rows)),
+                    float(branch_rows['LIMITS'].sum()),
+                )
+
+                # ======================================================
+                # SECONDARY TABLE PAGE
+                # ======================================================
+                secondary_data_lines = [
+                    _build_secondary_line(row)
+                    for _, row in chunk
+                ]
+
+                add_form_feed = _write_page(
+                    report_file,
+                    title_lines,
+                    secondary_header_lines,
+                    secondary_data_lines,
+                    add_form_feed,
+                )
+
+                # ✔ SUBTOTAL AFTER SECONDARY TABLE
+                _write_branch_subtotal(
+                    report_file,
+                    float(branch_rows['APPRLIMT'].sum()),
+                    int(len(branch_rows)),
+                    float(branch_rows['LIMITS'].sum()),
+                )
+
+                row_idx += len(chunk)
+
+        # (No change needed here unless you want end-of-report summary)
