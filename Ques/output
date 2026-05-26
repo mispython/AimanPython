@@ -1,58 +1,33 @@
-REPORT ID : EIBDOFCY
-PUBLIC BANK BERHAD
-OUTSTANDING FCY LOAN AND DEPOSITS AS AT 15/05/2026
+def _write_page(
+    report_file,
+    title_lines: list[str],
+    header_lines: list[str],
+    data_lines: list[str],
+    add_form_feed: bool,
+) -> bool:
 
+    page_lines = title_lines + header_lines + data_lines
 
+    if len(page_lines) > PAGE_SIZE:
+        raise ValueError(
+            f"PAGE_SIZE={PAGE_SIZE} exceeded: page has {len(page_lines)} lines."
+        )
 
-NON INDIVIDUAL - FCY FIXED DEPOSIT
+    if add_form_feed and page_lines:
 
-OBSCURCODEFREQCURRENT BALANCE
-  1MYR   1214107  153,940,861,373.15
+        # Remove ONLY the trailing newline from the previous row
+        # before starting a new page.
+        report_file.seek(report_file.tell() - 1)
 
+        report_file.write("\f")
+        report_file.write(page_lines[0])
 
-NON INDIVIDUAL - FCY CURRENT
+        remaining_lines = page_lines[1:]
 
-OBSCURCODEFREQCURRENT BALANCE
-  1AUD     10225    1,097,378,064.66
-  2CAD      2060       17,159,129.59
-  3CHF      1960        1,401,779.99
-  4CNY      5603      210,054,288.65
-  5EUR      2243       40,312,262.79
-  6GBP      4505      269,506,141.24
-  7HKD      2027       36,162,750.85
-  8JPY      2117      163,534,730.55
-  9MYR    848127   66,176,633,354.99
- 10NZD      4349      158,043,959.76
- 11SGD      5143    2,084,237,208.03
- 12THB      1971          465,315.45
- 13USD      6578   23,487,057,106.35
+    else:
+        remaining_lines = page_lines
 
+    for line in remaining_lines:
+        report_file.write(line)
 
-NON INDIVIDUAL - FCY LOAN
-
-OBSCURCODEFREQCURRENT BALANCE
-  1CHF         4      428,906,338.03
-  2EUR         1         -117,505.27
-  3GBP        19      584,889,947.51
-  4HKD        11      618,571,796.73
-  5SGD        21      800,866,263.32
-  6USD        25      819,488,418.08
-
-
-SUMMARY OF OUTSTANDING FCY LOAN AND DEPOSITS
-
-NOBSCURCODEFCYFD-INDIVFCYFD-CORPFCYCA-INDIVFCYCA-CORPFCYLN-INDIVFCYLN-CORP
-  1AUD                0.00                0.00                0.00    1,097,378,064.66                0.00                0.00
-  2CAD                0.00                0.00                0.00       17,159,129.59                0.00                0.00
-  3CHF                0.00                0.00                0.00        1,401,779.99                0.00      428,906,338.03
-  4CNY                0.00                0.00                0.00      210,054,288.65                0.00                0.00
-  5EUR                0.00                0.00                0.00       40,312,262.79                0.00         -117,505.27
-  6GBP                0.00                0.00                0.00      269,506,141.24                0.00      584,889,947.51
-  7HKD                0.00                0.00                0.00       36,162,750.85                0.00      618,571,796.73
-  8JPY                0.00                0.00                0.00      163,534,730.55                0.00                0.00
-  9MYR                0.00  153,940,861,373.15                0.00   66,176,633,354.99                0.00                0.00
- 10NZD                0.00                0.00                0.00      158,043,959.76                0.00                0.00
- 11SGD                0.00                0.00                0.00    2,084,237,208.03                0.00      800,866,263.32
- 12THB                0.00                0.00                0.00          465,315.45                0.00                0.00
- 13USD                0.00                0.00                0.00   23,487,057,106.35                0.00      819,488,418.08
-   TOT                0.00  153,940,861,373.15                0.00   93,741,946,092.90                0.00    3,252,605,258.40
+    return True
