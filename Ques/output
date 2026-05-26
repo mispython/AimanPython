@@ -19,7 +19,9 @@ def _write_report_file(
             rows = list(branch_rows.iterrows())
             row_idx = 0
 
-            while row_idx < len(rows):
+            total_rows = len(rows)
+
+            while row_idx < total_rows:
 
                 title_lines = _build_title_lines(
                     title1, title2, report_date, brn_code
@@ -39,9 +41,10 @@ def _write_report_file(
                     )
 
                 chunk = rows[row_idx:row_idx + rows_this_chunk]
+                is_last_chunk = (row_idx + rows_this_chunk) >= total_rows
 
                 # ======================================================
-                # PRIMARY TABLE PAGE
+                # PRIMARY TABLE
                 # ======================================================
                 primary_data_lines = [
                     _build_detail_line(row, show_brn=(idx == 0))
@@ -56,16 +59,17 @@ def _write_report_file(
                     add_form_feed,
                 )
 
-                # ✔ SUBTOTAL AFTER PRIMARY TABLE
-                _write_branch_subtotal(
-                    report_file,
-                    float(branch_rows['APPRLIMT'].sum()),
-                    int(len(branch_rows)),
-                    float(branch_rows['LIMITS'].sum()),
-                )
+                # ✔ subtotal ONLY on last chunk of branch
+                if is_last_chunk:
+                    _write_branch_subtotal(
+                        report_file,
+                        float(branch_rows['APPRLIMT'].sum()),
+                        int(len(branch_rows)),
+                        float(branch_rows['LIMITS'].sum()),
+                    )
 
                 # ======================================================
-                # SECONDARY TABLE PAGE
+                # SECONDARY TABLE
                 # ======================================================
                 secondary_data_lines = [
                     _build_secondary_line(row)
@@ -80,14 +84,13 @@ def _write_report_file(
                     add_form_feed,
                 )
 
-                # ✔ SUBTOTAL AFTER SECONDARY TABLE
-                _write_branch_subtotal(
-                    report_file,
-                    float(branch_rows['APPRLIMT'].sum()),
-                    int(len(branch_rows)),
-                    float(branch_rows['LIMITS'].sum()),
-                )
+                # ✔ subtotal ONLY on last chunk of branch
+                if is_last_chunk:
+                    _write_branch_subtotal(
+                        report_file,
+                        float(branch_rows['APPRLIMT'].sum()),
+                        int(len(branch_rows)),
+                        float(branch_rows['LIMITS'].sum()),
+                    )
 
                 row_idx += len(chunk)
-
-        # (No change needed here unless you want end-of-report summary)
