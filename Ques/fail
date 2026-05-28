@@ -1,4 +1,64 @@
-[ERROR] Report generation failed for PBB_ODLIMIT_REPORT_270526.txt: BinderException: Binder Error: Values list "o" does not have a column named "LIMIT1"
+def _pivot_overdraft_limits(con):
 
-LINE 14:             COALESCE(o.LIMIT1, 0) AS LIMIT1,
-                              ^
+    ovdr = con.execute("SELECT * FROM ovdr").df()
+
+    # ======================================================
+    # SAS-style row numbering (RCNT equivalent)
+    # ======================================================
+    ovdr = ovdr.sort_values(["ACCTNO"])
+    ovdr["RCNT"] = ovdr.groupby("ACCTNO").cumcount() + 1
+    ovdr = ovdr[ovdr["RCNT"] <= 5]
+
+    # ======================================================
+    # BUILD SAS-LIKE COLUMNS (NO LIST, NO PIVOT TABLE)
+    # ======================================================
+    odmerg = ovdr.pivot_table(
+        index="ACCTNO",
+        columns="RCNT",
+        values=["LMTAMT", "LMTRATE", "LMTCOLL"],
+        aggfunc="first"
+    )
+
+    # flatten columns
+    odmerg.columns = [
+        f"{val}{int(col)}"
+        for val, col in odmerg.columns
+    ]
+
+    odmerg = odmerg.reset_index()
+
+    # ======================================================
+    # RENAME TO SAS FORMAT (THIS IS WHAT YOU WERE MISSING)
+    # ======================================================
+    rename_map = {
+        "LMTAMT1": "LIMIT1", "LMTAMT2": "LIMIT2",
+        "LMTAMT3": "LIMIT3", "LMTAMT4": "LIMIT4",
+        "LMTAMT5": "LIMIT5",
+
+        "LMTRATE1": "RATE1", "LMTRATE2": "RATE2",
+        "LMTRATE3": "RATE3", "LMTRATE4": "RATE4",
+        "LMTRATE5": "RATE5",
+
+        "LMTCOLL1": "COLL1", "LMTCOLL2": "COLL2",
+        "LMTCOLL3": "COLL3", "LMTCOLL4": "COLL4",
+        "LMTCOLL5": "COLL5",
+    }
+
+    odmerg = odmerg.rename(columns=rename_map)
+
+    # ======================================================
+    # IMPORTANT: attach metadata like SAS retains
+    # ======================================================
+    meta = ovdr.groupby("ACCTNO").agg({
+        "BRANCH": "first",
+        "LMTBASER": "first",
+        "NAME": "first",
+        "ODSTATUS": "first",
+        "APPRLIMT": "first"
+    }).reset_index()
+
+    odmerg = odmerg.merge(meta, on="ACCTNO", how="left")
+
+    con.register("odmerg", odmerg)
+
+    return odmerg
