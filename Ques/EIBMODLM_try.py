@@ -6,8 +6,8 @@ Purpose : Report on Accounts with Overdraft Limits
             1. Public Bank Berhad - Accounts with OD Limits (ODPLAN 100-105)
             2. Public Islamic Bank Berhad - Accounts with CLF-i Limits (ODPLAN 106)
           NAME column is resolved by joining lm{month}{week}{year}.sas7bdat ACCTNO
-          against stg_dp_limit.sas7bdat ACCTNO and taking CUSTNAME as NAME.
-          Accounts with no matching CUSTNAME will show a blank NAME field.
+          against stg_dp_limit.sas7bdat ACCTNO and taking NAME.
+          Accounts with no matching NAME will show a blank NAME field.
 """
 
 import duckdb
@@ -30,7 +30,8 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLM"
 # # Production Path
 # INPUT_DIR  = Path("/dwh")
 # OUTPUT_DIR = Path("/host/mis/output/report") / "EIBMODLM"
-# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Input paths - Public Bank
 INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR, "ca")
@@ -44,7 +45,7 @@ INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")
 # INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR / "idp_ca", "ica")      # File name example - ica05226.sas7bdat
 # INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR / "idp_lm", "ilm")      # File name example - ilm05226.sas7bdat
 
-# Shared customer name lookup file (ACCTNO -> CUSTNAME mapped as NAME)
+# Shared customer name lookup file (ACCTNO -> NAME)
 # INPUT_CUSTNAME     = get_latest_file(INPUT_DIR, "cisr1ca")
 INPUT_CUSTNAME     = BASE_DIR / "input/uat" / "stg_dp_limit.sas7bdat"   # stg_dp_limit.sas7bdat
 # INPUT_CUSTNAME     = get_latest_file(INPUT_DIR / "rsd_cis", "cisr1ca")  # File name example - cisr1ca05226.sas7bdat
@@ -100,7 +101,7 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read one .sas7bdat file and return a Polars DataFrame."""
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
-    
+
     # >>>>>>>>>> Uncomment this -> For production <<<<<<<<<<
     pandas_df = pd.read_sas(
         path,
@@ -113,7 +114,7 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     #     path,
     #     format="sas7bdat",
     #     encoding="latin1",
-    #     chunksize = 1000
+    #     chunksize=1000,
     # )
     # pandas_df = next(reader)
 
@@ -123,7 +124,6 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     ]
 
     # print(f"\nDEBUG COLUMN NAMES [{path.name}]:")
-    # # print(pandas_df.columns.tolist())
     # print(pandas_df.head(10))
 
     return pl.from_pandas(pandas_df)
@@ -160,7 +160,7 @@ def _format_brn(value) -> str:
     return text[:3]
 
 
-def _get_report_titles(is_islamic) -> tuple:
+def _get_report_titles(is_islamic: bool) -> tuple:
     if is_islamic:
         return (
             'P U B L I C   I S L A M I C  B A N K   B E R H A D',
@@ -175,17 +175,15 @@ def _get_report_titles(is_islamic) -> tuple:
 
 
 def _load_custname_lookup(con: duckdb.DuckDBPyConnection) -> None:
-    """Load stg_dp_limit.sas7bdat and register ACCTNO -> CUSTNAME as NAME
-    into DuckDB as the 'custname_lookup' table.
+    """Load stg_dp_limit.sas7bdat and register ACCTNO -> NAME lookup into DuckDB.
 
     Join logic:
-        if ACCTNO in stg_dp_limit == ACCTNO in stg_dp_limit,
-        then CUSTNAME from stg_dp_limit is used as NAME.
+        if ACCTNO in stg_dp_limit == ACCTNO in overdraft data,
+        then NAME from stg_dp_limit is used.
     Unmatched overdraft accounts will carry a NULL / blank NAME.
     """
     custname_df = _read_sas7bdat(INPUT_CUSTNAME)
 
-    # Ensure only the columns we need are kept; rename CUSTNAME -> NAME
     required = {"ACCTNO", "NAME"}
     missing  = required - set(custname_df.columns)
     if missing:
@@ -193,12 +191,7 @@ def _load_custname_lookup(con: duckdb.DuckDBPyConnection) -> None:
             f"{INPUT_CUSTNAME.name} is missing required column(s): {', '.join(sorted(missing))}"
         )
 
-    lookup_pd = (
-        custname_df
-        .select(["ACCTNO", "NAME"])
-        .rename({"NAME": "NAME"})
-        .to_pandas()
-    )
+    lookup_pd = custname_df.select(["ACCTNO", "NAME"]).to_pandas()
     con.register('custname_lookup', lookup_pd)
 
 
@@ -207,7 +200,18 @@ def _load_current_accounts(
     current_file: Path,
     odplan_filter,
 ) -> pd.DataFrame:
-    """Load and filter current accounts from .sas7bdat."""
+    """Load and filter current accounts from .sas7bdat.
+
+    SAS equivalent:
+        DATA CURRENT;
+            KEEP ACCTNO BALANCE CRI;
+            SET  DEPOSIT.CURRENT;
+            IF   DEPTYPE  IN ('D','N');
+            IF   APPRLIMT GT 1;
+            IF   ODPLAN IN (100,101,102,103,104,105);  -- or = 106 for PIBB
+            IF   CURBAL LT 0 THEN BALANCE=(-1)*CURBAL;
+            ELSE DO; BALANCE=CURBAL; CRI='CR'; END;
+    """
     current_df = _read_sas7bdat(current_file)
     con.register('current_raw', current_df.to_pandas())
     odplan_condition = _build_odplan_condition(odplan_filter)
@@ -235,14 +239,36 @@ def _load_overdraft_data(
     con: duckdb.DuckDBPyConnection,
     overdft_file: Path,
 ) -> pd.DataFrame:
-    """Load and filter overdraft data from .sas7bdat, then enrich with NAME
-    by left-joining against the custname_lookup table on ACCTNO.
+    """Load and filter overdraft data from .sas7bdat, enrich with NAME via left-join.
 
-    Accounts whose ACCTNO does not appear in stg_dp_limit.sas7bdat will
-    have NAME set to an empty string.
+    SAS equivalent:
+        DATA OVDR;
+            KEEP ACCTNO BRANCH LMTBASER LMTRATE LMTAMT LMTCOLL
+                 NAME APPRLIMT ODSTATUS;
+            SET  ODLIMIT.OVERDFT;
+            IF   APPRLIMT GT 1;
+            IF   LMTTYPE IN ('Y','A');
+        PROC SORT DATA=OVDR; BY ACCTNO;
+
+        DATA OVDR2; SET OVDR; BY ACCTNO;
+            IF FIRST.ACCTNO THEN RCNT=1;
+            OUTPUT; RCNT+1;
+            IF LAST.ACCTNO THEN RCNT=0;
+
+        DATA OVDR1; SET OVDR2;
+            IF (1<=RCNT<=5) THEN OUTPUT;
+
+    RCNT assignment replicates SAS BY-group row numbering:
+        - Resets to 1 on FIRST.ACCTNO
+        - Increments by 1 after each OUTPUT
+        - Resets to 0 on LAST.ACCTNO
+    Only rows with RCNT between 1 and 5 (inclusive) are kept.
+    Accounts whose ACCTNO does not appear in stg_dp_limit will have NAME = ''.
     """
     ovdr_df = _read_sas7bdat(overdft_file)
     con.register('ovdr_raw', ovdr_df.to_pandas())
+
+    # Filter + join NAME — mirrors OVDR dataset; ORDER BY ensures stable RCNT assignment
     ovdr = con.execute("""
         SELECT
             o.ACCTNO,
@@ -259,94 +285,95 @@ def _load_overdraft_data(
             ON o.ACCTNO = c.ACCTNO
         WHERE o.APPRLIMT > 1
           AND o.LMTTYPE IN ('Y', 'A')
+        ORDER BY o.ACCTNO
     """).df()
-    # ovdr = ovdr.drop_duplicates(
-    #     subset=["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL", "BRANCH", "LMTBASER", "ODSTATUS"]
-    # )
-    # ovdr = ovdr.sort_values(
-    #     ["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL"]
-    # ).drop_duplicates(
-    #     subset=["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL", "BRANCH", "LMTBASER", "ODSTATUS"],
-    #     keep="first"
-    # )
-    ovdr = ovdr.sort_values(["ACCTNO"])
 
-    ovdr["RCNT"] = ovdr.groupby("ACCTNO").cumcount() + 1
-
-    # Keep only first 5 like SAS (1<=RCNT<=5)
-    ovdr = ovdr[ovdr["RCNT"] <= 5]
+    # SAS BY-group RCNT: resets to 1 on first row per ACCTNO, increments per row.
+    # cumcount on a stable ORDER BY ACCTNO result produces an identical sequence.
+    # sort=False preserves the ORDER BY order already applied above.
+    ovdr["RCNT"] = ovdr.groupby("ACCTNO", sort=False).cumcount() + 1
+    ovdr = ovdr[ovdr["RCNT"] <= 5].reset_index(drop=True)
 
     con.register('ovdr', ovdr)
     return ovdr
 
 
-def _pivot_overdraft_limits(con):
+def _extract_limit_slot(ovdr: pd.DataFrame, n: int) -> pd.DataFrame:
+    """Extract rows for a single RCNT slot and rename to LIMITn/RATEn/COLLn.
 
+    SAS equivalent (e.g. for n=2):
+        DATA ODS2; SET OVDR1;
+            KEEP ACCTNO BRANCH LMTBASER NAME ODSTATUS APPRLIMT LIMIT2 RATE2 COLL2;
+            IF RCNT=2 THEN DO;
+                LIMIT2=LMTAMT; RATE2=LMTRATE; COLL2=LMTCOLL;
+                OUTPUT;
+            END;
+
+    Only rows where RCNT equals n are selected, then LMTAMT/LMTRATE/LMTCOLL are
+    renamed to LIMITn/RATEn/COLLn.  This explicit per-slot filter is the correct
+    approach — using pivot_table(aggfunc='first') is unreliable because it picks
+    by DataFrame index order, not by RCNT value, which causes value swaps when
+    the index does not align perfectly with RCNT ordering.
+    """
+    slot = ovdr.loc[ovdr["RCNT"] == n, ["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL"]].copy()
+    slot = slot.rename(columns={
+        "LMTAMT":  f"LIMIT{n}",
+        "LMTRATE": f"RATE{n}",
+        "LMTCOLL": f"COLL{n}",
+    })
+    return slot.reset_index(drop=True)
+
+
+def _build_odmerg(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Replicate SAS ODS1..ODS5 + ODMERG pattern exactly.
+
+    SAS equivalent:
+        DATA ODS1; SET OVDR1; IF RCNT=1 THEN DO; LIMIT1=...; RATE1=...; COLL1=...; OUTPUT; END;
+        ...
+        DATA ODMERG; MERGE ODS1 ODS2 ODS3 ODS4 ODS5; BY ACCTNO;
+
+    Each ODSn subset contains exactly the rows where RCNT=n, renamed to LIMITn/RATEn/COLLn.
+    The MERGE BY ACCTNO collapses these into one row per ACCTNO.
+
+    Metadata (BRANCH, LMTBASER, NAME, ODSTATUS, APPRLIMT) is sourced from the
+    RCNT=1 row, which mirrors SAS MERGE behaviour where the first contributing
+    dataset for a given ACCTNO supplies the non-slot columns.
+    """
     ovdr = con.execute("SELECT * FROM ovdr").df()
 
-    # ======================================================
-    # SAS-style row numbering (RCNT equivalent)
-    # ======================================================
-    ovdr = ovdr.sort_values(["ACCTNO"])
-    ovdr["RCNT"] = ovdr.groupby("ACCTNO").cumcount() + 1
-    ovdr = ovdr[ovdr["RCNT"] <= 5]
-
-    # ======================================================
-    # BUILD SAS-LIKE COLUMNS (NO LIST, NO PIVOT TABLE)
-    # ======================================================
-    odmerg = ovdr.pivot_table(
-        index="ACCTNO",
-        columns="RCNT",
-        values=["LMTAMT", "LMTRATE", "LMTCOLL"],
-        aggfunc="first"
+    # Metadata sourced from RCNT=1 (first limit record per account)
+    meta = (
+        ovdr.loc[
+            ovdr["RCNT"] == 1,
+            ["ACCTNO", "BRANCH", "LMTBASER", "NAME", "ODSTATUS", "APPRLIMT"]
+        ]
+        .copy()
+        .reset_index(drop=True)
     )
 
-    # flatten columns
-    odmerg.columns = [
-        f"{val}{int(col)}"
-        for val, col in odmerg.columns
-    ]
-
-    odmerg = odmerg.reset_index()
-
-    # ======================================================
-    # RENAME TO SAS FORMAT (THIS IS WHAT YOU WERE MISSING)
-    # ======================================================
-    rename_map = {
-        "LMTAMT1": "LIMIT1", "LMTAMT2": "LIMIT2",
-        "LMTAMT3": "LIMIT3", "LMTAMT4": "LIMIT4",
-        "LMTAMT5": "LIMIT5",
-
-        "LMTRATE1": "RATE1", "LMTRATE2": "RATE2",
-        "LMTRATE3": "RATE3", "LMTRATE4": "RATE4",
-        "LMTRATE5": "RATE5",
-
-        "LMTCOLL1": "COLL1", "LMTCOLL2": "COLL2",
-        "LMTCOLL3": "COLL3", "LMTCOLL4": "COLL4",
-        "LMTCOLL5": "COLL5",
-    }
-
-    odmerg = odmerg.rename(columns=rename_map)
-
-    # ======================================================
-    # IMPORTANT: attach metadata like SAS retains
-    # ======================================================
-    meta = ovdr.groupby("ACCTNO").agg({
-        "BRANCH": "first",
-        "LMTBASER": "first",
-        "NAME": "first",
-        "ODSTATUS": "first",
-        "APPRLIMT": "first"
-    }).reset_index()
-
-    odmerg = odmerg.merge(meta, on="ACCTNO", how="left")
+    # Build ODS1..ODS5 via explicit slot extraction, then merge onto metadata
+    odmerg = meta
+    for n in range(1, 6):
+        slot_df = _extract_limit_slot(ovdr, n)
+        odmerg  = odmerg.merge(slot_df, on="ACCTNO", how="left")
 
     con.register("odmerg", odmerg)
-
     return odmerg
 
-def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
+def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Merge CURRENT (IN=A) with ODMERG and null-coalesce limit/rate fields.
+
+    SAS equivalent:
+        DATA OVDRM;
+            MERGE CURRENT(IN=A) ODMERG; BY ACCTNO;
+            IF A;
+            IF LIMIT2=. THEN LIMIT2=0;
+            ...
+            NOACCT=1;
+            IF FIRST.ACCTNO THEN LIMITS=0;
+            LIMITS=SUM(LIMIT1,LIMIT2,LIMIT3,LIMIT4,LIMIT5);
+    """
     ovdrm = con.execute("""
         SELECT
             c.ACCTNO,
@@ -359,34 +386,32 @@ def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFram
             o.ODSTATUS,
             o.APPRLIMT,
 
-            -- LIMIT 1
-            COALESCE(o.LIMIT1, 0) AS LIMIT1,
-            COALESCE(o.RATE1, 0.0) AS RATE1,
-            COALESCE(o.COLL1, '') AS COLL1,
+            -- LIMIT 1 (always present for matched accounts)
+            COALESCE(o.LIMIT1, 0)   AS LIMIT1,
+            COALESCE(o.RATE1,  0.0) AS RATE1,
+            COALESCE(o.COLL1,  '')  AS COLL1,
 
             -- LIMIT 2
-            COALESCE(o.LIMIT2, 0) AS LIMIT2,
-            COALESCE(o.RATE2, 0.0) AS RATE2,
-            COALESCE(o.COLL2, '') AS COLL2,
+            COALESCE(o.LIMIT2, 0)   AS LIMIT2,
+            COALESCE(o.RATE2,  0.0) AS RATE2,
+            COALESCE(o.COLL2,  '')  AS COLL2,
 
             -- LIMIT 3
-            COALESCE(o.LIMIT3, 0) AS LIMIT3,
-            COALESCE(o.RATE3, 0.0) AS RATE3,
-            COALESCE(o.COLL3, '') AS COLL3,
+            COALESCE(o.LIMIT3, 0)   AS LIMIT3,
+            COALESCE(o.RATE3,  0.0) AS RATE3,
+            COALESCE(o.COLL3,  '')  AS COLL3,
 
             -- LIMIT 4
-            COALESCE(o.LIMIT4, 0) AS LIMIT4,
-            COALESCE(o.RATE4, 0.0) AS RATE4,
-            COALESCE(o.COLL4, '') AS COLL4,
+            COALESCE(o.LIMIT4, 0)   AS LIMIT4,
+            COALESCE(o.RATE4,  0.0) AS RATE4,
+            COALESCE(o.COLL4,  '')  AS COLL4,
 
             -- LIMIT 5
-            COALESCE(o.LIMIT5, 0) AS LIMIT5,
-            COALESCE(o.RATE5, 0.0) AS RATE5,
-            COALESCE(o.COLL5, '') AS COLL5,
+            COALESCE(o.LIMIT5, 0)   AS LIMIT5,
+            COALESCE(o.RATE5,  0.0) AS RATE5,
+            COALESCE(o.COLL5,  '')  AS COLL5,
 
-            -- ======================================================
-            -- SAS equivalent LIMITS calculation (FIXED)
-            -- ======================================================
+            -- SAS: LIMITS = SUM(LIMIT1,...,LIMIT5)  (SAS SUM treats NULL as 0)
             (
                 COALESCE(o.LIMIT1, 0) +
                 COALESCE(o.LIMIT2, 0) +
@@ -407,12 +432,24 @@ def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFram
 
 
 def _format_branch_codes(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+    """Format BRANCH as zero-padded 3-character BRN string, then sort by BRN, ACCTNO.
+
+    SAS equivalent:
+        DATA BRNREF; SET OVDRM; BY BRANCH;
+            LENGTH BRH1 $1. BRH2 $2. BRH3 BRN $3.;
+            SELECT;
+                WHEN (BRANCH < 10)       BRN='00'||TRIM(BRH1);
+                WHEN (9 < BRANCH < 100)  BRN='0'||TRIM(BRH2);
+                WHEN (BRANCH > 99)       BRN=TRIM(BRH3);
+            END;
+        PROC SORT DATA=BRNREF; BY BRN ACCTNO;
+    """
     return con.execute("""
         SELECT *,
             CASE
-                WHEN BRANCH < 10  THEN '00' || CAST(BRANCH AS VARCHAR)
-                WHEN BRANCH < 100 THEN '0'  || CAST(BRANCH AS VARCHAR)
-                ELSE CAST(BRANCH AS VARCHAR)
+                WHEN BRANCH < 10  THEN '00' || CAST(CAST(BRANCH AS INTEGER) AS VARCHAR)
+                WHEN BRANCH < 100 THEN '0'  || CAST(CAST(BRANCH AS INTEGER) AS VARCHAR)
+                ELSE CAST(CAST(BRANCH AS INTEGER) AS VARCHAR)
             END AS BRN
         FROM ovdrm
         ORDER BY BRN, ACCTNO
@@ -425,7 +462,15 @@ def _write_branch_subtotal(
     branch_account_count: int,
     branch_total_operative: float,
 ) -> None:
+    """Write branch-level totals block.
 
+    SAS equivalent (COMPUTE AFTER BRN):
+        LINE @26 49*'-';
+        LINE @26 'TOTAL APPROVED LIMITS  =' @55 APPRLIMT.SUM COMMA20.2;
+        LINE @26 'TOTAL ACCOUNTS         =' @69 NOACCT.SUM 6.;
+        LINE @26 'TOTAL OPERATIVE LIMITS =' @55 LIMITS.SUM COMMA20.2;
+        LINE @26 49*'-';
+    """
     label_width = 26
     value_width = 22
 
@@ -457,7 +502,7 @@ def _build_title_lines(
     title2: str,
     report_date: str,
     branch_code: str,
-) -> list[str]:
+) -> list:
     return [
         f"1  {title1}\n",
         f"   {title2}\n",
@@ -469,12 +514,11 @@ def _build_title_lines(
     ]
 
 
-def _build_primary_header_lines(od_label: str) -> list[str]:
-    table_indent = " " * 3
+def _build_primary_header_lines(od_label: str) -> list:
     header_line_1 = (
         f"{'':<44}"
         f"{'BASE':>5}"
-        f"{' ' * 2}{od_label:<5}"
+        f"  {od_label:<5}"
         f"{'OUTSTANDING':>14}"
         f"{'APPROVED':>18}"
     )
@@ -483,7 +527,7 @@ def _build_primary_header_lines(od_label: str) -> list[str]:
         f"{'ACCOUNT NO':<12}"
         f"{'NAME OF CUSTOMER':<27}"
         f"{'RATE':>5}"
-        f"{' ' * 2}{'ST':<5}"
+        f"  {'ST':<5}"
         f"{'BALANCE':>14}"
         f"{'LIMIT':>18}"
         f"{'LIMIT1':>14}"
@@ -492,27 +536,30 @@ def _build_primary_header_lines(od_label: str) -> list[str]:
         f"{'LIMIT2':>14}"
     )
     return [
-        f"{table_indent}{header_line_1}\n",
-        f"{table_indent}{header_line_2}\n",
-        f"{table_indent}{'-' * len(header_line_2)}\n",
+        f"   {header_line_1}\n",
+        f"   {header_line_2}\n",
+        f"   {'-' * len(header_line_2)}\n",
     ]
 
 
-def _build_secondary_header_lines() -> list[str]:
+def _build_secondary_header_lines() -> list:
     return [
-        f"\n{' ' * 3}{'RATE2':>5}{'COLL2':>7}{'LIMIT3':>14}{'RATE3':>7}{'COLL3':>7}{'LIMIT4':>14}{'RATE4':>7}{'COLL4':>7}{'LIMIT5':>14}{'RATE5':>7}{'COLL5':>7}\n",
-        f"{' ' * 3}{'-' * 96}\n",
+        (
+            f"\n   "
+            f"{'RATE2':>5}{'COLL2':>7}{'LIMIT3':>14}{'RATE3':>7}{'COLL3':>7}"
+            f"{'LIMIT4':>14}{'RATE4':>7}{'COLL4':>7}{'LIMIT5':>14}{'RATE5':>7}{'COLL5':>7}\n"
+        ),
+        f"   {'-' * 96}\n",
     ]
 
 
 def _write_page(
     report_file,
-    title_lines: list[str],
-    header_lines: list[str],
-    data_lines: list[str],
+    title_lines: list,
+    header_lines: list,
+    data_lines: list,
     add_form_feed: bool,
 ) -> bool:
-
     page_lines = title_lines + header_lines + data_lines
 
     if len(page_lines) > PAGE_SIZE:
@@ -533,16 +580,17 @@ def _write_page(
 
 
 def _build_detail_line(row, show_brn: bool = True) -> str:
+    """Build primary detail line for one account row."""
     brn_value = _format_brn(row['BRN']) if show_brn else ""
 
     return (
-        f"{' ' * 3}{brn_value:<5}"
+        f"   {brn_value:<5}"
         f"{_safe_int(row['ACCTNO']):<12}"
         f"{_safe_text(row['NAME'], 24):<25}"
         f"{_safe_float(row['LMTBASER']):>7.2f}"
-        f"{' ' * 2}{_safe_text(row['ODSTATUS'], 2):<5}"
+        f"  {_safe_text(row['ODSTATUS'], 2):<5}"
         f"{_safe_float(row['BALANCE']):>14,.2f}"
-        f"{' ' * 2}{_safe_text(row['CRI'], 2):<2}"
+        f"  {_safe_text(row['CRI'], 2):<2}"
         f"{_safe_float(row['APPRLIMT']):>14,.2f}"
         f"{_safe_float(row['LIMIT1']):>14,.2f}"
         f"{_safe_float(row['RATE1']):>7.2f}"
@@ -552,8 +600,9 @@ def _build_detail_line(row, show_brn: bool = True) -> str:
 
 
 def _build_secondary_line(row) -> str:
+    """Build secondary detail line (RATE2..COLL5) for one account row."""
     return (
-        f"{' ' * 3}{_safe_float(row['RATE2']):>5.2f}"
+        f"   {_safe_float(row['RATE2']):>5.2f}"
         f"{_safe_text(row['COLL2'], 5):>7}"
         f"{_safe_float(row['LIMIT3']):>14,.2f}"
         f"{_safe_float(row['RATE3']):>7.2f}"
@@ -573,7 +622,6 @@ def _write_report_file(
     is_islamic: bool,
     report_date: str,
 ) -> None:
-
     title1, title2, od_label = _get_report_titles(is_islamic)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -582,12 +630,11 @@ def _write_report_file(
 
         for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
 
-            primary_header_lines = _build_primary_header_lines(od_label)
+            primary_header_lines   = _build_primary_header_lines(od_label)
             secondary_header_lines = _build_secondary_header_lines()
 
-            rows = list(branch_rows.iterrows())
-            row_idx = 0
-
+            rows       = list(branch_rows.iterrows())
+            row_idx    = 0
             total_rows = len(rows)
 
             while row_idx < total_rows:
@@ -596,20 +643,20 @@ def _write_report_file(
                     title1, title2, report_date, brn_code
                 )
 
-                fixed_primary = len(title_lines) + len(primary_header_lines)
+                fixed_primary   = len(title_lines) + len(primary_header_lines)
                 fixed_secondary = len(title_lines) + len(secondary_header_lines)
 
-                primary_capacity = PAGE_SIZE - fixed_primary
-                secondary_capacity = PAGE_SIZE - fixed_secondary
-
-                rows_this_chunk = min(primary_capacity, secondary_capacity)
+                rows_this_chunk = min(
+                    PAGE_SIZE - fixed_primary,
+                    PAGE_SIZE - fixed_secondary,
+                )
 
                 if rows_this_chunk <= 0:
                     raise ValueError(
                         f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
                     )
 
-                chunk = rows[row_idx:row_idx + rows_this_chunk]
+                chunk         = rows[row_idx: row_idx + rows_this_chunk]
                 is_last_chunk = (row_idx + rows_this_chunk) >= total_rows
 
                 # PRIMARY TABLE
@@ -626,7 +673,6 @@ def _write_report_file(
                     add_form_feed,
                 )
 
-                # Subtotal ONLY on last chunk of branch
                 if is_last_chunk:
                     _write_branch_subtotal(
                         report_file,
@@ -649,7 +695,6 @@ def _write_report_file(
                     add_form_feed,
                 )
 
-                # Subtotal ONLY on last chunk of branch
                 if is_last_chunk:
                     _write_branch_subtotal(
                         report_file,
@@ -672,8 +717,8 @@ def generate_od_report(
     Generate overdraft limit report with NAME resolved from stg_dp_limit.sas7bdat.
 
     NAME resolution logic:
-        if ACCTNO in lm05226.sas7bdat == ACCTNO in stg_dp_limit.sas7bdat
-        then NAME = CUSTNAME from stg_dp_limit.sas7bdat
+        if ACCTNO in overdraft file == ACCTNO in stg_dp_limit.sas7bdat
+        then NAME = NAME from stg_dp_limit.sas7bdat
         else NAME = '' (blank)
 
     Args:
@@ -710,9 +755,9 @@ def generate_od_report(
         matched = (ovdr['NAME'] != '').sum()
         print(f"  NAME matched from stg_dp_limit : {matched:,} / {len(ovdr):,}")
 
-        print("\nStep 4: Pivoting limits (up to 5 per account)...")
-        odmerg = _pivot_overdraft_limits(con)
-        print(f"Accounts with pivoted limits: {len(odmerg):,}")
+        print("\nStep 4: Building limit slots (ODS1..ODS5 -> ODMERG)...")
+        odmerg = _build_odmerg(con)
+        print(f"Accounts with limit slots built: {len(odmerg):,}")
 
         print("\nStep 5: Merging current accounts with overdraft data...")
         ovdrm = _merge_current_with_overdraft(con)
