@@ -1,135 +1,34 @@
-def _pivot_overdraft_limits(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    """
-    FIXED VERSION:
-    - Removes unstable ordering (LMTAMT DESC issue)
-    - Makes RCNT deterministic like SAS (input order style)
-    """
+SELECT
+    ACCTNO,
+    MAX(BRANCH) AS BRANCH,
+    MAX(LMTBASER) AS LMTBASER,
+    MAX(NAME) AS NAME,
+    MAX(ODSTATUS) AS ODSTATUS,
+    MAX(APPRLIMT) AS APPRLIMT,
 
-    odmerg = con.execute("""
-        WITH ranked AS (
-            SELECT *,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY ACCTNO
-                       ORDER BY ACCTNO, LMTAMT
-                   ) AS RCNT
-            FROM ovdr
-        ),
-        limited AS (
-            SELECT * FROM ranked WHERE RCNT <= 5
-        )
-        SELECT
-            ACCTNO,
-            MAX(BRANCH)   AS BRANCH,
-            MAX(LMTBASER) AS LMTBASER,
-            MAX(NAME)     AS NAME,
-            MAX(ODSTATUS) AS ODSTATUS,
-            MAX(APPRLIMT) AS APPRLIMT,
+    MAX(CASE WHEN rn = 1 THEN LMTAMT END) AS LIMIT1,
+    MAX(CASE WHEN rn = 1 THEN LMTRATE END) AS RATE1,
+    MAX(CASE WHEN rn = 1 THEN LMTCOLL END) AS COLL1,
 
-            MAX(CASE WHEN RCNT = 1 THEN LMTAMT END) AS LIMIT1,
-            MAX(CASE WHEN RCNT = 1 THEN LMTRATE END) AS RATE1,
-            MAX(CASE WHEN RCNT = 1 THEN LMTCOLL END) AS COLL1,
+    MAX(CASE WHEN rn = 2 THEN LMTAMT END) AS LIMIT2,
+    MAX(CASE WHEN rn = 2 THEN LMTRATE END) AS RATE2,
+    MAX(CASE WHEN rn = 2 THEN LMTCOLL END) AS COLL2,
 
-            MAX(CASE WHEN RCNT = 2 THEN LMTAMT END) AS LIMIT2,
-            MAX(CASE WHEN RCNT = 2 THEN LMTRATE END) AS RATE2,
-            MAX(CASE WHEN RCNT = 2 THEN LMTCOLL END) AS COLL2,
+    MAX(CASE WHEN rn = 3 THEN LMTAMT END) AS LIMIT3,
+    MAX(CASE WHEN rn = 3 THEN LMTRATE END) AS RATE3,
+    MAX(CASE WHEN rn = 3 THEN LMTCOLL END) AS COLL3,
 
-            MAX(CASE WHEN RCNT = 3 THEN LMTAMT END) AS LIMIT3,
-            MAX(CASE WHEN RCNT = 3 THEN LMTRATE END) AS RATE3,
-            MAX(CASE WHEN RCNT = 3 THEN LMTCOLL END) AS COLL3,
+    MAX(CASE WHEN rn = 4 THEN LMTAMT END) AS LIMIT4,
+    MAX(CASE WHEN rn = 4 THEN LMTRATE END) AS RATE4,
+    MAX(CASE WHEN rn = 4 THEN LMTCOLL END) AS COLL4,
 
-            MAX(CASE WHEN RCNT = 4 THEN LMTAMT END) AS LIMIT4,
-            MAX(CASE WHEN RCNT = 4 THEN LMTRATE END) AS RATE4,
-            MAX(CASE WHEN RCNT = 4 THEN LMTCOLL END) AS COLL4,
+    MAX(CASE WHEN rn = 5 THEN LMTAMT END) AS LIMIT5,
+    MAX(CASE WHEN rn = 5 THEN LMTRATE END) AS RATE5,
+    MAX(CASE WHEN rn = 5 THEN LMTCOLL END) AS COLL5
 
-            MAX(CASE WHEN RCNT = 5 THEN LMTAMT END) AS LIMIT5,
-            MAX(CASE WHEN RCNT = 5 THEN LMTRATE END) AS RATE5,
-            MAX(CASE WHEN RCNT = 5 THEN LMTCOLL END) AS COLL5
-
-        FROM limited
-        GROUP BY ACCTNO
-    """).df()
-
-    con.register('odmerg', odmerg)
-    return odmerg
-
-
-
-def _write_report_file(
-    brnref: pd.DataFrame,
-    output_file: Path,
-    is_islamic: bool,
-    report_date: str,
-) -> None:
-
-    title1, title2, od_label = _get_report_titles(is_islamic)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_file, 'w', encoding='utf-8') as report_file:
-        add_form_feed = False
-
-        # IMPORTANT: stable ordering like SAS
-        brnref = brnref.sort_values(["BRN", "ACCTNO"])
-
-        for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
-
-            rows = list(branch_rows.iterrows())
-            total_rows = len(rows)
-
-            row_idx = 0
-
-            while row_idx < total_rows:
-
-                title_lines = _build_title_lines(
-                    title1, title2, report_date, brn_code
-                )
-
-                primary_header_lines = _build_primary_header_lines(od_label)
-                secondary_header_lines = _build_secondary_header_lines()
-
-                fixed_primary = len(title_lines) + len(primary_header_lines)
-                fixed_secondary = len(title_lines) + len(secondary_header_lines)
-
-                capacity = PAGE_SIZE - max(fixed_primary, fixed_secondary)
-
-                chunk = rows[row_idx: row_idx + capacity]
-                is_last_chunk = (row_idx + capacity) >= total_rows
-
-                data_lines = []
-
-                # 🔥 IMPORTANT FIX: ONE ROW = FULL LINE
-                for idx, (_, row) in enumerate(chunk):
-                    data_lines.append(_build_detail_line(row))
-
-                # PRIMARY PAGE
-                add_form_feed = _write_page(
-                    report_file,
-                    title_lines,
-                    primary_header_lines,
-                    data_lines,
-                    add_form_feed,
-                )
-
-                # SECONDARY EXTENSION (same rows, same order)
-                secondary_lines = [
-                    _build_secondary_line(row)
-                    for _, row in chunk
-                ]
-
-                add_form_feed = _write_page(
-                    report_file,
-                    title_lines,
-                    secondary_header_lines,
-                    secondary_lines,
-                    add_form_feed,
-                )
-
-                # SUBTOTAL (ONLY ONCE — FIXED)
-                if is_last_chunk:
-                    _write_branch_subtotal(
-                        report_file,
-                        float(branch_rows['APPRLIMT'].sum()),
-                        int(len(branch_rows)),
-                        float(branch_rows['LIMITS'].sum()),
-                    )
-
-                row_idx += len(chunk)
+FROM (
+    SELECT *,
+           ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY LMTAMT, LMTRATE, LMTCOLL) AS rn
+    FROM ovdr
+)
+GROUP BY ACCTNO
