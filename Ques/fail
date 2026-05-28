@@ -1,1 +1,11 @@
-[ERROR] Report generation failed for PIBB_ODLIMIT_REPORT_270526.txt: BinderException: Binder Error: Values list "o" does not have a column named "BRANCH"
+    meta = ovdr.groupby("ACCTNO").agg({
+        "BRANCH": "first",
+        "LMTBASER": "first",
+        "NAME": "first",
+        "ODSTATUS": "first",
+        "APPRLIMT": "first"
+    }).reset_index()
+
+    odmerg = odmerg.merge(meta, on="ACCTNO", how="left")
+
+    return odmerg
