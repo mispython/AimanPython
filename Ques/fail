@@ -1,51 +1,59 @@
-def _pivot_overdraft_limits(con):
+def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
-    ovdr = con.execute("SELECT * FROM ovdr").df()
+    ovdrm = con.execute("""
+        SELECT
+            c.ACCTNO,
+            c.BALANCE,
+            c.CRI,
 
-    odmerg = ovdr.pivot_table(
-        index=["ACCTNO"],
-        columns="RCNT",
-        values=["LMTAMT", "LMTRATE", "LMTCOLL"],
-        aggfunc="first"
-    )
+            o.BRANCH,
+            o.LMTBASER,
+            o.NAME,
+            o.ODSTATUS,
+            o.APPRLIMT,
 
-    # flatten columns into SAS-style names
-    odmerg.columns = [
-        f"{val}{int(col)}"
-        for val, col in odmerg.columns
-    ]
+            -- LIMIT 1
+            COALESCE(o.LIMIT1, 0) AS LIMIT1,
+            COALESCE(o.RATE1, 0.0) AS RATE1,
+            COALESCE(o.COLL1, '') AS COLL1,
 
-    odmerg = odmerg.reset_index()
+            -- LIMIT 2
+            COALESCE(o.LIMIT2, 0) AS LIMIT2,
+            COALESCE(o.RATE2, 0.0) AS RATE2,
+            COALESCE(o.COLL2, '') AS COLL2,
 
-    # ==========================================================
-    # FIX NaN -> SAS-style blanks/zeros
-    # ==========================================================
-    for i in range(1, 6):
-        for col in ["LMTAMT", "LMTRATE"]:
-            name = f"{col}{i}"
-            if name in odmerg.columns:
-                odmerg[name] = odmerg[name].fillna(0)
+            -- LIMIT 3
+            COALESCE(o.LIMIT3, 0) AS LIMIT3,
+            COALESCE(o.RATE3, 0.0) AS RATE3,
+            COALESCE(o.COLL3, '') AS COLL3,
 
-        name = f"LMTCOLL{i}"
-        if name in odmerg.columns:
-            odmerg[name] = odmerg[name].fillna("")
+            -- LIMIT 4
+            COALESCE(o.LIMIT4, 0) AS LIMIT4,
+            COALESCE(o.RATE4, 0.0) AS RATE4,
+            COALESCE(o.COLL4, '') AS COLL4,
 
-    # rename to SAS-like field names
-    rename_map = {
-        "LMTAMT1": "LIMIT1", "LMTAMT2": "LIMIT2",
-        "LMTAMT3": "LIMIT3", "LMTAMT4": "LIMIT4",
-        "LMTAMT5": "LIMIT5",
+            -- LIMIT 5
+            COALESCE(o.LIMIT5, 0) AS LIMIT5,
+            COALESCE(o.RATE5, 0.0) AS RATE5,
+            COALESCE(o.COLL5, '') AS COLL5,
 
-        "LMTRATE1": "RATE1", "LMTRATE2": "RATE2",
-        "LMTRATE3": "RATE3", "LMTRATE4": "RATE4",
-        "LMTRATE5": "RATE5",
+            -- ======================================================
+            -- SAS equivalent LIMITS calculation (FIXED)
+            -- ======================================================
+            (
+                COALESCE(o.LIMIT1, 0) +
+                COALESCE(o.LIMIT2, 0) +
+                COALESCE(o.LIMIT3, 0) +
+                COALESCE(o.LIMIT4, 0) +
+                COALESCE(o.LIMIT5, 0)
+            ) AS LIMITS,
 
-        "LMTCOLL1": "COLL1", "LMTCOLL2": "COLL2",
-        "LMTCOLL3": "COLL3", "LMTCOLL4": "COLL4",
-        "LMTCOLL5": "COLL5",
-    }
+            1 AS NOACCT
 
-    odmerg = odmerg.rename(columns=rename_map)
+        FROM current c
+        INNER JOIN odmerg o
+            ON c.ACCTNO = o.ACCTNO
+    """).df()
 
-    con.register('odmerg', odmerg)
-    return odmerg
+    con.register('ovdrm', ovdrm)
+    return ovdrm
