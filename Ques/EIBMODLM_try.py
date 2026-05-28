@@ -326,7 +326,7 @@ def _extract_limit_slot(ovdr: pd.DataFrame, n: int) -> pd.DataFrame:
             END;
 
     Only rows where RCNT equals n are selected, then LMTAMT/LMTRATE/LMTCOLL are
-    renamed to LIMITn/RATEn/COLLn.  This explicit per-slot filter is the correct
+    renamed to LIMITn/RATEn/COLLn. This explicit per-slot filter is the correct
     approach — using pivot_table(aggfunc='first') is unreliable because it picks
     by DataFrame index order, not by RCNT value, which causes value swaps when
     the index does not align perfectly with RCNT ordering.
@@ -351,16 +351,20 @@ def _build_odmerg(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     Each ODSn subset contains exactly the rows where RCNT=n, renamed to LIMITn/RATEn/COLLn.
     The MERGE BY ACCTNO collapses these into one row per ACCTNO.
 
-    Metadata (BRANCH, LMTBASER, NAME, ODSTATUS, APPRLIMT) is sourced from the
-    RCNT=1 row, which mirrors SAS MERGE behaviour where the first contributing
-    dataset for a given ACCTNO supplies the non-slot columns.
+    Metadata (BRANCH, LMTBASER, NAME, ODSTATUS, APPRLIMT) is sourced from the LAST
+    RCNT row per account. In SAS, MERGE ODS1..ODS5 BY ACCTNO overwrites non-slot
+    columns with each contributing dataset's values in sequence — the last dataset
+    that contributes a non-missing value wins. Since ODS1..ODS5 are processed in
+    RCNT order, the highest RCNT present per account supplies the final values for
+    metadata columns such as LMTBASER, BRANCH, ODSTATUS, and APPRLIMT.
     """
     ovdr = con.execute("SELECT * FROM ovdr").df()
 
-    # Metadata sourced from RCNT=1 (first limit record per account)
+    # Metadata from the LAST RCNT row per account (mirrors SAS MERGE last-value behaviour)
+    last_rcnt_idx = ovdr.groupby("ACCTNO", sort=False)["RCNT"].idxmax()
     meta = (
         ovdr.loc[
-            ovdr["RCNT"] == 1,
+            last_rcnt_idx,
             ["ACCTNO", "BRANCH", "LMTBASER", "NAME", "ODSTATUS", "APPRLIMT"]
         ]
         .copy()
