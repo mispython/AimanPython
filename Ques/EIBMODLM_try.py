@@ -191,7 +191,15 @@ def _load_custname_lookup(con: duckdb.DuckDBPyConnection) -> None:
             f"{INPUT_CUSTNAME.name} is missing required column(s): {', '.join(sorted(missing))}"
         )
 
-    lookup_pd = custname_df.select(["ACCTNO", "NAME"]).to_pandas()
+    # Deduplicate on ACCTNO before registering. If stg_dp_limit contains multiple
+    # NAME rows for the same ACCTNO, the LEFT JOIN in _load_overdraft_data would
+    # multiply overdraft rows, breaking _ROW_NUM ordering and shifting RCNT slots.
+    lookup_pd = (
+        custname_df.select(["ACCTNO", "NAME"])
+        .to_pandas()
+        .drop_duplicates(subset=["ACCTNO"], keep="first")
+        .reset_index(drop=True)
+    )
     con.register('custname_lookup', lookup_pd)
 
 
