@@ -122,9 +122,9 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
         for col in pandas_df.columns
     ]
 
-    print(f"\nDEBUG COLUMN NAMES [{path.name}]:")
-    # print(pandas_df.columns.tolist())
-    print(pandas_df.head(10))
+    # print(f"\nDEBUG COLUMN NAMES [{path.name}]:")
+    # # print(pandas_df.columns.tolist())
+    # print(pandas_df.head(10))
 
     return pl.from_pandas(pandas_df)
 
@@ -244,6 +244,13 @@ def _load_overdraft_data(
     ovdr_df = _read_sas7bdat(overdft_file)
     con.register('ovdr_raw', ovdr_df.to_pandas())
     ovdr = con.execute("""
+        WITH ovdr_seq AS (
+            SELECT
+                o.*,
+                ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS _seq
+            FROM ovdr_raw o
+        )
+        
         SELECT
             o.ACCTNO,
             o.BRANCH,
@@ -253,14 +260,25 @@ def _load_overdraft_data(
             o.LMTCOLL,
             o.APPRLIMT,
             o.ODSTATUS,
-            COALESCE(c.NAME, '') AS NAME
-        FROM ovdr_raw o
+            COALESCE(c.NAME, '') AS NAME,
+            o._seq
+        FROM ovdr_seq o
         LEFT JOIN custname_lookup c
             ON REGEXP_REPLACE(CAST(o.ACCTNO AS VARCHAR), '\\.0+$', '') =
                REGEXP_REPLACE(CAST(c.ACCTNO AS VARCHAR), '\\.0+$', '')
         WHERE o.APPRLIMT > 1
           AND o.LMTTYPE IN ('Y', 'A')
     """).df()
+    # ovdr = ovdr.drop_duplicates(
+    #     subset=["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL", "BRANCH", "LMTBASER", "ODSTATUS"]
+    # )
+    ovdr = ovdr.sort_values(
+        ["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL"]
+    ).drop_duplicates(
+        subset=["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL", "BRANCH", "LMTBASER", "ODSTATUS"],
+        keep="first"
+    )
+
     con.register('ovdr', ovdr)
     return ovdr
 
@@ -288,57 +306,57 @@ def _pivot_overdraft_limits(con):
 
 
 def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-ovdrm = con.execute("""
-    SELECT
-        c.ACCTNO,
-        c.BALANCE,
-        c.CRI,
+    ovdrm = con.execute("""
+        SELECT
+            c.ACCTNO,
+            c.BALANCE,
+            c.CRI,
 
-        o.BRANCH,
-        o.LMTBASER,
-        o.NAME,
-        o.ODSTATUS,
-        o.APPRLIMT,
+            o.BRANCH,
+            o.LMTBASER,
+            o.NAME,
+            o.ODSTATUS,
+            o.APPRLIMT,
 
-        -- LIMIT 1
-        COALESCE(o.LIMIT_LIST[1], 0) AS LIMIT1,
-        COALESCE(o.RATE_LIST[1], 0.0) AS RATE1,
-        COALESCE(o.COLL_LIST[1], '') AS COLL1,
+            -- LIMIT 1
+            COALESCE(o.LIMIT_LIST[1], 0) AS LIMIT1,
+            COALESCE(o.RATE_LIST[1], 0.0) AS RATE1,
+            COALESCE(o.COLL_LIST[1], '') AS COLL1,
 
-        -- LIMIT 2
-        COALESCE(o.LIMIT_LIST[2], 0) AS LIMIT2,
-        COALESCE(o.RATE_LIST[2], 0.0) AS RATE2,
-        COALESCE(o.COLL_LIST[2], '') AS COLL2,
+            -- LIMIT 2
+            COALESCE(o.LIMIT_LIST[2], 0) AS LIMIT2,
+            COALESCE(o.RATE_LIST[2], 0.0) AS RATE2,
+            COALESCE(o.COLL_LIST[2], '') AS COLL2,
 
-        -- LIMIT 3
-        COALESCE(o.LIMIT_LIST[3], 0) AS LIMIT3,
-        COALESCE(o.RATE_LIST[3], 0.0) AS RATE3,
-        COALESCE(o.COLL_LIST[3], '') AS COLL3,
+            -- LIMIT 3
+            COALESCE(o.LIMIT_LIST[3], 0) AS LIMIT3,
+            COALESCE(o.RATE_LIST[3], 0.0) AS RATE3,
+            COALESCE(o.COLL_LIST[3], '') AS COLL3,
 
-        -- LIMIT 4
-        COALESCE(o.LIMIT_LIST[4], 0) AS LIMIT4,
-        COALESCE(o.RATE_LIST[4], 0.0) AS RATE4,
-        COALESCE(o.COLL_LIST[4], '') AS COLL4,
+            -- LIMIT 4
+            COALESCE(o.LIMIT_LIST[4], 0) AS LIMIT4,
+            COALESCE(o.RATE_LIST[4], 0.0) AS RATE4,
+            COALESCE(o.COLL_LIST[4], '') AS COLL4,
 
-        -- LIMIT 5
-        COALESCE(o.LIMIT_LIST[5], 0) AS LIMIT5,
-        COALESCE(o.RATE_LIST[5], 0.0) AS RATE5,
-        COALESCE(o.COLL_LIST[5], '') AS COLL5,
+            -- LIMIT 5
+            COALESCE(o.LIMIT_LIST[5], 0) AS LIMIT5,
+            COALESCE(o.RATE_LIST[5], 0.0) AS RATE5,
+            COALESCE(o.COLL_LIST[5], '') AS COLL5,
 
-        (
-            COALESCE(o.LIMIT_LIST[1], 0) +
-            COALESCE(o.LIMIT_LIST[2], 0) +
-            COALESCE(o.LIMIT_LIST[3], 0) +
-            COALESCE(o.LIMIT_LIST[4], 0) +
-            COALESCE(o.LIMIT_LIST[5], 0)
-        ) AS LIMITS,
+            (
+                COALESCE(o.LIMIT_LIST[1], 0) +
+                COALESCE(o.LIMIT_LIST[2], 0) +
+                COALESCE(o.LIMIT_LIST[3], 0) +
+                COALESCE(o.LIMIT_LIST[4], 0) +
+                COALESCE(o.LIMIT_LIST[5], 0)
+            ) AS LIMITS,
 
-        1 AS NOACCT
+            1 AS NOACCT
 
-    FROM current c
-    INNER JOIN odmerg o
-        ON c.ACCTNO = o.ACCTNO
-""").df()
+        FROM current c
+        INNER JOIN odmerg o
+            ON c.ACCTNO = o.ACCTNO
+    """).df()
     con.register('ovdrm', ovdrm)
     return ovdrm
 
