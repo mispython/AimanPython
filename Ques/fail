@@ -1,11 +1,5 @@
-    meta = ovdr.groupby("ACCTNO").agg({
-        "BRANCH": "first",
-        "LMTBASER": "first",
-        "NAME": "first",
-        "ODSTATUS": "first",
-        "APPRLIMT": "first"
-    }).reset_index()
+[ERROR] Report generation failed for PBB_ODLIMIT_REPORT_270526.txt: CatalogException: Catalog Error: Table with name odmerg does not exist!
+Did you mean "ovdr"?
 
-    odmerg = odmerg.merge(meta, on="ACCTNO", how="left")
-
-    return odmerg
+LINE 52:         INNER JOIN odmerg o
+                            ^
