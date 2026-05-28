@@ -265,78 +265,80 @@ def _load_overdraft_data(
     return ovdr
 
 
-def _pivot_overdraft_limits(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+def _pivot_overdraft_limits(con):
     odmerg = con.execute("""
-        WITH ranked AS (
-            SELECT *,
-                ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY LMTAMT DESC) AS RCNT
-            FROM ovdr
-        ),
-        limited AS (
-            SELECT * FROM ranked WHERE RCNT <= 5
-        )
         SELECT
             ACCTNO,
-            MAX(BRANCH)   AS BRANCH,
+            MAX(BRANCH) AS BRANCH,
             MAX(LMTBASER) AS LMTBASER,
-            MAX(NAME)     AS NAME,
+            MAX(NAME) AS NAME,
             MAX(ODSTATUS) AS ODSTATUS,
             MAX(APPRLIMT) AS APPRLIMT,
-            MAX(CASE WHEN RCNT = 1 THEN LMTAMT END) AS LIMIT1,
-            MAX(CASE WHEN RCNT = 1 THEN LMTRATE END) AS RATE1,
-            MAX(CASE WHEN RCNT = 1 THEN LMTCOLL END) AS COLL1,
-            MAX(CASE WHEN RCNT = 2 THEN LMTAMT END) AS LIMIT2,
-            MAX(CASE WHEN RCNT = 2 THEN LMTRATE END) AS RATE2,
-            MAX(CASE WHEN RCNT = 2 THEN LMTCOLL END) AS COLL2,
-            MAX(CASE WHEN RCNT = 3 THEN LMTAMT END) AS LIMIT3,
-            MAX(CASE WHEN RCNT = 3 THEN LMTRATE END) AS RATE3,
-            MAX(CASE WHEN RCNT = 3 THEN LMTCOLL END) AS COLL3,
-            MAX(CASE WHEN RCNT = 4 THEN LMTAMT END) AS LIMIT4,
-            MAX(CASE WHEN RCNT = 4 THEN LMTRATE END) AS RATE4,
-            MAX(CASE WHEN RCNT = 4 THEN LMTCOLL END) AS COLL4,
-            MAX(CASE WHEN RCNT = 5 THEN LMTAMT END) AS LIMIT5,
-            MAX(CASE WHEN RCNT = 5 THEN LMTRATE END) AS RATE5,
-            MAX(CASE WHEN RCNT = 5 THEN LMTCOLL END) AS COLL5
-        FROM limited
+
+            LIST(LMTAMT ORDER BY LMTAMT) AS LIMIT_LIST,
+            LIST(LMTRATE ORDER BY LMTAMT) AS RATE_LIST,
+            LIST(LMTCOLL ORDER BY LMTAMT) AS COLL_LIST
+
+        FROM ovdr
         GROUP BY ACCTNO
     """).df()
+
     con.register('odmerg', odmerg)
     return odmerg
 
 
 def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-    ovdrm = con.execute("""
-        SELECT
-            c.ACCTNO,
-            c.BALANCE,
-            c.CRI,
-            o.BRANCH,
-            o.LMTBASER,
-            o.NAME,
-            o.ODSTATUS,
-            o.APPRLIMT,
-            COALESCE(o.LIMIT1, 0)   AS LIMIT1,
-            COALESCE(o.RATE1, 0.0)  AS RATE1,
-            o.COLL1,
-            COALESCE(o.LIMIT2, 0)   AS LIMIT2,
-            COALESCE(o.RATE2, 0.0)  AS RATE2,
-            o.COLL2,
-            COALESCE(o.LIMIT3, 0)   AS LIMIT3,
-            COALESCE(o.RATE3, 0.0)  AS RATE3,
-            o.COLL3,
-            COALESCE(o.LIMIT4, 0)   AS LIMIT4,
-            COALESCE(o.RATE4, 0.0)  AS RATE4,
-            o.COLL4,
-            COALESCE(o.LIMIT5, 0)   AS LIMIT5,
-            COALESCE(o.RATE5, 0.0)  AS RATE5,
-            o.COLL5,
-            (COALESCE(o.LIMIT1, 0) + COALESCE(o.LIMIT2, 0) +
-             COALESCE(o.LIMIT3, 0) + COALESCE(o.LIMIT4, 0) +
-             COALESCE(o.LIMIT5, 0)) AS LIMITS,
-            1 AS NOACCT
-        FROM current c
-        INNER JOIN odmerg o ON c.ACCTNO = o.ACCTNO
-    """).df()
+ovdrm = con.execute("""
+    SELECT
+        c.ACCTNO,
+        c.BALANCE,
+        c.CRI,
+
+        o.BRANCH,
+        o.LMTBASER,
+        o.NAME,
+        o.ODSTATUS,
+        o.APPRLIMT,
+
+        -- LIMIT 1
+        COALESCE(o.LIMIT_LIST[1], 0) AS LIMIT1,
+        COALESCE(o.RATE_LIST[1], 0.0) AS RATE1,
+        COALESCE(o.COLL_LIST[1], '') AS COLL1,
+
+        -- LIMIT 2
+        COALESCE(o.LIMIT_LIST[2], 0) AS LIMIT2,
+        COALESCE(o.RATE_LIST[2], 0.0) AS RATE2,
+        COALESCE(o.COLL_LIST[2], '') AS COLL2,
+
+        -- LIMIT 3
+        COALESCE(o.LIMIT_LIST[3], 0) AS LIMIT3,
+        COALESCE(o.RATE_LIST[3], 0.0) AS RATE3,
+        COALESCE(o.COLL_LIST[3], '') AS COLL3,
+
+        -- LIMIT 4
+        COALESCE(o.LIMIT_LIST[4], 0) AS LIMIT4,
+        COALESCE(o.RATE_LIST[4], 0.0) AS RATE4,
+        COALESCE(o.COLL_LIST[4], '') AS COLL4,
+
+        -- LIMIT 5
+        COALESCE(o.LIMIT_LIST[5], 0) AS LIMIT5,
+        COALESCE(o.RATE_LIST[5], 0.0) AS RATE5,
+        COALESCE(o.COLL_LIST[5], '') AS COLL5,
+
+        (
+            COALESCE(o.LIMIT_LIST[1], 0) +
+            COALESCE(o.LIMIT_LIST[2], 0) +
+            COALESCE(o.LIMIT_LIST[3], 0) +
+            COALESCE(o.LIMIT_LIST[4], 0) +
+            COALESCE(o.LIMIT_LIST[5], 0)
+        ) AS LIMITS,
+
+        1 AS NOACCT
+
+    FROM current c
+    INNER JOIN odmerg o
+        ON c.ACCTNO = o.ACCTNO
+""").df()
     con.register('ovdrm', ovdrm)
     return ovdrm
 
