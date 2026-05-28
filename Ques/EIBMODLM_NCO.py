@@ -244,13 +244,6 @@ def _load_overdraft_data(
     ovdr_df = _read_sas7bdat(overdft_file)
     con.register('ovdr_raw', ovdr_df.to_pandas())
     ovdr = con.execute("""
-        WITH ovdr_seq AS (
-            SELECT
-                o.*,
-                ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS _seq
-            FROM ovdr_raw o
-        )
-        
         SELECT
             o.ACCTNO,
             o.BRANCH,
@@ -260,52 +253,100 @@ def _load_overdraft_data(
             o.LMTCOLL,
             o.APPRLIMT,
             o.ODSTATUS,
-            COALESCE(c.NAME, '') AS NAME,
-            o._seq
-        FROM ovdr_seq o
+            COALESCE(c.NAME, '') AS NAME
+        FROM ovdr_raw o
         LEFT JOIN custname_lookup c
-            ON REGEXP_REPLACE(CAST(o.ACCTNO AS VARCHAR), '\\.0+$', '') =
-               REGEXP_REPLACE(CAST(c.ACCTNO AS VARCHAR), '\\.0+$', '')
+            ON o.ACCTNO = c.ACCTNO
         WHERE o.APPRLIMT > 1
           AND o.LMTTYPE IN ('Y', 'A')
     """).df()
     # ovdr = ovdr.drop_duplicates(
     #     subset=["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL", "BRANCH", "LMTBASER", "ODSTATUS"]
     # )
-    ovdr = ovdr.sort_values(
-        ["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL"]
-    ).drop_duplicates(
-        subset=["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL", "BRANCH", "LMTBASER", "ODSTATUS"],
-        keep="first"
-    )
+    # ovdr = ovdr.sort_values(
+    #     ["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL"]
+    # ).drop_duplicates(
+    #     subset=["ACCTNO", "LMTAMT", "LMTRATE", "LMTCOLL", "BRANCH", "LMTBASER", "ODSTATUS"],
+    #     keep="first"
+    # )
+    ovdr = ovdr.sort_values(["ACCTNO"])
+
+    ovdr["RCNT"] = ovdr.groupby("ACCTNO").cumcount() + 1
+
+    # Keep only first 5 like SAS (1<=RCNT<=5)
+    ovdr = ovdr[ovdr["RCNT"] <= 5]
 
     con.register('ovdr', ovdr)
     return ovdr
 
 
 def _pivot_overdraft_limits(con):
-    odmerg = con.execute("""
-        SELECT
-            ACCTNO,
-            MAX(BRANCH) AS BRANCH,
-            MAX(LMTBASER) AS LMTBASER,
-            MAX(NAME) AS NAME,
-            MAX(ODSTATUS) AS ODSTATUS,
-            MAX(APPRLIMT) AS APPRLIMT,
 
-            LIST(LMTAMT ORDER BY LMTAMT) AS LIMIT_LIST,
-            LIST(LMTRATE ORDER BY LMTAMT) AS RATE_LIST,
-            LIST(LMTCOLL ORDER BY LMTAMT) AS COLL_LIST
+    ovdr = con.execute("SELECT * FROM ovdr").df()
 
-        FROM ovdr
-        GROUP BY ACCTNO
-    """).df()
+    # ======================================================
+    # SAS-style row numbering (RCNT equivalent)
+    # ======================================================
+    ovdr = ovdr.sort_values(["ACCTNO"])
+    ovdr["RCNT"] = ovdr.groupby("ACCTNO").cumcount() + 1
+    ovdr = ovdr[ovdr["RCNT"] <= 5]
 
-    con.register('odmerg', odmerg)
+    # ======================================================
+    # BUILD SAS-LIKE COLUMNS (NO LIST, NO PIVOT TABLE)
+    # ======================================================
+    odmerg = ovdr.pivot_table(
+        index="ACCTNO",
+        columns="RCNT",
+        values=["LMTAMT", "LMTRATE", "LMTCOLL"],
+        aggfunc="first"
+    )
+
+    # flatten columns
+    odmerg.columns = [
+        f"{val}{int(col)}"
+        for val, col in odmerg.columns
+    ]
+
+    odmerg = odmerg.reset_index()
+
+    # ======================================================
+    # RENAME TO SAS FORMAT (THIS IS WHAT YOU WERE MISSING)
+    # ======================================================
+    rename_map = {
+        "LMTAMT1": "LIMIT1", "LMTAMT2": "LIMIT2",
+        "LMTAMT3": "LIMIT3", "LMTAMT4": "LIMIT4",
+        "LMTAMT5": "LIMIT5",
+
+        "LMTRATE1": "RATE1", "LMTRATE2": "RATE2",
+        "LMTRATE3": "RATE3", "LMTRATE4": "RATE4",
+        "LMTRATE5": "RATE5",
+
+        "LMTCOLL1": "COLL1", "LMTCOLL2": "COLL2",
+        "LMTCOLL3": "COLL3", "LMTCOLL4": "COLL4",
+        "LMTCOLL5": "COLL5",
+    }
+
+    odmerg = odmerg.rename(columns=rename_map)
+
+    # ======================================================
+    # IMPORTANT: attach metadata like SAS retains
+    # ======================================================
+    meta = ovdr.groupby("ACCTNO").agg({
+        "BRANCH": "first",
+        "LMTBASER": "first",
+        "NAME": "first",
+        "ODSTATUS": "first",
+        "APPRLIMT": "first"
+    }).reset_index()
+
+    odmerg = odmerg.merge(meta, on="ACCTNO", how="left")
+
+    con.register("odmerg", odmerg)
+
     return odmerg
 
-
 def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+
     ovdrm = con.execute("""
         SELECT
             c.ACCTNO,
@@ -319,36 +360,39 @@ def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFram
             o.APPRLIMT,
 
             -- LIMIT 1
-            COALESCE(o.LIMIT_LIST[1], 0) AS LIMIT1,
-            COALESCE(o.RATE_LIST[1], 0.0) AS RATE1,
-            COALESCE(o.COLL_LIST[1], '') AS COLL1,
+            COALESCE(o.LIMIT1, 0) AS LIMIT1,
+            COALESCE(o.RATE1, 0.0) AS RATE1,
+            COALESCE(o.COLL1, '') AS COLL1,
 
             -- LIMIT 2
-            COALESCE(o.LIMIT_LIST[2], 0) AS LIMIT2,
-            COALESCE(o.RATE_LIST[2], 0.0) AS RATE2,
-            COALESCE(o.COLL_LIST[2], '') AS COLL2,
+            COALESCE(o.LIMIT2, 0) AS LIMIT2,
+            COALESCE(o.RATE2, 0.0) AS RATE2,
+            COALESCE(o.COLL2, '') AS COLL2,
 
             -- LIMIT 3
-            COALESCE(o.LIMIT_LIST[3], 0) AS LIMIT3,
-            COALESCE(o.RATE_LIST[3], 0.0) AS RATE3,
-            COALESCE(o.COLL_LIST[3], '') AS COLL3,
+            COALESCE(o.LIMIT3, 0) AS LIMIT3,
+            COALESCE(o.RATE3, 0.0) AS RATE3,
+            COALESCE(o.COLL3, '') AS COLL3,
 
             -- LIMIT 4
-            COALESCE(o.LIMIT_LIST[4], 0) AS LIMIT4,
-            COALESCE(o.RATE_LIST[4], 0.0) AS RATE4,
-            COALESCE(o.COLL_LIST[4], '') AS COLL4,
+            COALESCE(o.LIMIT4, 0) AS LIMIT4,
+            COALESCE(o.RATE4, 0.0) AS RATE4,
+            COALESCE(o.COLL4, '') AS COLL4,
 
             -- LIMIT 5
-            COALESCE(o.LIMIT_LIST[5], 0) AS LIMIT5,
-            COALESCE(o.RATE_LIST[5], 0.0) AS RATE5,
-            COALESCE(o.COLL_LIST[5], '') AS COLL5,
+            COALESCE(o.LIMIT5, 0) AS LIMIT5,
+            COALESCE(o.RATE5, 0.0) AS RATE5,
+            COALESCE(o.COLL5, '') AS COLL5,
 
+            -- ======================================================
+            -- SAS equivalent LIMITS calculation (FIXED)
+            -- ======================================================
             (
-                COALESCE(o.LIMIT_LIST[1], 0) +
-                COALESCE(o.LIMIT_LIST[2], 0) +
-                COALESCE(o.LIMIT_LIST[3], 0) +
-                COALESCE(o.LIMIT_LIST[4], 0) +
-                COALESCE(o.LIMIT_LIST[5], 0)
+                COALESCE(o.LIMIT1, 0) +
+                COALESCE(o.LIMIT2, 0) +
+                COALESCE(o.LIMIT3, 0) +
+                COALESCE(o.LIMIT4, 0) +
+                COALESCE(o.LIMIT5, 0)
             ) AS LIMITS,
 
             1 AS NOACCT
@@ -357,6 +401,7 @@ def _merge_current_with_overdraft(con: duckdb.DuckDBPyConnection) -> pd.DataFram
         INNER JOIN odmerg o
             ON c.ACCTNO = o.ACCTNO
     """).df()
+
     con.register('ovdrm', ovdrm)
     return ovdrm
 
