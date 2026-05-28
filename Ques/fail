@@ -1,5 +1,32 @@
-[ERROR] Report generation failed for PBB_ODLIMIT_REPORT_270526.txt: CatalogException: Catalog Error: Table with name odmerg does not exist!
-Did you mean "ovdr"?
+def _pivot_overdraft_limits(con):
 
-LINE 52:         INNER JOIN odmerg o
-                            ^
+    ovdr = con.execute("SELECT * FROM ovdr").df()
+
+    odmerg = ovdr.pivot_table(
+        index=["ACCTNO"],
+        columns="RCNT",
+        values=["LMTAMT", "LMTRATE", "LMTCOLL"],
+        aggfunc="first"
+    )
+
+    odmerg.columns = [
+        f"{val}{int(col)}"
+        for val, col in odmerg.columns
+    ]
+
+    odmerg = odmerg.reset_index()
+
+    # attach metadata (IMPORTANT)
+    meta = ovdr.groupby("ACCTNO").agg({
+        "BRANCH": "first",
+        "LMTBASER": "first",
+        "NAME": "first",
+        "ODSTATUS": "first",
+        "APPRLIMT": "first"
+    }).reset_index()
+
+    odmerg = odmerg.merge(meta, on="ACCTNO", how="left")
+
+    con.register("odmerg", odmerg)
+
+    return odmerg
