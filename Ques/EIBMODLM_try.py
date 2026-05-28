@@ -266,9 +266,17 @@ def _load_overdraft_data(
     Accounts whose ACCTNO does not appear in stg_dp_limit will have NAME = ''.
     """
     ovdr_df = _read_sas7bdat(overdft_file)
-    con.register('ovdr_raw', ovdr_df.to_pandas())
 
-    # Filter + join NAME — mirrors OVDR dataset; ORDER BY ensures stable RCNT assignment
+    # Tag each row with its original file position BEFORE any filter or sort.
+    # This is critical: SAS PROC SORT is a stable sort, so rows with the same
+    # ACCTNO retain their original file sequence. Without this tag, ORDER BY
+    # ACCTNO in DuckDB produces an arbitrary intra-group order, causing RCNT
+    # to be assigned to the wrong rows and producing wrong LIMIT/RATE/COLL slots.
+    ovdr_pd = ovdr_df.to_pandas()
+    ovdr_pd["_ROW_NUM"] = range(len(ovdr_pd))
+    con.register('ovdr_raw', ovdr_pd)
+
+    # Filter + join NAME, then sort by (ACCTNO, _ROW_NUM) to replicate SAS stable sort
     ovdr = con.execute("""
         SELECT
             o.ACCTNO,
@@ -279,20 +287,20 @@ def _load_overdraft_data(
             o.LMTCOLL,
             o.APPRLIMT,
             o.ODSTATUS,
+            o._ROW_NUM,
             COALESCE(c.NAME, '') AS NAME
         FROM ovdr_raw o
         LEFT JOIN custname_lookup c
             ON o.ACCTNO = c.ACCTNO
         WHERE o.APPRLIMT > 1
           AND o.LMTTYPE IN ('Y', 'A')
-        ORDER BY o.ACCTNO
+        ORDER BY o.ACCTNO, o._ROW_NUM
     """).df()
 
-    # SAS BY-group RCNT: resets to 1 on first row per ACCTNO, increments per row.
-    # cumcount on a stable ORDER BY ACCTNO result produces an identical sequence.
-    # sort=False preserves the ORDER BY order already applied above.
+    # SAS BY-group RCNT on stable-sorted data: resets to 1 on FIRST.ACCTNO,
+    # increments after each OUTPUT. sort=False preserves ORDER BY applied above.
     ovdr["RCNT"] = ovdr.groupby("ACCTNO", sort=False).cumcount() + 1
-    ovdr = ovdr[ovdr["RCNT"] <= 5].reset_index(drop=True)
+    ovdr = ovdr[ovdr["RCNT"] <= 5].drop(columns=["_ROW_NUM"]).reset_index(drop=True)
 
     con.register('ovdr', ovdr)
     return ovdr
