@@ -1,59 +1,51 @@
-SELECT
-    ACCTNO,
-    MAX(BRANCH) AS BRANCH,
-    MAX(LMTBASER) AS LMTBASER,
-    MAX(NAME) AS NAME,
-    MAX(ODSTATUS) AS ODSTATUS,
-    MAX(APPRLIMT) AS APPRLIMT,
+def _pivot_overdraft_limits(con):
 
-    MAX(CASE WHEN rn = 1 THEN LMTAMT END) AS LIMIT1,
-    MAX(CASE WHEN rn = 1 THEN LMTRATE END) AS RATE1,
-    MAX(CASE WHEN rn = 1 THEN LMTCOLL END) AS COLL1,
+    ovdr = con.execute("SELECT * FROM ovdr").df()
 
-    MAX(CASE WHEN rn = 2 THEN LMTAMT END) AS LIMIT2,
-    MAX(CASE WHEN rn = 2 THEN LMTRATE END) AS RATE2,
-    MAX(CASE WHEN rn = 2 THEN LMTCOLL END) AS COLL2,
+    odmerg = ovdr.pivot_table(
+        index=["ACCTNO"],
+        columns="RCNT",
+        values=["LMTAMT", "LMTRATE", "LMTCOLL"],
+        aggfunc="first"
+    )
 
-    MAX(CASE WHEN rn = 3 THEN LMTAMT END) AS LIMIT3,
-    MAX(CASE WHEN rn = 3 THEN LMTRATE END) AS RATE3,
-    MAX(CASE WHEN rn = 3 THEN LMTCOLL END) AS COLL3,
+    # flatten columns into SAS-style names
+    odmerg.columns = [
+        f"{val}{int(col)}"
+        for val, col in odmerg.columns
+    ]
 
-    MAX(CASE WHEN rn = 4 THEN LMTAMT END) AS LIMIT4,
-    MAX(CASE WHEN rn = 4 THEN LMTRATE END) AS RATE4,
-    MAX(CASE WHEN rn = 4 THEN LMTCOLL END) AS COLL4,
+    odmerg = odmerg.reset_index()
 
-    MAX(CASE WHEN rn = 5 THEN LMTAMT END) AS LIMIT5,
-    MAX(CASE WHEN rn = 5 THEN LMTRATE END) AS RATE5,
-    MAX(CASE WHEN rn = 5 THEN LMTCOLL END) AS COLL5
+    # ==========================================================
+    # FIX NaN -> SAS-style blanks/zeros
+    # ==========================================================
+    for i in range(1, 6):
+        for col in ["LMTAMT", "LMTRATE"]:
+            name = f"{col}{i}"
+            if name in odmerg.columns:
+                odmerg[name] = odmerg[name].fillna(0)
 
-FROM (
-    SELECT *,
-           ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY LMTAMT, LMTRATE, LMTCOLL) AS rn
-    FROM ovdr
-)
-GROUP BY ACCTNO
+        name = f"LMTCOLL{i}"
+        if name in odmerg.columns:
+            odmerg[name] = odmerg[name].fillna("")
 
+    # rename to SAS-like field names
+    rename_map = {
+        "LMTAMT1": "LIMIT1", "LMTAMT2": "LIMIT2",
+        "LMTAMT3": "LIMIT3", "LMTAMT4": "LIMIT4",
+        "LMTAMT5": "LIMIT5",
 
+        "LMTRATE1": "RATE1", "LMTRATE2": "RATE2",
+        "LMTRATE3": "RATE3", "LMTRATE4": "RATE4",
+        "LMTRATE5": "RATE5",
 
-o.LIMIT1,
-o.RATE1,
-o.COLL1,
-o.LIMIT2,
-o.RATE2,
-o.COLL2,
-o.LIMIT3,
-o.RATE3,
-o.COLL3,
-o.LIMIT4,
-o.RATE4,
-o.COLL4,
-o.LIMIT5,
-o.RATE5,
-o.COLL5,
-(
-    COALESCE(o.LIMIT1, 0) +
-    COALESCE(o.LIMIT2, 0) +
-    COALESCE(o.LIMIT3, 0) +
-    COALESCE(o.LIMIT4, 0) +
-    COALESCE(o.LIMIT5, 0)
-) AS LIMITS
+        "LMTCOLL1": "COLL1", "LMTCOLL2": "COLL2",
+        "LMTCOLL3": "COLL3", "LMTCOLL4": "COLL4",
+        "LMTCOLL5": "COLL5",
+    }
+
+    odmerg = odmerg.rename(columns=rename_map)
+
+    con.register('odmerg', odmerg)
+    return odmerg
