@@ -109,14 +109,14 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
 
-    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<
+    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<<<
     pandas_df = pd.read_sas(
         path,
         format="sas7bdat",
         encoding="latin1",
     )
 
-    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<
+    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
     # reader = pd.read_sas(
     #     path,
     #     format="sas7bdat",
@@ -678,25 +678,12 @@ def _write_report_file(
                 float(branch_rows['LIMITS'].sum()),
             )
 
-            # Collect all primary and secondary page chunks first, then append
-            # subtotal pages at the end. This ensures the layout is:
-            #   -> Primary table (all pages)
-            #   -> Secondary table (all pages)
-            #   -> Title, BRN & primary header + TOTAL table
-            #   -> Title, BRN & secondary header + TOTAL table
-            primary_chunks   = []
-            secondary_chunks = []
-
+            # ── PASS 1: all PRIMARY pages ────────────────────────────────────
             while row_idx < total_rows:
-                title_lines = _build_title_lines(
-                    title1, title2, report_date, brn_code
-                )
 
-                fixed_primary   = len(title_lines) + len(primary_header_lines)
-                fixed_secondary = len(title_lines) + len(secondary_header_lines)
-                fixed_lines     = max(fixed_primary, fixed_secondary)
-
-                max_data_rows = PAGE_SIZE - fixed_lines
+                title_lines   = _build_title_lines(title1, title2, report_date, brn_code)
+                fixed_primary = len(title_lines) + len(primary_header_lines)
+                max_data_rows = PAGE_SIZE - fixed_primary
 
                 if max_data_rows <= 0:
                     raise ValueError(
@@ -710,43 +697,54 @@ def _write_report_file(
                     _build_detail_line(row, show_brn=(idx == 0))
                     for idx, (_, row) in enumerate(chunk)
                 ]
+
+                add_form_feed = _write_page(
+                    report_file, title_lines, primary_header_lines,
+                    primary_data_lines, add_form_feed,
+                )
+
+                row_idx += rows_this_chunk
+
+            # ── PASS 2: all SECONDARY pages ──────────────────────────────────
+            row_idx = 0
+            while row_idx < total_rows:
+
+                title_lines     = _build_title_lines(title1, title2, report_date, brn_code)
+                fixed_secondary = len(title_lines) + len(secondary_header_lines)
+                max_data_rows   = PAGE_SIZE - fixed_secondary
+
+                if max_data_rows <= 0:
+                    raise ValueError(
+                        f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
+                    )
+
+                rows_this_chunk = min(total_rows - row_idx, max_data_rows)
+                chunk           = rows[row_idx: row_idx + rows_this_chunk]
+
                 secondary_data_lines = [
                     _build_secondary_line(row)
                     for _, row in chunk
                 ]
 
-                primary_chunks.append((title_lines, primary_header_lines, primary_data_lines))
-                secondary_chunks.append((title_lines, secondary_header_lines, secondary_data_lines))
+                add_form_feed = _write_page(
+                    report_file, title_lines, secondary_header_lines,
+                    secondary_data_lines, add_form_feed,
+                )
 
                 row_idx += rows_this_chunk
 
-            # ── WRITE ALL PRIMARY PAGES ──────────────────────────────────────
-            for title_lines, hdr, data in primary_chunks:
-                add_form_feed = _write_page(
-                    report_file, title_lines, hdr, data, add_form_feed
-                )
-
-            # ── WRITE ALL SECONDARY PAGES ────────────────────────────────────
-            for title_lines, hdr, data in secondary_chunks:
-                add_form_feed = _write_page(
-                    report_file, title_lines, hdr, data, add_form_feed
-                )
-
-            # ── SUBTOTAL AFTER PRIMARY HEADER ────────────────────────────────
-            # Always placed on its own dedicated page (title + primary header,
-            # no data rows) after all primary and secondary data pages.
+            # ── SUBTOTAL: always its own page pair after all data ────────────
+            # Page 1: title + primary header + subtotal block
             title_lines = _build_title_lines(title1, title2, report_date, brn_code)
             add_form_feed = _write_page(
-                report_file, title_lines, primary_header_lines, [], add_form_feed
+                report_file, title_lines, primary_header_lines, [], add_form_feed,
             )
             _write_branch_subtotal(report_file, *subtotal_args)
 
-            # ── SUBTOTAL AFTER SECONDARY HEADER ─────────────────────────────
-            # Always placed on its own dedicated page (title + secondary header,
-            # no data rows) immediately after the primary subtotal page.
+            # Page 2: title + secondary header + subtotal block
             title_lines = _build_title_lines(title1, title2, report_date, brn_code)
             add_form_feed = _write_page(
-                report_file, title_lines, secondary_header_lines, [], add_form_feed
+                report_file, title_lines, secondary_header_lines, [], add_form_feed,
             )
             _write_branch_subtotal(report_file, *subtotal_args)
 
