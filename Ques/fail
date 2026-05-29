@@ -25,16 +25,8 @@ def _write_report_file(
                 float(branch_rows['LIMITS'].sum()),
             )
 
-            # Track whether the primary subtotal fits inline on its last page.
-            # Deferred and written AFTER all secondary pages, so the order is:
-            #   Primary data pages -> Secondary data pages
-            #   -> Primary TOTAL page -> Secondary TOTAL page
-            primary_subtotal_inline   = False
-            last_primary_lines_used   = 0
-            last_primary_title_lines  = None
-
-            # ── PRIMARY TABLE ────────────────────────────────────────────────
             while row_idx < total_rows:
+
                 title_lines = _build_title_lines(
                     title1, title2, report_date, brn_code
                 )
@@ -54,6 +46,7 @@ def _write_report_file(
                 chunk           = rows[row_idx: row_idx + rows_this_chunk]
                 is_last_chunk   = (row_idx + rows_this_chunk) >= total_rows
 
+                # ── PRIMARY TABLE ────────────────────────────────────────────
                 primary_data_lines = [
                     _build_detail_line(row, show_brn=(idx == 0))
                     for idx, (_, row) in enumerate(chunk)
@@ -67,34 +60,20 @@ def _write_report_file(
                     add_form_feed,
                 )
 
+                # Track whether the primary subtotal overflowed (needs a new page).
+                # If it did, defer writing it until after the secondary table's
+                # overflow page so both subtotals appear together at the end.
+                primary_subtotal_deferred = False
+
                 if is_last_chunk:
                     lines_used = fixed_primary + rows_this_chunk
-                    primary_subtotal_inline  = (PAGE_SIZE - lines_used) >= SUBTOTAL_LINES
-                    last_primary_lines_used  = lines_used
-                    last_primary_title_lines = title_lines
+                    if (PAGE_SIZE - lines_used) >= SUBTOTAL_LINES:
+                        _write_branch_subtotal(report_file, *subtotal_args)
+                    else:
+                        # Defer: will be written before secondary subtotal below
+                        primary_subtotal_deferred = True
 
-                row_idx += rows_this_chunk
-
-            # ── SECONDARY TABLE ──────────────────────────────────────────────
-            row_idx = 0
-            last_secondary_lines_used  = 0
-            last_secondary_title_lines = None
-
-            while row_idx < total_rows:
-                title_lines = _build_title_lines(
-                    title1, title2, report_date, brn_code
-                )
-
-                fixed_primary   = len(title_lines) + len(primary_header_lines)
-                fixed_secondary = len(title_lines) + len(secondary_header_lines)
-                fixed_lines     = max(fixed_primary, fixed_secondary)
-
-                max_data_rows = PAGE_SIZE - fixed_lines
-
-                rows_this_chunk = min(total_rows - row_idx, max_data_rows)
-                chunk           = rows[row_idx: row_idx + rows_this_chunk]
-                is_last_chunk   = (row_idx + rows_this_chunk) >= total_rows
-
+                # ── SECONDARY TABLE ──────────────────────────────────────────
                 secondary_data_lines = [
                     _build_secondary_line(row)
                     for _, row in chunk
@@ -110,36 +89,20 @@ def _write_report_file(
 
                 if is_last_chunk:
                     lines_used = fixed_secondary + rows_this_chunk
-                    last_secondary_lines_used  = lines_used
-                    last_secondary_title_lines = title_lines
+                    if (PAGE_SIZE - lines_used) >= SUBTOTAL_LINES:
+                        # Secondary fits inline; write deferred primary first if any,
+                        # then secondary subtotal — both on this same page.
+                        if primary_subtotal_deferred:
+                            _write_branch_subtotal(report_file, *subtotal_args)
+                        _write_branch_subtotal(report_file, *subtotal_args)
+                    else:
+                        # Secondary also overflows — open one new page and write
+                        # both subtotals there (deferred primary first, then secondary).
+                        add_form_feed = _write_page(
+                            report_file, title_lines, secondary_header_lines, [], add_form_feed,
+                        )
+                        if primary_subtotal_deferred:
+                            _write_branch_subtotal(report_file, *subtotal_args)
+                        _write_branch_subtotal(report_file, *subtotal_args)
 
                 row_idx += rows_this_chunk
-
-            # ── PRIMARY SUBTOTAL (after all secondary data pages) ────────────
-            # If the subtotal fit inline on the last primary data page, it still
-            # needs its own page here — because secondary data pages have since
-            # been written between them. Use the inline flag only to decide
-            # whether a new page is needed vs. it already having enough space;
-            # since secondary pages were written after, always open a fresh page.
-            title_lines = _build_title_lines(title1, title2, report_date, brn_code)
-            if primary_subtotal_inline:
-                # Fits in terms of line count — but secondary pages were written
-                # after the last primary page, so we still need a new page.
-                add_form_feed = _write_page(
-                    report_file, title_lines, primary_header_lines, [], add_form_feed
-                )
-            else:
-                add_form_feed = _write_page(
-                    report_file, title_lines, primary_header_lines, [], add_form_feed
-                )
-            _write_branch_subtotal(report_file, *subtotal_args)
-
-            # ── SECONDARY SUBTOTAL ───────────────────────────────────────────
-            title_lines = _build_title_lines(title1, title2, report_date, brn_code)
-            if (PAGE_SIZE - last_secondary_lines_used) >= SUBTOTAL_LINES:
-                _write_branch_subtotal(report_file, *subtotal_args)
-            else:
-                add_form_feed = _write_page(
-                    report_file, title_lines, secondary_header_lines, [], add_form_feed
-                )
-                _write_branch_subtotal(report_file, *subtotal_args)
