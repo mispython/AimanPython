@@ -1,5 +1,101 @@
-True:
-3801734309  JENDELA MEGAJUTA SDN. BH    6.47  AC       565,507.16        650,000.00    500,000.00   2.55  07 07    150,000.00
+def _write_report_file(
+    brnref: pd.DataFrame,
+    output_file: Path,
+    is_islamic: bool,
+    report_date: str,
+) -> None:
+    title1, title2, od_label = _get_report_titles(is_islamic)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
-Wrong:
-3801734309  JENDELA MEGAJUTA SDN. BH    2.05  AC       565,507.16        650,000.00    500,000.00   2.55  07 07    150,000.00
+    with open(output_file, 'w', encoding='utf-8') as report_file:
+        add_form_feed = False
+
+        for brn_code, branch_rows in brnref.groupby('BRN', sort=False):
+
+            primary_header_lines   = _build_primary_header_lines(od_label)
+            secondary_header_lines = _build_secondary_header_lines()
+
+            rows       = list(branch_rows.iterrows())
+            row_idx    = 0
+            total_rows = len(rows)
+
+            subtotal_args = (
+                float(branch_rows['APPRLIMT'].sum()),
+                int(len(branch_rows)),
+                float(branch_rows['LIMITS'].sum()),
+            )
+
+            # ── PHASE 1: WRITE ALL PRIMARY TABLE PAGES ───────────────────────
+            # Collect secondary data lines in parallel so we don't iterate rows
+            # twice. All primary pages are written first; secondary pages follow.
+            secondary_chunks = []
+
+            while row_idx < total_rows:
+                title_lines = _build_title_lines(
+                    title1, title2, report_date, brn_code
+                )
+
+                fixed_primary   = len(title_lines) + len(primary_header_lines)
+                fixed_secondary = len(title_lines) + len(secondary_header_lines)
+                fixed_lines     = max(fixed_primary, fixed_secondary)
+
+                max_data_rows = PAGE_SIZE - fixed_lines
+
+                if max_data_rows <= 0:
+                    raise ValueError(
+                        f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
+                    )
+
+                rows_this_chunk = min(total_rows - row_idx, max_data_rows)
+                chunk           = rows[row_idx: row_idx + rows_this_chunk]
+
+                # Build both primary and secondary lines for this chunk
+                primary_data_lines = [
+                    _build_detail_line(row, show_brn=(idx == 0))
+                    for idx, (_, row) in enumerate(chunk)
+                ]
+                secondary_data_lines = [
+                    _build_secondary_line(row)
+                    for _, row in chunk
+                ]
+
+                # Write primary page now
+                add_form_feed = _write_page(
+                    report_file,
+                    title_lines,
+                    primary_header_lines,
+                    primary_data_lines,
+                    add_form_feed,
+                )
+
+                # Store secondary page for later
+                secondary_chunks.append((title_lines, secondary_data_lines))
+
+                row_idx += rows_this_chunk
+
+            # ── PHASE 2: WRITE ALL SECONDARY TABLE PAGES ─────────────────────
+            for sec_title_lines, sec_data_lines in secondary_chunks:
+                add_form_feed = _write_page(
+                    report_file,
+                    sec_title_lines,
+                    secondary_header_lines,
+                    sec_data_lines,
+                    add_form_feed,
+                )
+
+            # ── PHASE 3: SUBTOTAL UNDER PRIMARY HEADER ───────────────────────
+            # Always on its own dedicated page (title + primary header, no data)
+            # after all primary and secondary data pages for this branch.
+            title_lines   = _build_title_lines(title1, title2, report_date, brn_code)
+            add_form_feed = _write_page(
+                report_file, title_lines, primary_header_lines, [], add_form_feed
+            )
+            _write_branch_subtotal(report_file, *subtotal_args)
+
+            # ── PHASE 4: SUBTOTAL UNDER SECONDARY HEADER ─────────────────────
+            # Immediately after the primary subtotal page.
+            title_lines   = _build_title_lines(title1, title2, report_date, brn_code)
+            add_form_feed = _write_page(
+                report_file, title_lines, secondary_header_lines, [], add_form_feed
+            )
+            _write_branch_subtotal(report_file, *subtotal_args)
