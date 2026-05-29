@@ -25,13 +25,15 @@ def _write_report_file(
                 float(branch_rows['LIMITS'].sum()),
             )
 
-            # ── PHASE 1: ALL PRIMARY TABLE PAGES ─────────────────────────────
-            # Secondary lines are collected so all primary pages are written
-            # before any secondary page, giving the correct page order:
-            #   primary p1, primary p2 ... secondary p1, secondary p2 ...
-            secondary_chunks        = []
-            last_primary_lines_used = 0
+            # Track whether the primary subtotal fits inline on its last page.
+            # Deferred and written AFTER all secondary pages, so the order is:
+            #   Primary data pages -> Secondary data pages
+            #   -> Primary TOTAL page -> Secondary TOTAL page
+            primary_subtotal_inline   = False
+            last_primary_lines_used   = 0
+            last_primary_title_lines  = None
 
+            # ── PRIMARY TABLE ────────────────────────────────────────────────
             while row_idx < total_rows:
                 title_lines = _build_title_lines(
                     title1, title2, report_date, brn_code
@@ -50,14 +52,11 @@ def _write_report_file(
 
                 rows_this_chunk = min(total_rows - row_idx, max_data_rows)
                 chunk           = rows[row_idx: row_idx + rows_this_chunk]
+                is_last_chunk   = (row_idx + rows_this_chunk) >= total_rows
 
                 primary_data_lines = [
                     _build_detail_line(row, show_brn=(idx == 0))
                     for idx, (_, row) in enumerate(chunk)
-                ]
-                secondary_data_lines = [
-                    _build_secondary_line(row)
-                    for _, row in chunk
                 ]
 
                 add_form_feed = _write_page(
@@ -68,49 +67,75 @@ def _write_report_file(
                     add_form_feed,
                 )
 
-                secondary_chunks.append((title_lines, secondary_data_lines))
-
-                # Track how many lines the last primary page consumed
-                last_primary_lines_used = fixed_primary + rows_this_chunk
+                if is_last_chunk:
+                    lines_used = fixed_primary + rows_this_chunk
+                    primary_subtotal_inline  = (PAGE_SIZE - lines_used) >= SUBTOTAL_LINES
+                    last_primary_lines_used  = lines_used
+                    last_primary_title_lines = title_lines
 
                 row_idx += rows_this_chunk
 
-            # ── PHASE 2: ALL SECONDARY TABLE PAGES ───────────────────────────
-            last_secondary_lines_used = 0
+            # ── SECONDARY TABLE ──────────────────────────────────────────────
+            row_idx = 0
+            last_secondary_lines_used  = 0
+            last_secondary_title_lines = None
 
-            for sec_title_lines, sec_data_lines in secondary_chunks:
+            while row_idx < total_rows:
+                title_lines = _build_title_lines(
+                    title1, title2, report_date, brn_code
+                )
+
+                fixed_primary   = len(title_lines) + len(primary_header_lines)
+                fixed_secondary = len(title_lines) + len(secondary_header_lines)
+                fixed_lines     = max(fixed_primary, fixed_secondary)
+
+                max_data_rows = PAGE_SIZE - fixed_lines
+
+                rows_this_chunk = min(total_rows - row_idx, max_data_rows)
+                chunk           = rows[row_idx: row_idx + rows_this_chunk]
+                is_last_chunk   = (row_idx + rows_this_chunk) >= total_rows
+
+                secondary_data_lines = [
+                    _build_secondary_line(row)
+                    for _, row in chunk
+                ]
+
                 add_form_feed = _write_page(
                     report_file,
-                    sec_title_lines,
+                    title_lines,
                     secondary_header_lines,
-                    sec_data_lines,
+                    secondary_data_lines,
                     add_form_feed,
                 )
-                last_secondary_lines_used = (
-                    len(sec_title_lines) + len(secondary_header_lines) + len(sec_data_lines)
-                )
 
-            # ── PHASE 3: SUBTOTAL UNDER PRIMARY HEADER ───────────────────────
-            # If the subtotal block fits on the last primary data page, write it
-            # there (inline). Otherwise open a dedicated page with title + primary
-            # header only, then write the subtotal beneath it.
+                if is_last_chunk:
+                    lines_used = fixed_secondary + rows_this_chunk
+                    last_secondary_lines_used  = lines_used
+                    last_secondary_title_lines = title_lines
+
+                row_idx += rows_this_chunk
+
+            # ── PRIMARY SUBTOTAL (after all secondary data pages) ────────────
+            # If the subtotal fit inline on the last primary data page, it still
+            # needs its own page here — because secondary data pages have since
+            # been written between them. Use the inline flag only to decide
+            # whether a new page is needed vs. it already having enough space;
+            # since secondary pages were written after, always open a fresh page.
             title_lines = _build_title_lines(title1, title2, report_date, brn_code)
-
-            if (PAGE_SIZE - last_primary_lines_used) >= SUBTOTAL_LINES:
-                # Fits inline on the last primary page — no new page needed.
-                # The page was already written; just append the subtotal to the
-                # file stream (it follows immediately after the last data row).
-                _write_branch_subtotal(report_file, *subtotal_args)
+            if primary_subtotal_inline:
+                # Fits in terms of line count — but secondary pages were written
+                # after the last primary page, so we still need a new page.
+                add_form_feed = _write_page(
+                    report_file, title_lines, primary_header_lines, [], add_form_feed
+                )
             else:
                 add_form_feed = _write_page(
                     report_file, title_lines, primary_header_lines, [], add_form_feed
                 )
-                _write_branch_subtotal(report_file, *subtotal_args)
+            _write_branch_subtotal(report_file, *subtotal_args)
 
-            # ── PHASE 4: SUBTOTAL UNDER SECONDARY HEADER ─────────────────────
-            # Same inline-or-new-page decision, driven by the last secondary page.
+            # ── SECONDARY SUBTOTAL ───────────────────────────────────────────
             title_lines = _build_title_lines(title1, title2, report_date, brn_code)
-
             if (PAGE_SIZE - last_secondary_lines_used) >= SUBTOTAL_LINES:
                 _write_branch_subtotal(report_file, *subtotal_args)
             else:
