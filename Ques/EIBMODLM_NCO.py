@@ -59,6 +59,13 @@ OUTPUT_PIBB_REPORT = build_output_file(OUTPUT_DIR, "PIBB_ODLIMIT_REPORT").with_s
 # Report configuration
 PAGE_SIZE = 50  # PS=50 in OPTIONS
 
+# The subtotal block is an indivisible group of 9 lines:
+#   \n (1) + dashes (1) + approved\n\n (2) + accounts\n\n (2)
+#   + operative\n (1) + dashes\n\n (2) = 9 lines total.
+# This constant is used in _write_report_file to reserve space on the last
+# data page of each branch so the entire subtotal block always fits together.
+SUBTOTAL_LINES = 9
+
 
 # ============================================================================
 # REPORT DATE (from REPTDATE module - no reptdate.parquet file is read)
@@ -102,14 +109,14 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
 
-    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<
+    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<<<
     pandas_df = pd.read_sas(
         path,
         format="sas7bdat",
         encoding="latin1",
     )
 
-    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<
+    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
     # reader = pd.read_sas(
     #     path,
     #     format="sas7bdat",
@@ -476,31 +483,13 @@ def _format_branch_codes(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     """).df()
 
 
-def _count_subtotal_lines() -> int:
-    """Return the number of lines the branch subtotal block occupies.
-
-    The subtotal block written by _write_branch_subtotal:
-      blank line       -> 1
-      separator line   -> 1
-      approved limits  -> 1
-      blank line       -> 1
-      total accounts   -> 1
-      blank line       -> 1
-      operative limits -> 1
-      separator line   -> 1
-      blank line       -> 1
-    Total: 9 lines
-    """
-    return 9
-
-
 def _write_branch_subtotal(
     report_file,
     branch_total_limit: float,
     branch_account_count: int,
     branch_total_operative: float,
 ) -> None:
-    """Write branch-level totals block.
+    """Write branch-level totals block (9 lines, always written as one indivisible unit).
 
     SAS equivalent (COMPUTE AFTER BRN):
         LINE @26 49*'-';
@@ -508,6 +497,14 @@ def _write_branch_subtotal(
         LINE @26 'TOTAL ACCOUNTS         =' @69 NOACCT.SUM 6.;
         LINE @26 'TOTAL OPERATIVE LIMITS =' @55 LIMITS.SUM COMMA20.2;
         LINE @26 49*'-';
+
+    Line count breakdown (matches SUBTOTAL_LINES = 9):
+        \n                          -> 1
+        dashes\n                    -> 1
+        approved\n\n                -> 2
+        accounts\n\n                -> 2
+        operative\n                 -> 1
+        dashes\n\n                  -> 2
     """
     label_width = 26
     value_width = 22
@@ -663,9 +660,6 @@ def _write_report_file(
     title1, title2, od_label = _get_report_titles(is_islamic)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Number of lines the subtotal block occupies (must fit on the same page)
-    subtotal_line_count = _count_subtotal_lines()
-
     with open(output_file, 'w', encoding='utf-8') as report_file:
         add_form_feed = False
 
@@ -686,72 +680,96 @@ def _write_report_file(
 
                 fixed_primary   = len(title_lines) + len(primary_header_lines)
                 fixed_secondary = len(title_lines) + len(secondary_header_lines)
+                # Use the larger fixed-block so both primary and secondary tables
+                # are calculated against the same effective page capacity.
+                fixed_lines = max(fixed_primary, fixed_secondary)
 
-                # Maximum data rows that can fit on a page without the subtotal block.
-                # We always reserve space for the subtotal so it is never split across
-                # pages — if the last chunk cannot accommodate the subtotal on the same
-                # page, we break one row earlier and let the subtotal begin a new page.
-                max_rows_primary   = PAGE_SIZE - fixed_primary
-                max_rows_secondary = PAGE_SIZE - fixed_secondary
-                rows_this_chunk    = min(max_rows_primary, max_rows_secondary)
+                max_data_rows = PAGE_SIZE - fixed_lines
 
-                if rows_this_chunk <= 0:
+                if max_data_rows <= 0:
                     raise ValueError(
                         f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
                     )
 
-                # Determine whether this chunk is (or would be) the last one
-                chunk_candidate      = rows[row_idx: row_idx + rows_this_chunk]
-                would_be_last_chunk  = (row_idx + len(chunk_candidate)) >= total_rows
+                remaining     = total_rows - row_idx
+                will_be_last  = remaining <= max_data_rows
 
-                if would_be_last_chunk:
-                    # Check whether the subtotal block fits on the primary page together
-                    # with all remaining data rows.
-                    lines_used_primary = fixed_primary + len(chunk_candidate)
-                    subtotal_fits_primary = (
-                        lines_used_primary + subtotal_line_count <= PAGE_SIZE
+                if will_be_last:
+                    # Reserve SUBTOTAL_LINES on the last chunk so the entire
+                    # subtotal block (title+header+data+subtotal) fits within
+                    # PAGE_SIZE.  If even a single row cannot share the page
+                    # with the subtotal, rows_this_chunk becomes 0 and the
+                    # subtotal gets its own dedicated page.
+                    rows_this_chunk = min(
+                        remaining,
+                        PAGE_SIZE - fixed_lines - SUBTOTAL_LINES,
                     )
-
-                    # Check whether the subtotal block fits on the secondary page together
-                    # with all remaining data rows.
-                    lines_used_secondary = fixed_secondary + len(chunk_candidate)
-                    subtotal_fits_secondary = (
-                        lines_used_secondary + subtotal_line_count <= PAGE_SIZE
-                    )
-
-                    if not subtotal_fits_primary or not subtotal_fits_secondary:
-                        # The subtotal does not fit on at least one of the two pages.
-                        # Determine how many rows we can print on the tightest page so
-                        # that a full new page can be dedicated to the subtotal.
-                        max_with_subtotal_primary   = PAGE_SIZE - fixed_primary   - subtotal_line_count
-                        max_with_subtotal_secondary = PAGE_SIZE - fixed_secondary - subtotal_line_count
-                        safe_rows = min(max_with_subtotal_primary, max_with_subtotal_secondary)
-
-                        if safe_rows > 0 and len(chunk_candidate) > safe_rows:
-                            # Print only as many rows as safely fit; the subtotal will
-                            # appear on the next page after the remaining rows.
-                            chunk_candidate = chunk_candidate[:safe_rows]
-                            would_be_last_chunk = False  # More rows remain after this chunk
-
-                chunk        = chunk_candidate
-                is_last_chunk = would_be_last_chunk
+                else:
+                    rows_this_chunk = max_data_rows
 
                 # ── PRIMARY TABLE ────────────────────────────────────────────
-                primary_data_lines = [
-                    _build_detail_line(row, show_brn=(idx == 0))
-                    for idx, (_, row) in enumerate(chunk)
-                ]
+                if rows_this_chunk > 0:
+                    chunk = rows[row_idx: row_idx + rows_this_chunk]
+                    is_last_chunk = (row_idx + rows_this_chunk) >= total_rows
 
-                add_form_feed = _write_page(
-                    report_file,
-                    title_lines,
-                    primary_header_lines,
-                    primary_data_lines,
-                    add_form_feed,
-                )
+                    primary_data_lines = [
+                        _build_detail_line(row, show_brn=(idx == 0))
+                        for idx, (_, row) in enumerate(chunk)
+                    ]
 
-                if is_last_chunk:
-                    # Subtotal is guaranteed to fit here (validated above)
+                    add_form_feed = _write_page(
+                        report_file,
+                        title_lines,
+                        primary_header_lines,
+                        primary_data_lines,
+                        add_form_feed,
+                    )
+
+                    if is_last_chunk:
+                        _write_branch_subtotal(
+                            report_file,
+                            float(branch_rows['APPRLIMT'].sum()),
+                            int(len(branch_rows)),
+                            float(branch_rows['LIMITS'].sum()),
+                        )
+
+                    # ── SECONDARY TABLE ──────────────────────────────────────
+                    secondary_data_lines = [
+                        _build_secondary_line(row)
+                        for _, row in chunk
+                    ]
+
+                    add_form_feed = _write_page(
+                        report_file,
+                        title_lines,
+                        secondary_header_lines,
+                        secondary_data_lines,
+                        add_form_feed,
+                    )
+
+                    if is_last_chunk:
+                        _write_branch_subtotal(
+                            report_file,
+                            float(branch_rows['APPRLIMT'].sum()),
+                            int(len(branch_rows)),
+                            float(branch_rows['LIMITS'].sum()),
+                        )
+
+                else:
+                    # rows_this_chunk == 0: the subtotal cannot share a page with
+                    # any data row.  Open a dedicated page for the subtotal block,
+                    # prepended with title + primary header (then secondary header),
+                    # matching the standard page structure required by the report.
+                    is_last_chunk = True
+
+                    # Primary header page (empty data, then subtotal)
+                    add_form_feed = _write_page(
+                        report_file,
+                        title_lines,
+                        primary_header_lines,
+                        [],
+                        add_form_feed,
+                    )
                     _write_branch_subtotal(
                         report_file,
                         float(branch_rows['APPRLIMT'].sum()),
@@ -759,22 +777,14 @@ def _write_report_file(
                         float(branch_rows['LIMITS'].sum()),
                     )
 
-                # ── SECONDARY TABLE ──────────────────────────────────────────
-                secondary_data_lines = [
-                    _build_secondary_line(row)
-                    for _, row in chunk
-                ]
-
-                add_form_feed = _write_page(
-                    report_file,
-                    title_lines,
-                    secondary_header_lines,
-                    secondary_data_lines,
-                    add_form_feed,
-                )
-
-                if is_last_chunk:
-                    # Subtotal is guaranteed to fit here (validated above)
+                    # Secondary header page (empty data, then subtotal)
+                    add_form_feed = _write_page(
+                        report_file,
+                        title_lines,
+                        secondary_header_lines,
+                        [],
+                        add_form_feed,
+                    )
                     _write_branch_subtotal(
                         report_file,
                         float(branch_rows['APPRLIMT'].sum()),
@@ -782,7 +792,10 @@ def _write_report_file(
                         float(branch_rows['LIMITS'].sum()),
                     )
 
-                row_idx += len(chunk)
+                # Advance by the number of rows actually consumed this iteration.
+                # When rows_this_chunk is 0 we still need to advance past the
+                # remaining rows (which were all flushed as the subtotal-only page).
+                row_idx += rows_this_chunk if rows_this_chunk > 0 else remaining
 
 
 def generate_od_report(
