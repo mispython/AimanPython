@@ -1,3 +1,20 @@
+Step 2: Loading and filtering TLBTRAN weekly files...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 597, in <module>
+    df_all = _load_tlbtran_all(con)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 224, in _load_tlbtran_all
+    df_all = df_all.filter(pl.col("TRANCODE").is_in([2222, 2223]))
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 5325, in filter
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.InvalidOperationError: 'is_in' cannot check for List(Int64) values in String data
+
+
 DATA BRH (KEEP=D_TRX_BRANCH D_TRX_BRCHCODE);
   	INFILE BRHFILE;
   	INPUT @002 D_TRX_BRCHCODE   3.
