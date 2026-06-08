@@ -1,3 +1,16 @@
+Step 6: Merging CIT year data with branch reference...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 684, in <module>
+    df_cit_report = _merge_with_branch(con, df_cit_year, df_branch)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 446, in _merge_with_branch
+    merged = con.execute(f"""
+_duckdb.BinderException: Binder Error: Values list "c" does not have a column named "AMOUNT01"
+
+LINE 5:             COALESCE(c."AMOUNT01", 0) AS "AMOUNT01", COALESCE(c."AMOUNT02", 0...
+                             ^
+
+----------
+
 def _create_empty_cit_year() -> pl.DataFrame:
     """SAS-equivalent empty dataset with full schema"""
 
