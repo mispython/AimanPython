@@ -1,5 +1,5 @@
 # ============================================================
-# FILE: output_namer.py
+# FILE: output_date.py
 # PURPOSE: Universal output filename generator
 # ============================================================
 
@@ -39,8 +39,9 @@ def build_output_file(
 
     date_part = reptdate.strftime(fmt)
 
-    time_part = datetime.now().strftime("%H%M%S")
+    # time_part = datetime.now().strftime("%H%M%S")
 
-    filename = f"{prefix}_{date_part}_{time_part}"
+    # filename = f"{prefix}_{date_part}_{time_part}"
+    filename = f"{prefix}_{date_part}"
 
     return output_dir / filename
