@@ -1,18 +1,59 @@
-Step 2: Loading and filtering TLBTRAN weekly files...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 597, in <module>
-    df_all = _load_tlbtran_all(con)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 224, in _load_tlbtran_all
-    df_all = df_all.filter(pl.col("TRANCODE").is_in([2222, 2223]))
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 5325, in filter
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.InvalidOperationError: 'is_in' cannot check for List(Int64) values in String data
+def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
+    """
+    SAS equivalent:
+        DATA CIT.CIT&REPTYEAR;
+            SET FINAL;
+        OR
+        MERGE CIT.CIT&REPTYEAR FINAL;
+    """
+
+    amount_col = f"AMOUNT{REPTMON}"
+    noacct_col = f"NOACCT{REPTMON}"
+
+    # =========================================================
+    # 🔥 CASE 1: JANUARY → CREATE NEW YEARLY DATASET
+    # =========================================================
+    if REPTMON == "01" or not CIT_YEAR_FILE.exists():
+
+        stub_exprs = []
+        for m in range(2, 13):
+            mm = str(m).zfill(2)
+            stub_exprs.append(pl.lit(0.0).cast(pl.Float64).alias(f"AMOUNT{mm}"))
+            stub_exprs.append(pl.lit(0).cast(pl.Int64).alias(f"NOACCT{mm}"))
+
+        df_cit_year = df_final.with_columns(stub_exprs)
+
+    # =========================================================
+    # 🔥 CASE 2: FEB–DEC → MERGE WITH EXISTING DATASET
+    # =========================================================
+    else:
+        try:
+            df_existing = pl.read_parquet(CIT_YEAR_FILE)
+        except Exception:
+            # If file is missing or corrupted, behave like SAS "fresh dataset"
+            df_existing = pl.DataFrame()
+
+        # Remove current month columns from existing (SAS MERGE overwrite behavior)
+        for col in (amount_col, noacct_col):
+            if col in df_existing.columns:
+                df_existing = df_existing.drop(col)
+
+        # Ensure FINAL has correct schema alignment
+        df_cit_year = df_existing.join(
+            df_final,
+            on="BRANCH",
+            how="outer_coalesce"
+        )
+
+        # Fill nulls with 0 (SAS missing numeric default behavior)
+        df_cit_year = df_cit_year.fill_null(0)
+
+    # =========================================================
+    # SAVE (equivalent to CIT.CIT&REPTYEAR update)
+    # =========================================================
+    df_cit_year.write_parquet(CIT_YEAR_FILE)
+
+    return df_cit_year.sort("BRANCH")
 
 
 DATA BRH (KEEP=D_TRX_BRANCH D_TRX_BRCHCODE);
