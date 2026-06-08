@@ -29,7 +29,7 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLM"
 
 # # Production Path
 # INPUT_DIR  = Path("/dwh")
-# OUTPUT_DIR = Path("/host/mis/output/report") / "EIBMODLM"
+# OUTPUT_DIR = Path("/host/mis/output/report")
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -46,9 +46,8 @@ INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")
 # INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR / "idp_lm", "ilm")      # File name example - ilm05226.sas7bdat
 
 # Shared customer name lookup file (ACCTNO -> NAME)
-# INPUT_CUSTNAME     = get_latest_file(INPUT_DIR, "cisr1ca")
-INPUT_CUSTNAME     = BASE_DIR / "input/uat" / "stg_dp_limit.sas7bdat"   # stg_dp_limit.sas7bdat
-# INPUT_CUSTNAME     = get_latest_file(INPUT_DIR / "rsd_cis", "cisr1ca")  # File name example - cisr1ca05226.sas7bdat
+INPUT_CUSTNAME     = BASE_DIR / "input/uat" / "stg_dp_limit.sas7bdat"
+# INPUT_CUSTNAME     = Path("/sas/deposit/dwh/staging") / "stg_dp_limit.sas7bdat"
 
 # Output paths
 OUTPUT_PBB_REPORT  = build_output_file(OUTPUT_DIR, "PBB_ODLIMIT_REPORT").with_suffix(".txt")
@@ -130,6 +129,7 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
         for col in pandas_df.columns
     ]
 
+    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
     # print(f"\nDEBUG COLUMN NAMES [{path.name}]:")
     # print(pandas_df.head(10))
 
@@ -284,9 +284,9 @@ def _load_overdraft_data(
 
     # Tag each row with its original file position BEFORE any filter or sort.
     # This is critical: SAS PROC SORT is a stable sort, so rows with the same
-    # ACCTNO retain their original file sequence. Without this tag, ORDER BY
-    # ACCTNO in DuckDB produces an arbitrary intra-group order, causing RCNT
-    # to be assigned to the wrong rows and producing wrong LIMIT/RATE/COLL slots.
+    #                   ACCTNO retain their original file sequence. Without this tag, ORDER BY
+    #                   ACCTNO in DuckDB produces an arbitrary intra-group order, causing RCNT
+    #                   to be assigned to the wrong rows and producing wrong LIMIT/RATE/COLL slots.
     ovdr_pd = ovdr_df.to_pandas()
     ovdr_pd["_ROW_NUM"] = range(len(ovdr_pd))
     con.register('ovdr_raw', ovdr_pd)
@@ -695,9 +695,6 @@ def _write_report_file(
                         f"PAGE_SIZE={PAGE_SIZE} too small for report title/header blocks."
                     )
 
-                # Always fill the page to its natural capacity.
-                # Never trim rows off the bottom to make room for the subtotal —
-                # the subtotal placement decision is made AFTER writing the data.
                 rows_this_chunk = min(total_rows - row_idx, max_data_rows)
                 chunk           = rows[row_idx: row_idx + rows_this_chunk]
                 is_last_chunk   = (row_idx + rows_this_chunk) >= total_rows
@@ -716,19 +713,19 @@ def _write_report_file(
                     add_form_feed,
                 )
 
+                # Determine whether the primary subtotal fits inline or overflows.
+                # If it overflows, defer it — it will be written on its own dedicated
+                # page (Title + BRN + primary_header_lines) placed immediately before
+                # the secondary subtotal's dedicated page, so both appear together
+                # at the end after all data tables have been written.
+                primary_subtotal_deferred = False
+
                 if is_last_chunk:
-                    # After writing all data rows, check remaining space on this
-                    # page. If the subtotal block fits, write it here. Otherwise,
-                    # open a new page (title + primary header, no data) and write
-                    # it there — the data rows already printed stay where they are.
                     lines_used = fixed_primary + rows_this_chunk
                     if (PAGE_SIZE - lines_used) >= SUBTOTAL_LINES:
                         _write_branch_subtotal(report_file, *subtotal_args)
                     else:
-                        add_form_feed = _write_page(
-                            report_file, title_lines, primary_header_lines, [], add_form_feed,
-                        )
-                        _write_branch_subtotal(report_file, *subtotal_args)
+                        primary_subtotal_deferred = True
 
                 # ── SECONDARY TABLE ──────────────────────────────────────────
                 secondary_data_lines = [
@@ -747,10 +744,35 @@ def _write_report_file(
                 if is_last_chunk:
                     lines_used = fixed_secondary + rows_this_chunk
                     if (PAGE_SIZE - lines_used) >= SUBTOTAL_LINES:
+                        # Secondary fits inline on its last data page.
+                        # Write the deferred primary subtotal first (if any) — it
+                        # shares this same page — then the secondary subtotal.
+                        if primary_subtotal_deferred:
+                            _write_branch_subtotal(report_file, *subtotal_args)
                         _write_branch_subtotal(report_file, *subtotal_args)
                     else:
+                        # Secondary also overflows. Each subtotal gets its own
+                        # dedicated page with the appropriate header block.
+                        #
+                        # Page order:
+                        #   1. Title + BRN + primary_header_lines  → primary subtotal
+                        #   2. Title + BRN + secondary_header_lines → secondary subtotal
+                        if primary_subtotal_deferred:
+                            add_form_feed = _write_page(
+                                report_file,
+                                title_lines,
+                                primary_header_lines,
+                                [],
+                                add_form_feed,
+                            )
+                            _write_branch_subtotal(report_file, *subtotal_args)
+
                         add_form_feed = _write_page(
-                            report_file, title_lines, secondary_header_lines, [], add_form_feed,
+                            report_file,
+                            title_lines,
+                            secondary_header_lines,
+                            [],
+                            add_form_feed,
                         )
                         _write_branch_subtotal(report_file, *subtotal_args)
 
