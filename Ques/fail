@@ -1,26 +1,43 @@
-Step 5: Appending to yearly CIT file [CIT26.parquet]...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 652, in <module>
-    df_cit_year = _append_to_cit_year(df_final)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 360, in _append_to_cit_year
-    df_existing = pl.read_parquet(CIT_YEAR_FILE)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/io/parquet/functions.py", line 289, in read_parquet
-    return lf.collect()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ComputeError: failed to retrieve first file schema (parquet): expanded paths were empty (path expansion input: 'paths: [Local("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/CIT26.parquet")]', glob: true). Hint: passing a schema can allow this scan to succeed with an empty DataFrame.
+def _create_empty_cit_year() -> pl.DataFrame:
+    """SAS-equivalent empty dataset with full schema"""
 
-This error occurred with the following context stack:
-        [1] 'parquet scan'
-        [2] 'sink'
+    data = {}
+
+    data["BRANCH"] = pl.Series([], dtype=pl.Int64)
+
+    for m in range(1, 13):
+        mm = str(m).zfill(2)
+        data[f"AMOUNT{mm}"] = pl.Series([], dtype=pl.Float64)
+        data[f"NOACCT{mm}"] = pl.Series([], dtype=pl.Int64)
+
+    return pl.DataFrame(data)
+
+
+def _safe_read_cit_parquet(path: Path) -> pl.DataFrame:
+    """
+    Safe parquet reader (SAS-style robustness)
+    Prevents corrupted or schema-less parquet crashes
+    """
+
+    try:
+        if not path.exists():
+            return _create_empty_cit_year()
+
+        # extra safety: detect broken files
+        if path.stat().st_size < 500:
+            return _create_empty_cit_year()
+
+        df = pl.read_parquet(path)
+
+        # schema validation (VERY IMPORTANT)
+        if df.is_empty() or "BRANCH" not in df.columns:
+            return _create_empty_cit_year()
+
+        return df
+
+    except Exception:
+        # any corruption fallback
+        return _create_empty_cit_year()
 
 ----------
 
