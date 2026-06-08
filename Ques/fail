@@ -1,3 +1,25 @@
+Step 5: Appending to yearly CIT file [CIT26.parquet]...
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py:350: DeprecationWarning: use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.
+(Deprecated in version 0.20.29)
+  df_cit_year = df_existing.join(
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 633, in <module>
+    df_cit_year = _append_to_cit_year(df_final)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 350, in _append_to_cit_year
+    df_cit_year = df_existing.join(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ColumnNotFoundError: unable to find column "BRANCH"; valid columns: []
+
+
 def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
     """
     SAS equivalent:
