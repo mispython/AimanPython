@@ -1,3 +1,29 @@
+Step 5: Appending to yearly CIT file [CIT26.parquet]...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 652, in <module>
+    df_cit_year = _append_to_cit_year(df_final)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 360, in _append_to_cit_year
+    df_existing = pl.read_parquet(CIT_YEAR_FILE)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/io/parquet/functions.py", line 289, in read_parquet
+    return lf.collect()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ComputeError: failed to retrieve first file schema (parquet): expanded paths were empty (path expansion input: 'paths: [Local("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/CIT26.parquet")]', glob: true). Hint: passing a schema can allow this scan to succeed with an empty DataFrame.
+
+This error occurred with the following context stack:
+        [1] 'parquet scan'
+        [2] 'sink'
+
+----------
+
 # =====================================================================
 # CIT SCHEMA (SAS-LIKE FIXED STRUCTURE)
 # =====================================================================
