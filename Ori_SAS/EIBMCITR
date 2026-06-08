@@ -1,0 +1,295 @@
+//EIBMCITR JOB ACCOUNT-CODE,'EIBWTLTR',                                 JOB05765
+//         MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
+//         REGION=64M,NOTIFY=&SYSUID
+/*JOBPARM S=S1M1
+//*---------------------------------------------------------------------
+//* PROGRAM  : EIBMCITR
+//* ESMR     : 2016-2272 (TBC)
+//* DESC     : MONTHLY ACCUMULATED REPORT GOR CASH-IN-TRANSIT
+//*---------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DD01     DD DSN=SAP.PBB.MONTHLY.CIT.COLD,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//EIBMCITR  EXEC SAS609,REGION=64M,WORK='12000,12000'
+//BNM       DD DSN=SAP.TELLER.DAILY.SASDATA,DISP=SHR
+//CIT       DD DSN=SAP.TELLER.CIT.SASDATA,DISP=OLD
+//BRHFILE   DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//CITLIST   DD DSN=SAP.PBB.MONTHLY.CIT.COLD,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=1500,BLKSIZE=0),
+//             SPACE=(TRK,(1,1)),UNIT=SYSDA
+//SYSIN     DD *
+OPTIONS YEARCUTOFF=1960 NOCENTER NODATE NONUMBER MISSING=0;
+
+DATA REPTDATE;
+   REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+            PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+   CALL SYMPUT('WK1',PUT('01',$2.));
+   CALL SYMPUT('WK2',PUT('02',$2.));
+   CALL SYMPUT('WK3',PUT('03',$2.));
+   CALL SYMPUT('WK4',PUT('04',$2.));
+   CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTYEAR2',PUT(REPTDATE,YEAR4.));
+RUN;
+
+DATA BRANCH (KEEP=BRANCH BRABBR);
+  INFILE BRHFILE;
+  INPUT @002 BRANCH   3.
+        @006 BRABBR  $3.
+        @050 OPENIND $1.
+        ;
+        IF OPENIND NOT IN ('C',' ') AND BRANCH NE 279 OR BRANCH = 219;
+RUN;
+PROC SORT DATA=BRANCH; BY BRANCH; RUN;
+
+DATA ALL;
+  SET BNM.TLBTRAN&REPTYEAR&REPTMON&WK1
+      BNM.TLBTRAN&REPTYEAR&REPTMON&WK2
+      BNM.TLBTRAN&REPTYEAR&REPTMON&WK3
+      BNM.TLBTRAN&REPTYEAR&REPTMON&WK4;
+  IF TRANCODE IN (2222, 2223);
+RUN;
+PROC SORT DATA=ALL; BY REPTDATE BRANCH;RUN;
+
+DATA ALL;
+  SET ALL;
+  BY REPTDATE BRANCH;
+  IF FIRST.REPTDATE OR FIRST.BRANCH THEN NOACCT = 1;
+RUN;
+
+PROC SUMMARY DATA=ALL NWAY;
+CLASS REPTDATE BRANCH;
+VAR CASHOUT NOACCT;
+OUTPUT OUT=CIT(DROP=_TYPE_ _FREQ_)
+       SUM=AMOUNT&REPTMON NOACCT&REPTMON;
+RUN;
+
+DATA CIT;
+   SET CIT;
+   IF AMOUNT&REPTMON = 0 THEN DELETE;
+RUN;
+
+PROC SUMMARY DATA=CIT NWAY;
+CLASS BRANCH;
+VAR AMOUNT&REPTMON NOACCT&REPTMON;
+OUTPUT OUT=FINAL(DROP=_TYPE_ _FREQ_)
+       SUM=;
+RUN;
+
+%MACRO APPEND;
+   %IF "&REPTMON" EQ "01" %THEN %DO;
+      DATA CIT.CIT&REPTYEAR;
+         SET FINAL;
+         OUTPUT;
+         IF BRANCH NE . THEN DO;
+            AMOUNT02 = 0;
+            NOACCT02 = 0;
+            AMOUNT03 = 0;
+            NOACCT03 = 0;
+            AMOUNT04 = 0;
+            NOACCT04 = 0;
+            AMOUNT05 = 0;
+            NOACCT05 = 0;
+            AMOUNT06 = 0;
+            NOACCT06 = 0;
+            AMOUNT07 = 0;
+            NOACCT07 = 0;
+            AMOUNT08 = 0;
+            NOACCT08 = 0;
+            AMOUNT09 = 0;
+            NOACCT09 = 0;
+            AMOUNT10 = 0;
+            NOACCT10 = 0;
+            AMOUNT11 = 0;
+            NOACCT11 = 0;
+            AMOUNT12 = 0;
+            NOACCT12 = 0;
+        END;
+      RUN;
+   %END;
+%ELSE %DO;
+   PROC SORT DATA=FINAL; BY BRANCH;RUN;
+   DATA CIT.CIT&REPTYEAR;
+      MERGE CIT.CIT&REPTYEAR FINAL;
+      BY BRANCH;
+   RUN;
+%END;
+%MEND APPEND;
+%APPEND;
+
+PROC SORT DATA=CIT.CIT&REPTYEAR; BY BRANCH;RUN;
+DATA CIT;
+  MERGE CIT.CIT&REPTYEAR(IN=A) BRANCH(IN=B);
+  IF B;
+  RETAIN NO 0;
+  BY BRANCH;
+  SUMAMT = SUM(OF AMOUNT01-AMOUNT12);
+  SUMACT = SUM(OF NOACCT01-NOACCT12);
+  NO + 1;
+RUN;
+
+PROC SUMMARY DATA=CIT NWAY;
+VAR NOACCT01 NOACCT02 NOACCT03 NOACCT04 NOACCT05
+    NOACCT06 NOACCT07 NOACCT08 NOACCT09 NOACCT10
+    NOACCT11 NOACCT12 SUMACT
+    AMOUNT01 AMOUNT02 AMOUNT03 AMOUNT04 AMOUNT05
+    AMOUNT06 AMOUNT07 AMOUNT08 AMOUNT09 AMOUNT10
+    AMOUNT11 AMOUNT12 SUMAMT;
+OUTPUT OUT=TOTCIT SUM=;
+RUN;
+
+DATA _NULL_;
+   SET CIT;
+   FORMAT NOACCT01 NOACCT02 NOACCT03 NOACCT04 NOACCT05
+          NOACCT06 NOACCT07 NOACCT08 NOACCT09 NOACCT10
+          NOACCT11 NOACCT12 SUMACT COMMA20.
+          AMOUNT01 AMOUNT02 AMOUNT03 AMOUNT04 AMOUNT05
+          AMOUNT06 AMOUNT07 AMOUNT08 AMOUNT09 AMOUNT10
+          AMOUNT11 AMOUNT12 SUMAMT COMMA20.;
+
+   FILE CITLIST;
+   IF _N_ = 1 THEN DO;
+      PUT @1 '1CASH-IN-TRANSIT REPORT'"&REPTYEAR2";
+      PUT @001
+          @002 'NO'
+          @006 'BRANCH'
+          @013 'BRANCH'
+          @020 'JAN'
+          @038 'NO OF'
+          @047 'FEB'
+          @065 'NO OF'
+          @074 'MAR'
+          @092 'NO OF'
+          @101 'APR'
+          @119 'NO OF'
+          @128 'MAY'
+          @146 'NO OF'
+          @155 'JUN'
+          @173 'NO OF'
+          @182 'JUL'
+          @200 'NO OF'
+          @209 'AUG'
+          @227 'NO OF'
+          @236 'SEP'
+          @254 'NO OF'
+          @263 'OCT'
+          @281 'NO OF'
+          @290 'NOV'
+          @308 'NO OF'
+          @317 'DEC'
+          @335 'NO OF'
+          @344 'TOTAL'
+          @362 'TOTAL NO OF'
+             ;
+      PUT @001
+          @002
+          @006 'CODE'
+          @013
+          @020
+          @038 'TRANSIT'
+          @047
+          @065 'TRANSIT'
+          @074
+          @092 'TRANSIT'
+          @101
+          @119 'TRANSIT'
+          @128
+          @146 'TRANSIT'
+          @155
+          @173 'TRANSIT'
+          @182
+          @200 'TRANSIT'
+          @209
+          @227 'TRANSIT'
+          @236
+          @254 'TRANSIT'
+          @263
+          @281 'TRANSIT'
+          @290
+          @308 'TRANSIT'
+          @317
+          @335 'TRANSIT'
+          @344
+          @362 'TRANSIT'
+         ;
+      END;
+      PUT @001
+          @002 NO
+          @006 BRANCH
+          @013 BRABBR
+          @020 AMOUNT01
+          @038 NOACCT01
+          @047 AMOUNT02
+          @065 NOACCT02
+          @074 AMOUNT03
+          @092 NOACCT03
+          @101 AMOUNT04
+          @119 NOACCT04
+          @128 AMOUNT05
+          @146 NOACCT05
+          @155 AMOUNT06
+          @173 NOACCT06
+          @182 AMOUNT07
+          @200 NOACCT07
+          @209 AMOUNT08
+          @227 NOACCT08
+          @236 AMOUNT09
+          @254 NOACCT09
+          @263 AMOUNT10
+          @281 NOACCT10
+          @290 AMOUNT11
+          @308 NOACCT11
+          @317 AMOUNT12
+          @335 NOACCT12
+          @344 SUMAMT
+          @362 SUMACT
+             ;
+RUN;
+
+DATA _NULL_;
+   SET TOTCIT;
+   FORMAT NOACCT01 NOACCT02 NOACCT03 NOACCT04 NOACCT05
+          NOACCT06 NOACCT07 NOACCT08 NOACCT09 NOACCT10
+          NOACCT11 NOACCT12 SUMACT COMMA20.
+          AMOUNT01 AMOUNT02 AMOUNT03 AMOUNT04 AMOUNT05
+          AMOUNT06 AMOUNT07 AMOUNT08 AMOUNT09 AMOUNT10
+          AMOUNT11 AMOUNT12 SUMAMT COMMA20.;
+
+   FILE CITLIST  MOD;
+      PUT @001
+          @006
+          @013 'TOTAL'
+          @020 AMOUNT01
+          @038 NOACCT01
+          @047 AMOUNT02
+          @065 NOACCT02
+          @074 AMOUNT03
+          @092 NOACCT03
+          @101 AMOUNT04
+          @119 NOACCT04
+          @128 AMOUNT05
+          @146 NOACCT05
+          @155 AMOUNT06
+          @173 NOACCT06
+          @182 AMOUNT07
+          @200 NOACCT07
+          @209 AMOUNT08
+          @227 NOACCT08
+          @236 AMOUNT09
+          @254 NOACCT09
+          @263 AMOUNT10
+          @281 NOACCT10
+          @290 AMOUNT11
+          @308 NOACCT11
+          @317 AMOUNT12
+          @335 NOACCT12
+          @344 SUMAMT
+          @362 SUMACT
+             ;
+          OUTPUT;
+RUN;
+
