@@ -1,92 +1,61 @@
-df_amt = (
-    df.pivot(
-        index="BRANCH",
-        on="FILE_MONTH",
-        values="AMT",
-        aggregate_function="sum"
-    )
-)
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN
+======================================================================
+CASH-IN-TRANSIT MONTHLY ACCUMULATED REPORT
+======================================================================
 
-rename_amt = {}
+Report Date   : 08/06/2026
+Report Month  : 06
+Report Year   : 2026
 
-for m in range(1, 13):
-    mm = str(m).zfill(2)
-    if mm in df_amt.columns:
-        rename_amt[mm] = f"AMOUNT{mm}"
+Step 1: Reading branch reference file (DBRANCH.txt)...
+Branches loaded: 266
 
-df_amt = df_amt.rename(rename_amt)
+Step 2: Loading and filtering tlbtran weekly files...
 
+=== SCHEMA ===
+Schema([('REPTDATE', Float64), ('BRANCH', Float64), ('ACCTNO', Float64), ('AMOUNT', Float64), ('CASH_DRAWER_NUM', Float64), ('TRANDATE', Datetime(time_unit='ms', time_zone=None)), ('TRANTIME', Datetime(time_unit='ms', time_zone=None)), ('TRANCODE', String), ('CASHIN', Float64), ('CASHOUT', Float64), ('CHECKIN', Float64), ('TRANNAME', String), ('CHQIND', Float64), ('IDENTYPE', String), ('BMRSTATUS', String), ('MODEPAY', Null), ('SERVICEFEE', Float64), ('PAYFEE', String), ('REASON', String), ('PRODUCT', Float64), ('PBIND', String), ('FILE_MONTH', String)])
 
+=== DTYPES ===
+[Float64, Float64, Float64, Float64, Float64, Datetime(time_unit='ms', time_zone=None), Datetime(time_unit='ms', time_zone=None), String, Float64, Float64, Float64, String, Float64, String, String, Null, Float64, String, String, Float64, String, String]
+Transactions after TRANCODE filter: 704
 
-df_cnt = (
-    df.pivot(
-        index="BRANCH",
-        on="FILE_MONTH",
-        values="CNT",
-        aggregate_function="sum"
-    )
-)
-
-rename_cnt = {}
-
-for m in range(1, 13):
-    mm = str(m).zfill(2)
-    if mm in df_cnt.columns:
-        rename_cnt[mm] = f"NOACCT{mm}"
-
-df_cnt = df_cnt.rename(rename_cnt)
-
-
-
-df_final = df_amt.join(
-    df_cnt,
-    on="BRANCH",
-    how="left"
-)
-
-
-
-print(df.head())
-print(df["FILE_MONTH"].unique())
-
-==========
-
-if "BRANCH" not in df_existing.columns:
-    raise ValueError(
-        f"BRANCH missing from df_existing. Columns={df_existing.columns}"
-    )
-
-if "BRANCH" not in df_final.columns:
-    raise ValueError(
-        f"BRANCH missing from df_final. Columns={df_final.columns}"
-    )
-
-==========
+Step 3: Deriving NOACCT first-row flags per (REPTDATE, BRANCH)...
 
 Step 4: Aggregating CASHOUT and NOACCT to FINAL (by BRANCH)...
+   BRANCH FILE_MONTH          AMT   CNT
+0    33.0         02    5000000.0   2.0
+1   186.0         02   12478000.0   5.0
+2   193.0         02   13160000.0  12.0
+3   220.0         02  174841000.0  17.0
+4   283.0         02   24422000.0  11.0
+['02']
 Branches with non-zero CASHOUT: 219
 DEBUG df_final.columns:
-['BRANCH', 'AMOUNT02', 'BRANCH_right', 'NOACCT02', 'AMOUNT01', 'NOACCT01', 'AMOUNT03', 'NOACCT03', 'AMOUNT04', 'NOACCT04', 'AMOUNT05', 'NOACCT05', 'AMOUNT06', 'NOACCT06', 'AMOUNT07', 'NOACCT07', 'AMOUNT08', 'NOACCT08', 'AMOUNT09', 'NOACCT09', 'AMOUNT10', 'NOACCT10', 'AMOUNT11', 'NOACCT11', 'AMOUNT12', 'NOACCT12']
+['BRANCH', 'AMOUNT02', 'NOACCT02', 'AMOUNT01', 'NOACCT01', 'AMOUNT03', 'NOACCT03', 'AMOUNT04', 'NOACCT04', 'AMOUNT05', 'NOACCT05', 'AMOUNT06', 'NOACCT06', 'AMOUNT07', 'NOACCT07', 'AMOUNT08', 'NOACCT08', 'AMOUNT09', 'NOACCT09', 'AMOUNT10', 'NOACCT10', 'AMOUNT11', 'NOACCT11', 'AMOUNT12', 'NOACCT12']
 DEBUG df_final.schema:
-Schema([('BRANCH', Float64), ('AMOUNT02', Float64), ('BRANCH_right', Float64), ('NOACCT02', Float64), ('AMOUNT01', Int32), ('NOACCT01', Int32), ('AMOUNT03', Int32), ('NOACCT03', Int32), ('AMOUNT04', Int32), ('NOACCT04', Int32), ('AMOUNT05', Int32), ('NOACCT05', Int32), ('AMOUNT06', Int32), ('NOACCT06', Int32), ('AMOUNT07', Int32), ('NOACCT07', Int32), ('AMOUNT08', Int32), ('NOACCT08', Int32), ('AMOUNT09', Int32), ('NOACCT09', Int32), ('AMOUNT10', Int32), ('NOACCT10', Int32), ('AMOUNT11', Int32), ('NOACCT11', Int32), ('AMOUNT12', Int32), ('NOACCT12', Int32)])
+Schema([('BRANCH', Float64), ('AMOUNT02', Float64), ('NOACCT02', Float64), ('AMOUNT01', Int32), ('NOACCT01', Int32), ('AMOUNT03', Int32), ('NOACCT03', Int32), ('AMOUNT04', Int32), ('NOACCT04', Int32), ('AMOUNT05', Int32), ('NOACCT05', Int32), ('AMOUNT06', Int32), ('NOACCT06', Int32), ('AMOUNT07', Int32), ('NOACCT07', Int32), ('AMOUNT08', Int32), ('NOACCT08', Int32), ('AMOUNT09', Int32), ('NOACCT09', Int32), ('AMOUNT10', Int32), ('NOACCT10', Int32), ('AMOUNT11', Int32), ('NOACCT11', Int32), ('AMOUNT12', Int32), ('NOACCT12', Int32)])
 
 Step 5: Appending to yearly CIT file [CIT_AII_26.parquet]...
 
 === START DEBUG BEFORE JOIN ===
 df_existing columns:
-['BRANCH']
+['BRANCH', 'BRANCH_right']
 df_existing schema:
-Schema([('BRANCH', Int64)])
+Schema([('BRANCH', Int64), ('BRANCH_right', Float64)])
 df_final columns:
-['BRANCH', 'AMOUNT02', 'BRANCH_right', 'NOACCT02', 'AMOUNT01', 'NOACCT01', 'AMOUNT03', 'NOACCT03', 'AMOUNT04', 'NOACCT04', 'AMOUNT05', 'NOACCT05', 'AMOUNT06', 'NOACCT06', 'AMOUNT07', 'NOACCT07', 'AMOUNT08', 'NOACCT08', 'AMOUNT09', 'NOACCT09', 'AMOUNT10', 'NOACCT10', 'AMOUNT11', 'NOACCT11', 'AMOUNT12', 'NOACCT12']
+['BRANCH', 'AMOUNT02', 'NOACCT02', 'AMOUNT01', 'NOACCT01', 'AMOUNT03', 'NOACCT03', 'AMOUNT04', 'NOACCT04', 'AMOUNT05', 'NOACCT05', 'AMOUNT06', 'NOACCT06', 'AMOUNT07', 'NOACCT07', 'AMOUNT08', 'NOACCT08', 'AMOUNT09', 'NOACCT09', 'AMOUNT10', 'NOACCT10', 'AMOUNT11', 'NOACCT11', 'AMOUNT12', 'NOACCT12']
 df_final schema:
-Schema([('BRANCH', Int64), ('AMOUNT02', Float64), ('BRANCH_right', Float64), ('NOACCT02', Float64), ('AMOUNT01', Int32), ('NOACCT01', Int32), ('AMOUNT03', Int32), ('NOACCT03', Int32), ('AMOUNT04', Int32), ('NOACCT04', Int32), ('AMOUNT05', Int32), ('NOACCT05', Int32), ('AMOUNT06', Int32), ('NOACCT06', Int32), ('AMOUNT07', Int32), ('NOACCT07', Int32), ('AMOUNT08', Int32), ('NOACCT08', Int32), ('AMOUNT09', Int32), ('NOACCT09', Int32), ('AMOUNT10', Int32), ('NOACCT10', Int32), ('AMOUNT11', Int32), ('NOACCT11', Int32), ('AMOUNT12', Int32), ('NOACCT12', Int32)])
+Schema([('BRANCH', Int64), ('AMOUNT02', Float64), ('NOACCT02', Float64), ('AMOUNT01', Int32), ('NOACCT01', Int32), ('AMOUNT03', Int32), ('NOACCT03', Int32), ('AMOUNT04', Int32), ('NOACCT04', Int32), ('AMOUNT05', Int32), ('NOACCT05', Int32), ('AMOUNT06', Int32), ('NOACCT06', Int32), ('AMOUNT07', Int32), ('NOACCT07', Int32), ('AMOUNT08', Int32), ('NOACCT08', Int32), ('AMOUNT09', Int32), ('NOACCT09', Int32), ('AMOUNT10', Int32), ('NOACCT10', Int32), ('AMOUNT11', Int32), ('NOACCT11', Int32), ('AMOUNT12', Int32), ('NOACCT12', Int32)])
 
 === END DEBUG BEFORE JOIN ===
+
+thread '<unnamed>' (29529) panicked at crates/polars-core/src/series/mod.rs:1117:13:
+implementation error, cannot get ref Int64 from Float64
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 821, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 850, in <module>
     df_cit_year = _append_to_cit_year(df_final)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 535, in _append_to_cit_year
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 564, in _append_to_cit_year
     df_year = df_existing.join(
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
     return function(*args, **kwargs)
@@ -98,204 +67,7 @@ Traceback (most recent call last):
     return function(*args, **kwargs)
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
     return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.DuplicateError: column rename attempted with already existing name "BRANCH_right"
-
-----------
-
-Step 2: Loading and filtering tlbtran weekly files...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 773, in <module>
-    df_all = _load_tlbtran_all(con)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 310, in _load_tlbtran_all
-    weekly_dfs = [
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 311, in <listcomp>
-    _read_sas7bdat_with_month(wk_path)
-TypeError: _read_sas7bdat_with_month() missing 1 required positional argument: 'month'
-
-
-def _load_tlbtran_all(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
-    """Load and concatenate all 4 weekly TLBTRAN files, filter TRANCODE IN (2222,2223).
-
-    SAS equivalent:
-        DATA ALL;
-            SET BNM.TLBTRAN&REPTYEAR&REPTMON&WK1
-                BNM.TLBTRAN&REPTYEAR&REPTMON&WK2
-                BNM.TLBTRAN&REPTYEAR&REPTMON&WK3
-                BNM.TLBTRAN&REPTYEAR&REPTMON&WK4;
-            IF TRANCODE IN (2222, 2223);
-        PROC SORT DATA=ALL; BY REPTDATE BRANCH;
-    """
-    weekly_dfs = [
-        _read_sas7bdat_with_month(wk_path)
-        for wk_path in (
-            INPUT_TLBTRAN_WK1,
-            INPUT_TLBTRAN_WK2,
-            INPUT_TLBTRAN_WK3,
-            INPUT_TLBTRAN_WK4,
-        )
-    ]
-
---------------
-
-def build_month_final(con, df_all):
-    """
-    Monthly aggregation (FIXED SAS-style logic)
-    - Uses FILE_MONTH from filename (NOT REPTMON)
-    - Produces AMOUNT01–12 and NOACCT01–12 correctly
-    """
-
-    con.register("all_noacct", df_all.to_pandas())
-
-    # =========================================================
-    # STEP 1: GROUP BY BRANCH + FILE_MONTH
-    # =========================================================
-    df = con.execute("""
-        SELECT
-            BRANCH,
-            FILE_MONTH,
-            SUM(CASHOUT) AS AMT,
-            SUM(NOACCT) AS CNT
-        FROM all_noacct
-        GROUP BY BRANCH, FILE_MONTH
-    """).df()
-
-    df = pl.from_pandas(df)
-
-    # =========================================================
-    # STEP 2: PIVOT AMOUNT (MONTH → COLUMN)
-    # =========================================================
-    df_amt = df.pivot(
-        index="BRANCH",
-        columns="FILE_MONTH",
-        values="AMT",
-        aggregate_function="sum"
-    )
-
-    # =========================================================
-    # STEP 3: PIVOT NOACCT (MONTH → COLUMN)
-    # =========================================================
-    df_cnt = df.pivot(
-        index="BRANCH",
-        columns="FILE_MONTH",
-        values="CNT",
-        aggregate_function="sum"
-    )
-
-    # =========================================================
-    # STEP 4: MERGE BOTH TABLES
-    # =========================================================
-    df_final = df_amt.join(df_cnt, on="BRANCH", how="outer")
-
-    # =========================================================
-    # STEP 5: CLEAN NULLS
-    # =========================================================
-    df_final = df_final.fill_null(0)
-
-    # =========================================================
-    # STEP 6: RENAME COLUMNS TO SAS FORMAT
-    # =========================================================
-    rename_map = {}
-
-    for m in range(1, 13):
-        mm = str(m).zfill(2)
-
-        if mm in df_final.columns:
-            rename_map[mm] = f"AMOUNT{mm}"
-
-        # NOACCT pivot may create suffix variations depending on engine
-        if mm + "_right" in df_final.columns:
-            rename_map[mm + "_right"] = f"NOACCT{mm}"
-
-        if mm not in df_final.columns and f"{mm}_right" not in df_final.columns:
-            # ensure missing months still exist if needed later
-            df_final = df_final.with_columns([
-                pl.lit(0).alias(f"AMOUNT{mm}"),
-                pl.lit(0).alias(f"NOACCT{mm}")
-            ])
-
-    df_final = df_final.rename(rename_map)
-
-    # =========================================================
-    # STEP 7: ENSURE ALL REQUIRED COLUMNS EXIST (SAFETY)
-    # =========================================================
-    for m in range(1, 13):
-        mm = str(m).zfill(2)
-
-        if f"AMOUNT{mm}" not in df_final.columns:
-            df_final = df_final.with_columns(pl.lit(0).alias(f"AMOUNT{mm}"))
-
-        if f"NOACCT{mm}" not in df_final.columns:
-            df_final = df_final.with_columns(pl.lit(0).alias(f"NOACCT{mm}"))
-
-    # =========================================================
-    # STEP 8: FINAL OUTPUT
-    # =========================================================
-    return df_final.sort("BRANCH")
-
-----------
-
-def extract_month(path: Path) -> str:
-    # tlbtran01126 → "01"
-    match = re.match(r"tlbtran(\d{2})\d{3}", path.name.lower())
-    if not match:
-        raise ValueError(f"Invalid filename: {path.name}")
-    return match.group(1)
-
-
-def _read_sas7bdat(path: Path, month: str) -> pl.DataFrame:
-    pdf = pd.read_sas(path, format="sas7bdat", encoding="latin1")
-    pdf.columns = [c.upper().strip() for c in pdf.columns]
-
-    pdf["FILE_MONTH"] = month  # 🔥 KEY FIX
-
-    return pl.from_pandas(pdf)
-
-
-weekly_dfs = [
-    _read_sas7bdat(wk_path, extract_month(wk_path))
-    for wk_path in (
-        INPUT_TLBTRAN_WK1,
-        INPUT_TLBTRAN_WK2,
-        INPUT_TLBTRAN_WK3,
-        INPUT_TLBTRAN_WK4,
-    )
-]
-
-
-df_all = df_all.with_columns([
-    pl.col("FILE_MONTH")
-])
-
-
-df = con.execute("""
-    SELECT
-        BRANCH,
-        FILE_MONTH,
-        SUM(CASHOUT) AS AMT,
-        SUM(NOACCT) AS CNT
-    FROM all_noacct
-    GROUP BY BRANCH, FILE_MONTH
-""").df()
-
-
-df = pl.from_pandas(df)
-
-df = df.pivot(
-    index="BRANCH",
-    columns="FILE_MONTH",
-    values="AMT"
-).rename(lambda c: f"AMOUNT{c}" if c.isdigit() else c)
-
-
-df2 = pl.from_pandas(df2)
-
-df2 = df2.pivot(
-    index="BRANCH",
-    columns="FILE_MONTH",
-    values="CNT"
-).rename(lambda c: f"NOACCT{c}" if c.isdigit() else c)
-
-
+pyo3_runtime.PanicException: implementation error, cannot get ref Int64 from Float64
 
 
 ----------
