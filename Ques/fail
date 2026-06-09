@@ -1,3 +1,15 @@
+if "BRANCH" not in df_existing.columns:
+    raise ValueError(
+        f"BRANCH missing from df_existing. Columns={df_existing.columns}"
+    )
+
+if "BRANCH" not in df_final.columns:
+    raise ValueError(
+        f"BRANCH missing from df_final. Columns={df_final.columns}"
+    )
+
+==========
+
 Step 5: Appending to yearly CIT file [CIT_AII26.parquet]...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 792, in <module>
