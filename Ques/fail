@@ -1,3 +1,15 @@
+Step 2: Loading and filtering tlbtran weekly files...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 773, in <module>
+    df_all = _load_tlbtran_all(con)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 310, in _load_tlbtran_all
+    weekly_dfs = [
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 311, in <listcomp>
+    _read_sas7bdat_with_month(wk_path)
+TypeError: _read_sas7bdat_with_month() missing 1 required positional argument: 'month'
+
+--------------
+
 def build_month_final(con, df_all):
     """
     Monthly aggregation (FIXED SAS-style logic)
