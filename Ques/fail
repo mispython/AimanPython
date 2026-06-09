@@ -1,8 +1,40 @@
+======================================================================
+CASH-IN-TRANSIT MONTHLY ACCUMULATED REPORT
+======================================================================
+
+Report Date   : 08/06/2026
+Report Month  : 06
+Report Year   : 2026
+
+Step 1: Reading branch reference file (DBRANCH.txt)...
+Branches loaded: 266
+
+Step 2: Loading and filtering tlbtran weekly files...
+
+=== SCHEMA ===
+Schema([('REPTDATE', Float64), ('BRANCH', Float64), ('ACCTNO', Float64), ('AMOUNT', Float64), ('CASH_DRAWER_NUM', Float64), ('TRANDATE', Datetime(time_unit='ms', time_zone=None)), ('TRANTIME', Datetime(time_unit='ms', time_zone=None)), ('TRANCODE', String), ('CASHIN', Float64), ('CASHOUT', Float64), ('CHECKIN', Float64), ('TRANNAME', String), ('CHQIND', Float64), ('IDENTYPE', String), ('BMRSTATUS', String), ('MODEPAY', Null), ('SERVICEFEE', Float64), ('PAYFEE', String), ('REASON', String), ('PRODUCT', Float64), ('PBIND', String)])
+
+=== DTYPES ===
+[Float64, Float64, Float64, Float64, Float64, Datetime(time_unit='ms', time_zone=None), Datetime(time_unit='ms', time_zone=None), String, Float64, Float64, Float64, String, Float64, String, String, Null, Float64, String, String, Float64, String]
+Transactions after TRANCODE filter: 920
+
+Step 3: Deriving NOACCT first-row flags per (REPTDATE, BRANCH)...
+
+Step 4: Aggregating CASHOUT and NOACCT to FINAL (by BRANCH)...
+Branches with non-zero CASHOUT: 228
+DEBUG df_final.columns:
+['BRANCH', 'AMOUNT06', 'NOACCT06']
+DEBUG df_final.schema:
+Schema([('BRANCH', Float64), ('AMOUNT06', Float64), ('NOACCT06', Float64)])
+
+Step 5: Appending to yearly CIT file [CIT26.parquet]...
+Yearly CIT rows: 228
+
 Step 6: Merging CIT year data with branch reference...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 684, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 697, in <module>
     df_cit_report = _merge_with_branch(con, df_cit_year, df_branch)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 446, in _merge_with_branch
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 451, in _merge_with_branch
     merged = con.execute(f"""
 _duckdb.BinderException: Binder Error: Values list "c" does not have a column named "AMOUNT01"
 
