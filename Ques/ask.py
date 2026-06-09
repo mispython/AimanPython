@@ -432,96 +432,56 @@ def build_month_final(con, df_all):
 def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
 
     # =====================================================
-    # CASE 1: FIRST RUN (JAN / FILE DOES NOT EXIST)
+    # CASE 1: FIRST RUN
     # =====================================================
     if not CIT_YEAR_FILE.exists():
-
-        df_year = df_final.with_columns(
-            pl.col("BRANCH").cast(pl.Int64)
-        )
-
-        # ensure full 12-month structure (SAS init behavior)
-        for m in range(1, 13):
-            mm = str(m).zfill(2)
-
-            if f"AMOUNT{mm}" not in df_year.columns:
-                df_year = df_year.with_columns(pl.lit(0.0).alias(f"AMOUNT{mm}"))
-
-            if f"NOACCT{mm}" not in df_year.columns:
-                df_year = df_year.with_columns(pl.lit(0).alias(f"NOACCT{mm}"))
-
-        df_year.write_parquet(CIT_YEAR_FILE)
-        return df_year.sort("BRANCH")
+        df_final.write_parquet(CIT_YEAR_FILE)
+        return df_final.sort("BRANCH")
 
     # =====================================================
-    # CASE 2: UPDATE EXISTING YEAR FILE (FEB–DEC)
+    # CASE 2: UPDATE EXISTING YEAR FILE
     # =====================================================
-
     df_existing = _safe_read_cit_parquet(CIT_YEAR_FILE)
 
-    # enforce schema safety (CRITICAL)
-    df_existing = df_existing.with_columns(
-        pl.col("BRANCH").cast(pl.Int64)
+    df_existing = df_existing.with_columns(pl.col("BRANCH").cast(pl.Int64))
+    df_final = df_final.with_columns(pl.col("BRANCH").cast(pl.Int64))
+
+    # -----------------------------------------------------
+    # STEP 1: detect "active month columns" from df_final
+    # -----------------------------------------------------
+    update_cols = [c for c in df_final.columns if c != "BRANCH"]
+
+    # -----------------------------------------------------
+    # STEP 2: remove ONLY those columns from existing
+    # (this is the SAS "overwrite month logic")
+    # -----------------------------------------------------
+    df_existing = df_existing.drop(
+        [c for c in update_cols if c in df_existing.columns]
     )
 
-    df_final = df_final.with_columns(
-        pl.col("BRANCH").cast(pl.Int64)
-    )
+    # -----------------------------------------------------
+    # STEP 3: align missing columns in df_final to existing schema
+    # -----------------------------------------------------
+    for col in df_existing.columns:
+        if col not in df_final.columns:
+            df_final = df_final.with_columns(pl.lit(0).alias(col))
 
-    # drop current month columns (SAS overwrite behavior)
-    for col in df_final.columns:
-        if col == "BRANCH":
-            continue
-
-        if col in df_existing.columns:
-            df_existing = df_existing.drop(col)
-
-    print("\n=== START DEBUG BEFORE JOIN ===")
-
-    print ("df_existing columns:")
-    print(df_existing.columns)
-
-    print ("df_existing schema:")
-    print(df_existing.schema)
-
-    print ("df_final columns:")
-    print(df_final.columns)
-
-    print ("df_final schema:")
-    print(df_final.schema)
-
-    print("\n=== END DEBUG BEFORE JOIN ===\n")
-
-    if "BRANCH" not in df_existing.columns:
-        raise ValueError(
-            f"BRANCH missing from df_existing. Columns={df_existing.columns}"
-    )
-
-    if "BRANCH" not in df_final.columns:
-        raise ValueError(
-            f"BRANCH missing from df_final. Columns={df_final.columns}"
-    )
-
-    # enforce schema safety (CRITICAL)
-    df_existing = df_existing.with_columns(
-        pl.col("BRANCH").cast(pl.Int64)
-    )
-
-    df_final = df_final.with_columns(
-        pl.col("BRANCH").cast(pl.Int64)
-    )
-    
-    # SAS MERGE equivalent (NOT full schema rebuild)
-    df_year = df_existing.join(
-        df_final,
-        on="BRANCH",
-        how="left",
-    ).fill_null(0)
+    # -----------------------------------------------------
+    # STEP 4: combine (SAFE column union, NOT join)
+    # -----------------------------------------------------
+    df_year = df_existing.join(df_final, on="BRANCH", how="left").fill_null(0)
 
     df_year.write_parquet(CIT_YEAR_FILE)
 
     return df_year.sort("BRANCH")
 
+df_cit_year = _append_to_cit_year(df_final)
+
+print("\n=== CIT PARQUET SCHEMA ===")
+print(pl.read_parquet(CIT_YEAR_FILE).schema)
+
+print("\n=== CIT PARQUET HEAD ===")
+print(pl.read_parquet(CIT_YEAR_FILE).head())
 
 def _merge_with_branch(
     con: duckdb.DuckDBPyConnection,
