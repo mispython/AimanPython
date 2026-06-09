@@ -150,10 +150,6 @@ def cit_schema():
         schema[f"NOACCT{mm}"] = pl.Int64
 
     return schema
-
-
-def create_empty_cit_year():
-    return pl.DataFrame(schema=cit_schema())
           
 # ============================================================================
 # HELPER FUNCTIONS
@@ -189,6 +185,10 @@ def _safe_read_cit_parquet(path: Path) -> pl.DataFrame:
             return _create_empty_cit_year()
 
         df = pl.read_parquet(path)
+
+        df = df.with_columns(
+            pl.col("BRANCH").cast(pl.Int64)
+        )
 
         # schema validation (VERY IMPORTANT)
         if df.is_empty() or "BRANCH" not in df.columns:
@@ -368,57 +368,54 @@ def build_month_final(con, df_all):
     return pl.from_pandas(df)
 
 
-# =========================================================
-# MODULE C — SAS YEAR MERGE ENGINE
-# =========================================================
-
-def safe_read_cit(path: Path) -> pl.DataFrame:
-    try:
-        if not path.exists():
-            return create_empty_cit_year()
-
-        df = pl.read_parquet(path)
-
-        if df.is_empty():
-            return create_empty_cit_year()
-
-        return df
-
-    except Exception:
-        return create_empty_cit_year()
-
-
-def append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
-
-    full_schema = create_empty_cit_year()
-
-    if not CIT_YEAR_FILE.exists():
-
-        df_year = full_schema.join(
-            df_final,
-            on="BRANCH",
-            how="full",
-            coalesce=True
-        ).fill_null(0)
-
-        df_year.write_parquet(CIT_YEAR_FILE)
-        return df_year.sort("BRANCH")
-
-    df_existing = safe_read_cit(CIT_YEAR_FILE)
-
-    df_existing = full_schema.join(
-        df_existing,
-        on="BRANCH",
-        how="left"
-    ).fill_null(0)
+def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
 
     amount_col = f"AMOUNT{REPTMON}"
     noacct_col = f"NOACCT{REPTMON}"
 
-    for c in (amount_col, noacct_col):
-        if c in df_existing.columns:
-            df_existing = df_existing.drop(c)
+    # =====================================================
+    # CASE 1: FIRST RUN (JAN / FILE DOES NOT EXIST)
+    # =====================================================
+    if not CIT_YEAR_FILE.exists():
 
+        df_year = df_final.with_columns(
+            pl.col("BRANCH").cast(pl.Int64)
+        )
+
+        # ensure full 12-month structure (SAS init behavior)
+        for m in range(1, 13):
+            mm = str(m).zfill(2)
+
+            if f"AMOUNT{mm}" not in df_year.columns:
+                df_year = df_year.with_columns(pl.lit(0.0).alias(f"AMOUNT{mm}"))
+
+            if f"NOACCT{mm}" not in df_year.columns:
+                df_year = df_year.with_columns(pl.lit(0).alias(f"NOACCT{mm}"))
+
+        df_year.write_parquet(CIT_YEAR_FILE)
+        return df_year.sort("BRANCH")
+
+    # =====================================================
+    # CASE 2: UPDATE EXISTING YEAR FILE (FEB–DEC)
+    # =====================================================
+
+    df_existing = _safe_read_cit_parquet(CIT_YEAR_FILE)
+
+    # enforce schema safety (CRITICAL)
+    df_existing = df_existing.with_columns(
+        pl.col("BRANCH").cast(pl.Int64)
+    )
+
+    df_final = df_final.with_columns(
+        pl.col("BRANCH").cast(pl.Int64)
+    )
+
+    # drop current month columns (SAS overwrite behavior)
+    for col in (amount_col, noacct_col):
+        if col in df_existing.columns:
+            df_existing = df_existing.drop(col)
+
+    # SAS MERGE equivalent (NOT full schema rebuild)
     df_year = df_existing.join(
         df_final,
         on="BRANCH",
@@ -705,7 +702,7 @@ try:
     # DEBUG END HERE
 
     print(f"\nStep 5: Appending to yearly CIT file [{CIT_YEAR_FILE.name}]...")
-    df_cit_year = append_to_cit_year(df_final)
+    df_cit_year = _append_to_cit_year(df_final)
     print(f"Yearly CIT rows: {len(df_cit_year):,}")
 
     print("\nStep 6: Merging CIT year data with branch reference...")
