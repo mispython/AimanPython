@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program : EIBMCITR.py
+Program : EIBMCITR_AII_JAN.py
 Purpose : Monthly Accumulated Report for Cash-In-Transit
           Reads the 4 latest TLBTRAN .sas7bdat files (representing 4 weeks of
           the report month) and a DBRANCH.txt fixed-width branch reference file.
@@ -12,11 +12,20 @@ Purpose : Monthly Accumulated Report for Cash-In-Transit
 import duckdb
 import polars as pl
 import pandas as pd
+import re
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
 from input_date import get_latest_file
 from output_date import build_output_file
+
+
+def extract_month(path: Path) -> str:
+    # tlbtran01126 → "01"
+    match = re.match(r"tlbtran(\d{2})\d{3}", path.name.lower())
+    if not match:
+        raise ValueError(f"Invalid filename: {path.name}")
+    return match.group(1)
 
 # =====================================================================
 # CIT SCHEMA (SAS-LIKE FIXED STRUCTURE)
@@ -77,25 +86,25 @@ WK4 = "04"
 # get_latest_file returns only the single most-recent file, so we collect
 # all TLBTRAN candidates and sort by parsed date to pick the top 4.
 
-from input_date import extract_key, SUPPORTED_EXTENSIONS
+# from input_date import extract_key, SUPPORTED_EXTENSIONS
 
-def _get_latest_n_files(directory: Path, prefix: str, n: int) -> list:
-    """Return the n most-recently-dated files matching prefix in directory."""
-    files = [
-        f for f in directory.iterdir()
-        if f.is_file()
-        and f.suffix.lower() in SUPPORTED_EXTENSIONS
-        and f.name.upper().startswith(prefix.upper())
-        and extract_key(f.name) is not None
-    ]
-    if len(files) < n:
-        raise FileNotFoundError(
-            f"Expected at least {n} files with prefix '{prefix}' in {directory}, "
-            f"found {len(files)}."
-        )
-    files_sorted = sorted(files, key=lambda f: extract_key(f.name), reverse=True)
-    # Return in ascending date order (week 1 first)
-    return list(reversed(files_sorted[:n]))
+# def _get_latest_n_files(directory: Path, prefix: str, n: int) -> list:
+#     """Return the n most-recently-dated files matching prefix in directory."""
+#     files = [
+#         f for f in directory.iterdir()
+#         if f.is_file()
+#         and f.suffix.lower() in SUPPORTED_EXTENSIONS
+#         and f.name.upper().startswith(prefix.upper())
+#         and extract_key(f.name) is not None
+#     ]
+#     if len(files) < n:
+#         raise FileNotFoundError(
+#             f"Expected at least {n} files with prefix '{prefix}' in {directory}, "
+#             f"found {len(files)}."
+#         )
+#     files_sorted = sorted(files, key=lambda f: extract_key(f.name), reverse=True)
+#     # Return in ascending date order (week 1 first)
+#     return list(reversed(files_sorted[:n]))
 
 # INPUT_TLBTRAN_FILES = _get_latest_n_files(INPUT_DIR, "tlbtran", 4)
 
@@ -104,16 +113,16 @@ def _get_latest_n_files(directory: Path, prefix: str, n: int) -> list:
 # INPUT_TLBTRAN_WK3 = INPUT_TLBTRAN_FILES[2]
 # INPUT_TLBTRAN_WK4 = INPUT_TLBTRAN_FILES[3]
 
-INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran01126.sas7bdat"
-INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran01226.sas7bdat"
-INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran01326.sas7bdat"
-INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran01426.sas7bdat"
+INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran02126.sas7bdat"
+INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran02226.sas7bdat"
+INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran02326.sas7bdat"
+INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran02426.sas7bdat"
 
 # Persistent yearly CIT accumulation parquet
-CIT_YEAR_FILE = CIT_DIR / f"CIT{REPTYEAR}.parquet"
+CIT_YEAR_FILE = CIT_DIR / f"CIT_AII_{REPTYEAR}.parquet"
 
 # Output paths
-OUTPUT_CITLIST = build_output_file(OUTPUT_DIR, "EIBMCITR_CITLIST").with_suffix(".txt")
+OUTPUT_CITLIST = build_output_file(OUTPUT_DIR, "EIBMCITR_CITLIST_JAN").with_suffix(".txt")
 # Output example: EIBMCITR_CITLIST_310526.txt
 
 # ============================================================================
@@ -218,6 +227,15 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     return pl.from_pandas(pandas_df)
 
 
+def _read_sas7bdat_with_month(path: Path) -> pl.DataFrame:
+    pdf = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+    pdf.columns = [c.upper().strip() for c in pdf.columns]
+
+    pdf["FILE_MONTH"] = extract_month(path)
+
+    return pl.from_pandas(pdf)
+
+
 def _read_branch_file(path: Path) -> pl.DataFrame:
     """Parse DBRANCH.txt fixed-width flat file.
 
@@ -287,7 +305,7 @@ def _load_tlbtran_all(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
         PROC SORT DATA=ALL; BY REPTDATE BRANCH;
     """
     weekly_dfs = [
-        _read_sas7bdat(wk_path)
+        _read_sas7bdat_with_month(wk_path)
         for wk_path in (
             INPUT_TLBTRAN_WK1,
             INPUT_TLBTRAN_WK2,
@@ -309,7 +327,10 @@ def _load_tlbtran_all(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
     # print(df_all.select("TRANCODE").head(20))
     # # ----- DEBUG data type END -----
 
-    df_all = df_all.filter(pl.col("TRANCODE").is_in(["2222", "2223"]))
+    # df_all = df_all.filter(pl.col("TRANCODE").is_in(["2222", "2223"]))
+    df_all = df_all.filter(
+        pl.col("TRANCODE").cast(pl.Utf8).is_in(["2222", "2223"])
+    )
     df_all = df_all.sort(["REPTDATE", "BRANCH"])
 
     con.register("tlbtran_all", df_all.to_pandas())
@@ -342,36 +363,102 @@ def _derive_noacct(df_all: pl.DataFrame) -> pl.DataFrame:
 # =========================================================
 
 def build_month_final(con, df_all):
-    amount_col = f"AMOUNT{REPTMON}"
-    noacct_col = f"NOACCT{REPTMON}"
+    """
+    Monthly aggregation (FIXED SAS-style logic)
+    - Uses FILE_MONTH from filename (NOT REPTMON)
+    - Produces AMOUNT01–12 and NOACCT01–12 correctly
+    """
 
     con.register("all_noacct", df_all.to_pandas())
 
-    df = con.execute(f"""
-        WITH cit AS (
-            SELECT
-                BRANCH,
-                REPTDATE,
-                SUM(CASHOUT) AS AMT,
-                SUM(NOACCT) AS CNT
-            FROM all_noacct
-            GROUP BY REPTDATE, BRANCH
-        )
+    # =========================================================
+    # STEP 1: GROUP BY BRANCH + FILE_MONTH
+    # =========================================================
+    df = con.execute("""
         SELECT
             BRANCH,
-            SUM(AMT) AS "{amount_col}",
-            SUM(CNT) AS "{noacct_col}"
-        FROM cit
-        GROUP BY BRANCH
+            FILE_MONTH,
+            SUM(CASHOUT) AS AMT,
+            SUM(NOACCT) AS CNT
+        FROM all_noacct
+        GROUP BY BRANCH, FILE_MONTH
     """).df()
 
-    return pl.from_pandas(df)
+    df = pl.from_pandas(df)
+
+    # =========================================================
+    # STEP 2: PIVOT AMOUNT (MONTH → COLUMN)
+    # =========================================================
+    df_amt = df.pivot(
+        index="BRANCH",
+        on="FILE_MONTH",
+        values="AMT",
+        aggregate_function="sum"
+    )
+
+    # =========================================================
+    # STEP 3: PIVOT NOACCT (MONTH → COLUMN)
+    # =========================================================
+    df_cnt = df.pivot(
+        index="BRANCH",
+        on="FILE_MONTH",
+        values="CNT",
+        aggregate_function="sum"
+    )
+
+    # =========================================================
+    # STEP 4: MERGE BOTH TABLES
+    # =========================================================
+    df_final = df_amt.join(df_cnt, on="BRANCH", how="full")
+
+    # =========================================================
+    # STEP 5: CLEAN NULLS
+    # =========================================================
+    df_final = df_final.fill_null(0)
+
+    # =========================================================
+    # STEP 6: RENAME COLUMNS TO SAS FORMAT
+    # =========================================================
+    rename_map = {}
+
+    for m in range(1, 13):
+        mm = str(m).zfill(2)
+
+        if mm in df_final.columns:
+            rename_map[mm] = f"AMOUNT{mm}"
+
+        # NOACCT pivot may create suffix variations depending on engine
+        if mm + "_right" in df_final.columns:
+            rename_map[mm + "_right"] = f"NOACCT{mm}"
+
+        if mm not in df_final.columns and f"{mm}_right" not in df_final.columns:
+            # ensure missing months still exist if needed later
+            df_final = df_final.with_columns([
+                pl.lit(0).alias(f"AMOUNT{mm}"),
+                pl.lit(0).alias(f"NOACCT{mm}")
+            ])
+
+    df_final = df_final.rename(rename_map)
+
+    # =========================================================
+    # STEP 7: ENSURE ALL REQUIRED COLUMNS EXIST (SAFETY)
+    # =========================================================
+    for m in range(1, 13):
+        mm = str(m).zfill(2)
+
+        if f"AMOUNT{mm}" not in df_final.columns:
+            df_final = df_final.with_columns(pl.lit(0).alias(f"AMOUNT{mm}"))
+
+        if f"NOACCT{mm}" not in df_final.columns:
+            df_final = df_final.with_columns(pl.lit(0).alias(f"NOACCT{mm}"))
+
+    # =========================================================
+    # STEP 8: FINAL OUTPUT
+    # =========================================================
+    return df_final.sort("BRANCH")
 
 
 def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
-
-    amount_col = f"AMOUNT{REPTMON}"
-    noacct_col = f"NOACCT{REPTMON}"
 
     # =====================================================
     # CASE 1: FIRST RUN (JAN / FILE DOES NOT EXIST)
@@ -411,9 +498,38 @@ def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
     )
 
     # drop current month columns (SAS overwrite behavior)
-    for col in (amount_col, noacct_col):
+    for col in df_final.columns:
+        if col == "BRANCH":
+            continue
+
         if col in df_existing.columns:
             df_existing = df_existing.drop(col)
+
+    print("\n=== START DEBUG BEFORE JOIN ===")
+
+    print ("df_existing columns:")
+    print(df_existing.columns)
+
+    print ("df_existing schema:")
+    print(df_existing.schema)
+
+    print ("df_final columns:")
+    print(df_final.columns)
+
+    print ("df_final schema:")
+    print(df_final.schema)
+
+    print("\n=== END DEBUG BEFORE JOIN ===")
+
+    if "BRANCH" not in df_existing.columns:
+        raise ValueError(
+            f"BRANCH missing from df_existing. Columns={df_existing.columns}"
+    )
+
+    if "BRANCH" not in df_final.columns:
+        raise ValueError(
+            f"BRANCH missing from df_final. Columns={df_final.columns}"
+    )
 
     # SAS MERGE equivalent (NOT full schema rebuild)
     df_year = df_existing.join(
