@@ -1,19 +1,53 @@
-if not CIT_YEAR_FILE.exists():
+def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
+    """
+    SAS equivalent:
+    - First run: create CIT year dataset
+    - Subsequent runs: MERGE by BRANCH (retain full history)
+    """
 
-    df_cit_year = df_final
+    # Ensure CIT file exists?
+    if not CIT_YEAR_FILE.exists():
 
-    for m in range(1, 13):
-        mm = str(m).zfill(2)
+        # Start with full SAS structure
+        df_cit_year = _create_empty_cit_year()
 
-        if f"AMOUNT{mm}" not in df_cit_year.columns:
-            df_cit_year = df_cit_year.with_columns(
-                pl.lit(0.0).alias(f"AMOUNT{mm}")
-            )
+        # Merge current month into empty structure
+        df_cit_year = df_cit_year.join(
+            df_final,
+            on="BRANCH",
+            how="full",
+            coalesce=True
+        ).fill_null(0)
 
-        if f"NOACCT{mm}" not in df_cit_year.columns:
-            df_cit_year = df_cit_year.with_columns(
-                pl.lit(0).alias(f"NOACCT{mm}")
-            )
+    else:
+
+        # Read safely (handles corruption/empty file)
+        df_existing = _safe_read_cit_parquet(CIT_YEAR_FILE)
+
+        # Ensure schema safety
+        if df_existing.is_empty():
+            df_existing = _create_empty_cit_year()
+
+        # Remove current month columns (SAS overwrite behavior)
+        amount_col = f"AMOUNT{REPTMON}"
+        noacct_col = f"NOACCT{REPTMON}"
+
+        for col in (amount_col, noacct_col):
+            if col in df_existing.columns:
+                df_existing = df_existing.drop(col)
+
+        # MERGE LIKE SAS
+        df_cit_year = df_existing.join(
+            df_final,
+            on="BRANCH",
+            how="full",
+            coalesce=True
+        ).fill_null(0)
+
+    # Save updated CIT file
+    df_cit_year.write_parquet(CIT_YEAR_FILE)
+
+    return df_cit_year.sort("BRANCH")
 
 
 ======================================================================
