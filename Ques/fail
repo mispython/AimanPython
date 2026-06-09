@@ -10,11 +10,30 @@ if "BRANCH" not in df_final.columns:
 
 ==========
 
-Step 5: Appending to yearly CIT file [CIT_AII26.parquet]...
+Step 4: Aggregating CASHOUT and NOACCT to FINAL (by BRANCH)...
+Branches with non-zero CASHOUT: 219
+DEBUG df_final.columns:
+['BRANCH', 'AMOUNT02', 'BRANCH_right', 'NOACCT02', 'AMOUNT01', 'NOACCT01', 'AMOUNT03', 'NOACCT03', 'AMOUNT04', 'NOACCT04', 'AMOUNT05', 'NOACCT05', 'AMOUNT06', 'NOACCT06', 'AMOUNT07', 'NOACCT07', 'AMOUNT08', 'NOACCT08', 'AMOUNT09', 'NOACCT09', 'AMOUNT10', 'NOACCT10', 'AMOUNT11', 'NOACCT11', 'AMOUNT12', 'NOACCT12']
+DEBUG df_final.schema:
+Schema([('BRANCH', Float64), ('AMOUNT02', Float64), ('BRANCH_right', Float64), ('NOACCT02', Float64), ('AMOUNT01', Int32), ('NOACCT01', Int32), ('AMOUNT03', Int32), ('NOACCT03', Int32), ('AMOUNT04', Int32), ('NOACCT04', Int32), ('AMOUNT05', Int32), ('NOACCT05', Int32), ('AMOUNT06', Int32), ('NOACCT06', Int32), ('AMOUNT07', Int32), ('NOACCT07', Int32), ('AMOUNT08', Int32), ('NOACCT08', Int32), ('AMOUNT09', Int32), ('NOACCT09', Int32), ('AMOUNT10', Int32), ('NOACCT10', Int32), ('AMOUNT11', Int32), ('NOACCT11', Int32), ('AMOUNT12', Int32), ('NOACCT12', Int32)])
+
+Step 5: Appending to yearly CIT file [CIT_AII_26.parquet]...
+
+=== START DEBUG BEFORE JOIN ===
+df_existing columns:
+['BRANCH']
+df_existing schema:
+Schema([('BRANCH', Int64)])
+df_final columns:
+['BRANCH', 'AMOUNT02', 'BRANCH_right', 'NOACCT02', 'AMOUNT01', 'NOACCT01', 'AMOUNT03', 'NOACCT03', 'AMOUNT04', 'NOACCT04', 'AMOUNT05', 'NOACCT05', 'AMOUNT06', 'NOACCT06', 'AMOUNT07', 'NOACCT07', 'AMOUNT08', 'NOACCT08', 'AMOUNT09', 'NOACCT09', 'AMOUNT10', 'NOACCT10', 'AMOUNT11', 'NOACCT11', 'AMOUNT12', 'NOACCT12']
+df_final schema:
+Schema([('BRANCH', Int64), ('AMOUNT02', Float64), ('BRANCH_right', Float64), ('NOACCT02', Float64), ('AMOUNT01', Int32), ('NOACCT01', Int32), ('AMOUNT03', Int32), ('NOACCT03', Int32), ('AMOUNT04', Int32), ('NOACCT04', Int32), ('AMOUNT05', Int32), ('NOACCT05', Int32), ('AMOUNT06', Int32), ('NOACCT06', Int32), ('AMOUNT07', Int32), ('NOACCT07', Int32), ('AMOUNT08', Int32), ('NOACCT08', Int32), ('AMOUNT09', Int32), ('NOACCT09', Int32), ('AMOUNT10', Int32), ('NOACCT10', Int32), ('AMOUNT11', Int32), ('NOACCT11', Int32), ('AMOUNT12', Int32), ('NOACCT12', Int32)])
+
+=== END DEBUG BEFORE JOIN ===
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 792, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 821, in <module>
     df_cit_year = _append_to_cit_year(df_final)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 506, in _append_to_cit_year
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII_JAN", line 535, in _append_to_cit_year
     df_year = df_existing.join(
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
     return function(*args, **kwargs)
@@ -26,7 +45,7 @@ Traceback (most recent call last):
     return function(*args, **kwargs)
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
     return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "BRANCH"; valid columns: []
+polars.exceptions.DuplicateError: column rename attempted with already existing name "BRANCH_right"
 
 ----------
 
