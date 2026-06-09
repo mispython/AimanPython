@@ -1,5 +1,9 @@
-def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
+def _append_to_cit_year(df_final: pl.DataFrame, month: str) -> pl.DataFrame:
 
+    amt_col = f"AMOUNT{month}"
+    cnt_col = f"NOACCT{month}"
+
+    # FIRST RUN
     if not CIT_YEAR_FILE.exists():
         df_final.write_parquet(CIT_YEAR_FILE)
         return df_final.sort("BRANCH")
@@ -9,25 +13,23 @@ def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
     df_existing = df_existing.with_columns(pl.col("BRANCH").cast(pl.Int64))
     df_final = df_final.with_columns(pl.col("BRANCH").cast(pl.Int64))
 
-    # =====================================================
-    # ONLY UPDATE CURRENT MONTH
-    # =====================================================
-    current_month_cols = [
-        c for c in df_final.columns
-        if c != "BRANCH"
-    ]
+    # remove ONLY THIS MONTH (not everything)
+    if amt_col in df_existing.columns:
+        df_existing = df_existing.drop(amt_col)
 
-    # REMOVE ONLY THOSE COLUMNS FROM EXISTING
-    df_existing = df_existing.drop(
-        [c for c in current_month_cols if c in df_existing.columns]
-    )
+    if cnt_col in df_existing.columns:
+        df_existing = df_existing.drop(cnt_col)
 
-    # ALIGN STRUCTURE
+    # ensure schema alignment
+    for col in df_final.columns:
+        if col not in df_existing.columns:
+            df_existing = df_existing.with_columns(pl.lit(0).alias(col))
+
     for col in df_existing.columns:
         if col not in df_final.columns:
             df_final = df_final.with_columns(pl.lit(0).alias(col))
 
-    # FINAL MERGE (SAFE UNION STYLE)
+    # merge safely
     df_year = df_existing.join(df_final, on="BRANCH", how="left").fill_null(0)
 
     df_year.write_parquet(CIT_YEAR_FILE)
