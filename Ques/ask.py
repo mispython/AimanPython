@@ -137,7 +137,24 @@ if _missing:
         "The following required input files are missing:\n" + "\n".join(_missing)
     )
 
+# =========================================================
+# MODULE A — SAS CIT SCHEMA ENGINE (PLACE HERE)
+# =========================================================
 
+def cit_schema():
+    schema = {"BRANCH": pl.Int64}
+
+    for m in range(1, 13):
+        mm = str(m).zfill(2)
+        schema[f"AMOUNT{mm}"] = pl.Float64
+        schema[f"NOACCT{mm}"] = pl.Int64
+
+    return schema
+
+
+def create_empty_cit_year():
+    return pl.DataFrame(schema=cit_schema())
+          
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -320,104 +337,98 @@ def _derive_noacct(df_all: pl.DataFrame) -> pl.DataFrame:
     return df_all
 
 
-def _aggregate_to_cit(
-    con: duckdb.DuckDBPyConnection,
-    df_all: pl.DataFrame,
-) -> pl.DataFrame:
-    """Aggregate CASHOUT and NOACCT by (REPTDATE, BRANCH), then roll up to BRANCH.
+# =========================================================
+# MODULE B — MONTHLY FINAL BUILDER (SAS PROC SUMMARY)
+# =========================================================
 
-    SAS equivalent:
-        PROC SUMMARY DATA=ALL NWAY;
-            CLASS REPTDATE BRANCH;
-            VAR CASHOUT NOACCT;
-            OUTPUT OUT=CIT(DROP=_TYPE_ _FREQ_)
-                   SUM=AMOUNT&REPTMON NOACCT&REPTMON;
-        DATA CIT; SET CIT; IF AMOUNT&REPTMON = 0 THEN DELETE;
-
-        PROC SUMMARY DATA=CIT NWAY;
-            CLASS BRANCH;
-            VAR AMOUNT&REPTMON NOACCT&REPTMON;
-            OUTPUT OUT=FINAL(DROP=_TYPE_ _FREQ_)
-                   SUM=;
-    """
+def build_month_final(con, df_all):
     amount_col = f"AMOUNT{REPTMON}"
     noacct_col = f"NOACCT{REPTMON}"
 
     con.register("all_noacct", df_all.to_pandas())
-    final = con.execute(f"""
+
+    df = con.execute(f"""
         WITH cit AS (
             SELECT
                 BRANCH,
-                SUM(CASHOUT) AS "{amount_col}",
-                SUM(NOACCT)  AS "{noacct_col}"
+                REPTDATE,
+                SUM(CASHOUT) AS AMT,
+                SUM(NOACCT) AS CNT
             FROM all_noacct
             GROUP BY REPTDATE, BRANCH
-            HAVING SUM(CASHOUT) <> 0
         )
         SELECT
             BRANCH,
-            SUM("{amount_col}") AS "{amount_col}",
-            SUM("{noacct_col}") AS "{noacct_col}"
+            SUM(AMT) AS "{amount_col}",
+            SUM(CNT) AS "{noacct_col}"
         FROM cit
         GROUP BY BRANCH
     """).df()
 
-    return pl.from_pandas(final)
+    return pl.from_pandas(df)
 
 
-def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
+# =========================================================
+# MODULE C — SAS YEAR MERGE ENGINE
+# =========================================================
 
-    amount_col = f"AMOUNT{REPTMON}"
-    noacct_col = f"NOACCT{REPTMON}"
+def safe_read_cit(path: Path) -> pl.DataFrame:
+    try:
+        if not path.exists():
+            return create_empty_cit_year()
 
-    # =====================================================
-    # CASE 1: FILE DOES NOT EXIST OR JANUARY
-    # =====================================================
+        df = pl.read_parquet(path)
+
+        if df.is_empty():
+            return create_empty_cit_year()
+
+        return df
+
+    except Exception:
+        return create_empty_cit_year()
+
+
+def append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
+
+    full_schema = create_empty_cit_year()
+
     if not CIT_YEAR_FILE.exists():
 
-        df_cit_year = df_final
-
-        for m in range(1, 13):
-            mm = str(m).zfill(2)
-
-            if f"AMOUNT{mm}" not in df_cit_year.columns:
-                df_cit_year = df_cit_year.with_columns(
-                    pl.lit(0.0).alias(f"AMOUNT{mm}")
-                )
-
-            if f"NOACCT{mm}" not in df_cit_year.columns:
-                df_cit_year = df_cit_year.with_columns(
-                    pl.lit(0).alias(f"NOACCT{mm}")
-                )
-
-    # =====================================================
-    # CASE 2: MERGE WITH EXISTING YEAR DATA
-    # =====================================================
-    else:
-        df_existing = _safe_read_cit_parquet(CIT_YEAR_FILE)
-
-        # FORCE SCHEMA SAFETY (IMPORTANT FIX)
-        if df_existing.is_empty() or "BRANCH" not in df_existing.columns:
-            df_existing = _create_empty_cit_year()
-
-        # Remove current month columns (SAS overwrite behavior)
-        for col in (amount_col, noacct_col):
-            if col in df_existing.columns:
-                df_existing = df_existing.drop(col)
-
-        df_cit_year = df_existing.join(
+        df_year = full_schema.join(
             df_final,
             on="BRANCH",
             how="full",
             coalesce=True
         ).fill_null(0)
 
-    # =====================================================
-    # SAVE (SAS CIT.CIT&REPTYEAR equivalent)
-    # =====================================================
-    df_cit_year.write_parquet(CIT_YEAR_FILE)
+        df_year.write_parquet(CIT_YEAR_FILE)
+        return df_year.sort("BRANCH")
 
-    return df_cit_year.sort("BRANCH")
+    df_existing = safe_read_cit(CIT_YEAR_FILE)
+
+    df_existing = full_schema.join(
+        df_existing,
+        on="BRANCH",
+        how="left"
+    ).fill_null(0)
+
+    amount_col = f"AMOUNT{REPTMON}"
+    noacct_col = f"NOACCT{REPTMON}"
+
+    for c in (amount_col, noacct_col):
+        if c in df_existing.columns:
+            df_existing = df_existing.drop(c)
+
+    df_year = df_existing.join(
+        df_final,
+        on="BRANCH",
+        how="full",
+        coalesce=True
+    ).fill_null(0)
+
+    df_year.write_parquet(CIT_YEAR_FILE)
+
+    return df_year.sort("BRANCH")
 
 
 def _merge_with_branch(
@@ -682,7 +693,7 @@ try:
     df_all = _derive_noacct(df_all)
 
     print("\nStep 4: Aggregating CASHOUT and NOACCT to FINAL (by BRANCH)...")
-    df_final = _aggregate_to_cit(con, df_all)
+    df_final = build_month_final(con, df_all)
     print(f"Branches with non-zero CASHOUT: {len(df_final):,}")
 
     # DEBUG START HERE
@@ -694,7 +705,7 @@ try:
     # DEBUG END HERE
 
     print(f"\nStep 5: Appending to yearly CIT file [{CIT_YEAR_FILE.name}]...")
-    df_cit_year = _append_to_cit_year(df_final)
+    df_cit_year = append_to_cit_year(df_final)
     print(f"Yearly CIT rows: {len(df_cit_year):,}")
 
     print("\nStep 6: Merging CIT year data with branch reference...")
