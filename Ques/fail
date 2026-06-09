@@ -1,3 +1,100 @@
+def build_month_final(con, df_all):
+    """
+    Monthly aggregation (FIXED SAS-style logic)
+    - Uses FILE_MONTH from filename (NOT REPTMON)
+    - Produces AMOUNT01–12 and NOACCT01–12 correctly
+    """
+
+    con.register("all_noacct", df_all.to_pandas())
+
+    # =========================================================
+    # STEP 1: GROUP BY BRANCH + FILE_MONTH
+    # =========================================================
+    df = con.execute("""
+        SELECT
+            BRANCH,
+            FILE_MONTH,
+            SUM(CASHOUT) AS AMT,
+            SUM(NOACCT) AS CNT
+        FROM all_noacct
+        GROUP BY BRANCH, FILE_MONTH
+    """).df()
+
+    df = pl.from_pandas(df)
+
+    # =========================================================
+    # STEP 2: PIVOT AMOUNT (MONTH → COLUMN)
+    # =========================================================
+    df_amt = df.pivot(
+        index="BRANCH",
+        columns="FILE_MONTH",
+        values="AMT",
+        aggregate_function="sum"
+    )
+
+    # =========================================================
+    # STEP 3: PIVOT NOACCT (MONTH → COLUMN)
+    # =========================================================
+    df_cnt = df.pivot(
+        index="BRANCH",
+        columns="FILE_MONTH",
+        values="CNT",
+        aggregate_function="sum"
+    )
+
+    # =========================================================
+    # STEP 4: MERGE BOTH TABLES
+    # =========================================================
+    df_final = df_amt.join(df_cnt, on="BRANCH", how="outer")
+
+    # =========================================================
+    # STEP 5: CLEAN NULLS
+    # =========================================================
+    df_final = df_final.fill_null(0)
+
+    # =========================================================
+    # STEP 6: RENAME COLUMNS TO SAS FORMAT
+    # =========================================================
+    rename_map = {}
+
+    for m in range(1, 13):
+        mm = str(m).zfill(2)
+
+        if mm in df_final.columns:
+            rename_map[mm] = f"AMOUNT{mm}"
+
+        # NOACCT pivot may create suffix variations depending on engine
+        if mm + "_right" in df_final.columns:
+            rename_map[mm + "_right"] = f"NOACCT{mm}"
+
+        if mm not in df_final.columns and f"{mm}_right" not in df_final.columns:
+            # ensure missing months still exist if needed later
+            df_final = df_final.with_columns([
+                pl.lit(0).alias(f"AMOUNT{mm}"),
+                pl.lit(0).alias(f"NOACCT{mm}")
+            ])
+
+    df_final = df_final.rename(rename_map)
+
+    # =========================================================
+    # STEP 7: ENSURE ALL REQUIRED COLUMNS EXIST (SAFETY)
+    # =========================================================
+    for m in range(1, 13):
+        mm = str(m).zfill(2)
+
+        if f"AMOUNT{mm}" not in df_final.columns:
+            df_final = df_final.with_columns(pl.lit(0).alias(f"AMOUNT{mm}"))
+
+        if f"NOACCT{mm}" not in df_final.columns:
+            df_final = df_final.with_columns(pl.lit(0).alias(f"NOACCT{mm}"))
+
+    # =========================================================
+    # STEP 8: FINAL OUTPUT
+    # =========================================================
+    return df_final.sort("BRANCH")
+
+----------
+
 def extract_month(path: Path) -> str:
     # tlbtran01126 → "01"
     match = re.match(r"tlbtran(\d{2})\d{3}", path.name.lower())
