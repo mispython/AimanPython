@@ -373,18 +373,22 @@ def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
     # =====================================================
     # CASE 1: FILE DOES NOT EXIST OR JANUARY
     # =====================================================
-    if REPTMON == "01" or not CIT_YEAR_FILE.exists():
+    if not CIT_YEAR_FILE.exists():
 
-        df_existing = _create_empty_cit_year()
+        df_cit_year = df_final
 
-        # Add missing month columns (SAS-style initialization)
-        stub_exprs = []
-        for m in range(2, 13):
+        for m in range(1, 13):
             mm = str(m).zfill(2)
-            stub_exprs.append(pl.lit(0.0).alias(f"AMOUNT{mm}"))
-            stub_exprs.append(pl.lit(0).alias(f"NOACCT{mm}"))
 
-        df_cit_year = df_final.with_columns(stub_exprs)
+            if f"AMOUNT{mm}" not in df_cit_year.columns:
+                df_cit_year = df_cit_year.with_columns(
+                    pl.lit(0.0).alias(f"AMOUNT{mm}")
+                )
+
+            if f"NOACCT{mm}" not in df_cit_year.columns:
+                df_cit_year = df_cit_year.with_columns(
+                    pl.lit(0).alias(f"NOACCT{mm}")
+                )
 
     # =====================================================
     # CASE 2: MERGE WITH EXISTING YEAR DATA
