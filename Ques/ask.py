@@ -78,45 +78,11 @@ WK4 = "04"
 # ============================================================================
 # DERIVED INPUT PATHS
 # ============================================================================
-# Resolve the 4 latest TLBTRAN files available in INPUT_DIR.
-# The program runs on the last day of the month or the 1st of the following
-# month; either way, the 4 most-recently-dated TLBTRAN files represent the
-# 4 weeks of the report month.
-#
-# get_latest_file returns only the single most-recent file, so we collect
-# all TLBTRAN candidates and sort by parsed date to pick the top 4.
 
-# from input_date import extract_key, SUPPORTED_EXTENSIONS
-
-# def _get_latest_n_files(directory: Path, prefix: str, n: int) -> list:
-#     """Return the n most-recently-dated files matching prefix in directory."""
-#     files = [
-#         f for f in directory.iterdir()
-#         if f.is_file()
-#         and f.suffix.lower() in SUPPORTED_EXTENSIONS
-#         and f.name.upper().startswith(prefix.upper())
-#         and extract_key(f.name) is not None
-#     ]
-#     if len(files) < n:
-#         raise FileNotFoundError(
-#             f"Expected at least {n} files with prefix '{prefix}' in {directory}, "
-#             f"found {len(files)}."
-#         )
-#     files_sorted = sorted(files, key=lambda f: extract_key(f.name), reverse=True)
-#     # Return in ascending date order (week 1 first)
-#     return list(reversed(files_sorted[:n]))
-
-# INPUT_TLBTRAN_FILES = _get_latest_n_files(INPUT_DIR, "tlbtran", 4)
-
-# INPUT_TLBTRAN_WK1 = INPUT_TLBTRAN_FILES[0]
-# INPUT_TLBTRAN_WK2 = INPUT_TLBTRAN_FILES[1]
-# INPUT_TLBTRAN_WK3 = INPUT_TLBTRAN_FILES[2]
-# INPUT_TLBTRAN_WK4 = INPUT_TLBTRAN_FILES[3]
-
-INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran02126.sas7bdat"
-INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran02226.sas7bdat"
-INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran02326.sas7bdat"
-INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran02426.sas7bdat"
+INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran01126.sas7bdat"
+INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran01226.sas7bdat"
+INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran01326.sas7bdat"
+INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran01426.sas7bdat"
 
 # Persistent yearly CIT accumulation parquet
 CIT_YEAR_FILE = CIT_DIR / f"CIT_AII_{REPTYEAR}.parquet"
@@ -445,32 +411,8 @@ def build_month_final(con, df_all):
     # =========================================================
     df_final = df_final.fill_null(0)
 
-    # # =========================================================
-    # # STEP 6: RENAME COLUMNS TO SAS FORMAT
-    # # =========================================================
-    # rename_map = {}
-
-    # for m in range(1, 13):
-    #     mm = str(m).zfill(2)
-
-    #     if mm in df_final.columns:
-    #         rename_map[mm] = f"AMOUNT{mm}"
-
-    #     # NOACCT pivot may create suffix variations depending on engine
-    #     if mm + "_right" in df_final.columns:
-    #         rename_map[mm + "_right"] = f"NOACCT{mm}"
-
-    #     if mm not in df_final.columns and f"{mm}_right" not in df_final.columns:
-    #         # ensure missing months still exist if needed later
-    #         df_final = df_final.with_columns([
-    #             pl.lit(0).alias(f"AMOUNT{mm}"),
-    #             pl.lit(0).alias(f"NOACCT{mm}")
-    #         ])
-
-    # df_final = df_final.rename(rename_map)
-
     # =========================================================
-    # STEP 7: ENSURE ALL REQUIRED COLUMNS EXIST (SAFETY)
+    # STEP 6: ENSURE ALL REQUIRED COLUMNS EXIST (SAFETY)
     # =========================================================
     for m in range(1, 13):
         mm = str(m).zfill(2)
@@ -482,7 +424,7 @@ def build_month_final(con, df_all):
             df_final = df_final.with_columns(pl.lit(0).alias(f"NOACCT{mm}"))
 
     # =========================================================
-    # STEP 8: FINAL OUTPUT
+    # STEP 7: FINAL OUTPUT
     # =========================================================
     return df_final.sort("BRANCH")
 
@@ -548,7 +490,7 @@ def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
     print ("df_final schema:")
     print(df_final.schema)
 
-    print("\n=== END DEBUG BEFORE JOIN ===")
+    print("\n=== END DEBUG BEFORE JOIN ===\n")
 
     if "BRANCH" not in df_existing.columns:
         raise ValueError(
@@ -560,12 +502,20 @@ def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
             f"BRANCH missing from df_final. Columns={df_final.columns}"
     )
 
+    # enforce schema safety (CRITICAL)
+    df_existing = df_existing.with_columns(
+        pl.col("BRANCH").cast(pl.Int64)
+    )
+
+    df_final = df_final.with_columns(
+        pl.col("BRANCH").cast(pl.Int64)
+    )
+    
     # SAS MERGE equivalent (NOT full schema rebuild)
     df_year = df_existing.join(
         df_final,
         on="BRANCH",
-        how="full",
-        coalesce=True
+        how="left",
     ).fill_null(0)
 
     df_year.write_parquet(CIT_YEAR_FILE)
@@ -849,6 +799,16 @@ try:
     print(f"\nStep 5: Appending to yearly CIT file [{CIT_YEAR_FILE.name}]...")
     df_cit_year = _append_to_cit_year(df_final)
     print(f"Yearly CIT rows: {len(df_cit_year):,}")
+
+    # ===== START DEBUG PARQUET CONTENT =====
+    import polars as pl
+
+    print("\n=== CIT PARQUET SCHEMA ===")
+    print(pl.read_parquet(CIT_YEAR_FILE).schema)
+
+    print("\n=== CIT PARQUET HEAD ===")
+    print(pl.read_parquet(CIT_YEAR_FILE).head())
+    # ===== END DEBUG PARQUET CONTENT =====
 
     print("\nStep 6: Merging CIT year data with branch reference...")
     df_cit_report = _merge_with_branch(con, df_cit_year, df_branch)
