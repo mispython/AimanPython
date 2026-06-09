@@ -8,6 +8,29 @@ Traceback (most recent call last):
     _read_sas7bdat_with_month(wk_path)
 TypeError: _read_sas7bdat_with_month() missing 1 required positional argument: 'month'
 
+
+def _load_tlbtran_all(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
+    """Load and concatenate all 4 weekly TLBTRAN files, filter TRANCODE IN (2222,2223).
+
+    SAS equivalent:
+        DATA ALL;
+            SET BNM.TLBTRAN&REPTYEAR&REPTMON&WK1
+                BNM.TLBTRAN&REPTYEAR&REPTMON&WK2
+                BNM.TLBTRAN&REPTYEAR&REPTMON&WK3
+                BNM.TLBTRAN&REPTYEAR&REPTMON&WK4;
+            IF TRANCODE IN (2222, 2223);
+        PROC SORT DATA=ALL; BY REPTDATE BRANCH;
+    """
+    weekly_dfs = [
+        _read_sas7bdat_with_month(wk_path)
+        for wk_path in (
+            INPUT_TLBTRAN_WK1,
+            INPUT_TLBTRAN_WK2,
+            INPUT_TLBTRAN_WK3,
+            INPUT_TLBTRAN_WK4,
+        )
+    ]
+
 --------------
 
 def build_month_final(con, df_all):
