@@ -79,10 +79,10 @@ WK4 = "04"
 # DERIVED INPUT PATHS
 # ============================================================================
 
-INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran01126.sas7bdat"
-INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran01226.sas7bdat"
-INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran01326.sas7bdat"
-INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran01426.sas7bdat"
+INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran02126.sas7bdat"
+INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran02226.sas7bdat"
+INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran02326.sas7bdat"
+INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran02426.sas7bdat"
 
 # Persistent yearly CIT accumulation parquet
 CIT_YEAR_FILE = CIT_DIR / f"CIT_AII_{REPTYEAR}.parquet"
@@ -431,57 +431,39 @@ def build_month_final(con, df_all):
 
 def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
 
-    # =====================================================
-    # CASE 1: FIRST RUN
-    # =====================================================
     if not CIT_YEAR_FILE.exists():
         df_final.write_parquet(CIT_YEAR_FILE)
         return df_final.sort("BRANCH")
 
-    # =====================================================
-    # CASE 2: UPDATE EXISTING YEAR FILE
-    # =====================================================
     df_existing = _safe_read_cit_parquet(CIT_YEAR_FILE)
 
     df_existing = df_existing.with_columns(pl.col("BRANCH").cast(pl.Int64))
     df_final = df_final.with_columns(pl.col("BRANCH").cast(pl.Int64))
 
-    # -----------------------------------------------------
-    # STEP 1: detect "active month columns" from df_final
-    # -----------------------------------------------------
-    update_cols = [c for c in df_final.columns if c != "BRANCH"]
+    # =====================================================
+    # ONLY UPDATE CURRENT MONTH
+    # =====================================================
+    current_month_cols = [
+        c for c in df_final.columns
+        if c != "BRANCH"
+    ]
 
-    # -----------------------------------------------------
-    # STEP 2: remove ONLY those columns from existing
-    # (this is the SAS "overwrite month logic")
-    # -----------------------------------------------------
+    # REMOVE ONLY THOSE COLUMNS FROM EXISTING
     df_existing = df_existing.drop(
-        [c for c in update_cols if c in df_existing.columns]
+        [c for c in current_month_cols if c in df_existing.columns]
     )
 
-    # -----------------------------------------------------
-    # STEP 3: align missing columns in df_final to existing schema
-    # -----------------------------------------------------
+    # ALIGN STRUCTURE
     for col in df_existing.columns:
         if col not in df_final.columns:
             df_final = df_final.with_columns(pl.lit(0).alias(col))
 
-    # -----------------------------------------------------
-    # STEP 4: combine (SAFE column union, NOT join)
-    # -----------------------------------------------------
+    # FINAL MERGE (SAFE UNION STYLE)
     df_year = df_existing.join(df_final, on="BRANCH", how="left").fill_null(0)
 
     df_year.write_parquet(CIT_YEAR_FILE)
 
     return df_year.sort("BRANCH")
-
-df_cit_year = _append_to_cit_year(df_final)
-
-print("\n=== CIT PARQUET SCHEMA ===")
-print(pl.read_parquet(CIT_YEAR_FILE).schema)
-
-print("\n=== CIT PARQUET HEAD ===")
-print(pl.read_parquet(CIT_YEAR_FILE).head())
 
 def _merge_with_branch(
     con: duckdb.DuckDBPyConnection,
@@ -759,6 +741,13 @@ try:
     print(f"\nStep 5: Appending to yearly CIT file [{CIT_YEAR_FILE.name}]...")
     df_cit_year = _append_to_cit_year(df_final)
     print(f"Yearly CIT rows: {len(df_cit_year):,}")
+
+    # DEBUG VIEW - PARQUET
+    df = pl.read_parquet(CIT_YEAR_FILE)
+
+    print(("\n========== PARQUET CONTENT =========="))
+    print(df)
+    print("=====================================\n")
 
     # ===== START DEBUG PARQUET CONTENT =====
     import polars as pl
