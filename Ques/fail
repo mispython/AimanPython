@@ -1,61 +1,66 @@
-def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
+def extract_month(path: Path) -> str:
+    # tlbtran01126 → "01"
+    match = re.match(r"tlbtran(\d{2})\d{3}", path.name.lower())
+    if not match:
+        raise ValueError(f"Invalid filename: {path.name}")
+    return match.group(1)
 
-    amount_col = f"AMOUNT{REPTMON}"
-    noacct_col = f"NOACCT{REPTMON}"
 
-    # =====================================================
-    # CASE 1: FIRST RUN (JAN / FILE DOES NOT EXIST)
-    # =====================================================
-    if not CIT_YEAR_FILE.exists():
+def _read_sas7bdat(path: Path, month: str) -> pl.DataFrame:
+    pdf = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+    pdf.columns = [c.upper().strip() for c in pdf.columns]
 
-        df_year = df_final.with_columns(
-            pl.col("BRANCH").cast(pl.Int64)
-        )
+    pdf["FILE_MONTH"] = month  # 🔥 KEY FIX
 
-        # ensure full 12-month structure (SAS init behavior)
-        for m in range(1, 13):
-            mm = str(m).zfill(2)
+    return pl.from_pandas(pdf)
 
-            if f"AMOUNT{mm}" not in df_year.columns:
-                df_year = df_year.with_columns(pl.lit(0.0).alias(f"AMOUNT{mm}"))
 
-            if f"NOACCT{mm}" not in df_year.columns:
-                df_year = df_year.with_columns(pl.lit(0).alias(f"NOACCT{mm}"))
-
-        df_year.write_parquet(CIT_YEAR_FILE)
-        return df_year.sort("BRANCH")
-
-    # =====================================================
-    # CASE 2: UPDATE EXISTING YEAR FILE (FEB–DEC)
-    # =====================================================
-
-    df_existing = _safe_read_cit_parquet(CIT_YEAR_FILE)
-
-    # enforce schema safety (CRITICAL)
-    df_existing = df_existing.with_columns(
-        pl.col("BRANCH").cast(pl.Int64)
+weekly_dfs = [
+    _read_sas7bdat(wk_path, extract_month(wk_path))
+    for wk_path in (
+        INPUT_TLBTRAN_WK1,
+        INPUT_TLBTRAN_WK2,
+        INPUT_TLBTRAN_WK3,
+        INPUT_TLBTRAN_WK4,
     )
+]
 
-    df_final = df_final.with_columns(
-        pl.col("BRANCH").cast(pl.Int64)
-    )
 
-    # drop current month columns (SAS overwrite behavior)
-    for col in (amount_col, noacct_col):
-        if col in df_existing.columns:
-            df_existing = df_existing.drop(col)
+df_all = df_all.with_columns([
+    pl.col("FILE_MONTH")
+])
 
-    # SAS MERGE equivalent (NOT full schema rebuild)
-    df_year = df_existing.join(
-        df_final,
-        on="BRANCH",
-        how="full",
-        coalesce=True
-    ).fill_null(0)
 
-    df_year.write_parquet(CIT_YEAR_FILE)
+df = con.execute("""
+    SELECT
+        BRANCH,
+        FILE_MONTH,
+        SUM(CASHOUT) AS AMT,
+        SUM(NOACCT) AS CNT
+    FROM all_noacct
+    GROUP BY BRANCH, FILE_MONTH
+""").df()
 
-    return df_year.sort("BRANCH")
+
+df = pl.from_pandas(df)
+
+df = df.pivot(
+    index="BRANCH",
+    columns="FILE_MONTH",
+    values="AMT"
+).rename(lambda c: f"AMOUNT{c}" if c.isdigit() else c)
+
+
+df2 = pl.from_pandas(df2)
+
+df2 = df2.pivot(
+    index="BRANCH",
+    columns="FILE_MONTH",
+    values="CNT"
+).rename(lambda c: f"NOACCT{c}" if c.isdigit() else c)
+
+
+
 
 ----------
 
