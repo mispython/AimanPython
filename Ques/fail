@@ -1,76 +1,94 @@
 def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
-    """Merge new monthly data into the yearly CIT parquet, preserving existing months."""
+    """
+    Safely merge new monthly columns into the yearly CIT parquet.
+    Only columns present in df_final (excluding BRANCH) are updated.
+    All other existing month columns are preserved exactly as-is.
+    New branches from df_final are inserted with 0 for all other months.
+    """
 
-    # Columns being updated this run (e.g. AMOUNT02, NOACCT02)
     update_cols = [c for c in df_final.columns if c != "BRANCH"]
 
-    if not CIT_YEAR_FILE.exists():
-        # First run: scaffold all 12 months with zeros, then fill current month
-        schema_df = _create_empty_cit_year()
-        # We'll build from df_final, ensuring all 24 month cols exist
+    def _scaffold_all_months(df: pl.DataFrame) -> pl.DataFrame:
+        """Ensure all 24 month columns exist, filling missing ones with 0."""
         for m in range(1, 13):
             mm = str(m).zfill(2)
-            if f"AMOUNT{mm}" not in df_final.columns:
-                df_final = df_final.with_columns(pl.lit(0.0).alias(f"AMOUNT{mm}"))
-            if f"NOACCT{mm}" not in df_final.columns:
-                df_final = df_final.with_columns(pl.lit(0).cast(pl.Int64).alias(f"NOACCT{mm}"))
+            if f"AMOUNT{mm}" not in df.columns:
+                df = df.with_columns(pl.lit(0.0).cast(pl.Float64).alias(f"AMOUNT{mm}"))
+            if f"NOACCT{mm}" not in df.columns:
+                df = df.with_columns(pl.lit(0).cast(pl.Int64).alias(f"NOACCT{mm}"))
+        return df
 
-        # Reorder columns canonically
-        ordered_cols = ["BRANCH"] + [
+    def _canonical_order(df: pl.DataFrame) -> pl.DataFrame:
+        """Reorder to: BRANCH, AMOUNT01, NOACCT01, ..., AMOUNT12, NOACCT12."""
+        ordered = ["BRANCH"] + [
             col
             for m in range(1, 13)
             for col in (f"AMOUNT{str(m).zfill(2)}", f"NOACCT{str(m).zfill(2)}")
         ]
-        df_final = df_final.select(ordered_cols)
+        return df.select(ordered)
+
+    # Cast BRANCH consistently
+    df_final = df_final.with_columns(pl.col("BRANCH").cast(pl.Int64))
+
+    # ── FIRST RUN: no existing parquet ────────────────────────────────────
+    if not CIT_YEAR_FILE.exists():
+        df_final = _scaffold_all_months(df_final)
+        df_final = _canonical_order(df_final)
         df_final.write_parquet(CIT_YEAR_FILE)
         return df_final.sort("BRANCH")
 
+    # ── SUBSEQUENT RUNS ───────────────────────────────────────────────────
     df_existing = _safe_read_cit_parquet(CIT_YEAR_FILE)
     df_existing = df_existing.with_columns(pl.col("BRANCH").cast(pl.Int64))
-    df_final    = df_final.with_columns(pl.col("BRANCH").cast(pl.Int64))
+    df_existing = _scaffold_all_months(df_existing)
 
-    # Ensure all 24 month columns exist in df_existing
-    for m in range(1, 13):
-        mm = str(m).zfill(2)
-        if f"AMOUNT{mm}" not in df_existing.columns:
-            df_existing = df_existing.with_columns(pl.lit(0.0).alias(f"AMOUNT{mm}"))
-        if f"NOACCT{mm}" not in df_existing.columns:
-            df_existing = df_existing.with_columns(pl.lit(0).cast(pl.Int64).alias(f"NOACCT{mm}"))
-
-    # Join new data on BRANCH, then overwrite only the updated month columns
+    # Full outer join — keeps ALL branches from both sides
     df_merged = df_existing.join(
         df_final.select(["BRANCH"] + update_cols),
         on="BRANCH",
-        how="left",
+        how="full",
         suffix="_NEW"
     )
 
-    # Replace existing month cols with new values where available
-    replace_exprs = []
+    # Coalesce BRANCH (full join may produce nulls on either side)
+    df_merged = df_merged.with_columns(
+        pl.coalesce([pl.col("BRANCH"), pl.col("BRANCH_NEW")]).alias("BRANCH")
+    ).drop([c for c in df_merged.columns if c == "BRANCH_NEW"])
+
+    # For updated columns: take new value (overwrite existing month data)
+    # For non-updated columns: keep existing value, default 0 for new branches
+    overwrite_exprs = []
     for col in update_cols:
         new_col = f"{col}_NEW"
         if new_col in df_merged.columns:
-            replace_exprs.append(
-                pl.when(pl.col(new_col).is_not_null())
-                .then(pl.col(new_col))
-                .otherwise(pl.col(col))
+            overwrite_exprs.append(
+                pl.coalesce([pl.col(new_col), pl.lit(0).cast(pl.Float64)])
                 .alias(col)
             )
 
-    if replace_exprs:
-        df_merged = df_merged.with_columns(replace_exprs)
-
-    # Drop the _NEW suffix columns
-    drop_cols = [c for c in df_merged.columns if c.endswith("_NEW")]
-    df_merged = df_merged.drop(drop_cols)
-
-    # Reorder columns canonically: BRANCH, AMOUNT01, NOACCT01, ..., AMOUNT12, NOACCT12
-    ordered_cols = ["BRANCH"] + [
-        col
-        for m in range(1, 13)
-        for col in (f"AMOUNT{str(m).zfill(2)}", f"NOACCT{str(m).zfill(2)}")
+    keep_exprs = []
+    existing_only_cols = [
+        c for c in df_existing.columns
+        if c != "BRANCH" and c not in update_cols
     ]
-    df_merged = df_merged.select(ordered_cols)
+    for col in existing_only_cols:
+        keep_exprs.append(
+            pl.coalesce([pl.col(col), pl.lit(0).cast(pl.Float64)])
+            .alias(col)
+        )
+
+    if overwrite_exprs:
+        df_merged = df_merged.with_columns(overwrite_exprs)
+    if keep_exprs:
+        df_merged = df_merged.with_columns(keep_exprs)
+
+    # Drop all _NEW suffix columns
+    drop_cols = [c for c in df_merged.columns if c.endswith("_NEW")]
+    if drop_cols:
+        df_merged = df_merged.drop(drop_cols)
+
+    df_merged = _scaffold_all_months(df_merged)
+    df_merged = _canonical_order(df_merged)
 
     df_merged.write_parquet(CIT_YEAR_FILE)
     return df_merged.sort("BRANCH")
