@@ -1,20 +1,52 @@
-Step 5: Appending to yearly CIT file [CIT26.parquet]...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 708, in <module>
-    df_cit_year = append_to_cit_year(df_final)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_AII.py", line 397, in append_to_cit_year
-    df_year = full_schema.join(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.SchemaError: datatypes of join keys don't match - `BRANCH`: i64 on left does not match `BRANCH`: f64 on right (and no other type was available to cast to)
+def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
+
+    full_schema = _create_empty_cit_year()
+
+    if not CIT_YEAR_FILE.exists():
+
+        df_year = full_schema.join(
+            df_final,
+            on="BRANCH",
+            how="full",
+            coalesce=True
+        ).fill_null(0)
+
+        df_year.write_parquet(CIT_YEAR_FILE)
+        return df_year.sort("BRANCH")
+
+    df_existing = _safe_read_cit_parquet(CIT_YEAR_FILE)
+
+    df_final = df_final.with_columns(
+        pl.col("BRANCH").cast(pl.Int64)
+    )
+
+    df_existing = df_existing.with_columns(
+        pl.col("BRANCH").cast(pl.Int64)
+    )
+
+    df_existing = full_schema.join(
+        df_existing,
+        on="BRANCH",
+        how="left"
+    ).fill_null(0)
+
+    amount_col = f"AMOUNT{REPTMON}"
+    noacct_col = f"NOACCT{REPTMON}"
+
+    for c in (amount_col, noacct_col):
+        if c in df_existing.columns:
+            df_existing = df_existing.drop(c)
+
+    df_year = df_existing.join(
+        df_final,
+        on="BRANCH",
+        how="full",
+        coalesce=True
+    ).fill_null(0)
+
+    df_year.write_parquet(CIT_YEAR_FILE)
+
+    return df_year.sort("BRANCH")
 
 ----------
 
