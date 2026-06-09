@@ -1,3 +1,19 @@
+print(f"\nStep 5: Appending to yearly CIT file [{CIT_YEAR_FILE.name}]...")
+df_cit_year = _append_to_cit_year(df_final)
+print(f"Yearly CIT rows: {len(df_cit_year):,}")
+
+# ===== DEBUG PARQUET CONTENT =====
+import polars as pl
+
+print("\n=== CIT PARQUET SCHEMA ===")
+print(pl.read_parquet(CIT_YEAR_FILE).schema)
+
+print("\n=== CIT PARQUET HEAD ===")
+print(pl.read_parquet(CIT_YEAR_FILE).head())
+# =================================
+
+==========
+
 # =========================================================
 # MODULE B — MONTHLY FINAL BUILDER (SAS PROC SUMMARY)
 # =========================================================
