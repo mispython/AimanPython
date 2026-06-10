@@ -15,7 +15,7 @@ from output_date import build_output_file
 # CONFIGURATION
 # =============================================================================
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR  / "input/uat"
+INPUT_DIR  = BASE_DIR  / "input/prod"
 OUTPUT_DIR = BASE_DIR  / "output/EIBDOFCY"
 
 # INPUT_DIR  = Path("/dwh")
@@ -32,10 +32,10 @@ FD_FCY_PATH : DP.FCY&REPTYEAR&REPTMON&REPTDAY — FCY deposit file (.sas7bdat);
 CURR_PATH   : DEPO.CURRENT — current account (.sas7bdat); MYR rows only
 LN_PATH     : LOAN.LNNOTE  — loan (.sas7bdat); uses CCY (not CURCODE); FCY filtered from same file
 """
-FD_PATH     = INPUT_DIR / "fd260513.sas7bdat"
-FD_FCY_PATH = INPUT_DIR / "fcyfd260513.sas7bdat"
-CURR_PATH   = INPUT_DIR / "ca260513.sas7bdat"
-LN_PATH     = INPUT_DIR / "ln260513.sas7bdat"
+FD_PATH     = INPUT_DIR / "fd260609.sas7bdat"
+FD_FCY_PATH = INPUT_DIR / "fcyfd260609.sas7bdat"
+CURR_PATH   = INPUT_DIR / "ca260609.sas7bdat"
+LN_PATH     = INPUT_DIR / "ln260609.sas7bdat"
 # FD_PATH     = get_latest_file(INPUT_DIR / "dpd_fd", "fd" )            # DEPO.FD      (SET DEPO.FD)
 # FD_FCY_PATH = get_latest_file(INPUT_DIR / "dp_fcy", "fcyfd" )         # DP.FCY<REPTYEAR><REPTMON><REPTDAY>
 # CURR_PATH   = get_latest_file(INPUT_DIR / "dpd_ca", "ca")             # DEPO.CURRENT (SET DEPO.CURRENT)
@@ -63,21 +63,21 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing required input file: {path}")
     
-    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<<<
-    pandas_df = pd.read_sas(
-        path,
-        format="sas7bdat",
-        encoding="latin1",
-    )
-
-    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
-    # reader = pd.read_sas(
+    # # >>>>>>>>>> Uncomment this -> For production <<<<<<<<<<
+    # pandas_df = pd.read_sas(
     #     path,
     #     format="sas7bdat",
     #     encoding="latin1",
-    #     chunksize = 10000          
     # )
-    # pandas_df = next(reader)
+
+    # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<<<
+    reader = pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="latin1",
+        chunksize = 1000          
+    )
+    pandas_df = next(reader)
 
     pandas_df.columns = [
         str(c).upper().strip()
@@ -298,8 +298,8 @@ fcy_combined = pl.concat(
     how="diagonal"
 ).sort(["IND", "CURCODE"])
 
-# DLM = "\x05"   # '05'X    - # EBCDIC-style delimiter
-DLM = "|"                   # Standard report delimiter
+DLM = "\x05"   # '05'X    - # EBCDIC-style delimiter
+# DLM = "|"                   # Standard report delimiter
 
 # IND group ordering matches SAS SET order: A B C D E F
 _IND_HEADERS = {
