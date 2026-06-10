@@ -1,4 +1,94 @@
-    # ── Step 4: Detect month from filenames ────────────────────────────────
+def _get_latest_tlbtran_files(input_dir: Path) -> tuple[Path, Path, Path, Path]:
+    """Find the 4 weekly TLBTRAN files belonging to the latest available month.
+
+    Pattern: tlbtran{MM}{W}{YY}.sas7bdat
+        MM = month (01-12)
+        W  = week  (1-4)
+        YY = 2-digit year
+
+    Logic:
+    - Scan all tlbtran*.sas7bdat files in input_dir
+    - Group by (YY, MM) — pick the group with the latest (YY, MM)
+    - From that group, take weeks 1-4 (must have all 4)
+    - This handles the case where the program runs on the 1st of a new month
+      but the latest available datasets are from the previous month.
+    """
+    pattern = re.compile(r"tlbtran(\d{2})(\d{1})(\d{2})\.sas7bdat", re.IGNORECASE)
+
+    # Group files by (yy, mm)
+    groups: dict[tuple[str, str], dict[str, Path]] = {}
+    for f in input_dir.glob("tlbtran*.sas7bdat"):
+        m = pattern.match(f.name)
+        if not m:
+            continue
+        mm, wk, yy = m.group(1), m.group(2), m.group(3)
+        key = (yy, mm)
+        groups.setdefault(key, {})[wk] = f
+
+    if not groups:
+        raise FileNotFoundError(
+            f"No tlbtran*.sas7bdat files found in: {input_dir}"
+        )
+
+    # Pick the latest (yy, mm) group that has all 4 weeks
+    for (yy, mm) in sorted(groups.keys(), reverse=True):
+        weeks = groups[(yy, mm)]
+        if all(w in weeks for w in ("1", "2", "3", "4")):
+            wk1 = weeks["1"]
+            wk2 = weeks["2"]
+            wk3 = weeks["3"]
+            wk4 = weeks["4"]
+            print(f"  Latest complete month detected: {mm}/{yy}")
+            print(f"    WK1: {wk1.name}")
+            print(f"    WK2: {wk2.name}")
+            print(f"    WK3: {wk3.name}")
+            print(f"    WK4: {wk4.name}")
+            return wk1, wk2, wk3, wk4
+
+    raise FileNotFoundError(
+        "No complete set of 4 weekly TLBTRAN files found for any month in: "
+        f"{input_dir}\nAvailable groups: "
+        + ", ".join(f"{mm}/{yy}" for yy, mm in sorted(groups.keys(), reverse=True))
+    )
+
+
+def _detect_month_from_files(files: tuple[Path, Path, Path, Path]) -> str:
+    """Extract the month string from the resolved TLBTRAN file paths."""
+    pattern = re.compile(r"tlbtran(\d{2})\d{1}\d{2}\.sas7bdat", re.IGNORECASE)
+    detected = set()
+    for f in files:
+        m = pattern.match(f.name)
+        if m:
+            detected.add(m.group(1))
+    if len(detected) != 1:
+        raise ValueError(f"Conflicting months across resolved TLBTRAN files: {detected}")
+    return detected.pop()
+
+
+# Dynamically resolve the 4 weekly TLBTRAN files from the latest available month
+print("Scanning for latest TLBTRAN files...")
+(
+    INPUT_TLBTRAN_WK1,
+    INPUT_TLBTRAN_WK2,
+    INPUT_TLBTRAN_WK3,
+    INPUT_TLBTRAN_WK4,
+) = _get_latest_tlbtran_files(INPUT_DIR)
+
+# Branch file still requires explicit existence check
+if not INPUT_BRHFILE.exists():
+    raise FileNotFoundError(f"Branch file missing: {INPUT_BRHFILE}")
+
+
+# ── Step 4: Detect month from filenames ────────────────────────────────
+    print("\nStep 4: Detecting report month from TLBTRAN filenames...")
+    file_month = _detect_month_from_files(
+        (INPUT_TLBTRAN_WK1, INPUT_TLBTRAN_WK2, INPUT_TLBTRAN_WK3, INPUT_TLBTRAN_WK4)
+    )
+    print(f"  Detected month: {file_month}")
+
+==========
+
+# ── Step 4: Detect month from filenames ────────────────────────────────
     print("\nStep 4: Detecting report month from TLBTRAN filenames...")
     file_month = _detect_month_from_files()
     print(f"  Detected month from files: {file_month}")
