@@ -14,10 +14,13 @@ from output_date import build_output_file
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-base        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-input_path  = base / "input/uat"
-output_path = base / "output/EIBDOFCY"
-output_path.mkdir(parents=True, exist_ok=True)
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR  = BASE_DIR  / "input/uat"
+OUTPUT_DIR = BASE_DIR  / "output/EIBDOFCY"
+
+# INPUT_DIR  = Path("/dwh")
+# OUTPUT_DIR = Path("/host/mis/output/report") / "EIBDOFCY"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # >>>>> Input file paths <<<<<
 """
@@ -29,14 +32,14 @@ FD_FCY_PATH : DP.FCY&REPTYEAR&REPTMON&REPTDAY — FCY deposit file (.sas7bdat);
 CURR_PATH   : DEPO.CURRENT — current account (.sas7bdat); MYR rows only
 LN_PATH     : LOAN.LNNOTE  — loan (.sas7bdat); uses CCY (not CURCODE); FCY filtered from same file
 """
-# FD_PATH     = input_path / "fd260513.sas7bdat"             # DEPO.FD      (SET DEPO.FD)
-# FD_FCY_PATH = input_path / "fcyfd260513.sas7bdat"          # DP.FCY<REPTYEAR><REPTMON><REPTDAY>
-# CURR_PATH   = input_path / "ca260513.sas7bdat"             # DEPO.CURRENT (SET DEPO.CURRENT)
-LN_PATH     = input_path / "ln260513.sas7bdat"             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
-FD_PATH     = get_latest_file(input_path, "fd" )            # DEPO.FD      (SET DEPO.FD)
-FD_FCY_PATH = get_latest_file(input_path, "fcyfd" )         # DP.FCY<REPTYEAR><REPTMON><REPTDAY>
-CURR_PATH   = get_latest_file(input_path, "ca")             # DEPO.CURRENT (SET DEPO.CURRENT)
-# LN_PATH     = get_latest_file(input_path, "ln")             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
+FD_PATH     = INPUT_DIR / "fd260513.sas7bdat"
+FD_FCY_PATH = INPUT_DIR / "fcyfd260513.sas7bdat"
+CURR_PATH   = INPUT_DIR / "ca260513.sas7bdat"
+LN_PATH     = INPUT_DIR / "ln260513.sas7bdat"
+# FD_PATH     = get_latest_file(INPUT_DIR / "dpd_fd", "fd" )            # DEPO.FD      (SET DEPO.FD)
+# FD_FCY_PATH = get_latest_file(INPUT_DIR / "dp_fcy", "fcyfd" )         # DP.FCY<REPTYEAR><REPTMON><REPTDAY>
+# CURR_PATH   = get_latest_file(INPUT_DIR / "dpd_ca", "ca")             # DEPO.CURRENT (SET DEPO.CURRENT)
+# LN_PATH     = get_latest_file(INPUT_DIR / "lnd_ln", "ln")             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
 # >>>>> Required column sets for early validation per input file <<<<<
 """
@@ -152,8 +155,8 @@ fd_summary = (
     .sort(["IND", "CURCODE"])
 )
 
-fd_summary.write_parquet(output_path / "FD.parquet")
-fd_summary.write_csv(output_path / "FD.csv")
+fd_summary.write_parquet(OUTPUT_DIR / "FD.parquet")
+fd_summary.write_csv(OUTPUT_DIR / "FD.csv")
 
 # =============================================================================
 # DATA FCYCA  (SET DP.FCY<REPTYEAR><REPTMON><REPTDAY>
@@ -233,8 +236,8 @@ curr_summary = (
     .sort(["IND", "CURCODE"])
 )
 
-curr_summary.write_parquet(output_path / "CURR.parquet")
-curr_summary.write_csv(output_path / "CURR.csv")
+curr_summary.write_parquet(OUTPUT_DIR / "CURR.parquet")
+curr_summary.write_csv(OUTPUT_DIR / "CURR.csv")
 
 # =============================================================================
 # DATA LOAN  (SET LOAN.LNNOTE; WHERE CCY NE 'MYR')
@@ -281,12 +284,12 @@ loan_summary = (
     .sort(["IND", "CURCODE"])
 )
 
-loan_summary.write_parquet(output_path / "LOAN.parquet")
-loan_summary.write_csv(output_path / "LOAN.csv")
+loan_summary.write_parquet(OUTPUT_DIR / "LOAN.parquet")
+loan_summary.write_csv(OUTPUT_DIR / "LOAN.csv")
 
 # =============================================================================
-# DATA FCY  (SET FD CURR LOAN; BY IND; FILE OUTFCY;)
-# Produces the detailed section of OUTFCY.txt
+# DATA FCY  (SET FD CURR LOAN; BY IND; FILE OutstandingFCY;)
+# Produces the detailed section of OutstandingFCY.txt
 # =============================================================================
 
 # Combine all three summary datasets (diagonal concat fills missing cols with null)
@@ -295,7 +298,8 @@ fcy_combined = pl.concat(
     how="diagonal"
 ).sort(["IND", "CURCODE"])
 
-DLM = "\x05"   # '05'X
+# DLM = "\x05"   # '05'X    - # EBCDIC-style delimiter
+DLM = "|"                   # Standard report delimiter
 
 # IND group ordering matches SAS SET order: A B C D E F
 _IND_HEADERS = {
@@ -307,12 +311,17 @@ _IND_HEADERS = {
     "F": "NON INDIVIDUAL - FCY LOAN",
 }
 
-outfcy_path = output_path / "OUTFCY.txt"
-outfcy_path = output_path / "OUTFCY.csv"
+out_txt = OUTPUT_DIR / "OutstandingFCY.txt"
+out_txt = build_output_file(
+    OUTPUT_DIR,
+    "OutstandingFCY",
+    date_format="ddmmYYYY"
+).with_suffix(".txt")
+# out_csv = OUTPUT_DIR / "OutstandingFCY.csv"
 
-with open(outfcy_path, "w", encoding="utf-8") as f:
+with open(out_txt, "w", encoding="utf-8") as f:
 
-    # _N_ = 1 block  (first record written to FILE OUTFCY)
+    # _N_ = 1 block  (first record written to FILE OutstandingFCY)
     f.write(f"REPORT ID : EIBDOFCY\n")
     f.write(f"PUBLIC BANK BERHAD\n")
     f.write(f"OUTSTANDING FCY LOAN AND DEPOSITS AS AT {RDATE}\n")
@@ -320,6 +329,8 @@ with open(outfcy_path, "w", encoding="utf-8") as f:
 
     prev_ind  = None
     nobs      = 0
+
+    csv_rows = []       # For csv creation
 
     for row in fcy_combined.iter_rows(named=True):
         ind = row["IND"]
@@ -345,6 +356,15 @@ with open(outfcy_path, "w", encoding="utf-8") as f:
         freq   = row.get("_FREQ_") or 0
         curbal = row.get("CURBAL") or 0.0
 
+        # For csv creation
+        csv_rows.append({
+            "NOBS"            : nobs,
+            "IND"             : ind,
+            "CURCODE"         : row["CURCODE"],
+            "FREQ"            : freq,
+            "CURRENT_BALANCE" : curbal
+        })
+
         # PUT @01 NOBS 3. DLM+(-1) CURCODE $3. DLM+(-1) _FREQ_ 10. DLM+(-1) CURBAL COMMA20.2;
         f.write(
             f"{nobs:3d}{DLM}"
@@ -353,8 +373,11 @@ with open(outfcy_path, "w", encoding="utf-8") as f:
             f"{curbal:>20,.2f}\n"
         )
 
-fcy_combined.write_parquet(output_path / "FCY.parquet")
-fcy_combined.write_csv(output_path / "FCY.csv")
+# For csv creation
+pd.DataFrame(csv_rows).to_csv(OUTPUT_DIR / "OutstandingFCY.csv", index=False)
+
+fcy_combined.write_parquet(OUTPUT_DIR / "FCY.parquet")
+fcy_combined.write_csv(OUTPUT_DIR / "FCY.csv")
 
 # =============================================================================
 # PROC SUMMARY DATA=FCY NWAY; BY CURCODE;
@@ -375,12 +398,12 @@ fcy_currency_summary = (
     .sort("CURCODE")
 )
 
-fcy_currency_summary.write_parquet(output_path / "FCY_summary.parquet")
-fcy_currency_summary.write_csv(output_path / "FCY_summary.csv")
+fcy_currency_summary.write_parquet(OUTPUT_DIR / "FCY_summary.parquet")
+fcy_currency_summary.write_csv(OUTPUT_DIR / "FCY_summary.csv")
 
 # =============================================================================
-# DATA _NULL_  (SET FCY END=LAST; FILE OUTFCY MOD;)
-# Appends the summary section to OUTFCY.txt
+# DATA _NULL_  (SET FCY END=LAST; FILE OutstandingFCY MOD;)
+# Appends the summary section to OutstandingFCY.txt
 # =============================================================================
 totifd = 0.0
 totcfd = 0.0
@@ -389,7 +412,7 @@ totcca = 0.0
 totiln = 0.0
 totcln = 0.0
 
-with open(outfcy_path, "a", encoding="utf-8") as f:
+with open(out_txt, "a", encoding="utf-8") as f:
 
     n = 0
 
@@ -428,7 +451,7 @@ with open(outfcy_path, "a", encoding="utf-8") as f:
             f"{ilnbal:>20,.2f}{DLM}"
             f"{clnbal:>20,.2f}\n"
         )
-
+ 
         totifd += ifdbal
         totcfd += cfdbal
         totica += icabal
@@ -448,4 +471,4 @@ with open(outfcy_path, "a", encoding="utf-8") as f:
         f"{totcln:>20,.2f}\n"
     )
 
-print(f"\n EIBDOFCY_MYR_FCY completed — report date {RDATE}, output: {outfcy_path} \n")
+print(f"\n EIBDOFCY_MYR_FCY completed — report date {RDATE}, output: {out_txt} \n")
