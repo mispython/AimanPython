@@ -1,3 +1,64 @@
+def _merge_with_branch(
+    df_cit_year: pl.DataFrame,
+    df_branch: pl.DataFrame,
+    con: duckdb.DuckDBPyConnection,
+) -> pl.DataFrame:
+    """Merge CIT year data with branch reference, compute SUMAMT/SUMACT, assign NO.
+
+    SAS equivalent:
+        DATA CIT;
+          MERGE CIT.CIT&REPTYEAR(IN=A) BRANCH(IN=B);
+          IF B;
+          RETAIN NO 0; BY BRANCH;
+          SUMAMT = SUM(OF AMOUNT01-AMOUNT12);
+          SUMACT = SUM(OF NOACCT01-NOACCT12);
+          NO + 1;
+    """
+    amount_cols = [f"AMOUNT{str(m).zfill(2)}" for m in range(1, 13)]
+    noacct_cols = [f"NOACCT{str(m).zfill(2)}" for m in range(1, 13)]
+
+    amount_select = ", ".join(
+        f'COALESCE(c."{col}", 0) AS "{col}"' for col in amount_cols
+    )
+    noacct_select = ", ".join(
+        f'COALESCE(c."{col}", 0) AS "{col}"' for col in noacct_cols
+    )
+
+    con.register("cit_year",   df_cit_year.to_pandas())
+    con.register("branch_ref", df_branch.to_pandas())
+
+    df = con.execute(f"""
+        SELECT
+            b.BRANCH,
+            b.BRABBR,
+            {amount_select},
+            {noacct_select}
+        FROM branch_ref b
+        LEFT JOIN cit_year c ON c.BRANCH = b.BRANCH
+        ORDER BY b.BRANCH
+    """).pl()
+
+    # Cast all amount/noacct columns to consistent dtypes before horizontal sum
+    # to avoid Polars internal panic from mixed i32/i64/f64 in sum_horizontal
+    df = df.with_columns(
+        [pl.col(c).cast(pl.Float64) for c in amount_cols] +
+        [pl.col(c).cast(pl.Int64)   for c in noacct_cols]
+    )
+
+    df = df.with_columns([
+        pl.sum_horizontal([pl.col(c) for c in amount_cols]).alias("SUMAMT"),
+        pl.sum_horizontal([pl.col(c) for c in noacct_cols]).cast(pl.Int64).alias("SUMACT"),
+    ])
+
+    # SAS: RETAIN NO 0; NO + 1; → sequential row number starting at 1
+    df = df.with_columns(
+        pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias("NO")
+    )
+
+    return df
+
+==========
+
 Step 6: Merging CIT year data with branch reference...
 
 thread 'polars-0' (149429) panicked at crates/polars-core/src/series/arithmetic/owned.rs:91:1:
