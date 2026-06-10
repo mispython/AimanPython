@@ -1,3 +1,19 @@
+    # ── Step 4: Detect month from filenames ────────────────────────────────
+    print("\nStep 4: Detecting report month from TLBTRAN filenames...")
+    file_month = _detect_month_from_files()
+    print(f"  Detected month from files: {file_month}")
+
+    # ── Step 4b: Aggregate current month to branch level ──────────────────
+    print(f"\nStep 4b: Aggregating month {file_month} CASHOUT and NOACCT by BRANCH...")
+    df_month = _build_month_summary(df_all, con, file_month)
+    print(f"  Branches with non-zero CASHOUT this month: {len(df_month):,}")
+
+    # ── Step 5: Accumulate into yearly CIT parquet ─────────────────────────
+    print(f"\nStep 5: Updating yearly CIT parquet [{CIT_YEAR_FILE.name}]...")
+    df_cit_year = _update_cit_year(df_month, file_month)
+    print(f"  Total branches in yearly parquet: {len(df_cit_year):,}")
+
+
 def _detect_month_from_files() -> str:
     """Detect the report month from the input TLBTRAN filenames.
 
