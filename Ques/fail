@@ -1,30 +1,22 @@
-    # For updated columns:
-    # - if branch exists in new data → take new value
-    # - if branch only exists in existing data → preserve existing value (NOT 0)
-    overwrite_exprs = []
-    for col in update_cols:
-        new_col = f"{col}_NEW"
-        if new_col in df_merged.columns:
-            overwrite_exprs.append(
-                pl.when(pl.col(new_col).is_not_null())
-                .then(pl.col(new_col))
-                .otherwise(
-                    pl.coalesce([pl.col(col), pl.lit(0).cast(pl.Float64)])
-                )
-                .alias(col)
-            )
+Step 6: Merging CIT year data with branch reference...
 
-
-keep_exprs = []
-    existing_only_cols = [
-        c for c in df_existing.columns
-        if c != "BRANCH" and c not in update_cols
-    ]
-    for col in existing_only_cols:
-        keep_exprs.append(
-            pl.coalesce([pl.col(col), pl.lit(0).cast(pl.Float64)])
-            .alias(col)
-        )
+thread 'polars-0' (149429) panicked at crates/polars-core/src/series/arithmetic/owned.rs:91:1:
+internal error: entered unreachable code
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_append.py", line 602, in <module>
+    df_report = _merge_with_branch(df_cit_year, df_branch, con)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_append.py", line 390, in _merge_with_branch
+    df = df.with_columns([
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+pyo3_runtime.PanicException: internal error: entered unreachable code
 
 ==========
 
