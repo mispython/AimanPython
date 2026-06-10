@@ -24,25 +24,29 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # >>>>> Input file paths <<<
 """
-FD_PATH   : DEPO.FD      — fixed deposit (.sas7bdat); has CURCODE; filter WHERE CURCODE NE 'MYR'
-CURR_PATH : DEPO.CURRENT — current account (.sas7bdat); has CURCODE; filter WHERE CURCODE NE 'MYR'
-LN_PATH   : LOAN.LNNOTE  — loan (.sas7bdat); has CURCODE; filter WHERE CURCODE NE 'MYR'
+FD_MYR_PATH  : MYR fixed deposit records — no CURCODE column; all records are MYR.
+               CURCODE added as literal 'MYR' before concat.
+FD_FCY_PATH  : FCY fixed deposit records — has CURCODE; all records are FCY (no MYR filter needed).
+               Together FD_MYR_PATH + FD_FCY_PATH represent SAS DEPO.FD.
+CURR_PATH    : DEPO.CURRENT — mixed MYR+FCY current account records; has CURCODE.
+               FCY rows selected by filtering WHERE CURCODE NE 'MYR'.
+LN_PATH      : LOAN.LNNOTE — mixed MYR+FCY loan records; currency column is CCY (not CURCODE).
+               FCY rows selected by filtering WHERE CCY NE 'MYR'; CCY renamed to CURCODE downstream.
 """
-FD_PATH   = INPUT_DIR / "fd260609.sas7bdat"
-CURR_PATH = INPUT_DIR / "ca260609.sas7bdat"
-LN_PATH   = INPUT_DIR / "ln260609.sas7bdat"
-# FD_PATH   = get_latest_file(INPUT_DIR / "dpd_fd", "fd")    # DEPO.FD      (SET DEPO.FD)
-# CURR_PATH = get_latest_file(INPUT_DIR / "dpd_ca", "ca")    # DEPO.CURRENT (SET DEPO.CURRENT)
-# LN_PATH   = get_latest_file(INPUT_DIR / "lnd_ln", "ln")    # LOAN.LNNOTE  (SET LOAN.LNNOTE)
+FD_MYR_PATH  = INPUT_DIR / "fd260609.sas7bdat"
+FD_FCY_PATH  = INPUT_DIR / "fcyfd260609.sas7bdat"
+CURR_PATH    = INPUT_DIR / "ca260609.sas7bdat"
+LN_PATH      = INPUT_DIR / "ln260609.sas7bdat"
+# FD_MYR_PATH  = get_latest_file(INPUT_DIR / "dpd_fd",  "fd")      # DEPO.FD MYR portion
+# FD_FCY_PATH  = get_latest_file(INPUT_DIR / "dp_fcy",  "fcyfd")   # DEPO.FD FCY portion
+# CURR_PATH    = get_latest_file(INPUT_DIR / "dpd_ca",  "ca")      # DEPO.CURRENT
+# LN_PATH      = get_latest_file(INPUT_DIR / "lnd_ln",  "ln")      # LOAN.LNNOTE
 
 # >>>>> Required column sets for early validation per input file <<<
-"""
-All three source files contain CURCODE and mixed MYR+FCY records.
-FCY rows are selected by filtering WHERE CURCODE NE 'MYR', matching the original SAS.
-"""
-REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
-REQUIRED_CURR_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
-REQUIRED_LN_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
+REQUIRED_FD_MYR_COLUMNS  = {"CUSTCODE", "CURBAL"}               # no CURCODE; all MYR
+REQUIRED_FD_FCY_COLUMNS  = {"CUSTCODE", "CURCODE", "CURBAL"}    # CURCODE present; all FCY
+REQUIRED_CURR_COLUMNS    = {"CUSTCODE", "CURCODE", "CURBAL"}    # mixed; filter by CURCODE
+REQUIRED_LN_COLUMNS      = {"CUSTCODE", "CCY",     "CURBAL"}    # currency column is CCY
 
 # INDIVIDUAL custcode values (SAS: IF CUSTCODE IN ('77','78','95','96'))
 INDIVIDUAL_CUSTCODES = ["77", "78", "95", "96"]
@@ -159,17 +163,36 @@ RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR';)
-# DEPO.FD contains both MYR and FCY records; FCY rows selected by CURCODE NE 'MYR'.
+# DEPO.FD is represented by two separate files in this environment:
+#   - fd260609   : MYR fixed deposits — no CURCODE column; CURCODE added as literal 'MYR'
+#   - fcyfd260609: FCY fixed deposits — has CURCODE; all records are FCY (no filter needed)
+# Both are concatenated to form the full DEPO.FD equivalent, then FCY rows are kept
+# by filtering WHERE CURCODE NE 'MYR' (which retains all FCY rows and drops the MYR rows).
 # CUSTCODE IN ('77','78','95','96') → INDIVIDUAL (IND=A), else NON-INDIVIDUAL (IND=B).
 # =============================================================================
-_fd_raw = _read_sas7bdat(FD_PATH)
-_require_columns(_fd_raw, REQUIRED_FD_COLUMNS, FD_PATH)
-
-fd_df = (
-    _fd_raw
-    .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") != "MYR")                        # WHERE CURCODE NE 'MYR'
+_fd_myr_raw = _read_sas7bdat(FD_MYR_PATH)
+_require_columns(_fd_myr_raw, REQUIRED_FD_MYR_COLUMNS, FD_MYR_PATH)
+fd_myr = (
+    _fd_myr_raw
+    .with_columns([
+        pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars(),
+        pl.lit("MYR").alias("CURCODE"),             # no CURCODE column; all records are MYR
+    ])
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
+
+_fd_fcy_raw = _read_sas7bdat(FD_FCY_PATH)
+_require_columns(_fd_fcy_raw, REQUIRED_FD_FCY_COLUMNS, FD_FCY_PATH)
+fd_fcy = (
+    _fd_fcy_raw
+    .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])      # all records are FCY; no filter needed
+)
+
+# Concat MYR + FCY FD, then filter WHERE CURCODE NE 'MYR' to keep FCY rows only
+fd_df = (
+    pl.concat([fd_myr, fd_fcy], how="vertical")
+    .filter(pl.col("CURCODE") != "MYR")             # WHERE CURCODE NE 'MYR'
     .pipe(_assign_ind, "A", "B", "IFDBAL", "CFDBAL")
     .select(["IND", "CURCODE", "CURBAL", "IFDBAL", "CFDBAL"])
 )
@@ -183,7 +206,7 @@ fd_summary.write_csv(OUTPUT_DIR / "FD.csv")
 
 # =============================================================================
 # DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR';)
-# DEPO.CURRENT contains both MYR and FCY records; FCY rows selected by CURCODE NE 'MYR'.
+# DEPO.CURRENT is ca260609 — mixed MYR+FCY; FCY rows selected by CURCODE NE 'MYR'.
 # CUSTCODE IN ('77','78','95','96') → INDIVIDUAL (IND=C), else NON-INDIVIDUAL (IND=D).
 # =============================================================================
 _curr_raw = _read_sas7bdat(CURR_PATH)
@@ -192,7 +215,7 @@ _require_columns(_curr_raw, REQUIRED_CURR_COLUMNS, CURR_PATH)
 curr_df = (
     _curr_raw
     .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") != "MYR")                        # WHERE CURCODE NE 'MYR'
+    .filter(pl.col("CURCODE") != "MYR")             # WHERE CURCODE NE 'MYR'
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
     .pipe(_assign_ind, "C", "D", "ICABAL", "CCABAL")
     .select(["IND", "CURCODE", "CURBAL", "ICABAL", "CCABAL"])
@@ -207,7 +230,8 @@ curr_summary.write_csv(OUTPUT_DIR / "CURR.csv")
 
 # =============================================================================
 # DATA LOAN  (SET LOAN.LNNOTE; WHERE CURCODE NE 'MYR';)
-# LOAN.LNNOTE contains both MYR and FCY records; FCY rows selected by CURCODE NE 'MYR'.
+# LOAN.LNNOTE is ln260609 — mixed MYR+FCY; currency column is CCY (not CURCODE).
+# FCY rows selected by filtering WHERE CCY NE 'MYR'; CCY renamed to CURCODE for consistency.
 # CUSTCODE IN ('77','78','95','96') → INDIVIDUAL (IND=E), else NON-INDIVIDUAL (IND=F).
 # =============================================================================
 _loan_raw = _read_sas7bdat(LN_PATH)
@@ -216,7 +240,8 @@ _require_columns(_loan_raw, REQUIRED_LN_COLUMNS, LN_PATH)
 loan_df = (
     _loan_raw
     .with_columns(pl.col("CUSTCODE").cast(pl.Utf8).str.strip_chars())
-    .filter(pl.col("CURCODE") != "MYR")                        # WHERE CURCODE NE 'MYR'
+    .filter(pl.col("CCY") != "MYR")                # WHERE CURCODE NE 'MYR' (column is CCY)
+    .rename({"CCY": "CURCODE"})                     # align to CURCODE for downstream consistency
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
     .pipe(_assign_ind, "E", "F", "ILNBAL", "CLNBAL")
     .select(["IND", "CURCODE", "CURBAL", "ILNBAL", "CLNBAL"])
@@ -243,7 +268,7 @@ fcy_combined = (
 fcy_combined.write_parquet(OUTPUT_DIR / "FCY.parquet")
 fcy_combined.write_csv(OUTPUT_DIR / "FCY.csv")
 
-# Output file — named OutstandingFCY(DDMMYYYY).txt, e.g. OutstandingFCY09062026.txt
+# Output file — named OutstandingFCY(DDMMYYYY).txt e.g. OutstandingFCY09062026.txt
 out_txt = build_output_file(
     OUTPUT_DIR,
     "OutstandingFCY",
@@ -252,7 +277,8 @@ out_txt = build_output_file(
 
 with open(out_txt, "w", encoding="utf-8") as f:
 
-    # _N_ = 1 block — report header (PUT @1 'REPORT ID...' / 'PUBLIC BANK...' / ... /)
+    # _N_ = 1 block — report header
+    # PUT @1 'REPORT ID : EIBDOFCY' / 'PUBLIC BANK BERHAD' / "OUTSTANDING FCY..." /;
     f.write("REPORT ID : EIBDOFCY\n")
     f.write("PUBLIC BANK BERHAD\n")
     f.write(f"OUTSTANDING FCY LOAN AND DEPOSITS AS AT {RDATE}\n")
@@ -270,10 +296,10 @@ with open(out_txt, "w", encoding="utf-8") as f:
             prev_ind = ind
 
             if ind == "A":
-                # PUT @1 'INDIVIDUAL - FCY FIXED DEPOSIT';  (no leading blank lines for first group)
+                # PUT @1 'INDIVIDUAL - FCY FIXED DEPOSIT'; (no leading blank lines for first group)
                 f.write(f"{_IND_HEADERS[ind]}\n")
             else:
-                # PUT @1// '<header>';  (two blank lines before each subsequent group header)
+                # PUT @1// '<header>'; (two blank lines before each subsequent group header)
                 f.write(f"\n\n{_IND_HEADERS[ind]}\n")
 
             # PUT @01/ 'OBS' DLM+(-1) 'CURCODE' DLM+(-1) 'FREQ' DLM+(-1) 'CURRENT BALANCE' DLM+(-1);
