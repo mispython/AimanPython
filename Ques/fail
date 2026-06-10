@@ -1,3 +1,33 @@
+    # For updated columns:
+    # - if branch exists in new data → take new value
+    # - if branch only exists in existing data → preserve existing value (NOT 0)
+    overwrite_exprs = []
+    for col in update_cols:
+        new_col = f"{col}_NEW"
+        if new_col in df_merged.columns:
+            overwrite_exprs.append(
+                pl.when(pl.col(new_col).is_not_null())
+                .then(pl.col(new_col))
+                .otherwise(
+                    pl.coalesce([pl.col(col), pl.lit(0).cast(pl.Float64)])
+                )
+                .alias(col)
+            )
+
+
+keep_exprs = []
+    existing_only_cols = [
+        c for c in df_existing.columns
+        if c != "BRANCH" and c not in update_cols
+    ]
+    for col in existing_only_cols:
+        keep_exprs.append(
+            pl.coalesce([pl.col(col), pl.lit(0).cast(pl.Float64)])
+            .alias(col)
+        )
+
+==========
+
 def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
     """
     Safely merge new monthly columns into the yearly CIT parquet.
