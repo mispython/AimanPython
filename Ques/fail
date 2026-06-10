@@ -1,61 +1,112 @@
-def _merge_with_branch(
-    df_cit_year: pl.DataFrame,
-    df_branch: pl.DataFrame,
-    con: duckdb.DuckDBPyConnection,
-) -> pl.DataFrame:
-    """Merge CIT year data with branch reference, compute SUMAMT/SUMACT, assign NO.
+def _detect_month_from_files() -> str:
+    """Detect the report month from the input TLBTRAN filenames.
+
+    Pattern: tlbtran{MM}{W}{YY}.sas7bdat
+        tlbtran02126 → MM="02", W="1", YY="26"
+        tlbtran03126 → MM="03", W="1", YY="26"
+
+    All 4 weekly files must agree on the same month.
+    """
+    pattern = re.compile(r"tlbtran(\d{2})\d{1}\d{2}\.sas7bdat", re.IGNORECASE)
+
+    detected = set()
+    for p in (INPUT_TLBTRAN_WK1, INPUT_TLBTRAN_WK2, INPUT_TLBTRAN_WK3, INPUT_TLBTRAN_WK4):
+        m = pattern.match(p.name)
+        if m:
+            detected.add(m.group(1))
+
+    if len(detected) == 0:
+        raise ValueError("Could not detect month from any TLBTRAN filename.")
+    if len(detected) > 1:
+        raise ValueError(f"Conflicting months detected across TLBTRAN files: {detected}")
+
+    return detected.pop()  # e.g. "02"
+
+
+def _build_month_summary(df: pl.DataFrame, con: duckdb.DuckDBPyConnection, file_month: str) -> pl.DataFrame:
+    """Aggregate CASHOUT and NOACCT to branch level for the detected file month.
+
+    Uses file_month (from filename) instead of REPTMON (from system date),
+    so data always lands in its correct month column regardless of when
+    the program is run.
 
     SAS equivalent:
-        DATA CIT;
-          MERGE CIT.CIT&REPTYEAR(IN=A) BRANCH(IN=B);
-          IF B;
-          RETAIN NO 0; BY BRANCH;
-          SUMAMT = SUM(OF AMOUNT01-AMOUNT12);
-          SUMACT = SUM(OF NOACCT01-NOACCT12);
-          NO + 1;
+        PROC SUMMARY DATA=ALL NWAY;
+          CLASS REPTDATE BRANCH; VAR CASHOUT NOACCT;
+          OUTPUT OUT=CIT SUM=AMOUNT&REPTMON NOACCT&REPTMON;
+
+        DATA CIT; SET CIT; IF AMOUNT&REPTMON = 0 THEN DELETE;
+
+        PROC SUMMARY DATA=CIT NWAY;
+          CLASS BRANCH; VAR AMOUNT&REPTMON NOACCT&REPTMON;
+          OUTPUT OUT=FINAL SUM=;
     """
-    amount_cols = [f"AMOUNT{str(m).zfill(2)}" for m in range(1, 13)]
-    noacct_cols = [f"NOACCT{str(m).zfill(2)}" for m in range(1, 13)]
+    amt_col    = f"AMOUNT{file_month}"
+    noacct_col = f"NOACCT{file_month}"
 
-    amount_select = ", ".join(
-        f'COALESCE(c."{col}", 0) AS "{col}"' for col in amount_cols
-    )
-    noacct_select = ", ".join(
-        f'COALESCE(c."{col}", 0) AS "{col}"' for col in noacct_cols
-    )
+    con.register("all_noacct", df.to_pandas())
 
-    con.register("cit_year",   df_cit_year.to_pandas())
-    con.register("branch_ref", df_branch.to_pandas())
-
-    df = con.execute(f"""
+    df_agg = con.execute(f"""
         SELECT
-            b.BRANCH,
-            b.BRABBR,
-            {amount_select},
-            {noacct_select}
-        FROM branch_ref b
-        LEFT JOIN cit_year c ON c.BRANCH = b.BRANCH
-        ORDER BY b.BRANCH
+            BRANCH,
+            SUM(CASHOUT) AS {amt_col},
+            SUM(NOACCT)  AS {noacct_col}
+        FROM all_noacct
+        GROUP BY BRANCH
+        HAVING SUM(CASHOUT) <> 0
+        ORDER BY BRANCH
     """).pl()
 
-    # Cast all amount/noacct columns to consistent dtypes before horizontal sum
-    # to avoid Polars internal panic from mixed i32/i64/f64 in sum_horizontal
-    df = df.with_columns(
-        [pl.col(c).cast(pl.Float64) for c in amount_cols] +
-        [pl.col(c).cast(pl.Int64)   for c in noacct_cols]
+    return df_agg
+
+
+def _update_cit_year(df_month: pl.DataFrame, file_month: str) -> pl.DataFrame:
+    """Persist the current month's data into the yearly CIT parquet.
+
+    Uses file_month (from filename) to determine which columns to update,
+    so re-running for an older month never corrupts other months' data.
+    """
+    amt_col    = f"AMOUNT{file_month}"
+    noacct_col = f"NOACCT{file_month}"
+
+    df_month = df_month.with_columns(pl.col("BRANCH").cast(pl.Int64))
+
+    # ── FIRST RUN: no parquet exists yet ──────────────────────────────────
+    if not CIT_YEAR_FILE.exists():
+        df_out = _scaffold_all_months(df_month)
+        df_out = _canonical_order(df_out)
+        df_out.write_parquet(CIT_YEAR_FILE)
+        print(f"  Created new yearly CIT parquet: {CIT_YEAR_FILE.name}")
+        return df_out.sort("BRANCH")
+
+    # ── SUBSEQUENT RUNS ────────────────────────────────────────────────────
+    df_existing = pl.read_parquet(CIT_YEAR_FILE)
+    df_existing = df_existing.with_columns(pl.col("BRANCH").cast(pl.Int64))
+    df_existing = _scaffold_all_months(df_existing)
+
+    # Drop only this file's month columns — all other months are untouched
+    cols_to_drop = [c for c in [amt_col, noacct_col] if c in df_existing.columns]
+    if cols_to_drop:
+        df_existing = df_existing.drop(cols_to_drop)
+
+    # Full outer join: preserves all branches from both sides
+    df_merged = df_existing.join(
+        df_month.select(["BRANCH", amt_col, noacct_col]),
+        on="BRANCH",
+        how="full",
+        coalesce=True,
     )
 
-    df = df.with_columns([
-        pl.sum_horizontal([pl.col(c) for c in amount_cols]).alias("SUMAMT"),
-        pl.sum_horizontal([pl.col(c) for c in noacct_cols]).cast(pl.Int64).alias("SUMACT"),
+    df_merged = df_merged.with_columns([
+        pl.col(c).fill_null(0) for c in df_merged.columns if c != "BRANCH"
     ])
 
-    # SAS: RETAIN NO 0; NO + 1; → sequential row number starting at 1
-    df = df.with_columns(
-        pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias("NO")
-    )
+    df_merged = _scaffold_all_months(df_merged)
+    df_merged = _canonical_order(df_merged)
 
-    return df
+    df_merged.write_parquet(CIT_YEAR_FILE)
+    print(f"  Updated yearly CIT parquet: {CIT_YEAR_FILE.name} (month {file_month} written)")
+    return df_merged.sort("BRANCH")
 
 ==========
 
