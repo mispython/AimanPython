@@ -1,3 +1,57 @@
+# =============================================================================
+# DATA CURR  (SET DP.FCY...; WHERE 3000000000 <= ACCTNO <= 3999999999)
+# FCY CA records sourced from CURR_PATH, filtered by ACCTNO range.
+# =============================================================================
+_curr_fcy_raw = _read_sas7bdat(CURR_PATH)
+_require_columns(_curr_fcy_raw, REQUIRED_CURR_COLUMNS, CURR_PATH)
+curr_raw = (
+    _curr_fcy_raw
+    .with_columns(
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars()
+    )
+    .filter(
+        (pl.col("ACCTNO") >= 3_000_000_000) &
+        (pl.col("ACCTNO") <= 3_999_999_999)
+    )
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
+
+curr_df = (
+    curr_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("C")).otherwise(pl.lit("D"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("ICABAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CCABAL"),
+    ])
+    .select(["IND", "CURCODE", "CURBAL", "ICABAL", "CCABAL"])
+)
+
+# PROC SUMMARY DATA=CURR NWAY; BY IND CURCODE; VAR CURBAL ICABAL CCABAL; OUTPUT OUT=CURR SUM=;
+curr_summary = (
+    curr_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("ICABAL").sum(),
+        pl.col("CCABAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
+
+curr_summary.write_parquet(OUTPUT_DIR / "CURR.parquet")
+curr_summary.write_csv(OUTPUT_DIR / "CURR.csv")
+
+=================
+
 IF 3000000000<=ACCTNO<=3999999999 THEN OUTPUT FCYCA;
 
 ==================
