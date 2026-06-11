@@ -54,7 +54,7 @@ LN_PATH     : uses CCY (not CURCODE) to identify currency
 REQUIRED_FD_FCY_COLUMNS     = {"CUSTCODE", "CURCODE", "CURBAL"}
 # REQUIRED_CURR_COLUMNS     = {"CUSTCODE", "CURBAL"}
 REQUIRED_CURR_COLUMNS       = {"CUSTCODE", "CURBAL", "ACCTNO"}
-REQUIRED_CURR_FCY_COLUMNS   = {"ACCTNO", "CURCODE"}
+REQUIRED_CURR_FCY_COLUMNS   = {"ACCTNO", "CURCODE", "FCY_TYPE"}
 REQUIRED_LN_COLUMNS         = {"CUSTCODE", "CCY",     "CURBAL"}    # loan uses CCY, not CURCODE
 
 
@@ -162,36 +162,62 @@ fd_summary = (
 
 # =============================================================================
 # DATA CURR
-# Step 1: Read fcy260609.sas7bdat, filter ACCTNO range 3000000000–3999999999,
+# Step 1: Read fcy260609.sas7bdat, filter FCY_TYPE = FCYCA
+#         (CA accounts only — same file contains FD and other account types),
 #         keep ACCTNO + CURCODE as lookup.
 # Step 2: Read ca260609.sas7bdat for main CA data (CUSTCODE, CURBAL, ACCTNO).
 # Step 3: Join on ACCTNO to attach CURCODE onto CA records.
+#         ACCTNO cast to Int64 on BOTH sides before join to avoid dtype mismatch.
 # =============================================================================
 _curr_fcy_raw = _read_sas7bdat(CURR_FCY_PATH)
 _require_columns(_curr_fcy_raw, REQUIRED_CURR_FCY_COLUMNS, CURR_FCY_PATH)
 curr_fcy_lookup = (
     _curr_fcy_raw
-    .with_columns(pl.col("ACCTNO").cast(pl.Int64))
-    .filter(
-        (pl.col("ACCTNO") >= 3_000_000_000) &
-        (pl.col("ACCTNO") <= 3_999_999_999)
-    )
+    .with_columns(pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64))
+    .filter((pl.col("FCY_TYPE") == "FCYCA"))
     .select(["ACCTNO", "CURCODE"])
 )
 
 _curr_raw = _read_sas7bdat(CURR_PATH)
 _require_columns(_curr_raw, REQUIRED_CURR_COLUMNS, CURR_PATH)
+
+# Cast ACCTNO and CUSTCODE eagerly BEFORE join — dtype must match curr_fcy_lookup (Int64)
+_curr_casted = _curr_raw.with_columns([
+    pl.col("CUSTCODE")
+      .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+      .str.strip_chars(),
+    pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+])
+
 curr_raw = (
-    _curr_raw
-    .with_columns([
-        pl.col("CUSTCODE")
-          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
-          .str.strip_chars(),
-        pl.col("ACCTNO").cast(pl.Int64),                # allign dtype for join
-    ])
-    .join(curr_fcy_lookup, on="ACCTNO", how="inner")    # only ACCTNOs found in FCY range
+    _curr_casted
+    .join(curr_fcy_lookup, on="ACCTNO", how="inner")
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
+
+# # STARTS DEBUG HERE
+# print("=== ACCTNO DIAGNOSTICS ===")
+# print("CA ACCTNO dtype    :", _curr_raw.schema["ACCTNO"])
+# print("FCY ACCTNO dtype   :", _curr_fcy_raw.schema["ACCTNO"])
+# print("CA ACCTNO sample   :", _curr_raw["ACCTNO"].head(5).to_list())
+# print("FCY ACCTNO sample  :", _curr_fcy_raw["ACCTNO"].head(5).to_list())
+
+# print("\nFCY ACCTNO range check (3B-3.9B):")
+# print(_curr_fcy_raw.filter(
+#     (pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64) >= 3_000_000_000) &
+#     (pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64) <= 3_999_999_999)
+# ).shape)
+
+# print("\nCA ACCTNO range check (3B-3.9B):")
+# print(_curr_raw.filter(
+#     (pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64) >= 3_000_000_000) &
+#     (pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64) <= 3_999_999_999)
+# ).shape)
+
+# print("\ncurr_fcy_lookup count :", curr_fcy_lookup.shape)
+# print("curr_fcy_lookup sample:\n", curr_fcy_lookup.head(5))
+# print("\ncurr_raw after join   :", curr_raw.shape)
+# # END DEBUG HERE
 
 curr_df = (
     curr_raw
