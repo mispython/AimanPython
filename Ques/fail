@@ -1,368 +1,144 @@
-def _get_latest_tlbtran_files(input_dir: Path) -> tuple[Path, Path, Path, Path]:
-    """Find the 4 weekly TLBTRAN files belonging to the latest available month.
-
-    Pattern: tlbtran{MM}{W}{YY}.sas7bdat
-        MM = month (01-12)
-        W  = week  (1-4)
-        YY = 2-digit year
-
-    Logic:
-    - Scan all tlbtran*.sas7bdat files in input_dir
-    - Group by (YY, MM) — pick the group with the latest (YY, MM)
-    - From that group, take weeks 1-4 (must have all 4)
-    - This handles the case where the program runs on the 1st of a new month
-      but the latest available datasets are from the previous month.
-    """
-    pattern = re.compile(r"tlbtran(\d{2})(\d{1})(\d{2})\.sas7bdat", re.IGNORECASE)
-
-    # Group files by (yy, mm)
-    groups: dict[tuple[str, str], dict[str, Path]] = {}
-    for f in input_dir.glob("tlbtran*.sas7bdat"):
-        m = pattern.match(f.name)
-        if not m:
-            continue
-        mm, wk, yy = m.group(1), m.group(2), m.group(3)
-        key = (yy, mm)
-        groups.setdefault(key, {})[wk] = f
-
-    if not groups:
-        raise FileNotFoundError(
-            f"No tlbtran*.sas7bdat files found in: {input_dir}"
-        )
-
-    # Pick the latest (yy, mm) group that has all 4 weeks
-    for (yy, mm) in sorted(groups.keys(), reverse=True):
-        weeks = groups[(yy, mm)]
-        if all(w in weeks for w in ("1", "2", "3", "4")):
-            wk1 = weeks["1"]
-            wk2 = weeks["2"]
-            wk3 = weeks["3"]
-            wk4 = weeks["4"]
-            print(f"  Latest complete month detected: {mm}/{yy}")
-            print(f"    WK1: {wk1.name}")
-            print(f"    WK2: {wk2.name}")
-            print(f"    WK3: {wk3.name}")
-            print(f"    WK4: {wk4.name}")
-            return wk1, wk2, wk3, wk4
-
-    raise FileNotFoundError(
-        "No complete set of 4 weekly TLBTRAN files found for any month in: "
-        f"{input_dir}\nAvailable groups: "
-        + ", ".join(f"{mm}/{yy}" for yy, mm in sorted(groups.keys(), reverse=True))
+# =============================================================================
+# DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
+# Only FCY FD records are needed — sourced from FD_FCY_PATH.
+# DEPO.FD (FD_PATH) contains MYR-only records and is excluded per WHERE CURCODE NE 'MYR'.
+# =============================================================================
+_fd_fcy_raw = _read_sas7bdat(FD_FCY_PATH)
+_require_columns(_fd_fcy_raw, REQUIRED_FD_FCY_COLUMNS, FD_FCY_PATH)
+fd_raw = (
+    _fd_fcy_raw
+    .with_columns(
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars()
     )
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
 
-
-def _detect_month_from_files(files: tuple[Path, Path, Path, Path]) -> str:
-    """Extract the month string from the resolved TLBTRAN file paths."""
-    pattern = re.compile(r"tlbtran(\d{2})\d{1}\d{2}\.sas7bdat", re.IGNORECASE)
-    detected = set()
-    for f in files:
-        m = pattern.match(f.name)
-        if m:
-            detected.add(m.group(1))
-    if len(detected) != 1:
-        raise ValueError(f"Conflicting months across resolved TLBTRAN files: {detected}")
-    return detected.pop()
-
-
-# Dynamically resolve the 4 weekly TLBTRAN files from the latest available month
-print("Scanning for latest TLBTRAN files...")
-(
-    INPUT_TLBTRAN_WK1,
-    INPUT_TLBTRAN_WK2,
-    INPUT_TLBTRAN_WK3,
-    INPUT_TLBTRAN_WK4,
-) = _get_latest_tlbtran_files(INPUT_DIR)
-
-# Branch file still requires explicit existence check
-if not INPUT_BRHFILE.exists():
-    raise FileNotFoundError(f"Branch file missing: {INPUT_BRHFILE}")
-
-
-# ── Step 4: Detect month from filenames ────────────────────────────────
-    print("\nStep 4: Detecting report month from TLBTRAN filenames...")
-    file_month = _detect_month_from_files(
-        (INPUT_TLBTRAN_WK1, INPUT_TLBTRAN_WK2, INPUT_TLBTRAN_WK3, INPUT_TLBTRAN_WK4)
-    )
-    print(f"  Detected month: {file_month}")
-
-==========
-
-# ── Step 4: Detect month from filenames ────────────────────────────────
-    print("\nStep 4: Detecting report month from TLBTRAN filenames...")
-    file_month = _detect_month_from_files()
-    print(f"  Detected month from files: {file_month}")
-
-    # ── Step 4b: Aggregate current month to branch level ──────────────────
-    print(f"\nStep 4b: Aggregating month {file_month} CASHOUT and NOACCT by BRANCH...")
-    df_month = _build_month_summary(df_all, con, file_month)
-    print(f"  Branches with non-zero CASHOUT this month: {len(df_month):,}")
-
-    # ── Step 5: Accumulate into yearly CIT parquet ─────────────────────────
-    print(f"\nStep 5: Updating yearly CIT parquet [{CIT_YEAR_FILE.name}]...")
-    df_cit_year = _update_cit_year(df_month, file_month)
-    print(f"  Total branches in yearly parquet: {len(df_cit_year):,}")
-
-
-def _detect_month_from_files() -> str:
-    """Detect the report month from the input TLBTRAN filenames.
-
-    Pattern: tlbtran{MM}{W}{YY}.sas7bdat
-        tlbtran02126 → MM="02", W="1", YY="26"
-        tlbtran03126 → MM="03", W="1", YY="26"
-
-    All 4 weekly files must agree on the same month.
-    """
-    pattern = re.compile(r"tlbtran(\d{2})\d{1}\d{2}\.sas7bdat", re.IGNORECASE)
-
-    detected = set()
-    for p in (INPUT_TLBTRAN_WK1, INPUT_TLBTRAN_WK2, INPUT_TLBTRAN_WK3, INPUT_TLBTRAN_WK4):
-        m = pattern.match(p.name)
-        if m:
-            detected.add(m.group(1))
-
-    if len(detected) == 0:
-        raise ValueError("Could not detect month from any TLBTRAN filename.")
-    if len(detected) > 1:
-        raise ValueError(f"Conflicting months detected across TLBTRAN files: {detected}")
-
-    return detected.pop()  # e.g. "02"
-
-
-def _build_month_summary(df: pl.DataFrame, con: duckdb.DuckDBPyConnection, file_month: str) -> pl.DataFrame:
-    """Aggregate CASHOUT and NOACCT to branch level for the detected file month.
-
-    Uses file_month (from filename) instead of REPTMON (from system date),
-    so data always lands in its correct month column regardless of when
-    the program is run.
-
-    SAS equivalent:
-        PROC SUMMARY DATA=ALL NWAY;
-          CLASS REPTDATE BRANCH; VAR CASHOUT NOACCT;
-          OUTPUT OUT=CIT SUM=AMOUNT&REPTMON NOACCT&REPTMON;
-
-        DATA CIT; SET CIT; IF AMOUNT&REPTMON = 0 THEN DELETE;
-
-        PROC SUMMARY DATA=CIT NWAY;
-          CLASS BRANCH; VAR AMOUNT&REPTMON NOACCT&REPTMON;
-          OUTPUT OUT=FINAL SUM=;
-    """
-    amt_col    = f"AMOUNT{file_month}"
-    noacct_col = f"NOACCT{file_month}"
-
-    con.register("all_noacct", df.to_pandas())
-
-    df_agg = con.execute(f"""
-        SELECT
-            BRANCH,
-            SUM(CASHOUT) AS {amt_col},
-            SUM(NOACCT)  AS {noacct_col}
-        FROM all_noacct
-        GROUP BY BRANCH
-        HAVING SUM(CASHOUT) <> 0
-        ORDER BY BRANCH
-    """).pl()
-
-    return df_agg
-
-
-def _update_cit_year(df_month: pl.DataFrame, file_month: str) -> pl.DataFrame:
-    """Persist the current month's data into the yearly CIT parquet.
-
-    Uses file_month (from filename) to determine which columns to update,
-    so re-running for an older month never corrupts other months' data.
-    """
-    amt_col    = f"AMOUNT{file_month}"
-    noacct_col = f"NOACCT{file_month}"
-
-    df_month = df_month.with_columns(pl.col("BRANCH").cast(pl.Int64))
-
-    # ── FIRST RUN: no parquet exists yet ──────────────────────────────────
-    if not CIT_YEAR_FILE.exists():
-        df_out = _scaffold_all_months(df_month)
-        df_out = _canonical_order(df_out)
-        df_out.write_parquet(CIT_YEAR_FILE)
-        print(f"  Created new yearly CIT parquet: {CIT_YEAR_FILE.name}")
-        return df_out.sort("BRANCH")
-
-    # ── SUBSEQUENT RUNS ────────────────────────────────────────────────────
-    df_existing = pl.read_parquet(CIT_YEAR_FILE)
-    df_existing = df_existing.with_columns(pl.col("BRANCH").cast(pl.Int64))
-    df_existing = _scaffold_all_months(df_existing)
-
-    # Drop only this file's month columns — all other months are untouched
-    cols_to_drop = [c for c in [amt_col, noacct_col] if c in df_existing.columns]
-    if cols_to_drop:
-        df_existing = df_existing.drop(cols_to_drop)
-
-    # Full outer join: preserves all branches from both sides
-    df_merged = df_existing.join(
-        df_month.select(["BRANCH", amt_col, noacct_col]),
-        on="BRANCH",
-        how="full",
-        coalesce=True,
-    )
-
-    df_merged = df_merged.with_columns([
-        pl.col(c).fill_null(0) for c in df_merged.columns if c != "BRANCH"
+fd_df = (
+    fd_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("A")).otherwise(pl.lit("B"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("IFDBAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CFDBAL"),
     ])
+    .select(["IND", "CURCODE", "CURBAL", "IFDBAL", "CFDBAL"])
+)
 
-    df_merged = _scaffold_all_months(df_merged)
-    df_merged = _canonical_order(df_merged)
+# PROC SUMMARY DATA=FD NWAY; BY IND CURCODE; VAR CURBAL IFDBAL CFDBAL; OUTPUT OUT=FD SUM=;
+fd_summary = (
+    fd_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("IFDBAL").sum(),
+        pl.col("CFDBAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
 
-    df_merged.write_parquet(CIT_YEAR_FILE)
-    print(f"  Updated yearly CIT parquet: {CIT_YEAR_FILE.name} (month {file_month} written)")
-    return df_merged.sort("BRANCH")
 
-==========
-
-Step 6: Merging CIT year data with branch reference...
-
-thread 'polars-0' (149429) panicked at crates/polars-core/src/series/arithmetic/owned.rs:91:1:
-internal error: entered unreachable code
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_append.py", line 602, in <module>
-    df_report = _merge_with_branch(df_cit_year, df_branch, con)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMCITR_append.py", line 390, in _merge_with_branch
-    df = df.with_columns([
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-pyo3_runtime.PanicException: internal error: entered unreachable code
-
-==========
-
-def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
-    """
-    Safely merge new monthly columns into the yearly CIT parquet.
-    Only columns present in df_final (excluding BRANCH) are updated.
-    All other existing month columns are preserved exactly as-is.
-    New branches from df_final are inserted with 0 for all other months.
-    """
-
-    update_cols = [c for c in df_final.columns if c != "BRANCH"]
-
-    def _scaffold_all_months(df: pl.DataFrame) -> pl.DataFrame:
-        """Ensure all 24 month columns exist, filling missing ones with 0."""
-        for m in range(1, 13):
-            mm = str(m).zfill(2)
-            if f"AMOUNT{mm}" not in df.columns:
-                df = df.with_columns(pl.lit(0.0).cast(pl.Float64).alias(f"AMOUNT{mm}"))
-            if f"NOACCT{mm}" not in df.columns:
-                df = df.with_columns(pl.lit(0).cast(pl.Int64).alias(f"NOACCT{mm}"))
-        return df
-
-    def _canonical_order(df: pl.DataFrame) -> pl.DataFrame:
-        """Reorder to: BRANCH, AMOUNT01, NOACCT01, ..., AMOUNT12, NOACCT12."""
-        ordered = ["BRANCH"] + [
-            col
-            for m in range(1, 13)
-            for col in (f"AMOUNT{str(m).zfill(2)}", f"NOACCT{str(m).zfill(2)}")
-        ]
-        return df.select(ordered)
-
-    # Cast BRANCH consistently
-    df_final = df_final.with_columns(pl.col("BRANCH").cast(pl.Int64))
-
-    # ── FIRST RUN: no existing parquet ────────────────────────────────────
-    if not CIT_YEAR_FILE.exists():
-        df_final = _scaffold_all_months(df_final)
-        df_final = _canonical_order(df_final)
-        df_final.write_parquet(CIT_YEAR_FILE)
-        return df_final.sort("BRANCH")
-
-    # ── SUBSEQUENT RUNS ───────────────────────────────────────────────────
-    df_existing = _safe_read_cit_parquet(CIT_YEAR_FILE)
-    df_existing = df_existing.with_columns(pl.col("BRANCH").cast(pl.Int64))
-    df_existing = _scaffold_all_months(df_existing)
-
-    # Full outer join — keeps ALL branches from both sides
-    df_merged = df_existing.join(
-        df_final.select(["BRANCH"] + update_cols),
-        on="BRANCH",
-        how="full",
-        suffix="_NEW"
+# =============================================================================
+# DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
+# Only FCY CA records are needed — sourced from FD_FCY_PATH (same FCY file as FD).
+# DEPO.CURRENT (CURR_PATH) contains MYR-only records and is excluded per WHERE CURCODE NE 'MYR'.
+# FCY CA data resides in FD_FCY_PATH; CURCODE is present and identifies currency.
+# =============================================================================
+_curr_fcy_raw = _read_sas7bdat(FD_FCY_PATH)
+_require_columns(_curr_fcy_raw, REQUIRED_FD_FCY_COLUMNS, FD_FCY_PATH)
+curr_raw = (
+    _curr_fcy_raw
+    .with_columns(
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars()
     )
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
 
-    # Coalesce BRANCH (full join may produce nulls on either side)
-    df_merged = df_merged.with_columns(
-        pl.coalesce([pl.col("BRANCH"), pl.col("BRANCH_NEW")]).alias("BRANCH")
-    ).drop([c for c in df_merged.columns if c == "BRANCH_NEW"])
+curr_df = (
+    curr_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("C")).otherwise(pl.lit("D"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("ICABAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CCABAL"),
+    ])
+    .select(["IND", "CURCODE", "CURBAL", "ICABAL", "CCABAL"])
+)
 
-    # For updated columns: take new value (overwrite existing month data)
-    # For non-updated columns: keep existing value, default 0 for new branches
-    overwrite_exprs = []
-    for col in update_cols:
-        new_col = f"{col}_NEW"
-        if new_col in df_merged.columns:
-            overwrite_exprs.append(
-                pl.coalesce([pl.col(new_col), pl.lit(0).cast(pl.Float64)])
-                .alias(col)
-            )
+# PROC SUMMARY DATA=CURR NWAY; BY IND CURCODE; VAR CURBAL ICABAL CCABAL; OUTPUT OUT=CURR SUM=;
+curr_summary = (
+    curr_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("ICABAL").sum(),
+        pl.col("CCABAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
 
-    keep_exprs = []
-    existing_only_cols = [
-        c for c in df_existing.columns
-        if c != "BRANCH" and c not in update_cols
-    ]
-    for col in existing_only_cols:
-        keep_exprs.append(
-            pl.coalesce([pl.col(col), pl.lit(0).cast(pl.Float64)])
-            .alias(col)
-        )
 
-    if overwrite_exprs:
-        df_merged = df_merged.with_columns(overwrite_exprs)
-    if keep_exprs:
-        df_merged = df_merged.with_columns(keep_exprs)
+# =============================================================================
+# DATA LOAN  (SET LOAN.LNNOTE; WHERE CCY NE 'MYR')
+# Loan table uses CCY (not CURCODE) to identify currency.
+# FCY rows filtered by CCY != 'MYR'; CCY aliased to CURCODE for consistency.
+# =============================================================================
+_loan_raw = _read_sas7bdat(LN_PATH)
+_require_columns(_loan_raw, REQUIRED_LN_COLUMNS, LN_PATH)
+loan_raw = (
+    _loan_raw
+    .with_columns(
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars()
+    )
+    .filter(pl.col("CCY") != "MYR")
+    .rename({"CCY": "CURCODE"})
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
 
-    # Drop all _NEW suffix columns
-    drop_cols = [c for c in df_merged.columns if c.endswith("_NEW")]
-    if drop_cols:
-        df_merged = df_merged.drop(drop_cols)
+loan_df = (
+    loan_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("E")).otherwise(pl.lit("F"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("ILNBAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CLNBAL"),
+    ])
+    .select(["IND", "CURCODE", "CURBAL", "ILNBAL", "CLNBAL"])
+)
 
-    df_merged = _scaffold_all_months(df_merged)
-    df_merged = _canonical_order(df_merged)
-
-    df_merged.write_parquet(CIT_YEAR_FILE)
-    return df_merged.sort("BRANCH")
-
-==========
-
-========== PARQUET CONTENT ==========
-shape: (219, 25)
-┌────────┬──────────┬──────────┬──────────┬───┬──────────┬──────────┬──────────┬──────────┐
-│ BRANCH ┆ AMOUNT02 ┆ NOACCT02 ┆ AMOUNT01 ┆ … ┆ AMOUNT11 ┆ NOACCT11 ┆ AMOUNT12 ┆ NOACCT12 │
-│ ---    ┆ ---      ┆ ---      ┆ ---      ┆   ┆ ---      ┆ ---      ┆ ---      ┆ ---      │
-│ i64    ┆ f64      ┆ f64      ┆ i32      ┆   ┆ i32      ┆ i32      ┆ i32      ┆ i32      │
-╞════════╪══════════╪══════════╪══════════╪═══╪══════════╪══════════╪══════════╪══════════╡
-│ 2      ┆ 5.32e6   ┆ 1.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-│ 4      ┆ 5e6      ┆ 2.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-│ 5      ┆ 4.495e6  ┆ 1.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-│ 6      ┆ 1.6208e7 ┆ 4.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-│ 7      ┆ 5e6      ┆ 1.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-│ …      ┆ …        ┆ …        ┆ …        ┆ … ┆ …        ┆ …        ┆ …        ┆ …        │
-│ 296    ┆ 7.361e6  ┆ 3.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-│ 701    ┆ 3.921e6  ┆ 2.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-│ 702    ┆ 1.244e6  ┆ 1.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-│ 703    ┆ 2.15e7   ┆ 7.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-│ 704    ┆ 1.562e7  ┆ 7.0      ┆ 0        ┆ … ┆ 0        ┆ 0        ┆ 0        ┆ 0        │
-└────────┴──────────┴──────────┴──────────┴───┴──────────┴──────────┴──────────┴──────────┘
-
-----------
-
-DATA BRH (KEEP=D_TRX_BRANCH D_TRX_BRCHCODE);
-  	INFILE BRHFILE;
-  	INPUT @002 D_TRX_BRCHCODE   3.
-          @006 D_TRX_BRANCH    $3.
-          @050 STATUS   $1.
-          ;
-  	IF STATUS = 'O' AND D_TRX_BRCHCODE  NOT IN (101,187,279);
-RUN;
-PROC SORT DATA=BRH; BY D_TRX_BRANCH; RUN;
+# PROC SUMMARY DATA=LOAN NWAY; BY IND CURCODE; VAR CURBAL ILNBAL CLNBAL; OUTPUT OUT=LOAN SUM=;
+loan_summary = (
+    loan_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("ILNBAL").sum(),
+        pl.col("CLNBAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
