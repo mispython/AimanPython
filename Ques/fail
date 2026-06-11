@@ -1,3 +1,34 @@
+=== ACCTNO DIAGNOSTICS ===
+CA ACCTNO dtype    : Float64
+FCY ACCTNO dtype   : Float64
+CA ACCTNO sample   : [3000000333.0, 3060000633.0, 3060000730.0, 3060001628.0, 3060002235.0]
+FCY ACCTNO sample  : [1590002731.0, 1590003107.0, 1590003204.0, 1590003435.0, 1590006323.0]
+
+FCY ACCTNO range check (3B-3.9B):
+(66713, 101)
+
+CA ACCTNO range check (3B-3.9B):
+(849993, 147)
+
+curr_fcy_lookup count : (66713, 2)
+curr_fcy_lookup sample:
+ shape: (5, 2)
+┌────────────┬─────────┐
+│ ACCTNO     ┆ CURCODE │
+│ ---        ┆ ---     │
+│ i64        ┆ str     │
+╞════════════╪═════════╡
+│ 3590000016 ┆ USD     │
+│ 3590000027 ┆ SGD     │
+│ 3590000113 ┆ USD     │
+│ 3590000124 ┆ USD     │
+│ 3590000210 ┆ USD     │
+└────────────┴─────────┘
+
+curr_raw after join   : (0, 3)
+
+============
+
 print("=== ACCTNO DIAGNOSTICS ===")
 print("CA ACCTNO dtype    :", _curr_raw.schema["ACCTNO"])
 print("FCY ACCTNO dtype   :", _curr_fcy_raw.schema["ACCTNO"])
