@@ -1,3 +1,21 @@
+_curr_raw = _read_sas7bdat(CURR_PATH)
+_require_columns(_curr_raw, REQUIRED_CURR_COLUMNS, CURR_PATH)
+
+# Cast ACCTNO BEFORE joining — dtype must match curr_fcy_lookup (i64)
+_curr_raw_casted = _curr_raw.with_columns([
+    pl.col("CUSTCODE")
+      .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+      .str.strip_chars(),
+    pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+])
+
+curr_raw = (
+    _curr_raw_casted
+    .join(curr_fcy_lookup, on="ACCTNO", how="inner")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
+
+
 === ACCTNO DIAGNOSTICS ===
 CA ACCTNO dtype    : Float64
 FCY ACCTNO dtype   : Float64
