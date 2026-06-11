@@ -1,3 +1,7 @@
+IF 3000000000<=ACCTNO<=3999999999 THEN OUTPUT FCYCA;
+
+==================
+
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
 # Only FCY FD records are needed — sourced from FD_FCY_PATH.
