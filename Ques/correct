@@ -1,15 +1,19 @@
-  CURRENCY   AGENT                                 TRANSACTION          DEBIT(D)/           TRANS           FOREIGN                RM
-  CODE       NO     NAME                           DESCRIPTION          CREDIT(C)          ACTION            AMOUNT            AMOUNT
+REPORT ID : EIMNOSTE
+REPORT ON FOREIGN EXCHANGE TRANSACTION AS AT 11/06/26
+ 
+                                                                                       NO OF                                      
+  CURRENCY   AGENT                                 TRANSACTION           DEBIT(D)/     TRANS            FOREIGN                 RM
+  CODE       NO     NAME                           DESCRIPTION           CREDIT(C)    ACTION             AMOUNT             AMOUNT
                                                                                                                                      
-  AUD        556        ANZ LIMITED                    BR                   D                       1   -144,581,000.00   -408,920,625.47
-                        ANZ LIMITED                    FBEP AP              C                       1      1,500,000.00      4,204,287.90
-                        ANZ LIMITED                    FBEP AP              D                       1     -1,500,000.00     -4,205,221.95
-                        ANZ LIMITED                    ILC                  C                       1      4,000,000.00     11,174,008.40
-                        ANZ LIMITED                    ILC                  D                       1     -4,002,800.00    -11,197,866.22
-                        ANZ LIMITED                    MISCELLANEOUS        C                     279  1,121,834,893.72  3,163,471,710.25
-                        ANZ LIMITED                    MISCELLANEOUS        D                     292 -1,009,201,778.39 -2,844,786,914.74
-                        ANZ LIMITED                    TREASURY CREDIT      D                       2       -919,397.50     -2,568,338.84
-                        ANZ LIMITED                    TREASURY DEBIT       C                       1         69,374.00        193,796.41
-                                                                                                 -----------------------------------
-                                                                                                    -32,800,708.17    -92,635,164.26
-                                                                                                 -----------------------------------
+  AUD        556        ANZ LIMITED                    BR                    D                 1    -144,581,000.00    -408,920,625.47
+                        ANZ LIMITED                    FBEP AP               C                 1       1,500,000.00       4,204,287.90
+                        ANZ LIMITED                    FBEP AP               D                 1      -1,500,000.00      -4,205,221.95
+                        ANZ LIMITED                    ILC                   C                 1       4,000,000.00      11,174,008.40
+                        ANZ LIMITED                    ILC                   D                 1      -4,002,800.00     -11,197,866.22
+                        ANZ LIMITED                    MISCELLANEOUS         C               279   1,121,834,893.72   3,163,471,710.25
+                        ANZ LIMITED                    MISCELLANEOUS         D               292  -1,009,201,778.39  -2,844,786,914.74
+                        ANZ LIMITED                    TREASURY CREDIT       D                 2        -919,397.50      -2,568,338.84
+                        ANZ LIMITED                    TREASURY DEBIT        C                 1          69,374.00         193,796.41
+                                                                                            -------------------------------------
+                                                                                                -32,800,708.17     -92,635,164.26
+                                                                                            -------------------------------------
