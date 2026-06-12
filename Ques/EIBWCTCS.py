@@ -3,7 +3,6 @@
 Program  : EIBWCTCS.py
 Purpose  : WEEKLY CTCS (Cheque Transaction Confirmation System) FILE ACCUMULATION
            To run on weekly basis: 1st, 9th, 16th, 23rd.
-           ESMR: 2011-1379 / EJS: A2011-8660 / 2014-2484
            Reads a CTCS fixed-width text file, parses transactions,
            then appends/rebuilds the monthly CTCS parquet accumulator.
            Logic:
@@ -34,13 +33,15 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 INPUT_DIR  = BASE_DIR / "input/prod"
 OUTPUT_DIR = BASE_DIR / "output/EIBWCTCS"
 
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 # SAP.PBB.EPCU.CTCS.TXT(0) -- the weekly flat-file input
-TXTFILE_PATH = INPUT_DIR / "EPCU_CTCS.TXT"
+TXTFILE_PATH = INPUT_DIR / "EPCU_CTCS_copy.TXT"
 
 # CTCS.CTCS&REPTMON -- monthly accumulator (parquet)
 # The output path is determined at runtime once REPTMON is known.
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 con = duckdb.connect()
 
@@ -100,6 +101,12 @@ REPTYEAR  = str(_reptdate_val.year)[-2:]
 # &RDATE   = PUT(REPTDATE, Z5.) -- zero-padded 5-digit SAS date number
 # Reproduced as DDMMYY8. string for comparison (used as &REPTDATE too)
 RDATE_STR = _reptdate_val.strftime("%d/%m/%y")    # DDMMYY8. format
+
+# Debug report date
+print("\n========== CHECKING REPORT DATE ==========\n")
+print("RAW HEADER: ", _header)
+print("PARSED DATE: ", _file_raw_date)
+print("TDATE: ", _tdate)
 
 # Monthly accumulator path
 CTCS_MON_PQ = os.path.join(OUTPUT_DIR, f"CTCS{REPTMON}.parquet")
