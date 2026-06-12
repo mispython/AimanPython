@@ -1,3 +1,22 @@
+if FILEDAY == "08":
+    # First week: initialise the monthly accumulator with today's data only
+    ctcs_out = ctcs_new
+else:
+    # Subsequent weeks: load existing accumulator, drop rows for today,
+    # then prepend the new rows
+    if os.path.exists(CTCS_MON_PQ):
+        ctcs_existing = (
+            _load(CTCS_MON_PQ, CTCS_MON_CSV)
+            .filter(pl.col("REPTDATE") != _reptdate_val)
+        )
+        # SET CTCS CTCS.CTCS&REPTMON -> new rows first, then existing
+        ctcs_out = pl.concat([ctcs_new, ctcs_existing], how="diagonal_relaxed")
+    else:
+        # Monthly accumulator does not yet exist; start fresh
+        ctcs_out = ctcs_new
+
+=============
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py", line 210, in <module>
     if os.path.exists(CTCS_MON_PQ, CTCS_MON_CSV):
