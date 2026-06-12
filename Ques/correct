@@ -1,19 +1,35 @@
-REPORT ID : EIMNOSTE
-REPORT ON FOREIGN EXCHANGE TRANSACTION AS AT 11/06/26
- 
-                                                                                       NO OF                                      
-  CURRENCY   AGENT                                 TRANSACTION           DEBIT(D)/     TRANS            FOREIGN                 RM
-  CODE       NO     NAME                           DESCRIPTION           CREDIT(C)    ACTION             AMOUNT             AMOUNT
-                                                                                                                                     
-  AUD        556        ANZ LIMITED                    BR                    D                 1    -144,581,000.00    -408,920,625.47
-                        ANZ LIMITED                    FBEP AP               C                 1       1,500,000.00       4,204,287.90
-                        ANZ LIMITED                    FBEP AP               D                 1      -1,500,000.00      -4,205,221.95
-                        ANZ LIMITED                    ILC                   C                 1       4,000,000.00      11,174,008.40
-                        ANZ LIMITED                    ILC                   D                 1      -4,002,800.00     -11,197,866.22
-                        ANZ LIMITED                    MISCELLANEOUS         C               279   1,121,834,893.72   3,163,471,710.25
-                        ANZ LIMITED                    MISCELLANEOUS         D               292  -1,009,201,778.39  -2,844,786,914.74
-                        ANZ LIMITED                    TREASURY CREDIT       D                 2        -919,397.50      -2,568,338.84
-                        ANZ LIMITED                    TREASURY DEBIT        C                 1          69,374.00         193,796.41
-                                                                                            -------------------------------------
-                                                                                                -32,800,708.17     -92,635,164.26
-                                                                                            -------------------------------------
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py
+
+========== CHECKING REPORT DATE ==========
+
+RAW HEADER:  HD20260509                                                  
+
+PARSED DATE:  2026-05-09
+TDATE:  2026-05-08
+CTCS accumulator written: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS/CTCS05.parquet
+CTCS accumulator written: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS/CTCS05.csv
+  New rows this run : 56
+  Total rows stored : 56
+  Report date       : 08/05/26
+  File date         : 08/05/26
+
+ ========== PREVIEW ========== 
+
+shape: (56, 9)
+┌────────────┬────────────┬────────┬────────┬───┬─────┬─────────┬────────┬────────────┐
+│ TRANDT     ┆ ACCTNO     ┆ NOTENO ┆ CHEQNO ┆ … ┆ IND ┆ PRODIND ┆ TRANCD ┆ REPTDATE   │
+│ ---        ┆ ---        ┆ ---    ┆ ---    ┆   ┆ --- ┆ ---     ┆ ---    ┆ ---        │
+│ date       ┆ i64        ┆ i64    ┆ i64    ┆   ┆ str ┆ str     ┆ str    ┆ date       │
+╞════════════╪════════════╪════════╪════════╪═══╪═════╪═════════╪════════╪════════════╡
+│ 2026-05-04 ┆ 2184773304 ┆ 30010  ┆ 1927   ┆ … ┆ OC  ┆ C       ┆ 24     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8662205433 ┆ 90010  ┆ 1928   ┆ … ┆ OC  ┆ C       ┆ 24     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8151783819 ┆ 90010  ┆ 49970  ┆ … ┆ OC  ┆ C       ┆ 22     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8769194715 ┆ 90010  ┆ 335220 ┆ … ┆ OC  ┆ C       ┆ 21     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8147334832 ┆ 90010  ┆ 228173 ┆ … ┆ OC  ┆ C       ┆ 24     ┆ 2026-05-08 │
+│ …          ┆ …          ┆ …      ┆ …      ┆ … ┆ …   ┆ …       ┆ …      ┆ …          │
+│ 2026-05-04 ┆ 8647788521 ┆ 90010  ┆ 187345 ┆ … ┆ LC  ┆ C       ┆ 21     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 2969033203 ┆ 30011  ┆ 359628 ┆ … ┆ OC  ┆ C       ┆ 21     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8633792502 ┆ 90010  ┆ 694387 ┆ … ┆ HC  ┆ C       ┆ 11     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8612366617 ┆ 90010  ┆ 694388 ┆ … ┆ HC  ┆ C       ┆ 11     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8058683735 ┆ 90010  ┆ 18502  ┆ … ┆ LC  ┆ C       ┆ 24     ┆ 2026-05-08 │
+└────────────┴────────────┴────────┴────────┴───┴─────┴─────────┴────────┴────────────┘
