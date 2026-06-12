@@ -1,3 +1,10 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py", line 210, in <module>
+    if os.path.exists(CTCS_MON_PQ, CTCS_MON_CSV):
+TypeError: exists() takes 1 positional argument but 2 were given
+
+=================
+
 # =============================================================================
 # DATA CURR
 # Step 1: Read fcyfd260609.sas7bdat, filter ACCTNO 3000000000–3999999999
