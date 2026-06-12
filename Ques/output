@@ -1,3 +1,49 @@
- 3800005923  RAHMAN BROTHERS MOTOR       6.47  AC     3,526,178.08      3,500,000.00  2,500,000.00   7.47  51 00  2,500,000.00   7.47  51 00  1,000,000.00   6.97  51 00  1,000,000.00   6.97  51 00          0.00   0.00       
+RAW HEADER:  HD20260517                                                  
 
- 3800005923  RAHMAN BROTHERS MOTOR       6.47  AC     3,526,178.08      3,500,000.00  2,500,000.00   7.47  51 00  1,000,000.00      6.97  51 00          0.00   0.00                 0.00   0.00                 0.00   0.00                                             6.97  51 00          0.00   0.00                 0.00   0.00                 0.00   0.00                                         
+PARSED DATE:  2026-05-17
+TDATE:  2026-05-16
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py", line 212, in <module>
+    if os.path.exists(CTCS_MON_PQ, CTCS_MON_CSV):
+TypeError: exists() takes 1 positional argument but 2 were given
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ 
+
+
+
+
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py
+
+========== CHECKING REPORT DATE ==========
+
+RAW HEADER:  HD20260509                                                  
+
+PARSED DATE:  2026-05-09
+TDATE:  2026-05-08
+CTCS accumulator written: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS/CTCS05.parquet
+CTCS accumulator written: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS/CTCS05.csv
+  New rows this run : 56
+  Total rows stored : 56
+  Report date       : 08/05/26
+  File date         : 08/05/26
+
+ ========== PREVIEW ========== 
+
+shape: (56, 9)
+┌────────────┬────────────┬────────┬────────┬───┬─────┬─────────┬────────┬────────────┐
+│ TRANDT     ┆ ACCTNO     ┆ NOTENO ┆ CHEQNO ┆ … ┆ IND ┆ PRODIND ┆ TRANCD ┆ REPTDATE   │
+│ ---        ┆ ---        ┆ ---    ┆ ---    ┆   ┆ --- ┆ ---     ┆ ---    ┆ ---        │
+│ date       ┆ i64        ┆ i64    ┆ i64    ┆   ┆ str ┆ str     ┆ str    ┆ date       │
+╞════════════╪════════════╪════════╪════════╪═══╪═════╪═════════╪════════╪════════════╡
+│ 2026-05-04 ┆ 2184773304 ┆ 30010  ┆ 1927   ┆ … ┆ OC  ┆ C       ┆ 24     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8662205433 ┆ 90010  ┆ 1928   ┆ … ┆ OC  ┆ C       ┆ 24     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8151783819 ┆ 90010  ┆ 49970  ┆ … ┆ OC  ┆ C       ┆ 22     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8769194715 ┆ 90010  ┆ 335220 ┆ … ┆ OC  ┆ C       ┆ 21     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8147334832 ┆ 90010  ┆ 228173 ┆ … ┆ OC  ┆ C       ┆ 24     ┆ 2026-05-08 │
+│ …          ┆ …          ┆ …      ┆ …      ┆ … ┆ …   ┆ …       ┆ …      ┆ …          │
+│ 2026-05-04 ┆ 8647788521 ┆ 90010  ┆ 187345 ┆ … ┆ LC  ┆ C       ┆ 21     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 2969033203 ┆ 30011  ┆ 359628 ┆ … ┆ OC  ┆ C       ┆ 21     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8633792502 ┆ 90010  ┆ 694387 ┆ … ┆ HC  ┆ C       ┆ 11     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8612366617 ┆ 90010  ┆ 694388 ┆ … ┆ HC  ┆ C       ┆ 11     ┆ 2026-05-08 │
+│ 2026-05-04 ┆ 8058683735 ┆ 90010  ┆ 18502  ┆ … ┆ LC  ┆ C       ┆ 24     ┆ 2026-05-08 │
+└────────────┴────────────┴────────┴────────┴───┴─────┴─────────┴────────┴────────────┘
