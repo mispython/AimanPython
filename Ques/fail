@@ -1,3 +1,84 @@
+# ----------------------------------------------------------------------
+# PRINT1: CONSOLIDATED FORMAT (one line per branch + grand total)
+# Single page header at _N_=1, no per-branch page break.
+# ----------------------------------------------------------------------
+def write_print1_header(f, pagecnt, rdate):
+    f.write(f"1{'':44}P U B L I C   B A N K   B E R H A D{'':33}PAGE NO : {pagecnt}\n")
+    f.write(f" {'':44}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
+    f.write("0        <------------------------------ AMOUNT"
+            f"------------------------------><--------------------ITEM COUNT"
+            f"---------------------->\n")
+    f.write(" BRANCH        TRAN AMOUNT           CASH IN         CASH OUT"
+            "           CHEQUE      5K    10K    50K   100K   200K  >200K"
+            "     TOTAL  \n")
+    f.write(f" {'-'*130}\n")
+
+
+with open(OUTPUT_PRINT1, 'w') as f:
+    pagecnt = 1
+    linecnt = 0
+
+    bamt = bcshin = bcshout = bcheq = 0.0
+    bitema = bitemb = bitemc = bitemd = biteme = bitemf = 0
+
+    write_print1_header(f, pagecnt, rdate)
+    linecnt = 6
+
+    branches = list(df_final1.group_by('BRANCH', maintain_order=True))
+
+    for idx, (branch, branch_group) in enumerate(branches):
+        branch_no = branch[0] if isinstance(branch, tuple) else branch
+
+        gamt = gcshin = gcshout = gcheq = 0.0
+        gitema = gitemb = gitemc = gitemd = giteme = gitemf = 0
+
+        for row in branch_group.iter_rows(named=True):
+            gamt += row['AMOUNT']
+            gcshin += row['CASHIN']
+            gcshout += row['CASHOUT']
+            gcheq += row['CHECKIN']
+            gitema += row['ITEMA']
+            gitemb += row['ITEMB']
+            gitemc += row['ITEMC']
+            gitemd += row['ITEMD']
+            giteme += row['ITEME']
+            gitemf += row['ITEMF']
+
+            bamt += row['AMOUNT']
+            bcshin += row['CASHIN']
+            bcshout += row['CASHOUT']
+            bcheq += row['CHECKIN']
+            bitema += row['ITEMA']
+            bitemb += row['ITEMB']
+            bitemc += row['ITEMC']
+            bitemd += row['ITEMD']
+            biteme += row['ITEME']
+            bitemf += row['ITEMF']
+
+        gtlitem = gitema + gitemb + gitemc + gitemd + giteme + gitemf
+
+        prefix = "0" if idx == 0 else " "
+        f.write(f"{prefix} {branch_no:03d}   {gamt:18,.2f} {gcshin:17,.2f} {gcshout:17,.2f} "
+                f"{gcheq:17,.2f} {gitema:7.0f} {gitemb:7.0f} {gitemc:7.0f} "
+                f"{gitemd:7.0f} {giteme:7.0f} {gitemf:7.0f} {gtlitem:10.0f}\n")
+        linecnt += 1
+
+        if linecnt > PAGE_SIZE:
+            pagecnt += 1
+            write_print1_header(f, pagecnt, rdate)
+            linecnt = 6
+
+    # LAST observation: grand total block
+    btlitem = bitema + bitemb + bitemc + bitemd + biteme + bitemf
+    f.write(f" {'':7}{'-'*23}{'':1}{'-'*51}{'':1}{'-'*53}\n")
+    f.write(f" TOTAL  {bamt:18,.2f} {bcshin:17,.2f} {bcshout:17,.2f} "
+            f"{bcheq:17,.2f} {bitema:7.0f} {bitemb:7.0f} {bitemc:7.0f} "
+            f"{bitemd:7.0f} {biteme:7.0f} {bitemf:7.0f} {btlitem:10.0f}\n")
+    f.write(f" {'':7}{'-'*23}{'':1}{'-'*51}{'':1}{'-'*53}\n")
+    f.write(" \n")
+
+============================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py", line 288, in <module>
