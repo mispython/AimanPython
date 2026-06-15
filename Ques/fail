@@ -1,3 +1,9 @@
+df_final1 = df_final1.with_columns([
+    pl.col("TRANCODE").map_elements(lambda x: assign_group(x, group_map)[0]).alias("GROUP"),
+    pl.col("TRANCODE").map_elements(lambda x: assign_group(x, group_map)[1]).alias("SGROUP"),
+])
+
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py", line 250, in <module>
