@@ -1,3 +1,17 @@
+def fit_amount(value, width, decimals=2):
+    """
+    Format with commas if it fits.
+    Otherwise remove commas to stay within the fixed width.
+    """
+    s = f"{value:,.{decimals}f}"
+
+    if len(s) > width:
+        s = f"{value:.{decimals}f}"
+
+    return s.rjust(width)
+
+====================
+
 line = list(" " * 140)
 
 # control column
