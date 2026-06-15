@@ -32,7 +32,7 @@ PAGE_SIZE = 60
 # REPORT DATE (derived, not read from BKUPDTEB.parquet)
 # ----------------------------------------------------------------------
 reptdate_values = get_monthly_reptdate_values()
-rdate = reptdate_values.ddmmyy8.replace('/', '')  # DDMMYY8. -> DDMMYY (no separators)
+rdate = reptdate_values.ddmmyy8  # DDMMYY8. -> DDMMYY (no separators)
 
 # ----------------------------------------------------------------------
 # READ AND ACCUMULATE TRANSACTION DATA (FINAL1)
@@ -299,8 +299,8 @@ with open(OUTPUT_BRDEMO, 'w') as f:
 # Single page header at _N_=1, no per-branch page break.
 # ----------------------------------------------------------------------
 def write_print1_header(f, pagecnt, rdate):
-    f.write(f"1{'':44}P U B L I C   B A N K   B E R H A D{'':33}PAGE NO : {pagecnt}\n")
-    f.write(f" {'':44}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
+    f.write(f"1{'':45}P U B L I C   B A N K   B E R H A D{'':35}PAGE NO : {pagecnt}\n")
+    f.write(f" {'':45}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
     f.write("0        <------------------------------ AMOUNT"
             f"------------------------------><--------------------ITEM COUNT"
             f"---------------------->\n")
@@ -318,7 +318,7 @@ with open(OUTPUT_PRINT1, 'w') as f:
     bitema = bitemb = bitemc = bitemd = biteme = bitemf = 0
 
     write_print1_header(f, pagecnt, rdate)
-    linecnt = 6
+    linecnt = 7
 
     branches = list(df_final1.group_by('BRANCH', maintain_order=True))
 
@@ -354,15 +354,42 @@ with open(OUTPUT_PRINT1, 'w') as f:
         gtlitem = gitema + gitemb + gitemc + gitemd + giteme + gitemf
 
         prefix = "0" if idx == 0 else " "
-        f.write(f"{prefix} {branch_no:03d}   {gamt:18,.2f} {gcshin:17,.2f} {gcshout:17,.2f} "
-                f"{gcheq:17,.2f} {gitema:7.0f} {gitemb:7.0f} {gitemc:7.0f} "
-                f"{gitemd:7.0f} {giteme:7.0f} {gitemf:7.0f} {gtlitem:10.0f}\n")
+        # f.write(f"{prefix} {branch_no:03d}   {gamt:18,.2f} {gcshin:17,.2f} {gcshout:17,.2f} "
+        #         f"{gcheq:17,.2f} {gitema:7.0f} {gitemb:7.0f} {gitemc:7.0f} "
+        #         f"{gitemd:7.0f} {giteme:7.0f} {gitemf:7.0f} {gtlitem:10.0f}\n")
+        line = list(" " * 140)
+
+        # control column
+        line[0] = prefix
+
+        # branch
+        line[2:5] = f"{branch_no:03d}"
+
+        # amounts (fixed positions)
+        line[9:28]  = f"{gamt:,.2f}".rjust(19)
+        line[29:48] = f"{gcshin:,.2f}".rjust(19)
+        line[49:68] = f"{gcshout:,.2f}".rjust(19)
+        line[69:88] = f"{gcheq:,.2f}".rjust(19)
+
+        # item columns
+        line[89:96]  = f"{gitema:>6}"
+        line[97:104] = f"{gitemb:>6}"
+        line[105:112]= f"{gitemc:>6}"
+        line[113:120]= f"{gitemd:>6}"
+        line[121:128]= f"{giteme:>6}"
+        line[129:136]= f"{gitemf:>6}"
+
+        # total
+        line[137:145] = f"{gtlitem:>8}"
+
+        f.write("".join(line).rstrip() + "\n")
+
         linecnt += 1
 
-        if linecnt > PAGE_SIZE:
+        if linecnt >= PAGE_SIZE:
             pagecnt += 1
             write_print1_header(f, pagecnt, rdate)
-            linecnt = 6
+            linecnt = 7
 
     # LAST observation: grand total block
     btlitem = bitema + bitemb + bitemc + bitemd + biteme + bitemf
