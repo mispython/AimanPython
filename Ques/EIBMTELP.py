@@ -296,40 +296,34 @@ with open(OUTPUT_BRDEMO, 'w') as f:
 
 # ----------------------------------------------------------------------
 # PRINT1: CONSOLIDATED FORMAT (one line per branch + grand total)
+# Single page header at _N_=1, no per-branch page break.
 # ----------------------------------------------------------------------
-HEADER_LINES_PRINT1 = 6  # PUT count after _PAGE_: title(2) + column header(3) + dashes(1)
+def write_print1_header(f, pagecnt, rdate):
+    f.write(f"1{'':44}P U B L I C   B A N K   B E R H A D{'':33}PAGE NO : {pagecnt}\n")
+    f.write(f" {'':44}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
+    f.write("0        <------------------------------ AMOUNT"
+            f"------------------------------><--------------------ITEM COUNT"
+            f"---------------------->\n")
+    f.write(" BRANCH        TRAN AMOUNT           CASH IN         CASH OUT"
+            "           CHEQUE      5K    10K    50K   100K   200K  >200K"
+            "     TOTAL  \n")
+    f.write(f" {'-'*130}\n")
+
 
 with open(OUTPUT_PRINT1, 'w') as f:
-    pagecnt = 0
+    pagecnt = 1
     linecnt = 0
 
     bamt = bcshin = bcshout = bcheq = 0.0
     bitema = bitemb = bitemc = bitemd = biteme = bitemf = 0
 
-    branches = list(df_final1.group_by('BRANCH', maintain_order=True))
-    n_branches = len(branches)
+    write_print1_header(f, pagecnt, rdate)
+    linecnt = 6
 
-    def write_print1_header(f, pagecnt, rdate):
-        f.write(f"1{'':44}P U B L I C   B A N K   B E R H A D{'':33}PAGE NO : {pagecnt}\n")
-        f.write(f" {'':44}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
-        f.write(" \n")
-        f.write(f" {'':8}<------------------------------"
-                f"{'':5}AMOUNT{'':5}"
-                f"------------------------------>"
-                f"{'':30}<---------------------"
-                f"{'':19}ITEM COUNT"
-                f"{'':9}---------------------->\n")
-        f.write(f" BRANCH{'':8}TRAN AMOUNT{'':21}CASH IN{'':15}CASH OUT{'':18}CHEQUE"
-                f"{'':11}5K{'':5}10K{'':6}50K{'':5}100K{'':6}200K{'':5}>200K{'':9}TOTAL\n")
-        f.write(f" {'-'*29}{'':1}{'-'*30}{'':1}{'-'*30}{'':1}{'-'*30}{'':1}{'-'*12}\n")
-        f.write(" \n")
+    branches = list(df_final1.group_by('BRANCH', maintain_order=True))
 
     for idx, (branch, branch_group) in enumerate(branches):
         branch_no = branch[0] if isinstance(branch, tuple) else branch
-        pagecnt += 1
-
-        write_print1_header(f, pagecnt, rdate)
-        linecnt = 6
 
         gamt = gcshin = gcshout = gcheq = 0.0
         gitema = gitemb = gitemc = gitemd = giteme = gitemf = 0
@@ -359,18 +353,24 @@ with open(OUTPUT_PRINT1, 'w') as f:
 
         gtlitem = gitema + gitemb + gitemc + gitemd + giteme + gitemf
 
-        f.write(f"  {branch_no:03d}   {gamt:18,.2f} {gcshin:17,.2f} {gcshout:17,.2f} "
+        prefix = "0" if idx == 0 else " "
+        f.write(f"{prefix} {branch_no:03d}   {gamt:18,.2f} {gcshin:17,.2f} {gcshout:17,.2f} "
                 f"{gcheq:17,.2f} {gitema:7.0f} {gitemb:7.0f} {gitemc:7.0f} "
                 f"{gitemd:7.0f} {giteme:7.0f} {gitemf:7.0f} {gtlitem:10.0f}\n")
         linecnt += 1
 
-    # LAST: grand total block
+        if linecnt > PAGE_SIZE:
+            pagecnt += 1
+            write_print1_header(f, pagecnt, rdate)
+            linecnt = 6
+
+    # LAST observation: grand total block
     btlitem = bitema + bitemb + bitemc + bitemd + biteme + bitemf
-    f.write(f" {'':7}{'-'*23}{'':2}{'-'*50}{'':2}{'-'*50}\n")
+    f.write(f" {'':7}{'-'*23}{'':1}{'-'*51}{'':1}{'-'*53}\n")
     f.write(f" TOTAL  {bamt:18,.2f} {bcshin:17,.2f} {bcshout:17,.2f} "
             f"{bcheq:17,.2f} {bitema:7.0f} {bitemb:7.0f} {bitemc:7.0f} "
             f"{bitemd:7.0f} {biteme:7.0f} {bitemf:7.0f} {btlitem:10.0f}\n")
-    f.write(f" {'':7}{'-'*23}{'':2}{'-'*50}{'':2}{'-'*50}\n")
+    f.write(f" {'':7}{'-'*23}{'':1}{'-'*51}{'':1}{'-'*53}\n")
     f.write(" \n")
 
 # ----------------------------------------------------------------------
