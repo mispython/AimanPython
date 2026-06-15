@@ -1,3 +1,32 @@
+line = list(" " * 140)
+
+# control column
+line[0] = prefix
+
+# branch
+line[2:5] = f"{branch_no:03d}"
+
+# amounts (fixed positions)
+line[9:28]  = f"{gamt:,.2f}".rjust(19)
+line[29:48] = f"{gcshin:,.2f}".rjust(19)
+line[49:68] = f"{gcshout:,.2f}".rjust(19)
+line[69:88] = f"{gcheq:,.2f}".rjust(19)
+
+# item columns
+line[89:96]  = f"{gitema:>6}"
+line[97:104] = f"{gitemb:>6}"
+line[105:112]= f"{gitemc:>6}"
+line[113:120]= f"{gitemd:>6}"
+line[121:128]= f"{giteme:>6}"
+line[129:136]= f"{gitemf:>6}"
+
+# total
+line[137:145] = f"{gtlitem:>8}"
+
+f.write("".join(line).rstrip() + "\n")
+
+=======================
+
 # ----------------------------------------------------------------------
 # PRINT1: CONSOLIDATED FORMAT (one line per branch + grand total)
 # Single page header at _N_=1, no per-branch page break.
