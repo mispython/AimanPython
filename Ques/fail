@@ -1,3 +1,11 @@
+code_map = {code: (g, sg) for codes, (g, sg) in group_map.items() for code in codes}
+
+df_final1 = df_final1.with_columns([
+    pl.col("TRANCODE").map_elements(lambda x: code_map.get(x, (58, 58.1))[0]).alias("GROUP"),
+    pl.col("TRANCODE").map_elements(lambda x: code_map.get(x, (58, 58.1))[1]).alias("SGROUP"),
+])
+
+
 df_final1 = df_final1.with_columns([
     pl.col("TRANCODE").map_elements(lambda x: assign_group(x, group_map)[0]).alias("GROUP"),
     pl.col("TRANCODE").map_elements(lambda x: assign_group(x, group_map)[1]).alias("SGROUP"),
