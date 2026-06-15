@@ -1,0 +1,824 @@
+//EIBMTELP JOB SAS,MISEIS,CLASS=A,MSGCLASS=X,NOTIFY=&SYSUID
+/*JOBPARM S=S1M2
+//****************************************************************      00171007
+//* DELETE OUTPUT DATASETS                                              00171107
+//* ALLOCATE SAP.PBB.TELLER3.BRDEMO 15 GENERATIONS                      00290013
+//****************************************************************      00171207
+//DELETE   EXEC PGM=IEFBR14                                             00171313
+//DD1      DD DSN=SAP.PBB.TELLER1.COLD,                                 00171413
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,                      00171513
+//            SPACE=(CYL,1,RLSE)                                        00171613
+//DD2      DD DSN=SAP.PBB.TELLER2.COLD,                                 00171413
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,                      00171513
+//            SPACE=(CYL,1,RLSE)                                        00171613
+//*                                                                     00171707
+//SAS609   EXEC SAS609,REGION=6M,WORK='120000,8000'
+//BNM      DD DSN=SAP.TELLER.SASDATA,DISP=SHR
+//BRHFL    DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//PRINT1   DD DSN=SAP.PBB.TELLER1.COLD,                                 00290013
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FBA,LRECL=133,BLKSIZE=0,DSORG=PS),             00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+//PRINT2   DD DSN=SAP.PBB.TELLER2.COLD,                                 00290013
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FBA,LRECL=133,BLKSIZE=0,DSORG=PS),             00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+//BRDEMO   DD DSN=SAP.PBB.TELLER3.BRDEMO(+1),                           00290013
+//            DISP=(NEW,CATLG,DELETE),                                  00300013
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0,DSORG=PS),               00310013
+//            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA                         00320013
+*;
+OPTIONS NODATE NONUMBER NOCENTER;
+TITLE;
+*;
+DATA _NULL_;
+  SET BNM.BKUPDTEB;
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+*;
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBMTELP                                          |
+ |  DATE    : 01.11.01                                          |
+ |  MODIFICATION : SMR A286 (INCLUDE RPTS INTO COLD)            |
+ |  REPORT  : TO PRINT TELLER TRANSACTIONS FOR BRANCH SIZING    |
+ |            ANALYSIS                                          |
+ +--------------------------------------------------------------+;
+PROC SORT DATA=BNM.MNITLR1B OUT=FINAL1;
+  BY BRANCH TRANCODE;
+RUN;
+
+DATA FINAL1 (KEEP=BRANCH TRANCODE TRANNAME AMOUNT CASHIN CASHOUT
+                  CHECKIN ITEMA ITEMB ITEMC ITEMD ITEME ITEMF);
+  SET FINAL1;
+  BY BRANCH TRANCODE;
+  AMOUNT + AMT;
+  CASHIN + CSHIN;
+  CASHOUT + CSHOUT;
+  CHECKIN + CHEQUE;
+  ITEMA + ITEM1;
+  ITEMB + ITEM2;
+  ITEMC + ITEM3;
+  ITEMD + ITEM4;
+  ITEME + ITEM5;
+  ITEMF + ITEM6;
+  IF LAST.TRANCODE THEN DO;
+     OUTPUT;
+     AMOUNT = 0; CASHIN = 0; CASHOUT = 0; CHECKIN = 0;
+     ITEMA = 0; ITEMB = 0; ITEMC = 0; ITEMD = 0; ITEME = 0; ITEMF = 0;
+  END;
+RUN;
+
+PROC SORT DATA=FINAL1;
+  BY BRANCH TRANCODE;
+RUN;
+
+DATA FINAL1;
+  SET FINAL1;
+  SELECT(TRANCODE);
+    WHEN ('0600','0608','7600','7608') DO;
+      SGROUP = 1.1; GROUP = 1;
+    END;
+    WHEN ('1600','1604','1700','8600','8604','8700') DO;
+      SGROUP = 1.2; GROUP  = 1;
+    END;
+    WHEN ('2202','2212','2620','2220') DO;
+     SGROUP = 1.3; GROUP = 1;
+    END;
+    WHEN ('2070') DO;
+      SGROUP = 1.4; GROUP = 1;
+    END;
+    WHEN ('2050','2010','9010','2020','2030','2040') DO;
+      SGROUP = 1.5; GROUP = 1;
+    END;
+    WHEN ('2350','2330','2340','2360') DO;
+      SGROUP = 1.6; GROUP = 1;
+    END;
+    WHEN ('2120') DO;
+      SGROUP = 1.7; GROUP = 1;
+    END;
+    WHEN ('2080','2380','2400') DO;
+      SGROUP = 1.8; GROUP = 1;
+    END;
+    WHEN ('0626','0636','0750','7636','7750') DO;
+      SGROUP = 2.1; GROUP = 2;
+    END;
+    WHEN ('1626','8626') DO;
+      SGROUP = 2.2; GROUP = 2;
+    END;
+    WHEN ('0730','0738','7730','7738') DO;
+      SGROUP = 3.1; GROUP = 3;
+    END;
+    WHEN ('1730','8730') DO;
+      SGROUP = 3.2; GROUP = 3;
+    END;
+    WHEN ('0630','0638','7630','7638') DO;
+      SGROUP = 4.1; GROUP = 4;
+    END;
+    WHEN ('1630','1634','8630','8634') DO;
+      SGROUP = 4.2; GROUP = 4;
+    END;
+    WHEN ('2150') DO;
+      SGROUP = 4.3; GROUP = 4;
+    END;
+    WHEN ('2430') DO;
+      SGROUP = 4.4; GROUP = 4;
+    END;
+    WHEN ('0610','0618','0646','0656','0760','7610',
+          '7618','7656','7760') DO;
+      SGROUP = 5.1; GROUP = 5;
+    END;
+    WHEN ('1608','1610','1614','1618','8608','8610',
+          '8614','8618') DO;
+      SGROUP = 5.2; GROUP = 5;
+    END;
+    WHEN ('2130') DO;
+      SGROUP = 5.3; GROUP = 5;
+    END;
+    WHEN ('2410','2412') DO;
+      SGROUP = 5.4; GROUP = 5;
+    END;
+    WHEN ('0640','0648','7640','7648') DO;
+      SGROUP = 6.1; GROUP = 6;
+    END;
+    WHEN ('1640','1644','8640','8644') DO;
+      SGROUP = 6.2; GROUP = 6;
+    END;
+    WHEN ('2160') DO;
+      SGROUP = 6.3; GROUP = 6;
+    END;
+    WHEN ('2440') DO;
+      SGROUP = 6.4; GROUP = 6;
+    END;
+    WHEN ('0620','0628','7620','7628') DO;
+      SGROUP = 7.1; GROUP = 7;
+    END;
+    WHEN ('1620','1624','8620','8624') DO;
+      SGROUP = 7.2; GROUP = 7;
+    END;
+    WHEN ('2140') DO;
+      SGROUP = 7.3; GROUP = 7;
+    END;
+    WHEN ('2420') DO;
+      SGROUP = 7.4; GROUP = 7;
+    END;
+    WHEN ('0606','0616','0740','7616','7740') DO;
+      SGROUP = 8.1; GROUP = 8;
+    END;
+    WHEN ('1606','1706','8606','8706') DO;
+      SGROUP = 8.2; GROUP = 8;
+    END;
+    WHEN ('2606') DO;
+      SGROUP = 8.3; GROUP = 8;
+    END;
+    WHEN ('2086') DO;
+      SGROUP = 8.4; GROUP = 8;
+    END;
+    WHEN ('1718','1734','8718','8734') DO;
+      SGROUP = 9.1; GROUP = 9;
+    END;
+    WHEN ('2144') DO;
+      SGROUP = 9.2; GROUP = 9;
+    END;
+    WHEN ('1710','1726','8710','8726') DO;
+      SGROUP = 10.1; GROUP = 10;
+    END;
+    WHEN ('2158') DO;
+      SGROUP = 10.2; GROUP = 10;
+    END;
+    WHEN ('0660','0668','7660','7668') DO;
+      SGROUP = 11.1; GROUP = 11;
+    END;
+    WHEN ('1660','8660') DO;
+      SGROUP = 11.2; GROUP = 11;
+    END;
+    WHEN ('1714','1728','8714','8728') DO;
+      SGROUP = 12.1; GROUP = 12;
+    END;
+    WHEN ('2192') DO;
+      SGROUP = 12.2; GROUP = 12;
+    END;
+    WHEN ('0680','0688','7680','7688') DO;
+      SGROUP = 13.1; GROUP = 13;
+    END;
+    WHEN ('1680','1684','8680','8684') DO;
+      SGROUP = 13.2; GROUP = 13;
+    END;
+    WHEN ('2190') DO;
+      SGROUP = 13.3; GROUP = 13;
+    END;
+    WHEN ('2114') DO;
+      SGROUP = 14.1; GROUP = 14;
+    END;
+    WHEN ('2112') DO;
+      SGROUP = 15.1; GROUP = 15;
+    END;
+    WHEN ('0670','0678','7670','7678') DO;
+      SGROUP = 16.1; GROUP = 16;
+    END;
+    WHEN ('1670','1674','8670','8674') DO;
+      SGROUP = 16.2; GROUP = 16;
+    END;
+    WHEN ('2180') DO;
+      SGROUP = 16.3; GROUP = 16;
+    END;
+    WHEN ('0720','0728','7720','7728') DO;
+      SGROUP = 17.1; GROUP = 17;
+    END;
+    WHEN ('1720','1736','8720','8736') DO;
+      SGROUP = 17.2; GROUP = 17;
+    END;
+    WHEN ('2100') DO;
+      SGROUP = 17.3; GROUP = 17;
+    END;
+    WHEN ('0690','0698','7690','7698') DO;
+      SGROUP = 18.1; GROUP = 18;
+    END;
+    WHEN ('0650','0658','7650','7658') DO;
+      SGROUP = 19.1; GROUP = 19;
+    END;
+    WHEN ('1650','1654','8650','8654') DO;
+      SGROUP = 19.2; GROUP = 19;
+    END;
+    WHEN ('2170') DO;
+      SGROUP = 19.3; GROUP = 19;
+    END;
+    WHEN ('1698','8698') DO;
+      SGROUP = 20.1; GROUP = 20;
+    END;
+    WHEN ('2498') DO;
+      SGROUP = 20.2; GROUP = 20;
+    END;
+    WHEN ('0770','0778','7770','7778') DO;
+      SGROUP = 20.3; GROUP = 20;
+    END;
+    WHEN ('2000') DO;
+      SGROUP = 21.1; GROUP = 21;
+    END;
+    WHEN ('2480','9480') DO;
+      SGROUP = 22.1; GROUP = 22;
+    END;
+    WHEN ('5300','5302','5310','5312','5320','5322','2470','9470') DO;
+      SGROUP = 23.1; GROUP = 23;
+    END;
+    WHEN ('0140','9990','9992','9994') DO;
+      SGROUP = 24.1; GROUP = 24;
+    END;
+    WHEN ('0800','0808','3120','3128','7800','7808') DO;
+      SGROUP = 25.1; GROUP = 25;
+    END;
+    WHEN ('1800','1804','1900','1904','3020','8800','8804',
+          '8900','8904') DO;
+      SGROUP = 25.2; GROUP = 25;
+    END;
+    WHEN ('2200','2210','2630','2222') DO;
+      SGROUP = 25.3; GROUP = 25;
+    END;
+    WHEN ('2076') DO;
+      SGROUP = 25.4; GROUP = 25;
+    END;
+    WHEN ('2352','2362') DO;
+      SGROUP = 25.5; GROUP = 25;
+    END;
+    WHEN ('2122','2124') DO;
+      SGROUP = 25.6; GROUP = 25;
+    END;
+    WHEN ('2382','2450') DO;
+      SGROUP = 25.7; GROUP = 25;
+    END;
+    WHEN ('0970','0978','7970','7978') DO;
+      SGROUP = 26.1; GROUP = 26;
+    END;
+    WHEN ('1962','8962') DO;
+      SGROUP = 26.2; GROUP = 26;
+    END;
+    WHEN ('0990','0998','7990','7998') DO;
+      SGROUP = 27.1; GROUP = 27;
+    END;
+    WHEN ('1994','8994') DO;
+      SGROUP = 27.2; GROUP = 27;
+    END;
+    WHEN ('0810','7810','1814') DO;
+      SGROUP = 28.1; GROUP = 28;
+    END;
+    WHEN ('1820','8814','8820') DO;
+      SGROUP = 28.2; GROUP = 28;
+    END;
+    WHEN ('2152') DO;
+      SGROUP = 28.3; GROUP = 28;
+    END;
+    WHEN ('0818','7818') DO;
+      SGROUP = 29.1; GROUP = 29;
+    END;
+    WHEN ('1810','1818','8810','8818') DO;
+      SGROUP = 29.2; GROUP = 29;
+    END;
+    WHEN ('2132') DO;
+      SGROUP = 29.3; GROUP = 29;
+    END;
+    WHEN ('0848','7848') DO;
+      SGROUP = 30.1; GROUP = 30;
+    END;
+    WHEN ('1840','1846','8840','8846') DO;
+      SGROUP = 30.2; GROUP = 30;
+    END;
+    WHEN ('2162') DO;
+      SGROUP = 30.3; GROUP = 30;
+    END;
+    WHEN ('1914','1924','8914','8924') DO;
+      SGROUP = 31.1; GROUP = 31;
+    END;
+    WHEN ('2142') DO;
+      SGROUP = 31.2; GROUP = 31;
+    END;
+    WHEN ('1910','1918','8910','8918') DO;
+      SGROUP = 32.1; GROUP = 32;
+    END;
+    WHEN ('2108') DO;
+      SGROUP = 32.2; GROUP = 32;
+    END;
+    WHEN ('1890','8890') DO;
+      SGROUP = 33.1; GROUP = 33;
+    END;
+    WHEN ('0890','0898','7890','7898') DO;
+      SGROUP = 34.1; GROUP = 34;
+    END;
+    WHEN ('1894','8894') DO;
+      SGROUP = 34.2; GROUP = 34;
+    END;
+    WHEN ('2146') DO;
+      SGROUP = 35.1; GROUP = 35;
+    END;
+    WHEN ('0850','0858','7850','7858') DO;
+      SGROUP = 36.1; GROUP = 36;
+    END;
+    WHEN ('1850','8850') DO;
+      SGROUP = 36.2; GROUP = 36;
+    END;
+    WHEN ('0860','0868','7860','7868') DO;
+      SGROUP = 37.1; GROUP = 37;
+    END;
+    WHEN ('1860','8860') DO;
+      SGROUP = 37.2; GROUP = 37;
+    END;
+    WHEN ('0980','0988','7980','7988') DO;
+      SGROUP = 38.1; GROUP = 38;
+    END;
+    WHEN ('1990','8990') DO;
+      SGROUP = 38.2; GROUP = 38;
+    END;
+    WHEN ('0862','0864','7862','7864') DO;
+      SGROUP = 39.1; GROUP = 39;
+    END;
+    WHEN ('1866','8866') DO;
+      SGROUP = 39.2; GROUP = 39;
+    END;
+    WHEN ('0870','0878','7870','7878') DO;
+      SGROUP = 40.1; GROUP = 40;
+    END;
+    WHEN ('1870','8870') DO;
+      SGROUP = 40.2; GROUP = 40;
+    END;
+    WHEN ('0880','0888','7880','7888') DO;
+      SGROUP = 41.1; GROUP = 41;
+    END;
+    WHEN ('1880','8880') DO;
+      SGROUP = 41.2; GROUP = 41;
+    END;
+    WHEN ('0900','0908','7900','7908') DO;
+      SGROUP = 42.1; GROUP = 42;
+    END;
+    WHEN ('1970','8970') DO;
+      SGROUP = 42.2; GROUP = 42;
+    END;
+    WHEN ('0950','0958','7950','7958') DO;
+      SGROUP = 43.1; GROUP = 43;
+    END;
+    WHEN ('1950','8950') DO;
+      SGROUP = 43.2; GROUP = 43;
+    END;
+    WHEN ('2116') DO;
+      SGROUP = 43.3; GROUP = 43;
+    END;
+    WHEN ('1930','8930') DO;
+      SGROUP = 44.1; GROUP = 44;
+    END;
+    WHEN ('2118') DO;
+      SGROUP = 45.1; GROUP = 45;
+    END;
+    WHEN ('0960','0968','7960','7968') DO;
+      SGROUP = 46.1; GROUP = 46;
+    END;
+    WHEN ('1960','8960') DO;
+      SGROUP = 46.2; GROUP = 46;
+    END;
+    WHEN ('0920','0928','7920','7928') DO;
+      SGROUP = 47.1; GROUP = 47;
+    END;
+    WHEN ('1920','1926','8920','8926') DO;
+      SGROUP = 47.2; GROUP = 47;
+    END;
+    WHEN ('2102') DO;
+      SGROUP = 47.3; GROUP = 47;
+    END;
+    WHEN ('2110') DO;
+      SGROUP = 48.1; GROUP = 48;
+    END;
+    WHEN ('1808','8808') DO;
+      SGROUP = 49.1; GROUP = 49;
+    END;
+    WHEN ('2182') DO;
+      SGROUP = 49.2; GROUP = 49;
+    END;
+    WHEN ('1830','1838','8830','8838') DO;
+      SGROUP = 50.1; GROUP = 50;
+    END;
+    WHEN ('0820','0828','7820','7828') DO;
+      SGROUP = 51.1; GROUP = 51;
+    END;
+    WHEN ('1826','8826') DO;
+      SGROUP = 51.2; GROUP = 51;
+    END;
+    WHEN ('0840','0952','0954','7840','7954') DO;
+      SGROUP = 52.1; GROUP = 52;
+    END;
+    WHEN ('0830','0838','0910','0918','7830','7838','7910','7918') DO;
+      SGROUP = 53.1; GROUP = 53;
+    END;
+    WHEN ('1834','1844','1980','8834','8844','8980') DO;
+      SGROUP = 53.2; GROUP = 53;
+    END;
+    WHEN ('2172') DO;
+      SGROUP = 53.3; GROUP = 53;
+    END;
+    WHEN ('0940','0948','7940','7948') DO;
+      SGROUP = 54.1; GROUP = 54;
+    END;
+    WHEN ('1940','8940') DO;
+      SGROUP = 54.2; GROUP = 54;
+    END;
+    WHEN ('2500') DO;
+      SGROUP = 54.3; GROUP = 54;
+    END;
+    WHEN ('2510') DO;
+      SGROUP = 54.4; GROUP = 54;
+    END;
+    WHEN ('2520') DO;
+      SGROUP = 54.5; GROUP = 54;
+    END;
+    WHEN ('2398') DO;
+      SGROUP = 55.1; GROUP = 55;
+    END;
+    WHEN ('0930','0938','7930','7938') DO;
+      SGROUP = 55.2; GROUP = 55;
+    END;
+    WHEN ('1998','8998') DO;
+      SGROUP = 55.3; GROUP = 55;
+    END;
+    WHEN ('2490','9490') DO;
+      SGROUP = 56.1; GROUP = 56;
+    END;
+    WHEN ('2472','9472') DO;
+      SGROUP = 56.2; GROUP = 56;
+    END;
+    WHEN ('0150','9991','9993','9995','0130','0192','0300','0310',
+          '0399','0450','0455','1300','1310','1320','1330','1340',
+          '3010','3110','3500','3501','3502','3503','3510','3511',
+          '3512','3513','3522','3523','5100','5110','5120') DO;
+      SGROUP = 57.1; GROUP = 57;
+    END;
+    OTHERWISE DO;
+      SGROUP = 58.1; GROUP = 58;
+    END;
+  END;
+RUN;
+
+DATA BRH;
+  INFILE BRHFL;
+  INPUT @002  BRANCH    3.
+        @006  BRHCD    $3.
+        @012  BRHNM   $30.;
+PROC SORT; BY BRANCH;
+PROC SORT DATA=FINAL1 OUT=BRDEMO;  BY BRANCH;
+RUN;
+DATA BRDEMO;
+   MERGE BRH BRDEMO(IN=A); BY BRANCH;
+   IF A;
+   IF BRHCD='  ' THEN BRCHCD='N/A';
+
+*;
+DATA BRDEMO;
+  SET BRDEMO; BY BRANCH;
+  ZDATE=TODAY()-7;
+  ZMM=MONTH(ZDATE);
+  ZYY= YEAR(ZDATE);
+  RETAIN GITEMA GITEMB GITEMC GITEMD GITEME GITEMF;
+  IF FIRST.BRANCH THEN DO;
+     GITEMA=0; GITEMB=0; GITEMC=0; GITEMD=0; GITEME=0;
+     GITEMF=0;
+  END;
+
+  GITEMA + ITEMA;
+  GITEMB + ITEMB;
+  GITEMC + ITEMC;
+  GITEMD + ITEMD;
+  GITEME + ITEME;
+  GITEMF + ITEMF;
+
+  IF LAST.BRANCH THEN DO;
+     GTLITEM = SUM(GITEMA,GITEMB,GITEMC,GITEMD,GITEME,GITEMF);
+     TTLITEM+GTLITEM;
+     FILE BRDEMO;
+     PUT @001 ZMM        Z2.
+         @003 ZYY        Z4.
+         @008 BRANCH     Z3.
+         @012 BRHCD      $3.
+         @016 BRHNM     $30.
+         @047 GTLITEM  10.0;
+  END;
+
+PROC SORT DATA=FINAL1;
+  BY BRANCH GROUP SGROUP TRANCODE;
+RUN;
+
+*------------------------------------------------*
+*  CONSOLIDATED FORMAT                           *
+*------------------------------------------------*;
+DATA _NULL_;
+  SET FINAL1 END=LAST;
+  BY BRANCH GROUP SGROUP TRANCODE;
+  FILE PRINT1 HEADER=NEWPAGE;
+  RETAIN GAMT GCSHIN GCSHOUT GCHEQ GITEMA GITEMB GITEMC GITEMD GITEME
+                                   GITEMF
+         BAMT BCSHIN BCSHOUT BCHEQ BITEMA BITEMB BITEMC BITEMD BITEME
+                                   BITEMF;
+
+  IF _N_ = 1 THEN DO;
+     PUT _PAGE_;
+     BAMT = 0; BCSHIN = 0; BCSHOUT = 0; BCHEQ = 0;
+     BITEMA = 0; BITEMB = 0; BITEMC = 0; BITEMD = 0; BITEME = 0;
+     BITEMF = 0;
+  END;
+
+  IF FIRST.BRANCH THEN DO;
+     GAMT = 0; GCSHIN = 0; GCSHOUT = 0; GCHEQ = 0;
+     GITEMA = 0; GITEMB = 0; GITEMC = 0; GITEMD = 0; GITEME = 0;
+     GITEMF = 0;
+  END;
+
+  GAMT + AMOUNT;
+  GCSHIN + CASHIN;
+  GCSHOUT + CASHOUT;
+  GCHEQ + CHECKIN;
+  GITEMA + ITEMA;
+  GITEMB + ITEMB;
+  GITEMC + ITEMC;
+  GITEMD + ITEMD;
+  GITEME + ITEME;
+  GITEMF + ITEMF;
+
+  BAMT + AMOUNT;
+  BCSHIN + CASHIN;
+  BCSHOUT + CASHOUT;
+  BCHEQ + CHECKIN;
+  BITEMA + ITEMA;
+  BITEMB + ITEMB;
+  BITEMC + ITEMC;
+  BITEMD + ITEMD;
+  BITEME + ITEME;
+  BITEMF + ITEMF;
+
+  IF LAST.BRANCH THEN DO;
+    GTLITEM = SUM(GITEMA,GITEMB,GITEMC,GITEMD,GITEME,GITEMF);
+    PUT @2   BRANCH Z3.           @8   GAMT COMMA18.2
+        @27  GCSHIN COMMA17.2     @44  GCSHOUT COMMA17.2
+        @61  GCHEQ  COMMA17.2     @79  GITEMA  7.0
+        @86  GITEMB 7.0           @93  GITEMC  7.0
+        @100 GITEMD 7.0           @107 GITEME  7.0
+        @114 GITEMF 7.0           @121 GTLITEM 10.0;
+    LINECNT+1;
+  END;
+
+  IF LAST THEN DO;
+    BTLITEM = SUM(BITEMA,BITEMB,BITEMC,BITEMD,BITEME,BITEMF);
+    PUT @8  '-----------------------'
+        @31 '--------------------------------------------------'
+        @81 '----------------------------------------------------';
+    PUT @2  'TOTAL'               @8   BAMT COMMA18.2
+        @27  BCSHIN COMMA17.2     @44  BCSHOUT COMMA17.2
+        @61  BCHEQ  COMMA17.2     @79  BITEMA  7.0
+        @86  BITEMB 7.0           @93  BITEMC  7.0
+        @100 BITEMD 7.0           @107 BITEME  7.0
+        @114 BITEMF 7.0           @121 BTLITEM 10.0;
+    PUT @8  '-----------------------'
+        @31 '--------------------------------------------------'
+        @81 '----------------------------------------------------';
+    PUT;
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @45  'P U B L I C   B A N K   B E R H A D'
+        @116 'PAGE NO : ' PAGECNT;
+    PUT @45  'TELLER TRANSACTIONS BY BRANCH AS AT ' "&RDATE";
+    PUT;
+    PUT @9   '<------------------------------'
+        @41  'AMOUNT'
+        @47  '------------------------------>'
+        @78  '<---------------------'
+        @99  'ITEM COUNT'
+        @109 '---------------------->';
+    PUT @1   'BRANCH'
+        @15  'TRAN AMOUNT'
+        @37  'CASH IN'
+        @53  'CASH OUT'
+        @72  'CHEQUE'
+        @84  '5K'
+        @90  '10K'
+        @97  '50K'
+        @103 '100K'
+        @110 '200K'
+        @116 '>200K'
+        @126 'TOTAL';
+    PUT @1   '------------------------------'
+        @31  '------------------------------'
+        @61  '------------------------------'
+        @91  '------------------------------'
+        @121 '------------';
+    PUT;
+    LINECNT = 6;
+  RETURN;
+RUN;
+
+*------------------------------------------------*
+*  BRANCH DETAILS FORMAT                         *
+*------------------------------------------------*;
+DATA _NULL_;
+  SET FINAL1;
+  BY BRANCH GROUP SGROUP TRANCODE;
+  FILE PRINT2 HEADER=NEWPAGE;
+  RETAIN SAMT SCSHIN SCSHOUT SCHEQ SITEMA SITEMB SITEMC SITEMD SITEME
+                                   SITEMF
+         TAMT TCSHIN TCSHOUT TCHEQ TITEMA TITEMB TITEMC TITEMD TITEME
+                                   TITEMF
+         GAMT GCSHIN GCSHOUT GCHEQ GITEMA GITEMB GITEMC GITEMD GITEME
+                                   GITEMF;
+
+  IF FIRST.BRANCH THEN DO;
+     LINECNT=0;
+     GAMT = 0; GCSHIN = 0; GCSHOUT = 0; GCHEQ = 0;
+     GITEMA = 0; GITEMB = 0; GITEMC = 0; GITEMD = 0; GITEME = 0;
+     GITEMF = 0;
+     PUT _PAGE_;
+  END;
+
+  IF FIRST.GROUP THEN DO;
+     TAMT = 0; TCSHIN = 0; TCSHOUT = 0; TCHEQ = 0;
+     TITEMA = 0; TITEMB = 0; TITEMC = 0; TITEMD = 0; TITEME = 0;
+     TITEMF = 0;
+  END;
+
+  IF FIRST.SGROUP THEN DO;
+     SAMT = 0; SCSHIN = 0; SCSHOUT = 0; SCHEQ = 0;
+     SITEMA = 0; SITEMB = 0; SITEMC = 0; SITEMD = 0; SITEME = 0;
+     SITEMF = 0;
+  END;
+
+  SAMT + AMOUNT;
+  SCSHIN + CASHIN;
+  SCSHOUT + CASHOUT;
+  SCHEQ + CHECKIN;
+  SITEMA + ITEMA;
+  SITEMB + ITEMB;
+  SITEMC + ITEMC;
+  SITEMD + ITEMD;
+  SITEME + ITEME;
+  SITEMF + ITEMF;
+
+  TAMT + AMOUNT;
+  TCSHIN + CASHIN;
+  TCSHOUT + CASHOUT;
+  TCHEQ + CHECKIN;
+  TITEMA + ITEMA;
+  TITEMB + ITEMB;
+  TITEMC + ITEMC;
+  TITEMD + ITEMD;
+  TITEME + ITEME;
+  TITEMF + ITEMF;
+
+  GAMT + AMOUNT;
+  GCSHIN + CASHIN;
+  GCSHOUT + CASHOUT;
+  GCHEQ + CHECKIN;
+  GITEMA + ITEMA;
+  GITEMB + ITEMB;
+  GITEMC + ITEMC;
+  GITEMD + ITEMD;
+  GITEME + ITEME;
+  GITEMF + ITEMF;
+  TLITEM = SUM(ITEMA,ITEMB,ITEMC,ITEMD,ITEME,ITEMF);
+
+  PUT @1   BRANCH Z3.        @5   TRANCODE
+      @10  TRANNAME          @31  AMOUNT  COMMA15.2
+      @47  CASHIN COMMA13.2  @61  CASHOUT COMMA13.2
+      @75  CHECKIN COMMA12.2 @87  ITEMA   6.0
+      @94  ITEMB  6.0        @101 ITEMC   6.0
+      @108 ITEMD  5.0        @114 ITEME   5.0
+      @120 ITEMF  5.0        @126 TLITEM  6.0;
+  LINECNT +1;
+
+  IF LINECNT > 58 THEN DO;
+     PUT _PAGE_;
+  END;
+
+  IF LAST.SGROUP THEN DO;
+    STLITEM = SUM(SITEMA,SITEMB,SITEMC,SITEMD,SITEME,SITEMF);
+    PUT @31 '--------------------------------------------------'
+        @81 '----------------------------------------------------';
+    PUT @8  'TOTAL FOR SUBGROUP ' SGROUP  @31 SAMT COMMA15.2
+        @47  SCSHIN COMMA13.2     @61  SCSHOUT COMMA13.2
+        @75  SCHEQ  COMMA12.2     @87  SITEMA  6.0
+        @94  SITEMB 6.0           @101 SITEMC  6.0
+        @108 SITEMD 5.0           @114 SITEME  5.0
+        @120 SITEMF 5.0           @126 STLITEM 6.0;
+    PUT @31 '--------------------------------------------------'
+        @81 '----------------------------------------------------';
+    PUT;
+    LINECNT +4;
+    IF LINECNT > 58 THEN DO;
+     PUT _PAGE_;
+    END;
+  END;
+
+  IF LAST.GROUP THEN DO;
+    TTLITEM = SUM(TITEMA,TITEMB,TITEMC,TITEMD,TITEME,TITEMF);
+    PUT @31 '--------------------------------------------------'
+        @81 '----------------------------------------------------';
+    PUT @12 'TOTAL FOR GROUP ' GROUP @31 TAMT COMMA15.2
+        @47  TCSHIN COMMA13.2     @61  TCSHOUT COMMA13.2
+        @75  TCHEQ  COMMA12.2     @87  TITEMA  6.0
+        @94  TITEMB 6.0           @101 TITEMC  6.0
+        @108 TITEMD 5.0           @114 TITEME  5.0
+        @120 TITEMF 5.0           @126 TTLITEM 6.0;
+    PUT @31 '=================================================='
+        @81 '====================================================';
+    PUT;
+    LINECNT +4;
+    IF LINECNT > 58 THEN DO;
+     PUT _PAGE_;
+    END;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+    GTLITEM = SUM(GITEMA,GITEMB,GITEMC,GITEMD,GITEME,GITEMF);
+    PUT @31 '--------------------------------------------------'
+        @81 '----------------------------------------------------';
+    PUT @11 'TOTAL FOR BRANCH ' BRANCH Z3. @31 GAMT COMMA15.2
+        @47  GCSHIN COMMA13.2     @61  GCSHOUT COMMA13.2
+        @75  GCHEQ  COMMA12.2     @87  GITEMA  6.0
+        @94  GITEMB 6.0           @101 GITEMC  6.0
+        @108 GITEMD 5.0           @114 GITEME  5.0
+        @120 GITEMF 5.0           @126 GTLITEM 6.0;
+    PUT @31 '=================================================='
+        @81 '====================================================';
+    PUT;
+  END;
+
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @1   BRANCH Z3.
+        @45  'P U B L I C   B A N K   B E R H A D'
+        @116 'PAGE NO : ' PAGECNT;
+    PUT @45  'TELLER TRANSACTIONS BY BRANCH AS AT ' "&RDATE";
+    PUT;
+    PUT @31  '<--------------------------'
+        @58  'AMOUNT'
+        @64  '----------------------->'
+        @88  '<----------------'
+        @105 'ITEM COUNT'
+        @115 '----------------->';
+    PUT @1   'BRH'
+        @5   'CODE'
+        @10  'DESCRIPTION'
+        @35  'TRAN AMOUNT'
+        @53  'CASH IN'
+        @66  'CASH OUT'
+        @81  'CHEQUE'
+        @91  '5K'
+        @97  '10K'
+        @104 '50K'
+        @109 '100K'
+        @115 '200K'
+        @120 '>200K'
+        @127 'TOTAL';
+    PUT @1   '------------------------------'
+        @31  '------------------------------'
+        @61  '------------------------------'
+        @91  '------------------------------'
+        @121 '------------';
+    PUT;
+    LINECNT = 6;
+  RETURN;
+RUN;
+/*
