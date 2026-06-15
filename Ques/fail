@@ -1,86 +1,27 @@
 # ----------------------------------------------------------------------
-# PRINT2: BRANCH DETAIL FORMAT (STRICT 60-LINE PAGINATION FIXED)
+# PRINT2: BRANCH DETAIL FORMAT (one line per TRANCODE,
+#         subtotal per SGROUP, total per GROUP, total per BRANCH)
+# Strict PAGE_SIZE = 60 (header = 6 lines, max 54 data/total lines per page)
 # ----------------------------------------------------------------------
-
-PAGE_SIZE = 60
-HEADER_LINES = 6
-
-LINES_DETAIL = 1
-LINES_SUBGROUP = 3
-LINES_GROUP = 3
-LINES_BRANCH = 3
+HEADER_LINES_PRINT2 = 6
 
 
-def ensure_space(f, linecnt, needed_lines, branch_no, pagecnt, rdate):
-    if linecnt + needed_lines > PAGE_SIZE:
+def ensure_space(f, branch_no, pagecnt, linecnt, lines_needed, rdate):
+    """Break to a new page if lines_needed would exceed PAGE_SIZE."""
+    if linecnt + lines_needed > PAGE_SIZE:
         pagecnt += 1
         write_print2_header(f, branch_no, pagecnt, rdate)
-        return HEADER_LINES, pagecnt
-    return linecnt, pagecnt
+        linecnt = HEADER_LINES_PRINT2
+    return pagecnt, linecnt
 
 
-def write_print2_header(f, branch_no, pagecnt, rdate):
-    f.write(f"1{branch_no:03d}{'':41}P U B L I C   B A N K   B E R H A D{'':36}PAGE NO : {pagecnt}\n")
-    f.write(f" {'':44}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
-    f.write(f"0{'':30}<--------------------------AMOUNT----------------------->"
-            f"<----------------ITEM COUNT----------------->\n")
-    f.write(f" BRH CODE DESCRIPTION         TRAN AMOUNT      CASH IN      CASH OUT      CHEQUE"
-            f"   5K   10K   50K  100K  200K  >200K TOTAL\n")
-    f.write(f" {'-'*132}\n")
-
-
-def write_subgroup_total(f, sgroup_num, samt, scshin, scshout, scheq,
-                          sitema, sitemb, sitemc, sitemd, siteme, sitemf):
-    stlitem = sitema + sitemb + sitemc + sitemd + siteme + sitemf
-    f.write(f" {'':30}{'-'*102}\n")
-    f.write(
-        f" {'':7}TOTAL SUBGROUP {sgroup_num:<4.1f}"
-        f"{fit_amount(samt,15)} {fit_amount(scshin,13)} {fit_amount(scshout,13)} {fit_amount(scheq,12)} "
-        f"{str(int(sitema)).rjust(5)} {str(int(sitemb)).rjust(6)} {str(int(sitemc)).rjust(6)} "
-        f"{str(int(sitemd)).rjust(5)} {str(int(siteme)).rjust(5)} {str(int(sitemf)).rjust(5)} "
-        f"{str(int(stlitem)).rjust(6)}\n"
-    )
-    f.write(f" {'':30}{'-'*102}\n")
-
-
-def write_group_total(f, group_num, tamt, tcshin, tcshout, tcheq,
-                       titema, titemb, titemc, titemd, titeme, titemf):
-    ttlitem = titema + titemb + titemc + titemd + titeme + titemf
-    f.write(f" {'':30}{'-'*102}\n")
-    f.write(
-        f" {'':11}TOTAL GROUP {group_num:<3}"
-        f"{fit_amount(tamt,15)} {fit_amount(tcshin,13)} {fit_amount(tcshout,13)} {fit_amount(tcheq,12)} "
-        f"{str(int(titema)).rjust(5)} {str(int(titemb)).rjust(6)} {str(int(titemc)).rjust(6)} "
-        f"{str(int(titemd)).rjust(5)} {str(int(titeme)).rjust(5)} {str(int(titemf)).rjust(5)} "
-        f"{str(int(ttlitem)).rjust(6)}\n"
-    )
-    f.write(f" {'':30}{'='*102}\n")
-
-
-def write_branch_total(f, branch_no, gamt, gcshin, gcshout, gcheq,
-                        gitema, gitemb, gitemc, gitemd, giteme, gitemf):
-    gtlitem = gitema + gitemb + gitemc + gitemd + giteme + gitemf
-    f.write(f" {'':30}{'-'*102}\n")
-    f.write(
-        f" {'':10}TOTAL BRANCH {branch_no:03d}"
-        f"{fit_amount(gamt,15)} {fit_amount(gcshin,13)} {fit_amount(gcshout,13)} {fit_amount(gcheq,12)} "
-        f"{str(int(gitema)).rjust(5)} {str(int(gitemb)).rjust(6)} {str(int(gitemc)).rjust(6)} "
-        f"{str(int(gitemd)).rjust(5)} {str(int(giteme)).rjust(5)} {str(int(gitemf)).rjust(5)} "
-        f"{str(int(gtlitem)).rjust(6)}\n"
-    )
-    f.write(f" {'':30}{'='*102}\n")
-
-
-# ----------------------------------------------------------------------
-# PRINT2 MAIN
-# ----------------------------------------------------------------------
 with open(OUTPUT_PRINT2, 'w') as f:
     for branch, branch_group in df_final1.group_by('BRANCH', maintain_order=True):
         branch_no = branch[0] if isinstance(branch, tuple) else branch
         pagecnt = 1
 
         write_print2_header(f, branch_no, pagecnt, rdate)
-        linecnt = HEADER_LINES
+        linecnt = HEADER_LINES_PRINT2
 
         gamt = gcshin = gcshout = gcheq = 0.0
         gitema = gitemb = gitemc = gitemd = giteme = gitemf = 0
@@ -98,38 +39,30 @@ with open(OUTPUT_PRINT2, 'w') as f:
                 sitema = sitemb = sitemc = sitemd = siteme = sitemf = 0
 
                 for row in sgroup_data.iter_rows(named=True):
+                    tlitem = (row['ITEMA'] + row['ITEMB'] + row['ITEMC']
+                              + row['ITEMD'] + row['ITEME'] + row['ITEMF'])
 
-                    linecnt, pagecnt = ensure_space(
-                        f, linecnt, LINES_DETAIL, branch_no, pagecnt, rdate
-                    )
+                    # lookahead: ensure 1 line fits before writing
+                    pagecnt, linecnt = ensure_space(f, branch_no, pagecnt, linecnt, 1, rdate)
 
-                    tlitem = (
-                        row['ITEMA'] + row['ITEMB'] + row['ITEMC'] +
-                        row['ITEMD'] + row['ITEME'] + row['ITEMF']
-                    )
-
-                    f.write(
-                        f" {branch_no:03d} {row['TRANCODE']:<4} {row['TRANNAME']:<21}"
-                        f"{fit_amount(row['AMOUNT'],15)} "
-                        f"{fit_amount(row['CASHIN'],13)} "
-                        f"{fit_amount(row['CASHOUT'],13)} "
-                        f"{fit_amount(row['CHECKIN'],12)} "
-                        f"{str(int(row['ITEMA'])).rjust(5)} "
-                        f"{str(int(row['ITEMB'])).rjust(6)} "
-                        f"{str(int(row['ITEMC'])).rjust(6)} "
-                        f"{str(int(row['ITEMD'])).rjust(5)} "
-                        f"{str(int(row['ITEME'])).rjust(5)} "
-                        f"{str(int(row['ITEMF'])).rjust(5)} "
-                        f"{str(int(tlitem)).rjust(6)}\n"
-                    )
-
+                    f.write(f" {branch_no:03d} {row['TRANCODE']:<4} {row['TRANNAME']:<21}"
+                            f"{fit_amount(row['AMOUNT'],15)} "
+                            f"{fit_amount(row['CASHIN'],13)} "
+                            f"{fit_amount(row['CASHOUT'],13)} "
+                            f"{fit_amount(row['CHECKIN'],12)} "
+                            f"{str(int(row['ITEMA'])).rjust(5)} "
+                            f"{str(int(row['ITEMB'])).rjust(6)} "
+                            f"{str(int(row['ITEMC'])).rjust(6)} "
+                            f"{str(int(row['ITEMD'])).rjust(5)} "
+                            f"{str(int(row['ITEME'])).rjust(5)} "
+                            f"{str(int(row['ITEMF'])).rjust(5)} "
+                            f"{str(int(tlitem)).rjust(6)}\n")
                     linecnt += 1
 
                     samt += row['AMOUNT']
                     scshin += row['CASHIN']
                     scshout += row['CASHOUT']
                     scheq += row['CHECKIN']
-
                     sitema += row['ITEMA']
                     sitemb += row['ITEMB']
                     sitemc += row['ITEMC']
@@ -141,7 +74,6 @@ with open(OUTPUT_PRINT2, 'w') as f:
                     tcshin += row['CASHIN']
                     tcshout += row['CASHOUT']
                     tcheq += row['CHECKIN']
-
                     titema += row['ITEMA']
                     titemb += row['ITEMB']
                     titemc += row['ITEMC']
@@ -153,7 +85,6 @@ with open(OUTPUT_PRINT2, 'w') as f:
                     gcshin += row['CASHIN']
                     gcshout += row['CASHOUT']
                     gcheq += row['CHECKIN']
-
                     gitema += row['ITEMA']
                     gitemb += row['ITEMB']
                     gitemc += row['ITEMC']
@@ -161,191 +92,20 @@ with open(OUTPUT_PRINT2, 'w') as f:
                     giteme += row['ITEME']
                     gitemf += row['ITEMF']
 
-                linecnt, pagecnt = ensure_space(
-                    f, linecnt, LINES_SUBGROUP, branch_no, pagecnt, rdate
-                )
-                write_subgroup_total(
-                    f, sgrp_no, samt, scshin, scshout, scheq,
-                    sitema, sitemb, sitemc, sitemd, siteme, sitemf
-                )
-                linecnt += LINES_SUBGROUP
+                # subgroup total block = 2 lines (total line + underline)
+                pagecnt, linecnt = ensure_space(f, branch_no, pagecnt, linecnt, 2, rdate)
+                write_subgroup_total(f, sgrp_no, samt, scshin, scshout, scheq,
+                                      sitema, sitemb, sitemc, sitemd, siteme, sitemf)
+                linecnt += 2
 
-            linecnt, pagecnt = ensure_space(
-                f, linecnt, LINES_GROUP, branch_no, pagecnt, rdate
-            )
-            write_group_total(
-                f, grp_no, tamt, tcshin, tcshout, tcheq,
-                titema, titemb, titemc, titemd, titeme, titemf
-            )
-            linecnt += LINES_GROUP
+            # group total block = 2 lines
+            pagecnt, linecnt = ensure_space(f, branch_no, pagecnt, linecnt, 2, rdate)
+            write_group_total(f, grp_no, tamt, tcshin, tcshout, tcheq,
+                               titema, titemb, titemc, titemd, titeme, titemf)
+            linecnt += 2
 
-        linecnt, pagecnt = ensure_space(
-            f, linecnt, LINES_BRANCH, branch_no, pagecnt, rdate
-        )
-        write_branch_total(
-            f, branch_no, gamt, gcshin, gcshout, gcheq,
-            gitema, gitemb, gitemc, gitemd, giteme, gitemf
-        )
-
-================
-
-def fit_amount(value, width, decimals=2):
-    """
-    Format with commas if it fits.
-    Otherwise remove commas to stay within the fixed width.
-    """
-    s = f"{value:,.{decimals}f}"
-
-    if len(s) > width:
-        s = f"{value:.{decimals}f}"
-
-    return s.rjust(width)
-
-====================
-
-line = list(" " * 140)
-
-# control column
-line[0] = prefix
-
-# branch
-line[2:5] = f"{branch_no:03d}"
-
-# amounts (fixed positions)
-line[9:28]  = f"{gamt:,.2f}".rjust(19)
-line[29:48] = f"{gcshin:,.2f}".rjust(19)
-line[49:68] = f"{gcshout:,.2f}".rjust(19)
-line[69:88] = f"{gcheq:,.2f}".rjust(19)
-
-# item columns
-line[89:96]  = f"{gitema:>6}"
-line[97:104] = f"{gitemb:>6}"
-line[105:112]= f"{gitemc:>6}"
-line[113:120]= f"{gitemd:>6}"
-line[121:128]= f"{giteme:>6}"
-line[129:136]= f"{gitemf:>6}"
-
-# total
-line[137:145] = f"{gtlitem:>8}"
-
-f.write("".join(line).rstrip() + "\n")
-
-=======================
-
-# ----------------------------------------------------------------------
-# PRINT1: CONSOLIDATED FORMAT (one line per branch + grand total)
-# Single page header at _N_=1, no per-branch page break.
-# ----------------------------------------------------------------------
-def write_print1_header(f, pagecnt, rdate):
-    f.write(f"1{'':44}P U B L I C   B A N K   B E R H A D{'':33}PAGE NO : {pagecnt}\n")
-    f.write(f" {'':44}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
-    f.write("0        <------------------------------ AMOUNT"
-            f"------------------------------><--------------------ITEM COUNT"
-            f"---------------------->\n")
-    f.write(" BRANCH        TRAN AMOUNT           CASH IN         CASH OUT"
-            "           CHEQUE      5K    10K    50K   100K   200K  >200K"
-            "     TOTAL  \n")
-    f.write(f" {'-'*130}\n")
-
-
-with open(OUTPUT_PRINT1, 'w') as f:
-    pagecnt = 1
-    linecnt = 0
-
-    bamt = bcshin = bcshout = bcheq = 0.0
-    bitema = bitemb = bitemc = bitemd = biteme = bitemf = 0
-
-    write_print1_header(f, pagecnt, rdate)
-    linecnt = 6
-
-    branches = list(df_final1.group_by('BRANCH', maintain_order=True))
-
-    for idx, (branch, branch_group) in enumerate(branches):
-        branch_no = branch[0] if isinstance(branch, tuple) else branch
-
-        gamt = gcshin = gcshout = gcheq = 0.0
-        gitema = gitemb = gitemc = gitemd = giteme = gitemf = 0
-
-        for row in branch_group.iter_rows(named=True):
-            gamt += row['AMOUNT']
-            gcshin += row['CASHIN']
-            gcshout += row['CASHOUT']
-            gcheq += row['CHECKIN']
-            gitema += row['ITEMA']
-            gitemb += row['ITEMB']
-            gitemc += row['ITEMC']
-            gitemd += row['ITEMD']
-            giteme += row['ITEME']
-            gitemf += row['ITEMF']
-
-            bamt += row['AMOUNT']
-            bcshin += row['CASHIN']
-            bcshout += row['CASHOUT']
-            bcheq += row['CHECKIN']
-            bitema += row['ITEMA']
-            bitemb += row['ITEMB']
-            bitemc += row['ITEMC']
-            bitemd += row['ITEMD']
-            biteme += row['ITEME']
-            bitemf += row['ITEMF']
-
-        gtlitem = gitema + gitemb + gitemc + gitemd + giteme + gitemf
-
-        prefix = "0" if idx == 0 else " "
-        f.write(f"{prefix} {branch_no:03d}   {gamt:18,.2f} {gcshin:17,.2f} {gcshout:17,.2f} "
-                f"{gcheq:17,.2f} {gitema:7.0f} {gitemb:7.0f} {gitemc:7.0f} "
-                f"{gitemd:7.0f} {giteme:7.0f} {gitemf:7.0f} {gtlitem:10.0f}\n")
-        linecnt += 1
-
-        if linecnt > PAGE_SIZE:
-            pagecnt += 1
-            write_print1_header(f, pagecnt, rdate)
-            linecnt = 6
-
-    # LAST observation: grand total block
-    btlitem = bitema + bitemb + bitemc + bitemd + biteme + bitemf
-    f.write(f" {'':7}{'-'*23}{'':1}{'-'*51}{'':1}{'-'*53}\n")
-    f.write(f" TOTAL  {bamt:18,.2f} {bcshin:17,.2f} {bcshout:17,.2f} "
-            f"{bcheq:17,.2f} {bitema:7.0f} {bitemb:7.0f} {bitemc:7.0f} "
-            f"{bitemd:7.0f} {biteme:7.0f} {bitemf:7.0f} {btlitem:10.0f}\n")
-    f.write(f" {'':7}{'-'*23}{'':1}{'-'*51}{'':1}{'-'*53}\n")
-    f.write(" \n")
-
-============================
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py", line 288, in <module>
-    for branch, group in df_brdemo.partition_by('BRANCH', maintain_order=True).items():
-AttributeError: 'list' object has no attribute 'items'
-
-
-code_map = {code: (g, sg) for codes, (g, sg) in group_map.items() for code in codes}
-
-df_final1 = df_final1.with_columns([
-    pl.col("TRANCODE").map_elements(lambda x: code_map.get(x, (58, 58.1))[0]).alias("GROUP"),
-    pl.col("TRANCODE").map_elements(lambda x: code_map.get(x, (58, 58.1))[1]).alias("SGROUP"),
-])
-
-
-df_final1 = df_final1.with_columns([
-    pl.col("TRANCODE").map_elements(lambda x: assign_group(x, group_map)[0]).alias("GROUP"),
-    pl.col("TRANCODE").map_elements(lambda x: assign_group(x, group_map)[1]).alias("SGROUP"),
-])
-
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py", line 250, in <module>
-    df_brdemo = df_final1.join(df_brh, on='BRANCH', how='full').with_columns([
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.SchemaError: datatypes of join keys don't match - `BRANCH`: f64 on left does not match `BRANCH`: i64 on right (and no other type was available to cast to)
+        # branch total block = 2 lines
+        pagecnt, linecnt = ensure_space(f, branch_no, pagecnt, linecnt, 2, rdate)
+        write_branch_total(f, branch_no, gamt, gcshin, gcshout, gcheq,
+                            gitema, gitemb, gitemc, gitemd, giteme, gitemf)
+        linecnt += 2
