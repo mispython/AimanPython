@@ -57,12 +57,12 @@ df_final1 = df_final1.group_by(['BRANCH', 'TRANCODE'], maintain_order=True).agg(
     pl.col('CSHIN').sum().alias('CASHIN'),
     pl.col('CSHOUT').sum().alias('CASHOUT'),
     pl.col('CHEQUE').sum().alias('CHECKIN'),
-    pl.col('ITEM1').sum().alias('ITEMA'),
-    pl.col('ITEM2').sum().alias('ITEMB'),
-    pl.col('ITEM3').sum().alias('ITEMC'),
-    pl.col('ITEM4').sum().alias('ITEMD'),
-    pl.col('ITEM5').sum().alias('ITEME'),
-    pl.col('ITEM6').sum().alias('ITEMF')
+    pl.col('ITEM1').cast(pl.Int64).sum().alias('ITEMA'),
+    pl.col('ITEM2').cast(pl.Int64).sum().alias('ITEMB'),
+    pl.col('ITEM3').cast(pl.Int64).sum().alias('ITEMC'),
+    pl.col('ITEM4').cast(pl.Int64).sum().alias('ITEMD'),
+    pl.col('ITEM5').cast(pl.Int64).sum().alias('ITEME'),
+    pl.col('ITEM6').cast(pl.Int64).sum().alias('ITEMF')
 ]).sort(['BRANCH', 'TRANCODE'])
 
 
@@ -299,15 +299,15 @@ with open(OUTPUT_BRDEMO, 'w') as f:
 # Single page header at _N_=1, no per-branch page break.
 # ----------------------------------------------------------------------
 def write_print1_header(f, pagecnt, rdate):
-    f.write(f"1{'':45}P U B L I C   B A N K   B E R H A D{'':35}PAGE NO : {pagecnt}\n")
-    f.write(f" {'':45}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
+    f.write(f"1{'':44}P U B L I C   B A N K   B E R H A D{'':35}PAGE NO : {pagecnt}\n")
+    f.write(f" {'':44}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
     f.write("0        <------------------------------ AMOUNT"
             f"------------------------------><--------------------ITEM COUNT"
             f"---------------------->\n")
     f.write(" BRANCH        TRAN AMOUNT           CASH IN         CASH OUT"
             "           CHEQUE      5K    10K    50K   100K   200K  >200K"
             "     TOTAL  \n")
-    f.write(f" {'-'*130}\n")
+    f.write(f" {'-'*132}\n")
 
 
 with open(OUTPUT_PRINT1, 'w') as f:
@@ -354,10 +354,7 @@ with open(OUTPUT_PRINT1, 'w') as f:
         gtlitem = gitema + gitemb + gitemc + gitemd + giteme + gitemf
 
         prefix = "0" if idx == 0 else " "
-        # f.write(f"{prefix} {branch_no:03d}   {gamt:18,.2f} {gcshin:17,.2f} {gcshout:17,.2f} "
-        #         f"{gcheq:17,.2f} {gitema:7.0f} {gitemb:7.0f} {gitemc:7.0f} "
-        #         f"{gitemd:7.0f} {giteme:7.0f} {gitemf:7.0f} {gtlitem:10.0f}\n")
-        line = list(" " * 140)
+        line = list(" " * 133)
 
         # control column
         line[0] = prefix
@@ -366,21 +363,21 @@ with open(OUTPUT_PRINT1, 'w') as f:
         line[2:5] = f"{branch_no:03d}"
 
         # amounts (fixed positions)
-        line[9:28]  = f"{gamt:,.2f}".rjust(19)
-        line[29:48] = f"{gcshin:,.2f}".rjust(19)
-        line[49:68] = f"{gcshout:,.2f}".rjust(19)
-        line[69:88] = f"{gcheq:,.2f}".rjust(19)
+        line[8:26]  = f"{gamt:,.2f}".rjust(18)      # TRAN AMOUNT
+        line[27:44] = f"{gcshin:,.2f}".rjust(17)    # CASH IN
+        line[45:62] = f"{gcshout:,.2f}".rjust(16)   # CASH OUT
+        line[61:78] = f"{gcheq:,.2f}".rjust(17)     # CHEQUE
 
         # item columns
-        line[89:96]  = f"{gitema:>6}"
-        line[97:104] = f"{gitemb:>6}"
-        line[105:112]= f"{gitemc:>6}"
-        line[113:120]= f"{gitemd:>6}"
-        line[121:128]= f"{giteme:>6}"
-        line[129:136]= f"{gitemf:>6}"
+        line[79:86]  = str(int(gitema)).rjust(7)    # 5K
+        line[87:93]  = str(int(gitemb)).rjust(6)    # 10K
+        line[94:100] = str(int(gitemc)).rjust(6)    # 50K
+        line[101:107]= str(int(gitemd)).rjust(6)    # 100K
+        line[108:114]= str(int(giteme)).rjust(6)    # 200K
+        line[115:121]= str(int(gitemf)).rjust(6)    # > 200K
 
         # total
-        line[137:145] = f"{gtlitem:>8}"
+        line[122:131] = str(int(gtlitem)).rjust(9)
 
         f.write("".join(line).rstrip() + "\n")
 
@@ -393,68 +390,81 @@ with open(OUTPUT_PRINT1, 'w') as f:
 
     # LAST observation: grand total block
     btlitem = bitema + bitemb + bitemc + bitemd + biteme + bitemf
-    f.write(f" {'':7}{'-'*23}{'':1}{'-'*51}{'':1}{'-'*53}\n")
-    f.write(f" TOTAL  {bamt:18,.2f} {bcshin:17,.2f} {bcshout:17,.2f} "
-            f"{bcheq:17,.2f} {bitema:7.0f} {bitemb:7.0f} {bitemc:7.0f} "
-            f"{bitemd:7.0f} {biteme:7.0f} {bitemf:7.0f} {btlitem:10.0f}\n")
-    f.write(f" {'':7}{'-'*23}{'':1}{'-'*51}{'':1}{'-'*53}\n")
+    f.write(f" {'':7}{'-'*125}\n")
+    f.write(f"TOTAL {bamt:18,.2f}{bcshin:18,.2f}{bcshout:17,.2f}"
+            f"{bcheq:17,.2f} {bitema:7.0f}{bitemb:7.0f}{bitemc:7.0f}"
+            f"{bitemd:7.0f}{biteme:7.0f}{bitemf:7.0f} {btlitem:9.0f}\n")
+    f.write(f" {'':7}{'-'*125}\n")
     f.write(" \n")
 
 # ----------------------------------------------------------------------
 # PRINT2: BRANCH DETAIL FORMAT (one line per TRANCODE,
 #         subtotal per SGROUP, total per GROUP, total per BRANCH)
-# Page break when LINECNT > 58 (PAGE_SIZE = 60, header occupies 6 lines)
+# Page break when LINECNT > 58 (PAGE_SIZE = 60, header occupies 2 lines)
 # ----------------------------------------------------------------------
 DETAIL_LINE_LIMIT = 58
 
 
 def write_print2_header(f, branch_no, pagecnt, rdate):
-    f.write(f"1{branch_no:03d}{'':41}P U B L I C   B A N K   B E R H A D{'':33}PAGE NO : {pagecnt}\n")
+    f.write(f"1{branch_no:03d}{'':41}P U B L I C   B A N K   B E R H A D{'':36}PAGE NO : {pagecnt}\n")
     f.write(f" {'':44}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
-    f.write(" \n")
     f.write(f" {'':30}<--------------------------"
-            f"{'':3}AMOUNT{'':3}"
+            f"AMOUNT"
             f"----------------------->"
-            f"{'':20}<----------------"
-            f"{'':13}ITEM COUNT"
-            f"{'':6}----------------->\n")
-    f.write(f" BRH{'':1}CODE{'':1}DESCRIPTION{'':14}TRAN AMOUNT{'':12}CASH IN{'':6}CASH OUT{'':6}CHEQUE"
-            f"{'':5}5K{'':4}10K{'':4}50K{'':4}100K{'':4}200K{'':4}>200K{'':4}TOTAL\n")
-    f.write(f" {'-'*29}{'':1}{'-'*30}{'':1}{'-'*30}{'':1}{'-'*30}{'':1}{'-'*12}\n")
-    f.write(" \n")
+            f"<----------------"
+            f"ITEM COUNT"
+            f"----------------->\n")
+    f.write(f" BRH{'':1}CODE{'':1}DESCRIPTION{'':14}TRAN AMOUNT{'':7}CASH IN{'':6}CASH OUT{'':7}CHEQUE"
+            f"{'':4}5K{'':4}10K{'':4}50K{'':2}100K{'':2}200K{'':1}>200K{'':2}TOTAL\n")
+    f.write(f" {'-'*132}\n")
 
 
 def write_subgroup_total(f, sgroup_num, samt, scshin, scshout, scheq,
                           sitema, sitemb, sitemc, sitemd, siteme, sitemf):
     stlitem = sitema + sitemb + sitemc + sitemd + siteme + sitemf
-    f.write(f" {'':29}{'-'*50}{'':1}{'-'*54}\n")
-    f.write(f" {'':7}TOTAL FOR SUBGROUP {sgroup_num:<5.1f}{samt:15,.2f} {scshin:13,.2f} "
-            f"{scshout:13,.2f} {scheq:12,.2f} {sitema:6.0f} {sitemb:6.0f} "
-            f"{sitemc:6.0f} {sitemd:5.0f} {siteme:5.0f} {sitemf:5.0f} {stlitem:6.0f}\n")
-    f.write(f" {'':29}{'-'*50}{'':1}{'-'*54}\n")
-    f.write(" \n")
+    f.write(f" {'':29}{'-'*103}\n")
+    f.write(f" {'':7}TOTAL FOR SUBGROUP {sgroup_num:<4.1f}{samt:15,.2f} {scshin:13,.2f} "
+            f"{scshout:13,.2f} {scheq:12,.2f} "
+            f"{str(int(sitema)).rjust(5)} "
+            f"{str(int(sitemb)).rjust(6)} "
+            f"{str(int(sitemc)).rjust(6)} "
+            f"{str(int(sitemd)).rjust(5)} "
+            f"{str(int(siteme)).rjust(5)} "
+            f"{str(int(sitemf)).rjust(5)} "
+            f"{str(int(stlitem)).rjust(6)}\n")
+    f.write(f" {'':29}{'-'*103}\n")
 
 
 def write_group_total(f, group_num, tamt, tcshin, tcshout, tcheq,
                        titema, titemb, titemc, titemd, titeme, titemf):
     ttlitem = titema + titemb + titemc + titemd + titeme + titemf
-    f.write(f" {'':29}{'-'*50}{'':1}{'-'*54}\n")
-    f.write(f" {'':10}TOTAL FOR GROUP {group_num:<5}{tamt:15,.2f} {tcshin:13,.2f} "
-            f"{tcshout:13,.2f} {tcheq:12,.2f} {titema:6.0f} {titemb:6.0f} "
-            f"{titemc:6.0f} {titemd:5.0f} {titeme:5.0f} {titemf:5.0f} {ttlitem:6.0f}\n")
-    f.write(f" {'':29}{'='*50}{'':1}{'='*54}\n")
-    f.write(" \n")
+    f.write(f" {'':29}{'='*103}\n")
+    f.write(f" {'':10}TOTAL FOR GROUP {group_num:<4}{tamt:15,.2f} {tcshin:13,.2f} "
+            f"{tcshout:13,.2f} {tcheq:12,.2f} "
+            f"{str(int(titema)).rjust(5)} "
+            f"{str(int(titemb)).rjust(6)} "
+            f"{str(int(titemc)).rjust(6)} "
+            f"{str(int(titemd)).rjust(5)} "
+            f"{str(int(titeme)).rjust(5)} "
+            f"{str(int(titemf)).rjust(5)} "
+            f"{str(int(ttlitem)).rjust(6)}\n")
+    f.write(f" {'':29}{'='*103}\n")
 
 
 def write_branch_total(f, branch_no, gamt, gcshin, gcshout, gcheq,
                         gitema, gitemb, gitemc, gitemd, giteme, gitemf):
     gtlitem = gitema + gitemb + gitemc + gitemd + giteme + gitemf
-    f.write(f" {'':29}{'-'*50}{'':1}{'-'*54}\n")
+    f.write(f" {'':29}{'='*103}\n")
     f.write(f" {'':9}TOTAL FOR BRANCH {branch_no:03d}{gamt:15,.2f} {gcshin:13,.2f} "
-            f"{gcshout:13,.2f} {gcheq:12,.2f} {gitema:6.0f} {gitemb:6.0f} "
-            f"{gitemc:6.0f} {gitemd:5.0f} {giteme:5.0f} {gitemf:5.0f} {gtlitem:6.0f}\n")
-    f.write(f" {'':29}{'='*50}{'':1}{'='*54}\n")
-    f.write(" \n")
+            f"{gcshout:13,.2f} {gcheq:12,.2f} "
+            f"{str(int(gitema)).rjust(5)} "
+            f"{str(int(gitemb)).rjust(6)} "
+            f"{str(int(gitemc)).rjust(6)} "
+            f"{str(int(gitemd)).rjust(5)} "
+            f"{str(int(giteme)).rjust(5)} "
+            f"{str(int(gitemf)).rjust(5)} "
+            f"{str(int(gtlitem)).rjust(6)}\n")
+    f.write(f" {'':29}{'='*103}\n")
 
 
 with open(OUTPUT_PRINT2, 'w') as f:
@@ -486,9 +496,14 @@ with open(OUTPUT_PRINT2, 'w') as f:
 
                     f.write(f" {branch_no:03d} {row['TRANCODE']:<4} {row['TRANNAME']:<21}"
                             f"{row['AMOUNT']:15,.2f} {row['CASHIN']:13,.2f} {row['CASHOUT']:13,.2f} "
-                            f"{row['CHECKIN']:12,.2f} {row['ITEMA']:6.0f} {row['ITEMB']:6.0f} "
-                            f"{row['ITEMC']:6.0f} {row['ITEMD']:5.0f} {row['ITEME']:5.0f} "
-                            f"{row['ITEMF']:5.0f} {tlitem:6.0f}\n")
+                            f"{row['CHECKIN']:12,.2f} "
+                            f"{str(int(row['ITEMA'])).rjust(5)} "
+                            f"{str(int(row['ITEMB'])).rjust(6)} "
+                            f"{str(int(row['ITEMC'])).rjust(6)} "
+                            f"{str(int(row['ITEMD'])).rjust(5)} "
+                            f"{str(int(row['ITEME'])).rjust(5)} "
+                            f"{str(int(row['ITEMF'])).rjust(5)} "
+                            f"{str(int(tlitem)).rjust(6)}\n")
                     linecnt += 1
 
                     samt += row['AMOUNT']
