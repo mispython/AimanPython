@@ -1,3 +1,10 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMTELP_AII.py", line 288, in <module>
+    for branch, group in df_brdemo.partition_by('BRANCH', maintain_order=True).items():
+AttributeError: 'list' object has no attribute 'items'
+
+
 code_map = {code: (g, sg) for codes, (g, sg) in group_map.items() for code in codes}
 
 df_final1 = df_final1.with_columns([
