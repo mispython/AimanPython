@@ -1,3 +1,194 @@
+# ----------------------------------------------------------------------
+# PRINT2: BRANCH DETAIL FORMAT (STRICT 60-LINE PAGINATION FIXED)
+# ----------------------------------------------------------------------
+
+PAGE_SIZE = 60
+HEADER_LINES = 6
+
+LINES_DETAIL = 1
+LINES_SUBGROUP = 3
+LINES_GROUP = 3
+LINES_BRANCH = 3
+
+
+def ensure_space(f, linecnt, needed_lines, branch_no, pagecnt, rdate):
+    if linecnt + needed_lines > PAGE_SIZE:
+        pagecnt += 1
+        write_print2_header(f, branch_no, pagecnt, rdate)
+        return HEADER_LINES, pagecnt
+    return linecnt, pagecnt
+
+
+def write_print2_header(f, branch_no, pagecnt, rdate):
+    f.write(f"1{branch_no:03d}{'':41}P U B L I C   B A N K   B E R H A D{'':36}PAGE NO : {pagecnt}\n")
+    f.write(f" {'':44}TELLER TRANSACTIONS BY BRANCH AS AT {rdate}\n")
+    f.write(f"0{'':30}<--------------------------AMOUNT----------------------->"
+            f"<----------------ITEM COUNT----------------->\n")
+    f.write(f" BRH CODE DESCRIPTION         TRAN AMOUNT      CASH IN      CASH OUT      CHEQUE"
+            f"   5K   10K   50K  100K  200K  >200K TOTAL\n")
+    f.write(f" {'-'*132}\n")
+
+
+def write_subgroup_total(f, sgroup_num, samt, scshin, scshout, scheq,
+                          sitema, sitemb, sitemc, sitemd, siteme, sitemf):
+    stlitem = sitema + sitemb + sitemc + sitemd + siteme + sitemf
+    f.write(f" {'':30}{'-'*102}\n")
+    f.write(
+        f" {'':7}TOTAL SUBGROUP {sgroup_num:<4.1f}"
+        f"{fit_amount(samt,15)} {fit_amount(scshin,13)} {fit_amount(scshout,13)} {fit_amount(scheq,12)} "
+        f"{str(int(sitema)).rjust(5)} {str(int(sitemb)).rjust(6)} {str(int(sitemc)).rjust(6)} "
+        f"{str(int(sitemd)).rjust(5)} {str(int(siteme)).rjust(5)} {str(int(sitemf)).rjust(5)} "
+        f"{str(int(stlitem)).rjust(6)}\n"
+    )
+    f.write(f" {'':30}{'-'*102}\n")
+
+
+def write_group_total(f, group_num, tamt, tcshin, tcshout, tcheq,
+                       titema, titemb, titemc, titemd, titeme, titemf):
+    ttlitem = titema + titemb + titemc + titemd + titeme + titemf
+    f.write(f" {'':30}{'-'*102}\n")
+    f.write(
+        f" {'':11}TOTAL GROUP {group_num:<3}"
+        f"{fit_amount(tamt,15)} {fit_amount(tcshin,13)} {fit_amount(tcshout,13)} {fit_amount(tcheq,12)} "
+        f"{str(int(titema)).rjust(5)} {str(int(titemb)).rjust(6)} {str(int(titemc)).rjust(6)} "
+        f"{str(int(titemd)).rjust(5)} {str(int(titeme)).rjust(5)} {str(int(titemf)).rjust(5)} "
+        f"{str(int(ttlitem)).rjust(6)}\n"
+    )
+    f.write(f" {'':30}{'='*102}\n")
+
+
+def write_branch_total(f, branch_no, gamt, gcshin, gcshout, gcheq,
+                        gitema, gitemb, gitemc, gitemd, giteme, gitemf):
+    gtlitem = gitema + gitemb + gitemc + gitemd + giteme + gitemf
+    f.write(f" {'':30}{'-'*102}\n")
+    f.write(
+        f" {'':10}TOTAL BRANCH {branch_no:03d}"
+        f"{fit_amount(gamt,15)} {fit_amount(gcshin,13)} {fit_amount(gcshout,13)} {fit_amount(gcheq,12)} "
+        f"{str(int(gitema)).rjust(5)} {str(int(gitemb)).rjust(6)} {str(int(gitemc)).rjust(6)} "
+        f"{str(int(gitemd)).rjust(5)} {str(int(giteme)).rjust(5)} {str(int(gitemf)).rjust(5)} "
+        f"{str(int(gtlitem)).rjust(6)}\n"
+    )
+    f.write(f" {'':30}{'='*102}\n")
+
+
+# ----------------------------------------------------------------------
+# PRINT2 MAIN
+# ----------------------------------------------------------------------
+with open(OUTPUT_PRINT2, 'w') as f:
+    for branch, branch_group in df_final1.group_by('BRANCH', maintain_order=True):
+        branch_no = branch[0] if isinstance(branch, tuple) else branch
+        pagecnt = 1
+
+        write_print2_header(f, branch_no, pagecnt, rdate)
+        linecnt = HEADER_LINES
+
+        gamt = gcshin = gcshout = gcheq = 0.0
+        gitema = gitemb = gitemc = gitemd = giteme = gitemf = 0
+
+        for group_num, group_data in branch_group.group_by('GROUP', maintain_order=True):
+            grp_no = group_num[0] if isinstance(group_num, tuple) else group_num
+
+            tamt = tcshin = tcshout = tcheq = 0.0
+            titema = titemb = titemc = titemd = titeme = titemf = 0
+
+            for sgroup_num, sgroup_data in group_data.group_by('SGROUP', maintain_order=True):
+                sgrp_no = sgroup_num[0] if isinstance(sgroup_num, tuple) else sgroup_num
+
+                samt = scshin = scshout = scheq = 0.0
+                sitema = sitemb = sitemc = sitemd = siteme = sitemf = 0
+
+                for row in sgroup_data.iter_rows(named=True):
+
+                    linecnt, pagecnt = ensure_space(
+                        f, linecnt, LINES_DETAIL, branch_no, pagecnt, rdate
+                    )
+
+                    tlitem = (
+                        row['ITEMA'] + row['ITEMB'] + row['ITEMC'] +
+                        row['ITEMD'] + row['ITEME'] + row['ITEMF']
+                    )
+
+                    f.write(
+                        f" {branch_no:03d} {row['TRANCODE']:<4} {row['TRANNAME']:<21}"
+                        f"{fit_amount(row['AMOUNT'],15)} "
+                        f"{fit_amount(row['CASHIN'],13)} "
+                        f"{fit_amount(row['CASHOUT'],13)} "
+                        f"{fit_amount(row['CHECKIN'],12)} "
+                        f"{str(int(row['ITEMA'])).rjust(5)} "
+                        f"{str(int(row['ITEMB'])).rjust(6)} "
+                        f"{str(int(row['ITEMC'])).rjust(6)} "
+                        f"{str(int(row['ITEMD'])).rjust(5)} "
+                        f"{str(int(row['ITEME'])).rjust(5)} "
+                        f"{str(int(row['ITEMF'])).rjust(5)} "
+                        f"{str(int(tlitem)).rjust(6)}\n"
+                    )
+
+                    linecnt += 1
+
+                    samt += row['AMOUNT']
+                    scshin += row['CASHIN']
+                    scshout += row['CASHOUT']
+                    scheq += row['CHECKIN']
+
+                    sitema += row['ITEMA']
+                    sitemb += row['ITEMB']
+                    sitemc += row['ITEMC']
+                    sitemd += row['ITEMD']
+                    siteme += row['ITEME']
+                    sitemf += row['ITEMF']
+
+                    tamt += row['AMOUNT']
+                    tcshin += row['CASHIN']
+                    tcshout += row['CASHOUT']
+                    tcheq += row['CHECKIN']
+
+                    titema += row['ITEMA']
+                    titemb += row['ITEMB']
+                    titemc += row['ITEMC']
+                    titemd += row['ITEMD']
+                    titeme += row['ITEME']
+                    titemf += row['ITEMF']
+
+                    gamt += row['AMOUNT']
+                    gcshin += row['CASHIN']
+                    gcshout += row['CASHOUT']
+                    gcheq += row['CHECKIN']
+
+                    gitema += row['ITEMA']
+                    gitemb += row['ITEMB']
+                    gitemc += row['ITEMC']
+                    gitemd += row['ITEMD']
+                    giteme += row['ITEME']
+                    gitemf += row['ITEMF']
+
+                linecnt, pagecnt = ensure_space(
+                    f, linecnt, LINES_SUBGROUP, branch_no, pagecnt, rdate
+                )
+                write_subgroup_total(
+                    f, sgrp_no, samt, scshin, scshout, scheq,
+                    sitema, sitemb, sitemc, sitemd, siteme, sitemf
+                )
+                linecnt += LINES_SUBGROUP
+
+            linecnt, pagecnt = ensure_space(
+                f, linecnt, LINES_GROUP, branch_no, pagecnt, rdate
+            )
+            write_group_total(
+                f, grp_no, tamt, tcshin, tcshout, tcheq,
+                titema, titemb, titemc, titemd, titeme, titemf
+            )
+            linecnt += LINES_GROUP
+
+        linecnt, pagecnt = ensure_space(
+            f, linecnt, LINES_BRANCH, branch_no, pagecnt, rdate
+        )
+        write_branch_total(
+            f, branch_no, gamt, gcshin, gcshout, gcheq,
+            gitema, gitemb, gitemc, gitemd, giteme, gitemf
+        )
+
+================
+
 def fit_amount(value, width, decimals=2):
     """
     Format with commas if it fits.
