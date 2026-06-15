@@ -39,7 +39,17 @@ rdate = reptdate_values.ddmmyy8.replace('/', '')  # DDMMYY8. -> DDMMYY (no separ
 # ----------------------------------------------------------------------
 df_mnitlr1b = pd.read_sas(TEST_DIR / 'mnitlr1b.sas7bdat', encoding='latin1')
 df_mnitlr1b.columns = [c.upper() for c in df_mnitlr1b.columns]
-df_final1 = pl.from_pandas(df_mnitlr1b).sort(['BRANCH', 'TRANCODE'])
+df_final1 = (
+    pl.from_pandas(df_mnitlr1b)
+    .with_columns(
+        pl.col("BRANCH").cast(pl.Int64)
+    )
+    .sort(['BRANCH', 'TRANCODE'])
+)
+
+# df_final = df_final1.with_columns(
+#     pl.col("BRANCH").cast(pl.Int64)
+# )
 
 df_final1 = df_final1.group_by(['BRANCH', 'TRANCODE'], maintain_order=True).agg([
     pl.first('TRANNAME'),
@@ -247,7 +257,7 @@ df_brh = pl.DataFrame(branch_records).sort('BRANCH')
 # ----------------------------------------------------------------------
 # BRDEMO: MERGE BRH WITH FINAL1, IF A (left join keeping FINAL1 rows only)
 # ----------------------------------------------------------------------
-df_brdemo = df_final1.join(df_brh, on='BRANCH', how='full').with_columns([
+df_brdemo = df_final1.join(df_brh, on='BRANCH', how='left').with_columns([
     pl.when((pl.col('BRHCD').is_null()) | (pl.col('BRHCD').str.strip_chars() == ''))
       .then(pl.lit('N/A'))
       .otherwise(pl.col('BRHCD'))
