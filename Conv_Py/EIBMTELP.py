@@ -6,9 +6,10 @@ Purpose: Print teller transactions by branch for branch sizing analysis.
 """
 
 import polars as pl
+import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
-from REPTDATE import get_reptdate_values
+from REPTDATE import get_monthly_reptdate_values
 
 # ----------------------------------------------------------------------
 # PATH SETUP
@@ -26,15 +27,18 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 PAGE_SIZE = 60
 
 # ----------------------------------------------------------------------
-# REPORT DATE (derived, not read from BKUPDTEB.parquet)
+# REPORT DATE (derived - last day of previous month, no input dataset)
 # ----------------------------------------------------------------------
 reptdate_values = get_monthly_reptdate_values()
-rdate = reptdate_values['ddmmyy8'].replace('/', '')  # DDMMYY8. -> DDMMYY (no separators)
+rdate = reptdate_values.ddmmyy8.replace('/', '')  # DDMMYY8. -> DDMMYY (no separators)
 
 # ----------------------------------------------------------------------
 # READ AND ACCUMULATE TRANSACTION DATA (FINAL1)
+# MNITLR1B is a .sas7bdat dataset
 # ----------------------------------------------------------------------
-df_final1 = pl.read_parquet(BASE_DIR / 'MNITLR1B.parquet').sort(['BRANCH', 'TRANCODE'])
+df_mnitlr1b = pd.read_sas(BASE_DIR / 'MNITLR1B.sas7bdat', encoding='latin1')
+df_mnitlr1b.columns = [c.upper() for c in df_mnitlr1b.columns]
+df_final1 = pl.from_pandas(df_mnitlr1b).sort(['BRANCH', 'TRANCODE'])
 
 df_final1 = df_final1.group_by(['BRANCH', 'TRANCODE'], maintain_order=True).agg([
     pl.first('TRANNAME'),
