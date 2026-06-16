@@ -35,12 +35,12 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # PBB paths
 PBB_ODLC_PATH_1   = INPUT_DIR  / "PBB" / "ODLC_OVERDRAFT1_06.parquet"
 PBB_ODLC_PATH_2   = INPUT_DIR  / "PBB" / "ODLC_OVERDRAFT2_06.parquet"
-PBB_OUTPUT_PATH   = OUTPUT_DIR / "PBB" / "ODLIST1.txt"                      # SAP.PBB.ODLIS1.COLD
+PBB_OUTPUT_PATH   = OUTPUT_DIR / "PBB" / "ODRAFT1_ODLC.txt"                      # SAP.PBB.ODLIS1.COLD
 
 # PIBB paths
 PIBB_ODLCI_PATH_1   = INPUT_DIR  / "PIBB" / "ODLCI_OVERDRAFT1_06.parquet"
 PIBB_ODLCI_PATH_2   = INPUT_DIR  / "PIBB" / "ODLCI_OVERDRAFT2_06.parquet"
-PBB_OUTPUT_PATH     = OUTPUT_DIR / "PIBB" / "ODLIST1.txt"                   # SAP.PIBB.ODLIS1.COLD
+PIBB_OUTPUT_PATH     = OUTPUT_DIR / "PIBB" / "ODRAFT1_ODLCI.txt"                 # SAP.PIBB.ODLIS1.COLD
 
 
 # Report layout constants (LRECL=134, RECFM=FBA)
