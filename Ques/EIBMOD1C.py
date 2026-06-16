@@ -1,4 +1,4 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Program: EIBMOD1C.py
 Purpose: OD Listing by FISS Purpose Code (for all CustCodes)
@@ -6,9 +6,12 @@ Purpose: OD Listing by FISS Purpose Code (for all CustCodes)
          Output is a fixed-width report with ASA carriage control characters.
 """
 
+from pathlib import Path
+
 import duckdb
 import polars as pl
-from pathlib import Path
+
+from REPTDATE import get_reptdate_values
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -42,7 +45,6 @@ PIBB_ODLCI_PATH_1   = INPUT_DIR  / "PIBB" / "ODLCI_OVERDRAFT1_06.parquet"
 PIBB_ODLCI_PATH_2   = INPUT_DIR  / "PIBB" / "ODLCI_OVERDRAFT2_06.parquet"
 PIBB_OUTPUT_PATH     = OUTPUT_DIR / "PIBB" / "ODRAFT1_ODLCI.txt"                 # SAP.PIBB.ODLIS1.COLD
 
-
 # Report layout constants (LRECL=134, RECFM=FBA)
 LRECL      = 134
 PAGE_LINES = 60  # lines per page (default)
@@ -50,22 +52,6 @@ PAGE_LINES = 60  # lines per page (default)
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
-def get_report_date(deposit_parquet: Path):
-    """Read REPTDATE from MNITB and return formatted date strings."""
-    con = duckdb.connect()
-    df = con.execute(
-        f"SELECT REPTDATE FROM read_parquet('{deposit_parquet}') LIMIT 1"
-    ).fetchdf()
-    con.close()
-    reptdate = df['REPTDATE'].iloc[0]
-    if hasattr(reptdate, 'date'):
-        reptdate = reptdate.date()
-    # DDMMYY8. format -> DD/MM/YY
-    rdate   = reptdate.strftime('%d/%m/%y')
-    reptmon = reptdate.strftime('%m')
-    return rdate, reptmon
-
 
 def fmt_numeric(value, width: int, decimals: int) -> str:
     """Format a numeric value as right-justified with fixed decimal places."""
@@ -333,32 +319,30 @@ def generate_report(
             f.write(line + '\n')
 
     print(f"Report written to: {output_path}")
+    print(df_sorted)
 
 
 # ============================================================================
 # MAIN - PBB
 # ============================================================================
 
-def run_pbb():
+def run_pbb() -> None:
     """Run OD listing report for Public Bank Berhad."""
-    rdate, reptmon = get_report_date(PBB_DEPOSIT_PATH)
 
     # DATA ODRAFT1: SET ODLC.ODRAF1&REPTMON
-    odraf1_path = PBB_ODLC_PATH / f"odraf1{reptmon}.parquet"
-    con = duckdb.connect()
+    con = duckdb.connect(database=':memory:')
     odraft1_df = con.execute(
-        f"SELECT * FROM read_parquet('{odraf1_path}')"
+        "SELECT * FROM read_parquet(?)", [str(PBB_ODLC_PATH_1)]
     ).pl()
     con.close()
 
-    #
     title1 = (
         'REPORT NO :  ODLIST                           PUBLIC BANK BERHAD'
     )
     title2 = 'PROGRAM ID:  EIBMOD1C'
     title3 = (
         'OD LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)'
-        '                                       REPORT DATE: ' + rdate
+        '                                       REPORT DATE: ' + RDATE
     )
     title4 = '**'
 
@@ -376,26 +360,23 @@ def run_pbb():
 # MAIN - PIBB
 # ============================================================================
 
-def run_pibb():
+def run_pibb() -> None:
     """Run OD listing report for Public Islamic Bank Berhad."""
-    rdate, reptmon = get_report_date(PIBB_DEPOSIT_PATH)
 
     # DATA ODRAFT1: SET ODLCI.ODRAF1&REPTMON
-    odraf1_path = PIBB_ODLCI_PATH / f"odraf1{reptmon}.parquet"
-    con = duckdb.connect()
+    con = duckdb.connect(database=':memory:')
     odraft1_df = con.execute(
-        f"SELECT * FROM read_parquet('{odraf1_path}')"
+        "SELECT * FROM read_parquet(?)", [str(PIBB_ODLCI_PATH_1)]
     ).pl()
     con.close()
 
-    #
     title1 = (
         'REPORT NO :  ODLIST                         PUBLIC ISLAMIC BANK BERHAD'
     )
     title2 = 'PROGRAM ID:  EIBMOD1C'
     title3 = (
         'OD LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)'
-        '                                       REPORT DATE: ' + rdate
+        '                                       REPORT DATE: ' + RDATE
     )
     title4 = '**'
 
@@ -414,6 +395,11 @@ def run_pibb():
 # ============================================================================
 
 if __name__ == '__main__':
+    rv = get_reptdate_values()
+    RDATE = rv.reptdt.strftime('%d/%m/%y')   # DDMMYY8. format -> DD/MM/YY
+
+    print(f"Report Date : {rv.reptdate}")
+
     run_pbb()
     #
     # FOR PIBB
