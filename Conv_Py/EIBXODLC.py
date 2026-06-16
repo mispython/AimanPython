@@ -65,8 +65,15 @@ PIBB_CONFIG: Dict[str, Path] = {
 # When run on the  1st  → reptdate=last day of prior month (28/29/30/31) → NOWK='4'  ✓
 
 
+def _read_sas7bdat(path: Path) -> pl.DataFrame:
+    """Read a .sas7bdat file via pandas and convert to Polars with uppercased columns."""
+    pdf = pd.read_sas(str(path), encoding="latin1")
+    pdf.columns = [c.upper() for c in pdf.columns]
+    return pl.from_pandas(pdf)
+
+
 def _build_loan_path(loan_dir: Path, reptmon: str, nowk: str) -> Path:
-    return loan_dir / f"loan{reptmon}{nowk}.parquet"
+    return loan_dir / f"loan{reptmon}{nowk}.sas7bdat"
 
 
 # =============================================================================
@@ -100,21 +107,15 @@ def process_bank(
     if not loan_path.exists():
         raise FileNotFoundError(f"[{bank_name}] Missing loan file    : {loan_path}")
 
-    # Fresh connection per bank entity (avoids stale registered tables)
-    con = duckdb.connect(database=":memory:")
-
     # ------------------------------------------------------------------
     # Load inputs
     # DEPOSIT.CURRENT  → SAP.PBB.MNITB(0)  or  SAP.PIBB.MNITB(0)
     # LOAN dataset     → SAP.PBB.SASDATA   or  SAP.PIBB.SASDATA
     # ------------------------------------------------------------------
-    deposit_df = con.execute(
-        "SELECT * FROM read_parquet(?)", [str(deposit_path)]
-    ).pl()
+    deposit_df = _read_sas7bdat(deposit_path)
 
     loan_df = (
-        con.execute("SELECT * FROM read_parquet(?)", [str(loan_path)])
-        .pl()
+        _read_sas7bdat(loan_path)
         .select(["ACCTNO", "SECTORCD", "FISSPURP"])
     )
 
