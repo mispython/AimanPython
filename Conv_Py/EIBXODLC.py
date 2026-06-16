@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-File Name   : EIBXODLC
+File Name   : EIBXODLC.py
 Description : Overdraft Loan Classification outputs for PBB and PIBB.
               Runs biweekly:
                 - 16th of month  → report date = 15th  (NOWK='2')
@@ -12,30 +12,50 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
-import duckdb
+import pandas as pd
 import polars as pl
 
 from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
 
 
 # =============================================================================
 # PATH CONFIGURATION
 # =============================================================================
-SCRIPT_DIR = Path(__file__).resolve().parent
+# # Production Path
+# BASE_DIR = Path("/dwh")
 
-BASE_INPUT_DIR  = SCRIPT_DIR / "input"  / "EIBXODLC"
-BASE_OUTPUT_DIR = SCRIPT_DIR / "output" / "EIBXODLC"
+# OUTPUT_DIR = Path("/host/mis/output/report") / "EIBXODLC"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# PBB_CONFIG: Dict[str, Path] = {
+#     "deposit_current" : get_latest_file(BASE_DIR / "dp_ca", "ca"),       # File name example - ca05226.sas7bdat
+#     "loan_dir"        : get_latest_file(BASE_DIR / "ln_ln", "ln"),       # File name example - ln05126.sas7bdat
+#     "output_dir"      : OUTPUT_DIR / "PBB",
+# }
+
+# PIBB_CONFIG: Dict[str, Path] = {
+#     "deposit_current" : get_latest_file(BASE_DIR / "idp_ca", "ica"),     # File name example - ica05226.sas7bdat
+#     "loan_dir"        : get_latest_file(BASE_DIR / "iln_ln", "iln"),     # File name example - oln05126.sas7bdat
+#     "output_dir"      : OUTPUT_DIR / "PIBB",
+# }
+
+# Testing Path
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR  = BASE_DIR / "input/prod"  / "EIBXODLC"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBXODLC"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PBB_CONFIG: Dict[str, Path] = {
-    "deposit_current" : BASE_INPUT_DIR / "pbb" / "deposit_current.parquet",
-    "loan_dir"        : BASE_INPUT_DIR / "pbb" / "loan",
-    "output_dir"      : BASE_OUTPUT_DIR / "pbb",
+    "deposit_current" : get_latest_file(INPUT_DIR, "ca"),       # File name example - ca05226.sas7bdat
+    "loan_dir"        : get_latest_file(INPUT_DIR, "ln"),       # File name example - ln05126.sas7bdat
+    "output_dir"      : OUTPUT_DIR / "PBB",
 }
 
 PIBB_CONFIG: Dict[str, Path] = {
-    "deposit_current" : BASE_INPUT_DIR / "pibb" / "deposit_current.parquet",
-    "loan_dir"        : BASE_INPUT_DIR / "pibb" / "loan",
-    "output_dir"      : BASE_OUTPUT_DIR / "pibb",
+    "deposit_current" : get_latest_file(INPUT_DIR, "ica"),     # File name example - ica05226.sas7bdat
+    "loan_dir"        : get_latest_file(INPUT_DIR, "iln"),     # File name example - oln05126.sas7bdat
+    "output_dir"      : OUTPUT_DIR / "PIBB",
 }
 
 
