@@ -36,13 +36,15 @@ from input_date import get_latest_file
 
 # PIBB_CONFIG: Dict[str, Path] = {
 #     "deposit_current" : get_latest_file(BASE_DIR / "idp_ca", "ica"),     # File name example - ica05226.sas7bdat
-#     "loan_dir"        : get_latest_file(BASE_DIR / "iln_ln", "iln"),     # File name example - oln05126.sas7bdat
+#     "loan_dir"        : get_latest_file(BASE_DIR / "iln_ln", "iln"),     # File name example - iln05126.sas7bdat
 #     "output_dir"      : OUTPUT_DIR / "PIBB",
 # }
 
 # Testing Path
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input/prod"  / "EIBXODLC"
+INPUT_DIR  = BASE_DIR / "input/prod" / "EIBXODLC"
+# BASE_DIR = Path("/dwh")
+# OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS") / "output" / "EIBXODLC"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBXODLC"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -54,7 +56,7 @@ PBB_CONFIG: Dict[str, Path] = {
 
 PIBB_CONFIG: Dict[str, Path] = {
     "deposit_current" : get_latest_file(INPUT_DIR, "ica"),     # File name example - ica05226.sas7bdat
-    "loan_dir"        : get_latest_file(INPUT_DIR, "iln"),     # File name example - oln05126.sas7bdat
+    "loan_dir"        : get_latest_file(INPUT_DIR, "iln"),     # File name example - iln05126.sas7bdat
     "output_dir"      : OUTPUT_DIR / "PIBB",
 }
 
@@ -85,6 +87,7 @@ PIBB_CONFIG: Dict[str, Path] = {
 # When run on the  1st  → reptdate=last day of prior month (28/29/30/31) → NOWK='4'  ✓
 
 
+# Production USE
 def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read a .sas7bdat file via pandas and convert to Polars with uppercased columns."""
     pdf = pd.read_sas(str(path), encoding="latin1")
@@ -92,8 +95,32 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     return pl.from_pandas(pdf)
 
 
-def _build_loan_path(loan_dir: Path, reptmon: str, nowk: str) -> Path:
-    return loan_dir / f"loan{reptmon}{nowk}.sas7bdat"
+# # Testing USE
+# def _read_sas7bdat(path: Path, limit: int | None = None) -> pl.DataFrame:
+#     """Read SAS file and optionally limit rows for testing."""
+
+#     if not path.exists():
+#         raise FileNotFoundError(f"Missing required input file: {path}")
+
+#     # Reas SAS file
+#     df = pd.read_sas(
+#         path,
+#         format="sas7bdat",
+#         encoding="latin1",
+#     )
+
+#     # Standardise column names (SAS -> Python consistency)
+#     df.columns = [str(c).upper().strip() for c in df.columns]
+
+#     # Testing mode (limit rows)
+#     if limit is not None:
+#         df = df.head(limit)
+
+#     return pl.from_pandas(df)
+
+
+# def _build_loan_path(loan_dir: Path, reptmon: str, nowk: str) -> Path:
+#     return loan_dir / f"loan{reptmon}{nowk}.sas7bdat"
 
 
 # =============================================================================
@@ -120,24 +147,42 @@ def process_bank(
     deposit_path = config["deposit_current"]
     loan_dir     = config["loan_dir"]
     output_dir   = config["output_dir"]
-    loan_path    = _build_loan_path(loan_dir, reptmon, nowk)
 
     if not deposit_path.exists():
         raise FileNotFoundError(f"[{bank_name}] Missing deposit file : {deposit_path}")
-    if not loan_path.exists():
-        raise FileNotFoundError(f"[{bank_name}] Missing loan file    : {loan_path}")
+    if not loan_dir.exists():
+        raise FileNotFoundError(f"[{bank_name}] Missing loan file    : {loan_dir}")
 
     # ------------------------------------------------------------------
     # Load inputs
     # DEPOSIT.CURRENT  → SAP.PBB.MNITB(0)  or  SAP.PIBB.MNITB(0)
     # LOAN dataset     → SAP.PBB.SASDATA   or  SAP.PIBB.SASDATA
     # ------------------------------------------------------------------
-    deposit_df = _read_sas7bdat(deposit_path)
+    # Production USE
+    deposit_df = (
+        _read_sas7bdat(deposit_path)
+        .rename({"CUSTCODE":"CUSTCD"})
+        .with_columns(
+            pl.col("CUSTCD").cast(pl.Utf8)
+        )
+    )
 
     loan_df = (
-        _read_sas7bdat(loan_path)
+        _read_sas7bdat(loan_dir)
+        .rename({"SECTOR":"SECTORCD"})
+        .with_columns(
+            pl.col("SECTORCD").cast(pl.Utf8)
+        )
         .select(["ACCTNO", "SECTORCD", "FISSPURP"])
     )
+
+    # # Testing USE
+    # deposit_df = _read_sas7bdat(deposit_path, limit = 1000)
+
+    # loan_df = (
+    #     _read_sas7bdat(loan_dir, limit = 1000)
+    #     .select(["ACCTNO", "SECTORCD", "FISSPURP"])
+    # )
 
     # ------------------------------------------------------------------
     # DATA ODRAFT
@@ -146,7 +191,8 @@ def process_bank(
     # BALANCE = (-1)*CURBAL;
     # ------------------------------------------------------------------
     odraft = deposit_df.filter(
-        (pl.col("CURBAL") < 0) & (pl.col("CUSTCODE") != 81)
+        (pl.col("CURBAL") < 0) &
+        (pl.col("CUSTCD") != "81")
     ).with_columns(
         (pl.col("CURBAL") * -1).alias("BALANCE")
     )
