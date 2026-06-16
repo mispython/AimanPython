@@ -1,167 +1,205 @@
 #!/usr/bin/env python3
 """
-File Name: EIBXODLC
-Overdraft Loan Classification outputs for PBB and PIBB.
+File Name   : EIBXODLC
+Description : Overdraft Loan Classification outputs for PBB and PIBB.
+              Runs biweekly:
+                - 16th of month  → report date = 15th  (NOWK='2')
+                - 1st of month   → report date = last day of prior month (NOWK='4')
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 
 import duckdb
 import polars as pl
+
+from REPTDATE import get_reptdate_values
 
 
 # =============================================================================
 # PATH CONFIGURATION
 # =============================================================================
-# BASE_INPUT_DIR = Path("input/EIBXODLC")
-# BASE_OUTPUT_DIR = Path("/mnt/user-data/outputs/EIBXODLC")
-
 SCRIPT_DIR = Path(__file__).resolve().parent
-BASE_INPUT_DIR = SCRIPT_DIR / "input" / "EIBXODLC"
-BASE_OUTPUT_DIR = SCRIPT_DIR / "outputs" / "EIBXODLC"
+
+BASE_INPUT_DIR  = SCRIPT_DIR / "input"  / "EIBXODLC"
+BASE_OUTPUT_DIR = SCRIPT_DIR / "output" / "EIBXODLC"
 
 PBB_CONFIG: Dict[str, Path] = {
-    "reptdate": BASE_INPUT_DIR / "pbb" / "deposit_reptdate.parquet",
-    "deposit_current": BASE_INPUT_DIR / "pbb" / "deposit_current.parquet",
-    "loan_dir": BASE_INPUT_DIR / "pbb" / "loan",
-    "output_dir": BASE_OUTPUT_DIR / "pbb",
+    "deposit_current" : BASE_INPUT_DIR / "pbb" / "deposit_current.parquet",
+    "loan_dir"        : BASE_INPUT_DIR / "pbb" / "loan",
+    "output_dir"      : BASE_OUTPUT_DIR / "pbb",
 }
 
 PIBB_CONFIG: Dict[str, Path] = {
-    "reptdate": BASE_INPUT_DIR / "pibb" / "deposit_reptdate.parquet",
-    "deposit_current": BASE_INPUT_DIR / "pibb" / "deposit_current.parquet",
-    "loan_dir": BASE_INPUT_DIR / "pibb" / "loan",
-    "output_dir": BASE_OUTPUT_DIR / "pibb",
+    "deposit_current" : BASE_INPUT_DIR / "pibb" / "deposit_current.parquet",
+    "loan_dir"        : BASE_INPUT_DIR / "pibb" / "loan",
+    "output_dir"      : BASE_OUTPUT_DIR / "pibb",
 }
 
 
 # =============================================================================
-# DATA STRUCTURES
+# PROC FORMAT (informational – not used in output columns)
 # =============================================================================
-@dataclass(frozen=True)
-class MacroVars:
-    reptdate: date
-    nowk: str
-    reptmon: str
+# PROC FORMAT;
+#    VALUE BANKFMT 33='PBB'
+#                 134='PFB';
+# RUN;
 
 
 # =============================================================================
-# UTILITIES
+# REPORT DATE DERIVATION
 # =============================================================================
-SAS_EPOCH = date(1960, 1, 1)
+# Biweekly run schedule:
+#   Run on the 16th  → reptdate = 15th  → NOWK = '2'
+#   Run on the  1st  → reptdate = last day of prior month → NOWK = '4'
+#
+# get_reptdate_values() computes reptdate = today() - 1 day, then assigns NOWK:
+#   day 1-8   → NOWK='1'
+#   day 9-15  → NOWK='2'
+#   day 16-22 → NOWK='3'
+#   day 23+   → NOWK='4'
+#
+# When run on the 16th  → reptdate=15th → NOWK='2'  ✓
+# When run on the  1st  → reptdate=last day of prior month (28/29/30/31) → NOWK='4'  ✓
 
 
-def normalize_reptdate(value: Any) -> date:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, (int, float)):
-        numeric = int(value)
-        if numeric > 10_000_000:
-            text = f"{numeric:08d}"
-            return date(int(text[0:4]), int(text[4:6]), int(text[6:8]))
-        return SAS_EPOCH + timedelta(days=numeric)
-    if isinstance(value, str):
-        text = value.strip()
-        if text.isdigit() and len(text) == 8:
-            return date(int(text[0:4]), int(text[4:6]), int(text[6:8]))
-        return datetime.fromisoformat(text).date()
-    raise TypeError(f"Unsupported REPTDATE value: {value!r}")
-
-
-def derive_macro_vars(reptdate: date) -> MacroVars:
-    day = reptdate.day
-    if day == 8:
-        nowk = "1"
-    elif day == 15:
-        nowk = "2"
-    elif day == 22:
-        nowk = "3"
-    else:
-        nowk = "4"
-    reptmon = f"{reptdate.month:02d}"
-    return MacroVars(reptdate=reptdate, nowk=nowk, reptmon=reptmon)
-
-
-def read_reptdate(con: duckdb.DuckDBPyConnection, reptdate_path: Path) -> MacroVars:
-
-    print("Looking for:", reptdate_path.resolve())
-    print("Exists?", reptdate_path.exists(), "\n")
-
-    result = con.execute(
-        "SELECT REPTDATE FROM read_parquet(?) LIMIT 1",
-        [str(reptdate_path)],
-    ).fetchone()
-    if not result:
-        raise ValueError(f"REPTDATE file is empty: {reptdate_path}")
-    reptdate = normalize_reptdate(result[0])
-    return derive_macro_vars(reptdate)
-
-
-def load_parquet(con: duckdb.DuckDBPyConnection, path: Path) -> pl.DataFrame:
-    return con.execute("SELECT * FROM read_parquet(?)", [str(path)]).pl()
-
-
-def build_loan_path(loan_dir: Path, reptmon: str, nowk: str) -> Path:
+def _build_loan_path(loan_dir: Path, reptmon: str, nowk: str) -> Path:
     return loan_dir / f"loan{reptmon}{nowk}.parquet"
 
 
-def process_bank(bank_name: str, config: Dict[str, Path]) -> None:
-    con = duckdb.connect()
+# =============================================================================
+# CORE PROCESSING
+# =============================================================================
+def process_bank(
+    bank_name: str,
+    config: Dict[str, Path],
+    reptmon: str,
+    nowk: str,
+) -> None:
+    """
+    Process overdraft classification for a single bank entity (PBB or PIBB).
 
-    reptdate_path = config["reptdate"]
+    SAS pipeline:
+      1. PROC SORT LOAN dataset → keep ACCTNO, SECTORCD, FISSPURP
+      2. DATA ODRAFT  – filter DEPOSIT.CURRENT: CURBAL < 0 AND CUSTCODE NE 81
+      3. DATA ODRAFT1 – inner join ODRAFT + LOAN on ACCTNO
+      4. DATA ODRAFT2 – filter ODRAFT1: NON-INDIVIDUAL & (SECTORCD starts '5' OR = '8310')
+      5. PROC SORT ODRAFT1 → output ODRAF1{reptmon}  by BRANCH FISSPURP ACCTNO
+      6. PROC SORT ODRAFT2 → output ODRAF2{reptmon}  by BRANCH SECTORCD ACCTNO
+    """
+
     deposit_path = config["deposit_current"]
-    loan_dir = config["loan_dir"]
-    output_dir = config["output_dir"]
-
-    macros = read_reptdate(con, reptdate_path)
-    loan_path = build_loan_path(loan_dir, macros.reptmon, macros.nowk)
+    loan_dir     = config["loan_dir"]
+    output_dir   = config["output_dir"]
+    loan_path    = _build_loan_path(loan_dir, reptmon, nowk)
 
     if not deposit_path.exists():
-        raise FileNotFoundError(f"Missing deposit file: {deposit_path}")
+        raise FileNotFoundError(f"[{bank_name}] Missing deposit file : {deposit_path}")
     if not loan_path.exists():
-        raise FileNotFoundError(f"Missing loan file: {loan_path}")
+        raise FileNotFoundError(f"[{bank_name}] Missing loan file    : {loan_path}")
 
-    deposit = load_parquet(con, deposit_path)
-    loan = load_parquet(con, loan_path).select(["ACCTNO", "SECTORCD", "FISSPURP"])
+    # Fresh connection per bank entity (avoids stale registered tables)
+    con = duckdb.connect(database=":memory:")
 
-    odraft = (
-        deposit.filter((pl.col("CURBAL") < 0) & (pl.col("CUSTCODE") != 81))
-        .with_columns((pl.col("CURBAL") * -1).alias("BALANCE"))
+    # ------------------------------------------------------------------
+    # Load inputs
+    # DEPOSIT.CURRENT  → SAP.PBB.MNITB(0)  or  SAP.PIBB.MNITB(0)
+    # LOAN dataset     → SAP.PBB.SASDATA   or  SAP.PIBB.SASDATA
+    # ------------------------------------------------------------------
+    deposit_df = con.execute(
+        "SELECT * FROM read_parquet(?)", [str(deposit_path)]
+    ).pl()
+
+    loan_df = (
+        con.execute("SELECT * FROM read_parquet(?)", [str(loan_path)])
+        .pl()
+        .select(["ACCTNO", "SECTORCD", "FISSPURP"])
     )
 
-    odraft1 = odraft.join(loan, on="ACCTNO", how="inner")
+    # ------------------------------------------------------------------
+    # DATA ODRAFT
+    # SET DEPOSIT.CURRENT;
+    # IF CURBAL < 0 AND CUSTCODE NE 81;
+    # BALANCE = (-1)*CURBAL;
+    # ------------------------------------------------------------------
+    odraft = deposit_df.filter(
+        (pl.col("CURBAL") < 0) & (pl.col("CUSTCODE") != 81)
+    ).with_columns(
+        (pl.col("CURBAL") * -1).alias("BALANCE")
+    )
 
-    sector_str = pl.col("SECTORCD").cast(pl.Utf8)
+    # ------------------------------------------------------------------
+    # DATA ODRAFT1
+    # MERGE ODRAFT(IN=A) LOAN(IN=B); BY ACCTNO; IF A AND B;
+    # (inner join)
+    # ------------------------------------------------------------------
+    odraft1 = odraft.join(loan_df, on="ACCTNO", how="inner")
+
+    # ------------------------------------------------------------------
+    # DATA ODRAFT2
+    # IF CUSTCD NOT IN ('77','78','95','96') AND
+    #    (SUBSTR(SECTORCD,1,1) = '5' OR SECTORCD = '8310')
+    # ------------------------------------------------------------------
+    sector = pl.col("SECTORCD").cast(pl.Utf8)
     odraft2 = odraft1.filter(
         (~pl.col("CUSTCD").is_in(["77", "78", "95", "96"]))
-        & (sector_str.str.starts_with("5") | (sector_str == "8310"))
+        & (sector.str.starts_with("5") | (sector == "8310"))
     )
 
+    # ------------------------------------------------------------------
+    # Output
+    # PBB  : ODLC.ODRAF1{reptmon}  / ODLC.ODRAF2{reptmon}
+    # PIBB : ODLCI.ODRAF1{reptmon} / ODLCI.ODRAF2{reptmon}
+    # ------------------------------------------------------------------
     output_dir.mkdir(parents=True, exist_ok=True)
-    odraft1_sorted = odraft1.sort(["BRANCH", "FISSPURP", "ACCTNO"])
-    odraft2_sorted = odraft2.sort(["BRANCH", "SECTORCD", "ACCTNO"])
 
-    output_odraf1 = output_dir / f"ODRAF1{macros.reptmon}.parquet"
-    output_odraf2 = output_dir / f"ODRAF2{macros.reptmon}.parquet"
+    if bank_name == "PBB":
+        out1_name = f"ODLC_OVERDRAFT1_{reptmon}.parquet"
+        out2_name = f"ODLC_OVERDRAFT2_{reptmon}.parquet"
+    else:  # PIBB
+        out1_name = f"ODLCI_OVERDRAFT1_{reptmon}.parquet"
+        out2_name = f"ODLCI_OVERDRAFT2_{reptmon}.parquet"
 
-    odraft1_sorted.write_parquet(output_odraf1)
-    odraft2_sorted.write_parquet(output_odraf2)
+    out1_path = output_dir / out1_name
+    out2_path = output_dir / out2_name
 
-    print(f"[{bank_name}] REPTDATE: {macros.reptdate} NOWK={macros.nowk} REPTMON={macros.reptmon}")
-    print(f"[{bank_name}] Output: {output_odraf1}")
-    print(f"[{bank_name}] Output: {output_odraf2}")
+    # PROC SORT ODRAFT1 OUT=ODLC.ODRAF1{reptmon} BY BRANCH FISSPURP ACCTNO
+    odraft1.sort(["BRANCH", "FISSPURP", "ACCTNO"]).write_parquet(out1_path)
+
+    # PROC SORT ODRAFT2 OUT=ODLC.ODRAF2{reptmon} BY BRANCH SECTORCD ACCTNO
+    odraft2.sort(["BRANCH", "SECTORCD", "ACCTNO"]).write_parquet(out2_path)
+
+    # ------------------------------------------------------------------
+    # Terminal summary
+    # ------------------------------------------------------------------
+    print(f"\n[{bank_name}] REPTMON={reptmon}  NOWK={nowk}")
+    print(f"[{bank_name}] ODRAFT rows          : {len(odraft):,}")
+    print(f"[{bank_name}] ODRAFT1 (inner join) : {len(odraft1):,}")
+    print(f"[{bank_name}] ODRAFT2 (sector flt) : {len(odraft2):,}")
+    print(f"[{bank_name}] Output → {out1_path}")
+    print(f"[{bank_name}] Output → {out2_path}")
 
 
+# =============================================================================
+# MAIN
+# =============================================================================
 def main() -> None:
-    process_bank("PBB", PBB_CONFIG)
-    process_bank("PIBB", PIBB_CONFIG)
+    rv = get_reptdate_values()
+
+    reptmon = rv.reptmon   # zero-padded month  e.g. '05'
+    nowk    = rv.nowk      # week bucket        e.g. '2' or '4'
+
+    print(f"Report Date : {rv.reptdate}  (REPTMON={reptmon}, NOWK={nowk})")
+
+    # PBB
+    process_bank("PBB",  PBB_CONFIG,  reptmon, nowk)
+
+    # ******************************************************
+    # FOR PIBB
+    # ******************************************************
+    process_bank("PIBB", PIBB_CONFIG, reptmon, nowk)
 
 
 if __name__ == "__main__":
