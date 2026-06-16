@@ -1,3 +1,32 @@
+def _read_sas7bdat(path: Path, limit: int | None = None) -> pl.DataFrame:
+    """Read SAS file and optionally limit rows for testing."""
+
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required input file: {path}")
+
+    df = pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="latin1",
+    )
+
+    df.columns = [str(c).upper().strip() for c in df.columns]
+
+    if limit is not None:
+        df = df.head(limit)
+
+    return pl.from_pandas(df)
+
+
+deposit_df = _read_sas7bdat(deposit_path, limit=1000)
+
+loan_df = (
+    _read_sas7bdat(loan_path, limit=1000)
+    .select(["ACCTNO", "SECTORCD", "FISSPURP"])
+)
+
+===================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXODLC.py
 [FILE_RESOLVER] Selected latest: ca06226.sas7bdat
 [FILE_RESOLVER] Selected latest: ln06226.sas7bdat
