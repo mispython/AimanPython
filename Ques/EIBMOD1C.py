@@ -7,6 +7,7 @@ Purpose: OD Listing by FISS Purpose Code (for all CustCodes)
 """
 
 from pathlib import Path
+from datetime import datetime
 
 import duckdb
 import polars as pl
@@ -396,7 +397,9 @@ def run_pibb() -> None:
 
 if __name__ == '__main__':
     rv = get_reptdate_values()
-    RDATE = rv.reptdt.strftime('%d/%m/%y')   # DDMMYY8. format -> DD/MM/YY
+
+    RDATE = datetime.strptime(str(rv.reptdt), "%Y%m%d").strftime("%d/%m/%Y")
+    # RDATE = rv.reptdt.strftime('%d/%m/%y')   # DDMMYY8. format -> DD/MM/YY
 
     print(f"Report Date : {rv.reptdate}")
 
