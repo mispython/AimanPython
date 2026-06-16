@@ -1,3 +1,22 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXODLC.py", line 270, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXODLC.py", line 261, in main
+    process_bank("PBB",  PBB_CONFIG,  reptmon, nowk)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXODLC.py", line 191, in process_bank
+    odraft = deposit_df.filter(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 5325, in filter
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ComputeError: cannot compare string with numeric type (i32)
+
+================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXODLC.py
 [FILE_RESOLVER] Selected latest: ca06226.sas7bdat
 [FILE_RESOLVER] Selected latest: ln06226.sas7bdat
