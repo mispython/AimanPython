@@ -1,3 +1,17 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2/EIBXODLC.py", line 289, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2/EIBXODLC.py", line 280, in main
+    process_bank("PBB",  PBB_CONFIG,  reptmon, nowk)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2/EIBXODLC.py", line 177, in process_bank
+    _read_sas7bdat(deposit_path)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2/EIBXODLC.py", line 104, in _read_sas7bdat
+    df = pl.read_sas(path)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/__init__.py", line 545, in __getattr__
+    raise AttributeError(msg)
+AttributeError: module 'polars' has no attribute 'read_sas'
+
+
 def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read SAS file directly using Polars (no pandas)."""
 
