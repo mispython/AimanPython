@@ -28,20 +28,29 @@ import pandas as pd
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# # >>>>> Testing Path <<<<<
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_DIR  = BASE_DIR / "input/prod"
-OUTPUT_DIR = BASE_DIR / "output/EIBWCTCS"
+# INPUT_DIR  = BASE_DIR / "input/prod"
+# OUTPUT_DIR = BASE_DIR / "output/EIBWCTCS"
+
+# os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# # SAP.PBB.EPCU.CTCS.TXT(0) -- the weekly flat-file input
+# TXTFILE_PATH = INPUT_DIR / "EPCU_CTCS.TXT"
+
+# Production Path
+INPUT_DIR  = Path("/dwh")
+OUTPUT_DIR = Path("/host/mis/output/report") / "EIBWCTCS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # SAP.PBB.EPCU.CTCS.TXT(0) -- the weekly flat-file input
-TXTFILE_PATH = INPUT_DIR / "EPCU_CTCS_copy.TXT"
+-> need to know input file path -> TXTFILE_PATH = INPUT_DIR / "EPCU_CTCS.TXT"
 
 # CTCS.CTCS&REPTMON -- monthly accumulator (parquet)
 # The output path is determined at runtime once REPTMON is known.
-
-# os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 con = duckdb.connect()
 
@@ -209,9 +218,9 @@ if FILEDAY == "08":
 else:
     # Subsequent weeks: load existing accumulator, drop rows for today,
     # then prepend the new rows
-    if os.path.exists(CTCS_MON_PQ, CTCS_MON_CSV):
+    if os.path.exists(CTCS_MON_PQ):
         ctcs_existing = (
-            _load(CTCS_MON_PQ, CTCS_MON_CSV)
+            _load(CTCS_MON_PQ)
             .filter(pl.col("REPTDATE") != _reptdate_val)
         )
         # SET CTCS CTCS.CTCS&REPTMON -> new rows first, then existing
