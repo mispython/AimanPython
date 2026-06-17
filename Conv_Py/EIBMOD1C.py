@@ -24,7 +24,7 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 
 # Testing Path
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
 INPUT_DIR  = BASE_DIR / "output" / "EIBXODLC"        # Output path from EIBXODLC.py
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMOD1C"
 
@@ -41,7 +41,7 @@ PBB_ODLC_PATH_1   = INPUT_DIR / "PBB"  / "ODLC_OVERDRAFT1_06.parquet"
 PIBB_ODLCI_PATH_1 = INPUT_DIR / "PIBB" / "ODLCI_OVERDRAFT1_06.parquet"
 
 # Shared customer name lookup file (ACCTNO -> NAME)
-INPUT_CUSTNAME     = BASE_DIR / "input/uat" / "stg_dp_limit.sas7bdat"
+INPUT_CUSTNAME     = BASE_DIR / "input/prod" / "stg_dp_limit.sas7bdat"
 # INPUT_CUSTNAME   = Path("/sas/deposit/dwh/staging") / "stg_dp_limit.sas7bdat"
 
 # Output report files
@@ -262,7 +262,7 @@ def _fmt_balance(value) -> str:
 
 def _build_detail_line(row: dict) -> str:
 
-    cust = row.get('CUSTCD') or row.get('CUSTCODE')
+    # cust = row.get('CUSTCD') or row.get('CUSTCODE')
 
     """Build one fixed-width detail line for a single data row.
 
@@ -279,8 +279,8 @@ def _build_detail_line(row: dict) -> str:
         f" {_fmt_balance(row.get('BALANCE')):>12} "
         f" {_safe_text(row.get('FISSPURP'), 4):>4} "
         f" {_safe_text(row.get('SECTORCD'), 4):>4} "
-        # f" {_safe_int(row.get('CUSTCD')):>4} "
-        f" {_safe_float(cust):>4} "
+        f" {_safe_int(row.get('CUSTCD')):>4} "
+        # f" {_safe_int(cust):>4} "
         f" {_safe_text(row.get('STATE'), 3):<3} "
         f" {_safe_float(row.get('FLATRATE')):>5.2f} "
         f" {_safe_float(row.get('LIMIT1')):>12.2f} "
