@@ -7,15 +7,15 @@ Purpose: Print teller transactions by branch for branch sizing analysis.
 
 import polars as pl
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import date, timedelta, datetime
 from pathlib import Path
 from REPTDATE import get_monthly_reptdate_values
 
 # ----------------------------------------------------------------------
 # PATH SETUP
 # ----------------------------------------------------------------------
+# Testing Path
 BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# BASE_DIR = Path("/stgsrcsys/host/ftpfiles")
 TEST_DIR    = BASE_DIR / "input/prod"
 BRHFL_FILE  = TEST_DIR / "DBRANCH.TXT"
 
@@ -25,6 +25,17 @@ OUTPUT_PRINT2 = OUTPUT_DIR / 'TELLER2.txt'
 OUTPUT_BRDEMO = OUTPUT_DIR / 'TELLER3.txt'
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Production Path
+# BASE_DIR = Path("/stgsrcsys/host/ftpfiles")
+# BRHFL_FILE  = BASE_DIR / "DBRANCH.TXT"
+
+# OUTPUT_DIR = Path("/host/mis/output/report")
+# OUTPUT_PRINT1 = OUTPUT_DIR / 'TELLER1.txt'
+# OUTPUT_PRINT2 = OUTPUT_DIR / 'TELLER2.txt'
+# OUTPUT_BRDEMO = OUTPUT_DIR / 'TELLER3.txt'
+
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PAGE_SIZE = 60
 
@@ -37,7 +48,8 @@ rdate = reptdate_values.ddmmyy8  # DDMMYY8. -> DDMMYY (no separators)
 # ----------------------------------------------------------------------
 # READ AND ACCUMULATE TRANSACTION DATA (FINAL1)
 # ----------------------------------------------------------------------
-df_mnitlr1b = pd.read_sas(TEST_DIR / 'mnitlr1b.sas7bdat', encoding='latin1')
+df_mnitlr1b = pd.read_sas(TEST_DIR / 'mnitlr1b.sas7bdat', encoding='latin1')    # Testing Path
+# df_mnitlr1b = pd.read_sas(BASE_DIR / 'mnitlr1b.sas7bdat', encoding='latin1')    # Production Path
 df_mnitlr1b.columns = [c.upper() for c in df_mnitlr1b.columns]
 df_final1 = (
     pl.from_pandas(df_mnitlr1b)
@@ -268,9 +280,15 @@ df_brdemo = df_final1.join(df_brh, on='BRANCH', how='left').with_columns([
 # BRDEMO REPORT: GTLITEM per branch, ZDATE = TODAY() - 7
 # PUT @001 ZMM Z2. @003 ZYY Z4. @008 BRANCH Z3. @012 BRHCD $3. @016 BRHNM $30. @047 GTLITEM 10.0
 # ----------------------------------------------------------------------
-zdate = datetime.today() - timedelta(days=7)
-zmm = zdate.month
-zyy = zdate.year
+# zdate = datetime.today() - timedelta(days=7)
+# zmm = zdate.month
+# zyy = zdate.year
+
+today = date.today()
+# Get last day of previous month
+last_month_end = date(today.year, today.month, 1) - timedelta(days=1)
+zmm = last_month_end.month
+zyy = last_month_end.year
 
 with open(OUTPUT_BRDEMO, 'w') as f:
     for branch, group in df_brdemo.group_by('BRANCH', maintain_order=True):
@@ -431,6 +449,7 @@ with open(OUTPUT_PRINT1, 'w') as f:
 # Page break when LINECNT > 58 (PAGE_SIZE = 60, header occupies 2 lines)
 # ----------------------------------------------------------------------
 DETAIL_LINE_LIMIT = 58
+HEADER_LINES_PRINT2 = 6
 
 
 def write_print2_header(f, branch_no, pagecnt, rdate):
@@ -521,8 +540,10 @@ with open(OUTPUT_PRINT2, 'w') as f:
                 for row in sgroup_data.iter_rows(named=True):
                     tlitem = (row['ITEMA'] + row['ITEMB'] + row['ITEMC']
                               + row['ITEMD'] + row['ITEME'] + row['ITEMF'])
+                    
+                    cc = "0" if linecnt == HEADER_LINES_PRINT2 else " "
 
-                    f.write(f" {branch_no:03d} {row['TRANCODE']:<4} {row['TRANNAME']:<21}"
+                    f.write(f"{cc}{branch_no:03d} {row['TRANCODE']:<4} {row['TRANNAME']:<21}"
                             # f"{row['AMOUNT']:15,.2f} {row['CASHIN']:13,.2f} {row['CASHOUT']:13,.2f} "
                             # f"{row['CHECKIN']:12,.2f} "
                             f"{fit_amount(row['AMOUNT'],15)} "
@@ -594,6 +615,7 @@ with open(OUTPUT_PRINT2, 'w') as f:
 
         write_branch_total(f, branch_no, gamt, gcshin, gcshout, gcheq,
                             gitema, gitemb, gitemc, gitemd, giteme, gitemf)
+        linecnt += 2
 
 print(f"Teller Transaction Reporting Complete")
 print(f"Report Date: {rdate}")
