@@ -114,16 +114,20 @@ def _safe_text(value, length: int) -> str:
 
 
 def _fmt_branch(value) -> str:
-    """Format branch as zero-padded 3-digit string (SAS Z3. format)."""
+    # """Format branch as zero-padded 3-digit string (SAS Z3. format)."""
+    """Format branch without leading zeroes."""
     if value is None:
         return '   '
     text = str(value).strip()
     if text.endswith('.0'):
         text = text[:-2]
     digits = ''.join(ch for ch in text if ch.isdigit())
+    # if digits:
+    #     return digits.zfill(3)[-3:]
+    # return text[:3].zfill(3)
     if digits:
-        return digits.zfill(3)[-3:]
-    return text[:3].zfill(3)
+        return str(int(digits))
+    return text
 
 
 # ============================================================================
@@ -239,7 +243,7 @@ def _build_header_lines() -> list:
         f"  {'RATE1':>5}  {'RATE2':>5}  {'RATE3':>5}  {'RATE4':>5}  {'RATE5':>5}"
         f"  {'COLL1':>5}  {'COLL2':>5}  {'COLL3':>5}  {'COLL4':>5}  {'COLL5':>5}"
     )
-    underline = '   ' + '-' * 126
+    underline = '   ' + '-' * 122
     return [
         f"{hdr1}\n",
         f"{hdr2}\n",
@@ -252,6 +256,10 @@ def _build_header_lines() -> list:
 # DETAIL LINE BUILDER
 # ============================================================================
 
+def _fmt_balance(value) -> str:
+    return f"{_safe_float(value):.2f}"[:11]
+
+
 def _build_detail_line(row: dict) -> str:
     """Build one fixed-width detail line for a single data row.
 
@@ -263,18 +271,19 @@ def _build_detail_line(row: dict) -> str:
     return (
         f"   {_safe_int(row.get('ACCTNO')):>10} "
         f" {_safe_text(row.get('NAME'), 15):<24} "
-        f" {_safe_float(row.get('APPRLIMT')):>12,.2f} "
-        f" {_safe_float(row.get('BALANCE')):>12,.2f} "
+        f" {_safe_float(row.get('APPRLIMT')):>12.2f} "
+        # f" {_safe_float(row.get('BALANCE')):>12.2f} "
+        f" {_fmt_balance(row.get('BALANCE')):>12} "
         f" {_safe_text(row.get('FISSPURP'), 4):>4} "
         f" {_safe_text(row.get('SECTORCD'), 4):>4} "
         f" {_safe_int(row.get('CUSTCODE')):>4} "
-        f" {_safe_text(row.get('STATE'), 3):>3} "
+        f" {_safe_text(row.get('STATE'), 3):<3} "
         f" {_safe_float(row.get('FLATRATE')):>5.2f} "
-        f" {_safe_float(row.get('LIMIT1')):>12,.2f} "
-        f" {_safe_float(row.get('LIMIT2')):>12,.2f} "
-        f" {_safe_float(row.get('LIMIT3')):>12,.2f} "
-        f" {_safe_float(row.get('LIMIT4')):>12,.2f} "
-        f" {_safe_float(row.get('LIMIT5')):>12,.2f} "
+        f" {_safe_float(row.get('LIMIT1')):>12.2f} "
+        f" {_safe_float(row.get('LIMIT2')):>12.2f} "
+        f" {_safe_float(row.get('LIMIT3')):>12.2f} "
+        f" {_safe_float(row.get('LIMIT4')):>12.2f} "
+        f" {_safe_float(row.get('LIMIT5')):>12.2f} "
         f" {_safe_float(row.get('RATE1')):>5.2f} "
         f" {_safe_float(row.get('RATE2')):>5.2f} "
         f" {_safe_float(row.get('RATE3')):>5.2f} "
@@ -306,10 +315,11 @@ def _write_fisspurp_subtotal(
     """
     sep_line = ' ' * 15 + '-' * 52
     report_file.write(sep_line + '\n')
+    subtotal_str = f"{balance_sum:.2f}"[:13]
     report_file.write(
         f"{' ' * 15}{'SUBTOTAL FOR FISS PURPOSE   '}"
         f"{_safe_text(fisspurp, 4):<4}"
-        f"{balance_sum:>20.2f}\n"
+        f"{subtotal_str:>20}\n"
     )
     report_file.write(sep_line + '\n')
 
@@ -326,12 +336,13 @@ def _write_branch_grandtotal(
         LINE @015 'GRAND TOTAL FOR BRANCH   '  BRANCH Z3.  @054 BALANCE.SUM  13.2;
         LINE @015 52*'-';
     """
-    sep_line = ' ' * 14 + '-' * 52
+    sep_line = ' ' * 15 + '-' * 52
     report_file.write(sep_line + '\n')
+    grandtotal_str = f"{balance_sum:.2f}"[:13]
     report_file.write(
-        f"{' ' * 14}{'GRAND TOTAL FOR BRANCH   '}"
+        f"{' ' * 15}{'GRAND TOTAL FOR BRANCH   '}"
         f"{_fmt_branch(branch)}"
-        f"{balance_sum:>13.2f}\n"
+        f"{grandtotal_str:>24}\n"
     )
     report_file.write(sep_line + '\n')
 
