@@ -24,18 +24,20 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # Input flat file (mainframe fixed-width, RECFM=FB LRECL=1150)
-INPUT_DIR = BASE_DIR / "rawdata_converted" / "DP_PBECP_20250604"
+INPUT_DIR = BASE_DIR / "rawdata_converted" / "DP_PBECP_20260512.parquet"
 
 # Output files (equivalent of SAP.PBB.ECPTRN.ETRNFTP / ECISFTP)
-OUTPUT_DIR   = BASE_DIR / "output" / "EIBMECPT"
-ETRNFTP_FILE = OUTPUT_DIR / "ETRNFTP.parquet"
-ECISFTP_FILE = OUTPUT_DIR / "ECISFTP.parquet"
+OUTPUT_DIR   = BASE_DIR / "output" / "EIBMECPT_v2"
+# ETRNFTP_FILE = OUTPUT_DIR / "ETRNFTP.parquet"
+# ECISFTP_FILE = OUTPUT_DIR / "ECISFTP.parquet"
+ETRNFTP_FILE = OUTPUT_DIR / "ETRNFTP.csv"
+ECISFTP_FILE = OUTPUT_DIR / "ECISFTP.csv"
 
 # Weekly ECP Parquet store (equivalent of ECPOUT library)
 ECPOUT_DIR = OUTPUT_DIR / "ECPOUT"
 
 # Input flat file path
-DPECPT_FILE = INPUT_DIR / "DPECPT.txt"
+# DPECPT_FILE = INPUT_DIR / "DPECPT.txt"
 
 # Ensure directories exist
 ECPOUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -228,8 +230,8 @@ def parse_ecp_flat_file(filepath: Path, reptdate_val: date) -> pl.DataFrame:
 # =============================================================================
 # READ DAILY ECP FLAT FILE
 # =============================================================================
-print(f"[EIBMECPT] Reading flat file: {DPECPT_FILE}")
-ecp_daily: pl.DataFrame = parse_ecp_flat_file(DPECPT_FILE, RDATE)
+print(f"[EIBMECPT] Reading flat file: {INPUT_DIR}")
+ecp_daily: pl.DataFrame = parse_ecp_flat_file(INPUT_DIR, RDATE)
 print(f"[EIBMECPT] Records read from flat file: {len(ecp_daily)}")
 
 # =============================================================================
@@ -299,3 +301,8 @@ print(f"[EIBMECPT] CIS file written : {ECISFTP_FILE}  ({len(ecp_cis)} rows)")
 # =============================================================================
 
 print("[EIBMECPT] Program completed successfully.")
+
+# To show data - For testing purposes only
+print("\n ========== PREVIEW ========== \n")
+print(ecp_trn)
+print(ecp_cis)
