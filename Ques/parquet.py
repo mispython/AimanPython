@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Display Parquet files from the command line.
+"""Standalone Parquet file viewer.
 
-This utility prints a preview of a .parquet file as a table and can also show
-metadata such as columns, schema, row count, and column statistics. It uses
-pandas with a Parquet engine such as pyarrow or fastparquet.
+Put your Parquet file path in PARQUET_FILE_PATH below, then run:
+
+    python parquet_viewer.py
+
+The program reads that .parquet file and displays every row and every column.
 """
 
 from __future__ import annotations
@@ -14,8 +16,18 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+# ---------------------------------------------------------------------------
+# PUT YOUR PARQUET FILE PATH HERE
+# ---------------------------------------------------------------------------
+# Examples:
+#   PARQUET_FILE_PATH = r"C:\Users\you\Downloads\report.parquet"
+#   PARQUET_FILE_PATH = "/home/you/downloads/report.parquet"
+#   PARQUET_FILE_PATH = "./report.parquet"
+PARQUET_FILE_PATH = r"PUT_YOUR_PARQUET_FILE_PATH_HERE.parquet"
 
-DEFAULT_ROWS = 20
+# None means display the whole file. Set to a number such as 100 if you only
+# want to display the first 100 rows.
+ROWS_TO_DISPLAY: int | None = None
 
 
 class ParquetViewerError(Exception):
@@ -52,6 +64,10 @@ def _terminal_width() -> int:
 
 
 def _validate_file(path: Path) -> None:
+    if str(path) == "PUT_YOUR_PARQUET_FILE_PATH_HERE.parquet":
+        raise ParquetViewerError(
+            "Open parquet_viewer.py and replace PARQUET_FILE_PATH with your real .parquet file path."
+        )
     if not path.exists():
         raise ParquetViewerError(f"File does not exist: {path}")
     if not path.is_file():
@@ -97,46 +113,61 @@ def _print_stats(dataframe) -> None:
     print()
 
 
-def _print_table(dataframe, rows: int) -> None:
-    if rows < 0:
+def _print_table(dataframe, rows: int | None) -> None:
+    if rows is not None and rows < 0:
         raise ParquetViewerError("--rows must be 0 or greater")
     if rows == 0:
         return
 
-    preview = dataframe.head(rows)
-    if preview.empty:
+    display_dataframe = dataframe if rows is None else dataframe.head(rows)
+    if display_dataframe.empty:
         print("No rows to display.")
         return
 
-    print(f"First {len(preview):,} row(s):")
-    print(
-        preview.to_string(
-            index=False,
-            max_cols=None,
-            max_colwidth=40,
-            line_width=_terminal_width(),
-        )
-    )
+    if rows is None:
+        print(f"All {len(display_dataframe):,} row(s):")
+    else:
+        print(f"First {len(display_dataframe):,} row(s):")
+
+    with _load_pandas().option_context(
+        "display.max_rows",
+        None,
+        "display.max_columns",
+        None,
+        "display.max_colwidth",
+        None,
+        "display.width",
+        _terminal_width(),
+    ):
+        print(display_dataframe.to_string(index=False, max_rows=None, max_cols=None, max_colwidth=None))
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Display a .parquet file as a readable command-line table.",
+        description="Display the .parquet file path configured inside parquet_viewer.py.",
         epilog=(
-            "Examples:\n"
-            "  python parquet_viewer.py data.parquet\n"
-            "  python parquet_viewer.py data.parquet --rows 50 --schema\n"
-            "  python parquet_viewer.py data.parquet --columns name,amount,date --stats"
+            "Standalone use:\n"
+            "  1. Open parquet_viewer.py.\n"
+            "  2. Replace PARQUET_FILE_PATH with your .parquet file path.\n"
+            "  3. Run: python parquet_viewer.py\n\n"
+            "Optional override:\n"
+            "  python parquet_viewer.py /path/to/data.parquet"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("file", type=Path, help="Path to the .parquet file to display")
+    parser.add_argument(
+        "file",
+        nargs="?",
+        metavar="PARQUET_FILE",
+        type=Path,
+        help="Optional override. If omitted, the program uses PARQUET_FILE_PATH inside this file.",
+    )
     parser.add_argument(
         "-n",
         "--rows",
         type=int,
-        default=DEFAULT_ROWS,
-        help=f"Number of rows to display (default: {DEFAULT_ROWS}; use 0 for metadata only)",
+        default=ROWS_TO_DISPLAY,
+        help="Number of rows to display. Default displays the whole file. Use 0 for metadata only.",
     )
     parser.add_argument(
         "-c",
@@ -152,12 +183,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    parquet_file = args.file or Path(PARQUET_FILE_PATH)
 
     try:
-        _validate_file(args.file)
+        _validate_file(parquet_file)
         columns = _parse_columns(args.columns)
-        dataframe = _read_parquet(args.file, columns)
-        _print_basic_info(args.file, dataframe)
+        dataframe = _read_parquet(parquet_file, columns)
+        _print_basic_info(parquet_file, dataframe)
 
         if args.list_columns:
             _print_columns(dataframe.columns)
