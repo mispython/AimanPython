@@ -1,3 +1,31 @@
+df = df.with_columns([
+    pl.col("CUSTCD").cast(pl.Utf8),
+    pl.col("ACCTNO").cast(pl.Utf8),
+    pl.col("SECTORCD").cast(pl.Utf8),
+]) 
+
+
+deposit_df = (
+    _read_sas7bdat(deposit_path)
+    .rename({"CUSTCODE": "CUSTCD"})
+)
+
+deposit_df = deposit_df.with_columns([
+    pl.col("CUSTCD").cast(pl.Utf8)
+])
+
+
+loan_df = (
+    _read_sas7bdat(loan_dir)
+    .rename({"SECTOR": "SECTORCD"})
+    .with_columns([
+        pl.col("ACCTNO").cast(pl.Utf8),
+        pl.col("SECTORCD").cast(pl.Utf8),
+    ])
+    .select(["ACCTNO", "SECTORCD", "FISSPURP"])
+)
+
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2/EIBXODLC.py", line 289, in <module>
     main()
