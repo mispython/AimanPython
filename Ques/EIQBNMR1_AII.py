@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program: EQIBNMR1.py
+Program: EIQBNMR1.py
 """
 
 from pathlib import Path
@@ -12,17 +12,21 @@ from REPTDATE import get_reptdate_values
 from input_date import get_latest_file
 from output_date import build_output_file
 
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input" / "uat"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIQBNMR1"
 
-INPUT_DIR  = BASE_DIR / "input" / "uat"
-OUTPUT_DIR = BASE_DIR / "output" / "EIQBNMR1"
+# Production Path
+INPUT_DIR  = Path("/dwh")
+OUTPUT_DIR = Path("/host/mis/output/report") / "EIQBNMR1"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # These are the only input files for this Python version of EIQBNMR1.
-# SAS_PATH = INPUT_DIR / "ln05126.sas7bdat"
-# BTSAS_PATH = INPUT_DIR / "btrad04426.sas7bdat"
-SAS_PATH = get_latest_file(INPUT_DIR, "ln")
-BTSAS_PATH = get_latest_file(INPUT_DIR, "btrad")
+SAS_PATH   = get_latest_file(INPUT_DIR / "ln_ln", "ln")         # File name example "ln05126.sas7bdat"
+BTSAS_PATH = get_latest_file(INPUT_DIR / "btrade", "btrad")     # File name example "btrad04426.sas7bdat"
+# SAS_PATH   = get_latest_file(INPUT_DIR, "ln")         # File name example "ln05126.sas7bdat"
+# BTSAS_PATH = get_latest_file(INPUT_DIR, "btrad")     # File name example "btrad04426.sas7bdat"
 
 # REPORT DATE DERIVATION  (shared equivalent of SAS DATA REPTDATE step)
 reptdate_values = get_reptdate_values(year_format="%Y")
@@ -34,7 +38,7 @@ REPTDAY  = reptdate_values.reptday
 NOWK     = reptdate_values.nowk
 RDATE    = REPTDATE.strftime("%d/%m/%y")
 
-REPORT_FILE  = OUTPUT_DIR / f"EIQBNMR1_{REPTYEAR}{REPTMON}{REPTDAY}.txt"
+REPORT_FILE  = OUTPUT_DIR / f"EIQBNMR1_{REPTYEAR}{REPTMON}{REPTDAY}_report.txt"
 SUMMARY_FILE = OUTPUT_DIR / f"EIQBNMR1_{REPTYEAR}{REPTMON}{REPTDAY}_summary.csv"
 
 # SAS macro-list equivalents
@@ -123,16 +127,6 @@ def _normalise_common_columns(df: pl.DataFrame) -> pl.DataFrame:
         .alias("CUSTCODE"),
         pl.col("BALANCE").cast(pl.Float64).fill_null(0.0).alias("BALANCE"),
     )
-
-
-# def _load_loan_data() -> pl.DataFrame:
-#     """Load LN/OD rows from the single loan SAS dataset."""
-#     loan_df = _read_sas7bdat(SAS_PATH)
-#     _require_columns(loan_df, REQUIRED_LOAN_COLUMNS, SAS_PATH)
-#     return _normalise_common_columns(loan_df).with_columns(
-#         pl.col("ACCTYPE").cast(pl.Utf8).str.strip_chars().alias("ACCTYPE"),
-#         pl.col("PRODUCT").cast(pl.Int64, strict=False).alias("PRODUCT"),
-#     )
 
 
 def _load_loan_data() -> pl.DataFrame:
@@ -233,14 +227,27 @@ def _summarise(tagged: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+# ============================================================================
+# REPORT COLUMN WIDTHS
+# ============================================================================
+
+LOAN_W    = 20
+ACTYPE_W  = 10
+BALANCE_W = 36
+
+REPORT_W  = LOAN_W + ACTYPE_W + BALANCE_W + 2
+TOTAL_LABEL_W = LOAN_W + ACTYPE_W + 1
+
 def _build_report(summary_df: pl.DataFrame) -> list[str]:
     lines = [
         "REPORT ID : EIQBNMR1",
         f"PBB - BREAKDOWN OF LOAN BY OPERATING DIVISION {RDATE}",
         f"Report date: {REPTDATE.isoformat()}  Week: {NOWK}  Month: {REPTMON}",
-        "=" * 60,
-        f"{'LOAN TYPE':<20} {'A/C TYPE':<10} {'BALANCE':>20}",
-        "-" * 52,
+        "=" * REPORT_W,
+        f"{'LOAN TYPE':<{LOAN_W}} "
+        f"{'A/C TYPE':<{ACTYPE_W}} "
+        f"{'BALANCE':>{BALANCE_W}}",
+        "-" * REPORT_W,
     ]
 
     grand_total = 0.0
@@ -250,15 +257,25 @@ def _build_report(summary_df: pl.DataFrame) -> list[str]:
 
         for row in category_df.iter_rows(named=True):
             balance = row["BALANCE"] or 0.0
-            lines.append(f"{row['CATEG']:<20} {row['ACCTYPE']:<10} {balance:>20,.2f}")
+            lines.append(
+                f"{row['CATEG']:<{LOAN_W}} "
+                f"{row['ACCTYPE']:<{ACTYPE_W}} "
+                f"{balance:>{BALANCE_W},.2f}"
+            )
             category_total += balance
 
-        lines.append(f"{'':<31}{'TOTAL:':<10} {category_total:>20,.2f}")
-        lines.append("-" * 52)
+        lines.append(
+            f"{'TOTAL:':>{TOTAL_LABEL_W + 16}} "
+            f"{category_total:>20,.2f}"
+        )
+        lines.append("-" * 66)
         grand_total += category_total
 
-    lines.append(f"{'':<31}{'GRAND TOTAL:':<10} {grand_total:>20,.2f}")
-    lines.append("=" * 52)
+    lines.append(
+        f"{'GRAND TOTAL:':>{TOTAL_LABEL_W + 16}} "
+        f"{grand_total:>20,.2f}"
+    )
+    lines.append("=" * REPORT_W)
     return lines
 
 
@@ -311,4 +328,6 @@ def eiqbnmr1() -> None:
 if __name__ == "__main__":
     eiqbnmr1()
     print("[EIQBNMR1] Program completed successfully.")
-    
+
+
+# Balance / TOTAL / GRAND TOTAL append to be +16 row to the right
