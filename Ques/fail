@@ -1,81 +1,25 @@
-def _build_primary_header_lines() -> list:
-    hdr1 = (
-        f"   {'ACCOUNT':>10}  {'':<24}  {'APPROVE':>12}"
-        f"  {'OUTSTANDING':>12}  {'PUR':<4}  {'SEC':<4}  {'CUST':>4}"
-        f"  {'ST':<3}  {'FLAT':>5}"
-        f"  {'':>12}  {'':>12}"
-    )
-    hdr2 = (
-        f"   {'NUMBER':>10}  {'CUSTOMER NAME':<24}  {'LIMIT':>12}"
-        f"  {'BALANCE':>12}  {'POSE':<4}  {'TOR':<4}  {'CODE':>4}"
-        f"  {'CD':<3}  {'RATE':>5}"
-        f"  {'LIMIT1':>12}  {'LIMIT2':>12}"
-    )
-    underline = '   ' + '-' * (len(hdr2.rstrip()) - 3)
-    return [
-        f"{hdr1}\n",
-        f"{hdr2}\n",
-        f"{underline}\n",
-        f"\n",
-    ]
+for fp_idx, (fisspurp_code, fp_df) in enumerate(fisspurp_groups):
+    fp_rows       = list(fp_df.iterrows())
+    total_fp_rows = len(fp_rows)
+    fp_balance    = 0.0
+    is_last_fp    = (fp_idx == total_fp_groups - 1)
+    first_row_on_page = True   # reset to True at start of each FISSPURP group
 
+    for row_idx, (_, row) in enumerate(fp_rows):
+        is_last_row  = (row_idx == total_fp_rows - 1)
+        lines_needed = 1 + (FISSPURP_SUBTOTAL_LINES if is_last_row else 0)
+        if is_last_row and is_last_fp:
+            lines_needed += BRANCH_GRANDTOTAL_LINES
 
-def _build_secondary_header_lines() -> list:
-    hdr = (
-        f"\n   "
-        f"{'LIMIT3':>12}  {'LIMIT4':>12}  {'LIMIT5':>12}"
-        f"  {'RATE1':>5}  {'RATE2':>5}  {'RATE3':>5}  {'RATE4':>5}  {'RATE5':>5}"
-        f"  {'COLL1':>5}  {'COLL2':>5}  {'COLL3':>5}  {'COLL4':>5}  {'COLL5':>5}\n"
-    )
-    underline = f"   {'-' * 110}\n"
-    return [hdr, underline, "\n"]
+        page_before = page_lines_used
+        _ensure_primary(lines_needed)
 
+        # If _ensure_primary triggered a new page, first row on that page shows FISSPURP
+        if page_lines_used < page_before:
+            first_row_on_page = True
 
-def _build_primary_detail_line(row: dict, show_fisspurp: bool = True) -> str:
-    fisspurp_val = _safe_text(row.get('FISSPURP'), 4) if show_fisspurp else ''
-    return (
-        f"   {_safe_int(row.get('ACCTNO')):>10} "
-        f" {_safe_text(row.get('NAME'), 15):<24} "
-        f" {_safe_float(row.get('APPRLIMT')):>12.2f} "
-        f" {_fmt_balance(row.get('BALANCE')):>12} "
-        f" {fisspurp_val:>4} "
-        f" {_safe_text(row.get('SECTORCD'), 4):>4} "
-        f" {_safe_int(row.get('CUSTCD')):>4} "
-        f" {_safe_text(row.get('STATE'), 3):<3} "
-        f" {_safe_float(row.get('FLATRATE')):>5.2f} "
-        f" {_safe_float(row.get('LIMIT1')):>12.2f} "
-        f" {_safe_float(row.get('LIMIT2')):>12.2f}\n"
-    )
+        report_file.write(_build_primary_detail_line(row, show_fisspurp=first_row_on_page))
+        page_lines_used += 1
+        first_row_on_page = False   # subsequent rows on same page don't show it
 
-
-def _build_secondary_detail_line(row: dict) -> str:
-    return (
-        f"   "
-        f"{_safe_float(row.get('LIMIT3')):>12.2f}  "
-        f"{_safe_float(row.get('LIMIT4')):>12.2f}  "
-        f"{_safe_float(row.get('LIMIT5')):>12.2f}  "
-        f"{_safe_float(row.get('RATE1')):>5.2f}  "
-        f"{_safe_float(row.get('RATE2')):>5.2f}  "
-        f"{_safe_float(row.get('RATE3')):>5.2f}  "
-        f"{_safe_float(row.get('RATE4')):>5.2f}  "
-        f"{_safe_float(row.get('RATE5')):>5.2f}  "
-        f"{_safe_text(row.get('COL1'), 5):>5}  "
-        f"{_safe_text(row.get('COL2'), 5):>5}  "
-        f"{_safe_text(row.get('COL3'), 5):>5}  "
-        f"{_safe_text(row.get('COL4'), 5):>5}  "
-        f"{_safe_text(row.get('COL5'), 5):>5}\n"
-    )
-
-
-# Track first row per FISSPURP group
-for row_idx, (_, row) in enumerate(fp_rows):
-    is_last_row = (row_idx == total_fp_rows - 1)
-    show_fp     = (row_idx == 0)           # only show FISSPURP on first row
-    lines_needed = 1 + (FISSPURP_SUBTOTAL_LINES if is_last_row else 0)
-    if is_last_row and is_last_fp:
-        lines_needed += BRANCH_GRANDTOTAL_LINES
-    _ensure_primary(lines_needed)
-
-    report_file.write(_build_primary_detail_line(row, show_fisspurp=show_fp))
-    page_lines_used += 1
-    fp_balance += _safe_float(row.get('BALANCE'))
+        fp_balance += _safe_float(row.get('BALANCE'))
