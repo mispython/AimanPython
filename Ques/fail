@@ -1,16 +1,12 @@
-def _fmt_branch(value) -> str:
-    """Format branch without leading zeros."""
-    if value is None:
-        return ''
+def _read_sas7bdat(path: Path) -> pl.DataFrame:
+    """Read SAS file directly using Polars (no pandas)."""
 
-    text = str(value).strip()
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required input file: {path}")
 
-    if text.endswith('.0'):
-        text = text[:-2]
+    df = pl.read_sas(path)
 
-    digits = ''.join(ch for ch in text if ch.isdigit())
+    # Standardise column names
+    df.columns = [c.upper() for c in df.columns]
 
-    if digits:
-        return str(int(digits))
-
-    return text
+    return df
