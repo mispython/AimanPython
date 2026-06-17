@@ -201,10 +201,10 @@ def _get_report_titles(is_islamic: bool) -> tuple:
 def _build_title_lines(title1: str, title2: str, report_date: str, branch: str) -> list:
     """Build page title block lines (matches SAS TITLE1..TITLE4 + BY-group header)."""
     return [
-        f"1  {title1}\n",
-        f"   {title2}\n",
-        f"   OD LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)"
-        f"                                       REPORT DATE: {report_date}\n",
+        f"1{title1}\n",
+        f" {title2}\n",
+        f" OD LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)"
+        f"{' ' * 59}REPORT DATE: {report_date}\n",
         f"   **\n",
         f"\n",
         f" BRANCH={branch}\n",
@@ -223,22 +223,23 @@ def _build_header_lines() -> list:
     Two header rows because SPLIT='*' splits column labels at '*'.
     """
     hdr1 = (
-        f"   {'ACCOUNT':>10} {'CUSTOMER NAME':<24} {'APPROVE LIMIT':>12}"
-        f" {'OUTSTANDING':>12} {'PUR':>4} {'SEC':>4} {'CUST':>4}"
-        f" {'ST':>3} {'FLAT':>5}"
-        f" {'LIMIT1':>12} {'LIMIT2':>12} {'LIMIT3':>12} {'LIMIT4':>12} {'LIMIT5':>12}"
-        f" {'RATE1':>5} {'RATE2':>5} {'RATE3':>5} {'RATE4':>5} {'RATE5':>5}"
-        f" {'COLL1':>5} {'COLL2':>5} {'COLL3':>5} {'COLL4':>5} {'COLL5':>5}"
+        f"   {'ACCOUNT':>10}  {'':<24}  {'APPROVE':>12}"
+        f"  {'OUTSTANDING':>12}  {'PUR':<4}  {'SEC':<4}  {'CUST':>4}"
+        f"  {'ST':<3}  {'FLAT':>5}"
+        f"  {'':>12}  {'':>12}  {'':>12}  {'':>12}  {'':>12}"
+        f"  {'':>5}  {'':>5}  {'':>5}  {'':>5}  {'':>5}"
+        f"  {'':>5}  {'':>5}  {'':>5}  {'':>5}  {'':>5}"
+
     )
     hdr2 = (
-        f"   {'NUMBER':>10} {'':<24} {'':>12}"
-        f" {'BALANCE':>12} {'POSE':>4} {'TOR':>4} {'CODE':>4}"
-        f" {'CD':>3} {'RATE':>5}"
-        f" {'':>12} {'':>12} {'':>12} {'':>12} {'':>12}"
-        f" {'':>5} {'':>5} {'':>5} {'':>5} {'':>5}"
-        f" {'':>5} {'':>5} {'':>5} {'':>5} {'':>5}"
+        f"   {'NUMBER':>10}  {'CUSTOMER NAME':<24}  {'LIMIT':>12}"
+        f"  {'BALANCE':>12}  {'POSE':<4}  {'TOR':<4}  {'CODE':>4}"
+        f"  {'CD':<3}  {'RATE':>5}"
+        f"  {'LIMIT1':>12}  {'LIMIT2':>12}  {'LIMIT3':>12}  {'LIMIT4':>12}  {'LIMIT5':>12}"
+        f"  {'RATE1':>5}  {'RATE2':>5}  {'RATE3':>5}  {'RATE4':>5}  {'RATE5':>5}"
+        f"  {'COLL1':>5}  {'COLL2':>5}  {'COLL3':>5}  {'COLL4':>5}  {'COLL5':>5}"
     )
-    underline = '   ' + '-' * (len(hdr1.rstrip()) - 3)
+    underline = '   ' + '-' * 126
     return [
         f"{hdr1}\n",
         f"{hdr2}\n",
@@ -260,29 +261,29 @@ def _build_detail_line(row: dict) -> str:
       LIMIT1-5(12.2) RATE1-5(5.2) COL1-5($5.)
     """
     return (
-        f"   {_safe_int(row.get('ACCTNO')):>10}"
-        f" {_safe_text(row.get('NAME'), 24):<24}"
-        f" {_safe_float(row.get('APPRLIMT')):>12,.2f}"
-        f" {_safe_float(row.get('BALANCE')):>12,.2f}"
-        f" {_safe_text(row.get('FISSPURP'), 4):>4}"
-        f" {_safe_text(row.get('SECTORCD'), 4):>4}"
-        f" {_safe_int(row.get('CUSTCODE')):>4}"
-        f" {_safe_text(row.get('STATE'), 3):>3}"
-        f" {_safe_float(row.get('FLATRATE')):>5.2f}"
-        f" {_safe_float(row.get('LIMIT1')):>12,.2f}"
-        f" {_safe_float(row.get('LIMIT2')):>12,.2f}"
-        f" {_safe_float(row.get('LIMIT3')):>12,.2f}"
-        f" {_safe_float(row.get('LIMIT4')):>12,.2f}"
-        f" {_safe_float(row.get('LIMIT5')):>12,.2f}"
-        f" {_safe_float(row.get('RATE1')):>5.2f}"
-        f" {_safe_float(row.get('RATE2')):>5.2f}"
-        f" {_safe_float(row.get('RATE3')):>5.2f}"
-        f" {_safe_float(row.get('RATE4')):>5.2f}"
-        f" {_safe_float(row.get('RATE5')):>5.2f}"
-        f" {_safe_text(row.get('COL1'), 5):>5}"
-        f" {_safe_text(row.get('COL2'), 5):>5}"
-        f" {_safe_text(row.get('COL3'), 5):>5}"
-        f" {_safe_text(row.get('COL4'), 5):>5}"
+        f"   {_safe_int(row.get('ACCTNO')):>10} "
+        f" {_safe_text(row.get('NAME'), 15):<24} "
+        f" {_safe_float(row.get('APPRLIMT')):>12,.2f} "
+        f" {_safe_float(row.get('BALANCE')):>12,.2f} "
+        f" {_safe_text(row.get('FISSPURP'), 4):>4} "
+        f" {_safe_text(row.get('SECTORCD'), 4):>4} "
+        f" {_safe_int(row.get('CUSTCODE')):>4} "
+        f" {_safe_text(row.get('STATE'), 3):>3} "
+        f" {_safe_float(row.get('FLATRATE')):>5.2f} "
+        f" {_safe_float(row.get('LIMIT1')):>12,.2f} "
+        f" {_safe_float(row.get('LIMIT2')):>12,.2f} "
+        f" {_safe_float(row.get('LIMIT3')):>12,.2f} "
+        f" {_safe_float(row.get('LIMIT4')):>12,.2f} "
+        f" {_safe_float(row.get('LIMIT5')):>12,.2f} "
+        f" {_safe_float(row.get('RATE1')):>5.2f} "
+        f" {_safe_float(row.get('RATE2')):>5.2f} "
+        f" {_safe_float(row.get('RATE3')):>5.2f} "
+        f" {_safe_float(row.get('RATE4')):>5.2f} "
+        f" {_safe_float(row.get('RATE5')):>5.2f} "
+        f" {_safe_text(row.get('COL1'), 5):>5} "
+        f" {_safe_text(row.get('COL2'), 5):>5} "
+        f" {_safe_text(row.get('COL3'), 5):>5} "
+        f" {_safe_text(row.get('COL4'), 5):>5} "
         f" {_safe_text(row.get('COL5'), 5):>5}\n"
     )
 
@@ -303,12 +304,12 @@ def _write_fisspurp_subtotal(
         LINE @015 'SUBTOTAL FOR FISS PURPOSE   '  FISSPURP $4.  @054 BALANCE.SUM  13.2;
         LINE @015 52*'-';
     """
-    sep_line = ' ' * 14 + '-' * 52
+    sep_line = ' ' * 15 + '-' * 52
     report_file.write(sep_line + '\n')
     report_file.write(
-        f"{' ' * 14}{'SUBTOTAL FOR FISS PURPOSE   '}"
+        f"{' ' * 15}{'SUBTOTAL FOR FISS PURPOSE   '}"
         f"{_safe_text(fisspurp, 4):<4}"
-        f"{balance_sum:>13.2f}\n"
+        f"{balance_sum:>20.2f}\n"
     )
     report_file.write(sep_line + '\n')
 
