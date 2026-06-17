@@ -1,5 +1,16 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMOD1C.py
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMOD1C.py", line 399, in <module>
-    RDATE = rv.reptdt.strftime('%d/%m/%y')   # DDMMYY8. format -> DD/MM/YY
-AttributeError: 'int' object has no attribute 'strftime'
+def _fmt_branch(value) -> str:
+    """Format branch without leading zeros."""
+    if value is None:
+        return ''
+
+    text = str(value).strip()
+
+    if text.endswith('.0'):
+        text = text[:-2]
+
+    digits = ''.join(ch for ch in text if ch.isdigit())
+
+    if digits:
+        return str(int(digits))
+
+    return text
