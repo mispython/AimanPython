@@ -1,27 +1,101 @@
+"""
+Program : EIBDOFCY.py
+Purpose : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv) —  FCY
+"""
+
 import polars as pl
-import duckdb
+import pandas as pd                 # required for pd.read_sas()
 from pathlib import Path
-import datetime
-import sys
 
 from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+from output_date import build_output_file
 
-# Configuration
-base = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR  / "input/prod"
+# OUTPUT_DIR = BASE_DIR  / "output/EIBDOFCY"
 
-depo_path = base / "input/uat/DEPO"
-loan_path = base / "input/uat/LOAN"
-output_path = base / "output/EIBDOFCY"
-output_path.mkdir(exist_ok=True)
+# Production Path
+INPUT_DIR  = Path("/dwh")
+OUTPUT_DIR = Path("/host/mis/output/report") / "EIBDOFCY"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# # DATA REPTDATE; SET DEPO.REPTDATE;
-# reptdate_df = pl.read_parquet(depo_path / "REPTDATE.parquet")
+# >>>>> Input file paths <<<
+"""
+FD_FCY_PATH : DP.FCY&REPTYEAR&REPTMON&REPTDAY — FCY deposit file (.sas7bdat);
+              FCY FD data filtered by CURCODE != 'MYR'.
+              Same file also used for FCY CA data (filter: 3000000000 <= ACCTNO <= 3999999999).
+              Same file also used for FCY Loan data (filter: 2000000000 <= ACCTNO <= 2999999999).
+"""
+# FD_FCY_PATH     = INPUT_DIR / "fcyfd260609.sas7bdat"
+# CURR_FCY_PATH   = INPUT_DIR / "fcy260609.sas7bdat"
+# LN_PATH         = INPUT_DIR / "ln260609.sas7bdat"
+FD_FCY_PATH = get_latest_file(INPUT_DIR / "dp_fcy", "fcyfd")
+CURR_FCY_PATH = get_latest_file(INPUT_DIR / "dp_fcy", "fcy")            # DEPO.CURRENT (SET DEPO.CURRENT)
+LN_PATH       = get_latest_file(INPUT_DIR / "lnd_ln", "ln")             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
-# # CALL SYMPUT equivalent
-# first_row = reptdate_df.row(0)
-# RDATE = first_row['REPTDATE'].strftime('%d%m%Y')  # DDMMYY10.
+# >>>>> Required column sets for early validation per input file <<<
+"""
+FD_FCY_PATH (FD)    : has CUSTCODE, CURCODE, CURBAL; balance column is already CURBAL
+CURR_FCY_PATH (CA)  : has ACCTNO, CURCODE, CUSTCODE, CURBALRM; CURBALRM renamed to CURBAL
+                      filter: 3000000000 <= ACCTNO <= 3999999999
+LN_PATH  (Loan)     : has ACCTNO, CCY, CUSTCODE, CURBAL; CCY renamed to CURCODE
+                      filter: 2000000000 <= ACCTNO <= 2999999999
+"""
+REQUIRED_FD_FCY_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
+REQUIRED_CURR_FCY_COLUMNS = {"ACCTNO", "FCY_TYPE", "CURCODE", "CUSTCODE", "CURBALRM"}
+REQUIRED_LN_COLUMNS       = {"ACCTNO", "CCY", "CUSTCODE", "CURBAL"}
 
-# REPORT DATE DERIVATION  (shared equivalent of SAS DATA REPTDATE step)
+
+# =============================================================================
+# Helper — read one .sas7bdat and return a Polars DataFrame
+# =============================================================================
+def _read_sas7bdat(path: Path) -> pl.DataFrame:
+    """Read one .sas7bdat file and return a Polars DataFrame."""
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required input file: {path}")
+
+    # >>>>>>>>>> Uncomment this -> For production <<<<<<<<
+    pandas_df = pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="latin1",
+    )
+
+    # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<
+    # reader = pd.read_sas(
+    #     path,
+    #     format="sas7bdat",
+    #     encoding="latin1",
+    #     chunksize=1000
+    # )
+    # pandas_df = next(reader)
+
+    pandas_df.columns = [
+        str(c).upper().strip()
+        for c in pandas_df.columns
+    ]
+
+    return pl.from_pandas(pandas_df)
+
+
+# Helper — fail early with a clear message if columns are missing
+def _require_columns(df: pl.DataFrame, required: set[str], source: Path) -> None:
+    """Fail early with a clear message if the SAS file lacks needed columns."""
+    missing = sorted(required.difference(df.columns))
+    if missing:
+        raise ValueError(f"{source} is missing required column(s): {', '.join(missing)}")
+
+
+# =============================================================================
+# REPORT DATE DERIVATION
+# (Replaces: DATA REPTDATE; SET DEPO.REPTDATE; CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY10.));)
+# REPTDATE is derived as TODAY() - 1; RDATE formatted as DD/MM/YYYY (DDMMYY10.)
+# =============================================================================
 reptdate_values = get_reptdate_values(year_format="%Y")
 
 REPTDATE = reptdate_values.reptdate
@@ -29,216 +103,356 @@ REPTYEAR = reptdate_values.reptyear
 REPTMON  = reptdate_values.reptmon
 REPTDAY  = reptdate_values.reptday
 NOWK     = reptdate_values.nowk
-RDATE    = REPTDATE.strftime("%d/%m/%y")
+RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 
-print(f"RDATE: {RDATE}")
+# =============================================================================
+# DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
+# Only FCY FD records are needed — sourced from FD_FCY_PATH.
+# DEPO.FD (MYR-only records) is excluded per WHERE CURCODE NE 'MYR'.
+# =============================================================================
+_fd_fcy_raw = _read_sas7bdat(FD_FCY_PATH)
+_require_columns(_fd_fcy_raw, REQUIRED_FD_FCY_COLUMNS, FD_FCY_PATH)
+fd_raw = (
+    _fd_fcy_raw
+    .with_columns(
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars()
+    )
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
 
-# DATA FD; SET DEPO.FD;
-fd_df = pl.read_parquet(depo_path / "FD.parquet").filter(
-    pl.col('CURCODE') != 'MYR'
-).with_columns([
-    # IF CUSTCODE IN ('77','78','95','96') THEN DO;
-    pl.when(pl.col('CUSTCODE').is_in(['77', '78', '95', '96']))
-    .then(pl.struct([
-        pl.lit('A').alias('IND'),  # INDFD
-        pl.col('CURBAL').alias('IFDBAL'),
-        pl.lit(None).alias('CFDBAL')  # Initialize as null
-    ]))
-    .otherwise(pl.struct([
-        pl.lit('B').alias('IND'),  # COPRFD
-        pl.lit(None).alias('IFDBAL'),  # Initialize as null
-        pl.col('CURBAL').alias('CFDBAL')
-    ]))
-    .alias('ind_data')
-]).with_columns([
-    pl.col('ind_data').struct.field('IND').alias('IND'),
-    pl.col('ind_data').struct.field('IFDBAL').alias('IFDBAL'),
-    pl.col('ind_data').struct.field('CFDBAL').alias('CFDBAL')
-]).select([
-    'IND', 'CURCODE', 'CURBAL', 'IFDBAL', 'CFDBAL'
-])
+fd_df = (
+    fd_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("A")).otherwise(pl.lit("B"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("IFDBAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CFDBAL"),
+    ])
+    .select(["IND", "CURCODE", "CURBAL", "IFDBAL", "CFDBAL"])
+)
 
-# PROC SORT; BY IND CURCODE;
-fd_sorted = fd_df.sort(['IND', 'CURCODE'])
+# PROC SUMMARY DATA=FD NWAY; BY IND CURCODE; VAR CURBAL IFDBAL CFDBAL; OUTPUT OUT=FD SUM=;
+fd_summary = (
+    fd_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("IFDBAL").sum(),
+        pl.col("CFDBAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
 
-# PROC SUMMARY DATA=FD NWAY; BY IND CURCODE;
-fd_summary = fd_sorted.group_by(['IND', 'CURCODE']).agg([
-    pl.col('CURBAL').sum().alias('CURBAL'),
-    pl.col('IFDBAL').sum().alias('IFDBAL'),
-    pl.col('CFDBAL').sum().alias('CFDBAL')
-])
+# =============================================================================
+# DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
+# Source: CURR_FCY_PATH file.
+# Filter: 3000000000 <= ACCTNO <= 3999999999  (CA account number range)
+# CURBALRM renamed to CURBAL; CURCODE already present.
+# =============================================================================
+_curr_fcy_raw = _read_sas7bdat(CURR_FCY_PATH)
+_require_columns(_curr_fcy_raw, REQUIRED_CURR_FCY_COLUMNS, CURR_FCY_PATH)
 
-fd_summary.write_parquet(output_path / "FD.parquet")
-fd_summary.write_csv(output_path / "FD.csv")
+curr_raw = (
+    _curr_fcy_raw
+    .with_columns([
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars(),
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+    ])
+    .filter(
+        (pl.col("ACCTNO") >= 3_000_000_000) &
+        (pl.col("ACCTNO") <= 3_999_999_999)
+        # (pl.col("FCY_TYPE") == "FCYCA")
+    )
+    .rename({"CURBALRM": "CURBAL"})
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
 
-# DATA CURR; SET DEPO.CURRENT;
-curr_df = pl.read_parquet(depo_path / "CURRENT.parquet").filter(
-    pl.col('CURCODE') != 'MYR'
-).with_columns([
-    # IF CUSTCODE IN ('77','78','95','96') THEN DO;
-    pl.when(pl.col('CUSTCODE').is_in(['77', '78', '95', '96']))
-    .then(pl.struct([
-        pl.lit('C').alias('IND'),  # INDCA
-        pl.col('CURBAL').alias('ICABAL'),
-        pl.lit(None).alias('CCABAL')
-    ]))
-    .otherwise(pl.struct([
-        pl.lit('D').alias('IND'),  # COPRCA
-        pl.lit(None).alias('ICABAL'),
-        pl.col('CURBAL').alias('CCABAL')
-    ]))
-    .alias('ind_data')
-]).with_columns([
-    pl.col('ind_data').struct.field('IND').alias('IND'),
-    pl.col('ind_data').struct.field('ICABAL').alias('ICABAL'),
-    pl.col('ind_data').struct.field('CCABAL').alias('CCABAL')
-]).select([
-    'IND', 'CURCODE', 'CURBAL', 'ICABAL', 'CCABAL'
-])
+curr_df = (
+    curr_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("C")).otherwise(pl.lit("D"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("ICABAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CCABAL"),
+    ])
+    .select(["IND", "CURCODE", "CURBAL", "ICABAL", "CCABAL"])
+)
 
-# PROC SORT; BY IND CURCODE;
-curr_sorted = curr_df.sort(['IND', 'CURCODE'])
+# PROC SUMMARY DATA=CURR NWAY; BY IND CURCODE; VAR CURBAL ICABAL CCABAL; OUTPUT OUT=CURR SUM=;
+curr_summary = (
+    curr_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("ICABAL").sum(),
+        pl.col("CCABAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
 
-# PROC SUMMARY DATA=CURR NWAY; BY IND CURCODE;
-curr_summary = curr_sorted.group_by(['IND', 'CURCODE']).agg([
-    pl.col('CURBAL').sum().alias('CURBAL'),
-    pl.col('ICABAL').sum().alias('ICABAL'),
-    pl.col('CCABAL').sum().alias('CCABAL')
-])
+curr_summary.write_parquet(OUTPUT_DIR / "CURR.parquet")
+curr_summary.write_csv(OUTPUT_DIR / "CURR.csv")
 
-curr_summary.write_parquet(output_path / "CURR.parquet")
-curr_summary.write_csv(output_path / "CURR.csv")
+# =============================================================================
+# DATA LOAN  (SET LOAN.LNNOTE; WHERE CCY NE 'MYR')
+# Source: LN_PATH file.
+# Filter: 2000000000 <= ACCTNO <= 2999999999  (loan account number range)
+# CCY renamed to CURCODE for consistency.
+# =============================================================================
+_loan_raw = _read_sas7bdat(LN_PATH)
+_require_columns(_loan_raw, REQUIRED_LN_COLUMNS, LN_PATH)
 
-# DATA LOAN; SET LOAN.LNNOTE;
-loan_df = pl.read_parquet(loan_path / "LNNOTE.parquet").filter(
-    pl.col('CURCODE') != 'MYR'
-).with_columns([
-    # IF CUSTCODE IN ('77','78','95','96') THEN DO;
-    pl.when(pl.col('CUSTCODE').is_in(['77', '78', '95', '96']))
-    .then(pl.struct([
-        pl.lit('E').alias('IND'),  # INDLN
-        pl.col('CURBAL').alias('ILNBAL'),
-        pl.lit(None).alias('CLNBAL')
-    ]))
-    .otherwise(pl.struct([
-        pl.lit('F').alias('IND'),  # COPRLN
-        pl.lit(None).alias('ILNBAL'),
-        pl.col('CURBAL').alias('CLNBAL')
-    ]))
-    .alias('ind_data')
-]).with_columns([
-    pl.col('ind_data').struct.field('IND').alias('IND'),
-    pl.col('ind_data').struct.field('ILNBAL').alias('ILNBAL'),
-    pl.col('ind_data').struct.field('CLNBAL').alias('CLNBAL')
-]).select([
-    'IND', 'CURCODE', 'CURBAL', 'ILNBAL', 'CLNBAL'
-])
+loan_raw = (
+    _loan_raw
+    .with_columns([
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars(),
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+    ])
+    .filter(
+        (pl.col("ACCTNO") >= 2_000_000_000) &
+        (pl.col("ACCTNO") <= 2_999_999_999)
+    )
+    .rename({"CCY": "CURCODE"})
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
 
-# PROC SORT; BY IND CURCODE;
-loan_sorted = loan_df.sort(['IND', 'CURCODE'])
+loan_df = (
+    loan_raw
+    .with_columns([
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit("E")).otherwise(pl.lit("F"))
+          .alias("IND"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.col("CURBAL")).otherwise(pl.lit(None, dtype=pl.Float64))
+          .alias("ILNBAL"),
+        pl.when(pl.col("CUSTCODE").is_in(["77", "78", "95", "96"]))
+          .then(pl.lit(None, dtype=pl.Float64)).otherwise(pl.col("CURBAL"))
+          .alias("CLNBAL"),
+    ])
+    .select(["IND", "CURCODE", "CURBAL", "ILNBAL", "CLNBAL"])
+)
 
-# PROC SUMMARY DATA=LOAN NWAY; BY IND CURCODE;
-loan_summary = loan_sorted.group_by(['IND', 'CURCODE']).agg([
-    pl.col('CURBAL').sum().alias('CURBAL'),
-    pl.col('ILNBAL').sum().alias('ILNBAL'),
-    pl.col('CLNBAL').sum().alias('CLNBAL')
-])
+# PROC SUMMARY DATA=LOAN NWAY; BY IND CURCODE; VAR CURBAL ILNBAL CLNBAL; OUTPUT OUT=LOAN SUM=;
+loan_summary = (
+    loan_df
+    .group_by(["IND", "CURCODE"])
+    .agg([
+        pl.len().alias("_FREQ_"),
+        pl.col("CURBAL").sum(),
+        pl.col("ILNBAL").sum(),
+        pl.col("CLNBAL").sum(),
+    ])
+    .sort(["IND", "CURCODE"])
+)
 
-loan_summary.write_parquet(output_path / "LOAN.parquet")
-loan_summary.write_csv(output_path / "LOAN.csv")
+# =============================================================================
+# DATA FCY  (SET FD CURR LOAN; BY IND; FILE OutstandingFCY;)
+# Produces the detailed section of OutstandingFCY.txt
+# =============================================================================
 
-# DATA FCY; SET FD CURR LOAN;
-fcy_combined = pl.concat([fd_summary, curr_summary, loan_summary], how="diagonal")
+# Combine all three summary datasets (diagonal concat fills missing cols with null)
+fcy_combined = pl.concat(
+    [fd_summary, curr_summary, loan_summary],
+    how="diagonal_relaxed"
+).sort(["IND", "CURCODE"])
 
-# Sort by IND for BY group processing
-fcy_sorted = fcy_combined.sort('IND')
+DLM = "\t"   # tab spacing delimiter
+# DLM = "\x05"   # '05'X    - # EBCDIC-style delimiter
+# DLM = "|"                   # Standard report delimiter
 
-# Generate detailed report - equivalent to DATA FCY with FILE OUTFCY
-with open(output_path / "OUTFCY.txt", "w") as f:
-    f.write("REPORT ID : EIBDOFCY\n")
-    f.write("PUBLIC BANK BERHAD\n")
-    f.write(f"OUTSTANDING FCY LOAN AND DEPOSITS AS AT {RDATE}\n\n")
-    
-    current_ind = None
-    nobs = 0
-    
-    for row in fcy_sorted.iter_rows(named=True):
-        if row['IND'] != current_ind:
-            current_ind = row['IND']
-            nobs = 0
-            
-            # Write section headers
-            if row['IND'] == 'A':
-                f.write("INDIVIDUAL - FCY FIXED DEPOSIT\n")
-            elif row['IND'] == 'B':
-                f.write("\n\nNON INDIVIDUAL - FCY FIXED DEPOSIT\n")
-            elif row['IND'] == 'C':
-                f.write("\n\nINDIVIDUAL - FCY CURRENT\n")
-            elif row['IND'] == 'D':
-                f.write("\n\nNON INDIVIDUAL - FCY CURRENT\n")
-            elif row['IND'] == 'E':
-                f.write("\n\nINDIVIDUAL - FCY LOAN\n")
-            elif row['IND'] == 'F':
-                f.write("\n\nNON INDIVIDUAL - FCY LOAN\n")
-            
-            # Write column headers
-            f.write("\nOBS\x05CURCODE\x05FREQ\x05CURRENT BALANCE\n")
-        
+# IND group ordering matches SAS SET order: A B C D E F
+_IND_HEADERS = {
+    "A": "INDIVIDUAL - FCY FIXED DEPOSIT",
+    "B": "NON INDIVIDUAL - FCY FIXED DEPOSIT",
+    "C": "INDIVIDUAL - FCY CURRENT",
+    "D": "NON INDIVIDUAL - FCY CURRENT",
+    "E": "INDIVIDUAL - FCY LOAN",
+    "F": "NON INDIVIDUAL - FCY LOAN",
+}
+
+out_txt = build_output_file(
+    OUTPUT_DIR,
+    "OutstandingFCY",
+    date_format="ddmmYYYY"
+).with_suffix(".txt")
+# out_csv = OUTPUT_DIR / "OutstandingFCY.csv"
+
+with open(out_txt, "w", encoding="utf-8") as f:
+
+    # _N_ = 1 block  (first record written to FILE OutstandingFCY)
+    f.write(f"REPORT ID : EIBDOFCY\n")
+    f.write(f"PUBLIC BANK BERHAD\n")
+    f.write(f"OUTSTANDING FCY LOAN AND DEPOSITS AS AT {RDATE}\n")
+    f.write("\n")
+
+    prev_ind = None
+    nobs     = 0
+
+    csv_rows = []       # For csv creation
+
+    for row in fcy_combined.iter_rows(named=True):
+        ind = row["IND"]
+
+        # FIRST.IND block
+        if ind != prev_ind:
+            nobs     = 0
+            prev_ind = ind
+
+            if ind == "A":
+                # PUT @1  'INDIVIDUAL - FCY FIXED DEPOSIT';
+                f.write(f"{_IND_HEADERS[ind]}\n")
+            else:
+                # PUT @1// '<header>';  (two blank lines before header)
+                f.write(f"\n\n{_IND_HEADERS[ind]}\n")
+
+            # PUT @01/ 'OBS' DLM+(-1) 'CURCODE' DLM+(-1) 'FREQ' DLM+(-1) 'CURRENT BALANCE' DLM+(-1);
+            # The / before OBS produces one blank line (moves to next line)
+            f.write("\n")
+            f.write(f"OBS{DLM}CURCODE{DLM}FREQ{DLM}CURRENT BALANCE{DLM}\n")
+
         nobs += 1
-        # Write data row with DLM (ASCII 05) as separator
-        f.write(f"{nobs:3d}\x05{row['CURCODE']:3}\x05{row.get('_FREQ_', 1):10d}\x05{row['CURBAL']:20,.2f}\n")
+        freq   = row.get("_FREQ_") or 0
+        curbal = row.get("CURBAL") or 0.0
 
-print("Detailed FCY report generated")
+        # For csv creation
+        csv_rows.append({
+            "NOBS"            : nobs,
+            "IND"             : ind,
+            "CURCODE"         : row["CURCODE"],
+            "FREQ"            : freq,
+            "CURRENT_BALANCE" : curbal,
+        })
 
-# PROC SORT; BY CURCODE;
-fcy_by_currency = fcy_combined.sort('CURCODE')
+        # PUT @01 NOBS 3. DLM+(-1) CURCODE $3. DLM+(-1) _FREQ_ 10. DLM+(-1) CURBAL COMMA20.2;
+        f.write(
+            f"{nobs:3d}{DLM}"
+            f"{str(row['CURCODE']):3s}{DLM}"
+            f"{freq:10d}{DLM}"
+            f"{curbal:>20,.2f}\n"
+        )
 
+# For csv creation
+import pandas as _pd
+_pd.DataFrame(csv_rows).to_csv(OUTPUT_DIR / "OutstandingFCY.csv", index=False)
+
+fcy_combined.write_parquet(OUTPUT_DIR / "FCY.parquet")
+fcy_combined.write_csv(OUTPUT_DIR / "FCY.csv")
+
+# =============================================================================
 # PROC SUMMARY DATA=FCY NWAY; BY CURCODE;
-fcy_currency_summary = fcy_by_currency.group_by('CURCODE').agg([
-    pl.col('IFDBAL').sum().alias('IFDBAL'),
-    pl.col('CFDBAL').sum().alias('CFDBAL'),
-    pl.col('ICABAL').sum().alias('ICABAL'),
-    pl.col('CCABAL').sum().alias('CCABAL'),
-    pl.col('ILNBAL').sum().alias('ILNBAL'),
-    pl.col('CLNBAL').sum().alias('CLNBAL'),
-    pl.col('CURBAL').sum().alias('CURBAL')
-])
+# VAR IFDBAL CFDBAL ICABAL CCABAL ILNBAL CLNBAL CURBAL; OUTPUT OUT=FCY SUM=;
+# =============================================================================
+fcy_currency_summary = (
+    fcy_combined
+    .group_by("CURCODE")
+    .agg([
+        pl.col("IFDBAL").sum(),
+        pl.col("CFDBAL").sum(),
+        pl.col("ICABAL").sum(),
+        pl.col("CCABAL").sum(),
+        pl.col("ILNBAL").sum(),
+        pl.col("CLNBAL").sum(),
+        pl.col("CURBAL").sum(),
+    ])
+    .sort("CURCODE")
+)
 
-fcy_currency_summary.write_parquet(output_path / "FCY.parquet")
-fcy_currency_summary.write_csv(output_path / "FCY.csv")
+fcy_currency_summary.write_parquet(OUTPUT_DIR / "FCY_summary.parquet")
+fcy_currency_summary.write_csv(OUTPUT_DIR / "FCY_summary.csv")
 
-# Generate summary report - equivalent to DATA _NULL_ with FILE OUTFCY MOD
-with open(output_path / "OUTFCY.txt", "a") as f:
-    f.write("\n\nSUMMARY OF OUTSTANDING FCY LOAN AND DEPOSITS\n\n")
-    f.write("NOBS\x05CURCODE\x05FCYFD-INDIV\x05FCYFD-CORP\x05FCYCA-INDIV\x05FCYCA-CORP\x05FCYLN-INDIV\x05FCYLN-CORP\n")
-    
-    # Calculate running totals
-    totifd = 0.0
-    totcfd = 0.0
-    totica = 0.0
-    totcca = 0.0
-    totiln = 0.0
-    totcln = 0.0
-    
-    for i, row in enumerate(fcy_currency_summary.iter_rows(named=True), 1):
-        ifdbal = row.get('IFDBAL', 0) or 0
-        cfdbal = row.get('CFDBAL', 0) or 0
-        icabal = row.get('ICABAL', 0) or 0
-        ccabal = row.get('CCABAL', 0) or 0
-        ilnbal = row.get('ILNBAL', 0) or 0
-        clnbal = row.get('CLNBAL', 0) or 0
-        
-        f.write(f"{i:3d}\x05{row['CURCODE']:3}\x05{ifdbal:20,.2f}\x05{cfdbal:20,.2f}\x05{icabal:20,.2f}\x05{ccabal:20,.2f}\x05{ilnbal:20,.2f}\x05{clnbal:20,.2f}\n")
-        
+# =============================================================================
+# DATA _NULL_  (SET FCY END=LAST; FILE OutstandingFCY MOD;)
+# Appends the summary section to OutstandingFCY.txt
+# =============================================================================
+totifd = 0.0
+totcfd = 0.0
+totica = 0.0
+totcca = 0.0
+totiln = 0.0
+totcln = 0.0
+
+with open(out_txt, "a", encoding="utf-8") as f:
+
+    n = 0
+
+    for row in fcy_currency_summary.iter_rows(named=True):
+        n += 1
+
+        if n == 1:
+            # PUT @1 / / "SUMMARY OF OUTSTANDING FCY LOAN AND DEPOSITS"
+            #        / / 'NOBS' DLM+(-1) ... ;
+            # Two '/' before the heading = two blank lines before it
+            f.write("\n\n")
+            f.write("SUMMARY OF OUTSTANDING FCY LOAN AND DEPOSITS\n")
+            f.write("\n")
+            f.write(
+                f"NOBS{DLM}CURCODE{DLM}"
+                f"FCYFD-INDIV{DLM}FCYFD-CORP{DLM}"
+                f"FCYCA-INDIV{DLM}FCYCA-CORP{DLM}"
+                f"FCYLN-INDIV{DLM}FCYLN-CORP\n"
+            )
+
+        ifdbal = row.get("IFDBAL") or 0.0
+        cfdbal = row.get("CFDBAL") or 0.0
+        icabal = row.get("ICABAL") or 0.0
+        ccabal = row.get("CCABAL") or 0.0
+        ilnbal = row.get("ILNBAL") or 0.0
+        clnbal = row.get("CLNBAL") or 0.0
+
+        # PUT @1 _N_ 3. DLM+(-1) CURCODE $3. DLM+(-1) IFDBAL COMMA20.2 DLM+(-1) ...
+        f.write(
+            f"{n:3d}{DLM}"
+            f"{str(row['CURCODE']):3s}{DLM}"
+            f"{ifdbal:>20,.2f}{DLM}"
+            f"{cfdbal:>20,.2f}{DLM}"
+            f"{icabal:>20,.2f}{DLM}"
+            f"{ccabal:>20,.2f}{DLM}"
+            f"{ilnbal:>20,.2f}{DLM}"
+            f"{clnbal:>20,.2f}\n"
+        )
+
         totifd += ifdbal
         totcfd += cfdbal
         totica += icabal
         totcca += ccabal
         totiln += ilnbal
         totcln += clnbal
-    
-    # Write grand totals
-    f.write(f"\x05TOTAL\x05{totifd:20,.2f}\x05{totcfd:20,.2f}\x05{totica:20,.2f}\x05{totcca:20,.2f}\x05{totiln:20,.2f}\x05{totcln:20,.2f}\n")
 
-print("Summary FCY report generated")
-print("PROCESSING COMPLETED SUCCESSFULLY")
+    # IF LAST THEN PUT ...  (grand totals line)
+    f.write(
+        f"   {DLM}"
+        f"TOTAL{DLM}"
+        f"{totifd:>20,.2f}{DLM}"
+        f"{totcfd:>20,.2f}{DLM}"
+        f"{totica:>20,.2f}{DLM}"
+        f"{totcca:>20,.2f}{DLM}"
+        f"{totiln:>20,.2f}{DLM}"
+        f"{totcln:>20,.2f}\n"
+    )
+
+print(f"\n EIBDOFCY_MYR_FCY completed — report date {RDATE}, output: {out_txt} \n")
+
+with open(out_txt, "rb") as f:
+    content = f.read(1000)
+    print(content)
