@@ -1,25 +1,167 @@
-for fp_idx, (fisspurp_code, fp_df) in enumerate(fisspurp_groups):
-    fp_rows       = list(fp_df.iterrows())
-    total_fp_rows = len(fp_rows)
-    fp_balance    = 0.0
-    is_last_fp    = (fp_idx == total_fp_groups - 1)
-    first_row_on_page = True   # reset to True at start of each FISSPURP group
+def _write_report_file(
+    odraft_df: pd.DataFrame,
+    output_file: Path,
+    is_islamic: bool,
+    report_date: str,
+) -> None:
+    title1, title2 = _get_report_titles(is_islamic)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    for row_idx, (_, row) in enumerate(fp_rows):
-        is_last_row  = (row_idx == total_fp_rows - 1)
-        lines_needed = 1 + (FISSPURP_SUBTOTAL_LINES if is_last_row else 0)
-        if is_last_row and is_last_fp:
-            lines_needed += BRANCH_GRANDTOTAL_LINES
+    with open(output_file, 'w', encoding='utf-8') as report_file:
+        add_form_feed = False
 
-        page_before = page_lines_used
-        _ensure_primary(lines_needed)
+        for branch_code, branch_df in odraft_df.groupby('BRANCH', sort=False):
+            branch_str = _fmt_branch(branch_code)
 
-        # If _ensure_primary triggered a new page, first row on that page shows FISSPURP
-        if page_lines_used < page_before:
-            first_row_on_page = True
+            title_lines            = _build_title_lines(title1, title2, report_date, branch_str)
+            primary_header_lines   = _build_primary_header_lines()
+            secondary_header_lines = _build_secondary_header_lines()
 
-        report_file.write(_build_primary_detail_line(row, show_fisspurp=first_row_on_page))
-        page_lines_used += 1
-        first_row_on_page = False   # subsequent rows on same page don't show it
+            fixed_primary   = len(title_lines) + len(primary_header_lines)
+            fixed_secondary = len(title_lines) + len(secondary_header_lines)
 
-        fp_balance += _safe_float(row.get('BALANCE'))
+            max_primary_data_rows   = PAGE_SIZE - fixed_primary
+            max_secondary_data_rows = PAGE_SIZE - fixed_secondary
+
+            fisspurp_groups = list(branch_df.groupby('FISSPURP', sort=False))
+            total_fp_groups = len(fisspurp_groups)
+
+            # Pre-compute per-FISSPURP balance sums for reuse in secondary pass
+            fp_balance_sums = {}
+            for _, (fisspurp_code, fp_df) in enumerate(fisspurp_groups):
+                fp_balance_sums[fisspurp_code] = float(
+                    fp_df['BALANCE'].apply(_safe_float).sum()
+                )
+            branch_balance_sum = sum(fp_balance_sums.values())
+
+            # ------------------------------------------------------------------
+            # Build a flat list of all row dicts with metadata for both passes,
+            # preserving FISSPURP group boundaries and balance sums.
+            # Each entry: {row, fisspurp_code, is_last_in_fp, is_last_fp,
+            #              fp_balance, is_last_in_branch}
+            # ------------------------------------------------------------------
+            flat_rows = []
+            for fp_idx, (fisspurp_code, fp_df) in enumerate(fisspurp_groups):
+                fp_rows    = list(fp_df.iterrows())
+                n          = len(fp_rows)
+                is_last_fp = (fp_idx == total_fp_groups - 1)
+                for row_idx, (_, row) in enumerate(fp_rows):
+                    is_last_in_fp     = (row_idx == n - 1)
+                    is_last_in_branch = is_last_fp and is_last_in_fp
+                    flat_rows.append({
+                        'row'              : row,
+                        'fisspurp_code'    : fisspurp_code,
+                        'is_last_in_fp'    : is_last_in_fp,
+                        'is_last_fp'       : is_last_fp,
+                        'fp_balance'       : fp_balance_sums[fisspurp_code],
+                        'is_last_in_branch': is_last_in_branch,
+                    })
+
+            total_rows = len(flat_rows)
+
+            # ------------------------------------------------------------------
+            # Chunk rows page-by-page and interleave A + B pages per chunk
+            # ------------------------------------------------------------------
+            row_idx = 0
+
+            while row_idx < total_rows:
+
+                # ── Determine how many rows fit in this A-page chunk ──────────
+                # We simulate filling one A page (respecting subtotal/grandtotal
+                # keep-together rules) to find the chunk boundary.
+                page_lines = fixed_primary
+                chunk_end  = row_idx  # exclusive end index
+
+                while chunk_end < total_rows:
+                    entry        = flat_rows[chunk_end]
+                    is_last_in_fp     = entry['is_last_in_fp']
+                    is_last_in_branch = entry['is_last_in_branch']
+
+                    lines_needed = 1
+                    if is_last_in_fp:
+                        lines_needed += FISSPURP_SUBTOTAL_LINES
+                    if is_last_in_branch:
+                        lines_needed += BRANCH_GRANDTOTAL_LINES
+
+                    if page_lines + lines_needed > PAGE_SIZE:
+                        break
+
+                    page_lines += 1
+                    chunk_end  += 1
+
+                # If nothing fits at all (edge case), force at least one row
+                if chunk_end == row_idx:
+                    chunk_end = row_idx + 1
+
+                chunk = flat_rows[row_idx:chunk_end]
+
+                # ── A PAGE (primary columns) ──────────────────────────────────
+                if add_form_feed:
+                    report_file.write('\f')
+                for line in title_lines:
+                    report_file.write(line)
+                for line in primary_header_lines:
+                    report_file.write(line)
+                add_form_feed = True
+
+                page_lines_used       = fixed_primary
+                first_row_on_page     = True
+                prev_fisspurp         = None
+
+                for entry in chunk:
+                    row            = entry['row']
+                    fisspurp_code  = entry['fisspurp_code']
+                    is_last_in_fp  = entry['is_last_in_fp']
+                    is_last_in_branch = entry['is_last_in_branch']
+
+                    # Show FISSPURP on first row of page OR first row of new group
+                    show_fp = first_row_on_page or (fisspurp_code != prev_fisspurp)
+
+                    report_file.write(_build_primary_detail_line(row, show_fisspurp=show_fp))
+                    page_lines_used  += 1
+                    first_row_on_page = False
+                    prev_fisspurp     = fisspurp_code
+
+                    if is_last_in_fp:
+                        _write_fisspurp_subtotal(
+                            report_file, str(fisspurp_code), entry['fp_balance']
+                        )
+                        page_lines_used += FISSPURP_SUBTOTAL_LINES
+
+                    if is_last_in_branch:
+                        _write_branch_grandtotal(
+                            report_file, branch_code, branch_balance_sum
+                        )
+                        page_lines_used += BRANCH_GRANDTOTAL_LINES
+
+                # ── B PAGE (secondary columns) ────────────────────────────────
+                report_file.write('\f')
+                for line in title_lines:
+                    report_file.write(line)
+                for line in secondary_header_lines:
+                    report_file.write(line)
+
+                page_lines_used = fixed_secondary
+
+                for entry in chunk:
+                    row            = entry['row']
+                    fisspurp_code  = entry['fisspurp_code']
+                    is_last_in_fp  = entry['is_last_in_fp']
+                    is_last_in_branch = entry['is_last_in_branch']
+
+                    report_file.write(_build_secondary_detail_line(row))
+                    page_lines_used += 1
+
+                    if is_last_in_fp:
+                        _write_fisspurp_subtotal(
+                            report_file, str(fisspurp_code), entry['fp_balance']
+                        )
+                        page_lines_used += FISSPURP_SUBTOTAL_LINES
+
+                    if is_last_in_branch:
+                        _write_branch_grandtotal(
+                            report_file, branch_code, branch_balance_sum
+                        )
+                        page_lines_used += BRANCH_GRANDTOTAL_LINES
+
+                row_idx = chunk_end
