@@ -41,7 +41,7 @@ from input_date import get_latest_file
 # }
 
 # Testing Path
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
 INPUT_DIR  = BASE_DIR / "input/prod" / "EIBXODLC"
 # BASE_DIR = Path("/dwh")
 # OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS") / "output" / "EIBXODLC"
@@ -164,7 +164,7 @@ def process_bank(
         _read_sas7bdat(deposit_path)
         .rename({"CUSTCODE":"CUSTCD"})
         .with_columns(
-            pl.col("CUSTCD").cast(pl.Utf8)
+            pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
         )
     )
 
