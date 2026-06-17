@@ -26,7 +26,7 @@ from output_date import build_output_file
 # ============================================================================
 reptdate_values  = get_reptdate_values()
 REPTDATE         = reptdate_values.reptdate
-REPTYEAR         = reptdate_values.reptyear      # 2-digit year  (PUT(REPTDATE,YEAR2.))
+REPTYEAR         = reptdate_values.reptyear       # 2-digit year  (PUT(REPTDATE,YEAR2.))
 REPTMON          = reptdate_values.reptmon        # zero-padded month e.g. "02"
 
 _rv4             = get_reptdate_values(year_format="%Y")
@@ -53,10 +53,14 @@ INPUT_BRHFILE = INPUT_DIR / "DBRANCH.TXT"
 # INPUT_BRHFILE = Path("/stgsrcsys/host/ftpfiles") / "DBRANCH.txt"
 
 # 4 weekly TLBTRAN input files for the current report month
-INPUT_TLBTRAN_WK1 = INPUT_DIR / f"tlbtran{REPTMON}1{REPTYEAR}.sas7bdat"
-INPUT_TLBTRAN_WK2 = INPUT_DIR / f"tlbtran{REPTMON}2{REPTYEAR}.sas7bdat"
-INPUT_TLBTRAN_WK3 = INPUT_DIR / f"tlbtran{REPTMON}3{REPTYEAR}.sas7bdat"
-INPUT_TLBTRAN_WK4 = INPUT_DIR / f"tlbtran{REPTMON}4{REPTYEAR}.sas7bdat"
+# INPUT_TLBTRAN_WK1 = INPUT_DIR / f"tlbtran{REPTMON}1{REPTYEAR}.sas7bdat"
+# INPUT_TLBTRAN_WK2 = INPUT_DIR / f"tlbtran{REPTMON}2{REPTYEAR}.sas7bdat"
+# INPUT_TLBTRAN_WK3 = INPUT_DIR / f"tlbtran{REPTMON}3{REPTYEAR}.sas7bdat"
+# INPUT_TLBTRAN_WK4 = INPUT_DIR / f"tlbtran{REPTMON}4{REPTYEAR}.sas7bdat"
+INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran04126.sas7bdat"
+INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran04226.sas7bdat"
+INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran04326.sas7bdat"
+INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran04426.sas7bdat"
 
 # Persistent yearly CIT accumulation parquet — one file per year
 CIT_YEAR_FILE = CIT_DIR / f"CIT_{REPTYEAR2}.parquet"
@@ -193,7 +197,7 @@ def _load_tlbtran_all() -> pl.DataFrame:
             INPUT_TLBTRAN_WK4,
         )
     ]
-    df = pl.concat(weekly_dfs, how="diagonal")
+    df = pl.concat(weekly_dfs, how="diagonal_relaxed")
     df = df.filter(pl.col("TRANCODE").cast(pl.Utf8).is_in(["2222", "2223"]))
     df = df.sort(["REPTDATE", "BRANCH"])
     return df
@@ -227,8 +231,37 @@ def _derive_noacct(df: pl.DataFrame) -> pl.DataFrame:
 # STEP 4 — AGGREGATE CURRENT MONTH (PROC SUMMARY)
 # ============================================================================
 
-def _build_month_summary(df: pl.DataFrame, con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
-    """Aggregate CASHOUT and NOACCT to branch level for the current report month.
+def _detect_month_from_files() -> str:
+    """Detect the report month from the input TLBTRAN filenames.
+
+    Pattern: tlbtran{MM}{W}{YY}.sas7bdat
+        tlbtran02126 → MM="02", W="1", YY="26"
+        tlbtran03126 → MM="03", W="1", YY="26"
+
+    All 4 weekly files must agree on the same month.
+    """
+    pattern = re.compile(r"tlbtran(\d{2})\d{1}\d{2}\.sas7bdat", re.IGNORECASE)
+
+    detected = set()
+    for p in (INPUT_TLBTRAN_WK1, INPUT_TLBTRAN_WK2, INPUT_TLBTRAN_WK3, INPUT_TLBTRAN_WK4):
+        m = pattern.match(p.name)
+        if m:
+            detected.add(m.group(1))
+
+    if len(detected) == 0:
+        raise ValueError("Could not detect month from any TLBTRAN filename.")
+    if len(detected) > 1:
+        raise ValueError(f"Conflicting months detected across TLBTRAN files: {detected}")
+
+    return detected.pop()  # e.g. "02"
+
+
+def _build_month_summary(df: pl.DataFrame, con: duckdb.DuckDBPyConnection, file_month: str) -> pl.DataFrame:
+    """Aggregate CASHOUT and NOACCT to branch level for the detected file month.
+
+    Uses file_month (from filename) instead of REPTMON (from system date),
+    so data always lands in its correct month column regardless of when
+    the program is run.
 
     SAS equivalent:
         PROC SUMMARY DATA=ALL NWAY;
@@ -240,13 +273,9 @@ def _build_month_summary(df: pl.DataFrame, con: duckdb.DuckDBPyConnection) -> pl
         PROC SUMMARY DATA=CIT NWAY;
           CLASS BRANCH; VAR AMOUNT&REPTMON NOACCT&REPTMON;
           OUTPUT OUT=FINAL SUM=;
-
-    Returns a DataFrame with columns: BRANCH, AMOUNT{mm}, NOACCT{mm}
-    where mm = REPTMON (current report month).
     """
-    mm = REPTMON  # e.g. "02"
-    amt_col    = f"AMOUNT{mm}"
-    noacct_col = f"NOACCT{mm}"
+    amt_col    = f"AMOUNT{file_month}"
+    noacct_col = f"NOACCT{file_month}"
 
     con.register("all_noacct", df.to_pandas())
 
@@ -267,76 +296,52 @@ def _build_month_summary(df: pl.DataFrame, con: duckdb.DuckDBPyConnection) -> pl
 # STEP 5 — ACCUMULATE INTO YEARLY CIT PARQUET
 # ============================================================================
 
-def _update_cit_year(df_month: pl.DataFrame) -> pl.DataFrame:
+def _update_cit_year(df_month: pl.DataFrame, file_month: str) -> pl.DataFrame:
     """Persist the current month's data into the yearly CIT parquet.
 
-    Architecture:
-    - The parquet is the single source of truth for the full year.
-    - Each run supplies exactly 2 columns: AMOUNT{mm} and NOACCT{mm}.
-    - All other month columns are never touched.
-    - New branches from the current month are inserted with 0 for all other months.
-    - Branches already in the parquet but absent this month are preserved as-is.
-
-    SAS equivalent:
-        %MACRO APPEND;
-          %IF "&REPTMON" EQ "01" %THEN %DO;
-            DATA CIT.CIT&REPTYEAR; SET FINAL; ...all other months = 0...
-          %END;
-          %ELSE %DO;
-            PROC SORT DATA=FINAL; BY BRANCH;
-            DATA CIT.CIT&REPTYEAR;
-              MERGE CIT.CIT&REPTYEAR FINAL; BY BRANCH;
-          %END;
-        %MEND APPEND;
+    Uses file_month (from filename) to determine which columns to update,
+    so re-running for an older month never corrupts other months' data.
     """
-    mm         = REPTMON
-    amt_col    = f"AMOUNT{mm}"
-    noacct_col = f"NOACCT{mm}"
+    amt_col    = f"AMOUNT{file_month}"
+    noacct_col = f"NOACCT{file_month}"
 
     df_month = df_month.with_columns(pl.col("BRANCH").cast(pl.Int64))
 
-    # ── FIRST RUN: no parquet exists yet ─────────────────────────────────
+    # ── FIRST RUN: no parquet exists yet ──────────────────────────────────
     if not CIT_YEAR_FILE.exists():
-        df_out = df_month.clone()
-        df_out = _scaffold_all_months(df_out)
+        df_out = _scaffold_all_months(df_month)
         df_out = _canonical_order(df_out)
         df_out.write_parquet(CIT_YEAR_FILE)
         print(f"  Created new yearly CIT parquet: {CIT_YEAR_FILE.name}")
         return df_out.sort("BRANCH")
 
-    # ── SUBSEQUENT RUNS: load existing parquet ────────────────────────────
+    # ── SUBSEQUENT RUNS ────────────────────────────────────────────────────
     df_existing = pl.read_parquet(CIT_YEAR_FILE)
     df_existing = df_existing.with_columns(pl.col("BRANCH").cast(pl.Int64))
     df_existing = _scaffold_all_months(df_existing)
 
-    # Drop the current month's columns from existing so we can replace them
-    # cleanly — this is the ONLY columns we touch
+    # Drop only this file's month columns — all other months are untouched
     cols_to_drop = [c for c in [amt_col, noacct_col] if c in df_existing.columns]
     if cols_to_drop:
         df_existing = df_existing.drop(cols_to_drop)
 
-    # Full outer join: keeps all branches from both sides
-    # - Branches only in existing  → preserved, new month cols = 0
-    # - Branches only in df_month  → inserted, other month cols = 0
-    # - Branches in both           → existing cols kept, new month cols updated
+    # Full outer join: preserves all branches from both sides
     df_merged = df_existing.join(
         df_month.select(["BRANCH", amt_col, noacct_col]),
         on="BRANCH",
         how="full",
-        coalesce=True,   # merges the two BRANCH columns from both sides
+        coalesce=True,
     )
 
-    # Fill nulls: new branches get 0 for months they have no data in
     df_merged = df_merged.with_columns([
         pl.col(c).fill_null(0) for c in df_merged.columns if c != "BRANCH"
     ])
 
-    # Ensure all 12 months exist and apply canonical column order
     df_merged = _scaffold_all_months(df_merged)
     df_merged = _canonical_order(df_merged)
 
     df_merged.write_parquet(CIT_YEAR_FILE)
-    print(f"  Updated yearly CIT parquet: {CIT_YEAR_FILE.name} (month {mm} written)")
+    print(f"  Updated yearly CIT parquet: {CIT_YEAR_FILE.name} (month {file_month} written)")
     return df_merged.sort("BRANCH")
 
 # ============================================================================
@@ -383,9 +388,16 @@ def _merge_with_branch(
         ORDER BY b.BRANCH
     """).pl()
 
+    # Cast all amount/noacct columns to consistent dtypes before horizontal sum
+    # to avoid Polars internal panic from mixed i32/i64/f64 in sum_horizontal
+    df = df.with_columns(
+        [pl.col(c).cast(pl.Float64) for c in amount_cols] +
+        [pl.col(c).cast(pl.Int64)   for c in noacct_cols]
+    )
+
     df = df.with_columns([
         pl.sum_horizontal([pl.col(c) for c in amount_cols]).alias("SUMAMT"),
-        pl.sum_horizontal([pl.col(c) for c in noacct_cols]).alias("SUMACT"),
+        pl.sum_horizontal([pl.col(c) for c in noacct_cols]).cast(pl.Int64).alias("SUMACT"),
     ])
 
     # SAS: RETAIN NO 0; NO + 1; → sequential row number starting at 1
@@ -583,14 +595,19 @@ try:
     print("\nStep 3: Deriving NOACCT first-row flags per (REPTDATE, BRANCH)...")
     df_all = _derive_noacct(df_all)
 
-    # ── Step 4: Aggregate current month to branch level ────────────────────
-    print(f"\nStep 4: Aggregating month {REPTMON} CASHOUT and NOACCT by BRANCH...")
-    df_month = _build_month_summary(df_all, con)
+    # ── Step 4: Detect month from filenames ────────────────────────────────
+    print("\nStep 4: Detecting report month from TLBTRAN filenames...")
+    file_month = _detect_month_from_files()
+    print(f"  Detected month from files: {file_month}")
+
+    # ── Step 4b: Aggregate current month to branch level ──────────────────
+    print(f"\nStep 4b: Aggregating month {file_month} CASHOUT and NOACCT by BRANCH...")
+    df_month = _build_month_summary(df_all, con, file_month)
     print(f"  Branches with non-zero CASHOUT this month: {len(df_month):,}")
 
     # ── Step 5: Accumulate into yearly CIT parquet ─────────────────────────
     print(f"\nStep 5: Updating yearly CIT parquet [{CIT_YEAR_FILE.name}]...")
-    df_cit_year = _update_cit_year(df_month)
+    df_cit_year = _update_cit_year(df_month, file_month)
     print(f"  Total branches in yearly parquet: {len(df_cit_year):,}")
 
     # ── Step 6: Merge with branch reference ────────────────────────────────
