@@ -51,12 +51,14 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 PBB_CONFIG: Dict[str, Path] = {
     "deposit_current" : get_latest_file(INPUT_DIR, "ca"),       # File name example - ca05226.sas7bdat
     "loan_dir"        : get_latest_file(INPUT_DIR, "ln"),       # File name example - ln05126.sas7bdat
+    "limit_dir"       : get_latest_file(INPUT_DIR, "lm"),       # File name example - lm05126.sas7bdat
     "output_dir"      : OUTPUT_DIR / "PBB",
 }
 
 PIBB_CONFIG: Dict[str, Path] = {
     "deposit_current" : get_latest_file(INPUT_DIR, "ica"),     # File name example - ica05226.sas7bdat
     "loan_dir"        : get_latest_file(INPUT_DIR, "iln"),     # File name example - iln05126.sas7bdat
+    "limit_dir"       : get_latest_file(INPUT_DIR, "ilm"),     # File name example - ilm05126.sas7bdat
     "output_dir"      : OUTPUT_DIR / "PIBB",
 }
 
@@ -147,12 +149,15 @@ def process_bank(
 
     deposit_path = config["deposit_current"]
     loan_dir     = config["loan_dir"]
+    limit_dir    = config["limit_dir"]
     output_dir   = config["output_dir"]
 
     if not deposit_path.exists():
         raise FileNotFoundError(f"[{bank_name}] Missing deposit file : {deposit_path}")
     if not loan_dir.exists():
         raise FileNotFoundError(f"[{bank_name}] Missing loan file    : {loan_dir}")
+    if not limit_dir.exists():
+        raise FileNotFoundError(f"[{bank_name}] Missing loan file    : {limit_dir}")
 
     # ------------------------------------------------------------------
     # Load inputs
