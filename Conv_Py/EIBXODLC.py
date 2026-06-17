@@ -92,6 +92,7 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     """Read a .sas7bdat file via pandas and convert to Polars with uppercased columns."""
     pdf = pd.read_sas(str(path), encoding="latin1")
     pdf.columns = [c.upper() for c in pdf.columns]
+    
     return pl.from_pandas(pdf)
 
 
