@@ -17,20 +17,31 @@ from output_date import build_output_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# # >>>>> Testing Path <<<<<
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_DIR  = BASE_DIR / "input" / "prod"
-OUTPUT_DIR = BASE_DIR / "output" / "EIMNOSTE"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# INPUT_DIR  = BASE_DIR / "input" / "prod"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIMNOSTE"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# # Input paths
+# INPUT_WKNOST = INPUT_DIR / "FIDSAS.txt"        # Walker file  (fixed-width text)
+# INPUT_DPNOST = INPUT_DIR / "NOSCBNK.parquet"   # Deposit file (Parquet)
+
+# Production Path
 # Input paths
-INPUT_WKNOST = INPUT_DIR / "FIDSAS.txt"        # Walker file  (fixed-width text)
-INPUT_DPNOST = INPUT_DIR / "NOSCBNK.parquet"   # Deposit file (Parquet)
+INPUT_DIR = Path("/dwh")
+
+INPUT_WKNOST = INPUT_DIR / "dp" / "FIDSAS.txt"        # Walker file  (fixed-width text)
+INPUT_DPNOST = INPUT_DIR / "dp" / "NOSCBNK.parquet"   # Deposit file (Parquet)
+
+OUTPUT_DIR = Path("/host/mis/output/report") / "EIMNOSTE"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Output paths
 OUTPUT_WAK_DATASET = OUTPUT_DIR / "wak_{year}{month}.parquet"
 OUTPUT_DP_DATASET  = OUTPUT_DIR / "dp_{year}{month}.parquet"
-OUTPUT_REPORT      = build_output_file(OUTPUT_DIR, "EIMNOSTE_report").with_suffix(".txt")
+OUTPUT_REPORT      = build_output_file(OUTPUT_DIR, "EIMNOSTE_output").with_suffix(".txt")
 OUTPUT_SFTP_SCRIPT = OUTPUT_DIR / "sftp_commands.txt"
 
 # Report configuration
@@ -490,16 +501,16 @@ page_number = 0
 CURCODE_W = 10
 AGENTNO_W = 6
 NAME_W    = 30
-TRDESC_W  = 20
+TRDESC_W  = 21
 SIGN_W    = 9
 
 # Requested:
 # Leave X spaces between SIGN and NOTRAN
 GAP1_W    = 0
 
-NOTRAN_W  = 16
-FORCUR_W  = 17
-RMCUR_W   = 17
+NOTRAN_W  = 10
+FORCUR_W  = 18
+RMCUR_W   = 18
 
 # Fix subtotal dashed line allignment
 NUMERIC_SECTION_W = (
@@ -593,7 +604,7 @@ with open(OUTPUT_REPORT, "w") as fh:
         if current_agentno is not None and row["AGENTNO"] != current_agentno:
             # Fix agent subtotal allignment
             subtotal_indent = (
-                1 +
+                2 +
                 CURCODE_W + 1 +
                 AGENTNO_W + 1 +
                 NAME_W + 1 +
@@ -619,16 +630,16 @@ with open(OUTPUT_REPORT, "w") as fh:
         detail = " "                                                         # ASA single-space
 
         if row["CURCODE"] != current_curcode:
-            detail          += f" {row['CURCODE']:<10} "
+            detail          += f" {row['CURCODE']:<{CURCODE_W}} "
             current_curcode  =  row["CURCODE"]
         else:
-            detail += " " * 9
+            detail += " " * (CURCODE_W + 2)
 
         if row["AGENTNO"] != current_agentno:
-            detail          += f"{row['AGENTNO']:<6} "
+            detail          += f"{row['AGENTNO']:<{AGENTNO_W}} "
             current_agentno  =  row["AGENTNO"]
         else:
-            detail += " " * 6
+            detail += " " * (AGENTNO_W + 1)
 
         name   = (row["NAME"]   or "")[:30]
         trdesc = (row["TRDESC"] or "")[:20]
@@ -639,7 +650,7 @@ with open(OUTPUT_REPORT, "w") as fh:
 
           # Fix detail row allignment
         detail += (
-              f"{' ' * 4}{name:<{NAME_W}} "
+              f"{name:<{NAME_W}} "
               f"{trdesc:<{TRDESC_W}} "
               f"{sign:<{SIGN_W}}"
               f"{'':<{GAP1_W}}"
@@ -660,7 +671,7 @@ with open(OUTPUT_REPORT, "w") as fh:
     if current_agentno is not None:
         # Fix final agent subtotal allignment
         subtotal_indent = (
-            1 +
+            2 +
             CURCODE_W + 1 +
             AGENTNO_W + 1 +
             NAME_W + 1 +
@@ -691,7 +702,7 @@ with open(OUTPUT_REPORT, "w") as fh:
           
     fh.write(
         f"{' ' * grand_indent}"
-        f"{'TOTAL':>{SIGN_W + GAP1_W + NOTRAN_W}} "
+        f"{'TOTAL':>{SIGN_W + GAP1_W + NOTRAN_W}}{' ' * 2}"
         f"{total_forcur:>{FORCUR_W},.2f} "
         f"{total_rmcur:>{RMCUR_W},.2f}\n"
     )
@@ -700,7 +711,7 @@ with open(OUTPUT_REPORT, "w") as fh:
         f"{' ' * subtotal_indent}"
          f"{'=' * DASH_W}\n"
     )
-    fh.write(f" {' ' * 94}{'=' * 36}\n")
+    # fh.write(f" {' ' * 95}{'=' * 36}\n")
 
 print(f"  Report saved : {OUTPUT_REPORT}")
 
