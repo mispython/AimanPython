@@ -13,8 +13,9 @@ Description : Loan data preparation - merges LNNOTE, LNCOMM, and LOAN datasets
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
+import os
 import pandas as pd
 import polars as pl
 
@@ -28,11 +29,10 @@ from input_date import get_latest_file
 # # Production Path
 # BASE_DIR = Path("/dwh")
 
-BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR   = BASE_DIR / "input/prod" / "EIBXLNLC"
-LNCOMM_PATH = INPUT_DIR / "enrh_ln_comm.sas7bdat"
+BASE_DIR  = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR = BASE_DIR / "input/prod" / "EIBXLNLC"
 
-OUTPUT_DIR  = BASE_DIR / "output" / "EIBXLNLC"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBXLNLC"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ----------------------------------------------------------------------------
@@ -40,22 +40,17 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 #   1. LNNOTE - KEEP=ACCTNO NOTENO BANKNO STATE  (SAP.<ENTITY>.MNILN(0) - LNNOTE)
 #   2. LNCOMM - ACCTNO COMMNO CCOLLTRL           (SAP.<ENTITY>.MNILN(0) - LNCOMM)
 #   3. LOAN / ILOAN - loan extract (SAP.PBB.SASDATA / SAP.PIBB.SASDATA)
-#
-# NOTE: No example filenames were provided for LNNOTE/LNCOMM. Prefixes below
-# follow the same PBB/PIBB pairing convention already used for LOAN/ILOAN in
-# EIBXODLC.py (plain prefix for PBB, 'i'-prefixed for PIBB). Adjust if the
-# actual naming convention differs.
 # ----------------------------------------------------------------------------
 PBB_CONFIG: Dict[str, Path] = {
     "lnnote"    : INPUT_DIR / "lnnote_pbb.sas7bdat",
-    "lncomm"    : LNCOMM_PATH,
+    "lncomm"    : INPUT_DIR / "enrh_ln_comm.sas7bdat",
     "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "ln"),    # e.g. ln05126.sas7bdat
     "output_dir": OUTPUT_DIR / "PBB",
 }
 
 PIBB_CONFIG: Dict[str, Path] = {
     "lnnote"    : INPUT_DIR / "lnnote_pibb.sas7bdat",
-    "lncomm"    : LNCOMM_PATH,
+    "lncomm"    : INPUT_DIR / "enrh_ln_comm.sas7bdat",
     "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "iln"),   # e.g. iln05126.sas7bdat
     "output_dir": OUTPUT_DIR / "PIBB",
 }
@@ -87,51 +82,76 @@ BANKFMT = {33: 'PBB', 134: 'PFB'}
 # REPTMON feeds output file naming), so they are not carried forward.
 
 
-def _read_sas7bdat(path: Path) -> pl.DataFrame:
+def _get_row_limit() -> Optional[int]:
+    """
+    Return an optional per-file row limit for fast testing.
+
+    Set EIBXLNLC_ROW_LIMIT to a positive integer to read only that many rows
+    from each SAS input. Leave it unset or set it to 0 for full production runs.
+    """
+    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "").strip()
+    if not value:
+        return None
+
+    try:
+        row_limit = int(value)
+    except ValueError as exc:
+        raise ValueError("EIBXLNLC_ROW_LIMIT must be a positive integer or 0") from exc
+
+    return row_limit if row_limit > 0 else None
+
+
+def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     """Read a .sas7bdat file via pandas and convert to Polars with uppercased columns."""
-    pdf = pd.read_sas(str(path), encoding="latin1")
+    if row_limit:
+        reader = pd.read_sas(str(path), encoding="latin1", chunksize=row_limit)
+        try:
+            pdf = next(reader)
+        except StopIteration:
+            pdf = pd.DataFrame()
+    else:
+        pdf = pd.read_sas(str(path), encoding="latin1")
+
     pdf.columns = [c.upper() for c in pdf.columns]
     return pl.from_pandas(pdf)
 
 
-def _read_lnnote(lnnote_path: Path) -> pl.DataFrame:
+def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     """
     PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
        OUT=LNNOTE; BY ACCTNO NOTENO;
     """
     return (
-        _read_sas7bdat(lnnote_path)
+        _read_sas7bdat(lnnote_path, row_limit=row_limit)
         .select(["ACCTNO", "NOTENO", "BANKNO", "STATE"])
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
             pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
         ])
-        .sort(["ACCTNO", "NOTENO"])
     )
 
 
-def _read_lncomm(lncomm_path: Path) -> pl.DataFrame:
+def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     """
     PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO;
     """
     return (
-        _read_sas7bdat(lncomm_path)
+        _read_sas7bdat(lncomm_path, row_limit=row_limit)
         .select(["ACCTNO", "COMMNO", "CCOLLTRL"])
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
             pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
         ])
-        .sort(["ACCTNO", "COMMNO"])
     )
 
 
-def _read_loan(loan_path: Path) -> pl.DataFrame:
+def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     """
     PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO;
     Original LOAN columns 'SECTOR' / 'CUSTCODE' renamed to 'SECTORCD' / 'CUSTCD'.
     """
     return (
-        _read_sas7bdat(loan_path)
+        _read_sas7bdat(loan_path, row_limit=row_limit)
         .rename({"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD"})
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
@@ -139,7 +159,6 @@ def _read_loan(loan_path: Path) -> pl.DataFrame:
             pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
             pl.col("SECTORCD").cast(pl.Utf8),
         ])
-        .sort(["ACCTNO", "NOTENO"])
     )
 
 
@@ -150,7 +169,8 @@ def process_bank(
     bank_name: str,
     config: Dict[str, Path],
     reptmon: str,
-    lncomm_df: pl.DataFrame
+    lncomm_df: Optional[pl.DataFrame] = None,
+    row_limit: Optional[int] = None,
 ) -> None:
     """
     Process loan-list preparation for a single bank entity (PBB or PIBB).
@@ -167,18 +187,10 @@ def process_bank(
     if not loan_path.exists():
         raise FileNotFoundError(f"[{bank_name}] Missing LOAN file  : {loan_path}")
 
-    print("Reading LNNOTE...")
-    lnnote_df = _read_lnnote(lnnote_path)
-    print("Done LNNOTE")
-
-    print("Reading LNCOMM...")
-    # lncomm_df = _read_lncomm(lncomm_path)
-    lncomm_df = pl.read_parquet(LNCOMM_PATH.with_suffix(".parquet"))
-    print("Done LNCOMM")
-
-    print("Reading LOAN...")
-    loan_df   = _read_loan(loan_path)
-    print("Done LOAN")
+    lnnote_df = _read_lnnote(lnnote_path, row_limit=row_limit)
+    if lncomm_df is None:
+        lncomm_df = _read_lncomm(lncomm_path, row_limit=row_limit)
+    loan_df   = _read_loan(loan_path, row_limit=row_limit)
 
     # ------------------------------------------------------------------
     # DATA LNOTE: MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO
@@ -203,10 +215,11 @@ def process_bank(
     lnote_df = lnote_df.drop([c for c in lnote_df.columns if c.endswith("_NOTE")])
     lnote_df = lnote_df.select([c for c in keep_lnote if c in lnote_df.columns])
 
-    # PROC SORT DATA=LNOTE; BY ACCTNO COMMNO
+    # SAS sorted before merging; Polars hash joins do not require pre-sorting.
+    # Avoiding this large intermediate sort saves significant time and memory.
     lnote_df = lnote_df.with_columns(
         pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64)
-    ).sort(["ACCTNO", "COMMNO"])
+    )
 
     # ------------------------------------------------------------------
     # DATA NOTE1: MERGE LNOTE(IN=A) LNCOMM(IN=B); BY ACCTNO COMMNO; IF A
@@ -272,19 +285,25 @@ def main() -> None:
     rv = get_reptdate_values()
     reptmon = rv.reptmon   # zero-padded month e.g. '05'
     nowk    = rv.nowk      # week bucket       e.g. '2' or '4'
+  
+    row_limit = _get_row_limit()
 
     print(f"Report Date : {rv.reptdate}  (REPTMON={reptmon}, NOWK={nowk})")
+    if row_limit:
+        print(f"Test mode: reading at most {row_limit:,} rows from each SAS input")
 
-    # Load shared file ONCE
-    print("Loading LNCOMM once...")
-    lncomm_df = _read_lncomm(LNCOMM_PATH)
-    print("Done LNCOMM")
+    shared_lncomm_df: Optional[pl.DataFrame] = None
+    if PBB_CONFIG["lncomm"] == PIBB_CONFIG["lncomm"]:
+        lncomm_path = PBB_CONFIG["lncomm"]
+        if not lncomm_path.exists():
+            raise FileNotFoundError(f"Missing shared LNCOMM file: {lncomm_path}")
+        shared_lncomm_df = _read_lncomm(lncomm_path, row_limit=row_limit)
 
     # PBB
-    process_bank("PBB", PBB_CONFIG, reptmon, lncomm_df)
+    process_bank("PBB", PBB_CONFIG, reptmon, lncomm_df=shared_lncomm_df, row_limit=row_limit)
 
     # PIBB
-    process_bank("PIBB", PIBB_CONFIG, reptmon, lncomm_df)
+    process_bank("PIBB", PIBB_CONFIG, reptmon, lncomm_df=shared_lncomm_df, row_limit=row_limit)
 
 
 if __name__ == "__main__":
