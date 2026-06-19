@@ -39,11 +39,6 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 #   1. LNNOTE - KEEP=ACCTNO NOTENO BANKNO STATE  (SAP.<ENTITY>.MNILN(0) - LNNOTE)
 #   2. LNCOMM - ACCTNO COMMNO CCOLLTRL           (SAP.<ENTITY>.MNILN(0) - LNCOMM)
 #   3. LOAN / ILOAN - loan extract (SAP.PBB.SASDATA / SAP.PIBB.SASDATA)
-#
-# NOTE: No example filenames were provided for LNNOTE/LNCOMM. Prefixes below
-# follow the same PBB/PIBB pairing convention already used for LOAN/ILOAN in
-# EIBXODLC.py (plain prefix for PBB, 'i'-prefixed for PIBB). Adjust if the
-# actual naming convention differs.
 # ----------------------------------------------------------------------------
 PBB_CONFIG: Dict[str, Path] = {
     "lnnote"    : INPUT_DIR / "lnnote_pbb.sas7bdat",
@@ -267,9 +262,7 @@ def main() -> None:
     # PBB
     process_bank("PBB", PBB_CONFIG, reptmon)
 
-    # ******************************************************
-    # FOR PIBB
-    # ******************************************************
+    # PIBB
     process_bank("PIBB", PIBB_CONFIG, reptmon)
 
 
