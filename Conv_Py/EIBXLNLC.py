@@ -28,7 +28,7 @@ from input_date import get_latest_file
 # # Production Path
 # BASE_DIR = Path("/dwh")
 
-BASE_DIR  = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
+BASE_DIR  = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 INPUT_DIR = BASE_DIR / "input/prod" / "EIBXLNLC"
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBXLNLC"
@@ -37,7 +37,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ----------------------------------------------------------------------------
 # 3 inputs per bank entity, all .sas7bdat:
 #   1. LNNOTE - KEEP=ACCTNO NOTENO BANKNO STATE  (SAP.<ENTITY>.MNILN(0) - LNNOTE)
-#   2. LNCOMM - ACCTNO COMMNO CCOLLTRL            (SAP.<ENTITY>.MNILN(0) - LNCOMM)
+#   2. LNCOMM - ACCTNO COMMNO CCOLLTRL           (SAP.<ENTITY>.MNILN(0) - LNCOMM)
 #   3. LOAN / ILOAN - loan extract (SAP.PBB.SASDATA / SAP.PIBB.SASDATA)
 #
 # NOTE: No example filenames were provided for LNNOTE/LNCOMM. Prefixes below
@@ -46,16 +46,16 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # actual naming convention differs.
 # ----------------------------------------------------------------------------
 PBB_CONFIG: Dict[str, Path] = {
-    "lnnote":     get_latest_file(INPUT_DIR, "nt"),    # e.g. nt05226.sas7bdat
-    "lncomm":     get_latest_file(INPUT_DIR, "cm"),    # e.g. cm05226.sas7bdat
-    "loan_dir":   get_latest_file(INPUT_DIR, "ln"),    # e.g. ln05126.sas7bdat
+    "lnnote"    : INPUT_DIR / "lnnote_pbb.sas7bdat",
+    "lncomm"    : INPUT_DIR / "enrh_ln_comm.sas7bdat",
+    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "ln"),    # e.g. ln05126.sas7bdat
     "output_dir": OUTPUT_DIR / "PBB",
 }
 
 PIBB_CONFIG: Dict[str, Path] = {
-    "lnnote":     get_latest_file(INPUT_DIR, "int"),   # e.g. int05226.sas7bdat
-    "lncomm":     get_latest_file(INPUT_DIR, "icm"),   # e.g. icm05226.sas7bdat
-    "loan_dir":   get_latest_file(INPUT_DIR, "iln"),   # e.g. iln05126.sas7bdat
+    "lnnote"    : INPUT_DIR / "lnnote_pibb.sas7bdat",
+    "lncomm"    : INPUT_DIR / "enrh_ln_comm.sas7bdat",
+    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "iln"),   # e.g. iln05126.sas7bdat
     "output_dir": OUTPUT_DIR / "PIBB",
 }
 
