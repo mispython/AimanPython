@@ -1,621 +1,291 @@
 #!/usr/bin/env python3
 """
-Program : EIBMOD1C.py
-Purpose : OD Listing by FISS Purpose Code (for all CustCodes)
-          Produces reports for both Public Bank Berhad (PBB) and Public Islamic Bank Berhad (PIBB).
-          NAME column is resolved by joining stg_dp_limit.sas7bdat ACCTNO
-          against the overdraft data ACCTNO and taking NAME.
-          Accounts with no matching NAME will show a blank NAME field.
-          Output is a fixed-width plain-text report with form-feed page breaks,
-          following the same layout and pagination approach as EIBMODLM_DONE.py.
-
-          Per-branch output is split into two tables, same treatment EIBMODLM_DONE.py
-          gives RATE2..COLL5:
-            - PRIMARY table   : ACCTNO .. LIMIT2  (top, unchanged layout)
-            - SECONDARY table : LIMIT3 .. COLL5   (pushed to the bottom, on its
-              own dedicated page — the secondary header is the page break)
-          FISSPURP subtotal / BRANCH grand-total blocks are duplicated on both
-          tables, matching EIBMODLM_DONE.py's duplicated branch-subtotal call.
-
-          Runs after EIBXODLC.py in the scheduling pipeline.
+File Name   : EIBXLNLC.py
+Description : Loan data preparation - merges LNNOTE, LNCOMM, and LOAN datasets
+              to produce NOTE1 (all loans by FISSPURP) and NOTE2 (construction/
+              real-estate loans for non-individual customers) for both PBB and
+              PIBB. Runs at the same frequency as EIBXODLC.py (right after it
+              in scheduling):
+                - 16th of month -> report date = 15th  (NOWK='2')
+                - 1st of month  -> report date = last day of prior month (NOWK='4')
 """
 
-from pathlib import Path
+from __future__ import annotations
 
-import duckdb
+from pathlib import Path
+from typing import Dict
+
 import pandas as pd
 import polars as pl
 
 from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
 
-# ============================================================================
+
+# =============================================================================
 # PATH CONFIGURATION
-# ============================================================================
-
-# Testing Path
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
-INPUT_DIR  = BASE_DIR / "output" / "EIBXODLC"        # Output path from EIBXODLC.py
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMOD1C"
-
+# =============================================================================
 # # Production Path
-# INPUT_DIR  = Path("/dwh")
-# OUTPUT_DIR = Path("/host/mis/output/report") / "EIBMOD1C"
+# BASE_DIR = Path("/dwh")
 
+BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR   = BASE_DIR / "input/prod" / "EIBXLNLC"
+LNCOMM_PATH = INPUT_DIR / "enrh_ln_comm.sas7bdat"
+
+OUTPUT_DIR  = BASE_DIR / "output" / "EIBXLNLC"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# PBB parquet inputs (ODRAF1 — sorted BY BRANCH FISSPURP ACCTNO from EIBXODLC)
-PBB_ODLC_PATH_1   = INPUT_DIR / "PBB"  / "ODLC_OVERDRAFT1_06.parquet"
-
-# PIBB parquet inputs
-PIBB_ODLCI_PATH_1 = INPUT_DIR / "PIBB" / "ODLCI_OVERDRAFT1_06.parquet"
-
-# Shared customer name lookup file (ACCTNO -> NAME)
-INPUT_CUSTNAME     = BASE_DIR / "input/prod" / "stg_dp_limit.sas7bdat"
-# INPUT_CUSTNAME   = Path("/sas/deposit/dwh/staging") / "stg_dp_limit.sas7bdat"
-
-# Output report files
-PBB_OUTPUT_PATH   = OUTPUT_DIR / "PBB"  / "ODRAFT1_ODLC.txt"
-PIBB_OUTPUT_PATH  = OUTPUT_DIR / "PIBB" / "ODRAFT1_ODLCI.txt"
-
-# ============================================================================
-# REPORT LAYOUT CONSTANTS
-# ============================================================================
-PAGE_SIZE = 60       # PS=60 (default when not specified in OPTIONS)
-
-# The subtotal block written after each FISSPURP group (3 lines):
-#   dashes line (1) + subtotal line (1) + dashes line (1)
-FISSPURP_SUBTOTAL_LINES = 3
-
-# The grand-total block written after each BRANCH (3 lines):
-#   dashes (1) + grand total (1) + dashes (1)
-BRANCH_GRANDTOTAL_LINES = 3
-
-# ============================================================================
-# REPORT DATE
-# ============================================================================
-reptdate_values = get_reptdate_values()
-REPTDATE    = reptdate_values.reptdate
-REPTMON     = reptdate_values.reptmon
-REPORT_DATE = REPTDATE.strftime('%d/%m/%y')
-
-# ============================================================================
-# INPUT FILE EXISTENCE CHECK — fail fast before any processing
-# ============================================================================
-_REQUIRED_INPUTS = {
-    "PBB  Overdraft Data (ODRAF1)"  : PBB_ODLC_PATH_1,
-    "PIBB Overdraft Data (ODRAF1)"  : PIBB_ODLCI_PATH_1,
-    "Customer Name Lookup"          : INPUT_CUSTNAME,
+# ----------------------------------------------------------------------------
+# 3 inputs per bank entity, all .sas7bdat:
+#   1. LNNOTE - KEEP=ACCTNO NOTENO BANKNO STATE  (SAP.<ENTITY>.MNILN(0) - LNNOTE)
+#   2. LNCOMM - ACCTNO COMMNO CCOLLTRL           (SAP.<ENTITY>.MNILN(0) - LNCOMM)
+#   3. LOAN / ILOAN - loan extract (SAP.PBB.SASDATA / SAP.PIBB.SASDATA)
+#
+# NOTE: No example filenames were provided for LNNOTE/LNCOMM. Prefixes below
+# follow the same PBB/PIBB pairing convention already used for LOAN/ILOAN in
+# EIBXODLC.py (plain prefix for PBB, 'i'-prefixed for PIBB). Adjust if the
+# actual naming convention differs.
+# ----------------------------------------------------------------------------
+PBB_CONFIG: Dict[str, Path] = {
+    "lnnote"    : INPUT_DIR / "lnnote_pbb.sas7bdat",
+    "lncomm"    : LNCOMM_PATH,
+    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "ln"),    # e.g. ln05126.sas7bdat
+    "output_dir": OUTPUT_DIR / "PBB",
 }
 
-_missing = [
-    f"  [{label}] {path}"
-    for label, path in _REQUIRED_INPUTS.items()
-    if not path.exists()
-]
-if _missing:
-    raise FileNotFoundError(
-        "The following required input files are missing:\n" + "\n".join(_missing)
-    )
+PIBB_CONFIG: Dict[str, Path] = {
+    "lnnote"    : INPUT_DIR / "lnnote_pibb.sas7bdat",
+    "lncomm"    : LNCOMM_PATH,
+    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "iln"),   # e.g. iln05126.sas7bdat
+    "output_dir": OUTPUT_DIR / "PIBB",
+}
 
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def _safe_float(value) -> float:
-    try:
-        return float(value) if value is not None else 0.0
-    except (ValueError, TypeError):
-        return 0.0
-
-
-def _safe_int(value) -> int:
-    try:
-        return int(value) if value is not None else 0
-    except (ValueError, TypeError):
-        return 0
+# =============================================================================
+# PROC FORMAT (informational - not used in output columns)
+# =============================================================================
+# PROC FORMAT;
+#    VALUE BANKFMT 33='PBB'
+#                 134='PFB';
+# RUN;
+BANKFMT = {33: 'PBB', 134: 'PFB'}
 
 
-def _safe_text(value, length: int) -> str:
-    if value is None:
-        return ''
-    return str(value).strip()[:length]
+# =============================================================================
+# REPORT DATE DERIVATION
+# =============================================================================
+# DATA _NULL_;
+#    SET LOAN.REPTDATE;
+#    SELECT(DAY(REPTDATE)) ... CALL SYMPUT('NOWK', ...) CALL SYMPUT('RDATE', ...)
+#    CALL SYMPUT('REPTMON', ...) CALL SYMPUT('REPTYEAR', ...)
+# RUN;
+#
+# This program does not read its own REPTDATE source. It follows the same
+# biweekly schedule/derivation as EIBXODLC.py (runs immediately after it), so
+# REPTMON / NOWK are obtained from REPTDATE.get_reptdate_values(). RDATE
+# (DDMMYY8.) and REPTYEAR are not consumed downstream in this program (only
+# REPTMON feeds output file naming), so they are not carried forward.
 
 
-def _fmt_branch(value) -> str:
-    # """Format branch as zero-padded 3-digit string (SAS Z3. format)."""
-    """Format branch without leading zeroes."""
-    if value is None:
-        return '   '
-    text = str(value).strip()
-    if text.endswith('.0'):
-        text = text[:-2]
-    digits = ''.join(ch for ch in text if ch.isdigit())
-    # if digits:
-    #     return digits.zfill(3)[-3:]
-    # return text[:3].zfill(3)
-    if digits:
-        return str(int(digits))
-    return text
+def _read_sas7bdat(path: Path) -> pl.DataFrame:
+    """Read a .sas7bdat file via pandas and convert to Polars with uppercased columns."""
+    pdf = pd.read_sas(str(path), encoding="latin1")
+    pdf.columns = [c.upper() for c in pdf.columns]
+    return pl.from_pandas(pdf)
 
 
-# ============================================================================
-# CUSTOMER NAME LOOKUP
-# ============================================================================
-
-def _load_custname_lookup(con: duckdb.DuckDBPyConnection) -> None:
-    """Load stg_dp_limit.sas7bdat and register ACCTNO -> NAME lookup into DuckDB.
-
-    Join logic:
-        if ACCTNO in stg_dp_limit == ACCTNO in overdraft data,
-        then NAME from stg_dp_limit is used.
-    Unmatched accounts carry a blank NAME.
+def _read_lnnote(lnnote_path: Path) -> pl.DataFrame:
     """
-    pandas_df = pd.read_sas(INPUT_CUSTNAME, format='sas7bdat', encoding='latin1')
-    pandas_df.columns = [str(c).upper().strip() for c in pandas_df.columns]
-
-    required = {'ACCTNO', 'NAME'}
-    missing  = required - set(pandas_df.columns)
-    if missing:
-        raise ValueError(
-            f"{INPUT_CUSTNAME.name} is missing required column(s): {', '.join(sorted(missing))}"
-        )
-
-    lookup_pd = (
-        pandas_df[['ACCTNO', 'NAME']]
-        .drop_duplicates(subset=['ACCTNO'], keep='first')
-        .reset_index(drop=True)
-    )
-    con.register('custname_lookup', lookup_pd)
-
-
-# ============================================================================
-# DATA LOADING
-# ============================================================================
-
-def _load_odraft1(con: duckdb.DuckDBPyConnection, parquet_path: Path) -> pd.DataFrame:
-    """Load ODRAF1 parquet and enrich with NAME via left-join on stg_dp_limit.
-
-    SAS equivalent:
-        DATA ODRAFT1;  (output of EIBXODLC — already sorted BY BRANCH FISSPURP ACCTNO)
-        SET ODLC.ODRAF1&REPTMON;
-
-    NAME is resolved from stg_dp_limit.sas7bdat.
-    Accounts with no match carry NAME = ''.
-    """
-    df = con.execute(f"""
-        SELECT
-            o.*,
-            COALESCE(c.NAME, '') AS NAME
-        FROM read_parquet('{parquet_path}') o
-        LEFT JOIN custname_lookup c
-            ON CAST(o.ACCTNO AS BIGINT) = CAST(c.ACCTNO AS BIGINT)
-        ORDER BY o.BRANCH, o.FISSPURP, o.ACCTNO
-    """).df()
-    return df
-
-
-# ============================================================================
-# REPORT TITLE & HEADER BUILDERS
-# ============================================================================
-
-def _get_report_titles(is_islamic: bool) -> tuple:
-    if is_islamic:
-        return (
-            'REPORT NO :  ODLIST                         PUBLIC ISLAMIC BANK BERHAD',
-            'PROGRAM ID:  EIBMOD1C',
-        )
-    return (
-        'REPORT NO :  ODLIST                           PUBLIC BANK BERHAD',
-        'PROGRAM ID:  EIBMOD1C',
-    )
-
-
-def _build_title_lines(title1: str, title2: str, report_date: str, branch: str) -> list:
-    """Build page title block lines (matches SAS TITLE1..TITLE4 + BY-group header)."""
-    return [
-        f"1{title1}\n",
-        f" {title2}\n",
-        f" OD LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)"
-        f"{' ' * 59}REPORT DATE: {report_date}\n",
-        f"   **\n",
-        f"\n",
-        f" BRANCH={branch}\n",
-        f"\n",
-    ]
-
-
-def _build_primary_header_lines() -> list:
-    """Build column header rows for the PRIMARY table (ACCTNO .. LIMIT2).
-
-    This is the first half of the original single-table EIBMOD1C header,
-    sliced at the LIMIT2/LIMIT3 boundary. Every retained field keeps the
-    exact width/justification/separator spacing already set in EIBMOD1C —
-    only the column range differs.
-
-      ACCTNO(10.) NAME($24.) APPRLIMT(12.2) BALANCE(12.2) FISSPURP($4.)
-      SECTORCD($4.) CUSTCODE(4.) STATE($3.) FLATRATE(5.2) LIMIT1(12.2) LIMIT2(12.2)
-    """
-    hdr1 = (
-        f"   {'ACCOUNT':>10}  {'':<24}  {'APPROVE':>12}"
-        f"  {'OUTSTANDING':>12}  {'PUR':<4}  {'SEC':<4}  {'CUST':>4}"
-        f"  {'ST':<3}  {'FLAT':>5}"
-        f"  {'':>12}  {'':>12}"
-    )
-    hdr2 = (
-        f"   {'NUMBER':>10}  {'CUSTOMER NAME':<24}  {'LIMIT':>12}"
-        f"  {'BALANCE':>12}  {'POSE':<4}  {'TOR':<4}  {'CODE':>4}"
-        f"  {'CD':<3}  {'RATE':>5}"
-        f"  {'LIMIT1':>12}  {'LIMIT2':>12}"
-    )
-    underline = '   ' + '-' * (len(hdr2) - 3)
-    return [
-        f"{hdr1}\n",
-        f"{hdr2}\n",
-        f"{underline}\n",
-        f"\n",          # HEADSKIP: blank line after header
-    ]
-
-
-def _build_secondary_header_lines() -> list:
-    """Build column header rows for the SECONDARY table (LIMIT3 .. COLL5).
-
-    This is the second half of the original single-table EIBMOD1C header,
-    pushed onto its own page. Starting a fresh page with this header is what
-    moves LIMIT3..COLL5 'to the bottom' — the same treatment EIBMODLM_DONE.py
-    gives RATE2..COLL5 via its own dedicated secondary page.
-
-      LIMIT3(12.2) LIMIT4(12.2) LIMIT5(12.2) RATE1-5(5.2) COL1-5($5.)
-    """
-    hdr1 = (
-        f"   {'':>12}  {'':>12}  {'':>12}"
-        f"  {'':>5}  {'':>5}  {'':>5}  {'':>5}  {'':>5}"
-        f"  {'':>5}  {'':>5}  {'':>5}  {'':>5}  {'':>5}"
-    )
-    hdr2 = (
-        f"   {'LIMIT3':>12}  {'LIMIT4':>12}  {'LIMIT5':>12}"
-        f"  {'RATE1':>5}  {'RATE2':>5}  {'RATE3':>5}  {'RATE4':>5}  {'RATE5':>5}"
-        f"  {'COLL1':>5}  {'COLL2':>5}  {'COLL3':>5}  {'COLL4':>5}  {'COLL5':>5}"
-    )
-    underline = '   ' + '-' * (len(hdr2) - 3)
-    return [
-        f"{hdr1}\n",
-        f"{hdr2}\n",
-        f"{underline}\n",
-        f"\n",          # HEADSKIP: blank line after header
-    ]
-
-
-# ============================================================================
-# DETAIL LINE BUILDERS
-# ============================================================================
-
-def _fmt_balance(value) -> str:
-    return f"{_safe_float(value):.2f}"[:11]
-
-
-def _build_primary_detail_line(row: dict) -> str:
-    """Build the PRIMARY detail line (ACCTNO .. LIMIT2) for one data row.
-
-    Column order/format mirrors SAS PROC REPORT DEFINE statements, sliced at
-    the LIMIT2/LIMIT3 boundary:
-      ACCTNO(10.) NAME($24.) APPRLIMT(12.2) BALANCE(12.2)
-      FISSPURP($4.) SECTORCD($4.) CUSTCODE(4.) STATE($3.) FLATRATE(5.2)
-      LIMIT1(12.2) LIMIT2(12.2)
+    PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
+       OUT=LNNOTE; BY ACCTNO NOTENO;
     """
     return (
-        f"   {_safe_int(row.get('ACCTNO')):>10} "
-        f" {_safe_text(row.get('NAME'), 15):<24} "
-        f" {_safe_float(row.get('APPRLIMT')):>12.2f} "
-        f" {_fmt_balance(row.get('BALANCE')):>12} "
-        f" {_safe_text(row.get('FISSPURP'), 4):>4} "
-        f" {_safe_text(row.get('SECTORCD'), 4):>4} "
-        f" {_safe_int(row.get('CUSTCD')):>4} "
-        f" {_safe_text(row.get('STATE'), 3):<3} "
-        f" {_safe_float(row.get('FLATRATE')):>5.2f} "
-        f" {_safe_float(row.get('LIMIT1')):>12.2f} "
-        f" {_safe_float(row.get('LIMIT2')):>12.2f}\n"
+        _read_sas7bdat(lnnote_path)
+        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE"])
+        .with_columns([
+            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+            pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+        ])
+        .sort(["ACCTNO", "NOTENO"])
     )
 
 
-def _build_secondary_detail_line(row: dict) -> str:
-    """Build the SECONDARY detail line (LIMIT3 .. COLL5) for one data row.
-
-    Pushed onto its own page (secondary header acts as the page break),
-    per the request to move LIMIT3 through COLL5 to the bottom of the
-    report — the same treatment EIBMODLM_DONE.py applies to RATE2..COLL5.
-
-      LIMIT3(12.2) LIMIT4(12.2) LIMIT5(12.2) RATE1-5(5.2) COL1-5($5.)
+def _read_lncomm(lncomm_path: Path) -> pl.DataFrame:
+    """
+    PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO;
     """
     return (
-        f"   {_safe_float(row.get('LIMIT3')):>12.2f} "
-        f" {_safe_float(row.get('LIMIT4')):>12.2f} "
-        f" {_safe_float(row.get('LIMIT5')):>12.2f} "
-        f" {_safe_float(row.get('RATE1')):>5.2f} "
-        f" {_safe_float(row.get('RATE2')):>5.2f} "
-        f" {_safe_float(row.get('RATE3')):>5.2f} "
-        f" {_safe_float(row.get('RATE4')):>5.2f} "
-        f" {_safe_float(row.get('RATE5')):>5.2f} "
-        f" {_safe_text(row.get('COL1'), 5):>5} "
-        f" {_safe_text(row.get('COL2'), 5):>5} "
-        f" {_safe_text(row.get('COL3'), 5):>5} "
-        f" {_safe_text(row.get('COL4'), 5):>5} "
-        f" {_safe_text(row.get('COL5'), 5):>5}\n"
+        _read_sas7bdat(lncomm_path)
+        .select(["ACCTNO", "COMMNO", "CCOLLTRL"])
+        .with_columns([
+            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+            pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
+        ])
+        .sort(["ACCTNO", "COMMNO"])
     )
 
 
-# ============================================================================
-# SUBTOTAL LINE BUILDERS
-# ============================================================================
-
-def _write_fisspurp_subtotal(
-    report_file,
-    fisspurp: str,
-    balance_sum: float,
-) -> None:
-    """Write FISSPURP-level subtotal block (3 lines).
-
-    SAS equivalent (COMPUTE AFTER FISSPURP):
-        LINE @015 52*'-';
-        LINE @015 'SUBTOTAL FOR FISS PURPOSE   '  FISSPURP $4.  @054 BALANCE.SUM  13.2;
-        LINE @015 52*'-';
-
-    Written once on the PRIMARY table and again on the SECONDARY table for
-    the same FISSPURP group (identical figures both times) — this mirrors
-    EIBMODLM_DONE.py re-emitting the same branch subtotal under its
-    secondary table.
+def _read_loan(loan_path: Path) -> pl.DataFrame:
     """
-    sep_line = ' ' * 15 + '-' * 52
-    report_file.write(sep_line + '\n')
-    subtotal_str = f"{balance_sum:.2f}"[:13]
-    report_file.write(
-        f"{' ' * 15}{'SUBTOTAL FOR FISS PURPOSE   '}"
-        f"{_safe_text(fisspurp, 4):<4}"
-        f"{subtotal_str:>20}\n"
+    PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO;
+    Original LOAN columns 'SECTOR' / 'CUSTCODE' renamed to 'SECTORCD' / 'CUSTCD'.
+    """
+    return (
+        _read_sas7bdat(loan_path)
+        .rename({"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD"})
+        .with_columns([
+            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+            pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+            pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
+            pl.col("SECTORCD").cast(pl.Utf8),
+        ])
+        .sort(["ACCTNO", "NOTENO"])
     )
-    report_file.write(sep_line + '\n')
 
 
-def _write_branch_grandtotal(
-    report_file,
-    branch: str,
-    balance_sum: float,
+# =============================================================================
+# CORE PROCESSING
+# =============================================================================
+def process_bank(
+    bank_name: str,
+    config: Dict[str, Path],
+    reptmon: str,
+    lncomm_df: pl.DataFrame
 ) -> None:
-    """Write BRANCH-level grand total block (3 lines).
-
-    SAS equivalent (COMPUTE AFTER BRANCH):
-        LINE @015 52*'-';
-        LINE @015 'GRAND TOTAL FOR BRANCH   '  BRANCH Z3.  @054 BALANCE.SUM  13.2;
-        LINE @015 52*'-';
-
-    Written once on the PRIMARY table and again on the SECONDARY table for
-    the same branch (identical figures both times), same duplication
-    rationale as `_write_fisspurp_subtotal`.
     """
-    sep_line = ' ' * 15 + '-' * 52
-    report_file.write(sep_line + '\n')
-    grandtotal_str = f"{balance_sum:.2f}"[:13]
-    report_file.write(
-        f"{' ' * 15}{'GRAND TOTAL FOR BRANCH   '}"
-        f"{_fmt_branch(branch)}"
-        f"{grandtotal_str:>24}\n"
+    Process loan-list preparation for a single bank entity (PBB or PIBB).
+    """
+    lnnote_path = config["lnnote"]
+    lncomm_path = config["lncomm"]
+    loan_path   = config["loan_dir"]
+    output_dir  = config["output_dir"]
+
+    if not lnnote_path.exists():
+        raise FileNotFoundError(f"[{bank_name}] Missing LNNOTE file: {lnnote_path}")
+    if not lncomm_path.exists():
+        raise FileNotFoundError(f"[{bank_name}] Missing LNCOMM file: {lncomm_path}")
+    if not loan_path.exists():
+        raise FileNotFoundError(f"[{bank_name}] Missing LOAN file  : {loan_path}")
+
+    print("Reading LNNOTE...")
+    lnnote_df = _read_lnnote(lnnote_path)
+    print("Done LNNOTE")
+
+    print("Reading LNCOMM...")
+    # lncomm_df = _read_lncomm(lncomm_path)
+    lncomm_df = pl.read_parquet(LNCOMM_PATH.with_suffix(".parquet"))
+    print("Done LNCOMM")
+
+    print("Reading LOAN...")
+    loan_df   = _read_loan(loan_path)
+    print("Done LOAN")
+
+    # ------------------------------------------------------------------
+    # DATA LNOTE: MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO
+    # IF ACCTYPE = 'LN'
+    # KEEP: BANKNO BRANCH ACCTNO NOTENO NAME BALANCE SECTORCD CUSTCD
+    #       INTRATE NTBRCH COMMNO LIABCODE APPRLIMT FISSPURP STATE
+    # ------------------------------------------------------------------
+    lnote_df = loan_df.join(lnnote_df, on=["ACCTNO", "NOTENO"], how="left", suffix="_NOTE")
+    lnote_df = lnote_df.filter(pl.col("ACCTYPE") == "LN")
+
+    keep_lnote = [
+        "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "BALANCE",
+        "SECTORCD", "CUSTCD", "INTRATE", "NTBRCH", "COMMNO", "LIABCODE",
+        "APPRLIMT", "FISSPURP", "STATE",
+    ]
+    # BANKNO / STATE are only present on the LNNOTE side; prefer that side
+    # if LOAN does not already carry them.
+    for col in keep_lnote:
+        note_col = col + "_NOTE"
+        if note_col in lnote_df.columns and col not in lnote_df.columns:
+            lnote_df = lnote_df.rename({note_col: col})
+    lnote_df = lnote_df.drop([c for c in lnote_df.columns if c.endswith("_NOTE")])
+    lnote_df = lnote_df.select([c for c in keep_lnote if c in lnote_df.columns])
+
+    # PROC SORT DATA=LNOTE; BY ACCTNO COMMNO
+    lnote_df = lnote_df.with_columns(
+        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64)
+    ).sort(["ACCTNO", "COMMNO"])
+
+    # ------------------------------------------------------------------
+    # DATA NOTE1: MERGE LNOTE(IN=A) LNCOMM(IN=B); BY ACCTNO COMMNO; IF A
+    # KEEP: BANKNO BRANCH ACCTNO NOTENO NAME APPRLIMT BALANCE SECTORCD
+    #       CUSTCD STATE INTRATE NTBRCH COMMNO LIABCODE CCOLLTRL FISSPURP
+    # ------------------------------------------------------------------
+    note1_df = lnote_df.join(lncomm_df, on=["ACCTNO", "COMMNO"], how="left", suffix="_COMM")
+
+    keep_note1 = [
+        "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "APPRLIMT", "BALANCE",
+        "SECTORCD", "CUSTCD", "STATE", "INTRATE", "NTBRCH", "COMMNO",
+        "LIABCODE", "CCOLLTRL", "FISSPURP",
+    ]
+    note1_df = note1_df.drop([c for c in note1_df.columns if c.endswith("_COMM")])
+    note1_df = note1_df.select([c for c in keep_note1 if c in note1_df.columns])
+
+    # ------------------------------------------------------------------
+    # DATA NOTE2: SET NOTE1
+    # IF CUSTCD NOT IN ('77','78','95','96') AND
+    #    (SUBSTR(SECTORCD,1,1) = '5' OR SECTORCD = '8310') THEN OUTPUT
+    # ------------------------------------------------------------------
+    sector = pl.col("SECTORCD").cast(pl.Utf8)
+    note2_df = note1_df.filter(
+        (~pl.col("CUSTCD").cast(pl.Utf8).is_in(["77", "78", "95", "96"]))
+        & ((sector.str.slice(0, 1) == "5") | (sector == "8310"))
     )
-    report_file.write(sep_line + '\n')
+
+    # PROC DATASETS LIB=WORK NOLIST; DELETE LNOTE LNCOMM (implicit - not needed in Python)
+
+    # ------------------------------------------------------------------
+    # PROC SORT DATA=NOTE1 OUT=LNLC(I).NOTE1&REPTMON; BY BRANCH FISSPURP CUSTCD ACCTNO
+    # PROC SORT DATA=NOTE2 OUT=LNLC(I).NOTE2&REPTMON; BY BRANCH SECTORCD CUSTCD ACCTNO
+    # ------------------------------------------------------------------
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    note1_sorted = note1_df.sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
+    note2_sorted = note2_df.sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
+
+    prefix = "LNLC" if bank_name == "PBB" else "LNLCI"
+    note1_out = output_dir / f"{prefix}_NOTE1_{reptmon}.parquet"
+    note2_out = output_dir / f"{prefix}_NOTE2_{reptmon}.parquet"
+
+    note1_sorted.write_parquet(note1_out)
+    note2_sorted.write_parquet(note2_out)
+
+    # ------------------------------------------------------------------
+    # Terminal summary
+    # ------------------------------------------------------------------
+    print(f"\n[{bank_name}] REPTMON={reptmon}")
+    print(f"[{bank_name}] LOAN rows  : {len(loan_df):,}")
+    print(f"[{bank_name}] NOTE1 rows : {len(note1_sorted):,}")
+    print(f"[{bank_name}] NOTE2 rows : {len(note2_sorted):,}")
+    print(f"[{bank_name}] Output -> {note1_out}")
+    print(f"[{bank_name}] Output -> {note2_out}")
+    print(note1_sorted.head())
+    print(note2_sorted.head())
 
 
-# ============================================================================
-# TABLE PASS WRITER (one full PRIMARY or SECONDARY table for a branch)
-# ============================================================================
+# =============================================================================
+# MAIN
+# =============================================================================
+def main() -> None:
+    rv = get_reptdate_values()
+    reptmon = rv.reptmon   # zero-padded month e.g. '05'
+    nowk    = rv.nowk      # week bucket       e.g. '2' or '4'
 
-def _write_table_pass(
-    report_file,
-    fisspurp_codes: list,
-    fp_rows_cache: list,
-    fp_balance_sums: list,
-    branch_balance_sum: float,
-    branch_code,
-    title_lines: list,
-    header_lines: list,
-    add_form_feed: bool,
-    detail_line_builder,
-) -> bool:
-    """Write one complete table pass (PRIMARY or SECONDARY) for a single branch.
+    print(f"Report Date : {rv.reptdate}  (REPTMON={reptmon}, NOWK={nowk})")
 
-    Streams every row of the branch through `detail_line_builder`, inserting
-    the FISSPURP subtotal block (3 lines) right after the last row of each
-    FISSPURP group, and the BRANCH grand-total block (3 lines) right after
-    the last row of the branch — identical placement rules to the original
-    single-table EIBMOD1C report.
+    # Load shared file ONCE
+    print("Loading LNCOMM once...")
+    lncomm_df = _read_lncomm(LNCOMM_PATH)
+    print("Done LNCOMM")
 
-    The PRIMARY and SECONDARY passes each call this with a different
-    `header_lines`/`detail_line_builder` pair, and every pass always starts
-    a fresh page (form feed + title + header_lines) before its first row.
-    That is what makes `header_lines` act as the page break between the
-    PRIMARY (ACCTNO..LIMIT2) and SECONDARY (LIMIT3..COLL5) tables — the same
-    treatment EIBMODLM_DONE.py gives its RATE2..COLL5 columns.
+    # PBB
+    process_bank("PBB", PBB_CONFIG, reptmon, lncomm_df)
 
-    Returns the updated `add_form_feed` flag so the caller can thread page
-    state into the next pass / branch.
-    """
-    fixed_lines     = len(title_lines) + len(header_lines)
-    total_fp_groups = len(fisspurp_codes)
-    page_lines_used = 0
-
-    def _start_page():
-        nonlocal add_form_feed, page_lines_used
-        if add_form_feed:
-            report_file.write('\f')
-        for line in title_lines:
-            report_file.write(line)
-        for line in header_lines:
-            report_file.write(line)
-        add_form_feed   = True
-        page_lines_used = fixed_lines
-
-    def _ensure_space(needed: int):
-        if page_lines_used + needed > PAGE_SIZE:
-            _start_page()
-
-    _start_page()
-
-    for fp_idx, fisspurp_code in enumerate(fisspurp_codes):
-        fp_rows        = fp_rows_cache[fp_idx]
-        total_fp_rows  = len(fp_rows)
-        fp_balance_sum = fp_balance_sums[fp_idx]
-        is_last_fp     = (fp_idx == total_fp_groups - 1)
-
-        for row_idx, (_, row) in enumerate(fp_rows):
-            is_last_row_in_fp = (row_idx == total_fp_rows - 1)
-            lines_needed = 1 + (FISSPURP_SUBTOTAL_LINES if is_last_row_in_fp else 0)
-            if is_last_row_in_fp and is_last_fp:
-                lines_needed += BRANCH_GRANDTOTAL_LINES
-
-            _ensure_space(lines_needed)
-            report_file.write(detail_line_builder(row))
-            page_lines_used += 1
-
-        _ensure_space(FISSPURP_SUBTOTAL_LINES)
-        _write_fisspurp_subtotal(report_file, str(fisspurp_code), fp_balance_sum)
-        page_lines_used += FISSPURP_SUBTOTAL_LINES
-
-    _ensure_space(BRANCH_GRANDTOTAL_LINES)
-    _write_branch_grandtotal(report_file, branch_code, branch_balance_sum)
-    page_lines_used += BRANCH_GRANDTOTAL_LINES
-
-    return add_form_feed
+    # PIBB
+    process_bank("PIBB", PIBB_CONFIG, reptmon, lncomm_df)
 
 
-# ============================================================================
-# REPORT FILE WRITER
-# ============================================================================
-
-def _write_report_file(
-    odraft_df: pd.DataFrame,
-    output_file: Path,
-    is_islamic: bool,
-    report_date: str,
-) -> None:
-    """Write the full fixed-width report, paginated to PAGE_SIZE lines per page.
-
-    Each branch now produces two tables, in this order:
-      1. PRIMARY table   — ACCTNO .. LIMIT2  (top, unchanged layout)
-      2. SECONDARY table — LIMIT3 .. COLL5   (pushed to the bottom, on its
-         own dedicated page — see `_write_table_pass`)
-    FISSPURP subtotal / BRANCH grand-total blocks are written on both
-    tables (same figures, duplicated), mirroring EIBMODLM_DONE.py.
-    """
-    title1, title2 = _get_report_titles(is_islamic)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    primary_header_lines   = _build_primary_header_lines()
-    secondary_header_lines = _build_secondary_header_lines()
-
-    with open(output_file, 'w', encoding='utf-8') as report_file:
-        add_form_feed = False
-
-        # Group by BRANCH (outer), then FISSPURP (inner)
-        for branch_code, branch_df in odraft_df.groupby('BRANCH', sort=False):
-            branch_str  = _fmt_branch(branch_code)
-            title_lines = _build_title_lines(title1, title2, report_date, branch_str)
-
-            fisspurp_groups = list(branch_df.groupby('FISSPURP', sort=False))
-            fisspurp_codes  = [code for code, _ in fisspurp_groups]
-            fp_rows_cache   = [list(fp_df.iterrows()) for _, fp_df in fisspurp_groups]
-            fp_balance_sums = [
-                sum(_safe_float(row.get('BALANCE')) for _, row in fp_rows)
-                for fp_rows in fp_rows_cache
-            ]
-            branch_balance_sum = sum(fp_balance_sums)
-
-            # --- PRIMARY table pass (ACCTNO .. LIMIT2) ---
-            add_form_feed = _write_table_pass(
-                report_file, fisspurp_codes, fp_rows_cache, fp_balance_sums,
-                branch_balance_sum, branch_code, title_lines,
-                primary_header_lines, add_form_feed, _build_primary_detail_line,
-            )
-
-            # --- SECONDARY table pass (LIMIT3 .. COLL5) ---
-            # Always starts on a brand-new page: secondary_header_lines is
-            # the page break that pushes these columns to the bottom.
-            add_form_feed = _write_table_pass(
-                report_file, fisspurp_codes, fp_rows_cache, fp_balance_sums,
-                branch_balance_sum, branch_code, title_lines,
-                secondary_header_lines, add_form_feed, _build_secondary_detail_line,
-            )
-
-
-# ============================================================================
-# REPORT GENERATOR (main entry per bank)
-# ============================================================================
-
-def generate_od_listing_report(
-    parquet_path: Path,
-    output_file: Path,
-    is_islamic: bool,
-) -> bool:
-    """Generate OD listing report for one bank entity.
-
-    NAME resolution:
-        ACCTNO in parquet == ACCTNO in stg_dp_limit.sas7bdat → NAME
-        No match → NAME = '' (blank)
-
-    Args:
-        parquet_path : Path to ODRAF1 parquet (output of EIBXODLC)
-        output_file  : Path to output .txt report
-        is_islamic   : True for PIBB / CLF-i, False for PBB / OD
-    Returns:
-        True if successful, False otherwise.
-    """
-    bank_label = 'Public Islamic Bank Berhad (PIBB)' if is_islamic else 'Public Bank Berhad (PBB)'
-    print(f"\n{'=' * 70}")
-    print(f"Generating OD Listing Report — {bank_label}")
-    print(f"{'=' * 70}")
-    print(f"Report Date : {REPORT_DATE}")
-
-    con = duckdb.connect(database=':memory:')
-    try:
-        print("\nStep 1: Loading customer name lookup (stg_dp_limit)...")
-        _load_custname_lookup(con)
-        print("Customer name lookup registered.")
-
-        print("\nStep 2: Loading and enriching ODRAFT1 data...")
-        odraft_df = _load_odraft1(con, parquet_path)
-        print(f"ODRAFT1 rows loaded : {len(odraft_df):,}")
-        matched = (odraft_df['NAME'].str.strip() != '').sum()
-        print(f"NAME matched        : {matched:,} / {len(odraft_df):,}")
-
-        print("\nStep 3: Generating report...")
-        _write_report_file(odraft_df, output_file, is_islamic, REPORT_DATE)
-        print(f"Report saved : {output_file}")
-
-        print("\nReport Statistics:")
-        print(f"  Total Accounts    : {len(odraft_df):,}")
-        print(f"  Total Branches    : {odraft_df['BRANCH'].nunique()}")
-        print(f"  Total FISS Groups : {odraft_df['FISSPURP'].nunique()}")
-        if len(odraft_df) > 0:
-            print(f"  Total Balance     : {odraft_df['BALANCE'].sum():,.2f}")
-
-        print(f"\n{'=' * 20} PREVIEW: {output_file.name} {'=' * 20}\n")
-        with open(output_file, 'r', encoding='utf-8') as f:
-            print(f.read())
-        print(f"{'=' * 20} END PREVIEW {'=' * 20}\n")
-
-        return True
-
-    except Exception as exc:
-        print(f"\n[ERROR] Report generation failed for {output_file.name}: {type(exc).__name__}: {exc}")
-        return False
-
-    finally:
-        con.close()
-
-
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
-
-print('=' * 70)
-print('OD LISTING BY FISS PURPOSE CODE — REPORT GENERATION')
-print('=' * 70)
-
-results = {}
+if __name__ == "__main__":
+    main()
