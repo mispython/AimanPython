@@ -89,7 +89,7 @@ def _get_row_limit() -> Optional[int]:
     Set EIBXLNLC_ROW_LIMIT to a positive integer to read only that many rows
     from each SAS input. Leave it unset or set it to 0 for full production runs.
     """
-    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "").strip()
+    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "100").strip()
     if not value:
         return None
 
@@ -199,7 +199,7 @@ def process_bank(
     #       INTRATE NTBRCH COMMNO LIABCODE APPRLIMT FISSPURP STATE
     # ------------------------------------------------------------------
     lnote_df = loan_df.join(lnnote_df, on=["ACCTNO", "NOTENO"], how="left", suffix="_NOTE")
-    lnote_df = lnote_df.filter(pl.col("ACCTYPE") == "LN")
+    # lnote_df = lnote_df.filter(pl.col("ACCTYPE") == "LN")
 
     keep_lnote = [
         "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "BALANCE",
