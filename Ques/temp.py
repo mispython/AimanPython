@@ -9,7 +9,6 @@ def get_active_temp_processes(folder_path):
     to their precise creation source (Binary path and exact execution command).
     """
     active_map = {}
-    # Fetching 'exe' (binary location) and 'cmdline' (original trigger command)
     for proc in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
         try:
             # Check every open file handle currently registered to this process
@@ -33,21 +32,26 @@ def get_active_temp_processes(folder_path):
                         "size": file_size
                     }
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            # Bypass locked system tasks and short-lived execution tasks
             continue
     return active_map
 
 
 def get_folder_metrics(folder_path):
     total_size = 0
+    file_count = 0
+    folder_count = 0
     all_files = []
 
     # 1. Fetch ALL temporary files mapped directly to active runtime sources
     active_files = get_active_temp_processes(folder_path)
 
-    # 2. Disk scan loop for raw sizing
+    # 2. Disk scan loop for raw sizing and item counts
     for root, dirs, files in os.walk(folder_path):
+        # Count subdirectories found in the current root
+        folder_count += len(dirs)
+        
         for file in files:
+            file_count += 1
             file_path = os.path.join(root, file)
             try:
                 file_size = os.path.getsize(file_path)
@@ -60,9 +64,9 @@ def get_folder_metrics(folder_path):
                 continue
 
     # Sort files globally by size descending for the disk metrics block
-    top_10_files = sorted(all_files, key=lambda x: x[1], reverse=True)[:10]
+    top_10_files = sorted(all_files, key=lambda x: x, reverse=True)[:10]
 
-    return total_size, top_10_files, active_files
+    return total_size, file_count, folder_count, top_10_files, active_files
 
 
 def format_size(bytes_size):
@@ -77,14 +81,17 @@ def format_size(bytes_size):
 temp_dir = tempfile.gettempdir()
 print(f"Scanning target folder: {temp_dir}...\n")
 
-total_bytes, largest_files, all_active_files = get_folder_metrics(temp_dir)
+total_bytes, total_files, total_folders, largest_files, all_active_files = get_folder_metrics(temp_dir)
 
 # ==========================================================
-# SECTION 1: GLOBAL SERVER SUMMARY
+# SECTION 1: GLOBAL SERVER SUMMARY (Sizing & Item Count)
 # ==========================================================
 print("=" * 75)
-print(f"TOTAL TEMP FOLDER SIZE        : {format_size(total_bytes)}")
-print(f"TOTAL ACTIVE TEMP FILES IN USE: {len(all_active_files)}")
+print(f"TARGET TEMP DIRECTORY        : {temp_dir}")
+print(f"TOTAL TEMP FOLDER SIZE       : {format_size(total_bytes)}")
+print(f"TOTAL FILES DETECTED         : {total_files:,}")
+print(f"TOTAL SUBFOLDERS DETECTED    : {total_folders:,}")
+print(f"TOTAL ACTIVE FILES IN USE    : {len(all_active_files)}")
 print("=" * 75)
 
 # ==========================================================
