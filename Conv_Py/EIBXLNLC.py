@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
 File Name   : EIBXLNLC.py
-Description : Loan data preparation - merges LNNOTE (combined LNNOTE+LNCOMM
-              source) and LOAN datasets to produce NOTE1 (all loans by
-              FISSPURP) and NOTE2 (construction/real-estate loans for
-              non-individual customers) for both PBB and PIBB.
-              Runs at the same frequency as EIBXODLC.py (right after it in
-              scheduling):
+Description : Loan data preparation - merges LNNOTE, LNCOMM, and LOAN datasets
+              to produce NOTE1 (all loans by FISSPURP) and NOTE2 (construction/
+              real-estate loans for non-individual customers) for both PBB and
+              PIBB. Runs at the same frequency as EIBXODLC.py (right after it
+              in scheduling):
                 - 16th of month -> report date = 15th  (NOWK='2')
                 - 1st of month  -> report date = last day of prior month (NOWK='4')
 """
@@ -14,7 +13,7 @@ Description : Loan data preparation - merges LNNOTE (combined LNNOTE+LNCOMM
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict
 
 import pandas as pd
 import polars as pl
@@ -36,29 +35,27 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIBXLNLC"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ----------------------------------------------------------------------------
-# Only 2 physical inputs for this program:
-#   1. LNNOTE  - SHARED single source for both PBB and PIBB. In the original
-#                JCL, the "LNNOTE" DD pointed to library SAP.<ENTITY>.MNILN(0),
-#                which housed BOTH the LNNOTE dataset (ACCTNO NOTENO BANKNO
-#                STATE) and the LNCOMM dataset (ACCTNO COMMNO CCOLLTRL).
-#                Migrated as one combined parquet/sas7bdat source carrying an
-#                ENTITY_CD column to distinguish PBB vs PIBB rows.
-#   2. LOAN / ILOAN - bank-specific loan extract (PBB=LOAN, PIBB=ILOAN),
-#                equivalent to SAP.PBB.SASDATA / SAP.PIBB.SASDATA.
+# 3 inputs per bank entity, all .sas7bdat:
+#   1. LNNOTE - KEEP=ACCTNO NOTENO BANKNO STATE  (SAP.<ENTITY>.MNILN(0) - LNNOTE)
+#   2. LNCOMM - ACCTNO COMMNO CCOLLTRL            (SAP.<ENTITY>.MNILN(0) - LNCOMM)
+#   3. LOAN / ILOAN - loan extract (SAP.PBB.SASDATA / SAP.PIBB.SASDATA)
 #
-# NOTE: File-prefix pattern for the shared LNNOTE source ("nt") is assumed
-# (no example filename was provided for this input); adjust the prefix below
-# if the actual naming convention differs (e.g. nt05226.sas7bdat).
+# NOTE: No example filenames were provided for LNNOTE/LNCOMM. Prefixes below
+# follow the same PBB/PIBB pairing convention already used for LOAN/ILOAN in
+# EIBXODLC.py (plain prefix for PBB, 'i'-prefixed for PIBB). Adjust if the
+# actual naming convention differs.
 # ----------------------------------------------------------------------------
-LNNOTE_PATH = get_latest_file(INPUT_DIR, "nt")    # e.g. nt05226.sas7bdat (shared, ENTITY_CD-tagged)
-
 PBB_CONFIG: Dict[str, Path] = {
-    "loan_dir":   get_latest_file(INPUT_DIR, "ln"),   # e.g. ln05126.sas7bdat
+    "lnnote":     get_latest_file(INPUT_DIR, "nt"),    # e.g. nt05226.sas7bdat
+    "lncomm":     get_latest_file(INPUT_DIR, "cm"),    # e.g. cm05226.sas7bdat
+    "loan_dir":   get_latest_file(INPUT_DIR, "ln"),    # e.g. ln05126.sas7bdat
     "output_dir": OUTPUT_DIR / "PBB",
 }
 
 PIBB_CONFIG: Dict[str, Path] = {
-    "loan_dir":   get_latest_file(INPUT_DIR, "iln"),  # e.g. iln05126.sas7bdat
+    "lnnote":     get_latest_file(INPUT_DIR, "int"),   # e.g. int05226.sas7bdat
+    "lncomm":     get_latest_file(INPUT_DIR, "icm"),   # e.g. icm05226.sas7bdat
+    "loan_dir":   get_latest_file(INPUT_DIR, "iln"),   # e.g. iln05126.sas7bdat
     "output_dir": OUTPUT_DIR / "PIBB",
 }
 
@@ -82,12 +79,11 @@ BANKFMT = {33: 'PBB', 134: 'PFB'}
 #    CALL SYMPUT('REPTMON', ...) CALL SYMPUT('REPTYEAR', ...)
 # RUN;
 #
-# This program no longer reads its own REPTDATE source. It follows the exact
-# same biweekly schedule/derivation as EIBXODLC.py (it runs immediately after
-# it), so REPTMON / NOWK are obtained from REPTDATE.get_reptdate_values().
-# RDATE (DDMMYY8.) and REPTYEAR are not consumed anywhere downstream in this
-# program (only REPTMON/NOWK feed the dataset/file naming), so they are not
-# carried forward.
+# This program does not read its own REPTDATE source. It follows the same
+# biweekly schedule/derivation as EIBXODLC.py (runs immediately after it), so
+# REPTMON / NOWK are obtained from REPTDATE.get_reptdate_values(). RDATE
+# (DDMMYY8.) and REPTYEAR are not consumed downstream in this program (only
+# REPTMON feeds output file naming), so they are not carried forward.
 
 
 def _read_sas7bdat(path: Path) -> pl.DataFrame:
@@ -97,31 +93,13 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     return pl.from_pandas(pdf)
 
 
-def _split_lnnote_by_entity(lnnote_df: pl.DataFrame) -> Tuple[pl.DataFrame, pl.DataFrame]:
+def _read_lnnote(lnnote_path: Path) -> pl.DataFrame:
     """
-    Split the shared LNNOTE source into PBB / PIBB subsets.
-    ENTITY_CD = 'PIBB' -> PIBB data; ENTITY_CD != 'PIBB' -> PBB data.
+    PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
+       OUT=LNNOTE; BY ACCTNO NOTENO;
     """
-    entity = pl.col("ENTITY_CD").cast(pl.Utf8)
-    pibb_df = lnnote_df.filter(entity == "PIBB")
-    pbb_df  = lnnote_df.filter(entity != "PIBB")
-    return pbb_df, pibb_df
-
-
-def _derive_lnnote_and_lncomm(
-    entity_lnnote_df: pl.DataFrame,
-) -> Tuple[pl.DataFrame, pl.DataFrame]:
-    """
-    From the combined LNNOTE source (for one entity), reconstruct the two
-    original SAS datasets it represented:
-      - LNNOTE dataset : KEEP=ACCTNO NOTENO BANKNO STATE  (BY ACCTNO NOTENO)
-      - LNCOMM dataset : ACCTNO COMMNO CCOLLTRL            (BY ACCTNO COMMNO)
-    """
-    # PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
-    #    OUT=LNNOTE; BY ACCTNO NOTENO;
-    lnnote_df = (
-        entity_lnnote_df
-        .filter(pl.col("NOTENO").is_not_null())
+    return (
+        _read_sas7bdat(lnnote_path)
         .select(["ACCTNO", "NOTENO", "BANKNO", "STATE"])
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
@@ -130,10 +108,13 @@ def _derive_lnnote_and_lncomm(
         .sort(["ACCTNO", "NOTENO"])
     )
 
-    # PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO;
-    lncomm_df = (
-        entity_lnnote_df
-        .filter(pl.col("COMMNO").is_not_null())
+
+def _read_lncomm(lncomm_path: Path) -> pl.DataFrame:
+    """
+    PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO;
+    """
+    return (
+        _read_sas7bdat(lncomm_path)
         .select(["ACCTNO", "COMMNO", "CCOLLTRL"])
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
@@ -142,32 +123,15 @@ def _derive_lnnote_and_lncomm(
         .sort(["ACCTNO", "COMMNO"])
     )
 
-    return lnnote_df, lncomm_df
 
-
-# =============================================================================
-# CORE PROCESSING
-# =============================================================================
-def process_bank(
-    bank_name: str,
-    entity_lnnote_df: pl.DataFrame,
-    loan_path: Path,
-    output_dir: Path,
-    reptmon: str,
-) -> None:
+def _read_loan(loan_path: Path) -> pl.DataFrame:
     """
-    Process loan-list preparation for a single bank entity (PBB or PIBB).
+    PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO;
+    Original LOAN columns 'SECTOR' / 'CUSTCODE' renamed to 'SECTORCD' / 'CUSTCD'.
     """
-    if not loan_path.exists():
-        raise FileNotFoundError(f"[{bank_name}] Missing loan file: {loan_path}")
-
-    lnnote_df, lncomm_df = _derive_lnnote_and_lncomm(entity_lnnote_df)
-
-    # ------------------------------------------------------------------
-    # PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO
-    # ------------------------------------------------------------------
-    loan_df = (
+    return (
         _read_sas7bdat(loan_path)
+        .rename({"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD"})
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
             pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
@@ -176,6 +140,34 @@ def process_bank(
         ])
         .sort(["ACCTNO", "NOTENO"])
     )
+
+
+# =============================================================================
+# CORE PROCESSING
+# =============================================================================
+def process_bank(
+    bank_name: str,
+    config: Dict[str, Path],
+    reptmon: str,
+) -> None:
+    """
+    Process loan-list preparation for a single bank entity (PBB or PIBB).
+    """
+    lnnote_path = config["lnnote"]
+    lncomm_path = config["lncomm"]
+    loan_path   = config["loan_dir"]
+    output_dir  = config["output_dir"]
+
+    if not lnnote_path.exists():
+        raise FileNotFoundError(f"[{bank_name}] Missing LNNOTE file: {lnnote_path}")
+    if not lncomm_path.exists():
+        raise FileNotFoundError(f"[{bank_name}] Missing LNCOMM file: {lncomm_path}")
+    if not loan_path.exists():
+        raise FileNotFoundError(f"[{bank_name}] Missing LOAN file  : {loan_path}")
+
+    lnnote_df = _read_lnnote(lnnote_path)
+    lncomm_df = _read_lncomm(lncomm_path)
+    loan_df   = _read_loan(loan_path)
 
     # ------------------------------------------------------------------
     # DATA LNOTE: MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO
@@ -228,7 +220,7 @@ def process_bank(
     sector = pl.col("SECTORCD").cast(pl.Utf8)
     note2_df = note1_df.filter(
         (~pl.col("CUSTCD").cast(pl.Utf8).is_in(["77", "78", "95", "96"]))
-        & (sector.str.slice(0, 1) == "5") | (sector == "8310")
+        & ((sector.str.slice(0, 1) == "5") | (sector == "8310"))
     )
 
     # PROC DATASETS LIB=WORK NOLIST; DELETE LNOTE LNCOMM (implicit - not needed in Python)
@@ -253,9 +245,9 @@ def process_bank(
     # Terminal summary
     # ------------------------------------------------------------------
     print(f"\n[{bank_name}] REPTMON={reptmon}")
-    print(f"[{bank_name}] LOAN rows     : {len(loan_df):,}")
-    print(f"[{bank_name}] NOTE1 rows    : {len(note1_sorted):,}")
-    print(f"[{bank_name}] NOTE2 rows    : {len(note2_sorted):,}")
+    print(f"[{bank_name}] LOAN rows  : {len(loan_df):,}")
+    print(f"[{bank_name}] NOTE1 rows : {len(note1_sorted):,}")
+    print(f"[{bank_name}] NOTE2 rows : {len(note2_sorted):,}")
     print(f"[{bank_name}] Output -> {note1_out}")
     print(f"[{bank_name}] Output -> {note2_out}")
     print(note1_sorted.head())
@@ -272,16 +264,13 @@ def main() -> None:
 
     print(f"Report Date : {rv.reptdate}  (REPTMON={reptmon}, NOWK={nowk})")
 
-    lnnote_all_df = _read_sas7bdat(LNNOTE_PATH)
-    pbb_lnnote_df, pibb_lnnote_df = _split_lnnote_by_entity(lnnote_all_df)
-
     # PBB
-    process_bank("PBB", pbb_lnnote_df, PBB_CONFIG["loan_dir"], PBB_CONFIG["output_dir"], reptmon)
+    process_bank("PBB", PBB_CONFIG, reptmon)
 
     # ******************************************************
     # FOR PIBB
     # ******************************************************
-    process_bank("PIBB", pibb_lnnote_df, PIBB_CONFIG["loan_dir"], PIBB_CONFIG["output_dir"], reptmon)
+    process_bank("PIBB", PIBB_CONFIG, reptmon)
 
 
 if __name__ == "__main__":
