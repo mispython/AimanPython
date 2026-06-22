@@ -1,17 +1,18 @@
-from pathlib import Path
 import pandas as pd
+from pathlib import Path
 
-path = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBXODLC/ln06226.sas7bdat")
-cache_dir = path.parent / "parquet_cache" / path.stem
-parquet_files = list(cache_dir.glob("*.parquet"))
+files = {
+    "LNNOTE_PBB" : Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBXLNLC/lnnote_pbb.sas7bdat"),
+    "LNCOMM"     : Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBXLNLC/enrh_ln_comm.sas7bdat"),
+    "LOAN_PBB"   : Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBXODLC/ln06226.sas7bdat"),
+}
 
-print(f"Cache dir   : {cache_dir}")
-print(f"Cache exists: {cache_dir.exists()}")
-print(f"Parquet files: {len(parquet_files)}")
-if parquet_files:
-    newest_cache = max(f.stat().st_mtime for f in parquet_files)
-    sas_mtime    = path.stat().st_mtime
-    print(f"Cache mtime : {newest_cache}")
-    print(f"SAS mtime   : {sas_mtime}")
-    print(f"Cache valid : {newest_cache >= sas_mtime}")
-print(f"SAS file size: {path.stat().st_size / 1e9:.2f} GB")
+for name, path in files.items():
+    reader = pd.read_sas(str(path), encoding="latin1", chunksize=1)
+    chunk  = next(iter(reader))
+    cols   = sorted([c.upper() for c in chunk.columns.tolist()])
+    print(f"\n{'='*60}")
+    print(f"  {name}  ({len(cols)} columns)")
+    print(f"{'='*60}")
+    for c in cols:
+        print(f"  {c}")
