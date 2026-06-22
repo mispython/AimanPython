@@ -1,3 +1,15 @@
+lnnote_df = _read_lnnote(lnnote_path, row_limit=row_limit)
+
+# keep lncomm shared OR local
+local_lncomm = False
+if lncomm_df is None:
+    lncomm_df = _read_lncomm(lncomm_path, row_limit=row_limit)
+    local_lncomm = True
+
+loan_df = _read_loan(loan_path, row_limit=row_limit)
+
+===================
+
 def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     """
     Read a dataset with automatic Parquet caching.
