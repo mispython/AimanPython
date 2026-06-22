@@ -1,4 +1,25 @@
 Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 485, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 478, in main
+    process_bank("PBB", PBB_CONFIG, reptmon, lncomm_df=shared_lncomm_df, row_limit=row_limit)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 339, in process_bank
+    lnote_small = loan_df.join(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ColumnNotFoundError: unable to find column "COMMNO"; valid columns: ["ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "STATE"]
+
+===========
+
+Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 569, in <module>
     main()
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 562, in main
