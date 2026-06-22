@@ -11,6 +11,36 @@ loan_df = loan_df.select([
     "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
 ])
 
+
+prefix = "LNLC" if bank_name == "PBB" else "LNLCI"
+
+note1_tmp = output_dir / f"{prefix}_NOTE1_{reptmon}_tmp.parquet"
+note2_tmp = output_dir / f"{prefix}_NOTE2_{reptmon}_tmp.parquet"
+
+# STEP 1: write UNSORTED (low memory)
+note1_df.write_parquet(note1_tmp)
+note2_df.write_parquet(note2_tmp)
+
+# STEP 2: lazy sort (disk-based, not RAM-heavy)
+note1_sorted = (
+    pl.scan_parquet(note1_tmp)
+    .sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
+    .collect()
+)
+
+note2_sorted = (
+    pl.scan_parquet(note2_tmp)
+    .sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
+    .collect()
+)
+
+# STEP 3: final output
+note1_out = output_dir / f"{prefix}_NOTE1_{reptmon}.parquet"
+note2_out = output_dir / f"{prefix}_NOTE2_{reptmon}.parquet"
+
+note1_sorted.write_parquet(note1_out)
+note2_sorted.write_parquet(note2_out)
+
 ==================
 
 Traceback (most recent call last):
