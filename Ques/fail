@@ -1,8 +1,5 @@
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 497, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 490, in main
-    process_bank("PBB", PBB_CONFIG, reptmon, lncomm_df=shared_lncomm_df, row_limit=row_limit)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 390, in process_bank
-    print(f"[{bank_name}] NOTE1 rows : {len(note1_sorted):,}")
-UnboundLocalError: local variable 'note1_sorted' referenced before assignment
+if note1_sorted is None or note2_sorted is None:
+    raise RuntimeError(f"[{bank_name}] NOTE1/NOTE2 sorting failed before completion")
+
+print(f"[{bank_name}] NOTE1 rows : {len(note1_sorted):,}")
+print(f"[{bank_name}] NOTE2 rows : {len(note2_sorted):,}")
