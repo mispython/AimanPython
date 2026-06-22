@@ -1,3 +1,12 @@
+loan_df = _read_loan(loan_path, row_limit=row_limit)
+
+if loan_df is None or loan_df.is_empty():
+    raise RuntimeError(f"[{bank_name}] LOAN dataset failed to load or is empty")
+
+print(f"[DEBUG] LOAN loaded: {len(loan_df):,} rows, cols={loan_df.columns}")
+
+======================
+
 df = _read_sas7bdat(loan_path, row_limit=row_limit)
 
 rename_map = {
