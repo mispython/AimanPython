@@ -1,3 +1,22 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 455, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 448, in main
+    process_bank("PBB", PBB_CONFIG, reptmon, lncomm_df=shared_lncomm_df, row_limit=row_limit)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 292, in process_bank
+    lnnote_df = lnnote_df.select([
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10148, in select
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ColumnNotFoundError: unable to find column "COMMNO"; valid columns: ["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH"]
+
+===================
+
 lnnote_df = lnnote_df.select([
     "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
 ])
