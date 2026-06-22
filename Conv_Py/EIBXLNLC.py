@@ -18,6 +18,7 @@ from typing import Dict, Optional
 import os
 import pandas as pd
 import polars as pl
+import gc
 
 from REPTDATE import get_reptdate_values
 from input_date import get_latest_file
@@ -91,7 +92,7 @@ def _get_row_limit() -> Optional[int]:
 
     e.g.     value = os.environ.get("EIBXLNLC_ROW_LIMIT", "1000").strip()   -> For 1000 dataset rows testing
     """
-    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "1000").strip()
+    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "").strip()
     if not value:
         return None
 
@@ -104,64 +105,158 @@ def _get_row_limit() -> Optional[int]:
 
 
 def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-    """Read a .sas7bdat file via pandas and convert to Polars with uppercased columns."""
+    """
+    SAS → Parquet caching reader (biweekly-safe, memory-safe).
+
+    - Converts SAS in chunks if needed
+    - Stores Parquet in cache folder
+    - Reuses Parquet if SAS not updated
+    """
+
+    # ------------------------------------------------------------------
+    # Cache folder (keeps things clean)
+    # ------------------------------------------------------------------
+    cache_dir = path.parent / "parquet_cache_v2" / path.stem
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    parquet_files = list(cache_dir.glob("*.parquet"))
+
+    # ------------------------------------------------------------------
+    # Check if cache is valid (IMPORTANT: biweekly-safe logic)
+    # ------------------------------------------------------------------
+    cache_valid = (
+        len(parquet_files) > 0
+        and max(f.stat().st_mtime for f in parquet_files)
+            >= path.stat().st_mtime
+    )
+
+    # ------------------------------------------------------------------
+    # CASE 1: USE CACHE (FAST PATH)
+    # ------------------------------------------------------------------
+    if cache_valid and row_limit is None:
+        print(f"[CACHE HIT] Reading Parquet: {path.stem}")
+        # return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
+        return pl.scan_parquet(str(cache_dir / "*.parquet"))
+
+    # ------------------------------------------------------------------
+    # CASE 2: TEST MODE (LIMIT ROWS)
+    # ------------------------------------------------------------------
     if row_limit:
-        reader = pd.read_sas(str(path), encoding="latin1", chunksize=row_limit)
+        print(f"[TEST MODE] Reading SAS: {path.name}")
+
+        reader = pd.read_sas(
+            str(path),
+            encoding="latin1",
+            chunksize=row_limit
+        )
+
         try:
             pdf = next(reader)
         except StopIteration:
             pdf = pd.DataFrame()
-    else:
-        pdf = pd.read_sas(str(path), encoding="latin1")
 
-    pdf.columns = [c.upper() for c in pdf.columns]
-    return pl.from_pandas(pdf)
+        pdf.columns = [c.upper() for c in pdf.columns]
+        return pl.from_pandas(pdf)
+
+    # ------------------------------------------------------------------
+    # CASE 3: FULL CONVERSION (SAS → PARQUET PARTITIONED)
+    # ------------------------------------------------------------------
+    print(f"\n[CONVERT] SAS → Parquet (chunked): {path.name}")
+
+    reader = pd.read_sas(
+        str(path),
+        encoding="latin1",
+        chunksize=500_000  # safe for 7GB file
+    )
+
+    print(f"[CONVERT] Starting chunked read for: {path.name}")
+
+    for i, chunk in enumerate(reader):
+        if chunk is None or chunk.empty:
+            continue
+
+        print(f"[CHUNK {i}] Reading chunk {i} ...")
+
+        chunk.columns = [c.upper() for c in chunk.columns]
+
+        df = pl.from_pandas(chunk)
+
+        # Force consistent schema across all chunks
+        df = df.with_columns([
+            pl.col(c).cast(pl.Utf8, strict=False)
+            for c in df.columns
+        ])
+
+        out_file = cache_dir / f"part-{i:05d}.parquet"
+        df.write_parquet(out_file, compression="zstd")
+
+        print(f"[WRITE] {out_file} ({len(df):,} rows)")
+
+    print(f"[DONE] Cache created at: {cache_dir}")
+
+    # ------------------------------------------------------------------
+    # FINAL READ (as one logical dataset)
+    # ------------------------------------------------------------------
+    return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
 
 
 def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-    """
-    PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
-       OUT=LNNOTE; BY ACCTNO NOTENO;
-    """
+    raw = _read_sas7bdat(lnnote_path, row_limit=row_limit)
+    expr = (
+        raw
+        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
+        .drop_nulls(["ACCTNO", "NOTENO", "COMMNO"])
+    )
+    # collect after filter — much less RAM
+    df = expr.collect() if isinstance(expr, pl.LazyFrame) else expr
     return (
-        _read_sas7bdat(lnnote_path, row_limit=row_limit)
-        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH"])
+        df
+        .unique(subset=["ACCTNO", "NOTENO", "COMMNO"])
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
             pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
-        ])
-    )
-
-
-def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-    """
-    PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO;
-    """
-    return (
-        _read_sas7bdat(lncomm_path, row_limit=row_limit)
-        .select(["ACCTNO", "COMMNO", "CCOLLTRL"])
-        .with_columns([
-            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
             pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
         ])
     )
 
 
+def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    raw = _read_sas7bdat(lncomm_path, row_limit=row_limit)
+    expr = raw.select(["ACCTNO", "COMMNO", "CCOLLTRL"])
+    df = expr.collect() if isinstance(expr, pl.LazyFrame) else expr
+    return df.with_columns([
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
+    ])
+
+
 def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-    """
-    PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO;
-    Original LOAN columns 'SECTOR' / 'CUSTCODE' renamed to 'SECTORCD' / 'CUSTCD'.
-    """
-    return (
-        _read_sas7bdat(loan_path, row_limit=row_limit)
-        .rename({"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD"})
-        .with_columns([
-            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
-            pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
-            pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
-            pl.col("SECTORCD").cast(pl.Utf8),
+    raw = _read_sas7bdat(loan_path, row_limit=row_limit)
+    rename_map = {"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD", "STATECD": "STATE"}
+
+    if isinstance(raw, pl.LazyFrame):
+        # only rename columns that actually exist
+        existing = raw.collect_schema().names()
+        actual_rename = {k: v for k, v in rename_map.items() if k in existing}
+        expr = raw.rename(actual_rename).select([
+            "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
+            "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "COMMNO"
         ])
-    )
+        df = expr.collect()
+    else:
+        actual_rename = {k: v for k, v in rename_map.items() if k in raw.columns}
+        df = raw.rename(actual_rename).select([
+            "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
+            "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "COMMNO"
+        ])
+
+    return df.with_columns([
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
+        pl.col("SECTORCD").cast(pl.Utf8),
+        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
+    ])
 
 
 # =============================================================================
@@ -194,13 +289,67 @@ def process_bank(
         lncomm_df = _read_lncomm(lncomm_path, row_limit=row_limit)
     loan_df   = _read_loan(loan_path, row_limit=row_limit)
 
+    loan_df = loan_df.filter(
+        (~pl.col("CUSTCD").is_in(["77","78","95","96"]))
+    )
+
+    # ------------------------------
+    # Fix JOIN Memory
+    # ------------------------------
+    lnnote_df = lnnote_df.select([
+        # "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
+        "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
+    ])
+
+    lncomm_df = lncomm_df.select([
+        "ACCTNO", "COMMNO", "CCOLLTRL"
+    ])
+
+    # loan_df = loan_df.select([
+    #     "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
+    #     "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
+    # ])
+
+    loan_df = loan_df.select([
+        "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
+        "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "COMMNO"
+    ]).with_columns([
+        pl.col("ACCTNO").cast(pl.Int64),
+        pl.col("NOTENO").cast(pl.Int64),
+        pl.col("CUSTCD").cast(pl.Utf8),
+        pl.col("SECTORCD").cast(pl.Utf8),
+    ])
+
+    # PRE-FILTER EARLY (VERY IMPORTANT)
+    loan_df = loan_df.filter(
+        pl.col("CUSTCD").cast(pl.Utf8).is_in(["77","78","95","96"]).not_()
+    )
+
     # ------------------------------------------------------------------
     # DATA LNOTE: MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO
     # IF ACCTYPE = 'LN'
     # KEEP: BANKNO BRANCH ACCTNO NOTENO NAME BALANCE SECTORCD CUSTCD
     #       INTRATE NTBRCH COMMNO LIABCODE APPRLIMT FISSPURP STATE
     # ------------------------------------------------------------------
-    lnote_df = loan_df.join(lnnote_df, on=["ACCTNO", "NOTENO"], how="left", suffix="_NOTE")
+    # lnote_df = loan_df.join(lnnote_df, on=["ACCTNO", "NOTENO"], how="left", suffix="_NOTE")
+
+    # STEP 1: shrink LNCOMM first
+    lncomm_df = lncomm_df.unique(subset=["ACCTNO", "COMMNO"])
+
+    # STEP 2: JOIN smallest table first
+    lnote_small = loan_df.join(
+        lncomm_df,
+        on=["ACCTNO", "COMMNO"],
+        how="left"
+    )
+
+    # STEP 3: join LNNOTE LAST (big table joins last)
+    lnote_df = lnote_small.join(
+        lnnote_df,
+        on=["ACCTNO", "NOTENO"],
+        how="left"
+    )
+
     # lnote_df = lnote_df.filter(pl.col("ACCTYPE") == "LN")
 
     keep_lnote = [
@@ -249,6 +398,12 @@ def process_bank(
         & ((sector.str.slice(0, 1) == "5") | (sector == "8310"))
     )
 
+    del loan_df
+    del lnnote_df
+    del lncomm_df
+    del lnote_df
+    gc.collect()
+
     # PROC DATASETS LIB=WORK NOLIST; DELETE LNOTE LNCOMM (implicit - not needed in Python)
 
     # ------------------------------------------------------------------
@@ -257,10 +412,29 @@ def process_bank(
     # ------------------------------------------------------------------
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    note1_sorted = note1_df.sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
-    note2_sorted = note2_df.sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
-
     prefix = "LNLC" if bank_name == "PBB" else "LNLCI"
+
+    note1_tmp = output_dir / f"{prefix}_NOTE1_{reptmon}_tmp.parquet"
+    note2_tmp = output_dir / f"{prefix}_NOTE2_{reptmon}_tmp.parquet"
+
+    # STEP 1: write UNSORTED (low memory)
+    note1_df.write_parquet(note1_tmp)
+    note2_df.write_parquet(note2_tmp)
+
+    # STEP 2: lazy sort (disk-based, not RAM-heavy)
+    note1_sorted = (
+        pl.scan_parquet(note1_tmp)
+        .sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
+        .collect()
+    )
+
+    note2_sorted = (
+        pl.scan_parquet(note2_tmp)
+        .sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
+        .collect()
+    )
+
+    # STEP 3: final output
     note1_out = output_dir / f"{prefix}_NOTE1_{reptmon}.parquet"
     note2_out = output_dir / f"{prefix}_NOTE2_{reptmon}.parquet"
 
@@ -271,7 +445,7 @@ def process_bank(
     # Terminal summary
     # ------------------------------------------------------------------
     print(f"\n[{bank_name}] REPTMON={reptmon}")
-    print(f"[{bank_name}] LOAN rows  : {len(loan_df):,}")
+    # print(f"[{bank_name}] LOAN rows  : {len(loan_df):,}")
     print(f"[{bank_name}] NOTE1 rows : {len(note1_sorted):,}")
     print(f"[{bank_name}] NOTE2 rows : {len(note2_sorted):,}")
     print(f"[{bank_name}] Output -> {note1_out}")
