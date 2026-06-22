@@ -1,3 +1,28 @@
+# ---------------------------
+# PRINT FIRST (before delete)
+# ---------------------------
+print(f"\n[{bank_name}] REPTMON={reptmon}")
+print(f"[{bank_name}] LOAN rows  : {len(loan_df):,}")
+print(f"[{bank_name}] NOTE1 rows : {len(note1_sorted):,}")
+print(f"[{bank_name}] NOTE2 rows : {len(note2_sorted):,}")
+
+print(f"[{bank_name}] Output -> {note1_out}")
+print(f"[{bank_name}] Output -> {note2_out}")
+
+print(note1_sorted.head())
+print(note2_sorted.head())
+
+# ---------------------------
+# THEN CLEAN MEMORY
+# ---------------------------
+del loan_df
+del lnnote_df
+del lncomm_df
+del lnote_df
+gc.collect()
+
+===========
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py
 [FILE_RESOLVER] Selected latest: ln06226.sas7bdat
 [FILE_RESOLVER] Selected latest: iln06226.sas7bdat
