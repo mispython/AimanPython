@@ -12,6 +12,37 @@ def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataF
         ])
     )
 
+
+def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    """
+    PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO;
+    """
+    return (
+        _read_sas7bdat(lncomm_path, row_limit=row_limit)
+        .select(["ACCTNO", "COMMNO", "CCOLLTRL"])
+        .with_columns([
+            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+            pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
+        ])
+    )
+
+
+def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    """
+    PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO;
+    Original LOAN columns 'SECTOR' / 'CUSTCODE' renamed to 'SECTORCD' / 'CUSTCD'.
+    """
+    return (
+        _read_sas7bdat(loan_path, row_limit=row_limit)
+        .rename({"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD", "STATECD":"STATE"})
+        .with_columns([
+            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+            pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+            pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
+            pl.col("SECTORCD").cast(pl.Utf8),
+        ])
+    )
+
 ====================
 
 Traceback (most recent call last):
