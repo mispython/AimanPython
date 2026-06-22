@@ -1,20 +1,16 @@
-    # ------------------------------
-    # Fix JOIN Memory
-    # ------------------------------
-    lnnote_df = lnnote_df.select([
-        # "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
-        "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH",
-        "INTRATE", "BALANCE", "SECTOR", "CUSTCD"
-    ])
-
-    lncomm_df = lncomm_df.select([
-        "ACCTNO", "COMMNO", "CCOLLTRL"
-    ])
-
-    loan_df = loan_df.select([
-        "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
-        "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
-    ])
+def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    """
+    PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
+       OUT=LNNOTE; BY ACCTNO NOTENO;
+    """
+    return (
+        _read_sas7bdat(lnnote_path, row_limit=row_limit)
+        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
+        .with_columns([
+            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+            pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+        ])
+    )
 
 ====================
 
