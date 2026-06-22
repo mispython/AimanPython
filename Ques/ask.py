@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, Optional
+from tqdm import tqdm
 
 import os
 import pandas as pd
@@ -88,8 +89,10 @@ def _get_row_limit() -> Optional[int]:
 
     Set EIBXLNLC_ROW_LIMIT to a positive integer to read only that many rows
     from each SAS input. Leave it unset or set it to 0 for full production runs.
+
+    e.g.     value = os.environ.get("EIBXLNLC_ROW_LIMIT", "1000").strip()   -> For 1000 dataset rows testing
     """
-    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "100").strip()
+    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "").strip()
     if not value:
         return None
 
@@ -101,19 +104,110 @@ def _get_row_limit() -> Optional[int]:
     return row_limit if row_limit > 0 else None
 
 
+# def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+#     """Read a .sas7bdat file via pandas and convert to Polars with uppercased columns."""
+#     if row_limit:
+#         reader = pd.read_sas(str(path), encoding="latin1", chunksize=row_limit)
+#         try:
+#             pdf = next(reader)
+#         except StopIteration:
+#             pdf = pd.DataFrame()
+#     else:
+#         pdf = pd.read_sas(str(path), encoding="latin1")
+
+#     pdf.columns = [c.upper() for c in pdf.columns]
+#     return pl.from_pandas(pdf)
+
+
 def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-    """Read a .sas7bdat file via pandas and convert to Polars with uppercased columns."""
+    """
+    SAS → Parquet caching reader (biweekly-safe, memory-safe).
+
+    - Converts SAS in chunks if needed
+    - Stores Parquet in cache folder
+    - Reuses Parquet if SAS not updated
+    """
+
+    # ------------------------------------------------------------------
+    # Cache folder (keeps things clean)
+    # ------------------------------------------------------------------
+    cache_dir = path.parent / "parquet_cache" / path.stem
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    parquet_files = list(cache_dir.glob("*.parquet"))
+
+    # ------------------------------------------------------------------
+    # Check if cache is valid (IMPORTANT: biweekly-safe logic)
+    # ------------------------------------------------------------------
+    cache_valid = (
+        len(parquet_files) > 0
+        and max(f.stat().st_mtime for f in parquet_files)
+            >= path.stat().st_mtime
+    )
+
+    # ------------------------------------------------------------------
+    # CASE 1: USE CACHE (FAST PATH)
+    # ------------------------------------------------------------------
+    if cache_valid and row_limit is None:
+        print(f"[CACHE HIT] Reading Parquet: {path.stem}")
+        return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
+
+    # ------------------------------------------------------------------
+    # CASE 2: TEST MODE (LIMIT ROWS)
+    # ------------------------------------------------------------------
     if row_limit:
-        reader = pd.read_sas(str(path), encoding="latin1", chunksize=row_limit)
+        print(f"[TEST MODE] Reading SAS: {path.name}")
+
+        reader = pd.read_sas(
+            str(path),
+            encoding="latin1",
+            chunksize=row_limit
+        )
+
         try:
             pdf = next(reader)
         except StopIteration:
             pdf = pd.DataFrame()
-    else:
-        pdf = pd.read_sas(str(path), encoding="latin1")
 
-    pdf.columns = [c.upper() for c in pdf.columns]
-    return pl.from_pandas(pdf)
+        pdf.columns = [c.upper() for c in pdf.columns]
+        return pl.from_pandas(pdf)
+
+    # ------------------------------------------------------------------
+    # CASE 3: FULL CONVERSION (SAS → PARQUET PARTITIONED)
+    # ------------------------------------------------------------------
+    print(f"\n[CONVERT] SAS → Parquet (chunked): {path.name}")
+
+    reader = pd.read_sas(
+        str(path),
+        encoding="latin1",
+        chunksize=500_000  # safe for 7GB file
+    )
+
+    for i, chunk in enumerate(reader):
+        if chunk is None or chunk.empty:
+            continue
+
+        chunk.columns = [c.upper() for c in chunk.columns]
+
+        df = pl.from_pandas(chunk)
+
+        # Force consistent schema across all chunks
+        df = df.with_columns([
+            pl.col(c).cast(pl.Utf8, strict=False)
+            for c in df.columns
+        ])
+
+        out_file = cache_dir / f"part-{i:05d}.parquet"
+        df.write_parquet(out_file, compression="zstd")
+
+        print(f"[WRITE] {out_file} ({len(df):,} rows)")
+
+    print(f"[DONE] Cache created at: {cache_dir}")
+
+    # ------------------------------------------------------------------
+    # FINAL READ (as one logical dataset)
+    # ------------------------------------------------------------------
+    return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
 
 
 def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
@@ -123,7 +217,7 @@ def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataF
     """
     return (
         _read_sas7bdat(lnnote_path, row_limit=row_limit)
-        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE"])
+        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH"])
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
             pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
