@@ -1,3 +1,26 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 569, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 562, in main
+    process_bank("PBB", PBB_CONFIG, reptmon, lncomm_df=shared_lncomm_df, row_limit=row_limit)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 360, in process_bank
+    lnnote_df = _read_lnnote(lnnote_path, row_limit=row_limit)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 287, in _read_lnnote
+    df
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.InvalidOperationError: conversion from `str` to `i64` failed in column 'ACCTNO' for 6213812 out of 6213812 values: ["8378887120.0", "8555609634.0", … "8672898905.0"]
+
+Did not show all failed cases as there were too many.
+
+=====================
+
 def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     raw = _read_sas7bdat(lnnote_path, row_limit=row_limit)
     expr = (
