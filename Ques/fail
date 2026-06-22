@@ -1,2 +1,65 @@
-First 100 row(s):
- BANKNO  BRANCH     ACCTNO  NOTENO    APPRLIMT      BALANCE SECTORCD CUSTCD STATE  INTRATE  COMMNO LIABCODE CCOLLTRL FISSPURP
+def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    """
+    Read a dataset with automatic Parquet caching.
+
+    Logic:
+    1. If a Parquet cache exists and is newer than the SAS file,
+       read the Parquet directly.
+    2. Otherwise read the SAS file, create/update the Parquet cache,
+       then return the DataFrame.
+    """
+
+    parquet_path = path.with_suffix(".parquet")
+
+    # ------------------------------------------------------------------
+    # Test mode
+    # ------------------------------------------------------------------
+    if row_limit:
+        print(f"Reading SAS (test mode): {path.name}")
+
+        reader = pd.read_sas(
+            str(path),
+            encoding="latin1",
+            chunksize=row_limit,
+        )
+
+        try:
+            pdf = next(reader)
+        except StopIteration:
+            pdf = pd.DataFrame()
+
+        pdf.columns = [c.upper() for c in pdf.columns]
+
+        return pl.from_pandas(pdf)
+
+    # ------------------------------------------------------------------
+    # Production mode
+    # ------------------------------------------------------------------
+    use_parquet = (
+        parquet_path.exists()
+        and parquet_path.stat().st_mtime >= path.stat().st_mtime
+    )
+
+    if use_parquet:
+        print(f"Reading cached Parquet: {parquet_path.name}")
+        return pl.read_parquet(parquet_path)
+
+    print(f"Converting SAS -> Parquet: {path.name}")
+
+    pdf = pd.read_sas(
+        str(path),
+        encoding="latin1",
+    )
+
+    pdf.columns = [c.upper() for c in pdf.columns]
+
+    df = pl.from_pandas(pdf)
+
+    df.write_parquet(
+        parquet_path,
+        compression="zstd",
+    )
+
+    print(f"Created cache: {parquet_path.name}")
+
+    return df
