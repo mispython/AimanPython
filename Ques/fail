@@ -1,3 +1,62 @@
+def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    raw = _read_sas7bdat(lnnote_path, row_limit=row_limit)
+    expr = (
+        raw
+        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
+        .drop_nulls(["ACCTNO", "NOTENO", "COMMNO"])
+    )
+    # collect after filter — much less RAM
+    df = expr.collect() if isinstance(expr, pl.LazyFrame) else expr
+    return (
+        df
+        .unique(subset=["ACCTNO", "NOTENO", "COMMNO"])
+        .with_columns([
+            pl.col("ACCTNO").cast(pl.Int64),
+            pl.col("NOTENO").cast(pl.Int64),
+            pl.col("COMMNO").cast(pl.Int64),
+        ])
+    )
+
+
+def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    raw = _read_sas7bdat(lncomm_path, row_limit=row_limit)
+    expr = raw.select(["ACCTNO", "COMMNO", "CCOLLTRL"])
+    df = expr.collect() if isinstance(expr, pl.LazyFrame) else expr
+    return df.with_columns([
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
+    ])
+
+
+def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    raw = _read_sas7bdat(loan_path, row_limit=row_limit)
+    rename_map = {"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD", "STATECD": "STATE"}
+
+    if isinstance(raw, pl.LazyFrame):
+        # only rename columns that actually exist
+        existing = raw.collect_schema().names()
+        actual_rename = {k: v for k, v in rename_map.items() if k in existing}
+        expr = raw.rename(actual_rename).select([
+            "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
+            "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
+        ])
+        df = expr.collect()
+    else:
+        actual_rename = {k: v for k, v in rename_map.items() if k in raw.columns}
+        df = raw.rename(actual_rename).select([
+            "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
+            "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
+        ])
+
+    return df.with_columns([
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
+        pl.col("SECTORCD").cast(pl.Utf8),
+    ])
+
+===================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/cobaan.py
 Cache dir   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBXODLC/parquet_cache/ln06226
 Cache exists: True
