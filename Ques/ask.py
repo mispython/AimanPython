@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, Optional
-from tqdm import tqdm
 
 import os
 import pandas as pd
 import polars as pl
+import gc
 
 from REPTDATE import get_reptdate_values
 from input_date import get_latest_file
@@ -92,7 +92,7 @@ def _get_row_limit() -> Optional[int]:
 
     e.g.     value = os.environ.get("EIBXLNLC_ROW_LIMIT", "1000").strip()   -> For 1000 dataset rows testing
     """
-    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "").strip()
+    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "1000").strip()
     if not value:
         return None
 
@@ -131,7 +131,7 @@ def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     # ------------------------------------------------------------------
     # Cache folder (keeps things clean)
     # ------------------------------------------------------------------
-    cache_dir = path.parent / "parquet_cache" / path.stem
+    cache_dir = path.parent / "parquet_cache_v2" / path.stem
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_files = list(cache_dir.glob("*.parquet"))
@@ -217,7 +217,7 @@ def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataF
     """
     return (
         _read_sas7bdat(lnnote_path, row_limit=row_limit)
-        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH"])
+        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
             pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
@@ -246,7 +246,7 @@ def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame
     """
     return (
         _read_sas7bdat(loan_path, row_limit=row_limit)
-        .rename({"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD"})
+        .rename({"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD", "STATECD":"STATE"})
         .with_columns([
             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
             pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
@@ -285,6 +285,22 @@ def process_bank(
     if lncomm_df is None:
         lncomm_df = _read_lncomm(lncomm_path, row_limit=row_limit)
     loan_df   = _read_loan(loan_path, row_limit=row_limit)
+
+    # ------------------------------
+    # Fix JOIN Memory
+    # ------------------------------
+    lnnote_df = lnnote_df.select([
+        "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
+    ])
+
+    lncomm_df = lncomm_df.select([
+        "ACCTNO", "COMMNO", "CCOLLTRL"
+    ])
+
+    loan_df = loan_df.select([
+        "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
+        "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
+    ])
 
     # ------------------------------------------------------------------
     # DATA LNOTE: MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO
@@ -341,6 +357,12 @@ def process_bank(
         & ((sector.str.slice(0, 1) == "5") | (sector == "8310"))
     )
 
+    del loan_df
+    del lnnote_df
+    del lncomm_df
+    del lnote_df
+    gc.collect()
+
     # PROC DATASETS LIB=WORK NOLIST; DELETE LNOTE LNCOMM (implicit - not needed in Python)
 
     # ------------------------------------------------------------------
@@ -349,10 +371,39 @@ def process_bank(
     # ------------------------------------------------------------------
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    note1_sorted = note1_df.sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
-    note2_sorted = note2_df.sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
+    # note1_sorted = note1_df.sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
+    # note2_sorted = note2_df.sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
+
+    # prefix = "LNLC" if bank_name == "PBB" else "LNLCI"
+    # note1_out = output_dir / f"{prefix}_NOTE1_{reptmon}.parquet"
+    # note2_out = output_dir / f"{prefix}_NOTE2_{reptmon}.parquet"
+
+    # note1_sorted.write_parquet(note1_out)
+    # note2_sorted.write_parquet(note2_out)
 
     prefix = "LNLC" if bank_name == "PBB" else "LNLCI"
+
+    note1_tmp = output_dir / f"{prefix}_NOTE1_{reptmon}_tmp.parquet"
+    note2_tmp = output_dir / f"{prefix}_NOTE2_{reptmon}_tmp.parquet"
+
+    # STEP 1: write UNSORTED (low memory)
+    note1_df.write_parquet(note1_tmp)
+    note2_df.write_parquet(note2_tmp)
+
+    # STEP 2: lazy sort (disk-based, not RAM-heavy)
+    note1_sorted = (
+        pl.scan_parquet(note1_tmp)
+        .sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
+        .collect()
+    )
+
+    note2_sorted = (
+        pl.scan_parquet(note2_tmp)
+        .sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
+        .collect()
+    )
+
+    # STEP 3: final output
     note1_out = output_dir / f"{prefix}_NOTE1_{reptmon}.parquet"
     note2_out = output_dir / f"{prefix}_NOTE2_{reptmon}.parquet"
 
