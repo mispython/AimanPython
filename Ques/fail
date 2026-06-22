@@ -1,3 +1,23 @@
+    # ------------------------------
+    # Fix JOIN Memory
+    # ------------------------------
+    lnnote_df = lnnote_df.select([
+        # "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
+        "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH",
+        "INTRATE", "BALANCE", "SECTOR", "CUSTCD"
+    ])
+
+    lncomm_df = lncomm_df.select([
+        "ACCTNO", "COMMNO", "CCOLLTRL"
+    ])
+
+    loan_df = loan_df.select([
+        "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
+        "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
+    ])
+
+====================
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 455, in <module>
     main()
