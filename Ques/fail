@@ -1,38 +1,46 @@
-lnnote_df = _read_lnnote(lnnote_path, row_limit=row_limit)
-
-# keep lncomm shared OR local
-local_lncomm = False
-if lncomm_df is None:
-    lncomm_df = _read_lncomm(lncomm_path, row_limit=row_limit)
-    local_lncomm = True
-
-loan_df = _read_loan(loan_path, row_limit=row_limit)
-
-===================
-
 def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     """
-    Read a dataset with automatic Parquet caching.
+    SAS → Parquet caching reader (biweekly-safe, memory-safe).
 
-    Logic:
-    1. If a Parquet cache exists and is newer than the SAS file,
-       read the Parquet directly.
-    2. Otherwise read the SAS file, create/update the Parquet cache,
-       then return the DataFrame.
+    - Converts SAS in chunks if needed
+    - Stores Parquet in cache folder
+    - Reuses Parquet if SAS not updated
     """
 
-    parquet_path = path.with_suffix(".parquet")
+    # ------------------------------------------------------------------
+    # Cache folder (keeps things clean)
+    # ------------------------------------------------------------------
+    cache_dir = path.parent / "parquet_cache" / path.stem
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    parquet_files = list(cache_dir.glob("*.parquet"))
 
     # ------------------------------------------------------------------
-    # Test mode
+    # Check if cache is valid (IMPORTANT: biweekly-safe logic)
+    # ------------------------------------------------------------------
+    cache_valid = (
+        len(parquet_files) > 0
+        and max(f.stat().st_mtime for f in parquet_files)
+            >= path.stat().st_mtime
+    )
+
+    # ------------------------------------------------------------------
+    # CASE 1: USE CACHE (FAST PATH)
+    # ------------------------------------------------------------------
+    if cache_valid and row_limit is None:
+        print(f"[CACHE HIT] Reading Parquet: {path.stem}")
+        return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
+
+    # ------------------------------------------------------------------
+    # CASE 2: TEST MODE (LIMIT ROWS)
     # ------------------------------------------------------------------
     if row_limit:
-        print(f"Reading SAS (test mode): {path.name}")
+        print(f"[TEST MODE] Reading SAS: {path.name}")
 
         reader = pd.read_sas(
             str(path),
             encoding="latin1",
-            chunksize=row_limit,
+            chunksize=row_limit
         )
 
         try:
@@ -41,37 +49,35 @@ def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
             pdf = pd.DataFrame()
 
         pdf.columns = [c.upper() for c in pdf.columns]
-
         return pl.from_pandas(pdf)
 
     # ------------------------------------------------------------------
-    # Production mode
+    # CASE 3: FULL CONVERSION (SAS → PARQUET PARTITIONED)
     # ------------------------------------------------------------------
-    use_parquet = (
-        parquet_path.exists()
-        and parquet_path.stat().st_mtime >= path.stat().st_mtime
-    )
+    print(f"[CONVERT] SAS → Parquet (chunked): {path.name}")
 
-    if use_parquet:
-        print(f"Reading cached Parquet: {parquet_path.name}")
-        return pl.read_parquet(parquet_path)
-
-    print(f"Converting SAS -> Parquet: {path.name}")
-
-    pdf = pd.read_sas(
+    reader = pd.read_sas(
         str(path),
         encoding="latin1",
+        chunksize=500_000  # safe for 7GB file
     )
 
-    pdf.columns = [c.upper() for c in pdf.columns]
+    for i, chunk in enumerate(reader):
+        if chunk is None or chunk.empty:
+            continue
 
-    df = pl.from_pandas(pdf)
+        chunk.columns = [c.upper() for c in chunk.columns]
 
-    df.write_parquet(
-        parquet_path,
-        compression="zstd",
-    )
+        df = pl.from_pandas(chunk)
 
-    print(f"Created cache: {parquet_path.name}")
+        out_file = cache_dir / f"part-{i:05d}.parquet"
+        df.write_parquet(out_file, compression="zstd")
 
-    return df
+        print(f"[WRITE] {out_file} ({len(df):,} rows)")
+
+    print(f"[DONE] Cache created at: {cache_dir}")
+
+    # ------------------------------------------------------------------
+    # FINAL READ (as one logical dataset)
+    # ------------------------------------------------------------------
+    return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
