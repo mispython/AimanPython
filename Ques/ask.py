@@ -352,7 +352,7 @@ def process_bank(
     # STEP 2: JOIN smallest table first
     lnote_small = loan_df.join(
         lncomm_df,
-        on=["ACCTNO"],
+        on=["ACCTNO", "COMMNO"],
         how="left"
     )
 
