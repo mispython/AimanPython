@@ -1,3 +1,13 @@
+df = pl.from_pandas(chunk)
+
+# force consistent schema across all chunks
+df = df.with_columns([
+    pl.col(c).cast(pl.Utf8, strict=False)
+    for c in df.columns
+])
+
+==============
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 398, in <module>
     main()
