@@ -151,6 +151,8 @@ def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     if cache_valid and row_limit is None:
         print(f"[CACHE HIT] Reading Parquet: {path.stem}")
         return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
+    # else:
+    #     print(f"[CACHE MISS] Reading SAS: {path.name}")
 
     # ------------------------------------------------------------------
     # CASE 2: TEST MODE (LIMIT ROWS)
@@ -210,17 +212,31 @@ def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
 
 
+# def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+#     """
+#     PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
+#        OUT=LNNOTE; BY ACCTNO NOTENO;
+#     """
+#     return (
+#         _read_sas7bdat(lnnote_path, row_limit=row_limit)
+#         # .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
+#         .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH"])
+#         .with_columns([
+#             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+#             pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+#         ])
+#     )
+
 def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-    """
-    PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
-       OUT=LNNOTE; BY ACCTNO NOTENO;
-    """
     return (
         _read_sas7bdat(lnnote_path, row_limit=row_limit)
         .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
+        .drop_nulls(["ACCTNO", "NOTENO", "COMMNO"])
+        .unique(subset=["ACCTNO", "NOTENO", "COMMNO"])   # IMPORTANT
         .with_columns([
-            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
-            pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+            pl.col("ACCTNO").cast(pl.Int64),
+            pl.col("NOTENO").cast(pl.Int64),
+            pl.col("COMMNO").cast(pl.Int64),
         ])
     )
 
@@ -286,6 +302,10 @@ def process_bank(
         lncomm_df = _read_lncomm(lncomm_path, row_limit=row_limit)
     loan_df   = _read_loan(loan_path, row_limit=row_limit)
 
+    loan_df = loan_df.filter(
+        (~pl.col("CUSTCD").is_in(["77","78","95","96"]))
+    )
+
     # ------------------------------
     # Fix JOIN Memory
     # ------------------------------
@@ -298,10 +318,25 @@ def process_bank(
         "ACCTNO", "COMMNO", "CCOLLTRL"
     ])
 
+    # loan_df = loan_df.select([
+    #     "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
+    #     "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
+    # ])
+
     loan_df = loan_df.select([
         "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
         "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
+    ]).with_columns([
+        pl.col("ACCTNO").cast(pl.Int64),
+        pl.col("NOTENO").cast(pl.Int64),
+        pl.col("CUSTCD").cast(pl.Utf8),
+        pl.col("SECTORCD").cast(pl.Utf8),
     ])
+
+    # PRE-FILTER EARLY (VERY IMPORTANT)
+    loan_df = loan_df.filter(
+        pl.col("CUSTCD").cast(pl.Utf8).is_in(["77","78","95","96"]).not_()
+    )
 
     # ------------------------------------------------------------------
     # DATA LNOTE: MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO
@@ -309,7 +344,25 @@ def process_bank(
     # KEEP: BANKNO BRANCH ACCTNO NOTENO NAME BALANCE SECTORCD CUSTCD
     #       INTRATE NTBRCH COMMNO LIABCODE APPRLIMT FISSPURP STATE
     # ------------------------------------------------------------------
-    lnote_df = loan_df.join(lnnote_df, on=["ACCTNO", "NOTENO"], how="left", suffix="_NOTE")
+    # lnote_df = loan_df.join(lnnote_df, on=["ACCTNO", "NOTENO"], how="left", suffix="_NOTE")
+
+    # STEP 1: shrink LNCOMM first
+    lncomm_df = lncomm_df.unique(subset=["ACCTNO", "COMMNO"])
+
+    # STEP 2: JOIN smallest table first
+    lnote_small = loan_df.join(
+        lncomm_df,
+        on=["ACCTNO"],
+        how="left"
+    )
+
+    # STEP 3: join LNNOTE LAST (big table joins last)
+    lnote_df = lnote_small.join(
+        lnnote_df,
+        on=["ACCTNO", "NOTENO"],
+        how="left"
+    )
+
     # lnote_df = lnote_df.filter(pl.col("ACCTYPE") == "LN")
 
     keep_lnote = [
