@@ -1,61 +1,25 @@
-def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-    return (
-        _read_sas7bdat(lnnote_path, row_limit=row_limit)
-        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
-        .drop_nulls(["ACCTNO", "NOTENO", "COMMNO"])
-        .unique(subset=["ACCTNO", "NOTENO", "COMMNO"])   # IMPORTANT
-        .with_columns([
-            pl.col("ACCTNO").cast(pl.Int64),
-            pl.col("NOTENO").cast(pl.Int64),
-            pl.col("COMMNO").cast(pl.Int64),
-        ])
-    )
-
--------
-
-loan_df = _read_loan(...)
-
-loan_df = loan_df.select([
-    "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
-    "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
-]).with_columns([
-    pl.col("ACCTNO").cast(pl.Int64),
-    pl.col("NOTENO").cast(pl.Int64),
-    pl.col("CUSTCD").cast(pl.Utf8),
-    pl.col("SECTORCD").cast(pl.Utf8),
-])
-
-# PRE-FILTER EARLY (VERY IMPORTANT)
-loan_df = loan_df.filter(
-    pl.col("CUSTCD").cast(pl.Utf8).is_in(["77","78","95","96"]).not_()
-)
-
--------
-
-# STEP 1: shrink LNCOMM first
-lncomm_df = lncomm_df.unique(subset=["ACCTNO", "COMMNO"])
-
-# STEP 2: JOIN smallest table first
-lnote_small = loan_df.join(lncomm_df, on=["ACCTNO"], how="left")
-
-# STEP 3: join LNNOTE LAST (big table joins last)
-lnote_df = lnote_small.join(
-    lnnote_df,
-    on=["ACCTNO", "NOTENO"],
-    how="left"
-)
-
--------
-
-loan_df = loan_df.filter(
-    (~pl.col("CUSTCD").is_in(["77","78","95","96"]))
-)
-
-=========================
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py
-[FILE_RESOLVER] Selected latest: ln06226.sas7bdat
-[FILE_RESOLVER] Selected latest: iln06226.sas7bdat
-Report Date : 2026-06-21  (REPTMON=06, NOWK=3)
-[CACHE HIT] Reading Parquet: enrh_ln_comm
-[CACHE HIT] Reading Parquet: lnnote_pbb
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/cobaan.py
+Cache dir   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBXODLC/parquet_cache/ln06226
+Cache exists: True
+Parquet files: 5
+Cache mtime : 1782104615.9029999
+SAS mtime   : 1781581208.0
+Cache valid : True
+SAS file size: 2.40 GB
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/cobaan.py
+Cache dir   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBXLNLC/parquet_cache/lnnote_pbb
+Cache exists: True
+Parquet files: 13
+Cache mtime : 1782102515.3510551
+SAS mtime   : 1781842852.2998765
+Cache valid : True
+SAS file size: 7.53 GB
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/cobaan.py
+Cache dir   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBXLNLC/parquet_cache/enrh_ln_comm
+Cache exists: True
+Parquet files: 3
+Cache mtime : 1782100257.5521145
+SAS mtime   : 1781842223.656893
+Cache valid : True
+SAS file size: 0.11 GB
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ 
