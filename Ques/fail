@@ -1,3 +1,19 @@
+df = _read_sas7bdat(loan_path, row_limit=row_limit)
+
+rename_map = {
+    "SECTOR": "SECTORCD",
+    "CUSTCODE": "CUSTCD",
+    "STATECD": "STATE"
+}
+
+existing_renames = {k: v for k, v in rename_map.items() if k in df.columns}
+
+df = df.rename(existing_renames)
+
+print("[DEBUG LOAN COLUMNS]", df.columns)
+
+===========
+
 [PBB] REPTMON=06
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC.py", line 455, in <module>
