@@ -92,7 +92,7 @@ def _get_row_limit() -> Optional[int]:
 
     e.g.     value = os.environ.get("EIBXLNLC_ROW_LIMIT", "1000").strip()   -> For 1000 dataset rows testing
     """
-    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "1000").strip()
+    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "").strip()
     if not value:
         return None
 
@@ -131,7 +131,7 @@ def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     # ------------------------------------------------------------------
     # Cache folder (keeps things clean)
     # ------------------------------------------------------------------
-    cache_dir = path.parent / "parquet_cache_v2" / path.stem
+    cache_dir = path.parent / "parquet_cache" / path.stem
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_files = list(cache_dir.glob("*.parquet"))
@@ -290,7 +290,8 @@ def process_bank(
     # Fix JOIN Memory
     # ------------------------------
     lnnote_df = lnnote_df.select([
-        "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
+        # "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
+        "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH"
     ])
 
     lncomm_df = lncomm_df.select([
