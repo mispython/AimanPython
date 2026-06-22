@@ -1,8 +1,9 @@
 # !/usr/bin/env python3
 """
-Program: EIBMLN1C
+Program: EIBMLN1C.py
 Purpose: Loan Listing by FISS Purpose Code (for all CustCodes)
          Produces reports for both Public Bank Berhad (PBB) and Public Islamic Bank Berhad (PIBB).
+         Inputs sourced from EIBXLNLC.py outputs (NOTE1 parquet files, biweekly schedule).
          Output is a fixed-width report with ASA carriage control characters.
          RECFM=FBA, LRECL=134, BLKSIZE=13400
 """
@@ -11,21 +12,25 @@ import duckdb
 import polars as pl
 from pathlib import Path
 
+from REPTDATE import get_reptdate_values
+
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 
-BASE_DIR = Path("/data/sap")
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-# PBB paths
-PBB_LOAN_PATH    = BASE_DIR / "pbb/mniln/reptdate.parquet"        # SAP.PBB.MNILN(0) - REPTDATE
-PBB_LNLC_PATH    = BASE_DIR / "pbb/loanlist/sasdata"              # SAP.PBB.LOANLIST.SASDATA
-PBB_OUTPUT_PATH  = BASE_DIR / "pbb/loanlis1.cold.txt"             # SAP.PBB.LOANLIS1.COLD
+# PBB paths  (EIBXLNLC output -> EIBMLN1C input)
+PBB_INPUT_DIR   = BASE_DIR / "output/EIBXLNLC/PBB"           # SAP.PBB.LOANLIST.SASDATA  (NOTE1&REPTMON)
+PBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN1C/pbb_loanlis1.cold.txt"   # SAP.PBB.LOANLIS1.COLD
 
-# PIBB paths
-PIBB_LOAN_PATH   = BASE_DIR / "pibb/mniln/reptdate.parquet"       # SAP.PIBB.MNILN(0) - REPTDATE
-PIBB_LNLCI_PATH  = BASE_DIR / "pibb/loanlist/sasdata"             # SAP.PIBB.LOANLIST.SASDATA
-PIBB_OUTPUT_PATH = BASE_DIR / "pibb/loanlis1.cold.txt"            # SAP.PIBB.LOANLIS1.COLD
+# PIBB paths  (EIBXLNLC output -> EIBMLN1C input)
+PIBB_INPUT_DIR   = BASE_DIR / "output/EIBXLNLC/PIBB"          # SAP.PIBB.LOANLIST.SASDATA (NOTE1&REPTMON)
+PIBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN1C/pibb_loanlis1.cold.txt"  # SAP.PIBB.LOANLIS1.COLD
+
+# Output directory auto-creation
+PBB_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+PIBB_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Report layout constants (LRECL=134, RECFM=FBA)
 LRECL      = 134
@@ -34,23 +39,6 @@ PAGE_LINES = 60  # lines per page (default)
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
-def get_report_date(loan_parquet: Path) -> tuple:
-    """Read REPTDATE from MNILN REPTDATE dataset and return formatted strings."""
-    con = duckdb.connect()
-    df = con.execute(
-        f"SELECT REPTDATE FROM read_parquet('{loan_parquet}') LIMIT 1"
-    ).fetchdf()
-    con.close()
-    reptdate = df['REPTDATE'].iloc[0]
-    if hasattr(reptdate, 'date'):
-        reptdate = reptdate.date()
-    # DDMMYY8. format -> DD/MM/YY
-    rdate    = reptdate.strftime('%d/%m/%y')
-    reptmon  = reptdate.strftime('%m')
-    reptyear = reptdate.strftime('%Y')
-    return rdate, reptmon, reptyear
-
 
 def fmt_numeric(value, width: int, decimals: int) -> str:
     """Format a numeric value right-justified with fixed decimal places."""
@@ -122,34 +110,34 @@ def build_separator_line(col: int, count: int, char: str = '-') -> str:
 # fmt_type: 'N' = numeric (right-justified), 'C' = character (left-justified)
 
 COLUMNS_PBB = [
-    ('ACCTNO',   'ACCOUNT',      'NUMBER',      10, 'N', 0),
-    ('NOTENO',   'NOTE',         '',             5,  'N', 0),
-    ('NAME',     'CUSTOMER NAME','',            24,  'C', 0),
-    ('APPRLIMT', 'APPROVED',     'LIMIT',       13,  'N', 2),
-    ('BALANCE',  'OUTSTANDING',  'BALANCE',     13,  'N', 2),
-    ('FISSPURP', 'PUR',          'POSE',         4,  'C', 0),
-    ('SECTORCD', 'SEC',          'TOR',          4,  'C', 0),
-    ('CUSTCD',   'CUST',         'CODE',         4,  'C', 0),
-    ('STATE',    'ST',           'CD',           2,  'C', 0),
-    ('INTRATE',  'INT',          'RATE',         5,  'N', 2),
-    ('LIABCODE', 'COLL',         'NOTE',         4,  'C', 0),
-    ('CCOLLTRL', 'COLL',         'COMM',         4,  'C', 0),
+    ('ACCTNO',   'ACCOUNT',       'NUMBER',  10, 'N', 0),
+    ('NOTENO',   'NOTE',          '',         5, 'N', 0),
+    ('NAME',     'CUSTOMER NAME', '',        24, 'C', 0),
+    ('APPRLIMT', 'APPROVED',      'LIMIT',   13, 'N', 2),
+    ('BALANCE',  'OUTSTANDING',   'BALANCE', 13, 'N', 2),
+    ('FISSPURP', 'PUR',           'POSE',     4, 'C', 0),
+    ('SECTORCD', 'SEC',           'TOR',      4, 'C', 0),
+    ('CUSTCD',   'CUST',          'CODE',     4, 'C', 0),
+    ('STATE',    'ST',            'CD',       2, 'C', 0),
+    ('INTRATE',  'INT',           'RATE',     5, 'N', 2),
+    ('LIABCODE', 'COLL',          'NOTE',     4, 'C', 0),
+    ('CCOLLTRL', 'COLL',          'COMM',     4, 'C', 0),
 ]
 
 # PIBB uses 'APPROVE LIMIT' (no D) for APPRLIMT header
 COLUMNS_PIBB = [
-    ('ACCTNO',   'ACCOUNT',      'NUMBER',      10, 'N', 0),
-    ('NOTENO',   'NOTE',         '',             5,  'N', 0),
-    ('NAME',     'CUSTOMER NAME','',            24,  'C', 0),
-    ('APPRLIMT', 'APPROVE LIMIT','',            13,  'N', 2),
-    ('BALANCE',  'OUTSTANDING',  'BALANCE',     13,  'N', 2),
-    ('FISSPURP', 'PUR',          'POSE',         4,  'C', 0),
-    ('SECTORCD', 'SEC',          'TOR',          4,  'C', 0),
-    ('CUSTCD',   'CUST',         'CODE',         4,  'C', 0),
-    ('STATE',    'ST',           'CD',           2,  'C', 0),
-    ('INTRATE',  'INT',          'RATE',         5,  'N', 2),
-    ('LIABCODE', 'COLL',         'NOTE',         4,  'C', 0),
-    ('CCOLLTRL', 'COLL',         'COMM',         4,  'C', 0),
+    ('ACCTNO',   'ACCOUNT',       'NUMBER',  10, 'N', 0),
+    ('NOTENO',   'NOTE',          '',         5, 'N', 0),
+    ('NAME',     'CUSTOMER NAME', '',        24, 'C', 0),
+    ('APPRLIMT', 'APPROVE LIMIT', '',        13, 'N', 2),
+    ('BALANCE',  'OUTSTANDING',   'BALANCE', 13, 'N', 2),
+    ('FISSPURP', 'PUR',           'POSE',     4, 'C', 0),
+    ('SECTORCD', 'SEC',           'TOR',      4, 'C', 0),
+    ('CUSTCD',   'CUST',          'CODE',     4, 'C', 0),
+    ('STATE',    'ST',            'CD',       2, 'C', 0),
+    ('INTRATE',  'INT',           'RATE',     5, 'N', 2),
+    ('LIABCODE', 'COLL',          'NOTE',     4, 'C', 0),
+    ('CCOLLTRL', 'COLL',          'COMM',     4, 'C', 0),
 ]
 
 COL_SEP = 1  # spaces between columns
@@ -186,13 +174,45 @@ def format_data_row(row: dict, columns: list) -> str:
 
 
 # ============================================================================
+# REPORT GENERATION — MODULE-LEVEL HELPERS
+# (Extracted from generate_report to keep its Cognitive Complexity ≤ 15.
+#  Each helper owns one responsibility that previously added nesting cost
+#  inside the main function.)
+# ============================================================================
+
+def _accumulate_balance(row: dict) -> float:
+    """
+    Safely extract a BALANCE value from a data row dict.
+    Extracted from generate_report to remove the try/except at depth-3
+    (inside for-row inside for-fisspurp inside for-branch), which was
+    costing +4 in Cognitive Complexity due to the ExceptHandler nesting penalty.
+    Returns 0.0 on missing, None, or non-numeric values.
+    """
+    try:
+        return float(row.get('BALANCE', 0) or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _write_report_lines(lines: list, output_path: Path) -> None:
+    """
+    Write all accumulated ASA report lines to the output file.
+    Extracted from generate_report to remove the with/for nesting block
+    (with open → for line), which was costing +2 in Cognitive Complexity
+    at depth-1 due to the for loop sitting inside the with statement.
+    """
+    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
+        for line in lines:
+            f.write(line + '\n')
+
+
+# ============================================================================
 # REPORT GENERATION
 # ============================================================================
 
 def generate_report(
     lnnote_df: pl.DataFrame,
     columns: list,
-    rdate: str,
     title1: str,
     title2: str,
     title3: str,
@@ -289,10 +309,7 @@ def generate_report(
             for row in fp_df.to_dicts():
                 check_page_break(1)
                 emit(asa_newline(), format_data_row(row, columns))
-                try:
-                    fp_bal_sum += float(row.get('BALANCE', 0) or 0)
-                except (ValueError, TypeError):
-                    pass
+                fp_bal_sum += _accumulate_balance(row)
 
             branch_bal_sum += fp_bal_sum
 
@@ -320,43 +337,41 @@ def generate_report(
         emit(asa_newline(), build_compute_line(grand_txt, balance_str))
         emit(asa_newline(), build_separator_line(25, 51))
 
-    # Write output file
-    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
-        for line in lines:
-            f.write(line + '\n')
-
+    _write_report_lines(lines, output_path)
     print(f"Report written to: {output_path}")
+    print(f"Total lines      : {len(lines)}")
 
 
 # ============================================================================
 # MAIN - PBB
 # ============================================================================
 
-def run_pbb():
+def run_pbb(rdate: str, reptmon: str) -> None:
     """Run Loan listing report for Public Bank Berhad."""
-    rdate, reptmon, reptyear = get_report_date(PBB_LOAN_PATH)
 
     # DATA LNNOTE1: SET LNLC.NOTE1&REPTMON
-    note1_path = PBB_LNLC_PATH / f"note1{reptmon}.parquet"
+    # Input from EIBXLNLC.py output: LNLC_NOTE1_<reptmon>.parquet
+    note1_path = PBB_INPUT_DIR / f"LNLC_NOTE1_{reptmon}.parquet"
     con = duckdb.connect()
     lnnote1_df = con.execute(
         f"SELECT * FROM read_parquet('{note1_path}')"
     ).pl()
     con.close()
 
-    #
+    print(f"\n[PBB] Input : {note1_path}")
+    print(f"[PBB] Rows  : {len(lnnote1_df):,}")
+
     title1 = 'REPORT NO :  LOANLIST                         PUBLIC BANK BERHAD'
     title2 = 'PROGRAM ID:  EIBMLN1C'
     title3 = (
         'LOAN LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)'
-        '                                       REPORT DATE: ' + rdate
+        '                                      REPORT DATE: ' + rdate
     )
     title4 = '..'
 
     generate_report(
         lnnote_df=lnnote1_df,
         columns=COLUMNS_PBB,
-        rdate=rdate,
         title1=title1,
         title2=title2,
         title3=title3,
@@ -369,31 +384,32 @@ def run_pbb():
 # MAIN - PIBB
 # ============================================================================
 
-def run_pibb():
+def run_pibb(rdate: str, reptmon: str) -> None:
     """Run Loan listing report for Public Islamic Bank Berhad."""
-    rdate, reptmon, reptyear = get_report_date(PIBB_LOAN_PATH)
 
     # DATA LNNOTE1: SET LNLCI.NOTE1&REPTMON
-    note1_path = PIBB_LNLCI_PATH / f"note1{reptmon}.parquet"
+    # Input from EIBXLNLC.py output: LNLCI_NOTE1_<reptmon>.parquet
+    note1_path = PIBB_INPUT_DIR / f"LNLCI_NOTE1_{reptmon}.parquet"
     con = duckdb.connect()
     lnnote1_df = con.execute(
         f"SELECT * FROM read_parquet('{note1_path}')"
     ).pl()
     con.close()
 
-    #
+    print(f"\n[PIBB] Input : {note1_path}")
+    print(f"[PIBB] Rows  : {len(lnnote1_df):,}")
+
     title1 = 'REPORT NO :  LOANLIST          PUBLIC ISLAMIC BANK BERHAD'
     title2 = 'PROGRAM ID:  EIBMLN1C'
     title3 = (
         'LOAN LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)'
-        '                                       REPORT DATE: ' + rdate
+        '                                      REPORT DATE: ' + rdate
     )
     title4 = '**'
 
     generate_report(
         lnnote_df=lnnote1_df,
         columns=COLUMNS_PIBB,
-        rdate=rdate,
         title1=title1,
         title2=title2,
         title3=title3,
@@ -407,8 +423,17 @@ def run_pibb():
 # ============================================================================
 
 if __name__ == '__main__':
-    run_pbb()
+    # DATA _NULL_: SET LOAN.REPTDATE; CALL SYMPUT('RDATE', ...) CALL SYMPUT('REPTMON', ...)
+    # Replaced by get_reptdate_values() - no reptdate.parquet is read;
+    # report date is derived from today - 1 day, consistent with EIBXLNLC.py schedule.
+    rv      = get_reptdate_values()
+    rdate   = rv.reptdate.strftime('%d/%m/%y')   # DDMMYY8. -> DD/MM/YY
+    reptmon = rv.reptmon                          # zero-padded month e.g. '05'
+
+    print(f"Report Date : {rv.reptdate}  RDATE={rdate}  REPTMON={reptmon}")
+
+    run_pbb(rdate, reptmon)
     #
     # FOR PIBB
-    run_pibb()
+    run_pibb(rdate, reptmon)
     #
