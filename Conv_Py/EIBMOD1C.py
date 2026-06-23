@@ -6,8 +6,6 @@ Purpose : OD Listing by FISS Purpose Code (for all CustCodes)
           NAME column is resolved by joining stg_dp_limit.sas7bdat ACCTNO
           against the overdraft data ACCTNO and taking NAME.
           Accounts with no matching NAME will show a blank NAME field.
-          Output is a fixed-width plain-text report with form-feed page breaks,
-          following the same layout and pagination approach as EIBMODLM_DONE.py.
           Runs after EIBXODLC.py in the scheduling pipeline.
 """
 
@@ -24,7 +22,7 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 
 # Testing Path
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 INPUT_DIR  = BASE_DIR / "output" / "EIBXODLC"        # Output path from EIBXODLC.py
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMOD1C"
 
