@@ -1,509 +1,439 @@
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 """
-File Name   : EIBXLNLC.py
-Description : Loan data preparation - merges LNNOTE, LNCOMM, and LOAN datasets
-              to produce NOTE1 (all loans by FISSPURP) and NOTE2 (construction/
-              real-estate loans for non-individual customers) for both PBB and
-              PIBB. Runs at the same frequency as EIBXODLC.py (right after it
-              in scheduling):
-                - 16th of month -> report date = 15th  (NOWK='2')
-                - 1st of month  -> report date = last day of prior month (NOWK='4')
+Program: EIBMLN1C.py
+Purpose: Loan Listing by FISS Purpose Code (for all CustCodes)
+         Produces reports for both Public Bank Berhad (PBB) and Public Islamic Bank Berhad (PIBB).
+         Inputs sourced from EIBXLNLC.py outputs (NOTE1 parquet files, biweekly schedule).
+         Output is a fixed-width report with ASA carriage control characters.
+         RECFM=FBA, LRECL=134, BLKSIZE=13400
 """
 
-from __future__ import annotations
-
-from pathlib import Path
-from typing import Dict, Optional
-
-import os
-import pandas as pd
+import duckdb
 import polars as pl
-import gc
+from pathlib import Path
 
 from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
 
-
-# =============================================================================
+# ============================================================================
 # PATH CONFIGURATION
-# =============================================================================
-# # Production Path
-# BASE_DIR = Path("/dwh")
+# ============================================================================
 
-BASE_DIR  = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR = BASE_DIR / "input/prod" / "EIBXLNLC"
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIBXLNLC"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# PBB paths  (EIBXLNLC output -> EIBMLN1C input)
+PBB_INPUT_DIR   = BASE_DIR / "output/EIBXLNLC/PBB"                  # SAP.PBB.LOANLIST.SASDATA  (NOTE1&REPTMON)
+PBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN1C/pbb_loanlis1.txt"     # SAP.PBB.LOANLIS1.COLD
 
-# ----------------------------------------------------------------------------
-# 3 inputs per bank entity, all .sas7bdat:
-#   1. LNNOTE - KEEP=ACCTNO NOTENO BANKNO STATE  (SAP.<ENTITY>.MNILN(0) - LNNOTE)
-#   2. LNCOMM - ACCTNO COMMNO CCOLLTRL           (SAP.<ENTITY>.MNILN(0) - LNCOMM)
-#   3. LOAN / ILOAN - loan extract (SAP.PBB.SASDATA / SAP.PIBB.SASDATA)
-# ----------------------------------------------------------------------------
-PBB_CONFIG: Dict[str, Path] = {
-    "lnnote"    : INPUT_DIR / "lnnote_pbb.sas7bdat",
-    "lncomm"    : INPUT_DIR / "enrh_ln_comm.sas7bdat",
-    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "ln"),    # e.g. ln05126.sas7bdat
-    "output_dir": OUTPUT_DIR / "PBB",
-}
+# PIBB paths  (EIBXLNLC output -> EIBMLN1C input)
+PIBB_INPUT_DIR   = BASE_DIR / "output/EIBXLNLC/PIBB"                # SAP.PIBB.LOANLIST.SASDATA (NOTE1&REPTMON)
+PIBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN1C/pibb_loanlis1.txt"   # SAP.PIBB.LOANLIS1.COLD
 
-PIBB_CONFIG: Dict[str, Path] = {
-    "lnnote"    : INPUT_DIR / "lnnote_pibb.sas7bdat",
-    "lncomm"    : INPUT_DIR / "enrh_ln_comm.sas7bdat",
-    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "iln"),   # e.g. iln05126.sas7bdat
-    "output_dir": OUTPUT_DIR / "PIBB",
-}
+# Output directory auto-creation
+PBB_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+PIBB_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+# Report layout constants (LRECL=134, RECFM=FBA)
+LRECL      = 134
+PAGE_LINES = 60  # lines per page (default)
 
-# =============================================================================
-# PROC FORMAT (informational - not used in output columns)
-# =============================================================================
-# PROC FORMAT;
-#    VALUE BANKFMT 33='PBB'
-#                 134='PFB';
-# RUN;
-BANKFMT = {33: 'PBB', 134: 'PFB'}
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
 
-
-# =============================================================================
-# REPORT DATE DERIVATION
-# =============================================================================
-# DATA _NULL_;
-#    SET LOAN.REPTDATE;
-#    SELECT(DAY(REPTDATE)) ... CALL SYMPUT('NOWK', ...) CALL SYMPUT('RDATE', ...)
-#    CALL SYMPUT('REPTMON', ...) CALL SYMPUT('REPTYEAR', ...)
-# RUN;
-#
-# This program does not read its own REPTDATE source. It follows the same
-# biweekly schedule/derivation as EIBXODLC.py (runs immediately after it), so
-# REPTMON / NOWK are obtained from REPTDATE.get_reptdate_values(). RDATE
-# (DDMMYY8.) and REPTYEAR are not consumed downstream in this program (only
-# REPTMON feeds output file naming), so they are not carried forward.
-
-
-def _get_row_limit() -> Optional[int]:
-    """
-    Return an optional per-file row limit for fast testing.
-
-    Set EIBXLNLC_ROW_LIMIT to a positive integer to read only that many rows
-    from each SAS input. Leave it unset or set it to 0 for full production runs.
-
-    e.g.     value = os.environ.get("EIBXLNLC_ROW_LIMIT", "1000").strip()   -> For 1000 dataset rows testing
-    """
-    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "").strip()
-    if not value:
-        return None
-
+def fmt_numeric(value, width: int, decimals: int) -> str:
+    """Format a numeric value right-justified with fixed decimal places."""
+    if value is None:
+        return ' ' * width
     try:
-        row_limit = int(value)
-    except ValueError as exc:
-        raise ValueError("EIBXLNLC_ROW_LIMIT must be a positive integer or 0") from exc
-
-    return row_limit if row_limit > 0 else None
-
-
-# def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-#     """Read a .sas7bdat file via pandas and convert to Polars with uppercased columns."""
-#     if row_limit:
-#         reader = pd.read_sas(str(path), encoding="latin1", chunksize=row_limit)
-#         try:
-#             pdf = next(reader)
-#         except StopIteration:
-#             pdf = pd.DataFrame()
-#     else:
-#         pdf = pd.read_sas(str(path), encoding="latin1")
-
-#     pdf.columns = [c.upper() for c in pdf.columns]
-#     return pl.from_pandas(pdf)
+        formatted = f"{float(value):>{width}.{decimals}f}"
+        if len(formatted) > width:
+            formatted = formatted[:width]
+        return formatted
+    except (ValueError, TypeError):
+        return ' ' * width
 
 
-def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+def fmt_integer(value, width: int, zero_padded: bool = False) -> str:
+    """Format an integer value, optionally zero-padded (Zn. format)."""
+    if value is None:
+        return ' ' * width
+    try:
+        if zero_padded:
+            return f"{int(value):0{width}d}"
+        return f"{int(value):{width}d}"
+    except (ValueError, TypeError):
+        return ' ' * width
+
+
+def fmt_char(value, width: int) -> str:
+    """Format a character value left-justified, padded/truncated to width."""
+    if value is None:
+        return ' ' * width
+    s = str(value)
+    return f"{s:<{width}.{width}}"
+
+
+def asa_newpage() -> str:
+    """ASA carriage control: '1' = form feed / new page."""
+    return '1'
+
+
+def asa_newline() -> str:
+    """ASA carriage control: ' ' = single space (normal new line)."""
+    return ' '
+
+
+def pad_line(content: str, lrecl: int) -> str:
+    """Pad or truncate a line body (excluding ASA char) to LRECL-1 characters."""
+    body = lrecl - 1
+    return f"{content:<{body}.{body}}"
+
+
+def build_separator_line(col: int, count: int, char: str = '-') -> str:
     """
-    SAS → Parquet caching reader (biweekly-safe, memory-safe).
-
-    - Converts SAS in chunks if needed
-    - Stores Parquet in cache folder
-    - Reuses Parquet if SAS not updated
+    Build a separator line with repeated characters starting at
+    1-based column position col within the content area (no ASA char).
     """
-
-    # ------------------------------------------------------------------
-    # Cache folder (keeps things clean)
-    # ------------------------------------------------------------------
-    cache_dir = path.parent / "parquet_cache" / path.stem
-    cache_dir.mkdir(parents=True, exist_ok=True)
-
-    parquet_files = list(cache_dir.glob("*.parquet"))
-
-    # ------------------------------------------------------------------
-    # Check if cache is valid (IMPORTANT: biweekly-safe logic)
-    # ------------------------------------------------------------------
-    cache_valid = (
-        len(parquet_files) > 0
-        and max(f.stat().st_mtime for f in parquet_files)
-            >= path.stat().st_mtime
-    )
-
-    # ------------------------------------------------------------------
-    # CASE 1: USE CACHE (FAST PATH)
-    # ------------------------------------------------------------------
-    if cache_valid and row_limit is None:
-        print(f"[CACHE HIT] Reading Parquet: {path.stem}")
-        return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
-    # else:
-    #     print(f"[CACHE MISS] Reading SAS: {path.name}")
-
-    # ------------------------------------------------------------------
-    # CASE 2: TEST MODE (LIMIT ROWS)
-    # ------------------------------------------------------------------
-    if row_limit:
-        print(f"[TEST MODE] Reading SAS: {path.name}")
-
-        reader = pd.read_sas(
-            str(path),
-            encoding="latin1",
-            chunksize=row_limit
-        )
-
-        try:
-            pdf = next(reader)
-        except StopIteration:
-            pdf = pd.DataFrame()
-
-        pdf.columns = [c.upper() for c in pdf.columns]
-        return pl.from_pandas(pdf)
-
-    # ------------------------------------------------------------------
-    # CASE 3: FULL CONVERSION (SAS → PARQUET PARTITIONED)
-    # ------------------------------------------------------------------
-    print(f"\n[CONVERT] SAS → Parquet (chunked): {path.name}")
-
-    reader = pd.read_sas(
-        str(path),
-        encoding="latin1",
-        chunksize=500_000  # safe for 7GB file
-    )
-
-    for i, chunk in enumerate(reader):
-        if chunk is None or chunk.empty:
-            continue
-
-        chunk.columns = [c.upper() for c in chunk.columns]
-
-        df = pl.from_pandas(chunk)
-
-        # Force consistent schema across all chunks
-        df = df.with_columns([
-            pl.col(c).cast(pl.Utf8, strict=False)
-            for c in df.columns
-        ])
-
-        out_file = cache_dir / f"part-{i:05d}.parquet"
-        df.write_parquet(out_file, compression="zstd")
-
-        print(f"[WRITE] {out_file} ({len(df):,} rows)")
-
-    print(f"[DONE] Cache created at: {cache_dir}")
-
-    # ------------------------------------------------------------------
-    # FINAL READ (as one logical dataset)
-    # ------------------------------------------------------------------
-    return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
+    prefix = ' ' * (col - 1)
+    return prefix + (char * count)
 
 
-# def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-#     """
-#     PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
-#        OUT=LNNOTE; BY ACCTNO NOTENO;
-#     """
-#     return (
-#         _read_sas7bdat(lnnote_path, row_limit=row_limit)
-#         # .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
-#         .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH"])
-#         .with_columns([
-#             pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
-#             pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
-#         ])
-#     )
+# ============================================================================
+# COLUMN LAYOUT
+# ============================================================================
+# PROC REPORT COLUMN order (BRANCH is NOPRINT):
+#   ACCTNO(10.)  NOTENO(5.)  NAME($24.)  APPRLIMT(13.2)  BALANCE(13.2)
+#   FISSPURP($4.)  SECTORCD($4.)  CUSTCD($4.)  STATE($2.)
+#   INTRATE(5.2)  LIABCODE($4.)  CCOLLTRL($4.)
+#
+# Column tuple: (col_name, hdr_line1, hdr_line2, width, fmt_type, decimals)
+# fmt_type: 'N' = numeric (right-justified), 'C' = character (left-justified)
 
-def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-    return (
-        _read_sas7bdat(lnnote_path, row_limit=row_limit)
-        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
-        .drop_nulls(["ACCTNO", "NOTENO", "COMMNO"])
-        .unique(subset=["ACCTNO", "NOTENO", "COMMNO"])   # IMPORTANT
-        .with_columns([
-            pl.col("ACCTNO").cast(pl.Int64),
-            pl.col("NOTENO").cast(pl.Int64),
-            pl.col("COMMNO").cast(pl.Int64),
-        ])
-    )
+COLUMNS_PBB = [
+    ('ACCTNO',   'ACCOUNT',       'NUMBER',        10, 'N', 0),
+    ('NOTENO',   '',              'NOTE',           5, 'N', 0),
+    ('NAME',     '',              'CUSTOMER NAME', 24, 'C', 0),
+    ('APPRLIMT', 'APPROVED',      'LIMIT',         13, 'N', 2),
+    ('BALANCE',  'OUTSTANDING',   'BALANCE',       13, 'N', 2),
+    ('FISSPURP', 'PUR',           'POSE',           4, 'C', 0),
+    ('SECTORCD', 'SEC',           'TOR',            4, 'C', 0),
+    ('CUSTCD',   'CUST',          'CODE',           4, 'C', 0),
+    ('STATE',    'ST',            'CD',             2, 'C', 0),
+    ('INTRATE',  'INT',           'RATE',           5, 'N', 2),
+    ('LIABCODE', 'COLL',          'NOTE',           4, 'C', 0),
+    ('CCOLLTRL', 'COLL',          'COMM',           4, 'C', 0),
+]
+
+# PIBB uses 'APPROVE LIMIT' (no D) for APPRLIMT header
+COLUMNS_PIBB = [
+    ('ACCTNO',   'ACCOUNT',       'NUMBER',         10, 'N', 0),
+    ('NOTENO',   '',              'NOTE',            5, 'N', 0),
+    ('NAME',     '',              'CUSTOMER NAME',  24, 'C', 0),
+    ('APPRLIMT', 'APPROVE LIMIT', '',               13, 'N', 2),
+    ('BALANCE',  'OUTSTANDING',   'BALANCE',        13, 'N', 2),
+    ('FISSPURP', 'PUR',           'POSE',            4, 'C', 0),
+    ('SECTORCD', 'SEC',           'TOR',             4, 'C', 0),
+    ('CUSTCD',   'CUST',          'CODE',            4, 'C', 0),
+    ('STATE',    'ST',            'CD',              2, 'C', 0),
+    ('INTRATE',  'INT',           'RATE',            5, 'N', 2),
+    ('LIABCODE', 'COLL',          'NOTE',            4, 'C', 0),
+    ('CCOLLTRL', 'COLL',          'COMM',            4, 'C', 0),
+]
+
+COL_SEP = 1  # spaces between columns
 
 
-def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+def build_header_rows(columns: list) -> tuple:
+    """Build two header rows based on column definitions."""
+    row1 = ''
+    row2 = ''
+    for _, hdr1, hdr2, width, fmt_type, _ in columns:
+        if fmt_type == 'N':
+            row1 += f"{hdr1:>{width}}" + ' ' * COL_SEP
+            row2 += f"{hdr2:>{width}}" + ' ' * COL_SEP
+        else:
+            row1 += f"{hdr1:<{width}}" + ' ' * COL_SEP
+            row2 += f"{hdr2:<{width}}" + ' ' * COL_SEP
+    return row1.rstrip(), row2.rstrip()
+
+
+def format_data_row(row: dict, columns: list) -> str:
+    """Format a single data row according to column definitions."""
+    line = ''
+    for col_name, _, _, width, fmt_type, decimals in columns:
+        val = row.get(col_name, None)
+        if fmt_type == 'N':
+            if decimals > 0:
+                cell = fmt_numeric(val, width, decimals)
+            else:
+                cell = fmt_integer(val, width)
+        else:
+            cell = fmt_char(val, width)
+        line += cell + ' ' * COL_SEP
+    return line.rstrip()
+
+
+# ============================================================================
+# REPORT GENERATION — MODULE-LEVEL HELPERS
+# (Extracted from generate_report to keep its Cognitive Complexity ≤ 15.
+#  Each helper owns one responsibility that previously added nesting cost
+#  inside the main function.)
+# ============================================================================
+
+def _accumulate_balance(row: dict) -> float:
     """
-    PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO;
+    Safely extract a BALANCE value from a data row dict.
+    Extracted from generate_report to remove the try/except at depth-3
+    (inside for-row inside for-fisspurp inside for-branch), which was
+    costing +4 in Cognitive Complexity due to the ExceptHandler nesting penalty.
+    Returns 0.0 on missing, None, or non-numeric values.
     """
-    return (
-        _read_sas7bdat(lncomm_path, row_limit=row_limit)
-        .select(["ACCTNO", "COMMNO", "CCOLLTRL"])
-        .with_columns([
-            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
-            pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
-        ])
-    )
+    try:
+        return float(row.get('BALANCE', 0) or 0)
+    except (ValueError, TypeError):
+        return 0.0
 
 
-def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+def _write_report_lines(lines: list, output_path: Path) -> None:
     """
-    PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO;
-    Original LOAN columns 'SECTOR' / 'CUSTCODE' renamed to 'SECTORCD' / 'CUSTCD'.
+    Write all accumulated ASA report lines to the output file.
+    Extracted from generate_report to remove the with/for nesting block
+    (with open → for line), which was costing +2 in Cognitive Complexity
+    at depth-1 due to the for loop sitting inside the with statement.
     """
-    return (
-        _read_sas7bdat(loan_path, row_limit=row_limit)
-        .rename({"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD", "STATECD":"STATE"})
-        .with_columns([
-            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
-            pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
-            pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
-            pl.col("SECTORCD").cast(pl.Utf8),
-        ])
-    )
+    with open(output_path, 'w', encoding='utf-8', newline='\n') as f:
+        for line in lines:
+            f.write(line + '\n')
 
 
-# =============================================================================
-# CORE PROCESSING
-# =============================================================================
-def process_bank(
-    bank_name: str,
-    config: Dict[str, Path],
-    reptmon: str,
-    lncomm_df: Optional[pl.DataFrame] = None,
-    row_limit: Optional[int] = None,
-) -> None:
+# ============================================================================
+# REPORT GENERATION
+# ============================================================================
+
+def generate_report(
+    lnnote_df: pl.DataFrame,
+    columns: list,
+    title1: str,
+    title2: str,
+    title3: str,
+    title4: str,
+    output_path: Path,
+):
     """
-    Process loan-list preparation for a single bank entity (PBB or PIBB).
+    Generate the Loan listing report with ASA carriage control characters.
+    Output: RECFM=FBA, LRECL=134.
+
+    Report structure:
+      - Titles printed on each page header
+      - HEADSKIP: blank line after column headers
+      - HEADLINE: underline after column headers
+      - BY BRANCH grouping (NOPRINT)
+      - FISSPURP GROUP/ORDER: BREAK AFTER FISSPURP with subtotals
+      - BREAK AFTER BRANCH: grand total per branch
+
+    Subtotal/Grand total lines use 1-based column positions:
+      @025 = position 25 in content (index 24)
+      @063 = position 63 in content (index 62)
     """
-    lnnote_path = config["lnnote"]
-    lncomm_path = config["lncomm"]
-    loan_path   = config["loan_dir"]
-    output_dir  = config["output_dir"]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if not lnnote_path.exists():
-        raise FileNotFoundError(f"[{bank_name}] Missing LNNOTE file: {lnnote_path}")
-    if not lncomm_path.exists():
-        raise FileNotFoundError(f"[{bank_name}] Missing LNCOMM file: {lncomm_path}")
-    if not loan_path.exists():
-        raise FileNotFoundError(f"[{bank_name}] Missing LOAN file  : {loan_path}")
+    if lnnote_df.is_empty():
+        output_path.write_text('')
+        return
 
-    lnnote_df = _read_lnnote(lnnote_path, row_limit=row_limit)
-    if lncomm_df is None:
-        lncomm_df = _read_lncomm(lncomm_path, row_limit=row_limit)
-    loan_df   = _read_loan(loan_path, row_limit=row_limit)
+    # Sort: BY BRANCH then FISSPURP then natural order
+    df_sorted = lnnote_df.sort(['BRANCH', 'FISSPURP'])
 
-    loan_df = loan_df.filter(
-        (~pl.col("CUSTCD").is_in(["77","78","95","96"]))
+    hdr_row1, hdr_row2 = build_header_rows(columns)
+
+    lines      = []    # accumulated output lines (ASA char + padded content)
+    line_count = 0     # lines used on current page
+
+    # 1-based column positions for compute lines (content area, no ASA char)
+    POS_25 = 24   # 0-based index for @025
+    POS_63 = 62   # 0-based index for @063
+
+    def emit(asa: str, content: str):
+        nonlocal line_count
+        padded = pad_line(content, LRECL)
+        lines.append(asa + padded)
+        if asa != '+':
+            line_count += 1
+
+    def check_page_break(needed: int = 1):
+        if line_count + needed > PAGE_LINES:
+            emit_page_header()
+
+    def emit_page_header():
+        nonlocal line_count
+        emit(asa_newpage(), title1)
+        emit(asa_newline(), title2)
+        emit(asa_newline(), title3)
+        emit(asa_newline(), title4)
+        emit(asa_newline(), '')
+        # Column headers: two rows (SPLIT='*')
+        emit(asa_newline(), hdr_row1)
+        emit(asa_newline(), hdr_row2)
+        # HEADLINE: underline
+        underline = '-' * len(hdr_row1.rstrip())
+        emit(asa_newline(), underline)
+        # HEADSKIP: blank line
+        emit(asa_newline(), '')
+        line_count = 9  # header occupies 9 lines
+
+    def build_compute_line(prefix_text: str, suffix_value: str) -> str:
+        """
+        Build a compute LINE statement result.
+        prefix_text starts at POS_25 (0-based index 24).
+        suffix_value (balance) placed at POS_63 (0-based index 62).
+        """
+        line = ' ' * POS_25 + prefix_text
+        line = line.ljust(POS_63) + suffix_value
+        return line
+
+    # Emit first page header
+    emit_page_header()
+
+    branches = df_sorted['BRANCH'].unique(maintain_order=True).to_list()
+
+    for branch in branches:
+        branch_df      = df_sorted.filter(pl.col('BRANCH') == branch)
+        branch_bal_sum = 0.0
+
+        fisspurps = branch_df['FISSPURP'].unique(maintain_order=True).to_list()
+
+        for fisspurp in fisspurps:
+            fp_df      = branch_df.filter(pl.col('FISSPURP') == fisspurp)
+            fp_bal_sum = 0.0
+
+            for row in fp_df.to_dicts():
+                check_page_break(1)
+                emit(asa_newline(), format_data_row(row, columns))
+                fp_bal_sum += _accumulate_balance(row)
+
+            branch_bal_sum += fp_bal_sum
+
+            # BREAK AFTER FISSPURP compute block
+            # LINE @025 51*'-'
+            # LINE @025 'SUBTOTAL FOR FISS PURPOSE   ' FISSPURP $4. @063 BALANCE.SUM 13.2
+            # LINE @025 51*'-'
+            check_page_break(3)
+            emit(asa_newline(), build_separator_line(25, 51))
+            fp_str       = fmt_char(fisspurp, 4)
+            balance_str  = fmt_numeric(fp_bal_sum, 13, 2)
+            subtotal_txt = 'SUBTOTAL FOR FISS PURPOSE   ' + fp_str
+            emit(asa_newline(), build_compute_line(subtotal_txt, balance_str))
+            emit(asa_newline(), build_separator_line(25, 51))
+
+        # BREAK AFTER BRANCH compute block
+        # LINE @025 51*'-'
+        # LINE @025 'GRAND TOTAL FOR BRANCH   ' BRANCH Z3. @063 BALANCE.SUM 13.2
+        # LINE @025 51*'-'
+        check_page_break(3)
+        emit(asa_newline(), build_separator_line(25, 51))
+        branch_str  = fmt_integer(branch, 3, zero_padded=True)
+        balance_str = fmt_numeric(branch_bal_sum, 13, 2)
+        grand_txt   = 'GRAND TOTAL FOR BRANCH   ' + branch_str
+        emit(asa_newline(), build_compute_line(grand_txt, balance_str))
+        emit(asa_newline(), build_separator_line(25, 51))
+
+    _write_report_lines(lines, output_path)
+    print(f"Report written to: {output_path}")
+    print(f"Total lines      : {len(lines)}")
+
+
+# ============================================================================
+# MAIN - PBB
+# ============================================================================
+
+def run_pbb(rdate: str, reptmon: str) -> None:
+    """Run Loan listing report for Public Bank Berhad."""
+
+    # DATA LNNOTE1: SET LNLC.NOTE1&REPTMON
+    # Input from EIBXLNLC.py output: LNLC_NOTE1_<reptmon>.parquet
+    note1_path = PBB_INPUT_DIR / f"LNLC_NOTE1_{reptmon}.parquet"
+    con = duckdb.connect()
+    lnnote1_df = con.execute(
+        f"SELECT * FROM read_parquet('{note1_path}')"
+    ).pl()
+    con.close()
+
+    print(f"\n[PBB] Input : {note1_path}")
+    print(f"[PBB] Rows  : {len(lnnote1_df):,}")
+
+    title1 = 'REPORT NO :  LOANLIST                         PUBLIC BANK BERHAD'
+    title2 = 'PROGRAM ID:  EIBMLN1C'
+    title3 = (
+        'LOAN LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)'
+        '                                      REPORT DATE: ' + rdate
+    )
+    title4 = '..'
+
+    generate_report(
+        lnnote_df=lnnote1_df,
+        columns=COLUMNS_PBB,
+        title1=title1,
+        title2=title2,
+        title3=title3,
+        title4=title4,
+        output_path=PBB_OUTPUT_PATH,
     )
 
-    # ------------------------------
-    # Fix JOIN Memory
-    # ------------------------------
-    lnnote_df = lnnote_df.select([
-        # "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
-        "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH"
-    ])
 
-    lncomm_df = lncomm_df.select([
-        "ACCTNO", "COMMNO", "CCOLLTRL"
-    ])
+# ============================================================================
+# MAIN - PIBB
+# ============================================================================
 
-    # loan_df = loan_df.select([
-    #     "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
-    #     "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
-    # ])
+def run_pibb(rdate: str, reptmon: str) -> None:
+    """Run Loan listing report for Public Islamic Bank Berhad."""
 
-    loan_df = loan_df.select([
-        "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
-        "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
-    ]).with_columns([
-        pl.col("ACCTNO").cast(pl.Int64),
-        pl.col("NOTENO").cast(pl.Int64),
-        pl.col("CUSTCD").cast(pl.Utf8),
-        pl.col("SECTORCD").cast(pl.Utf8),
-    ])
+    # DATA LNNOTE1: SET LNLCI.NOTE1&REPTMON
+    # Input from EIBXLNLC.py output: LNLCI_NOTE1_<reptmon>.parquet
+    note1_path = PIBB_INPUT_DIR / f"LNLCI_NOTE1_{reptmon}.parquet"
+    con = duckdb.connect()
+    lnnote1_df = con.execute(
+        f"SELECT * FROM read_parquet('{note1_path}')"
+    ).pl()
+    con.close()
 
-    # PRE-FILTER EARLY (VERY IMPORTANT)
-    loan_df = loan_df.filter(
-        pl.col("CUSTCD").cast(pl.Utf8).is_in(["77","78","95","96"]).not_()
+    print(f"\n[PIBB] Input : {note1_path}")
+    print(f"[PIBB] Rows  : {len(lnnote1_df):,}")
+
+    title1 = 'REPORT NO :  LOANLIST          PUBLIC ISLAMIC BANK BERHAD'
+    title2 = 'PROGRAM ID:  EIBMLN1C'
+    title3 = (
+        'LOAN LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)'
+        '                                      REPORT DATE: ' + rdate
+    )
+    title4 = '**'
+
+    generate_report(
+        lnnote_df=lnnote1_df,
+        columns=COLUMNS_PIBB,
+        title1=title1,
+        title2=title2,
+        title3=title3,
+        title4=title4,
+        output_path=PIBB_OUTPUT_PATH,
     )
 
-    # ------------------------------------------------------------------
-    # DATA LNOTE: MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO
-    # IF ACCTYPE = 'LN'
-    # KEEP: BANKNO BRANCH ACCTNO NOTENO NAME BALANCE SECTORCD CUSTCD
-    #       INTRATE NTBRCH COMMNO LIABCODE APPRLIMT FISSPURP STATE
-    # ------------------------------------------------------------------
-    # lnote_df = loan_df.join(lnnote_df, on=["ACCTNO", "NOTENO"], how="left", suffix="_NOTE")
 
-    # STEP 1: shrink LNCOMM first
-    lncomm_df = lncomm_df.unique(subset=["ACCTNO", "COMMNO"])
+# ============================================================================
+# ENTRY POINT
+# ============================================================================
 
-    # STEP 2: JOIN smallest table first
-    lnote_small = loan_df.join(
-        lncomm_df,
-        on=["ACCTNO", "COMMNO"],
-        how="left"
-    )
+if __name__ == '__main__':
+    # DATA _NULL_: SET LOAN.REPTDATE; CALL SYMPUT('RDATE', ...) CALL SYMPUT('REPTMON', ...)
+    # Replaced by get_reptdate_values() - no reptdate.parquet is read;
+    # report date is derived from today - 1 day, consistent with EIBXLNLC.py schedule.
+    rv      = get_reptdate_values()
+    rdate   = rv.reptdate.strftime('%d/%m/%y')   # DDMMYY8. -> DD/MM/YY
+    reptmon = rv.reptmon                          # zero-padded month e.g. '05'
 
-    # STEP 3: join LNNOTE LAST (big table joins last)
-    lnote_df = lnote_small.join(
-        lnnote_df,
-        on=["ACCTNO", "NOTENO"],
-        how="left"
-    )
+    print(f"Report Date : {rv.reptdate}  RDATE={rdate}  REPTMON={reptmon}")
 
-    # lnote_df = lnote_df.filter(pl.col("ACCTYPE") == "LN")
-
-    keep_lnote = [
-        "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "BALANCE",
-        "SECTORCD", "CUSTCD", "INTRATE", "NTBRCH", "COMMNO", "LIABCODE",
-        "APPRLIMT", "FISSPURP", "STATE",
-    ]
-    # BANKNO / STATE are only present on the LNNOTE side; prefer that side
-    # if LOAN does not already carry them.
-    for col in keep_lnote:
-        note_col = col + "_NOTE"
-        if note_col in lnote_df.columns and col not in lnote_df.columns:
-            lnote_df = lnote_df.rename({note_col: col})
-    lnote_df = lnote_df.drop([c for c in lnote_df.columns if c.endswith("_NOTE")])
-    lnote_df = lnote_df.select([c for c in keep_lnote if c in lnote_df.columns])
-
-    # SAS sorted before merging; Polars hash joins do not require pre-sorting.
-    # Avoiding this large intermediate sort saves significant time and memory.
-    lnote_df = lnote_df.with_columns(
-        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64)
-    )
-
-    # ------------------------------------------------------------------
-    # DATA NOTE1: MERGE LNOTE(IN=A) LNCOMM(IN=B); BY ACCTNO COMMNO; IF A
-    # KEEP: BANKNO BRANCH ACCTNO NOTENO NAME APPRLIMT BALANCE SECTORCD
-    #       CUSTCD STATE INTRATE NTBRCH COMMNO LIABCODE CCOLLTRL FISSPURP
-    # ------------------------------------------------------------------
-    note1_df = lnote_df.join(lncomm_df, on=["ACCTNO", "COMMNO"], how="left", suffix="_COMM")
-
-    keep_note1 = [
-        "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "APPRLIMT", "BALANCE",
-        "SECTORCD", "CUSTCD", "STATE", "INTRATE", "NTBRCH", "COMMNO",
-        "LIABCODE", "CCOLLTRL", "FISSPURP",
-    ]
-    note1_df = note1_df.drop([c for c in note1_df.columns if c.endswith("_COMM")])
-    note1_df = note1_df.select([c for c in keep_note1 if c in note1_df.columns])
-
-    # ------------------------------------------------------------------
-    # DATA NOTE2: SET NOTE1
-    # IF CUSTCD NOT IN ('77','78','95','96') AND
-    #    (SUBSTR(SECTORCD,1,1) = '5' OR SECTORCD = '8310') THEN OUTPUT
-    # ------------------------------------------------------------------
-    sector = pl.col("SECTORCD").cast(pl.Utf8)
-    note2_df = note1_df.filter(
-        (~pl.col("CUSTCD").cast(pl.Utf8).is_in(["77", "78", "95", "96"]))
-        & ((sector.str.slice(0, 1) == "5") | (sector == "8310"))
-    )
-
-    del loan_df
-    del lnnote_df
-    del lncomm_df
-    del lnote_df
-    gc.collect()
-
-    # PROC DATASETS LIB=WORK NOLIST; DELETE LNOTE LNCOMM (implicit - not needed in Python)
-
-    # ------------------------------------------------------------------
-    # PROC SORT DATA=NOTE1 OUT=LNLC(I).NOTE1&REPTMON; BY BRANCH FISSPURP CUSTCD ACCTNO
-    # PROC SORT DATA=NOTE2 OUT=LNLC(I).NOTE2&REPTMON; BY BRANCH SECTORCD CUSTCD ACCTNO
-    # ------------------------------------------------------------------
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # note1_sorted = note1_df.sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
-    # note2_sorted = note2_df.sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
-
-    # prefix = "LNLC" if bank_name == "PBB" else "LNLCI"
-    # note1_out = output_dir / f"{prefix}_NOTE1_{reptmon}.parquet"
-    # note2_out = output_dir / f"{prefix}_NOTE2_{reptmon}.parquet"
-
-    # note1_sorted.write_parquet(note1_out)
-    # note2_sorted.write_parquet(note2_out)
-
-    prefix = "LNLC" if bank_name == "PBB" else "LNLCI"
-
-    note1_tmp = output_dir / f"{prefix}_NOTE1_{reptmon}_tmp.parquet"
-    note2_tmp = output_dir / f"{prefix}_NOTE2_{reptmon}_tmp.parquet"
-
-    # STEP 1: write UNSORTED (low memory)
-    note1_df.write_parquet(note1_tmp)
-    note2_df.write_parquet(note2_tmp)
-
-    # STEP 2: lazy sort (disk-based, not RAM-heavy)
-    note1_sorted = (
-        pl.scan_parquet(note1_tmp)
-        .sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
-        .collect()
-    )
-
-    note2_sorted = (
-        pl.scan_parquet(note2_tmp)
-        .sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
-        .collect()
-    )
-
-    # STEP 3: final output
-    note1_out = output_dir / f"{prefix}_NOTE1_{reptmon}.parquet"
-    note2_out = output_dir / f"{prefix}_NOTE2_{reptmon}.parquet"
-
-    note1_sorted.write_parquet(note1_out)
-    note2_sorted.write_parquet(note2_out)
-
-    # ------------------------------------------------------------------
-    # Terminal summary
-    # ------------------------------------------------------------------
-    print(f"\n[{bank_name}] REPTMON={reptmon}")
-    print(f"[{bank_name}] LOAN rows  : {len(loan_df):,}")
-    print(f"[{bank_name}] NOTE1 rows : {len(note1_sorted):,}")
-    print(f"[{bank_name}] NOTE2 rows : {len(note2_sorted):,}")
-    print(f"[{bank_name}] Output -> {note1_out}")
-    print(f"[{bank_name}] Output -> {note2_out}")
-    print(note1_sorted.head())
-    print(note2_sorted.head())
-
-
-# =============================================================================
-# MAIN
-# =============================================================================
-def main() -> None:
-    rv = get_reptdate_values()
-    reptmon = rv.reptmon   # zero-padded month e.g. '05'
-    nowk    = rv.nowk      # week bucket       e.g. '2' or '4'
-  
-    row_limit = _get_row_limit()
-
-    print(f"Report Date : {rv.reptdate}  (REPTMON={reptmon}, NOWK={nowk})")
-    if row_limit:
-        print(f"Test mode: reading at most {row_limit:,} rows from each SAS input")
-
-    shared_lncomm_df: Optional[pl.DataFrame] = None
-    if PBB_CONFIG["lncomm"] == PIBB_CONFIG["lncomm"]:
-        lncomm_path = PBB_CONFIG["lncomm"]
-        if not lncomm_path.exists():
-            raise FileNotFoundError(f"Missing shared LNCOMM file: {lncomm_path}")
-        shared_lncomm_df = _read_lncomm(lncomm_path, row_limit=row_limit)
-
-    # PBB
-    process_bank("PBB", PBB_CONFIG, reptmon, lncomm_df=shared_lncomm_df, row_limit=row_limit)
-
-    # PIBB
-    process_bank("PIBB", PIBB_CONFIG, reptmon, lncomm_df=shared_lncomm_df, row_limit=row_limit)
-
-
-if __name__ == "__main__":
-    main()
+    run_pbb(rdate, reptmon)
+    #
+    # FOR PIBB
+    run_pibb(rdate, reptmon)
+    #
