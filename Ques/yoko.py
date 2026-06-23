@@ -220,7 +220,7 @@ def _read_lnnote_shared(lnnote_path: Path, row_limit: Optional[int] = None) -> t
     Only ACCTNO, NOTENO, BANKNO, STATE are retained (matching the SAS KEEP=).
     """
     raw = _read_sas7bdat(lnnote_path, row_limit=row_limit)
-    expr = raw.select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "ENTITY_CD"])
+    expr = raw.select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO", "LIABCODE", "ENTITY_CD"])
     df = expr.collect() if isinstance(expr, pl.LazyFrame) else expr
 
     df = (
@@ -234,7 +234,7 @@ def _read_lnnote_shared(lnnote_path: Path, row_limit: Optional[int] = None) -> t
         ])
     )
 
-    keep_cols = ["ACCTNO", "NOTENO", "BANKNO", "STATE"]
+    keep_cols = ["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO", "LIABCODE"]
 
     pibb_df = df.filter(pl.col("ENTITY_CD") == "PIBB").select(keep_cols)
     pbb_df  = df.filter(pl.col("ENTITY_CD") != "PIBB").select(keep_cols)
@@ -266,7 +266,8 @@ def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame
     BY ACCTNO NOTENO;
     """
     raw = _read_sas7bdat(loan_path, row_limit=row_limit)
-    rename_map = {"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD"}
+    # SECTOR -> SECTORCD, CUSTCODE -> CUSTCD, STATECD -> STATE
+    rename_map = {"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD", "STATECD": "STATE"}
 
     if isinstance(raw, pl.LazyFrame):
         existing = raw.collect_schema().names()
@@ -332,8 +333,18 @@ def process_bank(
     lnote_df = loan_df.join(
         lnnote_df,
         on=["ACCTNO", "NOTENO"],
-        how="left"
+        how="left",
+        suffix="_LOAN"
     )
+
+    # SAS MERGE last-dataset wins: LNNOTE's LIABCODE overrides LOAN's LIABCODE
+    if "LIABCODE_LOAN" in lnote_df.columns:
+        # LIABCODE (from LNNOTE join side) is already the right one; drop LOAN's copy
+        lnote_df = lnote_df.drop("LIABCODE_LOAN")
+    
+    # COMMNO: prefer LNNOTE side if present (suffix _LOAN = LOAN's copy)
+    if "COMMNO_LOAN" in lnote_df.columns:
+        lnote_df = lnote_df.drop("COMMNO_LOAN")
 
     keep_lnote = [
         "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "BALANCE",
