@@ -1,944 +1,457 @@
-============================================================
-  LNNOTE_PBB  (494 columns)
-============================================================
-  AANUMBR
-  ABM_HL
-  ACCBRCH
-  ACCOSTCT
-  ACCRUAL
-  ACCRUEOP
-  ACCRUYTD
-  ACCTNO
-  ACCTPBRH
-  ACCTREVDT
-  ACCTYIND
-  AGING_FAST_TRACKER
-  AKPK_MATRIX_DATE
-  AKPK_MATRIX_TYPE
-  AKPK_RA_CUMM_INT_CAP_AMT
-  AKPK_RA_CUMM_INT_WAIVER_AMT
-  AKPK_RA_DIG_STATUS_CD
-  AKPK_RA_DIG_STATUS_DT
-  AKPK_RA_DLY_INT_ACCRUAL
-  AKPK_RA_END_DT
-  AKPK_RA_MTD_INT_ACCRUAL
-  AKPK_RA_MTH_INT_CAP_AMT
-  AKPK_RA_MTH_INT_WAIVER_AMT
-  AKPK_RA_ORIG_CEILING_RT
-  AKPK_RA_ORIG_SPREAD
-  AKPK_RA_START_DT
-  AKPK_RA_TAG
-  AKPK_RA_TAG_DT
-  AKPK_STATUS
-  APPCODE
-  APPORMT
-  APPRDATE
-  APPVALUE
-  ASCORE_COMM
-  ASCORE_LTST
-  ASCORE_PERM
-  ASSMDATE
-  AUTNACCR
-  AUTO_EXT_TAG
-  AUTO_EXT_TAG_DT
-  AUTO_REPRICE_DIFF_INSTL_AMT
-  AUTO_REPRICE_INSTL_AMT
-  BALANCE
-  BALLOON_REPAY_IND
-  BANKNO
-  BANK_EQUITY_RATIO
-  BILDUE
-  BILDUEMIG
-  BILLCNT
-  BILLEADDAY
-  BILLING_ADD_IND
-  BILLTYPE
-  BILPAY
-  BILPDYTD
-  BILPRIN
-  BILTOT
-  BIRTHDT
-  BKRPTIND
-  BLDATE
-  BONUSANO
-  BORSTAT
-  BULLET_REPAY_IND
-  CASHPRICE
-  CCRIS_INSTLAMT
-  CEILINGO
-  CEILINGU
-  CENSUS
-  CFINDEX
-  CJFEE
-  CLIMATE_ADAPT_GP2_FLG
-  CLIMATE_ENVIRONMT_GP3_FLG
-  CLIMATE_MITIGATE_GP1_FLG
-  CLIMATE_PRIN_TAXONOMY_CLASS
-  CLIMATE_PROHIBIT_GP5_FLG
-  CLIMATE_TRANSITION_GP4_FLG
-  COLLDESC
-  COLLMAKE
-  COLLYEAR
-  COMMNO
-  COMMNO_OLD
-  COM_FEE_NOTICE_IND
-  CONTRTYPE
-  CORPCODE
-  COSTCTR
-  COSTFUND
-  COURT_ORDER_APPLY_DT
-  COURT_ORDER_OBTAIN_DT
-  COURT_ORDER_PERPETUAL_IND
-  COURT_ORDER_UPDATE_DT
-  CP
-  CPNSTDTE
-  CRISPURP
-  CUMM_PAID_BILL_AMT
-  CUMM_PAID_BILL_PCT
-  CUM_WRIOFF
-  CURBAL
-  CURCODE
-  CURRATE
-  CURRILDTE
-  CUSTCDR
-  CUSTCDX
-  CUSTCODE
-  DAYARR_MO
-  DAYARR_MORA
-  DEALERNO
-  DEATHDATE
-  DELQCD
-  DEVIATION_CD
-  DIA_PAST01_MTH
-  DIA_PAST02_MTH
-  DIA_PAST03_MTH
-  DIA_PAST04_MTH
-  DIA_PAST05_MTH
-  DIA_PAST06_MTH
-  DIA_PAST07_MTH
-  DIA_PAST08_MTH
-  DIA_PAST09_MTH
-  DIA_PAST10_MTH
-  DIA_PAST11_MTH
-  DIA_PAST12_MTH
-  DIA_PAST13_MTH
-  DIA_PAST14_MTH
-  DIA_PAST15_MTH
-  DIA_PAST16_MTH
-  DIA_PAST17_MTH
-  DIA_PAST18_MTH
-  DIA_PAST19_MTH
-  DIA_PAST20_MTH
-  DIA_PAST21_MTH
-  DIA_PAST22_MTH
-  DIA_PAST23_MTH
-  DIA_PAST24_MTH
-  DIGITAL_RR_STATUS_CD
-  DIGITAL_RR_STATUS_DT
-  DISBIND1
-  DISPOSED_AMT
-  DISPYIND
-  DLVDATE
-  DNBFISME
-  DSR
-  EARLY_SETTLE_FEE_CHARGE_FLG
-  EARMARK_AMT
-  EARMARK_NOTICE_DT
-  EARNTERM
-  ECSRRSRV
-  ENTITY_CD
-  ESCRACCT
-  EXCESSPAY
-  EXRATIO
-  E_INVOICE_IND
-  FCLOSUREDT
-  FDACCTNO
-  FDACCTNO_
-  FDB
-  FDB_SCORING_DT
-  FDB_TAG
-  FDB_TAG_DT
-  FDCERTNO
-  FEEAMT
-  FEEAMT10
-  FEEAMT11
-  FEEAMT12
-  FEEAMT13
-  FEEAMT14
-  FEEAMT15
-  FEEAMT16
-  FEEAMT2
-  FEEAMT3
-  FEEAMT4
-  FEEAMT5
-  FEEAMT8
-  FEEAMT9
-  FEEAMTA
-  FEEAMTB
-  FEEAMTC
-  FEEAMTO
-  FEECOMBIND
-  FEEDUE
-  FEEDUEMS
-  FEEEARN1
-  FEEEARN2
-  FEEPDYTD
-  FEEPLAN
-  FEERATE
-  FEETOT2
-  FEETOTAL
-  FEEYTD
-  FEEYTDX
-  FEPDYTDX
-  FIRSILDTE
-  FLAG1
-  FLAG3
-  FLAG5
-  FLOOD_MO_DT
-  FLOOD_MO_PACKAGE_CD
-  FLOOD_MO_TAG
-  FLOOR_RT_OVER
-  FLOOR_RT_UNDER
-  FOREIGN
-  FORM1
-  FORM2
-  FRAUD_TAG
-  FRAUD_TAG_DT
-  FRELEAS
-  GOODWILL_CURR_AMT
-  GOODWILL_CURR_RATE
-  GOODWILL_IND
-  GRANTDT
-  GUAREND
-  GUARNOTICE
-  HISPTDT
-  HI_DIG_STATUS_CD
-  HI_DIG_STATUS_DT
-  HI_TAG
-  HI_TAG_DT
-  HP_STAGE_TRSF_IND
-  HSTINT
-  HSTOTAMT
-  HSTOTPAY
-  HSTPRIN
-  HTOTAMT2
-  HTOTPAY2
-  IA_LRU
-  IMPAIRED_HP_TAG
-  INDEX_PRICING
-  INDUSTRIAL_SECTOR_CD
-  INFEE
-  INSOLVENCY_IND
-  INTAMT
-  INTBASIS
-  INTBNP
-  INTBUYPD
-  INTEARN
-  INTEARN2
-  INTEARN3
-  INTEARN4
-  INTINYTD
-  INTMAINT
-  INTPAID
-  INTPDYTD
-  INTPYTD1
-  INTRATE
-  INTRATE2
-  INTSTDTE
-  INT_ADVICE_IND
-  INT_JAN_TO_JUN_AMT
-  INT_JUL_TO_DEC_AMT
-  ISSUEDT
-  JUDGE_AMT
-  JUDGE_DT
-  JUDGE_MAINT_DT
-  LASTBIL_INSTL_DT
-  LASTBIL_INT_DT
-  LASTTRAN
-  LATENOTICE
-  LEGAL_MATURITY_DT
-  LEGAL_NOTICE_INSTRUCT_DT
-  LEGAL_NOTICE_ISSUE_DT
-  LIABCODE
-  LMOENDDATE
-  LMOSTDATE
-  LMO_MAINT_DT
-  LMO_TAG
-  LOANSTAT
-  LOANTYPE
-  LOCK_IN_END_DT
-  LSTTRNAM
-  LSTTRNCD
-  LTST_MGB_SCORE
-  MAILCODE
-  MAILING_ADD_IND
-  MANUAL_RR_DT
-  MANUAL_RR_TAG
-  MAN_REV_DATE
-  MAN_REV_RATE
-  MARKED_PAYMENT_AMT
-  MARKED_PAYMENT_IND
-  MARKETVL
-  MATUREDT
-  MEMOACC
-  MINIFEE
-  MNIAPDTE
-  MNIAPLMT
-  MODELDES
-  MOENDDTE
-  MORA_BENCHMARK_AMT
-  MORDAYARR
-  MORTGIND
-  MOSTDTE
-  MO_INSTL_ARR
-  MO_MAIN_DT
-  MO_TAG
-  MTDINT
-  MTD_GHARAMAH_AMT
-  MTD_REPAID_AMT
-  MTD_TAWIDH_AMT
-  MULTI_CURRENCY_TAG
-  NACOSPADT
-  NAME
-  NDHEXPDT
-  NDHISSDT
-  NDPAYIND
-  NETPROC
-  NFEEAM10
-  NFEEAM11
-  NFEEAM12
-  NFEEAMT5
-  NFEEAMT6
-  NFEEAMT7
-  NFEEAMT8
-  NONACCR
-  NOOFPAY
-  NOTEMAT
-  NOTENO
-  NOTETERM
-  NPLCRR
-  NPLCRRBPA
-  NTAPR
-  NTBRCH
-  NTINDEX
-  NTINT
-  NUMCPNS
-  NUM_MORA
-  NUM_PAY_BIL_INSTL
-  NUM_PAY_BIL_INT
-  NUM_REPO_ORDER_ISSUE
-  NUM_RR
-  NURS_COUNTER
-  NURS_ENDDT
-  NURS_TAG
-  NURS_TAGDT
-  NUR_STARTDT
-  NXDUEDT
-  NXTBIL
-  OLDNOTEAPPVALUE
-  OLDNOTEBLDATE
-  OLDNOTEDAYARR
-  OLDNOTEISSUEDT
-  OLDNOTELASTTRAN
-  OLDRR
-  OLDUNPAID
-  OLD_FI
-  OLD_MACC_NO
-  OLD_SUBACC_NO
-  OMNIBUS_FACILITY_IND
-  ORGBAL
-  ORGTYPE
-  ORICODE
-  ORIGRATE
-  ORIG_RESTIND
-  OSTDAMT
-  PAIDIND
-  PAIDOFF
-  PAIDTODT
-  PARAS_TAG
-  PARAS_TAG_DT
-  PAYAMT
-  PAYEFFDT
-  PAYFREQ
-  PAYIND
-  PAYNUM
-  PAYTYPE
-  PCOSTCTR
-  PCT_INDEX_INTRATE
-  PENDBRH
-  POFFICER
-  POINTAMT
-  POSTCODE
-  POSTNTRN
-  PREVBRNO
-  PRE_BKRUPT_NOTICE_DT
-  PRINBNP
-  PRINPAID
-  PRINYTD
-  PRMOFFHP
-  PROMPT_PAY_TRACKER
-  PROP_ADD_IND
-  PROP_DEVELOP_FIN_IND
-  PTMNATE
-  PURPOSE
-  PZIPCODE
-  RATELMT2
-  REACCRUAL
-  REBATE
-  REBATEI
-  REBIND
-  RECOVER_COST
-  REFINANC
-  REFINANC_LN
-  REMAIN_TERM_MATURITY
-  REPAY_MODE
-  REPAY_PROPOSAL_CD
-  REPAY_PROPOSAL_DT
-  REPAY_SOURCE
-  REPAY_TYPE_CD
-  REPOSDTE
-  REPO_ORDER_EXPIRY_DT
-  REPO_ORDER_ISSUE_DT
-  RESTBALC
-  RESTIND
-  RESTIND_END_DT
-  RESTRUCT
-  REVERSED
-  RISKRATE
-  RISK_GRADE_CLASS
-  ROPAYIND
-  RRCYCLE
-  RRSTG1
-  RR_APPL_DATE
-  RR_APPR_DATE
-  RR_EREQUEST_NUM
-  RR_IL_RECLASS_DT
-  RR_TYPE
-  RR_UNTAG_DATE
-  RR_UNTAG_REPAY_CNT
-  RSN
-  RSRVREBI
-  RSRVTERM
-  SBA
-  SCHBIL_INSTL_DT
-  SCHBIL_INT_DT
-  SCH_REPAY_TERM
-  SCORE1
-  SCORE2
-  SECTOR
-  SECURE
-  SENDNBL
-  SIACCTNO
-  SITYPE
-  SM_DATE
-  SM_STATUS
-  SOURCE_INCOME_CURRENCY_CD
-  SPA_AMT
-  SPOTRATE
-  SPREAD
-  STAFFNO
-  STAFF_FREE_INT_IND
-  STAFF_FREE_INT_LOAN_AMT
-  STATE
-  STATUSDT
-  STMT_GEN_IND
-  STOPDEBIT
-  SYNDIND
-  SYNRATIO
-  SYS_REV_DATE
-  SYS_REV_RATE
-  TAKAFUL_AMT
-  TAKAFUL_COLLECT_ACCTNO
-  TAKAFUL_OPERAT
-  TAXEQIND
-  TAXNO
-  TERMIDAT
-  TFA_DIG_STATUS_CD
-  TFA_DIG_STATUS_DT
-  TFA_NURS_COUNTER
-  TFA_NURS_END_DT
-  TFA_NURS_START_DT
-  TFA_NURS_TAG
-  TFA_NURS_TAG_DT
-  TIA_TAG_DATE
-  TIA_UTAG_DATE
-  TIMES_RENEWED
-  TMLATE15
-  TMLATE30
-  TMLATE60
-  TMLATE90
-  TOTPDEOP
-  TRA_EFF_DT
-  TRA_RR_ACCEPT_DT
-  TRA_RR_IND
-  USEDIT
-  USER1
-  USER2
-  USER3
-  USER4
-  USER5
-  USLIMIT
-  USMARGIN
-  USURYIDX
-  VALUEDTE
-  VARSTDTE
-  VB
-  VEHI_MAKE_CATEGORY
-  VINNO
-  WORDTYP
-  WOS_RECEIVED_DT
-  WOS_SETTLED_DT
-  WOS_TAG
-  WRIOFF_AMT
-  WRIOFF_CLOSE_FILE_TAG
-  WRIOFF_CLOSE_FILE_TAG_DT
-  WRIOFF_DT
-  WRITE_DOWN_BAL
-  YTDEARNS
+#!/usr/bin/env python3
+"""
+File Name   : EIBXLNLC.py
+Description : Loan data preparation - merges LNNOTE, LNCOMM, and LOAN datasets
+              to produce NOTE1 (all loans by FISSPURP) and NOTE2 (construction/
+              real-estate loans for non-individual customers) for both PBB and
+              PIBB. Runs at the same frequency as EIBXODLC.py (right after it
+              in scheduling):
+                - 16th of month -> report date = 15th  (NOWK='2')
+                - 1st of month  -> report date = last day of prior month (NOWK='4')
 
-============================================================
-  LNCOMM  (22 columns)
-============================================================
-  ACCTNO
-  ACTIND
-  BANKNO
-  CAPPDATE
-  CAVAIAMT
-  CCOLLTRL
-  CCURAMT
-  CMBRCH
-  CMHSTAD3
-  CMHSTADJ
-  COMMNO
-  CORGAMT
-  CORIGMT
-  CPRODUCT
-  CSECTOR
-  CSTATE
-  CUSEDAMT
-  EXPIREDT
-  HSTCADAD
-  HSTNCDOR
-  REVOVLI
-  UNUSEAMT
+Column renames already applied at source (parquet creation):
+    LOAN : SECTOR   -> SECTORCD  |  CUSTCODE -> CUSTCD  |  STATECD -> STATE
+    LNCOMM: CMBRCH  -> BRANCH    |  CSECTOR  -> SECTORCD|  CSTATE  -> STATE
 
-============================================================
-  LOAN_PBB  (417 columns)
-============================================================
-  ABM_HL
-  ACCOSTCT
-  ACCRUAL
-  ACCRUEOP
-  ACCRUYTD
-  ACCTNO
-  ACCTYIND
-  AGING_FAST_TRACKER
-  AKPK_MATRIX_DATE
-  AKPK_MATRIX_TYPE
-  AKPK_RA_CUMM_INT_CAP_AMT
-  AKPK_RA_CUMM_INT_WAIVER_AMT
-  AKPK_RA_DIG_STATUS_CD
-  AKPK_RA_DIG_STATUS_DT
-  AKPK_RA_DLY_INT_ACCRUAL
-  AKPK_RA_END_DT
-  AKPK_RA_MTD_INT_ACCRUAL
-  AKPK_RA_MTH_INT_CAP_AMT
-  AKPK_RA_MTH_INT_WAIVER_AMT
-  AKPK_RA_ORIG_CEILING_RT
-  AKPK_RA_ORIG_SPREAD
-  AKPK_RA_START_DT
-  AKPK_RA_TAG
-  AKPK_RA_TAG_DT
-  AKPK_STATUS
-  APPORMT
-  APPRDATE
-  APPRLIM2
-  APPRLIMT
-  APPRLMTACCT
-  APPVALUE
-  ASCORE_COMM
-  ASCORE_LTST
-  ASCORE_PERM
-  ASSMDATE
-  AUTO_EXT_TAG
-  AUTO_EXT_TAG_DT
-  AUTO_REPRICE_DIFF_INSTL_AMT
-  AUTO_REPRICE_INSTL_AMT
-  BALANCE
-  BALLOON_REPAY_IND
-  BAL_AFT_EIR
-  BILLEADDAY
-  BILLING_ADD_IND
-  BILLTYPE
-  BILPAY
-  BLDATE
-  BORSTAT
-  BRANCH
-  BULLET_REPAY_IND
-  CAGATAG
-  CANO
-  CASHPRICE
-  CCRIS_INSTLAMT
-  CCY
-  CEILINGO
-  CEILINGU
-  CENSUS0
-  CENSUS1
-  CENSUS3
-  CENSUS4
-  CENSUS5
-  CFINDEX
-  CJFEE
-  CLIMATE_ADAPT_GP2_FLG
-  CLIMATE_ENVIRONMT_GP3_FLG
-  CLIMATE_MITIGATE_GP1_FLG
-  CLIMATE_PRIN_TAXONOMY_CLASS
-  CLIMATE_PROHIBIT_GP5_FLG
-  CLIMATE_TRANSITION_GP4_FLG
-  COLLAGE
-  COLLDESC
-  COLLMAKE
-  COLLYEAR
-  COMMNO
-  COMMNO_OLD
-  COMMTYPE
-  COM_FEE_NOTICE_IND
-  CORPCODE
-  COSTCTR
-  COSTFUND
-  COURT_ORDER_APPLY_DT
-  COURT_ORDER_OBTAIN_DT
-  COURT_ORDER_PERPETUAL_IND
-  COURT_ORDER_UPDATE_DT
-  CP
-  CPNSTDTE
-  CRISPURP
-  CUBALYTD
-  CUMM_PAID_BILL_AMT
-  CUMM_PAID_BILL_PCT
-  CUM_WRIOFF
-  CURAVMTH
-  CURBAL
-  CUSTCODE
-  CUSTFISS
-  DATEREGV
-  DAYARR
-  DAYARR_MORA
-  DEALERNO
-  DEATHDATE
-  DELQCD
-  DEVIATION_CD
-  DIA_PAST01_MTH
-  DIA_PAST02_MTH
-  DIA_PAST03_MTH
-  DIA_PAST04_MTH
-  DIA_PAST05_MTH
-  DIA_PAST06_MTH
-  DIA_PAST07_MTH
-  DIA_PAST08_MTH
-  DIA_PAST09_MTH
-  DIA_PAST10_MTH
-  DIA_PAST11_MTH
-  DIA_PAST12_MTH
-  DIA_PAST13_MTH
-  DIA_PAST14_MTH
-  DIA_PAST15_MTH
-  DIA_PAST16_MTH
-  DIA_PAST17_MTH
-  DIA_PAST18_MTH
-  DIA_PAST19_MTH
-  DIA_PAST20_MTH
-  DIA_PAST21_MTH
-  DIA_PAST22_MTH
-  DIA_PAST23_MTH
-  DIA_PAST24_MTH
-  DIGITAL_RR_STATUS_CD
-  DIGITAL_RR_STATUS_DT
-  DISPOSED_AMT
-  DLIVRYDT
-  DNBFISME
-  DNBFI_ORI
-  DOBCIS
-  DOBMNI
-  DSR
-  EARLY_SETTLE_FEE_CHARGE_FLG
-  EARMARK_AMT
-  EARMARK_NOTICE_DT
-  EARNTERM
-  EIR_ADJ
-  ESCROWRBAL
-  EXCESSPAY
-  EXPRDATE
-  EXRATIO
-  EXREGNO
-  E_INVOICE_IND
-  F1RELMOD
-  F5ACCONV
-  FCYBAL
-  FDACCTNO
-  FDB
-  FDB_SCORING_DT
-  FDB_TAG
-  FDB_TAG_DT
-  FDCERTNO
-  FEEAMT
-  FEEAMT14
-  FEEAMT15
-  FEEAMT16
-  FEEDUE
-  FEEEARN1
-  FEEEARN2
-  FEEYTD
-  FISSPURP
-  FLAG3
-  FLOOD_MO_DT
-  FLOOD_MO_PACKAGE_CD
-  FLOOD_MO_TAG
-  FLOOR_RT_OVER
-  FLOOR_RT_UNDER
-  FORATE
-  FORM1
-  FORM2
-  FRAUD_TAG
-  FRAUD_TAG_DT
-  FRELEAS
-  FULLREL_DT
-  GOODWILL_CURR_AMT
-  GOODWILL_CURR_RATE
-  GOODWILL_IND
-  GUAREND
-  GUARNOTICE
-  HI_DIG_STATUS_CD
-  HI_DIG_STATUS_DT
-  HI_TAG
-  HI_TAG_DT
-  HP_STAGE_TRSF_IND
-  IA_LRU
-  IMPAIRED_HP_TAG
-  INDEX_PRICING
-  INDUSTRIAL_SECTOR_CD
-  INSOLVENCY_IND
-  INTAMT
-  INTBASIS
-  INTEARN
-  INTEARN2
-  INTEARN3
-  INTEARN4
-  INTERDUE
-  INTINYTD
-  INTPDYTD
-  INTRATE
-  INTRATE2
-  INTSTDTE
-  INT_ADVICE_IND
-  INT_JAN_TO_JUN_AMT
-  INT_JUL_TO_DEC_AMT
-  ISSDTE
-  JUDGE_AMT
-  JUDGE_DT
-  JUDGE_MAINT_DT
-  LASTBIL_INSTL_DT
-  LASTBIL_INT_DT
-  LASTTRAN
-  LATENOTICE
-  LEGAL_MATURITY_DT
-  LEGAL_NOTICE_INSTRUCT_DT
-  LEGAL_NOTICE_ISSUE_DT
-  LIABCODE
-  LMOENDDATE
-  LMOSTDATE
-  LNUSER2
-  LN_UTILISE_LOCAT_CD
-  LOANSTAT
-  LOCK_IN_END_DT
-  LSTTRNAM
-  LSTTRNCD
-  LTST_MGB_SCORE
-  MAILCODE
-  MAILING_ADD_IND
-  MAKE
-  MANUAL_RR_DT
-  MANUAL_RR_TAG
-  MARKED_PAYMENT_AMT
-  MARKED_PAYMENT_IND
-  MARKETVL
-  MATUREDT
-  MEMOACC
-  MNIAPDTE
-  MNIAPLMT
-  MODEL
-  MODELDES
-  MOENDDTE
-  MORA_BENCHMARK_AMT
-  MOSTDTE
-  MO_INSTL_ARR
-  MO_MAIN_DT
-  MO_TAG
-  MTDAVBAL_MIS
-  MTDINT
-  MTD_REPAID_AMT
-  MTHARR
-  MTHARR_CCRIS
-  MULTI_CURRENCY_TAG
-  NACOSPADT
-  NETPROC
-  NEWBAL
-  NONACCRUAL
-  NOTENO
-  NOTETERM
-  NPLCRR
-  NPLCRRBPA
-  NPLIND
-  NTAPR
-  NTINDEX
-  NTINT
-  NUMCPNS
-  NUM_MORA
-  NUM_PAY_BIL_INSTL
-  NUM_PAY_BIL_INT
-  NUM_REPO_ORDER_ISSUE
-  NUM_RR
-  NURS_COUNTER
-  NURS_ENDDT
-  NURS_TAG
-  NURS_TAGDT
-  NUR_STARTDT
-  NXDUEDT
-  NXTBIL
-  OLDNOTEBLDATE
-  OLDNOTEDAYARR
-  OLD_FI
-  OLD_MACC_NO
-  OLD_SUBACC_NO
-  OMNIBUS_FACILITY_IND
-  ORGBAL
-  ORGTYPE
-  ORIGRATE
-  ORIG_RESTIND
-  PAIDIND
-  PAIDOFF
-  PARAS_TAG
-  PARAS_TAG_DT
-  PAYAMT
-  PAYEFDT
-  PAYEFDTO
-  PAYFREQ
-  PAYIND
-  PAYTYPE
-  PCT_INDEX_INTRATE
-  POFFICER
-  POINTAMT
-  POSTCODE
-  POSTDATE
-  POSTNTRN
-  PREVBRNO
-  PRE_BKRUPT_NOTICE_DT
-  PRIMOFHP
-  PRODUCT
-  PROMPT_PAY_TRACKER
-  PROP_ADD_IND
-  PROP_DEVELOP_FIN_IND
-  PTMNATE
-  PURPOSE
-  RATELMT2
-  REACCRUAL
-  REBATE
-  REBIND
-  RECOVER_COST
-  REFINANC
-  REFINANC_LN
-  REFNOTENO
-  REGNO
-  REMAINMT
-  REMAIN_TERM_MATURITY
-  REMMFISS
-  REPAY_MODE
-  REPAY_PROPOSAL_CD
-  REPAY_PROPOSAL_DT
-  REPAY_SOURCE
-  REPAY_TYPE_CD
-  REPO_ORDER_EXPIRY_DT
-  REPO_ORDER_ISSUE_DT
-  RESTBALC
-  RESTIND
-  RESTIND_END_DT
-  RISKRTE
-  RISK_GRADE_CLASS
-  RRCOUNTDTE
-  RRSTG1
-  RR_APPL_DATE
-  RR_APPR_DATE
-  RR_EREQUEST_NUM
-  RR_IL_RECLASS_DT
-  RR_TYPE
-  RR_UNTAG_DATE
-  RR_UNTAG_REPAY_CNT
-  RSN
-  SCHBIL_INSTL_DT
-  SCHBIL_INT_DT
-  SCH_REPAY_TERM
-  SCORE1
-  SCORE1MI
-  SCORE2
-  SCORE2CT
-  SECTFISS
-  SECTOR
-  SECURE
-  SENDBILL
-  SIACCTNO
-  SITYPE
-  SM_DATE
-  SM_STATUS
-  SOURCE_INCOME_CURRENCY_CD
-  SPREAD
-  STAFF_FREE_INT_IND
-  STAFF_FREE_INT_LOAN_AMT
-  STATECD
-  STMT_GEN_IND
-  STOPDEBIT
-  SYNRATIO
-  TAXNO
-  TFA_DIG_STATUS_CD
-  TFA_DIG_STATUS_DT
-  TFA_NURS_COUNTER
-  TFA_NURS_END_DT
-  TFA_NURS_START_DT
-  TFA_NURS_TAG
-  TFA_NURS_TAG_DT
-  TIMELATE
-  TIMES_RENEWED
-  TOTBNP
-  TOTPDEOP
-  TOT_MIGR
-  TRA_EFF_DT
-  TRA_RR_ACCEPT_DT
-  TRA_RR_IND
-  U1CLASSI
-  U2RACECO
-  U3MYCODE
-  U4RESIDE
-  UNDRAWN
-  UNEARNED
-  UNEARNED1
-  UNEARNED2
-  USEDIT
-  USER5
-  USERID
-  USINDEX
-  USLIMIT
-  USMARGIN
-  VALUATION_DT
-  VARSTDTE
-  VB
-  VEHI_CHASSIS_NUM
-  VEHI_ENGINE_NUM
-  VEHI_MAKE_CATEGORY
-  VINNO
-  WOS_RECEIVED_DT
-  WOS_SETTLED_DT
-  WOS_TAG
-  WRIOFF_AMT
-  WRIOFF_CLOSE_FILE_TAG
-  WRIOFF_CLOSE_FILE_TAG_DT
-  WRIOFF_DT
-  YTDEARNS
+SAS MERGE last-dataset-wins semantics replicated by explicit column coalescing:
+  Step 1: MERGE LOAN(IN=A) LNNOTE(IN=B) BY ACCTNO NOTENO
+          LNNOTE was sorted with KEEP=ACCTNO NOTENO BANKNO STATE, so the work
+          dataset entering the merge has ONLY those 4 columns.
+          -> LNNOTE wins (last-dataset) for shared column: STATE only
+          -> LNNOTE provides exclusively: BANKNO
+          -> LOAN provides all other columns: BRANCH, BALANCE, SECTORCD,
+             CUSTCD, INTRATE, COMMNO, LIABCODE, APPRLIMT, FISSPURP
+          -> NAME, NTBRCH: in LNOTE KEEP list but absent from both
+             LOAN and LNNOTE(KEEP=4); will be null unless LOAN carries them
+          -> IF ACCTYPE = 'LN'  (parquet pre-filtered; effectively a no-op)
+
+  Step 2: MERGE LNOTE(IN=A) LNCOMM(IN=B) BY ACCTNO COMMNO
+          LNCOMM has no KEEP restriction, all columns flow into merge.
+          -> LNCOMM wins (last-dataset) for shared columns:
+             BANKNO, BRANCH (CMBRCH), SECTORCD (CSECTOR), STATE (CSTATE)
+          -> CCOLLTRL comes exclusively from LNCOMM
+          -> IF A  (left join; LNOTE rows always kept)
+
+  NOTE1 = result of Step 2 (all records, KEEP list applied)
+  NOTE2 = NOTE1 filtered:
+          CUSTCD NOT IN ('77','78','95','96')
+          AND (SUBSTR(SECTORCD,1,1)='5' OR SECTORCD='8310')
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Dict, Optional
+
+import os
+import gc
+
+import pandas as pd
+import polars as pl
+import duckdb
+
+from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+
+
+# =============================================================================
+# PATH CONFIGURATION
+# =============================================================================
+# # Production Path
+# BASE_DIR = Path("/dwh")
+
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR  = BASE_DIR / "input/prod" / "EIBXLNLC"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBXLNLC"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# ----------------------------------------------------------------------------
+# Inputs (all .parquet, columns already renamed per spec above):
+#
+#   PBB
+#     lnnote  : ACCTNO NOTENO BANKNO STATE NAME NTBRCH COMMNO LIABCODE
+#     lncomm  : ACCTNO COMMNO CCOLLTRL BRANCH SECTORCD STATE
+#     loan    : ACCTNO NOTENO COMMNO BRANCH BALANCE SECTORCD CUSTCD INTRATE
+#                APPRLIMT FISSPURP LIABCODE  (ACCTYPE pre-filtered to 'LN')
+#
+#   PIBB - same structure, different files
+# ----------------------------------------------------------------------------
+PBB_CONFIG: Dict[str, Path] = {
+    "lnnote"    : INPUT_DIR / "lnnote_pbb.parquet",
+    "lncomm"    : INPUT_DIR / "lncomm_pbb.parquet",
+    "loan"      : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "ln"),
+    "output_dir": OUTPUT_DIR / "PBB",
+}
+
+PIBB_CONFIG: Dict[str, Path] = {
+    "lnnote"    : INPUT_DIR / "lnnote_pibb.parquet",
+    "lncomm"    : INPUT_DIR / "lncomm_pibb.parquet",
+    "loan"      : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "iln"),
+    "output_dir": OUTPUT_DIR / "PIBB",
+}
+
+
+# =============================================================================
+# PROC FORMAT (informational only - BANKNO not kept in final output)
+# =============================================================================
+# PROC FORMAT;
+#    VALUE BANKFMT 33='PBB'
+#                 134='PFB';
+# RUN;
+BANKFMT: Dict[int, str] = {33: "PBB", 134: "PFB"}
+
+
+# =============================================================================
+# REPORT DATE DERIVATION
+# =============================================================================
+# DATA _NULL_;
+#    SET LOAN.REPTDATE;
+#    SELECT(DAY(REPTDATE)) ...
+#    CALL SYMPUT('NOWK',   PUT(WK,$1.));
+#    CALL SYMPUT('RDATE',  PUT(REPTDATE, DDMMYY8.));
+#    CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE), Z2.));
+#    CALL SYMPUT('REPTYEAR',PUT(REPTDATE, YEAR4.));
+# RUN;
+#
+# REPTMON / NOWK are obtained from REPTDATE.get_reptdate_values().
+# RDATE and REPTYEAR are not consumed downstream in this program.
+
+
+# =============================================================================
+# ENVIRONMENT / TEST MODE
+# =============================================================================
+def _get_row_limit() -> Optional[int]:
+    """
+    Return an optional per-file row limit for fast testing.
+
+    Set EIBXLNLC_ROW_LIMIT to a positive integer to read only that many rows
+    from each input. Leave it unset or set it to 0 for full production runs.
+    """
+    value = os.environ.get("EIBXLNLC_ROW_LIMIT", "").strip()
+    if not value:
+        return None
+    try:
+        row_limit = int(value)
+    except ValueError as exc:
+        raise ValueError("EIBXLNLC_ROW_LIMIT must be a positive integer or 0") from exc
+    return row_limit if row_limit > 0 else None
+
+
+# =============================================================================
+# PARQUET READERS  (DuckDB → Polars)
+# =============================================================================
+def _read_parquet(path: Path, columns: list[str], row_limit: Optional[int] = None) -> pl.DataFrame:
+    """Read selected columns from a parquet file via DuckDB."""
+    cols_sql = ", ".join(f'"{c}"' for c in columns)
+    limit_clause = f"LIMIT {row_limit}" if row_limit else ""
+    con = duckdb.connect()
+    df = con.execute(
+        f"SELECT {cols_sql} FROM read_parquet('{path}') {limit_clause}"
+    ).pl()
+    con.close()
+    return df
+
+
+def _read_lnnote(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    """
+    PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE) OUT=LNNOTE;
+    The KEEP dataset option on PROC SORT restricts the output work dataset to
+    exactly 4 columns: ACCTNO, NOTENO, BANKNO, STATE.
+    All other LNNOTE columns (NAME, NTBRCH, BALANCE, SECTORCD, etc.) are
+    stripped before the merge and therefore come from LOAN, not LNNOTE.
+    In Merge 1, LNNOTE wins only for STATE (shared); BANKNO is LNNOTE-only.
+    """
+    cols = ["ACCTNO", "NOTENO", "BANKNO", "STATE"]
+    df = _read_parquet(path, cols, row_limit)
+    return df.with_columns([
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("BANKNO").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
+        pl.col("STATE").cast(pl.Utf8),
+    ])
+
+
+def _read_lncomm(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    """
+    PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO
+    No KEEP restriction — all columns flow into Merge 2.
+    Columns (parquet already renamed):
+      ACCTNO COMMNO BANKNO CCOLLTRL BRANCH(CMBRCH) SECTORCD(CSECTOR) STATE(CSTATE)
+    LNCOMM wins (last-dataset) in Merge 2 for: BANKNO, BRANCH, SECTORCD, STATE
+    """
+    cols = ["ACCTNO", "COMMNO", "BANKNO", "CCOLLTRL", "BRANCH", "SECTORCD", "STATE"]
+    df = _read_parquet(path, cols, row_limit)
+    return df.with_columns([
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("BANKNO").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
+        pl.col("CCOLLTRL").cast(pl.Utf8),
+        pl.col("BRANCH").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
+        pl.col("SECTORCD").cast(pl.Utf8),
+        pl.col("STATE").cast(pl.Utf8),
+    ])
+
+
+def _read_loan(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+    """
+    PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO
+    Columns (parquet already renamed):
+      ACCTNO NOTENO COMMNO BRANCH BALANCE SECTORCD CUSTCD INTRATE
+      APPRLIMT FISSPURP LIABCODE
+    NOTE: ACCTYPE='LN' filter is pre-applied during parquet creation.
+          If ACCTYPE is still present, it is dropped here as in SAS KEEP list.
+    """
+    cols = [
+        "ACCTNO", "NOTENO", "COMMNO", "BRANCH", "BALANCE",
+        "SECTORCD", "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "LIABCODE",
+    ]
+    df = _read_parquet(path, cols, row_limit)
+    return df.with_columns([
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("BRANCH").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
+        pl.col("BALANCE").cast(pl.Float64),
+        pl.col("SECTORCD").cast(pl.Utf8),
+        # CUSTCD: SAS numeric -> float -> int -> string  (avoids "78.0" artefacts)
+        pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
+        pl.col("INTRATE").cast(pl.Float64),
+        pl.col("APPRLIMT").cast(pl.Float64),
+        pl.col("FISSPURP").cast(pl.Utf8),
+        pl.col("LIABCODE").cast(pl.Utf8),
+    ])
+
+
+# =============================================================================
+# CORE PROCESSING
+# =============================================================================
+def process_bank(
+    bank_name: str,
+    config: Dict[str, Path],
+    reptmon: str,
+    row_limit: Optional[int] = None,
+) -> None:
+    """
+    Process loan-list preparation for a single bank entity (PBB or PIBB).
+
+    Mirrors the SAS logic exactly:
+      1. MERGE LOAN(IN=A) LNNOTE(IN=B) BY ACCTNO NOTENO  -> LNOTE (IF ACCTYPE='LN')
+      2. SORT LNOTE BY ACCTNO COMMNO
+      3. SORT LNCOMM BY ACCTNO COMMNO
+      4. MERGE LNOTE(IN=A) LNCOMM(IN=B) BY ACCTNO COMMNO -> NOTE1 (IF A)
+      5. NOTE2 = NOTE1 filtered by CUSTCD / SECTORCD
+      6. PROC SORT NOTE1 -> output  BY BRANCH FISSPURP CUSTCD ACCTNO
+      7. PROC SORT NOTE2 -> output  BY BRANCH SECTORCD CUSTCD ACCTNO
+    """
+    lnnote_path = config["lnnote"]
+    lncomm_path = config["lncomm"]
+    loan_path   = config["loan"]
+    output_dir  = config["output_dir"]
+
+    for label, p in [("LNNOTE", lnnote_path), ("LNCOMM", lncomm_path), ("LOAN", loan_path)]:
+        if not p.exists():
+            raise FileNotFoundError(f"[{bank_name}] Missing {label} file: {p}")
+
+    print(f"\n[{bank_name}] Reading inputs ...")
+    lnnote_df = _read_lnnote(lnnote_path, row_limit)
+    lncomm_df = _read_lncomm(lncomm_path, row_limit)
+    loan_df   = _read_loan(loan_path, row_limit)
+
+    print(f"[{bank_name}] LOAN rows  : {len(loan_df):,}")
+    print(f"[{bank_name}] LNNOTE rows: {len(lnnote_df):,}")
+    print(f"[{bank_name}] LNCOMM rows: {len(lncomm_df):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 1 — DATA LNOTE:
+    #   MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO; IF ACCTYPE='LN'
+    #   KEEP: BANKNO BRANCH ACCTNO NOTENO NAME BALANCE SECTORCD CUSTCD
+    #         INTRATE NTBRCH COMMNO LIABCODE APPRLIMT FISSPURP STATE
+    #
+    # Left join on (ACCTNO, NOTENO): LOAN drives (IN=A).
+    # LNNOTE(KEEP=4) has only: ACCTNO NOTENO BANKNO STATE
+    #   -> STATE  : shared, LNNOTE wins (last-dataset rule)
+    #   -> BANKNO : LNNOTE-only (not on LOAN)
+    # All other columns come exclusively from LOAN:
+    #   BRANCH, BALANCE, SECTORCD, CUSTCD, INTRATE, COMMNO, LIABCODE,
+    #   APPRLIMT, FISSPURP
+    # NAME and NTBRCH: present in LNOTE KEEP list but not in either source
+    #   after the KEEP restriction. They will be null unless LOAN carries them.
+    # ------------------------------------------------------------------
+    lnote_df = loan_df.join(
+        lnnote_df.rename({"STATE": "STATE_NOTE"}),
+        on=["ACCTNO", "NOTENO"],
+        how="left",
+    )
+
+    # STATE -> LNNOTE wins
+    lnote_df = lnote_df.with_columns(
+        pl.when(pl.col("STATE_NOTE").is_not_null())
+          .then(pl.col("STATE_NOTE"))
+          .otherwise(pl.col("STATE"))
+          .alias("STATE")
+    ).drop("STATE_NOTE")
+
+    # KEEP list for LNOTE
+    keep_lnote = [
+        "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "BALANCE",
+        "SECTORCD", "CUSTCD", "INTRATE", "NTBRCH", "COMMNO", "LIABCODE",
+        "APPRLIMT", "FISSPURP", "STATE",
+    ]
+    lnote_df = lnote_df.select([c for c in keep_lnote if c in lnote_df.columns])
+
+    print(f"[{bank_name}] LNOTE rows : {len(lnote_df):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 2 — PROC SORT LNOTE BY ACCTNO COMMNO  (implicit; join handles it)
+    # STEP 3 — PROC SORT LNCOMM BY ACCTNO COMMNO (implicit)
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # STEP 4 — DATA NOTE1:
+    #   MERGE LNOTE(IN=A) LNCOMM(IN=B); BY ACCTNO COMMNO; IF A
+    #   KEEP: BANKNO BRANCH ACCTNO NOTENO NAME APPRLIMT BALANCE
+    #         SECTORCD CUSTCD STATE INTRATE NTBRCH COMMNO LIABCODE
+    #         CCOLLTRL FISSPURP
+    #
+    # Left join on (ACCTNO, COMMNO): LNOTE drives (IF A).
+    # LNCOMM wins for columns it carries:
+    #   BRANCH (CMBRCH), SECTORCD (CSECTOR), STATE (CSTATE)
+    # CCOLLTRL comes exclusively from LNCOMM.
+    # ------------------------------------------------------------------
+    note1_df = lnote_df.join(
+        lncomm_df.rename({
+            "BRANCH"  : "BRANCH_COMM",
+            "SECTORCD": "SECTORCD_COMM",
+            "STATE"   : "STATE_COMM",
+        }),
+        on=["ACCTNO", "COMMNO"],
+        how="left",
+    )
+
+    # LNCOMM wins: overwrite LNOTE values where LNCOMM provides non-null data
+    note1_df = note1_df.with_columns([
+        # BRANCH -> LNCOMM wins
+        pl.when(pl.col("BRANCH_COMM").is_not_null())
+          .then(pl.col("BRANCH_COMM"))
+          .otherwise(pl.col("BRANCH"))
+          .alias("BRANCH"),
+        # SECTORCD -> LNCOMM wins
+        pl.when(pl.col("SECTORCD_COMM").is_not_null())
+          .then(pl.col("SECTORCD_COMM"))
+          .otherwise(pl.col("SECTORCD"))
+          .alias("SECTORCD"),
+        # STATE -> LNCOMM wins
+        pl.when(pl.col("STATE_COMM").is_not_null())
+          .then(pl.col("STATE_COMM"))
+          .otherwise(pl.col("STATE"))
+          .alias("STATE"),
+    ]).drop(["BRANCH_COMM", "SECTORCD_COMM", "STATE_COMM"])
+
+    # KEEP list for NOTE1
+    keep_note1 = [
+        "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "APPRLIMT", "BALANCE",
+        "SECTORCD", "CUSTCD", "STATE", "INTRATE", "NTBRCH", "COMMNO",
+        "LIABCODE", "CCOLLTRL", "FISSPURP",
+    ]
+    note1_df = note1_df.select([c for c in keep_note1 if c in note1_df.columns])
+
+    print(f"[{bank_name}] NOTE1 rows : {len(note1_df):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 5 — DATA NOTE2:
+    #   SET NOTE1;
+    #   IF CUSTCD NOT IN ('77','78','95','96') AND
+    #      (SUBSTR(SECTORCD,1,1)='5' OR SECTORCD='8310') THEN OUTPUT;
+    # ------------------------------------------------------------------
+    sector_col = pl.col("SECTORCD").cast(pl.Utf8)
+    note2_df = note1_df.filter(
+        (~pl.col("CUSTCD").cast(pl.Utf8).is_in(["77", "78", "95", "96"]))
+        & (
+            (sector_col.str.slice(0, 1) == "5")
+            | (sector_col == "8310")
+        )
+    )
+
+    print(f"[{bank_name}] NOTE2 rows : {len(note2_df):,}")
+
+    # Free intermediates
+    del loan_df, lnnote_df, lncomm_df, lnote_df
+    gc.collect()
+
+    # PROC DATASETS LIB=WORK NOLIST; DELETE LNOTE LNCOMM; (implicit in Python)
+
+    # ------------------------------------------------------------------
+    # STEP 6 — PROC SORT DATA=NOTE1 OUT=LNLC(I).NOTE1&REPTMON
+    #              BY BRANCH FISSPURP CUSTCD ACCTNO
+    # STEP 7 — PROC SORT DATA=NOTE2 OUT=LNLC(I).NOTE2&REPTMON
+    #              BY BRANCH SECTORCD CUSTCD ACCTNO
+    # ------------------------------------------------------------------
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    prefix = "LNLC" if bank_name == "PBB" else "LNLCI"
+
+    note1_out = output_dir / f"{prefix}_NOTE1_{reptmon}.parquet"
+    note2_out = output_dir / f"{prefix}_NOTE2_{reptmon}.parquet"
+
+    # Disk-friendly: write unsorted first, lazy-sort, write final
+    note1_tmp = output_dir / f"{prefix}_NOTE1_{reptmon}_tmp.parquet"
+    note2_tmp = output_dir / f"{prefix}_NOTE2_{reptmon}_tmp.parquet"
+
+    note1_df.write_parquet(note1_tmp)
+    note2_df.write_parquet(note2_tmp)
+
+    note1_sorted = (
+        pl.scan_parquet(note1_tmp)
+        .sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
+        .collect()
+    )
+    note2_sorted = (
+        pl.scan_parquet(note2_tmp)
+        .sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
+        .collect()
+    )
+
+    note1_sorted.write_parquet(note1_out)
+    note2_sorted.write_parquet(note2_out)
+
+    # Clean up temp files
+    note1_tmp.unlink(missing_ok=True)
+    note2_tmp.unlink(missing_ok=True)
+
+    # ------------------------------------------------------------------
+    # Terminal summary
+    # ------------------------------------------------------------------
+    print(f"\n[{bank_name}] REPTMON={reptmon}")
+    print(f"[{bank_name}] NOTE1 sorted rows : {len(note1_sorted):,}")
+    print(f"[{bank_name}] NOTE2 sorted rows : {len(note2_sorted):,}")
+    print(f"[{bank_name}] Output -> {note1_out}")
+    print(f"[{bank_name}] Output -> {note2_out}")
+    print(f"\n[{bank_name}] NOTE1 head:")
+    print(note1_sorted.head())
+    print(f"\n[{bank_name}] NOTE2 head:")
+    print(note2_sorted.head())
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+def main() -> None:
+    rv      = get_reptdate_values()
+    reptmon = rv.reptmon   # zero-padded month e.g. '05'
+    nowk    = rv.nowk      # week bucket       e.g. '2' or '4'
+
+    row_limit = _get_row_limit()
+
+    print(f"Report Date : {rv.reptdate}  (REPTMON={reptmon}, NOWK={nowk})")
+    if row_limit:
+        print(f"Test mode: reading at most {row_limit:,} rows from each input")
+
+    # PBB
+    process_bank("PBB",  PBB_CONFIG,  reptmon, row_limit=row_limit)
+
+    # PIBB
+    process_bank("PIBB", PIBB_CONFIG, reptmon, row_limit=row_limit)
+
+
+if __name__ == "__main__":
+    main()
