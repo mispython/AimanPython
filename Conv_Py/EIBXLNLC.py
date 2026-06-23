@@ -116,7 +116,7 @@ def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     # ------------------------------------------------------------------
     # Cache folder (keeps things clean)
     # ------------------------------------------------------------------
-    cache_dir = path.parent / "parquet_cache_v3" / path.stem
+    cache_dir = path.parent / "parquet_cache_v5" / path.stem
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_files = list(cache_dir.glob("*.parquet"))
@@ -232,7 +232,7 @@ def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataF
 
 def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     raw = _read_sas7bdat(loan_path, row_limit=row_limit)
-    rename_map = {"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD", "STATECD": "STATE"}
+    rename_map = {"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD"}
 
     if isinstance(raw, pl.LazyFrame):
         # only rename columns that actually exist
@@ -240,14 +240,14 @@ def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame
         actual_rename = {k: v for k, v in rename_map.items() if k in existing}
         expr = raw.rename(actual_rename).select([
             "ACCTNO", "NOTENO", "COMMNO", "BRANCH", "BALANCE", "SECTORCD",
-            "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "LIABCODE"
+            "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "LIABCODE"
         ])
         df = expr.collect()
     else:
         actual_rename = {k: v for k, v in rename_map.items() if k in raw.columns}
         df = raw.rename(actual_rename).select([
             "ACCTNO", "NOTENO", "COMMNO", "BRANCH", "BALANCE", "SECTORCD",
-            "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "LIABCODE"
+            "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "LIABCODE"
         ])
 
     return df.with_columns([
@@ -297,21 +297,17 @@ def process_bank(
     # Fix JOIN Memory
     # ------------------------------
     lnnote_df = lnnote_df.select([
-        "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
+        "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO", "LIABCODE"
     ])
 
     lncomm_df = lncomm_df.select([
         "ACCTNO", "COMMNO", "CCOLLTRL"
     ])
 
-    # loan_df = loan_df.select([
-    #     "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
-    #     "INTRATE", "APPRLIMT", "FISSPURP", "STATE"
-    # ])
 
     loan_df = loan_df.select([
         "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
-        "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "COMMNO"
+        "INTRATE", "APPRLIMT", "FISSPURP", "COMMNO", "LIABCODE"
     ]).with_columns([
         pl.col("ACCTNO").cast(pl.Int64),
         pl.col("NOTENO").cast(pl.Int64),
@@ -349,9 +345,13 @@ def process_bank(
         how="left"
     )
 
+    print("lnote_df columns: ", lnote_df.columns)
+
     # LIABCODE in both LOAN & LNNOTE - LNNOTE wins (SAS last-dataset rule)
     if "LIABCODE_right" in lnote_df.columns:
         lnote_df = lnote_df.drop("LIABCODE").rename({"LIABCODE_right": "LIABCODE"})
+    elif "LIABCODE" not in lnote_df.columns:
+        print("WARNING: LIABCODE missing entirely from joint result!")
 
     # lnote_df = lnote_df.filter(pl.col("ACCTYPE") == "LN")
 
