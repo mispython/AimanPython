@@ -30,9 +30,8 @@ from input_date import get_latest_file
 # # Production Path
 # BASE_DIR = Path("/dwh")
 
-BASE_DIR  = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR = BASE_DIR / "input/prod" / "EIBXLNLC"
-
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR  = BASE_DIR / "input/prod" / "EIBXLNLC"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBXLNLC"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -40,27 +39,29 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # Inputs:
 #   1. enrh_ln_note.sas7bdat  - shared LNNOTE file for both PBB and PIBB;
 #                                split by ENTITY_CD: 'PIBB' -> PIBB, else -> PBB
-#                                KEEP=ACCTNO NOTENO BANKNO STATE ENTITY_CD
-#                                (SAP.<ENTITY>.MNILN(0) - LNNOTE)
+#                                Columns: ACCTNO NOTENO BANKNO STATE NAME
+#                                         NTBRCH COMMNO LIABCODE ENTITY_CD
 #   2. enrh_ln_comm.sas7bdat  - shared LNCOMM file for both PBB and PIBB
-#                                KEEP=ACCTNO COMMNO CCOLLTRL
-#                                (SAP.<ENTITY>.MNILN(0) - LNCOMM)
+#                                Columns: ACCTNO COMMNO CCOLLTRL
 #   3. lnXXXXX.sas7bdat       - PBB loan extract  (SAP.PBB.SASDATA)
+#                                Columns: ACCTNO NOTENO COMMNO BRANCH BALANCE
+#                                         SECTORCD CUSTCD INTRATE APPRLIMT
+#                                         FISSPURP LIABCODE
 #   4. ilnXXXXX.sas7bdat      - PIBB loan extract (SAP.PIBB.SASDATA)
+#                                Same columns as PBB loan extract
 # ----------------------------------------------------------------------------
-LNNOTE_PATH : Path = INPUT_DIR / "enrh_ln_note.sas7bdat"
-LNCOMM_PATH : Path = INPUT_DIR / "enrh_ln_comm.sas7bdat"
+LNNOTE_PATH: Path = INPUT_DIR / "enrh_ln_note.sas7bdat"
+LNCOMM_PATH: Path = INPUT_DIR / "enrh_ln_comm.sas7bdat"
 
 PBB_CONFIG: Dict[str, Path] = {
-    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "ln"),    # e.g. ln05126.sas7bdat
+    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "ln"),
     "output_dir": OUTPUT_DIR / "PBB",
 }
 
 PIBB_CONFIG: Dict[str, Path] = {
-    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "iln"),   # e.g. iln05126.sas7bdat
+    "loan_dir"  : get_latest_file(BASE_DIR / "input/prod/EIBXODLC", "iln"),
     "output_dir": OUTPUT_DIR / "PIBB",
 }
-
 
 # =============================================================================
 # PROC FORMAT (informational - not used in output columns)
@@ -69,7 +70,7 @@ PIBB_CONFIG: Dict[str, Path] = {
 #    VALUE BANKFMT 33='PBB'
 #                 134='PFB';
 # RUN;
-BANKFMT = {33: 'PBB', 134: 'PFB'}
+BANKFMT = {33: "PBB", 134: "PFB"}
 
 
 # =============================================================================
@@ -81,175 +82,122 @@ BANKFMT = {33: 'PBB', 134: 'PFB'}
 #    CALL SYMPUT('REPTMON', ...) CALL SYMPUT('REPTYEAR', ...)
 # RUN;
 #
-# This program does not read its own REPTDATE source. It follows the same
-# biweekly schedule/derivation as EIBXODLC.py (runs immediately after it), so
-# REPTMON / NOWK are obtained from REPTDATE.get_reptdate_values(). RDATE
-# (DDMMYY8.) and REPTYEAR are not consumed downstream in this program (only
-# REPTMON feeds output file naming), so they are not carried forward.
+# REPTMON / NOWK are obtained from REPTDATE.get_reptdate_values().
+# RDATE and REPTYEAR are not consumed downstream so are not carried forward.
 
 
+# =============================================================================
+# ROW LIMIT HELPER (testing only)
+# =============================================================================
 def _get_row_limit() -> Optional[int]:
     """
     Return an optional per-file row limit for fast testing.
-
-    Set EIBXLNLC_ROW_LIMIT to a positive integer to read only that many rows
-    from each SAS input. Leave it unset or set it to 0 for full production runs.
-
-    e.g.     value = os.environ.get("EIBXLNLC_ROW_LIMIT", "1000").strip()   -> For 1000 dataset rows testing
+    Set EIBXLNLC_ROW_LIMIT to a positive integer to cap rows read from each
+    SAS input. Leave unset or 0 for full production runs.
     """
     value = os.environ.get("EIBXLNLC_ROW_LIMIT", "").strip()
     if not value:
         return None
-
     try:
         row_limit = int(value)
     except ValueError as exc:
         raise ValueError("EIBXLNLC_ROW_LIMIT must be a positive integer or 0") from exc
-
     return row_limit if row_limit > 0 else None
 
 
-def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
+# =============================================================================
+# SAS READER (cached via Parquet)
+# =============================================================================
+def _read_sas7bdat(path: Path, row_limit: Optional[int] = None):
     """
-    SAS → Parquet caching reader (biweekly-safe, memory-safe).
-
-    - Converts SAS in chunks if needed
-    - Stores Parquet in cache folder
-    - Reuses Parquet if SAS not updated
+    SAS -> Parquet caching reader (biweekly-safe, memory-safe).
+    Returns a pl.LazyFrame (cache hit / full convert) or pl.DataFrame (test mode).
     """
-
-    # ------------------------------------------------------------------
-    # Cache folder (keeps things clean)
-    # ------------------------------------------------------------------
     cache_dir = path.parent / "parquet_cache_v5" / path.stem
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_files = list(cache_dir.glob("*.parquet"))
-
-    # ------------------------------------------------------------------
-    # Check if cache is valid (IMPORTANT: biweekly-safe logic)
-    # ------------------------------------------------------------------
     cache_valid = (
         len(parquet_files) > 0
-        and max(f.stat().st_mtime for f in parquet_files)
-            >= path.stat().st_mtime
+        and max(f.stat().st_mtime for f in parquet_files) >= path.stat().st_mtime
     )
 
-    # ------------------------------------------------------------------
-    # CASE 1: USE CACHE (FAST PATH)
-    # ------------------------------------------------------------------
+    # CASE 1: USE CACHE
     if cache_valid and row_limit is None:
         print(f"[CACHE HIT] Reading Parquet: {path.stem}")
         return pl.scan_parquet(str(cache_dir / "*.parquet"))
 
-    # ------------------------------------------------------------------
-    # CASE 2: TEST MODE (LIMIT ROWS)
-    # ------------------------------------------------------------------
+    # CASE 2: TEST MODE
     if row_limit:
         print(f"[TEST MODE] Reading SAS: {path.name}")
-
-        reader = pd.read_sas(
-            str(path),
-            encoding="latin1",
-            chunksize=row_limit
-        )
-
+        reader = pd.read_sas(str(path), encoding="latin1", chunksize=row_limit)
         try:
             pdf = next(reader)
         except StopIteration:
             pdf = pd.DataFrame()
-
         pdf.columns = [c.upper() for c in pdf.columns]
         return pl.from_pandas(pdf)
 
-    # ------------------------------------------------------------------
-    # CASE 3: FULL CONVERSION (SAS → PARQUET PARTITIONED)
-    # ------------------------------------------------------------------
-    print(f"\n[CONVERT] SAS → Parquet (chunked): {path.name}")
-
-    reader = pd.read_sas(
-        str(path),
-        encoding="latin1",
-        chunksize=500_000  # safe for 7GB file
-    )
-
-    print(f"[CONVERT] Starting chunked read for: {path.name}")
-
+    # CASE 3: FULL CONVERSION (SAS -> PARQUET PARTITIONED)
+    print(f"\n[CONVERT] SAS -> Parquet (chunked): {path.name}")
+    reader = pd.read_sas(str(path), encoding="latin1", chunksize=500_000)
     for i, chunk in enumerate(reader):
         if chunk is None or chunk.empty:
             continue
-
         print(f"[CHUNK {i}] Reading chunk {i} ...")
-
         chunk.columns = [c.upper() for c in chunk.columns]
-
         df = pl.from_pandas(chunk)
-
-        # Force consistent schema across all chunks
-        df = df.with_columns([
-            pl.col(c).cast(pl.Utf8, strict=False)
-            for c in df.columns
-        ])
-
+        df = df.with_columns([pl.col(c).cast(pl.Utf8, strict=False) for c in df.columns])
         out_file = cache_dir / f"part-{i:05d}.parquet"
         df.write_parquet(out_file, compression="zstd")
-
         print(f"[WRITE] {out_file} ({len(df):,} rows)")
-
     print(f"[DONE] Cache created at: {cache_dir}")
-
-    # ------------------------------------------------------------------
-    # FINAL READ (as one logical dataset)
-    # ------------------------------------------------------------------
-    return pl.scan_parquet(str(cache_dir / "*.parquet")).collect()
+    return pl.scan_parquet(str(cache_dir / "*.parquet"))
 
 
-def _read_lnnote_shared(lnnote_path: Path, row_limit: Optional[int] = None) -> tuple[pl.DataFrame, pl.DataFrame]:
+# =============================================================================
+# READERS
+# =============================================================================
+def _read_lnnote_shared(
+    lnnote_path: Path, row_limit: Optional[int] = None
+) -> tuple[pl.DataFrame, pl.DataFrame]:
     """
-    Read the shared enrh_ln_note.sas7bdat and split into PBB and PIBB subsets.
+    Read shared enrh_ln_note.sas7bdat and split into PBB / PIBB.
 
-    SAS original:
-      PROC SORT DATA=LNNOTE.LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE)
-         OUT=LNNOTE;
-         BY ACCTNO NOTENO;
+    LNNOTE is the authoritative source for:
+      ACCTNO, NOTENO, BANKNO, STATE, NAME, NTBRCH, COMMNO, LIABCODE
 
-    The shared file carries an ENTITY_CD column:
-      - ENTITY_CD == 'PIBB'  -> PIBB dataset
-      - ENTITY_CD != 'PIBB'  -> PBB dataset
-
-    Only ACCTNO, NOTENO, BANKNO, STATE are retained (matching the SAS KEEP=).
+    ENTITY_CD == 'PIBB' -> PIBB subset
+    ENTITY_CD != 'PIBB' -> PBB subset
     """
-    raw = _read_sas7bdat(lnnote_path, row_limit=row_limit)
-    expr = raw.select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO", "LIABCODE", "ENTITY_CD"])
-    df = expr.collect() if isinstance(expr, pl.LazyFrame) else expr
+    raw  = _read_sas7bdat(lnnote_path, row_limit=row_limit)
+    need = ["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO", "LIABCODE", "ENTITY_CD"]
+    expr = raw.select(need)
+    df   = expr.collect() if isinstance(expr, pl.LazyFrame) else expr
 
-    df = (
-        df
-        .drop_nulls(["ACCTNO", "NOTENO"])
-        .unique(subset=["ACCTNO", "NOTENO"])
-        .with_columns([
-            pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
-            pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
-            pl.col("ENTITY_CD").cast(pl.Utf8),
-        ])
-    )
+    df = df.drop_nulls(["ACCTNO", "NOTENO"]).with_columns([
+        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("ENTITY_CD").cast(pl.Utf8),
+    ])
 
     keep_cols = ["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO", "LIABCODE"]
 
-    pibb_df = df.filter(pl.col("ENTITY_CD") == "PIBB").select(keep_cols)
-    pbb_df  = df.filter(pl.col("ENTITY_CD") != "PIBB").select(keep_cols)
+    # Split then deduplicate each subset independently
+    pbb_df  = df.filter(pl.col("ENTITY_CD") != "PIBB").select(keep_cols).unique(subset=["ACCTNO", "NOTENO"])
+    pibb_df = df.filter(pl.col("ENTITY_CD") == "PIBB").select(keep_cols).unique(subset=["ACCTNO", "NOTENO"])
 
     return pbb_df, pibb_df
 
 
 def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     """
-    PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM;
-    BY ACCTNO COMMNO;
+    PROC SORT DATA=LNNOTE.LNCOMM OUT=LNCOMM; BY ACCTNO COMMNO;
     """
-    raw = _read_sas7bdat(lncomm_path, row_limit=row_limit)
+    raw  = _read_sas7bdat(lncomm_path, row_limit=row_limit)
     expr = raw.select(["ACCTNO", "COMMNO", "CCOLLTRL"])
-    df = expr.collect() if isinstance(expr, pl.LazyFrame) else expr
+    df   = expr.collect() if isinstance(expr, pl.LazyFrame) else expr
     return (
         df
         .unique(subset=["ACCTNO", "COMMNO"])
@@ -262,34 +210,47 @@ def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataF
 
 def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     """
-    PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN;
-    BY ACCTNO NOTENO;
+    PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO;
+
+    Columns sourced from LOAN only:
+      ACCTNO, NOTENO, COMMNO, BRANCH, BALANCE, SECTORCD (SECTOR),
+      CUSTCD (CUSTCODE), INTRATE, APPRLIMT, FISSPURP, LIABCODE
+
+    STATE (STATECD in LOAN) is intentionally excluded — STATE is taken
+    exclusively from LNNOTE to avoid nulls and ensure consistency.
+    NOTENO is read from LOAN for the initial join key but LNNOTE's NOTENO
+    takes precedence after the merge.
+    NAME and NTBRCH are not present in LOAN — they come from LNNOTE.
     """
     raw = _read_sas7bdat(loan_path, row_limit=row_limit)
-    # SECTOR -> SECTORCD, CUSTCODE -> CUSTCD, STATECD -> STATE
-    rename_map = {"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD", "STATECD": "STATE"}
+
+    # SECTOR -> SECTORCD, CUSTCODE -> CUSTCD
+    # STATECD is intentionally NOT renamed or selected here
+    rename_map = {"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD"}
+
+    loan_cols = [
+        "ACCTNO", "NOTENO", "COMMNO", "BRANCH", "BALANCE",
+        "SECTORCD", "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "LIABCODE"
+    ]
 
     if isinstance(raw, pl.LazyFrame):
-        existing = raw.collect_schema().names()
+        existing      = raw.collect_schema().names()
         actual_rename = {k: v for k, v in rename_map.items() if k in existing}
-        expr = raw.rename(actual_rename).select([
-            "ACCTNO", "NOTENO", "COMMNO", "BRANCH", "BALANCE", "SECTORCD",
-            "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "LIABCODE"
-        ])
-        df = expr.collect()
+        df = raw.rename(actual_rename).select(
+            [c for c in loan_cols if c in raw.rename(actual_rename).collect_schema().names()]
+        ).collect()
     else:
         actual_rename = {k: v for k, v in rename_map.items() if k in raw.columns}
-        df = raw.rename(actual_rename).select([
-            "ACCTNO", "NOTENO", "COMMNO", "BRANCH", "BALANCE", "SECTORCD",
-            "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "LIABCODE"
-        ])
+        df = raw.rename(actual_rename).select(
+            [c for c in loan_cols if c in raw.rename(actual_rename).columns]
+        )
 
     return df.with_columns([
         pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
         pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
+        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
         pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
         pl.col("SECTORCD").cast(pl.Utf8),
-        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
     ])
 
 
@@ -297,15 +258,20 @@ def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame
 # CORE PROCESSING
 # =============================================================================
 def process_bank(
-    bank_name: str,
-    config: Dict[str, Path],
-    lnnote_df: pl.DataFrame,
-    lncomm_df: pl.DataFrame,
-    reptmon: str,
-    row_limit: Optional[int] = None,
+    bank_name : str,
+    config    : Dict[str, Path],
+    lnnote_df : pl.DataFrame,
+    lncomm_df : pl.DataFrame,
+    reptmon   : str,
+    row_limit : Optional[int] = None,
 ) -> None:
     """
     Process loan-list preparation for a single bank entity (PBB or PIBB).
+
+    SAS flow:
+      MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO;  -> LNOTE
+      MERGE LNOTE(IN=A) LNCOMM(IN=B); BY ACCTNO COMMNO; -> NOTE1
+      SET NOTE1; filter CUSTCD / SECTORCD;               -> NOTE2
     """
     loan_path  = config["loan_dir"]
     output_dir = config["output_dir"]
@@ -316,84 +282,89 @@ def process_bank(
     loan_df = _read_loan(loan_path, row_limit=row_limit)
 
     # ------------------------------------------------------------------
-    # SAS original does not explicitly filter CUSTCD here at LOAN level;
-    # the CUSTCD filter is applied only in the NOTE2 step.
-    # Filter ACCTYPE = 'LN' is implicit via the LOAN dataset used.
+    # LNNOTE is authoritative for: NOTENO, NAME, BANKNO, STATE, NTBRCH,
+    # COMMNO, LIABCODE.  Prefix LOAN columns that would collide so we can
+    # cleanly pick the correct side after the join.
     # ------------------------------------------------------------------
+    loan_prefixed = loan_df.rename({
+        "NOTENO"  : "LN_NOTENO",
+        "COMMNO"  : "LN_COMMNO",
+        "LIABCODE": "LN_LIABCODE",
+    })
 
     # ------------------------------------------------------------------
-    # DATA LNOTE: MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO; IF ACCTYPE = 'LN'
-    # KEEP: BANKNO BRANCH ACCTNO NOTENO NAME BALANCE SECTORCD CUSTCD
-    #       INTRATE NTBRCH COMMNO LIABCODE APPRLIMT FISSPURP STATE
+    # DATA LNOTE:
+    #   MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO;
+    #   IF ACCTYPE = 'LN';   <- implicit via LOAN dataset scope
+    #   KEEP: BANKNO BRANCH ACCTNO NOTENO NAME BALANCE SECTORCD CUSTCD
+    #         INTRATE NTBRCH COMMNO LIABCODE APPRLIMT FISSPURP STATE
     #
-    # Note: NAME and NTBRCH are not present in LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE
-    # in original SAS). They originate from the LOAN dataset itself. LIABCODE comes
-    # from LOAN; the SAS merge brings BANKNO and STATE from LNNOTE side.
+    # Join on ACCTNO only — LOAN's NOTENO can be 0/null for some records;
+    # LNNOTE is the authoritative source for NOTENO, NAME, STATE, etc.
     # ------------------------------------------------------------------
-    lnote_df = loan_df.join(
+    lnote_df = loan_prefixed.join(
         lnnote_df,
-        on=["ACCTNO", "NOTENO"],
+        on="ACCTNO",
         how="left",
-        suffix="_LOAN"
     )
 
-    # SAS MERGE last-dataset wins: LNNOTE's LIABCODE overrides LOAN's LIABCODE
-    if "LIABCODE_LOAN" in lnote_df.columns:
-        # LIABCODE (from LNNOTE join side) is already the right one; drop LOAN's copy
-        lnote_df = lnote_df.drop("LIABCODE_LOAN")
-    
-    # COMMNO: prefer LNNOTE side if present (suffix _LOAN = LOAN's copy)
-    if "COMMNO_LOAN" in lnote_df.columns:
-        lnote_df = lnote_df.drop("COMMNO_LOAN")
+    # LNNOTE wins for NOTENO, COMMNO, LIABCODE (SAS last-dataset rule)
+    lnote_df = lnote_df.with_columns([
+        # Prefer LNNOTE's NOTENO; fall back to LOAN's if null
+        pl.coalesce([pl.col("NOTENO"), pl.col("LN_NOTENO")]).alias("NOTENO"),
+        # Prefer LNNOTE's COMMNO; fall back to LOAN's if null
+        pl.coalesce([pl.col("COMMNO"), pl.col("LN_COMMNO")]).alias("COMMNO"),
+        # Prefer LNNOTE's LIABCODE; fall back to LOAN's if null
+        pl.coalesce([pl.col("LIABCODE"), pl.col("LN_LIABCODE")]).alias("LIABCODE"),
+    ]).drop(["LN_NOTENO", "LN_COMMNO", "LN_LIABCODE"])
 
     keep_lnote = [
         "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "BALANCE",
-        "SECTORCD", "CUSTCD", "INTRATE", "NTBRCH", "COMMNO", "LIABCODE",
-        "APPRLIMT", "FISSPURP", "STATE",
+        "SECTORCD", "CUSTCD", "INTRATE", "NTBRCH", "COMMNO",
+        "LIABCODE", "APPRLIMT", "FISSPURP", "STATE",
     ]
-    # Retain only columns that exist after the join
     lnote_df = lnote_df.select([c for c in keep_lnote if c in lnote_df.columns])
 
-    lnote_df = lnote_df.with_columns(
-        pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64)
-    )
+    del loan_df
+    gc.collect()
 
     # ------------------------------------------------------------------
-    # DATA NOTE1: MERGE LNOTE(IN=A) LNCOMM(IN=B); BY ACCTNO COMMNO; IF A
-    # KEEP: BANKNO BRANCH ACCTNO NOTENO NAME APPRLIMT BALANCE SECTORCD
-    #       CUSTCD STATE INTRATE NTBRCH COMMNO LIABCODE CCOLLTRL FISSPURP
+    # DATA NOTE1:
+    #   MERGE LNOTE(IN=A) LNCOMM(IN=B); BY ACCTNO COMMNO; IF A;
+    #   KEEP: BANKNO BRANCH ACCTNO NOTENO NAME APPRLIMT BALANCE SECTORCD
+    #         CUSTCD STATE INTRATE NTBRCH COMMNO LIABCODE CCOLLTRL FISSPURP
     # ------------------------------------------------------------------
     note1_df = lnote_df.join(
         lncomm_df,
         on=["ACCTNO", "COMMNO"],
         how="left",
-        suffix="_COMM"
+        suffix="_COMM",
     )
+    note1_df = note1_df.drop([c for c in note1_df.columns if c.endswith("_COMM")])
 
     keep_note1 = [
         "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "APPRLIMT", "BALANCE",
         "SECTORCD", "CUSTCD", "STATE", "INTRATE", "NTBRCH", "COMMNO",
         "LIABCODE", "CCOLLTRL", "FISSPURP",
     ]
-    note1_df = note1_df.drop([c for c in note1_df.columns if c.endswith("_COMM")])
     note1_df = note1_df.select([c for c in keep_note1 if c in note1_df.columns])
 
+    del lnote_df
+    gc.collect()
+
     # ------------------------------------------------------------------
-    # DATA NOTE2: SET NOTE1
-    # IF CUSTCD NOT IN ('77','78','95','96') AND
-    #    (SUBSTR(SECTORCD,1,1) = '5' OR SECTORCD = '8310') THEN OUTPUT
+    # DATA NOTE2:
+    #   SET NOTE1;
+    #   IF CUSTCD NOT IN ('77','78','95','96') AND
+    #      (SUBSTR(SECTORCD,1,1) = '5' OR SECTORCD = '8310') THEN OUTPUT;
     # ------------------------------------------------------------------
-    sector = pl.col("SECTORCD").cast(pl.Utf8)
+    sector   = pl.col("SECTORCD").cast(pl.Utf8)
     note2_df = note1_df.filter(
         (~pl.col("CUSTCD").cast(pl.Utf8).is_in(["77", "78", "95", "96"]))
         & ((sector.str.slice(0, 1) == "5") | (sector == "8310"))
     )
 
-    del loan_df
-    del lnote_df
-    gc.collect()
-
-    # PROC DATASETS LIB=WORK NOLIST; DELETE LNOTE LNCOMM (implicit - not needed in Python)
+    # PROC DATASETS LIB=WORK NOLIST; DELETE LNOTE LNCOMM; (not needed in Python)
 
     # ------------------------------------------------------------------
     # PROC SORT DATA=NOTE1 OUT=LNLC(I).NOTE1&REPTMON; BY BRANCH FISSPURP CUSTCD ACCTNO
@@ -401,29 +372,29 @@ def process_bank(
     # ------------------------------------------------------------------
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    prefix = "LNLC" if bank_name == "PBB" else "LNLCI"
-
+    prefix    = "LNLC" if bank_name == "PBB" else "LNLCI"
     note1_tmp = output_dir / f"{prefix}_NOTE1_{reptmon}_tmp.parquet"
     note2_tmp = output_dir / f"{prefix}_NOTE2_{reptmon}_tmp.parquet"
 
-    # STEP 1: write UNSORTED (low memory)
+    # Write unsorted first (low memory), then lazy sort
     note1_df.write_parquet(note1_tmp)
     note2_df.write_parquet(note2_tmp)
 
-    # STEP 2: lazy sort (disk-based, not RAM-heavy)
     note1_sorted = (
         pl.scan_parquet(note1_tmp)
         .sort(["BRANCH", "FISSPURP", "CUSTCD", "ACCTNO"])
         .collect()
     )
-
     note2_sorted = (
         pl.scan_parquet(note2_tmp)
         .sort(["BRANCH", "SECTORCD", "CUSTCD", "ACCTNO"])
         .collect()
     )
 
-    # STEP 3: final output
+    # Clean up temp files
+    note1_tmp.unlink(missing_ok=True)
+    note2_tmp.unlink(missing_ok=True)
+
     note1_out = output_dir / f"{prefix}_NOTE1_{reptmon}.parquet"
     note2_out = output_dir / f"{prefix}_NOTE2_{reptmon}.parquet"
 
@@ -446,9 +417,9 @@ def process_bank(
 # MAIN
 # =============================================================================
 def main() -> None:
-    rv = get_reptdate_values()
-    reptmon = rv.reptmon   # zero-padded month e.g. '05'
-    nowk    = rv.nowk      # week bucket       e.g. '2' or '4'
+    rv      = get_reptdate_values()
+    reptmon = rv.reptmon  # zero-padded month e.g. '05'
+    nowk    = rv.nowk     # week bucket       e.g. '2' or '4'
 
     row_limit = _get_row_limit()
 
@@ -461,11 +432,9 @@ def main() -> None:
     if not LNCOMM_PATH.exists():
         raise FileNotFoundError(f"Missing shared LNCOMM file: {LNCOMM_PATH}")
 
-    # Read shared LNNOTE once and split into PBB / PIBB subsets
+    # Read shared inputs once — split LNNOTE by ENTITY_CD
     pbb_lnnote_df, pibb_lnnote_df = _read_lnnote_shared(LNNOTE_PATH, row_limit=row_limit)
-
-    # Read shared LNCOMM once (same file for both banks)
-    shared_lncomm_df = _read_lncomm(LNCOMM_PATH, row_limit=row_limit)
+    shared_lncomm_df              = _read_lncomm(LNCOMM_PATH, row_limit=row_limit)
 
     # PBB
     process_bank(
