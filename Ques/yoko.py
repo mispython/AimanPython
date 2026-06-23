@@ -209,23 +209,7 @@ def _read_lncomm(lncomm_path: Path, row_limit: Optional[int] = None) -> pl.DataF
 
 
 def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
-    """
-    PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO NOTENO;
-
-    Columns sourced from LOAN only:
-      ACCTNO, NOTENO, COMMNO, BRANCH, BALANCE, SECTORCD (SECTOR),
-      CUSTCD (CUSTCODE), INTRATE, APPRLIMT, FISSPURP, LIABCODE
-
-    STATE (STATECD in LOAN) is intentionally excluded — STATE is taken
-    exclusively from LNNOTE to avoid nulls and ensure consistency.
-    NOTENO is read from LOAN for the initial join key but LNNOTE's NOTENO
-    takes precedence after the merge.
-    NAME and NTBRCH are not present in LOAN — they come from LNNOTE.
-    """
     raw = _read_sas7bdat(loan_path, row_limit=row_limit)
-
-    # SECTOR -> SECTORCD, CUSTCODE -> CUSTCD
-    # STATECD is intentionally NOT renamed or selected here
     rename_map = {"SECTOR": "SECTORCD", "CUSTCODE": "CUSTCD"}
 
     loan_cols = [
@@ -236,23 +220,30 @@ def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame
     if isinstance(raw, pl.LazyFrame):
         existing      = raw.collect_schema().names()
         actual_rename = {k: v for k, v in rename_map.items() if k in existing}
-        df = raw.rename(actual_rename).select(
-            [c for c in loan_cols if c in raw.rename(actual_rename).collect_schema().names()]
+        renamed       = raw.rename(actual_rename)
+        df            = renamed.select(
+            [c for c in loan_cols if c in renamed.collect_schema().names()]
         ).collect()
     else:
         actual_rename = {k: v for k, v in rename_map.items() if k in raw.columns}
-        df = raw.rename(actual_rename).select(
-            [c for c in loan_cols if c in raw.rename(actual_rename).columns]
+        renamed       = raw.rename(actual_rename)
+        df            = renamed.select(
+            [c for c in loan_cols if c in renamed.columns]
         )
 
-    return df.with_columns([
+    df = df.with_columns([
         pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
         pl.col("NOTENO").cast(pl.Float64).cast(pl.Int64),
         pl.col("COMMNO").cast(pl.Float64).cast(pl.Int64),
         pl.col("CUSTCD").cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8),
         pl.col("SECTORCD").cast(pl.Utf8),
+        pl.col("BRANCH").cast(pl.Float64).cast(pl.Int64),
     ])
 
+    # Guard: drop rows where NOTENO is 0 or null — these cannot join to LNNOTE
+    df = df.filter(pl.col("NOTENO").is_not_null() & (pl.col("NOTENO") != 0))
+
+    return df
 
 # =============================================================================
 # CORE PROCESSING
@@ -265,14 +256,6 @@ def process_bank(
     reptmon   : str,
     row_limit : Optional[int] = None,
 ) -> None:
-    """
-    Process loan-list preparation for a single bank entity (PBB or PIBB).
-
-    SAS flow:
-      MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO;  -> LNOTE
-      MERGE LNOTE(IN=A) LNCOMM(IN=B); BY ACCTNO COMMNO; -> NOTE1
-      SET NOTE1; filter CUSTCD / SECTORCD;               -> NOTE2
-    """
     loan_path  = config["loan_dir"]
     output_dir = config["output_dir"]
 
@@ -282,41 +265,38 @@ def process_bank(
     loan_df = _read_loan(loan_path, row_limit=row_limit)
 
     # ------------------------------------------------------------------
-    # LNNOTE is authoritative for: NOTENO, NAME, BANKNO, STATE, NTBRCH,
-    # COMMNO, LIABCODE.  Prefix LOAN columns that would collide so we can
-    # cleanly pick the correct side after the join.
+    # Protect LOAN-only columns that would collide with LNNOTE columns.
+    # LIABCODE exists in both — LNNOTE wins (SAS last-dataset rule).
+    # COMMNO exists in both — LNNOTE wins.
+    # BRANCH exists only in LOAN — must be preserved explicitly.
     # ------------------------------------------------------------------
     loan_prefixed = loan_df.rename({
-        "NOTENO"  : "LN_NOTENO",
-        "COMMNO"  : "LN_COMMNO",
         "LIABCODE": "LN_LIABCODE",
+        "COMMNO"  : "LN_COMMNO",
     })
 
     # ------------------------------------------------------------------
     # DATA LNOTE:
     #   MERGE LOAN(IN=A) LNNOTE(IN=B); BY ACCTNO NOTENO;
-    #   IF ACCTYPE = 'LN';   <- implicit via LOAN dataset scope
     #   KEEP: BANKNO BRANCH ACCTNO NOTENO NAME BALANCE SECTORCD CUSTCD
     #         INTRATE NTBRCH COMMNO LIABCODE APPRLIMT FISSPURP STATE
     #
-    # Join on ACCTNO only — LOAN's NOTENO can be 0/null for some records;
-    # LNNOTE is the authoritative source for NOTENO, NAME, STATE, etc.
+    # Join on ACCTNO + NOTENO (correct SAS BY keys).
+    # LNNOTE provides: BANKNO, NAME, STATE, NTBRCH, COMMNO, LIABCODE, NOTENO
+    # LOAN   provides: BRANCH, BALANCE, SECTORCD, CUSTCD, INTRATE,
+    #                  APPRLIMT, FISSPURP
     # ------------------------------------------------------------------
     lnote_df = loan_prefixed.join(
         lnnote_df,
-        on="ACCTNO",
+        on=["ACCTNO", "NOTENO"],
         how="left",
     )
 
-    # LNNOTE wins for NOTENO, COMMNO, LIABCODE (SAS last-dataset rule)
+    # Resolve COMMNO and LIABCODE — LNNOTE wins, fall back to LOAN
     lnote_df = lnote_df.with_columns([
-        # Prefer LNNOTE's NOTENO; fall back to LOAN's if null
-        pl.coalesce([pl.col("NOTENO"), pl.col("LN_NOTENO")]).alias("NOTENO"),
-        # Prefer LNNOTE's COMMNO; fall back to LOAN's if null
-        pl.coalesce([pl.col("COMMNO"), pl.col("LN_COMMNO")]).alias("COMMNO"),
-        # Prefer LNNOTE's LIABCODE; fall back to LOAN's if null
-        pl.coalesce([pl.col("LIABCODE"), pl.col("LN_LIABCODE")]).alias("LIABCODE"),
-    ]).drop(["LN_NOTENO", "LN_COMMNO", "LN_LIABCODE"])
+        pl.coalesce([pl.col("COMMNO"),    pl.col("LN_COMMNO")]).alias("COMMNO"),
+        pl.coalesce([pl.col("LIABCODE"),  pl.col("LN_LIABCODE")]).alias("LIABCODE"),
+    ]).drop(["LN_COMMNO", "LN_LIABCODE"])
 
     keep_lnote = [
         "BANKNO", "BRANCH", "ACCTNO", "NOTENO", "NAME", "BALANCE",
@@ -331,8 +311,6 @@ def process_bank(
     # ------------------------------------------------------------------
     # DATA NOTE1:
     #   MERGE LNOTE(IN=A) LNCOMM(IN=B); BY ACCTNO COMMNO; IF A;
-    #   KEEP: BANKNO BRANCH ACCTNO NOTENO NAME APPRLIMT BALANCE SECTORCD
-    #         CUSTCD STATE INTRATE NTBRCH COMMNO LIABCODE CCOLLTRL FISSPURP
     # ------------------------------------------------------------------
     note1_df = lnote_df.join(
         lncomm_df,
@@ -364,19 +342,12 @@ def process_bank(
         & ((sector.str.slice(0, 1) == "5") | (sector == "8310"))
     )
 
-    # PROC DATASETS LIB=WORK NOLIST; DELETE LNOTE LNCOMM; (not needed in Python)
-
-    # ------------------------------------------------------------------
-    # PROC SORT DATA=NOTE1 OUT=LNLC(I).NOTE1&REPTMON; BY BRANCH FISSPURP CUSTCD ACCTNO
-    # PROC SORT DATA=NOTE2 OUT=LNLC(I).NOTE2&REPTMON; BY BRANCH SECTORCD CUSTCD ACCTNO
-    # ------------------------------------------------------------------
     output_dir.mkdir(parents=True, exist_ok=True)
 
     prefix    = "LNLC" if bank_name == "PBB" else "LNLCI"
     note1_tmp = output_dir / f"{prefix}_NOTE1_{reptmon}_tmp.parquet"
     note2_tmp = output_dir / f"{prefix}_NOTE2_{reptmon}_tmp.parquet"
 
-    # Write unsorted first (low memory), then lazy sort
     note1_df.write_parquet(note1_tmp)
     note2_df.write_parquet(note2_tmp)
 
@@ -391,7 +362,6 @@ def process_bank(
         .collect()
     )
 
-    # Clean up temp files
     note1_tmp.unlink(missing_ok=True)
     note2_tmp.unlink(missing_ok=True)
 
@@ -401,9 +371,6 @@ def process_bank(
     note1_sorted.write_parquet(note1_out)
     note2_sorted.write_parquet(note2_out)
 
-    # ------------------------------------------------------------------
-    # Terminal summary
-    # ------------------------------------------------------------------
     print(f"\n[{bank_name}] REPTMON={reptmon}")
     print(f"[{bank_name}] NOTE1 rows : {len(note1_sorted):,}")
     print(f"[{bank_name}] NOTE2 rows : {len(note2_sorted):,}")
