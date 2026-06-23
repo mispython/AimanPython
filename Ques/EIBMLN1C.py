@@ -130,7 +130,7 @@ def _build_title_lines(title1: str, title2: str, report_date: str, branch: str, 
         f"1{title1}\n",
         f" {title2}\n",
         f" LOAN LISTING BY FISS PURPOSE CODE (FOR ALL CUSTCODES)"
-        f"                                      REPORT DATE: {report_date}\n",
+        f"{' ' * 57}REPORT DATE: {report_date}\n",
         f" {title4}\n",
         f"\n",
         f" BRANCH={branch}\n",
@@ -223,11 +223,11 @@ def _write_fisspurp_subtotal(report_file, fisspurp: str, balance_sum: float) -> 
         LINE @025 'SUBTOTAL FOR FISS PURPOSE   '  FISSPURP $4.  @063 BALANCE.SUM  13.2;
         LINE @025 51*'-';
     """
-    sep_line = ' ' * 24 + '-' * 51
+    sep_line = ' ' * 25 + '-' * 51
     report_file.write(sep_line + '\n')
     fp_str       = f"{_safe_text(fisspurp, 4):<4}"
     balance_str  = f"{balance_sum:>13.2f}"
-    subtotal_txt = f"{' ' * 24}{'SUBTOTAL FOR FISS PURPOSE   '}{fp_str}"
+    subtotal_txt = f"{' ' * 25}{'SUBTOTAL FOR FISS PURPOSE   '}{fp_str}"
     # @063 = position 63 in content (1-based); pad subtotal_txt to col 62 then append balance
     line = subtotal_txt.ljust(62) + balance_str
     report_file.write(line + '\n')
@@ -436,10 +436,10 @@ def generate_loan_listing_report(
 
         print(f"Report saved: {output_file}")
 
-        print(f"\n{'=' * 20} PREVIEW: {output_file.name} {'=' * 20}\n")
-        with open(output_file, 'r', encoding='utf-8') as f:
-            print(f.read())
-        print(f"{'=' * 20} END PREVIEW {'=' * 20}\n")
+        # print(f"\n{'=' * 20} PREVIEW: {output_file.name} {'=' * 20}\n")
+        # with open(output_file, 'r', encoding='utf-8') as f:
+        #     print(f.read())
+        # print(f"{'=' * 20} END PREVIEW {'=' * 20}\n")
 
         return True
 
