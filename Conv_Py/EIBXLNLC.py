@@ -116,7 +116,7 @@ def _read_sas7bdat(path: Path, row_limit: Optional[int] = None) -> pl.DataFrame:
     # ------------------------------------------------------------------
     # Cache folder (keeps things clean)
     # ------------------------------------------------------------------
-    cache_dir = path.parent / "parquet_cache_v2" / path.stem
+    cache_dir = path.parent / "parquet_cache_v3" / path.stem
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_files = list(cache_dir.glob("*.parquet"))
@@ -204,7 +204,7 @@ def _read_lnnote(lnnote_path: Path, row_limit: Optional[int] = None) -> pl.DataF
     raw = _read_sas7bdat(lnnote_path, row_limit=row_limit)
     expr = (
         raw
-        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"])
+        .select(["ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO", "LIABCODE"])
         .drop_nulls(["ACCTNO", "NOTENO", "COMMNO"])
     )
     # collect after filter — much less RAM
@@ -239,15 +239,15 @@ def _read_loan(loan_path: Path, row_limit: Optional[int] = None) -> pl.DataFrame
         existing = raw.collect_schema().names()
         actual_rename = {k: v for k, v in rename_map.items() if k in existing}
         expr = raw.rename(actual_rename).select([
-            "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
-            "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "COMMNO"
+            "ACCTNO", "NOTENO", "COMMNO", "BRANCH", "BALANCE", "SECTORCD",
+            "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "LIABCODE"
         ])
         df = expr.collect()
     else:
         actual_rename = {k: v for k, v in rename_map.items() if k in raw.columns}
         df = raw.rename(actual_rename).select([
-            "ACCTNO", "NOTENO", "BRANCH", "BALANCE", "SECTORCD", "CUSTCD",
-            "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "COMMNO"
+            "ACCTNO", "NOTENO", "COMMNO", "BRANCH", "BALANCE", "SECTORCD",
+            "CUSTCD", "INTRATE", "APPRLIMT", "FISSPURP", "STATE", "LIABCODE"
         ])
 
     return df.with_columns([
@@ -297,7 +297,6 @@ def process_bank(
     # Fix JOIN Memory
     # ------------------------------
     lnnote_df = lnnote_df.select([
-        # "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
         "ACCTNO", "NOTENO", "BANKNO", "STATE", "NAME", "NTBRCH", "COMMNO"
     ])
 
@@ -349,6 +348,10 @@ def process_bank(
         on=["ACCTNO", "NOTENO"],
         how="left"
     )
+
+    # LIABCODE in both LOAN & LNNOTE - LNNOTE wins (SAS last-dataset rule)
+    if "LIABCODE_right" in lnote_df.columns:
+        lnote_df = lnote_df.drop("LIABCODE").rename({"LIABCODE_right": "LIABCODE"})
 
     # lnote_df = lnote_df.filter(pl.col("ACCTYPE") == "LN")
 
