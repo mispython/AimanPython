@@ -37,42 +37,38 @@ def _ensure_parquet(sas_path: Path) -> Path:
 
 
 # ------------------------------------------------------------
-# Step 1 : Convert to parquet (once), then summarise via DuckDB
+# Step 1 : Convert to parquet (once), then summarise via Polars
 # ------------------------------------------------------------
 print(f"[INFO] Current loan file  : {LOAN_FILE.name}")
 curr_parquet = _ensure_parquet(LOAN_FILE)
 
-con = duckdb.connect()
-loan_summ = con.execute(f"""
-    SELECT
-        BRANCH,
-        PRODUCT,
-        SUM(BALANCE) AS BRLNAMT,
-        COUNT(*)     AS NOACCT
-    FROM read_parquet('{curr_parquet}')
-    WHERE PRODUCT IN ({','.join(str(p) for p in TARGET_PRODUCTS)})
-    GROUP BY BRANCH, PRODUCT
-""").pl()
-con.close()
+loan_summ = (
+    pl.scan_parquet(curr_parquet)
+    .filter(pl.col("PRODUCT").is_in(TARGET_PRODUCTS))
+    .group_by(["BRANCH", "PRODUCT"])
+    .agg([
+        pl.col("BALANCE").sum().alias("BRLNAMT"),
+        pl.len().alias("NOACCT"),
+    ])
+    .collect()
+)
 
 # ------------------------------------------------------------
-# Step 2 : Convert to parquet (once), then summarise via DuckDB
+# Step 2 : Convert to parquet (once), then summarise via Polars
 # ------------------------------------------------------------
 print(f"[INFO] Previous loan file : {PREVLN_FILE.name}")
 prev_parquet = _ensure_parquet(PREVLN_FILE)
 
-con = duckdb.connect()
-prevln_summ = con.execute(f"""
-    SELECT
-        BRANCH,
-        PRODUCT,
-        SUM(BALANCE) AS PBRLNAMT,
-        COUNT(*)     AS PNOACCT
-    FROM read_parquet('{prev_parquet}')
-    WHERE PRODUCT IN ({','.join(str(p) for p in TARGET_PRODUCTS)})
-    GROUP BY BRANCH, PRODUCT
-""").pl()
-con.close()
+prevln_summ = (
+    pl.scan_parquet(prev_parquet)
+    .filter(pl.col("PRODUCT").is_in(TARGET_PRODUCTS))
+    .group_by(["BRANCH", "PRODUCT"])
+    .agg([
+        pl.col("BALANCE").sum().alias("PBRLNAMT"),
+        pl.len().alias("PNOACCT"),
+    ])
+    .collect()
+)
 
 ============================
 
