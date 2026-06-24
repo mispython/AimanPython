@@ -1,55 +1,14 @@
->>> LNOTE <<<
-BANKNO
-				BRANCH
-ACCTNO
-NOTENO
-NAME
-BALANCE
-SECTORCD -> SECTOR
-CUSTCD	 -> CUSTCODE
-INTRATE
-NTBRCH
-COMMNO
-LIABCODE
-				APPRLIMT
-				FISSPURP
-STATE
-				CCOLLTRL
-========================================
-
->>> LOAN <<<
-				BANKNO
-BRANCH
-ACCTNO
-NOTENO
-				NAME
-BALANCE
-SECTORCD -> SECTOR
-CUSTCD	 -> CUSTCODE
-INTRATE
-				NTBRCH
-COMMNO
-LIABCODE
-APPRLIMT
-FISSPURP
-STATE	-> STATECD
-				CCOLLTRL
-========================================
-
->>> COMM <<<
-BANKNO
-BRANCH	 -> CMBRCH
-ACCTNO
-				NOTENO
-				NAME
-				BALANCE
-SECTORCD -> CSECTOR	
-				CUSTCD
-				INTRATE
-				NTBRCH
-COMMNO
-				LIABCODE
-				APPRLIMT
-				FISSPURP
-STATE	-> CSTATE
-CCOLLTRL
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLNSA.py", line 335, in <module>
+    loan_merged
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.SchemaError: datatypes of join keys don't match - `BRANCH`: str on left does not match `BRANCH`: i64 on right (and no other type was available to cast to)
