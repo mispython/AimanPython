@@ -96,6 +96,15 @@ def _read_sas7bdat(path: Path) -> pl.DataFrame:
     return pl.from_pandas(pandas_df)
 
 
+def _format_branch(value) -> str:
+    if value is None:
+        return ""
+    try:
+        return str(int(float(value)))
+    except (TypeError, ValueError):
+        return str(value).strip()
+
+
 def _safe_float(value) -> float:
     """Return float safely, defaulting to 0.0 for None/NaN."""
     try:
