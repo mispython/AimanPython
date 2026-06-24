@@ -14,15 +14,13 @@ import polars as pl
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
-from output_date import build_output_file
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 # Testing Path
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input" / "prod"
+INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBMFD"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMFDC3"
 
 # # Production Path
@@ -37,7 +35,8 @@ INPUT_FD1M = INPUT_DIR / "fd1m.sas7bdat"
 # INPUT_FD1M = get_latest_file(INPUT_DIR / "fd1m", "fd1m")
 
 # Output path
-OUTPUT_REPORT = build_output_file(OUTPUT_DIR, "PBB_FDRATE3C_REPORT").with_suffix(".txt")
+OUTPUT_REPORT = OUTPUT_DIR / "PBB_FDRATE3_REPORT.txt"
+# OUTPUT_REPORT = build_output_file(OUTPUT_DIR, "PBB_FDRATE3C_REPORT").with_suffix(".txt")
 # Output example: PBB_FDRATE3C_REPORT_180526.txt
 
 # Report configuration
@@ -236,26 +235,26 @@ def _build_header_lines() -> list:
     SPLIT='*' — column labels split on '*' into two header lines.
     """
     hdr1 = (
-        f"{'NAME OF CUSTOMER':<35}"
+        f"{'':35}"
         f"{'ACCOUNT':>10}"
-        f"{'RECEIPT':>8}"
+        f"{'RECEIPT':>9}"
         f"{'RECEIPT':>13}"
         f"{'':>5}"
-        f"{'DEPOSIT':>11}"
-        f"{'MATURITY':>11}"
-        f"{'OFFERED':>8}"
-        f"{'COUNTER':>8}"
+        f"{'DEPOSIT':>9}"
+        f"{'MATURITY':>12}"
+        f"{'OFFERED':>10}"
+        f"{'COUNTER':>9}"
     )
     hdr2 = (
-        f"{'':35}"
+        f"{'NAME OF CUSTOMER':<35}"
         f"{'NUMBER':>10}"
-        f"{'NUMBER':>8}"
+        f"{'NUMBER':>9}"
         f"{'AMOUNT':>13}"
         f"{'TERM':>5}"
-        f"{'DATE':>11}"
-        f"{'DATE':>11}"
-        f"{'RATE':>8}"
-        f"{'RATE':>8}"
+        f"{'DATE':>9}"
+        f"{'DATE':>12}"
+        f"{'RATE':>10}"
+        f"{'RATE':>9}"
     )
     separator = "-" * len(hdr2)
     return [
@@ -290,7 +289,7 @@ def _build_detail_line(row: dict) -> str:
         f"  {_safe_str(row.get('DEPNDT')):<10}"
         f"  {_safe_str(row.get('MATNDT')):<10}"
         f"{_format_comma7_2(row.get('RATE1'))}"
-        f"{_format_comma7_2(row.get('NR'))}\n"
+        f"  {_format_comma7_2(row.get('NR'))}\n"
     )
 
 
@@ -319,7 +318,7 @@ def _build_nameq_subtotal_lines(
         81*'-' = 81 dashes starting at col 40
     """
     indent     = " " * 39
-    dash_line  = indent + "-" * 81
+    dash_line  = indent + "-" * 76
     name_label = "NAME TOT ="
 
     # @040 'NAME TOT =' -> label is 10 chars, value at @057 means 7 spaces gap
