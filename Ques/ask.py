@@ -1,4 +1,82 @@
 # ------------------------------------------------------------
+# SAS7BDAT -> Parquet conversion helper
+# ------------------------------------------------------------
+PARQUET_DIR = BASE_DIR / "parquet_cache" / "EIBDLNSA"
+PARQUET_DIR.mkdir(parents=True, exist_ok=True)
+
+def _ensure_parquet(sas_path: Path) -> Path:
+    """
+    Convert a .sas7bdat file to parquet if not already done.
+    Returns the parquet path.
+    """
+    parquet_path = PARQUET_DIR / sas_path.with_suffix(".parquet").name
+    if parquet_path.exists():
+        print(f"[INFO] Parquet cache found   : {parquet_path.name}")
+        return parquet_path
+
+    print(f"[INFO] Converting to parquet : {sas_path.name}  (this may take a while ...)")
+    chunk_size  = 100_000
+    first_chunk = True
+    writer      = None
+
+    for chunk in pd.read_sas(str(sas_path), encoding="latin1", chunksize=chunk_size):
+        chunk.columns = [c.upper() for c in chunk.columns]
+        table = pl.from_pandas(chunk).to_arrow()
+        if first_chunk:
+            import pyarrow.parquet as pq
+            writer      = pq.ParquetWriter(str(parquet_path), table.schema)
+            first_chunk = False
+        writer.write_table(table)
+
+    if writer:
+        writer.close()
+
+    print(f"[INFO] Parquet saved         : {parquet_path}")
+    return parquet_path
+
+
+
+# ------------------------------------------------------------
+# Step 1 : Convert to parquet (once), then summarise via DuckDB
+# ------------------------------------------------------------
+print(f"[INFO] Current loan file  : {LOAN_FILE.name}")
+curr_parquet = _ensure_parquet(LOAN_FILE)
+
+con = duckdb.connect()
+loan_summ = con.execute(f"""
+    SELECT
+        BRANCH,
+        PRODUCT,
+        SUM(BALANCE) AS BRLNAMT,
+        COUNT(*)     AS NOACCT
+    FROM read_parquet('{curr_parquet}')
+    WHERE PRODUCT IN ({','.join(str(p) for p in TARGET_PRODUCTS)})
+    GROUP BY BRANCH, PRODUCT
+""").pl()
+con.close()
+
+# ------------------------------------------------------------
+# Step 2 : Convert to parquet (once), then summarise via DuckDB
+# ------------------------------------------------------------
+print(f"[INFO] Previous loan file : {PREVLN_FILE.name}")
+prev_parquet = _ensure_parquet(PREVLN_FILE)
+
+con = duckdb.connect()
+prevln_summ = con.execute(f"""
+    SELECT
+        BRANCH,
+        PRODUCT,
+        SUM(BALANCE) AS PBRLNAMT,
+        COUNT(*)     AS PNOACCT
+    FROM read_parquet('{prev_parquet}')
+    WHERE PRODUCT IN ({','.join(str(p) for p in TARGET_PRODUCTS)})
+    GROUP BY BRANCH, PRODUCT
+""").pl()
+con.close()
+
+============================
+
+# ------------------------------------------------------------
 # Report date
 # ------------------------------------------------------------
 reptdate_values = get_reptdate_values()
