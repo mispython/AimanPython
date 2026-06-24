@@ -21,7 +21,7 @@ from output_date import build_output_file
 # ============================================================================
 # Testing Path
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input" / "prod"
+INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBMFD"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMFDS2"
 
 # # Production Path
@@ -36,7 +36,8 @@ INPUT_FDC = INPUT_DIR / "fd1mc.sas7bdat"
 # INPUT_FDC = get_latest_file(INPUT_DIR / "fdc", "fd1mc")
 
 # Output path
-OUTPUT_REPORT = build_output_file(OUTPUT_DIR, "PBB_FDRATE3_REPORT").with_suffix(".txt")
+OUTPUT_REPORT = OUTPUT_DIR / "PBB_FDRATE3_REPORT.txt"
+# OUTPUT_REPORT = build_output_file(OUTPUT_DIR, "PBB_FDRATE3_REPORT").with_suffix(".txt")
 # Output example: PBB_FDRATE3_REPORT_180526.txt
 
 # Report configuration
@@ -184,7 +185,7 @@ def _build_title_lines(titles: list, branch: str) -> list:
         f"   {titles[1]}\n",
         f"   {titles[2]}\n",
         "\n",
-        f"   BRANCH: {branch}\n",
+        f"   BRANCH: {_format_branch(branch)}\n",
         "\n",
     ]
 
@@ -200,26 +201,26 @@ def _build_header_lines() -> list:
     SPLIT='*' — column labels split on '*' into two header lines.
     """
     hdr1 = (
-        f"{'NAME OF CUSTOMER':<35}"
-        f"{'BRN':<5}"
+        f"{'':35}"
+        f"{'':5}"
         f"{'ACCOUNT':>10}"
         f"{'RECEIPT':>8}"
         f"{'RECEIPT':>13}"
         f"{'':>5}"
-        f"{'DEPOSIT':>11}"
-        f"{'MATURITY':>11}"
+        f"{'DEPOSIT':>12}"
+        f"{'MATURITY':>12}"
         f"{'OFFERED':>8}"
         f"{'COUNTER':>8}"
     )
     hdr2 = (
-        f"{'':35}"
-        f"{'':5}"
+        f"{'NAME OF CUSTOMER':<35}"
+        f"{'BRN':<5}"
         f"{'NUMBER':>10}"
         f"{'NUMBER':>8}"
         f"{'AMOUNT':>13}"
         f"{'TERM':>5}"
-        f"{'DATE':>11}"
-        f"{'DATE':>11}"
+        f"{'DATE':>12}"
+        f"{'DATE':>12}"
         f"{'RATE':>8}"
         f"{'RATE':>8}"
     )
@@ -249,7 +250,7 @@ def _build_detail_line(row: dict) -> str:
         CURBALN / CURBALY are NOPRINT (not shown on detail lines)
     """
     return (
-        f"   {_safe_str(row.get('NAMEQ')):<35}"
+        f"   {_safe_text(row.get('NAMEQ'), 24):<35}"
         f"{_safe_str(row.get('BRN')):<5}"
         f"{_format_acctno(row.get('ACCTNO'))}"
         f"{_safe_int(row.get('DEPID')):>8}"
@@ -257,7 +258,7 @@ def _build_detail_line(row: dict) -> str:
         f"{_safe_int(row.get('DEPTERM')):>5}"
         f"  {_safe_str(row.get('DEPNDT')):<10}"
         f"  {_safe_str(row.get('MATNDT')):<10}"
-        f"{_format_comma7_2(row.get('RATE1'))}"
+        f" {_format_comma7_2(row.get('RATE1'))}"
         f"{_format_comma7_2(row.get('NR'))}\n"
     )
 
@@ -284,7 +285,7 @@ def _build_acctno_subtotal_lines(
         @104 = col 104
         79*'-' = 79 dashes starting at col 45  -> total line length = 44+79 = 123
     """
-    dash_line   = " " * 44 + "-" * 79
+    dash_line   = " " * 44 + "-" * 75
     # 'ACCT TOT =     ' is 16 chars; COMMA18.2 value occupies 18 chars
     #   => text starts @045, value ends around @078; 'C=' at @085, 'S=' at @104
     acct_label  = "ACCT TOT =     "
@@ -321,7 +322,7 @@ def _build_nameq_subtotal_lines(
         LINE @045 79*'-';
         ENDCOMP;
     """
-    dash_line  = " " * 44 + "-" * 79
+    dash_line  = " " * 44 + "-" * 75
     name_label = "NAME TOT =     "
     c_label    = "C="
     s_label    = "S="
@@ -446,7 +447,7 @@ def _write_report_file(
         name_curbaln = 0.0
 
         for i, row in enumerate(rows):
-            branch  = _safe_str(row.get("BRANCH"))
+            branch  = _format_branch(row.get("BRANCH"))
             nameq   = _safe_str(row.get("NAMEQ"))
             acctno  = _safe_int(row.get("ACCTNO"))
             curbal  = _safe_float(row.get("CURBAL"))
