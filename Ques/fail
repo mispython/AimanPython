@@ -1,15 +1,253 @@
-DATA CISCA;
-   	SET RS_CIS.CISR1CA&REPTMON&NOWK&REPTYY;
-   	IF SECCUST=901;
-	IF (3000000000<=ACCTNO<=3999999999) THEN OUTPUT CISCA;
-RUN;
-PROC SORT DATA=CISCA NODUPKEY; BY ACCTNO; RUN;
+class AsaReportWriter:
+    """
+    Write fixed-width text reports with ASA carriage-control characters.
+    RECFM=FB, LRECL=320, first character is ASA:
+      '1' = form-feed (new page)
+      ' ' = single space (normal line)
+      '0' = double space
+    """
 
-DATA CISFD;
-   	SET RS_CIS.CISR1FD&REPTMON&NOWK&REPTYY;
-   	IF SECCUST=901;
-	IF (1000000000<=ACCTNO<=1999999999) THEN OUTPUT CISFD;
-   IF (7000000000<=ACCTNO<=7999999999) THEN OUTPUT CISFD;
+    def __init__(self, out_path: Path, page_length: int = PAGE_LENGTH):
+        self.out_path       = out_path
+        self.page_length    = page_length
+        self.page_no        = 0
+        self.line_no        = 0
+        self.lines: list[str] = []
+        self._title_cache:  list[str] = []
+        self._header_cache: list[str] = []   # current section's column headers
 
-RUN;
-PROC SORT DATA=CISFD NODUPKEY; BY ACCTNO; RUN;
+    def _raw(self, asa: str, text: str) -> None:
+        record = f"{asa}{text}"
+        record = record[:320].ljust(320)
+        self.lines.append(record + "\n")
+
+    def _emit(self, asa: str, text: str) -> None:
+        self._raw(asa, text)
+        self.line_no += 1
+
+    def set_title_cache(self, title_lines: list[str]) -> None:
+        """Store page title lines for reprint on overflow."""
+        self._title_cache = title_lines
+
+    def set_header_cache(self, header_lines: list[str]) -> None:
+        """Store current section column-header lines for reprint on overflow."""
+        self._header_cache = header_lines
+
+    def new_page(self) -> None:
+        """
+        Emit form-feed prefixed onto the first title line directly:
+            1PUBLIC ISLAMIC BANK BERHAD (EIIMBTOP5)
+        Then reprint remaining title lines and column headers.
+        """
+        self.page_no += 1
+        self.line_no  = 0
+
+        all_lines = self._title_cache + self._header_cache
+        for idx, tline in enumerate(all_lines):
+            asa = "1" if idx == 0 else " "
+            self._emit(asa, tline)
+
+    def _ensure_space(self, needed: int = 1) -> None:
+        """Page-break if there is not enough room for `needed` more lines."""
+        if self.line_no + needed >= self.page_length:
+            self.new_page()
+
+    def line(self, text: str = "", double_space: bool = False) -> None:
+        asa = "0" if double_space else " "
+        self._ensure_space(1)
+        self._emit(asa, text)
+
+    def blank(self) -> None:
+        self._ensure_space(1)
+        self._emit(" ", "")
+
+    def save(self) -> None:
+        self.out_path.write_text("".join(self.lines), encoding="latin1")
+        print(f"  Written: {self.out_path}")
+
+==================
+
+def _print_summary_table(writer: AsaReportWriter, d2: pl.DataFrame) -> None:
+    hdr = (
+        f"{'DEPOSITOR':<24}  {'TOTAL BALANCE':>16}  {'FD BALANCE':>16}  {'CA BALANCE':>16}"
+    )
+    sep = "-" * len(hdr)
+
+    header_lines = [hdr, sep]
+    writer.set_header_cache(header_lines)
+    writer.line(hdr)
+    writer.line(sep)
+
+    for row in d2.iter_rows(named=True):
+        writer.line(
+            f"{str(row.get('CUSTNAME') or '')[:24]:<24}  "
+            f"{_fmt_amt(row.get('CURBAL'))}  "
+            f"{_fmt_amt(row.get('FDBAL'))}  "
+            f"{_fmt_amt(row.get('CABAL'))}"
+        )
+    writer.blank()
+
+=================
+
+def _print_detail_table(writer: AsaReportWriter, d3: pl.DataFrame) -> None:
+    hdr = (
+        f"{'BRANCH':>6}  {'MNI NO':>12}  {'DEPOSITOR':<24}  "
+        f"{'CIS NO':>10}  {'NEW IC':<15}  {'OLD IC':<15}  "
+        f"{'CURRENT BALANCE':>16}  {'PRODUCT':>7}  {'COST CENTRE':>10}"
+    )
+    sep = "-" * len(hdr)
+
+    header_lines = [hdr, sep]
+    writer.set_header_cache(header_lines)
+    writer.line(hdr)
+    writer.line(sep)
+
+    current_key = None
+    subtotal    = 0.0
+
+    for row in d3.iter_rows(named=True):
+        key = (
+            str(row.get("ICNO") or "").strip(),
+            str(row.get("CUSTNAME") or "").strip(),
+        )
+        bal = float(row.get("CURBAL") or 0)
+
+        if current_key is not None and key != current_key:
+            writer.line(
+                f"{'':>6}  {'':>12}  {'':24}  "
+                f"{'':>10}  {'':15}  {'':15}  "
+                f"{_fmt_amt(subtotal)}  {'':>7}  {'':>10}"
+            )
+            writer.blank()
+            subtotal = 0.0
+
+        current_key = key
+        subtotal   += bal
+
+        writer.line(
+            f"{str(row.get('BRANCH') or '')[:6]:>6}  "
+            f"{str(row.get('ACCTNO') or '')[:12]:>12}  "
+            f"{str(row.get('CUSTNAME') or '')[:24]:<24}  "
+            f"{str(row.get('CUSTNO') or '')[:10]:>10}  "
+            f"{str(row.get('NEWIC') or '')[:15]:<15}  "
+            f"{str(row.get('OLDIC') or '')[:15]:<15}  "
+            f"{_fmt_amt(row.get('CURBAL'))}  "
+            f"{str(row.get('PRODUCT') or '')[:7]:>7}  "
+            f"{str(row.get('COSTCTR') or '')[:10]:>10}"
+        )
+
+    if current_key is not None:
+        writer.line(
+            f"{'':>6}  {'':>12}  {'':24}  "
+            f"{'':>10}  {'':15}  {'':15}  "
+            f"{_fmt_amt(subtotal)}  {'':>7}  {'':>10}"
+        )
+
+=====================
+
+def _print_subs_detail(writer: AsaReportWriter, d: pl.DataFrame) -> None:
+    hdr = (
+        f"{'BRANCH':>6}  {'MNI NO':>12}  {'DEPOSITOR':<24}  "
+        f"{'CIS NO':>10}  {'CUSTCD':>6}  "
+        f"{'CURRENT BALANCE':>16}  {'PRODUCT':>7}  {'COST CENTRE':>10}"
+    )
+    sep = "-" * len(hdr)
+
+    header_lines = [hdr, sep]
+    writer.set_header_cache(header_lines)
+    writer.line(hdr)
+    writer.line(sep)
+
+    current_cust = None
+    subtotal     = 0.0
+
+    for row in d.iter_rows(named=True):
+        custno = row.get("CUSTNO")
+        bal    = float(row.get("CURBAL") or 0)
+
+        if current_cust is not None and custno != current_cust:
+            writer.line(
+                f"{'':>6}  {'':>12}  {'':24}  "
+                f"{'':>10}  {'':>6}  "
+                f"{_fmt_amt(subtotal)}  {'':>7}  {'':>10}"
+            )
+            writer.blank()
+            subtotal = 0.0
+
+        current_cust = custno
+        subtotal    += bal
+
+        writer.line(
+            f"{str(row.get('BRANCH') or '')[:6]:>6}  "
+            f"{str(row.get('ACCTNO') or '')[:12]:>12}  "
+            f"{str(row.get('CUSTNAME') or '')[:24]:<24}  "
+            f"{str(row.get('CUSTNO') or '')[:10]:>10}  "
+            f"{str(row.get('CUSTCODE') or '')[:6]:>6}  "
+            f"{_fmt_amt(row.get('CURBAL'))}  "
+            f"{str(row.get('PRODUCT') or '')[:7]:>7}  "
+            f"{str(row.get('COSTCTR') or '')[:10]:>10}"
+        )
+
+    if current_cust is not None:
+        writer.line(
+            f"{'':>6}  {'':>12}  {'':24}  "
+            f"{'':>10}  {'':>6}  "
+            f"{_fmt_amt(subtotal)}  {'':>7}  {'':>10}"
+        )
+
+===============
+
+def prnrec(data1: pl.DataFrame, title: str, rdate: str, out_path: Path) -> None:
+    d1 = data1.filter(
+        pl.col("ICNO").is_not_null()
+        & (pl.col("ICNO").cast(pl.Utf8, strict=False).str.strip_chars() != "")
+    ).sort(["ICNO", "CUSTNAME"])
+
+    d2 = (
+        d1.group_by(["ICNO", "CUSTNAME"], maintain_order=False)
+        .agg([
+            pl.col("CURBAL").cast(pl.Float64, strict=False).sum().alias("CURBAL"),
+            pl.col("FDBAL").cast(pl.Float64, strict=False).sum().alias("FDBAL"),
+            pl.col("CABAL").cast(pl.Float64, strict=False).sum().alias("CABAL"),
+        ])
+        .sort("CURBAL", descending=True)
+        .head(50)
+        .sort(["ICNO", "CUSTNAME"])
+    )
+
+    keys = d2.select(["ICNO", "CUSTNAME"])
+    d3   = d1.join(keys, on=["ICNO", "CUSTNAME"], how="inner").sort(["ICNO", "CUSTNAME"])
+
+    title_lines = _build_summary_header(title, rdate)
+    writer = AsaReportWriter(out_path)
+    writer.set_title_cache(title_lines)
+    writer.new_page()
+
+    _print_summary_table(writer, d2)
+
+    # Reset header cache before detail section so page-breaks reprint detail headers
+    writer.set_header_cache([])
+    _print_detail_table(writer, d3)
+
+    writer.save()
+
+=======================
+
+def write_subs_report(data_sub: pl.DataFrame, rdate: str, out_path: Path) -> None:
+    d = data_sub.filter(
+        pl.col("CUSTNO").cast(pl.Int64, strict=False).is_in(list(SUBS_CUSTNOS))
+    ).sort(["CUSTNO", "ACCTNO"])
+
+    title_lines = [
+        "PUBLIC ISLAMIC BANK BERHAD (EIIMBTOP5)",
+        f"PB SUBSIDIARIES UNDER TOP 50 CORP DEPOSITORS @ {rdate}",
+    ]
+    writer = AsaReportWriter(out_path)
+    writer.set_title_cache(title_lines)
+    writer.new_page()
+
+    _print_subs_detail(writer, d)
+    writer.save()
+
+======================
+
