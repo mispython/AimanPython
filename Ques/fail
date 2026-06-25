@@ -1,37 +1,20 @@
-import re
-
-# =============================================================================
-# FILE RESOLUTION
-# fdXXXXXX.sas7bdat     → yymmdd  (own folder, no ambiguity)
-# fcyfdXXXXXX.sas7bdat  → yymmdd  (6-digit suffix, strict match to avoid
-#                                   grabbing fcyfdXXXXX mmwyy variants)
-# =============================================================================
-FD_PATH = get_latest_file(FD_DIR, prefix="fd")
-
-def get_latest_fcyfd_yymmdd(directory: Path) -> Path:
-    """
-    Resolves the latest fcyfd file using strictly yymmdd (6-digit) suffix.
-    Rejects mmwyy (5-digit) variants that share the same 'fcyfd' prefix.
-    """
-    # Strict: prefix 'fcyfd' followed by exactly 6 digits then .sas7bdat
-    pattern = re.compile(r"^fcyfd(\d{2})(\d{2})(\d{2})\.sas7bdat$", re.IGNORECASE)
-
-    candidates = []
-    for f in directory.iterdir():
-        m = pattern.match(f.name)
-        if m:
-            yy, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            year = 2000 + yy if yy < 100 else yy
-            sort_key = (year, mm, dd)
-            candidates.append((sort_key, f))
-
-    if not candidates:
-        raise FileNotFoundError(
-            f"No fcyfd yymmdd files found in {directory}"
-        )
-
-    latest = max(candidates, key=lambda x: x[0])
-    print(f"[FILE_RESOLVER] Selected latest fcyfd (yymmdd): {latest[1].name}")
-    return latest[1]
-
-FCYFD_PATH = get_latest_fcyfd_yymmdd(FCYFD_DIR)
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py
+[FILE_RESOLVER] Selected latest: fd260623.sas7bdat
+[FILE_RESOLVER] Selected latest: fcyfd06326.sas7bdat
+FD input    : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBDFFCD/fd260623.sas7bdat
+FCYFD input : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBDFFCD/fcyfd06326.sas7bdat
+Loading $FORATE. format map from FCYFD...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 205, in <module>
+    forate_map = load_forate_map(FCYFD_PATH)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 90, in load_forate_map
+    forate_rows = df.filter(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 5325, in filter
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ColumnNotFoundError: unable to find column "FMTNAME"; valid columns: ["PURPOSE", "BRANCH", "ACCTNO", "NAME", "CLOSEDT", "REOPENDT", "CUSTCODE", "INTYTD", "CLASSIFI", "USER3", "LEDGBAL", "OPENIND", "PRODUCT", "INTPLAN", "CURBAL", "STATE", "CURCODE", "BDATE", "SECOND", "POST_IND", "MTDAVBAL", "DTLSTCUST", "OPENDT", "DNBFISME", "NXT_STMT_CYCLE_DT", "STMT_CYCLE", "REASON", "INSTRUCTIONS", "FORATE", "FORBAL", "CURBALUS", "INTPD", "ESIGNATURE", "MTDAVBAL_MIS", "MTDAVFORBAL_MIS", "ACSTATUS4", "ACSTATUS5", "ACSTATUS6", "ACSTATUS7", "ACSTATUS8", "ACSTATUS9", "ACSTATUS10", "MASTER_ACCT", "FCY_TYPE", "OKU_IND"]
