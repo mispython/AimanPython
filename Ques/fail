@@ -1,29 +1,15 @@
-loan_summ = (
-    raw_curr
-    .filter(pl.col("PRODUCT").cast(pl.Float64).cast(pl.Int64).is_in(TARGET_PRODUCTS))
-    .group_by(["BRANCH", "PRODUCT"])
-    .agg([
-        pl.col("BALANCE").cast(pl.Float64).sum().alias("BRLNAMT"),
-        pl.len().alias("NOACCT"),
-    ])
-    .collect()
-    .with_columns([
-        pl.col("BRANCH").cast(pl.Float64).cast(pl.Int64),
-        pl.col("PRODUCT").cast(pl.Float64).cast(pl.Int64),
-    ])
-)
+DATA CISCA;
+   	SET RS_CIS.CISR1CA&REPTMON&NOWK&REPTYY;
+   	IF SECCUST=901;
+	IF (3000000000<=ACCTNO<=3999999999) THEN OUTPUT CISCA;
+RUN;
+PROC SORT DATA=CISCA NODUPKEY; BY ACCTNO; RUN;
 
-prevln_summ = (
-    raw_prev
-    .filter(pl.col("PRODUCT").cast(pl.Float64).cast(pl.Int64).is_in(TARGET_PRODUCTS))
-    .group_by(["BRANCH", "PRODUCT"])
-    .agg([
-        pl.col("BALANCE").cast(pl.Float64).sum().alias("PBRLNAMT"),
-        pl.len().alias("PNOACCT"),
-    ])
-    .collect()
-    .with_columns([
-        pl.col("BRANCH").cast(pl.Float64).cast(pl.Int64),
-        pl.col("PRODUCT").cast(pl.Float64).cast(pl.Int64),
-    ])
-)
+DATA CISFD;
+   	SET RS_CIS.CISR1FD&REPTMON&NOWK&REPTYY;
+   	IF SECCUST=901;
+	IF (1000000000<=ACCTNO<=1999999999) THEN OUTPUT CISFD;
+   IF (7000000000<=ACCTNO<=7999999999) THEN OUTPUT CISFD;
+
+RUN;
+PROC SORT DATA=CISFD NODUPKEY; BY ACCTNO; RUN;
