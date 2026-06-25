@@ -1,23 +1,180 @@
-DOBCIS	ACCTNO	RACE	COUNTRY	BRANCH	CLOSEDT	REOPENDT	CUSTCODE	ORGCODE	ORGTYPE	INTYTD	PURPOSE	SECTOR	USER2	USER3	RISKCODE	LEDGBAL	OPENIND	LASTTRAN	AVGAMT	PRODUCT	DEPTYPE	INTPD	INTPLAN	CURBAL	STATE	INTCYCODE	INACTIVE	SECOND	BONUTYPE	SERVICE	BONUSANO	USER5	PREVBRNO	COSTCTR	POST_IND	INTRSTPD	MTDAVBAL	DTLSTCUST	OPENDT	PRIN_ACCT	NXT_STMT_CYCLE_DT	STMT_CYCLE	DNBFISME	INTPAYBL	MAILCODE	REASON	INSTRUCTIONS	FEEYTD	ACSTATUS4	ACSTATUS5	ACSTATUS6	ACSTATUS7	ACSTATUS8	ACSTATUS9	ACSTATUS10	DOBMNI	ESIGNATURE	CONDIMODE	MTDAVBAL_MIS	E_INVOICE_IND	POST_IND_MAINT_DT	POST_IND_EXP_DT	OKU_IND
+# =============================================================================
+# FILE RESOLUTION
+# fdXXXXXX.sas7bdat     → yymmdd  (e.g. fd260623.sas7bdat)
+# fcyfdXXXXXX.sas7bdat  → yymmdd strictly (6-digit suffix, rejects mmwyy
+#                          5-digit variants sharing the same fcyfd prefix)
+# =============================================================================
+
+def get_latest_fcyfd_yymmdd(directory: Path) -> Path:
+    """
+    Resolves latest fcyfd file using strictly yymmdd (6-digit) suffix.
+    Rejects mmwyy (5-digit) variants sharing the same 'fcyfd' prefix.
+    """
+    pattern = re.compile(r"^fcyfd(\d{2})(\d{2})(\d{2})\.sas7bdat$", re.IGNORECASE)
+    candidates = []
+    for f in directory.iterdir():
+        m = pattern.match(f.name)
+        if m:
+            yy, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            year = 2000 + yy if yy < 100 else yy
+            candidates.append(((year, mm, dd), f))
+    if not candidates:
+        raise FileNotFoundError(f"No fcyfd yymmdd files found in {directory}")
+    latest = max(candidates, key=lambda x: x[0])
+    print(f"[FILE_RESOLVER] Selected latest fcyfd (yymmdd): {latest[1].name}")
+    return latest[1]
 
 
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py
-[FILE_RESOLVER] Selected latest: fd260623.sas7bdat
-[FILE_RESOLVER] Selected latest: fcyfd06326.sas7bdat
-FD input    : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBDFFCD/fd260623.sas7bdat
-FCYFD input : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBDFFCD/fcyfd06326.sas7bdat
-Loading $FORATE. format map from FCYFD...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 205, in <module>
-    forate_map = load_forate_map(FCYFD_PATH)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 90, in load_forate_map
-    forate_rows = df.filter(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 5325, in filter
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "FMTNAME"; valid columns: ["PURPOSE", "BRANCH", "ACCTNO", "NAME", "CLOSEDT", "REOPENDT", "CUSTCODE", "INTYTD", "CLASSIFI", "USER3", "LEDGBAL", "OPENIND", "PRODUCT", "INTPLAN", "CURBAL", "STATE", "CURCODE", "BDATE", "SECOND", "POST_IND", "MTDAVBAL", "DTLSTCUST", "OPENDT", "DNBFISME", "NXT_STMT_CYCLE_DT", "STMT_CYCLE", "REASON", "INSTRUCTIONS", "FORATE", "FORBAL", "CURBALUS", "INTPD", "ESIGNATURE", "MTDAVBAL_MIS", "MTDAVFORBAL_MIS", "ACSTATUS4", "ACSTATUS5", "ACSTATUS6", "ACSTATUS7", "ACSTATUS8", "ACSTATUS9", "ACSTATUS10", "MASTER_ACCT", "FCY_TYPE", "OKU_IND"]
+FD_PATH    = get_latest_file(INPUT_DIR, prefix="fd")
+FCYFD_PATH = get_latest_fcyfd_yymmdd(INPUT_DIR)
+
+# =============================================================================
+# $FORATE. exchange rate map
+# In SAS, PROC FORMAT LIB=FCYFD loads $FORATE. from the FCYFD format catalogue
+# (.sas7bcat) into session memory. This catalogue is separate from the FCYFD
+# .sas7bdat data file. The PUT(CURCODE,$FORATE.) call performs a rate lookup.
+# Since .sas7bcat files are not readable in Python, populate FORATE_MAP from
+# your external rate source (DB, config, etc.).
+# A missing currency code returns None — replicating SAS blank/missing, which
+# causes downstream arithmetic to produce missing (null), not a fake rate.
+# =============================================================================
+FORATE_MAP: dict[str, float] = {
+    # Populate from your external rate source (DB, config, etc.)
+    # "USD": 4.47,
+    # "SGD": 3.30,
+    # "GBP": 5.60,
+    # "EUR": 4.85,
+    # "JPY": 0.030,
+}
+
+
+def put_forate(curcode: str) -> float | None:
+    """
+    Replicates SAS PUT(CURCODE, $FORATE.).
+    Returns float rate if found, None if not found.
+    SAS returns blank on missing format → arithmetic produces missing (null).
+    """
+    return FORATE_MAP.get(str(curcode).strip().upper(), None)
+
+
+# =============================================================================
+# STEP 1: Read inputs
+# PROC SORT DATA=FD.FD OUT=FD BY ACCTNO CDNO sorts FCYFD into a work dataset
+# also named FD, which the DATA step then SETs. The base FD dataset is the
+# full account master; FCYFD contains the FCY-enriched subset.
+# =============================================================================
+
+def read_sas(path: Path) -> pl.DataFrame:
+    pdf = pd.read_sas(str(path), encoding="latin1")
+    pdf.columns = [c.upper() for c in pdf.columns]
+    return pl.from_pandas(pdf)
+
+
+def read_fcyfd(path: Path) -> pl.DataFrame:
+    """
+    Reads and sorts FCYFD dataset.
+    PROC SORT DATA=FD.FD OUT=FD BY ACCTNO CDNO → sorts FCYFD by ACCTNO, CDNO.
+    """
+    df = read_sas(path)
+    df = df.sort(["ACCTNO", "CDNO"])
+    return df
+
+
+# =============================================================================
+# STEP 2: Apply foreign currency conversion
+# DATA FD.FD;
+#   SET FD;     ← FD here is the sorted FCYFD work dataset
+#   IF CURCODE NE 'MYR' THEN DO;
+#     FORATE  = PUT(CURCODE, $FORATE.);
+#     FORBAL  = CURBAL;
+#     CURBAL  = ROUND(CURBAL * FORATE, .01);
+#   END;
+#   CURBALUS = CURBAL / PUT('USD', $FORATE.);
+# RUN;
+# =============================================================================
+
+def apply_fx_conversion(df: pl.DataFrame) -> pl.DataFrame:
+    usd_rate = put_forate("USD")
+
+    rows = df.to_dicts()
+    result = []
+
+    for row in rows:
+        curcode = str(row.get("CURCODE", "") or "").strip().upper()
+
+        if curcode != "MYR":
+            forate = put_forate(curcode)
+            row["FORATE"] = forate
+
+            curbal = row.get("CURBAL")
+            row["FORBAL"] = curbal
+
+            if curbal is not None and forate is not None:
+                row["CURBAL"] = round(float(curbal) * forate, 2)
+            else:
+                # SAS: CURBAL * missing → missing
+                row["CURBAL"] = None
+        else:
+            # MYR rows: FORATE and FORBAL not assigned in SAS DATA step
+            row.setdefault("FORATE", None)
+            row.setdefault("FORBAL", None)
+
+        curbal_myr = row.get("CURBAL")
+        if curbal_myr is not None and usd_rate is not None and usd_rate != 0:
+            row["CURBALUS"] = float(curbal_myr) / usd_rate
+        else:
+            # SAS: missing / missing → missing
+            row["CURBALUS"] = None
+
+        result.append(row)
+
+    return pl.from_dicts(result)
+
+
+# =============================================================================
+# STEP 3: Write output dataset
+# DATA FD.FD overwrites the FD library member with FCY-converted records.
+# PROC PRINT WHERE CURCODE NE 'MYR' is a diagnostic listing to SAS output
+# window only — no external report file is produced by this program.
+# =============================================================================
+
+def write_output(df: pl.DataFrame) -> Path:
+    out_path = OUTPUT_DIR / "FD.parquet"
+    df.write_parquet(str(out_path))
+    return out_path
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+if __name__ == "__main__":
+    print(f"FD input    : {FD_PATH}")
+    print(f"FCYFD input : {FCYFD_PATH}")
+
+    print("Reading FD base dataset...")
+    fd_df = read_sas(FD_PATH)
+    print(f"  FD rows    : {len(fd_df)}")
+
+    print("Reading FCYFD dataset...")
+    fcyfd_df = read_fcyfd(FCYFD_PATH)
+    print(f"  FCYFD rows : {len(fcyfd_df)}")
+
+    print("Applying FX conversion on FCYFD...")
+    fcyfd_converted = apply_fx_conversion(fcyfd_df)
+
+    fcy_rows = fcyfd_converted.filter(
+        pl.col("CURCODE").str.strip_chars().str.to_uppercase() != "MYR"
+    )
+    print(f"  FCY rows converted : {len(fcy_rows)}")
+    print(f"  MYR rows unchanged : {len(fcyfd_converted) - len(fcy_rows)}")
+    print(fcy_rows.select([
+        c for c in ["ACCTNO", "CDNO", "CURCODE", "FORATE", "FORBAL", "CURBAL", "CURBALUS"]
+        if c in fcy_rows.columns
+    ]))
+
+    print("Writing output dataset...")
+    out_path = write_output(fcyfd_converted)
+    print(f"Output written to   : {out_path}")
+
+    print("Done.")
