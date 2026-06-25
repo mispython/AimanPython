@@ -29,8 +29,8 @@ from input_date import get_latest_file
 
 # INPUT_IFD   = get_latest_file(INPUT_DIR / "idp_fd",     "ifd")
 # INPUT_ICA   = get_latest_file(INPUT_DIR / "idp_ca",     "ica")
-# INPUT_CISCA = get_latest_file(INPUT_DIR / "idp_cisca",  "cisr1ca")
-# INPUT_CISFD = get_latest_file(INPUT_DIR / "idp_cisfd",  "cisr1fd")
+# INPUT_CISCA = get_latest_file(INPUT_DIR / "idp_cisr1ca",  "cisr1ca")
+# INPUT_CISFD = get_latest_file(INPUT_DIR / "idp_cisr1fd",  "cisr1fd")
 
 # Testing Path
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
