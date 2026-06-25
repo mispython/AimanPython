@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program : EIIMTOP5
+Program : EIIMTOP5.py
 Purpose : Generate Top 50 FD+CA Individual and Corporate depositors, and
           PB Subsidiaries report for Public Islamic Bank Berhad (PIBB),
           using .sas7bdat inputs and text report outputs with ASA
@@ -22,23 +22,34 @@ from input_date import get_latest_file
 # =============================================================================
 # PATH SETUP
 # =============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMTOP5")
-INPUT_DIR  = BASE_DIR / "input"
-OUTPUT_DIR = BASE_DIR / "output"
+# # Production Path
+# BASE_DIR   = Path("/dwh")
+# OUTPUT_DIR = Path("/host/mis/output/report")
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# INPUT_IFD   = get_latest_file(INPUT_DIR / "idp_fd",     "ifd")
+# INPUT_ICA   = get_latest_file(INPUT_DIR / "idp_ca",     "ica")
+# INPUT_CISCA = get_latest_file(INPUT_DIR / "idp_cisca",  "cisr1ca")
+# INPUT_CISFD = get_latest_file(INPUT_DIR / "idp_cisfd",  "cisr1fd")
+
+# Testing Path
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR  = BASE_DIR / "input/prod/EIIMTOP5"
+OUTPUT_DIR = BASE_DIR / "output/EIIMTOP5"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Input .sas7bdat files resolved at runtime via get_latest_file()
 # Filename pattern: prefix + MMWNN  (MM=month, W=week digit, NN=year, 5 chars total)
 # e.g. ifd06326, ica06326, cisr1ca06326, cisr1fd06326
-IFD_PREFIX    = "ifd"       # PIBB FD deposit data
-ICA_PREFIX    = "ica"       # PIBB CA deposit data
-CISR1CA_PREFIX = "cisr1ca"  # CISCA customer info
-CISR1FD_PREFIX = "cisr1fd"  # CISFD customer info
+INPUT_IFD   = get_latest_file(INPUT_DIR, "ifd")
+INPUT_ICA   = get_latest_file(INPUT_DIR, "ica")
+INPUT_CISCA = get_latest_file(INPUT_DIR, "cisr1ca")
+INPUT_CISFD = get_latest_file(INPUT_DIR, "cisr1fd")
 
 # Output text files (ASA carriage-control, fixed LRECL=320)
-FD11TEXT_OUT = OUTPUT_DIR / "SAP.PIBB.INDTOP50.TEXT.txt"   # Individual top 50
-FD12TEXT_OUT = OUTPUT_DIR / "SAP.PIBB.CORTOP50.TEXT.txt"   # Corporate top 50
-FDSTEXT_OUT  = OUTPUT_DIR / "SAP.PIBB.SUBTOP50.TEXT.txt"   # PB Subsidiaries
+FD11TEXT_OUT = OUTPUT_DIR / "INDTOP50.txt"   # Individual top 50
+FD12TEXT_OUT = OUTPUT_DIR / "CORTOP50.txt"   # Corporate top 50
+FDSTEXT_OUT  = OUTPUT_DIR / "SUBTOP50.txt"   # PB Subsidiaries
 
 # =============================================================================
 # CONSTANTS
@@ -76,12 +87,6 @@ def _read_sas(path: Path) -> pl.DataFrame:
     return pl.from_pandas(pdf)
 
 
-def _resolve_input(prefix: str) -> Path:
-    """Use get_latest_file() to locate the most recent .sas7bdat for a given prefix."""
-    filename = get_latest_file(str(INPUT_DIR), prefix)
-    return INPUT_DIR / filename
-
-
 # =============================================================================
 # UTILITY: FORMAT HELPERS
 # =============================================================================
@@ -93,6 +98,16 @@ def _fmt_amt(v) -> str:
         return f"{float(v):>16,.2f}"
     except (TypeError, ValueError):
         return f"{0:>16,.2f}"
+    
+
+def _fmt_int(v) -> str:
+    """Format numeric value as whole number string (no decimal points)."""
+    if v is None:
+        return ""
+    try:
+        return str(int(float(v)))
+    except (TypeError, ValueError):
+        return ""
 
 
 # =============================================================================
@@ -108,15 +123,16 @@ class AsaReportWriter:
     """
 
     def __init__(self, out_path: Path, page_length: int = PAGE_LENGTH):
-        self.out_path    = out_path
-        self.page_length = page_length
-        self.page_no     = 0
-        self.line_no     = 0
+        self.out_path       = out_path
+        self.page_length    = page_length
+        self.page_no        = 0
+        self.line_no        = 0
         self.lines: list[str] = []
+        self._title_cache:  list[str] = []
+        self._header_cache: list[str] = []   # current section's column headers
 
     def _raw(self, asa: str, text: str) -> None:
         record = f"{asa}{text}"
-        # Pad/truncate to LRECL=320 (1 ASA + 319 content)
         record = record[:320].ljust(320)
         self.lines.append(record + "\n")
 
@@ -124,22 +140,32 @@ class AsaReportWriter:
         self._raw(asa, text)
         self.line_no += 1
 
-    def new_page(self, title_lines: Iterable[str]) -> None:
-        """Emit form-feed and reprint title/header block."""
+    def set_title_cache(self, title_lines: list[str]) -> None:
+        """Store page title lines for reprint on overflow."""
+        self._title_cache = title_lines
+
+    def set_header_cache(self, header_lines: list[str]) -> None:
+        """Store current section column-header lines for reprint on overflow."""
+        self._header_cache = header_lines
+
+    def new_page(self) -> None:
+        """
+        Emit form-feed prefixed onto the first title line directly:
+            1PUBLIC ISLAMIC BANK BERHAD (EIIMBTOP5)
+        Then reprint remaining title lines and column headers.
+        """
         self.page_no += 1
         self.line_no  = 0
-        self._raw("1", "")          # form-feed; does not count against line_no
-        for tline in title_lines:
-            self._emit(" ", tline)
+
+        all_lines = self._title_cache + self._header_cache
+        for idx, tline in enumerate(all_lines):
+            asa = "1" if idx == 0 else " "
+            self._emit(asa, tline)
 
     def _ensure_space(self, needed: int = 1) -> None:
         """Page-break if there is not enough room for `needed` more lines."""
         if self.line_no + needed >= self.page_length:
-            self.new_page(self._title_cache)
-
-    def set_title_cache(self, title_lines: list[str]) -> None:
-        """Store title lines so page-overflow can reprint them."""
-        self._title_cache = title_lines
+            self.new_page()
 
     def line(self, text: str = "", double_space: bool = False) -> None:
         asa = "0" if double_space else " "
@@ -190,8 +216,8 @@ def build_cisca_cisfd() -> tuple[pl.DataFrame, pl.DataFrame]:
        IF (1000000000<=ACCTNO<=1999999999) THEN OUTPUT CISFD;
        IF (7000000000<=ACCTNO<=7999999999) THEN OUTPUT CISFD;
     """
-    cisca_raw = _read_sas(_resolve_input(CISR1CA_PREFIX))
-    cisfd_raw = _read_sas(_resolve_input(CISR1FD_PREFIX))
+    cisca_raw = _read_sas(INPUT_CISCA)
+    cisfd_raw = _read_sas(INPUT_CISFD)
 
     # SET (union) both CIS files, then split by ACCTNO range
     combined = pl.concat([_build_cis(cisca_raw), _build_cis(cisfd_raw)], how="diagonal_relaxed")
@@ -213,8 +239,8 @@ def build_ca_fd() -> tuple[pl.DataFrame, pl.DataFrame]:
        IF (1000000000<=ACCTNO<=1999999999) THEN OUTPUT FD;
        IF (7000000000<=ACCTNO<=7999999999) THEN OUTPUT FD;
     """
-    ica_df = _read_sas(_resolve_input(ICA_PREFIX))   # DEPOSIT.CURRENT → ica
-    ifd_df = _read_sas(_resolve_input(IFD_PREFIX))   # DEPOSIT.FD      → ifd
+    ica_df = _read_sas(INPUT_ICA)   # DEPOSIT.CURRENT → ica
+    ifd_df = _read_sas(INPUT_IFD)   # DEPOSIT.FD      → ifd
 
     combined = pl.concat([ica_df, ifd_df], how="diagonal_relaxed")
     combined = combined.filter(pl.col("CURBAL").cast(pl.Float64, strict=False) > 0)
@@ -296,20 +322,19 @@ def _build_summary_header(title: str, rdate: str) -> list[str]:
 
 
 def _print_summary_table(writer: AsaReportWriter, d2: pl.DataFrame) -> None:
-    """
-    PROC PRINT DATA=DATA2 (summary — top 50 aggregated rows)
-    LABEL CUSTNAME='DEPOSITOR' CURBAL='TOTAL BALANCE' FDBAL='FD BALANCE' CABAL='CA BALANCE'
-    FORMAT CURBAL FDBAL CABAL COMMA16.2;
-    """
     hdr = (
-        f"{'DEPOSITOR':<40}  {'TOTAL BALANCE':>16}  {'FD BALANCE':>16}  {'CA BALANCE':>16}"
+        f"{'DEPOSITOR':<24}  {'TOTAL BALANCE':>16}  {'FD BALANCE':>16}  {'CA BALANCE':>16}"
     )
     sep = "-" * len(hdr)
+
+    header_lines = [hdr, sep]
+    writer.set_header_cache(header_lines)
     writer.line(hdr)
     writer.line(sep)
+
     for row in d2.iter_rows(named=True):
         writer.line(
-            f"{str(row.get('CUSTNAME') or '')[:40]:<40}  "
+            f"{str(row.get('CUSTNAME') or '')[:24]:<24}  "
             f"{_fmt_amt(row.get('CURBAL'))}  "
             f"{_fmt_amt(row.get('FDBAL'))}  "
             f"{_fmt_amt(row.get('CABAL'))}"
@@ -318,19 +343,15 @@ def _print_summary_table(writer: AsaReportWriter, d2: pl.DataFrame) -> None:
 
 
 def _print_detail_table(writer: AsaReportWriter, d3: pl.DataFrame) -> None:
-    """
-    PROC PRINT DATA=DATA3 BY ICNO CUSTNAME; SUM CURBAL;
-    LABEL BRANCH='BRANCH CODE' ACCTNO='MNI NO' CUSTNAME='DEPOSITOR'
-          CUSTNO='CIS NO' NEWIC='NEW IC' OLDIC='OLD IC'
-          CURBAL='CURRENT BALANCE' PRODUCT='PRODUCT' COSTCTR='COST CENTRE'
-    VAR BRANCH ACCTNO CUSTNAME CUSTNO NEWIC OLDIC CURBAL PRODUCT COSTCTR;
-    """
     hdr = (
-        f"{'BRANCH':>6}  {'MNI NO':>12}  {'DEPOSITOR':<30}  "
+        f"{'BRANCH':>6}  {'MNI NO':>12}  {'DEPOSITOR':<24}  "
         f"{'CIS NO':>10}  {'NEW IC':<15}  {'OLD IC':<15}  "
         f"{'CURRENT BALANCE':>16}  {'PRODUCT':>7}  {'COST CENTRE':>10}"
     )
     sep = "-" * len(hdr)
+
+    header_lines = [hdr, sep]
+    writer.set_header_cache(header_lines)
     writer.line(hdr)
     writer.line(sep)
 
@@ -345,9 +366,8 @@ def _print_detail_table(writer: AsaReportWriter, d3: pl.DataFrame) -> None:
         bal = float(row.get("CURBAL") or 0)
 
         if current_key is not None and key != current_key:
-            # SUM line per BY group
             writer.line(
-                f"{'':>6}  {'':>12}  {'':30}  "
+                f"{'':>6}  {'':>12}  {'':24}  "
                 f"{'':>10}  {'':15}  {'':15}  "
                 f"{_fmt_amt(subtotal)}  {'':>7}  {'':>10}"
             )
@@ -358,43 +378,31 @@ def _print_detail_table(writer: AsaReportWriter, d3: pl.DataFrame) -> None:
         subtotal   += bal
 
         writer.line(
-            f"{str(row.get('BRANCH') or '')[:6]:>6}  "
-            f"{str(row.get('ACCTNO') or '')[:12]:>12}  "
-            f"{str(row.get('CUSTNAME') or '')[:30]:<30}  "
-            f"{str(row.get('CUSTNO') or '')[:10]:>10}  "
+            f"{_fmt_int(row.get('BRANCH') or '')[:6]:>6}  "
+            f"{_fmt_int(row.get('ACCTNO') or '')[:12]:>12}  "
+            f"{str(row.get('CUSTNAME') or '')[:24]:<24}  "
+            f"{_fmt_int(row.get('CUSTNO') or '')[:10]:>10}  "
             f"{str(row.get('NEWIC') or '')[:15]:<15}  "
             f"{str(row.get('OLDIC') or '')[:15]:<15}  "
             f"{_fmt_amt(row.get('CURBAL'))}  "
-            f"{str(row.get('PRODUCT') or '')[:7]:>7}  "
-            f"{str(row.get('COSTCTR') or '')[:10]:>10}"
+            f"{_fmt_int(row.get('PRODUCT') or '')[:7]:>7}  "
+            f"{_fmt_int(row.get('COSTCTR') or '')[:10]:>10}"
         )
 
-    # Final BY-group SUM line
     if current_key is not None:
         writer.line(
-            f"{'':>6}  {'':>12}  {'':30}  "
+            f"{'':>6}  {'':>12}  {'':24}  "
             f"{'':>10}  {'':15}  {'':15}  "
             f"{_fmt_amt(subtotal)}  {'':>7}  {'':>10}"
         )
 
 
 def prnrec(data1: pl.DataFrame, title: str, rdate: str, out_path: Path) -> None:
-    """
-    %MACRO PRNREC
-      PROC SORT DATA=DATA1; WHERE ICNO NE ''; BY ICNO CUSTNAME;
-      PROC SUMMARY ... SUM= → DATA2 top50
-      PROC PRINT DATA=DATA2 (summary)
-      PROC SORT DATA=DATA2 OUT=DATA2(KEEP=ICNO CUSTNAME CUSTNO); BY ICNO CUSTNAME;
-      DATA DATA3 = MERGE DATA1(IN=A) DATA2(IN=B); BY ICNO CUSTNAME; IF A AND B;
-      PROC PRINT DATA=DATA3 BY ICNO CUSTNAME; SUM CURBAL;
-    """
-    # WHERE ICNO NE '' / sort by ICNO CUSTNAME
     d1 = data1.filter(
         pl.col("ICNO").is_not_null()
         & (pl.col("ICNO").cast(pl.Utf8, strict=False).str.strip_chars() != "")
     ).sort(["ICNO", "CUSTNAME"])
 
-    # PROC SUMMARY → top 50 by descending CURBAL
     d2 = (
         d1.group_by(["ICNO", "CUSTNAME"], maintain_order=False)
         .agg([
@@ -407,16 +415,18 @@ def prnrec(data1: pl.DataFrame, title: str, rdate: str, out_path: Path) -> None:
         .sort(["ICNO", "CUSTNAME"])
     )
 
-    # DATA DATA3 — inner join d1 back to top-50 keys
     keys = d2.select(["ICNO", "CUSTNAME"])
     d3   = d1.join(keys, on=["ICNO", "CUSTNAME"], how="inner").sort(["ICNO", "CUSTNAME"])
 
     title_lines = _build_summary_header(title, rdate)
     writer = AsaReportWriter(out_path)
     writer.set_title_cache(title_lines)
-    writer.new_page(title_lines)
+    writer.new_page()
 
     _print_summary_table(writer, d2)
+
+    # Reset header cache before detail section so page-breaks reprint detail headers
+    writer.set_header_cache([])
     _print_detail_table(writer, d3)
 
     writer.save()
@@ -426,19 +436,15 @@ def prnrec(data1: pl.DataFrame, title: str, rdate: str, out_path: Path) -> None:
 # PB SUBSIDIARIES REPORT
 # =============================================================================
 def _print_subs_detail(writer: AsaReportWriter, d: pl.DataFrame) -> None:
-    """
-    PROC PRINT DATA=DATA1 BY CUSTNO; SUM CURBAL;
-    LABEL BRANCH='BRANCH CODE' ACCTNO='MNI NO' CUSTNAME='DEPOSITOR'
-          CUSTNO='CIS NO' CUSTCODE='CUSTCD'
-          CURBAL='CURRENT BALANCE' PRODUCT='PRODUCT' COSTCTR='COST CENTRE'
-    VAR BRANCH ACCTNO CUSTNAME CUSTNO CUSTCODE CURBAL PRODUCT COSTCTR;
-    """
     hdr = (
-        f"{'BRANCH':>6}  {'MNI NO':>12}  {'DEPOSITOR':<30}  "
+        f"{'BRANCH':>6}  {'MNI NO':>12}  {'DEPOSITOR':<24}  "
         f"{'CIS NO':>10}  {'CUSTCD':>6}  "
         f"{'CURRENT BALANCE':>16}  {'PRODUCT':>7}  {'COST CENTRE':>10}"
     )
     sep = "-" * len(hdr)
+
+    header_lines = [hdr, sep]
+    writer.set_header_cache(header_lines)
     writer.line(hdr)
     writer.line(sep)
 
@@ -451,7 +457,7 @@ def _print_subs_detail(writer: AsaReportWriter, d: pl.DataFrame) -> None:
 
         if current_cust is not None and custno != current_cust:
             writer.line(
-                f"{'':>6}  {'':>12}  {'':30}  "
+                f"{'':>6}  {'':>12}  {'':24}  "
                 f"{'':>10}  {'':>6}  "
                 f"{_fmt_amt(subtotal)}  {'':>7}  {'':>10}"
             )
@@ -462,44 +468,36 @@ def _print_subs_detail(writer: AsaReportWriter, d: pl.DataFrame) -> None:
         subtotal    += bal
 
         writer.line(
-            f"{str(row.get('BRANCH') or '')[:6]:>6}  "
-            f"{str(row.get('ACCTNO') or '')[:12]:>12}  "
-            f"{str(row.get('CUSTNAME') or '')[:30]:<30}  "
-            f"{str(row.get('CUSTNO') or '')[:10]:>10}  "
-            f"{str(row.get('CUSTCODE') or '')[:6]:>6}  "
+            f"{_fmt_int(row.get('BRANCH') or '')[:6]:>6}  "
+            f"{_fmt_int(row.get('ACCTNO') or '')[:12]:>12}  "
+            f"{str(row.get('CUSTNAME') or '')[:24]:<24}  "
+            f"{_fmt_int(row.get('CUSTNO') or '')[:10]:>10}  "
+            f"{_fmt_int(row.get('CUSTCODE') or '')[:6]:>6}  "
             f"{_fmt_amt(row.get('CURBAL'))}  "
-            f"{str(row.get('PRODUCT') or '')[:7]:>7}  "
-            f"{str(row.get('COSTCTR') or '')[:10]:>10}"
+            f"{_fmt_int(row.get('PRODUCT') or '')[:7]:>7}  "
+            f"{_fmt_int(row.get('COSTCTR') or '')[:10]:>10}"
         )
 
     if current_cust is not None:
         writer.line(
-            f"{'':>6}  {'':>12}  {'':30}  "
+            f"{'':>6}  {'':>12}  {'':24}  "
             f"{'':>10}  {'':>6}  "
             f"{_fmt_amt(subtotal)}  {'':>7}  {'':>10}"
         )
 
 
 def write_subs_report(data_sub: pl.DataFrame, rdate: str, out_path: Path) -> None:
-    """
-    DATA DATA1;
-       SET FDORG CAORG;
-       IF CUSTNO IN (53227,169990,170108,3562038,3721354);
-    PROC SORT; BY CUSTNO ACCTNO;
-    PROC PRINTTO PRINT=FDSTEXT NEW;
-    TITLE 'PB SUBSIDIARIES UNDER TOP 50 CORP DEPOSITORS @ ' &RDATE;
-    """
     d = data_sub.filter(
         pl.col("CUSTNO").cast(pl.Int64, strict=False).is_in(list(SUBS_CUSTNOS))
     ).sort(["CUSTNO", "ACCTNO"])
 
     title_lines = [
         "PUBLIC ISLAMIC BANK BERHAD (EIIMBTOP5)",
-        f"PB SUBSIDIARIES UNDER TOP 50 CORP DEPOSITORS @ {rdate}",
+        f"PB SUBSIDIARIES UNDER TOP 50 CORP DEPOSITORS @ {rdate}\n",
     ]
     writer = AsaReportWriter(out_path)
     writer.set_title_cache(title_lines)
-    writer.new_page(title_lines)
+    writer.new_page()
 
     _print_subs_detail(writer, d)
     writer.save()
@@ -517,9 +515,8 @@ def main() -> None:
     # CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
     # CALL SYMPUT('NOWK', ...)  — week-of-month bucket for input filename key
     reptdate_values = get_reptdate_values()
-    rdate   = reptdate_values["RDATE"]     # DD/MM/YY  (DDMMYY8.)
-    reptmon = reptdate_values["REPTMON"]   # ZZ2 month
-    # reptday / reptyear / nowk available from reptdate_values if needed elsewhere
+    rdate   = reptdate_values.rdate.strftime("%d/%m/%y")    # DD/MM/YY  (DDMMYY8.)
+    reptmon = reptdate_values.reptmon                       # ZZ2 month
 
     print(f"Report Date : {rdate}  (REPTMON={reptmon})")
 
@@ -545,7 +542,7 @@ def main() -> None:
     )
     # PROC PRINTTO PRINT=FD11TEXT NEW;
     # TITLE 'TOP 50 LARGEST FD+CA INDIVIDUAL CUSTOMERS AS AT ' &RDATE;
-    title_ind = f"TOP 50 LARGEST FD+CA INDIVIDUAL CUSTOMERS AS AT {rdate}"
+    title_ind = f"TOP 50 LARGEST FD+CA INDIVIDUAL CUSTOMERS AS AT {rdate}\n"
     print(f"\nGenerating: {FD11TEXT_OUT.name}")
     prnrec(data1_ind, title_ind, rdate, FD11TEXT_OUT)
 
@@ -560,7 +557,7 @@ def main() -> None:
     )
     # PROC PRINTTO PRINT=FD12TEXT NEW;
     # TITLE 'TOP 50 LARGEST FD+CA CORPORATE CUSTOMERS AS AT ' &RDATE;
-    title_corp = f"TOP 50 LARGEST FD+CA CORPORATE CUSTOMERS AS AT {rdate}"
+    title_corp = f"TOP 50 LARGEST FD+CA CORPORATE CUSTOMERS AS AT {rdate}\n"
     print(f"Generating: {FD12TEXT_OUT.name}")
     prnrec(data1_corp, title_corp, rdate, FD12TEXT_OUT)
 
