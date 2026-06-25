@@ -1,8 +1,37 @@
-def _fmt_int(v) -> str:
-    """Format numeric value as whole number string (no decimal points)."""
-    if v is None:
-        return ""
-    try:
-        return str(int(float(v)))
-    except (TypeError, ValueError):
-        return ""
+import re
+
+# =============================================================================
+# FILE RESOLUTION
+# fdXXXXXX.sas7bdat     → yymmdd  (own folder, no ambiguity)
+# fcyfdXXXXXX.sas7bdat  → yymmdd  (6-digit suffix, strict match to avoid
+#                                   grabbing fcyfdXXXXX mmwyy variants)
+# =============================================================================
+FD_PATH = get_latest_file(FD_DIR, prefix="fd")
+
+def get_latest_fcyfd_yymmdd(directory: Path) -> Path:
+    """
+    Resolves the latest fcyfd file using strictly yymmdd (6-digit) suffix.
+    Rejects mmwyy (5-digit) variants that share the same 'fcyfd' prefix.
+    """
+    # Strict: prefix 'fcyfd' followed by exactly 6 digits then .sas7bdat
+    pattern = re.compile(r"^fcyfd(\d{2})(\d{2})(\d{2})\.sas7bdat$", re.IGNORECASE)
+
+    candidates = []
+    for f in directory.iterdir():
+        m = pattern.match(f.name)
+        if m:
+            yy, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            year = 2000 + yy if yy < 100 else yy
+            sort_key = (year, mm, dd)
+            candidates.append((sort_key, f))
+
+    if not candidates:
+        raise FileNotFoundError(
+            f"No fcyfd yymmdd files found in {directory}"
+        )
+
+    latest = max(candidates, key=lambda x: x[0])
+    print(f"[FILE_RESOLVER] Selected latest fcyfd (yymmdd): {latest[1].name}")
+    return latest[1]
+
+FCYFD_PATH = get_latest_fcyfd_yymmdd(FCYFD_DIR)
