@@ -1,3 +1,15 @@
+# FORCE NUMERIC TYPES (FIX)
+df["CURBAL"] = pd.to_numeric(df["CURBAL"], errors="coerce")
+df["FORATE"] = pd.to_numeric(df["FORATE"], errors="coerce")
+
+# REMOVE INVALID DATA
+df = df[df["FORATE"].notna() & (df["FORATE"] != 0)].copy()
+
+# SAFE DIVISION
+df["CURBAL"] = df["CURBAL"] / df["FORATE"]
+
+===============
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py
 [EIBDPTER] Report date : 25/06/2026
 [EIBDPTER] T  = 2026-06-25
