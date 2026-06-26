@@ -1,14 +1,13 @@
 """
 Program : EIBDFFCD.py
 Purpose : Convert foreign currency fixed deposit balances to MYR and USD
-               equivalents using format-based exchange rates (FORATE).
-               SMR 2006-229. MNI3 / 10363.
+          equivalents using format-based exchange rates (FORATE).
 """
 
-import re
 import pandas as pd
 import polars as pl
 from pathlib import Path
+import re
 from typing import Optional
 
 from input_date import get_latest_file
@@ -24,17 +23,20 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
 # FILE RESOLUTION
-# fdXXXXXX.sas7bdat     → yymmdd  (e.g. fd260623.sas7bdat)
-# fcyfdXXXXXX.sas7bdat  → yymmdd strictly (6-digit suffix, rejects mmwyy
-#                          5-digit variants sharing the same fcyfd prefix)
+# fcyfdXXXXXX.sas7bdat  → yymmdd strictly (6-digit, rejects 5-digit mmwyy)
+# fcyXXXXXX.sas7bdat    → yymmdd strictly (6-digit, rejects 5-digit mmwyy)
+# fd is not used — the SAS FD libref points to fcyfd data, not the fd file.
 # =============================================================================
 
-def get_latest_fcyfd_yymmdd(directory: Path) -> Path:
+def get_latest_yymmdd(directory: Path, prefix: str) -> Path:
     """
-    Resolves latest fcyfd file using strictly yymmdd (6-digit) suffix.
-    Rejects mmwyy (5-digit) variants sharing the same 'fcyfd' prefix.
+    Resolves the latest file with the given prefix using strictly yymmdd
+    (6-digit) suffix. Rejects mmwyy (5-digit) variants sharing the same prefix.
     """
-    pattern = re.compile(r"^fcyfd(\d{2})(\d{2})(\d{2})\.sas7bdat$", re.IGNORECASE)
+    pattern = re.compile(
+        rf"^{re.escape(prefix)}(\d{{2}})(\d{{2}})(\d{{2}})\.sas7bdat$",
+        re.IGNORECASE,
+    )
     candidates = []
     for f in directory.iterdir():
         m = pattern.match(f.name)
@@ -43,14 +45,16 @@ def get_latest_fcyfd_yymmdd(directory: Path) -> Path:
             year = 2000 + yy if yy < 100 else yy
             candidates.append(((year, mm, dd), f))
     if not candidates:
-        raise FileNotFoundError(f"No fcyfd yymmdd files found in {directory}")
+        raise FileNotFoundError(
+            f"No {prefix} yymmdd files found in {directory}"
+        )
     latest = max(candidates, key=lambda x: x[0])
-    print(f"[FILE_RESOLVER] Selected latest fcyfd (yymmdd): {latest[1].name}")
+    print(f"[FILE_RESOLVER] Selected latest {prefix} (yymmdd): {latest[1].name}")
     return latest[1]
 
 
-FD_PATH    = get_latest_file(INPUT_DIR, prefix="fd")
-FCYFD_PATH = get_latest_fcyfd_yymmdd(INPUT_DIR)
+FCYFD_PATH = get_latest_yymmdd(INPUT_DIR, prefix="fcyfd")
+FCY_PATH   = get_latest_yymmdd(INPUT_DIR, prefix="fcy")
 
 # =============================================================================
 # $FORATE. exchange rate map
@@ -83,9 +87,6 @@ def put_forate(curcode: str) -> Optional[float]:
 
 # =============================================================================
 # STEP 1: Read inputs
-# PROC SORT DATA=FD.FD OUT=FD BY ACCTNO CDNO sorts FCYFD into a work dataset
-# also named FD, which the DATA step then SETs. The base FD dataset is the
-# full account master; FCYFD contains the FCY-enriched subset.
 # =============================================================================
 
 def read_sas(path: Path) -> pl.DataFrame:
@@ -94,20 +95,23 @@ def read_sas(path: Path) -> pl.DataFrame:
     return pl.from_pandas(pdf)
 
 
-def read_fcyfd(path: Path) -> pl.DataFrame:
-    """
-    Reads and sorts FCYFD dataset.
-    PROC SORT DATA=FD.FD OUT=FD BY ACCTNO CDNO → sorts FCYFD by ACCTNO, CDNO.
-    """
-    df = read_sas(path)
-    df = df.sort(["ACCTNO", "CDNO"])
-    return df
+# =============================================================================
+# STEP 2: Attach CDNO from FCY into FCYFD via ACCTNO join
+# FCY is only used to supply CDNO — all other columns come from FCYFD.
+# PROC SORT DATA=FD.FD OUT=FD BY ACCTNO CDNO sorts the joined result.
+# =============================================================================
+
+def attach_cdno(fcyfd_df: pl.DataFrame, fcy_df: pl.DataFrame) -> pl.DataFrame:
+    cdno_df = fcy_df.select(["ACCTNO", "CDNO"])
+    joined = fcyfd_df.join(cdno_df, on="ACCTNO", how="left")
+    joined = joined.sort(["ACCTNO", "CDNO"])
+    return joined
 
 
 # =============================================================================
-# STEP 2: Apply foreign currency conversion
+# STEP 3: Apply foreign currency conversion
 # DATA FD.FD;
-#   SET FD;     ← FD here is the sorted FCYFD work dataset
+#   SET FD;     ← FD here is the sorted FCYFD work dataset (with CDNO attached)
 #   IF CURCODE NE 'MYR' THEN DO;
 #     FORATE  = PUT(CURCODE, $FORATE.);
 #     FORBAL  = CURBAL;
@@ -156,7 +160,7 @@ def apply_fx_conversion(df: pl.DataFrame) -> pl.DataFrame:
 
 
 # =============================================================================
-# STEP 3: Write output dataset
+# STEP 4: Write output dataset
 # DATA FD.FD overwrites the FD library member with FCY-converted records.
 # PROC PRINT WHERE CURCODE NE 'MYR' is a diagnostic listing to SAS output
 # window only — no external report file is produced by this program.
@@ -173,32 +177,36 @@ def write_output(df: pl.DataFrame) -> Path:
 # =============================================================================
 
 if __name__ == "__main__":
-    print(f"FD input    : {FD_PATH}")
     print(f"FCYFD input : {FCYFD_PATH}")
-
-    print("Reading FD base dataset...")
-    fd_df = read_sas(FD_PATH)
-    print(f"  FD rows    : {len(fd_df)}")
+    print(f"FCY input   : {FCY_PATH}")
 
     print("Reading FCYFD dataset...")
-    fcyfd_df = read_fcyfd(FCYFD_PATH)
+    fcyfd_df = read_sas(FCYFD_PATH)
     print(f"  FCYFD rows : {len(fcyfd_df)}")
 
-    print("Applying FX conversion on FCYFD...")
-    fcyfd_converted = apply_fx_conversion(fcyfd_df)
+    print("Reading FCY dataset (for CDNO)...")
+    fcy_df = read_sas(FCY_PATH)
+    print(f"  FCY rows   : {len(fcy_df)}")
 
-    fcy_rows = fcyfd_converted.filter(
+    print("Attaching CDNO from FCY and sorting by ACCTNO, CDNO...")
+    fcyfd_with_cdno = attach_cdno(fcyfd_df, fcy_df)
+    print(f"  Rows after join : {len(fcyfd_with_cdno)}")
+
+    print("Applying FX conversion...")
+    fd_converted = apply_fx_conversion(fcyfd_with_cdno)
+
+    fcy_non_myr = fd_converted.filter(
         pl.col("CURCODE").str.strip_chars().str.to_uppercase() != "MYR"
     )
-    print(f"  FCY rows converted : {len(fcy_rows)}")
-    print(f"  MYR rows unchanged : {len(fcyfd_converted) - len(fcy_rows)}")
-    print(fcy_rows.select([
+    print(f"  FCY rows converted : {len(fcy_non_myr)}")
+    print(f"  MYR rows unchanged : {len(fd_converted) - len(fcy_non_myr)}")
+    print(fcy_non_myr.select([
         c for c in ["ACCTNO", "CDNO", "CURCODE", "FORATE", "FORBAL", "CURBAL", "CURBALUS"]
-        if c in fcy_rows.columns
+        if c in fcy_non_myr.columns
     ]))
 
     print("Writing output dataset...")
-    out_path = write_output(fcyfd_converted)
+    out_path = write_output(fd_converted)
     print(f"Output written to   : {out_path}")
 
     print("Done.")
