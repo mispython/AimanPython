@@ -297,7 +297,7 @@ def _fmt_num(val, total_width: int, decimals: int = 2) -> str:
     Replicates SAS 15.2 format behaviour.
     """
     try:
-        formatted = f"{float(val):>{total_width}.{decimals}f}"
+        formatted = f"{float(val):<{total_width}.{decimals}f}"
         return formatted[:total_width]
     except (ValueError, TypeError):
         return " " * total_width
