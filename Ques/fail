@@ -1,102 +1,13 @@
-Name	Type
-PURPOSE	Numeric
-BRANCH	Numeric
-ACCTNO	Numeric
-REOPENDT	Numeric
-CUSTCODE	Numeric
-CLASSIFI	Character
-USER3	Character
-LEDGBAL	Numeric
-L_DEP	Numeric
-OPENIND	Character
-LASTTRAN	Numeric
-RETURNS_Y	Numeric
-AVGAMT	Numeric
-PRODUCT	Numeric
-DEPTYPE	Character
-INTPAY	Numeric
-INTPLAN	Numeric
-STATE	Character
-INTCYCODE	Character
-CURCODE	Character
-RATE	Numeric
-BDATE	Numeric
-SECOND	Numeric
-PREVBRNO	Numeric
-POST_IND	Character
-MTDAVBAL	Numeric
-DTLSTCUST	Numeric
-OPENDT	Numeric
-NXT_STMT_CYCLE_DT	Numeric
-STMT_CYCLE	Character
-DNBFISME	Character
-DATE_LST_DEP	Numeric
-MAILCODE	Character
-REASON	Character
-INSTRUCTIONS	Character
-PB_ENTERPRISE_PACKAGE_CD	Character
-PB_ENTERPRISE_REG_DT	Numeric
-PB_ENTERPRISE_TAG	Character
-FORATE	Character
-FORBAL	Numeric
-CURBALUS	Numeric
-ACSTATUS4	Character
-ACSTATUS5	Character
-ACSTATUS6	Character
-ACSTATUS7	Character
-ACSTATUS8	Character
-ACSTATUS9	Character
-ACSTATUS10	Character
-PURPOSEM	Numeric
-CUSTCD	Character
-CUSTNO	Numeric
-CITIZEN	Character
-RACE	Character
-PRIMARY	Numeric
-PERLIMT	Numeric
-KEYWORD	Character
-PURPOSEC	Numeric
-TOTMTBAL	Numeric
-ESIGNATURE	Character
-CONDIMODE	Character
-MTDAVBAL_MIS	Numeric
-MTDAVFORBAL_MIS	Numeric
-DAYS	Numeric
-AVERBAL	Numeric
-CURBALRM	Numeric
-BANKNO	Numeric
-REPTNO	Numeric
-FMTCODE	Numeric
-STATEC	Character
-DEPODTE	Numeric
-CDNO	Numeric
-ORIGAMT	Numeric
-ORGDATE	Numeric
-MATDATE	Numeric
-ACCTTYPE	Numeric
-TERM	Numeric
-MATID	Character
-PAYMENT	Character
-RENEWAL	Character
-INTPDYTD	Numeric
-INTDATE	Numeric
-LASTACTV	Numeric
-INTFREQ	Numeric
-INTFREQID	Character
-PENDINT	Numeric
-LMATDATE	Numeric
-PRORATIO	Numeric
-FDHOLD	Character
-COSTCTR	Numeric
-COLLNO	Numeric
-INTTFRACCT	Numeric
-PRN_DISP_OPT	Character
-PRN_RENEW	Numeric
-PRN_TFR_ACCT	Numeric
-AMTIND	Character
-SECTOR	Numeric
-MASTER_ACCT	Numeric
-FCY_TYPE	Character
-E_INVOICE_IND	Character
-INACTIVE	Character
-OKU_IND	Character
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC_AII.py
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC_AII.py", line 55, in <module>
+    fd = fd.with_columns(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.InvalidOperationError: division with 'String' datatypes is not allowed
