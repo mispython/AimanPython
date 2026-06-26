@@ -42,14 +42,22 @@ fd_path = INPUT_DIR / "fd.sas7bdat"
 fd_pd = pd.read_sas(str(fd_path), format="sas7bdat", encoding="latin1")
 fd = pl.from_pandas(fd_pd)
 
+# print(fd.schema)      # Check columns' data type
+
+fd = fd.with_columns([
+    pl.col("CURBAL").cast(pl.Float64),
+    pl.col("FORATE").str.strip_chars().cast(pl.Float64),
+    pl.col("RATE").cast(pl.Float64),
+    pl.col("MATDATE").cast(pl.Int64),
+])
+
 # ============================================================
 # DATA FD STEP
-#   KEEP  CURCODE CURBAL FORATE MATDATE TENOR RATE AMTENOR AMTENORATE REPTDATE
+#   KEEP  CURCODE CURBAL FORATE MATDATE RATE
 #   WHERE CURBAL GT 0
 # ============================================================
 fd = fd.select([
-    "CURCODE", "CURBAL", "FORATE", "MATDATE", "TENOR",
-    "RATE", "AMTENOR", "AMTENORATE", "REPTDATE",
+    "CURCODE", "CURBAL", "FORATE", "MATDATE", "RATE",
 ]).filter(pl.col("CURBAL") > 0)
 
 # Convert CURBAL to MYR equivalent when CURCODE != 'MYR'
@@ -147,9 +155,9 @@ report_lines.append(pad(""))
 report_lines.append(pad(
     f"{'CURRENCY CODE':<24}"
     f",{'OUTSTANDING BALANCE':>20}"
-    f",{'AVERAGE TENOR (DAYS)':>20}"
-    f",{'AVERAGE RATE (%)':>16}"
-    f",{'NO OF O/S ACCOUNT':>16}"
+    f"{' ' * 4},{'AVERAGE TENOR (DAYS)':>20}"
+    f"{' ' * 4},{'AVERAGE RATE (%)':>16}"
+    f"{' ' * 8},{'NO OF O/S ACCOUNT':>16}"
 ))
 
 # Detail lines
@@ -165,9 +173,9 @@ for row in rows:
     line = (
         f"{curcode:<24}"
         f",{curbal:>20.2f}"
-        f",{int(round(avgtenor)):>20}"
-        f",{avgrate:>16.2f}"
-        f",{noacct:>16}"
+        f"{' ' * 4},{int(round(avgtenor)):>20}"
+        f"{' ' * 4},{avgrate:>16.2f}"
+        f"{' ' * 8},{noacct:>16}"
     )
     report_lines.append(pad(line))
 
