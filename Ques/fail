@@ -1,3 +1,21 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC_AII.py
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC_AII.py", line 47, in <module>
+    fd = fd.with_columns([
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.InvalidOperationError: conversion from `str` to `f64` failed in column 'FORATE' for 40766 out of 2854758 values: ["    5.4325875", "    2.8425828", … "        4.117"]
+
+Did not show all failed cases as there were too many.
+
+================
+
 fd = fd.with_columns([
     pl.col("CURBAL").cast(pl.Float64),
     pl.col("FORATE").cast(pl.Float64),
