@@ -17,13 +17,13 @@ from REPTDATE import get_reptdate_values
 # ------------------------------------------------------------
 # Paths
 # ------------------------------------------------------------
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIDE1ERR")
-INPUT_DIR  = BASE_DIR / "input"
-OUTPUT_DIR = BASE_DIR / "output"
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR  = BASE_DIR / "input/uat/EIDE1ERR"
+OUTPUT_DIR = BASE_DIR / "output/EIDE1ERR"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-DATEFL_PATH = INPUT_DIR / "COUNTI_NEW.txt"   # IBM counts   (IBMFL in SAS)
+DATEFL_PATH = INPUT_DIR / "COUNTI_NEW.txt"   # IBM counts    (IBMFL in SAS)
 DETFL_PATH  = INPUT_DIR / "COUNTD_NEW.txt"   # DETICA counts (DETFL in SAS)
 
 # ------------------------------------------------------------
@@ -151,24 +151,22 @@ def _header_lines() -> list[str]:
     # Line 1  (ASA '1' = form-feed / new page)
     l1 = (
         f"{'REPORT DATE : '}{DAY}-{MTH}-{YEAR}"
-        .ljust(44)
+        .ljust(37)
         + "P U B L I C  B A N K  B E R H A D     "
-        .center(63)
+        .center(70)
         + f"REPORT TIME : {TIME}"
     )
-    lines.append("1" + l1[:132])
+    lines.append(l1[:132])
 
     # Line 2
-    l2 = " " * 44 + "  DETICA DAILY JOBS SCHEDULE        "
-    lines.append(" " + l2[:132])
+    l2 = " " * 55 + "  DETICA DAILY JOBS SCHEDULE        "
+    lines.append(l2[:132])
 
     # Blank line
-    lines.append(" ")
-    # Another blank
-    lines.append(" ")
+    lines.append("")
 
     # Separator
-    lines.append(" " + SEP_LINE)
+    lines.append(SEP_LINE)
 
     # Column headers – row 1
     h1 = (
@@ -184,7 +182,7 @@ def _header_lines() -> list[str]:
         f"  "
         f"{'Done By':<7}"
     )
-    lines.append(" " + h1[:132])
+    lines.append(h1[:132])
 
     # Column headers – row 2
     h2 = (
@@ -197,10 +195,10 @@ def _header_lines() -> list[str]:
         + "  "
         + f"{'(Y/N)':^13}"
     )
-    lines.append(" " + h2[:132])
+    lines.append(h2[:132])
 
     # Separator
-    lines.append(" " + SEP_LINE)
+    lines.append(SEP_LINE)
 
     return lines
 
@@ -241,17 +239,16 @@ def _detail_lines(row: dict) -> list[str]:
     for i, ch in enumerate(diff_s,    start=74):  buf[i]   = ch
     buf[95] = tally_s
 
-    detail = " " + "".join(buf[0:132])
-    sep    = " " + SEP_LINE
-    blank  = " "
+    detail = "".join(buf[0:132])
+    sep    = SEP_LINE
+    blank  = ""
 
     return [detail, sep, blank]
 
 
 def _footer_line() -> str:
     return (
-        " "
-        + "# Call application team (CIS) if any of the records not TALLY."
+        "# Call application team (CIS) if any of the records not TALLY."
     )
 
 
