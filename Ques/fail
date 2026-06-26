@@ -1,43 +1,42 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC_AII.py
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py
+[EIBDPTER] Report date : 25/06/2026
+[EIBDPTER] T  = 2026-06-25
+[EIBDPTER] T1 = 2026-06-26
+[EIBDPTER] T2 = 2026-06-27
+[EIBDPTER] T3 = 2026-06-28
+[EIBDPTER] Reading /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBDRMFC/fd.sas7bdat ...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC_AII.py", line 47, in <module>
-    fd = fd.with_columns([
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.InvalidOperationError: conversion from `str` to `f64` failed in column 'FORATE' for 40766 out of 2854758 values: ["    5.4325875", "    2.8425828", … "        4.117"]
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/ops/array_ops.py", line 218, in _na_arithmetic_op
+    result = func(left, right)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/computation/expressions.py", line 242, in evaluate
+    return _evaluate(op, op_str, a, b)  # type: ignore[misc]
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/computation/expressions.py", line 131, in _evaluate_numexpr
+    result = _evaluate_standard(op, op_str, a, b)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/computation/expressions.py", line 73, in _evaluate_standard
+    return op(a, b)
+TypeError: unsupported operand type(s) for /: 'float' and 'str'
 
-Did not show all failed cases as there were too many.
+During handling of the above exception, another exception occurred:
 
-================
-
-fd = fd.with_columns([
-    pl.col("CURBAL").cast(pl.Float64),
-    pl.col("FORATE").cast(pl.Float64),
-    pl.col("RATE").cast(pl.Float64),
-    pl.col("MATDATE").cast(pl.Int64),
-])
-
-=================
-
-Schema([('BANKNO', Float64), ('REPTNO', Float64), ('FMTCODE', Float64), ('BRANCH', Float64), ('ACCTNO', Float64), ('STATEC', String), ('PURPOSE', String), ('CUSTCD', Float64), ('DEPODTE', Float64), ('NAME', String), ('CDNO', Float64), ('OPENIND', String), ('CURBAL', Float64), ('ORIGAMT', Float64), ('ORGDATE', Float64), ('MATDATE', Float64), ('RATE', Float64), ('ACCTTYPE', Float64), ('TERM', Float64), ('MATID', String), ('INTPLAN', Float64), ('PAYMENT', String), ('RENEWAL', String), ('INTPDYTD', Float64), ('INTPAY', Float64), ('INTDATE', Float64), ('LASTACTV', Float64), ('INTFREQ', Float64), ('INTFREQID', String), ('PENDINT', Float64), ('CURCODE', String), ('LMATDATE', Float64), ('PRORATIO', Float64), ('FDHOLD', String), ('COSTCTR', Float64), ('COLLNO', Float64), ('INTTFRACCT', Float64), ('PRN_DISP_OPT', String), ('PRN_RENEW', Float64), ('PRN_TFR_ACCT', Float64), ('AMTIND', String), ('FORATE', String), ('FORBAL', Float64), ('CURBALUS', Float64)])
-
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC_AII.py
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC_AII.py", line 55, in <module>
-    fd = fd.with_columns(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.InvalidOperationError: division with 'String' datatypes is not allowed
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 617, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 588, in main
+    fcyt1, fcyt2, fcyt3, fcyt4 = build_fcyt(fd_df)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 167, in build_fcyt
+    df["CURBAL"] = df["CURBAL"] / df["FORATE"]
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/ops/common.py", line 76, in new_method
+    return method(self, other)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/arraylike.py", line 210, in __truediv__
+    return self._arith_method(other, operator.truediv)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/series.py", line 6135, in _arith_method
+    return base.IndexOpsMixin._arith_method(self, other, op)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/base.py", line 1382, in _arith_method
+    result = ops.arithmetic_op(lvalues, rvalues, op)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/ops/array_ops.py", line 283, in arithmetic_op
+    res_values = _na_arithmetic_op(left, right, op)  # type: ignore[arg-type]
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/ops/array_ops.py", line 227, in _na_arithmetic_op
+    result = _masked_arith_op(left, right, op)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/ops/array_ops.py", line 163, in _masked_arith_op
+    result[mask] = op(xrav[mask], yrav[mask])
+TypeError: unsupported operand type(s) for /: 'float' and 'str'
