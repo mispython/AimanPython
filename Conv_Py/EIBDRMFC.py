@@ -1,8 +1,8 @@
-# ============================================================
-# PROGRAM  : EIBDRMFC.py
-# PURPOSE  : GENERATE A DAILY REPORT SEGREGATED INTO RINGGIT AND
-#            FOREIGN CURRENCY DEPOSIT
-# ESMR     : 2010-3059 (AAB)
+"""
+Program : EIBDRMFC.py
+Purpose : GENERATE A DAILY REPORT SEGREGATED INTO RINGGIT AND
+          FOREIGN CURRENCY DEPOSIT
+"""
 # ============================================================
 
 from pathlib import Path
@@ -12,14 +12,14 @@ import polars as pl
 import duckdb
 
 from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
+# from input_date import get_latest_file
 
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC")
-INPUT_DIR  = BASE_DIR / "input"
-OUTPUT_DIR = BASE_DIR / "output"
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR  = BASE_DIR / "input/prod/EIBDRMFC"
+OUTPUT_DIR = BASE_DIR / "output/EIBDRMFC"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -36,7 +36,8 @@ SDATE = reptdate_values.reptdt                          # PUT(REPTDATE, 8.)  →
 # ============================================================
 # READ INPUT: MNIFD.FD  (.sas7bdat)
 # ============================================================
-fd_path = get_latest_file(INPUT_DIR, prefix="fd")
+# fd_path = get_latest_file(INPUT_DIR, prefix="fd")
+fd_path = INPUT_DIR / "fd.sas7bdat"
 
 fd_pd = pd.read_sas(str(fd_path), format="sas7bdat", encoding="latin1")
 fd = pl.from_pandas(fd_pd)
