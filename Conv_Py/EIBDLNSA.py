@@ -1,16 +1,18 @@
-# ============================================================
-# PROGRAM : EIBDLNSA.py
-# PURPOSE : IBU Daily Report - Movements of Product 135, 136
-#           Branch Summary on Daily O/S (RM) - BAE Personal
-#           Financing-I and PLUS BAE Personal Financing-I
-# ============================================================
+#!/usr/bin/env python3
+"""
+Program : EIBDLNSA.py
+Purpose : IBU Daily Report - Movements of Product 135, 136
+          Branch Summary on Daily O/S (RM) - BAE Personal
+          Financing-I and PLUS BAE Personal Financing-I
+"""
 
 from pathlib import Path
 import pandas as pd
 import polars as pl
+import os
+import gc
 
 from REPTDATE import get_reptdate_values
-from input_date  import get_latest_file
 from output_date import build_output_file
 
 # ------------------------------------------------------------
@@ -18,33 +20,53 @@ from output_date import build_output_file
 # ------------------------------------------------------------
 reptdate_values = get_reptdate_values()
 
-REPTMON  = reptdate_values.reptmon    # current month  e.g. "06"
-REPTDAY  = reptdate_values.reptday    # current day    e.g. "18"
-REPTYEAR = reptdate_values.reptyear   # 2-digit year   e.g. "26"
-NOWK     = reptdate_values.nowk       # week number    e.g. "1"-"4"
-RDATE    = reptdate_values.reptdate.strftime("%d/%m/%y")  # DDMMYY8.
+REPTMON  = reptdate_values.reptmon
+REPTDAY  = reptdate_values.reptday
+REPTYEAR = reptdate_values.reptyear
+RDATE    = reptdate_values.reptdate.strftime("%d/%m/%y")
 
-# Previous month (MM1 = MM - 1; if MM1 = 0 then MM1 = 12)
-# NOTE: NOWK is hardcoded to '4' in the SAS source (NOWK='4')
-NOWK = "4"
+# Current month = reptdate month (MM), previous month = MM-1
+# Year rolls back when current month is January (01 -> 12 of prior year)
+_mm_int  = int(REPTMON)
+_yy_int  = int(REPTYEAR)
+
+_curr_mm = _mm_int
+_curr_yy = _yy_int
+
+_prev_mm = _mm_int - 1 if _mm_int > 1 else 12
+_prev_yy = _yy_int if _mm_int > 1 else _yy_int - 1
+
+CURR_LOAN_NAME = f"ln{_curr_mm:02d}4{_curr_yy:02d}.sas7bdat"
+PREV_LOAN_NAME = f"ln{_prev_mm:02d}4{_prev_yy:02d}.sas7bdat"
+# NOTE: Both loan references resolve to the two most-recent 'ln' files.
+#       get_latest_file returns the single latest; for the previous-month
+#       file a second call is made below after excluding the current file.
 
 # ------------------------------------------------------------
 # Path configuration
 # ------------------------------------------------------------
-BASE_DIR   = Path(r"C:\Users\aiman\Desktop\SAS_Python_Migration")
-MIS_DIR    = BASE_DIR / "MIS"          # .sas7bdat loan files  (prefix: ln)
-BRANCH_DIR = BASE_DIR / "BRANCHF"      # flat file  (no date prefix)
-OUTPUT_DIR = BASE_DIR / "OUTPUT" / "EIBDLNSA"
+# # Production Path
+# BASE_DIR   = Path("/dwh")
+# MIS_DIR    = BASE_DIR / "ln_ln"
+# BRANCH_DIR = Path("/sasdata/rawdata/lookup")
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBDLNSA"
+
+# Production Path
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+MIS_DIR    = BASE_DIR / "input/prod/EIBDLNSA"
+BRANCH_DIR = Path("/sasdata/rawdata/lookup")
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDLNSA"
+PARQUET_DIR = MIS_DIR / "parquet_cache"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+PARQUET_DIR.mkdir(parents=True, exist_ok=True)
 
-# Input files
-LOAN_FILE   = get_latest_file(MIS_DIR,   prefix="ln")   # MIS.LOAN&REPTMON&NOWK
-PREVLN_FILE = get_latest_file(MIS_DIR,   prefix="ln")   # MIS.LOAN&REPTMON1&NOWK
-#   NOTE: Both loan references resolve to the two most-recent 'ln' files.
-#         get_latest_file returns the single latest; for the previous-month
-#         file a second call is made below after excluding the current file.
-BRANCH_FILE = BRANCH_DIR / "branch.txt"                 # BRANCHF flat file
+LOAN_FILE   = MIS_DIR / CURR_LOAN_NAME
+PREVLN_FILE = MIS_DIR / PREV_LOAN_NAME
+
+OUTPUT_FILE = build_output_file(OUTPUT_DIR, prefix="EIBDLNSA").with_suffix(".txt")
+
+BRANCH_FILE = BRANCH_DIR / "LKP_BRANCH"                 # BRANCHF flat file
 
 # Resolve current (latest) and previous (second-latest) loan files
 _all_ln = sorted(
@@ -60,6 +82,66 @@ PREVLN_FILE = _all_ln[1] if len(_all_ln) > 1 else None
 
 # Output file  (prefix only; build_output_file appends _DDMMYY)
 OUTPUT_FILE = build_output_file(OUTPUT_DIR, prefix="EIBDLNSA").with_suffix(".txt")
+
+# ------------------------------------------------------------
+# SAS7BDAT -> Parquet caching reader  (adapted from EIBXLNLC)
+# ------------------------------------------------------------
+def _get_row_limit():
+    value = os.environ.get("EIBDLNSA_ROW_LIMIT", "").strip()
+    if not value:
+        return None
+    try:
+        row_limit = int(value)
+    except ValueError as exc:
+        raise ValueError("EIBDLNSA_ROW_LIMIT must be a positive integer or 0") from exc
+    return row_limit if row_limit > 0 else None
+
+
+def _read_sas7bdat(path: Path, row_limit=None):
+    """
+    SAS -> Parquet caching reader.
+    Returns pl.LazyFrame (cache hit / full convert) or pl.DataFrame (test mode).
+    """
+    cache_dir = PARQUET_DIR / path.stem
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    parquet_files = list(cache_dir.glob("*.parquet"))
+    cache_valid   = (
+        len(parquet_files) > 0
+        and max(f.stat().st_mtime for f in parquet_files) >= path.stat().st_mtime
+    )
+
+    # CASE 1: USE CACHE
+    if cache_valid and row_limit is None:
+        print(f"[CACHE HIT] Reading Parquet : {path.stem}")
+        return pl.scan_parquet(str(cache_dir / "*.parquet"))
+
+    # CASE 2: TEST MODE
+    if row_limit:
+        print(f"[TEST MODE] Reading SAS     : {path.name}")
+        reader = pd.read_sas(str(path), encoding="latin1", chunksize=row_limit)
+        try:
+            pdf = next(reader)
+        except StopIteration:
+            pdf = pd.DataFrame()
+        pdf.columns = [c.upper() for c in pdf.columns]
+        return pl.from_pandas(pdf)
+
+    # CASE 3: FULL CONVERSION (SAS -> PARQUET PARTITIONED)
+    print(f"\n[CONVERT] SAS -> Parquet (chunked) : {path.name}")
+    reader = pd.read_sas(str(path), encoding="latin1", chunksize=500_000)
+    for i, chunk in enumerate(reader):
+        if chunk is None or chunk.empty:
+            continue
+        print(f"[CHUNK {i}] rows processed ...")
+        chunk.columns = [c.upper() for c in chunk.columns]
+        df = pl.from_pandas(chunk)
+        df = df.with_columns([pl.col(c).cast(pl.Utf8, strict=False) for c in df.columns])
+        out_file = cache_dir / f"part-{i:05d}.parquet"
+        df.write_parquet(out_file, compression="zstd")
+        print(f"[WRITE] {out_file} ({len(df):,} rows)")
+    print(f"[DONE] Cache created at : {cache_dir}")
+    return pl.scan_parquet(str(cache_dir / "*.parquet"))
 
 # ------------------------------------------------------------
 # Constants
@@ -172,36 +254,45 @@ def _build_detail_line(label: str, row_map: dict, asa: str = ASA_SP) -> str:
         )
     return asa + body
 
-
 # ------------------------------------------------------------
 # Step 1 : Read & summarise current-month loan file
 # ------------------------------------------------------------
-print(f"[INFO] Reading current loan file  : {LOAN_FILE}")
-loan_df = pl.from_pandas(pd.read_sas(str(LOAN_FILE), encoding="latin1"))
-loan_df = loan_df.filter(pl.col("PRODUCT").is_in(TARGET_PRODUCTS))
+row_limit = _get_row_limit()
 
+print(f"[INFO] Current loan file  : {LOAN_FILE.name}")
+raw_curr  = _read_sas7bdat(LOAN_FILE, row_limit=row_limit)
 loan_summ = (
-    loan_df
+    raw_curr
+    .filter(pl.col("PRODUCT").cast(pl.Float64).cast(pl.Int64).is_in(TARGET_PRODUCTS))
     .group_by(["BRANCH", "PRODUCT"])
     .agg([
-        pl.col("BALANCE").sum().alias("BRLNAMT"),
+        pl.col("BALANCE").cast(pl.Float64).sum().alias("BRLNAMT"),
         pl.len().alias("NOACCT"),
+    ])
+    .collect()
+    .with_columns([
+        pl.col("BRANCH").cast(pl.Float64).cast(pl.Int64),
+        pl.col("PRODUCT").cast(pl.Float64).cast(pl.Int64),
     ])
 )
 
 # ------------------------------------------------------------
 # Step 2 : Read & summarise previous-month loan file
 # ------------------------------------------------------------
-print(f"[INFO] Reading previous loan file : {PREVLN_FILE}")
-prevln_df = pl.from_pandas(pd.read_sas(str(PREVLN_FILE), encoding="latin1"))
-prevln_df = prevln_df.filter(pl.col("PRODUCT").is_in(TARGET_PRODUCTS))
-
+print(f"[INFO] Previous loan file : {PREVLN_FILE.name}")
+raw_prev    = _read_sas7bdat(PREVLN_FILE, row_limit=row_limit)
 prevln_summ = (
-    prevln_df
+    raw_prev
+    .filter(pl.col("PRODUCT").cast(pl.Float64).cast(pl.Int64).is_in(TARGET_PRODUCTS))
     .group_by(["BRANCH", "PRODUCT"])
     .agg([
-        pl.col("BALANCE").sum().alias("PBRLNAMT"),
+        pl.col("BALANCE").cast(pl.Float64).sum().alias("PBRLNAMT"),
         pl.len().alias("PNOACCT"),
+    ])
+    .collect()
+    .with_columns([
+        pl.col("BRANCH").cast(pl.Float64).cast(pl.Int64),
+        pl.col("PRODUCT").cast(pl.Float64).cast(pl.Int64),
     ])
 )
 
