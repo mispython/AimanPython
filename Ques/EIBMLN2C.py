@@ -24,11 +24,11 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # PBB paths  (EIBXLNLC output -> EIBMLN2C input)
 PBB_INPUT_DIR   = BASE_DIR / "output/EIBXLNLC/PBB"                 # SAP.PBB.LOANLIST.SASDATA  (NOTE2&REPTMON)
-PBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN2C/pbb_loanlis2.txt"    # SAP.PBB.LOANLIS2.COLD
+PBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN2C/PBB_LOANLIS2.txt"    # SAP.PBB.LOANLIS2.COLD
 
 # PIBB paths  (EIBXLNLC output -> EIBMLN2C input)
 PIBB_INPUT_DIR   = BASE_DIR / "output/EIBXLNLC/PIBB"               # SAP.PIBB.LOANLIST.SASDATA (NOTE2&REPTMON)
-PIBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN2C/pibb_loanlis2.txt"  # SAP.PIBB.LOANLIS2.COLD
+PIBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN2C/PIBB_LOANLIS2.txt"  # SAP.PIBB.LOANLIS2.COLD
 
 # Output directory auto-creation
 PBB_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -134,7 +134,7 @@ def _build_title_lines(title1: str, title2: str, report_date: str, branch: str, 
         f"1{title1}\n",
         f" {title2}\n",
         f" LOAN LISTING BY CONSTRUCTION (SECTCODE 5001-5999) AND"
-        f"                                       REPORT DATE: {report_date}\n",
+        f"{' ' * 57}REPORT DATE: {report_date}\n",
         f" {title4}\n",
         f"\n",
         f" BRANCH={branch}\n",
