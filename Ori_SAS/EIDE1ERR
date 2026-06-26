@@ -1,0 +1,93 @@
+//EIDE1ERR JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M,NOTIFY=&SYSUID      JOB17305
+/*JOBPARM S=S1M1
+//*---------------------------------------------------------------------
+//* VALIDATION ERROR (IBM VS DETICA)
+//*---------------------------------------------------------------------
+//VERIFY   EXEC SAS609
+//DATEFL   DD DISP=SHR,DSN=RBP2.SAS.B033.DATEFILE
+//IBMFL    DD DISP=SHR,DSN=SAP.AML.DETICA.COUNTI.NEW(0)
+//DETFL    DD DISP=SHR,DSN=SAP.AML.DETICA.COUNTD.NEW(0)
+//OUTPUT   DD DSN=SAP.AML.DETICA.COUNT.NEW(+1),
+//            DISP=(NEW,CATLG,DELETE),UNIT=SYSDA,
+//            DCB=(LRECL=133,BLKSIZE=0,RECFM=FB),
+//            SPACE=(CYL,(100,100),RLSE)
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD *
+
+OPTIONS NOCENTER NODATE NONUMBER;
+
+DATA REPTDATE;
+   INFILE DATEFL LRECL=80 OBS=1;
+   INPUT @01  EXTDATE   11.;
+   REPTDATE = INPUT(SUBSTR(PUT(EXTDATE, Z11.), 1, 8), MMDDYY8.);
+   CALL SYMPUT ('DAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT ('MTH',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT ('YEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT ('TIME',PUT(TIME(),TIMEAMPM11.));
+RUN;
+
+DATA DETICA;
+   INFILE DETFL FIRSTOBS=4;
+   INPUT @01  DETNAME          $40.
+         @42  DET_CNT           12.;
+   IF DET_CNT >= 0;
+   UID + 1;
+RUN;
+PROC SORT; BY UID; RUN;
+
+DATA IBM;
+   INFILE IBMFL;
+   INPUT @01  IBMNAME          $25.
+         @29  IBM_CNT            9.;
+   IF IBM_CNT >= 0;
+   UID + 1;
+RUN;
+PROC SORT; BY UID; RUN;
+
+DATA COUNT;
+   MERGE DETICA(IN=A) IBM(IN=B);
+   BY UID;
+   IF A AND B;
+   DIFF = SUM(DET_CNT,(-1)*IBM_CNT);
+   IF DIFF = 0 THEN TALLY = 'Y';
+   ELSE             TALLY = 'N';
+RUN;
+
+DATA _NULL_;
+   SET COUNT END=EOF;
+   FILE OUTPUT;
+   IF _N_ = 1 THEN DO;
+       PUT  @001 'REPORT DATE : ' "&DAY-&MTH-&YEAR"
+            @045 '         P U B L I C  B A N K  B E R H A D     '
+            @108 'REPORT TIME : ' "&TIME"
+           /@045 '             DETICA DAILY JOBS SCHEDULE        '
+           /@001
+           /@001 132*'-'
+           /@001 'Obs'
+            @006 'Batch Name (DETICA)'
+            @040 'No. Of Records'
+            @058 'No. Of Records'
+            @076 'No. Of Records'
+            @089 '     Tally    '
+            @103 'Done By'
+           /@040 '   (DETICA)   '
+            @058 '  (IBM HOST)  '
+            @076 '  (Variance)  '
+            @089 '     (Y/N)    '
+           /@001 132*'-'
+            ;
+    END;
+    PUT @001 UID               3.
+        @006 DETNAME         $40.
+        @040 DET_CNT          12.
+        @058 IBM_CNT          12.
+        @075 DIFF             12.
+        @096 TALLY            $1.
+       /@001 132*'-'
+       /@001
+        ;
+    IF EOF THEN
+    PUT @001 '# Call application team (CIS) if any of the records not '
+             'TALLY.'
+        ;
+RUN;
