@@ -36,7 +36,7 @@ from input_date import get_latest_file
 # PATH CONFIGURATION
 # ============================================================
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input"   # directory containing fd.sas7bdat
+INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDRMFC"  # directory containing fd.sas7bdat
 OUTPUT_DIR = BASE_DIR / "output" / "EIBDPTER"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -163,7 +163,14 @@ def build_fcyt(df: pd.DataFrame):
     # Filter: MATDATE must not be missing
     df = df[df["MATDATE"].notna()].copy()
 
-    # CURBAL = CURBAL / FORATE
+    # FORCE NUMERIC TYPES (FIX)
+    df["CURBAL"] = pd.to_numeric(df["CURBAL"], errors="coerce")
+    df["FORATE"] = pd.to_numeric(df["FORATE"], errors="coerce")
+
+    # REMOVE INVALID DATA
+    df = df[df["FORATE"].notna() & (df["FORATE"] != 0)].copy()
+
+    # SAFE DIVISION
     df["CURBAL"] = df["CURBAL"] / df["FORATE"]
 
     # Parse MATDATE -> Python date
