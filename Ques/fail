@@ -1,3 +1,12 @@
+fd = fd.with_columns([
+    pl.col("CURBAL").cast(pl.Float64),
+    pl.col("FORATE").cast(pl.Float64),
+    pl.col("RATE").cast(pl.Float64),
+    pl.col("MATDATE").cast(pl.Int64),
+])
+
+=================
+
 Schema([('BANKNO', Float64), ('REPTNO', Float64), ('FMTCODE', Float64), ('BRANCH', Float64), ('ACCTNO', Float64), ('STATEC', String), ('PURPOSE', String), ('CUSTCD', Float64), ('DEPODTE', Float64), ('NAME', String), ('CDNO', Float64), ('OPENIND', String), ('CURBAL', Float64), ('ORIGAMT', Float64), ('ORGDATE', Float64), ('MATDATE', Float64), ('RATE', Float64), ('ACCTTYPE', Float64), ('TERM', Float64), ('MATID', String), ('INTPLAN', Float64), ('PAYMENT', String), ('RENEWAL', String), ('INTPDYTD', Float64), ('INTPAY', Float64), ('INTDATE', Float64), ('LASTACTV', Float64), ('INTFREQ', Float64), ('INTFREQID', String), ('PENDINT', Float64), ('CURCODE', String), ('LMATDATE', Float64), ('PRORATIO', Float64), ('FDHOLD', String), ('COSTCTR', Float64), ('COLLNO', Float64), ('INTTFRACCT', Float64), ('PRN_DISP_OPT', String), ('PRN_RENEW', Float64), ('PRN_TFR_ACCT', Float64), ('AMTIND', String), ('FORATE', String), ('FORBAL', Float64), ('CURBALUS', Float64)])
 
 
