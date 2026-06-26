@@ -1,101 +1,124 @@
-# =============================================================================
-# Program Name : EIBDFFCD
-# Purpose      : Convert foreign currency fixed deposit balances to MYR and USD
-#                equivalents using format-based exchange rates (FORATE).
-#                SMR 2006-229. MNI3 / 10363.
-# =============================================================================
+#!/usr/bin/env python3
+"""
+Program : EIBDFFCD.py
+Purpose : Convert foreign currency fixed deposit balances to MYR and USD
+          equivalents using format-based exchange rates (FORATE).
+"""
 
 import pandas as pd
 import polars as pl
 from pathlib import Path
+import re
+from typing import Optional
 
-from input_date import get_latest_file
+# from input_date import get_latest_file
 
 # =============================================================================
 # PATH CONFIGURATION
 # =============================================================================
-BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-FD_DIR      = BASE_DIR / "input" / "fd"
-FCYFD_DIR   = BASE_DIR / "input" / "fcyfd"
-OUTPUT_DIR  = BASE_DIR / "output" / "EIBDFFCD"
+# # Production Path
+# BASE_DIR   = Path("/dwh")
+# INPUT_DIR  = BASE_DIR / "dp_fcy"
+# OUTPUT_DIR = Path("/host/mis/output")
+
+# Testing Path
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDFFCD"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDFFCD"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
 # FILE RESOLUTION
-# fdXXXXXX.sas7bdat   → yymmdd  (e.g. fd260625.sas7bdat)
-# fcyfdXXXXX.sas7bdat → mmwyy   (e.g. fcyfd06126.sas7bdat)
-# =============================================================================
-FD_PATH    = get_latest_file(FD_DIR,    prefix="fd")
-FCYFD_PATH = get_latest_file(FCYFD_DIR, prefix="fcyfd")
-
-# =============================================================================
-# HELPER: $FORATE. format lookup
-# In SAS: PROC FORMAT LIB=FCYFD CNTLOUT=FOFMT reads the format catalogue from
-# the FCYFD library and re-applies it via PROC FORMAT CNTLIN=FOFMT, loading
-# $FORATE. into session memory.
-# Here we read the FCYFD sas7bdat directly and build an equivalent lookup dict.
-#
-# Expected FCYFD columns (standard SAS format CNTLOUT dataset):
-#   FMTNAME, START, END, LABEL (LABEL holds the exchange rate as a string)
+# fcyfdXXXXXX.sas7bdat -> yymmdd strictly (6-digit, rejects 5-digit mmwyy)
+# fcyXXXXXX.sas7bdat   -> yymmdd strictly (6-digit, rejects 5-digit mmwyy)
+# fd is not used — the SAS FD libref points to fcyfd data, not the fd file.
 # =============================================================================
 
-def load_forate_map(fcyfd_path: Path) -> dict[str, float]:
+def get_latest_yymmdd(directory: Path, prefix: str) -> Path:
     """
-    Reads the FCYFD format dataset and builds a currency-code → MYR rate map.
-    Replicates PROC FORMAT LIB=FCYFD / CNTLIN=FOFMT / $FORATE. lookup.
-    Only rows where FMTNAME = '$FORATE' (case-insensitive) are loaded.
+    Resolves the latest file with the given prefix using strictly yymmdd
+    (6-digit) suffix. Rejects mmwyy (5-digit) variants sharing the same prefix.
     """
-    pdf = pd.read_sas(str(fcyfd_path), encoding="latin1")
-    pdf.columns = [c.upper() for c in pdf.columns]
-    df = pl.from_pandas(pdf)
-
-    forate_rows = df.filter(
-        pl.col("FMTNAME").str.strip_chars().str.to_uppercase() == "$FORATE"
+    pattern = re.compile(
+        rf"^{re.escape(prefix)}(\d{{2}})(\d{{2}})(\d{{2}})\.sas7bdat$",
+        re.IGNORECASE,
     )
+    candidates = []
+    for f in directory.iterdir():
+        m = pattern.match(f.name)
+        if m:
+            yy, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            year = 2000 + yy if yy < 100 else yy
+            candidates.append(((year, mm, dd), f))
+    if not candidates:
+        raise FileNotFoundError(
+            f"No {prefix} yymmdd files found in {directory}"
+        )
+    latest = max(candidates, key=lambda x: x[0])
+    print(f"[FILE_RESOLVER] Selected latest {prefix} (yymmdd): {latest[1].name}")
+    return latest[1]
 
-    forate_map: dict[str, float] = {}
-    for row in forate_rows.iter_rows(named=True):
-        curcode = str(row.get("START", "") or "").strip().upper()
-        label   = str(row.get("LABEL",  "") or "").strip()
-        if curcode and label:
-            try:
-                forate_map[curcode] = float(label)
-            except ValueError:
-                # If LABEL is not a valid float, the rate is unparseable;
-                # leave it absent so callers can detect the missing rate.
-                pass
 
-    return forate_map
+FCYFD_PATH = get_latest_yymmdd(INPUT_DIR, prefix="fcyfd")
+FCY_PATH   = get_latest_yymmdd(INPUT_DIR, prefix="fcy")
+
+# =============================================================================
+# $FORATE. exchange rate map
+# In SAS, PROC FORMAT LIB=FCYFD loads $FORATE. from the FCYFD format catalogue
+#   (.sas7bcat) into session memory. This catalogue is separate from the FCYFD
+#   .sas7bdat data file. The PUT(CURCODE,$FORATE.) call performs a rate lookup.
+# Since .sas7bcat files are not readable in Python, populate FORATE_MAP from
+#   external rate source (DB, config, etc.).
+# A missing currency code returns None — replicating SAS blank/missing, which
+#   causes downstream arithmetic to produce missing (null), not a fake rate.
+# =============================================================================
+FORATE_MAP: dict[str, float] = {
+    # Populate from external rate source (DB, config, etc.)
+    # "USD": 4.47,
+    # "SGD": 3.30,
+    # "GBP": 5.60,
+    # "EUR": 4.85,
+    # "JPY": 0.030,
+}
 
 
-def put_forate(curcode: str, forate_map: dict[str, float]):
+def put_forate(curcode: str) -> Optional[float]:
     """
     Replicates SAS PUT(CURCODE, $FORATE.).
-    Returns the float rate if found, or None if not found.
-    In SAS a missing format value returns blank → subsequent arithmetic
-    produces a missing (null) value, NOT a neutral 1.0 fallback.
+    Returns float rate if found, None if not found.
+    SAS returns blank on missing format → arithmetic produces missing (null).
     """
-    return forate_map.get(curcode.strip().upper(), None)
+    return FORATE_MAP.get(str(curcode).strip().upper(), None)
 
 
 # =============================================================================
-# STEP 1: Read and sort FD dataset
-# PROC SORT DATA=FD.FD OUT=FD BY ACCTNO CDNO;
+# STEP 1: Read inputs
 # =============================================================================
 
-def read_fd(path: Path) -> pl.DataFrame:
+def read_sas(path: Path) -> pl.DataFrame:
     pdf = pd.read_sas(str(path), encoding="latin1")
     pdf.columns = [c.upper() for c in pdf.columns]
-    df = pl.from_pandas(pdf)
-    df = df.sort(["ACCTNO", "CDNO"])
-    return df
+    return pl.from_pandas(pdf)
 
 
 # =============================================================================
-# STEP 2: Apply foreign currency conversion
+# STEP 2: Attach CDNO from FCY into FCYFD via ACCTNO join
+# FCY is only used to supply CDNO — all other columns come from FCYFD.
+# PROC SORT DATA=FD.FD OUT=FD BY ACCTNO CDNO sorts the joined result.
+# =============================================================================
+
+def attach_cdno(fcyfd_df: pl.DataFrame, fcy_df: pl.DataFrame) -> pl.DataFrame:
+    cdno_df = fcy_df.select(["ACCTNO", "CDNO"])
+    joined = fcyfd_df.join(cdno_df, on="ACCTNO", how="left")
+    joined = joined.sort(["ACCTNO", "CDNO"])
+    return joined
+
+
+# =============================================================================
+# STEP 3: Apply foreign currency conversion
 # DATA FD.FD;
-#   SET FD;
+#   SET FD;     ← FD here is the sorted FCYFD work dataset (with CDNO attached)
 #   IF CURCODE NE 'MYR' THEN DO;
 #     FORATE  = PUT(CURCODE, $FORATE.);
 #     FORBAL  = CURBAL;
@@ -105,8 +128,8 @@ def read_fd(path: Path) -> pl.DataFrame:
 # RUN;
 # =============================================================================
 
-def apply_fx_conversion(df: pl.DataFrame, forate_map: dict[str, float]) -> pl.DataFrame:
-    usd_rate = put_forate("USD", forate_map)
+def apply_fx_conversion(df: pl.DataFrame) -> pl.DataFrame:
+    usd_rate = put_forate("USD")
 
     rows = df.to_dicts()
     result = []
@@ -115,8 +138,8 @@ def apply_fx_conversion(df: pl.DataFrame, forate_map: dict[str, float]) -> pl.Da
         curcode = str(row.get("CURCODE", "") or "").strip().upper()
 
         if curcode != "MYR":
-            forate = put_forate(curcode, forate_map)
-            row["FORATE"] = forate  # None if not found → mirrors SAS blank/missing
+            forate = put_forate(curcode)
+            row["FORATE"] = forate
 
             curbal = row.get("CURBAL")
             row["FORBAL"] = curbal
@@ -127,7 +150,7 @@ def apply_fx_conversion(df: pl.DataFrame, forate_map: dict[str, float]) -> pl.Da
                 # SAS: CURBAL * missing → missing
                 row["CURBAL"] = None
         else:
-            # MYR rows: FORATE and FORBAL are not assigned in the SAS DATA step
+            # MYR rows: FORATE and FORBAL not assigned in SAS DATA step
             row.setdefault("FORATE", None)
             row.setdefault("FORBAL", None)
 
@@ -144,13 +167,13 @@ def apply_fx_conversion(df: pl.DataFrame, forate_map: dict[str, float]) -> pl.Da
 
 
 # =============================================================================
-# STEP 3: Write updated FD dataset
-# DATA FD.FD overwrites the member — output is the converted dataset.
-# PROC PRINT is a diagnostic listing to the SAS output window only;
-# no external report file is produced by this program.
+# STEP 4: Write output dataset
+# DATA FD.FD overwrites the FD library member with FCY-converted records.
+# PROC PRINT WHERE CURCODE NE 'MYR' is a diagnostic listing to SAS output
+#   window only — no external report file is produced by this program.
 # =============================================================================
 
-def write_fd_output(df: pl.DataFrame) -> Path:
+def write_output(df: pl.DataFrame) -> Path:
     out_path = OUTPUT_DIR / "FD.parquet"
     df.write_parquet(str(out_path))
     return out_path
@@ -161,29 +184,36 @@ def write_fd_output(df: pl.DataFrame) -> Path:
 # =============================================================================
 
 if __name__ == "__main__":
-    print(f"FD input    : {FD_PATH}")
     print(f"FCYFD input : {FCYFD_PATH}")
+    print(f"FCY input   : {FCY_PATH}")
 
-    print("Loading $FORATE. format map from FCYFD...")
-    forate_map = load_forate_map(FCYFD_PATH)
-    print(f"  Loaded {len(forate_map)} currency rate(s): {list(forate_map.keys())}")
+    print("Reading FCYFD dataset...")
+    fcyfd_df = read_sas(FCYFD_PATH)
+    print(f"  FCYFD rows : {len(fcyfd_df)}")
 
-    print("Reading FD dataset...")
-    fd_df = read_fd(FD_PATH)
-    print(f"  Rows read: {len(fd_df)}")
+    print("Reading FCY dataset (for CDNO)...")
+    fcy_df = read_sas(FCY_PATH)
+    print(f"  FCY rows   : {len(fcy_df)}")
+
+    print("Attaching CDNO from FCY and sorting by ACCTNO, CDNO...")
+    fcyfd_with_cdno = attach_cdno(fcyfd_df, fcy_df)
+    print(f"  Rows after join : {len(fcyfd_with_cdno)}")
 
     print("Applying FX conversion...")
-    fd_converted = apply_fx_conversion(fd_df, forate_map)
+    fd_converted = apply_fx_conversion(fcyfd_with_cdno)
 
-    fcy_preview = fd_converted.filter(
+    fcy_non_myr = fd_converted.filter(
         pl.col("CURCODE").str.strip_chars().str.to_uppercase() != "MYR"
     )
-    print(f"  FCY rows converted : {len(fcy_preview)}")
-    print(f"  MYR rows unchanged : {len(fd_converted) - len(fcy_preview)}")
-    print(fcy_preview.select(["ACCTNO", "CDNO", "CURCODE", "FORATE", "FORBAL", "CURBAL", "CURBALUS"]))
+    print(f"  FCY rows converted : {len(fcy_non_myr)}")
+    print(f"  MYR rows unchanged : {len(fd_converted) - len(fcy_non_myr)}")
+    print(fcy_non_myr.select([
+        c for c in ["ACCTNO", "CDNO", "CURCODE", "FORATE", "FORBAL", "CURBAL", "CURBALUS"]
+        if c in fcy_non_myr.columns
+    ]))
 
     print("Writing output dataset...")
-    out_path = write_fd_output(fd_converted)
-    print(f"Output written to: {out_path}")
+    out_path = write_output(fd_converted)
+    print(f"Output written to   : {out_path}")
 
     print("Done.")
