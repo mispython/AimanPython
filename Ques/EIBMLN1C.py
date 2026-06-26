@@ -23,11 +23,11 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # PBB paths  (EIBXLNLC output -> EIBMLN1C input)
 PBB_INPUT_DIR   = BASE_DIR / "output/EIBXLNLC/PBB"                 # SAP.PBB.LOANLIST.SASDATA  (NOTE1&REPTMON)
-PBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN1C/pbb_loanlis1.txt"    # SAP.PBB.LOANLIS1.COLD
+PBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN1C/PBB_LOANLIS1.txt"    # SAP.PBB.LOANLIS1.COLD
 
 # PIBB paths  (EIBXLNLC output -> EIBMLN1C input)
 PIBB_INPUT_DIR   = BASE_DIR / "output/EIBXLNLC/PIBB"               # SAP.PIBB.LOANLIST.SASDATA (NOTE1&REPTMON)
-PIBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN1C/pibb_loanlis1.txt"  # SAP.PIBB.LOANLIS1.COLD
+PIBB_OUTPUT_PATH = BASE_DIR / "output/EIBMLN1C/PIBB_LOANLIS1.txt"  # SAP.PIBB.LOANLIS1.COLD
 
 # Output directory auto-creation
 PBB_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
