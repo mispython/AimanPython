@@ -512,7 +512,7 @@ catg_map = {
 }
 
 final = final.with_columns(
-    pl.col("CATG").replace(catg_map, default=None).alias("CATEGORY")
+    pl.col("CATG").replace_strict(catg_map, default=None).alias("CATEGORY")
 ).filter(pl.col("CATG").is_not_null())
 
 # PROC SORT; BY CATEGORY BRANCH ACCTNO;
