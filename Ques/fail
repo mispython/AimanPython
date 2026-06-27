@@ -1,3 +1,26 @@
+con = duckdb.connect(database=":memory:")
+print("OD products:")
+print(con.execute(f"""
+    SELECT CAST(PRODUCT AS INTEGER) AS PRODUCT, COUNT(*) as cnt
+    FROM read_parquet('{LOAN_CACHE}')
+    WHERE LNTYPE = 'OD'
+    GROUP BY PRODUCT
+    ORDER BY cnt DESC
+""").pl())
+con.close()
+
+
+con = duckdb.connect(database=":memory:")
+print("Any LN value:")
+print(con.execute(f"""
+    SELECT COUNT(*) as cnt
+    FROM read_parquet('{LOAN_CACHE}')
+    WHERE LNTYPE = 'LN'
+""").pl())
+con.close()
+
+
+
 ┌────────┬─────────┐
 │ LNTYPE ┆ cnt     │
 │ ---    ┆ ---     │
