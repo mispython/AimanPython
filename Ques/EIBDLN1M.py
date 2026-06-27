@@ -476,7 +476,13 @@ print(f"  Branch rows: {len(branch_df):,}")
 # ============================================================================
 print("\nStep 9: Merging with branch data...")
 
-merged_pl = pl.from_pandas(merged)
+merged_pl = pl.from_pandas(merged).with_columns(
+    pl.col("BRANCH").cast(pl.Int64)
+)
+
+branch_df = branch_df.with_columns(
+    pl.col("BRANCH").cast(pl.Int64)
+)
 
 final = merged_pl.join(branch_df, on="BRANCH", how="left")
 
