@@ -1,3 +1,23 @@
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+def sas_to_parquet(sas_path, output_path, name):
+    writer = None
+
+    for table in read_sas_in_chunks(sas_path):  # your existing loader
+        # FORCE schema consistency
+        if writer is None:
+            writer = pq.ParquetWriter(output_path, table.schema)
+        else:
+            table = table.cast(writer.schema)
+
+        writer.write_table(table)
+
+    if writer:
+        writer.close()
+
+===================
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 186, in <module>
     sas_to_parquet(loan_path, LOAN_CACHE, "LOAN")
