@@ -1,3 +1,22 @@
+┌────────┬─────────┐
+│ LNTYPE ┆ cnt     │
+│ ---    ┆ ---     │
+│ str    ┆ i64     │
+╞════════╪═════════╡
+│ HP     ┆ 1277061 │
+│ HL     ┆ 495642  │
+│ FL     ┆ 206018  │
+│ OD     ┆ 24909   │
+│ ST     ┆ 4372    │
+│ RC     ┆ 560     │
+│ null   ┆ 183     │
+│ FR     ┆ 38      │
+│ FT     ┆ 26      │
+│ FS     ┆ 15      │
+└────────┴─────────┘
+
+===============
+
 con = duckdb.connect(database=":memory:")
 print("LNTYPE distinct values:")
 print(con.execute(f"""
