@@ -1,0 +1,154 @@
+//EIBDOPBL JOB MIS,MISEIS,COND=(4,LT),CLASS=A,MSGCLASS=X,               JOB36099
+//         NOTIFY=&SYSUID
+/*JOBPARM S=S1M2
+//*
+//EIBMRLFM EXEC SAS609,REGION=6M,WORK='120000,8000'
+//DEPOSIT  DD DSN=SAP.PBB.MNITB.DAILY(0),DISP=SHR
+//FISSD    DD DSN=SAP.PBB.FISS.TEXT.DAILY,DISP=SHR
+//FISSID   DD DSN=SAP.PIBB.FISS.TEXT.DAILY,DISP=SHR
+//OUTFILE1 DD DSN=SAP.PBB.FISS.DAILY.REP(+1),
+//            DISP=(NEW,CATLG,DELETE),                                  00060002
+//            DCB=(RECFM=FB,LRECL=138,BLKSIZE=13800),                   00060002
+//            SPACE=(CYL,(10,20),RLSE),UNIT=SYSDA                       00060002
+//OUTFILE2 DD DSN=SAP.PBB.FISS.DAILY.REP.DELI(+1),
+//            DISP=(NEW,CATLG,DELETE),                                  00060002
+//            DCB=(RECFM=FB,LRECL=138,BLKSIZE=13800),                   00060002
+//            SPACE=(CYL,(10,20),RLSE),UNIT=SYSDA                       00060002
+//SASLIST  DD SYSOUT=*
+//SYSIN     DD *
+
+*;
+OPTIONS YEARCUTOFF=1930 NOCENTER NODATE;
+DATA REPTDATE;
+  SET DEPOSIT.REPTDATE;
+  CALL SYMPUT('REPDD',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('REPMM',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('REPYY',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPDT',PUT(REPTDATE,DDMMYY8.));
+RUN;
+DATA FISS_PBB;
+  INFILE FISSD DELIMITER = ';' FIRSTOBS=2 ;
+  INFORMAT BIC   $15.;
+  INFORMAT CURBAL 30. ;
+
+  FORMAT BIC    $15.;
+  FORMAT CURBAL 30. ;
+
+     INPUT BIC
+           CURBAL
+           ;
+   RUN;
+*;
+RUN;
+*;
+DATA FISS_PIBB;
+  INFILE FISSID DELIMITER = ';' FIRSTOBS=2 ;
+  INFORMAT BIC   $15.;
+  INFORMAT CURBAL 30. ;
+
+  FORMAT BIC    $15.;
+  FORMAT CURBAL 30. ;
+
+     INPUT BIC
+           CURBAL
+           ;
+   RUN;
+*;
+RUN;
+*;
+DATA FISS_PBB;
+FORMAT TYPE $10.;
+ SET FISS_PBB;
+  BICODE=SUBSTR(BIC,1,5);
+   IF BICODE = '95313' THEN TYPE='CA';
+   IF BICODE = '95312' THEN TYPE='SA';
+   IF BICODE = '95311' THEN TYPE='FD';
+   IF BICODE = '96311' THEN TYPE='FCYFD';
+   IF BICODE = '96313' THEN TYPE='FCYCA';
+   TYPEX=SUBSTR(BIC,6,2);
+   IF TYPEX='08' THEN CURBAL_I = CURBAL;
+   ELSE IF TYPEX='09' THEN CURBAL_C = CURBAL;
+RUN;
+DATA FISS_PIBB;
+FORMAT TYPE $10.;
+ SET FISS_PIBB;
+  BICODE=SUBSTR(BIC,1,5);
+   IF BICODE = '95313' THEN TYPE='CA';
+   IF BICODE = '95312' THEN TYPE='SA';
+   IF BICODE = '95315' THEN TYPE='FD';
+   IF BICODE = '96311' THEN TYPE='FCYFD';
+   IF BICODE = '96313' THEN TYPE='FCYCA';
+   TYPEX=SUBSTR(BIC,6,2);
+   IF TYPEX='08' THEN ICURBAL_I = CURBAL;
+   ELSE IF TYPEX='09' THEN ICURBAL_C = CURBAL;
+RUN;
+DATA FISS_PBB;
+  SET FISS_PBB;
+  IF TYPE=' ' THEN DELETE;
+RUN;
+DATA FISS_PIBB;
+  SET FISS_PIBB;
+  IF TYPE=' ' THEN DELETE;
+RUN;
+DATA FISS;
+ SET FISS_PBB FISS_PIBB;
+ NON=SUBSTR(BIC,8,2);
+ IF NON NE '00' THEN DELETE;
+RUN;
+PROC PRINT DATA=FISS; RUN;
+*;
+*;
+PROC SUMMARY DATA=FISS NWAY;
+CLASS TYPE;
+VAR CURBAL_I CURBAL_C ICURBAL_I ICURBAL_C;
+OUTPUT OUT=FISS SUM=;
+*;
+DATA FISS;
+ SET FISS;
+ IF CURBAL_I = . THEN CURBAL_I=0;
+ IF CURBAL_C = . THEN CURBAL_C=0;
+ IF ICURBAL_I = . THEN ICURBAL_I=0;
+ IF ICURBAL_C = . THEN ICURBAL_C=0;
+ TOTAL=CURBAL_I+CURBAL_C+ICURBAL_I+ICURBAL_C;
+RUN;
+*;
+PROC PRINT DATA=FISS; RUN;
+DATA _NULL_;
+  SET FISS;
+  FILE OUTFILE1;
+  IF _N_ = 1 THEN DO;
+    PUT @1 'BREAKDOWN INDIVIDUAL & NON INDIVIDUAL BY DEPOSIT @  '
+        @53 "&REPDT";
+    PUT @1 '                                        ';
+    PUT @1 '--------------------------------------------------------'
+        @57'--------------------------------------------------------';
+    PUT @40 'CURBAL';
+    PUT @1 '--------------------------------------------------------'
+        @57'--------------------------------------------------------';
+    PUT @25'PBB'
+        @58'PIBB';
+    PUT @1 '--------------------------------------------------------'
+        @57'--------------------------------------------------------';
+    PUT @1  'TYPE'
+        @15 'INDIVIDUAL'
+        @30 'NON-INDIVIDUAL'
+        @48 'INDIVIDUAL'
+        @62 'NON-INDIVIDUAL'
+        @80 'TOTAL';
+    PUT @1 '--------------------------------------------------------'
+        @57'--------------------------------------------------------';
+  END;
+  PUT @3 TYPE $6. @15 CURBAL_I 10. @30 CURBAL_C 10.  @48 ICURBAL_I 10.
+      @62 ICURBAL_C 10. @80 TOTAL 10.;
+RUN;
+*;
+DATA _NULL_;
+  SET FISS;
+  FILE OUTFILE2;
+  PUT @1 TYPE ','
+      @15 CURBAL_I ','
+      @30 CURBAL_C ','
+      @48 ICURBAL_I ','
+      @62 ICURBAL_C ','
+      @80 TOTAL ',';
+ RUN;
