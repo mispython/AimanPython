@@ -1,4 +1,18 @@
 con = duckdb.connect(database=":memory:")
+print("LNTYPE values currently mapped to NULL (excluded from report):")
+print(con.execute(f"""
+    SELECT LNTYPE, COUNT(*) as cnt
+    FROM read_parquet('{LOAN_CACHE}')
+    WHERE LNTYPE NOT IN ('OD','HP','RC','HL','FL','ST','FR','FT','FS')
+       OR LNTYPE IS NULL
+    GROUP BY LNTYPE
+    ORDER BY cnt DESC
+""").pl())
+con.close()
+
+=============
+
+con = duckdb.connect(database=":memory:")
 print("OD products:")
 print(con.execute(f"""
     SELECT CAST(PRODUCT AS INTEGER) AS PRODUCT, COUNT(*) as cnt
