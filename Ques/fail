@@ -1,3 +1,15 @@
+con = duckdb.connect(database=":memory:")
+print("LNTYPE distinct values:")
+print(con.execute(f"""
+    SELECT LNTYPE, COUNT(*) as cnt
+    FROM read_parquet('{LOAN_CACHE}')
+    GROUP BY LNTYPE
+    ORDER BY cnt DESC
+""").pl())
+con.close()
+
+==============
+
 DEBUG: Inspecting LOAN parquet columns...
 shape: (347, 2)
 ┌─────────────────────────────┬─────────────┐
