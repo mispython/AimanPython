@@ -149,19 +149,27 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
             chunk = chunk.iloc[: ROW_LIMIT - rows_read]
         rows_read += len(chunk)
 
-        # table = pa.Table.from_pandas(chunk, preserve_index=False)
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
 
-        chunk = chunk.convert_dtypes()
-
-        table = pa.Table.from_pandas(
-            chunk,
-            preserve_index=False,
-            safe=False
-        )
-
-        if writer is None:
+        if schema is None:
+            # Lock schema on first chunk
             schema = table.schema
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        else:
+            # Cast subsequent chunks to match the locked schema
+            cast_arrays = []
+            for i, field in enumerate(schema):
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING: Cannot cast '{field.name}' "
+                              f"from {col.type} to {field.type}: {e} — filling nulls")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=schema)
+
         writer.write_table(table)
         total += len(chunk)
         del chunk, table
@@ -208,6 +216,22 @@ else:
 # # Release file-path objects no longer needed
 # del cisln_path, cisdp_path
 # gc.collect()
+
+# # ============================================================================
+# # DEBUG: INSPECT LOAN PARQUET COLUMNS
+# # ============================================================================
+# print("\nDEBUG: Inspecting LOAN parquet columns...")
+# con = duckdb.connect(database=":memory:")
+# print("LNTYPE values currently mapped to NULL (excluded from report):")
+# print(con.execute(f"""
+#     SELECT LNTYPE, COUNT(*) as cnt
+#     FROM read_parquet('{LOAN_CACHE}')
+#     WHERE LNTYPE NOT IN ('OD','HP','RC','HL','FL','ST','FR','FT','FS')
+#        OR LNTYPE IS NULL
+#     GROUP BY LNTYPE
+#     ORDER BY cnt DESC
+# """).pl())
+# con.close()
 
 # ============================================================================
 # STEP 4: BUILD CISNM  (customer-name lookup)
@@ -259,13 +283,26 @@ print(f"  CISNM rows: {len(cisnm):,}")
 # STEP 5: BUILD SASC  (current-period loan summary)
 # DATA SASC; SET LOAN.LOAN&REPTMON&REPTDAY; ...
 # Accumulate ACCBAL / LIMTBAL per BRANCH+ACCTNO (SAS LAST.ACCTNO pattern)
+#
+# FLAG-01: ACCTYPE column does not exist in the parquet file.
+# Original SAS derives CATG from ACCTYPE ('OD'/'LN') + PRODUCT.
+# LNTYPE is used as substitute based on observed values:
+#   OD                → CATG='OD'  (with PRODUCT exclusion 107,173)
+#   HP                → CATG='HP'
+#   RC                → CATG='RC'
+#   HL/FL/ST/FR/FT/FS → CATG='TL' (assumed term loan variants)
+#   null (183 rows)   → excluded (same as SAS IF CATG NE '  ')
+# This mapping has NOT been formally verified against the original
+# SAS ACCTYPE derivation. Output may differ if the assumption is wrong.
+# ACTION REQUIRED: Confirm with data/business team that LNTYPE is the
+# correct equivalent of ACCTYPE in this parquet dataset.
 # ============================================================================
 print("\nStep 5: Building SASC (current period)...")
 
 con = duckdb.connect(database=":memory:")
 
 sasc = con.execute(f"""
-    WITH base AS (
+    WITH categorised AS (
         SELECT
             CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
             CAST(BRANCH   AS INTEGER) AS BRANCH,
@@ -273,31 +310,21 @@ sasc = con.execute(f"""
             CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
             CAST(APPRLIM2 AS DOUBLE)  AS APPRLIM2,
             CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-            CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
-            CAST(PRODUCT  AS INTEGER) AS PRODUCT
-        FROM read_parquet('{LOAN_CACHE}')
-    ),
-    categorised AS (
-        SELECT *,
             CASE
-                WHEN ACCTYPE = 'OD' AND PRODUCT NOT IN (107,173) THEN 'OD'
-                WHEN ACCTYPE = 'LN' AND PRODUCT IN
-                     (302,350,364,365,506,902,903,910,925,951)     THEN 'RC'
-                WHEN ACCTYPE = 'LN' AND PRODUCT IN
-                     (128,130,131,132,380,381,700,705,720,725)     THEN 'HP'
-                WHEN ACCTYPE = 'LN'                                THEN 'TL'
+                WHEN LNTYPE = 'OD'
+                     AND CAST(PRODUCT AS INTEGER) NOT IN (107,173) THEN 'OD'
+                WHEN LNTYPE = 'HP'                                 THEN 'HP'
+                WHEN LNTYPE = 'RC'                                 THEN 'RC'
+                WHEN LNTYPE IN ('HL','FL','ST','FR','FT','FS')     THEN 'TL'
                 ELSE NULL
             END AS CATG
-        FROM base
-        -- OD with PRODUCT IN (107,173) → excluded (SAS: DELETE)
-        WHERE NOT (ACCTYPE = 'OD' AND PRODUCT IN (107,173))
+        FROM read_parquet('{LOAN_CACHE}')
     ),
     filtered AS (
         SELECT ACCTNO, BRANCH, TDI, APPRLIMT, APPRLIM2, BALANCE, CATG
         FROM categorised
         WHERE CATG IS NOT NULL
     )
-    -- SAS LAST.ACCTNO accumulation within BRANCH+ACCTNO
     SELECT
         ACCTNO,
         BRANCH,
@@ -318,65 +345,29 @@ print(f"  SASC rows: {len(sasc):,}")
 # ============================================================================
 # STEP 6: BUILD SASP  (previous-period loan summary)
 # DATA SASP; SET LOANX.LOAN&REPTPMON&REPTPDAY; ...
+# Same FLAG-01 applies — LNTYPE used in place of ACCTYPE.
 # ============================================================================
 print("\nStep 6: Building SASP (previous period)...")
 
 con = duckdb.connect(database=":memory:")
 
 sasp = con.execute(f"""
-    WITH base AS (
-        SELECT
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            'P'                       AS TDI,
-            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-            CAST(BALANCE  AS DOUBLE)  AS BALANCE
-        FROM read_parquet('{LOANX_CACHE}')
-    ),
-    categorised AS (
-        SELECT
-            ACCTNO, BRANCH, TDI, APPRLIMT, BALANCE,
-            CASE
-                WHEN CAST((SELECT ACCTYPE FROM read_parquet('{LOANX_CACHE}') l
-                            WHERE l.ACCTNO = base.ACCTNO LIMIT 1) AS VARCHAR) = 'OD'
-                     THEN 'OD'   -- placeholder; resolved below
-                ELSE NULL
-            END AS CATG
-        FROM base
-    )
-    SELECT 1   -- dummy; see note below
-""").pl()
-con.close()
-
-# NOTE: The sub-select approach above would be very slow on 2 GB.
-# Use a single efficient pass instead:
-con = duckdb.connect(database=":memory:")
-
-sasp = con.execute(f"""
-    WITH base AS (
+    WITH categorised AS (
         SELECT
             CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
             CAST(BRANCH   AS INTEGER) AS BRANCH,
             'P'                       AS TDI,
             CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
             CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-            CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
-            CAST(PRODUCT  AS INTEGER) AS PRODUCT
-        FROM read_parquet('{LOANX_CACHE}')
-    ),
-    categorised AS (
-        SELECT *,
             CASE
-                WHEN ACCTYPE = 'OD' AND PRODUCT NOT IN (107,173) THEN 'OD'
-                WHEN ACCTYPE = 'LN' AND PRODUCT IN
-                     (302,350,364,365,506,902,903,910,925,951)     THEN 'RC'
-                WHEN ACCTYPE = 'LN' AND PRODUCT IN
-                     (128,130,131,132,380,381,700,705,720,725)     THEN 'HP'
-                WHEN ACCTYPE = 'LN'                                THEN 'TL'
+                WHEN LNTYPE = 'OD'
+                     AND CAST(PRODUCT AS INTEGER) NOT IN (107,173) THEN 'OD'
+                WHEN LNTYPE = 'HP'                                 THEN 'HP'
+                WHEN LNTYPE = 'RC'                                 THEN 'RC'
+                WHEN LNTYPE IN ('HL','FL','ST','FR','FT','FS')     THEN 'TL'
                 ELSE NULL
             END AS CATG
-        FROM base
-        WHERE NOT (ACCTYPE = 'OD' AND PRODUCT IN (107,173))
+        FROM read_parquet('{LOANX_CACHE}')
     ),
     filtered AS (
         SELECT ACCTNO, BRANCH, TDI, APPRLIMT, BALANCE, CATG
