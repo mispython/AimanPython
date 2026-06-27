@@ -1,3 +1,66 @@
+def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} → {cache_path.name} ...")
+
+    reader = pd.read_sas(
+        sas_path,
+        encoding="latin1",
+        chunksize=CHUNK_ROWS,
+    )
+
+    writer = None
+    total = 0
+    rows_read = 0
+    reference_schema = None
+
+    for chunk in reader:
+
+        if ROW_LIMIT and rows_read >= ROW_LIMIT:
+            break
+
+        if ROW_LIMIT:
+            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
+
+        rows_read += len(chunk)
+
+        # ALWAYS use pandas nullable-safe conversion ONCE
+        chunk = chunk.convert_dtypes()
+
+        # FORCE EVERYTHING CONSISTENTLY (NO INT LOGIC ANYMORE)
+        for col in chunk.columns:
+            if pd.api.types.is_numeric_dtype(chunk[col]):
+                chunk[col] = pd.to_numeric(chunk[col], errors="coerce").astype("float64")
+
+        table = pa.Table.from_pandas(
+            chunk,
+            preserve_index=False,
+            safe=False
+        )
+
+        # LOCK SCHEMA FROM FIRST CHUNK
+        if writer is None:
+            reference_schema = table.schema
+            writer = pq.ParquetWriter(
+                cache_path,
+                reference_schema,
+                compression="snappy"
+            )
+
+        # FORCE EXACT MATCH
+        table = table.cast(reference_schema)
+
+        writer.write_table(table)
+
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+
+    print(f"  [{tag}] Done — {total:,} rows cached.")
+
+==================
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 186, in <module>
     sas_to_parquet(loan_path, LOAN_CACHE, "LOAN")
