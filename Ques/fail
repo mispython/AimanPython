@@ -9,6 +9,26 @@ print(con.execute(f"""
 """).pl())
 con.close()
 
+OD products:
+shape: (60, 2)
+┌─────────┬───────┐
+│ PRODUCT ┆ cnt   │
+│ ---     ┆ ---   │
+│ i32     ┆ i64   │
+╞═════════╪═══════╡
+│ 100     ┆ 15786 │
+│ 177     ┆ 3303  │
+│ 123     ┆ 2020  │
+│ 154     ┆ 1251  │
+│ 155     ┆ 832   │
+│ …       ┆ …     │
+│ 78      ┆ 1     │
+│ 12      ┆ 1     │
+│ 9       ┆ 1     │
+│ 3       ┆ 1     │
+│ 400     ┆ 1     │
+└─────────┴───────┘
+
 
 con = duckdb.connect(database=":memory:")
 print("Any LN value:")
@@ -18,6 +38,17 @@ print(con.execute(f"""
     WHERE LNTYPE = 'LN'
 """).pl())
 con.close()
+
+DEBUG: Inspecting LOAN parquet columns...
+Any LN value:
+shape: (1, 1)
+┌─────┐
+│ cnt │
+│ --- │
+│ i64 │
+╞═════╡
+│ 0   │
+└─────┘
 
 
 
