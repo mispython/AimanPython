@@ -1,14 +1,15 @@
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 481, in <module>
-    final = merged_pl.join(branch_df, on="BRANCH", how="left")
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.SchemaError: datatypes of join keys don't match - `BRANCH`: f64 on left does not match `BRANCH`: i64 on right (and no other type was available to cast to)
+# STEP 9: MERGE WITH BRANCH
+print("\nStep 9: Merging with branch data...")
+
+merged_pl = pl.from_pandas(merged).with_columns(
+    pl.col("BRANCH").cast(pl.Int64)
+)
+
+branch_df = branch_df.with_columns(
+    pl.col("BRANCH").cast(pl.Int64)
+)
+
+final = merged_pl.join(branch_df, on="BRANCH", how="left")
+
+del merged, merged_pl, branch_df
+gc.collect()
