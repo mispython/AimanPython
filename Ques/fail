@@ -1,3 +1,19 @@
+chunk = chunk.convert_dtypes()
+
+for col in chunk.columns:
+    s = chunk[col]
+
+    if s.dtype.name in ["Float64", "float64"]:
+        chunk[col] = s.astype("float64")
+
+    elif s.dtype.name in ["Int64", "int64"]:
+        if s.isna().any():
+            chunk[col] = s.astype("float64")
+        else:
+            chunk[col] = s.astype("int64")
+
+================
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 201, in <module>
     sas_to_parquet(loan_path, LOAN_CACHE, "LOAN")
