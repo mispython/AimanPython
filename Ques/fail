@@ -1,3 +1,20 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 207, in <module>
+    sas_to_parquet(loan_path, LOAN_CACHE, "LOAN")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 182, in sas_to_parquet
+    table = table.cast(writer.schema)
+  File "pyarrow/table.pxi", line 3801, in pyarrow.lib.Table.cast
+  File "pyarrow/table.pxi", line 565, in pyarrow.lib.ChunkedArray.cast
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pyarrow/compute.py", line 404, in cast
+    return call_function("cast", [arr], options, memory_pool)
+  File "pyarrow/_compute.pyx", line 590, in pyarrow._compute.call_function
+  File "pyarrow/_compute.pyx", line 385, in pyarrow._compute.Function.call
+  File "pyarrow/error.pxi", line 154, in pyarrow.lib.pyarrow_internal_check_status
+  File "pyarrow/error.pxi", line 91, in pyarrow.lib.check_status
+pyarrow.lib.ArrowInvalid: Float value 494.5 was truncated converting to int64
+
+============
+
 chunk = chunk.convert_dtypes()
 
 for col in chunk.columns:
