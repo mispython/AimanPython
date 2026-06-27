@@ -1,83 +1,20 @@
-chunk = chunk.convert_dtypes()
-
-for col in chunk.columns:
-    if chunk[col].dtype == "Float64":
-        chunk[col] = chunk[col].astype("float64")
-    elif chunk[col].dtype == "Int64":
-        chunk[col] = chunk[col].astype("float64") if (chunk[col].dropna() % 1).any() else chunk[col].astype("int64")
-
-table = pa.Table.from_pandas(
-    chunk,
-    preserve_index=False,
-    safe=False
-)
-
-=================
-
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 195, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 201, in <module>
     sas_to_parquet(loan_path, LOAN_CACHE, "LOAN")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 170, in sas_to_parquet
-    table = table.cast(writer.schema)
-  File "pyarrow/table.pxi", line 3801, in pyarrow.lib.Table.cast
-  File "pyarrow/table.pxi", line 565, in pyarrow.lib.ChunkedArray.cast
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pyarrow/compute.py", line 404, in cast
-    return call_function("cast", [arr], options, memory_pool)
-  File "pyarrow/_compute.pyx", line 590, in pyarrow._compute.call_function
-  File "pyarrow/_compute.pyx", line 385, in pyarrow._compute.Function.call
-  File "pyarrow/error.pxi", line 154, in pyarrow.lib.pyarrow_internal_check_status
-  File "pyarrow/error.pxi", line 91, in pyarrow.lib.check_status
-pyarrow.lib.ArrowInvalid: Float value 494.5 was truncated converting to int64
-
-==================
-
-def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    print(f"  [{tag}] Converting {sas_path.name} → {cache_path.name} ...")
-
-    writer = None
-    total = 0
-    rows_read = 0
-
-    reader = pd.read_sas(
-        sas_path,
-        encoding="latin1",
-        chunksize=CHUNK_ROWS,
-    )
-
-    for chunk in reader:
-        if ROW_LIMIT and rows_read >= ROW_LIMIT:
-            break
-
-        if ROW_LIMIT:
-            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
-
-        rows_read += len(chunk)
-
-        chunk = chunk.convert_dtypes()
-
-        table = pa.Table.from_pandas(
-            chunk,
-            preserve_index=False,
-            safe=False
-        )
-
-        if writer is None:
-            writer = pq.ParquetWriter(
-                cache_path,
-                table.schema,   # lock schema from FIRST chunk
-                compression="snappy"
-            )
-
-        # FORCE schema match every chunk
-        table = table.cast(writer.schema)
-
-        writer.write_table(table)
-
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-
-    if writer:
-        writer.close()
-
-    print(f"  [{tag}] Done — {total:,} rows cached.")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 160, in sas_to_parquet
+    chunk[col] = chunk[col].astype("float64") if (chunk[col].dropna() % 1).any() else chunk[col].astype("int64")
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/generic.py", line 6643, in astype
+    new_data = self._mgr.astype(dtype=dtype, copy=copy, errors=errors)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/internals/managers.py", line 430, in astype
+    return self.apply(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/internals/managers.py", line 363, in apply
+    applied = getattr(b, f)(**kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/internals/blocks.py", line 758, in astype
+    new_values = astype_array_safe(values, dtype, copy=copy, errors=errors)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/dtypes/astype.py", line 237, in astype_array_safe
+    new_values = astype_array(values, dtype, copy=copy)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/dtypes/astype.py", line 179, in astype_array
+    values = values.astype(dtype, copy=copy)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/arrays/masked.py", line 586, in astype
+    raise ValueError("cannot convert NA to integer")
+ValueError: cannot convert NA to integer
