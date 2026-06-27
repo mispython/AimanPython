@@ -1,3 +1,19 @@
+chunk = chunk.convert_dtypes()
+
+for col in chunk.columns:
+    if chunk[col].dtype == "Float64":
+        chunk[col] = chunk[col].astype("float64")
+    elif chunk[col].dtype == "Int64":
+        chunk[col] = chunk[col].astype("float64") if (chunk[col].dropna() % 1).any() else chunk[col].astype("int64")
+
+table = pa.Table.from_pandas(
+    chunk,
+    preserve_index=False,
+    safe=False
+)
+
+=================
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 195, in <module>
     sas_to_parquet(loan_path, LOAN_CACHE, "LOAN")
