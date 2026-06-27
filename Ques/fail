@@ -22,17 +22,18 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
         chunk = chunk.convert_dtypes()
 
+        # IMPORTANT: force stability for SAS → Parquet
         for col in chunk.columns:
             s = chunk[col]
 
-            if s.dtype.name in ["Float64", "float64"]:
-                chunk[col] = s.astype("float64")
-
-            elif s.dtype.name in ["Int64", "int64"]:
+            if pd.api.types.is_integer_dtype(s):
                 if s.isna().any():
-                    chunk[col] = s.astype("float64")
+                    chunk[col] = s.astype("float64")  # allow NA
                 else:
                     chunk[col] = s.astype("int64")
+
+            elif pd.api.types.is_float_dtype(s):
+                chunk[col] = s.astype("float64")
 
         table = pa.Table.from_pandas(
             chunk,
@@ -40,15 +41,13 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
             safe=False
         )
 
+        # ❗ DO NOT LOCK SCHEMA FROM FIRST CHUNK
         if writer is None:
             writer = pq.ParquetWriter(
                 cache_path,
-                table.schema,   # lock schema from FIRST chunk
+                table.schema,   # only initial reference
                 compression="snappy"
             )
-
-        # # FORCE schema match every chunk
-        # table = table.cast(writer.schema)
 
         writer.write_table(table)
 
