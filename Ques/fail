@@ -1,109 +1,14 @@
-# ============================================================================
-# STEP 5: BUILD SASC  (current-period loan summary)
-# DATA SASC; SET LOAN.LOAN&REPTMON&REPTDAY; ...
-# Accumulate ACCBAL / LIMTBAL per BRANCH+ACCTNO (SAS LAST.ACCTNO pattern)
-#
-# FLAG-01: ACCTYPE column does not exist in the parquet file.
-# Original SAS derives CATG from ACCTYPE ('OD'/'LN') + PRODUCT.
-# LNTYPE is used as substitute based on observed values:
-#   OD                → CATG='OD'  (with PRODUCT exclusion 107,173)
-#   HP                → CATG='HP'
-#   RC                → CATG='RC'
-#   HL/FL/ST/FR/FT/FS → CATG='TL' (assumed term loan variants)
-#   null (183 rows)   → excluded (same as SAS IF CATG NE '  ')
-# This mapping has NOT been formally verified against the original
-# SAS ACCTYPE derivation. Output may differ if the assumption is wrong.
-# ACTION REQUIRED: Confirm with data/business team that LNTYPE is the
-# correct equivalent of ACCTYPE in this parquet dataset.
-# ============================================================================
-print("\nStep 5: Building SASC (current period)...")
-
-con = duckdb.connect(database=":memory:")
-
-sasc = con.execute(f"""
-    WITH categorised AS (
-        SELECT
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            'C'                       AS TDI,
-            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-            CAST(APPRLIM2 AS DOUBLE)  AS APPRLIM2,
-            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-            CASE
-                WHEN LNTYPE = 'OD'
-                     AND CAST(PRODUCT AS INTEGER) NOT IN (107,173) THEN 'OD'
-                WHEN LNTYPE = 'HP'                                 THEN 'HP'
-                WHEN LNTYPE = 'RC'                                 THEN 'RC'
-                WHEN LNTYPE IN ('HL','FL','ST','FR','FT','FS')     THEN 'TL'
-                ELSE NULL
-            END AS CATG
-        FROM read_parquet('{LOAN_CACHE}')
-    ),
-    filtered AS (
-        SELECT ACCTNO, BRANCH, TDI, APPRLIMT, APPRLIM2, BALANCE, CATG
-        FROM categorised
-        WHERE CATG IS NOT NULL
-    )
-    SELECT
-        ACCTNO,
-        BRANCH,
-        TDI,
-        MAX(APPRLIMT)   AS APPRLIMT,
-        MAX(APPRLIM2)   AS APPRLIM2,
-        ANY_VALUE(CATG) AS CATG,
-        SUM(BALANCE)    AS ACCBAL,
-        SUM(APPRLIMT)   AS LIMTBAL
-    FROM filtered
-    GROUP BY ACCTNO, BRANCH, TDI, CATG
-""").pl()
-
-con.close()
-gc.collect()
-print(f"  SASC rows: {len(sasc):,}")
-
-# ============================================================================
-# STEP 6: BUILD SASP  (previous-period loan summary)
-# DATA SASP; SET LOANX.LOAN&REPTPMON&REPTPDAY; ...
-# Same FLAG-01 applies — LNTYPE used in place of ACCTYPE.
-# ============================================================================
-print("\nStep 6: Building SASP (previous period)...")
-
-con = duckdb.connect(database=":memory:")
-
-sasp = con.execute(f"""
-    WITH categorised AS (
-        SELECT
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            'P'                       AS TDI,
-            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-            CASE
-                WHEN LNTYPE = 'OD'
-                     AND CAST(PRODUCT AS INTEGER) NOT IN (107,173) THEN 'OD'
-                WHEN LNTYPE = 'HP'                                 THEN 'HP'
-                WHEN LNTYPE = 'RC'                                 THEN 'RC'
-                WHEN LNTYPE IN ('HL','FL','ST','FR','FT','FS')     THEN 'TL'
-                ELSE NULL
-            END AS CATG
-        FROM read_parquet('{LOANX_CACHE}')
-    ),
-    filtered AS (
-        SELECT ACCTNO, BRANCH, TDI, APPRLIMT, BALANCE, CATG
-        FROM categorised
-        WHERE CATG IS NOT NULL
-    )
-    SELECT
-        ACCTNO,
-        BRANCH,
-        TDI,
-        ANY_VALUE(CATG) AS CATG,
-        SUM(BALANCE)    AS PACCBAL,
-        SUM(APPRLIMT)   AS PLIMBAL
-    FROM filtered
-    GROUP BY ACCTNO, BRANCH, TDI, CATG
-""").pl()
-
-con.close()
-gc.collect()
-print(f"  SASP rows: {len(sasp):,}")
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 481, in <module>
+    final = merged_pl.join(branch_df, on="BRANCH", how="left")
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.SchemaError: datatypes of join keys don't match - `BRANCH`: f64 on left does not match `BRANCH`: i64 on right (and no other type was available to cast to)
