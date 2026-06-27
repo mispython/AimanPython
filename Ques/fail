@@ -1,3 +1,11 @@
+Step 5: Building SASC (current period)...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 275, in <module>
+    sasc = con.execute(f"""
+_duckdb.BinderException: Binder Error: Column "ACCTYPE" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+
+=================
+
 def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     """Convert a large .sas7bdat to Parquet in streaming chunks."""
     print(f"  [{tag}] Converting {sas_path.name} → {cache_path.name} ...")
