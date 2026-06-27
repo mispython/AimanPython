@@ -1,5 +1,80 @@
-Step 5: Building SASC (current period)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 275, in <module>
-    sasc = con.execute(f"""
-_duckdb.BinderException: Binder Error: Column "ACCTYPE" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+sasp = con.execute(f"""
+    WITH categorised AS (
+        SELECT
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            'P'                       AS TDI,
+            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
+            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+            CASE
+                WHEN CAST(ACCTYPE AS VARCHAR) = 'OD'
+                     AND CAST(PRODUCT AS INTEGER) NOT IN (107,173) THEN 'OD'
+                WHEN CAST(ACCTYPE AS VARCHAR) = 'LN'
+                     AND CAST(PRODUCT AS INTEGER) IN
+                     (302,350,364,365,506,902,903,910,925,951)     THEN 'RC'
+                WHEN CAST(ACCTYPE AS VARCHAR) = 'LN'
+                     AND CAST(PRODUCT AS INTEGER) IN
+                     (128,130,131,132,380,381,700,705,720,725)     THEN 'HP'
+                WHEN CAST(ACCTYPE AS VARCHAR) = 'LN'               THEN 'TL'
+                ELSE NULL
+            END AS CATG
+        FROM read_parquet('{LOANX_CACHE}')
+    ),
+    filtered AS (
+        SELECT ACCTNO, BRANCH, TDI, APPRLIMT, BALANCE, CATG
+        FROM categorised
+        WHERE CATG IS NOT NULL
+    )
+    SELECT
+        ACCTNO,
+        BRANCH,
+        TDI,
+        ANY_VALUE(CATG) AS CATG,
+        SUM(BALANCE)    AS PACCBAL,
+        SUM(APPRLIMT)   AS PLIMBAL
+    FROM filtered
+    GROUP BY ACCTNO, BRANCH, TDI, CATG
+""").pl()
+
+===================
+
+sasc = con.execute(f"""
+    WITH categorised AS (
+        SELECT
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            'C'                       AS TDI,
+            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
+            CAST(APPRLIM2 AS DOUBLE)  AS APPRLIM2,
+            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+            CASE
+                WHEN CAST(ACCTYPE AS VARCHAR) = 'OD'
+                     AND CAST(PRODUCT AS INTEGER) NOT IN (107,173) THEN 'OD'
+                WHEN CAST(ACCTYPE AS VARCHAR) = 'LN'
+                     AND CAST(PRODUCT AS INTEGER) IN
+                     (302,350,364,365,506,902,903,910,925,951)     THEN 'RC'
+                WHEN CAST(ACCTYPE AS VARCHAR) = 'LN'
+                     AND CAST(PRODUCT AS INTEGER) IN
+                     (128,130,131,132,380,381,700,705,720,725)     THEN 'HP'
+                WHEN CAST(ACCTYPE AS VARCHAR) = 'LN'               THEN 'TL'
+                ELSE NULL
+            END AS CATG
+        FROM read_parquet('{LOAN_CACHE}')
+    ),
+    filtered AS (
+        SELECT ACCTNO, BRANCH, TDI, APPRLIMT, APPRLIM2, BALANCE, CATG
+        FROM categorised
+        WHERE CATG IS NOT NULL
+    )
+    SELECT
+        ACCTNO,
+        BRANCH,
+        TDI,
+        MAX(APPRLIMT)   AS APPRLIMT,
+        MAX(APPRLIM2)   AS APPRLIM2,
+        ANY_VALUE(CATG) AS CATG,
+        SUM(BALANCE)    AS ACCBAL,
+        SUM(APPRLIMT)   AS LIMTBAL
+    FROM filtered
+    GROUP BY ACCTNO, BRANCH, TDI, CATG
+""").pl()
