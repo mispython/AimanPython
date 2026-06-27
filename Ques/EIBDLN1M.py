@@ -39,7 +39,7 @@ INPUT_CISDP_DIR   = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
 INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
 # Parquet cache directory (temporary intermediates — cleared after use)
-CACHE_DIR = BASE_DIR / "input" / "EIBDLN1M" / "cache"
+CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBDLN1M"
 
 # Output
 OUTPUT_DIR  = BASE_DIR / "output" / "EIBDLN1M"
@@ -149,7 +149,16 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
             chunk = chunk.iloc[: ROW_LIMIT - rows_read]
         rows_read += len(chunk)
 
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        # table = pa.Table.from_pandas(chunk, preserve_index=False)
+
+        chunk = chunk.convert_dtypes()
+
+        table = pa.Table.from_pandas(
+            chunk,
+            preserve_index=False,
+            safe=False
+        )
+
         if writer is None:
             schema = table.schema
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
