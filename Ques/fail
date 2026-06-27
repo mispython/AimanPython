@@ -1,9 +1,8 @@
-Step 5: Building SASC (current period)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 275, in <module>
-    sasc = con.execute(f"""
-_duckdb.BinderException: Binder Error: Referenced column "ACCTYPE" not found in FROM clause!
-Candidate bindings: "ACCTNO", "CCY", "LNTYPE", "SITYPE", "PAYTYPE"
-
-LINE 11:                 WHEN CAST(ACCTYPE AS VARCHAR) = 'OD'
-                                   ^
+# ============================================================================
+# DEBUG: INSPECT LOAN PARQUET COLUMNS
+# ============================================================================
+print("\nDEBUG: Inspecting LOAN parquet columns...")
+con = duckdb.connect(database=":memory:")
+cols = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{LOAN_CACHE}')").pl()
+print(cols)
+con.close()
