@@ -1,8 +1,17 @@
-# ============================================================================
-# DEBUG: INSPECT LOAN PARQUET COLUMNS
-# ============================================================================
-print("\nDEBUG: Inspecting LOAN parquet columns...")
-con = duckdb.connect(database=":memory:")
-cols = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{LOAN_CACHE}')").pl()
-print(cols)
-con.close()
+┌────────────────────┬─────────────┬──────┬──────┬─────────┬───────┐
+│ column_name        ┆ column_type ┆ null ┆ key  ┆ default ┆ extra │
+│ ---                ┆ ---         ┆ ---  ┆ ---  ┆ ---     ┆ ---   │
+│ str                ┆ str         ┆ str  ┆ str  ┆ str     ┆ str   │
+╞════════════════════╪═════════════╪══════╪══════╪═════════╪═══════╡
+│ ACCTNO             ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ U2RACECO           ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ NOTENO             ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ PAYEFDT            ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CUSTCODE           ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ …                  ┆ …           ┆ …    ┆ …    ┆ …       ┆ …     │
+│ RRSTG1             ┆ INTEGER     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ AGING_FAST_TRACKER ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ GOODWILL_IND       ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ GOODWILL_CURR_RATE ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ GOODWILL_CURR_AMT  ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+└────────────────────┴─────────────┴──────┴──────┴─────────┴───────┘
