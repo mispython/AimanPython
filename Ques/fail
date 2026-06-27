@@ -10,6 +10,17 @@ print(con.execute(f"""
 """).pl())
 con.close()
 
+DEBUG: Inspecting LOAN parquet columns...
+LNTYPE values currently mapped to NULL (excluded from report):
+shape: (1, 2)
+┌────────┬─────┐
+│ LNTYPE ┆ cnt │
+│ ---    ┆ --- │
+│ str    ┆ i64 │
+╞════════╪═════╡
+│ null   ┆ 183 │
+└────────┴─────┘
+
 =============
 
 con = duckdb.connect(database=":memory:")
