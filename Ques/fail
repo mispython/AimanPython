@@ -1,3 +1,50 @@
+sasc = con.execute(f"""
+    WITH base AS (
+        SELECT
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            'C'                       AS TDI,
+            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
+            CAST(APPRLIM2 AS DOUBLE)  AS APPRLIM2,
+            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+            CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
+            CAST(PRODUCT  AS INTEGER) AS PRODUCT
+        FROM read_parquet('{LOAN_CACHE}')
+    ),
+    categorised AS (
+        SELECT
+            ACCTNO, BRANCH, TDI, APPRLIMT, APPRLIM2, BALANCE, ACCTYPE, PRODUCT,
+            CASE
+                WHEN ACCTYPE = 'OD' AND PRODUCT NOT IN (107,173) THEN 'OD'
+                WHEN ACCTYPE = 'LN' AND PRODUCT IN
+                     (302,350,364,365,506,902,903,910,925,951)     THEN 'RC'
+                WHEN ACCTYPE = 'LN' AND PRODUCT IN
+                     (128,130,131,132,380,381,700,705,720,725)     THEN 'HP'
+                WHEN ACCTYPE = 'LN'                                THEN 'TL'
+                ELSE NULL
+            END AS CATG
+        FROM base
+    ),
+    filtered AS (
+        SELECT ACCTNO, BRANCH, TDI, APPRLIMT, APPRLIM2, BALANCE, CATG
+        FROM categorised
+        WHERE CATG IS NOT NULL
+    )
+    SELECT
+        ACCTNO,
+        BRANCH,
+        TDI,
+        MAX(APPRLIMT)   AS APPRLIMT,
+        MAX(APPRLIM2)   AS APPRLIM2,
+        ANY_VALUE(CATG) AS CATG,
+        SUM(BALANCE)    AS ACCBAL,
+        SUM(APPRLIMT)   AS LIMTBAL
+    FROM filtered
+    GROUP BY ACCTNO, BRANCH, TDI, CATG
+""").pl()
+
+====================
+
 Step 5: Building SASC (current period)...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py", line 275, in <module>
