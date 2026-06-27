@@ -1,15 +1,5 @@
-# STEP 9: MERGE WITH BRANCH
-print("\nStep 9: Merging with branch data...")
-
-merged_pl = pl.from_pandas(merged).with_columns(
-    pl.col("BRANCH").cast(pl.Int64)
-)
-
-branch_df = branch_df.with_columns(
-    pl.col("BRANCH").cast(pl.Int64)
-)
-
-final = merged_pl.join(branch_df, on="BRANCH", how="left")
-
-del merged, merged_pl, branch_df
-gc.collect()
+Step 10: Merging with customer name data...
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLN1M.py:515: DeprecationWarning: the `default` parameter for `replace` is deprecated. Use `replace_strict` instead to set a default while replacing values.
+(Deprecated in version 1.0.0)
+  pl.col("CATG").replace(catg_map, default=None).alias("CATEGORY")
+  Final report rows: 47
