@@ -22,19 +22,27 @@ from input_date import get_latest_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-SCRIPT_DIR = Path(__file__).resolve().parent
+# Input directories - Production
+# BASE_DIR    = Path("/dwh")
 
-# Input directories
-INPUT_LOAN_DIR   = SCRIPT_DIR / "input" / "EIBDLN1M" / "LOAN"
-INPUT_CISLN_DIR  = SCRIPT_DIR / "input" / "EIBDLN1M" / "CISLN"
-INPUT_CISDP_DIR  = SCRIPT_DIR / "input" / "EIBDLN1M" / "CISDP"
-INPUT_BRANCH_FILE = SCRIPT_DIR / "input" / "EIBDLN1M" / "BRANCH" / "branch.txt"
+# INPUT_LOAN_DIR    = BASE_DIR / "lnd_ln"
+# INPUT_CISLN_DIR   = Path("/stgsrcsys/host/uat") / "CISLN_loan.sas7bdat"
+# INPUT_CISDP_DIR   = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
+# INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
+
+# Input directories - Testing
+BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+INPUT_LOAN_DIR    = BASE_DIR / "input" / "prod" / "EIBDLN1M"
+INPUT_CISLN_DIR   = Path("/stgsrcsys/host/uat") / "CISLN_loan.sas7bdat"
+INPUT_CISDP_DIR   = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
+INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
 # Parquet cache directory (temporary intermediates — cleared after use)
-CACHE_DIR = SCRIPT_DIR / "cache" / "EIBDLN1M"
+CACHE_DIR = BASE_DIR / "input" / "EIBDLN1M" / "cache"
 
 # Output
-OUTPUT_DIR  = SCRIPT_DIR / "output" / "EIBDLN1M"
+OUTPUT_DIR  = BASE_DIR / "output" / "EIBDLN1M"
 OUTPUT_FILE = OUTPUT_DIR / "EIBDLN1M_report.txt"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -176,23 +184,21 @@ if not _cache_is_fresh(loanx_path, LOANX_CACHE):
 else:
     print(f"  [LOANX] Cache fresh — skipping conversion.")
 
-# CISLN (~14.2 GB) — resolve latest file in CISLN folder
-cisln_path = get_latest_file(INPUT_CISLN_DIR)
-if not _cache_is_fresh(cisln_path, CISLN_CACHE):
-    sas_to_parquet(cisln_path, CISLN_CACHE, "CISLN")
+# CISLN (~14.2 GB) — fixed filename, no date pattern
+if not _cache_is_fresh(INPUT_CISLN_DIR , CISLN_CACHE):
+    sas_to_parquet(INPUT_CISLN_DIR , CISLN_CACHE, "CISLN")
 else:
     print(f"  [CISLN] Cache fresh — skipping conversion.")
 
-# CISDP (~1.2 GB) — resolve latest file in CISDP folder
-cisdp_path = get_latest_file(INPUT_CISDP_DIR)
-if not _cache_is_fresh(cisdp_path, CISDP_CACHE):
-    sas_to_parquet(cisdp_path, CISDP_CACHE, "CISDP")
+# CISDP (~1.2 GB) — fixed filename, no date pattern
+if not _cache_is_fresh(INPUT_CISDP_DIR , CISDP_CACHE):
+    sas_to_parquet(INPUT_CISDP_DIR , CISDP_CACHE, "CISDP")
 else:
     print(f"  [CISDP] Cache fresh — skipping conversion.")
 
-# Release file-path objects no longer needed
-del cisln_path, cisdp_path
-gc.collect()
+# # Release file-path objects no longer needed
+# del cisln_path, cisdp_path
+# gc.collect()
 
 # ============================================================================
 # STEP 4: BUILD CISNM  (customer-name lookup)
