@@ -1,3 +1,18 @@
+# FLAG-01: ACCTYPE column does not exist in the parquet file.
+# Original SAS derives CATG from ACCTYPE ('OD'/'LN') + PRODUCT.
+# LNTYPE is used as substitute based on observed values:
+#   OD              → CATG='OD'  (with PRODUCT exclusion 107,173)
+#   HP              → CATG='HP'
+#   RC              → CATG='RC'
+#   HL/FL/ST/FR/FT/FS → CATG='TL' (assumed term loan variants)
+#   null (183 rows) → excluded (same as SAS IF CATG NE '  ')
+# This mapping has NOT been formally verified against the original
+# SAS ACCTYPE derivation. Output may differ if the assumption is wrong.
+# ACTION REQUIRED: Confirm with data/business team that LNTYPE is the
+# correct equivalent of ACCTYPE in this parquet dataset.
+
+=================
+
 con = duckdb.connect(database=":memory:")
 print("LNTYPE values currently mapped to NULL (excluded from report):")
 print(con.execute(f"""
