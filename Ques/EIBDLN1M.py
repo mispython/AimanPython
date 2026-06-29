@@ -18,6 +18,7 @@ from datetime import timedelta
 
 from REPTDATE import get_reptdate_values
 from input_date import get_latest_file
+# from output_date import build_output_file
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -43,7 +44,6 @@ CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBDLN1M"
 
 # Output
 OUTPUT_DIR  = BASE_DIR / "output" / "EIBDLN1M"
-OUTPUT_FILE = OUTPUT_DIR / "EIBDLN1M_report.txt"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -77,9 +77,12 @@ REPTPDAY  = reptpdat.strftime("%d")
 REPTPMON  = reptpdat.strftime("%m")
 REPTPYEA  = reptpdat.strftime("%y")
 
+OUTPUT_FILE = OUTPUT_DIR / f"LN1M{REPTDAY}{REPTMON}.txt"
+
 print(f"  Report date  : {RDATE}")
-print(f"  Current  : {REPTMON}/{REPTDAY}/{REPTYEAR}")
-print(f"  Previous : {REPTPMON}/{REPTPDAY}/{REPTPYEA}")
+print(f"  Current      : {REPTMON}/{REPTDAY}/{REPTYEAR}")
+print(f"  Previous     : {REPTPMON}/{REPTPDAY}/{REPTPYEA}")
+print(f"  Output file  : {OUTPUT_FILE.name}")
 
 # ============================================================================
 # STEP 2: RESOLVE INPUT FILE NAMES  (LOAN = latest, LOANX = day before)
@@ -558,12 +561,12 @@ def _build_header(category: str) -> list[str]:
     lines.append(f"  *")
     lines.append(f"  {category:<16s}")
     lines.append(f"  {'-' * 131}")
-    lines.append(f"  BRH  BRH")
+    lines.append(f"  BRH   BRH")
     lines.append(
-        f"  CODE ABBR CUSTOMER NAME"
-        + " " * 30
+        f"  CODE  ABBR  CUSTOMER NAME"
+        + " " * 28
         + "ACCOUNT NO.   APPROVE LIMIT  CURRENT BALANCE"
-        + "   PREVIOUS BAL    NET (INC/DEC)"
+        + "     PREVIOUS BAL    NET (INC/DEC)"
     )
     lines.append(f"  {'-' * 131}")
     return lines          # 10 lines
@@ -604,7 +607,7 @@ for row in rows_iter:
     # Columns are 1-based in SAS; we build the full 133-char buffer.
     buf = [" "] * 133     # position 1 = index 0 (ASA char)
 
-    asa = "0" if first_data_row else " "
+    asa = "  0" if first_data_row else "   "
     buf[0] = asa
     first_data_row = False
 
@@ -618,7 +621,7 @@ for row in rows_iter:
 
     # @012 CUSTNAME $40.  (positions 12-51, 0-based 11-50)
     custname_str = str(row.get("CUSTNAME") or "")[:40]
-    buf[11:51] = list(f"{custname_str:<40s}")
+    buf[11:51] = list(f" {custname_str:<40s}")
 
     # @054 ACCTNO 10.  (positions 54-63, 0-based 53-62, right-justified)
     acctno_str = f"{int(row['ACCTNO'] or 0):>10d}"
