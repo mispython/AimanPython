@@ -1,3 +1,12 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/sas_check.py
+Total rows: (4324398,)
+After CLOSECD (patched): (4324350,)
+After ACCTYPE<>'IS' (patched): (4324398,)
+After IA/CARDHOLD (patched): (4324392,)
+All three combined (patched): (4324350,)
+
+=======================
+
 import duckdb
 con = duckdb.connect(":memory:")
 
