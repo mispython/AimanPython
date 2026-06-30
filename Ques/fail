@@ -1,10 +1,32 @@
-WHERE
-    COALESCE(TRIM(CAST(CLOSECD AS VARCHAR)), '') = ''
-    AND COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') <> 'IS'
-    AND NOT (
-        COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') = 'IA'
-        AND COALESCE(CAST(CARDHOLD AS DOUBLE), 0) <> 1
-    )
+import duckdb
+con = duckdb.connect(":memory:")
+
+path = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBDUNDP/cache/unicard260603.parquet"
+
+print("CLOSECD distinct values:")
+print(con.execute(f"SELECT CLOSECD, COUNT(*) FROM read_parquet('{path}') GROUP BY CLOSECD ORDER BY 2 DESC LIMIT 10").fetchall())
+
+print("ACCTYPE distinct values:")
+print(con.execute(f"SELECT ACCTYPE, COUNT(*) FROM read_parquet('{path}') GROUP BY ACCTYPE ORDER BY 2 DESC LIMIT 10").fetchall())
+
+print("CARDHOLD distinct values (including nulls):")
+print(con.execute(f"SELECT CARDHOLD, COUNT(*) FROM read_parquet('{path}') GROUP BY CARDHOLD ORDER BY 2 DESC LIMIT 10").fetchall())
+
+print("Row count after each filter stage:")
+print("Total:", con.execute(f"SELECT COUNT(*) FROM read_parquet('{path}')").fetchone())
+print("After CLOSECD filter:", con.execute(f"""
+    SELECT COUNT(*) FROM read_parquet('{path}')
+    WHERE (CLOSECD IS NULL OR TRIM(CAST(CLOSECD AS VARCHAR)) = '')
+""").fetchone())
+print("After ACCTYPE<>'IS' filter:", con.execute(f"""
+    SELECT COUNT(*) FROM read_parquet('{path}')
+    WHERE TRIM(CAST(ACCTYPE AS VARCHAR)) <> 'IS'
+""").fetchone())
+print("After IA/CARDHOLD filter:", con.execute(f"""
+    SELECT COUNT(*) FROM read_parquet('{path}')
+    WHERE NOT (TRIM(CAST(ACCTYPE AS VARCHAR)) = 'IA' AND CAST(CARDHOLD AS DOUBLE) <> 1)
+""").fetchone())
+con.close()
 
 ==========
 
