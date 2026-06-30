@@ -1,3 +1,24 @@
+card_df = con.execute(f"""
+    SELECT
+        TRIM(CAST(CARDNO   AS VARCHAR)) AS CARDNO,
+        TRIM(CAST(MONITOR  AS VARCHAR)) AS MONITOR,
+        TRIM(CAST(SOURCE   AS VARCHAR)) AS SOURCE,
+        COALESCE(TRIM(CAST(CLOSECD AS VARCHAR)), '') AS CLOSECD,
+        COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') AS ACCTYPE,
+        COALESCE(CAST(CARDHOLD AS DOUBLE), 0)        AS CARDHOLD,
+        TRIM(CAST(NEWIC    AS VARCHAR)) AS NEWIC,
+        TRIM(CAST(OLDIC    AS VARCHAR)) AS OLDIC,
+        TRIM(CAST(CUSTNAME AS VARCHAR)) AS CUSTNAME,
+        CAST(APPRLIMT AS DOUBLE)        AS APPRLIMT
+    FROM read_parquet('{CARD_CACHE}')
+    WHERE COALESCE(TRIM(CAST(CLOSECD AS VARCHAR)), '') = ''
+      AND COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') <> 'IS'
+      AND NOT (COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') = 'IA'
+               AND COALESCE(CAST(CARDHOLD AS DOUBLE), 0) <> 1)
+""").pl()
+
+===========
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py
 Step 1: Deriving report date...
   REPTDATE : 2026-06-22  (WK=03)
