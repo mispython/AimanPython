@@ -1,3 +1,9 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/sas_check.py
+Rows checked: 2000000
+Non-null MONITOR in raw SAS file: 10
+
+==============================
+
 import pandas as pd
 raw = pd.read_sas(
     "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBDUNDP/card/unicard260603.sas7bdat",
