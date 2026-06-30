@@ -1,3 +1,17 @@
+CLOSECD distinct values:
+[(None, 4324350), ('Q', 29), ('O', 7), ('C', 6), ('Z', 5), ('T', 1)]
+ACCTYPE distinct values:
+[(None, 4324312), ('I', 76), ('IA', 10)]
+CARDHOLD distinct values (including nulls):
+[(1.0, 4140526), (2.0, 174071), (3.0, 7915), (4.0, 1407), (5.0, 319), (6.0, 88), (7.0, 38), (8.0, 21), (9.0, 13)]
+Row count after each filter stage:
+Total: (4324398,)
+After CLOSECD filter: (4324350,)
+After ACCTYPE<>'IS' filter: (86,)
+After IA/CARDHOLD filter: (4140526,)
+
+=========================
+
 import duckdb
 con = duckdb.connect(":memory:")
 
