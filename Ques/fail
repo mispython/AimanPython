@@ -1,3 +1,22 @@
+import pandas as pd
+raw = pd.read_sas(
+    "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBDUNDP/card/unicard260603.sas7bdat",
+    encoding="latin1",
+    chunksize=500_000
+)
+total = 0
+nonnull_monitor = 0
+for chunk in raw:
+    total += len(chunk)
+    nonnull_monitor += chunk["MONITOR"].notna().sum()
+    if total >= 2_000_000:
+        break
+
+print("Rows checked:", total)
+print("Non-null MONITOR in raw SAS file:", nonnull_monitor)
+
+==================
+
 Step 4: Processing CARD file...
 100% ▕██████████████████████████████████████▏ (00:00:13.09 elapsed)     
   CARD raw rows after SQL filer: 4,324,350
