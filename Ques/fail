@@ -1,3 +1,22 @@
+[EIBMSCRN] Report date : 29/06/2026
+[EIBMSCRN] RMM=06  RYY=26  RYEAR=2026  RMON=JUN2026
+[EIBMSCRN] BRH=376  HRBR=0  HRHO=0
+[EIBMSCRN] UCARD filtered rows = 0
+[EIBMSCRN] UCBR=0  UCHO=0  UCEXC1=0
+[EIBMSCRN] DPC1=0  DPC2=112527
+[EIBMSCRN] ELDS processed rows = 272408
+[EIBMSCRN] SRSBR(all)=0  SRSHO(all)=0  SRSEXC=384935
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 1033, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 1003, in main
+    srsho_sum = summarize_ho(srsho_all)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 817, in summarize_ho
+    if result.num_rows == 0:
+AttributeError: 'pyarrow.lib.RecordBatchReader' object has no attribute 'num_rows'
+
+================
+
 def summarize_branch(srsbr_all: pl.DataFrame) -> pl.DataFrame:
     con = duckdb.connect(database=":memory:")
     con.register("srsbr_all", srsbr_all.to_arrow())
