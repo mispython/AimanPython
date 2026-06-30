@@ -22,41 +22,59 @@ from input_date import get_latest_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# BASE_DIR = Path("/dwh")
+BASE_DIR_XMIS   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR_XMIS  = BASE_DIR_XMIS / "input/prod"
 
 # ── DEPO (current day: PBB) ──────────────────────────────────────────────────
-DEPO_CA_DIR  = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "depo"   # dpd_ca
-DEPO_SA_DIR  = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "depo"   # dpd_sa
-DEPO_FD_DIR  = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "depo"   # dpd_fd
+# DEPO_CA_DIR  = BASE_DIR / "dpd_ca"  # dpd_ca
+# DEPO_SA_DIR  = BASE_DIR / "dpd_sa"  # dpd_sa
+# DEPO_FD_DIR  = BASE_DIR / "dpd_fd"  # dpd_fd
+DEPO_CA_DIR  = INPUT_DIR_XMIS / "deposit"
+DEPO_SA_DIR  = INPUT_DIR_XMIS / "deposit"
+DEPO_FD_DIR  = INPUT_DIR_XMIS / "deposit"
 
 # ── IDEPO (current day: PIBB) ────────────────────────────────────────────────
-IDEPO_CA_DIR = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "idepo"  # idpd_ca
-IDEPO_SA_DIR = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "idepo"  # idpd_sa
-IDEPO_FD_DIR = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "idepo"  # idpd_fd
+# IDEPO_CA_DIR = BASE_DIR / "idpd_ca"  # idpd_ca
+# IDEPO_SA_DIR = BASE_DIR / "idpd_sa"  # idpd_sa
+# IDEPO_FD_DIR = BASE_DIR / "idpd_fd"  # idpd_fd
+IDEPO_CA_DIR = INPUT_DIR_XMIS / "deposit"
+IDEPO_SA_DIR = INPUT_DIR_XMIS / "deposit"
+IDEPO_FD_DIR = INPUT_DIR_XMIS / "deposit"
 
 # ── PDEPO (previous day: PBB) ────────────────────────────────────────────────
-PDEPO_CA_DIR  = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "depo"  # dpd_ca (prev date)
-PDEPO_SA_DIR  = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "depo"  # dpd_sa (prev date)
-PDEPO_FD_DIR  = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "depo"  # dpd_fd (prev date)
+# PDEPO_CA_DIR  = BASE_DIR / "dpd_ca"  # dpd_ca (prev date)
+# PDEPO_SA_DIR  = BASE_DIR / "dpd_sa"  # dpd_sa (prev date)
+# PDEPO_FD_DIR  = BASE_DIR / "dpd_fd"  # dpd_fd (prev date)
+PDEPO_CA_DIR  = INPUT_DIR_XMIS / "deposit"
+PDEPO_SA_DIR  = INPUT_DIR_XMIS / "deposit"
+PDEPO_FD_DIR  = INPUT_DIR_XMIS / "deposit"
 
 # ── PIDEPO (previous day: PIBB) ──────────────────────────────────────────────
-PIDEPO_CA_DIR = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "idepo" # idpd_ca (prev date)
-PIDEPO_SA_DIR = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "idepo" # idpd_sa (prev date)
-PIDEPO_FD_DIR = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "idepo" # idpd_fd (prev date)
+# PIDEPO_CA_DIR = BASE_DIR / "idpd_ca"  # idpd_ca (prev date)
+# PIDEPO_SA_DIR = BASE_DIR / "idpd_sa"  # idpd_sa (prev date)
+# PIDEPO_FD_DIR = BASE_DIR / "idpd_fd"  # idpd_fd (prev date)
+PIDEPO_CA_DIR = INPUT_DIR_XMIS / "deposit"
+PIDEPO_SA_DIR = INPUT_DIR_XMIS / "deposit"
+PIDEPO_FD_DIR = INPUT_DIR_XMIS / "deposit"
 
 # ── CARD ─────────────────────────────────────────────────────────────────────
-CARD_DIR      = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "card"  # unicardYYMMWK.sas7bdat
+# CARD_DIR      = BASE_DIR / "rs_cis"  # unicardYYMMWK.sas7bdat
+CARD_DIR      = BASE_DIR_XMIS / "input/prod/EIBDUNDP"
 
 # ── CIS files (3 separate files) ─────────────────────────────────────────────
-CISDP_CA_FILE = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "cis" / "cisr1ca063026.sas7bdat"  # CISCA source
-CISDP_SA_FILE = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "cis" / "cisr1sa063026.sas7bdat"  # CISSA source
-CISDP_FD_FILE = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "cis" / "cisr1fd063026.sas7bdat"  # CISFD source
+# CISDP_CA_FILE = BASE_DIR / "rs_cis"  # CISCA source
+# CISDP_SA_FILE = BASE_DIR / "rs_cis"  # CISSA source
+# CISDP_FD_FILE = BASE_DIR / "rs_cis"  # CISFD source
+CISDP_CA_FILE = INPUT_DIR_XMIS / "cis"
+CISDP_SA_FILE = INPUT_DIR_XMIS / "cis"
+CISDP_FD_FILE = INPUT_DIR_XMIS / "cis"
 
 # ── Parquet cache directory ───────────────────────────────────────────────────
-CACHE_DIR     = BASE_DIR / "input" / "prod" / "EIBDUNDP" / "cache"
+CACHE_DIR     = INPUT_DIR_XMIS / "EIBDUNDP" / "cache"
 
 # ── Output ────────────────────────────────────────────────────────────────────
-OUTPUT_DIR    = BASE_DIR / "output" / "EIBDUNDP"
+OUTPUT_DIR    = BASE_DIR_XMIS / "output" / "EIBDUNDP"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -207,33 +225,36 @@ def _prev_day_path(latest_path: Path, prefix: str, search_dir: Path) -> Path:
     return candidates[0]
 
 # ── Current-day DEPO (PBB) ────────────────────────────────────────────────────
-depo_ca_path  = get_latest_file(DEPO_CA_DIR,  prefix="dpd_ca")
-depo_sa_path  = get_latest_file(DEPO_SA_DIR,  prefix="dpd_sa")
-depo_fd_path  = get_latest_file(DEPO_FD_DIR,  prefix="dpd_fd")
+depo_ca_path  = get_latest_file(DEPO_CA_DIR,  prefix="ca")
+depo_sa_path  = get_latest_file(DEPO_SA_DIR,  prefix="sa")
+depo_fd_path  = get_latest_file(DEPO_FD_DIR,  prefix="fd")
 
 # ── Current-day IDEPO (PIBB) ──────────────────────────────────────────────────
-idepo_ca_path = get_latest_file(IDEPO_CA_DIR, prefix="idpd_ca")
-idepo_sa_path = get_latest_file(IDEPO_SA_DIR, prefix="idpd_sa")
-idepo_fd_path = get_latest_file(IDEPO_FD_DIR, prefix="idpd_fd")
+idepo_ca_path = get_latest_file(IDEPO_CA_DIR, prefix="ica")
+idepo_sa_path = get_latest_file(IDEPO_SA_DIR, prefix="isa")
+idepo_fd_path = get_latest_file(IDEPO_FD_DIR, prefix="ifd")
 
 # ── Previous-day PDEPO (PBB) ─────────────────────────────────────────────────
-pdepo_ca_path  = _prev_day_path(depo_ca_path,  "dpd_ca",  PDEPO_CA_DIR)
-pdepo_sa_path  = _prev_day_path(depo_sa_path,  "dpd_sa",  PDEPO_SA_DIR)
-pdepo_fd_path  = _prev_day_path(depo_fd_path,  "dpd_fd",  PDEPO_FD_DIR)
+pdepo_ca_path  = _prev_day_path(depo_ca_path,  "ca",  PDEPO_CA_DIR)
+pdepo_sa_path  = _prev_day_path(depo_sa_path,  "sa",  PDEPO_SA_DIR)
+pdepo_fd_path  = _prev_day_path(depo_fd_path,  "fd",  PDEPO_FD_DIR)
 
 # ── Previous-day PIDEPO (PIBB) ───────────────────────────────────────────────
-pidepo_ca_path = _prev_day_path(idepo_ca_path, "idpd_ca", PIDEPO_CA_DIR)
-pidepo_sa_path = _prev_day_path(idepo_sa_path, "idpd_sa", PIDEPO_SA_DIR)
-pidepo_fd_path = _prev_day_path(idepo_fd_path, "idpd_fd", PIDEPO_FD_DIR)
+pidepo_ca_path = _prev_day_path(idepo_ca_path, "ica", PIDEPO_CA_DIR)
+pidepo_sa_path = _prev_day_path(idepo_sa_path, "isa", PIDEPO_SA_DIR)
+pidepo_fd_path = _prev_day_path(idepo_fd_path, "ifd", PIDEPO_FD_DIR)
 
 # ── CARD ─────────────────────────────────────────────────────────────────────
 card_prefix = f"unicard{REPTYEAR}{REPTMON}{NOWK}"
 card_path   = get_latest_file(CARD_DIR, prefix=card_prefix)
 
 # ── CIS (3 separate fixed files) ─────────────────────────────────────────────
-cisca_path = CISDP_CA_FILE   # source for CISCA  (CA accounts)
-cissa_path = CISDP_SA_FILE   # source for CISSA  (SA accounts)
-cisfd_path = CISDP_FD_FILE   # source for CISFD  (FD accounts)
+# cisca_path = CISDP_CA_FILE   # source for CISCA  (CA accounts)
+# cissa_path = CISDP_SA_FILE   # source for CISSA  (SA accounts)
+# cisfd_path = CISDP_FD_FILE   # source for CISFD  (FD accounts)
+cisca_path = get_latest_file(CISDP_CA_FILE, "cisr1ca")   # source for CISCA  (CA accounts)
+cissa_path = get_latest_file(CISDP_SA_FILE, "cisr1sa")   # source for CISSA  (SA accounts)
+cisfd_path = get_latest_file(CISDP_FD_FILE, "cisr1fd")   # source for CISFD  (FD accounts)
 
 print(f"  DEPO   CA : {depo_ca_path.name}")
 print(f"  DEPO   SA : {depo_sa_path.name}")
