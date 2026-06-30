@@ -1,3 +1,24 @@
+import pandas as pd
+raw = pd.read_sas(
+    "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBDUNDP/card/unicard260603.sas7bdat",
+    encoding="latin1",
+    chunksize=500_000
+)
+total = 0
+monitor_vals = {}
+source_match = 0
+for chunk in raw:
+    total += len(chunk)
+    for v, c in chunk["MONITOR"].value_counts(dropna=False).items():
+        monitor_vals[v] = monitor_vals.get(v, 0) + c
+    source_match += (chunk["SOURCE"] == "GCPIFD0209").sum()
+
+print("Total rows:", total)
+print("MONITOR distribution:", monitor_vals)
+print("SOURCE='GCPIFD0209' matches:", source_match)
+
+==================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/sas_check.py
 Rows checked: 2000000
 Non-null MONITOR in raw SAS file: 10
