@@ -1,3 +1,21 @@
+result = con.execute("""
+    SELECT HOE, STAFF, PRODUCT, NCORE,
+           COALESCE(SUM(C1CNT), 0) AS C1CNT,
+           COALESCE(SUM(C2CNT), 0) AS C2CNT,
+           COALESCE(SUM(C3CNT), 0) AS C3CNT,
+           COALESCE(SUM(C4CNT), 0) AS C4CNT,
+           COALESCE(SUM(C5CNT), 0) AS C5CNT,
+           COALESCE(SUM(C1BAL), 0.0) AS C1BAL,
+           COALESCE(SUM(C2BAL), 0.0) AS C2BAL,
+           COALESCE(SUM(C3BAL), 0.0) AS C3BAL
+    FROM srsho_all
+    GROUP BY HOE, STAFF, PRODUCT, NCORE
+""").arrow()
+
+result = result.to_table()  # FORCE FIX
+
+================
+
 [EIBMSCRN] Report date : 29/06/2026
 [EIBMSCRN] RMM=06  RYY=26  RYEAR=2026  RMON=JUN2026
 [EIBMSCRN] BRH=376  HRBR=0  HRHO=0
