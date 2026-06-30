@@ -1,3 +1,33 @@
+def load_hrbr() -> pl.DataFrame:
+    df = read_fixed_whole(HRBR_FILE, HRBR_SPEC)
+
+    # FORCE SCHEMA (critical fix)
+    return df.with_columns(
+        pl.col("STAFF").cast(pl.Int64, strict=False),
+        pl.col("BRANCH").cast(pl.Int64, strict=False),
+        pl.col("BRCHCD").cast(pl.Utf8, strict=False),
+    ).filter(
+        (pl.col("BRANCH") >= 2) & (pl.col("BRANCH") <= 267)
+    )
+
+
+def load_hrho() -> pl.DataFrame:
+    df = read_fixed_whole(HRHO_FILE, HRHO_SPEC)
+
+    return df.with_columns(
+        pl.col("STAFF").cast(pl.Int64, strict=False),
+        pl.col("HOE").cast(pl.Utf8, strict=False),
+    )
+
+
+if hrbr.height == 0:
+    return (
+        ucard.with_columns(pl.lit(None).cast(pl.Int64).alias("BRANCH")),
+        ucard.head(0)
+    )
+
+===================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py
 [EIBMSCRN] Report date : 29/06/2026
 [EIBMSCRN] RMM=06  RYY=26  RYEAR=2026  RMON=JUN2026
