@@ -1,3 +1,60 @@
+def summarize_branch(srsbr_all: pl.DataFrame) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    con.register("srsbr_all", srsbr_all.to_arrow())
+
+    result = con.execute("""
+        SELECT BRCHCD, STAFF, PRODUCT, NCORE,
+               COALESCE(SUM(C1CNT), 0) AS C1CNT,
+               COALESCE(SUM(C2CNT), 0) AS C2CNT,
+               COALESCE(SUM(C3CNT), 0) AS C3CNT,
+               COALESCE(SUM(C4CNT), 0) AS C4CNT,
+               COALESCE(SUM(C5CNT), 0) AS C5CNT,
+               COALESCE(SUM(C1BAL), 0.0) AS C1BAL,
+               COALESCE(SUM(C2BAL), 0.0) AS C2BAL,
+               COALESCE(SUM(C3BAL), 0.0) AS C3BAL
+        FROM srsbr_all
+        GROUP BY BRCHCD, STAFF, PRODUCT, NCORE
+    """).fetch_arrow_table()
+
+    con.close()
+
+    if result.num_rows == 0:
+        return pl.DataFrame(schema={
+            "BRCHCD": pl.Utf8,
+            "STAFF": pl.Int64,
+            "PRODUCT": pl.Utf8,
+            "NCORE": pl.Utf8,
+            "C1CNT": pl.Int64,
+            "C2CNT": pl.Int64,
+            "C3CNT": pl.Int64,
+            "C4CNT": pl.Int64,
+            "C5CNT": pl.Int64,
+            "C1BAL": pl.Float64,
+            "C2BAL": pl.Float64,
+            "C3BAL": pl.Float64,
+        })
+
+    return pl.from_arrow(result)
+
+
+if result.num_rows == 0:
+    return pl.DataFrame(schema={
+        "HOE": pl.Utf8,
+        "STAFF": pl.Int64,
+        "PRODUCT": pl.Utf8,
+        "NCORE": pl.Utf8,
+        "C1CNT": pl.Int64,
+        "C2CNT": pl.Int64,
+        "C3CNT": pl.Int64,
+        "C4CNT": pl.Int64,
+        "C5CNT": pl.Int64,
+        "C1BAL": pl.Float64,
+        "C2BAL": pl.Float64,
+        "C3BAL": pl.Float64,
+    })
+
+=====================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py
 [EIBMSCRN] Report date : 29/06/2026
 [EIBMSCRN] RMM=06  RYY=26  RYEAR=2026  RMON=JUN2026
