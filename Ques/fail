@@ -1,3 +1,26 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py
+[EIBMSCRN] Report date : 29/06/2026
+[EIBMSCRN] RMM=06  RYY=26  RYEAR=2026  RMON=JUN2026
+[EIBMSCRN] BRH=376  HRBR=0  HRHO=0
+[EIBMSCRN] UCARD filtered rows = 0
+[EIBMSCRN] UCBR=0  UCHO=0  UCEXC1=0
+[EIBMSCRN] DPC1=0  DPC2=112527
+[EIBMSCRN] ELDS processed rows = 272408
+[EIBMSCRN] SRSBR(all)=0  SRSHO(all)=0  SRSEXC=384935
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 1005, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 974, in main
+    srsbr_sum = summarize_branch(srsbr_all)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 777, in summarize_branch
+    return pl.from_arrow(result)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/convert/general.py", line 572, in from_arrow
+    pa_table = pa.Table.from_batches(
+  File "pyarrow/table.pxi", line 4050, in pyarrow.lib.Table.from_batches
+ValueError: Must pass schema, or at least one RecordBatch
+
+==============
+
 def parse_fixed_chunk(lines: List[str], specs) -> pl.DataFrame:
     rows = [_parse_line(line, specs) for line in lines]
 
