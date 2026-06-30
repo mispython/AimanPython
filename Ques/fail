@@ -1,3 +1,170 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py
+Step 1: Deriving report date...
+  REPTDATE : 2026-06-22  (WK=03)
+  RDTEA    : 29/06/26   RDTEB : 28/06/26
+  REPTYEAR=26  REPTMON=06  REPTDAY=22  NOWK=03
+  Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV.txt
+
+Step 2: Resolving all 16 input file paths...
+[FILE_RESOLVER] Selected latest: ca260628.sas7bdat
+[FILE_RESOLVER] Selected latest: sa260628.sas7bdat
+[FILE_RESOLVER] Selected latest: fd260628.sas7bdat
+[FILE_RESOLVER] Selected latest: ica260628.sas7bdat
+[FILE_RESOLVER] Selected latest: isa260628.sas7bdat
+[FILE_RESOLVER] Selected latest: ifd260628.sas7bdat
+[FILE_RESOLVER] Selected latest: unicard260603.sas7bdat
+[FILE_RESOLVER] Selected latest: cisr1ca06326.sas7bdat
+[FILE_RESOLVER] Selected latest: cisr1sa06326.sas7bdat
+[FILE_RESOLVER] Selected latest: cisr1fd06326.sas7bdat
+  DEPO   CA : ca260628.sas7bdat
+  DEPO   SA : sa260628.sas7bdat
+  DEPO   FD : fd260628.sas7bdat
+  IDEPO  CA : ica260628.sas7bdat
+  IDEPO  SA : isa260628.sas7bdat
+  IDEPO  FD : ifd260628.sas7bdat
+  PDEPO  CA : ca260627.sas7bdat
+  PDEPO  SA : sa260627.sas7bdat
+  PDEPO  FD : fd260627.sas7bdat
+  PIDEPO CA : ica260627.sas7bdat
+  PIDEPO SA : isa260627.sas7bdat
+  PIDEPO FD : ifd260627.sas7bdat
+  CARD      : unicard260603.sas7bdat
+  CIS CA    : cisr1ca06326.sas7bdat
+  CIS SA    : cisr1sa06326.sas7bdat
+  CIS FD    : cisr1fd06326.sas7bdat
+
+Step 3: Caching SAS files to Parquet (if needed)...
+  [DEPO_CA] Converting ca260628.sas7bdat → ca260628.parquet ...
+  [DEPO_CA] WARNING: Cannot cast 'BILLERIND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [DEPO_CA] Done — 851,129 rows cached.
+  [DEPO_SA] Converting sa260628.sas7bdat → sa260628.parquet ...
+  [DEPO_SA] Done — 4,271,868 rows cached.
+  [DEPO_FD] Converting fd260628.sas7bdat → fd260628.parquet ...
+  [DEPO_FD] WARNING: Cannot cast 'OKU_IND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [DEPO_FD] WARNING: Cannot cast 'OKU_IND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [DEPO_FD] Done — 1,210,873 rows cached.
+  [IDEPO_CA] Converting ica260628.sas7bdat → ica260628.parquet ...
+  [IDEPO_CA] Done — 153,492 rows cached.
+  [IDEPO_SA] Converting isa260628.sas7bdat → isa260628.parquet ...
+  [IDEPO_SA] WARNING: Cannot cast 'USER5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [IDEPO_SA] WARNING: Cannot cast 'USER5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [IDEPO_SA] WARNING: Cannot cast 'OKU_IND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [IDEPO_SA] Done — 2,249,101 rows cached.
+  [IDEPO_FD] Converting ifd260628.sas7bdat → ifd260628.parquet ...
+  [IDEPO_FD] Done — 223,588 rows cached.
+  [PDEPO_CA] Converting ca260627.sas7bdat → ca260627.parquet ...
+  [PDEPO_CA] WARNING: Cannot cast 'BILLERIND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [PDEPO_CA] Done — 851,132 rows cached.
+  [PDEPO_SA] Converting sa260627.sas7bdat → sa260627.parquet ...
+  [PDEPO_SA] Done — 4,271,861 rows cached.
+  [PDEPO_FD] Converting fd260627.sas7bdat → fd260627.parquet ...
+  [PDEPO_FD] WARNING: Cannot cast 'OKU_IND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [PDEPO_FD] WARNING: Cannot cast 'OKU_IND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [PDEPO_FD] Done — 1,210,882 rows cached.
+  [PIDEPO_CA] Converting ica260627.sas7bdat → ica260627.parquet ...
+  [PIDEPO_CA] Done — 153,490 rows cached.
+  [PIDEPO_SA] Converting isa260627.sas7bdat → isa260627.parquet ...
+  [PIDEPO_SA] WARNING: Cannot cast 'USER5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [PIDEPO_SA] WARNING: Cannot cast 'USER5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [PIDEPO_SA] WARNING: Cannot cast 'OKU_IND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [PIDEPO_SA] Done — 2,249,042 rows cached.
+  [PIDEPO_FD] Converting ifd260627.sas7bdat → ifd260627.parquet ...
+  [PIDEPO_FD] Done — 223,553 rows cached.
+  [CARD] Converting unicard260603.sas7bdat → unicard260603.parquet ...
+  [CARD] WARNING: Cannot cast 'ADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'MONITOR' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'OADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'ADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'MONITOR' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'OADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'MONITOR' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'ADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'MONITOR' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'OADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'MONITOR' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'OADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'MONITOR' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'OADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'ADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'MONITOR' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'OADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'MONITOR' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] WARNING: Cannot cast 'OADDRES5' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CARD] Done — 4,324,398 rows cached.
+  [CISCA] Converting cisr1ca06326.sas7bdat → cisr1ca06326.parquet ...
+  [CISCA] WARNING: Cannot cast 'CISCUSTCD11' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISCA] WARNING: Cannot cast 'CISCUSTCD12' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISCA] WARNING: Cannot cast 'CISCUSTCD13' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISCA] WARNING: Cannot cast 'CISCUSTCD14' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISCA] Done — 1,229,693 rows cached.
+  [CISSA] Converting cisr1sa06326.sas7bdat → cisr1sa06326.parquet ...
+  [CISSA] WARNING: Cannot cast 'CISCUSTCD8' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISSA] WARNING: Cannot cast 'CISCUSTCD9' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISSA] WARNING: Cannot cast 'CISCUSTCD8' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISSA] WARNING: Cannot cast 'CISCUSTCD9' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISSA] WARNING: Cannot cast 'CISCUSTCD8' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISSA] WARNING: Cannot cast 'CISCUSTCD9' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISSA] WARNING: Cannot cast 'CISCUSTCD8' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISSA] WARNING: Cannot cast 'CISCUSTCD9' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISSA] WARNING: Cannot cast 'LARGE_CORP_FLG' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CISSA] Done — 8,139,083 rows cached.
+  [CISFD] Converting cisr1fd06326.sas7bdat → cisr1fd06326.parquet ...
+  [CISFD] Done — 2,681,779 rows cached.
+
+Step 4: Processing CARD file...
+100% ▕██████████████████████████████████████▏ (00:00:07.08 elapsed)     
+  CARD  rows : 0
+  CARD1 rows : 0
+
+Step 5: Building CISCA / CISSA / CISFD via DuckDB joins...
+  CISCA rows : 0
+  CISSA rows : 0
+  CISFD rows : 0
+
+Step 6: Building PSA / PCA / PFD (previous-period balances)...
+  PSA rows : 0
+  PCA rows : 0
+  PFD rows : 0
+
+Step 7: Building SA / CA / FD (current-period balances)...
+  SA rows : 0
+  CA rows : 0
+  FD rows : 0
+
+Step 8: Combining DEPO / PDEPO and calculating withdrawals...
+  DEPO rows : 0
+
+Step 9: Summarising DEPO by NEWIC...
+  DEPO1 rows : 0
+
+Step 10: Splitting into DEPO2 / DEPO3...
+  DEPO2 rows : 0
+  DEPO3 rows : 0
+
+Step 11: Building TOT...
+  TOT rows : 0
+
+Step 12: Building FINAL dataset...
+100% ▕██████████████████████████████████████▏ (00:00:02.21 elapsed)     
+  FINAL rows : 0
+shape: (0, 9)
+┌────────┬───────┬────────┬──────┬───┬────────┬──────────┬─────────┬───────┐
+│ ACCTNO ┆ NEWIC ┆ CURBAL ┆ TYPE ┆ … ┆ CARDNO ┆ APPRLIMT ┆ MONITOR ┆ OLDIC │
+│ ---    ┆ ---   ┆ ---    ┆ ---  ┆   ┆ ---    ┆ ---      ┆ ---     ┆ ---   │
+│ i64    ┆ str   ┆ f64    ┆ str  ┆   ┆ str    ┆ f64      ┆ str     ┆ str   │
+╞════════╪═══════╪════════╪══════╪═══╪════════╪══════════╪═════════╪═══════╡
+└────────┴───────┴────────┴──────┴───┴────────┴──────────┴─────────┴───────┘
+
+Step 13: Generating report...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV.txt
+  Total lines    : 1
+
+EIBDUNDP complete.
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ 
+
+====================
+
 WHERE
     (CLOSECD IS NULL OR TRIM(CAST(CLOSECD AS VARCHAR)) = '' OR TRIM(CAST(CLOSECD AS VARCHAR)) = ' ')
     AND (ACCTYPE IS NULL OR TRIM(CAST(ACCTYPE AS VARCHAR)) <> 'IS')
