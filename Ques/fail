@@ -1,5 +1,17 @@
-print(card_df.select(["MONITOR", "SOURCE"]).group_by("MONITOR").len().sort("len", descending=True))
-print(card_df.filter(pl.col("SOURCE") == "GCPIFD0209").height)
+Step 4: Processing CARD file...
+100% ▕██████████████████████████████████████▏ (00:00:13.09 elapsed)     
+  CARD raw rows after SQL filer: 4,324,350
+shape: (1, 2)
+┌─────────┬─────────┐
+│ MONITOR ┆ len     │
+│ ---     ┆ ---     │
+│ str     ┆ u32     │
+╞═════════╪═════════╡
+│ null    ┆ 4324350 │
+└─────────┴─────────┘
+0
+  CARD  rows : 0
+  CARD1 rows : 0
 
 =======================
 
