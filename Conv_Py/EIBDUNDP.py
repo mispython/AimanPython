@@ -345,22 +345,27 @@ card_df = con.execute(f"""
         TRIM(CAST(CARDNO   AS VARCHAR)) AS CARDNO,
         TRIM(CAST(MONITOR  AS VARCHAR)) AS MONITOR,
         TRIM(CAST(SOURCE   AS VARCHAR)) AS SOURCE,
-        TRIM(CAST(CLOSECD  AS VARCHAR)) AS CLOSECD,
-        TRIM(CAST(ACCTYPE  AS VARCHAR)) AS ACCTYPE,
-        CAST(CARDHOLD AS DOUBLE)        AS CARDHOLD,
+        COALESCE(TRIM(CAST(CLOSECD AS VARCHAR)), '') AS CLOSECD,
+        COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') AS ACCTYPE,
+        COALESCE(CAST(CARDHOLD AS DOUBLE), 0)        AS CARDHOLD,
         TRIM(CAST(NEWIC    AS VARCHAR)) AS NEWIC,
         TRIM(CAST(OLDIC    AS VARCHAR)) AS OLDIC,
         TRIM(CAST(CUSTNAME AS VARCHAR)) AS CUSTNAME,
         CAST(APPRLIMT AS DOUBLE)        AS APPRLIMT
     FROM read_parquet('{CARD_CACHE}')
-    WHERE (CLOSECD IS NULL OR TRIM(CAST(CLOSECD AS VARCHAR)) = '')
-      AND TRIM(CAST(ACCTYPE AS VARCHAR)) <> 'IS'
-      AND NOT (TRIM(CAST(ACCTYPE AS VARCHAR)) = 'IA'
-               AND CAST(CARDHOLD AS DOUBLE) <> 1)
+    WHERE COALESCE(TRIM(CAST(CLOSECD AS VARCHAR)), '') = ''
+      AND COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') <> 'IS'
+      AND NOT (COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') = 'IA'
+               AND COALESCE(CAST(CARDHOLD AS DOUBLE), 0) <> 1)
 """).pl()
 
 con.close()
 gc.collect()
+
+print(f"  CARD raw rows after SQL filer: {len(card_df):,}")
+
+print(card_df.select(["MONITOR", "SOURCE"]).group_by("MONITOR").len().sort("len", descending=True))
+print(card_df.filter(pl.col("SOURCE") == "GCPIFD0209").height)
 
 # IF NEWIC=' ' THEN NEWIC=OLDIC
 card_df = card_df.with_columns(
@@ -519,7 +524,7 @@ def _curr_balance(cis_tbl: str, d_cache: Path, id_cache: Path) -> pl.DataFrame:
                    CAST(CURBAL  AS DOUBLE) AS CURBAL
             FROM read_parquet('{id_cache}')
         )
-        SELECT c.ACCTNO, c.NEWIC, COALESCE(cur.CURBAL, 0.0) AS CURBAL
+        SELECT c.ACCTNO, c.NEWIC, COALESCE(curr.CURBAL, 0.0) AS CURBAL
         FROM {cis_tbl} c
         LEFT JOIN curr ON c.ACCTNO = curr.ACCTNO
     """).pl()
@@ -900,6 +905,11 @@ output_lines: list[str] = []
 lines_on_page = PAGE_SIZE   # force a header on the very first customer group
 first_page    = True
 all_rows      = list(final_df.iter_rows(named=True))
+
+if not all_rows:
+    for h in _page_header(True):
+        output_lines.append(h)
+    lines_on_page = HEADER_LINES
 
 i = 0
 while i < len(all_rows):
