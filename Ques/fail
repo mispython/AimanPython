@@ -10,9 +10,22 @@ result = con.execute("""
            COALESCE(SUM(C3BAL), 0.0) AS C3BAL
     FROM srsho_all
     GROUP BY HOE, STAFF, PRODUCT, NCORE
-""").arrow()
+""").arrow().to_table()
 
-result = result.to_table()  # FORCE FIX
+
+result = con.execute("""
+    SELECT BRCHCD, STAFF, PRODUCT, NCORE,
+           COALESCE(SUM(C1CNT), 0) AS C1CNT,
+           COALESCE(SUM(C2CNT), 0) AS C2CNT,
+           COALESCE(SUM(C3CNT), 0) AS C3CNT,
+           COALESCE(SUM(C4CNT), 0) AS C4CNT,
+           COALESCE(SUM(C5CNT), 0) AS C5CNT,
+           COALESCE(SUM(C1BAL), 0.0) AS C1BAL,
+           COALESCE(SUM(C2BAL), 0.0) AS C2BAL,
+           COALESCE(SUM(C3BAL), 0.0) AS C3BAL
+    FROM srsbr_all
+    GROUP BY BRCHCD, STAFF, PRODUCT, NCORE
+""").arrow().to_table()
 
 ================
 
