@@ -1,21 +1,106 @@
-card_df = con.execute(f"""
-    SELECT
-        TRIM(CAST(CARDNO   AS VARCHAR)) AS CARDNO,
-        TRIM(CAST(MONITOR  AS VARCHAR)) AS MONITOR,
-        TRIM(CAST(SOURCE   AS VARCHAR)) AS SOURCE,
-        COALESCE(TRIM(CAST(CLOSECD AS VARCHAR)), '') AS CLOSECD,
-        COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') AS ACCTYPE,
-        COALESCE(CAST(CARDHOLD AS DOUBLE), 0)        AS CARDHOLD,
-        TRIM(CAST(NEWIC    AS VARCHAR)) AS NEWIC,
-        TRIM(CAST(OLDIC    AS VARCHAR)) AS OLDIC,
-        TRIM(CAST(CUSTNAME AS VARCHAR)) AS CUSTNAME,
-        CAST(APPRLIMT AS DOUBLE)        AS APPRLIMT
-    FROM read_parquet('{CARD_CACHE}')
-    WHERE COALESCE(TRIM(CAST(CLOSECD AS VARCHAR)), '') = ''
-      AND COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') <> 'IS'
-      AND NOT (COALESCE(TRIM(CAST(ACCTYPE AS VARCHAR)), '') = 'IA'
-               AND COALESCE(CAST(CARDHOLD AS DOUBLE), 0) <> 1)
-""").pl()
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py
+Step 1: Deriving report date...
+  REPTDATE : 2026-06-22  (WK=03)
+  RDTEA    : 29/06/26   RDTEB : 28/06/26
+  REPTYEAR=26  REPTMON=06  REPTDAY=22  NOWK=03
+  Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV.txt
+
+Step 2: Resolving all 16 input file paths...
+[FILE_RESOLVER] Selected latest: ca260628.sas7bdat
+[FILE_RESOLVER] Selected latest: sa260628.sas7bdat
+[FILE_RESOLVER] Selected latest: fd260628.sas7bdat
+[FILE_RESOLVER] Selected latest: ica260628.sas7bdat
+[FILE_RESOLVER] Selected latest: isa260628.sas7bdat
+[FILE_RESOLVER] Selected latest: ifd260628.sas7bdat
+[FILE_RESOLVER] Selected latest: unicard260603.sas7bdat
+[FILE_RESOLVER] Selected latest: cisr1ca06326.sas7bdat
+[FILE_RESOLVER] Selected latest: cisr1sa06326.sas7bdat
+[FILE_RESOLVER] Selected latest: cisr1fd06326.sas7bdat
+  DEPO   CA : ca260628.sas7bdat
+  DEPO   SA : sa260628.sas7bdat
+  DEPO   FD : fd260628.sas7bdat
+  IDEPO  CA : ica260628.sas7bdat
+  IDEPO  SA : isa260628.sas7bdat
+  IDEPO  FD : ifd260628.sas7bdat
+  PDEPO  CA : ca260627.sas7bdat
+  PDEPO  SA : sa260627.sas7bdat
+  PDEPO  FD : fd260627.sas7bdat
+  PIDEPO CA : ica260627.sas7bdat
+  PIDEPO SA : isa260627.sas7bdat
+  PIDEPO FD : ifd260627.sas7bdat
+  CARD      : unicard260603.sas7bdat
+  CIS CA    : cisr1ca06326.sas7bdat
+  CIS SA    : cisr1sa06326.sas7bdat
+  CIS FD    : cisr1fd06326.sas7bdat
+
+Step 3: Caching SAS files to Parquet (if needed)...
+  [DEPO_CA] Cache fresh — skipping conversion.
+  [DEPO_SA] Cache fresh — skipping conversion.
+  [DEPO_FD] Cache fresh — skipping conversion.
+  [IDEPO_CA] Cache fresh — skipping conversion.
+  [IDEPO_SA] Cache fresh — skipping conversion.
+  [IDEPO_FD] Cache fresh — skipping conversion.
+  [PDEPO_CA] Cache fresh — skipping conversion.
+  [PDEPO_SA] Cache fresh — skipping conversion.
+  [PDEPO_FD] Cache fresh — skipping conversion.
+  [PIDEPO_CA] Cache fresh — skipping conversion.
+  [PIDEPO_SA] Cache fresh — skipping conversion.
+  [PIDEPO_FD] Cache fresh — skipping conversion.
+  [CARD] Cache fresh — skipping conversion.
+  [CISCA] Cache fresh — skipping conversion.
+  [CISSA] Cache fresh — skipping conversion.
+  [CISFD] Cache fresh — skipping conversion.
+
+Step 4: Processing CARD file...
+100% ▕██████████████████████████████████████▏ (00:00:20.70 elapsed)     
+  CARD  rows : 0
+  CARD1 rows : 0
+
+Step 5: Building CISCA / CISSA / CISFD via DuckDB joins...
+  CISCA rows : 0
+  CISSA rows : 0
+  CISFD rows : 0
+
+Step 6: Building PSA / PCA / PFD (previous-period balances)...
+  PSA rows : 0
+  PCA rows : 0
+  PFD rows : 0
+
+Step 7: Building SA / CA / FD (current-period balances)...
+  SA rows : 0
+  CA rows : 0
+  FD rows : 0
+
+Step 8: Combining DEPO / PDEPO and calculating withdrawals...
+  DEPO rows : 0
+
+Step 9: Summarising DEPO by NEWIC...
+  DEPO1 rows : 0
+
+Step 10: Splitting into DEPO2 / DEPO3...
+  DEPO2 rows : 0
+  DEPO3 rows : 0
+
+Step 11: Building TOT...
+  TOT rows : 0
+
+Step 12: Building FINAL dataset...
+100% ▕██████████████████████████████████████▏ (00:00:05.69 elapsed)     
+  FINAL rows : 0
+shape: (0, 9)
+┌────────┬───────┬────────┬──────┬───┬────────┬──────────┬─────────┬───────┐
+│ ACCTNO ┆ NEWIC ┆ CURBAL ┆ TYPE ┆ … ┆ CARDNO ┆ APPRLIMT ┆ MONITOR ┆ OLDIC │
+│ ---    ┆ ---   ┆ ---    ┆ ---  ┆   ┆ ---    ┆ ---      ┆ ---     ┆ ---   │
+│ i64    ┆ str   ┆ f64    ┆ str  ┆   ┆ str    ┆ f64      ┆ str     ┆ str   │
+╞════════╪═══════╪════════╪══════╪═══╪════════╪══════════╪═════════╪═══════╡
+└────────┴───────┴────────┴──────┴───┴────────┴──────────┴─────────┴───────┘
+
+Step 13: Generating report...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV.txt
+  Total lines    : 1
+
+EIBDUNDP complete.
 
 ===================
 
