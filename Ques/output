@@ -1,49 +1,26 @@
-RAW HEADER:  HD20260517                                                  
+BRSTAF
 
-PARSED DATE:  2026-05-17
-TDATE:  2026-05-16
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py", line 212, in <module>
-    if os.path.exists(CTCS_MON_PQ, CTCS_MON_CSV):
-TypeError: exists() takes 1 positional argument but 2 were given
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ 
+    42951ONG MING WEI                            S174SRN EXE(CSU)   026SPG            REG 4      
+    42954SIM NUNG CHING                          E001EXECUTIVE      275MSL            SWKREG     
+    42997SYAMSHEIDA BINTI SAMSURI                E001EXECUTIVE      168KLC            REG 4      
+    42998NUR MAHFUZAH BINTI MOHD GHAZALI         C021CTC            743HPC-BSA        REG 5      
+    43002JULIANA BINTI OMAR SHAHIB               C021CTC            105KTI            STHRG1     
+    43004LIM CHEE TENG                           C042C SER REP      232TMD            REG 1      
+    43009SHOW HOCK KEONG                         C021CTC            048MTK            ECREGN     
+    43010TANG CHENG ANN                          E001EXECUTIVE      149BFT            SBHREG     
+    43011SITI ABIDAH BINTI DAUD                  C021CTC            704HPC-TJJ        STHRG1     
+    43012MAEMANAH BINTI MUHAMAD                  C021CTC            178MIN            REG 4      
 
 
+HOSTAF
 
-
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py
-
-========== CHECKING REPORT DATE ==========
-
-RAW HEADER:  HD20260509                                                  
-
-PARSED DATE:  2026-05-09
-TDATE:  2026-05-08
-CTCS accumulator written: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS/CTCS05.parquet
-CTCS accumulator written: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS/CTCS05.csv
-  New rows this run : 56
-  Total rows stored : 56
-  Report date       : 08/05/26
-  File date         : 08/05/26
-
- ========== PREVIEW ========== 
-
-shape: (56, 9)
-┌────────────┬────────────┬────────┬────────┬───┬─────┬─────────┬────────┬────────────┐
-│ TRANDT     ┆ ACCTNO     ┆ NOTENO ┆ CHEQNO ┆ … ┆ IND ┆ PRODIND ┆ TRANCD ┆ REPTDATE   │
-│ ---        ┆ ---        ┆ ---    ┆ ---    ┆   ┆ --- ┆ ---     ┆ ---    ┆ ---        │
-│ date       ┆ i64        ┆ i64    ┆ i64    ┆   ┆ str ┆ str     ┆ str    ┆ date       │
-╞════════════╪════════════╪════════╪════════╪═══╪═════╪═════════╪════════╪════════════╡
-│ 2026-05-04 ┆ 2184773304 ┆ 30010  ┆ 1927   ┆ … ┆ OC  ┆ C       ┆ 24     ┆ 2026-05-08 │
-│ 2026-05-04 ┆ 8662205433 ┆ 90010  ┆ 1928   ┆ … ┆ OC  ┆ C       ┆ 24     ┆ 2026-05-08 │
-│ 2026-05-04 ┆ 8151783819 ┆ 90010  ┆ 49970  ┆ … ┆ OC  ┆ C       ┆ 22     ┆ 2026-05-08 │
-│ 2026-05-04 ┆ 8769194715 ┆ 90010  ┆ 335220 ┆ … ┆ OC  ┆ C       ┆ 21     ┆ 2026-05-08 │
-│ 2026-05-04 ┆ 8147334832 ┆ 90010  ┆ 228173 ┆ … ┆ OC  ┆ C       ┆ 24     ┆ 2026-05-08 │
-│ …          ┆ …          ┆ …      ┆ …      ┆ … ┆ …   ┆ …       ┆ …      ┆ …          │
-│ 2026-05-04 ┆ 8647788521 ┆ 90010  ┆ 187345 ┆ … ┆ LC  ┆ C       ┆ 21     ┆ 2026-05-08 │
-│ 2026-05-04 ┆ 2969033203 ┆ 30011  ┆ 359628 ┆ … ┆ OC  ┆ C       ┆ 21     ┆ 2026-05-08 │
-│ 2026-05-04 ┆ 8633792502 ┆ 90010  ┆ 694387 ┆ … ┆ HC  ┆ C       ┆ 11     ┆ 2026-05-08 │
-│ 2026-05-04 ┆ 8612366617 ┆ 90010  ┆ 694388 ┆ … ┆ HC  ┆ C       ┆ 11     ┆ 2026-05-08 │
-│ 2026-05-04 ┆ 8058683735 ┆ 90010  ┆ 18502  ┆ … ┆ LC  ┆ C       ┆ 24     ┆ 2026-05-08 │
-└────────────┴────────────┴────────┴────────┴───┴─────┴─────────┴────────┴────────────┘
+    70999AHMAD DZAFRIUDDIN BIN NOOR ZAM          S017SRN EXE        000HPSD           HOE        
+    71004MUHAMMAD NAJIB BIN MOHD ZAIDI LEE       A021AM             000IAD-OPNS AUDIT HOE        
+    71011NUR MISHA NABILA BINTI MOHD RAZALI      S085SEC ANALYS     000ITD            HOE        
+    71013MOHAMAD FAREEZ LARINI BIN MOHD AZLEE    S017SRN EXE        000BOD-CCPC       HOE        
+    71026MUHAMMAD FADHIL BIN MOHAMAD RAZALI      S017SRN EXE        000PBCSS-QA       HOE        
+    71033MONG CHONG MENG                         S017SRN EXE        000RB-TFC         HOE        
+    71044UNGKU AQILAH ARD BINTI UNGKU AFFANDY    S017SRN EXE        000BOD-DEP&LOAN SYHOE        
+    71045MOHD FAIZAL HAFIZ BIN MANSUR            M013MSE            000PBCSS-MA/CC    HOE        
+    71046HANNANI BINTI AHSAN SABRI PANG          S017SRN EXE        000BOD-BOC        HOE        
+    71052NGUYEN TIEN DAT                         O001OFFICER        000PBVN-COMPLIANCEHOE        
