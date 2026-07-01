@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program : EIBMSCRN.py
+Program : EIBMSCRN
 Purpose : Staff sales-recognition (SRS) summary for credit card, deposit
           (DP_SRR1/DP_SCRFD) and ELDS staff-attendance records. Matches
           staff to branch (BRSTAF.txt) and head-office (HOSTAF.txt) staff
@@ -70,8 +70,8 @@ CARD_FILES = [FTP_DIR / "ACCT33.txt", FTP_DIR / "ACCT55.txt"]
 # HRBR_FILE = Path("/stgsrcsys/host/ftpfiles") / "BRSTAF.txt"
 # HRHO_FILE = Path("/stgsrcsys/host/ftpfiles") / "HOSTAF.txt"
 # # HRRG_FILE = Path("/stgsrcsys/host/ftpfiles") / "RGSTAF.txt"   # DATA HRRG step commented out in SAS
-HRBR_FILE = Path("/stgsrcsys/host/ftpfiles") / "BRSTAF.txt"
-HRHO_FILE = Path("/stgsrcsys/host/ftpfiles") / "HOSTAF.txt"
+HRBR_FILE = Path("/stgsrcsys/host/ftpfiles") / "BRSTAF.TXT"
+HRHO_FILE = Path("/stgsrcsys/host/ftpfiles") / "HOSTAF.TXT"
 # HRRG_FILE = Path("/stgsrcsys/host/ftpfiles") / "RGSTAF.txt"   # DATA HRRG step commented out in SAS
 
 CHUNK_SIZE = 500_000   # rows per chunk for large fixed-width files
@@ -119,30 +119,30 @@ HRHO_SPEC = [
 
 CARD_SPEC = [
     ("ACCTNO", 0, 11, "int"),
-    ("OPNMM", 13, 15, "int"),
-    ("OPNYR", 15, 17, "int"),
-    ("BRANC", 556, 560, "int"),
-    ("SECO", 560, 572, "str"),
+    ("OPNMM", 11, 13, "int"),
+    ("OPNYR", 13, 15, "int"),
+    ("BRANC", 15, 25, "int"),
+    ("SECO", 25, 60, "str"),
 ]
 
 DEP_SPEC = [
-    ("ACCTNO", 1, 11, "int"),
-    ("PRIMOFF", 49, 54, "int"),
-    ("SECNOFF", 55, 60, "int"),
+    ("ACCTNO", 0, 11, "int"),
+    ("PRIMOFF", 48, 54, "int"),
+    ("SECNOFF", 54, 60, "int"),
     ("XCORE", 60, 61, "str"),
     ("AVGBAL", 61, 75, "dec2"),
     ("YTDBALS", 75, 89, "dec2"),
     ("NUMMTH", 89, 91, "int"),
-    ("BRANCH", 96, 99, "int"),
+    ("BRANCH", 95, 99, "int"),
 ]
 
 ELDS_SPEC = [
     ("AANUM", 0, 13, "str"),
-    ("STAFX1", 16, 21, "str"),
-    ("STAFX2", 25, 30, "str"),
-    ("STAFX3", 34, 39, "str"),
-    ("PRODUCT", 50, 68, "str"),
-    ("YTDBAL", 68, 80, "int"),
+    ("STAFX1", 13, 21, "str"),
+    ("STAFX2", 21, 29, "str"),
+    ("STAFX3", 29, 37, "str"),
+    ("PRODUCT", 37, 55, "str"),
+    ("YTDBAL", 55, 67, "int"),
 ]
 
 
@@ -237,26 +237,76 @@ def load_brh() -> pl.DataFrame:
 #     return read_fixed_whole(HRHO_FILE, HRHO_SPEC)
 
 
-def load_hrbr() -> pl.DataFrame:
-    df = read_fixed_whole(HRBR_FILE, HRBR_SPEC)
+# def load_hrbr() -> pl.DataFrame:
+#     df = read_fixed_whole(HRBR_FILE, HRBR_SPEC)
 
-    # FORCE SCHEMA (critical fix)
-    return df.with_columns(
-        pl.col("STAFF").cast(pl.Int64, strict=False),
-        pl.col("BRANCH").cast(pl.Int64, strict=False),
-        pl.col("BRCHCD").cast(pl.Utf8, strict=False),
-    ).filter(
-        (pl.col("BRANCH") >= 2) & (pl.col("BRANCH") <= 267)
-    )
+#     print("\n===== HRBR DEBUG =====")
+#     print(df.head(20))
+#     print(df.schema)
+
+#     # FORCE SCHEMA (critical fix)
+#     return df.with_columns(
+#         pl.col("STAFF").cast(pl.Int64, strict=False),
+#         pl.col("BRANCH").cast(pl.Int64, strict=False),
+#         pl.col("BRCHCD").cast(pl.Utf8, strict=False),
+#     ).filter(
+#         (pl.col("BRANCH") >= 2) & (pl.col("BRANCH") <= 267)
+#     )
+
+
+def load_hrbr() -> pl.DataFrame:
+    lines = []
+
+    with open(HRBR_FILE, "r", encoding="latin1") as f:
+        for line in f:
+            staff = line[0:5].strip()
+
+            # split remaining by whitespace
+            parts = line[5:].split()
+
+            if len(parts) < 2:
+                continue
+
+            branch = parts[-2]
+            brchcd = parts[-1]
+
+            if staff.isdigit() and branch.isdigit():
+                lines.append((int(staff), int(branch), brchcd))
+
+    return pl.DataFrame(lines, schema=["STAFF", "BRANCH", "BRCHCD"])
+
+
+# def load_hrho() -> pl.DataFrame:
+#     df = read_fixed_whole(HRHO_FILE, HRHO_SPEC)
+
+#     print("\n===== HRHO DEBUG =====")
+#     print(df.head(20))
+#     print(df.schema)
+
+#     return df.with_columns(
+#         pl.col("STAFF").cast(pl.Int64, strict=False),
+#         pl.col("HOE").cast(pl.Utf8, strict=False),
+#     )
 
 
 def load_hrho() -> pl.DataFrame:
-    df = read_fixed_whole(HRHO_FILE, HRHO_SPEC)
+    lines = []
 
-    return df.with_columns(
-        pl.col("STAFF").cast(pl.Int64, strict=False),
-        pl.col("HOE").cast(pl.Utf8, strict=False),
-    )
+    with open(HRHO_FILE, "r", encoding="latin1") as f:
+        for line in f:
+            staff = line[0:5].strip()
+
+            parts = line[5:].split()
+
+            if len(parts) < 1:
+                continue
+
+            hoe = parts[-1]
+
+            if staff.isdigit():
+                lines.append((int(staff), hoe))
+
+    return pl.DataFrame(lines, schema=["STAFF", "HOE"])
 
 
 # DATA HRRG step is commented out in the original SAS source:
