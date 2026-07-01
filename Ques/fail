@@ -1,41 +1,29 @@
-def load_hrbr() -> pl.DataFrame:
-    lines = []
-
-    with open(HRBR_FILE, "r", encoding="latin1") as f:
-        for line in f:
-            staff = line[0:5].strip()
-
-            # split remaining by whitespace
-            parts = line[5:].split()
-
-            if len(parts) < 2:
-                continue
-
-            branch = parts[-2]
-            brchcd = parts[-1]
-
-            if staff.isdigit() and branch.isdigit():
-                lines.append((int(staff), int(branch), brchcd))
-
-    return pl.DataFrame(lines, schema=["STAFF", "BRANCH", "BRCHCD"])
+DEP_SPEC = [
+    ("ACCTNO", 0, 11, "int"),
+    ("PRIMOFF", 48, 54, "int"),
+    ("SECNOFF", 54, 60, "int"),
+    ("XCORE", 60, 61, "str"),
+    ("AVGBAL", 61, 75, "dec2"),
+    ("YTDBALS", 75, 89, "dec2"),
+    ("NUMMTH", 89, 91, "int"),
+    ("BRANCH", 95, 99, "int"),
+]
 
 
+ELDS_SPEC = [
+    ("AANUM", 0, 13, "str"),
+    ("STAFX1", 13, 21, "str"),
+    ("STAFX2", 21, 29, "str"),
+    ("STAFX3", 29, 37, "str"),
+    ("PRODUCT", 37, 55, "str"),
+    ("YTDBAL", 55, 67, "int"),
+]
 
-def load_hrho() -> pl.DataFrame:
-    lines = []
 
-    with open(HRHO_FILE, "r", encoding="latin1") as f:
-        for line in f:
-            staff = line[0:5].strip()
-
-            parts = line[5:].split()
-
-            if len(parts) < 1:
-                continue
-
-            hoe = parts[-1]
-
-            if staff.isdigit():
-                lines.append((int(staff), hoe))
-
-    return pl.DataFrame(lines, schema=["STAFF", "HOE"])
+CARD_SPEC = [
+    ("ACCTNO", 0, 11, "int"),
+    ("OPNMM", 11, 13, "int"),
+    ("OPNYR", 13, 15, "int"),
+    ("BRANC", 15, 25, "int"),
+    ("SECO", 25, 60, "str"),
+]
