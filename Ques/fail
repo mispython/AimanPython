@@ -1,19 +1,41 @@
-===== HRBR DEBUG =====
-shape: (0, 3)
-┌───────┬────────┬────────┐
-│ STAFF ┆ BRANCH ┆ BRCHCD │
-│ ---   ┆ ---    ┆ ---    │
-│ null  ┆ null   ┆ null   │
-╞═══════╪════════╪════════╡
-└───────┴────────┴────────┘
-Schema([('STAFF', Null), ('BRANCH', Null), ('BRCHCD', Null)])
+def load_hrbr() -> pl.DataFrame:
+    lines = []
 
-===== HRHO DEBUG =====
-shape: (0, 2)
-┌───────┬──────┐
-│ STAFF ┆ HOE  │
-│ ---   ┆ ---  │
-│ null  ┆ null │
-╞═══════╪══════╡
-└───────┴──────┘
-Schema([('STAFF', Null), ('HOE', Null)])
+    with open(HRBR_FILE, "r", encoding="latin1") as f:
+        for line in f:
+            staff = line[0:5].strip()
+
+            # split remaining by whitespace
+            parts = line[5:].split()
+
+            if len(parts) < 2:
+                continue
+
+            branch = parts[-2]
+            brchcd = parts[-1]
+
+            if staff.isdigit() and branch.isdigit():
+                lines.append((int(staff), int(branch), brchcd))
+
+    return pl.DataFrame(lines, schema=["STAFF", "BRANCH", "BRCHCD"])
+
+
+
+def load_hrho() -> pl.DataFrame:
+    lines = []
+
+    with open(HRHO_FILE, "r", encoding="latin1") as f:
+        for line in f:
+            staff = line[0:5].strip()
+
+            parts = line[5:].split()
+
+            if len(parts) < 1:
+                continue
+
+            hoe = parts[-1]
+
+            if staff.isdigit():
+                lines.append((int(staff), hoe))
+
+    return pl.DataFrame(lines, schema=["STAFF", "HOE"])
