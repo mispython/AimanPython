@@ -1,5 +1,5 @@
 """
-Program : EIBDEPDP
+Program : EIBDEPDP.py
 Purpose : Daily accumulation of BNM EPCU data (loan disbursement,
           loan payment, credit card payment) into monthly datasets.
 
