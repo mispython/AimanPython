@@ -30,7 +30,7 @@ from typing import Optional
 import polars as pl
 
 from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
+# from input_date import get_latest_file
 # from output_date import build_output_file
 # NOTE: build_output_file() is not used here. Its supported date formats
 # (ddmmyy / ddmmYYYY) do not match this program's output naming
@@ -48,13 +48,14 @@ from input_date import get_latest_file
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDEPDP")
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # Daily raw fixed-width input files (replacing DD: DPLD / DPLP / DPCC)
-INPUT_DIR = BASE_DIR / "input"
+# INPUT_DIR = BASE_DIR / "input"
+INPUT_DIR = BASE_DIR / "/stgsrcsys/host/uat"
 
 # Monthly accumulated output datasets (replacing libraries BNMLD / BNMLP / BNMCC)
-OUTPUT_DIR = BASE_DIR / "output"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDEPDP"
 BNMLD_DIR = OUTPUT_DIR / "BNMLD"
 BNMLP_DIR = OUTPUT_DIR / "BNMLP"
 BNMCC_DIR = OUTPUT_DIR / "BNMCC"
@@ -110,7 +111,7 @@ def _parse_numeric(raw: str, decimals: int = 0) -> Optional[float]:
     if decimals:
         return sign * (int(text) / (10 ** decimals))
 
-    return sign * float(int(text))
+    return sign * int(int(text))
 
 
 def _parse_mmddyy6(raw: str) -> Optional[date]:
@@ -236,9 +237,9 @@ def main() -> None:
     # ------------------------------------------------------------
     # Resolve latest daily input files (replacing DD: DPLD / DPLP / DPCC)
     # ------------------------------------------------------------
-    dpld_path = get_latest_file(INPUT_DIR, prefix="DPLD")
-    dplp_path = get_latest_file(INPUT_DIR, prefix="DPLP")
-    dpcc_path = get_latest_file(INPUT_DIR, prefix="DPCC")
+    dpld_path = INPUT_DIR / "DPLD.txt"
+    dplp_path = INPUT_DIR / "DPLP.txt"
+    dpcc_path = INPUT_DIR / "DPCC.txt"
 
     # ------------------------------------------------------------
     # DATA DPLD; INFILE DPLD MISSOVER; INPUT ...; REPTDATE=&RDATE; RUN;
