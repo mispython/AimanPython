@@ -1,45 +1,8 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py
-[EIBMSCRN] Report date : 30/06/2026
-[EIBMSCRN] RMM=06  RYY=26  RYEAR=2026  RMON=JUN2026
-/usr/lib64/python3.9/functools.py:888: DataOrientationWarning: Row orientation inferred during DataFrame construction. Explicitly specify the orientation by passing `orient="row"` to silence this warning.
-  return dispatch(args[0].__class__)(*args, **kw)
-[EIBMSCRN] BRH=376  HRBR=0  HRHO=4129
-[EIBMSCRN] UCARD filtered rows = 0
-[EIBMSCRN] UCBR=0  UCHO=0  UCEXC1=0
-[EIBMSCRN] DPC1=0  DPC2=112527
-[EIBMSCRN] ELDS processed rows = 272409
-[EIBMSCRN] SRSBR(all)=0  SRSHO(all)=3  SRSEXC=384933
-[EIBMSCRN] Wrote SCRD.SRSBR -> /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMSCRN/SRSBR_300626.parquet
-[EIBMSCRN] Wrote SCRD.SRSHO -> /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMSCRN/SRSHO_300626.parquet
-[EIBMSCRN] Wrote report -> /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMSCRN/EIBMSCRN_300626.txt
-
------ EXCEPTION REPORT (ELDS/DEPO unmatched staff) -----
-shape: (384_933, 4)
-┌──────┬───────┬────────────────────┬────────┐
-│ TAG  ┆ STAFF ┆ PRODUCT            ┆ YTDBAL │
-│ ---  ┆ ---   ┆ ---                ┆ ---    │
-│ str  ┆ i64   ┆ str                ┆ f64    │
-╞══════╪═══════╪════════════════════╪════════╡
-│ ELDS ┆ 25981 ┆ Retail Hire        ┆ null   │
-│ ELDS ┆ 50296 ┆ Retail Hire        ┆ null   │
-│ ELDS ┆ 23655 ┆ Retail Hire        ┆ null   │
-│ ELDS ┆ 41607 ┆ Retail Hire        ┆ null   │
-│ ELDS ┆ 26349 ┆ Retail Hire        ┆ null   │
-│ …    ┆ …     ┆ …                  ┆ …      │
-│ DEPO ┆ 35582 ┆ FIXED DEPOSITS     ┆ null   │
-│ DEPO ┆ 33756 ┆ FIXED DEPOSITS     ┆ null   │
-│ DEPO ┆ 33756 ┆ FIXED DEPOSITS     ┆ null   │
-│ DEPO ┆ 43010 ┆ FIXED DEPOSITS     ┆ null   │
-│ DEPO ┆ 35700 ┆ FIXED DEPOSITS     ┆ null   │
-└──────┴───────┴────────────────────┴────────┘
-
------ FINAL SRSP SUMMARY -----
-shape: (2, 14)
-┌────────────────────┬───────────────┬───────────────┬───────┬───┬───────────────┬───────────────┬───────────────┬───────────────┐
-│ PRODUCT            ┆ S1CNT         ┆ C1CNT         ┆ C1BAL ┆ … ┆ S4CNT         ┆ C4CNT         ┆ S5CNT         ┆ C5CNT         │
-│ ---                ┆ ---           ┆ ---           ┆ ---   ┆   ┆ ---           ┆ ---           ┆ ---           ┆ ---           │
-│ str                ┆ decimal[38,0] ┆ decimal[38,0] ┆ f64   ┆   ┆ decimal[38,0] ┆ decimal[38,0] ┆ decimal[38,0] ┆ decimal[38,0] │
-╞════════════════════╪═══════════════╪═══════════════╪═══════╪═══╪═══════════════╪═══════════════╪═══════════════╪═══════════════╡
-│ Retail Hire        ┆ 1             ┆ 2             ┆ 0.0   ┆ … ┆ 0             ┆ 0             ┆ 0             ┆ 0             │
-│ FIXED DEPOSITS     ┆ 0             ┆ 0             ┆ 0.0   ┆ … ┆ 0             ┆ 0             ┆ 0             ┆ 0             │
-└────────────────────┴───────────────┴───────────────┴───────┴───┴───────────────┴───────────────┴───────────────┴───────────────┘
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 1016, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 1002, in main
+    write_srsp_section(srsp, report)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 928, in write_srsp_section
+    f"{row['PRODUCT']:<20}{row['S1CNT']:>6}{row['C1CNT']:>8}{row['C1BAL']:>15.2f}"
+TypeError: unsupported format string passed to NoneType.__format__
