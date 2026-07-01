@@ -117,32 +117,35 @@ HRHO_SPEC = [
 #     ("REGN", 71, 86, "str"),
 # ]
 
+# FIX 1 — CARD_SPEC: correct SAS @col positions (1-based -> 0-based)
 CARD_SPEC = [
-    ("ACCTNO", 0, 11, "int"),
-    ("OPNMM", 11, 13, "int"),
-    ("OPNYR", 13, 15, "int"),
-    ("BRANC", 15, 25, "int"),
-    ("SECO", 25, 60, "str"),
+    ("ACCTNO", 0,   11,  "int"),   # @001  11.
+    ("OPNMM",  13,  15,  "int"),   # @014   2.
+    ("OPNYR",  15,  17,  "int"),   # @016   2.
+    ("BRANC",  556, 560, "int"),   # @557   4.
+    ("SECO",   560, 572, "str"),   # @561  $12.
 ]
 
+# FIX 2 — DEP_SPEC: correct SAS @col positions (1-based -> 0-based)
 DEP_SPEC = [
-    ("ACCTNO", 0, 11, "int"),
-    ("PRIMOFF", 48, 54, "int"),
-    ("SECNOFF", 54, 60, "int"),
-    ("XCORE", 60, 61, "str"),
-    ("AVGBAL", 61, 75, "dec2"),
-    ("YTDBALS", 75, 89, "dec2"),
-    ("NUMMTH", 89, 91, "int"),
-    ("BRANCH", 95, 99, "int"),
+    ("ACCTNO",  1,   11,  "int"),   # @002  10.
+    ("PRIMOFF", 49,  54,  "int"),   # @050   5.
+    ("SECNOFF", 55,  60,  "int"),   # @056   5.
+    ("XCORE",   60,  61,  "str"),   # @061  $1.
+    ("AVGBAL",  61,  75,  "dec2"),  # @062  14.2
+    ("YTDBALS", 75,  89,  "dec2"),  # @076  14.2
+    ("NUMMTH",  89,  91,  "int"),   # @090   2.
+    ("BRANCH",  96,  99,  "int"),   # @097   3.
 ]
 
+# FIX 3 — ELDS_SPEC: correct SAS @col positions (1-based -> 0-based)
 ELDS_SPEC = [
-    ("AANUM", 0, 13, "str"),
-    ("STAFX1", 13, 21, "str"),
-    ("STAFX2", 21, 29, "str"),
-    ("STAFX3", 29, 37, "str"),
-    ("PRODUCT", 37, 55, "str"),
-    ("YTDBAL", 55, 67, "int"),
+    ("AANUM",   0,  13, "str"),    # @001  $13.
+    ("STAFX1",  16, 21, "str"),    # @017   $5.
+    ("STAFX2",  25, 30, "str"),    # @026   $5.
+    ("STAFX3",  34, 39, "str"),    # @035   $5.
+    ("PRODUCT", 50, 68, "str"),    # @051  $18.
+    ("YTDBAL",  68, 80, "int"),    # @069  12.
 ]
 
 
@@ -164,23 +167,8 @@ def _parse_line(line: str, specs: List[Tuple[str, int, int, str]]) -> dict:
     return row
 
 
-# def parse_fixed_chunk(lines: List[str], specs) -> pl.DataFrame:
-#     """Parse a batch of fixed-width lines into a Polars DataFrame."""
-#     rows = [_parse_line(line, specs) for line in lines]
-#     if not rows:
-#         cols = {name: [] for name, *_ in specs}
-#         return pl.DataFrame(cols)
-#     return pl.DataFrame(rows)
-
-
+# FIX 7 — parse_fixed_chunk: build column-oriented to suppress DataOrientationWarning
 def parse_fixed_chunk(lines: List[str], specs) -> pl.DataFrame:
-    rows = [_parse_line(line, specs) for line in lines]
-
-    if not rows:
-        cols = {name: [] for name, *_ in specs}
-        return pl.DataFrame(cols)
-
-    # FIX: enforce schema explicitly (NO inference)
     schema = {
         name: pl.Utf8 if kind == "str"
         else pl.Float64 if kind == "dec2"
@@ -188,7 +176,17 @@ def parse_fixed_chunk(lines: List[str], specs) -> pl.DataFrame:
         for name, _, _, kind in specs
     }
 
-    return pl.DataFrame(rows, schema=schema)
+    if not lines:
+        return pl.DataFrame(schema=schema)
+
+    # Build column-oriented dict to avoid row-orientation inference warning
+    col_data: dict = {name: [] for name, *_ in specs}
+    for line in lines:
+        row = _parse_line(line, specs)
+        for name, *_ in specs:
+            col_data[name].append(row[name])
+
+    return pl.DataFrame(col_data, schema=schema)
 
 
 def iter_fixed_chunks(paths: List[Path], specs, chunk_size: int = CHUNK_SIZE):
@@ -224,89 +222,25 @@ def load_brh() -> pl.DataFrame:
     return read_fixed_whole(LKP_BRANCH_FILE, BRH_SPEC)
 
 
-# def load_hrbr() -> pl.DataFrame:
-#     """DATA HRBR; INPUT STAFF, BRANCH, BRCHCD; IF (002<=BRANCH<=267);"""
-#     df = read_fixed_whole(HRBR_FILE, HRBR_SPEC)
-#     if df.height == 0:
-#         return df
-#     return df.filter((pl.col("BRANCH") >= 2) & (pl.col("BRANCH") <= 267))
-
-
-# def load_hrho() -> pl.DataFrame:
-#     """DATA HRHO; INPUT STAFF, HOE $15.;"""
-#     return read_fixed_whole(HRHO_FILE, HRHO_SPEC)
-
-
-# def load_hrbr() -> pl.DataFrame:
-#     df = read_fixed_whole(HRBR_FILE, HRBR_SPEC)
-
-#     print("\n===== HRBR DEBUG =====")
-#     print(df.head(20))
-#     print(df.schema)
-
-#     # FORCE SCHEMA (critical fix)
-#     return df.with_columns(
-#         pl.col("STAFF").cast(pl.Int64, strict=False),
-#         pl.col("BRANCH").cast(pl.Int64, strict=False),
-#         pl.col("BRCHCD").cast(pl.Utf8, strict=False),
-#     ).filter(
-#         (pl.col("BRANCH") >= 2) & (pl.col("BRANCH") <= 267)
-#     )
-
-
+# FIX 4 — load_hrbr: use spec-based reader at correct byte positions [4:9], [68:71], [71:74]
+# Also re-adds the missing IF (002<=BRANCH<=267) filter from the SAS source.
 def load_hrbr() -> pl.DataFrame:
-    lines = []
-
-    with open(HRBR_FILE, "r", encoding="latin1") as f:
-        for line in f:
-            staff = line[0:5].strip()
-
-            # split remaining by whitespace
-            parts = line[5:].split()
-
-            if len(parts) < 2:
-                continue
-
-            branch = parts[-2]
-            brchcd = parts[-1]
-
-            if staff.isdigit() and branch.isdigit():
-                lines.append((int(staff), int(branch), brchcd))
-
-    return pl.DataFrame(lines, schema=["STAFF", "BRANCH", "BRCHCD"])
+    """DATA HRBR; INPUT @005 STAFF 5. @069 BRANCH 3. @072 BRCHCD $3.;
+    IF (002<=BRANCH<=267);"""
+    df = read_fixed_whole(HRBR_FILE, HRBR_SPEC)
+    if df.height == 0:
+        return df
+    return df.filter(
+        pl.col("BRANCH").is_not_null()
+        & (pl.col("BRANCH") >= 2)
+        & (pl.col("BRANCH") <= 267)
+    )
 
 
-# def load_hrho() -> pl.DataFrame:
-#     df = read_fixed_whole(HRHO_FILE, HRHO_SPEC)
-
-#     print("\n===== HRHO DEBUG =====")
-#     print(df.head(20))
-#     print(df.schema)
-
-#     return df.with_columns(
-#         pl.col("STAFF").cast(pl.Int64, strict=False),
-#         pl.col("HOE").cast(pl.Utf8, strict=False),
-#     )
-
-
+# FIX 5 — load_hrho: use spec-based reader at correct byte positions [4:9], [71:86]
 def load_hrho() -> pl.DataFrame:
-    lines = []
-
-    with open(HRHO_FILE, "r", encoding="latin1") as f:
-        for line in f:
-            staff = line[0:5].strip()
-
-            parts = line[5:].split()
-
-            if len(parts) < 1:
-                continue
-
-            hoe = parts[-1]
-
-            if staff.isdigit():
-                lines.append((int(staff), hoe))
-
-    return pl.DataFrame(lines, schema=["STAFF", "HOE"])
+    """DATA HRHO; INPUT @005 STAFF 5. @072 HOE $15.;"""
+    return read_fixed_whole(HRHO_FILE, HRHO_SPEC)
 
 
 # DATA HRRG step is commented out in the original SAS source:
@@ -523,21 +457,22 @@ def transform_dep_chunk(chunk: pl.DataFrame, brh: pl.DataFrame) -> pl.DataFrame:
     return chunk.join(brh_keys, on="BRANCH", how="left")
 
 
+# FIX 6 — split_dep_into_dpc1_dpc2: XCORE blank comparison
+# _parse_line strips all str fields, so SAS XCORE=' ' (space) becomes '' after strip.
+# Filter must use "" (empty string) not " " (space).
 def split_dep_into_dpc1_dpc2(dep_chunk: pl.DataFrame) -> Tuple[pl.DataFrame, pl.DataFrame]:
     """
-    DATA DPC1;
-       SET DEP; STAFF=PRIMOFF; IF STAFF IN (0,.) THEN DELETE;
-       IF XCORE=' '; NCORE='X'; CATG='CAT.1'; C1CNT=1; C1BAL=YTDBAL;
-    DATA DPC2;
-       SET DEP; STAFF=SECNOFF; IF STAFF IN (0,.) THEN STAFF=PRIMOFF;
-       IF STAFF IN (0,.) THEN DELETE; IF XCORE IN ('C','N'); ...
+    DATA DPC1; SET DEP; STAFF=PRIMOFF; IF STAFF IN (0,.) THEN DELETE;
+       IF XCORE=' ';   <- SAS blank; after strip in Python this is ''
+    DATA DPC2; SET DEP; ... IF XCORE IN ('C','N'); ...
     """
     if dep_chunk.height == 0:
         return dep_chunk, dep_chunk
 
     dpc1 = dep_chunk.with_columns(pl.col("PRIMOFF").alias("STAFF"))
     dpc1 = dpc1.filter(pl.col("STAFF").is_not_null() & (pl.col("STAFF") != 0))
-    dpc1 = dpc1.filter(pl.col("XCORE") == " ")
+    # SAS: IF XCORE=' ' -> blank field; _parse_line strips space to empty string
+    dpc1 = dpc1.filter(pl.col("XCORE") == "")
     dpc1 = dpc1.with_columns(
         [
             pl.lit("X").alias("NCORE"),
