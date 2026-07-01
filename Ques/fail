@@ -1,3 +1,28 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py
+[EIBMSCRN] Report date : 30/06/2026
+[EIBMSCRN] RMM=06  RYY=26  RYEAR=2026  RMON=JUN2026
+[EIBMSCRN] BRH=376  HRBR=0  HRHO=0
+[EIBMSCRN] UCARD filtered rows = 0
+[EIBMSCRN] UCBR=0  UCHO=0  UCEXC1=0
+[EIBMSCRN] DPC1=0  DPC2=112527
+[EIBMSCRN] ELDS processed rows = 272408
+[EIBMSCRN] SRSBR(all)=0  SRSHO(all)=0  SRSEXC=384935
+[EIBMSCRN] Wrote SCRD.SRSBR -> /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMSCRN/SRSBR_300626.parquet
+[EIBMSCRN] Wrote SCRD.SRSHO -> /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMSCRN/SRSHO_300626.parquet
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 1031, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 1011, in main
+    srss = derive_srss(srsho_sum, srsbr_sum)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 876, in derive_srss
+    srss = pl.from_arrow(srss_sum)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/convert/general.py", line 572, in from_arrow
+    pa_table = pa.Table.from_batches(
+  File "pyarrow/table.pxi", line 4050, in pyarrow.lib.Table.from_batches
+ValueError: Must pass schema, or at least one RecordBatch
+
+=========
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 1031, in <module>
     main()
