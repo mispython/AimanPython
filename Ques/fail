@@ -6,3 +6,55 @@ Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRN_AII.py", line 928, in write_srsp_section
     f"{row['PRODUCT']:<20}{row['S1CNT']:>6}{row['C1CNT']:>8}{row['C1BAL']:>15.2f}"
 TypeError: unsupported format string passed to NoneType.__format__
+
+
+
+def write_srsp_section(srsp: pl.DataFrame, report: ReportWriter):
+    report.title("FINAL SRSP SUMMARY")
+    report.blank()
+    first = True
+    for row in srsp.iter_rows(named=True):
+        prod = row['PRODUCT'] or ''
+        line = (
+            f"{prod};{row['S1CNT']};{row['C1CNT']};{row['C1BAL']};"
+            f"{row['S2CNT']};{row['C2CNT']};{row['C2BAL']};"
+            f"{row['S3CNT']};{row['C3CNT']};{row['C3BAL']};"
+            f"{row['S4CNT']};{row['C4CNT']};{row['S5CNT']};{row['C5CNT']}"
+        )
+        report.detail(line, first=first)
+        first = False
+
+    report.blank()
+    report.header(f"{'PRODUCT':<20}{'S1CNT':>6}{'C1CNT':>8}{'C1BAL':>15}"
+                   f"{'S2CNT':>6}{'C2CNT':>8}{'C2BAL':>15}"
+                   f"{'S3CNT':>6}{'C3CNT':>8}{'C3BAL':>15}"
+                   f"{'S4CNT':>6}{'C4CNT':>8}{'S5CNT':>6}{'C5CNT':>8}")
+    for row in srsp.iter_rows(named=True):
+        prod = row['PRODUCT'] or ''
+        line = (
+            f"{prod:<20}{row['S1CNT']:>6}{row['C1CNT']:>8}{row['C1BAL']:>15.2f}"
+            f"{row['S2CNT']:>6}{row['C2CNT']:>8}{row['C2BAL']:>15.2f}"
+            f"{row['S3CNT']:>6}{row['C3CNT']:>8}{row['C3BAL']:>15.2f}"
+            f"{row['S4CNT']:>6}{row['C4CNT']:>8}{row['S5CNT']:>6}{row['C5CNT']:>8}"
+        )
+        report.detail(line)
+
+
+def summarize_srsp(srss: pl.DataFrame) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    con.register("srss", srss.to_arrow())
+    result = con.execute(
+        """
+        SELECT PRODUCT,
+               COALESCE(SUM(S1CNT), 0) AS S1CNT, COALESCE(SUM(C1CNT), 0) AS C1CNT, COALESCE(SUM(C1BAL), 0.0) AS C1BAL,
+               COALESCE(SUM(S2CNT), 0) AS S2CNT, COALESCE(SUM(C2CNT), 0) AS C2CNT, COALESCE(SUM(C2BAL), 0.0) AS C2BAL,
+               COALESCE(SUM(S3CNT), 0) AS S3CNT, COALESCE(SUM(C3CNT), 0) AS C3CNT, COALESCE(SUM(C3BAL), 0.0) AS C3BAL,
+               COALESCE(SUM(S4CNT), 0) AS S4CNT, COALESCE(SUM(C4CNT), 0) AS C4CNT,
+               COALESCE(SUM(S5CNT), 0) AS S5CNT, COALESCE(SUM(C5CNT), 0) AS C5CNT
+        FROM srss
+        WHERE PRODUCT IS NOT NULL
+        GROUP BY PRODUCT
+        """
+    ).fetch_arrow_table()
+    con.close()
+    return pl.from_arrow(result)
