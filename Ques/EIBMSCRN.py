@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program : EIBMSCRN
+Program : EIBMSCRN.py
 Purpose : Staff sales-recognition (SRS) summary for credit card, deposit
           (DP_SRR1/DP_SCRFD) and ELDS staff-attendance records. Matches
           staff to branch (BRSTAF.txt) and head-office (HOSTAF.txt) staff
@@ -46,7 +46,7 @@ from output_date import build_output_file
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 FTP_DIR  = Path("/stgsrcsys/host/uat")
 
-# INPUT_DIR = BASE_DIR / "input" / "EIBMSCRN"
+INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBMSCRN"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMSCRN"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -70,8 +70,8 @@ CARD_FILES = [FTP_DIR / "ACCT33.txt", FTP_DIR / "ACCT55.txt"]
 # HRBR_FILE = Path("/stgsrcsys/host/ftpfiles") / "BRSTAF.txt"
 # HRHO_FILE = Path("/stgsrcsys/host/ftpfiles") / "HOSTAF.txt"
 # # HRRG_FILE = Path("/stgsrcsys/host/ftpfiles") / "RGSTAF.txt"   # DATA HRRG step commented out in SAS
-HRBR_FILE = Path("/stgsrcsys/host/ftpfiles") / "BRSTAF.TXT"
-HRHO_FILE = Path("/stgsrcsys/host/ftpfiles") / "HOSTAF.TXT"
+HRBR_FILE = INPUT_DIR / "BRSTAF.TXT"
+HRHO_FILE = INPUT_DIR / "HOSTAF.TXT"
 # HRRG_FILE = Path("/stgsrcsys/host/ftpfiles") / "RGSTAF.txt"   # DATA HRRG step commented out in SAS
 
 CHUNK_SIZE = 500_000   # rows per chunk for large fixed-width files
@@ -889,6 +889,7 @@ def summarize_srsp(srss: pl.DataFrame) -> pl.DataFrame:
                COALESCE(SUM(S4CNT), 0) AS S4CNT, COALESCE(SUM(C4CNT), 0) AS C4CNT,
                COALESCE(SUM(S5CNT), 0) AS S5CNT, COALESCE(SUM(C5CNT), 0) AS C5CNT
         FROM srss
+        WHERE PRODUCT IS NOT NULL
         GROUP BY PRODUCT
         """
     ).fetch_arrow_table()
@@ -909,8 +910,9 @@ def write_srsp_section(srsp: pl.DataFrame, report: ReportWriter):
     report.blank()
     first = True
     for row in srsp.iter_rows(named=True):
+        prod = row['PRODUCT'] or ''
         line = (
-            f"{row['PRODUCT']};{row['S1CNT']};{row['C1CNT']};{row['C1BAL']};"
+            f"{prod};{row['S1CNT']};{row['C1CNT']};{row['C1BAL']};"
             f"{row['S2CNT']};{row['C2CNT']};{row['C2BAL']};"
             f"{row['S3CNT']};{row['C3CNT']};{row['C3BAL']};"
             f"{row['S4CNT']};{row['C4CNT']};{row['S5CNT']};{row['C5CNT']}"
@@ -924,8 +926,9 @@ def write_srsp_section(srsp: pl.DataFrame, report: ReportWriter):
                    f"{'S3CNT':>6}{'C3CNT':>8}{'C3BAL':>15}"
                    f"{'S4CNT':>6}{'C4CNT':>8}{'S5CNT':>6}{'C5CNT':>8}")
     for row in srsp.iter_rows(named=True):
+        prod = row['PRODUCT'] or ''
         line = (
-            f"{row['PRODUCT']:<20}{row['S1CNT']:>6}{row['C1CNT']:>8}{row['C1BAL']:>15.2f}"
+            f"{prod:<20}{row['S1CNT']:>6}{row['C1CNT']:>8}{row['C1BAL']:>15.2f}"
             f"{row['S2CNT']:>6}{row['C2CNT']:>8}{row['C2BAL']:>15.2f}"
             f"{row['S3CNT']:>6}{row['C3CNT']:>8}{row['C3BAL']:>15.2f}"
             f"{row['S4CNT']:>6}{row['C4CNT']:>8}{row['S5CNT']:>6}{row['C5CNT']:>8}"
