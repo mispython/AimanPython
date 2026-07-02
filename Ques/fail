@@ -1,155 +1,82 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py
-[FILE_RESOLVER] Selected latest: ln06226.sas7bdat
-[FILE_RESOLVER] Selected latest: iln06226.sas7bdat
-Report Date : 2026-06-30  (REPTMON=06, NOWK=4)
-  [LNNOTE] Converting enrh_ln_note.sas7bdat -> enrh_ln_note.parquet ...
-  [LNNOTE] WARNING: Cannot cast 'OLD_FI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_MACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_SUBACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'AKPK_RA_DIG_STATUS_CD' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_FI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_MACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_SUBACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'AKPK_RA_DIG_STATUS_CD' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_FI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_MACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_SUBACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'AKPK_RA_DIG_STATUS_CD' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MULTI_CURRENCY_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_FI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_MACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_SUBACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_FI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_MACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'OLD_SUBACC_NO' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'REPAY_MODE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'FRAUD_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'REPAY_MODE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'WOS_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'REPAY_MODE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'WOS_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'WOS_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'WOS_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'REPAY_MODE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'WOS_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RSRVREBI' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'REPAY_MODE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_EREQUEST_NUM' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RR_TYPE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'WOS_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'VEHI_MAKE_CATEGORY' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] WARNING: Cannot cast 'GOODWILL_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [LNNOTE] Done - 7,998,661 rows cached.
-  [LNCOMM] Converting enrh_ln_comm.sas7bdat -> enrh_ln_comm.parquet ...
-  [LNCOMM] Done - 1,058,431 rows cached.
-  [PBB LOAN] Converting ln06226.sas7bdat -> pbb_ln06226.parquet ...
-  [PBB LOAN] WARNING: Cannot cast 'FORATE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'REFINANC' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'COM_FEE_NOTICE_IND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'REPAY_MODE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'MULTI_CURRENCY_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'REFINANC' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'REPAY_MODE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'WOS_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'REFINANC' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'REPAY_MODE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'WOS_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'MANUAL_RR_TAG' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] WARNING: Cannot cast 'RRSTG1' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [PBB LOAN] Done - 2,002,244 rows cached.
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py", line 403, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py", line 384, in main
-    process_bank(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py", line 287, in process_bank
-    con.execute(f"CREATE TEMP TABLE lnote AS {lnote_sql}")
-_duckdb.BinderException: Binder Error: Column "SECTORCD" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+lnote_sql = f"""
+        WITH lnnote_ranked AS (
+            SELECT
+                CAST(ACCTNO AS BIGINT)  AS ACCTNO,
+                CAST(NOTENO AS BIGINT)  AS NOTENO,
+                BANKNO, STATE, NAME, NTBRCH,
+                CAST(COMMNO AS BIGINT)  AS COMMNO,
+                LIABCODE,
+                ROW_NUMBER() OVER (
+                    PARTITION BY CAST(ACCTNO AS BIGINT), CAST(NOTENO AS BIGINT)
+                    ORDER BY CAST(ACCTNO AS BIGINT)
+                ) AS RN
+            FROM read_parquet('{lnnote_cache}')
+            WHERE ACCTNO IS NOT NULL AND NOTENO IS NOT NULL
+              AND {entity_filter}
+        ),
+        lnnote_bank AS (
+            SELECT ACCTNO, NOTENO, BANKNO, STATE, NAME, NTBRCH, COMMNO, LIABCODE
+            FROM lnnote_ranked
+            WHERE RN = 1
+        ),
+        loan_bank AS (
+            SELECT
+                CAST(ACCTNO AS BIGINT)  AS ACCTNO,
+                CAST(NOTENO AS BIGINT)  AS NOTENO,
+                CAST(COMMNO AS BIGINT)  AS COMMNO,
+                CAST(BRANCH AS BIGINT)  AS BRANCH,
+                BALANCE,
+                CAST(SECTORCD AS VARCHAR) AS SECTORCD,
+                CAST(CUSTCD   AS VARCHAR) AS CUSTCD,
+                INTRATE, APPRLIMT, FISSPURP, LIABCODE
+            FROM read_parquet('{loan_cache}')
+            WHERE NOTENO IS NOT NULL AND NOTENO <> 0
+        )
+        SELECT
+            n.BANKNO,
+            l.BRANCH,
+            l.ACCTNO,
+            l.NOTENO,
+            n.NAME,
+            l.BALANCE,
+            l.SECTORCD,
+            l.CUSTCD,
+            l.INTRATE,
+            n.NTBRCH,
+            COALESCE(n.COMMNO, l.COMMNO)     AS COMMNO,
+            COALESCE(n.LIABCODE, l.LIABCODE) AS LIABCODE,
+            l.APPRLIMT,
+            l.FISSPURP,
+            n.STATE
+        FROM loan_bank l
+        LEFT JOIN lnnote_bank n
+          ON l.ACCTNO = n.ACCTNO AND l.NOTENO = n.NOTENO
+    """
+
+
+
+note1_sql = f"""
+        WITH lncomm_ranked AS (
+            SELECT
+                CAST(ACCTNO AS BIGINT) AS ACCTNO,
+                CAST(COMMNO AS BIGINT) AS COMMNO,
+                CCOLLTRL,
+                ROW_NUMBER() OVER (
+                    PARTITION BY CAST(ACCTNO AS BIGINT), CAST(COMMNO AS BIGINT)
+                    ORDER BY CAST(ACCTNO AS BIGINT)
+                ) AS RN
+            FROM read_parquet('{lncomm_cache}')
+        ),
+        lncomm AS (
+            SELECT ACCTNO, COMMNO, CCOLLTRL
+            FROM lncomm_ranked
+            WHERE RN = 1
+        )
+        SELECT
+            o.BANKNO, o.BRANCH, o.ACCTNO, o.NOTENO, o.NAME, o.APPRLIMT,
+            o.BALANCE, o.SECTORCD, o.CUSTCD, o.STATE, o.INTRATE, o.NTBRCH,
+            o.COMMNO, o.LIABCODE, c.CCOLLTRL, o.FISSPURP
+        FROM lnote o
+        LEFT JOIN lncomm c
+          ON o.ACCTNO = c.ACCTNO AND o.COMMNO = c.COMMNO
+    """
