@@ -158,8 +158,8 @@ def _parse_ddmmyy8(raw: str) -> Optional[date]:
 # DPLD.DPLD&REPTMON / &PREPTMON / &PPREPTMON  ->  dpld<mm>.sas7bdat
 # ============================================================================
 def _load_dpld(mon: str) -> pl.DataFrame:
-    # path = INPUT_DIR / f"dpld{mon}.sas7bdat"
-    path = INPUT_DIR / f"dpld06.sas7bdat"
+    path = INPUT_DIR / f"dpld{mon}.sas7bdat"
+    # path = INPUT_DIR / f"dpld07.sas7bdat"
     pdf = pd.read_sas(path, encoding="latin1")
     return pl.from_pandas(pdf)
 
@@ -172,7 +172,7 @@ dpld = pl.concat(
 dpld = dpld.with_columns(
     pl.col("ACCTNO").cast(pl.Int64),
     pl.col("TRANDT").cast(pl.Date),
-    pl.col("TRANAMT").cast(pl.Float64),
+    pl.col("TRANAMT").cast(pl.Float64).round(2),
 )
 
 # ============================================================================
@@ -286,7 +286,7 @@ lnld      = _load_lnld_fixed_width(lnld_path)
 lnld = lnld.with_columns(
     pl.col("ACCTNO").cast(pl.Int64),
     pl.col("TRANDT").cast(pl.Date),
-    pl.col("TRANAMT").cast(pl.Float64),
+    pl.col("TRANAMT").cast(pl.Float64).round(2),
 )
 
 # ============================================================================
