@@ -1,3 +1,21 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py
+[FILE_RESOLVER] Selected latest: ln06226.sas7bdat
+[FILE_RESOLVER] Selected latest: iln06226.sas7bdat
+Report Date : 2026-07-01  (REPTMON=07, NOWK=1)
+  [LNNOTE] Cache fresh - skipping conversion.
+  [LNCOMM] Cache fresh - skipping conversion.
+  [PBB LOAN] Cache fresh - skipping conversion.
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py", line 419, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py", line 400, in main
+    process_bank(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py", line 295, in process_bank
+    con.execute(f"CREATE TEMP TABLE lnote AS {lnote_sql}")
+_duckdb.BinderException: Binder Error: Column "SECTORCD" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+
+=============
+
 lnote_sql = f"""
         WITH lnnote_ranked AS (
             SELECT
