@@ -1,3 +1,59 @@
+import textwrap
+
+def _box_row(cells, widths, aligns):
+    parts = []
+    for text, w, a in zip(cells, widths, aligns):
+        if a == "L":
+            parts.append(f"{text:<{w}}")
+        elif a == "R":
+            parts.append(f"{text:>{w}}")
+        else:
+            parts.append(text.center(w))
+    return "|" + "|".join(parts) + "|"
+
+
+def _render_report1_box(titles, label, n_val, sum_val):
+    LW, NW, VW = 31, 16, 16
+    lines = list(titles) + [""]
+    lines.append("-" * (LW + NW + VW + 4))
+    lines.append(_box_row(["", "NUMBER OF", "VALUE OF CHEQUES"], [LW, NW, VW], ["L", "C", "C"]))
+    lines.append(_box_row(["", "CHEQUES", "(RM'000)"], [LW, NW, VW], ["L", "C", "C"]))
+    lines.append("|" + "-" * LW + "+" + "-" * NW + "+" + "-" * VW + "|")
+    lines.append(_box_row([label, f"{n_val:,.0f}", f"{sum_val:,.0f}"], [LW, NW, VW], ["L", "R", "R"]))
+    lines.append("-" * (LW + NW + VW + 4))
+    return lines
+
+
+def _render_report23_box(titles, rows):
+    NOW, PW, UW, VW = 15, 15, 16, 12
+    total_w = NOW + PW + UW + VW + 5
+    lines = list(titles) + [""]
+    lines.append("-" * total_w)
+    lines.append(_box_row(["", "CHEQUES ISSUED"], [NOW + PW + 1, UW + VW + 1], ["L", "C"]))
+    lines.append("|" + " " * (NOW + PW + 1) + "|" + "-" * (UW + VW + 1) + "|")
+    lines.append(_box_row(["", "", "VALUE"], [NOW + PW + 1, UW, VW], ["L", "L", "C"]))
+    lines.append(_box_row(["", "UNIT", "(RM'000)"], [NOW + PW + 1, UW, VW], ["L", "C", "C"]))
+    lines.append("|" + "-" * (NOW + PW + 1) + "+" + "-" * UW + "+" + "-" * VW + "|")
+    lines.append(_box_row(["NO", "PURPOSE", "", ""], [NOW, PW, UW, VW], ["L", "L", "L", "L"]))
+    lines.append("|" + "-" * NOW + "+" + "-" * PW + "|" + " " * UW + "|" + " " * VW + "|")
+    for r in rows:
+        wrapped = textwrap.wrap(str(r["TRNXDESC"]), PW) or [""]
+        for i, text in enumerate(wrapped):
+            no_cell = str(r["COUNT"]) if i == 0 else ""
+            if i == len(wrapped) - 1:
+                unit_cell, val_cell = f"{r['UNIT']:,.0f}", f"{r['VALUE']:,.2f}"
+            else:
+                unit_cell, val_cell = "", ""
+            lines.append(_box_row([no_cell, text, unit_cell, val_cell], [NOW, PW, UW, VW], ["L", "L", "R", "R"]))
+    lines.append("-" * total_w)
+    return lines
+
+
+def _apply_asa(lines):
+    return [("1" if i == 0 else " ") + line for i, line in enumerate(lines)]
+
+==================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py", line 301, in <module>
