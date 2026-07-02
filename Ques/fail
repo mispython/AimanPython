@@ -1,5 +1,17 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py", line 114, in <module>
-    def _parse_int(raw: str) -> int | None:
-TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py", line 268, in <module>
+    lnld      = _load_lnld_fixed_width(lnld_path)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py", line 245, in _load_lnld_fixed_width
+    chunks.append(pl.DataFrame(records))
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 391, in __init__
+    self._df = sequence_to_pydf(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 466, in sequence_to_pydf
+    return _sequence_to_pydf_dispatcher(
+  File "/usr/lib64/python3.9/functools.py", line 888, in wrapper
+    return dispatch(args[0].__class__)(*args, **kw)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 722, in _sequence_of_dict_to_pydf
+    pydf = PyDataFrame.from_dicts(
+polars.exceptions.ComputeError: could not append value: "LF" of type: str to the builder; make sure that all rows have the same schema or consider increasing `infer_schema_length`
+
+it might also be that a value overflows the data-type's capacity
