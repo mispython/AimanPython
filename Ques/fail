@@ -1,3 +1,92 @@
+lnote_sql = f"""
+        WITH lnnote_ranked AS (
+            SELECT
+                CAST(ACCTNO AS BIGINT)  AS ACCTNO,
+                CAST(NOTENO AS BIGINT)  AS NOTENO,
+                BANKNO, STATE, NAME, NTBRCH,
+                CAST(COMMNO AS BIGINT)  AS COMMNO,
+                LIABCODE AS N_LIABCODE,
+                ROW_NUMBER() OVER (
+                    PARTITION BY CAST(ACCTNO AS BIGINT), CAST(NOTENO AS BIGINT)
+                    ORDER BY CAST(ACCTNO AS BIGINT)
+                ) AS RN
+            FROM read_parquet('{lnnote_cache}')
+            WHERE ACCTNO IS NOT NULL AND NOTENO IS NOT NULL
+              AND {entity_filter}
+        ),
+        lnnote_bank AS (
+            SELECT ACCTNO, NOTENO, BANKNO, STATE, NAME, NTBRCH, COMMNO AS N_COMMNO, N_LIABCODE
+            FROM lnnote_ranked
+            WHERE RN = 1
+        ),
+        loan_bank AS (
+            SELECT
+                CAST(ACCTNO  AS BIGINT)  AS ACCTNO,
+                CAST(NOTENO  AS BIGINT)  AS NOTENO,
+                CAST(COMMNO  AS BIGINT)  AS L_COMMNO,
+                CAST(BRANCH  AS BIGINT)  AS BRANCH,
+                BALANCE,
+                CAST(SECTORCD AS VARCHAR) AS SECTORCD_RAW,
+                CAST(CUSTCD   AS VARCHAR) AS CUSTCD_RAW,
+                INTRATE, APPRLIMT, FISSPURP,
+                LIABCODE AS L_LIABCODE
+            FROM read_parquet('{loan_cache}')
+            WHERE NOTENO IS NOT NULL AND NOTENO <> 0
+        )
+        SELECT
+            n.BANKNO,
+            l.BRANCH,
+            l.ACCTNO,
+            l.NOTENO,
+            n.NAME,
+            l.BALANCE,
+            l.SECTORCD_RAW                    AS SECTORCD,
+            l.CUSTCD_RAW                       AS CUSTCD,
+            l.INTRATE,
+            n.NTBRCH,
+            COALESCE(n.N_COMMNO, l.L_COMMNO)   AS COMMNO,
+            COALESCE(n.N_LIABCODE, l.L_LIABCODE) AS LIABCODE,
+            l.APPRLIMT,
+            l.FISSPURP,
+            n.STATE
+        FROM loan_bank l
+        LEFT JOIN lnnote_bank n
+          ON l.ACCTNO = n.ACCTNO AND l.NOTENO = n.NOTENO
+    """
+    con.execute(f"CREATE TEMP TABLE lnote AS {lnote_sql}")
+
+    note1_sql = f"""
+        WITH lncomm_ranked AS (
+            SELECT
+                CAST(ACCTNO AS BIGINT) AS ACCTNO,
+                CAST(COMMNO AS BIGINT) AS COMMNO,
+                CCOLLTRL,
+                ROW_NUMBER() OVER (
+                    PARTITION BY CAST(ACCTNO AS BIGINT), CAST(COMMNO AS BIGINT)
+                    ORDER BY CAST(ACCTNO AS BIGINT)
+                ) AS RN
+            FROM read_parquet('{lncomm_cache}')
+        ),
+        lncomm AS (
+            SELECT ACCTNO, COMMNO, CCOLLTRL
+            FROM lncomm_ranked
+            WHERE RN = 1
+        )
+        SELECT
+            o.BANKNO, o.BRANCH, o.ACCTNO, o.NOTENO, o.NAME, o.APPRLIMT,
+            o.BALANCE, o.SECTORCD, o.CUSTCD, o.STATE, o.INTRATE, o.NTBRCH,
+            o.COMMNO, o.LIABCODE, c.CCOLLTRL, o.FISSPURP
+        FROM lnote o
+        LEFT JOIN lncomm c
+          ON o.ACCTNO = c.ACCTNO AND o.COMMNO = c.COMMNO
+    """
+    note1_df = con.execute(note1_sql).pl()
+    con.execute("DROP TABLE lnote")
+    con.close()
+    gc.collect()
+
+============
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py
 [FILE_RESOLVER] Selected latest: ln06226.sas7bdat
 [FILE_RESOLVER] Selected latest: iln06226.sas7bdat
