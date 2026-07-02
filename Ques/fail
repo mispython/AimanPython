@@ -18,6 +18,28 @@ Candidate bindings: "SECTOR", "SECURE", "SCORE2CT", "LSTTRNCD", "CORPCODE"
 LINE 29:                 CAST(SECTORCD AS VARCHAR) AS SECTORCD_RAW,
                               ^
 
+================
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py
+[FILE_RESOLVER] Selected latest: ln06226.sas7bdat
+[FILE_RESOLVER] Selected latest: iln06226.sas7bdat
+Report Date : 2026-07-01  (REPTMON=07, NOWK=1)
+  [LNNOTE] Cache fresh - skipping conversion.
+  [LNCOMM] Cache fresh - skipping conversion.
+  [PBB LOAN] Cache fresh - skipping conversion.
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py", line 420, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py", line 401, in main
+    process_bank(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBXLNLC_2.py", line 296, in process_bank
+    con.execute(f"CREATE TEMP TABLE lnote AS {lnote_sql}")
+_duckdb.BinderException: Binder Error: Referenced column "SECTORCD" not found in FROM clause!
+Candidate bindings: "SECTOR", "SECURE", "SCORE2CT", "LSTTRNCD", "CORPCODE"
+
+LINE 29:                 CAST(SECTORCD AS VARCHAR) AS SECTORCD_RAW,
+                              ^
+
 =================
 
 lnote_sql = f"""
