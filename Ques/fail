@@ -1,5 +1,5 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py", line 361
-    _col_hdr_1 = [f"{'':<20}{'NUMBER OF CHEQUES':>20}{\"VALUE OF CHEQUES (RM'000)\":>28}"]
-                                                                                         ^
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py", line 397
+    _col_hdr_2 = [f"{'NO':<4}{'PURPOSE':<50}{'UNIT':>16}{\"VALUE (RM'000)\":>18}"]
+                                                                                 ^
 SyntaxError: f-string expression part cannot include a backslash
