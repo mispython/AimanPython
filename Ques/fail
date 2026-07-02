@@ -1,5 +1,13 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py
 Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py", line 301, in <module>
+    def _trnxdesc(trancode: int | None, feeplan: str | None) -> str:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+
+===================
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py
+Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py", line 284, in <module>
     tranx_bnm = lnld.join(dpld, on=["ACCTNO", "TRANDT", "TRANAMT"], how="inner")
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
