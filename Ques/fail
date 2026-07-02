@@ -1,3 +1,11 @@
+report_lines: list[str] = []
+report_lines += _apply_asa(_render_report1_box(_titles_1, "CHEQUES ISSUED", _total_n, _total_sum))
+report_lines.append(" ")
+report_lines += _apply_asa(_render_report23_box(_titles_2, _tbl2.to_dicts()))
+report_lines.append(" ")
+report_lines += _apply_asa(_render_report23_box(_titles_3, _tbl3.to_dicts()))
+
+
 import textwrap
 
 def _box_row(cells, widths, aligns):
