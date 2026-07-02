@@ -1,3 +1,31 @@
+_LNLD_SCHEMA = {
+    "ACCTNO": pl.Int64,
+    "NOTENO": pl.Int64,
+    "COSTCTR": pl.Int64,
+    "NOTETYPE": pl.Int64,
+    "TRANDT": pl.Date,
+    "TRANCODE": pl.Int64,
+    "SEQNO": pl.Int64,
+    "FEEPLAN": pl.Utf8,
+    "FEENO": pl.Int64,
+    "TRANAMT": pl.Float64,
+    "SOURCE": pl.Int64,
+}
+
+
+if len(records) >= CHUNK_SIZE:
+    chunks.append(pl.DataFrame(records, schema=_LNLD_SCHEMA))
+    records = []
+
+
+if records:
+    chunks.append(pl.DataFrame(records, schema=_LNLD_SCHEMA))
+
+if not chunks:
+    return pl.DataFrame(schema=_LNLD_SCHEMA)
+
+=================
+
 def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
     records: list[dict] = []
     chunks: list[pl.DataFrame] = []
