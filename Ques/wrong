@@ -1,76 +1,19 @@
-File: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBXLNLC/PBB/LNLC_NOTE1_06.parquet
-Rows: 2,002,244
-Columns: 16
-
-First 10 row(s):
-BANKNO BRANCH     ACCTNO  NOTENO NAME          APPRLIMT            BALANCE SECTORCD CUSTCD STATE           INTRATE NTBRCH  COMMNO LIABCODE CCOLLTRL FISSPURP
-  None   None 8153531532 90010.0 None              None               None     None   None  None              None   None     NaN     None     None     None
-  None   None 8157280520 90010.0 None              None               None     None   None  None              None   None     NaN     None     None     None
-  None   10.0 3127443809     NaN None          500000.0 23522.617897032997     9700     78  None              4.72   None     NaN     None     None     0110
-  None   10.0 3236131836     NaN None         1000000.0  86518.61797935399     9700     78  None              4.72   None     NaN     None     None     0110
-  None   10.0 3237956710     NaN None         1000000.0    68144.516283661     9700     78  None              4.72   None     NaN     None     None     0110
-  None   10.0 2024756216    10.0 None           22000.0 1889.0103055999998     0311     77  None 8.219999999999999   None     0.0       50     None     0311
-  None   10.0 8126409003    10.0 None           25000.0                0.0     0311     77  None              6.47   None     0.0       50     None     0311
-  None   10.0 2000947827    12.0 None 40596.78999999999  43372.52203579999     0312     77  None 7.069999999999999   None     0.0       50     None     0312
-  None   10.0 2000951716 30010.0 None           39755.0 11980.050799599998     0312     77  None 7.069999999999999   None   100.0       50       50     0312
-  None   10.0 2024055515    10.0 None           38000.0                0.0     0312     77  None 9.969999999999999   None     0.0       50     None     0312
-
-
-
-
-File: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBXLNLC/PBB/LNLC_NOTE2_06.parquet
-Rows: 14,225
-Columns: 16
-
-First 10 row(s):
-BANKNO BRANCH     ACCTNO  NOTENO NAME  APPRLIMT            BALANCE SECTORCD CUSTCD STATE           INTRATE NTBRCH  COMMNO LIABCODE CCOLLTRL FISSPURP
-  None   10.0 3093637218     NaN None  550000.0 1407.0531644059997     5001     42  None              5.97   None     NaN     None     None     0470
-  None   10.0 2055102624    11.0 None  500000.0 57097.362020199995     5001     44  None              7.47   None     0.0       32     None     0470
-  None   10.0 2072341524 30010.0 None 1125600.0     636121.8309802     5001     44  None              4.27   None   100.0       35       35     0324
-  None   10.0 2091648412    10.0 None  625000.0     251265.7440548     5001     44  None              7.47   None     0.0       34     None     0322
-  None   10.0 2094255522    11.0 None 1700000.0 1040788.1239355999     5001     44  None              4.27   None     0.0       35     None     0470
-  None   10.0 2097657018 30010.0 None  449100.0 156408.90136299995     5001     44  None              4.27   None   100.0       35       35     0324
-  None   10.0 2104320312    10.0 None 1275000.0  613531.7160292999     5001     44  None              4.27   None     0.0       35     None     0470
-  None   10.0 2105806205    10.0 None  650000.0 297916.48523099994     5001     44  None              5.47   None     0.0       34     None     0470
-  None   10.0 3139962000     NaN None  400000.0 47891.218461487995     5001     44  None 8.219999999999999   None     NaN     None     None     0322
-  None   10.0 3183114226     NaN None   30000.0 27540.437624129998     5001     44  None              7.47   None     NaN     None     None     0322
-
-
-
-
-File: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBXLNLC/PIBB/LNLCI_NOTE1_06.parquet
-Rows: 675,865
-Columns: 16
-
-First 10 row(s):
-BANKNO BRANCH     ACCTNO  NOTENO                     NAME          APPRLIMT            BALANCE SECTORCD CUSTCD STATE            INTRATE NTBRCH  COMMNO LIABCODE CCOLLTRL FISSPURP
-  33.0   10.0 2955780212    12.0    ISMAHAIRANI BT ISMAIL           58833.0      40049.3764694     9700     77    02  4.869999999999999   10.0     0.0       22     None     0312
-  33.0   10.0 2955780212    14.0    ISMAHAIRANI BT ISMAIL           58833.0      40049.3764694     9700     77    02  4.869999999999999   10.0     0.0       22     None     0312
-  33.0   10.0 2955780212    13.0    ISMAHAIRANI BT ISMAIL           58833.0      40049.3764694     9700     77    02  4.869999999999999   10.0     0.0       50     None     0312
-  33.0   10.0 2955780212    10.0    ISMAHAIRANI BT ISMAIL           58833.0      40049.3764694     9700     77     2  4.869999999999999   10.0     0.0       22     None     0312
-  33.0   10.0 2955780212    11.0    ISMAHAIRANI BT ISMAIL           58833.0      40049.3764694     9700     77    02  4.869999999999999   10.0     0.0       22     None     0312
-  33.0   10.0 2955780212    15.0    ISMAHAIRANI BT ISMAIL           58833.0      40049.3764694     9700     77    02  4.869999999999999   10.0     0.0       22     None     0312
-  33.0   10.0 2956978412 30010.0   ROSNAH BINTI ABU BAKAR         107032.79           25177.75     0410     77     2  7.449999999999999   10.0   100.0       50       50     0312
-  33.0   10.0 2958387801    10.0 KHAIRUL HAZIMIN BIN ABDU 71895.51999999999 12322.979999999998     9700     77     2 7.3999999999999995   10.0     0.0       50     None     0312
-  33.0   10.0 2958391533    10.0        ZAMRI BIN MARZUKI           42750.0 28151.823644499997     9700     77     2               5.02   10.0     0.0       50     None     0312
-  33.0   10.0 2958391921    11.0  FATIMAH BINTI OTHMAN/MD           30000.0 16470.701656799996     9700     77    02               5.17   10.0     0.0       50     None     0312
-
-
-
-
-File: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBXLNLC/PIBB/LNLCI_NOTE2_06.parquet
-Rows: 4,605
-Columns: 16
-
-First 10 row(s):
-BANKNO BRANCH     ACCTNO  NOTENO                    NAME  APPRLIMT            BALANCE SECTORCD CUSTCD STATE           INTRATE NTBRCH  COMMNO LIABCODE CCOLLTRL FISSPURP
-  33.0   10.0 2972689220    10.0  PRIMA KIARAMAS SDN BHD  388800.0 314567.18719399994     5001     41    02              7.72   10.0     0.0       34     None     0322
-  33.0   10.0 2972435611 30010.0     TJ BUILDERS SDN BHD  344038.0 275635.87689029996     5001     44    02              4.27   10.0   100.0       50       50     0316
-  33.0   10.0 2974750831 30010.0         OYC ENGINEERING  565833.0 311691.78260499996     5001     44    02              4.27   10.0   100.0       51       51     0324
-  33.0   10.0 2969329706 30010.0        LTW CONSTRUCTION  260000.0 175900.03881819997     5001     46    02              4.27   10.0   100.0       35       35     0324
-  33.0   10.0 2972433524    11.0 T.J. CIVIL & STRUCTURAL  236972.0 176837.31172929995     5001     46    02              4.27   10.0     0.0       38     None     0440
-  33.0   10.0 2972433524 30010.0 T.J. CIVIL & STRUCTURAL  219374.0 169112.18566899997     5001     46    02              4.27   10.0   100.0       50       50     0316
-  33.0   10.0 2972433524 30010.0 T.J. CIVIL & STRUCTURAL  236972.0 176837.31172929995     5001     46    02              4.27   10.0   100.0       50       50     0440
-  33.0   10.0 2972433524    11.0 T.J. CIVIL & STRUCTURAL  219374.0 169112.18566899997     5001     46    02              4.27   10.0     0.0       38     None     0316
-  33.0   10.0 2973893827    10.0 T.J. CIVIL & STRUCTURAL 1160000.0     825805.7880203     5001     46    02 4.369999999999999   10.0     0.0       35     None     0324
-  33.0   10.0 2973896327    10.0 T.J. CIVIL & STRUCTURAL 1056000.0  860583.0907374999     5001     46    02              4.47   10.0   100.0       35       35     0324
+1REPORT ID : EIBQEPC1
+ PUBLIC BANK BERHAD
+ CHEQUES ISSUED BY THE BANK AS AT 30/06/26
+ 
+                        NUMBER OF CHEQUES   VALUE OF CHEQUES (RM'000)
+ CHEQUES ISSUED                         0                           0
+ 
+1REPORT ID : EIBQEPC1
+ PUBLIC BANK BERHAD
+ TOP FIVE(5) PAYMENTS BY NUMBER OF CHEQUES AS AT 30/06/26
+ 
+ NO  PURPOSE                                                       UNIT    VALUE (RM'000)
+ 
+ 
+1REPORT ID : EIBQEPC1
+ PUBLIC BANK BERHAD
+ TOP FIVE(5) PAYMENTS BY VALUE OF CHEQUES AS AT 30/06/26
+ 
+ NO  PURPOSE                                                       UNIT    VALUE (RM'000)
