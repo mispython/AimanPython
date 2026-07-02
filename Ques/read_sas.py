@@ -1,3 +1,15 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/5_read_sas.py
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/5_read_sas.py", line 23, in <module>
+    result = con.execute(query).df()
+_duckdb.CatalogException: Catalog Error: Table Function with name read_sas does not exist!
+Did you mean "read_csv"?
+
+LINE 3: FROM read_sas('/stgsrcsys/host/uat/dpld06.sas7bdat')
+             ^
+
+===============
+
 import duckdb
 
 # =========================
