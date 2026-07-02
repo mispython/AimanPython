@@ -1,3 +1,102 @@
+def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
+    records: list[dict] = []
+    chunks: list[pl.DataFrame] = []
+    total_read = 0
+
+    with open(path, "r", encoding="latin1", errors="replace") as fh:
+        for line in fh:
+            raw = line.rstrip("\r\n")
+            if not raw.strip():
+                continue
+
+            # MISSOVER behavior
+            raw = raw.ljust(120)
+
+            parts = raw.split()
+
+            if len(parts) < 7:
+                continue
+
+            acctno = _parse_int(parts[0])
+            noteno = _parse_int(parts[1])
+            costctr = _parse_int(parts[2])
+            notetype = _parse_int(parts[3])
+            trandt = _parse_ddmmyy8(parts[4])
+
+            trancode = _parse_int(parts[5])
+            seqno = _parse_int(parts[6])
+
+            remaining = parts[7:]
+
+            feeplan = None
+            feeno = None
+            tranamt = None
+            source = None
+
+            # SAS logic: TRANCODE=760 has extra fields
+            if trancode == 760:
+                feeplan = remaining[0] if len(remaining) > 0 else None
+                feeno = _parse_int(remaining[1]) if len(remaining) > 1 else None
+                tranamt = _parse_implied_decimal(remaining[2], decimals=2) if len(remaining) > 2 else None
+                source = _parse_int(remaining[3]) if len(remaining) > 3 else None
+            else:
+                tranamt = _parse_implied_decimal(remaining[0], decimals=2) if len(remaining) > 0 else None
+                source = _parse_int(remaining[1]) if len(remaining) > 1 else None
+
+            # SAS filter condition
+            cond_range = costctr is None or costctr < 3000 or costctr > 3999
+            cond_excl = costctr not in (4043, 4048)
+
+            if not (cond_range and cond_excl):
+                continue
+
+            records.append({
+                "ACCTNO": acctno,
+                "NOTENO": noteno,
+                "COSTCTR": costctr,
+                "NOTETYPE": notetype,
+                "TRANDT": trandt,
+                "TRANCODE": trancode,
+                "SEQNO": seqno,
+                "FEEPLAN": feeplan,
+                "FEENO": feeno,
+                "TRANAMT": tranamt,
+                "SOURCE": source,
+            })
+
+            total_read += 1
+
+            if len(records) >= CHUNK_SIZE:
+                chunks.append(pl.DataFrame(records))
+                records = []
+
+            if ROW_LIMIT is not None and total_read >= ROW_LIMIT:
+                break
+
+    if records:
+        chunks.append(pl.DataFrame(records))
+
+    if not chunks:
+        return pl.DataFrame(
+            schema={
+                "ACCTNO": pl.Int64,
+                "NOTENO": pl.Int64,
+                "COSTCTR": pl.Int64,
+                "NOTETYPE": pl.Int64,
+                "TRANDT": pl.Date,
+                "TRANCODE": pl.Int64,
+                "SEQNO": pl.Int64,
+                "FEEPLAN": pl.Utf8,
+                "FEENO": pl.Int64,
+                "TRANAMT": pl.Float64,
+                "SOURCE": pl.Int64,
+            }
+        )
+
+    return pl.concat(chunks, how="diagonal_relaxed")
+
+====================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBQEPC1.py", line 268, in <module>
