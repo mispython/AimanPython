@@ -1,3 +1,9 @@
+dpld = dpld.with_columns(
+    (pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64))).alias("TRANDT")
+)
+
+================
+
 === /stgsrcsys/host/uat/dpld06.sas7bdat ===
   Columns and dtypes:
     ACCTNO               float64
