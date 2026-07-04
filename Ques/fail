@@ -1,1 +1,129 @@
-02000000901 00016 0000811 015 28/08/15        310 001                148800.00 500
+#!/usr/bin/env python3
+"""
+Diagnostic script: checks data availability between LNLD (.txt) and DPLD
+(.sas7bdat/.parquet) before running the full EIBQEPC1 join.
+Run this standalone - it does not modify or depend on EIBQEPC1.py.
+"""
+
+import re
+from collections import Counter
+from datetime import date
+from pathlib import Path
+
+import duckdb
+
+# ============================================================================
+# CONFIG - adjust these paths to match your environment
+# ============================================================================
+LNLD_PATH = Path("/stgsrcsys/host/uat/BNKCHEQ_RPT_QRTR.txt")
+DPLD_PATHS = [
+    Path("/stgsrcsys/host/uat/dpld06.sas7bdat"),
+    Path("/stgsrcsys/host/uat/dpld05.sas7bdat"),
+    Path("/stgsrcsys/host/uat/dpld04.sas7bdat"),
+]
+
+CHUNK_LINES = 1_000_000  # read this many lines at a time
+
+
+def _parse_ddmmyy8(raw: str):
+    s = raw.strip()
+    digits = re.sub(r"\D", "", s)
+    if len(digits) != 6:
+        return None
+    dd, mm, yy = int(digits[0:2]), int(digits[2:4]), int(digits[4:6])
+    year = 1900 + yy if yy >= 30 else 2000 + yy
+    try:
+        return date(year, mm, dd)
+    except ValueError:
+        return None
+
+
+def scan_lnld(path: Path) -> None:
+    print(f"\n=== Scanning LNLD file: {path} ===")
+    if not path.exists():
+        print("  FILE NOT FOUND.")
+        return
+
+    total_rows = 0
+    trancode_counts = Counter()
+    min_date, max_date = None, None
+    sample_acctnos = set()
+
+    with open(path, "r", encoding="latin1", errors="replace") as fh:
+        lines_in_chunk = 0
+        for line in fh:
+            raw = line.rstrip("\r\n")
+            if not raw.strip():
+                continue
+            raw = raw.ljust(90)
+
+            trandt = _parse_ddmmyy8(raw[30:38])
+            trancode = raw[46:49].strip()
+            acctno = raw[0:11].strip()
+
+            total_rows += 1
+            trancode_counts[trancode] += 1
+            if trandt is not None:
+                if min_date is None or trandt < min_date:
+                    min_date = trandt
+                if max_date is None or trandt > max_date:
+                    max_date = trandt
+            if len(sample_acctnos) < 20:
+                sample_acctnos.add(acctno)
+
+            lines_in_chunk += 1
+            if lines_in_chunk >= CHUNK_LINES:
+                print(f"  ...processed {total_rows:,} rows so far", flush=True)
+                lines_in_chunk = 0
+
+    print(f"  Total rows read      : {total_rows:,}")
+    print(f"  TRANDT range         : {min_date} to {max_date}")
+    print(f"  TRANCODE distribution: {dict(trancode_counts.most_common())}")
+    print(f"  Sample ACCTNOs       : {sorted(sample_acctnos)[:10]}")
+
+
+def scan_dpld(path: Path) -> None:
+    print(f"\n=== Scanning DPLD file: {path} ===")
+    if not path.exists():
+        print("  FILE NOT FOUND.")
+        return
+
+    con = duckdb.connect()
+    try:
+        # sas7bdat is not natively readable by DuckDB; convert via pandas first
+        # only if a .parquet counterpart doesn't already exist.
+        parquet_path = path.with_suffix(".parquet")
+        if not parquet_path.exists():
+            import pandas as pd
+            df = pd.read_sas(path, encoding="latin1")
+            df.to_parquet(parquet_path)
+
+        result = con.execute(
+            f"""
+            SELECT COUNT(*) AS row_count,
+                   MIN(TRANDT) AS min_date,
+                   MAX(TRANDT) AS max_date,
+                   COUNT(DISTINCT ACCTNO) AS distinct_accts
+            FROM '{parquet_path}'
+            """
+        ).fetchone()
+        print(f"  Row count       : {result[0]:,}")
+        print(f"  TRANDT range    : {result[1]} to {result[2]}")
+        print(f"  Distinct ACCTNOs: {result[3]:,}")
+
+        sample = con.execute(f"SELECT ACCTNO FROM '{parquet_path}' LIMIT 10").fetchall()
+        print(f"  Sample ACCTNOs  : {[r[0] for r in sample]}")
+    finally:
+        con.close()
+
+
+if __name__ == "__main__":
+    scan_lnld(LNLD_PATH)
+    for p in DPLD_PATHS:
+        scan_dpld(p)
+
+    print("\n=== Diagnosis ===")
+    print("Compare the TRANDT ranges and ACCTNO samples above between LNLD")
+    print("and each DPLD file. If the date ranges don't overlap, or the")
+    print("ACCTNOs never intersect, the join in EIBQEPC1.py will legitimately")
+    print("return zero rows - this is a data availability issue, not a bug.")
