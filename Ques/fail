@@ -1,3 +1,28 @@
+import re
+
+file_path = input("Enter full file path: ").strip()
+
+date_pattern = re.compile(r"\b\d{2}/\d{2}/26\b")
+
+found = 0
+max_rows = 100
+
+with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+    for line_num, line in enumerate(f, start=1):
+
+        col_47_49 = line[46:49]
+
+        if date_pattern.search(line) and col_47_49 == "310":
+            print(f"Line {line_num}: {line.rstrip()}")
+            found += 1
+
+            if found >= max_rows:
+                break
+
+print(f"\nMatches displayed: {found}")
+
+===================
+
 dpld = dpld.with_columns(
     (pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64))).alias("TRANDT")
 )
