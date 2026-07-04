@@ -159,7 +159,7 @@ def _parse_ddmmyy8(raw: str) -> Optional[date]:
 # ============================================================================
 def _load_dpld(mon: str) -> pl.DataFrame:
     path = INPUT_DIR / f"dpld{mon}.sas7bdat"
-    # path = INPUT_DIR / f"dpld07.sas7bdat"
+    # path = INPUT_DIR / f"dpld06.sas7bdat"
     pdf = pd.read_sas(path, encoding="latin1")
     return pl.from_pandas(pdf)
 
@@ -170,6 +170,7 @@ dpld = pl.concat(
 )
 
 dpld = dpld.with_columns(
+    pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64)).alias("TRANDT"),
     pl.col("ACCTNO").cast(pl.Int64),
     pl.col("TRANDT").cast(pl.Date),
     pl.col("TRANAMT").cast(pl.Float64).round(2),
