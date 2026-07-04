@@ -1,3 +1,20 @@
+# Debug
+print("DPLD rows :", dpld.height)
+print("LNLD rows :", lnld.height)
+
+print(dpld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head())
+print(lnld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head())
+
+tranx_bnm = lnld.join(
+    dpld,
+    on=["ACCTNO", "TRANDT", "TRANAMT"],
+    how="inner"
+)
+
+print("TRANX rows :", tranx_bnm.height)
+
+===========================
+
 import re
 
 file_path = input("Enter full file path: ").strip()
