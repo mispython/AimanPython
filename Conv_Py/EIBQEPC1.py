@@ -27,8 +27,10 @@ Notes
 # ============================================================================
 import os
 import re
+import textwrap
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import polars as pl
@@ -40,13 +42,10 @@ from output_date import build_output_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-INPUT_DIR = Path(os.environ.get("INPUT_DIR", "input"))
-OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "output"))
+BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS") 
+INPUT_DIR   = Path("/stgsrcsys/host/uat")
+OUTPUT_DIR  = BASE_DIR / "output" / "EIBQEPC1"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# LNLD (BNM.BNKCHEQ.RPT.QRTR GDG) - large fixed-width flat file, resolved by
-# latest-dated filename under INPUT_DIR (prefix convention: "lnld").
-LNLD_PREFIX = "lnld"
 
 # Chunked reading controls for the large LNLD flat file.
 CHUNK_SIZE = 500_000
@@ -110,7 +109,7 @@ FEEFMT = {
 # ============================================================================
 # FIELD PARSING HELPERS (fixed-width mainframe INPUT equivalents)
 # ============================================================================
-def _parse_int(raw: str) -> int | None:
+def _parse_int(raw: str) -> Optional[int]:
     s = raw.strip()
     if not s:
         return None
@@ -120,7 +119,7 @@ def _parse_int(raw: str) -> int | None:
         return None
 
 
-def _parse_implied_decimal(raw: str, decimals: int) -> float | None:
+def _parse_implied_decimal(raw: str, decimals: int) -> Optional[int]:
     """SAS w.d informat: divide by 10**d only when no explicit decimal point."""
     s = raw.strip()
     if not s:
@@ -138,7 +137,7 @@ def _parse_implied_decimal(raw: str, decimals: int) -> float | None:
     return -val if negative else val
 
 
-def _parse_ddmmyy8(raw: str) -> date | None:
+def _parse_ddmmyy8(raw: str) -> Optional[date]:
     """DDMMYY8. informat with OPTIONS YEARCUTOFF=1930 (delimited or plain)."""
     s = raw.strip()
     if not s:
@@ -160,6 +159,7 @@ def _parse_ddmmyy8(raw: str) -> date | None:
 # ============================================================================
 def _load_dpld(mon: str) -> pl.DataFrame:
     path = INPUT_DIR / f"dpld{mon}.sas7bdat"
+    # path = INPUT_DIR / f"dpld06.sas7bdat"
     pdf = pd.read_sas(path, encoding="latin1")
     return pl.from_pandas(pdf)
 
@@ -168,6 +168,23 @@ dpld = pl.concat(
     [_load_dpld(REPTMON), _load_dpld(PREPTMON), _load_dpld(PPREPTMON)],
     how="diagonal_relaxed",
 )
+
+# dpld = dpld.with_columns(
+#     pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64)).alias("TRANDT"),
+#     pl.col("ACCTNO").cast(pl.Int64),
+#     pl.col("TRANDT").cast(pl.Date),
+#     pl.col("TRANAMT").cast(pl.Float64).round(2),
+# )
+
+dpld = dpld.with_columns(
+    [
+        (pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64))).alias("TRANDT"),
+        pl.col("ACCTNO").cast(pl.Int64),
+        pl.col("TRANAMT").cast(pl.Float64).round(2),
+    ]
+)
+    
+    
 
 # ============================================================================
 # DATA BNM.LNLD
@@ -189,6 +206,21 @@ dpld = pl.concat(
 # Subsetting IF (applied during the INPUT step, before PROC SORT):
 #   (COSTCTR < 3000 OR COSTCTR > 3999) AND COSTCTR NOT IN (4043,4048)
 # ============================================================================
+_LNLD_SCHEMA = {
+    "ACCTNO": pl.Int64,
+    "NOTENO": pl.Int64,
+    "COSTCTR": pl.Int64,
+    "NOTETYPE": pl.Int64,
+    "TRANDT": pl.Date,
+    "TRANCODE": pl.Int64,
+    "SEQNO": pl.Int64,
+    "FEEPLAN": pl.Utf8,
+    "FEENO": pl.Int64,
+    "TRANAMT": pl.Float64,
+    "SOURCE": pl.Int64,
+}
+
+
 def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
     records: list[dict] = []
     chunks: list[pl.DataFrame] = []
@@ -244,30 +276,29 @@ def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
 
             total_read += 1
             if len(records) >= CHUNK_SIZE:
-                chunks.append(pl.DataFrame(records))
+                chunks.append(pl.DataFrame(records, schema=_LNLD_SCHEMA))
                 records = []
 
             if ROW_LIMIT is not None and total_read >= ROW_LIMIT:
                 break
 
     if records:
-        chunks.append(pl.DataFrame(records))
+        chunks.append(pl.DataFrame(records, schema=_LNLD_SCHEMA))
 
     if not chunks:
-        return pl.DataFrame(
-            schema={
-                "ACCTNO": pl.Int64, "NOTENO": pl.Int64, "COSTCTR": pl.Int64,
-                "NOTETYPE": pl.Int64, "TRANDT": pl.Date, "TRANCODE": pl.Int64,
-                "SEQNO": pl.Int64, "FEEPLAN": pl.Utf8, "FEENO": pl.Int64,
-                "TRANAMT": pl.Float64, "SOURCE": pl.Int64,
-            }
-        )
+        return pl.DataFrame(schema=_LNLD_SCHEMA)
 
     return pl.concat(chunks, how="diagonal_relaxed")
 
+# LNLD (BNM.BNKCHEQ.RPT.QRTR GDG) - large fixed-width flat file
+lnld_path = INPUT_DIR / "BNKCHEQ_RPT_QRTR.txt"
+lnld      = _load_lnld_fixed_width(lnld_path)
 
-lnld_path = get_latest_file(INPUT_DIR, prefix=LNLD_PREFIX)
-lnld = _load_lnld_fixed_width(lnld_path)
+lnld = lnld.with_columns(
+    pl.col("ACCTNO").cast(pl.Int64),
+    pl.col("TRANDT").cast(pl.Date),
+    pl.col("TRANAMT").cast(pl.Float64).round(2),
+)
 
 # ============================================================================
 # PROC SORT + DATA BNM.TRANX
@@ -275,12 +306,27 @@ lnld = _load_lnld_fixed_width(lnld_path)
 # Equivalent to an inner join on the BY keys; PROC SORT is not required
 # since polars' join does not depend on pre-sorted inputs.
 # ============================================================================
-tranx_bnm = lnld.join(dpld, on=["ACCTNO", "TRANDT", "TRANAMT"], how="inner")
+# tranx_bnm = lnld.join(dpld, on=["ACCTNO", "TRANDT", "TRANAMT"], how="inner")
+
+# Debug
+print("DPLD rows :", dpld.height)
+print("LNLD rows :", lnld.height)
+
+print(dpld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head())
+print(lnld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head())
+
+tranx_bnm = lnld.join(
+    dpld,
+    on=["ACCTNO", "TRANDT", "TRANAMT"],
+    how="inner"
+)
+
+print("TRANX rows :", tranx_bnm.height)
 
 # ============================================================================
 # DATA TRANX -- FOR PBB
 # ============================================================================
-def _trnxdesc(trancode: int | None, feeplan: str | None) -> str:
+def _trnxdesc(trancode: Optional[int], feeplan: Optional[str]) -> str:
     fp = (feeplan or "").strip()
     if trancode == 760 and fp:
         return FEEFMT.get(fp, fp)
@@ -308,39 +354,60 @@ tranx = (
 # ============================================================================
 # ASA REPORT HELPERS (page length 60; RECFM=FBA-style leading control char)
 # ============================================================================
-def _fmt_num(value, width: int = 16, decimals: int = 0) -> str:
-    if value is None:
-        value = 0
-    return f"{value:>{width},.{decimals}f}"
+def _box_row(cells, widths, aligns):
+    parts = []
+    for text, w, a in zip(cells, widths, aligns):
+        if a == "L":
+            parts.append(f"{text:<{w}}")
+        elif a == "R":
+            parts.append(f"{text:>{w}}")
+        else:
+            parts.append(text.center(w))
+    return "|" + "|".join(parts) + "|"
 
 
-def _emit_section(
-    all_lines: list[str],
-    titles: list[str],
-    col_header: list[str],
-    data_lines: list[str],
-) -> None:
-    """Append an ASA-formatted section, repeating the header on page overflow."""
-    header_block = titles + [""] + col_header
-    idx = 0
-    if not data_lines:
-        data_lines = [""]
-
-    while idx < len(data_lines):
-        page_lines = header_block.copy()
-        remaining_capacity = max(PAGE_LENGTH - len(page_lines), 1)
-        chunk = data_lines[idx: idx + remaining_capacity]
-        idx += len(chunk)
-        page_lines.extend(chunk)
-
-        for i, line in enumerate(page_lines):
-            control = "1" if i == 0 else " "
-            all_lines.append(control + line)
-
-    all_lines.append(" ")  # blank separator line between report sections
+def _render_report1_box(titles, label, n_val, sum_val):
+    LW, NW, VW = 31, 16, 16
+    lines = list(titles) + [""]
+    lines.append("-" * (LW + NW + VW + 4))
+    lines.append(_box_row(["", "NUMBER OF", "VALUE OF CHEQUES"], [LW, NW, VW], ["L", "C", "C"]))
+    lines.append(_box_row(["", "CHEQUES", "(RM'000)"], [LW, NW, VW], ["L", "C", "C"]))
+    lines.append("|" + "-" * LW + "+" + "-" * NW + "+" + "-" * VW + "|")
+    lines.append(_box_row([label, f"{n_val:,.0f}", f"{sum_val:,.0f}"], [LW, NW, VW], ["L", "R", "R"]))
+    lines.append("-" * (LW + NW + VW + 4))
+    return lines
 
 
-report_lines: list[str] = []
+def _render_report23_box(titles, rows):
+    NOW, PW, UW, VW = 15, 15, 16, 12
+    total_w = NOW + PW + UW + VW + 5
+    lines = list(titles) + [""]
+    lines.append("-" * total_w)
+    lines.append(_box_row(["", "CHEQUES ISSUED"], [NOW + PW + 1, UW + VW + 1], ["L", "C"]))
+    lines.append("|" + " " * (NOW + PW + 1) + "|" + "-" * (UW + VW + 1) + "|")
+    lines.append(_box_row(["", "", "VALUE"], [NOW + PW + 1, UW, VW], ["L", "L", "C"]))
+    lines.append(_box_row(["", "UNIT", "(RM'000)"], [NOW + PW + 1, UW, VW], ["L", "C", "C"]))
+    lines.append("|" + "-" * (NOW + PW + 1) + "+" + "-" * UW + "+" + "-" * VW + "|")
+    lines.append(_box_row(["NO", "PURPOSE", "", ""], [NOW, PW, UW, VW], ["L", "L", "L", "L"]))
+    lines.append("|" + "-" * NOW + "+" + "-" * PW + "|" + " " * UW + "|" + " " * VW + "|")
+    for r in rows:
+        wrapped = textwrap.wrap(str(r["TRNXDESC"]), PW) or [""]
+        for i, text in enumerate(wrapped):
+            no_cell = str(r["COUNT"]) if i == 0 else ""
+            if i == len(wrapped) - 1:
+                unit_cell, val_cell = f"{r['UNIT']:,.0f}", f"{r['VALUE']:,.2f}"
+            else:
+                unit_cell, val_cell = "", ""
+            lines.append(_box_row([no_cell, text, unit_cell, val_cell], [NOW, PW, UW, VW], ["L", "L", "R", "R"]))
+    lines.append("-" * total_w)
+    return lines
+
+
+def _apply_asa(lines):
+    return [("1" if i == 0 else " ") + line for i, line in enumerate(lines)]
+
+
+# report_lines: list[str] = []
 
 # ============================================================================
 # REPORT 1: PROC TABULATE - TOTAL CHEQUES ISSUED
@@ -355,14 +422,17 @@ _titles_1 = [
     "PUBLIC BANK BERHAD",
     f"CHEQUES ISSUED BY THE BANK AS AT {RDATE}",
 ]
-_col_hdr_1 = [f"{'':<20}{'NUMBER OF CHEQUES':>20}{chr(39) + 'S000':>0}"]
-# Column header rebuilt without stray characters:
-_col_hdr_1 = [f"{'':<20}{'NUMBER OF CHEQUES':>20}{\"VALUE OF CHEQUES (RM'000)\":>28}"]
-_data_1 = [
-    f"{DESC_FMT[1]:<20}{_fmt_num(_total_n, 20, 0)}{_fmt_num(_total_sum, 28, 0)}"
-]
 
-_emit_section(report_lines, _titles_1, _col_hdr_1, _data_1)
+# # _col_hdr_1 = [f"{'':<20}{'NUMBER OF CHEQUES':>20}{chr(39) + 'S000':>0}"]
+# # Column header rebuilt without stray characters:
+# value_hdr = "VALUE OF CHEQUES (RM'000)"
+
+# _col_hdr_1 = [f"{'':<20}{'NUMBER OF CHEQUES':>20}{value_hdr:>28}"]
+# _data_1 = [
+#     f"{DESC_FMT[1]:<20}{_fmt_num(_total_n, 20, 0)}{_fmt_num(_total_sum, 28, 0)}"
+# ]
+
+# _emit_section(report_lines, _titles_1, _col_hdr_1, _data_1)
 
 # ============================================================================
 # REPORT 2: TOP FIVE(5) PAYMENTS BY NUMBER OF CHEQUES
@@ -391,14 +461,17 @@ _titles_2 = [
     "PUBLIC BANK BERHAD",
     f"TOP FIVE(5) PAYMENTS BY NUMBER OF CHEQUES AS AT {RDATE}",
 ]
-_col_hdr_2 = [f"{'NO':<4}{'PURPOSE':<50}{'UNIT':>16}{\"VALUE (RM'000)\":>18}"]
-_data_2 = [
-    f"{r['COUNT']:<4}{str(r['TRNXDESC']):<50}"
-    f"{_fmt_num(r['UNIT'], 16, 0)}{_fmt_num(r['VALUE'], 18, 2)}"
-    for r in _tbl2.to_dicts()
-]
 
-_emit_section(report_lines, _titles_2, _col_hdr_2, _data_2)
+value_hdr = "VALUE (RM'000)"
+
+# _col_hdr_2 = [f"{'NO':<4}{'PURPOSE':<50}{'UNIT':>16}{value_hdr:>18}"]
+# _data_2 = [
+#     f"{r['COUNT']:<4}{str(r['TRNXDESC']):<50}"
+#     f"{_fmt_num(r['UNIT'], 16, 0)}{_fmt_num(r['VALUE'], 18, 2)}"
+#     for r in _tbl2.to_dicts()
+# ]
+
+# _emit_section(report_lines, _titles_2, _col_hdr_2, _data_2)
 
 # ============================================================================
 # REPORT 3: TOP FIVE(5) PAYMENTS BY VALUE OF CHEQUES
@@ -426,14 +499,25 @@ _titles_3 = [
     "PUBLIC BANK BERHAD",
     f"TOP FIVE(5) PAYMENTS BY VALUE OF CHEQUES AS AT {RDATE}",
 ]
-_col_hdr_3 = [f"{'NO':<4}{'PURPOSE':<50}{'UNIT':>16}{\"VALUE (RM'000)\":>18}"]
-_data_3 = [
-    f"{r['COUNT']:<4}{str(r['TRNXDESC']):<50}"
-    f"{_fmt_num(r['UNIT'], 16, 0)}{_fmt_num(r['VALUE'], 18, 2)}"
-    for r in _tbl3.to_dicts()
-]
 
-_emit_section(report_lines, _titles_3, _col_hdr_3, _data_3)
+value_hdr = "VALUE (RM'000)"
+
+# _col_hdr_3 = [f"{'NO':<4}{'PURPOSE':<50}{'UNIT':>16}{value_hdr:>18}"]
+# _data_3 = [
+#     f"{r['COUNT']:<4}{str(r['TRNXDESC']):<50}"
+#     f"{_fmt_num(r['UNIT'], 16, 0)}{_fmt_num(r['VALUE'], 18, 2)}"
+#     for r in _tbl3.to_dicts()
+# ]
+
+# _emit_section(report_lines, _titles_3, _col_hdr_3, _data_3)
+
+
+report_lines: list[str] = []
+report_lines += _apply_asa(_render_report1_box(_titles_1, "CHEQUES ISSUED", _total_n, _total_sum))
+report_lines.append(" ")
+report_lines += _apply_asa(_render_report23_box(_titles_2, _tbl2.to_dicts()))
+report_lines.append(" ")
+report_lines += _apply_asa(_render_report23_box(_titles_3, _tbl3.to_dicts()))
 
 # ============================================================================
 # WRITE OUTPUT (output_date.py -> date-stamped filename, no extension)
