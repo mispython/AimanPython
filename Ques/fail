@@ -1,3 +1,45 @@
+#!/usr/bin/env python3
+"""
+Diagnostic: inspect dpld{mon}.sas7bdat column names, dtypes, and sample rows
+to confirm ACCTNO (and TRANDT) are the correct fields and correctly typed.
+Standalone - does not modify or depend on EIBQEPC1.py.
+"""
+
+from pathlib import Path
+import pandas as pd
+
+DPLD_PATHS = [
+    Path("/stgsrcsys/host/uat/dpld06.sas7bdat"),
+    Path("/stgsrcsys/host/uat/dpld05.sas7bdat"),
+    Path("/stgsrcsys/host/uat/dpld04.sas7bdat"),
+]
+
+
+def inspect_dpld(path: Path) -> None:
+    print(f"\n=== {path} ===")
+    if not path.exists():
+        print("  FILE NOT FOUND.")
+        return
+
+    # Read SAS metadata (column names, formats, labels) without loading all rows
+    itr = pd.read_sas(path, encoding="latin1", iterator=True)
+    df_sample = itr.read(20)  # first 20 rows only
+
+    print("  Columns and dtypes:")
+    for col, dtype in df_sample.dtypes.items():
+        print(f"    {col:<20} {dtype}")
+
+    print("\n  First 20 rows (raw values as read by pandas):")
+    with pd.option_context("display.max_columns", None, "display.width", 200):
+        print(df_sample.to_string())
+
+
+if __name__ == "__main__":
+    for p in DPLD_PATHS:
+        inspect_dpld(p)
+
+==================
+
 === Scanning LNLD file: /stgsrcsys/host/uat/BNKCHEQ_RPT_QRTR.txt ===
   ...processed 1,000,000 rows so far
   ...processed 2,000,000 rows so far
