@@ -1,3 +1,46 @@
+=== Scanning LNLD file: /stgsrcsys/host/uat/BNKCHEQ_RPT_QRTR.txt ===
+  ...processed 1,000,000 rows so far
+  ...processed 2,000,000 rows so far
+  ...processed 3,000,000 rows so far
+  ...processed 4,000,000 rows so far
+  ...processed 5,000,000 rows so far
+  ...processed 6,000,000 rows so far
+  ...processed 7,000,000 rows so far
+  ...processed 8,000,000 rows so far
+  ...processed 9,000,000 rows so far
+  ...processed 10,000,000 rows so far
+  ...processed 11,000,000 rows so far
+  ...processed 12,000,000 rows so far
+  ...processed 13,000,000 rows so far
+  ...processed 14,000,000 rows so far
+  ...processed 15,000,000 rows so far
+  ...processed 16,000,000 rows so far
+  ...processed 17,000,000 rows so far
+  Total rows read      : 17,066,194
+  TRANDT range         : 2010-10-01 to 2026-06-30
+  TRANCODE distribution: {'752': 7122753, '310': 5422529, '750': 2290228, '754': 1498159, '753': 711570, '760': 20955}
+  Sample ACCTNOs       : ['02000000901', '02000001605', '02000002928', '02000003110', '02000003304', '02000003535', '02000003632', '02000004724', '02000005003', '02000005100']
+
+=== Scanning DPLD file: /stgsrcsys/host/uat/dpld06.sas7bdat ===
+  Row count       : 168,764
+  TRANDT range    : 24259.0 to 24287.0
+  Distinct ACCTNOs: 18,247
+  Sample ACCTNOs  : [3988626233.0, 3997001320.0, 3997001320.0, 3997003019.0, 3999201831.0, 3997003019.0, 3999201831.0, 3997003019.0, 3997003019.0, 3997026027.0]
+
+=== Scanning DPLD file: /stgsrcsys/host/uat/dpld05.sas7bdat ===
+  Row count       : 168,833
+  TRANDT range    : 24228.0 to 24256.0
+  Distinct ACCTNOs: 17,741
+  Sample ACCTNOs  : [6827.0, 3999201831.0, 7082.0, 3999201831.0, 7157.0, 3999201831.0, 7749.0, 3999201831.0, 7921.0, 3999201831.0]
+
+=== Scanning DPLD file: /stgsrcsys/host/uat/dpld04.sas7bdat ===
+  Row count       : 184,115
+  TRANDT range    : 24197.0 to 24226.0
+  Distinct ACCTNOs: 18,347
+  Sample ACCTNOs  : [3120637828.0, 3992339619.0, 3115290526.0, 3983507401.0, 3118986207.0, 3983507401.0, 3187732118.0, 3065282628.0, 3174108933.0, 3999061714.0]
+
+=======================
+
 #!/usr/bin/env python3
 """
 Diagnostic script: checks data availability between LNLD (.txt) and DPLD
