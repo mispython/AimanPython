@@ -339,7 +339,38 @@ lnld = lnld.with_columns(
 # Equivalent to an inner join on the BY keys; the PROC SORTs are dropped
 # since polars' join does not require pre-sorted inputs.
 # ============================================================================
-tranx_bnm = lnld.join(dpld, on=["ACCTNO", "TRANDT", "TRANAMT"], how="inner")
+lnld = lnld.with_columns(
+    pl.col("ACCTNO").cast(pl.Int64),
+    pl.col("TRANDT").cast(pl.Date),
+    pl.col("TRANAMT").cast(pl.Float64).round(2),
+)
+
+print("DPLD rows :", dpld.height)
+print("LNLD rows :", lnld.height)
+
+print(
+    "DPLD duplicate keys :",
+    dpld.group_by(["ACCTNO", "TRANDT", "TRANAMT"])
+        .len()
+        .filter(pl.col("len") > 1)
+        .height
+)
+
+print(
+    "LNLD duplicate keys :",
+    lnld.group_by(["ACCTNO", "TRANDT", "TRANAMT"])
+        .len()
+        .filter(pl.col("len") > 1)
+        .height
+)
+
+tranx_bnm = lnld.join(
+    dpld,
+    on=["ACCTNO", "TRANDT", "TRANAMT"],
+    how="inner"
+)
+
+print("TRANX rows :", tranx_bnm.height)
 
 # ============================================================================
 # DATA TRANX -- FOR PBB
