@@ -190,15 +190,6 @@ def _parse_ddmmyy8(raw: str) -> Optional[date]:
         return None
 
 
-def _sas_ddmmyy8_to_days(raw: str) -> int:
-    s = raw.strip()
-    if not s:
-        return None
-    dd = int(s[0:2])
-    mm = int(s[2:4])
-    yyyy = int(s[4:8])
-    return (date(yyyy, mm, dd) - date(1960, 1, 1)).days
-
 # ============================================================================
 # DATA BNM.DPLD
 # SET DPLD.DPLD&REPTMON; IF (&PREVDT<=REPTDATE<=&REPTDT);
@@ -213,10 +204,15 @@ def _load_dpld() -> pl.DataFrame:
     df = pl.from_pandas(pdf)
     return df.with_columns(
         [
+            # pl.col("ACCTNO").cast(pl.Int64),
+            # (pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64))).alias("TRANDT"),
+            # pl.col("TRANAMT").cast(pl.Float64).round(2),
+            # (pl.date(1960, 1, 1) + pl.duration(days=pl.col("REPTDATE").cast(pl.Int64))).alias("REPTDATE"),
+
             pl.col("ACCTNO").cast(pl.Int64),
-            (pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64))).alias("TRANDT"),
+            pl.col("TRANDT").cast(pl.Date),
             pl.col("TRANAMT").cast(pl.Float64).round(2),
-            (pl.date(1960, 1, 1) + pl.duration(days=pl.col("REPTDATE").cast(pl.Int64))).alias("REPTDATE"),
+            pl.col("REPTDATE").cast(pl.Date),
         ]
     )
 
@@ -279,8 +275,7 @@ def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
             noteno = _parse_int(raw[12:17])
             costctr = _parse_int(raw[18:25])
             notetype = _parse_int(raw[26:29])
-            # trandt = _parse_ddmmyy8(raw[30:38])
-            trandt = _sas_ddmmyy8_to_days(raw[30:38])
+            trandt = _parse_ddmmyy8(raw[30:38])
             trancode = _parse_int(raw[46:49])
             seqno = _parse_int(raw[50:53])
 
@@ -337,11 +332,11 @@ def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
 LNLD_PATH = INPUT_DIR / "LN_BNM_BNKCHEQ_RPT.TXT"
 lnld = _load_lnld_fixed_width(LNLD_PATH)
 
-lnld = lnld.with_columns(
-    pl.col("ACCTNO").cast(pl.Int64),
-    pl.col("TRANDT").cast(pl.Date),
-    pl.col("TRANAMT").cast(pl.Float64).round(2),
-)
+# lnld = lnld.with_columns(
+#     pl.col("ACCTNO").cast(pl.Int64),
+#     pl.col("TRANDT").cast(pl.Date),
+#     pl.col("TRANAMT").cast(pl.Float64).round(2),
+# )
 
 # ============================================================================
 # PROC SORT + DATA BNM.TRANX
