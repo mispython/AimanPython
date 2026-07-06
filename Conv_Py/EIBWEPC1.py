@@ -50,6 +50,7 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
 import polars as pl
 
 from REPTDATE import get_reptdate_values
@@ -68,6 +69,23 @@ CHUNK_SIZE = 500_000
 ROW_LIMIT = int(os.environ.get("ROW_LIMIT", "0")) or None  # test-mode cutoff
 
 PAGE_LENGTH = 60  # ASA report page length (not specified in JCL -> default 60)
+
+LRECL = 133  # SASLIST DD DCB LRECL=133 (see JCL)
+
+
+def _pad_line(line: str, width: int = LRECL) -> str:
+    return line[:width].ljust(width)
+
+
+def _finalize_page(lines: list[str], page_no: int, width: int = LRECL) -> list[str]:
+    """Pad every line to LRECL; print the automatic SAS page number
+    right-justified on TITLE1 (page numbers print by default since
+    OPTIONS did not specify NONUMBER)."""
+    suffix = f"{page_no} "
+    title = lines[0][: width - len(suffix)].ljust(width - len(suffix)) + suffix
+    out = [title]
+    out += [_pad_line(l, width) for l in lines[1:]]
+    return out
 
 # ============================================================================
 # DATA REPTDATE STEP EQUIVALENT
@@ -154,17 +172,20 @@ def _parse_implied_decimal(raw: str, decimals: int) -> Optional[float]:
 
 
 def _parse_ddmmyy8(raw: str) -> Optional[date]:
-    """DDMMYY8. informat with OPTIONS YEARCUTOFF=1930 (delimited or plain)."""
+    """DDMMYY8. informat, 8-digit field: DD(2)+MM(2)+YYYY(4), no delimiters.
+    Confirmed against actual LN_BNM_BNKCHEQ_RPT.TXT sample data
+    (e.g. '30062026' -> 30/06/2026). YEARCUTOFF=1930 does not apply here
+    since the year is explicit 4-digit, not an ambiguous 2-digit value.
+    """
     s = raw.strip()
     if not s:
         return None
     digits = re.sub(r"\D", "", s)
-    if len(digits) != 6:
+    if len(digits) != 8:
         return None
-    dd, mm, yy = int(digits[0:2]), int(digits[2:4]), int(digits[4:6])
-    year = 1900 + yy if yy >= 30 else 2000 + yy
+    dd, mm, yyyy = int(digits[0:2]), int(digits[2:4]), int(digits[4:8])
     try:
-        return date(year, mm, dd)
+        return date(yyyy, mm, dd)
     except ValueError:
         return None
 
@@ -172,20 +193,21 @@ def _parse_ddmmyy8(raw: str) -> Optional[date]:
 # ============================================================================
 # DATA BNM.DPLD
 # SET DPLD.DPLD&REPTMON; IF (&PREVDT<=REPTDATE<=&REPTDT);
-# DPLD.DPLD&REPTMON -> dpld<REPTMON>.parquet (already-converted input).
+# DPLD.DPLD&REPTMON -> dpld<REPTMON>.sas7bdat (raw mainframe SAS dataset).
 # The filter is applied on DPLD's own REPTDATE column (see module docstring).
 # ============================================================================
-DPLD_PATH = INPUT_DIR / f"dpld{REPTMON}.parquet"
+DPLD_PATH = INPUT_DIR / f"dpld{REPTMON}.sas7bdat"
 
 
 def _load_dpld() -> pl.DataFrame:
-    df = pl.read_parquet(DPLD_PATH)
+    pdf = pd.read_sas(DPLD_PATH, encoding="latin1")
+    df = pl.from_pandas(pdf)
     return df.with_columns(
         [
             pl.col("ACCTNO").cast(pl.Int64),
-            pl.col("TRANDT").cast(pl.Date),
+            (pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64))).alias("TRANDT"),
             pl.col("TRANAMT").cast(pl.Float64).round(2),
-            pl.col("REPTDATE").cast(pl.Date),
+            (pl.date(1960, 1, 1) + pl.duration(days=pl.col("REPTDATE").cast(pl.Int64))).alias("REPTDATE"),
         ]
     )
 
@@ -400,42 +422,65 @@ def _render_report23_box(titles, rows):
 
 
 def _render_report4_box(titles, costctrs, purposes, lookup):
-    """PROC TABULATE: rows = COSTCTR; column groups = each observed
-    TRNXDESC, each with UNIT (N, F=16.) and VALUE (SUM, RM'000) sub-columns.
-    """
-    LABEL_W, COL_W = 10, 12
-    group_w = 2 * COL_W + 1
-    total_w = LABEL_W + 1 + len(purposes) * group_w + 1
+    LABEL_W, UW, VW = 31, 16, 12
+
+    full_sep_row = (
+        "|" + "-" * LABEL_W
+        + "".join("+" + "-" * UW + "+" + "-" * VW for _ in purposes)
+        + "|"
+    )
+    total_w = len(full_sep_row)
+    purposes_area_w = total_w - LABEL_W - 3
 
     lines = list(titles) + [""]
     lines.append("-" * total_w)
 
-    hdr_purpose = "|" + " " * LABEL_W + "|"
-    for p in purposes:
-        hdr_purpose += p.center(group_w - 1) + "|"
-    lines.append(hdr_purpose)
+    lines.append("|" + " " * LABEL_W + "|" + "PURPOSE".center(purposes_area_w) + "|")
+    lines.append("|" + " " * LABEL_W + "|" + "-" * purposes_area_w + "|")
 
-    hdr_sub = "|" + "COSTCTR".ljust(LABEL_W) + "|"
-    for _ in purposes:
-        hdr_sub += "UNIT".center(COL_W) + "|" + "VALUE (RM'000)".center(COL_W) + "|"
-    lines.append(hdr_sub)
-    lines.append("-" * total_w)
+    if len(purposes) == 1:
+        lines.append("|" + " " * LABEL_W + "|" + purposes[0].center(purposes_area_w) + "|")
+        lines.append("|" + " " * LABEL_W + "|" + "-" * purposes_area_w + "|")
+    else:
+        group_w = UW + 1 + VW
+        row = "|" + " " * LABEL_W + "|"
+        sep = "|" + " " * LABEL_W + "|"
+        for p in purposes:
+            row += p.center(group_w) + "|"
+            sep += "-" * group_w + "|"
+        lines.append(row)
+        lines.append(sep)
 
-    for c in costctrs:
+    lines.append(
+        "|" + " " * LABEL_W + "|"
+        + "".join(" " * UW + "|" + "VALUE".center(VW) + "|" for _ in purposes)
+    )
+    lines.append(
+        "|" + " " * LABEL_W + "|"
+        + "".join("UNIT".center(UW) + "|" + "(RM'000)".center(VW) + "|" for _ in purposes)
+    )
+    lines.append(full_sep_row)
+
+    lines.append(
+        "|" + "COSTCTR".ljust(LABEL_W) + "|"
+        + "".join(" " * UW + "|" + " " * VW + "|" for _ in purposes)
+    )
+    lines.append(
+        "|" + "-" * LABEL_W + "|"
+        + "".join(" " * UW + "|" + " " * VW + "|" for _ in purposes)
+    )
+
+    for idx, c in enumerate(costctrs):
         row = "|" + (str(c) if c is not None else "").ljust(LABEL_W) + "|"
         for p in purposes:
-            # OPTIONS MISSING=0: a COSTCTR/PURPOSE combination with no
-            # observed records prints as 0 / 0.00 rather than blank.
             unit, value = lookup.get((c, p), (0, 0.0))
-            row += f"{unit:,.0f}".center(COL_W) + "|" + f"{value:,.2f}".center(COL_W) + "|"
+            row += f"{unit:,.0f}".rjust(UW) + "|" + f"{value:,.2f}".rjust(VW) + "|"
         lines.append(row)
+        if idx < len(costctrs) - 1:
+            lines.append(full_sep_row)
 
     lines.append("-" * total_w)
     return lines
-
-
-def _apply_asa(lines):
-    return [("1" if i == 0 else " ") + line for i, line in enumerate(lines)]
 
 
 # ============================================================================
@@ -529,18 +574,15 @@ _titles_4 = [
 # ASSEMBLE FULL REPORT (ASA carriage control applied per section)
 # ============================================================================
 report_lines: list[str] = []
-report_lines += _apply_asa(_render_report1_box(_titles_1, "CHEQUES ISSUED", _total_n, _total_sum))
-report_lines.append(" ")
-report_lines += _apply_asa(_render_report23_box(_titles_2, _tbl2.to_dicts()))
-report_lines.append(" ")
-report_lines += _apply_asa(_render_report23_box(_titles_3, _tbl3.to_dicts()))
-report_lines.append(" ")
-report_lines += _apply_asa(_render_report4_box(_titles_4, _costctrs, _purposes, _cross_lookup))
+report_lines += _finalize_page(_render_report1_box(_titles_1, "CHEQUES ISSUED", _total_n, _total_sum), 1)
+report_lines += _finalize_page(_render_report23_box(_titles_2, _tbl2.to_dicts()), 2)
+report_lines += _finalize_page(_render_report23_box(_titles_3, _tbl3.to_dicts()), 3)
+report_lines += _finalize_page(_render_report4_box(_titles_4, _costctrs, _purposes, _cross_lookup), 4)
 
 # ============================================================================
 # WRITE OUTPUT (output_date.py -> date-stamped filename, no extension)
 # ============================================================================
-output_path = build_output_file(OUTPUT_DIR, "EIBWEPC1", date_format="ddmmyy")
+output_path = build_output_file(OUTPUT_DIR, "EPCU_PART1_WEEKLY_PBB", date_format="ddmmyy")
 report_file = output_path.with_suffix(".txt")
 
 with open(report_file, "w", encoding="latin1") as f:
