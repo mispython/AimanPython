@@ -1,3 +1,23 @@
+def _parse_ddmmyy8(raw: str) -> Optional[date]:
+    """DDMMYY8. informat, 8-digit field: DD(2)+MM(2)+YYYY(4), no delimiters.
+    Confirmed against actual LN_BNM_BNKCHEQ_RPT.TXT sample data
+    (e.g. '30062026' -> 30/06/2026). YEARCUTOFF=1930 does not apply here
+    since the year is explicit 4-digit, not an ambiguous 2-digit value.
+    """
+    s = raw.strip()
+    if not s:
+        return None
+    digits = re.sub(r"\D", "", s)
+    if len(digits) != 8:
+        return None
+    dd, mm, yyyy = int(digits[0:2]), int(digits[2:4]), int(digits[4:8])
+    try:
+        return date(yyyy, mm, dd)
+    except ValueError:
+        return None
+
+================
+
 # ============================================================================
 # DATA BNM.DPLD
 # SET DPLD.DPLD&REPTMON; IF (&PREVDT<=REPTDATE<=&REPTDT);
