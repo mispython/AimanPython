@@ -1,16 +1,30 @@
+lnld = lnld.with_columns(
+    pl.col("ACCTNO").cast(pl.Int64),
+    pl.col("TRANDT").cast(pl.Date),
+    pl.col("TRANAMT").cast(pl.Float64).round(2),
+)
+
 print("DPLD rows :", dpld.height)
 print("LNLD rows :", lnld.height)
 
 print(
-    dpld.group_by(["ACCTNO","TRANDT","TRANAMT"])
+    "DPLD duplicate keys :",
+    dpld.group_by(["ACCTNO", "TRANDT", "TRANAMT"])
         .len()
         .filter(pl.col("len") > 1)
         .height
 )
 
 print(
-    lnld.group_by(["ACCTNO","TRANDT","TRANAMT"])
+    "LNLD duplicate keys :",
+    lnld.group_by(["ACCTNO", "TRANDT", "TRANAMT"])
         .len()
         .filter(pl.col("len") > 1)
         .height
+)
+
+tranx_bnm = lnld.join(
+    dpld,
+    on=["ACCTNO", "TRANDT", "TRANAMT"],
+    how="inner"
 )
