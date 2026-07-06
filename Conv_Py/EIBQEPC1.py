@@ -185,7 +185,6 @@ dpld = dpld.with_columns(
 )
     
     
-
 # ============================================================================
 # DATA BNM.LNLD
 # INFILE LNLD MISSOVER; fixed-width mainframe flat file (~8GB), read in
@@ -404,7 +403,8 @@ def _render_report23_box(titles, rows):
 
 
 def _apply_asa(lines):
-    return [("1" if i == 0 else " ") + line for i, line in enumerate(lines)]
+    # return [("1" if i == 0 else " ") + line for i, line in enumerate(lines)]
+    return lines
 
 
 # report_lines: list[str] = []
@@ -522,7 +522,7 @@ report_lines += _apply_asa(_render_report23_box(_titles_3, _tbl3.to_dicts()))
 # ============================================================================
 # WRITE OUTPUT (output_date.py -> date-stamped filename, no extension)
 # ============================================================================
-output_path = build_output_file(OUTPUT_DIR, "EIBQEPC1", date_format="ddmmyy")
+output_path = build_output_file(OUTPUT_DIR, "PBB_EPCU", date_format="ddmmyy")
 report_file = output_path.with_suffix(".txt")
 
 with open(report_file, "w", encoding="latin1") as f:
