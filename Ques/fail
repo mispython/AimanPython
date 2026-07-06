@@ -1,6 +1,6 @@
-DPLD rows : 0
+DPLD rows : 7695
 LNLD rows : 16331
-DPLD duplicate keys : 0
+DPLD duplicate keys : 397
 LNLD duplicate keys : 267
 TRANX rows : 0
 [OUTPUT] Report written to: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWEPC1/EPCU_PART1_WEEKLY_PBB_050726.txt
@@ -54,4 +54,5 @@ ALL PAYMENTS BY BRANCH AS AT 05/07/2026
 |-------------------------------|                                                                                                    
 |COSTCTR                        |                                                                                                    
 |-------------------------------|                                                                                                    
----------------------------------    
+---------------------------------                                                                                                    
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ 
