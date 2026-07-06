@@ -1,87 +1,16 @@
-report_lines: list[str] = []
-report_lines += _finalize_page(_render_report1_box(_titles_1, "CHEQUES ISSUED", _total_n, _total_sum), 1)
-report_lines += _finalize_page(_render_report23_box(_titles_2, _tbl2.to_dicts()), 2)
-report_lines += _finalize_page(_render_report23_box(_titles_3, _tbl3.to_dicts()), 3)
-report_lines += _finalize_page(_render_report4_box(_titles_4, _costctrs, _purposes, _cross_lookup), 4)
+print("DPLD rows :", dpld.height)
+print("LNLD rows :", lnld.height)
 
-================
+print(
+    dpld.group_by(["ACCTNO","TRANDT","TRANAMT"])
+        .len()
+        .filter(pl.col("len") > 1)
+        .height
+)
 
-def _render_report4_box(titles, costctrs, purposes, lookup):
-    LABEL_W, UW, VW = 31, 16, 12
-
-    full_sep_row = (
-        "|" + "-" * LABEL_W
-        + "".join("+" + "-" * UW + "+" + "-" * VW for _ in purposes)
-        + "|"
-    )
-    total_w = len(full_sep_row)
-    purposes_area_w = total_w - LABEL_W - 3
-
-    lines = list(titles) + [""]
-    lines.append("-" * total_w)
-
-    lines.append("|" + " " * LABEL_W + "|" + "PURPOSE".center(purposes_area_w) + "|")
-    lines.append("|" + " " * LABEL_W + "|" + "-" * purposes_area_w + "|")
-
-    if len(purposes) == 1:
-        lines.append("|" + " " * LABEL_W + "|" + purposes[0].center(purposes_area_w) + "|")
-        lines.append("|" + " " * LABEL_W + "|" + "-" * purposes_area_w + "|")
-    else:
-        group_w = UW + 1 + VW
-        row = "|" + " " * LABEL_W + "|"
-        sep = "|" + " " * LABEL_W + "|"
-        for p in purposes:
-            row += p.center(group_w) + "|"
-            sep += "-" * group_w + "|"
-        lines.append(row)
-        lines.append(sep)
-
-    lines.append(
-        "|" + " " * LABEL_W + "|"
-        + "".join(" " * UW + "|" + "VALUE".center(VW) + "|" for _ in purposes)
-    )
-    lines.append(
-        "|" + " " * LABEL_W + "|"
-        + "".join("UNIT".center(UW) + "|" + "(RM'000)".center(VW) + "|" for _ in purposes)
-    )
-    lines.append(full_sep_row)
-
-    lines.append(
-        "|" + "COSTCTR".ljust(LABEL_W) + "|"
-        + "".join(" " * UW + "|" + " " * VW + "|" for _ in purposes)
-    )
-    lines.append(
-        "|" + "-" * LABEL_W + "|"
-        + "".join(" " * UW + "|" + " " * VW + "|" for _ in purposes)
-    )
-
-    for idx, c in enumerate(costctrs):
-        row = "|" + (str(c) if c is not None else "").ljust(LABEL_W) + "|"
-        for p in purposes:
-            unit, value = lookup.get((c, p), (0, 0.0))
-            row += f"{unit:,.0f}".rjust(UW) + "|" + f"{value:,.2f}".rjust(VW) + "|"
-        lines.append(row)
-        if idx < len(costctrs) - 1:
-            lines.append(full_sep_row)
-
-    lines.append("-" * total_w)
-    return lines
-
-==================
-
-LRECL = 133  # SASLIST DD DCB LRECL=133 (see JCL)
-
-
-def _pad_line(line: str, width: int = LRECL) -> str:
-    return line[:width].ljust(width)
-
-
-def _finalize_page(lines: list[str], page_no: int, width: int = LRECL) -> list[str]:
-    """Pad every line to LRECL; print the automatic SAS page number
-    right-justified on TITLE1 (page numbers print by default since
-    OPTIONS did not specify NONUMBER)."""
-    suffix = f"{page_no} "
-    title = lines[0][: width - len(suffix)].ljust(width - len(suffix)) + suffix
-    out = [title]
-    out += [_pad_line(l, width) for l in lines[1:]]
-    return out
+print(
+    lnld.group_by(["ACCTNO","TRANDT","TRANAMT"])
+        .len()
+        .filter(pl.col("len") > 1)
+        .height
+)
