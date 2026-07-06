@@ -1,16 +1,16 @@
 REPORT ID : EIBQEPC1                                                                                                               1 
 PUBLIC BANK BERHAD                                                                                                                   
-CHEQUES ISSUED BY THE BANK AS AT 30/06/26                                                                                            
+CHEQUES ISSUED BY THE BANK AS AT 30/06/2026                                                                                          
                                                                                                                                      
 -------------------------------------------------------------------                                                                  
 |                               |   NUMBER OF    |VALUE OF CHEQUES|                                                                  
 |                               |    CHEQUES     |    (RM'000)    |                                                                  
 |-------------------------------+----------------+----------------|                                                                  
-|CHEQUES ISSUED                 |               6|             781|                                                                  
+|CHEQUES ISSUED                 |               2|             242|                                                                  
 -------------------------------------------------------------------                                                                  
 REPORT ID : EIBQEPC1                                                                                                               2 
 PUBLIC BANK BERHAD                                                                                                                   
-TOP FIVE(5) PAYMENTS BY NUMBER OF CHEQUES AS AT 30/06/26                                                                             
+ALL PAYMENTS BY NUMBER OF CHEQUES AS AT 30/06/2026                                                                                   
                                                                                                                                      
 ---------------------------------------------------------------                                                                      
 |                               |       CHEQUES ISSUED        |                                                                      
@@ -21,11 +21,11 @@ TOP FIVE(5) PAYMENTS BY NUMBER OF CHEQUES AS AT 30/06/26
 |NO             |PURPOSE        |                |            |                                                                      
 |---------------+---------------|                |            |                                                                      
 |1              |LOAN           |                |            |                                                                      
-|               |DISBURSEMENT   |               6|      781.20|                                                                      
+|               |DISBURSEMENT   |               2|      242.00|                                                                      
 ---------------------------------------------------------------                                                                      
 REPORT ID : EIBQEPC1                                                                                                               3 
 PUBLIC BANK BERHAD                                                                                                                   
-TOP FIVE(5) PAYMENTS BY VALUE OF CHEQUES AS AT 30/06/26                                                                              
+ALL PAYMENTS BY VALUE OF CHEQUES AS AT 30/06/2026                                                                                    
                                                                                                                                      
 ---------------------------------------------------------------                                                                      
 |                               |       CHEQUES ISSUED        |                                                                      
@@ -36,5 +36,23 @@ TOP FIVE(5) PAYMENTS BY VALUE OF CHEQUES AS AT 30/06/26
 |NO             |PURPOSE        |                |            |                                                                      
 |---------------+---------------|                |            |                                                                      
 |1              |LOAN           |                |            |                                                                      
-|               |DISBURSEMENT   |               6|      781.20|                                                                      
+|               |DISBURSEMENT   |               2|      242.00|                                                                      
+---------------------------------------------------------------                                                                      
+REPORT ID : EIBQEPC1                                                                                                               4 
+PUBLIC BANK BERHAD                                                                                                                   
+ALL PAYMENTS BY BRANCH AS AT 30/06/2026                                                                                              
+                                                                                                                                     
+---------------------------------------------------------------                                                                      
+|                               |           PURPOSE           |                                                                      
+|                               |-----------------------------|                                                                      
+|                               |      LOAN DISBURSEMENT      |                                                                      
+|                               |-----------------------------|                                                                      
+|                               |                |   VALUE    |                                                                      
+|                               |      UNIT      |  (RM'000)  |                                                                      
+|-------------------------------+----------------+------------|                                                                      
+|COSTCTR                        |                |            |                                                                      
+|-------------------------------|                |            |                                                                      
+|804                            |               1|      142.00|                                                                      
+|-------------------------------+----------------+------------|                                                                      
+|820                            |               1|      100.00|                                                                      
 ---------------------------------------------------------------                                                                      
