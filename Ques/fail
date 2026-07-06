@@ -1,71 +1,57 @@
-trandt = _sas_ddmmyy8_to_days(raw[30:38])
-
-def _sas_ddmmyy8_to_days(raw: str) -> int:
-    s = raw.strip()
-    if not s:
-        return None
-    dd = int(s[0:2])
-    mm = int(s[2:4])
-    yyyy = int(s[4:8])
-    return (date(yyyy, mm, dd) - date(1960, 1, 1)).days
-
-============
-
-trandt = pl.date(1960, 1, 1) + pl.duration(days=_sas_to_days(raw[30:38]))
-
-def _sas_to_days(raw: str) -> int:
-    s = raw.strip()
-    dd = int(s[0:2])
-    mm = int(s[2:4])
-    yyyy = int(s[4:8])
-    return (date(yyyy, mm, dd) - date(1960, 1, 1)).days
-
-=====================
-
-dd = int(raw[30:32])
-mm = int(raw[32:34])
-yyyy = int(raw[34:38])
-trandt = date(yyyy, mm, dd)
-
-# convert to SAS epoch-compatible format immediately
-trandt = pl.date(1960, 1, 1) + pl.duration(days=(trandt - date(1960, 1, 1)).days)
-
-========================
-
-DPLD rows : 7695
+DPLD rows : 0
 LNLD rows : 16331
-DPLD duplicate keys : 397
+DPLD duplicate keys : 0
 LNLD duplicate keys : 267
-
-==============
-
-lnld = lnld.with_columns(
-    pl.col("ACCTNO").cast(pl.Int64),
-    pl.col("TRANDT").cast(pl.Date),
-    pl.col("TRANAMT").cast(pl.Float64).round(2),
-)
-
-print("DPLD rows :", dpld.height)
-print("LNLD rows :", lnld.height)
-
-print(
-    "DPLD duplicate keys :",
-    dpld.group_by(["ACCTNO", "TRANDT", "TRANAMT"])
-        .len()
-        .filter(pl.col("len") > 1)
-        .height
-)
-
-print(
-    "LNLD duplicate keys :",
-    lnld.group_by(["ACCTNO", "TRANDT", "TRANAMT"])
-        .len()
-        .filter(pl.col("len") > 1)
-        .height
-)
-
-tranx_bnm = lnld.join(
-    dpld,
-    on=["ACCTNO", "TRANDT", "TRANAMT"],
-    how="inner"
-)
+TRANX rows : 0
+[OUTPUT] Report written to: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWEPC1/EPCU_PART1_WEEKLY_PBB_050726.txt
+REPORT ID : EIBQEPC1                                                                                                               1 
+PUBLIC BANK BERHAD                                                                                                                   
+CHEQUES ISSUED BY THE BANK AS AT 05/07/2026                                                                                          
+                                                                                                                                     
+-------------------------------------------------------------------                                                                  
+|                               |   NUMBER OF    |VALUE OF CHEQUES|                                                                  
+|                               |    CHEQUES     |    (RM'000)    |                                                                  
+|-------------------------------+----------------+----------------|                                                                  
+|CHEQUES ISSUED                 |               0|               0|                                                                  
+-------------------------------------------------------------------                                                                  
+REPORT ID : EIBQEPC1                                                                                                               2 
+PUBLIC BANK BERHAD                                                                                                                   
+ALL PAYMENTS BY NUMBER OF CHEQUES AS AT 05/07/2026                                                                                   
+                                                                                                                                     
+---------------------------------------------------------------                                                                      
+|                               |        CHEQUES ISSUED       |                                                                      
+|                               |-----------------------------|                                                                      
+|                               |                |   VALUE    |                                                                      
+|                               |      UNIT      |  (RM'000)  |                                                                      
+|-------------------------------+----------------+------------|                                                                      
+|NO             |PURPOSE        |                |            |                                                                      
+|---------------+---------------|                |            |                                                                      
+---------------------------------------------------------------                                                                      
+REPORT ID : EIBQEPC1                                                                                                               3 
+PUBLIC BANK BERHAD                                                                                                                   
+ALL PAYMENTS BY VALUE OF CHEQUES AS AT 05/07/2026                                                                                    
+                                                                                                                                     
+---------------------------------------------------------------                                                                      
+|                               |        CHEQUES ISSUED       |                                                                      
+|                               |-----------------------------|                                                                      
+|                               |                |   VALUE    |                                                                      
+|                               |      UNIT      |  (RM'000)  |                                                                      
+|-------------------------------+----------------+------------|                                                                      
+|NO             |PURPOSE        |                |            |                                                                      
+|---------------+---------------|                |            |                                                                      
+---------------------------------------------------------------                                                                      
+REPORT ID : EIBQEPC1                                                                                                               4 
+PUBLIC BANK BERHAD                                                                                                                   
+ALL PAYMENTS BY BRANCH AS AT 05/07/2026                                                                                              
+                                                                                                                                     
+---------------------------------                                                                                                    
+|                               |PURPOSE|                                                                                            
+|                               ||                                                                                                   
+|                               |                                                                                                    
+|                               |                                                                                                    
+|                               |                                                                                                    
+|                               |                                                                                                    
+|-------------------------------|                                                                                                    
+|COSTCTR                        |                                                                                                    
+|-------------------------------|                                                                                                    
+---------------------------------    
