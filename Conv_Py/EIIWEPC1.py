@@ -96,11 +96,13 @@ def _finalize_page(lines: list[str], page_no: int, width: int = LRECL) -> list[s
 # No reptdate.parquet exists; base REPTDATE comes from REPTDATE.py.
 # ============================================================================
 _reptdate_values = get_reptdate_values(year_format="%Y")  # CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.))
+
 # TEST OVERRIDE (uncomment to test against dpld06 with June LNLD sample data
 # instead of the current dpld07): forces REPTMON="06" / PREVDT-REPTDT window
 # into late June. Leave commented out for production runs (defaults to
 # date.today()).
 # _reptdate_values = get_reptdate_values(run_date=date(2026, 7, 1), year_format="%Y")
+
 REPTDATE_VAL: date = _reptdate_values.reptdate
 
 # SELECT(DAY(REPTDATE)):
