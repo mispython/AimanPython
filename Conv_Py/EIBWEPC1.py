@@ -372,6 +372,11 @@ tranx_bnm = lnld.join(
 
 print("TRANX rows :", tranx_bnm.height)
 
+print("DPLD TRANDT range:", dpld["TRANDT"].min(), "to", dpld["TRANDT"].max())
+print("LNLD TRANDT range:", lnld["TRANDT"].min(), "to", lnld["TRANDT"].max())
+print("DPLD sample keys:", dpld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head(5).to_dicts())
+print("LNLD sample keys:", lnld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head(5).to_dicts())
+
 # ============================================================================
 # DATA TRANX -- FOR PBB
 # ============================================================================
