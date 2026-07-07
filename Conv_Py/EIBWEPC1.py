@@ -92,7 +92,12 @@ def _finalize_page(lines: list[str], page_no: int, width: int = LRECL) -> list[s
 # (Original: SET LOAN.REPTDATE; SELECT(DAY(REPTDATE)) ... -> PREVDATE)
 # No reptdate.parquet exists; base REPTDATE comes from REPTDATE.py.
 # ============================================================================
+# Actual Configuration
 _reptdate_values = get_reptdate_values(year_format="%Y")  # CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.))
+
+# Testing configuration
+# _reptdate_values = get_reptdate_values(run_date=date(2026, 7, 1), year_format="%Y")
+
 REPTDATE_VAL: date = _reptdate_values.reptdate
 
 # SELECT(DAY(REPTDATE)):
@@ -347,6 +352,8 @@ lnld = lnld.with_columns(
 
 print("DPLD rows :", dpld.height)
 print("LNLD rows :", lnld.height)
+print("DPLD REPTDATE range (pre-filter):", dpld_raw["REPTDATE"].min(), "to", dpld_raw["REPTDATE"].max())
+print("Filter window:", PREVDT, "to", REPTDT)
 
 print(
     "DPLD duplicate keys :",
