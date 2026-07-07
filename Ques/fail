@@ -1,3 +1,12 @@
+_run_date_override = os.environ.get("RUN_DATE")
+_test_run_date = (
+    date.fromisoformat(_run_date_override) if _run_date_override else None
+)
+
+_reptdate_values = get_reptdate_values(run_date=_test_run_date, year_format="%Y")
+
+===================
+
 DPLD rows : 7695
 LNLD rows : 16331
 DPLD REPTDATE range (pre-filter): 2026-07-01 to 2026-07-01
