@@ -1,2 +1,68 @@
+DPLD rows : 7695
+LNLD rows : 16331
+DPLD REPTDATE range (pre-filter): 2026-07-01 to 2026-07-01
+Filter window: 2026-07-01 to 2026-07-06
+DPLD duplicate keys : 397
+LNLD duplicate keys : 267
+TRANX rows : 0
+DPLD TRANDT range: 2026-07-01 to 2026-07-01
+LNLD TRANDT range: 2026-06-23 to 2026-06-30
+DPLD sample keys: [{'ACCTNO': 3093356921, 'TRANDT': datetime.date(2026, 7, 1), 'TRANAMT': 937200.0}, {'ACCTNO': 3095193516, 'TRANDT': datetime.date(2026, 7, 1), 'TRANAMT': 145644.0}, {'ACCTNO': 3822525517, 'TRANDT': datetime.date(2026, 7, 1), 'TRANAMT': 44175.0}, {'ACCTNO': 3144038415, 'TRANDT': datetime.date(2026, 7, 1), 'TRANAMT': 13712.1}, {'ACCTNO': 3118986207, 'TRANDT': datetime.date(2026, 7, 1), 'TRANAMT': 117052.1}]
+LNLD sample keys: [{'ACCTNO': 2000096203, 'TRANDT': datetime.date(2026, 6, 30), 'TRANAMT': 54.0}, {'ACCTNO': 2000977030, 'TRANDT': datetime.date(2026, 6, 30), 'TRANAMT': 55.3}, {'ACCTNO': 2001384114, 'TRANDT': datetime.date(2026, 6, 23), 'TRANAMT': 54.0}, {'ACCTNO': 2001786619, 'TRANDT': datetime.date(2026, 6, 30), 'TRANAMT': 54.0}, {'ACCTNO': 2002078024, 'TRANDT': datetime.date(2026, 6, 23), 'TRANAMT': 54.0}]
+[OUTPUT] Report written to: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWEPC1/EPCU_PART1_WEEKLY_PBB_060726.txt
+REPORT ID : EIBQEPC1                                                                                                               1 
+PUBLIC BANK BERHAD                                                                                                                   
+CHEQUES ISSUED BY THE BANK AS AT 06/07/2026                                                                                          
+                                                                                                                                     
+-------------------------------------------------------------------                                                                  
+|                               |   NUMBER OF    |VALUE OF CHEQUES|                                                                  
+|                               |    CHEQUES     |    (RM'000)    |                                                                  
+|-------------------------------+----------------+----------------|                                                                  
+|CHEQUES ISSUED                 |               0|               0|                                                                  
+-------------------------------------------------------------------                                                                  
+REPORT ID : EIBQEPC1                                                                                                               2 
+PUBLIC BANK BERHAD                                                                                                                   
+ALL PAYMENTS BY NUMBER OF CHEQUES AS AT 06/07/2026                                                                                   
+                                                                                                                                     
+---------------------------------------------------------------                                                                      
+|                               |        CHEQUES ISSUED       |                                                                      
+|                               |-----------------------------|                                                                      
+|                               |                |   VALUE    |                                                                      
+|                               |      UNIT      |  (RM'000)  |                                                                      
+|-------------------------------+----------------+------------|                                                                      
+|NO             |PURPOSE        |                |            |                                                                      
+|---------------+---------------|                |            |                                                                      
+---------------------------------------------------------------                                                                      
+REPORT ID : EIBQEPC1                                                                                                               3 
+PUBLIC BANK BERHAD                                                                                                                   
+ALL PAYMENTS BY VALUE OF CHEQUES AS AT 06/07/2026                                                                                    
+                                                                                                                                     
+---------------------------------------------------------------                                                                      
+|                               |        CHEQUES ISSUED       |                                                                      
+|                               |-----------------------------|                                                                      
+|                               |                |   VALUE    |                                                                      
+|                               |      UNIT      |  (RM'000)  |                                                                      
+|-------------------------------+----------------+------------|                                                                      
+|NO             |PURPOSE        |                |            |                                                                      
+|---------------+---------------|                |            |                                                                      
+---------------------------------------------------------------                                                                      
+REPORT ID : EIBQEPC1                                                                                                               4 
+PUBLIC BANK BERHAD                                                                                                                   
+ALL PAYMENTS BY BRANCH AS AT 06/07/2026                                                                                              
+                                                                                                                                     
+---------------------------------                                                                                                    
+|                               |PURPOSE|                                                                                            
+|                               ||                                                                                                   
+|                               |                                                                                                    
+|                               |                                                                                                    
+|                               |                                                                                                    
+|                               |                                                                                                    
+|-------------------------------|                                                                                                    
+|COSTCTR                        |                                                                                                    
+|-------------------------------|                                                                                                    
+---------------------------------    
+
+====================
+
 print("DPLD REPTDATE range (pre-filter):", dpld_raw["REPTDATE"].min(), "to", dpld_raw["REPTDATE"].max())
 print("Filter window:", PREVDT, "to", REPTDT)
