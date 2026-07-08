@@ -44,10 +44,10 @@ HP_PRODUCTS = (128, 130, 131, 132, 380, 381, 700, 705, 720, 725,
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_LOAN_DIR    = BASE_DIR / "input" / "prod" / "EIMBRAMC" / "loan"      # lnXXXXX.sas7bdat
-INPUT_BT_DIR      = BASE_DIR / "input" / "prod" / "EIMBRAMC" / "bt"       # btradXXXXX.sas7bdat
-INPUT_CISLN_DIR   = Path("/stgsrcsys/host/uat") / "CISLN_loan.sas7bdat"
-INPUT_CISDP_DIR   = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
+INPUT_LOAN_DIR    = BASE_DIR / "input" / "prod" / "loan"        # lnXXXXX.sas7bdat
+INPUT_BT_DIR      = BASE_DIR / "input" / "prod" / "btrade"      # btmastXXXXX.sas7bdat
+INPUT_CISLN_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISLN_loan.sas7bdat"
+INPUT_CISDP_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISDP_deposit.sas7bdat"
 INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
 CACHE_DIR     = BASE_DIR / "input" / "prod" / "EIMBRAMC" / "cache"
@@ -73,7 +73,8 @@ LRECL      = 132   # data portion width (ASA control char is a separate byte)
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-_reptdate_values = get_reptdate_values()
+# _reptdate_values = get_reptdate_values()
+_reptdate_values = get_reptdate_values(run_date=date(2026, 7, 1))
 reptdate: date = _reptdate_values.reptdate     # equivalent of SET LN.REPTDATE
 
 _day = reptdate.day
@@ -118,7 +119,7 @@ print(f"  RDATE    : {RDATE}")
 print("\nStep 2: Resolving input files...")
 
 loan_path = get_latest_file(INPUT_LOAN_DIR, prefix="ln")
-bt_path   = get_latest_file(INPUT_BT_DIR, prefix="btrad")
+bt_path   = get_latest_file(INPUT_BT_DIR, prefix="btmast")
 
 print(f"  LOAN : {loan_path.name}")
 print(f"  BT   : {bt_path.name}")
@@ -247,10 +248,15 @@ print(f"  CIS rows: {len(cis):,}")
 # STEP 5: EXTRACT LN A/C (EXCEPT HP)
 # DATA LNACC(KEEP=ACCTNO NOTENO BRANCH CURBAL BALANCE APPRLIMT APPRLIM2
 #                 PRODTYPE UNDRAWN);
-#   SET LOAN.LOAN&REPTMON&NOWK;  IF PRODUCT NOT IN &HP;
-#   IF ACCTYPE='OD' THEN PRODTYPE='OD'; ELSE PRODTYPE='FL';
+#   SET LN_LN.LN06426;  IF PRODUCT NOT IN &HP;
+#   IF (3000000000<=ACCTNO<=3999999999) THEN PRODTYPE='OD'; ELSE PRODTYPE='FL';
+#
+# FLAG: ACCTYPE column does not exist in the LOAN parquet dataset.
+# PRODTYPE is instead derived from the ACCTNO numeric range, per source.
 # ============================================================================
 print("\nStep 5: Extracting LN accounts (excluding HP)...")
+
+# print(pl.read_parquet(LOAN_CACHE).columns)
 
 con = duckdb.connect(database=":memory:")
 _hp_list = ",".join(str(p) for p in HP_PRODUCTS)
@@ -264,7 +270,11 @@ lnacc = con.execute(f"""
         CAST(BALANCE  AS DOUBLE)  AS BALANCE,
         CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
         CAST(APPRLIM2 AS DOUBLE)  AS APPRLIM2,
-        CASE WHEN ACCTYPE = 'OD' THEN 'OD' ELSE 'FL' END AS PRODTYPE,
+        CASE
+            WHEN CAST(ACCTNO AS BIGINT) BETWEEN 3000000000 AND 3999999999
+                THEN 'OD'
+            ELSE 'FL'
+        END AS PRODTYPE,
         CAST(UNDRAWN  AS DOUBLE)  AS UNDRAWN
     FROM read_parquet('{LOAN_CACHE}')
     WHERE CAST(PRODUCT AS INTEGER) NOT IN ({_hp_list})
@@ -289,6 +299,8 @@ print(f"  LNACC rows: {len(lnacc):,}")
 # missing for every BT-sourced record -- reproduced here as a NULL column.
 # ============================================================================
 print("\nStep 6: Extracting BT accounts...")
+
+# print(pl.read_parquet(BT_CACHE).columns)
 
 con = duckdb.connect(database=":memory:")
 
