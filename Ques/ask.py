@@ -1,628 +1,1041 @@
 #!/usr/bin/env python3
 """
-Program  : EIBWEPC1.py
-Purpose  : CHEQUES ISSUED BY THE BANK - PUBLIC BANK BERHAD (PBB), WEEKLY
-           (ESMR: 2013-181)
-           Produces four tabular reports:
-             1. Total cheques issued (number + value)
-             2. All payments by number of cheques
-             3. All payments by value of cheques
-             4. All payments by branch (COSTCTR x PURPOSE cross-tab)
-
-Notes
------
-* LOAN.REPTDATE no longer exists as a physical dataset/parquet file. The
-  original SAS only used LOAN.REPTDATE to derive REPTDATE/PREVDATE macro
-  variables (it is never used for any other data), so it is fully replaced
-  here by REPTDATE.py.
-* This job is scheduled to run only on the 8th, 15th, 22nd, and the last
-  calendar day of the month (weekly cadence). The original SAS SELECT/WHEN
-  branches on DAY(REPTDATE) = 8, 15, 22, OTHERWISE, mapping PREVDATE to the
-  1st, 9th, 16th, and 23rd of the month respectively. Because the job only
-  ever runs on those four days, this is exactly equivalent to
-  REPTDATE.py's NOWK day-of-month bucket (1-8 / 9-15 / 16-22 / 23-31), so
-  NOWK is used to derive PREVDATE below.
-* Per project convention, all sas7bdat-origin inputs are assumed already
-  converted to Parquet with columns matching the SAS column spec. DPLD.DPLD
-  &REPTMON therefore maps to dpld<REPTMON>.parquet.
-* DPLD's own column named REPTDATE (used in `IF (&PREVDT<=REPTDATE<=
-  &REPTDT)`) is a field belonging to the DPLD record layout itself (the
-  batch/report date carried on each disbursement record) -- it is a
-  different value than the macro variable REPTDATE derived above, which
-  merely happens to share the name. This is assumed present in the DPLD
-  Parquet schema.
-* LNLD (RBP2.B033.LN.BNM.BNKCHEQ.RPT) is a raw mainframe fixed-width flat
-  file, kept as .txt and read via byte-offset slicing in chunks, never via
-  read_parquet()/read_csv() -- same record layout as the quarterly variant.
-* OPTIONS MISSING=0 causes SAS to print '0' instead of blank/'.' for
-  missing numeric values; this is reflected in the Report 4 cross-tab where
-  a COSTCTR/PURPOSE combination with no observations prints 0 / 0.00
-  instead of being left blank.
+Program : EIMBRAMC.py
+Purpose : Branch - Account Management Concept (AMC)
+          COLD report for Branch (detail) + Report for Commercial Banking (summary)
+          Original SAS: cold-for-branch / summary-for-HQ dual report, comparing
+          current month vs previous month approved-limit / outstanding-balance
+          utilisation per customer (ICNO) with combined-limit > RM1,000,000.
 """
 
-# ============================================================================
-# IMPORTS
-# ============================================================================
 import os
-import re
-import textwrap
-from datetime import date
-from pathlib import Path
-from typing import Optional
-
+import gc
+import duckdb
 import pandas as pd
 import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
+from pathlib import Path
+from datetime import date
 
 from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
 from output_date import build_output_file
+
+# ============================================================================
+# DEPENDENCY NOTES
+# ============================================================================
+# %INC PGM(PBBLNFMT); is included in the SAS SYSIN, but no PUT(var,fmt.) call
+# is made anywhere in this program's body, so no format_* function from
+# PBBLNFMT is imported here (per project convention: only import a dependency
+# function when it is traceable to an explicit PUT(var,fmt.) call).
+#
+# The SAS source filters "IF PRODUCT NOT IN &HP;" where &HP is a macro list
+# NOT defined anywhere inside this program's SYSIN (it must be set upstream,
+# e.g. in an included macro library not provided to this conversion). The
+# closest documented equivalent is PBBLNFMT.HP_ALL ("HP - ALL PRODUCTS").
+# It is reproduced locally below as the best available reference; confirm
+# against the true &HP macro definition before relying on this in production.
+HP_PRODUCTS = (128, 130, 131, 132, 380, 381, 700, 705, 720, 725,
+               983, 993, 996, 678, 679, 698, 699)
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = Path("/stgsrcsys/host/uat")
-OUTPUT_DIR = BASE_DIR / "output" / "EIBWEPC1"
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+INPUT_LOAN_DIR    = BASE_DIR / "input" / "prod" / "loan"        # lnXXXXX.sas7bdat
+INPUT_BT_DIR      = BASE_DIR / "input" / "prod" / "btrade"      # btmastXXXXX.sas7bdat
+INPUT_CISLN_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISLN_loan.sas7bdat"
+INPUT_CISDP_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISDP_deposit.sas7bdat"
+INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
+
+CACHE_DIR     = BASE_DIR / "input" / "prod" / "EIMBRAMC" / "cache"
+AMC_STORE_DIR = BASE_DIR / "input" / "prod" / "EIMBRAMC" / "amc_store"     # equivalent of SAP.PBB.AMC library
+
+OUTPUT_DIR = BASE_DIR / "output" / "EIMBRAMC"
+
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+AMC_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Chunked reading controls for the large LNLD flat file.
-CHUNK_SIZE = 500_000
-ROW_LIMIT = int(os.environ.get("ROW_LIMIT", "0")) or None  # test-mode cutoff
+CHUNK_ROWS = 500_000
+ROW_LIMIT  = int(os.environ.get("ROW_LIMIT", 0))   # 0 = no limit
 
-PAGE_LENGTH = 60  # ASA report page length (not specified in JCL -> default 60)
-
-LRECL = 133  # SASLIST DD DCB LRECL=133 (see JCL)
-
-
-def _pad_line(line: str, width: int = LRECL) -> str:
-    return line[:width].ljust(width)
-
-
-def _finalize_page(lines: list[str], page_no: int, width: int = LRECL) -> list[str]:
-    """Pad every line to LRECL; print the automatic SAS page number
-    right-justified on TITLE1 (page numbers print by default since
-    OPTIONS did not specify NONUMBER)."""
-    suffix = f"{page_no} "
-    title = lines[0][: width - len(suffix)].ljust(width - len(suffix)) + suffix
-    out = [title]
-    out += [_pad_line(l, width) for l in lines[1:]]
-    return out
+PAGE_SIZE  = 60
+LRECL      = 132   # data portion width (ASA control char is a separate byte)
 
 # ============================================================================
-# DATA REPTDATE STEP EQUIVALENT
-# (Original: SET LOAN.REPTDATE; SELECT(DAY(REPTDATE)) ... -> PREVDATE)
-# No reptdate.parquet exists; base REPTDATE comes from REPTDATE.py.
+# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py, then
+# replicate the SAS DATA REPTDATE step's custom WK/WK1/MM1/MM2 logic locally,
+# since this program's week-bucket rule is a discrete day-of-month match
+# [8/15/22/otherwise], not the generic range-based NOWK in REPTDATE.py)
 # ============================================================================
-_reptdate_values = get_reptdate_values(year_format="%Y")  # CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.))
-REPTDATE_VAL: date = _reptdate_values.reptdate
+print("Step 1: Deriving report date...")
 
-# SELECT(DAY(REPTDATE)):
-#   WHEN(08) PREVDATE = 1st of month   WHEN(15) PREVDATE = 9th of month
-#   WHEN(22) PREVDATE = 16th of month  OTHERWISE PREVDATE = 23rd of month
-# Equivalent via REPTDATE.py's NOWK day-of-month bucket (see module docstring
-# note above for why this equivalence holds).
-_NOWK_START_DAY = {"1": 1, "2": 9, "3": 16, "4": 23}
-PREVDATE: date = REPTDATE_VAL.replace(day=_NOWK_START_DAY[_reptdate_values.nowk])
+# _reptdate_values = get_reptdate_values()
+_reptdate_values = get_reptdate_values(run_date=date(2026, 7, 1))
+reptdate: date = _reptdate_values.reptdate     # equivalent of SET LN.REPTDATE
 
-REPTYEAR = _reptdate_values.reptyear              # PUT(REPTDATE,YEAR4.)
-REPTMON = _reptdate_values.reptmon                # PUT(MONTH(REPTDATE),Z2.)
-REPTDAY = _reptdate_values.reptday                # PUT(DAY(REPTDATE),Z2.)
-RDATE = REPTDATE_VAL.strftime("%d/%m/%Y")         # PUT(REPTDATE,DDMMYY10.)
-REPTDT: date = REPTDATE_VAL                       # CALL SYMPUT('REPTDT',REPTDATE)
-PREVDT: date = PREVDATE                           # CALL SYMPUT('PREVDT',PREVDATE)
+_day = reptdate.day
+if _day == 8:
+    WK, WK1 = "1", "4"
+elif _day == 15:
+    WK, WK1 = "2", "1"
+elif _day == 22:
+    WK, WK1 = "3", "2"
+else:
+    WK, WK1 = "4", "3"
 
-# ============================================================================
-# FORMAT DICTIONARIES  (PROC FORMAT equivalents)
-# ============================================================================
-DESC_FMT = {1: "CHEQUES ISSUED"}
+MM = reptdate.month
+YY1 = reptdate.year
+YY2 = reptdate.year
+MM1 = MM - 1
+if MM1 == 0:
+    MM1 = 12
+    YY1 = reptdate.year - 1
+MM2 = MM1 - 1
+if MM2 == 0:
+    MM2 = 12
+    YY2 = reptdate.year - 1
 
-TCODE_FMT = {
-    310: "LOAN DISBURSEMENT",
-    750: "PRINCIPAL INCREASE (PROGRESSIVE LOAN RELEASE)",
-    752: "DEBITING FOR INSURANCE PREMIUM",
-    753: "DEBITING FOR LEGAL FEE",
-    754: "DEBITING FOR OTHER PAYMENTS",
-    760: "MANUAL FEE ASSESSMENT FOR PAYMENT TO 3RD PARTY",
-}
+NOWK      = WK
+NOWK1     = WK1                      # derived but unused later in SAS source (kept for parity)
+REPTMON   = f"{MM:02d}"
+REPTMON1  = f"{MM1:02d}"
+REPTMON2  = f"{MM2:02d}"             # derived but unused later in SAS source (kept for parity)
+REPTYR    = f"{reptdate.year:04d}"
+REPTYR1   = f"{YY1:04d}"
+REPTYR2   = f"{YY2:04d}"             # derived but unused later in SAS source (kept for parity)
+RDATE     = reptdate.strftime("%d/%m/%y")
 
-FEEFMT = {
-    "QR": "QUIT RENT",
-    "LF": "LEGAL FEE & DISBURSEMENT",
-    "VA": "VALUATION FEE",
-    "IP": "INSURANCE PREMIUM",
-    "PA": "PROFESSIONAL/OTHERS",
-    "AC": "ADVERTISEMENT FEE",
-    "MC": "MAINTENANCE CHARGES",
-    "RE": "REPOSSESION CHARGES",
-    "RI": "REPAIR CHARGES",
-    "SC": "STORAGE CHARGES",
-    "SF": "SEARCH FEE",
-    "TC": "TOWING CHARGES",
-    "99": "MISCHELLANEOUS EXPENSES",
-}
+print(f"  REPTDATE : {reptdate}  (NOWK={NOWK})")
+print(f"  REPTMON  : {REPTMON}/{REPTYR}   REPTMON1: {REPTMON1}/{REPTYR1}")
+print(f"  RDATE    : {RDATE}")
 
 # ============================================================================
-# FIELD PARSING HELPERS (fixed-width mainframe INPUT equivalents)
+# STEP 2: RESOLVE INPUT FILES
 # ============================================================================
-def _parse_int(raw: str) -> Optional[int]:
-    s = raw.strip()
-    if not s:
-        return None
-    try:
-        return int(s)
-    except ValueError:
-        return None
+print("\nStep 2: Resolving input files...")
+
+loan_path = get_latest_file(INPUT_LOAN_DIR, prefix="ln")
+bt_path   = get_latest_file(INPUT_BT_DIR, prefix="btmast")
+
+print(f"  LOAN : {loan_path.name}")
+print(f"  BT   : {bt_path.name}")
 
 
-def _parse_implied_decimal(raw: str, decimals: int) -> Optional[float]:
-    """SAS w.d informat: divide by 10**d only when no explicit decimal point."""
-    s = raw.strip()
-    if not s:
-        return None
-    negative = s.startswith("-")
-    if negative:
-        s = s[1:]
-    try:
-        if "." in s:
-            val = float(s)
-        else:
-            val = int(s) / (10 ** decimals)
-    except ValueError:
-        return None
-    return -val if negative else val
-
-
-def _parse_ddmmyy8(raw: str) -> Optional[date]:
-    """DDMMYY8. informat, 8-digit field: DD(2)+MM(2)+YYYY(4), no delimiters.
-    Confirmed against actual LN_BNM_BNKCHEQ_RPT.TXT sample data
-    (e.g. '30062026' -> 30/06/2026). YEARCUTOFF=1930 does not apply here
-    since the year is explicit 4-digit, not an ambiguous 2-digit value.
-    """
-    s = raw.strip()
-    if not s:
-        return None
-    digits = re.sub(r"\D", "", s)
-    if len(digits) != 8:
-        return None
-    dd, mm, yyyy = int(digits[0:2]), int(digits[2:4]), int(digits[4:8])
-    try:
-        return date(yyyy, mm, dd)
-    except ValueError:
-        return None
-
-
-# ============================================================================
-# DATA BNM.DPLD
-# SET DPLD.DPLD&REPTMON; IF (&PREVDT<=REPTDATE<=&REPTDT);
-# DPLD.DPLD&REPTMON -> dpld<REPTMON>.sas7bdat (raw mainframe SAS dataset).
-# The filter is applied on DPLD's own REPTDATE column (see module docstring).
-# ============================================================================
-DPLD_PATH = INPUT_DIR / f"dpld{REPTMON}.sas7bdat"
-
-
-def _load_dpld() -> pl.DataFrame:
-    pdf = pd.read_sas(DPLD_PATH, encoding="latin1")
-    df = pl.from_pandas(pdf)
-    return df.with_columns(
-        [
-            # pl.col("ACCTNO").cast(pl.Int64),
-            # (pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64))).alias("TRANDT"),
-            # pl.col("TRANAMT").cast(pl.Float64).round(2),
-            # (pl.date(1960, 1, 1) + pl.duration(days=pl.col("REPTDATE").cast(pl.Int64))).alias("REPTDATE"),
-
-            pl.col("ACCTNO").cast(pl.Int64),
-            pl.col("TRANDT").cast(pl.Date),
-            pl.col("TRANAMT").cast(pl.Float64).round(2),
-            pl.col("REPTDATE").cast(pl.Date),
-        ]
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
     )
 
 
-dpld_raw = _load_dpld()
+def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    """Convert a .sas7bdat to Parquet in streaming chunks (memory-efficient)."""
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+    rows_read = 0
 
-dpld = dpld_raw.filter(
-    (pl.col("REPTDATE") >= PREVDT) & (pl.col("REPTDATE") <= REPTDT)
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        if ROW_LIMIT and rows_read >= ROW_LIMIT:
+            break
+        if ROW_LIMIT:
+            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
+        rows_read += len(chunk)
+
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+
+        if schema is None:
+            schema = table.schema
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        else:
+            cast_arrays = []
+            for field in schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
+                              f"from {col.type} to {field.type}: {e} -- filling nulls")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=schema)
+
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done -- {total:,} rows cached.")
+
+
+# ============================================================================
+# STEP 3: CACHE SOURCE FILES TO PARQUET
+# ============================================================================
+print("\nStep 3: Caching SAS files to Parquet (if needed)...")
+
+LOAN_CACHE  = CACHE_DIR / f"{loan_path.stem}.parquet"
+BT_CACHE    = CACHE_DIR / f"{bt_path.stem}.parquet"
+CISLN_CACHE = CACHE_DIR / "cisln.parquet"
+CISDP_CACHE = CACHE_DIR / "cisdp.parquet"
+
+if not _cache_is_fresh(loan_path, LOAN_CACHE):
+    sas_to_parquet(loan_path, LOAN_CACHE, "LOAN")
+else:
+    print("  [LOAN ] Cache fresh -- skipping conversion.")
+
+if not _cache_is_fresh(bt_path, BT_CACHE):
+    sas_to_parquet(bt_path, BT_CACHE, "BT")
+else:
+    print("  [BT   ] Cache fresh -- skipping conversion.")
+
+if not _cache_is_fresh(INPUT_CISLN_DIR, CISLN_CACHE):
+    sas_to_parquet(INPUT_CISLN_DIR, CISLN_CACHE, "CISLN")
+else:
+    print("  [CISLN] Cache fresh -- skipping conversion.")
+
+if not _cache_is_fresh(INPUT_CISDP_DIR, CISDP_CACHE):
+    sas_to_parquet(INPUT_CISDP_DIR, CISDP_CACHE, "CISDP")
+else:
+    print("  [CISDP] Cache fresh -- skipping conversion.")
+
+# ============================================================================
+# STEP 4: BUILD CIS  (customer name / phone lookup from CISLN + CISDP)
+# DATA LNCIS(KEEP=ACCTNO ICNO CUSTNAME PRIPHONE SECPHONE);
+#   SET CISLN.LOAN;  IF CACCCODE NOT IN ('017','021','028') AND SECCUST='901';
+#   IF NEWIC NE ' ' THEN ICNO=NEWIC; ELSE ICNO=OLDIC;
+# (DPCIS is the same logic against CISDP.DEPOSIT; CIS = LNCIS stacked DPCIS)
+# ============================================================================
+print("\nStep 4: Building CIS (customer name/phone lookup)...")
+
+con = duckdb.connect(database=":memory:")
+
+cis = con.execute(f"""
+    SELECT
+        CAST(ACCTNO AS BIGINT) AS ACCTNO,
+        CASE WHEN TRIM(COALESCE(NEWIC, '')) <> '' THEN NEWIC ELSE OLDIC END AS ICNO,
+        CUSTNAME,
+        PRIPHONE,
+        SECPHONE
+    FROM read_parquet('{CISLN_CACHE}')
+    WHERE CACCCODE NOT IN ('017','021','028') AND SECCUST = '901'
+
+    UNION ALL
+
+    SELECT
+        CAST(ACCTNO AS BIGINT) AS ACCTNO,
+        CASE WHEN TRIM(COALESCE(NEWIC, '')) <> '' THEN NEWIC ELSE OLDIC END AS ICNO,
+        CUSTNAME,
+        PRIPHONE,
+        SECPHONE
+    FROM read_parquet('{CISDP_CACHE}')
+    WHERE CACCCODE NOT IN ('017','021','028') AND SECCUST = '901'
+""").pl()
+
+con.close()
+gc.collect()
+print(f"  CIS rows: {len(cis):,}")
+
+# ============================================================================
+# STEP 5: EXTRACT LN A/C (EXCEPT HP)
+# DATA LNACC(KEEP=ACCTNO NOTENO BRANCH CURBAL BALANCE APPRLIMT APPRLIM2
+#                 PRODTYPE UNDRAWN);
+#   SET LN_LN.LN06426;  IF PRODUCT NOT IN &HP;
+#   IF (3000000000<=ACCTNO<=3999999999) THEN PRODTYPE='OD'; ELSE PRODTYPE='FL';
+#
+# FLAG: ACCTYPE column does not exist in the LOAN parquet dataset.
+# PRODTYPE is instead derived from the ACCTNO numeric range, per source.
+# ============================================================================
+print("\nStep 5: Extracting LN accounts (excluding HP)...")
+
+# print(pl.read_parquet(LOAN_CACHE).columns)
+
+con = duckdb.connect(database=":memory:")
+_hp_list = ",".join(str(p) for p in HP_PRODUCTS)
+
+lnacc = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(BRANCH   AS INTEGER) AS BRANCH,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+        CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
+        CAST(APPRLIM2 AS DOUBLE)  AS APPRLIM2,
+        CASE
+            WHEN CAST(ACCTNO AS BIGINT) BETWEEN 3000000000 AND 3999999999
+                THEN 'OD'
+            ELSE 'FL'
+        END AS PRODTYPE,
+        CAST(UNDRAWN  AS DOUBLE)  AS UNDRAWN
+    FROM read_parquet('{LOAN_CACHE}')
+    WHERE CAST(PRODUCT AS INTEGER) NOT IN ({_hp_list})
+""").pl()
+
+con.close()
+gc.collect()
+print(f"  LNACC rows: {len(lnacc):,}")
+
+# ============================================================================
+# STEP 6: EXTRACT BT A/C
+# DATA BTACC(KEEP=ACCT BRANCH DCURBAL DBALANCE APPRLIMT PRODTYPE DUNDRAWN);
+#   SET BT.BTMAST&REPTMON&NOWK;
+#   IF SUBACCT='OV' AND CUSTCD NE ' ' AND DCURBAL NE .;  PRODTYPE='TB';
+#   ACCT=ACCTNO; NOTENO=0;
+# DATA AMC.BTACC(RENAME=(ACCT=ACCTNO DCURBAL=CURBAL DBALANCE=BALANCE
+#                        DUNDRAWN=UNDRAWN)); SET BTACC;
+#
+# NOTE: NOTENO is set to 0 in the source data step, but the DATA statement's
+# KEEP= list does not include NOTENO, so it is not retained on BTACC. When
+# BTACC is later stacked with LNACC (SET LNACC BTACC), NOTENO is therefore
+# missing for every BT-sourced record -- reproduced here as a NULL column.
+# ============================================================================
+print("\nStep 6: Extracting BT accounts...")
+
+# print(pl.read_parquet(BT_CACHE).columns)
+
+con = duckdb.connect(database=":memory:")
+
+btacc = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(BRANCH   AS INTEGER) AS BRANCH,
+        CAST(DCURBAL  AS DOUBLE)  AS CURBAL,
+        CAST(DBALANCE AS DOUBLE)  AS BALANCE,
+        CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
+        'TB'                      AS PRODTYPE,
+        CAST(DUNDRAWN AS DOUBLE)  AS UNDRAWN
+    FROM read_parquet('{BT_CACHE}')
+    WHERE SUBACCT = 'OV'
+      AND TRIM(COALESCE(CUSTCD, '')) <> ''
+      AND DCURBAL IS NOT NULL
+""").pl()
+
+con.close()
+gc.collect()
+print(f"  BTACC rows: {len(btacc):,}")
+
+# Permanent side-output equivalent of "DATA AMC.BTACC(RENAME=...); SET BTACC;"
+btacc.write_parquet(AMC_STORE_DIR / "BTACC.parquet")
+
+# ============================================================================
+# STEP 7: COMBINE AMCACC = SET LNACC BTACC; MERGE WITH CIS (BY ACCTNO)
+# ============================================================================
+print("\nStep 7: Combining LNACC + BTACC, joining CIS...")
+
+btacc = btacc.with_columns(pl.lit(None).cast(pl.Int64).alias("NOTENO"))
+lnacc = lnacc.with_columns(pl.col("NOTENO").cast(pl.Int64))
+# btacc = btacc.with_columns(pl.col("APPRLIM2").cast(pl.Float64) if "APPRLIM2" in btacc.columns else pl.lit(None).cast(pl.Float64).alias("APPRLIM2"))
+# if "APPRLIM2" not in btacc.columns:
+#     btacc = btacc.with_columns(pl.lit(None).cast(pl.Float64).alias("APPRLIM2"))
+
+if "APPRLIM2" in btacc.columns:
+    btacc = btacc.with_columns(
+        pl.col("APPRLIM2").cast(pl.Float64)
+    )
+else:
+    btacc = btacc.with_columns(
+        pl.lit(None).cast(pl.Float64).alias("APPRLIM2")
+    )
+
+amcacc_raw = pl.concat([lnacc, btacc.select(lnacc.columns)], how="vertical")
+
+# INNER JOIN AMCACC & CIS BY ACCTNO; IF (A AND B) AND ICNO NE ' '
+amcacc = amcacc_raw.join(cis, on="ACCTNO", how="inner").filter(
+    pl.col("ICNO").is_not_null() & (pl.col("ICNO").str.strip_chars() != "")
+)
+print(f"  AMCACC (post CIS join) rows: {len(amcacc):,}")
+
+# ============================================================================
+# STEP 8: FILTER TO CUSTOMERS WITH SUMMED APPRLIMT > RM1,000,000 BY BRANCH+ICNO
+# ============================================================================
+print("\nStep 8: Filtering customers with combined limit > RM1,000,000...")
+
+amclimt_keys = (
+    amcacc.group_by(["BRANCH", "ICNO"])
+    .agg(pl.col("APPRLIMT").sum().alias("APPRLIMT"))
+    .filter(pl.col("APPRLIMT") > 1_000_000)
+    .select(["BRANCH", "ICNO"])
 )
 
+amcacc = amcacc.join(amclimt_keys, on=["BRANCH", "ICNO"], how="inner")
+print(f"  AMCACC (post RM1M filter) rows: {len(amcacc):,}")
+
 # ============================================================================
-# DATA BNM.LNLD
-# INFILE LNLD MISSOVER; fixed-width mainframe flat file, read in chunks with
-# byte-offset slicing (1-based SAS @col -> 0-based Python slice).
-#
-#   @001 ACCTNO    11.            -> [0:11]
-#   @013 NOTENO     5.            -> [12:17]
-#   @019 COSTCTR    7.            -> [18:25]
-#   @027 NOTETYPE   3.            -> [26:29]
-#   @031 TRANDT     DDMMYY8.      -> [30:38]
-#   @047 TRANCODE   3.            -> [46:49]
-#   @051 SEQNO      3.            -> [50:53]
-#   @055 FEEPLAN    $2.  (TRANCODE=760 only) -> [54:56]
-#   @057 FEENO      3.   (TRANCODE=760 only) -> [56:59]
-#   @061 TRANAMT    18.2          -> [60:78]
-#   @080 SOURCE     3.            -> [79:82]
-#
-# Subsetting IF (applied during the INPUT step, before PROC SORT):
-#   (COSTCTR < 3000 OR COSTCTR > 3999) AND COSTCTR NOT IN (4043,4048)
+# STEP 9: READ BRANCH FLAT FILE (fixed-width) & LEFT-JOIN BY BRANCH
+# INFILE BRHFILE LRECL=80; INPUT @2 BRANCH 3. @6 BRABBR $3.;
 # ============================================================================
-_LNLD_SCHEMA = {
-    "ACCTNO": pl.Int64,
-    "NOTENO": pl.Int64,
-    "COSTCTR": pl.Int64,
-    "NOTETYPE": pl.Int64,
-    "TRANDT": pl.Date,
-    "TRANCODE": pl.Int64,
-    "SEQNO": pl.Int64,
-    "FEEPLAN": pl.Utf8,
-    "FEENO": pl.Int64,
-    "TRANAMT": pl.Float64,
-    "SOURCE": pl.Int64,
-}
+print("\nStep 9: Reading branch flat file and merging...")
+
+branch_rows = []
+with open(INPUT_BRANCH_FILE, "rb") as fh:
+    for raw in fh:
+        line = raw.rstrip(b"\r\n")
+        if len(line) < 8:
+            continue
+        branch = int(line[1:4].decode("latin1").strip() or 0)   # @2 3.
+        brabbr = line[5:8].decode("latin1")                     # @6 $3.
+        branch_rows.append({"BRANCH": branch, "BRABBR": brabbr})
+
+brhdata = pl.DataFrame(branch_rows).with_columns(pl.col("BRANCH").cast(pl.Int64))
+amcacc = amcacc.with_columns(pl.col("BRANCH").cast(pl.Int64))
+
+# DATA AMC.AMC&REPTMON&NOWK; MERGE AMCACC(IN=A) BRHDATA; BY BRANCH; IF A;
+amc_current = amcacc.join(brhdata, on="BRANCH", how="left")
+print(f"  AMC current-period rows: {len(amc_current):,}")
+
+# Persist current period to the AMC store (self-referencing history library)
+AMC_CURRENT_KEY  = f"AMC{REPTMON}{NOWK}"
+AMC_PREVIOUS_KEY = f"AMC{REPTMON1}{NOWK}"
+
+amc_current.write_parquet(AMC_STORE_DIR / f"{AMC_CURRENT_KEY}.parquet")
+print(f"  Stored current-period snapshot: {AMC_CURRENT_KEY}.parquet")
+
+del amcacc_raw, amcacc, amclimt_keys, lnacc, btacc, brhdata
+gc.collect()
+
+# ============================================================================
+# STEP 10: CURRENT-MONTH DATASET (CAMC)
+# PROC SORT ... OUT=CAMC; BY BRANCH ICNO ACCTNO NOTENO;
+# IF APPRLIMT/BALANCE/UNDRAWN missing THEN 0;
+# IF (APPRLIMT GT 0 AND PRODTYPE NE 'FL') THEN CPERCT=ROUND(...);
+# ============================================================================
+print("\nStep 10: Building CAMC (current month)...")
+
+camc = amc_current.sort(["BRANCH", "ICNO", "ACCTNO", "NOTENO"], nulls_last=False)
+camc = camc.with_columns([
+    pl.col("APPRLIMT").fill_null(0.0),
+    pl.col("BALANCE").fill_null(0.0),
+    pl.col("UNDRAWN").fill_null(0.0),
+])
+camc = camc.with_columns(
+    pl.when((pl.col("APPRLIMT") > 0) & (pl.col("PRODTYPE") != "FL"))
+    .then(((pl.col("APPRLIMT") - pl.col("UNDRAWN")) / pl.col("APPRLIMT") * 100).round(2))
+    .otherwise(None)
+    .alias("CPERCT")
+)
+print(f"  CAMC rows: {len(camc):,}")
+
+# ============================================================================
+# STEP 11: PREVIOUS-MONTH DATASET (PAMC)  -- read from AMC store
+# PROC SORT DATA=AMC.AMC&REPTMON1&NOWK OUT=PAMC
+#   (RENAME=(APPRLIMT=PLIMT BALANCE=PBAL UNDRAWN=PUNDRAWN));
+# ============================================================================
+print("\nStep 11: Building PAMC (previous month)...")
+
+_prev_path = AMC_STORE_DIR / f"{AMC_PREVIOUS_KEY}.parquet"
+if _prev_path.exists():
+    pamc_raw = pl.read_parquet(_prev_path)
+# else:
+#     print(f"  WARNING: previous-period snapshot {AMC_PREVIOUS_KEY}.parquet not found "
+#           f"(first-ever run for this cycle) -- treating previous month as empty.")
+#     pamc_raw = amc_current.clear()
+else:
+    raise FileNotFoundError(
+        f"Previous AMC snapshot missing: "
+        f"{AMC_PREVIOUS_KEY}.parquet"
+    )
+
+pamc = pamc_raw.sort(["BRANCH", "ICNO", "ACCTNO", "NOTENO"], nulls_last=False).rename({
+    "APPRLIMT": "PLIMT",
+    "BALANCE": "PBAL",
+    "UNDRAWN": "PUNDRAWN",
+})
+pamc = pamc.with_columns([
+    pl.col("PLIMT").fill_null(0.0),
+    pl.col("PBAL").fill_null(0.0),
+    pl.col("PUNDRAWN").fill_null(0.0),
+])
+pamc = pamc.with_columns(
+    pl.when((pl.col("PLIMT") > 0) & (pl.col("PRODTYPE") != "FL"))
+    .then(((pl.col("PLIMT") - pl.col("PUNDRAWN")) / pl.col("PLIMT") * 100).round(2))
+    .otherwise(None)
+    .alias("PPERCT")
+)
+print(f"  PAMC rows: {len(pamc):,}")
+
+# ============================================================================
+# STEP 12: DETAIL MERGE  (AMC = MERGE PAMC CAMC; BY BRANCH ICNO ACCTNO NOTENO)
+# SAS last-dataset-wins: CAMC values win over PAMC for overlapping columns.
+# ============================================================================
+print("\nStep 12: Merging PAMC + CAMC for detail report...")
+
+# camc_pd = camc.to_pandas()
+# pamc_pd = pamc.to_pandas()
+
+# _keys = ["BRANCH", "ICNO", "ACCTNO", "NOTENO"]
+# _shared = ["CUSTNAME", "PRIPHONE", "SECPHONE", "PRODTYPE", "BRABBR", "CURBAL", "APPRLIM2"]
+
+# detail_merged = pd.merge(pamc_pd, camc_pd, on=_keys, how="outer", suffixes=("_p", "_c"))
+
+camc_pd = camc.to_pandas()
+pamc_pd = pamc.to_pandas()
+
+_keys = ["BRANCH", "ICNO", "ACCTNO", "NOTENO"]
+
+# Reproduce SAS MERGE sequencing behaviour
+pamc_pd["_SEQ"] = (
+    pamc_pd.groupby(_keys)
+    .cumcount()
+)
+
+camc_pd["_SEQ"] = (
+    camc_pd.groupby(_keys)
+    .cumcount()
+)
+
+detail_merged = pd.merge(
+    pamc_pd,
+    camc_pd,
+    on=_keys + ["_SEQ"],
+    how="outer",
+    suffixes=("_p", "_c")
+)
+
+detail_merged.drop(columns=["_SEQ"], inplace=True)
+
+_shared = [
+    "CUSTNAME", 
+    "PRIPHONE", 
+    "SECPHONE", 
+    "PRODTYPE", 
+    "BRABBR", 
+    "CURBAL", 
+    "APPRLIM2"
+]
+
+for col in _shared:
+    detail_merged[col] = (
+        detail_merged[f"{col}_c"]
+        .combine_first(detail_merged[f"{col}_p"])
+    )
+    detail_merged.drop(columns=[f"{col}_c", f"{col}_p"], inplace=True)
+
+# For testing purposes (Excluding TB from COLDBR detail report)
+detail_merged = detail_merged[
+    detail_merged["PRODTYPE"] != "TB"
+]
+
+detail_merged.sort_values(["BRANCH", "CUSTNAME", "PRODTYPE"], inplace=True, kind="stable")
+detail_merged.reset_index(drop=True, inplace=True)
+print(f"  Detail merged rows: {len(detail_merged):,}")
+
+# ============================================================================
+# FORMATTING HELPERS
+# ============================================================================
+
+def _comma(value, width: int, decimals: int = 0) -> str:
+    """SAS COMMAw.d equivalent: right-justified in *width*, missing -> '.'."""
+    if value is None or pd.isna(value):
+        return ".".rjust(width)
+    v = float(value)
+    s = f"{v:,.{decimals}f}" if decimals > 0 else f"{v:,.0f}"
+    return s.rjust(width)
 
 
-def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
-    records: list[dict] = []
-    chunks: list[pl.DataFrame] = []
-    total_read = 0
+def _place(buf: list, col: int, text: str) -> None:
+    """Write *text* into buf starting at SAS column *col* (1-based)."""
+    idx = col - 1
+    end = idx + len(text)
+    if end > len(buf):
+        buf.extend([" "] * (end - len(buf)))
+    buf[idx:end] = list(text)
 
-    with open(path, "r", encoding="latin1", errors="replace") as fh:
-        for line in fh:
-            raw = line.rstrip("\r\n")
-            if not raw.strip():
-                continue
 
-            raw = raw.ljust(90)  # MISSOVER: short records treated as blank-padded
+class ReportWriter:
+    """Accumulates ASA-carriage-controlled report lines.
 
-            acctno = _parse_int(raw[0:11])
-            noteno = _parse_int(raw[12:17])
-            costctr = _parse_int(raw[18:25])
-            notetype = _parse_int(raw[26:29])
-            trandt = _parse_ddmmyy8(raw[30:38])
-            trancode = _parse_int(raw[46:49])
-            seqno = _parse_int(raw[50:53])
+    A SAS PUT statement that writes only blanks (e.g. PUT @001 '     ';) does
+    not produce its own visible print record; SAS folds its carriage-control
+    effect into the NEXT emitted line as a double-space ('0') control
+    character. .blank() records that pending fold.
+    """
 
-            feeplan = None
-            feeno = None
-            if trancode == 760:
-                feeplan = raw[54:56].strip() or None
-                feeno = _parse_int(raw[56:59])
+    def __init__(self):
+        self.lines: list[str] = []
+        self._pending_asa = None
 
-            tranamt = _parse_implied_decimal(raw[60:78], decimals=2)
-            source = _parse_int(raw[79:82])
+    def blank(self) -> None:
+        self._pending_asa = "0"
 
-            # SAS missing numeric values sort lower than any real number, so a
-            # missing COSTCTR satisfies "COSTCTR < 3000".
-            cond_range = costctr is None or costctr < 3000 or costctr > 3999
-            cond_excl = costctr not in (4043, 4048)
-            if not (cond_range and cond_excl):
-                continue
+    def emit(self, buf: list, asa: str = " ") -> None:
+        if self._pending_asa is not None:
+            asa = self._pending_asa
+            self._pending_asa = None
+        line = asa + "".join(buf[:LRECL])
+        self.lines.append(line)
 
-            records.append(
-                {
-                    "ACCTNO": acctno,
-                    "NOTENO": noteno,
-                    "COSTCTR": costctr,
-                    "NOTETYPE": notetype,
-                    "TRANDT": trandt,
-                    "TRANCODE": trancode,
-                    "SEQNO": seqno,
-                    "FEEPLAN": feeplan,
-                    "FEENO": feeno,
-                    "TRANAMT": tranamt,
-                    "SOURCE": source,
-                }
+
+# ============================================================================
+# STEP 13: GENERATE COLDBR (detail report)
+# ============================================================================
+print("\nStep 13: Generating COLDBR (detail) report...")
+
+
+def _coldbr_header(writer: ReportWriter, branch: int, pagecnt: int) -> int:
+    buf = [" "] * LRECL
+    _place(buf, 1, "PUBLIC BANK BERHAD")
+    _place(buf, 119, f"PAGE NO : {pagecnt}")
+    writer.emit(buf, asa="1")
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "DETAIL REPORT ON CUSTOMER UNDER ACCOUNT MANAGEMENT CON")
+    _place(buf, 55, f"CEPT(AMC) AS AT {RDATE}")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "REPORT ID: EIMBRAMC")
+    writer.emit(buf)
+
+    writer.blank()
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "BRANCH CODE= ")
+    _place(buf, 14, f"{int(branch or 0):03d}")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 36, "CURRENT MONTH")
+    _place(buf, 73, "PREVIOUS MONTH")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "NAME(TEL/NO)/")
+    _place(buf, 23, "-" * 38)
+    _place(buf, 63, "-" * 38)
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "I/C NO")
+    _place(buf, 13, "FACILITY")
+    _place(buf, 23, "APP/OPER LIMIT")
+    _place(buf, 41, "O/S BALANCE")
+    _place(buf, 53, "UTILISED")
+    _place(buf, 63, "APP/OPER LIMIT")
+    _place(buf, 81, "O/S BALANCE")
+    _place(buf, 93, "UTILISED")
+    _place(buf, 104, "OFFICER")
+    _place(buf, 116, "REMARKS")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "-" * 132)
+    writer.emit(buf)
+
+    return 9
+
+DEBUG_FILE = OUTPUT_DIR / "AMCBR_debug.txt"
+
+def generate_coldbr(df: pd.DataFrame) -> list:
+    writer = ReportWriter()
+    debug = open(DEBUG_FILE, "w", encoding="utf-8")
+    pagecnt = 0
+    linecnt = 0
+    cur_branch = None
+    cur_custname = None
+
+    bcuaplmt = bcuosbal = bpraplmt = bprosbal = 0.0
+    cuaplmt = cuosbal = cuudraw = praplmt = prosbal = prudraw = 0.0
+
+    n = len(df)
+    for i in range(n):
+        row = df.iloc[i]
+        branch = row["BRANCH"]
+        custname = row["CUSTNAME"]
+        is_first_branch = branch != cur_branch
+        is_first_custname = is_first_branch or (custname != cur_custname)
+
+        nxt = df.iloc[i + 1] if i + 1 < n else None
+        is_last_branch = (nxt is None) or (nxt["BRANCH"] != branch)
+        is_last_custname = is_last_branch or (nxt is not None and nxt["CUSTNAME"] != custname)
+
+        if is_first_branch:
+            pagecnt += 1
+            linecnt = _coldbr_header(writer, branch, pagecnt)
+            # bcuaplmt = row["APPRLIMT"] or 0
+            # bcuosbal = row["BALANCE"] or 0
+            # bpraplmt = row["PLIMT"] or 0
+            # bprosbal = row["PBAL"] or 0
+            bcuaplmt = 0.0
+            bcuosbal = 0.0
+            bpraplmt = 0.0
+            bprosbal = 0.0
+            cur_branch = branch
+
+        cuaplmt += row["APPRLIMT"] or 0
+        cuosbal += row["BALANCE"] or 0
+        cuudraw += row["UNDRAWN"] or 0
+        praplmt += row["PLIMT"] or 0
+        prosbal += row["PBAL"] or 0
+        prudraw += row["PUNDRAWN"] or 0
+
+        bcuaplmt += row["APPRLIMT"] or 0
+        bcuosbal += row["BALANCE"] or 0
+        bpraplmt += row["PLIMT"] or 0
+        bprosbal += row["PBAL"] or 0
+
+        if is_first_custname:
+            name = str(row["CUSTNAME"] or "").rstrip()
+            pri = str(row["PRIPHONE"] or "").rstrip()
+            sec = str(row["SECPHONE"] or "").rstrip()
+            cust = f"{name} ({pri}/{sec})"
+            buf = [" "] * LRECL
+            _place(buf, 1, cust)
+            writer.emit(buf)
+            linecnt += 1
+            cur_custname = custname
+
+        if linecnt > 55:
+            pagecnt += 1
+            linecnt = _coldbr_header(writer, branch, pagecnt)
+
+        buf = [" "] * LRECL
+        _place(buf, 1, str(row["ICNO"] or ""))
+        _place(buf, 16, str(row["PRODTYPE"] or ""))
+        _place(buf, 23, _comma(row["APPRLIMT"], 14, 2))
+        _place(buf, 38, _comma(row["BALANCE"], 14, 2))
+        _place(buf, 54, _comma(row["CPERCT"], 6, 2))
+        _place(buf, 60, "%")
+        _place(buf, 63, _comma(row["PLIMT"], 14, 2))
+        _place(buf, 78, _comma(row["PBAL"], 14, 2))
+        _place(buf, 94, _comma(row["PPERCT"], 6, 2))
+        _place(buf, 100, "%")
+        writer.emit(buf)
+        linecnt += 1
+
+        if is_last_custname:
+
+            print(
+                f"Customer TOTAL | "
+                f"Branch = {branch} | "
+                f"Customer = {custname} |  "
+                f"linecnt = {linecnt}\n"
             )
 
-            total_read += 1
-            if len(records) >= CHUNK_SIZE:
-                chunks.append(pl.DataFrame(records, schema=_LNLD_SCHEMA))
-                records = []
+            cupcent = round((cuaplmt - cuudraw) / cuaplmt * 100, 2) if cuaplmt > 0 else 0.0
+            prpcent = round((praplmt - prudraw) / praplmt * 100, 2) if praplmt > 0 else 0.0
 
-            if ROW_LIMIT is not None and total_read >= ROW_LIMIT:
-                break
+            buf = [" "] * LRECL
+            _place(buf, 1, "-" * 132)
+            writer.emit(buf)
 
-    if records:
-        chunks.append(pl.DataFrame(records, schema=_LNLD_SCHEMA))
+            buf = [" "] * LRECL
+            _place(buf, 1, "TOTAL: ")
+            _place(buf, 23, _comma(cuaplmt, 14, 2))
+            _place(buf, 38, _comma(cuosbal, 14, 2))
+            _place(buf, 54, _comma(cupcent, 6, 2))
+            _place(buf, 60, "%")
+            _place(buf, 63, _comma(praplmt, 14, 2))
+            _place(buf, 78, _comma(prosbal, 14, 2))
+            _place(buf, 94, _comma(prpcent, 6, 2))
+            _place(buf, 100, "%")
+            writer.emit(buf)
 
-    if not chunks:
-        return pl.DataFrame(schema=_LNLD_SCHEMA)
+            buf = [" "] * LRECL
+            _place(buf, 1, "-" * 132)
+            writer.emit(buf)
+            linecnt += 3
 
-    return pl.concat(chunks, how="diagonal_relaxed")
+            writer.blank()
+            linecnt += 1
+
+            cuaplmt = cuosbal = cuudraw = praplmt = prosbal = prudraw = 0.0
+
+        if is_last_branch:
+
+            print(
+                f"BR TOTAL | "
+                f"Branch = {branch} | "
+                f"linecnt = {linecnt}\n"
+            )
+
+            buf = [" "] * LRECL
+            _place(buf, 1, "BR TOTAL: ")
+            _place(buf, 23, _comma(bcuaplmt, 14, 2))
+            _place(buf, 38, _comma(bcuosbal, 14, 2))
+            _place(buf, 63, _comma(bpraplmt, 14, 2))
+            _place(buf, 78, _comma(bprosbal, 14, 2))
+            writer.emit(buf)
+
+            buf = [" "] * LRECL
+            _place(buf, 1, "=" * 132)
+            writer.emit(buf)
+
+            bcuaplmt = bcuosbal = bpraplmt = bprosbal = 0.0
+            pagecnt = 0
+
+    debug.close()
+
+    return writer.lines
 
 
-# LNLD (RBP2.B033.LN.BNM.BNKCHEQ.RPT) -- weekly, non-generational flat file
-LNLD_PATH = INPUT_DIR / "LN_BNM_BNKCHEQ_RPT.TXT"
-lnld = _load_lnld_fixed_width(LNLD_PATH)
-
-# lnld = lnld.with_columns(
-#     pl.col("ACCTNO").cast(pl.Int64),
-#     pl.col("TRANDT").cast(pl.Date),
-#     pl.col("TRANAMT").cast(pl.Float64).round(2),
-# )
+coldbr_lines = generate_coldbr(detail_merged)
+print(f"  COLDBR lines: {len(coldbr_lines):,}")
 
 # ============================================================================
-# PROC SORT + DATA BNM.TRANX
-# MERGE LNLD(IN=A) DPLD(IN=B); BY ACCTNO TRANDT TRANAMT; IF A & B;
-# Equivalent to an inner join on the BY keys; the PROC SORTs are dropped
-# since polars' join does not require pre-sorted inputs.
+# STEP 14: BUILD HQ SUMMARY INPUTS (re-derived from CAMC / PAMC, per source)
 # ============================================================================
-lnld = lnld.with_columns(
-    pl.col("ACCTNO").cast(pl.Int64),
-    pl.col("TRANDT").cast(pl.Date),
-    pl.col("TRANAMT").cast(pl.Float64).round(2),
+print("\nStep 14: Building HQ summary aggregates...")
+
+pamc_hq = pamc.to_pandas().copy()
+
+# For testing purposes (Excluding TB from HQ summary)
+pamc_hq = pamc_hq[pamc_hq["PRODTYPE"] != "TB"]
+
+pamc_hq["PFLLIMT"] = pamc_hq.apply(lambda r: r["PLIMT"] if r["PRODTYPE"] == "FL" else None, axis=1)
+pamc_hq["PUNDRAW"] = pamc_hq.apply(lambda r: 0.0 if r["PRODTYPE"] == "FL" else r["PUNDRAWN"], axis=1)
+pamc_hq["PODLIMT"] = pamc_hq.apply(lambda r: r["PLIMT"] if r["PRODTYPE"] != "FL" else None, axis=1)
+
+_p1 = pamc_hq.groupby(["BRANCH", "ICNO"], as_index=False)[["PFLLIMT", "PODLIMT", "PBAL", "PUNDRAW"]].sum(min_count=1)
+pamc_hq_agg = _p1.groupby("BRANCH", as_index=False).agg(
+    PFLLIMT=("PFLLIMT", "sum"),
+    PODLIMT=("PODLIMT", "sum"),
+    PBAL=("PBAL", "sum"),
+    PUNDRAW=("PUNDRAW", "sum"),
+    # PCUST=("ICNO", "count"),
+    PCUST=("ICNO", "nunique"),
 )
 
-print("DPLD rows :", dpld.height)
-print("LNLD rows :", lnld.height)
+camc_hq = camc.to_pandas().copy()
 
-print(
-    "DPLD duplicate keys :",
-    dpld.group_by(["ACCTNO", "TRANDT", "TRANAMT"])
-        .len()
-        .filter(pl.col("len") > 1)
-        .height
+# For testing purposes (Excluding TB from HQ summary)
+camc_hq = camc_hq[camc_hq["PRODTYPE"] != "TB"]
+
+camc_hq["CFLLIMT"] = camc_hq.apply(lambda r: r["APPRLIMT"] if r["PRODTYPE"] == "FL" else None, axis=1)
+camc_hq["CUNDRAW"] = camc_hq.apply(lambda r: 0.0 if r["PRODTYPE"] == "FL" else r["UNDRAWN"], axis=1)
+camc_hq["CODLIMT"] = camc_hq.apply(lambda r: r["APPRLIMT"] if r["PRODTYPE"] != "FL" else None, axis=1)
+
+_c1 = camc_hq.groupby(["BRANCH", "ICNO"], as_index=False)[["CFLLIMT", "CODLIMT", "BALANCE", "CUNDRAW"]].sum(min_count=1)
+camc_hq_agg = _c1.groupby("BRANCH", as_index=False).agg(
+    CFLLIMT=("CFLLIMT", "sum"),
+    CODLIMT=("CODLIMT", "sum"),
+    BALANCE=("BALANCE", "sum"),
+    CUNDRAW=("CUNDRAW", "sum"),
+    # CCUST=("ICNO", "count"),
+    CCUST=("ICNO", "nunique"),
 )
 
-print(
-    "LNLD duplicate keys :",
-    lnld.group_by(["ACCTNO", "TRANDT", "TRANAMT"])
-        .len()
-        .filter(pl.col("len") > 1)
-        .height
-)
-
-tranx_bnm = lnld.join(
-    dpld,
-    on=["ACCTNO", "TRANDT", "TRANAMT"],
-    how="inner"
-)
-
-print("TRANX rows :", tranx_bnm.height)
-
-# ============================================================================
-# DATA TRANX -- FOR PBB
-# ============================================================================
-def _trnxdesc(trancode: Optional[int], feeplan: Optional[str]) -> str:
-    fp = (feeplan or "").strip()
-    if trancode == 760 and fp:
-        return FEEFMT.get(fp, fp)
-    return TCODE_FMT.get(trancode, str(trancode) if trancode is not None else "")
+amclimit = pd.merge(camc_hq_agg, pamc_hq_agg, on="BRANCH", how="outer")
 
 
-tranx = (
-    tranx_bnm
-    .with_columns(
-        [
-            (pl.col("TRANAMT") / 1000).alias("TRANAMT1"),
-            pl.lit(1).cast(pl.Int64).alias("VALUE"),  # CLASS VALUE (always 1)
-        ]
-    )
-    .with_columns(
-        pl.struct(["TRANCODE", "FEEPLAN"])
-        .map_elements(
-            lambda r: _trnxdesc(r["TRANCODE"], r["FEEPLAN"]),
-            return_dtype=pl.String,
-        )
-        .alias("TRNXDESC")
-    )
-)
+def _pct(numer_limit, undrawn):
+    if numer_limit is None or pd.isna(numer_limit) or numer_limit <= 0:
+        return 0.0
+    return round((numer_limit - (undrawn or 0.0)) / numer_limit * 100, 2)
+
+
+amclimit["CPERCT"] = amclimit.apply(lambda r: _pct(r["CODLIMT"], r["CUNDRAW"]), axis=1)
+amclimit["PPERCT"] = amclimit.apply(lambda r: _pct(r["PODLIMT"], r["PUNDRAW"]), axis=1)
+amclimit.sort_values("BRANCH", inplace=True, kind="stable")
+amclimit.reset_index(drop=True, inplace=True)
+print(f"  AMCLIMIT (HQ) rows: {len(amclimit):,}")
 
 # ============================================================================
-# ASA REPORT HELPERS (page length 60; RECFM=FBA-style leading control char)
+# STEP 15: GENERATE COLDHQ (summary report)
 # ============================================================================
-def _box_row(cells, widths, aligns):
-    parts = []
-    for text, w, a in zip(cells, widths, aligns):
-        if a == "L":
-            parts.append(f"{text:<{w}}")
-        elif a == "R":
-            parts.append(f"{text:>{w}}")
-        else:
-            parts.append(text.center(w))
-    return "|" + "|".join(parts) + "|"
+print("\nStep 15: Generating COLDHQ (summary) report...")
 
 
-def _render_report1_box(titles, label, n_val, sum_val):
-    LW, NW, VW = 31, 16, 16
-    lines = list(titles) + [""]
-    lines.append("-" * (LW + NW + VW + 4))
-    lines.append(_box_row(["", "NUMBER OF", "VALUE OF CHEQUES"], [LW, NW, VW], ["L", "C", "C"]))
-    lines.append(_box_row(["", "CHEQUES", "(RM'000)"], [LW, NW, VW], ["L", "C", "C"]))
-    lines.append("|" + "-" * LW + "+" + "-" * NW + "+" + "-" * VW + "|")
-    lines.append(_box_row([label, f"{n_val:,.0f}", f"{sum_val:,.0f}"], [LW, NW, VW], ["L", "R", "R"]))
-    lines.append("-" * (LW + NW + VW + 4))
-    return lines
+def _thousands(value):
+    if value is None or pd.isna(value):
+        return None
+    return round(value / 1000)
 
 
-def _render_report23_box(titles, rows):
-    NOW, PW, UW, VW = 15, 15, 16, 12
-    total_w = NOW + PW + UW + VW + 5
-    lines = list(titles) + [""]
-    lines.append("-" * total_w)
-    lines.append(_box_row(["", "CHEQUES ISSUED"], [NOW + PW + 1, UW + VW + 1], ["L", "C"]))
-    lines.append("|" + " " * (NOW + PW + 1) + "|" + "-" * (UW + VW + 1) + "|")
-    lines.append(_box_row(["", "", "VALUE"], [NOW + PW + 1, UW, VW], ["L", "L", "C"]))
-    lines.append(_box_row(["", "UNIT", "(RM'000)"], [NOW + PW + 1, UW, VW], ["L", "C", "C"]))
-    lines.append("|" + "-" * (NOW + PW + 1) + "+" + "-" * UW + "+" + "-" * VW + "|")
-    lines.append(_box_row(["NO", "PURPOSE", "", ""], [NOW, PW, UW, VW], ["L", "L", "L", "L"]))
-    lines.append("|" + "-" * NOW + "+" + "-" * PW + "|" + " " * UW + "|" + " " * VW + "|")
-    for r in rows:
-        wrapped = textwrap.wrap(str(r["TRNXDESC"]), PW) or [""]
-        for i, text in enumerate(wrapped):
-            no_cell = str(r["COUNT"]) if i == 0 else ""
-            if i == len(wrapped) - 1:
-                unit_cell, val_cell = f"{r['UNIT']:,.0f}", f"{r['VALUE']:,.2f}"
-            else:
-                unit_cell, val_cell = "", ""
-            lines.append(_box_row([no_cell, text, unit_cell, val_cell], [NOW, PW, UW, VW], ["L", "L", "R", "R"]))
-    lines.append("-" * total_w)
-    return lines
+def _coldhq_header(writer: ReportWriter, pagecnt: int) -> int:
+    buf = [" "] * LRECL
+    _place(buf, 1, "PUBLIC BANK BERHAD")
+    _place(buf, 115, f"PAGE NO : {pagecnt}")
+    writer.emit(buf, asa="1")
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "SUMMARY REPORT BY BRANCH ON CUSTOMER UNDER ACCO")
+    _place(buf, 48, f"UNT MANAGEMENT CONCEPT(AMC) AS AT {RDATE}")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "REPORT ID: EIMBRAMC")
+    writer.emit(buf)
+
+    writer.blank()
+
+    buf = [" "] * LRECL
+    _place(buf, 27, f"{REPTMON}/{REPTYR}")
+    _place(buf, 79, f"{REPTMON1}/{REPTYR1}")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 5, "-" * 51)
+    _place(buf, 58, "-" * 51)
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 5, "NO OF")
+    _place(buf, 13, "APPROVED/")
+    _place(buf, 35, "TOTAL")
+    _place(buf, 51, "%")
+    _place(buf, 58, "NO OF")
+    _place(buf, 66, "APPROVED/")
+    _place(buf, 88, "TOTAL")
+    _place(buf, 103, "%")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "BR")
+    _place(buf, 5, "CUST")
+    _place(buf, 13, "OPERATIVE LTD")
+    _place(buf, 35, "OUTSTANDING")
+    _place(buf, 48, "UTILISED")
+    _place(buf, 58, "CUST")
+    _place(buf, 66, "OPERATIVE LTD")
+    _place(buf, 88, "OUTSTANDING")
+    _place(buf, 100, "UTILISED")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 13, "RM(`000)")
+    _place(buf, 35, "BALANCE")
+    _place(buf, 66, "RM(`000)")
+    _place(buf, 88, "BALANCE")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 35, "(FL+OD+TB)")
+    _place(buf, 48, "(OD+TB)")
+    _place(buf, 88, "(FL+OD+TB)")
+    _place(buf, 100, "(OD+TB)")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 13, "FL")
+    _place(buf, 24, "OD+TB")
+    _place(buf, 35, "RM(`000)")
+    _place(buf, 66, "FL")
+    _place(buf, 77, "OD+TB")
+    _place(buf, 88, "RM(`000)")
+    writer.emit(buf)
+
+    buf = [" "] * LRECL
+    _place(buf, 1, "-" * 107)
+    writer.emit(buf)
+
+    return 12
 
 
-def _render_report4_box(titles, costctrs, purposes, lookup):
-    LABEL_W, UW, VW = 31, 16, 12
+def generate_coldhq(df: pd.DataFrame) -> list:
+    writer = ReportWriter()
+    pagecnt = 1
+    linecnt = _coldhq_header(writer, pagecnt)
 
-    full_sep_row = (
-        "|" + "-" * LABEL_W
-        + "".join("+" + "-" * UW + "+" + "-" * VW for _ in purposes)
-        + "|"
-    )
-    total_w = len(full_sep_row)
-    purposes_area_w = total_w - LABEL_W - 3
+    tccust = tpcust = 0
+    tcfllimt = tcodlimt = tbalance = tcundraw = 0.0
+    tpfllimt = tpodlimt = tpbal = tpundraw = 0.0
 
-    lines = list(titles) + [""]
-    lines.append("-" * total_w)
+    n = len(df)
+    for i in range(n):
+        row = df.iloc[i]
+        is_last = (i == n - 1)
 
-    lines.append("|" + " " * LABEL_W + "|" + "PURPOSE".center(purposes_area_w) + "|")
-    lines.append("|" + " " * LABEL_W + "|" + "-" * purposes_area_w + "|")
+        if linecnt > 55:
+            pagecnt += 1
+            linecnt = _coldhq_header(writer, pagecnt)
 
-    if len(purposes) == 1:
-        lines.append("|" + " " * LABEL_W + "|" + purposes[0].center(purposes_area_w) + "|")
-        lines.append("|" + " " * LABEL_W + "|" + "-" * purposes_area_w + "|")
-    else:
-        group_w = UW + 1 + VW
-        row = "|" + " " * LABEL_W + "|"
-        sep = "|" + " " * LABEL_W + "|"
-        for p in purposes:
-            row += p.center(group_w) + "|"
-            sep += "-" * group_w + "|"
-        lines.append(row)
-        lines.append(sep)
+        cfllimt = _thousands(row["CFLLIMT"])
+        codlimt = _thousands(row["CODLIMT"])
+        balance = _thousands(row["BALANCE"])
+        cundraw = _thousands(row["CUNDRAW"])
+        pfllimt = _thousands(row["PFLLIMT"])
+        podlimt = _thousands(row["PODLIMT"])
+        pbal    = _thousands(row["PBAL"])
+        pundraw = _thousands(row["PUNDRAW"])
 
-    lines.append(
-        "|" + " " * LABEL_W + "|"
-        + "".join(" " * UW + "|" + "VALUE".center(VW) + "|" for _ in purposes)
-    )
-    lines.append(
-        "|" + " " * LABEL_W + "|"
-        + "".join("UNIT".center(UW) + "|" + "(RM'000)".center(VW) + "|" for _ in purposes)
-    )
-    lines.append(full_sep_row)
+        buf = [" "] * LRECL
+        _place(buf, 1, f"{int(row['BRANCH'] or 0):03d}")
+        _place(buf, 5, _comma(row["CCUST"], 7))
+        _place(buf, 13, _comma(cfllimt, 10))
+        _place(buf, 24, _comma(codlimt, 10))
+        _place(buf, 35, _comma(balance, 11))
+        _place(buf, 50, _comma(row["CPERCT"], 6, 2))
+        _place(buf, 58, _comma(row["PCUST"], 7))
+        _place(buf, 66, _comma(pfllimt, 10))
+        _place(buf, 77, _comma(podlimt, 10))
+        _place(buf, 88, _comma(pbal, 11))
+        _place(buf, 102, _comma(row["PPERCT"], 6, 2))
+        writer.emit(buf)
+        linecnt += 1
 
-    lines.append(
-        "|" + "COSTCTR".ljust(LABEL_W) + "|"
-        + "".join(" " * UW + "|" + " " * VW + "|" for _ in purposes)
-    )
-    lines.append(
-        "|" + "-" * LABEL_W + "|"
-        + "".join(" " * UW + "|" + " " * VW + "|" for _ in purposes)
-    )
+        tccust  += int(row["CCUST"]) if pd.notna(row["CCUST"]) else 0
+        tcfllimt += cfllimt or 0.0
+        tcodlimt += codlimt or 0.0
+        tbalance += balance or 0.0
+        tcundraw += cundraw or 0.0
+        tpcust  += int(row["PCUST"]) if pd.notna(row["PCUST"]) else 0
+        tpfllimt += pfllimt or 0.0
+        tpodlimt += podlimt or 0.0
+        tpbal   += pbal or 0.0
+        tpundraw += pundraw or 0.0
 
-    for idx, c in enumerate(costctrs):
-        row = "|" + (str(c) if c is not None else "").ljust(LABEL_W) + "|"
-        for p in purposes:
-            unit, value = lookup.get((c, p), (0, 0.0))
-            row += f"{unit:,.0f}".rjust(UW) + "|" + f"{value:,.2f}".rjust(VW) + "|"
-        lines.append(row)
-        if idx < len(costctrs) - 1:
-            lines.append(full_sep_row)
+        if is_last:
+            tcperct = _pct(tcodlimt, tcundraw)
+            tppercnt = _pct(tpodlimt, tpundraw)
 
-    lines.append("-" * total_w)
-    return lines
+            buf = [" "] * LRECL
+            _place(buf, 1, "-" * 107)
+            writer.emit(buf)
+
+            buf = [" "] * LRECL
+            _place(buf, 1, "TOT")
+            _place(buf, 5, _comma(tccust, 7))
+            _place(buf, 13, _comma(tcfllimt, 10))
+            _place(buf, 24, _comma(tcodlimt, 10))
+            _place(buf, 35, _comma(tbalance, 11))
+            _place(buf, 50, _comma(tcperct, 6, 2))
+            _place(buf, 58, _comma(tpcust, 7))
+            _place(buf, 66, _comma(tpfllimt, 10))
+            _place(buf, 77, _comma(tpodlimt, 10))
+            _place(buf, 88, _comma(tpbal, 11))
+            _place(buf, 102, _comma(tppercnt, 6, 2))
+            writer.emit(buf)
+
+            buf = [" "] * LRECL
+            _place(buf, 1, "=" * 107)
+            writer.emit(buf)
+            linecnt += 3
+
+    return writer.lines
 
 
-# ============================================================================
-# REPORT 1: PROC TABULATE - TOTAL CHEQUES ISSUED
-# ============================================================================
-_total_n = tranx.height
-_total_sum = tranx["TRANAMT1"].sum() or 0.0
-
-_titles_1 = [
-    "REPORT ID : EIBQEPC1",
-    "PUBLIC BANK BERHAD",
-    f"CHEQUES ISSUED BY THE BANK AS AT {RDATE}",
-]
-
-# ============================================================================
-# REPORT 2: ALL PAYMENTS BY NUMBER OF CHEQUES
-# PROC SUMMARY by TRNXDESC -> sort DESCENDING UNIT -> add COUNT rank
-# ============================================================================
-_tran1_n = (
-    tranx.group_by("TRNXDESC")
-    .agg([pl.len().alias("UNIT"), pl.col("TRANAMT1").sum().alias("TRANAMT1")])
-    .sort("UNIT", descending=True)
-    .with_row_index("COUNT", offset=1)
-)
-
-_xxx_n = _tran1_n.select(["COUNT", "TRNXDESC"])
-_tranx1 = tranx.join(_xxx_n, on="TRNXDESC", how="left").sort("COUNT")
-
-_tbl2 = (
-    _tranx1.group_by(["COUNT", "TRNXDESC"])
-    .agg([pl.len().alias("UNIT"), pl.col("TRANAMT1").sum().alias("VALUE")])
-    .sort("COUNT")
-)
-
-_titles_2 = [
-    "REPORT ID : EIBQEPC1",
-    "PUBLIC BANK BERHAD",
-    f"ALL PAYMENTS BY NUMBER OF CHEQUES AS AT {RDATE}",
-]
-
-# ============================================================================
-# REPORT 3: ALL PAYMENTS BY VALUE OF CHEQUES
-# PROC SUMMARY by TRNXDESC -> sort DESCENDING TRANAMT1 -> add COUNT rank
-# ============================================================================
-_tran1_v = (
-    tranx.group_by("TRNXDESC")
-    .agg([pl.len().alias("UNIT"), pl.col("TRANAMT1").sum().alias("TRANAMT1")])
-    .sort("TRANAMT1", descending=True)
-    .with_row_index("COUNT", offset=1)
-)
-
-_xxx_v = _tran1_v.select(["COUNT", "TRNXDESC"])
-_tranx2 = tranx.join(_xxx_v, on="TRNXDESC", how="left").sort("COUNT")
-
-_tbl3 = (
-    _tranx2.group_by(["COUNT", "TRNXDESC"])
-    .agg([pl.len().alias("UNIT"), pl.col("TRANAMT1").sum().alias("VALUE")])
-    .sort("COUNT")
-)
-
-_titles_3 = [
-    "REPORT ID : EIBQEPC1",
-    "PUBLIC BANK BERHAD",
-    f"ALL PAYMENTS BY VALUE OF CHEQUES AS AT {RDATE}",
-]
-
-# ============================================================================
-# REPORT 4: ALL PAYMENTS BY BRANCH (COSTCTR x TRNXDESC cross-tab)
-# CLASS TRNXDESC COSTCTR; VAR TRANAMT1;
-# TABLE COSTCTR='COSTCTR', TRNXDESC='PURPOSE'*TRANAMT1=' '*(N='UNIT'*F=16. SUM="VALUE (RM'000)")
-# ============================================================================
-_cross = (
-    tranx.group_by(["COSTCTR", "TRNXDESC"])
-    .agg([pl.len().alias("UNIT"), pl.col("TRANAMT1").sum().alias("VALUE")])
-)
-
-_costctrs = sorted(_cross["COSTCTR"].unique().to_list(), key=lambda v: (v is None, v))
-_purposes = sorted(_cross["TRNXDESC"].unique().to_list())
-
-_cross_lookup = {
-    (r["COSTCTR"], r["TRNXDESC"]): (r["UNIT"], r["VALUE"]) for r in _cross.to_dicts()
-}
-
-_titles_4 = [
-    "REPORT ID : EIBQEPC1",
-    "PUBLIC BANK BERHAD",
-    f"ALL PAYMENTS BY BRANCH AS AT {RDATE}",
-]
+coldhq_lines = generate_coldhq(amclimit)
+print(f"  COLDHQ lines: {len(coldhq_lines):,}")
 
 # ============================================================================
-# ASSEMBLE FULL REPORT (ASA carriage control applied per section)
+# STEP 16: WRITE OUTPUT FILES
 # ============================================================================
-report_lines: list[str] = []
-report_lines += _finalize_page(_render_report1_box(_titles_1, "CHEQUES ISSUED", _total_n, _total_sum), 1)
-report_lines += _finalize_page(_render_report23_box(_titles_2, _tbl2.to_dicts()), 2)
-report_lines += _finalize_page(_render_report23_box(_titles_3, _tbl3.to_dicts()), 3)
-report_lines += _finalize_page(_render_report4_box(_titles_4, _costctrs, _purposes, _cross_lookup), 4)
+print("\nStep 16: Writing output files...")
 
-# ============================================================================
-# WRITE OUTPUT (output_date.py -> date-stamped filename, no extension)
-# ============================================================================
-output_path = build_output_file(OUTPUT_DIR, "EPCU_PART1_WEEKLY_PBB", date_format="ddmmyy")
-report_file = output_path.with_suffix(".txt")
+coldbr_file = build_output_file(OUTPUT_DIR, "AMCBR").with_suffix(".txt")
+coldhq_file = build_output_file(OUTPUT_DIR, "AMCHQ").with_suffix(".txt")
 
-with open(report_file, "w", encoding="latin1") as f:
-    f.write("\n".join(report_lines) + "\n")
+with open(coldbr_file, "w", encoding="latin1") as fh:
+    for ln in coldbr_lines:
+        fh.write(ln + "\n")
 
-print(f"[OUTPUT] Report written to: {report_file}")
-print("\n".join(report_lines))
+with open(coldhq_file, "w", encoding="latin1") as fh:
+    for ln in coldhq_lines:
+        fh.write(ln + "\n")
+
+print(f"  COLDBR output : {coldbr_file}")
+print(f"  COLDHQ output : {coldhq_file}")
+
+del detail_merged, camc, pamc, amc_current
+gc.collect()
+
+print("\nEIMBRAMC complete.")
