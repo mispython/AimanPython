@@ -1,3 +1,14 @@
+Step 6: Extracting BT accounts...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMBRAMC_AII.py", line 304, in <module>
+    btacc = con.execute(f"""
+_duckdb.BinderException: Binder Error: Referenced column "DCURBAL" not found in FROM clause!
+Candidate bindings: "CURBAL", "DISCRATE", "INDUSTRIAL_SECTOR_CD", "CALBASP", "CREATDS"
+
+LINE 13:       AND DCURBAL IS NOT NULL
+                   ^
+============================
+
 # ============================================================================
 # STEP 5: EXTRACT LN A/C (EXCEPT HP)
 # DATA LNACC(KEEP=ACCTNO NOTENO BRANCH CURBAL BALANCE APPRLIMT APPRLIM2
@@ -49,8 +60,7 @@ DATA LNACC(KEEP=ACCTNO NOTENO BRANCH CURBAL BALANCE APPRLIMT
 	else PRODTYPE 'FL' 
 RUN;
 
-
-
+============================
 
 Step 5: Extracting LN accounts (excluding HP)...
 Traceback (most recent call last):
