@@ -1,3 +1,23 @@
+if is_first_branch:
+    pagecnt += 1
+    linecnt = _coldbr_header(writer, branch, pagecnt)
+
+    bcuaplmt = 0.0
+    bcuosbal = 0.0
+    bpraplmt = 0.0
+    bprosbal = 0.0
+
+
+bcuaplmt += row["APPRLIMT"] or 0
+bcuosbal += row["BALANCE"] or 0
+bpraplmt += row["PLIMT"] or 0
+bprosbal += row["PBAL"] or 0
+
+
+
+
+====================
+
 pamc_hq_agg = _p1.groupby("BRANCH", as_index=False).agg(
     PFLLIMT=("PFLLIMT", "sum"),
     PODLIMT=("PODLIMT", "sum"),
