@@ -713,7 +713,7 @@ def generate_coldbr(df: pd.DataFrame) -> list:
 
         if is_last_custname:
 
-            print(
+            debug.write(
                 f"Customer TOTAL | "
                 f"Branch = {branch} | "
                 f"Customer = {custname} |  "
@@ -751,7 +751,7 @@ def generate_coldbr(df: pd.DataFrame) -> list:
 
         if is_last_branch:
 
-            print(
+            debug.write(
                 f"BR TOTAL | "
                 f"Branch = {branch} | "
                 f"linecnt = {linecnt}\n"
@@ -773,6 +773,7 @@ def generate_coldbr(df: pd.DataFrame) -> list:
             pagecnt = 0
 
     debug.close()
+    print(f"DEBUG at {DEBUG_FILE}")
 
     return writer.lines
 
