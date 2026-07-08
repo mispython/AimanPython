@@ -1,3 +1,15 @@
+# ============================================================================
+# STEP 5: EXTRACT LN A/C (EXCEPT HP)
+# DATA LNACC(KEEP=ACCTNO NOTENO BRANCH CURBAL BALANCE APPRLIMT APPRLIM2
+#                 PRODTYPE UNDRAWN);
+#   SET LN_LN.LN06426;  IF PRODUCT NOT IN &HP;
+#   IF (3000000000<=ACCTNO<=3999999999) THEN PRODTYPE='OD'; ELSE PRODTYPE='FL';
+#
+# FLAG: ACCTYPE column does not exist in the LOAN parquet dataset.
+# PRODTYPE is instead derived from the ACCTNO numeric range, per source.
+# ============================================================================
+print("\nStep 5: Extracting LN accounts (excluding HP)...")
+
 con = duckdb.connect(database=":memory:")
 _hp_list = ",".join(str(p) for p in HP_PRODUCTS)
 
