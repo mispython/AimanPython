@@ -1,3 +1,18 @@
+(case when (3000000000<=ACCTNO<=3999999999) then 'OD' else 'LN' end) as ACCTYPE length = 8,
+
+DATA LNACC(KEEP=ACCTNO NOTENO BRANCH CURBAL BALANCE APPRLIMT
+                APPRLIM2 PRODTYPE UNDRAWN);
+   SET LN_LN.LN06426;
+
+   IF PRODUCT NOT IN &HP;
+
+	IF (3000000000<=ACCTNO<= 3999999999 ) then PRODTYPE ='OD' 
+	else PRODTYPE 'FL' 
+RUN;
+
+
+
+
 Step 5: Extracting LN accounts (excluding HP)...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMBRAMC_AII.py", line 258, in <module>
