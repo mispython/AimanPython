@@ -1,3 +1,31 @@
+camc_pd = camc.to_pandas()
+pamc_pd = pamc.to_pandas()
+
+_keys = ["BRANCH", "ICNO", "ACCTNO", "NOTENO"]
+
+# Reproduce SAS MERGE sequencing behaviour
+pamc_pd["_SEQ"] = (
+    pamc_pd.groupby(_keys)
+    .cumcount()
+)
+
+camc_pd["_SEQ"] = (
+    camc_pd.groupby(_keys)
+    .cumcount()
+)
+
+detail_merged = pd.merge(
+    pamc_pd,
+    camc_pd,
+    on=_keys + ["_SEQ"],
+    how="outer",
+    suffixes=("_p", "_c")
+)
+
+detail_merged.drop(columns=["_SEQ"], inplace=True)
+
+=================
+
 if "APPRLIM2" in btacc.columns:
     btacc = btacc.with_columns(
         pl.col("APPRLIM2").cast(pl.Float64)
