@@ -1,3 +1,21 @@
+pamc_hq_agg = _p1.groupby("BRANCH", as_index=False).agg(
+    PFLLIMT=("PFLLIMT", "sum"),
+    PODLIMT=("PODLIMT", "sum"),
+    PBAL=("PBAL", "sum"),
+    PUNDRAW=("PUNDRAW", "sum"),
+    PCUST=("ICNO", "nunique"),
+)
+
+camc_hq_agg = _c1.groupby("BRANCH", as_index=False).agg(
+    CFLLIMT=("CFLLIMT", "sum"),
+    CODLIMT=("CODLIMT", "sum"),
+    BALANCE=("BALANCE", "sum"),
+    CUNDRAW=("CUNDRAW", "sum"),
+    CCUST=("ICNO", "nunique"),
+)
+
+==========================
+
 camc_pd = camc.to_pandas()
 pamc_pd = pamc.to_pandas()
 
