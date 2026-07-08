@@ -1,3 +1,30 @@
+con = duckdb.connect(database=":memory:")
+_hp_list = ",".join(str(p) for p in HP_PRODUCTS)
+
+lnacc = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(BRANCH   AS INTEGER) AS BRANCH,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+        CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
+        CAST(APPRLIM2 AS DOUBLE)  AS APPRLIM2,
+        CASE
+            WHEN CAST(ACCTNO AS BIGINT) BETWEEN 3000000000 AND 3999999999
+                THEN 'OD'
+            ELSE 'FL'
+        END AS PRODTYPE,
+        CAST(UNDRAWN  AS DOUBLE)  AS UNDRAWN
+    FROM read_parquet('{LOAN_CACHE}')
+    WHERE CAST(PRODUCT AS INTEGER) NOT IN ({_hp_list})
+""").pl()
+
+con.close()
+gc.collect()
+print(f"  LNACC rows: {len(lnacc):,}")
+
+
 (case when (3000000000<=ACCTNO<=3999999999) then 'OD' else 'LN' end) as ACCTYPE length = 8,
 
 DATA LNACC(KEEP=ACCTNO NOTENO BRANCH CURBAL BALANCE APPRLIMT
