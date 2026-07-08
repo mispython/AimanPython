@@ -432,8 +432,14 @@ def _build_lnprod_map() -> Dict[int, str]:
     m[175] = '34120'                               # MUSHARAKAH MUTANAQISAH HOME EQUITY-I
     m[445] = '34120'                               # ABBA HOUSE FIN.-I PRESC.VAR RATES
     m[446] = '34120'                               # ABBA HOUSE FIN.-I NON PRESC.VAR RATES
-    for k in range(200, 250): m[k] = '34120'       # 200-249 HOUSING LOANS
-    for k in range(250, 261): m[k] = '34120'       # 250-260
+    # for k in range(200, 250): m[k] = '34120'       # 200-249 HOUSING LOANS
+    # for k in range(250, 261): m[k] = '34120'       # 250-260
+    for k in [200, 201, 204, 205, 209, 210, 211, 212, 213, 214, 215,
+              216, 217, 218, 219, 220, 225, 226, 227, 228, 230, 231,
+              232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242,
+              243, 244, 245, 246, 247, 248, 249, 250, 253, 254, 255,
+              256, 257, 258, 259, 260]:
+        m[k] = '34120'                             # PRIORITY SECTOR/NORMAL/MAH SING/HOS/HOME OWNERSHIP/etc. HOUSING LOANS
     m[400] = '34120'                               # EQUITY HOMESAVE-i
     m[409] = '34120'                               # HOME EQUITY FIN-I VR PRCB
     m[410] = '34120'                               # HOME EQUITY FIN-I VR PRCB REDRAW
