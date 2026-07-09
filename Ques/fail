@@ -1,27 +1,124 @@
-===== IBTDL Columns =====
-['TRANSREX', 'CREATTYP', 'BRANCH', 'APPLCODE', 'ACCTNO', 'SUBACCT', 'CREATYYMMDD', 'EXPIRDS', 'SYNDICAT', 'SPECIALF', 'PURPOSES', 'AANUMBER', 'INTRATE', 'SPREAD', 'INFUNDRT', 'DISCNTB', 'DISCNTF', 'TRANXMT', 'EXCHRTE', 'FORCURR', 'LIABCODE', 'BTREL1', 'RELFROM', 'CURRENCY', 'APPRLIMT', 'APPRLIM2', 'OFFAPIND', 'TFDESC01', 'TFCNTR01', 'TFCNTR03', 'TFCNTR04', 'TFINDR01', 'TFINDR02', 'TFINDR03', 'TFINDR04', 'TFINDR05', 'ISSDTEYYMMDD', 'SINDICAT', 'SUBPROD', 'FACLINE', 'PRODGRP', 'DIRCTIND', 'TRANSREL', 'COMMRATE', 'DISCRATE', 'CONRATE_IND', 'INTBASE', 'PLUSMINUS', 'NUMDAYS', 'BACOM', 'DISCOUNT_PROCEED', 'MTD_TAWIDH_AMT', 'MTD_GHARAMAH_AMT', 'REPAY_SOURCE', 'REPAY_TYPE_CD', 'PROP_DEVELOP_FIN_IND', 'CLIMATE_PRIN_TAXONOMY_CLASS', 'CLIMATE_MITIGATE_GP1_FLG', 'CLIMATE_ADAPT_GP2_FLG', 'CLIMATE_ENVIRONMT_GP3_FLG', 'CLIMATE_TRANSITION_GP4_FLG', 'CLIMATE_PROHIBIT_GP5_FLG', 'SOURCE_INCOME_CURRENCY_CD', 'AADATE', 'REFERRAL_BRANCH', 'APPL_COMMERCIAL_TAG', 'COMBRATE', 'AA_APPROVED_DT', 'BTREL2', 'BTREL3', 'BTREL4', 'NOLEVEL', 'OUTSTAND', 'CERTNO', 'COLLECNO', 'PAYBKNO', 'ADDRLN3', 'ADDRLN4', 'CNTRY', 'PREBKNO', 'PRINAMT_MYRX', 'INTAMT_MYRX', 'OTH_CHARGEX', 'TRANSREF', 'MATUREDS', 'RETAILID', 'STATE', 'SCORE1', 'SCORE2', 'BUSREGN', 'SECTOR', 'SM_STATUS', 'IA_LRU', 'SM_DATE', 'ASCORE_LTST', 'ASCORE_PERM', 'APVDATE', 'INDUSTRIAL_SECTOR_CD', 'LEGAL_ACTION_CD', 'LEGAL_ACTION_DT', 'CCPT_LTST_REVIEW_DT', 'FDB_TAG', 'FDB_TAG_DT', 'FDB_SCORING_DT', 'CUSTCODE', 'DNBFISME', 'ACCTNON', 'ACCTNOX', 'PRINAMT', 'INTAMT', 'INTYTD', 'FIXFLT', 'CALBASP', 'INTAMT_MYR', 'PRINAMT_MYR', 'TENOR_INT', 'OTH_CHARGE', 'REPTDAT1', 'RDAY1', 'ISSYY', 'ISSMM', 'ISSDTX', 'IRIA', 'FACILITY', 'PREFIX', 'CREATDS', 'ISSDTE', 'MATDATE', 'EXPRDATE', 'DIA_PAST01_MTH', 'DIA_PAST02_MTH', 'DIA_PAST03_MTH', 'DIA_PAST04_MTH', 'DIA_PAST05_MTH', 'DIA_PAST06_MTH', 'DIA_PAST07_MTH', 'DIA_PAST08_MTH', 'DIA_PAST09_MTH', 'DIA_PAST10_MTH', 'DIA_PAST11_MTH', 'DIA_PAST12_MTH']
+def _as_date(value) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, (int, float)):
+        if value != value:  # NaN
+            return None
+        return date(1960, 1, 1) + timedelta(days=int(value))
+    return pd.Timestamp(value).date()
 
-===== IBTMAST Columns =====
-['CUSTCODE', 'FICODE', 'ACCTNO', 'POSTCODE', 'TFID', 'CUSTCODX', 'RETAILID', 'STATE', 'SCORE1', 'SCORE2', 'BUSREGN', 'BIRTHDTX', 'SECTOR', 'SETTLED', 'SM_STATUS', 'IA_LRU', 'SM_DATE', 'REVIEW_DT', 'ASCORE_LTST', 'ASCORE_PREVIOUS', 'INDUSTRIAL_SECTOR_CD', 'LEGAL_ACTION_CD', 'LEGAL_ACTION_DT', 'E_INVOICE_IND', 'CCPT_LTST_REVIEW_DT', 'FDB_TAG', 'FDB_TAG_DT', 'FDB_SCORING_DT', 'DNBFISME', 'BIRTHDT', 'APVDATE', 'SUBACCT', 'BTREL', 'INTRECV', 'DCURBAL', 'ICURBAL', 'DBALANCE', 'COLLATER', 'BRANCH', 'APPLCODE', 'CCRISFAC', 'TRANXMT', 'CURRENCY', 'APPRLIMT', 'AA_NUM', 'SINDICAT', 'ORI_AALIMIT', 'CLIMATE_PRIN_TAXONOMY_CLASS', 'SOURCE_INCOME_CURRENCY_CD', 'AA_APPROVED_DT', 'LEVELS', 'KEYFACI', 'LEVEL1', 'LEVEL2', 'LEVEL3', 'LEVEL4', 'LEVEL5', 'D', 'I', 'DIRCTIND', 'CUSTCD', 'ISSDTE', 'EXPRDATE', 'DCURBALX', 'ICURBALX', 'DUNDRAWN', 'IUNDRAWN', 'ORIGMT', 'SECTORCD', 'AMTIND', 'ACCTNOX']
 
-===================
+def fmt_value(v: Optional[float]) -> str:
+    if v is None:
+        v = 0.0
+    if v == 0:
+        return '0'.rjust(VALUE_WIDTH)
+    return f"{v:{VALUE_WIDTH}.2f}"
 
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWIBT1C.py
-[FILE_RESOLVER] Selected latest: ibtdtl260630.sas7bdat
-[FILE_RESOLVER] Selected latest: ibtmast06426.sas7bdat
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWIBT1C.py", line 472, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWIBT1C.py", line 440, in main
-    btradm = build_btradm(ibtmast)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWIBT1C.py", line 241, in build_btradm
-    ibtmast
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "LIABCODE"; valid columns: ["CUSTCODE", "FICODE", "ACCTNO", "POSTCODE", "TFID", "CUSTCODX", "RETAILID", "STATE", "SCORE1", "SCORE2", "BUSREGN", "BIRTHDTX", "SECTOR", "SETTLED", "SM_STATUS", "IA_LRU", "SM_DATE", "REVIEW_DT", "ASCORE_LTST", "ASCORE_PREVIOUS", "INDUSTRIAL_SECTOR_CD", "LEGAL_ACTION_CD", "LEGAL_ACTION_DT", "E_INVOICE_IND", "CCPT_LTST_REVIEW_DT", "FDB_TAG", "FDB_TAG_DT", "FDB_SCORING_DT", "DNBFISME", "BIRTHDT", "APVDATE", "SUBACCT", "BTREL", "INTRECV", "DCURBAL", "ICURBAL", "DBALANCE", "COLLATER", "BRANCH", "APPLCODE", "CCRISFAC", "TRANXMT", "CURRENCY", "APPRLIMT", "AA_NUM", "SINDICAT", "ORI_AALIMIT", "CLIMATE_PRIN_TAXONOMY_CLASS", "SOURCE_INCOME_CURRENCY_CD", "AA_APPROVED_DT", "LEVELS", "KEYFACI", "LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5", "D", "I", "DIRCTIND", "CUSTCD", "ISSDTE", "EXPRDATE", "DCURBALX", "ICURBALX", "DUNDRAWN", "IUNDRAWN", "ORIGMT", "SECTORCD", "AMTIND", "ACCTNOX"]
+
+col_labels = bucket_labels + ['TOTAL']
+    header1 = '|BNMCO-' + ''.join(f'|{c.strip()[:VALUE_WIDTH].center(VALUE_WIDTH)}' for c in col_labels) + '|'
+    header2 = '|DE    ' + ''.join(f'|{"".center(VALUE_WIDTH)}' for c in col_labels) + '|'
+    sep = '|------' + '+-------------' * len(col_labels) + '|'
+    border = '-' * len(header1)
+
+    body: list[str] = [border, header1, header2, sep]
+    for idx, rowvals in pivot.sort_index().iterrows():
+        label = str(idx).strip().ljust(6)[:6]
+        cells = ''.join(f'|{fmt_value(rowvals[c])}' for c in col_labels)
+        body.append(f'|{label}{cells}|')
+
+    total_cells = ''.join(f'|{fmt_value(grand_total[c])}' for c in col_labels)
+    body.append(f'|TOTAL {total_cells}|')
+    body.append(border)
+
+    return paginate(title3, rdate_str, body)
+
+
+def build_report1(loan_df: pl.DataFrame, rdate_str: str,
+                   start_page: int = 1) -> tuple[list[tuple[str, str]], int]:
+    """Render the collateral report as a single GRAND TOTAL PROC TABULATE
+    crosstab, with BNMCODE down the rows and collateral type/TOTAL across
+    the columns.  Missing detail rows from the master/detail merge are
+    excluded so unmatched master accounts do not produce all-zero rows.
+    """
+    pdf = loan_df.select(['BNMCODE', 'TYP', 'OUTSTAND']).to_pandas()
+    pdf = pdf[pdf['OUTSTAND'].notna()]
+    pdf['BNMCODE'] = pdf['BNMCODE'].fillna('').astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+    pdf = pdf[pdf['BNMCODE'] != '']
+    pdf['TYP_LABEL'] = pdf['TYP'].apply(format_typfmt)
+
+    title3 = ' REPORT ON COLLATERAL'
+    pivot = pdf.pivot_table(index='BNMCODE', columns='TYP_LABEL',
+                             values='OUTSTAND', aggfunc='sum', fill_value=0.0)
+    typ_labels = list(pivot.columns)
+    if not typ_labels:
+        return paginate(title3, rdate_str, [], start_page=start_page)
+
+    width = ROW_WIDTH + (VALUE_WIDTH + 1) * (len(typ_labels) + 1) + 1
+    header1 = '|BNMCO-' + ''.join(f'|{label.strip()[:VALUE_WIDTH].center(VALUE_WIDTH)}' for label in typ_labels) + '|' + ''.center(VALUE_WIDTH) + '|'
+    header2 = '|DE    ' + ''.join(f'|{"(100%)".center(VALUE_WIDTH)}' for _ in typ_labels) + '|' + 'TOTAL'.center(VALUE_WIDTH) + '|'
+    sep = '|------' + '+-------------' * (len(typ_labels) + 1) + '|'
+
+    body: list[str] = ['GRAND TOTAL', '-' * width, header1, header2, sep]
+
+    totals = {label: 0.0 for label in typ_labels}
+    for bnmcode, rowvals in pivot.sort_index().iterrows():
+        cells = [float(rowvals[label]) for label in typ_labels]
+        for label, value in zip(typ_labels, cells):
+            totals[label] += value
+        body.append(f'|{str(bnmcode).ljust(6)[:6]}' + ''.join(f'|{fmt_value(v)}' for v in cells) + f'|{fmt_value(sum(cells))}|')
+
+    total_values = [totals[label] for label in typ_labels]
+    body.append('|TOTAL ' + ''.join(f'|{fmt_value(v)}' for v in total_values) + f'|{fmt_value(sum(total_values))}|')
+    body.append('-' * width)
+
+    return paginate(title3, rdate_str, body, start_page=start_page)
+
+
+def paginate(title3: str, rdate_str: str, body_lines: list[str],
+             page_length: int = PAGE_LENGTH,
+             start_page: int = 1) -> tuple[list[tuple[str, str]], int]:
+    """Paginate report lines with page-numbered headings.
+    Returns (rendered_lines, next_page) so callers can chain page numbers
+    continuously across multiple reports instead of restarting at page 1."""
+    header_len = len(title_block(title3, rdate_str, start_page))
+    lines_per_page = max(page_length - header_len, 1)
+
+    out: list[tuple[str, str]] = []
+    page_no = start_page
+    for i, line in enumerate(body_lines):
+        if i % lines_per_page == 0:
+            out.extend(title_block(title3, rdate_str, page_no))
+            page_no += 1
+        out.append(('', line))
+    if not body_lines:
+        out.extend(title_block(title3, rdate_str, page_no))
+        page_no += 1
+    return out, page_no
+
+
+def build_two_way_report(loan2_df: pl.DataFrame, bucket_fn, bucket_labels: list[str],
+                          title3: str, rdate_str: str,
+                          start_page: int = 1) -> tuple[list[tuple[str, str]], int]:
+
+
+return paginate(title3, rdate_str, body, start_page=start_page)
+
+
+report1_lines, next_page = build_report1(loan, rdate_str, start_page=1)
+    report2_lines, next_page = build_two_way_report(
+        loan2, format_remfmt,
+        ['UP TO 1 WK     ', '>1 WK - 1 MTH  ', '>1 MTH - 3 MTHS',
+         '>3 - 6 MTHS    ', '>6 MTHS - 1 YR ', '>1 YEAR        '],
+        ' REPORT ON REMAINING MATURITY', rdate_str, start_page=next_page,
+    )
+    report3_lines, next_page = build_two_way_report(
+        loan2, format_remfmts,
+        ['<1 YEAR        ', '>1 YEAR        '],
+        ' REPORT ON REMAINING MATURITY', rdate_str, start_page=next_page,
+    )
