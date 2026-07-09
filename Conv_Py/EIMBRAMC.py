@@ -333,9 +333,18 @@ print("\nStep 7: Combining LNACC + BTACC, joining CIS...")
 
 btacc = btacc.with_columns(pl.lit(None).cast(pl.Int64).alias("NOTENO"))
 lnacc = lnacc.with_columns(pl.col("NOTENO").cast(pl.Int64))
-btacc = btacc.with_columns(pl.col("APPRLIM2").cast(pl.Float64) if "APPRLIM2" in btacc.columns else pl.lit(None).cast(pl.Float64).alias("APPRLIM2"))
-if "APPRLIM2" not in btacc.columns:
-    btacc = btacc.with_columns(pl.lit(None).cast(pl.Float64).alias("APPRLIM2"))
+# btacc = btacc.with_columns(pl.col("APPRLIM2").cast(pl.Float64) if "APPRLIM2" in btacc.columns else pl.lit(None).cast(pl.Float64).alias("APPRLIM2"))
+# if "APPRLIM2" not in btacc.columns:
+#     btacc = btacc.with_columns(pl.lit(None).cast(pl.Float64).alias("APPRLIM2"))
+
+if "APPRLIM2" in btacc.columns:
+    btacc = btacc.with_columns(
+        pl.col("APPRLIM2").cast(pl.Float64)
+    )
+else:
+    btacc = btacc.with_columns(
+        pl.lit(None).cast(pl.Float64).alias("APPRLIM2")
+    )
 
 amcacc_raw = pl.concat([lnacc, btacc.select(lnacc.columns)], how="vertical")
 
@@ -425,10 +434,15 @@ print("\nStep 11: Building PAMC (previous month)...")
 _prev_path = AMC_STORE_DIR / f"{AMC_PREVIOUS_KEY}.parquet"
 if _prev_path.exists():
     pamc_raw = pl.read_parquet(_prev_path)
+# else:
+#     print(f"  WARNING: previous-period snapshot {AMC_PREVIOUS_KEY}.parquet not found "
+#           f"(first-ever run for this cycle) -- treating previous month as empty.")
+#     pamc_raw = amc_current.clear()
 else:
-    print(f"  WARNING: previous-period snapshot {AMC_PREVIOUS_KEY}.parquet not found "
-          f"(first-ever run for this cycle) -- treating previous month as empty.")
-    pamc_raw = amc_current.clear()
+    raise FileNotFoundError(
+        f"Previous AMC snapshot missing: "
+        f"{AMC_PREVIOUS_KEY}.parquet"
+    )
 
 pamc = pamc_raw.sort(["BRANCH", "ICNO", "ACCTNO", "NOTENO"], nulls_last=False).rename({
     "APPRLIMT": "PLIMT",
@@ -454,16 +468,61 @@ print(f"  PAMC rows: {len(pamc):,}")
 # ============================================================================
 print("\nStep 12: Merging PAMC + CAMC for detail report...")
 
+# camc_pd = camc.to_pandas()
+# pamc_pd = pamc.to_pandas()
+
+# _keys = ["BRANCH", "ICNO", "ACCTNO", "NOTENO"]
+# _shared = ["CUSTNAME", "PRIPHONE", "SECPHONE", "PRODTYPE", "BRABBR", "CURBAL", "APPRLIM2"]
+
+# detail_merged = pd.merge(pamc_pd, camc_pd, on=_keys, how="outer", suffixes=("_p", "_c"))
+
 camc_pd = camc.to_pandas()
 pamc_pd = pamc.to_pandas()
 
 _keys = ["BRANCH", "ICNO", "ACCTNO", "NOTENO"]
-_shared = ["CUSTNAME", "PRIPHONE", "SECPHONE", "PRODTYPE", "BRABBR", "CURBAL", "APPRLIM2"]
 
-detail_merged = pd.merge(pamc_pd, camc_pd, on=_keys, how="outer", suffixes=("_p", "_c"))
+# Reproduce SAS MERGE sequencing behaviour
+pamc_pd["_SEQ"] = (
+    pamc_pd.groupby(_keys)
+    .cumcount()
+)
+
+camc_pd["_SEQ"] = (
+    camc_pd.groupby(_keys)
+    .cumcount()
+)
+
+detail_merged = pd.merge(
+    pamc_pd,
+    camc_pd,
+    on=_keys + ["_SEQ"],
+    how="outer",
+    suffixes=("_p", "_c")
+)
+
+detail_merged.drop(columns=["_SEQ"], inplace=True)
+
+_shared = [
+    "CUSTNAME", 
+    "PRIPHONE", 
+    "SECPHONE", 
+    "PRODTYPE", 
+    "BRABBR", 
+    "CURBAL", 
+    "APPRLIM2"
+]
+
 for col in _shared:
-    detail_merged[col] = detail_merged[f"{col}_c"].combine_first(detail_merged[f"{col}_p"])
+    detail_merged[col] = (
+        detail_merged[f"{col}_c"]
+        .combine_first(detail_merged[f"{col}_p"])
+    )
     detail_merged.drop(columns=[f"{col}_c", f"{col}_p"], inplace=True)
+
+# For testing purposes (Excluding TB from COLDBR detail report)
+detail_merged = detail_merged[
+    detail_merged["PRODTYPE"] != "TB"
+]
 
 detail_merged.sort_values(["BRANCH", "CUSTNAME", "PRODTYPE"], inplace=True, kind="stable")
 detail_merged.reset_index(drop=True, inplace=True)
@@ -480,6 +539,12 @@ def _comma(value, width: int, decimals: int = 0) -> str:
     v = float(value)
     s = f"{v:,.{decimals}f}" if decimals > 0 else f"{v:,.0f}"
     return s.rjust(width)
+
+
+def _num(value) -> float:
+    """Safe float coercion for accumulators: None/NaN -> 0.0.
+    (Plain `value or 0` is unsafe here because NaN is truthy in Python.)"""
+    return 0.0 if value is None or pd.isna(value) else float(value)
 
 
 def _place(buf: list, col: int, text: str) -> None:
@@ -522,10 +587,14 @@ print("\nStep 13: Generating COLDBR (detail) report...")
 
 
 def _coldbr_header(writer: ReportWriter, branch: int, pagecnt: int) -> int:
+    # FILE ... HEADER=NEWPAGE causes SAS to auto-eject a blank top-of-form
+    # page (ASA '1') before running the header routine's own PUTs.
+    writer.emit([" "] * LRECL, asa="1")
+
     buf = [" "] * LRECL
     _place(buf, 1, "PUBLIC BANK BERHAD")
     _place(buf, 119, f"PAGE NO : {pagecnt}")
-    writer.emit(buf, asa="1")
+    writer.emit(buf)          # normal ASA ' '
 
     buf = [" "] * LRECL
     _place(buf, 1, "DETAIL REPORT ON CUSTOMER UNDER ACCOUNT MANAGEMENT CON")
@@ -573,9 +642,11 @@ def _coldbr_header(writer: ReportWriter, branch: int, pagecnt: int) -> int:
 
     return 9
 
+DEBUG_FILE = OUTPUT_DIR / "AMCBR_debug.txt"
 
 def generate_coldbr(df: pd.DataFrame) -> list:
     writer = ReportWriter()
+    debug = open(DEBUG_FILE, "w", encoding="utf-8")
     pagecnt = 0
     linecnt = 0
     cur_branch = None
@@ -599,18 +670,39 @@ def generate_coldbr(df: pd.DataFrame) -> list:
         if is_first_branch:
             pagecnt += 1
             linecnt = _coldbr_header(writer, branch, pagecnt)
-            bcuaplmt = row["APPRLIMT"] or 0
-            bcuosbal = row["BALANCE"] or 0
-            bpraplmt = row["PLIMT"] or 0
-            bprosbal = row["PBAL"] or 0
+            # bcuaplmt = row["APPRLIMT"] or 0
+            # bcuosbal = row["BALANCE"] or 0
+            # bpraplmt = row["PLIMT"] or 0
+            # bprosbal = row["PBAL"] or 0
+            bcuaplmt = 0.0
+            bcuosbal = 0.0
+            bpraplmt = 0.0
+            bprosbal = 0.0
             cur_branch = branch
 
-        cuaplmt += row["APPRLIMT"] or 0
-        cuosbal += row["BALANCE"] or 0
-        cuudraw += row["UNDRAWN"] or 0
-        praplmt += row["PLIMT"] or 0
-        prosbal += row["PBAL"] or 0
-        prudraw += row["PUNDRAWN"] or 0
+        # cuaplmt += row["APPRLIMT"] or 0
+        # cuosbal += row["BALANCE"] or 0
+        # cuudraw += row["UNDRAWN"] or 0
+        # praplmt += row["PLIMT"] or 0
+        # prosbal += row["PBAL"] or 0
+        # prudraw += row["PUNDRAWN"] or 0
+
+        # bcuaplmt += row["APPRLIMT"] or 0
+        # bcuosbal += row["BALANCE"] or 0
+        # bpraplmt += row["PLIMT"] or 0
+        # bprosbal += row["PBAL"] or 0
+
+        cuaplmt += _num(row["APPRLIMT"])
+        cuosbal += _num(row["BALANCE"])
+        cuudraw += _num(row["UNDRAWN"])
+        praplmt += _num(row["PLIMT"])
+        prosbal += _num(row["PBAL"])
+        prudraw += _num(row["PUNDRAWN"])
+
+        bcuaplmt += _num(row["APPRLIMT"])
+        bcuosbal += _num(row["BALANCE"])
+        bpraplmt += _num(row["PLIMT"])
+        bprosbal += _num(row["PBAL"])
 
         if is_first_custname:
             name = str(row["CUSTNAME"] or "").rstrip()
@@ -642,6 +734,14 @@ def generate_coldbr(df: pd.DataFrame) -> list:
         linecnt += 1
 
         if is_last_custname:
+
+            debug.write(
+                f"Customer TOTAL | "
+                f"Branch = {branch} | "
+                f"Customer = {custname} |  "
+                f"linecnt = {linecnt}\n"
+            )
+
             cupcent = round((cuaplmt - cuudraw) / cuaplmt * 100, 2) if cuaplmt > 0 else 0.0
             prpcent = round((praplmt - prudraw) / praplmt * 100, 2) if praplmt > 0 else 0.0
 
@@ -672,6 +772,13 @@ def generate_coldbr(df: pd.DataFrame) -> list:
             cuaplmt = cuosbal = cuudraw = praplmt = prosbal = prudraw = 0.0
 
         if is_last_branch:
+
+            debug.write(
+                f"BR TOTAL | "
+                f"Branch = {branch} | "
+                f"linecnt = {linecnt}\n"
+            )
+
             buf = [" "] * LRECL
             _place(buf, 1, "BR TOTAL: ")
             _place(buf, 23, _comma(bcuaplmt, 14, 2))
@@ -687,6 +794,9 @@ def generate_coldbr(df: pd.DataFrame) -> list:
             bcuaplmt = bcuosbal = bpraplmt = bprosbal = 0.0
             pagecnt = 0
 
+    debug.close()
+    print(f"DEBUG at {DEBUG_FILE}")
+
     return writer.lines
 
 
@@ -699,6 +809,10 @@ print(f"  COLDBR lines: {len(coldbr_lines):,}")
 print("\nStep 14: Building HQ summary aggregates...")
 
 pamc_hq = pamc.to_pandas().copy()
+
+# For testing purposes (Excluding TB from HQ summary)
+pamc_hq = pamc_hq[pamc_hq["PRODTYPE"] != "TB"]
+
 pamc_hq["PFLLIMT"] = pamc_hq.apply(lambda r: r["PLIMT"] if r["PRODTYPE"] == "FL" else None, axis=1)
 pamc_hq["PUNDRAW"] = pamc_hq.apply(lambda r: 0.0 if r["PRODTYPE"] == "FL" else r["PUNDRAWN"], axis=1)
 pamc_hq["PODLIMT"] = pamc_hq.apply(lambda r: r["PLIMT"] if r["PRODTYPE"] != "FL" else None, axis=1)
@@ -709,10 +823,15 @@ pamc_hq_agg = _p1.groupby("BRANCH", as_index=False).agg(
     PODLIMT=("PODLIMT", "sum"),
     PBAL=("PBAL", "sum"),
     PUNDRAW=("PUNDRAW", "sum"),
-    PCUST=("ICNO", "count"),
+    # PCUST=("ICNO", "count"),
+    PCUST=("ICNO", "nunique"),
 )
 
 camc_hq = camc.to_pandas().copy()
+
+# For testing purposes (Excluding TB from HQ summary)
+camc_hq = camc_hq[camc_hq["PRODTYPE"] != "TB"]
+
 camc_hq["CFLLIMT"] = camc_hq.apply(lambda r: r["APPRLIMT"] if r["PRODTYPE"] == "FL" else None, axis=1)
 camc_hq["CUNDRAW"] = camc_hq.apply(lambda r: 0.0 if r["PRODTYPE"] == "FL" else r["UNDRAWN"], axis=1)
 camc_hq["CODLIMT"] = camc_hq.apply(lambda r: r["APPRLIMT"] if r["PRODTYPE"] != "FL" else None, axis=1)
@@ -723,7 +842,8 @@ camc_hq_agg = _c1.groupby("BRANCH", as_index=False).agg(
     CODLIMT=("CODLIMT", "sum"),
     BALANCE=("BALANCE", "sum"),
     CUNDRAW=("CUNDRAW", "sum"),
-    CCUST=("ICNO", "count"),
+    # CCUST=("ICNO", "count"),
+    CCUST=("ICNO", "nunique"),
 )
 
 amclimit = pd.merge(camc_hq_agg, pamc_hq_agg, on="BRANCH", how="outer")
@@ -754,10 +874,14 @@ def _thousands(value):
 
 
 def _coldhq_header(writer: ReportWriter, pagecnt: int) -> int:
+    # FILE ... HEADER=NEWPAGE causes SAS to auto-eject a blank top-of-form
+    # page (ASA '1') before running the header routine's own PUTs.
+    writer.emit([" "] * LRECL, asa="1")
+
     buf = [" "] * LRECL
     _place(buf, 1, "PUBLIC BANK BERHAD")
-    _place(buf, 115, f"PAGE NO : {pagecnt}")
-    writer.emit(buf, asa="1")
+    _place(buf, 119, f"PAGE NO : {pagecnt}")
+    writer.emit(buf)          # normal ASA ' '
 
     buf = [" "] * LRECL
     _place(buf, 1, "SUMMARY REPORT BY BRANCH ON CUSTOMER UNDER ACCO")
