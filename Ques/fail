@@ -29,3 +29,11 @@ def _coldbr_header(writer: ReportWriter, branch: int, pagecnt: int) -> int:
     ...
 
 
+
+print("\nStep 7: Joining LNACC with CIS (TB/BT excluded)...")
+
+amcacc_raw = lnacc
+
+amcacc = amcacc_raw.join(cis, on="ACCTNO", how="inner").filter(
+    pl.col("ICNO").is_not_null() & (pl.col("ICNO").str.strip_chars() != "")
+)
