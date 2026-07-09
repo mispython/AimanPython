@@ -1,49 +1,19 @@
-Step 15: Generating COLDHQ (summary) report...
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWIBT1C.py
+[FILE_RESOLVER] Selected latest: ibtdtl260630.sas7bdat
+[FILE_RESOLVER] Selected latest: ibtmast06426.sas7bdat
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMBRAMC_AII.py", line 1043, in <module>
-    coldhq_lines = generate_coldhq(amclimit)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMBRAMC_AII.py", line 963, in generate_coldhq
-    linecnt = _coldhq_header(writer, pagecnt)
-TypeError: _coldhq_header() missing 1 required positional argument: 'pagecnt'
-
-==============
-
-def _num(value) -> float:
-    """Safe float coercion for accumulators: None/NaN -> 0.0.
-    (Plain `value or 0` is unsafe here because NaN is truthy in Python.)"""
-    return 0.0 if value is None or pd.isna(value) else float(value)
-
-
-cuaplmt += _num(row["APPRLIMT"])
-cuosbal += _num(row["BALANCE"])
-cuudraw += _num(row["UNDRAWN"])
-praplmt += _num(row["PLIMT"])
-prosbal += _num(row["PBAL"])
-prudraw += _num(row["PUNDRAWN"])
-
-bcuaplmt += _num(row["APPRLIMT"])
-bcuosbal += _num(row["BALANCE"])
-bpraplmt += _num(row["PLIMT"])
-bprosbal += _num(row["PBAL"])
-
-
-def _coldbr_header(writer: ReportWriter, branch: int, pagecnt: int) -> int:
-    # FILE ... HEADER=NEWPAGE causes SAS to auto-eject a blank top-of-form
-    # page (ASA '1') before running the header routine's own PUTs.
-    writer.emit([" "] * LRECL, asa="1")
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "PUBLIC BANK BERHAD")
-    _place(buf, 119, f"PAGE NO : {pagecnt}")
-    writer.emit(buf)          # normal ASA ' '
-    ...
-
-
-
-print("\nStep 7: Joining LNACC with CIS (TB/BT excluded)...")
-
-amcacc_raw = lnacc
-
-amcacc = amcacc_raw.join(cis, on="ACCTNO", how="inner").filter(
-    pl.col("ICNO").is_not_null() & (pl.col("ICNO").str.strip_chars() != "")
-)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWIBT1C.py", line 472, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWIBT1C.py", line 440, in main
+    btradm = build_btradm(ibtmast)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWIBT1C.py", line 241, in build_btradm
+    ibtmast
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ColumnNotFoundError: unable to find column "LIABCODE"; valid columns: ["CUSTCODE", "FICODE", "ACCTNO", "POSTCODE", "TFID", "CUSTCODX", "RETAILID", "STATE", "SCORE1", "SCORE2", "BUSREGN", "BIRTHDTX", "SECTOR", "SETTLED", "SM_STATUS", "IA_LRU", "SM_DATE", "REVIEW_DT", "ASCORE_LTST", "ASCORE_PREVIOUS", "INDUSTRIAL_SECTOR_CD", "LEGAL_ACTION_CD", "LEGAL_ACTION_DT", "E_INVOICE_IND", "CCPT_LTST_REVIEW_DT", "FDB_TAG", "FDB_TAG_DT", "FDB_SCORING_DT", "DNBFISME", "BIRTHDT", "APVDATE", "SUBACCT", "BTREL", "INTRECV", "DCURBAL", "ICURBAL", "DBALANCE", "COLLATER", "BRANCH", "APPLCODE", "CCRISFAC", "TRANXMT", "CURRENCY", "APPRLIMT", "AA_NUM", "SINDICAT", "ORI_AALIMIT", "CLIMATE_PRIN_TAXONOMY_CLASS", "SOURCE_INCOME_CURRENCY_CD", "AA_APPROVED_DT", "LEVELS", "KEYFACI", "LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5", "D", "I", "DIRCTIND", "CUSTCD", "ISSDTE", "EXPRDATE", "DCURBALX", "ICURBALX", "DUNDRAWN", "IUNDRAWN", "ORIGMT", "SECTORCD", "AMTIND", "ACCTNOX"]
