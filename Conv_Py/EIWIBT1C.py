@@ -43,8 +43,8 @@ from PBBLNFMT import format_btprod, format_btprodi
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-BASE_DIR = Path(r"/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR = BASE_DIR / "input"
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR = BASE_DIR / "input" / "prod" / "btrade"
 OUTPUT_DIR = BASE_DIR / "output" / "EIWIBT1C"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
