@@ -1,3 +1,24 @@
+for row in btradi.head(10).iter_rows(named=True):
+    print(
+        row["ISSDTE"],
+        type(row["ISSDTE"]),
+        row["EXPRDATE"],
+        type(row["EXPRDATE"])
+    )
+
+
+print(
+    loan2.select(
+        [
+            "BNMCODE",
+            "EXPRDATE",
+            "REMMTH"
+        ]
+    ).head(20)
+)
+
+===============
+
 print(ibtdtl.columns)
 print(btradi.select(['EXPRDATE']).head(10))
 print(btradi.select(pl.col('EXPRDATE').is_null().sum()))
