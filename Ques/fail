@@ -1,3 +1,13 @@
+Step 15: Generating COLDHQ (summary) report...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMBRAMC_AII.py", line 1043, in <module>
+    coldhq_lines = generate_coldhq(amclimit)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMBRAMC_AII.py", line 963, in generate_coldhq
+    linecnt = _coldhq_header(writer, pagecnt)
+TypeError: _coldhq_header() missing 1 required positional argument: 'pagecnt'
+
+==============
+
 def _num(value) -> float:
     """Safe float coercion for accumulators: None/NaN -> 0.0.
     (Plain `value or 0` is unsafe here because NaN is truthy in Python.)"""
