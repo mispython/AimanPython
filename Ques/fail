@@ -1,124 +1,63 @@
-def _as_date(value) -> Optional[date]:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, (int, float)):
-        if value != value:  # NaN
-            return None
-        return date(1960, 1, 1) + timedelta(days=int(value))
-    return pd.Timestamp(value).date()
+REPORT ID: EIWIBT1C                                                                                                              177                  
+PUBLIC BANK BERHAD            DATE : 30/06/26                                                                                                         
+ REPORT ON REMAINING MATURITY                                                                                                                         
+                                                                                                                                                      
+----------------------------------------------------------------------------------------------------------                                            
+|BNMCO-|             |             | >1 MTH - 3  |             | >6 MTHS - 1 |             |             |                                            
+|DE    | UP TO 1 WK  |>1 WK - 1 MTH|    MTHS     | >3 - 6 MTHS |     YR      |   >1 YEAR   |    TOTAL    |                                            
+|------+-------------+-------------+-------------+-------------+-------------+-------------+-------------|                                            
+|34152 |  11451397.68|  67114416.22| 149507425.92|  56092334.29|            0|            0| 284165574.11|                                            
+|34159 |   3392733.71|            0|            0|            0|            0|            0|   3392733.71|                                            
+|34160 |         0.00|            0|    270370.59|     98071.40|            0|            0|    368441.99|                                            
+|53100 |   1566816.08|   1362146.96|   1690689.56|            0|            0|            0|   4619652.60|                                            
+|53999 |  22597231.75|   4838783.04|  11193059.63|  14621630.36|  39005705.77| 524022549.77| 616278960.32|                                            
+|TOTAL |  39008179.22|  73315346.22| 162661545.70|  70812036.05|  39005705.77| 524022549.77| 908825362.73|                                            
+----------------------------------------------------------------------------------------------------------                                            
+REPORT ID: EIWIBT1C                                                                                                              178                  
+PUBLIC BANK BERHAD            DATE : 30/06/26                                                                                                         
+ REPORT ON REMAINING MATURITY                                                                                                                         
+                                                                                                                                                      
+--------------------------------------------------                                                                                                    
+|BNMCO-|   <1 YEAR   |   >1 YEAR   |    TOTAL    |                                                                                                    
+|------+-------------+-------------+-------------|                                                                                                    
+|34152 | 284165574.11|            0| 284165574.11|                                                                                                    
+|34159 |   3392733.71|            0|   3392733.71|                                                                                                    
+|34160 |    368441.99|            0|    368441.99|                                                                                                    
+|53100 |   4619652.60|            0|   4619652.60|                                                                                                    
+|53999 |  92256410.55| 524022549.77| 616278960.32|                                                                                                    
+|TOTAL | 384802812.96| 524022549.77| 908825362.73|                                                                                                    
+--------------------------------------------------        
 
 
-def fmt_value(v: Optional[float]) -> str:
-    if v is None:
-        v = 0.0
-    if v == 0:
-        return '0'.rjust(VALUE_WIDTH)
-    return f"{v:{VALUE_WIDTH}.2f}"
 
 
-col_labels = bucket_labels + ['TOTAL']
-    header1 = '|BNMCO-' + ''.join(f'|{c.strip()[:VALUE_WIDTH].center(VALUE_WIDTH)}' for c in col_labels) + '|'
-    header2 = '|DE    ' + ''.join(f'|{"".center(VALUE_WIDTH)}' for c in col_labels) + '|'
-    sep = '|------' + '+-------------' * len(col_labels) + '|'
-    border = '-' * len(header1)
 
-    body: list[str] = [border, header1, header2, sep]
-    for idx, rowvals in pivot.sort_index().iterrows():
-        label = str(idx).strip().ljust(6)[:6]
-        cells = ''.join(f'|{fmt_value(rowvals[c])}' for c in col_labels)
-        body.append(f'|{label}{cells}|')
-
-    total_cells = ''.join(f'|{fmt_value(grand_total[c])}' for c in col_labels)
-    body.append(f'|TOTAL {total_cells}|')
-    body.append(border)
-
-    return paginate(title3, rdate_str, body)
-
-
-def build_report1(loan_df: pl.DataFrame, rdate_str: str,
-                   start_page: int = 1) -> tuple[list[tuple[str, str]], int]:
-    """Render the collateral report as a single GRAND TOTAL PROC TABULATE
-    crosstab, with BNMCODE down the rows and collateral type/TOTAL across
-    the columns.  Missing detail rows from the master/detail merge are
-    excluded so unmatched master accounts do not produce all-zero rows.
-    """
-    pdf = loan_df.select(['BNMCODE', 'TYP', 'OUTSTAND']).to_pandas()
-    pdf = pdf[pdf['OUTSTAND'].notna()]
-    pdf['BNMCODE'] = pdf['BNMCODE'].fillna('').astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
-    pdf = pdf[pdf['BNMCODE'] != '']
-    pdf['TYP_LABEL'] = pdf['TYP'].apply(format_typfmt)
-
-    title3 = ' REPORT ON COLLATERAL'
-    pivot = pdf.pivot_table(index='BNMCODE', columns='TYP_LABEL',
-                             values='OUTSTAND', aggfunc='sum', fill_value=0.0)
-    typ_labels = list(pivot.columns)
-    if not typ_labels:
-        return paginate(title3, rdate_str, [], start_page=start_page)
-
-    width = ROW_WIDTH + (VALUE_WIDTH + 1) * (len(typ_labels) + 1) + 1
-    header1 = '|BNMCO-' + ''.join(f'|{label.strip()[:VALUE_WIDTH].center(VALUE_WIDTH)}' for label in typ_labels) + '|' + ''.center(VALUE_WIDTH) + '|'
-    header2 = '|DE    ' + ''.join(f'|{"(100%)".center(VALUE_WIDTH)}' for _ in typ_labels) + '|' + 'TOTAL'.center(VALUE_WIDTH) + '|'
-    sep = '|------' + '+-------------' * (len(typ_labels) + 1) + '|'
-
-    body: list[str] = ['GRAND TOTAL', '-' * width, header1, header2, sep]
-
-    totals = {label: 0.0 for label in typ_labels}
-    for bnmcode, rowvals in pivot.sort_index().iterrows():
-        cells = [float(rowvals[label]) for label in typ_labels]
-        for label, value in zip(typ_labels, cells):
-            totals[label] += value
-        body.append(f'|{str(bnmcode).ljust(6)[:6]}' + ''.join(f'|{fmt_value(v)}' for v in cells) + f'|{fmt_value(sum(cells))}|')
-
-    total_values = [totals[label] for label in typ_labels]
-    body.append('|TOTAL ' + ''.join(f'|{fmt_value(v)}' for v in total_values) + f'|{fmt_value(sum(total_values))}|')
-    body.append('-' * width)
-
-    return paginate(title3, rdate_str, body, start_page=start_page)
-
-
-def paginate(title3: str, rdate_str: str, body_lines: list[str],
-             page_length: int = PAGE_LENGTH,
-             start_page: int = 1) -> tuple[list[tuple[str, str]], int]:
-    """Paginate report lines with page-numbered headings.
-    Returns (rendered_lines, next_page) so callers can chain page numbers
-    continuously across multiple reports instead of restarting at page 1."""
-    header_len = len(title_block(title3, rdate_str, start_page))
-    lines_per_page = max(page_length - header_len, 1)
-
-    out: list[tuple[str, str]] = []
-    page_no = start_page
-    for i, line in enumerate(body_lines):
-        if i % lines_per_page == 0:
-            out.extend(title_block(title3, rdate_str, page_no))
-            page_no += 1
-        out.append(('', line))
-    if not body_lines:
-        out.extend(title_block(title3, rdate_str, page_no))
-        page_no += 1
-    return out, page_no
-
-
-def build_two_way_report(loan2_df: pl.DataFrame, bucket_fn, bucket_labels: list[str],
-                          title3: str, rdate_str: str,
-                          start_page: int = 1) -> tuple[list[tuple[str, str]], int]:
-
-
-return paginate(title3, rdate_str, body, start_page=start_page)
-
-
-report1_lines, next_page = build_report1(loan, rdate_str, start_page=1)
-    report2_lines, next_page = build_two_way_report(
-        loan2, format_remfmt,
-        ['UP TO 1 WK     ', '>1 WK - 1 MTH  ', '>1 MTH - 3 MTHS',
-         '>3 - 6 MTHS    ', '>6 MTHS - 1 YR ', '>1 YEAR        '],
-        ' REPORT ON REMAINING MATURITY', rdate_str, start_page=next_page,
-    )
-    report3_lines, next_page = build_two_way_report(
-        loan2, format_remfmts,
-        ['<1 YEAR        ', '>1 YEAR        '],
-        ' REPORT ON REMAINING MATURITY', rdate_str, start_page=next_page,
-    )
+REPORT ID: EIWIBT1C                                                                                                              177                  
+PUBLIC BANK BERHAD            DATE : 08/07/26                                                                                                         
+ REPORT ON REMAINING MATURITY                                                                                                                         
+                                                                                                                                                      
+----------------------------------------------------------------------------------------------------------                                            
+|BNMCO-|             |             | >1 MTH - 3  |             | >6 MTHS - 1 |             |             |                                            
+|DE    | UP TO 1 WK  |>1 WK - 1 MTH|    MTHS     | >3 - 6 MTHS |     YR      |   >1 YEAR   |    TOTAL    |                                            
+|------+-------------+-------------+-------------+-------------+-------------+-------------+-------------|                                            
+|34152 | 284165574.11|            0|            0|            0|            0|            0| 284165574.11|                                            
+|34159 |   3392733.71|            0|            0|            0|            0|            0|   3392733.71|                                            
+|34160 |    368441.99|            0|            0|            0|            0|            0|    368441.99|                                            
+|53100 |   4619652.60|            0|            0|            0|            0|            0|   4619652.60|                                            
+|53999 | 616278960.32|            0|            0|            0|            0|            0| 616278960.32|                                            
+|TOTAL | 908825362.73|            0|            0|            0|            0|            0| 908825362.73|                                            
+----------------------------------------------------------------------------------------------------------                                            
+REPORT ID: EIWIBT1C                                                                                                              178                  
+PUBLIC BANK BERHAD            DATE : 08/07/26                                                                                                         
+ REPORT ON REMAINING MATURITY                                                                                                                         
+                                                                                                                                                      
+--------------------------------------------------                                                                                                    
+|BNMCO-|   <1 YEAR   |   >1 YEAR   |    TOTAL    |                                                                                                    
+|------+-------------+-------------+-------------|                                                                                                    
+|34152 | 284165574.11|            0| 284165574.11|                                                                                                    
+|34159 |   3392733.71|            0|   3392733.71|                                                                                                    
+|34160 |    368441.99|            0|    368441.99|                                                                                                    
+|53100 |   4619652.60|            0|   4619652.60|                                                                                                    
+|53999 | 616278960.32|            0| 616278960.32|                                                                                                    
+|TOTAL | 908825362.73|            0| 908825362.73|                                                                                                    
+--------------------------------------------------                                                                                                    
