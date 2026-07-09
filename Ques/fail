@@ -1,3 +1,9 @@
+print(ibtdtl.columns)
+print(btradi.select(['EXPRDATE']).head(10))
+print(btradi.select(pl.col('EXPRDATE').is_null().sum()))
+
+====================
+
 *Original output
 
 REPORT ID: EIWIBT1C                                                                                                              177                  
