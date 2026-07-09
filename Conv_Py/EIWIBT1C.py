@@ -139,13 +139,31 @@ def compute_origmt(issdte, exprdate) -> str:
     return '10' if days < 366 else '20'
 
 
+# def _as_date(value) -> Optional[date]:
+#     if value is None:
+#         return None
+#     if isinstance(value, datetime):
+#         return value.date()
+#     if isinstance(value, date):
+#         return value
+#     return pd.Timestamp(value).date()
+
+
 def _as_date(value) -> Optional[date]:
     if value is None:
         return None
+
     if isinstance(value, datetime):
         return value.date()
+
     if isinstance(value, date):
         return value
+
+    # SAS date conversion:
+    # SAS stores date as number of days since 01/01/1960
+    if isinstance(value, (int, float)):
+        return (pd.Timestamp("1960-01-01") + pd.Timedelta(days=value)).date()
+
     return pd.Timestamp(value).date()
 
 
@@ -570,13 +588,34 @@ def main() -> None:
 
     print("\n===== IBTMAST Columns =====")
     print(ibtmast.columns)
-
+    
     btradi = build_btradi(ibtdtl)
+
+    print("\n===== DATE DEBUG =====")
+    for row in btradi.head(10).iter_rows(named=True):
+        print(
+            row["ISSDTE"],
+            type(row["ISSDTE"]),
+            row["EXPRDATE"],
+            type(row["EXPRDATE"])
+        )
+
     btradia = build_btradia(btradi)
     btradm = build_btradm(ibtmast)
     btrade = build_btrade(btradm, btradia)
     loan = build_loan(btrade)
     loan2 = build_loan2(btradi, rptdate)
+
+    print("\n===== REMMTH DEBUG =====")
+    print(
+        loan2.select(
+            [
+                "BNMCODE",
+                "EXPRDATE",
+                "REMMTH"
+            ]
+        ).head(20)
+    )
 
     report1_lines, next_page = build_report1(loan, rdate_str, start_page=1)
     grand_total_lines, next_page = build_report1_grand_total(loan, rdate_str, next_page)
@@ -600,9 +639,9 @@ def main() -> None:
     write_report(output_path, all_lines)
 
     print(f"Output written to: {output_path}")
-    print()
-    for ctrl, text in all_lines:
-        print(text)
+    # print()
+    # for ctrl, text in all_lines:
+    #     print(text)
 
 if __name__ == "__main__":
     main()
