@@ -421,7 +421,7 @@ def build_report1(loan_df: pl.DataFrame, rdate_str: str, start_page: int = 1) ->
         out.extend(title_block(' REPORT ON COLLATERAL', rdate_str, page_no))
         branch_table = pivot.loc[branch]
         branch_table = branch_table.reindex(sorted(branch_table.index))
-        width = ROW_WIDTH + (VALUE_WIDTH + 1) * (len(typ_labels) + 1) + 1
+        width = ROW_WIDTH + (VALUE_WIDTH + 1) * (len(typ_labels) + 1)
 
         out.append(('', f'BRANCH {branch}'))
         out.append(('', '-' * width))
