@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program  : EIWIBT1C.py
+Program  : EIWIBT1C
 Purpose  : Undrawn Trade Bills by Collaterals with Remaining Maturity (PIBB)
 Converted from SAS/JCL to Python.
 
@@ -27,6 +27,20 @@ Schema assumptions (FLAG-01, unverified - original copybook/DDL not provided):
                       (assumed NOT to carry BRANCH/PRODCD/OUTSTAND - those are
                       supplied purely from the BTRADIA summary on merge, matching
                       SAS's last-dataset-wins MERGE semantics.)
+
+PROC TABULATE semantics (Report 1):
+  TABLE (BRANCH ALL='GRAND TOTAL'), (BNMCODE=' ' ALL='TOTAL'),
+        (TYP=' ' ALL='TOTAL')*OUTSTAND=' '*SUM=' ' / BOX='BNMCODE' RTS=8;
+  Three comma-separated dimensions => PAGE = BRANCH, ROW = BNMCODE, COLUMN = TYP.
+  Each page only contains the BNMCODE/TYP combinations that actually occur in
+  the data for that BRANCH (no invented zero rows/columns), plus a final
+  'GRAND TOTAL' page (the BRANCH ALL= level) summed across all branches.
+
+FLAG-01 (unverifiable without an actual SAS run): exact column position of the
+OPTIONS NUMBER page-number digit on TITLE1. The source has no OPTIONS
+LINESIZE=, so LINESIZE=132 (the SAS default) is assumed and the digit is
+right-justified to end at column 132 of the printed line, before the 150-byte
+LRECL padding is applied.
 """
 
 from pathlib import Path
@@ -43,8 +57,8 @@ from PBBLNFMT import format_btprod, format_btprodi
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR = BASE_DIR / "input" / "prod" / "btrade"
+BASE_DIR = Path(r"/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output" / "EIWIBT1C"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -53,8 +67,9 @@ IBTDTL_PREFIX = "ibtdtl"     # ibtdtlXXXXXX.sas7bdat  -> YY MM DD
 
 PAGE_LENGTH = 60
 LRECL = 150
-ROW_WIDTH = 8          # RTS=8
-VALUE_WIDTH = 13       # FORMAT=13.2
+LINESIZE = 132          # FLAG-01: assumed default (no OPTIONS LINESIZE= in source)
+LABEL_WIDTH = 6         # BOX='BNMCODE' row-label column width (observed)
+VALUE_WIDTH = 13        # matches FORMAT=13.2
 
 
 # ============================================================
@@ -92,6 +107,12 @@ def format_remfmt(months: float) -> str:
 def format_remfmts(months: float) -> str:
     """VALUE REMFMTS (yearly remaining-maturity bucket)"""
     return '<1 YEAR        ' if months <= 12 else '>1 YEAR        '
+
+
+REMFMT_ORDER = ['UP TO 1 WK', '>1 WK - 1 MTH', '>1 MTH - 3 MTHS',
+                '>3 - 6 MTHS', '>6 MTHS - 1 YR', '>1 YEAR']
+REMFMTS_ORDER = ['<1 YEAR', '>1 YEAR']
+TYPFMT_ORDER = [1, 2, 3, 4, 5, 6, 7]
 
 
 # ============================================================
@@ -208,10 +229,13 @@ def load_ibtmast() -> pl.DataFrame:
 # DATA STEP EQUIVALENTS
 # ============================================================
 def build_btradi(ibtdtl: pl.DataFrame) -> pl.DataFrame:
-    """DATA BTRADI (both steps): PRODCD assignment + ORIGMT derivation."""
+    """DATA BTRADI (both steps): PRODCD assignment + ORIGMT derivation.
+    BRANCH is cast to Int64 here so it never renders with a trailing '.0'
+    (pd.read_sas returns all SAS numerics as Float64)."""
     df = ibtdtl.with_columns([
         pl.col('LIABCODE').cast(pl.Utf8).str.strip_chars(),
         pl.col('DIRCTIND').cast(pl.Utf8).str.strip_chars(),
+        pl.col('BRANCH').cast(pl.Int64),
     ])
 
     prodcd_vals: list[Optional[str]] = []
@@ -257,12 +281,19 @@ def build_btrade(btradm: pl.DataFrame, btradia: pl.DataFrame) -> pl.DataFrame:
 
 
 def build_loan(btrade: pl.DataFrame) -> pl.DataFrame:
-    """DATA LOAN: %COLL; BNMCODE = PRODCD;"""
+    """DATA LOAN: %COLL; BNMCODE = PRODCD;
+    PROC SORT DATA=LOAN; BY BRANCH; WHERE BNMCODE NE ' ';
+    PROC SORT DATA=LOAN; BY ACCTNO;
+    The two PROC SORTs (no OUT=) resort LOAN in place; the WHERE on the first
+    one permanently drops blank-BNMCODE rows before Report 1 is built."""
     typ_vals = [classify_collateral(v) for v in btrade['LIABCODE'].to_list()]
-    return btrade.with_columns([
+    loan = btrade.with_columns([
         pl.Series('TYP', typ_vals),
         pl.col('PRODCD').alias('BNMCODE'),
     ])
+    return loan.filter(
+        pl.col('BNMCODE').is_not_null() & (pl.col('BNMCODE').str.strip_chars() != '')
+    )
 
 
 def build_loan2(btradi: pl.DataFrame, rptdate: date) -> pl.DataFrame:
@@ -291,126 +322,203 @@ def build_loan2(btradi: pl.DataFrame, rptdate: date) -> pl.DataFrame:
 
 
 # ============================================================
-# REPORT RENDERING (ASA carriage control, PROC TABULATE-style crosstabs)
+# TABULATE-STYLE BOX RENDERING
 # ============================================================
-def fmt_value(v: Optional[float]) -> str:
-    if v is None:
-        v = 0.0
-    return f"{v:{VALUE_WIDTH}.2f}"
+def _center(text: str, width: int) -> str:
+    if len(text) >= width:
+        return text[:width]
+    pad = width - len(text)
+    left = pad // 2
+    right = pad - left
+    return ' ' * left + text + ' ' * right
 
 
-def title_block(title3: str, rdate_str: str) -> list[tuple[str, str]]:
-    return [
-        ('1', 'REPORT ID: EIWIBT1C'),
-        (' ', f'PUBLIC BANK BERHAD            DATE : {rdate_str}'),
+def _wrap_words(label: str, width: int) -> tuple[str, str]:
+    """Split a label onto (at most) two physical lines within `width`,
+    breaking on the last word boundary that fits; hard-hyphenates a single
+    over-long word when there is no boundary to break on."""
+    label = label.strip()
+    if len(label) <= width:
+        return '', label
+    words = label.split()
+    if len(words) == 1:
+        cut = width - 1
+        return label[:cut] + '-', label[cut:]
+    line1_words: list[str] = []
+    cur_len = 0
+    for w in words:
+        added_len = len(w) if not line1_words else cur_len + 1 + len(w)
+        if added_len <= width:
+            line1_words.append(w)
+            cur_len = added_len
+        else:
+            break
+    remaining = words[len(line1_words):]
+    if not remaining:
+        remaining = [line1_words.pop()]
+    return ' '.join(line1_words), ' '.join(remaining)
+
+
+def wrap_col_header(label: str, width: int = VALUE_WIDTH) -> tuple[str, str]:
+    """Data-column header: both physical lines centered within `width`."""
+    line1, line2 = _wrap_words(label, width)
+    return (_center(line1, width), _center(line2, width))
+
+
+def wrap_row_header(label: str, width: int = LABEL_WIDTH) -> tuple[str, str]:
+    """BOX= row header: both physical lines left-justified within `width`."""
+    line1, line2 = _wrap_words(label, width)
+    return (line1.ljust(width), line2.ljust(width))
+
+
+def fmt_cell(value: Optional[float], missing: bool) -> str:
+    """Cells with no underlying observations print as a bare right-justified
+    '0' (no decimals); cells with real (even zero-valued) data print with
+    the FORMAT=13.2 decimal formatting."""
+    if missing:
+        return '0'.rjust(VALUE_WIDTH)
+    return f"{value:{VALUE_WIDTH}.2f}"
+
+
+def render_box(row_box_label: str, col_labels: list[str],
+               row_data: list[tuple[str, list[tuple[float, bool]]]],
+               total_row: list[tuple[float, bool]]) -> list[str]:
+    """Renders one BOX='...' RTS=n PROC TABULATE crosstab, including the
+    trailing TOTAL column and TOTAL row, with top/bottom borders."""
+    widths = [LABEL_WIDTH] + [VALUE_WIDTH] * (len(col_labels) + 1)
+    total_width = sum(widths) + len(widths) + 1
+
+    header1_label, header2_label = wrap_row_header(row_box_label)
+    col_headers = [wrap_col_header(c) for c in col_labels] + [wrap_col_header('TOTAL')]
+
+    lines: list[str] = ['-' * total_width]
+    lines.append('|' + '|'.join([header1_label] + [h[0] for h in col_headers]) + '|')
+    lines.append('|' + '|'.join([header2_label] + [h[1] for h in col_headers]) + '|')
+    lines.append('|' + '+'.join('-' * w for w in widths) + '|')
+
+    for label, cells in row_data:
+        row_label_text = label.ljust(LABEL_WIDTH)[:LABEL_WIDTH]
+        cell_text = '|'.join(fmt_cell(v, m) for v, m in cells)
+        lines.append('|' + row_label_text + '|' + cell_text + '|')
+
+    total_label_text = 'TOTAL'.ljust(LABEL_WIDTH)
+    total_cell_text = '|'.join(fmt_cell(v, m) for v, m in total_row)
+    lines.append('|' + total_label_text + '|' + total_cell_text + '|')
+    lines.append('-' * total_width)
+
+    return lines
+
+
+# ============================================================
+# REPORT 1: PAGE=BRANCH, ROW=BNMCODE, COLUMN=TYP
+# ============================================================
+def _crosstab(pdf: 'pd.DataFrame', row_col: str, col_col: str,
+              col_order: list) -> tuple[list[str], list[tuple[str, list]], list]:
+    """Groups pdf by (row_col, col_col) summing OUTSTAND, keeping NaN for
+    combinations that never occur (used to render a bare '0' vs '0.00')."""
+    present_cols = [c for c in col_order if c in pdf['__COL__'].unique()]
+    pivot = pdf.pivot_table(index='__ROW__', columns='__COL__',
+                             values='OUTSTAND', aggfunc='sum', fill_value=None)
+
+    row_labels = sorted(pivot.index.tolist(), key=lambda x: str(x))
+    row_data = []
+    for row_label in row_labels:
+        cells = []
+        for c in present_cols:
+            val = pivot.loc[row_label, c] if c in pivot.columns else None
+            missing = val is None or pd.isna(val)
+            cells.append((0.0 if missing else float(val), missing))
+        row_total = sum(v for v, m in cells)
+        cells.append((row_total, False))
+        row_data.append((str(row_label), cells))
+
+    total_row = []
+    for c in present_cols:
+        col_sum = pivot[c].sum() if c in pivot.columns else 0.0
+        total_row.append((float(col_sum), False))
+    grand_total = sum(v for v, _ in total_row)
+    total_row.append((grand_total, False))
+
+    return present_cols, row_data, total_row
+
+
+def build_report1_page(loan_pdf: 'pd.DataFrame') -> list[str]:
+    """One BOX='BNMCODE' RTS=8 crosstab (rows=BNMCODE, cols=TYP) for the
+    subset of LOAN belonging to a single page (one BRANCH, or ALL for the
+    GRAND TOTAL page)."""
+    pdf = loan_pdf.copy()
+    pdf['__ROW__'] = pdf['BNMCODE']
+    pdf['__COL__'] = pdf['TYP']
+
+    present_typs, row_data, total_row = _crosstab(pdf, 'BNMCODE', 'TYP', TYPFMT_ORDER)
+    col_labels = [format_typfmt(t) for t in present_typs]
+    return render_box('BNMCODE', col_labels, row_data, total_row)
+
+
+def build_report1(loan: pl.DataFrame) -> list[tuple[str, str]]:
+    loan_pdf = loan.select(['BRANCH', 'BNMCODE', 'TYP', 'OUTSTAND']).to_pandas()
+    loan_pdf['BNMCODE'] = loan_pdf['BNMCODE'].astype(str).str.strip()
+
+    branches = sorted(loan_pdf['BRANCH'].unique().tolist())
+
+    lines: list[tuple[str, str]] = []
+    for branch in branches:
+        subset = loan_pdf[loan_pdf['BRANCH'] == branch]
+        box_lines = build_report1_page(subset)
+        lines.extend(_page(' REPORT ON COLLATERAL', f'BRANCH {branch}', box_lines))
+
+    grand_box_lines = build_report1_page(loan_pdf)
+    lines.extend(_page(' REPORT ON COLLATERAL', 'GRAND TOTAL', grand_box_lines))
+
+    return lines
+
+
+# ============================================================
+# REPORT 2 / 3: ROW=BNMCODE, COLUMN=REMMTH BUCKET
+# ============================================================
+def build_bucketed_report(loan2: pl.DataFrame, bucket_fn, bucket_order: list[str],
+                           title3: str) -> list[tuple[str, str]]:
+    pdf = loan2.select(['BNMCODE', 'REMMTH', 'OUTSTAND']).to_pandas()
+    pdf['BNMCODE'] = pdf['BNMCODE'].astype(str).str.strip()
+    pdf['__ROW__'] = pdf['BNMCODE']
+    pdf['__COL__'] = pdf['REMMTH'].apply(bucket_fn).astype(str).str.strip()
+
+    _, row_data, total_row = _crosstab(pdf, 'BNMCODE', 'REMMTH', bucket_order)
+    box_lines = render_box('BNMCODE', bucket_order, row_data, total_row)
+
+    body = [title3.strip(), ''] + box_lines
+    return _page(title3, None, body, is_prebuilt_body=True)
+
+
+# ============================================================
+# PAGE / TITLE ASSEMBLY (ASA carriage control)
+# ============================================================
+_page_counter = {'n': 0}
+_rdate_str = {'v': ''}
+
+
+def _title1(page_num: int) -> str:
+    num_str = str(page_num)
+    left = 'REPORT ID: EIWIBT1C'
+    return left.ljust(LINESIZE - len(num_str)) + num_str
+
+
+def _page(title3: str, page_header: Optional[str], body_lines: list[str],
+          is_prebuilt_body: bool = False) -> list[tuple[str, str]]:
+    """Emits one ASA new-page ('1') block: TITLE1/2/3, blank line, optional
+    page-dimension header (e.g. 'BRANCH 3002' / 'GRAND TOTAL'), then body."""
+    _page_counter['n'] += 1
+    lines: list[tuple[str, str]] = [
+        ('1', _title1(_page_counter['n'])),
+        (' ', f'PUBLIC BANK BERHAD            DATE : {_rdate_str["v"]}'),
         (' ', title3),
         (' ', ''),
     ]
-
-
-def paginate(title3: str, rdate_str: str, body_lines: list[str],
-             page_length: int = PAGE_LENGTH) -> list[tuple[str, str]]:
-    """Apply ASA carriage control with a new page (titles repeated) every
-    `page_length` printed lines."""
-    header = title_block(title3, rdate_str)
-    lines_per_page = max(page_length - len(header), 1)
-
-    out: list[tuple[str, str]] = []
-    for i, line in enumerate(body_lines):
-        if i % lines_per_page == 0:
-            out.extend(header)
-        out.append((' ', line))
-    if not body_lines:
-        out.extend(header)
-    return out
-
-
-def build_report1(loan_df: pl.DataFrame, rdate_str: str) -> list[tuple[str, str]]:
-    """PROC TABULATE: CLASS BRANCH BNMCODE TYP; VAR OUTSTAND;
-    TABLE (BRANCH ALL='GRAND TOTAL'),(BNMCODE=' ' ALL='TOTAL'),
-          (TYP=' ' ALL='TOTAL')*OUTSTAND=' '*SUM=' ' / BOX='BNMCODE' RTS=8;
-    NOTE (FLAG-01): Simplified block-per-BNMCODE rendering; genuine PROC
-    TABULATE page-across splitting for very wide tables is not replicated."""
-    pdf = loan_df.select(['BRANCH', 'BNMCODE', 'TYP', 'OUTSTAND']).to_pandas()
-    pdf['BRANCH'] = pdf['BRANCH'].astype(str).str.strip()
-    pdf['BNMCODE'] = pdf['BNMCODE'].fillna('').astype(str).str.strip()
-    pdf['TYP_LABEL'] = pdf['TYP'].apply(format_typfmt)
-
-    bnmcodes = sorted(pdf['BNMCODE'].unique())
-    typ_labels_all = sorted(pdf['TYP_LABEL'].unique())
-
-    pivot = pdf.pivot_table(index='BRANCH', columns=['BNMCODE', 'TYP_LABEL'],
-                             values='OUTSTAND', aggfunc='sum', fill_value=0.0)
-
-    body: list[str] = ['REPORT ON COLLATERAL', '']
-    for bnmcode in bnmcodes:
-        sub_labels = [t for t in typ_labels_all if (bnmcode, t) in pivot.columns]
-        if not sub_labels:
-            continue
-
-        box_label = bnmcode if bnmcode else '(blank)'
-        body.append(f'BNMCODE'.ljust(ROW_WIDTH) + f'| BNMCODE = {box_label}')
-        header = 'BNMCODE'.ljust(ROW_WIDTH) + '|' + '|'.join(
-            t.strip()[:VALUE_WIDTH].rjust(VALUE_WIDTH) for t in sub_labels
-        ) + '|' + 'TOTAL'.rjust(VALUE_WIDTH)
-        body.append(header)
-        body.append('-' * len(header))
-
-        for branch, rowvals in pivot.iterrows():
-            cells = [rowvals.get((bnmcode, t), 0.0) for t in sub_labels]
-            subtotal = sum(cells)
-            row_line = (str(branch).ljust(ROW_WIDTH)[:ROW_WIDTH] + '|' +
-                        '|'.join(fmt_value(c) for c in cells) + '|' + fmt_value(subtotal))
-            body.append(row_line)
-
-        grand_cells = [
-            pivot[(bnmcode, t)].sum() if (bnmcode, t) in pivot.columns else 0.0
-            for t in sub_labels
-        ]
-        grand_subtotal = sum(grand_cells)
-        total_line = ('GRAND TOTAL'.ljust(ROW_WIDTH) + '|' +
-                      '|'.join(fmt_value(c) for c in grand_cells) + '|' + fmt_value(grand_subtotal))
-        body.append(total_line)
-        body.append('')
-
-    return paginate('REPORT ON COLLATERAL', rdate_str, body)
-
-
-def build_two_way_report(loan2_df: pl.DataFrame, bucket_fn, bucket_labels: list[str],
-                          title3: str, rdate_str: str) -> list[tuple[str, str]]:
-    """PROC TABULATE: CLASS BNMCODE REMMTH; VAR OUTSTAND;
-    TABLE (BNMCODE=' ' ALL='TOTAL'),(REMMTH=' ' ALL='TOTAL')*OUTSTAND=' '*SUM=' '
-          / BOX='BNMCODE' RTS=8;"""
-    pdf = loan2_df.select(['BNMCODE', 'REMMTH', 'OUTSTAND']).to_pandas()
-    pdf['BNMCODE'] = pdf['BNMCODE'].fillna('').astype(str).str.strip()
-    pdf['__BUCKET__'] = pdf['REMMTH'].apply(bucket_fn)
-
-    pivot = pdf.pivot_table(index='BNMCODE', columns='__BUCKET__',
-                             values='OUTSTAND', aggfunc='sum', fill_value=0.0)
-    for b in bucket_labels:
-        if b not in pivot.columns:
-            pivot[b] = 0.0
-    pivot = pivot[bucket_labels]
-    pivot['TOTAL'] = pivot.sum(axis=1)
-    grand_total = pivot.sum(axis=0)
-
-    header_cols = bucket_labels + ['TOTAL']
-    header = 'BNMCODE'.ljust(ROW_WIDTH) + '|' + '|'.join(
-        c.strip()[:VALUE_WIDTH].rjust(VALUE_WIDTH) for c in header_cols
-    )
-    sep = '-' * len(header)
-
-    body: list[str] = [title3.strip(), '', header, sep]
-    for idx, rowvals in pivot.iterrows():
-        label = (str(idx).strip() or '(blank)').ljust(ROW_WIDTH)[:ROW_WIDTH]
-        cells = '|'.join(fmt_value(rowvals[c]) for c in header_cols)
-        body.append(f'{label}|{cells}')
-
-    body.append(sep)
-    total_cells = '|'.join(fmt_value(grand_total[c]) for c in header_cols)
-    body.append('TOTAL'.ljust(ROW_WIDTH) + '|' + total_cells)
-
-    return paginate(title3, rdate_str, body)
+    if page_header is not None:
+        lines.append((' ', page_header))
+    for line in body_lines:
+        lines.append((' ', line))
+    return lines
 
 
 # ============================================================
@@ -430,7 +538,7 @@ def write_report(output_path: Path, all_lines: list[tuple[str, str]]) -> None:
 def main() -> None:
     reptdate_values = get_reptdate_values()
     rptdate = reptdate_values.reptdate
-    rdate_str = rptdate.strftime('%d/%m/%y')
+    _rdate_str['v'] = rptdate.strftime('%d/%m/%y')
 
     ibtdtl = load_ibtdtl()
     ibtmast = load_ibtmast()
@@ -442,18 +550,11 @@ def main() -> None:
     loan = build_loan(btrade)
     loan2 = build_loan2(btradi, rptdate)
 
-    report1_lines = build_report1(loan, rdate_str)
-    report2_lines = build_two_way_report(
-        loan2, format_remfmt,
-        ['UP TO 1 WK     ', '>1 WK - 1 MTH  ', '>1 MTH - 3 MTHS',
-         '>3 - 6 MTHS    ', '>6 MTHS - 1 YR ', '>1 YEAR        '],
-        ' REPORT ON REMAINING MATURITY', rdate_str,
-    )
-    report3_lines = build_two_way_report(
-        loan2, format_remfmts,
-        ['<1 YEAR        ', '>1 YEAR        '],
-        ' REPORT ON REMAINING MATURITY', rdate_str,
-    )
+    report1_lines = build_report1(loan)
+    report2_lines = build_bucketed_report(
+        loan2, format_remfmt, REMFMT_ORDER, ' REPORT ON REMAINING MATURITY')
+    report3_lines = build_bucketed_report(
+        loan2, format_remfmts, REMFMTS_ORDER, ' REPORT ON REMAINING MATURITY')
 
     all_lines = report1_lines + report2_lines + report3_lines
 
@@ -464,7 +565,7 @@ def main() -> None:
 
     print(f"Output written to: {output_path}")
     print()
-    for ctrl, text in all_lines:
+    for _, text in all_lines:
         print(text)
 
 
