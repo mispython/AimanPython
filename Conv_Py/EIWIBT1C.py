@@ -297,81 +297,84 @@ def fmt_value(v: Optional[float]) -> str:
     return f"{v:{VALUE_WIDTH}.2f}"
 
 
-def title_block(title3: str, rdate_str: str) -> list[tuple[str, str]]:
+def title_block(title3: str, rdate_str: str, page_no: int) -> list[tuple[str, str]]:
+    title = f"REPORT ID: EIWIBT1C{page_no:>113}"
     return [
-        ('1', 'REPORT ID: EIWIBT1C'),
-        (' ', f'PUBLIC BANK BERHAD            DATE : {rdate_str}'),
-        (' ', title3),
-        (' ', ''),
+        ('', title),
+        ('', f'PUBLIC BANK BERHAD            DATE : {rdate_str}'),
+        ('', title3),
+        ('', ''),
     ]
 
 
 def paginate(title3: str, rdate_str: str, body_lines: list[str],
-             page_length: int = PAGE_LENGTH) -> list[tuple[str, str]]:
-    """Apply ASA carriage control with a new page (titles repeated) every
-    `page_length` printed lines."""
-    header = title_block(title3, rdate_str)
-    lines_per_page = max(page_length - len(header), 1)
+             page_length: int = PAGE_LENGTH, start_page: int = 1) -> list[tuple[str, str]]:
+    """Paginate report lines with page-numbered headings."""
+    header_len = len(title_block(title3, rdate_str, start_page))
+    lines_per_page = max(page_length - header_len, 1)
 
     out: list[tuple[str, str]] = []
+    page_no = start_page
     for i, line in enumerate(body_lines):
         if i % lines_per_page == 0:
-            out.extend(header)
-        out.append((' ', line))
+            out.extend(title_block(title3, rdate_str, page_no))
+            page_no += 1
+        out.append(('', line))
     if not body_lines:
-        out.extend(header)
+        out.extend(title_block(title3, rdate_str, page_no))
     return out
 
 
 def build_report1(loan_df: pl.DataFrame, rdate_str: str) -> list[tuple[str, str]]:
-    """PROC TABULATE: CLASS BRANCH BNMCODE TYP; VAR OUTSTAND;
-    TABLE (BRANCH ALL='GRAND TOTAL'),(BNMCODE=' ' ALL='TOTAL'),
-          (TYP=' ' ALL='TOTAL')*OUTSTAND=' '*SUM=' ' / BOX='BNMCODE' RTS=8;
-    NOTE (FLAG-01): Simplified block-per-BNMCODE rendering; genuine PROC
-    TABULATE page-across splitting for very wide tables is not replicated."""
+    """Render the collateral report in the PROC TABULATE page-by-branch layout.
+
+    The expected EIWIBT1C text places each branch on its own page, with BNMCODE
+    down the rows and collateral type/TOTAL across the columns.  Missing detail
+    rows from the master/detail merge are excluded so unmatched master accounts
+    do not produce all-zero branch rows.
+    """
     pdf = loan_df.select(['BRANCH', 'BNMCODE', 'TYP', 'OUTSTAND']).to_pandas()
-    pdf['BRANCH'] = pdf['BRANCH'].astype(str).str.strip()
-    pdf['BNMCODE'] = pdf['BNMCODE'].fillna('').astype(str).str.strip()
+    pdf = pdf[pdf['OUTSTAND'].notna()]
+    pdf['BRANCH'] = pdf['BRANCH'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+    pdf['BNMCODE'] = pdf['BNMCODE'].fillna('').astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+    pdf = pdf[pdf['BNMCODE'] != '']
     pdf['TYP_LABEL'] = pdf['TYP'].apply(format_typfmt)
 
-    bnmcodes = sorted(pdf['BNMCODE'].unique())
-    typ_labels_all = sorted(pdf['TYP_LABEL'].unique())
-
-    pivot = pdf.pivot_table(index='BRANCH', columns=['BNMCODE', 'TYP_LABEL'],
+    pivot = pdf.pivot_table(index=['BRANCH', 'BNMCODE'], columns='TYP_LABEL',
                              values='OUTSTAND', aggfunc='sum', fill_value=0.0)
+    typ_labels = list(pivot.columns)
+    if not typ_labels:
+        return paginate(' REPORT ON COLLATERAL', rdate_str, [])
 
-    body: list[str] = ['REPORT ON COLLATERAL', '']
-    for bnmcode in bnmcodes:
-        sub_labels = [t for t in typ_labels_all if (bnmcode, t) in pivot.columns]
-        if not sub_labels:
-            continue
+    # Match the narrow PROC TABULATE output used by the reference report.  The
+    # current data normally has one collateral column (OTHERS), but this also
+    # supports additional TYP columns if they are present.
+    out: list[tuple[str, str]] = []
+    for page_no, branch in enumerate(sorted(pivot.index.get_level_values('BRANCH').unique()), start=1):
+        out.extend(title_block(' REPORT ON COLLATERAL', rdate_str, page_no))
+        branch_table = pivot.loc[branch]
+        branch_table = branch_table.reindex(sorted(branch_table.index))
+        width = ROW_WIDTH + (VALUE_WIDTH + 1) * (len(typ_labels) + 1) + 1
 
-        box_label = bnmcode if bnmcode else '(blank)'
-        body.append(f'BNMCODE'.ljust(ROW_WIDTH) + f'| BNMCODE = {box_label}')
-        header = 'BNMCODE'.ljust(ROW_WIDTH) + '|' + '|'.join(
-            t.strip()[:VALUE_WIDTH].rjust(VALUE_WIDTH) for t in sub_labels
-        ) + '|' + 'TOTAL'.rjust(VALUE_WIDTH)
-        body.append(header)
-        body.append('-' * len(header))
+        out.append(('', f'BRANCH {branch}'))
+        out.append(('', '-' * width))
+        header1 = '|BNMCO-' + ''.join(f'|{label.strip()[:VALUE_WIDTH].center(VALUE_WIDTH)}' for label in typ_labels) + '|' + ''.center(VALUE_WIDTH) + '|'
+        header2 = '|DE    ' + ''.join(f'|{"(100%)".center(VALUE_WIDTH)}' for _ in typ_labels) + '|' + 'TOTAL'.center(VALUE_WIDTH) + '|'
+        out.append(('', header1))
+        out.append(('', header2))
+        out.append(('', '|------' + '+-------------' * (len(typ_labels) + 1) + '|'))
 
-        for branch, rowvals in pivot.iterrows():
-            cells = [rowvals.get((bnmcode, t), 0.0) for t in sub_labels]
-            subtotal = sum(cells)
-            row_line = (str(branch).ljust(ROW_WIDTH)[:ROW_WIDTH] + '|' +
-                        '|'.join(fmt_value(c) for c in cells) + '|' + fmt_value(subtotal))
-            body.append(row_line)
+        totals = {label: 0.0 for label in typ_labels}
+        for bnmcode, rowvals in branch_table.iterrows():
+            cells = [float(rowvals[label]) for label in typ_labels]
+            for label, value in zip(typ_labels, cells):
+                totals[label] += value
+            out.append(('', f'|{str(bnmcode).ljust(6)[:6]}' + ''.join(f'|{fmt_value(v)}' for v in cells) + f'|{fmt_value(sum(cells))}|'))
 
-        grand_cells = [
-            pivot[(bnmcode, t)].sum() if (bnmcode, t) in pivot.columns else 0.0
-            for t in sub_labels
-        ]
-        grand_subtotal = sum(grand_cells)
-        total_line = ('GRAND TOTAL'.ljust(ROW_WIDTH) + '|' +
-                      '|'.join(fmt_value(c) for c in grand_cells) + '|' + fmt_value(grand_subtotal))
-        body.append(total_line)
-        body.append('')
-
-    return paginate('REPORT ON COLLATERAL', rdate_str, body)
+        total_values = [totals[label] for label in typ_labels]
+        out.append(('', '|TOTAL ' + ''.join(f'|{fmt_value(v)}' for v in total_values) + f'|{fmt_value(sum(total_values))}|'))
+        out.append(('', '-' * width))
+    return out
 
 
 def build_two_way_report(loan2_df: pl.DataFrame, bucket_fn, bucket_labels: list[str],
