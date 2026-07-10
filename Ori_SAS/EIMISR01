@@ -1,0 +1,276 @@
+//EIMISR01 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB22447
+/*JOBPARM S=S1M1
+//*******************************************************
+//**  SFTP TO DRR
+//*******************************************************
+//STEP01   EXEC PGM=ICEGENER
+//SYSPRINT DD SYSOUT=*
+//SYSUT1   DD *
+cd "WMTB-SA&S/DEP - SAS/RM RPT/SA/OS BALANCE"
+//SYSUT2   DD DSN=&&FTPPUT,DISP=(NEW,PASS),
+//            SPACE=(TRK,(1)),UNIT=SYSDA,RECFM=FB,LRECL=80
+//SYSIN    DD DUMMY
+//*--------------------------------------------------------------------
+//* PROGRAM  : EIMISR01
+//* ESMR     : 2013-2085
+//* DESC     : MONTHLY REPORT ON SAVINGS DEPOSITS' OUTSTANDING BALANCE
+//*            (REPORT ID : DMMISR01) AND ACCOUNTS BREAKDOWN BY BRANCH
+//*            BRANCH BY PBB & PIBB
+//*--------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DD01     DD DSN=SAP.PBB.EIMISR01.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//EIMISR01 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//MNITB    DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//BRHFILE  DD DSN=RBP2.B033.PBB.BRANCH,DISP=SHR
+//ISR01    DD DSN=SAP.PBB.EIMISR01.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(200,100),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=1000,RECFM=FB,BLKSIZE=10000)
+//SFTP01   DD DSN=&&FTPCMD,DISP=(NEW,PASS),
+//            SPACE=(TRK,(1)),UNIT=SYSDA,RECFM=FB,LRECL=80
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1960 NOCENTER NODATE NONUMBER MISSING=0;
+
+DATA REPTDATE;
+  SET MNITB.REPTDATE;
+  CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
+  CALL SYMPUT('REPTYR', PUT(REPTDATE, YEAR2.));
+  CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+  CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+  CALL SYMPUT('RDATE', PUT(REPTDATE, Z5.));
+  CALL SYMPUT('REPTDT', PUT(REPTDATE, DDMMYY10.));
+RUN;
+
+LIBNAME MIS "SAP.PBB.MIS.D&REPTYEAR" DISP=SHR;
+
+DATA BRHDATA;
+   INFILE BRHFILE;
+   INPUT @002 BRANCH   3.
+         @006 BRABBR  $3.
+         @050 STATUS  $1.
+         ;
+   IF BRANCH IN (101,279) THEN STATUS = 'C';
+RUN;
+PROC SORT DATA=BRHDATA; BY BRANCH BRABBR; RUN;
+
+PROC SORT DATA=MIS.DYPOSXBR&REPTMON OUT=SABAL;
+   BY BRANCH;
+   WHERE REPTDATE = &RDATE;
+RUN;
+
+DATA ALLSA SABAL EXCEP;
+   MERGE SABAL(IN=A) BRHDATA;
+   BY BRANCH;
+   IF A;
+   IF TOTSAVG  = . THEN TOTSAVG  = 0;
+   IF TOTSAVGI = . THEN TOTSAVGI = 0;
+   TOTSA   = SUM(TOTSAVG,TOTSAVGI);
+   TOTSAML = INT(ROUND(TOTSA/1000));
+   TOTCNT  = SUM(SACNT,ISACNT);
+   OUTPUT ALLSA;
+   IF STATUS = 'O' THEN OUTPUT SABAL;
+   ELSE                 OUTPUT EXCEP;
+RUN;
+
+DATA _NULL_;
+   SET SABAL END=LAST;
+   FILE ISR01;
+   IF _N_ = 1 THEN DO;
+      PUT @001 'REPORT ID : EIMISR01'
+             / 'MONTHLY SAVINGS DEPOSITS OUTSTANDING BALANCE & '
+               'ACCOUNTS BY BRANCH @ ' "&REPTDT"
+             / 'RETAIL FINANCIAL SERVICES - SALES ADMINISTRATION & '
+               'SUPPORT'
+             / ' ';
+      PUT @002                                  @004 ';'
+          @006                                  @017 ';'
+          @018                                  @029 ';'
+          @030                                  @050 ';'
+          @051 'OUTSTANDING BALANCE'            @071 ';'
+          @072                                  @092 ';'
+          @093                                  @113 ';'
+          @114                                  @134 ';'
+          @135 'NO. OF OUSTANDING ACCOUNTS'     @175 ';;'
+          ;
+      PUT @002                                  @004 ';'
+          @006                                  @017 ';'
+          @018                                  @029 ';'
+          @030                                  @050 ';'
+          @051 '(RM)'                           @071 ';'
+          @072                                  @092 ';'
+          @093                                  @113 ';'
+          @114                                  @134 ';'
+          @135 '(ALL BALANCES)'                 @155 ';'
+          @156                                  @176 ';'
+          ;
+      PUT @002 'NO            '                 @004 ';'
+          @005 'BRANCH ABBV.  '                 @017 ';'
+          @018 'BRANCH CODE   '                 @029 ';'
+          @030 'PBB           '                 @050 ';'
+          @051 'PIBB          '                 @071 ';'
+          @072 'TOTAL         '                 @092 ';'
+          @093 'TOTAL (RM ''000) '              @113 ';'
+          @114 'PBB           '                 @134 ';'
+          @135 'PIBB          '                 @155 ';'
+          @156 'TOTAL         '                 @176 ';'
+          ;
+      PUT @002                                  @004 ';'
+          @005                                  @017 ';'
+          @018                                  @029 ';'
+          @030 '(A)           '                 @050 ';'
+          @051 '(B)           '                 @071 ';'
+          @072 '(C)=(A)+(B)   '                 @092 ';'
+          @093                                  @113 ';'
+          @114 '(D)           '                 @134 ';'
+          @135 '(E)           '                 @155 ';'
+          @156 '(F)=(D)+(E)   '                 @176 ';'
+          ;
+   END;
+
+      PUT @001 _N_             3.               @004 ';'
+          @005 BRABBR         $3.               @017 ';'
+          @018 BRANCH         Z3.               @029 ';'
+          @030 TOTSAVG   COMMA20.2              @050 ';'
+          @051 TOTSAVGI  COMMA20.2              @071 ';'
+          @072 TOTSA     COMMA20.2              @092 ';'
+          @093 TOTSAML   COMMA20.               @113 ';'
+          @114 SACNT     COMMA20.               @134 ';'
+          @135 ISACNT    COMMA20.               @155 ';'
+          @156 TOTCNT    COMMA20.               @176 ';'
+          ;
+
+   XTOTSAVG +TOTSAVG;
+   XTOTSAVGI+TOTSAVGI;
+   XTOTSA   +TOTSA;
+   XTOTSAML +TOTSAML;
+   XSACNT   +SACNT;
+   XISACNT  +ISACNT;
+   XTOTCNT  +TOTCNT;
+
+   IF LAST THEN DO;
+      PUT @002                                  @004 ';'
+          @005 'TOTAL (A)'                      @017 ';'
+          @018                                  @029 ';'
+          @030 XTOTSAVG   COMMA20.2             @050 ';'
+          @051 XTOTSAVGI  COMMA20.2             @071 ';'
+          @072 XTOTSA     COMMA20.2             @092 ';'
+          @093 XTOTSAML   COMMA20.              @113 ';'
+          @114 XSACNT     COMMA20.              @134 ';'
+          @135 XISACNT    COMMA20.              @155 ';'
+          @156 XTOTCNT    COMMA20.              @176 ';'
+          ;
+   END;
+RUN;
+
+DATA _NULL_;
+   IF TRN=0 THEN DO;
+      FILE ISR01 MOD;
+      PUT @002                                  @004 ';'
+          @005 'EXCEPTIONAL REPORT';
+      PUT @002                                  @004 ';'
+          @005 '(CLOSED/MERGED BRANCHES)';
+      PUT @002                                  @004 ';'
+          @005 'TOTAL (B)';
+   END;
+   SET EXCEP NOBS=TRN END=LAST;
+   FILE ISR01 MOD;
+   IF _N_ = 1 THEN DO;
+      IF _N_ = 1 THEN DO;
+         PUT @002                               @004 ';'
+             @005 'EXCEPTIONAL REPORT';
+         PUT @002                               @004 ';'
+             @005 '(CLOSED/MERGED BRANCHES)';
+      END;
+   END;
+      PUT @001 _N_             3.               @004 ';'
+          @005 BRABBR         $3.               @017 ';'
+          @018 BRANCH         Z3.               @029 ';'
+          @030 TOTSAVG   COMMA20.2              @050 ';'
+          @051 TOTSAVGI  COMMA20.2              @071 ';'
+          @072 TOTSA     COMMA20.2              @092 ';'
+          @093 TOTSAML   COMMA20.               @113 ';'
+          @114 SACNT     COMMA20.               @134 ';'
+          @135 ISACNT    COMMA20.               @155 ';'
+          @156 TOTCNT    COMMA20.               @176 ';'
+          ;
+
+   XTOTSAVG +TOTSAVG;
+   XTOTSAVGI+TOTSAVGI;
+   XTOTSA   +TOTSA;
+   XTOTSAML +TOTSAML;
+   XSACNT   +SACNT;
+   XISACNT  +ISACNT;
+   XTOTCNT  +TOTCNT;
+
+   IF LAST THEN DO;
+      PUT @002                                  @004 ';'
+          @005 'TOTAL (B)'                      @017 ';'
+          @018                                  @029 ';'
+          @030 XTOTSAVG   COMMA20.2             @050 ';'
+          @051 XTOTSAVGI  COMMA20.2             @071 ';'
+          @072 XTOTSA     COMMA20.2             @092 ';'
+          @093 XTOTSAML   COMMA20.              @113 ';'
+          @114 XSACNT     COMMA20.              @134 ';'
+          @135 XISACNT    COMMA20.              @155 ';'
+          @156 XTOTCNT    COMMA20.              @176 ';'
+          ;
+   END;
+RUN;
+
+PROC SUMMARY DATA=ALLSA NWAY;
+   VAR TOTSAVG TOTSAVGI TOTSA TOTSAML SACNT ISACNT TOTCNT;
+   OUTPUT OUT=ALLSA(DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+
+DATA _NULL_;
+   SET ALLSA;
+   FILE ISR01 MOD;
+   PUT @001                                     @004 ';'
+       @005 'GRAND TOTAL (A)+(B)'               @028 ';;'
+       @030 TOTSAVG   COMMA20.2                 @050 ';'
+       @051 TOTSAVGI  COMMA20.2                 @071 ';'
+       @072 TOTSA     COMMA20.2                 @092 ';'
+       @093 TOTSAML   COMMA20.                  @113 ';'
+       @114 SACNT     COMMA20.                  @134 ';'
+       @135 ISACNT    COMMA20.                  @155 ';'
+       @156 TOTCNT    COMMA20.                  @176 ';'
+       ;
+RUN;
+
+DATA _NULL_;
+   FILE SFTP01;
+   PUT @1 "put //SAP.PBB.EIMISR01.TEXT  SA_BAL&ACC@&REPTMON&REPTYR..TXT"
+       ;
+RUN;
+//*--------------------------------------------------------------------
+//* FTP TO SAS DATAWAREHOUSE
+//*--------------------------------------------------------------------
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*cd "TextFile/RetailBank/Monthly/MTH-END/RM MTG/SA"
+//*           DD DISP=SHR,DSN=&&FTPCMD
+//*           DD *
+//*EOB
+/*
+//*--------------------------------------------------------------------
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//*--------------------------------------------------------------------
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+//           DD DISP=SHR,DSN=&&FTPPUT
+//           DD *
+PUT //SAP.PBB.EIMISR01.TEXT  SA_BAL&ACC@&REPTMON&REPTYR..TXT
+EOB
+/*
