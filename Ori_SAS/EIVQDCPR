@@ -1,0 +1,112 @@
+//EIVQDCPR JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M,NOTIFY=&SYSUID
+/*JOBPARM S=S1M1
+//*-------------------------------------------------------------------
+//* PROGRAM : EIVQDCPR
+//* ESMR    : 2019-146 (PIVB)
+//* DESC    : AUTOMATE THE FINANCIAL INCLUSION DATA COLLECTION PACKAGE
+//*           REPORT
+//*-------------------------------------------------------------------
+//DELETE  EXEC PGM=IEFBR14
+//DEL01   DD DSN=SAP.PIVB.FIDCPR.CSV,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(CYL,(0))
+//DEL02   DD DSN=SAP.PIVB.FIDCPR.XLS,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(CYL,(0))
+//*-------------------------------------------------------------------
+//EIVQDCPR EXEC SAS609
+//EQU      DD DSN=SAP.PIVB.UTGE231.TXT(0),DISP=SHR
+//BOS      DD DSN=SAP.PIVB.BOS1204.CSV(0),DISP=SHR
+//DCPCSV   DD DSN=SAP.PIVB.FIDCPR.CSV,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=2000,BLKSIZE=20000),
+//            SPACE=(TRK,(20,20)),UNIT=SYSDA
+//DCPXLS   DD DSN=SAP.PIVB.FIDCPR.XLS,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=2000,BLKSIZE=20000),
+//            SPACE=(TRK,(20,20)),UNIT=SYSDA
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(1000))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(1000))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(1000))
+//SYSIN    DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 NOCENTER NODATE MISSING=' ';
+
+DATA REPTDATE;
+   REPTDATE = TODAY()-DAY(TODAY());
+   CALL SYMPUT('REPTDT',REPTDATE);
+RUN;
+
+DATA EQU;
+   INFILE EQU;
+   INPUT @001 UTRDT      $8.   /* Reporting Date       */
+         @009 UTCIC     $20.   /* ID Number  Character */
+         @021 UTDOB      $8.   /* Date of Birth        */
+         @029 UTDOC      $8.   /* Date of Account      */
+         ;
+   SOURCE = 'EQU';
+RUN;
+
+DATA BOS;
+   INFILE BOS DELIMITER=',' DSD FIRSTOBS=2;
+   INPUT FICODE       :   8.   /* FI Code              */
+         UTCIC        : $20.   /* ID Number  Character */
+         UTDOB        :  $8.   /* Date of Birth        */
+         BRANCH       :   8.   /* Branch Code          */
+         UTDOC        :  $8.   /* Date of Account      */
+         ;
+   SOURCE = 'BOS';
+RUN;
+
+*------------------------------------------------*
+*  CONSOLIDATE                                   *
+*------------------------------------------------*;
+DATA CONSO;
+   SET BOS EQU;
+   FICODE = 1204;
+   BRANCH = 14;
+   DLM = ',';
+   FILE DCPCSV;
+   PUT FICODE     +(-1)DLM+(-1)
+       UTCIC      +(-1)DLM+(-1)
+       UTDOB      +(-1)DLM+(-1)
+       BRANCH     +(-1)DLM+(-1)
+       UTDOC
+       ;
+
+   DLM = '05'X;
+   FILE DCPXLS;
+   IF _N_=1 THEN DO;
+      PUT @001 'PUBLIC INVESTMENT BANK BERHAD'
+          /
+          /    'FI Code'                                   DLM
+               'ID Number'                                 DLM
+               'Date of Birth'                             DLM
+               'Branch'                                    DLM
+               'Date of Account'                           DLM
+          ;
+   END;
+   PUT    @001  FICODE                                     DLM
+                UTCIC                                      DLM
+                UTDOB                                      DLM
+                BRANCH                                     DLM
+                UTDOC                                      DLM
+          ;
+RUN;
+//*------------------------------------------------------
+//* FTP TO PIVSVFIL101 - PIVB FILE SERVER
+//*------------------------------------------------------
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//OUTPUT   DD SYSOUT=*
+//SYSPRINT DD SYSOUT=*
+//CMD.SYSUT1 DD *
+export PASSWD_DSN='OPER.PBB.CONTROL(SAS#SFTP)'
+$coz_bin/cozsftp  $ssh_opts -b- sas2lcr@192.168.56.10 <<EOB
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd "Financial Inclusion Data Collection Package"
+PUT //SAP.PIVB.FIDCPR.CSV   1204D.csv
+PUT //SAP.PIVB.FIDCPR.XLS   1204D(%ODD.%OMM.%OYY.).xls
+EOB
+/*
