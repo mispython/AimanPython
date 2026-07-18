@@ -1,3 +1,31 @@
+def build_report_lines(template_rows: list[TemplateRow], totlcr: pl.DataFrame) -> list[str]:
+    totlcr_map = {
+        row["item"]: (row["utnma1"], row["utnma2"], row["utnma3"])
+        for row in totlcr.iter_rows(named=True)
+    }
+
+    lines: list[str] = []
+    for idx, trow in enumerate(template_rows):
+        if idx == 0:
+            lines.append("PUBLIC INVESTMENT BANK BERHAD")
+
+        utnma1, utnma2, utnma3 = totlcr_map.get(trow.item, (None, None, None))
+        utnma1 = abs(utnma1) if utnma1 is not None else None
+        utnma2 = abs(utnma2) if utnma2 is not None else None
+        utnma3 = abs(utnma3) if utnma3 is not None else None
+
+        # Fixed width format - NO DELIMITERS
+        line = (
+            f"{trow.desc:<500}"  # Description padded to 500 chars
+            f"{_format_comma20_2(utnma1)}"  # 20 chars
+            f"{_format_comma20_2(utnma2)}"  # 20 chars
+            f"{_format_comma20_2(utnma3)}"  # 20 chars
+        )
+        lines.append(line)
+    return lines
+
+=======================
+
 NSFRCD_FMT: dict[str, str] = {
     # === ITEM 6: Tier 1 and Tier 2 capital ===
     "S-SHARE": "0006_3",
