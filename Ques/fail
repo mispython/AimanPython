@@ -1,18 +1,4 @@
-# Add this to your read_gl function
-def read_gl(path: Path) -> list[GLRecord]:
-    records: list[GLRecord] = []
-    unmapped = set()
-    mapped = set()
-    with path.open("r", encoding="latin1") as fh:
-        for raw_line in fh:
-            # ... existing code ...
-            glfmt = nsfrcd_fmt(set_id)
-            if glfmt.strip() == "":
-                unmapped.add(set_id)
-                continue
-            mapped.add(set_id)
-            # ... rest of code ...
-    
+    # ADD THIS DEBUG BLOCK AFTER the for loop
     print(f"\n--- MAPPED SET_IDs ({len(mapped)}) ---")
     for s in sorted(mapped):
         print(f"  '{s}' -> {nsfrcd_fmt(s)}")
@@ -20,4 +6,5 @@ def read_gl(path: Path) -> list[GLRecord]:
     print(f"\n--- UNMAPPED SET_IDs ({len(unmapped)}) ---")
     for s in sorted(unmapped):
         print(f"  '{s}'")
+    
     return records
