@@ -44,9 +44,13 @@ from REPTDATE import get_monthly_reptdate_values
 # ------------------------------------------------------------
 # Path setup
 # ------------------------------------------------------------
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIVQDCPR")
-INPUT_DIR = BASE_DIR / "input"
-OUTPUT_DIR = BASE_DIR / "output"
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR = BASE_DIR / "input"
+# OUTPUT_DIR = BASE_DIR / "output"
+
+INPUT_DIR  = Path("/stgsrcsys/host/uat")
+OUTPUT_DIR = BASE_DIR / "output" / "EIVQDCPR"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 EQU_FILE = INPUT_DIR / "UTGE231.txt"
 BOS_FILE = INPUT_DIR / "BOS1204.txt"
@@ -235,15 +239,15 @@ def main() -> None:
     write_csv_output(conso, OUTPUT_CSV_FILE)
     write_xls_output(conso, OUTPUT_XLS_FILE)
 
-    print(f"[OUTPUT] CSV written to : {OUTPUT_CSV_FILE}")
-    print(f"[OUTPUT] XLS written to : {OUTPUT_XLS_FILE}")
-
     print("\n[RESULT] Consolidated records (FICODE, UTCIC, UTDOB, BRANCH, UTDOC):")
     for rec in conso:
         print(
             f"{rec['FICODE']},{rec['UTCIC']},{rec['UTDOB']},"
             f"{rec['BRANCH']},{rec['UTDOC']}"
         )
+
+    print(f"[OUTPUT] CSV written to : {OUTPUT_CSV_FILE}")
+    print(f"[OUTPUT] XLS written to : {OUTPUT_XLS_FILE}")
 
     # ------------------------------------------------------------
     # //RUNSFTP EXEC COZBATCH ... (FTP TO PIVSVFIL101 - PIVB FILE SERVER)
