@@ -1,7 +1,7 @@
 # Add this after your TOTLCR print
-print("\n--- ITEM 76 DETAILS ---")
+print("\n--- ITEM 76 DETAILS (all rows with item=76) ---")
 item_76_rows = lcrall.filter(pl.col("item") == 76)
-print(item_76_rows.select(["src", "utnma1", "utnma2", "utnma3"]))
+print(item_76_rows.select(["src", "item", "utnma1", "utnma2", "utnma3"]))
 
 
 --- TOTLCR ALL---
