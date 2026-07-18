@@ -21,13 +21,6 @@ from typing import Optional
 import polars as pl
 
 from REPTDATE import get_monthly_reptdate_values
-# from input_date import get_latest_file
-# output_date.build_output_file() is NOT used here: SAS derives the output
-# filename component RPTDT via PUT(REPTDATE,YYMMDDN8.) (8-digit YYYYMMDD),
-# which does not match either pattern in output_date.DATE_FORMATS
-# ("ddmmyy" / "ddmmYYYY"). Per project convention this is a non-standard
-# output naming pattern, so the filename is built directly from REPTDATE
-# values in main() instead.
 
 # ----------------------------------------------------------------------------
 # %INC PGM(PBBELF,PBLCRFMT);  -- session-level include in the original SAS.
@@ -80,127 +73,127 @@ NSFRCD_FMT: dict[str, str] = {
     # (Will be populated from MNL or EQ)
     
     # === ITEM 13: Unsecured funding from non-financial corporates ===
-    "S-STD R/NR": "0076_1",        # 
-    "S-SUNDEBT": "0076_1",         # 
-    "S-SUNDEBTREC": "0076_1",      # 
-    "S-REMI CA": "0076_1",         # Already mapped
-    "S-SSTPAY": "0076_1",          # Already mapped
-    "S-PBS DLRS": "0076_1",        # Already mapped
-    "S-ACCEXP": "0076_3",          # Already mapped - BUCKET 3
-    "S-AFRECADV": "0076_3",        # Already mapped - BUCKET 3
-    "S-ALLW COMM": "0076_3",       # Already mapped - BUCKET 3
-    "S-LEASE ROUA": "0076_3",      # Already mapped - BUCKET 3
-    "S-LOANCONTRO": "0076_3",      # Already mapped - BUCKET 3
-    "S-PBS PAYB": "0076_3",        # Already mapped - BUCKET 3
-    "S-PROVCLGFEE": "0076_3",      # Already mapped - BUCKET 3
-    "S-PROVOTH": "0076_3",         # Already mapped - BUCKET 3
-    "S-PROVTAX(C)": "0076_3",      # Already mapped - BUCKET 3
-    "S-SUNCRE": "0076_3",          # Already mapped - BUCKET 3
-    "S-SUNCRE KAP": "0076_3",      # Already mapped - BUCKET 3
+    "S-STD R/NR": "0076_1",        
+    "S-SUNDEBT": "0076_1",         
+    "S-SUNDEBTREC": "0076_1",      
+    "S-REMI CA": "0076_1",         
+    "S-SSTPAY": "0076_1",          
+    "S-PBS DLRS": "0076_1",        
+    "S-ACCEXP": "0076_3",          
+    "S-AFRECADV": "0076_3",        
+    "S-ALLW COMM": "0076_3",       
+    "S-LEASE ROUA": "0076_3",      
+    "S-LOANCONTRO": "0076_3",     
+    "S-PBS PAYB": "0076_3",        
+    "S-PROVCLGFEE": "0076_3",      
+    "S-PROVOTH": "0076_3",         
+    "S-PROVTAX(C)": "0076_3",      
+    "S-SUNCRE": "0076_3",         
+    "S-SUNCRE KAP": "0076_3",      
     
     # === ITEM 25: Unsecured funding from sovereigns/PSEs/MDBs/NDBs ===
-    "S-REVCRE": "0025_1",          # 
-    "S-REVREAFMGS": "0025_1",      # Check amount
-    "S-REVREPBNM1": "0025_1",      # Check amount
-    "S-REVREPBNM2": "0025_1",      # Check amount
-    "S-REVREPOBNM": "0025_1",      # Check amount
-    "S-REVREPOHFT": "0025_1",      # Check amount
-    "S-REVREPOMGI": "0025_1",      # Check amount
-    "S-REVREPOMGS": "0025_1",      # Check amount
-    "S-REVRES": "0025_1",          # 
+    "S-REVCRE": "0025_1",          
+    "S-REVREAFMGS": "0025_1",      
+    "S-REVREPBNM1": "0025_1",      
+    "S-REVREPBNM2": "0025_1",       
+    "S-REVREPOBNM": "0025_1",       
+    "S-REVREPOHFT": "0025_1",       
+    "S-REVREPOMGI": "0025_1",       
+    "S-REVREPOMGS": "0025_1",       
+    "S-REVRES": "0025_1",           
     
     # === ITEM 32: Unsecured funding from other legal entities ===
-    "S-CURPNL": "0032_1",          # 
-    "S-ACCDEPNO/E": "0032_1",      # 
-    "S-ACCDEPRENO": "0032_1",      # 
-    "S-DEPNCOPMSW": "0032_1",      # 
-    "S-AFS UN-ISL": "0032_1",      # 
-    "S-CL CTL CR": "0032_1",       # 
-    "S-GUARANTEE": "0032_1",       # 
-    "S-REMI FD 30": "0032_1",      # Check amount
-    "S-REMI FD 32": "0032_1",      # Check amount
-    "S-REMISIERS": "0032_1",       # Check amount
-    "S-SUNDEP": "0032_1",          # 
-    "S-ACCDEPNF&F": "0032_1",      # 
-    "S-ACCDEPNMV": "0032_1",       # 
-    "S-DEPNF&F": "0032_1",         # 
-    "S-DEPNH/W": "0032_1",         # 
-    "S-DEPNMV": "0032_1",          # Check amount
-    "S-DEPNO/E": "0032_1",         # 
-    "S-F&F": "0032_1",             # 
-    "S-PDEPNSW": "0032_1",         # 
-    "S-PDEPRENO": "0032_1",        # Check amount
-    "S-REG RES": "0032_1",         # 
-    "S-REMISIERS": "0032_1",       # Check amount
-    "S-RENO": "0032_1",            # 
-    "S-REPOMGS": "0032_1",         # Check amount
-    "S-RETPROF": "0032_1",         # 
-    # "S-REVREAFMGS": "0032_1",      # Check amount
-    "S-SUNDEP": "0032_1",          # 
-    "S-UNREAL UQS": "0032_1",      # 
-    "S-UNREALMGS": "0032_1",       # 
+    "S-CURPNL": "0032_1",          
+    "S-ACCDEPNO/E": "0032_1",      
+    "S-ACCDEPRENO": "0032_1",      
+    "S-DEPNCOPMSW": "0032_1",      
+    "S-AFS UN-ISL": "0032_1",      
+    "S-CL CTL CR": "0032_1",       
+    "S-GUARANTEE": "0032_1",       
+    "S-REMI FD 30": "0032_1",       
+    "S-REMI FD 32": "0032_1",       
+    "S-REMISIERS": "0032_1",        
+    "S-SUNDEP": "0032_1",          
+    "S-ACCDEPNF&F": "0032_1",      
+    "S-ACCDEPNMV": "0032_1",       
+    "S-DEPNF&F": "0032_1",         
+    "S-DEPNH/W": "0032_1",         
+    "S-DEPNMV": "0032_1",           
+    "S-DEPNO/E": "0032_1",         
+    "S-F&F": "0032_1",             
+    "S-PDEPNSW": "0032_1",         
+    "S-PDEPRENO": "0032_1",         
+    "S-REG RES": "0032_1",         
+    "S-REMISIERS": "0032_1",        
+    "S-RENO": "0032_1",            
+    "S-REPOMGS": "0032_1",          
+    "S-RETPROF": "0032_1",         
+    # "S-REVREAFMGS": "0032_1",       
+    "S-SUNDEP": "0032_1",          
+    "S-UNREAL UQS": "0032_1",      
+    "S-UNREALMGS": "0032_1",       
     
     # === ITEM 74: Trade date payables ===
-    "S-OS SALES": "0074_1",        # Already mapped
+    "S-OS SALES": "0074_1",         
     
     # === ITEM 76: Already mapped above ===
     
     # === ITEM 84: Coins and banknotes ===
-    "S-PETTY CASH": "0084_1",      # Already mapped
+    "S-PETTY CASH": "0084_1",       
     
     # === ITEM 85: Total central bank reserves ===
-    "S-STADEPBNM": "0085_3",       # Already mapped
+    "S-STADEPBNM": "0085_3",        
     
     # === ITEM 116: Deposits/UA Funds held at financial institutions ===
-    "S-BNMFL 1MTH": "0116_1",      # Already mapped
-    "S-PBB CUR": "0116_1",         # Already mapped
-    "S-PIBB CUR": "0116_1",        # Already mapped
-    "S-PB CA OTH": "0116_1",       # Already mapped
-    "S-CB": "0116_1",              # Already mapped
-    "S-REMI FD": "0116_1",         # Already mapped
-    "S-LBFD": "0116_1",            # Already mapped
-    "S-MBFL 1MTH": "0116_1",       # Already mapped
-    "S-LBFL 1MTH": "0116_1",       # Already mapped
-    "S-DNBFI 1MTH": "0116_1",      # Already mapped
-    "S-LBFL": "0116_1",            # Already mapped
-    "LCR-FIOPSDEP": "0140_1",      # Already mapped
+    "S-BNMFL 1MTH": "0116_1",       
+    "S-PBB CUR": "0116_1",          
+    "S-PIBB CUR": "0116_1",         
+    "S-PB CA OTH": "0116_1",        
+    "S-CB": "0116_1",               
+    "S-REMI FD": "0116_1",          
+    "S-LBFD": "0116_1",             
+    "S-MBFL 1MTH": "0116_1",        
+    "S-LBFL 1MTH": "0116_1",        
+    "S-DNBFI 1MTH": "0116_1",       
+    "S-LBFL": "0116_1",             
+    "LCR-FIOPSDEP": "0140_1",       
     
     # === ITEM 140: Unsecured loans/financing to financial institutions ===
-    "S-BNM": "0152_1",             # Already mapped
-    "S-BNM FIX": "0152_1",         # Already mapped
+    "S-BNM": "0152_1",              
+    "S-BNM FIX": "0152_1",          
     
     # === ITEM 152: Loans/Financing to central banks ===
-    "S-BNM": "0152_1",             # Already mapped
-    "S-BNM FIX": "0152_1",         # Already mapped
-    "S-BNM O/N": "0152_1",         # Check amount
-    "S-BNM(AFS)": "0152_1",        # Check amount
-    "S-BNMFL": "0152_1",           # Check amount
-    "S-BNM BILL M": "0152_1",      # Check amount
-    "S-BNM BILL T": "0152_1",      # Check amount
+    "S-BNM": "0152_1",              
+    "S-BNM FIX": "0152_1",          
+    "S-BNM O/N": "0152_1",          
+    "S-BNM(AFS)": "0152_1",         
+    "S-BNMFL": "0152_1",            
+    "S-BNM BILL M": "0152_1",       
+    "S-BNM BILL T": "0152_1",       
     
     # === ITEM 206: Other short-term unsecured instruments ===
-    "S-HFT": "0206_1",             # 
-    "S-MGS": "0206_1",             # 
-    "S-MTN LN": "0206_1",          # 
-    "S-TERMLN": "0206_1",          # 
-    "S-ISLAMIC(A)": "0206_1",      # 
-    "S-ISLPDS (I)": "0206_1",      #
+    "S-HFT": "0206_1",             
+    "S-MGS": "0206_1",             
+    "S-MTN LN": "0206_1",          
+    "S-TERMLN": "0206_1",          
+    "S-ISLAMIC(A)": "0206_1",      
+    "S-ISLPDS (I)": "0206_1",     
     
     # === ITEM 245: Cash or other assets to CCP default fund ===
-    "S-MARGIN COL": "0245_3",      # Already mapped - 3,112.12
+    "S-MARGIN COL": "0245_3",        
     
     # === ITEM 246: Required stable funding for IM and CCP ===
-    "S-MARGIN COL": "0245_3",      # Already mapped
+    "S-MARGIN COL": "0245_3",       
     
     # === ITEM 247: Items deducted from regulatory capital ===
-    "S-DTAX": "0247_3",            # Already mapped 
-    "S-IA": "0247_3",              # Already mapped 
-    "S-IAISLDE(D)": "0247_3",      # 
-    "S-D T ASSETS": "0247_3",      # 
+    "S-DTAX": "0247_3",              
+    "S-IA": "0247_3",                
+    "S-IAISLDE(D)": "0247_3",      
+    "S-D T ASSETS": "0247_3",      
     
     # === ITEM 248: Trade date receivables ===
-    "S-O/S PUR C": "0248_1",       # Already mapped 
-    "S-CLIENT CTL": "0248_1",      # Already mapped 
+    "S-O/S PUR C": "0248_1",         
+    "S-CLIENT CTL": "0248_1",        
     
     # === ITEM 249: Interdependent assets ===
     # (Will be populated from EQ or MNL)
@@ -209,13 +202,13 @@ NSFRCD_FMT: dict[str, str] = {
     # (Will be populated from EQ or MNL)
     
     # === ITEM 256: Irrevocable/conditionally revocable credit facilities ===
-    "S-RCF": "0256_1",             # Already mapped 
-    "S-SM F": "0256_1",            # Already mapped 
-    "S-TLF": "0256_1",             # Already mapped 
+    "S-RCF": "0256_1",               
+    "S-SM F": "0256_1",              
+    "S-TLF": "0256_1",               
     
     # === ITEM 260: Guarantees and letters of credit ===
-    "OBS00100100": "0260_1",       # Already mapped 
-    "S-GUARANTEE": "0260_1",       # 
+    "OBS00100100": "0260_1",         
+    "S-GUARANTEE": "0260_1",       
     
     # === ITEM 282: Unsecured funding from PSEs/NDBs (D. Additional) ===
     # (Will be populated from EQ)
@@ -675,9 +668,8 @@ def main() -> None:
     print(lcrall.select(["src", "item", "utnma1", "utnma2", "utnma3"]))
 
     totlcr = summarize_totlcr(lcrall)
-    print("\n--- TOTLCR ---")
-    print(totlcr)
-
+    # print("\n--- TOTLCR ---")
+    # print(totlcr)
     print("\n--- TOTLCR ALL---")
     with pl.Config(tbl_rows=1000):
         print(totlcr)
