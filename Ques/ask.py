@@ -1,1042 +1,703 @@
 #!/usr/bin/env python3
 """
-Program : EIMBRAMC.py
-Purpose : Branch - Account Management Concept (AMC)
-          COLD report for Branch (detail) + Report for Commercial Banking (summary)
-          Original SAS: cold-for-branch / summary-for-HQ dual report, comparing
-          current month vs previous month approved-limit / outstanding-balance
-          utilisation per customer (ICNO) with combined-limit > RM1,000,000.
+Program : EIVMNSFR.py
+Purpose : Automate the Net Stable Funding Ratio (NSFR) report for entity
+          and consolidated level (PIVB).
+
+          Combines three maturity-bucket data feeds - the mainframe GL
+          feed (GLPIVB), the equation-derived feed (EQUA) and the manually
+          maintained feed (MNL1) - summarises them by BNM item code, and
+          merges the totals against a fixed positional item-code template
+          (TEMPL) to produce the delimited NSFR report used downstream by
+          the FTP job step.
 """
 
-import os
-import gc
-import duckdb
-import pandas as pd
-import polars as pl
-import pyarrow as pa
-import pyarrow.parquet as pq
+from __future__ import annotations
+
+from dataclasses import dataclass
 from pathlib import Path
-from datetime import date
+from typing import Optional
 
-from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
-from output_date import build_output_file
+import polars as pl
 
-# ============================================================================
-# DEPENDENCY NOTES
-# ============================================================================
-# %INC PGM(PBBLNFMT); is included in the SAS SYSIN, but no PUT(var,fmt.) call
-# is made anywhere in this program's body, so no format_* function from
-# PBBLNFMT is imported here (per project convention: only import a dependency
-# function when it is traceable to an explicit PUT(var,fmt.) call).
-#
-# The SAS source filters "IF PRODUCT NOT IN &HP;" where &HP is a macro list
-# NOT defined anywhere inside this program's SYSIN (it must be set upstream,
-# e.g. in an included macro library not provided to this conversion). The
-# closest documented equivalent is PBBLNFMT.HP_ALL ("HP - ALL PRODUCTS").
-# It is reproduced locally below as the best available reference; confirm
-# against the true &HP macro definition before relying on this in production.
-HP_PRODUCTS = (128, 130, 131, 132, 380, 381, 700, 705, 720, 725,
-               983, 993, 996, 678, 679, 698, 699)
+from REPTDATE import get_monthly_reptdate_values
+
+# ----------------------------------------------------------------------------
+# %INC PGM(PBBELF,PBLCRFMT);  -- session-level include in the original SAS.
+# Neither PBBELF nor PBLCRFMT format functions are invoked via PUT(var,fmt.)
+# anywhere in this program body. The only PUT(...,fmt.) call in the whole
+# program uses the *local* PROC FORMAT $NSFRCD defined further below. Per
+# project convention (session-level %INC with no direct format call = a
+# comment-only reference), neither module is imported here.
+# from PBBELF import ...      # not used - no direct PUT(var, fmt.) call
+# from PBLCRFMT import ...    # not used - no direct PUT(var, fmt.) call
+# ----------------------------------------------------------------------------
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR = BASE_DIR / "input"
+# OUTPUT_DIR = BASE_DIR / "output"
 
-INPUT_LOAN_DIR    = BASE_DIR / "input" / "prod" / "loan"        # lnXXXXX.sas7bdat
-INPUT_BT_DIR      = BASE_DIR / "input" / "prod" / "btrade"      # btmastXXXXX.sas7bdat
-INPUT_CISLN_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISLN_loan.sas7bdat"
-INPUT_CISDP_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISDP_deposit.sas7bdat"
-INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
+INPUT_DIR  = Path("/stgsrcsys/host/uat")
+OUTPUT_DIR = BASE_DIR / "output" / "EIVMNSFR"
 
-CACHE_DIR     = BASE_DIR / "input" / "prod" / "EIMBRAMC" / "cache"
-AMC_STORE_DIR = BASE_DIR / "input" / "prod" / "EIMBRAMC" / "amc_store"     # equivalent of SAP.PBB.AMC library
+# SAP.PIVB.NSFR.TEMPLATE -- static fixed-position item-code list, not a dated
+# input (analogous to BRHFILE/LKP_BRANCH convention).
+TEMPLATE_FILE = INPUT_DIR / "NSFR_TEMPLATE.txt"
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIMBRAMC"
+# Dated monthly feeds - resolved via input_date.get_latest_file() below.
+# EQUA_INPUT = "eqnsf"      # SAP.PIVB.EQNSF.MTHEND.TXT(0)
+# GLPIVB_PREFIX = "glpivb"   # SAP.APPL.PIVB.MTHEND.LCR(0)
+# MNL1_PREFIX = "mnlnsf"     # SAP.PIVB.MNL.NSFR.LCR(0)
+
+EQUA_DIR   = INPUT_DIR / "EQNSF_MTHEND.txt"
+GLPIVB_DIR = INPUT_DIR / "MTHEND_LCR.txt"
+MNL1_DIR   = INPUT_DIR / "MNL_NSFR_MTHEND.txt"
+
+DLM = "\x05"  # SAS: DLM='05'X
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-AMC_STORE_DIR.mkdir(parents=True, exist_ok=True)
-
-CHUNK_ROWS = 500_000
-ROW_LIMIT  = int(os.environ.get("ROW_LIMIT", 0))   # 0 = no limit
-
-PAGE_SIZE  = 60
-LRECL      = 132   # data portion width (ASA control char is a separate byte)
 
 # ============================================================================
-# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py, then
-# replicate the SAS DATA REPTDATE step's custom WK/WK1/MM1/MM2 logic locally,
-# since this program's week-bucket rule is a discrete day-of-month match
-# [8/15/22/otherwise], not the generic range-based NOWK in REPTDATE.py)
+# LOCAL FORMAT: $NSFRCD (PROC FORMAT defined in this program - NOT PBBELF/
+# PBLCRFMT). Maps a GL SET_ID description string to a "<item><'_'><bucket>"
+# tag; item = 4-digit BNM item code, bucket = 1/2/3 maturity bucket.
 # ============================================================================
-print("Step 1: Deriving report date...")
-
-# _reptdate_values = get_reptdate_values()
-_reptdate_values = get_reptdate_values(run_date=date(2026, 7, 1))
-reptdate: date = _reptdate_values.reptdate     # equivalent of SET LN.REPTDATE
-
-_day = reptdate.day
-if _day == 8:
-    WK, WK1 = "1", "4"
-elif _day == 15:
-    WK, WK1 = "2", "1"
-elif _day == 22:
-    WK, WK1 = "3", "2"
-else:
-    WK, WK1 = "4", "3"
-
-MM = reptdate.month
-YY1 = reptdate.year
-YY2 = reptdate.year
-MM1 = MM - 1
-if MM1 == 0:
-    MM1 = 12
-    YY1 = reptdate.year - 1
-MM2 = MM1 - 1
-if MM2 == 0:
-    MM2 = 12
-    YY2 = reptdate.year - 1
-
-NOWK      = WK
-NOWK1     = WK1                      # derived but unused later in SAS source (kept for parity)
-REPTMON   = f"{MM:02d}"
-REPTMON1  = f"{MM1:02d}"
-REPTMON2  = f"{MM2:02d}"             # derived but unused later in SAS source (kept for parity)
-REPTYR    = f"{reptdate.year:04d}"
-REPTYR1   = f"{YY1:04d}"
-REPTYR2   = f"{YY2:04d}"             # derived but unused later in SAS source (kept for parity)
-RDATE     = reptdate.strftime("%d/%m/%y")
-
-print(f"  REPTDATE : {reptdate}  (NOWK={NOWK})")
-print(f"  REPTMON  : {REPTMON}/{REPTYR}   REPTMON1: {REPTMON1}/{REPTYR1}")
-print(f"  RDATE    : {RDATE}")
-
-# ============================================================================
-# STEP 2: RESOLVE INPUT FILES
-# ============================================================================
-print("\nStep 2: Resolving input files...")
-
-loan_path = get_latest_file(INPUT_LOAN_DIR, prefix="ln")
-bt_path   = get_latest_file(INPUT_BT_DIR, prefix="btmast")
-
-print(f"  LOAN : {loan_path.name}")
-print(f"  BT   : {bt_path.name}")
-
-
-def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
-    return (
-        cache_path.exists()
-        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
-    )
-
-
-def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    """Convert a .sas7bdat to Parquet in streaming chunks (memory-efficient)."""
-    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    writer = None
-    schema = None
-    total = 0
-    rows_read = 0
-
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
-        if ROW_LIMIT and rows_read >= ROW_LIMIT:
-            break
-        if ROW_LIMIT:
-            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
-        rows_read += len(chunk)
-
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
-
-        if schema is None:
-            schema = table.schema
-            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        else:
-            cast_arrays = []
-            for field in schema:
-                col = table.column(field.name)
-                if col.type != field.type:
-                    try:
-                        col = col.cast(field.type, safe=False)
-                    except Exception as e:
-                        print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
-                              f"from {col.type} to {field.type}: {e} -- filling nulls")
-                        col = pa.nulls(len(col), type=field.type)
-                cast_arrays.append(col)
-            table = pa.Table.from_arrays(cast_arrays, schema=schema)
-
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-
-    if writer:
-        writer.close()
-    print(f"  [{tag}] Done -- {total:,} rows cached.")
-
-
-# ============================================================================
-# STEP 3: CACHE SOURCE FILES TO PARQUET
-# ============================================================================
-print("\nStep 3: Caching SAS files to Parquet (if needed)...")
-
-LOAN_CACHE  = CACHE_DIR / f"{loan_path.stem}.parquet"
-BT_CACHE    = CACHE_DIR / f"{bt_path.stem}.parquet"
-CISLN_CACHE = CACHE_DIR / "cisln.parquet"
-CISDP_CACHE = CACHE_DIR / "cisdp.parquet"
-
-if not _cache_is_fresh(loan_path, LOAN_CACHE):
-    sas_to_parquet(loan_path, LOAN_CACHE, "LOAN")
-else:
-    print("  [LOAN ] Cache fresh -- skipping conversion.")
-
-if not _cache_is_fresh(bt_path, BT_CACHE):
-    sas_to_parquet(bt_path, BT_CACHE, "BT")
-else:
-    print("  [BT   ] Cache fresh -- skipping conversion.")
-
-if not _cache_is_fresh(INPUT_CISLN_DIR, CISLN_CACHE):
-    sas_to_parquet(INPUT_CISLN_DIR, CISLN_CACHE, "CISLN")
-else:
-    print("  [CISLN] Cache fresh -- skipping conversion.")
-
-if not _cache_is_fresh(INPUT_CISDP_DIR, CISDP_CACHE):
-    sas_to_parquet(INPUT_CISDP_DIR, CISDP_CACHE, "CISDP")
-else:
-    print("  [CISDP] Cache fresh -- skipping conversion.")
-
-# ============================================================================
-# STEP 4: BUILD CIS  (customer name / phone lookup from CISLN + CISDP)
-# DATA LNCIS(KEEP=ACCTNO ICNO CUSTNAME PRIPHONE SECPHONE);
-#   SET CISLN.LOAN;  IF CACCCODE NOT IN ('017','021','028') AND SECCUST='901';
-#   IF NEWIC NE ' ' THEN ICNO=NEWIC; ELSE ICNO=OLDIC;
-# (DPCIS is the same logic against CISDP.DEPOSIT; CIS = LNCIS stacked DPCIS)
-# ============================================================================
-print("\nStep 4: Building CIS (customer name/phone lookup)...")
-
-con = duckdb.connect(database=":memory:")
-
-cis = con.execute(f"""
-    SELECT
-        CAST(ACCTNO AS BIGINT) AS ACCTNO,
-        CASE WHEN TRIM(COALESCE(NEWIC, '')) <> '' THEN NEWIC ELSE OLDIC END AS ICNO,
-        CUSTNAME,
-        PRIPHONE,
-        SECPHONE
-    FROM read_parquet('{CISLN_CACHE}')
-    WHERE CACCCODE NOT IN ('017','021','028') AND SECCUST = '901'
-
-    UNION ALL
-
-    SELECT
-        CAST(ACCTNO AS BIGINT) AS ACCTNO,
-        CASE WHEN TRIM(COALESCE(NEWIC, '')) <> '' THEN NEWIC ELSE OLDIC END AS ICNO,
-        CUSTNAME,
-        PRIPHONE,
-        SECPHONE
-    FROM read_parquet('{CISDP_CACHE}')
-    WHERE CACCCODE NOT IN ('017','021','028') AND SECCUST = '901'
-""").pl()
-
-con.close()
-gc.collect()
-print(f"  CIS rows: {len(cis):,}")
-
-# ============================================================================
-# STEP 5: EXTRACT LN A/C (EXCEPT HP)
-# DATA LNACC(KEEP=ACCTNO NOTENO BRANCH CURBAL BALANCE APPRLIMT APPRLIM2
-#                 PRODTYPE UNDRAWN);
-#   SET LN_LN.LN06426;  IF PRODUCT NOT IN &HP;
-#   IF (3000000000<=ACCTNO<=3999999999) THEN PRODTYPE='OD'; ELSE PRODTYPE='FL';
-#
-# FLAG: ACCTYPE column does not exist in the LOAN parquet dataset.
-# PRODTYPE is instead derived from the ACCTNO numeric range, per source.
-# ============================================================================
-print("\nStep 5: Extracting LN accounts (excluding HP)...")
-
-# print(pl.read_parquet(LOAN_CACHE).columns)
-
-con = duckdb.connect(database=":memory:")
-_hp_list = ",".join(str(p) for p in HP_PRODUCTS)
-
-lnacc = con.execute(f"""
-    SELECT
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(NOTENO   AS BIGINT)  AS NOTENO,
-        CAST(BRANCH   AS INTEGER) AS BRANCH,
-        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
-        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-        CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-        CAST(APPRLIM2 AS DOUBLE)  AS APPRLIM2,
-        CASE
-            WHEN CAST(ACCTNO AS BIGINT) BETWEEN 3000000000 AND 3999999999
-                THEN 'OD'
-            ELSE 'FL'
-        END AS PRODTYPE,
-        CAST(UNDRAWN  AS DOUBLE)  AS UNDRAWN
-    FROM read_parquet('{LOAN_CACHE}')
-    WHERE CAST(PRODUCT AS INTEGER) NOT IN ({_hp_list})
-""").pl()
-
-con.close()
-gc.collect()
-print(f"  LNACC rows: {len(lnacc):,}")
-
-# ============================================================================
-# STEP 6: EXTRACT BT A/C
-# DATA BTACC(KEEP=ACCT BRANCH DCURBAL DBALANCE APPRLIMT PRODTYPE DUNDRAWN);
-#   SET BT.BTMAST&REPTMON&NOWK;
-#   IF SUBACCT='OV' AND CUSTCD NE ' ' AND DCURBAL NE .;  PRODTYPE='TB';
-#   ACCT=ACCTNO; NOTENO=0;
-# DATA AMC.BTACC(RENAME=(ACCT=ACCTNO DCURBAL=CURBAL DBALANCE=BALANCE
-#                        DUNDRAWN=UNDRAWN)); SET BTACC;
-#
-# NOTE: NOTENO is set to 0 in the source data step, but the DATA statement's
-# KEEP= list does not include NOTENO, so it is not retained on BTACC. When
-# BTACC is later stacked with LNACC (SET LNACC BTACC), NOTENO is therefore
-# missing for every BT-sourced record -- reproduced here as a NULL column.
-# ============================================================================
-print("\nStep 6: Extracting BT accounts...")
-
-# print(pl.read_parquet(BT_CACHE).columns)
-
-con = duckdb.connect(database=":memory:")
-
-btacc = con.execute(f"""
-    SELECT
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(BRANCH   AS INTEGER) AS BRANCH,
-        CAST(DCURBAL  AS DOUBLE)  AS CURBAL,
-        CAST(DBALANCE AS DOUBLE)  AS BALANCE,
-        CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-        'TB'                      AS PRODTYPE,
-        CAST(DUNDRAWN AS DOUBLE)  AS UNDRAWN
-    FROM read_parquet('{BT_CACHE}')
-    WHERE SUBACCT = 'OV'
-      AND TRIM(COALESCE(CUSTCD, '')) <> ''
-      AND DCURBAL IS NOT NULL
-""").pl()
-
-con.close()
-gc.collect()
-print(f"  BTACC rows: {len(btacc):,}")
-
-# Permanent side-output equivalent of "DATA AMC.BTACC(RENAME=...); SET BTACC;"
-btacc.write_parquet(AMC_STORE_DIR / "BTACC.parquet")
-
-# ============================================================================
-# STEP 7: COMBINE AMCACC = SET LNACC BTACC; MERGE WITH CIS (BY ACCTNO)
-# ============================================================================
-print("\nStep 7: Combining LNACC + BTACC, joining CIS...")
-
-btacc = btacc.with_columns(pl.lit(None).cast(pl.Int64).alias("NOTENO"))
-lnacc = lnacc.with_columns(pl.col("NOTENO").cast(pl.Int64))
-# btacc = btacc.with_columns(pl.col("APPRLIM2").cast(pl.Float64) if "APPRLIM2" in btacc.columns else pl.lit(None).cast(pl.Float64).alias("APPRLIM2"))
-# if "APPRLIM2" not in btacc.columns:
-#     btacc = btacc.with_columns(pl.lit(None).cast(pl.Float64).alias("APPRLIM2"))
-
-if "APPRLIM2" in btacc.columns:
-    btacc = btacc.with_columns(
-        pl.col("APPRLIM2").cast(pl.Float64)
-    )
-else:
-    btacc = btacc.with_columns(
-        pl.lit(None).cast(pl.Float64).alias("APPRLIM2")
-    )
-
-amcacc_raw = pl.concat([lnacc, btacc.select(lnacc.columns)], how="vertical")
-
-# INNER JOIN AMCACC & CIS BY ACCTNO; IF (A AND B) AND ICNO NE ' '
-amcacc = amcacc_raw.join(cis, on="ACCTNO", how="inner").filter(
-    pl.col("ICNO").is_not_null() & (pl.col("ICNO").str.strip_chars() != "")
-)
-print(f"  AMCACC (post CIS join) rows: {len(amcacc):,}")
-
-# ============================================================================
-# STEP 8: FILTER TO CUSTOMERS WITH SUMMED APPRLIMT > RM1,000,000 BY BRANCH+ICNO
-# ============================================================================
-print("\nStep 8: Filtering customers with combined limit > RM1,000,000...")
-
-amclimt_keys = (
-    amcacc.group_by(["BRANCH", "ICNO"])
-    .agg(pl.col("APPRLIMT").sum().alias("APPRLIMT"))
-    .filter(pl.col("APPRLIMT") > 1_000_000)
-    .select(["BRANCH", "ICNO"])
-)
-
-amcacc = amcacc.join(amclimt_keys, on=["BRANCH", "ICNO"], how="inner")
-print(f"  AMCACC (post RM1M filter) rows: {len(amcacc):,}")
-
-# ============================================================================
-# STEP 9: READ BRANCH FLAT FILE (fixed-width) & LEFT-JOIN BY BRANCH
-# INFILE BRHFILE LRECL=80; INPUT @2 BRANCH 3. @6 BRABBR $3.;
-# ============================================================================
-print("\nStep 9: Reading branch flat file and merging...")
-
-branch_rows = []
-with open(INPUT_BRANCH_FILE, "rb") as fh:
-    for raw in fh:
-        line = raw.rstrip(b"\r\n")
-        if len(line) < 8:
-            continue
-        branch = int(line[1:4].decode("latin1").strip() or 0)   # @2 3.
-        brabbr = line[5:8].decode("latin1")                     # @6 $3.
-        branch_rows.append({"BRANCH": branch, "BRABBR": brabbr})
-
-brhdata = pl.DataFrame(branch_rows).with_columns(pl.col("BRANCH").cast(pl.Int64))
-amcacc = amcacc.with_columns(pl.col("BRANCH").cast(pl.Int64))
-
-# DATA AMC.AMC&REPTMON&NOWK; MERGE AMCACC(IN=A) BRHDATA; BY BRANCH; IF A;
-amc_current = amcacc.join(brhdata, on="BRANCH", how="left")
-print(f"  AMC current-period rows: {len(amc_current):,}")
-
-# Persist current period to the AMC store (self-referencing history library)
-AMC_CURRENT_KEY  = f"AMC{REPTMON}{NOWK}"
-AMC_PREVIOUS_KEY = f"AMC{REPTMON1}{NOWK}"
-
-amc_current.write_parquet(AMC_STORE_DIR / f"{AMC_CURRENT_KEY}.parquet")
-print(f"  Stored current-period snapshot: {AMC_CURRENT_KEY}.parquet")
-
-del amcacc_raw, amcacc, amclimt_keys, lnacc, btacc, brhdata
-gc.collect()
-
-# ============================================================================
-# STEP 10: CURRENT-MONTH DATASET (CAMC)
-# PROC SORT ... OUT=CAMC; BY BRANCH ICNO ACCTNO NOTENO;
-# IF APPRLIMT/BALANCE/UNDRAWN missing THEN 0;
-# IF (APPRLIMT GT 0 AND PRODTYPE NE 'FL') THEN CPERCT=ROUND(...);
-# ============================================================================
-print("\nStep 10: Building CAMC (current month)...")
-
-camc = amc_current.sort(["BRANCH", "ICNO", "ACCTNO", "NOTENO"], nulls_last=False)
-camc = camc.with_columns([
-    pl.col("APPRLIMT").fill_null(0.0),
-    pl.col("BALANCE").fill_null(0.0),
-    pl.col("UNDRAWN").fill_null(0.0),
-])
-camc = camc.with_columns(
-    pl.when((pl.col("APPRLIMT") > 0) & (pl.col("PRODTYPE") != "FL"))
-    .then(((pl.col("APPRLIMT") - pl.col("UNDRAWN")) / pl.col("APPRLIMT") * 100).round(2))
-    .otherwise(None)
-    .alias("CPERCT")
-)
-print(f"  CAMC rows: {len(camc):,}")
-
-# ============================================================================
-# STEP 11: PREVIOUS-MONTH DATASET (PAMC)  -- read from AMC store
-# PROC SORT DATA=AMC.AMC&REPTMON1&NOWK OUT=PAMC
-#   (RENAME=(APPRLIMT=PLIMT BALANCE=PBAL UNDRAWN=PUNDRAWN));
-# ============================================================================
-print("\nStep 11: Building PAMC (previous month)...")
-
-_prev_path = AMC_STORE_DIR / f"{AMC_PREVIOUS_KEY}.parquet"
-if _prev_path.exists():
-    pamc_raw = pl.read_parquet(_prev_path)
-# else:
-#     print(f"  WARNING: previous-period snapshot {AMC_PREVIOUS_KEY}.parquet not found "
-#           f"(first-ever run for this cycle) -- treating previous month as empty.")
-#     pamc_raw = amc_current.clear()
-else:
-    raise FileNotFoundError(
-        f"Previous AMC snapshot missing: "
-        f"{AMC_PREVIOUS_KEY}.parquet"
-    )
-
-pamc = pamc_raw.sort(["BRANCH", "ICNO", "ACCTNO", "NOTENO"], nulls_last=False).rename({
-    "APPRLIMT": "PLIMT",
-    "BALANCE": "PBAL",
-    "UNDRAWN": "PUNDRAWN",
-})
-pamc = pamc.with_columns([
-    pl.col("PLIMT").fill_null(0.0),
-    pl.col("PBAL").fill_null(0.0),
-    pl.col("PUNDRAWN").fill_null(0.0),
-])
-pamc = pamc.with_columns(
-    pl.when((pl.col("PLIMT") > 0) & (pl.col("PRODTYPE") != "FL"))
-    .then(((pl.col("PLIMT") - pl.col("PUNDRAWN")) / pl.col("PLIMT") * 100).round(2))
-    .otherwise(None)
-    .alias("PPERCT")
-)
-print(f"  PAMC rows: {len(pamc):,}")
-
-# ============================================================================
-# STEP 12: DETAIL MERGE  (AMC = MERGE PAMC CAMC; BY BRANCH ICNO ACCTNO NOTENO)
-# SAS last-dataset-wins: CAMC values win over PAMC for overlapping columns.
-# ============================================================================
-print("\nStep 12: Merging PAMC + CAMC for detail report...")
-
-# camc_pd = camc.to_pandas()
-# pamc_pd = pamc.to_pandas()
-
-# _keys = ["BRANCH", "ICNO", "ACCTNO", "NOTENO"]
-# _shared = ["CUSTNAME", "PRIPHONE", "SECPHONE", "PRODTYPE", "BRABBR", "CURBAL", "APPRLIM2"]
-
-# detail_merged = pd.merge(pamc_pd, camc_pd, on=_keys, how="outer", suffixes=("_p", "_c"))
-
-camc_pd = camc.to_pandas()
-pamc_pd = pamc.to_pandas()
-
-_keys = ["BRANCH", "ICNO", "ACCTNO", "NOTENO"]
-
-# Reproduce SAS MERGE sequencing behaviour
-pamc_pd["_SEQ"] = (
-    pamc_pd.groupby(_keys)
-    .cumcount()
-)
-
-camc_pd["_SEQ"] = (
-    camc_pd.groupby(_keys)
-    .cumcount()
-)
-
-detail_merged = pd.merge(
-    pamc_pd,
-    camc_pd,
-    on=_keys + ["_SEQ"],
-    how="outer",
-    suffixes=("_p", "_c")
-)
-
-detail_merged.drop(columns=["_SEQ"], inplace=True)
-
-_shared = [
-    "CUSTNAME", 
-    "PRIPHONE", 
-    "SECPHONE", 
-    "PRODTYPE", 
-    "BRABBR", 
-    "CURBAL", 
-    "APPRLIM2"
-]
-
-for col in _shared:
-    detail_merged[col] = (
-        detail_merged[f"{col}_c"]
-        .combine_first(detail_merged[f"{col}_p"])
-    )
-    detail_merged.drop(columns=[f"{col}_c", f"{col}_p"], inplace=True)
-
-# For testing purposes (Excluding TB from COLDBR detail report)
-detail_merged = detail_merged[
-    detail_merged["PRODTYPE"] != "TB"
-]
-
-detail_merged.sort_values(["BRANCH", "CUSTNAME", "PRODTYPE"], inplace=True, kind="stable")
-detail_merged.reset_index(drop=True, inplace=True)
-print(f"  Detail merged rows: {len(detail_merged):,}")
-
-# ============================================================================
-# FORMATTING HELPERS
-# ============================================================================
-
-def _comma(value, width: int, decimals: int = 0) -> str:
-    """SAS COMMAw.d equivalent: right-justified in *width*, missing -> '.'."""
-    if value is None or pd.isna(value):
-        return ".".rjust(width)
-    v = float(value)
-    s = f"{v:,.{decimals}f}" if decimals > 0 else f"{v:,.0f}"
-    return s.rjust(width)
-
-
-def _place(buf: list, col: int, text: str) -> None:
-    """Write *text* into buf starting at SAS column *col* (1-based)."""
-    idx = col - 1
-    end = idx + len(text)
-    if end > len(buf):
-        buf.extend([" "] * (end - len(buf)))
-    buf[idx:end] = list(text)
-
-
-class ReportWriter:
-    """Accumulates ASA-carriage-controlled report lines.
-
-    A SAS PUT statement that writes only blanks (e.g. PUT @001 '     ';) does
-    not produce its own visible print record; SAS folds its carriage-control
-    effect into the NEXT emitted line as a double-space ('0') control
-    character. .blank() records that pending fold.
-    """
-
-    def __init__(self):
-        self.lines: list[str] = []
-        self._pending_asa = None
-
-    def blank(self) -> None:
-        self._pending_asa = "0"
-
-    def emit(self, buf: list, asa: str = " ") -> None:
-        if self._pending_asa is not None:
-            asa = self._pending_asa
-            self._pending_asa = None
-        line = asa + "".join(buf[:LRECL])
-        self.lines.append(line)
+NSFRCD_FMT: dict[str, str] = {
+    # === ITEM 6: Tier 1 and Tier 2 capital ===
+    "S-SHARE": "0006_3",
+    
+    # === ITEM 11: Less stable deposits ===
+    # (Will be populated from MNL or EQ)
+    
+    # === ITEM 13: Unsecured funding from non-financial corporates ===
+    # "S-STD R/NR": "0076_1",        
+    # "S-SUNDEBT": "0076_1",         
+    # "S-SUNDEBTREC": "0076_1",              
+    "S-ACCEXP": "0076_3",          
+    "S-AFRECADV": "0076_3",        
+    "S-ALLW COMM": "0076_3",       
+    "S-LEASE ROUA": "0076_3",      
+    "S-LOANCONTRO": "0076_3",     
+    "S-PBS PAYB": "0076_3",        
+    "S-PROVCLGFEE": "0076_3",      
+    "S-PROVOTH": "0076_3",         
+    "S-PROVTAX(C)": "0076_3",      
+    "S-SUNCRE": "0076_3",         
+    "S-SUNCRE KAP": "0076_3",      
+    
+    # # === ITEM 25: Unsecured funding from sovereigns/PSEs/MDBs/NDBs ===
+    # # "S-REVCRE": "0025_1",          
+    # "S-REVREAFMGS": "0025_1",      
+    # "S-REVREPBNM1": "0025_1",      
+    # "S-REVREPBNM2": "0025_1",       
+    # "S-REVREPOBNM": "0025_1",       
+    # "S-REVREPOHFT": "0025_1",       
+    # "S-REVREPOMGI": "0025_1",       
+    # "S-REVREPOMGS": "0025_1",       
+    # "S-REVRES": "0025_1",           
+    
+    # # === ITEM 32: Unsecured funding from other legal entities ===
+    # "S-CURPNL": "0032_1",          
+    # "S-ACCDEPNO/E": "0032_1",      
+    # "S-ACCDEPRENO": "0032_1",      
+    # "S-DEPNCOPMSW": "0032_1",      
+    # "S-AFS UN-ISL": "0032_1",      
+    # "S-CL CTL CR": "0032_1",       
+    # "S-GUARANTEE": "0032_1",       
+    # "S-REMI FD 30": "0032_1",       
+    # "S-REMI FD 32": "0032_1",       
+    # "S-REMISIERS": "0032_1",        
+    # "S-SUNDEP": "0032_1",          
+    # "S-ACCDEPNF&F": "0032_1",      
+    # "S-ACCDEPNMV": "0032_1",       
+    # "S-DEPNF&F": "0032_1",         
+    # "S-DEPNH/W": "0032_1",         
+    # "S-DEPNMV": "0032_1",           
+    # "S-DEPNO/E": "0032_1",         
+    # "S-F&F": "0032_1",             
+    # "S-PDEPNSW": "0032_1",         
+    # "S-PDEPRENO": "0032_1",         
+    # "S-REG RES": "0032_1",         
+    # "S-REMISIERS": "0032_1",        
+    # "S-RENO": "0032_1",            
+    # "S-REPOMGS": "0032_1",          
+    # "S-RETPROF": "0032_1",         
+    # # "S-REVREAFMGS": "0032_1",      
+    # "S-UNREAL UQS": "0032_1",      
+    # "S-UNREALMGS": "0032_1",       
+    
+    # === ITEM 74: Trade date payables ===
+    "S-OS SALES": "0074_1",         
+    
+    # === ITEM 76: Unsecured funding from non-financial corporates ===        
+    "S-SSTPAY": "0076_1",          
+    "S-PBS DLRS": "0076_1",
+    "S-REMI CA": "0076_1", 
+    
+    # === ITEM 84: Coins and banknotes ===
+    "S-PETTY CASH": "0084_1",       
+    
+    # === ITEM 85: Total central bank reserves ===
+    "S-STADEPBNM": "0085_3",        
+    
+    # === ITEM 116: Deposits/UA Funds held at financial institutions ===
+    "S-BNMFL 1MTH": "0116_1",       
+    "S-PBB CUR": "0116_1",          
+    "S-PIBB CUR": "0116_1",         
+    "S-PB CA OTH": "0116_1",        
+    "S-CB": "0116_1",               
+    "S-REMI FD": "0116_1",          
+    "S-LBFD": "0116_1",             
+    "S-MBFL 1MTH": "0116_1",        
+    "S-LBFL 1MTH": "0116_1",        
+    "S-DNBFI 1MTH": "0116_1",       
+    "S-LBFL": "0116_1",             
+    "LCR-FIOPSDEP": "0140_1",       
+    
+    # # === ITEM 140: Unsecured loans/financing to financial institutions ===
+    # "S-BNM": "0152_1",              
+    # "S-BNM FIX": "0152_1",          
+    
+    # === ITEM 152: Loans/Financing to central banks ===
+    "S-BNM": "0152_1",              
+    "S-BNM FIX": "0152_1",          
+    "S-BNM O/N": "0152_1",          
+    "S-BNM(AFS)": "0152_1",         
+    "S-BNMFL": "0152_1",            
+    "S-BNM BILL M": "0152_1",       
+    "S-BNM BILL T": "0152_1",       
+    
+    # === ITEM 206: Other short-term unsecured instruments ===
+    "S-HFT": "0206_1",             
+    "S-MGS": "0206_1",             
+    "S-MTN LN": "0206_1",          
+    "S-TERMLN": "0206_1",          
+    "S-ISLAMIC(A)": "0206_1",      
+    "S-ISLPDS (I)": "0206_1",     
+    
+    # === ITEM 245: Cash or other assets to CCP default fund ===
+    "S-MARGIN COL": "0245_3",        
+    
+    # === ITEM 246: Required stable funding for IM and CCP ===
+    "S-MARGIN COL": "0245_3",       
+    
+    # === ITEM 247: Items deducted from regulatory capital ===
+    "S-DTAX": "0247_3",              
+    "S-IA": "0247_3",                
+    "S-IAISLDE(D)": "0247_3",      
+    "S-D T ASSETS": "0247_3",      
+    
+    # === ITEM 248: Trade date receivables ===
+    "S-O/S PUR C": "0248_1",         
+    "S-CLIENT CTL": "0248_1",        
+    
+    # === ITEM 249: Interdependent assets ===
+    # (Will be populated from EQ or MNL)
+    
+    # === ITEM 251: All other assets 100% treatment ===
+    # (Will be populated from EQ or MNL)
+    
+    # === ITEM 256: Irrevocable/conditionally revocable credit facilities ===
+    "S-RCF": "0256_1",               
+    "S-SM F": "0256_1",              
+    "S-TLF": "0256_1",               
+    
+    # === ITEM 260: Guarantees and letters of credit ===
+    "OBS00100100": "0260_1",         
+    # "S-GUARANTEE": "0260_1",       
+    
+    # === ITEM 282: Unsecured funding from PSEs/NDBs (D. Additional) ===
+    # (Will be populated from EQ)
+}
+
+NSFRCD_OTHER = "      "  # OTHER = '      '
+
+
+def nsfrcd_fmt(value: Optional[str]) -> str:
+    """VALUE $NSFRCD (local PROC FORMAT)."""
+    if value is None:
+        return NSFRCD_OTHER
+    return NSFRCD_FMT.get(value, NSFRCD_OTHER)
 
 
 # ============================================================================
-# STEP 13: GENERATE COLDBR (detail report)
+# NUMERIC PARSING HELPERS (SAS informats)
 # ============================================================================
-print("\nStep 13: Generating COLDBR (detail) report...")
-
-
-def _coldbr_header(writer: ReportWriter, branch: int, pagecnt: int) -> int:
-    buf = [" "] * LRECL
-    _place(buf, 1, "PUBLIC BANK BERHAD")
-    _place(buf, 119, f"PAGE NO : {pagecnt}")
-    writer.emit(buf, asa="1")
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "DETAIL REPORT ON CUSTOMER UNDER ACCOUNT MANAGEMENT CON")
-    _place(buf, 55, f"CEPT(AMC) AS AT {RDATE}")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "REPORT ID: EIMBRAMC")
-    writer.emit(buf)
-
-    writer.blank()
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "BRANCH CODE= ")
-    _place(buf, 14, f"{int(branch or 0):03d}")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 36, "CURRENT MONTH")
-    _place(buf, 73, "PREVIOUS MONTH")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "NAME(TEL/NO)/")
-    _place(buf, 23, "-" * 38)
-    _place(buf, 63, "-" * 38)
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "I/C NO")
-    _place(buf, 13, "FACILITY")
-    _place(buf, 23, "APP/OPER LIMIT")
-    _place(buf, 41, "O/S BALANCE")
-    _place(buf, 53, "UTILISED")
-    _place(buf, 63, "APP/OPER LIMIT")
-    _place(buf, 81, "O/S BALANCE")
-    _place(buf, 93, "UTILISED")
-    _place(buf, 104, "OFFICER")
-    _place(buf, 116, "REMARKS")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "-" * 132)
-    writer.emit(buf)
-
-    return 9
-
-DEBUG_FILE = OUTPUT_DIR / "AMCBR_debug.txt"
-
-def generate_coldbr(df: pd.DataFrame) -> list:
-    writer = ReportWriter()
-    debug = open(DEBUG_FILE, "w", encoding="utf-8")
-    pagecnt = 0
-    linecnt = 0
-    cur_branch = None
-    cur_custname = None
-
-    bcuaplmt = bcuosbal = bpraplmt = bprosbal = 0.0
-    cuaplmt = cuosbal = cuudraw = praplmt = prosbal = prudraw = 0.0
-
-    n = len(df)
-    for i in range(n):
-        row = df.iloc[i]
-        branch = row["BRANCH"]
-        custname = row["CUSTNAME"]
-        is_first_branch = branch != cur_branch
-        is_first_custname = is_first_branch or (custname != cur_custname)
-
-        nxt = df.iloc[i + 1] if i + 1 < n else None
-        is_last_branch = (nxt is None) or (nxt["BRANCH"] != branch)
-        is_last_custname = is_last_branch or (nxt is not None and nxt["CUSTNAME"] != custname)
-
-        if is_first_branch:
-            pagecnt += 1
-            linecnt = _coldbr_header(writer, branch, pagecnt)
-            # bcuaplmt = row["APPRLIMT"] or 0
-            # bcuosbal = row["BALANCE"] or 0
-            # bpraplmt = row["PLIMT"] or 0
-            # bprosbal = row["PBAL"] or 0
-            bcuaplmt = 0.0
-            bcuosbal = 0.0
-            bpraplmt = 0.0
-            bprosbal = 0.0
-            cur_branch = branch
-
-        cuaplmt += row["APPRLIMT"] or 0
-        cuosbal += row["BALANCE"] or 0
-        cuudraw += row["UNDRAWN"] or 0
-        praplmt += row["PLIMT"] or 0
-        prosbal += row["PBAL"] or 0
-        prudraw += row["PUNDRAWN"] or 0
-
-        bcuaplmt += row["APPRLIMT"] or 0
-        bcuosbal += row["BALANCE"] or 0
-        bpraplmt += row["PLIMT"] or 0
-        bprosbal += row["PBAL"] or 0
-
-        if is_first_custname:
-            name = str(row["CUSTNAME"] or "").rstrip()
-            pri = str(row["PRIPHONE"] or "").rstrip()
-            sec = str(row["SECPHONE"] or "").rstrip()
-            cust = f"{name} ({pri}/{sec})"
-            buf = [" "] * LRECL
-            _place(buf, 1, cust)
-            writer.emit(buf)
-            linecnt += 1
-            cur_custname = custname
-
-        if linecnt > 55:
-            pagecnt += 1
-            linecnt = _coldbr_header(writer, branch, pagecnt)
-
-        buf = [" "] * LRECL
-        _place(buf, 1, str(row["ICNO"] or ""))
-        _place(buf, 16, str(row["PRODTYPE"] or ""))
-        _place(buf, 23, _comma(row["APPRLIMT"], 14, 2))
-        _place(buf, 38, _comma(row["BALANCE"], 14, 2))
-        _place(buf, 54, _comma(row["CPERCT"], 6, 2))
-        _place(buf, 60, "%")
-        _place(buf, 63, _comma(row["PLIMT"], 14, 2))
-        _place(buf, 78, _comma(row["PBAL"], 14, 2))
-        _place(buf, 94, _comma(row["PPERCT"], 6, 2))
-        _place(buf, 100, "%")
-        writer.emit(buf)
-        linecnt += 1
-
-        if is_last_custname:
-
-            debug.write(
-                f"Customer TOTAL | "
-                f"Branch = {branch} | "
-                f"Customer = {custname} |  "
-                f"linecnt = {linecnt}\n"
-            )
-
-            cupcent = round((cuaplmt - cuudraw) / cuaplmt * 100, 2) if cuaplmt > 0 else 0.0
-            prpcent = round((praplmt - prudraw) / praplmt * 100, 2) if praplmt > 0 else 0.0
-
-            buf = [" "] * LRECL
-            _place(buf, 1, "-" * 132)
-            writer.emit(buf)
-
-            buf = [" "] * LRECL
-            _place(buf, 1, "TOTAL: ")
-            _place(buf, 23, _comma(cuaplmt, 14, 2))
-            _place(buf, 38, _comma(cuosbal, 14, 2))
-            _place(buf, 54, _comma(cupcent, 6, 2))
-            _place(buf, 60, "%")
-            _place(buf, 63, _comma(praplmt, 14, 2))
-            _place(buf, 78, _comma(prosbal, 14, 2))
-            _place(buf, 94, _comma(prpcent, 6, 2))
-            _place(buf, 100, "%")
-            writer.emit(buf)
-
-            buf = [" "] * LRECL
-            _place(buf, 1, "-" * 132)
-            writer.emit(buf)
-            linecnt += 3
-
-            writer.blank()
-            linecnt += 1
-
-            cuaplmt = cuosbal = cuudraw = praplmt = prosbal = prudraw = 0.0
-
-        if is_last_branch:
-
-            debug.write(
-                f"BR TOTAL | "
-                f"Branch = {branch} | "
-                f"linecnt = {linecnt}\n"
-            )
-
-            buf = [" "] * LRECL
-            _place(buf, 1, "BR TOTAL: ")
-            _place(buf, 23, _comma(bcuaplmt, 14, 2))
-            _place(buf, 38, _comma(bcuosbal, 14, 2))
-            _place(buf, 63, _comma(bpraplmt, 14, 2))
-            _place(buf, 78, _comma(bprosbal, 14, 2))
-            writer.emit(buf)
-
-            buf = [" "] * LRECL
-            _place(buf, 1, "=" * 132)
-            writer.emit(buf)
-
-            bcuaplmt = bcuosbal = bpraplmt = bprosbal = 0.0
-            pagecnt = 0
-
-    debug.close()
-    print(f"DEBUG at {DEBUG_FILE}")
-
-    return writer.lines
-
-
-coldbr_lines = generate_coldbr(detail_merged)
-print(f"  COLDBR lines: {len(coldbr_lines):,}")
-
-# ============================================================================
-# STEP 14: BUILD HQ SUMMARY INPUTS (re-derived from CAMC / PAMC, per source)
-# ============================================================================
-print("\nStep 14: Building HQ summary aggregates...")
-
-pamc_hq = pamc.to_pandas().copy()
-
-# For testing purposes (Excluding TB from HQ summary)
-pamc_hq = pamc_hq[pamc_hq["PRODTYPE"] != "TB"]
-
-pamc_hq["PFLLIMT"] = pamc_hq.apply(lambda r: r["PLIMT"] if r["PRODTYPE"] == "FL" else None, axis=1)
-pamc_hq["PUNDRAW"] = pamc_hq.apply(lambda r: 0.0 if r["PRODTYPE"] == "FL" else r["PUNDRAWN"], axis=1)
-pamc_hq["PODLIMT"] = pamc_hq.apply(lambda r: r["PLIMT"] if r["PRODTYPE"] != "FL" else None, axis=1)
-
-_p1 = pamc_hq.groupby(["BRANCH", "ICNO"], as_index=False)[["PFLLIMT", "PODLIMT", "PBAL", "PUNDRAW"]].sum(min_count=1)
-pamc_hq_agg = _p1.groupby("BRANCH", as_index=False).agg(
-    PFLLIMT=("PFLLIMT", "sum"),
-    PODLIMT=("PODLIMT", "sum"),
-    PBAL=("PBAL", "sum"),
-    PUNDRAW=("PUNDRAW", "sum"),
-    # PCUST=("ICNO", "count"),
-    PCUST=("ICNO", "nunique"),
-)
-
-camc_hq = camc.to_pandas().copy()
-
-# For testing purposes (Excluding TB from HQ summary)
-camc_hq = camc_hq[camc_hq["PRODTYPE"] != "TB"]
-
-camc_hq["CFLLIMT"] = camc_hq.apply(lambda r: r["APPRLIMT"] if r["PRODTYPE"] == "FL" else None, axis=1)
-camc_hq["CUNDRAW"] = camc_hq.apply(lambda r: 0.0 if r["PRODTYPE"] == "FL" else r["UNDRAWN"], axis=1)
-camc_hq["CODLIMT"] = camc_hq.apply(lambda r: r["APPRLIMT"] if r["PRODTYPE"] != "FL" else None, axis=1)
-
-_c1 = camc_hq.groupby(["BRANCH", "ICNO"], as_index=False)[["CFLLIMT", "CODLIMT", "BALANCE", "CUNDRAW"]].sum(min_count=1)
-camc_hq_agg = _c1.groupby("BRANCH", as_index=False).agg(
-    CFLLIMT=("CFLLIMT", "sum"),
-    CODLIMT=("CODLIMT", "sum"),
-    BALANCE=("BALANCE", "sum"),
-    CUNDRAW=("CUNDRAW", "sum"),
-    # CCUST=("ICNO", "count"),
-    CCUST=("ICNO", "nunique"),
-)
-
-amclimit = pd.merge(camc_hq_agg, pamc_hq_agg, on="BRANCH", how="outer")
-
-
-def _pct(numer_limit, undrawn):
-    if numer_limit is None or pd.isna(numer_limit) or numer_limit <= 0:
-        return 0.0
-    return round((numer_limit - (undrawn or 0.0)) / numer_limit * 100, 2)
-
-
-amclimit["CPERCT"] = amclimit.apply(lambda r: _pct(r["CODLIMT"], r["CUNDRAW"]), axis=1)
-amclimit["PPERCT"] = amclimit.apply(lambda r: _pct(r["PODLIMT"], r["PUNDRAW"]), axis=1)
-amclimit.sort_values("BRANCH", inplace=True, kind="stable")
-amclimit.reset_index(drop=True, inplace=True)
-print(f"  AMCLIMIT (HQ) rows: {len(amclimit):,}")
-
-# ============================================================================
-# STEP 15: GENERATE COLDHQ (summary report)
-# ============================================================================
-print("\nStep 15: Generating COLDHQ (summary) report...")
-
-
-def _thousands(value):
-    if value is None or pd.isna(value):
+def _parse_comma_number(raw: str) -> Optional[float]:
+    """COMMA20.2 informat: strip thousands separators / currency symbols,
+    honour parenthesised negatives; blank -> missing."""
+    raw = raw.strip()
+    if not raw:
         return None
-    return round(value / 1000)
+    negative = raw.startswith("(") and raw.endswith(")")
+    if negative:
+        raw = raw[1:-1]
+    raw = raw.replace(",", "").replace("$", "")
+    if not raw:
+        return None
+    value = float(raw)
+    return -value if negative else value
 
 
-def _coldhq_header(writer: ReportWriter, pagecnt: int) -> int:
-    buf = [" "] * LRECL
-    _place(buf, 1, "PUBLIC BANK BERHAD")
-    _place(buf, 115, f"PAGE NO : {pagecnt}")
-    writer.emit(buf, asa="1")
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "SUMMARY REPORT BY BRANCH ON CUSTOMER UNDER ACCO")
-    _place(buf, 48, f"UNT MANAGEMENT CONCEPT(AMC) AS AT {RDATE}")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "REPORT ID: EIMBRAMC")
-    writer.emit(buf)
-
-    writer.blank()
-
-    buf = [" "] * LRECL
-    _place(buf, 27, f"{REPTMON}/{REPTYR}")
-    _place(buf, 79, f"{REPTMON1}/{REPTYR1}")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 5, "-" * 51)
-    _place(buf, 58, "-" * 51)
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 5, "NO OF")
-    _place(buf, 13, "APPROVED/")
-    _place(buf, 35, "TOTAL")
-    _place(buf, 51, "%")
-    _place(buf, 58, "NO OF")
-    _place(buf, 66, "APPROVED/")
-    _place(buf, 88, "TOTAL")
-    _place(buf, 103, "%")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "BR")
-    _place(buf, 5, "CUST")
-    _place(buf, 13, "OPERATIVE LTD")
-    _place(buf, 35, "OUTSTANDING")
-    _place(buf, 48, "UTILISED")
-    _place(buf, 58, "CUST")
-    _place(buf, 66, "OPERATIVE LTD")
-    _place(buf, 88, "OUTSTANDING")
-    _place(buf, 100, "UTILISED")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 13, "RM(`000)")
-    _place(buf, 35, "BALANCE")
-    _place(buf, 66, "RM(`000)")
-    _place(buf, 88, "BALANCE")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 35, "(FL+OD+TB)")
-    _place(buf, 48, "(OD+TB)")
-    _place(buf, 88, "(FL+OD+TB)")
-    _place(buf, 100, "(OD+TB)")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 13, "FL")
-    _place(buf, 24, "OD+TB")
-    _place(buf, 35, "RM(`000)")
-    _place(buf, 66, "FL")
-    _place(buf, 77, "OD+TB")
-    _place(buf, 88, "RM(`000)")
-    writer.emit(buf)
-
-    buf = [" "] * LRECL
-    _place(buf, 1, "-" * 107)
-    writer.emit(buf)
-
-    return 12
+def _parse_plain_number(raw: str) -> Optional[float]:
+    """Plain numeric informat (17.2 / 16.); blank -> missing."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    return float(raw)
 
 
-def generate_coldhq(df: pd.DataFrame) -> list:
-    writer = ReportWriter()
-    pagecnt = 1
-    linecnt = _coldhq_header(writer, pagecnt)
+def _format_comma20_2(value: Optional[float]) -> str:
+    """FORMAT ... COMMA20.2 for report output. MISSING=' ' -> blank field."""
+    if value is None:
+        return " " * 20
+    return f"{value:,.2f}".rjust(20)
 
-    tccust = tpcust = 0
-    tcfllimt = tcodlimt = tbalance = tcundraw = 0.0
-    tpfllimt = tpodlimt = tpbal = tpundraw = 0.0
-
-    n = len(df)
-    for i in range(n):
-        row = df.iloc[i]
-        is_last = (i == n - 1)
-
-        if linecnt > 55:
-            pagecnt += 1
-            linecnt = _coldhq_header(writer, pagecnt)
-
-        cfllimt = _thousands(row["CFLLIMT"])
-        codlimt = _thousands(row["CODLIMT"])
-        balance = _thousands(row["BALANCE"])
-        cundraw = _thousands(row["CUNDRAW"])
-        pfllimt = _thousands(row["PFLLIMT"])
-        podlimt = _thousands(row["PODLIMT"])
-        pbal    = _thousands(row["PBAL"])
-        pundraw = _thousands(row["PUNDRAW"])
-
-        buf = [" "] * LRECL
-        _place(buf, 1, f"{int(row['BRANCH'] or 0):03d}")
-        _place(buf, 5, _comma(row["CCUST"], 7))
-        _place(buf, 13, _comma(cfllimt, 10))
-        _place(buf, 24, _comma(codlimt, 10))
-        _place(buf, 35, _comma(balance, 11))
-        _place(buf, 50, _comma(row["CPERCT"], 6, 2))
-        _place(buf, 58, _comma(row["PCUST"], 7))
-        _place(buf, 66, _comma(pfllimt, 10))
-        _place(buf, 77, _comma(podlimt, 10))
-        _place(buf, 88, _comma(pbal, 11))
-        _place(buf, 102, _comma(row["PPERCT"], 6, 2))
-        writer.emit(buf)
-        linecnt += 1
-
-        tccust  += int(row["CCUST"]) if pd.notna(row["CCUST"]) else 0
-        tcfllimt += cfllimt or 0.0
-        tcodlimt += codlimt or 0.0
-        tbalance += balance or 0.0
-        tcundraw += cundraw or 0.0
-        tpcust  += int(row["PCUST"]) if pd.notna(row["PCUST"]) else 0
-        tpfllimt += pfllimt or 0.0
-        tpodlimt += podlimt or 0.0
-        tpbal   += pbal or 0.0
-        tpundraw += pundraw or 0.0
-
-        if is_last:
-            tcperct = _pct(tcodlimt, tcundraw)
-            tppercnt = _pct(tpodlimt, tpundraw)
-
-            buf = [" "] * LRECL
-            _place(buf, 1, "-" * 107)
-            writer.emit(buf)
-
-            buf = [" "] * LRECL
-            _place(buf, 1, "TOT")
-            _place(buf, 5, _comma(tccust, 7))
-            _place(buf, 13, _comma(tcfllimt, 10))
-            _place(buf, 24, _comma(tcodlimt, 10))
-            _place(buf, 35, _comma(tbalance, 11))
-            _place(buf, 50, _comma(tcperct, 6, 2))
-            _place(buf, 58, _comma(tpcust, 7))
-            _place(buf, 66, _comma(tpfllimt, 10))
-            _place(buf, 77, _comma(tpodlimt, 10))
-            _place(buf, 88, _comma(tpbal, 11))
-            _place(buf, 102, _comma(tppercnt, 6, 2))
-            writer.emit(buf)
-
-            buf = [" "] * LRECL
-            _place(buf, 1, "=" * 107)
-            writer.emit(buf)
-            linecnt += 3
-
-    return writer.lines
-
-
-coldhq_lines = generate_coldhq(amclimit)
-print(f"  COLDHQ lines: {len(coldhq_lines):,}")
 
 # ============================================================================
-# STEP 16: WRITE OUTPUT FILES
+# DATA TEMPLATE
+#   INFILE TEMPL LRECL=1000 DSD; INPUT @001 DESC $CHAR500.;
+#   ITEM = _N_;  IF ITEM > 1;  *Exclude header/title row;
+#   PROC SORT; BY ITEM; RUN;   -- no-op: ITEM already ascends with file order
 # ============================================================================
-print("\nStep 16: Writing output files...")
+@dataclass
+class TemplateRow:
+    item: int
+    desc: str
 
-coldbr_file = build_output_file(OUTPUT_DIR, "AMCBR").with_suffix(".txt")
-coldhq_file = build_output_file(OUTPUT_DIR, "AMCHQ").with_suffix(".txt")
 
-with open(coldbr_file, "w", encoding="latin1") as fh:
-    for ln in coldbr_lines:
-        fh.write(ln + "\n")
+def read_template(path: Path) -> list[TemplateRow]:
+    rows: list[TemplateRow] = []
+    with path.open("r", encoding="latin1") as fh:
+        for line_no, line in enumerate(fh, start=1):
+            if line_no == 1:
+                continue  # ITEM = _N_; IF ITEM > 1
+            desc = line.rstrip("\n").ljust(500)[:500]
+            rows.append(TemplateRow(item=line_no, desc=desc))
+    return rows
 
-with open(coldhq_file, "w", encoding="latin1") as fh:
-    for ln in coldhq_lines:
-        fh.write(ln + "\n")
 
-print(f"  COLDBR output : {coldbr_file}")
-print(f"  COLDHQ output : {coldhq_file}")
+# ============================================================================
+# DATA GL
+#   INFILE GLPIVB;
+#   INPUT @002 SET_ID $19.  @042 AMOUNT COMMA20.2  @062 SIGN $1.;
+#   GLFMT = PUT(SET_ID,$NSFRCD.);
+#   IF GLFMT NE '' THEN DO;
+#      ITEM = SUBSTR(GLFMT,1,4)*1; I = SUBSTRN(GLFMT,6,1);
+#      ARRAY BUCKET UTNMA1-UTNMA3;  BUCKET(I) = AMOUNT/1000;  OUTPUT;
+#      IF SET_ID='LCR-FIOPSDEP' THEN UTNMA1 = -UTNMA1;
+#      SELECT(SET_ID);
+#         WHEN('S-STADEPBNM')  DO; ITEM=86;  OUTPUT; END;
+#         WHEN('LCR-FIOPSDEP') DO; ITEM=116; OUTPUT; END;
+#         WHEN('S-MARGIN COL') DO; ITEM=246; OUTPUT; END;
+#         OTHERWISE;
+#      END;
+#   END;
+#   PROC SORT DATA=GL; BY ITEM; RUN;   PROC PRINT; RUN;
+# ============================================================================
+@dataclass
+class GLRecord:
+    item: int
+    utnma1: Optional[float]
+    utnma2: Optional[float]
+    utnma3: Optional[float]
 
-del detail_merged, camc, pamc, amc_current
-gc.collect()
 
-print("\nEIMBRAMC complete.")
+def read_gl(path: Path) -> list[GLRecord]:
+    records: list[GLRecord] = []
+    unmapped = set()    # DEBUG
+    mapped = set()      # DEBUG
+    with path.open("r", encoding="latin1") as fh:
+        for raw_line in fh:
+            line = raw_line.rstrip("\n")
+            if len(line) < 62:
+                line = line.ljust(62)
+
+            set_id = line[1:20].strip()      # @002 SET_ID $19.
+            amount_raw = line[41:61]         # @042 AMOUNT COMMA20.2
+            # sign = line[61:62]             # @062 SIGN $1. - read but not
+            #                                  referenced anywhere downstream
+            amount = _parse_comma_number(amount_raw)
+
+            set_id = line[1:20].strip()      # @002 SET_ID $19.
+            # # DEBUG
+            # if set_id.startswith("S-OS"):
+            #     print(f"FOUND S-OS: '{set_id}'")
+
+            glfmt = nsfrcd_fmt(set_id)
+            if glfmt.strip() == "":
+                unmapped.add(set_id)        # DEBUG
+                continue  # IF GLFMT NE '' guard - unmatched SET_ID -> no rows
+            mapped.add(set_id)      # DEBUG
+
+            # # DEBUG
+            # if set_id.startswith("S-OS"):
+            #     print(f"DEBUG S-OS: set_id='{set_id}', glfmt='{glfmt}'")
+
+            item = int(glfmt[0:4])       # SUBSTR(GLFMT,1,4)*1
+            bucket_idx = int(glfmt[5])   # SUBSTRN(GLFMT,6,1)
+
+            bucket = [None, None, None]  # ARRAY BUCKET UTNMA1-UTNMA3
+            if amount is not None:
+                bucket[bucket_idx - 1] = amount / 1000
+
+            records.append(GLRecord(item=item, utnma1=bucket[0], utnma2=bucket[1], utnma3=bucket[2]))
+
+            # # DEBUG
+            # if set_id.startswith("S-OS"):
+            #     print(f"DEBUG S-OS: item={item}, bucket_idx={bucket_idx}, amount={amount}, bucket={bucket}, records appended")
+
+            if set_id == "LCR-FIOPSDEP" and bucket[0] is not None:
+                bucket[0] = -bucket[0]
+
+            extra_item: Optional[int] = None
+            if set_id == "S-STADEPBNM":
+                extra_item = 86
+            elif set_id == "LCR-FIOPSDEP":
+                extra_item = 116
+            elif set_id == "S-MARGIN COL":
+                extra_item = 246
+
+            if extra_item is not None:
+                records.append(GLRecord(item=extra_item, utnma1=bucket[0], utnma2=bucket[1], utnma3=bucket[2]))
+
+    # DEBUG
+    print(f"\n--- MAPPED SET_IDs ({len(mapped)}) ---")
+    for s in sorted(mapped):
+        print(f"  '{s}' -> {nsfrcd_fmt(s)}")
+
+    # DEBUG    
+    print(f"\n--- UNMAPPED SET_IDs ({len(unmapped)}) ---")
+    for s in sorted(unmapped):
+        print(f"  '{s}'")
+
+    return records
+
+
+def gl_records_to_df(records: list[GLRecord]) -> pl.DataFrame:
+    return pl.DataFrame(
+        [{"item": r.item, "utnma1": r.utnma1, "utnma2": r.utnma2, "utnma3": r.utnma3} for r in records],
+        schema={"item": pl.Int64, "utnma1": pl.Float64, "utnma2": pl.Float64, "utnma3": pl.Float64},
+    ).sort("item")  # PROC SORT DATA=GL; BY ITEM;
+
+
+# ============================================================================
+# DATA EQ
+#   INFILE EQUA END=EOF DLM='|' DSD;
+#   INPUT UTNREF :$10.  UTNMA1-UTNMA5 :17.2  UTNTTL :17.2;
+#   ITEM = SUBSTR(UTNREF,3,5)*1;
+#   PROC PRINT; RUN;   -- no sort: printed in file order
+#   (END=EOF flag is read by SAS but never referenced in this DATA step)
+# ============================================================================
+@dataclass
+class EQRecord:
+    item: int
+    utnma1: Optional[float]
+    utnma2: Optional[float]
+    utnma3: Optional[float]
+    utnma4: Optional[float]
+    utnma5: Optional[float]
+    utnttl: Optional[float]
+
+
+def read_eq(path: Path) -> list[EQRecord]:
+    records: list[EQRecord] = []
+    with path.open("r", encoding="latin1") as fh:
+        for raw_line in fh:
+            line = raw_line.rstrip("\n")
+            if not line:
+                continue
+            fields = line.split("|")
+            fields += [""] * (7 - len(fields))
+
+            utnref = fields[0].strip()
+            utnma1 = _parse_plain_number(fields[1])
+            utnma2 = _parse_plain_number(fields[2])
+            utnma3 = _parse_plain_number(fields[3])
+            utnma4 = _parse_plain_number(fields[4])
+            utnma5 = _parse_plain_number(fields[5])
+            utnttl = _parse_plain_number(fields[6])
+
+            item = int(utnref[2:7])  # SUBSTR(UTNREF,3,5)*1
+
+            records.append(EQRecord(item, utnma1, utnma2, utnma3, utnma4, utnma5, utnttl))
+    return records
+
+
+def eq_records_to_df(records: list[EQRecord]) -> pl.DataFrame:
+    return pl.DataFrame(
+        [
+            {
+                "item": r.item, "utnma1": r.utnma1, "utnma2": r.utnma2, "utnma3": r.utnma3,
+                "utnma4": r.utnma4, "utnma5": r.utnma5, "utnttl": r.utnttl,
+            }
+            for r in records
+        ],
+        schema={
+            "item": pl.Int64, "utnma1": pl.Float64, "utnma2": pl.Float64, "utnma3": pl.Float64,
+            "utnma4": pl.Float64, "utnma5": pl.Float64, "utnttl": pl.Float64,
+        },
+    )
+
+
+# ============================================================================
+# DATA NSFR
+#   INFILE MNL1 DELIMITER=',' DSD FIRSTOBS=2;
+#   INPUT LINE :$10.  UTNMA1-UTNMA3 :16.;
+#   ITEM = SUBSTR(LINE,6,3)*1;   DROP LINE;
+# ============================================================================
+@dataclass
+class NSFRRecord:
+    item: int
+    utnma1: Optional[float]
+    utnma2: Optional[float]
+    utnma3: Optional[float]
+
+
+def read_nsfr_manual(path: Path) -> list[NSFRRecord]:
+    records: list[NSFRRecord] = []
+    with path.open("r", encoding="latin1") as fh:
+        lines = fh.readlines()
+
+    for raw_line in lines[1:]:  # FIRSTOBS=2 skips the header row
+        line = raw_line.rstrip("\n")
+        if not line:
+            continue
+        fields = line.split(",")
+        fields += [""] * (4 - len(fields))
+
+        line_field = fields[0].strip()
+        utnma1 = _parse_plain_number(fields[1])
+        utnma2 = _parse_plain_number(fields[2])
+        utnma3 = _parse_plain_number(fields[3])
+
+        item = int(line_field[5:8])  # SUBSTR(LINE,6,3)*1
+
+        records.append(NSFRRecord(item, utnma1, utnma2, utnma3))
+    return records
+
+
+def nsfr_records_to_df(records: list[NSFRRecord]) -> pl.DataFrame:
+    return pl.DataFrame(
+        [{"item": r.item, "utnma1": r.utnma1, "utnma2": r.utnma2, "utnma3": r.utnma3} for r in records],
+        schema={"item": pl.Int64, "utnma1": pl.Float64, "utnma2": pl.Float64, "utnma3": pl.Float64},
+    )
+
+
+# ============================================================================
+# DATA LCRALL
+#   SET GL(IN=B) EQ(IN=C) NSFR;  WHERE ITEM > 0;
+#   IF B THEN SRC='WLK'; ELSE IF C THEN SRC='EQU'; ELSE SRC='MNL';
+#   PROC PRINT; VAR SRC ITEM UTNMA1 UTNMA2 UTNMA3; RUN;
+#   PROC SORT DATA=LCRALL; BY ITEM; RUN;
+# ============================================================================
+def build_lcrall(gl_df: pl.DataFrame, eq_df: pl.DataFrame, nsfr_df: pl.DataFrame) -> pl.DataFrame:
+    gl_df = gl_df.with_columns(pl.lit("WLK").alias("src"))
+    eq_df = eq_df.with_columns(pl.lit("EQU").alias("src"))
+    nsfr_df = nsfr_df.with_columns(pl.lit("MNL").alias("src"))
+
+    lcrall = pl.concat([gl_df, eq_df, nsfr_df], how="diagonal_relaxed")
+    return lcrall.filter(pl.col("item") > 0)
+
+
+# ============================================================================
+# PROC SUMMARY DATA=LCRALL NWAY; BY ITEM;
+#   VAR UTNMA1 UTNMA2 UTNMA3 UTNTTL;  OUTPUT OUT=TOTLCR(DROP=_FREQ_ _TYPE_) SUM=;
+#   PROC PRINT; RUN;
+# (BY-group processing requires sorted input in SAS; group_by + final .sort()
+# below achieves the same grouped/ordered result without a separate physical
+# sort pass.)
+# ============================================================================
+def summarize_totlcr(lcrall: pl.DataFrame) -> pl.DataFrame:
+    return (
+        lcrall.group_by("item")
+        .agg(
+            [
+                pl.col("utnma1").sum().alias("utnma1"),
+                pl.col("utnma2").sum().alias("utnma2"),
+                pl.col("utnma3").sum().alias("utnma3"),
+                pl.col("utnttl").sum().alias("utnttl"),
+            ]
+        )
+        .sort("item")
+    )
+
+
+# ============================================================================
+# PROC TRANSPOSE DATA=TOTLCR OUT=GTOTLCR PREFIX=L; ID ITEM; VAR UTNTTL;
+# NOTE: GTOTLCR is produced in the original SAS but never referenced again by
+# any subsequent step (no PROC PRINT/merge consumes it). Retained here only
+# for structural parity with the original program.
+# ============================================================================
+def transpose_totlcr(totlcr: pl.DataFrame) -> pl.DataFrame:
+    wide_row = {f"L{row['item']}": row["utnttl"] for row in totlcr.iter_rows(named=True)}
+    return pl.DataFrame([wide_row]) if wide_row else pl.DataFrame()
+
+
+# ============================================================================
+# DATA _NULL_;
+#   MERGE TEMPLATE(IN=A) TOTLCR;  BY ITEM;  IF A;
+#   DLM='05'X;  FILE LCROUT;  FORMAT UTNMA1 UTNMA2 UTNMA3 COMMA20.2;
+#   IF _N_=1 THEN DO; PUT @001 'PUBLIC INVESTMENT BANK BERHAD'; END;
+#   UTNMA1=ABS(UTNMA1); UTNMA2=ABS(UTNMA2); UTNMA3=ABS(UTNMA3);
+#   PUT @001 DESC $CHAR500. DLM UTNMA1 DLM UTNMA2 DLM UTNMA3 DLM DLM;
+# LCROUT is RECFM=FB (not FBA) -> no ASA carriage control required.
+# ============================================================================
+# def build_report_lines(template_rows: list[TemplateRow], totlcr: pl.DataFrame) -> list[str]:
+#     totlcr_map = {
+#         row["item"]: (row["utnma1"], row["utnma2"], row["utnma3"])
+#         for row in totlcr.iter_rows(named=True)
+#     }
+
+#     lines: list[str] = []
+#     for idx, trow in enumerate(template_rows):
+#         if idx == 0:
+#             lines.append("PUBLIC INVESTMENT BANK BERHAD")
+
+#         utnma1, utnma2, utnma3 = totlcr_map.get(trow.item, (None, None, None))
+#         utnma1 = abs(utnma1) if utnma1 is not None else None
+#         utnma2 = abs(utnma2) if utnma2 is not None else None
+#         utnma3 = abs(utnma3) if utnma3 is not None else None
+
+#         line = (
+#             f"{trow.desc}{DLM}"
+#             f"{_format_comma20_2(utnma1)}{DLM}"
+#             f"{_format_comma20_2(utnma2)}{DLM}"
+#             f"{_format_comma20_2(utnma3)}{DLM}"
+#             f"{DLM}"
+#         )
+#         lines.append(line)
+#     return lines
+
+def build_report_lines(template_rows: list[TemplateRow], totlcr: pl.DataFrame) -> list[str]:
+    totlcr_map = {
+        row["item"]: (row["utnma1"], row["utnma2"], row["utnma3"])
+        for row in totlcr.iter_rows(named=True)
+    }
+
+    lines: list[str] = []
+    for idx, trow in enumerate(template_rows):
+        if idx == 0:
+            lines.append("PUBLIC INVESTMENT BANK BERHAD")
+
+        utnma1, utnma2, utnma3 = totlcr_map.get(trow.item, (None, None, None))
+        utnma1 = abs(utnma1) if utnma1 is not None else None
+        utnma2 = abs(utnma2) if utnma2 is not None else None
+        utnma3 = abs(utnma3) if utnma3 is not None else None
+
+        # Fixed width format - NO DELIMITERS
+        line = (
+            f"{trow.desc:<500}"  # Description padded to 500 chars
+            f"{_format_comma20_2(utnma1)}"  # 20 chars
+            f"{_format_comma20_2(utnma2)}"  # 20 chars
+            f"{_format_comma20_2(utnma3)}"  # 20 chars
+        )
+        lines.append(line)
+    return lines
+
+
+def write_report(lines: list[str], output_path: Path) -> None:
+    with output_path.open("w", encoding="latin1", newline="") as fh:
+        for line in lines:
+            fh.write(line + "\n")
+
+
+# ============================================================================
+# DATA _NULL_; FILE SFTPFL;
+#   PUT @1 "put //SAP.PIVB.NSFR.MTHEND.TEXT(+1)  NSFR_&RPTDT._MTH.XLS";
+# ============================================================================
+def write_sftp_command(rptdt: str, output_path: Path) -> Path:
+    sftp_path = output_path.parent / "sftp_command.txt"
+    with sftp_path.open("w", encoding="latin1") as fh:
+        fh.write(f"put //SAP.PIVB.NSFR.MTHEND.TEXT(+1)  NSFR_{rptdt}_MTH.XLS\n")
+    return sftp_path
+
+
+# ----------------------------------------------------------------------------
+# JCL step RUNSFTP (COZBATCH) - mainframe SFTP submission of the report file.
+# This is mainframe/JCL infrastructure, not portable to Python; left as a
+# commented placeholder for reference only, not executed:
+#
+# export PASSWD_DSN='OPER.PBB.CONTROL(SAS#SFTP)'
+# $coz_bin/cozsftp $ssh_opts -b- sas2finlcr@192.168.56.10 <<EOB
+# lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# lzopts linerule=$lr
+# //           DD DISP=SHR,DSN=&&FTPPUT
+# //           DD *
+# EOB
+# ----------------------------------------------------------------------------
+
+
+def main() -> None:
+    # DATA REPTDATE; REPTDATE = TODAY()-DAY(TODAY());  -> last day of prior month
+    reptdate_values = get_monthly_reptdate_values()
+    reptmon = reptdate_values.reptmon                       # REPTMON: Z2.
+    reptday = reptdate_values.reptday                        # REPTDAY: Z2.
+    rdate = reptdate_values.ddmmyy8                           # RDATE:  DDMMYY8.
+    rptdt = reptdate_values.reptdate.strftime("%Y%m%d")       # RPTDT:  YYMMDDN8.
+
+    print(f"Report date (REPTDATE) : {reptdate_values.reptdate}")
+    print(f"REPTMON                : {reptmon}")
+    print(f"REPTDAY                : {reptday}")
+    print(f"RDATE (DDMMYY8.)       : {rdate}")
+    print(f"RPTDT (YYMMDDN8.)      : {rptdt}")
+
+    # glpivb_file = get_latest_file(INPUT_DIR, prefix=GLPIVB_PREFIX)
+    # equa_file = get_latest_file(INPUT_DIR, prefix=EQUA_PREFIX)
+    # mnl1_file = get_latest_file(INPUT_DIR, prefix=MNL1_PREFIX)
+
+    glpivb_file = GLPIVB_DIR
+    equa_file   = EQUA_DIR
+    mnl1_file   = MNL1_DIR
+
+    template_rows = read_template(TEMPLATE_FILE)
+
+    gl_df = gl_records_to_df(read_gl(glpivb_file))
+    print("\n--- GL (sorted by ITEM) ---")
+    print(gl_df)
+
+    eq_df = eq_records_to_df(read_eq(equa_file))
+    print("\n--- EQ ---")
+    print(eq_df)
+
+    nsfr_df = nsfr_records_to_df(read_nsfr_manual(mnl1_file))
+
+    lcrall = build_lcrall(gl_df, eq_df, nsfr_df)
+    print("\n--- LCRALL (SRC, ITEM, UTNMA1-3) ---")
+    print(lcrall.select(["src", "item", "utnma1", "utnma2", "utnma3"]))
+
+    totlcr = summarize_totlcr(lcrall)
+    # print("\n--- TOTLCR ---")
+    # print(totlcr)
+    print("\n--- TOTLCR ALL---")
+    with pl.Config(tbl_rows=1000):
+        print(totlcr)
+
+    print("\n--- ITEM 76 DETAILS (all rows) ---")
+    with pl.Config(tbl_rows=1000):
+        item_76_rows = lcrall.filter(pl.col("item") == 76)
+        print(item_76_rows.select(["src", "utnma1", "utnma2", "utnma3"]))
+
+    _gtotlcr = transpose_totlcr(totlcr)  # produced for SAS parity only, unused further
+
+    report_lines = build_report_lines(template_rows, totlcr)
+
+    # RPTDT uses YYMMDDN8., not covered by output_date.py's DATE_FORMATS
+    output_filename = f"NSFR_{rptdt}_MTH"
+    output_path = OUTPUT_DIR / f"{output_filename}.txt"
+    write_report(report_lines, output_path)
+
+    sftp_path = write_sftp_command(rptdt, output_path)
+
+    print(f"\nOutput report written to : {output_path}")
+    print(f"SFTP command file        : {sftp_path}")
+    # print("\n--- Report contents ---")
+    # for line in report_lines:
+    #     print(line)
+
+
+if __name__ == "__main__":
+    main()
