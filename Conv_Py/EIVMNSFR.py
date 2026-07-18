@@ -73,12 +73,9 @@ NSFRCD_FMT: dict[str, str] = {
     # (Will be populated from MNL or EQ)
     
     # === ITEM 13: Unsecured funding from non-financial corporates ===
-    "S-STD R/NR": "0076_1",        
-    "S-SUNDEBT": "0076_1",         
-    "S-SUNDEBTREC": "0076_1",      
-    "S-REMI CA": "0076_1",         
-    "S-SSTPAY": "0076_1",          
-    "S-PBS DLRS": "0076_1",        
+    # "S-STD R/NR": "0076_1",        
+    # "S-SUNDEBT": "0076_1",         
+    # "S-SUNDEBTREC": "0076_1",              
     "S-ACCEXP": "0076_3",          
     "S-AFRECADV": "0076_3",        
     "S-ALLW COMM": "0076_3",       
@@ -91,52 +88,54 @@ NSFRCD_FMT: dict[str, str] = {
     "S-SUNCRE": "0076_3",         
     "S-SUNCRE KAP": "0076_3",      
     
-    # === ITEM 25: Unsecured funding from sovereigns/PSEs/MDBs/NDBs ===
-    "S-REVCRE": "0025_1",          
-    "S-REVREAFMGS": "0025_1",      
-    "S-REVREPBNM1": "0025_1",      
-    "S-REVREPBNM2": "0025_1",       
-    "S-REVREPOBNM": "0025_1",       
-    "S-REVREPOHFT": "0025_1",       
-    "S-REVREPOMGI": "0025_1",       
-    "S-REVREPOMGS": "0025_1",       
-    "S-REVRES": "0025_1",           
+    # # === ITEM 25: Unsecured funding from sovereigns/PSEs/MDBs/NDBs ===
+    # # "S-REVCRE": "0025_1",          
+    # "S-REVREAFMGS": "0025_1",      
+    # "S-REVREPBNM1": "0025_1",      
+    # "S-REVREPBNM2": "0025_1",       
+    # "S-REVREPOBNM": "0025_1",       
+    # "S-REVREPOHFT": "0025_1",       
+    # "S-REVREPOMGI": "0025_1",       
+    # "S-REVREPOMGS": "0025_1",       
+    # "S-REVRES": "0025_1",           
     
-    # === ITEM 32: Unsecured funding from other legal entities ===
-    "S-CURPNL": "0032_1",          
-    "S-ACCDEPNO/E": "0032_1",      
-    "S-ACCDEPRENO": "0032_1",      
-    "S-DEPNCOPMSW": "0032_1",      
-    "S-AFS UN-ISL": "0032_1",      
-    "S-CL CTL CR": "0032_1",       
-    "S-GUARANTEE": "0032_1",       
-    "S-REMI FD 30": "0032_1",       
-    "S-REMI FD 32": "0032_1",       
-    "S-REMISIERS": "0032_1",        
-    "S-SUNDEP": "0032_1",          
-    "S-ACCDEPNF&F": "0032_1",      
-    "S-ACCDEPNMV": "0032_1",       
-    "S-DEPNF&F": "0032_1",         
-    "S-DEPNH/W": "0032_1",         
-    "S-DEPNMV": "0032_1",           
-    "S-DEPNO/E": "0032_1",         
-    "S-F&F": "0032_1",             
-    "S-PDEPNSW": "0032_1",         
-    "S-PDEPRENO": "0032_1",         
-    "S-REG RES": "0032_1",         
-    "S-REMISIERS": "0032_1",        
-    "S-RENO": "0032_1",            
-    "S-REPOMGS": "0032_1",          
-    "S-RETPROF": "0032_1",         
-    # "S-REVREAFMGS": "0032_1",       
-    "S-SUNDEP": "0032_1",          
-    "S-UNREAL UQS": "0032_1",      
-    "S-UNREALMGS": "0032_1",       
+    # # === ITEM 32: Unsecured funding from other legal entities ===
+    # "S-CURPNL": "0032_1",          
+    # "S-ACCDEPNO/E": "0032_1",      
+    # "S-ACCDEPRENO": "0032_1",      
+    # "S-DEPNCOPMSW": "0032_1",      
+    # "S-AFS UN-ISL": "0032_1",      
+    # "S-CL CTL CR": "0032_1",       
+    # "S-GUARANTEE": "0032_1",       
+    # "S-REMI FD 30": "0032_1",       
+    # "S-REMI FD 32": "0032_1",       
+    # "S-REMISIERS": "0032_1",        
+    # "S-SUNDEP": "0032_1",          
+    # "S-ACCDEPNF&F": "0032_1",      
+    # "S-ACCDEPNMV": "0032_1",       
+    # "S-DEPNF&F": "0032_1",         
+    # "S-DEPNH/W": "0032_1",         
+    # "S-DEPNMV": "0032_1",           
+    # "S-DEPNO/E": "0032_1",         
+    # "S-F&F": "0032_1",             
+    # "S-PDEPNSW": "0032_1",         
+    # "S-PDEPRENO": "0032_1",         
+    # "S-REG RES": "0032_1",         
+    # "S-REMISIERS": "0032_1",        
+    # "S-RENO": "0032_1",            
+    # "S-REPOMGS": "0032_1",          
+    # "S-RETPROF": "0032_1",         
+    # # "S-REVREAFMGS": "0032_1",      
+    # "S-UNREAL UQS": "0032_1",      
+    # "S-UNREALMGS": "0032_1",       
     
     # === ITEM 74: Trade date payables ===
     "S-OS SALES": "0074_1",         
     
-    # === ITEM 76: Already mapped above ===
+    # === ITEM 76: Unsecured funding from non-financial corporates ===        
+    "S-SSTPAY": "0076_1",          
+    "S-PBS DLRS": "0076_1",
+    "S-REMI CA": "0076_1", 
     
     # === ITEM 84: Coins and banknotes ===
     "S-PETTY CASH": "0084_1",       
@@ -158,9 +157,9 @@ NSFRCD_FMT: dict[str, str] = {
     "S-LBFL": "0116_1",             
     "LCR-FIOPSDEP": "0140_1",       
     
-    # === ITEM 140: Unsecured loans/financing to financial institutions ===
-    "S-BNM": "0152_1",              
-    "S-BNM FIX": "0152_1",          
+    # # === ITEM 140: Unsecured loans/financing to financial institutions ===
+    # "S-BNM": "0152_1",              
+    # "S-BNM FIX": "0152_1",          
     
     # === ITEM 152: Loans/Financing to central banks ===
     "S-BNM": "0152_1",              
@@ -324,8 +323,9 @@ def read_gl(path: Path) -> list[GLRecord]:
             amount = _parse_comma_number(amount_raw)
 
             set_id = line[1:20].strip()      # @002 SET_ID $19.
-            if set_id.startswith("S-OS"):
-                print(f"FOUND S-OS: '{set_id}'")
+            # # DEBUG
+            # if set_id.startswith("S-OS"):
+            #     print(f"FOUND S-OS: '{set_id}'")
 
             glfmt = nsfrcd_fmt(set_id)
             if glfmt.strip() == "":
@@ -333,8 +333,9 @@ def read_gl(path: Path) -> list[GLRecord]:
                 continue  # IF GLFMT NE '' guard - unmatched SET_ID -> no rows
             mapped.add(set_id)      # DEBUG
 
-            if set_id.startswith("S-OS"):
-                print(f"DEBUG S-OS: set_id='{set_id}', glfmt='{glfmt}'")
+            # # DEBUG
+            # if set_id.startswith("S-OS"):
+            #     print(f"DEBUG S-OS: set_id='{set_id}', glfmt='{glfmt}'")
 
             item = int(glfmt[0:4])       # SUBSTR(GLFMT,1,4)*1
             bucket_idx = int(glfmt[5])   # SUBSTRN(GLFMT,6,1)
@@ -345,8 +346,9 @@ def read_gl(path: Path) -> list[GLRecord]:
 
             records.append(GLRecord(item=item, utnma1=bucket[0], utnma2=bucket[1], utnma3=bucket[2]))
 
-            if set_id.startswith("S-OS"):
-                print(f"DEBUG S-OS: item={item}, bucket_idx={bucket_idx}, amount={amount}, bucket={bucket}, records appended")
+            # # DEBUG
+            # if set_id.startswith("S-OS"):
+            #     print(f"DEBUG S-OS: item={item}, bucket_idx={bucket_idx}, amount={amount}, bucket={bucket}, records appended")
 
             if set_id == "LCR-FIOPSDEP" and bucket[0] is not None:
                 bucket[0] = -bucket[0]
@@ -674,10 +676,28 @@ def main() -> None:
     with pl.Config(tbl_rows=1000):
         print(totlcr)
 
-    print("\n--- ITEM 76 DETAILS (all rows) ---")
-    with pl.Config(tbl_rows=1000):
-        item_76_rows = lcrall.filter(pl.col("item") == 76)
-        print(item_76_rows.select(["src", "utnma1", "utnma2", "utnma3"]))
+    # # DEBUG
+    # print("\n--- ITEM 76 DETAILS (all rows) ---")
+    # with pl.Config(tbl_rows=1000):
+    #     item_76_rows = lcrall.filter(pl.col("item") == 76)
+    #     print(item_76_rows.select(["src", "utnma1", "utnma2", "utnma3"]))
+
+    # # DEBUG
+    # print("\n--- DEBUG: Item contributions from GL (src='WLK') ---")
+    # with pl.Config(tbl_rows=1000):
+    #     for item in [206, 247, 251]:
+    #         print(f"\nITEM {item}:")
+    #         # Filter GL rows for this item
+    #         gl_rows = lcrall.filter((pl.col("src") == "WLK") & (pl.col("item") == item))
+    #         if gl_rows.height == 0:
+    #             print("  No GL rows")
+    #         else:
+    #             print(gl_rows.select(["src", "item", "utnma1", "utnma2", "utnma3"]))
+    #         # Show EQ and MNL contributions too
+    #         eq_rows = lcrall.filter((pl.col("src") == "EQU") & (pl.col("item") == item))
+    #         if eq_rows.height > 0:
+    #             print("  EQ rows:")
+    #             print(eq_rows.select(["src", "item", "utnma1", "utnma2", "utnma3"]))
 
     _gtotlcr = transpose_totlcr(totlcr)  # produced for SAS parity only, unused further
 
