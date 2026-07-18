@@ -124,7 +124,7 @@ NSFRCD_FMT: dict[str, str] = {
     # (Will be populated from MNL or EQ)
     
     # === ITEM 13: Unsecured funding from non-financial corporates ===
-    "S-OS SALES": "0074_1",        # Already mapped
+    "S-OS SALES": "0076_1",        # Already mapped
     "S-STD R/NR": "0076_1",        # 
     "S-SUNDEBT": "0076_1",         # 
     "S-SUNDEBTREC": "0076_1",      # 
