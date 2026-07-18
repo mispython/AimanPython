@@ -1,0 +1,879 @@
+Report date (REPTDATE) : 2026-06-30
+REPTMON                : 06
+REPTDAY                : 30
+RDATE (DDMMYY8.)       : 30/06/26
+RPTDT (YYMMDDN8.)      : 20260630
+FOUND S-OS: 'S-OS SALES'
+DEBUG S-OS: set_id='S-OS SALES', glfmt='0074_1'
+DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None, None], records appended
+
+--- MAPPED SET_IDs (91) ---
+  'LCR-FIOPSDEP' -> 0140_1
+  'OBS00100100' -> 0260_1
+  'S-ACCDEPNF&F' -> 0032_1
+  'S-ACCDEPNMV' -> 0032_1
+  'S-ACCDEPNO/E' -> 0032_1
+  'S-ACCDEPRENO' -> 0032_1
+  'S-ACCEXP' -> 0076_3
+  'S-AFRECADV' -> 0076_3
+  'S-AFS UN-ISL' -> 0032_1
+  'S-ALLW COMM' -> 0076_3
+  'S-BNM' -> 0152_1
+  'S-BNM BILL M' -> 0152_1
+  'S-BNM BILL T' -> 0152_1
+  'S-BNM O/N' -> 0152_1
+  'S-BNM(AFS)' -> 0152_1
+  'S-BNMFL' -> 0152_1
+  'S-BNMFL 1MTH' -> 0116_1
+  'S-CB' -> 0116_1
+  'S-CL CTL CR' -> 0032_1
+  'S-CLIENT CTL' -> 0248_1
+  'S-CURPNL' -> 0032_1
+  'S-D T ASSETS' -> 0247_3
+  'S-DEPNCOPMSW' -> 0032_1
+  'S-DEPNF&F' -> 0032_1
+  'S-DEPNH/W' -> 0032_1
+  'S-DEPNMV' -> 0032_1
+  'S-DEPNO/E' -> 0032_1
+  'S-DNBFI 1MTH' -> 0116_1
+  'S-DTAX' -> 0247_3
+  'S-F&F' -> 0032_1
+  'S-GUARANTEE' -> 0260_1
+  'S-HFT' -> 0206_1
+  'S-IA' -> 0247_3
+  'S-IAISLDE(D)' -> 0247_3
+  'S-ISLAMIC(A)' -> 0206_1
+  'S-ISLPDS (I)' -> 0206_1
+  'S-LBFD' -> 0116_1
+  'S-LBFL' -> 0116_1
+  'S-LBFL 1MTH' -> 0116_1
+  'S-LEASE ROUA' -> 0076_3
+  'S-LOANCONTRO' -> 0076_3
+  'S-MARGIN COL' -> 0245_3
+  'S-MBFL 1MTH' -> 0116_1
+  'S-MGS' -> 0206_1
+  'S-MTN LN' -> 0206_1
+  'S-O/S PUR C' -> 0248_1
+  'S-OS SALES' -> 0074_1
+  'S-PB CA OTH' -> 0116_1
+  'S-PBB CUR' -> 0116_1
+  'S-PBS DLRS' -> 0076_1
+  'S-PBS PAYB' -> 0076_3
+  'S-PDEPNSW' -> 0032_1
+  'S-PDEPRENO' -> 0032_1
+  'S-PETTY CASH' -> 0084_1
+  'S-PIBB CUR' -> 0116_1
+  'S-PROVCLGFEE' -> 0076_3
+  'S-PROVOTH' -> 0076_3
+  'S-PROVTAX(C)' -> 0076_3
+  'S-RCF' -> 0256_1
+  'S-REG RES' -> 0032_1
+  'S-REMI CA' -> 0076_1
+  'S-REMI FD' -> 0116_1
+  'S-REMI FD 30' -> 0032_1
+  'S-REMI FD 32' -> 0032_1
+  'S-REMISIERS' -> 0032_1
+  'S-RENO' -> 0032_1
+  'S-REPOMGS' -> 0032_1
+  'S-RETPROF' -> 0032_1
+  'S-REVCRE' -> 0025_1
+  'S-REVREAFMGS' -> 0025_1
+  'S-REVREPBNM1' -> 0025_1
+  'S-REVREPBNM2' -> 0025_1
+  'S-REVREPOBNM' -> 0025_1
+  'S-REVREPOHFT' -> 0025_1
+  'S-REVREPOMGI' -> 0025_1
+  'S-REVREPOMGS' -> 0025_1
+  'S-REVRES' -> 0025_1
+  'S-SHARE' -> 0006_3
+  'S-SM F' -> 0256_1
+  'S-SSTPAY' -> 0076_1
+  'S-STADEPBNM' -> 0085_3
+  'S-STD R/NR' -> 0076_1
+  'S-SUNCRE' -> 0076_3
+  'S-SUNCRE KAP' -> 0076_3
+  'S-SUNDEBT' -> 0076_1
+  'S-SUNDEBTREC' -> 0076_1
+  'S-SUNDEP' -> 0032_1
+  'S-TERMLN' -> 0206_1
+  'S-TLF' -> 0256_1
+  'S-UNREAL UQS' -> 0032_1
+  'S-UNREALMGS' -> 0032_1
+
+--- UNMAPPED SET_IDs (650) ---
+  ''
+  '0260630'
+  '49760000000Y'
+  '49860000000Y'
+  '89000000000A'
+  '89000000000B'
+  '89000000000Y'
+  'EQCNV'
+  'EXP-FEE'
+  'EXP-FEEA'
+  'EXP-FEEB'
+  'EXP-INT'
+  'EXP-OEXPADM'
+  'EXP-OEXPADM1'
+  'EXP-OEXPADM2'
+  'EXP-OEXPEST'
+  'EXP-OEXPMK'
+  'EXP-OEXPSC'
+  'FINPO M_01'
+  'FKCOA'
+  'FWD PUR ASS'
+  'INTPLAC(BNM)'
+  'INTPLC(INTB)'
+  'LCR-CAB'
+  'LCR-CLIENT'
+  'LCR-FI30DAYS'
+  'LCR-NONOPSDP'
+  'LCR-ONPLCCB'
+  'LCR-OTH'
+  'OBS00300110'
+  'OBS00500100'
+  'OBS00500200'
+  'OBS02100050'
+  'OBS02200050'
+  'OBS03000050'
+  'OBS12200050'
+  'P-ALL'
+  'P-B&C BRCOM'
+  'P-B&C CD'
+  'P-B&C EBROK'
+  'P-B&C PMB'
+  'P-B&C REM'
+  'P-B&CREBATE'
+  'P-BS CD'
+  'P-BS REM'
+  'P-BS REMPROV'
+  'P-CF FEE W/O'
+  'P-IMPRLOSS'
+  'P-INTEXPN'
+  'P-INTIDF'
+  'P-INTINCDRM'
+  'P-INTINCN'
+  'P-INTIODLRS'
+  'P-INTIOREM'
+  'P-INTIOSM'
+  'P-INTIREPO'
+  'P-INTOTH'
+  'P-LOANBDR'
+  'P-LOANLOSSP'
+  'P-NFICOMSI'
+  'P-NFIDIVINC'
+  'P-NFIMISC'
+  'P-NFIMSGAIN'
+  'P-NFIP/LFA'
+  'P-NFISTE A/C'
+  'P-NIIBROKE'
+  'P-NONINTBC'
+  'P-NONINTINCA'
+  'P-OVERHEXP'
+  'P-OVERHEXP01'
+  'P-OVERHEXP02'
+  'P-OVERHEXP03'
+  'P-OVERHEXP04'
+  'P-OVERHEXP05'
+  'P-OVERHEXP06'
+  'P-OVERHEXP09'
+  'P-PBDW/B'
+  'P-PROPDIV'
+  'P-RETPROFFWD'
+  'P-TAX REFUND'
+  'P-TAXATION'
+  'REV-G/L FINS'
+  'REV-INT'
+  'REV-NONINT'
+  'REV-OTH INC'
+  'REVAUD'
+  'REVAUDCTR'
+  'REVCAD'
+  'REVCADCTR'
+  'REVCNY'
+  'REVCNYCTR'
+  'REVEUR'
+  'REVEURCTR'
+  'REVGBP'
+  'REVGBPCTR'
+  'REVHKD'
+  'REVHKDCTR'
+  'REVIDR'
+  'REVIDRCTR'
+  'REVJPY'
+  'REVJPYCTR'
+  'REVSGD'
+  'REVSGDCTR'
+  'REVUSD'
+  'REVUSDCTR'
+  'S-ACCAMOR'
+  'S-AFS PIN BD'
+  'S-AFS UN-BNM'
+  'S-AFS UN-KHA'
+  'S-AFS UN-MGS'
+  'S-AFS UN-PDS'
+  'S-AFS UN-TRE'
+  'S-AFS UNREAL'
+  'S-AFSDIM PIN'
+  'S-AFSRES'
+  'S-AFSUN-NIDI'
+  'S-AMOPDSI(I)'
+  'S-AMORT MTN'
+  'S-AMORTBNMM'
+  'S-AMORTCAGT'
+  'S-AMORTIAS'
+  'S-AMORTKHA-O'
+  'S-AMORTMGI'
+  'S-AMORTMGI-A'
+  'S-AMORTMGS'
+  'S-AMORTMGS-A'
+  'S-AMORTMGST'
+  'S-AMORTPDS'
+  'S-AMORTPDS-A'
+  'S-AMORTPDST'
+  'S-AMORTPDSTI'
+  'S-AMRT NID A'
+  'S-AMTDUEFPBB'
+  'S-AMTDUEPCON'
+  'S-AMTDUEPMBB'
+  'S-AMTDUETPBB'
+  'S-AP S/OFF'
+  'S-AP SUS'
+  'S-BA'
+  'S-BA F'
+  'S-BA O/S'
+  'S-BAS'
+  'S-BAS IRIA'
+  'S-BAST'
+  'S-BGRECADV'
+  'S-BNM IRIADV'
+  'S-CAG'
+  'S-CAG FIX'
+  'S-CAG T'
+  'S-CAGANOTES'
+  'S-CAGANOTEST'
+  'S-CAGFL 1MTH'
+  'S-CB FEE REC'
+  'S-CGFL'
+  'S-COMPDEPNHW'
+  'S-COMPDEPNSW'
+  'S-COMPH/W'
+  'S-COMPS/W'
+  'S-CONTRA'
+  'S-CORPADVFEE'
+  'S-CSCOLP'
+  'S-CSCOLR'
+  'S-DEF RES'
+  'S-DH FIX'
+  'S-DH O/N'
+  'S-DHFL'
+  'S-DHFL 1MTH'
+  'S-DIM PDS D'
+  'S-DIM PIN BF'
+  'S-DIM ZNID M'
+  'S-DIMI CD LT'
+  'S-DIMI CD ST'
+  'S-DIMI MTB T'
+  'S-DIMKB'
+  'S-DNBFI I/B'
+  'S-DNBFI>1MTH'
+  'S-EALIS CUR'
+  'S-FCY STOCK'
+  'S-FCYSUNCRE'
+  'S-FD'
+  'S-FESTIVE'
+  'S-FIXED DEP'
+  'S-FRANKING'
+  'S-GEN RES'
+  'S-GOLF CM'
+  'S-GS TRE'
+  'S-GSTPAY'
+  'S-GSTPAY4'
+  'S-GSTPAY5'
+  'S-GSTREFUND'
+  'S-GSTREFUND2'
+  'S-GSTREFUND3'
+  'S-HFT UNREAL'
+  'S-HFTIUNREAL'
+  'S-IASLDE(D)'
+  'S-IIAKB'
+  'S-IMPAIRMENT'
+  'S-IMPRQUOTED'
+  'S-INT RR MGI'
+  'S-INTADVBNMA'
+  'S-INTADVBNMD'
+  'S-INTADVBNMM'
+  'S-INTADVISLI'
+  'S-INTADVKHAO'
+  'S-INTADVNCDS'
+  'S-INTADVNIDI'
+  'S-INTADVTREA'
+  'S-INTISLD(D)'
+  'S-INTPAY'
+  'S-INTPAYANID'
+  'S-INTPAYNIDA'
+  'S-INTREC MTN'
+  'S-INTREC RC1'
+  'S-INTREC'LN'
+  'S-INTREC'OTH'
+  'S-INTRECHFT'
+  'S-INTRECPBS'
+  'S-INTRECPLAC'
+  'S-INTRECREPO'
+  'S-IR'
+  'S-IR MGS T'
+  'S-IRAZNIDISL'
+  'S-IRBNMBILLM'
+  'S-IRCAG T'
+  'S-IRCAGANOTE'
+  'S-IRCAGNOTES'
+  'S-IRCAGT'
+  'S-IRIA KHAPL'
+  'S-IRISNID LT'
+  'S-IRISNID ST'
+  'S-IRMGI (I)'
+  'S-IRMGS T'
+  'S-IRMGS(D)'
+  'S-IRMGS(I)'
+  'S-IRNMBILL'
+  'S-IRNMBILLM'
+  'S-IRPDS'
+  'S-IRRAMTN(I)'
+  'S-IRRANIDINV'
+  'S-IRRANMTN'
+  'S-ISIRIABAS'
+  'S-ISL(A) INT'
+  'S-ISLDEBT(D)'
+  'S-ISLNCDZ'
+  'S-ISLPDSI(I)'
+  'S-ISS'
+  'S-KAPITICONV'
+  'S-KB'
+  'S-KHA INTOCI'
+  'S-KHA(FVOCI)'
+  'S-KHA(OCI)'
+  'S-KHA-PL'
+  'S-LB FIX'
+  'S-LB O/N'
+  'S-LBFL ISL 1'
+  'S-LCR L10'
+  'S-LCR L142'
+  'S-LCR L174'
+  'S-LCR L184'
+  'S-LCR L32'
+  'S-LOS RECKAP'
+  'S-LOSS PAYB'
+  'S-MB FIX'
+  'S-MB O/N'
+  'S-MBFL'
+  'S-MGI'
+  'S-MGI ACCRE'
+  'S-MGI D'
+  'S-MGI INT'
+  'S-MGI(A) INT'
+  'S-MGI(AFS)'
+  'S-MGIUNREAL'
+  'S-MGS T'
+  'S-MGS(A)'
+  'S-MGS(A) INT'
+  'S-MGSRR'
+  'S-MGSRRAFS'
+  'S-MGSRRHFT'
+  'S-MGSRRHTM'
+  'S-MM CTRAC'
+  'S-MTB IRIA'
+  'S-MTB T'
+  'S-MTB UNREAL'
+  'S-MTN'
+  'S-MTN(I)'
+  'S-MV'
+  'S-NCD(D) ISL'
+  'S-NCD(D) ST'
+  'S-NCD(D) STI'
+  'S-NCD(D)AMOR'
+  'S-NCD(D)I IN'
+  'S-NCD(D)UR2'
+  'S-NCD(D)URIS'
+  'S-NCDLT'
+  'S-NCDLTREPO'
+  'S-NCDST'
+  'S-NCDSTREPO'
+  'S-NCDZ'
+  'S-NCDZREPO'
+  'S-NID INT AF'
+  'S-NID(AFS)'
+  'S-NIDISL(A)'
+  'S-NIDST'
+  'S-NIDSTREPO'
+  'S-NIDZEREPO'
+  'S-NOM(A)/(T)'
+  'S-O/E'
+  'S-OTH LIAB'
+  'S-OTHPROV-DF'
+  'S-PACC'
+  'S-PACCA'
+  'S-PACCAFSISL'
+  'S-PACCAFSMGS'
+  'S-PACCAFSNID'
+  'S-PACCAFSPDS'
+  'S-PACCAGNT'
+  'S-PACCANIDST'
+  'S-PACCDSISL'
+  'S-PACCISCAGN'
+  'S-PBNOMINEES'
+  'S-PBS AESM'
+  'S-PBS DFDEBT'
+  'S-PBS SMDEBT'
+  'S-PBS TA'
+  'S-PDS'
+  'S-PDS(A)'
+  'S-PDS(A) INT'
+  'S-PDS(D)'
+  'S-PDS(D) INT'
+  'S-PFBDDCOL-A'
+  'S-PFBDDCOL-H'
+  'S-PFBDDCOLLA'
+  'S-PFBDDGEN'
+  'S-PFBDDGP'
+  'S-PFBDDSP'
+  'S-PFBDDSPEC'
+  'S-PFT CTRBAL'
+  'S-PFT RECKAP'
+  'S-PREPAYMENT'
+  'S-PROACCCAGT'
+  'S-PROACCMGST'
+  'S-PROACCPDS'
+  'S-PROACINIDT'
+  'S-PROCAGACCT'
+  'S-PROV CORP'
+  'S-PROV D ROU'
+  'S-PROVADVFEE'
+  'S-PROVGRA'
+  'S-PROVS'
+  'S-PROVSD'
+  'S-PROVTAX(D)'
+  'S-PROVXR'
+  'S-QUOTEDAFS'
+  'S-QUOTEDSH'
+  'S-REMISIERFD'
+  'S-ROU ASSET'
+  'S-SNCD'
+  'S-SNIDZEROCO'
+  'S-STA RES'
+  'S-STAFFLN'
+  'S-STAFFSP'
+  'S-STD&NETNID'
+  'S-TAXREBATE'
+  'S-TRE IRIADV'
+  'S-TRE(A)'
+  'S-TREASBILL'
+  'S-U/W OBLI'
+  'S-U/WRECADV'
+  'S-UNINT'
+  'S-UNQUOAFS'
+  'S-UNQUOM'
+  'S-UNQUOOCI'
+  'S-UNQUOTOCI'
+  'S-UNR NID AF'
+  'S-UNREAL 0CD'
+  'S-UNREAL AFS'
+  'S-UNREAL BAS'
+  'S-UNREAL HFT'
+  'S-UNREAL MTN'
+  'S-UNREALBNMD'
+  'S-UNREALCAG'
+  'S-UNREALCAGN'
+  'S-UNREALHFT'
+  'S-URMGI-A'
+  'SRR_01'
+  'T-ACDISCAGB'
+  'T-ACDISISL'
+  'T-ACDISLNID'
+  'T-ACDISLNIDT'
+  'T-ACDISMGST'
+  'T-ACDISNID'
+  'T-ACDISPDS'
+  'T-ADMINBOX'
+  'T-ADMOPERI'
+  'T-ADMRI'
+  'T-AGENCYFEE'
+  'T-ALWCORPFEE'
+  'T-BANKCHGRI'
+  'T-BDWOFF'
+  'T-CF FEE W/O'
+  'T-CFW/O'
+  'T-COMMISSION'
+  'T-CORPADVFEE'
+  'T-CUSTODIAN'
+  'T-DEPN ROUA'
+  'T-DFFEE'
+  'T-DIMVDEAL'
+  'T-DIMVIS'
+  'T-DIVIQS'
+  'T-DIVIUNS'
+  'T-DIVSEC'
+  'T-EAAUDIT'
+  'T-EABOOKNEWP'
+  'T-EABRCOM'
+  'T-EABREBATE'
+  'T-EADIRATALL'
+  'T-EADIRFEE'
+  'T-EADLRSLICE'
+  'T-EAGST'
+  'T-EAGST1'
+  'T-EAGST2'
+  'T-EAGSTA'
+  'T-EALEGAL'
+  'T-EALICENCE'
+  'T-EAOTCOMM'
+  'T-EAOTHERS'
+  'T-EAPNS'
+  'T-EAPOSTAGE'
+  'T-EAPROFEE'
+  'T-EARESSHA'
+  'T-EASTAMPD'
+  'T-EASUBS'
+  'T-EATELEPHO'
+  'T-ECBLOOMCOM'
+  'T-ECDEPN'
+  'T-ECGENREP'
+  'T-ECGUARANT'
+  'T-ECINSURAN'
+  'T-ECLNW'
+  'T-ECMAINSERV'
+  'T-ECRENFISS'
+  'T-ECUPKEEPOE'
+  'T-EMKTGADV'
+  'T-EMKTGENT'
+  'T-EMKTGOTH'
+  'T-EMKTGTRAV'
+  'T-EPCALLOW'
+  'T-EPCBEIS'
+  'T-EPCBKEPF'
+  'T-EPCBSOCSO'
+  'T-EPCEXGRAT'
+  'T-EPCINCBON'
+  'T-EPCOMEMS'
+  'T-EPCOSCD'
+  'T-EPCOSTL'
+  'T-EPCOT'
+  'T-EPCRBF'
+  'T-EPCS T&T'
+  'T-EPCSALLOW'
+  'T-EPCSALWAG'
+  'T-EPCSBONUS'
+  'T-EPCSTECF'
+  'T-EPCSTEDIR'
+  'T-EPCSTEEXP'
+  'T-EPCSTEFUND'
+  'T-EPCSTERIM'
+  'T-EPCSTETRAN'
+  'T-EPCSWLAU'
+  'T-EPCSWMED'
+  'T-EPCSWOTH'
+  'T-EPCSWSINS'
+  'T-ESTRI'
+  'T-FEEAGREEM'
+  'T-FEECLGFEE'
+  'T-FEECUSTOD'
+  'T-FEEOCOMM'
+  'T-FEEOOTHFEE'
+  'T-FEETRSF'
+  'T-FILE STAMP'
+  'T-FINES'
+  'T-GUARANTFEE'
+  'T-IEBA'
+  'T-IECDFD'
+  'T-IECDNID'
+  'T-IECDNID 2'
+  'T-IECOL'
+  'T-IEIBLB'
+  'T-IEIBMERBK'
+  'T-IEIBNCAG'
+  'T-IEIBNDISC'
+  'T-IEIBNOTH'
+  'T-IELEASE'
+  'T-IEOOTHERS'
+  'T-IEOSTD'
+  'T-IEURMGS'
+  'T-IEURNID'
+  'T-IEURRMGS'
+  'T-IISCHG'
+  'T-IISCHGBS'
+  'T-IMPRQUO'
+  'T-INC RR MGI'
+  'T-INQUOTED-A'
+  'T-INT  ROUA'
+  'T-INT MTN L'
+  'T-INTPEN'
+  'T-INVLBNM-A'
+  'T-INVLDBNM'
+  'T-INVLDCCMB'
+  'T-INVLDMGI'
+  'T-INVLDMGS'
+  'T-INVLDNCDST'
+  'T-INVLDPDS'
+  'T-INVLDPDSI'
+  'T-INVLDTB'
+  'T-INVLIMGI'
+  'T-INVLMGI-I'
+  'T-INVLMGS(A)'
+  'T-INVLQUOTED'
+  'T-INVNIDISS'
+  'T-INVPDBARED'
+  'T-INVPDBNM'
+  'T-INVPDBNM-A'
+  'T-INVPDCAG'
+  'T-INVPDISL'
+  'T-INVPDMGS'
+  'T-INVPDPDS'
+  'T-INVPDS'
+  'T-INVPDS(A)'
+  'T-INVPDTB'
+  'T-INVPIBA'
+  'T-INVPIBNM'
+  'T-INVPIMGI'
+  'T-INVPIMGS'
+  'T-INVPINBOND'
+  'T-INVPINID'
+  'T-INVPMGIAFS'
+  'T-INVPMGIHFT'
+  'T-INVPMGSAFS'
+  'T-INVQUOTEDS'
+  'T-IRAFSBNM'
+  'T-IRAFSIDS'
+  'T-IRAFSISNID'
+  'T-IRAFSKHA'
+  'T-IRAFSMGI'
+  'T-IRAFSMGS'
+  'T-IRAFSNIDST'
+  'T-IRAFSPDS'
+  'T-IRAFSTRE'
+  'T-IRDISLNID'
+  'T-IRDMGI'
+  'T-IRDSBAS'
+  'T-IRDSBNMB'
+  'T-IRDSCAGN'
+  'T-IRDSDOMB'
+  'T-IRDSIDS'
+  'T-IRDSMGI'
+  'T-IRDSMGS'
+  'T-IRDSNCD ST'
+  'T-IRDSNID'
+  'T-IRDSPDS'
+  'T-IRDSREVREP'
+  'T-IRDSRRMGS'
+  'T-IRDSTB'
+  'T-IRDTB'
+  'T-IRIBBNM'
+  'T-IRIBCAGAM'
+  'T-IRIBDISC'
+  'T-IRIBFINCO'
+  'T-IRIBLB'
+  'T-IRIBLIB'
+  'T-IRIBMERBK'
+  'T-IRIBOTHFI'
+  'T-IRISBNMB'
+  'T-IRISCAGB'
+  'T-IRISISLAM'
+  'T-IRISISLAMB'
+  'T-IRISKHA'
+  'T-IRISMGI'
+  'T-IRISMGS'
+  'T-IRISNID'
+  'T-IRISOBA'
+  'T-IRISPDS'
+  'T-IRISTB'
+  'T-IRLBAS'
+  'T-IRLREVCR'
+  'T-IRLSTAFFL'
+  'T-IRTL'
+  'T-ITD'
+  'T-ITD COMSE'
+  'T-ITD COMSTS'
+  'T-LEADMAFEE'
+  'T-LFBDCOLLA'
+  'T-LFBDGEN'
+  'T-LFBDOTHERS'
+  'T-LFBDRECOVE'
+  'T-LFBDSPEC'
+  'T-LFWRITEBK'
+  'T-LNLOSS'
+  'T-LOANPROC'
+  'T-LOSSDOFA'
+  'T-MIDSFEE'
+  'T-MKTOPERI'
+  'T-MKTRI'
+  'T-NBD'
+  'T-OE RENTAL'
+  'T-OIFAWO'
+  'T-OTHCOM'
+  'T-OTHEXP'
+  'T-OTHSOINC'
+  'T-PARTICIFE1'
+  'T-PARTICIFEE'
+  'T-PDISPFA'
+  'T-PLACEFEE'
+  'T-PREMCAGA'
+  'T-PREMIMGI'
+  'T-PREMIMGS'
+  'T-PREMKHZ'
+  'T-PREMLSNID'
+  'T-PREMMGIAFS'
+  'T-PREMMGS'
+  'T-PREMMGSAFS'
+  'T-PREMNIDISL'
+  'T-PREMNSTAFS'
+  'T-PREMPDS'
+  'T-PREMSSNID'
+  'T-REALFOREX'
+  'T-RECCORPFEE'
+  'T-RENT'
+  'T-RENT OFF'
+  'T-RENT STORE'
+  'T-ROUNDING'
+  'T-SAFEKEEP'
+  'T-SCF'
+  'T-SCL'
+  'T-SCORE FEE'
+  'T-SEC SER'
+  'T-SGR SCHEME'
+  'T-SPC'
+  'T-SPR'
+  'T-SRB SCHEME'
+  'T-STFOPERI'
+  'T-STFRI'
+  'T-TRANSF'
+  'T-TRBDGEN'
+  'T-TREMMGI'
+  'T-UNDWRITFEE'
+  'T-UNREALISED'
+  'TEST1'
+  'YRENDCBS'
+  'YRENDCPL'
+
+--- GL (sorted by ITEM) ---
+shape: (94, 4)
+┌──────┬──────────────┬────────┬──────────┐
+│ item ┆ utnma1       ┆ utnma2 ┆ utnma3   │
+│ ---  ┆ ---          ┆ ---    ┆ ---      │
+│ i64  ┆ f64          ┆ f64    ┆ f64      │
+╞══════╪══════════════╪════════╪══════════╡
+│ 6    ┆ null         ┆ null   ┆ 170000.0 │
+│ 25   ┆ 119696.1     ┆ null   ┆ null     │
+│ 25   ┆ 0.0          ┆ null   ┆ null     │
+│ 25   ┆ 0.0          ┆ null   ┆ null     │
+│ 25   ┆ 0.0          ┆ null   ┆ null     │
+│ …    ┆ …            ┆ …      ┆ …        │
+│ 256  ┆ 36353.9      ┆ null   ┆ null     │
+│ 256  ┆ 200880.96421 ┆ null   ┆ null     │
+│ 256  ┆ 250737.24549 ┆ null   ┆ null     │
+│ 260  ┆ 5700.0       ┆ null   ┆ null     │
+│ 260  ┆ 5700.0       ┆ null   ┆ null     │
+└──────┴──────────────┴────────┴──────────┘
+
+--- EQ ---
+shape: (15, 7)
+┌──────┬────────────┬────────┬────────┬──────────┬──────────┬────────────┐
+│ item ┆ utnma1     ┆ utnma2 ┆ utnma3 ┆ utnma4   ┆ utnma5   ┆ utnttl     │
+│ ---  ┆ ---        ┆ ---    ┆ ---    ┆ ---      ┆ ---      ┆ ---        │
+│ i64  ┆ f64        ┆ f64    ┆ f64    ┆ f64      ┆ f64      ┆ f64        │
+╞══════╪════════════╪════════╪════════╪══════════╪══════════╪════════════╡
+│ 11   ┆ 0.0        ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 0.0        │
+│ 13   ┆ 1.3058e8   ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.3058e8   │
+│ 15   ┆ 1.3058e8   ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.3058e8   │
+│ 25   ┆ 3.040127e8 ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 3.040127e8 │
+│ 27   ┆ 3.040127e8 ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 3.040127e8 │
+│ …    ┆ …          ┆ …      ┆ …      ┆ …        ┆ …        ┆ …          │
+│ 128  ┆ 0.0        ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 2.8597e8 ┆ 2.8597e8   │
+│ 194  ┆ 0.0        ┆ 0.0    ┆ 0.0    ┆ 2.0102e7 ┆ 9.5453e7 ┆ 1.1555e8   │
+│ 206  ┆ 2.3e8      ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 2.3e8      │
+│ 251  ┆ 977213.7   ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 977213.7   │
+│ 282  ┆ 3.040127e8 ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 3.040127e8 │
+└──────┴────────────┴────────┴────────┴──────────┴──────────┴────────────┘
+
+--- LCRALL (SRC, ITEM, UTNMA1-3) ---
+shape: (114, 5)
+┌─────┬──────┬──────────┬────────┬──────────┐
+│ src ┆ item ┆ utnma1   ┆ utnma2 ┆ utnma3   │
+│ --- ┆ ---  ┆ ---      ┆ ---    ┆ ---      │
+│ str ┆ i64  ┆ f64      ┆ f64    ┆ f64      │
+╞═════╪══════╪══════════╪════════╪══════════╡
+│ WLK ┆ 6    ┆ null     ┆ null   ┆ 170000.0 │
+│ WLK ┆ 25   ┆ 119696.1 ┆ null   ┆ null     │
+│ WLK ┆ 25   ┆ 0.0      ┆ null   ┆ null     │
+│ WLK ┆ 25   ┆ 0.0      ┆ null   ┆ null     │
+│ WLK ┆ 25   ┆ 0.0      ┆ null   ┆ null     │
+│ …   ┆ …    ┆ …        ┆ …      ┆ …        │
+│ MNL ┆ 6    ┆ 0.0      ┆ 0.0    ┆ 0.0      │
+│ MNL ┆ 11   ┆ 0.0      ┆ 0.0    ┆ 0.0      │
+│ MNL ┆ 76   ┆ 0.0      ┆ 0.0    ┆ 0.0      │
+│ MNL ┆ 247  ┆ 0.0      ┆ 0.0    ┆ 0.0      │
+│ MNL ┆ 251  ┆ 0.0      ┆ 0.0    ┆ 0.0      │
+└─────┴──────┴──────────┴────────┴──────────┘
+
+--- TOTLCR ALL---
+shape: (29, 5)
+┌──────┬──────────────┬──────────┬─────────────┬────────────┐
+│ item ┆ utnma1       ┆ utnma2   ┆ utnma3      ┆ utnttl     │
+│ ---  ┆ ---          ┆ ---      ┆ ---         ┆ ---        │
+│ i64  ┆ f64          ┆ f64      ┆ f64         ┆ f64        │
+╞══════╪══════════════╪══════════╪═════════════╪════════════╡
+│ 6    ┆ 0.0          ┆ 0.0      ┆ 170000.0    ┆ 0.0        │
+│ 11   ┆ 0.0          ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 13   ┆ 1.3058e8     ┆ 0.0      ┆ 0.0         ┆ 1.3058e8   │
+│ 15   ┆ 1.3058e8     ┆ 0.0      ┆ 0.0         ┆ 1.3058e8   │
+│ 25   ┆ 3.0413e8     ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
+│ 27   ┆ 3.040127e8   ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
+│ 32   ┆ 8.1688e8     ┆ 2.04e8   ┆ 1.05e8      ┆ 1.1255e9   │
+│ 34   ┆ 3.2261e8     ┆ 2.9e7    ┆ 5e6         ┆ 3.5661e8   │
+│ 35   ┆ 4.9393e8     ┆ 1.75e8   ┆ 1e8         ┆ 7.6893e8   │
+│ 74   ┆ 124107.128   ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 76   ┆ 1.9879e6     ┆ 2.6908e6 ┆ 1.8961e6    ┆ 5.8143e6   │
+│ 84   ┆ 1.0          ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 85   ┆ 0.0          ┆ 0.0      ┆ 21119.0     ┆ 0.0        │
+│ 86   ┆ 0.0          ┆ 0.0      ┆ 21119.0     ┆ 0.0        │
+│ 116  ┆ 5155.82183   ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 122  ┆ 0.0          ┆ 0.0      ┆ 0.0         ┆ 1.2394e9   │
+│ 128  ┆ 0.0          ┆ 0.0      ┆ 0.0         ┆ 2.8597e8   │
+│ 140  ┆ 12173.95044  ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 152  ┆ 17.70702     ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 194  ┆ 0.0          ┆ 0.0      ┆ 0.0         ┆ 1.1555e8   │
+│ 206  ┆ 2.3114e8     ┆ 0.0      ┆ 0.0         ┆ 2.3e8      │
+│ 245  ┆ 0.0          ┆ 0.0      ┆ 3112.11957  ┆ 0.0        │
+│ 246  ┆ 0.0          ┆ 0.0      ┆ 3112.11957  ┆ 0.0        │
+│ 247  ┆ 0.0          ┆ 0.0      ┆ 41518.70407 ┆ 0.0        │
+│ 248  ┆ 153064.17386 ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 251  ┆ 977213.7     ┆ 0.0      ┆ 0.0         ┆ 977213.7   │
+│ 256  ┆ 487972.1097  ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 260  ┆ 11400.0      ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 282  ┆ 3.040127e8   ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
+└──────┴──────────────┴──────────┴─────────────┴────────────┘
+
+--- ITEM 76 DETAILS (all rows) ---
+shape: (19, 4)
+┌─────┬──────────────┬──────────┬─────────────┐
+│ src ┆ utnma1       ┆ utnma2   ┆ utnma3      │
+│ --- ┆ ---          ┆ ---      ┆ ---         │
+│ str ┆ f64          ┆ f64      ┆ f64         │
+╞═════╪══════════════╪══════════╪═════════════╡
+│ WLK ┆ null         ┆ null     ┆ 24138.47917 │
+│ WLK ┆ null         ┆ null     ┆ 1456.66675  │
+│ WLK ┆ null         ┆ null     ┆ 118.98709   │
+│ WLK ┆ null         ┆ null     ┆ 24242.22065 │
+│ WLK ┆ null         ┆ null     ┆ 0.0         │
+│ WLK ┆ 4247.75538   ┆ null     ┆ null        │
+│ WLK ┆ null         ┆ null     ┆ 2158.73369  │
+│ WLK ┆ null         ┆ null     ┆ 847.66818   │
+│ WLK ┆ null         ┆ null     ┆ 0.0         │
+│ WLK ┆ null         ┆ null     ┆ 2955.1865   │
+│ WLK ┆ 687.46825    ┆ null     ┆ null        │
+│ WLK ┆ 719.43468    ┆ null     ┆ null        │
+│ WLK ┆ 678424.95278 ┆ null     ┆ null        │
+│ WLK ┆ null         ┆ null     ┆ 18586.01221 │
+│ WLK ┆ null         ┆ null     ┆ 55.69319    │
+│ WLK ┆ 1897.76896   ┆ null     ┆ null        │
+│ WLK ┆ 0.0          ┆ null     ┆ null        │
+│ EQU ┆ 1.3019e6     ┆ 2.6908e6 ┆ 1.8216e6    │
+│ MNL ┆ 0.0          ┆ 0.0      ┆ 0.0         │
+└─────┴──────────────┴──────────┴─────────────┘
