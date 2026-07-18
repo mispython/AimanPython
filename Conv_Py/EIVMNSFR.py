@@ -124,9 +124,8 @@ NSFRCD_FMT: dict[str, str] = {
     # (Will be populated from MNL or EQ)
     
     # === ITEM 13: Unsecured funding from non-financial corporates ===
-    "S-OS SALES": "0074_1",        # Already mapped - but check if should be 0076_1?
-    "S-STD R/NR": "0076_1",        # 678,424,952.78
-    "S-SUNDEBT": "0076_1",         # 1,897,768.96
+    "S-STD R/NR": "0076_1",        # 
+    "S-SUNDEBT": "0076_1",         # 
     "S-SUNDEBTREC": "0076_1",      
     "S-REMI CA": "0076_1",         # Already mapped
     "S-SSTPAY": "0076_1",          # Already mapped
@@ -144,7 +143,7 @@ NSFRCD_FMT: dict[str, str] = {
     "S-SUNCRE KAP": "0076_3",      # Already mapped - BUCKET 3
     
     # === ITEM 25: Unsecured funding from sovereigns/PSEs/MDBs/NDBs ===
-    "S-REVCRE": "0025_1",          # 119,696,100.00
+    "S-REVCRE": "0025_1",          # 
     "S-REVREAFMGS": "0025_1",      # Check amount
     "S-REVREPBNM1": "0025_1",      # Check amount
     "S-REVREPBNM2": "0025_1",      # Check amount
@@ -152,38 +151,38 @@ NSFRCD_FMT: dict[str, str] = {
     "S-REVREPOHFT": "0025_1",      # Check amount
     "S-REVREPOMGI": "0025_1",      # Check amount
     "S-REVREPOMGS": "0025_1",      # Check amount
-    "S-REVRES": "0025_1",          # 1,882,621.98
+    "S-REVRES": "0025_1",          # 
     
     # === ITEM 32: Unsecured funding from other legal entities ===
-    "S-CURPNL": "0032_1",          # 29,998,628.82
-    "S-ACCDEPNO/E": "0032_1",      # 784,310.42
-    "S-ACCDEPRENO": "0032_1",      # 3,720,287.12
-    "S-DEPNCOPMSW": "0032_1",      # 246,043.51
-    "S-AFS UN-ISL": "0032_1",      # 574,460.93
-    "S-CL CTL CR": "0032_1",       # 21,803.52
-    "S-GUARANTEE": "0032_1",       # 5,700,000.00
+    "S-CURPNL": "0032_1",          # 
+    "S-ACCDEPNO/E": "0032_1",      # 
+    "S-ACCDEPRENO": "0032_1",      # 
+    "S-DEPNCOPMSW": "0032_1",      # 
+    "S-AFS UN-ISL": "0032_1",      # 
+    "S-CL CTL CR": "0032_1",       # 
+    "S-GUARANTEE": "0032_1",       # 
     "S-REMI FD 30": "0032_1",      # Check amount
     "S-REMI FD 32": "0032_1",      # Check amount
     "S-REMISIERS": "0032_1",       # Check amount
-    "S-SUNDEP": "0032_1",          # 735,118.00
-    "S-ACCDEPNF&F": "0032_1",      # 643,836.46
-    "S-ACCDEPNMV": "0032_1",       # 71,500.50
-    "S-DEPNF&F": "0032_1",         # 42,589.71
-    "S-DEPNH/W": "0032_1",         # 140,297.54
+    "S-SUNDEP": "0032_1",          # 
+    "S-ACCDEPNF&F": "0032_1",      # 
+    "S-ACCDEPNMV": "0032_1",       # 
+    "S-DEPNF&F": "0032_1",         # 
+    "S-DEPNH/W": "0032_1",         # 
     "S-DEPNMV": "0032_1",          # Check amount
-    "S-DEPNO/E": "0032_1",         # 33,587.65
-    "S-F&F": "0032_1",             # 647,189.73
-    "S-PDEPNSW": "0032_1",         # 246,043.51
+    "S-DEPNO/E": "0032_1",         # 
+    "S-F&F": "0032_1",             # 
+    "S-PDEPNSW": "0032_1",         # 
     "S-PDEPRENO": "0032_1",        # Check amount
-    "S-REG RES": "0032_1",         # 6,824,239.25
+    "S-REG RES": "0032_1",         # 
     "S-REMISIERS": "0032_1",       # Check amount
-    "S-RENO": "0032_1",            # 3,760,420.68
+    "S-RENO": "0032_1",            # 
     "S-REPOMGS": "0032_1",         # Check amount
-    "S-RETPROF": "0032_1",         # 262,989,655.78
-    "S-REVREAFMGS": "0032_1",      # Check amount
-    "S-SUNDEP": "0032_1",          # 735,118.00
-    "S-UNREAL UQS": "0032_1",      # 25,619,668.05
-    "S-UNREALMGS": "0032_1",       # 114,692.81
+    "S-RETPROF": "0032_1",         # 
+    # "S-REVREAFMGS": "0032_1",      # Check amount
+    "S-SUNDEP": "0032_1",          # 
+    "S-UNREAL UQS": "0032_1",      # 
+    "S-UNREALMGS": "0032_1",       # 
     
     # === ITEM 74: Trade date payables ===
     "S-OS SALES": "0074_1",        # Already mapped
@@ -191,10 +190,10 @@ NSFRCD_FMT: dict[str, str] = {
     # === ITEM 76: Already mapped above ===
     
     # === ITEM 84: Coins and banknotes ===
-    "S-PETTY CASH": "0084_1",      # Already mapped - 1,000.00
+    "S-PETTY CASH": "0084_1",      # Already mapped
     
     # === ITEM 85: Total central bank reserves ===
-    "S-STADEPBNM": "0085_3",       # Already mapped - 21,119.00
+    "S-STADEPBNM": "0085_3",       # Already mapped
     
     # === ITEM 116: Deposits/UA Funds held at financial institutions ===
     "S-BNMFL 1MTH": "0116_1",      # Already mapped
@@ -208,10 +207,10 @@ NSFRCD_FMT: dict[str, str] = {
     "S-LBFL 1MTH": "0116_1",       # Already mapped
     "S-DNBFI 1MTH": "0116_1",      # Already mapped
     "S-LBFL": "0116_1",            # Already mapped
-    "LCR-FIOPSDEP": "0140_1",      # Already mapped - 12,173.95
+    "LCR-FIOPSDEP": "0140_1",      # Already mapped
     
     # === ITEM 140: Unsecured loans/financing to financial institutions ===
-    "S-BNM": "0152_1",             # Already mapped - 17.71
+    "S-BNM": "0152_1",             # Already mapped
     "S-BNM FIX": "0152_1",         # Already mapped
     
     # === ITEM 152: Loans/Financing to central banks ===
@@ -224,12 +223,12 @@ NSFRCD_FMT: dict[str, str] = {
     "S-BNM BILL T": "0152_1",      # Check amount
     
     # === ITEM 206: Other short-term unsecured instruments ===
-    "S-HFT": "0206_1",             # 120,000,000.00
-    "S-MGS": "0206_1",             # 120,000,000.00
-    "S-MTN LN": "0206_1",          # 129,860,000.00
-    "S-TERMLN": "0206_1",          # 438,814,254.01
-    "S-ISLAMIC(A)": "0206_1",      # 115,000,000.00
-    "S-ISLPDS (I)": "0206_1",      # 215,000,000.00
+    "S-HFT": "0206_1",             # 
+    "S-MGS": "0206_1",             # 
+    "S-MTN LN": "0206_1",          # 
+    "S-TERMLN": "0206_1",          # 
+    "S-ISLAMIC(A)": "0206_1",      # 
+    "S-ISLPDS (I)": "0206_1",      #
     
     # === ITEM 245: Cash or other assets to CCP default fund ===
     "S-MARGIN COL": "0245_3",      # Already mapped - 3,112.12
@@ -238,14 +237,14 @@ NSFRCD_FMT: dict[str, str] = {
     "S-MARGIN COL": "0245_3",      # Already mapped
     
     # === ITEM 247: Items deducted from regulatory capital ===
-    "S-DTAX": "0247_3",            # Already mapped - 6,620,997.24
-    "S-IA": "0247_3",              # Already mapped - 28,000,000.00
-    "S-IAISLDE(D)": "0247_3",      # 276,709.59
-    "S-D T ASSETS": "0247_3",      # 6,620,997.24
+    "S-DTAX": "0247_3",            # Already mapped 
+    "S-IA": "0247_3",              # Already mapped 
+    "S-IAISLDE(D)": "0247_3",      # 
+    "S-D T ASSETS": "0247_3",      # 
     
     # === ITEM 248: Trade date receivables ===
-    "S-O/S PUR C": "0248_1",       # Already mapped - 146,335,145.37
-    "S-CLIENT CTL": "0248_1",      # Already mapped - 6,729,028.49
+    "S-O/S PUR C": "0248_1",       # Already mapped 
+    "S-CLIENT CTL": "0248_1",      # Already mapped 
     
     # === ITEM 249: Interdependent assets ===
     # (Will be populated from EQ or MNL)
@@ -254,13 +253,13 @@ NSFRCD_FMT: dict[str, str] = {
     # (Will be populated from EQ or MNL)
     
     # === ITEM 256: Irrevocable/conditionally revocable credit facilities ===
-    "S-RCF": "0256_1",             # Already mapped - 36,353,900.00
-    "S-SM F": "0256_1",            # Already mapped - 200,880,964.21
-    "S-TLF": "0256_1",             # Already mapped - 250,737,245.49
+    "S-RCF": "0256_1",             # Already mapped 
+    "S-SM F": "0256_1",            # Already mapped 
+    "S-TLF": "0256_1",             # Already mapped 
     
     # === ITEM 260: Guarantees and letters of credit ===
-    "OBS00100100": "0260_1",       # Already mapped - 5,700,000.00
-    "S-GUARANTEE": "0260_1",       # 5,700,000.00
+    "OBS00100100": "0260_1",       # Already mapped 
+    "S-GUARANTEE": "0260_1",       # 
     
     # === ITEM 282: Unsecured funding from PSEs/NDBs (D. Additional) ===
     # (Will be populated from EQ)
