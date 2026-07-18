@@ -4,3 +4,6 @@ if set_id.startswith("S-OS"):
 
 if set_id.startswith("S-OS"):
     print(f"DEBUG S-OS: set_id='{set_id}', glfmt='{glfmt}'")
+
+if set_id.startswith("S-OS"):
+    print(f"DEBUG S-OS: item={item}, bucket_idx={bucket_idx}, amount={amount}, bucket={bucket}, records appended")
