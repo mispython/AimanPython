@@ -72,50 +72,6 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # PBLCRFMT). Maps a GL SET_ID description string to a "<item><'_'><bucket>"
 # tag; item = 4-digit BNM item code, bucket = 1/2/3 maturity bucket.
 # ============================================================================
-# NSFRCD_FMT: dict[str, str] = {
-#     "S-SHARE": "0006_3",
-#     "S-OS SALES": "0074_1",
-#     "S-SSTPAY": "0076_1",
-#     "S-PBS DLRS": "0076_1",
-#     "S-REMI CA": "0076_1",
-#     "S-LEASE ROUA": "0076_3",
-#     "S-PROVTAX(C)": "0076_3",
-#     "S-PROVOTH": "0076_3",
-#     "S-ALLW COMM": "0076_3",
-#     "S-PROVCLGFEE": "0076_3",
-#     "S-AFRECADV": "0076_3",
-#     "S-ACCEXP": "0076_3",
-#     "S-SUNCRE KAP": "0076_3",
-#     "S-SUNCRE": "0076_3",
-#     "S-LOANCONTRO": "0076_3",
-#     "S-PBS PAYB": "0076_3",
-#     "S-PETTY CASH": "0084_1",
-#     "S-STADEPBNM": "0085_3",
-#     "S-BNMFL 1MTH": "0116_1",
-#     "S-PBB CUR": "0116_1",
-#     "S-PIBB CUR": "0116_1",
-#     "S-PB CA OTH": "0116_1",
-#     "S-CB": "0116_1",
-#     "S-REMI FD": "0116_1",
-#     "S-LBFD": "0116_1",
-#     "S-MBFL 1MTH": "0116_1",
-#     "S-LBFL 1MTH": "0116_1",
-#     "S-DNBFI 1MTH": "0116_1",
-#     "S-LBFL": "0116_1",
-#     "LCR-FIOPSDEP": "0140_1",
-#     "S-BNM FIX": "0152_1",
-#     "S-BNM": "0152_1",
-#     "S-MARGIN COL": "0245_3",
-#     "S-DTAX": "0247_3",
-#     "S-IA": "0247_3",
-#     "S-O/S PUR C": "0248_1",
-#     "S-CLIENT CTL": "0248_1",
-#     "S-RCF": "0256_1",
-#     "S-SM F": "0256_1",
-#     "S-TLF": "0256_1",
-#     "OBS00100100": "0260_1",
-# }
-
 NSFRCD_FMT: dict[str, str] = {
     # === ITEM 6: Tier 1 and Tier 2 capital ===
     "S-SHARE": "0006_3",
@@ -124,7 +80,6 @@ NSFRCD_FMT: dict[str, str] = {
     # (Will be populated from MNL or EQ)
     
     # === ITEM 13: Unsecured funding from non-financial corporates ===
-    "S-OS SALES": "0076_1",        # Already mapped
     "S-STD R/NR": "0076_1",        # 
     "S-SUNDEBT": "0076_1",         # 
     "S-SUNDEBTREC": "0076_1",      # 
@@ -186,7 +141,7 @@ NSFRCD_FMT: dict[str, str] = {
     "S-UNREALMGS": "0032_1",       # 
     
     # === ITEM 74: Trade date payables ===
-    # "S-OS SALES": "0074_1",        # Already mapped
+    "S-OS SALES": "0074_1",        # Already mapped
     
     # === ITEM 76: Already mapped above ===
     
@@ -375,11 +330,18 @@ def read_gl(path: Path) -> list[GLRecord]:
             #                                  referenced anywhere downstream
             amount = _parse_comma_number(amount_raw)
 
+            set_id = line[1:20].strip()      # @002 SET_ID $19.
+            if set_id.startswith("S-OS"):
+                print(f"FOUND S-OS: '{set_id}'")
+
             glfmt = nsfrcd_fmt(set_id)
             if glfmt.strip() == "":
                 unmapped.add(set_id)        # DEBUG
                 continue  # IF GLFMT NE '' guard - unmatched SET_ID -> no rows
             mapped.add(set_id)      # DEBUG
+
+            if set_id.startswith("S-OS"):
+                print(f"DEBUG S-OS: set_id='{set_id}', glfmt='{glfmt}'")
 
             item = int(glfmt[0:4])       # SUBSTR(GLFMT,1,4)*1
             bucket_idx = int(glfmt[5])   # SUBSTRN(GLFMT,6,1)
@@ -389,6 +351,9 @@ def read_gl(path: Path) -> list[GLRecord]:
                 bucket[bucket_idx - 1] = amount / 1000
 
             records.append(GLRecord(item=item, utnma1=bucket[0], utnma2=bucket[1], utnma3=bucket[2]))
+
+            if set_id.startswith("S-OS"):
+                print(f"DEBUG S-OS: item={item}, bucket_idx={bucket_idx}, amount={amount}, bucket={bucket}, records appended")
 
             if set_id == "LCR-FIOPSDEP" and bucket[0] is not None:
                 bucket[0] = -bucket[0]
@@ -712,6 +677,15 @@ def main() -> None:
     totlcr = summarize_totlcr(lcrall)
     print("\n--- TOTLCR ---")
     print(totlcr)
+
+    print("\n--- TOTLCR ALL---")
+    with pl.Config(tbl_rows=1000):
+        print(totlcr)
+
+    print("\n--- ITEM 76 DETAILS (all rows) ---")
+    with pl.Config(tbl_rows=1000):
+        item_76_rows = lcrall.filter(pl.col("item") == 76)
+        print(item_76_rows.select(["src", "utnma1", "utnma2", "utnma3"]))
 
     _gtotlcr = transpose_totlcr(totlcr)  # produced for SAS parity only, unused further
 
