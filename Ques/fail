@@ -1,209 +1,40 @@
-def build_report_lines(template_rows: list[TemplateRow], totlcr: pl.DataFrame) -> list[str]:
-    totlcr_map = {
-        row["item"]: (row["utnma1"], row["utnma2"], row["utnma3"])
-        for row in totlcr.iter_rows(named=True)
-    }
-
-    lines: list[str] = []
-    for idx, trow in enumerate(template_rows):
-        if idx == 0:
-            lines.append("PUBLIC INVESTMENT BANK BERHAD")
-
-        utnma1, utnma2, utnma3 = totlcr_map.get(trow.item, (None, None, None))
-        utnma1 = abs(utnma1) if utnma1 is not None else None
-        utnma2 = abs(utnma2) if utnma2 is not None else None
-        utnma3 = abs(utnma3) if utnma3 is not None else None
-
-        # Fixed width format - NO DELIMITERS
-        line = (
-            f"{trow.desc:<500}"  # Description padded to 500 chars
-            f"{_format_comma20_2(utnma1)}"  # 20 chars
-            f"{_format_comma20_2(utnma2)}"  # 20 chars
-            f"{_format_comma20_2(utnma3)}"  # 20 chars
-        )
-        lines.append(line)
-    return lines
-
-=======================
-
-NSFRCD_FMT: dict[str, str] = {
-    # === ITEM 6: Tier 1 and Tier 2 capital ===
-    "S-SHARE": "0006_3",
-    
-    # === ITEM 11: Less stable deposits ===
-    # (Will be populated from MNL or EQ)
-    
-    # === ITEM 13: Unsecured funding from non-financial corporates ===
-    "S-OS SALES": "0074_1",        # Already mapped - but check if should be 0076_1?
-    "S-STD R/NR": "0076_1",        # 678,424,952.78
-    "S-SUNDEBT": "0076_1",         # 1,897,768.96
-    "S-SUNDEBTREC": "0076_1",      
-    "S-REMI CA": "0076_1",         # Already mapped
-    "S-SSTPAY": "0076_1",          # Already mapped
-    "S-PBS DLRS": "0076_1",        # Already mapped
-    "S-ACCEXP": "0076_3",          # Already mapped - BUCKET 3
-    "S-AFRECADV": "0076_3",        # Already mapped - BUCKET 3
-    "S-ALLW COMM": "0076_3",       # Already mapped - BUCKET 3
-    "S-LEASE ROUA": "0076_3",      # Already mapped - BUCKET 3
-    "S-LOANCONTRO": "0076_3",      # Already mapped - BUCKET 3
-    "S-PBS PAYB": "0076_3",        # Already mapped - BUCKET 3
-    "S-PROVCLGFEE": "0076_3",      # Already mapped - BUCKET 3
-    "S-PROVOTH": "0076_3",         # Already mapped - BUCKET 3
-    "S-PROVTAX(C)": "0076_3",      # Already mapped - BUCKET 3
-    "S-SUNCRE": "0076_3",          # Already mapped - BUCKET 3
-    "S-SUNCRE KAP": "0076_3",      # Already mapped - BUCKET 3
-    
-    # === ITEM 25: Unsecured funding from sovereigns/PSEs/MDBs/NDBs ===
-    "S-REVCRE": "0025_1",          # 119,696,100.00
-    "S-REVREAFMGS": "0025_1",      # Check amount
-    "S-REVREPBNM1": "0025_1",      # Check amount
-    "S-REVREPBNM2": "0025_1",      # Check amount
-    "S-REVREPOBNM": "0025_1",      # Check amount
-    "S-REVREPOHFT": "0025_1",      # Check amount
-    "S-REVREPOMGI": "0025_1",      # Check amount
-    "S-REVREPOMGS": "0025_1",      # Check amount
-    "S-REVRES": "0025_1",          # 1,882,621.98
-    
-    # === ITEM 32: Unsecured funding from other legal entities ===
-    "S-CURPNL": "0032_1",          # 29,998,628.82
-    "S-ACCDEPNO/E": "0032_1",      # 784,310.42
-    "S-ACCDEPRENO": "0032_1",      # 3,720,287.12
-    "S-DEPNCOPMSW": "0032_1",      # 246,043.51
-    "S-AFS UN-ISL": "0032_1",      # 574,460.93
-    "S-CL CTL CR": "0032_1",       # 21,803.52
-    "S-GUARANTEE": "0032_1",       # 5,700,000.00
-    "S-REMI FD 30": "0032_1",      # Check amount
-    "S-REMI FD 32": "0032_1",      # Check amount
-    "S-REMISIERS": "0032_1",       # Check amount
-    "S-SUNDEP": "0032_1",          # 735,118.00
-    "S-ACCDEPNF&F": "0032_1",      # 643,836.46
-    "S-ACCDEPNMV": "0032_1",       # 71,500.50
-    "S-DEPNF&F": "0032_1",         # 42,589.71
-    "S-DEPNH/W": "0032_1",         # 140,297.54
-    "S-DEPNMV": "0032_1",          # Check amount
-    "S-DEPNO/E": "0032_1",         # 33,587.65
-    "S-F&F": "0032_1",             # 647,189.73
-    "S-PDEPNSW": "0032_1",         # 246,043.51
-    "S-PDEPRENO": "0032_1",        # Check amount
-    "S-REG RES": "0032_1",         # 6,824,239.25
-    "S-REMISIERS": "0032_1",       # Check amount
-    "S-RENO": "0032_1",            # 3,760,420.68
-    "S-REPOMGS": "0032_1",         # Check amount
-    "S-RETPROF": "0032_1",         # 262,989,655.78
-    "S-REVREAFMGS": "0032_1",      # Check amount
-    "S-SUNDEP": "0032_1",          # 735,118.00
-    "S-UNREAL UQS": "0032_1",      # 25,619,668.05
-    "S-UNREALMGS": "0032_1",       # 114,692.81
-    
-    # === ITEM 74: Trade date payables ===
-    "S-OS SALES": "0074_1",        # Already mapped
-    
-    # === ITEM 76: Already mapped above ===
-    
-    # === ITEM 84: Coins and banknotes ===
-    "S-PETTY CASH": "0084_1",      # Already mapped - 1,000.00
-    
-    # === ITEM 85: Total central bank reserves ===
-    "S-STADEPBNM": "0085_3",       # Already mapped - 21,119.00
-    
-    # === ITEM 116: Deposits/UA Funds held at financial institutions ===
-    "S-BNMFL 1MTH": "0116_1",      # Already mapped
-    "S-PBB CUR": "0116_1",         # Already mapped
-    "S-PIBB CUR": "0116_1",        # Already mapped
-    "S-PB CA OTH": "0116_1",       # Already mapped
-    "S-CB": "0116_1",              # Already mapped
-    "S-REMI FD": "0116_1",         # Already mapped
-    "S-LBFD": "0116_1",            # Already mapped
-    "S-MBFL 1MTH": "0116_1",       # Already mapped
-    "S-LBFL 1MTH": "0116_1",       # Already mapped
-    "S-DNBFI 1MTH": "0116_1",      # Already mapped
-    "S-LBFL": "0116_1",            # Already mapped
-    "LCR-FIOPSDEP": "0140_1",      # Already mapped - 12,173.95
-    
-    # === ITEM 140: Unsecured loans/financing to financial institutions ===
-    "S-BNM": "0152_1",             # Already mapped - 17.71
-    "S-BNM FIX": "0152_1",         # Already mapped
-    
-    # === ITEM 152: Loans/Financing to central banks ===
-    "S-BNM": "0152_1",             # Already mapped
-    "S-BNM FIX": "0152_1",         # Already mapped
-    "S-BNM O/N": "0152_1",         # Check amount
-    "S-BNM(AFS)": "0152_1",        # Check amount
-    "S-BNMFL": "0152_1",           # Check amount
-    "S-BNM BILL M": "0152_1",      # Check amount
-    "S-BNM BILL T": "0152_1",      # Check amount
-    
-    # === ITEM 206: Other short-term unsecured instruments ===
-    "S-HFT": "0206_1",             # 120,000,000.00
-    "S-MGS": "0206_1",             # 120,000,000.00
-    "S-MTN LN": "0206_1",          # 129,860,000.00
-    "S-TERMLN": "0206_1",          # 438,814,254.01
-    "S-ISLAMIC(A)": "0206_1",      # 115,000,000.00
-    "S-ISLPDS (I)": "0206_1",      # 215,000,000.00
-    
-    # === ITEM 245: Cash or other assets to CCP default fund ===
-    "S-MARGIN COL": "0245_3",      # Already mapped - 3,112.12
-    
-    # === ITEM 246: Required stable funding for IM and CCP ===
-    "S-MARGIN COL": "0245_3",      # Already mapped
-    
-    # === ITEM 247: Items deducted from regulatory capital ===
-    "S-DTAX": "0247_3",            # Already mapped - 6,620,997.24
-    "S-IA": "0247_3",              # Already mapped - 28,000,000.00
-    "S-IAISLDE(D)": "0247_3",      # 276,709.59
-    "S-D T ASSETS": "0247_3",      # 6,620,997.24
-    
-    # === ITEM 248: Trade date receivables ===
-    "S-O/S PUR C": "0248_1",       # Already mapped - 146,335,145.37
-    "S-CLIENT CTL": "0248_1",      # Already mapped - 6,729,028.49
-    
-    # === ITEM 249: Interdependent assets ===
-    # (Will be populated from EQ or MNL)
-    
-    # === ITEM 251: All other assets 100% treatment ===
-    # (Will be populated from EQ or MNL)
-    
-    # === ITEM 256: Irrevocable/conditionally revocable credit facilities ===
-    "S-RCF": "0256_1",             # Already mapped - 36,353,900.00
-    "S-SM F": "0256_1",            # Already mapped - 200,880,964.21
-    "S-TLF": "0256_1",             # Already mapped - 250,737,245.49
-    
-    # === ITEM 260: Guarantees and letters of credit ===
-    "OBS00100100": "0260_1",       # Already mapped - 5,700,000.00
-    "S-GUARANTEE": "0260_1",       # 5,700,000.00
-    
-    # === ITEM 282: Unsecured funding from PSEs/NDBs (D. Additional) ===
-    # (Will be populated from EQ)
-}
-
-=============================
-
-# ADD THIS DEBUG BLOCK AFTER the for loop
-    print(f"\n--- MAPPED SET_IDs ({len(mapped)}) ---")
-    for s in sorted(mapped):
-        print(f"  '{s}' -> {nsfrcd_fmt(s)}")
-    
-    print(f"\n--- UNMAPPED SET_IDs ({len(unmapped)}) ---")
-    for s in sorted(unmapped):
-        print(f"  '{s}'")
-    
-    return records
-
--------------------
-
---- MAPPED SET_IDs (40) ---
+--- MAPPED SET_IDs (91) ---
   'LCR-FIOPSDEP' -> 0140_1
   'OBS00100100' -> 0260_1
+  'S-ACCDEPNF&F' -> 0032_1
+  'S-ACCDEPNMV' -> 0032_1
+  'S-ACCDEPNO/E' -> 0032_1
+  'S-ACCDEPRENO' -> 0032_1
   'S-ACCEXP' -> 0076_3
   'S-AFRECADV' -> 0076_3
+  'S-AFS UN-ISL' -> 0032_1
   'S-ALLW COMM' -> 0076_3
   'S-BNM' -> 0152_1
+  'S-BNM BILL M' -> 0152_1
+  'S-BNM BILL T' -> 0152_1
+  'S-BNM O/N' -> 0152_1
+  'S-BNM(AFS)' -> 0152_1
+  'S-BNMFL' -> 0152_1
   'S-BNMFL 1MTH' -> 0116_1
   'S-CB' -> 0116_1
+  'S-CL CTL CR' -> 0032_1
   'S-CLIENT CTL' -> 0248_1
+  'S-CURPNL' -> 0032_1
+  'S-D T ASSETS' -> 0247_3
+  'S-DEPNCOPMSW' -> 0032_1
+  'S-DEPNF&F' -> 0032_1
+  'S-DEPNH/W' -> 0032_1
+  'S-DEPNMV' -> 0032_1
+  'S-DEPNO/E' -> 0032_1
   'S-DNBFI 1MTH' -> 0116_1
   'S-DTAX' -> 0247_3
+  'S-F&F' -> 0032_1
+  'S-GUARANTEE' -> 0260_1
+  'S-HFT' -> 0206_1
   'S-IA' -> 0247_3
+  'S-IAISLDE(D)' -> 0247_3
+  'S-ISLAMIC(A)' -> 0206_1
+  'S-ISLPDS (I)' -> 0206_1
   'S-LBFD' -> 0116_1
   'S-LBFL' -> 0116_1
   'S-LBFL 1MTH' -> 0116_1
@@ -211,29 +42,56 @@ NSFRCD_FMT: dict[str, str] = {
   'S-LOANCONTRO' -> 0076_3
   'S-MARGIN COL' -> 0245_3
   'S-MBFL 1MTH' -> 0116_1
+  'S-MGS' -> 0206_1
+  'S-MTN LN' -> 0206_1
   'S-O/S PUR C' -> 0248_1
   'S-OS SALES' -> 0074_1
   'S-PB CA OTH' -> 0116_1
   'S-PBB CUR' -> 0116_1
   'S-PBS DLRS' -> 0076_1
   'S-PBS PAYB' -> 0076_3
+  'S-PDEPNSW' -> 0032_1
+  'S-PDEPRENO' -> 0032_1
   'S-PETTY CASH' -> 0084_1
   'S-PIBB CUR' -> 0116_1
   'S-PROVCLGFEE' -> 0076_3
   'S-PROVOTH' -> 0076_3
   'S-PROVTAX(C)' -> 0076_3
   'S-RCF' -> 0256_1
+  'S-REG RES' -> 0032_1
   'S-REMI CA' -> 0076_1
   'S-REMI FD' -> 0116_1
+  'S-REMI FD 30' -> 0032_1
+  'S-REMI FD 32' -> 0032_1
+  'S-REMISIERS' -> 0032_1
+  'S-RENO' -> 0032_1
+  'S-REPOMGS' -> 0032_1
+  'S-RETPROF' -> 0032_1
+  'S-REVCRE' -> 0025_1
+  'S-REVREAFMGS' -> 0025_1
+  'S-REVREPBNM1' -> 0025_1
+  'S-REVREPBNM2' -> 0025_1
+  'S-REVREPOBNM' -> 0025_1
+  'S-REVREPOHFT' -> 0025_1
+  'S-REVREPOMGI' -> 0025_1
+  'S-REVREPOMGS' -> 0025_1
+  'S-REVRES' -> 0025_1
   'S-SHARE' -> 0006_3
   'S-SM F' -> 0256_1
   'S-SSTPAY' -> 0076_1
   'S-STADEPBNM' -> 0085_3
+  'S-STD R/NR' -> 0076_1
   'S-SUNCRE' -> 0076_3
   'S-SUNCRE KAP' -> 0076_3
+  'S-SUNDEBT' -> 0076_1
+  'S-SUNDEBTREC' -> 0076_1
+  'S-SUNDEP' -> 0032_1
+  'S-TERMLN' -> 0206_1
   'S-TLF' -> 0256_1
+  'S-UNREAL UQS' -> 0032_1
+  'S-UNREALMGS' -> 0032_1
 
---- UNMAPPED SET_IDs (701) ---
+--- UNMAPPED SET_IDs (650) ---
   ''
   '0260630'
   '49760000000Y'
@@ -340,13 +198,8 @@ NSFRCD_FMT: dict[str, str] = {
   'REVUSD'
   'REVUSDCTR'
   'S-ACCAMOR'
-  'S-ACCDEPNF&F'
-  'S-ACCDEPNMV'
-  'S-ACCDEPNO/E'
-  'S-ACCDEPRENO'
   'S-AFS PIN BD'
   'S-AFS UN-BNM'
-  'S-AFS UN-ISL'
   'S-AFS UN-KHA'
   'S-AFS UN-MGS'
   'S-AFS UN-PDS'
@@ -384,12 +237,7 @@ NSFRCD_FMT: dict[str, str] = {
   'S-BAS IRIA'
   'S-BAST'
   'S-BGRECADV'
-  'S-BNM BILL M'
-  'S-BNM BILL T'
   'S-BNM IRIADV'
-  'S-BNM O/N'
-  'S-BNM(AFS)'
-  'S-BNMFL'
   'S-CAG'
   'S-CAG FIX'
   'S-CAG T'
@@ -398,7 +246,6 @@ NSFRCD_FMT: dict[str, str] = {
   'S-CAGFL 1MTH'
   'S-CB FEE REC'
   'S-CGFL'
-  'S-CL CTL CR'
   'S-COMPDEPNHW'
   'S-COMPDEPNSW'
   'S-COMPH/W'
@@ -407,14 +254,7 @@ NSFRCD_FMT: dict[str, str] = {
   'S-CORPADVFEE'
   'S-CSCOLP'
   'S-CSCOLR'
-  'S-CURPNL'
-  'S-D T ASSETS'
   'S-DEF RES'
-  'S-DEPNCOPMSW'
-  'S-DEPNF&F'
-  'S-DEPNH/W'
-  'S-DEPNMV'
-  'S-DEPNO/E'
   'S-DH FIX'
   'S-DH O/N'
   'S-DHFL'
@@ -429,7 +269,6 @@ NSFRCD_FMT: dict[str, str] = {
   'S-DNBFI I/B'
   'S-DNBFI>1MTH'
   'S-EALIS CUR'
-  'S-F&F'
   'S-FCY STOCK'
   'S-FCYSUNCRE'
   'S-FD'
@@ -445,11 +284,8 @@ NSFRCD_FMT: dict[str, str] = {
   'S-GSTREFUND'
   'S-GSTREFUND2'
   'S-GSTREFUND3'
-  'S-GUARANTEE'
-  'S-HFT'
   'S-HFT UNREAL'
   'S-HFTIUNREAL'
-  'S-IAISLDE(D)'
   'S-IASLDE(D)'
   'S-IIAKB'
   'S-IMPAIRMENT'
@@ -498,10 +334,8 @@ NSFRCD_FMT: dict[str, str] = {
   'S-IRRANMTN'
   'S-ISIRIABAS'
   'S-ISL(A) INT'
-  'S-ISLAMIC(A)'
   'S-ISLDEBT(D)'
   'S-ISLNCDZ'
-  'S-ISLPDS (I)'
   'S-ISLPDSI(I)'
   'S-ISS'
   'S-KAPITICONV'
@@ -530,7 +364,6 @@ NSFRCD_FMT: dict[str, str] = {
   'S-MGI(A) INT'
   'S-MGI(AFS)'
   'S-MGIUNREAL'
-  'S-MGS'
   'S-MGS T'
   'S-MGS(A)'
   'S-MGS(A) INT'
@@ -543,7 +376,6 @@ NSFRCD_FMT: dict[str, str] = {
   'S-MTB T'
   'S-MTB UNREAL'
   'S-MTN'
-  'S-MTN LN'
   'S-MTN(I)'
   'S-MV'
   'S-NCD(D) ISL'
@@ -584,8 +416,6 @@ NSFRCD_FMT: dict[str, str] = {
   'S-PBS DFDEBT'
   'S-PBS SMDEBT'
   'S-PBS TA'
-  'S-PDEPNSW'
-  'S-PDEPRENO'
   'S-PDS'
   'S-PDS(A)'
   'S-PDS(A) INT'
@@ -616,36 +446,15 @@ NSFRCD_FMT: dict[str, str] = {
   'S-PROVXR'
   'S-QUOTEDAFS'
   'S-QUOTEDSH'
-  'S-REG RES'
-  'S-REMI FD 30'
-  'S-REMI FD 32'
   'S-REMISIERFD'
-  'S-REMISIERS'
-  'S-RENO'
-  'S-REPOMGS'
-  'S-RETPROF'
-  'S-REVCRE'
-  'S-REVREAFMGS'
-  'S-REVREPBNM1'
-  'S-REVREPBNM2'
-  'S-REVREPOBNM'
-  'S-REVREPOHFT'
-  'S-REVREPOMGI'
-  'S-REVREPOMGS'
-  'S-REVRES'
   'S-ROU ASSET'
   'S-SNCD'
   'S-SNIDZEROCO'
   'S-STA RES'
   'S-STAFFLN'
   'S-STAFFSP'
-  'S-STD R/NR'
   'S-STD&NETNID'
-  'S-SUNDEBT'
-  'S-SUNDEBTREC'
-  'S-SUNDEP'
   'S-TAXREBATE'
-  'S-TERMLN'
   'S-TRE IRIADV'
   'S-TRE(A)'
   'S-TREASBILL'
@@ -662,12 +471,10 @@ NSFRCD_FMT: dict[str, str] = {
   'S-UNREAL BAS'
   'S-UNREAL HFT'
   'S-UNREAL MTN'
-  'S-UNREAL UQS'
   'S-UNREALBNMD'
   'S-UNREALCAG'
   'S-UNREALCAGN'
   'S-UNREALHFT'
-  'S-UNREALMGS'
   'S-URMGI-A'
   'SRR_01'
   'T-ACDISCAGB'
@@ -935,83 +742,3 @@ NSFRCD_FMT: dict[str, str] = {
   'TEST1'
   'YRENDCBS'
   'YRENDCPL'
-
---- GL (sorted by ITEM) ---
-shape: (43, 4)
-┌──────┬──────────────┬────────┬─────────────┐
-│ item ┆ utnma1       ┆ utnma2 ┆ utnma3      │
-│ ---  ┆ ---          ┆ ---    ┆ ---         │
-│ i64  ┆ f64          ┆ f64    ┆ f64         │
-╞══════╪══════════════╪════════╪═════════════╡
-│ 6    ┆ null         ┆ null   ┆ 170000.0    │
-│ 74   ┆ 124107.128   ┆ null   ┆ null        │
-│ 76   ┆ null         ┆ null   ┆ 24138.47917 │
-│ 76   ┆ null         ┆ null   ┆ 1456.66675  │
-│ 76   ┆ null         ┆ null   ┆ 118.98709   │
-│ …    ┆ …            ┆ …      ┆ …           │
-│ 248  ┆ 146335.14537 ┆ null   ┆ null        │
-│ 256  ┆ 36353.9      ┆ null   ┆ null        │
-│ 256  ┆ 200880.96421 ┆ null   ┆ null        │
-│ 256  ┆ 250737.24549 ┆ null   ┆ null        │
-│ 260  ┆ 5700.0       ┆ null   ┆ null        │
-└──────┴──────────────┴────────┴─────────────┘
-
---- EQ ---
-shape: (15, 7)
-┌──────┬────────────┬────────┬────────┬──────────┬──────────┬────────────┐
-│ item ┆ utnma1     ┆ utnma2 ┆ utnma3 ┆ utnma4   ┆ utnma5   ┆ utnttl     │
-│ ---  ┆ ---        ┆ ---    ┆ ---    ┆ ---      ┆ ---      ┆ ---        │
-│ i64  ┆ f64        ┆ f64    ┆ f64    ┆ f64      ┆ f64      ┆ f64        │
-╞══════╪════════════╪════════╪════════╪══════════╪══════════╪════════════╡
-│ 11   ┆ 0.0        ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 0.0        │
-│ 13   ┆ 1.1115e8   ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.1115e8   │
-│ 15   ┆ 1.1115e8   ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.1115e8   │
-│ 25   ┆ 1.993935e8 ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.993935e8 │
-│ 27   ┆ 1.993935e8 ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.993935e8 │
-│ …    ┆ …          ┆ …      ┆ …      ┆ …        ┆ …        ┆ …          │
-│ 128  ┆ 0.0        ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 2.8576e8 ┆ 2.8576e8   │
-│ 194  ┆ 0.0        ┆ 0.0    ┆ 0.0    ┆ 2.0125e7 ┆ 9.5581e7 ┆ 1.1571e8   │
-│ 206  ┆ 2.6e8      ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 2.6e8      │
-│ 251  ┆ 1.0195e6   ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.0195e6   │
-│ 282  ┆ 1.993935e8 ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.993935e8 │
-└──────┴────────────┴────────┴────────┴──────────┴──────────┴────────────┘
-
---- LCRALL (SRC, ITEM, UTNMA1-3) ---
-shape: (63, 5)
-┌─────┬──────┬────────────┬────────┬─────────────┐
-│ src ┆ item ┆ utnma1     ┆ utnma2 ┆ utnma3      │
-│ --- ┆ ---  ┆ ---        ┆ ---    ┆ ---         │
-│ str ┆ i64  ┆ f64        ┆ f64    ┆ f64         │
-╞═════╪══════╪════════════╪════════╪═════════════╡
-│ WLK ┆ 6    ┆ null       ┆ null   ┆ 170000.0    │
-│ WLK ┆ 74   ┆ 124107.128 ┆ null   ┆ null        │
-│ WLK ┆ 76   ┆ null       ┆ null   ┆ 24138.47917 │
-│ WLK ┆ 76   ┆ null       ┆ null   ┆ 1456.66675  │
-│ WLK ┆ 76   ┆ null       ┆ null   ┆ 118.98709   │
-│ …   ┆ …    ┆ …          ┆ …      ┆ …           │
-│ MNL ┆ 6    ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-│ MNL ┆ 11   ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-│ MNL ┆ 76   ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-│ MNL ┆ 247  ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-│ MNL ┆ 251  ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-└─────┴──────┴────────────┴────────┴─────────────┘
-
---- TOTLCR ---
-shape: (29, 5)
-┌──────┬──────────────┬────────┬──────────┬────────────┐
-│ item ┆ utnma1       ┆ utnma2 ┆ utnma3   ┆ utnttl     │
-│ ---  ┆ ---          ┆ ---    ┆ ---      ┆ ---        │
-│ i64  ┆ f64          ┆ f64    ┆ f64      ┆ f64        │
-╞══════╪══════════════╪════════╪══════════╪════════════╡
-│ 6    ┆ 0.0          ┆ 0.0    ┆ 170000.0 ┆ 0.0        │
-│ 11   ┆ 0.0          ┆ 0.0    ┆ 0.0      ┆ 0.0        │
-│ 13   ┆ 1.1115e8     ┆ 0.0    ┆ 0.0      ┆ 1.1115e8   │
-│ 15   ┆ 1.1115e8     ┆ 0.0    ┆ 0.0      ┆ 1.1115e8   │
-│ 25   ┆ 1.993935e8   ┆ 0.0    ┆ 0.0      ┆ 1.993935e8 │
-│ …    ┆ …            ┆ …      ┆ …        ┆ …          │
-│ 248  ┆ 153064.17386 ┆ 0.0    ┆ 0.0      ┆ 0.0        │
-│ 251  ┆ 1.0195e6     ┆ 0.0    ┆ 0.0      ┆ 1.0195e6   │
-│ 256  ┆ 487972.1097  ┆ 0.0    ┆ 0.0      ┆ 0.0        │
-│ 260  ┆ 5700.0       ┆ 0.0    ┆ 0.0      ┆ 0.0        │
-│ 282  ┆ 1.993935e8   ┆ 0.0    ┆ 0.0      ┆ 1.993935e8 │
-└──────┴──────────────┴────────┴──────────┴────────────┘
