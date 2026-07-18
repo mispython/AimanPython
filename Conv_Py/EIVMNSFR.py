@@ -10,28 +10,6 @@ Purpose : Automate the Net Stable Funding Ratio (NSFR) report for entity
           merges the totals against a fixed positional item-code template
           (TEMPL) to produce the delimited NSFR report used downstream by
           the FTP job step.
-
-Original SAS JCL header (JOB/JOBPARM/DD statements, SORTWK allocations,
-SAS609 step invocation) is mainframe batch infrastructure and is not
-convertible to Python; only the SAS program logic below is converted.
-
-  //EIVMNSFR JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M,NOTIFY=&SYSUID
-  /*JOBPARM S=S1M1
-  //EIVMNSFR EXEC SAS609
-  //PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-  //TEMPL    DD DSN=SAP.PIVB.NSFR.TEMPLATE,DISP=SHR
-  //EQUA     DD DSN=SAP.PIVB.EQNSF.MTHEND.TXT(0),DISP=SHR
-  //GLPIVB   DD DSN=SAP.APPL.PIVB.MTHEND.LCR(0),DISP=SHR
-  //MNL1     DD DSN=SAP.PIVB.MNL.NSFR.LCR(0),DISP=SHR
-  //LCROUT   DD DSN=SAP.PIVB.NSFR.MTHEND.TEXT(+1),... RECFM=FB,LRECL=2000
-  //SFTPFL   DD DSN=&&FTPPUT,... RECFM=FB,LRECL=80
-  //SORTWK01-03 DD ... (sort work space, not applicable in Python)
-
-  OPTIONS SORTDEV=3390 YEARCUTOFF=1950 NOCENTER NODATE MISSING=' '
-          NOSORTBLKMODE SORTPARM='HIPRMAX=0,MOSIZE=0' PS=2000;
-  (MISSING=' ' -> missing numerics render as blanks; replicated by the
-   blank-padding helper below. YEARCUTOFF=1950 has no effect here since no
-   2-digit year parsing occurs in this program.)
 """
 
 from __future__ import annotations
@@ -43,7 +21,7 @@ from typing import Optional
 import polars as pl
 
 from REPTDATE import get_monthly_reptdate_values
-from input_date import get_latest_file
+# from input_date import get_latest_file
 # output_date.build_output_file() is NOT used here: SAS derives the output
 # filename component RPTDT via PUT(REPTDATE,YYMMDDN8.) (8-digit YYYYMMDD),
 # which does not match either pattern in output_date.DATE_FORMATS
@@ -65,18 +43,25 @@ from input_date import get_latest_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIVMNSFR")
-INPUT_DIR = BASE_DIR / "input"
-OUTPUT_DIR = BASE_DIR / "output"
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR = BASE_DIR / "input"
+# OUTPUT_DIR = BASE_DIR / "output"
+
+INPUT_DIR  = Path("/stgsrcsys/host/uat")
+OUTPUT_DIR = BASE_DIR / "output" / "EIVMNSFR"
 
 # SAP.PIVB.NSFR.TEMPLATE -- static fixed-position item-code list, not a dated
 # input (analogous to BRHFILE/LKP_BRANCH convention).
-TEMPLATE_FILE = INPUT_DIR / "nsfr_template.txt"
+TEMPLATE_FILE = INPUT_DIR / "NSFR_TEMPLATE.txt"
 
 # Dated monthly feeds - resolved via input_date.get_latest_file() below.
-EQUA_PREFIX = "eqnsf"      # SAP.PIVB.EQNSF.MTHEND.TXT(0)
-GLPIVB_PREFIX = "glpivb"   # SAP.APPL.PIVB.MTHEND.LCR(0)
-MNL1_PREFIX = "mnlnsf"     # SAP.PIVB.MNL.NSFR.LCR(0)
+# EQUA_INPUT = "eqnsf"      # SAP.PIVB.EQNSF.MTHEND.TXT(0)
+# GLPIVB_PREFIX = "glpivb"   # SAP.APPL.PIVB.MTHEND.LCR(0)
+# MNL1_PREFIX = "mnlnsf"     # SAP.PIVB.MNL.NSFR.LCR(0)
+
+EQUA_DIR   = INPUT_DIR / "EQNSF.txt"
+GLPIVB_DIR = INPUT_DIR / "MTHEND_LCR.txt"
+MNL1_DIR   = INPUT_DIR / "MNL_NSFR.txt"
 
 DLM = "\x05"  # SAS: DLM='05'X
 
@@ -509,9 +494,13 @@ def main() -> None:
     print(f"RDATE (DDMMYY8.)       : {rdate}")
     print(f"RPTDT (YYMMDDN8.)      : {rptdt}")
 
-    glpivb_file = get_latest_file(INPUT_DIR, prefix=GLPIVB_PREFIX)
-    equa_file = get_latest_file(INPUT_DIR, prefix=EQUA_PREFIX)
-    mnl1_file = get_latest_file(INPUT_DIR, prefix=MNL1_PREFIX)
+    # glpivb_file = get_latest_file(INPUT_DIR, prefix=GLPIVB_PREFIX)
+    # equa_file = get_latest_file(INPUT_DIR, prefix=EQUA_PREFIX)
+    # mnl1_file = get_latest_file(INPUT_DIR, prefix=MNL1_PREFIX)
+
+    glpivb_file = GLPIVB_DIR
+    equa_file   = EQUA_DIR
+    mnl1_file   = MNL1_DIR
 
     template_rows = read_template(TEMPLATE_FILE)
 
