@@ -1,0 +1,189 @@
+//EIVDNSFR JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M,NOTIFY=&SYSUID
+/*JOBPARM S=S1M1
+//*-------------------------------------------------------------------
+//* PROGRAM  : EIVDNSFR
+//* ESMR     : 2019-205 (PIVB)
+//* DESC     : AUTOMATE NET STABLE FUNDING RATIO (NSFR) FOR ENTITY AND
+//*            CONSOL LEVEL
+//*-------------------------------------------------------------------
+//EIVDNSFR EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//TEMPL    DD DSN=SAP.PIVB.NSFR.TEMPLATE,DISP=SHR
+//EQUA     DD DSN=SAP.PIVB.EQNSF.DAILY.TXT(0),DISP=SHR
+//GLPIVB   DD DSN=SAP.APPL.PIVB.DAILY.LCR(0),DISP=SHR
+//MNL1     DD DSN=SAP.PIVB.MNL.NSFR.LCR(0),DISP=SHR
+//LCROUT   DD DSN=SAP.PIVB.NSFR.DAILY.TEXT(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=2000,BLKSIZE=20000),
+//            SPACE=(TRK,(10,10)),UNIT=SYSDA
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(1000))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(1000))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(1000))
+//SYSIN    DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 NOCENTER NODATE MISSING=' '
+        NOSORTBLKMODE SORTPARM='HIPRMAX=0,MOSIZE=0' PS=2000;
+
+%INC PGM(PBBELF,PBLCRFMT);
+
+DATA REPTDATE;
+   REPTDATE = TODAY()-DAY(TODAY());
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RPTDT',PUT(REPTDATE,YYMMDDN8.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+   CALL SYMPUT('REPTDT',REPTDATE);
+RUN;
+
+DATA TEMPLATE;
+   INFILE TEMPL LRECL=1000 DSD;
+   INPUT @001 DESC     $CHAR500.
+         ;
+   ITEM = _N_;
+   IF ITEM > 1; *Exclude;
+RUN;
+PROC SORT; BY ITEM; RUN;
+
+PROC FORMAT;
+   VALUE $NSFRCD
+   'S-SHARE'                                                 = '0006_3'
+   'S-OS SALES'                                              = '0074_1'
+   'S-SSTPAY','S-PBS DLRS','S-REMI CA'                       = '0076_1'
+   'S-LEASE ROUA','S-PROVTAX(C)','S-PROVOTH','S-ALLW COMM',
+   'S-PROVCLGFEE','S-AFRECADV','S-ACCEXP','S-SUNCRE KAP',
+   'S-SUNCRE','S-LOANCONTRO','S-PBS PAYB'                    = '0076_3'
+   'S-PETTY CASH'                                            = '0084_1'
+   'S-STADEPBNM'                                             = '0085_3'
+   'S-BNMFL 1MTH','S-PBB CUR','S-PIBB CUR','S-PB CA OTH',
+   'S-CB','S-REMI FD','S-LBFD','S-MBFL 1MTH','S-LBFL 1MTH',
+   'S-DNBFI 1MTH','S-LBFL'                                   = '0116_1'
+   'LCR-FIOPSDEP'                                            = '0140_1'
+   'S-BNM FIX','S-BNM'                                       = '0152_1'
+   'S-MARGIN COL'                                            = '0245_3'
+   'S-DTAX','S-IA'                                           = '0247_3'
+   'S-O/S PUR C','S-CLIENT CTL'                              = '0248_1'
+   'S-RCF','S-SM F','S-TLF'                                  = '0256_1'
+   'OBS00100100'                                             = '0260_1'
+   OTHER                                                     = '      '
+   ;
+RUN;
+
+*------------------------------------------------*
+*  MANUAL TEMPLATE                               *
+*------------------------------------------------*;
+DATA NSFR; *NSFR Manual;
+   INFILE MNL1 DELIMITER=',' DSD FIRSTOBS=2;
+   INPUT  LINE      :      $10.
+          UTNMA1    :       16.
+          UTNMA2    :       16.
+          UTNMA3    :       16.
+          ;
+   ITEM = SUBSTR(LINE,6,3)*1;
+   DROP LINE;
+RUN;
+
+*------------------------------------------------*
+*  WALKER GL                                     *
+*------------------------------------------------*;
+DATA GL;
+   INFILE GLPIVB;
+   INPUT @002 SET_ID         $19.
+         @042 AMOUNT     COMMA20.2
+         @062 SIGN            $1.
+         ;
+   GLFMT = PUT(SET_ID,$NSFRCD.);
+   IF GLFMT NE '' THEN DO;
+      ITEM = SUBSTR(GLFMT,1,4)*1; I = SUBSTRN(GLFMT,6,1);
+      ARRAY BUCKET UTNMA1-UTNMA3;
+      BUCKET(I) = AMOUNT/1000;
+      OUTPUT;
+      IF SET_ID = 'LCR-FIOPSDEP' THEN UTNMA1 = -UTNMA1;
+      SELECT(SET_ID);
+         WHEN('S-STADEPBNM')    DO; ITEM = 86; OUTPUT; END;
+         WHEN('LCR-FIOPSDEP')   DO; ITEM= 116; OUTPUT; END;
+         WHEN('S-MARGIN COL')   DO; ITEM= 246; OUTPUT; END;
+         OTHERWISE;
+      END;
+   END;
+RUN;
+PROC SORT DATA=GL; BY ITEM; RUN;
+PROC PRINT; RUN;
+*------------------------------------------------*
+*  EQUATION                                      *
+*------------------------------------------------*;
+DATA EQ;
+   INFILE EQUA END=EOF DLM='|' DSD;
+   INPUT UTNREF     :    $10.   /* ITEM CODE            */
+         UTNMA1     :     17.2  /* <  3MONTHS           */
+         UTNMA2     :     17.2  /* >= 3MONTHS < 6MONTHS */
+         UTNMA3     :     17.2  /* >= 6MONTHS < 9MONTHS */
+         UTNMA4     :     17.2  /* >= 9MONTHS < 1YEAR   */
+         UTNMA5     :     17.2  /* >  1 YEAR            */
+         UTNTTL     :     17.2  /* TOTAL                */
+         ;
+   ITEM = SUBSTR(UTNREF,3,5)*1;
+RUN;
+PROC PRINT; RUN;
+
+*------------------------------------------------*
+*  CONSOLIDATE                                   *
+*------------------------------------------------*;
+DATA LCRALL;
+   SET GL(IN=B) EQ(IN=C) NSFR;
+   WHERE ITEM > 0;
+   IF      B THEN SRC = 'WLK';
+   ELSE IF C THEN SRC = 'EQU';
+   ELSE           SRC = 'MNL';
+  *IF SRC = 'MNL';
+RUN;
+PROC PRINT; VAR SRC ITEM UTNMA1 UTNMA2 UTNMA3; RUN;
+PROC SORT DATA=LCRALL; BY ITEM; RUN;
+
+PROC SUMMARY DATA=LCRALL NWAY;
+   BY ITEM;
+   VAR UTNMA1 UTNMA2 UTNMA3 UTNTTL;
+   OUTPUT OUT=TOTLCR(DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+PROC PRINT; RUN;
+
+PROC TRANSPOSE DATA=TOTLCR OUT=GTOTLCR PREFIX=L;
+   ID ITEM;
+   VAR UTNTTL;
+RUN;
+
+DATA _NULL_;
+   MERGE TEMPLATE(IN=A) TOTLCR;
+   BY ITEM;
+   IF A;
+   DLM='05'X;
+   FILE LCROUT;
+   FORMAT UTNMA1 UTNMA2 UTNMA3 COMMA20.2;
+   IF _N_=1 THEN DO;
+      PUT @001 'PUBLIC INVESTMENT BANK BERHAD'
+          ;
+   END;
+   UTNMA1 = ABS(UTNMA1);
+   UTNMA2 = ABS(UTNMA2);
+   UTNMA3 = ABS(UTNMA3);
+      PUT @001  DESC         $CHAR500.                     DLM
+                UTNMA1                                     DLM
+                UTNMA2                                     DLM
+                UTNMA3                                     DLM
+                                                           DLM
+          ;
+RUN;
+//*---------------------------------------------------------------
+//* FTP TO PIVB FILE SERVER
+//*---------------------------------------------------------------
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//OUTPUT   DD SYSOUT=*
+//SYSPRINT DD SYSOUT=*
+//CMD.SYSUT1 DD *
+export PASSWD_DSN='OPER.PBB.CONTROL(SAS#SFTP)'
+$coz_bin/cozsftp  $ssh_opts -b- sas2finlcr@192.168.56.10 <<EOB
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+PUT //SAP.PIVB.NSFR.DAILY.TEXT(+1)   NSFR_%OYYYY.%OMM.%ODD..XLS
+EOB
+/*
