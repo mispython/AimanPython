@@ -3,20 +3,12 @@ REPTMON                : 06
 REPTDAY                : 30
 RDATE (DDMMYY8.)       : 30/06/26
 RPTDT (YYMMDDN8.)      : 20260630
-FOUND S-OS: 'S-OS SALES'
-DEBUG S-OS: set_id='S-OS SALES', glfmt='0074_1'
-DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None, None], records appended
 
---- MAPPED SET_IDs (91) ---
+--- MAPPED SET_IDs (53) ---
   'LCR-FIOPSDEP' -> 0140_1
   'OBS00100100' -> 0260_1
-  'S-ACCDEPNF&F' -> 0032_1
-  'S-ACCDEPNMV' -> 0032_1
-  'S-ACCDEPNO/E' -> 0032_1
-  'S-ACCDEPRENO' -> 0032_1
   'S-ACCEXP' -> 0076_3
   'S-AFRECADV' -> 0076_3
-  'S-AFS UN-ISL' -> 0032_1
   'S-ALLW COMM' -> 0076_3
   'S-BNM' -> 0152_1
   'S-BNM BILL M' -> 0152_1
@@ -26,19 +18,10 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'S-BNMFL' -> 0152_1
   'S-BNMFL 1MTH' -> 0116_1
   'S-CB' -> 0116_1
-  'S-CL CTL CR' -> 0032_1
   'S-CLIENT CTL' -> 0248_1
-  'S-CURPNL' -> 0032_1
   'S-D T ASSETS' -> 0247_3
-  'S-DEPNCOPMSW' -> 0032_1
-  'S-DEPNF&F' -> 0032_1
-  'S-DEPNH/W' -> 0032_1
-  'S-DEPNMV' -> 0032_1
-  'S-DEPNO/E' -> 0032_1
   'S-DNBFI 1MTH' -> 0116_1
   'S-DTAX' -> 0247_3
-  'S-F&F' -> 0032_1
-  'S-GUARANTEE' -> 0260_1
   'S-HFT' -> 0206_1
   'S-IA' -> 0247_3
   'S-IAISLDE(D)' -> 0247_3
@@ -59,48 +42,24 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'S-PBB CUR' -> 0116_1
   'S-PBS DLRS' -> 0076_1
   'S-PBS PAYB' -> 0076_3
-  'S-PDEPNSW' -> 0032_1
-  'S-PDEPRENO' -> 0032_1
   'S-PETTY CASH' -> 0084_1
   'S-PIBB CUR' -> 0116_1
   'S-PROVCLGFEE' -> 0076_3
   'S-PROVOTH' -> 0076_3
   'S-PROVTAX(C)' -> 0076_3
   'S-RCF' -> 0256_1
-  'S-REG RES' -> 0032_1
   'S-REMI CA' -> 0076_1
   'S-REMI FD' -> 0116_1
-  'S-REMI FD 30' -> 0032_1
-  'S-REMI FD 32' -> 0032_1
-  'S-REMISIERS' -> 0032_1
-  'S-RENO' -> 0032_1
-  'S-REPOMGS' -> 0032_1
-  'S-RETPROF' -> 0032_1
-  'S-REVCRE' -> 0025_1
-  'S-REVREAFMGS' -> 0025_1
-  'S-REVREPBNM1' -> 0025_1
-  'S-REVREPBNM2' -> 0025_1
-  'S-REVREPOBNM' -> 0025_1
-  'S-REVREPOHFT' -> 0025_1
-  'S-REVREPOMGI' -> 0025_1
-  'S-REVREPOMGS' -> 0025_1
-  'S-REVRES' -> 0025_1
   'S-SHARE' -> 0006_3
   'S-SM F' -> 0256_1
   'S-SSTPAY' -> 0076_1
   'S-STADEPBNM' -> 0085_3
-  'S-STD R/NR' -> 0076_1
   'S-SUNCRE' -> 0076_3
   'S-SUNCRE KAP' -> 0076_3
-  'S-SUNDEBT' -> 0076_1
-  'S-SUNDEBTREC' -> 0076_1
-  'S-SUNDEP' -> 0032_1
   'S-TERMLN' -> 0206_1
   'S-TLF' -> 0256_1
-  'S-UNREAL UQS' -> 0032_1
-  'S-UNREALMGS' -> 0032_1
 
---- UNMAPPED SET_IDs (650) ---
+--- UNMAPPED SET_IDs (688) ---
   ''
   '0260630'
   '49760000000Y'
@@ -207,8 +166,13 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'REVUSD'
   'REVUSDCTR'
   'S-ACCAMOR'
+  'S-ACCDEPNF&F'
+  'S-ACCDEPNMV'
+  'S-ACCDEPNO/E'
+  'S-ACCDEPRENO'
   'S-AFS PIN BD'
   'S-AFS UN-BNM'
+  'S-AFS UN-ISL'
   'S-AFS UN-KHA'
   'S-AFS UN-MGS'
   'S-AFS UN-PDS'
@@ -255,6 +219,7 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'S-CAGFL 1MTH'
   'S-CB FEE REC'
   'S-CGFL'
+  'S-CL CTL CR'
   'S-COMPDEPNHW'
   'S-COMPDEPNSW'
   'S-COMPH/W'
@@ -263,7 +228,13 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'S-CORPADVFEE'
   'S-CSCOLP'
   'S-CSCOLR'
+  'S-CURPNL'
   'S-DEF RES'
+  'S-DEPNCOPMSW'
+  'S-DEPNF&F'
+  'S-DEPNH/W'
+  'S-DEPNMV'
+  'S-DEPNO/E'
   'S-DH FIX'
   'S-DH O/N'
   'S-DHFL'
@@ -278,6 +249,7 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'S-DNBFI I/B'
   'S-DNBFI>1MTH'
   'S-EALIS CUR'
+  'S-F&F'
   'S-FCY STOCK'
   'S-FCYSUNCRE'
   'S-FD'
@@ -293,6 +265,7 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'S-GSTREFUND'
   'S-GSTREFUND2'
   'S-GSTREFUND3'
+  'S-GUARANTEE'
   'S-HFT UNREAL'
   'S-HFTIUNREAL'
   'S-IASLDE(D)'
@@ -425,6 +398,8 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'S-PBS DFDEBT'
   'S-PBS SMDEBT'
   'S-PBS TA'
+  'S-PDEPNSW'
+  'S-PDEPRENO'
   'S-PDS'
   'S-PDS(A)'
   'S-PDS(A) INT'
@@ -455,14 +430,34 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'S-PROVXR'
   'S-QUOTEDAFS'
   'S-QUOTEDSH'
+  'S-REG RES'
+  'S-REMI FD 30'
+  'S-REMI FD 32'
   'S-REMISIERFD'
+  'S-REMISIERS'
+  'S-RENO'
+  'S-REPOMGS'
+  'S-RETPROF'
+  'S-REVCRE'
+  'S-REVREAFMGS'
+  'S-REVREPBNM1'
+  'S-REVREPBNM2'
+  'S-REVREPOBNM'
+  'S-REVREPOHFT'
+  'S-REVREPOMGI'
+  'S-REVREPOMGS'
+  'S-REVRES'
   'S-ROU ASSET'
   'S-SNCD'
   'S-SNIDZEROCO'
   'S-STA RES'
   'S-STAFFLN'
   'S-STAFFSP'
+  'S-STD R/NR'
   'S-STD&NETNID'
+  'S-SUNDEBT'
+  'S-SUNDEBTREC'
+  'S-SUNDEP'
   'S-TAXREBATE'
   'S-TRE IRIADV'
   'S-TRE(A)'
@@ -480,10 +475,12 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'S-UNREAL BAS'
   'S-UNREAL HFT'
   'S-UNREAL MTN'
+  'S-UNREAL UQS'
   'S-UNREALBNMD'
   'S-UNREALCAG'
   'S-UNREALCAGN'
   'S-UNREALHFT'
+  'S-UNREALMGS'
   'S-URMGI-A'
   'SRR_01'
   'T-ACDISCAGB'
@@ -753,24 +750,24 @@ DEBUG S-OS: item=74, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None,
   'YRENDCPL'
 
 --- GL (sorted by ITEM) ---
-shape: (94, 4)
-┌──────┬──────────────┬────────┬──────────┐
-│ item ┆ utnma1       ┆ utnma2 ┆ utnma3   │
-│ ---  ┆ ---          ┆ ---    ┆ ---      │
-│ i64  ┆ f64          ┆ f64    ┆ f64      │
-╞══════╪══════════════╪════════╪══════════╡
-│ 6    ┆ null         ┆ null   ┆ 170000.0 │
-│ 25   ┆ 119696.1     ┆ null   ┆ null     │
-│ 25   ┆ 0.0          ┆ null   ┆ null     │
-│ 25   ┆ 0.0          ┆ null   ┆ null     │
-│ 25   ┆ 0.0          ┆ null   ┆ null     │
-│ …    ┆ …            ┆ …      ┆ …        │
-│ 256  ┆ 36353.9      ┆ null   ┆ null     │
-│ 256  ┆ 200880.96421 ┆ null   ┆ null     │
-│ 256  ┆ 250737.24549 ┆ null   ┆ null     │
-│ 260  ┆ 5700.0       ┆ null   ┆ null     │
-│ 260  ┆ 5700.0       ┆ null   ┆ null     │
-└──────┴──────────────┴────────┴──────────┘
+shape: (56, 4)
+┌──────┬──────────────┬────────┬─────────────┐
+│ item ┆ utnma1       ┆ utnma2 ┆ utnma3      │
+│ ---  ┆ ---          ┆ ---    ┆ ---         │
+│ i64  ┆ f64          ┆ f64    ┆ f64         │
+╞══════╪══════════════╪════════╪═════════════╡
+│ 6    ┆ null         ┆ null   ┆ 170000.0    │
+│ 74   ┆ 124107.128   ┆ null   ┆ null        │
+│ 76   ┆ null         ┆ null   ┆ 24138.47917 │
+│ 76   ┆ null         ┆ null   ┆ 1456.66675  │
+│ 76   ┆ null         ┆ null   ┆ 118.98709   │
+│ …    ┆ …            ┆ …      ┆ …           │
+│ 248  ┆ 146335.14537 ┆ null   ┆ null        │
+│ 256  ┆ 36353.9      ┆ null   ┆ null        │
+│ 256  ┆ 200880.96421 ┆ null   ┆ null        │
+│ 256  ┆ 250737.24549 ┆ null   ┆ null        │
+│ 260  ┆ 5700.0       ┆ null   ┆ null        │
+└──────┴──────────────┴────────┴─────────────┘
 
 --- EQ ---
 shape: (15, 7)
@@ -793,24 +790,24 @@ shape: (15, 7)
 └──────┴────────────┴────────┴────────┴──────────┴──────────┴────────────┘
 
 --- LCRALL (SRC, ITEM, UTNMA1-3) ---
-shape: (114, 5)
-┌─────┬──────┬──────────┬────────┬──────────┐
-│ src ┆ item ┆ utnma1   ┆ utnma2 ┆ utnma3   │
-│ --- ┆ ---  ┆ ---      ┆ ---    ┆ ---      │
-│ str ┆ i64  ┆ f64      ┆ f64    ┆ f64      │
-╞═════╪══════╪══════════╪════════╪══════════╡
-│ WLK ┆ 6    ┆ null     ┆ null   ┆ 170000.0 │
-│ WLK ┆ 25   ┆ 119696.1 ┆ null   ┆ null     │
-│ WLK ┆ 25   ┆ 0.0      ┆ null   ┆ null     │
-│ WLK ┆ 25   ┆ 0.0      ┆ null   ┆ null     │
-│ WLK ┆ 25   ┆ 0.0      ┆ null   ┆ null     │
-│ …   ┆ …    ┆ …        ┆ …      ┆ …        │
-│ MNL ┆ 6    ┆ 0.0      ┆ 0.0    ┆ 0.0      │
-│ MNL ┆ 11   ┆ 0.0      ┆ 0.0    ┆ 0.0      │
-│ MNL ┆ 76   ┆ 0.0      ┆ 0.0    ┆ 0.0      │
-│ MNL ┆ 247  ┆ 0.0      ┆ 0.0    ┆ 0.0      │
-│ MNL ┆ 251  ┆ 0.0      ┆ 0.0    ┆ 0.0      │
-└─────┴──────┴──────────┴────────┴──────────┘
+shape: (76, 5)
+┌─────┬──────┬────────────┬────────┬─────────────┐
+│ src ┆ item ┆ utnma1     ┆ utnma2 ┆ utnma3      │
+│ --- ┆ ---  ┆ ---        ┆ ---    ┆ ---         │
+│ str ┆ i64  ┆ f64        ┆ f64    ┆ f64         │
+╞═════╪══════╪════════════╪════════╪═════════════╡
+│ WLK ┆ 6    ┆ null       ┆ null   ┆ 170000.0    │
+│ WLK ┆ 74   ┆ 124107.128 ┆ null   ┆ null        │
+│ WLK ┆ 76   ┆ null       ┆ null   ┆ 24138.47917 │
+│ WLK ┆ 76   ┆ null       ┆ null   ┆ 1456.66675  │
+│ WLK ┆ 76   ┆ null       ┆ null   ┆ 118.98709   │
+│ …   ┆ …    ┆ …          ┆ …      ┆ …           │
+│ MNL ┆ 6    ┆ 0.0        ┆ 0.0    ┆ 0.0         │
+│ MNL ┆ 11   ┆ 0.0        ┆ 0.0    ┆ 0.0         │
+│ MNL ┆ 76   ┆ 0.0        ┆ 0.0    ┆ 0.0         │
+│ MNL ┆ 247  ┆ 0.0        ┆ 0.0    ┆ 0.0         │
+│ MNL ┆ 251  ┆ 0.0        ┆ 0.0    ┆ 0.0         │
+└─────┴──────┴────────────┴────────┴─────────────┘
 
 --- TOTLCR ALL---
 shape: (29, 5)
@@ -823,13 +820,13 @@ shape: (29, 5)
 │ 11   ┆ 0.0          ┆ 0.0      ┆ 0.0         ┆ 0.0        │
 │ 13   ┆ 1.3058e8     ┆ 0.0      ┆ 0.0         ┆ 1.3058e8   │
 │ 15   ┆ 1.3058e8     ┆ 0.0      ┆ 0.0         ┆ 1.3058e8   │
-│ 25   ┆ 3.0413e8     ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
+│ 25   ┆ 3.040127e8   ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
 │ 27   ┆ 3.040127e8   ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
-│ 32   ┆ 8.1688e8     ┆ 2.04e8   ┆ 1.05e8      ┆ 1.1255e9   │
+│ 32   ┆ 8.1654e8     ┆ 2.04e8   ┆ 1.05e8      ┆ 1.1255e9   │
 │ 34   ┆ 3.2261e8     ┆ 2.9e7    ┆ 5e6         ┆ 3.5661e8   │
 │ 35   ┆ 4.9393e8     ┆ 1.75e8   ┆ 1e8         ┆ 7.6893e8   │
 │ 74   ┆ 124107.128   ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 76   ┆ 1.9879e6     ┆ 2.6908e6 ┆ 1.8961e6    ┆ 5.8143e6   │
+│ 76   ┆ 1.3076e6     ┆ 2.6908e6 ┆ 1.8961e6    ┆ 5.8143e6   │
 │ 84   ┆ 1.0          ┆ 0.0      ┆ 0.0         ┆ 0.0        │
 │ 85   ┆ 0.0          ┆ 0.0      ┆ 21119.0     ┆ 0.0        │
 │ 86   ┆ 0.0          ┆ 0.0      ┆ 21119.0     ┆ 0.0        │
@@ -846,37 +843,34 @@ shape: (29, 5)
 │ 248  ┆ 153064.17386 ┆ 0.0      ┆ 0.0         ┆ 0.0        │
 │ 251  ┆ 977213.7     ┆ 0.0      ┆ 0.0         ┆ 977213.7   │
 │ 256  ┆ 487972.1097  ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 260  ┆ 11400.0      ┆ 0.0      ┆ 0.0         ┆ 0.0        │
+│ 260  ┆ 5700.0       ┆ 0.0      ┆ 0.0         ┆ 0.0        │
 │ 282  ┆ 3.040127e8   ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
 └──────┴──────────────┴──────────┴─────────────┴────────────┘
 
 --- ITEM 76 DETAILS (all rows) ---
-shape: (19, 4)
-┌─────┬──────────────┬──────────┬─────────────┐
-│ src ┆ utnma1       ┆ utnma2   ┆ utnma3      │
-│ --- ┆ ---          ┆ ---      ┆ ---         │
-│ str ┆ f64          ┆ f64      ┆ f64         │
-╞═════╪══════════════╪══════════╪═════════════╡
-│ WLK ┆ null         ┆ null     ┆ 24138.47917 │
-│ WLK ┆ null         ┆ null     ┆ 1456.66675  │
-│ WLK ┆ null         ┆ null     ┆ 118.98709   │
-│ WLK ┆ null         ┆ null     ┆ 24242.22065 │
-│ WLK ┆ null         ┆ null     ┆ 0.0         │
-│ WLK ┆ 4247.75538   ┆ null     ┆ null        │
-│ WLK ┆ null         ┆ null     ┆ 2158.73369  │
-│ WLK ┆ null         ┆ null     ┆ 847.66818   │
-│ WLK ┆ null         ┆ null     ┆ 0.0         │
-│ WLK ┆ null         ┆ null     ┆ 2955.1865   │
-│ WLK ┆ 687.46825    ┆ null     ┆ null        │
-│ WLK ┆ 719.43468    ┆ null     ┆ null        │
-│ WLK ┆ 678424.95278 ┆ null     ┆ null        │
-│ WLK ┆ null         ┆ null     ┆ 18586.01221 │
-│ WLK ┆ null         ┆ null     ┆ 55.69319    │
-│ WLK ┆ 1897.76896   ┆ null     ┆ null        │
-│ WLK ┆ 0.0          ┆ null     ┆ null        │
-│ EQU ┆ 1.3019e6     ┆ 2.6908e6 ┆ 1.8216e6    │
-│ MNL ┆ 0.0          ┆ 0.0      ┆ 0.0         │
-└─────┴──────────────┴──────────┴─────────────┘
+shape: (16, 4)
+┌─────┬────────────┬──────────┬─────────────┐
+│ src ┆ utnma1     ┆ utnma2   ┆ utnma3      │
+│ --- ┆ ---        ┆ ---      ┆ ---         │
+│ str ┆ f64        ┆ f64      ┆ f64         │
+╞═════╪════════════╪══════════╪═════════════╡
+│ WLK ┆ null       ┆ null     ┆ 24138.47917 │
+│ WLK ┆ null       ┆ null     ┆ 1456.66675  │
+│ WLK ┆ null       ┆ null     ┆ 118.98709   │
+│ WLK ┆ null       ┆ null     ┆ 24242.22065 │
+│ WLK ┆ null       ┆ null     ┆ 0.0         │
+│ WLK ┆ 4247.75538 ┆ null     ┆ null        │
+│ WLK ┆ null       ┆ null     ┆ 2158.73369  │
+│ WLK ┆ null       ┆ null     ┆ 847.66818   │
+│ WLK ┆ null       ┆ null     ┆ 0.0         │
+│ WLK ┆ null       ┆ null     ┆ 2955.1865   │
+│ WLK ┆ 687.46825  ┆ null     ┆ null        │
+│ WLK ┆ 719.43468  ┆ null     ┆ null        │
+│ WLK ┆ null       ┆ null     ┆ 18586.01221 │
+│ WLK ┆ null       ┆ null     ┆ 55.69319    │
+│ EQU ┆ 1.3019e6   ┆ 2.6908e6 ┆ 1.8216e6    │
+│ MNL ┆ 0.0        ┆ 0.0      ┆ 0.0         │
+└─────┴────────────┴──────────┴─────────────┘
 
 Output report written to : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIVMNSFR/NSFR_20260630_MTH.txt
 SFTP command file        : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIVMNSFR/sftp_command.txt
