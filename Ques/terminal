@@ -877,3 +877,6 @@ shape: (19, 4)
 │ EQU ┆ 1.3019e6     ┆ 2.6908e6 ┆ 1.8216e6    │
 │ MNL ┆ 0.0          ┆ 0.0      ┆ 0.0         │
 └─────┴──────────────┴──────────┴─────────────┘
+
+Output report written to : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIVMNSFR/NSFR_20260630_MTH.txt
+SFTP command file        : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIVMNSFR/sftp_command.txt
