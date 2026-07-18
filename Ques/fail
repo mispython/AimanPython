@@ -7,3 +7,7 @@ if set_id.startswith("S-OS"):
 
 if set_id.startswith("S-OS"):
     print(f"DEBUG S-OS: item={item}, bucket_idx={bucket_idx}, amount={amount}, bucket={bucket}, records appended")
+
+FOUND S-OS: 'S-OS SALES'
+DEBUG S-OS: set_id='S-OS SALES', glfmt='0076_1'
+DEBUG S-OS: item=76, bucket_idx=1, amount=124107128.0, bucket=[124107.128, None, None], records appended
