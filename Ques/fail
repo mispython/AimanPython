@@ -1,3 +1,6 @@
 set_id = line[1:20].strip()      # @002 SET_ID $19.
 if set_id.startswith("S-OS"):
     print(f"FOUND S-OS: '{set_id}'")
+
+if set_id.startswith("S-OS"):
+    print(f"DEBUG S-OS: set_id='{set_id}', glfmt='{glfmt}'")
