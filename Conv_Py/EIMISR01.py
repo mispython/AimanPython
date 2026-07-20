@@ -1,28 +1,30 @@
 """
-Program : EIMISR01.py
-Purpose : Monthly report on savings deposits' outstanding balance
-          (Report ID: DMMISR01) and accounts breakdown by branch,
-          for PBB (conventional) & PIBB (Islamic) combined.
+Program Name : EIMISR01
+Purpose      : Monthly report on savings deposits' outstanding balance
+               (Report ID: DMMISR01) and accounts breakdown by branch,
+               for PBB (conventional) & PIBB (Islamic) combined.
+Source       : Converted from EIMISR01 SAS/JCL batch program.
 
 Notes on conversion:
   - REPTDATE is derived via REPTDATE.py (get_reptdate_values), not read
     from a reptdate.parquet file, which does not exist in this environment.
-  - input_date.get_latest_file() is NOT used:
-      * BRHFILE (LKP_BRANCH) is a static-name lookup file with no date
-        component in its filename -> referenced by direct path.
-      * DYPOSXBR&REPTMON carries only a deterministic month suffix
-        (REPTMON), so the filename is built directly rather than resolved
-        via the "latest file by pattern" search used for rolling files.
+  - DYPOSXBR&REPTMON (.sas7bdat) is now resolved via
+    input_date.get_latest_file(INPUT_DIR, prefix="DYPOSXBR"), which picks
+    the latest file whose embedded date matches the recognised filename
+    patterns, rather than being built directly from REPTMON.
+  - BRHFILE (LKP_BRANCH) remains a static-name lookup file with no date
+    component in its filename -> referenced by direct path, not via
+    get_latest_file().
   - output_date.build_output_file() is NOT used: the original output
     DSN (SAP.PBB.EIMISR01.TEXT) carries no date component in its name
     (the report date only appears inside the report content/title),
     so the output filename is fixed.
-  - DYPOSXBR&REPTMON is a .sas7bdat file (DYPOSXBR{MM}.sas7bdat). It is
-    cached to Parquet once (chunked stream + freshness check, same
-    pattern as EIBDLN1M.py) and read from the cache via DuckDB thereafter.
+  - DYPOSXBR is cached to Parquet once (chunked stream + freshness check,
+    same pattern as EIBDLN1M.py) and read from the cache via DuckDB
+    thereafter.
   - LIBNAME MIS "SAP.PBB.MIS.D&REPTYEAR" is not applicable: there is no
-    separate MIS_DIR input in this environment; DYPOSXBR&REPTMON is read
-    directly from the input/cache directories below.
+    separate MIS_DIR input in this environment; DYPOSXBR is read directly
+    from the input/cache directories below.
   - //ISR01 DD ... DCB=(...,RECFM=FB,...) -> RECFM=FB (not FBA), meaning
     the original output carries NO ASA carriage-control characters.
     This report is therefore written as plain semicolon-delimited,
@@ -47,6 +49,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
 
 # ============================================================
 # PATH CONFIGURATION
@@ -83,9 +86,12 @@ REPTDAY = _reptdate_values.reptday                        # Z2.     zero-padded 
 RDATE: date = _reptdate_values.reptdate                   # actual report date (used for filtering)
 REPTDT = _reptdate_values.reptdate.strftime("%d/%m/%Y")   # DDMMYY10. equivalent, e.g. "09/07/2026"
 
-# DYPOSXBR&REPTMON — .sas7bdat input, deterministic month-suffix filename
-DYPOSXBR_SAS = INPUT_DIR / f"DYPOSXBR{REPTMON}.sas7bdat"
-DYPOSXBR_CACHE = CACHE_DIR / f"DYPOSXBR{REPTMON}.parquet"
+# ============================================================
+# STEP: RESOLVE DYPOSXBR INPUT FILE  (input_date.get_latest_file)
+# DYPOSXBR&REPTMON&REPTYR..sas7bdat -> latest file matching prefix
+# ============================================================
+DYPOSXBR_SAS = get_latest_file(INPUT_DIR, prefix="DYPOSXBR")
+DYPOSXBR_CACHE = CACHE_DIR / f"{DYPOSXBR_SAS.stem}.parquet"
 
 
 # ============================================================
@@ -501,6 +507,7 @@ def write_report(
 def main() -> None:
     print(f"Report date (RDATE) : {RDATE}")
     print(f"REPTMON / REPTYEAR  : {REPTMON} / {REPTYEAR}")
+    print(f"DYPOSXBR input file : {DYPOSXBR_SAS.name}")
 
     ensure_dyposxbr_cache()
 
