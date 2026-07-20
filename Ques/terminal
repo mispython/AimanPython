@@ -1,924 +1,390 @@
-Report date (REPTDATE) : 2026-06-30
-REPTMON                : 06
-REPTDAY                : 30
-RDATE (DDMMYY8.)       : 30/06/26
-RPTDT (YYMMDDN8.)      : 20260630
+First 10 row(s):
+ REPTDATE  BRANCH      TOTSAVG   SACNT     TOTSAVGI  ISACNT
+  24258.0     2.0 7.540922e+07  8992.0 2.446829e+07  6156.0
+  24258.0     3.0 1.841063e+08 16446.0 1.991325e+07  4840.0
+  24258.0     4.0 1.627434e+08 17802.0 4.402138e+07  6722.0
+  24258.0     5.0 1.566919e+08 17549.0 5.129836e+07 12761.0
+  24258.0     6.0 1.520562e+08 18902.0 4.178565e+07  7451.0
+  24258.0     7.0 4.104909e+08 51629.0 5.781853e+07 16611.0
+  24258.0     8.0 2.070762e+08 23194.0 2.766523e+07 10248.0
+  24258.0     9.0 2.318356e+08 27012.0 3.851698e+07  7615.0
+  24258.0    10.0 1.863996e+08 27435.0 3.705644e+07  8543.0
+  24258.0    11.0 8.732713e+07 10751.0 1.710464e+07  4893.0
 
---- MAPPED SET_IDs (54) ---
-  'LCR-FIOPSDEP' -> 0140_1
-  'OBS00100100' -> 0260_1
-  'S-ACCEXP' -> 0076_3
-  'S-AFRECADV' -> 0076_3
-  'S-ALLW COMM' -> 0076_3
-  'S-BNM' -> 0152_1
-  'S-BNM BILL M' -> 0152_1
-  'S-BNM BILL T' -> 0152_1
-  'S-BNM O/N' -> 0152_1
-  'S-BNM(AFS)' -> 0152_1
-  'S-BNMFL' -> 0152_1
-  'S-BNMFL 1MTH' -> 0116_1
-  'S-CB' -> 0116_1
-  'S-CLIENT CTL' -> 0248_1
-  'S-D T ASSETS' -> 0247_3
-  'S-DNBFI 1MTH' -> 0116_1
-  'S-DTAX' -> 0247_3
-  'S-GUARANTEE' -> 0260_1
-  'S-HFT' -> 0206_1
-  'S-IA' -> 0247_3
-  'S-IAISLDE(D)' -> 0247_3
-  'S-ISLAMIC(A)' -> 0206_1
-  'S-ISLPDS (I)' -> 0206_1
-  'S-LBFD' -> 0116_1
-  'S-LBFL' -> 0116_1
-  'S-LBFL 1MTH' -> 0116_1
-  'S-LEASE ROUA' -> 0076_3
-  'S-LOANCONTRO' -> 0076_3
-  'S-MARGIN COL' -> 0245_3
-  'S-MBFL 1MTH' -> 0116_1
-  'S-MGS' -> 0206_1
-  'S-MTN LN' -> 0206_1
-  'S-O/S PUR C' -> 0248_1
-  'S-OS SALES' -> 0074_1
-  'S-PB CA OTH' -> 0116_1
-  'S-PBB CUR' -> 0116_1
-  'S-PBS DLRS' -> 0076_1
-  'S-PBS PAYB' -> 0076_3
-  'S-PETTY CASH' -> 0084_1
-  'S-PIBB CUR' -> 0116_1
-  'S-PROVCLGFEE' -> 0076_3
-  'S-PROVOTH' -> 0076_3
-  'S-PROVTAX(C)' -> 0076_3
-  'S-RCF' -> 0256_1
-  'S-REMI CA' -> 0076_1
-  'S-REMI FD' -> 0116_1
-  'S-SHARE' -> 0006_3
-  'S-SM F' -> 0256_1
-  'S-SSTPAY' -> 0076_1
-  'S-STADEPBNM' -> 0085_3
-  'S-SUNCRE' -> 0076_3
-  'S-SUNCRE KAP' -> 0076_3
-  'S-TERMLN' -> 0206_1
-  'S-TLF' -> 0256_1
 
---- UNMAPPED SET_IDs (687) ---
-  ''
-  '0260630'
-  '49760000000Y'
-  '49860000000Y'
-  '89000000000A'
-  '89000000000B'
-  '89000000000Y'
-  'EQCNV'
-  'EXP-FEE'
-  'EXP-FEEA'
-  'EXP-FEEB'
-  'EXP-INT'
-  'EXP-OEXPADM'
-  'EXP-OEXPADM1'
-  'EXP-OEXPADM2'
-  'EXP-OEXPEST'
-  'EXP-OEXPMK'
-  'EXP-OEXPSC'
-  'FINPO M_01'
-  'FKCOA'
-  'FWD PUR ASS'
-  'INTPLAC(BNM)'
-  'INTPLC(INTB)'
-  'LCR-CAB'
-  'LCR-CLIENT'
-  'LCR-FI30DAYS'
-  'LCR-NONOPSDP'
-  'LCR-ONPLCCB'
-  'LCR-OTH'
-  'OBS00300110'
-  'OBS00500100'
-  'OBS00500200'
-  'OBS02100050'
-  'OBS02200050'
-  'OBS03000050'
-  'OBS12200050'
-  'P-ALL'
-  'P-B&C BRCOM'
-  'P-B&C CD'
-  'P-B&C EBROK'
-  'P-B&C PMB'
-  'P-B&C REM'
-  'P-B&CREBATE'
-  'P-BS CD'
-  'P-BS REM'
-  'P-BS REMPROV'
-  'P-CF FEE W/O'
-  'P-IMPRLOSS'
-  'P-INTEXPN'
-  'P-INTIDF'
-  'P-INTINCDRM'
-  'P-INTINCN'
-  'P-INTIODLRS'
-  'P-INTIOREM'
-  'P-INTIOSM'
-  'P-INTIREPO'
-  'P-INTOTH'
-  'P-LOANBDR'
-  'P-LOANLOSSP'
-  'P-NFICOMSI'
-  'P-NFIDIVINC'
-  'P-NFIMISC'
-  'P-NFIMSGAIN'
-  'P-NFIP/LFA'
-  'P-NFISTE A/C'
-  'P-NIIBROKE'
-  'P-NONINTBC'
-  'P-NONINTINCA'
-  'P-OVERHEXP'
-  'P-OVERHEXP01'
-  'P-OVERHEXP02'
-  'P-OVERHEXP03'
-  'P-OVERHEXP04'
-  'P-OVERHEXP05'
-  'P-OVERHEXP06'
-  'P-OVERHEXP09'
-  'P-PBDW/B'
-  'P-PROPDIV'
-  'P-RETPROFFWD'
-  'P-TAX REFUND'
-  'P-TAXATION'
-  'REV-G/L FINS'
-  'REV-INT'
-  'REV-NONINT'
-  'REV-OTH INC'
-  'REVAUD'
-  'REVAUDCTR'
-  'REVCAD'
-  'REVCADCTR'
-  'REVCNY'
-  'REVCNYCTR'
-  'REVEUR'
-  'REVEURCTR'
-  'REVGBP'
-  'REVGBPCTR'
-  'REVHKD'
-  'REVHKDCTR'
-  'REVIDR'
-  'REVIDRCTR'
-  'REVJPY'
-  'REVJPYCTR'
-  'REVSGD'
-  'REVSGDCTR'
-  'REVUSD'
-  'REVUSDCTR'
-  'S-ACCAMOR'
-  'S-ACCDEPNF&F'
-  'S-ACCDEPNMV'
-  'S-ACCDEPNO/E'
-  'S-ACCDEPRENO'
-  'S-AFS PIN BD'
-  'S-AFS UN-BNM'
-  'S-AFS UN-ISL'
-  'S-AFS UN-KHA'
-  'S-AFS UN-MGS'
-  'S-AFS UN-PDS'
-  'S-AFS UN-TRE'
-  'S-AFS UNREAL'
-  'S-AFSDIM PIN'
-  'S-AFSRES'
-  'S-AFSUN-NIDI'
-  'S-AMOPDSI(I)'
-  'S-AMORT MTN'
-  'S-AMORTBNMM'
-  'S-AMORTCAGT'
-  'S-AMORTIAS'
-  'S-AMORTKHA-O'
-  'S-AMORTMGI'
-  'S-AMORTMGI-A'
-  'S-AMORTMGS'
-  'S-AMORTMGS-A'
-  'S-AMORTMGST'
-  'S-AMORTPDS'
-  'S-AMORTPDS-A'
-  'S-AMORTPDST'
-  'S-AMORTPDSTI'
-  'S-AMRT NID A'
-  'S-AMTDUEFPBB'
-  'S-AMTDUEPCON'
-  'S-AMTDUEPMBB'
-  'S-AMTDUETPBB'
-  'S-AP S/OFF'
-  'S-AP SUS'
-  'S-BA'
-  'S-BA F'
-  'S-BA O/S'
-  'S-BAS'
-  'S-BAS IRIA'
-  'S-BAST'
-  'S-BGRECADV'
-  'S-BNM IRIADV'
-  'S-CAG'
-  'S-CAG FIX'
-  'S-CAG T'
-  'S-CAGANOTES'
-  'S-CAGANOTEST'
-  'S-CAGFL 1MTH'
-  'S-CB FEE REC'
-  'S-CGFL'
-  'S-CL CTL CR'
-  'S-COMPDEPNHW'
-  'S-COMPDEPNSW'
-  'S-COMPH/W'
-  'S-COMPS/W'
-  'S-CONTRA'
-  'S-CORPADVFEE'
-  'S-CSCOLP'
-  'S-CSCOLR'
-  'S-CURPNL'
-  'S-DEF RES'
-  'S-DEPNCOPMSW'
-  'S-DEPNF&F'
-  'S-DEPNH/W'
-  'S-DEPNMV'
-  'S-DEPNO/E'
-  'S-DH FIX'
-  'S-DH O/N'
-  'S-DHFL'
-  'S-DHFL 1MTH'
-  'S-DIM PDS D'
-  'S-DIM PIN BF'
-  'S-DIM ZNID M'
-  'S-DIMI CD LT'
-  'S-DIMI CD ST'
-  'S-DIMI MTB T'
-  'S-DIMKB'
-  'S-DNBFI I/B'
-  'S-DNBFI>1MTH'
-  'S-EALIS CUR'
-  'S-F&F'
-  'S-FCY STOCK'
-  'S-FCYSUNCRE'
-  'S-FD'
-  'S-FESTIVE'
-  'S-FIXED DEP'
-  'S-FRANKING'
-  'S-GEN RES'
-  'S-GOLF CM'
-  'S-GS TRE'
-  'S-GSTPAY'
-  'S-GSTPAY4'
-  'S-GSTPAY5'
-  'S-GSTREFUND'
-  'S-GSTREFUND2'
-  'S-GSTREFUND3'
-  'S-HFT UNREAL'
-  'S-HFTIUNREAL'
-  'S-IASLDE(D)'
-  'S-IIAKB'
-  'S-IMPAIRMENT'
-  'S-IMPRQUOTED'
-  'S-INT RR MGI'
-  'S-INTADVBNMA'
-  'S-INTADVBNMD'
-  'S-INTADVBNMM'
-  'S-INTADVISLI'
-  'S-INTADVKHAO'
-  'S-INTADVNCDS'
-  'S-INTADVNIDI'
-  'S-INTADVTREA'
-  'S-INTISLD(D)'
-  'S-INTPAY'
-  'S-INTPAYANID'
-  'S-INTPAYNIDA'
-  'S-INTREC MTN'
-  'S-INTREC RC1'
-  'S-INTREC'LN'
-  'S-INTREC'OTH'
-  'S-INTRECHFT'
-  'S-INTRECPBS'
-  'S-INTRECPLAC'
-  'S-INTRECREPO'
-  'S-IR'
-  'S-IR MGS T'
-  'S-IRAZNIDISL'
-  'S-IRBNMBILLM'
-  'S-IRCAG T'
-  'S-IRCAGANOTE'
-  'S-IRCAGNOTES'
-  'S-IRCAGT'
-  'S-IRIA KHAPL'
-  'S-IRISNID LT'
-  'S-IRISNID ST'
-  'S-IRMGI (I)'
-  'S-IRMGS T'
-  'S-IRMGS(D)'
-  'S-IRMGS(I)'
-  'S-IRNMBILL'
-  'S-IRNMBILLM'
-  'S-IRPDS'
-  'S-IRRAMTN(I)'
-  'S-IRRANIDINV'
-  'S-IRRANMTN'
-  'S-ISIRIABAS'
-  'S-ISL(A) INT'
-  'S-ISLDEBT(D)'
-  'S-ISLNCDZ'
-  'S-ISLPDSI(I)'
-  'S-ISS'
-  'S-KAPITICONV'
-  'S-KB'
-  'S-KHA INTOCI'
-  'S-KHA(FVOCI)'
-  'S-KHA(OCI)'
-  'S-KHA-PL'
-  'S-LB FIX'
-  'S-LB O/N'
-  'S-LBFL ISL 1'
-  'S-LCR L10'
-  'S-LCR L142'
-  'S-LCR L174'
-  'S-LCR L184'
-  'S-LCR L32'
-  'S-LOS RECKAP'
-  'S-LOSS PAYB'
-  'S-MB FIX'
-  'S-MB O/N'
-  'S-MBFL'
-  'S-MGI'
-  'S-MGI ACCRE'
-  'S-MGI D'
-  'S-MGI INT'
-  'S-MGI(A) INT'
-  'S-MGI(AFS)'
-  'S-MGIUNREAL'
-  'S-MGS T'
-  'S-MGS(A)'
-  'S-MGS(A) INT'
-  'S-MGSRR'
-  'S-MGSRRAFS'
-  'S-MGSRRHFT'
-  'S-MGSRRHTM'
-  'S-MM CTRAC'
-  'S-MTB IRIA'
-  'S-MTB T'
-  'S-MTB UNREAL'
-  'S-MTN'
-  'S-MTN(I)'
-  'S-MV'
-  'S-NCD(D) ISL'
-  'S-NCD(D) ST'
-  'S-NCD(D) STI'
-  'S-NCD(D)AMOR'
-  'S-NCD(D)I IN'
-  'S-NCD(D)UR2'
-  'S-NCD(D)URIS'
-  'S-NCDLT'
-  'S-NCDLTREPO'
-  'S-NCDST'
-  'S-NCDSTREPO'
-  'S-NCDZ'
-  'S-NCDZREPO'
-  'S-NID INT AF'
-  'S-NID(AFS)'
-  'S-NIDISL(A)'
-  'S-NIDST'
-  'S-NIDSTREPO'
-  'S-NIDZEREPO'
-  'S-NOM(A)/(T)'
-  'S-O/E'
-  'S-OTH LIAB'
-  'S-OTHPROV-DF'
-  'S-PACC'
-  'S-PACCA'
-  'S-PACCAFSISL'
-  'S-PACCAFSMGS'
-  'S-PACCAFSNID'
-  'S-PACCAFSPDS'
-  'S-PACCAGNT'
-  'S-PACCANIDST'
-  'S-PACCDSISL'
-  'S-PACCISCAGN'
-  'S-PBNOMINEES'
-  'S-PBS AESM'
-  'S-PBS DFDEBT'
-  'S-PBS SMDEBT'
-  'S-PBS TA'
-  'S-PDEPNSW'
-  'S-PDEPRENO'
-  'S-PDS'
-  'S-PDS(A)'
-  'S-PDS(A) INT'
-  'S-PDS(D)'
-  'S-PDS(D) INT'
-  'S-PFBDDCOL-A'
-  'S-PFBDDCOL-H'
-  'S-PFBDDCOLLA'
-  'S-PFBDDGEN'
-  'S-PFBDDGP'
-  'S-PFBDDSP'
-  'S-PFBDDSPEC'
-  'S-PFT CTRBAL'
-  'S-PFT RECKAP'
-  'S-PREPAYMENT'
-  'S-PROACCCAGT'
-  'S-PROACCMGST'
-  'S-PROACCPDS'
-  'S-PROACINIDT'
-  'S-PROCAGACCT'
-  'S-PROV CORP'
-  'S-PROV D ROU'
-  'S-PROVADVFEE'
-  'S-PROVGRA'
-  'S-PROVS'
-  'S-PROVSD'
-  'S-PROVTAX(D)'
-  'S-PROVXR'
-  'S-QUOTEDAFS'
-  'S-QUOTEDSH'
-  'S-REG RES'
-  'S-REMI FD 30'
-  'S-REMI FD 32'
-  'S-REMISIERFD'
-  'S-REMISIERS'
-  'S-RENO'
-  'S-REPOMGS'
-  'S-RETPROF'
-  'S-REVCRE'
-  'S-REVREAFMGS'
-  'S-REVREPBNM1'
-  'S-REVREPBNM2'
-  'S-REVREPOBNM'
-  'S-REVREPOHFT'
-  'S-REVREPOMGI'
-  'S-REVREPOMGS'
-  'S-REVRES'
-  'S-ROU ASSET'
-  'S-SNCD'
-  'S-SNIDZEROCO'
-  'S-STA RES'
-  'S-STAFFLN'
-  'S-STAFFSP'
-  'S-STD R/NR'
-  'S-STD&NETNID'
-  'S-SUNDEBT'
-  'S-SUNDEBTREC'
-  'S-SUNDEP'
-  'S-TAXREBATE'
-  'S-TRE IRIADV'
-  'S-TRE(A)'
-  'S-TREASBILL'
-  'S-U/W OBLI'
-  'S-U/WRECADV'
-  'S-UNINT'
-  'S-UNQUOAFS'
-  'S-UNQUOM'
-  'S-UNQUOOCI'
-  'S-UNQUOTOCI'
-  'S-UNR NID AF'
-  'S-UNREAL 0CD'
-  'S-UNREAL AFS'
-  'S-UNREAL BAS'
-  'S-UNREAL HFT'
-  'S-UNREAL MTN'
-  'S-UNREAL UQS'
-  'S-UNREALBNMD'
-  'S-UNREALCAG'
-  'S-UNREALCAGN'
-  'S-UNREALHFT'
-  'S-UNREALMGS'
-  'S-URMGI-A'
-  'SRR_01'
-  'T-ACDISCAGB'
-  'T-ACDISISL'
-  'T-ACDISLNID'
-  'T-ACDISLNIDT'
-  'T-ACDISMGST'
-  'T-ACDISNID'
-  'T-ACDISPDS'
-  'T-ADMINBOX'
-  'T-ADMOPERI'
-  'T-ADMRI'
-  'T-AGENCYFEE'
-  'T-ALWCORPFEE'
-  'T-BANKCHGRI'
-  'T-BDWOFF'
-  'T-CF FEE W/O'
-  'T-CFW/O'
-  'T-COMMISSION'
-  'T-CORPADVFEE'
-  'T-CUSTODIAN'
-  'T-DEPN ROUA'
-  'T-DFFEE'
-  'T-DIMVDEAL'
-  'T-DIMVIS'
-  'T-DIVIQS'
-  'T-DIVIUNS'
-  'T-DIVSEC'
-  'T-EAAUDIT'
-  'T-EABOOKNEWP'
-  'T-EABRCOM'
-  'T-EABREBATE'
-  'T-EADIRATALL'
-  'T-EADIRFEE'
-  'T-EADLRSLICE'
-  'T-EAGST'
-  'T-EAGST1'
-  'T-EAGST2'
-  'T-EAGSTA'
-  'T-EALEGAL'
-  'T-EALICENCE'
-  'T-EAOTCOMM'
-  'T-EAOTHERS'
-  'T-EAPNS'
-  'T-EAPOSTAGE'
-  'T-EAPROFEE'
-  'T-EARESSHA'
-  'T-EASTAMPD'
-  'T-EASUBS'
-  'T-EATELEPHO'
-  'T-ECBLOOMCOM'
-  'T-ECDEPN'
-  'T-ECGENREP'
-  'T-ECGUARANT'
-  'T-ECINSURAN'
-  'T-ECLNW'
-  'T-ECMAINSERV'
-  'T-ECRENFISS'
-  'T-ECUPKEEPOE'
-  'T-EMKTGADV'
-  'T-EMKTGENT'
-  'T-EMKTGOTH'
-  'T-EMKTGTRAV'
-  'T-EPCALLOW'
-  'T-EPCBEIS'
-  'T-EPCBKEPF'
-  'T-EPCBSOCSO'
-  'T-EPCEXGRAT'
-  'T-EPCINCBON'
-  'T-EPCOMEMS'
-  'T-EPCOSCD'
-  'T-EPCOSTL'
-  'T-EPCOT'
-  'T-EPCRBF'
-  'T-EPCS T&T'
-  'T-EPCSALLOW'
-  'T-EPCSALWAG'
-  'T-EPCSBONUS'
-  'T-EPCSTECF'
-  'T-EPCSTEDIR'
-  'T-EPCSTEEXP'
-  'T-EPCSTEFUND'
-  'T-EPCSTERIM'
-  'T-EPCSTETRAN'
-  'T-EPCSWLAU'
-  'T-EPCSWMED'
-  'T-EPCSWOTH'
-  'T-EPCSWSINS'
-  'T-ESTRI'
-  'T-FEEAGREEM'
-  'T-FEECLGFEE'
-  'T-FEECUSTOD'
-  'T-FEEOCOMM'
-  'T-FEEOOTHFEE'
-  'T-FEETRSF'
-  'T-FILE STAMP'
-  'T-FINES'
-  'T-GUARANTFEE'
-  'T-IEBA'
-  'T-IECDFD'
-  'T-IECDNID'
-  'T-IECDNID 2'
-  'T-IECOL'
-  'T-IEIBLB'
-  'T-IEIBMERBK'
-  'T-IEIBNCAG'
-  'T-IEIBNDISC'
-  'T-IEIBNOTH'
-  'T-IELEASE'
-  'T-IEOOTHERS'
-  'T-IEOSTD'
-  'T-IEURMGS'
-  'T-IEURNID'
-  'T-IEURRMGS'
-  'T-IISCHG'
-  'T-IISCHGBS'
-  'T-IMPRQUO'
-  'T-INC RR MGI'
-  'T-INQUOTED-A'
-  'T-INT  ROUA'
-  'T-INT MTN L'
-  'T-INTPEN'
-  'T-INVLBNM-A'
-  'T-INVLDBNM'
-  'T-INVLDCCMB'
-  'T-INVLDMGI'
-  'T-INVLDMGS'
-  'T-INVLDNCDST'
-  'T-INVLDPDS'
-  'T-INVLDPDSI'
-  'T-INVLDTB'
-  'T-INVLIMGI'
-  'T-INVLMGI-I'
-  'T-INVLMGS(A)'
-  'T-INVLQUOTED'
-  'T-INVNIDISS'
-  'T-INVPDBARED'
-  'T-INVPDBNM'
-  'T-INVPDBNM-A'
-  'T-INVPDCAG'
-  'T-INVPDISL'
-  'T-INVPDMGS'
-  'T-INVPDPDS'
-  'T-INVPDS'
-  'T-INVPDS(A)'
-  'T-INVPDTB'
-  'T-INVPIBA'
-  'T-INVPIBNM'
-  'T-INVPIMGI'
-  'T-INVPIMGS'
-  'T-INVPINBOND'
-  'T-INVPINID'
-  'T-INVPMGIAFS'
-  'T-INVPMGIHFT'
-  'T-INVPMGSAFS'
-  'T-INVQUOTEDS'
-  'T-IRAFSBNM'
-  'T-IRAFSIDS'
-  'T-IRAFSISNID'
-  'T-IRAFSKHA'
-  'T-IRAFSMGI'
-  'T-IRAFSMGS'
-  'T-IRAFSNIDST'
-  'T-IRAFSPDS'
-  'T-IRAFSTRE'
-  'T-IRDISLNID'
-  'T-IRDMGI'
-  'T-IRDSBAS'
-  'T-IRDSBNMB'
-  'T-IRDSCAGN'
-  'T-IRDSDOMB'
-  'T-IRDSIDS'
-  'T-IRDSMGI'
-  'T-IRDSMGS'
-  'T-IRDSNCD ST'
-  'T-IRDSNID'
-  'T-IRDSPDS'
-  'T-IRDSREVREP'
-  'T-IRDSRRMGS'
-  'T-IRDSTB'
-  'T-IRDTB'
-  'T-IRIBBNM'
-  'T-IRIBCAGAM'
-  'T-IRIBDISC'
-  'T-IRIBFINCO'
-  'T-IRIBLB'
-  'T-IRIBLIB'
-  'T-IRIBMERBK'
-  'T-IRIBOTHFI'
-  'T-IRISBNMB'
-  'T-IRISCAGB'
-  'T-IRISISLAM'
-  'T-IRISISLAMB'
-  'T-IRISKHA'
-  'T-IRISMGI'
-  'T-IRISMGS'
-  'T-IRISNID'
-  'T-IRISOBA'
-  'T-IRISPDS'
-  'T-IRISTB'
-  'T-IRLBAS'
-  'T-IRLREVCR'
-  'T-IRLSTAFFL'
-  'T-IRTL'
-  'T-ITD'
-  'T-ITD COMSE'
-  'T-ITD COMSTS'
-  'T-LEADMAFEE'
-  'T-LFBDCOLLA'
-  'T-LFBDGEN'
-  'T-LFBDOTHERS'
-  'T-LFBDRECOVE'
-  'T-LFBDSPEC'
-  'T-LFWRITEBK'
-  'T-LNLOSS'
-  'T-LOANPROC'
-  'T-LOSSDOFA'
-  'T-MIDSFEE'
-  'T-MKTOPERI'
-  'T-MKTRI'
-  'T-NBD'
-  'T-OE RENTAL'
-  'T-OIFAWO'
-  'T-OTHCOM'
-  'T-OTHEXP'
-  'T-OTHSOINC'
-  'T-PARTICIFE1'
-  'T-PARTICIFEE'
-  'T-PDISPFA'
-  'T-PLACEFEE'
-  'T-PREMCAGA'
-  'T-PREMIMGI'
-  'T-PREMIMGS'
-  'T-PREMKHZ'
-  'T-PREMLSNID'
-  'T-PREMMGIAFS'
-  'T-PREMMGS'
-  'T-PREMMGSAFS'
-  'T-PREMNIDISL'
-  'T-PREMNSTAFS'
-  'T-PREMPDS'
-  'T-PREMSSNID'
-  'T-REALFOREX'
-  'T-RECCORPFEE'
-  'T-RENT'
-  'T-RENT OFF'
-  'T-RENT STORE'
-  'T-ROUNDING'
-  'T-SAFEKEEP'
-  'T-SCF'
-  'T-SCL'
-  'T-SCORE FEE'
-  'T-SEC SER'
-  'T-SGR SCHEME'
-  'T-SPC'
-  'T-SPR'
-  'T-SRB SCHEME'
-  'T-STFOPERI'
-  'T-STFRI'
-  'T-TRANSF'
-  'T-TRBDGEN'
-  'T-TREMMGI'
-  'T-UNDWRITFEE'
-  'T-UNREALISED'
-  'TEST1'
-  'YRENDCBS'
-  'YRENDCPL'
-
---- GL (sorted by ITEM) ---
-shape: (57, 4)
-┌──────┬──────────────┬────────┬─────────────┐
-│ item ┆ utnma1       ┆ utnma2 ┆ utnma3      │
-│ ---  ┆ ---          ┆ ---    ┆ ---         │
-│ i64  ┆ f64          ┆ f64    ┆ f64         │
-╞══════╪══════════════╪════════╪═════════════╡
-│ 6    ┆ null         ┆ null   ┆ 170000.0    │
-│ 74   ┆ 124107.128   ┆ null   ┆ null        │
-│ 76   ┆ null         ┆ null   ┆ 24138.47917 │
-│ 76   ┆ null         ┆ null   ┆ 1456.66675  │
-│ 76   ┆ null         ┆ null   ┆ 118.98709   │
-│ …    ┆ …            ┆ …      ┆ …           │
-│ 256  ┆ 36353.9      ┆ null   ┆ null        │
-│ 256  ┆ 200880.96421 ┆ null   ┆ null        │
-│ 256  ┆ 250737.24549 ┆ null   ┆ null        │
-│ 260  ┆ 5700.0       ┆ null   ┆ null        │
-│ 260  ┆ 5700.0       ┆ null   ┆ null        │
-└──────┴──────────────┴────────┴─────────────┘
-
---- EQ ---
-shape: (15, 7)
-┌──────┬────────────┬────────┬────────┬──────────┬──────────┬────────────┐
-│ item ┆ utnma1     ┆ utnma2 ┆ utnma3 ┆ utnma4   ┆ utnma5   ┆ utnttl     │
-│ ---  ┆ ---        ┆ ---    ┆ ---    ┆ ---      ┆ ---      ┆ ---        │
-│ i64  ┆ f64        ┆ f64    ┆ f64    ┆ f64      ┆ f64      ┆ f64        │
-╞══════╪════════════╪════════╪════════╪══════════╪══════════╪════════════╡
-│ 11   ┆ 0.0        ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 0.0        │
-│ 13   ┆ 1.3058e8   ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.3058e8   │
-│ 15   ┆ 1.3058e8   ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 1.3058e8   │
-│ 25   ┆ 3.040127e8 ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 3.040127e8 │
-│ 27   ┆ 3.040127e8 ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 3.040127e8 │
-│ …    ┆ …          ┆ …      ┆ …      ┆ …        ┆ …        ┆ …          │
-│ 128  ┆ 0.0        ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 2.8597e8 ┆ 2.8597e8   │
-│ 194  ┆ 0.0        ┆ 0.0    ┆ 0.0    ┆ 2.0102e7 ┆ 9.5453e7 ┆ 1.1555e8   │
-│ 206  ┆ 2.3e8      ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 2.3e8      │
-│ 251  ┆ 977213.7   ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 977213.7   │
-│ 282  ┆ 3.040127e8 ┆ 0.0    ┆ 0.0    ┆ 0.0      ┆ 0.0      ┆ 3.040127e8 │
-└──────┴────────────┴────────┴────────┴──────────┴──────────┴────────────┘
-
---- LCRALL (SRC, ITEM, UTNMA1-3) ---
-shape: (77, 5)
-┌─────┬──────┬────────────┬────────┬─────────────┐
-│ src ┆ item ┆ utnma1     ┆ utnma2 ┆ utnma3      │
-│ --- ┆ ---  ┆ ---        ┆ ---    ┆ ---         │
-│ str ┆ i64  ┆ f64        ┆ f64    ┆ f64         │
-╞═════╪══════╪════════════╪════════╪═════════════╡
-│ WLK ┆ 6    ┆ null       ┆ null   ┆ 170000.0    │
-│ WLK ┆ 74   ┆ 124107.128 ┆ null   ┆ null        │
-│ WLK ┆ 76   ┆ null       ┆ null   ┆ 24138.47917 │
-│ WLK ┆ 76   ┆ null       ┆ null   ┆ 1456.66675  │
-│ WLK ┆ 76   ┆ null       ┆ null   ┆ 118.98709   │
-│ …   ┆ …    ┆ …          ┆ …      ┆ …           │
-│ MNL ┆ 6    ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-│ MNL ┆ 11   ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-│ MNL ┆ 76   ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-│ MNL ┆ 247  ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-│ MNL ┆ 251  ┆ 0.0        ┆ 0.0    ┆ 0.0         │
-└─────┴──────┴────────────┴────────┴─────────────┘
-
---- TOTLCR ALL---
-shape: (29, 5)
-┌──────┬──────────────┬──────────┬─────────────┬────────────┐
-│ item ┆ utnma1       ┆ utnma2   ┆ utnma3      ┆ utnttl     │
-│ ---  ┆ ---          ┆ ---      ┆ ---         ┆ ---        │
-│ i64  ┆ f64          ┆ f64      ┆ f64         ┆ f64        │
-╞══════╪══════════════╪══════════╪═════════════╪════════════╡
-│ 6    ┆ 0.0          ┆ 0.0      ┆ 170000.0    ┆ 0.0        │
-│ 11   ┆ 0.0          ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 13   ┆ 1.3058e8     ┆ 0.0      ┆ 0.0         ┆ 1.3058e8   │
-│ 15   ┆ 1.3058e8     ┆ 0.0      ┆ 0.0         ┆ 1.3058e8   │
-│ 25   ┆ 3.040127e8   ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
-│ 27   ┆ 3.040127e8   ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
-│ 32   ┆ 8.1654e8     ┆ 2.04e8   ┆ 1.05e8      ┆ 1.1255e9   │
-│ 34   ┆ 3.2261e8     ┆ 2.9e7    ┆ 5e6         ┆ 3.5661e8   │
-│ 35   ┆ 4.9393e8     ┆ 1.75e8   ┆ 1e8         ┆ 7.6893e8   │
-│ 74   ┆ 124107.128   ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 76   ┆ 1.3076e6     ┆ 2.6908e6 ┆ 1.8961e6    ┆ 5.8143e6   │
-│ 84   ┆ 1.0          ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 85   ┆ 0.0          ┆ 0.0      ┆ 21119.0     ┆ 0.0        │
-│ 86   ┆ 0.0          ┆ 0.0      ┆ 21119.0     ┆ 0.0        │
-│ 116  ┆ 5155.82183   ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 122  ┆ 0.0          ┆ 0.0      ┆ 0.0         ┆ 1.2394e9   │
-│ 128  ┆ 0.0          ┆ 0.0      ┆ 0.0         ┆ 2.8597e8   │
-│ 140  ┆ 12173.95044  ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 152  ┆ 17.70702     ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 194  ┆ 0.0          ┆ 0.0      ┆ 0.0         ┆ 1.1555e8   │
-│ 206  ┆ 2.3114e8     ┆ 0.0      ┆ 0.0         ┆ 2.3e8      │
-│ 245  ┆ 0.0          ┆ 0.0      ┆ 3112.11957  ┆ 0.0        │
-│ 246  ┆ 0.0          ┆ 0.0      ┆ 3112.11957  ┆ 0.0        │
-│ 247  ┆ 0.0          ┆ 0.0      ┆ 41518.70407 ┆ 0.0        │
-│ 248  ┆ 153064.17386 ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 251  ┆ 977213.7     ┆ 0.0      ┆ 0.0         ┆ 977213.7   │
-│ 256  ┆ 487972.1097  ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 260  ┆ 11400.0      ┆ 0.0      ┆ 0.0         ┆ 0.0        │
-│ 282  ┆ 3.040127e8   ┆ 0.0      ┆ 0.0         ┆ 3.040127e8 │
-└──────┴──────────────┴──────────┴─────────────┴────────────┘
-
---- ITEM 76 DETAILS (all rows) ---
-shape: (16, 4)
-┌─────┬────────────┬──────────┬─────────────┐
-│ src ┆ utnma1     ┆ utnma2   ┆ utnma3      │
-│ --- ┆ ---        ┆ ---      ┆ ---         │
-│ str ┆ f64        ┆ f64      ┆ f64         │
-╞═════╪════════════╪══════════╪═════════════╡
-│ WLK ┆ null       ┆ null     ┆ 24138.47917 │
-│ WLK ┆ null       ┆ null     ┆ 1456.66675  │
-│ WLK ┆ null       ┆ null     ┆ 118.98709   │
-│ WLK ┆ null       ┆ null     ┆ 24242.22065 │
-│ WLK ┆ null       ┆ null     ┆ 0.0         │
-│ WLK ┆ 4247.75538 ┆ null     ┆ null        │
-│ WLK ┆ null       ┆ null     ┆ 2158.73369  │
-│ WLK ┆ null       ┆ null     ┆ 847.66818   │
-│ WLK ┆ null       ┆ null     ┆ 0.0         │
-│ WLK ┆ null       ┆ null     ┆ 2955.1865   │
-│ WLK ┆ 687.46825  ┆ null     ┆ null        │
-│ WLK ┆ 719.43468  ┆ null     ┆ null        │
-│ WLK ┆ null       ┆ null     ┆ 18586.01221 │
-│ WLK ┆ null       ┆ null     ┆ 55.69319    │
-│ EQU ┆ 1.3019e6   ┆ 2.6908e6 ┆ 1.8216e6    │
-│ MNL ┆ 0.0        ┆ 0.0      ┆ 0.0         │
-└─────┴────────────┴──────────┴─────────────┘
-
---- DEBUG: Item contributions from GL (src='WLK') ---
-
-ITEM 206:
-shape: (6, 5)
-┌─────┬──────┬──────────────┬────────┬────────┐
-│ src ┆ item ┆ utnma1       ┆ utnma2 ┆ utnma3 │
-│ --- ┆ ---  ┆ ---          ┆ ---    ┆ ---    │
-│ str ┆ i64  ┆ f64          ┆ f64    ┆ f64    │
-╞═════╪══════╪══════════════╪════════╪════════╡
-│ WLK ┆ 206  ┆ 120000.0     ┆ null   ┆ null   │
-│ WLK ┆ 206  ┆ 115000.0     ┆ null   ┆ null   │
-│ WLK ┆ 206  ┆ 215000.0     ┆ null   ┆ null   │
-│ WLK ┆ 206  ┆ 120000.0     ┆ null   ┆ null   │
-│ WLK ┆ 206  ┆ 129860.0     ┆ null   ┆ null   │
-│ WLK ┆ 206  ┆ 438814.25401 ┆ null   ┆ null   │
-└─────┴──────┴──────────────┴────────┴────────┘
-  EQ rows:
-shape: (1, 5)
-┌─────┬──────┬────────┬────────┬────────┐
-│ src ┆ item ┆ utnma1 ┆ utnma2 ┆ utnma3 │
-│ --- ┆ ---  ┆ ---    ┆ ---    ┆ ---    │
-│ str ┆ i64  ┆ f64    ┆ f64    ┆ f64    │
-╞═════╪══════╪════════╪════════╪════════╡
-│ EQU ┆ 206  ┆ 2.3e8  ┆ 0.0    ┆ 0.0    │
-└─────┴──────┴────────┴────────┴────────┘
-
-ITEM 247:
-shape: (4, 5)
-┌─────┬──────┬────────┬────────┬────────────┐
-│ src ┆ item ┆ utnma1 ┆ utnma2 ┆ utnma3     │
-│ --- ┆ ---  ┆ ---    ┆ ---    ┆ ---        │
-│ str ┆ i64  ┆ f64    ┆ f64    ┆ f64        │
-╞═════╪══════╪════════╪════════╪════════════╡
-│ WLK ┆ 247  ┆ null   ┆ null   ┆ 6620.99724 │
-│ WLK ┆ 247  ┆ null   ┆ null   ┆ 6620.99724 │
-│ WLK ┆ 247  ┆ null   ┆ null   ┆ 28000.0    │
-│ WLK ┆ 247  ┆ null   ┆ null   ┆ 276.70959  │
-└─────┴──────┴────────┴────────┴────────────┘
-
-ITEM 251:
-  No GL rows
-  EQ rows:
-shape: (1, 5)
-┌─────┬──────┬──────────┬────────┬────────┐
-│ src ┆ item ┆ utnma1   ┆ utnma2 ┆ utnma3 │
-│ --- ┆ ---  ┆ ---      ┆ ---    ┆ ---    │
-│ str ┆ i64  ┆ f64      ┆ f64    ┆ f64    │
-╞═════╪══════╪══════════╪════════╪════════╡
-│ EQU ┆ 251  ┆ 977213.7 ┆ 0.0    ┆ 0.0    │
-└─────┴──────┴──────────┴────────┴────────┘
+B001 PCS   BANK-ATMC                             C                              
+B002 JSS   JALAN SULTAN SULAIMAN            W    O                              
+B003 JRC   JALAN RAJA CHULAN                W    O                              
+B004 MLK   MELAKA                           M    O                              
+B005 IMO   IPOH MAIN OFFICE                 A    O                              
+B006 PPG   PULAU PINANG                     P    O                              
+B007 JBU   JOHOR BAHRU                      J    O                              
+B008 KTN   KUANTAN                          C    O                              
+B009 JYK   JALAN YANG KALSOM                A    O                              
+B010 ASR   ALOR SETAR                       K    O                              
+B011 GRN   GURUN                            K    O                              
+B012 PPH   PASIR PUTEH                      D    C                              
+B013 KBU   KOTA BAHRU                       D    O                              
+B014 TMH   TANAH MERAH                      D    O                              
+B015 KPG   KEPONG                           W    O                              
+B016 NLI   NILAI                            N    O                              
+B017 TPN   TAMPIN                           N    O                              
+B018 PJN   PJ NEW TOWN                      B    O                              
+B019 DUA   DAMASARA UTAMA                   B    O                              
+B020 TCL   TAMAN CHI LIUNG                  B    O                              
+B021 BPT   BATU PAHAT                       J    O                              
+B022 SMY   SEMENYIH                         B    O                              
+B023 KMT   KAMUNTING                        A    O                              
+B024 RSH   RASAH                            N    O                              
+B025 SAM   SHAH ALAM                        B    O                              
+B026 SPG   SERI PETALING                    W    O                              
+B027 NTL   NIBONG TEBAL                     P    O                              
+B028 MUA   MUAR                             J    O                              
+B029 JRL   JALAN RAJA LAUT                  W    O                              
+B030 KTU   KUALA TERENGGANU                 T    O                              
+B031 SKC   SEKINCHAN                        B    O                              
+B032 WSS   WISMA SABERKAS                   Q    O                              
+B033 KKU   KOTA KINABALU                    S    O                              
+B034 KGR   KANGAR                           R    O                              
+B035 SSA   SERI SETIA                       B    O                              
+B036 SS2   SS2                              B    O                              
+B037 TSA   TAMAN SENTOSA                    J    O                              
+B038 JKL   JALAN KLANG LAMA                 W    O                              
+B039 KKG   KUALA KELAWANG                   N    O                              
+B040 JSB   JALAN SUNGAI BESI                W    O                              
+B041 JIH   JALAN IPOH                       W    O                              
+B042 BMM   BUKIT MERTAJAM                   P    O                              
+B043 BTG   BANTING                          B    O                              
+B044 TWU   TAWAU                            S    O                              
+B045 SRB   SEREMBAN                         N    O                              
+B046 APG   AMPANG                           B    O                              
+B047 SGM   SEGAMAT                          J    O                              
+B048 MTK   MENTAKAB                         C    O                              
+B049 JLP   JELAPANG                         A    O                              
+B050 MRI   MIRI                             Q    O                              
+B051 SMG   SERI MANJUNG                     A    O                              
+B052 UTM   ULU TIRAM                        J    O                              
+B053 TMI   TAMAN MALURI                     W    O                              
+B054 BBB   BANDAR BAYAN BARU                P    O                              
+B055 LBN   LABUAN                           L    O                              
+B056 KJG   KAJANG                           B    O                              
+B057 SPI   SUNGAI PETANI                    K    O                              
+B058 SBU   SIBU                             Q    O                              
+B059 PKL   PONTIAN KECIL                    J    O                              
+B060 BAM   BAGAN AJAM                       P    O                              
+B061 KLI   KULAI                            J    O                              
+B062 SDK   SANDAKAN                         S    O                              
+B063 GMS   GEMAS                            N    O                              
+B064 PDN   PORT DICKSON                     N    O                              
+B065 BHU   BAHAU                            N    O                              
+B066 BDA   BUKIT DAMANSARA                  W    O                              
+B067 CMR   CHEMOR                           A    O                              
+B068 SAT   SIMPANG AMPAT                    P    O                              
+B069 BKI   BATANG KALI                      B    O                              
+B070 PSA   POKOK SENA                       K    O                              
+B071 BCG   BRINCHANG                        C    O                              
+B072 PPR   PAPAR                            S    O                              
+B073 SPK   SUNGAI PELEK                     B    O                              
+B074 SIK   SIK                              K    O                              
+B075 CAH   CHAAH                            J    O                              
+B076 PRS   PANTAI REMIS                     A    O                              
+B077 PLI   PULAU LANGKAWI                   K    O                              
+B078 SJA   SUBANG JAYA                      B    O                              
+B079 MSI   MASAI                            J    O                              
+B080 MLB   MENGLEMBU                        A    O                              
+B081 SBH   SUNGAI BULOH                     B    O                              
+B082 MCG   MACHANG                          D    C                              
+B083 JBB   JALAN BUKIT BINTANG              W    O                              
+B084 PMS   PASIR MAS                        D    C                              
+B085 SST   SUNGEI SIPUT                     A    O                              
+B086 CLN   CHANGLUN                         K    O                              
+B087 MSG   MERSING                          J    O                              
+B088 KUM   KULIM                            K    O                              
+B089 TPI   TAMPOI                           J    O                              
+B090 BTL   BINTULU                          Q    O                              
+B091 KUG   KLUANG                           J    O                              
+B092 KLG   KLANG                            B    O                              
+B093 EDU   ENDAU                            J    O                              
+B094 STP   SETAPAK                          W    O                              
+B095 TIN   TELUK INTAN                      A    O                              
+B096 SGK   SERI GOMBAK                      B    O                              
+B097 HSL   JALAN TUN HS LEE                 W    O                              
+B098 TCY   TAMAN CENTURY                    J    C                              
+B099 XXX   NOT ASSIGNED                          C                              
+B100 YYY   NOT ASSIGNED                          C                              
+B101 KBR   KAMPUNG BARU                     W    O                              
+B102 PRJ   PARIT RAJA                       J    O                              
+B103 JJG   JINJANG                          W    O                              
+B104 KKL   KUALA KETIL                      K    O                              
+B105 KTI   KOTA TINGGI                      J    O                              
+B106 CKI   CHUKAI                           T    O                              
+B107 JLT   JELUTONG                         P    O                              
+B108 BSI   BAGAN SERAI                      A    O                              
+B109 KSR   KUALA SELANGOR                   B    O                              
+B110 TJJ   TMN JOHOR JAYA                   J    O                              
+B111 AKH   AIR KEROH                        M    O                              
+B112 LDO   LIDO                             S    O                              
+B113 TML   TEMERLOH                         C    O                              
+B114 BBA   BANDAR BARU AIR ITAM             P    O                              
+B115 KNG   KENINGAU                         S    O                              
+B116 TRI   TRIANG                           C    O                              
+B117 KKI   KUALA KRAI                       D    O                              
+B118 TMW   TAMAN MELAWATI                   B    O                              
+B119 BNV   BERCHAM NV                       A    C                              
+B120 PIH   PANDAN INDAH                     B    O                              
+B121 PRA   PRAI                             P    O                              
+B122 SKN   SERI KEMBANGAN                   B    O                              
+B123 IGN   IPOH GARDEN                      A    O                              
+B124 S14   SECTION 14                       B    O                              
+B125 KJA   KELANA JAYA                      B    O                              
+B126 PTS   PULAU TIKUS                      P    O                              
+B127 TSM   TAMAN SERI MUDA                  B    O                              
+B128 SGB   SEGAMBUT                         W    O                              
+B129 BSR   BANGSAR                          W    O                              
+B130 PDG   PADUNGAN                         Q    O                              
+B131 TMG   TAMAN MAYANG                     B    O                              
+B132 CKT   CHOW KIT                         W    C                              
+B133 PKG   PORT KLANG                       B    O                              
+B134 RPG   RANTAU PANJANG                   D    C                              
+B135 BSY   BANDAR SUNWAY                    B    O                              
+B136 TCS   TAMAN CHERAS                     W    O                              
+B137 JPP   JALAN PASIR PUTIH                A    O                              
+B138 WMU   WANGSA MAJU                      W    O                              
+B139 JRT   JERANTUT                         C    O                              
+B140 CPE   CITY PARADE                      S    O                              
+B141 STL   SENTUL                           W    O                              
+B142 KBD   KOTA BELUD                       S    O                              
+B143 LDU   LAHAD DATU                       S    O                              
+B144 KHG   KAHANG                           J    O                              
+B145 BSD   BANDAR SERI DAMANSARA            B    O                              
+B146 PSG   PUSING                           A    O                              
+B147 PNS   PEKAN NENAS                      J    O                              
+B148 PJO   PJ OLD TOWN                      B    O                              
+B149 BFT   BEAUFORT                         S    O                              
+B150 LMM   LEBUH MACALLUM                   P    O                              
+B151 SLY   SELAYANG                         W    O                              
+B152 ATR   AYER TAWAR                       A    O                              
+B153 USJ   USJ                              B    O                              
+B154 BSJ   BANDAR SEBERANG JAYA             P    O                              
+B155 TTJ   TAMAN TAMING JAYA                B    O                              
+B156 TMR   TAMAN MELAKA RAYA                M    O                              
+B157 BPJ   BANDAR PUCHONG JAYA              B    O                              
+B158 SPL   SIMPANG PULAI                    A    O                              
+B159 RLU   RELAU                            P    O                              
+B160 MTH   MASJID TANAH                     M    O                              
+B161 DGG   DONGGONGAN                       S    O                              
+B162 SEA   SEA PARK                         B    O                              
+B163 JKA   JALAN KUCHAI LAMA                W    O                              
+B164 KBS   KEPALA BATAS                     P    O                              
+B165 TKA   TENGKERA                         M    O                              
+B166 PGG   PASIR GUDANG                     J    C                              
+B167 BBG   BUKIT BERUNTUNG                  B    O                              
+B168 KLC   KL CITY MAIN OFFICE              W    O                              
+B169 CTD   CHANGKAT THAMBI DOLLAH           W    O                              
+B170 PJA   PANDAN JAYA                      B    O                              
+B171 JMR   JALAN MACALISTER                 P    O                              
+B172 TMJ   TAMAN MALIM JAYA                 M    O                              
+B173 SCA   SUNGAI CHUA                      B    O                              
+B174 BBP   BANDAR BARU PERMAS JAYA          J    O                              
+B175 LBG   LIMBANG                          Q    O                              
+B176 TPG   TAMAN PERLING                    J    O                              
+B177 JRU   JALAN RAJA UDA                   P    O                              
+B178 MIN   MEDAN IDAMAN                     W    O                              
+B179 OUG   OVERSEAS UNION GARDEN            W    O                              
+B180 KBG   KAMPUNG BARU SUBANG              B    O                              
+B181 SRO   SIBU REGIONAL OFFICE             Q    C                              
+B182 JPU   JALAN PULAU SIBU                 Q    C                              
+B183 JCL   JALAN CENTRAL                    Q    O                              
+B184 JPN   JALAN PENRISSEN                  Q    O                              
+B185 KCY   KUCHING CITY                     Q    O                              
+B186 JTZ   JALAN TUN ZAIDI                  Q    O                              
+B187 CST   CHINA STREET                     Q    O                              
+B189 BNH   BATU NIAH                        Q    O                              
+B190 BTR   BINTANGOR                        Q    O                              
+B191 KPT   KAPIT                            Q    O                              
+B192 MRD   MARUDI                           Q    O                              
+B193 MKH   MUKAH                            Q    O                              
+B194 SRK   SARIKEI                          Q    O                              
+B195 BWK   BINTANG WALK                     W    O                              
+B196 JHL   JALAN HANG LEKIU                 W    O                              
+B197 TNM   TIONG NAM                        W    O                              
+B198 TDA   TAMAN DESA                       W    O                              
+B199 JTH   JALAN TAPAH                      B    O                              
+B200 JSK   JALAN SERI KEMBANGAN             B    C                              
+B201 PDA   PANDAMARAN                       B    O                              
+B202 RWG   RAWANG                           B    O                              
+B203 SJM   SUNGAI JAROM                     B    O                              
+B204 BTW   BUTTERWORTH                      P    O                              
+B205 SNG   SUNGAI NIBONG                    P    O                              
+B206 TBM   TAMAN BUKIT MAS                  P    O                              
+B207 BCM   BERCHAM                          A    O                              
+B208 JSI   JALAN SULTAN IDRIS SHAH          A    O                              
+B209 STW   SITIAWAN                         A    O                              
+B210 TMM   TANJUNG MALIM                    A    O                              
+B211 TPD   TANJUNG PIANDANG                 A    O                              
+B212 JMA   JALAN MUNSHI ABDULLAH            M    C                              
+B213 JKB   JALAN KG BARU,SG PETANI          K    C                              
+B214 JGA   JALAN GEREJA                     J    C                              
+B215 JKP   JALAN KUKUP                      J    C                              
+B216 SKI   SKUDAI                           J    O                              
+B217 TMB   TAMAN MUNSYI IBRAHIM             J    O                              
+B218 ZZZ   NOT ASSIGNED                          C                              
+B219 BC1   BUREAU DE CHANGE                 C    C                              
+B220 GHS   GENTING HIGHLANDS                C    O                              
+B221 TSK   TAMAN SENTOSA KLANG              B    O                              
+B222 TDC   TAMAN DESA CEMERLANG             J    O                              
+B223 TRJ   TAMAN RASAH JAYA                 N    C                              
+B224 JAH   JALAN ABDULLAH                   J    O                              
+B225 TIH   TAMAN INDAH                      B    O                              
+B226 JPR   JALAN PASAR                      W    O                              
+B227 KSB   KAMPUNG BARU SUNGAI BULOH        B    C                              
+B228 INN   INANAM                           S    O                              
+B229 TSJ   TAMAN SELAYANG JAYA              B    C                              
+B230 SSH   SALAK SOUTH                      W    O                              
+B231 BBM   BATU BERENDAM                    M    O                              
+B232 TMD   TAMAN MIDAH                      W    O                              
+B233 BEN   BENTONG                          C    O                              
+B234 SRM   SIMPANG RENGGAM                  J    O                              
+B235 SBM   SABAK BERNAM                     B    O                              
+B236 UYB   ULU YAM BARU                     B    C                              
+B237 KLS   KUALA LIPIS                      C    O                              
+B238 JKT   JALAN KOTA                       K    O                              
+B239 KMY   KEMAYAN                          C    O                              
+B240 KAP   KAPAR                            B    O                              
+B241 DJA   DAMANSARA JAYA                   B    O                              
+B242 TKK   TANGKAK                          J    O                              
+B243 KKR   KUALA KANGSAR                    A    O                              
+B244 GRT   GUNUNG RAPAT                     A    O                              
+B245 BDR   BIDOR                            A    O                              
+B246 BGH   BATU GAJAH                       A    C                              
+B247 BPR   BUKIT PASIR                      J    O                              
+B248 JTS   JALAN TUN SAMBANTHAN             W    O                              
+B249 TAI   TAIPING                          A    O                              
+B250 TEA   TAMAN ENG ANN                    B    C                              
+B251 KPR   KAMPAR                           A    O                              
+B252 TMA   TAMAN MUDA                       B    O                              
+B253 JTT   JALAN TANJUNG TOKONG             P    C                              
+B254 KPH   KUALA PILAH                      N    O                              
+B255 SBP   SUNGAI BAKAP                     P    C                              
+B256 PBR   PARIT BUNTAR                     A    O                              
+B257 RAU   RAUB                             C    O                              
+B258 JTA   JITRA                            K    O                              
+B259 SAN   SRI AMAN                         Q    O                              
+B260 KDN   KUALA DUNGUN                     T    O                              
+B261 GMG   GUA MUSANG                       D    O                              
+B262 TCT   TAMAN CONNAUGHT                  W    O                              
+B263 BTA   BENTA                            C    O                              
+B264 JBH   JALAN BESERAH                    C    O                              
+B265 JAI   JALAN AIR ITAM                   P    O                              
+B266 JDK   JALAN DATUK KERAMAT              P    O                              
+B267 TDI   TAMAN TUN DR. ISMAIL             W    O                              
+B268 BBT   BANDAR BUKIT TINGGI              B    O                              
+B269 MKA   MONT KIARA                       W    O                              
+B270 BPI   BANDAR PUTERI PUCHONG            B    O                              
+B273 LHA   LI HUA                           Q    O                              
+B274 STG   STUTONG                          Q    O                              
+B275 MSL   MEDAN SENTRAL                    Q    O                              
+B276 JAS   JALAN APAS                       S    O                              
+B277 WSU   WAKAF SIKU                       D    O                              
+B278 JPI   JALAN PANTAI                     S    O                              
+B279 PTJ   PUTRAJAYA                        W    O                              
+B280 KDA   KOTA DAMANSARA                   B    O                              
+B281 PLT   PELITA                           Q    O                              
+B282 PTT   PUTATAN                          S    O                              
+B283 PSE   PRIMA SQUARE                     S    O                              
+B284 BSP   BANDAR SRI PERMAISURI            W    O                              
+B285 BMC   BANDAR MAHKOTA CHERAS            B    O                              
+B286 BIH   BUKIT INDAH                      J    O                              
+B287 SUA   SUTERA UTAMA                     J    O                              
+B288 SPT   STARPARC POINT                   W    O                              
+B289 TEE   TAMAN EQUINE BRANCH              B    O                              
+B290 TDY   TAMAN DAYA BRANCH                J    O                              
+B291 BSL   BANDAR SUNGAI LONG               B    O                              
+B292 BMJ   BANDAR MENJALARA                 W    O                              
+B293 BSA   BANDAR SETIA ALAM                B    O                              
+B294 KKM   KOTA KEMUNING                    B    O                              
+B295 BKR   BANDAR KINRARA                   B    O                              
+B296 BJL   BUKIT JALIL                      W    O                              
+B310 TRE   TREASURY                         W                                   
+B701 IKB   ISLAMIC KAMPUNG BARU             W    O                              
+B702 IPJ   PUTRAJAYA                        W    O                              
+B703 IWS   WAKAF SIKU                       D    O                              
+B704 IJK   ISLAMIC JALAN KOTA               K    O                              
+B800 H01   RASAH HP CENTRE                  N                                   
+B801 H02   BUTTERWORTH HP CENTRE            P                                   
+B802 H03   TAMAN MALURI HP CENTRE           W                                   
+B803 H04   INANAM HP CENTRE                 S                                   
+B804 H05   JOHOR BAHRU HP CENTRE            J                                   
+B805 H06   TAMAN JOHOR JAYA HP CENTRE       J                                   
+B806 H07   JALAN KOTA HP CENTRE             K                                   
+B807 H08   BATU BERENDAM HP CENTRE          M                                   
+B808 H09   JALAN DATUK KERAMAT HP CENTRE    P                                   
+B809 H10   IPOH MAIN OFFICE HP CENTRE       A                                   
+B811 H11   KL CITY HP CENTRE                W                                   
+B812 H12   JALAN SULTAN SULAIMAN HP CENTRE  W                                   
+B813 H13   KUCHING CITY HP CENTRE           Q                                   
+B814 H14   BANDAR BUKIT TINGGI HP CENTRE    B                                   
+B815 H15   KELANA JAYA HP CENTRE            B                                   
+B816 H16   SECTION 14 HP CENTRE             B                                   
+B817 H17   PULAU PINANG HP CENTRE           P                                   
+B818 H18   JALAN SUNGAI BESI HP CENTRE      W                                   
+B819 H19   JALAN BESERAH HP CENTRE          C                                   
+B820 H20   BANDAR SUNWAY HP CENTRE          B                                   
+B821 H21   SETAPAK HP CENTRE                W                                   
+B822 H22   SELAYANG HP CENTRE               W                                   
+B823 H23   IPOH GARDEN HP CENTRE            A                                   
+B824 H24   SUNGAI PETANI HP CENTRE          K                                   
+B825 H25   BANDAR PUTERI PUCHONG HP CENTRE  B                                   
+B826 H26   BUKIT MERTAJAM HP CENTRE         P                                   
+B827 H27   WAKAF SIKU HP CENTRE             D                                   
+B828 H28   TAMAN INDAH HP CENTRE            B                                   
+B829 H29   BANDAR SETIA ALAM HP HUB         S                                   
+B844 H44   KANGAR HP HUB                    R                                   
+B845 H45   LABUAN HP HUB                    L                                   
+B846 H46   TAWAU HP HUB                     S                                   
+B847 H47   PRIMA SQUARE HP HUB              S                                   
+B848 H48   BINTULU HP HUB                   Q                                   
+B849 H49   MIRI HP HUB                      Q                                   
+B850 H50   LI HUA HP HUB                    Q                                   
+B851 H51   BANTING HP HUB                   B                                   
+B852 H52   KLUANG HP HUB                    J                                   
+B853 H53   BATU PAHAT HP HUB                J                                   
+B854 H54   JALAN ABDULLAH HP HUB            J                                   
+B855 H55   KULAI HP HUB                     J                                   
+B856 H56   RAWANG HP HUB                    B                                   
+B857 H57   SITIAWAN HP HUB                  A                                   
+B858 H58   TEMERLOH HP HUB                  C                                   
+B859 H59   TAIPING HB HUB                   A                                   
+B860 H60   TELUK INTAN HP HUB               A                                   
+B861 H61   SEGAMAT HP HUB                   J                                   
+B862 H62   KUALA TERENGGANU HP HUB          T                                   
+B863 H63   BENTONG HP HUB                   C                                   
+B884 HOE   PIBB FINANCE DIVISION            W                                   
+B902 CBR   CONSUMER CREDIT                  W                                   
+B903 CCC   CREDIT CONTROL CENTRE            W                                   
+B904 SCD   SIBU CREDIT DEPARTMENT           Q                                   
+B905 SCC   CCC SELANGOR                     W                                   
+B906 CAD   CREDIT ADMIN                     W                                   
+B907 SDC   SECURITIES DOCUMENTATION CENTRE  W                                   
+B908 ICC   CCC/SDC PERAK                    A                                   
+B909 PCC   CCC/SDC PENANG                   P                                   
+B910 JCC   CCC/SDC JOHOR                    J                                   
+B911 KCA   CAC KL                           A                                   
+B912 CCA   CAC CITY CENTRE                  A                                   
+B913 LCA   CAC KLANG                        A                                   
+B914 JCA   CAC JOHOR BHARU                  A                                   
+B915 PCA   CAC PULAU PINANG                 A                                   
+B916 BCA   CAC BUTTERWORTH                  A                                   
+B917 KCC   CCC/SDC KLANG                    B                                   
+B918 MCC   CCC/SDC MELAKA                   M                                   
+B919 HCC   CCC/SDC KUCHING                  Q                                   
+B920 LCC   CCC/SDC K KINABALU               S                                   
+B922 SRC   SEREMBAN RCC & SDC               N                                   
+B923 ICA   CAC IPOH                         A                                   
+B940 UTW   WEALTH MANAGEMENT AND TB         W                                   
+B992 TFC   TRADE FINANCE CENTRE             W                                   
+B993 XPP   CCPC-PP                          P                                   
+B994 XJB   CCPC-JB                          J                                   
+B996 SMC   SHARE MARGIN CENTRE              W                                   
+B997 CCP   CCPC-KL                          W                                   
+B998 CPC   CENTRALIZE PAYMENT CENTRE        W                                   
