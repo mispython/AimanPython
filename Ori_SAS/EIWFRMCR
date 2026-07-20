@@ -1,0 +1,178 @@
+//EIWFRMCR JOB MSGCLASS=X,MSGLEVEL=(1,1),NOTIFY=&SYSUID                 JOB33290
+//*----------------------------------------------------------------
+//* ESMR     : 2019-4793
+//* DESC     : GENERATE FOREIGN REMITTANCE REPORT FOR
+//*            COMPLIANCE CHECKING
+//* ESMR     : 2019-1086
+//* DESC     : INCLUDE NEW FIELDS FOR REMITTANCE REPORT
+//*----------------------------------------------------------------
+//DELETE  EXEC PGM=IEFBR14
+//DEL01   DD DSN=SAP.PBB.COMP.INWARD.REPT,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(CYL,(0))
+//DEL02   DD DSN=SAP.PBB.COMP.OUTWARD.REPT,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(CYL,(0))
+//*----------------------------------------------------------------
+//EIWFRMCR  EXEC SAS609
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//RMT       DD DSN=SAP.PBB.CRM.RMTRNSAC(0),DISP=SHR
+//INWREPT   DD DSN=SAP.PBB.COMP.INWARD.REPT,
+//             DISP=(MOD,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=1000,BLKSIZE=20000),
+//             SPACE=(CYL,(5,2)),UNIT=SYSDA
+//OUTWREPT  DD DSN=SAP.PBB.COMP.OUTWARD.REPT,
+//             DISP=(MOD,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=1000,BLKSIZE=20000),
+//             SPACE=(CYL,(5,2)),UNIT=SYSDA
+//SYSIN     DD *
+
+OPTIONS YEARCUTOFF=1950 NOCENTER;
+
+DATA REPTDATE;
+   SET DEPOSIT.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN(8)   CALL SYMPUT('NOWK', PUT('1', $1.));
+      WHEN(15)  CALL SYMPUT('NOWK', PUT('2', $1.));
+      WHEN(22)  CALL SYMPUT('NOWK', PUT('3', $1.));
+      OTHERWISE CALL SYMPUT('NOWK', PUT('4', $1.));
+   END;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+RUN;
+
+DATA INWARD OUTWARD;
+   SET RMT.REMTRAN&REPTMON&NOWK&REPTYEAR;
+   WHERE REMTYPE = 'F' AND STATUS IN ('TI','TO','BR');
+
+   IF STATUS = 'TI' THEN OUTPUT INWARD;
+   ELSE OUTPUT OUTWARD;
+
+   KEEP BRANCHABB STATUS SERIAL LASTTRAN ANAD1 ANAD2 ANAD3 ANAD4
+        BNAD1 BNAD2 BNAD3 BNAD4 AMOUNT FORAMT PAYREF
+        ACCTNO CURRENCY PAYMODE USERID RESIDENT APPLNATIONAL
+        BMRSTATUS COUNTRY ADMIN;
+RUN;
+
+DATA _NULL_;
+   SET INWARD;
+   FILE INWREPT;
+   DLM = '05'X;
+   IF _N_ = 1 THEN DO;
+      PUT 'TRANSACTION DATE '    +(-1)DLM+(-1)
+          'BRANCH NAME '         +(-1)DLM+(-1)
+          'REFERENCE NO '        +(-1)DLM+(-1)
+          'BENEFICIARY NAME 1 '  +(-1)DLM+(-1)
+          'BENEFICIARY NAME 2 '  +(-1)DLM+(-1)
+          'BENEFICIARY NAME 3 '  +(-1)DLM+(-1)
+          'BENEFICIARY NAME 4 '  +(-1)DLM+(-1)
+          'ORDERING CUSTOMER 1 ' +(-1)DLM+(-1)
+          'ORDERING CUSTOMER 2 ' +(-1)DLM+(-1)
+          'ORDERING CUSTOMER 3 ' +(-1)DLM+(-1)
+          'ORDERING CUSTOMER 4 ' +(-1)DLM+(-1)
+          'AMOUNT (FCY) '        +(-1)DLM+(-1)
+          'AMOUNT (MYR) '        +(-1)DLM+(-1)
+          'ACCOUNT NO '          +(-1)DLM+(-1)
+          'CURRENCY '            +(-1)DLM+(-1)
+          'PAYMENT MODE '        +(-1)DLM+(-1)
+          'STAFF ID '            +(-1)DLM+(-1)
+          'RESIDENCY '           +(-1)DLM+(-1)
+          'NATIONALITY '         +(-1)DLM+(-1)
+          'BMR STATUS '          +(-1)DLM+(-1)
+          'COUNTRY '             +(-1)DLM+(-1)
+          'CBOP CODE '           +(-1)DLM+(-1);
+   END;
+
+   PUT LASTTRAN  +(-1)DLM+(-1)
+       BRANCHABB +(-1)DLM+(-1)
+       SERIAL    +(-1)DLM+(-1)
+       BNAD1     +(-1)DLM+(-1)
+       BNAD2     +(-1)DLM+(-1)
+       BNAD3     +(-1)DLM+(-1)
+       BNAD4     +(-1)DLM+(-1)
+       ANAD1     +(-1)DLM+(-1)
+       ANAD2     +(-1)DLM+(-1)
+       ANAD3     +(-1)DLM+(-1)
+       ANAD4     +(-1)DLM+(-1)
+       FORAMT    +(-1)DLM+(-1)
+       AMOUNT    +(-1)DLM+(-1)
+       ACCTNO    +(-1)DLM+(-1)
+       CURRENCY  +(-1)DLM+(-1)
+       PAYMODE   +(-1)DLM+(-1)
+       USERID    +(-1)DLM+(-1)
+       RESIDENT  +(-1)DLM+(-1)
+       APPLNATIONAL    +(-1)DLM+(-1)
+       BMRSTATUS +(-1)DLM+(-1)
+       COUNTRY   +(-1)DLM+(-1)
+       ADMIN     +(-1)DLM+(-1);
+RUN;
+
+DATA _NULL_;
+   SET OUTWARD;
+   FILE OUTWREPT;
+   DLM = '05'X;
+   IF _N_ = 1 THEN DO;
+      PUT 'TRANSACTION DATE '    +(-1)DLM+(-1)
+          'BRANCH NAME '         +(-1)DLM+(-1)
+          'REFERENCE NO '        +(-1)DLM+(-1)
+          'ORDERING CUSTOMER 1 ' +(-1)DLM+(-1)
+          'ORDERING CUSTOMER 2 ' +(-1)DLM+(-1)
+          'ORDERING CUSTOMER 3 ' +(-1)DLM+(-1)
+          'ORDERING CUSTOMER 4 ' +(-1)DLM+(-1)
+          'ORDERING CUSTOMER ACCOUNT NO ' +(-1)DLM+(-1)
+          'BENEFICIARY NAME 1 ' +(-1)DLM+(-1)
+          'BENEFICIARY NAME 2 ' +(-1)DLM+(-1)
+          'BENEFICIARY NAME 3 ' +(-1)DLM+(-1)
+          'BENEFICIARY NAME 4 ' +(-1)DLM+(-1)
+          'AMOUNT (FCY) '       +(-1)DLM+(-1)
+          'AMOUNT (MYR) '       +(-1)DLM+(-1)
+          'ACCOUNT NO '          +(-1)DLM+(-1)
+          'CURRENCY '            +(-1)DLM+(-1)
+          'PAYMENT MODE '        +(-1)DLM+(-1)
+          'STAFF ID '            +(-1)DLM+(-1)
+          'RESIDENCY '           +(-1)DLM+(-1)
+          'NATIONALITY '         +(-1)DLM+(-1)
+          'BMR STATUS '          +(-1)DLM+(-1)
+          'COUNTRY '             +(-1)DLM+(-1)
+          'CBOP CODE '           +(-1)DLM+(-1);
+   END;
+
+   PUT LASTTRAN   +(-1)DLM+(-1)
+       BRANCHABB  +(-1)DLM+(-1)
+       SERIAL     +(-1)DLM+(-1)
+       ANAD1      +(-1)DLM+(-1)
+       ANAD2      +(-1)DLM+(-1)
+       ANAD3      +(-1)DLM+(-1)
+       ANAD4      +(-1)DLM+(-1)
+       PAYREF     +(-1)DLM+(-1)
+       BNAD1      +(-1)DLM+(-1)
+       BNAD2      +(-1)DLM+(-1)
+       BNAD3      +(-1)DLM+(-1)
+       BNAD4      +(-1)DLM+(-1)
+       FORAMT     +(-1)DLM+(-1)
+       AMOUNT     +(-1)DLM+(-1)
+       ACCTNO     +(-1)DLM+(-1)
+       CURRENCY   +(-1)DLM+(-1)
+       PAYMODE    +(-1)DLM+(-1)
+       USERID     +(-1)DLM+(-1)
+       RESIDENT   +(-1)DLM+(-1)
+       APPLNATIONAL    +(-1)DLM+(-1)
+       BMRSTATUS  +(-1)DLM+(-1)
+       COUNTRY    +(-1)DLM+(-1)
+       ADMIN      +(-1)DLM+(-1);
+RUN;
+//*----------------------------------------------------------
+//* FTP REPORTS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//*----------------------------------------------------------
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+CD CD-BRC
+PUT //SAP.PBB.COMP.INWARD.REPT   \
+          ForeignInwardRemittances_%OYYYY.%OMM.%ODD..txt
+PUT //SAP.PBB.COMP.OUTWARD.REPT  \
+          ForeignOutwardRemittances_%OYYYY.%OMM.%ODD..txt
+EOB
