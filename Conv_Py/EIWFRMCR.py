@@ -1,5 +1,5 @@
 """
-Program : EIWFRMCR
+Program : EIWFRMCR.py
 Purpose : Generate Foreign Remittance Report (Inward & Outward) for
           compliance checking. Reads remittance transactions, filters
           foreign ('F') transactions with STATUS IN ('TI','TO','BR'),
@@ -7,10 +7,14 @@ Purpose : Generate Foreign Remittance Report (Inward & Outward) for
           OUTWARD extract (STATUS IN ('TO','BR')).
 """
 
+import gc
 from pathlib import Path
 
+import duckdb
 import pandas as pd
 import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
 from input_date import get_latest_file
@@ -19,9 +23,12 @@ from input_date import get_latest_file
 # PATH CONFIGURATION
 # ============================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR = BASE_DIR / "input"
+INPUT_DIR = BASE_DIR / "input" / "prod" / "remittance"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIWFRMCR"
 OUTPUT_DIR = BASE_DIR / "output" / "EIWFRMCR"
+
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 RMT_PREFIX = "remtran"
 
@@ -34,6 +41,11 @@ OUTWARD_REPORT_FILE = OUTPUT_DIR / "SAP_PBB_COMP_OUTWARD_REPT.txt"
 
 # Delimiter used in SAS: DLM = '05'X (hex 05 / ASCII ENQ control character)
 DLM = chr(0x05)
+
+# ============================================================
+# CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
+# ============================================================
+CHUNK_ROWS = 500_000
 
 # NOTE: Original JCL DELETE step (PGM=IEFBR14) removed the previously
 # catalogued INWARD/OUTWARD datasets before the SAS step ran. This is not
@@ -82,6 +94,73 @@ print(f"Report Month : {REPTMON}")
 # Filename pattern: remtran{MM}{W}{YY}.sas7bdat  (e.g. remtran07126.sas7bdat)
 rmt_file = get_latest_file(INPUT_DIR, prefix=RMT_PREFIX)
 print(f"Input RMT File : {rmt_file}")
+
+RMT_CACHE = CACHE_DIR / f"{rmt_file.stem}.parquet"
+
+
+# ============================================================
+# HELPER: CACHE STAMP  (skip re-conversion if .sas7bdat hasn't changed)
+# ============================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    """Return True when the Parquet cache is newer than the source SAS file."""
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
+
+
+# ============================================================
+# HELPER: STREAM .sas7bdat → PARQUET  (memory-efficient chunked conversion)
+# ============================================================
+def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    """Convert a large .sas7bdat to Parquet in streaming chunks."""
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+
+        if schema is None:
+            # Lock schema on first chunk
+            schema = table.schema
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        else:
+            # Cast subsequent chunks to match the locked schema
+            cast_arrays = []
+            for field in schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING: Cannot cast '{field.name}' "
+                              f"from {col.type} to {field.type}: {e} — filling nulls")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=schema)
+
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done — {total:,} rows cached.")
+
+
+# ============================================================
+# CACHE RMT FILE TO PARQUET  (~700 MB — streamed, not loaded whole)
+# ============================================================
+print("\nCaching RMT file to Parquet (if needed)...")
+
+if not _cache_is_fresh(rmt_file, RMT_CACHE):
+    sas_to_parquet(rmt_file, RMT_CACHE, "RMT")
+else:
+    print(f"  [RMT] Cache fresh — skipping conversion.")
 
 
 # ============================================================
@@ -275,18 +354,7 @@ def _write_report(
 
 
 # ============================================================
-# READ RMT (REMITTANCE TRANSACTION) DATA
-# ============================================================
-rmt_pdf = pd.read_sas(rmt_file, encoding="latin1")
-rmt_df = pl.from_pandas(rmt_pdf)
-
-# Normalize fixed-width character columns (SAS pads char values with blanks)
-str_cols = [c for c, dt in zip(rmt_df.columns, rmt_df.dtypes) if dt == pl.Utf8]
-if str_cols:
-    rmt_df = rmt_df.with_columns([pl.col(c).str.strip_chars() for c in str_cols])
-
-# ============================================================
-# FILTER & SPLIT: INWARD / OUTWARD
+# READ + FILTER RMT DATA FROM PARQUET CACHE  (DuckDB, filter pushed to SQL)
 # ============================================================
 # Original:
 #   WHERE REMTYPE = 'F' AND STATUS IN ('TI','TO','BR');
@@ -304,12 +372,32 @@ KEEP_COLUMNS = [
     "APPLNATIONAL", "BMRSTATUS", "COUNTRY", "ADMIN",
 ]
 
-filtered_df = rmt_df.filter(
-    (pl.col("REMTYPE") == "F") & (pl.col("STATUS").is_in(["TI", "TO", "BR"]))
-).select(KEEP_COLUMNS)
+print("\nReading + filtering RMT data from Parquet cache...")
+
+con = duckdb.connect(database=":memory:")
+
+filtered_df = con.execute(f"""
+    SELECT {', '.join(KEEP_COLUMNS)}
+    FROM read_parquet('{RMT_CACHE}')
+    WHERE REMTYPE = 'F'
+      AND STATUS IN ('TI', 'TO', 'BR')
+""").pl()
+
+con.close()
+gc.collect()
+
+print(f"  Filtered rows: {len(filtered_df):,}")
+
+# Normalize fixed-width character columns (SAS pads char values with blanks)
+str_cols = [c for c, dt in zip(filtered_df.columns, filtered_df.dtypes) if dt == pl.Utf8]
+if str_cols:
+    filtered_df = filtered_df.with_columns([pl.col(c).str.strip_chars() for c in str_cols])
 
 inward_df = filtered_df.filter(pl.col("STATUS") == "TI")
 outward_df = filtered_df.filter(pl.col("STATUS") != "TI")  # STATUS IN ('TO','BR')
+
+del filtered_df
+gc.collect()
 
 # ============================================================
 # WRITE OUTPUT FILES
@@ -333,6 +421,17 @@ for line in outward_lines[:5]:
     print(line.replace(DLM, "|"))
 
 # ============================================================
+# CACHE NOTE
+# ============================================================
+# The RMT parquet cache (RMT_CACHE) is intentionally kept across runs so a
+# second execution against the same source file skips the expensive
+# SAS -> Parquet conversion step. Remove it manually or let the freshness
+# check (_cache_is_fresh) handle eviction when the source file changes.
+
+del inward_df, outward_df
+gc.collect()
+
+# ============================================================
 # NOTE: Original JCL step RUNSFTP transmits the two output files to the
 # Data Report Repository (DRR) system via SFTP. This is an external file
 # transfer step outside the scope of this SAS-to-Python data conversion
@@ -349,3 +448,5 @@ for line in outward_lines[:5]:
 # PUT //SAP.PBB.COMP.OUTWARD.REPT  \
 #           ForeignOutwardRemittances_%OYYYY.%OMM.%ODD..txt
 # EOB
+
+print("\nEIWFRMCR complete.")
