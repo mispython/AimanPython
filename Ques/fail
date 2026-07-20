@@ -1,3 +1,34 @@
+def read_sabal(dyposxbr_cache: Path, reptdate_value: date) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    try:
+        # SAS dates are stored as days since 1960-01-01
+        # Convert the numeric REPTDATE to a proper date for comparison
+        query = f"""
+            SELECT BRANCH, TOTSAVG, TOTSAVGI, SACNT, ISACNT
+            FROM read_parquet('{dyposxbr_cache.as_posix()}')
+            WHERE DATE '1960-01-01' + INTERVAL (CAST(REPTDATE AS INTEGER)) DAY = DATE '{reptdate_value.isoformat()}'
+            ORDER BY BRANCH
+        """
+        return con.execute(query).pl()
+    finally:
+        con.close()
+
+
+def read_sabal(dyposxbr_cache: Path, reptdate_value: date) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    try:
+        query = f"""
+            SELECT BRANCH, TOTSAVG, TOTSAVGI, SACNT, ISACNT
+            FROM read_parquet('{dyposxbr_cache.as_posix()}')
+            WHERE CAST(REPTDATE AS INTEGER) = DATEDIFF('day', DATE '1960-01-01', DATE '{reptdate_value.isoformat()}')
+            ORDER BY BRANCH
+        """
+        return con.execute(query).pl()
+    finally:
+        con.close()
+
+====================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py
 [FILE_RESOLVER] Selected latest: DYPOSXBR06.sas7bdat
 Report date (RDATE) : 2026-07-19
