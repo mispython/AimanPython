@@ -1,106 +1,11 @@
-def read_sabal(dyposxbr_cache: Path, reptdate_value: date) -> pl.DataFrame:
-    sas_date_num = _to_sas_date_value(reptdate_value)
-    con = duckdb.connect(database=":memory:")
-    try:
-        query = f"""
-            SELECT
-                CAST(BRANCH AS BIGINT) AS BRANCH,
-                TOTSAVG, TOTSAVGI, SACNT, ISACNT
-            FROM read_parquet('{dyposxbr_cache.as_posix()}')
-            WHERE CAST(REPTDATE AS DOUBLE) = {sas_date_num}
-            ORDER BY BRANCH
-        """
-        return con.execute(query).pl()
-    finally:
-        con.close()
-
-=====================
-
 (virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py
 [FILE_RESOLVER] Selected latest: DYPOSXBR06.sas7bdat
 Report date (RDATE) : 2026-07-19
 REPTMON / REPTYEAR  : 07 / 2026
 DYPOSXBR input file : DYPOSXBR06.sas7bdat
   [DYPOSXBR] Cache fresh — skipping conversion.
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 541, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 532, in main
-    allsa, sabal_open, excep = build_allsa_sabal_excep(sabal, brhdata)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 267, in build_allsa_sabal_excep
-    merged = sabal.join(brhdata, on="BRANCH", how="left")
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.SchemaError: datatypes of join keys don't match - `BRANCH`: f64 on left does not match `BRANCH`: i64 on right (and no other type was available to cast to)
-
-========================
-
-# SAS stores dates as "days since 1960-01-01" (numeric, not a DATE type).
-# pd.read_sas() -> Parquet keeps REPTDATE as DOUBLE, so we must compare
-# against the equivalent SAS numeric day value instead of a SQL DATE literal.
-_SAS_EPOCH = date(1960, 1, 1)
-
-
-def _to_sas_date_value(d: date) -> int:
-    """Convert a Python date to SAS's numeric date (days since 1960-01-01)."""
-    return (d - _SAS_EPOCH).days
-
-
-def read_sabal(dyposxbr_cache: Path, reptdate_value: date) -> pl.DataFrame:
-    sas_date_num = _to_sas_date_value(reptdate_value)
-    con = duckdb.connect(database=":memory:")
-    try:
-        query = f"""
-            SELECT BRANCH, TOTSAVG, TOTSAVGI, SACNT, ISACNT
-            FROM read_parquet('{dyposxbr_cache.as_posix()}')
-            WHERE CAST(REPTDATE AS DOUBLE) = {sas_date_num}
-            ORDER BY BRANCH
-        """
-        return con.execute(query).pl()
-    finally:
-        con.close()
-
-==================
-
-def read_sabal(dyposxbr_cache: Path, reptdate_value: date) -> pl.DataFrame:
-    con = duckdb.connect(database=":memory:")
-    try:
-        # SAS dates are stored as days since 1960-01-01
-        # Convert the numeric REPTDATE to a proper date for comparison
-        query = f"""
-            SELECT BRANCH, TOTSAVG, TOTSAVGI, SACNT, ISACNT
-            FROM read_parquet('{dyposxbr_cache.as_posix()}')
-            WHERE DATE '1960-01-01' + INTERVAL (CAST(REPTDATE AS INTEGER)) DAY = DATE '{reptdate_value.isoformat()}'
-            ORDER BY BRANCH
-        """
-        return con.execute(query).pl()
-    finally:
-        con.close()
-
-====================
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py
-[FILE_RESOLVER] Selected latest: DYPOSXBR06.sas7bdat
-Report date (RDATE) : 2026-07-19
-REPTMON / REPTYEAR  : 07 / 2026
-DYPOSXBR input file : DYPOSXBR06.sas7bdat
-  [DYPOSXBR] Cache fresh — skipping conversion.
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 516, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 505, in main
-    sabal = read_sabal(DYPOSXBR_CACHE, RDATE)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 219, in read_sabal
-    return con.execute(query).pl()
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column REPTDATE
-
-LINE 4:             WHERE REPTDATE = DATE '2026-07-19'
-                          ^
+[EIMISR01] Report written to : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIMISR01/SA_BAL&ACC.txt
+[EIMISR01] Total lines written: 13
+[EIMISR01] SABAL (open) rows  : 0
+[EIMISR01] EXCEP rows         : 0
+[EIMISR01] Grand total balance: 0.00
