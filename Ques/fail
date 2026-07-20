@@ -1,4 +1,18 @@
-
+def read_sabal(dyposxbr_cache: Path, reptdate_value: date) -> pl.DataFrame:
+    sas_date_num = _to_sas_date_value(reptdate_value)
+    con = duckdb.connect(database=":memory:")
+    try:
+        query = f"""
+            SELECT
+                CAST(BRANCH AS BIGINT) AS BRANCH,
+                TOTSAVG, TOTSAVGI, SACNT, ISACNT
+            FROM read_parquet('{dyposxbr_cache.as_posix()}')
+            WHERE CAST(REPTDATE AS DOUBLE) = {sas_date_num}
+            ORDER BY BRANCH
+        """
+        return con.execute(query).pl()
+    finally:
+        con.close()
 
 =====================
 
