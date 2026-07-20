@@ -1,82 +1,17 @@
-def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    """Convert a large .sas7bdat to Parquet in streaming chunks."""
-    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    writer = None
-    schema = None
-    total = 0
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py
+[FILE_RESOLVER] Selected latest: DYPOSXBR06.sas7bdat
+Report date (RDATE) : 2026-07-19
+REPTMON / REPTYEAR  : 07 / 2026
+DYPOSXBR input file : DYPOSXBR06.sas7bdat
+  [DYPOSXBR] Cache fresh — skipping conversion.
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 516, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 505, in main
+    sabal = read_sabal(DYPOSXBR_CACHE, RDATE)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 219, in read_sabal
+    return con.execute(query).pl()
+_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column REPTDATE
 
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
-
-        if schema is None:
-            # Lock schema on first chunk, but never lock in a 'null' type
-            # inferred from a chunk that happened to be blank for a text
-            # column — that would silently null out real values found in
-            # every later chunk.
-            fields = []
-            for field in table.schema:
-                if pa.types.is_null(field.type):
-                    fields.append(pa.field(field.name, pa.string()))
-                else:
-                    fields.append(field)
-            schema = pa.schema(fields)
-            table = table.cast(schema, safe=False)
-            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        else:
-            # Cast subsequent chunks to match the locked schema
-            cast_arrays = []
-            for field in schema:
-                col = table.column(field.name)
-                if col.type != field.type:
-                    try:
-                        col = col.cast(field.type, safe=False)
-                    except Exception as e:
-                        # Never silently null out real data. If the locked
-                        # schema field is a string, force through as string;
-                        # only fall back to nulls for genuine type conflicts.
-                        if pa.types.is_string(field.type):
-                            col = col.cast(pa.string(), safe=False)
-                        else:
-                            print(f"  [{tag}] WARNING: Cannot cast '{field.name}' "
-                                  f"from {col.type} to {field.type}: {e} — filling nulls")
-                            col = pa.nulls(len(col), type=field.type)
-                cast_arrays.append(col)
-            table = pa.Table.from_arrays(cast_arrays, schema=schema)
-
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-
-    if writer:
-        writer.close()
-    print(f"  [{tag}] Done — {total:,} rows cached.")
-
-=================
-
-print("\nCaching RMT file to Parquet (if needed)...")
-
-# ONE-TIME: force rebuild since the existing cache was written by the old
-# schema-locking logic and may contain silently-nulled columns. Remove this
-# `unlink()` block after the next successful run so caching resumes as normal.
-if RMT_CACHE.exists():
-    print(f"  [RMT] Removing stale cache: {RMT_CACHE.name}")
-    RMT_CACHE.unlink()
-
-if not _cache_is_fresh(rmt_file, RMT_CACHE):
-    sas_to_parquet(rmt_file, RMT_CACHE, "RMT")
-else:
-    print(f"  [RMT] Cache fresh — skipping conversion.")
-
-==============
-
-# TEMPORARY DIAGNOSTIC — remove after confirming the fix
-con = duckdb.connect(database=":memory:")
-print(con.execute(f"""
-    SELECT BRANCHABB, BNAD1, ANAD1, CURRENCY, COUNTRY
-    FROM read_parquet('{RMT_CACHE}')
-    WHERE BRANCHABB IS NOT NULL
-    LIMIT 5
-""").pl())
-con.close()
+LINE 4:             WHERE REPTDATE = DATE '2026-07-19'
+                          ^
