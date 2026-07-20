@@ -1,15 +1,24 @@
-print("\n--- DEBUG: Item contributions from GL (src='WLK') ---")
-with pl.Config(tbl_rows=1000):
-    for item in [206, 247, 251]:
-        print(f"\nITEM {item}:")
-        # Filter GL rows for this item
-        gl_rows = lcrall.filter((pl.col("src") == "WLK") & (pl.col("item") == item))
-        if gl_rows.height == 0:
-            print("  No GL rows")
+def _fmt_num(value) -> str:
+    """Replicate SAS BEST12. right-aligned numeric output (+(-1) has no effect here)."""
+    if value is None:
+        return " " * 12  # SAS missing numeric prints 12 blanks
+    try:
+        num = float(value)
+        if num != num:  # NaN (SAS missing)
+            return " " * 12
+        # Check for whole number to avoid trailing .0
+        if num.is_integer():
+            # Format as integer, right-aligned to 12
+            return f"{int(num):>12}"
         else:
-            print(gl_rows.select(["src", "item", "utnma1", "utnma2", "utnma3"]))
-        # Show EQ and MNL contributions too
-        eq_rows = lcrall.filter((pl.col("src") == "EQU") & (pl.col("item") == item))
-        if eq_rows.height > 0:
-            print("  EQ rows:")
-            print(eq_rows.select(["src", "item", "utnma1", "utnma2", "utnma3"]))
+            # Format as decimal, right-aligned to 12
+            # Note: Python uses bankers rounding, but it's negligible for this report.
+            return f"{num:>12}"
+    except (ValueError, TypeError):
+        # Fallback if somehow a string got here (shouldn't happen)
+        return str(value).rjust(12)
+
+
+    lines = [_build_line(headers).ljust(1000)]
+    for row in df.iter_rows(named=True):
+        lines.append(build_line_fn(row).ljust(1000))
