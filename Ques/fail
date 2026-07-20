@@ -1,3 +1,45 @@
+# ============================================================
+# STEP: DERIVE RDATE FROM THE ACTUAL DYPOSXBR CACHE
+# The monthly REPTDATE stamped in this table (e.g. 2026-06-01 for
+# DYPOSXBR06) does not follow the daily "yesterday" convention in
+# REPTDATE.py — it reflects whatever date MNITB.REPTDATE held when
+# production populated this snapshot. Rather than assume a formula,
+# pull the actual date present in the resolved file.
+# ============================================================
+def get_actual_reptdate(dyposxbr_cache: Path) -> date:
+    con = duckdb.connect(database=":memory:")
+    try:
+        result = con.execute(f"""
+            SELECT CAST(MAX(REPTDATE) AS DOUBLE) AS max_reptdate
+            FROM read_parquet('{dyposxbr_cache.as_posix()}')
+        """).fetchone()
+    finally:
+        con.close()
+
+    sas_epoch = date(1960, 1, 1)
+    return sas_epoch + timedelta(days=int(result[0]))
+
+
+def main() -> None:
+    ensure_dyposxbr_cache()
+
+    actual_rdate = get_actual_reptdate(DYPOSXBR_CACHE)
+    reptdt_display = actual_rdate.strftime("%d/%m/%Y")
+
+    print(f"Report date (RDATE) : {actual_rdate}")
+    print(f"REPTMON / REPTYEAR  : {REPTMON} / {REPTYEAR}")
+    print(f"DYPOSXBR input file : {DYPOSXBR_SAS.name}")
+
+    brhdata = read_branch_lookup(BRHFILE)
+    sabal = read_sabal(DYPOSXBR_CACHE, actual_rdate)
+
+    allsa, sabal_open, excep = build_allsa_sabal_excep(sabal, brhdata)
+
+    write_report(ISR01_OUTPUT, reptdt_display, sabal_open, excep, allsa)
+    ...
+
+================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py
 [FILE_RESOLVER] Selected latest: DYPOSXBR06.sas7bdat
 Report date (RDATE) : 2026-07-19
