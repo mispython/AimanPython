@@ -36,11 +36,12 @@ RMT_PREFIX = "remtran"
 # No date component is present in these SAS-catalogued output DSNs, so
 # output_date.py's date-stamped naming is not applicable here; filenames
 # are static.
-INWARD_REPORT_FILE = OUTPUT_DIR / "SAP_PBB_COMP_INWARD_REPT.txt"
-OUTWARD_REPORT_FILE = OUTPUT_DIR / "SAP_PBB_COMP_OUTWARD_REPT.txt"
+INWARD_REPORT_FILE = OUTPUT_DIR / "ForeignInwardRemittances.txt"
+OUTWARD_REPORT_FILE = OUTPUT_DIR / "ForeignOutwardRemittances.txt"
 
 # Delimiter used in SAS: DLM = '05'X (hex 05 / ASCII ENQ control character)
-DLM = chr(0x05)
+# DLM = chr(0x05)
+DLM = "\t"
 
 # ============================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
@@ -124,8 +125,18 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
         table = pa.Table.from_pandas(chunk, preserve_index=False)
 
         if schema is None:
-            # Lock schema on first chunk
-            schema = table.schema
+            # Lock schema on first chunk, but never lock in a 'null' type
+            # inferred from a chunk that happened to be blank for a text
+            # column — that would silently null out real values found in
+            # every later chunk.
+            fields = []
+            for field in table.schema:
+                if pa.types.is_null(field.type):
+                    fields.append(pa.field(field.name, pa.string()))
+                else:
+                    fields.append(field)
+            schema = pa.schema(fields)
+            table = table.cast(schema, safe=False)
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
         else:
             # Cast subsequent chunks to match the locked schema
@@ -136,9 +147,15 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
                     try:
                         col = col.cast(field.type, safe=False)
                     except Exception as e:
-                        print(f"  [{tag}] WARNING: Cannot cast '{field.name}' "
-                              f"from {col.type} to {field.type}: {e} — filling nulls")
-                        col = pa.nulls(len(col), type=field.type)
+                        # Never silently null out real data. If the locked
+                        # schema field is a string, force through as string;
+                        # only fall back to nulls for genuine type conflicts.
+                        if pa.types.is_string(field.type):
+                            col = col.cast(pa.string(), safe=False)
+                        else:
+                            print(f"  [{tag}] WARNING: Cannot cast '{field.name}' "
+                                  f"from {col.type} to {field.type}: {e} — filling nulls")
+                            col = pa.nulls(len(col), type=field.type)
                 cast_arrays.append(col)
             table = pa.Table.from_arrays(cast_arrays, schema=schema)
 
@@ -157,10 +174,28 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 # ============================================================
 print("\nCaching RMT file to Parquet (if needed)...")
 
+# # ONE-TIME: force rebuild since the existing cache was written by the old
+# # schema-locking logic and may contain silently-nulled columns. Remove this
+# # `unlink()` block after the next successful run so caching resumes as normal.
+# if RMT_CACHE.exists():
+#     print(f"  [RMT] Removing stale cache: {RMT_CACHE.name}")
+#     RMT_CACHE.unlink()
+
 if not _cache_is_fresh(rmt_file, RMT_CACHE):
     sas_to_parquet(rmt_file, RMT_CACHE, "RMT")
 else:
     print(f"  [RMT] Cache fresh — skipping conversion.")
+
+
+# TEMPORARY DIAGNOSTIC — remove after confirming the fix
+con = duckdb.connect(database=":memory:")
+print(con.execute(f"""
+    SELECT BRANCHABB, BNAD1, ANAD1, CURRENCY, COUNTRY
+    FROM read_parquet('{RMT_CACHE}')
+    WHERE BRANCHABB IS NOT NULL
+    LIMIT 10
+""").pl())
+con.close()
 
 
 # ============================================================
@@ -173,8 +208,9 @@ def _fmt_str(value) -> str:
     output would otherwise add before the delimiter.
     """
     if value is None:
-        return ""
-    return str(value).strip()
+        return " "
+    stripped = str(value).strip()
+    return stripped if stripped else " "
 
 
 def _fmt_num(value) -> str:
@@ -296,7 +332,8 @@ def _build_inward_line(row: dict) -> str:
         _fmt_str(row["APPLNATIONAL"]),
         _fmt_str(row["BMRSTATUS"]),
         _fmt_str(row["COUNTRY"]),
-        _fmt_str(row["ADMIN"]),
+        # _fmt_str(row["ADMIN"]),
+        _fmt_num(row["ADMIN"]),
     ]
     return _build_line(fields)
 
@@ -326,7 +363,8 @@ def _build_outward_line(row: dict) -> str:
         _fmt_str(row["APPLNATIONAL"]),
         _fmt_str(row["BMRSTATUS"]),
         _fmt_str(row["COUNTRY"]),
-        _fmt_str(row["ADMIN"]),
+        # _fmt_str(row["ADMIN"]),
+        _fmt_num(row["ADMIN"]),
     ]
     return _build_line(fields)
 
