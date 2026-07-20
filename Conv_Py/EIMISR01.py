@@ -1,24 +1,14 @@
 """
-Program Name : EIMISR01
-Purpose      : Monthly report on savings deposits' outstanding balance
-               (Report ID: DMMISR01) and accounts breakdown by branch,
-               for PBB (conventional) & PIBB (Islamic) combined.
-Source       : Converted from EIMISR01 SAS/JCL batch program.
+Program : EIMISR01.py
+Purpose : Monthly report on savings deposits' outstanding balance
+          (Report ID: DMMISR01) and accounts breakdown by branch,
+          for PBB (conventional) & PIBB (Islamic) combined.
 
 Notes on conversion:
-  - REPTDATE is derived via REPTDATE.py (get_reptdate_values), not read
-    from a reptdate.parquet file, which does not exist in this environment.
-  - DYPOSXBR&REPTMON (.sas7bdat) is now resolved via
+  - DYPOSXBR&REPTMON (.sas7bdat) is resolved via
     input_date.get_latest_file(INPUT_DIR, prefix="DYPOSXBR"), which picks
     the latest file whose embedded date matches the recognised filename
     patterns, rather than being built directly from REPTMON.
-  - BRHFILE (LKP_BRANCH) remains a static-name lookup file with no date
-    component in its filename -> referenced by direct path, not via
-    get_latest_file().
-  - output_date.build_output_file() is NOT used: the original output
-    DSN (SAP.PBB.EIMISR01.TEXT) carries no date component in its name
-    (the report date only appears inside the report content/title),
-    so the output filename is fixed.
   - DYPOSXBR is cached to Parquet once (chunked stream + freshness check,
     same pattern as EIBDLN1M.py) and read from the cache via DuckDB
     thereafter.
@@ -55,17 +45,16 @@ from input_date import get_latest_file
 # PATH CONFIGURATION
 # ============================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# BASE_DIR = Path(r"C:\Users\aiman\Desktop\SAS_Python_Migration\Data_Warehouse\MIS\XMIS")  # local test path
 
-INPUT_DIR = BASE_DIR / "input" / "prod" / "EIMISR01"
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIMISR01"
+INPUT_DIR = BASE_DIR / "input" / "prod" / "deposit"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIMISR01"
 OUTPUT_DIR = BASE_DIR / "output" / "EIMISR01"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # BRHFILE: static-name flat file (no date component) -> direct path reference
-BRHFILE = INPUT_DIR / "LKP_BRANCH.txt"
+BRHFILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
 # //ISR01 DD DSN=SAP.PBB.EIMISR01.TEXT ... DCB=(LRECL=1000,RECFM=FB,...)
 ISR01_OUTPUT = OUTPUT_DIR / "EIMISR01.TEXT"
