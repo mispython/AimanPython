@@ -1,24 +1,23 @@
-def _fmt_num(value) -> str:
-    """Replicate SAS BEST12. right-aligned numeric output (+(-1) has no effect here)."""
+# 2. _fmt_str: blank char fields must render as a single space, not empty,
+#    to match SAS's blank-character PUT behavior and preserve column spacing.
+
+def _fmt_str(value) -> str:
+    """Format a character field: trim leading/trailing blanks.
+
+    Equivalent of SAS `var +(-1)` trimming the trailing blank that list
+    output would otherwise add before the delimiter.
+    """
     if value is None:
-        return " " * 12  # SAS missing numeric prints 12 blanks
-    try:
-        num = float(value)
-        if num != num:  # NaN (SAS missing)
-            return " " * 12
-        # Check for whole number to avoid trailing .0
-        if num.is_integer():
-            # Format as integer, right-aligned to 12
-            return f"{int(num):>12}"
-        else:
-            # Format as decimal, right-aligned to 12
-            # Note: Python uses bankers rounding, but it's negligible for this report.
-            return f"{num:>12}"
-    except (ValueError, TypeError):
-        # Fallback if somehow a string got here (shouldn't happen)
-        return str(value).rjust(12)
+        return " "
+    stripped = str(value).strip()
+    return stripped if stripped else " "
 
 
-    lines = [_build_line(headers).ljust(1000)]
-    for row in df.iter_rows(named=True):
-        lines.append(build_line_fn(row).ljust(1000))
+# 3. ADMIN (CBOP CODE) is numeric — use _fmt_num, not _fmt_str,
+#    in BOTH _build_inward_line and _build_outward_line.
+
+# OLD (in both functions):
+# _fmt_str(row["ADMIN"]),
+
+# NEW:
+_fmt_num(row["ADMIN"]),
