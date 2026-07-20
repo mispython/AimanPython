@@ -1,3 +1,34 @@
+
+
+=====================
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py
+[FILE_RESOLVER] Selected latest: DYPOSXBR06.sas7bdat
+Report date (RDATE) : 2026-07-19
+REPTMON / REPTYEAR  : 07 / 2026
+DYPOSXBR input file : DYPOSXBR06.sas7bdat
+  [DYPOSXBR] Cache fresh — skipping conversion.
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 541, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 532, in main
+    allsa, sabal_open, excep = build_allsa_sabal_excep(sabal, brhdata)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMISR01.py", line 267, in build_allsa_sabal_excep
+    merged = sabal.join(brhdata, on="BRANCH", how="left")
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.SchemaError: datatypes of join keys don't match - `BRANCH`: f64 on left does not match `BRANCH`: i64 on right (and no other type was available to cast to)
+
+========================
+
 # SAS stores dates as "days since 1960-01-01" (numeric, not a DATE type).
 # pd.read_sas() -> Parquet keeps REPTDATE as DOUBLE, so we must compare
 # against the equivalent SAS numeric day value instead of a SQL DATE literal.
