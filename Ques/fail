@@ -1,3 +1,61 @@
+Step 7: Building DPBTRAN (today's transactions)...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDSDFT_AII.py", line 332, in <module>
+    dpbtran = con.execute(f"""
+_duckdb.BinderException: Binder Error: No function matches the given name and argument types '+(DATE, BIGINT)'. You might need to add explicit type casts.
+        Candidate functions:
+        +(TINYINT) -> TINYINT
+        +(TINYINT, TINYINT) -> TINYINT
+        +(SMALLINT) -> SMALLINT
+        +(SMALLINT, SMALLINT) -> SMALLINT
+        +(INTEGER) -> INTEGER
+        +(INTEGER, INTEGER) -> INTEGER
+        +(BIGINT) -> BIGINT
+        +(BIGINT, BIGINT) -> BIGINT
+        +(HUGEINT) -> HUGEINT
+        +(HUGEINT, HUGEINT) -> HUGEINT
+        +(FLOAT) -> FLOAT
+        +(FLOAT, FLOAT) -> FLOAT
+        +(DOUBLE) -> DOUBLE
+        +(DOUBLE, DOUBLE) -> DOUBLE
+        +(DECIMAL) -> DECIMAL
+        +(DECIMAL, DECIMAL) -> DECIMAL
+        +(UTINYINT) -> UTINYINT
+        +(UTINYINT, UTINYINT) -> UTINYINT
+        +(USMALLINT) -> USMALLINT
+        +(USMALLINT, USMALLINT) -> USMALLINT
+        +(UINTEGER) -> UINTEGER
+        +(UINTEGER, UINTEGER) -> UINTEGER
+        +(UBIGINT) -> UBIGINT
+        +(UBIGINT, UBIGINT) -> UBIGINT
+        +(UHUGEINT) -> UHUGEINT
+        +(UHUGEINT, UHUGEINT) -> UHUGEINT
+        +(DATE, INTEGER) -> DATE
+        +(INTEGER, DATE) -> DATE
+        +(INTERVAL, INTERVAL) -> INTERVAL
+        +(DATE, INTERVAL) -> TIMESTAMP
+        +(INTERVAL, DATE) -> TIMESTAMP
+        +(TIME, INTERVAL) -> TIME
+        +(INTERVAL, TIME) -> TIME
+        +(TIMESTAMP, INTERVAL) -> TIMESTAMP
+        +(INTERVAL, TIMESTAMP) -> TIMESTAMP
+        +(TIME WITH TIME ZONE, INTERVAL) -> TIME WITH TIME ZONE
+        +(INTERVAL, TIME WITH TIME ZONE) -> TIME WITH TIME ZONE
+        +(TIME, DATE) -> TIMESTAMP
+        +(DATE, TIME) -> TIMESTAMP
+        +(TIME WITH TIME ZONE, DATE) -> TIMESTAMP WITH TIME ZONE
+        +(DATE, TIME WITH TIME ZONE) -> TIMESTAMP WITH TIME ZONE
+        +([ANY[]...]) -> ANY[]
+        +(BIGNUM, BIGNUM) -> BIGNUM
+        +(TIMESTAMP WITH TIME ZONE, INTERVAL) -> TIMESTAMP WITH TIME ZONE
+        +(INTERVAL, TIMESTAMP WITH TIME ZONE) -> TIMESTAMP WITH TIME ZONE
+
+
+LINE 11:     WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS BIGINT))
+                                      ^
+
+=================
+
 [DEBUG] DPBTRAN_CACHE schema:
 shape: (36, 6)
 ┌─────────────┬─────────────┬──────┬──────┬─────────┬───────┐
