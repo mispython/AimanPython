@@ -1,421 +1,562 @@
-"""
-Program : EIWFRMCR.py
-Purpose : Generate Foreign Remittance Report (Inward & Outward) for
-          compliance checking. Reads remittance transactions, filters
-          foreign ('F') transactions with STATUS IN ('TI','TO','BR'),
-          and splits them into an INWARD extract (STATUS='TI') and an
-          OUTWARD extract (STATUS IN ('TO','BR')).
-          Output matches original SAS output exactly:
-          - hex 05 delimiter
-          - SAS `+(-1)` trimming of final space
-          - leading spaces for numerics (BEST12.)
-          - fixed 1000-byte records (RECFM=FB, LRECL=1000)
-"""
+//EIBMLI4I JOB MISEIS,EIBMLIQ4,CLASS=A,MSGCLASS=A,NOTIFY=&SYSUID
+//*
+//* ADHOC - SAIFUL ADZLIM  ISLAMIC PART 4
+//*
+//SAS609  EXEC SAS609
+//BNMTBL4   DD DSN=SAP.PBB.KAPITI4(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD SYSOUT=X
+//SYSIN     DD *
 
-import gc
-import json
-from pathlib import Path
+OPTIONS NOCENTER YEARCUTOFF=1950 PS=60 LS=132;
+*;
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0.255 = 'UP TO 1 WK     '
+      0.255 -1  = '>1 WK - 1 MTH  '
+      1-3     = '>1 MTH - 3 MTHS'
+      3-6     = '>3 - 6 MTHS    '
+      6-12    = '>6 MTHS - 1 YR '
+      OTHER   = '>1 YEAR        ';
 
-import duckdb
-import pandas as pd
-import polars as pl
-import pyarrow as pa
-import pyarrow.parquet as pq
-import pyreadstat
+   VALUE REMFMTA
+      LOW-0.255 = '01'
+      0.255-1   = '02'
+      1-3       = '03'
+      3-6       = '04'
+      6-12      = '05'
+      OTHER     = '06';
+*;
+RUN;
+*;
+ * TO ENSURE CORRECT MTH-END DATE IS TAKEN SHOULD IT BE MTH-END;
+%MACRO MTHENDDT;
+   IF MTHEND='Y' THEN DO;
+      SELECT(MTHIPD);
+         WHEN(1,3,5,7,8,10,12) MTHDAY=31;
+         WHEN(4,6,9,11) MTHDAY=30;
+         OTHERWISE DO;
+         IF MOD(YRTRAN,4) = 0 THEN MTHDAY=29;
+            ELSE MTHDAY=28;
+         END;
+      END;
+      IF DAYTRAN > MTHDAY THEN DAYTRAN=MTHDAY;
+   END;
+%MEND MTHENDDT;
+*;
+%MACRO CALCIPD;
+   MTHEND='N';  * CHECK IF TRANSACTION DATE IS ON MONTH-END ;
+   NPAY=6;      * PAYMENT FREQUENCY IS FIXED COS UTIPI IS NIL;
+   NYEAR=0;
+   IF DAY(MATDT+1)=1 THEN MTHEND='Y';
 
-from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
+   DAYTRAN=DAY(MATDT);
+   YRTRAN =YEAR(MATDT);
+   MTHTRAN=MONTH(MATDT);
 
-# ============================================================
-# PATH CONFIGURATION
-# ============================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR = BASE_DIR / "input" / "prod" / "remittance"
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIWFRMCR"
-OUTPUT_DIR = BASE_DIR / "output" / "EIWFRMCR"
+   TRANDAYS=MATDT-REPTDT;
+   NUMOFN=INT(TRANDAYS/(NPAY*30));
+   NUMMTH=NUMOFN*NPAY;
+   NYEAR=INT(NUMMTH/12);
+   NMTH=MOD(NUMMTH,12);
+   MTHIPD=(MTHTRAN-NMTH)-NPAY;
+   IF MTHIPD <= 0 THEN DO;
+      MTHIPD=MTHIPD+12; NYEAR+1;
+   END;
+   YRTRAN=YRTRAN-NYEAR;
+   %MTHENDDT;
+   PREINTDT=MDY(MTHIPD,DAYTRAN,YRTRAN);
+   IF PREINTDT NE . THEN DO;
+      DAYTRAN=DAY(PREINTDT);
+      YRTRAN =YEAR(PREINTDT);
+      MTHIPD=MONTH(PREINTDT);
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+      MTHIPD+NPAY;
+      IF MTHIPD > 12 THEN DO;
+         YRTRAN+1;
+         MTHIPD=MOD(MTHIPD,12);
+      END;
+      %MTHENDDT;
+      CURINTDT=MDY(MTHIPD,DAYTRAN,YRTRAN);
+   END;
+%MEND CALCIPD;
+*;
+DATA REPTDATE;
+   INFILE BNMTBL4  OBS=1;
+   INPUT @113 UTRPT $10.;
+   REPTDATE=INPUT(UTRPT,DDMMYY10.);
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
 
-RMT_PREFIX = "remtran"
+DATA LIQCLASS;
+   INFILE BNMTBL4;
+   INPUT @1  UTOSD $10.
+         @11 UTSMN $16.
+         @27 UTCPR PD6.7
+         @33 UTYLD PD4.4
+         @37 UTFCV PD8.2
+         @45 UTDCV PD8.2
+         @53 UTMKV PD8.2
+         @61 UTMDT $10.
+         @71 UTINT PD8.2
+         @79 UTPLS PD8.2
+         @87 UTSTY $3.
+         @90 UTTTY $1.
+         @91 UTITY $1.
+         @92 UTIPI $1.
+         @93 UTLCD $10.
+         @103 UTNCD $10.
+         @113 UTRPT $10.
+         @123 UTSTS $5.
+         @128 UTAMS PD8.2
+         @136 UTCLS $1.
+         @137 UTPGMID $10.
+         @147 UTIDT $10.
+         @157 UTRMD $10.
+         @167 UTAMP PD8.2
+         @175 UTREF $4.
+         @175 UTREF1 $1.
+         @178 UTREF4 $1.
+         @191 UTTYP $3.
+         ;
 
-# Output filenames (static, as in original)
-INWARD_REPORT_FILE = OUTPUT_DIR / "SAP_PBB_COMP_INWARD_REPT.txt"
-OUTWARD_REPORT_FILE = OUTPUT_DIR / "SAP_PBB_COMP_OUTWARD_REPT.txt"
+   LABEL UTOSD = 'SETTLEMENT/TRANSACTION DATE'
+         UTSMN = 'SECURITY MNEMONIC/STOCK CODE'
+         UTCPR = 'DISCOUNT/COUPON RATE'
+         UTYLD = 'YIELD'
+         UTFCV = 'FACE VALUE'
+         UTDCV = 'COST/CAPITAL VALUE'
+         UTMKV = 'MARKET VALUE'
+         UTMDT = 'MATURITY DATE'
+         UTINT = 'INTEREST AMOUNT'
+         UTPLS = 'PROFIT & LOSS'
+         UTSTY = 'SECURITY TYPE'
+         UTTTY = 'TRANSACTION TYPE'
+         UTITY = 'INSTRUMENT TYPE'
+         UTIPI = 'INTEREST PAYMENT INDICATOR'
+         UTLCD = 'LAST INTEREST PAYMENT DATE'
+         UTNCD = 'NEXT INTEREST PAYMENT DATE'
+         UTRPT = 'REPORTING DATE'
+         UTSTS = 'STATUS'
+         UTAMS = 'SALES PROCEEDS'
+         UTCLS = 'CLASS'
+       UTPGMID = 'PROGRAM ID'
+         UTIDT = 'ISSUE DATE' /* MM-DD-YYYY */
+         UTRMD = 'REPO MAT DATE'
+         UTAMP = 'PURCHASE PROCEEDS'
+         UTREF = 'PORTFOLIO REF'
+         UTTYP = 'PORTFOLIO TYP'
+         ;
 
-# Delimiter: hex 05 (ENQ)
-DLM = chr(0x05)
-# Numeric width used by SAS BEST12.
-NUM_WIDTH = 12
+   IF UTREF1 EQ 'I' AND UTREF4 NE '  ';
 
-# ============================================================
-# CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
-# ============================================================
-CHUNK_ROWS = 500_000
+DATA LIQCLASS;
+   SET LIQCLASS;
+       AMOUNT=UTMKV;
+       IF AMOUNT=.  THEN AMOUNT=0;
+       REPTDATE=INPUT(UTRPT,DDMMYY10.);
+       RPYR  = YEAR(REPTDATE);
+       RPMTH = MONTH(REPTDATE);
+       RPDAY = DAY(REPTDATE);
+       IF MOD(RPYR,4) = 0 THEN RD2 = 29;
 
-# ============================================================
-# REPORT DATE DERIVATION
-# ============================================================
-reptdate_values = get_reptdate_values()
-REPTYEAR = reptdate_values.reptyear
-REPTMON = reptdate_values.reptmon
-RDATE = reptdate_values.rdate
+       CHKDT='04SEP04'D;
+       STATUS=SUBSTR(UTSTS,1,2);
+       ISSDT=0;
+       IF UTIDT NOT = '    ' THEN DO;
+          ISSDD=SUBSTR(UTIDT,4,2);
+          ISSMM=SUBSTR(UTIDT,1,2);
+          ISSYY=SUBSTR(UTIDT,7,4);
+          ISSDT=MDY(ISSMM,ISSDD,ISSYY);
+       END;
+       IF ISSDT LE CHKDT THEN C2='R'; ELSE
+       IF ISSDT > CHKDT  THEN C2='Y';
+*;
+DATA LIQCLAS1;
+   SET LIQCLASS;
+   SELECT(UTSTY);
+     WHEN ('MGS','MTB','BNB','BNN','BMN','BMC',
+           'KHA','MGI','ITB') DO;
+        CLASS = 'A'; SLIPPAGE = 2;
+        IF UTTTY='X'             THEN CLASS='R';
+     END;
 
-print(f"Report Date  : {RDATE}")
-print(f"Report Year  : {REPTYEAR}")
-print(f"Report Month : {REPTMON}")
+     WHEN ('IDS','DHB') DO;
+        CLASS = 'A'; SLIPPAGE = 3;
+        IF UTTTY='X'             THEN CLASS='R';
+     END;
+     WHEN ('DMB') DO;
+        CLASS = 'A'; SLIPPAGE = 4;
+        IF UTTTY='X'             THEN CLASS='R';
+     END;
+     WHEN ('CB2','CF1','CF2','CMB','PNB') DO;
+        CLASS = 'B'; SLIPPAGE = 4;
+        IF UTSTY='CB2' AND UTTTY='X' AND C2='R'  THEN CLASS='R';
+     END;
+     WHEN ('CB1','CNT','SMC','SAC') DO;
+        CLASS = 'B'; SLIPPAGE=4;
+        IF UTTTY='X' AND C2='R'  THEN CLASS='R';
+        IF C2='Y' THEN DO; CLASS = 'F'; SLIPPAGE=6; END;
+     END;
+     WHEN ('SBA') DO;
+        IF SUBSTR(UTSTS,1,2) IN ('P1','P2','AA') THEN DO;
+           CLASS = 'C'; SLIPPAGE = 4; END;
+        ELSE DO;
+           CLASS = 'D'; SLIPPAGE = 6; END;
+     END;
+     OTHERWISE;
+   END;
+   IF CLASS NE '   ' THEN OUTPUT LIQCLAS1;
+*;
+DATA LIQCLAS2;
+   SET LIQCLASS;
+   IF UTSTY IN ('SSD','SDC') AND UTSTS='P1' THEN DO;
+      CLASS = 'E'; SLIPPAGE = 6;
+      OUTPUT LIQCLAS2;
+   END;
+   IF UTSTY IN ('SLD','SFD','SZD') AND
+      UTSTS IN ('AA','AAA','MARC1','MARC2') THEN DO;
+      CLASS = 'E'; SLIPPAGE = 6;
+      OUTPUT LIQCLAS2;
+   END;
+RUN;
+*;
+DATA LIQCLAS3;
+   SET LIQCLAS2;
+   IF  UTTTY='R' THEN DO;
+       CLASS='X'; OUTPUT;
+       CLASS='Y'; OUTPUT;
+   END;
+*;
+DATA LIQCLASS;
+  SET LIQCLAS1 LIQCLAS2 LIQCLAS3;
+*;
 
-# ============================================================
-# LOCATE LATEST RMT FILE (or reconstruct exact name if preferred)
-# ============================================================
-rmt_file = get_latest_file(INPUT_DIR, prefix=RMT_PREFIX)
-print(f"Input RMT File : {rmt_file}")
-
-RMT_CACHE = CACHE_DIR / f"{rmt_file.stem}.parquet"
-META_CACHE = CACHE_DIR / f"{rmt_file.stem}_meta.json"
-
-
-# ============================================================
-# HELPER: CACHE STAMP
-# ============================================================
-def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
-    return (
-        cache_path.exists()
-        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
-    )
-
-
-# ============================================================
-# FUNCTION TO EXTRACT SAS COLUMN METADATA (using pyreadstat)
-# ============================================================
-def extract_sas_metadata(sas_path: Path) -> dict:
-    """Return dict with column names as keys and lengths (for chars) or None (for nums)."""
-    _, meta = pyreadstat.read_sas7bdat(sas_path, metadata_only=True)
-    col_lengths = {}
-    for name, typ, length in zip(meta.column_names, meta.column_types, meta.column_lengths):
-        if typ == "string":
-            col_lengths[name] = length
-        else:
-            col_lengths[name] = None  # numeric columns have no fixed width; we use NUM_WIDTH
-    return col_lengths
-
-
-# ============================================================
-# STREAM .sas7bdat → PARQUET (with metadata cache)
-# ============================================================
-def sas_to_parquet_with_meta(sas_path: Path, cache_path: Path, meta_path: Path) -> None:
-    """Convert large .sas7bdat to Parquet, and save column metadata as JSON."""
-    print(f"  Converting {sas_path.name} -> {cache_path.name} ...")
-
-    # 1. Extract metadata
-    col_lengths = extract_sas_metadata(sas_path)
-    with open(meta_path, "w") as f:
-        json.dump(col_lengths, f)
-
-    # 2. Stream data in chunks
-    writer = None
-    schema = None
-    total = 0
-
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
-        if schema is None:
-            schema = table.schema
-            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        else:
-            # Cast to match schema (as in original code)
-            cast_arrays = []
-            for field in schema:
-                col = table.column(field.name)
-                if col.type != field.type:
-                    try:
-                        col = col.cast(field.type, safe=False)
-                    except Exception as e:
-                        print(f"    WARNING: Cannot cast '{field.name}' "
-                              f"from {col.type} to {field.type}: {e} — filling nulls")
-                        col = pa.nulls(len(col), type=field.type)
-                cast_arrays.append(col)
-            table = pa.Table.from_arrays(cast_arrays, schema=schema)
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-
-    if writer:
-        writer.close()
-    print(f"  Done — {total:,} rows cached.")
-
-
-# ============================================================
-# LOAD OR BUILD CACHE
-# ============================================================
-print("\nCaching RMT file to Parquet (if needed)...")
-
-if not (_cache_is_fresh(rmt_file, RMT_CACHE) and META_CACHE.exists()):
-    sas_to_parquet_with_meta(rmt_file, RMT_CACHE, META_CACHE)
-else:
-    print("  Cache fresh — skipping conversion.")
-
-# Load column metadata
-with open(META_CACHE, "r") as f:
-    COL_LENGTHS = json.load(f)
-
-
-# ============================================================
-# FORMATTING HELPERS (SAS exact match)
-# ============================================================
-def _fmt_str(value, col_name: str) -> str:
-    """Format a character column exactly as SAS `PUT var +(-1)` would.
-
-    SAS writes the full length of the variable, then backs up one column
-    before the delimiter, effectively dropping the last character of the
-    field (which is always a space because SAS pads with trailing blanks).
-    If the field is empty, we write (length-1) spaces.
-    """
-    if value is None:
-        value = ""
-    else:
-        value = str(value).rstrip()  # remove any stored trailing spaces
-    length = COL_LENGTHS.get(col_name, 30)  # fallback to 30 if unknown
-    # We need to output length-1 characters (SAS removes the last char)
-    # After rstrip, the value has no trailing blanks; pad to length-1 with spaces
-    return value.ljust(length - 1)
-
-
-def _fmt_num(value) -> str:
-    """Format numeric as SAS BEST12. (right‑aligned, 12 chars)."""
-    if value is None or (isinstance(value, float) and value != value):  # NaN
-        return " " * NUM_WIDTH  # all blanks (SAS writes missing as '.'? But original has empty)
-    # For numeric, SAS BEST12. output has no trailing spaces; we just right-align.
-    return f"{value:>{NUM_WIDTH}}"
-
-
-def _fmt_date(value) -> str:
-    """Format date as YYYY-MM-DD (as in original sample)."""
-    if value is None:
-        return ""
-    if hasattr(value, "strftime"):
-        return value.strftime("%Y-%m-%d")
-    return str(value).strip()
-
-
-def _build_line(fields: list, col_names: list = None) -> str:
-    """Join fields with DLM, including trailing DLM, using column-specific formatting."""
-    if col_names is None:
-        col_names = []
-    formatted = []
-    for i, (field, col) in enumerate(zip(fields, col_names)):
-        if col is not None and col in COL_LENGTHS:
-            # character column
-            formatted.append(_fmt_str(field, col))
-        else:
-            # numeric (or unknown) – assume numeric
-            formatted.append(_fmt_num(field))
-    return DLM.join(formatted) + DLM
-
-
-# ============================================================
-# HEADER DEFINITIONS (same as original)
-# ============================================================
-INWARD_HEADERS = [
-    "TRANSACTION DATE",
-    "BRANCH NAME",
-    "REFERENCE NO",
-    "BENEFICIARY NAME 1",
-    "BENEFICIARY NAME 2",
-    "BENEFICIARY NAME 3",
-    "BENEFICIARY NAME 4",
-    "ORDERING CUSTOMER 1",
-    "ORDERING CUSTOMER 2",
-    "ORDERING CUSTOMER 3",
-    "ORDERING CUSTOMER 4",
-    "AMOUNT (FCY)",
-    "AMOUNT (MYR)",
-    "ACCOUNT NO",
-    "CURRENCY",
-    "PAYMENT MODE",
-    "STAFF ID",
-    "RESIDENCY",
-    "NATIONALITY",
-    "BMR STATUS",
-    "COUNTRY",
-    "CBOP CODE",
-]
-
-OUTWARD_HEADERS = [
-    "TRANSACTION DATE",
-    "BRANCH NAME",
-    "REFERENCE NO",
-    "ORDERING CUSTOMER 1",
-    "ORDERING CUSTOMER 2",
-    "ORDERING CUSTOMER 3",
-    "ORDERING CUSTOMER 4",
-    "ORDERING CUSTOMER ACCOUNT NO",
-    "BENEFICIARY NAME 1",
-    "BENEFICIARY NAME 2",
-    "BENEFICIARY NAME 3",
-    "BENEFICIARY NAME 4",
-    "AMOUNT (FCY)",
-    "AMOUNT (MYR)",
-    "ACCOUNT NO",
-    "CURRENCY",
-    "PAYMENT MODE",
-    "STAFF ID",
-    "RESIDENCY",
-    "NATIONALITY",
-    "BMR STATUS",
-    "COUNTRY",
-    "CBOP CODE",
-]
+DATA LIQCLASS;
+   SET LIQCLASS;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF CLASS NE ' ' OR CLASS NE . ;
+      FORMAT DISCOUNT P 15.6;
+      DISTYLD  = UTYLD + SLIPPAGE;
+      DISCOUNT = (DISTYLD/100)*UTMKV;
+      P = DISCOUNT;
+      CPN = UTCPR;
+      YLD = DISTYLD;
+      RV = 100;
+      DISTAMT  = 0;
+      REPTDT   = INPUT(UTRPT,DDMMYY10.);
+      SETTLEDT = INPUT(UTOSD,DDMMYY10.);
+      PREINTDT = INPUT(UTLCD,DDMMYY10.);
+      CURINTDT = INPUT(UTNCD,DDMMYY10.);
+      MATDT    = INPUT(UTMDT,DDMMYY10.);
+      IF UTTTY='X' THEN MATDT=INPUT(UTRMD,DDMMYY10.);
+      IF UTTTY='R' THEN DO;
+         IF CLASS='X' THEN MATDT=INPUT(UTMDT,DDMMYY10.);
+         IF CLASS='Y' THEN MATDT=INPUT(UTRMD,DDMMYY10.);
+      END;
+      TSM      = MATDT - REPTDT;
 
 
-# ============================================================
-# DETAIL LINE BUILDERS (using column names for formatting)
-# ============================================================
-def _build_inward_line(row: dict) -> str:
-    fields = [
-        _fmt_date(row["LASTTRAN"]),
-        row["BRANCHABB"],
-        row["SERIAL"],
-        row["BNAD1"],
-        row["BNAD2"],
-        row["BNAD3"],
-        row["BNAD4"],
-        row["ANAD1"],
-        row["ANAD2"],
-        row["ANAD3"],
-        row["ANAD4"],
-        row["FORAMT"],
-        row["AMOUNT"],
-        row["ACCTNO"],
-        row["CURRENCY"],
-        row["PAYMODE"],
-        row["USERID"],
-        row["RESIDENT"],
-        row["APPLNATIONAL"],
-        row["BMRSTATUS"],
-        row["COUNTRY"],
-        row["ADMIN"],
-    ]
-    col_names = [
-        "LASTTRAN", "BRANCHABB", "SERIAL", "BNAD1", "BNAD2", "BNAD3", "BNAD4",
-        "ANAD1", "ANAD2", "ANAD3", "ANAD4", "FORAMT", "AMOUNT", "ACCTNO",
-        "CURRENCY", "PAYMODE", "USERID", "RESIDENT", "APPLNATIONAL",
-        "BMRSTATUS", "COUNTRY", "ADMIN"
-    ]
-    return _build_line(fields, col_names)
+      IF CURINTDT=. OR CURINTDT=' ' OR CURINTDT=0 THEN
+         TM=MATDT-REPTDT;
+      ELSE TM=CURINTDT-REPTDT;
+
+      REMMTH = ROUND((TSM/365)*12,.01);
+      IF TSM < 8 THEN REMMTH=0.1;  /* FIXED THIS TO BE MORE ACCURATE */
+      IF (UTITY IN ('I','F') AND UTIPI ^= ' ') OR
+         (UTSTY IN ('SZD','DHB','DMB','IDS','KHA','MGI')) THEN DO;
 
 
-def _build_outward_line(row: dict) -> str:
-    fields = [
-        _fmt_date(row["LASTTRAN"]),
-        row["BRANCHABB"],
-        row["SERIAL"],
-        row["ANAD1"],
-        row["ANAD2"],
-        row["ANAD3"],
-        row["ANAD4"],
-        row["PAYREF"],
-        row["BNAD1"],
-        row["BNAD2"],
-        row["BNAD3"],
-        row["BNAD4"],
-        row["FORAMT"],
-        row["AMOUNT"],
-        row["ACCTNO"],
-        row["CURRENCY"],
-        row["PAYMODE"],
-        row["USERID"],
-        row["RESIDENT"],
-        row["APPLNATIONAL"],
-        row["BMRSTATUS"],
-        row["COUNTRY"],
-        row["ADMIN"],
-    ]
-    col_names = [
-        "LASTTRAN", "BRANCHABB", "SERIAL", "ANAD1", "ANAD2", "ANAD3", "ANAD4",
-        "PAYREF", "BNAD1", "BNAD2", "BNAD3", "BNAD4", "FORAMT", "AMOUNT",
-        "ACCTNO", "CURRENCY", "PAYMODE", "USERID", "RESIDENT", "APPLNATIONAL",
-        "BMRSTATUS", "COUNTRY", "ADMIN"
-    ]
-    return _build_line(fields, col_names)
 
 
-def _write_report(
-    df: pl.DataFrame,
-    headers: list,
-    build_line_fn,
-    output_path: Path,
-) -> None:
-    """Write header + detail lines, each exactly 1000 bytes long (no newline)."""
-    with open(output_path, "wb") as f:  # binary mode – no newline conversion
-        # Write header record
-        header_line = _build_line(headers, col_names=None)  # headers are strings, no special formatting
-        f.write(header_line.ljust(1000).encode("latin1"))
+         IF UTSTY IN ('DHB','IDS','KHA','DMB','MGI') THEN DO;
+            %CALCIPD;   * CALCULATE INTEREST PAYMENT DATES ;
+         END;
+         *;
+         DSC = CURINTDT - REPTDT;
+         DCS = REPTDT - PREINTDT;
+         DCC = CURINTDT - PREINTDT;
 
-        # Write each detail record
-        for row in df.iter_rows(named=True):
-            line = build_line_fn(row)
-            f.write(line.ljust(1000).encode("latin1"))
+         NDAYS = MATDT - CURINTDT;
 
 
-# ============================================================
-# READ + FILTER RMT DATA FROM PARQUET CACHE
-# ============================================================
-KEEP_COLUMNS = [
-    "BRANCHABB", "STATUS", "SERIAL", "LASTTRAN",
-    "ANAD1", "ANAD2", "ANAD3", "ANAD4",
-    "BNAD1", "BNAD2", "BNAD3", "BNAD4",
-    "AMOUNT", "FORAMT", "PAYREF",
-    "ACCTNO", "CURRENCY", "PAYMODE", "USERID", "RESIDENT",
-    "APPLNATIONAL", "BMRSTATUS", "COUNTRY", "ADMIN",
-]
 
-print("\nReading + filtering RMT data from Parquet cache...")
+         IF UTSTY IN ('SZD','DHB','DMB','IDS','KHA') THEN CPN = 0;
+         IF REMMTH < 6 AND UTITY = 'I' THEN DO;
+            CPN2 = CPN/100;
+            YLD = YLD/100;
+            ACCINT = CPN2*(DCS/(2*DCC));
+            DISCOUNT = (1+CPN2/2)/(1+YLD*(TSM/(2*DCC)))-ACCINT;
+            P = DISCOUNT*100;
+         END;
+         ELSE DO;  /* APPENDIX 1 FORMULA */
+            IF UTSTY NOT IN ('SFD','CF1','CF2','CFB','SSD') THEN DO;
+               SELECT(UTIPI);       /* CALCULATE N VALUE  */
+                 WHEN('Q') DO; /* QUARTERLY, EVERY 3 MONTHS ONCE */
+                   NPAY = 3; END;
+                 WHEN('H') DO; /* HALF-YEARLY, EVERY 6 MONTHS ONCE */
+                   NPAY = 6; END;
+                 WHEN('Y') DO; /* YEARLY, EVERY 12 MONTHS ONCE */
+                   NPAY = 12; END;
+                 OTHERWISE;
+               END;
+               *;
+               NMTH = ROUND(NDAYS/365*12,.1);
+               N = INT(NMTH/NPAY)+1;
+               /* CALCULATE PART I VALUE */
+               POWERI = N-1+DSC/DCC;   /* CALCULATE FOR PART I */
+               I = RV/((1+YLD/200)**POWERI);
+               II = 0;
 
-con = duckdb.connect(database=":memory:")
-filtered_df = con.execute(f"""
-    SELECT {', '.join(KEEP_COLUMNS)}
-    FROM read_parquet('{RMT_CACHE}')
-    WHERE REMTYPE = 'F'
-      AND STATUS IN ('TI', 'TO', 'BR')
-""").pl()
-con.close()
-gc.collect()
+               IF DSC ^= . AND DCC ^= . THEN DO;
+                  DO K = 1 TO N;
+                     POWERII = K-1+DSC/DCC;
+                     II + (CPN/2)/((1 + YLD/200)**POWERII);
+                  END;
 
-print(f"  Filtered rows: {len(filtered_df):,}")
+               /* CALCULATE PART III */
+                  III = 100*((CPN/200)*(DCS/DCC));
 
-# Split into inward (TI) and outward (TO, BR)
-inward_df = filtered_df.filter(pl.col("STATUS") == "TI")
-outward_df = filtered_df.filter(pl.col("STATUS") != "TI")
-del filtered_df
-gc.collect()
+               /* THE WHOLE FORMULAE */
+                  DISCOUNT = I + II - III;
+                  P = DISCOUNT;
+               END;
+            END;
+         END;
+      END;
 
-# ============================================================
-# WRITE OUTPUT FILES (exact SAS format)
-# ============================================================
-_write_report(inward_df, INWARD_HEADERS, _build_inward_line, INWARD_REPORT_FILE)
-_write_report(outward_df, OUTWARD_HEADERS, _build_outward_line, OUTWARD_REPORT_FILE)
+      REPTDAYS = REPTDT - PREINTDT;
+      ORGTENOR = MATDT - PREINTDT;
+      CPN2 = CPN/100;
+      YLD2 = YLD/100;
+      SELECT(UTSTY);
+         WHEN('MGS','CBB','SLD','CB1','CB2','CMB','PNB') DO;
+            DISTAMT = UTFCV*((P/100)+(CPN2*REPTDAYS)/(DCC*2));
+         END;
+         WHEN('CFB','SFD','CF1','CF2') DO;
+            DISTAMT = UTFCV*((36500+(CPN*DCC))/(36500+(YLD*TM)));
+         END;
+     /*  WHEN('SZD','KHA','IDS','DHB','DMB','ISB') DO; */
+         WHEN('SZD','KHA','IDS','DHB','DMB') DO;
+            DISTAMT = UTFCV*(P/100);
+         END;
+         WHEN('SSD','SLD') DO;
+            DISTAMT = UTFCV*(36500+CPN*ORGTENOR)/(36500+YLD*TSM);
+         END;
+         OTHERWISE DO;
+            DISTAMT = UTFCV*(1-(YLD*TSM)/36500);
+         END;
+      END;
+RUN;
 
-# ============================================================
-# TERMINAL OUTPUT (preview with visible delimiter replacement)
-# ============================================================
-print(f"\nInward Report Output Path  : {INWARD_REPORT_FILE}")
-print(f"Inward Records Written     : {inward_df.height}")
-print("Inward Report Preview (first 3 lines, | in place of delimiter):")
-with open(INWARD_REPORT_FILE, "rb") as f:
-    # Read first 3 records (each 1000 bytes)
-    for _ in range(3):
-        rec = f.read(1000).decode("latin1")
-        print(rec.replace(DLM, "|").rstrip())
+PROC SORT DATA=LIQCLASS OUT=LIQCLASS;
+   BY UTSTY CLASS;
+RUN;
+*;
+%INC PGM(MATDTEX);
+*;
+DATA LIQCLASS;
+    SET LIQCLASS;
+    MRNGE=PUT(REMMTH,REMFMT.);
+*;
+TITLE1 'REPORT ID: EIBMLIQ4';
+TITLE2 'PUBLIC BANK BERHAD - STATISTICS DEPARTMENT';
+TITLE3 'STOCK OF LIQUEFIABLE ASSETS (PART 4)';
+TITLE4 'AS AT ' &RDATE;
+*;
+PROC PRINT DATA=LIQCLASS SPLIT='*';
+VAR UTOSD CPN YLD UTMKV UTMDT UTSTY UTFCV PREINTDT CURINTDT
+    DISCOUNT DISTAMT UTTTY STATUS UTRMD MRNGE;
+SUM DISTAMT;
+FORMAT PREINTDT CURINTDT DDMMYY8.;
+RUN;
+*;
+PROC SUMMARY DATA=LIQCLASS NWAY;
+CLASS UTSTY CLASS REMMTH UTTTY;
+VAR   DISTAMT UTMKV UTAMP;
+OUTPUT OUT=LIQASSET (DROP=_TYPE_ _FREQ_)
+       SUM=;
+RUN;
+*;
+DATA LIQASSET;
+   KEEP MKVNIDX MKVNIDY UTAMP
+        CLASS UTSTY AMTSTK AMTREPO MKVBOOK MKVREV TOTDSCT REMMTH;
+   SET LIQASSET;
+   BY UTSTY CLASS REMMTH;
+   IF FIRST.CLASS OR FIRST.REMMTH THEN DO;
+      STKNID = 0; REPNID = 0;
+      AMTSTK = 0; AMTREPO = 0; AMTREV = 0; TOTDSCT = 0;
+   END;
+   RETAIN AMTSTK AMTREPO AMTREV TOTDSCT STKNID REPNID;
 
-print(f"\nOutward Report Output Path : {OUTWARD_REPORT_FILE}")
-print(f"Outward Records Written    : {outward_df.height}")
-print("Outward Report Preview (first 3 lines, | in place of delimiter):")
-with open(OUTWARD_REPORT_FILE, "rb") as f:
-    for _ in range(3):
-        rec = f.read(1000).decode("latin1")
-        print(rec.replace(DLM, "|").rstrip())
+   SELECT(UTTTY);
+      WHEN('S') DO;
+         AMTSTK + UTMKV;
+      END;
+      WHEN('R') DO;
+         AMTREPO + UTMKV;
+         IF CLASS='X' THEN STKNID=STKNID+UTAMP;
+         IF CLASS='Y' THEN REPNID=REPNID+UTAMP;
+      END;
+      WHEN('X') DO;
+         AMTREV + UTMKV;
+      END;
+      OTHERWISE;
+   END;
+   IF UTSTY = 'SSD' OR
+      UTSTY = 'SLD' THEN DO;
+      IF UTTTY='R' THEN TOTDSCT = TOTDSCT - DISTAMT;
+      ELSE TOTDSCT + DISTAMT;
+   END;
+   ELSE TOTDSCT + DISTAMT;
 
-print("\nEIWFRMCR complete.")
+   IF LAST.UTSTY OR LAST.CLASS OR LAST.REMMTH THEN DO;
+      MKVBOOK = AMTSTK - AMTREPO;
+      MKVREV  = AMTREV;
+      MKVNIDX = STKNID;
+      MKVNIDY = REPNID;
+      OUTPUT;
+   END;
+RUN;
+*;
+PROC FORMAT;
+   VALUE $CLASSF
+     'A' = 'RM MKTBL SECUR/PAPERS ISSUED BY FED GOVT/BNM'
+     'B' = 'CAGAMAS BONDS & NOTES'
+     'C' = 'BAS ISSUED BY TIER1/AAA-RATED INST.'
+     'D' = 'BAS ISSUED BY TIER2 & NON-AAA'
+     'E' = 'NIDS ISSUED BY RATING'
+     'F' = 'STOCK                '
+     'R' = 'REVERSE REPO            '
+     'X' = 'NIDS UDR REPO (LIABILITIES)'
+     'Y' = 'NIDS UDR REPO (ASSETS)  ';
+RUN;
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  CLASS CLASS UTSTY;
+  VAR   MKVBOOK MKVREV TOTDSCT;
+  TABLE CLASS = ' ',UTSTY ALL,
+        MKVBOOK = 'MKT VALUE SECUR REPT IN BOOKS'*F=COMMA16.2
+        MKVREV  = 'MKT VALUE SECUR RECV UDR REV REPO'*F=COMMA16.2
+        TOTDSCT = 'TOTAL VALUE OF SECUR AFTER DISCOUNT'*F=COMMA16.2
+        /RTS=50 BOX='CLASS-1 LIQUIFIABLE ASSETS';
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  FORMAT CLASS $CLASSF.;
+  WHERE CLASS IN ('A','B');
+RUN;
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  CLASS CLASS UTSTY;
+  VAR   MKVBOOK MKVREV TOTDSCT;
+  TABLE CLASS = ' ',UTSTY ALL,
+        MKVBOOK = 'MKT VALUE SECUR REPT IN BOOKS'*F=COMMA16.2
+        MKVREV  = 'MKT VALUE SECUR RECV UDR REV REPO'*F=COMMA16.2
+        TOTDSCT = 'TOTAL VALUE OF SECUR AFTER DISCOUNT'*F=COMMA16.2
+        /RTS=50 BOX='CLASS-1 LIQUIFIABLE ASSETS';
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  FORMAT CLASS $CLASSF.;
+  WHERE CLASS='R';
+RUN;
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  FORMAT REMMTH REMFMT.;
+  CLASS CLASS REMMTH;
+  VAR   MKVREV  TOTDSCT;
+  TABLE CLASS=' ',REMMTH='REMAINING MATURITY' ALL,
+        MKVREV  = 'MKT VALUE SECUR RECV UDR REV REPO'*F=COMMA16.2
+        TOTDSCT = 'TOTAL VALUE OF SECUR AFTER DISCOUNT'*F=COMMA16.2
+        /RTS=30 BOX='CLASS-1 LIQUID ASSETS BY';
+  FORMAT CLASS $CLASSF.;
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  WHERE CLASS IN ('R');
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  CLASS CLASS UTSTY;
+  VAR   MKVBOOK MKVREV TOTDSCT;
+  TABLE CLASS = ' ',UTSTY ALL,
+        MKVBOOK = 'MKT VALUE SECUR REPT IN BOOKS'*F=COMMA16.2
+        MKVREV  = 'MKT VALUE SECUR RECV UDR REV REPO'*F=COMMA16.2
+        TOTDSCT = 'TOTAL VALUE OF SECUR AFTER DISCOUNT'*F=COMMA16.2
+        /RTS=50 BOX='CLASS-2 LIQUIFIABLE ASSETS FOR CLASS F';
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  FORMAT CLASS $CLASSF.;
+  WHERE CLASS='F';
+RUN;
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  FORMAT REMMTH REMFMT.;
+  CLASS  CLASS REMMTH;
+  VAR    MKVBOOK MKVREV TOTDSCT;
+  TABLE  CLASS=' ',REMMTH='REMAINING MATURITY' ALL,
+         MKVBOOK = 'MKT VALUE SECUR REPT IN BOOKS'*F=COMMA16.2
+         MKVREV  = 'MKT VALUE SECUR RECV UDR REV REPO'*F=COMMA16.2
+         TOTDSCT = 'TOTAL VALUE OF SECUR AFTER DISCOUNT'*F=COMMA16.2
+        /RTS=50 BOX='CLASS-2 LIQUIFIABLE ASSETS FOR CLASS F';
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  FORMAT CLASS $CLASSF.;
+  WHERE CLASS='F';
+RUN;
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  CLASS CLASS UTSTY;
+  VAR   MKVBOOK MKVREV TOTDSCT;
+  TABLE CLASS=' ',UTSTY ALL,
+        MKVBOOK = 'MKT VALUE SECUR REPT IN BOOKS'*F=COMMA16.2
+        MKVREV  = 'MKT VALUE SECUR RECV UDR REV REPO'*F=COMMA16.2
+        TOTDSCT = 'TOTAL VALUE OF SECUR AFTER DISCOUNT'*F=COMMA16.2
+        /RTS=50 BOX='CLASS-2 LIQUID ASSETS & CREDIT LINES';
+  FORMAT CLASS $CLASSF.;
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  WHERE CLASS IN ('C','D','E');
+RUN;
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  FORMAT REMMTH REMFMT.;
+  CLASS CLASS REMMTH;
+  VAR   MKVBOOK TOTDSCT;
+  TABLE CLASS=' ',REMMTH='REMAINING MATURITY' ALL,
+        MKVBOOK = 'MKT VALUE SECUR REPT IN BOOKS'*F=COMMA16.2
+        TOTDSCT = 'TOTAL VALUE OF SECUR AFTER DISCOUNT'*F=COMMA16.2
+        /RTS=30 BOX='CLASS-2 LIQUID ASSETS BY';
+  FORMAT CLASS $CLASSF.;
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  WHERE CLASS IN ('C','D','E');
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  CLASS CLASS UTSTY;
+  VAR   MKVNIDY;
+  TABLE CLASS=' ',UTSTY ALL,
+        MKVNIDY='PURCHASE PROCEEDS FOR NIDS UDR REPO'*F=COMMA16.2
+      / RTS=50 BOX='CLASS-2 LIQUID ASSETS';
+  FORMAT CLASS $CLASSF.;
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  WHERE CLASS='Y';
+RUN;
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  FORMAT REMMTH REMFMT.;
+  CLASS  CLASS REMMTH;
+  VAR    MKVNIDX;
+  TABLE  CLASS=' ',REMMTH='REMAINING MATURITY' ALL,
+         MKVNIDX='STOCK MATURITY DATE'*F=COMMA20.2
+      /  RTS=30 BOX='CLASS-2 LIQUID ASSETS BY';
+  FORMAT CLASS $CLASSF.;
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  WHERE CLASS='X';
+*;
+PROC TABULATE DATA=LIQASSET FORMCHAR='           ';
+  FORMAT REMMTH REMFMT.;
+  CLASS  CLASS REMMTH;
+  VAR    MKVNIDY;
+  TABLE  CLASS=' ',REMMTH='REMAINING MATURITY' ALL,
+         MKVNIDY='REPO MATURITY DATE'*F=COMMA20.2
+      /  RTS=30 BOX='CLASS-2 LIQUID ASSETS BY';
+  FORMAT CLASS $CLASSF.;
+  KEYLABEL SUM = ' ' ALL = 'TOTAL';
+  WHERE CLASS='Y';
+*;
