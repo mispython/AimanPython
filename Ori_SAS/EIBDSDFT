@@ -1,0 +1,166 @@
+//EIBDSDFT JOB MSGCLASS=X,MSGLEVEL=(2,1),REGION=256M                    JOB47695
+/*JOBPARM S=S1M2
+//**********************************************************************
+//**  SPECIAL DEPOSIT FACILLITY (SDF)
+//**  ESMR : 2016-4722
+//**  GENERATE DAILY EXTRACTION ON PRODUCT TYPE 20 & 21 FROM TRX HISTORY
+//**  OF M&I DEPOSIT SYSTEM
+//**********************************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DD01     DD DSN=SAP.PBB.SDF.DAILY,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//**********************************************************************
+//SAS609   EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//CIS      DD DSN=SAP.PBB.CISBEXT.DP.DAILY,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB.DAILY(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB.DAILY(0),DISP=SHR
+//DEPOP    DD DSN=SAP.PBB.MNITB.DAILY(-1),DISP=SHR
+//IDEPOP   DD DSN=SAP.PIBB.MNITB.DAILY(-1),DISP=SHR
+//CRM      DD DSN=SAP.PBB.CRM.DPTRNSAC(0),DISP=SHR
+//DETICA   DD DSN=SAP.AML.DETICA.SASDATA,DISP=SHR
+//SDFD     DD DSN=SAP.PBB.SDF.SASDATA,DISP=OLD
+//SDFFL    DD DSN=SAP.PBB.SDF.DAILY,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(10,10),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=1000,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD *
+
+OPTIONS NOCENTER YEARCUTOFF=1960 COMPRESS=Y MISSING='';
+
+DATA REPTDATE;
+   SET DEPO.REPTDATE;
+   SELECT;
+      WHEN(01<=DAY(REPTDATE)<=08) DO; WEEK = '01'; END;
+      WHEN(09<=DAY(REPTDATE)<=15) DO; WEEK = '02'; END;
+      WHEN(16<=DAY(REPTDATE)<=22) DO; WEEK = '03'; END;
+      OTHERWISE                   DO; WEEK = '04'; END;
+   END;
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('NOWK',PUT(WEEK,$2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));
+   CALL SYMPUT('REPTDT',REPTDATE);
+RUN;
+
+DATA SDF;
+   SET DEPO.CURRENT IDEPO.CURRENT;
+   WHERE PRODUCT IN (20,21);
+   REPTDATE = &REPTDT;
+   KEEP ACCTNO BRANCH OPENDT PRODUCT OPENIND CURBAL REPTDATE;
+RUN;
+PROC SORT; BY ACCTNO; RUN;
+
+DATA SDFPREV(RENAME=(CURBAL=PCURBAL));
+   SET DEPOP.CURRENT IDEPOP.CURRENT;
+   KEEP ACCTNO CURBAL;
+RUN;
+PROC SORT; BY ACCTNO; RUN;
+
+PROC SORT DATA=CIS.DEPOSIT(KEEP=ACCTNO CUSTNAME SECCUST) OUT=CIS;
+   WHERE SECCUST='901';
+   BY ACCTNO;
+RUN;
+
+PROC SORT DATA=CRM.DPBTRAN&REPTYEAR&REPTMON&NOWK
+           OUT=DPBTRAN(KEEP=ACCTNO TRANCODE TRANAMT TIMECTRL);
+   WHERE REPTDATE = &REPTDT;
+   BY ACCTNO TIMECTRL;
+RUN;
+
+PROC SORT DATA=DETICA.TRANCODE
+           OUT=TRANCD(KEEP=TXN_CODE TXN_DESC CRDR EFFDATETIME);
+   BY TXN_CODE DESCENDING EFFDATETIME;
+   WHERE ACCTCODE = 'DP';
+RUN;
+PROC SORT DATA=TRANCD NODUPKEY; BY TXN_CODE; RUN;
+
+DATA TRXFMT(KEEP=TXN_CODE LABEL FMTNAME TYPE RENAME=(TXN_CODE=START));
+   SET TRANCD END=LAST;
+   IF      TXN_CODE = 828 THEN TXN_DESC = 'MISC DR';
+   ELSE IF TXN_CODE = 629 THEN TXN_DESC = 'MISC CR';
+   FORMAT LABEL $40. FMTNAME $30.;
+   TYPE    = 'N';
+   LABEL   = TXN_DESC;
+   FMTNAME = 'TRXDESC';
+   OUTPUT;
+   LABEL   = CRDR;
+   FMTNAME = 'TRXCRDR';
+   OUTPUT;
+RUN;
+PROC SORT; BY FMTNAME START; RUN;
+PROC FORMAT LIBRARY=WORK CNTLIN=TRXFMT; RUN;
+
+DATA SDFD.SDF&REPTDAY SDF;
+   MERGE SDF(IN=A) SDFPREV CIS DPBTRAN;
+   BY ACCTNO;
+   IF A;
+   TRANDESC = PUT(TRANCODE,TRXDESC.);
+   CRDR     = PUT(TRANCODE,TRXCRDR.);
+   IF CRDR = 'D' THEN DEBIT  = -TRANAMT;
+   ELSE               CREDIT =  TRANAMT;
+   IF PCURBAL = . THEN PCURBAL = 0.00;
+   IF DEBIT   = . THEN DEBIT   = 0.00;
+   IF CREDIT  = . THEN CREDIT  = 0.00;
+   IF CURBAL  = . THEN CURBAL  = 0.00;
+RUN;
+
+%MACRO APPEND;
+   %IF "&REPTDAY" = "01" %THEN %DO;
+       DATA SDFD.SDFALL&REPTMON;
+          SET SDF;
+       RUN;
+   %END;
+   %ELSE %DO;
+       DATA SDFD.SDFALL&REPTMON;
+          SET SDFD.SDFALL&REPTMON;
+          IF REPTDATE = &REPTDT THEN DELETE;
+       RUN;
+       DATA SDFD.SDFALL&REPTMON;
+          SET SDFD.SDFALL&REPTMON SDF;
+       RUN;
+   %END;
+   PROC SORT DATA=SDFD.SDFALL&REPTMON; BY REPTDATE ACCTNO; RUN;
+%MEND APPEND;
+%APPEND;
+
+DATA _NULL_;
+   SET SDFD.SDFALL&REPTMON;
+   WHERE REPTDATE <= &REPTDT;
+   FORMAT REPTDATE DDMMYY10.
+          PCURBAL DEBIT CREDIT CURBAL COMMA16.2;
+   DLM='05'X;
+   FILE SDFFL;
+   IF _N_ =1 THEN DO;
+      PUT @1 "Special Deposit Facility (SDF) RM Account as at &RDATE"
+          /
+          /                         DLM
+             'Date'                 DLM
+             'Branch'               DLM
+             'SDF Account Number'   DLM
+             'Customer Name'        DLM
+             'Product'              DLM
+             'Opening Balance'      DLM
+             'Transaction Code'     DLM
+             'Description'          DLM
+             'Debit'                DLM
+             'Credit'               DLM
+             'Outstanding Balance'  DLM
+          ;
+   END;
+   PUT @1                           DLM
+             REPTDATE               DLM
+             BRANCH                 DLM
+             ACCTNO                 DLM
+             CUSTNAME               DLM
+             PRODUCT                DLM
+             PCURBAL                DLM
+             TRANCODE               DLM
+             TRANDESC               DLM
+             DEBIT                  DLM
+             CREDIT                 DLM
+             CURBAL                 DLM
+             ;
+RUN;
