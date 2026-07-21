@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import gc
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 
 import duckdb
 import pandas as pd
@@ -57,10 +57,10 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 BRHFILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
 # //ISR01 DD DSN=SAP.PBB.EIMISR01.TEXT ... DCB=(LRECL=1000,RECFM=FB,...)
-ISR01_OUTPUT = OUTPUT_DIR / "EIMISR01.TEXT"
+ISR01_OUTPUT = OUTPUT_DIR / "SA_BAL&ACC.txt"
 LRECL = 1000
 
-# Chunked .sas7bdat -> Parquet streaming (mirrors EIBDLN1M.py pattern)
+# Chunked .sas7bdat -> Parquet streaming
 CHUNK_ROWS = 500_000
 
 # ============================================================
@@ -68,19 +68,41 @@ CHUNK_ROWS = 500_000
 # ============================================================
 _reptdate_values = get_reptdate_values(year_format="%Y")
 
-REPTYEAR = _reptdate_values.reptyear                      # YEAR4.  e.g. "2026"
-REPTYR = _reptdate_values.reptdate.strftime("%y")         # YEAR2.  e.g. "26"
-REPTMON = _reptdate_values.reptmon                        # Z2.     zero-padded month
-REPTDAY = _reptdate_values.reptday                        # Z2.     zero-padded day
-RDATE: date = _reptdate_values.reptdate                   # actual report date (used for filtering)
-REPTDT = _reptdate_values.reptdate.strftime("%d/%m/%Y")   # DDMMYY10. equivalent, e.g. "09/07/2026"
+REPTYEAR    = _reptdate_values.reptyear                         # YEAR4.  e.g. "2026"
+REPTYR      = _reptdate_values.reptdate.strftime("%y")          # YEAR2.  e.g. "26"
+REPTMON     = _reptdate_values.reptmon                          # Z2.     zero-padded month
+REPTDAY     = _reptdate_values.reptday                          # Z2.     zero-padded day
+RDATE: date = _reptdate_values.reptdate                         # actual report date (used for filtering)
+REPTDT      = _reptdate_values.reptdate.strftime("%d/%m/%Y")    # DDMMYY10. equivalent, e.g. "09/07/2026"
 
 # ============================================================
 # STEP: RESOLVE DYPOSXBR INPUT FILE  (input_date.get_latest_file)
-# DYPOSXBR&REPTMON&REPTYR..sas7bdat -> latest file matching prefix
+# DYPOSXBR&REPTMON.sas7bdat -> latest file matching prefix
 # ============================================================
-DYPOSXBR_SAS = get_latest_file(INPUT_DIR, prefix="DYPOSXBR")
+DYPOSXBR_SAS = get_latest_file(INPUT_DIR, prefix="DYPOSXBR")    # e.g. DYPOSXBR06.sas7bdat
 DYPOSXBR_CACHE = CACHE_DIR / f"{DYPOSXBR_SAS.stem}.parquet"
+
+
+# ============================================================
+# STEP: DERIVE RDATE FROM THE ACTUAL DYPOSXBR CACHE
+# The monthly REPTDATE stamped in this table (e.g. 2026-06-01 for
+# DYPOSXBR06) does not follow the daily "yesterday" convention in
+# REPTDATE.py — it reflects whatever date MNITB.REPTDATE held when
+# production populated this snapshot. Rather than assume a formula,
+# pull the actual date present in the resolved file.
+# ============================================================
+def get_actual_reptdate(dyposxbr_cache: Path) -> date:
+    con = duckdb.connect(database=":memory:")
+    try:
+        result = con.execute(f"""
+            SELECT CAST(MAX(REPTDATE) AS DOUBLE) AS max_reptdate
+            FROM read_parquet('{dyposxbr_cache.as_posix()}')
+        """).fetchone()
+    finally:
+        con.close()
+
+    sas_epoch = date(1960, 1, 1)
+    return sas_epoch + timedelta(days=int(result[0]))
 
 
 # ============================================================
@@ -205,14 +227,28 @@ def read_branch_lookup(path: Path) -> pl.DataFrame:
 # PROC SORT DATA=MIS.DYPOSXBR&REPTMON OUT=SABAL;
 #    BY BRANCH;
 #    WHERE REPTDATE = &RDATE;
+# NOTE: SAS stores dates as "days since 1960-01-01" (numeric, not a DATE type).
+# pd.read_sas() -> Parquet keeps REPTDATE as DOUBLE, so we must compare
+# against the equivalent SAS numeric day value instead of a SQL DATE literal.
 # ============================================================
+_SAS_EPOCH = date(1960, 1, 1)
+
+
+def _to_sas_date_value(d: date) -> int:
+    """Convert a Python date to SAS's numeric date (days since 1960-01-01)."""
+    return (d - _SAS_EPOCH).days
+
+
 def read_sabal(dyposxbr_cache: Path, reptdate_value: date) -> pl.DataFrame:
+    sas_date_num = _to_sas_date_value(reptdate_value)
     con = duckdb.connect(database=":memory:")
     try:
         query = f"""
-            SELECT BRANCH, TOTSAVG, TOTSAVGI, SACNT, ISACNT
+            SELECT
+                CAST(BRANCH AS BIGINT) AS BRANCH,
+                TOTSAVG, TOTSAVGI, SACNT, ISACNT
             FROM read_parquet('{dyposxbr_cache.as_posix()}')
-            WHERE REPTDATE = DATE '{reptdate_value.isoformat()}'
+            WHERE CAST(REPTDATE AS DOUBLE) = {sas_date_num}
             ORDER BY BRANCH
         """
         return con.execute(query).pl()
@@ -494,18 +530,21 @@ def write_report(
 
 
 def main() -> None:
-    print(f"Report date (RDATE) : {RDATE}")
+    ensure_dyposxbr_cache()
+
+    actual_rdate = get_actual_reptdate(DYPOSXBR_CACHE)
+    reptdt_display = actual_rdate.strftime("%d/%m/%Y")
+
+    print(f"Report date (RDATE) : {actual_rdate}")
     print(f"REPTMON / REPTYEAR  : {REPTMON} / {REPTYEAR}")
     print(f"DYPOSXBR input file : {DYPOSXBR_SAS.name}")
 
-    ensure_dyposxbr_cache()
-
     brhdata = read_branch_lookup(BRHFILE)
-    sabal = read_sabal(DYPOSXBR_CACHE, RDATE)
+    sabal = read_sabal(DYPOSXBR_CACHE, actual_rdate)
 
     allsa, sabal_open, excep = build_allsa_sabal_excep(sabal, brhdata)
 
-    write_report(ISR01_OUTPUT, REPTDT, sabal_open, excep, allsa)
+    write_report(ISR01_OUTPUT, reptdt_display, sabal_open, excep, allsa)
 
     del allsa, sabal_open, excep, sabal, brhdata
     gc.collect()
