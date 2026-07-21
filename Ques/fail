@@ -58,13 +58,22 @@ con.close()
 
 
 
--- REPTDATE is cached as a raw SAS numeric date (DOUBLE = days since
-    -- 1960-01-01), not a native DATE/TIMESTAMP, because pd.read_sas() lost
-    -- the SAS date-format metadata during chunked PyArrow conversion.
-    -- DuckDB has no direct DOUBLE -> DATE cast, so reconstruct it via the
-    -- SAS epoch instead of casting.
+con = duckdb.connect(database=":memory:")
+dpbtran = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(TRANCODE AS BIGINT)  AS TRANCODE,
+        CAST(TRANAMT  AS DOUBLE)  AS TRANAMT,
+        CAST(TIMECTRL AS VARCHAR) AS TIMECTRL
+    FROM read_parquet('{DPBTRAN_CACHE}')
+    -- REPTDATE is cached as a raw SAS numeric date (DOUBLE = days since
+    -- 1960-01-01), not a native DATE/TIMESTAMP. DuckDB has no direct
+    -- DOUBLE -> DATE cast, so reconstruct it via the SAS epoch instead.
     WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS BIGINT))
           = DATE '{reptdate.isoformat()}'
+    ORDER BY ACCTNO, TIMECTRL
+""").pl()
+con.close()
 
 =================
 
