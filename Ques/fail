@@ -5,7 +5,8 @@
 # ============================================================================
 con = duckdb.connect(database=":memory:")
 print("\n[DEBUG] DPBTRAN_CACHE schema:")
-print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{DPBTRAN_CACHE}')").pl())
+with pl.Config(tbl_rows=-1, tbl_cols=-1):
+    print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{DPBTRAN_CACHE}')").pl())
 con.close()
 
 
