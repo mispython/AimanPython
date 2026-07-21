@@ -6,7 +6,6 @@ Purpose : Special Deposit Facility (SDF) RM Account - Daily Extraction
           History of M&I Deposit System (PBB + PIBB), enriched with customer
           name and transaction descriptions, and appended to a month-to-date
           cumulative file for reporting.
-ESMR    : 2016-4722
 """
 
 import gc
@@ -33,26 +32,25 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 # Daily deposit "current" extract files (DEPO / IDEPO, generation (0))
 # and their "previous" generation (-1), resolved via input_date.get_latest_file
 # and date-minus-one-day matching (same technique as EIBDLN1M.py LOAN/LOANX).
-INPUT_DEPO_DIR = BASE_DIR / "input" / "prod" / "EIBDSDFT"
+INPUT_DEPO_DIR = BASE_DIR / "input" / "prod" / "deposit_d"
 
 # CIS.DEPOSIT — same physical customer-info deposit file referenced by
 # EIBDLN1M.py (CISDP_deposit.sas7bdat); fixed filename, no date pattern.
-INPUT_CIS_FILE = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
+INPUT_CIS_FILE = BASE_DIR / "input" / "prod" / "cis" / "CIS_deposit260720.sas7bdat"
 
 # CRM.DPBTRAN&REPTYEAR&REPTMON&NOWK — weekly transaction-history extract.
 # Its name is fully determined by REPTYEAR/REPTMON/NOWK, so it is built
 # directly (no need to "search" for the latest file).
-INPUT_DPBTRAN_DIR = BASE_DIR / "input" / "prod" / "EIBDSDFT"
+INPUT_DPBTRAN_DIR = BASE_DIR / "input" / "prod" / "cis"
 
 # DETICA.TRANCODE — AML/Detica transaction-code lookup; fixed filename.
-INPUT_TRANCODE_FILE = Path("/stgsrcsys/host/uat") / "DETICA_trancode.sas7bdat"
+INPUT_TRANCODE_FILE = BASE_DIR / "input" / "prod" / "detica" / "trancode.sas7bdat"
 
 # Parquet cache directory (kept across runs; freshness-checked)
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBDSDFT"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDSDFT"
 
-# Output
+# Output directory
 OUTPUT_DIR = BASE_DIR / "output" / "EIBDSDFT"
-OUTPUT_FILE = OUTPUT_DIR / "SDF_DAILY.txt"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -66,7 +64,8 @@ CHUNK_ROWS = 500_000
 # OUTPUT RECORD LAYOUT  (DCB=(LRECL=1000,RECFM=FB) — NOT ASA; DLM='05'X)
 # ============================================================================
 LRECL = 1000
-DLM = "\x05"
+# DLM = "\x05"
+DLM = "\t"
 
 # ============================================================================
 # STEP 1: REPORT DATE  (DATA REPTDATE; no reptdate.parquet — REPTDATE.py)
@@ -75,6 +74,7 @@ print("Step 1: Deriving report date...")
 
 reptdate_values = get_reptdate_values()
 reptdate = reptdate_values.reptdate            # yesterday (SAS: TODAY()-1)
+rptdt = reptdate_values.reptdate.strftime("%Y%m%d")       # RPTDT:  YYMMDDN8.
 
 REPTDAY  = reptdate_values.reptday
 REPTMON  = reptdate_values.reptmon
@@ -84,6 +84,10 @@ RDATE    = reptdate.strftime("%d/%m/%Y")        # SAS PUT(REPTDATE,DDMMYY10.)
 
 print(f"  Report date  : {RDATE}")
 print(f"  REPTYEAR/MON/DAY/NOWK : {REPTYEAR}/{REPTMON}/{REPTDAY}/{NOWK}")
+
+# Output filename
+# OUTPUT_FILE = OUTPUT_DIR / "SDF_DAILY.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"SDF_{rptdt}.txt"
 
 # ============================================================================
 # NOTE: JCL DELETE step (DD01 delete of SAP.PBB.SDF.DAILY) has no Python
@@ -95,8 +99,8 @@ print(f"  REPTYEAR/MON/DAY/NOWK : {REPTYEAR}/{REPTMON}/{REPTDAY}/{NOWK}")
 # ============================================================================
 print("\nStep 2: Resolving DEPO / IDEPO current & previous file names...")
 
-pbb_depo_path  = get_latest_file(INPUT_DEPO_DIR, prefix="dpld")
-pibb_depo_path = get_latest_file(INPUT_DEPO_DIR, prefix="idpld")
+pbb_depo_path  = get_latest_file(INPUT_DEPO_DIR, prefix="ca")
+pibb_depo_path = get_latest_file(INPUT_DEPO_DIR, prefix="ica")
 
 
 def _resolve_prev_day_file(current_path: Path, prefix: str, directory: Path) -> Path:
@@ -119,8 +123,8 @@ def _resolve_prev_day_file(current_path: Path, prefix: str, directory: Path) -> 
     return candidates[0]
 
 
-pbb_depop_path  = _resolve_prev_day_file(pbb_depo_path, "dpld", INPUT_DEPO_DIR)
-pibb_depop_path = _resolve_prev_day_file(pibb_depo_path, "idpld", INPUT_DEPO_DIR)
+pbb_depop_path  = _resolve_prev_day_file(pbb_depo_path, "ca", INPUT_DEPO_DIR)
+pibb_depop_path = _resolve_prev_day_file(pibb_depo_path, "ica", INPUT_DEPO_DIR)
 
 DPBTRAN_FILE = INPUT_DPBTRAN_DIR / f"dpbtran{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
 
