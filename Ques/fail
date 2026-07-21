@@ -1,3 +1,31 @@
+con = duckdb.connect(database=":memory:")
+trancd = con.execute(f"""
+    WITH filtered AS (
+        SELECT
+            CAST(TXN_CODE     AS BIGINT)  AS TXN_CODE,
+            CAST(TXN_DESC     AS VARCHAR) AS TXN_DESC,
+            CAST(CRDR         AS VARCHAR) AS CRDR,
+            TIMESTAMP '1960-01-01 00:00:00'
+                + to_seconds(CAST(ROUND(EFFDATETIME) AS BIGINT)) AS EFFDATETIME
+        FROM read_parquet('{TRANCODE_CACHE}')
+        WHERE CAST(ACCTCODE AS VARCHAR) = 'DP'
+    ),
+    ranked AS (
+        SELECT *,
+               ROW_NUMBER() OVER (
+                   PARTITION BY TXN_CODE
+                   ORDER BY EFFDATETIME DESC
+               ) AS rn
+        FROM filtered
+    )
+    SELECT TXN_CODE, TXN_DESC, CRDR
+    FROM ranked
+    WHERE rn = 1
+""").pl()
+con.close()
+
+===================
+
 Step 8: Building TRANCD (transaction-code lookup)...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDSDFT_AII.py", line 359, in <module>
