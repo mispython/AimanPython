@@ -1,3 +1,50 @@
+[DEBUG] DPBTRAN_CACHE schema:
+shape: (36, 6)
+┌─────────────┬─────────────┬──────┬──────┬─────────┬───────┐
+│ column_name ┆ column_type ┆ null ┆ key  ┆ default ┆ extra │
+│ ---         ┆ ---         ┆ ---  ┆ ---  ┆ ---     ┆ ---   │
+│ str         ┆ str         ┆ str  ┆ str  ┆ str     ┆ str   │
+╞═════════════╪═════════════╪══════╪══════╪═════════╪═══════╡
+│ FMTCODE     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ ACCTNO      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ USERID      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TRANCODE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CHANNEL     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TRANAMT     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CHQNO       ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TRLIND      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ PENALTY     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TRACEBR     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ ORIDT       ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ ORITXNCD    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL1     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL2     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL3     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL4     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL5     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL6     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ LTRAIL2     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ LTRAIL3     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TIMECTRL    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ REPTDATE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ LTRAIL1     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ NAME        ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CDNO        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CURCODE     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TERM        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TERMID      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ RSONCODE    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ RSONDESC    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CUSTCODE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ PRODCD      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ MATDATE     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ RATE        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ FORATE      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ PRORATIO    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+└─────────────┴─────────────┴──────┴──────┴─────────┴───────┘
+
+=================
+
 # ============================================================================
 # DEBUG: Inspect DPBTRAN parquet schema — confirm REPTDATE's actual type
 # before it's used in Step 7. Remove once REPTDATE's column type is
