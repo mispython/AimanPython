@@ -1,3 +1,25 @@
+# ============================================================================
+# DEBUG: Inspect DPBTRAN parquet schema — confirm REPTDATE's actual type
+# before it's used in Step 7. Remove once REPTDATE's column type is
+# confirmed stable across cache rebuilds.
+# ============================================================================
+con = duckdb.connect(database=":memory:")
+print("\n[DEBUG] DPBTRAN_CACHE schema:")
+print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{DPBTRAN_CACHE}')").pl())
+con.close()
+
+
+
+-- REPTDATE is cached as a raw SAS numeric date (DOUBLE = days since
+    -- 1960-01-01), not a native DATE/TIMESTAMP, because pd.read_sas() lost
+    -- the SAS date-format metadata during chunked PyArrow conversion.
+    -- DuckDB has no direct DOUBLE -> DATE cast, so reconstruct it via the
+    -- SAS epoch instead of casting.
+    WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS BIGINT))
+          = DATE '{reptdate.isoformat()}'
+
+=================
+
 Step 7: Building DPBTRAN (today's transactions)...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDSDFT_AII.py", line 308, in <module>
