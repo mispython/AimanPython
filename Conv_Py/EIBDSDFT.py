@@ -21,8 +21,10 @@ from datetime import date as _date_cls, timedelta
 from REPTDATE import get_reptdate_values
 from input_date import get_latest_file
 # output_date.py NOT used: the original output DD (SAP.PBB.SDF.DAILY) is a
-# GDG-catalogued dataset with no date component embedded in its name; the
-# output filename below is therefore fixed, mirroring the original DSN.
+# GDG-catalogued dataset with no date component embedded in its name in SAS;
+# the Python output filename is instead date-stamped directly from REPTDATE
+# below (per requirement), so output_date.build_output_file's naming pattern
+# is not needed.
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -74,7 +76,6 @@ print("Step 1: Deriving report date...")
 
 reptdate_values = get_reptdate_values()
 reptdate = reptdate_values.reptdate            # yesterday (SAS: TODAY()-1)
-rptdt = reptdate_values.reptdate.strftime("%Y%m%d")       # RPTDT:  YYMMDDN8.
 
 REPTDAY  = reptdate_values.reptday
 REPTMON  = reptdate_values.reptmon
@@ -82,12 +83,16 @@ REPTYEAR = reptdate_values.reptyear
 NOWK     = reptdate_values.nowk.zfill(2)        # SAS WEEK is $2. ('01'..'04')
 RDATE    = reptdate.strftime("%d/%m/%Y")        # SAS PUT(REPTDATE,DDMMYY10.)
 
+# Daily timestamp component used to date-stamp the output filename below.
+RPTDT_STAMP = reptdate.strftime("%Y%m%d")       # e.g. 20260720
+
 print(f"  Report date  : {RDATE}")
 print(f"  REPTYEAR/MON/DAY/NOWK : {REPTYEAR}/{REPTMON}/{REPTDAY}/{NOWK}")
 
-# Output filename
-# OUTPUT_FILE = OUTPUT_DIR / "SDF_DAILY.txt"
-OUTPUT_FILE = OUTPUT_DIR / f"SDF_{rptdt}.txt"
+# Output filename — daily timestamped (one output file produced per run/day)
+OUTPUT_FILE = OUTPUT_DIR / f"SDF_{RPTDT_STAMP}.txt"
+
+print(f"  Output file  : {OUTPUT_FILE.name}")
 
 # ============================================================================
 # NOTE: JCL DELETE step (DD01 delete of SAP.PBB.SDF.DAILY) has no Python
@@ -99,8 +104,8 @@ OUTPUT_FILE = OUTPUT_DIR / f"SDF_{rptdt}.txt"
 # ============================================================================
 print("\nStep 2: Resolving DEPO / IDEPO current & previous file names...")
 
-pbb_depo_path  = get_latest_file(INPUT_DEPO_DIR, prefix="ca")
-pibb_depo_path = get_latest_file(INPUT_DEPO_DIR, prefix="ica")
+pbb_depo_path  = get_latest_file(INPUT_DEPO_DIR, prefix="dpld")
+pibb_depo_path = get_latest_file(INPUT_DEPO_DIR, prefix="idpld")
 
 
 def _resolve_prev_day_file(current_path: Path, prefix: str, directory: Path) -> Path:
@@ -123,8 +128,8 @@ def _resolve_prev_day_file(current_path: Path, prefix: str, directory: Path) -> 
     return candidates[0]
 
 
-pbb_depop_path  = _resolve_prev_day_file(pbb_depo_path, "ca", INPUT_DEPO_DIR)
-pibb_depop_path = _resolve_prev_day_file(pibb_depo_path, "ica", INPUT_DEPO_DIR)
+pbb_depop_path  = _resolve_prev_day_file(pbb_depo_path, "dpld", INPUT_DEPO_DIR)
+pibb_depop_path = _resolve_prev_day_file(pibb_depo_path, "idpld", INPUT_DEPO_DIR)
 
 DPBTRAN_FILE = INPUT_DPBTRAN_DIR / f"dpbtran{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
 
@@ -146,7 +151,7 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
 
 
 def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    """Convert a .sas7bdat to Parquet in streaming chunks."""
+    """Convert a .sas7bdat to Parquet in streaming chunks (memory-efficient)."""
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     writer = None
     schema = None
@@ -157,9 +162,11 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
         table = pa.Table.from_pandas(chunk, preserve_index=False)
 
         if schema is None:
+            # Lock schema on first chunk
             schema = table.schema
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
         else:
+            # Cast subsequent chunks to match the locked schema
             cast_arrays = []
             for field in schema:
                 col = table.column(field.name)
@@ -184,6 +191,7 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _ensure_cache(sas_path: Path, cache_path: Path, tag: str) -> None:
+    """Convert *sas_path* to Parquet only if the cache is stale or missing."""
     if not _cache_is_fresh(sas_path, cache_path):
         sas_to_parquet(sas_path, cache_path, tag)
     else:
@@ -191,7 +199,10 @@ def _ensure_cache(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 # ============================================================================
-# STEP 3: CACHE SAS FILES TO PARQUET
+# STEP 3: CACHE ALL .sas7bdat SOURCE FILES TO PARQUET (if needed)
+# All 7 raw inputs (DEPO, IDEPO, DEPOP, IDEPOP, CIS, DPBTRAN, TRANCODE) are
+# .sas7bdat on disk; every downstream read in this program operates on the
+# cached Parquet copies only, per the EIBDLN1M.py streaming-cache pattern.
 # ============================================================================
 print("\nStep 3: Caching SAS files to Parquet (if needed)...")
 
@@ -215,6 +226,8 @@ _ensure_cache(INPUT_TRANCODE_FILE, TRANCODE_CACHE, "TRANCODE")
 # STEP 4: BUILD SDF  (current-period deposit, product 20/21)
 # DATA SDF; SET DEPO.CURRENT IDEPO.CURRENT; WHERE PRODUCT IN (20,21);
 #   REPTDATE = &REPTDT; KEEP ACCTNO BRANCH OPENDT PRODUCT OPENIND CURBAL REPTDATE;
+# All reads below use read_parquet() on the cached copies — never the raw
+# .sas7bdat files directly.
 # ============================================================================
 print("\nStep 4: Building SDF (current period, PRODUCT 20/21)...")
 
@@ -402,6 +415,10 @@ print(f"  Merged rows: {len(merged):,}")
 # STEP 11: PERSIST DAY SNAPSHOT + APPEND TO MONTH-TO-DATE CACHE
 # DATA SDFD.SDF&REPTDAY SDF; ... (day snapshot)
 # %MACRO APPEND; ... DATA SDFD.SDFALL&REPTMON; ... PROC SORT BY REPTDATE ACCTNO;
+# SDFD is a self-derived permanent library in SAS (not a raw external input):
+# it is seeded/rolled-forward entirely from this program's own daily output,
+# so the Parquet equivalents below (DAY_CACHE_FILE / MONTH_CACHE_FILE) are
+# both read from and written to by this same program run over run.
 # ============================================================================
 print("\nStep 11: Persisting day snapshot and month-to-date accumulation...")
 
@@ -503,8 +520,13 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in output_lines:
         fh.write(ln + "\n")
 
-print(f"  Output written : {OUTPUT_FILE}")
+print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(output_lines):,}")
+print("\n  --- Output preview ---")
+for ln in output_lines[:20]:
+    print(ln.rstrip())
+if len(output_lines) > 20:
+    print(f"  ... ({len(output_lines) - 20} more lines)")
 
 del sdfall, report_df
 gc.collect()
