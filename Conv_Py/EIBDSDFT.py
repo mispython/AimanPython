@@ -223,16 +223,16 @@ _ensure_cache(INPUT_CIS_FILE, CIS_CACHE, "CIS")
 _ensure_cache(DPBTRAN_FILE, DPBTRAN_CACHE, "DPBTRAN")
 _ensure_cache(INPUT_TRANCODE_FILE, TRANCODE_CACHE, "TRANCODE")
 
-# ============================================================================
-# DEBUG: Inspect DPBTRAN parquet schema — confirm REPTDATE's actual type
-# before it's used in Step 7. Remove once REPTDATE's column type is
-# confirmed stable across cache rebuilds.
-# ============================================================================
-con = duckdb.connect(database=":memory:")
-print("\n[DEBUG] DPBTRAN_CACHE schema:")
-with pl.Config(tbl_rows=-1, tbl_cols=-1):
-    print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{DPBTRAN_CACHE}')").pl())
-con.close()
+# # ============================================================================
+# # DEBUG: Inspect DPBTRAN parquet schema — confirm REPTDATE's actual type
+# # before it's used in Step 7. Remove once REPTDATE's column type is
+# # confirmed stable across cache rebuilds.
+# # ============================================================================
+# con = duckdb.connect(database=":memory:")
+# print("\n[DEBUG] DPBTRAN_CACHE schema:")
+# with pl.Config(tbl_rows=-1, tbl_cols=-1):
+#     print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{DPBTRAN_CACHE}')").pl())
+# con.close()
 
 # ============================================================================
 # STEP 4: BUILD SDF  (current-period deposit, product 20/21)
@@ -340,7 +340,9 @@ dpbtran = con.execute(f"""
     -- 1960-01-01), not a native DATE/TIMESTAMP. DuckDB has no direct
     -- DOUBLE -> DATE cast, so reconstruct it via the SAS epoch instead.
     WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS INTEGER))
-          = DATE '{reptdate.isoformat()}'
+          >= DATE '2026-07-01'
+        AND (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS INTEGER))
+          <= DATE '2026-07-20'
     ORDER BY ACCTNO, TIMECTRL
 """).pl()
 con.close()
@@ -515,71 +517,169 @@ gc.collect()
 # FORMAT REPTDATE DDMMYY10. PCURBAL DEBIT CREDIT CURBAL COMMA16.2;
 # DLM='05'X; FILE SDFFL;  (RECFM=FB, LRECL=1000 — no ASA carriage control)
 # ============================================================================
+# print("\nStep 12: Generating output file...")
+
+# report_df = sdfall.filter(pl.col("REPTDATE") <= reptdate)
+
+
+# def _fmt_comma16(value) -> str:
+#     """COMMA16.2 — right-justified, width 16, thousands separator, 2 dp."""
+#     if value is None:
+#         return " " * 16
+#     return f"{float(value):,.2f}".rjust(16)
+
+
+# def _fmt_num12(value) -> str:
+#     """Default numeric BEST12. — right-justified, width 12, no format."""
+#     if value is None:
+#         return " " * 12
+#     return f"{int(round(float(value)))}".rjust(12)
+
+
+# def _fmt_char(value, width: int) -> str:
+#     """Character variable — left-justified, padded/truncated to *width*."""
+#     return f"{str(value or '')[:width]:<{width}s}"
+
+
+# def _pad_record(line: str) -> str:
+#     return line[:LRECL].ljust(LRECL)
+
+
+# output_lines: list[str] = []
+
+# # Title line + blank line + delimited column-header line (IF _N_=1 block)
+# output_lines.append(_pad_record(f"Special Deposit Facility (SDF) RM Account as at {RDATE}"))
+# output_lines.append(_pad_record(""))
+# header_fields = [
+#     "Date", "Branch", "SDF Account Number", "Customer Name", "Product",
+#     "Opening Balance", "Transaction Code", "Description", "Debit",
+#     "Credit", "Outstanding Balance",
+# ]
+# output_lines.append(_pad_record(DLM + DLM.join(header_fields) + DLM))
+
+# for row in report_df.iter_rows(named=True):
+#     fields = [
+#         row["REPTDATE"].strftime("%d/%m/%Y"),
+#         _fmt_num12(row["BRANCH"]),
+#         _fmt_num12(row["ACCTNO"]),
+#         _fmt_char(row["CUSTNAME"], 40),
+#         _fmt_num12(row["PRODUCT"]),
+#         _fmt_comma16(row["PCURBAL"]),
+#         _fmt_num12(row["TRANCODE"]),
+#         _fmt_char(row["TRANDESC"], 40),
+#         _fmt_comma16(row["DEBIT"]),
+#         _fmt_comma16(row["CREDIT"]),
+#         _fmt_comma16(row["CURBAL"]),
+#     ]
+#     output_lines.append(_pad_record(DLM + DLM.join(fields) + DLM))
+
+# with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+#     for ln in output_lines:
+#         fh.write(ln + "\n")
+
+# print(f"\n  Output written : {OUTPUT_FILE}")
+# print(f"  Total lines    : {len(output_lines):,}")
+# print("\n  --- Output preview ---")
+# for ln in output_lines[:20]:
+#     print(ln.rstrip())
+# if len(output_lines) > 20:
+#     print(f"  ... ({len(output_lines) - 20} more lines)")
+
+# ============================================================================
+# STEP 12: GENERATE OUTPUT FILE (exact SAS style)
+# ============================================================================
 print("\nStep 12: Generating output file...")
 
 report_df = sdfall.filter(pl.col("REPTDATE") <= reptdate)
+rows = report_df.to_dicts()
 
+# ------------------------------
+# Formatting functions (match SAS formats)
+# ------------------------------
 
-def _fmt_comma16(value) -> str:
-    """COMMA16.2 — right-justified, width 16, thousands separator, 2 dp."""
-    if value is None:
-        return " " * 16
-    return f"{float(value):,.2f}".rjust(16)
+def fmt_date(d):
+    """DDMMYY10. with a leading space (as seen in original output)."""
+    return (d.strftime("%d/%m/%Y")).ljust(14)  # 10
 
-
-def _fmt_num12(value) -> str:
-    """Default numeric BEST12. — right-justified, width 12, no format."""
-    if value is None:
+def fmt_num12(v):
+    """BEST12. – right‑justified, width 12."""
+    if v is None or pd.isna(v):
         return " " * 12
-    return f"{int(round(float(value)))}".rjust(12)
+    return f"{int(round(float(v)))}".ljust(12)
 
+def fmt_num5(v):
+    """BEST5. – right‑justified, width 5."""
+    if v is None or pd.isna(v):
+        return " " * 5
+    return f"{int(round(float(v)))}".ljust(5)
 
-def _fmt_char(value, width: int) -> str:
-    """Character variable — left-justified, padded/truncated to *width*."""
-    return f"{str(value or '')[:width]:<{width}s}"
+def fmt_text(v, width):
+    """$w. – left‑justified, padded with spaces to width."""
+    if v is None or pd.isna(v):
+        return " " * width
+    return f"{str(v).strip()[:width]:<{width}s}"
 
+def fmt_comma16(v):
+    """COMMA16.2 – right‑justified, width 16, thousands separators, 2 decimals."""
+    if v is None or pd.isna(v):
+        return " " * 16
+    return f"{float(v):,.2f}".ljust(16)
 
-def _pad_record(line: str) -> str:
-    return line[:LRECL].ljust(LRECL)
+# def fmt_DLM(v):
+#     if v is None or pd.isna(v):
+#         return " " + DLM + " "
+#     return f"{int(round(float(v)))}".ljust(3) + DLM + " "
 
+# ------------------------------
+# Build header and data rows
+# ------------------------------
 
-output_lines: list[str] = []
-
-# Title line + blank line + delimited column-header line (IF _N_=1 block)
-output_lines.append(_pad_record(f"Special Deposit Facility (SDF) RM Account as at {RDATE}"))
-output_lines.append(_pad_record(""))
+# Header fields (exact names as in original)
 header_fields = [
-    "Date", "Branch", "SDF Account Number", "Customer Name", "Product",
-    "Opening Balance", "Transaction Code", "Description", "Debit",
-    "Credit", "Outstanding Balance",
+    "Date", "Branch", "SDF Account Number", "Customer Name",
+    "Product", "Opening Balance", "Transaction Code",
+    "Description", "Debit", "Credit", "Outstanding Balance"
 ]
-output_lines.append(_pad_record(DLM + DLM.join(header_fields) + DLM))
 
-for row in report_df.iter_rows(named=True):
+# Each row starts and ends with DLM
+header_line = DLM + DLM.join(header_fields) + DLM
+
+data_lines = []
+for row in rows:
     fields = [
-        row["REPTDATE"].strftime("%d/%m/%Y"),
-        _fmt_num12(row["BRANCH"]),
-        _fmt_num12(row["ACCTNO"]),
-        _fmt_char(row["CUSTNAME"], 40),
-        _fmt_num12(row["PRODUCT"]),
-        _fmt_comma16(row["PCURBAL"]),
-        _fmt_num12(row["TRANCODE"]),
-        _fmt_char(row["TRANDESC"], 40),
-        _fmt_comma16(row["DEBIT"]),
-        _fmt_comma16(row["CREDIT"]),
-        _fmt_comma16(row["CURBAL"]),
+        fmt_date(row["REPTDATE"]),
+        fmt_num5(row["BRANCH"]),
+        fmt_num12(row["ACCTNO"]),
+        fmt_text(row["CUSTNAME"], 27) + "   ",
+        fmt_num5(row["PRODUCT"]),
+        fmt_comma16(row["PCURBAL"]),
+        fmt_num5(row["TRANCODE"]),
+        fmt_text(row["TRANDESC"], 24) + "   ",
+        fmt_comma16(row["DEBIT"]),
+        fmt_comma16(row["CREDIT"]),
+        fmt_comma16(row["CURBAL"]),
     ]
-    output_lines.append(_pad_record(DLM + DLM.join(fields) + DLM))
+    data_lines.append(DLM + DLM.join(fields) + DLM)
+
+# ------------------------------
+# Write to file
+# ------------------------------
+
+output_lines = [
+    f"Special Deposit Facility (SDF) RM Account as at {RDATE}",
+    "",  # blank line (same as original)
+    header_line,
+    *data_lines
+]
 
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-    for ln in output_lines:
-        fh.write(ln + "\n")
+    fh.write("\n".join(output_lines) + "\n")
 
 print(f"\n  Output written : {OUTPUT_FILE}")
-print(f"  Total lines    : {len(output_lines):,}")
+print(f"  Total rows    : {len(data_lines)}")
 print("\n  --- Output preview ---")
 for ln in output_lines[:20]:
-    print(ln.rstrip())
+    print(ln)
 if len(output_lines) > 20:
     print(f"  ... ({len(output_lines) - 20} more lines)")
 
