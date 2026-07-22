@@ -1,3 +1,15 @@
+# Current (incorrect):
+WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS INTEGER))
+      = DATE '{reptdate.isoformat()}'
+
+# Should be (to get all transactions for the month):
+WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS INTEGER))
+      >= DATE '2026-07-01'
+  AND (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS INTEGER))
+      <= DATE '2026-07-20'
+
+==================
+
 con = duckdb.connect(database=":memory:")
 trancd = con.execute(f"""
     WITH filtered AS (
