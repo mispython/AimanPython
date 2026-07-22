@@ -1,390 +1,123 @@
-First 10 row(s):
- REPTDATE  BRANCH      TOTSAVG   SACNT     TOTSAVGI  ISACNT
-  24258.0     2.0 7.540922e+07  8992.0 2.446829e+07  6156.0
-  24258.0     3.0 1.841063e+08 16446.0 1.991325e+07  4840.0
-  24258.0     4.0 1.627434e+08 17802.0 4.402138e+07  6722.0
-  24258.0     5.0 1.566919e+08 17549.0 5.129836e+07 12761.0
-  24258.0     6.0 1.520562e+08 18902.0 4.178565e+07  7451.0
-  24258.0     7.0 4.104909e+08 51629.0 5.781853e+07 16611.0
-  24258.0     8.0 2.070762e+08 23194.0 2.766523e+07 10248.0
-  24258.0     9.0 2.318356e+08 27012.0 3.851698e+07  7615.0
-  24258.0    10.0 1.863996e+08 27435.0 3.705644e+07  8543.0
-  24258.0    11.0 8.732713e+07 10751.0 1.710464e+07  4893.0
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDSDFT_AII.py
+Step 1: Deriving report date...
+  Report date  : 20/07/2026
+  REPTYEAR/MON/DAY/NOWK : 26/07/20/03
+  Output file  : SDF_20260720.txt
 
+Step 2: Resolving DEPO / IDEPO current & previous file names...
+[FILE_RESOLVER] Selected latest: ca260720.sas7bdat
+[FILE_RESOLVER] Selected latest: ica260720.sas7bdat
+[FILE_RESOLVER] Selected latest: dpbtran260702.sas7bdat
+  DEPO   : ca260720.sas7bdat
+  DEPOP  : ca260719.sas7bdat
+  IDEPO  : ica260720.sas7bdat
+  IDEPOP : ica260719.sas7bdat
+  DPBTRAN: dpbtran260702.sas7bdat
 
-B001 PCS   BANK-ATMC                             C                              
-B002 JSS   JALAN SULTAN SULAIMAN            W    O                              
-B003 JRC   JALAN RAJA CHULAN                W    O                              
-B004 MLK   MELAKA                           M    O                              
-B005 IMO   IPOH MAIN OFFICE                 A    O                              
-B006 PPG   PULAU PINANG                     P    O                              
-B007 JBU   JOHOR BAHRU                      J    O                              
-B008 KTN   KUANTAN                          C    O                              
-B009 JYK   JALAN YANG KALSOM                A    O                              
-B010 ASR   ALOR SETAR                       K    O                              
-B011 GRN   GURUN                            K    O                              
-B012 PPH   PASIR PUTEH                      D    C                              
-B013 KBU   KOTA BAHRU                       D    O                              
-B014 TMH   TANAH MERAH                      D    O                              
-B015 KPG   KEPONG                           W    O                              
-B016 NLI   NILAI                            N    O                              
-B017 TPN   TAMPIN                           N    O                              
-B018 PJN   PJ NEW TOWN                      B    O                              
-B019 DUA   DAMASARA UTAMA                   B    O                              
-B020 TCL   TAMAN CHI LIUNG                  B    O                              
-B021 BPT   BATU PAHAT                       J    O                              
-B022 SMY   SEMENYIH                         B    O                              
-B023 KMT   KAMUNTING                        A    O                              
-B024 RSH   RASAH                            N    O                              
-B025 SAM   SHAH ALAM                        B    O                              
-B026 SPG   SERI PETALING                    W    O                              
-B027 NTL   NIBONG TEBAL                     P    O                              
-B028 MUA   MUAR                             J    O                              
-B029 JRL   JALAN RAJA LAUT                  W    O                              
-B030 KTU   KUALA TERENGGANU                 T    O                              
-B031 SKC   SEKINCHAN                        B    O                              
-B032 WSS   WISMA SABERKAS                   Q    O                              
-B033 KKU   KOTA KINABALU                    S    O                              
-B034 KGR   KANGAR                           R    O                              
-B035 SSA   SERI SETIA                       B    O                              
-B036 SS2   SS2                              B    O                              
-B037 TSA   TAMAN SENTOSA                    J    O                              
-B038 JKL   JALAN KLANG LAMA                 W    O                              
-B039 KKG   KUALA KELAWANG                   N    O                              
-B040 JSB   JALAN SUNGAI BESI                W    O                              
-B041 JIH   JALAN IPOH                       W    O                              
-B042 BMM   BUKIT MERTAJAM                   P    O                              
-B043 BTG   BANTING                          B    O                              
-B044 TWU   TAWAU                            S    O                              
-B045 SRB   SEREMBAN                         N    O                              
-B046 APG   AMPANG                           B    O                              
-B047 SGM   SEGAMAT                          J    O                              
-B048 MTK   MENTAKAB                         C    O                              
-B049 JLP   JELAPANG                         A    O                              
-B050 MRI   MIRI                             Q    O                              
-B051 SMG   SERI MANJUNG                     A    O                              
-B052 UTM   ULU TIRAM                        J    O                              
-B053 TMI   TAMAN MALURI                     W    O                              
-B054 BBB   BANDAR BAYAN BARU                P    O                              
-B055 LBN   LABUAN                           L    O                              
-B056 KJG   KAJANG                           B    O                              
-B057 SPI   SUNGAI PETANI                    K    O                              
-B058 SBU   SIBU                             Q    O                              
-B059 PKL   PONTIAN KECIL                    J    O                              
-B060 BAM   BAGAN AJAM                       P    O                              
-B061 KLI   KULAI                            J    O                              
-B062 SDK   SANDAKAN                         S    O                              
-B063 GMS   GEMAS                            N    O                              
-B064 PDN   PORT DICKSON                     N    O                              
-B065 BHU   BAHAU                            N    O                              
-B066 BDA   BUKIT DAMANSARA                  W    O                              
-B067 CMR   CHEMOR                           A    O                              
-B068 SAT   SIMPANG AMPAT                    P    O                              
-B069 BKI   BATANG KALI                      B    O                              
-B070 PSA   POKOK SENA                       K    O                              
-B071 BCG   BRINCHANG                        C    O                              
-B072 PPR   PAPAR                            S    O                              
-B073 SPK   SUNGAI PELEK                     B    O                              
-B074 SIK   SIK                              K    O                              
-B075 CAH   CHAAH                            J    O                              
-B076 PRS   PANTAI REMIS                     A    O                              
-B077 PLI   PULAU LANGKAWI                   K    O                              
-B078 SJA   SUBANG JAYA                      B    O                              
-B079 MSI   MASAI                            J    O                              
-B080 MLB   MENGLEMBU                        A    O                              
-B081 SBH   SUNGAI BULOH                     B    O                              
-B082 MCG   MACHANG                          D    C                              
-B083 JBB   JALAN BUKIT BINTANG              W    O                              
-B084 PMS   PASIR MAS                        D    C                              
-B085 SST   SUNGEI SIPUT                     A    O                              
-B086 CLN   CHANGLUN                         K    O                              
-B087 MSG   MERSING                          J    O                              
-B088 KUM   KULIM                            K    O                              
-B089 TPI   TAMPOI                           J    O                              
-B090 BTL   BINTULU                          Q    O                              
-B091 KUG   KLUANG                           J    O                              
-B092 KLG   KLANG                            B    O                              
-B093 EDU   ENDAU                            J    O                              
-B094 STP   SETAPAK                          W    O                              
-B095 TIN   TELUK INTAN                      A    O                              
-B096 SGK   SERI GOMBAK                      B    O                              
-B097 HSL   JALAN TUN HS LEE                 W    O                              
-B098 TCY   TAMAN CENTURY                    J    C                              
-B099 XXX   NOT ASSIGNED                          C                              
-B100 YYY   NOT ASSIGNED                          C                              
-B101 KBR   KAMPUNG BARU                     W    O                              
-B102 PRJ   PARIT RAJA                       J    O                              
-B103 JJG   JINJANG                          W    O                              
-B104 KKL   KUALA KETIL                      K    O                              
-B105 KTI   KOTA TINGGI                      J    O                              
-B106 CKI   CHUKAI                           T    O                              
-B107 JLT   JELUTONG                         P    O                              
-B108 BSI   BAGAN SERAI                      A    O                              
-B109 KSR   KUALA SELANGOR                   B    O                              
-B110 TJJ   TMN JOHOR JAYA                   J    O                              
-B111 AKH   AIR KEROH                        M    O                              
-B112 LDO   LIDO                             S    O                              
-B113 TML   TEMERLOH                         C    O                              
-B114 BBA   BANDAR BARU AIR ITAM             P    O                              
-B115 KNG   KENINGAU                         S    O                              
-B116 TRI   TRIANG                           C    O                              
-B117 KKI   KUALA KRAI                       D    O                              
-B118 TMW   TAMAN MELAWATI                   B    O                              
-B119 BNV   BERCHAM NV                       A    C                              
-B120 PIH   PANDAN INDAH                     B    O                              
-B121 PRA   PRAI                             P    O                              
-B122 SKN   SERI KEMBANGAN                   B    O                              
-B123 IGN   IPOH GARDEN                      A    O                              
-B124 S14   SECTION 14                       B    O                              
-B125 KJA   KELANA JAYA                      B    O                              
-B126 PTS   PULAU TIKUS                      P    O                              
-B127 TSM   TAMAN SERI MUDA                  B    O                              
-B128 SGB   SEGAMBUT                         W    O                              
-B129 BSR   BANGSAR                          W    O                              
-B130 PDG   PADUNGAN                         Q    O                              
-B131 TMG   TAMAN MAYANG                     B    O                              
-B132 CKT   CHOW KIT                         W    C                              
-B133 PKG   PORT KLANG                       B    O                              
-B134 RPG   RANTAU PANJANG                   D    C                              
-B135 BSY   BANDAR SUNWAY                    B    O                              
-B136 TCS   TAMAN CHERAS                     W    O                              
-B137 JPP   JALAN PASIR PUTIH                A    O                              
-B138 WMU   WANGSA MAJU                      W    O                              
-B139 JRT   JERANTUT                         C    O                              
-B140 CPE   CITY PARADE                      S    O                              
-B141 STL   SENTUL                           W    O                              
-B142 KBD   KOTA BELUD                       S    O                              
-B143 LDU   LAHAD DATU                       S    O                              
-B144 KHG   KAHANG                           J    O                              
-B145 BSD   BANDAR SERI DAMANSARA            B    O                              
-B146 PSG   PUSING                           A    O                              
-B147 PNS   PEKAN NENAS                      J    O                              
-B148 PJO   PJ OLD TOWN                      B    O                              
-B149 BFT   BEAUFORT                         S    O                              
-B150 LMM   LEBUH MACALLUM                   P    O                              
-B151 SLY   SELAYANG                         W    O                              
-B152 ATR   AYER TAWAR                       A    O                              
-B153 USJ   USJ                              B    O                              
-B154 BSJ   BANDAR SEBERANG JAYA             P    O                              
-B155 TTJ   TAMAN TAMING JAYA                B    O                              
-B156 TMR   TAMAN MELAKA RAYA                M    O                              
-B157 BPJ   BANDAR PUCHONG JAYA              B    O                              
-B158 SPL   SIMPANG PULAI                    A    O                              
-B159 RLU   RELAU                            P    O                              
-B160 MTH   MASJID TANAH                     M    O                              
-B161 DGG   DONGGONGAN                       S    O                              
-B162 SEA   SEA PARK                         B    O                              
-B163 JKA   JALAN KUCHAI LAMA                W    O                              
-B164 KBS   KEPALA BATAS                     P    O                              
-B165 TKA   TENGKERA                         M    O                              
-B166 PGG   PASIR GUDANG                     J    C                              
-B167 BBG   BUKIT BERUNTUNG                  B    O                              
-B168 KLC   KL CITY MAIN OFFICE              W    O                              
-B169 CTD   CHANGKAT THAMBI DOLLAH           W    O                              
-B170 PJA   PANDAN JAYA                      B    O                              
-B171 JMR   JALAN MACALISTER                 P    O                              
-B172 TMJ   TAMAN MALIM JAYA                 M    O                              
-B173 SCA   SUNGAI CHUA                      B    O                              
-B174 BBP   BANDAR BARU PERMAS JAYA          J    O                              
-B175 LBG   LIMBANG                          Q    O                              
-B176 TPG   TAMAN PERLING                    J    O                              
-B177 JRU   JALAN RAJA UDA                   P    O                              
-B178 MIN   MEDAN IDAMAN                     W    O                              
-B179 OUG   OVERSEAS UNION GARDEN            W    O                              
-B180 KBG   KAMPUNG BARU SUBANG              B    O                              
-B181 SRO   SIBU REGIONAL OFFICE             Q    C                              
-B182 JPU   JALAN PULAU SIBU                 Q    C                              
-B183 JCL   JALAN CENTRAL                    Q    O                              
-B184 JPN   JALAN PENRISSEN                  Q    O                              
-B185 KCY   KUCHING CITY                     Q    O                              
-B186 JTZ   JALAN TUN ZAIDI                  Q    O                              
-B187 CST   CHINA STREET                     Q    O                              
-B189 BNH   BATU NIAH                        Q    O                              
-B190 BTR   BINTANGOR                        Q    O                              
-B191 KPT   KAPIT                            Q    O                              
-B192 MRD   MARUDI                           Q    O                              
-B193 MKH   MUKAH                            Q    O                              
-B194 SRK   SARIKEI                          Q    O                              
-B195 BWK   BINTANG WALK                     W    O                              
-B196 JHL   JALAN HANG LEKIU                 W    O                              
-B197 TNM   TIONG NAM                        W    O                              
-B198 TDA   TAMAN DESA                       W    O                              
-B199 JTH   JALAN TAPAH                      B    O                              
-B200 JSK   JALAN SERI KEMBANGAN             B    C                              
-B201 PDA   PANDAMARAN                       B    O                              
-B202 RWG   RAWANG                           B    O                              
-B203 SJM   SUNGAI JAROM                     B    O                              
-B204 BTW   BUTTERWORTH                      P    O                              
-B205 SNG   SUNGAI NIBONG                    P    O                              
-B206 TBM   TAMAN BUKIT MAS                  P    O                              
-B207 BCM   BERCHAM                          A    O                              
-B208 JSI   JALAN SULTAN IDRIS SHAH          A    O                              
-B209 STW   SITIAWAN                         A    O                              
-B210 TMM   TANJUNG MALIM                    A    O                              
-B211 TPD   TANJUNG PIANDANG                 A    O                              
-B212 JMA   JALAN MUNSHI ABDULLAH            M    C                              
-B213 JKB   JALAN KG BARU,SG PETANI          K    C                              
-B214 JGA   JALAN GEREJA                     J    C                              
-B215 JKP   JALAN KUKUP                      J    C                              
-B216 SKI   SKUDAI                           J    O                              
-B217 TMB   TAMAN MUNSYI IBRAHIM             J    O                              
-B218 ZZZ   NOT ASSIGNED                          C                              
-B219 BC1   BUREAU DE CHANGE                 C    C                              
-B220 GHS   GENTING HIGHLANDS                C    O                              
-B221 TSK   TAMAN SENTOSA KLANG              B    O                              
-B222 TDC   TAMAN DESA CEMERLANG             J    O                              
-B223 TRJ   TAMAN RASAH JAYA                 N    C                              
-B224 JAH   JALAN ABDULLAH                   J    O                              
-B225 TIH   TAMAN INDAH                      B    O                              
-B226 JPR   JALAN PASAR                      W    O                              
-B227 KSB   KAMPUNG BARU SUNGAI BULOH        B    C                              
-B228 INN   INANAM                           S    O                              
-B229 TSJ   TAMAN SELAYANG JAYA              B    C                              
-B230 SSH   SALAK SOUTH                      W    O                              
-B231 BBM   BATU BERENDAM                    M    O                              
-B232 TMD   TAMAN MIDAH                      W    O                              
-B233 BEN   BENTONG                          C    O                              
-B234 SRM   SIMPANG RENGGAM                  J    O                              
-B235 SBM   SABAK BERNAM                     B    O                              
-B236 UYB   ULU YAM BARU                     B    C                              
-B237 KLS   KUALA LIPIS                      C    O                              
-B238 JKT   JALAN KOTA                       K    O                              
-B239 KMY   KEMAYAN                          C    O                              
-B240 KAP   KAPAR                            B    O                              
-B241 DJA   DAMANSARA JAYA                   B    O                              
-B242 TKK   TANGKAK                          J    O                              
-B243 KKR   KUALA KANGSAR                    A    O                              
-B244 GRT   GUNUNG RAPAT                     A    O                              
-B245 BDR   BIDOR                            A    O                              
-B246 BGH   BATU GAJAH                       A    C                              
-B247 BPR   BUKIT PASIR                      J    O                              
-B248 JTS   JALAN TUN SAMBANTHAN             W    O                              
-B249 TAI   TAIPING                          A    O                              
-B250 TEA   TAMAN ENG ANN                    B    C                              
-B251 KPR   KAMPAR                           A    O                              
-B252 TMA   TAMAN MUDA                       B    O                              
-B253 JTT   JALAN TANJUNG TOKONG             P    C                              
-B254 KPH   KUALA PILAH                      N    O                              
-B255 SBP   SUNGAI BAKAP                     P    C                              
-B256 PBR   PARIT BUNTAR                     A    O                              
-B257 RAU   RAUB                             C    O                              
-B258 JTA   JITRA                            K    O                              
-B259 SAN   SRI AMAN                         Q    O                              
-B260 KDN   KUALA DUNGUN                     T    O                              
-B261 GMG   GUA MUSANG                       D    O                              
-B262 TCT   TAMAN CONNAUGHT                  W    O                              
-B263 BTA   BENTA                            C    O                              
-B264 JBH   JALAN BESERAH                    C    O                              
-B265 JAI   JALAN AIR ITAM                   P    O                              
-B266 JDK   JALAN DATUK KERAMAT              P    O                              
-B267 TDI   TAMAN TUN DR. ISMAIL             W    O                              
-B268 BBT   BANDAR BUKIT TINGGI              B    O                              
-B269 MKA   MONT KIARA                       W    O                              
-B270 BPI   BANDAR PUTERI PUCHONG            B    O                              
-B273 LHA   LI HUA                           Q    O                              
-B274 STG   STUTONG                          Q    O                              
-B275 MSL   MEDAN SENTRAL                    Q    O                              
-B276 JAS   JALAN APAS                       S    O                              
-B277 WSU   WAKAF SIKU                       D    O                              
-B278 JPI   JALAN PANTAI                     S    O                              
-B279 PTJ   PUTRAJAYA                        W    O                              
-B280 KDA   KOTA DAMANSARA                   B    O                              
-B281 PLT   PELITA                           Q    O                              
-B282 PTT   PUTATAN                          S    O                              
-B283 PSE   PRIMA SQUARE                     S    O                              
-B284 BSP   BANDAR SRI PERMAISURI            W    O                              
-B285 BMC   BANDAR MAHKOTA CHERAS            B    O                              
-B286 BIH   BUKIT INDAH                      J    O                              
-B287 SUA   SUTERA UTAMA                     J    O                              
-B288 SPT   STARPARC POINT                   W    O                              
-B289 TEE   TAMAN EQUINE BRANCH              B    O                              
-B290 TDY   TAMAN DAYA BRANCH                J    O                              
-B291 BSL   BANDAR SUNGAI LONG               B    O                              
-B292 BMJ   BANDAR MENJALARA                 W    O                              
-B293 BSA   BANDAR SETIA ALAM                B    O                              
-B294 KKM   KOTA KEMUNING                    B    O                              
-B295 BKR   BANDAR KINRARA                   B    O                              
-B296 BJL   BUKIT JALIL                      W    O                              
-B310 TRE   TREASURY                         W                                   
-B701 IKB   ISLAMIC KAMPUNG BARU             W    O                              
-B702 IPJ   PUTRAJAYA                        W    O                              
-B703 IWS   WAKAF SIKU                       D    O                              
-B704 IJK   ISLAMIC JALAN KOTA               K    O                              
-B800 H01   RASAH HP CENTRE                  N                                   
-B801 H02   BUTTERWORTH HP CENTRE            P                                   
-B802 H03   TAMAN MALURI HP CENTRE           W                                   
-B803 H04   INANAM HP CENTRE                 S                                   
-B804 H05   JOHOR BAHRU HP CENTRE            J                                   
-B805 H06   TAMAN JOHOR JAYA HP CENTRE       J                                   
-B806 H07   JALAN KOTA HP CENTRE             K                                   
-B807 H08   BATU BERENDAM HP CENTRE          M                                   
-B808 H09   JALAN DATUK KERAMAT HP CENTRE    P                                   
-B809 H10   IPOH MAIN OFFICE HP CENTRE       A                                   
-B811 H11   KL CITY HP CENTRE                W                                   
-B812 H12   JALAN SULTAN SULAIMAN HP CENTRE  W                                   
-B813 H13   KUCHING CITY HP CENTRE           Q                                   
-B814 H14   BANDAR BUKIT TINGGI HP CENTRE    B                                   
-B815 H15   KELANA JAYA HP CENTRE            B                                   
-B816 H16   SECTION 14 HP CENTRE             B                                   
-B817 H17   PULAU PINANG HP CENTRE           P                                   
-B818 H18   JALAN SUNGAI BESI HP CENTRE      W                                   
-B819 H19   JALAN BESERAH HP CENTRE          C                                   
-B820 H20   BANDAR SUNWAY HP CENTRE          B                                   
-B821 H21   SETAPAK HP CENTRE                W                                   
-B822 H22   SELAYANG HP CENTRE               W                                   
-B823 H23   IPOH GARDEN HP CENTRE            A                                   
-B824 H24   SUNGAI PETANI HP CENTRE          K                                   
-B825 H25   BANDAR PUTERI PUCHONG HP CENTRE  B                                   
-B826 H26   BUKIT MERTAJAM HP CENTRE         P                                   
-B827 H27   WAKAF SIKU HP CENTRE             D                                   
-B828 H28   TAMAN INDAH HP CENTRE            B                                   
-B829 H29   BANDAR SETIA ALAM HP HUB         S                                   
-B844 H44   KANGAR HP HUB                    R                                   
-B845 H45   LABUAN HP HUB                    L                                   
-B846 H46   TAWAU HP HUB                     S                                   
-B847 H47   PRIMA SQUARE HP HUB              S                                   
-B848 H48   BINTULU HP HUB                   Q                                   
-B849 H49   MIRI HP HUB                      Q                                   
-B850 H50   LI HUA HP HUB                    Q                                   
-B851 H51   BANTING HP HUB                   B                                   
-B852 H52   KLUANG HP HUB                    J                                   
-B853 H53   BATU PAHAT HP HUB                J                                   
-B854 H54   JALAN ABDULLAH HP HUB            J                                   
-B855 H55   KULAI HP HUB                     J                                   
-B856 H56   RAWANG HP HUB                    B                                   
-B857 H57   SITIAWAN HP HUB                  A                                   
-B858 H58   TEMERLOH HP HUB                  C                                   
-B859 H59   TAIPING HB HUB                   A                                   
-B860 H60   TELUK INTAN HP HUB               A                                   
-B861 H61   SEGAMAT HP HUB                   J                                   
-B862 H62   KUALA TERENGGANU HP HUB          T                                   
-B863 H63   BENTONG HP HUB                   C                                   
-B884 HOE   PIBB FINANCE DIVISION            W                                   
-B902 CBR   CONSUMER CREDIT                  W                                   
-B903 CCC   CREDIT CONTROL CENTRE            W                                   
-B904 SCD   SIBU CREDIT DEPARTMENT           Q                                   
-B905 SCC   CCC SELANGOR                     W                                   
-B906 CAD   CREDIT ADMIN                     W                                   
-B907 SDC   SECURITIES DOCUMENTATION CENTRE  W                                   
-B908 ICC   CCC/SDC PERAK                    A                                   
-B909 PCC   CCC/SDC PENANG                   P                                   
-B910 JCC   CCC/SDC JOHOR                    J                                   
-B911 KCA   CAC KL                           A                                   
-B912 CCA   CAC CITY CENTRE                  A                                   
-B913 LCA   CAC KLANG                        A                                   
-B914 JCA   CAC JOHOR BHARU                  A                                   
-B915 PCA   CAC PULAU PINANG                 A                                   
-B916 BCA   CAC BUTTERWORTH                  A                                   
-B917 KCC   CCC/SDC KLANG                    B                                   
-B918 MCC   CCC/SDC MELAKA                   M                                   
-B919 HCC   CCC/SDC KUCHING                  Q                                   
-B920 LCC   CCC/SDC K KINABALU               S                                   
-B922 SRC   SEREMBAN RCC & SDC               N                                   
-B923 ICA   CAC IPOH                         A                                   
-B940 UTW   WEALTH MANAGEMENT AND TB         W                                   
-B992 TFC   TRADE FINANCE CENTRE             W                                   
-B993 XPP   CCPC-PP                          P                                   
-B994 XJB   CCPC-JB                          J                                   
-B996 SMC   SHARE MARGIN CENTRE              W                                   
-B997 CCP   CCPC-KL                          W                                   
-B998 CPC   CENTRALIZE PAYMENT CENTRE        W                                   
+Step 3: Caching SAS files to Parquet (if needed)...
+  [DEPO] Converting ca260720.sas7bdat -> ca260720.parquet ...
+  [DEPO] WARNING: Cannot cast 'BILLERIND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [DEPO] Done — 852,312 rows cached.
+  [DEPOP] Converting ca260719.sas7bdat -> ca260719.parquet ...
+  [DEPOP] WARNING: Cannot cast 'BILLERIND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [DEPOP] Done — 852,126 rows cached.
+  [IDEPO] Converting ica260720.sas7bdat -> ica260720.parquet ...
+  [IDEPO] Done — 153,990 rows cached.
+  [IDEPOP] Converting ica260719.sas7bdat -> ica260719.parquet ...
+  [IDEPOP] Done — 153,927 rows cached.
+  [CIS] Converting CIS_deposit260720.sas7bdat -> cisdp_deposit.parquet ...
+  [CIS] WARNING: Cannot cast 'CISCUSTCD11' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CIS] WARNING: Cannot cast 'CISCUSTCD12' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CIS] WARNING: Cannot cast 'CISCUSTCD13' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CIS] WARNING: Cannot cast 'CISCUSTCD14' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
+  [CIS] Done — 1,236,108 rows cached.
+  [DPBTRAN] Converting dpbtran260702.sas7bdat -> dpbtran260702.parquet ...
+  [DPBTRAN] Done — 35,143,089 rows cached.
+  [TRANCODE] Converting trancode.sas7bdat -> detica_trancode.parquet ...
+  [TRANCODE] Done — 570 rows cached.
+
+[DEBUG] DPBTRAN_CACHE schema:
+shape: (36, 6)
+┌─────────────┬─────────────┬──────┬──────┬─────────┬───────┐
+│ column_name ┆ column_type ┆ null ┆ key  ┆ default ┆ extra │
+│ ---         ┆ ---         ┆ ---  ┆ ---  ┆ ---     ┆ ---   │
+│ str         ┆ str         ┆ str  ┆ str  ┆ str     ┆ str   │
+╞═════════════╪═════════════╪══════╪══════╪═════════╪═══════╡
+│ FMTCODE     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ ACCTNO      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ USERID      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TRANCODE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CHANNEL     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TRANAMT     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CHQNO       ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TRLIND      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ PENALTY     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TRACEBR     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ ORIDT       ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ ORITXNCD    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL1     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL2     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL3     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL4     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL5     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ STRAIL6     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ LTRAIL2     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ LTRAIL3     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TIMECTRL    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ REPTDATE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ LTRAIL1     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ NAME        ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CDNO        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CURCODE     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TERM        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ TERMID      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ RSONCODE    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ RSONDESC    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+│ CUSTCODE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ PRODCD      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ MATDATE     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ RATE        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ FORATE      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
+│ PRORATIO    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
+└─────────────┴─────────────┴──────┴──────┴─────────┴───────┘
+
+Step 4: Building SDF (current period, PRODUCT 20/21)...
+  SDF rows: 5
+
+Step 5: Building SDFPREV (previous period)...
+  SDFPREV rows: 1,006,053
+
+Step 6: Building CIS (customer name, SECCUST=901)...
+  CIS rows: 1,123,909
+
+Step 7: Building DPBTRAN (today's transactions)...
+  DPBTRAN rows: 0
+
+Step 8: Building TRANCD (transaction-code lookup)...
+  TRANCD rows: 265
+
+Step 9: Merging SDF + SDFPREV + CIS + DPBTRAN...
+
+Step 10: Deriving TRANDESC/CRDR and DEBIT/CREDIT...
+  Merged rows: 5
+
+Step 11: Persisting day snapshot and month-to-date accumulation...
+  Day cache    : sdf_day_260720.parquet
+  Month cache  : sdfall_2607.parquet (5 rows)
+
+Step 12: Generating output file...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDSDFT/SDF_20260720.txt
+  Total lines    : 8
+
+  --- Output preview ---
+Special Deposit Facility (SDF) RM Account as at 20/07/2026
+
+        Date    Branch  SDF Account Number      Customer Name   Product Opening Balance Transaction Code        Description     Debit   Credit  Outstanding Balance
+        20/07/2026                 8      3800037310    LEVERAGE MEDICAL SDN. BHD.                                20            9,749.00                                                                                    0.00               0.00                9,749.00
+        20/07/2026                 8      3800037832    MAKMUR MBS GROUP SDN. BHD.                                20           22,623.00                                                                                    0.00               0.00               29,774.60
+        20/07/2026               259      3801284135    HY & H ENTERPRISE SDN. BHD.                               20            6,881.20                                                                                    0.00               0.00                6,881.20
+        20/07/2026                30      3801582925    AZIMAT TELCO SDN. BHD.                                    20          100,000.00                                                                                    0.00               0.00              100,000.00
+        20/07/2026               207      3801642808    MAJOR TRADE SDN. BHD.                                     20          130,001.22                                                                                    0.00               0.00              152,949.25
+
+EIBDSDFT complete.
