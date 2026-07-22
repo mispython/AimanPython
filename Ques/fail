@@ -1,84 +1,25 @@
-# ============================================================================
-# STEP 12: GENERATE OUTPUT FILE (exact SAS style)
-# ============================================================================
-print("\nStep 12: Generating output file...")
+DLM = "\x05"   # or "\t"
 
-report_df = sdfall.filter(pl.col("REPTDATE") <= reptdate)
-rows = report_df.to_dicts()
-
-# Define delimiter (same as SAS DLM='05'X, but we use tab for readability)
-DLM = "\t"
-
-# ------------------------------
-# Formatting functions (match SAS formats)
-# ------------------------------
-
-def fmt_date(d):
-    """DDMMYY10. with a leading space (as seen in original output)."""
-    return (" " + d.strftime("%d/%m/%Y")).rjust(11)  # 10 + 1
-
-def fmt_num12(v):
-    """BEST12. – right‑justified, width 12."""
-    if v is None or pd.isna(v):
-        return " " * 12
-    return f"{int(round(float(v)))}".rjust(12)
-
-def fmt_text(v, width):
-    """$w. – left‑justified, padded with spaces to width."""
-    if v is None or pd.isna(v):
-        return " " * width
-    return f"{str(v).strip()[:width]:<{width}s}"
-
-def fmt_comma16(v):
-    """COMMA16.2 – right‑justified, width 16, thousands separators, 2 decimals."""
-    if v is None or pd.isna(v):
-        return " " * 16
-    return f"{float(v):,.2f}".rjust(16)
-
-# ------------------------------
-# Build header and data rows
-# ------------------------------
-
-# Header fields (exact names as in original)
-header_fields = [
+# Header
+header = DLM + DLM.join([
     "Date", "Branch", "SDF Account Number", "Customer Name",
     "Product", "Opening Balance", "Transaction Code",
     "Description", "Debit", "Credit", "Outstanding Balance"
-]
-
-# Each row starts and ends with DLM
-header_line = DLM + DLM.join(header_fields) + DLM
+]) + DLM
 
 data_lines = []
 for row in rows:
     fields = [
-        fmt_date(row["REPTDATE"]),
-        fmt_num12(row["BRANCH"]),
-        fmt_num12(row["ACCTNO"]),
-        fmt_text(row["CUSTNAME"], 40),
-        fmt_num12(row["PRODUCT"]),
-        fmt_comma16(row["PCURBAL"]),
-        fmt_num12(row["TRANCODE"]),
-        fmt_text(row["TRANDESC"], 40),
-        fmt_comma16(row["DEBIT"]),
-        fmt_comma16(row["CREDIT"]),
-        fmt_comma16(row["CURBAL"]),
+        row["REPTDATE"].strftime("%d/%m/%Y"),
+        str(int(round(row["BRANCH"]))) if row["BRANCH"] is not None else "",
+        str(int(round(row["ACCTNO"]))) if row["ACCTNO"] is not None else "",
+        row["CUSTNAME"] or "",
+        str(int(round(row["PRODUCT"]))) if row["PRODUCT"] is not None else "",
+        f"{row['PCURBAL']:,.2f}" if row["PCURBAL"] is not None else "",
+        str(int(round(row["TRANCODE"]))) if row["TRANCODE"] is not None else "",
+        row["TRANDESC"] or "",
+        f"{row['DEBIT']:,.2f}" if row["DEBIT"] is not None else "",
+        f"{row['CREDIT']:,.2f}" if row["CREDIT"] is not None else "",
+        f"{row['CURBAL']:,.2f}" if row["CURBAL"] is not None else "",
     ]
     data_lines.append(DLM + DLM.join(fields) + DLM)
-
-# ------------------------------
-# Write to file
-# ------------------------------
-
-output_lines = [
-    f"Special Deposit Facility (SDF) RM Account as at {RDATE}",
-    "",  # blank line (same as original)
-    header_line,
-    *data_lines
-]
-
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-    fh.write("\n".join(output_lines) + "\n")
-
-print(f"\n  Output written : {OUTPUT_FILE}")
-print(f"  Total rows    : {len(data_lines)}")
