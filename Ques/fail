@@ -1,275 +1,104 @@
 # ============================================================================
-# STEP 12: GENERATE OUTPUT FILE
+# STEP 12: GENERATE OUTPUT FILE (aligned, no separator line)
 # ============================================================================
 print("\nStep 12: Generating output file...")
 
 report_df = sdfall.filter(pl.col("REPTDATE") <= reptdate)
 
+# Convert to list of dicts for easier processing
+rows = report_df.to_dicts()
 
-def _fmt_comma16(value) -> str:
-    """COMMA16.2 — right-justified, width 16, thousands separator, 2 dp."""
-    if value is None or pd.isna(value):
-        return " " * 16
-    return f"{float(value):,.2f}".rjust(16)
-
-
-def _fmt_num12(value) -> str:
-    """Default numeric BEST12. — right-justified, width 12, no format."""
-    if value is None or pd.isna(value):
-        return " " * 12
-    return f"{int(round(float(value)))}".rjust(12)
-
-
-def _fmt_char(value, width: int) -> str:
-    """Character variable — left-justified, padded/truncated to *width*."""
-    if value is None or pd.isna(value):
-        return " " * width
-    return f"{str(value)[:width]:<{width}s}"
-
-
-def _pad_record(line: str) -> str:
-    """Pad or truncate to LRECL=1000."""
-    return line[:LRECL].ljust(LRECL)
-
-
-output_lines: list[str] = []
-
-# Title line + blank line + delimited column-header line
-output_lines.append(_pad_record(f"Special Deposit Facility (SDF) RM Account as at {RDATE}"))
-output_lines.append(_pad_record(""))
-
-# Header fields with proper spacing (DLM + DLM.join + DLM)
-header_fields = [
-    "Date", "Branch", "SDF Account Number", "Customer Name", "Product",
-    "Opening Balance", "Transaction Code", "Description", "Debit",
-    "Credit", "Outstanding Balance",
+# Define column headers and their alignment (L=left, R=right)
+columns = [
+    ("Date", "L"),
+    ("Branch", "R"),
+    ("SDF Account Number", "R"),
+    ("Customer Name", "L"),
+    ("Product", "R"),
+    ("Opening Balance", "R"),
+    ("Transaction Code", "R"),
+    ("Description", "L"),
+    ("Debit", "R"),
+    ("Credit", "R"),
+    ("Outstanding Balance", "R"),
 ]
-output_lines.append(_pad_record(DLM + DLM.join(header_fields) + DLM))
 
-for row in report_df.iter_rows(named=True):
-    # Format each field according to SAS formats
-    fields = [
-        row["REPTDATE"].strftime("%d/%m/%Y"),                    # Date - no special formatting
-        _fmt_num12(row["BRANCH"]),                               # Branch - BEST12.
-        _fmt_num12(row["ACCTNO"]),                               # Account Number - BEST12.
-        _fmt_char(row["CUSTNAME"], 40),                          # Customer Name - $40.
-        _fmt_num12(row["PRODUCT"]),                              # Product - BEST12.
-        _fmt_comma16(row["PCURBAL"]),                            # Opening Balance - COMMA16.2
-        _fmt_num12(row["TRANCODE"]),                             # Transaction Code - BEST12.
-        _fmt_char(row["TRANDESC"], 40),                          # Description - $40.
-        _fmt_comma16(row["DEBIT"]),                              # Debit - COMMA16.2
-        _fmt_comma16(row["CREDIT"]),                             # Credit - COMMA16.2
-        _fmt_comma16(row["CURBAL"]),                             # Outstanding Balance - COMMA16.2
-    ]
-    output_lines.append(_pad_record(DLM + DLM.join(fields) + DLM))
+# Prepare data rows with formatted values
+data_rows = []
+for row in rows:
+    date_str = row["REPTDATE"].strftime("%d/%m/%Y")
+    cust_name = (row["CUSTNAME"] or "").strip()
+    trandesc = (row["TRANDESC"] or "").strip()
+    
+    # Format numbers: COMMA16.2 for decimals, BEST12. for integers
+    def fmt_comma(val):
+        if val is None or pd.isna(val):
+            return ""
+        return f"{float(val):,.2f}"
+    
+    def fmt_int(val):
+        if val is None or pd.isna(val):
+            return ""
+        return f"{int(round(float(val)))}"
+    
+    data_rows.append([
+        date_str,
+        fmt_int(row["BRANCH"]),
+        fmt_int(row["ACCTNO"]),
+        cust_name,
+        fmt_int(row["PRODUCT"]),
+        fmt_comma(row["PCURBAL"]),
+        fmt_int(row["TRANCODE"]),
+        trandesc,
+        fmt_comma(row["DEBIT"]),
+        fmt_comma(row["CREDIT"]),
+        fmt_comma(row["CURBAL"]),
+    ])
 
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-    for ln in output_lines:
-        fh.write(ln + "\n")
+# Combine header and data
+all_rows = [[col[0] for col in columns]] + data_rows
+
+# Compute column widths (at least as wide as the header)
+col_widths = []
+for i, col in enumerate(columns):
+    header_len = len(col[0])
+    max_data_len = max((len(str(row[i])) for row in data_rows), default=0)
+    col_widths.append(max(header_len, max_data_len) + 2)  # +2 for padding
+
+# Build the table lines
+lines = []
+# Title
+lines.append(f"Special Deposit Facility (SDF) RM Account as at {RDATE}")
+lines.append("")  # blank line
+
+# Header row
+header_line = ""
+for i, col in enumerate(columns):
+    if col[1] == "L":
+        header_line += col[0].ljust(col_widths[i])
+    else:
+        header_line += col[0].rjust(col_widths[i])
+lines.append(header_line)
+
+# Data rows (no separator line)
+for data_row in data_rows:
+    line = ""
+    for i, (col, align) in enumerate(columns):
+        val = data_row[i]
+        if align == "L":
+            line += val.ljust(col_widths[i])
+        else:
+            line += val.rjust(col_widths[i])
+    lines.append(line)
+
+# Write to file
+with open(OUTPUT_FILE, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(lines) + "\n")
 
 print(f"\n  Output written : {OUTPUT_FILE}")
-print(f"  Total lines    : {len(output_lines):,}")
+print(f"  Total rows    : {len(data_rows)}")
 print("\n  --- Output preview ---")
-for ln in output_lines[:20]:
-    print(ln.rstrip())
-if len(output_lines) > 20:
-    print(f"  ... ({len(output_lines) - 20} more lines)")
-
-==========================
-
-# Current (incorrect):
-WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS INTEGER))
-      = DATE '{reptdate.isoformat()}'
-
-# Should be (to get all transactions for the month):
-WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS INTEGER))
-      >= DATE '2026-07-01'
-  AND (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS INTEGER))
-      <= DATE '2026-07-20'
-
-==================
-
-con = duckdb.connect(database=":memory:")
-trancd = con.execute(f"""
-    WITH filtered AS (
-        SELECT
-            CAST(TXN_CODE     AS BIGINT)  AS TXN_CODE,
-            CAST(TXN_DESC     AS VARCHAR) AS TXN_DESC,
-            CAST(CRDR         AS VARCHAR) AS CRDR,
-            TIMESTAMP '1960-01-01 00:00:00'
-                + to_seconds(CAST(ROUND(EFFDATETIME) AS BIGINT)) AS EFFDATETIME
-        FROM read_parquet('{TRANCODE_CACHE}')
-        WHERE CAST(ACCTCODE AS VARCHAR) = 'DP'
-    ),
-    ranked AS (
-        SELECT *,
-               ROW_NUMBER() OVER (
-                   PARTITION BY TXN_CODE
-                   ORDER BY EFFDATETIME DESC
-               ) AS rn
-        FROM filtered
-    )
-    SELECT TXN_CODE, TXN_DESC, CRDR
-    FROM ranked
-    WHERE rn = 1
-""").pl()
-con.close()
-
-===================
-
-Step 8: Building TRANCD (transaction-code lookup)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDSDFT_AII.py", line 359, in <module>
-    trancd = con.execute(f"""
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> TIMESTAMP) when casting from source column EFFDATETIME
-
-LINE 7:             CAST(EFFDATETIME  AS TIMESTAMP) AS EFFDATETIME
-                    ^
-
-==============
-
-Step 7: Building DPBTRAN (today's transactions)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDSDFT_AII.py", line 332, in <module>
-    dpbtran = con.execute(f"""
-_duckdb.BinderException: Binder Error: No function matches the given name and argument types '+(DATE, BIGINT)'. You might need to add explicit type casts.
-        Candidate functions:
-        +(TINYINT) -> TINYINT
-        +(TINYINT, TINYINT) -> TINYINT
-        +(SMALLINT) -> SMALLINT
-        +(SMALLINT, SMALLINT) -> SMALLINT
-        +(INTEGER) -> INTEGER
-        +(INTEGER, INTEGER) -> INTEGER
-        +(BIGINT) -> BIGINT
-        +(BIGINT, BIGINT) -> BIGINT
-        +(HUGEINT) -> HUGEINT
-        +(HUGEINT, HUGEINT) -> HUGEINT
-        +(FLOAT) -> FLOAT
-        +(FLOAT, FLOAT) -> FLOAT
-        +(DOUBLE) -> DOUBLE
-        +(DOUBLE, DOUBLE) -> DOUBLE
-        +(DECIMAL) -> DECIMAL
-        +(DECIMAL, DECIMAL) -> DECIMAL
-        +(UTINYINT) -> UTINYINT
-        +(UTINYINT, UTINYINT) -> UTINYINT
-        +(USMALLINT) -> USMALLINT
-        +(USMALLINT, USMALLINT) -> USMALLINT
-        +(UINTEGER) -> UINTEGER
-        +(UINTEGER, UINTEGER) -> UINTEGER
-        +(UBIGINT) -> UBIGINT
-        +(UBIGINT, UBIGINT) -> UBIGINT
-        +(UHUGEINT) -> UHUGEINT
-        +(UHUGEINT, UHUGEINT) -> UHUGEINT
-        +(DATE, INTEGER) -> DATE
-        +(INTEGER, DATE) -> DATE
-        +(INTERVAL, INTERVAL) -> INTERVAL
-        +(DATE, INTERVAL) -> TIMESTAMP
-        +(INTERVAL, DATE) -> TIMESTAMP
-        +(TIME, INTERVAL) -> TIME
-        +(INTERVAL, TIME) -> TIME
-        +(TIMESTAMP, INTERVAL) -> TIMESTAMP
-        +(INTERVAL, TIMESTAMP) -> TIMESTAMP
-        +(TIME WITH TIME ZONE, INTERVAL) -> TIME WITH TIME ZONE
-        +(INTERVAL, TIME WITH TIME ZONE) -> TIME WITH TIME ZONE
-        +(TIME, DATE) -> TIMESTAMP
-        +(DATE, TIME) -> TIMESTAMP
-        +(TIME WITH TIME ZONE, DATE) -> TIMESTAMP WITH TIME ZONE
-        +(DATE, TIME WITH TIME ZONE) -> TIMESTAMP WITH TIME ZONE
-        +([ANY[]...]) -> ANY[]
-        +(BIGNUM, BIGNUM) -> BIGNUM
-        +(TIMESTAMP WITH TIME ZONE, INTERVAL) -> TIMESTAMP WITH TIME ZONE
-        +(INTERVAL, TIMESTAMP WITH TIME ZONE) -> TIMESTAMP WITH TIME ZONE
-
-
-LINE 11:     WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS BIGINT))
-                                      ^
-
-=================
-
-[DEBUG] DPBTRAN_CACHE schema:
-shape: (36, 6)
-┌─────────────┬─────────────┬──────┬──────┬─────────┬───────┐
-│ column_name ┆ column_type ┆ null ┆ key  ┆ default ┆ extra │
-│ ---         ┆ ---         ┆ ---  ┆ ---  ┆ ---     ┆ ---   │
-│ str         ┆ str         ┆ str  ┆ str  ┆ str     ┆ str   │
-╞═════════════╪═════════════╪══════╪══════╪═════════╪═══════╡
-│ FMTCODE     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ ACCTNO      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ USERID      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TRANCODE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CHANNEL     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TRANAMT     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CHQNO       ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TRLIND      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ PENALTY     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TRACEBR     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ ORIDT       ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ ORITXNCD    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL1     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL2     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL3     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL4     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL5     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL6     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ LTRAIL2     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ LTRAIL3     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TIMECTRL    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ REPTDATE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ LTRAIL1     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ NAME        ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CDNO        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CURCODE     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TERM        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TERMID      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ RSONCODE    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ RSONDESC    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CUSTCODE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ PRODCD      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ MATDATE     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ RATE        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ FORATE      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ PRORATIO    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-└─────────────┴─────────────┴──────┴──────┴─────────┴───────┘
-
-=================
-
-# ============================================================================
-# DEBUG: Inspect DPBTRAN parquet schema — confirm REPTDATE's actual type
-# before it's used in Step 7. Remove once REPTDATE's column type is
-# confirmed stable across cache rebuilds.
-# ============================================================================
-con = duckdb.connect(database=":memory:")
-print("\n[DEBUG] DPBTRAN_CACHE schema:")
-with pl.Config(tbl_rows=-1, tbl_cols=-1):
-    print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{DPBTRAN_CACHE}')").pl())
-con.close()
-
-
-
-con = duckdb.connect(database=":memory:")
-dpbtran = con.execute(f"""
-    SELECT
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(TRANCODE AS BIGINT)  AS TRANCODE,
-        CAST(TRANAMT  AS DOUBLE)  AS TRANAMT,
-        CAST(TIMECTRL AS VARCHAR) AS TIMECTRL
-    FROM read_parquet('{DPBTRAN_CACHE}')
-    -- REPTDATE is cached as a raw SAS numeric date (DOUBLE = days since
-    -- 1960-01-01), not a native DATE/TIMESTAMP. DuckDB has no direct
-    -- DOUBLE -> DATE cast, so reconstruct it via the SAS epoch instead.
-    WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS BIGINT))
-          = DATE '{reptdate.isoformat()}'
-    ORDER BY ACCTNO, TIMECTRL
-""").pl()
-con.close()
-
-=================
-
-Step 7: Building DPBTRAN (today's transactions)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDSDFT_AII.py", line 308, in <module>
-    dpbtran = con.execute(f"""
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column REPTDATE
-
-LINE 8:     WHERE CAST(REPTDATE AS DATE) = DATE '2026-07-20'
-                  ^
+for ln in lines[:20]:
+    print(ln)
+if len(lines) > 20:
+    print(f"  ... ({len(lines) - 20} more lines)")
