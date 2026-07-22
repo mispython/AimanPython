@@ -1,104 +1,92 @@
 # ============================================================================
-# STEP 12: GENERATE OUTPUT FILE (aligned, no separator line)
+# STEP 12: GENERATE OUTPUT FILE (fixed‑width, spaces, no tabs)
 # ============================================================================
 print("\nStep 12: Generating output file...")
 
 report_df = sdfall.filter(pl.col("REPTDATE") <= reptdate)
-
-# Convert to list of dicts for easier processing
 rows = report_df.to_dicts()
 
-# Define column headers and their alignment (L=left, R=right)
-columns = [
-    ("Date", "L"),
-    ("Branch", "R"),
-    ("SDF Account Number", "R"),
-    ("Customer Name", "L"),
-    ("Product", "R"),
-    ("Opening Balance", "R"),
-    ("Transaction Code", "R"),
-    ("Description", "L"),
-    ("Debit", "R"),
-    ("Credit", "R"),
-    ("Outstanding Balance", "R"),
+# SAS format widths (from the original PUT statement)
+WIDTHS = {
+    "date": 11,              # DDMMYY10. + leading space
+    "branch": 12,            # BEST12.
+    "acctno": 12,            # BEST12.
+    "custname": 40,          # $40.
+    "product": 12,           # BEST12.
+    "opening": 16,           # COMMA16.2
+    "txncode": 12,           # BEST12.
+    "desc": 40,              # $40.
+    "debit": 16,             # COMMA16.2
+    "credit": 16,            # COMMA16.2
+    "balance": 16,           # COMMA16.2
+}
+
+# Helper functions to format each field
+def fmt_date(d):
+    return (" " + d.strftime("%d/%m/%Y")).rjust(WIDTHS["date"])
+
+def fmt_num12(v):
+    if v is None or pd.isna(v):
+        return " " * WIDTHS["branch"]
+    return f"{int(round(float(v)))}".rjust(WIDTHS["branch"])
+
+def fmt_text(v, width):
+    if v is None or pd.isna(v):
+        return " " * width
+    return f"{str(v).strip()[:width]:<{width}s}"
+
+def fmt_comma(v, width):
+    if v is None or pd.isna(v):
+        return " " * width
+    return f"{float(v):,.2f}".rjust(width)
+
+# Build the rows (as formatted strings)
+header = [
+    "Date".rjust(WIDTHS["date"]),
+    "Branch".rjust(WIDTHS["branch"]),
+    "SDF Account Number".rjust(WIDTHS["acctno"]),
+    "Customer Name".ljust(WIDTHS["custname"]),
+    "Product".rjust(WIDTHS["product"]),
+    "Opening Balance".rjust(WIDTHS["opening"]),
+    "Transaction Code".rjust(WIDTHS["txncode"]),
+    "Description".ljust(WIDTHS["desc"]),
+    "Debit".rjust(WIDTHS["debit"]),
+    "Credit".rjust(WIDTHS["credit"]),
+    "Outstanding Balance".rjust(WIDTHS["balance"]),
 ]
 
-# Prepare data rows with formatted values
-data_rows = []
+data_lines = []
 for row in rows:
-    date_str = row["REPTDATE"].strftime("%d/%m/%Y")
-    cust_name = (row["CUSTNAME"] or "").strip()
-    trandesc = (row["TRANDESC"] or "").strip()
-    
-    # Format numbers: COMMA16.2 for decimals, BEST12. for integers
-    def fmt_comma(val):
-        if val is None or pd.isna(val):
-            return ""
-        return f"{float(val):,.2f}"
-    
-    def fmt_int(val):
-        if val is None or pd.isna(val):
-            return ""
-        return f"{int(round(float(val)))}"
-    
-    data_rows.append([
-        date_str,
-        fmt_int(row["BRANCH"]),
-        fmt_int(row["ACCTNO"]),
-        cust_name,
-        fmt_int(row["PRODUCT"]),
-        fmt_comma(row["PCURBAL"]),
-        fmt_int(row["TRANCODE"]),
-        trandesc,
-        fmt_comma(row["DEBIT"]),
-        fmt_comma(row["CREDIT"]),
-        fmt_comma(row["CURBAL"]),
-    ])
+    line = [
+        fmt_date(row["REPTDATE"]),
+        fmt_num12(row["BRANCH"]),
+        fmt_num12(row["ACCTNO"]),
+        fmt_text(row["CUSTNAME"], WIDTHS["custname"]),
+        fmt_num12(row["PRODUCT"]),
+        fmt_comma(row["PCURBAL"], WIDTHS["opening"]),
+        fmt_num12(row["TRANCODE"]),
+        fmt_text(row["TRANDESC"], WIDTHS["desc"]),
+        fmt_comma(row["DEBIT"], WIDTHS["debit"]),
+        fmt_comma(row["CREDIT"], WIDTHS["credit"]),
+        fmt_comma(row["CURBAL"], WIDTHS["balance"]),
+    ]
+    data_lines.append("".join(line))   # join with no separator (spaces are inside each field)
 
-# Combine header and data
-all_rows = [[col[0] for col in columns]] + data_rows
-
-# Compute column widths (at least as wide as the header)
-col_widths = []
-for i, col in enumerate(columns):
-    header_len = len(col[0])
-    max_data_len = max((len(str(row[i])) for row in data_rows), default=0)
-    col_widths.append(max(header_len, max_data_len) + 2)  # +2 for padding
-
-# Build the table lines
-lines = []
-# Title
-lines.append(f"Special Deposit Facility (SDF) RM Account as at {RDATE}")
-lines.append("")  # blank line
-
-# Header row
-header_line = ""
-for i, col in enumerate(columns):
-    if col[1] == "L":
-        header_line += col[0].ljust(col_widths[i])
-    else:
-        header_line += col[0].rjust(col_widths[i])
-lines.append(header_line)
-
-# Data rows (no separator line)
-for data_row in data_rows:
-    line = ""
-    for i, (col, align) in enumerate(columns):
-        val = data_row[i]
-        if align == "L":
-            line += val.ljust(col_widths[i])
-        else:
-            line += val.rjust(col_widths[i])
-    lines.append(line)
+# Title and blank line
+output_lines = []
+output_lines.append(f"Special Deposit Facility (SDF) RM Account as at {RDATE}")
+output_lines.append("")
+output_lines.append("".join(header))
+output_lines.extend(data_lines)
 
 # Write to file
 with open(OUTPUT_FILE, "w", encoding="utf-8") as fh:
-    fh.write("\n".join(lines) + "\n")
+    fh.write("\n".join(output_lines) + "\n")
 
 print(f"\n  Output written : {OUTPUT_FILE}")
-print(f"  Total rows    : {len(data_rows)}")
+print(f"  Total rows    : {len(data_lines)}")
 print("\n  --- Output preview ---")
-for ln in lines[:20]:
+for ln in output_lines[:20]:
     print(ln)
-if len(lines) > 20:
-    print(f"  ... ({len(lines) - 20} more lines)")
+if len(output_lines) > 20:
+    print(f"  ... ({len(output_lines) - 20} more lines)")
