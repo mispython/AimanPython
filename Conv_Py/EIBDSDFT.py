@@ -517,77 +517,6 @@ gc.collect()
 # FORMAT REPTDATE DDMMYY10. PCURBAL DEBIT CREDIT CURBAL COMMA16.2;
 # DLM='05'X; FILE SDFFL;  (RECFM=FB, LRECL=1000 — no ASA carriage control)
 # ============================================================================
-# print("\nStep 12: Generating output file...")
-
-# report_df = sdfall.filter(pl.col("REPTDATE") <= reptdate)
-
-
-# def _fmt_comma16(value) -> str:
-#     """COMMA16.2 — right-justified, width 16, thousands separator, 2 dp."""
-#     if value is None:
-#         return " " * 16
-#     return f"{float(value):,.2f}".rjust(16)
-
-
-# def _fmt_num12(value) -> str:
-#     """Default numeric BEST12. — right-justified, width 12, no format."""
-#     if value is None:
-#         return " " * 12
-#     return f"{int(round(float(value)))}".rjust(12)
-
-
-# def _fmt_char(value, width: int) -> str:
-#     """Character variable — left-justified, padded/truncated to *width*."""
-#     return f"{str(value or '')[:width]:<{width}s}"
-
-
-# def _pad_record(line: str) -> str:
-#     return line[:LRECL].ljust(LRECL)
-
-
-# output_lines: list[str] = []
-
-# # Title line + blank line + delimited column-header line (IF _N_=1 block)
-# output_lines.append(_pad_record(f"Special Deposit Facility (SDF) RM Account as at {RDATE}"))
-# output_lines.append(_pad_record(""))
-# header_fields = [
-#     "Date", "Branch", "SDF Account Number", "Customer Name", "Product",
-#     "Opening Balance", "Transaction Code", "Description", "Debit",
-#     "Credit", "Outstanding Balance",
-# ]
-# output_lines.append(_pad_record(DLM + DLM.join(header_fields) + DLM))
-
-# for row in report_df.iter_rows(named=True):
-#     fields = [
-#         row["REPTDATE"].strftime("%d/%m/%Y"),
-#         _fmt_num12(row["BRANCH"]),
-#         _fmt_num12(row["ACCTNO"]),
-#         _fmt_char(row["CUSTNAME"], 40),
-#         _fmt_num12(row["PRODUCT"]),
-#         _fmt_comma16(row["PCURBAL"]),
-#         _fmt_num12(row["TRANCODE"]),
-#         _fmt_char(row["TRANDESC"], 40),
-#         _fmt_comma16(row["DEBIT"]),
-#         _fmt_comma16(row["CREDIT"]),
-#         _fmt_comma16(row["CURBAL"]),
-#     ]
-#     output_lines.append(_pad_record(DLM + DLM.join(fields) + DLM))
-
-# with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-#     for ln in output_lines:
-#         fh.write(ln + "\n")
-
-# print(f"\n  Output written : {OUTPUT_FILE}")
-# print(f"  Total lines    : {len(output_lines):,}")
-# print("\n  --- Output preview ---")
-# for ln in output_lines[:20]:
-#     print(ln.rstrip())
-# if len(output_lines) > 20:
-#     print(f"  ... ({len(output_lines) - 20} more lines)")
-
-# ============================================================================
-# STEP 12: GENERATE OUTPUT FILE (exact SAS style)
-# ============================================================================
 print("\nStep 12: Generating output file...")
 
 report_df = sdfall.filter(pl.col("REPTDATE") <= reptdate)
@@ -636,9 +565,17 @@ def fmt_comma16(v):
 
 # Header fields (exact names as in original)
 header_fields = [
-    "Date", "Branch", "SDF Account Number", "Customer Name",
-    "Product", "Opening Balance", "Transaction Code",
-    "Description", "Debit", "Credit", "Outstanding Balance"
+    "Date"                  + " " * 8,
+    "Branch"                ,
+    "SDF Account Number"    ,
+    "Customer Name"         + " " * 16,
+    "Product"               + " " * 4,
+    "Opening Balance"       + " " * 4,
+    "Transaction Code"      ,
+    "Description"           + " " * 16,
+    "Debit"                 + " " * 12,
+    "Credit"                + " " * 12,
+    "Outstanding Balance"
 ]
 
 # Each row starts and ends with DLM
@@ -647,17 +584,17 @@ header_line = DLM + DLM.join(header_fields) + DLM
 data_lines = []
 for row in rows:
     fields = [
-        fmt_date(row["REPTDATE"]),
-        fmt_num5(row["BRANCH"]),
-        fmt_num12(row["ACCTNO"]),
-        fmt_text(row["CUSTNAME"], 27) + "   ",
-        fmt_num5(row["PRODUCT"]),
-        fmt_comma16(row["PCURBAL"]),
-        fmt_num5(row["TRANCODE"]),
-        fmt_text(row["TRANDESC"], 24) + "   ",
-        fmt_comma16(row["DEBIT"]),
-        fmt_comma16(row["CREDIT"]),
-        fmt_comma16(row["CURBAL"]),
+        fmt_date(row["REPTDATE"])       ,
+        fmt_num5(row["BRANCH"])         ,
+        fmt_num12(row["ACCTNO"])        + " " * 4,
+        fmt_text(row["CUSTNAME"], 27)   + " " * 4,
+        fmt_num5(row["PRODUCT"])        + " " * 4,
+        fmt_comma16(row["PCURBAL"])     ,
+        fmt_num5(row["TRANCODE"])       + " " * 12,
+        fmt_text(row["TRANDESC"], 20)   + " " * 4,
+        fmt_comma16(row["DEBIT"])       ,
+        fmt_comma16(row["CREDIT"])      ,
+        fmt_comma16(row["CURBAL"])      ,
     ]
     data_lines.append(DLM + DLM.join(fields) + DLM)
 
