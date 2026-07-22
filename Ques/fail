@@ -1,92 +1,84 @@
 # ============================================================================
-# STEP 12: GENERATE OUTPUT FILE (fixed‑width, spaces, no tabs)
+# STEP 12: GENERATE OUTPUT FILE (exact SAS style)
 # ============================================================================
 print("\nStep 12: Generating output file...")
 
 report_df = sdfall.filter(pl.col("REPTDATE") <= reptdate)
 rows = report_df.to_dicts()
 
-# SAS format widths (from the original PUT statement)
-WIDTHS = {
-    "date": 11,              # DDMMYY10. + leading space
-    "branch": 12,            # BEST12.
-    "acctno": 12,            # BEST12.
-    "custname": 40,          # $40.
-    "product": 12,           # BEST12.
-    "opening": 16,           # COMMA16.2
-    "txncode": 12,           # BEST12.
-    "desc": 40,              # $40.
-    "debit": 16,             # COMMA16.2
-    "credit": 16,            # COMMA16.2
-    "balance": 16,           # COMMA16.2
-}
+# Define delimiter (same as SAS DLM='05'X, but we use tab for readability)
+DLM = "\t"
 
-# Helper functions to format each field
+# ------------------------------
+# Formatting functions (match SAS formats)
+# ------------------------------
+
 def fmt_date(d):
-    return (" " + d.strftime("%d/%m/%Y")).rjust(WIDTHS["date"])
+    """DDMMYY10. with a leading space (as seen in original output)."""
+    return (" " + d.strftime("%d/%m/%Y")).rjust(11)  # 10 + 1
 
 def fmt_num12(v):
+    """BEST12. – right‑justified, width 12."""
     if v is None or pd.isna(v):
-        return " " * WIDTHS["branch"]
-    return f"{int(round(float(v)))}".rjust(WIDTHS["branch"])
+        return " " * 12
+    return f"{int(round(float(v)))}".rjust(12)
 
 def fmt_text(v, width):
+    """$w. – left‑justified, padded with spaces to width."""
     if v is None or pd.isna(v):
         return " " * width
     return f"{str(v).strip()[:width]:<{width}s}"
 
-def fmt_comma(v, width):
+def fmt_comma16(v):
+    """COMMA16.2 – right‑justified, width 16, thousands separators, 2 decimals."""
     if v is None or pd.isna(v):
-        return " " * width
-    return f"{float(v):,.2f}".rjust(width)
+        return " " * 16
+    return f"{float(v):,.2f}".rjust(16)
 
-# Build the rows (as formatted strings)
-header = [
-    "Date".rjust(WIDTHS["date"]),
-    "Branch".rjust(WIDTHS["branch"]),
-    "SDF Account Number".rjust(WIDTHS["acctno"]),
-    "Customer Name".ljust(WIDTHS["custname"]),
-    "Product".rjust(WIDTHS["product"]),
-    "Opening Balance".rjust(WIDTHS["opening"]),
-    "Transaction Code".rjust(WIDTHS["txncode"]),
-    "Description".ljust(WIDTHS["desc"]),
-    "Debit".rjust(WIDTHS["debit"]),
-    "Credit".rjust(WIDTHS["credit"]),
-    "Outstanding Balance".rjust(WIDTHS["balance"]),
+# ------------------------------
+# Build header and data rows
+# ------------------------------
+
+# Header fields (exact names as in original)
+header_fields = [
+    "Date", "Branch", "SDF Account Number", "Customer Name",
+    "Product", "Opening Balance", "Transaction Code",
+    "Description", "Debit", "Credit", "Outstanding Balance"
 ]
+
+# Each row starts and ends with DLM
+header_line = DLM + DLM.join(header_fields) + DLM
 
 data_lines = []
 for row in rows:
-    line = [
+    fields = [
         fmt_date(row["REPTDATE"]),
         fmt_num12(row["BRANCH"]),
         fmt_num12(row["ACCTNO"]),
-        fmt_text(row["CUSTNAME"], WIDTHS["custname"]),
+        fmt_text(row["CUSTNAME"], 40),
         fmt_num12(row["PRODUCT"]),
-        fmt_comma(row["PCURBAL"], WIDTHS["opening"]),
+        fmt_comma16(row["PCURBAL"]),
         fmt_num12(row["TRANCODE"]),
-        fmt_text(row["TRANDESC"], WIDTHS["desc"]),
-        fmt_comma(row["DEBIT"], WIDTHS["debit"]),
-        fmt_comma(row["CREDIT"], WIDTHS["credit"]),
-        fmt_comma(row["CURBAL"], WIDTHS["balance"]),
+        fmt_text(row["TRANDESC"], 40),
+        fmt_comma16(row["DEBIT"]),
+        fmt_comma16(row["CREDIT"]),
+        fmt_comma16(row["CURBAL"]),
     ]
-    data_lines.append("".join(line))   # join with no separator (spaces are inside each field)
+    data_lines.append(DLM + DLM.join(fields) + DLM)
 
-# Title and blank line
-output_lines = []
-output_lines.append(f"Special Deposit Facility (SDF) RM Account as at {RDATE}")
-output_lines.append("")
-output_lines.append("".join(header))
-output_lines.extend(data_lines)
-
+# ------------------------------
 # Write to file
-with open(OUTPUT_FILE, "w", encoding="utf-8") as fh:
+# ------------------------------
+
+output_lines = [
+    f"Special Deposit Facility (SDF) RM Account as at {RDATE}",
+    "",  # blank line (same as original)
+    header_line,
+    *data_lines
+]
+
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     fh.write("\n".join(output_lines) + "\n")
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total rows    : {len(data_lines)}")
-print("\n  --- Output preview ---")
-for ln in output_lines[:20]:
-    print(ln)
-if len(output_lines) > 20:
-    print(f"  ... ({len(output_lines) - 20} more lines)")
