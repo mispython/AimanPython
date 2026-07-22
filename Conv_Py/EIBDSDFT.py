@@ -104,8 +104,8 @@ print(f"  Output file  : {OUTPUT_FILE.name}")
 # ============================================================================
 print("\nStep 2: Resolving DEPO / IDEPO current & previous file names...")
 
-pbb_depo_path  = get_latest_file(INPUT_DEPO_DIR, prefix="dpld")
-pibb_depo_path = get_latest_file(INPUT_DEPO_DIR, prefix="idpld")
+pbb_depo_path  = get_latest_file(INPUT_DEPO_DIR, prefix="ca")
+pibb_depo_path = get_latest_file(INPUT_DEPO_DIR, prefix="ica")
 
 
 def _resolve_prev_day_file(current_path: Path, prefix: str, directory: Path) -> Path:
@@ -128,10 +128,11 @@ def _resolve_prev_day_file(current_path: Path, prefix: str, directory: Path) -> 
     return candidates[0]
 
 
-pbb_depop_path  = _resolve_prev_day_file(pbb_depo_path, "dpld", INPUT_DEPO_DIR)
-pibb_depop_path = _resolve_prev_day_file(pibb_depo_path, "idpld", INPUT_DEPO_DIR)
+pbb_depop_path  = _resolve_prev_day_file(pbb_depo_path, "ca", INPUT_DEPO_DIR)
+pibb_depop_path = _resolve_prev_day_file(pibb_depo_path, "ica", INPUT_DEPO_DIR)
 
-DPBTRAN_FILE = INPUT_DPBTRAN_DIR / f"dpbtran{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
+# DPBTRAN_FILE = INPUT_DPBTRAN_DIR / f"dpbtran{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
+DPBTRAN_FILE = get_latest_file(INPUT_DPBTRAN_DIR, prefix="dpbtran")
 
 print(f"  DEPO   : {pbb_depo_path.name}")
 print(f"  DEPOP  : {pbb_depop_path.name}")
@@ -223,6 +224,17 @@ _ensure_cache(DPBTRAN_FILE, DPBTRAN_CACHE, "DPBTRAN")
 _ensure_cache(INPUT_TRANCODE_FILE, TRANCODE_CACHE, "TRANCODE")
 
 # ============================================================================
+# DEBUG: Inspect DPBTRAN parquet schema — confirm REPTDATE's actual type
+# before it's used in Step 7. Remove once REPTDATE's column type is
+# confirmed stable across cache rebuilds.
+# ============================================================================
+con = duckdb.connect(database=":memory:")
+print("\n[DEBUG] DPBTRAN_CACHE schema:")
+with pl.Config(tbl_rows=-1, tbl_cols=-1):
+    print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{DPBTRAN_CACHE}')").pl())
+con.close()
+
+# ============================================================================
 # STEP 4: BUILD SDF  (current-period deposit, product 20/21)
 # DATA SDF; SET DEPO.CURRENT IDEPO.CURRENT; WHERE PRODUCT IN (20,21);
 #   REPTDATE = &REPTDT; KEEP ACCTNO BRANCH OPENDT PRODUCT OPENIND CURBAL REPTDATE;
@@ -303,15 +315,32 @@ print(f"  CIS rows: {len(cis):,}")
 # ============================================================================
 print("\nStep 7: Building DPBTRAN (today's transactions)...")
 
+# con = duckdb.connect(database=":memory:")
+# dpbtran = con.execute(f"""
+#     SELECT
+#         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+#         CAST(TRANCODE AS BIGINT)  AS TRANCODE,
+#         CAST(TRANAMT  AS DOUBLE)  AS TRANAMT,
+#         CAST(TIMECTRL AS BIGINT)  AS TIMECTRL
+#     FROM read_parquet('{DPBTRAN_CACHE}')
+#     WHERE CAST(REPTDATE AS DATE) = DATE '{reptdate.isoformat()}'
+#     ORDER BY ACCTNO, TIMECTRL
+# """).pl()
+# con.close()
+
 con = duckdb.connect(database=":memory:")
 dpbtran = con.execute(f"""
     SELECT
         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
         CAST(TRANCODE AS BIGINT)  AS TRANCODE,
         CAST(TRANAMT  AS DOUBLE)  AS TRANAMT,
-        CAST(TIMECTRL AS BIGINT)  AS TIMECTRL
+        CAST(TIMECTRL AS VARCHAR) AS TIMECTRL
     FROM read_parquet('{DPBTRAN_CACHE}')
-    WHERE CAST(REPTDATE AS DATE) = DATE '{reptdate.isoformat()}'
+    -- REPTDATE is cached as a raw SAS numeric date (DOUBLE = days since
+    -- 1960-01-01), not a native DATE/TIMESTAMP. DuckDB has no direct
+    -- DOUBLE -> DATE cast, so reconstruct it via the SAS epoch instead.
+    WHERE (DATE '1960-01-01' + CAST(ROUND(REPTDATE) AS INTEGER))
+          = DATE '{reptdate.isoformat()}'
     ORDER BY ACCTNO, TIMECTRL
 """).pl()
 con.close()
@@ -326,6 +355,31 @@ print(f"  DPBTRAN rows: {len(dpbtran):,}")
 # ============================================================================
 print("\nStep 8: Building TRANCD (transaction-code lookup)...")
 
+# con = duckdb.connect(database=":memory:")
+# trancd = con.execute(f"""
+#     WITH filtered AS (
+#         SELECT
+#             CAST(TXN_CODE     AS BIGINT)  AS TXN_CODE,
+#             CAST(TXN_DESC     AS VARCHAR) AS TXN_DESC,
+#             CAST(CRDR         AS VARCHAR) AS CRDR,
+#             CAST(EFFDATETIME  AS TIMESTAMP) AS EFFDATETIME
+#         FROM read_parquet('{TRANCODE_CACHE}')
+#         WHERE CAST(ACCTCODE AS VARCHAR) = 'DP'
+#     ),
+#     ranked AS (
+#         SELECT *,
+#                ROW_NUMBER() OVER (
+#                    PARTITION BY TXN_CODE
+#                    ORDER BY EFFDATETIME DESC
+#                ) AS rn
+#         FROM filtered
+#     )
+#     SELECT TXN_CODE, TXN_DESC, CRDR
+#     FROM ranked
+#     WHERE rn = 1
+# """).pl()
+# con.close()
+
 con = duckdb.connect(database=":memory:")
 trancd = con.execute(f"""
     WITH filtered AS (
@@ -333,7 +387,8 @@ trancd = con.execute(f"""
             CAST(TXN_CODE     AS BIGINT)  AS TXN_CODE,
             CAST(TXN_DESC     AS VARCHAR) AS TXN_DESC,
             CAST(CRDR         AS VARCHAR) AS CRDR,
-            CAST(EFFDATETIME  AS TIMESTAMP) AS EFFDATETIME
+            TIMESTAMP '1960-01-01 00:00:00'
+                + to_seconds(CAST(ROUND(EFFDATETIME) AS BIGINT)) AS EFFDATETIME
         FROM read_parquet('{TRANCODE_CACHE}')
         WHERE CAST(ACCTCODE AS VARCHAR) = 'DP'
     ),
