@@ -15,13 +15,16 @@ import pyarrow.parquet as pq
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
-# from input_date import get_latest_file
+from input_date import get_latest_file
 # from output_date import build_output_file
 #
-# input_date.py is NOT used: the JCL source DSNs for CISDP, CISSA, SAVING,
-# CURRENT and FD (SAP.PBB.CISBEXT.DP / SAP.PBB.CRM.CISBEXT / SAP.PBB.MNITB(0))
-# carry no date component in their names, so there is no "latest file by date"
-# to resolve - fixed physical filenames are used instead (mirrors the
+# input_date.py IS used for SAVING, CURRENT and FD: their physical filenames
+# encode an MMWYY date (e.g. sa07226.sas7bdat = month 07, week 2, year 26),
+# so get_latest_file() resolves the newest file per prefix ('sa','ca','fd').
+#
+# input_date.py is NOT used for CISDP / CISSA: the JCL source DSNs
+# (SAP.PBB.CISBEXT.DP / SAP.PBB.CRM.CISBEXT) carry no date component in their
+# names, so fixed physical filenames are used instead (mirrors the
 # CISLN_loan.sas7bdat / CISDP_deposit.sas7bdat fixed-name pattern in
 # EIBDLN1M.py).
 #
@@ -31,23 +34,15 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # DEPENDENCY: format libraries
 # Original SAS: %INC PGM(PBBLNFMT,PBBDPFMT,PBMISFMT);
-# PBBLNFMT and PBBDPFMT are included at session level only - no direct
+# PBBLNFMT and PBBDPFMT are included at session level only - neither defines
+# a BRCHCD format (checked: PBBLNFMT has STATECD/STATEPOST; PBBDPFMT has its
+# own STATECD and BRANCHCD-to-full-name, not BRCHCD), and no other explicit
 # PUT(var,fmt.) call against their formats appears in this program body, so
-# they are NOT imported here (comment only, per project convention).
-# The BRCHCD. format IS explicitly invoked via PUT(BRANCH,BRCHCD.) in the
-# DPBR step below. That format's source module (PBMISFMT.py) is not provided
-# in this project, so it is referenced as a placeholder import with a
-# runtime guard rather than a fabricated implementation.
+# they are NOT imported here (comment only).
+# The BRCHCD. format IS explicitly invoked via PUT(BRANCH,BRCHCD.) below.
+# Confirmed source: PBMISFMT.format_brchcd() (numeric branch -> 3-letter code).
 # ============================================================================
-try:
-    from PBMISFMT import get_brchcd_format
-except ImportError:
-    def get_brchcd_format(branch: int) -> str:
-        raise NotImplementedError(
-            "PBMISFMT.get_brchcd_format is required to reproduce "
-            "PUT(BRANCH,BRCHCD.) but PBMISFMT.py is not available in this "
-            "project."
-        )
+from PBMISFMT import format_brchcd as get_brchcd_format
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -57,11 +52,15 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBMDPBR"
 
 # Fixed physical input files (no date component in source DSNs)
-INPUT_CISDP_FILE   = INPUT_DIR / "cisdp_deposit.sas7bdat"     # CISDP.DEPOSIT
-INPUT_CISSA_FILE   = INPUT_DIR / "cissa_deposit.sas7bdat"     # CISSA.DEPOSIT (CRM external)
-INPUT_SAVING_FILE  = INPUT_DIR / "dep_saving.sas7bdat"        # DEP.SAVING
-INPUT_CURRENT_FILE = INPUT_DIR / "dep_current.sas7bdat"       # DEP.CURRENT
-INPUT_FD_FILE      = INPUT_DIR / "dep_fd.sas7bdat"            # DEP.FD
+INPUT_CISDP_FILE = INPUT_DIR / "cisdp_deposit.sas7bdat"   # CISDP.DEPOSIT
+INPUT_CISSA_FILE = INPUT_DIR / "cissa_deposit.sas7bdat"   # CISSA.DEPOSIT (CRM external)
+
+# SAVING / CURRENT / FD filenames encode an MMWYY date (e.g. sa07226.sas7bdat)
+# and are resolved to the latest file per prefix via input_date.get_latest_file()
+INPUT_DEP_DIR      = INPUT_DIR
+SAVING_PREFIX      = "sa"   # DEP.SAVING  -> sa{MM}{W}{YY}.sas7bdat
+CURRENT_PREFIX     = "ca"   # DEP.CURRENT -> ca{MM}{W}{YY}.sas7bdat
+FD_PREFIX          = "fd"   # DEP.FD      -> fd{MM}{W}{YY}.sas7bdat
 
 # Parquet cache directory (co-located with source, same convention as EIBDLN1M)
 CACHE_DIR = INPUT_DIR
@@ -221,22 +220,33 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 # ============================================================================
-# STEP 2: CACHE SAS FILES TO PARQUET
+# STEP 2: RESOLVE LATEST SAVING / CURRENT / FD FILES, THEN CACHE TO PARQUET
+# Filenames encode MMWYY (e.g. sa07226.sas7bdat = month 07, week 2, year 26).
 # ============================================================================
-print("\nStep 2: Caching SAS files to Parquet (if needed)...")
+print("\nStep 2: Resolving latest SAVING / CURRENT / FD files...")
+
+saving_path  = get_latest_file(INPUT_DEP_DIR, prefix=SAVING_PREFIX)
+current_path = get_latest_file(INPUT_DEP_DIR, prefix=CURRENT_PREFIX)
+fd_path      = get_latest_file(INPUT_DEP_DIR, prefix=FD_PREFIX)
+
+print(f"  SAVING  : {saving_path.name}")
+print(f"  CURRENT : {current_path.name}")
+print(f"  FD      : {fd_path.name}")
+
+print("\nStep 2b: Caching SAS files to Parquet (if needed)...")
 
 CISDP_CACHE   = CACHE_DIR / "cisdp_deposit.parquet"
 CISSA_CACHE   = CACHE_DIR / "cissa_deposit.parquet"
-SAVING_CACHE  = CACHE_DIR / "dep_saving.parquet"
-CURRENT_CACHE = CACHE_DIR / "dep_current.parquet"
-FD_CACHE      = CACHE_DIR / "dep_fd.parquet"
+SAVING_CACHE  = CACHE_DIR / f"{saving_path.stem}.parquet"
+CURRENT_CACHE = CACHE_DIR / f"{current_path.stem}.parquet"
+FD_CACHE      = CACHE_DIR / f"{fd_path.stem}.parquet"
 
 _sources = (
-    (INPUT_CISDP_FILE,   CISDP_CACHE,   "CISDP"),
-    (INPUT_CISSA_FILE,   CISSA_CACHE,   "CISSA"),
-    (INPUT_SAVING_FILE,  SAVING_CACHE,  "SAVING"),
-    (INPUT_CURRENT_FILE, CURRENT_CACHE, "CURRENT"),
-    (INPUT_FD_FILE,      FD_CACHE,      "FD"),
+    (INPUT_CISDP_FILE, CISDP_CACHE,   "CISDP"),
+    (INPUT_CISSA_FILE, CISSA_CACHE,   "CISSA"),
+    (saving_path,      SAVING_CACHE,  "SAVING"),
+    (current_path,     CURRENT_CACHE, "CURRENT"),
+    (fd_path,          FD_CACHE,      "FD"),
 )
 
 for sas_path, cache_path, tag in _sources:
