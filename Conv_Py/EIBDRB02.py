@@ -18,6 +18,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
+from datetime import date, datetime
 
 from REPTDATE import get_reptdate_values
 from PBBELF import format_brchcd, format_regnew
@@ -107,6 +108,9 @@ else:
 # ============================================================================
 print("\nStep 4: Building WDRAW (reporting-date filter)...")
 
+# compute SAS date value (days since 1960-01-01)
+sas_date = (reptdate - date(1960, 1, 1)).days
+
 con = duckdb.connect(database=":memory:")
 wdraw = con.execute(f"""
     SELECT
@@ -118,7 +122,7 @@ wdraw = con.execute(f"""
         CAST(TRIM(RSONCODE)     AS VARCHAR) AS RSONCODE,
         CAST(TRANAMT            AS DOUBLE)  AS TRANAMT
     FROM read_parquet('{FDWDRW_CACHE}')
-    WHERE CAST(REPTDATE AS DATE) = DATE '{RPTDATE.isoformat()}'
+    WHERE REPTDATE = {sas_date}
 """).pl()
 con.close()
 
@@ -133,29 +137,46 @@ print(f"  WDRAW rows: {len(wdraw):,}")
 # ============================================================================
 # FORMAT HELPERS  (approximate SAS default/explicit numeric PUT widths)
 # ============================================================================
-def _best12(value) -> str:
-    """Unformatted numeric PUT default (~BEST12.)."""
+# def _best12(value) -> str:
+#     """Unformatted numeric PUT default (~BEST12.)."""
+#     if value is None:
+#         value = 0
+#     if float(value).is_integer():
+#         text = str(int(value))
+#     else:
+#         text = f"{value:.6f}".rstrip("0").rstrip(".")
+#     return text.rjust(12)
+
+
+# def _comma16(value) -> str:
+#     """COMMA16. — comma-separated, 0 decimals, width 16."""
+#     if value is None:
+#         value = 0
+#     return f"{value:,.0f}".rjust(16)
+
+
+# def _fmt3(value) -> str:
+#     """FORMAT ... 3. — rounded integer, width 3."""
+#     if value is None:
+#         value = 0
+#     return f"{round(value):d}".rjust(3)
+
+
+def _fmt_count(value) -> str:
+    """Integer count – no comma, no padding."""
+    return str(int(value)) if value is not None else "0"
+
+def _fmt_amount(value) -> str:
+    """Amount with commas, no padding."""
     if value is None:
-        value = 0
-    if float(value).is_integer():
-        text = str(int(value))
-    else:
-        text = f"{value:.6f}".rstrip("0").rstrip(".")
-    return text.rjust(12)
+        value = 0.0
+    return f"{value:,.0f}"
 
-
-def _comma16(value) -> str:
-    """COMMA16. — comma-separated, 0 decimals, width 16."""
+def _fmt_pct(value) -> str:
+    """Percentage rounded to integer, no padding."""
     if value is None:
-        value = 0
-    return f"{value:,.0f}".rjust(16)
-
-
-def _fmt3(value) -> str:
-    """FORMAT ... 3. — rounded integer, width 3."""
-    if value is None:
-        value = 0
-    return f"{round(value):d}".rjust(3)
+        value = 0.0
+    return str(round(value))
 
 
 # ============================================================================
@@ -256,7 +277,7 @@ def write_group_report(wdraw_group: pl.DataFrame, rtitle: str, output_path: Path
 
     lines: list[str] = []
 
-    # ---- initial header block (written once, FILE ... without MOD) ----
+    # ---- initial header block ----
     lines.append("REPORT ID : EIBDRB01")
     lines.append(
         f"TITLE : DAILY SUMMARY REPORT ON REASONS FOR {rtitle} "
@@ -268,19 +289,16 @@ def write_group_report(wdraw_group: pl.DataFrame, rtitle: str, output_path: Path
 
     for j in range(1, 5):
         if j == 3:
-            # This marker is written unconditionally, independent of data.
             lines.append(" ")
             lines.append("(B) NON-INDIVIDUAL CUSTOMER")
 
         fdraw = build_fdraw(wdraw_by_j[j])
         if fdraw.is_empty():
-            # DATA _NULL_ SET FDRAW&J / TOTAL&J with 0 obs never executes,
-            # so no header, detail, or total lines are produced for this J.
             continue
 
         totals = build_total(fdraw)
 
-        # ---- header rows (IF _N_=1 block) ----
+        # ---- sub‑report header rows (separator is ";" with no spaces) ----
         lines.append(" ")
         lines.append("   " + HDR_MAP[j])
         lines.append("   " + HEADER_ROW2)
@@ -294,39 +312,42 @@ def write_group_report(wdraw_group: pl.DataFrame, rtitle: str, output_path: Path
         row4 = ["", "", ""]
         for _ in REASON_CODES:
             row4 += ["NO.", "RM"]
+        # Add extra pair for TOTAL columns
+        row4 += ["NO.", "RM"]
         lines.append("   " + ";".join(row4))
 
-        # ---- branch detail rows ----
+        # ---- data rows: separator is " ;" (space + semicolon) ----
+        sep = " ;"
         for row in fdraw.iter_rows(named=True):
             fields = [
-                _best12(row["BRANCH"]),
+                _fmt_count(row["BRANCH"]),
                 str(row["BRABBR"] or ""),
                 str(row["REGION"] or ""),
             ]
             for i in range(1, 17):
-                fields.append(_best12(row[f"C{i}"]))
-                fields.append(_comma16(row[f"A{i}"]))
-            fields.append(_best12(row["TOT_CNT"]))
-            fields.append(_comma16(row["TOT_AMT"]))
-            lines.append("   " + ";".join(fields))
+                fields.append(_fmt_count(row[f"C{i}"]))
+                fields.append(_fmt_amount(row[f"A{i}"]))
+            fields.append(_fmt_count(row["TOT_CNT"]))
+            fields.append(_fmt_amount(row["TOT_AMT"]))
+            lines.append("   " + sep.join(fields))
 
         # ---- grand total row ----
         total_fields = ["", "TOTAL", ""]
         for i in range(1, 17):
-            total_fields.append(_best12(totals[f"RC{i}"]))
-            total_fields.append(_comma16(totals[f"RA{i}"]))
-        total_fields.append(_best12(totals["GTC"]))
-        total_fields.append(_comma16(totals["GTA"]))
-        lines.append("   " + ";".join(total_fields))
+            total_fields.append(_fmt_count(totals[f"RC{i}"]))
+            total_fields.append(_fmt_amount(totals[f"RA{i}"]))
+        total_fields.append(_fmt_count(totals["GTC"]))
+        total_fields.append(_fmt_amount(totals["GTA"]))
+        lines.append("  " + sep.join(total_fields))
 
         # ---- % composition row ----
         pct_fields = ["", "% COMPOSITION", ""]
         for i in range(1, 17):
-            pct_fields.append(_fmt3(totals[f"PC{i}"]))
-            pct_fields.append(_fmt3(totals[f"PA{i}"]))
-        pct_fields.append(_fmt3(totals["PGTC"]))
-        pct_fields.append(_fmt3(totals["PGTA"]))
-        lines.append("   " + ";".join(pct_fields))
+            pct_fields.append(_fmt_pct(totals[f"PC{i}"]))
+            pct_fields.append(_fmt_pct(totals[f"PA{i}"]))
+        pct_fields.append(_fmt_pct(totals["PGTC"]))
+        pct_fields.append(_fmt_pct(totals["PGTA"]))
+        lines.append("  " + sep.join(pct_fields))
 
     with open(output_path, "w", encoding="latin1") as fh:
         for ln in lines:
