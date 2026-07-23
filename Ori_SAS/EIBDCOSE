@@ -1,0 +1,366 @@
+//EIBDCOSE  JOB MISEIS,CLASS=A,MSGCLASS=A,NOTIFY=&SYSUID
+/*JOBPARM S=S1M2
+//*
+//EIBDCOSE  EXEC SAS609,REGION=8M
+//COST      DD DSN=SAP.PBB.CORP.COST,DISP=OLD
+//CORPNM    DD DSN=SAP.PBB.COST.CORP.TEXT(0),DISP=SHR
+//ESMRTXT   DD DSN=SAP.PBB.COST.ESMR.TEXT(0),DISP=SHR
+//COSTRATE  DD DSN=SAP.PBB.COST.RATE.TEXT(0),DISP=SHR
+//COSTOTH   DD DSN=SAP.PBB.COST.OTHER.TEXT(0),DISP=SHR
+//DPTRBL    DD DSN=RBP2.B033.DPTRBLGS,DISP=SHR
+//STOCKBK   DD DSN=RBP2.B033.SASCONF1.PYMT(0),DISP=SHR
+//DEP01     DD DSN=RBP2.B033.DP.COLLECT.SERVICE.DAILY,DISP=SHR
+//DEP02     DD DSN=RBP2.B033.DP.ECPFDS.DAILY,DISP=SHR
+//DEP03     DD DSN=RBP2.B033.DDS.DAILY.RPT(0),DISP=SHR
+//          DD DSN=RBP2.B033.FPXDDS.DAILY.RPT(0),DISP=SHR
+//DEP04     DD DSN=RBP2.B033.DP.MISC.DAILY,DISP=SHR
+//SYSIN     DD *
+
+OPTIONS NOCENTER YEARCUTOFF=1950 LS=132;
+
+DATA COST.REPTDATE;
+  REPTDATE = TODAY()-1;
+  CALL SYMPUT('MTHEND',PUT(DAY(TODAY()),Z2.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+PROC PRINT DATA=COST.REPTDATE; FORMAT REPTDATE DATE8. ;RUN;
+
+DATA _NULL_;
+  INFILE STOCKBK OBS=1;
+  INPUT @056  YY     4.
+        @060  MM     2.
+        @062  DD     2.
+        ;
+  REPTDATE = MDY(MM,DD,YY);
+  CALL SYMPUT('SBKDT', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  INFILE DEP01 OBS=1;
+  INPUT @056  YY     4.
+        @060  MM     2.
+        @062  DD     2.
+        ;
+  REPTDATE = MDY(MM,DD,YY);
+  CALL SYMPUT('DEP01DT', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+*** 1. CORP NAME (FR ESMR) ***;
+%MACRO CORPNAME;
+   DATA NAME;
+      INFILE CORPNM;
+      INPUT @001 CUSTNAME  $80.
+            @081 NMABBR    $20.
+            @101 ACCNM     $80.
+            @181 ACCTNO    10.
+            ;
+      IF NMABBR NE '' AND ACCTNO GT 0;
+   RUN;
+
+   PROC APPEND DATA=NAME BASE=COST.NAME; RUN;
+   PROC SORT DATA=COST.NAME NODUPKEY; BY ACCTNO NMABBR ACCNM; RUN;
+%MEND;
+
+
+*** 2. COST RATE FROM USER ***;
+%MACRO COSTRT;
+   DATA RATE;
+      INFILE COSTRATE FIRSTOBS=4;
+      INPUT @001 FLOAT     5.2
+            @008 MANRATE   7.2
+            @017 OTCRATE   5.2
+            @024 ATMRATE   5.2
+            @031 PBERATE   5.2
+            @040 TELERATE  5.2
+            @053 DEBRATE   5.2
+            @067 MISCRATE  5.2
+            ;
+      IF FLOAT GT 0;
+      TRANDT=INPUT("&RDATE", DDMMYY8.);
+   RUN;
+
+   %IF "&REPTDAY" EQ "01" %THEN %DO;
+      DATA COST.RATE&REPTMON; SET RATE; RUN;
+   %END;
+   %ELSE %DO;
+      DATA COST.RATE&REPTMON;
+        SET COST.RATE&REPTMON;
+        IF TRANDT EQ INPUT("&RDATE", DDMMYY8.) THEN DELETE;
+      RUN;
+      PROC APPEND DATA=RATE BASE=COST.RATE&REPTMON; RUN;
+   %END;
+%MEND;
+
+
+*** 3. ESMR  ***;
+%MACRO ESMRDTL;
+   DATA ESMR(DROP=DD MM YY);
+      INFILE ESMRTXT;
+      INPUT @001 SMRNO     $13.
+            @014 ACCTNO    10.
+            @034 MANDAY    8.
+            @044 DD        2.
+            @047 MM        2.
+            @050 YY        4.
+            ;
+      TRANDT  = MDY(MM,DD,YY);
+      EXPDT   = MDY(MM,DD,(YY+5));
+   RUN;
+
+   PROC APPEND DATA=ESMR BASE=COST.ESMR; RUN;
+   PROC SORT DATA=COST.ESMR NODUPKEY; BY ACCTNO SMRNO; RUN;
+%MEND;
+
+
+*** 4. STOCK BANKING ***;
+%MACRO SBKDTL;
+   DATA STBK(DROP=DD MM YY);
+      INFILE STOCKBK;
+      INPUT @001 ACCTNO    10.
+            @012 SVTYPE    $7.
+            @020 COUNT     7.
+            @028 AMOUNT    13.
+            @042 FEEAMT1   13.
+            @056 YY        4.
+            @060 MM        2.
+            @062 DD        2.
+            @065 FEEAMT2   13.
+            ;
+      TRANDT  = MDY(MM,DD,YY);
+      AMOUNT  = AMOUNT/100;
+      FEEAMT1 = FEEAMT1/100;
+      FEEAMT2 = FEEAMT2/100;
+   RUN;
+
+   %IF "&REPTDAY" EQ "01" %THEN %DO;
+      DATA COST.STBK&REPTMON; SET STBK; RUN;
+   %END;
+   %ELSE %DO;
+      DATA COST.STBK&REPTMON;
+         SET COST.STBK&REPTMON;
+         IF TRANDT EQ INPUT("&RDATE", DDMMYY8.) THEN DELETE;
+      RUN;
+      PROC APPEND DATA=STBK BASE=COST.STBK&REPTMON; RUN;
+   %END;
+%MEND;
+
+
+*** 5. DEPOSIT - COLLECTION ***;
+%MACRO DEPCOLL;
+   DATA DPCOL(DROP=DD MM YY);
+      INFILE DEP01;
+      INPUT @001 ACCTNO    10.
+            @012 SVTYPE    $7.
+            @020 COUNT     7.
+            @028 AMOUNT    13.
+            @042 FEEAMT1   13.
+            @056 YY        4.
+            @060 MM        2.
+            @062 DD        2.
+            @065 FEEAMT2   13.
+            ;
+      TRANDT  = MDY(MM,DD,YY);
+      AMOUNT  = AMOUNT/100;
+      FEEAMT1 = FEEAMT1/100;
+      FEEAMT2 = FEEAMT2/100;
+   RUN;
+
+   %IF "&REPTDAY" EQ "01" %THEN %DO;
+      DATA COST.DPCOL&REPTMON; SET DPCOL; RUN;
+   %END;
+   %ELSE %DO;
+      DATA COST.DPCOL&REPTMON;
+        SET COST.DPCOL&REPTMON;
+        IF TRANDT EQ INPUT("&RDATE", DDMMYY8.) THEN DELETE;
+      RUN;
+      PROC APPEND DATA=DPCOL BASE=COST.DPCOL&REPTMON; RUN;
+   %END;
+%MEND;
+
+
+*** 6. DEPOSIT - ECP/FDS    ***;
+%MACRO DEPECP;
+   DATA DPECP(DROP=DD MM YY);
+      INFILE DEP02;
+      INPUT @001 ACCTNO    10.
+            @012 SVTYPE    $7.
+            @020 COUNT     7.
+            @028 AMOUNT    13.
+            @042 FEEAMT1   13.
+            @056 YY        4.
+            @060 MM        2.
+            @062 DD        2.
+            @065 FEEAMT2   13.
+            ;
+      TRANDT  = MDY(MM,DD,YY);
+      AMOUNT  = AMOUNT/100;
+      FEEAMT1 = FEEAMT1/100;
+      FEEAMT2 = FEEAMT2/100;
+   RUN;
+
+   %IF "&REPTDAY" EQ "01" %THEN %DO;
+      DATA COST.DPECP&REPTMON; SET DPECP; RUN;
+   %END;
+   %ELSE %DO;
+      DATA COST.DPECP&REPTMON;
+        SET COST.DPECP&REPTMON;
+        IF TRANDT EQ INPUT("&RDATE", DDMMYY8.) THEN DELETE;
+      RUN;
+      PROC APPEND DATA=DPECP BASE=COST.DPECP&REPTMON; RUN;
+   %END;
+%MEND;
+
+
+*** 7. DEPOSIT - DIRECT DEBIT SERVICE  ***;
+%MACRO DEPDDS;
+   DATA DPDDS(DROP=DD MM YY);
+      INFILE DEP03;
+      INPUT @001 ACCTNO    10.
+            @012 SVTYPE    $7.
+            @020 COUNT     7.
+            @028 AMOUNT    13.
+            @042 FEEAMT1   13.
+            @056 YY        4.
+            @060 MM        2.
+            @062 DD        2.
+            @065 FEEAMT2   13.
+            ;
+      TRANDT  = MDY(MM,DD,YY);
+      AMOUNT  = AMOUNT/100;
+      FEEAMT1 = FEEAMT1/100;
+      FEEAMT2 = FEEAMT2/100;
+   RUN;
+
+   %IF "&REPTDAY" EQ "01" %THEN %DO;
+      DATA COST.DPDDS&REPTMON; SET DPDDS; RUN;
+   %END;
+   %ELSE %DO;
+      DATA COST.DPDDS&REPTMON;
+        SET COST.DPDDS&REPTMON;
+        IF TRANDT EQ INPUT("&RDATE", DDMMYY8.) THEN DELETE;
+      RUN;
+      PROC APPEND DATA=DPDDS BASE=COST.DPDDS&REPTMON; RUN;
+   %END;
+%MEND;
+
+
+*** 8. DEPOSIT - MISC ***;
+%MACRO DEPMISC;
+   DATA DPMISC(DROP=DD MM YY);
+      INFILE DEP04;
+      INPUT @001 ACCTNO    10.
+            @012 SVTYPE    $7.
+            @020 COUNT     7.
+            @028 AMOUNT    13.
+            @042 FEEAMT1   13.
+            @056 YY        4.
+            @060 MM        2.
+            @062 DD        2.
+            @065 FEEAMT2   13.
+            ;
+      TRANDT  = MDY(MM,DD,YY);
+      AMOUNT  = AMOUNT/100;
+      FEEAMT1 = FEEAMT1/100;
+      FEEAMT2 = FEEAMT2/100;
+   RUN;
+
+   %IF "&REPTDAY" EQ "01" %THEN %DO;
+      DATA COST.DPMISC&REPTMON; SET DPMISC; RUN;
+   %END;
+   %ELSE %DO;
+      DATA COST.DPMISC&REPTMON;
+        SET COST.DPMISC&REPTMON;
+        IF TRANDT EQ INPUT("&RDATE", DDMMYY8.) THEN DELETE;
+      RUN;
+      PROC APPEND DATA=DPMISC BASE=COST.DPMISC&REPTMON; RUN;
+   %END;
+%MEND;
+
+
+*** 9. DEPOSIT - AVERAGE BALANCE AND INTEREST PAID ***;
+***              (ONLY ON MONTH END)               ***;
+%MACRO DEPBAL;
+   %IF "&MTHEND" EQ "01" %THEN %DO;
+      DATA DPBAL;
+         INFILE DPTRBL LRECL=924;
+         INPUT @110 ACCTNO   PD6.
+               @822 AVGBAL   PD8.2
+               @880 INTRSTPD PD9.2
+               ;
+         TRANDT=INPUT("&RDATE", DDMMYY8.);
+         IF ACCTNO GT 0;
+      RUN;
+
+      PROC SORT DATA=COST.NAME OUT=NAME; BY ACCTNO; RUN;
+      PROC SORT DATA=DPBAL NODUPKEYS; BY ACCTNO; RUN;
+      DATA DPBAL;
+         MERGE DPBAL(IN=A) NAME(IN=B);
+         BY ACCTNO;
+         IF A AND B;
+      RUN;
+
+      DATA COST.DPBAL&REPTMON; SET DPBAL; RUN;
+   %END;
+%MEND;
+
+
+*** 10. OTHER (H/W AND DATA COMM) ***;
+%MACRO OTHERDTL;
+   DATA OTHCOST(DROP=DD MM YY DD1 MM1 YY1);
+      INFILE COSTOTH FIRSTOBS=5;
+      INPUT @001 ACCTNO    10.
+            @012 CTYPE     $2.
+            @020 ORICOST   12.2
+            @033 DD        2.
+            @035 MM        2.
+            @037 YY        4.
+            @042 DD1       2.
+            @044 MM1       2.
+            @046 YY1       4.
+            ;
+      IF ACCTNO GT 0;
+      IF CTYPE = 'HW' THEN DO;
+         TRANDT  = MDY(MM,DD,YY);
+         EXPDT   = MDY(MM1,DD1,YY1);
+      END;
+
+   RUN;
+   DATA COST.OTHCOST; SET OTHCOST; RUN;
+%MEND;
+
+
+
+*** MAIN PROCESS ***;
+%MACRO PROCESS;
+  %IF "&SBKDT" EQ "&RDATE" AND
+      "&DEP01DT" EQ "&RDATE" %THEN %DO;
+
+     %CORPNAME;
+     %COSTRT;
+     %ESMRDTL;
+     %SBKDTL;
+     %DEPCOLL;
+     %DEPECP;
+     %DEPDDS;
+     %DEPMISC;
+     %DEPBAL;
+     %OTHERDTL;
+
+  %END;
+  %ELSE %DO;
+     %IF "&SBKDT" NE "&RDATE" %THEN
+        %PUT THE STOCK BANKING FILE IS NOT DATED &RDATE;
+     %IF "&DEP01DT" NE "&RDATE" %THEN
+        %PUT THE DEPOSIT COLLECTION FILE IS NOT DATED &RDATE;
+     %PUT THE JOB IS NOT DONE !!;
+     %DO;
+        DATA A;
+        ABORT 77;
+     %END;
+  %END;
+%MEND;
+%PROCESS;
+
