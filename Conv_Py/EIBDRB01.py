@@ -40,8 +40,8 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_DEPO_DIR = BASE_DIR / "input" / "prod" / "EIBDRB01" / "depo"
-INPUT_WALK_DIR = BASE_DIR / "input" / "prod" / "EIBDRB01" / "walk"
+INPUT_DEPO_DIR = BASE_DIR / "input" / "prod" / "deposit_fcy_d"
+INPUT_WALK_DIR = BASE_DIR / "input" / "prod" / "walker"
 
 CACHE_DIR = BASE_DIR / "cache" / "EIBDRB01"
 STORE_DIR = BASE_DIR / "store" / "EIBDRB01"
@@ -391,7 +391,7 @@ def _comma(value, width: int, decimals: int = 0) -> str:
         s = f"{v:,.{decimals}f}"
     else:
         s = f"{v:,.0f}"
-    return s.rjust(width)
+    return s.ljust(width)
 
 
 def _place(buf: list, col: int, text: str) -> None:
