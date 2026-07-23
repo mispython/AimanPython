@@ -1,26 +1,121 @@
-Special Deposit Facility (SDF) RM Account as at 21/07/2026
-
-       Date      BranchSDF Account NumberCustomer Name                                Product Opening BalanceTransaction CodeDescription                                        Debit          CreditOutstanding Balance
- 21/07/2026           8  3800037310LEVERAGE MEDICAL SDN. BHD.                        20        9,749.00                                                                0.00            0.00        9,749.00
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00          704.60       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00          553.20       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00          864.10       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00          645.30       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00          835.75       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00          335.85       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00          855.25       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00        1,067.15       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00        1,357.00       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00        2,763.85       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00        1,913.00       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00          630.90       29,774.60
- 21/07/2026           8  3800037832MAKMUR MBS GROUP SDN. BHD.                        20       22,623.00         750DEPOSIT CASH                                        0.00          912.85       29,774.60
- 21/07/2026         259  3801284135HY & H ENTERPRISE SDN. BHD.                       20        6,881.20                                                                0.00            0.00        6,881.20
- 21/07/2026          30  3801582925AZIMAT TELCO SDN. BHD.                            20      100,000.00         795FORCE POST CR                                       0.00       25,646.09      100,000.00
- 21/07/2026         207  3801642808MAJOR TRADE SDN. BHD.                             20      130,001.22         606DEPOSIT-EDP/ECP                                     0.00          759.51      152,949.25
- 21/07/2026         207  3801642808MAJOR TRADE SDN. BHD.                             20      130,001.22         606DEPOSIT-EDP/ECP                                     0.00          870.63      152,949.25
- 21/07/2026         207  3801642808MAJOR TRADE SDN. BHD.                             20      130,001.22         606DEPOSIT-EDP/ECP                                     0.00        1,123.20      152,949.25
- 21/07/2026         207  3801642808MAJOR TRADE SDN. BHD.                             20      130,001.22         795FORCE POST CR                                       0.00          169.32      152,949.25
- 21/07/2026         207  3801642808MAJOR TRADE SDN. BHD.                             20      130,001.22         795FORCE POST CR                                       0.00          233.91      152,949.25
- 21/07/2026         207  3801642808MAJOR TRADE SDN. BHD.                             20      130,001.22         795FORCE POST CR                                       0.00          396.06      152,949.25
- 21/07/2026         207  3801642808MAJOR TRADE SDN. BHD.                             20      130,001.22         795FORCE POST CR                                       0.00           34.80      152,949.25
+1PUBLIC BANK BERHAD                                                                                                                  
+ DEVELOPMENT OF WEALTH MANAGEMENT CENTRES                                                                                            
+ DEPOSIT RANGE PROFILE BY SELECTED BRANCHES- 22/07/26                                                                                
+                                                                                                                                     
+ BRH    DEPOSIT RANGE                        NO. OF       OUTSTANDING AMOUNT                                                         
+ ---------------------------------------------------------------------------                                                         
+                                                                                                                                     
+ BAM     0.              BELOW RM 50,000        8,769          48,006,437.44                                                         
+ BAM     1. RM  50,000 - BELOW RM100,000        1,106          76,278,737.54                                                         
+ BAM     2. RM 100,000 - BELOW RM200,000          771         107,747,172.84                                                         
+ BAM     3. RM 200,000 - BELOW RM300,000          328          79,776,541.06                                                         
+ BAM     4. RM 300,000 - BELOW RM400,000          173          59,906,590.05                                                         
+ BAM     5. RM 400,000 - BELOW RM500,000           92          40,346,502.13                                                         
+ BAM     6. RM 500,000 - BELOW RM600,000           59          31,988,400.58                                                         
+ BAM     7. RM 600,000 - BELOW RM700,000           52          33,875,126.64                                                         
+ BAM     8. RM 700,000 - BELOW RM800,000           17          12,583,841.45                                                         
+ BAM     9. RM 800,000 - BELOW RM900,000           26          22,159,620.90                                                         
+ BAM    10. RM 900,000 - BELOW RM 1 MILL           14          13,303,053.45                                                         
+ BAM    11. RM  1 MILL - BELOW RM 2 MILL           85         113,759,057.60                                                         
+ BAM    12. RM  2 MILL - BELOW RM 3 MILL           14          34,346,361.30                                                         
+ BAM    13. RM  3 MILL - BELOW RM 4 MILL            9          29,934,644.19                                                         
+ BAM    14. RM  4 MILL - BELOW RM 5 MILL            8          35,458,305.67                                                         
+ BAM    15. RM  5 MILL - BELOW RM 6 MILL            1           5,445,858.83                                                         
+ BAM    16. RM  6 MILL - BELOW RM 7 MILL            1           6,204,959.59                                                         
+ BAM    17. RM  7 MILL - BELOW RM 8 MILL            3          22,557,122.86                                                         
+ BAM    18. RM  8 MILL - BELOW RM 9 MILL            1           8,648,347.54                                                         
+ BAM    20. RM 10 MILL & ABOVE                      4          91,121,736.43                                                         
+          -----------------------------------------------------------------                                                          
+          TOTAL                                  11,533      873,448,418.09                                                          
+          -----------------------------------------------------------------                                                          
+1PUBLIC BANK BERHAD                                                                                                                  
+ DEVELOPMENT OF WEALTH MANAGEMENT CENTRES                                                                                            
+ DEPOSIT RANGE PROFILE BY SELECTED BRANCHES- 22/07/26                                                                                
+                                                                                                                                     
+ BRH    DEPOSIT RANGE                        NO. OF       OUTSTANDING AMOUNT                                                         
+ ---------------------------------------------------------------------------                                                         
+                                                                                                                                     
+ BBB     0.              BELOW RM 50,000       10,499          27,644,417.76                                                         
+ BBB     1. RM  50,000 - BELOW RM100,000          841          58,411,237.98                                                         
+ BBB     2. RM 100,000 - BELOW RM200,000          783         107,191,817.01                                                         
+ BBB     3. RM 200,000 - BELOW RM300,000          308          74,096,874.05                                                         
+ BBB     4. RM 300,000 - BELOW RM400,000          171          58,881,498.81                                                         
+ BBB     5. RM 400,000 - BELOW RM500,000          108          48,232,382.88                                                         
+ BBB     6. RM 500,000 - BELOW RM600,000           70          38,147,766.86                                                         
+ BBB     7. RM 600,000 - BELOW RM700,000           36          23,061,972.46                                                         
+ BBB     8. RM 700,000 - BELOW RM800,000           29          21,749,947.32                                                         
+ BBB     9. RM 800,000 - BELOW RM900,000           25          21,044,196.26                                                         
+ BBB    10. RM 900,000 - BELOW RM 1 MILL           23          21,801,737.93                                                         
+ BBB    11. RM  1 MILL - BELOW RM 2 MILL           86         117,805,822.78                                                         
+ BBB    12. RM  2 MILL - BELOW RM 3 MILL           21          51,896,446.50                                                         
+ BBB    13. RM  3 MILL - BELOW RM 4 MILL           13          43,480,755.23                                                         
+ BBB    14. RM  4 MILL - BELOW RM 5 MILL            6          26,943,264.63                                                         
+ BBB    15. RM  5 MILL - BELOW RM 6 MILL            3          16,016,305.22                                                         
+ BBB    16. RM  6 MILL - BELOW RM 7 MILL            5          32,795,882.80                                                         
+ BBB    17. RM  7 MILL - BELOW RM 8 MILL            1           7,189,847.75                                                         
+ BBB    18. RM  8 MILL - BELOW RM 9 MILL            1           8,112,915.39                                                         
+ BBB    19. RM  9 MILL - BELOW RM10 MILL            2          18,663,632.86                                                         
+ BBB    20. RM 10 MILL & ABOVE                      5          97,903,249.08                                                         
+          -----------------------------------------------------------------                                                          
+          TOTAL                                  13,036      921,071,971.56                                                          
+          -----------------------------------------------------------------                                                          
+1PUBLIC BANK BERHAD                                                                                                                  
+ DEVELOPMENT OF WEALTH MANAGEMENT CENTRES                                                                                            
+ DEPOSIT RANGE PROFILE BY SELECTED BRANCHES- 22/07/26                                                                                
+                                                                                                                                     
+ BRH    DEPOSIT RANGE                        NO. OF       OUTSTANDING AMOUNT                                                         
+ ---------------------------------------------------------------------------                                                         
+                                                                                                                                     
+ BCM     0.              BELOW RM 50,000       17,014         116,733,227.13                                                         
+ BCM     1. RM  50,000 - BELOW RM100,000        2,092         147,203,908.37                                                         
+ BCM     2. RM 100,000 - BELOW RM200,000        1,572         216,997,144.46                                                         
+ BCM     3. RM 200,000 - BELOW RM300,000          623         150,788,067.70                                                         
+ BCM     4. RM 300,000 - BELOW RM400,000          313         107,040,448.96                                                         
+ BCM     5. RM 400,000 - BELOW RM500,000          142          62,812,196.34                                                         
+ BCM     6. RM 500,000 - BELOW RM600,000           77          41,881,060.63                                                         
+ BCM     7. RM 600,000 - BELOW RM700,000           65          41,101,333.12                                                         
+ BCM     8. RM 700,000 - BELOW RM800,000           33          24,836,394.40                                                         
+ BCM     9. RM 800,000 - BELOW RM900,000           34          28,649,842.92                                                         
+ BCM    10. RM 900,000 - BELOW RM 1 MILL           22          20,806,790.85                                                         
+ BCM    11. RM  1 MILL - BELOW RM 2 MILL           64          86,417,155.07                                                         
+ BCM    12. RM  2 MILL - BELOW RM 3 MILL           22          51,071,692.90                                                         
+ BCM    13. RM  3 MILL - BELOW RM 4 MILL            9          30,882,848.09                                                         
+ BCM    14. RM  4 MILL - BELOW RM 5 MILL            3          12,901,619.46                                                         
+ BCM    15. RM  5 MILL - BELOW RM 6 MILL            5          26,782,650.23                                                         
+ BCM    16. RM  6 MILL - BELOW RM 7 MILL            1           6,299,174.42                                                         
+ BCM    17. RM  7 MILL - BELOW RM 8 MILL            1           7,200,588.77                                                         
+ BCM    19. RM  9 MILL - BELOW RM10 MILL            1           9,395,448.76                                                         
+          -----------------------------------------------------------------                                                          
+          TOTAL                                  22,093    1,189,801,592.58                                                          
+          -----------------------------------------------------------------                                                          
+1PUBLIC BANK BERHAD                                                                                                                  
+ DEVELOPMENT OF WEALTH MANAGEMENT CENTRES                                                                                            
+ DEPOSIT RANGE PROFILE BY SELECTED BRANCHES- 22/07/26                                                                                
+                                                                                                                                     
+ BRH    DEPOSIT RANGE                        NO. OF       OUTSTANDING AMOUNT                                                         
+ ---------------------------------------------------------------------------                                                         
+                                                                                                                                     
+ BDA     0.              BELOW RM 50,000        4,775          21,523,675.13                                                         
+ BDA     1. RM  50,000 - BELOW RM100,000          419          29,693,698.88                                                         
+ BDA     2. RM 100,000 - BELOW RM200,000          422          58,315,899.77                                                         
+ BDA     3. RM 200,000 - BELOW RM300,000          205          50,255,148.20                                                         
+ BDA     4. RM 300,000 - BELOW RM400,000          157          54,014,725.14                                                         
+ BDA     5. RM 400,000 - BELOW RM500,000           94          41,605,260.79                                                         
+ BDA     6. RM 500,000 - BELOW RM600,000           72          39,141,501.96                                                         
+ BDA     7. RM 600,000 - BELOW RM700,000           61          39,502,338.62                                                         
+ BDA     8. RM 700,000 - BELOW RM800,000           42          31,311,610.80                                                         
+ BDA     9. RM 800,000 - BELOW RM900,000           37          31,103,368.19                                                         
+ BDA    10. RM 900,000 - BELOW RM 1 MILL           25          23,443,622.95                                                         
+ BDA    11. RM  1 MILL - BELOW RM 2 MILL          147         203,545,483.76                                                         
+ BDA    12. RM  2 MILL - BELOW RM 3 MILL           53         125,622,394.90                                                         
+ BDA    13. RM  3 MILL - BELOW RM 4 MILL           27          91,662,920.10                                                         
+ BDA    14. RM  4 MILL - BELOW RM 5 MILL            3          13,766,928.83                                                         
+ BDA    15. RM  5 MILL - BELOW RM 6 MILL            9          48,577,220.65                                                         
+ BDA    16. RM  6 MILL - BELOW RM 7 MILL            6          39,335,818.76                                                         
+ BDA    17. RM  7 MILL - BELOW RM 8 MILL            6          44,914,782.17                                                         
+ BDA    18. RM  8 MILL - BELOW RM 9 MILL            2          17,097,180.24                                                         
+ BDA    19. RM  9 MILL - BELOW RM10 MILL            3          28,918,608.35                                                         
+ BDA    20. RM 10 MILL & ABOVE                     14         303,974,892.31                                                         
+          -----------------------------------------------------------------                                                          
+          TOTAL                                   6,579    1,337,327,080.50                                                          
+          -----------------------------------------------------------------                                                          
