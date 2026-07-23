@@ -1,3 +1,19 @@
+//*---------------------------------------------------------------
+//* EIBDRB02 - DAILY FD WITHDRAWALS OVER-THE-COUNTER BY BRANCH
+//*---------------------------------------------------------------
+//EIBDRB02  EXEC SAS609
+//DEPOSIT   DD DSN=SAP.PBB.MNITB.DAILY(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//MIS       DD DSN=SAP.PBB.DP.SASDATA,DISP=SHR
+//RMWDRAW   DD DSN=SAP.PBB.EIBDRB2A,
+//             DISP=(NEW,CATLG,DELETE),
+//             SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//             DCB=(LRECL=360,RECFM=FB,BLKSIZE=36000)
+//FCYWDRAW  DD DSN=SAP.PBB.EIBDRB2B,
+//             DISP=(NEW,CATLG,DELETE),
+//             SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//             DCB=(LRECL=360,RECFM=FB,BLKSIZE=36000)
+//SYSIN     DD
 *;
 OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;
 %INC PGM(PBBELF);
