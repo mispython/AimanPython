@@ -54,7 +54,7 @@ CURRENT_PREFIX = "ca"   # DEP.CURRENT -> ca{MM}{W}{YY}.sas7bdat
 FD_PREFIX      = "fd"   # DEP.FD      -> fd{MM}{W}{YY}.sas7bdat
 
 # Parquet cache directory (separate from EIBMDPBR — different program instance)
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMDPFF"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMDPBR"
 
 OUTPUT_DIR  = BASE_DIR / "output" / "EIBMDPFF"
 OUTPUT_FILE = OUTPUT_DIR / "ALL.txt"     # SAP.PBB.PROFILE.ALL
@@ -81,15 +81,15 @@ CONTENT_WIDTH = 132  # printable characters, no ASA control
 # therefore starts where the TOTAL label is anchored in the COMPUTE block
 # (@007), and ACCT / BALANCE start where ACCT.SUM / BALANCE.SUM are anchored
 # (@038 / @048).
-DRANGE_START = 6    # column 7
+DRANGE_START = 2    # column 7
 DRANGE_WIDTH = 35
 
 ACCT_START         = 37   # column 38
-ACCT_WIDTH_DETAIL  = 8    # FORMAT=COMMA8.0  (detail)
+ACCT_WIDTH_DETAIL  = 10   # FORMAT=COMMA8.0  (detail)
 ACCT_WIDTH_TOTAL   = 10   # COMMA10.0        (ACCT.SUM in COMPUTE block)
 
 BALANCE_START         = 47   # column 48
-BALANCE_WIDTH_DETAIL  = 18   # FORMAT=COMMA18.2 (detail)
+BALANCE_WIDTH_DETAIL  = 20   # FORMAT=COMMA18.2 (detail)
 BALANCE_WIDTH_TOTAL   = 20   # COMMA20.2        (BALANCE.SUM in COMPUTE block)
 
 DASH_START        = 2    # column 3  (header HEADLINE rule)
@@ -546,7 +546,7 @@ def _build_header_lines(page_num):
     buf2 = _new_buffer()
     _place(buf2, DRANGE_START, 14, "DEPOSIT RANGE")
     _place(buf2, ACCT_START, 12, "  CUSTOMER")
-    _place(buf2, BALANCE_START, 19, "OUTSTANDING AMOUNT")
+    _place(buf2, BALANCE_START, 20, "  OUTSTANDING AMOUNT")
     lines.append("".join(buf2))
 
     # Dashed line (HEADLINE)
