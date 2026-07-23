@@ -1,3 +1,21 @@
+def _fmt_count(value) -> str:
+    """Integer count – no comma, no padding."""
+    return str(int(value)) if value is not None else "0"
+
+def _fmt_amount(value) -> str:
+    """Amount with commas, no padding."""
+    if value is None:
+        value = 0.0
+    return f"{value:,.0f}"
+
+def _fmt_pct(value) -> str:
+    """Percentage rounded to integer, no padding."""
+    if value is None:
+        value = 0.0
+    return str(round(value))
+
+
+
 def write_group_report(wdraw_group: pl.DataFrame, rtitle: str, output_path: Path) -> None:
     """Build FDRAW/TOTAL for J=1..4 and write the semicolon-delimited report."""
 
@@ -18,7 +36,7 @@ def write_group_report(wdraw_group: pl.DataFrame, rtitle: str, output_path: Path
 
     lines: list[str] = []
 
-    # ---- initial header block (written once, FILE ... without MOD) ----
+    # ---- initial header block ----
     lines.append("REPORT ID : EIBDRB01")
     lines.append(
         f"TITLE : DAILY SUMMARY REPORT ON REASONS FOR {rtitle} "
@@ -39,7 +57,7 @@ def write_group_report(wdraw_group: pl.DataFrame, rtitle: str, output_path: Path
 
         totals = build_total(fdraw)
 
-        # ---- sub‑report header rows (use ";" without spaces) ----
+        # ---- sub‑report header rows (separator is ";" with no spaces) ----
         lines.append(" ")
         lines.append("   " + HDR_MAP[j])
         lines.append("   " + HEADER_ROW2)
@@ -55,37 +73,37 @@ def write_group_report(wdraw_group: pl.DataFrame, rtitle: str, output_path: Path
             row4 += ["NO.", "RM"]
         lines.append("   " + ";".join(row4))
 
-        # ---- branch detail rows (use " ; " as separator) ----
-        sep = " ; "
+        # ---- data rows: separator is " ;" (space + semicolon) ----
+        sep = " ;"
         for row in fdraw.iter_rows(named=True):
             fields = [
-                _best12(row["BRANCH"]),
+                _fmt_count(row["BRANCH"]),
                 str(row["BRABBR"] or ""),
                 str(row["REGION"] or ""),
             ]
             for i in range(1, 17):
-                fields.append(_best12(row[f"C{i}"]))
-                fields.append(_comma16(row[f"A{i}"]))
-            fields.append(_best12(row["TOT_CNT"]))
-            fields.append(_comma16(row["TOT_AMT"]))
+                fields.append(_fmt_count(row[f"C{i}"]))
+                fields.append(_fmt_amount(row[f"A{i}"]))
+            fields.append(_fmt_count(row["TOT_CNT"]))
+            fields.append(_fmt_amount(row["TOT_AMT"]))
             lines.append("   " + sep.join(fields))
 
         # ---- grand total row ----
         total_fields = ["", "TOTAL", ""]
         for i in range(1, 17):
-            total_fields.append(_best12(totals[f"RC{i}"]))
-            total_fields.append(_comma16(totals[f"RA{i}"]))
-        total_fields.append(_best12(totals["GTC"]))
-        total_fields.append(_comma16(totals["GTA"]))
+            total_fields.append(_fmt_count(totals[f"RC{i}"]))
+            total_fields.append(_fmt_amount(totals[f"RA{i}"]))
+        total_fields.append(_fmt_count(totals["GTC"]))
+        total_fields.append(_fmt_amount(totals["GTA"]))
         lines.append("   " + sep.join(total_fields))
 
         # ---- % composition row ----
         pct_fields = ["", "% COMPOSITION", ""]
         for i in range(1, 17):
-            pct_fields.append(_fmt3(totals[f"PC{i}"]))
-            pct_fields.append(_fmt3(totals[f"PA{i}"]))
-        pct_fields.append(_fmt3(totals["PGTC"]))
-        pct_fields.append(_fmt3(totals["PGTA"]))
+            pct_fields.append(_fmt_pct(totals[f"PC{i}"]))
+            pct_fields.append(_fmt_pct(totals[f"PA{i}"]))
+        pct_fields.append(_fmt_pct(totals["PGTC"]))
+        pct_fields.append(_fmt_pct(totals["PGTA"]))
         lines.append("   " + sep.join(pct_fields))
 
     with open(output_path, "w", encoding="latin1") as fh:
@@ -97,57 +115,3 @@ def write_group_report(wdraw_group: pl.DataFrame, rtitle: str, output_path: Path
     print("  --- Preview ---")
     for preview_line in lines[:10]:
         print(f"  {preview_line}")
-
-====================
-
-Step 4: Building WDRAW (reporting-date filter)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRB02.py", line 127, in <module>
-    sas_date = (reptdate - datetime(1960, 1, 1)).days
-TypeError: unsupported operand type(s) for -: 'datetime.date' and 'datetime.datetime'
-
-===============
-
-from datetime import datetime
-
-# compute SAS date value (days since 1960-01-01)
-sas_date = (reptdate - datetime(1960, 1, 1)).days
-
-con = duckdb.connect(database=":memory:")
-wdraw = con.execute(f"""
-    SELECT
-        CAST(BRANCH             AS INTEGER) AS BRANCH,
-        CAST(TRIM(CURCODE)      AS VARCHAR) AS CURCODE,
-        CAST(PRODCD             AS INTEGER) AS PRODCD,
-        CAST(TRIM(ACCTTYPE)     AS VARCHAR) AS ACCTTYPE,
-        CAST(CUSTCODE           AS INTEGER) AS CUSTCODE,
-        CAST(TRIM(RSONCODE)     AS VARCHAR) AS RSONCODE,
-        CAST(TRANAMT            AS DOUBLE)  AS TRANAMT
-    FROM read_parquet('{FDWDRW_CACHE}')
-    WHERE REPTDATE = {sas_date}
-""").pl()
-con.close()
-
-======================
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRB02.py
-Step 1: Deriving report date...
-  Report year  : 2026
-  Report month : 07
-  Report date  : 22/07/26
-
-Step 2: Resolving FDWDRW input file...
-  FDWDRW : fdwdrw07.sas7bdat
-
-Step 3: Caching FDWDRW to Parquet (if needed)...
-  [FDWDRW] Converting fdwdrw07.sas7bdat -> fdwdrw07.parquet ...
-  [FDWDRW] Done — 157,116 rows cached.
-
-Step 4: Building WDRAW (reporting-date filter)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRB02.py", line 111, in <module>
-    wdraw = con.execute(f"""
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column REPTDATE
-
-LINE 11:     WHERE CAST(REPTDATE AS DATE) = DATE '2026-07-22'
-                   ^
