@@ -1,116 +1,21 @@
-# ============================================================================
-# STEP 9: GENERATE REPORT  (ASA carriage control, LRECL=133, PAGE_SIZE=60)
-# ============================================================================
-print("\nStep 9: Generating report...")
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRB02.py
+Step 1: Deriving report date...
+  Report year  : 2026
+  Report month : 07
+  Report date  : 22/07/26
 
-# Column positions (0‑based) – adjusted to match SAS output
-BRCHCD_START = 2      # col 3
-BRCHCD_WIDTH = 5
-DRANGE_START = 9      # col 10
-DRANGE_WIDTH = 35
-ACCT_START = 44       # col 45
-ACCT_WIDTH_DETAIL = 10
-ACCT_WIDTH_TOTAL = 10
-BALANCE_START = 56    # col 58 (we use 56 to leave 2 spaces before? Actually SAS puts AMOUNT at 58, so start=57? Let's use 57)
-BALANCE_WIDTH_DETAIL = 18
-BALANCE_WIDTH_TOTAL = 17
+Step 2: Resolving FDWDRW input file...
+  FDWDRW : fdwdrw07.sas7bdat
 
-DASH_LENGTH = 72
-DASH_START = 2        # dashed line starts at col 3 (2+1)
-DASH_LENGTH_TOTAL = 64
-DASH_START_TOTAL = 9  # total dashes start at col 10
+Step 3: Caching FDWDRW to Parquet (if needed)...
+  [FDWDRW] Converting fdwdrw07.sas7bdat -> fdwdrw07.parquet ...
+  [FDWDRW] Done — 157,116 rows cached.
 
-HEADER_LINES = 8      # exactly 8 lines from _build_header_lines
-PAGE_SIZE = 60
-CONTENT_WIDTH = 132
+Step 4: Building WDRAW (reporting-date filter)...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRB02.py", line 111, in <module>
+    wdraw = con.execute(f"""
+_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column REPTDATE
 
-# ----------------------------------------------------------------------------
-# Helper functions (keep your existing _place, _format_number, _new_buffer,
-# _build_header_lines, _build_detail_row, _build_break_lines as defined)
-# but ensure _build_detail_row expects a boolean `show_brchcd` and writes
-# BRCHCD only if True.
-# ----------------------------------------------------------------------------
-
-output_lines = []
-page_num = 1
-line_count = 0
-current_brh = None
-group_acct_total = 0
-group_balance_total = 0.0
-is_first_row_on_page = True   # we add header before any row
-
-# Add first page header
-output_lines.extend(_build_header_lines(page_num))
-line_count = HEADER_LINES
-page_num += 1
-is_first_row_on_page = True
-
-rows = summary.to_dicts()
-
-for i, row in enumerate(rows):
-    brh = row["BRCHCD"]
-    is_new_group = (brh != current_brh)
-
-    # --- Emit break for previous group if any ---
-    if is_new_group and current_brh is not None:
-        break_lines = _build_break_lines(group_acct_total, group_balance_total)
-        if line_count + len(break_lines) > PAGE_SIZE:
-            output_lines.extend(_build_header_lines(page_num))
-            line_count = HEADER_LINES
-            page_num += 1
-            is_first_row_on_page = True
-        output_lines.extend(break_lines)
-        line_count += len(break_lines)
-        group_acct_total = 0
-        group_balance_total = 0.0
-
-    # Update current group if new
-    if is_new_group:
-        current_brh = brh
-
-    # --- Page break before detail row if needed ---
-    if line_count >= PAGE_SIZE:
-        output_lines.extend(_build_header_lines(page_num))
-        line_count = HEADER_LINES
-        page_num += 1
-        is_first_row_on_page = True
-
-    # Determine whether to show branch code
-    show_brchcd = is_new_group or is_first_row_on_page
-
-    # Build detail line
-    detail = _build_detail_row(
-        brh if show_brchcd else "",
-        row["DRANGE"],
-        row["ACCT"],
-        row["BALANCE"],
-        show_brchcd
-    )
-    output_lines.append(detail)
-    line_count += 1
-
-    # After printing the first row on this page, turn off the flag
-    is_first_row_on_page = False
-
-    # Accumulate group totals
-    group_acct_total += row["ACCT"] or 0
-    group_balance_total += row["BALANCE"] or 0.0
-
-    # --- If last row, emit closing break ---
-    if i == len(rows) - 1:
-        break_lines = _build_break_lines(group_acct_total, group_balance_total)
-        if line_count + len(break_lines) > PAGE_SIZE:
-            output_lines.extend(_build_header_lines(page_num))
-            line_count = HEADER_LINES
-            page_num += 1
-            is_first_row_on_page = True
-        output_lines.extend(break_lines)
-        line_count += len(break_lines)
-
-# Write output
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-    for ln in output_lines:
-        fh.write(ln.ljust(CONTENT_WIDTH) + "\n")
-
-print(f"\n  Output written : {OUTPUT_FILE}")
-print(f"  Total lines    : {len(output_lines):,}")
+LINE 11:     WHERE CAST(REPTDATE AS DATE) = DATE '2026-07-22'
+                   ^
