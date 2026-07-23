@@ -1,25 +1,217 @@
-DLM = "\x05"   # or "\t"
+# ============================================================================
+# REPORT GENERATION WITH EXACT SAS LAYOUT
+# ============================================================================
 
-# Header
-header = DLM + DLM.join([
-    "Date", "Branch", "SDF Account Number", "Customer Name",
-    "Product", "Opening Balance", "Transaction Code",
-    "Description", "Debit", "Credit", "Outstanding Balance"
-]) + DLM
+from datetime import datetime
+import math
 
-data_lines = []
-for row in rows:
-    fields = [
-        row["REPTDATE"].strftime("%d/%m/%Y"),
-        str(int(round(row["BRANCH"]))) if row["BRANCH"] is not None else "",
-        str(int(round(row["ACCTNO"]))) if row["ACCTNO"] is not None else "",
-        row["CUSTNAME"] or "",
-        str(int(round(row["PRODUCT"]))) if row["PRODUCT"] is not None else "",
-        f"{row['PCURBAL']:,.2f}" if row["PCURBAL"] is not None else "",
-        str(int(round(row["TRANCODE"]))) if row["TRANCODE"] is not None else "",
-        row["TRANDESC"] or "",
-        f"{row['DEBIT']:,.2f}" if row["DEBIT"] is not None else "",
-        f"{row['CREDIT']:,.2f}" if row["CREDIT"] is not None else "",
-        f"{row['CURBAL']:,.2f}" if row["CURBAL"] is not None else "",
-    ]
-    data_lines.append(DLM + DLM.join(fields) + DLM)
+# --- Page configuration -----------------------------------------------------
+PAGE_SIZE    = 60
+HEADER_LINES = 9   # title(3) + blank + two header lines + dash + blank + (maybe 1 blank?) 
+                   # Actually: titles (3), blank, header1, header2, dash, blank => 7? 
+                   # Let's count: 3 titles + 1 blank =4, + header1=5, +header2=6, +dash=7, +blank=8. So 8 lines before data.
+                   # We'll set to 8.
+
+CONTENT_WIDTH = 132  # printable characters, no ASA control
+
+# Column positions (0-based indices)
+BRCHCD_START = 2    # column 3
+BRCHCD_WIDTH = 5
+DRANGE_START = 9    # column 10
+DRANGE_WIDTH = 35
+ACCT_START = 44     # column 45
+ACCT_WIDTH_DETAIL = 8
+ACCT_WIDTH_TOTAL = 10
+BALANCE_START = 57  # column 58
+BALANCE_WIDTH_DETAIL = 18
+BALANCE_WIDTH_TOTAL = 17
+
+DASH_LENGTH = 72    # number of dashes in break lines
+DASH_START = 9      # column 10 (0-based index 9)
+
+def _place(buf, start0, width, text, right_just=False):
+    """Place text into buffer list at given 0-based start, width."""
+    text = text[:width]
+    if right_just:
+        text = text.rjust(width)
+    else:
+        text = text.ljust(width)
+    buf[start0:start0+width] = list(text)
+
+def _format_number(value, width, decimals=0):
+    """Format number with commas, right-aligned in given width."""
+    if value is None:
+        return " " * width
+    try:
+        v = float(value)
+    except:
+        return " " * width
+    if decimals == 0:
+        s = f"{int(round(v)):,}"
+    else:
+        s = f"{v:,.{decimals}f}"
+    return s.rjust(width)[:width]
+
+def _new_buffer():
+    return [" "] * CONTENT_WIDTH
+
+def _build_header_lines(page_num):
+    """Return list of strings for the top of a new page."""
+    lines = []
+
+    # 1st title line with timestamp and page number
+    now = datetime.now()
+    ts = now.strftime("%H:%M %A, %B %d, %Y")
+    page_str = f"{page_num:4d}"  # right-aligned with 4 digits
+    right_text = f"{ts} {page_str}"  # SAS style: timestamp then page number
+    # Place title left, right_text right-justified at the end
+    title1 = "PUBLIC BANK BERHAD"
+    # Ensure total length = CONTENT_WIDTH
+    # right_text will occupy len(right_text) columns at the far right
+    # Fill middle with spaces
+    middle = CONTENT_WIDTH - len(title1) - len(right_text)
+    if middle < 0:
+        # fallback: truncate right_text
+        right_text = right_text[:CONTENT_WIDTH - len(title1)]
+        middle = 0
+    line1 = title1 + " " * middle + right_text
+    lines.append(line1)
+
+    # 2nd and 3rd title lines (left-justified)
+    lines.append("DEVELOPMENT OF WEALTH MANAGEMENT CENTRES")
+    lines.append(f"DEPOSIT RANGE PROFILE BY SELECTED BRANCHES- {RDATE}")
+
+    # Blank line
+    lines.append("")
+
+    # Two-line column headers
+    buf1 = _new_buffer()
+    _place(buf1, BRCHCD_START, 3, "BRH")   # "BRH" at start of BRCHCD field
+    _place(buf1, ACCT_START, 6, "NO. OF")  # placed over ACCT column
+    lines.append("".join(buf1))
+
+    buf2 = _new_buffer()
+    _place(buf2, BRCHCD_START, 4, "CODE")          # "CODE" under BRH
+    _place(buf2, DRANGE_START, 14, "DEPOSIT RANGE") # start of DRANGE
+    _place(buf2, ACCT_START, 8, "CUSTOMER")        # under ACCT
+    _place(buf2, BALANCE_START, 19, "OUTSTANDING AMOUNT")  # under BALANCE
+    lines.append("".join(buf2))
+
+    # Dashed line (HEADLINE) – dashes from DASH_START for DASH_LENGTH
+    dash_buf = _new_buffer()
+    _place(dash_buf, DASH_START, DASH_LENGTH, "-" * DASH_LENGTH)
+    lines.append("".join(dash_buf))
+
+    # Blank line (HEADSKIP)
+    lines.append("")
+
+    return lines
+
+def _build_detail_row(brchcd, drange, acct, balance, is_first):
+    """Build a detail line; if is_first False, brchcd is blank."""
+    buf = _new_buffer()
+    if is_first:
+        _place(buf, BRCHCD_START, BRCHCD_WIDTH, brchcd or "")  # left-justified
+    else:
+        # leave blank (already spaces)
+        pass
+    _place(buf, DRANGE_START, DRANGE_WIDTH, drange or "")
+    _place(buf, ACCT_START, ACCT_WIDTH_DETAIL, _format_number(acct, ACCT_WIDTH_DETAIL, 0), right_just=True)
+    _place(buf, BALANCE_START, BALANCE_WIDTH_DETAIL, _format_number(balance, BALANCE_WIDTH_DETAIL, 2), right_just=True)
+    return "".join(buf)
+
+def _build_break_lines(total_acct, total_balance):
+    """Return list of lines for break after branch (dash, total, dash)."""
+    lines = []
+
+    # First dashed line
+    dash_buf = _new_buffer()
+    _place(dash_buf, DASH_START, DASH_LENGTH, "-" * DASH_LENGTH)
+    lines.append("".join(dash_buf))
+
+    # TOTAL line
+    total_buf = _new_buffer()
+    _place(total_buf, DASH_START, 5, "TOTAL")  # "TOTAL" at column 10
+    _place(total_buf, ACCT_START, ACCT_WIDTH_TOTAL,
+           _format_number(total_acct, ACCT_WIDTH_TOTAL, 0), right_just=True)
+    _place(total_buf, BALANCE_START, BALANCE_WIDTH_TOTAL,
+           _format_number(total_balance, BALANCE_WIDTH_TOTAL, 2), right_just=True)
+    lines.append("".join(total_buf))
+
+    # Second dashed line
+    dash_buf2 = _new_buffer()
+    _place(dash_buf2, DASH_START, DASH_LENGTH, "-" * DASH_LENGTH)
+    lines.append("".join(dash_buf2))
+
+    return lines
+
+# --- Main report generation -------------------------------------------------
+print("\nStep 9: Generating report...")
+
+output_lines = []
+page_num = 1
+line_count = 0  # lines on current page (including headers)
+current_brh = None
+group_acct_total = 0
+group_balance_total = 0.0
+
+# Convert summary to list of dicts (already sorted)
+rows = summary.to_dicts()
+
+# Prepend header for first page
+output_lines.extend(_build_header_lines(page_num))
+line_count = HEADER_LINES  # assuming header function returns exactly that many lines
+
+for i, row in enumerate(rows):
+    brh = row["BRCHCD"]
+    is_new_group = (brh != current_brh)
+
+    if is_new_group and current_brh is not None:
+        # Emit break lines for previous group
+        break_lines = _build_break_lines(group_acct_total, group_balance_total)
+        if line_count + len(break_lines) > PAGE_SIZE:
+            output_lines.extend(_build_header_lines(page_num))
+            line_count = HEADER_LINES
+            page_num += 1
+        output_lines.extend(break_lines)
+        line_count += len(break_lines)
+        group_acct_total = 0
+        group_balance_total = 0.0
+
+    if is_new_group:
+        current_brh = brh
+        # No need to add extra header now, we already have it
+
+    # Check page break before detail line
+    if line_count >= PAGE_SIZE:
+        output_lines.extend(_build_header_lines(page_num))
+        line_count = HEADER_LINES
+        page_num += 1
+
+    # Build detail line – show brchcd only on first row of group
+    is_first_in_group = (is_new_group)  # because we just set current_brh
+    detail = _build_detail_row(brh, row["DRANGE"], row["ACCT"], row["BALANCE"], is_first_in_group)
+    output_lines.append(detail)
+    line_count += 1
+
+    group_acct_total += row["ACCT"] or 0
+    group_balance_total += row["BALANCE"] or 0.0
+
+    # If this is the last row, emit closing break
+    if i == len(rows) - 1:
+        break_lines = _build_break_lines(group_acct_total, group_balance_total)
+        if line_count + len(break_lines) > PAGE_SIZE:
+            output_lines.extend(_build_header_lines(page_num))
+            line_count = HEADER_LINES
+            page_num += 1
+        output_lines.extend(break_lines)
+        line_count += len(break_lines)
+
+# Write output
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in output_lines:
+        # Ensure each line is exactly CONTENT_WIDTH characters (right-pad)
+        fh.write(ln.ljust(CONTENT_WIDTH) + "\n")
+
+print(f"\n  Output written : {OUTPUT_FILE}")
+print(f"  Total lines    : {len(output_lines):,}")
