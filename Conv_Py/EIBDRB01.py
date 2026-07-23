@@ -45,7 +45,7 @@ INPUT_WALK_DIR = BASE_DIR / "input" / "prod" / "walker"
 
 CACHE_DIR = BASE_DIR / "cache" / "EIBDRB01"
 STORE_DIR = BASE_DIR / "store" / "EIBDRB01"
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDRB01"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDRBDP"
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 STORE_DIR.mkdir(parents=True, exist_ok=True)
@@ -96,8 +96,8 @@ print(f"  Year/Mon/Day: {REPTYEAR}/{REPTMON}/{REPTDAY}")
 # ============================================================================
 print("\nStep 2: Resolving DEPO (FCY FD) / WALK (Walker) file names...")
 
-FCY_FILE = INPUT_DEPO_DIR / f"fcyfd{REPTYY}{REPTMON}{REPTDAY}.sas7bdat"
-WK_FILE  = INPUT_WALK_DIR / f"wkdtl{REPTYY}{REPTMON}{REPTDAY}.sas7bdat"
+FCY_FILE = INPUT_DEPO_DIR / f"fcyfd{REPTYY}{REPTMON}{REPTDAY}.sas7bdat"         # /dwh/dp_fcy (daily)
+WK_FILE  = INPUT_WALK_DIR / f"wkdtl{REPTYY}{REPTMON}{REPTDAY}.sas7bdat"         # /dwh/dwh_m/tempsource/walker (daily)
 
 if not re.fullmatch(r"fcyfd\d{6}\.sas7bdat", FCY_FILE.name):
     raise ValueError(f"FCY filename does not match daily yymmdd pattern: {FCY_FILE.name}")
@@ -351,7 +351,7 @@ print(f"  RBDP rows: {len(rbdp):,}")
 # ============================================================================
 print("\nStep 7: Updating monthly store (RB01DP)...")
 
-STORE_FILE = STORE_DIR / f"RB01DP{REPTMON}.parquet"
+STORE_FILE = STORE_DIR / f"RB01DP{REPTMON}.parquet"         # Generated on 1st of the month (parquet file)
 
 if REPTDAY == "01":
     store_df = rbdp
