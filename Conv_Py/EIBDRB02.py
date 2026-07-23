@@ -33,11 +33,11 @@ from PBBELF import format_brchcd, format_regnew
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # Input directories - Testing
-INPUT_DEPOSIT_DIR = BASE_DIR / "input" / "prod" / "EIBDRB02"   # MIS.FDWDRW&REPTMON
-CACHE_DIR         = BASE_DIR / "input" / "prod" / "EIBDRB02"
+INPUT_DEPOSIT_DIR = Path("/stgsrcsys/host/uat/AII/SASDATA")   # MIS.FDWDRW&REPTMON
+CACHE_DIR         = BASE_DIR / "input" / "cache" / "EIBDRB02"
 
 # Output
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDRB02"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDRBDP"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
