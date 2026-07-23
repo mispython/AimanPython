@@ -25,7 +25,7 @@ import EIBDRB02
 OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDRBDP")
 
 STALE_OUTPUTS = [
-    OUTPUT_DIR / f"EIBDRB01_{__import__('EIBDRB01').REPTMON}.txt",  # DD01
+    OUTPUT_DIR / f"EIBDRB01_{__import__('EIBDRB01').REPTMON}.txt",   # DD01
     OUTPUT_DIR / "EIBDRB2A.txt",                                     # DD02
     OUTPUT_DIR / "EIBDRB2B.txt",                                     # DD03
 ]
