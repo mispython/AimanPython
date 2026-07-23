@@ -494,4 +494,4 @@ print(f"  Total lines    : {len(output_lines):,}")
 del store_df
 gc.collect()
 
-print("\nEIBDRB01 complete.")
+print("\nEIBDRB01 complete.\n")
