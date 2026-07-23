@@ -389,4 +389,4 @@ wdraw_fcy = wdraw.filter(pl.col("CURCODE") != "MYR")
 
 write_group_report(wdraw_fcy, RTITLE_FCY, OUTPUT_DIR / "EIBDRB2B.txt")  # DD: FCYWDRAW
 
-print("\nEIBDRB02 complete.")
+print("\nEIBDRB02 complete.\n")
