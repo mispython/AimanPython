@@ -3,7 +3,6 @@
 Program : EIBMDPBR.py
 Purpose : Development of Wealth Management Centres -
           Deposit Range Profile by Selected Branches Report
-          (SMR 2006-1400. SELECTED BRANCHES.)
 """
 
 import gc
@@ -49,21 +48,21 @@ from PBMISFMT import format_brchcd as get_brchcd_format
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBMDPBR"
+INPUT_DIR = BASE_DIR / "input" / "prod"
 
 # Fixed physical input files (no date component in source DSNs)
-INPUT_CISDP_FILE = INPUT_DIR / "cisdp_deposit.sas7bdat"   # CISDP.DEPOSIT
-INPUT_CISSA_FILE = INPUT_DIR / "cissa_deposit.sas7bdat"   # CISSA.DEPOSIT (CRM external)
+INPUT_CISDP_FILE = INPUT_DIR / "cis" / "cisdp_deposit.sas7bdat"   # CISDP.DEPOSIT
+INPUT_CISSA_FILE = INPUT_DIR / "cis" / "cissa_deposit.sas7bdat"   # CISSA.DEPOSIT (CRM external)
 
 # SAVING / CURRENT / FD filenames encode an MMWYY date (e.g. sa07226.sas7bdat)
 # and are resolved to the latest file per prefix via input_date.get_latest_file()
-INPUT_DEP_DIR      = INPUT_DIR
+INPUT_DEP_DIR      = INPUT_DIR / "deposit"
 SAVING_PREFIX      = "sa"   # DEP.SAVING  -> sa{MM}{W}{YY}.sas7bdat
 CURRENT_PREFIX     = "ca"   # DEP.CURRENT -> ca{MM}{W}{YY}.sas7bdat
 FD_PREFIX          = "fd"   # DEP.FD      -> fd{MM}{W}{YY}.sas7bdat
 
 # Parquet cache directory (co-located with source, same convention as EIBDLN1M)
-CACHE_DIR = INPUT_DIR
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMDPBR"
 
 OUTPUT_DIR  = BASE_DIR / "output" / "EIBMDPBR"
 OUTPUT_FILE = OUTPUT_DIR / "DPBR.txt"
