@@ -75,29 +75,26 @@ CHUNK_ROWS = 500_000
 # REPORT PAGE CONFIGURATION
 # ============================================================================
 PAGE_SIZE    = 60
-HEADER_LINES = 9   # title(3) + blank + two header lines + dash + blank + (maybe 1 blank?) 
-                   # Actually: titles (3), blank, header1, header2, dash, blank => 7? 
-                   # Let's count: 3 titles + 1 blank =4, + header1=5, +header2=6, +dash=7, +blank=8. So 8 lines before data.
-                   # We'll set to 8.
+HEADER_LINES = 9   # title (3) + blank (1) + header lines (2) + dash (1) + blank
 
 CONTENT_WIDTH = 132  # printable characters, no ASA control
 
 # Column positions (0-based indices)
-BRCHCD_START = 2    # column 3
-BRCHCD_WIDTH = 5
-DRANGE_START = 9    # column 10
-DRANGE_WIDTH = 35
-ACCT_START = 44     # column 45
-ACCT_WIDTH_DETAIL = 10
-ACCT_WIDTH_TOTAL = 10
-BALANCE_START = 56  # column 58
+BRCHCD_START        = 2    # column 3
+BRCHCD_WIDTH        = 5
+DRANGE_START        = 9    # column 10
+DRANGE_WIDTH        = 35
+ACCT_START          = 44   # column 45
+ACCT_WIDTH_DETAIL   = 10
+ACCT_WIDTH_TOTAL    = 10
+BALANCE_START       = 56   # column 57
 BALANCE_WIDTH_DETAIL = 18
 BALANCE_WIDTH_TOTAL = 17
 
-DASH_LENGTH = 72    # number of dashes in break lines
+DASH_LENGTH = 72        # number of dashes in break lines
+DASH_START = 2          # column 3
 DASH_LENGTH_TOTAL = 64
-DASH_START = 2      # column 10 (0-based index 9)
-DASH_START_TOTAL = 9
+DASH_START_TOTAL = 9    # column 10
 
 # ============================================================================
 # STEP 0: DELETE OLD OUTPUT FILE  (DELETE EXEC PGM=IEFBR14 equivalent)
@@ -651,62 +648,86 @@ def _build_break_lines(total_acct, total_balance):
     return lines
 
 
+# ----------------------------------------------------------------------------
+# Helper functions (keep your existing _place, _format_number, _new_buffer,
+# _build_header_lines, _build_detail_row, _build_break_lines as defined)
+# but ensure _build_detail_row expects a boolean `show_brchcd` and writes
+# BRCHCD only if True.
+# ----------------------------------------------------------------------------
+
 output_lines = []
 page_num = 1
-line_count = 0  # lines on current page (including headers)
+line_count = 0
 current_brh = None
 group_acct_total = 0
 group_balance_total = 0.0
+is_first_row_on_page = True   # we add header before any row
 
-# Convert summary to list of dicts (already sorted)
-rows = summary.to_dicts()
-
-# Prepend header for first page
+# Add first page header
 output_lines.extend(_build_header_lines(page_num))
-line_count = HEADER_LINES  # assuming header function returns exactly that many lines
+line_count = HEADER_LINES
+page_num += 1
+is_first_row_on_page = True
+
+rows = summary.to_dicts()
 
 for i, row in enumerate(rows):
     brh = row["BRCHCD"]
     is_new_group = (brh != current_brh)
 
+    # --- Emit break for previous group if any ---
     if is_new_group and current_brh is not None:
-        # Emit break lines for previous group
         break_lines = _build_break_lines(group_acct_total, group_balance_total)
         if line_count + len(break_lines) > PAGE_SIZE:
             output_lines.extend(_build_header_lines(page_num))
             line_count = HEADER_LINES
             page_num += 1
+            is_first_row_on_page = True
         output_lines.extend(break_lines)
         line_count += len(break_lines)
         group_acct_total = 0
         group_balance_total = 0.0
 
+    # Update current group if new
     if is_new_group:
         current_brh = brh
-        # No need to add extra header now, we already have it
 
-    # Check page break before detail line
-    if line_count > PAGE_SIZE:
+    # --- Page break before detail row if needed ---
+    if line_count >= PAGE_SIZE:
         output_lines.extend(_build_header_lines(page_num))
         line_count = HEADER_LINES
         page_num += 1
+        is_first_row_on_page = True
 
-    # Build detail line – show brchcd only on first row of group
-    is_first_in_group = (is_new_group)  # because we just set current_brh
-    detail = _build_detail_row(brh, row["DRANGE"], row["ACCT"], row["BALANCE"], is_first_in_group)
+    # Determine whether to show branch code
+    show_brchcd = is_new_group or is_first_row_on_page
+
+    # Build detail line
+    detail = _build_detail_row(
+        brh if show_brchcd else "",
+        row["DRANGE"],
+        row["ACCT"],
+        row["BALANCE"],
+        show_brchcd
+    )
     output_lines.append(detail)
     line_count += 1
 
+    # After printing the first row on this page, turn off the flag
+    is_first_row_on_page = False
+
+    # Accumulate group totals
     group_acct_total += row["ACCT"] or 0
     group_balance_total += row["BALANCE"] or 0.0
 
-    # If this is the last row, emit closing break
+    # --- If last row, emit closing break ---
     if i == len(rows) - 1:
         break_lines = _build_break_lines(group_acct_total, group_balance_total)
         if line_count + len(break_lines) > PAGE_SIZE:
             output_lines.extend(_build_header_lines(page_num))
             line_count = HEADER_LINES
             page_num += 1
+            is_first_row_on_page = True
         output_lines.extend(break_lines)
         line_count += len(break_lines)
 
