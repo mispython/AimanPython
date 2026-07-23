@@ -1,3 +1,11 @@
+Step 4: Building WDRAW (reporting-date filter)...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRB02.py", line 127, in <module>
+    sas_date = (reptdate - datetime(1960, 1, 1)).days
+TypeError: unsupported operand type(s) for -: 'datetime.date' and 'datetime.datetime'
+
+===============
+
 from datetime import datetime
 
 # compute SAS date value (days since 1960-01-01)
