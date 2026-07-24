@@ -13,6 +13,7 @@ import math
 import re
 from pathlib import Path
 from datetime import date
+from typing import Optional
 
 import duckdb
 import pandas as pd
@@ -29,15 +30,13 @@ from output_date import build_output_file
 # ============================================================================
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDDCMG"     # DPGIA, EQ, IEQ (.txt)
-                                                            # RNID, IRNID, UTFX, IUTFX, EFORATE (.sas7bdat)
-CACHE_DIR  = BASE_DIR / "input" / "prod" / "EIBDDCMG"      # Parquet cache for .sas7bdat sources
-MASTER_DIR = BASE_DIR / "master" / "EIBDDCMG"              # Persisted monthly DCMG master (replaces
-                                                            # the SAS permanent library member
-                                                            # MIS.DCMG&REPTMON)
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"              # Printed month-to-date listing
+INPUT_DIR  = Path("/dwh")                               # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
+HOST_DIR    = Path("/stgsrcsys/host/uat/AII")           # DPGIA, EQ, IEQ (.txt), EFORATE (.sas7bdat)
+CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIBDDCMG"  # Parquet cache for .sas7bdat sources
+MASTER_DIR = BASE_DIR / "master" / "EIBDDCMG"           # Persisted monthly DCMG master (replaces the SAS permanent library member MIS.DCMG&REPTMON)
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"           # Printed month-to-date listing
 
-for _d in (INPUT_DIR, CACHE_DIR, MASTER_DIR, OUTPUT_DIR):
+for _d in (INPUT_DIR, HOST_DIR, CACHE_DIR, MASTER_DIR, OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -131,7 +130,7 @@ def _ensure_cache(sas_path: Path, cache_path: Path, tag: str) -> None:
 # ============================================================================
 # HELPER: NUMERIC PARSING
 # ============================================================================
-def _parse_comma_numeric(text) -> float | None:
+def _parse_comma_numeric(text) -> Optional[float]:
     """Parse a COMMA-formatted numeric text field (commas + explicit decimal)."""
     if text is None:
         return None
@@ -144,7 +143,7 @@ def _parse_comma_numeric(text) -> float | None:
         return None
 
 
-def _parse_w_d_numeric(text: str, decimals: int) -> float | None:
+def _parse_w_d_numeric(text: str, decimals: int) -> Optional[float]:
     """
     Parse a plain SAS numeric informat field (e.g. 16.2): if the raw text
     already contains a decimal point, use it as-is; otherwise the informat
@@ -161,7 +160,7 @@ def _parse_w_d_numeric(text: str, decimals: int) -> float | None:
         return None
 
 
-def _parse_ddmmyyyy(text: str) -> date | None:
+def _parse_ddmmyyyy(text: str) -> Optional[date]:
     """
     Parse a DD/MM/YYYY (or similarly single-char separated) 10-char date
     field, matching SUBSTR(DTE,1,2)=day, SUBSTR(DTE,4,2)=month,
@@ -230,7 +229,7 @@ def _fmt_num(value, width: int, decimals: int = 2) -> str:
 # ============================================================================
 print("\nStep 2: Reading UTMS (EQ)...")
 
-EQ_FILE = get_latest_file(INPUT_DIR, prefix="eqnid")
+EQ_FILE = HOST_DIR / "PBB_EQNID.TXT"
 
 def _read_pipe_delimited(path: Path) -> list[list[str]]:
     with open(path, "r", encoding="latin1", newline="") as fh:
@@ -257,7 +256,7 @@ print(f"  UTMS rows: {len(utms):,}")
 # ============================================================================
 print("\nStep 3: Reading IUTMS (IEQ)...")
 
-IEQ_FILE = get_latest_file(INPUT_DIR, prefix="ieqnid")
+IEQ_FILE = HOST_DIR / "PIBB_EQNID.TXT"
 _ieq_rows = _read_pipe_delimited(IEQ_FILE)
 
 # INONFI: FIRSTOBS=2 OBS=2 -> only the single second physical line
@@ -305,7 +304,7 @@ equtms = utms.join(iutms, on="REPTDATE", how="full", coalesce=True)
 # ============================================================================
 print("\nStep 5: Parsing PBGIA (DPGIA)...")
 
-DPGIA_FILE = get_latest_file(INPUT_DIR, prefix="dpgia")
+DPGIA_FILE = HOST_DIR / "DPGIA.TXT"
 
 def _parse_pbgia(path: Path) -> pl.DataFrame:
     with open(path, "r", encoding="latin1") as fh:
@@ -362,8 +361,8 @@ pbgia_today = pbgia.filter(pl.col("REPTDATE") == reptdate)
 # ============================================================================
 print("\nStep 6: Building UTFX / IUTFX (DEQ / IDEQ)...")
 
-UTFX_SAS    = INPUT_DIR / f"utfx{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-IUTFX_SAS   = INPUT_DIR / f"iutfx{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+UTFX_SAS    = INPUT_DIR / "eq_d" / f"utfx{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+IUTFX_SAS   = INPUT_DIR / "ieq_d" / f"iutfx{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
 UTFX_CACHE  = CACHE_DIR / f"utfx{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 IUTFX_CACHE = CACHE_DIR / f"iutfx{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 
@@ -416,7 +415,7 @@ print(f"  IUTFX: TOTIPMMD={iutfx['TOTIPMMD'][0]}  TOTIDFI={iutfx['TOTIDFI'][0]}"
 # ============================================================================
 print("\nStep 7: Reading ERATE (EFORATE)...")
 
-EFORATE_SAS   = INPUT_DIR / f"eforate{REPTMON}.sas7bdat"
+EFORATE_SAS   = HOST_DIR / "SASDATA_EGOLD" / f"eforate{REPTMON}.sas7bdat"
 EFORATE_CACHE = CACHE_DIR / f"eforate{REPTMON}.parquet"
 _ensure_cache(EFORATE_SAS, EFORATE_CACHE, "EFORATE")
 
@@ -442,8 +441,8 @@ erate_today = erate.filter(pl.col("REPTDATE") == reptdate)
 # ============================================================================
 print("\nStep 8: Building RNID / IRNID...")
 
-RNID_SAS    = INPUT_DIR / f"rnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-IRNID_SAS   = INPUT_DIR / f"irnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+RNID_SAS    = INPUT_DIR / "rnid" / f"rnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+IRNID_SAS   = INPUT_DIR / "irnid" / f"irnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
 RNID_CACHE  = CACHE_DIR / f"rnid{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 IRNID_CACHE = CACHE_DIR / f"irnid{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 
