@@ -28,10 +28,10 @@ from output_date import build_output_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
 
 # INPUT_DIR  = Path("/dwh")                               # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
-INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDDCMG "    # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
+INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDDCMG"    # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
 HOST_DIR    = Path("/stgsrcsys/host/uat/AII")           # DPGIA, EQ, IEQ (.txt), EFORATE (.sas7bdat)
 CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIBDDCMG"  # Parquet cache for .sas7bdat sources
 # MASTER_DIR = BASE_DIR / "master" / "EIBDDCMG"           # Persisted monthly DCMG master (replaces the SAS permanent library member MIS.DCMG&REPTMON)
@@ -369,8 +369,8 @@ print("\nStep 6: Building UTFX / IUTFX (DEQ / IDEQ)...")
 # UTFX_SAS    = get_latest_file(INPUT_DIR / "eq_d", prefix="utfx")
 # IUTFX_SAS   = get_latest_file(INPUT_DIR / "ieq_d", prefix="iutfx")
 
-UTFX_SAS    = get_latest_file(INPUT_DIR / "eq_d", prefix="utfx")
-IUTFX_SAS   = get_latest_file(INPUT_DIR / "ieq_d", prefix="iutfx")
+UTFX_SAS    = get_latest_file(INPUT_DIR, prefix="utfx")
+IUTFX_SAS   = get_latest_file(INPUT_DIR, prefix="iutfx")
 
 UTFX_CACHE  = CACHE_DIR / f"utfx{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 IUTFX_CACHE = CACHE_DIR / f"iutfx{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
@@ -456,8 +456,8 @@ print("\nStep 8: Building RNID / IRNID...")
 # RNID_SAS    = get_latest_file(INPUT_DIR / "rnid", prefix="rnid")
 # IRNID_SAS   = get_latest_file(INPUT_DIR / "irnid", prefix="irnid")
 
-RNID_SAS    = get_latest_file(INPUT_DIR / "rnid", prefix="rnid")
-IRNID_SAS   = get_latest_file(INPUT_DIR / "irnid", prefix="irnid")
+RNID_SAS    = get_latest_file(INPUT_DIR, prefix="rnid")
+IRNID_SAS   = get_latest_file(INPUT_DIR, prefix="irnid")
 
 RNID_CACHE  = CACHE_DIR / f"rnid{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 IRNID_CACHE = CACHE_DIR / f"irnid{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
