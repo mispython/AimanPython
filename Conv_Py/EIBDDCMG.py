@@ -514,6 +514,29 @@ print(f"  IRNID: TOIINDV={irnid['TOIINDV'][0]}  TOININD={irnid['TOININD'][0]}")
 # ============================================================================
 print("\nStep 9: Building today's DCMG row...")
 
+def _normalize_sas_reptdate(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Normalize a REPTDATE column coming from pandas.read_sas() into a
+    proper Polars Date column.
+
+    pandas only auto-decodes REPTDATE into a real datetime when the
+    source .sas7bdat column carries a recognized SAS date/datetime
+    format. Otherwise it comes back as a raw numeric SAS date value --
+    days since 1960-01-01, NOT the Unix/Polars epoch of 1970-01-01.
+    Casting that raw number straight to pl.Date silently shifts every
+    date forward by exactly 3653 days (~10 years), e.g. 2026 -> 2036.
+    This detects the raw-numeric case and re-bases it onto 1960-01-01
+    explicitly; an already-decoded datetime column is just cast as-is.
+    """
+    dtype = df.schema["REPTDATE"]
+    if dtype in (pl.Float32, pl.Float64, pl.Int32, pl.Int64):
+        return df.with_columns(
+            (pl.lit(date(1960, 1, 1)) + pl.duration(days=pl.col("REPTDATE").cast(pl.Int64)))
+            .alias("REPTDATE")
+        )
+    return df.with_columns(pl.col("REPTDATE").cast(pl.Date))
+
+
 def _left_join(base_df: pl.DataFrame, other_df: pl.DataFrame) -> pl.DataFrame:
     if other_df.is_empty():
         return base_df
@@ -597,9 +620,9 @@ else:
     if DCMG_PARQUET.exists():
         existing = pl.read_parquet(DCMG_PARQUET)
     elif DCMG_SAS_LEGACY.exists():
-        existing = pl.from_pandas(
-            pd.read_sas(DCMG_SAS_LEGACY, encoding="latin1")
-        ).with_columns(pl.col("REPTDATE").cast(pl.Date))
+        existing = _normalize_sas_reptdate(
+            pl.from_pandas(pd.read_sas(DCMG_SAS_LEGACY, encoding="latin1"))
+        )
     else:
         existing = pl.DataFrame(schema=DCMG_SCHEMA)
 
