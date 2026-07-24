@@ -1,30 +1,15 @@
-Step 7: Reading ERATE (EFORATE)...
-  [EFORATE] Converting eforate07.sas7bdat -> eforate07.parquet ...
-  [EFORATE] Done -- 17 rows cached.
+Step 10: Appending to monthly DCMG master...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDDCMG.py", line 423, in <module>
-    erate = con.execute(f"""
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column REPTDATE
-
-LINE 3:         CAST(REPTDATE AS DATE)  AS REPTDATE,
-                ^
-
-
-REPTDATE
-24288
-24289
-24290
-24293
-24294
-24295
-24296
-24297
-24300
-24301
-24302
-24303
-24304
-24307
-24308
-24309
-24310
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2/EIBDDCMG.py", line 612, in <module>
+    dcmg_monthly.write_parquet(DCMG_PARQUET)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 4184, in write_parquet
+    self.lazy().sink_parquet(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2924, in sink_parquet
+    ldf.collect(engine=engine)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+PermissionError: Permission denied (os error 13): /stgsrcsys/host/uat/AII/SASDATA_EGOLD/dcmg07.parquet
