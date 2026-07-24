@@ -1,15 +1,141 @@
-Step 10: Appending to monthly DCMG master...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2/EIBDDCMG.py", line 612, in <module>
-    dcmg_monthly.write_parquet(DCMG_PARQUET)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 4184, in write_parquet
-    self.lazy().sink_parquet(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2924, in sink_parquet
-    ldf.collect(engine=engine)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-PermissionError: Permission denied (os error 13): /stgsrcsys/host/uat/AII/SASDATA_EGOLD/dcmg07.parquet
+# ============================================================================
+# STEP 11: REPORT GENERATION  (three separate sections, matching original)
+# ============================================================================
+print("\nStep 11: Generating report...")
+
+REPORT_FILE = build_output_file(OUTPUT_DIR, "EIBDDCMG").with_suffix(".txt")
+
+# Column width definitions (same as before, but we'll map var -> width)
+COL_WIDTHS = {
+    "REPTDATE": 10,
+    "PROCEED": 15,
+    "IPROCEED": 15,
+    "TOTPROCD": 15,
+    "IPROCEFI": 15,
+    "TOTINDV": 15,
+    "TOTNIND": 15,
+    "TOTRNID": 15,
+    "TOIINDV": 15,
+    "TOININD": 15,
+    "TOIRNID": 15,
+    "TOTANID": 15,
+    "TOTCPMMD": 15,
+    "TOTIPMMD": 15,
+    "TOTNPMMD": 15,
+    "TOTCDFI": 15,
+    "TOTIDFI": 15,
+    "TOTNDFI": 15,
+    "CLOSBAL": 15,
+    "SELLRATE": 14,
+    "BUYRATE": 14,
+}
+
+# Define three sections: each has a list of columns and the header parts
+# per line (depth).  Empty strings indicate no label on that line.
+SECTIONS = [
+    {
+        "columns": ["REPTDATE", "PROCEED", "IPROCEED", "TOTPROCD", "IPROCEFI",
+                    "TOTINDV", "TOTNIND", "TOTRNID"],
+        "headers": [
+            ["",          "NID-C",    "NID-I",    "TOTAL",    "NID-I(FI)", "RETAIL",   "RETAIL",   "RETAIL"],
+            ["",          "(NON-FI)", "(NON-FI)", "NIDS",     "(PBB ONLY)", "NID",      "NID",      "NID"],
+            ["DATE",      "(PROCEEDS)","(PROCEEDS)","(CONV + ISL)","(PROCEEDS)","(CONV)",  "(CONV)",  "(CONV)"]
+        ]
+    },
+    {
+        "columns": ["REPTDATE", "TOIINDV", "TOININD", "TOIRNID", "TOTANID",
+                    "TOTCPMMD", "TOTIPMMD", "TOTNPMMD", "TOTCDFI"],
+        "headers": [
+            ["",          "INDV",      "NON-INDV",  "TOTAL",     "TOTAL",      "PMMD &",    "PMMD",      "TOTAL",     "DFI & FI"],
+            ["",          "RETAIL",    "RETAIL",    "RETAIL",    "RETAIL",     "PQMMD",     "(ISL)",     "PMMD",      "PMMD &"],
+            ["DATE",      "NIDC",      "NIDC",      "NIDC",      "NID & NIDC", "(CONV)",    "",          "(CONV + ISL)","PQMMD"],
+            ["",          "(ISL)",     "(ISL)",     "(ISL)",     "(CONV + ISL)","",          "",          "",          "(CONV)"]
+        ]
+    },
+    {
+        "columns": ["REPTDATE", "TOTIDFI", "TOTNDFI", "CLOSBAL", "SELLRATE", "BUYRATE"],
+        "headers": [
+            ["",          "DFI & FI",  "TOTAL",     "GIA",       "GIA",       "GIA"],
+            ["",          "PMMD",      "DFI & FI",  "BALANCE",   "CLSG PRICE","CLSG PRICE"],
+            ["DATE",      "(ISL)",     "(CONV + ISL)","IN RM",    "RM/G",      "RM/G"],
+            ["",          "",          "",          "(SPOTRATE)","(SELLING)","(BUYING)"]
+        ]
+    }
+]
+
+def _build_section_header(section: dict) -> list[str]:
+    """Build the multi-line header for a section, with labels centered."""
+    cols = section["columns"]
+    headers = section["headers"]   # list of lists (depth x columns)
+    depth = len(headers)
+    lines = []
+    for d in range(depth):
+        parts = []
+        for i, var in enumerate(cols):
+            label = headers[d][i] if d < len(headers) and i < len(headers[d]) else ""
+            width = COL_WIDTHS[var]
+            parts.append(label.center(width))
+        lines.append((" " * 1).join(parts))  # single space gap
+    # rule line
+    total_width = sum(COL_WIDTHS[var] for var in cols) + (len(cols) - 1) * 1
+    lines.append("-" * total_width)
+    return lines
+
+def _format_section_value(col: dict, value) -> str:
+    """Format a single value for a given column definition."""
+    if col["type"] == "date":
+        return value.strftime("%d/%m/%Y").rjust(col["width"]) if value else "0".rjust(col["width"])
+    if col["type"] == "comma":
+        return _fmt_comma(value, col["width"], 0)
+    if col["type"] == "num2":
+        return _fmt_num(value, col["width"], 2)
+    return str(value or "").rjust(col["width"])
+
+def _build_section_detail(row: dict, cols: list) -> str:
+    """Build a detail line for a given list of column definitions."""
+    parts = []
+    for var in cols:
+        col_def = next(c for c in REPORT_COLUMNS if c["var"] == var)
+        parts.append(_format_section_value(col_def, row.get(var)))
+    return (" " * 1).join(parts)
+
+# Prepare column definitions for lookup (convert to dict for speed)
+REPORT_COLUMNS_DICT = {c["var"]: c for c in REPORT_COLUMNS}
+
+# Write output
+output_lines: list[str] = []
+first_section = True
+
+for section in SECTIONS:
+    cols = section["columns"]
+    # Page break (ASA '1') before each section (except first)
+    if not first_section:
+        output_lines.append("1")   # empty page? Actually, we need a page break; SAS uses '1' on first line of new page.
+    else:
+        first_section = False
+
+    # Title block (same for all sections)
+    title_block = _build_title_block()
+    # For the first line of the page, we need '1' as carriage control.
+    output_lines.append("1" + title_block[0])   # title_block[0] is first title line
+    for tl in title_block[1:]:
+        output_lines.append(" " + tl)
+    output_lines.append("")   # blank line
+
+    # Header lines
+    header_lines = _build_section_header(section)
+    for hl in header_lines:
+        output_lines.append(" " + hl)   # normal line (space)
+
+    # Detail rows (only for the columns in this section)
+    for row in dcmg_monthly.sort("REPTDATE").iter_rows(named=True):
+        detail = _build_section_detail(row, cols)
+        output_lines.append(" " + detail)
+
+# Write file
+with open(REPORT_FILE, "w", encoding="latin1") as fh:
+    for ln in output_lines:
+        fh.write(ln + "\n")
+
+print(f"\n  Output written : {REPORT_FILE}")
+print(f"  Total lines    : {len(output_lines):,}\n")
