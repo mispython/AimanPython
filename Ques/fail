@@ -1,117 +1,30 @@
-def _fmt_count(value) -> str:
-    """Integer count – no comma, no padding."""
-    return str(int(value)) if value is not None else "0"
+Step 7: Reading ERATE (EFORATE)...
+  [EFORATE] Converting eforate07.sas7bdat -> eforate07.parquet ...
+  [EFORATE] Done -- 17 rows cached.
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDDCMG.py", line 423, in <module>
+    erate = con.execute(f"""
+_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column REPTDATE
 
-def _fmt_amount(value) -> str:
-    """Amount with commas, no padding."""
-    if value is None:
-        value = 0.0
-    return f"{value:,.0f}"
-
-def _fmt_pct(value) -> str:
-    """Percentage rounded to integer, no padding."""
-    if value is None:
-        value = 0.0
-    return str(round(value))
+LINE 3:         CAST(REPTDATE AS DATE)  AS REPTDATE,
+                ^
 
 
-
-def write_group_report(wdraw_group: pl.DataFrame, rtitle: str, output_path: Path) -> None:
-    """Build FDRAW/TOTAL for J=1..4 and write the semicolon-delimited report."""
-
-    def subset(accttype: str, cust_in_list: bool) -> pl.DataFrame:
-        cond = pl.col("ACCTTYPE") == accttype
-        if cust_in_list:
-            cond = cond & pl.col("CUSTCODE").is_in(CUST_INDIV)
-        else:
-            cond = cond & (~pl.col("CUSTCODE").is_in(CUST_INDIV))
-        return wdraw_group.filter(cond)
-
-    wdraw_by_j = {
-        1: subset("C", True),   # WDRAW1: PBB  individual
-        2: subset("I", True),   # WDRAW2: PIBB individual
-        3: subset("C", False),  # WDRAW3: PBB  non-individual
-        4: subset("I", False),  # WDRAW4: PIBB non-individual
-    }
-
-    lines: list[str] = []
-
-    # ---- initial header block ----
-    lines.append("REPORT ID : EIBDRB01")
-    lines.append(
-        f"TITLE : DAILY SUMMARY REPORT ON REASONS FOR {rtitle} "
-        "OVER-THE-COUNTER BASED ON RECEIPTS BY BRANCH"
-    )
-    lines.append(f"REPORTING DATE : {RDATE}")
-    lines.append(" ")
-    lines.append("(A) INDIVIDUAL CUSTOMER (CUSTOMER CODE: 77,78,95 AND 96)")
-
-    for j in range(1, 5):
-        if j == 3:
-            lines.append(" ")
-            lines.append("(B) NON-INDIVIDUAL CUSTOMER")
-
-        fdraw = build_fdraw(wdraw_by_j[j])
-        if fdraw.is_empty():
-            continue
-
-        totals = build_total(fdraw)
-
-        # ---- sub‑report header rows (separator is ";" with no spaces) ----
-        lines.append(" ")
-        lines.append("   " + HDR_MAP[j])
-        lines.append("   " + HEADER_ROW2)
-
-        row3 = ["CODE", "ABBR", ""]
-        for code in REASON_CODES:
-            row3 += [code, code]
-        row3 += ["TOTAL", "TOTAL"]
-        lines.append("   " + ";".join(row3))
-
-        row4 = ["", "", ""]
-        for _ in REASON_CODES:
-            row4 += ["NO.", "RM"]
-        lines.append("   " + ";".join(row4))
-
-        # ---- data rows: separator is " ;" (space + semicolon) ----
-        sep = " ;"
-        for row in fdraw.iter_rows(named=True):
-            fields = [
-                _fmt_count(row["BRANCH"]),
-                str(row["BRABBR"] or ""),
-                str(row["REGION"] or ""),
-            ]
-            for i in range(1, 17):
-                fields.append(_fmt_count(row[f"C{i}"]))
-                fields.append(_fmt_amount(row[f"A{i}"]))
-            fields.append(_fmt_count(row["TOT_CNT"]))
-            fields.append(_fmt_amount(row["TOT_AMT"]))
-            lines.append("   " + sep.join(fields))
-
-        # ---- grand total row ----
-        total_fields = ["", "TOTAL", ""]
-        for i in range(1, 17):
-            total_fields.append(_fmt_count(totals[f"RC{i}"]))
-            total_fields.append(_fmt_amount(totals[f"RA{i}"]))
-        total_fields.append(_fmt_count(totals["GTC"]))
-        total_fields.append(_fmt_amount(totals["GTA"]))
-        lines.append("   " + sep.join(total_fields))
-
-        # ---- % composition row ----
-        pct_fields = ["", "% COMPOSITION", ""]
-        for i in range(1, 17):
-            pct_fields.append(_fmt_pct(totals[f"PC{i}"]))
-            pct_fields.append(_fmt_pct(totals[f"PA{i}"]))
-        pct_fields.append(_fmt_pct(totals["PGTC"]))
-        pct_fields.append(_fmt_pct(totals["PGTA"]))
-        lines.append("   " + sep.join(pct_fields))
-
-    with open(output_path, "w", encoding="latin1") as fh:
-        for ln in lines:
-            fh.write(ln + "\n")
-
-    print(f"  Output written : {output_path}")
-    print(f"  Total lines    : {len(lines):,}")
-    print("  --- Preview ---")
-    for preview_line in lines[:10]:
-        print(f"  {preview_line}")
+REPTDATE
+24288
+24289
+24290
+24293
+24294
+24295
+24296
+24297
+24300
+24301
+24302
+24303
+24304
+24307
+24308
+24309
+24310
