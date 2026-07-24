@@ -30,13 +30,14 @@ from output_date import build_output_file
 # ============================================================================
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_DIR  = Path("/dwh")                               # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
+# INPUT_DIR  = Path("/dwh")                               # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
 HOST_DIR    = Path("/stgsrcsys/host/uat/AII")           # DPGIA, EQ, IEQ (.txt), EFORATE (.sas7bdat)
 CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIBDDCMG"  # Parquet cache for .sas7bdat sources
 MASTER_DIR = BASE_DIR / "master" / "EIBDDCMG"           # Persisted monthly DCMG master (replaces the SAS permanent library member MIS.DCMG&REPTMON)
 OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"           # Printed month-to-date listing
 
-for _d in (INPUT_DIR, HOST_DIR, CACHE_DIR, MASTER_DIR, OUTPUT_DIR):
+# for _d in (INPUT_DIR, HOST_DIR, CACHE_DIR, MASTER_DIR, OUTPUT_DIR):
+for _d in (HOST_DIR, CACHE_DIR, MASTER_DIR, OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -361,8 +362,15 @@ pbgia_today = pbgia.filter(pl.col("REPTDATE") == reptdate)
 # ============================================================================
 print("\nStep 6: Building UTFX / IUTFX (DEQ / IDEQ)...")
 
-UTFX_SAS    = INPUT_DIR / "eq_d" / f"utfx{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-IUTFX_SAS   = INPUT_DIR / "ieq_d" / f"iutfx{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+# UTFX_SAS    = INPUT_DIR / "eq_d" / f"utfx{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+# IUTFX_SAS   = INPUT_DIR / "ieq_d" / f"iutfx{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+
+# UTFX_SAS    = get_latest_file(INPUT_DIR / "eq_d", prefix="utfx")
+# IUTFX_SAS   = get_latest_file(INPUT_DIR / "ieq_d", prefix="iutfx")
+
+UTFX_SAS    = get_latest_file(HOST_DIR / "eq_d", prefix="utfx")
+IUTFX_SAS   = get_latest_file(HOST_DIR / "ieq_d", prefix="iutfx")
+
 UTFX_CACHE  = CACHE_DIR / f"utfx{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 IUTFX_CACHE = CACHE_DIR / f"iutfx{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 
@@ -422,7 +430,7 @@ _ensure_cache(EFORATE_SAS, EFORATE_CACHE, "EFORATE")
 con = duckdb.connect(database=":memory:")
 erate = con.execute(f"""
     SELECT
-        CAST(REPTDATE AS DATE)  AS REPTDATE,
+        DATE '1960-01-01' + CAST(REPTDATE AS INTEGER) AS REPTDATE,
         CAST(SELLRATE AS DOUBLE) AS SELLRATE,
         CAST(BUYRATE  AS DOUBLE) AS BUYRATE
     FROM read_parquet('{EFORATE_CACHE}')
@@ -441,8 +449,15 @@ erate_today = erate.filter(pl.col("REPTDATE") == reptdate)
 # ============================================================================
 print("\nStep 8: Building RNID / IRNID...")
 
-RNID_SAS    = INPUT_DIR / "rnid" / f"rnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-IRNID_SAS   = INPUT_DIR / "irnid" / f"irnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+# RNID_SAS    = INPUT_DIR / "rnid" / f"rnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+# IRNID_SAS   = INPUT_DIR / "irnid" / f"irnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+
+# RNID_SAS    = get_latest_file(INPUT_DIR / "rnid", prefix="rnid")
+# IRNID_SAS   = get_latest_file(INPUT_DIR / "irnid", prefix="irnid")
+
+RNID_SAS    = get_latest_file(HOST_DIR / "rnid", prefix="rnid")
+IRNID_SAS   = get_latest_file(HOST_DIR / "irnid", prefix="irnid")
+
 RNID_CACHE  = CACHE_DIR / f"rnid{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 IRNID_CACHE = CACHE_DIR / f"irnid{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 
