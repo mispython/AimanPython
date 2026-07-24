@@ -617,36 +617,88 @@ print(f"  Master file        : {DCMG_PARQUET}")
 # ============================================================================
 # STEP 11: REPORT GENERATION  (PROC REPORT ... SPLIT='*', ASA carriage
 # control, LINESIZE=140, default PAGESIZE=60, NOCENTER/NODATE/NONUMBER)
+#
+# The 21 defined columns require far more than LINESIZE=140 to print on a
+# single row, so PROC REPORT automatically wraps into COLUMN PANELS: it
+# greedily fills as many columns as fit within LINESIZE, prints every row
+# for that set of columns on its own page(s), then starts a fresh page
+# with the next batch of columns, and so on until all columns have been
+# printed. Because the original PROC REPORT step has no ID statement,
+# REPTDATE is only carried in the first panel; it is not repeated on
+# later panels.
+#
+# Each column's true on-page slot width is its SAS format width + 2 (a
+# fixed 2-character gutter folded into the column itself, not a separate
+# inter-column space), and both header text and data values are
+# right-justified within that slot -- confirmed against a reference run
+# of the original SAS output.
 # ============================================================================
 print("\nStep 11: Generating report...")
 
 REPORT_FILE = build_output_file(OUTPUT_DIR, "EIBDDCMG").with_suffix(".txt")
 
+# format_width is the SAS format's own display width (COMMA15.->15,
+# 14.2->14, DDMMYY10.->10). PROC REPORT's actual column slot on the page is
+# format_width + 2 (a fixed 2-character gutter folded into each column, not
+# a separate inter-column separator) -- see _slot_width().
 REPORT_COLUMNS = [
-    {"var": "REPTDATE", "header": ["DATE"],                                          "width": 10, "type": "date"},
-    {"var": "PROCEED",  "header": ["NID-C", "(NON-FI)", "(PROCEEDS)"],                "width": 15, "type": "comma"},
-    {"var": "IPROCEED", "header": ["NID-I", "(NON-FI)", "(PROCEEDS)"],                "width": 15, "type": "comma"},
-    {"var": "TOTPROCD", "header": ["TOTAL", "NIDS", "(CONV + ISL)"],                  "width": 15, "type": "comma"},
-    {"var": "IPROCEFI", "header": ["NID-I(FI)", "(PBB ONLY)", "(PROCEEDS)"],          "width": 15, "type": "comma"},
-    {"var": "TOTINDV",  "header": ["INDV", "RETAIL", "NID", "(CONV)"],                "width": 15, "type": "comma"},
-    {"var": "TOTNIND",  "header": ["NON-INDV", "RETAIL", "NID", "(CONV)"],            "width": 15, "type": "comma"},
-    {"var": "TOTRNID",  "header": ["TOTAL", "RETAIL", "NID", "(CONV)"],               "width": 15, "type": "comma"},
-    {"var": "TOIINDV",  "header": ["INDV", "RETAIL", "NIDC", "(ISL)"],                "width": 15, "type": "comma"},
-    {"var": "TOININD",  "header": ["NON-INDV", "RETAIL", "NIDC", "(ISL)"],            "width": 15, "type": "comma"},
-    {"var": "TOIRNID",  "header": ["TOTAL", "RETAIL", "NIDC", "(ISL)"],               "width": 15, "type": "comma"},
-    {"var": "TOTANID",  "header": ["TOTAL", "RETAIL", "NID & NIDC", "(CONV + ISL)"],  "width": 15, "type": "comma"},
-    {"var": "TOTCPMMD", "header": ["PMMD &", "PQMMD", "(CONV)"],                      "width": 15, "type": "comma"},
-    {"var": "TOTIPMMD", "header": ["PMMD", "(ISL)"],                                  "width": 15, "type": "comma"},
-    {"var": "TOTNPMMD", "header": ["TOTAL", "PMMD", "(CONV + ISL)"],                  "width": 15, "type": "comma"},
-    {"var": "TOTCDFI",  "header": ["DFI & FI", "PMMD &", "PQMMD", "(CONV)"],          "width": 15, "type": "comma"},
-    {"var": "TOTIDFI",  "header": ["DFI & FI", "PMMD", "(ISL)"],                      "width": 15, "type": "comma"},
-    {"var": "TOTNDFI",  "header": ["TOTAL", "DFI & FI", "PMMD", "(CONV + ISL)"],      "width": 15, "type": "comma"},
-    {"var": "CLOSBAL",  "header": ["GIA", "BALANCE", "IN RM", "(SPOTRATE)"],          "width": 15, "type": "comma"},
-    {"var": "SELLRATE", "header": ["GIA", "CLSG PRICE", "RM/G", "(SELLING)"],         "width": 14, "type": "num2"},
-    {"var": "BUYRATE",  "header": ["GIA", "CLSG PRICE", "RM/G", "(BUYING)"],          "width": 14, "type": "num2"},
+    {"var": "REPTDATE", "header": ["DATE"],                                          "format_width": 10, "type": "date"},
+    {"var": "PROCEED",  "header": ["NID-C", "(NON-FI)", "(PROCEEDS)"],                "format_width": 15, "type": "comma"},
+    {"var": "IPROCEED", "header": ["NID-I", "(NON-FI)", "(PROCEEDS)"],                "format_width": 15, "type": "comma"},
+    {"var": "TOTPROCD", "header": ["TOTAL", "NIDS", "(CONV + ISL)"],                  "format_width": 15, "type": "comma"},
+    {"var": "IPROCEFI", "header": ["NID-I(FI)", "(PBB ONLY)", "(PROCEEDS)"],          "format_width": 15, "type": "comma"},
+    {"var": "TOTINDV",  "header": ["INDV", "RETAIL", "NID", "(CONV)"],                "format_width": 15, "type": "comma"},
+    {"var": "TOTNIND",  "header": ["NON-INDV", "RETAIL", "NID", "(CONV)"],            "format_width": 15, "type": "comma"},
+    {"var": "TOTRNID",  "header": ["TOTAL", "RETAIL", "NID", "(CONV)"],               "format_width": 15, "type": "comma"},
+    {"var": "TOIINDV",  "header": ["INDV", "RETAIL", "NIDC", "(ISL)"],                "format_width": 15, "type": "comma"},
+    {"var": "TOININD",  "header": ["NON-INDV", "RETAIL", "NIDC", "(ISL)"],            "format_width": 15, "type": "comma"},
+    {"var": "TOIRNID",  "header": ["TOTAL", "RETAIL", "NIDC", "(ISL)"],               "format_width": 15, "type": "comma"},
+    {"var": "TOTANID",  "header": ["TOTAL", "RETAIL", "NID & NIDC", "(CONV + ISL)"],  "format_width": 15, "type": "comma"},
+    {"var": "TOTCPMMD", "header": ["PMMD &", "PQMMD", "(CONV)"],                      "format_width": 15, "type": "comma"},
+    {"var": "TOTIPMMD", "header": ["PMMD", "(ISL)"],                                  "format_width": 15, "type": "comma"},
+    {"var": "TOTNPMMD", "header": ["TOTAL", "PMMD", "(CONV + ISL)"],                  "format_width": 15, "type": "comma"},
+    {"var": "TOTCDFI",  "header": ["DFI & FI", "PMMD &", "PQMMD", "(CONV)"],          "format_width": 15, "type": "comma"},
+    {"var": "TOTIDFI",  "header": ["DFI & FI", "PMMD", "(ISL)"],                      "format_width": 15, "type": "comma"},
+    {"var": "TOTNDFI",  "header": ["TOTAL", "DFI & FI", "PMMD", "(CONV + ISL)"],      "format_width": 15, "type": "comma"},
+    {"var": "CLOSBAL",  "header": ["GIA", "BALANCE", "IN RM", "(SPOTRATE)"],          "format_width": 15, "type": "comma"},
+    {"var": "SELLRATE", "header": ["GIA", "CLSG PRICE", "RM/G", "(SELLING)"],         "format_width": 14, "type": "num2"},
+    {"var": "BUYRATE",  "header": ["GIA", "CLSG PRICE", "RM/G", "(BUYING)"],          "format_width": 14, "type": "num2"},
 ]
-COLUMN_GAP = 1
-HEADER_DEPTH = max(len(c["header"]) for c in REPORT_COLUMNS)
+
+LINESIZE     = 140                                            # OPTIONS LINESIZE=140
+HEADER_DEPTH = max(len(c["header"]) for c in REPORT_COLUMNS)   # 4 -- fixed across every panel
+
+
+def _slot_width(col: dict) -> int:
+    return col["format_width"] + 2
+
+
+def _build_panels() -> list[list[dict]]:
+    """
+    Greedily partitions REPORT_COLUMNS, left to right, into panels whose
+    total slot width fits within LINESIZE. This reproduces PROC REPORT's
+    automatic column-wrap when the requested columns are wider than
+    LINESIZE: REPTDATE only lands in the first panel (there is no ID
+    statement in the original PROC REPORT step to repeat it on later
+    panels); every subsequent panel starts a fresh page with the columns
+    that did not fit on the previous one.
+    """
+    panels: list[list[dict]] = []
+    panel: list[dict] = []
+    used = 0
+    for col in REPORT_COLUMNS:
+        w = _slot_width(col)
+        if panel and used + w > LINESIZE:
+            panels.append(panel)
+            panel, used = [], 0
+        panel.append(col)
+        used += w
+    if panel:
+        panels.append(panel)
+    return panels
+
+
+REPORT_PANELS = _build_panels()
 
 
 def _build_title_block() -> list[str]:
@@ -660,59 +712,72 @@ def _build_title_block() -> list[str]:
     ]
 
 
-def _build_column_header_block() -> list[str]:
-    """SPLIT='*' multi-line headers, bottom-aligned against the rule line."""
+def _build_column_header_block(panel: list[dict]) -> list[str]:
+    """SPLIT='*' multi-line headers, right-justified and bottom-aligned
+    against the rule line (columns with fewer header lines get blank
+    filler rows at the top)."""
     lines = []
     for depth in range(HEADER_DEPTH):
         parts = []
-        for col in REPORT_COLUMNS:
+        for col in panel:
             header_parts = col["header"]
             pad = HEADER_DEPTH - len(header_parts)
             idx = depth - pad
             text = header_parts[idx] if idx >= 0 else ""
-            parts.append(text.center(col["width"]))
-        lines.append((" " * COLUMN_GAP).join(parts))
-    rule_width = sum(c["width"] for c in REPORT_COLUMNS) + COLUMN_GAP * (len(REPORT_COLUMNS) - 1)
-    lines.append("-" * rule_width)
+            parts.append(text.rjust(_slot_width(col)))
+        lines.append("".join(parts))
+    panel_width = sum(_slot_width(c) for c in panel)
+    # PROC REPORT's HEADLINE rule reserves a fixed 2-character lead-in
+    # before the dashes begin, independent of the first column's own width.
+    lines.append("  " + "-" * (panel_width - 2))
     return lines
 
 
-def _build_page_header() -> list[str]:
+def _build_page_header(panel: list[dict]) -> list[str]:
     """Full page-top block: titles, blank separator, column headers, rule."""
     block = list(_build_title_block())
     block.append("")
-    block.extend(_build_column_header_block())
+    block.extend(_build_column_header_block(panel))
     return block
 
 
 def _format_value(col: dict, value) -> str:
+    width = _slot_width(col)
     if col["type"] == "date":
-        return value.strftime("%d/%m/%Y").rjust(col["width"]) if value else "0".rjust(col["width"])
+        return value.strftime("%d/%m/%Y").rjust(width) if value else "0".rjust(width)
     if col["type"] == "comma":
-        return _fmt_comma(value, col["width"], 0)
+        return _fmt_comma(value, width, 0)
     if col["type"] == "num2":
-        return _fmt_num(value, col["width"], 2)
-    return str(value or "").rjust(col["width"])
+        return _fmt_num(value, width, 2)
+    return str(value or "").rjust(width)
 
 
-def _build_detail_line(row: dict) -> str:
-    parts = [_format_value(col, row.get(col["var"])) for col in REPORT_COLUMNS]
-    return (" " * COLUMN_GAP).join(parts)
+def _build_detail_line(panel: list[dict], row: dict) -> str:
+    return "".join(_format_value(col, row.get(col["var"])) for col in panel)
+
+
+def _pad_line(line: str) -> str:
+    """Every physical line (title, header, rule, detail) is blank-padded
+    out to the full LINESIZE, regardless of how much of it a given panel
+    actually uses."""
+    return line.ljust(LINESIZE)
 
 
 output_lines: list[str] = []
-lines_on_page = 0
+sorted_rows = list(dcmg_monthly.sort("REPTDATE").iter_rows(named=True))
 
-for row in dcmg_monthly.sort("REPTDATE").iter_rows(named=True):
-    if lines_on_page == 0 or lines_on_page >= PAGE_SIZE:
-        page_header = _build_page_header()
-        output_lines.append("1" + page_header[0])       # '1' = new page
-        for hl in page_header[1:]:
-            output_lines.append(" " + hl)
-        lines_on_page = HEADER_LINES
+for panel in REPORT_PANELS:
+    lines_on_page = 0
+    for row in sorted_rows:
+        if lines_on_page == 0 or lines_on_page >= PAGE_SIZE:
+            page_header = _build_page_header(panel)
+            output_lines.append("1" + _pad_line(page_header[0]))   # '1' = new page
+            for hl in page_header[1:]:
+                output_lines.append(" " + _pad_line(hl))
+            lines_on_page = HEADER_LINES
 
-    output_lines.append(" " + _build_detail_line(row))    # ' ' = single space
-    lines_on_page += 1
+        output_lines.append(" " + _pad_line(_build_detail_line(panel, row)))  # ' ' = single space
+        lines_on_page += 1
 
 with open(REPORT_FILE, "w", encoding="latin1") as fh:
     for ln in output_lines:
