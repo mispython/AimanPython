@@ -31,14 +31,15 @@ from output_date import build_output_file
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
 
 # INPUT_DIR  = Path("/dwh")                               # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
-INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDDCMG"    # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
-HOST_DIR    = Path("/stgsrcsys/host/uat/AII")           # DPGIA, EQ, IEQ (.txt), EFORATE (.sas7bdat)
+INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDDCMG"   # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
+HOST_DIR   = Path("/stgsrcsys/host/uat/AII")            # DPGIA, EQ, IEQ (.txt), EFORATE (.sas7bdat)
+EGOLD_DIR  = HOST_DIR / "SASDATA_EGOLD"                 # Persisted monthly DCMG master (replaces the SAS permanent library member MIS.DCMG&REPTMON)
 CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIBDDCMG"  # Parquet cache for .sas7bdat sources
-# MASTER_DIR = BASE_DIR / "master" / "EIBDDCMG"           # Persisted monthly DCMG master (replaces the SAS permanent library member MIS.DCMG&REPTMON)
+STORE_DIR  = BASE_DIR / "store" / "EIBDDCMG"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"           # Printed month-to-date listing
 
 # for _d in (INPUT_DIR, HOST_DIR, CACHE_DIR, MASTER_DIR, OUTPUT_DIR):
-for _d in (HOST_DIR, CACHE_DIR, OUTPUT_DIR):
+for _d in (HOST_DIR, CACHE_DIR, EGOLD_DIR, STORE_DIR, OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -424,7 +425,7 @@ print(f"  IUTFX: TOTIPMMD={iutfx['TOTIPMMD'][0]}  TOTIDFI={iutfx['TOTIDFI'][0]}"
 # ============================================================================
 print("\nStep 7: Reading ERATE (EFORATE)...")
 
-EFORATE_SAS   = HOST_DIR / "SASDATA_EGOLD" / f"eforate{REPTMON}.sas7bdat"
+EFORATE_SAS   = EGOLD_DIR / f"eforate{REPTMON}.sas7bdat"
 EFORATE_CACHE = CACHE_DIR / f"eforate{REPTMON}.parquet"
 _ensure_cache(EFORATE_SAS, EFORATE_CACHE, "EFORATE")
 
@@ -585,8 +586,8 @@ print("  Today's DCMG row built.")
 # ============================================================================
 print("\nStep 10: Appending to monthly DCMG master...")
 
-DCMG_PARQUET    = HOST_DIR / "SASDATA_EGOLD" / f"dcmg{REPTMON}.parquet"
-DCMG_SAS_LEGACY = HOST_DIR / "SASDATA_EGOLD" / f"dcmg{REPTMON}.sas7bdat"
+DCMG_PARQUET    = STORE_DIR / f"dcmg{REPTMON}.parquet"
+DCMG_SAS_LEGACY = EGOLD_DIR / f"dcmg{REPTMON}.sas7bdat"
 
 DCMG_SCHEMA = dcmg_today.schema
 
