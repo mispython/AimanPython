@@ -13,3 +13,36 @@ cisca = cisca.unique(subset=["ACCTNO"], keep="last")
 
 
 cisfd = cisfd.unique(subset=["ACCTNO"], keep="last")
+
+======================
+
+def _sum_cols(df: pl.DataFrame, cols: list) -> dict:
+    """Return sum of columns; if df is empty, return None for each."""
+    if df.is_empty():
+        return {c: None for c in cols}
+    return df.select([pl.col(c).fill_null(0).sum().alias(c) for c in cols]).row(0, named=True)
+
+def _fmt_comma(value, decimals: int = 2) -> str:
+    """Format number with commas; None -> '.' (SAS missing)."""
+    if value is None:
+        return "."
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return ""
+    return f"{v:,.{decimals}f}"
+
+def _fmt_num(value) -> str:
+    """Format number without decimals if integer; None -> '.'."""
+    if value is None:
+        return "."
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return str(int(v)) if v == int(v) else str(v)
+
+===================
+
+(1, f"{idx} ) {row['PMTYPE']}"),   # space after index before )
+
