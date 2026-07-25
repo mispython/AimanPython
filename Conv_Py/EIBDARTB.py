@@ -36,19 +36,20 @@ from ARTBFMT import get_fundmne, get_fundtype, PMFUND
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII/EIBDARTB")
 
-INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDARTB"
-CACHE_DIR  = BASE_DIR / "input" / "prod" / "EIBDARTB" / "cache"
+INPUT_DIR  = BASE_DIR / "input" / "prod" / "deposit_fcy_d"
+CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIBDARTB"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBDARTB"
 
-INPUT_CISDP_FILE  = INPUT_DIR / "CISDP_DEPOSIT.sas7bdat"     # CISDP.DEPOSIT
-INPUT_CISFD_FILE  = INPUT_DIR / "CISFD_DEPOSIT.sas7bdat"     # CISFD.DEPOSIT
-INPUT_DPCUST_FILE = INPUT_DIR / "DPCUST.txt"                 # DPCUST DD (fixed-width flat file)
+INPUT_CISDP_FILE  = STG_DIR / "CISDP" / "CISDP_deposit.sas7bdat"     # CISDP.DEPOSIT
+INPUT_CISFD_FILE  = STG_DIR / "CISFD" / "CISFD_deposit.sas7bdat"     # CISFD.DEPOSIT
+INPUT_DPCUST_FILE = STG_DIR / "DPCUST.TXT"                 # DPCUST DD (fixed-width flat file)
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_FILE = OUTPUT_DIR / "EIBDARTB.txt"
+# OUTPUT_FILE = OUTPUT_DIR / f"EIBDARTB.txt"
 # NOTE: SASLIST DD is RECFM=VB (variable, blocked) — NOT RECFM=VBA — so the
 # original report carries no ASA carriage-control byte. Lines are written
 # here as plain text, matching the actual DCB in the JCL.
@@ -96,9 +97,10 @@ def _get_latest_excluding(directory: Path, prefix: str, exclude_prefix: str) -> 
     return latest
 
 
-ca_path   = get_latest_file(INPUT_DIR, prefix="dpd_ca")                                    # DEPOSIT.CURRENT
-fd_path   = _get_latest_excluding(INPUT_DIR, prefix="dpd_fd", exclude_prefix="dpd_fdcd")   # DEPOSIT.FD
-fdcd_path = get_latest_file(INPUT_DIR, prefix="dpd_fdcd")                                  # FD.FD (detailed FD master)
+ca_path   = get_latest_file(INPUT_DIR, prefix="ca")                                    # DEPOSIT.CURRENT            - /dwh/dpd_ca
+# fd_path   = _get_latest_excluding(INPUT_DIR, prefix="dpd_fd", exclude_prefix="dpd_fdcd")   
+fd_path   = get_latest_file(INPUT_DIR, prefix="fd")                                    # DEPOSIT.FD                 - /dwh/dpd_fd
+fdcd_path = get_latest_file(INPUT_DIR, prefix="fdcd")                                  # FD.FD (detailed FD master) - /dwh/dpd_fdcd
 
 print(f"  CA   : {ca_path.name}")
 print(f"  FD   : {fd_path.name}")
@@ -751,6 +753,8 @@ output_lines.append(_line([
 # ============================================================================
 # WRITE OUTPUT
 # ============================================================================
+OUTPUT_FILE = OUTPUT_DIR / f"EIBDARTB_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in output_lines:
         fh.write(ln + "\n")
