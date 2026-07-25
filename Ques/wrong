@@ -1,105 +1,142 @@
-REPORT ID : DMMISR1G                                                                                                                        
-PUBLIC BANK BERHAD                                                                                                                          
-SALES ADMINISTRATION & SUPPORT                                                                                                              
-BANK'S TOTAL DEPOSITS (RM '000)                                                                                                             
-AS AT  23/07/26                                                                                                                             
-                                                                                                                                            
-                                                                                             INDV         NON-INDV            TOTAL         
-                        NID-C            NID-I            TOTAL        NID-I(FI)           RETAIL           RETAIL           RETAIL         
-                     (NON-FI)         (NON-FI)             NIDS       (PBB ONLY)              NID              NID              NID         
-        DATE       (PROCEEDS)       (PROCEEDS)     (CONV + ISL)       (PROCEEDS)           (CONV)           (CONV)           (CONV)         
-  ---------------------------------------------------------------------------------------------------------------------------------         
-  23/07/2026                0                0                0        1,148,576                0                0                0         
-  01/07/2036                0                0                0        1,145,830                0                0                0         
-  02/07/2036                0                0                0        1,145,955                0                0                0         
-  03/07/2036                0                0                0        1,146,080                0                0                0         
-  04/07/2036                0                0                0        1,146,204                0                0                0         
-  05/07/2036                0                0                0        1,146,329                0                0                0         
-  06/07/2036                0                0                0        1,146,454                0                0                0         
-  07/07/2036                0                0                0        1,146,579                0                0                0         
-  08/07/2036                0                0                0        1,146,704                0                0                0         
-  09/07/2036                0                0                0        1,146,828                0                0                0         
-  10/07/2036                0                0                0        1,146,953                0                0                0         
-  11/07/2036                0                0                0        1,147,078                0                0                0         
-  12/07/2036                0                0                0        1,147,203                0                0                0         
-  13/07/2036                0                0                0        1,147,328                0                0                0         
-  14/07/2036                0                0                0        1,147,453                0                0                0         
-  15/07/2036                0                0                0        1,147,577                0                0                0         
-  16/07/2036                0                0                0        1,147,702                0                0                0         
-  17/07/2036                0                0                0        1,147,827                0                0                0         
-  18/07/2036                0                0                0        1,147,952                0                0                0         
-  19/07/2036                0                0                0        1,148,077                0                0                0         
-  20/07/2036                0                0                0        1,148,201                0                0                0         
-  21/07/2036                0                0                0        1,148,326                0                0                0         
-  22/07/2036                0                0                0        1,148,451                0                0                0         
-  23/07/2036                0                0                0        1,148,576                0                0                0         
-REPORT ID : DMMISR1G                                                                                                                        
-PUBLIC BANK BERHAD                                                                                                                          
-SALES ADMINISTRATION & SUPPORT                                                                                                              
-BANK'S TOTAL DEPOSITS (RM '000)                                                                                                             
-AS AT  23/07/26                                                                                                                             
-                                                                                                                                            
-             INDV         NON-INDV            TOTAL            TOTAL                                                            DFI & FI    
-           RETAIL           RETAIL           RETAIL           RETAIL           PMMD &                             TOTAL           PMMD &    
-             NIDC             NIDC             NIDC       NID & NIDC            PQMMD             PMMD             PMMD            PQMMD    
-            (ISL)            (ISL)            (ISL)     (CONV + ISL)           (CONV)            (ISL)     (CONV + ISL)           (CONV)    
-  --------------------------------------------------------------------------------------------------------------------------------------    
-                0                0                0                0       60,205,655       10,198,040       70,403,695          300,000    
-                0                0                0                0       61,470,782        9,928,497       71,399,279          300,000    
-                0                0                0                0       61,862,325        9,882,136       71,744,461          300,000    
-                0                0                0                0       62,703,633        9,758,966       72,462,599          300,000    
-                0                0                0                0       62,703,633        9,758,966       72,462,599          300,000    
-                0                0                0                0       62,703,633        9,758,966       72,462,599          300,000    
-                0                0                0                0       62,704,236        9,930,317       72,634,553          300,000    
-                0                0                0                0       62,610,999        9,888,409       72,499,408          300,000    
-                0                0                0                0       62,683,038        9,876,662       72,559,700          300,000    
-                0                0                0                0       62,183,473        9,636,534       71,820,007          300,000    
-                0                0                0                0       62,476,753        9,877,593       72,354,346          300,000    
-                0                0                0                0       62,476,753        9,877,593       72,354,346          300,000    
-                0                0                0                0       62,476,753        9,877,593       72,354,346          300,000    
-                0                0                0                0       61,848,561        9,908,018       71,756,579          300,000    
-                0                0                0                0       61,996,857        9,757,335       71,754,192          300,000    
-                0                0                0                0       61,107,750        9,762,060       70,869,810          300,000    
-                0                0                0                0       61,747,618        9,701,860       71,449,478          300,000    
-                0                0                0                0       61,661,074        9,856,286       71,517,360          300,000    
-                0                0                0                0       61,661,074        9,856,286       71,517,360          300,000    
-                0                0                0                0       61,661,074        9,856,286       71,517,360          300,000    
-                0                0                0                0       61,442,313       10,056,476       71,498,789          300,000    
-                0                0                0                0       60,497,157        9,723,747       70,220,904          300,000    
-                0                0                0                0       60,803,531       10,115,398       70,918,929          300,000    
-                0                0                0                0       60,205,655       10,198,040       70,403,695          300,000    
-REPORT ID : DMMISR1G                                                                                                                        
-PUBLIC BANK BERHAD                                                                                                                          
-SALES ADMINISTRATION & SUPPORT                                                                                                              
-BANK'S TOTAL DEPOSITS (RM '000)                                                                                                             
-AS AT  23/07/26                                                                                                                             
-                                                                                                                                            
-                             TOTAL              GIA             GIA             GIA                                                         
-         DFI & FI         DFI & FI          BALANCE      CLSG PRICE      CLSG PRICE                                                         
-             PMMD             PMMD            IN RM            RM/G            RM/G                                                         
-            (ISL)     (CONV + ISL)       (SPOTRATE)       (SELLING)        (BUYING)                                                         
-  ---------------------------------------------------------------------------------                                                         
-                0          300,000        1,983,530          550.74          529.68                                                         
-                0          300,000        1,921,413          535.89          515.24                                                         
-                0          300,000        1,954,672          544.88          523.89                                                         
-                0          300,000        2,003,812          559.46          537.90                                                         
-                0          300,000                0               0               0                                                         
-                0          300,000                0               0               0                                                         
-                0          300,000        1,994,399          559.94          538.46                                                         
-                0          300,000        1,982,759          556.36          535.06                                                         
-                0          300,000        1,950,556          553.10          531.77                                                         
-                0          300,000        1,977,620          552.15          530.96                                                         
-                0          300,000        1,972,311          552.48          531.29                                                         
-                0          300,000                0               0               0                                                         
-                0          300,000                0               0               0                                                         
-                0          300,000        1,960,539          545.92          525.06                                                         
-                0          300,000        1,937,535          539.48          518.78                                                         
-                0          300,000        1,943,867          540.72          520.04                                                         
-                0          300,000        1,943,396          541.04          520.28                                                         
-                0          300,000        1,938,613          534.08          513.59                                                         
-                0          300,000                0               0               0                                                         
-                0          300,000                0               0               0                                                         
-                0          300,000        1,949,873          540.41          519.76                                                         
-                0          300,000        1,971,857          547.44          526.48                                                         
-                0          300,000        1,996,270          556.80          535.27                                                         
-                0          300,000        1,983,530          550.74          529.68                                                         
+P U B L I C   B A N K   B E R H A D
+REPORT ID : EIBDARTB @ 24/07/2026
+TABLE 1: SUMMARY TABLE FOR AMANAH RAYA GROUP
+PUBLIC BANK (PBB)            ;;;CURRENT ACCOUNTS          ;FIXED DEPOSITS                ;TOTAL (RM)
+1) NON-PUBLIC MUTUAL FUND    ;;;11,673,813.51             ;0.00                          ;11,673,813.51
+2) PUBLIC MUTUAL FUND        ;;;14,313,161.04             ;0.00                          ;14,313,161.04
+TOTAL                        ;;;25,986,974.55             ;0.00                          ;25,986,974.55
+TABLE 2: DETAILED BREAKDOWN LISTING FOR AMANAH RAYA GROUP
+I) CURRENT ACCOUNT
+CIS NO.       ;CUST. MNEMONIC ;CUSTOMER FULL NAME                                                                                                   ;CURRENT BALANCE    ;INTEREST (%)  ;BALANCE (CURRENT BALANCE + ACCRUED INTEREST)
+(A) PUBLIC MUTUAL FUND PORTFOLIO
+11880426      ;ARBPBF         ;ARTB-PB BALANCED FUND                                                                                                ;50,791.72          ;              ;50,791.72
+11880426      ;ARBPSF         ;ARTB-PUBLIC SAVINGS FUND                                                                                             ;49,902.65          ;              ;49,902.65
+11880426      ;ARBPGF         ;ARTB-PUBLIC GROWTH FUND                                                                                              ;889,639.79         ;              ;889,639.79
+11880426      ;ARBPIF         ;ARTB - PUBLIC INDEX FUND                                                                                             ;50,788.11          ;              ;50,788.11
+11880426      ;ARBPSC         ;ARTB-PUBLIC SMALLCAP FUND                                                                                            ;50,034.59          ;              ;50,034.59
+11880426      ;ARBPEF         ;ARTB-PUBLIC EQUITY FUND                                                                                              ;945,441.85         ;              ;945,441.85
+11880426      ;               ;AMANAHRAYA TRUSTEES BHD-PB GROWTH FUND                                                                               ;50,608.92          ;              ;50,608.92
+11880426      ;ARBPFI         ;ARTB-PB FIXED INCOME FUND                                                                                            ;50,190.73          ;              ;50,190.73
+11880426      ;ARBPIB         ;ARTB- PUBLIC INSTITUTIONAL BOND FUND                                                                                 ;50,958.12          ;              ;50,958.12
+11880426      ;ARBPEB         ;ARTB-PUBLIC ENHANCED BOND FUND                                                                                       ;942,505.95         ;              ;942,505.95
+11880426      ;ARBPDS         ;ARTB-PUBLIC DIVIDEND SELECT FUND                                                                                     ;50,754.63          ;              ;50,754.63
+11880426      ;ARBPFE         ;ARTB-PUBLIC FAR-EAST SELECT FUND                                                                                     ;50,146.62          ;              ;50,146.62
+11880426      ;ARBPSB         ;ARTB-PUBLIC SELECT BOND FUND                                                                                         ;50,713.94          ;              ;50,713.94
+11880426      ;ARBPAE         ;ARTB-PB ASIA EQUITY FUND                                                                                             ;50,432.45          ;              ;50,432.45
+11880426      ;ARBGSF         ;ARTB-PUBLIC GLOBAL SELECT FUND                                                                                       ;50,359.89          ;              ;50,359.89
+11880426      ;ARBPFD         ;ARTB-PUBLIC FAR-EAST DIVIDEND FUND                                                                                   ;49,938.01          ;              ;49,938.01
+11880426      ;               ;AMANAHRAYA TRUSTEES BHD-PB CASH MGT FUND                                                                             ;50,173.54          ;              ;50,173.54
+11880426      ;ARBPFB         ;ARTB-PUBLIC FAR-EAST BALANCED FUND                                                                                   ;414,242.26         ;              ;414,242.26
+11880426      ;ARBPGB         ;ARTB-PUBLIC TACTICAL ALLOCATION FUND                                                                                 ;432,039.34         ;              ;432,039.34
+11880426      ;ARBCPF         ;ARTB-PB CASH PLUS FUND                                                                                               ;50,624.00          ;              ;50,624.00
+11880426      ;ARBCSF         ;ARTB-PUBLIC CHINA SELECT FUND                                                                                        ;2,601,787.27       ;              ;2,601,787.27
+11880426      ;ARBPRF         ;ARTB-PUBLIC FAR-EAST PROPERTY & RESORTS                                                                              ;746,297.84         ;              ;746,297.84
+11880426      ;ARBPSE         ;ARTB-PUBLIC SOUTH-EAST ASIA SELECT FUND                                                                              ;750,454.08         ;              ;750,454.08
+11880426      ;ARBPCP         ;ARTB-PB CHINA PACIFIC EQUITY FUND                                                                                    ;668,312.08         ;              ;668,312.08
+11880426      ;ARBPSS         ;ARTB-PUBLIC SECTOR SELECT FUND                                                                                       ;370,536.16         ;              ;370,536.16
+11880426      ;ARBARE         ;ARTB-PB ASIA REAL ESTATE INCOME FUND                                                                                 ;128,766.74         ;              ;128,766.74
+11880426      ;ARBCTF         ;ARTB-PUBLIC FAR-EAST CONSUMER THEMES F                                                                               ;50,621.04          ;              ;50,621.04
+11880426      ;ARTCAE         ;ARTB-PB CHINA ASEAN EQUITY FUND                                                                                      ;51,036.15          ;              ;51,036.15
+11880426      ;ARTPCT         ;ARTB-PUBLIC CHINA TITANS FUND                                                                                        ;50,436.89          ;              ;50,436.89
+11880426      ;ARBTEL         ;ARTB-PUBLIC FAR-EAST TELCO &                                                                                         ;334,258.51         ;              ;334,258.51
+11880426      ;ARTPSA         ;ARTB-PUBLIC SELECT ALPHA-30 FUND                                                                                     ;50,324.14          ;              ;50,324.14
+11880426      ;ARTPAD         ;ARTB-PB AUSTRALIA DYNAMIC BALANCED FUND                                                                              ;181,410.49         ;              ;181,410.49
+11880426      ;ARTPAE         ;ARTB-PUBLIC AUSTRALIA EQUITY FUND                                                                                    ;1,079,102.03       ;              ;1,079,102.03
+11880426      ;ARTCAF         ;ARTB-PB CHINA AUSTRALIA EQUITY FUND                                                                                  ;1,074,685.65       ;              ;1,074,685.65
+11880426      ;ARTP30         ;ARTB-PUBLIC FAR-EAST ALPHA-30 FUND                                                                                   ;50,404.41          ;              ;50,404.41
+11880426      ;ARTS30         ;ARTB-PB SINGAPORE ADVANTAGE-30 EQUITY                                                                                ;50,521.89          ;              ;50,521.89
+11880426      ;ARTPIB         ;ARTB-PB INFRASTRUCTURE BOND FUND                                                                                     ;50,106.91          ;              ;50,106.91
+11880426      ;ARTOGF         ;ARTB-PUBLIC OPTIMAL GROWTH FUND                                                                                      ;224,523.37         ;              ;224,523.37
+11880426      ;ARTPIF         ;ARTB-PUBLIC INDONESIA SELECT FUND                                                                                    ;50,853.37          ;              ;50,853.37
+11880426      ;               ;AMANAHRAYA TRUSTEES BERHAD-PB INDONESIA                                                                              ;50,624.06          ;              ;50,624.06
+11880426      ;ARTSTR         ;ARTB-PUBLIC STRATEGIC BOND FUND                                                                                      ;50,611.80          ;              ;50,611.80
+11880426      ;ARTPAP         ;ARTB-PB ASIA PACIFIC ENTERPRISES FUND                                                                                ;50,659.85          ;              ;50,659.85
+11880426      ;ARTSEF         ;ARTB-PUBLIC SINGAPORE EQUITY FUND                                                                                    ;50,563.48          ;              ;50,563.48
+11880426      ;ARTAEG         ;ARTB-PB ASIA EMERGING GROWTH FUND                                                                                    ;50,179.24          ;              ;50,179.24
+11880426      ;ARTPBD         ;ARTB-PB BOND FUND                                                                                                    ;50,109.53          ;              ;50,109.53
+11880426      ;ARTPGS         ;ARTB-PB GROWTH SEQUEL FUND                                                                                           ;50,424.29          ;              ;50,424.29
+11880426      ;ARTETB         ;ARTB-PUBLIC ENTERPRISES BOND FUND                                                                                    ;50,725.86          ;              ;50,725.86
+11880426      ;ARTSSC         ;ARTB-PUBLIC STRATEGIC SMALLCAP FUND                                                                                  ;50,523.84          ;              ;50,523.84
+11880426      ;               ;ARTB-PB DYNAMIC ALLOCATION FUND                                                                                      ;711,577.43         ;              ;711,577.43
+11880426      ;               ;ARTB-PUBLIC MUTUAL PRS CONSERVATIVE FUND                                                                             ;49,745.68          ;              ;49,745.68
+11880426      ;               ;ARTB-PUBLIC MUTUAL PRS GROWTH FUND                                                                                   ;51,213.57          ;              ;51,213.57
+11880426      ;               ;ARTB-PUBLIC MUTUAL PRS MODERATE FUND                                                                                 ;50,063.80          ;              ;50,063.80
+11880426      ;               ;ARTB-PB MIXED ASSET CONSERVATIVE FUND                                                                                ;51,412.48          ;              ;51,412.48
+
+SUBTOTAL (A)  ;               ;                                                                                                                     ;14,313,161.04      ; -            ;14,313,161.04
+
+(B) NON-PUBLIC MUTUAL FUND PORTFOLIO
+11880426      ;               ;ARTB-PUBLIC WORLDWIDE EQUITY FUND                                                                                    ;50,163.18          ;              ;50,163.18
+11880426      ;               ;ART-TRUSTEE'S REIMBURSEMENT ACCOUNT FOR                                                                              ;29,704.10          ;              ;29,704.10
+11880426      ;               ;AMANAHRAYA TRUSTEE BERHAD-PUBLIC CHINA                                                                               ;50,620.63          ;              ;50,620.63
+11880426      ;               ;ARTB-PB BALANCED SEQUEL FUND                                                                                         ;50,161.11          ;              ;50,161.11
+11880426      ;               ;ART-TRUSTEE'S REIMBURSEMENT A/C FOR PBB                                                                              ;29,714.10          ;              ;29,714.10
+11880426      ;               ;ARTB-PB GLOBAL EQUITY FUND                                                                                           ;50,202.50          ;              ;50,202.50
+11880426      ;               ;ARTB-PUB SELECT MIXED ASSET GROWTH FUND                                                                              ;60,780.88          ;              ;60,780.88
+11880426      ;               ;ARTB-PUB SELECT MIXED ASSET                                                                                          ;116,457.99         ;              ;116,457.99
+11880426      ;               ;ARTB-PUBLIC E-CASH DEPOSIT FUND                                                                                      ;50,460.14          ;              ;50,460.14
+11880426      ;               ;ARTB-PUBLIC STRATEGIC GROWTH FUND                                                                                    ;51,281.11          ;              ;51,281.11
+11880426      ;               ;ARTB-PB DIVIDEND BUILDER EQUITY FUND                                                                                 ;50,163.50          ;              ;50,163.50
+11880426      ;               ;ARTB-PUBLIC SELECT TREASURES EQUITY FUND                                                                             ;50,245.40          ;              ;50,245.40
+11880426      ;               ;ARTB-PUBLIC MUTUAL PRS EQUITY FUND                                                                                   ;50,784.87          ;              ;50,784.87
+11880426      ;               ;ARTB-PUBLIC MUTUAL PRS STRATEGIC EQUITY                                                                              ;50,680.38          ;              ;50,680.38
+11880426      ;               ;ARTB-PUBLIC ADVANTAGE GROWTH EQUITY FUND                                                                             ;50,216.90          ;              ;50,216.90
+11880426      ;               ;ARTB-PUBLIC GROWTH BALANCED FUND                                                                                     ;50,591.74          ;              ;50,591.74
+11880426      ;               ;ARTB-PUBLIC REGULAR SAVINGS SEQUEL FUND                                                                              ;50,147.60          ;              ;50,147.60
+11880426      ;               ;ARTB-PB SMALLCAP GROWTH FUND                                                                                         ;50,792.76          ;              ;50,792.76
+11880426      ;               ;ARTB-PUBLIC WHOLESALE INCOME FUND                                                                                    ;50,347.97          ;              ;50,347.97
+11880426      ;               ;ARTB-PUBLIC EMERGING OPPORTUNITIES FUND                                                                              ;80,744.36          ;              ;80,744.36
+11880426      ;               ;ARTB-PB MIXED ASSET GROWTH FUND                                                                                      ;50,544.08          ;              ;50,544.08
+11880426      ;               ;ARTB-PUBLIC STRATEGIC BALANCED FUND                                                                                  ;50,282.35          ;              ;50,282.35
+11880426      ;               ;ARTB-PB ASEAN DIVIDEND SEQUEL FUND                                                                                   ;50,827.91          ;              ;50,827.91
+11880426      ;               ;ARTB-PUBLIC OPTIMAL EQUITY FUND                                                                                      ;51,100.86          ;              ;51,100.86
+11880426      ;               ;ARTB-PUBLIC NAVIGATOR GROWTH FUND                                                                                    ;50,482.91          ;              ;50,482.91
+11880426      ;               ;ARTB-PUBLIC ASEAN GROWTH FUND                                                                                        ;50,390.32          ;              ;50,390.32
+11880426      ;               ;ARTB-PUBLIC E-FLEXI ALLOCATION FUND                                                                                  ;49,734.28          ;              ;49,734.28
+11880426      ;               ;ARTB-PUBLIC GREATER CHINA FUND                                                                                       ;50,009.46          ;              ;50,009.46
+11880426      ;               ;ARTB-PB ASIA PACIFIC DIVIDEND FUND                                                                                   ;50,496.48          ;              ;50,496.48
+11880426      ;               ;ARTB-PUBLIC WHOLESALE VIETNAM EQUITY                                                                                 ;50,483.61          ;              ;50,483.61
+11880426      ;               ;ARTB-PUBLIC INDIA-GLOBAL EQUITY FUND                                                                                 ;293,627.05         ;              ;293,627.05
+11880426      ;               ;AMANAHRAYA TRUSTEES BERHAD-TRA-PBB AT1CS                                                                             ;29,777.00          ;              ;29,777.00
+11880426      ;               ;ARTB-PUBLIC LIFESTYLE & TECHNOLOGY FUND                                                                              ;50,083.88          ;              ;50,083.88
+11880426      ;               ;ARTB-PB ASIA-30 EQUITY FUND                                                                                          ;1,126,835.26       ;              ;1,126,835.26
+11880426      ;               ;ARTB-PUBLIC U.S.EQUITY FUND                                                                                          ;49,731.47          ;              ;49,731.47
+11880426      ;               ;ARTB-PB ASIA CONSUMER SECTOR FUND                                                                                    ;936,012.94         ;              ;936,012.94
+11880426      ;               ;ARTB-PB GLOBAL TECHNOLOGY &                                                                                          ;50,632.17          ;              ;50,632.17
+11880426      ;               ;ARTB-PUBLIC E-ENHANCED MONEY MARKET FUND                                                                             ;50,023.73          ;              ;50,023.73
+11880426      ;               ;ARTB-PB GLOBAL OPPORTUNITIES FUND                                                                                    ;891,069.89         ;              ;891,069.89
+11880426      ;               ;ARTB-PUBLIC VIETNAM-GLOBAL EQUITY FUND                                                                               ;650,133.75         ;              ;650,133.75
+11880426      ;               ;ARTB-PUBLIC JAPAN GLOBAL EQUITY FUND                                                                                 ;50,384.39          ;              ;50,384.39
+11880426      ;               ;AMANAHRAYA TRUSTEES BERHAD-PUBLIC E-ASIA                                                                             ;50,673.11          ;              ;50,673.11
+11880426      ;               ;AMANAHRAYA TRUSTEES BERHAD-PB GREATER                                                                                ;50,158.72          ;              ;50,158.72
+11880426      ;               ;ARTB - PUBLIC E-INCOME FUND                                                                                          ;51,301.91          ;              ;51,301.91
+11880426      ;               ;ARTB-PUBLIC E-ARTIFICIAL INTELLIGENCE                                                                                ;50,455.41          ;              ;50,455.41
+11880426      ;               ;AMANAHRAYA TRUSTEES BERHAD-PB VIETNAM                                                                                ;186,354.23         ;              ;186,354.23
+11880426      ;               ;ARTB-PUBLIC HEALTHCARE-GLOBAL EQUITY                                                                                 ;50,744.42          ;              ;50,744.42
+11880426      ;               ;ARTB-PB U.S.EAGLE FUND                                                                                               ;436,204.36         ;              ;436,204.36
+11880426      ;               ;ARTB-PUBLIC E-CARBON EFFICIENT FUND                                                                                  ;50,824.97          ;              ;50,824.97
+11880426      ;               ;ARTB-PUBLIC E-EMAS GOLD FUND                                                                                         ;50,740.91          ;              ;50,740.91
+11880426      ;               ;ARTB-PUBLIC E-PIONEER ENTREPRENEUR FUND                                                                              ;50,161.02          ;              ;50,161.02
+11880426      ;               ;ARTB-PUBLIC E-ASIA EVOLVING GROWTH FUND                                                                              ;3,234,951.64       ;              ;3,234,951.64
+11880426      ;               ;ARTB-PUBLIC ASIA PACIFIC FOCUS FUND                                                                                  ;481,045.20         ;              ;481,045.20
+11880426      ;               ;ARTB -PUBLIC ASIA PACIFIC ALPHA -40 FUND                                                                             ;50,979.41          ;              ;50,979.41
+11880426      ;               ;ARTB-PUBLIC E-WORLDWIDE THEMATIC GROWTH                                                                              ;50,593.26          ;              ;50,593.26
+11880426      ;               ;AMANAHRAYA TRUSTEES BERHAD                                                                                           ;50,439.90          ;              ;50,439.90
+11880426      ;               ;AMANAHRAYA TRUSTEES BERHAD                                                                                           ;50,871.04          ;              ;50,871.04
+11880426      ;               ;ARTB PUBLIC E-ATARAXIA MIXED                                                                                         ;522,683.69         ;              ;522,683.69
+11880426      ;               ;ARTB-PB SUSTAINABLE GROWTH FUND                                                                                      ;247,688.30         ;              ;247,688.30
+11880426      ;               ;AMANAHRAYA TRUSTEES BERHAD-PBB-TRA                                                                                   ;99,937.00          ;              ;99,937.00
+11880426      ;               ;AMANAHRAYA TRUSTEES BERHAD-PBB10B-TRA                                                                                ;100,080.00         ;              ;100,080.00
+
+SUBTOTAL (B)  ;               ;                                                                                                                     ;11,673,813.51      ; -            ;11,673,813.51
+
+TOTAL (A)+(B) ;               ;                                                                                                                     ;25,986,974.55      ; -            ;25,986,974.55
+
+II) FIXED DEPOSITS
+CIS NO.       ;CUST. MNEMONIC ;CUSTOMER FULL NAME                      ;TRANSACTION DATE ;MATURITY DATE ;ORIGINAL TENOR ;REMAINING DAYS TO MATURITY ;CURRENT BALANCE    ;INTEREST (%)  ;BALANCE (CURRENT BALANCE + ACCRUED INTEREST)
+SUBTOTAL (C)  ;               ;                                        ;                 ;              ;0 M            ;0                          ;0.00               ; -            ;0.00
+
+SUBTOTAL (D)  ;               ;                                        ;                 ;              ;0 M            ;0                          ;0.00               ; -            ;0.00
+
+TOTAL (C)+(D) ;               ;                                        ;                 ;              ;0 M            ;0                          ;0.00               ; -            ;0.00
+GRAND TOTAL (A+B+C+D)                                                  ;;                ;              ;0 M            ;0                          ;25,986,974.55      ; -            ;25,986,974.55
