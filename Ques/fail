@@ -9,3 +9,7 @@ ca = ca.with_columns(
 )
 
 
+cisca = cisca.unique(subset=["ACCTNO"], keep="last")
+
+
+cisfd = cisfd.unique(subset=["ACCTNO"], keep="last")
