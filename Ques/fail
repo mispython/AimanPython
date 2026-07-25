@@ -63,3 +63,44 @@ if has_fd2:
 
 ====================
 
+term_str = ".  M" if not has_fd else f"{_fmt_num(totarfd.get('TERM'))} M"
+rmaindt_str = "." if not has_fd else _fmt_num(totarfd.get('RMAINDT'))
+
+output_lines.append(_line([
+    (1, "TOTAL (C)+(D)"),
+    (15, ";"),
+    (31, ";"),
+    (72, ";"),
+    (90, ";"),
+    (105, f";{term_str}"),
+    (121, f";{rmaindt_str}"),
+    (149, f";{_fmt_comma(totarfd.get('CURBAL'))}"),
+    (169, "; -"),
+    (184, f";{_fmt_comma(totarfd.get('BALANCE'))}"),
+]))
+
+====================
+
+term_str = ".  M" if not has_fd else f"{_fmt_num(gtcafd.get('TERM'))} M"
+rmaindt_str = "." if not has_fd else _fmt_num(gtcafd.get('RMAINDT'))
+
+output_lines.append(_line([
+    (1, "GRAND TOTAL (A+B+C+D)"),
+    (72, ";;"),
+    (90, ";"),
+    (105, f";{term_str}"),
+    (121, f";{rmaindt_str}"),
+    (149, f";{_fmt_comma(gtcafd.get('CURBAL'))}"),
+    (169, "; -"),
+    (184, f";{_fmt_comma(gtcafd.get('BALANCE'))}"),
+]))
+
+====================
+
+print("Table 1 totals (PUBLIC):", sumcafd.filter(pl.col("PMTYPE") == "PUBLIC MUTUAL FUND").row(0))
+print("Table 1 totals (NON-PUBLIC):", sumcafd.filter(pl.col("PMTYPE") == "NON-PUBLIC MUTUAL FUND").row(0))
+print("Grand total:", totcafd_row)
+
+=====================
+
+has_fd = has_fd1 or has_fd2   # from previous step
