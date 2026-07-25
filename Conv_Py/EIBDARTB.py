@@ -231,25 +231,38 @@ print("\nStep 6: Merging CA with CISCA...")
 ca    = ca.with_columns(pl.col("ACCTNO").cast(pl.Int64))
 cisca = cisca.with_columns(pl.col("ACCTNO").cast(pl.Int64))
 
+# ca = ca.join(
+#     cisca.select(["ACCTNO", "CUSTNAME", "ICNO"]),
+#     # cisca.select(["ACCTNO", "CUSTNAME_CIS", "ICNO"]),
+#     on="ACCTNO", how="left",
+# )
+
+# # SAS MERGE CA(IN=A) CISCA — last-dataset-wins on CUSTNAME (CISCA's CUSTNAME
+# # overwrites CA's own CUSTNAME when matched). The subsequent SAS check
+# # "IF CUSTNAME = '   ' THEN CUSTNAME=NAME" references a variable NAME that is
+# # never assigned anywhere in the original program (absent from both source
+# # datasets), so SAS always evaluates it as missing/blank; that branch is a
+# # no-op in the original code and is reproduced as a no-op here.
+# ca = ca.with_columns(
+#     pl.when(pl.col("CUSTNAME_CIS").is_not_null())
+#       .then(pl.col("CUSTNAME_CIS"))
+#       .otherwise(pl.col("CUSTNAME"))
+#       .alias("CUSTNAME"),
+#     (pl.col("CURBAL").fill_null(0) + pl.col("INTPAYBL").fill_null(0)).alias("BALANCE"),
+#     pl.lit("CA").alias("CISTYPE"),
+# ).drop("CUSTNAME_CIS")
+
 ca = ca.join(
-    cisca.select(["ACCTNO", "CUSTNAME", "ICNO"]).rename({"CUSTNAME": "CUSTNAME_CIS"}),
-    on="ACCTNO", how="left",
+    cisca.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO"]),
+    on="ACCTNO",
+    how="left",
 )
 
-# SAS MERGE CA(IN=A) CISCA — last-dataset-wins on CUSTNAME (CISCA's CUSTNAME
-# overwrites CA's own CUSTNAME when matched). The subsequent SAS check
-# "IF CUSTNAME = '   ' THEN CUSTNAME=NAME" references a variable NAME that is
-# never assigned anywhere in the original program (absent from both source
-# datasets), so SAS always evaluates it as missing/blank; that branch is a
-# no-op in the original code and is reproduced as a no-op here.
 ca = ca.with_columns(
-    pl.when(pl.col("CUSTNAME_CIS").is_not_null())
-      .then(pl.col("CUSTNAME_CIS"))
-      .otherwise(pl.col("CUSTNAME"))
-      .alias("CUSTNAME"),
     (pl.col("CURBAL").fill_null(0) + pl.col("INTPAYBL").fill_null(0)).alias("BALANCE"),
     pl.lit("CA").alias("CISTYPE"),
-).drop("CUSTNAME_CIS")
+)
+
 print(f"  CA merged rows: {len(ca):,}")
 
 # ============================================================================
@@ -296,20 +309,32 @@ print("\nStep 9: Merging FD with CISFD...")
 fd    = fd.with_columns(pl.col("ACCTNO").cast(pl.Int64))
 cisfd = cisfd.with_columns(pl.col("ACCTNO").cast(pl.Int64))
 
+# fd = fd.join(
+#     cisfd.select(["ACCTNO", "CUSTNAME", "ICNO"]),
+#     on="ACCTNO", how="left",
+# )
+
+# # Same NAME-is-undefined no-op note from Step 6 applies here.
+# fd = fd.with_columns(
+#     pl.when(pl.col("CUSTNAME_CIS").is_not_null())
+#       .then(pl.col("CUSTNAME_CIS"))
+#       .otherwise(pl.col("CUSTNAME"))
+#       .alias("CUSTNAME"),
+#     (pl.col("CURBAL").fill_null(0) + pl.col("INTPAYBL").fill_null(0)).alias("BALANCE"),
+#     pl.lit("FD").alias("CISTYPE"),
+# ).drop("CUSTNAME_CIS")
+
 fd = fd.join(
-    cisfd.select(["ACCTNO", "CUSTNAME", "ICNO"]).rename({"CUSTNAME": "CUSTNAME_CIS"}),
-    on="ACCTNO", how="left",
+    cisfd.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO"]),
+    on="ACCTNO",
+    how="left",
 )
 
-# Same NAME-is-undefined no-op note from Step 6 applies here.
 fd = fd.with_columns(
-    pl.when(pl.col("CUSTNAME_CIS").is_not_null())
-      .then(pl.col("CUSTNAME_CIS"))
-      .otherwise(pl.col("CUSTNAME"))
-      .alias("CUSTNAME"),
     (pl.col("CURBAL").fill_null(0) + pl.col("INTPAYBL").fill_null(0)).alias("BALANCE"),
     pl.lit("FD").alias("CISTYPE"),
-).drop("CUSTNAME_CIS")
+)
+
 print(f"  FD merged rows: {len(fd):,}")
 
 # ============================================================================
@@ -453,7 +478,8 @@ totarca  = _sum_cols(arca,  ["CURBAL", "BALANCE"])
 print("\nStep 15: Merging ARFD with detailed FD master (MNIFD)...")
 
 mnifd = pl.read_parquet(FDCD_CACHE).select(
-    ["ACCTNO", "MATID", "DEPODTE", "MATDATE", "TERM", "RATE", "INTPAY", "CURBAL"]
+    ["ACCTNO", "MATID", "DEPDATE", "MATDATE", "TERM", "RATE", "INTPAY", "CURBAL"]
+    ).rename({"DEPDATE": "DEPODTE"}
 ).with_columns(pl.col("ACCTNO").cast(pl.Int64))
 
 arfd = arfd.with_columns(pl.col("ACCTNO").cast(pl.Int64))
@@ -566,7 +592,7 @@ output_lines: list = []
 # ---- Table 1: Summary -----------------------------------------------------
 output_lines.append(_line([(1, "P U B L I C   B A N K   B E R H A D")]))
 output_lines.append(_line([(1, f"REPORT ID : EIBDARTB @ {TDATE}")]))
-output_lines.append(_line([(1, "")]))
+# output_lines.append(_line([(1, "")]))
 output_lines.append(_line([(1, "TABLE 1: SUMMARY TABLE FOR AMANAH RAYA GROUP")]))
 output_lines.append(_line([
     (1, "PUBLIC BANK (PBB)"),
@@ -591,7 +617,7 @@ output_lines.append(_line([
 ]))
 
 # ---- Table 2: Detailed breakdown - I) Current Account ---------------------
-output_lines.append(_line([(1, "")]))
+# output_lines.append(_line([(1, "")]))
 output_lines.append(_line([(1, "TABLE 2: DETAILED BREAKDOWN LISTING FOR AMANAH RAYA GROUP")]))
 output_lines.append(_line([(1, "I) CURRENT ACCOUNT")]))
 output_lines.append(_line([
