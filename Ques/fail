@@ -1,8 +1,7 @@
-ca = ca.join(
-    cisca.select(["ACCTNO", "CUSTNAME", "ICNO"]),
-    on="ACCTNO",
-    how="left",
-)
+ca = pl.read_parquet(CA_CACHE)
+print("CA columns:", ca.columns)          # Add this line
+print("CA INTPAYBL sample:", ca['INTPAYBL'].head())  # Add this line
+
 
 ca = ca.with_columns(
     (pl.col("CURBAL").fill_null(0) + pl.col("INTPAYBL").fill_null(0)).alias("BALANCE"),
@@ -10,13 +9,3 @@ ca = ca.with_columns(
 )
 
 
-fd = fd.join(
-    cisfd.select(["ACCTNO", "CUSTNAME", "ICNO"]),
-    on="ACCTNO",
-    how="left",
-)
-
-fd = fd.with_columns(
-    (pl.col("CURBAL").fill_null(0) + pl.col("INTPAYBL").fill_null(0)).alias("BALANCE"),
-    pl.lit("FD").alias("CISTYPE"),
-)
