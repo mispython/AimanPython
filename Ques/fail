@@ -46,3 +46,20 @@ def _fmt_num(value) -> str:
 
 (1, f"{idx} ) {row['PMTYPE']}"),   # space after index before )
 
+==================
+
+output_lines.append(_line([(1, f"({sub_letter}) {ftype}  MUTUAL FUND PORTFOLIO")]))
+
+==================
+
+# Only print FD sections if there are observations
+has_fd1 = not arfd1.is_empty()
+has_fd2 = not arfd2.is_empty()
+
+if has_fd1:
+    _print_fd_section(arfd1, sumarfd1, "C")
+if has_fd2:
+    _print_fd_section(arfd2, sumarfd2, "D")
+
+====================
+
