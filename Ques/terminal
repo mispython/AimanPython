@@ -1,123 +1,38 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDSDFT_AII.py
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDARTB.py
 Step 1: Deriving report date...
-  Report date  : 20/07/2026
-  REPTYEAR/MON/DAY/NOWK : 26/07/20/03
-  Output file  : SDF_20260720.txt
+  Report date : 2026-07-24  (TDATE=24/07/2026)
 
-Step 2: Resolving DEPO / IDEPO current & previous file names...
-[FILE_RESOLVER] Selected latest: ca260720.sas7bdat
-[FILE_RESOLVER] Selected latest: ica260720.sas7bdat
-[FILE_RESOLVER] Selected latest: dpbtran260702.sas7bdat
-  DEPO   : ca260720.sas7bdat
-  DEPOP  : ca260719.sas7bdat
-  IDEPO  : ica260720.sas7bdat
-  IDEPOP : ica260719.sas7bdat
-  DPBTRAN: dpbtran260702.sas7bdat
+Step 2: Resolving dated input files...
+[FILE_RESOLVER] Selected latest: ca260724.sas7bdat
+[FILE_RESOLVER] Selected latest: fd260724.sas7bdat
+[FILE_RESOLVER] Selected latest: fdcd260724.sas7bdat
+  CA   : ca260724.sas7bdat
+  FD   : fd260724.sas7bdat
+  FDCD : fdcd260724.sas7bdat
 
 Step 3: Caching SAS files to Parquet (if needed)...
-  [DEPO] Converting ca260720.sas7bdat -> ca260720.parquet ...
-  [DEPO] WARNING: Cannot cast 'BILLERIND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [DEPO] Done — 852,312 rows cached.
-  [DEPOP] Converting ca260719.sas7bdat -> ca260719.parquet ...
-  [DEPOP] WARNING: Cannot cast 'BILLERIND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [DEPOP] Done — 852,126 rows cached.
-  [IDEPO] Converting ica260720.sas7bdat -> ica260720.parquet ...
-  [IDEPO] Done — 153,990 rows cached.
-  [IDEPOP] Converting ica260719.sas7bdat -> ica260719.parquet ...
-  [IDEPOP] Done — 153,927 rows cached.
-  [CIS] Converting CIS_deposit260720.sas7bdat -> cisdp_deposit.parquet ...
-  [CIS] WARNING: Cannot cast 'CISCUSTCD11' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CIS] WARNING: Cannot cast 'CISCUSTCD12' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CIS] WARNING: Cannot cast 'CISCUSTCD13' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CIS] WARNING: Cannot cast 'CISCUSTCD14' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CIS] Done — 1,236,108 rows cached.
-  [DPBTRAN] Converting dpbtran260702.sas7bdat -> dpbtran260702.parquet ...
-  [DPBTRAN] Done — 35,143,089 rows cached.
-  [TRANCODE] Converting trancode.sas7bdat -> detica_trancode.parquet ...
-  [TRANCODE] Done — 570 rows cached.
+  [CA] Cache fresh - skipping conversion.
+  [FD] Cache fresh - skipping conversion.
+  [FDCD] Cache fresh - skipping conversion.
+  [CISDP] Cache fresh - skipping conversion.
+  [CISFD] Cache fresh - skipping conversion.
 
-[DEBUG] DPBTRAN_CACHE schema:
-shape: (36, 6)
-┌─────────────┬─────────────┬──────┬──────┬─────────┬───────┐
-│ column_name ┆ column_type ┆ null ┆ key  ┆ default ┆ extra │
-│ ---         ┆ ---         ┆ ---  ┆ ---  ┆ ---     ┆ ---   │
-│ str         ┆ str         ┆ str  ┆ str  ┆ str     ┆ str   │
-╞═════════════╪═════════════╪══════╪══════╪═════════╪═══════╡
-│ FMTCODE     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ ACCTNO      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ USERID      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TRANCODE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CHANNEL     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TRANAMT     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CHQNO       ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TRLIND      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ PENALTY     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TRACEBR     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ ORIDT       ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ ORITXNCD    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL1     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL2     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL3     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL4     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL5     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ STRAIL6     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ LTRAIL2     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ LTRAIL3     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TIMECTRL    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ REPTDATE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ LTRAIL1     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ NAME        ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CDNO        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CURCODE     ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TERM        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ TERMID      ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ RSONCODE    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ RSONDESC    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-│ CUSTCODE    ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ PRODCD      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ MATDATE     ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ RATE        ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ FORATE      ┆ DOUBLE      ┆ YES  ┆ null ┆ null    ┆ null  │
-│ PRORATIO    ┆ VARCHAR     ┆ YES  ┆ null ┆ null    ┆ null  │
-└─────────────┴─────────────┴──────┴──────┴─────────┴───────┘
+Step 4: Building CISCA (CA customer lookup)...
+  CISCA rows: 1,123,041
 
-Step 4: Building SDF (current period, PRODUCT 20/21)...
-  SDF rows: 5
+Step 5: Building CA (current account)...
+  CA rows (CURBAL>0, PRODCD<>'N'): 766,182
 
-Step 5: Building SDFPREV (previous period)...
-  SDFPREV rows: 1,006,053
-
-Step 6: Building CIS (customer name, SECCUST=901)...
-  CIS rows: 1,123,909
-
-Step 7: Building DPBTRAN (today's transactions)...
-  DPBTRAN rows: 0
-
-Step 8: Building TRANCD (transaction-code lookup)...
-  TRANCD rows: 265
-
-Step 9: Merging SDF + SDFPREV + CIS + DPBTRAN...
-
-Step 10: Deriving TRANDESC/CRDR and DEBIT/CREDIT...
-  Merged rows: 5
-
-Step 11: Persisting day snapshot and month-to-date accumulation...
-  Day cache    : sdf_day_260720.parquet
-  Month cache  : sdfall_2607.parquet (5 rows)
-
-Step 12: Generating output file...
-
-  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDSDFT/SDF_20260720.txt
-  Total lines    : 8
-
-  --- Output preview ---
-Special Deposit Facility (SDF) RM Account as at 20/07/2026
-
-        Date    Branch  SDF Account Number      Customer Name   Product Opening Balance Transaction Code        Description     Debit   Credit  Outstanding Balance
-        20/07/2026                 8      3800037310    LEVERAGE MEDICAL SDN. BHD.                                20            9,749.00                                                                                    0.00               0.00                9,749.00
-        20/07/2026                 8      3800037832    MAKMUR MBS GROUP SDN. BHD.                                20           22,623.00                                                                                    0.00               0.00               29,774.60
-        20/07/2026               259      3801284135    HY & H ENTERPRISE SDN. BHD.                               20            6,881.20                                                                                    0.00               0.00                6,881.20
-        20/07/2026                30      3801582925    AZIMAT TELCO SDN. BHD.                                    20          100,000.00                                                                                    0.00               0.00              100,000.00
-        20/07/2026               207      3801642808    MAJOR TRADE SDN. BHD.                                     20          130,001.22                                                                                    0.00               0.00              152,949.25
-
-EIBDSDFT complete.
+Step 6: Merging CA with CISCA...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDARTB.py", line 245, in <module>
+    ca = ca.with_columns(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ColumnNotFoundError: unable to find column "CUSTNAME"; valid columns: ["DOBCIS", "ACCTNO", "RACE", "COUNTRY", "BRANCH", "CLOSEDT", "REOPENDT", "CUSTCODE", "ODPLAN", "RATE1", "RATE2", "RATE3", "RATE4", "RATE5", "FLATRATE", "ORGCODE", "ORGTYPE", "LIMIT1", "LIMIT2", "LIMIT3", "LIMIT4", "LIMIT5", "INTYTD", "PURPOSE", "SECTOR", "USER2", "USER3", "RISKCODE", "LEDGBAL", "L_DEP", "OPENIND", "LASTTRAN", "RETURNS_Y", "CHGIND", "AVGAMT", "PRODUCT", "DEPTYPE", "INTPD", "INTPLAN", "CURBAL", "CHQFLOAT", "STATE", "INTCYCODE", "APPRLIMT", "ODINTCHR", "ODINTACC", "YTDAVAMT", "INACTIVE", "SECOND", "BONUTYPE", "SERVICE", "BONUSANO", "USER5", "PREVBRNO", "COSTCTR", "AUTHORISE_LIMIT", "POST_IND", "CENSUST", "ACCPROF", "MAXPROF", "INTRSTPD", "MTDAVBAL", "BILLERIND", "MODIFIED_FACILITY_IND", "DTLSTCUST", "OPENDT", "NXT_STMT_CYCLE_DT", "STMT_CYCLE", "DNBFISME", "DATE_LST_DEP", "INTPAYBL", "INTPLAN_IBCA", "MAILCODE", "RRIND", "RRCOMPLDT", "REASON", "INSTRUCTIONS", "OMNILOAN", "OMNITRDB", "DSR", "MTD_REPAID_AMT", "INDUSTRIAL_SECTOR_CD", "MTD_DISBURSED_AMT", "MTD_REPAY_TYPE10_AMT", "MTD_REPAY_TYPE20_AMT", "MTD_REPAY_TYPE30_AMT", "COV_OPT_OUT", "PROP_DEVELOP_FIN_IND", "REPAY_TYPE_CD", "PB_ENTERPRISE_PACKAGE_CD", "PB_ENTERPRISE_REG_DT", "PB_ENTERPRISE_TAG", "WRITE_DOWN_BAL", "FEEYTD", "FAACRR", "CRRCODE", "ASCORE_PERM", "ASCORE_LTST", "ASCORE_COMM", "ACSTATUS4", "ACSTATUS5", "ACSTATUS6", "ACSTATUS7", "ACSTATUS8", "ACSTATUS9", "ACSTATUS10", "CUSTFISS", "RISKRATE", "DOBMNI", "RR_EXP_DATE", "RR_EFF_DATE", "DNBFI_ORI", "ESIGNATURE", "CONDIMODE", "MTDAVBAL_MIS", "NOCRDAY", "ACCMCR", "NODRDAY", "ACCMDR", "MTDAVCBAL", "MTDAVDBAL", "DIA_PAST01_MTH", "DIA_PAST02_MTH", "DIA_PAST03_MTH", "DIA_PAST04_MTH", "DIA_PAST05_MTH", "DIA_PAST06_MTH", "DIA_PAST07_MTH", "DIA_PAST08_MTH", "DIA_PAST09_MTH", "DIA_PAST10_MTH", "DIA_PAST11_MTH", "DIA_PAST12_MTH", "E_INVOICE_IND", "CASH_DEPOSIT_LIMIT_IND", "SOURCE_INCOME_CURRENCY_CD", "CASH_DEPOSIT_AMOUNT_AGG", "POST_IND_MAINT_DT", "POST_IND_EXP_DT", "FDB_TAG", "FDB_TAG_DT", "FDB_SCORING_DT", "REFERRAL_BRANCH", "ACCTNO_SAVE_LN", "SUB_OD_PRODUCT", "APPL_COMMERCIAL_TAG", "OKU_IND", "WRIOFF_CLOSE_FILE_TAG", "WRIOFF_CLOSE_FILE_TAG_DT", "PRODCD", "CUSTNAME_CIS", "ICNO"]
