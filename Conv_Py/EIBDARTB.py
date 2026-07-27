@@ -205,6 +205,8 @@ cisca = con.execute(f"""
 con.close()
 print(f"  CISCA rows: {len(cisca):,}")
 
+# cisca = cisca.unique(subset=["ACCTNO"], keep="last")
+
 # ============================================================================
 # STEP 5: BUILD CA  (current account, PRODCD via CAPROD format)
 # DATA CA; SET DEPOSIT.CURRENT; PRODCD=PUT(PRODUCT,CAPROD.);
@@ -213,6 +215,10 @@ print(f"  CISCA rows: {len(cisca):,}")
 print("\nStep 5: Building CA (current account)...")
 
 ca = pl.read_parquet(CA_CACHE)
+
+print("CA columns:", ca.columns)
+print("CA INTPAYBL sample:", ca['INTPAYBL'].head())
+
 ca = ca.with_columns(
     pl.col("PRODUCT").cast(pl.Int64, strict=False)
       .map_elements(caprod_format, return_dtype=pl.Utf8)
@@ -230,27 +236,6 @@ print("\nStep 6: Merging CA with CISCA...")
 
 ca    = ca.with_columns(pl.col("ACCTNO").cast(pl.Int64))
 cisca = cisca.with_columns(pl.col("ACCTNO").cast(pl.Int64))
-
-# ca = ca.join(
-#     cisca.select(["ACCTNO", "CUSTNAME", "ICNO"]),
-#     # cisca.select(["ACCTNO", "CUSTNAME_CIS", "ICNO"]),
-#     on="ACCTNO", how="left",
-# )
-
-# # SAS MERGE CA(IN=A) CISCA — last-dataset-wins on CUSTNAME (CISCA's CUSTNAME
-# # overwrites CA's own CUSTNAME when matched). The subsequent SAS check
-# # "IF CUSTNAME = '   ' THEN CUSTNAME=NAME" references a variable NAME that is
-# # never assigned anywhere in the original program (absent from both source
-# # datasets), so SAS always evaluates it as missing/blank; that branch is a
-# # no-op in the original code and is reproduced as a no-op here.
-# ca = ca.with_columns(
-#     pl.when(pl.col("CUSTNAME_CIS").is_not_null())
-#       .then(pl.col("CUSTNAME_CIS"))
-#       .otherwise(pl.col("CUSTNAME"))
-#       .alias("CUSTNAME"),
-#     (pl.col("CURBAL").fill_null(0) + pl.col("INTPAYBL").fill_null(0)).alias("BALANCE"),
-#     pl.lit("CA").alias("CISTYPE"),
-# ).drop("CUSTNAME_CIS")
 
 ca = ca.join(
     cisca.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO"]),
@@ -293,6 +278,8 @@ cisfd = con.execute(f"""
 con.close()
 print(f"  CISFD rows: {len(cisfd):,}")
 
+# cisfd = cisfd.unique(subset=["ACCTNO"], keep="last")
+
 # ============================================================================
 # STEP 8: BUILD FD  (basic FD balances)  DATA FD; SET DEPOSIT.FD; IF CURBAL>0;
 # ============================================================================
@@ -308,21 +295,6 @@ print("\nStep 9: Merging FD with CISFD...")
 
 fd    = fd.with_columns(pl.col("ACCTNO").cast(pl.Int64))
 cisfd = cisfd.with_columns(pl.col("ACCTNO").cast(pl.Int64))
-
-# fd = fd.join(
-#     cisfd.select(["ACCTNO", "CUSTNAME", "ICNO"]),
-#     on="ACCTNO", how="left",
-# )
-
-# # Same NAME-is-undefined no-op note from Step 6 applies here.
-# fd = fd.with_columns(
-#     pl.when(pl.col("CUSTNAME_CIS").is_not_null())
-#       .then(pl.col("CUSTNAME_CIS"))
-#       .otherwise(pl.col("CUSTNAME"))
-#       .alias("CUSTNAME"),
-#     (pl.col("CURBAL").fill_null(0) + pl.col("INTPAYBL").fill_null(0)).alias("BALANCE"),
-#     pl.lit("FD").alias("CISTYPE"),
-# ).drop("CUSTNAME_CIS")
 
 fd = fd.join(
     cisfd.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO"]),
@@ -447,6 +419,10 @@ totcafd_row = sumcafd.select([
     pl.col("CURBAL").sum().alias("CURBAL"),
 ]).row(0, named=True)
 
+print("Table 1 totals (PUBLIC):", sumcafd.filter(pl.col("PMTYPE") == "PUBLIC MUTUAL FUND").row(0))
+print("Table 1 totals (NON-PUBLIC):", sumcafd.filter(pl.col("PMTYPE") == "NON-PUBLIC MUTUAL FUND").row(0))
+print("Grand total:", totcafd_row)
+
 # ============================================================================
 # STEP 14: SPLIT INTO ARCA (current account) / ARFD (fixed deposit)
 # ============================================================================
@@ -461,9 +437,16 @@ arca1 = arca.filter(pl.col("PMTYP") == 1)
 arca2 = arca.filter(pl.col("PMTYP") != 1)
 
 
+# def _sum_cols(df: pl.DataFrame, cols: list) -> dict:
+#     if df.is_empty():
+#         return {c: 0.0 for c in cols}
+#     return df.select([pl.col(c).fill_null(0).sum().alias(c) for c in cols]).row(0, named=True)
+
+
 def _sum_cols(df: pl.DataFrame, cols: list) -> dict:
+    """Return sum of columns; if df is empty, return None for each."""
     if df.is_empty():
-        return {c: 0.0 for c in cols}
+        return {c: None for c in cols}
     return df.select([pl.col(c).fill_null(0).sum().alias(c) for c in cols]).row(0, named=True)
 
 
@@ -535,15 +518,30 @@ sumarfd1 = _sum_cols(arfd1, ["TERM", "RMAINDT", "CURBAL", "BALANCE"])
 sumarfd2 = _sum_cols(arfd2, ["TERM", "RMAINDT", "CURBAL", "BALANCE"])
 totarfd  = _sum_cols(arfd,  ["TERM", "RMAINDT", "CURBAL", "BALANCE"])
 
-# GTCAFD = SET TOTARCA TOTARFD; SUMMARY (no BY). TOTARCA has no TERM/RMAINDT
-# fields (missing -> excluded from those sums by PROC SUMMARY), so TERM and
-# RMAINDT come solely from TOTARFD, while CURBAL/BALANCE combine both.
+# # GTCAFD = SET TOTARCA TOTARFD; SUMMARY (no BY). TOTARCA has no TERM/RMAINDT
+# # fields (missing -> excluded from those sums by PROC SUMMARY), so TERM and
+# # RMAINDT come solely from TOTARFD, while CURBAL/BALANCE combine both.
+# gtcafd = {
+#     "TERM":     totarfd["TERM"],
+#     "RMAINDT":  totarfd["RMAINDT"],
+#     "CURBAL":   totarca["CURBAL"] + totarfd["CURBAL"],
+#     "BALANCE":  totarca["BALANCE"] + totarfd["BALANCE"],
+# }
+
+# Determine if we have any FD records
+has_fd = (not arfd1.is_empty()) or (not arfd2.is_empty())
+
+# For totals, treat missing FD values as 0
+fd_curbal = totarfd.get("CURBAL") or 0.0
+fd_balance = totarfd.get("BALANCE") or 0.0
+
 gtcafd = {
-    "TERM":     totarfd["TERM"],
-    "RMAINDT":  totarfd["RMAINDT"],
-    "CURBAL":   totarca["CURBAL"] + totarfd["CURBAL"],
-    "BALANCE":  totarca["BALANCE"] + totarfd["BALANCE"],
+    "TERM":     totarfd.get("TERM"),      # keep None for later formatting
+    "RMAINDT":  totarfd.get("RMAINDT"),   # keep None
+    "CURBAL":   totarca["CURBAL"] + fd_curbal,
+    "BALANCE":  totarca["BALANCE"] + fd_balance,
 }
+
 
 # ============================================================================
 # STEP 16: REPORT GENERATION  (semicolon-delimited, fixed SAS @col layout)
@@ -551,9 +549,20 @@ gtcafd = {
 print("\nStep 16: Generating report...")
 
 
+# def _fmt_comma(value, decimals: int = 2) -> str:
+#     if value is None:
+#         return ""
+#     try:
+#         v = float(value)
+#     except (TypeError, ValueError):
+#         return ""
+#     return f"{v:,.{decimals}f}"
+
+
 def _fmt_comma(value, decimals: int = 2) -> str:
+    """Format number with commas; None -> '.' (SAS missing)."""
     if value is None:
-        return ""
+        return "."
     try:
         v = float(value)
     except (TypeError, ValueError):
@@ -561,9 +570,20 @@ def _fmt_comma(value, decimals: int = 2) -> str:
     return f"{v:,.{decimals}f}"
 
 
+# def _fmt_num(value) -> str:
+#     if value is None:
+#         return ""
+#     try:
+#         v = float(value)
+#     except (TypeError, ValueError):
+#         return str(value)
+#     return str(int(v)) if v == int(v) else str(v)
+
+
 def _fmt_num(value) -> str:
+    """Format number without decimals if integer; None -> '.'."""
     if value is None:
-        return ""
+        return "."
     try:
         v = float(value)
     except (TypeError, ValueError):
@@ -603,7 +623,8 @@ output_lines.append(_line([
 
 for idx, row in enumerate(sumcafd.iter_rows(named=True), start=1):
     output_lines.append(_line([
-        (1, f"{idx}) {row['PMTYPE']}"),
+        # (1, f"{idx}) {row['PMTYPE']}"),
+        (1, f"{idx} ) {row['PMTYPE']}"), 
         (30, f";;;{_fmt_comma(row['CABAL'])}"),
         (59, f";{_fmt_comma(row['FDBAL'])}"),
         (90, f";{_fmt_comma(row['CURBAL'])}"),
@@ -634,7 +655,8 @@ def _print_ca_section(df: pl.DataFrame, summary: dict, sub_letter: str) -> None:
     ftype = "PUBLIC" if sub_letter == "A" else "NON-PUBLIC"
     for i, row in enumerate(df.iter_rows(named=True)):
         if i == 0:
-            output_lines.append(_line([(1, f"({sub_letter}) {ftype} MUTUAL FUND PORTFOLIO")]))
+            # output_lines.append(_line([(1, f"({sub_letter}) {ftype} MUTUAL FUND PORTFOLIO")]))
+            output_lines.append(_line([(1, f"({sub_letter}) {ftype}  MUTUAL FUND PORTFOLIO")]))
         output_lines.append(_line([
             (1, str(row["CUSTNO"])),
             (15, f";{row.get('FUNDMNE') or ''}"),
@@ -749,8 +771,35 @@ def _print_fd_section(df: pl.DataFrame, summary: dict, sub_letter: str) -> None:
     output_lines.append(_line([(1, "")]))
 
 
-_print_fd_section(arfd1, sumarfd1, "C")
-_print_fd_section(arfd2, sumarfd2, "D")
+# _print_fd_section(arfd1, sumarfd1, "C")
+# _print_fd_section(arfd2, sumarfd2, "D")
+
+# Only print FD sections if there are observations
+has_fd1 = not arfd1.is_empty()
+has_fd2 = not arfd2.is_empty()
+
+if has_fd1:
+    _print_fd_section(arfd1, sumarfd1, "C")
+if has_fd2:
+    _print_fd_section(arfd2, sumarfd2, "D")
+
+has_fd = has_fd1 or has_fd2
+
+# output_lines.append(_line([
+#     (1, "TOTAL (C)+(D)"),
+#     (15, ";"),
+#     (31, ";"),
+#     (72, ";"),
+#     (90, ";"),
+#     (105, f";{_fmt_num(totarfd.get('TERM'))} M"),
+#     (121, f";{_fmt_num(totarfd.get('RMAINDT'))}"),
+#     (149, f";{_fmt_comma(totarfd.get('CURBAL'))}"),
+#     (169, "; -"),
+#     (184, f";{_fmt_comma(totarfd.get('BALANCE'))}"),
+# ]))
+
+term_str = ".  M" if not has_fd else f"{_fmt_num(totarfd.get('TERM'))} M"
+rmaindt_str = "." if not has_fd else _fmt_num(totarfd.get('RMAINDT'))
 
 output_lines.append(_line([
     (1, "TOTAL (C)+(D)"),
@@ -758,19 +807,33 @@ output_lines.append(_line([
     (31, ";"),
     (72, ";"),
     (90, ";"),
-    (105, f";{_fmt_num(totarfd.get('TERM'))} M"),
-    (121, f";{_fmt_num(totarfd.get('RMAINDT'))}"),
-    (149, f";{_fmt_comma(totarfd.get('CURBAL'))}"),
+    (105, f";{term_str}"),
+    (121, f";{rmaindt_str}"),
+    (149, f";{_fmt_comma(totarfd.get('CURBAL') or 0.0)}"),
     (169, "; -"),
-    (184, f";{_fmt_comma(totarfd.get('BALANCE'))}"),
+    (184, f";{_fmt_comma(totarfd.get('BALANCE') or 0.0)}"),
 ]))
+
+# output_lines.append(_line([
+#     (1, "GRAND TOTAL (A+B+C+D)"),
+#     (72, ";;"),
+#     (90, ";"),
+#     (105, f";{_fmt_num(gtcafd.get('TERM'))} M"),
+#     (121, f";{_fmt_num(gtcafd.get('RMAINDT'))}"),
+#     (149, f";{_fmt_comma(gtcafd.get('CURBAL'))}"),
+#     (169, "; -"),
+#     (184, f";{_fmt_comma(gtcafd.get('BALANCE'))}"),
+# ]))
+
+term_str = ".  M" if not has_fd else f"{_fmt_num(gtcafd.get('TERM'))} M"
+rmaindt_str = "." if not has_fd else _fmt_num(gtcafd.get('RMAINDT'))
 
 output_lines.append(_line([
     (1, "GRAND TOTAL (A+B+C+D)"),
     (72, ";;"),
     (90, ";"),
-    (105, f";{_fmt_num(gtcafd.get('TERM'))} M"),
-    (121, f";{_fmt_num(gtcafd.get('RMAINDT'))}"),
+    (105, f";{term_str}"),
+    (121, f";{rmaindt_str}"),
     (149, f";{_fmt_comma(gtcafd.get('CURBAL'))}"),
     (169, "; -"),
     (184, f";{_fmt_comma(gtcafd.get('BALANCE'))}"),
@@ -788,9 +851,9 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(output_lines):,}")
 
-print("\n--- Report Preview ---")
-for ln in output_lines:
-    print(ln)
+# print("\n--- Report Preview ---")
+# for ln in output_lines:
+#     print(ln)
 
 del ca, fd, cafd, bnm_cafd, arca, arfd, mnifd
 gc.collect()
