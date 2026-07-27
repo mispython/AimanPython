@@ -1,3 +1,13 @@
+subs_all = pl.from_pandas(subs_all_pd).with_columns([
+    pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
+      .then(pl.col("NEWIC"))
+      .otherwise(pl.col("OLDIC"))
+      .alias("ICNO"),
+    pl.col("CURBAL").alias("RMAMT"),
+    pl.lit(None).alias("FCYAMT"),
+])
+
+
 Step 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 669, in <module>
