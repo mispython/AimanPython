@@ -296,6 +296,10 @@ del ca_raw, fd_raw, sa_raw
 gc.collect()
 print(f"  CA rows: {len(ca):,}   FD rows: {len(fd):,}   SA rows: {len(sa):,}")
 
+# print("\nCA Parquet columns:", pl.read_parquet(CA_CACHE).columns)
+# print("\nFD Parquet columns:", pl.read_parquet(FD_CACHE).columns)
+# print("\nSA Parquet columns:", pl.read_parquet(SA_CACHE).columns)
+
 # ============================================================================
 # STEP 6: MERGE CA/FD WITH CISCA, SA WITH CISFD
 # PROC SORT DATA=CISCA; BY ACCTNO;  PROC SORT DATA=CA; BY ACCTNO;
@@ -319,6 +323,9 @@ def _merge_with_cis(acct_df: pl.DataFrame, cis_df: pl.DataFrame) -> pl.DataFrame
     if "_CIS_CUSTNAME" in merged.columns:
         merged["CUSTNAME"] = merged["_CIS_CUSTNAME"].where(
             merged["_CIS_CUSTNAME"].notna() & (merged["_CIS_CUSTNAME"].str.strip() != ""),
+            # NOTE: merged.get("NAME") returns None — this program's account-level
+            # parquet schema (CA/FD/SA) has no NAME field. Falls back to null rather
+            # than fabricating a name when CIS's CUSTNAME is blank.
             merged.get("NAME"),
         )
         merged.drop(columns=["_CIS_CUSTNAME"], inplace=True)
@@ -330,6 +337,10 @@ fd = _merge_with_cis(fd, cisfd)
 sa = _merge_with_cis(sa, cisfd)
 
 print(f"  CA merged rows: {len(ca):,}   FD merged rows: {len(fd):,}   SA merged rows: {len(sa):,}")
+
+# print("CA columns after merge:", ca.columns)
+# print("FD columns after merge:", fd.columns)
+# print("SA columns after merge:", sa.columns)
 
 # ============================================================================
 # STEP 7: SPLIT INTO IND / ORG  (CUSTCODE / PURPOSE / INDORG rules)
@@ -360,9 +371,18 @@ def _split_ind_org(df: pl.DataFrame, bal_col: str) -> tuple[pl.DataFrame, pl.Dat
     org_df = remainder.filter(pl.col("INDORG") == "O")
 
     # DATA xxIND; SET xxIND; IF PURPOSE='2' THEN DO ICNO='JOINT'; CUSTNAME=NAME; END;
+    # ind_df = ind_df.with_columns([
+    #     pl.when(pl.col("PURPOSE") == "2").then(pl.lit("JOINT")).otherwise(pl.col("ICNO")).alias("ICNO"),
+    #     pl.when(pl.col("PURPOSE") == "2").then(pl.col("NAME")).otherwise(pl.col("CUSTNAME")).alias("CUSTNAME"),
+    # ])
+
     ind_df = ind_df.with_columns([
         pl.when(pl.col("PURPOSE") == "2").then(pl.lit("JOINT")).otherwise(pl.col("ICNO")).alias("ICNO"),
-        pl.when(pl.col("PURPOSE") == "2").then(pl.col("NAME")).otherwise(pl.col("CUSTNAME")).alias("CUSTNAME"),
+        # NOTE: SAS source sets CUSTNAME=NAME here, but this program's actual
+        # parquet schema has no NAME field (only CUSTNAME, already populated from
+        # the CIS merge in Step 6). Retaining CUSTNAME as-is instead of
+        # fabricating a NAME value.
+        pl.col("CUSTNAME"),
     ])
 
     # PROC SORT NODUPKEY BY ACCTNO ICNO CUSTNAME
