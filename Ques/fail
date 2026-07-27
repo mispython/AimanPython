@@ -1,3 +1,15 @@
+print("CA columns after merge:", ca.columns)
+print("FD columns after merge:", fd.columns)
+print("SA columns after merge:", sa.columns)
+
+
+print("CA Parquet columns:", pl.read_parquet(CA_CACHE).columns)
+
+
+merged = acct_pd.merge(cis_pd, on="ACCTNO", how="left")
+
+=====================
+
 Step 7: Splitting CA/FD/SA into IND / ORG branches...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 375, in <module>
