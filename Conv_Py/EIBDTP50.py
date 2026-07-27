@@ -312,7 +312,7 @@ print("\nStep 6: Merging account data with customer lookups...")
 def _merge_with_cis(acct_df: pl.DataFrame, cis_df: pl.DataFrame) -> pl.DataFrame:
     """SAS MERGE acct(IN=A) cis; BY ACCTNO; IF CUSTNAME blank THEN CUSTNAME=NAME; IF A."""
     acct_pd = acct_df.to_pandas()
-    cis_pd = cis_df.select(["ACCTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"]).to_pandas()
+    cis_pd = cis_df.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"]).to_pandas()
     cis_pd = cis_pd.rename(columns={"CUSTNAME": "_CIS_CUSTNAME"})
 
     merged = acct_pd.merge(cis_pd, on="ACCTNO", how="left")
@@ -434,19 +434,20 @@ class _PageWriter:
         self.lines_on_page = 0
         self.first_page = True
 
-    def new_page(self, *header_args):
+    def new_page(self, *header_args, header_fn=None):
+        """Start a new page. Optionally override the header function."""
         if not self.first_page:
             self.lines.append("\f")
         self.first_page = False
-        header_lines = self.header_fn(*header_args)
+
+        # Use provided header_fn if given, otherwise use the default
+        fn = header_fn if header_fn is not None else self.header_fn
+        header_lines = fn(*header_args)
         self.lines.extend(header_lines)
         self.lines_on_page = len(header_lines)
 
     def add_line(self, line: str):
         if self.lines_on_page >= PAGE_SIZE:
-            # Re-issue last used header args is not tracked here; caller is
-            # expected to call new_page() explicitly on overflow when the
-            # header differs by BY-group. For plain continuation, blank header.
             self.lines.append("\f")
             self.lines_on_page = 0
         self.lines.append(line)
@@ -463,7 +464,7 @@ def _summary_header(title2: str) -> list[str]:
         "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
         title2 + f" {RDATE}",
         "-" * LRECL,
-        f"{'DEPOSITOR':<30}{'TOTAL BALANCE':>18}{'FD BALANCE':>18}{'CA BALANCE':>18}{'SA BALANCE':>18}",
+        f"{'Obs':<6}{'DEPOSITOR':<30}{'TOTAL BALANCE':>18}{'FD BALANCE':>18}{'CA BALANCE':>18}{'SA BALANCE':>18}",
         "-" * LRECL,
     ]
 
@@ -473,8 +474,10 @@ def _detail_header(title2: str) -> list[str]:
         "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
         title2 + f" {RDATE}",
         "-" * LRECL,
-        f"{'BRH':<7}{'MNI NO':>12}{'CUSTCD':>8}{'DEPOSITOR':<30}{'CIS NO':>12}"
-        f"{'NEW IC':>14}{'OLD IC':>14}{'CURRENT BALANCE':>18}{'PRODUCT':>8}",
+        # Line 1: labels for BRANCH, OLD, CURRENT above their columns
+        f"{'Obs':<6}{'BRANCH':<6}{'':<12}{'':<8}{'DEPOSITOR':<30}{'':<12}{'':<14}{'OLD':<14}{'CURRENT':<18}{'':<8}",
+        # Line 2: detailed column names
+        f"{'':<6}{'CODE':<6}{'MNI NO':>12}{'CUSTCD':>8}{'':<30}{'CIS NO':>12}{'NEW IC':>14}{'IC':>14}{'BALANCE':>18}{'PRODUCT':>8}",
         "-" * LRECL,
     ]
 
@@ -489,23 +492,6 @@ def _subs_header(title3: str) -> list[str]:
         f"{'CURRENT BALANCE':>18}{'PRODUCT':>8}",
         "-" * LRECL,
     ]
-
-
-# def _standardize_schema(df: pl.DataFrame) -> pl.DataFrame:
-#     """Cast common columns to consistent types for safe concatenation."""
-#     # Numeric columns -> Int64 (or Float64 if they may have decimals)
-#     for col in ['BRANCH', 'ACCTNO', 'CUSTNO', 'CUSTCODE', 'PRODUCT']:
-#         if col in df.columns:
-#             df = df.with_columns(pl.col(col).cast(pl.Int64, strict=False))
-#     # Balance columns -> Float64
-#     for col in ['CURBAL', 'FDBAL', 'CABAL', 'SABAL']:
-#         if col in df.columns:
-#             df = df.with_columns(pl.col(col).cast(pl.Float64, strict=False))
-#     # String columns -> Utf8
-#     for col in ['ICNO', 'CUSTNAME', 'NEWIC', 'OLDIC', 'INDORG', 'PURPOSE']:
-#         if col in df.columns:
-#             df = df.with_columns(pl.col(col).cast(pl.Utf8, strict=False))
-#     return df
 
 # ============================================================================
 # STEP 8: %MACRO PRNREC  (Top 100 summary + detail, run for IND and ORG)
@@ -525,25 +511,12 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
     # print("saind_df:")
     # print(saind_df.schema)
 
-    # fdind_df = _standardize_schema(fdind_df)
-    # caind_df = _standardize_schema(caind_df)
-    # saind_df = _standardize_schema(saind_df)
-
     # ---- Use Pandas to concat ----
     fdind_pd = fdind_df.to_pandas()
     caind_pd = caind_df.to_pandas()
     saind_pd = saind_df.to_pandas()
     data1_pd = pd.concat([fdind_pd, caind_pd, saind_pd], ignore_index=True)
     data1 = pl.from_pandas(data1_pd)
-
-    # data1 = pl.concat(
-    #     [fdind_df, caind_df, saind_df], how="diagonal"
-    # ).with_columns(
-    #     pl.when((pl.col("ICNO").is_null()) | (pl.col("ICNO").str.strip_chars() == ""))
-    #     .then(pl.lit("XX"))
-    #     .otherwise(pl.col("ICNO"))
-    #     .alias("ICNO")
-    # )
 
     data1 = data1.with_columns(
         pl.when((pl.col("ICNO").is_null()) | (pl.col("ICNO").str.strip_chars() == ""))
@@ -576,8 +549,9 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
     # ---- Print Top 100 summary ----
     writer = _PageWriter(_summary_header)
     writer.new_page(title2_summary)
-    for row in data2.iter_rows(named=True):
+    for idx, row in enumerate(data2.iter_rows(named=True), start=1):
         line = (
+            f"{idx:>6}"
             f"{str(row.get('CUSTNAME') or '')[:30]:<30}"
             f"{_fmt_comma(row.get('CURBAL'), 18)}"
             f"{_fmt_comma(row.get('FDBAL'), 18)}"
@@ -591,16 +565,54 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
     data3 = data1.join(top_keys, on=["ICNO", "CUSTNAME"], how="inner")
     data3 = data3.sort(["ICNO", "CUSTNAME"])
 
-    writer.new_page(title2_detail)
+    # writer.new_page(title2_detail)
+    # current_group = None
+    # group_sum = 0.0
+    # for row in data3.iter_rows(named=True):
+    #     group_key = (row.get("ICNO"), row.get("CUSTNAME"))
+    #     if current_group is not None and group_key != current_group:
+    #         writer.add_line(f"{'':<49}{'TOTAL':>12}{_fmt_comma(group_sum, 18)}")
+    #         group_sum = 0.0
+    #     current_group = group_key
+
+    #     branch_str = str(int(row.get("BRANCH") or 0)).rjust(6) if row.get("BRANCH") is not None else " " * 6
+    #     acctno_str = f"{int(row.get('ACCTNO') or 0):>12d}"
+    #     custcode_str = str(row.get("CUSTCODE") or "")[:8].rjust(8)
+    #     custname_str = str(row.get("CUSTNAME") or "")[:30]
+    #     custno_str = f"{int(row.get('CUSTNO') or 0):>12d}" if row.get("CUSTNO") is not None else " " * 12
+    #     newic_str = str(row.get("NEWIC") or "")[:14].rjust(14)
+    #     oldic_str = str(row.get("OLDIC") or "")[:14].rjust(14)
+    #     curbal_str = _fmt_comma(row.get("CURBAL"), 18)
+    #     product_str = str(row.get("PRODUCT") or "")[:8].rjust(8)
+
+    #     line = (
+    #         f"{branch_str:<7}{acctno_str}{custcode_str}{custname_str:<30}"
+    #         f"{custno_str}{newic_str}{oldic_str}{curbal_str}{product_str}"
+    #     )
+    #     writer.add_line(line)
+    #     group_sum += float(row.get("CURBAL") or 0.0)
+
+    writer.new_page(title2_detail, header_fn=_detail_header)
+    obs_counter = 1
     current_group = None
     group_sum = 0.0
+
     for row in data3.iter_rows(named=True):
         group_key = (row.get("ICNO"), row.get("CUSTNAME"))
+        # If we've moved to a new group, print subtotals for the previous group
         if current_group is not None and group_key != current_group:
-            writer.add_line(f"{'':<49}{'TOTAL':>12}{_fmt_comma(group_sum, 18)}")
+            # CUSTNAME subtotal line
+            writer.add_line(
+                f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+            )
+            # ICNO subtotal line (indented)
+            writer.add_line(
+                f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+            )
             group_sum = 0.0
         current_group = group_key
 
+        # Build the detail line with Obs
         branch_str = str(int(row.get("BRANCH") or 0)).rjust(6) if row.get("BRANCH") is not None else " " * 6
         acctno_str = f"{int(row.get('ACCTNO') or 0):>12d}"
         custcode_str = str(row.get("CUSTCODE") or "")[:8].rjust(8)
@@ -612,11 +624,29 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
         product_str = str(row.get("PRODUCT") or "")[:8].rjust(8)
 
         line = (
-            f"{branch_str:<7}{acctno_str}{custcode_str}{custname_str:<30}"
-            f"{custno_str}{newic_str}{oldic_str}{curbal_str}{product_str}"
+            f"{obs_counter:>6}"
+            f"{branch_str}"
+            f"{acctno_str}"
+            f"{custcode_str}"
+            f"{custname_str:<30}"
+            f"{custno_str}"
+            f"{newic_str}"
+            f"{oldic_str}"
+            f"{curbal_str}"
+            f"{product_str}"
         )
         writer.add_line(line)
+        obs_counter += 1
         group_sum += float(row.get("CURBAL") or 0.0)
+
+    # After the loop, print subtotal for the last group
+    if current_group is not None:
+        writer.add_line(
+            f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+        )
+        writer.add_line(
+            f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+        )
 
     if current_group is not None:
         writer.add_line(f"{'':<49}{'TOTAL':>12}{_fmt_comma(group_sum, 18)}")
@@ -653,7 +683,11 @@ data1_org, data3_org = _run_prnrec(
 # ============================================================================
 print("\nStep 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...")
 
-# subs_all = pl.concat([fdorg, caorg, saorg], how="diagonal").with_columns([
+fdorg_pd = fdorg.to_pandas()
+caorg_pd = caorg.to_pandas()
+saorg_pd = saorg.to_pandas()
+subs_all_pd = pd.concat([fdorg_pd, caorg_pd, saorg_pd], ignore_index=True)
+# subs_all = pl.from_pandas(subs_all_pd).with_columns([
 #     pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
 #       .then(pl.col("NEWIC"))
 #       .otherwise(pl.col("OLDIC"))
@@ -662,17 +696,13 @@ print("\nStep 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...")
 #     pl.when(pl.col("CURCODE") != "MYR").then(pl.col("CURBAL")).otherwise(None).alias("FCYAMT"),
 # ])
 
-fdorg_pd = fdorg.to_pandas()
-caorg_pd = caorg.to_pandas()
-saorg_pd = saorg.to_pandas()
-subs_all_pd = pd.concat([fdorg_pd, caorg_pd, saorg_pd], ignore_index=True)
 subs_all = pl.from_pandas(subs_all_pd).with_columns([
     pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
       .then(pl.col("NEWIC"))
       .otherwise(pl.col("OLDIC"))
       .alias("ICNO"),
-    pl.when(pl.col("CURCODE") == "MYR").then(pl.col("CURBAL")).otherwise(None).alias("RMAMT"),
-    pl.when(pl.col("CURCODE") != "MYR").then(pl.col("CURBAL")).otherwise(None).alias("FCYAMT"),
+    pl.col("CURBAL").alias("RMAMT"),
+    pl.lit(None).alias("FCYAMT"),
 ])
 
 # PROC SORT DATA=LIST.COF_MNI_DEPOSITOR_LIST OUT=COF_MNI_IDNO(KEEP=DEPID DEPGRP BUSSREG) NODUPKEY; BY BUSSREG;
