@@ -1,6 +1,6 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDARTB.py
 Step 1: Deriving report date...
-  Report date : 2026-07-24  (TDATE=24/07/2026)
+  Report date : 2026-07-26  (TDATE=26/07/2026)
 
 Step 2: Resolving dated input files...
 [FILE_RESOLVER] Selected latest: ca260724.sas7bdat
@@ -21,13 +21,30 @@ Step 4: Building CISCA (CA customer lookup)...
   CISCA rows: 1,123,041
 
 Step 5: Building CA (current account)...
+CA columns: ['DOBCIS', 'ACCTNO', 'RACE', 'COUNTRY', 'BRANCH', 'CLOSEDT', 'REOPENDT', 'CUSTCODE', 'ODPLAN', 'RATE1', 'RATE2', 'RATE3', 'RATE4', 'RATE5', 'FLATRATE', 'ORGCODE', 'ORGTYPE', 'LIMIT1', 'LIMIT2', 'LIMIT3', 'LIMIT4', 'LIMIT5', 'INTYTD', 'PURPOSE', 'SECTOR', 'USER2', 'USER3', 'RISKCODE', 'LEDGBAL', 'L_DEP', 'OPENIND', 'LASTTRAN', 'RETURNS_Y', 'CHGIND', 'AVGAMT', 'PRODUCT', 'DEPTYPE', 'INTPD', 'INTPLAN', 'CURBAL', 'CHQFLOAT', 'STATE', 'INTCYCODE', 'APPRLIMT', 'ODINTCHR', 'ODINTACC', 'YTDAVAMT', 'INACTIVE', 'SECOND', 'BONUTYPE', 'SERVICE', 'BONUSANO', 'USER5', 'PREVBRNO', 'COSTCTR', 'AUTHORISE_LIMIT', 'POST_IND', 'CENSUST', 'ACCPROF', 'MAXPROF', 'INTRSTPD', 'MTDAVBAL', 'BILLERIND', 'MODIFIED_FACILITY_IND', 'DTLSTCUST', 'OPENDT', 'NXT_STMT_CYCLE_DT', 'STMT_CYCLE', 'DNBFISME', 'DATE_LST_DEP', 'INTPAYBL', 'INTPLAN_IBCA', 'MAILCODE', 'RRIND', 'RRCOMPLDT', 'REASON', 'INSTRUCTIONS', 'OMNILOAN', 'OMNITRDB', 'DSR', 'MTD_REPAID_AMT', 'INDUSTRIAL_SECTOR_CD', 'MTD_DISBURSED_AMT', 'MTD_REPAY_TYPE10_AMT', 'MTD_REPAY_TYPE20_AMT', 'MTD_REPAY_TYPE30_AMT', 'COV_OPT_OUT', 'PROP_DEVELOP_FIN_IND', 'REPAY_TYPE_CD', 'PB_ENTERPRISE_PACKAGE_CD', 'PB_ENTERPRISE_REG_DT', 'PB_ENTERPRISE_TAG', 'WRITE_DOWN_BAL', 'FEEYTD', 'FAACRR', 'CRRCODE', 'ASCORE_PERM', 'ASCORE_LTST', 'ASCORE_COMM', 'ACSTATUS4', 'ACSTATUS5', 'ACSTATUS6', 'ACSTATUS7', 'ACSTATUS8', 'ACSTATUS9', 'ACSTATUS10', 'CUSTFISS', 'RISKRATE', 'DOBMNI', 'RR_EXP_DATE', 'RR_EFF_DATE', 'DNBFI_ORI', 'ESIGNATURE', 'CONDIMODE', 'MTDAVBAL_MIS', 'NOCRDAY', 'ACCMCR', 'NODRDAY', 'ACCMDR', 'MTDAVCBAL', 'MTDAVDBAL', 'DIA_PAST01_MTH', 'DIA_PAST02_MTH', 'DIA_PAST03_MTH', 'DIA_PAST04_MTH', 'DIA_PAST05_MTH', 'DIA_PAST06_MTH', 'DIA_PAST07_MTH', 'DIA_PAST08_MTH', 'DIA_PAST09_MTH', 'DIA_PAST10_MTH', 'DIA_PAST11_MTH', 'DIA_PAST12_MTH', 'E_INVOICE_IND', 'CASH_DEPOSIT_LIMIT_IND', 'SOURCE_INCOME_CURRENCY_CD', 'CASH_DEPOSIT_AMOUNT_AGG', 'POST_IND_MAINT_DT', 'POST_IND_EXP_DT', 'FDB_TAG', 'FDB_TAG_DT', 'FDB_SCORING_DT', 'REFERRAL_BRANCH', 'ACCTNO_SAVE_LN', 'SUB_OD_PRODUCT', 'APPL_COMMERCIAL_TAG', 'OKU_IND', 'WRIOFF_CLOSE_FILE_TAG', 'WRIOFF_CLOSE_FILE_TAG_DT']
+CA INTPAYBL sample: shape: (10,)
+Series: 'INTPAYBL' [f64]
+[
+        7.7
+        0.0
+        0.0
+        0.0
+        0.0
+        0.0
+        0.0
+        0.0
+        0.0
+        -0.003053
+]
   CA rows (CURBAL>0, PRODCD<>'N'): 766,182
 
 Step 6: Merging CA with CISCA...
   CA merged rows: 766,182
+Rows for CUSTNO 11880426 after CA merge: 114
+First 10 ACCTNOs: [3076907432, 3090409507, 3090409604, 3090409701, 3107663710, 3109808328, 3117494532, 3117494629, 3121093106, 3130536305]
 
 Step 7: Building CISFD (FD customer lookup)...
-100% ▕██████████████████████████████████████▏ (00:00:04.09 elapsed)     
+100% ▕██████████████████████████████████████▏ (00:00:10.49 elapsed)     
   CISFD rows: 8,627,025
 
 Step 8: Building FD (basic fixed deposit balances)...
@@ -38,6 +55,7 @@ Step 9: Merging FD with CISFD...
 
 Step 10: Building CAFD (combined CA + FD for target customers)...
   CAFD rows: 114
+Rows for CUSTNO 11880426 in CAFD: 114
 
 Step 11: Reading DPCUST flat file...
   DEPO rows: 9,759,965
@@ -46,19 +64,18 @@ Step 12: Merging CAFD with DEPO and applying fund formats...
   BNM.CAFD rows: 114
 
 Step 13: Building Table 1 summaries...
+Table 1 totals (PUBLIC): ('PUBLIC MUTUAL FUND', 14313161.04, 0.0, 14313161.04)
+Table 1 totals (NON-PUBLIC): ('NON-PUBLIC MUTUAL FUND', 11673813.51, 0.0, 11673813.51)
+Grand total: {'CABAL': 25986974.549999997, 'FDBAL': 0.0, 'CURBAL': 25986974.549999997}
 
 Step 14: Splitting CAFD into ARCA / ARFD...
 
 Step 15: Merging ARFD with detailed FD master (MNIFD)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDARTB.py", line 480, in <module>
-    mnifd = pl.read_parquet(FDCD_CACHE).select(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10148, in select
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "DEPODTE"; valid columns: ["BRANCH", "ACCTNO", "STATEC", "PURPOSE", "CUSTCD", "CDNO", "OPENIND", "CURBAL", "ORIGAMT", "ORGDATE", "MATDATE", "RATE", "PRODUCT", "TERM", "MATID", "INTPLAN", "PAYMENT", "RENEWAL", "INTPAY", "LASTACTV", "INTFREQ", "INTFREQID", "PEND_INTPLAN", "LMATDATE", "INTTFRACCT", "PRN_DISP_OPT", "PRN_RENEW", "PRN_TFR_ACCT", "DEPDATE"]
+  ARFD (detailed) rows: 0
+
+Step 16: Generating report...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDARTB/EIBDARTB_26072026.txt
+  Total lines    : 138
+
+EIBDARTB complete.
