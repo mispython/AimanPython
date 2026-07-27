@@ -27,9 +27,9 @@ Step 9: Generating FD11TEXT (Individual) and FD12TEXT (Corporate)...
 
   Generating INDVTP50_260726.txt ...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 591, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 612, in <module>
     data1_ind, data3_ind = _run_prnrec(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 503, in _run_prnrec
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 524, in _run_prnrec
     data1 = pl.concat(
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/functions/eager.py", line 247, in concat
     out = wrap_df(plr.concat_df_diagonal(elems))
