@@ -1,3 +1,57 @@
+# Determine if we have any FD records
+has_fd = (not arfd1.is_empty()) or (not arfd2.is_empty())
+
+# For totals, treat missing FD values as 0
+fd_curbal = totarfd.get("CURBAL") or 0.0
+fd_balance = totarfd.get("BALANCE") or 0.0
+
+gtcafd = {
+    "TERM":     totarfd.get("TERM"),      # keep None for later formatting
+    "RMAINDT":  totarfd.get("RMAINDT"),   # keep None
+    "CURBAL":   totarca["CURBAL"] + fd_curbal,
+    "BALANCE":  totarca["BALANCE"] + fd_balance,
+}
+
+
+term_str = ".  M" if not has_fd else f"{_fmt_num(totarfd.get('TERM'))} M"
+rmaindt_str = "." if not has_fd else _fmt_num(totarfd.get('RMAINDT'))
+
+output_lines.append(_line([
+    (1, "TOTAL (C)+(D)"),
+    (15, ";"),
+    (31, ";"),
+    (72, ";"),
+    (90, ";"),
+    (105, f";{term_str}"),
+    (121, f";{rmaindt_str}"),
+    (149, f";{_fmt_comma(totarfd.get('CURBAL') or 0.0)}"),
+    (169, "; -"),
+    (184, f";{_fmt_comma(totarfd.get('BALANCE') or 0.0)}"),
+]))
+
+
+term_str = ".  M" if not has_fd else f"{_fmt_num(gtcafd.get('TERM'))} M"
+rmaindt_str = "." if not has_fd else _fmt_num(gtcafd.get('RMAINDT'))
+
+output_lines.append(_line([
+    (1, "GRAND TOTAL (A+B+C+D)"),
+    (72, ";;"),
+    (90, ";"),
+    (105, f";{term_str}"),
+    (121, f";{rmaindt_str}"),
+    (149, f";{_fmt_comma(gtcafd.get('CURBAL'))}"),
+    (169, "; -"),
+    (184, f";{_fmt_comma(gtcafd.get('BALANCE'))}"),
+]))
+
+
+if not arfd1.is_empty():
+    _print_fd_section(arfd1, sumarfd1, "C")
+if not arfd2.is_empty():
+    _print_fd_section(arfd2, sumarfd2, "D")
+
+========================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDARTB.py
 Step 1: Deriving report date...
   Report date : 2026-07-24  (TDATE=24/07/2026)
