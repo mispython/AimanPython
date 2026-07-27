@@ -1,3 +1,13 @@
+Step 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 656, in <module>
+    subs_all = pl.concat([fdorg, caorg, saorg], how="diagonal").with_columns([
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/functions/eager.py", line 247, in concat
+    out = wrap_df(plr.concat_df_diagonal(elems))
+polars.exceptions.SchemaError: type String is incompatible with expected type Float64
+
+=============
+
 def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, output_path: Path):
     print(f"\n  Generating {output_path.name} ...")
 
