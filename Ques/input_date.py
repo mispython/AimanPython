@@ -24,7 +24,10 @@ SUPPORTED_EXTENSIONS = {
 # Filename date patterns (supports multiple legacy formats)
 # ------------------------------------------------------------
 PATTERNS = [
-    # mmwwyy (your current format)
+    # yymmdd
+    r"(?P<prefix>[a-zA-Z]*)(?P<yy>\d{2})(?P<mm>\d{2})(?P<dd>\d{2})",
+
+    # mmwwyy
     r"(?P<prefix>[a-zA-Z]*)(?P<mm>\d{2})(?P<ww>\d{1,2})(?P<yy>\d{2})",
 
     # ddmmyy
@@ -38,6 +41,9 @@ PATTERNS = [
 
     # mm-w-yy or mm_w_yy
     r"(?P<prefix>[a-zA-Z]*)(?P<mm>\d{2})\D(?P<ww>\d{1,2})\D(?P<yy>\d{2})",
+
+    # mm
+    r"(?P<prefix>[a-zA-Z]*)(?P<mm>\d{2})",
 ]
 
 # ------------------------------------------------------------
