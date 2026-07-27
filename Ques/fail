@@ -1,45 +1,56 @@
-def _format_subtotal(label: str, amount: float) -> str:
-    """Return a line with 'label' left-justified under the DEPOSITOR column,
-    and amount right-justified under the CURBAL column."""
-    # Fixed widths (Obs=6, BRANCH=6, ACCTNO=12, CUSTCODE=8, DEPOSITOR=30,
-    # CUSTNO=12, NEWIC=14, OLDIC=14) => total before CURBAL = 6+6+12+8+30+12+14+14 = 102
-    # The CURBAL column is 18 wide.
-    before_curbal = 6 + 6 + 12 + 8 + 30 + 12 + 14 + 14
-    return f"{label:<{before_curbal}}{_fmt_comma(amount, 18)}"
+# Column start positions (0‑based)
+COL_OBS    = 0
+COL_BRANCH = 6
+COL_ACCTNO = 12
+COL_CUSTCD = 24
+COL_NAME   = 32
+COL_CUSTNO = 62
+COL_NEWIC  = 74
+COL_OLDIC  = 88
+COL_BAL    = 102
+COL_PROD   = 120
 
 
-writer.add_line(_format_subtotal("CUSTNAME", group_sum))
-writer.add_line(_format_subtotal("    ICNO", group_sum))
-
-
-# After finishing a group, print a separator line of dashes
-separator = "-" * 8  # for the amount column, but we can just print a line of dashes
-writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "-" * 18)
-
-
-writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "-" * 18)
+if current_group is not None and group_key != current_group:
+    # --- Dashed separator line ---
+    dash_under_name = "--------"
+    dash_under_bal  = "----------------"
+    writer.add_line(
+        " " * COL_NAME + dash_under_name +
+        " " * (COL_BAL - (COL_NAME + len(dash_under_name))) +
+        dash_under_bal
+    )
+    # --- CUSTNAME subtotal ---
+    total_str = _fmt_comma(group_sum, 18)
+    writer.add_line(
+        " " * COL_NAME + f"{'CUSTNAME':<30}" +
+        " " * (COL_BAL - COL_NAME - 30) + total_str
+    )
+    # --- ICNO subtotal (indented) ---
+    writer.add_line(
+        " " * COL_NAME + f"{'    ICNO':<30}" +
+        " " * (COL_BAL - COL_NAME - 30) + total_str
+    )
+    group_sum = 0.0
 
 
 if current_group is not None:
-    # Print a separator line first
-    writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "=" * 18)
-    writer.add_line(_format_subtotal("TOTAL", group_sum))
+    # Compute grand total (sum of all group_sum values)
+    # We need to accumulate `grand_total` during the loop.
+    # For now, we assume we have a variable `grand_total` that holds the sum.
+    # Add this before the loop: grand_total = 0.0
+    # Inside the loop, add to grand_total as we accumulate.
+    # Then here:
+    total_str = _fmt_comma(grand_total, 18)
+    writer.add_line(" " * COL_BAL + "================")  # 16 equals signs
+    writer.add_line(
+        " " * (COL_BAL - 4) + "TOTAL" +
+        " " * (COL_BAL - (COL_BAL - 4) - 4) + total_str
+    )
 
 
-for row in data3.iter_rows(named=True):
-    group_key = (row.get("ICNO"), row.get("CUSTNAME"))
-    if current_group is not None and group_key != current_group:
-        # Print group subtotal lines
-        writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "-" * 18)
-        writer.add_line(_format_subtotal("CUSTNAME", group_sum))
-        writer.add_line(_format_subtotal("    ICNO", group_sum))
-        group_sum = 0.0
-    current_group = group_key
+grand_total = 0.0
 
-    # ... (build and print detail line) ...
-    group_sum += float(row.get("CURBAL") or 0.0)
 
-# After loop
-if current_group is not None:
-    writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "=" * 18)
-    writer.add_line(_format_subtotal("TOTAL", group_sum))
+group_sum += float(row.get("CURBAL") or 0.0)
+grand_total += float(row.get("CURBAL") or 0.0)
