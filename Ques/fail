@@ -1,3 +1,24 @@
+def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, output_path: Path):
+    print(f"\n  Generating {output_path.name} ...")
+
+    # ---- Use Pandas to concat ----
+    fdind_pd = fdind_df.to_pandas()
+    caind_pd = caind_df.to_pandas()
+    saind_pd = saind_df.to_pandas()
+    data1_pd = pd.concat([fdind_pd, caind_pd, saind_pd], ignore_index=True)
+    data1 = pl.from_pandas(data1_pd)
+
+    # ---- Continue with the rest of the original logic ----
+    data1 = data1.with_columns(
+        pl.when((pl.col("ICNO").is_null()) | (pl.col("ICNO").str.strip_chars() == ""))
+        .then(pl.lit("XX"))
+        .otherwise(pl.col("ICNO"))
+        .alias("ICNO")
+    )
+    # ... (the rest of the function stays exactly as before)
+
+=================
+
 Step 9: Generating FD11TEXT (Individual) and FD12TEXT (Corporate)...
 
   Generating INDVTP50_260726.txt ...
