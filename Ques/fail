@@ -1,64 +1,62 @@
-    writer.new_page(title2_detail)
-    obs_counter = 1
-    current_group = None
-    group_sum = 0.0
+class _PageWriter:
+    """Accumulates report lines with PAGE_SIZE-line pagination.
 
-    for row in data3.iter_rows(named=True):
-        group_key = (row.get("ICNO"), row.get("CUSTNAME"))
-        # If we've moved to a new group, print subtotals for the previous group
-        if current_group is not None and group_key != current_group:
-            # CUSTNAME subtotal line
-            writer.add_line(
-                f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
-            )
-            # ICNO subtotal line (indented)
-            writer.add_line(
-                f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
-            )
-            group_sum = 0.0
-        current_group = group_key
+    RECFM=FB (no trailing 'A') -> no ASA carriage-control byte is reserved.
+    A literal form-feed character on its own line marks a new page instead.
+    """
 
-        # Build the detail line with Obs
-        branch_str = str(int(row.get("BRANCH") or 0)).rjust(6) if row.get("BRANCH") is not None else " " * 6
-        acctno_str = f"{int(row.get('ACCTNO') or 0):>12d}"
-        custcode_str = str(row.get("CUSTCODE") or "")[:8].rjust(8)
-        custname_str = str(row.get("CUSTNAME") or "")[:30]
-        custno_str = f"{int(row.get('CUSTNO') or 0):>12d}" if row.get("CUSTNO") is not None else " " * 12
-        newic_str = str(row.get("NEWIC") or "")[:14].rjust(14)
-        oldic_str = str(row.get("OLDIC") or "")[:14].rjust(14)
-        curbal_str = _fmt_comma(row.get("CURBAL"), 18)
-        product_str = str(row.get("PRODUCT") or "")[:8].rjust(8)
+    def __init__(self, header_fn):
+        self.header_fn = header_fn
+        self.lines: list[str] = []
+        self.lines_on_page = 0
+        self.first_page = True
 
-        line = (
-            f"{obs_counter:>6}"
-            f"{branch_str}"
-            f"{acctno_str}"
-            f"{custcode_str}"
-            f"{custname_str:<30}"
-            f"{custno_str}"
-            f"{newic_str}"
-            f"{oldic_str}"
-            f"{curbal_str}"
-            f"{product_str}"
-        )
-        writer.add_line(line)
-        obs_counter += 1
-        group_sum += float(row.get("CURBAL") or 0.0)
+    def new_page(self, *header_args, header_fn=None):
+        """Start a new page. Optionally override the header function."""
+        if not self.first_page:
+            self.lines.append("\f")
+        self.first_page = False
 
-    # After the loop, print subtotal for the last group
-    if current_group is not None:
-        writer.add_line(
-            f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
-        )
-        writer.add_line(
-            f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
-        )
+        # Use provided header_fn if given, otherwise use the default
+        fn = header_fn if header_fn is not None else self.header_fn
+        header_lines = fn(*header_args)
+        self.lines.extend(header_lines)
+        self.lines_on_page = len(header_lines)
+
+    def add_line(self, line: str):
+        if self.lines_on_page >= PAGE_SIZE:
+            self.lines.append("\f")
+            self.lines_on_page = 0
+        self.lines.append(line)
+        self.lines_on_page += 1
+
+    def write(self, path: Path):
+        with open(path, "w", encoding="latin1") as fh:
+            for ln in self.lines:
+                fh.write(ln.ljust(LRECL if ln != "\f" else 1) + "\n")
 
 
-data2 = data2.sort("CURBAL", descending=True).head(100)
+    writer = _PageWriter(_summary_header)
+    writer.new_page(title2_summary)   # uses default (_summary_header)
+
+    # ... print summary rows ...
+
+    # Start the detail section with the detail header
+    writer.new_page(title2_detail, header_fn=_detail_header)   # <-- override here
+
+    # ... print detail rows ...
 
 
-top_keys = data2.select(["ICNO", "CUSTNAME"])
-data3 = data1.join(top_keys, on=["ICNO", "CUSTNAME"], how="inner")
+def _detail_header(title2: str) -> list[str]:
+    return [
+        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
+        title2 + f" {RDATE}",
+        "-" * LRECL,
+        # Line 1: labels for BRANCH, OLD, CURRENT above their columns
+        f"{'Obs':<6}{'BRANCH':<6}{'':<12}{'':<8}{'DEPOSITOR':<30}{'':<12}{'':<14}{'OLD':<14}{'CURRENT':<18}{'':<8}",
+        # Line 2: detailed column names
+        f"{'':<6}{'CODE':<6}{'MNI NO':>12}{'CUSTCD':>8}{'':<30}{'CIS NO':>12}{'NEW IC':>14}{'IC':>14}{'BALANCE':>18}{'PRODUCT':>8}",
+        "-" * LRECL,
+    ]
 
 
