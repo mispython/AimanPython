@@ -1,8 +1,8 @@
-# After Step 6
-cust_rows = ca.filter(pl.col("CUSTNO") == 11880426)
-print(f"Rows for CUSTNO 11880426 after CA merge: {len(cust_rows)}")
-print("First 10 ACCTNOs:", cust_rows.select("ACCTNO").head(10).to_series().to_list())
-
-
-cafd_1188 = cafd.filter(pl.col("CUSTNO") == 11880426)
-print(f"Rows for CUSTNO 11880426 in CAFD: {len(cafd_1188)}")
+# In Table 1 generation:
+fd_display = "." if not has_fd else _fmt_comma(row['FDBAL'])
+output_lines.append(_line([
+    (1, f"{idx} ) {row['PMTYPE']}"),
+    (30, f";;;{_fmt_comma(row['CABAL'])}"),
+    (59, f";{fd_display}"),
+    (90, f";{_fmt_comma(row['CURBAL'])}"),
+]))
