@@ -1,262 +1,74 @@
-# Concatenate using Pandas to avoid type conflicts
-fdorg_pd = fdorg.to_pandas()
-caorg_pd = caorg.to_pandas()
-saorg_pd = saorg.to_pandas()
-subs_all_pd = pd.concat([fdorg_pd, caorg_pd, saorg_pd], ignore_index=True)
-subs_all = pl.from_pandas(subs_all_pd).with_columns([
-    pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
-      .then(pl.col("NEWIC"))
-      .otherwise(pl.col("OLDIC"))
-      .alias("ICNO"),
-    pl.when(pl.col("CURCODE") == "MYR").then(pl.col("CURBAL")).otherwise(None).alias("RMAMT"),
-    pl.when(pl.col("CURCODE") != "MYR").then(pl.col("CURBAL")).otherwise(None).alias("FCYAMT"),
-])
+def _summary_header(title2: str) -> list[str]:
+    return [
+        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
+        title2 + f" {RDATE}",
+        "-" * LRECL,
+        f"{'Obs':<6}{'DEPOSITOR':<30}{'TOTAL BALANCE':>18}{'FD BALANCE':>18}{'CA BALANCE':>18}{'SA BALANCE':>18}",
+        "-" * LRECL,
+    ]
 
-======================
 
-Step 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 656, in <module>
-    subs_all = pl.concat([fdorg, caorg, saorg], how="diagonal").with_columns([
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/functions/eager.py", line 247, in concat
-    out = wrap_df(plr.concat_df_diagonal(elems))
-polars.exceptions.SchemaError: type String is incompatible with expected type Float64
-
-=============
-
-def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, output_path: Path):
-    print(f"\n  Generating {output_path.name} ...")
-
-    # ---- Use Pandas to concat ----
-    fdind_pd = fdind_df.to_pandas()
-    caind_pd = caind_df.to_pandas()
-    saind_pd = saind_df.to_pandas()
-    data1_pd = pd.concat([fdind_pd, caind_pd, saind_pd], ignore_index=True)
-    data1 = pl.from_pandas(data1_pd)
-
-    # ---- Continue with the rest of the original logic ----
-    data1 = data1.with_columns(
-        pl.when((pl.col("ICNO").is_null()) | (pl.col("ICNO").str.strip_chars() == ""))
-        .then(pl.lit("XX"))
-        .otherwise(pl.col("ICNO"))
-        .alias("ICNO")
+# In _run_prnrec, after data2 is limited:
+writer = _PageWriter(_summary_header)
+writer.new_page(title2_summary)
+for idx, row in enumerate(data2.iter_rows(named=True), start=1):
+    line = (
+        f"{idx:>6}"
+        f"{str(row.get('CUSTNAME') or '')[:30]:<30}"
+        f"{_fmt_comma(row.get('CURBAL'), 18)}"
+        f"{_fmt_comma(row.get('FDBAL'), 18)}"
+        f"{_fmt_comma(row.get('CABAL'), 18)}"
+        f"{_fmt_comma(row.get('SABAL'), 18)}"
     )
-    # ... (the rest of the function stays exactly as before)
-
-=================
-
-Step 9: Generating FD11TEXT (Individual) and FD12TEXT (Corporate)...
-
-  Generating INDVTP50_260726.txt ...
-
-=== Schemas before concat ===
-fdind_df:
-Schema([('DOBCIS', Float64), ('ACCTNO', Float64), ('RACE', String), ('COUNTRY', String), ('BRANCH', Float64), ('CLOSEDT', Float64), ('REOPENDT', Float64), ('CUSTCODE', Float64), ('ORGCODE', String), ('ORGTYPE', String), ('INTYTD', Float64), ('PURPOSE', String), ('SECTOR', Float64), ('USER2', String), ('USER3', String), ('RISKCODE', String), ('LEDGBAL', Float64), ('OPENIND', String), ('LASTTRAN', Float64), ('AVGAMT', Float64), ('PRODUCT', Float64), ('DEPTYPE', String), ('INTPD', Float64), ('INTPLAN', Float64), ('CURBAL', Float64), ('STATE', String), ('INTCYCODE', String), ('INACTIVE', String), ('SECOND', Float64), ('BONUTYPE', Float64), ('SERVICE', Float64), ('BONUSANO', Float64), ('USER5', Float64), ('PREVBRNO', Float64), ('COSTCTR', Float64), ('POST_IND', String), ('INTRSTPD', Float64), ('MTDAVBAL', Float64), ('DTLSTCUST', Float64), ('OPENDT', Float64), ('PRIN_ACCT', Float64), ('NXT_STMT_CYCLE_DT', Float64), ('STMT_CYCLE', String), ('DNBFISME', String), ('INTPAYBL', Float64), ('MAILCODE', String), ('REASON', String), ('INSTRUCTIONS', String), ('FEEYTD', Float64), ('ACSTATUS4', String), ('ACSTATUS5', String), ('ACSTATUS6', String), ('ACSTATUS7', String), ('ACSTATUS8', String), ('ACSTATUS9', String), ('ACSTATUS10', String), ('DOBMNI', Float64), ('ESIGNATURE', String), ('CONDIMODE', String), ('MTDAVBAL_MIS', Float64), ('E_INVOICE_IND', String), ('POST_IND_MAINT_DT', Float64), ('POST_IND_EXP_DT', Float64), ('OKU_IND', String), ('ICNO', String), ('NEWIC', String), ('OLDIC', String), ('INDORG', String), ('CUSTNAME', String), ('FDBAL', Float64)])
-caind_df:
-Schema([('DOBCIS', Float64), ('ACCTNO', Float64), ('RACE', String), ('COUNTRY', String), ('BRANCH', Float64), ('CLOSEDT', Float64), ('REOPENDT', Float64), ('CUSTCODE', Float64), ('ODPLAN', Float64), ('RATE1', Float64), ('RATE2', Float64), ('RATE3', Float64), ('RATE4', Float64), ('RATE5', Float64), ('FLATRATE', Float64), ('ORGCODE', String), ('ORGTYPE', String), ('LIMIT1', Float64), ('LIMIT2', Float64), ('LIMIT3', Float64), ('LIMIT4', Float64), ('LIMIT5', Float64), ('INTYTD', Float64), ('PURPOSE', String), ('SECTOR', Float64), ('USER2', String), ('USER3', String), ('RISKCODE', String), ('LEDGBAL', Float64), ('L_DEP', Float64), ('OPENIND', String), ('LASTTRAN', Float64), ('RETURNS_Y', Float64), ('CHGIND', Float64), ('AVGAMT', Float64), ('PRODUCT', Float64), ('DEPTYPE', String), ('INTPD', Float64), ('INTPLAN', Float64), ('CURBAL', Float64), ('CHQFLOAT', Float64), ('STATE', String), ('INTCYCODE', String), ('APPRLIMT', Float64), ('ODINTCHR', Float64), ('ODINTACC', Float64), ('YTDAVAMT', Float64), ('INACTIVE', String), ('SECOND', Float64), ('BONUTYPE', Float64), ('SERVICE', Float64), ('BONUSANO', Float64), ('USER5', String), ('PREVBRNO', Float64), ('COSTCTR', Float64), ('AUTHORISE_LIMIT', Float64), ('POST_IND', String), ('CENSUST', Float64), ('ACCPROF', Float64), ('MAXPROF', Float64), ('INTRSTPD', Float64), ('MTDAVBAL', Float64), ('BILLERIND', Float64), ('MODIFIED_FACILITY_IND', String), ('DTLSTCUST', Float64), ('OPENDT', Float64), ('NXT_STMT_CYCLE_DT', Float64), ('STMT_CYCLE', String), ('DNBFISME', String), ('DATE_LST_DEP', Float64), ('INTPAYBL', Float64), ('INTPLAN_IBCA', Float64), ('MAILCODE', String), ('RRIND', String), ('RRCOMPLDT', Float64), ('REASON', String), ('INSTRUCTIONS', String), ('OMNILOAN', Float64), ('OMNITRDB', Float64), ('DSR', Float64), ('MTD_REPAID_AMT', Float64), ('INDUSTRIAL_SECTOR_CD', String), ('MTD_DISBURSED_AMT', Float64), ('MTD_REPAY_TYPE10_AMT', Float64), ('MTD_REPAY_TYPE20_AMT', Float64), ('MTD_REPAY_TYPE30_AMT', Float64), ('COV_OPT_OUT', String), ('PROP_DEVELOP_FIN_IND', String), ('REPAY_TYPE_CD', String), ('PB_ENTERPRISE_PACKAGE_CD', String), ('PB_ENTERPRISE_REG_DT', Float64), ('PB_ENTERPRISE_TAG', String), ('WRITE_DOWN_BAL', Float64), ('FEEYTD', Float64), ('FAACRR', String), ('CRRCODE', String), ('ASCORE_PERM', String), ('ASCORE_LTST', String), ('ASCORE_COMM', String), ('ACSTATUS4', String), ('ACSTATUS5', String), ('ACSTATUS6', String), ('ACSTATUS7', String), ('ACSTATUS8', String), ('ACSTATUS9', String), ('ACSTATUS10', String), ('CUSTFISS', String), ('RISKRATE', String), ('DOBMNI', Float64), ('RR_EXP_DATE', Float64), ('RR_EFF_DATE', Float64), ('DNBFI_ORI', String), ('ESIGNATURE', String), ('CONDIMODE', String), ('MTDAVBAL_MIS', Float64), ('NOCRDAY', Float64), ('ACCMCR', Float64), ('NODRDAY', Float64), ('ACCMDR', Float64), ('MTDAVCBAL', Float64), ('MTDAVDBAL', Float64), ('DIA_PAST01_MTH', Float64), ('DIA_PAST02_MTH', Float64), ('DIA_PAST03_MTH', Float64), ('DIA_PAST04_MTH', Float64), ('DIA_PAST05_MTH', Float64), ('DIA_PAST06_MTH', Float64), ('DIA_PAST07_MTH', Float64), ('DIA_PAST08_MTH', Float64), ('DIA_PAST09_MTH', Float64), ('DIA_PAST10_MTH', Float64), ('DIA_PAST11_MTH', Float64), ('DIA_PAST12_MTH', Float64), ('E_INVOICE_IND', String), ('CASH_DEPOSIT_LIMIT_IND', Float64), ('SOURCE_INCOME_CURRENCY_CD', String), ('CASH_DEPOSIT_AMOUNT_AGG', Float64), ('POST_IND_MAINT_DT', Float64), ('POST_IND_EXP_DT', Float64), ('FDB_TAG', String), ('FDB_TAG_DT', Float64), ('FDB_SCORING_DT', Float64), ('REFERRAL_BRANCH', Float64), ('ACCTNO_SAVE_LN', Float64), ('SUB_OD_PRODUCT', Float64), ('APPL_COMMERCIAL_TAG', Float64), ('OKU_IND', Float64), ('WRIOFF_CLOSE_FILE_TAG', String), ('WRIOFF_CLOSE_FILE_TAG_DT', Float64), ('PRODCD', String), ('ICNO', String), ('NEWIC', String), ('OLDIC', String), ('INDORG', String), ('CUSTNAME', String), ('CABAL', Float64)])
-saind_df:
-Schema([('DOBCIS', Float64), ('ACCTNO', Float64), ('RACE', String), ('COUNTRY', String), ('BRANCH', Float64), ('CLOSEDT', Float64), ('REOPENDT', Float64), ('CUSTCODE', Float64), ('ORGCODE', String), ('ORGTYPE', String), ('INTYTD', Float64), ('PURPOSE', String), ('SECTOR', Float64), ('USER2', String), ('USER3', String), ('RISKCODE', String), ('LEDGBAL', Float64), ('OPENIND', String), ('LASTTRAN', Float64), ('CHGIND', Float64), ('AVGAMT', Float64), ('PRODUCT', Float64), ('DEPTYPE', String), ('INTPD', Float64), ('INTPLAN', Float64), ('CURBAL', Float64), ('CHQFLOAT', Float64), ('STATE', String), ('INTCYCODE', String), ('PBIND', String), ('YTDAVAMT', Float64), ('INACTIVE', String), ('SECOND', Float64), ('BONUTYPE', Float64), ('SERVICE', Float64), ('BONUSANO', Float64), ('USER5', String), ('PREVBRNO', Float64), ('COSTCTR', Float64), ('POST_IND', String), ('INTRSTPD', Float64), ('MTDAVBAL', Float64), ('DTLSTCUST', Float64), ('OPENDT', Float64), ('NXT_STMT_CYCLE_DT', Float64), ('STMT_CYCLE', String), ('AC_OPEN_STATUS_CD', String), ('DNBFISME', String), ('INTPAYBL', Float64), ('MAILCODE', String), ('REASON', String), ('INSTRUCTIONS', String), ('SSADATE', Float64), ('FEEYTD', Float64), ('ACSTATUS4', String), ('ACSTATUS5', String), ('ACSTATUS6', String), ('ACSTATUS7', String), ('ACSTATUS8', String), ('ACSTATUS9', String), ('ACSTATUS10', String), ('DOBMNI', Float64), ('ESIGNATURE', String), ('CONDIMODE', String), ('MTDAVBAL_MIS', Float64), ('E_INVOICE_IND', String), ('CASH_DEPOSIT_LIMIT_IND', Float64), ('CASH_DEPOSIT_AMOUNT_AGG', Float64), ('POST_IND_MAINT_DT', Float64), ('POST_IND_EXP_DT', Float64), ('OKU_IND', String), ('PRODCD', String), ('ICNO', String), ('NEWIC', String), ('OLDIC', String), ('INDORG', String), ('CUSTNAME', String), ('SABAL', Float64)])
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 620, in <module>
-    data1_ind, data3_ind = _run_prnrec(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 532, in _run_prnrec
-    data1 = pl.concat(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/functions/eager.py", line 247, in concat
-    out = wrap_df(plr.concat_df_diagonal(elems))
-polars.exceptions.SchemaError: type String is incompatible with expected type Float64
-
-===================
-
-print("\n=== Schemas before concat ===")
-print("fdind_df:")
-print(fdind_df.schema)
-print("caind_df:")
-print(caind_df.schema)
-print("saind_df:")
-print(saind_df.schema)
+    writer.add_line(line)
 
 
-def _standardize_schema(df: pl.DataFrame) -> pl.DataFrame:
-    """Cast common columns to consistent types for safe concatenation."""
-    # Numeric columns -> Int64 (or Float64 if they may have decimals)
-    for col in ['BRANCH', 'ACCTNO', 'CUSTNO', 'CUSTCODE', 'PRODUCT']:
-        if col in df.columns:
-            df = df.with_columns(pl.col(col).cast(pl.Int64, strict=False))
-    # Balance columns -> Float64
-    for col in ['CURBAL', 'FDBAL', 'CABAL', 'SABAL']:
-        if col in df.columns:
-            df = df.with_columns(pl.col(col).cast(pl.Float64, strict=False))
-    # String columns -> Utf8
-    for col in ['ICNO', 'CUSTNAME', 'NEWIC', 'OLDIC', 'INDORG', 'PURPOSE']:
-        if col in df.columns:
-            df = df.with_columns(pl.col(col).cast(pl.Utf8, strict=False))
-    return df
+def _detail_header(title2: str) -> list[str]:
+    # Line 1: "BRANCH", "OLD", "CURRENT" positioned above respective columns
+    # Line 2: column names under them
+    return [
+        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
+        title2 + f" {RDATE}",
+        "-" * LRECL,
+        # Line 1: "BRANCH" over the 6‑char branch column, "OLD" over OLD IC, "CURRENT" over balance
+        f"{'Obs':<6}{'BRANCH':<6}{'':<12}{'':<8}{'DEPOSITOR':<30}{'':<12}{'':<14}{'OLD':<14}{'CURRENT':<18}{'':<8}",
+        # Line 2: detailed column names
+        f"{'':<6}{'CODE':<6}{'MNI NO':>12}{'CUSTCD':>8}{'':<30}{'CIS NO':>12}{'NEW IC':>14}{'IC':>14}{'BALANCE':>18}{'PRODUCT':>8}",
+        "-" * LRECL,
+    ]
 
 
-fdind_df = _standardize_schema(fdind_df)
-caind_df = _standardize_schema(caind_df)
-saind_df = _standardize_schema(saind_df)
-
-data1 = pl.concat([fdind_df, caind_df, saind_df], how="diagonal")
-
-=======================
-
-Step 9: Generating FD11TEXT (Individual) and FD12TEXT (Corporate)...
-
-  Generating INDVTP50_260726.txt ...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 612, in <module>
-    data1_ind, data3_ind = _run_prnrec(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 524, in _run_prnrec
-    data1 = pl.concat(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/functions/eager.py", line 247, in concat
-    out = wrap_df(plr.concat_df_diagonal(elems))
-polars.exceptions.SchemaError: type String is incompatible with expected type Float64
+# After the group's rows are printed, before the next group:
+if current_group is not None:
+    # Print CUSTNAME line
+    writer.add_line(
+        f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+    )
+    # Print ICNO line (indented)
+    writer.add_line(
+        f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+    )
+    # Reset group_sum
+    group_sum = 0.0
 
 
-
-ind_df = ind_df.with_columns([
-    pl.when(pl.col("PURPOSE") == "2").then(pl.lit("JOINT")).otherwise(pl.col("ICNO")).alias("ICNO"),
-    # NOTE: SAS source sets CUSTNAME=NAME here, but this program's actual
-    # parquet schema has no NAME field (only CUSTNAME, already populated from
-    # the CIS merge in Step 6). Retaining CUSTNAME as-is instead of
-    # fabricating a NAME value.
-    pl.col("CUSTNAME"),
-])
-
-
-
-merged["CUSTNAME"] = merged["_CIS_CUSTNAME"].where(
-    merged["_CIS_CUSTNAME"].notna() & (merged["_CIS_CUSTNAME"].str.strip() != ""),
-    merged.get("NAME"),   # <- silently becomes all-None since NAME doesn't exist
-)
+obs_counter = 1  # outside the loop
+for row in data3.iter_rows(named=True):
+    # ... compute branch_str, acctno_str, etc.
+    line = (
+        f"{obs_counter:>6}"
+        f"{branch_str:<6}"  # branch code right-aligned? Actually branch is right-aligned in SAS, so use rjust(6)
+        # ... but careful: branch_str is currently right-justified with rjust(6), we can just use it.
+        # We'll adjust the format string accordingly.
+    )
+    writer.add_line(line)
+    obs_counter += 1
+    group_sum += float(row.get("CURBAL") or 0.0)
 
 
-# NOTE: merged.get("NAME") returns None — this program's account-level
-# parquet schema (CA/FD/SA) has no NAME field. Falls back to null rather
-# than fabricating a name when CIS's CUSTNAME is blank.
-merged.get("NAME"),
-
-====================
-
-CA Parquet columns: ['DOBCIS', 'ACCTNO', 'RACE', 'COUNTRY', 'BRANCH', 'CLOSEDT', 'REOPENDT', 'CUSTCODE', 'ODPLAN', 'RATE1', 'RATE2', 'RATE3', 'RATE4', 'RATE5', 'FLATRATE', 'ORGCODE', 'ORGTYPE', 'LIMIT1', 'LIMIT2', 'LIMIT3', 'LIMIT4', 'LIMIT5', 'INTYTD', 'PURPOSE', 'SECTOR', 'USER2', 'USER3', 'RISKCODE', 'LEDGBAL', 'L_DEP', 'OPENIND', 'LASTTRAN', 'RETURNS_Y', 'CHGIND', 'AVGAMT', 'PRODUCT', 'DEPTYPE', 'INTPD', 'INTPLAN', 'CURBAL', 'CHQFLOAT', 'STATE', 'INTCYCODE', 'APPRLIMT', 'ODINTCHR', 'ODINTACC', 'YTDAVAMT', 'INACTIVE', 'SECOND', 'BONUTYPE', 'SERVICE', 'BONUSANO', 'USER5', 'PREVBRNO', 'COSTCTR', 'AUTHORISE_LIMIT', 'POST_IND', 'CENSUST', 'ACCPROF', 'MAXPROF', 'INTRSTPD', 'MTDAVBAL', 'BILLERIND', 'MODIFIED_FACILITY_IND', 'DTLSTCUST', 'OPENDT', 'NXT_STMT_CYCLE_DT', 'STMT_CYCLE', 'DNBFISME', 'DATE_LST_DEP', 'INTPAYBL', 'INTPLAN_IBCA', 'MAILCODE', 'RRIND', 'RRCOMPLDT', 'REASON', 'INSTRUCTIONS', 'OMNILOAN', 'OMNITRDB', 'DSR', 'MTD_REPAID_AMT', 'INDUSTRIAL_SECTOR_CD', 'MTD_DISBURSED_AMT', 'MTD_REPAY_TYPE10_AMT', 'MTD_REPAY_TYPE20_AMT', 'MTD_REPAY_TYPE30_AMT', 'COV_OPT_OUT', 'PROP_DEVELOP_FIN_IND', 'REPAY_TYPE_CD', 'PB_ENTERPRISE_PACKAGE_CD', 'PB_ENTERPRISE_REG_DT', 'PB_ENTERPRISE_TAG', 'WRITE_DOWN_BAL', 'FEEYTD', 'FAACRR', 'CRRCODE', 'ASCORE_PERM', 'ASCORE_LTST', 'ASCORE_COMM', 'ACSTATUS4', 'ACSTATUS5', 'ACSTATUS6', 'ACSTATUS7', 'ACSTATUS8', 'ACSTATUS9', 'ACSTATUS10', 'CUSTFISS', 'RISKRATE', 'DOBMNI', 'RR_EXP_DATE', 'RR_EFF_DATE', 'DNBFI_ORI', 'ESIGNATURE', 'CONDIMODE', 'MTDAVBAL_MIS', 'NOCRDAY', 'ACCMCR', 'NODRDAY', 'ACCMDR', 'MTDAVCBAL', 'MTDAVDBAL', 'DIA_PAST01_MTH', 'DIA_PAST02_MTH', 'DIA_PAST03_MTH', 'DIA_PAST04_MTH', 'DIA_PAST05_MTH', 'DIA_PAST06_MTH', 'DIA_PAST07_MTH', 'DIA_PAST08_MTH', 'DIA_PAST09_MTH', 'DIA_PAST10_MTH', 'DIA_PAST11_MTH', 'DIA_PAST12_MTH', 'E_INVOICE_IND', 'CASH_DEPOSIT_LIMIT_IND', 'SOURCE_INCOME_CURRENCY_CD', 'CASH_DEPOSIT_AMOUNT_AGG', 'POST_IND_MAINT_DT', 'POST_IND_EXP_DT', 'FDB_TAG', 'FDB_TAG_DT', 'FDB_SCORING_DT', 'REFERRAL_BRANCH', 'ACCTNO_SAVE_LN', 'SUB_OD_PRODUCT', 'APPL_COMMERCIAL_TAG', 'OKU_IND', 'WRIOFF_CLOSE_FILE_TAG', 'WRIOFF_CLOSE_FILE_TAG_DT']
-
-FD Parquet columns: ['DOBCIS', 'ACCTNO', 'RACE', 'COUNTRY', 'BRANCH', 'CLOSEDT', 'REOPENDT', 'CUSTCODE', 'ORGCODE', 'ORGTYPE', 'INTYTD', 'PURPOSE', 'SECTOR', 'USER2', 'USER3', 'RISKCODE', 'LEDGBAL', 'OPENIND', 'LASTTRAN', 'AVGAMT', 'PRODUCT', 'DEPTYPE', 'INTPD', 'INTPLAN', 'CURBAL', 'STATE', 'INTCYCODE', 'INACTIVE', 'SECOND', 'BONUTYPE', 'SERVICE', 'BONUSANO', 'USER5', 'PREVBRNO', 'COSTCTR', 'POST_IND', 'INTRSTPD', 'MTDAVBAL', 'DTLSTCUST', 'OPENDT', 'PRIN_ACCT', 'NXT_STMT_CYCLE_DT', 'STMT_CYCLE', 'DNBFISME', 'INTPAYBL', 'MAILCODE', 'REASON', 'INSTRUCTIONS', 'FEEYTD', 'ACSTATUS4', 'ACSTATUS5', 'ACSTATUS6', 'ACSTATUS7', 'ACSTATUS8', 'ACSTATUS9', 'ACSTATUS10', 'DOBMNI', 'ESIGNATURE', 'CONDIMODE', 'MTDAVBAL_MIS', 'E_INVOICE_IND', 'POST_IND_MAINT_DT', 'POST_IND_EXP_DT', 'OKU_IND']
-
-SA Parquet columns: ['DOBCIS', 'ACCTNO', 'RACE', 'COUNTRY', 'BRANCH', 'CLOSEDT', 'REOPENDT', 'CUSTCODE', 'ORGCODE', 'ORGTYPE', 'INTYTD', 'PURPOSE', 'SECTOR', 'USER2', 'USER3', 'RISKCODE', 'LEDGBAL', 'OPENIND', 'LASTTRAN', 'CHGIND', 'AVGAMT', 'PRODUCT', 'DEPTYPE', 'INTPD', 'INTPLAN', 'CURBAL', 'CHQFLOAT', 'STATE', 'INTCYCODE', 'PBIND', 'YTDAVAMT', 'INACTIVE', 'SECOND', 'BONUTYPE', 'SERVICE', 'BONUSANO', 'USER5', 'PREVBRNO', 'COSTCTR', 'POST_IND', 'INTRSTPD', 'MTDAVBAL', 'DTLSTCUST', 'OPENDT', 'NXT_STMT_CYCLE_DT', 'STMT_CYCLE', 'AC_OPEN_STATUS_CD', 'DNBFISME', 'INTPAYBL', 'MAILCODE', 'REASON', 'INSTRUCTIONS', 'SSADATE', 'FEEYTD', 'ACSTATUS4', 'ACSTATUS5', 'ACSTATUS6', 'ACSTATUS7', 'ACSTATUS8', 'ACSTATUS9', 'ACSTATUS10', 'DOBMNI', 'ESIGNATURE', 'CONDIMODE', 'MTDAVBAL_MIS', 'E_INVOICE_IND', 'CASH_DEPOSIT_LIMIT_IND', 'CASH_DEPOSIT_AMOUNT_AGG', 'POST_IND_MAINT_DT', 'POST_IND_EXP_DT', 'OKU_IND']
+data2 = data2.sort("CURBAL", descending=True).head(100)
 
 
-print("CA Parquet columns:", pl.read_parquet(CA_CACHE).columns)
-print("FD Parquet columns:", pl.read_parquet(FD_CACHE).columns)
-print("SA Parquet columns:", pl.read_parquet(SA_CACHE).columns)
+data1 = data1.filter(pl.col("ICNO").is_not_null() & (pl.col("CUSTNAME").is_not_null()))
 
 
-CA columns after merge: ['DOBCIS', 'ACCTNO', 'RACE', 'COUNTRY', 'BRANCH', 'CLOSEDT', 'REOPENDT', 'CUSTCODE', 'ODPLAN', 'RATE1', 'RATE2', 'RATE3', 'RATE4', 'RATE5', 'FLATRATE', 'ORGCODE', 'ORGTYPE', 'LIMIT1', 'LIMIT2', 'LIMIT3', 'LIMIT4', 'LIMIT5', 'INTYTD', 'PURPOSE', 'SECTOR', 'USER2', 'USER3', 'RISKCODE', 'LEDGBAL', 'L_DEP', 'OPENIND', 'LASTTRAN', 'RETURNS_Y', 'CHGIND', 'AVGAMT', 'PRODUCT', 'DEPTYPE', 'INTPD', 'INTPLAN', 'CURBAL', 'CHQFLOAT', 'STATE', 'INTCYCODE', 'APPRLIMT', 'ODINTCHR', 'ODINTACC', 'YTDAVAMT', 'INACTIVE', 'SECOND', 'BONUTYPE', 'SERVICE', 'BONUSANO', 'USER5', 'PREVBRNO', 'COSTCTR', 'AUTHORISE_LIMIT', 'POST_IND', 'CENSUST', 'ACCPROF', 'MAXPROF', 'INTRSTPD', 'MTDAVBAL', 'BILLERIND', 'MODIFIED_FACILITY_IND', 'DTLSTCUST', 'OPENDT', 'NXT_STMT_CYCLE_DT', 'STMT_CYCLE', 'DNBFISME', 'DATE_LST_DEP', 'INTPAYBL', 'INTPLAN_IBCA', 'MAILCODE', 'RRIND', 'RRCOMPLDT', 'REASON', 'INSTRUCTIONS', 'OMNILOAN', 'OMNITRDB', 'DSR', 'MTD_REPAID_AMT', 'INDUSTRIAL_SECTOR_CD', 'MTD_DISBURSED_AMT', 'MTD_REPAY_TYPE10_AMT', 'MTD_REPAY_TYPE20_AMT', 'MTD_REPAY_TYPE30_AMT', 'COV_OPT_OUT', 'PROP_DEVELOP_FIN_IND', 'REPAY_TYPE_CD', 'PB_ENTERPRISE_PACKAGE_CD', 'PB_ENTERPRISE_REG_DT', 'PB_ENTERPRISE_TAG', 'WRITE_DOWN_BAL', 'FEEYTD', 'FAACRR', 'CRRCODE', 'ASCORE_PERM', 'ASCORE_LTST', 'ASCORE_COMM', 'ACSTATUS4', 'ACSTATUS5', 'ACSTATUS6', 'ACSTATUS7', 'ACSTATUS8', 'ACSTATUS9', 'ACSTATUS10', 'CUSTFISS', 'RISKRATE', 'DOBMNI', 'RR_EXP_DATE', 'RR_EFF_DATE', 'DNBFI_ORI', 'ESIGNATURE', 'CONDIMODE', 'MTDAVBAL_MIS', 'NOCRDAY', 'ACCMCR', 'NODRDAY', 'ACCMDR', 'MTDAVCBAL', 'MTDAVDBAL', 'DIA_PAST01_MTH', 'DIA_PAST02_MTH', 'DIA_PAST03_MTH', 'DIA_PAST04_MTH', 'DIA_PAST05_MTH', 'DIA_PAST06_MTH', 'DIA_PAST07_MTH', 'DIA_PAST08_MTH', 'DIA_PAST09_MTH', 'DIA_PAST10_MTH', 'DIA_PAST11_MTH', 'DIA_PAST12_MTH', 'E_INVOICE_IND', 'CASH_DEPOSIT_LIMIT_IND', 'SOURCE_INCOME_CURRENCY_CD', 'CASH_DEPOSIT_AMOUNT_AGG', 'POST_IND_MAINT_DT', 'POST_IND_EXP_DT', 'FDB_TAG', 'FDB_TAG_DT', 'FDB_SCORING_DT', 'REFERRAL_BRANCH', 'ACCTNO_SAVE_LN', 'SUB_OD_PRODUCT', 'APPL_COMMERCIAL_TAG', 'OKU_IND', 'WRIOFF_CLOSE_FILE_TAG', 'WRIOFF_CLOSE_FILE_TAG_DT', 'PRODCD', 'ICNO', 'NEWIC', 'OLDIC', 'INDORG', 'CUSTNAME']
-FD columns after merge: ['DOBCIS', 'ACCTNO', 'RACE', 'COUNTRY', 'BRANCH', 'CLOSEDT', 'REOPENDT', 'CUSTCODE', 'ORGCODE', 'ORGTYPE', 'INTYTD', 'PURPOSE', 'SECTOR', 'USER2', 'USER3', 'RISKCODE', 'LEDGBAL', 'OPENIND', 'LASTTRAN', 'AVGAMT', 'PRODUCT', 'DEPTYPE', 'INTPD', 'INTPLAN', 'CURBAL', 'STATE', 'INTCYCODE', 'INACTIVE', 'SECOND', 'BONUTYPE', 'SERVICE', 'BONUSANO', 'USER5', 'PREVBRNO', 'COSTCTR', 'POST_IND', 'INTRSTPD', 'MTDAVBAL', 'DTLSTCUST', 'OPENDT', 'PRIN_ACCT', 'NXT_STMT_CYCLE_DT', 'STMT_CYCLE', 'DNBFISME', 'INTPAYBL', 'MAILCODE', 'REASON', 'INSTRUCTIONS', 'FEEYTD', 'ACSTATUS4', 'ACSTATUS5', 'ACSTATUS6', 'ACSTATUS7', 'ACSTATUS8', 'ACSTATUS9', 'ACSTATUS10', 'DOBMNI', 'ESIGNATURE', 'CONDIMODE', 'MTDAVBAL_MIS', 'E_INVOICE_IND', 'POST_IND_MAINT_DT', 'POST_IND_EXP_DT', 'OKU_IND', 'ICNO', 'NEWIC', 'OLDIC', 'INDORG', 'CUSTNAME']
-SA columns after merge: ['DOBCIS', 'ACCTNO', 'RACE', 'COUNTRY', 'BRANCH', 'CLOSEDT', 'REOPENDT', 'CUSTCODE', 'ORGCODE', 'ORGTYPE', 'INTYTD', 'PURPOSE', 'SECTOR', 'USER2', 'USER3', 'RISKCODE', 'LEDGBAL', 'OPENIND', 'LASTTRAN', 'CHGIND', 'AVGAMT', 'PRODUCT', 'DEPTYPE', 'INTPD', 'INTPLAN', 'CURBAL', 'CHQFLOAT', 'STATE', 'INTCYCODE', 'PBIND', 'YTDAVAMT', 'INACTIVE', 'SECOND', 'BONUTYPE', 'SERVICE', 'BONUSANO', 'USER5', 'PREVBRNO', 'COSTCTR', 'POST_IND', 'INTRSTPD', 'MTDAVBAL', 'DTLSTCUST', 'OPENDT', 'NXT_STMT_CYCLE_DT', 'STMT_CYCLE', 'AC_OPEN_STATUS_CD', 'DNBFISME', 'INTPAYBL', 'MAILCODE', 'REASON', 'INSTRUCTIONS', 'SSADATE', 'FEEYTD', 'ACSTATUS4', 'ACSTATUS5', 'ACSTATUS6', 'ACSTATUS7', 'ACSTATUS8', 'ACSTATUS9', 'ACSTATUS10', 'DOBMNI', 'ESIGNATURE', 'CONDIMODE', 'MTDAVBAL_MIS', 'E_INVOICE_IND', 'CASH_DEPOSIT_LIMIT_IND', 'CASH_DEPOSIT_AMOUNT_AGG', 'POST_IND_MAINT_DT', 'POST_IND_EXP_DT', 'OKU_IND', 'PRODCD', 'ICNO', 'NEWIC', 'OLDIC', 'INDORG', 'CUSTNAME']
-
-
-print("CA columns after merge:", ca.columns)
-print("FD columns after merge:", fd.columns)
-print("SA columns after merge:", sa.columns)
-
-
-print("CA Parquet columns:", pl.read_parquet(CA_CACHE).columns)
-
-
-merged = acct_pd.merge(cis_pd, on="ACCTNO", how="left")
-
-=====================
-
-Step 7: Splitting CA/FD/SA into IND / ORG branches...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 375, in <module>
-    caind, caorg = _split_ind_org(ca, "CABAL")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 363, in _split_ind_org
-    ind_df = ind_df.with_columns([
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "NAME"; valid columns: ["DOBCIS", "ACCTNO", "RACE", "COUNTRY", "BRANCH", "CLOSEDT", "REOPENDT", "CUSTCODE", "ODPLAN", "RATE1", "RATE2", "RATE3", "RATE4", "RATE5", "FLATRATE", "ORGCODE", "ORGTYPE", "LIMIT1", "LIMIT2", "LIMIT3", "LIMIT4", "LIMIT5", "INTYTD", "PURPOSE", "SECTOR", "USER2", "USER3", "RISKCODE", "LEDGBAL", "L_DEP", "OPENIND", "LASTTRAN", "RETURNS_Y", "CHGIND", "AVGAMT", "PRODUCT", "DEPTYPE", "INTPD", "INTPLAN", "CURBAL", "CHQFLOAT", "STATE", "INTCYCODE", "APPRLIMT", "ODINTCHR", "ODINTACC", "YTDAVAMT", "INACTIVE", "SECOND", "BONUTYPE", "SERVICE", "BONUSANO", "USER5", "PREVBRNO", "COSTCTR", "AUTHORISE_LIMIT", "POST_IND", "CENSUST", "ACCPROF", "MAXPROF", "INTRSTPD", "MTDAVBAL", "BILLERIND", "MODIFIED_FACILITY_IND", "DTLSTCUST", "OPENDT", "NXT_STMT_CYCLE_DT", "STMT_CYCLE", "DNBFISME", "DATE_LST_DEP", "INTPAYBL", "INTPLAN_IBCA", "MAILCODE", "RRIND", "RRCOMPLDT", "REASON", "INSTRUCTIONS", "OMNILOAN", "OMNITRDB", "DSR", "MTD_REPAID_AMT", "INDUSTRIAL_SECTOR_CD", "MTD_DISBURSED_AMT", "MTD_REPAY_TYPE10_AMT", "MTD_REPAY_TYPE20_AMT", "MTD_REPAY_TYPE30_AMT", "COV_OPT_OUT", "PROP_DEVELOP_FIN_IND", "REPAY_TYPE_CD", "PB_ENTERPRISE_PACKAGE_CD", "PB_ENTERPRISE_REG_DT", "PB_ENTERPRISE_TAG", "WRITE_DOWN_BAL", "FEEYTD", "FAACRR", "CRRCODE", "ASCORE_PERM", "ASCORE_LTST", "ASCORE_COMM", "ACSTATUS4", "ACSTATUS5", "ACSTATUS6", "ACSTATUS7", "ACSTATUS8", "ACSTATUS9", "ACSTATUS10", "CUSTFISS", "RISKRATE", "DOBMNI", "RR_EXP_DATE", "RR_EFF_DATE", "DNBFI_ORI", "ESIGNATURE", "CONDIMODE", "MTDAVBAL_MIS", "NOCRDAY", "ACCMCR", "NODRDAY", "ACCMDR", "MTDAVCBAL", "MTDAVDBAL", "DIA_PAST01_MTH", "DIA_PAST02_MTH", "DIA_PAST03_MTH", "DIA_PAST04_MTH", "DIA_PAST05_MTH", "DIA_PAST06_MTH", "DIA_PAST07_MTH", "DIA_PAST08_MTH", "DIA_PAST09_MTH", "DIA_PAST10_MTH", "DIA_PAST11_MTH", "DIA_PAST12_MTH", "E_INVOICE_IND", "CASH_DEPOSIT_LIMIT_IND", "SOURCE_INCOME_CURRENCY_CD", "CASH_DEPOSIT_AMOUNT_AGG", "POST_IND_MAINT_DT", "POST_IND_EXP_DT", "FDB_TAG", "FDB_TAG_DT", "FDB_SCORING_DT", "REFERRAL_BRANCH", "ACCTNO_SAVE_LN", "SUB_OD_PRODUCT", "APPL_COMMERCIAL_TAG", "OKU_IND", "WRIOFF_CLOSE_FILE_TAG", "WRIOFF_CLOSE_FILE_TAG_DT", "PRODCD", "ICNO", "NEWIC", "OLDIC", "INDORG", "CUSTNAME", "CABAL"]
-
-======================
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py
-Step 1: Deriving report date...
-  Report date : 26/07/26
-  REPTYEAR    : 2026  REPTMON: 07  REPTDAY: 26  NOWK: 4
-
-Step 2: Resolving latest ca / fd / sa file names...
-[FILE_RESOLVER] Selected latest: ca260726.sas7bdat
-[FILE_RESOLVER] Selected latest: fd260726.sas7bdat
-[FILE_RESOLVER] Selected latest: sa260726.sas7bdat
-  CA (CURRENT) : ca260726.sas7bdat
-  FD           : fd260726.sas7bdat
-  SA (SAVING)  : sa260726.sas7bdat
-
-Step 3: Caching SAS files to Parquet (if needed)...
-  [CA] Converting ca260726.sas7bdat -> ca260726.parquet ...
-  [CA] WARNING: Cannot cast 'BILLERIND' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CA] Done — 852,597 rows cached.
-  [FD] Converting fd260726.sas7bdat -> fd260726.parquet ...
-  [FD] Done — 1,210,873 rows cached.
-  [SA] Converting sa260726.sas7bdat -> sa260726.parquet ...
-  [SA] Done — 4,247,695 rows cached.
-  [CISDP] Converting CISDP_deposit.sas7bdat -> cisdp.parquet ...
-  [CISDP] WARNING: Cannot cast 'CISCUSTCD11' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISDP] WARNING: Cannot cast 'CISCUSTCD12' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISDP] WARNING: Cannot cast 'CISCUSTCD13' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISDP] WARNING: Cannot cast 'CISCUSTCD14' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISDP] Done — 1,236,729 rows cached.
-  [CISFD] Converting CISFD_deposit.sas7bdat -> cisfd.parquet ...
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD7' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD7' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD7' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD7' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD8' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD9' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD7' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD8' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD9' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD7' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD7' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] WARNING: Cannot cast 'CISCUSTCD8' from string to null: Unsupported cast from string to null using function cast_null — filling nulls
-  [CISFD] Done — 10,885,536 rows cached.
-  [MNILIST] Converting cof_mni_depositor_list.sas7bdat -> cof_mni_depositor_list.parquet ...
-  [MNILIST] Done — 2,527 rows cached.
-  [TOPDEP] Converting keep_top_dep_excl_pbb.sas7bdat -> keep_top_dep_excl_pbb.parquet ...
-  [TOPDEP] Done — 99 rows cached.
-
-Step 4: Building CISCA / CISFD customer lookups...
-100% ▕██████████████████████████████████████▏ (00:00:22.42 elapsed)     
-  CISCA rows: 1,123,041   CISFD rows: 8,627,025
-
-Step 5: Building CA / FD / SA datasets (product format + filter)...
-100% ▕██████████████████████████████████████▏ (00:00:08.39 elapsed)     
-100% ▕██████████████████████████████████████▏ (00:00:03.42 elapsed)     
-100% ▕██████████████████████████████████████▏ (00:00:15.81 elapsed)     
-  CA rows: 766,230   FD rows: 879,077   SA rows: 4,126,446
-
-Step 6: Merging account data with customer lookups...
-  CA merged rows: 766,230   FD merged rows: 879,077   SA merged rows: 4,126,446
-
-Step 7: Splitting CA/FD/SA into IND / ORG branches...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 375, in <module>
-    caind, caorg = _split_ind_org(ca, "CABAL")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 363, in _split_ind_org
-    ind_df = ind_df.with_columns([
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "NAME"; valid columns: ["DOBCIS", "ACCTNO", "RACE", "COUNTRY", "BRANCH", "CLOSEDT", "REOPENDT", "CUSTCODE", "ODPLAN", "RATE1", "RATE2", "RATE3", "RATE4", "RATE5", "FLATRATE", "ORGCODE", "ORGTYPE", "LIMIT1", "LIMIT2", "LIMIT3", "LIMIT4", "LIMIT5", "INTYTD", "PURPOSE", "SECTOR", "USER2", "USER3", "RISKCODE", "LEDGBAL", "L_DEP", "OPENIND", "LASTTRAN", "RETURNS_Y", "CHGIND", "AVGAMT", "PRODUCT", "DEPTYPE", "INTPD", "INTPLAN", "CURBAL", "CHQFLOAT", "STATE", "INTCYCODE", "APPRLIMT", "ODINTCHR", "ODINTACC", "YTDAVAMT", "INACTIVE", "SECOND", "BONUTYPE", "SERVICE", "BONUSANO", "USER5", "PREVBRNO", "COSTCTR", "AUTHORISE_LIMIT", "POST_IND", "CENSUST", "ACCPROF", "MAXPROF", "INTRSTPD", "MTDAVBAL", "BILLERIND", "MODIFIED_FACILITY_IND", "DTLSTCUST", "OPENDT", "NXT_STMT_CYCLE_DT", "STMT_CYCLE", "DNBFISME", "DATE_LST_DEP", "INTPAYBL", "INTPLAN_IBCA", "MAILCODE", "RRIND", "RRCOMPLDT", "REASON", "INSTRUCTIONS", "OMNILOAN", "OMNITRDB", "DSR", "MTD_REPAID_AMT", "INDUSTRIAL_SECTOR_CD", "MTD_DISBURSED_AMT", "MTD_REPAY_TYPE10_AMT", "MTD_REPAY_TYPE20_AMT", "MTD_REPAY_TYPE30_AMT", "COV_OPT_OUT", "PROP_DEVELOP_FIN_IND", "REPAY_TYPE_CD", "PB_ENTERPRISE_PACKAGE_CD", "PB_ENTERPRISE_REG_DT", "PB_ENTERPRISE_TAG", "WRITE_DOWN_BAL", "FEEYTD", "FAACRR", "CRRCODE", "ASCORE_PERM", "ASCORE_LTST", "ASCORE_COMM", "ACSTATUS4", "ACSTATUS5", "ACSTATUS6", "ACSTATUS7", "ACSTATUS8", "ACSTATUS9", "ACSTATUS10", "CUSTFISS", "RISKRATE", "DOBMNI", "RR_EXP_DATE", "RR_EFF_DATE", "DNBFI_ORI", "ESIGNATURE", "CONDIMODE", "MTDAVBAL_MIS", "NOCRDAY", "ACCMCR", "NODRDAY", "ACCMDR", "MTDAVCBAL", "MTDAVDBAL", "DIA_PAST01_MTH", "DIA_PAST02_MTH", "DIA_PAST03_MTH", "DIA_PAST04_MTH", "DIA_PAST05_MTH", "DIA_PAST06_MTH", "DIA_PAST07_MTH", "DIA_PAST08_MTH", "DIA_PAST09_MTH", "DIA_PAST10_MTH", "DIA_PAST11_MTH", "DIA_PAST12_MTH", "E_INVOICE_IND", "CASH_DEPOSIT_LIMIT_IND", "SOURCE_INCOME_CURRENCY_CD", "CASH_DEPOSIT_AMOUNT_AGG", "POST_IND_MAINT_DT", "POST_IND_EXP_DT", "FDB_TAG", "FDB_TAG_DT", "FDB_SCORING_DT", "REFERRAL_BRANCH", "ACCTNO_SAVE_LN", "SUB_OD_PRODUCT", "APPL_COMMERCIAL_TAG", "OKU_IND", "WRIOFF_CLOSE_FILE_TAG", "WRIOFF_CLOSE_FILE_TAG_DT", "PRODCD", "ICNO", "NEWIC", "OLDIC", "INDORG", "CUSTNAME", "CABAL"]
