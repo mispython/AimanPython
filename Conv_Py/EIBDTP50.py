@@ -459,26 +459,47 @@ class _PageWriter:
                 fh.write(ln.ljust(LRECL if ln != "\f" else 1) + "\n")
 
 
+# def _summary_header(title2: str) -> list[str]:
+#     return [
+#         "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
+#         title2 + f" {RDATE}",
+#         "-" * LRECL,
+#         f"{'Obs':<6}{'DEPOSITOR':<30}{'TOTAL BALANCE':>18}{'FD BALANCE':>18}{'CA BALANCE':>18}{'SA BALANCE':>18}",
+#         "-" * LRECL,
+#     ]
+
+
 def _summary_header(title2: str) -> list[str]:
     return [
         "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
         title2 + f" {RDATE}",
-        "-" * LRECL,
-        f"{'Obs':<6}{'DEPOSITOR':<30}{'TOTAL BALANCE':>18}{'FD BALANCE':>18}{'CA BALANCE':>18}{'SA BALANCE':>18}",
-        "-" * LRECL,
+        "-" * 133,
+        "Obs   DEPOSITOR                                      TOTAL BALANCE          FD BALANCE          CA BALANCE          SA BALANCE",
+        "-" * 133,
     ]
+
+
+# def _detail_header(title2: str) -> list[str]:
+#     return [
+#         "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
+#         title2 + f" {RDATE}",
+#         "-" * LRECL,
+#         # Line 1: labels for BRANCH, OLD, CURRENT above their columns
+#         f"{'Obs':<6}{'BRANCH':<6}{'':<12}{'':<8}{'DEPOSITOR':<30}{'':<12}{'':<14}{'OLD':<14}{'CURRENT':<18}{'':<8}",
+#         # Line 2: detailed column names
+#         f"{'':<6}{'CODE':<6}{'MNI NO':>12}{'CUSTCD':>8}{'':<30}{'CIS NO':>12}{'NEW IC':>14}{'IC':>14}{'BALANCE':>18}{'PRODUCT':>8}",
+#         "-" * LRECL,
+#     ]
 
 
 def _detail_header(title2: str) -> list[str]:
     return [
         "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
         title2 + f" {RDATE}",
-        "-" * LRECL,
-        # Line 1: labels for BRANCH, OLD, CURRENT above their columns
-        f"{'Obs':<6}{'BRANCH':<6}{'':<12}{'':<8}{'DEPOSITOR':<30}{'':<12}{'':<14}{'OLD':<14}{'CURRENT':<18}{'':<8}",
-        # Line 2: detailed column names
-        f"{'':<6}{'CODE':<6}{'MNI NO':>12}{'CUSTCD':>8}{'':<30}{'CIS NO':>12}{'NEW IC':>14}{'IC':>14}{'BALANCE':>18}{'PRODUCT':>8}",
-        "-" * LRECL,
+        "-" * 133,
+        "Obs   BRANCH                    DEPOSITOR                                               OLD           CURRENT",
+        "      CODE        MNI NO  CUSTCD                                    CIS NO        NEW IC            IC           BALANCE PRODUCT",
+        "-" * 133,
     ]
 
 
@@ -501,6 +522,20 @@ def _subs_header(title3: str) -> list[str]:
 # DATA3 BY ICNO CUSTNAME SUM CURBAL;
 # ============================================================================
 def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, output_path: Path):
+
+    # Column start positions (0‑based)
+    COL_OBS    = 0
+    COL_BRANCH = 6
+    COL_ACCTNO = 12
+    COL_CUSTCD = 24
+    COL_NAME   = 32
+    COL_CUSTNO = 62
+    COL_NEWIC  = 74
+    COL_OLDIC  = 88
+    COL_BAL    = 102
+    COL_PROD   = 120
+    grand_total = 0.0
+
     print(f"\n  Generating {output_path.name} ...")
 
     # print("\n=== Schemas before concat ===")
@@ -565,33 +600,6 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
     data3 = data1.join(top_keys, on=["ICNO", "CUSTNAME"], how="inner")
     data3 = data3.sort(["ICNO", "CUSTNAME"])
 
-    # writer.new_page(title2_detail)
-    # current_group = None
-    # group_sum = 0.0
-    # for row in data3.iter_rows(named=True):
-    #     group_key = (row.get("ICNO"), row.get("CUSTNAME"))
-    #     if current_group is not None and group_key != current_group:
-    #         writer.add_line(f"{'':<49}{'TOTAL':>12}{_fmt_comma(group_sum, 18)}")
-    #         group_sum = 0.0
-    #     current_group = group_key
-
-    #     branch_str = str(int(row.get("BRANCH") or 0)).rjust(6) if row.get("BRANCH") is not None else " " * 6
-    #     acctno_str = f"{int(row.get('ACCTNO') or 0):>12d}"
-    #     custcode_str = str(row.get("CUSTCODE") or "")[:8].rjust(8)
-    #     custname_str = str(row.get("CUSTNAME") or "")[:30]
-    #     custno_str = f"{int(row.get('CUSTNO') or 0):>12d}" if row.get("CUSTNO") is not None else " " * 12
-    #     newic_str = str(row.get("NEWIC") or "")[:14].rjust(14)
-    #     oldic_str = str(row.get("OLDIC") or "")[:14].rjust(14)
-    #     curbal_str = _fmt_comma(row.get("CURBAL"), 18)
-    #     product_str = str(row.get("PRODUCT") or "")[:8].rjust(8)
-
-    #     line = (
-    #         f"{branch_str:<7}{acctno_str}{custcode_str}{custname_str:<30}"
-    #         f"{custno_str}{newic_str}{oldic_str}{curbal_str}{product_str}"
-    #     )
-    #     writer.add_line(line)
-    #     group_sum += float(row.get("CURBAL") or 0.0)
-
     writer.new_page(title2_detail, header_fn=_detail_header)
     obs_counter = 1
     current_group = None
@@ -599,36 +607,59 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
 
     for row in data3.iter_rows(named=True):
         group_key = (row.get("ICNO"), row.get("CUSTNAME"))
-        # If we've moved to a new group, print subtotals for the previous group
+        # # If we've moved to a new group, print subtotals for the previous group
+        # if current_group is not None and group_key != current_group:
+        #     # CUSTNAME subtotal line
+        #     writer.add_line(
+        #         f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+        #     )
+        #     # ICNO subtotal line (indented)
+        #     writer.add_line(
+        #         f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+        #     )
+        #     group_sum = 0.0
+
         if current_group is not None and group_key != current_group:
-            # CUSTNAME subtotal line
+            # --- Dashed separator line ---
+            dash_under_name = "--------"
+            dash_under_bal  = "----------------"
             writer.add_line(
-                f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+                " " * COL_NAME + dash_under_name +
+                " " * (COL_BAL - (COL_NAME + len(dash_under_name))) +
+                dash_under_bal
             )
-            # ICNO subtotal line (indented)
+            # --- CUSTNAME subtotal ---
+            total_str = _fmt_comma(group_sum, 18)
             writer.add_line(
-                f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+                " " * COL_NAME + f"{'CUSTNAME':<30}" +
+                " " * (COL_BAL - COL_NAME - 30) + total_str
+            )
+            # --- ICNO subtotal (indented) ---
+            writer.add_line(
+                " " * COL_NAME + f"{'    ICNO':<30}" +
+                " " * (COL_BAL - COL_NAME - 30) + total_str
             )
             group_sum = 0.0
+            
         current_group = group_key
 
         # Build the detail line with Obs
-        branch_str = str(int(row.get("BRANCH") or 0)).rjust(6) if row.get("BRANCH") is not None else " " * 6
-        acctno_str = f"{int(row.get('ACCTNO') or 0):>12d}"
-        custcode_str = str(row.get("CUSTCODE") or "")[:8].rjust(8)
-        custname_str = str(row.get("CUSTNAME") or "")[:30]
-        custno_str = f"{int(row.get('CUSTNO') or 0):>12d}" if row.get("CUSTNO") is not None else " " * 12
-        newic_str = str(row.get("NEWIC") or "")[:14].rjust(14)
-        oldic_str = str(row.get("OLDIC") or "")[:14].rjust(14)
-        curbal_str = _fmt_comma(row.get("CURBAL"), 18)
-        product_str = str(row.get("PRODUCT") or "")[:8].rjust(8)
+        branch_str = f"{int(row.get('BRANCH') or 0):>6}"
+        acctno_str = f"{int(row.get('ACCTNO') or 0):>12}"
+        custcode_str = f"{int(row.get('CUSTCODE') or 0):>8}" if row.get('CUSTCODE') is not None else " " * 8
+        custname_str = f"{str(row.get('CUSTNAME') or '')[:30]:<30}"
+        custno_str = f"{int(row.get('CUSTNO') or 0):>12}" if row.get('CUSTNO') is not None else " " * 12
+        newic_str = f"{str(row.get('NEWIC') or '')[:14]:>14}"
+        oldic_str = f"{str(row.get('OLDIC') or '')[:14]:>14}"
+        curbal_str = _fmt_comma(row.get('CURBAL'), 18)
+        product_str = f"{str(row.get('PRODUCT') or '')[:8]:>8}"
 
         line = (
             f"{obs_counter:>6}"
             f"{branch_str}"
             f"{acctno_str}"
             f"{custcode_str}"
-            f"{custname_str:<30}"
+            f"{custname_str}"
             f"{custno_str}"
             f"{newic_str}"
             f"{oldic_str}"
@@ -640,21 +671,59 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
         group_sum += float(row.get("CURBAL") or 0.0)
 
     # After the loop, print subtotal for the last group
-    if current_group is not None:
+    # if current_group is not None:
+    #     writer.add_line(
+    #         f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+    #     )
+    #     writer.add_line(
+    #         f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+    #     )
+
+    if current_group is not None and group_key != current_group:
+        # --- Dashed separator line ---
+        dash_under_name = "--------"
+        dash_under_bal  = "----------------"
         writer.add_line(
-            f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+            " " * COL_NAME + dash_under_name +
+            " " * (COL_BAL - (COL_NAME + len(dash_under_name))) +
+            dash_under_bal
         )
+        # --- CUSTNAME subtotal ---
+        total_str = _fmt_comma(group_sum, 18)
         writer.add_line(
-            f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
+            " " * COL_NAME + f"{'CUSTNAME':<30}" +
+            " " * (COL_BAL - COL_NAME - 30) + total_str
         )
+        # --- ICNO subtotal (indented) ---
+        writer.add_line(
+            " " * COL_NAME + f"{'    ICNO':<30}" +
+            " " * (COL_BAL - COL_NAME - 30) + total_str
+        )
+        group_sum = 0.0
+
+    # if current_group is not None:
+    #     writer.add_line(f"{'':<49}{'TOTAL':>12}{_fmt_comma(group_sum, 18)}")
 
     if current_group is not None:
-        writer.add_line(f"{'':<49}{'TOTAL':>12}{_fmt_comma(group_sum, 18)}")
+        # Compute grand total (sum of all group_sum values)
+        # We need to accumulate `grand_total` during the loop.
+        # For now, we assume we have a variable `grand_total` that holds the sum.
+        # Add this before the loop: grand_total = 0.0
+        # Inside the loop, add to grand_total as we accumulate.
+        # Then here:
+        total_str = _fmt_comma(grand_total, 18)
+        writer.add_line(" " * COL_BAL + "================")  # 16 equals signs
+        writer.add_line(
+            " " * (COL_BAL - 4) + "TOTAL" +
+            " " * (COL_BAL - (COL_BAL - 4) - 4) + total_str
+        )
+
+    group_sum += float(row.get("CURBAL") or 0.0)
+    grand_total += float(row.get("CURBAL") or 0.0)
 
     writer.write(output_path)
     print(f"  Output written : {output_path}  ({len(writer.lines):,} lines)")
     return data1, data3
-
 
 # ============================================================================
 # STEP 9: FD11TEXT / FD12TEXT  (Individual / Corporate customers)
