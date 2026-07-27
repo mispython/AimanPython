@@ -1,656 +1,716 @@
 #!/usr/bin/env python3
 """
-Program  : EIBDTP50.py
-Purpose  : Produce reports - Top 50 Depositor (Daily RM & FCY).
-           Generates three reports:
-             FD11TEXT  - Top 100 Largest FD/CA/SA Individual Customers
-             FD12TEXT  - Top 100 Largest FD/CA/SA Corporate Customers
-             FD2TEXT   - Group of Companies Under Top 100 Corp Depositors
-
-           Dependency: PBBDPFMT (product mapping and format definitions)
+Program : EIBDTP50.py
+Purpose : Daily Top 50 Depositors RM & FCY  WIP/NHN2 (After EIBDDEPF)
 """
 
-# ============================================================================
-# STANDARD LIBRARY IMPORTS
-# ============================================================================
-import sys
-import logging
-from pathlib import Path
-from datetime import date
-from typing import Optional
-
-# ============================================================================
-# THIRD-PARTY IMPORTS
-# ============================================================================
+import os
+import gc
 import duckdb
+import pandas as pd
 import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
+from pathlib import Path
 
-# ============================================================================
-# DEPENDENCY IMPORTS
-# ============================================================================
-from PBBDPFMT import CAProductFormat, SAProductFormat
+from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+from output_date import build_output_file
+
+# Dependency: PBBDPFMT (shared format module, already converted separately).
+# Only get_caprod() and get_saprod() are imported because the SAS body only
+# contains PUT(PRODUCT,CAPROD.) and PUT(PRODUCT,SAPROD.) calls. FDPROD/FDDENOM
+# etc. are NOT imported — no PUT(var,FDPROD.) call exists in this program.
+from PBBDPFMT import get_caprod, get_saprod
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = Path(".")
-DATA_DIR   = BASE_DIR / "data"
-OUTPUT_DIR = BASE_DIR / "output"
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+# DEPOSIT DD -> dpd_ca / dpd_fd / dpd_sa (dated filenames, latest per run)
+INPUT_DEPOSIT_DIR = BASE_DIR / "input" / "prod" / "EIBDTP50"
+
+# CISDP DD / CISFD DD -> fixed filenames, no date component
+INPUT_CISDP_FILE = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
+INPUT_CISFD_FILE = Path("/stgsrcsys/host/uat") / "CISFD_deposit.sas7bdat"
+
+# LIST DD -> fixed filenames, no date component
+INPUT_LIST_DIR = BASE_DIR / "input" / "prod" / "EIBDTP50"
+INPUT_MNI_LIST_FILE = INPUT_LIST_DIR / "COF_MNI_DEPOSITOR_LIST.sas7bdat"
+INPUT_TOPDEP_FILE = INPUT_LIST_DIR / "KEEP_TOP_DEP_EXCL_PBB.sas7bdat"
+
+# Parquet cache directory
+CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBDTP50"
+
+# Output directory (fixed filenames -- see note above re: GDG generations)
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDTP50"
+
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Input parquet paths
-REPTDATE_PATH             = DATA_DIR / "deposit"  / "reptdate.parquet"
-DEPOSIT_CURRENT_PATH      = DATA_DIR / "deposit"  / "current.parquet"
-DEPOSIT_FD_PATH           = DATA_DIR / "deposit"  / "fd.parquet"
-DEPOSIT_SAVING_PATH       = DATA_DIR / "deposit"  / "saving.parquet"
-CISDP_DEPOSIT_PATH        = DATA_DIR / "cisdp"    / "deposit.parquet"
-CISFD_DEPOSIT_PATH        = DATA_DIR / "cisfd"    / "deposit.parquet"
-COF_MNI_DEPOSITOR_PATH    = DATA_DIR / "list"     / "cof_mni_depositor_list.parquet"
-KEEP_TOP_DEP_EXCL_PBB_PATH= DATA_DIR / "list"     / "keep_top_dep_excl_pbb.parquet"
-
-# Output report paths (plain-text, ASA carriage control, LRECL=133)
-FD11TEXT_PATH = OUTPUT_DIR / "TOP50I.TXT"   # Individual customers
-FD12TEXT_PATH = OUTPUT_DIR / "TOP50C.TXT"   # Corporate customers
-FD2TEXT_PATH  = OUTPUT_DIR / "TOP50S.TXT"   # Subsidiaries customers
+OUTPUT_FD11 = build_output_file(OUTPUT_DIR, "INDVTP50", date_format="ddmmyy").with_suffix(".txt")   # FD11TEXT (Individual)
+OUTPUT_FD12 = build_output_file(OUTPUT_DIR, "CORPTP50", date_format="ddmmyy").with_suffix(".txt")   # FD12TEXT (Corporate)
+OUTPUT_FD2  = build_output_file(OUTPUT_DIR, "SUBSTP50", date_format="ddmmyy").with_suffix(".txt")   # FD2TEXT  (Subsidiaries)
 
 # ============================================================================
-# CONSTANTS
+# CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
 # ============================================================================
-PAGE_WIDTH   = 133
-PAGE_LINES   = 60
-LINES_HEADER = 5   # title lines + blank lines before data
-
-# ============================================================================
-# LOGGING
-# ============================================================================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-log = logging.getLogger(__name__)
-
+CHUNK_ROWS = 500_000
+ROW_LIMIT  = int(os.environ.get("ROW_LIMIT", 0))   # 0 = no limit (test mode via env)
 
 # ============================================================================
-# REPORT DATE DERIVATION
-# Mirrors: DATA REPTDATE; SET DEPOSIT.REPTDATE; SELECT(DAY(REPTDATE));
+# REPORT PAGE CONFIGURATION
 # ============================================================================
-def derive_report_date() -> tuple[str, str, str, str, str]:
-    """
-    Read REPTDATE from deposit parquet and derive macro variables:
-      NOWK     - week number within month (1-4)
-      REPTYEAR - 4-digit year
-      REPTMON  - 2-digit zero-padded month
-      REPTDAY  - 2-digit zero-padded day
-      RDATE    - formatted date as DD/MM/YYYY
-    Returns (nowk, reptyear, reptmon, reptday, rdate).
-    """
-    df = pl.read_parquet(REPTDATE_PATH)
-    reptdate: date = df["REPTDATE"][0]
-
-    day = reptdate.day
-    if   day == 8:  nowk = "1"
-    elif day == 15: nowk = "2"
-    elif day == 22: nowk = "3"
-    else:           nowk = "4"
-
-    reptyear = str(reptdate.year)
-    reptmon  = f"{reptdate.month:02d}"
-    reptday  = f"{reptdate.day:02d}"
-    rdate    = reptdate.strftime("%d/%m/%Y")
-
-    return nowk, reptyear, reptmon, reptday, rdate
-
+# JCL DCB=(RECFM=FB,LRECL=133,BLKSIZE=0) -- RECFM is FB, NOT FBA, therefore
+# there is NO ASA carriage-control byte reserved in column 1. Page breaks are
+# emitted as a literal form-feed character on its own line instead.
+PAGE_SIZE    = 60
+LRECL        = 133
 
 # ============================================================================
-# FORMAT APPLICATION HELPERS
+# STEP 1: REPORT DATE  (no reptdate.parquet — derive from REPTDATE.py)
+# CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));  -> 4-digit year
+# CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
 # ============================================================================
-def apply_caprod(product: Optional[int]) -> str:
-    return CAProductFormat.format(product)
+print("Step 1: Deriving report date...")
 
-def apply_saprod(product: Optional[int]) -> str:
-    return SAProductFormat.format(product)
+reptdate_values = get_reptdate_values(year_format="%Y")
+reptdate = reptdate_values.reptdate
 
+RDATE    = reptdate.strftime("%d/%m/%y")   # DDMMYY8.
+REPTYEAR = reptdate_values.reptyear
+REPTMON  = reptdate_values.reptmon
+REPTDAY  = reptdate_values.reptday
+
+# SELECT(DAY(REPTDATE)); WHEN(8)->1 WHEN(15)->2 WHEN(22)->3 OTHERWISE->4
+# (exact-day match, NOT a range test). NOWK is computed for fidelity but is
+# not referenced anywhere else in the original SAS program body.
+_day = reptdate.day
+if _day == 8:
+    NOWK = "1"
+elif _day == 15:
+    NOWK = "2"
+elif _day == 22:
+    NOWK = "3"
+else:
+    NOWK = "4"
+
+print(f"  Report date : {RDATE}")
+print(f"  REPTYEAR    : {REPTYEAR}  REPTMON: {REPTMON}  REPTDAY: {REPTDAY}  NOWK: {NOWK}")
 
 # ============================================================================
-# DATA PREPARATION
+# STEP 2: RESOLVE LATEST DEPOSIT INPUT FILES
 # ============================================================================
+print("\nStep 2: Resolving latest dpd_ca / dpd_fd / dpd_sa file names...")
 
-def load_cisca() -> pl.DataFrame:
-    """
-    DATA CISCA: Filter CIS deposit records for CA accounts.
-      SECCUST='901', ACCTNO 3000000000–3999999999
-      ICNO derived from NEWIC or CUSTNO.
-    """
-    df = pl.read_parquet(CISDP_DEPOSIT_PATH)
-    df = df.filter(
-        (pl.col("SECCUST") == "901") &
-        (pl.col("ACCTNO").is_between(3_000_000_000, 3_999_999_999))
+ca_path = get_latest_file(INPUT_DEPOSIT_DIR, prefix="dpd_ca")
+fd_path = get_latest_file(INPUT_DEPOSIT_DIR, prefix="dpd_fd")
+sa_path = get_latest_file(INPUT_DEPOSIT_DIR, prefix="dpd_sa")
+
+print(f"  CA (CURRENT) : {ca_path.name}")
+print(f"  FD           : {fd_path.name}")
+print(f"  SA (SAVING)  : {sa_path.name}")
+
+# ============================================================================
+# HELPER: CACHE STAMP  (skip re-conversion if .sas7bdat hasn't changed)
+# ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    """Return True when the Parquet cache is newer than the source SAS file."""
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
     )
-    df = df.with_columns(
-        pl.when(pl.col("NEWIC") != "")
-          .then(pl.col("NEWIC"))
-          .otherwise(pl.col("CUSTNO"))
-          .alias("ICNO")
+
+# ============================================================================
+# HELPER: STREAM .sas7bdat -> PARQUET  (memory-efficient chunked conversion)
+# ============================================================================
+def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    """Convert a large .sas7bdat to Parquet in streaming chunks."""
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer    = None
+    schema    = None
+    total     = 0
+    rows_read = 0
+
+    reader = pd.read_sas(
+        sas_path,
+        encoding="latin1",
+        chunksize=CHUNK_ROWS,
     )
-    return df.select(["CUSTNO", "ACCTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"])
+    for chunk in reader:
+        if ROW_LIMIT and rows_read >= ROW_LIMIT:
+            break
+        if ROW_LIMIT:
+            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
+        rows_read += len(chunk)
 
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
 
-def load_cisfd() -> pl.DataFrame:
-    """
-    DATA CISFD: Filter CIS deposit records for FD/SA accounts.
-      SECCUST='901', ACCTNO in ranges 1xxx, 4xxx–6xxx, 7xxx.
-      ICNO derived from NEWIC or CUSTNO.
-    """
-    df = pl.read_parquet(CISFD_DEPOSIT_PATH)
-    df = df.filter(
-        (pl.col("SECCUST") == "901") &
-        (
-            pl.col("ACCTNO").is_between(1_000_000_000, 1_999_999_999) |
-            pl.col("ACCTNO").is_between(7_000_000_000, 7_999_999_999) |
-            pl.col("ACCTNO").is_between(4_000_000_000, 6_999_999_999)
+        if schema is None:
+            schema = table.schema
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        else:
+            cast_arrays = []
+            for field in schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING: Cannot cast '{field.name}' "
+                              f"from {col.type} to {field.type}: {e} — filling nulls")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=schema)
+
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done — {total:,} rows cached.")
+
+# ============================================================================
+# STEP 3: CACHE ALL SAS FILES TO PARQUET
+# ============================================================================
+print("\nStep 3: Caching SAS files to Parquet (if needed)...")
+
+CA_CACHE       = CACHE_DIR / f"{ca_path.stem}.parquet"
+FD_CACHE       = CACHE_DIR / f"{fd_path.stem}.parquet"
+SA_CACHE       = CACHE_DIR / f"{sa_path.stem}.parquet"
+CISDP_CACHE    = CACHE_DIR / "cisdp.parquet"
+CISFD_CACHE    = CACHE_DIR / "cisfd.parquet"
+MNILIST_CACHE  = CACHE_DIR / "cof_mni_depositor_list.parquet"
+TOPDEP_CACHE   = CACHE_DIR / "keep_top_dep_excl_pbb.parquet"
+
+for src, cache, tag in (
+    (ca_path, CA_CACHE, "CA"),
+    (fd_path, FD_CACHE, "FD"),
+    (sa_path, SA_CACHE, "SA"),
+    (INPUT_CISDP_FILE, CISDP_CACHE, "CISDP"),
+    (INPUT_CISFD_FILE, CISFD_CACHE, "CISFD"),
+    (INPUT_MNI_LIST_FILE, MNILIST_CACHE, "MNILIST"),
+    (INPUT_TOPDEP_FILE, TOPDEP_CACHE, "TOPDEP"),
+):
+    if not _cache_is_fresh(src, cache):
+        sas_to_parquet(src, cache, tag)
+    else:
+        print(f"  [{tag}] Cache fresh — skipping conversion.")
+
+# ============================================================================
+# STEP 4: BUILD CISCA / CISFD  (customer master lookups)
+# DATA CISCA(KEEP=CUSTNO ACCTNO CUSTNAME ICNO NEWIC OLDIC INDORG);
+#    SET CISDP.DEPOSIT; IF SECCUST='901';
+#    IF (3000000000<=ACCTNO<=3999999999);
+#    IF NEWIC NE '' THEN ICNO=NEWIC; ELSE ICNO=CUSTNO;
+# DATA CISFD(...): SET CISFD.DEPOSIT; IF SECCUST='901';
+#    IF (1000000000<=ACCTNO<=1999999999) OR (7000000000<=ACCTNO<=7999999999)
+#       OR (4000000000<=ACCTNO<=6999999999);
+# ============================================================================
+print("\nStep 4: Building CISCA / CISFD customer lookups...")
+
+con = duckdb.connect(database=":memory:")
+
+cisca = con.execute(f"""
+    SELECT
+        CAST(CUSTNO   AS BIGINT)  AS CUSTNO,
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(CUSTNAME AS VARCHAR) AS CUSTNAME,
+        CASE
+            WHEN NEWIC IS NOT NULL AND TRIM(CAST(NEWIC AS VARCHAR)) <> ''
+                THEN TRIM(CAST(NEWIC AS VARCHAR))
+            ELSE CAST(CUSTNO AS VARCHAR)
+        END AS ICNO,
+        CAST(NEWIC  AS VARCHAR) AS NEWIC,
+        CAST(OLDIC  AS VARCHAR) AS OLDIC,
+        CAST(INDORG AS VARCHAR) AS INDORG
+    FROM read_parquet('{CISDP_CACHE}')
+    WHERE SECCUST = '901'
+      AND CAST(ACCTNO AS BIGINT) BETWEEN 3000000000 AND 3999999999
+""").pl()
+
+cisfd = con.execute(f"""
+    SELECT
+        CAST(CUSTNO   AS BIGINT)  AS CUSTNO,
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(CUSTNAME AS VARCHAR) AS CUSTNAME,
+        CASE
+            WHEN NEWIC IS NOT NULL AND TRIM(CAST(NEWIC AS VARCHAR)) <> ''
+                THEN TRIM(CAST(NEWIC AS VARCHAR))
+            ELSE CAST(CUSTNO AS VARCHAR)
+        END AS ICNO,
+        CAST(NEWIC  AS VARCHAR) AS NEWIC,
+        CAST(OLDIC  AS VARCHAR) AS OLDIC,
+        CAST(INDORG AS VARCHAR) AS INDORG
+    FROM read_parquet('{CISFD_CACHE}')
+    WHERE SECCUST = '901'
+      AND (
+            CAST(ACCTNO AS BIGINT) BETWEEN 1000000000 AND 1999999999
+         OR CAST(ACCTNO AS BIGINT) BETWEEN 7000000000 AND 7999999999
+         OR CAST(ACCTNO AS BIGINT) BETWEEN 4000000000 AND 6999999999
+      )
+""").pl()
+
+con.close()
+gc.collect()
+print(f"  CISCA rows: {len(cisca):,}   CISFD rows: {len(cisfd):,}")
+
+# ============================================================================
+# STEP 5: BUILD CA / FD / SA  (account-level datasets, filtered)
+# DATA CA;  SET DEPOSIT.CURRENT; PRODCD=PUT(PRODUCT,CAPROD.);
+#           IF CURBAL>0 AND PRODCD NE 'N';
+# DATA FD;  SET DEPOSIT.FD;      IF CURBAL>0;
+# DATA SA;  SET DEPOSIT.SAVING;  PRODCD=PUT(PRODUCT,SAPROD.);
+#           IF CURBAL>0 AND PRODCD NE 'N';
+# ============================================================================
+print("\nStep 5: Building CA / FD / SA datasets (product format + filter)...")
+
+con = duckdb.connect(database=":memory:")
+ca_raw = con.execute(f"SELECT * FROM read_parquet('{CA_CACHE}') WHERE CAST(CURBAL AS DOUBLE) > 0").pl()
+fd_raw = con.execute(f"SELECT * FROM read_parquet('{FD_CACHE}') WHERE CAST(CURBAL AS DOUBLE) > 0").pl()
+sa_raw = con.execute(f"SELECT * FROM read_parquet('{SA_CACHE}') WHERE CAST(CURBAL AS DOUBLE) > 0").pl()
+con.close()
+gc.collect()
+
+ca = ca_raw.with_columns(
+    pl.col("PRODUCT").cast(pl.Int64).map_elements(get_caprod, return_dtype=pl.Utf8).alias("PRODCD")
+).filter(pl.col("PRODCD") != "N")
+
+sa = sa_raw.with_columns(
+    pl.col("PRODUCT").cast(pl.Int64).map_elements(get_saprod, return_dtype=pl.Utf8).alias("PRODCD")
+).filter(pl.col("PRODCD") != "N")
+
+fd = fd_raw
+
+del ca_raw, fd_raw, sa_raw
+gc.collect()
+print(f"  CA rows: {len(ca):,}   FD rows: {len(fd):,}   SA rows: {len(sa):,}")
+
+# ============================================================================
+# STEP 6: MERGE CA/FD WITH CISCA, SA WITH CISFD
+# PROC SORT DATA=CISCA; BY ACCTNO;  PROC SORT DATA=CA; BY ACCTNO;
+# DATA CA; MERGE CA(IN=A) CISCA; BY ACCTNO;
+#    IF CUSTNAME='   ' THEN CUSTNAME=NAME;  IF A;
+# (Analogous logic for FD/SA with CISFD.)
+# ============================================================================
+print("\nStep 6: Merging account data with customer lookups...")
+
+def _merge_with_cis(acct_df: pl.DataFrame, cis_df: pl.DataFrame) -> pl.DataFrame:
+    """SAS MERGE acct(IN=A) cis; BY ACCTNO; IF CUSTNAME blank THEN CUSTNAME=NAME; IF A."""
+    acct_pd = acct_df.to_pandas()
+    cis_pd = cis_df.select(["ACCTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"]).to_pandas()
+    cis_pd = cis_pd.rename(columns={"CUSTNAME": "_CIS_CUSTNAME"})
+
+    merged = acct_pd.merge(cis_pd, on="ACCTNO", how="left")
+
+    # SASC/CIS CUSTNAME wins; fall back to the account's own embedded NAME
+    # field only when CIS did not supply a CUSTNAME (matches: SAS MERGE
+    # last-dataset-wins semantics with IF CUSTNAME='   ' THEN CUSTNAME=NAME).
+    if "_CIS_CUSTNAME" in merged.columns:
+        merged["CUSTNAME"] = merged["_CIS_CUSTNAME"].where(
+            merged["_CIS_CUSTNAME"].notna() & (merged["_CIS_CUSTNAME"].str.strip() != ""),
+            merged.get("NAME"),
         )
-    )
-    df = df.with_columns(
-        pl.when(pl.col("NEWIC") != "")
-          .then(pl.col("NEWIC"))
-          .otherwise(pl.col("CUSTNO"))
-          .alias("ICNO")
-    )
-    return df.select(["CUSTNO", "ACCTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"])
+        merged.drop(columns=["_CIS_CUSTNAME"], inplace=True)
 
+    return pl.from_pandas(merged)
 
-def load_ca() -> pl.DataFrame:
-    """
-    DATA CA: Current accounts with positive balance and valid PRODCD.
-    """
-    df = pl.read_parquet(DEPOSIT_CURRENT_PATH)
-    df = df.with_columns(
-        pl.col("PRODUCT").map_elements(apply_caprod, return_dtype=pl.Utf8).alias("PRODCD")
-    )
-    return df.filter((pl.col("CURBAL") > 0) & (pl.col("PRODCD") != "N"))
+ca = _merge_with_cis(ca, cisca)
+fd = _merge_with_cis(fd, cisfd)
+sa = _merge_with_cis(sa, cisfd)
 
-
-def load_fd() -> pl.DataFrame:
-    """
-    DATA FD: Fixed deposits with positive balance.
-    """
-    df = pl.read_parquet(DEPOSIT_FD_PATH)
-    return df.filter(pl.col("CURBAL") > 0)
-
-
-def load_sa() -> pl.DataFrame:
-    """
-    DATA SA: Savings accounts with positive balance and valid PRODCD.
-    """
-    df = pl.read_parquet(DEPOSIT_SAVING_PATH)
-    df = df.with_columns(
-        pl.col("PRODUCT").map_elements(apply_saprod, return_dtype=pl.Utf8).alias("PRODCD")
-    )
-    return df.filter((pl.col("CURBAL") > 0) & (pl.col("PRODCD") != "N"))
-
-
-def merge_and_split(base: pl.DataFrame, cis: pl.DataFrame,
-                    bal_col: str, ind_custcodes: list[int]) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """
-    Merge base deposit data with CIS lookup by ACCTNO.
-    Resolve CUSTNAME from CIS where blank.
-    Split into IND (individual) and ORG (corporate) datasets.
-    Mirrors DATA xIND / xORG steps with CUSTCODE and PURPOSE filters.
-
-    Returns (ind_df, org_df)
-    """
-    # Merge: base LEFT JOIN cis on ACCTNO
-    merged = base.join(cis, on="ACCTNO", how="left", suffix="_CIS")
-
-    # Resolve CUSTNAME: if blank use NAME from base
-    if "NAME" in merged.columns:
-        merged = merged.with_columns(
-            pl.when(pl.col("CUSTNAME").str.strip_chars() == "")
-              .then(pl.col("NAME"))
-              .otherwise(pl.col("CUSTNAME"))
-              .alias("CUSTNAME")
-        )
-
-    merged = merged.with_columns(pl.col("CURBAL").alias(bal_col))
-
-    # IND: CUSTCODE IN (77,78,95,96)
-    ind = merged.filter(pl.col("CUSTCODE").is_in(ind_custcodes))
-
-    # ORG: exclude PURPOSE='2', keep INDORG='O'
-    org = merged.filter(
-        ~pl.col("CUSTCODE").is_in(ind_custcodes) &
-        (pl.col("PURPOSE") != "2") &
-        (pl.col("INDORG") == "O")
-    )
-
-    # For IND: PURPOSE='2' → set ICNO='JOINT', CUSTNAME=NAME
-    if "NAME" in ind.columns:
-        ind = ind.with_columns(
-            pl.when(pl.col("PURPOSE") == "2")
-              .then(pl.lit("JOINT"))
-              .otherwise(pl.col("ICNO"))
-              .alias("ICNO"),
-            pl.when(pl.col("PURPOSE") == "2")
-              .then(pl.col("NAME"))
-              .otherwise(pl.col("CUSTNAME"))
-              .alias("CUSTNAME")
-        )
-
-    # NODUPKEY: BY ACCTNO ICNO CUSTNAME
-    ind = ind.unique(subset=["ACCTNO", "ICNO", "CUSTNAME"], keep="first")
-
-    return ind, org
-
+print(f"  CA merged rows: {len(ca):,}   FD merged rows: {len(fd):,}   SA merged rows: {len(sa):,}")
 
 # ============================================================================
-# ASA CARRIAGE CONTROL REPORT WRITER
+# STEP 7: SPLIT INTO IND / ORG  (CUSTCODE / PURPOSE / INDORG rules)
+# DATA xxIND xxORG; SET xx;
+#    xxBAL = CURBAL;
+#    IF CUSTCODE IN (77,78,95,96) THEN OUTPUT xxIND;
+#    ELSE DO;
+#       IF PURPOSE='2' THEN DELETE;
+#       IF INDORG='O' THEN OUTPUT xxORG;
+#    END;
+# DATA xxIND; SET xxIND; IF PURPOSE='2' THEN DO; ICNO='JOINT'; CUSTNAME=NAME; END;
+# PROC SORT DATA=xxIND OUT=xxIND NODUPKEY; BY ACCTNO ICNO CUSTNAME;
 # ============================================================================
+print("\nStep 7: Splitting CA/FD/SA into IND / ORG branches...")
 
-class ReportWriter:
-    """
-    Writes fixed-width ASA carriage-control reports (LRECL=133).
-    ASA codes: ' ' = single space, '1' = new page, '0' = double space, '+' = overprint.
-    """
+def _split_ind_org(df: pl.DataFrame, bal_col: str) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Replicate the CUSTCODE/PURPOSE/INDORG OUTPUT branching + JOINT relabel."""
+    df = df.with_columns(pl.col("CURBAL").alias(bal_col))
 
-    def __init__(self, path: Path, title1: str, title2: str, page_lines: int = PAGE_LINES):
-        self.path       = path
-        self.title1     = title1
-        self.title2     = title2
-        self.page_lines = page_lines
-        self._lines: list[str] = []
-        self._cur_line  = 0
-        self._page      = 0
+    custcode_set = [77, 78, 95, 96]
+    is_special_custcode = pl.col("CUSTCODE").cast(pl.Int64, strict=False).is_in(custcode_set)
 
-    def _format_line(self, asa: str, text: str) -> str:
-        content = (text or "")[:PAGE_WIDTH - 1]
-        return f"{asa}{content:<{PAGE_WIDTH - 1}}\n"
+    ind_df = df.filter(is_special_custcode)
+    remainder = df.filter(~is_special_custcode)
 
-    def new_page(self):
-        self._page    += 1
-        self._cur_line = 0
-        asa = "1" if self._page > 1 else "1"
-        self._lines.append(self._format_line(asa, self.title1))
-        self._lines.append(self._format_line(" ", self.title2))
-        self._lines.append(self._format_line(" ", ""))
-        self._cur_line += 3
+    # ELSE DO: IF PURPOSE='2' THEN DELETE;  (drop before INDORG check)
+    remainder = remainder.filter(pl.col("PURPOSE") != "2")
+    org_df = remainder.filter(pl.col("INDORG") == "O")
 
-    def write_line(self, text: str, asa: str = " "):
-        if self._cur_line == 0 or self._cur_line >= self.page_lines - 2:
-            self.new_page()
-        self._lines.append(self._format_line(asa, text))
-        self._cur_line += 1
+    # DATA xxIND; SET xxIND; IF PURPOSE='2' THEN DO ICNO='JOINT'; CUSTNAME=NAME; END;
+    ind_df = ind_df.with_columns([
+        pl.when(pl.col("PURPOSE") == "2").then(pl.lit("JOINT")).otherwise(pl.col("ICNO")).alias("ICNO"),
+        pl.when(pl.col("PURPOSE") == "2").then(pl.col("NAME")).otherwise(pl.col("CUSTNAME")).alias("CUSTNAME"),
+    ])
 
-    def write_separator(self, char: str = "-"):
-        self.write_line(char * (PAGE_WIDTH - 1))
+    # PROC SORT NODUPKEY BY ACCTNO ICNO CUSTNAME
+    ind_df = ind_df.sort(["ACCTNO", "ICNO", "CUSTNAME"]).unique(
+        subset=["ACCTNO", "ICNO", "CUSTNAME"], keep="first"
+    )
 
-    def flush(self):
-        with self.path.open("w", encoding="utf-8") as f:
-            f.writelines(self._lines)
-        log.info("Report written: %s (%d pages)", self.path, self._page)
+    return ind_df, org_df
 
+caind, caorg = _split_ind_org(ca, "CABAL")
+fdind, fdorg = _split_ind_org(fd, "FDBAL")
+said, saorg  = _split_ind_org(sa, "SABAL")
+# (variable named 'said' to avoid clashing with builtin-ish 'saind'; kept
+#  distinct from function name only, logically this IS SAIND)
+saind = said
+
+del ca, fd, sa
+gc.collect()
+
+print(f"  CAIND:{len(caind):,} CAORG:{len(caorg):,}  "
+      f"FDIND:{len(fdind):,} FDORG:{len(fdorg):,}  "
+      f"SAIND:{len(saind):,} SAORG:{len(saorg):,}")
 
 # ============================================================================
-# PRNREC MACRO — Summary + Detail print for IND/ORG groups
+# REPORT HELPERS
 # ============================================================================
+def _fmt_comma(value, width: int, decimals: int = 2) -> str:
+    """Format number with comma separators, right-justified to *width*."""
+    if value is None:
+        return " " * width
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return " " * width
+    s = f"{v:,.{decimals}f}"
+    return s.rjust(width)
 
-def prnrec(data1: pl.DataFrame, writer: ReportWriter) -> None:
+
+class _PageWriter:
+    """Accumulates report lines with PAGE_SIZE-line pagination.
+
+    RECFM=FB (no trailing 'A') -> no ASA carriage-control byte is reserved.
+    A literal form-feed character on its own line marks a new page instead.
     """
-    Mirrors %PRNREC macro:
-      1. Filter ICNO non-blank.
-      2. Summarise CURBAL/FDBAL/CABAL/SABAL by ICNO+CUSTNAME.
-      3. Sort descending CURBAL, keep top 100.
-      4. Print summary table.
-      5. Merge back for detail rows and print by ICNO+CUSTNAME groups.
-    """
-    # Ensure balance columns exist
-    for col in ("FDBAL", "CABAL", "SABAL"):
+
+    def __init__(self, header_fn):
+        self.header_fn = header_fn
+        self.lines: list[str] = []
+        self.lines_on_page = 0
+        self.first_page = True
+
+    def new_page(self, *header_args):
+        if not self.first_page:
+            self.lines.append("\f")
+        self.first_page = False
+        header_lines = self.header_fn(*header_args)
+        self.lines.extend(header_lines)
+        self.lines_on_page = len(header_lines)
+
+    def add_line(self, line: str):
+        if self.lines_on_page >= PAGE_SIZE:
+            # Re-issue last used header args is not tracked here; caller is
+            # expected to call new_page() explicitly on overflow when the
+            # header differs by BY-group. For plain continuation, blank header.
+            self.lines.append("\f")
+            self.lines_on_page = 0
+        self.lines.append(line)
+        self.lines_on_page += 1
+
+    def write(self, path: Path):
+        with open(path, "w", encoding="latin1") as fh:
+            for ln in self.lines:
+                fh.write(ln.ljust(LRECL if ln != "\f" else 1) + "\n")
+
+
+def _summary_header(title2: str) -> list[str]:
+    return [
+        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
+        title2 + f" {RDATE}",
+        "-" * LRECL,
+        f"{'DEPOSITOR':<30}{'TOTAL BALANCE':>18}{'FD BALANCE':>18}{'CA BALANCE':>18}{'SA BALANCE':>18}",
+        "-" * LRECL,
+    ]
+
+
+def _detail_header(title2: str) -> list[str]:
+    return [
+        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
+        title2 + f" {RDATE}",
+        "-" * LRECL,
+        f"{'BRH':<7}{'MNI NO':>12}{'CUSTCD':>8}{'DEPOSITOR':<30}{'CIS NO':>12}"
+        f"{'NEW IC':>14}{'OLD IC':>14}{'CURRENT BALANCE':>18}{'PRODUCT':>8}",
+        "-" * LRECL,
+    ]
+
+
+def _subs_header(title3: str) -> list[str]:
+    return [
+        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTOP5",
+        f"GROUP OF COMPANIES UNDER TOP 100 CORP DEPOSITORS @ {RDATE}",
+        f"***** {title3} *****",
+        "-" * LRECL,
+        f"{'BRH':<7}{'MNI NO':>12}{'DEPOSITOR':<30}{'CIS NO':>12}{'CUSTCD':>8}"
+        f"{'CURRENT BALANCE':>18}{'PRODUCT':>8}",
+        "-" * LRECL,
+    ]
+
+# ============================================================================
+# STEP 8: %MACRO PRNREC  (Top 100 summary + detail, run for IND and ORG)
+# PROC SUMMARY BY ICNO CUSTNAME VAR CURBAL FDBAL CABAL SABAL SUM=;
+# PROC SORT DESCENDING CURBAL; OBS=100;
+# PROC PRINT DATA2 (summary Top 100); then join back to DATA1 -> PROC PRINT
+# DATA3 BY ICNO CUSTNAME SUM CURBAL;
+# ============================================================================
+def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, output_path: Path):
+    print(f"\n  Generating {output_path.name} ...")
+
+    data1 = pl.concat(
+        [fdind_df, caind_df, saind_df], how="diagonal"
+    ).with_columns(
+        pl.when((pl.col("ICNO").is_null()) | (pl.col("ICNO").str.strip_chars() == ""))
+        .then(pl.lit("XX"))
+        .otherwise(pl.col("ICNO"))
+        .alias("ICNO")
+    )
+
+    for col in ("CURBAL", "FDBAL", "CABAL", "SABAL"):
         if col not in data1.columns:
             data1 = data1.with_columns(pl.lit(0.0).alias(col))
+        else:
+            data1 = data1.with_columns(pl.col(col).fill_null(0.0))
 
-    # Filter non-blank ICNO
-    data1 = data1.filter(pl.col("ICNO").str.strip_chars() != "")
-
-    # Summarise by ICNO + CUSTNAME
+    # PROC SUMMARY BY ICNO CUSTNAME; VAR CURBAL FDBAL CABAL SABAL; SUM=;
     data2 = (
-        data1.group_by(["ICNO", "CUSTNAME"])
-             .agg([
-                 pl.col("CURBAL").sum(),
-                 pl.col("FDBAL").sum(),
-                 pl.col("CABAL").sum(),
-                 pl.col("SABAL").sum(),
-             ])
-             .sort("CURBAL", descending=True)
-             .head(100)
+        data1.filter(pl.col("ICNO").is_not_null())
+        .group_by(["ICNO", "CUSTNAME"])
+        .agg([
+            pl.col("CURBAL").sum().alias("CURBAL"),
+            pl.col("FDBAL").sum().alias("FDBAL"),
+            pl.col("CABAL").sum().alias("CABAL"),
+            pl.col("SABAL").sum().alias("SABAL"),
+        ])
     )
 
-    # ---- Summary Print ----
-    hdr = (
-        f"{'DEPOSITOR':<40} {'TOTAL BALANCE':>16} {'FD BALANCE':>16} "
-        f"{'CA BALANCE':>16} {'SA BALANCE':>16}"
-    )
-    writer.write_line(hdr)
-    writer.write_separator()
+    # PROC SORT DESCENDING CURBAL; DATA2(OBS=100);
+    data2 = data2.sort("CURBAL", descending=True).head(100)
 
+    # ---- Print Top 100 summary ----
+    writer = _PageWriter(_summary_header)
+    writer.new_page(title2_summary)
     for row in data2.iter_rows(named=True):
         line = (
-            f"{str(row['CUSTNAME']):<40} {row['CURBAL']:>16,.2f} {row['FDBAL']:>16,.2f} "
-            f"{row['CABAL']:>16,.2f} {row['SABAL']:>16,.2f}"
+            f"{str(row.get('CUSTNAME') or '')[:30]:<30}"
+            f"{_fmt_comma(row.get('CURBAL'), 18)}"
+            f"{_fmt_comma(row.get('FDBAL'), 18)}"
+            f"{_fmt_comma(row.get('CABAL'), 18)}"
+            f"{_fmt_comma(row.get('SABAL'), 18)}"
         )
-        writer.write_line(line)
+        writer.add_line(line)
 
-    # Total line
-    total_curbal = data2["CURBAL"].sum()
-    writer.write_separator()
-    writer.write_line(f"{'TOTAL':<40} {total_curbal:>16,.2f}", asa="0")
-    writer.write_line("")
-
-    # ---- Detail Print (by ICNO+CUSTNAME, filtered to top-100 set) ----
+    # ---- DATA3 = MERGE DATA1(IN=A) DATA2(IN=B); BY ICNO CUSTNAME; IF A AND B; ----
     top_keys = data2.select(["ICNO", "CUSTNAME"])
     data3 = data1.join(top_keys, on=["ICNO", "CUSTNAME"], how="inner")
     data3 = data3.sort(["ICNO", "CUSTNAME"])
 
-    detail_hdr = (
-        f"{'BRANCH CODE':>11} {'MNI NO':>12} {'CUSTCD':>6} {'DEPOSITOR':<30} "
-        f"{'CIS NO':>10} {'NEW IC':>15} {'OLD IC':>15} {'CURRENT BALANCE':>16} {'PRODUCT':>7}"
-    )
-
-    grp_key = None
-    grp_total = 0.0
-
+    writer.new_page(title2_detail)
+    current_group = None
+    group_sum = 0.0
     for row in data3.iter_rows(named=True):
-        cur_key = (row.get("ICNO", ""), row.get("CUSTNAME", ""))
-        if cur_key != grp_key:
-            if grp_key is not None:
-                writer.write_separator("=")
-                writer.write_line(
-                    f"{'':>11} {'':>12} {'':>6} {'SUBTOTAL':<30} {'':>10} {'':>15} {'':>15} "
-                    f"{grp_total:>16,.2f}"
-                )
-                writer.write_line("")
-            writer.write_line(f"  ICNO: {cur_key[0]}   DEPOSITOR: {cur_key[1]}", asa="1")
-            writer.write_line(detail_hdr)
-            writer.write_separator()
-            grp_key   = cur_key
-            grp_total = 0.0
+        group_key = (row.get("ICNO"), row.get("CUSTNAME"))
+        if current_group is not None and group_key != current_group:
+            writer.add_line(f"{'':<49}{'TOTAL':>12}{_fmt_comma(group_sum, 18)}")
+            group_sum = 0.0
+        current_group = group_key
 
-        branch   = row.get("BRANCH",   "")
-        acctno   = row.get("ACCTNO",   "")
-        custcode = row.get("CUSTCODE", "")
-        custname = row.get("CUSTNAME", "")
-        custno   = row.get("CUSTNO",   "")
-        newic    = row.get("NEWIC",    "")
-        oldic    = row.get("OLDIC",    "")
-        curbal   = row.get("CURBAL",   0.0) or 0.0
-        product  = row.get("PRODUCT",  "")
-        grp_total += curbal
+        branch_str = str(int(row.get("BRANCH") or 0)).rjust(6) if row.get("BRANCH") is not None else " " * 6
+        acctno_str = f"{int(row.get('ACCTNO') or 0):>12d}"
+        custcode_str = str(row.get("CUSTCODE") or "")[:8].rjust(8)
+        custname_str = str(row.get("CUSTNAME") or "")[:30]
+        custno_str = f"{int(row.get('CUSTNO') or 0):>12d}" if row.get("CUSTNO") is not None else " " * 12
+        newic_str = str(row.get("NEWIC") or "")[:14].rjust(14)
+        oldic_str = str(row.get("OLDIC") or "")[:14].rjust(14)
+        curbal_str = _fmt_comma(row.get("CURBAL"), 18)
+        product_str = str(row.get("PRODUCT") or "")[:8].rjust(8)
 
         line = (
-            f"{str(branch):>11} {str(acctno):>12} {str(custcode):>6} {str(custname):<30} "
-            f"{str(custno):>10} {str(newic):>15} {str(oldic):>15} {curbal:>16,.2f} {str(product):>7}"
+            f"{branch_str:<7}{acctno_str}{custcode_str}{custname_str:<30}"
+            f"{custno_str}{newic_str}{oldic_str}{curbal_str}{product_str}"
         )
-        writer.write_line(line)
+        writer.add_line(line)
+        group_sum += float(row.get("CURBAL") or 0.0)
 
-    # Final group total
-    if grp_key is not None:
-        writer.write_separator("=")
-        writer.write_line(
-            f"{'':>11} {'':>12} {'':>6} {'SUBTOTAL':<30} {'':>10} {'':>15} {'':>15} "
-            f"{grp_total:>16,.2f}"
+    if current_group is not None:
+        writer.add_line(f"{'':<49}{'TOTAL':>12}{_fmt_comma(group_sum, 18)}")
+
+    writer.write(output_path)
+    print(f"  Output written : {output_path}  ({len(writer.lines):,} lines)")
+    return data1, data3
+
+
+# ============================================================================
+# STEP 9: FD11TEXT / FD12TEXT  (Individual / Corporate customers)
+# ============================================================================
+print("\nStep 9: Generating FD11TEXT (Individual) and FD12TEXT (Corporate)...")
+
+data1_ind, data3_ind = _run_prnrec(
+    fdind, caind, saind,
+    "TOP 100 LARGEST FD/CA/SA INDIVIDUAL CUSTOMERS AS AT",
+    "TOP 100 LARGEST FD/CA/SA INDIVIDUAL CUSTOMERS AS AT",
+    OUTPUT_FD11,
+)
+
+data1_org, data3_org = _run_prnrec(
+    fdorg, caorg, saorg,
+    "TOP 100 LARGEST FD/CA/SA CORPORATE CUSTOMERS AS AT",
+    "TOP 100 LARGEST FD/CA/SA CORPORATE CUSTOMERS AS AT",
+    OUTPUT_FD12,
+)
+
+# ============================================================================
+# STEP 10: SUBSIDIARIES REPORT (FD2TEXT)
+# DATA SUBS_ALL; SET FDORG CAORG SAORG;
+#    IF NEWIC NE '' THEN ICNO=NEWIC; ELSE ICNO=OLDIC;
+#    IF CURCODE EQ 'MYR' THEN RMAMT=CURBAL; ELSE FCYAMT=CURBAL;
+# ============================================================================
+print("\nStep 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...")
+
+subs_all = pl.concat([fdorg, caorg, saorg], how="diagonal").with_columns([
+    pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
+      .then(pl.col("NEWIC"))
+      .otherwise(pl.col("OLDIC"))
+      .alias("ICNO"),
+    pl.when(pl.col("CURCODE") == "MYR").then(pl.col("CURBAL")).otherwise(None).alias("RMAMT"),
+    pl.when(pl.col("CURCODE") != "MYR").then(pl.col("CURBAL")).otherwise(None).alias("FCYAMT"),
+])
+
+# PROC SORT DATA=LIST.COF_MNI_DEPOSITOR_LIST OUT=COF_MNI_IDNO(KEEP=DEPID DEPGRP BUSSREG) NODUPKEY; BY BUSSREG;
+con = duckdb.connect(database=":memory:")
+mni_list = con.execute(f"SELECT * FROM read_parquet('{MNILIST_CACHE}')").pl()
+topdep = con.execute(f"SELECT * FROM read_parquet('{TOPDEP_CACHE}')").pl()
+con.close()
+gc.collect()
+
+cof_mni_idno = (
+    mni_list.select(["DEPID", "DEPGRP", "BUSSREG"])
+    .sort("BUSSREG")
+    .unique(subset=["BUSSREG"], keep="first")
+    .rename({"BUSSREG": "NEWIC"})
+)
+
+cof_mni_cust = (
+    mni_list.select(["DEPID", "DEPGRP", "CUSTNO"])
+    .sort("CUSTNO")
+    .unique(subset=["CUSTNO"], keep="first")
+)
+
+# DATA MNI_IC MNI_ICX(DROP=DEPID DEPGRP);
+#    MERGE SUBS_ALL(IN=A) COF_MNI_IDNO(RENAME=(BUSSREG=NEWIC)); BY NEWIC; IF A;
+#    IF DEPID>0 THEN OUTPUT MNI_IC; ELSE OUTPUT MNI_ICX;
+subs_all_pd = subs_all.sort("NEWIC").to_pandas()
+cof_mni_idno_pd = cof_mni_idno.to_pandas()
+
+merged_ic = subs_all_pd.merge(cof_mni_idno_pd, on="NEWIC", how="left")
+mni_ic = merged_ic[merged_ic["DEPID"] > 0].copy()
+mni_icx = merged_ic[~(merged_ic["DEPID"] > 0)].drop(columns=["DEPID", "DEPGRP"], errors="ignore").copy()
+
+# DATA MNI_CUST MNI_CUSTX(DROP=DEPID);
+#    MERGE MNI_ICX(IN=A) COF_MNI_CUST; BY CUSTNO; IF A;
+#    IF DEPID>0 THEN OUTPUT MNI_CUST; ELSE OUTPUT MNI_CUSTX;
+mni_icx_sorted = mni_icx.sort_values("CUSTNO")
+cof_mni_cust_pd = cof_mni_cust.to_pandas()
+
+merged_cust = mni_icx_sorted.merge(cof_mni_cust_pd, on="CUSTNO", how="left")
+mni_cust = merged_cust[merged_cust["DEPID"] > 0].copy()
+mni_custx = merged_cust[~(merged_cust["DEPID"] > 0)].drop(columns=["DEPID"], errors="ignore").copy()
+
+# DATA MNI_ALL; SET MNI_IC MNI_CUST; PROC SORT; BY CUSTNO;
+mni_all = pd.concat([mni_ic, mni_cust], ignore_index=True).sort_values("CUSTNO")
+
+# PROC SORT DATA=LIST.KEEP_TOP_DEP_EXCL_PBB OUT=TOPDEP; BY CUSTNO;
+topdep_pd = topdep.sort("CUSTNO").to_pandas()
+
+# DATA SUBS_ALL; MERGE MNI_ALL(IN=A) TOPDEP(IN=B); BY CUSTNO; IF A AND NOT B;
+merged_final = mni_all.merge(
+    topdep_pd[["CUSTNO"]].assign(_IN_TOPDEP=True), on="CUSTNO", how="left"
+)
+subs_all_final = merged_final[merged_final["_IN_TOPDEP"].isna()].drop(columns=["_IN_TOPDEP"])
+subs_all_final = subs_all_final.sort_values(["DEPID"])
+
+del subs_all, subs_all_pd, merged_ic, mni_ic, mni_icx, mni_icx_sorted, merged_cust
+del mni_cust, mni_custx, mni_all, merged_final
+gc.collect()
+
+# PROC MEANS DATA=SUBS_ALL NWAY NOPRINT; VAR DEPID; OUTPUT OUT=MAX_ID MIN=S_ID MAX=L_ID;
+if len(subs_all_final) > 0:
+    max_depid = int(subs_all_final["DEPID"].max())
+else:
+    max_depid = -1
+
+print(f"  MAX DEPID: {max_depid}")
+
+# PROC SORT DATA=SUBS_ALL; BY CUSTNO ACCTNO;
+subs_all_final = subs_all_final.sort_values(["CUSTNO", "ACCTNO"])
+
+# %MACRO PRNSUB; %DO I=0 %TO &MAX %BY 1; ... %END; %MEND; %PRNSUB;
+subs_writer = _PageWriter(_subs_header)
+last_group_name = ""
+
+for depid in range(0, max_depid + 1):
+    subset = subs_all_final[subs_all_final["DEPID"] == depid]
+    if subset.empty:
+        # No rows for this DEPID -- SAS would still execute PROC PRINT with
+        # zero observations (header-only page) using the previous GROUP
+        # symbol value carried over from the prior iteration.
+        continue
+
+    # GROUP=DEPGRP; CALL SYMPUT('GROUP',GROUP);  -> last row's DEPGRP wins
+    last_group_name = str(subset["DEPGRP"].iloc[-1] or "")
+
+    subs_writer.new_page(last_group_name)
+    group_total = 0.0
+    for _, row in subset.iterrows():
+        branch_str = str(int(row.get("BRANCH") or 0)).rjust(6) if pd.notna(row.get("BRANCH")) else " " * 6
+        acctno_str = f"{int(row.get('ACCTNO') or 0):>12d}"
+        custname_str = str(row.get("CUSTNAME") or "")[:30]
+        custno_str = f"{int(row.get('CUSTNO') or 0):>12d}" if pd.notna(row.get("CUSTNO")) else " " * 12
+        custcode_str = str(row.get("CUSTCODE") or "")[:8].rjust(8)
+        curbal_str = _fmt_comma(row.get("CURBAL"), 18)
+        product_str = str(row.get("PRODUCT") or "")[:8].rjust(8)
+
+        line = (
+            f"{branch_str:<7}{acctno_str}{custname_str:<30}{custno_str}"
+            f"{custcode_str}{curbal_str}{product_str}"
         )
+        subs_writer.add_line(line)
+        group_total += float(row.get("CURBAL") or 0.0)
 
+    subs_writer.add_line(f"{'':<57}{'TOTAL':>12}{_fmt_comma(group_total, 18)}")
 
-# ============================================================================
-# SUBSIDIARIES SECTION
-# ============================================================================
-
-def build_subs_all(fdorg: pl.DataFrame, caorg: pl.DataFrame, saorg: pl.DataFrame) -> pl.DataFrame:
-    """
-    DATA SUBS_ALL: Combine corporate FD/CA/SA, derive ICNO, RMAMT/FCYAMT.
-    """
-    combined = pl.concat([fdorg, caorg, saorg], how="diagonal")
-
-    # Derive ICNO from NEWIC or OLDIC
-    combined = combined.with_columns(
-        pl.when(pl.col("NEWIC").str.strip_chars() != "")
-          .then(pl.col("NEWIC"))
-          .otherwise(pl.col("OLDIC"))
-          .alias("ICNO")
-    )
-
-    # RMAMT / FCYAMT split by currency
-    combined = combined.with_columns([
-        pl.when(pl.col("CURCODE") == "MYR")
-          .then(pl.col("CURBAL"))
-          .otherwise(pl.lit(0.0))
-          .alias("RMAMT"),
-        pl.when(pl.col("CURCODE") != "MYR")
-          .then(pl.col("CURBAL"))
-          .otherwise(pl.lit(0.0))
-          .alias("FCYAMT"),
-        pl.lit(None).cast(pl.Int64).alias("DEPID"),
-        pl.lit(None).cast(pl.Utf8).alias("DEPGRP"),
-    ])
-
-    return combined
-
-
-def match_depositor_list(subs_all: pl.DataFrame) -> pl.DataFrame:
-    """
-    Mirrors the PROC SORT / DATA MNI_IC / MNI_CUST merge steps.
-    Matches subs against COF_MNI_DEPOSITOR_LIST by NEWIC (BUSSREG) then CUSTNO.
-    Excludes records found in KEEP_TOP_DEP_EXCL_PBB (anti-join).
-    Returns final SUBS_ALL with DEPID and DEPGRP populated.
-    """
-    cof_raw = pl.read_parquet(COF_MNI_DEPOSITOR_PATH)
-
-    # Deduplicate by BUSSREG → COF_MNI_IDNO
-    cof_idno = (
-        cof_raw.sort("BUSSREG")
-               .unique(subset=["BUSSREG"], keep="first")
-               .select(["DEPID", "DEPGRP", "BUSSREG"])
-    )
-
-    # Deduplicate by CUSTNO → COF_MNI_CUST
-    cof_cust = (
-        cof_raw.sort("CUSTNO")
-               .unique(subset=["CUSTNO"], keep="first")
-               .select(["DEPID", "DEPGRP", "CUSTNO"])
-    )
-
-    # Sort subs by NEWIC
-    subs = subs_all.sort("NEWIC")
-
-    # Merge by NEWIC = BUSSREG
-    merged_ic = subs.join(
-        cof_idno.rename({"BUSSREG": "NEWIC"}),
-        on="NEWIC", how="left", suffix="_COF"
-    )
-    # Overwrite DEPID/DEPGRP where matched
-    merged_ic = merged_ic.with_columns([
-        pl.coalesce(["DEPID_COF", "DEPID"]).alias("DEPID"),
-        pl.coalesce(["DEPGRP_COF", "DEPGRP"]).alias("DEPGRP"),
-    ]).drop(["DEPID_COF", "DEPGRP_COF"])
-
-    mni_ic  = merged_ic.filter(pl.col("DEPID").is_not_null() & (pl.col("DEPID") > 0))
-    mni_icx = merged_ic.filter(~(pl.col("DEPID").is_not_null() & (pl.col("DEPID") > 0)))
-
-    # Merge unmatched by CUSTNO
-    mni_icx_sorted = mni_icx.sort("CUSTNO")
-    merged_cust = mni_icx_sorted.join(cof_cust, on="CUSTNO", how="left", suffix="_COF")
-    merged_cust = merged_cust.with_columns([
-        pl.coalesce(["DEPID_COF", "DEPID"]).alias("DEPID"),
-        pl.coalesce(["DEPGRP_COF", "DEPGRP"]).alias("DEPGRP"),
-    ]).drop(["DEPID_COF", "DEPGRP_COF"])
-
-    mni_cust  = merged_cust.filter(pl.col("DEPID").is_not_null() & (pl.col("DEPID") > 0))
-
-    # Combine IC + CUST matched
-    mni_all = pl.concat([mni_ic, mni_cust], how="diagonal").sort("CUSTNO")
-
-    # Anti-join with KEEP_TOP_DEP_EXCL_PBB
-    topdep = pl.read_parquet(KEEP_TOP_DEP_EXCL_PBB_PATH).sort("CUSTNO")
-    result = mni_all.join(topdep.select(["CUSTNO"]), on="CUSTNO", how="anti")
-
-    return result.sort(["CUSTNO", "ACCTNO"])
-
-
-def print_subsidiaries(subs_all: pl.DataFrame, writer: ReportWriter, rdate: str) -> None:
-    """
-    Mirrors %PRNSUB macro:
-      Iterate over each DEPID group, print accounts grouped by CUSTNO.
-    """
-    if subs_all.is_empty():
-        log.warning("SUBS_ALL is empty — no subsidiary report to print.")
-        return
-
-    dep_ids = (
-        subs_all.select("DEPID")
-                .filter(pl.col("DEPID").is_not_null())
-                .unique()
-                .sort("DEPID")["DEPID"]
-                .to_list()
-    )
-
-    detail_hdr = (
-        f"{'BRANCH CODE':>11} {'MNI NO':>12} {'DEPOSITOR':<30} "
-        f"{'CIS NO':>10} {'CUSTCD':>6} {'CURRENT BALANCE':>16} {'PRODUCT':>7}"
-    )
-
-    for dep_id in dep_ids:
-        subs = subs_all.filter(pl.col("DEPID") == dep_id)
-        if subs.is_empty():
-            continue
-
-        group = subs["DEPGRP"][0] or ""
-        writer.title1 = "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTOP5"
-        writer.title2 = f"GROUP OF COMPANIES UNDER TOP 100 CORP DEPOSITORS @ {rdate}"
-        writer.new_page()
-        writer.write_line(f"***** {group} *****")
-        writer.write_line("")
-
-        cust_groups = subs.partition_by("CUSTNO", maintain_order=True)
-        for grp_df in cust_groups:
-            custno    = grp_df["CUSTNO"][0]
-            grp_total = 0.0
-            writer.write_line(f"  CUSTNO: {custno}")
-            writer.write_line(detail_hdr)
-            writer.write_separator()
-
-            for row in grp_df.iter_rows(named=True):
-                branch   = row.get("BRANCH",   "")
-                acctno   = row.get("ACCTNO",   "")
-                custname = row.get("CUSTNAME", "")
-                custno_r = row.get("CUSTNO",   "")
-                custcode = row.get("CUSTCODE", "")
-                curbal   = row.get("CURBAL",   0.0) or 0.0
-                product  = row.get("PRODUCT",  "")
-                grp_total += curbal
-
-                line = (
-                    f"{str(branch):>11} {str(acctno):>12} {str(custname):<30} "
-                    f"{str(custno_r):>10} {str(custcode):>6} {curbal:>16,.2f} {str(product):>7}"
-                )
-                writer.write_line(line)
-
-            writer.write_separator("=")
-            writer.write_line(
-                f"{'':>11} {'':>12} {'SUBTOTAL':<30} {'':>10} {'':>6} {grp_total:>16,.2f}"
-            )
-            writer.write_line("")
-
+subs_writer.write(OUTPUT_FD2)
+print(f"  Output written : {OUTPUT_FD2}  ({len(subs_writer.lines):,} lines)")
 
 # ============================================================================
-# MAIN
+# TERMINAL SUMMARY OUTPUT
 # ============================================================================
+print("\n" + "=" * 60)
+print("EIBDTP50 OUTPUT SUMMARY")
+print("=" * 60)
+print(f"Report date            : {RDATE}")
+print(f"FD11TEXT (Individual)  : {OUTPUT_FD11}")
+print(f"FD12TEXT (Corporate)   : {OUTPUT_FD12}")
+print(f"FD2TEXT  (Subsidiaries): {OUTPUT_FD2}")
+print(f"Top-100 Individual rows: {len(data3_ind):,}")
+print(f"Top-100 Corporate rows : {len(data3_org):,}")
+print(f"Subsidiary detail rows : {len(subs_all_final):,}")
 
-def main() -> None:
-    log.info("EIBDTP50 started.")
-
-    # ----------------------------------------------------------------
-    # Derive report date macro variables
-    # ----------------------------------------------------------------
-    nowk, reptyear, reptmon, reptday, rdate = derive_report_date()
-    log.info("Report date: %s (week %s)", rdate, nowk)
-
-    # ----------------------------------------------------------------
-    # %INC PGM(PBBDPFMT) — product format functions imported above
-    # ----------------------------------------------------------------
-
-    # ----------------------------------------------------------------
-    # Load and prepare datasets
-    # ----------------------------------------------------------------
-    cisca = load_cisca()
-    cisfd = load_cisfd()
-    ca    = load_ca()
-    fd    = load_fd()
-    sa    = load_sa()
-
-    ind_custcodes = [77, 78, 95, 96]
-
-    # CA merge + split
-    caind, caorg = merge_and_split(ca, cisca, "CABAL", ind_custcodes)
-
-    # FD merge + split
-    fdind, fdorg = merge_and_split(fd, cisfd, "FDBAL", ind_custcodes)
-
-    # SA merge + split (uses CISFD as the CIS source)
-    saind, saorg = merge_and_split(sa, cisfd, "SABAL", ind_custcodes)
-
-    # ----------------------------------------------------------------
-    # FD+CA+SA INDIVIDUAL CUSTOMERS  → FD11TEXT
-    # ----------------------------------------------------------------
-    data1_ind = pl.concat([fdind, caind, saind], how="diagonal")
-    data1_ind = data1_ind.with_columns(
-        pl.when(pl.col("ICNO").str.strip_chars() == "")
-          .then(pl.lit("XX"))
-          .otherwise(pl.col("ICNO"))
-          .alias("ICNO")
-    )
-
-    writer_ind = ReportWriter(
-        FD11TEXT_PATH,
-        title1="PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
-        title2=f"TOP 100 LARGEST FD/CA/SA INDIVIDUAL CUSTOMERS AS AT {rdate}",
-    )
-    prnrec(data1_ind, writer_ind)
-    writer_ind.flush()
-
-    # ----------------------------------------------------------------
-    # FD+CA+SA CORPORATE CUSTOMERS  → FD12TEXT
-    # ----------------------------------------------------------------
-    data1_org = pl.concat([fdorg, caorg, saorg], how="diagonal")
-    data1_org = data1_org.with_columns(
-        pl.when(pl.col("ICNO").str.strip_chars() == "")
-          .then(pl.lit("XX"))
-          .otherwise(pl.col("ICNO"))
-          .alias("ICNO")
-    )
-
-    writer_org = ReportWriter(
-        FD12TEXT_PATH,
-        title1="PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
-        title2=f"TOP 100 LARGEST FD/CA/SA CORPORATE CUSTOMERS AS AT {rdate}",
-    )
-    prnrec(data1_org, writer_org)
-    writer_org.flush()
-
-    # ----------------------------------------------------------------
-    # FD/CA/SA SUBSIDIARIES CUSTOMERS  → FD2TEXT
-    # ----------------------------------------------------------------
-    subs_all = build_subs_all(fdorg, caorg, saorg)
-    subs_all = match_depositor_list(subs_all)
-
-    writer_subs = ReportWriter(
-        FD2TEXT_PATH,
-        title1="PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTOP5",
-        title2=f"GROUP OF COMPANIES UNDER TOP 100 CORP DEPOSITORS @ {rdate}",
-    )
-    print_subsidiaries(subs_all, writer_subs, rdate)
-    writer_subs.flush()
-
-    log.info("EIBDTP50 completed.")
-
-
-if __name__ == "__main__":
-    main()
+gc.collect()
+print("\nEIBDTP50 complete.")
