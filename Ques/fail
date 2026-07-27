@@ -1,28 +1,57 @@
-def _merge_with_cis(acct_df: pl.DataFrame, cis_df: pl.DataFrame) -> pl.DataFrame:
-    """SAS MERGE acct(IN=A) cis; BY ACCTNO; IF CUSTNAME blank THEN CUSTNAME=NAME; IF A."""
-    acct_pd = acct_df.to_pandas()
-    # Add CUSTNO to the selection from CIS
-    cis_pd = cis_df.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"]).to_pandas()
-    cis_pd = cis_pd.rename(columns={"CUSTNAME": "_CIS_CUSTNAME"})
-
-    merged = acct_pd.merge(cis_pd, on="ACCTNO", how="left")
-
-    if "_CIS_CUSTNAME" in merged.columns:
-        merged["CUSTNAME"] = merged["_CIS_CUSTNAME"].where(
-            merged["_CIS_CUSTNAME"].notna() & (merged["_CIS_CUSTNAME"].str.strip() != ""),
-            merged.get("NAME"),
-        )
-        merged.drop(columns=["_CIS_CUSTNAME"], inplace=True)
-
-    return pl.from_pandas(merged)
+def _summary_header(title2: str) -> list[str]:
+    return [
+        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
+        title2 + f" {RDATE}",
+        "-" * 133,
+        "Obs   DEPOSITOR                                      TOTAL BALANCE          FD BALANCE          CA BALANCE          SA BALANCE",
+        "-" * 133,
+    ]
 
 
-Step 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 741, in <module>
-    mni_icx_sorted = mni_icx.sort_values("CUSTNO")
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/frame.py", line 7189, in sort_values
-    k = self._get_label_or_level_values(by[0], axis=axis)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/generic.py", line 1911, in _get_label_or_level_values
-    raise KeyError(key)
-KeyError: 'CUSTNO'
+def _detail_header(title2: str) -> list[str]:
+    return [
+        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
+        title2 + f" {RDATE}",
+        "-" * 133,
+        "Obs   BRANCH                    DEPOSITOR                                               OLD           CURRENT",
+        "      CODE        MNI NO  CUSTCD                                    CIS NO        NEW IC            IC           BALANCE PRODUCT",
+        "-" * 133,
+    ]
+
+
+branch_str = f"{int(row.get('BRANCH') or 0):>6}"
+acctno_str = f"{int(row.get('ACCTNO') or 0):>12}"
+custcode_str = f"{int(row.get('CUSTCODE') or 0):>8}" if row.get('CUSTCODE') is not None else " " * 8
+custname_str = f"{str(row.get('CUSTNAME') or '')[:30]:<30}"
+custno_str = f"{int(row.get('CUSTNO') or 0):>12}" if row.get('CUSTNO') is not None else " " * 12
+newic_str = f"{str(row.get('NEWIC') or '')[:14]:>14}"
+oldic_str = f"{str(row.get('OLDIC') or '')[:14]:>14}"
+curbal_str = _fmt_comma(row.get('CURBAL'), 18)
+product_str = f"{str(row.get('PRODUCT') or '')[:8]:>8}"
+
+line = (
+    f"{obs_counter:>6}"
+    f"{branch_str}"
+    f"{acctno_str}"
+    f"{custcode_str}"
+    f"{custname_str}"
+    f"{custno_str}"
+    f"{newic_str}"
+    f"{oldic_str}"
+    f"{curbal_str}"
+    f"{product_str}"
+)
+
+
+writer.add_line("--------" + ...)  # optional dashed line
+writer.add_line(f"{'CUSTNAME':<30}" + " " * (6+6+12+8+12+14+14) + f"{group_sum:>18}")  # align with CURBAL column
+writer.add_line(f"{'    ICNO':<30}" + " " * (same) + f"{group_sum:>18}")
+
+
+# After each group
+total_str = _fmt_comma(group_sum, 18)
+writer.add_line(f"{'CUSTNAME':<30}".rjust(6+6+12+8+30) + " " * (12+14+14) + total_str)  # Adjust padding to align
+writer.add_line(f"{'    ICNO':<30}".rjust(6+6+12+8+30) + " " * (12+14+14) + total_str)
+
+
+line = f"{'CUSTNAME':<30}".rjust(32) + " " * (12+14+14) + total_str  # but this is messy.
