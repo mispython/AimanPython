@@ -1,3 +1,19 @@
+# Concatenate using Pandas to avoid type conflicts
+fdorg_pd = fdorg.to_pandas()
+caorg_pd = caorg.to_pandas()
+saorg_pd = saorg.to_pandas()
+subs_all_pd = pd.concat([fdorg_pd, caorg_pd, saorg_pd], ignore_index=True)
+subs_all = pl.from_pandas(subs_all_pd).with_columns([
+    pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
+      .then(pl.col("NEWIC"))
+      .otherwise(pl.col("OLDIC"))
+      .alias("ICNO"),
+    pl.when(pl.col("CURCODE") == "MYR").then(pl.col("CURBAL")).otherwise(None).alias("RMAMT"),
+    pl.when(pl.col("CURCODE") != "MYR").then(pl.col("CURBAL")).otherwise(None).alias("FCYAMT"),
+])
+
+======================
+
 Step 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 656, in <module>
