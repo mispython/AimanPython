@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
-Program : EIBDTP50.py
-Purpose : Daily Top 50 Depositors RM & FCY  WIP/NHN2 (After EIBDDEPF)
+Program  : EIBDTP50.py
+Purpose  : Produce reports - Top 50 Depositor (Daily RM & FCY).
+           Generates three reports:
+             FD11TEXT  - Top 100 Largest FD/CA/SA Individual Customers
+             FD12TEXT  - Top 100 Largest FD/CA/SA Corporate Customers
+             FD2TEXT   - Group of Companies Under Top 100 Corp Depositors
+
+Activated by EIBDTP5J.py
 """
 
 import os
@@ -18,10 +24,10 @@ from input_date import get_latest_file
 from output_date import build_output_file
 
 # Dependency: PBBDPFMT (shared format module, already converted separately).
-# Only get_caprod() and get_saprod() are imported because the SAS body only
-# contains PUT(PRODUCT,CAPROD.) and PUT(PRODUCT,SAPROD.) calls. FDPROD/FDDENOM
-# etc. are NOT imported — no PUT(var,FDPROD.) call exists in this program.
-from PBBDPFMT import get_caprod, get_saprod
+# Only caprod_format() and saprod_format() are imported because the SAS body
+# only contains PUT(PRODUCT,CAPROD.) and PUT(PRODUCT,SAPROD.) calls. FDPROD/
+# FDDENOM etc. are NOT imported — no PUT(var,FDPROD.) call exists in this program.
+from PBBDPFMT import caprod_format, saprod_format
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -29,22 +35,23 @@ from PBBDPFMT import get_caprod, get_saprod
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # DEPOSIT DD -> dpd_ca / dpd_fd / dpd_sa (dated filenames, latest per run)
-INPUT_DEPOSIT_DIR = BASE_DIR / "input" / "prod" / "EIBDTP50"
+INPUT_DEPOSIT_DIR = BASE_DIR / "input" / "prod" / "deposit_d"
 
 # CISDP DD / CISFD DD -> fixed filenames, no date component
-INPUT_CISDP_FILE = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
-INPUT_CISFD_FILE = Path("/stgsrcsys/host/uat") / "CISFD_deposit.sas7bdat"
+INPUT_CIS_DIR    = Path("/stgsrcsys/host/uat/AII/EIBDARTB")
+INPUT_CISDP_FILE = INPUT_CIS_DIR / "CISDP" / "CISDP_deposit.sas7bdat"
+INPUT_CISFD_FILE = INPUT_CIS_DIR / "CISFD" / "CISFD_deposit.sas7bdat"
 
 # LIST DD -> fixed filenames, no date component
-INPUT_LIST_DIR = BASE_DIR / "input" / "prod" / "EIBDTP50"
-INPUT_MNI_LIST_FILE = INPUT_LIST_DIR / "COF_MNI_DEPOSITOR_LIST.sas7bdat"
-INPUT_TOPDEP_FILE = INPUT_LIST_DIR / "KEEP_TOP_DEP_EXCL_PBB.sas7bdat"
+INPUT_LIST_DIR      = Path("/stgsrcsys/host/uat/AII/EIBDTP50")
+INPUT_MNI_LIST_FILE = INPUT_LIST_DIR / "cof_mni_depositor_list.sas7bdat" 
+INPUT_TOPDEP_FILE   = INPUT_LIST_DIR / "keep_top_dep_excl_pbb.sas7bdat" 
 
 # Parquet cache directory
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBDTP50"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDTP50"
 
 # Output directory (fixed filenames -- see note above re: GDG generations)
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDTP50"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDTP5J"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -102,11 +109,11 @@ print(f"  REPTYEAR    : {REPTYEAR}  REPTMON: {REPTMON}  REPTDAY: {REPTDAY}  NOWK
 # ============================================================================
 # STEP 2: RESOLVE LATEST DEPOSIT INPUT FILES
 # ============================================================================
-print("\nStep 2: Resolving latest dpd_ca / dpd_fd / dpd_sa file names...")
+print("\nStep 2: Resolving latest ca / fd / sa file names...")
 
-ca_path = get_latest_file(INPUT_DEPOSIT_DIR, prefix="dpd_ca")
-fd_path = get_latest_file(INPUT_DEPOSIT_DIR, prefix="dpd_fd")
-sa_path = get_latest_file(INPUT_DEPOSIT_DIR, prefix="dpd_sa")
+ca_path = get_latest_file(INPUT_DEPOSIT_DIR, prefix="ca")
+fd_path = get_latest_file(INPUT_DEPOSIT_DIR, prefix="fd")
+sa_path = get_latest_file(INPUT_DEPOSIT_DIR, prefix="sa")
 
 print(f"  CA (CURRENT) : {ca_path.name}")
 print(f"  FD           : {fd_path.name}")
@@ -276,11 +283,11 @@ con.close()
 gc.collect()
 
 ca = ca_raw.with_columns(
-    pl.col("PRODUCT").cast(pl.Int64).map_elements(get_caprod, return_dtype=pl.Utf8).alias("PRODCD")
+    pl.col("PRODUCT").cast(pl.Int64).map_elements(caprod_format, return_dtype=pl.Utf8).alias("PRODCD")
 ).filter(pl.col("PRODCD") != "N")
 
 sa = sa_raw.with_columns(
-    pl.col("PRODUCT").cast(pl.Int64).map_elements(get_saprod, return_dtype=pl.Utf8).alias("PRODCD")
+    pl.col("PRODUCT").cast(pl.Int64).map_elements(saprod_format, return_dtype=pl.Utf8).alias("PRODCD")
 ).filter(pl.col("PRODCD") != "N")
 
 fd = fd_raw
