@@ -490,6 +490,23 @@ def _subs_header(title3: str) -> list[str]:
         "-" * LRECL,
     ]
 
+
+# def _standardize_schema(df: pl.DataFrame) -> pl.DataFrame:
+#     """Cast common columns to consistent types for safe concatenation."""
+#     # Numeric columns -> Int64 (or Float64 if they may have decimals)
+#     for col in ['BRANCH', 'ACCTNO', 'CUSTNO', 'CUSTCODE', 'PRODUCT']:
+#         if col in df.columns:
+#             df = df.with_columns(pl.col(col).cast(pl.Int64, strict=False))
+#     # Balance columns -> Float64
+#     for col in ['CURBAL', 'FDBAL', 'CABAL', 'SABAL']:
+#         if col in df.columns:
+#             df = df.with_columns(pl.col(col).cast(pl.Float64, strict=False))
+#     # String columns -> Utf8
+#     for col in ['ICNO', 'CUSTNAME', 'NEWIC', 'OLDIC', 'INDORG', 'PURPOSE']:
+#         if col in df.columns:
+#             df = df.with_columns(pl.col(col).cast(pl.Utf8, strict=False))
+#     return df
+
 # ============================================================================
 # STEP 8: %MACRO PRNREC  (Top 100 summary + detail, run for IND and ORG)
 # PROC SUMMARY BY ICNO CUSTNAME VAR CURBAL FDBAL CABAL SABAL SUM=;
@@ -500,9 +517,35 @@ def _subs_header(title3: str) -> list[str]:
 def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, output_path: Path):
     print(f"\n  Generating {output_path.name} ...")
 
-    data1 = pl.concat(
-        [fdind_df, caind_df, saind_df], how="diagonal"
-    ).with_columns(
+    # print("\n=== Schemas before concat ===")
+    # print("fdind_df:")
+    # print(fdind_df.schema)
+    # print("caind_df:")
+    # print(caind_df.schema)
+    # print("saind_df:")
+    # print(saind_df.schema)
+
+    # fdind_df = _standardize_schema(fdind_df)
+    # caind_df = _standardize_schema(caind_df)
+    # saind_df = _standardize_schema(saind_df)
+
+    # ---- Use Pandas to concat ----
+    fdind_pd = fdind_df.to_pandas()
+    caind_pd = caind_df.to_pandas()
+    saind_pd = saind_df.to_pandas()
+    data1_pd = pd.concat([fdind_pd, caind_pd, saind_pd], ignore_index=True)
+    data1 = pl.from_pandas(data1_pd)
+
+    # data1 = pl.concat(
+    #     [fdind_df, caind_df, saind_df], how="diagonal"
+    # ).with_columns(
+    #     pl.when((pl.col("ICNO").is_null()) | (pl.col("ICNO").str.strip_chars() == ""))
+    #     .then(pl.lit("XX"))
+    #     .otherwise(pl.col("ICNO"))
+    #     .alias("ICNO")
+    # )
+
+    data1 = data1.with_columns(
         pl.when((pl.col("ICNO").is_null()) | (pl.col("ICNO").str.strip_chars() == ""))
         .then(pl.lit("XX"))
         .otherwise(pl.col("ICNO"))
@@ -610,7 +653,20 @@ data1_org, data3_org = _run_prnrec(
 # ============================================================================
 print("\nStep 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...")
 
-subs_all = pl.concat([fdorg, caorg, saorg], how="diagonal").with_columns([
+# subs_all = pl.concat([fdorg, caorg, saorg], how="diagonal").with_columns([
+#     pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
+#       .then(pl.col("NEWIC"))
+#       .otherwise(pl.col("OLDIC"))
+#       .alias("ICNO"),
+#     pl.when(pl.col("CURCODE") == "MYR").then(pl.col("CURBAL")).otherwise(None).alias("RMAMT"),
+#     pl.when(pl.col("CURCODE") != "MYR").then(pl.col("CURBAL")).otherwise(None).alias("FCYAMT"),
+# ])
+
+fdorg_pd = fdorg.to_pandas()
+caorg_pd = caorg.to_pandas()
+saorg_pd = saorg.to_pandas()
+subs_all_pd = pd.concat([fdorg_pd, caorg_pd, saorg_pd], ignore_index=True)
+subs_all = pl.from_pandas(subs_all_pd).with_columns([
     pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
       .then(pl.col("NEWIC"))
       .otherwise(pl.col("OLDIC"))
