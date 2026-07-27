@@ -1,8 +1,15 @@
-# In Table 1 generation:
-fd_display = "." if not has_fd else _fmt_comma(row['FDBAL'])
-output_lines.append(_line([
-    (1, f"{idx} ) {row['PMTYPE']}"),
-    (30, f";;;{_fmt_comma(row['CABAL'])}"),
-    (59, f";{fd_display}"),
-    (90, f";{_fmt_comma(row['CURBAL'])}"),
-]))
+# Dependency: PBBDPFMT (shared format module, already converted separately).
+# Only caprod_format() and saprod_format() are imported because the SAS body
+# only contains PUT(PRODUCT,CAPROD.) and PUT(PRODUCT,SAPROD.) calls. FDPROD/
+# FDDENOM etc. are NOT imported — no PUT(var,FDPROD.) call exists in this
+# program.
+
+from PBBDPFMT import caprod_format, saprod_format
+
+ca = ca_raw.with_columns(
+    pl.col("PRODUCT").cast(pl.Int64).map_elements(caprod_format, return_dtype=pl.Utf8).alias("PRODCD")
+).filter(pl.col("PRODCD") != "N")
+
+sa = sa_raw.with_columns(
+    pl.col("PRODUCT").cast(pl.Int64).map_elements(saprod_format, return_dtype=pl.Utf8).alias("PRODCD")
+).filter(pl.col("PRODCD") != "N")
