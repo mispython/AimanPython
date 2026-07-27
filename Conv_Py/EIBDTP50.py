@@ -474,7 +474,7 @@ def _summary_header(title2: str) -> list[str]:
         "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
         title2 + f" {RDATE}",
         "-" * 133,
-        "Obs   DEPOSITOR                                      TOTAL BALANCE          FD BALANCE          CA BALANCE          SA BALANCE",
+        "Obs   DEPOSITOR                                     TOTAL BALANCE        FD BALANCE        CA BALANCE        SA BALANCE",
         "-" * 133,
     ]
 
@@ -497,8 +497,8 @@ def _detail_header(title2: str) -> list[str]:
         "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
         title2 + f" {RDATE}",
         "-" * 133,
-        "Obs   BRANCH                    DEPOSITOR                                               OLD           CURRENT",
-        "      CODE        MNI NO  CUSTCD                                    CIS NO        NEW IC            IC           BALANCE PRODUCT",
+        "Obs   BRANCH              CUST                                                                                   CURRENT",
+        "      CODE        MNI NO  CD    DEPOSITOR                           CIS NO        NEW IC        OLD IC           BALANCE   PRODUCT",
         "-" * 133,
     ]
 
@@ -587,7 +587,7 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
     for idx, row in enumerate(data2.iter_rows(named=True), start=1):
         line = (
             f"{idx:>6}"
-            f"{str(row.get('CUSTNAME') or '')[:30]:<30}"
+            f"{str(row.get('CUSTNAME') or '')[:40]:<40}"
             f"{_fmt_comma(row.get('CURBAL'), 18)}"
             f"{_fmt_comma(row.get('FDBAL'), 18)}"
             f"{_fmt_comma(row.get('CABAL'), 18)}"
@@ -604,23 +604,14 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
     obs_counter = 1
     current_group = None
     group_sum = 0.0
+    grand_total = 0.0   # already defined above; keep it
 
     for row in data3.iter_rows(named=True):
         group_key = (row.get("ICNO"), row.get("CUSTNAME"))
-        # # If we've moved to a new group, print subtotals for the previous group
-        # if current_group is not None and group_key != current_group:
-        #     # CUSTNAME subtotal line
-        #     writer.add_line(
-        #         f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
-        #     )
-        #     # ICNO subtotal line (indented)
-        #     writer.add_line(
-        #         f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
-        #     )
-        #     group_sum = 0.0
 
+        # If we've moved to a new group, print subtotals for the previous group
         if current_group is not None and group_key != current_group:
-            # --- Dashed separator line ---
+            # Dashed separator
             dash_under_name = "--------"
             dash_under_bal  = "----------------"
             writer.add_line(
@@ -628,25 +619,23 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
                 " " * (COL_BAL - (COL_NAME + len(dash_under_name))) +
                 dash_under_bal
             )
-            # --- CUSTNAME subtotal ---
             total_str = _fmt_comma(group_sum, 18)
             writer.add_line(
                 " " * COL_NAME + f"{'CUSTNAME':<30}" +
                 " " * (COL_BAL - COL_NAME - 30) + total_str
             )
-            # --- ICNO subtotal (indented) ---
             writer.add_line(
                 " " * COL_NAME + f"{'    ICNO':<30}" +
                 " " * (COL_BAL - COL_NAME - 30) + total_str
             )
             group_sum = 0.0
-            
+
         current_group = group_key
 
         # Build the detail line with Obs
         branch_str = f"{int(row.get('BRANCH') or 0):>6}"
         acctno_str = f"{int(row.get('ACCTNO') or 0):>12}"
-        custcode_str = f"{int(row.get('CUSTCODE') or 0):>8}" if row.get('CUSTCODE') is not None else " " * 8
+        custcode_str = f"{int(row.get('CUSTCODE') or 0):>7}" if row.get('CUSTCODE') is not None else " " * 8
         custname_str = f"{str(row.get('CUSTNAME') or '')[:30]:<30}"
         custno_str = f"{int(row.get('CUSTNO') or 0):>12}" if row.get('CUSTNO') is not None else " " * 12
         newic_str = f"{str(row.get('NEWIC') or '')[:14]:>14}"
@@ -655,32 +644,24 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
         product_str = f"{str(row.get('PRODUCT') or '')[:8]:>8}"
 
         line = (
-            f"{obs_counter:>6}"
+            f"{obs_counter:>3}   "
             f"{branch_str}"
             f"{acctno_str}"
-            f"{custcode_str}"
+            f"{custcode_str} "
             f"{custname_str}"
             f"{custno_str}"
             f"{newic_str}"
             f"{oldic_str}"
             f"{curbal_str}"
-            f"{product_str}"
+            f"  {product_str}"
         )
         writer.add_line(line)
         obs_counter += 1
         group_sum += float(row.get("CURBAL") or 0.0)
+        grand_total += float(row.get("CURBAL") or 0.0)   # <-- ADD THIS
 
-    # After the loop, print subtotal for the last group
-    # if current_group is not None:
-    #     writer.add_line(
-    #         f"{'CUSTNAME':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
-    #     )
-    #     writer.add_line(
-    #         f"{'    ICNO':<6}{'':<6}{'':<12}{'':<8}{'':<30}{'':<12}{'':<14}{'':<14}{_fmt_comma(group_sum, 18)}"
-    #     )
-
-    if current_group is not None and group_key != current_group:
-        # --- Dashed separator line ---
+    # After the loop, print subtotals for the last group (if any)
+    if current_group is not None:
         dash_under_name = "--------"
         dash_under_bal  = "----------------"
         writer.add_line(
@@ -688,38 +669,24 @@ def _run_prnrec(fdind_df, caind_df, saind_df, title2_summary, title2_detail, out
             " " * (COL_BAL - (COL_NAME + len(dash_under_name))) +
             dash_under_bal
         )
-        # --- CUSTNAME subtotal ---
         total_str = _fmt_comma(group_sum, 18)
         writer.add_line(
             " " * COL_NAME + f"{'CUSTNAME':<30}" +
             " " * (COL_BAL - COL_NAME - 30) + total_str
         )
-        # --- ICNO subtotal (indented) ---
         writer.add_line(
             " " * COL_NAME + f"{'    ICNO':<30}" +
             " " * (COL_BAL - COL_NAME - 30) + total_str
         )
-        group_sum = 0.0
 
-    # if current_group is not None:
-    #     writer.add_line(f"{'':<49}{'TOTAL':>12}{_fmt_comma(group_sum, 18)}")
-
+    # Grand total line
     if current_group is not None:
-        # Compute grand total (sum of all group_sum values)
-        # We need to accumulate `grand_total` during the loop.
-        # For now, we assume we have a variable `grand_total` that holds the sum.
-        # Add this before the loop: grand_total = 0.0
-        # Inside the loop, add to grand_total as we accumulate.
-        # Then here:
         total_str = _fmt_comma(grand_total, 18)
-        writer.add_line(" " * COL_BAL + "================")  # 16 equals signs
+        writer.add_line(" " * COL_BAL + "================")  # 16 equals
         writer.add_line(
             " " * (COL_BAL - 4) + "TOTAL" +
             " " * (COL_BAL - (COL_BAL - 4) - 4) + total_str
         )
-
-    group_sum += float(row.get("CURBAL") or 0.0)
-    grand_total += float(row.get("CURBAL") or 0.0)
 
     writer.write(output_path)
     print(f"  Output written : {output_path}  ({len(writer.lines):,} lines)")
@@ -756,14 +723,6 @@ fdorg_pd = fdorg.to_pandas()
 caorg_pd = caorg.to_pandas()
 saorg_pd = saorg.to_pandas()
 subs_all_pd = pd.concat([fdorg_pd, caorg_pd, saorg_pd], ignore_index=True)
-# subs_all = pl.from_pandas(subs_all_pd).with_columns([
-#     pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
-#       .then(pl.col("NEWIC"))
-#       .otherwise(pl.col("OLDIC"))
-#       .alias("ICNO"),
-#     pl.when(pl.col("CURCODE") == "MYR").then(pl.col("CURBAL")).otherwise(None).alias("RMAMT"),
-#     pl.when(pl.col("CURCODE") != "MYR").then(pl.col("CURBAL")).otherwise(None).alias("FCYAMT"),
-# ])
 
 subs_all = pl.from_pandas(subs_all_pd).with_columns([
     pl.when((pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").str.strip_chars() != ""))
