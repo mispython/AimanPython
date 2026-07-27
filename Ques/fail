@@ -1,3 +1,22 @@
+def _merge_with_cis(acct_df: pl.DataFrame, cis_df: pl.DataFrame) -> pl.DataFrame:
+    """SAS MERGE acct(IN=A) cis; BY ACCTNO; IF CUSTNAME blank THEN CUSTNAME=NAME; IF A."""
+    acct_pd = acct_df.to_pandas()
+    # Add CUSTNO to the selection from CIS
+    cis_pd = cis_df.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"]).to_pandas()
+    cis_pd = cis_pd.rename(columns={"CUSTNAME": "_CIS_CUSTNAME"})
+
+    merged = acct_pd.merge(cis_pd, on="ACCTNO", how="left")
+
+    if "_CIS_CUSTNAME" in merged.columns:
+        merged["CUSTNAME"] = merged["_CIS_CUSTNAME"].where(
+            merged["_CIS_CUSTNAME"].notna() & (merged["_CIS_CUSTNAME"].str.strip() != ""),
+            merged.get("NAME"),
+        )
+        merged.drop(columns=["_CIS_CUSTNAME"], inplace=True)
+
+    return pl.from_pandas(merged)
+
+
 Step 10: Building SUBS_ALL and generating FD2TEXT (Subsidiaries)...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDTP50.py", line 741, in <module>
