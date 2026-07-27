@@ -1,3 +1,12 @@
+print("\n=== Schemas before concat ===")
+print("fdind_df:")
+print(fdind_df.schema)
+print("caind_df:")
+print(caind_df.schema)
+print("saind_df:")
+print(saind_df.schema)
+
+
 def _standardize_schema(df: pl.DataFrame) -> pl.DataFrame:
     """Cast common columns to consistent types for safe concatenation."""
     # Numeric columns -> Int64 (or Float64 if they may have decimals)
