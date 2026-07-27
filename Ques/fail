@@ -1,57 +1,45 @@
-def _summary_header(title2: str) -> list[str]:
-    return [
-        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
-        title2 + f" {RDATE}",
-        "-" * 133,
-        "Obs   DEPOSITOR                                      TOTAL BALANCE          FD BALANCE          CA BALANCE          SA BALANCE",
-        "-" * 133,
-    ]
+def _format_subtotal(label: str, amount: float) -> str:
+    """Return a line with 'label' left-justified under the DEPOSITOR column,
+    and amount right-justified under the CURBAL column."""
+    # Fixed widths (Obs=6, BRANCH=6, ACCTNO=12, CUSTCODE=8, DEPOSITOR=30,
+    # CUSTNO=12, NEWIC=14, OLDIC=14) => total before CURBAL = 6+6+12+8+30+12+14+14 = 102
+    # The CURBAL column is 18 wide.
+    before_curbal = 6 + 6 + 12 + 8 + 30 + 12 + 14 + 14
+    return f"{label:<{before_curbal}}{_fmt_comma(amount, 18)}"
 
 
-def _detail_header(title2: str) -> list[str]:
-    return [
-        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBDTP50",
-        title2 + f" {RDATE}",
-        "-" * 133,
-        "Obs   BRANCH                    DEPOSITOR                                               OLD           CURRENT",
-        "      CODE        MNI NO  CUSTCD                                    CIS NO        NEW IC            IC           BALANCE PRODUCT",
-        "-" * 133,
-    ]
+writer.add_line(_format_subtotal("CUSTNAME", group_sum))
+writer.add_line(_format_subtotal("    ICNO", group_sum))
 
 
-branch_str = f"{int(row.get('BRANCH') or 0):>6}"
-acctno_str = f"{int(row.get('ACCTNO') or 0):>12}"
-custcode_str = f"{int(row.get('CUSTCODE') or 0):>8}" if row.get('CUSTCODE') is not None else " " * 8
-custname_str = f"{str(row.get('CUSTNAME') or '')[:30]:<30}"
-custno_str = f"{int(row.get('CUSTNO') or 0):>12}" if row.get('CUSTNO') is not None else " " * 12
-newic_str = f"{str(row.get('NEWIC') or '')[:14]:>14}"
-oldic_str = f"{str(row.get('OLDIC') or '')[:14]:>14}"
-curbal_str = _fmt_comma(row.get('CURBAL'), 18)
-product_str = f"{str(row.get('PRODUCT') or '')[:8]:>8}"
-
-line = (
-    f"{obs_counter:>6}"
-    f"{branch_str}"
-    f"{acctno_str}"
-    f"{custcode_str}"
-    f"{custname_str}"
-    f"{custno_str}"
-    f"{newic_str}"
-    f"{oldic_str}"
-    f"{curbal_str}"
-    f"{product_str}"
-)
+# After finishing a group, print a separator line of dashes
+separator = "-" * 8  # for the amount column, but we can just print a line of dashes
+writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "-" * 18)
 
 
-writer.add_line("--------" + ...)  # optional dashed line
-writer.add_line(f"{'CUSTNAME':<30}" + " " * (6+6+12+8+12+14+14) + f"{group_sum:>18}")  # align with CURBAL column
-writer.add_line(f"{'    ICNO':<30}" + " " * (same) + f"{group_sum:>18}")
+writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "-" * 18)
 
 
-# After each group
-total_str = _fmt_comma(group_sum, 18)
-writer.add_line(f"{'CUSTNAME':<30}".rjust(6+6+12+8+30) + " " * (12+14+14) + total_str)  # Adjust padding to align
-writer.add_line(f"{'    ICNO':<30}".rjust(6+6+12+8+30) + " " * (12+14+14) + total_str)
+if current_group is not None:
+    # Print a separator line first
+    writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "=" * 18)
+    writer.add_line(_format_subtotal("TOTAL", group_sum))
 
 
-line = f"{'CUSTNAME':<30}".rjust(32) + " " * (12+14+14) + total_str  # but this is messy.
+for row in data3.iter_rows(named=True):
+    group_key = (row.get("ICNO"), row.get("CUSTNAME"))
+    if current_group is not None and group_key != current_group:
+        # Print group subtotal lines
+        writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "-" * 18)
+        writer.add_line(_format_subtotal("CUSTNAME", group_sum))
+        writer.add_line(_format_subtotal("    ICNO", group_sum))
+        group_sum = 0.0
+    current_group = group_key
+
+    # ... (build and print detail line) ...
+    group_sum += float(row.get("CURBAL") or 0.0)
+
+# After loop
+if current_group is not None:
+    writer.add_line(" " * 6 + " " * 6 + " " * 12 + " " * 8 + " " * 30 + " " * 12 + " " * 14 + " " * 14 + "=" * 18)
+    writer.add_line(_format_subtotal("TOTAL", group_sum))
