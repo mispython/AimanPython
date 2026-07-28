@@ -1,87 +1,61 @@
-    writer.new_page(title2_detail, header_fn=_detail_header)
-    obs_counter = 1
-    current_group = None
-    group_sum = 0.0
-    grand_total = 0.0   # already defined above; keep it
+INPUT_MNITB_DIR   = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # dp_fcy<date>.sas7bdat (CA)
+INPUT_MNITBFD_DIR = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # dp_fcyfd<date>.sas7bdat (FD)
+INPUT_IMNITB_DIR  = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # idp_fcy<date>.sas7bdat
+INPUT_WALK_DIR    = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # wk<date>.sas7bdat
 
-    for row in data3.iter_rows(named=True):
-        group_key = (row.get("ICNO"), row.get("CUSTNAME"))
 
-        # If we've moved to a new group, print subtotals for the previous group
-        if current_group is not None and group_key != current_group:
-            # Dashed separator
-            dash_under_name = "--------"
-            dash_under_bal  = "----------------"
-            writer.add_line(
-                " " * COL_NAME + dash_under_name +
-                " " * (COL_BAL - (COL_NAME + len(dash_under_name))) +
-                dash_under_bal
-            )
-            total_str = _fmt_comma(group_sum, 18)
-            writer.add_line(
-                " " * COL_NAME + f"{'CUSTNAME':<30}" +
-                " " * (COL_BAL - COL_NAME - 30) + total_str
-            )
-            writer.add_line(
-                " " * COL_NAME + f"{'    ICNO':<30}" +
-                " " * (COL_BAL - COL_NAME - 30) + total_str
-            )
-            group_sum = 0.0
+mnitb_path   = get_latest_file(INPUT_MNITB_DIR, prefix="dp_fcy")
+mnitbfd_path = get_latest_file(INPUT_MNITBFD_DIR, prefix="dp_fcyfd")
+imnitb_path  = get_latest_file(INPUT_IMNITB_DIR, prefix="idp_fcy")
+walk_path    = get_latest_file(INPUT_WALK_DIR, prefix="wk")
 
-        current_group = group_key
+print(f"  MNITB   (dp_fcy)  : {mnitb_path.name}")
+print(f"  MNITB-FD(dp_fcyfd): {mnitbfd_path.name}")
+print(f"  IMNITB  (idp_fcy) : {imnitb_path.name}")
+print(f"  WALK    (wk)      : {walk_path.name}")
 
-        # Build the detail line with Obs
-        branch_str = f"{int(row.get('BRANCH') or 0):>6}"
-        acctno_str = f"{int(row.get('ACCTNO') or 0):>12}"
-        custcode_str = f"{int(row.get('CUSTCODE') or 0):>8}" if row.get('CUSTCODE') is not None else " " * 8
-        custname_str = f"{str(row.get('CUSTNAME') or '')[:30]:<30}"
-        custno_str = f"{int(row.get('CUSTNO') or 0):>12}" if row.get('CUSTNO') is not None else " " * 12
-        newic_str = f"{str(row.get('NEWIC') or '')[:14]:>14}"
-        oldic_str = f"{str(row.get('OLDIC') or '')[:14]:>14}"
-        curbal_str = _fmt_comma(row.get('CURBAL'), 18)
-        product_str = f"{str(row.get('PRODUCT') or '')[:8]:>8}"
 
-        line = (
-            f"{obs_counter:>6}"
-            f"{branch_str}"
-            f"{acctno_str}"
-            f"{custcode_str}"
-            f"{custname_str}"
-            f"{custno_str}"
-            f"{newic_str}"
-            f"{oldic_str}"
-            f"{curbal_str}"
-            f"{product_str}"
-        )
-        writer.add_line(line)
-        obs_counter += 1
-        group_sum += float(row.get("CURBAL") or 0.0)
-        grand_total += float(row.get("CURBAL") or 0.0)   # <-- ADD THIS
+mnitbfd_path = get_latest_file(INPUT_MNITBFD_DIR, prefix="dp_fcyfd")
+mnitb_candidates_dir_files = {
+    f.name for f in INPUT_MNITB_DIR.iterdir()
+    if f.is_file() and f.name.startswith("dp_fcy") and not f.name.startswith("dp_fcyfd")
+}
+mnitb_path = get_latest_file(INPUT_MNITB_DIR, prefix="dp_fcy")
+if mnitb_path.name not in mnitb_candidates_dir_files:
+    raise FileNotFoundError(
+        f"Resolved CA file '{mnitb_path.name}' overlaps FD prefix — check dp_fcy* naming."
+    )
 
-    # After the loop, print subtotals for the last group (if any)
-    if current_group is not None:
-        dash_under_name = "--------"
-        dash_under_bal  = "----------------"
-        writer.add_line(
-            " " * COL_NAME + dash_under_name +
-            " " * (COL_BAL - (COL_NAME + len(dash_under_name))) +
-            dash_under_bal
-        )
-        total_str = _fmt_comma(group_sum, 18)
-        writer.add_line(
-            " " * COL_NAME + f"{'CUSTNAME':<30}" +
-            " " * (COL_BAL - COL_NAME - 30) + total_str
-        )
-        writer.add_line(
-            " " * COL_NAME + f"{'    ICNO':<30}" +
-            " " * (COL_BAL - COL_NAME - 30) + total_str
-        )
 
-    # Grand total line
-    if current_group is not None:
-        total_str = _fmt_comma(grand_total, 18)
-        writer.add_line(" " * COL_BAL + "================")  # 16 equals
-        writer.add_line(
-            " " * (COL_BAL - 4) + "TOTAL" +
-            " " * (COL_BAL - (COL_BAL - 4) - 4) + total_str
-        )
+MNITB_CACHE   = CACHE_DIR / f"{mnitb_path.stem}.parquet"
+MNITBFD_CACHE = CACHE_DIR / f"{mnitbfd_path.stem}.parquet"
+IMNITB_CACHE  = CACHE_DIR / f"{imnitb_path.stem}.parquet"
+WALK_CACHE    = CACHE_DIR / f"{walk_path.stem}.parquet"
+
+for src, cache, tag in (
+    (mnitb_path,   MNITB_CACHE,   "MNITB"),
+    (mnitbfd_path, MNITBFD_CACHE, "MNITB-FD"),
+    (imnitb_path,  IMNITB_CACHE,  "IMNITB"),
+    (walk_path,    WALK_CACHE,    "WALK"),
+):
+    if not _cache_is_fresh(src, cache):
+        sas_to_parquet(src, cache, tag)
+    else:
+        print(f"  [{tag}] Cache fresh — skipping conversion.")
+
+
+print("\nStep 5: Building FDFY (FCY fixed-deposit summary)...")
+
+con = duckdb.connect(database=":memory:")
+fd_domestic = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(CURBALRM AS DOUBLE)  AS CURBAL,
+        CAST(CUSTCODE AS INTEGER) AS CUSTCODE,
+        CAST(PRODUCT  AS INTEGER) AS PRODUCT
+    FROM read_parquet('{MNITBFD_CACHE}')
+    WHERE PRODUCT IN ({",".join(str(p) for p in sorted(FCY))})
+""").pl()
+con.close()
+
+
