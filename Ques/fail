@@ -1,61 +1,110 @@
-INPUT_MNITB_DIR   = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # dp_fcy<date>.sas7bdat (CA)
-INPUT_MNITBFD_DIR = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # dp_fcyfd<date>.sas7bdat (FD)
-INPUT_IMNITB_DIR  = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # idp_fcy<date>.sas7bdat
-INPUT_WALK_DIR    = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # wk<date>.sas7bdat
+PAGE_SIZE = 60     # lines per page (SAS default)
+LINE_GAP = 2        # spaces between report columns
+
+# All column defs (name, width, 3-line header) — same as before, kept as the
+# single source of truth. PAGE_GROUPS below slices this by name into the
+# three requested page groupings.
+ALL_COLUMNS = [
+    ("TOTFDFY",  17, ["FCY FD", "BALANCE", "(EXCL.FI)"]),
+    ("TOTFCFY",  17, ["FCY FD", "FOREIGN", "COMPANIES"]),
+    ("TOTFYFD",  14, ["FCY FD", "TOTAL", ""]),
+    ("TOFFDFIC", 14, ["FCY FD-C FI", "", ""]),
+    ("TOTCAFY",  14, ["FCY CA-C", "BALANCE", "(EXCL.FI)"]),
+    ("TOTCAFYI", 14, ["FCY CA-I", "BALANCE", "(EXCL.FI)"]),
+    ("TOTFYCA",  14, ["FCY CA", "TOTAL", ""]),
+    ("TOTFCY",   14, ["TOTAL", "FCY", "BALANCE"]),
+    ("TOFFDIDC", 14, ["FCY FD-C", "INDV", ""]),
+    ("TOFFDNDC", 14, ["FCY FD-C", "NON-INDV", ""]),
+    ("TOFCAFIC", 14, ["FCY CA-C FI", "", ""]),
+    ("TOFCAFII", 14, ["FCY CA-I FI", "", ""]),
+    ("TOTFCAFI", 14, ["TOTAL", "FCY CA FI", ""]),
+    ("TOTFCYFI", 14, ["TOTAL", "FCY FI", ""]),
+    ("TOFCAIDC", 14, ["FCY CA-C", "INDV", ""]),
+    ("TOFCANDC", 14, ["FCY CA-C", "NON-INDV", ""]),
+    ("TOFCAIDI", 14, ["FCY CA-I", "INDV", ""]),
+    ("TOFCANDI", 14, ["FCY CA-I", "NON-INDV", ""]),
+    ("TOTFCAID", 14, ["TOTAL", "FCY CA INDV", ""]),
+    ("TOTFCAND", 14, ["TOTAL", "FCY CA NON-INDV", ""]),
+]
+DATE_WIDTH = 8   # DDMMYY8.
+DATE_HEADER = ["DATE", "", ""]
+
+# Column-group boundaries requested:
+#   Page 1: DATE .. FCY CA TOTAL           -> TOTFDFY..TOTFYCA (+ DATE)
+#   Page 2: TOTAL FCY BALANCE .. FCY CA-C INDV -> TOTFCY..TOFCAIDC
+#   Page 3: FCY CA-C NON-INDV .. TOTAL FCY CA NON-INDV -> TOFCANDC..TOTFCAND
+_GROUP_BOUNDARIES = [
+    ("TOTFDFY", "TOTFYCA"),
+    ("TOTFCY", "TOFCAIDC"),
+    ("TOFCANDC", "TOTFCAND"),
+]
+
+_col_names = [c[0] for c in ALL_COLUMNS]
 
 
-mnitb_path   = get_latest_file(INPUT_MNITB_DIR, prefix="dp_fcy")
-mnitbfd_path = get_latest_file(INPUT_MNITBFD_DIR, prefix="dp_fcyfd")
-imnitb_path  = get_latest_file(INPUT_IMNITB_DIR, prefix="idp_fcy")
-walk_path    = get_latest_file(INPUT_WALK_DIR, prefix="wk")
-
-print(f"  MNITB   (dp_fcy)  : {mnitb_path.name}")
-print(f"  MNITB-FD(dp_fcyfd): {mnitbfd_path.name}")
-print(f"  IMNITB  (idp_fcy) : {imnitb_path.name}")
-print(f"  WALK    (wk)      : {walk_path.name}")
+def _slice_columns(start_name: str, end_name: str) -> list:
+    i = _col_names.index(start_name)
+    j = _col_names.index(end_name)
+    return ALL_COLUMNS[i:j + 1]
 
 
-mnitbfd_path = get_latest_file(INPUT_MNITBFD_DIR, prefix="dp_fcyfd")
-mnitb_candidates_dir_files = {
-    f.name for f in INPUT_MNITB_DIR.iterdir()
-    if f.is_file() and f.name.startswith("dp_fcy") and not f.name.startswith("dp_fcyfd")
-}
-mnitb_path = get_latest_file(INPUT_MNITB_DIR, prefix="dp_fcy")
-if mnitb_path.name not in mnitb_candidates_dir_files:
-    raise FileNotFoundError(
-        f"Resolved CA file '{mnitb_path.name}' overlaps FD prefix — check dp_fcy* naming."
-    )
+# Each page group: (columns_subset, include_date_column)
+PAGE_GROUPS = [
+    (_slice_columns(*_GROUP_BOUNDARIES[0]), True),
+    (_slice_columns(*_GROUP_BOUNDARIES[1]), False),
+    (_slice_columns(*_GROUP_BOUNDARIES[2]), False),
+]
 
 
-MNITB_CACHE   = CACHE_DIR / f"{mnitb_path.stem}.parquet"
-MNITBFD_CACHE = CACHE_DIR / f"{mnitbfd_path.stem}.parquet"
-IMNITB_CACHE  = CACHE_DIR / f"{imnitb_path.stem}.parquet"
-WALK_CACHE    = CACHE_DIR / f"{walk_path.stem}.parquet"
+def _build_header_block(columns: list, include_date: bool) -> list[str]:
+    """Title lines + 3-line multi-part column headers + separator, for one
+    page group's column subset."""
+    lines = list(TITLE_LINES)
+    lines.append("")
 
-for src, cache, tag in (
-    (mnitb_path,   MNITB_CACHE,   "MNITB"),
-    (mnitbfd_path, MNITBFD_CACHE, "MNITB-FD"),
-    (imnitb_path,  IMNITB_CACHE,  "IMNITB"),
-    (walk_path,    WALK_CACHE,    "WALK"),
-):
-    if not _cache_is_fresh(src, cache):
-        sas_to_parquet(src, cache, tag)
-    else:
-        print(f"  [{tag}] Cache fresh — skipping conversion.")
+    col_headers = ([DATE_HEADER] if include_date else []) + [h for _, _, h in columns]
+    col_widths  = ([DATE_WIDTH] if include_date else []) + [w for _, w, _ in columns]
 
+    for line_idx in range(3):
+        parts = [
+            _center(headers[line_idx], width)
+            for headers, width in zip(col_headers, col_widths)
+        ]
+        lines.append((" " * LINE_GAP).join(parts))
 
-print("\nStep 5: Building FDFY (FCY fixed-deposit summary)...")
-
-con = duckdb.connect(database=":memory:")
-fd_domestic = con.execute(f"""
-    SELECT
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(CURBALRM AS DOUBLE)  AS CURBAL,
-        CAST(CUSTCODE AS INTEGER) AS CUSTCODE,
-        CAST(PRODUCT  AS INTEGER) AS PRODUCT
-    FROM read_parquet('{MNITBFD_CACHE}')
-    WHERE PRODUCT IN ({",".join(str(p) for p in sorted(FCY))})
-""").pl()
-con.close()
+    total_width = sum(col_widths) + LINE_GAP * (len(col_widths) - 1)
+    lines.append("-" * total_width)
+    return lines   # 5 titles + 1 blank + 3 header lines + 1 separator = 10 lines
 
 
+HEADER_LINES = len(_build_header_block(*PAGE_GROUPS[0]))
+
+
+output_lines: list[str] = []
+
+
+def _emit_header(columns: list, include_date: bool) -> list[str]:
+    """Return a header block, ASA '1' on the first line (always a new page)."""
+    block = _build_header_block(columns, include_date)
+    lines = [("1" + block[0])]
+    lines.extend(" " + ln for ln in block[1:])
+    return lines
+
+
+for columns, include_date in PAGE_GROUPS:
+    lines_on_page = 0
+
+    for row_idx, row in enumerate(report_df.iter_rows(named=True)):
+        if row_idx == 0 or lines_on_page >= PAGE_SIZE:
+            output_lines.extend(_emit_header(columns, include_date))
+            lines_on_page = HEADER_LINES
+
+        parts = []
+        if include_date:
+            parts.append(_fmt_date(row["REPTDATE"]).rjust(DATE_WIDTH))
+        for col_name, width, _ in columns:
+            parts.append(_fmt_comma(row.get(col_name), width))
+
+        detail_line = (" " * LINE_GAP).join(parts)
+        output_lines.append(" " + detail_line)   # ASA ' ' = single space
+        lines_on_page += 1
