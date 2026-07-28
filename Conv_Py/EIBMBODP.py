@@ -63,9 +63,18 @@ PAGE_SIZE  = 60   # SAS default lines-per-page (no PAGESIZE= specified)
 # ============================================================================
 print("Step 1: Deriving report date...")
 
+# reptdate_values = get_reptdate_values()
+# reptdate = reptdate_values.reptdate
+# REPTMON  = reptdate_values.reptmon
+# REPTDAY  = reptdate_values.reptday
+# RDATE    = reptdate.strftime("%d/%m/%y")
+
 reptdate_values = get_reptdate_values()
 reptdate = reptdate_values.reptdate
-REPTMON  = reptdate_values.reptmon
+# Compute previous month with wrap-around
+prev_month = 12 if reptdate.month == 1 else reptdate.month - 1
+REPTMON = f"{prev_month:02d}"
+# Keep REPTDAY and RDATE as they were (they are not used for file names)
 REPTDAY  = reptdate_values.reptday
 RDATE    = reptdate.strftime("%d/%m/%y")
 
