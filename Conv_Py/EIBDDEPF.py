@@ -61,7 +61,7 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 INPUT_MNITB_DIR   = BASE_DIR / "input" / "prod" / "deposit_fcy"   # dp_fcy<date>.sas7bdat (CA)
 INPUT_MNITBFD_DIR = BASE_DIR / "input" / "prod" / "deposit_fcy"   # dp_fcyfd<date>.sas7bdat (FD)
 INPUT_IMNITB_DIR  = BASE_DIR / "input" / "prod" / "deposit_fcy"   # idp_fcy<date>.sas7bdat
-INPUT_WALK_DIR    = BASE_DIR / "input" / "prod" / "walker"   # wk<date>.sas7bdat
+INPUT_WALK_DIR    = BASE_DIR / "input" / "prod" / "walker"        # wk<date>.sas7bdat
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDDEPF"
 
