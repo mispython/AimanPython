@@ -58,11 +58,12 @@ from PBBDPFMT import FCY, ddcustcd_format, fdcustcd_format
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_MNITB_DIR  = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # dp_fcy<date>.sas7bdat
-INPUT_IMNITB_DIR = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # idp_fcy<date>.sas7bdat
-INPUT_WALK_DIR   = BASE_DIR / "input" / "prod" / "EIBDDEPF"   # wk<date>.sas7bdat
+INPUT_MNITB_DIR   = BASE_DIR / "input" / "prod" / "deposit_fcy"   # dp_fcy<date>.sas7bdat (CA)
+INPUT_MNITBFD_DIR = BASE_DIR / "input" / "prod" / "deposit_fcy"   # dp_fcyfd<date>.sas7bdat (FD)
+INPUT_IMNITB_DIR  = BASE_DIR / "input" / "prod" / "deposit_fcy"   # idp_fcy<date>.sas7bdat
+INPUT_WALK_DIR    = BASE_DIR / "input" / "prod" / "walker"   # wk<date>.sas7bdat
 
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBDDEPF"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDDEPF"
 
 # Monthly cumulative dataset directory - equivalent of LIBNAME MIS
 # "SAP.PBB.MIS.D&REPTYEAR" holding dataset DYFCY&REPTMON.
@@ -126,13 +127,15 @@ MONTHLY_FILE = MONTHLY_YEAR_DIR / f"DYFCY{REPTMON}.parquet"
 # ============================================================================
 print("\nStep 2: Resolving input files...")
 
-mnitb_path  = get_latest_file(INPUT_MNITB_DIR, prefix="dp_fcy")
-imnitb_path = get_latest_file(INPUT_IMNITB_DIR, prefix="idp_fcy")
-walk_path   = get_latest_file(INPUT_WALK_DIR, prefix="wk")
+mnitb_path   = get_latest_file(INPUT_MNITB_DIR, prefix="fcy")
+mnitbfd_path = get_latest_file(INPUT_MNITBFD_DIR, prefix="fcyfd")
+imnitb_path  = get_latest_file(INPUT_IMNITB_DIR, prefix="ifcy")
+walk_path    = get_latest_file(INPUT_WALK_DIR, prefix="wk")
 
-print(f"  MNITB (dp_fcy) : {mnitb_path.name}")
-print(f"  IMNITB(idp_fcy): {imnitb_path.name}")
-print(f"  WALK  (wk)     : {walk_path.name}")
+print(f"  MNITB     (fcy)   : {mnitb_path.name}")
+print(f"  MNITB-FD  (fcyfd) : {mnitbfd_path.name}")
+print(f"  IMNITB    (ifcy)  : {imnitb_path.name}")
+print(f"  WALK      (wk)    : {walk_path.name}")
 
 # ============================================================================
 # HELPERS: CACHE FRESHNESS + STREAMED SAS -> PARQUET CONVERSION
@@ -184,14 +187,16 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str,
 
 print("\nStep 3: Caching source files to Parquet (if needed)...")
 
-MNITB_CACHE  = CACHE_DIR / f"{mnitb_path.stem}.parquet"
-IMNITB_CACHE = CACHE_DIR / f"{imnitb_path.stem}.parquet"
-WALK_CACHE   = CACHE_DIR / f"{walk_path.stem}.parquet"
+MNITB_CACHE   = CACHE_DIR / f"{mnitb_path.stem}.parquet"
+MNITBFD_CACHE = CACHE_DIR / f"{mnitbfd_path.stem}.parquet"
+IMNITB_CACHE  = CACHE_DIR / f"{imnitb_path.stem}.parquet"
+WALK_CACHE    = CACHE_DIR / f"{walk_path.stem}.parquet"
 
 for src, cache, tag in (
-    (mnitb_path,  MNITB_CACHE,  "MNITB"),
-    (imnitb_path, IMNITB_CACHE, "IMNITB"),
-    (walk_path,   WALK_CACHE,   "WALK"),
+    (mnitb_path,   MNITB_CACHE,   "MNITB"),
+    (mnitbfd_path, MNITBFD_CACHE, "MNITB-FD"),
+    (imnitb_path,  IMNITB_CACHE,  "IMNITB"),
+    (walk_path,    WALK_CACHE,    "WALK"),
 ):
     if not _cache_is_fresh(src, cache):
         sas_to_parquet(src, cache, tag)
@@ -303,12 +308,11 @@ con = duckdb.connect(database=":memory:")
 fd_domestic = con.execute(f"""
     SELECT
         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(CURBALRM AS DOUBLE)  AS CURBAL,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
         CAST(CUSTCODE AS INTEGER) AS CUSTCODE,
         CAST(PRODUCT  AS INTEGER) AS PRODUCT
-    FROM read_parquet('{MNITB_CACHE}')
-    WHERE NOT (ACCTNO BETWEEN {CA_ACCTNO_LOW} AND {CA_ACCTNO_HIGH})
-      AND PRODUCT IN ({",".join(str(p) for p in sorted(FCY))})
+    FROM read_parquet('{MNITBFD_CACHE}')
+    WHERE PRODUCT IN ({",".join(str(p) for p in sorted(FCY))})
 """).pl()
 con.close()
 
