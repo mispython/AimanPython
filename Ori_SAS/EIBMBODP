@@ -1,0 +1,69 @@
+//EIBMBODP JOB ACCOUNT-CODE,'PROGRAMMER-NAME',
+//         MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
+//         REGION=32M,NOTIFY=&SYSUID
+//*
+//* AFTER EIBMFCFD
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PBB.BOD.PAPERS,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//CREATE  EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.PBB.BOD.PAPERS,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=0),
+//            SPACE=(CYL,(10,10),RLSE),UNIT=SYSDA
+//*
+//SAS609   EXEC SAS609
+//MISB     DD DSN=SAP.PIBCRISS.SASDATA,DISP=SHR
+//MNI      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.BOD.PAPERS,DISP=MOD
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1950 NOCENTER LINESIZE = 250;
+DATA REPTDATE;
+  SET MNI.REPTDATE;
+  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE), Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+DATA BODOM;
+   SET MISB.BODOM&REPTMON;
+*;
+PROC PRINT DATA=BODOM;
+TITLE1 'BOD PAPERS (ORIGINAL MATURITY) ' "&RDATE";
+VAR OM AMOUNT;
+SUM AMOUNT;
+*;
+DATA BODRM;
+   SET MISB.BODRM&REPTMON;
+*;
+PROC PRINT DATA=BODRM;
+TITLE1 'BOD PAPERS (REMAINING MATURITY) ' "&RDATE";
+VAR RM AMOUNT;
+SUM AMOUNT;
+RUN;
+//******************************************************************
+//* FTP HOST DATASETS TO PBB DATAWAREHOUSE SERVER
+//******************************************************************
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*cd TEXTFILE
+//*cd FIN
+//*put //SAP.PBB.BOD.PAPERS  BODPPR.TXT
+//*EOB
+//******************************************************************
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//******************************************************************
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd "FD-BNM REPORTING/PBB/BNM RPTG/BNM RPTG_SUB"
+put //SAP.PBB.BOD.PAPERS  BODPPR.TXT
+EOB
