@@ -29,9 +29,10 @@ from REPTDATE import get_reptdate_values
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR = Path("/stgsrcsys/host/uat/AII/MISB")
 
-INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBMBODP"
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBMBODP"
+# INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBMBODP"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMBODP"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMBODP"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -78,8 +79,8 @@ print(f"  Output file : {OUTPUT_FILE.name}")
 # ============================================================================
 print("\nStep 2: Resolving BODOM / BODRM file names...")
 
-bodom_path = INPUT_DIR / f"BODOM{REPTMON}.sas7bdat"
-bodrm_path = INPUT_DIR / f"BODRM{REPTMON}.sas7bdat"
+bodom_path = STG_DIR / f"bodom06.sas7bdat"
+bodrm_path = STG_DIR / f"bodrm06.sas7bdat"
 
 for _p in (bodom_path, bodrm_path):
     if not _p.exists():
@@ -233,11 +234,11 @@ def _print_section(df: pl.DataFrame, label_col: str, title: str) -> list[str]:
     )
     amount_width = max(
         len("AMOUNT"),
-        max((len(f"{v:,.2f}") for v in amount_values if v is not None), default=0),
+        max((len(f"{v:,.2f}") for v in amount_values if v is not None), default=0) + 1,
     )
 
-    obs_hdr    = "OBS".rjust(obs_width)
-    label_hdr  = label_col.rjust(label_width)
+    obs_hdr    = "Obs".rjust(obs_width)
+    label_hdr  = label_col.ljust(label_width)
     amount_hdr = "AMOUNT".rjust(amount_width)
 
     # TITLE1 (NOCENTER -> left justified), truncated/padded to LRECL on write
@@ -249,7 +250,7 @@ def _print_section(df: pl.DataFrame, label_col: str, title: str) -> list[str]:
     total = 0.0
     for idx, row in enumerate(df.iter_rows(named=True), start=1):
         obs_str    = str(idx).rjust(obs_width)
-        label_str  = str(row[label_col] or "").rjust(label_width)
+        label_str  = str(row[label_col] or "").ljust(label_width)
         amount_val = row["AMOUNT"] or 0.0
         amount_str = _fmt_num(amount_val, amount_width, 2)
         total += amount_val
