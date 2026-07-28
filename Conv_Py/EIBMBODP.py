@@ -234,7 +234,7 @@ def _print_section(df: pl.DataFrame, label_col: str, title: str) -> list[str]:
     )
     amount_width = max(
         len("AMOUNT"),
-        max((len(f"{v:,.2f}") for v in amount_values if v is not None), default=0) + 1,
+        max((len(f"{v:,.2f}") for v in amount_values if v is not None), default=0),
     )
 
     obs_hdr    = "Obs".rjust(obs_width)
