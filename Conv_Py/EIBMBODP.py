@@ -79,8 +79,8 @@ print(f"  Output file : {OUTPUT_FILE.name}")
 # ============================================================================
 print("\nStep 2: Resolving BODOM / BODRM file names...")
 
-bodom_path = STG_DIR / f"bodom06.sas7bdat"
-bodrm_path = STG_DIR / f"bodrm06.sas7bdat"
+bodom_path = STG_DIR / f"bodom{REPTMON}.sas7bdat"
+bodrm_path = STG_DIR / f"bodrm{REPTMON}.sas7bdat"
 
 for _p in (bodom_path, bodrm_path):
     if not _p.exists():
