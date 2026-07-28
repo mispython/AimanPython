@@ -73,9 +73,10 @@ MONTHLY_FILE = MONTHLY_DIR / REPTYEAR / f"DYFCY{REPTMON}.parquet"
 PAGE_SIZE = 60     # lines per page (SAS default)
 LINE_GAP = 2        # spaces between report columns
 
-# (base_column, display_width, header_lines)
-# Widths follow PROC REPORT FORMAT=COMMA17. (17) / COMMA14. (14).
-COLUMNS = [
+# All column defs (name, width, 3-line header) — same as before, kept as the
+# single source of truth. PAGE_GROUPS below slices this by name into the
+# three requested page groupings.
+ALL_COLUMNS = [
     ("TOTFDFY",  17, ["FCY FD", "BALANCE", "(EXCL.FI)"]),
     ("TOTFCFY",  17, ["FCY FD", "FOREIGN", "COMPANIES"]),
     ("TOTFYFD",  14, ["FCY FD", "TOTAL", ""]),
@@ -99,6 +100,32 @@ COLUMNS = [
 ]
 DATE_WIDTH = 8   # DDMMYY8.
 DATE_HEADER = ["DATE", "", ""]
+
+# Column-group boundaries:
+#   Page 1: DATE .. FCY CA TOTAL           -> TOTFDFY..TOTFYCA (+ DATE)
+#   Page 2: TOTAL FCY BALANCE .. FCY CA-C INDV -> TOTFCY..TOFCAIDC
+#   Page 3: FCY CA-C NON-INDV .. TOTAL FCY CA NON-INDV -> TOFCANDC..TOTFCAND
+_GROUP_BOUNDARIES = [
+    ("TOTFDFY", "TOTFYCA"),
+    ("TOTFCY", "TOFCAIDC"),
+    ("TOFCANDC", "TOTFCAND"),
+]
+
+_col_names = [c[0] for c in ALL_COLUMNS]
+
+
+def _slice_columns(start_name: str, end_name: str) -> list:
+    i = _col_names.index(start_name)
+    j = _col_names.index(end_name)
+    return ALL_COLUMNS[i:j + 1]
+
+
+# Each page group: (columns_subset, include_date_column)
+PAGE_GROUPS = [
+    (_slice_columns(*_GROUP_BOUNDARIES[0]), True),
+    (_slice_columns(*_GROUP_BOUNDARIES[1]), False),
+    (_slice_columns(*_GROUP_BOUNDARIES[2]), False),
+]
 
 # ============================================================================
 # LOAD MONTHLY CUMULATIVE DATA
@@ -143,13 +170,14 @@ TITLE_LINES = [
 ]
 
 
-def _build_header_block() -> list[str]:
-    """Title lines + 3-line multi-part column headers + separator."""
+def _build_header_block(columns: list, include_date: bool) -> list[str]:
+    """Title lines + 3-line multi-part column headers + separator, for one
+    page group's column subset."""
     lines = list(TITLE_LINES)
     lines.append("")
 
-    col_headers = [DATE_HEADER] + [h for _, _, h in COLUMNS]
-    col_widths  = [DATE_WIDTH] + [w for _, w, _ in COLUMNS]
+    col_headers = ([DATE_HEADER] if include_date else []) + [h for _, _, h in columns]
+    col_widths  = ([DATE_WIDTH] if include_date else []) + [w for _, w, _ in columns]
 
     for line_idx in range(3):
         parts = [
@@ -163,7 +191,7 @@ def _build_header_block() -> list[str]:
     return lines   # 5 titles + 1 blank + 3 header lines + 1 separator = 10 lines
 
 
-HEADER_LINES = len(_build_header_block())
+HEADER_LINES = len(_build_header_block(*PAGE_GROUPS[0]))
 
 # ============================================================================
 # STEP 3: GENERATE REPORT
@@ -171,35 +199,33 @@ HEADER_LINES = len(_build_header_block())
 print("\nStep 3: Generating report...")
 
 output_lines: list[str] = []
-lines_on_page = 0
-first_block = True
 
 
-def _emit_header(new_page: bool) -> None:
-    global lines_on_page
-    block = _build_header_block()
-    asa_first = "1" if new_page else " "
-    output_lines.append(asa_first + block[0])
-    for ln in block[1:]:
-        output_lines.append(" " + ln)
-    lines_on_page = HEADER_LINES
+def _emit_header(columns: list, include_date: bool) -> list[str]:
+    """Return a header block, ASA '1' on the first line (always a new page)."""
+    block = _build_header_block(columns, include_date)
+    lines = [("" + block[0])]
+    lines.extend("" + ln for ln in block[1:])
+    return lines
 
 
-for row in report_df.iter_rows(named=True):
-    if first_block:
-        _emit_header(new_page=True)
-        first_block = False
-    elif lines_on_page >= PAGE_SIZE:
-        _emit_header(new_page=True)
+for columns, include_date in PAGE_GROUPS:
+    lines_on_page = 0
 
-    date_str = _fmt_date(row["REPTDATE"])
-    parts = [date_str.rjust(DATE_WIDTH)]
-    for col_name, width, _ in COLUMNS:
-        parts.append(_fmt_comma(row.get(col_name), width))
+    for row_idx, row in enumerate(report_df.iter_rows(named=True)):
+        if row_idx == 0 or lines_on_page >= PAGE_SIZE:
+            output_lines.extend(_emit_header(columns, include_date))
+            lines_on_page = HEADER_LINES
 
-    detail_line = (" " * LINE_GAP).join(parts)
-    output_lines.append(" " + detail_line)   # ASA ' ' = single space
-    lines_on_page += 1
+        parts = []
+        if include_date:
+            parts.append(_fmt_date(row["REPTDATE"]).rjust(DATE_WIDTH))
+        for col_name, width, _ in columns:
+            parts.append(_fmt_comma(row.get(col_name), width))
+
+        detail_line = (" " * LINE_GAP).join(parts)
+        output_lines.append(" " + detail_line)   # ASA ' ' = single space
+        lines_on_page += 1
 
 # ============================================================================
 # WRITE OUTPUT
