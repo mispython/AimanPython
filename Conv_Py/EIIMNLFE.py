@@ -7,25 +7,6 @@ Purpose : PIBB National Loans/Deposit Behavioural Trend Report
           Current/CASA), re-derives BNM product coding (including ISTIMA
           code normalisation into RM Fixed Deposit codes), and produces
           the BEHAVIORAL TABLE / HIGH-LOW / HIGHLOW(monetary) reports.
-
-Dependency notes:
-  - REPTDATE.py    : used for report-date derivation (daily variant).
-                     The original SAS `SET DEPOSIT.REPTDATE` step reads an
-                     externally-maintained REPTDATE dataset; since no such
-                     parquet exists, REPTDATE is derived via
-                     get_reptdate_values() instead, per project convention.
-  - input_date.py  : used to resolve the NOTE input file (STORE1.NOTE&date).
-                     Per the PIBB naming convention (prefix "i" prepended to
-                     the PBB prefix), the file prefix used is "inote".
-                     There is no GLRMFXP2 input in this program (no STOREGL
-                     DD in the JCL), so input_date is only used once here.
-  - output_date.py : NOT used. The SASLIST output (`SAP.PIBB.NLF.BEHAVE.TEXT
-                     (+1)`, a GDG "+1" generation) carries no date component
-                     in its filename, so a fixed output filename is used
-                     instead, per project convention.
-  - PBBLNFMT / PBBDPFMT / PBBELF / PBMISFMT : not referenced. No
-                     `PUT(var,fmt.)` calls to these format libraries exist
-                     in the original SAS body, so no import is made.
 """
 
 import os
@@ -48,12 +29,15 @@ from input_date import get_latest_file
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # STORE1 DD -> SAP.PIBB.NLF.DAILY ("i" prefix per PIBB naming convention)
-INPUT_NOTE_DIR = Path("/stgsrcsys/host/uat/AII/EIIMNLFE") / "STORE1"
+# INPUT_NOTE_DIR      = BASE_DIR / "input" / "prod" / "EIBMNLFE"          # note
+
+STG_DIR             = Path("/stgsrcsys/host/uat/AII/EIIMNLFE")
+INPUT_NOTE_DIR      = STG_DIR  / "STORE1"           # note
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMNLFE"
 
 # Persistent library replicating SAS permanent libraries (BASE/STORE/FINAL).
-LIB_ROOT   = BASE_DIR / "lib" / "EIIMNLFE"
+LIB_ROOT   = BASE_DIR / "input" / "lib" / "EIIMNLFE"
 BASE_LIB   = LIB_ROOT / "base"     # BASE.<PROD> - true daily/milestone accumulator
 STORE_LIB  = LIB_ROOT / "store"    # STORE.* - snapshot of this run's working sets
 FINAL_LIB  = LIB_ROOT / "final"    # FINAL.* - snapshot of this run's report sets
@@ -64,7 +48,7 @@ for _d in (INPUT_NOTE_DIR, CACHE_DIR, BASE_LIB, STORE_LIB, FINAL_LIB, OUTPUT_DIR
     _d.mkdir(parents=True, exist_ok=True)
 
 # Output filename carries no date component (GDG "+1" generation) - fixed name.
-OUTPUT_FILE = OUTPUT_DIR / "NLFBEHAVE.txt"
+OUTPUT_FILE = OUTPUT_DIR / "NLFBEHAVE_EIIMNLFE.txt"
 
 # ============================================================================
 # REPORT PAGE CONFIGURATION
