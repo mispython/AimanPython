@@ -24,6 +24,9 @@ SUPPORTED_EXTENSIONS = {
 # Filename date patterns (supports multiple legacy formats)
 # ------------------------------------------------------------
 PATTERNS = [
+    # yyyymmdd
+    r"(?P<prefix>[a-zA-Z]*)(?P<yyyy>\d{4})(?P<mm>\d{2})(?P<dd>\d{2})",
+
     # yymmdd
     r"(?P<prefix>[a-zA-Z]*)(?P<yy>\d{2})(?P<mm>\d{2})(?P<dd>\d{2})",
 
@@ -49,6 +52,28 @@ PATTERNS = [
 # ------------------------------------------------------------
 # Extract sortable key from filename
 # ------------------------------------------------------------
+# def extract_key(filename: str):
+#     for pattern in PATTERNS:
+#         m = re.search(pattern, filename)
+#         if not m:
+#             continue
+
+#         gd = m.groupdict()
+
+#         yy = int(gd.get("yy") or 0)
+#         mm = int(gd.get("mm") or 0)
+#         dd = int(gd.get("dd") or 0)
+#         ww = int(gd.get("ww") or 0)
+
+#         year = 2000 + yy if yy < 100 else yy
+
+#         # unified ranking key (year → month → week → day)
+#         return (year, mm, ww, dd)
+
+#     return None
+
+
+
 def extract_key(filename: str):
     for pattern in PATTERNS:
         m = re.search(pattern, filename)
@@ -57,14 +82,17 @@ def extract_key(filename: str):
 
         gd = m.groupdict()
 
-        yy = int(gd.get("yy") or 0)
-        mm = int(gd.get("mm") or 0)
-        dd = int(gd.get("dd") or 0)
-        ww = int(gd.get("ww") or 0)
+        # Try 4-digit year first
+        if 'yyyy' in gd and gd['yyyy']:
+            year = int(gd['yyyy'])
+        else:
+            yy = int(gd.get('yy') or 0)
+            year = 2000 + yy if yy < 100 else yy
 
-        year = 2000 + yy if yy < 100 else yy
+        mm = int(gd.get('mm') or 0)
+        dd = int(gd.get('dd') or 0)
+        ww = int(gd.get('ww') or 0)
 
-        # unified ranking key (year → month → week → day)
         return (year, mm, ww, dd)
 
     return None
