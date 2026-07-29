@@ -6,24 +6,6 @@ Purpose : National Loans/Deposit Behavioural Trend Report
           movement bands per deposit product (RM & Foreign Currency,
           Fixed/Savings/Current/CASA), re-derives BNM product coding,
           and produces the BEHAVIORAL TABLE / HIGH-LOW / MAXMIN reports.
-
-Dependency notes:
-  - REPTDATE.py    : used for report-date derivation (daily variant).
-                     The original SAS `SET DEPOSIT.REPTDATE` step reads an
-                     externally-maintained REPTDATE dataset; since no such
-                     parquet exists, REPTDATE is derived via
-                     get_reptdate_values() instead, per project convention.
-  - input_date.py  : used to resolve the NOTE and GLRMFXP2 input files.
-                     Both filenames fully encode the report date, so
-                     get_latest_file() is called with the exact date-encoded
-                     prefix (a single match is expected either way).
-  - output_date.py : NOT used. The SASLIST output (`SAP.PBB.NLF.BEHAVE.TEXT
-                     (+1)`, a GDG "+1" generation) carries no date component
-                     in its filename, so a fixed output filename is used
-                     instead, per project convention.
-  - PBBLNFMT / PBBDPFMT / PBBELF / PBMISFMT : not referenced. No
-                     `PUT(var,fmt.)` calls to these format libraries exist
-                     in the original SAS body, so no import is made.
 """
 
 import os
@@ -48,13 +30,17 @@ from input_date import get_latest_file
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_NOTE_DIR      = BASE_DIR / "input" / "prod" / "EIBMNLFE" / "note"
-INPUT_GLRMFXP2_DIR  = BASE_DIR / "input" / "prod" / "EIBMNLFE" / "glrmfxp2"
+# INPUT_NOTE_DIR      = BASE_DIR / "input" / "prod" / "EIBMNLFE"          # note
+# INPUT_GLRMFXP2_DIR  = BASE_DIR / "input" / "prod" / "EIBMNLFE"          # glrmfxp2
 
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBMNLFE" / "cache"
+STG_DIR             = Path("/stgsrcsys/host/uat/AII/EIBMNLFE")
+INPUT_NOTE_DIR      = STG_DIR  / "STORE1"           # note
+INPUT_GLRMFXP2_DIR  = STG_DIR  / "STOREGL"          # glrmfxp2
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMNLFE"
 
 # Persistent library replicating SAS permanent libraries (BASE/STORE/FINAL).
-LIB_ROOT   = BASE_DIR / "lib" / "EIBMNLFE"
+LIB_ROOT   = BASE_DIR / "input" / "lib" / "EIBMNLFE"
 BASE_LIB   = LIB_ROOT / "base"     # BASE.<PROD> - true daily/milestone accumulator
 STORE_LIB  = LIB_ROOT / "store"    # STORE.* - snapshot of this run's working sets
 FINAL_LIB  = LIB_ROOT / "final"    # FINAL.* - snapshot of this run's report sets
@@ -236,8 +222,11 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 # ============================================================================
 print("\nStep 2: Resolving NOTE / GLRMFXP2 input files...")
 
-_note_prefix = f"note{REPTYEAR}{REPTMON}{REPTDAY}"
-_gl_prefix   = f"glrmfxp2{REPTYEAR}{REPTMON}{REPTDAY}"
+# _note_prefix = f"note{REPTYEAR}{REPTMON}{REPTDAY}"
+# _gl_prefix   = f"glrmfxp2{REPTYEAR}{REPTMON}{REPTDAY}"
+
+_note_prefix = "note"
+_gl_prefix   = "glrmfxp2"
 
 note_path = get_latest_file(INPUT_NOTE_DIR, prefix=_note_prefix)
 gl_path   = get_latest_file(INPUT_GLRMFXP2_DIR, prefix=_gl_prefix)
@@ -321,10 +310,18 @@ print(f"  STORE.DEP rows: {len(store_dep):,}")
 # ============================================================================
 print("\nStep 5: Building DEPRMP2 / DEPFXP2...")
 
+# def _item_expr(mapping: dict, key_col: str):
+#     return (
+#         pl.col(key_col).map_dict({k: v[0] for k, v in mapping.items()}, default=None).alias("ITEM"),
+#         pl.col(key_col).map_dict({k: v[1] for k, v in mapping.items()}, default=None).alias("ITEM4"),
+#     )
+
 def _item_expr(mapping: dict, key_col: str):
+    item_dict   = {k: v[0] for k, v in mapping.items()}
+    item4_dict  = {k: v[1] for k, v in mapping.items()}
     return (
-        pl.col(key_col).map_dict({k: v[0] for k, v in mapping.items()}, default=None).alias("ITEM"),
-        pl.col(key_col).map_dict({k: v[1] for k, v in mapping.items()}, default=None).alias("ITEM4"),
+        pl.col(key_col).replace_strict(item_dict, default=None).alias("ITEM"),
+        pl.col(key_col).replace_strict(item4_dict, default=None).alias("ITEM4"),
     )
 
 item_expr, item4_expr = _item_expr(ITEM_MAP_STAGE1, "DESC")
@@ -783,8 +780,8 @@ def report(prod: str, store_df: pl.DataFrame):
         k: max(abs(lowest[k]), abs(highest[k])) for k in ("WEEK", "MONTH", "QTR", "HALFYR", "YEAR")
     }
 
-    week_amt   = round(maxmin_pct["WEEK"] * outstand / 100)
-    month_amt  = round((maxmin_pct["MONTH"] * outstand / 100) - week_amt)
+    week_amt   = round(maxmin_pct["WEEK"] * outstand / 100, 1)
+    month_amt  = round((maxmin_pct["MONTH"] * outstand / 100) - week_amt, 1)
     qtr_amt    = round((maxmin_pct["QTR"] * outstand / 100) - (week_amt + month_amt))
     halfyr_amt = round((maxmin_pct["HALFYR"] * outstand / 100) - (week_amt + month_amt + qtr_amt))
     year_amt   = round((maxmin_pct["YEAR"] * outstand / 100) - (week_amt + month_amt + qtr_amt + halfyr_amt))
@@ -846,7 +843,7 @@ behavenote = pl.DataFrame(maxmin_results) if maxmin_results else pl.DataFrame(
 )
 
 behavenote = behavenote.with_columns(
-    pl.col("DESC").map_dict(DESC_TO_BNMCODE2, default=None).alias("PROD")
+    pl.col("DESC").replace_strict(DESC_TO_BNMCODE2, default=None).alias("PROD")
 ).with_columns(
     pl.col("PROD").str.slice(5, 2).alias("INDNON")
 )
