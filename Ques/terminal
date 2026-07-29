@@ -1,30 +1,4 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNLFE.py
-Step 1: Deriving report date...
-  REPTDATE     : 2026-07-28  (DATEX/RDATE = 28/07/26)
-  REPTYEAR/MON/DAY : 2026/07/28
-  LAST (prev month end day) : 30
-  INSERT flag  : ''
-
-Step 2: Resolving NOTE / GLRMFXP2 input files...
-[FILE_RESOLVER] Selected latest: note20260728.sas7bdat
-[FILE_RESOLVER] Selected latest: glrmfxp220260630.sas7bdat
-  NOTE      : note20260728.sas7bdat
-  GLRMFXP2  : glrmfxp220260630.sas7bdat
-  [NOTE] Converting note20260728.sas7bdat -> note20260728.parquet ...
-  [NOTE] Done - 28 rows cached.
-  [GLRMFXP2] Converting glrmfxp220260630.sas7bdat -> glrmfxp220260630.parquet ...
-  [GLRMFXP2] Done - 2 rows cached.
-
-Step 3: Building DEPOSIT (NOTE derivation)...
-  DEPOSIT rows: 28
-
-Step 4: Transposing to WEEK/MONTH/QTR/HALFYR/YEAR/LAST columns...
-  STORE.DEP rows: 10
-
-Step 5: Building DEPRMP2 / DEPFXP2...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNLFE.py", line 319, in <module>
-    item_expr, item4_expr = _item_expr(ITEM_MAP_STAGE1, "DESC")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNLFE.py", line 315, in _item_expr
-    pl.col(key_col).map_dict({k: v[0] for k, v in mapping.items()}, default=None).alias("ITEM"),
-AttributeError: 'Expr' object has no attribute 'map_dict'
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ pip install --upgrade polars
+Looking in indexes: https://python:****@repo.cbr.pbb.my/repository/pypi-proxy/simple
+Requirement already satisfied: polars in /sas/python/virt_edw_dev/lib/python3.9/site-packages (1.36.1)
+Requirement already satisfied: polars-runtime-32==1.36.1 in /sas/python/virt_edw_dev/lib/python3.9/site-packages (from polars) (1.36.1)
