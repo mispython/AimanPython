@@ -52,7 +52,7 @@ for _d in (INPUT_NOTE_DIR, INPUT_GLRMFXP2_DIR, CACHE_DIR,
     _d.mkdir(parents=True, exist_ok=True)
 
 # Output filename carries no date component (GDG "+1" generation) - fixed name.
-OUTPUT_FILE = OUTPUT_DIR / "NLFBEHAVE.txt"
+OUTPUT_FILE = OUTPUT_DIR / "NLFBEHAVE_EIBMNLFE.txt"
 
 # ============================================================================
 # REPORT PAGE CONFIGURATION
