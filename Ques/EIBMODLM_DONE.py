@@ -22,32 +22,32 @@ from output_date import build_output_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-# Testing Path
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input" / "prod"
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLM"
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input" / "prod"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLM"
 
-# # Production Path
-# INPUT_DIR  = Path("/dwh")
-# OUTPUT_DIR = Path("/host/mis/output/report")
+# Production Path
+INPUT_DIR  = Path("/dwh")
+OUTPUT_DIR = Path("/host/mis/output/report")
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Input paths - Public Bank
-INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR, "ca")
-INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR, "lm")
-# INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR / "dp_ca", "ca")       # File name example - ca05226.sas7bdat
-# INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR / "dp_lm", "lm")       # File name example - lm05226.sas7bdat
+# INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR, "ca")
+# INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR, "lm")
+INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR / "dp_ca", "ca")       # File name example - ca05226.sas7bdat
+INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR / "dp_lm", "lm")       # File name example - lm05226.sas7bdat
 
 # Input paths - Islamic Bank
-INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR, "ica")
-INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")
-# INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR / "idp_ca", "ica")      # File name example - ica05226.sas7bdat
-# INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR / "idp_lm", "ilm")      # File name example - ilm05226.sas7bdat
+# INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR, "ica")
+# INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")
+INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR / "idp_ca", "ica")      # File name example - ica05226.sas7bdat
+INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR / "idp_lm", "ilm")      # File name example - ilm05226.sas7bdat
 
 # Shared customer name lookup file (ACCTNO -> NAME)
-INPUT_CUSTNAME     = BASE_DIR / "input/uat" / "stg_dp_limit.sas7bdat"
-# INPUT_CUSTNAME     = Path("/sas/deposit/dwh/staging") / "stg_dp_limit.sas7bdat"
+# INPUT_CUSTNAME     = BASE_DIR / "input/uat" / "stg_dp_limit.sas7bdat"
+INPUT_CUSTNAME     = Path("/sas/deposit/dwh/staging") / "stg_dp_limit.sas7bdat"
 
 # Output paths
 OUTPUT_PBB_REPORT  = build_output_file(OUTPUT_DIR, "PBB_ODLIMIT_REPORT").with_suffix(".txt")
