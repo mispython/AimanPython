@@ -58,7 +58,7 @@ INPUT_DIR_PIBB_LOAN    = BASE_DIR / "input" / "prod" / "EIBMODLT"
 # resolved from stg_dp_limit.sas7bdat by matching ACCTNO, restricted to
 # DEPTYPE IN ('N','D') so only deposit-type records are used as the
 # source of COL1-5 (mirrors the original ODRAFT filter's deposit scope).
-INPUT_STG_DP = BASE_DIR / "input" / "prod" / "EIBMODLT" / "stg_dp_dptrblgs.sas7bdat"
+INPUT_STG_DP = BASE_DIR / "input" / "prod" / "EIBMODLT" / "stg_dp_dptrblgs.sas7bdat"          # /sas/deposit/dwh/staging/stg_dp_dptrblgs.sas7bdat
 
 # Parquet cache directory (shared by all four source files + the lookup file)
 CACHE_DIR     = BASE_DIR / "input" / "cache" / "EIBMODLT"
