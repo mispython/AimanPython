@@ -61,7 +61,7 @@ INPUT_DIR_PIBB_LOAN     = BASE_DIR / "input" / "prod" / "EIBMODLT"
 
 # Shared customer name lookup file (ACCTNO -> NAME)
 # INPUT_CUSTNAME     = Path("/sas/deposit/dwh/staging") / "stg_dp_limit.sas7bdat"
-INPUT_CUSTNAME     = BASE_DIR / "input" / "prod" / "EIBMODLT"
+INPUT_CUSTNAME     = BASE_DIR / "input" / "prod" / "EIBMODLT" / "stg_dp_limit.sas7bdat"
 
 # CACHE_DIR_PBB_DEPOSIT   = INPUT_DIR_PBB_DEPOSIT
 # CACHE_DIR_PBB_LOAN      = INPUT_DIR_PBB_LOAN
@@ -73,15 +73,16 @@ CACHE_DIR_PBB_DEPOSIT   = CACHE_DIR
 CACHE_DIR_PBB_LOAN      = CACHE_DIR
 CACHE_DIR_PIBB_DEPOSIT  = CACHE_DIR
 CACHE_DIR_PIBB_LOAN     = CACHE_DIR
+CACHE_DIR_CUSTNAME      = CACHE_DIR
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLT"
 
 for _d in (
     INPUT_DIR_PBB_DEPOSIT, INPUT_DIR_PBB_LOAN,
     INPUT_DIR_PIBB_DEPOSIT, INPUT_DIR_PIBB_LOAN,
-    INPUT_CUSTNAME,
 ):
     _d.mkdir(parents=True, exist_ok=True)
+INPUT_CUSTNAME.parent.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -177,6 +178,28 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     if writer:
         writer.close()
     print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def ensure_custname_cache(custname_path: Path, cache_path: Path) -> Path:
+    """Convert stg_dp_limit.sas7bdat to Parquet with deduplication on ACCTNO."""
+    print("\n=== Caching Customer Name Lookup ===")
+    if _cache_is_fresh(custname_path, cache_path):
+        print("  [CUSTNAME] Cache fresh - skipping conversion.")
+        return cache_path
+
+    print(f"  [CUSTNAME] Converting {custname_path.name} -> {cache_path.name} ...")
+    # Read the whole file (it's small)
+    df = pd.read_sas(custname_path, encoding="latin1")
+    # Keep only needed columns, deduplicate on ACCTNO
+    if "ACCTNO" not in df.columns or "NAME" not in df.columns:
+        raise ValueError("stg_dp_limit.sas7bdat missing ACCTNO or NAME columns")
+    df = df[["ACCTNO", "NAME"]].drop_duplicates(subset=["ACCTNO"], keep="first")
+    # Convert to Parquet
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, cache_path, compression="snappy")
+    print(f"  [CUSTNAME] Done - {len(df):,} unique accounts cached.")
+    return cache_path
 
 
 # ============================================================================
@@ -526,6 +549,7 @@ class BankConfig:
     custname_dir: Path
     deposit_cache_dir: Path
     loan_cache_dir: Path
+    cache_custname: Path
     deposit_prefix: str
     loan_prefix: str
     bank_title: str
@@ -541,6 +565,7 @@ BANKS = [
         custname_dir        = INPUT_CUSTNAME, 
         deposit_cache_dir   = CACHE_DIR_PBB_DEPOSIT,
         loan_cache_dir      = CACHE_DIR_PBB_LOAN,
+        cache_custname      = CACHE_DIR_CUSTNAME,
         deposit_prefix      = "ca",
         loan_prefix         = "ln",
         bank_title          = "P U B L I C   B A N K   B E R H A D",
@@ -554,6 +579,7 @@ BANKS = [
         custname_dir        = INPUT_CUSTNAME, 
         deposit_cache_dir   = CACHE_DIR_PIBB_DEPOSIT,
         loan_cache_dir      = CACHE_DIR_PIBB_LOAN,
+        cache_custname      = CACHE_DIR_CUSTNAME,
         deposit_prefix      = "ica",
         loan_prefix         = "iln",
         bank_title          = "P U B L I C   I S L A M I C  B A N K   B E R H A D",
@@ -595,44 +621,54 @@ def ensure_bank_cache(cfg: BankConfig) -> tuple:
     return loan_cache, deposit_cache
 
 
+
+
+
 # ============================================================================
 # PHASE 2: REPORT GENERATION  (runs for every bank after ALL caching is done)
 # ============================================================================
-def generate_bank_report(cfg: BankConfig, loan_cache: Path, deposit_cache: Path) -> None:
+def generate_bank_report(cfg: BankConfig, loan_cache: Path, deposit_cache: Path, custname_cache: Path) -> None:
     print(f"\n=== Reporting {cfg.bank_code} ===")
 
     con = duckdb.connect(database=":memory:")
+
+    # Register customer name lookup
+    con.execute(f"""
+        CREATE OR REPLACE VIEW custname_lookup AS
+        SELECT ACCTNO, NAME FROM read_parquet('{custname_cache}')
+    """)  
 
     # DATA ODRAFT; SET DEPOSIT.CURRENT; IF CURBAL<0 AND CUSTCODE NE 81;
     # BALANCE = (-1)*CURBAL;
     odraft = con.execute(f"""
         SELECT
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            CAST(CUSTCODE AS INTEGER) AS CUSTCODE,
-            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-            CAST(NAME     AS VARCHAR) AS NAME,
-            CAST(LIMIT1   AS DOUBLE)  AS LIMIT1,
-            CAST(LIMIT2   AS DOUBLE)  AS LIMIT2,
-            CAST(LIMIT3   AS DOUBLE)  AS LIMIT3,
-            CAST(LIMIT4   AS DOUBLE)  AS LIMIT4,
-            CAST(LIMIT5   AS DOUBLE)  AS LIMIT5,
-            CAST(RATE1    AS DOUBLE)  AS RATE1,
-            CAST(RATE2    AS DOUBLE)  AS RATE2,
-            CAST(RATE3    AS DOUBLE)  AS RATE3,
-            CAST(RATE4    AS DOUBLE)  AS RATE4,
-            CAST(RATE5    AS DOUBLE)  AS RATE5,
-            CAST(COL1     AS VARCHAR) AS COL1,
-            CAST(COL2     AS VARCHAR) AS COL2,
-            CAST(COL3     AS VARCHAR) AS COL3,
-            CAST(COL4     AS VARCHAR) AS COL4,
-            CAST(COL5     AS VARCHAR) AS COL5,
-            CAST(STATE    AS VARCHAR) AS STATE,
-            CAST(FLATRATE AS DOUBLE)  AS FLATRATE,
-            (-1) * CAST(CURBAL AS DOUBLE) AS BALANCE
-        FROM read_parquet('{deposit_cache}')
-        WHERE CAST(CURBAL AS DOUBLE) < 0
-          AND COALESCE(CAST(CUSTCODE AS INTEGER), -1) <> 81
+            CAST(d.ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(d.BRANCH   AS INTEGER) AS BRANCH,
+            CAST(d.CUSTCODE AS INTEGER) AS CUSTCODE,
+            CAST(d.APPRLIMT AS DOUBLE)  AS APPRLIMT,
+            COALESCE(l.NAME, '') AS NAME,   -- <-- lookup takes precedence
+            CAST(d.LIMIT1   AS DOUBLE)  AS LIMIT1,
+            CAST(d.LIMIT2   AS DOUBLE)  AS LIMIT2,
+            CAST(d.LIMIT3   AS DOUBLE)  AS LIMIT3,
+            CAST(d.LIMIT4   AS DOUBLE)  AS LIMIT4,
+            CAST(d.LIMIT5   AS DOUBLE)  AS LIMIT5,
+            CAST(d.RATE1    AS DOUBLE)  AS RATE1,
+            CAST(d.RATE2    AS DOUBLE)  AS RATE2,
+            CAST(d.RATE3    AS DOUBLE)  AS RATE3,
+            CAST(d.RATE4    AS DOUBLE)  AS RATE4,
+            CAST(d.RATE5    AS DOUBLE)  AS RATE5,
+            CAST(d.COL1     AS VARCHAR) AS COL1,
+            CAST(d.COL2     AS VARCHAR) AS COL2,
+            CAST(d.COL3     AS VARCHAR) AS COL3,
+            CAST(d.COL4     AS VARCHAR) AS COL4,
+            CAST(d.COL5     AS VARCHAR) AS COL5,
+            CAST(d.STATE    AS VARCHAR) AS STATE,
+            CAST(d.FLATRATE AS DOUBLE)  AS FLATRATE,
+            (-1) * CAST(d.CURBAL AS DOUBLE) AS BALANCE
+        FROM read_parquet('{deposit_cache}') d
+        LEFT JOIN custname_lookup l ON d.ACCTNO = l.ACCTNO
+        WHERE CAST(d.CURBAL AS DOUBLE) < 0
+          AND COALESCE(CAST(d.CUSTCODE AS INTEGER), -1) <> 81
     """).pl()
 
     # PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN(KEEP=ACCTNO SECTORCD FISSPURP);
@@ -716,6 +752,8 @@ def main() -> None:
     for cfg in BANKS:
         caches[cfg.bank_code] = ensure_bank_cache(cfg)
 
+    cache_custname = ensure_custname_cache(INPUT_CUSTNAME, CACHE_DIR_CUSTNAME)
+
     # --------------------------------------------------------------------
     # PHASE 2 — once every file is cached, generate the report for PBB,
     # then PIBB, in the same run.
@@ -723,7 +761,7 @@ def main() -> None:
     print("\n########## PHASE 2: REPORT GENERATION (PBB, then PIBB) ##########")
     for cfg in BANKS:
         loan_cache, deposit_cache = caches[cfg.bank_code]
-        generate_bank_report(cfg, loan_cache, deposit_cache)
+        generate_bank_report(cfg, loan_cache, deposit_cache, cache_custname)
 
     # --------------------------------------------------------------------
     # PLACEHOLDER: STEP02/STEP04 PGM=SPLIB136 (mainframe utility, source
