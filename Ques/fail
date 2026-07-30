@@ -1,2 +1,1 @@
-import duckdb
-print(duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{deposit_cache}')").df())
+print(duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{deposit_cache}')").df().to_string())
