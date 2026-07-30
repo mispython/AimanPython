@@ -4,17 +4,13 @@ Generating Public Bank OD Listing Report
 
 Report Date: 29/07/26
 
-Step 1: Loading customer name lookup (stg_dp_limit)...
-Customer name lookup registered.
+Step 1: Loading STG DP lookup (NAME + COL1-5, DEPTYPE IN ('N','D'))...
 
-Step 2: Building ODRAFT (deposit accounts with negative balance)...
+[ERROR] Report generation failed for PBB: BinderException: Binder Error: Referenced column "COL1" not found in FROM clause!
+Candidate bindings: "ACCTNO"
 
-[ERROR] Report generation failed for PBB: BinderException: Binder Error: Table "d" does not have a column named "COL1"
-
-Candidate bindings: : "SECOND", "ODPLAN", "COSTCTR", "COUNTRY", "CLOSEDT"
-
-LINE 18:                 CAST(d.COL1     AS VARCHAR) AS COL1,
-                              ^
+LINE 3:             SELECT ACCTNO, NAME, COL1, COL2, COL3, COL4, COL5
+                                         ^
 
 ======================================================================
 Generating Islamic Bank OD Listing Report
@@ -22,17 +18,13 @@ Generating Islamic Bank OD Listing Report
 
 Report Date: 29/07/26
 
-Step 1: Loading customer name lookup (stg_dp_limit)...
-Customer name lookup registered.
+Step 1: Loading STG DP lookup (NAME + COL1-5, DEPTYPE IN ('N','D'))...
 
-Step 2: Building ODRAFT (deposit accounts with negative balance)...
+[ERROR] Report generation failed for PIBB: BinderException: Binder Error: Referenced column "COL1" not found in FROM clause!
+Candidate bindings: "ACCTNO"
 
-[ERROR] Report generation failed for PIBB: BinderException: Binder Error: Table "d" does not have a column named "COL1"
-
-Candidate bindings: : "SECOND", "ODPLAN", "COSTCTR", "CLOSEDT", "COUNTRY"
-
-LINE 18:                 CAST(d.COL1     AS VARCHAR) AS COL1,
-                              ^
+LINE 3:             SELECT ACCTNO, NAME, COL1, COL2, COL3, COL4, COL5
+                                         ^
 
 ======================================================================
 GENERATED REPORTS:
@@ -41,156 +33,3 @@ GENERATED REPORTS:
   2. Islamic Bank CLF-i Listing : [FAILED]
 
 REPORT GENERATION COMPLETED WITH ERRORS — review output above.
-
-
-                   column_name column_type null   key default extra
-0                       DOBCIS      DOUBLE  YES  None    None  None
-1                       ACCTNO      DOUBLE  YES  None    None  None
-2                         RACE     VARCHAR  YES  None    None  None
-3                      COUNTRY     VARCHAR  YES  None    None  None
-4                       BRANCH      DOUBLE  YES  None    None  None
-5                      CLOSEDT      DOUBLE  YES  None    None  None
-6                     REOPENDT      DOUBLE  YES  None    None  None
-7                     CUSTCODE      DOUBLE  YES  None    None  None
-8                       ODPLAN      DOUBLE  YES  None    None  None
-9                        RATE1      DOUBLE  YES  None    None  None
-10                       RATE2      DOUBLE  YES  None    None  None
-11                       RATE3      DOUBLE  YES  None    None  None
-12                       RATE4      DOUBLE  YES  None    None  None
-13                       RATE5      DOUBLE  YES  None    None  None
-14                    FLATRATE      DOUBLE  YES  None    None  None
-15                     ORGCODE     VARCHAR  YES  None    None  None
-16                     ORGTYPE     VARCHAR  YES  None    None  None
-17                      LIMIT1      DOUBLE  YES  None    None  None
-18                      LIMIT2      DOUBLE  YES  None    None  None
-19                      LIMIT3      DOUBLE  YES  None    None  None
-20                      LIMIT4      DOUBLE  YES  None    None  None
-21                      LIMIT5      DOUBLE  YES  None    None  None
-22                      INTYTD      DOUBLE  YES  None    None  None
-23                     PURPOSE     VARCHAR  YES  None    None  None
-24                      SECTOR      DOUBLE  YES  None    None  None
-25                       USER2     VARCHAR  YES  None    None  None
-26                       USER3     VARCHAR  YES  None    None  None
-27                    RISKCODE     VARCHAR  YES  None    None  None
-28                     LEDGBAL      DOUBLE  YES  None    None  None
-29                       L_DEP      DOUBLE  YES  None    None  None
-30                     OPENIND     VARCHAR  YES  None    None  None
-31                    LASTTRAN      DOUBLE  YES  None    None  None
-32                   RETURNS_Y      DOUBLE  YES  None    None  None
-33                      CHGIND      DOUBLE  YES  None    None  None
-34                      AVGAMT      DOUBLE  YES  None    None  None
-35                     PRODUCT      DOUBLE  YES  None    None  None
-36                     DEPTYPE     VARCHAR  YES  None    None  None
-37                       INTPD      DOUBLE  YES  None    None  None
-38                     INTPLAN      DOUBLE  YES  None    None  None
-39                      CURBAL      DOUBLE  YES  None    None  None
-40                    CHQFLOAT      DOUBLE  YES  None    None  None
-41                       STATE     VARCHAR  YES  None    None  None
-42                   INTCYCODE     VARCHAR  YES  None    None  None
-43                    APPRLIMT      DOUBLE  YES  None    None  None
-44                    ODINTCHR      DOUBLE  YES  None    None  None
-45                    ODINTACC      DOUBLE  YES  None    None  None
-46                    YTDAVAMT      DOUBLE  YES  None    None  None
-47                    INACTIVE     VARCHAR  YES  None    None  None
-48                      SECOND      DOUBLE  YES  None    None  None
-49                    BONUTYPE      DOUBLE  YES  None    None  None
-50                     SERVICE      DOUBLE  YES  None    None  None
-51                    BONUSANO      DOUBLE  YES  None    None  None
-52                       USER5     VARCHAR  YES  None    None  None
-53                    PREVBRNO      DOUBLE  YES  None    None  None
-54                      AVGBAL      DOUBLE  YES  None    None  None
-55                     COSTCTR      DOUBLE  YES  None    None  None
-56             AUTHORISE_LIMIT      DOUBLE  YES  None    None  None
-57                    POST_IND     VARCHAR  YES  None    None  None
-58                     CENSUST      DOUBLE  YES  None    None  None
-59                     ACCPROF      DOUBLE  YES  None    None  None
-60                     MAXPROF      DOUBLE  YES  None    None  None
-61                    INTRSTPD      DOUBLE  YES  None    None  None
-62                    MTDAVBAL      DOUBLE  YES  None    None  None
-63                   BILLERIND     VARCHAR  YES  None    None  None
-64       MODIFIED_FACILITY_IND     VARCHAR  YES  None    None  None
-65                   DTLSTCUST      DOUBLE  YES  None    None  None
-66                      OPENDT      DOUBLE  YES  None    None  None
-67                    DNBFISME     VARCHAR  YES  None    None  None
-68                DATE_LST_DEP      DOUBLE  YES  None    None  None
-69           NXT_STMT_CYCLE_DT      DOUBLE  YES  None    None  None
-70                  STMT_CYCLE     VARCHAR  YES  None    None  None
-71                    INTPAYBL      DOUBLE  YES  None    None  None
-72                INTPLAN_IBCA      DOUBLE  YES  None    None  None
-73                    MAILCODE     VARCHAR  YES  None    None  None
-74                       RRIND     VARCHAR  YES  None    None  None
-75                   RRCOMPLDT      DOUBLE  YES  None    None  None
-76                      REASON     VARCHAR  YES  None    None  None
-77                INSTRUCTIONS     VARCHAR  YES  None    None  None
-78                    OMNILOAN      DOUBLE  YES  None    None  None
-79                    OMNITRDB      DOUBLE  YES  None    None  None
-80                         DSR      DOUBLE  YES  None    None  None
-81              MTD_REPAID_AMT      DOUBLE  YES  None    None  None
-82        INDUSTRIAL_SECTOR_CD     VARCHAR  YES  None    None  None
-83           MTD_DISBURSED_AMT      DOUBLE  YES  None    None  None
-84        MTD_REPAY_TYPE10_AMT      DOUBLE  YES  None    None  None
-85        MTD_REPAY_TYPE20_AMT      DOUBLE  YES  None    None  None
-86        MTD_REPAY_TYPE30_AMT      DOUBLE  YES  None    None  None
-87                 COV_OPT_OUT     VARCHAR  YES  None    None  None
-88        PROP_DEVELOP_FIN_IND     VARCHAR  YES  None    None  None
-89               REPAY_TYPE_CD     VARCHAR  YES  None    None  None
-90    PB_ENTERPRISE_PACKAGE_CD     VARCHAR  YES  None    None  None
-91        PB_ENTERPRISE_REG_DT      DOUBLE  YES  None    None  None
-92           PB_ENTERPRISE_TAG     VARCHAR  YES  None    None  None
-93              WRITE_DOWN_BAL      DOUBLE  YES  None    None  None
-94                      FEEYTD      DOUBLE  YES  None    None  None
-95                      FAACRR     VARCHAR  YES  None    None  None
-96                     CRRCODE     VARCHAR  YES  None    None  None
-97                 ASCORE_PERM     VARCHAR  YES  None    None  None
-98                 ASCORE_LTST     VARCHAR  YES  None    None  None
-99                 ASCORE_COMM     VARCHAR  YES  None    None  None
-100                  ACSTATUS4     VARCHAR  YES  None    None  None
-101                  ACSTATUS5     VARCHAR  YES  None    None  None
-102                  ACSTATUS6     VARCHAR  YES  None    None  None
-103                  ACSTATUS7     VARCHAR  YES  None    None  None
-104                  ACSTATUS8     VARCHAR  YES  None    None  None
-105                  ACSTATUS9     VARCHAR  YES  None    None  None
-106                 ACSTATUS10     VARCHAR  YES  None    None  None
-107                   CUSTFISS     VARCHAR  YES  None    None  None
-108                   RISKRATE     VARCHAR  YES  None    None  None
-109                     DOBMNI      DOUBLE  YES  None    None  None
-110                RR_EXP_DATE      DOUBLE  YES  None    None  None
-111                RR_EFF_DATE      DOUBLE  YES  None    None  None
-112                  DNBFI_ORI     VARCHAR  YES  None    None  None
-113                 ESIGNATURE     VARCHAR  YES  None    None  None
-114                  CONDIMODE     VARCHAR  YES  None    None  None
-115               MTDAVBAL_MIS      DOUBLE  YES  None    None  None
-116                    NOCRDAY      DOUBLE  YES  None    None  None
-117                     ACCMCR      DOUBLE  YES  None    None  None
-118                    NODRDAY      DOUBLE  YES  None    None  None
-119                     ACCMDR      DOUBLE  YES  None    None  None
-120                  MTDAVCBAL      DOUBLE  YES  None    None  None
-121                  MTDAVDBAL      DOUBLE  YES  None    None  None
-122             DIA_PAST01_MTH      DOUBLE  YES  None    None  None
-123             DIA_PAST02_MTH      DOUBLE  YES  None    None  None
-124             DIA_PAST03_MTH      DOUBLE  YES  None    None  None
-125             DIA_PAST04_MTH      DOUBLE  YES  None    None  None
-126             DIA_PAST05_MTH      DOUBLE  YES  None    None  None
-127             DIA_PAST06_MTH      DOUBLE  YES  None    None  None
-128             DIA_PAST07_MTH      DOUBLE  YES  None    None  None
-129             DIA_PAST08_MTH      DOUBLE  YES  None    None  None
-130             DIA_PAST09_MTH      DOUBLE  YES  None    None  None
-131             DIA_PAST10_MTH      DOUBLE  YES  None    None  None
-132             DIA_PAST11_MTH      DOUBLE  YES  None    None  None
-133             DIA_PAST12_MTH      DOUBLE  YES  None    None  None
-134              E_INVOICE_IND     VARCHAR  YES  None    None  None
-135     CASH_DEPOSIT_LIMIT_IND      DOUBLE  YES  None    None  None
-136  SOURCE_INCOME_CURRENCY_CD     VARCHAR  YES  None    None  None
-137    CASH_DEPOSIT_AMOUNT_AGG      DOUBLE  YES  None    None  None
-138          POST_IND_MAINT_DT      DOUBLE  YES  None    None  None
-139            POST_IND_EXP_DT      DOUBLE  YES  None    None  None
-140                    FDB_TAG     INTEGER  YES  None    None  None
-141                 FDB_TAG_DT      DOUBLE  YES  None    None  None
-142             FDB_SCORING_DT      DOUBLE  YES  None    None  None
-143            REFERRAL_BRANCH      DOUBLE  YES  None    None  None
-144             ACCTNO_SAVE_LN      DOUBLE  YES  None    None  None
-145             SUB_OD_PRODUCT      DOUBLE  YES  None    None  None
-146        APPL_COMMERCIAL_TAG     INTEGER  YES  None    None  None
-147                    OKU_IND     INTEGER  YES  None    None  None
-148      WRIOFF_CLOSE_FILE_TAG     INTEGER  YES  None    None  None
-149   WRIOFF_CLOSE_FILE_TAG_DT      DOUBLE  YES  None    None  None
