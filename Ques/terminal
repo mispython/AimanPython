@@ -1,35 +1,8 @@
-======================================================================
-Generating Public Bank OD Listing Report
-======================================================================
-
-Report Date: 29/07/26
-
-Step 1: Loading STG DP lookup (NAME + COL1-5, DEPTYPE IN ('N','D'))...
-
-[ERROR] Report generation failed for PBB: BinderException: Binder Error: Referenced column "COL1" not found in FROM clause!
-Candidate bindings: "ACCTNO"
-
-LINE 3:             SELECT ACCTNO, NAME, COL1, COL2, COL3, COL4, COL5
-                                         ^
-
-======================================================================
-Generating Islamic Bank OD Listing Report
-======================================================================
-
-Report Date: 29/07/26
-
-Step 1: Loading STG DP lookup (NAME + COL1-5, DEPTYPE IN ('N','D'))...
-
-[ERROR] Report generation failed for PIBB: BinderException: Binder Error: Referenced column "COL1" not found in FROM clause!
-Candidate bindings: "ACCTNO"
-
-LINE 3:             SELECT ACCTNO, NAME, COL1, COL2, COL3, COL4, COL5
-                                         ^
-
-======================================================================
-GENERATED REPORTS:
-======================================================================
-  1. Public Bank OD Listing     : [FAILED]
-  2. Islamic Bank CLF-i Listing : [FAILED]
-
-REPORT GENERATION COMPLETED WITH ERRORS — review output above.
+=== Caching STG DP Limit Lookup ===
+  [STG_DP] Converting stg_dp_limit.sas7bdat -> stg_dp_limit.parquet ...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 810, in <module>
+    stg_dp_cache = _ensure_stg_dp_cache(INPUT_STG_DP, CACHE_STG_DP)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 221, in _ensure_stg_dp_cache
+    raise ValueError(
+ValueError: stg_dp_limit.sas7bdat missing required column(s): COL1, COL2, COL3, COL4, COL5, DEPTYPE
