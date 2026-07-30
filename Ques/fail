@@ -1,1 +1,15 @@
-print(duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{deposit_cache}')").df().to_string())
+======================================================================
+Generating Public Bank OD Listing Report
+======================================================================
+
+Report Date: 29/07/26
+
+Step 1: Loading STG DP lookup (NAME + COL1-5, DEPTYPE IN ('N','D'))...
+STG DP lookup registered.
+
+Step 2: Building ODRAFT (deposit accounts with negative balance)...
+ODRAFT records: 24,950
+
+Step 3: Loading LOAN (ACCTNO, SECTORCD, FISSPURP)...
+
+[ERROR] Report generation failed for PBB: BinderException: Binder Error: Column "SECTORCD" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
