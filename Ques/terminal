@@ -1,7 +1,42 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py
+Step 1: Deriving report date / week number...
+  Report date : 29/07/26
+  Report month: 07  Week: 4
+
+########## PHASE 1: SAS -> PARQUET CACHING (ALL BANKS) ##########
+
+=== Caching PBB ===
+  Deposit input dir : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBMODLT
+  Loan input dir    : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBMODLT
+[FILE_RESOLVER] Selected latest: ln07326.sas7bdat
+[FILE_RESOLVER] Selected latest: ca07326.sas7bdat
+  [PBB_LOAN] Cache fresh - skipping conversion.
+  [PBB_DEPOSIT] Cache fresh - skipping conversion.
+
+=== Caching PIBB ===
+  Deposit input dir : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBMODLT
+  Loan input dir    : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBMODLT
+[FILE_RESOLVER] Selected latest: iln07326.sas7bdat
+[FILE_RESOLVER] Selected latest: ica07326.sas7bdat
+  [PIBB_LOAN] Cache fresh - skipping conversion.
+  [PIBB_DEPOSIT] Cache fresh - skipping conversion.
+
+=== Caching Customer Name Lookup ===
+  [CUSTNAME] Cache fresh - skipping conversion.
+
+########## PHASE 2: REPORT GENERATION (PBB, then PIBB) ##########
+
+=== Reporting PBB ===
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 85, in <module>
-    _d.mkdir(parents=True, exist_ok=True)
-  File "/usr/lib64/python3.9/pathlib.py", line 1251, in mkdir
-    self._accessor.mkdir(self, mode)
-FileExistsError: [Errno 17] File exists: '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/EIBMODLT/stg_dp_limit.sas7bdat'
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 780, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 764, in main
+    generate_bank_report(cfg, loan_cache, deposit_cache, cache_custname)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 643, in generate_bank_report
+    odraft = con.execute(f"""
+_duckdb.BinderException: Binder Error: Table "d" does not have a column named "COL1"
+
+Candidate bindings: : "SECOND", "ODPLAN", "COSTCTR", "COUNTRY", "CLOSEDT"
+
+LINE 18:             CAST(d.COL1     AS VARCHAR) AS COL1,
+                          ^
