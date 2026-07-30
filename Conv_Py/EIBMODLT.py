@@ -73,7 +73,7 @@ CACHE_DIR_PBB_DEPOSIT   = CACHE_DIR
 CACHE_DIR_PBB_LOAN      = CACHE_DIR
 CACHE_DIR_PIBB_DEPOSIT  = CACHE_DIR
 CACHE_DIR_PIBB_LOAN     = CACHE_DIR
-CACHE_DIR_CUSTNAME      = CACHE_DIR
+CACHE_CUSTNAME      = CACHE_DIR / f"{INPUT_CUSTNAME.stem}.parquet"
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLT"
 
@@ -549,7 +549,7 @@ class BankConfig:
     custname_dir: Path
     deposit_cache_dir: Path
     loan_cache_dir: Path
-    cache_custname: Path
+    # cache_custname: Path
     deposit_prefix: str
     loan_prefix: str
     bank_title: str
@@ -565,7 +565,7 @@ BANKS = [
         custname_dir        = INPUT_CUSTNAME, 
         deposit_cache_dir   = CACHE_DIR_PBB_DEPOSIT,
         loan_cache_dir      = CACHE_DIR_PBB_LOAN,
-        cache_custname      = CACHE_DIR_CUSTNAME,
+        # cache_custname      = CACHE_DIR_CUSTNAME,
         deposit_prefix      = "ca",
         loan_prefix         = "ln",
         bank_title          = "P U B L I C   B A N K   B E R H A D",
@@ -579,7 +579,7 @@ BANKS = [
         custname_dir        = INPUT_CUSTNAME, 
         deposit_cache_dir   = CACHE_DIR_PIBB_DEPOSIT,
         loan_cache_dir      = CACHE_DIR_PIBB_LOAN,
-        cache_custname      = CACHE_DIR_CUSTNAME,
+        # cache_custname      = CACHE_DIR_CUSTNAME,
         deposit_prefix      = "ica",
         loan_prefix         = "iln",
         bank_title          = "P U B L I C   I S L A M I C  B A N K   B E R H A D",
@@ -752,7 +752,7 @@ def main() -> None:
     for cfg in BANKS:
         caches[cfg.bank_code] = ensure_bank_cache(cfg)
 
-    cache_custname = ensure_custname_cache(INPUT_CUSTNAME, CACHE_DIR_CUSTNAME)
+    cache_custname = ensure_custname_cache(INPUT_CUSTNAME, CACHE_DIR / f"{INPUT_CUSTNAME.stem}.parquet")
 
     # --------------------------------------------------------------------
     # PHASE 2 — once every file is cached, generate the report for PBB,
