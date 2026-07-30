@@ -9,14 +9,6 @@ Purpose : OD (Overdraft) Listing Report
               EIBMODLT step -> PBB  (Public Bank Berhad)
               EIBMODLI step -> PIBB (Public Islamic Bank Berhad)
 
-Dependencies:
-    REPTDATE.py   -> get_reptdate_values()  (report date / week derivation)
-    input_date.py -> get_latest_file()      (latest LOAN / DEPOSIT file by date)
-    output_date.py-> NOT USED. Original DD names (SAP.BANK.ODLIST.RPS/.TEXT,
-                     SAP.PIBB.ODLIST.RPS/.TEXT) carry no date component in
-                     the dataset name, so static output filenames are used
-                     instead, per project convention.
-
 NOTE ON MAINFRAME-ONLY STEPS (no SAS source available to convert):
     - The JOB's leading IEFBR14 DELETE steps merely purge old cataloged
       datasets before (re)creation. Python overwrites output files directly,
@@ -28,6 +20,7 @@ NOTE ON MAINFRAME-ONLY STEPS (no SAS source available to convert):
       as a commented placeholder below.
 """
 
+import os
 import gc
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +38,7 @@ from input_date import get_latest_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
+# BASE_DIR = ("/dwh")
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # Each of the 4 source files (PBB deposit, PBB loan, PIBB deposit, PIBB loan)
@@ -55,15 +49,26 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 #   LOAN    DD DSN=SAP.PIBB.SASDATA   -> PIBB loan
 # so each file gets its own independent input/cache directory rather than
 # sharing a folder with any other file.
-INPUT_DIR_PBB_DEPOSIT   = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB_DEPOSIT"
-INPUT_DIR_PBB_LOAN      = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB_LOAN"
-INPUT_DIR_PIBB_DEPOSIT  = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB_DEPOSIT"
-INPUT_DIR_PIBB_LOAN     = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB_LOAN"
+# INPUT_DIR_PBB_DEPOSIT   = BASE_DIR / "dp_ca"
+# INPUT_DIR_PBB_LOAN      = BASE_DIR / "ln_ln"
+# INPUT_DIR_PIBB_DEPOSIT  = BASE_DIR / "idp_ca"
+# INPUT_DIR_PIBB_LOAN     = BASE_DIR / "iln_ln"
 
-CACHE_DIR_PBB_DEPOSIT   = INPUT_DIR_PBB_DEPOSIT
-CACHE_DIR_PBB_LOAN      = INPUT_DIR_PBB_LOAN
-CACHE_DIR_PIBB_DEPOSIT  = INPUT_DIR_PIBB_DEPOSIT
-CACHE_DIR_PIBB_LOAN     = INPUT_DIR_PIBB_LOAN
+INPUT_DIR_PBB_DEPOSIT   = BASE_DIR / "input" / "prod" / "EIBMODLT"
+INPUT_DIR_PBB_LOAN      = BASE_DIR / "input" / "prod" / "EIBMODLT"
+INPUT_DIR_PIBB_DEPOSIT  = BASE_DIR / "input" / "prod" / "EIBMODLT"
+INPUT_DIR_PIBB_LOAN     = BASE_DIR / "input" / "prod" / "EIBMODLT"
+
+# CACHE_DIR_PBB_DEPOSIT   = INPUT_DIR_PBB_DEPOSIT
+# CACHE_DIR_PBB_LOAN      = INPUT_DIR_PBB_LOAN
+# CACHE_DIR_PIBB_DEPOSIT  = INPUT_DIR_PIBB_DEPOSIT
+# CACHE_DIR_PIBB_LOAN     = INPUT_DIR_PIBB_LOAN
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMODLT"
+CACHE_DIR_PBB_DEPOSIT   = CACHE_DIR
+CACHE_DIR_PBB_LOAN      = CACHE_DIR
+CACHE_DIR_PIBB_DEPOSIT  = CACHE_DIR
+CACHE_DIR_PIBB_LOAN     = CACHE_DIR
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLT"
 
@@ -74,7 +79,12 @@ for _d in (
     _d.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-CHUNK_ROWS = 500_000
+# ============================================================================
+# REPORT PAGE CONFIGURATION
+# ============================================================================
+PAGE_SIZE    = 60   # lines per page (default, not otherwise specified)
+ROW_LIMIT    = int(os.environ.get("ROW_LIMIT", 0))
+CHUNK_ROWS   = 500_000
 
 # ============================================================================
 # STEP: REPORT DATE  (no reptdate.parquet — derive from REPTDATE.py)
@@ -118,14 +128,21 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
 
 
 def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    """Convert a .sas7bdat file to Parquet in streaming chunks."""
+    """Convert a .sas7bdat to Parquet in streaming chunks (schema-locked)."""
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     writer = None
     schema = None
     total = 0
+    rows_read = 0
 
     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
     for chunk in reader:
+        if ROW_LIMIT and rows_read >= ROW_LIMIT:
+            break
+        if ROW_LIMIT:
+            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
+        rows_read += len(chunk)
+
         table = pa.Table.from_pandas(chunk, preserve_index=False)
 
         if schema is None:
@@ -140,7 +157,7 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
                         col = col.cast(field.type, safe=False)
                     except Exception as e:
                         print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
-                              f"from {col.type} to {field.type}: {e} - filling nulls")
+                              f"{col.type}->{field.type}: {e} - nulling")
                         col = pa.nulls(len(col), type=field.type)
                 cast_arrays.append(col)
             table = pa.Table.from_arrays(cast_arrays, schema=schema)
@@ -515,8 +532,8 @@ BANKS = [
         loan_dir=INPUT_DIR_PBB_LOAN,
         deposit_cache_dir=CACHE_DIR_PBB_DEPOSIT,
         loan_cache_dir=CACHE_DIR_PBB_LOAN,
-        deposit_prefix="dp_ca",
-        loan_prefix="ln_ln",
+        deposit_prefix="ca",
+        loan_prefix="ln",
         bank_title="P U B L I C   B A N K   B E R H A D",
         output_rps_name="ODLIST_RPS.txt",
         output_text_name="ODLIST_TEXT.txt",
@@ -527,8 +544,8 @@ BANKS = [
         loan_dir=INPUT_DIR_PIBB_LOAN,
         deposit_cache_dir=CACHE_DIR_PIBB_DEPOSIT,
         loan_cache_dir=CACHE_DIR_PIBB_LOAN,
-        deposit_prefix="idp_ca",
-        loan_prefix="idp_ln",
+        deposit_prefix="ica",
+        loan_prefix="iln",
         bank_title="P U B L I C   I S L A M I C  B A N K   B E R H A D",
         output_rps_name="ODLISTI_RPS.txt",
         output_text_name="ODLISTI_TEXT.txt",
