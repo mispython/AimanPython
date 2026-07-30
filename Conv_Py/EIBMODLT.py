@@ -58,7 +58,7 @@ INPUT_DIR_PIBB_LOAN    = BASE_DIR / "input" / "prod" / "EIBMODLT"
 # resolved from stg_dp_limit.sas7bdat by matching ACCTNO, restricted to
 # DEPTYPE IN ('N','D') so only deposit-type records are used as the
 # source of COL1-5 (mirrors the original ODRAFT filter's deposit scope).
-INPUT_STG_DP = BASE_DIR / "input" / "prod" / "EIBMODLT" / "stg_dp_limit.sas7bdat"
+INPUT_STG_DP = BASE_DIR / "input" / "prod" / "EIBMODLT" / "stg_dp_dptrblgs.sas7bdat"
 
 # Parquet cache directory (shared by all four source files + the lookup file)
 CACHE_DIR     = BASE_DIR / "input" / "cache" / "EIBMODLT"
@@ -718,7 +718,7 @@ def generate_od_listing_report(
         loan = con.execute(f"""
             SELECT
                 CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-                CAST(SECTORCD AS VARCHAR) AS SECTORCD,
+                CAST(SECTOR   AS VARCHAR) AS SECTORCD,
                 CAST(FISSPURP AS VARCHAR) AS FISSPURP
             FROM read_parquet('{loan_cache}')
         """).pl()
@@ -781,10 +781,10 @@ def generate_od_listing_report(
         print(f"  ODRAFT1 rows (all FISS purpose)                  : {len(odraft1_sorted):,}")
         print(f"  ODRAFT2 rows (construction/real estate, non-indi): {len(odraft2_sorted):,}")
 
-        print(f"\n========== PREVIEW: {cfg.rps_output.name} ==========\n")
-        with open(cfg.rps_output, "r", encoding="latin1") as f:
-            print(f.read())
-        print("========== END PREVIEW ==========\n")
+        # print(f"\n========== PREVIEW: {cfg.rps_output.name} ==========\n")
+        # with open(cfg.rps_output, "r", encoding="latin1") as f:
+        #     print(f.read())
+        # print("========== END PREVIEW ==========\n")
 
         return True
 
@@ -850,6 +850,46 @@ if all(results.values()):
     print("\nREPORT GENERATION COMPLETE")
 else:
     print("\nREPORT GENERATION COMPLETED WITH ERRORS — review output above.")
+
+# # >>>> DEBUGGING STARTS <<<<<
+
+# print("\n")
+# df = pd.read_sas(INPUT_STG_DP, encoding="latin1")
+# df.columns = [str(c).upper().strip() for c in df.columns]
+
+# print("Raw DEPTYPE unique values (repr to reveal whitespace):")
+# print(df["DEPTYPE"].apply(repr).value_counts().head(20))
+
+# print("\nACCTNO dtype:", df["ACCTNO"].dtype)
+# print("NAME dtype:", df["NAME"].dtype)
+
+# # Test with stripped comparison
+# stripped_match = df["DEPTYPE"].astype(str).str.strip().isin(["D", "N"])
+# print(f"\nRows matching DEPTYPE after strip: {stripped_match.sum():,} / {len(df):,}")
+
+# raw_match = df["DEPTYPE"].isin(["D", "N"])
+# print(f"Rows matching DEPTYPE without strip: {raw_match.sum():,} / {len(df):,}")
+
+# print("\n")
+# acct_deposit = duckdb.sql(f"SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS a FROM read_parquet('{deposit_cache}')").pl()
+# acct_lookup  = duckdb.sql(f"SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS a FROM read_parquet('{stg_dp_cache}')").pl()
+# print("Deposit accounts:", len(acct_deposit))
+# print("Lookup accounts :", len(acct_lookup))
+# print("Overlap         :", len(acct_deposit.join(acct_lookup, on="a", how="inner")))
+
+# print(duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{loan_cache}')").df().to_string())
+
+# print("\n")
+# cols = duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{loan_cache}')").df()["column_name"].tolist()
+# from collections import Counter
+# dupes = {c: n for c, n in Counter([c.upper() for c in cols]).items() if n > 1}
+# print("Case-insensitive duplicates:", dupes)
+# print("All columns:", cols)
+
+
+# print(duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{deposit_cache}')").df().to_string())
+
+# # >>>> DEBUGGING ENDS <<<<<
 
 # ============================================================================
 # PLACEHOLDER: STEP02/STEP04 PGM=SPLIB136 (mainframe utility, source not
