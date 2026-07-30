@@ -1,840 +1,671 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
-Program Name: EIBMODLT
-Purpose: Generate OD (Overdraft) Listing Reports for PBB (Public Bank Berhad) and PIBB (Public Islamic Bank Berhad)
-         - Report 1: OD Listing by FISS Purpose Code (all custcodes)
-         - Report 2: OD Listing by Construction (Sector 5001-5999) and Real Estate (8310) for Non-Individual Customers
-         Outputs text data file (ODLSD/ODLSDI) and RPS report file (ODLST/ODLSTI)
+Program : EIBMODLT.py
+Purpose : OD (Overdraft) Listing Report
+          - Listing of overdraft accounts by FISS Purpose Code (all customer
+            codes) and by Sector Code (construction 5001-5999 / real estate
+            8310, non-individual customers only)
+          - Produces both banks covered by the original JOB:
+              EIBMODLT step -> PBB  (Public Bank Berhad)
+              EIBMODLI step -> PIBB (Public Islamic Bank Berhad)
+
+Dependencies:
+    REPTDATE.py   -> get_reptdate_values()  (report date / week derivation)
+    input_date.py -> get_latest_file()      (latest LOAN / DEPOSIT file by date)
+    output_date.py-> NOT USED. Original DD names (SAP.BANK.ODLIST.RPS/.TEXT,
+                     SAP.PIBB.ODLIST.RPS/.TEXT) carry no date component in
+                     the dataset name, so static output filenames are used
+                     instead, per project convention.
+
+NOTE ON MAINFRAME-ONLY STEPS (no SAS source available to convert):
+    - The JOB's leading IEFBR14 DELETE steps merely purge old cataloged
+      datasets before (re)creation. Python overwrites output files directly,
+      so no equivalent action is required.
+    - STEP02 / STEP04 (PGM=SPLIB136) is an external mainframe utility that
+      post-processes the RPS-format report (inserting real ASA/printer
+      control bytes and splitting it by branch region using
+      RMDS.OPC.BANKCODE members). Its source is not provided, so it is left
+      as a commented placeholder below.
 """
+
+import gc
+from dataclasses import dataclass
+from pathlib import Path
 
 import duckdb
+import pandas as pd
 import polars as pl
-from datetime import date, datetime
-import os
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-# =============================================================================
+from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+# from output_date import build_output_file  # NOT USED - output filenames carry no date component
+
+# ============================================================================
 # PATH CONFIGURATION
-# =============================================================================
+# ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-# --- PBB Input Paths ---
-BANK_REPTDATE_PARQUET    = "input/bank/reptdate.parquet"
-BANK_LOAN_PARQUET_PREFIX = "input/bank/loan"          # e.g. loan0101.parquet (LOAN&REPTMON&NOWK)
-BANK_CURRENT_PARQUET     = "input/bank/current.parquet"
+# PBB and PIBB come from separate SAS dataset qualifiers in the original JOB
+# (SAP.PBB.MNITB / SAP.PBB.SASDATA  vs  SAP.PIBB.MNITB / SAP.PIBB.SASDATA),
+# so each bank gets its own input/cache root instead of sharing one folder.
+# This also avoids filename collisions between the two banks' loan/deposit
+# files being cached over one another.
+INPUT_DIR_PBB   = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB"
+INPUT_DIR_PIBB  = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB"
 
-# --- PIBB Input Paths ---
-PIBB_REPTDATE_PARQUET    = "input/pibb/reptdate.parquet"
-PIBB_LOAN_PARQUET_PREFIX = "input/pibb/loan"
-PIBB_CURRENT_PARQUET     = "input/pibb/current.parquet"
+CACHE_DIR_PBB   = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB"
+CACHE_DIR_PIBB  = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB"
 
-# --- PBB Output Paths ---
-BANK_ODLST_TXT  = "output/bank/odlist_rps.txt"        # SAP.BANK.ODLIST.RPS   (136 char)
-BANK_ODLSD_TXT  = "output/bank/odlist_text.txt"       # SAP.BANK.ODLIST.TEXT  (80 char)
+OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLT"
 
-# --- PIBB Output Paths ---
-PIBB_ODLSTI_TXT = "output/pibb/odlist_rps.txt"        # SAP.PIBB.ODLIST.RPS   (136 char)
-PIBB_ODLSDI_TXT = "output/pibb/odlist_text.txt"       # SAP.PIBB.ODLIST.TEXT  (80 char)
+INPUT_DIR_PBB.mkdir(parents=True, exist_ok=True)
+INPUT_DIR_PIBB.mkdir(parents=True, exist_ok=True)
+CACHE_DIR_PBB.mkdir(parents=True, exist_ok=True)
+CACHE_DIR_PIBB.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Ensure output directories exist
-os.makedirs("output/bank", exist_ok=True)
-os.makedirs("output/pibb", exist_ok=True)
+CHUNK_ROWS = 500_000
 
-# Fixed record widths
-LINE_WIDTH     = 136
-TEXT_WIDTH     = 80
-LINECNT_MAX    = 55
-LINECNT_START  = 13
+# ============================================================================
+# STEP: REPORT DATE  (no reptdate.parquet — derive from REPTDATE.py)
+# ============================================================================
+print("Step 1: Deriving report date / week number...")
 
-# =============================================================================
-# FORMAT HELPERS
-# =============================================================================
+reptdate_values = get_reptdate_values()
+reptdate = reptdate_values.reptdate
+REPTMON  = reptdate_values.reptmon
 
-BANK_FMT = {33: 'PBB', 134: 'PFB'}
+# Original SAS derives WK/WK1/SDD from an exact-match WHEN(DAY(REPTDATE))
+# structure (day 8/15/22/otherwise). REPTDATE.py's NOWK banding
+# (1-8 / 9-15 / 16-22 / 23-31) covers the same four buckets, since these
+# jobs only ever run on days 8, 15, 22, or month-end. NOWK is therefore
+# used as the WK equivalent below.
+NOWK = reptdate_values.nowk
 
-def fmt_bankno(bankno):
-    """PROC FORMAT BANKFMT"""
-    return BANK_FMT.get(bankno, str(bankno) if bankno is not None else '')
+# NOTE: SDD and WK1 are computed in the original SAS WHEN block but are
+# never referenced anywhere else in the program, so they are not
+# reproduced here (no behavioural effect is lost).
 
-def fmt_ddmmyy8(d):
-    """Format date as DD/MM/YY (DDMMYY8.)"""
-    if d is None:
-        return ''
-    if isinstance(d, (int, float)):
-        d = date(1960, 1, 1) + __import__('datetime').timedelta(days=int(d))
-    elif isinstance(d, str):
-        d = datetime.strptime(d, '%Y-%m-%d').date()
-    return d.strftime('%d/%m/%y')
+RDATE = reptdate.strftime("%d/%m/%y")  # PUT(REPTDATE, DDMMYY8.)
 
-def fmt_comma(val, width, decimals=2):
-    """Format numeric as COMMA<width>.<decimals>, right-justified."""
-    if val is None or (isinstance(val, float) and val != val):
-        return ' ' * width
-    formatted = f"{val:,.{decimals}f}"
-    return formatted.rjust(width)
+print(f"  Report date : {RDATE}")
+print(f"  Report month: {REPTMON}  Week: {NOWK}")
 
-def fmt_comma15_2(val):
-    return fmt_comma(val, 15, 2)
+# PROC FORMAT VALUE BANKFMT 33='PBB' 134='PFB'; -- defined in SAS but never
+# applied via PUT(var, BANKFMT.) anywhere in this program, so it is not
+# reproduced (no live import/usage exists to trace).
 
-def fmt_comma18_2(val):
-    return fmt_comma(val, 18, 2)
 
-def fmt_comma8_2(val):
-    return fmt_comma(val, 8, 2)
+# ============================================================================
+# CACHING HELPERS  (pattern follows EIBDLN1M.py)
+# ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    """Return True when the Parquet cache is newer than the source SAS file."""
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
 
-def fmt_comma6_2(val):
-    return fmt_comma(val, 6, 2)
 
-def fmt_z3(val):
-    """Format numeric as Z3. (zero-padded 3 digits)"""
-    if val is None:
-        return '000'
-    return str(int(val)).zfill(3)
+def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    """Convert a .sas7bdat file to Parquet in streaming chunks."""
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
 
-def place_at(line_list, col, text):
-    """Place text into line_list at 1-indexed column position."""
-    col0 = col - 1
-    for i, ch in enumerate(str(text)):
-        pos = col0 + i
-        while len(line_list) <= pos:
-            line_list.append(' ')
-        line_list[pos] = ch
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
 
-def make_line(width=LINE_WIDTH):
-    return [' '] * width
+        if schema is None:
+            schema = table.schema
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        else:
+            cast_arrays = []
+            for field in schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
+                              f"from {col.type} to {field.type}: {e} - filling nulls")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=schema)
 
-def finalize_line(line_list, width=LINE_WIDTH):
-    s = ''.join(line_list)
-    return s.ljust(width)[:width]
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
 
-def write_blank_p001(f, width=LINE_WIDTH):
-    line = make_line(width)
-    place_at(line, 1, 'P001')
-    f.write(finalize_line(line, width) + '\n')
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
 
-# =============================================================================
-# DETERMINE REPORT DATE VARIABLES FROM REPTDATE
-# =============================================================================
 
-def get_report_vars(reptdate_parquet):
-    """
-    Read REPTDATE, compute NOWK, RDATE, REPTMON.
-    OPTIONS YEARCUTOFF=1950: 2-digit years 50-99 -> 1950-1999, 00-49 -> 2000-2049.
-    """
-    con = duckdb.connect()
-    row = con.execute(
-        f"SELECT reptdate FROM read_parquet('{reptdate_parquet}') LIMIT 1"
-    ).fetchone()
-    con.close()
+# ============================================================================
+# FIXED-WIDTH FORMATTING HELPERS
+# ============================================================================
+def _line(width: int = 136) -> list:
+    return [" "] * width
 
-    reptdate_val = row[0]
-    if isinstance(reptdate_val, (int, float)):
-        reptdate = date(1960, 1, 1) + __import__('datetime').timedelta(days=int(reptdate_val))
-    elif isinstance(reptdate_val, str):
-        reptdate = datetime.strptime(reptdate_val, '%Y-%m-%d').date()
-    else:
-        reptdate = reptdate_val
 
-    day = reptdate.day
-    if day == 8:
-        wk = '1'
-    elif day == 15:
-        wk = '2'
-    elif day == 22:
-        wk = '3'
-    else:
-        wk = '4'
+def _place(buf: list, col: int, text: str) -> None:
+    """Place text into buf at a 1-based column position."""
+    start = col - 1
+    end = start + len(text)
+    if end > len(buf):
+        buf.extend([" "] * (end - len(buf)))
+    buf[start:end] = list(text)
 
-    rdate   = reptdate.strftime('%d/%m/%y')
-    reptmon = str(reptdate.month).zfill(2)
 
-    return wk, rdate, reptmon
+def _comma(value, width: int, decimals: int = 2) -> str:
+    """COMMAw.d style: comma-separated, right-justified, sign if negative."""
+    if value is None:
+        return " " * width
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return " " * width
+    return f"{v:,.{decimals}f}".rjust(width)
 
-# =============================================================================
-# MAKE BRANCH NUMBER STRING (BRNO)
-# =============================================================================
 
-def make_brno(branch):
-    """Compute BRNO from branch number (SAS SELECT logic)."""
-    b = int(branch)
+def _num(value, width: int) -> str:
+    """Plain numeric PUT (e.g. 3., 10., 12.) - right-justified, no commas."""
+    if value is None:
+        return " " * width
+    try:
+        return f"{int(value)}".rjust(width)
+    except (TypeError, ValueError):
+        return " " * width
+
+
+def _zpad(value, width: int) -> str:
+    """Zn. style zero-padded numeric."""
+    if value is None:
+        return "0" * width
+    return f"{int(value):0{width}d}"
+
+
+def _char(value, width: int, right: bool = False) -> str:
+    """Character PUT: $w. (left-justified) or $w.-R (right-justified)."""
+    s = "" if value is None else str(value)
+    s = s[:width]
+    return s.rjust(width) if right else s.ljust(width)
+
+
+def _write(fh, buf: list) -> None:
+    fh.write("".join(buf) + "\n")
+
+
+def _branch_no(branch) -> str:
+    """SAS SELECT(BRANCH<10 / <100 / >99) -> BRNO computation."""
+    b = int(branch or 0)
     if b < 10:
         return f"BR0{b}"
-    elif b < 100:
+    if b < 100:
         return f"BR{b}"
-    else:
+    if b > 99:
         return f"B{b}"
+    return ""  # unreachable in practice (mirrors SAS OTHERWISE; no assignment)
 
-# =============================================================================
-# DATA PREPARATION (shared logic for PBB and PIBB)
-# =============================================================================
 
-def prepare_data(reptdate_parquet, loan_parquet_prefix, current_parquet):
+# ============================================================================
+# STATIC HEADER LINE CONTENT  (shared identically between both reports)
+# ============================================================================
+def _blank_p001_line() -> str:
+    buf = _line()
+    _place(buf, 1, "P001")
+    return "".join(buf)
+
+
+def _ghijk_lines() -> list:
+    lines = []
+
+    buf = _line()
+    _place(buf, 1, "P001")
+    _place(buf, 62, "APPROVED")
+    _place(buf, 76, "OUTSTANDING")
+    _place(buf, 89, "FISS PURPOSE")
+    _place(buf, 103, "SECTOR")
+    _place(buf, 111, "CUST")
+    _place(buf, 118, "STATE")
+    lines.append("".join(buf))
+
+    buf = _line()
+    _place(buf, 1, "P001")
+    _place(buf, 10, "A/C NO.")
+    _place(buf, 19, "NAME OF CUSTOMER")
+    _place(buf, 65, "LIMIT")
+    _place(buf, 80, "BALANCE")
+    _place(buf, 95, "CODE")
+    _place(buf, 105, "CODE")
+    _place(buf, 111, "CODE")
+    _place(buf, 119, "CODE")
+    _place(buf, 124, "FLAT RATE")
+    lines.append("".join(buf))
+
+    buf = _line()
+    _place(buf, 1, "P001")
+    _place(buf, 14, "LIMIT1")
+    _place(buf, 31, "LIMIT2")
+    _place(buf, 49, "LIMIT3")
+    _place(buf, 67, "LIMIT4")
+    _place(buf, 85, "LIMIT5")
+    _place(buf, 95, "RATE1")
+    _place(buf, 102, "RATE2")
+    _place(buf, 109, "RATE3")
+    _place(buf, 116, "RATE4")
+    _place(buf, 123, "RATE5")
+    lines.append("".join(buf))
+
+    buf = _line()
+    _place(buf, 1, "P001")
+    _place(buf, 95, "COLL1")
+    _place(buf, 102, "COLL2")
+    _place(buf, 109, "COLL3")
+    _place(buf, 116, "COLL4")
+    _place(buf, 123, "COLL5")
+    lines.append("".join(buf))
+
+    buf = _line()
+    _place(buf, 1, "P001")
+    _place(buf, 5, "-" * 30)
+    _place(buf, 35, "-" * 30)
+    _place(buf, 65, "-" * 30)
+    _place(buf, 95, "-" * 30)
+    _place(buf, 125, "-" * 10)
+    lines.append("".join(buf))
+
+    return lines
+
+
+GHIJK_LINES = _ghijk_lines()
+BLANK_P001_LINE = _blank_p001_line()
+
+
+def _line_c(pagecnt: int, bank_title: str) -> str:
+    buf = _line()
+    _place(buf, 1, "P000REPORT NO :  ODLIST")
+    _place(buf, 44, bank_title)
+    _place(buf, 122, f"PAGE NO : {pagecnt}")
+    return "".join(buf)
+
+
+def _header_lines_fisspurp(branch, pagecnt: int, bank_title: str) -> list:
+    lines = [_line_c(pagecnt, bank_title)]
+
+    buf = _line()
+    _place(buf, 1, "P001BRANCH    :  ")
+    _place(buf, 22, _zpad(branch, 3))
+    _place(buf, 32, f"OD LISTING FOR FISS PURPOSE CODE (FOR ALL CUSTCODES) {RDATE}")
+    lines.append("".join(buf))
+
+    lines.append(BLANK_P001_LINE)
+    lines.append(BLANK_P001_LINE)
+    lines.extend(GHIJK_LINES)
+    lines.append(BLANK_P001_LINE)
+    lines.append(BLANK_P001_LINE)
+    return lines
+
+
+def _header_lines_sector(branch, pagecnt: int, bank_title: str) -> list:
+    lines = [_line_c(pagecnt, bank_title)]
+
+    buf = _line()
+    _place(buf, 1, "P001BRANCH    :  ")
+    _place(buf, 22, _zpad(branch, 3))
+    _place(buf, 36, "OD LISTING BY CONSTRUCTION (SECTCODE 5001-5999) AND")
+    lines.append("".join(buf))
+
+    # NOTE: original SAS PUT statement for this second title line has no
+    # terminating semicolon before the following PUT @1 'P001';, and it
+    # carries no leading 'P001' control code of its own (starts directly at
+    # @31). This is reproduced literally: columns 1-30 are blank.
+    buf = _line()
+    _place(buf, 31, f"REAL ESTATE (SECTCODE 8310) FOR NON-INDI. CUSTOMER FOR {RDATE}")
+    lines.append("".join(buf))
+
+    lines.append(BLANK_P001_LINE)
+    lines.append(BLANK_P001_LINE)
+    lines.extend(GHIJK_LINES)
+    lines.append(BLANK_P001_LINE)
+    lines.append(BLANK_P001_LINE)
+    return lines
+
+
+# ============================================================================
+# DETAIL / SUBTOTAL / GRANDTOTAL / NEWPAGE WRITERS
+# ============================================================================
+def _write_detail(fh, row: dict) -> None:
+    buf = _line()
+    _place(buf, 1, "P001")
+    _place(buf, 5, _num(row.get("ACCTNO"), 12))
+    _place(buf, 19, _char(row.get("NAME"), 33))
+    _place(buf, 52, _comma(row.get("APPRLIMT"), 18, 2))
+    _place(buf, 72, _comma(row.get("BALANCE"), 15, 2))
+    _place(buf, 95, _char(row.get("FISSPURP"), 4, right=True))
+    _place(buf, 105, _char(row.get("SECTORCD"), 4, right=True))
+    _place(buf, 111, _num(row.get("CUSTCODE"), 4))
+    _place(buf, 117, _char(row.get("STATE"), 6, right=True))
+    _place(buf, 125, _comma(row.get("FLATRATE"), 8, 2))
+    _write(fh, buf)
+
+    buf = _line()
+    _place(buf, 1, "P001")
+    _place(buf, 5, _comma(row.get("LIMIT1"), 15, 2))
+    _place(buf, 22, _comma(row.get("LIMIT2"), 15, 2))
+    _place(buf, 40, _comma(row.get("LIMIT3"), 15, 2))
+    _place(buf, 58, _comma(row.get("LIMIT4"), 15, 2))
+    _place(buf, 76, _comma(row.get("LIMIT5"), 15, 2))
+    _place(buf, 94, _comma(row.get("RATE1"), 6, 2))
+    _place(buf, 101, _comma(row.get("RATE2"), 6, 2))
+    _place(buf, 108, _comma(row.get("RATE3"), 6, 2))
+    _place(buf, 115, _comma(row.get("RATE4"), 6, 2))
+    _place(buf, 122, _comma(row.get("RATE5"), 6, 2))
+    _write(fh, buf)
+
+    buf = _line()
+    _place(buf, 1, "P001")
+    _place(buf, 95, _char(row.get("COL1"), 7))
+    _place(buf, 102, _char(row.get("COL2"), 7))
+    _place(buf, 109, _char(row.get("COL3"), 7))
+    _place(buf, 116, _char(row.get("COL4"), 7))
+    _place(buf, 123, _char(row.get("COL5"), 7))
+    _write(fh, buf)
+
+
+def _write_subtotal(fh, label: str, minor_value, amount: float) -> None:
+    buf = _line(); _place(buf, 1, "P001"); _place(buf, 72, "-" * 15); _write(fh, buf)
+
+    buf = _line()
+    _place(buf, 1, "P001")
+    prefix = f"SUBTOTAL FOR {label} "
+    _place(buf, 37, prefix)
+    _place(buf, 37 + len(prefix), "" if minor_value is None else str(minor_value))
+    _place(buf, 72, _comma(amount, 15, 2))
+    _write(fh, buf)
+
+    buf = _line(); _place(buf, 1, "P001"); _place(buf, 72, "=" * 15); _write(fh, buf)
+    buf = _line(); _place(buf, 1, "P001"); _write(fh, buf)
+
+
+def _write_grandtotal(fh, amount: float) -> None:
+    buf = _line(); _place(buf, 1, "P001"); _place(buf, 72, "-" * 15); _write(fh, buf)
+    buf = _line(); _place(buf, 1, "P001"); _place(buf, 37, "GRAND TOTAL "); _place(buf, 72, _comma(amount, 15, 2)); _write(fh, buf)
+    buf = _line(); _place(buf, 1, "P001"); _place(buf, 72, "=" * 15); _write(fh, buf)
+    buf = _line(); _place(buf, 1, "P001"); _write(fh, buf)
+
+
+def _write_newpage(fh, branch, pagecnt: int, first_branch: bool,
+                    header_builder, bank_title: str) -> int:
+    pagecnt += 1
+
+    buf = _line(); _place(buf, 1, "E255"); _write(fh, buf)
+
+    if first_branch:
+        buf = _line()
+        _place(buf, 1, "P000PBBEDPPBBEDP")
+        _place(buf, 133, _branch_no(branch))
+        _write(fh, buf)
+
+    for line_text in header_builder(branch, pagecnt, bank_title):
+        fh.write(line_text + "\n")
+
+    return pagecnt
+
+
+def _process_group_report(fh, records: list, minor_col: str, label: str,
+                           header_builder, bank_title: str) -> None:
     """
-    Replicate SAS data preparation:
-      1. Determine NOWK, RDATE, REPTMON from REPTDATE
-      2. Load LOAN (KEEP=ACCTNO SECTORCD FISSPURP) sorted BY ACCTNO
-      3. Load CURRENT, filter CURBAL<0 AND CUSTCODE NE 81, compute BALANCE=(-1)*CURBAL -> ODRAFT
-      4. Sort ODRAFT BY ACCTNO
-      5. MERGE ODRAFT + LOAN BY ACCTNO, keep IF A AND B -> ODRAFT1
-      6. ODRAFT2 = ODRAFT1 filtered by CUSTCD/SECTORCD rules
-      7. Sort ODRAFT1 BY BRANCH FISSPURP ACCTNO
-      8. Sort ODRAFT2 BY BRANCH SECTORCD ACCTNO
-    Returns: rdate, odraft1 (polars df), odraft2 (polars df)
+    Shared BY-group report engine, mirrors both DATA _NULL_ steps:
+      - BY BRANCH FISSPURP ACCTNO (minor_col='FISSPURP', label='FISS PURPOSE')
+      - BY BRANCH SECTORCD ACCTNO (minor_col='SECTORCD', label='SECTOR')
     """
-    wk, rdate, reptmon = get_report_vars(reptdate_parquet)
-    loan_parquet = f"{loan_parquet_prefix}{reptmon}{wk}.parquet"
+    n = len(records)
+    pagecnt = 0
+    linecnt = 0
+    brchamt = 0.0
+    bnmamt = 0.0
 
-    con = duckdb.connect()
+    for i, row in enumerate(records):
+        branch = row.get("BRANCH")
+        is_first_branch = (i == 0) or (records[i - 1]["BRANCH"] != branch)
+        is_first_minor = is_first_branch or (records[i - 1][minor_col] != row.get(minor_col))
+        is_last_minor = (i == n - 1) or (records[i + 1]["BRANCH"] != branch) or \
+            (records[i + 1][minor_col] != row.get(minor_col))
+        is_last_branch = (i == n - 1) or (records[i + 1]["BRANCH"] != branch)
 
-    # Load LOAN (KEEP=ACCTNO SECTORCD FISSPURP) sorted BY ACCTNO
-    loan_df = con.execute(f"""
-        SELECT acctno, sectorcd, fisspurp
-        FROM read_parquet('{loan_parquet}')
-        ORDER BY acctno
+        if is_first_branch:
+            pagecnt = 0
+            brchamt = 0.0
+            pagecnt = _write_newpage(fh, branch, pagecnt, True, header_builder, bank_title)
+            linecnt = 13
+
+        if is_first_minor:
+            bnmamt = 0.0
+
+        balance = row.get("BALANCE") or 0.0
+        brchamt += balance
+        bnmamt += balance
+
+        _write_detail(fh, row)
+        linecnt += 3
+
+        if linecnt > 55:
+            pagecnt = _write_newpage(fh, branch, pagecnt, False, header_builder, bank_title)
+            linecnt = 13
+
+        if is_last_minor:
+            _write_subtotal(fh, label, row.get(minor_col), bnmamt)
+            linecnt += 4
+
+        if linecnt > 55:
+            pagecnt = _write_newpage(fh, branch, pagecnt, False, header_builder, bank_title)
+            linecnt = 13
+
+        if is_last_branch:
+            _write_grandtotal(fh, brchamt)
+            # NOTE: original SAS does not increment LINECNT after the grand
+            # total block; preserved as-is.
+
+
+def _write_odld_line(fh, row: dict) -> None:
+    buf = _line(80)
+    _place(buf, 1, _num(row.get("BRANCH"), 3))
+    _place(buf, 4, _num(row.get("ACCTNO"), 10))
+    _place(buf, 14, _comma(row.get("APPRLIMT"), 15, 2))
+    _place(buf, 31, _comma(row.get("BALANCE"), 15, 2))
+    _write(fh, buf)
+
+
+# ============================================================================
+# BANK CONFIGURATION
+# ============================================================================
+@dataclass(frozen=True)
+class BankConfig:
+    bank_code: str
+    input_dir: Path
+    cache_dir: Path
+    deposit_prefix: str
+    loan_prefix: str
+    bank_title: str
+    output_rps_name: str
+    output_text_name: str
+
+
+BANKS = [
+    BankConfig(
+        bank_code="PBB",
+        input_dir=INPUT_DIR_PBB,
+        cache_dir=CACHE_DIR_PBB,
+        deposit_prefix="dp_ca",
+        loan_prefix="ln_ln",
+        bank_title="P U B L I C   B A N K   B E R H A D",
+        output_rps_name="ODLIST_RPS.txt",
+        output_text_name="ODLIST_TEXT.txt",
+    ),
+    BankConfig(
+        bank_code="PIBB",
+        input_dir=INPUT_DIR_PIBB,
+        cache_dir=CACHE_DIR_PIBB,
+        deposit_prefix="idp_ca",
+        loan_prefix="idp_ln",
+        bank_title="P U B L I C   I S L A M I C  B A N K   B E R H A D",
+        output_rps_name="ODLISTI_RPS.txt",
+        output_text_name="ODLISTI_TEXT.txt",
+    ),
+]
+
+
+# ============================================================================
+# MAIN PROCESSING PER BANK
+# ============================================================================
+def process_bank(cfg: BankConfig) -> None:
+    print(f"\n=== Processing {cfg.bank_code} ===")
+    print(f"  Input dir : {cfg.input_dir}")
+
+    loan_path = get_latest_file(cfg.input_dir, prefix=cfg.loan_prefix)
+    deposit_path = get_latest_file(cfg.input_dir, prefix=cfg.deposit_prefix)
+
+    loan_cache = cfg.cache_dir / f"{loan_path.stem}.parquet"
+    deposit_cache = cfg.cache_dir / f"{deposit_path.stem}.parquet"
+
+    if not _cache_is_fresh(loan_path, loan_cache):
+        sas_to_parquet(loan_path, loan_cache, f"{cfg.bank_code}_LOAN")
+    else:
+        print(f"  [{cfg.bank_code}_LOAN] Cache fresh - skipping conversion.")
+
+    if not _cache_is_fresh(deposit_path, deposit_cache):
+        sas_to_parquet(deposit_path, deposit_cache, f"{cfg.bank_code}_DEPOSIT")
+    else:
+        print(f"  [{cfg.bank_code}_DEPOSIT] Cache fresh - skipping conversion.")
+
+    con = duckdb.connect(database=":memory:")
+
+    # DATA ODRAFT; SET DEPOSIT.CURRENT; IF CURBAL<0 AND CUSTCODE NE 81;
+    # BALANCE = (-1)*CURBAL;
+    odraft = con.execute(f"""
+        SELECT
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            CAST(CUSTCODE AS INTEGER) AS CUSTCODE,
+            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
+            CAST(NAME     AS VARCHAR) AS NAME,
+            CAST(LIMIT1   AS DOUBLE)  AS LIMIT1,
+            CAST(LIMIT2   AS DOUBLE)  AS LIMIT2,
+            CAST(LIMIT3   AS DOUBLE)  AS LIMIT3,
+            CAST(LIMIT4   AS DOUBLE)  AS LIMIT4,
+            CAST(LIMIT5   AS DOUBLE)  AS LIMIT5,
+            CAST(RATE1    AS DOUBLE)  AS RATE1,
+            CAST(RATE2    AS DOUBLE)  AS RATE2,
+            CAST(RATE3    AS DOUBLE)  AS RATE3,
+            CAST(RATE4    AS DOUBLE)  AS RATE4,
+            CAST(RATE5    AS DOUBLE)  AS RATE5,
+            CAST(COL1     AS VARCHAR) AS COL1,
+            CAST(COL2     AS VARCHAR) AS COL2,
+            CAST(COL3     AS VARCHAR) AS COL3,
+            CAST(COL4     AS VARCHAR) AS COL4,
+            CAST(COL5     AS VARCHAR) AS COL5,
+            CAST(STATE    AS VARCHAR) AS STATE,
+            CAST(FLATRATE AS DOUBLE)  AS FLATRATE,
+            (-1) * CAST(CURBAL AS DOUBLE) AS BALANCE
+        FROM read_parquet('{deposit_cache}')
+        WHERE CAST(CURBAL AS DOUBLE) < 0
+          AND COALESCE(CAST(CUSTCODE AS INTEGER), -1) <> 81
     """).pl()
 
-    # Load CURRENT, filter CURBAL<0 AND CUSTCODE NE 81
-    current_df = con.execute(f"""
-        SELECT *
-        FROM read_parquet('{current_parquet}')
-        WHERE curbal < 0 AND custcode <> 81
-        ORDER BY acctno
+    # PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN(KEEP=ACCTNO SECTORCD FISSPURP);
+    # BY ACCTNO; -- sort is only needed here to prepare the merge key; the
+    # explicit join below achieves the same match-merge result, so the
+    # physical sort is not reproduced.
+    loan = con.execute(f"""
+        SELECT
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(SECTORCD AS VARCHAR) AS SECTORCD,
+            CAST(FISSPURP AS VARCHAR) AS FISSPURP
+        FROM read_parquet('{loan_cache}')
     """).pl()
 
     con.close()
+    gc.collect()
 
-    # BALANCE = (-1)*CURBAL
-    odraft = current_df.with_columns(
-        (pl.col('curbal') * -1).alias('balance')
-    )
+    # DATA ODRAFT1; MERGE ODRAFT(IN=A) LOAN(IN=B); BY ACCTNO; IF A AND B;
+    odraft1 = odraft.join(loan, on="ACCTNO", how="inner")
 
-    # MERGE ODRAFT + LOAN BY ACCTNO, keep IF A AND B (inner join)
-    odraft1 = odraft.join(loan_df, on='acctno', how='inner', suffix='_loan')
-
-    # Resolve overlapping columns from loan side (sectorcd, fisspurp)
-    for col in ['sectorcd', 'fisspurp']:
-        loan_col = f"{col}_loan"
-        if loan_col in odraft1.columns:
-            odraft1 = odraft1.with_columns(
-                pl.when(pl.col(loan_col).is_not_null())
-                  .then(pl.col(loan_col))
-                  .otherwise(pl.col(col))
-                  .alias(col)
-            ).drop(loan_col)
-
-    # ODRAFT2: CUSTCD NOT IN ('77','78','95','96') AND (SECTORCD starts '5' OR SECTORCD='8310')
+    # DATA ODRAFT2; SET ODRAFT1;
+    # IF CUSTCD NOT IN ('77','78','95','96') AND
+    #   (SUBSTR(SECTORCD,1,1)='5' OR SECTORCD='8310') THEN OUTPUT;
+    #
+    # NOTE: CUSTCD is never present in ODRAFT1 - the LOAN dataset was kept
+    # down to ACCTNO/SECTORCD/FISSPURP only, and ODRAFT (from DEPOSIT) has
+    # no CUSTCD field either (it has CUSTCODE, a different field). In the
+    # original SAS, referencing an undefined variable makes it missing for
+    # every observation, and a missing value is never IN a list of
+    # non-missing values, so "CUSTCD NOT IN (...)" is always TRUE and adds
+    # no real filtering. Only the SECTORCD condition actually filters rows,
+    # which is what is implemented below (preserves true program behaviour).
     odraft2 = odraft1.filter(
-        (~pl.col('custcd').cast(pl.Utf8).is_in(['77', '78', '95', '96'])) &
-        (
-            pl.col('sectorcd').cast(pl.Utf8).str.starts_with('5') |
-            (pl.col('sectorcd').cast(pl.Utf8) == '8310')
+        (pl.col("SECTORCD").str.slice(0, 1) == "5") | (pl.col("SECTORCD") == "8310")
+    )
+
+    # PROC SORT DATA=ODRAFT1; BY BRANCH FISSPURP ACCTNO;
+    odraft1_sorted = odraft1.sort(["BRANCH", "FISSPURP", "ACCTNO"])
+    # PROC SORT DATA=ODRAFT2; BY BRANCH SECTORCD ACCTNO;
+    odraft2_sorted = odraft2.sort(["BRANCH", "SECTORCD", "ACCTNO"])
+
+    del odraft, loan, odraft1, odraft2
+    gc.collect()
+
+    output_text_path = OUTPUT_DIR / cfg.output_text_name
+    output_rps_path = OUTPUT_DIR / cfg.output_rps_name
+
+    # DATA ODLD; SET ODRAFT1; FILE ODLSD; PUT ...
+    print(f"  Writing {output_text_path.name} ...")
+    with open(output_text_path, "w", encoding="latin1") as fh:
+        for row in odraft1_sorted.iter_rows(named=True):
+            _write_odld_line(fh, row)
+
+    # DATA _NULL_; SET ODRAFT1; BY BRANCH FISSPURP ACCTNO; FILE ODLST; ...
+    # DATA _NULL_; SET ODRAFT2; BY BRANCH SECTORCD ACCTNO; FILE ODLST MOD; ...
+    print(f"  Writing {output_rps_path.name} ...")
+    with open(output_rps_path, "w", encoding="latin1") as fh:
+        _process_group_report(
+            fh, odraft1_sorted.to_dicts(), "FISSPURP", "FISS PURPOSE",
+            _header_lines_fisspurp, cfg.bank_title,
         )
-    )
-
-    # Sort ODRAFT1 BY BRANCH FISSPURP ACCTNO
-    odraft1_sorted = odraft1.sort(['branch', 'fisspurp', 'acctno'])
-
-    # Sort ODRAFT2 BY BRANCH SECTORCD ACCTNO
-    odraft2_sorted = odraft2.sort(['branch', 'sectorcd', 'acctno'])
-
-    return rdate, odraft1_sorted, odraft2_sorted
-
-# =============================================================================
-# WRITE TEXT DATA FILE (ODLSD / ODLSDI) — 80-char fixed
-# =============================================================================
-
-def write_odlsd(odraft1: pl.DataFrame, output_path: str):
-    """
-    Write text data file.
-    PUT @01 BRANCH 3. @04 ACCTNO 10. @14 APPRLIMT COMMA15.2 @31 BALANCE COMMA15.2
-    Fixed record length 80.
-    """
-    lines = []
-    for row in odraft1.iter_rows(named=True):
-        line = make_line(TEXT_WIDTH)
-
-        branch   = str(int(row['branch'])).rjust(3)   if row['branch']   is not None else '   '
-        acctno   = str(int(row['acctno'])).rjust(10)  if row['acctno']   is not None else ' ' * 10
-        apprlimt = fmt_comma15_2(row.get('apprlimt'))
-        balance  = fmt_comma15_2(row['balance'])
-
-        place_at(line, 1,  branch)
-        place_at(line, 4,  acctno)
-        place_at(line, 14, apprlimt)
-        place_at(line, 31, balance)
-
-        lines.append(finalize_line(line, TEXT_WIDTH))
-
-    with open(output_path, 'w', encoding='ascii', errors='replace') as f:
-        for ln in lines:
-            f.write(ln + '\n')
-
-# =============================================================================
-# PAGE HEADER WRITERS
-# =============================================================================
-
-def write_newpage_fiss(f, pagecnt, branch, rdate, is_first_branch, bank_title, width=LINE_WIDTH):
-    """Write new page header for FISS Purpose OD report. Returns updated pagecnt."""
-    pagecnt += 1
-
-    # E255 — page eject control
-    line = make_line(width)
-    place_at(line, 1, 'E255')
-    f.write(finalize_line(line, width) + '\n')
-
-    if is_first_branch:
-        brno = make_brno(branch)
-        line = make_line(width)
-        place_at(line, 1,   'P000PBBEDPPBBEDP')
-        place_at(line, 133, brno)
-        f.write(finalize_line(line, width) + '\n')
-
-    # P000 report title line
-    line = make_line(width)
-    place_at(line, 1,   'P000REPORT NO :  ODLIST')
-    place_at(line, 44,  bank_title)
-    place_at(line, 122, f'PAGE NO : {pagecnt}')
-    f.write(finalize_line(line, width) + '\n')
-
-    # P001 branch / report description line
-    branch_z3 = fmt_z3(branch)
-    line = make_line(width)
-    place_at(line, 1,  'P001BRANCH    :  ')
-    place_at(line, 22, branch_z3)
-    place_at(line, 32, f'OD LISTING FOR FISS PURPOSE CODE (FOR ALL CUSTCODES) {rdate}')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Two blank P001
-    write_blank_p001(f, width)
-    write_blank_p001(f, width)
-
-    # Column header row 1
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 62,  'APPROVED')
-    place_at(line, 76,  'OUTSTANDING')
-    place_at(line, 89,  'FISS PURPOSE')
-    place_at(line, 103, 'SECTOR')
-    place_at(line, 111, 'CUST')
-    place_at(line, 118, 'STATE')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Column header row 2
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 10,  'A/C NO.')
-    place_at(line, 19,  'NAME OF CUSTOMER')
-    place_at(line, 65,  'LIMIT')
-    place_at(line, 80,  'BALANCE')
-    place_at(line, 95,  'CODE')
-    place_at(line, 105, 'CODE')
-    place_at(line, 111, 'CODE')
-    place_at(line, 119, 'CODE')
-    place_at(line, 124, 'FLAT RATE')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Column header row 3 (LIMIT1..LIMIT5, RATE1..RATE5)
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 14,  'LIMIT1')
-    place_at(line, 31,  'LIMIT2')
-    place_at(line, 49,  'LIMIT3')
-    place_at(line, 67,  'LIMIT4')
-    place_at(line, 85,  'LIMIT5')
-    place_at(line, 95,  'RATE1')
-    place_at(line, 102, 'RATE2')
-    place_at(line, 109, 'RATE3')
-    place_at(line, 116, 'RATE4')
-    place_at(line, 123, 'RATE5')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Column header row 4 (COLL1..COLL5)
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 95,  'COLL1')
-    place_at(line, 102, 'COLL2')
-    place_at(line, 109, 'COLL3')
-    place_at(line, 116, 'COLL4')
-    place_at(line, 123, 'COLL5')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Separator line
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 5,   '-' * 30)
-    place_at(line, 35,  '-' * 30)
-    place_at(line, 65,  '-' * 30)
-    place_at(line, 95,  '-' * 30)
-    place_at(line, 125, '-' * 10)
-    f.write(finalize_line(line, width) + '\n')
-
-    # Two blank P001
-    write_blank_p001(f, width)
-    write_blank_p001(f, width)
-
-    return pagecnt
-
-
-def write_newpage_sector(f, pagecnt, branch, rdate, is_first_branch, bank_title, width=LINE_WIDTH):
-    """Write new page header for Sector/Construction OD report. Returns updated pagecnt."""
-    pagecnt += 1
-
-    line = make_line(width)
-    place_at(line, 1, 'E255')
-    f.write(finalize_line(line, width) + '\n')
-
-    if is_first_branch:
-        brno = make_brno(branch)
-        line = make_line(width)
-        place_at(line, 1,   'P000PBBEDPPBBEDP')
-        place_at(line, 133, brno)
-        f.write(finalize_line(line, width) + '\n')
-
-    # P000 report title line
-    line = make_line(width)
-    place_at(line, 1,   'P000REPORT NO :  ODLIST')
-    place_at(line, 44,  bank_title)
-    place_at(line, 122, f'PAGE NO : {pagecnt}')
-    f.write(finalize_line(line, width) + '\n')
-
-    # P001 branch / report description line 1
-    branch_z3 = fmt_z3(branch)
-    line = make_line(width)
-    place_at(line, 1,  'P001BRANCH    :  ')
-    place_at(line, 22, branch_z3)
-    place_at(line, 36, 'OD LISTING BY CONSTRUCTION (SECTCODE 5001-5999) AND')
-    f.write(finalize_line(line, width) + '\n')
-
-    # P001 report description line 2 (PUT @31 "REAL ESTATE...")
-    line = make_line(width)
-    place_at(line, 31, f'REAL ESTATE (SECTCODE 8310) FOR NON-INDI. CUSTOMER FOR {rdate}')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Two blank P001
-    write_blank_p001(f, width)
-    write_blank_p001(f, width)
-
-    # Column header row 1
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 62,  'APPROVED')
-    place_at(line, 76,  'OUTSTANDING')
-    place_at(line, 89,  'FISS PURPOSE')
-    place_at(line, 103, 'SECTOR')
-    place_at(line, 111, 'CUST')
-    place_at(line, 118, 'STATE')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Column header row 2
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 10,  'A/C NO.')
-    place_at(line, 19,  'NAME OF CUSTOMER')
-    place_at(line, 65,  'LIMIT')
-    place_at(line, 80,  'BALANCE')
-    place_at(line, 95,  'CODE')
-    place_at(line, 105, 'CODE')
-    place_at(line, 111, 'CODE')
-    place_at(line, 119, 'CODE')
-    place_at(line, 124, 'FLAT RATE')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Column header row 3
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 14,  'LIMIT1')
-    place_at(line, 31,  'LIMIT2')
-    place_at(line, 49,  'LIMIT3')
-    place_at(line, 67,  'LIMIT4')
-    place_at(line, 85,  'LIMIT5')
-    place_at(line, 95,  'RATE1')
-    place_at(line, 102, 'RATE2')
-    place_at(line, 109, 'RATE3')
-    place_at(line, 116, 'RATE4')
-    place_at(line, 123, 'RATE5')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Column header row 4
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 95,  'COLL1')
-    place_at(line, 102, 'COLL2')
-    place_at(line, 109, 'COLL3')
-    place_at(line, 116, 'COLL4')
-    place_at(line, 123, 'COLL5')
-    f.write(finalize_line(line, width) + '\n')
-
-    # Separator line
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 5,   '-' * 30)
-    place_at(line, 35,  '-' * 30)
-    place_at(line, 65,  '-' * 30)
-    place_at(line, 95,  '-' * 30)
-    place_at(line, 125, '-' * 10)
-    f.write(finalize_line(line, width) + '\n')
-
-    # Two blank P001
-    write_blank_p001(f, width)
-    write_blank_p001(f, width)
-
-    return pagecnt
-
-# =============================================================================
-# DATA ROW WRITER (3 lines per record)
-# =============================================================================
-
-def write_data_rows(f, row, width=LINE_WIDTH):
-    """
-    Write 3 PUT lines per data record (matching SAS output).
-    Line 1: ACCTNO, NAME, APPRLIMT, BALANCE, FISSPURP, SECTORCD, CUSTCODE, STATE, FLATRATE
-    Line 2: LIMIT1..LIMIT5, RATE1..RATE5
-    Line 3: COL1..COL5
-    """
-    # --- Line 1 ---
-    line = make_line(width)
-    place_at(line, 1, 'P001')
-
-    acctno   = str(int(row['acctno'])).rjust(12) if row['acctno'] is not None else ' ' * 12
-    name     = str(row['name'])[:33]             if row['name']   is not None else ''
-    apprlimt = fmt_comma18_2(row.get('apprlimt'))
-    balance  = fmt_comma15_2(row['balance'])
-    fisspurp = str(row['fisspurp'])[:4].rjust(4) if row['fisspurp']  is not None else '    '
-    sectorcd = str(row['sectorcd'])[:4].rjust(4) if row['sectorcd']  is not None else '    '
-    custcode = str(row['custcode']).rjust(4)      if row.get('custcode') is not None else '    '
-    state    = str(row['state'])[:6].rjust(6)    if row['state']    is not None else '      '
-    flatrate = fmt_comma8_2(row.get('flatrate'))
-
-    place_at(line, 5,   acctno)
-    place_at(line, 19,  name)
-    place_at(line, 52,  apprlimt)
-    place_at(line, 72,  balance)
-    place_at(line, 95,  fisspurp)
-    place_at(line, 105, sectorcd)
-    place_at(line, 111, custcode)
-    place_at(line, 117, state)
-    place_at(line, 125, flatrate)
-    f.write(finalize_line(line, width) + '\n')
-
-    # --- Line 2 ---
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 5,   fmt_comma15_2(row.get('limit1')))
-    place_at(line, 22,  fmt_comma15_2(row.get('limit2')))
-    place_at(line, 40,  fmt_comma15_2(row.get('limit3')))
-    place_at(line, 58,  fmt_comma15_2(row.get('limit4')))
-    place_at(line, 76,  fmt_comma15_2(row.get('limit5')))
-    place_at(line, 94,  fmt_comma6_2(row.get('rate1')))
-    place_at(line, 101, fmt_comma6_2(row.get('rate2')))
-    place_at(line, 108, fmt_comma6_2(row.get('rate3')))
-    place_at(line, 115, fmt_comma6_2(row.get('rate4')))
-    place_at(line, 122, fmt_comma6_2(row.get('rate5')))
-    f.write(finalize_line(line, width) + '\n')
-
-    # --- Line 3 ---
-    line = make_line(width)
-    place_at(line, 1,   'P001')
-    place_at(line, 95,  str(row['col1']) if row.get('col1') is not None else '')
-    place_at(line, 102, str(row['col2']) if row.get('col2') is not None else '')
-    place_at(line, 109, str(row['col3']) if row.get('col3') is not None else '')
-    place_at(line, 116, str(row['col4']) if row.get('col4') is not None else '')
-    place_at(line, 123, str(row['col5']) if row.get('col5') is not None else '')
-    f.write(finalize_line(line, width) + '\n')
-
-# =============================================================================
-# SUBTOTAL AND GRAND TOTAL WRITERS
-# =============================================================================
-
-def write_subtotal_fiss(f, fisspurp, bnmamt, width=LINE_WIDTH):
-    """Write 4 subtotal lines for FISS Purpose group."""
-    line = make_line(width)
-    place_at(line, 1,  'P001')
-    place_at(line, 72, '---------------')
-    f.write(finalize_line(line, width) + '\n')
-
-    line = make_line(width)
-    place_at(line, 1,  'P001')
-    fisp_str = str(fisspurp) if fisspurp is not None else ''
-    place_at(line, 37, f'SUBTOTAL FOR FISS PURPOSE {fisp_str}')
-    place_at(line, 72, fmt_comma15_2(bnmamt))
-    f.write(finalize_line(line, width) + '\n')
-
-    line = make_line(width)
-    place_at(line, 1,  'P001')
-    place_at(line, 72, '===============')
-    f.write(finalize_line(line, width) + '\n')
-
-    write_blank_p001(f, width)
-
-
-def write_subtotal_sector(f, sectorcd, bnmamt, width=LINE_WIDTH):
-    """Write 4 subtotal lines for Sector Code group."""
-    line = make_line(width)
-    place_at(line, 1,  'P001')
-    place_at(line, 72, '---------------')
-    f.write(finalize_line(line, width) + '\n')
-
-    line = make_line(width)
-    place_at(line, 1,  'P001')
-    sect_str = str(sectorcd) if sectorcd is not None else ''
-    place_at(line, 37, f'SUBTOTAL FOR SECTOR {sect_str}')
-    place_at(line, 72, fmt_comma15_2(bnmamt))
-    f.write(finalize_line(line, width) + '\n')
-
-    line = make_line(width)
-    place_at(line, 1,  'P001')
-    place_at(line, 72, '===============')
-    f.write(finalize_line(line, width) + '\n')
-
-    write_blank_p001(f, width)
-
-
-def write_grand_total(f, brchamt, width=LINE_WIDTH):
-    """Write 4 grand total lines for branch."""
-    line = make_line(width)
-    place_at(line, 1,  'P001')
-    place_at(line, 72, '---------------')
-    f.write(finalize_line(line, width) + '\n')
-
-    line = make_line(width)
-    place_at(line, 1,  'P001')
-    place_at(line, 37, 'GRAND TOTAL ')
-    place_at(line, 72, fmt_comma15_2(brchamt))
-    f.write(finalize_line(line, width) + '\n')
-
-    line = make_line(width)
-    place_at(line, 1,  'P001')
-    place_at(line, 72, '===============')
-    f.write(finalize_line(line, width) + '\n')
-
-    write_blank_p001(f, width)
-
-# =============================================================================
-# WRITE RPS REPORT — FISS PURPOSE (ODRAFT1)
-# =============================================================================
-
-def write_odlst_fiss(odraft1: pl.DataFrame, rdate: str, output_path: str,
-                     bank_title: str, mode: str = 'w', width: int = LINE_WIDTH):
-    """
-    Write OD RPS report grouped by BRANCH / FISSPURP / ACCTNO.
-    Each record produces 3 output lines. Equivalent to the first DATA _NULL_ block.
-    """
-    rows = odraft1.to_dicts()
-    n = len(rows)
-
-    with open(output_path, mode, encoding='ascii', errors='replace') as f:
-        linecnt       = 0
-        pagecnt       = 0
-        brchamt       = 0.0
-        bnmamt        = 0.0
-        prev_branch   = None
-        prev_fisspurp = None
-
-        for idx, row in enumerate(rows):
-            branch   = row['branch']
-            fisspurp = row['fisspurp']
-            balance  = row['balance'] if row['balance'] is not None else 0.0
-
-            is_first_branch   = (branch != prev_branch)
-            is_first_fisspurp = is_first_branch or (fisspurp != prev_fisspurp)
-
-            is_last_branch   = (idx == n - 1) or (rows[idx + 1]['branch'] != branch)
-            is_last_fisspurp = (idx == n - 1) or \
-                               (rows[idx + 1]['fisspurp'] != fisspurp) or \
-                               (rows[idx + 1]['branch'] != branch)
-
-            if is_first_branch:
-                pagecnt = 0
-                brchamt = 0.0
-                pagecnt = write_newpage_fiss(f, pagecnt, branch, rdate,
-                                             True, bank_title, width)
-                linecnt = LINECNT_START
-
-            if is_first_fisspurp:
-                bnmamt = 0.0
-
-            brchamt += balance
-            bnmamt  += balance
-
-            write_data_rows(f, row, width)
-            linecnt += 3
-
-            if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_fiss(f, pagecnt, branch, rdate,
-                                             False, bank_title, width)
-                linecnt = LINECNT_START
-
-            if is_last_fisspurp:
-                write_subtotal_fiss(f, fisspurp, bnmamt, width)
-                linecnt += 4
-
-            if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_fiss(f, pagecnt, branch, rdate,
-                                             False, bank_title, width)
-                linecnt = LINECNT_START
-
-            if is_last_branch:
-                write_grand_total(f, brchamt, width)
-                # Note: SAS does not increment LINECNT after LAST.BRANCH grand total
-
-            prev_branch   = branch
-            prev_fisspurp = fisspurp
-
-# =============================================================================
-# WRITE RPS REPORT — SECTOR CODE (ODRAFT2)
-# =============================================================================
-
-def write_odlst_sector(odraft2: pl.DataFrame, rdate: str, output_path: str,
-                       bank_title: str, mode: str = 'a', width: int = LINE_WIDTH):
-    """
-    Write OD RPS report grouped by BRANCH / SECTORCD / ACCTNO.
-    Each record produces 3 output lines. Equivalent to the second DATA _NULL_ block (FILE ODLST MOD).
-    """
-    rows = odraft2.to_dicts()
-    n = len(rows)
-
-    with open(output_path, mode, encoding='ascii', errors='replace') as f:
-        linecnt        = 0
-        pagecnt        = 0
-        brchamt        = 0.0
-        bnmamt         = 0.0
-        prev_branch    = None
-        prev_sectorcd  = None
-
-        for idx, row in enumerate(rows):
-            branch   = row['branch']
-            sectorcd = row['sectorcd']
-            balance  = row['balance'] if row['balance'] is not None else 0.0
-
-            is_first_branch   = (branch != prev_branch)
-            is_first_sectorcd = is_first_branch or (sectorcd != prev_sectorcd)
-
-            is_last_branch   = (idx == n - 1) or (rows[idx + 1]['branch'] != branch)
-            is_last_sectorcd = (idx == n - 1) or \
-                               (rows[idx + 1]['sectorcd'] != sectorcd) or \
-                               (rows[idx + 1]['branch'] != branch)
-
-            if is_first_branch:
-                pagecnt = 0
-                brchamt = 0.0
-                pagecnt = write_newpage_sector(f, pagecnt, branch, rdate,
-                                               True, bank_title, width)
-                linecnt = LINECNT_START
-
-            if is_first_sectorcd:
-                bnmamt = 0.0
-
-            brchamt += balance
-            bnmamt  += balance
-
-            write_data_rows(f, row, width)
-            linecnt += 3
-
-            if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_sector(f, pagecnt, branch, rdate,
-                                               False, bank_title, width)
-                linecnt = LINECNT_START
-
-            if is_last_sectorcd:
-                write_subtotal_sector(f, sectorcd, bnmamt, width)
-                linecnt += 4
-
-            if linecnt > LINECNT_MAX:
-                pagecnt = write_newpage_sector(f, pagecnt, branch, rdate,
-                                               False, bank_title, width)
-                linecnt = LINECNT_START
-
-            if is_last_branch:
-                write_grand_total(f, brchamt, width)
-                # Note: SAS does not increment LINECNT after LAST.BRANCH grand total
-
-            prev_branch   = branch
-            prev_sectorcd = sectorcd
-
-# =============================================================================
-# MAIN: PBB SECTION
-# =============================================================================
-
-def run_pbb():
-    """
-    Process PBB (Public Bank Berhad) OD Listing.
-    Equivalent to the first EIBMODLT SAS execution block.
-    """
-    print("Processing PBB OD Listing...")
-
-    rdate, odraft1, odraft2 = prepare_data(
-        BANK_REPTDATE_PARQUET,
-        BANK_LOAN_PARQUET_PREFIX,
-        BANK_CURRENT_PARQUET
-    )
-
-    # Write ODLSD text data file (DATA ODLD block)
-    write_odlsd(odraft1, BANK_ODLSD_TXT)
-    print(f"  Written: {BANK_ODLSD_TXT}")
-
-    # Write ODLST RPS report - FISS Purpose (FILE ODLST, new)
-    bank_title = 'P U B L I C   B A N K   B E R H A D'
-    write_odlst_fiss(odraft1, rdate, BANK_ODLST_TXT, bank_title, mode='w')
-    print(f"  Written FISS section: {BANK_ODLST_TXT}")
-
-    # Write ODLST RPS report - Sector Code (FILE ODLST MOD, append)
-    write_odlst_sector(odraft2, rdate, BANK_ODLST_TXT, bank_title, mode='a')
-    print(f"  Appended Sector section: {BANK_ODLST_TXT}")
-
-    # //STEP01 EXEC PGM=IEFBR14 - Delete RBP2.B033.ODLISTR*.RPS datasets (no-op in Python)
-    # //STEP02 EXEC PGM=SPLIB136 - Insert control characters for RPS, split by region (no-op in Python)
-    # //INFIL1 DD DSN=RMDS.OPC.BANKCODE(KLREGION) - KL Region bank codes (no-op in Python)
-    # //INFIL2 DD DSN=RMDS.OPC.BANKCODE(BGREGION) - BG Region bank codes (no-op in Python)
-    # //INFIL3 DD DSN=RMDS.OPC.BANKCODE(JBREGION) - JB Region bank codes (no-op in Python)
-    # //INFIL4 DD DSN=RMDS.OPC.BANKCODE(SBREGION) - SB Region bank codes (no-op in Python)
-    # //INFIL5 DD DSN=RMDS.OPC.BANKCODE(PPREGION) - PP Region bank codes (no-op in Python)
-    # //INFIL6 DD DSN=RMDS.OPC.BANKCODE(TTREGION) - TT Region bank codes (no-op in Python)
-
-    print("PBB OD Listing complete.")
-
-# =============================================================================
-# MAIN: PIBB SECTION
-# =============================================================================
-
-def run_pibb():
-    """
-    Process PIBB (Public Islamic Bank Berhad) OD Listing.
-    Equivalent to the EIBMODLI SAS execution block (FOR PIBB).
-    """
-    print("Processing PIBB OD Listing...")
-
-    rdate, odraft1, odraft2 = prepare_data(
-        PIBB_REPTDATE_PARQUET,
-        PIBB_LOAN_PARQUET_PREFIX,
-        PIBB_CURRENT_PARQUET
-    )
-
-    # Write ODLSDI text data file (DATA ODLD block)
-    write_odlsd(odraft1, PIBB_ODLSDI_TXT)
-    print(f"  Written: {PIBB_ODLSDI_TXT}")
-
-    # Write ODLSTI RPS report - FISS Purpose (FILE ODLSTI, new)
-    pibb_title = 'P U B L I C   I S L A M I C  B A N K   B E R H A D'
-    write_odlst_fiss(odraft1, rdate, PIBB_ODLSTI_TXT, pibb_title, mode='w')
-    print(f"  Written FISS section: {PIBB_ODLSTI_TXT}")
-
-    # Write ODLSTI RPS report - Sector Code (FILE ODLSTI MOD, append)
-    write_odlst_sector(odraft2, rdate, PIBB_ODLSTI_TXT, pibb_title, mode='a')
-    print(f"  Appended Sector section: {PIBB_ODLSTI_TXT}")
-
-    # //STEP03 EXEC PGM=IEFBR14 - Delete RBP2.B051.ODLISTR*.RPS datasets (no-op in Python)
-    # //STEP04 EXEC PGM=SPLIB136 - Insert control characters for RPS, split by region (no-op in Python)
-    # //INFIL1 DD DSN=RMDS.OPC.BANKCODE(KLREGION) - KL Region bank codes (no-op in Python)
-    # //INFIL2 DD DSN=RMDS.OPC.BANKCODE(BGREGION) - BG Region bank codes (no-op in Python)
-    # //INFIL3 DD DSN=RMDS.OPC.BANKCODE(JBREGION) - JB Region bank codes (no-op in Python)
-    # //INFIL4 DD DSN=RMDS.OPC.BANKCODE(SBREGION) - SB Region bank codes (no-op in Python)
-    # //INFIL5 DD DSN=RMDS.OPC.BANKCODE(PPREGION) - PP Region bank codes (no-op in Python)
-    # //INFIL6 DD DSN=RMDS.OPC.BANKCODE(TTREGION) - TT Region bank codes (no-op in Python)
-
-    print("PIBB OD Listing complete.")
-
-# =============================================================================
-# ENTRY POINT
-# =============================================================================
-
-if __name__ == '__main__':
-    run_pbb()
-    run_pibb()
+        _process_group_report(
+            fh, odraft2_sorted.to_dicts(), "SECTORCD", "SECTOR",
+            _header_lines_sector, cfg.bank_title,
+        )
+
+    print(f"  {cfg.bank_code} results:")
+    print(f"    ODRAFT1 rows (all FISS purpose): {len(odraft1_sorted):,}")
+    print(f"    ODRAFT2 rows (construction/real estate, non-indi): {len(odraft2_sorted):,}")
+    print(f"    Output text file : {output_text_path}")
+    print(f"    Output RPS file  : {output_rps_path}")
+
+
+def main() -> None:
+    for cfg in BANKS:
+        process_bank(cfg)
+
+    # --------------------------------------------------------------------
+    # PLACEHOLDER: STEP02/STEP04 PGM=SPLIB136 (mainframe utility, source
+    # not provided). This step inserts real ASA control characters into
+    # the RPS report and splits it by branch region using
+    # RMDS.OPC.BANKCODE(KLREGION/BGREGION/JBREGION/SBREGION/PPREGION/
+    # TTREGION) reference members.
+    # --------------------------------------------------------------------
+    # import subprocess
+    # subprocess.run(["splib136", str(output_rps_path), ...])
+
+    print("\nEIBMODLT complete.")
+
+
+if __name__ == "__main__":
+    main()
