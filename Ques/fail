@@ -1,6 +1,20 @@
-import duckdb
-acct_deposit = duckdb.sql(f"SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS a FROM read_parquet('{deposit_cache}')").pl()
-acct_lookup  = duckdb.sql(f"SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS a FROM read_parquet('{stg_dp_cache}')").pl()
-print("Deposit accounts:", len(acct_deposit))
-print("Lookup accounts :", len(acct_lookup))
-print("Overlap         :", len(acct_deposit.join(acct_lookup, on="a", how="inner")))
+Raw DEPTYPE unique values (repr to reveal whitespace):
+DEPTYPE
+'D'    24371
+'S'    17983
+'C'    12412
+'N'     7240
+'T'        4
+'R'        2
+Name: count, dtype: int64
+
+ACCTNO dtype: float64
+NAME dtype: object
+
+Rows matching DEPTYPE after strip: 31,611 / 62,012
+Rows matching DEPTYPE without strip: 31,611 / 62,012
+
+
+Deposit accounts: 154029
+Lookup accounts : 31583
+Overlap         : 970
