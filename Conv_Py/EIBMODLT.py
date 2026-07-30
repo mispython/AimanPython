@@ -9,6 +9,14 @@ Purpose : OD (Overdraft) Listing Report
               EIBMODLT step -> PBB  (Public Bank Berhad)
               EIBMODLI step -> PIBB (Public Islamic Bank Berhad)
 
+Dependencies:
+    REPTDATE.py   -> get_reptdate_values()  (report date / week derivation)
+    input_date.py -> get_latest_file()      (latest LOAN / DEPOSIT file by date)
+    output_date.py-> NOT USED. Original DD names (SAP.BANK.ODLIST.RPS/.TEXT,
+                     SAP.PIBB.ODLIST.RPS/.TEXT) carry no date component in
+                     the dataset name, so static output filenames are used
+                     instead, per project convention.
+
 NOTE ON MAINFRAME-ONLY STEPS (no SAS source available to convert):
     - The JOB's leading IEFBR14 DELETE steps merely purge old cataloged
       datasets before (re)creation. Python overwrites output files directly,
@@ -20,7 +28,6 @@ NOTE ON MAINFRAME-ONLY STEPS (no SAS source available to convert):
       as a commented placeholder below.
 """
 
-import os
 import gc
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +45,6 @@ from input_date import get_latest_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-# BASE_DIR = ("/dwh")
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # Each of the 4 source files (PBB deposit, PBB loan, PIBB deposit, PIBB loan)
@@ -49,26 +55,15 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 #   LOAN    DD DSN=SAP.PIBB.SASDATA   -> PIBB loan
 # so each file gets its own independent input/cache directory rather than
 # sharing a folder with any other file.
-# INPUT_DIR_PBB_DEPOSIT   = BASE_DIR / "dp_ca"
-# INPUT_DIR_PBB_LOAN      = BASE_DIR / "ln_ln"
-# INPUT_DIR_PIBB_DEPOSIT  = BASE_DIR / "idp_ca"
-# INPUT_DIR_PIBB_LOAN     = BASE_DIR / "iln_ln"
+INPUT_DIR_PBB_DEPOSIT   = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB_DEPOSIT"
+INPUT_DIR_PBB_LOAN      = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB_LOAN"
+INPUT_DIR_PIBB_DEPOSIT  = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB_DEPOSIT"
+INPUT_DIR_PIBB_LOAN     = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB_LOAN"
 
-INPUT_DIR_PBB_DEPOSIT   = BASE_DIR / "input" / "prod" / "EIBMODLT"
-INPUT_DIR_PBB_LOAN      = BASE_DIR / "input" / "prod" / "EIBMODLT"
-INPUT_DIR_PIBB_DEPOSIT  = BASE_DIR / "input" / "prod" / "EIBMODLT"
-INPUT_DIR_PIBB_LOAN     = BASE_DIR / "input" / "prod" / "EIBMODLT"
-
-# CACHE_DIR_PBB_DEPOSIT   = INPUT_DIR_PBB_DEPOSIT
-# CACHE_DIR_PBB_LOAN      = INPUT_DIR_PBB_LOAN
-# CACHE_DIR_PIBB_DEPOSIT  = INPUT_DIR_PIBB_DEPOSIT
-# CACHE_DIR_PIBB_LOAN     = INPUT_DIR_PIBB_LOAN
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMODLT"
-CACHE_DIR_PBB_DEPOSIT   = CACHE_DIR
-CACHE_DIR_PBB_LOAN      = CACHE_DIR
-CACHE_DIR_PIBB_DEPOSIT  = CACHE_DIR
-CACHE_DIR_PIBB_LOAN     = CACHE_DIR
+CACHE_DIR_PBB_DEPOSIT   = INPUT_DIR_PBB_DEPOSIT
+CACHE_DIR_PBB_LOAN      = INPUT_DIR_PBB_LOAN
+CACHE_DIR_PIBB_DEPOSIT  = INPUT_DIR_PIBB_DEPOSIT
+CACHE_DIR_PIBB_LOAN     = INPUT_DIR_PIBB_LOAN
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLT"
 
@@ -79,12 +74,7 @@ for _d in (
     _d.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ============================================================================
-# REPORT PAGE CONFIGURATION
-# ============================================================================
-PAGE_SIZE    = 60   # lines per page (default, not otherwise specified)
-ROW_LIMIT    = int(os.environ.get("ROW_LIMIT", 0))
-CHUNK_ROWS   = 500_000
+CHUNK_ROWS = 500_000
 
 # ============================================================================
 # STEP: REPORT DATE  (no reptdate.parquet — derive from REPTDATE.py)
@@ -128,21 +118,14 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
 
 
 def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    """Convert a .sas7bdat to Parquet in streaming chunks (schema-locked)."""
+    """Convert a .sas7bdat file to Parquet in streaming chunks."""
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     writer = None
     schema = None
     total = 0
-    rows_read = 0
 
     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
     for chunk in reader:
-        if ROW_LIMIT and rows_read >= ROW_LIMIT:
-            break
-        if ROW_LIMIT:
-            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
-        rows_read += len(chunk)
-
         table = pa.Table.from_pandas(chunk, preserve_index=False)
 
         if schema is None:
@@ -157,7 +140,7 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
                         col = col.cast(field.type, safe=False)
                     except Exception as e:
                         print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
-                              f"{col.type}->{field.type}: {e} - nulling")
+                              f"from {col.type} to {field.type}: {e} - filling nulls")
                         col = pa.nulls(len(col), type=field.type)
                 cast_arrays.append(col)
             table = pa.Table.from_arrays(cast_arrays, schema=schema)
@@ -532,8 +515,8 @@ BANKS = [
         loan_dir=INPUT_DIR_PBB_LOAN,
         deposit_cache_dir=CACHE_DIR_PBB_DEPOSIT,
         loan_cache_dir=CACHE_DIR_PBB_LOAN,
-        deposit_prefix="ca",
-        loan_prefix="ln",
+        deposit_prefix="dp_ca",
+        loan_prefix="ln_ln",
         bank_title="P U B L I C   B A N K   B E R H A D",
         output_rps_name="ODLIST_RPS.txt",
         output_text_name="ODLIST_TEXT.txt",
@@ -544,8 +527,8 @@ BANKS = [
         loan_dir=INPUT_DIR_PIBB_LOAN,
         deposit_cache_dir=CACHE_DIR_PIBB_DEPOSIT,
         loan_cache_dir=CACHE_DIR_PIBB_LOAN,
-        deposit_prefix="ica",
-        loan_prefix="iln",
+        deposit_prefix="idp_ca",
+        loan_prefix="idp_ln",
         bank_title="P U B L I C   I S L A M I C  B A N K   B E R H A D",
         output_rps_name="ODLISTI_RPS.txt",
         output_text_name="ODLISTI_TEXT.txt",
@@ -554,10 +537,15 @@ BANKS = [
 
 
 # ============================================================================
-# MAIN PROCESSING PER BANK
+# MAIN PROCESSING — PHASE 1 (CACHE) AND PHASE 2 (REPORT)
 # ============================================================================
-def process_bank(cfg: BankConfig) -> None:
-    print(f"\n=== Processing {cfg.bank_code} ===")
+# ============================================================================
+# PHASE 1: SAS -> PARQUET CACHE CONVERSION  (runs for every bank first)
+# ============================================================================
+def ensure_bank_cache(cfg: BankConfig) -> tuple:
+    """Resolve latest LOAN/DEPOSIT files for a bank and ensure their Parquet
+    cache is fresh. Returns (loan_cache_path, deposit_cache_path)."""
+    print(f"\n=== Caching {cfg.bank_code} ===")
     print(f"  Deposit input dir : {cfg.deposit_dir}")
     print(f"  Loan input dir    : {cfg.loan_dir}")
 
@@ -576,6 +564,15 @@ def process_bank(cfg: BankConfig) -> None:
         sas_to_parquet(deposit_path, deposit_cache, f"{cfg.bank_code}_DEPOSIT")
     else:
         print(f"  [{cfg.bank_code}_DEPOSIT] Cache fresh - skipping conversion.")
+
+    return loan_cache, deposit_cache
+
+
+# ============================================================================
+# PHASE 2: REPORT GENERATION  (runs for every bank after ALL caching is done)
+# ============================================================================
+def generate_bank_report(cfg: BankConfig, loan_cache: Path, deposit_cache: Path) -> None:
+    print(f"\n=== Reporting {cfg.bank_code} ===")
 
     con = duckdb.connect(database=":memory:")
 
@@ -683,8 +680,23 @@ def process_bank(cfg: BankConfig) -> None:
 
 
 def main() -> None:
+    # --------------------------------------------------------------------
+    # PHASE 1 — convert ALL source files (PBB deposit/loan, PIBB
+    # deposit/loan) to Parquet cache FIRST, before any reporting starts.
+    # --------------------------------------------------------------------
+    print("\n########## PHASE 1: SAS -> PARQUET CACHING (ALL BANKS) ##########")
+    caches = {}
     for cfg in BANKS:
-        process_bank(cfg)
+        caches[cfg.bank_code] = ensure_bank_cache(cfg)
+
+    # --------------------------------------------------------------------
+    # PHASE 2 — once every file is cached, generate the report for PBB,
+    # then PIBB, in the same run.
+    # --------------------------------------------------------------------
+    print("\n########## PHASE 2: REPORT GENERATION (PBB, then PIBB) ##########")
+    for cfg in BANKS:
+        loan_cache, deposit_cache = caches[cfg.bank_code]
+        generate_bank_report(cfg, loan_cache, deposit_cache)
 
     # --------------------------------------------------------------------
     # PLACEHOLDER: STEP02/STEP04 PGM=SPLIB136 (mainframe utility, source
