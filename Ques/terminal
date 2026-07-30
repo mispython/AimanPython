@@ -9,18 +9,33 @@ Step 1: Deriving report date / week number...
 [FILE_RESOLVER] Selected latest: ln07326.sas7bdat
 [FILE_RESOLVER] Selected latest: ca07326.sas7bdat
   [PBB_LOAN] Converting ln07326.sas7bdat -> ln07326.parquet ...
+  [PBB_LOAN] WARNING: cannot cast 'FORATE' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'REFINANC' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'MANUAL_RR_TAG' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'COM_FEE_NOTICE_IND' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'REPAY_MODE' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'MULTI_CURRENCY_TAG' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'RRSTG1' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'REFINANC' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'REPAY_MODE' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'WOS_TAG' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'RRSTG1' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'REFINANC' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'MANUAL_RR_TAG' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'REPAY_MODE' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'WOS_TAG' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'RRSTG1' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'MANUAL_RR_TAG' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] WARNING: cannot cast 'RRSTG1' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_LOAN] Done - 2,011,246 rows cached.
+  [PBB_DEPOSIT] Converting ca07326.sas7bdat -> ca07326.parquet ...
+  [PBB_DEPOSIT] WARNING: cannot cast 'BILLERIND' string->null: Unsupported cast from string to null using function cast_null - nulling
+  [PBB_DEPOSIT] Done - 852,491 rows cached.
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 703, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 705, in <module>
     main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 687, in main
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 689, in main
     process_bank(cfg)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 571, in process_bank
-    sas_to_parquet(loan_path, loan_cache, f"{cfg.bank_code}_LOAN")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 150, in sas_to_parquet
-    writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pyarrow/parquet/core.py", line 1010, in __init__
-    sink = self.file_handle = filesystem.open_output_stream(
-  File "pyarrow/_fs.pyx", line 878, in pyarrow._fs.FileSystem.open_output_stream
-  File "pyarrow/error.pxi", line 154, in pyarrow.lib.pyarrow_internal_check_status
-  File "pyarrow/error.pxi", line 91, in pyarrow.lib.check_status
-FileNotFoundError: [Errno 2] Failed to open local file '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMODLT/ln07326.parquet'. Detail: [errno 2] No such file or directory
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 586, in process_bank
+    odraft = con.execute(f"""
+_duckdb.BinderException: Binder Error: Column "NAME" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
