@@ -47,23 +47,31 @@ from input_date import get_latest_file
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-# PBB and PIBB come from separate SAS dataset qualifiers in the original JOB
-# (SAP.PBB.MNITB / SAP.PBB.SASDATA  vs  SAP.PIBB.MNITB / SAP.PIBB.SASDATA),
-# so each bank gets its own input/cache root instead of sharing one folder.
-# This also avoids filename collisions between the two banks' loan/deposit
-# files being cached over one another.
-INPUT_DIR_PBB   = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB"
-INPUT_DIR_PIBB  = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB"
+# Each of the 4 source files (PBB deposit, PBB loan, PIBB deposit, PIBB loan)
+# comes from a distinct SAS dataset qualifier in the original JOB:
+#   DEPOSIT DD DSN=SAP.PBB.MNITB(0)   -> PBB  deposit
+#   LOAN    DD DSN=SAP.PBB.SASDATA    -> PBB  loan
+#   DEPOSIT DD DSN=SAP.PIBB.MNITB(0)  -> PIBB deposit
+#   LOAN    DD DSN=SAP.PIBB.SASDATA   -> PIBB loan
+# so each file gets its own independent input/cache directory rather than
+# sharing a folder with any other file.
+INPUT_DIR_PBB_DEPOSIT   = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB_DEPOSIT"
+INPUT_DIR_PBB_LOAN      = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB_LOAN"
+INPUT_DIR_PIBB_DEPOSIT  = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB_DEPOSIT"
+INPUT_DIR_PIBB_LOAN     = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB_LOAN"
 
-CACHE_DIR_PBB   = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PBB"
-CACHE_DIR_PIBB  = BASE_DIR / "input" / "prod" / "EIBMODLT" / "PIBB"
+CACHE_DIR_PBB_DEPOSIT   = INPUT_DIR_PBB_DEPOSIT
+CACHE_DIR_PBB_LOAN      = INPUT_DIR_PBB_LOAN
+CACHE_DIR_PIBB_DEPOSIT  = INPUT_DIR_PIBB_DEPOSIT
+CACHE_DIR_PIBB_LOAN     = INPUT_DIR_PIBB_LOAN
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLT"
 
-INPUT_DIR_PBB.mkdir(parents=True, exist_ok=True)
-INPUT_DIR_PIBB.mkdir(parents=True, exist_ok=True)
-CACHE_DIR_PBB.mkdir(parents=True, exist_ok=True)
-CACHE_DIR_PIBB.mkdir(parents=True, exist_ok=True)
+for _d in (
+    INPUT_DIR_PBB_DEPOSIT, INPUT_DIR_PBB_LOAN,
+    INPUT_DIR_PIBB_DEPOSIT, INPUT_DIR_PIBB_LOAN,
+):
+    _d.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -489,8 +497,10 @@ def _write_odld_line(fh, row: dict) -> None:
 @dataclass(frozen=True)
 class BankConfig:
     bank_code: str
-    input_dir: Path
-    cache_dir: Path
+    deposit_dir: Path
+    loan_dir: Path
+    deposit_cache_dir: Path
+    loan_cache_dir: Path
     deposit_prefix: str
     loan_prefix: str
     bank_title: str
@@ -501,8 +511,10 @@ class BankConfig:
 BANKS = [
     BankConfig(
         bank_code="PBB",
-        input_dir=INPUT_DIR_PBB,
-        cache_dir=CACHE_DIR_PBB,
+        deposit_dir=INPUT_DIR_PBB_DEPOSIT,
+        loan_dir=INPUT_DIR_PBB_LOAN,
+        deposit_cache_dir=CACHE_DIR_PBB_DEPOSIT,
+        loan_cache_dir=CACHE_DIR_PBB_LOAN,
         deposit_prefix="dp_ca",
         loan_prefix="ln_ln",
         bank_title="P U B L I C   B A N K   B E R H A D",
@@ -511,8 +523,10 @@ BANKS = [
     ),
     BankConfig(
         bank_code="PIBB",
-        input_dir=INPUT_DIR_PIBB,
-        cache_dir=CACHE_DIR_PIBB,
+        deposit_dir=INPUT_DIR_PIBB_DEPOSIT,
+        loan_dir=INPUT_DIR_PIBB_LOAN,
+        deposit_cache_dir=CACHE_DIR_PIBB_DEPOSIT,
+        loan_cache_dir=CACHE_DIR_PIBB_LOAN,
         deposit_prefix="idp_ca",
         loan_prefix="idp_ln",
         bank_title="P U B L I C   I S L A M I C  B A N K   B E R H A D",
@@ -527,13 +541,14 @@ BANKS = [
 # ============================================================================
 def process_bank(cfg: BankConfig) -> None:
     print(f"\n=== Processing {cfg.bank_code} ===")
-    print(f"  Input dir : {cfg.input_dir}")
+    print(f"  Deposit input dir : {cfg.deposit_dir}")
+    print(f"  Loan input dir    : {cfg.loan_dir}")
 
-    loan_path = get_latest_file(cfg.input_dir, prefix=cfg.loan_prefix)
-    deposit_path = get_latest_file(cfg.input_dir, prefix=cfg.deposit_prefix)
+    loan_path = get_latest_file(cfg.loan_dir, prefix=cfg.loan_prefix)
+    deposit_path = get_latest_file(cfg.deposit_dir, prefix=cfg.deposit_prefix)
 
-    loan_cache = cfg.cache_dir / f"{loan_path.stem}.parquet"
-    deposit_cache = cfg.cache_dir / f"{deposit_path.stem}.parquet"
+    loan_cache = cfg.loan_cache_dir / f"{loan_path.stem}.parquet"
+    deposit_cache = cfg.deposit_cache_dir / f"{deposit_path.stem}.parquet"
 
     if not _cache_is_fresh(loan_path, loan_cache):
         sas_to_parquet(loan_path, loan_cache, f"{cfg.bank_code}_LOAN")
