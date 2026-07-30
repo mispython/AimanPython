@@ -1,7 +1,84 @@
-def _item_expr(mapping: dict, key_col: str):
-    item_dict   = {k: v[0] for k, v in mapping.items()}
-    item4_dict  = {k: v[1] for k, v in mapping.items()}
-    return (
-        pl.col(key_col).replace(item_dict, default=None).alias("ITEM"),
-        pl.col(key_col).replace(item4_dict, default=None).alias("ITEM4"),
-    )
+def ensure_custname_cache(custname_path: Path, cache_path: Path) -> Path:
+    """Convert stg_dp_limit.sas7bdat to Parquet with deduplication on ACCTNO."""
+    print("\n=== Caching Customer Name Lookup ===")
+    if _cache_is_fresh(custname_path, cache_path):
+        print("  [CUSTNAME] Cache fresh - skipping conversion.")
+        return cache_path
+
+    print(f"  [CUSTNAME] Converting {custname_path.name} -> {cache_path.name} ...")
+    # Read the whole file (it's small)
+    df = pd.read_sas(custname_path, encoding="latin1")
+    # Keep only needed columns, deduplicate on ACCTNO
+    if "ACCTNO" not in df.columns or "NAME" not in df.columns:
+        raise ValueError("stg_dp_limit.sas7bdat missing ACCTNO or NAME columns")
+    df = df[["ACCTNO", "NAME"]].drop_duplicates(subset=["ACCTNO"], keep="first")
+    # Convert to Parquet
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, cache_path, compression="snappy")
+    print(f"  [CUSTNAME] Done - {len(df):,} unique accounts cached.")
+    return cache_path
+
+
+def main() -> None:
+    print("\n########## PHASE 1: SAS -> PARQUET CACHING (ALL BANKS) ##########")
+    caches = {}
+    for cfg in BANKS:
+        caches[cfg.bank_code] = ensure_bank_cache(cfg)
+
+    # Add customer name lookup cache (shared by both banks)
+    custname_cache = ensure_custname_cache(INPUT_CUSTNAME, CACHE_CUSTNAME)
+
+    # Store it in a global or pass it to generate_bank_report
+    # We'll modify generate_bank_report to accept it as a parameter.
+
+    print("\n########## PHASE 2: REPORT GENERATION (PBB, then PIBB) ##########")
+    for cfg in BANKS:
+        loan_cache, deposit_cache = caches[cfg.bank_code]
+        generate_bank_report(cfg, loan_cache, deposit_cache, custname_cache)
+
+
+def generate_bank_report(cfg: BankConfig, loan_cache: Path, deposit_cache: Path, custname_cache: Path) -> None:
+    print(f"\n=== Reporting {cfg.bank_code} ===")
+
+    con = duckdb.connect(database=":memory:")
+
+    # Register customer name lookup
+    con.execute(f"""
+        CREATE OR REPLACE VIEW custname_lookup AS
+        SELECT ACCTNO, NAME FROM read_parquet('{custname_cache}')
+    """)
+
+    # Now modify the odraft SQL: left join with lookup and use COALESCE
+    odraft = con.execute(f"""
+        SELECT
+            CAST(d.ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(d.BRANCH   AS INTEGER) AS BRANCH,
+            CAST(d.CUSTCODE AS INTEGER) AS CUSTCODE,
+            CAST(d.APPRLIMT AS DOUBLE)  AS APPRLIMT,
+            COALESCE(l.NAME, '') AS NAME,   -- <-- lookup takes precedence
+            CAST(d.LIMIT1   AS DOUBLE)  AS LIMIT1,
+            CAST(d.LIMIT2   AS DOUBLE)  AS LIMIT2,
+            CAST(d.LIMIT3   AS DOUBLE)  AS LIMIT3,
+            CAST(d.LIMIT4   AS DOUBLE)  AS LIMIT4,
+            CAST(d.LIMIT5   AS DOUBLE)  AS LIMIT5,
+            CAST(d.RATE1    AS DOUBLE)  AS RATE1,
+            CAST(d.RATE2    AS DOUBLE)  AS RATE2,
+            CAST(d.RATE3    AS DOUBLE)  AS RATE3,
+            CAST(d.RATE4    AS DOUBLE)  AS RATE4,
+            CAST(d.RATE5    AS DOUBLE)  AS RATE5,
+            CAST(d.COL1     AS VARCHAR) AS COL1,
+            CAST(d.COL2     AS VARCHAR) AS COL2,
+            CAST(d.COL3     AS VARCHAR) AS COL3,
+            CAST(d.COL4     AS VARCHAR) AS COL4,
+            CAST(d.COL5     AS VARCHAR) AS COL5,
+            CAST(d.STATE    AS VARCHAR) AS STATE,
+            CAST(d.FLATRATE AS DOUBLE)  AS FLATRATE,
+            (-1) * CAST(d.CURBAL AS DOUBLE) AS BALANCE
+        FROM read_parquet('{deposit_cache}') d
+        LEFT JOIN custname_lookup l ON d.ACCTNO = l.ACCTNO
+        WHERE CAST(d.CURBAL AS DOUBLE) < 0
+          AND COALESCE(CAST(d.CUSTCODE AS INTEGER), -1) <> 81
+    """).pl()
+
+
