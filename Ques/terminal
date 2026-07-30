@@ -1,8 +1,14 @@
-=== Caching STG DP Limit Lookup ===
-  [STG_DP] Converting stg_dp_limit.sas7bdat -> stg_dp_limit.parquet ...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 810, in <module>
-    stg_dp_cache = _ensure_stg_dp_cache(INPUT_STG_DP, CACHE_STG_DP)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 221, in _ensure_stg_dp_cache
-    raise ValueError(
-ValueError: stg_dp_limit.sas7bdat missing required column(s): COL1, COL2, COL3, COL4, COL5, DEPTYPE
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMODLT.py", line 877, in <module>
+    print("Overlap         :", len(acct_deposit.join(acct_lookup, on="a", how="inner")))
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.SchemaError: datatypes of join keys don't match - `a`: i64 on left does not match `a`: f64 on right (and no other type was available to cast to)
