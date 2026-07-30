@@ -1,22 +1,2 @@
-def ensure_custname_cache(custname_path: Path, cache_path: Path) -> Path:
-    """Convert stg_dp_limit.sas7bdat to Parquet with deduplication on ACCTNO."""
-    print("\n=== Caching Customer Name Lookup ===")
-    if _cache_is_fresh(custname_path, cache_path):
-        print("  [CUSTNAME] Cache fresh - skipping conversion.")
-        return cache_path
-
-    print(f"  [CUSTNAME] Converting {custname_path.name} -> {cache_path.name} ...")
-    # Read the whole file (it's small)
-    df = pd.read_sas(custname_path, encoding="latin1")
-    # Keep only needed columns, deduplicate on ACCTNO
-    if "ACCTNO" not in df.columns or "NAME" not in df.columns:
-        raise ValueError("stg_dp_limit.sas7bdat missing ACCTNO or NAME columns")
-    df = df[["ACCTNO", "NAME"]].drop_duplicates(subset=["ACCTNO"], keep="first")
-    # Convert to Parquet
-    table = pa.Table.from_pandas(df, preserve_index=False)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, cache_path, compression="snappy")
-    print(f"  [CUSTNAME] Done - {len(df):,} unique accounts cached.")
-    return cache_path
-
-
+import duckdb
+print(duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{deposit_cache}')").df())
