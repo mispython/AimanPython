@@ -1,27 +1,6 @@
-import pandas as pd
-
-df = pd.read_sas(INPUT_STG_DP, encoding="latin1")
-df.columns = [str(c).upper().strip() for c in df.columns]
-
-print("Raw DEPTYPE unique values (repr to reveal whitespace):")
-print(df["DEPTYPE"].apply(repr).value_counts().head(20))
-
-print("\nACCTNO dtype:", df["ACCTNO"].dtype)
-print("NAME dtype:", df["NAME"].dtype)
-
-# Test with stripped comparison
-stripped_match = df["DEPTYPE"].astype(str).str.strip().isin(["D", "N"])
-print(f"\nRows matching DEPTYPE after strip: {stripped_match.sum():,} / {len(df):,}")
-
-raw_match = df["DEPTYPE"].isin(["D", "N"])
-print(f"Rows matching DEPTYPE without strip: {raw_match.sum():,} / {len(df):,}")
-
-
-
-
 import duckdb
 acct_deposit = duckdb.sql(f"SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS a FROM read_parquet('{deposit_cache}')").pl()
-acct_lookup  = duckdb.sql(f"SELECT DISTINCT ACCTNO AS a FROM read_parquet('{stg_dp_cache}')").pl()
+acct_lookup  = duckdb.sql(f"SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS a FROM read_parquet('{stg_dp_cache}')").pl()
 print("Deposit accounts:", len(acct_deposit))
 print("Lookup accounts :", len(acct_lookup))
 print("Overlap         :", len(acct_deposit.join(acct_lookup, on="a", how="inner")))
