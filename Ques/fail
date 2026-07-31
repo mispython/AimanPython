@@ -1,8 +1,1 @@
-  
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLNLT.py", line 1077, in <module>
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLNLT.py", line 971, in run_pbb
-    gc.collect()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLNLT.py", line 428, in write_lnlisd
-    for row in filtered.iter_rows(NAMEd=True):
-TypeError: iter_rows() got an unexpected keyword argument 'NAMEd'
+CUSTCD = f"{int(row['CUSTCD']):>4}" if (row['CUSTCD'] is not None and not is_nan_float(row['CUSTCD'])) else '    '
