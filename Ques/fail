@@ -1,22 +1,8 @@
-lnnote_df = con.execute(f"""
-    SELECT ACCTNO, NOTENO, BANKNO, STATE, NAME
-    FROM read_parquet('{lnnote_cache}')
-    ORDER BY ACCTNO, NOTENO
-""").pl()
-
-
-# After handling BANKNO, STATE, NAME:
-# Rename SECTOR -> SECTORCD and CUSTCODE -> CUSTCD if they exist
-if 'SECTOR' in merged.columns and 'SECTORCD' not in merged.columns:
-    merged = merged.rename({'SECTOR': 'SECTORCD'})
-if 'CUSTCODE' in merged.columns and 'CUSTCD' not in merged.columns:
-    merged = merged.rename({'CUSTCODE': 'CUSTCD'})
-
-
-lnote = merged.select([
-    'BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'BALANCE',
-    'SECTORCD', 'CUSTCD', 'INTRATE', 'COMMNO', 'LIABCODE',
-    'APPRLIMT', 'FISSPURP', 'STATE'
-])
-
-
+  
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLNLT.py", line 1077, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLNLT.py", line 971, in run_pbb
+    gc.collect()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLNLT.py", line 428, in write_lnlisd
+    for row in filtered.iter_rows(NAMEd=True):
+TypeError: iter_rows() got an unexpected keyword argument 'NAMEd'
