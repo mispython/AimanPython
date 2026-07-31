@@ -34,6 +34,7 @@ from input_date import get_latest_file
 # PATH CONFIGURATION
 # =============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
 # ------------------------------------------------------------------
 # Input directories / files
@@ -42,36 +43,36 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 # w=week digit derived from SAS SELECT(DAY(REPTDATE)), yy=2-digit year) ->
 # resolved via input_date.get_latest_file(). PIBB filenames use the "i"
 # prefix convention (ln -> iln).
-INPUT_DIR      = BASE_DIR / "input" / "prod" / "EIBMLNLT"
-BANK_LOAN_DIR  = INPUT_DIR / "bank_loan"
-PIBB_LOAN_DIR  = INPUT_DIR / "pibb_loan"
+INPUT_DIR      = BASE_DIR / "input" / "prod"
+PBB_LOAN_DIR   = INPUT_DIR / "loan"
+PIBB_LOAN_DIR  = INPUT_DIR / "loan"
 
 # LNNOTE / LNCOMM carry no date component in their filenames -> static paths
-BANK_LNNOTE_FILE = INPUT_DIR / "lnnote_bank.sas7bdat"
-BANK_LNCOMM_FILE = INPUT_DIR / "lncomm_bank.sas7bdat"
-PIBB_LNNOTE_FILE = INPUT_DIR / "lnnote_pibb.sas7bdat"
-PIBB_LNCOMM_FILE = INPUT_DIR / "lncomm_pibb.sas7bdat"
+PBB_LNNOTE_FILE  = STG_DIR / "PBB_lnnote.sas7bdat"
+PBB_LNCOMM_FILE  = STG_DIR / "PBB_lncomm.sas7bdat"
+PIBB_LNNOTE_FILE = STG_DIR / "PIBB_lnnote.sas7bdat"
+PIBB_LNCOMM_FILE = STG_DIR / "PIBB_lncomm .sas7bdat"
 
 # ------------------------------------------------------------------
 # Parquet cache directories (chunked SAS -> Parquet, freshness-checked)
 # ------------------------------------------------------------------
-CACHE_DIR      = BASE_DIR / "cache" / "EIBMLNLT"
-BANK_CACHE_DIR = CACHE_DIR / "bank"
-PIBB_CACHE_DIR = CACHE_DIR / "pibb"
+CACHE_DIR      = BASE_DIR / "input" / "cache" / "EIBMLNLT"
+PBB_CACHE_DIR  = CACHE_DIR / "PBB"
+PIBB_CACHE_DIR = CACHE_DIR / "PIBB"
 
 # ------------------------------------------------------------------
 # Output directories / files (fixed filenames -- no date suffix)
 # ------------------------------------------------------------------
 OUTPUT_DIR      = BASE_DIR / "output" / "EIBMLNLT"
-BANK_OUTPUT_DIR = OUTPUT_DIR / "bank"
-PIBB_OUTPUT_DIR = OUTPUT_DIR / "pibb"
+PBB_OUTPUT_DIR  = OUTPUT_DIR / "PBB"
+PIBB_OUTPUT_DIR = OUTPUT_DIR / "PIBB"
 
-for _d in (BANK_LOAN_DIR, PIBB_LOAN_DIR, BANK_CACHE_DIR, PIBB_CACHE_DIR,
-           BANK_OUTPUT_DIR, PIBB_OUTPUT_DIR):
+for _d in (PBB_LOAN_DIR, PIBB_LOAN_DIR, PBB_CACHE_DIR, PIBB_CACHE_DIR,
+           PBB_OUTPUT_DIR, PIBB_OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
-BANK_LNLISD_TXT = BANK_OUTPUT_DIR / "loanlist_text.txt"   # SAP.BANK.LOANLIST.TEXT (80 char)
-BANK_LNLIST_TXT = BANK_OUTPUT_DIR / "loanlist_rps.txt"    # SAP.BANK.LOANLIST.RPS  (136 char)
+PBB_LNLISD_TXT = PBB_OUTPUT_DIR / "loanlist_text.txt"   # SAP.BANK.LOANLIST.TEXT (80 char)
+PBB_LNLIST_TXT = PBB_OUTPUT_DIR / "loanlist_rps.txt"    # SAP.BANK.LOANLIST.RPS  (136 char)
 
 PIBB_LNLISX_TXT = PIBB_OUTPUT_DIR / "loanlist_text.txt"   # SAP.PIBB.LOANLIST.TEXT (80 char)
 PIBB_LNLISR_TXT = PIBB_OUTPUT_DIR / "loanlist_rps.txt"    # SAP.PIBB.LOANLIST.RPS  (136 char)
@@ -434,7 +435,7 @@ def make_brno(branch):
         return f"BR{b}"
     return f"B{b}"
 
-def write_newpage_fiss(f, pagecnt, branch, bankno, rdate, is_first_branch, bank_title, line_width=136):
+def write_newpage_fiss(f, pagecnt, branch, bankno, rdate, is_first_branch, pbb_title, line_width=136):
     """Write a new page header for FISS Purpose report. Returns updated pagecnt."""
     pagecnt += 1
 
@@ -451,7 +452,7 @@ def write_newpage_fiss(f, pagecnt, branch, bankno, rdate, is_first_branch, bank_
 
     line = make_line(line_width)
     place_at(line, 1, 'P000REPORT NO :  LOANLIST')
-    place_at(line, 44, bank_title)
+    place_at(line, 44, pbb_title)
     place_at(line, 122, f'PAGE NO : {pagecnt}')
     f.write(finalize_line(line, line_width) + '\n')
 
@@ -513,7 +514,7 @@ def write_newpage_fiss(f, pagecnt, branch, bankno, rdate, is_first_branch, bank_
 
     return pagecnt
 
-def write_newpage_sector(f, pagecnt, branch, bankno, rdate, is_first_branch, bank_title, line_width=136):
+def write_newpage_sector(f, pagecnt, branch, bankno, rdate, is_first_branch, pbb_title, line_width=136):
     """Write a new page header for Sector/Construction report. Returns updated pagecnt."""
     pagecnt += 1
 
@@ -530,7 +531,7 @@ def write_newpage_sector(f, pagecnt, branch, bankno, rdate, is_first_branch, ban
 
     line = make_line(line_width)
     place_at(line, 1, 'P000REPORT NO :  LOANLIST')
-    place_at(line, 44, bank_title)
+    place_at(line, 44, pbb_title)
     place_at(line, 122, f'PAGE NO : {pagecnt}')
     f.write(finalize_line(line, line_width) + '\n')
 
@@ -719,16 +720,16 @@ def _derive_group_status(current_row, next_row, previous_branch, previous_group,
 
 
 def _start_new_page(f, pagecnt, branch, bankno, rdate, is_first_page,
-                    bank_title, line_width, newpage_writer):
+                    pbb_title, line_width, newpage_writer):
     """Call the appropriate newpage_writer and return updated (pagecnt, linecnt)."""
     pagecnt = newpage_writer(
-        f, pagecnt, branch, bankno, rdate, is_first_page, bank_title, line_width
+        f, pagecnt, branch, bankno, rdate, is_first_page, pbb_title, line_width
     )
     return pagecnt, 11
 
 
 def _handle_branch_open(f, branch, bankno, rdate,
-                        bank_title, line_width, newpage_writer):
+                        pbb_title, line_width, newpage_writer):
     """
     Actions taken when entering a new branch: reset page/branch accumulator,
     emit the first page header for this branch. Returns (pagecnt, linecnt, brchamt).
@@ -736,44 +737,44 @@ def _handle_branch_open(f, branch, bankno, rdate,
     brchamt = 0.0
     pagecnt, linecnt = _start_new_page(
         f, 0, branch, bankno, rdate, True,
-        bank_title, line_width, newpage_writer
+        pbb_title, line_width, newpage_writer
     )
     return pagecnt, linecnt, brchamt
 
 
 def _handle_page_overflow(f, pagecnt, linecnt, branch, bankno, rdate,
-                          bank_title, line_width, newpage_writer):
+                          pbb_title, line_width, newpage_writer):
     """Emit a new page header when the current page is full."""
     if linecnt > PAGE_LINE_THRESHOLD:
         pagecnt, linecnt = _start_new_page(
             f, pagecnt, branch, bankno, rdate, False,
-            bank_title, line_width, newpage_writer
+            pbb_title, line_width, newpage_writer
         )
     return pagecnt, linecnt
 
 
 def _handle_group_close(f, pagecnt, linecnt, group_value, bnmamt,
-                        branch, bankno, rdate, bank_title, line_width,
+                        branch, bankno, rdate, pbb_title, line_width,
                         newpage_writer, subtotal_writer):
     """Emit the group subtotal (4 lines), then check for page overflow."""
     subtotal_writer(f, group_value, bnmamt, line_width)
     linecnt += 4
     pagecnt, linecnt = _handle_page_overflow(
         f, pagecnt, linecnt, branch, bankno, rdate,
-        bank_title, line_width, newpage_writer
+        pbb_title, line_width, newpage_writer
     )
     return pagecnt, linecnt
 
 
 def _handle_branch_close(f, pagecnt, linecnt, brchamt,
-                         branch, bankno, rdate, bank_title, line_width,
+                         branch, bankno, rdate, pbb_title, line_width,
                          newpage_writer):
     """Emit the branch grand total (4 lines), then check for page overflow."""
     write_grand_total(f, brchamt, line_width)
     linecnt += 4
     pagecnt, linecnt = _handle_page_overflow(
         f, pagecnt, linecnt, branch, bankno, rdate,
-        bank_title, line_width, newpage_writer
+        pbb_title, line_width, newpage_writer
     )
     return pagecnt, linecnt
 
@@ -781,7 +782,7 @@ def _handle_branch_close(f, pagecnt, linecnt, brchamt,
 # WRITE RPS REPORT — SHARED GROUPED WRITER
 # =============================================================================
 
-def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width,
+def _write_lnlist_grouped(rows, rdate, output_path, pbb_title, mode, line_width,
                           group_field, newpage_writer, subtotal_writer):
     """Shared writer for grouped RPS output (FISS purpose / Sector code variants)."""
     n           = len(rows)
@@ -810,7 +811,7 @@ def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width
             if is_first_branch:
                 pagecnt, linecnt, brchamt = _handle_branch_open(
                     f, branch, bankno, rdate,
-                    bank_title, line_width, newpage_writer
+                    pbb_title, line_width, newpage_writer
                 )
 
             if is_first_group:
@@ -824,20 +825,20 @@ def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width
 
             pagecnt, linecnt = _handle_page_overflow(
                 f, pagecnt, linecnt, branch, bankno, rdate,
-                bank_title, line_width, newpage_writer
+                pbb_title, line_width, newpage_writer
             )
 
             if is_last_group:
                 pagecnt, linecnt = _handle_group_close(
                     f, pagecnt, linecnt, group_value, bnmamt,
-                    branch, bankno, rdate, bank_title, line_width,
+                    branch, bankno, rdate, pbb_title, line_width,
                     newpage_writer, subtotal_writer
                 )
 
             if is_last_branch:
                 pagecnt, linecnt = _handle_branch_close(
                     f, pagecnt, linecnt, brchamt,
-                    branch, bankno, rdate, bank_title, line_width,
+                    branch, bankno, rdate, pbb_title, line_width,
                     newpage_writer
                 )
 
@@ -849,7 +850,7 @@ def _write_lnlist_grouped(rows, rdate, output_path, bank_title, mode, line_width
 # =============================================================================
 
 def write_lnlist_fiss(lnnote1: pl.DataFrame, rdate: str, output_path: Path,
-                      bank_title: str, mode: str = 'w', line_width: int = 136):
+                      pbb_title: str, mode: str = 'w', line_width: int = 136):
     """
     Write LNLIST RPS report grouped by BRANCH / FISSPURP / CUSTCD / ACCTNO.
     Equivalent to the first DATA _NULL_ block.
@@ -858,7 +859,7 @@ def write_lnlist_fiss(lnnote1: pl.DataFrame, rdate: str, output_path: Path,
         rows=lnnote1.to_dicts(),
         rdate=rdate,
         output_path=output_path,
-        bank_title=bank_title,
+        pbb_title=pbb_title,
         mode=mode,
         line_width=line_width,
         group_field='fisspurp',
@@ -871,7 +872,7 @@ def write_lnlist_fiss(lnnote1: pl.DataFrame, rdate: str, output_path: Path,
 # =============================================================================
 
 def write_lnlist_sector(lnnote2: pl.DataFrame, rdate: str, output_path: Path,
-                        bank_title: str, mode: str = 'a', line_width: int = 136):
+                        pbb_title: str, mode: str = 'a', line_width: int = 136):
     """
     Write LNLIST RPS report grouped by BRANCH / SECTORCD / CUSTCD / ACCTNO.
     Equivalent to the second DATA _NULL_ block (FILE LNLIST MOD).
@@ -880,7 +881,7 @@ def write_lnlist_sector(lnnote2: pl.DataFrame, rdate: str, output_path: Path,
         rows=lnnote2.to_dicts(),
         rdate=rdate,
         output_path=output_path,
-        bank_title=bank_title,
+        pbb_title=pbb_title,
         mode=mode,
         line_width=line_width,
         group_field='sectorcd',
@@ -900,20 +901,20 @@ def run_pbb():
     print("Processing PBB section...")
 
     _, rdate, _, _, lnnote1, lnnote2 = prepare_data(
-        BANK_LOAN_DIR, "ln",
-        BANK_LNNOTE_FILE, BANK_LNCOMM_FILE,
-        BANK_CACHE_DIR, "PBB"
+        PBB_LOAN_DIR, "ln",
+        PBB_LNNOTE_FILE, PBB_LNCOMM_FILE,
+        PBB_CACHE_DIR, "PBB"
     )
 
-    write_lnlisd(lnnote1, BANK_LNLISD_TXT)
-    print(f"  Written: {BANK_LNLISD_TXT}")
+    write_lnlisd(lnnote1, PBB_LNLISD_TXT)
+    print(f"  Written: {PBB_LNLISD_TXT}")
 
-    bank_title = 'P U B L I C   B A N K   B E R H A D'
-    write_lnlist_fiss(lnnote1, rdate, BANK_LNLIST_TXT, bank_title, mode='w')
-    print(f"  Written FISS section: {BANK_LNLIST_TXT}")
+    pbb_title = 'P U B L I C   B A N K   B E R H A D'
+    write_lnlist_fiss(lnnote1, rdate, PBB_LNLIST_TXT, pbb_title, mode='w')
+    print(f"  Written FISS section: {PBB_LNLIST_TXT}")
 
-    write_lnlist_sector(lnnote2, rdate, BANK_LNLIST_TXT, bank_title, mode='a')
-    print(f"  Appended Sector section: {BANK_LNLIST_TXT}")
+    write_lnlist_sector(lnnote2, rdate, PBB_LNLIST_TXT, pbb_title, mode='a')
+    print(f"  Appended Sector section: {PBB_LNLIST_TXT}")
 
     # PROC DATASETS LIB=WORK NOLIST; DELETE NOTE1 LNNOTE1; (in-memory, no-op in Python)
 
