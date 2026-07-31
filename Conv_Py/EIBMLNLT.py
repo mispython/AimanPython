@@ -305,7 +305,7 @@ def build_lnnote_datasets(loan_cache: Path, lnnote_cache: Path,
 
     # LNNOTE: KEEP=ACCTNO NOTENO BANKNO STATE, sorted BY ACCTNO NOTENO
     lnnote_df = con.execute(f"""
-        SELECT ACCTNO, NOTENO, BANKNO, STATE
+        SELECT ACCTNO, NOTENO, BANKNO, STATE, NAME, NTBRCH
         FROM read_parquet('{lnnote_cache}')
         ORDER BY ACCTNO, NOTENO
     """).pl()
@@ -331,11 +331,38 @@ def build_lnnote_datasets(loan_cache: Path, lnnote_cache: Path,
             pl.when(pl.col('STATE_note').is_not_null()).then(pl.col('STATE_note')).otherwise(pl.col('STATE')).alias('STATE')
         ]).drop('STATE_note')
 
-    lnote = merged.filter(pl.col('ACCTYPE') == 'LN').select([
+    # Handle NAME: if it came from LNNOTE (with suffix _note), rename/coalesce
+    if 'NAME_note' in merged.columns:
+        if 'NAME' in merged.columns:
+            # If LOAN also has NAME, use LNNOTE's if not null, else LOAN's
+            merged = merged.with_columns([
+                pl.when(pl.col('NAME_note').is_not_null())
+                .then(pl.col('NAME_note'))
+                .otherwise(pl.col('NAME'))
+                .alias('NAME')
+            ]).drop('NAME_note')
+        else:
+            # LOAN lacks NAME, so simply rename
+            merged = merged.rename({'NAME_note': 'NAME'})
+
+    # Rename SECTOR -> SECTORCD and CUSTCODE -> CUSTCD if they exist
+    if 'SECTOR' in merged.columns and 'SECTORCD' not in merged.columns:
+        merged = merged.rename({'SECTOR': 'SECTORCD'})
+    if 'CUSTCODE' in merged.columns and 'CUSTCD' not in merged.columns:
+        merged = merged.rename({'CUSTCODE': 'CUSTCD'})
+
+    # lnote = merged.filter(pl.col('ACCTYPE') == 'LN').select([
+    lnote = merged.select([
         'BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'BALANCE',
         'SECTORCD', 'CUSTCD', 'INTRATE', 'NTBRCH', 'COMMNO', 'LIABCODE',
         'APPRLIMT', 'FISSPURP', 'STATE'
     ]).sort(['ACCTNO', 'COMMNO'])
+
+    # lnote = merged.select([
+        # 'BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'BALANCE',
+        # 'SECTORCD', 'CUSTCD', 'INTRATE', 'COMMNO', 'LIABCODE',
+        # 'APPRLIMT', 'FISSPURP', 'STATE'
+    # ])
 
     del merged, loan_df, lnnote_df
     gc.collect()
@@ -398,7 +425,7 @@ def write_lnlisd(lnnote1: pl.DataFrame, output_path: Path):
     )
 
     lines = []
-    for row in filtered.iter_rows(NAMEd=True):
+    for row in filtered.iter_rows(named=True):
         line = [' '] * 80
 
         BRANCH = str(int(row['BRANCH'])).rjust(3)[:3] if row['BRANCH'] is not None else '   '
@@ -611,7 +638,8 @@ def write_data_row(f, row, line_width=136):
 
     FISSPURP = str(row['FISSPURP'])[:4].rjust(4) if row['FISSPURP'] is not None else '    '
     SECTORCD = str(row['SECTORCD'])[:4].rjust(4) if row['SECTORCD'] is not None else '    '
-    CUSTCD   = str(row['CUSTCD']).rjust(4)[:4]   if row['CUSTCD']   is not None else '    '
+    # CUSTCD   = str(row['CUSTCD']).rjust(4)[:4]   if row['CUSTCD']   is not None else '    '
+    CUSTCD = f"{int(row['CUSTCD']):>4}" if (row['CUSTCD'] is not None and not is_nan_float(row['CUSTCD'])) else '    '
     STATE    = str(row['STATE'])[:3].rjust(3)    if row['STATE']    is not None else '   '
     LIABCODE = str(row['LIABCODE']) if row['LIABCODE'] is not None else ''
     CCOLLTRL = str(row['CCOLLTRL']) if row['CCOLLTRL'] is not None else ''
@@ -894,50 +922,12 @@ def write_lnlist_sector(lnnote2: pl.DataFrame, rdate: str, output_path: Path,
 # MAIN: PBB SECTION
 # =============================================================================
 
-# def run_pbb():
-#     """
-#     Process PBB (Public Bank Berhad) section.
-#     Equivalent to the first EIBMLNLT SAS execution block.
-#     """
-#     print("Processing PBB section...")
-
-#     _, rdate, _, _, lnnote1, lnnote2 = prepare_data(
-#         PBB_LOAN_DIR, "ln",
-#         PBB_LNNOTE_FILE, PBB_LNCOMM_FILE,
-#         PBB_CACHE_DIR, "PBB"
-#     )
-
-#     write_lnlisd(lnnote1, PBB_LNLISD_TXT)
-#     print(f"  Written: {PBB_LNLISD_TXT}")
-
-#     pbb_title = 'P U B L I C   B A N K   B E R H A D'
-#     write_lnlist_fiss(lnnote1, rdate, PBB_LNLIST_TXT, pbb_title, mode='w')
-#     print(f"  Written FISS section: {PBB_LNLIST_TXT}")
-
-#     write_lnlist_sector(lnnote2, rdate, PBB_LNLIST_TXT, pbb_title, mode='a')
-#     print(f"  Appended Sector section: {PBB_LNLIST_TXT}")
-
-#     # PROC DATASETS LIB=WORK NOLIST; DELETE NOTE1 LNNOTE1; (in-memory, no-op in Python)
-
-#     # //STEP01 EXEC PGM=IEFBR14 - Delete RBP2.B033.LOANLIS*.RPS datasets (no-op in Python)
-#     # //STEP02 EXEC PGM=SPLIB136 - Insert control characters for RPS, split by region (no-op in Python)
-#     # //INFIL1 DD DSN=RMDS.OPC.BANKCODE(KLREGION) - KL Region bank codes (no-op in Python)
-#     # //INFIL2 DD DSN=RMDS.OPC.BANKCODE(BGREGION) - BG Region bank codes (no-op in Python)
-#     # //INFIL3 DD DSN=RMDS.OPC.BANKCODE(JBREGION) - JB Region bank codes (no-op in Python)
-#     # //INFIL4 DD DSN=RMDS.OPC.BANKCODE(SBREGION) - SB Region bank codes (no-op in Python)
-#     # //INFIL5 DD DSN=RMDS.OPC.BANKCODE(PPREGION) - PP Region bank codes (no-op in Python)
-#     # //INFIL6 DD DSN=RMDS.OPC.BANKCODE(TTREGION) - TT Region bank codes (no-op in Python)
-
-#     del lnnote1, lnnote2
-#     gc.collect()
-#     print("PBB section complete.")
-
 def run_pbb(rdate: str, loan_cache: Path, lnnote_cache: Path, lncomm_cache: Path):
     """
     Process PBB (Public Bank Berhad) section.
     Assumes inputs are already cached to Parquet (see cache_inputs_to_parquet()).
     """
-    print("Processing PBB section...")
+    print("\nProcessing PBB section...")
 
     lnnote1, lnnote2 = build_lnnote_datasets(loan_cache, lnnote_cache, lncomm_cache, "PBB")
 
@@ -959,50 +949,12 @@ def run_pbb(rdate: str, loan_cache: Path, lnnote_cache: Path, lncomm_cache: Path
 # MAIN: PIBB SECTION
 # =============================================================================
 
-# def run_pibb():
-#     """
-#     Process PIBB (Public Islamic Bank Berhad) section.
-#     Equivalent to the second EIBMLNLT SAS execution block (FOR PIBB).
-#     """
-#     print("Processing PIBB section...")
-
-#     _, rdate, _, _, lnnote1, lnnote2 = prepare_data(
-#         PIBB_LOAN_DIR, "iln",
-#         PIBB_LNNOTE_FILE, PIBB_LNCOMM_FILE,
-#         PIBB_CACHE_DIR, "PIBB"
-#     )
-
-#     write_lnlisd(lnnote1, PIBB_LNLISX_TXT)
-#     print(f"  Written: {PIBB_LNLISX_TXT}")
-
-#     pibb_title = 'P U B L I C   I S L A M I C   B A N K   B E R H A D'
-#     write_lnlist_fiss(lnnote1, rdate, PIBB_LNLISR_TXT, pibb_title, mode='w')
-#     print(f"  Written FISS section: {PIBB_LNLISR_TXT}")
-
-#     write_lnlist_sector(lnnote2, rdate, PIBB_LNLISR_TXT, pibb_title, mode='a')
-#     print(f"  Appended Sector section: {PIBB_LNLISR_TXT}")
-
-#     # PROC DATASETS LIB=WORK NOLIST; DELETE NOTE1 LNNOTE1; (in-memory, no-op in Python)
-
-#     # //STEP01 EXEC PGM=IEFBR14 - Delete RBP2.B051.LOANLIS*.RPS datasets (no-op in Python)
-#     # //STEP02 EXEC PGM=SPLIB136 - Insert control characters for RPS, split by region (no-op in Python)
-#     # //INFIL1 DD DSN=RMDS.OPC.BANKCODE(KLREGION) - KL Region bank codes (no-op in Python)
-#     # //INFIL2 DD DSN=RMDS.OPC.BANKCODE(BGREGION) - BG Region bank codes (no-op in Python)
-#     # //INFIL3 DD DSN=RMDS.OPC.BANKCODE(JBREGION) - JB Region bank codes (no-op in Python)
-#     # //INFIL4 DD DSN=RMDS.OPC.BANKCODE(SBREGION) - SB Region bank codes (no-op in Python)
-#     # //INFIL5 DD DSN=RMDS.OPC.BANKCODE(PPREGION) - PP Region bank codes (no-op in Python)
-#     # //INFIL6 DD DSN=RMDS.OPC.BANKCODE(TTREGION) - TT Region bank codes (no-op in Python)
-
-#     del lnnote1, lnnote2
-#     gc.collect()
-#     print("PIBB section complete.")
-
 def run_pibb(rdate: str, loan_cache: Path, lnnote_cache: Path, lncomm_cache: Path):
     """
     Process PIBB (Public Islamic Bank Berhad) section.
     Assumes inputs are already cached to Parquet (see cache_inputs_to_parquet()).
     """
-    print("Processing PIBB section...")
+    print("\nProcessing PIBB section...")
 
     lnnote1, lnnote2 = build_lnnote_datasets(loan_cache, lnnote_cache, lncomm_cache, "PIBB")
 
