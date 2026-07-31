@@ -1,13 +1,22 @@
-# Handle NAME: if it came from LNNOTE (with suffix _note), rename/coalesce
-if 'NAME_note' in merged.columns:
-    if 'NAME' in merged.columns:
-        # If LOAN also has NAME, use LNNOTE's if not null, else LOAN's
-        merged = merged.with_columns([
-            pl.when(pl.col('NAME_note').is_not_null())
-             .then(pl.col('NAME_note'))
-             .otherwise(pl.col('NAME'))
-             .alias('NAME')
-        ]).drop('NAME_note')
-    else:
-        # LOAN lacks NAME, so simply rename
-        merged = merged.rename({'NAME_note': 'NAME'})
+lnnote_df = con.execute(f"""
+    SELECT ACCTNO, NOTENO, BANKNO, STATE, NAME
+    FROM read_parquet('{lnnote_cache}')
+    ORDER BY ACCTNO, NOTENO
+""").pl()
+
+
+# After handling BANKNO, STATE, NAME:
+# Rename SECTOR -> SECTORCD and CUSTCODE -> CUSTCD if they exist
+if 'SECTOR' in merged.columns and 'SECTORCD' not in merged.columns:
+    merged = merged.rename({'SECTOR': 'SECTORCD'})
+if 'CUSTCODE' in merged.columns and 'CUSTCD' not in merged.columns:
+    merged = merged.rename({'CUSTCODE': 'CUSTCD'})
+
+
+lnote = merged.select([
+    'BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'BALANCE',
+    'SECTORCD', 'CUSTCD', 'INTRATE', 'COMMNO', 'LIABCODE',
+    'APPRLIMT', 'FISSPURP', 'STATE'
+])
+
+
