@@ -352,17 +352,17 @@ def build_lnnote_datasets(loan_cache: Path, lnnote_cache: Path,
         merged = merged.rename({'CUSTCODE': 'CUSTCD'})
 
     # lnote = merged.filter(pl.col('ACCTYPE') == 'LN').select([
+    # lnote = merged.select([
+    #     'BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'BALANCE',
+    #     'SECTORCD', 'CUSTCD', 'INTRATE', 'NTBRCH', 'COMMNO', 'LIABCODE',
+    #     'APPRLIMT', 'FISSPURP', 'STATE'
+    # ]).sort(['ACCTNO', 'COMMNO'])
+
     lnote = merged.select([
         'BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'BALANCE',
-        'SECTORCD', 'CUSTCD', 'INTRATE', 'NTBRCH', 'COMMNO', 'LIABCODE',
+        'SECTORCD', 'CUSTCD', 'INTRATE', 'COMMNO', 'LIABCODE',
         'APPRLIMT', 'FISSPURP', 'STATE'
     ]).sort(['ACCTNO', 'COMMNO'])
-
-    # lnote = merged.select([
-        # 'BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'BALANCE',
-        # 'SECTORCD', 'CUSTCD', 'INTRATE', 'COMMNO', 'LIABCODE',
-        # 'APPRLIMT', 'FISSPURP', 'STATE'
-    # ])
 
     del merged, loan_df, lnnote_df
     gc.collect()
@@ -376,16 +376,21 @@ def build_lnnote_datasets(loan_cache: Path, lnnote_cache: Path,
 
     note1 = lnote.join(lncomm, on=['ACCTNO', 'COMMNO'], how='left', suffix='_comm')
 
+    # for col in ['BANKNO', 'BRANCH', 'NOTENO', 'NAME', 'BALANCE', 'SECTORCD', 'CUSTCD',
+    #             'INTRATE', 'NTBRCH', 'LIABCODE', 'APPRLIMT', 'FISSPURP', 'STATE']:
     for col in ['BANKNO', 'BRANCH', 'NOTENO', 'NAME', 'BALANCE', 'SECTORCD', 'CUSTCD',
-                'INTRATE', 'NTBRCH', 'LIABCODE', 'APPRLIMT', 'FISSPURP', 'STATE']:
+                'INTRATE', 'LIABCODE', 'APPRLIMT', 'FISSPURP', 'STATE']:
         comm_col = f"{col}_comm"
         if comm_col in note1.columns:
             note1 = note1.with_columns(
                 pl.when(pl.col(comm_col).is_not_null()).then(pl.col(comm_col)).otherwise(pl.col(col)).alias(col)
             ).drop(comm_col)
 
+    # note1_cols = ['BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'APPRLIMT', 'BALANCE',
+    #               'SECTORCD', 'CUSTCD', 'STATE', 'INTRATE', 'NTBRCH', 'COMMNO', 'LIABCODE',
+    #               'CCOLLTRL', 'FISSPURP']
     note1_cols = ['BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'APPRLIMT', 'BALANCE',
-                  'SECTORCD', 'CUSTCD', 'STATE', 'INTRATE', 'NTBRCH', 'COMMNO', 'LIABCODE',
+                  'SECTORCD', 'CUSTCD', 'STATE', 'INTRATE', 'COMMNO', 'LIABCODE',
                   'CCOLLTRL', 'FISSPURP']
     note1 = note1.select([c for c in note1_cols if c in note1.columns])
 
