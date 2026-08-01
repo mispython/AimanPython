@@ -69,7 +69,7 @@ INPUT_DEPO_DIR  = STG_DIR / "DEPO"
 INPUT_IDEPO_DIR = STG_DIR / "IDEPO"
 
 # Parquet cache directory
-CACHE_DIR = BASE_DIR / "input" / "prod" / "cache" / "EIBM0941"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBM0941"
 
 # Output
 OUTPUT_DIR = BASE_DIR / "output" / "EIBM0941"
@@ -107,7 +107,7 @@ REPTMON1 = f"{MM1:02d}"                       # PUT(MM1,Z2.) -- computed for
                                                # again after this point.
 REPTDT   = monthly_values.yymmdd              # PUT(REPTDATE,YYMMDDN6.)
 
-YM = int(f"{RYEAR}{RMONTH}")                  # YM=&RYEAR&RMONTH
+YM = int(f"{RYEAR}{REPTMON1}")                  # YM=&RYEAR&RMONTH
 
 OUTPUT_FILE = OUTPUT_DIR / "FMGL0941.txt"
 
@@ -122,14 +122,14 @@ print(f"  Output file  : {OUTPUT_FILE.name}")
 # ============================================================================
 print("\nStep 2: Resolving input file paths...")
 
-savg_path   = INPUT_MIS_DIR   / f"savg{RMONTH}.sas7bdat"
-curr_path   = INPUT_MIS_DIR   / f"curr{RMONTH}.sas7bdat"
-fd_path     = INPUT_MIS_DIR   / f"fd{RMONTH}.sas7bdat"
-savgf_path  = INPUT_MISS_DIR  / f"savgf{RMONTH}.sas7bdat"
-currf_path  = INPUT_MISS_DIR  / f"currf{RMONTH}.sas7bdat"
-fdf_path    = INPUT_MISS_DIR  / f"fdf{RMONTH}.sas7bdat"
-rnidm_path  = INPUT_DEPO_DIR  / f"rnidm{RMONTH}.sas7bdat"
-irnidm_path = INPUT_IDEPO_DIR / f"rnidm{RMONTH}.sas7bdat"
+savg_path   = INPUT_MIS_DIR   / f"savg{REPTMON1}.sas7bdat"
+curr_path   = INPUT_MIS_DIR   / f"curr{REPTMON1}.sas7bdat"
+fd_path     = INPUT_MIS_DIR   / f"fd{REPTMON1}.sas7bdat"
+savgf_path  = INPUT_MISS_DIR  / f"savgf{REPTMON1}.sas7bdat"
+currf_path  = INPUT_MISS_DIR  / f"currf{REPTMON1}.sas7bdat"
+fdf_path    = INPUT_MISS_DIR  / f"fdf{REPTMON1}.sas7bdat"
+rnidm_path  = INPUT_DEPO_DIR  / f"rnidm{REPTMON1}.sas7bdat"
+irnidm_path = INPUT_IDEPO_DIR / f"rnidm{REPTMON1}.sas7bdat"
 
 for _p in (savg_path, curr_path, fd_path, savgf_path,
            currf_path, fdf_path, rnidm_path, irnidm_path):
@@ -201,14 +201,14 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 # ============================================================================
 print("\nStep 3: Caching SAS files to Parquet (if needed)...")
 
-SAVG_CACHE   = CACHE_DIR / f"savg{RMONTH}.parquet"
-CURR_CACHE   = CACHE_DIR / f"curr{RMONTH}.parquet"
-FD_CACHE     = CACHE_DIR / f"fd{RMONTH}.parquet"
-SAVGF_CACHE  = CACHE_DIR / f"savgf{RMONTH}.parquet"
-CURRF_CACHE  = CACHE_DIR / f"currf{RMONTH}.parquet"
-FDF_CACHE    = CACHE_DIR / f"fdf{RMONTH}.parquet"
-RNIDM_CACHE  = CACHE_DIR / f"rnidm{RMONTH}.parquet"
-IRNIDM_CACHE = CACHE_DIR / f"irnidm{RMONTH}.parquet"
+SAVG_CACHE   = CACHE_DIR / f"savg{REPTMON1}.parquet"
+CURR_CACHE   = CACHE_DIR / f"curr{REPTMON1}.parquet"
+FD_CACHE     = CACHE_DIR / f"fd{REPTMON1}.parquet"
+SAVGF_CACHE  = CACHE_DIR / f"savgf{REPTMON1}.parquet"
+CURRF_CACHE  = CACHE_DIR / f"currf{REPTMON1}.parquet"
+FDF_CACHE    = CACHE_DIR / f"fdf{REPTMON1}.parquet"
+RNIDM_CACHE  = CACHE_DIR / f"rnidm{REPTMON1}.parquet"
+IRNIDM_CACHE = CACHE_DIR / f"irnidm{REPTMON1}.parquet"
 
 _conversion_plan = [
     (savg_path, SAVG_CACHE, "SAVG"),
@@ -402,6 +402,9 @@ print(f"  IRNID1 rows: {len(irnid1_final):,}")
 # PROC SORT; BY AGLFLD BRANCX PRODUCX;
 # ============================================================================
 print("\nStep 7: Combining DEP + RNID1 + IRNID1...")
+
+rnid1_final = rnid1_final.with_columns(pl.col("NOACCT").cast(pl.Float64))
+irnid1_final = irnid1_final.with_columns(pl.col("NOACCT").cast(pl.Float64))
 
 all_df = pl.concat([dep_final, rnid1_final, irnid1_final], how="vertical")
 all_df = all_df.sort(["AGLFLD", "BRANCX", "PRODUCX"])
