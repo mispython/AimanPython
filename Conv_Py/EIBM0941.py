@@ -97,17 +97,17 @@ reptdate = monthly_values.reptdate
 MM       = reptdate.month
 MM1      = MM - 1 if MM > 1 else 12   # REPTMON1: same wraparound logic as SAS
 
-RDATE    = monthly_values.ddmmyy8            # PUT(REPTDATE,DDMMYY8.)
-RYEAR    = monthly_values.reptyear            # PUT(REPTDATE,YEAR4.)
-RMONTH   = monthly_values.reptmon             # PUT(MM,Z2.)
-REPTMON1 = f"{MM1:02d}"                       # PUT(MM1,Z2.) -- computed for
-                                               # parity with SAS but, exactly
-                                               # as in the original source,
-                                               # REPTMON1 is never referenced
-                                               # again after this point.
-REPTDT   = monthly_values.yymmdd              # PUT(REPTDATE,YYMMDDN6.)
+RDATE    = monthly_values.ddmmyy8           # PUT(REPTDATE,DDMMYY8.)
+RYEAR    = monthly_values.reptyear          # PUT(REPTDATE,YEAR4.)
+RMONTH   = monthly_values.reptmon           # PUT(MM,Z2.)
+REPTMON1 = f"{MM1:02d}"                     # PUT(MM1,Z2.) -- computed for
+                                            # parity with SAS but, exactly
+                                            # as in the original source,
+                                            # REPTMON1 is never referenced
+                                            # again after this point.
+REPTDT   = monthly_values.yymmdd            # PUT(REPTDATE,YYMMDDN6.)
 
-YM = int(f"{RYEAR}{REPTMON1}")                  # YM=&RYEAR&RMONTH
+YM = int(f"{RYEAR}{REPTMON1}")              # YM=&RYEAR&RMONTH
 
 OUTPUT_FILE = OUTPUT_DIR / "FMGL0941.txt"
 
