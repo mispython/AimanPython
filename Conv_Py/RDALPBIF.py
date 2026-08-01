@@ -1,286 +1,167 @@
 #!/usr/bin/env python3
 """
-Program  : RDALPBIF.py
-Purpose  : Load PBIF client data, filter and enrich, then compute
-           next billing date (MATDTE) for commitment maturity profiling.
+Program : RDALPBIF.py
+Purpose : Build the PBIF liquidity dataset for the NORMAL (non month-end)
+          reporting cycle. Converted from Ori_SAS/RDALPBIF, %INC'd by
+          EIBMAPBL when REPTQ = 'N' (tomorrow is NOT the 1st of a month).
 
-           Reads  : PBIF.CLIEN<REPTYEAR><REPTMON><REPTDAY>  (parquet)
-                    REPTDATE                                  (parquet, from caller)
-
-           Produces: PBIF dataset (parquet) — enriched with MATDTE, PRODCD,
-                     FISSPURP, AMTIND, CUSTFISS, BALANCE, UNDRAWN.
-
-           Note   : This module is included (%INC PGM(RDALPBIF)) by a calling
-                    program. It expects REPTDATE (date) and the following macro
-                    variables to be passed in: REPTYEAR, REPTMON, REPTDAY.
-
-           Dependencies: PBBLNFMT (included in SAS header via %INC PGM(PBBLNFMT))
+Dependency note:
+    The original SAS source has "%INC PGM(PBBLNFMT);" at the top, but no
+    PUT(var, fmt.) style call against any PBBLNFMT format exists anywhere
+    in this program's body. Per conversion policy the include is kept only
+    as a comment/placeholder below and is NOT wired up as a live import,
+    because none of PBBLNFMT's format functions are actually exercised here.
 """
 
-# ============================================================================
-# STANDARD LIBRARY IMPORTS
-# ============================================================================
-import logging
+# from PBBLNFMT import ...   # placeholder only -- no PBBLNFMT format is
+                              # actually referenced anywhere in RDALPBIF.
+
 from datetime import date
-from pathlib import Path
 from typing import Optional
 
-# ============================================================================
-# THIRD-PARTY IMPORTS
-# ============================================================================
+import duckdb
 import polars as pl
 
 # ============================================================================
-# DEPENDENCY IMPORTS
-# Note: %INC PGM(PBBLNFMT) appears in the SAS header as a global include.
-#       Examining this program's logic: it applies fixed constants ('30591', '0470',
-#       'D') and a local CUSTFISS remap — none of which are PBBLNFMT format functions.
-#       The PBBLNFMT include is inherited from the calling job's global context in SAS
-#       but no PBBLNFMT functions are directly invoked in this program's code.
+# CUSTFISS / CUSTCX RECODE
+# IF CUSTFISS IN (41,42,43,66) THEN CUSTFISS=41; ELSE
+# IF CUSTFISS IN (44,47,67)    THEN CUSTFISS=44; ELSE
+# IF CUSTFISS IN (46)          THEN CUSTFISS=46; ELSE
+# IF CUSTFISS IN (48,49,51,68) THEN CUSTFISS=48; ELSE
+# IF CUSTFISS IN (52,53,54,69) THEN CUSTFISS=52;
 # ============================================================================
-
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-BASE_DIR   = Path(".")
-DATA_DIR   = BASE_DIR / "data"
-OUTPUT_DIR = BASE_DIR / "output"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-PBIF_DATA_DIR = DATA_DIR / "pbif"      # PBIF.CLIEN<REPTYEAR><REPTMON><REPTDAY>
-REPTDATE_PATH = DATA_DIR / "bnm" / "reptdate.parquet"
-
-# ============================================================================
-# CONSTANTS — calendar day counts (matches %DCLVAR RETAIN D1-D12 31 D4 D6 D9 D11 30)
-# ============================================================================
-_BASE_LDAY = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+_CUSTFISS_MAP = {
+    "41": "41", "42": "41", "43": "41", "66": "41",
+    "44": "44", "47": "44", "67": "44",
+    "46": "46",
+    "48": "48", "49": "48", "51": "48", "68": "48",
+    "52": "52", "53": "52", "54": "52", "69": "52",
+}
 
 
-def lday_array(year: int) -> list[int]:
-    """Return days-in-month array for given year, leap-year aware."""
-    d = _BASE_LDAY.copy()
-    if year % 4 == 0:
-        d[1] = 29
-    return d
-
-# ============================================================================
-# LOGGING
-# ============================================================================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-log = logging.getLogger(__name__)
+def _map_custfiss(custcd: Optional[str]) -> str:
+    """CUSTFISS=CUSTCD; recode chain; CUSTCX=CUSTFISS;"""
+    code = "" if custcd is None else str(custcd).strip()
+    return _CUSTFISS_MAP.get(code, code)
 
 
 # ============================================================================
-# HELPER: %NXTBLDT macro (RDALPBIF variant)
-# Advance MATDTE by FREQ months from DAY(MATDTE).
+# %NXTBLDT MACRO — advance MATDTE by FREQ months, capping day-of-month
+# LDAY array (D1-D12): 31 default, D4/D6/D9/D11=30, D2 leap-year aware.
 # ============================================================================
-def next_matdte(matdte: date, freq: int) -> date:
-    """
-    %MACRO NXTBLDT (RDALPBIF version):
-      DD = DAY(MATDTE)
-      MM = MONTH(MATDTE) + FREQ
-      YY = YEAR(MATDTE)
-      IF MM > 12: MM -= 12; YY += 1
-      End-of-month capping applied.
-    Note: uses MATDTE.day (not ISSDTE) unlike the EIIBTLIQ variant.
-    """
+def _days_in_month(month: int, year: int) -> int:
+    days = {1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
+            7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
+    if month == 2 and year % 4 == 0:   # SAS simple leap rule (YEARCUTOFF=1950)
+        return 29
+    return days[month]
+
+
+def _next_bldate(matdte: date, freq: int) -> date:
     dd = matdte.day
     mm = matdte.month + freq
     yy = matdte.year
-
     if mm > 12:
         mm -= 12
         yy += 1
-
-    lday = lday_array(yy)
-    if mm == 2 and yy % 4 == 0:
-        lday[1] = 29
-    if dd > lday[mm - 1]:
-        dd = lday[mm - 1]
-
-    try:
-        return date(yy, mm, dd)
-    except ValueError:
-        return date(yy, mm, lday[mm - 1])
+    last_day = _days_in_month(mm, yy)
+    if dd > last_day:
+        dd = last_day
+    return date(yy, mm, dd)
 
 
-# ============================================================================
-# CUSTFISS remapping (mirrors IF/ELSE IF chain in SAS)
-# ============================================================================
-def remap_custfiss(custfiss: int) -> int:
-    if custfiss in (41, 42, 43, 66):   return 41
-    if custfiss in (44, 47, 67):        return 44
-    if custfiss in (46,):               return 46
-    if custfiss in (48, 49, 51, 68):    return 48
-    if custfiss in (52, 53, 54, 69):    return 52
-    return custfiss
-
-
-# ============================================================================
-# STEP 1: Load and filter PBIF.CLIEN<REPTYEAR><REPTMON><REPTDAY>
-# ============================================================================
-def load_pbif(reptyear: str, reptmon: str, reptday: str) -> pl.DataFrame:
+def build_pbif(client_cache_path: str, reptdate: date) -> pl.DataFrame:
     """
-    DATA PBIF; SET PBIF.CLIEN&REPTYEAR&REPTMON&REPTDAY;
-      IF ENTITY='PBBH';
-      IF FIU=0.00 AND PRMTHFIU=0.00 THEN DELETE;
-      APPRLIMX = INLIMIT;
-      PRODCD   = '30591';
-      FISSPURP = '0470';
-      AMTIND   = 'D';
-      CUSTFISS remapping;
-      CUSTCX   = CUSTFISS;
-      BALANCE  = SUM(FIU, PRMTHFIU);
-      UNDRAWN  = INLIMIT - BALANCE;
-    PROC SORT; BY CLIENTNO;
-    """
-    pbif_path = PBIF_DATA_DIR / f"CLIEN{reptyear}{reptmon}{reptday}.parquet"
-    df = pl.read_parquet(pbif_path)
+    Convert RDALPBIF into a callable producing the final PBIF dataset.
 
-    # Filter ENTITY='PBBH' and non-zero FIU or PRMTHFIU
-    df = df.filter(
-        (pl.col("ENTITY") == "PBBH") &
-        ~((pl.col("FIU") == 0.0) & (pl.col("PRMTHFIU") == 0.0))
+    Args:
+        client_cache_path: path to the cached Parquet version of
+                            PBIF.CLIEN&REPTYEAR&REPTMON&REPTDAY (.sas7bdat).
+        reptdate: date object equivalent to REPTDATE (from REPTDATE.py).
+
+    Returns:
+        Final PBIF Polars DataFrame, equivalent to
+        "PROC SORT DATA=PBIF OUT=PBIF NODUPKEY; BY CLIENTNO MATDTE;"
+    """
+    # ------------------------------------------------------------------
+    # DATA PBIF; SET PBIF.CLIEN...; IF ENTITY='PBBH';
+    # ------------------------------------------------------------------
+    con = duckdb.connect(database=":memory:")
+    base = con.execute(f"""
+        SELECT
+            CAST(ENTITY   AS VARCHAR) AS ENTITY,
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            CAST(CLIENTNO AS VARCHAR) AS CLIENTNO,
+            CAST(ACCTNO   AS VARCHAR) AS ACCTNO,
+            CAST(INLIMIT  AS DOUBLE)  AS INLIMIT,
+            CAST(FIU      AS DOUBLE)  AS FIU,
+            CAST(PRMTHFIU AS DOUBLE)  AS PRMTHFIU,
+            CAST(CUSTCD   AS VARCHAR) AS CUSTCD,
+            CAST(SECTORCD AS VARCHAR) AS SECTORCD,
+            CAST(STDATES  AS DATE)    AS STDATES
+        FROM read_parquet('{client_cache_path}')
+        WHERE ENTITY = 'PBBH'
+    """).pl()
+    con.close()
+
+    if base.is_empty():
+        return base
+
+    # APPRLIMX=INLIMIT; PRODCD='30591'; FISSPURP='0470'; AMTIND='D';
+    base = base.with_columns([
+        pl.col("INLIMIT").alias("APPRLIMX"),
+        pl.lit("30591").alias("PRODCD"),
+        pl.lit("0470").alias("FISSPURP"),
+        pl.lit("D").alias("AMTIND"),
+    ])
+
+    # CUSTFISS=CUSTCD; recode chain; CUSTCX=CUSTFISS;
+    base = base.with_columns(
+        pl.col("CUSTCD").map_elements(_map_custfiss, return_dtype=pl.Utf8).alias("CUSTCX")
     )
 
-    result_rows = []
-    for r in df.to_dicts():
-        fiu      = float(r.get("FIU",      0) or 0)
-        prmthfiu = float(r.get("PRMTHFIU", 0) or 0)
-        inlimit  = float(r.get("INLIMIT",  0) or 0)
-        custcd   = int(r.get("CUSTCD",     0) or 0)
+    # BALANCE=SUM(FIU,PRMTHFIU); UNDRAWN=(INLIMIT-BALANCE);
+    base = base.with_columns(
+        (pl.col("FIU").fill_null(0.0) + pl.col("PRMTHFIU").fill_null(0.0)).alias("BALANCE")
+    ).with_columns(
+        (pl.col("INLIMIT") - pl.col("BALANCE")).alias("UNDRAWN")
+    )
 
-        custfiss = remap_custfiss(custcd)
-        balance  = fiu + prmthfiu
-        undrawn  = inlimit - balance
+    # PROC SORT; BY CLIENTNO;  -- redundant: final PROC SORT NODUPKEY below
+    # re-sorts BY CLIENTNO MATDTE anyway, so the intermediate sort is skipped.
 
-        r.update({
-            "APPRLIMX": inlimit,
-            "PRODCD":   "30591",
-            "FISSPURP": "0470",
-            "AMTIND":   "D",
-            "CUSTFISS": custfiss,
-            "CUSTCX":   custfiss,
-            "BALANCE":  balance,
-            "UNDRAWN":  undrawn,
-        })
-        result_rows.append(r)
+    # PROC PRINT; VAR BRANCH CLIENTNO BALANCE CUSTCX FISSPURP INLIMIT
+    #             UNDRAWN SECTORCD ACCTNO; SUM BALANCE UNDRAWN;
+    print("\n[RDALPBIF] PBIF listing (equivalent PROC PRINT):")
+    print(base.select(["BRANCH", "CLIENTNO", "BALANCE", "CUSTCX", "FISSPURP",
+                        "INLIMIT", "UNDRAWN", "SECTORCD", "ACCTNO"]))
+    print(f"  SUM BALANCE = {base['BALANCE'].sum():,.2f}   "
+          f"SUM UNDRAWN = {base['UNDRAWN'].sum():,.2f}")
 
-    out = pl.DataFrame(result_rows) if result_rows else pl.DataFrame()
-    return out.sort("CLIENTNO") if not out.is_empty() else out
-
-
-# ============================================================================
-# PROC PRINT equivalent (for diagnostic output to log)
-# ============================================================================
-def print_pbif(df: pl.DataFrame) -> None:
-    """
-    PROC PRINT; VAR BRANCH CLIENTNO BALANCE CUSTCX FISSPURP INLIMIT UNDRAWN SECTORCD ACCTNO;
-    SUM BALANCE UNDRAWN;
-    Outputs summary to log.
-    """
-    cols = ["BRANCH", "CLIENTNO", "BALANCE", "CUSTCX", "FISSPURP",
-            "INLIMIT", "UNDRAWN", "SECTORCD", "ACCTNO"]
-    available = [c for c in cols if c in df.columns]
-    log.info("PBIF print (rows=%d):", len(df))
-    log.info("  SUM BALANCE : %.2f", float(df["BALANCE"].sum()) if "BALANCE" in df.columns else 0)
-    log.info("  SUM UNDRAWN : %.2f", float(df["UNDRAWN"].sum()) if "UNDRAWN" in df.columns else 0)
-
-
-# ============================================================================
-# STEP 2: Compute MATDTE via %NXTBLDT advance loop
-# ============================================================================
-def compute_matdte(df: pl.DataFrame, reptdate: date) -> pl.DataFrame:
-    """
-    DATA PBIF (DROP CUSTCD):
-      %DCLVAR — initialise day arrays from REPTDATE.
-      FREQ=6 (default); IF INLIMIT < 1000000.00 THEN FREQ=12.
-      MATDTE = REPTDATE.
-      IF STDATES > 0: MATDTE = STDATES; advance while MATDTE <= REPTDATE.
-    PROC SORT NODUPKEY; BY CLIENTNO MATDTE;
-    """
-    result_rows = []
-    for r in df.to_dicts():
-        inlimit = float(r.get("INLIMIT",  0) or 0)
-        stdates = r.get("STDATES")           # start date field
-
-        # FREQ: 12 for small limits, 6 for large
-        freq = 12 if inlimit < 1_000_000.0 else 6
-
+    # ------------------------------------------------------------------
+    # DATA PBIF; DROP CUSTCD; %DCLVAR FORMAT CUSTCX $2.; SET PBIF;
+    # FREQ=6; IF INLIMIT<1000000 THEN FREQ=12;
+    # MATDTE=REPTDATE; IF STDATES>0 THEN DO MATDTE=STDATES;
+    #    DO WHILE (MATDTE<=REPTDATE); %NXTBLDT END; END;
+    # ------------------------------------------------------------------
+    rows = base.drop("CUSTCD").to_dicts()
+    out_rows = []
+    for row in rows:
+        freq = 12 if row["INLIMIT"] < 1_000_000.00 else 6
         matdte = reptdate
-
-        if stdates and stdates > date(1960, 1, 1):
+        stdates = row.get("STDATES")
+        if stdates is not None and stdates > date(1960, 1, 1):
             matdte = stdates
-            # DO WHILE (MATDTE <= REPTDATE): %NXTBLDT
-            safety = 0
             while matdte <= reptdate:
-                matdte = next_matdte(matdte, freq)
-                safety += 1
-                if safety > 1000:
-                    break   # guard against infinite loop
+                matdte = _next_bldate(matdte, freq)
+        row["FREQ"] = freq
+        row["MATDTE"] = matdte
+        out_rows.append(row)
 
-        # DROP CUSTCD
-        r.pop("CUSTCD", None)
-        r["MATDTE"] = matdte
-        result_rows.append(r)
+    result = pl.DataFrame(out_rows)
 
-    out = pl.DataFrame(result_rows) if result_rows else pl.DataFrame()
-    if not out.is_empty():
-        out = out.unique(subset=["CLIENTNO", "MATDTE"], keep="first")\
-                 .sort(["CLIENTNO", "MATDTE"])
-    return out
-
-
-# ============================================================================
-# MAIN
-# ============================================================================
-def main(reptdate: Optional[date] = None,
-         reptyear: Optional[str]  = None,
-         reptmon:  Optional[str]  = None,
-         reptday:  Optional[str]  = None) -> pl.DataFrame:
-    """
-    Entry point for RDALPBIF — called by parent program.
-    If date parameters are not supplied, reads from REPTDATE_PATH.
-    Returns enriched PBIF dataframe.
-    """
-    log.info("RDALPBIF started.")
-
-    if reptdate is None:
-        rd       = pl.read_parquet(REPTDATE_PATH).row(0, named=True)
-        reptdate = rd["REPTDATE"]
-        reptyear = reptdate.strftime("%y")     # YEAR2. — two-digit year
-        reptmon  = f"{reptdate.month:02d}"
-        reptday  = f"{reptdate.day:02d}"
-
-    # ----------------------------------------------------------------
-    # Load and filter PBIF
-    # ----------------------------------------------------------------
-    pbif = load_pbif(reptyear, reptmon, reptday)
-    log.info("PBIF rows after filter: %d", len(pbif))
-
-    # PROC PRINT diagnostic
-    print_pbif(pbif)
-
-    # ----------------------------------------------------------------
-    # Compute MATDTE
-    # ----------------------------------------------------------------
-    pbif = compute_matdte(pbif, reptdate)
-    log.info("PBIF rows after MATDTE computation: %d", len(pbif))
-
-    # ----------------------------------------------------------------
-    # Write output parquet
-    # ----------------------------------------------------------------
-    out_path = OUTPUT_DIR / f"PBIF{reptyear}{reptmon}{reptday}.parquet"
-    pbif.write_parquet(out_path)
-    log.info("PBIF written: %s", out_path)
-
-    log.info("RDALPBIF completed.")
-    return pbif
-
-
-if __name__ == "__main__":
-    main()
+    # PROC SORT DATA=PBIF OUT=PBIF NODUPKEY; BY CLIENTNO MATDTE;
+    result = result.sort(["CLIENTNO", "MATDTE"]).unique(
+        subset=["CLIENTNO", "MATDTE"], keep="first", maintain_order=True
+    )
+    return result
