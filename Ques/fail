@@ -1,1 +1,2 @@
-CUSTCD = f"{int(row['CUSTCD']):>4}" if (row['CUSTCD'] is not None and not is_nan_float(row['CUSTCD'])) else '    '
+rnid1_final = rnid1_final.with_columns(pl.col("NOACCT").cast(pl.Float64))
+irnid1_final = irnid1_final.with_columns(pl.col("NOACCT").cast(pl.Float64))
