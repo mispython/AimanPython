@@ -61,14 +61,15 @@ from REPTDATE import get_monthly_reptdate_values
 
 # Input directories - Testing
 BASE_DIR        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR         = Path("/stgsrcsys/host/uat/AII/EIBM0941")
 
-INPUT_MIS_DIR   = BASE_DIR / "input" / "prod" / "EIBM0941" / "MIS"
-INPUT_MISS_DIR  = BASE_DIR / "input" / "prod" / "EIBM0941" / "MISS"
-INPUT_DEPO_DIR  = BASE_DIR / "input" / "prod" / "EIBM0941" / "DEPO"
-INPUT_IDEPO_DIR = BASE_DIR / "input" / "prod" / "EIBM0941" / "IDEPO"
+INPUT_MIS_DIR   = STG_DIR / "MIS"
+INPUT_MISS_DIR  = STG_DIR / "MISS"
+INPUT_DEPO_DIR  = STG_DIR / "DEPO"
+INPUT_IDEPO_DIR = STG_DIR / "IDEPO"
 
 # Parquet cache directory
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBM0941" / "cache"
+CACHE_DIR = BASE_DIR / "input" / "prod" / "cache" / "EIBM0941"
 
 # Output
 OUTPUT_DIR = BASE_DIR / "output" / "EIBM0941"
@@ -121,14 +122,14 @@ print(f"  Output file  : {OUTPUT_FILE.name}")
 # ============================================================================
 print("\nStep 2: Resolving input file paths...")
 
-savg_path   = INPUT_MIS_DIR   / f"SAVG{RMONTH}.sas7bdat"
-curr_path   = INPUT_MIS_DIR   / f"CURR{RMONTH}.sas7bdat"
-fd_path     = INPUT_MIS_DIR   / f"FD{RMONTH}.sas7bdat"
-savgf_path  = INPUT_MISS_DIR  / f"SAVGF{RMONTH}.sas7bdat"
-currf_path  = INPUT_MISS_DIR  / f"CURRF{RMONTH}.sas7bdat"
-fdf_path    = INPUT_MISS_DIR  / f"FDF{RMONTH}.sas7bdat"
-rnidm_path  = INPUT_DEPO_DIR  / f"RNIDM{RMONTH}.sas7bdat"
-irnidm_path = INPUT_IDEPO_DIR / f"RNIDM{RMONTH}.sas7bdat"
+savg_path   = INPUT_MIS_DIR   / f"savg{RMONTH}.sas7bdat"
+curr_path   = INPUT_MIS_DIR   / f"curr{RMONTH}.sas7bdat"
+fd_path     = INPUT_MIS_DIR   / f"fd{RMONTH}.sas7bdat"
+savgf_path  = INPUT_MISS_DIR  / f"savgf{RMONTH}.sas7bdat"
+currf_path  = INPUT_MISS_DIR  / f"currf{RMONTH}.sas7bdat"
+fdf_path    = INPUT_MISS_DIR  / f"fdf{RMONTH}.sas7bdat"
+rnidm_path  = INPUT_DEPO_DIR  / f"rnidm{RMONTH}.sas7bdat"
+irnidm_path = INPUT_IDEPO_DIR / f"rnidm{RMONTH}.sas7bdat"
 
 for _p in (savg_path, curr_path, fd_path, savgf_path,
            currf_path, fdf_path, rnidm_path, irnidm_path):
