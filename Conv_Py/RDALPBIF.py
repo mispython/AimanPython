@@ -16,7 +16,7 @@ Dependency note:
 # from PBBLNFMT import ...   # placeholder only -- no PBBLNFMT format is
                               # actually referenced anywhere in RDALPBIF.
 
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 import duckdb
@@ -149,11 +149,20 @@ def build_pbif(client_cache_path: str, reptdate: date) -> pl.DataFrame:
     for row in rows:
         freq = 12 if row["INLIMIT"] < 1_000_000.00 else 6
         matdte = reptdate
+        # stdates = row.get("STDATES")
+        # if stdates is not None and stdates > date(1960, 1, 1):
+        #     matdte = stdates
+        #     while matdte <= reptdate:
+        #         matdte = _next_bldate(matdte, freq)
         stdates = row.get("STDATES")
-        if stdates is not None and stdates > date(1960, 1, 1):
-            matdte = stdates
-            while matdte <= reptdate:
-                matdte = _next_bldate(matdte, freq)
+        if stdates is not None:
+            # Convert to date if it's a datetime
+            if isinstance(stdates, datetime):
+                stdates = stdates.date()
+            if stdates > date(1960, 1, 1):
+                matdte = stdates
+                while matdte <= reptdate:
+                    matdte = _next_bldate(matdte, freq)
         row["FREQ"] = freq
         row["MATDTE"] = matdte
         out_rows.append(row)
