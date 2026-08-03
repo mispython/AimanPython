@@ -1,60 +1,21 @@
-import gc
-from pathlib import Path
-from datetime import datetime                      # <-- ADDED (if not already)
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMAPBL.py
+Step 1: Deriving report date...
+  Report date : 02/08/26
+  REPTYEAR/REPTMON/REPTDAY : 26/08/02
+  REPTQ (month-end?) : N
 
-import duckdb
-import pandas as pd
-import polars as pl
-import pyarrow as pa
-import pyarrow.parquet as pq
+Step 2: Resolving CLIENT dataset...
+  CLIENT source : clien260802.sas7bdat
+  [CLIENT] Converting clien260802.sas7bdat -> clien260802.parquet ...
+  [CLIENT] Done -- 31 rows cached.
 
-from GET_BATCH_DATE import get_batch_date_dwh      # <-- ADDED
+Step 3: Building PBIF via RDALPBIF/RDLMPBIF...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMAPBL.py", line 135, in <module>
+    pbif = RDALPBIF.build_pbif(str(CLIENT_CACHE_PATH), reptdate)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/RDALPBIF.py", line 90, in build_pbif
+    base = con.execute(f"""
+_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column STDATES
 
-# ... paths ...
-
-# ============================================================
-# REPORT DATE DERIVATION  (from batch control, not REPTDATE)
-# ============================================================
-SOURCE_SYSTEM = 'REMIT'   # choose the code for remittance data (from your list)
-
-# Fetch batch date string (format: "YYYY-MM-DD HH:MM:SS")
-batch_date_str = get_batch_date_dwh(SOURCE_SYSTEM)
-
-# Parse to datetime
-batch_dt = datetime.strptime(batch_date_str, "%Y-%m-%d %H:%M:%S")
-
-# Derive the report-date components
-RDATE = batch_dt.date()
-REPTYEAR = batch_dt.strftime("%y")   # two-digit year
-REPTMON = batch_dt.strftime("%m")    # zero-padded month
-
-# Compute NOWK (same logic as SAS SELECT(DAY(REPTDATE)))
-day_of_month = batch_dt.day
-if 1 <= day_of_month <= 8:
-    NOWK = '1'
-elif 9 <= day_of_month <= 15:
-    NOWK = '2'
-elif 16 <= day_of_month <= 22:
-    NOWK = '3'
-else:
-    NOWK = '4'
-
-print(f"Report Date  : {RDATE}")
-print(f"Report Year  : {REPTYEAR}")
-print(f"Report Month : {REPTMON}")
-print(f"Report Week  : {NOWK}")
-
-# ============================================================
-# BUILD RMT FILENAME from derived components  (matches SAS naming)
-# ============================================================
-# Original: SET RMT.REMTRAN&REPTMON&NOWK&REPTYEAR;
-rmt_filename = f"remtran{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-rmt_file = INPUT_DIR / rmt_filename
-
-if not rmt_file.exists():
-    raise FileNotFoundError(
-        f"Expected RMT file not found: {rmt_file}\n"
-        f"Derived from batch date {batch_dt.date()} with NOWK={NOWK}."
-    )
-
-print(f"Input RMT File : {rmt_file}")
+LINE 12:             CAST(STDATES  AS DATE)    AS STDATES
+                     ^
