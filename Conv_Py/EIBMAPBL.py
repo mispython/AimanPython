@@ -32,8 +32,8 @@ import RDLMPBIF
 # ============================================================================
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_CLIENT_DIR = BASE_DIR / "input" / "prod" / "EIBMAPBL"
-INPUT_MECHRG_FILE = BASE_DIR / "input" / "prod" / "EIBMAPBL" / "MECHRG.txt"
+INPUT_CLIENT_DIR  = Path("/stgsrcsys/host/uat/AII/EIBMAPBL")
+INPUT_MECHRG_FILE = Path("/stgsrcsys/host/uat/AII/EIBMAPBL") / "MECHRG.txt"
 
 CACHE_DIR  = BASE_DIR / "input" / "prod" / "EIBMAPBL"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMAPBL"
@@ -72,8 +72,8 @@ OUTPUT_FILE = OUTPUT_DIR / f"PBIFLIQ{REPTMON}{REPTYEAR}.dat"
 # ============================================================================
 print("\nStep 2: Resolving CLIENT dataset...")
 
-CLIENT_SAS_PATH   = INPUT_CLIENT_DIR / f"CLIEN{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-CLIENT_CACHE_PATH = CACHE_DIR / f"CLIEN{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
+CLIENT_SAS_PATH   = INPUT_CLIENT_DIR / f"clien{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+CLIENT_CACHE_PATH = CACHE_DIR / f"clien{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 
 print(f"  CLIENT source : {CLIENT_SAS_PATH.name}")
 
