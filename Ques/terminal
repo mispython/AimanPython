@@ -6,16 +6,33 @@ Step 1: Deriving report date...
 
 Step 2: Resolving CLIENT dataset...
   CLIENT source : clien260802.sas7bdat
-  [CLIENT] Converting clien260802.sas7bdat -> clien260802.parquet ...
-  [CLIENT] Done -- 31 rows cached.
+  [CLIENT] Cache fresh -- skipping conversion.
 
 Step 3: Building PBIF via RDALPBIF/RDLMPBIF...
+
+[RDALPBIF] PBIF listing (equivalent PROC PRINT):
+shape: (31, 9)
+┌────────┬───────────┬─────────┬────────┬───┬──────────┬──────────┬──────────┬──────────────┐
+│ BRANCH ┆ CLIENTNO  ┆ BALANCE ┆ CUSTCX ┆ … ┆ INLIMIT  ┆ UNDRAWN  ┆ SECTORCD ┆ ACCTNO       │
+│ ---    ┆ ---       ┆ ---     ┆ ---    ┆   ┆ ---      ┆ ---      ┆ ---      ┆ ---          │
+│ i32    ┆ str       ┆ f64     ┆ str    ┆   ┆ f64      ┆ f64      ┆ str      ┆ str          │
+╞════════╪═══════════╪═════════╪════════╪═══╪══════════╪══════════╪══════════╪══════════════╡
+│ 168    ┆ COE01D0KL ┆ 0.0     ┆ 67.0   ┆ … ┆ 500000.0 ┆ 500000.0 ┆ 3313     ┆ 2057319026.0 │
+│ 168    ┆ DPT21D5PG ┆ 0.0     ┆ 67.0   ┆ … ┆ 850000.0 ┆ 850000.0 ┆ 3851     ┆ 2062650506.0 │
+│ 168    ┆ FLN01D0KL ┆ 0.0     ┆ 67.0   ┆ … ┆ 3e6      ┆ 3e6      ┆ 5030     ┆ 2057319123.0 │
+│ 168    ┆ GST01D0KL ┆ 0.0     ┆ 67.0   ┆ … ┆ 500000.0 ┆ 500000.0 ┆ 6120     ┆ 2057319705.0 │
+│ 168    ┆ HEC01D0KL ┆ 0.0     ┆ 51.0   ┆ … ┆ 1.8e6    ┆ 1.8e6    ┆ 3834     ┆ 2057319936.0 │
+│ …      ┆ …         ┆ …       ┆ …      ┆ … ┆ …        ┆ …        ┆ …        ┆ …            │
+│ 168    ┆ TED01D0KL ┆ 0.0     ┆ 67.0   ┆ … ┆ 500000.0 ┆ 500000.0 ┆ 5001     ┆ 2061274820.0 │
+│ 168    ┆ UNA01D0PG ┆ 0.0     ┆ 67.0   ┆ … ┆ 800000.0 ┆ 800000.0 ┆ 6130     ┆ 2061274917.0 │
+│ 168    ┆ UPP01D0KL ┆ 0.0     ┆ 62.0   ┆ … ┆ 1e6      ┆ 1e6      ┆ 3280     ┆ 2061275002.0 │
+│ 7      ┆ VPS01D0JB ┆ 0.0     ┆ 63.0   ┆ … ┆ 450000.0 ┆ 450000.0 ┆ 3819     ┆ 2047215000.0 │
+│ 168    ┆ WAH01D0PG ┆ 0.0     ┆ 67.0   ┆ … ┆ 200000.0 ┆ 200000.0 ┆ 3551     ┆ 2062650215.0 │
+└────────┴───────────┴─────────┴────────┴───┴──────────┴──────────┴──────────┴──────────────┘
+  SUM BALANCE = 0.00   SUM UNDRAWN = 29,850,000.00
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMAPBL.py", line 135, in <module>
     pbif = RDALPBIF.build_pbif(str(CLIENT_CACHE_PATH), reptdate)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/RDALPBIF.py", line 90, in build_pbif
-    base = con.execute(f"""
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column STDATES
-
-LINE 12:             CAST(STDATES  AS DATE)    AS STDATES
-                     ^
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/RDALPBIF.py", line 153, in build_pbif
+    if stdates is not None and stdates > date(1960, 1, 1):
+TypeError: can't compare datetime.datetime to datetime.date
