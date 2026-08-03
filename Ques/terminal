@@ -1,52 +1,30 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBM0941.py
-Step 1: Deriving report date...
-  Report date  : 31/07/26
-  RYEAR/RMONTH : 2026/07  (REPTMON1=06, unused downstream)
-  REPTDT       : 260731
-  YM           : 202607
-  Output file  : FMGL0941.txt
-
-Step 2: Resolving input file paths...
-  savg07.sas7bdat
-  curr07.sas7bdat
-  fd07.sas7bdat
-  savgf07.sas7bdat
-  currf07.sas7bdat
-  fdf07.sas7bdat
-  rnidm07.sas7bdat
-  rnidm07.sas7bdat
-
-Step 3: Caching SAS files to Parquet (if needed)...
-  [SAVG] Converting savg07.sas7bdat -> savg07.parquet ...
-  [SAVG] Done — 2,314 rows cached.
-  [CURR] Converting curr07.sas7bdat -> curr07.parquet ...
-  [CURR] Done — 5,013 rows cached.
-  [FD] Converting fd07.sas7bdat -> fd07.parquet ...
-  [FD] Done — 1,104 rows cached.
-  [SAVGF] Converting savgf07.sas7bdat -> savgf07.parquet ...
-  [SAVGF] Done — 2,052 rows cached.
-  [CURRF] Converting currf07.sas7bdat -> currf07.parquet ...
-  [CURRF] Done — 2,469 rows cached.
-  [FDF] Converting fdf07.sas7bdat -> fdf07.parquet ...
-  [FDF] Done — 780 rows cached.
-  [RNIDM] Converting rnidm07.sas7bdat -> rnidm07.parquet ...
-  [RNIDM] Done — 1,622 rows cached.
-  [IRNIDM] Converting rnidm07.sas7bdat -> irnidm07.parquet ...
-  [IRNIDM] Done — 327 rows cached.
-
-Step 4: Building DEP (deposit summary, PBB + PIBB)...
-  DEP rows: 2,096
-
-Step 5: Building RNID1 (PBB)...
-  RNID1 rows: 0
-
-Step 6: Building IRNID1 (PIBB)...
-  IRNID1 rows: 0
-
-Step 7: Combining DEP + RNID1 + IRNID1...
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py
+[EIBDPTER] Report date : 02/08/2026
+[EIBDPTER] T  = 2026-08-02
+[EIBDPTER] T1 = 2026-08-03
+[EIBDPTER] T2 = 2026-08-04
+[EIBDPTER] T3 = 2026-08-05
+[EIBDPTER] Reading /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/deposit_d/fd260625.sas7bdat ...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBM0941.py", line 406, in <module>
-    all_df = pl.concat([dep_final, rnid1_final, irnid1_final], how="vertical")
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/functions/eager.py", line 234, in concat
-    out = wrap_df(plr.concat_df(elems))
-polars.exceptions.SchemaError: type Int64 is incompatible with expected type Float64
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3805, in get_loc
+    return self._engine.get_loc(casted_key)
+  File "index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7081, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7089, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'CUSTCD'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 625, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 596, in main
+    fcyt1, fcyt2, fcyt3, fcyt4 = build_fcyt(fd_df)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 159, in build_fcyt
+    df = df[~df["CUSTCD"].isin([77, 78, 95, 96])].copy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/frame.py", line 4102, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3812, in get_loc
+    raise KeyError(key) from err
+KeyError: 'CUSTCD'
