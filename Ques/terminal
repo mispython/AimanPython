@@ -1,30 +1,26 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py
-[EIBDPTER] Report date : 02/08/2026
-[EIBDPTER] T  = 2026-08-02
-[EIBDPTER] T1 = 2026-08-03
-[EIBDPTER] T2 = 2026-08-04
-[EIBDPTER] T3 = 2026-08-05
-[EIBDPTER] Reading /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/deposit_d/fd260625.sas7bdat ...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3805, in get_loc
-    return self._engine.get_loc(casted_key)
-  File "index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
-  File "index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
-  File "pandas/_libs/hashtable_class_helper.pxi", line 7081, in pandas._libs.hashtable.PyObjectHashTable.get_item
-  File "pandas/_libs/hashtable_class_helper.pxi", line 7089, in pandas._libs.hashtable.PyObjectHashTable.get_item
-KeyError: 'CUSTCD'
+from pathlib import Path
+import polars as pl
 
-The above exception was the direct cause of the following exception:
+# Replace REPTDATE import with GET_BATCH_DATE utilities
+from GET_BATCH_DATE import first_date_of_month, get_past_n_date   # <-- ADDED
+from datetime import datetime                                     # <-- ADDED (if not already imported)
 
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 625, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 596, in main
-    fcyt1, fcyt2, fcyt3, fcyt4 = build_fcyt(fd_df)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 159, in build_fcyt
-    df = df[~df["CUSTCD"].isin([77, 78, 95, 96])].copy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/frame.py", line 4102, in __getitem__
-    indexer = self.columns.get_loc(key)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3812, in get_loc
-    raise KeyError(key) from err
-KeyError: 'CUSTCD'
+# ... other code ...
+
+# ------------------------------------------------------------
+# DATA REPTDATE step equivalent (now using GET_BATCH_DATE)
+# ------------------------------------------------------------
+def print_reptdate() -> None:
+    """Equivalent of: DATA REPTDATE; REPTDATE = TODAY()-DAY(TODAY());"""
+    # Get today's date in the format expected by GET_BATCH_DATE functions
+    today_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # First day of current month
+    first_day_str = first_date_of_month(today_str)   # returns "YYYY-MM-DD 00:00:00"
+    
+    # Subtract 1 day to get last day of previous month
+    prev_month_last_day_str = get_past_n_date(first_day_str, 1)
+    
+    # Convert to date object for printing (or just print the string)
+    reptdate = datetime.strptime(prev_month_last_day_str, "%Y-%m-%d %H:%M:%S").date()
+    print(f"[REPTDATE] Report date (REPTDT): {reptdate}")
