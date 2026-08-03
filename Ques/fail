@@ -1,31 +1,43 @@
-100000
-170000
-600000
-100000
-360000
-400000
-240000
-100000
-300000
-100000
-70000
-120000
-80000
-200000
-100000
-1000000
-60000
-70000
-100000
-400000
-160000
-120000
-100000
-200000
-50000
-80000
-100000
-160000
-200000
-90000
-40000
+# ... imports ...
+from GET_BATCH_DATE import get_batch_date_dwh          # <-- ADDED
+from datetime import datetime, timedelta               # <-- ADDED (if not already)
+import RDALPBIF
+import RDLMPBIF
+
+# ...
+
+# ============================================================================
+# STEP 1: REPORT DATE  (from batch control, not REPTDATE)
+# ============================================================================
+# Choose the correct source system code for this dataset.
+# Likely candidates from your list: 'PIVB_CIS', 'PIVB_LN', 'PIVB_BOS', 'PBEX'
+# Adjust as needed.
+SOURCE_SYSTEM = 'PIVB_CIS'   # <-- CHANGE THIS to the correct code
+
+# Fetch batch date string (format: "YYYY-MM-DD HH:MM:SS")
+batch_date_str = get_batch_date_dwh(SOURCE_SYSTEM)
+
+# Parse to datetime
+batch_dt = datetime.strptime(batch_date_str, "%Y-%m-%d %H:%M:%S")
+
+# Derive report-date components (same as SAS)
+reptdate = batch_dt.date()
+REPTYEAR = batch_dt.strftime("%y")   # two-digit year
+REPTMON  = batch_dt.strftime("%m")   # zero-padded month
+REPTDAY  = batch_dt.strftime("%d")   # zero-padded day
+REPTYR   = batch_dt.year             # four-digit year
+
+# Compute REPTQ (month-end flag)
+next_day = reptdate + timedelta(days=1)
+REPTQ = 'Y' if next_day.day == 1 else 'N'
+
+# ... rest of the code ...
+
+CLIENT_SAS_PATH = INPUT_CLIENT_DIR / f"clien{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+
+# Optional: add existence check (matching SAS expectation)
+if not CLIENT_SAS_PATH.exists():
+    raise FileNotFoundError(
+        f"Expected CLIENT file not found: {CLIENT_SAS_PATH}\n"
+        f"Derived from batch date {reptdate} with REPTQ={REPTQ}."
+    )
