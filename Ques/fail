@@ -1,33 +1,45 @@
-STDATES
--------
-13046
-12794
-15778
-11970
-13128
-17106
-14175
-17841
-14735
-13532
-17043
-12612
-17395
-14938
-17392
-16052
-16260
-12867
-15587
-13964
-14564
-17133
-14523
-15279
-15726
-16223
-13353
-13629
-16169
-14893
-11588
+CAST(DATE '1960-01-01' + (CAST(STDATES AS INTEGER) * INTERVAL '1' DAY) AS DATE) AS STDATES
+
+
+SELECT
+    CAST(ENTITY   AS VARCHAR) AS ENTITY,
+    CAST(BRANCH   AS INTEGER) AS BRANCH,
+    CAST(CLIENTNO AS VARCHAR) AS CLIENTNO,
+    CAST(ACCTNO   AS VARCHAR) AS ACCTNO,
+    CAST(INLIMIT  AS DOUBLE)  AS INLIMIT,
+    CAST(FIU      AS DOUBLE)  AS FIU,
+    CAST(PRMTHFIU AS DOUBLE)  AS PRMTHFIU,
+    CAST(CUSTCD   AS VARCHAR) AS CUSTCD,
+    CAST(SECTORCD AS VARCHAR) AS SECTORCD,
+    CAST(DATE '1960-01-01' + (CAST(STDATES AS INTEGER) * INTERVAL '1' DAY) AS DATE) AS STDATES
+FROM read_parquet('{client_cache_path}')
+WHERE ENTITY = 'PBBH'
+
+
+stdates = row.get("STDATES")
+if stdates is not None:
+    # Convert to date if it's a datetime
+    if isinstance(stdates, datetime):
+        stdates = stdates.date()
+    if stdates > date(1960, 1, 1):
+        matdte = stdates
+        while matdte <= reptdate:
+            matdte = _next_bldate(matdte, freq)
+
+
+rows = base.drop("CUSTCD").to_dicts()
+out_rows = []
+for row in rows:
+    freq = 12 if row["INLIMIT"] < 1_000_000.00 else 6
+    matdte = reptdate
+    stdates = row.get("STDATES")
+    if stdates is not None:
+        if isinstance(stdates, datetime):
+            stdates = stdates.date()
+        if stdates > date(1960, 1, 1):
+            matdte = stdates
+            while matdte <= reptdate:
+                matdte = _next_bldate(matdte, freq)
+    row["FREQ"] = freq
+    row["MATDTE"] = matdte
+    out_rows.append(row)
