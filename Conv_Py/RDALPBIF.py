@@ -98,7 +98,7 @@ def build_pbif(client_cache_path: str, reptdate: date) -> pl.DataFrame:
             CAST(PRMTHFIU AS DOUBLE)  AS PRMTHFIU,
             CAST(CUSTCD   AS VARCHAR) AS CUSTCD,
             CAST(SECTORCD AS VARCHAR) AS SECTORCD,
-            CAST(STDATES  AS DATE)    AS STDATES
+            CAST(DATE '1960-01-01' + (CAST(STDATES AS INTEGER) * INTERVAL '1' DAY) AS DATE) AS STDATES
         FROM read_parquet('{client_cache_path}')
         WHERE ENTITY = 'PBBH'
     """).pl()
