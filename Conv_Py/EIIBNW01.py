@@ -57,7 +57,7 @@ print("Step 1: Deriving report date and week parameters...")
 
 # Choose the correct source system code for LOAN (Islamic)
 # From your list: 'LN' or 'PIVB_LN' – we'll use 'PIVB_LN'
-SOURCE_SYSTEM = 'LN'   # <-- CHANGE THIS if your team uses a different code
+SOURCE_SYSTEM = 'LN'   # <-- CHANGE THIS if it uses a different code
 
 # Fetch batch date string (format: "YYYY-MM-DD HH:MM:SS")
 batch_date_str = get_batch_date_dwh(SOURCE_SYSTEM)
@@ -118,6 +118,23 @@ HLWOF = {423, 650, 651, 664}
 REWOF = {425, 654, 655, 656, 657, 658, 659, 660, 661, 662, 663, 665, 666, 667, 421, 671}
 STFLN = {102, 103, 104, 105, 106, 107, 108}
 
+PRODESC_ORDER = {
+    "HIRE PURCHASE": 1,
+    "HOUSING LOANS": 2,
+    "OD RETAIL": 3,
+    "OTHERS CORPORATE": 4,
+    "OTHERS RETAIL": 5,
+    "PERSONAL LOANS": 6,
+    "HOUSE FINANCING SOLD TO CAGAMAS": 7,
+    "PURCHASE OF RESIDENTIAL PROPERTY": 8,
+    "STAFF FINANCING": 9,
+    "TOTAL COMMERCIAL RETAILS": 10,
+    "COMMERCIAL RETAIL - IND": 11,
+    "COMMERCIAL RETAIL - NON IND": 12,
+    "BILLS RETAIL": 13,
+    "BILLS CORPORATE": 14,
+}
+
 # ============================================================================
 # INPUT FILE PATHS  (10 physical .sas7bdat inputs; filenames are deterministic
 # from REPTMON/NOWK/REPTMON1/NOWK3 derived above)
@@ -160,39 +177,6 @@ def _cache_path(sas_path: Path) -> Path:
 
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return cache_path.exists() and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
-
-
-# def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-#     """Stream a .sas7bdat into Parquet using a schema-locked chunked writer."""
-#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-#     writer, schema, total = None, None, 0
-
-#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-#     for chunk in reader:
-#         table = pa.Table.from_pandas(chunk, preserve_index=False)
-#         if schema is None:
-#             schema = table.schema
-#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-#         else:
-#             cast_arrays = []
-#             for field in schema:
-#                 col = table.column(field.name)
-#                 if col.type != field.type:
-#                     try:
-#                         col = col.cast(field.type, safe=False)
-#                     except Exception as e:
-#                         print(f"  [{tag}] WARNING: cannot cast '{field.name}': {e} -> nulls")
-#                         col = pa.nulls(len(col), type=field.type)
-#                 cast_arrays.append(col)
-#             table = pa.Table.from_arrays(cast_arrays, schema=schema)
-#         writer.write_table(table)
-#         total += len(chunk)
-#         del chunk, table
-#         gc.collect()
-
-#     if writer:
-#         writer.close()
-#     print(f"  [{tag}] Done -- {total:,} rows cached.")
 
 
 def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
@@ -293,19 +277,6 @@ def _select_loan_family(alias: str) -> str:
 # ============================================================================
 print("\nStep 3: Building LOANDM (deletion-detection anti-join)...")
 
-# con = duckdb.connect(database=":memory:")
-
-# loandm = con.execute(f"""
-#     SELECT {_select_loan_family('d')}
-#     FROM read_parquet('{ISASD_LOAN_PQ}') d
-#     LEFT JOIN read_parquet('{BNM_LOAN_CUR_PQ}') m
-#         ON d.ACCTNO = m.ACCTNO AND d.NOTENO = m.NOTENO
-#     WHERE m.ACCTNO IS NULL
-# """).pl()
-
-# con.close()
-# print(f"  LOANDM rows: {len(loandm):,}")
-
 # 1. Read the actual schema of ISASD_LOAN (the DLOAN file)
 d_schema = pq.read_schema(ISASD_LOAN_PQ)
 d_cols = set(d_schema.names)
@@ -319,9 +290,9 @@ for col in LOAN_FAMILY_COLS:
         select_parts.append(f'd."{col}" AS "{col}"')
     else:
         # For numeric columns, use NULL::DOUBLE; for strings, NULL::VARCHAR.
-        # We can just use NULL (DuckDB infers type from context), but explicit is safer.
-        # We'll check the type from the master list or just use NULL::DOUBLE for numeric.
-        # Since we don't know the exact type, plain NULL works in DuckDB for COALESCE later.
+        # Here, use NULL (DuckDB infers type from context), but explicit is safer.
+        # Will check the type from the master list or just use NULL::DOUBLE for numeric.
+        # Since the exact type is unknown, plain NULL works in DuckDB for COALESCE later.
         select_parts.append(f'NULL AS "{col}"')
 
 select_clause = ", ".join(select_parts)
@@ -349,41 +320,6 @@ print(f"  LOANDM rows: {len(loandm):,}")
 # dataset's columns are all NULL for a BY group where it had no match.
 # ============================================================================
 print("\nStep 4: Building loan_merged (5-way last-dataset-wins merge)...")
-
-# con = duckdb.connect(database=":memory:")
-# con.register("loandm", loandm.to_pandas())
-
-# coalesce_cols = ", ".join(
-#     f"COALESCE(lnwod.{c}, lnwof.{c}, mloan.{c}, prev.{c}, loandm.{c}) AS {c}"
-#     for c in LOAN_FAMILY_COLS if c not in ("ACCTNO", "NOTENO")
-# )
-
-# loan_merged = con.execute(f"""
-#     WITH keys AS (
-#         SELECT ACCTNO, NOTENO FROM loandm
-#         UNION
-#         SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LOAN_PRV_PQ}')
-#         UNION
-#         SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LOAN_CUR_PQ}')
-#         UNION
-#         SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LNWOF_PQ}')
-#         UNION
-#         SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LNWOD_PQ}')
-#     )
-#     SELECT keys.ACCTNO, keys.NOTENO, {coalesce_cols}
-#     FROM keys
-#     LEFT JOIN loandm                                 loandm ON keys.ACCTNO = loandm.ACCTNO AND keys.NOTENO = loandm.NOTENO
-#     LEFT JOIN read_parquet('{BNM_LOAN_PRV_PQ}')       prev   ON keys.ACCTNO = prev.ACCTNO   AND keys.NOTENO = prev.NOTENO
-#     LEFT JOIN read_parquet('{BNM_LOAN_CUR_PQ}')       mloan  ON keys.ACCTNO = mloan.ACCTNO  AND keys.NOTENO = mloan.NOTENO
-#     LEFT JOIN read_parquet('{BNM_LNWOF_PQ}')          lnwof  ON keys.ACCTNO = lnwof.ACCTNO  AND keys.NOTENO = lnwof.NOTENO
-#     LEFT JOIN read_parquet('{BNM_LNWOD_PQ}')          lnwod  ON keys.ACCTNO = lnwod.ACCTNO  AND keys.NOTENO = lnwod.NOTENO
-#     -- Commented in original SAS, kept for traceability -- never executed:
-#     -- WHERE NOT (ACCTYPE='OD' AND PRODUCT IN (150,151,152,181))
-# """).pl()
-
-# con.close()
-# gc.collect()
-# print(f"  loan_merged rows: {len(loan_merged):,}")
 
 def arrow_to_duckdb(pa_type) -> str:
     if pa.types.is_integer(pa_type):
@@ -581,136 +517,6 @@ loan_raw_current = con.execute(f"""
 con.close()
 gc.collect()
 print(f"  LNCOMM rows: {len(lncomm):,}   raw current LOAN rows: {len(loan_raw_current):,}")
-
-# ============================================================================
-# STEP 8: ALM / ALMBT split
-#   DATA ALM ALMBT;
-#     MERGE LOAN(IN=A RENAME=(BALANCE=ORIBAL BAL_AFT_EIR=BALANCE)) LNCOMM(IN=B);
-#     BY ACCTNO COMMNO; IF A;
-#     ... NOACCT derivation ...
-#     IF (2850000000<=ACCTNO<=2859999999 AND 40000<=NOTENO<=49999) OR PRODUCT=444
-#        THEN OUTPUT ALMBT; ELSE OUTPUT ALM;
-# ============================================================================
-# print("\nStep 8: Building ALM / ALMBT (loan classification + NOACCT logic)...")
-
-# con = duckdb.connect(database=":memory:")
-# con.register("loan_raw_current", loan_raw_current.to_pandas())
-# con.register("lncomm", lncomm.to_pandas())
-
-# alm_base_pd = con.execute("""
-#     SELECT
-#         l.ACCTNO, l.NOTENO, l.FISSPURP, l.PRODUCT, l.NOTETERM, l.EARNTERM,
-#         l.BALANCE AS ORIBAL,          -- RENAME=(BALANCE=ORIBAL ...)
-#         l.BAL_AFT_EIR AS BALANCE,     -- RENAME=(BAL_AFT_EIR=BALANCE)
-#         l.PAIDIND, l.APPRDATE, l.APPRLIM2, l.PRODCD, l.CUSTCD, l.AMTIND,
-#         l.SECTORCD, l.ACCTYPE, l.BRANCH, l.DNBFISME, l.COMMNO,
-#         l.EIR_ADJ, l.CJFEE, l.RLEASAMT,
-#         c.CUSEDAMT
-#     FROM loan_raw_current l
-#     LEFT JOIN lncomm c ON l.ACCTNO = c.ACCTNO AND l.COMMNO = c.COMMNO
-#     WHERE l.PAIDIND NOT IN ('P', 'C') OR l.EIR_ADJ IS NOT NULL
-# """).pl()
-
-# con.close()
-
-
-# def _derive_noacct(row: dict) -> Optional[int]:
-#     """
-#     Replicates the NOACCT derivation block:
-#       IF ACCTYPE='OD' AND PRODUCT IN (150,151,152,181) THEN DELETE;   (commented in SAS -- kept inert)
-#       ... BALX / XIND deletion of zero-balance rows ...
-#       IF ACCTYPE='LN' THEN DO;
-#          (special-case retention conditions; otherwise NOACCT=0)
-#       END;
-#       IF PAIDIND NOT IN ('P','C') AND NOACCT^=0 AND ROUND(ORIBAL,.01) NOT IN (0,-0) AND ORIBAL NE ' '
-#          THEN NOACCT=1;
-#     Returns None to signal the record must be dropped (ORIBAL = -0.00 delete rule).
-#     """
-#     oribal = row["ORIBAL"]
-#     if oribal is None:
-#         return 0
-#     balx = round(oribal, 2)
-#     if oribal == -0.00:
-#         return None  # IF ORIBAL=-.00 THEN DELETE;
-#     xind_y = balx in (0.00, -0.00)
-#     if xind_y:
-#         return None  # IF XIND='Y' THEN DELETE;
-
-#     noacct = row.get("NOACCT")
-#     if row["ACCTYPE"] == "LN":
-#         rleasamt = row["RLEASAMT"] or 0.0
-#         cjfee    = row["CJFEE"]
-#         product  = row["PRODUCT"] or 0
-#         commno   = row["COMMNO"] or 0
-#         cusedamt = row["CUSEDAMT"] or 0
-#         paidind_not_pc = row["PAIDIND"] not in ("P", "C")
-#         cond1 = rleasamt != 0.0 and paidind_not_pc and oribal > 0 and cjfee != oribal
-#         cond2 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and 600 <= product <= 699
-#         cond3 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and commno > 0 and cusedamt > 0
-#         if not (cond1 or cond2 or cond3):
-#             noacct = 0
-
-#     if row["PAIDIND"] not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.00, -0.00):
-#         noacct = 1
-#     return noacct
-
-
-# _alm_rows = []
-# for r in alm_base_pd.iter_rows(named=True):
-#     r = dict(r)
-#     r["NOACCT"] = None
-#     noacct = _derive_noacct(r)
-#     if noacct is None:
-#         continue
-#     r["NOACCT"] = noacct
-#     _alm_rows.append(r)
-
-# alm_almbt_pd = pl.DataFrame(_alm_rows) if _alm_rows else alm_base_pd.clear()
-
-# _is_almbt = (
-#     (pl.col("ACCTNO") >= 2850000000) & (pl.col("ACCTNO") <= 2859999999) &
-#     (pl.col("NOTENO") >= 40000) & (pl.col("NOTENO") <= 49999)
-# ) | (pl.col("PRODUCT") == 444)
-
-# almbt_split = alm_almbt_pd.filter(_is_almbt)
-# alm_split   = alm_almbt_pd.filter(~_is_almbt)
-
-# # ----------------------------------------------------------------------
-# # DATA ALM; SET ALM; BY ACCTNO COMMNO;
-# #   IF FIRST.ACCTNO OR FIRST.COMMNO THEN UNQ=0;
-# #   IF PRODCD IN ('34170','34190','34690') THEN DO; UNQ+NOACCT; IF UNQ>1 THEN NOACCT=0; END;
-# # ----------------------------------------------------------------------
-# alm_split = alm_split.sort(["ACCTNO", "COMMNO"])
-# _unq_rows, _prev_acct, _prev_comm, _unq = [], None, None, 0
-# for r in alm_split.iter_rows(named=True):
-#     r = dict(r)
-#     if r["ACCTNO"] != _prev_acct or r["COMMNO"] != _prev_comm:
-#         _unq = 0
-#     if r["PRODCD"] in ("34170", "34190", "34690"):
-#         _unq += (r["NOACCT"] or 0)
-#         if _unq > 1:
-#             r["NOACCT"] = 0
-#     _prev_acct, _prev_comm = r["ACCTNO"], r["COMMNO"]
-#     _unq_rows.append(r)
-# alm_split = pl.DataFrame(_unq_rows) if _unq_rows else alm_split
-
-# # ----------------------------------------------------------------------
-# # DATA ALMBT; SET ALMBT; BY ACCTNO; IF FIRST.ACCTNO THEN NOACCT=1; ELSE NOACCT=0;
-# # ----------------------------------------------------------------------
-# almbt_split = almbt_split.sort(["ACCTNO"])
-# _almbt_rows, _prev_acct = [], None
-# for r in almbt_split.iter_rows(named=True):
-#     r = dict(r)
-#     r["NOACCT"] = 1 if r["ACCTNO"] != _prev_acct else 0
-#     _prev_acct = r["ACCTNO"]
-#     _almbt_rows.append(r)
-# almbt_split = pl.DataFrame(_almbt_rows) if _almbt_rows else almbt_split
-
-# # DATA ALM; SET ALM ALMBT;
-# alm = pl.concat([alm_split, almbt_split], how="diagonal")
-# del alm_base_pd, alm_almbt_pd, _alm_rows, _unq_rows, _almbt_rows
-# gc.collect()
-# print(f"  ALM (combined) rows: {len(alm):,}")
 
 # ============================================================================
 # STEP 8: ALM / ALMBT split
@@ -970,12 +776,6 @@ almloan = almloan.filter(pl.col("PRODESC") != "HOUSE FINANCING SOLD TO CAGAMAS")
 # ============================================================================
 print("\nStep 13: Building bankers-trade (BTRAD) section...")
 
-# BT_COLS = [
-#     "ACCTNO", "SUBACCT", "TRANSREF", "DIRCTIND", "CUSTCD", "RETAILID",
-#     "SECTORCD", "DNBFISME", "APPRLIMT", "DISBURSE", "REPAID", "BALANCE",
-#     "FISSPURP", "PRODUCT", "NOTETERM", "APPRLIM2", "PRODCD", "AMTIND",
-# ]
-
 BT_COLS = [
     "ACCTNO", "SUBACCT", "TRANSREF", "DIRCTIND", "CUSTCD", "RETAILID",
     "SECTORCD", "DNBFISME", "APPRLIMT", "DISBURSE", "REPAID", "BALANCE",
@@ -1141,14 +941,6 @@ def _alm2_prodesc(row: dict) -> tuple[str, str]:
 
 
 alm2_src = alm2.filter(pl.col("PRODESC").is_in(["OD RETAIL", "OTHERS RETAIL"]))
-# _rows = []
-# for r in alm2_src.iter_rows(named=True):
-#     r = dict(r)
-#     new_desc, type_val = _alm2_prodesc(r)
-#     r["PRODESC"] = new_desc
-#     r["TYPE"] = type_val
-#     _rows.append(r)
-# alm2_tbl = pl.DataFrame(_rows) if _rows else alm2_src.clear()\
 
 _rows = []
 for r in alm2_src.iter_rows(named=True):
@@ -1298,6 +1090,9 @@ tabulate_facility = (
     almprod.group_by("TYPE", maintain_order=True)
            .agg([pl.col("BALANCE").sum(), pl.col("NOACCT").sum()])
 )
+tabulate_facility = tabulate_facility.sort(
+    pl.col("TYPE").map_elements(lambda x: {"BANK TRADE":1, "CASH LINE FACILITY":2, 
+                                "FIXED FINANCING":3}.get(x, 99), return_dtype=pl.Int64))
 
 mastsec = (
     mast.group_by(["SECTGROUP", "SECTTYPE"], maintain_order=True)
@@ -1322,6 +1117,7 @@ tabulate_sector = (
     almsec_src.group_by(["SECTGROUP", "SECTTYPE"], maintain_order=True)
               .agg([pl.col("BALANCE").sum(), pl.col("NOACCT").sum()])
 )
+tabulate_sector = tabulate_sector.sort(["SECTGROUP", "SECTTYPE"])
 
 # ============================================================================
 # REPORT FORMATTING  (SASLIST DCB is RECFM=FB, NOT FBA -> no ASA carriage-
@@ -1363,31 +1159,82 @@ def _page_header(title2: str, title3: str) -> list[str]:
     ]
 
 
+# def emit_report(output_lines: list[str], rows: list[dict], title2: str,
+#                 title3: str = DEFAULT_TITLE3, label_col: str = "PRODESC") -> None:
+#     header = _page_header(title2, title3)
+#     output_lines.append("\f" + header[0])
+#     output_lines.extend(header[1:])
+#     lines_used = len(header)
+#     totals = {c: 0.0 for c, _, _ in REPORT_COLS}
+
+#     for row in rows:
+#         if lines_used >= PAGE_SIZE - 2:
+#             output_lines.append("\f" + header[0])
+#             output_lines.extend(header[1:])
+#             lines_used = len(header)
+#         label = str(row.get(label_col, "") or "")[:35]
+#         line = f"{label:<35}"
+#         for c, w, d in REPORT_COLS:
+#             v = row.get(c)
+#             totals[c] += (v or 0)
+#             line += _fmt_num(v, w, d)
+#         output_lines.append(line)
+#         lines_used += 1
+
+#     output_lines.append("-" * LRECL)
+#     sum_line = f"{'':<35}"
+#     for c, w, d in REPORT_COLS:
+#         sum_line += _fmt_num(totals[c], w, d)
+#     output_lines.append(sum_line)
+#     output_lines.append("")
+
+
 def emit_report(output_lines: list[str], rows: list[dict], title2: str,
                 title3: str = DEFAULT_TITLE3, label_col: str = "PRODESC") -> None:
+    # Sort rows according to PRODESC_ORDER
+    rows = sorted(rows, key=lambda r: PRODESC_ORDER.get(r.get(label_col, ""), 999))
+    # Add "Obs" column (1-based index)
+    for i, row in enumerate(rows, 1):
+        row["Obs"] = i
+
+    # Column definitions: Obs + existing REPORT_COLS
+    cols = [("Obs", 5, 0)] + REPORT_COLS
+
     header = _page_header(title2, title3)
+    # Build header line with Obs
+    header_line = f"{'Obs':<5}" + f"{'PRODESC':<35}" + "".join(f"{c:>{w}}" for c, w, _ in cols[1:])
+    # Replace the fifth line of header (the column headers) with this new one
+    header[4] = header_line
+    # Dashes line stays the same
+    dashes_line = "-" * LRECL
+    header[5] = dashes_line
+
     output_lines.append("\f" + header[0])
     output_lines.extend(header[1:])
     lines_used = len(header)
-    totals = {c: 0.0 for c, _, _ in REPORT_COLS}
+    totals = {c: 0.0 for c, _, _ in cols}
 
     for row in rows:
         if lines_used >= PAGE_SIZE - 2:
             output_lines.append("\f" + header[0])
             output_lines.extend(header[1:])
             lines_used = len(header)
+
+        # Build line: Obs + label + values
+        line = f"{row['Obs']:>5}"  # right-align Obs (matches SAS)
         label = str(row.get(label_col, "") or "")[:35]
-        line = f"{label:<35}"
-        for c, w, d in REPORT_COLS:
+        line += f"{label:<35}"
+        for c, w, d in cols[1:]:  # skip Obs
             v = row.get(c)
             totals[c] += (v or 0)
             line += _fmt_num(v, w, d)
         output_lines.append(line)
         lines_used += 1
 
+    # Totals line
     output_lines.append("-" * LRECL)
-    sum_line = f"{'':<35}"
-    for c, w, d in REPORT_COLS:
+    sum_line = f"{'':>5}{'':<35}"  # blank for Obs and label columns
+    for c, w, d in cols[1:]:
         sum_line += _fmt_num(totals[c], w, d)
     output_lines.append(sum_line)
     output_lines.append("")
