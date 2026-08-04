@@ -1,21 +1,41 @@
-import pandas as pd
+# ============================================================================
+# STEP 3: LOANDM = DLOAN records NOT present in MLOAN (SAS: IF A AND NOT B)
+#   DATA LOANDM; MERGE DLOAN(IN=A) MLOAN(IN=B); BY ACCTNO NOTENO; IF A AND NOT B;
+# ============================================================================
+print("\nStep 3: Building LOANDM (deletion-detection anti-join)...")
 
-# Use the path that was constructed for ISASD_LOAN_SAS
-print(ISASD_LOAN_SAS)  # confirm the path
-df_sample = pd.read_sas(ISASD_LOAN_SAS, nrows=1)
-print("Columns in ISASD_LOAN:")
-print(sorted(df_sample.columns.tolist()))
+import pyarrow.parquet as pq
 
+# 1. Read the actual schema of ISASD_LOAN (the DLOAN file)
+d_schema = pq.read_schema(ISASD_LOAN_PQ)
+d_cols = set(d_schema.names)
 
+# 2. Build the SELECT clause for the LOAN_FAMILY_COLS
+#    If the column exists in DLOAN, select it from 'd'.
+#    Otherwise, select NULL (with an appropriate type hint).
+select_parts = []
+for col in LOAN_FAMILY_COLS:
+    if col in d_cols:
+        select_parts.append(f'd."{col}" AS "{col}"')
+    else:
+        # For numeric columns, use NULL::DOUBLE; for strings, NULL::VARCHAR.
+        # We can just use NULL (DuckDB infers type from context), but explicit is safer.
+        # We'll check the type from the master list or just use NULL::DOUBLE for numeric.
+        # Since we don't know the exact type, plain NULL works in DuckDB for COALESCE later.
+        select_parts.append(f'NULL AS "{col}"')
 
+select_clause = ", ".join(select_parts)
 
-Step 3: Building LOANDM (deletion-detection anti-join)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 244, in <module>
-    loandm = con.execute(f"""
-_duckdb.BinderException: Binder Error: Table "d" does not have a column named "NOTETERM"
+# 3. Execute the anti-join
+con = duckdb.connect(database=":memory:")
 
-Candidate bindings: : "NOTENO"
+loandm = con.execute(f"""
+    SELECT {select_clause}
+    FROM read_parquet('{ISASD_LOAN_PQ}') d
+    LEFT JOIN read_parquet('{BNM_LOAN_CUR_PQ}') m
+        ON d.ACCTNO = m.ACCTNO AND d.NOTENO = m.NOTENO
+    WHERE m.ACCTNO IS NULL
+""").pl()
 
-LINE 2: ... AS NOTENO, d.FISSPURP AS FISSPURP, d.PRODUCT AS PRODUCT, d.NOTETERM AS NOTETERM, d.EARNTERM AS EARNTERM, d.BALANCE...
-                                                                     ^
+con.close()
+print(f"  LOANDM rows: {len(loandm):,}")
