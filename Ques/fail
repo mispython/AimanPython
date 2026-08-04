@@ -1,41 +1,31 @@
-# ============================================================================
-# STEP 3: LOANDM = DLOAN records NOT present in MLOAN (SAS: IF A AND NOT B)
-#   DATA LOANDM; MERGE DLOAN(IN=A) MLOAN(IN=B); BY ACCTNO NOTENO; IF A AND NOT B;
-# ============================================================================
-print("\nStep 3: Building LOANDM (deletion-detection anti-join)...")
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py
+Step 1: Deriving report date and week parameters...
+Error: single positional indexer is out-of-bounds
+  REPTDATE : 26/06/25   NOWK=4 NOWK1=1 NOWK2=2 NOWK3=3
+  REPTMON  : 06  REPTMON1=06  REPTMON2=05
+  SDATE    : 23/06/25
 
-import pyarrow.parquet as pq
+Step 2: Caching SAS inputs to Parquet (if needed)...
+  [ISASD_LOAN] Cache fresh -- skipping conversion.
+  [BNM_LOAN_CUR] Cache fresh -- skipping conversion.
+  [BNM_LOAN_PRV] Cache fresh -- skipping conversion.
+  [BNM_LNWOF] Cache fresh -- skipping conversion.
+  [BNM_LNWOD] Converting lnwod074.sas7bdat -> lnwod074.parquet ...
+  [BNM_LNWOD] Done -- 0 rows cached.
+  [DISPAY] Cache fresh -- skipping conversion.
+  [IDEPOSIT_CUR] Cache fresh -- skipping conversion.
+  [LOAN_LNCOMM] Cache fresh -- skipping conversion.
+  [BTBNM_CUR] Cache fresh -- skipping conversion.
+  [BTBNM_PRV] Cache fresh -- skipping conversion.
 
-# 1. Read the actual schema of ISASD_LOAN (the DLOAN file)
-d_schema = pq.read_schema(ISASD_LOAN_PQ)
-d_cols = set(d_schema.names)
+Step 3: Building LOANDM (deletion-detection anti-join)...
+  LOANDM rows: 6,979
 
-# 2. Build the SELECT clause for the LOAN_FAMILY_COLS
-#    If the column exists in DLOAN, select it from 'd'.
-#    Otherwise, select NULL (with an appropriate type hint).
-select_parts = []
-for col in LOAN_FAMILY_COLS:
-    if col in d_cols:
-        select_parts.append(f'd."{col}" AS "{col}"')
-    else:
-        # For numeric columns, use NULL::DOUBLE; for strings, NULL::VARCHAR.
-        # We can just use NULL (DuckDB infers type from context), but explicit is safer.
-        # We'll check the type from the master list or just use NULL::DOUBLE for numeric.
-        # Since we don't know the exact type, plain NULL works in DuckDB for COALESCE later.
-        select_parts.append(f'NULL AS "{col}"')
+Step 4: Building loan_merged (5-way last-dataset-wins merge)...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 307, in <module>
+    loan_merged = con.execute(f"""
+_duckdb.IOException: IO Error: No files found that match the pattern "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNW01/lnwod074.parquet"
 
-select_clause = ", ".join(select_parts)
-
-# 3. Execute the anti-join
-con = duckdb.connect(database=":memory:")
-
-loandm = con.execute(f"""
-    SELECT {select_clause}
-    FROM read_parquet('{ISASD_LOAN_PQ}') d
-    LEFT JOIN read_parquet('{BNM_LOAN_CUR_PQ}') m
-        ON d.ACCTNO = m.ACCTNO AND d.NOTENO = m.NOTENO
-    WHERE m.ACCTNO IS NULL
-""").pl()
-
-con.close()
-print(f"  LOANDM rows: {len(loandm):,}")
+LINE 11:         SELECT ACCTNO, NOTENO FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS...
+                                            ^
