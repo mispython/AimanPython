@@ -1,3 +1,14 @@
+import pandas as pd
+
+# Use the path that was constructed for ISASD_LOAN_SAS
+print(ISASD_LOAN_SAS)  # confirm the path
+df_sample = pd.read_sas(ISASD_LOAN_SAS, nrows=1)
+print("Columns in ISASD_LOAN:")
+print(sorted(df_sample.columns.tolist()))
+
+
+
+
 Step 3: Building LOANDM (deletion-detection anti-join)...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 244, in <module>
