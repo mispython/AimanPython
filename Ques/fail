@@ -1,2 +1,1 @@
-IF (3000000000<=ACCTNO<= 3999999999 ) then PRODTYPE ='OD' 
-	else PRODTYPE 'FL' 
+(case when (3000000000<=ACCTNO<=3999999999) then 'OD' else 'LN' end) as ACCTYPE length = 8
