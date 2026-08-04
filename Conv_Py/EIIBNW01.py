@@ -10,7 +10,7 @@ Purpose : PIBB Weekly BNM Loan Movement Report (ESMR 2020-4052)
 
 import gc
 from pathlib import Path
-from datetime import date as _date_cls
+from datetime import datetime, date as _date_cls
 
 import duckdb
 import pandas as pd
@@ -18,8 +18,9 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
+# from REPTDATE import get_reptdate_values
+# from input_date import get_latest_file
+from GET_BATCH_DATE import get_batch_date_dwh
 
 # NOTE: output_date.build_output_file is NOT used. SASLIST
 # (SAP.PIBB.EIIBNW01.TEXT) is a static catalogued dataset name with no
@@ -28,8 +29,7 @@ from input_date import get_latest_file
 
 # Only FISSTYPE/FISSGROUP have explicit PUT(SECTORCD, $fmt.) calls in this
 # program body -- per the dependency-import rule, only these two are
-# imported live from PBBLNFMT. All other PBBLNFMT products/format tables
-# are irrelevant to EIIBNW01 and are intentionally not imported.
+# imported live from PBBLNFMT.
 from PBBLNFMT import format_fisstype, format_fissgroup
 
 # ============================================================================
@@ -53,13 +53,20 @@ for _d in (ISASD_DIR, BNM_DIR, BTBNM_DIR, DISPAY_DIR, IDEPOSIT_DIR, LOAN_DIR, OU
     _d.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
-# STEP 1: REPORT DATE + WEEK DERIVATION  (DATA REPTDATE equivalent)
-# No reptdate.parquet exists -- REPTDATE.py supplies the report date.
+# STEP 1: REPORT DATE + WEEK DERIVATION (now from batch control)
 # ============================================================================
 print("Step 1: Deriving report date and week parameters...")
 
-_rv       = get_reptdate_values()
-_reptdate = _rv.reptdate                       # equivalent of LOAN.REPTDATE
+# Choose the correct source system code for LOAN (Islamic)
+# From your list: 'LN' or 'PIVB_LN' – we'll use 'PIVB_LN'
+SOURCE_SYSTEM = 'PIVB_LN'   # <-- CHANGE THIS if your team uses a different code
+
+# Fetch batch date string (format: "YYYY-MM-DD HH:MM:SS")
+batch_date_str = get_batch_date_dwh(SOURCE_SYSTEM)
+
+# Parse to datetime
+_reptdate_dt = datetime.strptime(batch_date_str, "%Y-%m-%d %H:%M:%S")
+_reptdate = _reptdate_dt.date()                     # equivalent of LOAN.REPTDATE
 
 _day = _reptdate.day
 if _day == 8:
@@ -69,7 +76,7 @@ elif _day == 15:
 elif _day == 22:
     SDD, NOWK, NOWK1, NOWK2, NOWK3 = 16, '3', '4', '1', '2'
 else:
-    SDD, NOWK, NOWK1, NOWK2, NOWK3 = 23, '4', '1', '2', '3'   # OTHERWISE
+    SDD, NOWK, NOWK1, NOWK2, NOWK3 = 23, '4', '1', '2', '3'
 
 _mm = _reptdate.month
 if NOWK == '1':
