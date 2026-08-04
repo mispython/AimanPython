@@ -1,28 +1,50 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py
-Step 1: Deriving report date and week parameters...
-Error: single positional indexer is out-of-bounds
-  REPTDATE : 26/06/25   NOWK=4 NOWK1=1 NOWK2=2 NOWK3=3
-  REPTMON  : 06  REPTMON1=06  REPTMON2=05
-  SDATE    : 23/06/25
+def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    """Stream a .sas7bdat into Parquet using a schema‑locked chunked writer.
+       Always creates a Parquet file – even if the SAS dataset is empty.
+    """
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    total = 0
+    had_data = False
 
-Step 2: Caching SAS inputs to Parquet (if needed)...
-  [ISASD_LOAN] Cache fresh -- skipping conversion.
-  [BNM_LOAN_CUR] Cache fresh -- skipping conversion.
-  [BNM_LOAN_PRV] Cache fresh -- skipping conversion.
-  [BNM_LNWOF] Cache fresh -- skipping conversion.
-  [BNM_LNWOD] Converting lnwod074.sas7bdat -> lnwod074.parquet ...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 234, in sas_to_parquet
-    df_empty = pd.read_sas(sas_path, encoding="latin1", nrows=0)
-TypeError: read_sas() got an unexpected keyword argument 'nrows'
+    # Read in chunks to handle large files
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
 
-The above exception was the direct cause of the following exception:
+    for chunk in reader:
+        had_data = True
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
 
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 265, in <module>
-    BNM_LNWOD_PQ    = ensure_cached(BNM_LNWOD_SAS,    "BNM_LNWOD")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 250, in ensure_cached
-    sas_to_parquet(sas_path, cache_path, tag)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 242, in sas_to_parquet
-    raise RuntimeError(f"Could not create empty Parquet file for {sas_path}") from e
-RuntimeError: Could not create empty Parquet file for /stgsrcsys/host/uat/AII/EIIBNW01/BNM/lnwod074.sas7bdat
+        if writer is None:
+            # First chunk: create writer with this table's schema
+            writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
+        else:
+            # Subsequent chunks: cast columns to match the original schema
+            cast_arrays = []
+            for field in writer.schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING: cannot cast '{field.name}': {e} -> nulls")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=writer.schema)
+
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    else:
+        # No data at all – create an empty Parquet file with the correct schema
+        # Read the full file (which has 0 rows) to get the column definitions
+        df_empty = pd.read_sas(sas_path, encoding="latin1")   # reads 0 rows but gives schema
+        empty_table = pa.Table.from_pandas(df_empty, preserve_index=False)
+        writer_empty = pq.ParquetWriter(cache_path, empty_table.schema, compression="snappy")
+        writer_empty.write_table(empty_table)
+        writer_empty.close()
+
+    print(f"  [{tag}] Done -- {total:,} rows cached.")
