@@ -2,25 +2,8 @@ Step 5: Building DISPAY (rounded) and PREVDISPAY...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 499, in <module>
     dispay_rounded = con.execute(f"""
-_duckdb.BinderException: Binder Error: No function matches the given name and argument types 'round(DOUBLE, DECIMAL(3,2))'. You might need to add explicit type casts.
-        Candidate functions:
-        round(TINYINT) -> TINYINT
-        round(TINYINT, INTEGER) -> TINYINT
-        round(SMALLINT) -> SMALLINT
-        round(SMALLINT, INTEGER) -> SMALLINT
-        round(INTEGER) -> INTEGER
-        round(INTEGER, INTEGER) -> INTEGER
-        round(BIGINT) -> BIGINT
-        round(BIGINT, INTEGER) -> BIGINT
-        round(HUGEINT) -> HUGEINT
-        round(HUGEINT, INTEGER) -> HUGEINT
-        round(FLOAT) -> FLOAT
-        round(FLOAT, INTEGER) -> FLOAT
-        round(DOUBLE) -> DOUBLE
-        round(DOUBLE, INTEGER) -> DOUBLE
-        round(DECIMAL) -> DECIMAL
-        round(DECIMAL, INTEGER) -> DECIMAL
+_duckdb.BinderException: Binder Error: Referenced column "ACCTYPE" not found in FROM clause!
+Candidate bindings: "ACCTNO", "CCY", "_TYPE_", "HISTPRINRM_EAL", "HISTPRINFX_EAL"
 
-
-LINE 4:         ROUND(DISBURSE, 0.01) AS DISBURSE,
-                ^
+LINE 7:         BRANCH, ACCTYPE
+                        ^
