@@ -1,72 +1,179 @@
-PRODESC_ORDER = {
-    "HIRE PURCHASE": 1,
-    "HOUSING LOANS": 2,
-    "OD RETAIL": 3,
-    "OTHERS CORPORATE": 4,
-    "OTHERS RETAIL": 5,
-    "PERSONAL LOANS": 6,
-    "HOUSE FINANCING SOLD TO CAGAMAS": 7,
-    "PURCHASE OF RESIDENTIAL PROPERTY": 8,
-    "STAFF FINANCING": 9,
-    "TOTAL COMMERCIAL RETAILS": 10,
-    "COMMERCIAL RETAIL - IND": 11,
-    "COMMERCIAL RETAIL - NON IND": 12,
-    "BILLS RETAIL": 13,
-    "BILLS CORPORATE": 14,
-}
+# ============================================================================
+# REPORT FORMATTING  (replicates default SAS PROC PRINT / PROC TABULATE
+# listing banner: TITLE1 + system time/date + page number, "=" sum-line
+# under numeric columns, missing values printed as '.', plain (non-comma)
+# numeric formatting, and TABULATE's BEST12. auto-shrinking format.)
+# ============================================================================
+LRECL = 133
+DEFAULT_TITLE1 = "PUBLIC ISLAMIC BANK BERHAD"
+DEFAULT_TITLE3 = "REPORT ID : EIIBNM01"
 
+OBS_W   = 5
+LABEL_W = 40
+GAP     = "   "  # 3-space column gap, matches SAS default column spacing
+
+# (column, width, decimals) -- widths derived from the '====' sum-line
+# lengths in the reference SAS output (16/16/16/6/7/6).
+NUM_SPECS = [
+    ("DISBURSE", 16, 2),
+    ("REPAID",   16, 2),
+    ("BALANCE",  16, 2),
+    ("DISBNO",    6, 0),
+    ("REPAYNO",   7, 0),
+    ("NOACCT",    6, 0),
+]
+
+_RUN_TS  = datetime.now()      # SAS captures system time/date once per run
+_PAGE_NO = [0]                 # shared page counter across all report sections
+
+
+def _fmt_plain(value, width: int, decimals: int) -> str:
+    """Plain (no thousands separator) numeric format. Missing -> '.' (SAS convention)."""
+    if value is None:
+        return ".".rjust(width)
+    if decimals:
+        s = f"{value:,.0f}".replace(",", "") if False else f"{value:.{decimals}f}"
+    else:
+        s = f"{int(round(value)):d}"
+    return s.rjust(width)[:width] if len(s) <= width else s.rjust(width)
+
+
+def _banner_line1(title1: str) -> str:
+    """
+    TITLE1 (left) + system time/date + page number, matching SAS's default
+    listing header. Time/date block ends near col 129; page number in the
+    final 4 columns.
+    """
+    _PAGE_NO[0] += 1
+    date_str = _RUN_TS.strftime("%H:%M %A, %B %-d, %Y")
+    line = f"{title1:<96}{date_str:>29}{_PAGE_NO[0]:>4}"
+    return line[:LRECL].ljust(LRECL)
+
+
+def _column_header_line() -> str:
+    line = f"{'Obs':<{OBS_W}}{'PRODESC':<{LABEL_W}}"
+    for name, w, _ in NUM_SPECS:
+        line += GAP + name.rjust(w)
+    return line
+
+
+def _sum_separator_line() -> str:
+    line = " " * (OBS_W + LABEL_W)
+    for _, w, _ in NUM_SPECS:
+        line += GAP + "=" * w
+    return line
+
+
+def _page_header(title2: str, title3: str = DEFAULT_TITLE3) -> list[str]:
+    lines = [_banner_line1(DEFAULT_TITLE1), title2, ""]
+    if title3:
+        lines.insert(2, title3)
+    lines.append(_column_header_line())
+    lines.append("")   # blank row under headers (not a dash line)
+    return lines
 
 
 def emit_report(output_lines: list[str], rows: list[dict], title2: str,
                 title3: str = DEFAULT_TITLE3, label_col: str = "PRODESC") -> None:
-    # Sort rows according to PRODESC_ORDER
     rows = sorted(rows, key=lambda r: PRODESC_ORDER.get(r.get(label_col, ""), 999))
-    # Add "Obs" column (1-based index)
-    for i, row in enumerate(rows, 1):
-        row["Obs"] = i
-
-    # Column definitions: Obs + existing REPORT_COLS
-    cols = [("Obs", 5, 0)] + REPORT_COLS
 
     header = _page_header(title2, title3)
-    # Build header line with Obs
-    header_line = f"{'Obs':<5}" + f"{'PRODESC':<35}" + "".join(f"{c:>{w}}" for c, w, _ in cols[1:])
-    # Replace the fifth line of header (the column headers) with this new one
-    header[4] = header_line
-    # Dashes line stays the same
-    dashes_line = "-" * LRECL
-    header[5] = dashes_line
-
-    output_lines.append("\f" + header[0])
-    output_lines.extend(header[1:])
+    output_lines.extend(header)
     lines_used = len(header)
-    totals = {c: 0.0 for c, _, _ in cols}
+    totals = {c: 0.0 for c, _, _ in NUM_SPECS}
+    obs = 0
 
     for row in rows:
-        if lines_used >= PAGE_SIZE - 2:
-            output_lines.append("\f" + header[0])
-            output_lines.extend(header[1:])
+        if lines_used >= PAGE_SIZE - 3:
+            header = _page_header(title2, title3)
+            output_lines.extend(header)
             lines_used = len(header)
 
-        # Build line: Obs + label + values
-        line = f"{row['Obs']:>5}"  # right-align Obs (matches SAS)
-        label = str(row.get(label_col, "") or "")[:35]
-        line += f"{label:<35}"
-        for c, w, d in cols[1:]:  # skip Obs
+        obs += 1
+        label = str(row.get(label_col, "") or "")[:LABEL_W]
+        line = f"{obs:>{OBS_W}}{label:<{LABEL_W}}"
+        for c, w, d in NUM_SPECS:
             v = row.get(c)
-            totals[c] += (v or 0)
-            line += _fmt_num(v, w, d)
+            if v is not None:
+                totals[c] += v
+            line += GAP + _fmt_plain(v, w, d)
         output_lines.append(line)
         lines_used += 1
 
-    # Totals line
-    output_lines.append("-" * LRECL)
-    sum_line = f"{'':>5}{'':<35}"  # blank for Obs and label columns
-    for c, w, d in cols[1:]:
-        sum_line += _fmt_num(totals[c], w, d)
+    output_lines.append(_sum_separator_line())
+    sum_line = " " * (OBS_W + LABEL_W)
+    for c, w, d in NUM_SPECS:
+        sum_line += GAP + _fmt_plain(totals[c], w, d)
     output_lines.append(sum_line)
     output_lines.append("")
 
 
-tabulate_facility = tabulate_facility.sort(pl.col("TYPE").map_elements(lambda x: {"BANK TRADE":1, "CASH LINE FACILITY":2, "FIXED FINANCING":3}.get(x, 99), return_dtype=pl.Int64))
-tabulate_sector = tabulate_sector.sort(["SECTGROUP", "SECTTYPE"])
+def _best_format(value, width: int = 12) -> str:
+    """Mimics SAS BEST12.: try 2 decimals, then fewer, then integer, to fit width."""
+    if value is None:
+        return " " * width
+    for decimals in (2, 1, 0):
+        s = f"{value:.{decimals}f}"
+        if len(s) <= width:
+            return s.rjust(width)
+    return f"{value:.0f}"[-width:].rjust(width)
+
+
+def emit_tabulate(output_lines: list[str], rows: list[dict], class_cols: list[str],
+                   value_col: str, count_col: str, title2: str, box: str) -> None:
+    """Box-style PROC TABULATE replica: |label(23)|value(12)|count(10)|."""
+    LBL_W, VAL_W, CNT_W = 23, 12, 10
+    border = "-" * (LBL_W + VAL_W + CNT_W + 4)
+
+    def _emit_top(new_page: bool = True) -> None:
+        if new_page:
+            output_lines.append(_banner_line1(DEFAULT_TITLE1))
+            output_lines.append(title2)
+            output_lines.append("")
+        output_lines.append(border)
+        if len(class_cols) == 2:
+            output_lines.append(f"|{box:<{LBL_W}}|{'':<{VAL_W}}|{'NO. OF':^{CNT_W}}|")
+            output_lines.append(f"|{'':<{LBL_W}}|{'AMOUNT':^{VAL_W}}|{'ACCT':^{CNT_W}}|")
+        else:
+            output_lines.append(f"|{box:<{LBL_W}}|{'':<{VAL_W}}|{'NO. OF':^{CNT_W}}|")
+            output_lines.append(f"|{'':<{LBL_W}}|{'AMOUNT':^{VAL_W}}|{'ACCT':^{CNT_W}}|")
+        output_lines.append(f"|{'-'*LBL_W}+{'-'*VAL_W}+{'-'*CNT_W}|")
+
+    _emit_top(new_page=True)
+    lines_used = 6
+    grand_bal, grand_cnt = 0.0, 0
+    prev_group = None
+
+    for row in rows:
+        if lines_used >= PAGE_SIZE - 4:
+            output_lines.append(border)
+            output_lines.append("")
+            output_lines.append("(Continued)")
+            _emit_top(new_page=True)
+            lines_used = 6
+            prev_group = None
+
+        if len(class_cols) == 2:
+            g1, g2 = row.get(class_cols[0], ""), row.get(class_cols[1], "")
+            if g1 != prev_group:
+                label1 = f"{str(g1):<11}|{str(g2):<11}"
+                prev_group = g1
+            else:
+                label1 = f"{'':<11}|{str(g2):<11}"
+        else:
+            label1 = f"{str(row.get(class_cols[0], '')):<{LBL_W}}"[:LBL_W]
+
+        bal = row.get(value_col) or 0.0
+        cnt = row.get(count_col) or 0
+        grand_bal += bal
+        grand_cnt += cnt
+        output_lines.append(f"|{label1[:LBL_W]:<{LBL_W}}|{_best_format(bal, VAL_W)}|{cnt:>{CNT_W}}|")
+        if len(class_cols) == 2:
+            output_lines.append(f"|{'':<11}|{'-'*11}+{'-'*VAL_W}+{'-'*CNT_W}|")
+            lines_used += 1
+        lines_used += 1
+
+    output_lines.append(f"|{'-'*LBL_W}+{'-'*VAL_W}+{'-'*CNT_W}|")
+    output_lines.append(f"|{'GRAND TOTAL':<{LBL_W}}|{_best_format(grand_bal, VAL_W)}|{grand_cnt:>{CNT_W}}|")
+    output_lines.append(border)
+    output_lines.append("")    
