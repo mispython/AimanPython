@@ -1,3 +1,4 @@
+[sas_edw_dev@svdwh004 MIS]$ source /sas/python/virt_edw_dev/bin/activate
 (virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py
 Step 1: Deriving report date and week parameters...
 Error: single positional indexer is out-of-bounds
@@ -56,6 +57,21 @@ Step 10: Final ALM merge with DISPAY + OD adjustment...
   ALM (final, post-DISPAY) rows: 195,155
 
 Step 11: Assigning PRODESC / SECTTYPE / SECTGROUP...
+
+  DEBUG: Checking OD accounts classification...
+  Number of OD rows: 0
+  No OD accounts found in alm2!
+
+  DEBUG: NOACCT distribution in alm2:
+shape: (2, 2)
+┌────────┬────────┐
+│ NOACCT ┆ len    │
+│ ---    ┆ ---    │
+│ i64    ┆ u32    │
+╞════════╪════════╡
+│ 1      ┆ 195153 │
+│ 0      ┆ 2      │
+└────────┴────────┘
 
 Step 12: Summarizing ALM by PRODESC...
 
