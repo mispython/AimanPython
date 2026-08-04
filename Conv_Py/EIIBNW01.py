@@ -759,25 +759,31 @@ _PERSONAL = {135, 136, 138, 419, 420, 422, 424, 426, 464, 465, 468, 469, 470,
 
 def _prodesc(row: dict) -> Optional[str]:
     # --- sanitise inputs ---
-    product_raw = row["PRODUCT"]
-    prodcd_raw  = row["PRODCD"]
-    acctype_raw = row["ACCTYPE"]
+    product_raw = row.get("PRODUCT")
+    prodcd_raw  = row.get("PRODCD")
+    acctype_raw = row.get("ACCTYPE")
 
     # Convert to string and strip
-    prodcd  = str(prodcd_raw).strip()
-    acctype = str(acctype_raw).strip()
+    prodcd  = str(prodcd_raw).strip() if prodcd_raw is not None else ""
+    acctype = str(acctype_raw).strip() if acctype_raw is not None else ""
 
     # Convert product to int if it's a string; if it's bytes, decode first
-    if isinstance(product_raw, str):
-        product = int(product_raw.strip())
+    if product_raw is None:
+        product = 0   # treat missing as 0 (but will likely be caught later)
+    elif isinstance(product_raw, str):
+        try:
+            product = int(product_raw.strip())
+        except ValueError:
+            product = 0
     elif isinstance(product_raw, bytes):
-        product = int(product_raw.decode('latin1').strip())
+        try:
+            product = int(product_raw.decode('latin1').strip())
+        except ValueError:
+            product = 0
     else:
         product = product_raw   # assume it's already int/float
-    
-    product = row["PRODUCT"]
-    prodcd  = row["PRODCD"]
-    acctype = row["ACCTYPE"]
+
+    # --- now the original logic (using cleaned variables) ---
     if product in _PERSONAL:
         return "PERSONAL LOANS"
     if (acctype == "LN" and prodcd == "34111") or (product in (698, 699, 983)):
