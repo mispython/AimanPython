@@ -527,6 +527,11 @@ con = duckdb.connect(database=":memory:")
 con.register("loan_raw_current", loan_raw_current.to_pandas())
 con.register("lncomm", lncomm.to_pandas())
 
+# Debug: check PAIDIND distribution
+print("  DEBUG: Rows in loan_raw_current before filtering:", len(loan_raw_current))
+print("  DEBUG: PAIDIND distribution in loan_raw_current:")
+print(loan_raw_current.group_by("PAIDIND").len())
+
 alm_base_pd = con.execute("""
     SELECT
         l.ACCTNO, l.NOTENO, l.FISSPURP, l.PRODUCT, l.NOTETERM, l.EARNTERM,
@@ -543,19 +548,50 @@ alm_base_pd = con.execute("""
 
 con.close()
 
+# After executing the query that creates alm_base_pd:
+print("  DEBUG: Rows in alm_base_pd after WHERE filter:", len(alm_base_pd))
+
+# def derive_noacct(row: dict) -> Optional[int]:
+#     """
+#     Replicates the NOACCT derivation block.
+#     Returns None to signal the record must be dropped.
+#     """
+#     oribal = row.get("ORIBAL")
+#     if oribal is None:
+#         return 0
+#     balx = round(oribal, 2)
+#     if oribal == -0.00 or balx in (0.00, -0.00):
+#         return None
+
+#     noacct = row.get("NOACCT", 0)
+#     if row.get("ACCTYPE") == "LN":
+#         rleasamt = row.get("RLEASAMT") or 0.0
+#         cjfee = row.get("CJFEE")
+#         product = row.get("PRODUCT") or 0
+#         commno = row.get("COMMNO") or 0
+#         cusedamt = row.get("CUSEDAMT") or 0
+#         paidind_not_pc = row.get("PAIDIND") not in ("P", "C")
+#         cond1 = rleasamt != 0.0 and paidind_not_pc and oribal > 0 and cjfee != oribal
+#         cond2 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and 600 <= product <= 699
+#         cond3 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and commno > 0 and cusedamt > 0
+#         if not (cond1 or cond2 or cond3):
+#             noacct = 0
+
+#     if row.get("PAIDIND") not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.00, -0.00):
+#         noacct = 1
+#     return noacct
+
 def derive_noacct(row: dict) -> Optional[int]:
-    """
-    Replicates the NOACCT derivation block.
-    Returns None to signal the record must be dropped.
-    """
     oribal = row.get("ORIBAL")
     if oribal is None:
-        return 0
+        return None
     balx = round(oribal, 2)
     if oribal == -0.00 or balx in (0.00, -0.00):
         return None
 
-    noacct = row.get("NOACCT", 0)
+    # start as missing (None)
+    noacct = None
+
     if row.get("ACCTYPE") == "LN":
         rleasamt = row.get("RLEASAMT") or 0.0
         cjfee = row.get("CJFEE")
@@ -567,8 +603,10 @@ def derive_noacct(row: dict) -> Optional[int]:
         cond2 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and 600 <= product <= 699
         cond3 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and commno > 0 and cusedamt > 0
         if not (cond1 or cond2 or cond3):
-            noacct = 0
+            noacct = 0   # explicitly set to 0 only if conditions fail
+        # else leave as None -> will become 1 later if final condition passes
 
+    # Final check: only if noacct is not 0 (i.e., None or 1) and other conditions
     if row.get("PAIDIND") not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.00, -0.00):
         noacct = 1
     return noacct
@@ -720,6 +758,23 @@ _PERSONAL = {135, 136, 138, 419, 420, 422, 424, 426, 464, 465, 468, 469, 470,
 
 
 def _prodesc(row: dict) -> Optional[str]:
+    # --- sanitise inputs ---
+    product_raw = row["PRODUCT"]
+    prodcd_raw  = row["PRODCD"]
+    acctype_raw = row["ACCTYPE"]
+
+    # Convert to string and strip
+    prodcd  = str(prodcd_raw).strip()
+    acctype = str(acctype_raw).strip()
+
+    # Convert product to int if it's a string; if it's bytes, decode first
+    if isinstance(product_raw, str):
+        product = int(product_raw.strip())
+    elif isinstance(product_raw, bytes):
+        product = int(product_raw.decode('latin1').strip())
+    else:
+        product = product_raw   # assume it's already int/float
+    
     product = row["PRODUCT"]
     prodcd  = row["PRODCD"]
     acctype = row["ACCTYPE"]
@@ -1131,10 +1186,9 @@ DEFAULT_TITLE3 = "REPORT ID : EIIBNM01"
 
 OBS_W   = 5
 LABEL_W = 40
-GAP     = "   "  # 3-space column gap, matches SAS default column spacing
+GAP     = "   "  # 3 spaces between columns
 
-# (column, width, decimals) -- widths derived from the '====' sum-line
-# lengths in the reference SAS output (16/16/16/6/7/6).
+# (column, width, decimals) – widths derived from the sum‑line "====" lengths
 NUM_SPECS = [
     ("DISBURSE", 16, 2),
     ("REPAID",   16, 2),
@@ -1144,61 +1198,65 @@ NUM_SPECS = [
     ("NOACCT",    6, 0),
 ]
 
-_RUN_TS  = datetime.now()      # SAS captures system time/date once per run
-_PAGE_NO = [0]                 # shared page counter across all report sections
-
+_RUN_TS  = datetime.now()      # capture system time once per run
+_PAGE_NO = [0]                 # shared page counter
 
 def _fmt_plain(value, width: int, decimals: int) -> str:
-    """Plain (no thousands separator) numeric format. Missing -> '.' (SAS convention)."""
+    """SAS‑style: thousands separators, 2 decimals, missing -> '.'."""
     if value is None:
         return ".".rjust(width)
+    # Build format string with thousands commas
     if decimals:
-        s = f"{value:,.0f}".replace(",", "") if False else f"{value:.{decimals}f}"
+        s = f"{value:,.{decimals}f}"
     else:
-        s = f"{int(round(value)):d}"
-    return s.rjust(width)[:width] if len(s) <= width else s.rjust(width)
-
+        s = f"{int(round(value)):,}"
+    # If too wide, fallback to plain (should not happen)
+    if len(s) > width:
+        s = f"{value:.{decimals}f}" if decimals else f"{int(round(value))}"
+    return s.rjust(width)[:width]  # right‑align and truncate if needed
 
 def _banner_line1(title1: str) -> str:
-    """
-    TITLE1 (left) + system time/date + page number, matching SAS's default
-    listing header. Time/date block ends near col 129; page number in the
-    final 4 columns.
-    """
+    """TITLE1 (left) + timestamp + page number (right‑aligned)."""
     _PAGE_NO[0] += 1
     date_str = _RUN_TS.strftime("%H:%M %A, %B %-d, %Y")
+    # Page number goes in the final 4 columns
     line = f"{title1:<96}{date_str:>29}{_PAGE_NO[0]:>4}"
     return line[:LRECL].ljust(LRECL)
 
-
 def _column_header_line() -> str:
-    line = f"{'Obs':<{OBS_W}}{'PRODESC':<{LABEL_W}}"
+    """Column headers: Obs (right‑aligned), PRODESC (left), then numeric headers."""
+    line = f"{'Obs':<5}" + f"{'PRODESC':<{LABEL_W}}"
     for name, w, _ in NUM_SPECS:
         line += GAP + name.rjust(w)
     return line
 
-
 def _sum_separator_line() -> str:
-    line = " " * (OBS_W + LABEL_W)
+    """Line of '=' under each numeric column (exact SAS PROC PRINT sum line)."""
+    line = " " * (OBS_W + LABEL_W)  # blank under Obs and PRODESC
     for _, w, _ in NUM_SPECS:
         line += GAP + "=" * w
     return line
 
-
 def _page_header(title2: str, title3: str = DEFAULT_TITLE3) -> list[str]:
-    lines = [_banner_line1(DEFAULT_TITLE1), title2, ""]
-    if title3:
-        lines.insert(2, title3)
-    lines.append(_column_header_line())
-    lines.append("")   # blank row under headers (not a dash line)
-    return lines
-
+    """Three‑line header: title1+timestamp+page, title2, title3, then blank."""
+    return [
+        _banner_line1(DEFAULT_TITLE1),
+        title2,
+        title3,
+        "",
+    ]
 
 def emit_report(output_lines: list[str], rows: list[dict], title2: str,
                 title3: str = DEFAULT_TITLE3, label_col: str = "PRODESC") -> None:
+    """Generate a report page with Obs, sorted rows, and sum line."""
     rows = sorted(rows, key=lambda r: PRODESC_ORDER.get(r.get(label_col, ""), 999))
 
     header = _page_header(title2, title3)
+    # Insert column headers after the blank line (index 3)
+    header.insert(4, _column_header_line())
+    # Insert a blank line after the headers (as in original)
+    header.insert(5, "")
+
     output_lines.extend(header)
     lines_used = len(header)
     totals = {c: 0.0 for c, _, _ in NUM_SPECS}
@@ -1207,12 +1265,14 @@ def emit_report(output_lines: list[str], rows: list[dict], title2: str,
     for row in rows:
         if lines_used >= PAGE_SIZE - 3:
             header = _page_header(title2, title3)
+            header.insert(4, _column_header_line())
+            header.insert(5, "")
             output_lines.extend(header)
             lines_used = len(header)
 
         obs += 1
         label = str(row.get(label_col, "") or "")[:LABEL_W]
-        line = f"{obs:<{OBS_W}}{label:<{LABEL_W}}"
+        line = f"{obs:<{OBS_W}}" + f"{label:<{LABEL_W}}"
         for c, w, d in NUM_SPECS:
             v = row.get(c)
             if v is not None:
@@ -1221,28 +1281,30 @@ def emit_report(output_lines: list[str], rows: list[dict], title2: str,
         output_lines.append(line)
         lines_used += 1
 
+    # Sum line
     output_lines.append(_sum_separator_line())
     sum_line = " " * (OBS_W + LABEL_W)
     for c, w, d in NUM_SPECS:
         sum_line += GAP + _fmt_plain(totals[c], w, d)
     output_lines.append(sum_line)
-    output_lines.append("")
+    output_lines.append("")   # blank line after totals
 
 
 def _best_format(value, width: int = 12) -> str:
-    """Mimics SAS BEST12.: try 2 decimals, then fewer, then integer, to fit width."""
+    """Mimic SAS BEST12.: try 2,1,0 decimals to fit width; else integer."""
     if value is None:
         return " " * width
+    # Try 2 decimals first
     for decimals in (2, 1, 0):
-        s = f"{value:.{decimals}f}"
+        s = f"{value:,.{decimals}f}" if decimals else f"{int(round(value)):,}"
         if len(s) <= width:
             return s.rjust(width)
-    return f"{value:.0f}"[-width:].rjust(width)
-
+    # Fallback: plain integer without commas
+    return f"{int(round(value))}"[-width:].rjust(width)
 
 def emit_tabulate(output_lines: list[str], rows: list[dict], class_cols: list[str],
                    value_col: str, count_col: str, title2: str, box: str) -> None:
-    """Box-style PROC TABULATE replica: |label(23)|value(12)|count(10)|."""
+    """Box‑style PROC TABULATE replica with BEST12.‑like widths."""
     LBL_W, VAL_W, CNT_W = 23, 12, 10
     border = "-" * (LBL_W + VAL_W + CNT_W + 4)
 
@@ -1252,12 +1314,9 @@ def emit_tabulate(output_lines: list[str], rows: list[dict], class_cols: list[st
             output_lines.append(title2)
             output_lines.append("")
         output_lines.append(border)
-        if len(class_cols) == 2:
-            output_lines.append(f"|{box:<{LBL_W}}|{'':<{VAL_W}}|{'NO. OF':^{CNT_W}}|")
-            output_lines.append(f"|{'':<{LBL_W}}|{'AMOUNT':^{VAL_W}}|{'ACCT':^{CNT_W}}|")
-        else:
-            output_lines.append(f"|{box:<{LBL_W}}|{'':<{VAL_W}}|{'NO. OF':^{CNT_W}}|")
-            output_lines.append(f"|{'':<{LBL_W}}|{'AMOUNT':^{VAL_W}}|{'ACCT':^{CNT_W}}|")
+        # Header rows
+        output_lines.append(f"|{box:<{LBL_W}}|{'':<{VAL_W}}|{'NO. OF':^{CNT_W}}|")
+        output_lines.append(f"|{'':<{LBL_W}}|{'AMOUNT':^{VAL_W}}|{'ACCT':^{CNT_W}}|")
         output_lines.append(f"|{'-'*LBL_W}+{'-'*VAL_W}+{'-'*CNT_W}|")
 
     _emit_top(new_page=True)
@@ -1289,6 +1348,7 @@ def emit_tabulate(output_lines: list[str], rows: list[dict], class_cols: list[st
         grand_bal += bal
         grand_cnt += cnt
         output_lines.append(f"|{label1[:LBL_W]:<{LBL_W}}|{_best_format(bal, VAL_W)}|{cnt:>{CNT_W}}|")
+        # Add a separator line for multi‑level groups (mimics original)
         if len(class_cols) == 2:
             output_lines.append(f"|{'':<11}|{'-'*11}+{'-'*VAL_W}+{'-'*CNT_W}|")
             lines_used += 1
