@@ -1,19 +1,2 @@
-# --- DEBUG: Inspect OD accounts and PRODESC assignment ---
-print("\n  DEBUG: Checking OD accounts classification...")
-od_rows = alm2.filter(pl.col("ACCTYPE") == "OD")
-print(f"  Number of OD rows: {od_rows.height}")
-if od_rows.height > 0:
-    print("  Sample OD rows (raw values):")
-    print(od_rows.select(["ACCTNO", "PRODCD", "PRODUCT", "ACCTYPE", "PRODESC"]).head(10))
-    print("  PRODESC distribution among OD rows:")
-    print(od_rows.group_by("PRODESC").len())
-    print("  PRODCD values in OD rows:")
-    print(od_rows.group_by("PRODCD").len())
-    print("  PRODUCT values in OD rows:")
-    print(od_rows.group_by("PRODUCT").len())
-else:
-    print("  No OD accounts found in alm2!")
-
-# Also check NOACCT distribution
-print("\n  DEBUG: NOACCT distribution in alm2:")
-print(alm2.group_by("NOACCT").len())
+IF (3000000000<=ACCTNO<= 3999999999 ) then PRODTYPE ='OD' 
+	else PRODTYPE 'FL' 
