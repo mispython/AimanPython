@@ -1,6 +1,120 @@
-# Apply NOACCT via map_elements to avoid manual loop
+# ============================================================================
+# STEP 8: ALM / ALMBT split
+# ============================================================================
+print("\nStep 8: Building ALM / ALMBT (loan classification + NOACCT logic)...")
+
+con = duckdb.connect(database=":memory:")
+con.register("loan_raw_current", loan_raw_current.to_pandas())
+con.register("lncomm", lncomm.to_pandas())
+
+alm_base_pd = con.execute("""
+    SELECT
+        l.ACCTNO, l.NOTENO, l.FISSPURP, l.PRODUCT, l.NOTETERM, l.EARNTERM,
+        l.BALANCE AS ORIBAL,
+        l.BAL_AFT_EIR AS BALANCE,
+        l.PAIDIND, l.APPRDATE, l.APPRLIM2, l.PRODCD, l.CUSTCD, l.AMTIND,
+        l.SECTORCD, l.ACCTYPE, l.BRANCH, l.DNBFISME, l.COMMNO,
+        l.EIR_ADJ, l.CJFEE, l.RLEASAMT,
+        c.CUSEDAMT
+    FROM loan_raw_current l
+    LEFT JOIN lncomm c ON l.ACCTNO = c.ACCTNO AND l.COMMNO = c.COMMNO
+    WHERE l.PAIDIND NOT IN ('P', 'C') OR l.EIR_ADJ IS NOT NULL
+""").pl()
+
+con.close()
+
+def derive_noacct(row: dict) -> int | None:
+    """
+    Replicates the NOACCT derivation block.
+    Returns None to signal the record must be dropped.
+    """
+    oribal = row.get("ORIBAL")
+    if oribal is None:
+        return 0
+    balx = round(oribal, 2)
+    if oribal == -0.00 or balx in (0.00, -0.00):
+        return None
+
+    noacct = row.get("NOACCT", 0)
+    if row.get("ACCTYPE") == "LN":
+        rleasamt = row.get("RLEASAMT") or 0.0
+        cjfee = row.get("CJFEE")
+        product = row.get("PRODUCT") or 0
+        commno = row.get("COMMNO") or 0
+        cusedamt = row.get("CUSEDAMT") or 0
+        paidind_not_pc = row.get("PAIDIND") not in ("P", "C")
+        cond1 = rleasamt != 0.0 and paidind_not_pc and oribal > 0 and cjfee != oribal
+        cond2 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and 600 <= product <= 699
+        cond3 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and commno > 0 and cusedamt > 0
+        if not (cond1 or cond2 or cond3):
+            noacct = 0
+
+    if row.get("PAIDIND") not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.00, -0.00):
+        noacct = 1
+    return noacct
+
+# Compute NOACCT using map_elements (no manual list construction)
 alm_base_pd = alm_base_pd.with_columns(
     pl.struct(alm_base_pd.columns).map_elements(derive_noacct, return_dtype=pl.Int64).alias("NOACCT")
 )
-# Remove rows where NOACCT is None (i.e., dropped)
+# Drop rows where NOACCT is None
 alm_almbt_pd = alm_base_pd.filter(pl.col("NOACCT").is_not_null())
+
+_is_almbt = (
+    (pl.col("ACCTNO") >= 2850000000) & (pl.col("ACCTNO") <= 2859999999) &
+    (pl.col("NOTENO") >= 40000) & (pl.col("NOTENO") <= 49999)
+) | (pl.col("PRODUCT") == 444)
+
+almbt_split = alm_almbt_pd.filter(_is_almbt)
+alm_split   = alm_almbt_pd.filter(~_is_almbt)
+
+# ----------------------------------------------------------------------
+# DATA ALM; SET ALM; BY ACCTNO COMMNO;
+#   IF FIRST.ACCTNO OR FIRST.COMMNO THEN UNQ=0;
+#   IF PRODCD IN ('34170','34190','34690') THEN DO; UNQ+NOACCT; IF UNQ>1 THEN NOACCT=0; END;
+# ----------------------------------------------------------------------
+alm_split = alm_split.sort(["ACCTNO", "COMMNO"])
+_unq_rows = []
+_prev_acct, _prev_comm, _unq = None, None, 0
+
+for r in alm_split.iter_rows(named=True):
+    r = dict(r)
+    if r["ACCTNO"] != _prev_acct or r["COMMNO"] != _prev_comm:
+        _unq = 0
+    if r["PRODCD"] in ("34170", "34190", "34690"):
+        _unq += (r["NOACCT"] or 0)
+        if _unq > 1:
+            r["NOACCT"] = 0
+    _prev_acct, _prev_comm = r["ACCTNO"], r["COMMNO"]
+    _unq_rows.append(r)
+
+if _unq_rows:
+    import pandas as pd
+    alm_split = pl.DataFrame(pd.DataFrame(_unq_rows))
+    alm_split = alm_split.with_columns(pl.col("NOACCT").cast(pl.Int64))
+else:
+    alm_split = alm_split
+
+# ----------------------------------------------------------------------
+# DATA ALMBT; SET ALMBT; BY ACCTNO; IF FIRST.ACCTNO THEN NOACCT=1; ELSE NOACCT=0;
+# ----------------------------------------------------------------------
+almbt_split = almbt_split.sort(["ACCTNO"])
+_almbt_rows = []
+_prev_acct = None
+for r in almbt_split.iter_rows(named=True):
+    r = dict(r)
+    r["NOACCT"] = 1 if r["ACCTNO"] != _prev_acct else 0
+    _prev_acct = r["ACCTNO"]
+    _almbt_rows.append(r)
+
+if _almbt_rows:
+    import pandas as pd
+    almbt_split = pl.DataFrame(pd.DataFrame(_almbt_rows))
+    almbt_split = almbt_split.with_columns(pl.col("NOACCT").cast(pl.Int64))
+else:
+    almbt_split = almbt_split
+
+alm = pl.concat([alm_split, almbt_split], how="diagonal")
+del alm_base_pd, alm_almbt_pd, _unq_rows, _almbt_rows
+gc.collect()
+print(f"  ALM (combined) rows: {len(alm):,}")
