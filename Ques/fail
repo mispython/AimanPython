@@ -1,43 +1,22 @@
-# ... imports ...
-from GET_BATCH_DATE import get_batch_date_dwh          # <-- ADDED
-from datetime import datetime, timedelta               # <-- ADDED (if not already)
-import RDALPBIF
-import RDLMPBIF
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py
+Step 1: Deriving report date and week parameters...
+Error: single positional indexer is out-of-bounds
+  REPTDATE : 26/06/25   NOWK=4 NOWK1=1 NOWK2=2 NOWK3=3
+  REPTMON  : 06  REPTMON1=06  REPTMON2=05
+  SDATE    : 23/06/25
 
-# ...
-
-# ============================================================================
-# STEP 1: REPORT DATE  (from batch control, not REPTDATE)
-# ============================================================================
-# Choose the correct source system code for this dataset.
-# Likely candidates from your list: 'PIVB_CIS', 'PIVB_LN', 'PIVB_BOS', 'PBEX'
-# Adjust as needed.
-SOURCE_SYSTEM = 'PIVB_CIS'   # <-- CHANGE THIS to the correct code
-
-# Fetch batch date string (format: "YYYY-MM-DD HH:MM:SS")
-batch_date_str = get_batch_date_dwh(SOURCE_SYSTEM)
-
-# Parse to datetime
-batch_dt = datetime.strptime(batch_date_str, "%Y-%m-%d %H:%M:%S")
-
-# Derive report-date components (same as SAS)
-reptdate = batch_dt.date()
-REPTYEAR = batch_dt.strftime("%y")   # two-digit year
-REPTMON  = batch_dt.strftime("%m")   # zero-padded month
-REPTDAY  = batch_dt.strftime("%d")   # zero-padded day
-REPTYR   = batch_dt.year             # four-digit year
-
-# Compute REPTQ (month-end flag)
-next_day = reptdate + timedelta(days=1)
-REPTQ = 'Y' if next_day.day == 1 else 'N'
-
-# ... rest of the code ...
-
-CLIENT_SAS_PATH = INPUT_CLIENT_DIR / f"clien{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-
-# Optional: add existence check (matching SAS expectation)
-if not CLIENT_SAS_PATH.exists():
-    raise FileNotFoundError(
-        f"Expected CLIENT file not found: {CLIENT_SAS_PATH}\n"
-        f"Derived from batch date {reptdate} with REPTQ={REPTQ}."
-    )
+Step 2: Caching SAS inputs to Parquet (if needed)...
+  [ISASD_LOAN] Converting loan06.sas7bdat -> loan06.parquet ...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 199, in <module>
+    ISASD_LOAN_PQ   = ensure_cached(ISASD_LOAN_SAS,   "ISASD_LOAN")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 188, in ensure_cached
+    sas_to_parquet(sas_path, cache_path, tag)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 162, in sas_to_parquet
+    writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pyarrow/parquet/core.py", line 1010, in __init__
+    sink = self.file_handle = filesystem.open_output_stream(
+  File "pyarrow/_fs.pyx", line 878, in pyarrow._fs.FileSystem.open_output_stream
+  File "pyarrow/error.pxi", line 154, in pyarrow.lib.pyarrow_internal_check_status
+  File "pyarrow/error.pxi", line 91, in pyarrow.lib.check_status
+PermissionError: [Errno 13] Failed to open local file '/stgsrcsys/host/uat/AII/EIIBNW01/ISASD/loan06.parquet'. Detail: [errno 13] Permission denied
