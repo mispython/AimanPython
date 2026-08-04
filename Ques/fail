@@ -1,10 +1,112 @@
-Step 4: Building loan_merged (5-way last-dataset-wins merge)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 465, in <module>
-    loan_merged = con.execute(f"""
-_duckdb.BinderException: Binder Error: Table "lnwod" does not have a column named "BAL_AFT_EIR"
+# ============================================================================
+# STEP 4: loan_merged (5-way last-dataset-wins merge) with dynamic COALESCE
+# ============================================================================
+print("\nStep 4: Building loan_merged (5-way last-dataset-wins merge)...")
 
-Candidate bindings: : "BLDATE"
+import pyarrow.parquet as pq
+import polars as pl
 
-LINE 13: ...), CAST(loandm.BRANCH AS DOUBLE)) AS BRANCH, COALESCE(CAST(lnwod.BAL_AFT_EIR AS DOUBLE), CAST(lnwof.BAL_AFT_EIR AS...
-                                                                       ^
+def arrow_to_duckdb(pa_type) -> str:
+    if pa.types.is_integer(pa_type):
+        return "BIGINT"
+    elif pa.types.is_floating(pa_type):
+        return "DOUBLE"
+    elif pa.types.is_string(pa_type):
+        return "VARCHAR"
+    elif pa.types.is_date(pa_type):
+        return "DATE"
+    elif pa.types.is_timestamp(pa_type):
+        return "TIMESTAMP"
+    else:
+        return "VARCHAR"
+
+def polars_to_duckdb(polars_dtype) -> str:
+    if polars_dtype in (pl.Int64, pl.Int32):
+        return "BIGINT"
+    elif polars_dtype in (pl.Float64, pl.Float32):
+        return "DOUBLE"
+    elif polars_dtype == pl.Utf8:
+        return "VARCHAR"
+    elif polars_dtype == pl.Date:
+        return "DATE"
+    elif polars_dtype == pl.Datetime:
+        return "TIMESTAMP"
+    else:
+        return "VARCHAR"
+
+# Read schemas of all Parquet sources
+mloan_schema = pq.read_schema(BNM_LOAN_CUR_PQ)
+prev_schema  = pq.read_schema(BNM_LOAN_PRV_PQ)
+lnwof_schema = pq.read_schema(BNM_LNWOF_PQ)
+lnwod_schema = pq.read_schema(BNM_LNWOD_PQ)
+loandm_schema = loandm.schema   # Polars DataFrame from Step 3
+
+# Determine target type for each column (prefer mloan, then loandm, prev, lnwof, lnwod)
+target_types = {}
+for col in LOAN_FAMILY_COLS:
+    if col in mloan_schema.names:
+        target_types[col] = arrow_to_duckdb(mloan_schema.field(col).type)
+    elif col in loandm_schema:
+        target_types[col] = polars_to_duckdb(loandm_schema[col])
+    elif col in prev_schema.names:
+        target_types[col] = arrow_to_duckdb(prev_schema.field(col).type)
+    elif col in lnwof_schema.names:
+        target_types[col] = arrow_to_duckdb(lnwof_schema.field(col).type)
+    elif col in lnwod_schema.names:
+        target_types[col] = arrow_to_duckdb(lnwod_schema.field(col).type)
+    else:
+        target_types[col] = "VARCHAR"   # fallback
+
+# Build COALESCE clause with explicit casts, only including sources that have the column
+coalesce_parts = []
+for c in LOAN_FAMILY_COLS:
+    if c in ("ACCTNO", "NOTENO"):
+        continue
+    t = target_types[c]
+    source_exprs = []
+    # Precedence order: lnwod -> lnwof -> mloan -> prev -> loandm
+    for src, src_schema in [("lnwod", lnwod_schema), ("lnwof", lnwof_schema),
+                            ("mloan", mloan_schema), ("prev", prev_schema)]:
+        if c in src_schema.names:
+            source_exprs.append(f"CAST({src}.{c} AS {t})")
+    # Check loandm (Polars DataFrame)
+    if c in loandm_schema:
+        source_exprs.append(f"CAST(loandm.{c} AS {t})")
+    
+    # Build COALESCE or fallback to NULL if no source has the column
+    if source_exprs:
+        coalesce_expr = f"COALESCE({', '.join(source_exprs)}) AS {c}"
+    else:
+        coalesce_expr = f"NULL::{t} AS {c}"   # should never happen
+    coalesce_parts.append(coalesce_expr)
+
+coalesce_cols = ", ".join(coalesce_parts)
+
+# Execute the merge query
+con = duckdb.connect(database=":memory:")
+con.register("loandm", loandm.to_pandas())
+
+loan_merged = con.execute(f"""
+    WITH keys AS (
+        SELECT ACCTNO, NOTENO FROM loandm
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LOAN_PRV_PQ}')
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LOAN_CUR_PQ}')
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LNWOF_PQ}')
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LNWOD_PQ}')
+    )
+    SELECT keys.ACCTNO, keys.NOTENO, {coalesce_cols}
+    FROM keys
+    LEFT JOIN loandm                                 loandm ON keys.ACCTNO = loandm.ACCTNO AND keys.NOTENO = loandm.NOTENO
+    LEFT JOIN read_parquet('{BNM_LOAN_PRV_PQ}')       prev   ON keys.ACCTNO = prev.ACCTNO   AND keys.NOTENO = prev.NOTENO
+    LEFT JOIN read_parquet('{BNM_LOAN_CUR_PQ}')       mloan  ON keys.ACCTNO = mloan.ACCTNO  AND keys.NOTENO = mloan.NOTENO
+    LEFT JOIN read_parquet('{BNM_LNWOF_PQ}')          lnwof  ON keys.ACCTNO = lnwof.ACCTNO  AND keys.NOTENO = lnwof.NOTENO
+    LEFT JOIN read_parquet('{BNM_LNWOD_PQ}')          lnwod  ON keys.ACCTNO = lnwod.ACCTNO  AND keys.NOTENO = lnwod.NOTENO
+""").pl()
+
+con.close()
+gc.collect()
+print(f"  loan_merged rows: {len(loan_merged):,}")
