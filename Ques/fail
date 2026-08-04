@@ -1,45 +1,19 @@
-def _prodesc(row: dict) -> Optional[str]:
-    # --- sanitise inputs ---
-    product_raw = row.get("PRODUCT")
-    prodcd_raw  = row.get("PRODCD")
-    acctype_raw = row.get("ACCTYPE")
+# --- DEBUG: Inspect OD accounts and PRODESC assignment ---
+print("\n  DEBUG: Checking OD accounts classification...")
+od_rows = alm2.filter(pl.col("ACCTYPE") == "OD")
+print(f"  Number of OD rows: {od_rows.height}")
+if od_rows.height > 0:
+    print("  Sample OD rows (raw values):")
+    print(od_rows.select(["ACCTNO", "PRODCD", "PRODUCT", "ACCTYPE", "PRODESC"]).head(10))
+    print("  PRODESC distribution among OD rows:")
+    print(od_rows.group_by("PRODESC").len())
+    print("  PRODCD values in OD rows:")
+    print(od_rows.group_by("PRODCD").len())
+    print("  PRODUCT values in OD rows:")
+    print(od_rows.group_by("PRODUCT").len())
+else:
+    print("  No OD accounts found in alm2!")
 
-    # Convert to string and strip
-    prodcd  = str(prodcd_raw).strip() if prodcd_raw is not None else ""
-    acctype = str(acctype_raw).strip() if acctype_raw is not None else ""
-
-    # Convert product to int if it's a string; if it's bytes, decode first
-    if product_raw is None:
-        product = 0   # treat missing as 0 (but will likely be caught later)
-    elif isinstance(product_raw, str):
-        try:
-            product = int(product_raw.strip())
-        except ValueError:
-            product = 0
-    elif isinstance(product_raw, bytes):
-        try:
-            product = int(product_raw.decode('latin1').strip())
-        except ValueError:
-            product = 0
-    else:
-        product = product_raw   # assume it's already int/float
-
-    # --- now the original logic (using cleaned variables) ---
-    if product in _PERSONAL:
-        return "PERSONAL LOANS"
-    if (acctype == "LN" and prodcd == "34111") or (product in (698, 699, 983)):
-        return "HIRE PURCHASE"
-    if acctype == "LN" and prodcd == "54120":
-        return "HOUSE FINANCING SOLD TO CAGAMAS"
-    if (acctype == "LN" and prodcd == "34120") or (product in HLWOF):
-        return "HOUSING LOANS"
-    if acctype == "OD" and prodcd in ("34180", "34240") and product in ODCORP:
-        return "OD CORPORATE"
-    if acctype == "OD" and prodcd in ("34180", "34240") and product not in ODCORP:
-        return "OD RETAIL"
-    if acctype == "LN" and prodcd not in ("34111", "34120", "N", "M") and product in FLCORP:
-        return "OTHERS CORPORATE"
-    if (acctype == "LN" and prodcd not in ("34111", "34120", "N", "M") and product not in FLCORP) \
-            or (product in REWOF):
-        return "OTHERS RETAIL"
-    return None
+# Also check NOACCT distribution
+print("\n  DEBUG: NOACCT distribution in alm2:")
+print(alm2.group_by("NOACCT").len())
