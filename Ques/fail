@@ -1,9 +1,15 @@
-Step 5: Building DISPAY (rounded) and PREVDISPAY...
+Step 8: Building ALM / ALMBT (loan classification + NOACCT logic)...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 499, in <module>
-    dispay_rounded = con.execute(f"""
-_duckdb.BinderException: Binder Error: Referenced column "ACCTYPE" not found in FROM clause!
-Candidate bindings: "ACCTNO", "CCY", "_TYPE_", "HISTPRINRM_EAL", "HISTPRINFX_EAL"
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 668, in <module>
+    alm_almbt_pd = pl.DataFrame(_alm_rows) if _alm_rows else alm_base_pd.clear()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 391, in __init__
+    self._df = sequence_to_pydf(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 466, in sequence_to_pydf
+    return _sequence_to_pydf_dispatcher(
+  File "/usr/lib64/python3.9/functools.py", line 888, in wrapper
+    return dispatch(args[0].__class__)(*args, **kw)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 722, in _sequence_of_dict_to_pydf
+    pydf = PyDataFrame.from_dicts(
+polars.exceptions.ComputeError: could not append value: 0.0 of type: f64 to the builder; make sure that all rows have the same schema or consider increasing `infer_schema_length`
 
-LINE 7:         BRANCH, ACCTYPE
-                        ^
+it might also be that a value overflows the data-type's capacity
