@@ -1,31 +1,49 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py
-Step 1: Deriving report date and week parameters...
-Error: single positional indexer is out-of-bounds
-  REPTDATE : 26/06/25   NOWK=4 NOWK1=1 NOWK2=2 NOWK3=3
-  REPTMON  : 06  REPTMON1=06  REPTMON2=05
-  SDATE    : 23/06/25
+def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    """Stream a .sas7bdat into Parquet using a schema-locked chunked writer.
+       Always creates a Parquet file – even if the SAS dataset is empty.
+    """
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    total = 0
+    had_data = False
 
-Step 2: Caching SAS inputs to Parquet (if needed)...
-  [ISASD_LOAN] Cache fresh -- skipping conversion.
-  [BNM_LOAN_CUR] Cache fresh -- skipping conversion.
-  [BNM_LOAN_PRV] Cache fresh -- skipping conversion.
-  [BNM_LNWOF] Cache fresh -- skipping conversion.
-  [BNM_LNWOD] Converting lnwod074.sas7bdat -> lnwod074.parquet ...
-  [BNM_LNWOD] Done -- 0 rows cached.
-  [DISPAY] Cache fresh -- skipping conversion.
-  [IDEPOSIT_CUR] Cache fresh -- skipping conversion.
-  [LOAN_LNCOMM] Cache fresh -- skipping conversion.
-  [BTBNM_CUR] Cache fresh -- skipping conversion.
-  [BTBNM_PRV] Cache fresh -- skipping conversion.
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        had_data = True
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        if writer is None:
+            writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
+        else:
+            # Cast columns to the original schema (if needed)
+            cast_arrays = []
+            for field in writer.schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING: cannot cast '{field.name}': {e} -> nulls")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=writer.schema)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
 
-Step 3: Building LOANDM (deletion-detection anti-join)...
-  LOANDM rows: 6,979
+    if writer:
+        writer.close()
+    else:
+        # No data – create an empty Parquet file with the correct schema
+        try:
+            df_empty = pd.read_sas(sas_path, encoding="latin1", nrows=0)
+            empty_table = pa.Table.from_pandas(df_empty, preserve_index=False)
+            writer_empty = pq.ParquetWriter(cache_path, empty_table.schema, compression="snappy")
+            writer_empty.write_table(empty_table)
+            writer_empty.close()
+        except Exception as e:
+            # Fallback: if even reading the schema fails, create a minimal dummy schema
+            # (should not happen for valid SAS files)
+            raise RuntimeError(f"Could not create empty Parquet file for {sas_path}") from e
 
-Step 4: Building loan_merged (5-way last-dataset-wins merge)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 307, in <module>
-    loan_merged = con.execute(f"""
-_duckdb.IOException: IO Error: No files found that match the pattern "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNW01/lnwod074.parquet"
-
-LINE 11:         SELECT ACCTNO, NOTENO FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS...
-                                            ^
+    print(f"  [{tag}] Done -- {total:,} rows cached.")
