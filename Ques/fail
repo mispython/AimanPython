@@ -1,16 +1,72 @@
-_rows = []
-for r in alm2_src.iter_rows(named=True):
-    r = dict(r)
-    new_desc, type_val = _alm2_prodesc(r)
-    r["PRODESC"] = new_desc
-    r["TYPE"] = type_val
-    _rows.append(r)
+PRODESC_ORDER = {
+    "HIRE PURCHASE": 1,
+    "HOUSING LOANS": 2,
+    "OD RETAIL": 3,
+    "OTHERS CORPORATE": 4,
+    "OTHERS RETAIL": 5,
+    "PERSONAL LOANS": 6,
+    "HOUSE FINANCING SOLD TO CAGAMAS": 7,
+    "PURCHASE OF RESIDENTIAL PROPERTY": 8,
+    "STAFF FINANCING": 9,
+    "TOTAL COMMERCIAL RETAILS": 10,
+    "COMMERCIAL RETAIL - IND": 11,
+    "COMMERCIAL RETAIL - NON IND": 12,
+    "BILLS RETAIL": 13,
+    "BILLS CORPORATE": 14,
+}
 
-if _rows:
-    import pandas as pd
-    alm2_tbl = pl.DataFrame(pd.DataFrame(_rows))
-else:
-    alm2_tbl = alm2_src.clear()
 
 
+def emit_report(output_lines: list[str], rows: list[dict], title2: str,
+                title3: str = DEFAULT_TITLE3, label_col: str = "PRODESC") -> None:
+    # Sort rows according to PRODESC_ORDER
+    rows = sorted(rows, key=lambda r: PRODESC_ORDER.get(r.get(label_col, ""), 999))
+    # Add "Obs" column (1-based index)
+    for i, row in enumerate(rows, 1):
+        row["Obs"] = i
 
+    # Column definitions: Obs + existing REPORT_COLS
+    cols = [("Obs", 5, 0)] + REPORT_COLS
+
+    header = _page_header(title2, title3)
+    # Build header line with Obs
+    header_line = f"{'Obs':<5}" + f"{'PRODESC':<35}" + "".join(f"{c:>{w}}" for c, w, _ in cols[1:])
+    # Replace the fifth line of header (the column headers) with this new one
+    header[4] = header_line
+    # Dashes line stays the same
+    dashes_line = "-" * LRECL
+    header[5] = dashes_line
+
+    output_lines.append("\f" + header[0])
+    output_lines.extend(header[1:])
+    lines_used = len(header)
+    totals = {c: 0.0 for c, _, _ in cols}
+
+    for row in rows:
+        if lines_used >= PAGE_SIZE - 2:
+            output_lines.append("\f" + header[0])
+            output_lines.extend(header[1:])
+            lines_used = len(header)
+
+        # Build line: Obs + label + values
+        line = f"{row['Obs']:>5}"  # right-align Obs (matches SAS)
+        label = str(row.get(label_col, "") or "")[:35]
+        line += f"{label:<35}"
+        for c, w, d in cols[1:]:  # skip Obs
+            v = row.get(c)
+            totals[c] += (v or 0)
+            line += _fmt_num(v, w, d)
+        output_lines.append(line)
+        lines_used += 1
+
+    # Totals line
+    output_lines.append("-" * LRECL)
+    sum_line = f"{'':>5}{'':<35}"  # blank for Obs and label columns
+    for c, w, d in cols[1:]:
+        sum_line += _fmt_num(totals[c], w, d)
+    output_lines.append(sum_line)
+    output_lines.append("")
+
+
+tabulate_facility = tabulate_facility.sort(pl.col("TYPE").map_elements(lambda x: {"BANK TRADE":1, "CASH LINE FACILITY":2, "FIXED FINANCING":3}.get(x, 99), return_dtype=pl.Int64))
+tabulate_sector = tabulate_sector.sort(["SECTGROUP", "SECTTYPE"])
