@@ -1,9 +1,15 @@
-Step 13: Building bankers-trade (BTRAD) section...
+Step 14: Building retail commercial (ALM2/ALMBTCR) breakdown...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 982, in <module>
-    btrad = con.execute(f"""
-_duckdb.BinderException: Binder Error: Referenced column "PRODUCT" not found in FROM clause!
-Candidate bindings: "PRODCD", "PRODGRP", "EXPRDATE", "CUSTCODE", "REPAY_SOURCE"
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py", line 1151, in <module>
+    alm2_tbl = pl.DataFrame(_rows) if _rows else alm2_src.clear()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 391, in __init__
+    self._df = sequence_to_pydf(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 466, in sequence_to_pydf
+    return _sequence_to_pydf_dispatcher(
+  File "/usr/lib64/python3.9/functools.py", line 888, in wrapper
+    return dispatch(args[0].__class__)(*args, **kw)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 722, in _sequence_of_dict_to_pydf
+    pydf = PyDataFrame.from_dicts(
+polars.exceptions.ComputeError: could not append value: 0.0 of type: f64 to the builder; make sure that all rows have the same schema or consider increasing `infer_schema_length`
 
-LINE 2: ..., DNBFISME, APPRLIMT, DISBURSE, REPAID, BALANCE, FISSPURP, PRODUCT, NOTETERM, APPRLIM2, PRODCD, AMTIND, TRANSREF
-                                                                      ^
+it might also be that a value overflows the data-type's capacity
