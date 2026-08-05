@@ -509,8 +509,26 @@ lncomm = con.execute(f"""
     FROM read_parquet('{LOAN_LNCOMM_PQ}')
 """).pl()
 
+# loan_raw_current = con.execute(f"""
+#     SELECT {', '.join(LOAN_FAMILY_COLS)}
+#     FROM read_parquet('{BNM_LOAN_CUR_PQ}')
+# """).pl()
+
+# Build the column list, but replace ACCTYPE with the derived CASE expression
+cols = []
+for c in LOAN_FAMILY_COLS:
+    if c == "ACCTYPE":
+        cols.append(f"""
+            CASE 
+                WHEN ACCTNO >= 3000000000 AND ACCTNO <= 3999999999 THEN 'OD'
+                ELSE 'LN'
+            END AS ACCTYPE
+        """)
+    else:
+        cols.append(c)
+
 loan_raw_current = con.execute(f"""
-    SELECT {', '.join(LOAN_FAMILY_COLS)}
+    SELECT {', '.join(cols)}
     FROM read_parquet('{BNM_LOAN_CUR_PQ}')
 """).pl()
 
@@ -809,6 +827,26 @@ alm2 = alm2.with_columns([
     pl.col("SECTORCD").map_elements(format_fisstype, return_dtype=pl.Utf8).alias("SECTTYPE"),
     pl.col("SECTORCD").map_elements(format_fissgroup, return_dtype=pl.Utf8).alias("SECTGROUP"),
 ])
+
+# --- DEBUG: Inspect OD accounts and PRODESC assignment ---
+print("\n  DEBUG: Checking OD accounts classification...")
+od_rows = alm2.filter(pl.col("ACCTYPE") == "OD")
+print(f"  Number of OD rows: {od_rows.height}")
+if od_rows.height > 0:
+    print("  Sample OD rows (raw values):")
+    print(od_rows.select(["ACCTNO", "PRODCD", "PRODUCT", "ACCTYPE", "PRODESC"]).head(10))
+    print("  PRODESC distribution among OD rows:")
+    print(od_rows.group_by("PRODESC").len())
+    print("  PRODCD values in OD rows:")
+    print(od_rows.group_by("PRODCD").len())
+    print("  PRODUCT values in OD rows:")
+    print(od_rows.group_by("PRODUCT").len())
+else:
+    print("  No OD accounts found in alm2!")
+
+# Also check NOACCT distribution
+print("\n  DEBUG: NOACCT distribution in alm2:")
+print(alm2.group_by("NOACCT").len())
 
 # ============================================================================
 # STEP 12: PROC SUMMARY DATA=ALM NWAY MISSING; CLASS PRODESC; -> ALMLOAN
