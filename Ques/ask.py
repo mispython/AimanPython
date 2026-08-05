@@ -135,20 +135,6 @@ PRODESC_ORDER = {
     "BILLS CORPORATE": 14,
 }
 
-
-def get_acctype(acctno) -> str:
-    """Return 'OD' if ACCTNO is between 3,000,000,000 and 3,999,999,999, else 'LN'."""
-    if acctno is None:
-        return "LN"
-    # Ensure it's numeric
-    try:
-        acctno = float(acctno)
-    except (ValueError, TypeError):
-        return "LN"
-    if 3000000000 <= acctno <= 3999999999:
-        return "OD"
-    return "LN"
-
 # ============================================================================
 # INPUT FILE PATHS  (10 physical .sas7bdat inputs; filenames are deterministic
 # from REPTMON/NOWK/REPTMON1/NOWK3 derived above)
@@ -281,37 +267,29 @@ LOAN_FAMILY_COLS = [
 ]
 
 
-def _select_loan_family(alias: str) -> str:
-    return ", ".join(f"{alias}.{c} AS {c}" for c in LOAN_FAMILY_COLS)
-
-
 # ============================================================================
-# STEP 3: LOANDM = DLOAN records NOT present in MLOAN (SAS: IF A AND NOT B)
-#   DATA LOANDM; MERGE DLOAN(IN=A) MLOAN(IN=B); BY ACCTNO NOTENO; IF A AND NOT B;
+# STEP 3: LOANDM = DLOAN records NOT present in MLOAN
 # ============================================================================
 print("\nStep 3: Building LOANDM (deletion-detection anti-join)...")
 
-# 1. Read the actual schema of ISASD_LOAN (the DLOAN file)
 d_schema = pq.read_schema(ISASD_LOAN_PQ)
 d_cols = set(d_schema.names)
 
-# 2. Build the SELECT clause for the LOAN_FAMILY_COLS
-#    If the column exists in DLOAN, select it from 'd'.
-#    Otherwise, select NULL (with an appropriate type hint).
 select_parts = []
 for col in LOAN_FAMILY_COLS:
-    if col in d_cols:
-        select_parts.append(f'd."{col}" AS "{col}"')
+    if col == "ACCTYPE":
+        # Derive ACCTYPE from ACCTNO
+        select_parts.append(
+            "CASE WHEN d.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 'OD' ELSE 'LN' END AS ACCTYPE"
+        )
     else:
-        # For numeric columns, use NULL::DOUBLE; for strings, NULL::VARCHAR.
-        # Here, use NULL (DuckDB infers type from context), but explicit is safer.
-        # Will check the type from the master list or just use NULL::DOUBLE for numeric.
-        # Since the exact type is unknown, plain NULL works in DuckDB for COALESCE later.
-        select_parts.append(f'NULL AS "{col}"')
+        if col in d_cols:
+            select_parts.append(f'd."{col}" AS "{col}"')
+        else:
+            select_parts.append(f'NULL AS "{col}"')
 
 select_clause = ", ".join(select_parts)
 
-# 3. Execute the anti-join
 con = duckdb.connect(database=":memory:")
 
 loandm = con.execute(f"""
@@ -324,6 +302,7 @@ loandm = con.execute(f"""
 
 con.close()
 print(f"  LOANDM rows: {len(loandm):,}")
+
 
 # ============================================================================
 # STEP 4: loan_merged  (DATA LOAN&REPTMON&NOWK; MERGE LOANDM PREV MLOAN LNWOF LNWOD;)
@@ -386,11 +365,11 @@ for col in LOAN_FAMILY_COLS:
     else:
         target_types[col] = "VARCHAR"   # fallback
 
-# Build COALESCE clause with explicit casts, only including sources that have the column
+# Build COALESCE clause for all columns except ACCTYPE
 coalesce_parts = []
 for c in LOAN_FAMILY_COLS:
-    if c in ("ACCTNO", "NOTENO"):
-        continue
+    if c in ("ACCTNO", "NOTENO", "ACCTYPE"):
+        continue   # skip ACCTYPE – we'll derive it later
     t = target_types[c]
     source_exprs = []
     # Precedence order: lnwod -> lnwof -> mloan -> prev -> loandm
@@ -398,15 +377,13 @@ for c in LOAN_FAMILY_COLS:
                             ("mloan", mloan_schema), ("prev", prev_schema)]:
         if c in src_schema.names:
             source_exprs.append(f"CAST({src}.{c} AS {t})")
-    # Check loandm (Polars DataFrame)
     if c in loandm_schema:
         source_exprs.append(f"CAST(loandm.{c} AS {t})")
     
-    # Build COALESCE or fallback to NULL if no source has the column
     if source_exprs:
         coalesce_expr = f"COALESCE({', '.join(source_exprs)}) AS {c}"
     else:
-        coalesce_expr = f"NULL::{t} AS {c}"   # should never happen
+        coalesce_expr = f"NULL::{t} AS {c}"
     coalesce_parts.append(coalesce_expr)
 
 coalesce_cols = ", ".join(coalesce_parts)
@@ -427,7 +404,15 @@ loan_merged = con.execute(f"""
         UNION
         SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LNWOD_PQ}')
     )
-    SELECT keys.ACCTNO, keys.NOTENO, {coalesce_cols}
+    SELECT 
+        keys.ACCTNO, 
+        keys.NOTENO,
+        {coalesce_cols},
+        -- Derive ACCTYPE from ACCTNO
+        CASE 
+            WHEN keys.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 'OD' 
+            ELSE 'LN' 
+        END AS ACCTYPE
     FROM keys
     LEFT JOIN loandm                                 loandm ON keys.ACCTNO = loandm.ACCTNO AND keys.NOTENO = loandm.NOTENO
     LEFT JOIN read_parquet('{BNM_LOAN_PRV_PQ}')       prev   ON keys.ACCTNO = prev.ACCTNO   AND keys.NOTENO = prev.NOTENO
@@ -523,28 +508,17 @@ lncomm = con.execute(f"""
     FROM read_parquet('{LOAN_LNCOMM_PQ}')
 """).pl()
 
+# List all columns except ACCTYPE, then add derived ACCTYPE
+other_cols = [c for c in LOAN_FAMILY_COLS if c != "ACCTYPE"]
 loan_raw_current = con.execute(f"""
-    SELECT {', '.join(LOAN_FAMILY_COLS)}
+    SELECT 
+        {', '.join(other_cols)},
+        CASE 
+            WHEN ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 'OD' 
+            ELSE 'LN' 
+        END AS ACCTYPE
     FROM read_parquet('{BNM_LOAN_CUR_PQ}')
 """).pl()
-
-# # Build the column list, but replace ACCTYPE with the derived CASE expression
-# cols = []
-# for c in LOAN_FAMILY_COLS:
-#     if c == "ACCTYPE":
-#         cols.append(f"""
-#             CASE 
-#                 WHEN ACCTNO >= 3000000000 AND ACCTNO <= 3999999999 THEN 'OD'
-#                 ELSE 'LN'
-#             END AS ACCTYPE
-#         """)
-#     else:
-#         cols.append(c)
-
-# loan_raw_current = con.execute(f"""
-#     SELECT {', '.join(cols)}
-#     FROM read_parquet('{BNM_LOAN_CUR_PQ}')
-# """).pl()
 
 # --- DEBUG: Check ACCTNO range and derived ACCTYPE ---
 print("  DEBUG: ACCTNO range in loan_raw_current:")
@@ -749,54 +723,6 @@ print(f"  DISPAY(for ALM) rows: {len(dispay_for_alm):,}")
 #     IF REPAID>0 THEN REPAYNO=1;  IF DISBURSE>0 THEN DISBNO=1;
 #     IF REPAID<0 THEN REPAID=0;   IF DISBURSE<0 THEN DISBURSE=0;
 # ============================================================================
-# print("\nStep 10: Final ALM merge with DISPAY + OD adjustment...")
-
-# con = duckdb.connect(database=":memory:")
-# con.register("alm", alm.to_pandas())
-# con.register("dispay_for_alm", dispay_for_alm.to_pandas())
-
-# alm2 = con.execute("""
-#     SELECT
-#         b.*,
-#         a.DISBURSE AS DISBURSE_ORI_SRC, a.REPAID AS REPAID_ORI_SRC,
-#         a.PREDISBURSE, a.PREREPAID
-#     FROM dispay_for_alm a
-#     INNER JOIN alm b ON a.ACCTNO = b.ACCTNO AND a.NOTENO = b.NOTENO
-# """).pl()
-
-# con.close()
-
-# alm2 = alm2.with_columns([
-#     pl.col("DISBURSE_ORI_SRC").alias("DISBURSE_ORI"),
-#     pl.col("REPAID_ORI_SRC").alias("REPAID_ORI"),
-#     pl.col("DISBURSE_ORI_SRC").alias("DISBURSE"),
-#     pl.col("REPAID_ORI_SRC").alias("REPAID"),
-# ])
-
-# print("  DEBUG: ACCTYPE distribution in alm2 after merge:")
-# print(alm2.group_by("ACCTYPE").len())
-
-# _od_mask = pl.col("ACCTYPE") == "OD"
-# alm2 = alm2.with_columns([
-#     pl.when(_od_mask)
-#       .then(((pl.col("REPAID") - pl.col("PREREPAID").fill_null(0.0)) * 100).round(0) / 100)
-#       .otherwise(pl.col("REPAID")).alias("REPAID"),
-#     pl.when(_od_mask)
-#       .then(((pl.col("DISBURSE") - pl.col("PREDISBURSE").fill_null(0.0)) * 100).round(0) / 100)
-#       .otherwise(pl.col("DISBURSE")).alias("DISBURSE"),
-# ])
-# alm2 = alm2.with_columns([
-#     pl.when(pl.col("REPAID") > 0).then(1).otherwise(None).alias("REPAYNO"),
-#     pl.when(pl.col("DISBURSE") > 0).then(1).otherwise(None).alias("DISBNO"),
-# ])
-# alm2 = alm2.with_columns([
-#     pl.when(pl.col("REPAID") < 0).then(0.0).otherwise(pl.col("REPAID")).alias("REPAID"),
-#     pl.when(pl.col("DISBURSE") < 0).then(0.0).otherwise(pl.col("DISBURSE")).alias("DISBURSE"),
-# ])
-# del alm, dispay_for_alm
-# gc.collect()
-# print(f"  ALM (final, post-DISPAY) rows: {len(alm2):,}")
-
 print("\nStep 10: Final ALM merge with DISPAY + OD adjustment...")
 
 con = duckdb.connect(database=":memory:")
@@ -806,13 +732,10 @@ con.register("dispay_for_alm", dispay_for_alm.to_pandas())
 alm2 = con.execute("""
     SELECT
         b.*,
-        COALESCE(a.DISBURSE, 0) AS DISBURSE_ORI_SRC,
-        COALESCE(a.REPAID, 0) AS REPAID_ORI_SRC,
-        COALESCE(a.PREDISBURSE, 0) AS PREDISBURSE,
-        COALESCE(a.PREREPAID, 0) AS PREREPAID
-    FROM alm b
-    LEFT JOIN dispay_for_alm a
-        ON a.ACCTNO = b.ACCTNO AND a.NOTENO = b.NOTENO
+        a.DISBURSE AS DISBURSE_ORI_SRC, a.REPAID AS REPAID_ORI_SRC,
+        a.PREDISBURSE, a.PREREPAID
+    FROM dispay_for_alm a
+    INNER JOIN alm b ON a.ACCTNO = b.ACCTNO AND a.NOTENO = b.NOTENO
 """).pl()
 
 con.close()
@@ -824,14 +747,16 @@ alm2 = alm2.with_columns([
     pl.col("REPAID_ORI_SRC").alias("REPAID"),
 ])
 
-# OD adjustment: use get_acctype on ACCTNO to identify OD rows
-_od_mask = pl.col("ACCTNO").map_elements(get_acctype, return_dtype=pl.Utf8) == "OD"
+print("  DEBUG: ACCTYPE distribution in alm2 after merge:")
+print(alm2.group_by("ACCTYPE").len())
+
+_od_mask = pl.col("ACCTYPE") == "OD"
 alm2 = alm2.with_columns([
     pl.when(_od_mask)
-      .then(((pl.col("REPAID") - pl.col("PREREPAID")) * 100).round(0) / 100)
+      .then(((pl.col("REPAID") - pl.col("PREREPAID").fill_null(0.0)) * 100).round(0) / 100)
       .otherwise(pl.col("REPAID")).alias("REPAID"),
     pl.when(_od_mask)
-      .then(((pl.col("DISBURSE") - pl.col("PREDISBURSE")) * 100).round(0) / 100)
+      .then(((pl.col("DISBURSE") - pl.col("PREDISBURSE").fill_null(0.0)) * 100).round(0) / 100)
       .otherwise(pl.col("DISBURSE")).alias("DISBURSE"),
 ])
 alm2 = alm2.with_columns([
@@ -860,13 +785,11 @@ def _prodesc(row: dict) -> Optional[str]:
     # --- sanitise inputs ---
     product_raw = row.get("PRODUCT")
     prodcd_raw  = row.get("PRODCD")
-    # acctype_raw = row.get("ACCTYPE")
-    acctno = row.get("ACCTNO")
-    acctype = get_acctype(acctno)
+    acctype_raw = row.get("ACCTYPE")
 
     # Convert to string and strip
     prodcd  = str(prodcd_raw).strip() if prodcd_raw is not None else ""
-    # acctype = str(acctype_raw).strip() if acctype_raw is not None else ""
+    acctype = str(acctype_raw).strip() if acctype_raw is not None else ""
 
     # Convert product to int if it's a string; if it's bytes, decode first
     if product_raw is None:
