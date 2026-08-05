@@ -1,32 +1,114 @@
-def derive_noacct(row: dict) -> Optional[int]:
-    oribal = row.get("ORIBAL")
-    if oribal is None:
-        return None
-    balx = round(oribal, 2)
-    if oribal == -0.00 or balx in (0.00, -0.00):
-        return None
+# ============================================================================
+# STEP 3: LOANDM = DLOAN records NOT present in MLOAN
+# ============================================================================
+print("\nStep 3: Building LOANDM (deletion-detection anti-join)...")
 
-    # start as missing (None)
-    noacct = None
+d_schema = pq.read_schema(ISASD_LOAN_PQ)
+d_cols = set(d_schema.names)
 
-    # Determine account type using ACCTNO
-    acct_type = get_acctype(row.get("ACCTNO"))
+select_parts = []
+for col in LOAN_FAMILY_COLS:
+    if col == "ACCTYPE":
+        # Derive ACCTYPE from ACCTNO
+        select_parts.append(
+            "CASE WHEN d.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 'OD' ELSE 'LN' END AS ACCTYPE"
+        )
+    else:
+        if col in d_cols:
+            select_parts.append(f'd."{col}" AS "{col}"')
+        else:
+            select_parts.append(f'NULL AS "{col}"')
 
-    if acct_type == "LN":
-        rleasamt = row.get("RLEASAMT") or 0.0
-        cjfee = row.get("CJFEE")
-        product = row.get("PRODUCT") or 0
-        commno = row.get("COMMNO") or 0
-        cusedamt = row.get("CUSEDAMT") or 0
-        paidind_not_pc = row.get("PAIDIND") not in ("P", "C")
-        cond1 = rleasamt != 0.0 and paidind_not_pc and oribal > 0 and cjfee != oribal
-        cond2 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and 600 <= product <= 699
-        cond3 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and commno > 0 and cusedamt > 0
-        if not (cond1 or cond2 or cond3):
-            noacct = 0   # explicitly set to 0 only if conditions fail
-        # else leave as None -> will become 1 later if final condition passes
+select_clause = ", ".join(select_parts)
 
-    # Final check: only if noacct is not 0 (i.e., None or 1) and other conditions
-    if row.get("PAIDIND") not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.00, -0.00):
-        noacct = 1
-    return noacct
+con = duckdb.connect(database=":memory:")
+
+loandm = con.execute(f"""
+    SELECT {select_clause}
+    FROM read_parquet('{ISASD_LOAN_PQ}') d
+    LEFT JOIN read_parquet('{BNM_LOAN_CUR_PQ}') m
+        ON d.ACCTNO = m.ACCTNO AND d.NOTENO = m.NOTENO
+    WHERE m.ACCTNO IS NULL
+""").pl()
+
+con.close()
+print(f"  LOANDM rows: {len(loandm):,}")
+
+
+
+# Build COALESCE clause for all columns except ACCTYPE
+coalesce_parts = []
+for c in LOAN_FAMILY_COLS:
+    if c in ("ACCTNO", "NOTENO", "ACCTYPE"):
+        continue   # skip ACCTYPE – we'll derive it later
+    t = target_types[c]
+    source_exprs = []
+    # Precedence order: lnwod -> lnwof -> mloan -> prev -> loandm
+    for src, src_schema in [("lnwod", lnwod_schema), ("lnwof", lnwof_schema),
+                            ("mloan", mloan_schema), ("prev", prev_schema)]:
+        if c in src_schema.names:
+            source_exprs.append(f"CAST({src}.{c} AS {t})")
+    if c in loandm_schema:
+        source_exprs.append(f"CAST(loandm.{c} AS {t})")
+    
+    if source_exprs:
+        coalesce_expr = f"COALESCE({', '.join(source_exprs)}) AS {c}"
+    else:
+        coalesce_expr = f"NULL::{t} AS {c}"
+    coalesce_parts.append(coalesce_expr)
+
+coalesce_cols = ", ".join(coalesce_parts)
+
+# Execute the merge query
+con = duckdb.connect(database=":memory:")
+con.register("loandm", loandm.to_pandas())
+
+loan_merged = con.execute(f"""
+    WITH keys AS (
+        SELECT ACCTNO, NOTENO FROM loandm
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LOAN_PRV_PQ}')
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LOAN_CUR_PQ}')
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LNWOF_PQ}')
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LNWOD_PQ}')
+    )
+    SELECT 
+        keys.ACCTNO, 
+        keys.NOTENO,
+        {coalesce_cols},
+        -- Derive ACCTYPE from ACCTNO
+        CASE 
+            WHEN keys.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 'OD' 
+            ELSE 'LN' 
+        END AS ACCTYPE
+    FROM keys
+    LEFT JOIN loandm                                 loandm ON keys.ACCTNO = loandm.ACCTNO AND keys.NOTENO = loandm.NOTENO
+    LEFT JOIN read_parquet('{BNM_LOAN_PRV_PQ}')       prev   ON keys.ACCTNO = prev.ACCTNO   AND keys.NOTENO = prev.NOTENO
+    LEFT JOIN read_parquet('{BNM_LOAN_CUR_PQ}')       mloan  ON keys.ACCTNO = mloan.ACCTNO  AND keys.NOTENO = mloan.NOTENO
+    LEFT JOIN read_parquet('{BNM_LNWOF_PQ}')          lnwof  ON keys.ACCTNO = lnwof.ACCTNO  AND keys.NOTENO = lnwof.NOTENO
+    LEFT JOIN read_parquet('{BNM_LNWOD_PQ}')          lnwod  ON keys.ACCTNO = lnwod.ACCTNO  AND keys.NOTENO = lnwod.NOTENO
+""").pl()
+
+con.close()
+gc.collect()
+print(f"  loan_merged rows: {len(loan_merged):,}")
+
+
+
+# List all columns except ACCTYPE, then add derived ACCTYPE
+other_cols = [c for c in LOAN_FAMILY_COLS if c != "ACCTYPE"]
+loan_raw_current = con.execute(f"""
+    SELECT 
+        {', '.join(other_cols)},
+        CASE 
+            WHEN ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 'OD' 
+            ELSE 'LN' 
+        END AS ACCTYPE
+    FROM read_parquet('{BNM_LOAN_CUR_PQ}')
+""").pl()
+
+
+
