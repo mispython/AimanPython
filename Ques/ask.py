@@ -475,6 +475,18 @@ con.register("loan_merged", loan_merged.to_pandas())
 con.register("dispay_rounded", dispay_rounded.to_pandas())
 con.register("prevdispay", prevdispay.to_pandas())
 
+# dispay_final = con.execute("""
+#     SELECT
+#         a.ACCTNO, a.NOTENO,
+#         a.FISSPURP, a.PRODUCT, a.DNBFISME, a.PRODCD, a.CUSTCD, a.AMTIND,
+#         a.SECTORCD, a.BRANCH, a.ACCTYPE,
+#         b.DISBURSE, b.REPAID,
+#         p.PREDISBURSE, p.PREREPAID
+#     FROM loan_merged a
+#     INNER JOIN dispay_rounded b ON a.ACCTNO = b.ACCTNO AND a.NOTENO = b.NOTENO
+#     LEFT JOIN prevdispay p ON a.ACCTNO = p.ACCTNO AND a.NOTENO = p.NOTENO
+# """).pl()
+
 dispay_final = con.execute("""
     SELECT
         a.ACCTNO, a.NOTENO,
@@ -483,9 +495,47 @@ dispay_final = con.execute("""
         b.DISBURSE, b.REPAID,
         p.PREDISBURSE, p.PREREPAID
     FROM loan_merged a
-    INNER JOIN dispay_rounded b ON a.ACCTNO = b.ACCTNO AND a.NOTENO = b.NOTENO
-    LEFT JOIN prevdispay p ON a.ACCTNO = p.ACCTNO AND a.NOTENO = p.NOTENO
+    INNER JOIN dispay_rounded b 
+        ON a.ACCTNO = b.ACCTNO 
+        AND (CASE WHEN a.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 0 ELSE a.NOTENO END) = 
+            (CASE WHEN b.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 0 ELSE b.NOTENO END)
+    LEFT JOIN prevdispay p 
+        ON a.ACCTNO = p.ACCTNO 
+        AND (CASE WHEN a.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 0 ELSE a.NOTENO END) = 
+            (CASE WHEN p.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 0 ELSE p.NOTENO END)
 """).pl()
+
+# ===== DEBUG: OD mismatch analysis =====
+print("\nDEBUG: Checking OD presence in DISPAY pipeline...")
+
+# 1. How many OD rows in loan_merged?
+loan_od_count = loan_merged.filter(pl.col("ACCTYPE") == "OD").height
+print(f"  OD rows in loan_merged: {loan_od_count}")
+
+# 2. How many OD rows in the raw DISPAY (before rounding/filtering)?
+raw_dispay_od = con.execute(f"""
+    SELECT COUNT(*) FROM read_parquet('{DISPAY_PQ}')
+    WHERE ACCTNO BETWEEN 3000000000 AND 3999999999
+""").pl()[0,0]
+print(f"  OD rows in raw DISPAY file: {raw_dispay_od}")
+
+# 3. How many OD rows in dispay_rounded (after rounding & filter)?
+round_od = dispay_rounded.filter(pl.col("ACCTNO").is_between(3000000000, 3999999999)).height
+print(f"  OD rows in dispay_rounded: {round_od}")
+
+# 4. Anti-join: loan_merged OD keys NOT found in dispay_rounded
+loan_od_keys = loan_merged.filter(pl.col("ACCTYPE") == "OD").select(["ACCTNO", "NOTENO"])
+dispay_keys = dispay_rounded.select(["ACCTNO", "NOTENO"])
+missing = loan_od_keys.join(dispay_keys, on=["ACCTNO", "NOTENO"], how="anti")
+print(f"  OD rows in loan_merged missing from dispay_rounded: {missing.height}")
+if missing.height > 0:
+    print("  Sample missing keys (first 5):")
+    print(missing.head(5))
+
+# 5. Check if OD rows exist in dispay_final (should be 0 if missing all)
+od_final = dispay_final.filter(pl.col("ACCTYPE") == "OD").height
+print(f"  OD rows in dispay_final (final joined dataset): {od_final}")
+# =========================================
 
 con.close()
 gc.collect()
@@ -749,8 +799,6 @@ alm2 = alm2.with_columns([
 
 print("DEBUG: ACCTYPE distribution in alm2 after merge:")
 print(alm2.group_by("ACCTYPE").len())
-print("DEBUG: PRODESC distribution in alm2:")
-print(alm2.group_by("PRODESC").len())
 
 _od_mask = pl.col("ACCTYPE") == "OD"
 alm2 = alm2.with_columns([
