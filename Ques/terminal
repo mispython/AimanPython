@@ -95,23 +95,41 @@ shape: (1, 2)
 ╞═════════╪════════╡
 │ LN      ┆ 195155 │
 └─────────┴────────┘
-DEBUG: PRODESC distribution in alm2:
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNMW01_v2.py", line 753, in <module>
-    print(alm2.group_by("PRODESC").len())
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/group_by.py", line 532, in len
-    return self.agg(len_expr)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/group_by.py", line 296, in agg
-    self._lgb()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "PRODESC"; valid columns: ["ACCTNO", "NOTENO", "FISSPURP", "PRODUCT", "NOTETERM", "EARNTERM", "ORIBAL", "BALANCE", "PAIDIND", "APPRDATE", "APPRLIM2", "PRODCD", "CUSTCD", "AMTIND", "SECTORCD", "ACCTYPE", "BRANCH", "DNBFISME", "COMMNO", "EIR_ADJ", "CJFEE", "RLEASAMT", "CUSEDAMT", "NOACCT", "DISBURSE_ORI_SRC", "REPAID_ORI_SRC", "PREDISBURSE", "PREREPAID", "DISBURSE_ORI", "REPAID_ORI", "DISBURSE", "REPAID"]
+  ALM (final, post-DISPAY) rows: 195,155
 
-Resolved plan until failure:
+Step 11: Assigning PRODESC / SECTTYPE / SECTGROUP...
 
-        ---> FAILED HERE RESOLVING 'sink' <---
-DF ["ACCTNO", "NOTENO", "FISSPURP", "PRODUCT", ...]; PROJECT */32 COLUMNS
+  DEBUG: Checking OD accounts classification...
+  Number of OD rows: 0
+  No OD accounts found in alm2!
+
+  DEBUG: NOACCT distribution in alm2:
+shape: (2, 2)
+┌────────┬────────┐
+│ NOACCT ┆ len    │
+│ ---    ┆ ---    │
+│ i64    ┆ u32    │
+╞════════╪════════╡
+│ 1      ┆ 195153 │
+│ 0      ┆ 2      │
+└────────┴────────┘
+
+Step 12: Summarizing ALM by PRODESC...
+
+Step 13: Building bankers-trade (BTRAD) section...
+  ALMBTRD rows: 1
+
+Step 14: Building retail commercial (ALM2/ALMBTCR) breakdown...
+
+Step 15: Building SME/DBE/DNBFI/FBE breakdowns...
+  SME/DBE/DNBFI/FBE breakdowns complete.
+
+Step 16: Building TABULATE-equivalent sector/facility tables...
+
+Step 17: Writing report sections...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIBNW01/EIIBNW01.txt
+  Total lines    : 320
+  SFTP control file written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIBNW01/EIIBNM01_WK4.txt
+
+EIIBNW01 complete.
