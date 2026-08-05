@@ -608,7 +608,7 @@ alm_base_pd = con.execute("""
         c.CUSEDAMT
     FROM loan_raw_current l
     LEFT JOIN lncomm c ON l.ACCTNO = c.ACCTNO AND l.COMMNO = c.COMMNO
-    WHERE l.PAIDIND NOT IN ('P', 'C') OR l.EIR_ADJ IS NOT NULL
+    WHERE (l.PAIDIND IS NULL OR l.PAIDIND NOT IN ('P', 'C')) OR l.EIR_ADJ IS NOT NULL
 """).pl()
 
 con.close()
@@ -737,7 +737,24 @@ if _almbt_rows:
 else:
     almbt_split = almbt_split
 
+# alm = pl.concat([alm_split, almbt_split], how="diagonal")
+# del alm_base_pd, alm_almbt_pd, _unq_rows, _almbt_rows
+# gc.collect()
+# print(f"  ALM (combined) rows: {len(alm):,}")
+
 alm = pl.concat([alm_split, almbt_split], how="diagonal")
+
+# ===== DEBUG: Check OD rows in alm before merge =====
+print("\nDEBUG: OD rows in alm before merge:")
+od_in_alm = alm.filter(pl.col("ACCTYPE") == "OD")
+print(f"  Number of OD rows in alm: {od_in_alm.height}")
+if od_in_alm.height > 0:
+    print("  Sample OD rows from alm (ACCTNO, NOTENO):")
+    print(od_in_alm.select(["ACCTNO", "NOTENO"]).head(5))
+    print("  Data type of ACCTNO in alm:", alm.schema["ACCTNO"])
+else:
+    print("  No OD rows in alm!")
+
 del alm_base_pd, alm_almbt_pd, _unq_rows, _almbt_rows
 gc.collect()
 print(f"  ALM (combined) rows: {len(alm):,}")
@@ -788,6 +805,17 @@ con = duckdb.connect(database=":memory:")
 con.register("alm", alm.to_pandas())
 con.register("dispay_for_alm", dispay_for_alm.to_pandas())
 
+# ===== DEBUG: Check join key match =====
+print("\nDEBUG: Checking join key match for OD rows...")
+sample_od = dispay_for_alm.filter(pl.col("ACCTYPE") == "OD").select("ACCTNO").head(1).to_pandas()
+if not sample_od.empty:
+    sample_acctno = sample_od.iloc[0, 0]
+    print(f"  Sample OD ACCTNO from dispay_for_alm: {sample_acctno}")
+    in_alm = alm.filter(pl.col("ACCTNO") == sample_acctno)
+    print(f"  Rows in alm with that ACCTNO: {in_alm.height}")
+    if in_alm.height > 0:
+        print("  Sample NOTENO in alm for that ACCTNO:", in_alm.select("NOTENO").head(1))
+
 # alm2 = con.execute("""
 #     SELECT
 #         b.*,
@@ -804,7 +832,7 @@ alm2 = con.execute("""
         a.PREDISBURSE, a.PREREPAID
     FROM dispay_for_alm a
     INNER JOIN alm b 
-        ON a.ACCTNO = b.ACCTNO 
+        ON CAST(a.ACCTNO AS BIGINT) = CAST(b.ACCTNO AS BIGINT)
         AND (CASE WHEN a.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 0 ELSE a.NOTENO END) = 
             (CASE WHEN b.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 0 ELSE b.NOTENO END)
 """).pl()
