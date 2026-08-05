@@ -1,3 +1,157 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNW01.py
+Step 1: Deriving report date and week parameters...
+Error: single positional indexer is out-of-bounds
+  REPTDATE : 26/06/25   NOWK=4 NOWK1=1 NOWK2=2 NOWK3=3
+  REPTMON  : 06  REPTMON1=06  REPTMON2=05
+  SDATE    : 23/06/25
+
+Step 2: Caching SAS inputs to Parquet (if needed)...
+  [ISASD_LOAN] Cache fresh -- skipping conversion.
+  [BNM_LOAN_CUR] Cache fresh -- skipping conversion.
+  [BNM_LOAN_PRV] Cache fresh -- skipping conversion.
+  [BNM_LNWOF] Cache fresh -- skipping conversion.
+  [BNM_LNWOD] Cache fresh -- skipping conversion.
+  [DISPAY] Cache fresh -- skipping conversion.
+  [IDEPOSIT_CUR] Cache fresh -- skipping conversion.
+  [LOAN_LNCOMM] Cache fresh -- skipping conversion.
+  [BTBNM_CUR] Cache fresh -- skipping conversion.
+  [BTBNM_PRV] Cache fresh -- skipping conversion.
+
+Step 3: Building LOANDM (deletion-detection anti-join)...
+  LOANDM rows: 6,979
+
+Step 4: Building loan_merged (5-way last-dataset-wins merge)...
+  loan_merged rows: 661,449
+
+Step 5: Building DISPAY (rounded) and PREVDISPAY...
+  DISPAY(rounded) rows: 201,484   PREVDISPAY rows: 4,637
+
+Step 6: Building final DISPAY dataset (inner-joined on loan A & dispay B)...
+  DISPAY(final) rows: 196,823
+
+Step 7: Building LNCOMM and raw current LOAN (for ALM/ALMBT)...
+  DEBUG: ACCTNO range in loan_raw_current:
+    min ACCTNO: 2002980905.0
+    max ACCTNO: 8996925404.0
+  DEBUG: Derived ACCTYPE distribution:
+shape: (2, 2)
+┌─────────┬────────┐
+│ ACCTYPE ┆ len    │
+│ ---     ┆ ---    │
+│ str     ┆ u32    │
+╞═════════╪════════╡
+│ LN      ┆ 623281 │
+│ OD      ┆ 5022   │
+└─────────┴────────┘
+  DEBUG: Sample rows (ACCTNO, ACCTYPE):
+shape: (10, 2)
+┌──────────┬─────────┐
+│ ACCTNO   ┆ ACCTYPE │
+│ ---      ┆ ---     │
+│ f64      ┆ str     │
+╞══════════╪═════════╡
+│ 2.0030e9 ┆ LN      │
+│ 2.0056e9 ┆ LN      │
+│ 2.0065e9 ┆ LN      │
+│ 2.0788e9 ┆ LN      │
+│ 2.0878e9 ┆ LN      │
+│ 2.8000e9 ┆ LN      │
+│ 2.8000e9 ┆ LN      │
+│ 2.8000e9 ┆ LN      │
+│ 2.8000e9 ┆ LN      │
+│ 2.8000e9 ┆ LN      │
+└──────────┴─────────┘
+  LNCOMM rows: 161,451   raw current LOAN rows: 628,303
+
+Step 8: Building ALM / ALMBT (loan classification + NOACCT logic)...
+  DEBUG: Rows in loan_raw_current before filtering: 628303
+  DEBUG: PAIDIND distribution in loan_raw_current:
+shape: (4, 2)
+┌─────────┬────────┐
+│ PAIDIND ┆ len    │
+│ ---     ┆ ---    │
+│ str     ┆ u32    │
+╞═════════╪════════╡
+│ M       ┆ 619122 │
+│ P       ┆ 4157   │
+│ C       ┆ 2      │
+│ null    ┆ 5022   │
+└─────────┴────────┘
+  DEBUG: Rows in alm_base_pd after WHERE filter: 619147
+  ALM (combined) rows: 616,495
+
+Step 9: Filtering DISPAY(final) for ALM merge...
+  DEBUG: ACCTYPE distribution in dispay_final:
+shape: (1, 2)
+┌─────────┬────────┐
+│ ACCTYPE ┆ len    │
+│ ---     ┆ ---    │
+│ str     ┆ u32    │
+╞═════════╪════════╡
+│ LN      ┆ 196823 │
+└─────────┴────────┘
+  DEBUG: ACCTYPE distribution in dispay_for_alm:
+shape: (1, 2)
+┌─────────┬────────┐
+│ ACCTYPE ┆ len    │
+│ ---     ┆ ---    │
+│ str     ┆ u32    │
+╞═════════╪════════╡
+│ LN      ┆ 196823 │
+└─────────┴────────┘
+  DISPAY(for ALM) rows: 196,823
+
+Step 10: Final ALM merge with DISPAY + OD adjustment...
+  DEBUG: ACCTYPE distribution in alm2 after merge:
+shape: (1, 2)
+┌─────────┬────────┐
+│ ACCTYPE ┆ len    │
+│ ---     ┆ ---    │
+│ str     ┆ u32    │
+╞═════════╪════════╡
+│ LN      ┆ 195155 │
+└─────────┴────────┘
+  ALM (final, post-DISPAY) rows: 195,155
+
+Step 11: Assigning PRODESC / SECTTYPE / SECTGROUP...
+
+  DEBUG: Checking OD accounts classification...
+  Number of OD rows: 0
+  No OD accounts found in alm2!
+
+  DEBUG: NOACCT distribution in alm2:
+shape: (2, 2)
+┌────────┬────────┐
+│ NOACCT ┆ len    │
+│ ---    ┆ ---    │
+│ i64    ┆ u32    │
+╞════════╪════════╡
+│ 1      ┆ 195153 │
+│ 0      ┆ 2      │
+└────────┴────────┘
+
+Step 12: Summarizing ALM by PRODESC...
+
+Step 13: Building bankers-trade (BTRAD) section...
+  ALMBTRD rows: 1
+
+Step 14: Building retail commercial (ALM2/ALMBTCR) breakdown...
+
+Step 15: Building SME/DBE/DNBFI/FBE breakdowns...
+  SME/DBE/DNBFI/FBE breakdowns complete.
+
+Step 16: Building TABULATE-equivalent sector/facility tables...
+
+Step 17: Writing report sections...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIBNW01/EIIBNW01.txt
+  Total lines    : 320
+  SFTP control file written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIBNW01/EIIBNM01_WK4.txt
+
+EIIBNW01 complete.
+
+
+
 # In Step 9, after creating dispay_for_alm:
 print("  DEBUG: ACCTYPE distribution in dispay_final:")
 print(dispay_final.group_by("ACCTYPE").len())
