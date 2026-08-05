@@ -6,6 +6,9 @@ Purpose : PIBB Weekly BNM Loan Movement Report (ESMR 2020-4052)
           amounts. Produces disbursement / repayment / outstanding-balance
           summaries by product category, sector, and SME classification
           for loans, and bankers-trade (IBTRAD) facilities.
+
+OD & LN are seperated by ACCTYPE, where;
+    If ACCTYPE = LN, then LN. If ACCTYPE = OD, then OD
 """
 
 import gc
@@ -509,28 +512,37 @@ lncomm = con.execute(f"""
     FROM read_parquet('{LOAN_LNCOMM_PQ}')
 """).pl()
 
+loan_raw_current = con.execute(f"""
+    SELECT {', '.join(LOAN_FAMILY_COLS)}
+    FROM read_parquet('{BNM_LOAN_CUR_PQ}')
+""").pl()
+
+# # Build the column list, but replace ACCTYPE with the derived CASE expression
+# cols = []
+# for c in LOAN_FAMILY_COLS:
+#     if c == "ACCTYPE":
+#         cols.append(f"""
+#             CASE 
+#                 WHEN ACCTNO >= 3000000000 AND ACCTNO <= 3999999999 THEN 'OD'
+#                 ELSE 'LN'
+#             END AS ACCTYPE
+#         """)
+#     else:
+#         cols.append(c)
+
 # loan_raw_current = con.execute(f"""
-#     SELECT {', '.join(LOAN_FAMILY_COLS)}
+#     SELECT {', '.join(cols)}
 #     FROM read_parquet('{BNM_LOAN_CUR_PQ}')
 # """).pl()
 
-# Build the column list, but replace ACCTYPE with the derived CASE expression
-cols = []
-for c in LOAN_FAMILY_COLS:
-    if c == "ACCTYPE":
-        cols.append(f"""
-            CASE 
-                WHEN ACCTNO >= 3000000000 AND ACCTNO <= 3999999999 THEN 'OD'
-                ELSE 'LN'
-            END AS ACCTYPE
-        """)
-    else:
-        cols.append(c)
-
-loan_raw_current = con.execute(f"""
-    SELECT {', '.join(cols)}
-    FROM read_parquet('{BNM_LOAN_CUR_PQ}')
-""").pl()
+# --- DEBUG: Check ACCTNO range and derived ACCTYPE ---
+print("  DEBUG: ACCTNO range in loan_raw_current:")
+print(f"    min ACCTNO: {loan_raw_current['ACCTNO'].min()}")
+print(f"    max ACCTNO: {loan_raw_current['ACCTNO'].max()}")
+print("  DEBUG: Derived ACCTYPE distribution:")
+print(loan_raw_current.group_by("ACCTYPE").len())
+print("  DEBUG: Sample rows (ACCTNO, ACCTYPE):")
+print(loan_raw_current.select(["ACCTNO", "ACCTYPE"]).head(10))
 
 con.close()
 gc.collect()
@@ -707,6 +719,12 @@ dispay_for_alm = dispay_final.filter(
     | (pl.col("PRODCD").cast(pl.Utf8) == "54120")
     | (pl.col("PRODUCT").is_in([698, 699, 983]))
 )
+
+print("  DEBUG: ACCTYPE distribution in dispay_final:")
+print(dispay_final.group_by("ACCTYPE").len())
+print("  DEBUG: ACCTYPE distribution in dispay_for_alm:")
+print(dispay_for_alm.group_by("ACCTYPE").len())
+
 print(f"  DISPAY(for ALM) rows: {len(dispay_for_alm):,}")
 
 # ============================================================================
@@ -743,6 +761,9 @@ alm2 = alm2.with_columns([
     pl.col("DISBURSE_ORI_SRC").alias("DISBURSE"),
     pl.col("REPAID_ORI_SRC").alias("REPAID"),
 ])
+
+print("  DEBUG: ACCTYPE distribution in alm2 after merge:")
+print(alm2.group_by("ACCTYPE").len())
 
 _od_mask = pl.col("ACCTYPE") == "OD"
 alm2 = alm2.with_columns([
