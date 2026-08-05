@@ -779,13 +779,25 @@ con = duckdb.connect(database=":memory:")
 con.register("alm", alm.to_pandas())
 con.register("dispay_for_alm", dispay_for_alm.to_pandas())
 
+# alm2 = con.execute("""
+#     SELECT
+#         b.*,
+#         a.DISBURSE AS DISBURSE_ORI_SRC, a.REPAID AS REPAID_ORI_SRC,
+#         a.PREDISBURSE, a.PREREPAID
+#     FROM dispay_for_alm a
+#     INNER JOIN alm b ON a.ACCTNO = b.ACCTNO AND a.NOTENO = b.NOTENO
+# """).pl()
+
 alm2 = con.execute("""
     SELECT
         b.*,
         a.DISBURSE AS DISBURSE_ORI_SRC, a.REPAID AS REPAID_ORI_SRC,
         a.PREDISBURSE, a.PREREPAID
     FROM dispay_for_alm a
-    INNER JOIN alm b ON a.ACCTNO = b.ACCTNO AND a.NOTENO = b.NOTENO
+    INNER JOIN alm b 
+        ON a.ACCTNO = b.ACCTNO 
+        AND (CASE WHEN a.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 0 ELSE a.NOTENO END) = 
+            (CASE WHEN b.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 0 ELSE b.NOTENO END)
 """).pl()
 
 con.close()
