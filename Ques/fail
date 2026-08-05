@@ -1,1 +1,20 @@
 (case when (3000000000<=ACCTNO<=3999999999) then 'OD' else 'LN' end) as ACCTYPE length = 8
+
+
+# Build the column list, but replace ACCTYPE with the derived CASE expression
+cols = []
+for c in LOAN_FAMILY_COLS:
+    if c == "ACCTYPE":
+        cols.append(f"""
+            CASE 
+                WHEN ACCTNO >= 3000000000 AND ACCTNO <= 3999999999 THEN 'OD'
+                ELSE 'LN'
+            END AS ACCTYPE
+        """)
+    else:
+        cols.append(c)
+
+loan_raw_current = con.execute(f"""
+    SELECT {', '.join(cols)}
+    FROM read_parquet('{BNM_LOAN_CUR_PQ}')
+""").pl()
