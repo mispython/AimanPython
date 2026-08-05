@@ -1,19 +1,2 @@
-# De-duplicate rows produced by the OD NOTENO-collapse fan-out: when several
-# real NOTENO values for one ACCTNO all classify as 'OD' (and are zeroed to
-# the same join key), the INNER JOIN above can emit multiple copies of the
-# same underlying account. Keep DISBURSE/REPAID/BALANCE as summed business
-# totals (SAS would have summed these across notes anyway), but count each
-# ACCTNO only once for NOACCT/DISBNO/REPAYNO to avoid multiplying account
-# counts by the number of collapsed notes.
-_dedup_flag_cols = ["NOACCT", "DISBNO", "REPAYNO"]
-alm2 = (
-    alm2.sort(["ACCTNO"])
-        .with_columns([
-            pl.when(pl.col("ACCTNO") != pl.col("ACCTNO").shift(1))
-              .then(pl.col(c))
-              .otherwise(None)
-              .alias(c)
-            for c in _dedup_flag_cols
-        ])
-)
-print(f"  ALM rows after ACCTNO-level NOACCT/DISBNO/REPAYNO de-dup: {len(alm2):,}")
+  ALM (final, post-DISPAY) rows: 199,143
+  ALM rows after ACCTNO-level NOACCT/DISBNO/REPAYNO de-dup: 199,143
