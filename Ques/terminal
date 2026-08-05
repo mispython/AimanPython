@@ -1,65 +1,8 @@
-from pathlib import Path
-import polars as pl
-from GET_BATCH_DATE import first_date_of_month, get_past_n_date
-from datetime import datetime, timedelta
-
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = Path("/stgsrcsys/host/uat")
-OUTPUT_DIR = BASE_DIR / "output" / "EIVQDCPR"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# ============================================================
-# COMPUTE REPORT DATE (last day of previous month)
-# ============================================================
-today_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-first_day_str = first_date_of_month(today_str)          # e.g. "2026-08-01 00:00:00"
-prev_month_last_day_str = get_past_n_date(first_day_str, 1)  # e.g. "2026-07-31 00:00:00"
-reptdate = datetime.strptime(prev_month_last_day_str, "%Y-%m-%d %H:%M:%S").date()
-
-# Format suffix as DDMMYY (e.g., 310726)
-date_suffix = reptdate.strftime("%d%m%y")
-
-# ============================================================
-# INPUT FILES – with date suffix (Option A)
-# ============================================================
-EQU_FILE = INPUT_DIR / f"UTGE231_{date_suffix}.txt"
-BOS_FILE = INPUT_DIR / f"BOS1204_{date_suffix}.txt"
-
-# Optional: check they exist
-if not EQU_FILE.exists():
-    raise FileNotFoundError(f"EQU file not found: {EQU_FILE}")
-if not BOS_FILE.exists():
-    raise FileNotFoundError(f"BOS file not found: {BOS_FILE}")
-
-# ============================================================
-# OUTPUT FILES – with datetime timestamp (like EIDE1ERR.py)
-# ============================================================
-_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-OUTPUT_CSV_FILE = OUTPUT_DIR / f"FIDCPR_{_ts}.csv"
-OUTPUT_XLS_FILE = OUTPUT_DIR / f"FIDCPR_{_ts}.xls"
-
-# ============================================================
-# DATA REPTDATE step equivalent (now just logs the date)
-# ============================================================
-def print_reptdate() -> None:
-    print(f"[REPTDATE] Report date (REPTDT): {reptdate}")
-
-# ============================================================
-# MAIN (unchanged except using the new paths)
-# ============================================================
-def main() -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    print_reptdate()
-
-    equ_records = read_equ_file(EQU_FILE)   # now uses the dated file
-    bos_records = read_bos_file(BOS_FILE)   # now uses the dated file
-    conso = build_conso(bos_records, equ_records)
-
-    write_csv_output(conso, OUTPUT_CSV_FILE)
-    write_xls_output(conso, OUTPUT_XLS_FILE)
-
-    print(f"[OUTPUT] CSV written to : {OUTPUT_CSV_FILE}")
-    print(f"[OUTPUT] XLS written to : {OUTPUT_XLS_FILE}")
-
-if __name__ == "__main__":
-    main()
+# --- DEBUG: Check ACCTNO range and derived ACCTYPE ---
+print("  DEBUG: ACCTNO range in loan_raw_current:")
+print(f"    min ACCTNO: {loan_raw_current['ACCTNO'].min()}")
+print(f"    max ACCTNO: {loan_raw_current['ACCTNO'].max()}")
+print("  DEBUG: Derived ACCTYPE distribution:")
+print(loan_raw_current.group_by("ACCTYPE").len())
+print("  DEBUG: Sample rows (ACCTNO, ACCTYPE):")
+print(loan_raw_current.select(["ACCTNO", "ACCTYPE"]).head(10))
