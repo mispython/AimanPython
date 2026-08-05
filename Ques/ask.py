@@ -742,6 +742,14 @@ del alm_base_pd, alm_almbt_pd, _unq_rows, _almbt_rows
 gc.collect()
 print(f"  ALM (combined) rows: {len(alm):,}")
 
+print("\nDEBUG: Checking PRODCD/PRODUCT for OD rows in dispay_final...")
+od_rows = dispay_final.filter(pl.col("ACCTYPE") == "OD")
+if od_rows.height > 0:
+    print("  Distinct PRODCD values in OD rows:")
+    print(od_rows.select(pl.col("PRODCD").cast(pl.Utf8).unique()))
+    print("  Distinct PRODUCT values in OD rows:")
+    print(od_rows.select("PRODUCT").unique())
+
 # ============================================================================
 # STEP 9: DISPAY filter/keep for the ALM merge
 #   PROC SORT DATA=DISPAY(KEEP=... ) BY ACCTNO NOTENO CUSTCD FISSPURP SECTORCD;
@@ -753,6 +761,7 @@ dispay_for_alm = dispay_final.filter(
     (pl.col("PRODCD").cast(pl.Utf8).str.slice(0, 2) == "34")
     | (pl.col("PRODCD").cast(pl.Utf8) == "54120")
     | (pl.col("PRODUCT").is_in([698, 699, 983]))
+    | (pl.col("ACCTYPE") == "OD")
 )
 
 print("  DEBUG: ACCTYPE distribution in dispay_final:")
