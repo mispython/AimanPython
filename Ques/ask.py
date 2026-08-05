@@ -521,13 +521,13 @@ loan_raw_current = con.execute(f"""
 """).pl()
 
 # --- DEBUG: Check ACCTNO range and derived ACCTYPE ---
-print("  DEBUG: ACCTNO range in loan_raw_current:")
-print(f"    min ACCTNO: {loan_raw_current['ACCTNO'].min()}")
-print(f"    max ACCTNO: {loan_raw_current['ACCTNO'].max()}")
-print("  DEBUG: Derived ACCTYPE distribution:")
+print("DEBUG: ACCTNO range in loan_raw_current:")
+print(f"  min: {loan_raw_current['ACCTNO'].min()}")
+print(f"  max: {loan_raw_current['ACCTNO'].max()}")
+print("DEBUG: Current ACCTYPE distribution from derived logic:")
 print(loan_raw_current.group_by("ACCTYPE").len())
-print("  DEBUG: Sample rows (ACCTNO, ACCTYPE):")
-print(loan_raw_current.select(["ACCTNO", "ACCTYPE"]).head(10))
+print("DEBUG: Count of ACCTNO between 3000000000 and 3999999999:")
+print(loan_raw_current.filter(pl.col('ACCTNO').is_between(3000000000, 3999999999)).height)
 
 con.close()
 gc.collect()
@@ -747,8 +747,10 @@ alm2 = alm2.with_columns([
     pl.col("REPAID_ORI_SRC").alias("REPAID"),
 ])
 
-print("  DEBUG: ACCTYPE distribution in alm2 after merge:")
+print("DEBUG: ACCTYPE distribution in alm2 after merge:")
 print(alm2.group_by("ACCTYPE").len())
+print("DEBUG: PRODESC distribution in alm2:")
+print(alm2.group_by("PRODESC").len())
 
 _od_mask = pl.col("ACCTYPE") == "OD"
 alm2 = alm2.with_columns([
