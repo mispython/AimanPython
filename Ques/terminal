@@ -1,71 +1,32 @@
-def get_acctype(acctno) -> str:
-    """Return 'OD' if ACCTNO is between 3,000,000,000 and 3,999,999,999, else 'LN'."""
-    if acctno is None:
-        return "LN"
-    # Ensure it's numeric
-    try:
-        acctno = float(acctno)
-    except (ValueError, TypeError):
-        return "LN"
-    if 3000000000 <= acctno <= 3999999999:
-        return "OD"
-    return "LN"
+def derive_noacct(row: dict) -> Optional[int]:
+    oribal = row.get("ORIBAL")
+    if oribal is None:
+        return None
+    balx = round(oribal, 2)
+    if oribal == -0.00 or balx in (0.00, -0.00):
+        return None
 
+    # start as missing (None)
+    noacct = None
 
+    # Determine account type using ACCTNO
+    acct_type = get_acctype(row.get("ACCTNO"))
 
-acctno = row.get("ACCTNO")
-acctype = get_acctype(acctno)
+    if acct_type == "LN":
+        rleasamt = row.get("RLEASAMT") or 0.0
+        cjfee = row.get("CJFEE")
+        product = row.get("PRODUCT") or 0
+        commno = row.get("COMMNO") or 0
+        cusedamt = row.get("CUSEDAMT") or 0
+        paidind_not_pc = row.get("PAIDIND") not in ("P", "C")
+        cond1 = rleasamt != 0.0 and paidind_not_pc and oribal > 0 and cjfee != oribal
+        cond2 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and 600 <= product <= 699
+        cond3 = rleasamt == 0.0 and paidind_not_pc and oribal > 0 and commno > 0 and cusedamt > 0
+        if not (cond1 or cond2 or cond3):
+            noacct = 0   # explicitly set to 0 only if conditions fail
+        # else leave as None -> will become 1 later if final condition passes
 
-
-
-print("\nStep 10: Final ALM merge with DISPAY + OD adjustment...")
-
-con = duckdb.connect(database=":memory:")
-con.register("alm", alm.to_pandas())
-con.register("dispay_for_alm", dispay_for_alm.to_pandas())
-
-alm2 = con.execute("""
-    SELECT
-        b.*,
-        COALESCE(a.DISBURSE, 0) AS DISBURSE_ORI_SRC,
-        COALESCE(a.REPAID, 0) AS REPAID_ORI_SRC,
-        COALESCE(a.PREDISBURSE, 0) AS PREDISBURSE,
-        COALESCE(a.PREREPAID, 0) AS PREREPAID
-    FROM alm b
-    LEFT JOIN dispay_for_alm a
-        ON a.ACCTNO = b.ACCTNO AND a.NOTENO = b.NOTENO
-""").pl()
-
-con.close()
-
-alm2 = alm2.with_columns([
-    pl.col("DISBURSE_ORI_SRC").alias("DISBURSE_ORI"),
-    pl.col("REPAID_ORI_SRC").alias("REPAID_ORI"),
-    pl.col("DISBURSE_ORI_SRC").alias("DISBURSE"),
-    pl.col("REPAID_ORI_SRC").alias("REPAID"),
-])
-
-# OD adjustment: use get_acctype on ACCTNO to identify OD rows
-_od_mask = pl.col("ACCTNO").map_elements(get_acctype, return_dtype=pl.Utf8) == "OD"
-alm2 = alm2.with_columns([
-    pl.when(_od_mask)
-      .then(((pl.col("REPAID") - pl.col("PREREPAID")) * 100).round(0) / 100)
-      .otherwise(pl.col("REPAID")).alias("REPAID"),
-    pl.when(_od_mask)
-      .then(((pl.col("DISBURSE") - pl.col("PREDISBURSE")) * 100).round(0) / 100)
-      .otherwise(pl.col("DISBURSE")).alias("DISBURSE"),
-])
-alm2 = alm2.with_columns([
-    pl.when(pl.col("REPAID") > 0).then(1).otherwise(None).alias("REPAYNO"),
-    pl.when(pl.col("DISBURSE") > 0).then(1).otherwise(None).alias("DISBNO"),
-])
-alm2 = alm2.with_columns([
-    pl.when(pl.col("REPAID") < 0).then(0.0).otherwise(pl.col("REPAID")).alias("REPAID"),
-    pl.when(pl.col("DISBURSE") < 0).then(0.0).otherwise(pl.col("DISBURSE")).alias("DISBURSE"),
-])
-del alm, dispay_for_alm
-gc.collect()
-print(f"  ALM (final, post-DISPAY) rows: {len(alm2):,}")
-
-
-
+    # Final check: only if noacct is not 0 (i.e., None or 1) and other conditions
+    if row.get("PAIDIND") not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.00, -0.00):
+        noacct = 1
+    return noacct
