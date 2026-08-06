@@ -1,8 +1,7 @@
-[sas_edw_dev@svdwh004 MIS]$ source /sas/python/virt_edw_dev/bin/activate
 (virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIDARTB.py
 Step 1: Deriving report date...
-  Report date (TDATE) : 05/08/2026
-  Output file         : ARTB_DAILY_260806_143039.txt
+  Report date (TDATE) : 04/08/2026
+  Output file         : ARTB_DAILY_260805.txt
 
 Step 3: Resolving dated input files...
   [FILE_RESOLVER] Selected latest: ca260804.sas7bdat
@@ -27,22 +26,9 @@ Step 7: Building CISFD...
 
 Step 8: Building FD...
   FD rows (pre-merge): 878,368
-  FD rows after merge with CISFD: 461697
-  FD CUSTNOs present: [None, 24, 27, 46, 77, 96, 124, 135, 148, 163]
-  Does FD contain CUSTNO 11880426? False
 
 Step 9: Building CAFD (CA + FD stack, CUSTNO filter)...
   CAFD rows: 114
-  CAFD rows by CISTYPE:
-shape: (1, 2)
-┌─────────┬─────┐
-│ CISTYPE ┆ len │
-│ ---     ┆ --- │
-│ str     ┆ u32 │
-╞═════════╪═════╡
-│ CA      ┆ 114 │
-└─────────┴─────┘
-  CAFD rows with CUSTNO 11880426: 114
 
 Step 10: Reading DPCUST fixed-width file...
   DEPO rows: 9,779,745
@@ -53,13 +39,28 @@ Step 11: Building BNM.CAFD...
 Step 12: Summarising CABAL/FDBAL/CURBAL by PMTYPE...
 
 Step 13: Splitting ARCA / ARFD by CISTYPE...
-  ARFD_base rows: 0
-  ARFD_base ACCTNOs sample: []
 
 Step 14: Loading MNIFD (FD.FD detailed dataset)...
   MNIFD rows: 2,620,204
-  MNIFD rows: 2620204
-  MNIFD ACCTNOs sample: [1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725]
+
+[DEBUG] ---- Dataset diagnostics ----
+[DEBUG] ARFD_base dtypes: Schema([('ACCTNO', Int64), ('CUSTNO', Int64), ('CUSTNAME', String), ('FUNDMNE', String), ('FUNDNAME', String), ('PMTYP', Int64)])
+[DEBUG] mnifd dtypes    : Schema([('ACCTNO', Int64), ('DEPODTE', Int64), ('MATDATE', Int64), ('TERM', Float64), ('MATID', String), ('INTPAY', Float64), ('CURBAL', Float64), ('RATE', Float64)])
+[DEBUG] ARFD_base rows  : 0
+[DEBUG] mnifd rows      : 2620204
+[DEBUG] ARFD_base unique ACCTNO: 0
+[DEBUG] mnifd unique ACCTNO    : 878368
+[DEBUG] ARFD_base ACCTNO sample: []
+[DEBUG] mnifd ACCTNO sample    : [1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725]
+[DEBUG] ACCTNO overlap count between ARFD_base and mnifd: 0
+[DEBUG] Sample overlap ACCTNOs: []
+[DEBUG] CISFD rows for target CUSTNO_FILTER: 51
+[DEBUG] CISFD target ACCTNO sample: [1443562930, 1690998705, 1690999215, 1691108926, 1691250532, 1691250726, 1691250920, 1691251430, 1691251527, 1691252134]
+[DEBUG] Target ACCTNOs also present in mnifd: 0
+[DEBUG] Raw CISFD SECCUST distinct values (sample): ['902', '901']
+[DEBUG] Raw CISDP SECCUST distinct values (sample): ['901', '902']
+[DEBUG] ---- End diagnostics ----
+
 
 Step 15: Building ARFD (inner join with MNIFD)...
   ARFD rows: 0
@@ -67,7 +68,7 @@ Step 15: Building ARFD (inner join with MNIFD)...
 
 Step 16: Generating report...
 
-  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIDARTB/ARTB_DAILY_260806_143039.txt
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIDARTB/ARTB_DAILY_260806.txt
   Total lines    : 144
 
 EIIDARTB complete.
