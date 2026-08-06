@@ -27,7 +27,8 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from REPTDATE import get_reptdate_values
+# from REPTDATE import get_reptdate_values
+from GET_BATCH_DATE import get_past_n_date
 from PBBDPFMT import caprod_format
 from ARTBFMT import get_fundmne, get_fundtype, PMFUND
 
@@ -72,14 +73,36 @@ FILE_ENCODING = "latin1"
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-reptdate_values = get_reptdate_values(year_format="%Y")
-reptdate: date = reptdate_values.reptdate
-RDATE     = reptdate                                    # used for RMAINDT date arithmetic
-REPTYEAR  = reptdate_values.reptyear                     # YEAR4.
-REPTMON   = reptdate_values.reptmon                      # Z2.
-REPTDAY   = reptdate_values.reptday                      # Z2.
-TDATE     = reptdate.strftime("%d/%m/%Y")                # DDMMYY10.
-NOWK      = reptdate_values.nowk                         # unused downstream (see note above)
+# reptdate_values = get_reptdate_values(year_format="%Y")
+# reptdate: date = reptdate_values.reptdate
+# RDATE     = reptdate                                    # used for RMAINDT date arithmetic
+# REPTYEAR  = reptdate_values.reptyear                     # YEAR4.
+# REPTMON   = reptdate_values.reptmon                      # Z2.
+# REPTDAY   = reptdate_values.reptday                      # Z2.
+# TDATE     = reptdate.strftime("%d/%m/%Y")                # DDMMYY10.
+# NOWK      = reptdate_values.nowk                         # unused downstream (see note above)
+
+# Compute yesterday's date using GET_BATCH_DATE
+today_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+yesterday_str = get_past_n_date(today_str, 1)          # returns "YYYY-MM-DD HH:MM:SS"
+reptdate = datetime.strptime(yesterday_str, "%Y-%m-%d %H:%M:%S").date()
+
+RDATE     = reptdate
+REPTYEAR  = reptdate.strftime("%Y")                    # YEAR4.
+REPTMON   = reptdate.strftime("%m")                    # Z2.
+REPTDAY   = reptdate.strftime("%d")                    # Z2.
+TDATE     = reptdate.strftime("%d/%m/%Y")              # DDMMYY10.
+
+# Compute NOWK (though unused downstream, kept for traceability)
+day = reptdate.day
+if day <= 8:
+    NOWK = '1'
+elif day <= 15:
+    NOWK = '2'
+elif day <= 22:
+    NOWK = '3'
+else:
+    NOWK = '4'
 
 print(f"  Report date (TDATE) : {TDATE}")
 print(f"  Output file         : {OUTPUT_FILE.name}")
@@ -111,7 +134,7 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
 
 
 # ============================================================================
-# HELPER: STREAM .sas7bdat -> PARQUET  (mirrors EIBDLN1M.py pattern)
+# HELPER: STREAM .sas7bdat -> PARQUET
 # ============================================================================
 def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str, chunk_rows: int = 250_000) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
@@ -162,14 +185,40 @@ def ensure_cached(sas_path: Path, cache_path: Path, tag: str) -> Path:
 # HELPER: strict "latest dated file" resolver avoiding overlapping prefixes
 # (dpd_fd vs dpd_fdcd) — uses input_date.extract_key for date ranking.
 # ============================================================================
-from input_date import extract_key  # noqa: E402  (import placed near use)
+# from input_date import extract_key  # noqa: E402  (import placed near use)
 
 
-def get_latest_file_strict(directory: Path, name_pattern: "re.Pattern") -> Path:
-    candidates = [f for f in directory.iterdir() if f.is_file() and name_pattern.match(f.name)]
+# def get_latest_file_strict(directory: Path, name_pattern: "re.Pattern") -> Path:
+#     candidates = [f for f in directory.iterdir() if f.is_file() and name_pattern.match(f.name)]
+#     if not candidates:
+#         raise FileNotFoundError(f"No files matching pattern in {directory}")
+#     latest = max(candidates, key=lambda f: extract_key(f.name))
+#     print(f"  [FILE_RESOLVER] Selected latest: {latest.name}")
+#     return latest
+
+def get_latest_dated_file(directory: Path, pattern: str) -> Path:
+    """
+    Return the file in `directory` matching the given regex pattern that has
+    the highest 6‑digit date (YYMMDD) embedded in its name.
+    Example pattern: r"^dpd_ca\d{6}\.sas7bdat$"
+    """
+    pat = re.compile(pattern, re.IGNORECASE)
+    candidates = []
+    for f in directory.iterdir():
+        if f.is_file() and pat.match(f.name):
+            # Extract the 6 digits from the filename
+            match = re.search(r"\d{6}", f.name)
+            if match:
+                date_str = match.group(0)
+                try:
+                    dt = datetime.strptime(date_str, "%y%m%d").date()
+                    candidates.append((dt, f))
+                except ValueError:
+                    continue
     if not candidates:
-        raise FileNotFoundError(f"No files matching pattern in {directory}")
-    latest = max(candidates, key=lambda f: extract_key(f.name))
+        raise FileNotFoundError(f"No files matching pattern '{pattern}' in {directory}")
+    # Return the file with the latest date
+    latest = max(candidates, key=lambda x: x[0])[1]
     print(f"  [FILE_RESOLVER] Selected latest: {latest.name}")
     return latest
 
@@ -179,13 +228,17 @@ def get_latest_file_strict(directory: Path, name_pattern: "re.Pattern") -> Path:
 # ============================================================================
 print("\nStep 3: Resolving dated input files...")
 
-_dpd_ca_pattern   = re.compile(r"^dpd_ca\d{6}\.sas7bdat$", re.IGNORECASE)
-_dpd_fd_pattern   = re.compile(r"^dpd_fd\d{6}\.sas7bdat$", re.IGNORECASE)   # excludes dpd_fdcd
-_dpd_fdcd_pattern = re.compile(r"^dpd_fdcd\d{6}\.sas7bdat$", re.IGNORECASE)
+# _dpd_ca_pattern   = re.compile(r"^ca\d{6}\.sas7bdat$", re.IGNORECASE)
+# _dpd_fd_pattern   = re.compile(r"^fd\d{6}\.sas7bdat$", re.IGNORECASE)   # excludes dpd_fdcd
+# _dpd_fdcd_pattern = re.compile(r"^fdcd\d{6}\.sas7bdat$", re.IGNORECASE)
 
-dpd_ca_path   = get_latest_file_strict(INPUT_DEPOSIT_CA, _dpd_ca_pattern)     # DEPOSIT.CURRENT
-dpd_fd_path   = get_latest_file_strict(INPUT_DEPOSIT_FD, _dpd_fd_pattern)     # DEPOSIT.FD
-dpd_fdcd_path = get_latest_file_strict(INPUT_FD_DIR, _dpd_fdcd_pattern)       # FD.FD (MNIFD)
+# dpd_ca_path   = get_latest_file_strict(INPUT_DEPOSIT_CA, _dpd_ca_pattern)     # DEPOSIT.CURRENT
+# dpd_fd_path   = get_latest_file_strict(INPUT_DEPOSIT_FD, _dpd_fd_pattern)     # DEPOSIT.FD
+# dpd_fdcd_path = get_latest_file_strict(INPUT_FD_DIR, _dpd_fdcd_pattern)       # FD.FD (MNIFD)
+
+dpd_ca_path   = get_latest_dated_file(INPUT_DEPOSIT_CA, r"^ca\d{6}\.sas7bdat$")
+dpd_fd_path   = get_latest_dated_file(INPUT_DEPOSIT_FD, r"^fd\d{6}\.sas7bdat$")
+dpd_fdcd_path = get_latest_dated_file(INPUT_FD_DIR,     r"^fdcd\d{6}\.sas7bdat$")
 
 # ============================================================================
 # STEP 4: CACHE ALL .sas7bdat SOURCES TO PARQUET
