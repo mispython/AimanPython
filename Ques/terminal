@@ -1,2 +1,5 @@
-  ALM (final, post-DISPAY) rows: 199,143
-  ALM rows after ACCTNO-level NOACCT/DISBNO/REPAYNO de-dup: 199,143
+Step 6: Building CA...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIDARTB.py", line 289, in <module>
+    ca_raw = con.execute(f"""
+_duckdb.BinderException: Binder Error: Column "NAME" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
