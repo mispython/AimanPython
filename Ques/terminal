@@ -1,13 +1,73 @@
+[sas_edw_dev@svdwh004 MIS]$ source /sas/python/virt_edw_dev/bin/activate
+(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIDARTB.py
+Step 1: Deriving report date...
+  Report date (TDATE) : 05/08/2026
+  Output file         : ARTB_DAILY_260806_143039.txt
+
+Step 3: Resolving dated input files...
+  [FILE_RESOLVER] Selected latest: ca260804.sas7bdat
+  [FILE_RESOLVER] Selected latest: fd260804.sas7bdat
+  [FILE_RESOLVER] Selected latest: fdcd260804.sas7bdat
+
+Step 4: Caching .sas7bdat sources to Parquet...
+  [CA] Cache fresh - skipping conversion.
+  [FD] Cache fresh - skipping conversion.
+  [FDCD] Cache fresh - skipping conversion.
+  [CISDP] Cache fresh - skipping conversion.
+  [CISFD] Cache fresh - skipping conversion.
+
+Step 5: Building CISCA...
+  CISCA rows: 1,125,342
+
+Step 6: Building CA...
+  CA rows (post PRODCD filter): 765,905
+
+Step 7: Building CISFD...
+  CISFD rows: 8,644,428
+
+Step 8: Building FD...
+  FD rows (pre-merge): 878,368
+  FD rows after merge with CISFD: 461697
+  FD CUSTNOs present: [None, 24, 27, 46, 77, 96, 124, 135, 148, 163]
+  Does FD contain CUSTNO 11880426? False
+
+Step 9: Building CAFD (CA + FD stack, CUSTNO filter)...
+  CAFD rows: 114
+  CAFD rows by CISTYPE:
+shape: (1, 2)
+┌─────────┬─────┐
+│ CISTYPE ┆ len │
+│ ---     ┆ --- │
+│ str     ┆ u32 │
+╞═════════╪═════╡
+│ CA      ┆ 114 │
+└─────────┴─────┘
+  CAFD rows with CUSTNO 11880426: 114
+
+Step 10: Reading DPCUST fixed-width file...
+  DEPO rows: 9,779,745
+
+Step 11: Building BNM.CAFD...
+  BNM.CAFD rows: 114
+
+Step 12: Summarising CABAL/FDBAL/CURBAL by PMTYPE...
+
+Step 13: Splitting ARCA / ARFD by CISTYPE...
+  ARFD_base rows: 0
+  ARFD_base ACCTNOs sample: []
+
 Step 14: Loading MNIFD (FD.FD detailed dataset)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIDARTB.py", line 669, in <module>
-    mnifd = pl.read_parquet(FDCD_CACHE).select([
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10148, in select
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "DEPODTE"; valid columns: ["BRANCH", "ACCTNO", "STATEC", "PURPOSE", "CUSTCD", "CDNO", "OPENIND", "CURBAL", "ORIGAMT", "ORGDATE", "MATDATE", "RATE", "PRODUCT", "TERM", "MATID", "INTPLAN", "PAYMENT", "RENEWAL", "INTPAY", "LASTACTV", "INTFREQ", "INTFREQID", "PEND_INTPLAN", "LMATDATE", "INTTFRACCT", "PRN_DISP_OPT", "PRN_RENEW", "PRN_TFR_ACCT", "DEPDATE"]
+  MNIFD rows: 2,620,204
+  MNIFD rows: 2620204
+  MNIFD ACCTNOs sample: [1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725, 1000001725]
+
+Step 15: Building ARFD (inner join with MNIFD)...
+  ARFD rows: 0
+  ARFD rows after inner join: 0
+
+Step 16: Generating report...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIDARTB/ARTB_DAILY_260806_143039.txt
+  Total lines    : 144
+
+EIIDARTB complete.
