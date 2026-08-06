@@ -1,5 +1,16 @@
-Step 6: Building CA...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIDARTB.py", line 289, in <module>
-    ca_raw = con.execute(f"""
-_duckdb.BinderException: Binder Error: Column "NAME" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+print("\nStep 5: Building CISCA...")
+
+cisca = pl.read_parquet(CISDP_CACHE).filter(
+    (pl.col("SECCUST").cast(pl.Utf8) == "901") &
+    (pl.col("ACCTNO").cast(pl.Int64).is_between(3000000000, 3999999999))
+).select([
+    pl.col("CUSTNO").cast(pl.Int64).alias("CUSTNO"),
+    pl.col("ACCTNO").cast(pl.Int64).alias("ACCTNO"),
+    pl.col("CUSTNAME").cast(pl.Utf8).alias("CUSTNAME"),
+    pl.when(
+        (pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").cast(pl.Utf8).str.strip_chars() != "")
+    ).then(pl.col("NEWIC")).otherwise(pl.col("OLDIC")).alias("ICNO"),
+    pl.lit("CA").alias("CISTYPE")
+])
+
+print(f"  CISCA rows: {len(cisca):,}")
