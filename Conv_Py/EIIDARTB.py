@@ -52,7 +52,8 @@ INPUT_DPCUST_FILE = STG_DIR / "DPEXTCRM_CUSTINFO.txt"               # static fix
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIDARTB"
 
 # Generate time stamp
-_ts = datetime.now().strftime("%y%m%d_%H%M%S")
+# _ts = datetime.now().strftime("%y%m%d_%H%M%S")
+_ts = datetime.now().strftime("%y%m%d")
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIIDARTB"
 OUTPUT_FILE = OUTPUT_DIR / f"ARTB_DAILY_{_ts}.txt"
@@ -303,11 +304,6 @@ ca_merged = ca_raw.join(
     how="left"
 )
 
-# Assign default CUSTNO for missing values
-ca_merged = ca_merged.with_columns(
-    pl.col("CUSTNO").fill_null(11880426)
-)
-
 # # Fallback for CUSTNAME (No fallback as dataset has no 'NAME' column)
 # ca_merged = ca_merged.with_columns(
 #     pl.when(
@@ -383,11 +379,6 @@ fd_merged = fd_raw.join(
     how="left"
 )
 
-# Assign default CUSTNO for missing values
-fd_merged = fd_merged.with_columns(
-    pl.col("CUSTNO").fill_null(11880426)
-)
-
 # Remove PURPOSE == '2'
 fd_merged = fd_merged.filter(pl.col("PURPOSE") != "2")
 
@@ -413,10 +404,10 @@ FD = fd_merged
 del fd_raw, fd_merged
 gc.collect()
 
-# DEBUG STEP 8
-print("  FD rows after merge with CISFD:", len(FD))
-print("  FD CUSTNOs present:", FD['CUSTNO'].unique().to_list()[:10])
-print("  Does FD contain CUSTNO 11880426?", 11880426 in FD['CUSTNO'].unique())
+# # DEBUG STEP 8
+# print("  FD rows after merge with CISFD:", len(FD))
+# print("  FD CUSTNOs present:", FD['CUSTNO'].unique().to_list()[:10])
+# print("  Does FD contain CUSTNO 11880426?", 11880426 in FD['CUSTNO'].unique())
 
 # ============================================================================
 # STEP 9: DATA CAFD  (stack CA + FD, filter fixed CUSTNO list)
@@ -444,10 +435,10 @@ CAFD = CAFD.filter(
 )
 print(f"  CAFD rows: {len(CAFD):,}")
 
-# DEBUG STEP 9
-print("  CAFD rows by CISTYPE:")
-print(CAFD.group_by('CISTYPE').agg(pl.len()))
-print("  CAFD rows with CUSTNO 11880426:", CAFD.filter(pl.col('CUSTNO') == 11880426).height)
+# # DEBUG STEP 9
+# print("  CAFD rows by CISTYPE:")
+# print(CAFD.group_by('CISTYPE').agg(pl.len()))
+# print("  CAFD rows with CUSTNO 11880426:", CAFD.filter(pl.col('CUSTNO') == 11880426).height)
 
 # ============================================================================
 # STEP 10: DATA DEPO  (read DPCUST fixed-width text file)
@@ -543,9 +534,9 @@ sumarca1 = ARCA1.select(["CURBAL", "BALANCE"]).to_pandas().sum(numeric_only=True
 sumarca2 = ARCA2.select(["CURBAL", "BALANCE"]).to_pandas().sum(numeric_only=True)
 totarca  = ARCA.select(["CURBAL", "BALANCE"]).to_pandas().sum(numeric_only=True)
 
-# DEBUG STEP 13
-print("  ARFD_base rows:", len(ARFD_base))
-print("  ARFD_base ACCTNOs sample:", ARFD_base['ACCTNO'].head(10).to_list())
+# # DEBUG STEP 13
+# print("  ARFD_base rows:", len(ARFD_base))
+# print("  ARFD_base ACCTNOs sample:", ARFD_base['ACCTNO'].head(10).to_list())
 
 # ============================================================================
 # STEP 14: PROC SORT DATA=FD.FD OUT=MNIFD; BY ACCTNO;   (dpd_fdcd file)
@@ -564,31 +555,6 @@ mnifd = pl.read_parquet(FDCD_CACHE).select([
 ]).sort("ACCTNO")
 
 print(f"  MNIFD rows: {len(mnifd):,}")
-
-
-def _parse_depodte(raw: Optional[int]) -> Optional[date]:
-    """PUT(DEPODTE,Z11.) -> SUBSTR(...,1,8) -> INPUT(...,MMDDYY8.)  (MM DD YYYY)."""
-    if raw is None:
-        return None
-    z11 = f"{int(raw):011d}"
-    mmddyyyy = z11[0:8]
-    mm, dd, yyyy = int(mmddyyyy[0:2]), int(mmddyyyy[2:4]), int(mmddyyyy[4:8])
-    try:
-        return date(yyyy, mm, dd)
-    except ValueError:
-        return None
-
-
-def _parse_matdate(raw: Optional[int]) -> Optional[date]:
-    """PUT(MATDATE,Z8.) -> INPUT(...,YYMMDD8.)  (YYYY MM DD)."""
-    if raw is None:
-        return None
-    z8 = f"{int(raw):08d}"
-    yyyy, mm, dd = int(z8[0:4]), int(z8[4:6]), int(z8[6:8])
-    try:
-        return date(yyyy, mm, dd)
-    except ValueError:
-        return None
     
 
 def sas_date_to_py(sas_days):
@@ -596,9 +562,9 @@ def sas_date_to_py(sas_days):
         return None
     return SAS_EPOCH + timedelta(days=int(sas_days))
 
-# DEBUG STEP 14
-print("  MNIFD rows:", len(mnifd))
-print("  MNIFD ACCTNOs sample:", mnifd['ACCTNO'].head(10).to_list())
+# # DEBUG STEP 14
+# print("  MNIFD rows:", len(mnifd))
+# print("  MNIFD ACCTNOs sample:", mnifd['ACCTNO'].head(10).to_list())
 
 # ============================================================================
 # STEP 15: DATA ARFD
