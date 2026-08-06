@@ -1,7 +1,8 @@
+[sas_edw_dev@svdwh004 MIS]$ source /sas/python/virt_edw_dev/bin/activate
 (virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIDARTB.py
 Step 1: Deriving report date...
-  Report date (TDATE) : 04/08/2026
-  Output file         : ARTB_DAILY_260805.txt
+  Report date (TDATE) : 05/08/2026
+  Output file         : ARTB_DAILY_260806.txt
 
 Step 3: Resolving dated input files...
   [FILE_RESOLVER] Selected latest: ca260804.sas7bdat
@@ -26,6 +27,24 @@ Step 7: Building CISFD...
 
 Step 8: Building FD...
   FD rows (pre-merge): 878,368
+
+[DEBUG] ---- FD / CISFD merge diagnostics ----
+[DEBUG] Target FD ACCTNOs from CISFD: 51
+[DEBUG] Sample: [1996573824, 1996639617, 1996655235, 1840319236, 1823571207, 1996619400, 1996768008, 1691254803, 1825161620, 1996573205]
+[DEBUG] fd_raw (dpd_fd, CURBAL>0) unique ACCTNO count: 878368
+[DEBUG] fd_raw ACCTNO sample: [1396703235, 1319108613, 1379926022, 1363148809, 1266679819, 1069547532, 1384120331, 1423966221, 1275068431, 1428160528]
+[DEBUG] Overlap between target CISFD ACCTNOs and fd_raw ACCTNOs: 0
+[DEBUG] Target ACCTNOs found in RAW dpd_fd (before CURBAL/PURPOSE filters): 1
+shape: (1, 3)
+┌────────────┬────────┬─────────┐
+│ ACCTNO     ┆ CURBAL ┆ PURPOSE │
+│ ---        ┆ ---    ┆ ---     │
+│ i64        ┆ f64    ┆ str     │
+╞════════════╪════════╪═════════╡
+│ 1443562930 ┆ 0.0    ┆ E       │
+└────────────┴────────┴─────────┘
+[DEBUG] ---- End FD/CISFD diagnostics ----
+
 
 Step 9: Building CAFD (CA + FD stack, CUSTNO filter)...
   CAFD rows: 114
