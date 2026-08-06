@@ -17,7 +17,7 @@ Dependencies:
 
 import gc
 import re
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -35,28 +35,26 @@ from ARTBFMT import get_fundmne, get_fundtype, PMFUND
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII/EIIDARTB")
 
-# //DEPOSIT DD DSN=SAP.PIBB.MNITB.DAILY(0) -> holds dpd_ca{yymmdd}, dpd_fd{yymmdd}
-INPUT_DEPOSIT_DIR = BASE_DIR / "input" / "prod" / "EIIDARTB" / "deposit"
-
-# //FD DD DSN=SAP.PIBB.MNIFD.DAILY(0) -> holds dpd_fdcd{yymmdd} (detailed FD/MNIFD)
-INPUT_FD_DIR = BASE_DIR / "input" / "prod" / "EIIDARTB" / "fd"
-
-# //CISDP DD DSN=SAP.PBB.CISBEXT.DP  -> static catalogued deposit CIS extract
-INPUT_CISDP_FILE = Path("/stgsrcsys/host/uat") / "CISBEXT_DP.sas7bdat"
-
-# //CISFD DD DSN=SAP.PBB.CRM.CISBEXT -> static catalogued deposit CIS extract
-INPUT_CISFD_FILE = Path("/stgsrcsys/host/uat") / "CISBEXT_CRM.sas7bdat"
-
-# //DPCUST DD DSN=RBP2.B033.DP.DPEXTCRM.CUSTINFO -> static fixed-width text file
-INPUT_DPCUST_FILE = Path("/stgsrcsys/host/uat") / "DPEXTCRM_CUSTINFO.txt"
+# INPUT_DEPOSIT_CA  = BASE_DIR / "input" / "prod" / "EIIDARTB" / "dpd_ca"   # holds dpd_ca{yymmdd}, dpd_fd{yymmdd}
+# INPUT_DEPOSIT_FD  = BASE_DIR / "input" / "prod" / "EIIDARTB" / "dpd_fd"   # holds dpd_ca{yymmdd}, dpd_fd{yymmdd}
+# INPUT_FD_DIR      = BASE_DIR / "input" / "prod" / "EIIDARTB" / "dpd_fdcd" # holds dpd_fdcd{yymmdd} (detailed FD/MNIFD)
+INPUT_DEPOSIT_CA  = STG_DIR
+INPUT_DEPOSIT_FD  = STG_DIR
+INPUT_FD_DIR      = STG_DIR
+INPUT_CISDP_FILE  = STG_DIR / "CISDP" / "CISDP_deposit.sas7bdat"            # static catalogued deposit CIS extract
+INPUT_CISFD_FILE  = STG_DIR / "CISFD" / "CISFD_deposit.sas7bdat"            # static catalogued deposit CIS extract
+INPUT_DPCUST_FILE = STG_DIR / "DPEXTCRM_CUSTINFO.txt"                       # static fixed-width text file
 
 # Parquet cache directory (temporary intermediates from .sas7bdat sources)
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIIDARTB"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIDARTB"
 
-# //SASLIST DD DSN=SAP.PIBB.ARTB.DAILY(+1) -> GDG "+1", no date token in name
+# Generate time stamp
+_ts = datetime.now().strftime("%y%m%d_%H%M%S")
+
 OUTPUT_DIR = BASE_DIR / "output" / "EIIDARTB"
-OUTPUT_FILE = OUTPUT_DIR / "ARTB_DAILY.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"ARTB_DAILY_{_ts}.txt"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -185,8 +183,8 @@ _dpd_ca_pattern   = re.compile(r"^dpd_ca\d{6}\.sas7bdat$", re.IGNORECASE)
 _dpd_fd_pattern   = re.compile(r"^dpd_fd\d{6}\.sas7bdat$", re.IGNORECASE)   # excludes dpd_fdcd
 _dpd_fdcd_pattern = re.compile(r"^dpd_fdcd\d{6}\.sas7bdat$", re.IGNORECASE)
 
-dpd_ca_path   = get_latest_file_strict(INPUT_DEPOSIT_DIR, _dpd_ca_pattern)     # DEPOSIT.CURRENT
-dpd_fd_path   = get_latest_file_strict(INPUT_DEPOSIT_DIR, _dpd_fd_pattern)     # DEPOSIT.FD
+dpd_ca_path   = get_latest_file_strict(INPUT_DEPOSIT_CA, _dpd_ca_pattern)     # DEPOSIT.CURRENT
+dpd_fd_path   = get_latest_file_strict(INPUT_DEPOSIT_FD, _dpd_fd_pattern)     # DEPOSIT.FD
 dpd_fdcd_path = get_latest_file_strict(INPUT_FD_DIR, _dpd_fdcd_pattern)       # FD.FD (MNIFD)
 
 # ============================================================================
@@ -197,8 +195,8 @@ print("\nStep 4: Caching .sas7bdat sources to Parquet...")
 CA_CACHE       = CACHE_DIR / f"{dpd_ca_path.stem}.parquet"
 FD_CACHE       = CACHE_DIR / f"{dpd_fd_path.stem}.parquet"
 FDCD_CACHE     = CACHE_DIR / f"{dpd_fdcd_path.stem}.parquet"
-CISDP_CACHE    = CACHE_DIR / "cisdp.parquet"
-CISFD_CACHE    = CACHE_DIR / "cisfd.parquet"
+CISDP_CACHE    = CACHE_DIR / "cisdp_deposit.parquet"
+CISFD_CACHE    = CACHE_DIR / "cisfd_deposit.parquet"
 
 ensure_cached(dpd_ca_path, CA_CACHE, "CA")
 ensure_cached(dpd_fd_path, FD_CACHE, "FD")
