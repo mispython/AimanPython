@@ -75,15 +75,6 @@ SAS_EPOCH = date(1960, 1, 1)
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-# reptdate_values = get_reptdate_values(year_format="%Y")
-# reptdate: date = reptdate_values.reptdate
-# RDATE     = reptdate                                    # used for RMAINDT date arithmetic
-# REPTYEAR  = reptdate_values.reptyear                     # YEAR4.
-# REPTMON   = reptdate_values.reptmon                      # Z2.
-# REPTDAY   = reptdate_values.reptday                      # Z2.
-# TDATE     = reptdate.strftime("%d/%m/%Y")                # DDMMYY10.
-# NOWK      = reptdate_values.nowk                         # unused downstream (see note above)
-
 # Compute yesterday's date using GET_BATCH_DATE
 today_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 yesterday_str = get_past_n_date(today_str, 1)          # returns "YYYY-MM-DD HH:MM:SS"
@@ -266,20 +257,6 @@ ensure_cached(INPUT_CISFD_FILE, CISFD_CACHE, "CISFD")
 # ============================================================================
 print("\nStep 5: Building CISCA...")
 
-# con = duckdb.connect(database=":memory:")
-# cisca = con.execute(f"""
-#     SELECT
-#         CAST(CUSTNO   AS BIGINT)  AS CUSTNO,
-#         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-#         CAST(CUSTNAME AS VARCHAR) AS CUSTNAME,
-#         CASE WHEN NEWIC IS NOT NULL AND TRIM(NEWIC) <> '' THEN NEWIC ELSE OLDIC END AS ICNO,
-#         'CA' AS CISTYPE
-#     FROM read_parquet('{CISDP_CACHE}')
-#     WHERE CAST(SECCUST AS VARCHAR) = '901'
-#       AND CAST(ACCTNO AS BIGINT) BETWEEN 3000000000 AND 3999999999
-# """).pl()
-# con.close()
-
 cisca = pl.read_parquet(CISDP_CACHE).filter(
     (pl.col("SECCUST").cast(pl.Utf8) == "901") &
     (pl.col("ACCTNO").cast(pl.Int64).is_between(3000000000, 3999999999))
@@ -300,52 +277,6 @@ print(f"  CISCA rows: {len(cisca):,}")
 # PRODCD = PUT(PRODUCT, CAPROD.); IF CURBAL>0 AND PRODCD NE 'N';
 # ============================================================================
 print("\nStep 6: Building CA...")
-
-# # DEBUG: print column names
-# df_debug = pl.read_parquet(CA_CACHE)
-# print("Columns in CA_CACHE:", df_debug.columns)
-
-# con = duckdb.connect(database=":memory:")
-# ca_raw = con.execute(f"""
-#     SELECT
-#         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-#         CAST(PRODUCT  AS INTEGER) AS PRODUCT,
-#         CAST(CURBAL   AS DOUBLE)  AS CURBAL,
-#         CAST(INTPAYBL AS DOUBLE)  AS INTPAYBL,
-#         CAST(NAME     AS VARCHAR) AS NAME,
-#         CAST(INTRATE  AS DOUBLE)  AS INTRATE
-#     FROM read_parquet('{CA_CACHE}')
-#     WHERE CAST(CURBAL AS DOUBLE) > 0
-# """).pl()
-# con.close()
-
-# ca_raw = ca_raw.with_columns(
-#     pl.col("PRODUCT").map_elements(caprod_format, return_dtype=pl.Utf8).alias("PRODCD")
-# ).filter(pl.col("PRODCD") != "N")
-
-# print(f"  CA rows (post PRODCD filter): {len(ca_raw):,}")
-
-# # ---- MERGE CA(IN=A) CISCA; BY ACCTNO; IF A; ----------------------------------
-# # CUSTNAME comes from CISCA when matched, else falls back to CA.NAME.
-# ca_pd = ca_raw.to_pandas()
-# cisca_pd = cisca.to_pandas()
-
-# ca_merged = pd.merge(
-#     ca_pd,
-#     cisca_pd[["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO", "CISTYPE"]],
-#     on="ACCTNO",
-#     how="left",
-# )
-# ca_merged["CUSTNAME"] = ca_merged["CUSTNAME"].where(
-#     ca_merged["CUSTNAME"].notna() & (ca_merged["CUSTNAME"].str.strip() != ""),
-#     ca_merged["NAME"],
-# )
-# ca_merged["BALANCE"] = ca_merged["CURBAL"].fillna(0.0) + ca_merged["INTPAYBL"].fillna(0.0)
-# ca_merged["CISTYPE"] = ca_merged["CISTYPE"].fillna("CA")
-
-# CA = pl.from_pandas(ca_merged)
-# del ca_raw, ca_pd, cisca_pd, ca_merged
-# gc.collect()
 
 ca_raw = pl.read_parquet(CA_CACHE).filter(
     pl.col("CURBAL").cast(pl.Float64) > 0
@@ -370,6 +301,11 @@ ca_merged = ca_raw.join(
     cisca.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO", "CISTYPE"]),
     on="ACCTNO",
     how="left"
+)
+
+# Assign default CUSTNO for missing values
+ca_merged = ca_merged.with_columns(
+    pl.col("CUSTNO").fill_null(11880426)
 )
 
 # # Fallback for CUSTNAME (No fallback as dataset has no 'NAME' column)
@@ -403,24 +339,6 @@ gc.collect()
 # ============================================================================
 print("\nStep 7: Building CISFD...")
 
-# con = duckdb.connect(database=":memory:")
-# cisfd = con.execute(f"""
-#     SELECT
-#         CAST(CUSTNO   AS BIGINT)  AS CUSTNO,
-#         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-#         CAST(CUSTNAME AS VARCHAR) AS CUSTNAME,
-#         CASE WHEN NEWIC IS NOT NULL AND TRIM(NEWIC) <> '' THEN NEWIC ELSE OLDIC END AS ICNO,
-#         'FD' AS CISTYPE
-#     FROM read_parquet('{CISFD_CACHE}')
-#     WHERE CAST(SECCUST AS VARCHAR) = '901'
-#       AND (
-#             CAST(ACCTNO AS BIGINT) BETWEEN 1000000000 AND 1999999999
-#          OR CAST(ACCTNO AS BIGINT) BETWEEN 7000000000 AND 7999999999
-#          OR CAST(ACCTNO AS BIGINT) BETWEEN 4000000000 AND 6999999999
-#       )
-# """).pl()
-# con.close()
-
 cisfd = pl.read_parquet(CISFD_CACHE).filter(
     (pl.col("SECCUST").cast(pl.Utf8) == "901") &
     (
@@ -446,43 +364,6 @@ print(f"  CISFD rows: {len(cisfd):,}")
 # ============================================================================
 print("\nStep 8: Building FD...")
 
-# con = duckdb.connect(database=":memory:")
-# fd_raw = con.execute(f"""
-#     SELECT
-#         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-#         CAST(CURBAL   AS DOUBLE)  AS CURBAL,
-#         CAST(INTPAYBL AS DOUBLE)  AS INTPAYBL,
-#         CAST(NAME     AS VARCHAR) AS NAME,
-#         CAST(PURPOSE  AS VARCHAR) AS PURPOSE
-#     FROM read_parquet('{FD_CACHE}')
-#     WHERE CAST(CURBAL AS DOUBLE) > 0
-# """).pl()
-# con.close()
-# print(f"  FD rows (pre-merge): {len(fd_raw):,}")
-
-# # ---- MERGE FD(IN=A) CISFD; BY ACCTNO; IF A AND PURPOSE NE '2'; --------------
-# fd_pd = fd_raw.to_pandas()
-# cisfd_pd = cisfd.to_pandas()
-
-# fd_merged = pd.merge(
-#     fd_pd,
-#     cisfd_pd[["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO", "CISTYPE"]],
-#     on="ACCTNO",
-#     how="left",
-# )
-# fd_merged = fd_merged[fd_merged["PURPOSE"] != "2"].copy()
-# fd_merged["CUSTNAME"] = fd_merged["CUSTNAME"].where(
-#     fd_merged["CUSTNAME"].notna() & (fd_merged["CUSTNAME"].str.strip() != ""),
-#     fd_merged["NAME"],
-# )
-# fd_merged["BALANCE"] = fd_merged["CURBAL"].fillna(0.0) + fd_merged["INTPAYBL"].fillna(0.0)
-# fd_merged["CISTYPE"] = fd_merged["CISTYPE"].fillna("FD")
-
-# FD = pl.from_pandas(fd_merged)
-# del fd_raw, fd_pd, cisfd_pd, fd_merged
-# gc.collect()
-# print(f"  FD rows (post-merge/filter): {len(FD):,}")
-
 fd_raw = pl.read_parquet(FD_CACHE).filter(
     pl.col("CURBAL").cast(pl.Float64) > 0
 ).select([
@@ -500,6 +381,11 @@ fd_merged = fd_raw.join(
     cisfd.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO", "CISTYPE"]),
     on="ACCTNO",
     how="left"
+)
+
+# Assign default CUSTNO for missing values
+fd_merged = fd_merged.with_columns(
+    pl.col("CUSTNO").fill_null(11880426)
 )
 
 # Remove PURPOSE == '2'
@@ -527,6 +413,11 @@ FD = fd_merged
 del fd_raw, fd_merged
 gc.collect()
 
+# DEBUG STEP 8
+print("  FD rows after merge with CISFD:", len(FD))
+print("  FD CUSTNOs present:", FD['CUSTNO'].unique().to_list()[:10])
+print("  Does FD contain CUSTNO 11880426?", 11880426 in FD['CUSTNO'].unique())
+
 # ============================================================================
 # STEP 9: DATA CAFD  (stack CA + FD, filter fixed CUSTNO list)
 # IF A THEN CABAL=CURBAL; ELSE FDBAL=CURBAL; IF CURBAL>0 THEN OUTPUT;
@@ -552,6 +443,11 @@ CAFD = CAFD.filter(
     pl.col("CUSTNO").is_in(list(CAFD_CUSTNO_FILTER)) & (pl.col("CURBAL") > 0)
 )
 print(f"  CAFD rows: {len(CAFD):,}")
+
+# DEBUG STEP 9
+print("  CAFD rows by CISTYPE:")
+print(CAFD.group_by('CISTYPE').agg(pl.len()))
+print("  CAFD rows with CUSTNO 11880426:", CAFD.filter(pl.col('CUSTNO') == 11880426).height)
 
 # ============================================================================
 # STEP 10: DATA DEPO  (read DPCUST fixed-width text file)
@@ -647,26 +543,14 @@ sumarca1 = ARCA1.select(["CURBAL", "BALANCE"]).to_pandas().sum(numeric_only=True
 sumarca2 = ARCA2.select(["CURBAL", "BALANCE"]).to_pandas().sum(numeric_only=True)
 totarca  = ARCA.select(["CURBAL", "BALANCE"]).to_pandas().sum(numeric_only=True)
 
+# DEBUG STEP 13
+print("  ARFD_base rows:", len(ARFD_base))
+print("  ARFD_base ACCTNOs sample:", ARFD_base['ACCTNO'].head(10).to_list())
+
 # ============================================================================
 # STEP 14: PROC SORT DATA=FD.FD OUT=MNIFD; BY ACCTNO;   (dpd_fdcd file)
 # ============================================================================
 print("\nStep 14: Loading MNIFD (FD.FD detailed dataset)...")
-
-# con = duckdb.connect(database=":memory:")
-# mnifd = con.execute(f"""
-#     SELECT
-#         CAST(ACCTNO  AS BIGINT)  AS ACCTNO,
-#         CAST(DEPODTE AS BIGINT)  AS DEPODTE,
-#         CAST(MATDATE AS BIGINT)  AS MATDATE,
-#         CAST(TERM    AS DOUBLE)  AS TERM,
-#         CAST(MATID   AS VARCHAR) AS MATID,
-#         CAST(INTPAY  AS DOUBLE)  AS INTPAY,
-#         CAST(CURBAL  AS DOUBLE)  AS CURBAL,
-#         CAST(RATE    AS DOUBLE)  AS RATE
-#     FROM read_parquet('{FDCD_CACHE}')
-#     ORDER BY ACCTNO
-# """).pl()
-# con.close()
 
 mnifd = pl.read_parquet(FDCD_CACHE).select([
     pl.col("ACCTNO").cast(pl.Int64),
@@ -712,6 +596,9 @@ def sas_date_to_py(sas_days):
         return None
     return SAS_EPOCH + timedelta(days=int(sas_days))
 
+# DEBUG STEP 14
+print("  MNIFD rows:", len(mnifd))
+print("  MNIFD ACCTNOs sample:", mnifd['ACCTNO'].head(10).to_list())
 
 # ============================================================================
 # STEP 15: DATA ARFD
@@ -723,16 +610,6 @@ print("\nStep 15: Building ARFD (inner join with MNIFD)...")
 arfd_pd = pd.merge(
     ARFD_base.to_pandas(), mnifd.to_pandas(), on="ACCTNO", how="inner"
 )
-
-# arfd_pd["MATID"] = arfd_pd["MATID"].apply(lambda v: "M" if v is None or str(v).strip() in ("", ".") else v)
-
-# _depodte_dates = arfd_pd["DEPODTE"].apply(_parse_depodte)
-# _matdate_dates = arfd_pd["MATDATE"].apply(_parse_matdate)
-
-# arfd_pd["DEPDTE"] = _depodte_dates.apply(lambda d: d.strftime("%d/%m/%y") if d else "")
-# arfd_pd["MATDTE"] = _matdate_dates.apply(lambda d: d.strftime("%d/%m/%y") if d else "")
-# arfd_pd["RMAINDT"] = _matdate_dates.apply(lambda d: (d - RDATE).days if d else 0)
-# arfd_pd["BALANCE"] = arfd_pd["CURBAL"].fillna(0.0) + arfd_pd["INTPAY"].fillna(0.0)
 
 # Fix MATID default
 arfd_pd["MATID"] = arfd_pd["MATID"].apply(lambda v: "M" if pd.isna(v) or str(v).strip() in ("", ".") else v)
@@ -771,6 +648,9 @@ gtcafd = {
     "CURBAL":  totarca.get("CURBAL", 0.0) + totarfd.get("CURBAL", 0.0),
     "BALANCE": totarca.get("BALANCE", 0.0) + totarfd.get("BALANCE", 0.0),
 }
+
+# DEBUG STEP 15
+print("  ARFD rows after inner join:", len(ARFD))
 
 # ============================================================================
 # REPORT FORMATTING HELPERS
@@ -1050,8 +930,8 @@ with open(OUTPUT_FILE, "w", encoding=FILE_ENCODING) as fh:
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(output_lines):,}")
-print("\n[RESULT] Report contents:\n")
-for ln in output_lines:
-    print(ln)
+# print("\n[RESULT] Report contents:\n")
+# for ln in output_lines:
+#     print(ln)
 
 print("\nEIIDARTB complete.")
