@@ -1,21 +1,41 @@
-print("  FD rows after merge with CISFD:", len(FD))
-print("  FD CUSTNOs present:", FD['CUSTNO'].unique().to_list()[:10])
-print("  Does FD contain CUSTNO 11880426?", 11880426 in FD['CUSTNO'].unique())
+# ============================================================================
+# DEBUG: DIAGNOSE ARFD_base / MNIFD JOIN MISMATCH
+# ============================================================================
+print("\n[DEBUG] ---- Dataset diagnostics ----")
 
+print("[DEBUG] ARFD_base dtypes:", ARFD_base.schema)
+print("[DEBUG] mnifd dtypes    :", mnifd.schema)
 
-print("  CAFD rows by CISTYPE:")
-print(CAFD.group_by('CISTYPE').agg(pl.count()))
-print("  CAFD rows with CUSTNO 11880426:", CAFD.filter(pl.col('CUSTNO') == 11880426).height)
+print("[DEBUG] ARFD_base rows  :", ARFD_base.height)
+print("[DEBUG] mnifd rows      :", mnifd.height)
 
+print("[DEBUG] ARFD_base unique ACCTNO:", ARFD_base["ACCTNO"].n_unique())
+print("[DEBUG] mnifd unique ACCTNO    :", mnifd["ACCTNO"].n_unique())
 
-print("  ARFD_base rows:", len(ARFD_base))
-print("  ARFD_base ACCTNOs sample:", ARFD_base['ACCTNO'].head(10).to_list())
+print("[DEBUG] ARFD_base ACCTNO sample:", ARFD_base["ACCTNO"].head(10).to_list())
+print("[DEBUG] mnifd ACCTNO sample    :", mnifd["ACCTNO"].head(10).to_list())
 
+overlap = set(ARFD_base["ACCTNO"].to_list()) & set(mnifd["ACCTNO"].to_list())
+print("[DEBUG] ACCTNO overlap count between ARFD_base and mnifd:", len(overlap))
+print("[DEBUG] Sample overlap ACCTNOs:", list(overlap)[:10])
 
-print("  MNIFD rows:", len(mnifd))
-print("  MNIFD ACCTNOs sample:", mnifd['ACCTNO'].head(10).to_list())
+# Check whether target CUSTNOs even have FD accounts in CISFD at all
+cisfd_target = cisfd.filter(pl.col("CUSTNO").is_in(list(CAFD_CUSTNO_FILTER)))
+print("[DEBUG] CISFD rows for target CUSTNO_FILTER:", cisfd_target.height)
+print("[DEBUG] CISFD target ACCTNO sample:", cisfd_target["ACCTNO"].head(10).to_list())
 
+# Check how many of those target ACCTNOs exist in mnifd (dpd_fdcd)
+target_acctnos = set(cisfd_target["ACCTNO"].to_list())
+mnifd_acctnos  = set(mnifd["ACCTNO"].to_list())
+print("[DEBUG] Target ACCTNOs also present in mnifd:", len(target_acctnos & mnifd_acctnos))
 
-print("  ARFD rows after inner join:", len(ARFD))
+# Check SECCUST raw values (to catch padding/whitespace issues)
+raw_cisfd = pl.read_parquet(CISFD_CACHE)
+print("[DEBUG] Raw CISFD SECCUST distinct values (sample):",
+      raw_cisfd["SECCUST"].unique().head(10).to_list())
 
+raw_cisdp = pl.read_parquet(CISDP_CACHE)
+print("[DEBUG] Raw CISDP SECCUST distinct values (sample):",
+      raw_cisdp["SECCUST"].unique().head(10).to_list())
 
+print("[DEBUG] ---- End diagnostics ----\n")
