@@ -1,27 +1,21 @@
-print("\nStep 15: Building ARFD (inner join with MNIFD)...")
+print("  FD rows after merge with CISFD:", len(FD))
+print("  FD CUSTNOs present:", FD['CUSTNO'].unique().to_list()[:10])
+print("  Does FD contain CUSTNO 11880426?", 11880426 in FD['CUSTNO'].unique())
 
-arfd_pd = pd.merge(
-    ARFD_base.to_pandas(), mnifd.to_pandas(), on="ACCTNO", how="inner"
-)
 
-# Fix MATID default
-arfd_pd["MATID"] = arfd_pd["MATID"].apply(lambda v: "M" if pd.isna(v) or str(v).strip() in ("", ".") else v)
+print("  CAFD rows by CISTYPE:")
+print(CAFD.group_by('CISTYPE').agg(pl.count()))
+print("  CAFD rows with CUSTNO 11880426:", CAFD.filter(pl.col('CUSTNO') == 11880426).height)
 
-# Convert SAS date integers to Python dates
-arfd_pd["DEPODTE_DATE"] = arfd_pd["DEPODTE"].apply(sas_date_to_py)
-arfd_pd["MATDATE_DATE"] = arfd_pd["MATDATE"].apply(sas_date_to_py)
 
-# Format as strings for report
-arfd_pd["DEPDTE"] = arfd_pd["DEPODTE_DATE"].apply(lambda d: d.strftime("%d/%m/%y") if d else "")
-arfd_pd["MATDTE"] = arfd_pd["MATDATE_DATE"].apply(lambda d: d.strftime("%d/%m/%y") if d else "")
+print("  ARFD_base rows:", len(ARFD_base))
+print("  ARFD_base ACCTNOs sample:", ARFD_base['ACCTNO'].head(10).to_list())
 
-# Compute remaining days (RMAINDT = MATDATE - RDATE)
-arfd_pd["RMAINDT"] = arfd_pd["MATDATE_DATE"].apply(lambda d: (d - RDATE).days if d else 0)
 
-# Compute BALANCE
-arfd_pd["BALANCE"] = arfd_pd["CURBAL"].fillna(0.0) + arfd_pd["INTPAY"].fillna(0.0)
+print("  MNIFD rows:", len(mnifd))
+print("  MNIFD ACCTNOs sample:", mnifd['ACCTNO'].head(10).to_list())
 
-ARFD = pl.from_pandas(arfd_pd)
-del arfd_pd, mnifd
-gc.collect()
-print(f"  ARFD rows: {len(ARFD):,}")
+
+print("  ARFD rows after inner join:", len(ARFD))
+
+
