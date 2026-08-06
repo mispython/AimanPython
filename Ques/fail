@@ -1,155 +1,27 @@
-print("\nStep 5: Building CISCA...")
+print("\nStep 15: Building ARFD (inner join with MNIFD)...")
 
-cisca = pl.read_parquet(CISDP_CACHE).filter(
-    (pl.col("SECCUST").cast(pl.Utf8) == "901") &
-    (pl.col("ACCTNO").cast(pl.Int64).is_between(3000000000, 3999999999))
-).select([
-    pl.col("CUSTNO").cast(pl.Int64).alias("CUSTNO"),
-    pl.col("ACCTNO").cast(pl.Int64).alias("ACCTNO"),
-    pl.col("CUSTNAME").cast(pl.Utf8).alias("CUSTNAME"),
-    pl.when(
-        (pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").cast(pl.Utf8).str.strip_chars() != "")
-    ).then(pl.col("NEWIC")).otherwise(pl.col("OLDIC")).alias("ICNO"),
-    pl.lit("CA").alias("CISTYPE")
-])
-
-print(f"  CISCA rows: {len(cisca):,}")
-
-
-
-print("\nStep 6: Building CA...")
-
-ca_raw = pl.read_parquet(CA_CACHE).filter(
-    pl.col("CURBAL").cast(pl.Float64) > 0
-).select([
-    pl.col("ACCTNO").cast(pl.Int64),
-    pl.col("PRODUCT").cast(pl.Int32),
-    pl.col("CURBAL").cast(pl.Float64),
-    pl.col("INTPAYBL").cast(pl.Float64),
-    pl.col("NAME").cast(pl.Utf8),
-    pl.col("INTRATE").cast(pl.Float64),
-])
-
-# Apply caprod_format (using map_elements)
-ca_raw = ca_raw.with_columns(
-    pl.col("PRODUCT").map_elements(caprod_format, return_dtype=pl.Utf8).alias("PRODCD")
-).filter(pl.col("PRODCD") != "N")
-
-print(f"  CA rows (post PRODCD filter): {len(ca_raw):,}")
-
-# Merge with CISCA (using Polars join)
-ca_merged = ca_raw.join(
-    cisca.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO", "CISTYPE"]),
-    on="ACCTNO",
-    how="left"
+arfd_pd = pd.merge(
+    ARFD_base.to_pandas(), mnifd.to_pandas(), on="ACCTNO", how="inner"
 )
 
-# Fallback for CUSTNAME
-ca_merged = ca_merged.with_columns(
-    pl.when(
-        (pl.col("CUSTNAME").is_null()) | (pl.col("CUSTNAME").str.strip_chars() == "")
-    ).then(pl.col("NAME")).otherwise(pl.col("CUSTNAME")).alias("CUSTNAME")
-)
+# Fix MATID default
+arfd_pd["MATID"] = arfd_pd["MATID"].apply(lambda v: "M" if pd.isna(v) or str(v).strip() in ("", ".") else v)
+
+# Convert SAS date integers to Python dates
+arfd_pd["DEPODTE_DATE"] = arfd_pd["DEPODTE"].apply(sas_date_to_py)
+arfd_pd["MATDATE_DATE"] = arfd_pd["MATDATE"].apply(sas_date_to_py)
+
+# Format as strings for report
+arfd_pd["DEPDTE"] = arfd_pd["DEPODTE_DATE"].apply(lambda d: d.strftime("%d/%m/%y") if d else "")
+arfd_pd["MATDTE"] = arfd_pd["MATDATE_DATE"].apply(lambda d: d.strftime("%d/%m/%y") if d else "")
+
+# Compute remaining days (RMAINDT = MATDATE - RDATE)
+arfd_pd["RMAINDT"] = arfd_pd["MATDATE_DATE"].apply(lambda d: (d - RDATE).days if d else 0)
 
 # Compute BALANCE
-ca_merged = ca_merged.with_columns(
-    (pl.col("CURBAL").fill_null(0.0) + pl.col("INTPAYBL").fill_null(0.0)).alias("BALANCE")
-)
+arfd_pd["BALANCE"] = arfd_pd["CURBAL"].fillna(0.0) + arfd_pd["INTPAY"].fillna(0.0)
 
-# Fill CISTYPE if null
-ca_merged = ca_merged.with_columns(
-    pl.col("CISTYPE").fill_null("CA")
-)
-
-CA = ca_merged
-
-del ca_raw, ca_merged
+ARFD = pl.from_pandas(arfd_pd)
+del arfd_pd, mnifd
 gc.collect()
-
-
-
-print("\nStep 7: Building CISFD...")
-
-cisfd = pl.read_parquet(CISFD_CACHE).filter(
-    (pl.col("SECCUST").cast(pl.Utf8) == "901") &
-    (
-        pl.col("ACCTNO").cast(pl.Int64).is_between(1000000000, 1999999999) |
-        pl.col("ACCTNO").cast(pl.Int64).is_between(7000000000, 7999999999) |
-        pl.col("ACCTNO").cast(pl.Int64).is_between(4000000000, 6999999999)
-    )
-).select([
-    pl.col("CUSTNO").cast(pl.Int64),
-    pl.col("ACCTNO").cast(pl.Int64),
-    pl.col("CUSTNAME").cast(pl.Utf8),
-    pl.when(
-        (pl.col("NEWIC").is_not_null()) & (pl.col("NEWIC").cast(pl.Utf8).str.strip_chars() != "")
-    ).then(pl.col("NEWIC")).otherwise(pl.col("OLDIC")).alias("ICNO"),
-    pl.lit("FD").alias("CISTYPE")
-])
-
-print(f"  CISFD rows: {len(cisfd):,}")
-
-
-
-print("\nStep 8: Building FD...")
-
-fd_raw = pl.read_parquet(FD_CACHE).filter(
-    pl.col("CURBAL").cast(pl.Float64) > 0
-).select([
-    pl.col("ACCTNO").cast(pl.Int64),
-    pl.col("CURBAL").cast(pl.Float64),
-    pl.col("INTPAYBL").cast(pl.Float64),
-    pl.col("NAME").cast(pl.Utf8),
-    pl.col("PURPOSE").cast(pl.Utf8),
-])
-
-print(f"  FD rows (pre-merge): {len(fd_raw):,}")
-
-# Merge with CISFD
-fd_merged = fd_raw.join(
-    cisfd.select(["ACCTNO", "CUSTNO", "CUSTNAME", "ICNO", "CISTYPE"]),
-    on="ACCTNO",
-    how="left"
-)
-
-# Remove PURPOSE == '2'
-fd_merged = fd_merged.filter(pl.col("PURPOSE") != "2")
-
-# Fallback for CUSTNAME
-fd_merged = fd_merged.with_columns(
-    pl.when(
-        (pl.col("CUSTNAME").is_null()) | (pl.col("CUSTNAME").str.strip_chars() == "")
-    ).then(pl.col("NAME")).otherwise(pl.col("CUSTNAME")).alias("CUSTNAME")
-)
-
-# Compute BALANCE
-fd_merged = fd_merged.with_columns(
-    (pl.col("CURBAL").fill_null(0.0) + pl.col("INTPAYBL").fill_null(0.0)).alias("BALANCE")
-)
-
-# Fill CISTYPE if null
-fd_merged = fd_merged.with_columns(
-    pl.col("CISTYPE").fill_null("FD")
-)
-
-FD = fd_merged
-
-del fd_raw, fd_merged
-gc.collect()
-
-
-
-print("\nStep 14: Loading MNIFD (FD.FD detailed dataset)...")
-
-mnifd = pl.read_parquet(FDCD_CACHE).select([
-    pl.col("ACCTNO").cast(pl.Int64),
-    pl.col("DEPODTE").cast(pl.Int64),
-    pl.col("MATDATE").cast(pl.Int64),
-    pl.col("TERM").cast(pl.Float64),
-    pl.col("MATID").cast(pl.Utf8),
-    pl.col("INTPAY").cast(pl.Float64),
-    pl.col("CURBAL").cast(pl.Float64),
-    pl.col("RATE").cast(pl.Float64),
-]).sort("ACCTNO")
-
-print(f"  MNIFD rows: {len(mnifd):,}")
+print(f"  ARFD rows: {len(ARFD):,}")
