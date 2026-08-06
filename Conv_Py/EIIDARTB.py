@@ -259,7 +259,7 @@ ensure_cached(INPUT_CISFD_FILE, CISFD_CACHE, "CISFD")
 print("\nStep 5: Building CISCA...")
 
 cisca = pl.read_parquet(CISDP_CACHE).filter(
-    (pl.col("SECCUST").cast(pl.Utf8) == "901") &
+    (pl.col("SECCUST").cast(pl.Utf8).str.strip_chars() == "901") &
     (pl.col("ACCTNO").cast(pl.Int64).is_between(3000000000, 3999999999))
 ).select([
     pl.col("CUSTNO").cast(pl.Int64).alias("CUSTNO"),
@@ -336,7 +336,7 @@ gc.collect()
 print("\nStep 7: Building CISFD...")
 
 cisfd = pl.read_parquet(CISFD_CACHE).filter(
-    (pl.col("SECCUST").cast(pl.Utf8) == "901") &
+    (pl.col("SECCUST").cast(pl.Utf8).str.strip_chars() == "901") &
     (
         pl.col("ACCTNO").cast(pl.Int64).is_between(1000000000, 1999999999) |
         pl.col("ACCTNO").cast(pl.Int64).is_between(7000000000, 7999999999) |
@@ -400,6 +400,36 @@ fd_merged = fd_merged.with_columns(
 )
 
 FD = fd_merged
+
+# ============================================================================
+# DEBUG: DIAGNOSE WHY TARGET FD ACCOUNTS DON'T SURVIVE THE CISFD MERGE
+# ============================================================================
+print("\n[DEBUG] ---- FD / CISFD merge diagnostics ----")
+
+target_fd_acctnos = set(cisfd.filter(
+    pl.col("CUSTNO").is_in(list(CAFD_CUSTNO_FILTER))
+)["ACCTNO"].to_list())
+print("[DEBUG] Target FD ACCTNOs from CISFD:", len(target_fd_acctnos))
+print("[DEBUG] Sample:", list(target_fd_acctnos)[:10])
+
+fd_raw_acctnos = set(fd_raw["ACCTNO"].to_list())
+print("[DEBUG] fd_raw (dpd_fd, CURBAL>0) unique ACCTNO count:", len(fd_raw_acctnos))
+print("[DEBUG] fd_raw ACCTNO sample:", list(fd_raw_acctnos)[:10])
+
+overlap_fd = target_fd_acctnos & fd_raw_acctnos
+print("[DEBUG] Overlap between target CISFD ACCTNOs and fd_raw ACCTNOs:", len(overlap_fd))
+
+# Check without the CURBAL>0 filter — are they in dpd_fd at all, regardless of balance?
+fd_all = pl.read_parquet(FD_CACHE).select([
+    pl.col("ACCTNO").cast(pl.Int64),
+    pl.col("CURBAL").cast(pl.Float64),
+    pl.col("PURPOSE").cast(pl.Utf8),
+])
+target_in_fd_all = fd_all.filter(pl.col("ACCTNO").is_in(list(target_fd_acctnos)))
+print("[DEBUG] Target ACCTNOs found in RAW dpd_fd (before CURBAL/PURPOSE filters):", target_in_fd_all.height)
+print(target_in_fd_all)
+
+print("[DEBUG] ---- End FD/CISFD diagnostics ----\n")
 
 del fd_raw, fd_merged
 gc.collect()
@@ -508,7 +538,7 @@ print("\nStep 12: Summarising CABAL/FDBAL/CURBAL by PMTYPE...")
 sumcafd_pd = (
     BNM_CAFD.select(["PMTYPE", "CABAL", "FDBAL", "CURBAL"])
     .to_pandas()
-    .groupby("PMTYPE", as_index=False, sort=False)
+    .groupby("PMTYPE", as_index=False, sort=True)
     .sum(numeric_only=True)
 )
 totcafd_pd = BNM_CAFD.select(["CABAL", "FDBAL", "CURBAL"]).to_pandas().sum(numeric_only=True)
@@ -565,6 +595,48 @@ def sas_date_to_py(sas_days):
 # # DEBUG STEP 14
 # print("  MNIFD rows:", len(mnifd))
 # print("  MNIFD ACCTNOs sample:", mnifd['ACCTNO'].head(10).to_list())
+
+# ============================================================================
+# DEBUG: DIAGNOSE ARFD_base / MNIFD JOIN MISMATCH
+# ============================================================================
+print("\n[DEBUG] ---- Dataset diagnostics ----")
+
+print("[DEBUG] ARFD_base dtypes:", ARFD_base.schema)
+print("[DEBUG] mnifd dtypes    :", mnifd.schema)
+
+print("[DEBUG] ARFD_base rows  :", ARFD_base.height)
+print("[DEBUG] mnifd rows      :", mnifd.height)
+
+print("[DEBUG] ARFD_base unique ACCTNO:", ARFD_base["ACCTNO"].n_unique())
+print("[DEBUG] mnifd unique ACCTNO    :", mnifd["ACCTNO"].n_unique())
+
+print("[DEBUG] ARFD_base ACCTNO sample:", ARFD_base["ACCTNO"].head(10).to_list())
+print("[DEBUG] mnifd ACCTNO sample    :", mnifd["ACCTNO"].head(10).to_list())
+
+overlap = set(ARFD_base["ACCTNO"].to_list()) & set(mnifd["ACCTNO"].to_list())
+print("[DEBUG] ACCTNO overlap count between ARFD_base and mnifd:", len(overlap))
+print("[DEBUG] Sample overlap ACCTNOs:", list(overlap)[:10])
+
+# Check whether target CUSTNOs even have FD accounts in CISFD at all
+cisfd_target = cisfd.filter(pl.col("CUSTNO").is_in(list(CAFD_CUSTNO_FILTER)))
+print("[DEBUG] CISFD rows for target CUSTNO_FILTER:", cisfd_target.height)
+print("[DEBUG] CISFD target ACCTNO sample:", cisfd_target["ACCTNO"].head(10).to_list())
+
+# Check how many of those target ACCTNOs exist in mnifd (dpd_fdcd)
+target_acctnos = set(cisfd_target["ACCTNO"].to_list())
+mnifd_acctnos  = set(mnifd["ACCTNO"].to_list())
+print("[DEBUG] Target ACCTNOs also present in mnifd:", len(target_acctnos & mnifd_acctnos))
+
+# Check SECCUST raw values (to catch padding/whitespace issues)
+raw_cisfd = pl.read_parquet(CISFD_CACHE)
+print("[DEBUG] Raw CISFD SECCUST distinct values (sample):",
+      raw_cisfd["SECCUST"].unique().head(10).to_list())
+
+raw_cisdp = pl.read_parquet(CISDP_CACHE)
+print("[DEBUG] Raw CISDP SECCUST distinct values (sample):",
+      raw_cisdp["SECCUST"].unique().head(10).to_list())
+
+print("[DEBUG] ---- End diagnostics ----\n")
 
 # ============================================================================
 # STEP 15: DATA ARFD
