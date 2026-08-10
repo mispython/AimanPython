@@ -1,57 +1,6 @@
-if row["FIRST_BRANCH"]:
-    brhamt = brhac = 0
-    pagecnt += 1
-    header_lines = _header_a(row["BRANCH"], pagecnt, row.get("TYPE") or "")
-    if pagecnt > 1:
-        # Prepend form-feed to the first header line (no extra blank line)
-        header_lines[0] = "\f" + header_lines[0]
-    out.extend(header_lines)
-    linecnt = 5
-
-
-if row["FIRST_BRANCH"]:
-    brhamt = brhac = 0
-    pagecnt += 1
-    header_lines = _header_b(row["BRANCH"], pagecnt, row.get("TYPE") or "")
-    if pagecnt > 1:
-        # Prepend form-feed to the first header line (no extra blank line)
-        header_lines[0] = "\f" + header_lines[0]
-    out.extend(header_lines)
-    linecnt = 5
-
-===========
-
-def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFrame:
-    product_filter = (
-        f"CAST(PRODUCT AS INTEGER) IN ({','.join(str(p) for p in hpd_products)})"
-        if hpd_products
-        else "1=0"
-    )
-
-    con = duckdb.connect(database=":memory:")
-    df = con.execute(f"""
-        SELECT
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-            CAST(BORSTAT  AS VARCHAR) AS BORSTAT,
-            CAST(PRODUCT  AS INTEGER) AS PRODUCT,
-            CAST(ARREAR2  AS DOUBLE)  AS ARREAR2,
-            CAST(DATE '1960-01-01' + CAST(ISSDTE AS INTEGER)  AS DATE) AS ISSDTE,
-            CAST(DAYDIFF  AS DOUBLE)  AS DAYDIFF,
-            CAST(NAME     AS VARCHAR) AS NAME,
-            CAST(CAST(NOTENO AS DOUBLE) AS BIGINT) AS NOTENO,
-            CAST(DATE '1960-01-01' + CAST(LASTRAN AS INTEGER) AS DATE) AS LASTRAN,
-            CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
-            CAST(NOISTLPD AS DOUBLE)  AS NOISTLPD,
-            CAST(DATE '1960-01-01' + CAST(MATURDT AS INTEGER) AS DATE) AS MATURDT,
-            CAST(LSTTRNAM AS DOUBLE)  AS LSTTRNAM,
-            CAST(DELQCD   AS VARCHAR) AS DELQCD,
-            CAST(COLLDESC AS VARCHAR) AS COLLDESC
-        FROM read_parquet('{cache_path}')
-        WHERE CAST(BALANCE AS DOUBLE) > 0
-          AND (CAST(BORSTAT AS VARCHAR) IS NULL OR CAST(BORSTAT AS VARCHAR) <> 'Z')
-          AND {product_filter}
-    """).pl()
-    con.close()
-    return df
+KGR PREMALA A/P RAMAIAH 90010    16/06/26          16/06/26          515.30        0          0 - < 1 MTH                43,541.99                                                                                                                              
+    8161031522          720      16/06/35         43,200.00                                         15                                                                                                                                                          
+    PERODUA         BEZZA                N VRB5640                   1329                                                                                                                                                                                       
+                                        ------------------------------------------------------------------------------------------                                                                                                                              
+    SUBTOTAL                            NO OF A/C :            1                                                         43,541.99                                                                                                                              
+                                        ------------------------------------------------------------------------------------------
