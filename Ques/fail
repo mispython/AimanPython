@@ -1,3 +1,26 @@
+if row["FIRST_BRANCH"]:
+    brhamt = brhac = 0
+    pagecnt += 1
+    header_lines = _header_a(row["BRANCH"], pagecnt, row.get("TYPE") or "")
+    if pagecnt > 1:
+        # Prepend form-feed to the first header line (no extra blank line)
+        header_lines[0] = "\f" + header_lines[0]
+    out.extend(header_lines)
+    linecnt = 5
+
+
+if row["FIRST_BRANCH"]:
+    brhamt = brhac = 0
+    pagecnt += 1
+    header_lines = _header_b(row["BRANCH"], pagecnt, row.get("TYPE") or "")
+    if pagecnt > 1:
+        # Prepend form-feed to the first header line (no extra blank line)
+        header_lines[0] = "\f" + header_lines[0]
+    out.extend(header_lines)
+    linecnt = 5
+
+===========
+
 def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFrame:
     product_filter = (
         f"CAST(PRODUCT AS INTEGER) IN ({','.join(str(p) for p in hpd_products)})"
