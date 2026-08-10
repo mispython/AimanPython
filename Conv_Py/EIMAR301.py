@@ -73,8 +73,10 @@ PAGE_LEN   = 60            # not directly used for row counting here (LINECNT dr
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-_rv       = get_reptdate_values(year_format="%Y")
-reptdate  = _rv.reptdate
+# _rv       = get_reptdate_values(year_format="%Y")
+# reptdate  = _rv.reptdate
+
+reptdate = date(2026, 7, 31)
 
 if reptdate.month == 1:
     _pmth  = 12
@@ -88,6 +90,7 @@ else:
 # PREPTDTE = date(_pyear, _pmth, _last_day)
 
 PREPTDTE = date(_pyear, _pmth, 1)          # &PREPTDTE : first day of previous month
+# RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
 RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
 REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
 REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
@@ -207,6 +210,52 @@ print(f"  BRHDATA rows: {len(brhdata):,}")
 print("\nStep 4: Building LNTEMP...")
 
 
+# def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFrame:
+#     product_filter = (
+#         f"CAST(PRODUCT AS INTEGER) IN ({','.join(str(p) for p in hpd_products)})"
+#         if hpd_products
+#         else "1=0"
+#     )
+
+#     con = duckdb.connect(database=":memory:")
+
+#     # --- DEBUG: Check raw data for the specific account ---
+#     debug_raw = con.execute(f"""
+#         SELECT *
+#         FROM read_parquet('{cache_path}')
+#         WHERE ACCTNO = 8220131913
+#     """).pl()
+#     print("DEBUG: Raw row (no filters):")
+#     print(debug_raw)
+#     # ----------------------------------------------------
+
+#     df = con.execute(f"""
+#         SELECT
+#             CAST(BRANCH   AS INTEGER) AS BRANCH,
+#             CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+#             CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+#             CAST(BORSTAT  AS VARCHAR) AS BORSTAT,
+#             CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+#             CAST(ARREAR2  AS DOUBLE)  AS ARREAR2,
+#             CAST(DATE '1960-01-01' + CAST(ISSDTE AS INTEGER)  AS DATE) AS ISSDTE,
+#             CAST(DAYDIFF  AS DOUBLE)  AS DAYDIFF,
+#             CAST(NAME     AS VARCHAR) AS NAME,
+#             CAST(CAST(NOTENO AS DOUBLE) AS BIGINT) AS NOTENO,   -- <-- changed
+#             CAST(DATE '1960-01-01' + CAST(LASTRAN AS INTEGER) AS DATE) AS LASTRAN,
+#             CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
+#             CAST(NOISTLPD AS DOUBLE)  AS NOISTLPD,
+#             CAST(DATE '1960-01-01' + CAST(MATURDT AS INTEGER) AS DATE) AS MATURDT,
+#             CAST(LSTTRNAM AS DOUBLE)  AS LSTTRNAM,
+#             CAST(DELQCD   AS VARCHAR) AS DELQCD,
+#             CAST(COLLDESC AS VARCHAR) AS COLLDESC
+#         FROM read_parquet('{cache_path}')
+#         WHERE CAST(BALANCE AS DOUBLE) > 0
+#           AND CAST(BORSTAT AS VARCHAR) <> 'Z'
+#           AND {product_filter}
+#     """).pl()
+#     con.close()
+#     return df
+
 def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFrame:
     product_filter = (
         f"CAST(PRODUCT AS INTEGER) IN ({','.join(str(p) for p in hpd_products)})"
@@ -214,7 +263,83 @@ def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFram
         else "1=0"
     )
 
+    # --- DEBUG: Print the product filter string ---
+    print(f"DEBUG: product_filter = {product_filter}")
+    # ---------------------------------------------
+
     con = duckdb.connect(database=":memory:")
+
+    # ======================================================================
+    # DEBUG BLOCK 1: Check raw data for the specific account (no filters)
+    # ======================================================================
+    debug_raw = con.execute(f"""
+        SELECT *
+        FROM read_parquet('{cache_path}')
+        WHERE ACCTNO = 8220131913
+    """).pl()
+    print("\nDEBUG: Raw row (no filters, all columns):")
+    print(debug_raw)
+    print("Number of raw rows:", len(debug_raw))
+    # ======================================================================
+
+    # ======================================================================
+    # DEBUG BLOCK 2: Test each filter condition individually
+    # ======================================================================
+    # 2a. Check BALANCE > 0
+    debug_balance = con.execute(f"""
+        SELECT ACCTNO, BALANCE
+        FROM read_parquet('{cache_path}')
+        WHERE ACCTNO = 8220131913 AND CAST(BALANCE AS DOUBLE) > 0
+    """).pl()
+    print("\nDEBUG: BALANCE > 0 test:")
+    print(debug_balance)
+
+    # 2b. Check BORSTAT <> 'Z'
+    debug_borstat = con.execute(f"""
+        SELECT ACCTNO, BORSTAT
+        FROM read_parquet('{cache_path}')
+        WHERE ACCTNO = 8220131913 AND CAST(BORSTAT AS VARCHAR) <> 'Z'
+    """).pl()
+    print("\nDEBUG: BORSTAT <> 'Z' test:")
+    print(debug_borstat)
+
+    # 2c. Check PRODUCT IN (...)
+    debug_product = con.execute(f"""
+        SELECT ACCTNO, PRODUCT
+        FROM read_parquet('{cache_path}')
+        WHERE ACCTNO = 8220131913 AND {product_filter}
+    """).pl()
+    print("\nDEBUG: PRODUCT filter test:")
+    print(debug_product)
+
+    # 2d. Check the data type of PRODUCT (to see if it's stored as string with decimal)
+    debug_type = con.execute(f"""
+        SELECT TYPEOF(PRODUCT) as product_type, PRODUCT
+        FROM read_parquet('{cache_path}')
+        WHERE ACCTNO = 8220131913
+    """).pl()
+    print("\nDEBUG: Data type and value of PRODUCT:")
+    print(debug_type)
+    # ======================================================================
+
+    # ======================================================================
+    # DEBUG BLOCK 3: Check the full row with all filters applied
+    # ======================================================================
+    debug_full_filter = con.execute(f"""
+        SELECT *
+        FROM read_parquet('{cache_path}')
+        WHERE ACCTNO = 8220131913
+          AND CAST(BALANCE AS DOUBLE) > 0
+          AND CAST(BORSTAT AS VARCHAR) <> 'Z'
+          AND {product_filter}
+    """).pl()
+    print("\nDEBUG: Row after ALL filters (this is what would go into LNTEMP):")
+    print(debug_full_filter)
+    # ======================================================================
+
+    # ----------------------------------------------------------------------
+    # Now run the actual query that builds LNTEMP (unchanged)
+    # ----------------------------------------------------------------------
     df = con.execute(f"""
         SELECT
             CAST(BRANCH   AS INTEGER) AS BRANCH,
@@ -226,7 +351,7 @@ def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFram
             CAST(DATE '1960-01-01' + CAST(ISSDTE AS INTEGER)  AS DATE) AS ISSDTE,
             CAST(DAYDIFF  AS DOUBLE)  AS DAYDIFF,
             CAST(NAME     AS VARCHAR) AS NAME,
-            CAST(CAST(NOTENO AS DOUBLE) AS BIGINT) AS NOTENO,   -- <-- changed
+            CAST(CAST(NOTENO AS DOUBLE) AS BIGINT) AS NOTENO,
             CAST(DATE '1960-01-01' + CAST(LASTRAN AS INTEGER) AS DATE) AS LASTRAN,
             CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
             CAST(NOISTLPD AS DOUBLE)  AS NOISTLPD,
@@ -236,17 +361,18 @@ def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFram
             CAST(COLLDESC AS VARCHAR) AS COLLDESC
         FROM read_parquet('{cache_path}')
         WHERE CAST(BALANCE AS DOUBLE) > 0
-          AND CAST(BORSTAT AS VARCHAR) <> 'Z'
+          AND (CAST(BORSTAT AS VARCHAR) IS NULL OR CAST(BORSTAT AS VARCHAR) <> 'Z')
           AND {product_filter}
     """).pl()
     con.close()
     return df
 
-
 lntemp = build_lntemp(LOANTEMP_CACHE, HPD_PRODUCTS)
 lntemp = lntemp.join(brhdata, on="BRANCH", how="left")
 gc.collect()
 print(f"  LNTEMP rows: {len(lntemp):,}")
+
+print(lntemp.filter(pl.col("ACCTNO") == 8220131913))
 
 # ============================================================================
 # STEP 5: BUILD LOAN
@@ -503,15 +629,25 @@ def generate_report_a(loan1_df: pl.DataFrame) -> list[str]:
         if row["FIRST_CAT"]:
             total = totac = 0
 
+        # if row["FIRST_BRANCH"]:
+        #     brhamt = brhac = 0
+        #     if pagecnt > 0:
+        #         out.append("\f")                     # <-- skip on first page
+        #         linecnt = 0
+        #     pagecnt += 1
+        #     # out.append("\f")  # RECFM=FB -> form-feed marks a new page, no ASA byte
+        #     out.extend(_header_a(row["BRANCH"], pagecnt, row.get("TYPE") or ""))
+        #     # linecnt = 6
+        #     linecnt = 5
+
         if row["FIRST_BRANCH"]:
             brhamt = brhac = 0
-            if pagecnt > 0:
-                out.append("\f")                     # <-- skip on first page
-                linecnt = 0
             pagecnt += 1
-            # out.append("\f")  # RECFM=FB -> form-feed marks a new page, no ASA byte
-            out.extend(_header_a(row["BRANCH"], pagecnt, row.get("TYPE") or ""))
-            # linecnt = 6
+            header_lines = _header_a(row["BRANCH"], pagecnt, row.get("TYPE") or "")
+            if pagecnt > 1:
+                # Prepend form-feed to the first header line (no extra blank line)
+                header_lines[0] = "\f" + header_lines[0]
+            out.extend(header_lines)
             linecnt = 5
 
         if row["FIRST_ARREAR2"]:
@@ -673,16 +809,26 @@ def generate_report_b(loan1_df: pl.DataFrame) -> list[str]:
         if row["FIRST_CAT"]:
             total = totac = 0
 
+        # if row["FIRST_BRANCH"]:
+        #     pagecnt = 0
+        #     brhamt = brhac = 0
+        #     if pagecnt > 0:
+        #         out.append("\f")                     # <-- skip on first page
+        #         linecnt = 0
+        #     pagecnt += 1
+        #     # out.append("\f")
+        #     out.extend(_header_b(row["BRANCH"], pagecnt, row.get("TYPE") or ""))
+        #     # linecnt = 6
+        #     linecnt = 5
+
         if row["FIRST_BRANCH"]:
-            pagecnt = 0
             brhamt = brhac = 0
-            if pagecnt > 0:
-                out.append("\f")                     # <-- skip on first page
-                linecnt = 0
             pagecnt += 1
-            # out.append("\f")
-            out.extend(_header_b(row["BRANCH"], pagecnt, row.get("TYPE") or ""))
-            # linecnt = 6
+            header_lines = _header_b(row["BRANCH"], pagecnt, row.get("TYPE") or "")
+            if pagecnt > 1:
+                # Prepend form-feed to the first header line (no extra blank line)
+                header_lines[0] = "\f" + header_lines[0]
+            out.extend(header_lines)
             linecnt = 5
 
         if row["FIRST_ARREAR2"]:
