@@ -8,29 +8,27 @@ Purpose : Details for NPL Accounts for CCD PFB (Monthly Report)
           - EIMAR301-D : Summary on accounts in arrear with 2 instalments paid only
 
 Original JCL notes (kept for traceability):
-    //DELETE   EXEC PGM=IEFBR14                 -> old SASLIST output deleted;
-                                                    equivalent handled by opening
-                                                    the output file in "w" mode.
-    //LOAN     DD DSN=SAP.PBB.MNILN(0)           -> NOT referenced anywhere in the
-                                                    SAS program body; left as an
-                                                    unused placeholder DD.
-    //BRHFILE  DD DSN=RBP2.B033.PBB.BRANCH       -> fixed-width flat file (BRHDATA)
-    //BNM      DD DSN=SAP.PBB.CCDTEMP(0)         -> SAS library (GDG generation 0)
-                                                    holding members REPTDATE and
-                                                    LOANTEMP. REPTDATE is replaced
-                                                    by REPTDATE.py per project
-                                                    convention; LOANTEMP is read as
-                                                    a .sas7bdat and cached to Parquet
-                                                    (see EIBDLN1M.py pattern).
-    //PGM      DD DSN=SAP.BNM.PROGRAM            -> NOT referenced anywhere in the
-                                                    SAS program body; left as an
-                                                    unused placeholder DD.
-          %INC PGM(PBBLNFMT,PBBELF);                   -> supplies ARRCLASS./CACBRCH. formats,
-                                                           now imported directly from
-                                                           PBBLNFMT.format_arrclass and
-                                                           PBBELF.format_cacbrch. &HPD is
-                                                           inferred from PBBLNFMT.HP_ACTIVE
-                                                           (see comment at HPD_PRODUCTS).
+    //DELETE   EXEC PGM=IEFBR14             -> old SASLIST output deleted;
+                                                equivalent handled by opening
+                                                the output file in "w" mode.
+    //LOAN     DD DSN=SAP.PBB.MNILN(0)      -> NOT referenced anywhere in the
+                                                SAS program body; left as an
+                                                unused placeholder DD.
+    //BRHFILE  DD DSN=RBP2.B033.PBB.BRANCH  -> fixed-width flat file (BRHDATA)
+    //BNM      DD DSN=SAP.PBB.CCDTEMP(0)    -> SAS library (GDG generation 0)
+                                                holding members REPTDATE and
+                                                LOANTEMP. REPTDATE is replaced
+                                                by REPTDATE.py per project
+                                                convention; LOANTEMP is read as
+                                                a .sas7bdat and cached to Parquet.
+    //PGM      DD DSN=SAP.BNM.PROGRAM       -> NOT referenced anywhere in the
+                                                SAS program body; left as an
+                                                unused placeholder DD.
+    %INC PGM(PBBLNFMT,PBBELF);              -> supplies ARRCLASS./CACBRCH. formats,
+                                                now imported directly from
+                                                PBBLNFMT.format_arrclass and
+                                                PBBELF.format_cacbrch. &HPD is
+                                                inferred from PBBLNFMT.HP_ACTIVE
 """
 
 import gc
@@ -45,7 +43,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
+# from input_date import get_latest_file
 from PBBLNFMT import HP_ACTIVE, format_arrclass
 from PBBELF import format_cacbrch
 
@@ -53,12 +51,14 @@ from PBBELF import format_cacbrch
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat")
 
-INPUT_DIR    = BASE_DIR / "input" / "prod" / "EIMAR301"
-CACHE_DIR    = INPUT_DIR / "cache"
+CACHE_DIR    = BASE_DIR / "input" / "cache" / "EIMAR301"
 OUTPUT_DIR   = BASE_DIR / "output" / "EIMAR301"
 
-INPUT_BRANCH_FILE = INPUT_DIR / "branch.txt"     # BRHFILE - static flat file, no GDG date
+LOANTEMP_FILE = STG_DIR / "loantemp.sas7bdat"
+INPUT_BRANCH_DIR= Path("/sasdata/rawdata/lookup")
+INPUT_BRANCH_FILE = INPUT_BRANCH_DIR / "LKP_BRANCH"     # BRHFILE - static flat file
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -108,10 +108,10 @@ HPD_PRODUCTS: tuple[int, ...] = tuple(HP_ACTIVE)
 # ============================================================================
 print("\nStep 2: Resolving latest LOANTEMP file...")
 
-loantemp_path = get_latest_file(INPUT_DIR, prefix="loantemp")
-print(f"  LOANTEMP : {loantemp_path.name}")
+# loantemp_path = get_latest_file(INPUT_DIR, prefix="loantemp")
+print(f"  LOANTEMP : {LOANTEMP_FILE.name}")
 
-LOANTEMP_CACHE = CACHE_DIR / f"{loantemp_path.stem}.parquet"
+LOANTEMP_CACHE = CACHE_DIR / f"{LOANTEMP_FILE.stem}.parquet"
 
 
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
@@ -159,8 +159,8 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Done -- {total:,} rows cached.")
 
 
-if not _cache_is_fresh(loantemp_path, LOANTEMP_CACHE):
-    sas_to_parquet(loantemp_path, LOANTEMP_CACHE, "LOANTEMP")
+if not _cache_is_fresh(LOANTEMP_FILE, LOANTEMP_CACHE):
+    sas_to_parquet(LOANTEMP_FILE, LOANTEMP_CACHE, "LOANTEMP")
 else:
     print("  [LOANTEMP] Cache fresh -- skipping conversion.")
 
@@ -418,7 +418,7 @@ def _header_a(branch: int, pagecnt: int, type_label: str) -> list[str]:
     lines.append(_line(buf))
 
     buf = _new_buf()
-    _place(buf, 28, f"{type_label}2 MTHS & ABOVE AND A/C PAID 2 ISTL AND BELOW AS AT {RDATE}")
+    _place(buf, 28, f"{type_label}2 MTHS & ABOVE AND A/C PAID 2 ISTL AND BELOW AS AT {PREPTDTE}\n")
     lines.append(_line(buf))
 
     lines.append("")  # PUT @1 ' ';
@@ -582,7 +582,7 @@ def _header_b(branch: int, pagecnt: int, type_label: str) -> list[str]:
     lines.append(_line(buf))
 
     buf = _new_buf()
-    _place(buf, 28, f"{type_label}ACCOUNT WITH 3 - 8 MONTH IN ARREAR AS AT {RDATE}")
+    _place(buf, 28, f"{type_label}ACCOUNT WITH 3 - 8 MONTH IN ARREAR AS AT {PREPTDTE}\n")
     lines.append(_line(buf))
 
     lines.append("")
@@ -857,7 +857,7 @@ report_c_lines = generate_tabulate_report(
     newrel_summary,
     "PROGRAM ID : EIMAR301-C",
     "PUBLIC BANLK BERHAD",
-    f"SUMMARY ON AC WITH PAYMENT OF 2 ISTL & BELOW AS AT {RDATE}",
+    f"SUMMARY ON AC WITH PAYMENT OF 2 ISTL & BELOW AS AT {PREPTDTE}\n",
     include_all_column=True,
 )
 
@@ -865,7 +865,7 @@ report_d_lines = generate_tabulate_report(
     accarr_summary,
     "PROGRAM ID : EIMAR301-D",
     "PUBLIC BANLK BERHAD",
-    f"SUMMARY ON A/C IN ARREAR WITH 2 ISTL PAID ONLY AS AT {RDATE}",
+    f"SUMMARY ON A/C IN ARREAR WITH 2 ISTL PAID ONLY AS AT {PREPTDTE}\n",
     include_all_column=False,   # ALL*(...) column intentionally commented out in source
 )
 
@@ -888,9 +888,9 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(all_lines):,}")
-print("\n[RESULT] Report content:")
-for ln in all_lines:
-    print(ln)
+# print("\n[RESULT] Report content:")
+# for ln in all_lines:
+#     print(ln)
 
 del lntemp, loan, loan1
 gc.collect()
