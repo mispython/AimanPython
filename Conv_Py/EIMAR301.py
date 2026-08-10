@@ -83,11 +83,11 @@ else:
     _pmth  = reptdate.month - 1
     _pyear = reptdate.year
 
-# Get the last day of the calculated previous month
-_last_day = calendar.monthrange(_pyear, _pmth)[1]
-PREPTDTE = date(_pyear, _pmth, _last_day)
+# # Get the last day of the calculated previous month
+# _last_day = calendar.monthrange(_pyear, _pmth)[1]
+# PREPTDTE = date(_pyear, _pmth, _last_day)
 
-# PREPTDTE = date(_pyear, _pmth, 1)          # &PREPTDTE : first day of previous month
+PREPTDTE = date(_pyear, _pmth, 1)          # &PREPTDTE : first day of previous month
 RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
 REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
 REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
@@ -423,7 +423,7 @@ def _header_a(branch: int, pagecnt: int, type_label: str) -> list[str]:
     lines.append(_line(buf))
 
     buf = _new_buf()
-    _place(buf, 28, f"{type_label}2 MTHS & ABOVE AND A/C PAID 2 ISTL AND BELOW AS AT {PREPTDTE}")
+    _place(buf, 28, f"{type_label}2 MTHS & ABOVE AND A/C PAID 2 ISTL AND BELOW AS AT {RDATE}")
     lines.append(_line(buf))
 
     # lines.append("")  # PUT @1 ' ';
@@ -597,7 +597,7 @@ def _header_b(branch: int, pagecnt: int, type_label: str) -> list[str]:
     lines.append(_line(buf))
 
     buf = _new_buf()
-    _place(buf, 28, f"{type_label}ACCOUNT WITH 3 - 8 MONTH IN ARREAR AS AT {PREPTDTE}")
+    _place(buf, 28, f"{type_label}ACCOUNT WITH 3 - 8 MONTH IN ARREAR AS AT {RDATE}")
     lines.append(_line(buf))
 
     # lines.append("")
