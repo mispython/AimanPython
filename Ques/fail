@@ -1,34 +1,34 @@
-FD = fd_merged
+def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFrame:
+    product_filter = (
+        f"CAST(PRODUCT AS INTEGER) IN ({','.join(str(p) for p in hpd_products)})"
+        if hpd_products
+        else "1=0"
+    )
 
-# ============================================================================
-# DEBUG: DIAGNOSE WHY TARGET FD ACCOUNTS DON'T SURVIVE THE CISFD MERGE
-# ============================================================================
-print("\n[DEBUG] ---- FD / CISFD merge diagnostics ----")
-
-target_fd_acctnos = set(cisfd.filter(
-    pl.col("CUSTNO").is_in(list(CAFD_CUSTNO_FILTER))
-)["ACCTNO"].to_list())
-print("[DEBUG] Target FD ACCTNOs from CISFD:", len(target_fd_acctnos))
-print("[DEBUG] Sample:", list(target_fd_acctnos)[:10])
-
-fd_raw_acctnos = set(fd_raw["ACCTNO"].to_list())
-print("[DEBUG] fd_raw (dpd_fd, CURBAL>0) unique ACCTNO count:", len(fd_raw_acctnos))
-print("[DEBUG] fd_raw ACCTNO sample:", list(fd_raw_acctnos)[:10])
-
-overlap_fd = target_fd_acctnos & fd_raw_acctnos
-print("[DEBUG] Overlap between target CISFD ACCTNOs and fd_raw ACCTNOs:", len(overlap_fd))
-
-# Check without the CURBAL>0 filter — are they in dpd_fd at all, regardless of balance?
-fd_all = pl.read_parquet(FD_CACHE).select([
-    pl.col("ACCTNO").cast(pl.Int64),
-    pl.col("CURBAL").cast(pl.Float64),
-    pl.col("PURPOSE").cast(pl.Utf8),
-])
-target_in_fd_all = fd_all.filter(pl.col("ACCTNO").is_in(list(target_fd_acctnos)))
-print("[DEBUG] Target ACCTNOs found in RAW dpd_fd (before CURBAL/PURPOSE filters):", target_in_fd_all.height)
-print(target_in_fd_all)
-
-print("[DEBUG] ---- End FD/CISFD diagnostics ----\n")
-
-del fd_raw, fd_merged
-gc.collect()
+    con = duckdb.connect(database=":memory:")
+    df = con.execute(f"""
+        SELECT
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+            CAST(BORSTAT  AS VARCHAR) AS BORSTAT,
+            CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+            CAST(ARREAR2  AS DOUBLE)  AS ARREAR2,
+            CAST(DATE '1960-01-01' + CAST(ISSDTE AS INTEGER)  AS DATE) AS ISSDTE,
+            CAST(DAYDIFF  AS DOUBLE)  AS DAYDIFF,
+            CAST(NAME     AS VARCHAR) AS NAME,
+            CAST(CAST(NOTENO AS DOUBLE) AS BIGINT) AS NOTENO,   -- <-- changed
+            CAST(DATE '1960-01-01' + CAST(LASTRAN AS INTEGER) AS DATE) AS LASTRAN,
+            CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
+            CAST(NOISTLPD AS DOUBLE)  AS NOISTLPD,
+            CAST(DATE '1960-01-01' + CAST(MATURDT AS INTEGER) AS DATE) AS MATURDT,
+            CAST(LSTTRNAM AS DOUBLE)  AS LSTTRNAM,
+            CAST(DELQCD   AS VARCHAR) AS DELQCD,
+            CAST(COLLDESC AS VARCHAR) AS COLLDESC
+        FROM read_parquet('{cache_path}')
+        WHERE CAST(BALANCE AS DOUBLE) > 0
+          AND CAST(BORSTAT AS VARCHAR) <> 'Z'
+          AND {product_filter}
+    """).pl()
+    con.close()
+    return df
