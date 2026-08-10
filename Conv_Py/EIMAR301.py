@@ -211,7 +211,7 @@ def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFram
     product_filter = (
         f"CAST(PRODUCT AS INTEGER) IN ({','.join(str(p) for p in hpd_products)})"
         if hpd_products
-        else "1=0"   # HPD_PRODUCTS placeholder is empty -> matches no rows
+        else "1=0"
     )
 
     con = duckdb.connect(database=":memory:")
@@ -226,7 +226,7 @@ def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFram
             CAST(DATE '1960-01-01' + CAST(ISSDTE AS INTEGER)  AS DATE) AS ISSDTE,
             CAST(DAYDIFF  AS DOUBLE)  AS DAYDIFF,
             CAST(NAME     AS VARCHAR) AS NAME,
-            CAST(NOTENO   AS VARCHAR) AS NOTENO,
+            CAST(CAST(NOTENO AS DOUBLE) AS BIGINT) AS NOTENO,   -- <-- changed
             CAST(DATE '1960-01-01' + CAST(LASTRAN AS INTEGER) AS DATE) AS LASTRAN,
             CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
             CAST(NOISTLPD AS DOUBLE)  AS NOISTLPD,
@@ -426,7 +426,7 @@ def _header_a(branch: int, pagecnt: int, type_label: str) -> list[str]:
     _place(buf, 28, f"{type_label}2 MTHS & ABOVE AND A/C PAID 2 ISTL AND BELOW AS AT {PREPTDTE}")
     lines.append(_line(buf))
 
-    lines.append("")  # PUT @1 ' ';
+    # lines.append("")  # PUT @1 ' ';
 
     buf = _new_buf()
     _place(buf, 1, "BRH")
@@ -482,7 +482,7 @@ def _subtotal_block_a(label: str, count: int, amount: float) -> list[str]:
     _place(buf, 41, DASH40); _place(buf, 81, DASH40); _place(buf, 121, DASH10)
     lines.append(_line(buf))
 
-    lines.append("")
+    # lines.append("")
     return lines
 
 
@@ -505,10 +505,14 @@ def generate_report_a(loan1_df: pl.DataFrame) -> list[str]:
 
         if row["FIRST_BRANCH"]:
             brhamt = brhac = 0
+            if pagecnt > 0:
+                out.append("\f")                     # <-- skip on first page
+                linecnt = 0
             pagecnt += 1
-            out.append("\f")  # RECFM=FB -> form-feed marks a new page, no ASA byte
+            # out.append("\f")  # RECFM=FB -> form-feed marks a new page, no ASA byte
             out.extend(_header_a(row["BRANCH"], pagecnt, row.get("TYPE") or ""))
-            linecnt = 6
+            # linecnt = 6
+            linecnt = 5
 
         if row["FIRST_ARREAR2"]:
             brharr = brharrac = 0
@@ -527,8 +531,8 @@ def generate_report_a(loan1_df: pl.DataFrame) -> list[str]:
         out.append(_line(buf))
 
         buf = _new_buf()
-        _place(buf, 5, _fmt_num(row.get("ACCTNO"), 20).lstrip().rjust(20))
-        _place(buf, 25, _fmt_num(row.get("PRODUCT"), 9))
+        _place(buf, 5, _fmt_num(row.get("ACCTNO"), 20).lstrip().ljust(20))
+        _place(buf, 25, _fmt_num(row.get("PRODUCT"), 9).lstrip().ljust(9))
         _place(buf, 34, _fmt_date(row.get("MATURDT")))
         _place(buf, 45, _fmt_comma(row.get("LSTTRNAM"), 15, 2))
         _place(buf, 95, _fmt_comma(row.get("DAYDIFF"), 8, 0))
@@ -539,8 +543,9 @@ def generate_report_a(loan1_df: pl.DataFrame) -> list[str]:
         _place(buf, 5, str(row.get("COLLDESC") or ""))
         out.append(_line(buf))
 
-        out.append("")  # PUT @1 ' ';
-        linecnt += 4
+        # out.append("")  # PUT @1 ' ';
+        # linecnt += 4
+        linecnt += 3
 
         balance = row.get("BALANCE") or 0.0
         brharr += balance; brharrac += 1
@@ -549,19 +554,24 @@ def generate_report_a(loan1_df: pl.DataFrame) -> list[str]:
 
         if linecnt > 56:
             out.append("\f")
+            linecnt = 0
 
         if row["LAST_ARREAR2"]:
             out.extend(_subtotal_block_a("SUBTOTAL", brharrac, brharr))
-            linecnt += 4
+            # linecnt += 4
+            linecnt += 3
 
         if linecnt > 56:
             out.append("\f")
+            linecnt = 0
 
         if row["LAST_BRANCH"]:
             out.extend(_subtotal_block_a("BRANCH TOTAL", brhac, brhamt))
+            linecnt += 3
 
         if row["LAST_CAT"]:
             out.extend(_subtotal_block_a("GRAND TOTAL", totac, total))
+            linecnt += 3
 
     return out
 
@@ -590,7 +600,7 @@ def _header_b(branch: int, pagecnt: int, type_label: str) -> list[str]:
     _place(buf, 28, f"{type_label}ACCOUNT WITH 3 - 8 MONTH IN ARREAR AS AT {PREPTDTE}")
     lines.append(_line(buf))
 
-    lines.append("")
+    # lines.append("")
 
     buf = _new_buf()
     _place(buf, 1, "BRH")
@@ -639,7 +649,7 @@ def _subtotal_block_b(label: str, count: int, amount: float) -> list[str]:
     _place(buf, 41, DASH40); _place(buf, 81, DASH40); _place(buf, 121, DASH10)
     lines.append(_line(buf))
 
-    lines.append("")
+    # lines.append("")
     return lines
 
 
@@ -666,10 +676,14 @@ def generate_report_b(loan1_df: pl.DataFrame) -> list[str]:
         if row["FIRST_BRANCH"]:
             pagecnt = 0
             brhamt = brhac = 0
+            if pagecnt > 0:
+                out.append("\f")                     # <-- skip on first page
+                linecnt = 0
             pagecnt += 1
-            out.append("\f")
+            # out.append("\f")
             out.extend(_header_b(row["BRANCH"], pagecnt, row.get("TYPE") or ""))
-            linecnt = 6
+            # linecnt = 6
+            linecnt = 5
 
         if row["FIRST_ARREAR2"]:
             brharr = brharrac = 0
@@ -696,7 +710,7 @@ def generate_report_b(loan1_df: pl.DataFrame) -> list[str]:
         _place(buf, 59, str(row.get("COLLDESC") or ""))
         out.append(_line(buf))
 
-        out.append("")
+        # out.append("")
         linecnt += 3
 
         balance = row.get("BALANCE") or 0.0
@@ -706,20 +720,25 @@ def generate_report_b(loan1_df: pl.DataFrame) -> list[str]:
 
         if linecnt > 56:
             out.append("\f")
+            linecnt = 0
 
         if row["LAST_ARREAR2"]:
             out.extend(_subtotal_block_b("SUBTOTAL", brharrac, brharr))
-            linecnt += 4
+            # linecnt += 4
+            linecnt += 3
 
         if linecnt > 56:
             out.append("\f")
+            linecnt = 0
 
         if row["LAST_BRANCH"]:
             out.extend(_subtotal_block_b("BRANCH TOTAL", brhac, brhamt))
+            linecnt += 3
 
         if row["LAST_CAT"]:
             out.extend(_subtotal_block_b("GRAND TOTAL", totac, total))
             total = 0  # SAS: TOTAL = 0; after grand total on LAST.CAT
+            linecnt += 3
 
     return out
 
@@ -800,7 +819,7 @@ def generate_tabulate_report(
     out.append(title1)
     out.append(title2)
     out.append(title3)
-    out.append("")
+    # out.append("")
 
     categories = [c for c in PAYDESC_ORDER if c in summary["PAYDESC"].unique().to_list()]
     if not categories:
