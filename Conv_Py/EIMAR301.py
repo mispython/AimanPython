@@ -33,6 +33,7 @@ Original JCL notes (kept for traceability):
 
 import gc
 import re
+import calendar
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -82,7 +83,11 @@ else:
     _pmth  = reptdate.month - 1
     _pyear = reptdate.year
 
-PREPTDTE = date(_pyear, _pmth, 1)          # &PREPTDTE : first day of previous month
+# Get the last day of the calculated previous month
+_last_day = calendar.monthrange(_pyear, _pmth)[1]
+PREPTDTE = date(_pyear, _pmth, _last_day)
+
+# PREPTDTE = date(_pyear, _pmth, 1)          # &PREPTDTE : first day of previous month
 RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
 REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
 REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
@@ -418,7 +423,7 @@ def _header_a(branch: int, pagecnt: int, type_label: str) -> list[str]:
     lines.append(_line(buf))
 
     buf = _new_buf()
-    _place(buf, 28, f"{type_label}2 MTHS & ABOVE AND A/C PAID 2 ISTL AND BELOW AS AT {PREPTDTE}\n")
+    _place(buf, 28, f"{type_label}2 MTHS & ABOVE AND A/C PAID 2 ISTL AND BELOW AS AT {PREPTDTE}")
     lines.append(_line(buf))
 
     lines.append("")  # PUT @1 ' ';
@@ -582,7 +587,7 @@ def _header_b(branch: int, pagecnt: int, type_label: str) -> list[str]:
     lines.append(_line(buf))
 
     buf = _new_buf()
-    _place(buf, 28, f"{type_label}ACCOUNT WITH 3 - 8 MONTH IN ARREAR AS AT {PREPTDTE}\n")
+    _place(buf, 28, f"{type_label}ACCOUNT WITH 3 - 8 MONTH IN ARREAR AS AT {PREPTDTE}")
     lines.append(_line(buf))
 
     lines.append("")
@@ -857,7 +862,7 @@ report_c_lines = generate_tabulate_report(
     newrel_summary,
     "PROGRAM ID : EIMAR301-C",
     "PUBLIC BANLK BERHAD",
-    f"SUMMARY ON AC WITH PAYMENT OF 2 ISTL & BELOW AS AT {PREPTDTE}\n",
+    f"SUMMARY ON AC WITH PAYMENT OF 2 ISTL & BELOW AS AT {PREPTDTE}",
     include_all_column=True,
 )
 
@@ -865,7 +870,7 @@ report_d_lines = generate_tabulate_report(
     accarr_summary,
     "PROGRAM ID : EIMAR301-D",
     "PUBLIC BANLK BERHAD",
-    f"SUMMARY ON A/C IN ARREAR WITH 2 ISTL PAID ONLY AS AT {PREPTDTE}\n",
+    f"SUMMARY ON A/C IN ARREAR WITH 2 ISTL PAID ONLY AS AT {PREPTDTE}",
     include_all_column=False,   # ALL*(...) column intentionally commented out in source
 )
 
