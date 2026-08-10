@@ -72,40 +72,41 @@ shape: (0, 32)
 │ f64    ┆ f64    ┆ f64 ┆ str  ┆   ┆ f64     ┆ f64     ┆ f64     ┆ f64    │
 ╞════════╪════════╪═════╪══════╪═══╪═════════╪═════════╪═════════╪════════╡
 └────────┴────────┴─────┴──────┴───┴─────────┴─────────┴─────────┴────────┘
-  LNTEMP rows: 3,707
-shape: (0, 18)
-┌────────┬────────┬─────────┬─────────┬───┬──────────┬────────┬──────────┬─────────┐
-│ BRANCH ┆ ACCTNO ┆ BALANCE ┆ BORSTAT ┆ … ┆ LSTTRNAM ┆ DELQCD ┆ COLLDESC ┆ BRHCODE │
-│ ---    ┆ ---    ┆ ---     ┆ ---     ┆   ┆ ---      ┆ ---    ┆ ---      ┆ ---     │
-│ i32    ┆ i64    ┆ f64     ┆ str     ┆   ┆ f64      ┆ str    ┆ str      ┆ str     │
-╞════════╪════════╪═════════╪═════════╪═══╪══════════╪════════╪══════════╪═════════╡
-└────────┴────────┴─────────┴─────────┴───┴──────────┴────────┴──────────┴─────────┘
+  LNTEMP rows: 1,270,642
+shape: (1, 18)
+┌────────┬────────────┬──────────┬─────────┬───┬──────────┬────────┬─────────────────────────────────┬─────────┐
+│ BRANCH ┆ ACCTNO     ┆ BALANCE  ┆ BORSTAT ┆ … ┆ LSTTRNAM ┆ DELQCD ┆ COLLDESC                        ┆ BRHCODE │
+│ ---    ┆ ---        ┆ ---      ┆ ---     ┆   ┆ ---      ┆ ---    ┆ ---                             ┆ ---     │
+│ i32    ┆ i64        ┆ f64      ┆ str     ┆   ┆ f64      ┆ str    ┆ str                             ┆ str     │
+╞════════╪════════════╪══════════╪═════════╪═══╪══════════╪════════╪═════════════════════════════════╪═════════╡
+│ 8      ┆ 8220131913 ┆ 51739.98 ┆ null    ┆ … ┆ 900.0    ┆ null   ┆ TOYOTA          CAMRY         … ┆ KTN     │
+└────────┴────────────┴──────────┴─────────┴───┴──────────┴────────┴─────────────────────────────────┴─────────┘
 
 Step 5: Building LOAN (duplicate-output semantics preserved)...
-  LOAN rows (with duplication): 2,685
+  LOAN rows (with duplication): 10,218
 
 Step 6: Building LOAN1 (duplicate-output semantics preserved)...
-  LOAN1 rows (with duplication): 2,685
+  LOAN1 rows (with duplication): 10,218
 
 Step 7: Sorting LOAN1...
 
 Step 8: Generating report EIMAR301-A...
-  Report A lines: 3,877
+  Report A lines: 12,006
 
 Step 9: Generating report EIMAR301-B...
   Report B lines: 593
 
 Step 10: Building NEWREL / ACCARR summaries...
   NEWREL summary rows: 0
-  ACCARR summary rows: 6
+  ACCARR summary rows: 44
 
 Step 11: Generating tabulate-style reports (C/D)...
   Report C lines: 8
-  Report D lines: 14
+  Report D lines: 52
 
 Step 12: Writing output file...
 
   Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIMAR301/EIMAR301_260809.txt
-  Total lines    : 4,492
+  Total lines    : 12,659
 
 EIMAR301 complete.
