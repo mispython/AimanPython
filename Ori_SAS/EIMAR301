@@ -1,0 +1,422 @@
+//EIMAR301 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB16530
+/*JOBPARM S=S1M1
+//*
+//PRINT1    OUTPUT CLASS=X,DEST='S1.LOCAL',
+//          NAME='THE MANAGER',
+//          BUILDING='MENARA PBB',
+//          DEPT='PBB - HP CREDIT CONTROL',
+//          ADDRESS=('22TH FLOOR','MENARA PUBLIC BANK',
+//          '146 JALAN AMPANG','50450 KUALA LUMPUR')
+//*
+//****************************************************************
+//* PROGRAM  : LNCCDP10
+//* FUNCTION : DETAILS FOR NPL ACCOUNTS FOR CCD PFB.
+//*            (A MONTHLY REPORT)
+//* LAST MODIFY : ESMR 2006-1048
+//****************************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD  DSN=SAP.PBB.EIMAR301.TEXT,
+//             DISP=(MOD,DELETE,DELETE),
+//             SPACE=(CYL,(10,20))
+//EIMAR301  EXEC SAS609
+//CONFIG    DD DISP=SHR,DSN=SYS3.SAS.V609.CNTL(BATCHXA)
+//LOAN      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//BRHFILE   DD DSN=RBP2.B033.PBB.BRANCH,DISP=SHR
+//BNM       DD DSN=SAP.PBB.CCDTEMP(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD DSN=SAP.PBB.EIMAR301.TEXT,
+//             DISP=(MOD,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=256,BLKSIZE=28160),
+//             SPACE=(CYL,(5,2)),UNIT=SYSDA
+//SYSIN     DD *
+
+OPTIONS NOCENTER NONUMBER NODATE SORTDEV=3390 YEARCUTOFF=1950;
+TITLE;
+%INC PGM(PBBLNFMT,PBBELF);
+
+DATA _NULL_;
+  SET BNM.REPTDATE;
+  IF MONTH(REPTDATE) EQ 1 THEN DO;
+     PMTH = 12;
+     PYEAR = YEAR(REPTDATE) - 1;
+  END;
+  ELSE DO;
+     PMTH = MONTH(REPTDATE) - 1;
+     PYEAR = YEAR(REPTDATE);
+  END;
+  PDATE = MDY(PMTH,1,PYEAR);
+  CALL SYMPUT('PREPTDTE',PDATE);
+  CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+  CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
+  CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+  CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+RUN;
+
+PROC SORT DATA=BNM.LOANTEMP OUT=LNTEMP;
+  WHERE BALANCE > 0 AND BORSTAT NE 'Z' AND
+        PRODUCT IN &HPD;
+  BY BRANCH;
+RUN;
+
+DATA BRHDATA;
+   INFILE BRHFILE LRECL=80;
+   INPUT @2 BRANCH  3.
+         @6 BRHCODE $3.;
+RUN;
+PROC SORT DATA=BRHDATA; BY BRANCH; RUN;
+DATA LNTEMP;
+  MERGE LNTEMP(IN=PRESENT) BRHDATA;
+  BY BRANCH;
+  IF PRESENT=1 THEN OUTPUT LNTEMP;
+RUN;
+
+
+*+---------------------------------------------------------------+
+ |  REPORTING...............                                     |
+ +---------------------------------------------------------------+;
+DATA LOAN;
+  SET LNTEMP;
+  IF ARREAR2 GE 3  OR BORSTAT = 'R' OR BORSTAT = 'I' OR
+     BORSTAT = 'F' OR BORSTAT = 'Y'
+     THEN OUTPUT;
+  IF ISSDTE GE &PREPTDTE AND DAYDIFF >= 8 THEN OUTPUT;
+RUN;
+
+DATA LOAN1;
+  FORMAT  TYPE  $30.;
+  SET LOAN;
+  IF BORSTAT = 'F' THEN ARREAR2 = 15;
+  ARREARS=PUT(ARREAR2, ARRCLASS.);
+  CACBR=PUT(BRANCH, CACBRCH.);
+  * BLDATE2 =PUT(BLDATE,MMDDYY8.);
+
+  IF PRODUCT IN (380,381,700,705,720,725) THEN DO;
+     CAT  = 'A';
+     TYPE = 'HP DIRECT(CONV) ';
+     OUTPUT;
+  END;
+  IF PRODUCT IN (128,130,131,132) THEN DO;
+     CAT  = 'C';
+     TYPE = 'AITAB ';
+     OUTPUT;
+  END;
+  IF PRODUCT IN (380,381) THEN DO;
+     CAT  = 'B';
+     TYPE = 'HP (380,381) ';
+     OUTPUT;
+  END;
+RUN;
+
+PROC SORT DATA=LOAN1 OUT=LOAN1;
+  BY CAT BRANCH ARREAR2 DESCENDING BALANCE;
+RUN;
+
+*+---------------------------------------------------------------+
+ |  ONLY FOR HP PRODUCT                                          |
+ |  PLUS IT IS NOT UNDER CAC BRANCHES....                        |
+ +---------------------------------------------------------------+;
+DATA _NULL_;
+  SET LOAN1 END=LAST;
+  WHERE CACBR = '000';
+  BY CAT BRANCH ARREAR2 DESCENDING BALANCE;
+  FILE PRINT HEADER=NEWPAGE;
+
+  IF FIRST.CAT    THEN DO;
+     PAGECNT=0;
+     TOTAL=0;
+     TOTAC=0;
+  END;
+
+  IF FIRST.BRANCH THEN DO;
+     BRHAMT=0;
+     BRHAC=0;
+     PUT _PAGE_;
+  END;
+
+  IF FIRST.ARREAR2 THEN DO;
+     BRHARR=0;
+     BRHARRAC=0;
+  END;
+
+  PUT  @1   BRHCODE
+       @5   NAME                @25  NOTENO
+       @34  ISSDTE   DDMMYY8.   @52  LASTRAN  DDMMYY8.
+       @61  PAYAMT   COMMA15.2  @77  NOISTLPD COMMA8.
+       @87  BORSTAT             @95  ARREARS
+       @114 BALANCE  COMMA17.2  ;
+  PUT  @5   ACCTNO              @25  PRODUCT
+       @34  MATURDT  DDMMYY8.   @45  LSTTRNAM COMMA15.2
+       @95  DAYDIFF  COMMA8.    @114 DELQCD ;
+  PUT  @5   COLLDESC;
+  PUT  @1   ' ';
+  LINECNT + 4;
+  BRHARR + BALANCE;
+  BRHARRAC + 1;
+  BRHAMT + BALANCE;
+  BRHAC + 1;
+  TOTAL + BALANCE;
+  TOTAC + 1;
+
+  IF LINECNT > 56 THEN DO;
+     PUT _PAGE_;
+  END;
+
+  IF LAST.ARREAR2 THEN DO;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @5   'SUBTOTAL'     @41 'NO OF A/C : ' BRHARRAC  COMMA12.0
+          @114 BRHARR  COMMA17.2;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+     LINECNT + 4;
+  END;
+
+  IF LINECNT > 56 THEN DO;
+     PUT _PAGE_;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @5   'BRANCH TOTAL' @41 'NO OF A/C : ' BRHAC  COMMA12.0
+          @114 BRHAMT COMMA17.2;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+  END;
+
+  IF LAST.CAT   THEN DO;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @5   'GRAND TOTAL' @41 'NO OF A/C : ' TOTAC  COMMA12.0
+          @114 TOTAL COMMA17.2;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    LINECNT=6;
+    PUT @1   'PROGRAM-ID:EIMAR301-A - BRANCH : ' BRANCH   3.
+        @43  'P U B L I C   B A N K   B E R H A D'
+        @118 'PAGE NO.: ' PAGECNT;
+    PUT @28  TYPE '2 MTHS & ABOVE AND A/C PAID 2 ISTL AND BELOW '
+             'AS AT ' "&RDATE";
+    PUT @1   ' ';
+    PUT @1   'BRH'
+        @5   'NAME'             @25  'NOTENO'
+        @34  'ISSUE DT'         @45  'LST TR DT'
+        @61  'ISTL AMT'         @76  'NO ISTL PD'
+        @87  'BORSTAT'          @95  'ARREARS'
+        @115 'BALANCE' ;
+    PUT @1   ' '
+        @5   'ACC NO'           @25  'PRODUCT'
+        @34  'MATURE DT'        @45  'LST TR AMT'
+        @95  'DAYS ARR'         @115 'DELQ REASON CODE' ;
+    PUT @5   'COLLATERAL DESC' ;
+    PUT @1   '----------------------------------------'
+        @41  '----------------------------------------'
+        @81  '----------------------------------------'
+        @121 '----------';
+  RETURN;
+RUN;
+//
+*+---------------------------------------------------------------+
+ |  DATE     : 16.02.2004                                        |
+ |  FUNCTION : DETAILS FOR NPL(3-8 MTHS) ACCOUNTS FOR CCD PFB.   |
+ |             (A MONTHLY REPORT)                                |
+ +---------------------------------------------------------------+;
+DATA _NULL_;
+  SET LOAN1 END=LAST;
+  WHERE (ARREAR2 >= 4 AND ARREAR2 < 10) AND
+        (BORSTAT NE 'F' AND BORSTAT NE 'I' AND
+         BORSTAT NE 'R');
+  BY CAT BRANCH ARREAR2 DESCENDING BALANCE;
+  FILE PRINT HEADER=NEWPAGE;
+
+  IF FIRST.CAT    THEN DO;
+     TOTAL=0;
+     TOTAC=0;
+     PAGECNT=0;
+  END;
+
+  IF FIRST.BRANCH THEN DO;
+     PAGECNT=0;
+     BRHAMT=0;
+     BRHAC=0;
+     PUT _PAGE_;
+  END;
+
+  IF FIRST.ARREAR2 THEN DO;
+     BRHARR=0;
+     BRHARRAC=0;
+  END;
+
+  PUT  @1   BRHCODE
+       @5   ACCTNO              @16  NAME
+       @41  NOTENO              @54  PRODUCT
+       @59  BORSTAT             @68  ISSDTE   DDMMYY8.
+       @79  DAYDIFF             @84  ARREARS
+       @100 BALANCE  COMMA17.2  @120 NOISTLPD COMMA10.;
+  PUT  @5   LASTRAN  DDMMYY8.   @16  MATURDT  DDMMYY8.
+       @29  LSTTRNAM COMMA17.2  @46  PAYAMT   COMMA11.2
+       @59  COLLDESC;
+  PUT  @1   ' ';
+  LINECNT + 3;
+  BRHARR + BALANCE;
+  BRHARRAC + 1;
+  BRHAMT + BALANCE;
+  BRHAC + 1;
+  TOTAL + BALANCE;
+  TOTAC + 1;
+
+  IF LINECNT > 56 THEN DO;
+     PUT _PAGE_;
+  END;
+
+  IF LAST.ARREAR2 THEN DO;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @5   'SUBTOTAL'     @41 'NO OF A/C : ' BRHARRAC  COMMA12.0
+          @100 BRHARR  COMMA17.2;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+     LINECNT + 4;
+  END;
+
+  IF LINECNT > 56 THEN DO;
+     PUT _PAGE_;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @5   'BRANCH TOTAL' @41 'NO OF A/C : ' BRHAC  COMMA12.0
+          @100 BRHAMT COMMA17.2;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+  END;
+
+  IF LAST.CAT   THEN DO;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @5   'GRAND TOTAL' @41 'NO OF A/C : ' TOTAC  COMMA12.0
+          @100 TOTAL COMMA17.2;
+     PUT  @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+     TOTAL = 0;
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    LINECNT=6;
+    PUT @1   'PROGRAM-ID:EIMAR301-B - BRANCH : ' BRANCH   3.
+        @43  'P U B L I C   B A N K   B E R H A D'
+        @110 'PAGE NO.: ' PAGECNT;
+    PUT @28  TYPE 'ACCOUNT WITH 3 - 8 MONTH IN ARREAR '
+             'AS AT ' "&RDATE";
+    PUT @1   ' ';
+    PUT @1   'BRH'
+        @5   'ACCTNO'           @16 'NAME'
+        @40  'NOTENO'           @50 'PRODUCT'
+        @59  'BORSTAT'          @68 'ISSUE DT'
+        @78  'DAYS'             @84 'ARREARS'
+        @110 'BALANCE'          @120 'NO ISTL PAID';
+    PUT @1   ' '
+        @5   'LST TR DT'        @16  'MAT. DATE'
+        @36  'LST TR AMT'       @49  'ISTL AMT'
+        @59  'COLLATERAL DESCRIPTION';
+    PUT @1   '----------------------------------------'
+        @41  '----------------------------------------'
+        @81  '----------------------------------------'
+        @121 '----------';
+  RETURN;
+RUN;
+PROC DATASETS LIB=WORK NOLIST; DELETE LOAN1; RUN;
+
+*+---------------------------------------------------------------+
+ |  DATE     : 6 APR 2005                                        |
+ |  FUNCTION : A/C RELEASE 2 MTHS FR REPORTING DATE.             |
+ +---------------------------------------------------------------+;
+DATA NEWREL;
+   SET LNTEMP;
+   IF ISSDTE GE &PREPTDTE AND DAYDIFF >= 8;
+   IF NOISTLPD LT 1 THEN PAYDESC = 'NO PAYMENT';
+   ELSE IF (NOISTLPD GE 1 AND NOISTLPD LT 2) THEN
+        PAYDESC = 'PAID 1 ISTL';
+   ELSE PAYDESC = 'PAID 2 ISTL';
+RUN;
+
+PROC SUMMARY DATA=NEWREL NWAY;
+     CLASS BRHCODE PAYDESC;
+     VAR BALANCE;
+     OUTPUT OUT=NEWREL (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_)
+                  SUM=;
+RUN;
+
+PROC TABULATE DATA=NEWREL NOSEPS MISSING;
+  CLASS PAYDESC BRHCODE;
+  VAR NOACCT BALANCE;
+  TABLE BRHCODE=' ' ALL='TOTAL',
+        PAYDESC*(NOACCT='NO OF A/C'*F=COMMA8.0
+                 BALANCE='O/S BALANCE'*F=COMMA15.2)*SUM
+            ALL*(NOACCT='NO OF A/C'*F=COMMA8.0
+                 BALANCE='O/S BALANCE'*F=COMMA15.2)*SUM
+        / BOX='BRANCH' RTS=8;
+  TITLE1 'PROGRAM ID : EIMAR301-C';
+  TITLE2 'PUBLIC BANLK BERHAD';
+  TITLE3 'SUMMARY ON AC WITH PAYMENT OF 2 ISTL & BELOW AS AT ' "&RDATE";
+RUN;
+
+*+---------------------------------------------------------------+
+ |  DATE     : 6 APR 2005                                        |
+ |  FUNCTION : A/C WITH ONLY 2 INSTL PAID AS AT REPORTING DATE.  |
+ +---------------------------------------------------------------+;
+DATA ACCARR;
+   SET LNTEMP;
+   IF (2<=NOISTLPD<3) AND DAYDIFF >= 8;
+   PAYDESC = 'PAID 2 ISTL';
+RUN;
+
+PROC SUMMARY DATA=ACCARR NWAY;
+     CLASS BRHCODE PAYDESC;
+     VAR BALANCE;
+     OUTPUT OUT=ACCARR (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_)
+                  SUM=;
+RUN;
+
+PROC TABULATE DATA=ACCARR NOSEPS MISSING;
+  CLASS PAYDESC BRHCODE;
+  VAR NOACCT BALANCE;
+  TABLE BRHCODE=' ' ALL='TOTAL',
+        PAYDESC*(NOACCT='NO OF A/C'*F=COMMA8.0
+                 BALANCE='O/S BALANCE'*F=COMMA15.2)*SUM
+          /*  ALL*(NOACCT='NO OF A/C'*F=COMMA8.0
+                 BALANCE='O/S BALANCE'*F=COMMA15.2)*SUM */
+        / BOX='BRANCH' RTS=8;
+  TITLE1 'PROGRAM ID : EIMAR301-D';
+  TITLE2 'PUBLIC BANLK BERHAD';
+  TITLE3 'SUMMARY ON A/C IN ARREAR WITH 2 ISTL PAID ONLY AS AT '
+         "&RDATE";
+RUN;
+
+
