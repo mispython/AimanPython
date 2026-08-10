@@ -1,34 +1,7 @@
-def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFrame:
-    product_filter = (
-        f"CAST(PRODUCT AS INTEGER) IN ({','.join(str(p) for p in hpd_products)})"
-        if hpd_products
-        else "1=0"
-    )
-
-    con = duckdb.connect(database=":memory:")
-    df = con.execute(f"""
-        SELECT
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-            CAST(BORSTAT  AS VARCHAR) AS BORSTAT,
-            CAST(PRODUCT  AS INTEGER) AS PRODUCT,
-            CAST(ARREAR2  AS DOUBLE)  AS ARREAR2,
-            CAST(DATE '1960-01-01' + CAST(ISSDTE AS INTEGER)  AS DATE) AS ISSDTE,
-            CAST(DAYDIFF  AS DOUBLE)  AS DAYDIFF,
-            CAST(NAME     AS VARCHAR) AS NAME,
-            CAST(CAST(NOTENO AS DOUBLE) AS BIGINT) AS NOTENO,   -- <-- changed
-            CAST(DATE '1960-01-01' + CAST(LASTRAN AS INTEGER) AS DATE) AS LASTRAN,
-            CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
-            CAST(NOISTLPD AS DOUBLE)  AS NOISTLPD,
-            CAST(DATE '1960-01-01' + CAST(MATURDT AS INTEGER) AS DATE) AS MATURDT,
-            CAST(LSTTRNAM AS DOUBLE)  AS LSTTRNAM,
-            CAST(DELQCD   AS VARCHAR) AS DELQCD,
-            CAST(COLLDESC AS VARCHAR) AS COLLDESC
-        FROM read_parquet('{cache_path}')
-        WHERE CAST(BALANCE AS DOUBLE) > 0
-          AND CAST(BORSTAT AS VARCHAR) <> 'Z'
-          AND {product_filter}
-    """).pl()
-    con.close()
-    return df
+if row["FIRST_BRANCH"]:
+    brhamt = brhac = 0
+    if pagecnt > 0:
+        out.append("\f")                     # <-- skip on first page
+    pagecnt += 1
+    out.extend(_header_a(...))
+    linecnt = 5
