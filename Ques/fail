@@ -1,7 +1,9 @@
-if row["FIRST_BRANCH"]:
-    brhamt = brhac = 0
-    if pagecnt > 0:
-        out.append("\f")                     # <-- skip on first page
-    pagecnt += 1
-    out.extend(_header_a(...))
-    linecnt = 5
+    # --- DEBUG: Check raw data for the specific account ---
+    debug_raw = con.execute(f"""
+        SELECT *
+        FROM read_parquet('{cache_path}')
+        WHERE ACCTNO = 8220131913
+    """).pl()
+    print("DEBUG: Raw row (no filters):")
+    print(debug_raw)
+    # ----------------------------------------------------
