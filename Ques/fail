@@ -5,83 +5,7 @@ def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFram
         else "1=0"
     )
 
-    # --- DEBUG: Print the product filter string ---
-    print(f"DEBUG: product_filter = {product_filter}")
-    # ---------------------------------------------
-
     con = duckdb.connect(database=":memory:")
-
-    # ======================================================================
-    # DEBUG BLOCK 1: Check raw data for the specific account (no filters)
-    # ======================================================================
-    debug_raw = con.execute(f"""
-        SELECT *
-        FROM read_parquet('{cache_path}')
-        WHERE ACCTNO = 8220131913
-    """).pl()
-    print("\nDEBUG: Raw row (no filters, all columns):")
-    print(debug_raw)
-    print("Number of raw rows:", len(debug_raw))
-    # ======================================================================
-
-    # ======================================================================
-    # DEBUG BLOCK 2: Test each filter condition individually
-    # ======================================================================
-    # 2a. Check BALANCE > 0
-    debug_balance = con.execute(f"""
-        SELECT ACCTNO, BALANCE
-        FROM read_parquet('{cache_path}')
-        WHERE ACCTNO = 8220131913 AND CAST(BALANCE AS DOUBLE) > 0
-    """).pl()
-    print("\nDEBUG: BALANCE > 0 test:")
-    print(debug_balance)
-
-    # 2b. Check BORSTAT <> 'Z'
-    debug_borstat = con.execute(f"""
-        SELECT ACCTNO, BORSTAT
-        FROM read_parquet('{cache_path}')
-        WHERE ACCTNO = 8220131913 AND CAST(BORSTAT AS VARCHAR) <> 'Z'
-    """).pl()
-    print("\nDEBUG: BORSTAT <> 'Z' test:")
-    print(debug_borstat)
-
-    # 2c. Check PRODUCT IN (...)
-    debug_product = con.execute(f"""
-        SELECT ACCTNO, PRODUCT
-        FROM read_parquet('{cache_path}')
-        WHERE ACCTNO = 8220131913 AND {product_filter}
-    """).pl()
-    print("\nDEBUG: PRODUCT filter test:")
-    print(debug_product)
-
-    # 2d. Check the data type of PRODUCT (to see if it's stored as string with decimal)
-    debug_type = con.execute(f"""
-        SELECT TYPEOF(PRODUCT) as product_type, PRODUCT
-        FROM read_parquet('{cache_path}')
-        WHERE ACCTNO = 8220131913
-    """).pl()
-    print("\nDEBUG: Data type and value of PRODUCT:")
-    print(debug_type)
-    # ======================================================================
-
-    # ======================================================================
-    # DEBUG BLOCK 3: Check the full row with all filters applied
-    # ======================================================================
-    debug_full_filter = con.execute(f"""
-        SELECT *
-        FROM read_parquet('{cache_path}')
-        WHERE ACCTNO = 8220131913
-          AND CAST(BALANCE AS DOUBLE) > 0
-          AND CAST(BORSTAT AS VARCHAR) <> 'Z'
-          AND {product_filter}
-    """).pl()
-    print("\nDEBUG: Row after ALL filters (this is what would go into LNTEMP):")
-    print(debug_full_filter)
-    # ======================================================================
-
-    # ----------------------------------------------------------------------
-    # Now run the actual query that builds LNTEMP (unchanged)
-    # ----------------------------------------------------------------------
     df = con.execute(f"""
         SELECT
             CAST(BRANCH   AS INTEGER) AS BRANCH,
@@ -103,7 +27,7 @@ def build_lntemp(cache_path: Path, hpd_products: tuple[int, ...]) -> pl.DataFram
             CAST(COLLDESC AS VARCHAR) AS COLLDESC
         FROM read_parquet('{cache_path}')
         WHERE CAST(BALANCE AS DOUBLE) > 0
-          AND CAST(BORSTAT AS VARCHAR) <> 'Z'
+          AND (CAST(BORSTAT AS VARCHAR) IS NULL OR CAST(BORSTAT AS VARCHAR) <> 'Z')
           AND {product_filter}
     """).pl()
     con.close()
