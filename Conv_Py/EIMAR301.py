@@ -25,13 +25,12 @@ Original JCL notes (kept for traceability):
     //PGM      DD DSN=SAP.BNM.PROGRAM            -> NOT referenced anywhere in the
                                                     SAS program body; left as an
                                                     unused placeholder DD.
-    %INC PGM(PBBLNFMT,PBBELF);                   -> supplies &HPD macro variable and
-                                                     ARRCLASS./CACBRCH. formats; none
-                                                     of these are defined in the
-                                                     format libraries available to
-                                                     this migration, so they are
-                                                     reproduced as documented
-                                                     placeholders below.
+          %INC PGM(PBBLNFMT,PBBELF);                   -> supplies ARRCLASS./CACBRCH. formats,
+                                                           now imported directly from
+                                                           PBBLNFMT.format_arrclass and
+                                                           PBBELF.format_cacbrch. &HPD is
+                                                           inferred from PBBLNFMT.HP_ACTIVE
+                                                           (see comment at HPD_PRODUCTS).
 """
 
 import gc
