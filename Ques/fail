@@ -15,9 +15,11 @@ def generate_report_a(loan1_df: pl.DataFrame) -> list[str]:
     def print_header(branch: int, type_label: str) -> None:
         nonlocal pagecnt, linecnt
         pagecnt += 1
+        header_lines = _header_a(branch, pagecnt, type_label)
         if pagecnt > 1:
-            out.append("\f")
-        out.extend(_header_a(branch, pagecnt, type_label))
+            # Prepend form-feed to the first line of the header
+            header_lines[0] = "\f" + header_lines[0]
+        out.extend(header_lines)
         linecnt = 6   # SAS sets LINECNT=6 after NEWPAGE
 
     for row in rows:
@@ -87,7 +89,8 @@ def generate_report_a(loan1_df: pl.DataFrame) -> list[str]:
     return out
 
 
-==============
+=============
+
 
 def generate_report_b(loan1_df: pl.DataFrame) -> list[str]:
     filtered = loan1_df.filter(
@@ -100,20 +103,23 @@ def generate_report_b(loan1_df: pl.DataFrame) -> list[str]:
     rows = compute_by_flags(filtered.to_dicts(), ["CAT", "BRANCH", "ARREAR2"])
 
     out: list[str] = []
-    out.append("\f")          # force Report B to start on a new page
-
     pagecnt = 0
     linecnt = 0
     total = totac = 0.0
     brharr = brharrac = brhamt = brhac = 0.0
+    first_page = True   # flag to force a page break for the first header
 
+    # Helper to print header on a new page
     def print_header(branch: int, type_label: str) -> None:
-        nonlocal pagecnt, linecnt
+        nonlocal pagecnt, linecnt, first_page
         pagecnt += 1
-        if pagecnt > 1:
-            out.append("\f")
-        out.extend(_header_b(branch, pagecnt, type_label))
+        header_lines = _header_b(branch, pagecnt, type_label)
+        if pagecnt > 1 or first_page:
+            # Prepend form-feed to the first line of the header
+            header_lines[0] = "\f" + header_lines[0]
+        out.extend(header_lines)
         linecnt = 6
+        first_page = False   # only force break for the very first header
 
     for row in rows:
         if row["FIRST_CAT"]:
@@ -150,7 +156,7 @@ def generate_report_b(loan1_df: pl.DataFrame) -> list[str]:
         out.append(_line(buf))
 
         # third line is blank (no output), but we count it
-        linecnt += 4   # three PUT lines + blank
+        linecnt += 4
 
         balance = row.get("BALANCE") or 0.0
         brharr += balance; brharrac += 1
