@@ -1,0 +1,118 @@
+//EIIWREXL JOB MSGCLASS=X,MSGLEVEL=(2,1),REGION=64M
+//*-------------------------------------------------------------------
+//* FILE NAME : REXL_49299_ddmmyy.XLS
+//* ESMR : 2020-4276
+//* EXTRACT DETAIL TRANSACTIONS ON OTHER RM MISCELLANEOUS LIABILITIES TO
+//* NON-RESIDENTS FOR REPORT ON REXL FOR PIBB
+//*-------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.REXL.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//*-------------------------------------------------------------------
+//EIIWREXL EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//BNM      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(100,100)),UNIT=(SYSDA,5)
+//FD       DD DSN=SAP.PIBB.MNIFD(0),DISP=SHR
+//DEPOSIT  DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//CISDP    DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
+//OUTPUT   DD DSN=SAP.PIBB.REXL.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=1000,BLKSIZE=10000),
+//            SPACE=(TRK,(50,10)),UNIT=SYSDA
+//SFTP01    DD DSN=&&FTPPUT,DISP=(NEW,PASS),
+//             SPACE=(TRK,(1)),UNIT=SYSDA,RECFM=FB,LRECL=80
+//SYSIN    DD *
+
+OPTIONS NOCENTER YEARCUTOFF=1950;
+
+DATA REPTDATE;
+   SET DEPOSIT.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN(8)   CALL SYMPUT('NOWK', PUT('1', $1.));
+      WHEN(15)  CALL SYMPUT('NOWK', PUT('2', $1.));
+      WHEN(22)  CALL SYMPUT('NOWK', PUT('3', $1.));
+      OTHERWISE CALL SYMPUT('NOWK', PUT('4', $1.));
+   END;
+   CALL SYMPUT('REPTDT',PUT(REPTDATE,DDMMYYN6.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+RUN;
+
+%INC PGM(DALWPBBD);
+%INC PGM(FALWPBBD);
+
+DATA _NULL_;
+   LENGTH BNMCODE $14.;
+   SET BNM.SAVG&REPTMON&NOWK
+       BNM.CURN&REPTMON&NOWK
+       BNM.FDWKLY(RENAME=(INTPAY=INTPAYBL CUSTCODE=CUSTCD BIC=PRODCD
+                          ACCTTYPE=PRODUCT)) END=LAST;
+   WHERE PRODCD IN ('42132','42199') &
+         CUSTCD IN ('80','81','82','83','84','85','86','87','88','89',
+                    '90','91','92','95','96','98','99') &
+         INTPAYBL NOT IN (.,0);
+   BNMCODE='4929980000000Y';
+   FORMAT INTPAYBL SPTF COMMA13.4;
+   DLM='05'X;
+   FILE OUTPUT;
+   IF _N_=1 THEN DO;
+      PUT @1 'PUBLIC ISLAMIC BANK BERHAD'
+          /  'DETAIL TRANSACTIONS ON OTHER RM MISCELLANEOUS '
+             'LIABILITIES TO NON-RESIDENTS'
+          /
+          /  'Obs'                                 DLM
+             'BNMCODE'                             DLM
+             'CUSTCD'                              DLM
+             'PRODCD'                              DLM
+             'BRANCH'                              DLM
+             'ACCTNO'                              DLM
+             'NAME'                                DLM
+             'PRODUCT'                             DLM
+             'INTPAYBL'                            DLM
+          ;
+   END;
+   SPTF+INTPAYBL;
+   PUT    @1 _N_                                   DLM
+             BNMCODE                               DLM
+             CUSTCD                                DLM
+             PRODCD                                DLM
+             BRANCH                                DLM
+             ACCTNO                                DLM
+             NAME                                  DLM
+             PRODUCT                               DLM
+             INTPAYBL                              DLM
+          ;
+
+   IF LAST THEN
+      PUT @1                                       DLM
+             'TOTAL'                               DLM
+                                                   DLM
+                                                   DLM
+                                                   DLM
+                                                   DLM
+                                                   DLM
+                                                   DLM
+             SPTF                                  DLM
+          ;
+RUN;
+
+DATA _NULL_;
+   FILE SFTP01;
+   PUT @1 "PUT //SAP.PIBB.REXL.TEXT    REXL_49299_&REPTDT..XLS"
+       ;
+RUN;
+//******************************************************************
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//******************************************************************
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd "FD-BNM REPORTING/PIBB/BNM RPTG"
+//           DD DISP=SHR,DSN=&&FTPPUT
+//           DD *
+EOB
+/*
