@@ -1,24 +1,22 @@
-def _fmt_comma(value, width: int, decimals: int = 0) -> str:
-    if value is None:
-        return " " * width
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return " " * width
+for i in range(1, 18):
+    totamt[i] = round(totamt.get(i, 0.0) + amt.get(i, 0.0), 2)
+    totacc[i] = totacc.get(i, 0) + cnt.get(i, 0)
 
-    # 1. Build the string with thousands separators
-    if decimals > 0:
-        s_with_comma = f"{v:,.{decimals}f}"
-    else:
-        s_with_comma = f"{v:,.0f}"
 
-    # 2. If it fits within the width, return it right‑aligned
-    if len(s_with_comma) <= width:
-        return s_with_comma.rjust(width)
+def _grand_total_lines(totamt: dict, totacc: dict) -> list[str]:
+    sgtotbrh = round(sum(totamt.get(i, 0.0) for i in range(4, 18)), 2)
+    sgtotbr2 = round(sgtotbrh - totamt.get(4, 0.0) - totamt.get(5, 0.0) - totamt.get(6, 0.0), 2)
+    sgtotacc = sum(totacc.get(i, 0) for i in range(4, 18))          # counts are integers, no rounding needed
+    sgtotac2 = sgtotacc - totacc.get(4, 0) - totacc.get(5, 0) - totacc.get(6, 0)
+    gtotbrh  = round(sgtotbrh + totamt.get(1, 0.0) + totamt.get(2, 0.0) + totamt.get(3, 0.0), 2)
+    gtotacc  = sgtotacc + totacc.get(1, 0) + totacc.get(2, 0) + totacc.get(3, 0)
 
-    # 3. Otherwise, remove all commas and try again
-    s_no_comma = s_with_comma.replace(",", "")
-    # (Optional) If it still doesn't fit, you could further shorten
-    # by reducing decimals or using scientific notation, but the
-    # original SAS would show asterisks; we simply return as is.
-    return s_no_comma.rjust(width)
+
+subbrh = round(sum(amt.get(i, 0.0) for i in range(4, 18)), 2)
+subbr2 = round(subbrh - amt.get(4, 0.0) - amt.get(5, 0.0) - amt.get(6, 0.0), 2)
+subacc = sum(cnt.get(i, 0) for i in range(4, 18))
+subac2 = subacc - cnt.get(4, 0) - cnt.get(5, 0) - cnt.get(6, 0)
+totbrh = round(subbrh + amt.get(1, 0.0) + amt.get(2, 0.0) + amt.get(3, 0.0), 2)
+sotacc = subacc + cnt.get(1, 0) + cnt.get(2, 0) + cnt.get(3, 0)
+
+
