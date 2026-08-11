@@ -1,13 +1,3 @@
-bucket_agg = (
-    loantemp.filter(pl.col("BALANCE") > 0)
-    .group_by(["CAT", "BRANCH", "ARREAR"])
-    .agg([
-        pl.col("BALANCE").sum().alias("AMT"),
-        pl.len().alias("CNT"),
-    ])
-)
-
-# Round AMT to 2 decimal places to match SAS fixed‑decimal behaviour
-bucket_agg = bucket_agg.with_columns(
-    pl.col("AMT").round(2)
+loantemp = loantemp.with_columns(
+    pl.col("BALANCE").round(2)
 )
