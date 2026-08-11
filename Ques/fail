@@ -5,12 +5,20 @@ def _fmt_comma(value, width: int, decimals: int = 0) -> str:
         v = float(value)
     except (TypeError, ValueError):
         return " " * width
-    # Build the formatted string with commas (standard thousands separator)
+
+    # 1. Build the string with thousands separators
     if decimals > 0:
-        s = f"{v:,.{decimals}f}"
+        s_with_comma = f"{v:,.{decimals}f}"
     else:
-        s = f"{v:,.0f}"          # rounds and adds commas
-    # If absolute value >= 1 billion, strip all commas
-    if abs(v) >= 1_000_000_000:
-        s = s.replace(",", "")
-    return s.rjust(width)
+        s_with_comma = f"{v:,.0f}"
+
+    # 2. If it fits within the width, return it right‑aligned
+    if len(s_with_comma) <= width:
+        return s_with_comma.rjust(width)
+
+    # 3. Otherwise, remove all commas and try again
+    s_no_comma = s_with_comma.replace(",", "")
+    # (Optional) If it still doesn't fit, you could further shorten
+    # by reducing decimals or using scientific notation, but the
+    # original SAS would show asterisks; we simply return as is.
+    return s_no_comma.rjust(width)
