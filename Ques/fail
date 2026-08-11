@@ -1,22 +1,13 @@
-for i in range(1, 18):
-    totamt[i] = round(totamt.get(i, 0.0) + amt.get(i, 0.0), 2)
-    totacc[i] = totacc.get(i, 0) + cnt.get(i, 0)
+bucket_agg = (
+    loantemp.filter(pl.col("BALANCE") > 0)
+    .group_by(["CAT", "BRANCH", "ARREAR"])
+    .agg([
+        pl.col("BALANCE").sum().alias("AMT"),
+        pl.len().alias("CNT"),
+    ])
+)
 
-
-def _grand_total_lines(totamt: dict, totacc: dict) -> list[str]:
-    sgtotbrh = round(sum(totamt.get(i, 0.0) for i in range(4, 18)), 2)
-    sgtotbr2 = round(sgtotbrh - totamt.get(4, 0.0) - totamt.get(5, 0.0) - totamt.get(6, 0.0), 2)
-    sgtotacc = sum(totacc.get(i, 0) for i in range(4, 18))          # counts are integers, no rounding needed
-    sgtotac2 = sgtotacc - totacc.get(4, 0) - totacc.get(5, 0) - totacc.get(6, 0)
-    gtotbrh  = round(sgtotbrh + totamt.get(1, 0.0) + totamt.get(2, 0.0) + totamt.get(3, 0.0), 2)
-    gtotacc  = sgtotacc + totacc.get(1, 0) + totacc.get(2, 0) + totacc.get(3, 0)
-
-
-subbrh = round(sum(amt.get(i, 0.0) for i in range(4, 18)), 2)
-subbr2 = round(subbrh - amt.get(4, 0.0) - amt.get(5, 0.0) - amt.get(6, 0.0), 2)
-subacc = sum(cnt.get(i, 0) for i in range(4, 18))
-subac2 = subacc - cnt.get(4, 0) - cnt.get(5, 0) - cnt.get(6, 0)
-totbrh = round(subbrh + amt.get(1, 0.0) + amt.get(2, 0.0) + amt.get(3, 0.0), 2)
-sotacc = subacc + cnt.get(1, 0) + cnt.get(2, 0) + cnt.get(3, 0)
-
-
+# Round AMT to 2 decimal places to match SAS fixed‑decimal behaviour
+bucket_agg = bucket_agg.with_columns(
+    pl.col("AMT").round(2)
+)
