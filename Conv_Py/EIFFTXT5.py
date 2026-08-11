@@ -12,7 +12,7 @@ This program:
 
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from pathlib import Path
 
 # =========================================================================
@@ -30,8 +30,16 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIFFTXT5"
 PIBB_INPUT_FILE = os.path.join(INPUT_DIR, 'WOFFTXTI.txt')
 PBB_INPUT_FILE = os.path.join(INPUT_DIR, 'WOFFTXT.txt')
 
+# Report date setup
+reptdate = date.today() - timedelta(days=1)
+
+RDATE    = reptdate.strftime("%y%m%d")   # &RDATE    : DDMMYY8.
+REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
+REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
+REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.     (unused downstream, kept for parity)
+
 # Output files
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, 'WOFFTXT_ALL.txt')
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, f'WOFFTXT_ALL_{RDATE}.txt')
 SFTP_WEBNOTES = os.path.join(OUTPUT_DIR, 'sftp_webnotes.txt')
 SFTP_DRR = os.path.join(OUTPUT_DIR, 'sftp_drr.txt')
 
