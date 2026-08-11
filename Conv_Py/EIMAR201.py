@@ -377,12 +377,12 @@ def _build_header(type_label: str, pagecnt: int) -> list[str]:
     # lines.append(_line(_new_buf()))   # PUT @1 ' ';
 
     buf = _new_buf()
-    _place(buf, 1,   "0BRH   NO          < 1 MTH")
+    _place(buf, 1,   "BRH   NO          < 1 MTH")
     _place(buf, 33,  "NO     1 TO < 2 MTH")
     _place(buf, 58,  "NO     2 TO < 3 MTH")
     _place(buf, 84,  "NO      3 TO < 4 MTH")
     _place(buf, 111, "NO      4 TO < 5 MTH")
-    lines.append(_line(buf))
+    lines.append(_line(buf, "0"))
 
     buf = _new_buf()
     _place(buf, 1,   "       NO     5 TO < 6 MTH")
