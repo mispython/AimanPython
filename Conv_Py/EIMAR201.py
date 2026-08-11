@@ -27,10 +27,6 @@ Original JCL notes (kept for traceability):
     //PGM      DD DSN=SAP.BNM.PROGRAM       -> NOT referenced anywhere in the
                                                 SAS program body; left as an
                                                 unused placeholder DD.
-    NOTE: This SAS program contains no %INC PGM(...) statement, so unlike
-    EIMAR301 there is no PBBLNFMT/PBBELF (or similar) format-library
-    dependency to import here. CAT/TYPE labels are literal assignments
-    within the SAS DATA step itself.
 """
 
 import gc
@@ -84,7 +80,7 @@ print("Step 1: Deriving report date...")
 reptdate = date(2026, 7, 31)
 
 RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
-RDATE2   = reptdate.strftime("%y%m%d")     # &RDATE    : DDMMYY8.
+RDATE2   = reptdate.strftime("%y%m%d")     # &RDATE    : YYMMDD6.
 REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
 REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
 REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.     (unused downstream, kept for parity)
