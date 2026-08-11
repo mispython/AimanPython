@@ -11,7 +11,7 @@ Purpose : Outstanding Loans Classified as NPL Report for CCD PFB
           - Merges with the branch lookup file.
           - Produces the same 17-bucket arrears-aging report layout as
             EIMAR201, but under an "NPL" title, and APPENDS it onto
-            EIMAR201's own output file (SAP.PBB.CCDTXT3, DISP=MOD),
+            EIMAR202's own output file (SAP.PBB.CCDTXT3, DISP=MOD),
             since EIMAR202 is a direct continuation of EIMAR201's run.
 
 Original JCL notes (kept for traceability):
@@ -411,12 +411,12 @@ def _build_header(type_label: str, pagecnt: int) -> list[str]:
     # lines.append(_line(_new_buf()))   # PUT @1 ' ';
 
     buf = _new_buf()
-    _place(buf, 1,   "0BRH   NO          < 1 MTH")
+    _place(buf, 1,   "BRH    NO         < 1 MTH")
     _place(buf, 34,  "NO     1 TO < 2 MTH")
     _place(buf, 59,  "NO     2 TO < 3 MTH")
     _place(buf, 84,  "NO      3 TO < 4 MTH")
     _place(buf, 111, "NO      4 TO < 5 MTH")
-    lines.append(_line(buf))
+    lines.append(_line(buf, "0"))
 
     buf = _new_buf()
     _place(buf, 1,   "        NO    5 TO < 6 MTH")
