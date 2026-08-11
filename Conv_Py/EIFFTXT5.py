@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Program: EIFFTXT5.py
-Date: 2016-4547 (ESMR)
-Purpose: STREAMLINE HP LOTUS NOTES WRITE-OFF SYSTEM
+Program : EIFFTXT5.py
+Purpose : STREAMLINE HP LOTUS NOTES WRITE-OFF SYSTEM
 
 This program:
 1. Reads write-off text files from PIBB and PBB sources
@@ -21,17 +20,22 @@ from pathlib import Path
 # =========================================================================
 
 # Path Configuration
-UPLOAD_DIR = os.getenv('UPLOAD_DIR', '/mnt/user-data/uploads')
-OUTPUT_DIR = os.getenv('OUTPUT_DIR', '/mnt/user-data/outputs')
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat")
+
+INPUT_DIR = STG_DIR / "AII/EIFFTXT5"
+OUTPUT_DIR = BASE_DIR / "output" / "EIFFTXT5"
 
 # Input files
-PIBB_INPUT_FILE = os.path.join(UPLOAD_DIR, 'FTPLNS_WOFFTXT_PIBB.txt')
-PBB_INPUT_FILE = os.path.join(UPLOAD_DIR, 'FTPLNS_WOFFTXT_PBB.txt')
+PIBB_INPUT_FILE = os.path.join(INPUT_DIR, 'WOFFTXTI.txt')
+PBB_INPUT_FILE = os.path.join(INPUT_DIR, 'WOFFTXT.txt')
 
 # Output files
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, 'FTPLNS_WOFFTXT_ALL.txt')
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, 'WOFFTXT_ALL.txt')
 SFTP_WEBNOTES = os.path.join(OUTPUT_DIR, 'sftp_webnotes.txt')
 SFTP_DRR = os.path.join(OUTPUT_DIR, 'sftp_drr.txt')
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 # =========================================================================
