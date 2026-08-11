@@ -70,12 +70,6 @@ LRECL      = 133          # DCB LRECL=133, RECFM=FBA -> byte 0 is the ASA
 PAGE_SIZE    = 60          # lines per page (SAS FILE PRINT default)
 HEADER_LINES = 8           # NEWPAGE label emits exactly 8 PUT lines
 
-# NOTE: output_date.py (build_output_file) is NOT used here. The SAS
-# SASLIST DSN (SAP.PBB.CCDTXT3) carries no date component in its name,
-# so the output filename below is fixed, matching the same reasoning
-# applied in EIVQDCPR.py.
-OUTPUT_FILE = OUTPUT_DIR / "EIMAR201.txt"
-
 # ============================================================================
 # STEP 1: REPORT DATE  (DATA _NULL_; SET BNM.REPTDATE; ...)
 # ============================================================================
@@ -84,15 +78,22 @@ print("Step 1: Deriving report date...")
 # reptdate_values = get_reptdate_values(year_format="%Y")
 # reptdate        = reptdate_values.reptdate
 
-reptdate = date.today() - timedelta(days=1)
+# reptdate = date.today() - timedelta(days=1)
 
-# # Testing purposes
-# reptdate = date(2026, 7, 31)
+# Testing purposes
+reptdate = date(2026, 7, 31)
 
 RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
+RDATE2   = reptdate.strftime("%y%m%d")     # &RDATE    : DDMMYY8.
 REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
 REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
 REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.     (unused downstream, kept for parity)
+
+# NOTE: output_date.py (build_output_file) is NOT used here. The SAS
+# SASLIST DSN (SAP.PBB.CCDTXT3) carries no date component in its name,
+# so the output filename below is fixed, matching the same reasoning
+# applied in EIVQDCPR.py.
+OUTPUT_FILE = OUTPUT_DIR / f'EIMAR201_{RDATE2}.txt'
 
 print(f"  Report date : {RDATE}")
 print(f"  Output file : {OUTPUT_FILE.name}")
@@ -252,6 +253,7 @@ print(f"  LOANTEM2 rows (with duplication): {len(loantem2):,}")
 print("\nStep 5: Building LOANTEMP...")
 
 loantemp = loantem2.join(brhdata, on="BRANCH", how="left")
+loantemp = loantemp.with_columns(pl.col("BALANCE").round(2))
 del loantem2
 gc.collect()
 print(f"  LOANTEMP rows: {len(loantemp):,}")
@@ -273,6 +275,11 @@ bucket_agg = (
         pl.col("BALANCE").sum().alias("AMT"),
         pl.len().alias("CNT"),
     ])
+)
+
+# Round AMT to 2 decimal places to match SAS fixed‑decimal behaviour
+bucket_agg = bucket_agg.with_columns(
+    pl.col("AMT").round(2)
 )
 
 # Every distinct CAT/BRANCH combination present in LOANTEMP drives one
@@ -326,8 +333,23 @@ def _fmt_comma(value, width: int, decimals: int = 0) -> str:
         v = float(value)
     except (TypeError, ValueError):
         return " " * width
-    s = f"{v:,.{decimals}f}" if decimals > 0 else f"{int(round(v)):,}"
-    return s.rjust(width)
+
+    # 1. Build the string with thousands separators
+    if decimals > 0:
+        s_with_comma = f"{v:,.{decimals}f}"
+    else:
+        s_with_comma = f"{v:,.0f}"
+
+    # 2. If it fits within the width, return it right‑aligned
+    if len(s_with_comma) <= width:
+        return s_with_comma.rjust(width)
+
+    # 3. Otherwise, remove all commas and try again
+    s_no_comma = s_with_comma.replace(",", "")
+    # (Optional) If it still doesn't fit, you could further shorten
+    # by reducing decimals or using scientific notation, but the
+    # original SAS would show asterisks; we simply return as is.
+    return s_no_comma.rjust(width)
 
 
 def _fmt_z(value, width: int) -> str:
@@ -356,10 +378,10 @@ def _build_header(type_label: str, pagecnt: int) -> list[str]:
     _place(buf, 103, RDATE)
     lines.append(_line(buf))
 
-    lines.append(_line(_new_buf()))   # PUT @1 ' ';
+    # lines.append(_line(_new_buf()))   # PUT @1 ' ';
 
     buf = _new_buf()
-    _place(buf, 1,   "BRH    NO          < 1 MTH")
+    _place(buf, 1,   "0BRH   NO          < 1 MTH")
     _place(buf, 33,  "NO     1 TO < 2 MTH")
     _place(buf, 58,  "NO     2 TO < 3 MTH")
     _place(buf, 84,  "NO      3 TO < 4 MTH")
@@ -400,11 +422,11 @@ def _build_header(type_label: str, pagecnt: int) -> list[str]:
 
 def _branch_detail_lines(branch: int, brhcode: str, amt: dict, cnt: dict) -> list[str]:
     """LAST.BRANCH block -- 4 PUT lines (17 buckets + subtotal columns)."""
-    subbrh = sum(amt.get(i, 0.0) for i in range(4, 18))
-    subbr2 = subbrh - amt.get(4, 0.0) - amt.get(5, 0.0) - amt.get(6, 0.0)
+    subbrh = round(sum(amt.get(i, 0.0) for i in range(4, 18)), 2)
+    subbr2 = round(subbrh - amt.get(4, 0.0) - amt.get(5, 0.0) - amt.get(6, 0.0), 2)
     subacc = sum(cnt.get(i, 0) for i in range(4, 18))
     subac2 = subacc - cnt.get(4, 0) - cnt.get(5, 0) - cnt.get(6, 0)
-    totbrh = subbrh + amt.get(1, 0.0) + amt.get(2, 0.0) + amt.get(3, 0.0)
+    totbrh = round(subbrh + amt.get(1, 0.0) + amt.get(2, 0.0) + amt.get(3, 0.0), 2)
     sotacc = subacc + cnt.get(1, 0) + cnt.get(2, 0) + cnt.get(3, 0)
 
     lines: list[str] = []
@@ -448,11 +470,11 @@ def _branch_detail_lines(branch: int, brhcode: str, amt: dict, cnt: dict) -> lis
 
 def _grand_total_lines(totamt: dict, totacc: dict) -> list[str]:
     """LAST.CAT block -- dashes + TOT (4 PUT lines) + dashes + blank = 7 lines."""
-    sgtotbrh = sum(totamt.get(i, 0.0) for i in range(4, 18))
-    sgtotbr2 = sgtotbrh - totamt.get(4, 0.0) - totamt.get(5, 0.0) - totamt.get(6, 0.0)
-    sgtotacc = sum(totacc.get(i, 0) for i in range(4, 18))
+    sgtotbrh = round(sum(totamt.get(i, 0.0) for i in range(4, 18)), 2)
+    sgtotbr2 = round(sgtotbrh - totamt.get(4, 0.0) - totamt.get(5, 0.0) - totamt.get(6, 0.0), 2)
+    sgtotacc = sum(totacc.get(i, 0) for i in range(4, 18))          # counts are integers, no rounding needed
     sgtotac2 = sgtotacc - totacc.get(4, 0) - totacc.get(5, 0) - totacc.get(6, 0)
-    gtotbrh  = sgtotbrh + totamt.get(1, 0.0) + totamt.get(2, 0.0) + totamt.get(3, 0.0)
+    gtotbrh  = round(sgtotbrh + totamt.get(1, 0.0) + totamt.get(2, 0.0) + totamt.get(3, 0.0), 2)
     gtotacc  = sgtotacc + totacc.get(1, 0) + totacc.get(2, 0) + totacc.get(3, 0)
 
     lines: list[str] = []
@@ -500,7 +522,7 @@ def _grand_total_lines(totamt: dict, totacc: dict) -> list[str]:
     _place(buf, 81, DASH40); _place(buf, 121, DASH10)
     lines.append(_line(buf))
 
-    lines.append(_line(_new_buf()))   # PUT; blank line
+    # lines.append(_line(_new_buf()))   # PUT; blank line
 
     return lines
 
@@ -526,7 +548,8 @@ for cat in cats_present:
     totacc: dict[int, int] = {}
 
     def _print_header() -> None:
-        nonlocal pagecnt, lines_on_page
+        # nonlocal pagecnt, lines_on_page
+        global pagecnt, lines_on_page
         pagecnt += 1
         output_lines.extend(_build_header(type_label, pagecnt))
         lines_on_page = HEADER_LINES
@@ -550,7 +573,7 @@ for cat in cats_present:
         lines_on_page += 4
 
         for i in range(1, 18):
-            totamt[i] = totamt.get(i, 0.0) + amt.get(i, 0.0)
+            totamt[i] = round(totamt.get(i, 0.0) + amt.get(i, 0.0), 2)
             totacc[i] = totacc.get(i, 0) + cnt.get(i, 0)
 
     if lines_on_page + 7 > PAGE_SIZE:
@@ -570,9 +593,9 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 
-print("\n[RESULT] Report content:")
-for ln in output_lines:
-    print(ln)
+# print("\n[RESULT] Report content:")
+# for ln in output_lines:
+#     print(ln)
 
 del bucket_agg, branch_universe
 gc.collect()
