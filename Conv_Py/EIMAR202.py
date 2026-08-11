@@ -32,22 +32,21 @@ Original JCL notes (kept for traceability):
                                                 as a .sas7bdat and cached to
                                                 Parquet (EIBDLN1M pattern).
     //CCDTXT3   DD DSN=SAP.PBB.CCDTXT3,DISP=MOD
-                                             -> APPEND target: the exact same
-                                                physical dataset EIMAR201
-                                                wrote via its SASLIST DD.
-                                                Reproduced here by opening
-                                                EIMAR201's own output file in
-                                                "a" (append) mode, inheriting
-                                                its DCB (LRECL=133,
-                                                RECFM=FBA -- ASA carriage
-                                                control).
+                                             -> APPEND target on the mainframe:
+                                                the same physical dataset
+                                                EIMAR201 wrote via SASLIST.
+                                                Reproduced here by READING
+                                                EIMAR201's output file as
+                                                input, appending EIMAR202's
+                                                report to it in memory, and
+                                                writing the result to
+                                                EIMAR202's own output path
+                                                (inherits EIMAR201's DCB:
+                                                LRECL=133, RECFM=FBA -- ASA
+                                                carriage control).
     //PGM       DD DSN=SAP.BNM.PROGRAM      -> NOT referenced anywhere in the
                                                 SAS program body; left as an
                                                 unused placeholder DD.
-    NOTE: This SAS program contains no %INC PGM(...) statement, so unlike
-    EIMAR301 there is no PBBLNFMT/PBBELF (or similar) format-library
-    dependency to import here. CAT/TYPE labels are literal assignments
-    within the SAS DATA step itself (same convention as EIMAR201).
 """
 
 import gc
@@ -69,16 +68,17 @@ import pyarrow.parquet as pq
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat")
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIMAR202"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIMAR201"
 
-# NOTE: output_date.py (build_output_file) is NOT used here. EIMAR202 does
-# not create a new output dataset -- CCDTXT3 DD DISP=MOD means it appends
-# onto the SAME physical file EIMAR201 produced (SAP.PBB.CCDTXT3). The
-# output directory/filename below therefore intentionally match EIMAR201.py
-# so the two programs share one physical output file, exactly as on the
-# mainframe.
-OUTPUT_DIR  = BASE_DIR / "output" / "EIMAR201"
-OUTPUT_FILE = OUTPUT_DIR / "EIMAR201.txt"
+# Input: EIMAR201's own output file. EIMAR202 (CCDTXT3 DD DISP=MOD on the
+# mainframe) appends onto whatever EIMAR201 already wrote, so it is treated
+# here as an explicit upstream input rather than a shared mutable file.
+EIMAR201_DIR  = BASE_DIR / "output" / "EIMAR201"
+# EIMAR201_FILE = EIMAR201_DIR / "EIMAR201.txt"
+
+# Output: EIMAR202's own file = EIMAR201's content + EIMAR202's report.
+OUTPUT_DIR  = BASE_DIR / "output" / "EIMAR202"
+# OUTPUT_FILE = OUTPUT_DIR / "EIMAR202.txt"
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -104,18 +104,25 @@ print("Step 1: Deriving report date...")
 # reptdate_values = get_reptdate_values(year_format="%Y")
 # reptdate        = reptdate_values.reptdate
 
-reptdate = date.today() - timedelta(days=1)
+# reptdate = date.today() - timedelta(days=1)
 
-# # Testing purposes
-# reptdate = date(2026, 7, 31)
+# Testing purposes
+reptdate = date(2026, 7, 31)
 
 RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
+RDATE2   = reptdate.strftime("%y%m%d")     # &RDATE    : YYMMDD6.
 REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
 REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
 REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.     (unused downstream, kept for parity)
 
+EIMAR201_FILE = EIMAR201_DIR / f'EIMAR201_{RDATE2}.txt'
+OUTPUT_FILE = OUTPUT_DIR / f'EIMAR202_{RDATE2}.txt'
+
+# print(f"  Report date : {RDATE}")
+# print(f"  Output file : {OUTPUT_FILE.name} (append mode)")
 print(f"  Report date : {RDATE}")
-print(f"  Output file : {OUTPUT_FILE.name} (append mode)")
+print(f"  Input file  : {EIMAR201_FILE.name}")
+print(f"  Output file : {OUTPUT_FILE.name}")
 
 # ============================================================================
 # STEP 2: RESOLVE LOANTEMP (.sas7bdat, BNM.LOANTEMP GDG(0))
@@ -356,8 +363,23 @@ def _fmt_comma(value, width: int, decimals: int = 0) -> str:
         v = float(value)
     except (TypeError, ValueError):
         return " " * width
-    s = f"{v:,.{decimals}f}" if decimals > 0 else f"{int(round(v)):,}"
-    return s.rjust(width)
+
+    # 1. Build the string with thousands separators
+    if decimals > 0:
+        s_with_comma = f"{v:,.{decimals}f}"
+    else:
+        s_with_comma = f"{v:,.0f}"
+
+    # 2. If it fits within the width, return it right‑aligned
+    if len(s_with_comma) <= width:
+        return s_with_comma.rjust(width)
+
+    # 3. Otherwise, remove all commas and try again
+    s_no_comma = s_with_comma.replace(",", "")
+    # (Optional) If it still doesn't fit, you could further shorten
+    # by reducing decimals or using scientific notation, but the
+    # original SAS would show asterisks; we simply return as is.
+    return s_no_comma.rjust(width)
 
 
 def _fmt_z(value, width: int) -> str:
@@ -386,10 +408,10 @@ def _build_header(type_label: str, pagecnt: int) -> list[str]:
     _place(buf, 104, RDATE)
     lines.append(_line(buf))
 
-    lines.append(_line(_new_buf()))   # PUT @1 ' ';
+    # lines.append(_line(_new_buf()))   # PUT @1 ' ';
 
     buf = _new_buf()
-    _place(buf, 1,   "BRH     NO         < 1 MTH")
+    _place(buf, 1,   "0BRH   NO          < 1 MTH")
     _place(buf, 34,  "NO     1 TO < 2 MTH")
     _place(buf, 59,  "NO     2 TO < 3 MTH")
     _place(buf, 84,  "NO      3 TO < 4 MTH")
@@ -530,7 +552,7 @@ def _grand_total_lines(totamt: dict, totacc: dict) -> list[str]:
     _place(buf, 81, DASH40); _place(buf, 121, DASH10)
     lines.append(_line(buf))
 
-    lines.append(_line(_new_buf()))   # PUT; blank line
+    # lines.append(_line(_new_buf()))   # PUT; blank line
 
     return lines
 
@@ -556,7 +578,7 @@ for cat in cats_present:
     totacc: dict[int, int] = {}
 
     def _print_header() -> None:
-        nonlocal pagecnt, lines_on_page
+        global pagecnt, lines_on_page
         pagecnt += 1
         output_lines.extend(_build_header(type_label, pagecnt))
         lines_on_page = HEADER_LINES
@@ -592,17 +614,33 @@ for cat in cats_present:
 print(f"  Total report lines: {len(output_lines):,}")
 
 # ============================================================================
-# STEP 9: WRITE OUTPUT  (APPEND -- CCDTXT3 DD DISP=MOD onto EIMAR201's file)
+# STEP 9: WRITE OUTPUT
+# Reproduces CCDTXT3 DD DISP=MOD by reading EIMAR201's existing output as
+# the base content, then appending EIMAR202's own report lines, and writing
+# the combined result to EIMAR202's own output path (fresh file, not
+# mutating EIMAR201's file).
 # ============================================================================
-with open(OUTPUT_FILE, "a", encoding="latin1") as fh:
+if not EIMAR201_FILE.exists():
+    raise FileNotFoundError(
+        f"EIMAR201 output not found: {EIMAR201_FILE}. "
+        f"EIMAR201.py must run before EIMAR202.py."
+    )
+
+with open(EIMAR201_FILE, "r", encoding="latin1") as fh:
+    eimar201_lines = fh.read().splitlines()
+
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in eimar201_lines:
+        fh.write(ln + "\n")
     for ln in output_lines:
         fh.write(ln + "\n")
 
-print(f"\n  Output appended to : {OUTPUT_FILE}")
+print(f"\n  Input read from    : {EIMAR201_FILE}")
+print(f"  Output written to  : {OUTPUT_FILE}")
 
-print("\n[RESULT] Report content:")
-for ln in output_lines:
-    print(ln)
+# print("\n[RESULT] Report content:")
+# for ln in output_lines:
+#     print(ln)
 
 del bucket_agg, branch_universe
 gc.collect()
