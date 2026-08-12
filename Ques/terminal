@@ -1,5 +1,24 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 MIS]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMAR201.py
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMAR201.py", line 529
-    nonlocal pagecnt, lines_on_page
-    ^
-SyntaxError: no binding for nonlocal 'pagecnt' found
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIVQDCPR.py
+
+Uploading reports to PIVSVFIL101 via SFTP...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/range.py", line 413, in get_loc
+    return self._range.index(new_key)
+ValueError: 0 is not in range
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIVQDCPR.py", line 384, in <module>
+    sftp_upload_to_pivb(OUTPUT_CSV_FILE, OUTPUT_XLS_FILE)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIVQDCPR.py", line 350, in sftp_upload_to_pivb
+    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(PIVB_HOST_DESC)
+  File "/sas/python/virt_edw_dev/Data_Warehouse/Common/Jobs/EDW_TRANSFORMATION.py", line 662, in get_sftp_info
+    sftp_id = df['SFTP_ID'][0]
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/series.py", line 1121, in __getitem__
+    return self._get_value(key)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/series.py", line 1237, in _get_value
+    loc = self.index.get_loc(label)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/range.py", line 415, in get_loc
+    raise KeyError(key) from err
+KeyError: 0
