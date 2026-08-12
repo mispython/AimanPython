@@ -1,21 +1,15 @@
-# ------------------------------------------------------------
-# COMPUTE REPORT DATE (last day of previous month) via GET_BATCH_DATE
-# ------------------------------------------------------------
-_today_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-_first_day_str = first_date_of_month(_today_str)            # "YYYY-MM-DD 00:00:00"
-_prev_month_last_day_str = get_past_n_date(_first_day_str, 1)
+def _pivb_remote_filenames() -> tuple[str, str]:
+    """
+    Build the two remote filenames per the JCL PUT lines:
+        PUT //SAP.PIVB.FIDCPR.CSV   1204D.csv
+        PUT //SAP.PIVB.FIDCPR.XLS   1204D(%ODD.%OMM.%OYY.).xls
 
-reptdate: date = datetime.strptime(_prev_month_last_day_str, "%Y-%m-%d %H:%M:%S").date()
-
-# Filename suffix: YYMMDD only, no dashes, no time (e.g. "260731")
-_ts: str = reptdate.strftime("%y%m%d")
-
-
-
-EQU_FILE = INPUT_DIR / f"UTGE231_{_ts}.txt"
-
-
-
-def print_reptdate() -> None:
-    """Equivalent of: DATA REPTDATE; REPTDATE = TODAY()-DAY(TODAY());"""
-    print(f"[REPTDATE] Report date (REPTDT): {reptdate}")
+    NOTE: Original JCL's %ODD.%OMM.%OYY. tokens represent the FTP
+    run date, not the report date. This has been changed on request
+    to instead follow REPTDT (the same date used to name the local
+    input/output files, e.g. UTGE231_260731.txt), so the remote XLS
+    filename date matches the report period rather than today's date.
+    """
+    csv_name = "1204D.csv"
+    xls_name = f"1204D({reptdate:%d.%m.%y}).xls"
+    return csv_name, xls_name
