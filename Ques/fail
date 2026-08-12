@@ -1,88 +1,89 @@
 # ============================================================
-# SFTP CONFIGURATION (DRR - Data Report Repository System)
+# SFTP CONFIGURATION (PIVSVFIL101 - PIVB File Server)
 # ============================================================
-# HOST_DESC value that identifies the DRR entry in
-# ctl_dwh_sftp_info.sas7bdat. CONFIRM this against the actual control
-# table content — placeholder until verified with the infra/DBA team.
-DRR_HOST_DESC = "DRR"
+# NOTE: Original JCL connects directly to sas2lcr@192.168.56.10 via
+# cozsftp, using credentials from OPER.PBB.CONTROL(SAS#SFTP) - a
+# DIFFERENT control dataset than ctl_dwh_sftp_info.sas7bdat used
+# elsewhere in this project. The HOST_DESC value below is a
+# placeholder; CONFIRM with infra team which row in
+# ctl_dwh_sftp_info.sas7bdat (if any) corresponds to this PIVB file
+# server before production use. If no equivalent row exists, this
+# server's credentials may need to be sourced differently.
+PIVB_HOST_DESC = "PIVSVFIL101"
 
-# Remote folder on the DRR server (from JCL: CD CD-BRC)
-DRR_REMOTE_DIR = "CD-BRC"
+# Remote folder on the PIVB file server (from JCL: cd "...")
+PIVB_REMOTE_DIR = "Financial Inclusion Data Collection Package"
 
 
 
 # ============================================================
-# SFTP UPLOAD TO DRR
+# SFTP UPLOAD TO PIVSVFIL101
 # ============================================================
-def _drr_remote_filename(prefix: str) -> str:
+def _pivb_remote_filenames() -> tuple[str, str]:
     """
-    Build the DRR filename using the run date, matching the JCL's
-    %OYYYY.%OMM.%ODD token. %O-prefixed variables in the original
-    COZBATCH/NDM script represent the file-transfer run date (today),
-    not the report date (REPTYEAR/REPTMON) — kept distinct on purpose.
+    Build the two remote filenames per the JCL PUT lines:
+        PUT //SAP.PIVB.FIDCPR.CSV   1204D.csv
+        PUT //SAP.PIVB.FIDCPR.XLS   1204D(%ODD.%OMM.%OYY.).xls
+
+    The CSV name is static. The XLS name embeds the transfer run date
+    (%O-prefixed = run date, not the report date REPTDT) as
+    DD.MM.YY inside literal parentheses.
     """
     today = datetime.now()
-    return f"{prefix}_{today:%Y.%m.%d}.txt"
+    csv_name = "1204D.csv"
+    xls_name = f"1204D({today:%d.%m.%y}).xls"
+    return csv_name, xls_name
 
 
-def sftp_upload_to_drr(local_files: list) -> None:
+def sftp_upload_to_pivb(csv_path: Path, xls_path: Path) -> None:
     """
-    Upload output report file(s) to the DRR server.
+    Upload FIDCPR.csv / FIDCPR.xls to the PIVB file server.
 
     Equivalent of the JCL RUNSFTP step:
         //RUNSFTP  EXEC COZBATCH
-        //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+        export PASSWD_DSN='OPER.PBB.CONTROL(SAS#SFTP)'
+        $coz_bin/cozsftp $ssh_opts -b- sas2lcr@192.168.56.10 <<EOB
         lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
         lzopts linerule=$lr
-        CD CD-BRC
-        PUT //SAP.PBB.COMP.INWARD.REPT   \
-                  ForeignInwardRemittances_%OYYYY.%OMM.%ODD..txt
-        PUT //SAP.PBB.COMP.OUTWARD.REPT  \
-                  ForeignOutwardRemittances_%OYYYY.%OMM.%ODD..txt
+        cd "Financial Inclusion Data Collection Package"
+        PUT //SAP.PIVB.FIDCPR.CSV   1204D.csv
+        PUT //SAP.PIVB.FIDCPR.XLS   1204D(%ODD.%OMM.%OYY.).xls
         EOB
-
-    Parameters:
-        local_files: list of (local_path: Path, remote_filename_prefix: str)
     """
-    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(DRR_HOST_DESC)
+    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(PIVB_HOST_DESC)
 
     ssh = paramiko.SSHClient()
-    # NOTE: HOST_KEY from ctl_dwh_sftp_info.sas7bdat is available for strict
-    # host-key pinning, but its stored format (hex blob / OpenSSH pubkey
-    # string / fingerprint) is not confirmed yet — CONFIRM with infra team
-    # before enabling strict pinning. AutoAddPolicy is used in the interim.
+    # NOTE: HOST_KEY format unconfirmed (see EIWFRMCR.py note) - using
+    # AutoAddPolicy() in the interim.
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    print(f"  Connecting to PIVB host {host_ip} as {sftp_id} ...")
     ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
     sftp = ssh.open_sftp()
 
     try:
-        sftp.chdir(DRR_REMOTE_DIR)
+        sftp.chdir(PIVB_REMOTE_DIR)
     except IOError:
         sftp.close()
         ssh.close()
-        sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
+        sys.exit(f"Aborting: Remote PIVB folder '{PIVB_REMOTE_DIR}' not found")
 
-    for local_path, remote_prefix in local_files:
-        remote_name = _drr_remote_filename(remote_prefix)
-        print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
-        sftp.put(str(local_path), remote_name)
+    csv_name, xls_name = _pivb_remote_filenames()
+
+    print(f"  SFTP upload: {csv_path.name} -> {PIVB_REMOTE_DIR}/{csv_name}")
+    sftp.put(str(csv_path), csv_name)
+
+    print(f"  SFTP upload: {xls_path.name} -> {PIVB_REMOTE_DIR}/{xls_name}")
+    sftp.put(str(xls_path), xls_name)
 
     sftp.close()
     ssh.close()
-    print("  DRR upload complete.")
+    print("  PIVB upload complete.")
 
 
 
-# ============================================================
-# SFTP REPORTS TO DATA REPORT REPOSITORY SYSTEM (DRR)
-# ============================================================
-print("\nUploading reports to DRR via SFTP...")
-sftp_upload_to_drr([
-    (INWARD_REPORT_FILE, "ForeignInwardRemittances"),
-    (OUTWARD_REPORT_FILE, "ForeignOutwardRemittances"),
-])
-
-
-
+    # ------------------------------------------------------------
+    # //RUNSFTP EXEC COZBATCH ... (FTP TO PIVSVFIL101 - PIVB FILE SERVER)
+    # ------------------------------------------------------------
+    print("\nUploading reports to PIVSVFIL101 via SFTP...")
+    sftp_upload_to_pivb(OUTPUT_CSV_FILE, OUTPUT_XLS_FILE)
