@@ -112,7 +112,6 @@ REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstr
 REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
 REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.     (unused downstream, kept for parity)
 
-
 RUN_DAY15_REPORT = (REPTDAY == "15")       # %IF "&REPTDAY" = "15" %THEN %DO;
 
 OUTPUT_FILE = OUTPUT_DIR / f"CCDTXT2_{RDATE2}.txt"
@@ -384,7 +383,7 @@ def _build_header_main(progid: str, type_label: str, pagecnt: int) -> list:
     _place(buf, 58, "NO     2 TO < 3 MTH")
     _place(buf, 84, "NO      3 TO < 4 MTH")
     _place(buf, 111, "NO      4 TO < 5 MTH")
-    lines.append(_finalize(buf, " "))
+    lines.append(_finalize(buf, "0"))
 
     buf = _new_buf()
     _place(buf, 1, "       NO     5 TO < 6 MTH")
@@ -593,7 +592,7 @@ def _build_header_day15(progid: str, type_label: str, pagecnt: int) -> list:
     _place(buf, 58, "NO     2 TO < 3 MTH")
     _place(buf, 84, "NO      3 TO < 4 MTH")
     _place(buf, 111, "NO      4 TO < 5 MTH")
-    lines.append(_finalize(buf, " "))
+    lines.append(_finalize(buf, "0"))
 
     buf = _new_buf()
     _place(buf, 1, "       NO     5 TO < 6 MTH")
@@ -895,13 +894,13 @@ print(f"  Total lines    : {len(all_lines):,} "
 # ============================================================================
 # STEP 11: RESULTS SUMMARY  (printed to terminal)
 # ============================================================================
-print("\n--- Combined CCDTXT2 (first 20 lines) ---")
-for ln in all_lines[:20]:
-    print(ln)
+# print("\n--- Combined CCDTXT2 (first 20 lines) ---")
+# for ln in all_lines[:20]:
+#     print(ln)
 
-print("\n--- EIMAR102 appended section (first 20 lines) ---")
-for ln in (lines_a + lines_b)[:20]:
-    print(ln)
+# print("\n--- EIMAR102 appended section (first 20 lines) ---")
+# for ln in (lines_a + lines_b)[:20]:
+#     print(ln)
 
 # ============================================================================
 # STEP 12: CLEANUP
