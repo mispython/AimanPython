@@ -51,11 +51,12 @@ HPD_PRODUCTS: tuple = ()
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat")
 
-INPUT_BNM_DIR     = BASE_DIR / "input" / "prod" / "EIMAR101"
+INPUT_BNM_DIR     = STG_DIR / "AII"
 INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
-CACHE_DIR  = BASE_DIR / "input" / "prod" / "EIMAR101"
+CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR101"
 OUTPUT_DIR = BASE_DIR / "output" / "EIMAR101"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -70,8 +71,8 @@ ROW_LIMIT  = int(os.environ.get("ROW_LIMIT", 0))   # 0 = no limit (test mode)
 # ============================================================================
 # REPORT PAGE CONFIGURATION
 # ============================================================================
-PAGE_SIZE    = 60   # lines per page (SAS default)
-HEADER_LINES = 8     # NEWPAGE header block occupies 8 lines
+PAGE_SIZE     = 60   # lines per page (SAS default)
+HEADER_LINES  = 8     # NEWPAGE header block occupies 8 lines
 LRECL_CCDTXT2 = 133
 
 CAT_TYPE_LABELS = {
@@ -110,7 +111,7 @@ print(f"  CCDTXT7A    : {CCDTXT7A_FILE.name}")
 # ============================================================================
 print("\nStep 2: Resolving BNM.LOANTEMP input file...")
 
-bnm_path = get_latest_file(INPUT_BNM_DIR, prefix="loantemp")
+bnm_path = INPUT_BNM_DIR / "loantemp.sas7bdat"
 print(f"  BNM.LOANTEMP : {bnm_path.name}")
 
 # ============================================================================
@@ -377,7 +378,7 @@ def _build_header_lines(progid: str, type_label: str, pagecnt: int) -> list:
 
     buf = _new_buf()
     _place(buf, 1, " ")
-    lines.append(_finalize(buf, " "))
+    # lines.append(_finalize(buf, " "))
 
     buf = _new_buf()
     _place(buf, 1, "BRH    NO          < 1 MTH")
