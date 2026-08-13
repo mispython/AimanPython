@@ -1,0 +1,280 @@
+//EIMAR103 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB02003
+/*JOBPARM S=S1M1
+//*
+//*********************************************************************
+//* OLD PROGRAM  : LNCCD008
+//* FUNCTION : LOANS IN ARREARS CLASSIFIED AS NPL FOR HPCCD.
+//*            (THE MONTH-END VERSION)
+//* NOTE     : REMOVE THE BORSTAT 'I' FOR HOUSING LOAN AND
+//*            FIXED LOAN, REFER TO EMAIL FROM NKW, SAM, CREDIT
+//*            CONTROL, BRANCH ADMINSTRATION, PFB. DATED ON
+//*            19TH OCT 2001.
+//*MODIFY ESMR :2006-11-03 2006-1048
+//*MODIFY ESMR :2015-2448(TO REMOVE PROGRAM ID EIMAR103-B FOR TYPE
+//*             (HPD-C) & (-HPD-))
+//*********************************************************************
+//EIMAR103  EXEC SAS609
+//CONFIG    DD DISP=SHR,DSN=SYS3.SAS.V609.CNTL(BATCHXA)
+//LOAN      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//BRHFILE   DD DSN=RBP2.B033.PBB.BRANCH,DISP=SHR
+//BNM       DD DSN=SAP.PBB.CCDTEMP(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//CCDTXT2   DD DSN=SAP.PBB.CCDTXT2,DISP=MOD
+//SYSIN     DD *
+
+TITLE;
+OPTIONS NONUMBER NODATE SORTDEV=3390 YEARCUTOFF=1950;
+%INC PGM(PBBLNFMT);
+
+DATA REPTDATE;
+   SET BNM.REPTDATE;
+   CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+   CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
+   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+   CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+RUN;
+
+PROC SORT DATA=BNM.LOANTEMP OUT=LOAN;
+  BY BRANCH ARREAR2;
+RUN;
+
+DATA BRHDATA;
+  INFILE BRHFILE LRECL=80;
+  INPUT @2 BRANCH  3.
+        @6 BRHCODE $3.;
+RUN;
+
+DATA LOANTEMP;
+  FORMAT  TYPE  $13.;
+  SET LOAN;
+  CENSUS9 = SUBSTR(PUT(CENSUS,8.2),7,1);
+  IF BALANCE > 0 AND BORSTAT NE 'Z';
+  IF ARREAR2 > 3 OR BORSTAT = 'R' OR BORSTAT = 'I'
+     OR BORSTAT = 'F' OR CENSUS9 = '9' OR USER5= 'N' THEN DO;
+     IF PRODUCT IN (380,381,700,705,720,725,15,20,71,72) AND
+        (BORSTAT IN ('R','I','F')  OR (ARREAR2 > 3)
+        OR USER5 = 'N') THEN DO;
+        CAT  = 'A';
+        TYPE = '(HPD-C)';
+        OUTPUT;
+     END;
+     IF PRODUCT IN (380,381)           AND
+        (BORSTAT IN ('R','I','F')  OR (ARREAR2 > 3)
+        OR USER5 = 'N') THEN DO;
+        CAT  = 'B';
+        TYPE = '(HP 380/381)';
+        OUTPUT;
+     END;
+     IF PRODUCT IN (103,104,107,108,128,130,131,132)   AND
+        (BORSTAT IN ('R','I','F')  OR (ARREAR2 > 3)
+        OR USER5 = 'N') THEN DO;
+        CAT  = 'C';
+        TYPE = '(AITAB)';
+        OUTPUT;
+     END;
+     IF PRODUCT IN &HPD AND
+        (BORSTAT IN ('R','I','F')  OR (ARREAR2 > 3)
+        OR USER5 = 'N') THEN DO;
+        CAT  = 'D';
+        TYPE = '(-HPD-)';
+        OUTPUT;
+     END;
+  END;
+RUN;
+
+PROC SORT DATA=LOANTEMP; BY BRANCH;
+
+DATA LOAN1;
+  MERGE LOANTEMP(IN=PRESENT) BRHDATA;
+  BY BRANCH;
+  IF PRESENT=1 THEN OUTPUT LOAN1;
+RUN;
+
+PROC SORT DATA=LOAN1 OUT=LOAN1;
+  BY CAT BRANCH ARREAR2;
+RUN;
+%MACRO PRNPROC;
+DATA _NULL_;
+   ARRAY BRHAMT{14} BRHAMT1-BRHAMT14;
+   ARRAY NOACC{14}  NOACC1-NOACC14;
+   ARRAY TOTAMT{14} TOTAMT1-TOTAMT14;
+   ARRAY TOTACC{14} TOTACC1-TOTACC14;
+   SET PRNDATA END=LAST;
+   BY CAT BRANCH ARREAR2;
+   FILE CCDTXT2 HEADER=NEWPAGE;
+
+  IF FIRST.CAT    THEN DO;
+     PUT _PAGE_;
+     SGTOTBRH = 0;
+     SGTOTBR2 = 0;
+     SGTOTACC = 0;
+     SGTOTAC2 = 0;
+     GTOTBRH  = 0;
+     GTOTACC  = 0;
+     DO I = 1 TO 14;
+        TOTAMT(I) = 0;
+        BRHAMT(I) = 0;
+        TOTACC(I) = 0;
+        NOACC(I)  = 0;
+     END;
+  END;
+
+  IF FIRST.BRANCH THEN DO;
+     DO I = 1 TO 14;
+        BRHAMT(I)=0;
+        NOACC(I) =0;
+     END;
+     SUBBRH =0;   SUBACC=0;
+     SUBBR2 =0;   SUBAC2=0;
+     TOTBRH =0;   SOTACC=0;
+  END;
+
+  IF BALANCE GT 0   THEN DO;
+     BRHAMT(ARREAR2) + BALANCE;
+     /* IF PRODUCT IN (110,115,700,705)   THEN DO;
+        IF BALANCE GT 200  THEN NOACC(ARREAR2) + 1;
+     END; ELSE */ NOACC(ARREAR2) + 1;
+  END;
+
+  IF LAST.BRANCH THEN DO;
+     DO I = 1 TO 14;
+        TOTAMT(I) + BRHAMT(I);
+        TOTACC(I) + NOACC(I);
+     END;
+
+     SUBBRH = SUM(BRHAMT4,BRHAMT5,BRHAMT6,BRHAMT7,BRHAMT8,BRHAMT9,
+                  BRHAMT10,BRHAMT11,BRHAMT12,BRHAMT13,BRHAMT14);
+     SUBBR2 = SUM(BRHAMT7,BRHAMT8,BRHAMT9,BRHAMT10,BRHAMT11,
+                  BRHAMT12,BRHAMT13,BRHAMT14);
+     SUBACC = SUM(NOACC4,NOACC5,NOACC6,NOACC7,NOACC8,NOACC9,
+                  NOACC10,NOACC11,NOACC12,NOACC13,NOACC14);
+     SUBAC2 = SUM(NOACC7,NOACC8,NOACC9,NOACC10,NOACC11,
+                  NOACC12,NOACC13,NOACC14);
+     TOTBRH = SUM(SUBBRH,BRHAMT1,BRHAMT2,BRHAMT3);
+     SOTACC = SUM(SUBACC,NOACC1,NOACC2,NOACC3);
+
+     PUT  @1   BRANCH Z3.
+          @5   NOACC1 COMMA7.0  @13  BRHAMT1 COMMA16.2
+          @30  NOACC2 COMMA7.0  @38  BRHAMT2 COMMA15.2
+          @54  NOACC3 COMMA7.0  @62  BRHAMT3 COMMA15.2
+          @78  NOACC4 COMMA8.0  @87  BRHAMT4 COMMA17.2
+          @105 NOACC5 COMMA8.0  @114 BRHAMT5 COMMA17.2;
+     PUT  @1   BRHCODE
+          @5   NOACC6 COMMA7.0  @13  BRHAMT6 COMMA16.2
+          @30  NOACC7 COMMA7.0  @38  BRHAMT7 COMMA15.2
+          @54  NOACC8 COMMA7.0  @62  BRHAMT8 COMMA15.2
+          @78  NOACC9 COMMA8.0  @87  BRHAMT9 COMMA17.2
+          @105 NOACC10 COMMA8.0 @114 BRHAMT10 COMMA17.2;
+     PUT  @5   NOACC11 COMMA7.0 @13  BRHAMT11 COMMA16.2
+          @30  NOACC12 COMMA7.0 @38  BRHAMT12 COMMA15.2
+          @54  NOACC13 COMMA7.0 @62  BRHAMT13 COMMA15.2
+          @78  NOACC14 COMMA8.0 @87  BRHAMT14 COMMA17.2
+          @105 SUBACC COMMA8.0  @114 SUBBRH  COMMA17.2;
+     PUT  @78  SUBAC2 COMMA8.0  @87  SUBBR2  COMMA17.2
+          @105 SOTACC COMMA8.0  @114 TOTBRH  COMMA17.2;
+  END;
+
+  IF LAST.CAT  THEN DO;
+     SGTOTBRH = SUM(TOTAMT4,TOTAMT5,TOTAMT6,TOTAMT7,TOTAMT8,TOTAMT9,
+                    TOTAMT10,TOTAMT11,TOTAMT12,TOTAMT13,TOTAMT14);
+     SGTOTBR2 = SUM(TOTAMT7,TOTAMT8,TOTAMT9,TOTAMT10,TOTAMT11,
+                    TOTAMT12,TOTAMT13,TOTAMT14);
+     SGTOTACC = SUM(TOTACC4,TOTACC5,TOTACC6,TOTACC7,TOTACC8,TOTACC9,
+                    TOTACC10,TOTACC11,TOTACC12,TOTACC13,TOTACC14);
+     SGTOTAC2 = SUM(TOTACC7,TOTACC8,TOTACC9,TOTACC10,TOTACC11,
+                    TOTACC12,TOTACC13,TOTACC14);
+     GTOTBRH  = SUM(SGTOTBRH,TOTAMT1,TOTAMT2,TOTAMT3);
+     GTOTACC  = SUM(SGTOTACC,TOTACC1,TOTACC2,TOTACC3);
+
+     PUT  @1   '----------------------------------------'
+          @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT  @1  'TOT'
+          @5   TOTACC1 COMMA7.0  @13  TOTAMT1 COMMA16.2
+          @30  TOTACC2 COMMA7.0  @38  TOTAMT2 COMMA15.2
+          @54  TOTACC3 COMMA7.0  @62  TOTAMT3 COMMA15.2
+          @78  TOTACC4 COMMA8.0  @87  TOTAMT4 COMMA17.2
+          @105 TOTACC5 COMMA8.0  @114 TOTAMT5 COMMA17.2;
+     PUT  @5   TOTACC6 COMMA7.0  @13  TOTAMT6 COMMA16.2
+          @30  TOTACC7 COMMA7.0  @38  TOTAMT7 COMMA15.2
+          @54  TOTACC8 COMMA7.0  @62  TOTAMT8 COMMA15.2
+          @78  TOTACC9  COMMA8.0 @87  TOTAMT9 COMMA17.2
+          @105 TOTACC10 COMMA8.0 @114 TOTAMT10 COMMA17.2;
+     PUT  @5   TOTACC11 COMMA7.0 @13  TOTAMT11 COMMA16.2
+          @30  TOTACC12 COMMA7.0 @38  TOTAMT12 COMMA15.2
+          @54  TOTACC13 COMMA7.0 @62  TOTAMT13 COMMA15.2
+          @78  TOTACC14 COMMA8.0 @87  TOTAMT14 COMMA17.2
+          @105 SGTOTACC COMMA8.0 @114 SGTOTBRH COMMA17.2;
+     PUT  @78  SGTOTAC2 COMMA8.0 @87  SGTOTBR2 COMMA17.2
+          @105 GTOTACC COMMA8.0  @114 GTOTBRH  COMMA17.2;
+     PUT  @1   '----------------------------------------'
+          @41  '----------------------------------------'
+          @81  '----------------------------------------'
+          @121 '----------';
+     PUT;
+     PAGECNT = 0;
+  END;
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @1   'PROGRAM-ID : ' "&PROGID"
+        @43  'P U B L I C   B A N K   B E R H A D'
+        @118 'PAGE NO.: ' PAGECNT;
+    PUT @41  'OUTSTANDING LOANS CLASSIFIED AS NPL '
+        @77  TYPE  $13.
+        @91  "&RDATE";
+    PUT @1   ' ';
+    PUT @1   'BRH     NO         < 1 MTH'
+        @34         'NO     1 TO < 2 MTH'
+        @59         'NO     2 TO < 3 MTH'
+        @84        'NO      3 TO < 4 MTH'
+        @111       'NO      4 TO < 5 MTH';
+    PUT @1   '        NO    5 TO < 6 MTH'
+        @34         'NO     6 TO < 7 MTH'
+        @59         'NO     7 TO < 8 MTH'
+        @84        'NO      8 TO < 9 MTH'
+        @111       'NO     9 TO < 12 MTH';
+    PUT @1   '        NO  12 TO < 18 MTH'
+        @34         'NO   18 TO < 24 MTH'
+        @59         'NO   24 TO < 36 MTH'
+        @84        'NO          > 36 MTH'
+        @111       'NO   SUBTOTAL >=3MTH';
+    PUT @84        'NO   SUBTOTAL >=6MTH'
+        @111       'NO             TOTAL';
+    PUT @1   '----------------------------------------'
+        @41  '----------------------------------------'
+        @81  '----------------------------------------'
+        @121 '----------';
+  RETURN;
+RUN;
+%MEND PRNPRO;
+
+DATA PRNDATA;
+     SET LOAN1;
+     CALL SYMPUT('PROGID', 'EIMAR103-A');
+     /*
+     CALL SYMPUT('RPTTITLE', 'OUTSTANDING LOANS CLASSIFIED AS NPL');
+     */
+RUN;
+%PRNPROC;
+
+*+----------------------------------------------------------------+
+ |  FOR ARREAR 3 - 8 MTHS REQUESTED ON 16 FEB 2004                |
+ +----------------------------------------------------------------+;
+DATA PRNDATA;
+ SET LOAN1;
+  IF TYPE IN ('(HPD-C)','(-HPD-)') THEN DELETE;
+  IF (BORSTAT NE 'F' AND BORSTAT NE 'I' AND
+      BORSTAT NE 'R' ) AND
+     (PRODUCT IN &HPD OR PRODUCT IN (15,20,71,72));
+     CALL SYMPUT('PROGID', 'EIMAR103-B');
+     /*
+     CALL SYMPUT('RPTTITLE',
+   'OUTSTANDING LOANS CLASSIFIED AS NPL(EXCLUDE BORR. STAT F/I/R/T) ');
+     */
+RUN;
+%PRNPROC;
+
+PROC DATASETS LIB=WORK NOLIST; DELETE LOANTEMP LOAN1 PRNDATA; RUN;
