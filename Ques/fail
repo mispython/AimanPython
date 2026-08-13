@@ -1,15 +1,30 @@
-def _pivb_remote_filenames() -> tuple[str, str]:
-    """
-    Build the two remote filenames per the JCL PUT lines:
-        PUT //SAP.PIVB.FIDCPR.CSV   1204D.csv
-        PUT //SAP.PIVB.FIDCPR.XLS   1204D(%ODD.%OMM.%OYY.).xls
+def _fmt_comma(value, width, decimals=0):
+    """COMMAw.d equivalent – commas if they fit, otherwise no commas."""
+    if value is None:
+        return " " * width
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return " " * width
 
-    NOTE: Original JCL's %ODD.%OMM.%OYY. tokens represent the FTP
-    run date, not the report date. This has been changed on request
-    to instead follow REPTDT (the same date used to name the local
-    input/output files, e.g. UTGE231_260731.txt), so the remote XLS
-    filename date matches the report period rather than today's date.
-    """
-    csv_name = "1204D.csv"
-    xls_name = f"1204D({reptdate:%d.%m.%y}).xls"
-    return csv_name, xls_name
+    # Try with commas and proper decimals
+    if decimals > 0:
+        s = f"{v:,.{decimals}f}"
+    else:
+        s = f"{int(round(v)):,}"
+
+    if len(s) <= width:
+        return s.rjust(width)
+
+    # Too wide -> drop commas
+    if decimals > 0:
+        s = f"{v:.{decimals}f}"
+    else:
+        s = str(int(round(v)))
+
+    if len(s) <= width:
+        return s.rjust(width)
+
+    # Still too wide? Fallback to BASIC formatting (shouldn't happen with correct widths)
+    # We'll just right-justify without further truncation.
+    return s.rjust(width)
