@@ -46,14 +46,8 @@ from input_date import get_latest_file
 # ============================================================================
 # &HPD MACRO PLACEHOLDER
 # ============================================================================
-# &HPD is referenced once in the original SAS source ("PRODUCT IN &HPD"),
-# but is not defined anywhere within EIMAR104 itself and is not resolvable
-# from any dependency file supplied for this conversion. Its member list is
-# unknown, so it is declared here as an explicit, empty placeholder,
-# consistent with EIMAR101.py / EIMAR103.py. CAT='D' rows will therefore
-# correctly yield zero matching rows until this list is populated with the
-# real product codes.
-HPD_PRODUCTS: tuple = ()
+# &HPD is referenced once in the original SAS source ("PRODUCT IN &HPD")
+HPD_PRODUCTS   = (380, 381, 700, 705, 720, 725)
 
 # CAT product lists  (DATA LOAN1 categorisation)
 CAT_A_PRODUCTS = (380, 381, 700, 705, 720, 725, 15, 20, 71, 72)
@@ -732,6 +726,10 @@ print("\nStep 9: Writing combined CCDTXT2 output...")
 
 all_lines = eimar103_lines + lines_a
 
+# Remove any trailing blank lines
+while all_lines and all_lines[-1].strip() == "":
+    all_lines.pop()
+
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in all_lines:
         fh.write(f"{ln:<{LRECL_CCDTXT2}}\n")
@@ -743,13 +741,13 @@ print(f"  Total lines    : {len(all_lines):,} "
 # ============================================================================
 # STEP 10: RESULTS SUMMARY  (printed to terminal)
 # ============================================================================
-print("\n--- Combined CCDTXT2 (first 20 lines) ---")
-for ln in all_lines[:20]:
-    print(ln)
+# print("\n--- Combined CCDTXT2 (first 20 lines) ---")
+# for ln in all_lines[:20]:
+#     print(ln)
 
-print("\n--- EIMAR104 appended section (first 20 lines) ---")
-for ln in lines_a[:20]:
-    print(ln)
+# print("\n--- EIMAR104 appended section (first 20 lines) ---")
+# for ln in lines_a[:20]:
+#     print(ln)
 
 # ============================================================================
 # STEP 11: CLEANUP
