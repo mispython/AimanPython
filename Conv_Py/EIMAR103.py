@@ -26,7 +26,9 @@ import polars as pl
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+
 from pathlib import Path
+from datetime import date, datetime, timedelta
 
 from REPTDATE import get_monthly_reptdate_values
 from input_date import get_latest_file
@@ -72,7 +74,7 @@ INPUT_BNM_DIR       = STG_DIR
 INPUT_BRANCH_FILE   = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 EIMAR102_OUTPUT_DIR = BASE_DIR / "output" / "EIMAR102"   # predecessor program's CCDTXT2
 
-CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR103"
+CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR101"
 OUTPUT_DIR = BASE_DIR / "output" / "EIMAR103"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -99,14 +101,30 @@ N_BUCKETS     = 14   # ARREAR2 buckets
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-reptdate_values = get_monthly_reptdate_values(year_format="%Y")
-reptdate = reptdate_values.reptdate
+# -----------------------------------------------
+# reptdate_values = get_monthly_reptdate_values(year_format="%Y")
+# reptdate = reptdate_values.reptdate
+
+# RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
+# RDATE2   = reptdate.strftime("%y%m%d")     # yymmdd suffix for own output filename
+# REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.
+# REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.
+# REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.  (drives %PROC15 gate)
+# -----------------------------------------------
+
+# reptdate_values = get_reptdate_values(year_format="%Y")
+# reptdate        = reptdate_values.reptdate
+
+# reptdate = date.today() - timedelta(days=1)
+
+# Testing purposes
+reptdate = date(2026, 7, 31)
 
 RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
-RDATE2   = reptdate.strftime("%y%m%d")     # yymmdd suffix for own output filename
-REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.
-REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.
-REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.
+RDATE2   = reptdate.strftime("%y%m%d")     # &RDATE    : YYMMDD6.
+REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
+REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
+REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.     (unused downstream, kept for parity)
 
 OUTPUT_FILE = OUTPUT_DIR / f"CCDTXT2_{RDATE2}.txt"
 
@@ -409,9 +427,9 @@ def _build_header_npl(progid: str, type_label: str, pagecnt: int) -> list:
     _place(buf, 91, RDATE)
     lines.append(_finalize(buf, " "))
 
-    buf = _new_buf()
-    _place(buf, 1, " ")
-    lines.append(_finalize(buf, " "))
+    # buf = _new_buf()
+    # _place(buf, 1, " ")
+    # lines.append(_finalize(buf, " "))
 
     buf = _new_buf()
     _place(buf, 1, "BRH     NO         < 1 MTH")
@@ -419,7 +437,7 @@ def _build_header_npl(progid: str, type_label: str, pagecnt: int) -> list:
     _place(buf, 59, "NO     2 TO < 3 MTH")
     _place(buf, 84, "NO      3 TO < 4 MTH")
     _place(buf, 111, "NO      4 TO < 5 MTH")
-    lines.append(_finalize(buf, " "))
+    lines.append(_finalize(buf, "0"))
 
     buf = _new_buf()
     _place(buf, 1, "        NO    5 TO < 6 MTH")
@@ -716,6 +734,10 @@ print("\nStep 10: Writing combined CCDTXT2 output...")
 
 all_lines = eimar102_lines + lines_a + lines_b
 
+# Remove any trailing blank lines
+while all_lines and all_lines[-1].strip() == "":
+    all_lines.pop()
+
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in all_lines:
         fh.write(f"{ln:<{LRECL_CCDTXT2}}\n")
@@ -727,13 +749,13 @@ print(f"  Total lines    : {len(all_lines):,} "
 # ============================================================================
 # STEP 11: RESULTS SUMMARY  (printed to terminal)
 # ============================================================================
-print("\n--- Combined CCDTXT2 (first 20 lines) ---")
-for ln in all_lines[:20]:
-    print(ln)
+# print("\n--- Combined CCDTXT2 (first 20 lines) ---")
+# for ln in all_lines[:20]:
+#     print(ln)
 
-print("\n--- EIMAR103 appended section (first 20 lines) ---")
-for ln in (lines_a + lines_b)[:20]:
-    print(ln)
+# print("\n--- EIMAR103 appended section (first 20 lines) ---")
+# for ln in (lines_a + lines_b)[:20]:
+#     print(ln)
 
 # ============================================================================
 # STEP 12: CLEANUP
