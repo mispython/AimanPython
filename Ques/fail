@@ -1,3 +1,19 @@
+        # LAST.CAT -> grand total block (7 lines)
+        if lines_on_page + 7 > PAGE_SIZE:
+            pagecnt += 1
+            output_lines.extend(_build_header_lines(progid, type_label, pagecnt))
+            lines_on_page = HEADER_LINES
+
+        total_lines = _build_total_lines(totamt, totacc)
+        # If there's another CAT coming, drop the final blank line (PUT;)
+        if cat != cats_present[-1]:
+            total_lines = total_lines[:-1]
+        output_lines.extend(total_lines)
+        pagecnt = 0   # PAGECNT = 0; (reset after LAST.CAT)
+
+
+
+
 def _fmt_comma(value, width, decimals=0):
     """COMMAw.d equivalent – commas if they fit, otherwise no commas."""
     if value is None:
