@@ -782,6 +782,10 @@ print("\nStep 9: Writing CCDTXT2...")
 
 all_lines = lines_a + lines_b
 
+# Remove any trailing blank lines
+while all_lines and all_lines[-1].strip() == "":
+    all_lines.pop()
+
 with open(CCDTXT2_FILE, "w", encoding="latin1") as fh:
     for ln in all_lines:
         fh.write(ln + "\n")
@@ -794,10 +798,6 @@ print(f"  Total lines     : {len(all_lines):,}")
 # OPTIONS NONUMBER NODATE;
 # ============================================================================
 print("\nStep 10: Building CCDTXT7A (branch summary extract)...")
-
-# Remove any trailing blank lines
-while all_lines and all_lines[-1].strip() == "":
-    all_lines.pop()
 
 loan7a_rows = build_loan7a_rows(part_b_df)
 write_ccdtxt7a(loan7a_rows, CCDTXT7A_FILE)
