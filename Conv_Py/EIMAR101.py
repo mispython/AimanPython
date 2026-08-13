@@ -421,8 +421,8 @@ def _build_header_lines(progid: str, type_label: str, pagecnt: int) -> list:
     _place(buf, 88, RDATE)
     lines.append(_finalize(buf, " "))
 
-    buf = _new_buf()
-    _place(buf, 1, " ")
+    # buf = _new_buf()
+    # _place(buf, 1, " ")
     # lines.append(_finalize(buf, " "))
 
     buf = _new_buf()
