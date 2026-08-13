@@ -21,7 +21,9 @@ import polars as pl
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+
 from pathlib import Path
+from datetime import date, datetime, timedelta
 
 from REPTDATE import get_monthly_reptdate_values
 from input_date import get_latest_file
@@ -52,7 +54,7 @@ INPUT_BNM_DIR       = STG_DIR
 INPUT_BRANCH_FILE   = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 EIMAR101_OUTPUT_DIR = BASE_DIR / "output" / "EIMAR101"   # predecessor program's CCDTXT2
 
-CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR102"
+CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR101"
 OUTPUT_DIR = BASE_DIR / "output" / "EIMAR102"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -85,14 +87,31 @@ CAT_TYPE_LABELS = {
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-reptdate_values = get_monthly_reptdate_values(year_format="%Y")
-reptdate = reptdate_values.reptdate
+# -----------------------------------------------
+# reptdate_values = get_monthly_reptdate_values(year_format="%Y")
+# reptdate = reptdate_values.reptdate
+
+# RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
+# RDATE2   = reptdate.strftime("%y%m%d")     # yymmdd suffix for own output filename
+# REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.
+# REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.
+# REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.  (drives %PROC15 gate)
+# -----------------------------------------------
+
+# reptdate_values = get_reptdate_values(year_format="%Y")
+# reptdate        = reptdate_values.reptdate
+
+# reptdate = date.today() - timedelta(days=1)
+
+# Testing purposes
+reptdate = date(2026, 7, 31)
 
 RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
-RDATE2   = reptdate.strftime("%y%m%d")     # yymmdd suffix for own output filename
-REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.
-REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.
-REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.  (drives %PROC15 gate)
+RDATE2   = reptdate.strftime("%y%m%d")     # &RDATE    : YYMMDD6.
+REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
+REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
+REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.     (unused downstream, kept for parity)
+
 
 RUN_DAY15_REPORT = (REPTDAY == "15")       # %IF "&REPTDAY" = "15" %THEN %DO;
 
@@ -355,9 +374,9 @@ def _build_header_main(progid: str, type_label: str, pagecnt: int) -> list:
     _place(buf, 83, RDATE)
     lines.append(_finalize(buf, " "))
 
-    buf = _new_buf()
-    _place(buf, 1, " ")
-    lines.append(_finalize(buf, " "))
+    # buf = _new_buf()
+    # _place(buf, 1, " ")
+    # lines.append(_finalize(buf, " "))
 
     buf = _new_buf()
     _place(buf, 1, "BRH    NO          < 1 MTH")
@@ -541,7 +560,7 @@ def _build_total_main(totamt: dict, totacc: dict) -> list:
     _place(buf, 81, "-" * 40); _place(buf, 121, "-" * 10)
     lines.append(_finalize(buf, " "))
 
-    lines.append(_finalize(_new_buf(), " "))  # PUT; blank line
+    # lines.append(_finalize(_new_buf(), " "))  # PUT; blank line
 
     return lines  # 7 lines
 
