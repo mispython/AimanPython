@@ -559,7 +559,7 @@ def _build_total_main(totamt: dict, totacc: dict) -> list:
     _place(buf, 81, "-" * 40); _place(buf, 121, "-" * 10)
     lines.append(_finalize(buf, " "))
 
-    # lines.append(_finalize(_new_buf(), " "))  # PUT; blank line
+    lines.append(_finalize(_new_buf(), " "))  # PUT; blank line
 
     return lines  # 7 lines
 
@@ -882,6 +882,10 @@ print(f"  EIMAR101 lines carried forward: {len(eimar101_lines):,}")
 print("\nStep 10: Writing combined CCDTXT2 output...")
 
 all_lines = eimar101_lines + lines_a + lines_b
+
+# Remove any trailing blank lines
+while all_lines and all_lines[-1].strip() == "":
+    all_lines.pop()
 
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in all_lines:
