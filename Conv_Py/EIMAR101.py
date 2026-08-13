@@ -84,6 +84,7 @@ CAT_TYPE_LABELS = {
 # ============================================================================
 print("Step 1: Deriving report date...")
 
+# -----------------------------------------------
 # reptdate_values = get_monthly_reptdate_values(year_format="%Y")
 
 # RDATE    = reptdate_values.ddmmyy8      # PUT(REPTDATE, DDMMYY8.)
@@ -92,7 +93,7 @@ print("Step 1: Deriving report date...")
 # REPTDAY  = reptdate_values.reptday      # PUT(DAY(REPTDATE), Z2.)
 
 # _date_suffix = reptdate_values.reptdate.strftime("%y%m%d")   # yymmdd suffix
-
+# -----------------------------------------------
 
 # reptdate_values = get_reptdate_values(year_format="%Y")
 # reptdate        = reptdate_values.reptdate
@@ -599,8 +600,8 @@ def _build_total_lines(totamt: dict, totacc: dict) -> list:
     _place(buf, 121, "-" * 10)
     lines.append(_finalize(buf, " "))
 
-    # PUT;  (blank line, PAGECNT = 0 handled by caller)
-    lines.append(_finalize(_new_buf(), " "))
+    # # PUT;  (blank line, PAGECNT = 0 handled by caller)
+    # lines.append(_finalize(_new_buf(), " "))
 
     return lines  # 7 lines
 
