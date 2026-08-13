@@ -17,6 +17,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
+from datetime import date, datetime, timedelta
 
 from REPTDATE import get_monthly_reptdate_values
 from input_date import get_latest_file
@@ -35,17 +36,11 @@ from input_date import get_latest_file
 # for that reason.
 
 # ============================================================================
-# &HPD MACRO PLACEHOLDER
+# &HPD MACRO
 # ============================================================================
-# &HPD is referenced twice in the original SAS source ("PRODUCT IN &HPD"),
-# but is not defined anywhere within EIMAR101 itself and is not resolvable
-# from any dependency file supplied for this conversion (it is presumably
-# set by an external macro/PARM outside the provided SAS program). Its
-# member list is unknown, so it is declared here as an explicit, empty
-# placeholder. CAT='D' rows and the EIMAR101-B filter will therefore
-# correctly yield zero matching rows until this list is populated with the
-# real product codes.
-HPD_PRODUCTS: tuple = ()
+# &HPD is referenced twice in the original SAS source ("PRODUCT IN &HPD")
+# HPD_PRODUCTS: tuple = ()
+HPD_PRODUCTS = (380, 381, 700, 705, 720, 725)
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -53,7 +48,7 @@ HPD_PRODUCTS: tuple = ()
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat")
 
-INPUT_BNM_DIR     = STG_DIR / "AII"
+INPUT_BNM_DIR     = STG_DIR
 INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
 CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR101"
@@ -89,17 +84,35 @@ CAT_TYPE_LABELS = {
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-reptdate_values = get_monthly_reptdate_values(year_format="%Y")
+# reptdate_values = get_monthly_reptdate_values(year_format="%Y")
 
-RDATE    = reptdate_values.ddmmyy8      # PUT(REPTDATE, DDMMYY8.)
-REPTYEAR = reptdate_values.reptyear     # PUT(REPTDATE, YEAR4.)
-REPTMON  = reptdate_values.reptmon      # PUT(MONTH(REPTDATE), Z2.)
-REPTDAY  = reptdate_values.reptday      # PUT(DAY(REPTDATE), Z2.)
+# RDATE    = reptdate_values.ddmmyy8      # PUT(REPTDATE, DDMMYY8.)
+# REPTYEAR = reptdate_values.reptyear     # PUT(REPTDATE, YEAR4.)
+# REPTMON  = reptdate_values.reptmon      # PUT(MONTH(REPTDATE), Z2.)
+# REPTDAY  = reptdate_values.reptday      # PUT(DAY(REPTDATE), Z2.)
 
-_date_suffix = reptdate_values.reptdate.strftime("%y%m%d")   # yymmdd suffix
+# _date_suffix = reptdate_values.reptdate.strftime("%y%m%d")   # yymmdd suffix
 
-CCDTXT2_FILE  = OUTPUT_DIR / f"CCDTXT2_{_date_suffix}.txt"
-CCDTXT7A_FILE = OUTPUT_DIR / f"CCDTXT7A_{_date_suffix}.txt"
+
+# reptdate_values = get_reptdate_values(year_format="%Y")
+# reptdate        = reptdate_values.reptdate
+
+# reptdate = date.today() - timedelta(days=1)
+
+# Testing purposes
+reptdate = date(2026, 7, 31)
+
+RDATE    = reptdate.strftime("%d/%m/%y")   # &RDATE    : DDMMYY8.
+RDATE2   = reptdate.strftime("%y%m%d")     # &RDATE    : YYMMDD6.
+REPTYEAR = reptdate.strftime("%Y")         # &REPTYEAR : YEAR4.  (unused downstream, kept for parity)
+REPTMON  = reptdate.strftime("%m")         # &REPTMON  : Z2.     (unused downstream, kept for parity)
+REPTDAY  = reptdate.strftime("%d")         # &REPTDAY  : Z2.     (unused downstream, kept for parity)
+
+# CCDTXT2_FILE  = OUTPUT_DIR / f"CCDTXT2_{_date_suffix}.txt"
+# CCDTXT7A_FILE = OUTPUT_DIR / f"CCDTXT7A_{_date_suffix}.txt"
+
+CCDTXT2_FILE  = OUTPUT_DIR / f"CCDTXT2_{RDATE2}.txt"
+CCDTXT7A_FILE = OUTPUT_DIR / f"CCDTXT7A_{RDATE2}.txt"
 
 print(f"  Report date : {RDATE}")
 print(f"  Output dir  : {OUTPUT_DIR}")
@@ -309,18 +322,49 @@ print(f"  LOANTEMP rows: {len(loantemp):,}")
 # ============================================================================
 # FORMATTING HELPERS
 # ============================================================================
-def _fmt_comma(value, width: int, decimals: int = 0) -> str:
-    """COMMAw.d equivalent — comma-separated, right-justified to *width*."""
+# def _fmt_comma(value, width: int, decimals: int = 0) -> str:
+#     """COMMAw.d equivalent — comma-separated, right-justified to *width*."""
+#     if value is None:
+#         return " " * width
+#     try:
+#         v = float(value)
+#     except (TypeError, ValueError):
+#         return " " * width
+#     if decimals > 0:
+#         s = f"{v:,.{decimals}f}"
+#     else:
+#         s = f"{int(round(v)):,}"
+#     return s.rjust(width)
+
+def _fmt_comma(value, width, decimals=0):
+    """COMMAw.d equivalent – commas if they fit, otherwise no commas."""
     if value is None:
         return " " * width
     try:
         v = float(value)
     except (TypeError, ValueError):
         return " " * width
+
+    # Try with commas and proper decimals
     if decimals > 0:
         s = f"{v:,.{decimals}f}"
     else:
         s = f"{int(round(v)):,}"
+
+    if len(s) <= width:
+        return s.rjust(width)
+
+    # Too wide -> drop commas
+    if decimals > 0:
+        s = f"{v:.{decimals}f}"
+    else:
+        s = str(int(round(v)))
+
+    if len(s) <= width:
+        return s.rjust(width)
+
+    # If too wide, Fallback to BASIC formatting (shouldn't happen with correct widths)
+    # It will just right-justify without further truncation.
     return s.rjust(width)
 
 
@@ -349,7 +393,7 @@ def _new_buf() -> list:
 
 
 def _place(buf: list, col: int, text: str) -> None:
-    start = col - 1
+    start = col
     end = start + len(text)
     buf[start:end] = list(text)
 
@@ -386,7 +430,7 @@ def _build_header_lines(progid: str, type_label: str, pagecnt: int) -> list:
     _place(buf, 58, "NO     2 TO < 3 MTH")
     _place(buf, 84, "NO      3 TO < 4 MTH")
     _place(buf, 111, "NO      4 TO < 5 MTH")
-    lines.append(_finalize(buf, " "))
+    lines.append(_finalize(buf, "0"))
 
     buf = _new_buf()
     _place(buf, 1, "       NO     5 TO < 6 MTH")
@@ -623,13 +667,26 @@ def generate_arrears_report(df: pl.DataFrame, progid: str) -> list:
                 totamt[i] += brhamt[i]
                 totacc[i] += noacc[i]
 
+        # # LAST.CAT -> grand total block (7 lines)
+        # if lines_on_page + 7 > PAGE_SIZE:
+        #     pagecnt += 1
+        #     output_lines.extend(_build_header_lines(progid, type_label, pagecnt))
+        #     lines_on_page = HEADER_LINES
+
+        # output_lines.extend(_build_total_lines(totamt, totacc))
+        # pagecnt = 0   # PAGECNT = 0; (reset after LAST.CAT)
+
         # LAST.CAT -> grand total block (7 lines)
         if lines_on_page + 7 > PAGE_SIZE:
             pagecnt += 1
             output_lines.extend(_build_header_lines(progid, type_label, pagecnt))
             lines_on_page = HEADER_LINES
 
-        output_lines.extend(_build_total_lines(totamt, totacc))
+        total_lines = _build_total_lines(totamt, totacc)
+        # If there's another CAT coming, drop the final blank line (PUT;)
+        if cat != cats_present[-1]:
+            total_lines = total_lines[:-1]
+        output_lines.extend(total_lines)
         pagecnt = 0   # PAGECNT = 0; (reset after LAST.CAT)
 
     return output_lines
