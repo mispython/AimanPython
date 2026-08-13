@@ -600,8 +600,8 @@ def _build_total_lines(totamt: dict, totacc: dict) -> list:
     _place(buf, 121, "-" * 10)
     lines.append(_finalize(buf, " "))
 
-    # # PUT;  (blank line, PAGECNT = 0 handled by caller)
-    # lines.append(_finalize(_new_buf(), " "))
+    # PUT;  (blank line, PAGECNT = 0 handled by caller)
+    lines.append(_finalize(_new_buf(), " ")) 
 
     return lines  # 7 lines
 
@@ -795,6 +795,10 @@ print(f"  Total lines     : {len(all_lines):,}")
 # ============================================================================
 print("\nStep 10: Building CCDTXT7A (branch summary extract)...")
 
+# Remove any trailing blank lines
+while all_lines and all_lines[-1].strip() == "":
+    all_lines.pop()
+
 loan7a_rows = build_loan7a_rows(part_b_df)
 write_ccdtxt7a(loan7a_rows, CCDTXT7A_FILE)
 
@@ -804,14 +808,14 @@ print(f"  Total rows       : {len(loan7a_rows):,}")
 # ============================================================================
 # STEP 11: RESULTS SUMMARY  (printed to terminal)
 # ============================================================================
-print("\n--- CCDTXT2 (first 20 lines) ---")
-for ln in all_lines[:20]:
-    print(ln)
+# print("\n--- CCDTXT2 (first 20 lines) ---")
+# for ln in all_lines[:20]:
+#     print(ln)
 
-print("\n--- CCDTXT7A (first 5 rows) ---")
-for row in loan7a_rows[:5]:
-    print(f"  BRHCODE={row['BRHCODE']} TYPE={row['TYPE']} "
-          f"NOACC1={row['NOACC'][1]} BRHAMT1={row['BRHAMT'][1]}")
+# print("\n--- CCDTXT7A (first 5 rows) ---")
+# for row in loan7a_rows[:5]:
+#     print(f"  BRHCODE={row['BRHCODE']} TYPE={row['TYPE']} "
+#           f"NOACC1={row['NOACC'][1]} BRHAMT1={row['BRHAMT'][1]}")
 
 # ============================================================================
 # STEP 12: CLEANUP
