@@ -1,0 +1,717 @@
+//EIBMEPC2 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M,NOTIFY=&SYSUID       JOB45764
+//* TO RUN MONTHLY
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD01     DD DSN=SAP.PBB.EIBMEPC2.TRXLIST.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD02     DD DSN=SAP.PIBB.EIBMEPC2.TRXLIST.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD03     DD DSN=SAP.EIBMEPC2.CDMLIST.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD04     DD DSN=SAP.PBB.EIBMEPC2.SUM.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD05     DD DSN=SAP.PIBB.EIBMEPC2.SUM.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD06     DD DSN=SAP.EIBMEPC2.CDMSUM.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//GETFILE  EXEC SAS609
+//DPLP     DD DSN=SAP.PBB.EPCU.LOANPYMT,DISP=SHR
+//DPCC     DD DSN=SAP.PBB.EPCU.CRDTPYMT,DISP=SHR
+//LNLP1    DD DSN=SAP.PBB.CRM.LNTRNSAC(0),DISP=SHR
+//DPTRN    DD DSN=SAP.PBB.CRM.DPTRNSAC(0),DISP=SHR
+//CTCS     DD DSN=SAP.PBB.EPCU.CTCS,DISP=SHR
+//LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//ILOAN    DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
+//BNMW1    DD DSN=SAP.PBB.EPCUWH.WEEKLY(-3),DISP=SHR
+//BNMW2    DD DSN=SAP.PBB.EPCUWH.WEEKLY(-2),DISP=SHR
+//BNMW3    DD DSN=SAP.PBB.EPCUWH.WEEKLY(-1),DISP=SHR
+//BNMW4    DD DSN=SAP.PBB.EPCUWH.WEEKLY(0),DISP=SHR
+//IBNMW1   DD DSN=SAP.PIBB.EPCUWH.WEEKLY(-3),DISP=SHR
+//IBNMW2   DD DSN=SAP.PIBB.EPCUWH.WEEKLY(-2),DISP=SHR
+//IBNMW3   DD DSN=SAP.PIBB.EPCUWH.WEEKLY(-1),DISP=SHR
+//IBNMW4   DD DSN=SAP.PIBB.EPCUWH.WEEKLY(0),DISP=SHR
+//TRX      DD DSN=SAP.PBB.EIBMEPC2.TRXLIST.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(200,100),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=1000,RECFM=FB,BLKSIZE=10000)
+//ITRX     DD DSN=SAP.PIBB.EIBMEPC2.TRXLIST.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(200,100),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=1000,RECFM=FB,BLKSIZE=10000)
+//CDM      DD DSN=SAP.EIBMEPC2.CDMLIST.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(200,100),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=1000,RECFM=FB,BLKSIZE=10000)
+//SUM      DD DSN=SAP.PBB.EIBMEPC2.SUM.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(200,100),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=1000,RECFM=FB,BLKSIZE=10000)
+//ISUM     DD DSN=SAP.PIBB.EIBMEPC2.SUM.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(200,100),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=1000,RECFM=FB,BLKSIZE=10000)
+//CDMSUM   DD DSN=SAP.EIBMEPC2.CDMSUM.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(200,100),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=1000,RECFM=FB,BLKSIZE=10000)
+//BNM      DD DSN=SAP.PBB.EPCUWH.MONTH(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(400,200),RLSE),UNIT=(SYSDA,8)
+//IBNM      DD DSN=SAP.PIBB.EPCUWH.MONTH(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(400,200),RLSE),UNIT=(SYSDA,8)
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1930 NOCENTER NODATE;
+DATA REPTDATE (KEEP=REPTDATE);
+  SET LOAN.REPTDATE;
+  SREPTDATE = MDY(MONTH(REPTDATE),1,YEAR(REPTDATE));
+  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+  CALL SYMPUT('RDATE',REPTDATE);
+  CALL SYMPUT('REPTMON1',PUT(MONTH(REPTDATE), Z2.)||'01');
+  CALL SYMPUT('REPTMON2',PUT(MONTH(REPTDATE), Z2.)||'02');
+  CALL SYMPUT('REPTMON3',PUT(MONTH(REPTDATE), Z2.)||'03');
+  CALL SYMPUT('REPTMON4',PUT(MONTH(REPTDATE), Z2.)||'04');
+  CALL SYMPUT('PREPTYEAR',PUT(PRVRPTDATE,YEAR2.));
+  CALL SYMPUT('REPORTDT',PUT(REPTDATE,DDMMYY10.));
+  CALL SYMPUT('RDATE1',SREPTDATE);
+RUN;
+
+PROC FORMAT;
+   VALUE DESC
+      4-7, 60-62,70,200-299,
+      600,911                          = 'HL'
+      15,20,71,72,380,381,700,
+      705,720,725                      = 'VL'
+      25-34,73-79,303,306-308,311,
+      313,320-340,355-358,364,365,
+      367,369,391                      = 'PL'
+      .                                = 'MS'
+      OTHER                            = 'OT';
+
+   VALUE IDESC
+      102,105,106,110-119,124,139,142,
+      145,150-151,152,156,170,175,400,
+      409,410,412-415,423,466,469,650,
+      651,664                          = 'HL'
+      103,104,107,108,128,130-132,196  = 'VL'
+      122,135-138,194-195,419-420,422,
+      424,426,464,465,468,652,653,668,
+      669,672-675                      = 'PL'
+      .                                = 'MS'
+      OTHER                            = 'OT';
+
+   VALUE SEQFMT
+      1 = 'CASH'
+      2 = 'HOUSE CHEQUE'
+      3 = 'LOCAL CHEQUE'
+      4 = 'ATM'
+      6 = 'RENTAS'
+      7 = 'CDM'
+      8 = 'CDT';
+
+   VALUE $PDESC
+      'HL'       = 'HOUSING LOANS'
+      'VL'       = 'VEHICLE LOANS'
+      'PL'       = 'PERSONAL LOANS'
+      'CC'       = 'CREDIT AND CHARGE CARDS'
+      'MS','OT'  = 'OTHER TYPES OF LOANS';
+RUN;
+
+   /*  CASH - LN  */
+DATA BNM.DPLP;
+ SET DPLP.DPLP&REPTMON;
+RUN;
+
+DATA BNM.LNLP;
+    SET LNLP1.LNTRAX&REPTYEAR&REPTMON1
+        LNLP1.LNTRAX&REPTYEAR&REPTMON2
+        LNLP1.LNTRAX&REPTYEAR&REPTMON3
+        LNLP1.LNTRAX&REPTYEAR&REPTMON4;
+    TRANDT=REPTDATE;
+RUN;
+PROC SORT DATA=BNM.DPLP OUT=DPLP;BY ACCTNO TRANDT TRANAMT;RUN;
+PROC SORT DATA=BNM.LNLP OUT=LNLP;BY ACCTNO TRANDT TRANAMT;RUN;
+
+DATA BNM.OTCLN;
+   MERGE LNLP(IN=A) DPLP(IN=B);
+   BY ACCTNO TRANDT TRANAMT;
+   IF A & B;
+RUN;
+
+DATA LNNOTE;
+   SET LOAN.LNNOTE(KEEP=ACCBRCH ACCTNO NOTENO LOANTYPE COSTCTR)
+       ILOAN.LNNOTE(KEEP=ACCBRCH ACCTNO NOTENO LOANTYPE COSTCTR);
+RUN;
+PROC SORT DATA=LNNOTE;BY ACCTNO NOTENO;RUN;
+PROC SORT DATA=BNM.OTCLN OUT=OTCLN;BY ACCTNO NOTENO;RUN;
+
+DATA BNM.OTCLN IBNM.OTCLN;
+   MERGE OTCLN(IN=A) LNNOTE(IN=B);
+   BY ACCTNO NOTENO;
+   IF A;
+   ITEM = 'CASH';
+   SEQ  = 1;
+   IF (3000 < COSTCTR < 3999) OR COSTCTR IN (4043,4048) THEN DO;
+      PROD = PUT(LOANTYPE,IDESC.);
+      OUTPUT IBNM.OTCLN;
+   END;
+   ELSE DO;
+      PROD = PUT(LOANTYPE,DESC.);
+      OUTPUT BNM.OTCLN;
+   END;
+RUN;
+
+  /* CASH - CC */
+DATA BNM.OTCCC;
+ SET DPCC.DPCC&REPTMON;
+   PROD = 'CC';
+   ITEM = 'CASH';
+   SEQ  = 1;
+RUN;
+
+   /*  CTCS  */
+DATA CTCS;
+ SET CTCS.CTCS&REPTMON;
+ IF IND NE 'OC'; /* TO EXCLUDE OVERSEAS CHEQUE */
+RUN;
+PROC SORT DATA=CTCS;BY ACCTNO NOTENO;RUN;
+
+DATA CTCS;
+   MERGE CTCS(IN=A) LNNOTE(IN=B);
+   BY ACCTNO NOTENO;
+   IF A;
+   TRANAMT=ROUND(TRANAMT,0.01);
+   IF PRODIND = 'O' THEN DO;
+     IF IND='HC' THEN DO;
+         ITEM = 'HOUSE CHEQUE';
+         SEQ  = 2;
+     END;
+     IF IND='LC' THEN DO;
+         ITEM = 'LOCAL CHEQUE';
+         SEQ  = 3;
+     END;
+   END;
+   ELSE IF PRODIND = 'C' THEN DO;
+     ITEM = 'CDM';
+     SEQ  = 7;
+   END;
+RUN;
+
+DATA DPTRX(RENAME=(CHQNO=CHEQNO REPTDATE=TRANDT ACCTNO=DEBACCT));
+   SET DPTRN.DPBTRAN&REPTYEAR&REPTMON1
+       DPTRN.DPBTRAN&REPTYEAR&REPTMON2
+       DPTRN.DPBTRAN&REPTYEAR&REPTMON3
+       DPTRN.DPBTRAN&REPTYEAR&REPTMON4;
+   KEEP REPTDATE TRANAMT CHQNO ACCTNO;
+   IF TRANCODE=876;
+   TRANAMT=ROUND(TRANAMT,0.01);
+RUN;
+PROC SORT DATA=CTCS ; BY TRANDT TRANAMT CHEQNO; RUN;
+PROC SORT DATA=DPTRX NODUPKEYS; BY TRANDT TRANAMT CHEQNO DEBACCT;RUN;
+DATA CTCS;
+   MERGE CTCS(IN=A) DPTRX(IN=B);
+   BY TRANDT TRANAMT CHEQNO;
+   IF A;
+RUN;
+
+DATA BNM.CTCS IBNM.CTCS;
+   SET CTCS;
+   IF (3000 < COSTCTR < 3999) OR COSTCTR IN (4043,4048) THEN DO;
+      PROD = PUT(LOANTYPE,IDESC.);
+      OUTPUT IBNM.CTCS;
+   END;
+   ELSE DO;
+      PROD = PUT(LOANTYPE,DESC.);
+      OUTPUT BNM.CTCS;
+   END;
+RUN;
+
+  /* ELECTRONIC FUND TRANSFER */
+DATA EFT614N668;
+   SET BNM.LNLP;
+   IF CHANNEL IN (501,502) AND TRANCODE IN (614,668) THEN DO;
+      ITEM = 'ATM';
+      SEQ  =  4;
+      OUTPUT;END;
+   IF CHANNEL IN (521,522) AND TRANCODE IN (614,668) THEN DO;
+      ITEM = 'INTERBANK';
+      SEQ  =  5;
+      OUTPUT;END;
+   IF CHANNEL IN (513,514) AND TRANCODE IN (614,668) THEN DO;
+      ITEM = 'CDT';
+      SEQ  =  8;
+      OUTPUT;END;
+RUN;
+
+DATA EFT614;
+   SET EFT614N668;
+   IF TRANCODE EQ 614;
+RUN;
+
+PROC SORT DATA=EFT614N668; BY ACCTNO NOTENO USERID CHANNEL;
+
+PROC SUMMARY DATA=EFT614N668 NWAY; BY ACCTNO NOTENO USERID CHANNEL;
+VAR TRANAMT; OUTPUT OUT=EFTAMT SUM=; RUN;
+
+PROC SORT DATA=EFT614; BY ACCTNO NOTENO USERID CHANNEL;
+PROC SORT DATA=EFTAMT; BY ACCTNO NOTENO USERID CHANNEL;
+DATA BNM.EFT;
+   MERGE EFT614(IN=A) EFTAMT(IN=B);
+   BY ACCTNO NOTENO USERID CHANNEL;
+   IF A;
+RUN;
+
+PROC SORT DATA=BNM.EFT OUT=EFT;BY ACCTNO NOTENO;RUN;
+DATA BNM.EFT IBNM.EFT;
+   MERGE EFT(IN=A) LNNOTE;
+   BY ACCTNO NOTENO;
+   IF A;
+   PROD = PUT(LOANTYPE,DESC.);
+   IF (3000 < COSTCTR < 3999) OR COSTCTR IN (4043,4048) THEN DO;
+      PROD = PUT(LOANTYPE,IDESC.);
+      OUTPUT IBNM.EFT;
+   END;
+   ELSE DO;
+      PROD = PUT(LOANTYPE,DESC.);
+      OUTPUT BNM.EFT;
+   END;
+RUN;
+
+   /* RENTAS */
+DATA BNM.RENCC;
+  SET BNMW1.RENCC
+      BNMW2.RENCC
+      BNMW3.RENCC
+      BNMW4.RENCC;
+RUN;
+
+DATA BNM.RENLN;
+  SET BNMW1.RENLN
+      BNMW2.RENLN
+      BNMW3.RENLN
+      BNMW4.RENLN
+      IBNMW1.RENLN
+      IBNMW2.RENLN
+      IBNMW3.RENLN
+      IBNMW4.RENLN;
+RUN;
+
+PROC SORT DATA=BNM.RENLN OUT=RENLN;BY ACCTNO NOTENO;RUN;
+DATA BNM.RENLN IBNM.RENLN;
+   MERGE RENLN(IN=A) LNNOTE(DROP=LOANTYPE);
+   BY ACCTNO NOTENO;
+   IF A;
+   IF (3000 < COSTCTR < 3999) OR COSTCTR IN (4043,4048) THEN DO;
+      PROD = PUT(LOANTYPE,IDESC.);
+      OUTPUT IBNM.RENLN;
+   END;
+   ELSE DO;
+      PROD = PUT(LOANTYPE,DESC.);
+      OUTPUT BNM.RENLN;
+   END;
+RUN;
+
+  /* CONSOLIDATION */
+DATA BNM.TRANX2;
+   FORMAT ENTITY $4.;
+   SET BNM.CTCS BNM.RENLN BNM.RENCC BNM.OTCLN BNM.OTCCC BNM.EFT;
+   *WHERE PROD NOT EQ 'OT';
+   TRANAMT1 = TRANAMT/1000;
+   ENTITY='PBB';
+   PDESC    = PUT(PROD,$PDESC.);
+   SEQFMT   = PUT(SEQ ,SEQFMT.);
+RUN;
+PROC SORT DATA=BNM.TRANX2;BY SEQ;RUN;
+
+DATA IBNM.TRANX2;
+   FORMAT ENTITY $4.;
+   SET IBNM.CTCS IBNM.RENLN IBNM.OTCLN IBNM.EFT;
+   *WHERE PROD NOT EQ 'OT';
+   TRANAMT1 = TRANAMT/1000;
+   ENTITY='PIBB';
+   PDESC    = PUT(PROD,$PDESC.);
+   SEQFMT   = PUT(SEQ ,SEQFMT.);
+RUN;
+
+PROC SORT DATA=IBNM.TRANX2;BY SEQ;RUN;
+DATA _NULL_;
+   SET BNM.TRANX2;
+   *WHERE PROD NOT IN ('MS','OT');
+   FILE TRX;
+   FORMAT TRANDT DDMMYY10.;
+   BRCH     = PUT(ACCBRCH,Z3.);
+   IF _N_ = 1 THEN DO;
+      PUT @1 'PBB - TRANSACTION LISTING FOR REPORT ID: EIBMEPC2 '
+             'AS AT ' "&REPORTDT";
+      PUT @1 ' ';
+      PUT @1 'BRANCH'               ';' 'PAYMENT DATE'    ';'
+             'ACCOUNT NUMBER'       ';' 'TYPE OF LOAN'    ';'
+             'TYPE OF TRANSACTIONS' ';' 'CHEQUE NUMBER'   ';'
+             'ACCOUNT DEBITED'    ';' 'VALUE OF TRANSACTIONS (RM)' ';'
+             'TRANSACTION CODE'   ';'
+             ;
+   END;
+
+   PUT @1 BRCH     ';'  TRANDT  ';'
+          ACCTNO   ';'  PDESC   ';'
+          ITEM     ';'  CHEQNO  ';'
+          DEBACCT  ';'  TRANAMT ';'
+          TRANCD   ';'
+          ;
+RUN;
+
+DATA _NULL_;
+   SET IBNM.TRANX2;
+   *WHERE PROD NOT IN ('MS','OT');
+   FILE ITRX;
+   FORMAT TRANDT DDMMYY10.;
+   BRCH     = PUT(ACCBRCH,Z3.);
+   IF _N_ = 1 THEN DO;
+      PUT @1 'PIBB - TRANSACTION LISTING FOR REPORT ID: EIBMEPC2 '
+             'AS AT ' "&REPORTDT";
+      PUT @1 ' ';
+      PUT @1 'BRANCH'               ';' 'PAYMENT DATE'    ';'
+             'ACCOUNT NUMBER'       ';' 'TYPE OF LOAN'    ';'
+             'TYPE OF TRANSACTIONS' ';' 'CHEQUE NUMBER'   ';'
+             'ACCOUNT DEBITED'    ';' 'VALUE OF TRANSACTIONS (RM)' ';'
+             'TRANSACTION CODE'   ';'
+             ;
+   END;
+
+   PUT @1 BRCH     ';'  TRANDT  ';'
+          ACCTNO   ';'  PDESC   ';'
+          ITEM     ';'  CHEQNO  ';'
+          DEBACCT  ';'  TRANAMT ';'
+          TRANCD   ';'
+          ;
+RUN;
+
+DATA _NULL_;
+   SET BNM.TRANX2 IBNM.TRANX2;
+   WHERE ITEM EQ 'CDM';
+   FILE CDM;
+   FORMAT TRANDT DDMMYY10.;
+   BRCH     = PUT(ACCBRCH,Z3.);
+   IF _N_ = 1 THEN DO;
+      PUT @1 'PBB & PIBB - TRANSACTION LISTING FOR CDM OF EIBMEPC2 '
+             'AS AT ' "&REPORTDT";
+      PUT @1 ' ';
+      PUT @1 'BRANCH'               ';' 'PAYMENT DATE'    ';'
+             'ENTITY'               ';'
+             'ACCOUNT NUMBER'       ';' 'TYPE OF LOAN'    ';'
+             'TYPE OF TRANSACTIONS' ';' 'CHEQUE NUMBER'   ';'
+             'ACCOUNT DEBITED'    ';' 'VALUE OF TRANSACTIONS (RM)' ';'
+             'TRANSACTION CODE'   ';'
+             ;
+   END;
+
+   PUT @1 BRCH     ';'  TRANDT  ';'
+          ENTITY   ';'
+          ACCTNO   ';'  PDESC   ';'
+          IND      ';'  CHEQNO  ';'
+          DEBACCT  ';'  TRANAMT ';'
+          TRANCD   ';'
+          ;
+RUN;
+
+DATA SUM;
+   SET BNM.TRANX2;
+   IF PROD EQ 'CC' THEN CC_AMT=TRANAMT1;
+   IF PROD EQ 'HL' THEN HL_AMT=TRANAMT1;
+   IF PROD EQ 'PL' THEN PL_AMT=TRANAMT1;
+   IF PROD EQ 'VL' THEN VL_AMT=TRANAMT1;
+   IF PROD IN ('OT','MS') THEN OT_AMT=TRANAMT1;
+   IF PROD EQ 'CC' THEN CC_NUM=1;
+   IF PROD EQ 'HL' THEN HL_NUM=1;
+   IF PROD EQ 'PL' THEN PL_NUM=1;
+   IF PROD EQ 'VL' THEN VL_NUM=1;
+   IF PROD IN ('OT','MS') THEN OT_NUM=1;
+   CNUM=1;
+RUN;
+
+PROC SUMMARY DATA=SUM NWAY;
+   *WHERE PROD NOT IN ('MS','OT');
+   FORMAT PROD $PDESC. SEQ SEQFMT.;
+   CLASS SEQ;
+   VAR CC_AMT HL_AMT PL_AMT VL_AMT OT_AMT
+       CC_NUM HL_NUM PL_NUM VL_NUM OT_NUM
+       TRANAMT1 CNUM;
+   OUTPUT OUT=SUM1 SUM=;
+RUN;
+
+PROC SUMMARY DATA=SUM NWAY;
+   *WHERE PROD NOT IN ('MS','OT');
+   VAR CC_AMT HL_AMT PL_AMT VL_AMT OT_AMT
+       CC_NUM HL_NUM PL_NUM VL_NUM OT_NUM
+   TRANAMT1 CNUM;
+   OUTPUT OUT=SUM2 SUM=;
+RUN;
+
+DATA _NULL_;
+   SET SUM1 SUM2;
+   FILE SUM;
+   FORMAT TRANX $20.;
+   IF _N_ = 1 THEN DO;
+      PUT @1 'PUBLIC BANK BERHAD';
+      PUT @1 'REPORT ID: EIBMEPC2';
+      PUT @1 'LOAN REPAYMENT BY CUSTOMER AS AT ' "&REPORTDT";
+      PUT @1 ' ';
+      PUT @1 ' '                    ';' 'CREDIT AND CHARGE CARDS' ';'
+             ' '                    ';' 'HOUSING LOANS'           ';'
+             ' '                    ';' 'VEHICLE LOANS'           ';'
+             ' '                    ';' 'PERSONAL LOANS'          ';'
+             ' '                    ';' 'OTHER TYPES OF LOANS'    ';'
+             ' '                    ';' 'TOTAL'                   ';'
+             ' '                     ;
+      PUT @1 ' '                    ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'              ;
+      PUT @1 'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'          ;
+      PUT @1 ' '                    ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"              ;
+   END;
+
+   TRANX=PUT(SEQ,SEQFMT.);
+   IF SEQ EQ . THEN TRANX='TOTAL';
+
+   PUT @1 TRANX  ';'
+          CC_NUM ';' CC_AMT ';' HL_NUM ';' HL_AMT ';'
+          VL_NUM ';' VL_AMT ';' PL_NUM ';' PL_AMT ';'
+          OT_NUM ';' OT_AMT ';' CNUM   ';' TRANAMT1 ;
+RUN;
+
+DATA ISUM;
+   SET IBNM.TRANX2;
+   IF PROD EQ 'HL' THEN HL_AMT=TRANAMT1;
+   IF PROD EQ 'PL' THEN PL_AMT=TRANAMT1;
+   IF PROD EQ 'VL' THEN VL_AMT=TRANAMT1;
+   IF PROD IN ('OT','MS') THEN OT_AMT=TRANAMT1;
+   IF PROD EQ 'HL' THEN HL_NUM=1;
+   IF PROD EQ 'PL' THEN PL_NUM=1;
+   IF PROD EQ 'VL' THEN VL_NUM=1;
+   IF PROD IN ('OT','MS') THEN OT_NUM=1;
+   CNUM=1;
+RUN;
+
+PROC SUMMARY DATA=ISUM NWAY;
+   *WHERE PROD NOT IN ('MS','OT');
+   FORMAT PROD $PDESC. SEQ SEQFMT.;
+   CLASS SEQ;
+   VAR HL_AMT PL_AMT VL_AMT OT_AMT
+       HL_NUM PL_NUM VL_NUM OT_NUM
+       TRANAMT1 CNUM;
+   OUTPUT OUT=ISUM1 SUM=;
+RUN;
+
+PROC SUMMARY DATA=ISUM NWAY;
+   *WHERE PROD NOT IN ('MS','OT');
+   VAR HL_AMT PL_AMT VL_AMT OT_AMT
+       HL_NUM PL_NUM VL_NUM OT_NUM
+   TRANAMT1 CNUM;
+   OUTPUT OUT=ISUM2 SUM=;
+RUN;
+
+DATA _NULL_;
+   SET ISUM1 ISUM2;
+   FILE ISUM;
+   FORMAT TRANX $20.;
+   IF _N_ = 1 THEN DO;
+      PUT @1 'PUBLIC ISLAMIC BANK BERHAD';
+      PUT @1 'REPORT ID: EIBMEPC2';
+      PUT @1 'LOAN REPAYMENT BY CUSTOMER AS AT ' "&REPORTDT";
+      PUT @1 ' ';
+      PUT @1 ' '                    ';' 'HOUSING LOANS'           ';'
+             ' '                    ';' 'VEHICLE LOANS'           ';'
+             ' '                    ';' 'PERSONAL LOANS'          ';'
+             ' '                    ';' 'OTHER TYPES OF LOANS'    ';'
+             ' '                    ';' 'TOTAL'                   ';'
+             ' '                     ;
+      PUT @1 ' '                    ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'              ;
+      PUT @1 'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'          ;
+      PUT @1 ' '                    ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"              ;
+   END;
+
+   TRANX=PUT(SEQ,SEQFMT.);
+   IF SEQ EQ . THEN TRANX='TOTAL';
+
+   PUT @1 TRANX  ';'
+          HL_NUM ';' HL_AMT ';'
+          VL_NUM ';' VL_AMT ';' PL_NUM ';' PL_AMT ';'
+          OT_NUM ';' OT_AMT ';' CNUM   ';' TRANAMT1 ;
+RUN;
+
+DATA CDMTRANX2;
+   SET SUM ISUM;
+   WHERE ITEM EQ 'CDM';
+RUN;
+
+DATA CDMSUM;
+   SET SUM ISUM;
+   WHERE ITEM EQ 'CDM';
+   IF IND EQ 'HC'                   THEN HC_AMT=TRANAMT1;
+   IF IND EQ 'LC'                   THEN LC_AMT=TRANAMT1;
+   IF IND EQ 'HC'                   THEN HC_NUM=1;
+   IF IND EQ 'LC'                   THEN LC_NUM=1;
+   IF IND EQ 'HC' AND ENTITY='PBB'  THEN CHC_AMT=TRANAMT1;
+   IF IND EQ 'LC' AND ENTITY='PBB'  THEN CLC_AMT=TRANAMT1;
+   IF IND EQ 'HC' AND ENTITY='PBB'  THEN CHC_NUM=1;
+   IF IND EQ 'LC' AND ENTITY='PBB'  THEN CLC_NUM=1;
+   IF IND EQ 'HC' AND ENTITY='PIBB' THEN IHC_AMT=TRANAMT1;
+   IF IND EQ 'LC' AND ENTITY='PIBB' THEN ILC_AMT=TRANAMT1;
+   IF IND EQ 'HC' AND ENTITY='PIBB' THEN IHC_NUM=1;
+   IF IND EQ 'LC' AND ENTITY='PIBB' THEN ILC_NUM=1;
+RUN;
+
+PROC SUMMARY DATA=CDMSUM NWAY;
+   *WHERE PROD NOT IN ('MS','OT');
+   FORMAT PROD $PDESC. SEQ SEQFMT.;
+   CLASS PROD;
+   VAR HC_AMT  LC_AMT  HC_NUM  LC_NUM
+       CHC_AMT CLC_AMT CHC_NUM CLC_NUM
+       IHC_AMT ILC_AMT IHC_NUM ILC_NUM;
+   OUTPUT OUT=CDMSUM1 SUM=;
+RUN;
+
+PROC SUMMARY DATA=CDMSUM NWAY;
+   *WHERE PROD NOT IN ('MS','OT');
+   VAR HC_AMT  LC_AMT  HC_NUM  LC_NUM
+       CHC_AMT CLC_AMT CHC_NUM CLC_NUM
+       IHC_AMT ILC_AMT IHC_NUM ILC_NUM;
+   OUTPUT OUT=CDMSUM2 SUM=;
+RUN;
+
+DATA _NULL_;
+   SET CDMSUM1 CDMSUM2;
+   FILE CDMSUM;
+   FORMAT TRANX $20.;
+   IF _N_ = 1 THEN DO;
+      PUT @1 'PUBLIC BANK BERHAD & PUBLIC ISLAMIC BANK BERHAD';
+      PUT @1 'REPORT ID: EIBMEPC2';
+      PUT @1 'LOAN REPAYMENT BY CUSTOMER BY CDM AS AT ' "&REPORTDT";
+      PUT @1 ' ';
+      PUT @1 ' '                    ';' 'PBB'                     ';'
+             ' '                    ';' ' '                       ';'
+             ' '                    ';' 'PIBB'                    ';'
+             ' '                    ';' ' '                       ';'
+             ' '                    ';' 'TOTAL'                   ';'
+             ' '                    ';' ' '                       ';'
+             ' '                     ;
+      PUT @1 ' '                    ';' 'HOUSE CHEQUE'            ';'
+             ' '                    ';' 'LOCAL CHEQUE'            ';'
+             ' '                    ';' 'HOUSE CHEQUE'            ';'
+             ' '                    ';' 'LOCAL CHEQUE'            ';'
+             ' '                    ';' 'HOUSE CHEQUE'            ';'
+             ' '                    ';' 'LOCAL CHEQUE'            ';'
+             ' '                     ;
+      PUT @1 ' '                    ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'             ';' 'NUMBER OF'               ';'
+             'VALUE OF'              ;
+      PUT @1 'TYPE OF LOAN'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'         ';' 'TRANSACTION'             ';'
+             'TRANSACTIONS'          ;
+      PUT @1 ' '                    ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"             ';' '(UNIT)'                  ';'
+             "(RM'000)"              ;
+   END;
+   TRANX=PUT(PROD,$PDESC.);
+   IF TRANX EQ '' THEN TRANX='TOTAL';
+
+   PUT @1 TRANX   ';'
+          CHC_NUM ';' CHC_AMT ';' CLC_NUM ';' CLC_AMT ';'
+          IHC_NUM ';' IHC_AMT ';' ILC_NUM ';' ILC_AMT ';'
+          HC_NUM  ';' HC_AMT  ';' LC_NUM  ';' LC_AMT   ;
+RUN;
+
+//*----------------------------------------------------------------
+//* FTP TO SAS DATAWAREHOUSE
+//*----------------------------------------------------------------
+//*%OPC SCAN
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*CD TextFile/Remittance/BPP
+//*PUT //SAP.PBB.EIBMEPC2.TRXLIST.TEXT    MEPC2_PBB_TRX@%OMM.%OYY..TXT
+//*PUT //SAP.PIBB.EIBMEPC2.TRXLIST.TEXT   MEPC2_PIBB_TRX@%OMM.%OYY..TXT
+//*PUT //SAP.EIBMEPC2.CDMLIST.TEXT        MEPC2_CDM_TRX@%OMM.%OYY..TXT
+//*PUT //SAP.PBB.EIBMEPC2.SUM.TEXT        MEPC2_PBB_SUM@%OMM.%OYY..TXT
+//*PUT //SAP.PIBB.EIBMEPC2.SUM.TEXT       MEPC2_PIBB_SUM@%OMM.%OYY..TXT
+//*PUT //SAP.EIBMEPC2.CDMSUM.TEXT         MEPC2_CDM_SUM@%OMM.%OYY..TXT
+//*EOB
+/*
+//*----------------------------------------------------------------
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//*----------------------------------------------------------------
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+CD "BOD-BPP/BNM - LOANS REPAYMENT CDM REPORT"
+PUT //SAP.EIBMEPC2.CDMSUM.TEXT         MEPC2_CDM_SUM@%OMM.%OYY..TXT
+CD "/BOD-BPP/BNM - LOANS REPAYMENT CDM TRANSACTION LISTING"
+PUT //SAP.EIBMEPC2.CDMLIST.TEXT        MEPC2_CDM_TRX@%OMM.%OYY..TXT
+CD "/BOD-BPP/BNM - PBB LOAN REPAYMENT REPORT"
+PUT //SAP.PBB.EIBMEPC2.SUM.TEXT        MEPC2_PBB_SUM@%OMM.%OYY..TXT
+CD "/BOD-BPP/BNM - PBB LOAN REPAYMENT TRANSACTION LISTING"
+PUT //SAP.PBB.EIBMEPC2.TRXLIST.TEXT    MEPC2_PBB_TRX@%OMM.%OYY..TXT
+CD "/BOD-BPP/BNM - PIBB LOAN REPAYMENT REPORT"
+PUT //SAP.PIBB.EIBMEPC2.SUM.TEXT       MEPC2_PIBB_SUM@%OMM.%OYY..TXT
+CD "/BOD-BPP/BNM - PIBB LOAN REPAYMENT TRANSACTION LISTING"
+PUT //SAP.PIBB.EIBMEPC2.TRXLIST.TEXT   MEPC2_PIBB_TRX@%OMM.%OYY..TXT
+EOB
+/*
