@@ -100,7 +100,11 @@ CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWKAPE"
 for _d in (OUTPUT_DIR, OUTPUT_NSRS_DIR, CACHE_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
+# ============================================================================
+# GLOBAL CONFIGURATION
+# ============================================================================
 CHUNK_ROWS = 500_000
+PAGE_SIZE = 60
 
 # ============================================================================
 # SFTP CONFIGURATION
@@ -128,40 +132,39 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
 
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    writer, schema, total = None, None, 0
+    
+    # Read the whole SAS file into a pandas DataFrame
+    try:
+        df = pd.read_sas(sas_path, encoding="latin1")
+    except Exception as e:
+        raise RuntimeError(f"Failed to read SAS file {sas_path}: {e}")
+    
+    # Convert to PyArrow Table (this preserves the schema even if df is empty)
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    
+    # Write to Parquet
+    writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
+    writer.write_table(table)
+    writer.close()
+    
+    print(f"  [{tag}] Done — {len(df):,} rows cached.")
 
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
-        if schema is None:
-            schema = table.schema
-            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        else:
-            cast_arrays = []
-            for field in schema:
-                col = table.column(field.name)
-                if col.type != field.type:
-                    try:
-                        col = col.cast(field.type, safe=False)
-                    except Exception as e:
-                        print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
-                              f"from {col.type} to {field.type}: {e} — filling nulls")
-                        col = pa.nulls(len(col), type=field.type)
-                cast_arrays.append(col)
-            table = pa.Table.from_arrays(cast_arrays, schema=schema)
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
 
-    if writer:
-        writer.close()
-    print(f"  [{tag}] Done — {total:,} rows cached.")
+# def _load_cached(sas_path: Path, tag: str) -> Path:
+#     """Resolve <stem>.parquet cache under CACHE_DIR, converting if stale."""
+#     cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+#     if _cache_is_fresh(sas_path, cache_path):
+#         print(f"  [{tag}] Cache fresh — skipping conversion.")
+#     else:
+#         _sas_to_parquet(sas_path, cache_path, tag)
+#     return cache_path
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    """Resolve <stem>.parquet cache under CACHE_DIR, converting if stale."""
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    """Resolve <parent>_<stem>.parquet cache under CACHE_DIR, converting if stale."""
+    # Include directory name to avoid collisions (e.g., bnm_elw081.parquet vs bnmb_elw081.parquet)
+    cache_name = f"{sas_path.parent.name}_{sas_path.stem}.parquet"
+    cache_path = CACHE_DIR / cache_name
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh — skipping conversion.")
     else:
@@ -294,6 +297,10 @@ def _render_pivot_report(
     an ALL/grand-total row, columns = distinct class_col values, each
     showing one or more summed value columns (COMMA-formatted).
     """
+    # If there is no data, return nothing (no titles, no headers)
+    if df.is_empty():
+        return []
+    
     lines = list(title_lines)
 
     class_vals = sorted(df[class_col].drop_nulls().unique().to_list())
@@ -332,6 +339,107 @@ def _render_pivot_report(
     return lines
 
 
+def _paginate_simple(lines: list[str], page_size: int, header_lines: list[str]) -> list[str]:
+    """
+    Paginate a list of lines where only the header lines (titles + column headers)
+    need to be repeated on every page. No group reprinting.
+    Ensures that the total number of lines per page NEVER exceeds page_size.
+    """
+    if not lines:
+        return []
+
+    # Separate header from data
+    header_count = len(header_lines)
+    data_lines = lines[header_count:]
+    if not data_lines:
+        return lines
+
+    result = []
+    page_buffer = []
+    # Start the first page with the header lines
+    page_buffer = header_lines.copy()
+    # We will iterate over data lines and add them to page_buffer
+    for line in data_lines:
+        # Check if adding this line would exceed page_size
+        if len(page_buffer) + 1 > page_size:
+            # Flush current page
+            result.extend(page_buffer)
+            # Start a new page with the header and this line
+            page_buffer = header_lines.copy()
+            page_buffer.append(line)
+        else:
+            page_buffer.append(line)
+    # Flush the last page
+    if page_buffer:
+        result.extend(page_buffer)
+    return result
+
+
+def _paginate_with_groups(lines: list[str], page_size: int, header_lines: list[str]) -> list[str]:
+    """
+    Paginate a list of lines that contains groups (FMTNAME printed only on first row).
+    On each new page, reprint the header lines, and if the group continues,
+    reprint the FMTNAME for that group at the top of the new page.
+    Strictly enforces page_size lines per page.
+    """
+    if not lines:
+        return []
+
+    header_count = len(header_lines)
+    data_lines = lines[header_count:]
+    if not data_lines:
+        return lines
+
+    # Pre-scan data_lines to find group starts (lines with non-space at column 1)
+    group_starts = []   # list of (index, fmtname)
+    current_fmt = None
+    for idx, line in enumerate(data_lines):
+        if len(line) > 0 and line[0] != ' ':
+            current_fmt = line[:7].strip()
+            group_starts.append((idx, current_fmt))
+
+    result = []
+    page_buffer = header_lines.copy()
+    # We'll build pages line by line, remembering the current group for reprint
+    current_group_fmt = None
+    # We need to know if we are at the start of a page to reprint group if needed
+    # We'll keep a flag that indicates we are at the beginning of a page (after header)
+    at_page_start = True
+
+    for idx, line in enumerate(data_lines):
+        # Check if this line is a group start
+        is_group_start = (len(line) > 0 and line[0] != ' ')
+        if is_group_start:
+            current_group_fmt = line[:7].strip()
+
+        # Check if adding this line would exceed page_size
+        if len(page_buffer) + 1 > page_size:
+            # Flush current page
+            result.extend(page_buffer)
+            # Start a new page with header
+            page_buffer = header_lines.copy()
+            at_page_start = True
+            # If this line is NOT a group start and we have a current group, we need to reprint the group header
+            if not is_group_start and current_group_fmt is not None:
+                # Create a group header line
+                buf = _new_buf()
+                _put(buf, 1, current_group_fmt)
+                group_line = _line(buf, " ")
+                # Add the group header to the new page (it counts as one line)
+                page_buffer.append(group_line)
+            # Now add the current line
+            page_buffer.append(line)
+            at_page_start = False
+        else:
+            page_buffer.append(line)
+            at_page_start = False
+
+    # Flush last page
+    if page_buffer:
+        result.extend(page_buffer)
+    return result
+
+
 # ============================================================================
 # STEP 4: ELG.GOLD&REPTMON&NOWK  (work dataset, single seed row — not a
 # physical file, see module docstring)
@@ -354,21 +462,42 @@ print("\nStep 5: Building REP4...")
 rep4_sas = INPUT_BNMK_REP4X_DIR / f"rep4x{REPTYEAR}{REPTMON}{WK}.sas7bdat"
 rep4_cache = _load_cached(rep4_sas, "BNMK_REP4X")
 
+# con = duckdb.connect(database=":memory:")
+# rep4 = con.execute(f"""
+#     SELECT
+#         CASE WHEN BNMCODE = '3723000000000Y' THEN '3523000000000Y' ELSE BNMCODE END AS BNMCODE,
+#         CAST(UTSTY   AS VARCHAR) AS UTSTY,
+#         CAST(UTREF   AS VARCHAR) AS UTREF,
+#         CAST(ELDAY   AS VARCHAR) AS ELDAY,
+#         CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
+#         CAST(NETAMT  AS DOUBLE)  AS NETAMT,
+#         CAST(COSTDED AS DOUBLE)  AS COSTDED
+#     FROM read_parquet('{rep4_cache.as_posix()}')
+#     WHERE UTREF IN ('DLG','IDLG')
+#       AND UTSTY NOT IN ('BMN','CB1')
+# """).pl()
+# con.close()
+
 con = duckdb.connect(database=":memory:")
-rep4 = con.execute(f"""
+rep4_raw = con.execute(f"""
     SELECT
         CASE WHEN BNMCODE = '3723000000000Y' THEN '3523000000000Y' ELSE BNMCODE END AS BNMCODE,
         CAST(UTSTY   AS VARCHAR) AS UTSTY,
         CAST(UTREF   AS VARCHAR) AS UTREF,
         CAST(ELDAY   AS VARCHAR) AS ELDAY,
         CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
-        CAST(NETAMT  AS DOUBLE)  AS NETAMT,
-        CAST(COSTDED AS DOUBLE)  AS COSTDED
     FROM read_parquet('{rep4_cache.as_posix()}')
     WHERE UTREF IN ('DLG','IDLG')
       AND UTSTY NOT IN ('BMN','CB1')
 """).pl()
 con.close()
+
+# Add missing columns that REP2_base has (NETAMT, COSTDED) with null/0.0
+rep4 = rep4_raw.with_columns([
+    pl.lit(None).cast(pl.Float64).alias("NETAMT"),   # or pl.lit(0.0)
+    pl.lit(None).cast(pl.Float64).alias("COSTDED"),
+])
+
 print(f"  REP4 rows: {len(rep4):,}")
 
 # ============================================================================
@@ -538,18 +667,83 @@ del elw1, gold_df, rep4, rep2, rep0, variance_df
 gc.collect()
 
 # ============================================================================
-# STEP 11: WRITE OUTPUT (SASLIST, RECFM=FB LRECL=133, ASA carriage control)
+# STEP 11: PAGINATE (only if needed) AND WRITE OUTPUT
 # ============================================================================
-print("\nStep 11: Writing SASLIST output...")
+print("\nStep 11: Paginating and writing output...")
 
-all_lines = report1_lines + report2_lines + report3_lines + pibelq_lines
+def extract_header_lines(block_lines: list[str]) -> list[str]:
+    """Extract the header lines (titles, column header, dashed line)."""
+    header = []
+    for line in block_lines:
+        header.append(line)
+        if "---" in line:  # dashed line indicates end of header
+            break
+    return header
 
+def paginate_block(block: list[str], page_size: int, with_groups: bool = False) -> list[str]:
+    """
+    Paginate a single block of lines (either pivot or detail).
+    If the block fits on one page, return it unchanged (faster).
+    """
+    if not block:
+        return []
+    header = extract_header_lines(block)
+    header_count = len(header)
+    total_lines = len(block)
+    # If the whole block fits on one page, no need to paginate
+    if total_lines <= page_size:
+        return block
+
+    data_lines = block[header_count:]
+    if not data_lines:
+        return block
+
+    if with_groups:
+        # Use group-aware pagination
+        return _paginate_with_groups(block, page_size, header)
+    else:
+        return _paginate_simple(block, page_size, header)
+
+# Paginate pivot reports (no groups)
+paginated_reports = []
+for report_lines in [report1_lines, report2_lines, report3_lines]:
+    if report_lines:
+        paginated_reports.extend(paginate_block(report_lines, PAGE_SIZE, with_groups=False))
+
+# Split pibelq_lines into day blocks, including the bank name
+day_blocks = []
+i = 0
+while i < len(pibelq_lines):
+    line = pibelq_lines[i]
+    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line:
+        # Include the previous line if it's the bank name
+        block_start = i
+        if i > 0 and pibelq_lines[i-1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
+            block_start = i - 1
+        block = []
+        j = block_start
+        while j < len(pibelq_lines):
+            if j != block_start and "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in pibelq_lines[j]:
+                break
+            block.append(pibelq_lines[j])
+            j += 1
+        day_blocks.append(block)
+        i = j
+    else:
+        i += 1
+
+# Paginate each day block with group reprinting
+paginated_pibelq = []
+for block in day_blocks:
+    paginated_pibelq.extend(paginate_block(block, PAGE_SIZE, with_groups=True))
+
+# Combine all reports
+all_lines = paginated_reports + paginated_pibelq
+
+# Write output
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in all_lines:
         fh.write(ln[:133].ljust(133) + "\n")
-
-print(f"  Output written : {OUTPUT_FILE}")
-print(f"  Total lines    : {len(all_lines):,}")
 
 # ============================================================================
 # STEP 12: COPY OUTPUT FOR NSRS  (PROC IEBGENER copy of the SASLIST output)
