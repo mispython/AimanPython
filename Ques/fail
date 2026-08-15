@@ -1,49 +1,18 @@
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    writer, schema, total = None, None, 0
-
-    # First, try to read the file in chunks
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
-        if schema is None:
-            schema = table.schema
-            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        else:
-            cast_arrays = []
-            for field in schema:
-                col = table.column(field.name)
-                if col.type != field.type:
-                    try:
-                        col = col.cast(field.type, safe=False)
-                    except Exception as e:
-                        print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
-                              f"from {col.type} to {field.type}: {e} — filling nulls")
-                        col = pa.nulls(len(col), type=field.type)
-                cast_arrays.append(col)
-            table = pa.Table.from_arrays(cast_arrays, schema=schema)
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-
-    # If no rows were read, create an empty Parquet file with the correct schema
-    if writer is None:
-        # Read the first row to get schema (nrows=1 reads only the header and one row)
-        # If the file is truly empty, nrows=0 may fail, so we use nrows=1 and then drop it.
-        try:
-            sample = pd.read_sas(sas_path, encoding="latin1", nrows=1)
-            schema = pa.Table.from_pandas(sample, preserve_index=False).schema
-        except Exception:
-            # Fallback: if even one row cannot be read, raise a clear error
-            raise RuntimeError(f"Cannot determine schema for {sas_path} – file may be corrupted or empty.")
-        # Create empty table with that schema
-        empty_table = pa.Table.from_arrays([[] for _ in schema], schema=schema)
-        writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        writer.write_table(empty_table)
-        writer.close()
-        total = 0
-        print(f"  [{tag}] Done — {total:,} rows cached (empty file created).")
-    else:
-        writer.close()
-        print(f"  [{tag}] Done — {total:,} rows cached.")
+    
+    # Read the whole SAS file into a pandas DataFrame
+    try:
+        df = pd.read_sas(sas_path, encoding="latin1")
+    except Exception as e:
+        raise RuntimeError(f"Failed to read SAS file {sas_path}: {e}")
+    
+    # Convert to PyArrow Table (this preserves the schema even if df is empty)
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    
+    # Write to Parquet
+    writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
+    writer.write_table(table)
+    writer.close()
+    
+    print(f"  [{tag}] Done — {len(df):,} rows cached.")
