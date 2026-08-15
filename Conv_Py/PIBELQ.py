@@ -96,39 +96,6 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     )
 
 
-# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-#     writer, schema, total = None, None, 0
-
-#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-#     for chunk in reader:
-#         table = pa.Table.from_pandas(chunk, preserve_index=False)
-#         if schema is None:
-#             schema = table.schema
-#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-#         else:
-#             cast_arrays = []
-#             for field in schema:
-#                 col = table.column(field.name)
-#                 if col.type != field.type:
-#                     try:
-#                         col = col.cast(field.type, safe=False)
-#                     except Exception as e:
-#                         print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
-#                               f"from {col.type} to {field.type}: {e} — filling nulls")
-#                         col = pa.nulls(len(col), type=field.type)
-#                 cast_arrays.append(col)
-#             table = pa.Table.from_arrays(cast_arrays, schema=schema)
-#         writer.write_table(table)
-#         total += len(chunk)
-#         del chunk, table
-#         gc.collect()
-
-#     if writer:
-#         writer.close()
-#     print(f"  [{tag}] Done — {total:,} rows cached.")
-
-
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     
@@ -150,8 +117,10 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    """Resolve <stem>.parquet cache under CACHE_DIR, converting if stale."""
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    """Resolve <parent>_<stem>.parquet cache under CACHE_DIR, converting if stale."""
+    # Include directory name to avoid collisions (e.g., bnm_elw081.parquet vs bnmb_elw081.parquet)
+    cache_name = f"{sas_path.parent.name}_{sas_path.stem}.parquet"
+    cache_path = CACHE_DIR / cache_name
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh — skipping conversion.")
     else:
@@ -190,12 +159,27 @@ def _fmt_comma(value, width: int, decimals: int = 2) -> str:
 
 
 def _title_lines(*titles: str) -> list[str]:
-    """TITLE1..TITLEn -> first line ASA='1' (new page), rest ASA=' '."""
+    """TITLE1..TITLEn -> all lines get ASA=' ' (space)."""
     lines = []
-    for i, t in enumerate(titles):
+    for t in titles:
         buf = _new_buf()
         _put(buf, 1, t)
-        lines.append(_line(buf, "1" if i == 0 else " "))
+        lines.append(_line(buf, " "))   # always space, no '1'
+    return lines
+
+
+def _render_table_header() -> list[str]:
+    """Emulate the PROC REPORT column headers and the dashed line."""
+    lines = []
+    buf = _new_buf()
+    # Matches the SAS REPORT header exactly:
+    # "  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL"
+    _put(buf, 1, "FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL")
+    lines.append(_line(buf, " "))
+
+    buf = _new_buf()
+    _put(buf, 1, "-" * 119)   # 119 dashes starting at column 3 (two spaces before)
+    lines.append(_line(buf, " "))
     return lines
 
 
@@ -225,15 +209,26 @@ def build_elw1(reptmon: str, nowk: str, sdesc: str) -> pl.DataFrame:
     elw2_cache = _load_cached(elw2_sas, "BNMB_ELW")
 
     con = duckdb.connect(database=":memory:")
+    # elw2 = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+    #            CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{elw2_cache.as_posix()}')
+    #     WHERE BNMCODE = '4929980000000Y' AND BRANCH > 3000
+    # """).pl()
     elw2 = con.execute(f"""
-        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
                CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
         FROM read_parquet('{elw2_cache.as_posix()}')
-        WHERE BNMCODE = '4929980000000Y' AND BRANCH > 3000
+        WHERE BNMCODE = '4929980000000Y'
     """).pl()
 
+    # elw1_raw = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+    #            CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{elw1_cache.as_posix()}')
+    # """).pl()
     elw1_raw = con.execute(f"""
-        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
                CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
         FROM read_parquet('{elw1_cache.as_posix()}')
     """).pl()
@@ -381,10 +376,6 @@ def _build_elwt(elw_final: pl.DataFrame) -> pl.DataFrame:
 # PROC REPORT RENDERING
 # ============================================================================
 def _render_report_rmel(df: pl.DataFrame) -> list[str]:
-    """
-    PROC REPORT WHERE=(FMTNAME IN ('A-RMEL','B-RMEA')) with BREAK AFTER
-    FMTNAME / COMPUTE producing a dashed subtotal line per FMTNAME group.
-    """
     lines = []
     subset = df.filter(pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
         ["FMTNAME", "SIGN", "BNMCODE"]
@@ -396,9 +387,12 @@ def _render_report_rmel(df: pl.DataFrame) -> list[str]:
         grp = subset.filter(pl.col("FMTNAME") == fmtname)
         amounx_sum = 0.0
         totalx_sum = 0.0
+        first_row = True
         for row in grp.iter_rows(named=True):
             buf = _new_buf()
-            _put(buf, 1, str(row["FMTNAME"] or ""))
+            if first_row:
+                _put(buf, 1, str(row["FMTNAME"] or ""))
+                first_row = False
             _put(buf, 10, str(row["BNMCODE"] or ""))
             _put(buf, 26, str(row["DESC"] or "")[:40])
             _put(buf, 68, str(row["SIGN"] or ""))
@@ -408,19 +402,22 @@ def _render_report_rmel(df: pl.DataFrame) -> list[str]:
             amounx_sum += row["AMOUNX"] or 0.0
             totalx_sum += row["TOTALX"] or 0.0
 
+        # Dashed line after each group (separator)
         buf = _new_buf()
-        _put(buf, 3, "-" * 119)
+        _put(buf, 1, "-" * 119)
         lines.append(_line(buf))
 
+        # Total line
         buf = _new_buf()
-        _put(buf, 12, f"TOTAL FOR {fmtname:<7s}")
-        _put(buf, 74, _fmt_comma(amounx_sum, 24, 2))
-        _put(buf, 98, _fmt_comma(totalx_sum, 24, 2))
+        _put(buf, 10, f"TOTAL FOR {fmtname:<7s}")
+        _put(buf, 72, _fmt_comma(amounx_sum, 24, 2))
+        _put(buf, 96, _fmt_comma(totalx_sum, 24, 2))
         lines.append(_line(buf))
 
+        # Dashed line under total
         buf = _new_buf()
-        _put(buf, 74, "-" * 24)
-        _put(buf, 98, "-" * 24)
+        _put(buf, 72, "-" * 24)
+        _put(buf, 96, "-" * 24)
         lines.append(_line(buf))
 
     return lines
@@ -432,9 +429,14 @@ def _render_report_rest(df: pl.DataFrame) -> list[str]:
     subset = df.filter(~pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
         ["FMTNAME", "SIGN", "BNMCODE"]
     )
+    current_fmt = None
     for row in subset.iter_rows(named=True):
         buf = _new_buf()
-        _put(buf, 1, str(row["FMTNAME"] or ""))
+        # Print FMTNAME only when it changes (SAS GROUP behavior)
+        if row["FMTNAME"] != current_fmt:
+            current_fmt = row["FMTNAME"]
+            _put(buf, 1, str(row["FMTNAME"] or ""))
+        # otherwise leave blank
         _put(buf, 10, str(row["BNMCODE"] or ""))
         _put(buf, 26, str(row["DESC"] or "")[:40])
         _put(buf, 68, str(row["SIGN"] or ""))
@@ -506,7 +508,12 @@ def prtel(day_code: str, *, reptmon: str, nowk: str, sdesc: str, rdate: str,
     elitem = _el_catalogue(EL_DEFINITIONS)   # PROC SORT DATA=EL ...
     elw_final = _finalize_elw(elw_stack, elitem, drop_4019=True)
     elwt = _build_elwt(elw_final)
-    combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
+    # combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
+    # combined = pl.concat([elwt, elw_final.drop("IDX")], how="vertical")
+    common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
+    elwt = elwt.select(common_cols)
+    elw_final = elw_final.select(common_cols)
+    combined = pl.concat([elwt, elw_final], how="vertical")
 
     lines = _title_lines(
         sdesc,
@@ -514,6 +521,7 @@ def prtel(day_code: str, *, reptmon: str, nowk: str, sdesc: str, rdate: str,
         f"REPORT DATE : {rdate}",
         "",
     )
+    lines.extend(_render_table_header())   # <-- add header here
     lines.extend(_render_report_rmel(combined))
     lines.extend(_render_report_rest(combined))
     return lines
@@ -581,13 +589,18 @@ def prteli(day_code: str, *, reptmon: str, nowk: str, rdate: str,
     elitem = _el_catalogue(ELI_DEFINITIONS)   # PROC SORT DATA=ELI ...
     elw_final = _finalize_elw(elw_stack, elitem, drop_4019=drop_4019)
     elwt = _build_elwt(elw_final)
-    combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
+    # combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
+    common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
+    elwt = elwt.select(common_cols)
+    elw_final = elw_final.select(common_cols)
+    combined = pl.concat([elwt, elw_final], how="vertical")
 
     lines = _title_lines(
         f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}",
         f"REPORT DATE : {rdate}",
         "",
     )
+    lines.extend(_render_table_header())   # <-- add header here
     lines.extend(_render_report_rmel(combined))
     lines.extend(_render_report_rest(combined))
     return lines
