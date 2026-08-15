@@ -9,4 +9,3 @@ Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 574, in <module>
     pibelq_lines.extend(
 TypeError: 'NoneType' object is not iterable
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ 
