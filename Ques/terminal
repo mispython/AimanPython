@@ -17,16 +17,24 @@ Step 2: Deriving week/month bucket (REPTDATE)...
 Step 4: Building GOLD seed dataset...
 
 Step 5: Building REP4...
-  [BNMK_REP4X] Cache fresh — skipping conversion.
+  [BNMK_REP4X] Converting rep4x2026081.sas7bdat -> rep4x2026081.parquet ...
+  [BNMK_REP4X] Done — 32 rows cached.
   REP4 rows: 0
 
 Step 6: Building REP2 (union with REP4, remap, BNMCODG)...
   [BNMK_REP2] Converting rep2081.sas7bdat -> rep2081.parquet ...
-  [BNMK_REP2] Done — 0 rows cached.
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 407, in <module>
-    rep2_base = con.execute(f"""
-_duckdb.IOException: IO Error: No files found that match the pattern "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIWKAPE/rep2081.parquet"
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 196, in _sas_to_parquet
+    sample = pd.read_sas(sas_path, encoding="latin1", nrows=1)
+TypeError: read_sas() got an unexpected keyword argument 'nrows'
 
-LINE 10:     FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS...
-                  ^
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 455, in <module>
+    rep2_cache = _load_cached(rep2_sas, "BNMK_REP2")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 219, in _load_cached
+    _sas_to_parquet(sas_path, cache_path, tag)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 200, in _sas_to_parquet
+    raise RuntimeError(f"Cannot determine schema for {sas_path} – file may be corrupted or empty.")
+RuntimeError: Cannot determine schema for /stgsrcsys/host/uat/AII/KAPE/BNMK/rep2081.sas7bdat – file may be corrupted or empty.
