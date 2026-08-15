@@ -1,78 +1,22 @@
-# ============================================================================
-# STEP 11: PAGINATE (only if needed) AND WRITE OUTPUT
-# ============================================================================
-print("\nStep 11: Paginating and writing output...")
-
-def extract_header_lines(block_lines: list[str]) -> list[str]:
-    """Extract the header lines (titles, column header, dashed line)."""
-    header = []
-    for line in block_lines:
-        header.append(line)
-        if "---" in line:  # dashed line indicates end of header
-            break
-    return header
-
-def paginate_block(block: list[str], page_size: int, with_groups: bool = False) -> list[str]:
-    """
-    Paginate a single block of lines (either pivot or detail).
-    If the block fits on one page, return it unchanged (faster).
-    """
-    if not block:
-        return []
-    header = extract_header_lines(block)
-    header_count = len(header)
-    total_lines = len(block)
-    # If the whole block fits on one page, no need to paginate
-    if total_lines <= page_size:
-        return block
-
-    data_lines = block[header_count:]
-    if not data_lines:
-        return block
-
-    if with_groups:
-        # Use group-aware pagination
-        return _paginate_with_groups(block, page_size, header)
-    else:
-        return _paginate_simple(block, page_size, header)
-
-# Paginate pivot reports (no groups)
-paginated_reports = []
-for report_lines in [report1_lines, report2_lines, report3_lines]:
-    if report_lines:
-        paginated_reports.extend(paginate_block(report_lines, PAGE_SIZE, with_groups=False))
-
 # Split pibelq_lines into day blocks, including the bank name
+detail_positions = [
+    idx for idx, line in enumerate(pibelq_lines)
+    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line
+]
+
 day_blocks = []
-i = 0
-while i < len(pibelq_lines):
-    line = pibelq_lines[i]
-    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line:
-        # Include the previous line if it's the bank name
-        block_start = i
-        if i > 0 and pibelq_lines[i-1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
-            block_start = i - 1
-        block = []
-        j = block_start
-        while j < len(pibelq_lines):
-            if j != block_start and "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in pibelq_lines[j]:
-                break
-            block.append(pibelq_lines[j])
-            j += 1
-        day_blocks.append(block)
-        i = j
+for k, pos in enumerate(detail_positions):
+    block_start = pos
+    if pos > 0 and pibelq_lines[pos - 1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
+        block_start = pos - 1
+
+    if k + 1 < len(detail_positions):
+        next_pos = detail_positions[k + 1]
+        if next_pos > 0 and pibelq_lines[next_pos - 1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
+            block_end = next_pos - 1
+        else:
+            block_end = next_pos
     else:
-        i += 1
+        block_end = len(pibelq_lines)
 
-# Paginate each day block with group reprinting
-paginated_pibelq = []
-for block in day_blocks:
-    paginated_pibelq.extend(paginate_block(block, PAGE_SIZE, with_groups=True))
-
-# Combine all reports
-all_lines = paginated_reports + paginated_pibelq
-
-# Write output
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-    for ln in all_lines:
-        fh.write(ln[:133].ljust(133) + "\n")
+    day_blocks.append(pibelq_lines[block_start:block_end])
