@@ -5,11 +5,41 @@ Step 10: Rendering PIBELQ daily EL detail reports...
   [PIBELQ] prtel(DAYA)...
   [BNMK_TBL1] Cache fresh — skipping conversion.
   [BNMK_REP2] Cache fresh — skipping conversion.
+  [PIBELQ] prtel(DAYB)...
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_REP2] Cache fresh — skipping conversion.
+  [PIBELQ] prtel(DAYC)...
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_REP2] Cache fresh — skipping conversion.
+  [PIBELQ] prtel(DAYD)...
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_REP2] Cache fresh — skipping conversion.
+  [PIBELQ] prtel(DAYE)...
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_REP2] Cache fresh — skipping conversion.
+  [PIBELQ] prtel(DAYF)...
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_REP2] Cache fresh — skipping conversion.
+  [PIBELQ] prtel(DAYG)...
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_REP2] Cache fresh — skipping conversion.
+  [PIBELQ] prtel(DAYH)...
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_REP2] Cache fresh — skipping conversion.
+  [PIBELQ] prteli(DAYI)...
+  [BNMK_REP2] Cache fresh — skipping conversion.
+  [BNMK_TBL1] Cache fresh — skipping conversion.
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 575, in <module>
-    prtel(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 533, in prtel
-    combined = pl.concat([elwt, elw_final.drop("IDX")], how="vertical")
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/functions/eager.py", line 234, in concat
-    out = wrap_df(plr.concat_df(elems))
-polars.exceptions.ShapeError: unable to vstack, column names don't match: "FMTNAME" and "SIGN"
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 583, in <module>
+    prteli(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 612, in prteli
+    combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10148, in select
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ColumnNotFoundError: unable to find column "IDX"; valid columns: ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
