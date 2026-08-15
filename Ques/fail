@@ -1,154 +1,24 @@
-def _paginate_simple(lines: list[str], page_size: int, header_lines: list[str]) -> list[str]:
-    """
-    Paginate a list of lines where only the header lines (titles + column headers)
-    need to be repeated on every page. No group reprinting.
-    Ensures that the total number of lines per page NEVER exceeds page_size.
-    """
-    if not lines:
-        return []
-
-    # Separate header from data
-    header_count = len(header_lines)
-    data_lines = lines[header_count:]
-    if not data_lines:
-        return lines
-
-    result = []
-    page_buffer = []
-    # Start the first page with the header lines
-    page_buffer = header_lines.copy()
-    # We will iterate over data lines and add them to page_buffer
-    for line in data_lines:
-        # Check if adding this line would exceed page_size
-        if len(page_buffer) + 1 > page_size:
-            # Flush current page
-            result.extend(page_buffer)
-            # Start a new page with the header and this line
-            page_buffer = header_lines.copy()
-            page_buffer.append(line)
-        else:
-            page_buffer.append(line)
-    # Flush the last page
-    if page_buffer:
-        result.extend(page_buffer)
-    return result
-
-
-def _paginate_with_groups(lines: list[str], page_size: int, header_lines: list[str]) -> list[str]:
-    """
-    Paginate a list of lines that contains groups (FMTNAME printed only on first row).
-    On each new page, reprint the header lines, and if the group continues,
-    reprint the FMTNAME for that group at the top of the new page.
-    Strictly enforces page_size lines per page.
-    """
-    if not lines:
-        return []
-
-    header_count = len(header_lines)
-    data_lines = lines[header_count:]
-    if not data_lines:
-        return lines
-
-    # Pre-scan data_lines to find group starts (lines with non-space at column 1)
-    group_starts = []   # list of (index, fmtname)
-    current_fmt = None
-    for idx, line in enumerate(data_lines):
-        if len(line) > 0 and line[0] != ' ':
-            current_fmt = line[:7].strip()
-            group_starts.append((idx, current_fmt))
-
-    result = []
-    page_buffer = header_lines.copy()
-    # We'll build pages line by line, remembering the current group for reprint
-    current_group_fmt = None
-    # We need to know if we are at the start of a page to reprint group if needed
-    # We'll keep a flag that indicates we are at the beginning of a page (after header)
-    at_page_start = True
-
-    for idx, line in enumerate(data_lines):
-        # Check if this line is a group start
-        is_group_start = (len(line) > 0 and line[0] != ' ')
-        if is_group_start:
-            current_group_fmt = line[:7].strip()
-
-        # Check if adding this line would exceed page_size
-        if len(page_buffer) + 1 > page_size:
-            # Flush current page
-            result.extend(page_buffer)
-            # Start a new page with header
-            page_buffer = header_lines.copy()
-            at_page_start = True
-            # If this line is NOT a group start and we have a current group, we need to reprint the group header
-            if not is_group_start and current_group_fmt is not None:
-                # Create a group header line
-                buf = _new_buf()
-                _put(buf, 1, current_group_fmt)
-                group_line = _line(buf, " ")
-                # Add the group header to the new page (it counts as one line)
-                page_buffer.append(group_line)
-            # Now add the current line
-            page_buffer.append(line)
-            at_page_start = False
-        else:
-            page_buffer.append(line)
-            at_page_start = False
-
-    # Flush last page
-    if page_buffer:
-        result.extend(page_buffer)
-    return result
-
-
-
-
-def extract_header_lines(block_lines: list[str]) -> list[str]:
-    """Extract the header lines (titles, column header, dashed line) from a block."""
-    header = []
-    for line in block_lines:
-        header.append(line)
-        if "---" in line:  # dashed line indicates end of header
-            break
-    return header
-
-
-
-
-# ============================================================================
-# STEP 11: PAGINATE AND WRITE OUTPUT
-# ============================================================================
-print("\nStep 11: Paginating and writing output...")
-
-# Paginate each pivot report separately
-paginated_reports = []
-for report_lines in [report1_lines, report2_lines, report3_lines]:
-    if not report_lines:
-        continue
-    header = extract_header_lines(report_lines)
-    paginated = _paginate_simple(report_lines, PAGE_SIZE, header)
-    paginated_reports.extend(paginated)
-
-# Paginate PIBELQ day blocks with group reprinting
+# Split pibelq_lines into day blocks, ensuring the bank name is included
 day_blocks = []
-current_block = []
-for line in pibelq_lines:
-    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line and current_block:
-        day_blocks.append(current_block)
-        current_block = [line]
+i = 0
+while i < len(pibelq_lines):
+    line = pibelq_lines[i]
+    # Detect the start of a day: the line containing "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY"
+    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line:
+        # Determine the block start: include the previous line if it is the bank name
+        block_start = i
+        if i > 0 and pibelq_lines[i-1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
+            block_start = i - 1
+        # Gather all lines for this day block until the next day title
+        block = []
+        j = block_start
+        while j < len(pibelq_lines):
+            # If we hit another day title (and j is not the start), stop
+            if j != block_start and "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in pibelq_lines[j]:
+                break
+            block.append(pibelq_lines[j])
+            j += 1
+        day_blocks.append(block)
+        i = j  # continue from where we stopped
     else:
-        current_block.append(line)
-if current_block:
-    day_blocks.append(current_block)
-
-paginated_pibelq = []
-for block in day_blocks:
-    header = extract_header_lines(block)
-    paginated_block = _paginate_with_groups(block, PAGE_SIZE, header)
-    paginated_pibelq.extend(paginated_block)
-
-# Combine all reports
-all_lines = paginated_reports + paginated_pibelq
-
-# Write output
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-    for ln in all_lines:
-        fh.write(ln[:133].ljust(133) + "\n")
+        i += 1
