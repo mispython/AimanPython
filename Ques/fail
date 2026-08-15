@@ -1,1 +1,4 @@
-combined = pl.concat([elwt, elw_final.drop("IDX")], how="vertical")
+common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
+elwt = elwt.select(common_cols)
+elw_final = elw_final.select(common_cols)
+combined = pl.concat([elwt, elw_final], how="vertical")
