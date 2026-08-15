@@ -1,30 +1,36 @@
-# ============================================================================
-# GLOBAL CONFIGURATION
-# ============================================================================
-PAGE_SIZE = 60
-
-
-
 def _paginate_simple(lines: list[str], page_size: int, header_lines: list[str]) -> list[str]:
     """
     Paginate a list of lines where only the header lines (titles + column headers)
     need to be repeated on every page. No group reprinting.
+    Ensures that the total number of lines per page NEVER exceeds page_size.
     """
     if not lines:
         return []
-    result = []
-    # Count header lines: we assume header_lines is already provided
+
+    # Separate header from data
     header_count = len(header_lines)
-    # The remaining lines are data lines
     data_lines = lines[header_count:]
     if not data_lines:
-        return lines  # nothing to paginate
+        return lines
 
-    # Total lines per page = header_count + data lines
-    for i in range(0, len(data_lines), page_size - header_count):
-        page_data = data_lines[i:i + page_size - header_count]
-        result.extend(header_lines)
-        result.extend(page_data)
+    result = []
+    page_buffer = []
+    # Start the first page with the header lines
+    page_buffer = header_lines.copy()
+    # We will iterate over data lines and add them to page_buffer
+    for line in data_lines:
+        # Check if adding this line would exceed page_size
+        if len(page_buffer) + 1 > page_size:
+            # Flush current page
+            result.extend(page_buffer)
+            # Start a new page with the header and this line
+            page_buffer = header_lines.copy()
+            page_buffer.append(line)
+        else:
+            page_buffer.append(line)
+    # Flush the last page
+    if page_buffer:
+        result.extend(page_buffer)
     return result
 
 
@@ -33,81 +39,77 @@ def _paginate_with_groups(lines: list[str], page_size: int, header_lines: list[s
     Paginate a list of lines that contains groups (FMTNAME printed only on first row).
     On each new page, reprint the header lines, and if the group continues,
     reprint the FMTNAME for that group at the top of the new page.
+    Strictly enforces page_size lines per page.
     """
     if not lines:
         return []
+
     header_count = len(header_lines)
     data_lines = lines[header_count:]
     if not data_lines:
         return lines
 
-    # Scan data_lines to find group starts (lines with non-space at column 1)
-    group_starts = []   # list of (index, fmtname) where index is in data_lines
+    # Pre-scan data_lines to find group starts (lines with non-space at column 1)
+    group_starts = []   # list of (index, fmtname)
     current_fmt = None
     for idx, line in enumerate(data_lines):
-        # Check if the line has a non-space in column 1 (FMTNAME)
         if len(line) > 0 and line[0] != ' ':
-            # Extract the FMTNAME (first 7 characters)
             current_fmt = line[:7].strip()
             group_starts.append((idx, current_fmt))
-        # else: we could store the last fmt for later, but we already have it
 
-    # We'll iterate through data_lines and split into pages
     result = []
-    page_start = 0
-    while page_start < len(data_lines):
-        # Determine the end of this page (up to page_size - header_count lines)
-        page_end = min(page_start + (page_size - header_count), len(data_lines))
-        # Check if we need to reprint a group header on this new page
-        # If page_start > 0 (not first page) and the first line of this page is not a group start,
-        # we need to reprint the FMTNAME of the previous group.
-        if page_start > 0:
-            # Find the last group start before this page
-            last_group_idx = -1
-            last_group_fmt = None
-            for idx, fmt in reversed(group_starts):
-                if idx < page_start:
-                    last_group_idx = idx
-                    last_group_fmt = fmt
-                    break
-            if last_group_fmt is not None:
-                # Check if the first line of this page is a group start
-                first_line = data_lines[page_start]
-                is_group_start = (len(first_line) > 0 and first_line[0] != ' ')
-                if not is_group_start:
-                    # We need to reprint the group header before the page content
-                    # Create a line with the FMTNAME at column 1, and blank elsewhere
-                    buf = _new_buf()
-                    _put(buf, 1, last_group_fmt)
-                    group_header_line = _line(buf, " ")
-                    # Insert it at the beginning of the page data, but after the header lines
-                    # So we will include it as the first data line of this page
-                    # But we need to adjust page_end to include it, and we must not exceed page_size
-                    # We'll insert it by prepending to the page slice
-                    page_data = [group_header_line] + data_lines[page_start:page_end]
-                    # However, this may cause the page to have more lines than page_size, so we need to trim
-                    # We'll set page_end = page_start + (page_size - header_count - 1) to leave room for the group header
-                    # But we already computed page_end. Better: we'll adjust page_end before slicing.
-                    # We'll do it differently: after we know we need to reprint, we reduce the number of data lines by 1.
-                    # So we set page_end = min(page_start + (page_size - header_count - 1), len(data_lines))
-                    # and then we prepend the group header.
-                    # Let's recalc:
-                    max_data_lines = page_size - header_count - 1  # reserve one line for group header
-                    page_end = min(page_start + max_data_lines, len(data_lines))
-                    page_data = [group_header_line] + data_lines[page_start:page_end]
-                else:
-                    page_data = data_lines[page_start:page_end]
-            else:
-                page_data = data_lines[page_start:page_end]
+    page_buffer = header_lines.copy()
+    # We'll build pages line by line, remembering the current group for reprint
+    current_group_fmt = None
+    # We need to know if we are at the start of a page to reprint group if needed
+    # We'll keep a flag that indicates we are at the beginning of a page (after header)
+    at_page_start = True
+
+    for idx, line in enumerate(data_lines):
+        # Check if this line is a group start
+        is_group_start = (len(line) > 0 and line[0] != ' ')
+        if is_group_start:
+            current_group_fmt = line[:7].strip()
+
+        # Check if adding this line would exceed page_size
+        if len(page_buffer) + 1 > page_size:
+            # Flush current page
+            result.extend(page_buffer)
+            # Start a new page with header
+            page_buffer = header_lines.copy()
+            at_page_start = True
+            # If this line is NOT a group start and we have a current group, we need to reprint the group header
+            if not is_group_start and current_group_fmt is not None:
+                # Create a group header line
+                buf = _new_buf()
+                _put(buf, 1, current_group_fmt)
+                group_line = _line(buf, " ")
+                # Add the group header to the new page (it counts as one line)
+                page_buffer.append(group_line)
+            # Now add the current line
+            page_buffer.append(line)
+            at_page_start = False
         else:
-            page_data = data_lines[page_start:page_end]
+            page_buffer.append(line)
+            at_page_start = False
 
-        # Add the header lines for this page
-        result.extend(header_lines)
-        result.extend(page_data)
-        page_start = page_end
-
+    # Flush last page
+    if page_buffer:
+        result.extend(page_buffer)
     return result
+
+
+
+
+def extract_header_lines(block_lines: list[str]) -> list[str]:
+    """Extract the header lines (titles, column header, dashed line) from a block."""
+    header = []
+    for line in block_lines:
+        header.append(line)
+        if "---" in line:  # dashed line indicates end of header
+            break
+    return header
+
 
 
 
@@ -116,37 +118,16 @@ def _paginate_with_groups(lines: list[str], page_size: int, header_lines: list[s
 # ============================================================================
 print("\nStep 11: Paginating and writing output...")
 
-# We need to separate the reports into blocks that have their own headers.
-# For pivot reports, they have titles and column headers.
-# For pibelq_lines, each day is a block with its own titles and headers.
-
-# First, paginate the pivot reports (RENTAS, Variance, Rev Repo) - they have no groups
-# We need to identify the header lines for each pivot report.
-# Since each pivot report is a continuous list of lines starting with titles and a header,
-# we can treat the first few lines as header.
-
-def extract_header_lines(block_lines: list[str], num_title_lines: int) -> list[str]:
-    # Assume the header consists of title lines, then the column header line, then dashed line.
-    # The exact number varies; we can find the dashed line by searching for "--------"
-    # and take everything up to and including that.
-    header = []
-    for line in block_lines:
-        header.append(line)
-        if "---" in line:  # dashed line indicates end of header
-            break
-    return header
-
 # Paginate each pivot report separately
 paginated_reports = []
 for report_lines in [report1_lines, report2_lines, report3_lines]:
     if not report_lines:
         continue
-    header = extract_header_lines(report_lines, 3)  # titles count is approximate
+    header = extract_header_lines(report_lines)
     paginated = _paginate_simple(report_lines, PAGE_SIZE, header)
     paginated_reports.extend(paginated)
 
-# Now handle pibelq_lines: split into day blocks
-# Each day block starts with a line containing "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY"
+# Paginate PIBELQ day blocks with group reprinting
 day_blocks = []
 current_block = []
 for line in pibelq_lines:
@@ -158,11 +139,9 @@ for line in pibelq_lines:
 if current_block:
     day_blocks.append(current_block)
 
-# Paginate each day block with group reprinting
 paginated_pibelq = []
 for block in day_blocks:
-    # Extract the header lines (titles + column header + dashed line)
-    header = extract_header_lines(block, 3)  # titles vary but we extract dynamically
+    header = extract_header_lines(block)
     paginated_block = _paginate_with_groups(block, PAGE_SIZE, header)
     paginated_pibelq.extend(paginated_block)
 
@@ -173,6 +152,3 @@ all_lines = paginated_reports + paginated_pibelq
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in all_lines:
         fh.write(ln[:133].ljust(133) + "\n")
-
-
-
