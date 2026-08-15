@@ -711,26 +711,27 @@ for report_lines in [report1_lines, report2_lines, report3_lines]:
         paginated_reports.extend(paginate_block(report_lines, PAGE_SIZE, with_groups=False))
 
 # Split pibelq_lines into day blocks, including the bank name
+detail_positions = [
+    idx for idx, line in enumerate(pibelq_lines)
+    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line
+]
+
 day_blocks = []
-i = 0
-while i < len(pibelq_lines):
-    line = pibelq_lines[i]
-    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line:
-        # Include the previous line if it's the bank name
-        block_start = i
-        if i > 0 and pibelq_lines[i-1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
-            block_start = i - 1
-        block = []
-        j = block_start
-        while j < len(pibelq_lines):
-            if j != block_start and "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in pibelq_lines[j]:
-                break
-            block.append(pibelq_lines[j])
-            j += 1
-        day_blocks.append(block)
-        i = j
+for k, pos in enumerate(detail_positions):
+    block_start = pos
+    if pos > 0 and pibelq_lines[pos - 1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
+        block_start = pos - 1
+
+    if k + 1 < len(detail_positions):
+        next_pos = detail_positions[k + 1]
+        if next_pos > 0 and pibelq_lines[next_pos - 1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
+            block_end = next_pos - 1
+        else:
+            block_end = next_pos
     else:
-        i += 1
+        block_end = len(pibelq_lines)
+
+    day_blocks.append(pibelq_lines[block_start:block_end])
 
 # Paginate each day block with group reprinting
 paginated_pibelq = []
@@ -744,6 +745,9 @@ all_lines = paginated_reports + paginated_pibelq
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in all_lines:
         fh.write(ln[:133].ljust(133) + "\n")
+
+print(f"  Output written : {OUTPUT_FILE}")
+print(f"  Total lines    : {len(all_lines):,}")
 
 # ============================================================================
 # STEP 12: COPY OUTPUT FOR NSRS  (PROC IEBGENER copy of the SASLIST output)
