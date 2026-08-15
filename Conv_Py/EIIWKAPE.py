@@ -77,11 +77,17 @@ from PIBELQ import build_elw1, prtel, prteli
 # PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_FIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
 
-INPUT_BNMK_REP4X_DIR = BASE_DIR / "input" / "prod" / "EIIWKAPE" / "bnmk_rep4x"
-INPUT_BNMK_REP2_DIR  = BASE_DIR / "input" / "prod" / "EIIWKAPE" / "bnmk_rep2"
-INPUT_BNMS_ELSCD_DIR = BASE_DIR / "input" / "prod" / "EIIWKAPE" / "bnms_elscd"
-INPUT_BNM_ELW_DIR    = BASE_DIR / "input" / "prod" / "EIIWKAPE" / "bnm_elw"
+INPUT_BNMK_REP4X_DIR = STG_FIR / "BNMK"                 # bnmk_rep4x
+INPUT_BNMK_REP2_DIR  = STG_FIR / "BNMK"                 # bnmk_rep2
+INPUT_BNMS_ELSCD_DIR = STG_FIR / "BNMS"                 # bnmk_elscd
+INPUT_BNM_ELW_DIR    = STG_FIR / "BNM"                  # bnm_elw
+
+# INPUT_BNMK_REP4X_DIR = STG_FIR / "BNMK" / "rep4x2026081.sas7bdat"
+# INPUT_BNMK_REP2_DIR  = STG_FIR / "BNMK" / "rep2081.sas7bdat"
+# INPUT_BNMS_ELSCD_DIR = STG_FIR / "BNMS" / "elscd081.sas7bdat"
+# INPUT_BNM_ELW_DIR    = STG_FIR / "BNM"  / "elw081.sas7bdat"
 
 OUTPUT_DIR      = BASE_DIR / "output" / "EIIWKAPE"
 OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIIWKAPE" / "nsrs"
@@ -89,7 +95,7 @@ OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIIWKAPE" / "nsrs"
 # Parquet cache directory — shared with PIBELQ.py (same BNMK REP2 dataset
 # is read by both programs for the same REPTMON/NOWK, so caching once
 # here avoids a duplicate conversion when PIBELQ.py runs in-process)
-CACHE_DIR = BASE_DIR / "cache" / "EIIWKAPE"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWKAPE"
 
 for _d in (OUTPUT_DIR, OUTPUT_NSRS_DIR, CACHE_DIR):
     _d.mkdir(parents=True, exist_ok=True)
@@ -222,7 +228,7 @@ print(f"  REPTYEAR  : {REPTYEAR}")
 print(f"  RPDATE    : {RPDATE}")
 
 # ============================================================================
-# STEP 3: OUTPUT FILE NAMES
+# STEP 3: OUTPUT FILE NAMES 
 # SASLIST DSN=SAP.PIBB.EIIWKAPD (catalogued, no date suffix in local name)
 # ============================================================================
 OUTPUT_FILE      = OUTPUT_DIR / "EIIWKAPD.txt"
