@@ -1,53 +1,21 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py
-Step 1: Deriving report date (REPTDAT1)...
-  SDESC  : PUBLIC ISLAMIC BANK BERHAD
-  RDATE  : 14/08/26
-  RYEAR  : 2026
-  MTHNAM : AUGUST
-
-Step 2: Deriving week/month bucket (REPTDATE)...
-  WK / NOWK : 1
-  REPTMON   : 08
-  REPTYEAR  : 2026
-  RPDATE    : 14/08/26
-  Output file        : EIIWKAPD.txt
-  NSRS copy          : EIIWKAPD.txt
-  SFTP remote name   : EIIWKAPD_WK1.TXT
-
-Step 4: Building GOLD seed dataset...
-
-Step 5: Building REP4...
-  [BNMK_REP4X] Converting rep4x2026081.sas7bdat -> BNMK_rep4x2026081.parquet ...
-  [BNMK_REP4X] Done — 32 rows cached.
-  REP4 rows: 0
-
-Step 6: Building REP2 (union with REP4, remap, BNMCODG)...
-  [BNMK_REP2] Converting rep2081.sas7bdat -> BNMK_rep2081.parquet ...
-  [BNMK_REP2] Done — 0 rows cached.
-  REP2 rows: 0
-
-Step 7: Rendering RENTAS securities report...
-
-Step 8: Building variance report (KAPITI vs WALKER)...
-  [BNMS_ELSCD] Converting elscd081.sas7bdat -> BNMS_elscd081.parquet ...
-  [BNMS_ELSCD] Done — 0 rows cached.
-  [BNM_ELW] Converting elw081.sas7bdat -> BNM_elw081.parquet ...
-  [BNM_ELW] Done — 272 rows cached.
-
-Step 9: Building Rev Repo report...
-
 Step 10: Rendering PIBELQ daily EL detail reports...
   Loading BNM ELW / BNMB ELW (build_elw1)...
   [BNM_ELW] Cache fresh — skipping conversion.
-  [BNMB_ELW] Converting elw081.sas7bdat -> BNMB_elw081.parquet ...
-  [BNMB_ELW] Done — 571 rows cached.
+  [BNMB_ELW] Cache fresh — skipping conversion.
+  [PIBELQ] prtel(DAYA)...
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_REP2] Cache fresh — skipping conversion.
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 570, in <module>
-    elw1 = build_elw1(REPTMON, NOWK, SDESC)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 240, in build_elw1
-    elw2 = con.execute(f"""
-_duckdb.BinderException: Binder Error: Referenced column "BRANCH" not found in FROM clause!
-Candidate bindings: "BNMCODE", "AMOUNT"
-
-LINE 2:         SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
-                                                              ^
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 575, in <module>
+    prtel(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 532, in prtel
+    combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical_relaxed")
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10148, in select
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ColumnNotFoundError: unable to find column "IDX"; valid columns: ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
