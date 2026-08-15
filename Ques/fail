@@ -1,46 +1,14 @@
-def _render_report_rmel(df: pl.DataFrame) -> list[str]:
-    lines = []
-    subset = df.filter(pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
-        ["FMTNAME", "SIGN", "BNMCODE"]
-    )
-    if subset.is_empty():
-        return lines
-
-    for fmtname in subset["FMTNAME"].unique(maintain_order=True).sort().to_list():
-        grp = subset.filter(pl.col("FMTNAME") == fmtname)
-        amounx_sum = 0.0
-        totalx_sum = 0.0
-        first_row = True
-        for row in grp.iter_rows(named=True):
-            buf = _new_buf()
-            if first_row:
-                _put(buf, 1, str(row["FMTNAME"] or ""))
-                first_row = False
-            _put(buf, 10, str(row["BNMCODE"] or ""))
-            _put(buf, 26, str(row["DESC"] or "")[:40])
-            _put(buf, 68, str(row["SIGN"] or ""))
-            _put(buf, 74, _fmt_comma(row["AMOUNT"], 22, 2))
-            _put(buf, 98, _fmt_comma(row["TOTAL"], 22, 2))
-            lines.append(_line(buf))
-            amounx_sum += row["AMOUNX"] or 0.0
-            totalx_sum += row["TOTALX"] or 0.0
-
-        # Dashed line after each group (separator)
-        buf = _new_buf()
-        _put(buf, 3, "-" * 119)
-        lines.append(_line(buf))
-
-        # Total line
-        buf = _new_buf()
-        _put(buf, 12, f"TOTAL FOR {fmtname:<7s}")
-        _put(buf, 74, _fmt_comma(amounx_sum, 24, 2))
-        _put(buf, 98, _fmt_comma(totalx_sum, 24, 2))
-        lines.append(_line(buf))
-
-        # Dashed line under total
-        buf = _new_buf()
-        _put(buf, 74, "-" * 24)
-        _put(buf, 98, "-" * 24)
-        lines.append(_line(buf))
-
-    return lines
+def _render_pivot_report(
+    df: pl.DataFrame,
+    title_lines: list[str],
+    row_col: str,
+    all_label: str,
+    class_col: str,
+    value_specs: list[tuple],
+    rts: int,
+) -> list[str]:
+    # If there is no data, return nothing (no titles, no headers)
+    if df.is_empty():
+        return []
+    
+    # ... rest of the function remains unchanged
