@@ -1,24 +1,24 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIVQDCPR.py
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py
+Step 1: Deriving report date (REPTDAT1)...
+  SDESC  : PUBLIC ISLAMIC BANK BERHAD
+  RDATE  : 13/08/26
+  RYEAR  : 2026
+  MTHNAM : AUGUST
 
-Uploading reports to PIVSVFIL101 via SFTP...
+Step 2: Deriving week/month bucket (REPTDATE)...
+  WK / NOWK : 1
+  REPTMON   : 08
+  REPTYEAR  : 2026
+  RPDATE    : 13/08/26
+  Output file        : EIIWKAPD.txt
+  NSRS copy          : EIIWKAPD.txt
+  SFTP remote name   : EIIWKAPD_WK1.TXT
+
+Step 4: Building GOLD seed dataset...
+
+Step 5: Building REP4...
+  [BNMK_REP4X] Cache fresh — skipping conversion.
 Traceback (most recent call last):
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/range.py", line 413, in get_loc
-    return self._range.index(new_key)
-ValueError: 0 is not in range
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIVQDCPR.py", line 384, in <module>
-    sftp_upload_to_pivb(OUTPUT_CSV_FILE, OUTPUT_XLS_FILE)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIVQDCPR.py", line 350, in sftp_upload_to_pivb
-    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(PIVB_HOST_DESC)
-  File "/sas/python/virt_edw_dev/Data_Warehouse/Common/Jobs/EDW_TRANSFORMATION.py", line 662, in get_sftp_info
-    sftp_id = df['SFTP_ID'][0]
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/series.py", line 1121, in __getitem__
-    return self._get_value(key)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/series.py", line 1237, in _get_value
-    loc = self.index.get_loc(label)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/range.py", line 415, in get_loc
-    raise KeyError(key) from err
-KeyError: 0
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 358, in <module>
+    rep4 = con.execute(f"""
+_duckdb.BinderException: Binder Error: Column "NETAMT" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
