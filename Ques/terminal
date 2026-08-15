@@ -1,4 +1,4 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py
+/sas/python/virt_edw_dev/bin/python3 /sas/python/v(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py
 Step 1: Deriving report date (REPTDAT1)...
   SDESC  : PUBLIC ISLAMIC BANK BERHAD
   RDATE  : 14/08/26
@@ -17,24 +17,32 @@ Step 2: Deriving week/month bucket (REPTDATE)...
 Step 4: Building GOLD seed dataset...
 
 Step 5: Building REP4...
-  [BNMK_REP4X] Converting rep4x2026081.sas7bdat -> rep4x2026081.parquet ...
-  [BNMK_REP4X] Done — 32 rows cached.
+  [BNMK_REP4X] Cache fresh — skipping conversion.
   REP4 rows: 0
 
 Step 6: Building REP2 (union with REP4, remap, BNMCODG)...
-  [BNMK_REP2] Converting rep2081.sas7bdat -> rep2081.parquet ...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 196, in _sas_to_parquet
-    sample = pd.read_sas(sas_path, encoding="latin1", nrows=1)
-TypeError: read_sas() got an unexpected keyword argument 'nrows'
+  [BNMK_REP2] Cache fresh — skipping conversion.
+  REP2 rows: 0
 
-During handling of the above exception, another exception occurred:
+Step 7: Rendering RENTAS securities report...
 
+Step 8: Building variance report (KAPITI vs WALKER)...
+  [BNMS_ELSCD] Cache fresh — skipping conversion.
+  [BNM_ELW] Cache fresh — skipping conversion.
+
+Step 9: Building Rev Repo report...
+
+Step 10: Rendering PIBELQ daily EL detail reports...
+  Loading BNM ELW / BNMB ELW (build_elw1)...
+  [BNM_ELW] Cache fresh — skipping conversion.
+  [BNMB_ELW] Cache fresh — skipping conversion.
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 455, in <module>
-    rep2_cache = _load_cached(rep2_sas, "BNMK_REP2")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 219, in _load_cached
-    _sas_to_parquet(sas_path, cache_path, tag)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 200, in _sas_to_parquet
-    raise RuntimeError(f"Cannot determine schema for {sas_path} – file may be corrupted or empty.")
-RuntimeError: Cannot determine schema for /stgsrcsys/host/uat/AII/KAPE/BNMK/rep2081.sas7bdat – file may be corrupted or empty.
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 558, in <module>
+    elw1 = build_elw1(REPTMON, NOWK, SDESC)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 228, in build_elw1
+    elw2 = con.execute(f"""
+_duckdb.BinderException: Binder Error: Referenced column "BRANCH" not found in FROM clause!
+Candidate bindings: "BNMCODE", "AMOUNT"
+
+LINE 2:         SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+                                                              ^
