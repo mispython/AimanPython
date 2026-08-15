@@ -1,7 +1,7 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py
 Step 1: Deriving report date (REPTDAT1)...
   SDESC  : PUBLIC ISLAMIC BANK BERHAD
-  RDATE  : 13/08/26
+  RDATE  : 14/08/26
   RYEAR  : 2026
   MTHNAM : AUGUST
 
@@ -9,7 +9,7 @@ Step 2: Deriving week/month bucket (REPTDATE)...
   WK / NOWK : 1
   REPTMON   : 08
   REPTYEAR  : 2026
-  RPDATE    : 13/08/26
+  RPDATE    : 14/08/26
   Output file        : EIIWKAPD.txt
   NSRS copy          : EIIWKAPD.txt
   SFTP remote name   : EIIWKAPD_WK1.TXT
@@ -18,7 +18,15 @@ Step 4: Building GOLD seed dataset...
 
 Step 5: Building REP4...
   [BNMK_REP4X] Cache fresh — skipping conversion.
+  REP4 rows: 0
+
+Step 6: Building REP2 (union with REP4, remap, BNMCODG)...
+  [BNMK_REP2] Converting rep2081.sas7bdat -> rep2081.parquet ...
+  [BNMK_REP2] Done — 0 rows cached.
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 358, in <module>
-    rep4 = con.execute(f"""
-_duckdb.BinderException: Binder Error: Column "NETAMT" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 407, in <module>
+    rep2_base = con.execute(f"""
+_duckdb.IOException: IO Error: No files found that match the pattern "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIWKAPE/rep2081.parquet"
+
+LINE 10:     FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS...
+                  ^
