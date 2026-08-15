@@ -1,22 +1,2 @@
-# Split pibelq_lines into day blocks, including the bank name
-detail_positions = [
-    idx for idx, line in enumerate(pibelq_lines)
-    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line
-]
-
-day_blocks = []
-for k, pos in enumerate(detail_positions):
-    block_start = pos
-    if pos > 0 and pibelq_lines[pos - 1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
-        block_start = pos - 1
-
-    if k + 1 < len(detail_positions):
-        next_pos = detail_positions[k + 1]
-        if next_pos > 0 and pibelq_lines[next_pos - 1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
-            block_end = next_pos - 1
-        else:
-            block_end = next_pos
-    else:
-        block_end = len(pibelq_lines)
-
-    day_blocks.append(pibelq_lines[block_start:block_end])
+print(f"  Output written : {OUTPUT_FILE}")
+print(f"  Total lines    : {len(all_lines):,}")
