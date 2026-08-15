@@ -1,46 +1,23 @@
-        # LAST.CAT -> grand total block (7 lines)
-        if lines_on_page + 7 > PAGE_SIZE:
-            pagecnt += 1
-            output_lines.extend(_build_header_lines(progid, type_label, pagecnt))
-            lines_on_page = HEADER_LINES
+# Step 5: REP4
+rep4_sas = INPUT_BNMK_REP4X_DIR / f"rep4x{REPTYEAR}{REPTMON}{WK}.sas7bdat"
+rep4_cache = _load_cached(rep4_sas, "BNMK_REP4X")
 
-        total_lines = _build_total_lines(totamt, totacc)
-        # If there's another CAT coming, drop the final blank line (PUT;)
-        if cat != cats_present[-1]:
-            total_lines = total_lines[:-1]
-        output_lines.extend(total_lines)
-        pagecnt = 0   # PAGECNT = 0; (reset after LAST.CAT)
+con = duckdb.connect(database=":memory:")
+rep4_raw = con.execute(f"""
+    SELECT
+        CASE WHEN BNMCODE = '3723000000000Y' THEN '3523000000000Y' ELSE BNMCODE END AS BNMCODE,
+        CAST(UTSTY AS VARCHAR) AS UTSTY,
+        CAST(UTREF AS VARCHAR) AS UTREF,
+        CAST(ELDAY AS VARCHAR) AS ELDAY,
+        CAST(AMOUNT AS DOUBLE) AS AMOUNT   -- if AMOUNT exists; if not, omit or use 0.0
+    FROM read_parquet('{rep4_cache.as_posix()}')
+    WHERE UTREF IN ('DLG','IDLG')
+      AND UTSTY NOT IN ('BMN','CB1')
+""").pl()
+con.close()
 
-
-
-
-def _fmt_comma(value, width, decimals=0):
-    """COMMAw.d equivalent – commas if they fit, otherwise no commas."""
-    if value is None:
-        return " " * width
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return " " * width
-
-    # Try with commas and proper decimals
-    if decimals > 0:
-        s = f"{v:,.{decimals}f}"
-    else:
-        s = f"{int(round(v)):,}"
-
-    if len(s) <= width:
-        return s.rjust(width)
-
-    # Too wide -> drop commas
-    if decimals > 0:
-        s = f"{v:.{decimals}f}"
-    else:
-        s = str(int(round(v)))
-
-    if len(s) <= width:
-        return s.rjust(width)
-
-    # Still too wide? Fallback to BASIC formatting (shouldn't happen with correct widths)
-    # We'll just right-justify without further truncation.
-    return s.rjust(width)
+# Add missing columns that REP2_base has (NETAMT, COSTDED) with null/0.0
+rep4 = rep4_raw.with_columns([
+    pl.lit(None).cast(pl.Float64).alias("NETAMT"),   # or pl.lit(0.0)
+    pl.lit(None).cast(pl.Float64).alias("COSTDED"),
+])
