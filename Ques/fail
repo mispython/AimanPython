@@ -1,2 +1,1 @@
-print(f"  Output written : {OUTPUT_FILE}")
-print(f"  Total lines    : {len(all_lines):,}")
+merged = merged.filter(pl.col("IDX").str.strip() != "")
