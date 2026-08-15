@@ -1,4 +1,74 @@
-common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
-elwt = elwt.select(common_cols)
-elw_final = elw_final.select(common_cols)
-combined = pl.concat([elwt, elw_final], how="vertical")
+def _render_report_rmel(df: pl.DataFrame) -> list[str]:
+    """
+    PROC REPORT WHERE=(FMTNAME IN ('A-RMEL','B-RMEA')) with BREAK AFTER
+    FMTNAME / COMPUTE producing a dashed subtotal line per FMTNAME group.
+    """
+    lines = []
+    subset = df.filter(pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
+        ["FMTNAME", "SIGN", "BNMCODE"]
+    )
+    if subset.is_empty():
+        return lines
+
+    for fmtname in subset["FMTNAME"].unique(maintain_order=True).sort().to_list():
+        grp = subset.filter(pl.col("FMTNAME") == fmtname)
+        amounx_sum = 0.0
+        totalx_sum = 0.0
+        first_row = True
+        for row in grp.iter_rows(named=True):
+            buf = _new_buf()
+            # Print FMTNAME only on the first row of the group (SAS GROUP behavior)
+            if first_row:
+                _put(buf, 1, str(row["FMTNAME"] or ""))
+                first_row = False
+            # otherwise leave column 1 blank
+            _put(buf, 10, str(row["BNMCODE"] or ""))
+            _put(buf, 26, str(row["DESC"] or "")[:40])
+            _put(buf, 68, str(row["SIGN"] or ""))
+            _put(buf, 74, _fmt_comma(row["AMOUNT"], 22, 2))
+            _put(buf, 98, _fmt_comma(row["TOTAL"], 22, 2))
+            lines.append(_line(buf))
+            amounx_sum += row["AMOUNX"] or 0.0
+            totalx_sum += row["TOTALX"] or 0.0
+
+        buf = _new_buf()
+        _put(buf, 3, "-" * 119)
+        lines.append(_line(buf))
+
+        buf = _new_buf()
+        _put(buf, 12, f"TOTAL FOR {fmtname:<7s}")
+        _put(buf, 74, _fmt_comma(amounx_sum, 24, 2))
+        _put(buf, 98, _fmt_comma(totalx_sum, 24, 2))
+        lines.append(_line(buf))
+
+        buf = _new_buf()
+        _put(buf, 74, "-" * 24)
+        _put(buf, 98, "-" * 24)
+        lines.append(_line(buf))
+
+    return lines
+
+
+
+
+def _render_report_rest(df: pl.DataFrame) -> list[str]:
+    """PROC REPORT WHERE=(FMTNAME NOT IN ('A-RMEL','B-RMEA'))."""
+    lines = []
+    subset = df.filter(~pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
+        ["FMTNAME", "SIGN", "BNMCODE"]
+    )
+    current_fmt = None
+    for row in subset.iter_rows(named=True):
+        buf = _new_buf()
+        # Print FMTNAME only when it changes (SAS GROUP behavior)
+        if row["FMTNAME"] != current_fmt:
+            current_fmt = row["FMTNAME"]
+            _put(buf, 1, str(row["FMTNAME"] or ""))
+        # otherwise leave blank
+        _put(buf, 10, str(row["BNMCODE"] or ""))
+        _put(buf, 26, str(row["DESC"] or "")[:40])
+        _put(buf, 68, str(row["SIGN"] or ""))
+        _put(buf, 74, _fmt_comma(row["AMOUNT"], 22, 2))
+        _put(buf, 98, _fmt_comma(row["TOTAL"], 22, 2))
+        lines.append(_line(buf))
+    return lines
