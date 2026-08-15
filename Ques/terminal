@@ -6,6 +6,10 @@ Step 10: Rendering PIBELQ daily EL detail reports...
   [BNMK_TBL1] Cache fresh — skipping conversion.
   [BNMK_REP2] Cache fresh — skipping conversion.
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 574, in <module>
-    pibelq_lines.extend(
-TypeError: 'NoneType' object is not iterable
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 651, in <module>
+    prtel(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 509, in prtel
+    elw_final = _finalize_elw(elw_stack, elitem, drop_4019=True)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 300, in _finalize_elw
+    merged = merged.filter(pl.col("IDX").str.strip() != "")
+AttributeError: 'ExprStringNameSpace' object has no attribute 'strip'
