@@ -1,1 +1,23 @@
-merged = merged.filter(pl.col("IDX").str.strip() != "")
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                      1,584,654,299.44        1,584,654,299.44            
+                                                                         ------------------------------------------------            
+PUBLIC ISLAMIC BANK BERHAD                                                                                                           
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYA                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,096,174,715.42       92,096,174,715.42            
+
+
+
+
+
+-----------------------------------------------------------------------------------------------------------------------             
+          TOTAL FOR B-RMEA                                                      1,584,654,299.44        1,584,654,299.44             
+                                                                        ------------------------------------------------             
+ C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
+ D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
+ E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,096,174,716.17       92,096,174,716.17             
