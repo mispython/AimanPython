@@ -70,15 +70,16 @@ from PBBELF import EL_DEFINITIONS, ELI_DEFINITIONS
 # PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_FIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
 
-INPUT_BNMK_REP2_DIR = BASE_DIR / "input" / "prod" / "EIIWKAPE" / "bnmk_rep2"
-INPUT_BNMK_TBL1_DIR = BASE_DIR / "input" / "prod" / "EIIWKAPE" / "bnmk_tbl1"
-INPUT_BNM_ELW_DIR   = BASE_DIR / "input" / "prod" / "EIIWKAPE" / "bnm_elw"
-INPUT_BNMB_ELW_DIR  = BASE_DIR / "input" / "prod" / "EIIWKAPE" / "bnmb_elw"
+INPUT_BNMK_REP2_DIR = STG_FIR / "BNMK"              # bnmk_rep2
+INPUT_BNMK_TBL1_DIR = STG_FIR / "BNMK"              # bnmk_tbl1
+INPUT_BNM_ELW_DIR   = STG_FIR / "BNM"               # bnm_elw
+INPUT_BNMB_ELW_DIR  = STG_FIR / "BNMB"              # bnms_elw
 
 # Parquet cache directory (shared with EIIWKAPE.py — same physical
 # BNMK REP2 dataset is read by both programs for the same REPTMON/NOWK)
-CACHE_DIR = BASE_DIR / "cache" / "EIIWKAPE"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWKAPE"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -95,37 +96,57 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     )
 
 
+# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+#     writer, schema, total = None, None, 0
+
+#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+#     for chunk in reader:
+#         table = pa.Table.from_pandas(chunk, preserve_index=False)
+#         if schema is None:
+#             schema = table.schema
+#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+#         else:
+#             cast_arrays = []
+#             for field in schema:
+#                 col = table.column(field.name)
+#                 if col.type != field.type:
+#                     try:
+#                         col = col.cast(field.type, safe=False)
+#                     except Exception as e:
+#                         print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
+#                               f"from {col.type} to {field.type}: {e} — filling nulls")
+#                         col = pa.nulls(len(col), type=field.type)
+#                 cast_arrays.append(col)
+#             table = pa.Table.from_arrays(cast_arrays, schema=schema)
+#         writer.write_table(table)
+#         total += len(chunk)
+#         del chunk, table
+#         gc.collect()
+
+#     if writer:
+#         writer.close()
+#     print(f"  [{tag}] Done — {total:,} rows cached.")
+
+
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    writer, schema, total = None, None, 0
-
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
-        if schema is None:
-            schema = table.schema
-            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        else:
-            cast_arrays = []
-            for field in schema:
-                col = table.column(field.name)
-                if col.type != field.type:
-                    try:
-                        col = col.cast(field.type, safe=False)
-                    except Exception as e:
-                        print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
-                              f"from {col.type} to {field.type}: {e} — filling nulls")
-                        col = pa.nulls(len(col), type=field.type)
-                cast_arrays.append(col)
-            table = pa.Table.from_arrays(cast_arrays, schema=schema)
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-
-    if writer:
-        writer.close()
-    print(f"  [{tag}] Done — {total:,} rows cached.")
+    
+    # Read the whole SAS file into a pandas DataFrame
+    try:
+        df = pd.read_sas(sas_path, encoding="latin1")
+    except Exception as e:
+        raise RuntimeError(f"Failed to read SAS file {sas_path}: {e}")
+    
+    # Convert to PyArrow Table (this preserves the schema even if df is empty)
+    table = pa.Table.from_pandas(df, preserve_index=False)
+    
+    # Write to Parquet
+    writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
+    writer.write_table(table)
+    writer.close()
+    
+    print(f"  [{tag}] Done — {len(df):,} rows cached.")
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
