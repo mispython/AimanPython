@@ -1,3 +1,65 @@
+def _get_day_title_lines(include_bank: bool, day_code: str, rdate: str, sdesc: str = None) -> list[str]:
+    """
+    Return the title lines for a day's report (no column header).
+    include_bank: True for DAYA-DAYH, False for DAYI.
+    Includes a blank line after the report date.
+    """
+    titles = []
+    if include_bank and sdesc:
+        titles.append(sdesc)
+    titles.append(f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}")
+    titles.append(f"REPORT DATE : {rdate}")
+    titles.append("")  # blank line after report date
+    return _title_lines(*titles)
+
 def _get_full_header(include_bank: bool, day_code: str, rdate: str, sdesc: str = None) -> list[str]:
-    """Return only the title lines (bank name, detail title, report date) for a day."""
-    return _get_day_title_lines(include_bank, day_code, rdate, sdesc)
+    """
+    Return the complete header: title lines + column header + dashed line.
+    """
+    title_lines = _get_day_title_lines(include_bank, day_code, rdate, sdesc)
+    return title_lines + _render_table_header()
+
+
+
+
+    # Build the full header (titles + column header + dashed line) for this day
+    full_header = _get_full_header(True, day_code, rdate, sdesc)
+
+    # Render the A-RMEL and B-RMEA groups (includes subtotal lines)
+    rmel_lines = _render_report_rmel(combined)
+
+    # Render the remaining groups
+    rest_lines = _render_report_rest(combined)
+
+    # Assemble output
+    lines = full_header + rmel_lines
+    if rest_lines:
+        # Add only the title lines (no column header) before the rest groups
+        title_only = _get_day_title_lines(True, day_code, rdate, sdesc)
+        # Add a blank line between the subtotal and the repeated title? Actually the subtotal already has short dashes,
+        # and the original has a blank line after the subtotal and before the repeated title.
+        # We'll add an extra blank line.
+        lines += [""] + title_only + rest_lines
+    else:
+        lines += rest_lines
+    return lines
+
+
+
+
+    full_header = _get_full_header(False, day_code, rdate)   # no bank name
+
+    rmel_lines = _render_report_rmel(combined)
+    rest_lines = _render_report_rest(combined)
+
+    lines = full_header + rmel_lines
+    if rest_lines:
+        title_only = _get_day_title_lines(False, day_code, rdate)
+        lines += [""] + title_only + rest_lines
+    else:
+        lines += rest_lines
+    return lines
+
+
+
+
