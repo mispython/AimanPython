@@ -1,13 +1,1 @@
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    """Resolve <parent>_<stem>.parquet cache under CACHE_DIR, converting if stale."""
-    # Include directory name to avoid collisions (e.g., bnm_elw081.parquet vs bnmb_elw081.parquet)
-    cache_name = f"{sas_path.parent.name}_{sas_path.stem}.parquet"
-    cache_path = CACHE_DIR / cache_name
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh — skipping conversion.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
-
-
-
+combined = pl.concat([elwt, elw_final.drop("IDX")], how="vertical")
