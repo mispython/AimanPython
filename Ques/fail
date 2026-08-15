@@ -1,199 +1,178 @@
-def _extract_fmtname_from_line(line: str) -> str | None:
-    """Return the FMTNAME (column 1-7) if present and non‑blank, else None."""
-    if len(line) > 7:
-        fmt = line[0:7].strip()   # ASA char is at index 0, so actual content starts at 1
-        # Wait: our _line() prepends an ASA character (space) at index 0.
-        # So the FMTNAME is at column 1 (0‑based index 1) to column 7.
-        # Let's re‑think: our line string starts with an ASA char (space or '1').
-        # The content begins at position 1. So FMTNAME occupies positions 1‑7 (0‑based indices 1‑7).
-        if len(line) > 8:
-            fmt = line[1:8].strip()
-            return fmt if fmt else None
-    return None
+# ============================================================================
+# GLOBAL CONFIGURATION
+# ============================================================================
+PAGE_SIZE = 60
 
 
 
-def _render_report_rmel(df: pl.DataFrame) -> list[tuple[str | None, str]]:
-    """Return list of (fmtname, line) for A-RMEL and B-RMEA groups."""
-    rows = []
-    subset = df.filter(pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
-        ["FMTNAME", "SIGN", "BNMCODE"]
-    )
-    if subset.is_empty():
-        return rows
+def _paginate_simple(lines: list[str], page_size: int, header_lines: list[str]) -> list[str]:
+    """
+    Paginate a list of lines where only the header lines (titles + column headers)
+    need to be repeated on every page. No group reprinting.
+    """
+    if not lines:
+        return []
+    result = []
+    # Count header lines: we assume header_lines is already provided
+    header_count = len(header_lines)
+    # The remaining lines are data lines
+    data_lines = lines[header_count:]
+    if not data_lines:
+        return lines  # nothing to paginate
 
-    for fmtname in subset["FMTNAME"].unique(maintain_order=True).sort().to_list():
-        grp = subset.filter(pl.col("FMTNAME") == fmtname)
-        amounx_sum = 0.0
-        totalx_sum = 0.0
-        first_row = True
-        for row in grp.iter_rows(named=True):
-            buf = _new_buf()
-            current_fmt = None
-            if first_row:
-                current_fmt = row["FMTNAME"]
-                _put(buf, 1, str(row["FMTNAME"] or ""))
-                first_row = False
-            # else leave column 1 blank (current_fmt remains None)
-            _put(buf, 10, str(row["BNMCODE"] or ""))
-            _put(buf, 26, str(row["DESC"] or "")[:40])
-            _put(buf, 68, str(row["SIGN"] or ""))
-            _put(buf, 74, _fmt_comma(row["AMOUNT"], 22, 2))
-            _put(buf, 98, _fmt_comma(row["TOTAL"], 22, 2))
-            rows.append((current_fmt, _line(buf, " ")))
-            amounx_sum += row["AMOUNX"] or 0.0
-            totalx_sum += row["TOTALX"] or 0.0
-
-        # Dashed line after group
-        buf = _new_buf()
-        _put(buf, 3, "-" * 119)
-        rows.append((None, _line(buf, " ")))
-
-        # Total line
-        buf = _new_buf()
-        _put(buf, 12, f"TOTAL FOR {fmtname:<7s}")
-        _put(buf, 74, _fmt_comma(amounx_sum, 24, 2))
-        _put(buf, 98, _fmt_comma(totalx_sum, 24, 2))
-        rows.append((None, _line(buf, " ")))
-
-        # Dashed line under total
-        buf = _new_buf()
-        _put(buf, 74, "-" * 24)
-        _put(buf, 98, "-" * 24)
-        rows.append((None, _line(buf, " ")))
-
-    return rows
+    # Total lines per page = header_count + data lines
+    for i in range(0, len(data_lines), page_size - header_count):
+        page_data = data_lines[i:i + page_size - header_count]
+        result.extend(header_lines)
+        result.extend(page_data)
+    return result
 
 
+def _paginate_with_groups(lines: list[str], page_size: int, header_lines: list[str]) -> list[str]:
+    """
+    Paginate a list of lines that contains groups (FMTNAME printed only on first row).
+    On each new page, reprint the header lines, and if the group continues,
+    reprint the FMTNAME for that group at the top of the new page.
+    """
+    if not lines:
+        return []
+    header_count = len(header_lines)
+    data_lines = lines[header_count:]
+    if not data_lines:
+        return lines
 
-def _render_report_rest(df: pl.DataFrame) -> list[tuple[str | None, str]]:
-    """Return list of (fmtname, line) for all other FMTNAME groups."""
-    rows = []
-    subset = df.filter(~pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
-        ["FMTNAME", "SIGN", "BNMCODE"]
-    )
+    # Scan data_lines to find group starts (lines with non-space at column 1)
+    group_starts = []   # list of (index, fmtname) where index is in data_lines
     current_fmt = None
-    first_row = True
-    for row in subset.iter_rows(named=True):
-        buf = _new_buf()
-        fmt_to_print = None
-        if row["FMTNAME"] != current_fmt:
-            current_fmt = row["FMTNAME"]
-            fmt_to_print = current_fmt
-            _put(buf, 1, str(current_fmt or ""))
-        # else leave blank
-        _put(buf, 10, str(row["BNMCODE"] or ""))
-        _put(buf, 26, str(row["DESC"] or "")[:40])
-        _put(buf, 68, str(row["SIGN"] or ""))
-        _put(buf, 74, _fmt_comma(row["AMOUNT"], 22, 2))
-        _put(buf, 98, _fmt_comma(row["TOTAL"], 22, 2))
-        rows.append((fmt_to_print, _line(buf, " ")))
-    return rows
+    for idx, line in enumerate(data_lines):
+        # Check if the line has a non-space in column 1 (FMTNAME)
+        if len(line) > 0 and line[0] != ' ':
+            # Extract the FMTNAME (first 7 characters)
+            current_fmt = line[:7].strip()
+            group_starts.append((idx, current_fmt))
+        # else: we could store the last fmt for later, but we already have it
 
-
-
-def _paginate_report(
-    rows: list[tuple[str | None, str]],
-    title_lines: list[str],
-    header_lines: list[str],
-    page_size: int = 60,
-) -> list[str]:
-    """
-    Paginate the body rows (with optional fmtname) into pages of up to `page_size` lines.
-    Each page includes titles, header, and the data rows.
-    If a group continues across pages, the fmtname is reprinted on the next page.
-    """
-    # Count how many lines are used by titles and header
-    header_count = len(title_lines) + len(header_lines)
-    # We also need to account for the blank line after header? In our current, there is no blank line, but there is a dashed line in header.
-    # Actually, header_lines includes the dashed line.
-    # So usable lines per page = page_size - header_count
-
-    out_lines = []
-    current_page_lines = []
-    current_fmt = None   # the fmtname of the last data row that had a non‑None fmtname
-
-    def flush_page():
-        nonlocal current_page_lines, current_fmt
-        if not current_page_lines:
-            return
-        # Start new page with titles and header
-        out_lines.extend(title_lines)
-        out_lines.extend(header_lines)
-        # Now add the body lines for this page
-        # Before adding, if the first row has a None fmtname, we need to reprint the current_fmt
-        if current_page_lines and current_page_lines[0][0] is None:
-            # Insert a group header line with the current_fmt
-            fmt = current_fmt if current_fmt is not None else ""
-            buf = _new_buf()
-            _put(buf, 1, fmt)
-            out_lines.append(_line(buf, " "))
-        # Add all rows (we only need the line string)
-        for _, line in current_page_lines:
-            out_lines.append(line)
-        current_page_lines = []
-
-    for fmt, line in rows:
-        # Check if we need to start a new page
-        # We count how many lines we already have in current_page_lines
-        # Including the header lines which will be added on flush
-        # We need to check if adding this line would exceed page_size (including titles and header)
-        if len(current_page_lines) + header_count >= page_size:
-            # Flush current page before adding this line
-            flush_page()
-            # Now current_page_lines is empty, and we can add this line
-            # But we need to remember the current fmt for the new page
-            # If fmt is not None, update current_fmt; else keep previous
-            if fmt is not None:
-                current_fmt = fmt
-            current_page_lines.append((fmt, line))
+    # We'll iterate through data_lines and split into pages
+    result = []
+    page_start = 0
+    while page_start < len(data_lines):
+        # Determine the end of this page (up to page_size - header_count lines)
+        page_end = min(page_start + (page_size - header_count), len(data_lines))
+        # Check if we need to reprint a group header on this new page
+        # If page_start > 0 (not first page) and the first line of this page is not a group start,
+        # we need to reprint the FMTNAME of the previous group.
+        if page_start > 0:
+            # Find the last group start before this page
+            last_group_idx = -1
+            last_group_fmt = None
+            for idx, fmt in reversed(group_starts):
+                if idx < page_start:
+                    last_group_idx = idx
+                    last_group_fmt = fmt
+                    break
+            if last_group_fmt is not None:
+                # Check if the first line of this page is a group start
+                first_line = data_lines[page_start]
+                is_group_start = (len(first_line) > 0 and first_line[0] != ' ')
+                if not is_group_start:
+                    # We need to reprint the group header before the page content
+                    # Create a line with the FMTNAME at column 1, and blank elsewhere
+                    buf = _new_buf()
+                    _put(buf, 1, last_group_fmt)
+                    group_header_line = _line(buf, " ")
+                    # Insert it at the beginning of the page data, but after the header lines
+                    # So we will include it as the first data line of this page
+                    # But we need to adjust page_end to include it, and we must not exceed page_size
+                    # We'll insert it by prepending to the page slice
+                    page_data = [group_header_line] + data_lines[page_start:page_end]
+                    # However, this may cause the page to have more lines than page_size, so we need to trim
+                    # We'll set page_end = page_start + (page_size - header_count - 1) to leave room for the group header
+                    # But we already computed page_end. Better: we'll adjust page_end before slicing.
+                    # We'll do it differently: after we know we need to reprint, we reduce the number of data lines by 1.
+                    # So we set page_end = min(page_start + (page_size - header_count - 1), len(data_lines))
+                    # and then we prepend the group header.
+                    # Let's recalc:
+                    max_data_lines = page_size - header_count - 1  # reserve one line for group header
+                    page_end = min(page_start + max_data_lines, len(data_lines))
+                    page_data = [group_header_line] + data_lines[page_start:page_end]
+                else:
+                    page_data = data_lines[page_start:page_end]
+            else:
+                page_data = data_lines[page_start:page_end]
         else:
-            # Just add to current page
-            if fmt is not None:
-                current_fmt = fmt
-            current_page_lines.append((fmt, line))
+            page_data = data_lines[page_start:page_end]
 
-    # Flush any remaining lines
-    if current_page_lines:
-        flush_page()
+        # Add the header lines for this page
+        result.extend(header_lines)
+        result.extend(page_data)
+        page_start = page_end
 
-    return out_lines
+    return result
 
 
 
-    # Build title lines
-    title_lines = _title_lines(
-        sdesc,
-        f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}",
-        f"REPORT DATE : {rdate}",
-        "",
-    )
-    header_lines = _render_table_header()
+# ============================================================================
+# STEP 11: PAGINATE AND WRITE OUTPUT
+# ============================================================================
+print("\nStep 11: Paginating and writing output...")
 
-    # Build body rows for the two report sections
-    rows_rmel = _render_report_rmel(combined)
-    rows_rest = _render_report_rest(combined)
+# We need to separate the reports into blocks that have their own headers.
+# For pivot reports, they have titles and column headers.
+# For pibelq_lines, each day is a block with its own titles and headers.
 
-    # Combine body rows (order: RMEL first, then REST)
-    all_rows = rows_rmel + rows_rest
+# First, paginate the pivot reports (RENTAS, Variance, Rev Repo) - they have no groups
+# We need to identify the header lines for each pivot report.
+# Since each pivot report is a continuous list of lines starting with titles and a header,
+# we can treat the first few lines as header.
 
-    # Paginate with page size 60
-    lines = _paginate_report(all_rows, title_lines, header_lines, page_size=60)
-    return lines
+def extract_header_lines(block_lines: list[str], num_title_lines: int) -> list[str]:
+    # Assume the header consists of title lines, then the column header line, then dashed line.
+    # The exact number varies; we can find the dashed line by searching for "--------"
+    # and take everything up to and including that.
+    header = []
+    for line in block_lines:
+        header.append(line)
+        if "---" in line:  # dashed line indicates end of header
+            break
+    return header
 
+# Paginate each pivot report separately
+paginated_reports = []
+for report_lines in [report1_lines, report2_lines, report3_lines]:
+    if not report_lines:
+        continue
+    header = extract_header_lines(report_lines, 3)  # titles count is approximate
+    paginated = _paginate_simple(report_lines, PAGE_SIZE, header)
+    paginated_reports.extend(paginated)
 
+# Now handle pibelq_lines: split into day blocks
+# Each day block starts with a line containing "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY"
+day_blocks = []
+current_block = []
+for line in pibelq_lines:
+    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line and current_block:
+        day_blocks.append(current_block)
+        current_block = [line]
+    else:
+        current_block.append(line)
+if current_block:
+    day_blocks.append(current_block)
 
-    title_lines = _title_lines(
-        f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}",
-        f"REPORT DATE : {rdate}",
-        "",
-    )
-    header_lines = _render_table_header()
-    rows_rmel = _render_report_rmel(combined)
-    rows_rest = _render_report_rest(combined)
-    all_rows = rows_rmel + rows_rest
-    lines = _paginate_report(all_rows, title_lines, header_lines, page_size=60)
-    return lines
+# Paginate each day block with group reprinting
+paginated_pibelq = []
+for block in day_blocks:
+    # Extract the header lines (titles + column header + dashed line)
+    header = extract_header_lines(block, 3)  # titles vary but we extract dynamically
+    paginated_block = _paginate_with_groups(block, PAGE_SIZE, header)
+    paginated_pibelq.extend(paginated_block)
+
+# Combine all reports
+all_lines = paginated_reports + paginated_pibelq
+
+# Write output
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in all_lines:
+        fh.write(ln[:133].ljust(133) + "\n")
 
 
 
