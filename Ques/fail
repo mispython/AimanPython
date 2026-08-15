@@ -1,23 +1,66 @@
-  -----------------------------------------------------------------------------------------------------------------------            
-           TOTAL FOR B-RMEA                                                      1,584,654,299.44        1,584,654,299.44            
-                                                                         ------------------------------------------------            
-PUBLIC ISLAMIC BANK BERHAD                                                                                                           
-DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYA                                                                                  
-REPORT DATE :  08/08/26                                                                                                              
-                                                                                                                                     
-                                                                                                                                     
-                                                                                                                                     
-  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
-  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00            
-  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,096,174,715.42       92,096,174,715.42            
+def _get_day_title_lines(include_bank: bool, day_code: str, rdate: str, sdesc: str = None) -> list[str]:
+    """
+    Return the title lines for a day's report.
+    include_bank: True for DAYA-DAYH, False for DAYI.
+    """
+    titles = []
+    if include_bank and sdesc:
+        titles.append(sdesc)
+    titles.append(f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}")
+    titles.append(f"REPORT DATE : {rdate}")
+    titles.append("")  # blank line after report date
+    return _title_lines(*titles)
+
+def _get_full_header(include_bank: bool, day_code: str, rdate: str, sdesc: str = None) -> list[str]:
+    """
+    Return the complete header for a day: title lines + column header + dashed line.
+    """
+    title_lines = _get_day_title_lines(include_bank, day_code, rdate, sdesc)
+    return title_lines + _render_table_header()
 
 
 
+    # Build the full header for this day (includes bank name)
+    full_header = _get_full_header(True, day_code, rdate, sdesc)
+
+    # Render the A-RMEL and B-RMEA groups
+    rmel_lines = _render_report_rmel(combined)
+
+    # Render the remaining groups
+    rest_lines = _render_report_rest(combined)
+
+    # Assemble output
+    lines = full_header + rmel_lines
+    if rest_lines:
+        # If there are remaining groups, repeat the full header before them
+        lines += full_header + rest_lines
+    else:
+        lines += rest_lines
+    return lines
 
 
------------------------------------------------------------------------------------------------------------------------             
-          TOTAL FOR B-RMEA                                                      1,584,654,299.44        1,584,654,299.44             
-                                                                        ------------------------------------------------             
- C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
- D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
- E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,096,174,716.17       92,096,174,716.17             
+
+    # Build the full header for DAYI (no bank name)
+    full_header = _get_full_header(False, day_code, rdate)   # sdesc omitted
+
+    rmel_lines = _render_report_rmel(combined)
+    rest_lines = _render_report_rest(combined)
+
+    lines = full_header + rmel_lines
+    if rest_lines:
+        lines += full_header + rest_lines
+    else:
+        lines += rest_lines
+    return lines
+
+
+
+def _render_table_header() -> list[str]:
+    lines = []
+    buf = _new_buf()
+    _put(buf, 1, "  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL")
+    lines.append(_line(buf, " "))
+    buf = _new_buf()
+    _put(buf, 3, "-" * 119)
+    lines.append(_line(buf, " "))
+    return lines
