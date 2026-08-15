@@ -1,18 +1,13 @@
-def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    
-    # Read the whole SAS file into a pandas DataFrame
-    try:
-        df = pd.read_sas(sas_path, encoding="latin1")
-    except Exception as e:
-        raise RuntimeError(f"Failed to read SAS file {sas_path}: {e}")
-    
-    # Convert to PyArrow Table (this preserves the schema even if df is empty)
-    table = pa.Table.from_pandas(df, preserve_index=False)
-    
-    # Write to Parquet
-    writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
-    writer.write_table(table)
-    writer.close()
-    
-    print(f"  [{tag}] Done — {len(df):,} rows cached.")
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    """Resolve <parent>_<stem>.parquet cache under CACHE_DIR, converting if stale."""
+    # Include directory name to avoid collisions (e.g., bnm_elw081.parquet vs bnmb_elw081.parquet)
+    cache_name = f"{sas_path.parent.name}_{sas_path.stem}.parquet"
+    cache_path = CACHE_DIR / cache_name
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh — skipping conversion.")
+    else:
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
+
+
+
