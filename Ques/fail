@@ -1,50 +1,46 @@
-def _title_lines(*titles: str) -> list[str]:
-    """TITLE1..TITLEn -> all lines get ASA=' ' (space)."""
+def _render_report_rmel(df: pl.DataFrame) -> list[str]:
     lines = []
-    for t in titles:
+    subset = df.filter(pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
+        ["FMTNAME", "SIGN", "BNMCODE"]
+    )
+    if subset.is_empty():
+        return lines
+
+    for fmtname in subset["FMTNAME"].unique(maintain_order=True).sort().to_list():
+        grp = subset.filter(pl.col("FMTNAME") == fmtname)
+        amounx_sum = 0.0
+        totalx_sum = 0.0
+        first_row = True
+        for row in grp.iter_rows(named=True):
+            buf = _new_buf()
+            if first_row:
+                _put(buf, 1, str(row["FMTNAME"] or ""))
+                first_row = False
+            _put(buf, 10, str(row["BNMCODE"] or ""))
+            _put(buf, 26, str(row["DESC"] or "")[:40])
+            _put(buf, 68, str(row["SIGN"] or ""))
+            _put(buf, 74, _fmt_comma(row["AMOUNT"], 22, 2))
+            _put(buf, 98, _fmt_comma(row["TOTAL"], 22, 2))
+            lines.append(_line(buf))
+            amounx_sum += row["AMOUNX"] or 0.0
+            totalx_sum += row["TOTALX"] or 0.0
+
+        # Dashed line after each group (separator)
         buf = _new_buf()
-        _put(buf, 1, t)
-        lines.append(_line(buf, " "))   # always space, no '1'
+        _put(buf, 3, "-" * 119)
+        lines.append(_line(buf))
+
+        # Total line
+        buf = _new_buf()
+        _put(buf, 12, f"TOTAL FOR {fmtname:<7s}")
+        _put(buf, 74, _fmt_comma(amounx_sum, 24, 2))
+        _put(buf, 98, _fmt_comma(totalx_sum, 24, 2))
+        lines.append(_line(buf))
+
+        # Dashed line under total
+        buf = _new_buf()
+        _put(buf, 74, "-" * 24)
+        _put(buf, 98, "-" * 24)
+        lines.append(_line(buf))
+
     return lines
-
-
-
-def _render_table_header() -> list[str]:
-    """Emulate the PROC REPORT column headers and the dashed line."""
-    lines = []
-    buf = _new_buf()
-    # Matches the SAS REPORT header exactly:
-    # "  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL"
-    _put(buf, 1, "  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL")
-    lines.append(_line(buf, " "))
-
-    buf = _new_buf()
-    _put(buf, 3, "-" * 119)   # 119 dashes starting at column 3 (two spaces before)
-    lines.append(_line(buf, " "))
-    return lines
-
-
-
-lines = _title_lines(
-    sdesc,
-    f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}",
-    f"REPORT DATE : {rdate}",
-    "",
-)
-lines.extend(_render_table_header())   # <-- add header here
-lines.extend(_render_report_rmel(combined))
-lines.extend(_render_report_rest(combined))
-
-
-
-lines = _title_lines(
-    f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}",
-    f"REPORT DATE : {rdate}",
-    "",
-)
-lines.extend(_render_table_header())   # <-- add header here
-lines.extend(_render_report_rmel(combined))
-lines.extend(_render_report_rest(combined))
-
-
-
