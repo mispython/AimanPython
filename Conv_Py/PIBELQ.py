@@ -1,64 +1,61 @@
 #!/usr/bin/env python3
 """
-Program : EIIWKAPE.py
-Purpose : Weekly (Daily) KAPITI Stock Report - Specified & Non-Specified
-          RENTAS Securities from Trading Book, for Public Islamic Bank
-          Berhad (PIBB). Produces the variance report between KAPITI and
-          WALKER, and the Rev Repo report, then dispatches PIBELQ's
-          per-day detail Eligible Liabilities report (DAY A - DAY I).
+Program : PIBELQ.py
+Purpose : Macro-equivalent module converted from PIBELQ (split from PBBELP).
+          Builds and prints the detail daily Eligible Liabilities (EL)
+          items for DAY A - DAY H (prtel) and DAY I (prteli).
 
-Dependency:
-    %INC PGM(PIBELQ);  -> converted separately as PIBELQ.py
+Called by EIIWKAPE.py via:
     from PIBELQ import build_elw1, prtel, prteli
 
-Dependency note (PBBELF):
-    PIBELQ.py (not this program) uses PBBELF.EL_DEFINITIONS /
-    ELI_DEFINITIONS as the EL/ELI item catalogue. This program does not
-    reference PBBELF directly, so it is not imported here.
-
 ============================================================================
-PHYSICAL INPUT DATASETS USED BY THIS PROGRAM  (all .sas7bdat, cached to
+PHYSICAL INPUT DATASETS USED BY THIS MODULE  (all .sas7bdat, cached to
 Parquet on first read per EIBDLN1M.py's chunked-conversion pattern)
 ============================================================================
-1. BNMK REP4X  (SAS libref BNMK -> SAP.PIBB.DKAPITI.SASDATA)
-   File     : rep4x<REPTYEAR><REPTMON><WK>.sas7bdat
-   Path     : INPUT_BNMK_REP4X_DIR
-   Used in  : Step 5 - build REP4 (BNMCODE remap 3723...->3523...,
-              filtered UTREF IN ('DLG','IDLG'), UTSTY NOT IN ('BMN','CB1'))
-
-2. BNMK REP2   (SAS libref BNMK -> SAP.PIBB.DKAPITI.SASDATA)
-   File     : rep2<REPTMON><WK>.sas7bdat
+1. BNMK REP2   (SAS libref BNMK -> SAP.PIBB.DKAPITI.SASDATA)
+   File     : rep2<REPTMON><NOWK>.sas7bdat
    Path     : INPUT_BNMK_REP2_DIR
-   Used in  : Step 6 - build REP2 (union with REP4, BNMCODG derivation) ->
-              feeds the RENTAS securities report (Step 7)
-              Step 9 - raw REP0 (Rev Repo at purchase proceeds report),
-              read independently from the *unmodified* dataset (SAS SET
-              BNMK.REP2&REPTMON&WK directly, not the reworked work.REP2)
-              NOTE: this is the SAME physical dataset that PIBELQ.py reads
-              as rep2<REPTMON><NOWK> since NOWK == WK in this program.
+   Used in  : prtel()  -> builds REP6 (RM MARKETABLE SECURITIES total,
+              BNMCODE forced to '4017100000000Y', filtered by ELDAY)
+              prteli() -> builds REP7 (same logic, DAYI)
 
-3. BNMS ELSCD  (SAS libref BNMS -> SAP.PIBB.RDAL1)
-   File     : elscd<REPTMON><WK>.sas7bdat
-   Path     : INPUT_BNMS_ELSCD_DIR
-   Used in  : Step 8 - WALW variance source (union with BNM ELW)
+2. BNMK TBL1   (SAS libref BNMK -> SAP.PIBB.DKAPITI.SASDATA)
+   File     : tbl1<REPTMON><NOWK>.sas7bdat
+   Path     : INPUT_BNMK_TBL1_DIR
+   Used in  : prtel() / prteli() -> PMM dataset, filtered by ELDAY
 
-4. BNM ELW     (SAS libref BNM  -> SAP.PIBB.D&TOYYYY)
-   File     : elw<REPTMON><WK>.sas7bdat
+3. BNM ELW     (SAS libref BNM  -> SAP.PIBB.D&TOYYYY)
+   File     : elw<REPTMON><NOWK>.sas7bdat
    Path     : INPUT_BNM_ELW_DIR
-   Used in  : Step 8 - WALW variance source (union with BNMS ELSCD)
+   Used in  : build_elw1() -> primary ELW1 source (remap/split logic for
+              BNMCODEs 32199xx, 4411xxx/4414xxx/etc., 4019000000000Y)
+
+4. BNMB ELW    (SAS libref BNMB -> SAP.PBB.D&TOYYYY)
+   File     : elw<REPTMON><NOWK>.sas7bdat
+   Path     : INPUT_BNMB_ELW_DIR
+   Used in  : build_elw1() -> ELW2 override rows (BNMCODE='4929980000000Y'
+              AND BRANCH > 3000), unioned onto ELW1
 
 ------------------------------------------------------------------------
-NON-FILE / DERIVED INPUTS
+NON-FILE INPUT: EL / ELI ITEM CATALOGUE
 ------------------------------------------------------------------------
-- LOAN.REPTDATE and BNMK.REPTDATE: no reptdate.parquet/.sas7bdat exists.
-  Both are derived from REPTDATE.py's get_reptdate_values() (see Steps 1-2).
-- ELG.GOLD&REPTMON&NOWK: a single-row work dataset built inline by this
-  program (Step 4) — not a physical file — and passed to PIBELQ.prtel /
-  prteli as gold_df.
+DATA ELITEM in the original SAS is built from `PROC SORT DATA=EL` (in
+%PRTEL, days A-H) and `PROC SORT DATA=ELI` (in %PRTELI, day I). These are
+NOT physical BNM datasets in this job's JCL -- their column layout
+(BNMCODE, SIGN, FMTNAME, TYPE, IDX, DESC) is exactly PBBELF's
+EL_DEFINITIONS / ELI_DEFINITIONS tables, so they are sourced directly
+from the PBBELF format-library module rather than from a file:
+    from PBBELF import EL_DEFINITIONS, ELI_DEFINITIONS
+
+Dependency note (format functions):
+    %INC PGM(PBBELF); loads the PBBELF format library into the SAS
+    session. Aside from the EL_DEFINITIONS/ELI_DEFINITIONS data used
+    above, no PUT(var, <PBBELF-format>.) call (format_brchcd,
+    format_regnew, format_ctype, format_cacbrch, etc.) appears anywhere
+    in this program body, so those format functions are NOT imported.
 """
 
 import gc
-from datetime import date, timedelta
 from pathlib import Path
 
 import duckdb
@@ -67,11 +64,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from REPTDATE import get_reptdate_values
-from PIBELQ import build_elw1, prtel, prteli
-
-# NOTE: %INC PGM stated in JCL, but PBB.PROGRAM library holds SAS source
-# code (compiled macros), not data - it has no python equivalent to import.
+from PBBELF import EL_DEFINITIONS, ELI_DEFINITIONS
 
 # ============================================================================
 # PATH CONFIGURATION (each physical input kept independent)
@@ -79,44 +72,17 @@ from PIBELQ import build_elw1, prtel, prteli
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_FIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
 
-INPUT_BNMK_REP4X_DIR = STG_FIR / "BNMK"                 # bnmk_rep4x
-INPUT_BNMK_REP2_DIR  = STG_FIR / "BNMK"                 # bnmk_rep2
-INPUT_BNMS_ELSCD_DIR = STG_FIR / "BNMS"                 # bnmk_elscd
-INPUT_BNM_ELW_DIR    = STG_FIR / "BNM"                  # bnm_elw
+INPUT_BNMK_REP2_DIR = STG_FIR / "BNMK"              # bnmk_rep2
+INPUT_BNMK_TBL1_DIR = STG_FIR / "BNMK"              # bnmk_tbl1
+INPUT_BNM_ELW_DIR   = STG_FIR / "BNM"               # bnm_elw
+INPUT_BNMB_ELW_DIR  = STG_FIR / "BNMB"              # bnms_elw
 
-# INPUT_BNMK_REP4X_DIR = STG_FIR / "BNMK" / "rep4x2026081.sas7bdat"
-# INPUT_BNMK_REP2_DIR  = STG_FIR / "BNMK" / "rep2081.sas7bdat"
-# INPUT_BNMS_ELSCD_DIR = STG_FIR / "BNMS" / "elscd081.sas7bdat"
-# INPUT_BNM_ELW_DIR    = STG_FIR / "BNM"  / "elw081.sas7bdat"
-
-OUTPUT_DIR      = BASE_DIR / "output" / "EIIWKAPE"
-OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIIWKAPE" / "nsrs"
-
-# Parquet cache directory — shared with PIBELQ.py (same BNMK REP2 dataset
-# is read by both programs for the same REPTMON/NOWK, so caching once
-# here avoids a duplicate conversion when PIBELQ.py runs in-process)
+# Parquet cache directory (shared with EIIWKAPE.py — same physical
+# BNMK REP2 dataset is read by both programs for the same REPTMON/NOWK)
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWKAPE"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-for _d in (OUTPUT_DIR, OUTPUT_NSRS_DIR, CACHE_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
-
-# ============================================================================
-# GLOBAL CONFIGURATION
-# ============================================================================
 CHUNK_ROWS = 500_000
-PAGE_SIZE = 60
-
-# ============================================================================
-# SFTP CONFIGURATION
-# ============================================================================
-# RUNSFTP step uploads the report to "FD-BNM REPORTING/PIBB/BNM RPTG" on the
-# Data Report Repository (DRR) host. Following project convention, paramiko
-# is used with credentials resolved via EDW_TRANSFORMATION.get_sftp_info().
-# HOST_DESC key for the DRR host is not confirmed against
-# ctl_dwh_sftp_info.sas7bdat yet, so the actual transfer call is left as a
-# documented placeholder below (see Step 13).
-# from EDW_TRANSFORMATION import get_sftp_info
-SFTP_REMOTE_DIR = "FD-BNM REPORTING/PIBB/BNM RPTG"
 
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
@@ -150,16 +116,6 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Done — {len(df):,} rows cached.")
 
 
-# def _load_cached(sas_path: Path, tag: str) -> Path:
-#     """Resolve <stem>.parquet cache under CACHE_DIR, converting if stale."""
-#     cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-#     if _cache_is_fresh(sas_path, cache_path):
-#         print(f"  [{tag}] Cache fresh — skipping conversion.")
-#     else:
-#         _sas_to_parquet(sas_path, cache_path, tag)
-#     return cache_path
-
-
 def _load_cached(sas_path: Path, tag: str) -> Path:
     """Resolve <parent>_<stem>.parquet cache under CACHE_DIR, converting if stale."""
     # Include directory name to avoid collisions (e.g., bnm_elw081.parquet vs bnmb_elw081.parquet)
@@ -173,86 +129,14 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 
 
 # ============================================================================
-# STEP 1: REPORT DATE  (LOAN.REPTDATE equivalent — no physical file, see
-# module docstring "NON-FILE / DERIVED INPUTS")
-# DATA REPTDAT1; SET LOAN.REPTDATE; SDESC='PUBLIC ISLAMIC BANK BERHAD'; ...
-# ============================================================================
-print("Step 1: Deriving report date (REPTDAT1)...")
-
-_reptdat1 = get_reptdate_values(year_format="%Y")
-SDESC   = "PUBLIC ISLAMIC BANK BERHAD"
-RDATE   = _reptdat1.reptdate.strftime("%d/%m/%y")   # DDMMYY8.
-RYEAR   = _reptdat1.reptdate.strftime("%Y")          # YEAR4.
-MTHNAM  = _reptdat1.reptdate.strftime("%B").upper()  # MONNAME.
-
-print(f"  SDESC  : {SDESC}")
-print(f"  RDATE  : {RDATE}")
-print(f"  RYEAR  : {RYEAR}")
-print(f"  MTHNAM : {MTHNAM}")
-
-# ============================================================================
-# STEP 2: WEEK / MONTH DERIVATION  (BNMK.REPTDATE equivalent — no
-# physical file, see module docstring)
-# DATA REPTDATE; SET BNMK.REPTDATE; MM=MONTH(SXDATE);
-#   custom week buckets (1-8='4', 9-15='1', 16-22='2', else='3');
-#   IF WK='4' THEN roll back one month (and one year if January).
-# ============================================================================
-print("\nStep 2: Deriving week/month bucket (REPTDATE)...")
-
-SXDATE = _reptdat1.reptdate
-_day = SXDATE.day
-if 1 <= _day <= 8:
-    WK = "4"
-elif 9 <= _day <= 15:
-    WK = "1"
-elif 16 <= _day <= 22:
-    WK = "2"
-else:
-    WK = "3"
-
-MM = SXDATE.month
-if WK == "4":
-    MM1 = MM - 1
-    if MM1 == 0:
-        MM1 = 12
-    MM = MM1
-    if MM == 12:
-        # SXDATE = MDY(1,1,YEAR(SXDATE)) - 1  ->  31-Dec of prior year
-        SXDATE = date(SXDATE.year, 1, 1) - timedelta(days=1)
-
-NOWK     = WK                       # CALL SYMPUT('NOWK', WK) -- identical to WK
-REPTMON  = f"{MM:02d}"              # Z2.
-RPDATE   = SXDATE.strftime("%d/%m/%y")
-REPTYEAR = SXDATE.strftime("%Y")    # YEAR4.
-
-print(f"  WK / NOWK : {WK}")
-print(f"  REPTMON   : {REPTMON}")
-print(f"  REPTYEAR  : {REPTYEAR}")
-print(f"  RPDATE    : {RPDATE}")
-
-# ============================================================================
-# STEP 3: OUTPUT FILE NAMES 
-# SASLIST DSN=SAP.PIBB.EIIWKAPD (catalogued, no date suffix in local name)
-# ============================================================================
-OUTPUT_FILE      = OUTPUT_DIR / "EIIWKAPD.txt"
-OUTPUT_NSRS_FILE = OUTPUT_NSRS_DIR / "EIIWKAPD.txt"
-
-# PUT //SAP.PIBB.EIIWKAPD  EIIWKAPD_MTH.TXT   (if NOWK='4')
-# PUT //SAP.PIBB.EIIWKAPD  EIIWKAPD_WK&NOWK..TXT  (otherwise)
-SFTP_REMOTE_NAME = "EIIWKAPD_MTH.TXT" if NOWK == "4" else f"EIIWKAPD_WK{NOWK}.TXT"
-
-print(f"  Output file        : {OUTPUT_FILE.name}")
-print(f"  NSRS copy          : {OUTPUT_NSRS_FILE.name}")
-print(f"  SFTP remote name   : {SFTP_REMOTE_NAME}")
-
-# ============================================================================
-# ASA REPORT HELPERS
+# ASA REPORT LINE HELPERS
 # ============================================================================
 def _new_buf(width: int = 132) -> list:
     return [" "] * width
 
 
 def _put(buf: list, col: int, text: str) -> None:
+    """SAS @col PUT text equivalent (col is 1-based)."""
     start = col - 1
     for i, ch in enumerate(str(text)):
         if 0 <= start + i < len(buf):
@@ -275,514 +159,506 @@ def _fmt_comma(value, width: int, decimals: int = 2) -> str:
 
 
 def _title_lines(*titles: str) -> list[str]:
+    """TITLE1..TITLEn -> all lines get ASA=' ' (space)."""
     lines = []
-    for i, t in enumerate(titles):
+    for t in titles:
         buf = _new_buf()
         _put(buf, 1, t)
-        lines.append(_line(buf, "1" if i == 0 else " "))
+        lines.append(_line(buf, " "))   # always space, no '1'
     return lines
 
 
-def _render_pivot_report(
-    df: pl.DataFrame,
-    title_lines: list[str],
-    row_col: str,
-    all_label: str,
-    class_col: str,
-    value_specs: list[tuple],
-    rts: int,
-) -> list[str]:
+def _get_day_title_lines(include_bank: bool, day_code: str, rdate: str, sdesc: str = None) -> list[str]:
     """
-    Generic emulation of PROC TABULATE: rows = distinct row_col values plus
-    an ALL/grand-total row, columns = distinct class_col values, each
-    showing one or more summed value columns (COMMA-formatted).
+    Return the title lines for a day's report (no column header).
+    include_bank: True for DAYA-DAYH, False for DAYI.
+    Includes a blank line after the report date.
     """
-    # If there is no data, return nothing (no titles, no headers)
-    if df.is_empty():
-        return []
-    
-    lines = list(title_lines)
+    titles = []
+    if include_bank and sdesc:
+        titles.append(sdesc)
+    titles.append(f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}")
+    titles.append(f"REPORT DATE : {rdate}")
+    titles.append("")  # blank line after report date
+    return _title_lines(*titles)
 
-    class_vals = sorted(df[class_col].drop_nulls().unique().to_list())
-    hdr = _new_buf()
-    pos = rts + 1
-    col_starts = {}
-    for cv in class_vals:
-        for (col, label, width, dec) in value_specs:
-            col_starts[(cv, col)] = pos
-            seg = cv if len(value_specs) == 1 else f"{cv[:width - len(label) - 1]} {label}"
-            _put(hdr, pos, seg[:width].rjust(width))
-            pos += width
-    lines.append(_line(hdr))
-    lines.append(" " + "-" * (pos - 2))
+def _get_full_header(include_bank: bool, day_code: str, rdate: str, sdesc: str = None) -> list[str]:
+    """
+    Return the complete header: title lines + column header + dashed line.
+    """
+    title_lines = _get_day_title_lines(include_bank, day_code, rdate, sdesc)
+    return title_lines + _render_table_header()
 
-    grand = {}
-    row_vals = sorted(df[row_col].drop_nulls().unique().to_list())
-    for rv in row_vals:
-        buf = _new_buf()
-        _put(buf, 1, str(rv)[:rts])
-        sub = df.filter(pl.col(row_col) == rv)
-        for cv in class_vals:
-            cell = sub.filter(pl.col(class_col) == cv)
-            for (col, label, width, dec) in value_specs:
-                val = float(cell[col].sum()) if len(cell) else 0.0
-                grand[(cv, col)] = grand.get((cv, col), 0.0) + val
-                _put(buf, col_starts[(cv, col)], _fmt_comma(val, width, dec))
-        lines.append(_line(buf))
+
+def _render_table_header() -> list[str]:
+    """Emulate the PROC REPORT column headers and the dashed line."""
+    lines = []
+    buf = _new_buf()
+    # Matches the SAS REPORT header exactly:
+    # "  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL"
+    _put(buf, 1, "FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL")
+    lines.append(_line(buf, " "))
 
     buf = _new_buf()
-    _put(buf, 1, all_label[:rts])
-    for cv in class_vals:
-        for (col, label, width, dec) in value_specs:
-            _put(buf, col_starts[(cv, col)], _fmt_comma(grand.get((cv, col), 0.0), width, dec))
-    lines.append(_line(buf))
+    _put(buf, 1, "-" * 119)   # 119 dashes starting at column 3 (two spaces before)
+    lines.append(_line(buf, " "))
     return lines
 
 
-def _paginate_simple(lines: list[str], page_size: int, header_lines: list[str]) -> list[str]:
-    """
-    Paginate a list of lines where only the header lines (titles + column headers)
-    need to be repeated on every page. No group reprinting.
-    Ensures that the total number of lines per page NEVER exceeds page_size.
-    """
-    if not lines:
-        return []
+# ============================================================================
+# EL / ELI CATALOGUE (from PBBELF, not a file — see module docstring)
+# ============================================================================
+def _el_catalogue(definitions: list) -> pl.DataFrame:
+    """PROC SORT DATA=EL|ELI (DROP=TYPE) OUT=ELITEM; BY BNMCODE;"""
+    df = pl.DataFrame(definitions).rename({
+        "bnmcode": "BNMCODE", "sign": "SIGN", "fmtname": "FMTNAME",
+        "idx": "IDX", "desc": "DESC",
+    }).drop("type")   # DROP=TYPE
+    return df.sort("BNMCODE")
 
-    # Separate header from data
-    header_count = len(header_lines)
-    data_lines = lines[header_count:]
-    if not data_lines:
-        return lines
 
-    result = []
-    page_buffer = []
-    # Start the first page with the header lines
-    page_buffer = header_lines.copy()
-    # We will iterate over data lines and add them to page_buffer
-    for line in data_lines:
-        # Check if adding this line would exceed page_size
-        if len(page_buffer) + 1 > page_size:
-            # Flush current page
-            result.extend(page_buffer)
-            # Start a new page with the header and this line
-            page_buffer = header_lines.copy()
-            page_buffer.append(line)
+# ============================================================================
+# BUILD ELW1  (shared by prtel() per-day filter and prteli())
+# DATA ELW1; SET BNM.ELW&REPTMON&NOWK; ... ; DATA ELW2; SET BNMB.ELW...;
+# ============================================================================
+def build_elw1(reptmon: str, nowk: str, sdesc: str) -> pl.DataFrame:
+    print("  Loading BNM ELW / BNMB ELW (build_elw1)...")
+
+    elw1_sas = INPUT_BNM_ELW_DIR / f"elw{reptmon}{nowk}.sas7bdat"
+    elw1_cache = _load_cached(elw1_sas, "BNM_ELW")
+
+    elw2_sas = INPUT_BNMB_ELW_DIR / f"elw{reptmon}{nowk}.sas7bdat"
+    elw2_cache = _load_cached(elw2_sas, "BNMB_ELW")
+
+    con = duckdb.connect(database=":memory:")
+    # elw2 = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+    #            CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{elw2_cache.as_posix()}')
+    #     WHERE BNMCODE = '4929980000000Y' AND BRANCH > 3000
+    # """).pl()
+    elw2 = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
+               CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{elw2_cache.as_posix()}')
+        WHERE BNMCODE = '4929980000000Y'
+    """).pl()
+
+    # elw1_raw = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+    #            CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{elw1_cache.as_posix()}')
+    # """).pl()
+    elw1_raw = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
+               CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{elw1_cache.as_posix()}')
+    """).pl()
+    con.close()
+
+    elw1_raw = elw1_raw.with_columns(pl.col("AMOUNT").abs())
+
+    rows = []
+    for row in elw1_raw.iter_rows(named=True):
+        bnmcode = row["BNMCODE"]
+        amount = row["AMOUNT"]
+
+        # IF "&SDESC"='PUBLIC BANK BERHAD' THEN ... (only applies to PBB run)
+        if sdesc == "PUBLIC BANK BERHAD" and bnmcode == "4929980000000Y":
+            amount = 0.00
+
+        if bnmcode in ("3219902000000Y", "3219903000000Y", "3219912000000Y"):
+            rows.append({**row, "BNMCODE": "3219910000000Y", "AMOUNT": amount})
+        elif bnmcode in (
+            "4411100000000Y", "4414000000000Y", "4411010000000Y",
+            "4411015000000Y", "4411080000000Y", "4411200000000Y",
+            "4411300000000Y", "4411900000000Y", "4412000000000Y",
+            "4413000000000Y", "4429900000000Y",
+        ):
+            rows.append({**row, "BNMCODE": bnmcode, "AMOUNT": amount})
+            rows.append({**row, "BNMCODE": "4410000000000Y", "AMOUNT": amount})
+        elif bnmcode == "4019000000000Y":
+            rows.append({**row, "BNMCODE": "4019100000000Y", "AMOUNT": amount})
+            rows.append({**row, "BNMCODE": "4019000000000Y", "AMOUNT": 0.00})
         else:
-            page_buffer.append(line)
-    # Flush the last page
-    if page_buffer:
-        result.extend(page_buffer)
-    return result
+            rows.append({**row, "BNMCODE": bnmcode, "AMOUNT": amount})
+
+    elw1 = pl.DataFrame(rows, schema=elw1_raw.schema) if rows else elw1_raw.clear()
+    elw1 = pl.concat([elw1, elw2.select(elw1.columns)], how="vertical")
+    return elw1
 
 
-def _paginate_with_groups(lines: list[str], page_size: int, header_lines: list[str]) -> list[str]:
+def _elw_for_day(elw1: pl.DataFrame, day_code: str) -> pl.DataFrame:
+    """PROC SORT DATA=ELW1(WHERE=(ELDAY="&I")) OUT=ELW (KEEP=BNMCODE AMOUNT)."""
+    return (
+        elw1.filter(pl.col("ELDAY") == day_code)
+        .select(["BNMCODE", "AMOUNT"])
+        .sort("BNMCODE")
+    )
+
+
+# ============================================================================
+# MERGE WITH EL/ELI CATALOGUE + BUILD ELWT (SRR row) + FINAL RENDER
+# ============================================================================
+def _finalize_elw(elw_stack: pl.DataFrame, elitem: pl.DataFrame,
+                   drop_4019: bool = True) -> pl.DataFrame:
     """
-    Paginate a list of lines that contains groups (FMTNAME printed only on first row).
-    On each new page, reprint the header lines, and if the group continues,
-    reprint the FMTNAME for that group at the top of the new page.
-    Strictly enforces page_size lines per page.
+    DATA ELW; MERGE ELW(IN=A) ELITEM(IN=B); BY BNMCODE; IF B;
+    ... DESC override for cagamas, FMTNAME=IDX||'-'||FMTNAME,
+    AMOUNX/TOTALX SIGN adjustment, drop 4019000000000Y/4019100000000Y.
+
+    drop_4019: prtel() always drops these two codes; prteli() only drops
+    them WHEN WK NE &NOWK  (i.e. when NOWK is not '4') — controlled by
+    the caller.
     """
-    if not lines:
-        return []
+    summed = elw_stack.group_by("BNMCODE").agg(pl.col("AMOUNT").sum().alias("AMOUNT"))
 
-    header_count = len(header_lines)
-    data_lines = lines[header_count:]
-    if not data_lines:
-        return lines
+    merged = elitem.join(summed, on="BNMCODE", how="left").with_columns(
+        pl.col("AMOUNT").fill_null(0.0)
+    )
+    merged = merged.with_columns(pl.col("AMOUNT").alias("TOTAL"))
 
-    # Pre-scan data_lines to find group starts (lines with non-space at column 1)
-    group_starts = []   # list of (index, fmtname)
-    current_fmt = None
-    for idx, line in enumerate(data_lines):
-        if len(line) > 0 and line[0] != ' ':
-            current_fmt = line[:7].strip()
-            group_starts.append((idx, current_fmt))
+    # IF IDX NE ' '; FMTNAME=IDX||'-'||FMTNAME;
+    merged = merged.filter(pl.col("IDX").str.strip_chars() != "")
+    merged = merged.with_columns(
+        (pl.col("IDX") + "-" + pl.col("FMTNAME")).alias("FMTNAME")
+    )
 
-    result = []
-    page_buffer = header_lines.copy()
-    # We'll build pages line by line, remembering the current group for reprint
-    current_group_fmt = None
-    # We need to know if we are at the start of a page to reprint group if needed
-    # We'll keep a flag that indicates we are at the beginning of a page (after header)
-    at_page_start = True
-
-    for idx, line in enumerate(data_lines):
-        # Check if this line is a group start
-        is_group_start = (len(line) > 0 and line[0] != ' ')
-        if is_group_start:
-            current_group_fmt = line[:7].strip()
-
-        # Check if adding this line would exceed page_size
-        if len(page_buffer) + 1 > page_size:
-            # Flush current page
-            result.extend(page_buffer)
-            # Start a new page with header
-            page_buffer = header_lines.copy()
-            at_page_start = True
-            # If this line is NOT a group start and we have a current group, we need to reprint the group header
-            if not is_group_start and current_group_fmt is not None:
-                # Create a group header line
-                buf = _new_buf()
-                _put(buf, 1, current_group_fmt)
-                group_line = _line(buf, " ")
-                # Add the group header to the new page (it counts as one line)
-                page_buffer.append(group_line)
-            # Now add the current line
-            page_buffer.append(line)
-            at_page_start = False
-        else:
-            page_buffer.append(line)
-            at_page_start = False
-
-    # Flush last page
-    if page_buffer:
-        result.extend(page_buffer)
-    return result
-
-
-# ============================================================================
-# STEP 4: ELG.GOLD&REPTMON&NOWK  (work dataset, single seed row — not a
-# physical file, see module docstring)
-# DATA ELG.GOLD&REPTMON&NOWK; ELDAY='DAYI'; BNMCODE='4929995000000Y';
-#      AMOUNT=0.00;
-# ============================================================================
-print("\nStep 4: Building GOLD seed dataset...")
-
-gold_df = pl.DataFrame({
-    "ELDAY": ["DAYI"],
-    "BNMCODE": ["4929995000000Y"],
-    "AMOUNT": [0.00],
-})
-
-# ============================================================================
-# STEP 5: REP4  (INPUT: BNMK REP4X — see module docstring item 1)
-# ============================================================================
-print("\nStep 5: Building REP4...")
-
-rep4_sas = INPUT_BNMK_REP4X_DIR / f"rep4x{REPTYEAR}{REPTMON}{WK}.sas7bdat"
-rep4_cache = _load_cached(rep4_sas, "BNMK_REP4X")
-
-# con = duckdb.connect(database=":memory:")
-# rep4 = con.execute(f"""
-#     SELECT
-#         CASE WHEN BNMCODE = '3723000000000Y' THEN '3523000000000Y' ELSE BNMCODE END AS BNMCODE,
-#         CAST(UTSTY   AS VARCHAR) AS UTSTY,
-#         CAST(UTREF   AS VARCHAR) AS UTREF,
-#         CAST(ELDAY   AS VARCHAR) AS ELDAY,
-#         CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
-#         CAST(NETAMT  AS DOUBLE)  AS NETAMT,
-#         CAST(COSTDED AS DOUBLE)  AS COSTDED
-#     FROM read_parquet('{rep4_cache.as_posix()}')
-#     WHERE UTREF IN ('DLG','IDLG')
-#       AND UTSTY NOT IN ('BMN','CB1')
-# """).pl()
-# con.close()
-
-con = duckdb.connect(database=":memory:")
-rep4_raw = con.execute(f"""
-    SELECT
-        CASE WHEN BNMCODE = '3723000000000Y' THEN '3523000000000Y' ELSE BNMCODE END AS BNMCODE,
-        CAST(UTSTY   AS VARCHAR) AS UTSTY,
-        CAST(UTREF   AS VARCHAR) AS UTREF,
-        CAST(ELDAY   AS VARCHAR) AS ELDAY,
-        CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
-    FROM read_parquet('{rep4_cache.as_posix()}')
-    WHERE UTREF IN ('DLG','IDLG')
-      AND UTSTY NOT IN ('BMN','CB1')
-""").pl()
-con.close()
-
-# Add missing columns that REP2_base has (NETAMT, COSTDED) with null/0.0
-rep4 = rep4_raw.with_columns([
-    pl.lit(None).cast(pl.Float64).alias("NETAMT"),   # or pl.lit(0.0)
-    pl.lit(None).cast(pl.Float64).alias("COSTDED"),
-])
-
-print(f"  REP4 rows: {len(rep4):,}")
-
-# ============================================================================
-# STEP 6: REP2  (INPUT: BNMK REP2 — see module docstring item 2)
-# DATA REP2; SET BNMK.REP2&REPTMON&WK REP4; remap codes; build BNMCODG;
-# PROC SORT BY BNMCODG omitted -- the pivot renderer groups by row_col
-# directly, so a pre-sort is unnecessary.
-# ============================================================================
-print("\nStep 6: Building REP2 (union with REP4, remap, BNMCODG)...")
-
-rep2_sas = INPUT_BNMK_REP2_DIR / f"rep2{REPTMON}{WK}.sas7bdat"
-rep2_cache = _load_cached(rep2_sas, "BNMK_REP2")
-
-con = duckdb.connect(database=":memory:")
-rep2_base = con.execute(f"""
-    SELECT
-        CAST(BNMCODE AS VARCHAR) AS BNMCODE,
-        CAST(UTSTY   AS VARCHAR) AS UTSTY,
-        CAST(UTREF   AS VARCHAR) AS UTREF,
-        CAST(ELDAY   AS VARCHAR) AS ELDAY,
-        CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
-        CAST(NETAMT  AS DOUBLE)  AS NETAMT,
-        CAST(COSTDED AS DOUBLE)  AS COSTDED
-    FROM read_parquet('{rep2_cache.as_posix()}')
-""").pl()
-con.close()
-
-rep2 = pl.concat([rep2_base, rep4.select(rep2_base.columns)], how="vertical")
-
-_is_repo = pl.col("BNMCODE") == "3250000000000Y"
-rep2 = rep2.with_columns([
-    pl.when(_is_repo).then(pl.lit("REV")).otherwise(pl.col("UTSTY")).alias("UTSTY"),
-    pl.when(_is_repo).then(pl.lit("REPO ")).otherwise(pl.col("UTREF")).alias("UTREF"),
-    pl.when(_is_repo).then(pl.col("NETAMT")).otherwise(pl.col("AMOUNT")).alias("AMOUNT"),
-])
-rep2 = rep2.with_columns(
-    pl.when(pl.col("BNMCODE") == "3752000000000Y")
-    .then(pl.lit("3552000000000Y"))
-    .otherwise(pl.col("BNMCODE"))
-    .alias("BNMCODE")
-)
-rep2 = rep2.with_columns(
-    (pl.col("BNMCODE") + "-" + pl.col("UTSTY") + " " + pl.col("UTREF").str.slice(0, 5)).alias("BNMCODG")
-)
-print(f"  REP2 rows: {len(rep2):,}")
-
-# ============================================================================
-# STEP 7: RENTAS SECURITIES REPORT  (PROC TABULATE #1)
-# ============================================================================
-print("\nStep 7: Rendering RENTAS securities report...")
-
-title1 = _title_lines(
-    f"PUBLIC BANK BERHAD -REPORT DATE {RDATE}",
-    "SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK",
-    f"(DAILY KAPITI STOCK REPORT) WEEK {WK} {MTHNAM} {RYEAR}",
-)
-report1_lines = _render_pivot_report(
-    rep2, title1,
-    row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
-    class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)], rts=30,
-)
-
-# ============================================================================
-# STEP 8: VARIANCE REPORT  (INPUT: BNMS ELSCD + BNM ELW — see module
-# docstring items 3 & 4; PROC SUMMARY REPOV / WALW, MERGE, TABULATE #2)
-# ============================================================================
-print("\nStep 8: Building variance report (KAPITI vs WALKER)...")
-
-repov = rep2.group_by(["BNMCODE", "ELDAY"]).agg(pl.col("AMOUNT").sum().alias("AMOUNT"))
-
-elscd_sas = INPUT_BNMS_ELSCD_DIR / f"elscd{REPTMON}{WK}.sas7bdat"
-elscd_cache = _load_cached(elscd_sas, "BNMS_ELSCD")
-
-elw_sas = INPUT_BNM_ELW_DIR / f"elw{REPTMON}{WK}.sas7bdat"
-elw_cache = _load_cached(elw_sas, "BNM_ELW")
-
-con = duckdb.connect(database=":memory:")
-walw_base = con.execute(f"""
-    SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
-           CAST(AMOUNT AS DOUBLE) AMOUNT
-    FROM read_parquet('{elscd_cache.as_posix()}')
-    UNION ALL
-    SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
-           CAST(AMOUNT AS DOUBLE) AMOUNT
-    FROM read_parquet('{elw_cache.as_posix()}')
-""").pl()
-con.close()
-
-walw = walw_base.group_by(["BNMCODE", "ELDAY"]).agg(pl.col("AMOUNT").sum().alias("WALWAMT"))
-
-# MERGE REPOV(IN=A) WALW(IN=B); BY BNMCODE ELDAY; IF A;  -> left join, keep REPOV
-variance_df = repov.join(walw, on=["BNMCODE", "ELDAY"], how="left").with_columns(
-    pl.col("WALWAMT").fill_null(0.0)
-).with_columns(
-    (pl.col("AMOUNT") - pl.col("WALWAMT")).alias("VARIANC")
-)
-
-title2 = _title_lines("VARIANCE BETWEEN KAPITI AND WALKER")
-report2_lines = _render_pivot_report(
-    variance_df, title2,
-    row_col="BNMCODE", all_label="TOTAL ",
-    class_col="ELDAY",
-    value_specs=[
-        ("AMOUNT", "KAPITI", 16, 2),
-        ("WALWAMT", "WALKER", 16, 2),
-        ("VARIANC", "VARIANCE", 16, 2),
-    ],
-    rts=34,
-)
-
-# ============================================================================
-# STEP 9: REV REPO AT PURCHASE PROCEEDS REPORT  (REP0, TABULATE #3)
-# DATA REP0; SET BNMK.REP2&REPTMON&WK;  -- raw physical REP2 (same input
-# as Step 6 item 2), read directly rather than from the reworked work.REP2,
-# since SAS re-reads the physical dataset here instead of reusing work.REP2.
-# ============================================================================
-print("\nStep 9: Building Rev Repo report...")
-
-rep0 = rep2_base.filter(pl.col("BNMCODE") == "3250000000000Y").with_columns(
-    (pl.col("BNMCODE") + "-" + pl.col("UTSTY") + " " + pl.col("UTREF").str.slice(0, 5)).alias("BNMCODG")
-)
-
-title3 = _title_lines("REV REPO AT PURCHASE PROCEEDS")
-report3_lines = _render_pivot_report(
-    rep0, title3,
-    row_col="BNMCODG", all_label="TOTAL ",
-    class_col="ELDAY",
-    value_specs=[
-        ("AMOUNT", "AMOUNT", 16, 2),
-        ("COSTDED", "(-) PURC PROC.", 16, 2),
-        ("NETAMT", "MARKET SEC ", 16, 2),
-    ],
-    rts=30,
-)
-
-del rep2_base, repov, walw_base, walw
-gc.collect()
-
-# ============================================================================
-# STEP 10: PIBELQ DAILY EL DETAIL REPORTS  (%PRTEL DAYA..DAYH, %PRTELI DAYI)
-# Consumes: BNMK REP2 / BNMK TBL1 / BNM ELW / BNMB ELW — all documented
-# in PIBELQ.py's own module docstring, kept as separate physical inputs.
-# ============================================================================
-print("\nStep 10: Rendering PIBELQ daily EL detail reports...")
-
-elw1 = build_elw1(REPTMON, NOWK, SDESC)
-
-pibelq_lines: list[str] = []
-for day_code in ("DAYA", "DAYB", "DAYC", "DAYD", "DAYE", "DAYF", "DAYG", "DAYH"):
-    pibelq_lines.extend(
-        prtel(
-            day_code,
-            reptmon=REPTMON, nowk=NOWK, sdesc=SDESC, rdate=RDATE,
-            gold_df=gold_df, rep4_df=rep4, elw1=elw1,
+    # Cagamas special description
+    merged = merged.with_columns([
+        pl.when(pl.col("BNMCODE") == "4314017000000Y")
+        .then(
+            pl.lit("O/W RM IBB FROM CAGAMAS ")
+            + pl.col("AMOUNT").map_elements(lambda v: _fmt_comma(v, 14, 2).strip(), return_dtype=pl.Utf8)
         )
+        .otherwise(pl.col("DESC"))
+        .alias("DESC"),
+        pl.when(pl.col("BNMCODE") == "4314017000000Y").then(0.0).otherwise(pl.col("AMOUNT")).alias("AMOUNT"),
+        pl.when(pl.col("BNMCODE") == "4314017000000Y").then(0.0).otherwise(pl.col("TOTAL")).alias("TOTAL"),
+    ])
+
+    merged = merged.with_columns([
+        pl.col("AMOUNT").alias("AMOUNX"),
+        pl.col("TOTAL").alias("TOTALX"),
+    ])
+    neg = pl.col("SIGN") == "-"
+    merged = merged.with_columns(
+        pl.when(neg).then(-1 * pl.col("AMOUNT")).otherwise(pl.col("AMOUNX")).alias("AMOUNX")
+    )
+    merged = merged.with_columns(
+        pl.when(neg).then(pl.col("AMOUNX")).otherwise(pl.col("TOTALX")).alias("TOTALX")
     )
 
-pibelq_lines.extend(
-    prteli(
-        "DAYI",
-        reptmon=REPTMON, nowk=NOWK, rdate=RDATE,
-        gold_df=gold_df, rep4_df=rep4, elw1=elw1,
+    merged = merged.with_columns(
+        pl.when(pl.col("BNMCODE") == "4017100000000Y")
+        .then(pl.lit("TOTAL RM MARKETABLE SECURITIES"))
+        .otherwise(pl.col("DESC"))
+        .alias("DESC")
     )
-)
 
-del elw1, gold_df, rep4, rep2, rep0, variance_df
-gc.collect()
+    if drop_4019:
+        merged = merged.filter(~pl.col("BNMCODE").is_in(["4019000000000Y", "4019100000000Y"]))
+    return merged
+
+
+def _build_elwt(elw_final: pl.DataFrame) -> pl.DataFrame:
+    """DATA ELWT; SET ELW; BNMCODE='4013000000000Y'; ... PROC SUMMARY NWAY."""
+    elwt = elw_final.with_columns([
+        pl.lit("4013000000000Y").alias("BNMCODE"),
+        pl.lit("E-ELSRR").alias("FMTNAME"),
+        pl.lit("+").alias("SIGN"),
+        pl.lit("ELIGIBLE LIABILITIES FOR SRR NEXT MONTH").alias("DESC"),
+    ])
+    bd_flag = pl.col("IDX").is_in(["B", "D"])
+    elwt = elwt.with_columns(
+        pl.when(bd_flag).then(-1 * pl.col("AMOUNT")).otherwise(pl.col("AMOUNX")).alias("AMOUNX")
+    )
+    elwt = elwt.with_columns(
+        pl.when(bd_flag).then(pl.col("AMOUNX")).otherwise(pl.col("TOTALX")).alias("TOTALX")
+    )
+
+    grouped = (
+        elwt.group_by(["BNMCODE", "FMTNAME", "DESC", "SIGN"])
+        .agg([
+            pl.col("AMOUNT").sum().alias("AMOUNT"),
+            pl.col("TOTAL").sum().alias("TOTAL"),
+            pl.col("AMOUNX").sum().alias("AMOUNX"),
+            pl.col("TOTALX").sum().alias("TOTALX"),
+        ])
+    )
+    # DATA ELWT; SET ELWT; AMOUNT=AMOUNX; TOTAL=TOTALX;
+    grouped = grouped.with_columns([
+        pl.col("AMOUNX").alias("AMOUNT"),
+        pl.col("TOTALX").alias("TOTAL"),
+    ])
+    return grouped
+
 
 # ============================================================================
-# STEP 11: PAGINATE (only if needed) AND WRITE OUTPUT
+# PROC REPORT RENDERING
 # ============================================================================
-print("\nStep 11: Paginating and writing output...")
+def _render_report_rmel(df: pl.DataFrame) -> list[str]:
+    lines = []
+    subset = df.filter(pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
+        ["FMTNAME", "SIGN", "BNMCODE"]
+    )
+    if subset.is_empty():
+        return lines
 
-def extract_header_lines(block_lines: list[str]) -> list[str]:
-    """Extract the header lines (titles, column header, dashed line)."""
-    header = []
-    for line in block_lines:
-        header.append(line)
-        if "---" in line:  # dashed line indicates end of header
-            break
-    return header
+    for fmtname in subset["FMTNAME"].unique(maintain_order=True).sort().to_list():
+        grp = subset.filter(pl.col("FMTNAME") == fmtname)
+        amounx_sum = 0.0
+        totalx_sum = 0.0
+        first_row = True
+        for row in grp.iter_rows(named=True):
+            buf = _new_buf()
+            if first_row:
+                _put(buf, 1, str(row["FMTNAME"] or ""))
+                first_row = False
+            _put(buf, 10, str(row["BNMCODE"] or ""))
+            _put(buf, 26, str(row["DESC"] or "")[:40])
+            _put(buf, 68, str(row["SIGN"] or ""))
+            _put(buf, 74, _fmt_comma(row["AMOUNT"], 22, 2))
+            _put(buf, 98, _fmt_comma(row["TOTAL"], 22, 2))
+            lines.append(_line(buf))
+            amounx_sum += row["AMOUNX"] or 0.0
+            totalx_sum += row["TOTALX"] or 0.0
 
-def paginate_block(block: list[str], page_size: int, with_groups: bool = False) -> list[str]:
-    """
-    Paginate a single block of lines (either pivot or detail).
-    If the block fits on one page, return it unchanged (faster).
-    """
-    if not block:
-        return []
-    header = extract_header_lines(block)
-    header_count = len(header)
-    total_lines = len(block)
-    # If the whole block fits on one page, no need to paginate
-    if total_lines <= page_size:
-        return block
+        # Dashed line after each group (separator)
+        buf = _new_buf()
+        _put(buf, 1, "-" * 119)
+        lines.append(_line(buf))
 
-    data_lines = block[header_count:]
-    if not data_lines:
-        return block
+        # Total line
+        buf = _new_buf()
+        _put(buf, 10, f"TOTAL FOR {fmtname:<7s}")
+        _put(buf, 72, _fmt_comma(amounx_sum, 24, 2))
+        _put(buf, 96, _fmt_comma(totalx_sum, 24, 2))
+        lines.append(_line(buf))
 
-    if with_groups:
-        # Use group-aware pagination
-        return _paginate_with_groups(block, page_size, header)
+        # Dashed line under total
+        buf = _new_buf()
+        _put(buf, 72, "-" * 24)
+        _put(buf, 96, "-" * 24)
+        lines.append(_line(buf))
+
+    return lines
+
+
+def _render_report_rest(df: pl.DataFrame) -> list[str]:
+    """PROC REPORT WHERE=(FMTNAME NOT IN ('A-RMEL','B-RMEA'))."""
+    lines = []
+    subset = df.filter(~pl.col("FMTNAME").is_in(["A-RMEL", "B-RMEA"])).sort(
+        ["FMTNAME", "SIGN", "BNMCODE"]
+    )
+    current_fmt = None
+    for row in subset.iter_rows(named=True):
+        buf = _new_buf()
+        # Print FMTNAME only when it changes (SAS GROUP behavior)
+        if row["FMTNAME"] != current_fmt:
+            current_fmt = row["FMTNAME"]
+            _put(buf, 1, str(row["FMTNAME"] or ""))
+        # otherwise leave blank
+        _put(buf, 10, str(row["BNMCODE"] or ""))
+        _put(buf, 26, str(row["DESC"] or "")[:40])
+        _put(buf, 68, str(row["SIGN"] or ""))
+        _put(buf, 74, _fmt_comma(row["AMOUNT"], 22, 2))
+        _put(buf, 98, _fmt_comma(row["TOTAL"], 22, 2))
+        lines.append(_line(buf))
+    return lines
+
+
+# ============================================================================
+# PRTEL(I)  -- I in DAYA..DAYH
+# ============================================================================
+def prtel(day_code: str, *, reptmon: str, nowk: str, sdesc: str, rdate: str,
+          gold_df: pl.DataFrame, rep4_df: pl.DataFrame, elw1: pl.DataFrame) -> list[str]:
+    print(f"  [PIBELQ] prtel({day_code})...")
+
+    # DATA ELG; SET ELG.GOLD&REPTMON&NOWK; IF ELDAY="&I";
+    # GOLD is a single-row work dataset built inline in EIIWKAPE.py — not a
+    # physical file — passed in as gold_df.
+    elg = gold_df.filter(pl.col("ELDAY") == day_code)
+
+    # DATA PMM; SET BNMK.TBL1&REPTMON&NOWK; IF ELDAY="&I";
+    tbl1_sas = INPUT_BNMK_TBL1_DIR / f"tbl1{reptmon}{nowk}.sas7bdat"
+    tbl1_cache = _load_cached(tbl1_sas, "BNMK_TBL1")
+
+    # DATA REP6; SET BNMK.REP2&REPTMON&NOWK REP4; ... IF ELDAY="&I";
+    rep2_sas = INPUT_BNMK_REP2_DIR / f"rep2{reptmon}{nowk}.sas7bdat"
+    rep2_cache = _load_cached(rep2_sas, "BNMK_REP2")
+
+    con = duckdb.connect(database=":memory:")
+    pmm = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{tbl1_cache.as_posix()}')
+        WHERE ELDAY = '{day_code}'
+    """).pl()
+
+    rep2_base = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(UTSTY AS VARCHAR) UTSTY,
+               CAST(UTREF AS VARCHAR) UTREF, CAST(ELDAY AS VARCHAR) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT, CAST(NETAMT AS DOUBLE) NETAMT,
+               CAST(COSTDED AS DOUBLE) COSTDED
+        FROM read_parquet('{rep2_cache.as_posix()}')
+    """).pl()
+    con.close()
+
+    rep6 = pl.concat([rep2_base, rep4_df.select(rep2_base.columns)], how="vertical")
+    rep6 = rep6.with_columns(
+        pl.when(pl.col("BNMCODE") == "3250000000000Y")
+        .then(pl.col("NETAMT"))
+        .otherwise(pl.col("AMOUNT"))
+        .alias("AMOUNT")
+    )
+    rep6 = rep6.with_columns(pl.lit("4017100000000Y").alias("BNMCODE"))
+    rep6 = rep6.filter(pl.col("ELDAY") == day_code).select(["BNMCODE", "AMOUNT"])
+
+    elw = _elw_for_day(elw1, day_code)
+
+    elw_stack = pl.concat(
+        [
+            elw.select(["BNMCODE", "AMOUNT"]),
+            rep6.select(["BNMCODE", "AMOUNT"]),
+            pmm.select(["BNMCODE", "AMOUNT"]),
+            elg.select(["BNMCODE", "AMOUNT"]),
+        ],
+        how="vertical",
+    )
+
+    elitem = _el_catalogue(EL_DEFINITIONS)   # PROC SORT DATA=EL ...
+    elw_final = _finalize_elw(elw_stack, elitem, drop_4019=True)
+    elwt = _build_elwt(elw_final)
+    # combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
+    # combined = pl.concat([elwt, elw_final.drop("IDX")], how="vertical")
+    common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
+    elwt = elwt.select(common_cols)
+    elw_final = elw_final.select(common_cols)
+    combined = pl.concat([elwt, elw_final], how="vertical")
+
+    # lines = _title_lines(
+    #     sdesc,
+    #     f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}",
+    #     f"REPORT DATE : {rdate}",
+    #     "",
+    # )
+    # lines.extend(_render_table_header())   # <-- add header here
+    # lines.extend(_render_report_rmel(combined))
+    # lines.extend(_render_report_rest(combined))
+    # return lines
+
+    # Build the full header (titles + column header + dashed line) for this day
+    full_header = _get_full_header(True, day_code, rdate, sdesc)
+
+    # Render the A-RMEL and B-RMEA groups (includes subtotal lines)
+    rmel_lines = _render_report_rmel(combined)
+
+    # Render the remaining groups
+    rest_lines = _render_report_rest(combined)
+
+    # Assemble output
+    lines = full_header + rmel_lines
+    if rest_lines:
+        # Add only the title lines (no column header) before the rest groups
+        title_only = _get_day_title_lines(True, day_code, rdate, sdesc)
+        # Add a blank line between the subtotal and the repeated title? Actually the subtotal already has short dashes,
+        # and the original has a blank line after the subtotal and before the repeated title.
+        # We'll add an extra blank line.
+        lines += [""] + title_only + rest_lines
     else:
-        return _paginate_simple(block, page_size, header)
+        lines += rest_lines
+    return lines
 
-# Paginate pivot reports (no groups)
-paginated_reports = []
-for report_lines in [report1_lines, report2_lines, report3_lines]:
-    if report_lines:
-        paginated_reports.extend(paginate_block(report_lines, PAGE_SIZE, with_groups=False))
 
-# Split pibelq_lines into day blocks, including the bank name
-detail_positions = [
-    idx for idx, line in enumerate(pibelq_lines)
-    if "DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAY" in line
-]
+# ============================================================================
+# PRTELI(I)  -- I = DAYI
+# ============================================================================
+def prteli(day_code: str, *, reptmon: str, nowk: str, rdate: str,
+           gold_df: pl.DataFrame, rep4_df: pl.DataFrame, elw1: pl.DataFrame) -> list[str]:
+    print(f"  [PIBELQ] prteli({day_code})...")
 
-day_blocks = []
-for k, pos in enumerate(detail_positions):
-    block_start = pos
-    if pos > 0 and pibelq_lines[pos - 1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
-        block_start = pos - 1
+    rep2_sas = INPUT_BNMK_REP2_DIR / f"rep2{reptmon}{nowk}.sas7bdat"
+    rep2_cache = _load_cached(rep2_sas, "BNMK_REP2")
 
-    if k + 1 < len(detail_positions):
-        next_pos = detail_positions[k + 1]
-        if next_pos > 0 and pibelq_lines[next_pos - 1].strip().startswith("PUBLIC ISLAMIC BANK BERHAD"):
-            block_end = next_pos - 1
-        else:
-            block_end = next_pos
+    tbl1_sas = INPUT_BNMK_TBL1_DIR / f"tbl1{reptmon}{nowk}.sas7bdat"
+    tbl1_cache = _load_cached(tbl1_sas, "BNMK_TBL1")
+
+    con = duckdb.connect(database=":memory:")
+    rep2_base = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(UTSTY AS VARCHAR) UTSTY,
+               CAST(UTREF AS VARCHAR) UTREF, CAST(ELDAY AS VARCHAR) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT, CAST(NETAMT AS DOUBLE) NETAMT,
+               CAST(COSTDED AS DOUBLE) COSTDED
+        FROM read_parquet('{rep2_cache.as_posix()}')
+    """).pl()
+
+    pmm = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{tbl1_cache.as_posix()}')
+        WHERE ELDAY = '{day_code}'
+    """).pl()
+    con.close()
+
+    # DATA REP7; SET BNMK.REP2&REPTMON&NOWK REP4; ... IF ELDAY="&I";
+    rep7 = pl.concat([rep2_base, rep4_df.select(rep2_base.columns)], how="vertical")
+    rep7 = rep7.with_columns(
+        pl.when(pl.col("BNMCODE") == "3250000000000Y")
+        .then(pl.col("NETAMT"))
+        .otherwise(pl.col("AMOUNT"))
+        .alias("AMOUNT")
+    )
+    rep7 = rep7.with_columns(pl.lit("4017100000000Y").alias("BNMCODE"))
+    rep7 = rep7.filter(pl.col("ELDAY") == day_code)
+    # PROC SUMMARY NWAY CLASS BNMCODE VAR AMOUNT
+    rep7 = rep7.group_by("BNMCODE").agg(pl.col("AMOUNT").sum().alias("AMOUNT"))
+
+    elw = _elw_for_day(elw1, day_code)
+    elg = gold_df.filter(pl.col("ELDAY") == day_code)
+
+    elw_stack = pl.concat(
+        [
+            elw.select(["BNMCODE", "AMOUNT"]),
+            rep7.select(["BNMCODE", "AMOUNT"]),
+            elg.select(["BNMCODE", "AMOUNT"]),
+            pmm.select(["BNMCODE", "AMOUNT"]),
+        ],
+        how="vertical",
+    )
+
+    # WK='4' (literal); IF WK NE "&NOWK" THEN drop 4019000000000Y/4019100000000Y
+    drop_4019 = (nowk != "4")
+
+    elitem = _el_catalogue(ELI_DEFINITIONS)   # PROC SORT DATA=ELI ...
+    elw_final = _finalize_elw(elw_stack, elitem, drop_4019=drop_4019)
+    elwt = _build_elwt(elw_final)
+    # combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
+    common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
+    elwt = elwt.select(common_cols)
+    elw_final = elw_final.select(common_cols)
+    combined = pl.concat([elwt, elw_final], how="vertical")
+
+    # lines = _title_lines(
+    #     f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}",
+    #     f"REPORT DATE : {rdate}",
+    #     "",
+    # )
+    # lines.extend(_render_table_header())   # <-- add header here
+    # lines.extend(_render_report_rmel(combined))
+    # lines.extend(_render_report_rest(combined))
+    # return lines
+
+    # Build the full header for DAYI (no bank name)
+    full_header = _get_full_header(False, day_code, rdate)   # no bank name
+
+    rmel_lines = _render_report_rmel(combined)
+    rest_lines = _render_report_rest(combined)
+
+    lines = full_header + rmel_lines
+    if rest_lines:
+        title_only = _get_day_title_lines(False, day_code, rdate)
+        lines += [""] + title_only + rest_lines
     else:
-        block_end = len(pibelq_lines)
-
-    day_blocks.append(pibelq_lines[block_start:block_end])
-
-# Paginate each day block with group reprinting
-paginated_pibelq = []
-for block in day_blocks:
-    paginated_pibelq.extend(paginate_block(block, PAGE_SIZE, with_groups=True))
-
-# Combine all reports
-all_lines = paginated_reports + paginated_pibelq
-
-# Write output
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-    for ln in all_lines:
-        fh.write(ln[:133].ljust(133) + "\n")
-
-print(f"  Output written : {OUTPUT_FILE}")
-print(f"  Total lines    : {len(all_lines):,}")
-
-# ============================================================================
-# STEP 12: COPY OUTPUT FOR NSRS  (PROC IEBGENER copy of the SASLIST output)
-# ============================================================================
-print("\nStep 12: Copying output for NSRS...")
-
-with open(OUTPUT_FILE, "rb") as src, open(OUTPUT_NSRS_FILE, "wb") as dst:
-    dst.write(src.read())
-
-print(f"  NSRS copy written : {OUTPUT_NSRS_FILE}")
-
-# ============================================================================
-# STEP 13: SFTP THE REPORT TO THE DATA REPORT REPOSITORY (DRR)
-# RUNSFTP step -- lzopts servercp=..., cd "FD-BNM REPORTING/PIBB/BNM RPTG"
-# ============================================================================
-print("\nStep 13: Transferring output via SFTP...")
-
-# HOST_DESC lookup key against ctl_dwh_sftp_info.sas7bdat is not yet
-# confirmed for this DRR destination, so the transfer is documented here
-# rather than executed silently against an unverified host entry.
-#
-# from EDW_TRANSFORMATION import get_sftp_info
-# import paramiko
-#
-# sftp_info = get_sftp_info("DRR")  # HOST_DESC placeholder -- confirm key
-# transport = paramiko.Transport((sftp_info.host, sftp_info.port))
-# transport.connect(username=sftp_info.username, password=sftp_info.password)
-# sftp = paramiko.SFTPClient.from_transport(transport)
-# sftp.chdir(SFTP_REMOTE_DIR)
-# sftp.put(str(OUTPUT_FILE), SFTP_REMOTE_NAME)
-# sftp.close()
-# transport.close()
-
-print(f"  Remote dir  : {SFTP_REMOTE_DIR}")
-print(f"  Remote name : {SFTP_REMOTE_NAME}")
-print("  (SFTP transfer call left commented -- HOST_DESC key unconfirmed)")
-
-print("\nEIIWKAPE complete.")
+        lines += rest_lines
+    return lines
