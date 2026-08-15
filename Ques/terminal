@@ -9,7 +9,7 @@ Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 575, in <module>
     prtel(
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 532, in prtel
-    combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical_relaxed")
+    combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10148, in select
     self.lazy()
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
