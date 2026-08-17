@@ -4,16 +4,13 @@ def _render_pivot_report(
     row_col: str,
     all_label: str,
     class_col: str,
-    value_specs: list[tuple],   # list of (column_name, label, width, decimals)
+    value_specs: list[tuple],   # (col_name, label, width, decimals)
     rts: int,
     class_vals: list,
     page_num: int = 1,
 ) -> list[str]:
     """
-    Render a PROC TABULATE grid with fixed width, borders, and spanning headers.
-    value_specs: each tuple (col_name, label, width, decimals)
-    class_vals: list of values to use as columns (subset of class_col)
-    page_num: used only to add extra blank line before the first page.
+    Render a PROC TABULATE grid with fixed width, borders, and split total label.
     """
     if df.is_empty() or not class_vals:
         return []
@@ -22,186 +19,204 @@ def _render_pivot_report(
     if page_num == 1:
         lines.append("")                # blank line before first table
 
-    # ---- Determine column widths ----
     num_classes = len(class_vals)
     num_sub = len(value_specs)
-    total_value_cols = num_classes * num_sub
 
-    # Each sub-column width is given in value_specs
-    sub_widths = [w for (_, _, w, _) in value_specs]
-    # Total value area width = sum of sub-column widths + (total_value_cols - 1) for pipes
-    value_area_width = sum(sub_widths) + (total_value_cols - 1)
-
-    # Row label column width: we want total line width = 132
-    # Total line = "|" + row_label_width + "|" + value_area_width + "|"
-    # => row_label_width = 132 - 2 - value_area_width
-    row_label_width = 132 - 2 - value_area_width
-    # But we also respect rts as a hint; if row_label_width > rts, we may reduce?
-    # For safety, we set row_label_width = min(row_label_width, rts) but we need exact 132.
-    # We'll use the computed width to ensure 132.
-    # However, for variance with 3 sub-columns and 6 days: sub_widths = [16,16,16] => total = 16*18+17 = 305, too big.
-    # That would require row_label_width negative. So we need to reduce sub-column widths.
-    # In the original variance output, the sub-columns are narrower (maybe 10 or 11).
-    # We'll compute a scale factor to fit within 132.
-    # For now, we just use the widths as given and if total > 132, we'll reduce row_label_width to a minimum.
-    # Actually the original had separate widths for variance (e.g., 15 for KAPITI, 15 for WALKER, 15 for VARIANCE?)
-    # We'll trust the caller to supply appropriate widths.
-    # But we can enforce a minimum row_label_width (e.g., 20) and if value_area_width > 132-2-20, we reduce sub_widths proportionally.
-    if row_label_width < 10:
-        # Too many columns; reduce sub-column widths proportionally
-        # Compute scaling factor to make row_label_width = 10
+    # ---- Determine sub-column widths ----
+    # We want the total line width to be exactly 132
+    # Total = 2 (outer pipes) + row_label_width + (sum of sub_widths) + (num_sub * num_classes - 1) pipes
+    # Let's first compute suggested widths from value_specs
+    base_widths = [w for (_, _, w, _) in value_specs]
+    # Total width needed for value area (including internal pipes)
+    value_area_needed = sum(base_widths) + (num_sub * num_classes - 1)
+    # Max row label width we can afford (we want at least 10 chars)
+    max_row_label = 132 - 2 - value_area_needed
+    if max_row_label < 10:
+        # Need to shrink sub-columns
+        scale = (132 - 2 - 10) / (value_area_needed - (num_sub * num_classes - 1) + 1)  # approximate
+        # Actually we need to reduce widths proportionally
+        total_base = sum(base_widths)
         target_value_area = 132 - 2 - 10  # 120
-        scale = target_value_area / (sum(sub_widths) + (total_value_cols - 1))
-        # Adjust sub_widths
-        new_sub_widths = [max(5, int(w * scale)) for w in sub_widths]  # keep at least 5
-        # Recompute value_area_width
-        value_area_width = sum(new_sub_widths) + (total_value_cols - 1)
+        # We need sum(new_widths) + (num_sub*num_classes - 1) = target_value_area
+        # => sum(new_widths) = target_value_area - (num_sub*num_classes - 1)
+        target_sum = target_value_area - (num_sub * num_classes - 1)
+        scale = target_sum / total_base if total_base > 0 else 1
+        sub_widths = [max(5, int(w * scale)) for w in base_widths]  # minimum 5
+        # Recompute actual value area
+        value_area_width = sum(sub_widths) + (num_sub * num_classes - 1)
         row_label_width = 132 - 2 - value_area_width
-        # Update sub_widths for formatting
-        sub_widths = new_sub_widths
     else:
-        row_label_width = min(row_label_width, rts)  # cap at rts
+        sub_widths = base_widths
+        row_label_width = max_row_label
+        # Cap row_label_width at rts (we can reduce it further if needed)
+        if row_label_width > rts:
+            row_label_width = rts
+            # Recompute value area
+            value_area_width = 132 - 2 - row_label_width
+            # Adjust sub_widths proportionally to fit value_area_width
+            total_base = sum(base_widths)
+            target_sum = value_area_width - (num_sub * num_classes - 1)
+            scale = target_sum / total_base if total_base > 0 else 1
+            sub_widths = [max(5, int(w * scale)) for w in base_widths]
+            # Recompute
+            value_area_width = sum(sub_widths) + (num_sub * num_classes - 1)
+            row_label_width = 132 - 2 - value_area_width
 
-    # ---- Helper to build a cell string of exact width ----
-    def pad_left(s, width):
-        return s.rjust(width)
+    # Ensure row_label_width at least 5
+    if row_label_width < 5:
+        row_label_width = 5
+        # Recompute value_area_width accordingly
+        value_area_width = 132 - 2 - row_label_width
 
-    def pad_center(s, width):
-        return s.center(width)
+    # ---- Helper to format numbers with fixed width ----
+    def fmt_val(val, width, dec):
+        if pd.isna(val) or val is None:
+            return ' ' * width
+        try:
+            v = float(val)
+        except:
+            return ' ' * width
+        # Try with commas
+        s = f"{v:,.{dec}f}"
+        if len(s) <= width:
+            return s.rjust(width)
+        # If overflow, try without commas
+        s2 = f"{v:.{dec}f}"
+        if len(s2) <= width:
+            return s2.rjust(width)
+        # Still overflow? truncate decimal places
+        # Reduce decimals until it fits
+        for d in range(dec-1, -1, -1):
+            s3 = f"{v:.{d}f}"
+            if len(s3) <= width:
+                return s3.rjust(width)
+        # Last resort: use scientific notation? Not needed.
+        return ('*' * width)  # indicate overflow
 
-    def pad_right(s, width):
-        return s.ljust(width)
+    # ---- Build cell strings ----
+    def make_cells(data_list):
+        # data_list is list of (value, width) pairs
+        return [fmt_val(val, w, dec) for (val, w, dec) in data_list]
 
-    # ---- Build border lines ----
+    def get_value_cells(row_val, cv):
+        # Returns list of formatted strings for this row and class
+        sub = df.filter((pl.col(row_col) == row_val) & (pl.col(class_col) == cv))
+        cells = []
+        for (col, label, width, dec) in value_specs:
+            val = sub[col].sum() if len(sub) > 0 else 0.0
+            cells.append(fmt_val(val, width, dec))
+        return cells
+
+    # ---- Build lines ----
     def border_line() -> str:
-        # Build a string of '-' with '+' at pipe positions
-        # Positions: after row_label_width, and after each sub-column group
-        parts = []
-        # First part: row label area
-        parts.append('-' * row_label_width)
-        # Then value area: for each sub-column, dashes of its width
-        for i, sw in enumerate(sub_widths):
-            parts.append('-' * sw)
-        # Join with '+'
-        return '|' + '+'.join(parts) + '|'
+        # Build a line of '-' and '+': outer pipes and '+' at boundaries
+        # Parts: row_label_area, then for each sub-column group (day) we have a block of dashes with '+' between sub-columns
+        # We'll build a list of segments: first the row label part (dashes), then for each sub-column, dashes of its width
+        segments = ['-' * row_label_width]
+        for cv in class_vals:
+            for w in sub_widths:
+                segments.append('-' * w)
+        return '|' + '|'.join(segments) + '|'
 
-    # ---- Build spanning header row (ELDAY) ----
-    def span_header_row() -> str:
-        # Row label cell: spaces
-        label_cell = ' ' * row_label_width
-        # Value area: center "ELDAY" over all sub-columns (including pipes)
-        # The value area width includes the pipes between sub-columns
+    def span_header() -> str:
+        # Row label: spaces
+        label_part = ' ' * row_label_width
+        # Value part: center "ELDAY" over the entire value area (including pipes)
         total_value_width = value_area_width
         header_text = 'ELDAY'
-        left_pad = (total_value_width - len(header_text)) // 2
-        right_pad = total_value_width - len(header_text) - left_pad
-        value_cell = ' ' * left_pad + header_text + ' ' * right_pad
-        return '|' + label_cell + '|' + value_cell + '|'
+        left = (total_value_width - len(header_text)) // 2
+        right = total_value_width - len(header_text) - left
+        value_part = ' ' * left + header_text + ' ' * right
+        return '|' + label_part + '|' + value_part + '|'
 
-    # ---- Build class header row (e.g., DAYA spanning its sub-columns) ----
-    def class_header_row() -> str:
-        label_cell = ' ' * row_label_width
-        cells = []
+    def class_header() -> str:
+        label_part = ' ' * row_label_width
+        # For each class, center the day name over its group of sub-columns
+        # The group width = sum of sub_widths for this class + (num_sub-1) pipes
+        group_width = sum(sub_widths) + (num_sub - 1)
+        day_cells = []
         for cv in class_vals:
-            # For each class, we need to span its sub-columns
-            # The width of this group = sum of sub_widths for this class + (num_sub-1) pipes
-            group_width = sum(sub_widths) + (num_sub - 1)
             cv_str = str(cv)
-            # Center the class label within the group
             left = (group_width - len(cv_str)) // 2
             right = group_width - len(cv_str) - left
-            cells.append(' ' * left + cv_str + ' ' * right)
-        # Join cells with '|' (no outer pipes yet)
-        value_part = '|'.join(cells)
-        return '|' + label_cell + '|' + value_part + '|'
+            day_cells.append(' ' * left + cv_str + ' ' * right)
+        # Join with '|' (these are internal separators between day groups)
+        value_part = '|'.join(day_cells)
+        return '|' + label_part + '|' + value_part + '|'
 
-    # ---- Build sub-header row (e.g., KAPITI, WALKER, VARIANCE) ----
-    def sub_header_row() -> str:
-        label_cell = ' ' * row_label_width
-        cells = []
-        for _ in class_vals:
+    def sub_header() -> str:
+        label_part = ' ' * row_label_width
+        sub_cells = []
+        for cv in class_vals:
             for (_, label, width, _) in value_specs:
-                # Center the label within its sub-column width
-                cells.append(pad_center(label, width))
-        value_part = '|'.join(cells)
-        return '|' + label_cell + '|' + value_part + '|'
+                # Center the sub-label within its width
+                sub_cells.append(label.center(width))
+        value_part = '|'.join(sub_cells)
+        return '|' + label_part + '|' + value_part + '|'
 
-    # ---- Build data row for a given row value ----
-    def data_row(row_val: str) -> str:
-        label_cell = pad_right(str(row_val), row_label_width)[:row_label_width]
-        cells = []
+    def data_row(row_val) -> str:
+        label_part = str(row_val).ljust(row_label_width)[:row_label_width]
+        value_parts = []
         for cv in class_vals:
-            sub_df = df.filter((pl.col(row_col) == row_val) & (pl.col(class_col) == cv))
+            sub = df.filter((pl.col(row_col) == row_val) & (pl.col(class_col) == cv))
             for (col, label, width, dec) in value_specs:
-                val = float(sub_df[col].sum()) if len(sub_df) > 0 else 0.0
-                fmt = _fmt_comma(val, width, dec)
-                cells.append(fmt)
-        value_part = '|'.join(cells)
-        return '|' + label_cell + '|' + value_part + '|'
+                val = sub[col].sum() if len(sub) > 0 else 0.0
+                value_parts.append(fmt_val(val, width, dec))
+        value_part = '|'.join(value_parts)
+        return '|' + label_part + '|' + value_part + '|'
 
-    # ---- Build total row ----
-    def total_row() -> str:
-        label_cell = pad_right(all_label, row_label_width)[:row_label_width]
-        cells = []
-        for cv in class_vals:
-            sub_df = df.filter(pl.col(class_col) == cv)
-            for (col, label, width, dec) in value_specs:
-                val = float(sub_df[col].sum()) if len(sub_df) > 0 else 0.0
-                fmt = _fmt_comma(val, width, dec)
-                cells.append(fmt)
-        value_part = '|'.join(cells)
-        return '|' + label_cell + '|' + value_part + '|'
+    def total_row(first_part: bool) -> str:
+        # first_part: True for first line of total (label, no numbers), False for second line (numbers)
+        if first_part:
+            # Split all_label into two parts: e.g., "TOTAL RM MARKETABLE" and "SECURITIES"
+            # We'll take the part before the last space
+            words = all_label.split()
+            if len(words) == 1:
+                # No space, just put the whole thing and numbers on same line? But we'll put numbers on second line.
+                first_label = all_label
+                second_label = ''
+            else:
+                first_label = ' '.join(words[:-1])
+                second_label = words[-1]
+            # For first line: label part is first_label, value part all spaces
+            label_part = first_label.ljust(row_label_width)[:row_label_width]
+            # Value part: for each sub-column, spaces of width
+            value_parts = [' ' * w for w in sub_widths for _ in class_vals]
+            value_part = '|'.join(value_parts)
+            return '|' + label_part + '|' + value_part + '|'
+        else:
+            # second line: label part is second_label (or empty), numbers
+            words = all_label.split()
+            if len(words) == 1:
+                second_label = ''
+            else:
+                second_label = words[-1]
+            label_part = second_label.ljust(row_label_width)[:row_label_width]
+            value_parts = []
+            for cv in class_vals:
+                sub = df.filter(pl.col(class_col) == cv)
+                for (col, label, width, dec) in value_specs:
+                    val = sub[col].sum() if len(sub) > 0 else 0.0
+                    value_parts.append(fmt_val(val, width, dec))
+            value_part = '|'.join(value_parts)
+            return '|' + label_part + '|' + value_part + '|'
 
-    # ---- Assemble the grid ----
+    # ---- Assemble ----
     lines.append(border_line())
-    lines.append(span_header_row())
-    lines.append(border_line())   # separator after spanning header
-    lines.append(class_header_row())
-    lines.append(sub_header_row())
-    lines.append(border_line())   # separator before data
+    lines.append(span_header())
+    lines.append(border_line())    # separator after span header
+    lines.append(class_header())
+    lines.append(sub_header())
+    lines.append(border_line())    # separator before data
 
     row_vals = sorted(df[row_col].drop_nulls().unique().to_list())
     for rv in row_vals:
         lines.append(data_row(rv))
 
-    lines.append(border_line())   # separator before total
-    lines.append(total_row())
-    lines.append(border_line())   # bottom border
+    lines.append(border_line())    # separator before total
+    # Total rows: first line with first part of label, no numbers; second line with second part and numbers
+    lines.append(total_row(True))  # first part
+    lines.append(total_row(False)) # second part with numbers
+    lines.append(border_line())    # bottom border
 
     return lines
-
-
-
-
-report1_lines = _render_pivot_report(
-    rep2, title1,
-    row_col="BNMCODG",
-    all_label="TOTAL RM MARKETABLE SECURITIES",
-    class_col="ELDAY",
-    value_specs=[("AMOUNT", "", 16, 2)],   # single column per day
-    rts=30,
-    class_vals=first_elday,   # e.g., DAYA..DAYF
-    page_num=1
-)
-
-
-
-
-report2_lines = _render_pivot_report(
-    variance_df, title2,
-    row_col="BNMCODE",
-    all_label="TOTAL ",
-    class_col="ELDAY",
-    value_specs=[
-        ("AMOUNT", "KAPITI", 12, 2),
-        ("WALWAMT", "WALKER", 12, 2),
-        ("VARIANC", "VARIANCE", 12, 2),
-    ],
-    rts=34,
-    class_vals=elday_values,
-    page_num=1
-)
-
-
-
-
