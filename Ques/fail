@@ -1,25 +1,115 @@
-print("Step 1: Deriving report date (REPTDAT1)...")
+con = duckdb.connect(database=":memory:")
+rep2_filtered = con.execute(f"""
+    SELECT
+        TRIM(CAST(BNMCODE AS VARCHAR)) AS BNMCODE,
+        TRIM(CAST(UTSTY   AS VARCHAR)) AS UTSTY,
+        TRIM(CAST(UTREF   AS VARCHAR)) AS UTREF,
+        TRIM(CAST(ELDAY   AS VARCHAR)) AS ELDAY,
+        CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
+        CAST(NETAMT  AS DOUBLE)  AS NETAMT,
+        CAST(COSTDED AS DOUBLE)  AS COSTDED
+    FROM read_parquet('{rep2_cache.as_posix()}')
+    WHERE NOT (
+        UTSTY IN ('CB1','CF1','CNT','SAC','SMC','ISB')
+        AND UTREF NOT IN ('DLG','IDLG')
+    )
+""").pl()
+con.close()
+print(f"  REP2 (filtered) rows: {len(rep2_filtered):,}")
 
-# ---- FOR VALIDATION: force report date to 8 August 2026 ----
-# Comment out this override and uncomment the original line below for production.
-from datetime import date
-FIXED_DATE = date(2026, 8, 8)
-# _reptdat1 = get_reptdate_values(year_format="%Y")
-# Create a simple object with the fixed date
-class Dummy:
-    pass
-_reptdat1 = Dummy()
-_reptdat1.reptdate = FIXED_DATE
-# -----------------------------------------------------------
 
-SDESC   = "PUBLIC BANK BERHAD"
-RDATE   = _reptdat1.reptdate.strftime("%d/%m/%y")   # DDMMYY8.
-RYEAR   = _reptdat1.reptdate.strftime("%Y")          # YEAR4.
-MTHNAM  = _reptdat1.reptdate.strftime("%B").upper()  # MONNAME.
-MTHEND  = f"{_reptdat1.reptdate.day:02d}"            # Z2.
 
-print(f"  SDESC  : {SDESC}")
-print(f"  RDATE  : {RDATE}")
-print(f"  RYEAR  : {RYEAR}")
-print(f"  MTHNAM : {MTHNAM}")
-print(f"  MTHEND : {MTHEND}")
+
+con = duckdb.connect(database=":memory:")
+rep4_raw = con.execute(f"""
+    SELECT
+        TRIM(CAST(BNMCODE AS VARCHAR)) AS BNMCODE,
+        TRIM(CAST(UTSTY   AS VARCHAR)) AS UTSTY,
+        TRIM(CAST(UTREF   AS VARCHAR)) AS UTREF,
+        TRIM(CAST(ELDAY   AS VARCHAR)) AS ELDAY,
+        CAST(AMOUNT  AS DOUBLE)  AS AMOUNT
+    FROM read_parquet('{rep4_cache.as_posix()}')
+    WHERE NOT (
+        UTSTY IN ('CB1','CF1','CNT','SAC','SMC','ISB')
+        AND UTREF NOT IN ('DLG','IDLG')
+    )
+""").pl()
+con.close()
+
+
+
+
+con = duckdb.connect(database=":memory:")
+elw_wk_raw = con.execute(f"""
+    SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
+           CAST(AMOUNT AS DOUBLE) AMOUNT
+    FROM read_parquet('{elw_wk_cache.as_posix()}')
+""").pl()
+con.close()
+
+
+
+
+elw1_raw = con.execute(f"""
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE,
+               TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{elw1_cache.as_posix()}')
+    """).pl()
+    con.close()
+
+
+
+
+con = duckdb.connect(database=":memory:")
+    gold = con.execute(f"""
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{gold_cache.as_posix()}')
+        WHERE ELDAY = '{day_code}'
+    """).pl()
+    con.close()
+    return gold
+
+
+
+
+con = duckdb.connect(database=":memory:")
+    tbl1_df = con.execute(f"""
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{tbl1_cache.as_posix()}')
+        WHERE ELDAY = '{day_code}'
+    """).pl()
+
+    # (DROP=REPTDATS) -- REPTDATS is simply not selected below
+    dci_df = con.execute(f"""
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{dci_cache.as_posix()}')
+        WHERE ELDAY = '{day_code}'
+    """).pl()
+    con.close()
+
+
+
+
+con = duckdb.connect(database=":memory:")
+    dci_df = con.execute(f"""
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{dci_cache.as_posix()}')
+        WHERE ELDAY = '{day_code}'
+    """).pl()
+
+    tbl1_df = con.execute(f"""
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{tbl1_cache.as_posix()}')
+        WHERE ELDAY = '{day_code}'
+    """).pl()
+    con.close()
+
+
+
+
