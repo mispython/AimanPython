@@ -1,6 +1,29 @@
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+1PUBLIC BANK BERHAD -REPORT DATE 16/08/26                                                                                            
+ SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK                                                                       
+ (DAILY KAPITI STOCK REPORT) WEEK 2 AUGUST 2026                                                                                      
+                                           DAYA            DAYB            DAYC            DAYD            DAYE            DAYF      
+ ------------------------------------------------------------------------------------------------------------------------------------
+ 3721000000000Y-MGS AFS        7,708,662,462.007,708,662,462.007,789,617,462.007,730,083,362.007,730,083,362.007,740,747,162.007,801,
+ 3721000000000Y-MGS AFSLI      5,866,112,880.405,866,112,880.405,866,112,880.405,866,112,880.405,866,112,880.405,918,554,680.406,231,
+ 3721000000000Y-MGS DLG          483,182,500.00  483,182,500.00  493,002,500.00  514,148,500.00  504,328,500.00  494,293,500.00  413,
+ 3721000000000Y-MGS INV        3,324,518,116.603,324,518,116.603,324,518,116.603,324,518,116.603,324,518,116.603,324,518,116.603,324,
+ 3722000000000Y-ITB AFS          231,830,158.62  231,830,158.62  231,830,158.62  231,830,158.62  231,830,158.62  231,830,158.62  231,
+ 3722000000000Y-MTB DLG          196,991,780.80  196,991,780.80  196,991,780.80  196,991,780.80  196,991,780.80  196,991,780.80      
+ 3723000000000Y-MGI AFS        6,681,998,108.906,681,998,108.906,682,014,108.906,682,014,108.906,682,014,108.906,631,783,108.906,631,
+ 3723000000000Y-MGI AFSLI      5,831,925,497.605,831,925,497.605,831,925,497.605,982,160,997.605,982,160,997.605,982,160,997.606,032,
+ 3723000000000Y-MGI DLG        1,265,506,110.201,265,506,110.201,245,255,610.201,143,965,110.201,133,910,110.201,054,041,110.201,054,
+ 3723000000000Y-MGI INV        3,422,899,124.003,422,899,124.003,422,899,124.003,422,899,124.003,524,183,124.003,524,183,124.003,524,
+ TOTAL RM MARKETABLE SECURITIES35,013,626,739.135,013,626,739.135,084,167,239.135,094,724,139.135,176,133,139.135,099,103,739.135,246
+1VARIANCE BETWEEN KAPITI AND WALKER                                                                                                  
+                                        DAYA KAPITI     DAYA WALKER   DAYA VARIANCE     DAYB KAPITI     DAYB WALKER   DAYB VARIANCE  
+ ------------------------------------------------------------------------------------------------------------------------------------
+ 3721000000000Y                    17,382,475,959.0            0.0017,382,475,959.017,382,475,959.0            0.0017,382,475,959.017
+ 3722000000000Y                      428,821,939.42            0.00  428,821,939.42  428,821,939.42            0.00  428,821,939.42  
+ 3723000000000Y                    17,202,328,840.714,896,644,805.22,305,684,035.4317,202,328,840.714,898,184,639.22,304,144,201.4617
+ TOTAL                             35,013,626,739.114,896,644,805.220,116,981,933.835,013,626,739.114,898,184,639.220,115,442,099.835
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYA                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -36,18 +59,18 @@
           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +             100,000,000.00          100,000,000.00             
           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
           4410000000000Y  RM MISC BORROWINGS                        +           1,000,000,000.00        1,000,000,000.00             
-          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              10,473,423.29           10,473,423.29             
-          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                       0.00                    0.00             
+          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              64,958,736.69           64,958,736.69             
+          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  25,260.96               25,260.96             
           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00             
-          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.75                    0.75             
-          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +                       0.00                    0.00             
-          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                       0.00                    0.00             
+          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
+          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              39,115,634.18           39,115,634.18             
+          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84             
           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           1,000,000,000.00        1,000,000,000.00             
           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00             
           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00             
           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -                       0.00                    0.00             
  -----------------------------------------------------------------------------------------------------------------------             
-          TOTAL FOR A-RMEL                                                     93,680,829,015.61       93,680,829,015.61             
+          TOTAL FOR A-RMEL                                                     93,774,456,012.23       93,774,456,012.23             
                                                                         ------------------------------------------------             
  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00             
           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00             
@@ -58,9 +81,9 @@
           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00             
           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00             
           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYA                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -102,61 +125,17 @@
  -----------------------------------------------------------------------------------------------------------------------             
           TOTAL FOR B-RMEA                                                      1,584,654,299.44        1,584,654,299.44             
                                                                         ------------------------------------------------             
- -        NSSTS           1. NSSTS                                                          0.00                    0.00             
-          NSSTS INVEST    1.1 NSSTS INVESTMENT                                    409,764,360.84          409,764,360.84             
-          NSSTS TRADING   1.2 NSSTS TRADING                                                 0.00                    0.00             
-          SSTS            SSTS                                                              0.00                    0.00             
- -FXEA    3260000000000Y  FX DEPOSITS PLACED                        +                       0.00                    0.00             
-          3280000000000Y  FX REVERSE REPOS                          +                       0.00                    0.00             
-          3362081000000Y  FX NOSTRO ACCOUNT BALANCES WITH FBI       +              18,859,293.47           18,859,293.47             
-          3364002000000Y  FX INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00             
-          3364003000000Y  FX INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00             
-          3364012000000Y  FX INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00             
-          3364081100000Y  FX INTERBANK PLACEMENTS WITH FBI <= 1 YR  +                       0.00                    0.00             
-          3370000000000Y  SPTF - FX AMOUNT DUE FROM DESIGNATED FI   +                       0.00                    0.00             
-          3460000000000Y  FX LOANS                                  +                       0.00                    0.00             
-          3460064000000Y  FX LOANS GOV DBE                          +                       0.00                    0.00             
-          3460081000000Y  FX LOANS FBI                              +                       0.00                    0.00             
-          3761000000000Y  FX SHARES HELD                            +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
- DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYA                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
                                                                                                                                      
- FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
- -----------------------------------------------------------------------------------------------------------------------             
-          3765000200000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3769900000000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3961000000000Y  FX NOTES AND COINS                        +                       0.00                    0.00             
-          3961100000000Y  FX INVESTMENTS                            +                       0.00                    0.00             
-          3962000000000Y  FOREIGN SUBSIDIARIES                      +                       0.00                    0.00             
-          3963000000000Y  FOREIGN ASSOCIATE COMPANIES               +                       0.00                    0.00             
-          3966900000000Y  FX INVESTMENT IN LABUAN OFFSHORE ENTITY   +                       0.00                    0.00             
-          3967000000000Y  FX MARGIN PLACED WITH EXCHANGES           +                       0.00                    0.00             
-          3968000000000Y  FX INTEREST RECEIVABLES NIE               +                       0.00                    0.00             
-          3969900000000Y  FX OTHER ASSETS NIE                       +                       0.00                    0.00             
-          3979900000000Y  SPTF OTHER FX MISC LIAB NIE               +                       0.00                    0.00             
- -FXEL    4260000000000Y  FX DEPOSITS ACCEPTED                      +               9,982,689.94            9,982,689.94             
-          4269981000000Y  FX DEPOSITS ACCEPTED TO BNM               +                       0.00                    0.00             
-          4360000000000Y  FX AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00             
-          4362081000000Y  FX OVERDRAWN NOSTRO ACCOUNTS WITH FBI     +                       0.00                    0.00             
-          4364002000000Y  FX INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00             
-          4364003000000Y  FX INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00             
-          4364012000000Y  FX INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00             
-          4364081100000Y  FX INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
-          4370000000000Y  SPTF FX AMOUNT DUE TO FI                  +                       0.00                    0.00             
-          4460000000000Y  FX MISC BORROWINGS                        +                       0.00                    0.00             
-          4760000000000Y  FX DEBT SECURITIES ISSUED                 +                       0.00                    0.00             
-          4961050000000Y  FX INTEREST PAYABLE TO RESIDENTS          +                       0.00                    0.00             
-          4961080000000Y  FX INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00             
-          4969950000000Y  OTHER FX MISC LIAB NIE DUE TO RESIDENTS   +                       0.00                    0.00             
-          4969980000000Y  OTHER FX MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
-          4461100000000Y  FX SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00             
+ PUBLIC BANK BERHAD                                                                                                                  
+ DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYA                                                                                  
+ REPORT DATE : 16/08/26                                                                                                              
+                                                                                                                                     
  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
- D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
- E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,534,781,060.42       92,534,781,060.42             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,013,626,739.12       35,013,626,739.12             
+ E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          57,176,174,973.67       57,176,174,973.67             
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYB                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -192,18 +171,18 @@
           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +             100,000,000.00          100,000,000.00             
           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
           4410000000000Y  RM MISC BORROWINGS                        +           1,000,000,000.00        1,000,000,000.00             
-          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              10,509,964.40           10,509,964.40             
-          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                       0.00                    0.00             
+          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              66,231,687.08           66,231,687.08             
+          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  25,942.50               25,942.50             
           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00             
-          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.75                    0.75             
-          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +                       0.00                    0.00             
-          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                       0.00                    0.00             
+          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
+          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              39,115,634.18           39,115,634.18             
+          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84             
           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           1,000,000,000.00        1,000,000,000.00             
           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00             
           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00             
           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -                       0.00                    0.00             
  -----------------------------------------------------------------------------------------------------------------------             
-          TOTAL FOR A-RMEL                                                     93,653,761,488.01       93,653,761,488.01             
+          TOTAL FOR A-RMEL                                                     93,748,625,575.45       93,748,625,575.45             
                                                                         ------------------------------------------------             
  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00             
           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00             
@@ -214,9 +193,9 @@
           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00             
           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00             
           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYB                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -258,61 +237,17 @@
  -----------------------------------------------------------------------------------------------------------------------             
           TOTAL FOR B-RMEA                                                      1,573,951,430.43        1,573,951,430.43             
                                                                         ------------------------------------------------             
- -        NSSTS           1. NSSTS                                                          0.00                    0.00             
-          NSSTS INVEST    1.1 NSSTS INVESTMENT                                    409,805,299.94          409,805,299.94             
-          NSSTS TRADING   1.2 NSSTS TRADING                                                 0.00                    0.00             
-          SSTS            SSTS                                                              0.00                    0.00             
- -FXEA    3260000000000Y  FX DEPOSITS PLACED                        +                       0.00                    0.00             
-          3280000000000Y  FX REVERSE REPOS                          +                       0.00                    0.00             
-          3362081000000Y  FX NOSTRO ACCOUNT BALANCES WITH FBI       +              18,859,293.47           18,859,293.47             
-          3364002000000Y  FX INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00             
-          3364003000000Y  FX INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00             
-          3364012000000Y  FX INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00             
-          3364081100000Y  FX INTERBANK PLACEMENTS WITH FBI <= 1 YR  +                       0.00                    0.00             
-          3370000000000Y  SPTF - FX AMOUNT DUE FROM DESIGNATED FI   +                       0.00                    0.00             
-          3460000000000Y  FX LOANS                                  +                       0.00                    0.00             
-          3460064000000Y  FX LOANS GOV DBE                          +                       0.00                    0.00             
-          3460081000000Y  FX LOANS FBI                              +                       0.00                    0.00             
-          3761000000000Y  FX SHARES HELD                            +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
- DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYB                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
                                                                                                                                      
- FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
- -----------------------------------------------------------------------------------------------------------------------             
-          3765000200000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3769900000000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3961000000000Y  FX NOTES AND COINS                        +                       0.00                    0.00             
-          3961100000000Y  FX INVESTMENTS                            +                       0.00                    0.00             
-          3962000000000Y  FOREIGN SUBSIDIARIES                      +                       0.00                    0.00             
-          3963000000000Y  FOREIGN ASSOCIATE COMPANIES               +                       0.00                    0.00             
-          3966900000000Y  FX INVESTMENT IN LABUAN OFFSHORE ENTITY   +                       0.00                    0.00             
-          3967000000000Y  FX MARGIN PLACED WITH EXCHANGES           +                       0.00                    0.00             
-          3968000000000Y  FX INTEREST RECEIVABLES NIE               +                       0.00                    0.00             
-          3969900000000Y  FX OTHER ASSETS NIE                       +                       0.00                    0.00             
-          3979900000000Y  SPTF OTHER FX MISC LIAB NIE               +                       0.00                    0.00             
- -FXEL    4260000000000Y  FX DEPOSITS ACCEPTED                      +               9,982,689.94            9,982,689.94             
-          4269981000000Y  FX DEPOSITS ACCEPTED TO BNM               +                       0.00                    0.00             
-          4360000000000Y  FX AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00             
-          4362081000000Y  FX OVERDRAWN NOSTRO ACCOUNTS WITH FBI     +                       0.00                    0.00             
-          4364002000000Y  FX INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00             
-          4364003000000Y  FX INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00             
-          4364012000000Y  FX INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00             
-          4364081100000Y  FX INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
-          4370000000000Y  SPTF FX AMOUNT DUE TO FI                  +                       0.00                    0.00             
-          4460000000000Y  FX MISC BORROWINGS                        +                       0.00                    0.00             
-          4760000000000Y  FX DEBT SECURITIES ISSUED                 +                       0.00                    0.00             
-          4961050000000Y  FX INTEREST PAYABLE TO RESIDENTS          +                       0.00                    0.00             
-          4961080000000Y  FX INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00             
-          4969950000000Y  OTHER FX MISC LIAB NIE DUE TO RESIDENTS   +                       0.00                    0.00             
-          4969980000000Y  OTHER FX MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
-          4461100000000Y  FX SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00             
+ PUBLIC BANK BERHAD                                                                                                                  
+ DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYB                                                                                  
+ REPORT DATE : 16/08/26                                                                                                              
+                                                                                                                                     
  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
- D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
- E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,518,457,340.93       92,518,457,340.93             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,013,626,739.12       35,013,626,739.12             
+ E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          57,161,047,405.90       57,161,047,405.90             
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYC                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -348,18 +283,18 @@
           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +             100,000,000.00          100,000,000.00             
           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
           4410000000000Y  RM MISC BORROWINGS                        +           1,000,000,000.00        1,000,000,000.00             
-          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              10,548,439.11           10,548,439.11             
-          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                       0.00                    0.00             
+          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              32,681,741.24           32,681,741.24             
+          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  26,624.06               26,624.06             
           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00             
-          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       2.59                    2.59             
-          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +                       0.00                    0.00             
-          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                       0.00                    0.00             
+          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
+          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              39,162,056.85           39,162,056.85             
+          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84             
           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           1,000,000,000.00        1,000,000,000.00             
           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00             
           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00             
           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -                       0.00                    0.00             
  -----------------------------------------------------------------------------------------------------------------------             
-          TOTAL FOR A-RMEL                                                     94,473,717,324.01       94,473,717,324.01             
+          TOTAL FOR A-RMEL                                                     94,535,040,093.30       94,535,040,093.30             
                                                                         ------------------------------------------------             
  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00             
           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00             
@@ -370,9 +305,9 @@
           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00             
           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00             
           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYC                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -414,61 +349,17 @@
  -----------------------------------------------------------------------------------------------------------------------             
           TOTAL FOR B-RMEA                                                      2,296,996,240.17        2,296,996,240.17             
                                                                         ------------------------------------------------             
- -        NSSTS           1. NSSTS                                                          0.00                    0.00             
-          NSSTS INVEST    1.1 NSSTS INVESTMENT                                    409,846,240.74          409,846,240.74             
-          NSSTS TRADING   1.2 NSSTS TRADING                                                 0.00                    0.00             
-          SSTS            SSTS                                                              0.00                    0.00             
- -FXEA    3260000000000Y  FX DEPOSITS PLACED                        +                       0.00                    0.00             
-          3280000000000Y  FX REVERSE REPOS                          +                       0.00                    0.00             
-          3362081000000Y  FX NOSTRO ACCOUNT BALANCES WITH FBI       +              18,900,007.15           18,900,007.15             
-          3364002000000Y  FX INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00             
-          3364003000000Y  FX INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00             
-          3364012000000Y  FX INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00             
-          3364081100000Y  FX INTERBANK PLACEMENTS WITH FBI <= 1 YR  +                       0.00                    0.00             
-          3370000000000Y  SPTF - FX AMOUNT DUE FROM DESIGNATED FI   +                       0.00                    0.00             
-          3460000000000Y  FX LOANS                                  +                       0.00                    0.00             
-          3460064000000Y  FX LOANS GOV DBE                          +                       0.00                    0.00             
-          3460081000000Y  FX LOANS FBI                              +                       0.00                    0.00             
-          3761000000000Y  FX SHARES HELD                            +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
- DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYC                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
                                                                                                                                      
- FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
- -----------------------------------------------------------------------------------------------------------------------             
-          3765000200000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3769900000000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3961000000000Y  FX NOTES AND COINS                        +                       0.00                    0.00             
-          3961100000000Y  FX INVESTMENTS                            +                       0.00                    0.00             
-          3962000000000Y  FOREIGN SUBSIDIARIES                      +                       0.00                    0.00             
-          3963000000000Y  FOREIGN ASSOCIATE COMPANIES               +                       0.00                    0.00             
-          3966900000000Y  FX INVESTMENT IN LABUAN OFFSHORE ENTITY   +                       0.00                    0.00             
-          3967000000000Y  FX MARGIN PLACED WITH EXCHANGES           +                       0.00                    0.00             
-          3968000000000Y  FX INTEREST RECEIVABLES NIE               +                       0.00                    0.00             
-          3969900000000Y  FX OTHER ASSETS NIE                       +                       0.00                    0.00             
-          3979900000000Y  SPTF OTHER FX MISC LIAB NIE               +                       0.00                    0.00             
- -FXEL    4260000000000Y  FX DEPOSITS ACCEPTED                      +               5,110,668.25            5,110,668.25             
-          4269981000000Y  FX DEPOSITS ACCEPTED TO BNM               +                       0.00                    0.00             
-          4360000000000Y  FX AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00             
-          4362081000000Y  FX OVERDRAWN NOSTRO ACCOUNTS WITH FBI     +                       0.00                    0.00             
-          4364002000000Y  FX INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00             
-          4364003000000Y  FX INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00             
-          4364012000000Y  FX INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00             
-          4364081100000Y  FX INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
-          4370000000000Y  SPTF FX AMOUNT DUE TO FI                  +                       0.00                    0.00             
-          4460000000000Y  FX MISC BORROWINGS                        +                       0.00                    0.00             
-          4760000000000Y  FX DEBT SECURITIES ISSUED                 +                       0.00                    0.00             
-          4961050000000Y  FX INTEREST PAYABLE TO RESIDENTS          +                       0.00                    0.00             
-          4961080000000Y  FX INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00             
-          4969950000000Y  OTHER FX MISC LIAB NIE DUE TO RESIDENTS   +                       0.00                    0.00             
-          4969980000000Y  OTHER FX MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
-          4461100000000Y  FX SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00             
+ PUBLIC BANK BERHAD                                                                                                                  
+ DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYC                                                                                  
+ REPORT DATE : 16/08/26                                                                                                              
+                                                                                                                                     
  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
- D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
- E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,610,577,999.98       92,610,577,999.98             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,084,167,239.12       35,084,167,239.12             
+ E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          57,153,876,614.01       57,153,876,614.01             
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYD                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -504,18 +395,18 @@
           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +             100,000,000.00          100,000,000.00             
           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
           4410000000000Y  RM MISC BORROWINGS                        +           1,000,000,000.00        1,000,000,000.00             
-          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              10,552,060.25           10,552,060.25             
-          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                       0.00                    0.00             
+          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              33,923,294.22           33,923,294.22             
+          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  27,305.69               27,305.69             
           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00             
-          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.75                    0.75             
-          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +                       0.00                    0.00             
-          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                       0.00                    0.00             
+          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
+          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              39,187,464.90           39,187,464.90             
+          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84             
           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           1,000,000,000.00        1,000,000,000.00             
           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00             
           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00             
           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -                       0.00                    0.00             
  -----------------------------------------------------------------------------------------------------------------------             
-          TOTAL FOR A-RMEL                                                     94,636,407,036.85       94,636,407,036.85             
+          TOTAL FOR A-RMEL                                                     94,698,993,829.49       94,698,993,829.49             
                                                                         ------------------------------------------------             
  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00             
           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00             
@@ -526,9 +417,9 @@
           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00             
           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00             
           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYD                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -570,61 +461,17 @@
  -----------------------------------------------------------------------------------------------------------------------             
           TOTAL FOR B-RMEA                                                      2,711,663,246.28        2,711,663,246.28             
                                                                         ------------------------------------------------             
- -        NSSTS           1. NSSTS                                                          0.00                    0.00             
-          NSSTS INVEST    1.1 NSSTS INVESTMENT                                    409,887,183.17          409,887,183.17             
-          NSSTS TRADING   1.2 NSSTS TRADING                                                 0.00                    0.00             
-          SSTS            SSTS                                                              0.00                    0.00             
- -FXEA    3260000000000Y  FX DEPOSITS PLACED                        +                       0.00                    0.00             
-          3280000000000Y  FX REVERSE REPOS                          +                       0.00                    0.00             
-          3362081000000Y  FX NOSTRO ACCOUNT BALANCES WITH FBI       +              18,906,054.25           18,906,054.25             
-          3364002000000Y  FX INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00             
-          3364003000000Y  FX INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00             
-          3364012000000Y  FX INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00             
-          3364081100000Y  FX INTERBANK PLACEMENTS WITH FBI <= 1 YR  +                       0.00                    0.00             
-          3370000000000Y  SPTF - FX AMOUNT DUE FROM DESIGNATED FI   +                       0.00                    0.00             
-          3460000000000Y  FX LOANS                                  +                       0.00                    0.00             
-          3460064000000Y  FX LOANS GOV DBE                          +                       0.00                    0.00             
-          3460081000000Y  FX LOANS FBI                              +                       0.00                    0.00             
-          3761000000000Y  FX SHARES HELD                            +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
- DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYD                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
                                                                                                                                      
- FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
- -----------------------------------------------------------------------------------------------------------------------             
-          3765000200000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3769900000000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3961000000000Y  FX NOTES AND COINS                        +                       0.00                    0.00             
-          3961100000000Y  FX INVESTMENTS                            +                       0.00                    0.00             
-          3962000000000Y  FOREIGN SUBSIDIARIES                      +                       0.00                    0.00             
-          3963000000000Y  FOREIGN ASSOCIATE COMPANIES               +                       0.00                    0.00             
-          3966900000000Y  FX INVESTMENT IN LABUAN OFFSHORE ENTITY   +                       0.00                    0.00             
-          3967000000000Y  FX MARGIN PLACED WITH EXCHANGES           +                       0.00                    0.00             
-          3968000000000Y  FX INTEREST RECEIVABLES NIE               +                       0.00                    0.00             
-          3969900000000Y  FX OTHER ASSETS NIE                       +                       0.00                    0.00             
-          3979900000000Y  SPTF OTHER FX MISC LIAB NIE               +                       0.00                    0.00             
- -FXEL    4260000000000Y  FX DEPOSITS ACCEPTED                      +               4,397,311.27            4,397,311.27             
-          4269981000000Y  FX DEPOSITS ACCEPTED TO BNM               +                       0.00                    0.00             
-          4360000000000Y  FX AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00             
-          4362081000000Y  FX OVERDRAWN NOSTRO ACCOUNTS WITH FBI     +                       0.00                    0.00             
-          4364002000000Y  FX INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00             
-          4364003000000Y  FX INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00             
-          4364012000000Y  FX INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00             
-          4364081100000Y  FX INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
-          4370000000000Y  SPTF FX AMOUNT DUE TO FI                  +                       0.00                    0.00             
-          4460000000000Y  FX MISC BORROWINGS                        +                       0.00                    0.00             
-          4760000000000Y  FX DEBT SECURITIES ISSUED                 +                       0.00                    0.00             
-          4961050000000Y  FX INTEREST PAYABLE TO RESIDENTS          +                       0.00                    0.00             
-          4961080000000Y  FX INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00             
-          4969950000000Y  OTHER FX MISC LIAB NIE DUE TO RESIDENTS   +                       0.00                    0.00             
-          4969980000000Y  OTHER FX MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
-          4461100000000Y  FX SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00             
+ PUBLIC BANK BERHAD                                                                                                                  
+ DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYD                                                                                  
+ REPORT DATE : 16/08/26                                                                                                              
+                                                                                                                                     
  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
- D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
- E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,357,934,339.26       92,357,934,339.26             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,094,724,139.12       35,094,724,139.12             
+ E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          56,892,606,444.09       56,892,606,444.09             
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYE                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -660,18 +507,18 @@
           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +             100,000,000.00          100,000,000.00             
           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
           4410000000000Y  RM MISC BORROWINGS                        +           1,000,000,000.00        1,000,000,000.00             
-          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              10,556,201.22           10,556,201.22             
-          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                       0.00                    0.00             
+          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              35,058,258.53           35,058,258.53             
+          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  27,987.26               27,987.26             
           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00             
-          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       1.44                    1.44             
-          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +                       0.00                    0.00             
-          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                       0.00                    0.00             
+          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
+          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              40,202,439.56           40,202,439.56             
+          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84             
           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           1,000,000,000.00        1,000,000,000.00             
           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00             
           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00             
           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -                       0.00                    0.00             
  -----------------------------------------------------------------------------------------------------------------------             
-          TOTAL FOR A-RMEL                                                     94,834,302,264.48       94,834,302,264.48             
+          TOTAL FOR A-RMEL                                                     94,899,035,536.01       94,899,035,536.01             
                                                                         ------------------------------------------------             
  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00             
           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00             
@@ -682,9 +529,9 @@
           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00             
           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00             
           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYE                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -726,61 +573,17 @@
  -----------------------------------------------------------------------------------------------------------------------             
           TOTAL FOR B-RMEA                                                      2,715,762,024.28        2,715,762,024.28             
                                                                         ------------------------------------------------             
- -        NSSTS           1. NSSTS                                                          0.00                    0.00             
-          NSSTS INVEST    1.1 NSSTS INVESTMENT                                    408,973,538.24          408,973,538.24             
-          NSSTS TRADING   1.2 NSSTS TRADING                                                 0.00                    0.00             
-          SSTS            SSTS                                                              0.00                    0.00             
- -FXEA    3260000000000Y  FX DEPOSITS PLACED                        +                       0.00                    0.00             
-          3280000000000Y  FX REVERSE REPOS                          +                       0.00                    0.00             
-          3362081000000Y  FX NOSTRO ACCOUNT BALANCES WITH FBI       +              18,896,369.96           18,896,369.96             
-          3364002000000Y  FX INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00             
-          3364003000000Y  FX INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00             
-          3364012000000Y  FX INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00             
-          3364081100000Y  FX INTERBANK PLACEMENTS WITH FBI <= 1 YR  +                       0.00                    0.00             
-          3370000000000Y  SPTF - FX AMOUNT DUE FROM DESIGNATED FI   +                       0.00                    0.00             
-          3460000000000Y  FX LOANS                                  +                       0.00                    0.00             
-          3460064000000Y  FX LOANS GOV DBE                          +                       0.00                    0.00             
-          3460081000000Y  FX LOANS FBI                              +                       0.00                    0.00             
-          3761000000000Y  FX SHARES HELD                            +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
- DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYE                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
                                                                                                                                      
- FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
- -----------------------------------------------------------------------------------------------------------------------             
-          3765000200000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3769900000000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3961000000000Y  FX NOTES AND COINS                        +                       0.00                    0.00             
-          3961100000000Y  FX INVESTMENTS                            +                       0.00                    0.00             
-          3962000000000Y  FOREIGN SUBSIDIARIES                      +                       0.00                    0.00             
-          3963000000000Y  FOREIGN ASSOCIATE COMPANIES               +                       0.00                    0.00             
-          3966900000000Y  FX INVESTMENT IN LABUAN OFFSHORE ENTITY   +                       0.00                    0.00             
-          3967000000000Y  FX MARGIN PLACED WITH EXCHANGES           +                       0.00                    0.00             
-          3968000000000Y  FX INTEREST RECEIVABLES NIE               +                       0.00                    0.00             
-          3969900000000Y  FX OTHER ASSETS NIE                       +                       0.00                    0.00             
-          3979900000000Y  SPTF OTHER FX MISC LIAB NIE               +                       0.00                    0.00             
- -FXEL    4260000000000Y  FX DEPOSITS ACCEPTED                      +               4,182,404.68            4,182,404.68             
-          4269981000000Y  FX DEPOSITS ACCEPTED TO BNM               +                       0.00                    0.00             
-          4360000000000Y  FX AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00             
-          4362081000000Y  FX OVERDRAWN NOSTRO ACCOUNTS WITH FBI     +                       0.00                    0.00             
-          4364002000000Y  FX INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00             
-          4364003000000Y  FX INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00             
-          4364012000000Y  FX INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00             
-          4364081100000Y  FX INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
-          4370000000000Y  SPTF FX AMOUNT DUE TO FI                  +                       0.00                    0.00             
-          4460000000000Y  FX MISC BORROWINGS                        +                       0.00                    0.00             
-          4760000000000Y  FX DEBT SECURITIES ISSUED                 +                       0.00                    0.00             
-          4961050000000Y  FX INTEREST PAYABLE TO RESIDENTS          +                       0.00                    0.00             
-          4961080000000Y  FX INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00             
-          4969950000000Y  OTHER FX MISC LIAB NIE DUE TO RESIDENTS   +                       0.00                    0.00             
-          4969980000000Y  OTHER FX MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
-          4461100000000Y  FX SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00             
+ PUBLIC BANK BERHAD                                                                                                                  
+ DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYE                                                                                  
+ REPORT DATE : 16/08/26                                                                                                              
+                                                                                                                                     
  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
- D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
- E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,550,592,553.08       92,550,592,553.08             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,176,133,139.12       35,176,133,139.12             
+ E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          57,007,140,372.61       57,007,140,372.61             
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYF                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -816,18 +619,18 @@
           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +             100,000,000.00          100,000,000.00             
           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
           4410000000000Y  RM MISC BORROWINGS                        +           1,000,000,000.00        1,000,000,000.00             
-          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              10,558,065.95           10,558,065.95             
-          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                       0.00                    0.00             
+          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              35,755,157.83           35,755,157.83             
+          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  28,683.34               28,683.34             
           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00             
-          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.75                    0.75             
-          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +                       0.00                    0.00             
-          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                       0.00                    0.00             
+          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
+          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              41,375,964.15           41,375,964.15             
+          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     862.20                  862.20             
           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           1,000,000,000.00        1,000,000,000.00             
           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00             
           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00             
           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -                       0.00                    0.00             
  -----------------------------------------------------------------------------------------------------------------------             
-          TOTAL FOR A-RMEL                                                     94,992,515,057.38       94,992,515,057.38             
+          TOTAL FOR A-RMEL                                                     95,059,117,658.19       95,059,117,658.19             
                                                                         ------------------------------------------------             
  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00             
           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00             
@@ -838,9 +641,9 @@
           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00             
           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00             
           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYF                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -882,61 +685,17 @@
  -----------------------------------------------------------------------------------------------------------------------             
           TOTAL FOR B-RMEA                                                      2,576,704,325.83        2,576,704,325.83             
                                                                         ------------------------------------------------             
- -        NSSTS           1. NSSTS                                                          0.00                    0.00             
-          NSSTS INVEST    1.1 NSSTS INVESTMENT                                    409,014,484.02          409,014,484.02             
-          NSSTS TRADING   1.2 NSSTS TRADING                                                 0.00                    0.00             
-          SSTS            SSTS                                                              0.00                    0.00             
- -FXEA    3260000000000Y  FX DEPOSITS PLACED                        +                       0.00                    0.00             
-          3280000000000Y  FX REVERSE REPOS                          +                       0.00                    0.00             
-          3362081000000Y  FX NOSTRO ACCOUNT BALANCES WITH FBI       +              18,873,296.06           18,873,296.06             
-          3364002000000Y  FX INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00             
-          3364003000000Y  FX INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00             
-          3364012000000Y  FX INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00             
-          3364081100000Y  FX INTERBANK PLACEMENTS WITH FBI <= 1 YR  +                       0.00                    0.00             
-          3370000000000Y  SPTF - FX AMOUNT DUE FROM DESIGNATED FI   +                       0.00                    0.00             
-          3460000000000Y  FX LOANS                                  +                       0.00                    0.00             
-          3460064000000Y  FX LOANS GOV DBE                          +                       0.00                    0.00             
-          3460081000000Y  FX LOANS FBI                              +                       0.00                    0.00             
-          3761000000000Y  FX SHARES HELD                            +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
- DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYF                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
                                                                                                                                      
- FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
- -----------------------------------------------------------------------------------------------------------------------             
-          3765000200000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3769900000000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3961000000000Y  FX NOTES AND COINS                        +                       0.00                    0.00             
-          3961100000000Y  FX INVESTMENTS                            +                       0.00                    0.00             
-          3962000000000Y  FOREIGN SUBSIDIARIES                      +                       0.00                    0.00             
-          3963000000000Y  FOREIGN ASSOCIATE COMPANIES               +                       0.00                    0.00             
-          3966900000000Y  FX INVESTMENT IN LABUAN OFFSHORE ENTITY   +                       0.00                    0.00             
-          3967000000000Y  FX MARGIN PLACED WITH EXCHANGES           +                       0.00                    0.00             
-          3968000000000Y  FX INTEREST RECEIVABLES NIE               +                       0.00                    0.00             
-          3969900000000Y  FX OTHER ASSETS NIE                       +                       0.00                    0.00             
-          3979900000000Y  SPTF OTHER FX MISC LIAB NIE               +                       0.00                    0.00             
- -FXEL    4260000000000Y  FX DEPOSITS ACCEPTED                      +               4,177,429.59            4,177,429.59             
-          4269981000000Y  FX DEPOSITS ACCEPTED TO BNM               +                       0.00                    0.00             
-          4360000000000Y  FX AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00             
-          4362081000000Y  FX OVERDRAWN NOSTRO ACCOUNTS WITH FBI     +                       0.00                    0.00             
-          4364002000000Y  FX INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00             
-          4364003000000Y  FX INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00             
-          4364012000000Y  FX INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00             
-          4364081100000Y  FX INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
-          4370000000000Y  SPTF FX AMOUNT DUE TO FI                  +                       0.00                    0.00             
-          4460000000000Y  FX MISC BORROWINGS                        +                       0.00                    0.00             
-          4760000000000Y  FX DEBT SECURITIES ISSUED                 +                       0.00                    0.00             
-          4961050000000Y  FX INTEREST PAYABLE TO RESIDENTS          +                       0.00                    0.00             
-          4961080000000Y  FX INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00             
-          4969950000000Y  OTHER FX MISC LIAB NIE DUE TO RESIDENTS   +                       0.00                    0.00             
-          4969980000000Y  OTHER FX MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
-          4461100000000Y  FX SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00             
+ PUBLIC BANK BERHAD                                                                                                                  
+ DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYF                                                                                  
+ REPORT DATE : 16/08/26                                                                                                              
+                                                                                                                                     
  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
- D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
- E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          92,847,875,941.22       92,847,875,941.22             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,099,103,739.12       35,099,103,739.12             
+ E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          57,383,309,593.24       57,383,309,593.24             
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYG                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -972,18 +731,18 @@
           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +             645,000,000.00          645,000,000.00             
           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
           4410000000000Y  RM MISC BORROWINGS                        +           1,000,000,000.00        1,000,000,000.00             
-          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              10,519,216.34           10,519,216.34             
-          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                       0.00                    0.00             
+          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              36,878,179.08           36,878,179.08             
+          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  29,372.26               29,372.26             
           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00             
-          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       3.68                    3.68             
-          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +                       0.00                    0.00             
-          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                       0.00                    0.00             
+          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
+          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              41,610,929.73           41,610,929.73             
+          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     862.20                  862.20             
           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           1,000,000,000.00        1,000,000,000.00             
           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00             
           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00             
           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -                       0.00                    0.00             
  -----------------------------------------------------------------------------------------------------------------------             
-          TOTAL FOR A-RMEL                                                     96,887,083,281.96       96,887,083,281.96             
+          TOTAL FOR A-RMEL                                                     96,955,083,405.21       96,955,083,405.21             
                                                                         ------------------------------------------------             
  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00             
           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00             
@@ -994,9 +753,9 @@
           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00             
           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00             
           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYG                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -1038,61 +797,17 @@
  -----------------------------------------------------------------------------------------------------------------------             
           TOTAL FOR B-RMEA                                                      2,251,301,740.03        2,251,301,740.03             
                                                                         ------------------------------------------------             
- -        NSSTS           1. NSSTS                                                          0.00                    0.00             
-          NSSTS INVEST    1.1 NSSTS INVESTMENT                                    409,055,431.41          409,055,431.41             
-          NSSTS TRADING   1.2 NSSTS TRADING                                                 0.00                    0.00             
-          SSTS            SSTS                                                              0.00                    0.00             
- -FXEA    3260000000000Y  FX DEPOSITS PLACED                        +                       0.00                    0.00             
-          3280000000000Y  FX REVERSE REPOS                          +                       0.00                    0.00             
-          3362081000000Y  FX NOSTRO ACCOUNT BALANCES WITH FBI       +              18,880,218.22           18,880,218.22             
-          3364002000000Y  FX INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00             
-          3364003000000Y  FX INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00             
-          3364012000000Y  FX INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00             
-          3364081100000Y  FX INTERBANK PLACEMENTS WITH FBI <= 1 YR  +                       0.00                    0.00             
-          3370000000000Y  SPTF - FX AMOUNT DUE FROM DESIGNATED FI   +                       0.00                    0.00             
-          3460000000000Y  FX LOANS                                  +                       0.00                    0.00             
-          3460064000000Y  FX LOANS GOV DBE                          +                       0.00                    0.00             
-          3460081000000Y  FX LOANS FBI                              +                       0.00                    0.00             
-          3761000000000Y  FX SHARES HELD                            +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
- DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYG                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
                                                                                                                                      
- FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
- -----------------------------------------------------------------------------------------------------------------------             
-          3765000200000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3769900000000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3961000000000Y  FX NOTES AND COINS                        +                       0.00                    0.00             
-          3961100000000Y  FX INVESTMENTS                            +                       0.00                    0.00             
-          3962000000000Y  FOREIGN SUBSIDIARIES                      +                       0.00                    0.00             
-          3963000000000Y  FOREIGN ASSOCIATE COMPANIES               +                       0.00                    0.00             
-          3966900000000Y  FX INVESTMENT IN LABUAN OFFSHORE ENTITY   +                       0.00                    0.00             
-          3967000000000Y  FX MARGIN PLACED WITH EXCHANGES           +                       0.00                    0.00             
-          3968000000000Y  FX INTEREST RECEIVABLES NIE               +                       0.00                    0.00             
-          3969900000000Y  FX OTHER ASSETS NIE                       +                       0.00                    0.00             
-          3979900000000Y  SPTF OTHER FX MISC LIAB NIE               +                       0.00                    0.00             
- -FXEL    4260000000000Y  FX DEPOSITS ACCEPTED                      +               4,190,170.83            4,190,170.83             
-          4269981000000Y  FX DEPOSITS ACCEPTED TO BNM               +                       0.00                    0.00             
-          4360000000000Y  FX AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00             
-          4362081000000Y  FX OVERDRAWN NOSTRO ACCOUNTS WITH FBI     +                       0.00                    0.00             
-          4364002000000Y  FX INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00             
-          4364003000000Y  FX INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00             
-          4364012000000Y  FX INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00             
-          4364081100000Y  FX INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
-          4370000000000Y  SPTF FX AMOUNT DUE TO FI                  +                       0.00                    0.00             
-          4460000000000Y  FX MISC BORROWINGS                        +                       0.00                    0.00             
-          4760000000000Y  FX DEBT SECURITIES ISSUED                 +                       0.00                    0.00             
-          4961050000000Y  FX INTEREST PAYABLE TO RESIDENTS          +                       0.00                    0.00             
-          4961080000000Y  FX INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00             
-          4969950000000Y  OTHER FX MISC LIAB NIE DUE TO RESIDENTS   +                       0.00                    0.00             
-          4969980000000Y  OTHER FX MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
-          4461100000000Y  FX SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00             
+ PUBLIC BANK BERHAD                                                                                                                  
+ DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYG                                                                                  
+ REPORT DATE : 16/08/26                                                                                                              
+                                                                                                                                     
  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
- D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
- E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          95,067,907,362.38       95,067,907,362.38             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,246,263,058.32       35,246,263,058.32             
+ E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          59,457,518,606.86       59,457,518,606.86             
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYH                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -1150,9 +865,9 @@
           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00             
           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00             
           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
+ PUBLIC BANK BERHAD                                                                                                                  
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYH                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -1194,60 +909,16 @@
  -----------------------------------------------------------------------------------------------------------------------             
           TOTAL FOR B-RMEA                                                                  0.00                    0.00             
                                                                         ------------------------------------------------             
- -        NSSTS           1. NSSTS                                                          0.00                    0.00             
-          NSSTS INVEST    1.1 NSSTS INVESTMENT                                              0.00                    0.00             
-          NSSTS TRADING   1.2 NSSTS TRADING                                                 0.00                    0.00             
-          SSTS            SSTS                                                              0.00                    0.00             
- -FXEA    3260000000000Y  FX DEPOSITS PLACED                        +                       0.00                    0.00             
-          3280000000000Y  FX REVERSE REPOS                          +                       0.00                    0.00             
-          3362081000000Y  FX NOSTRO ACCOUNT BALANCES WITH FBI       +                       0.00                    0.00             
-          3364002000000Y  FX INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00             
-          3364003000000Y  FX INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00             
-          3364012000000Y  FX INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00             
-          3364081100000Y  FX INTERBANK PLACEMENTS WITH FBI <= 1 YR  +                       0.00                    0.00             
-          3370000000000Y  SPTF - FX AMOUNT DUE FROM DESIGNATED FI   +                       0.00                    0.00             
-          3460000000000Y  FX LOANS                                  +                       0.00                    0.00             
-          3460064000000Y  FX LOANS GOV DBE                          +                       0.00                    0.00             
-          3460081000000Y  FX LOANS FBI                              +                       0.00                    0.00             
-          3761000000000Y  FX SHARES HELD                            +                       0.00                    0.00             
- PUBLIC ISLAMIC BANK BERHAD                                                                                                          
- DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYH                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
                                                                                                                                      
- FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
- -----------------------------------------------------------------------------------------------------------------------             
-          3765000200000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3769900000000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3961000000000Y  FX NOTES AND COINS                        +                       0.00                    0.00             
-          3961100000000Y  FX INVESTMENTS                            +                       0.00                    0.00             
-          3962000000000Y  FOREIGN SUBSIDIARIES                      +                       0.00                    0.00             
-          3963000000000Y  FOREIGN ASSOCIATE COMPANIES               +                       0.00                    0.00             
-          3966900000000Y  FX INVESTMENT IN LABUAN OFFSHORE ENTITY   +                       0.00                    0.00             
-          3967000000000Y  FX MARGIN PLACED WITH EXCHANGES           +                       0.00                    0.00             
-          3968000000000Y  FX INTEREST RECEIVABLES NIE               +                       0.00                    0.00             
-          3969900000000Y  FX OTHER ASSETS NIE                       +                       0.00                    0.00             
-          3979900000000Y  SPTF OTHER FX MISC LIAB NIE               +                       0.00                    0.00             
- -FXEL    4260000000000Y  FX DEPOSITS ACCEPTED                      +                       0.00                    0.00             
-          4269981000000Y  FX DEPOSITS ACCEPTED TO BNM               +                       0.00                    0.00             
-          4360000000000Y  FX AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00             
-          4362081000000Y  FX OVERDRAWN NOSTRO ACCOUNTS WITH FBI     +                       0.00                    0.00             
-          4364002000000Y  FX INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00             
-          4364003000000Y  FX INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00             
-          4364012000000Y  FX INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00             
-          4364081100000Y  FX INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
-          4370000000000Y  SPTF FX AMOUNT DUE TO FI                  +                       0.00                    0.00             
-          4460000000000Y  FX MISC BORROWINGS                        +                       0.00                    0.00             
-          4760000000000Y  FX DEBT SECURITIES ISSUED                 +                       0.00                    0.00             
-          4961050000000Y  FX INTEREST PAYABLE TO RESIDENTS          +                       0.00                    0.00             
-          4961080000000Y  FX INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00             
-          4969950000000Y  OTHER FX MISC LIAB NIE DUE TO RESIDENTS   +                       0.00                    0.00             
-          4969980000000Y  OTHER FX MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
-          4461100000000Y  FX SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00             
+ PUBLIC BANK BERHAD                                                                                                                  
+ DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYH                                                                                  
+ REPORT DATE : 16/08/26                                                                                                              
+                                                                                                                                     
  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +                       0.00                    0.00             
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYI                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -1283,18 +954,18 @@
           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +             645,000,000.00          645,000,000.00             
           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
           4410000000000Y  RM MISC BORROWINGS                        +           1,000,000,000.00        1,000,000,000.00             
-          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              10,435,894.71           10,435,894.71             
-          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                       0.00                    0.00             
+          4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              38,020,196.63           38,020,196.63             
+          4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  30,061.11               30,061.11             
           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00             
-          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       3.68                    3.68             
-          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +                       0.00                    0.00             
-          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                       0.00                    0.00             
+          4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
+          4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              41,639,797.08           41,639,797.08             
+          4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     862.20                  862.20             
           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           1,000,000,000.00        1,000,000,000.00             
           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00             
           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00             
           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -                       0.00                    0.00             
  -----------------------------------------------------------------------------------------------------------------------             
-          TOTAL FOR A-RMEL                                                     96,888,934,473.04       96,888,934,473.04             
+          TOTAL FOR A-RMEL                                                     96,958,189,491.67       96,958,189,491.67             
                                                                         ------------------------------------------------             
  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00             
           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00             
@@ -1307,7 +978,7 @@
           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00             
           3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00             
  DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYI                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
+ REPORT DATE : 16/08/26                                                                                                              
                                                                                                                                      
  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
  -----------------------------------------------------------------------------------------------------------------------             
@@ -1348,54 +1019,10 @@
  -----------------------------------------------------------------------------------------------------------------------             
           TOTAL FOR B-RMEA                                                      2,253,582,405.25        2,253,582,405.25             
                                                                         ------------------------------------------------             
- -        NSSTS           1. NSSTS                                                          0.00                    0.00             
-          NSSTS INVEST    1.1 NSSTS INVESTMENT                                    409,096,380.50          409,096,380.50             
-          NSSTS TRADING   1.2 NSSTS TRADING                                                 0.00                    0.00             
-          SSTS            SSTS                                                              0.00                    0.00             
- -FXEA    3260000000000Y  FX DEPOSITS PLACED                        +                       0.00                    0.00             
-          3280000000000Y  FX REVERSE REPOS                          +                       0.00                    0.00             
-          3362081000000Y  FX NOSTRO ACCOUNT BALANCES WITH FBI       +              18,880,218.22           18,880,218.22             
-          3364002000000Y  FX INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00             
-          3364003000000Y  FX INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00             
-          3364012000000Y  FX INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00             
-          3364081100000Y  FX INTERBANK PLACEMENTS WITH FBI <= 1 YR  +                       0.00                    0.00             
-          3370000000000Y  SPTF - FX AMOUNT DUE FROM DESIGNATED FI   +                       0.00                    0.00             
-          3460000000000Y  FX LOANS                                  +                       0.00                    0.00             
-          3460064000000Y  FX LOANS GOV DBE                          +                       0.00                    0.00             
-          3460081000000Y  FX LOANS FBI                              +                       0.00                    0.00             
-          3761000000000Y  FX SHARES HELD                            +                       0.00                    0.00             
-          3765000200000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
-          3769900000000Y  FX SECURITIES HELD (OLD=37600)            +                       0.00                    0.00             
- DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYI                                                                                  
- REPORT DATE : 14/08/26                                                                                                              
                                                                                                                                      
- FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL             
- -----------------------------------------------------------------------------------------------------------------------             
-          3961000000000Y  FX NOTES AND COINS                        +                       0.00                    0.00             
-          3961100000000Y  FX INVESTMENTS                            +                       0.00                    0.00             
-          3962000000000Y  FOREIGN SUBSIDIARIES                      +                       0.00                    0.00             
-          3963000000000Y  FOREIGN ASSOCIATE COMPANIES               +                       0.00                    0.00             
-          3966900000000Y  FX INVESTMENT IN LABUAN OFFSHORE ENTITY   +                       0.00                    0.00             
-          3967000000000Y  FX MARGIN PLACED WITH EXCHANGES           +                       0.00                    0.00             
-          3968000000000Y  FX INTEREST RECEIVABLES NIE               +                       0.00                    0.00             
-          3969900000000Y  FX OTHER ASSETS NIE                       +                       0.00                    0.00             
-          3979900000000Y  SPTF OTHER FX MISC LIAB NIE               +                       0.00                    0.00             
- -FXEL    4260000000000Y  FX DEPOSITS ACCEPTED                      +               4,190,170.83            4,190,170.83             
-          4269981000000Y  FX DEPOSITS ACCEPTED TO BNM               +                       0.00                    0.00             
-          4360000000000Y  FX AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00             
-          4362081000000Y  FX OVERDRAWN NOSTRO ACCOUNTS WITH FBI     +                       0.00                    0.00             
-          4364002000000Y  FX INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00             
-          4364003000000Y  FX INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00             
-          4364012000000Y  FX INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00             
-          4364081100000Y  FX INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00             
-          4370000000000Y  SPTF FX AMOUNT DUE TO FI                  +                       0.00                    0.00             
-          4460000000000Y  FX MISC BORROWINGS                        +                       0.00                    0.00             
-          4760000000000Y  FX DEBT SECURITIES ISSUED                 +                       0.00                    0.00             
-          4961050000000Y  FX INTEREST PAYABLE TO RESIDENTS          +                       0.00                    0.00             
-          4961080000000Y  FX INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00             
-          4969950000000Y  OTHER FX MISC LIAB NIE DUE TO RESIDENTS   +                       0.00                    0.00             
-          4969980000000Y  OTHER FX MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00             
-          4461100000000Y  FX SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00             
+ DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : DAYI                                                                                  
+ REPORT DATE : 16/08/26                                                                                                              
+                                                                                                                                     
  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00             
- D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00             
- E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          95,067,518,837.33       95,067,518,837.33             
+ D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,246,263,058.32       35,246,263,058.32             
+ E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +          59,458,344,028.10       59,458,344,028.10             
