@@ -259,9 +259,15 @@ def build_elw1(reptmon: str, nowk: str) -> pl.DataFrame:
     elw1_cache = _load_cached(elw1_sas, "BNM_ELW")
 
     con = duckdb.connect(database=":memory:")
+    # elw1_raw = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+    #            CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{elw1_cache.as_posix()}')
+    # """).pl()
     elw1_raw = con.execute(f"""
-        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
-               CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
+               CAST(ELDAY AS VARCHAR) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
         FROM read_parquet('{elw1_cache.as_posix()}')
     """).pl()
     con.close()
@@ -271,11 +277,12 @@ def build_elw1(reptmon: str, nowk: str) -> pl.DataFrame:
     rows = []
     for row in elw1_raw.iter_rows(named=True):
         bnmcode = row["BNMCODE"]
-        branch = row["BRANCH"]
+        # branch = row["BRANCH"]
         amount = row["AMOUNT"]
 
         # IF BNMCODE='4929980000000Y' AND BRANCH > 3000 THEN DELETE;
-        if bnmcode == "4929980000000Y" and (branch or 0) > 3000:
+        # if bnmcode == "4929980000000Y" and (branch or 0) > 3000:
+        if bnmcode == "4929980000000Y":
             continue
 
         if bnmcode in ("3219902000000Y", "3219903000000Y", "3219912000000Y"):
@@ -632,7 +639,7 @@ def prteli(day_code: str, *, reptmon: str, nowk: str, rdate: str,
 
     # DATA PMM; SET BNMK.DCI&REPTMON&NOWK(DROP=REPTDATS) BNMK.TBL1&REPTMON&NOWK;
     #           IF ELDAY="&I";  -- note DCI-then-TBL1 order (swapped vs prtel)
-    
+
     # # PROD Input
     # dci_sas = INPUT_BNMK_DCI_DIR / f"dci{reptmon}{nowk}.sas7bdat"
 
