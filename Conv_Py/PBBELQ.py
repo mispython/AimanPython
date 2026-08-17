@@ -264,9 +264,16 @@ def build_elw1(reptmon: str, nowk: str) -> pl.DataFrame:
     #            CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
     #     FROM read_parquet('{elw1_cache.as_posix()}')
     # """).pl()
+    # elw1_raw = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
+    #            CAST(ELDAY AS VARCHAR) ELDAY,
+    #            CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{elw1_cache.as_posix()}')
+    # """).pl()
+
     elw1_raw = con.execute(f"""
-        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
-               CAST(ELDAY AS VARCHAR) ELDAY,
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE,
+               TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
                CAST(AMOUNT AS DOUBLE) AMOUNT
         FROM read_parquet('{elw1_cache.as_posix()}')
     """).pl()
@@ -327,8 +334,15 @@ def _load_gold(reptmon: str, nowk: str, day_code: str) -> pl.DataFrame:
     gold_cache = _load_cached(gold_sas, "ELG_GOLD")
 
     con = duckdb.connect(database=":memory:")
+    # gold = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+    #            CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{gold_cache.as_posix()}')
+    #     WHERE ELDAY = '{day_code}'
+    # """).pl()
+
     gold = con.execute(f"""
-        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
                CAST(AMOUNT AS DOUBLE) AMOUNT
         FROM read_parquet('{gold_cache.as_posix()}')
         WHERE ELDAY = '{day_code}'
@@ -539,9 +553,26 @@ def prtel(day_code: str, *, reptmon: str, nowk: str, sdesc: str, rdate: str,
 
     dci_cache = _load_cached(dci_sas, "BNMK_DCI")
 
+    # con = duckdb.connect(database=":memory:")
+    # tbl1_df = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+    #            CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{tbl1_cache.as_posix()}')
+    #     WHERE ELDAY = '{day_code}'
+    # """).pl()
+
+    # # (DROP=REPTDATS) -- REPTDATS is simply not selected below
+    # dci_df = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+    #            CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{dci_cache.as_posix()}')
+    #     WHERE ELDAY = '{day_code}'
+    # """).pl()
+    # con.close()
+
     con = duckdb.connect(database=":memory:")
     tbl1_df = con.execute(f"""
-        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
                CAST(AMOUNT AS DOUBLE) AMOUNT
         FROM read_parquet('{tbl1_cache.as_posix()}')
         WHERE ELDAY = '{day_code}'
@@ -549,7 +580,7 @@ def prtel(day_code: str, *, reptmon: str, nowk: str, sdesc: str, rdate: str,
 
     # (DROP=REPTDATS) -- REPTDATS is simply not selected below
     dci_df = con.execute(f"""
-        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
                CAST(AMOUNT AS DOUBLE) AMOUNT
         FROM read_parquet('{dci_cache.as_posix()}')
         WHERE ELDAY = '{day_code}'
@@ -608,7 +639,7 @@ def prtel(day_code: str, *, reptmon: str, nowk: str, sdesc: str, rdate: str,
         # Add a blank line between the subtotal and the repeated title? Actually the subtotal already has short dashes,
         # and the original has a blank line after the subtotal and before the repeated title.
         # We'll add an extra blank line.
-        lines += [""] + title_only + rest_lines
+        lines += title_only + ["", ""] + rest_lines
     else:
         lines += rest_lines
     return lines
@@ -656,16 +687,32 @@ def prteli(day_code: str, *, reptmon: str, nowk: str, rdate: str,
 
     tbl1_cache = _load_cached(tbl1_sas, "BNMK_TBL1")
 
+    # con = duckdb.connect(database=":memory:")
+    # dci_df = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+    #            CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{dci_cache.as_posix()}')
+    #     WHERE ELDAY = '{day_code}'
+    # """).pl()
+
+    # tbl1_df = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+    #            CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{tbl1_cache.as_posix()}')
+    #     WHERE ELDAY = '{day_code}'
+    # """).pl()
+    # con.close()
+
     con = duckdb.connect(database=":memory:")
     dci_df = con.execute(f"""
-        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
                CAST(AMOUNT AS DOUBLE) AMOUNT
         FROM read_parquet('{dci_cache.as_posix()}')
         WHERE ELDAY = '{day_code}'
     """).pl()
 
     tbl1_df = con.execute(f"""
-        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
                CAST(AMOUNT AS DOUBLE) AMOUNT
         FROM read_parquet('{tbl1_cache.as_posix()}')
         WHERE ELDAY = '{day_code}'
@@ -708,7 +755,7 @@ def prteli(day_code: str, *, reptmon: str, nowk: str, rdate: str,
     lines = full_header + rmel_lines
     if rest_lines:
         title_only = _get_day_title_lines(False, day_code, rdate)
-        lines += [""] + title_only + rest_lines
+        lines += title_only + ["", ""] + rest_lines
     else:
         lines += rest_lines
     return lines
