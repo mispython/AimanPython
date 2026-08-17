@@ -1,19 +1,19 @@
-/sas/python/virt_edw_dev/bin/python3 /sas/python/v(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWKAPE_AII.py
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWKAPE_AII.py
 Step 1: Deriving report date (REPTDAT1)...
   SDESC  : PUBLIC BANK BERHAD
-  RDATE  : 16/08/26
+  RDATE  : 08/08/26
   RYEAR  : 2026
-  MTHNAM : AUGUST
-  MTHEND : 16
+  MTHNAM : August
+  MTHEND : 08
 
 Step 2: Deriving week/month bucket (REPTDATE)...
-  WK / NOWK : 2
-  REPTMON   : 08
+  WK / NOWK : 4
+  REPTMON   : 07
   REPTYEAR  : 2026
-  RPDATE    : 16/08/26
+  RPDATE    : 08/08/26
   Output file        : EIBWKAPD.txt
   NSRS copy          : EIBWKAPD.txt
-  SFTP remote name   : EIBWKAPD_WK2.TXT
+  SFTP remote name   : EIBWKAPD_MTH.TXT
 
 Step 4: Building REP2 (filtered)...
   [BNMK_REP2] Converting rep2081.sas7bdat -> BNMK_rep2081.parquet ...
@@ -29,9 +29,114 @@ Step 6: Rendering PBBELQ daily EL detail reports...
   Loading BNM ELW (build_elw1)...
   [BNM_ELW] Converting elw081.sas7bdat -> BNM_elw081.parquet ...
   [BNM_ELW] Done — 272 rows cached.
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWKAPE_AII.py", line 541, in <module>
-    elw1 = _pbbelq_build_elw1(REPTMON, NOWK)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PBBELQ_AII.py", line 262, in build_elw1
-    elw1_raw = con.execute(f"""
-_duckdb.BinderException: Binder Error: Column "BRANCH" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+  [PBBELQ] prtel(DAYA)...
+  [ELG_GOLD] Converting gold081.sas7bdat -> ELG_gold081.parquet ...
+  [ELG_GOLD] Done — 8 rows cached.
+  [BNMK_TBL1] Converting tbl1081.sas7bdat -> BNMK_tbl1081.parquet ...
+  [BNMK_TBL1] Done — 8 rows cached.
+  [BNMK_DCI] Converting dci081.sas7bdat -> BNMK_dci081.parquet ...
+  [BNMK_DCI] Done — 16 rows cached.
+  [PBBELQ] prtel(DAYB)...
+  [ELG_GOLD] Cache fresh — skipping conversion.
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_DCI] Cache fresh — skipping conversion.
+  [PBBELQ] prtel(DAYC)...
+  [ELG_GOLD] Cache fresh — skipping conversion.
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_DCI] Cache fresh — skipping conversion.
+  [PBBELQ] prtel(DAYD)...
+  [ELG_GOLD] Cache fresh — skipping conversion.
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_DCI] Cache fresh — skipping conversion.
+  [PBBELQ] prtel(DAYE)...
+  [ELG_GOLD] Cache fresh — skipping conversion.
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_DCI] Cache fresh — skipping conversion.
+  [PBBELQ] prtel(DAYF)...
+  [ELG_GOLD] Cache fresh — skipping conversion.
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_DCI] Cache fresh — skipping conversion.
+  [PBBELQ] prtel(DAYG)...
+  [ELG_GOLD] Cache fresh — skipping conversion.
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_DCI] Cache fresh — skipping conversion.
+  [PBBELQ] prtel(DAYH)...
+  [ELG_GOLD] Cache fresh — skipping conversion.
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [BNMK_DCI] Cache fresh — skipping conversion.
+  [PBBELQ] prteli(DAYI)...
+  [BNMK_DCI] Cache fresh — skipping conversion.
+  [BNMK_TBL1] Cache fresh — skipping conversion.
+  [ELG_GOLD] Cache fresh — skipping conversion.
+
+Step 7: Rebuilding REP2 (union with REP4, remap, BNMCODG)...
+  REP2 rows: 78
+
+Step 8: Rendering RENTAS securities report...
+
+Step 9: Building variance report (KAPITI vs WALKER)...
+  [BNM_ELW_WK] Converting elw081.sas7bdat -> BNMB_elw081.parquet ...
+  [BNM_ELW_WK] Done — 571 rows cached.
+
+[DIAG] repov BNMCODE samples (repr):
+    '3721000000000Y'  len=14
+    '3722000000000Y'  len=14
+    '3723000000000Y'  len=14
+[DIAG] repov ELDAY samples (repr):
+    'DAYA'  len=4
+    'DAYB'  len=4
+    'DAYC'  len=4
+    'DAYD'  len=4
+    'DAYE'  len=4
+    'DAYF'  len=4
+    'DAYG'  len=4
+    'DAYI'  len=4
+
+[DIAG] elw_wk_raw BNMCODE samples (repr):
+    '3250001000000Y'  len=14
+    '3311002000000Y'  len=14
+    '3311003000000Y'  len=14
+    '3313000000000Y'  len=14
+    '3314001000000Y'  len=14
+[DIAG] elw_wk_raw ELDAY samples (repr):
+    'DAYA'  len=4
+    'DAYB'  len=4
+    'DAYC'  len=4
+    'DAYD'  len=4
+    'DAYE'  len=4
+    'DAYF'  len=4
+    'DAYG'  len=4
+    'DAYI'  len=4
+
+[DIAG] Does elw_wk_raw contain 3721000000000Y at all?
+shape: (8, 3)
+┌────────────────┬───────┬───────────┐
+│ BNMCODE        ┆ ELDAY ┆ AMOUNT    │
+│ ---            ┆ ---   ┆ ---       │
+│ str            ┆ str   ┆ f64       │
+╞════════════════╪═══════╪═══════════╡
+│ 3721000000000Y ┆ DAYA  ┆ 2.3674e10 │
+│ 3721000000000Y ┆ DAYB  ┆ 2.3676e10 │
+│ 3721000000000Y ┆ DAYC  ┆ 2.3763e10 │
+│ 3721000000000Y ┆ DAYD  ┆ 2.3779e10 │
+│ 3721000000000Y ┆ DAYE  ┆ 2.3770e10 │
+│ 3721000000000Y ┆ DAYF  ┆ 2.3817e10 │
+│ 3721000000000Y ┆ DAYG  ┆ 2.3800e10 │
+│ 3721000000000Y ┆ DAYI  ┆ 2.3802e10 │
+└────────────────┴───────┴───────────┘
+
+Step 10: Building Rev Repo report...
+
+Step 11: Paginating and writing output...
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWKAPE/EIBWKAPD.txt
+  Total lines    : 1,179
+
+Step 12: Copying output for NSRS...
+  NSRS copy written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWKAPE/nsrs/EIBWKAPD.txt
+
+Step 13: Transferring output via SFTP...
+  Remote dir  : FD-BNM REPORTING/PBB/BNM RPTG
+  Remote name : EIBWKAPD_MTH.TXT
+  (SFTP transfer call left commented -- HOST_DESC key unconfirmed)
+
+EIBWKAPE complete.
