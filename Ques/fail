@@ -1,159 +1,25 @@
-def _render_pivot_table(
-    df: pl.DataFrame,
-    base_titles: list[str],
-    row_col: str,
-    all_label: str,
-    class_col: str,
-    value_specs: list[tuple],   # (col_name, sublabel, width, decimals)
-    rts: int,
-    row_label: str = "BNMCODE",
-) -> list[str]:
-    """
-    Fully-bordered emulation of PROC TABULATE.
-    - Paginates columns when >6 class values (ELDAY).
-    - Prints titles on every page, with "(Continued)" on subsequent pages.
-    - Uses partial separator after row‑label header.
-    - Splits total label into two lines when needed.
-    - All lines are exactly 132 characters (plus ASA char).
-    """
-    if df.is_empty():
-        return []
+print("Step 1: Deriving report date (REPTDAT1)...")
 
-    class_vals = sorted(df[class_col].drop_nulls().unique().to_list())
-    row_vals = sorted(df[row_col].drop_nulls().unique().to_list())
-    if not class_vals or not row_vals:
-        return []
+# ---- FOR VALIDATION: force report date to 8 August 2026 ----
+# Comment out this override and uncomment the original line below for production.
+from datetime import date
+FIXED_DATE = date(2026, 8, 8)
+# _reptdat1 = get_reptdate_values(year_format="%Y")
+# Create a simple object with the fixed date
+class Dummy:
+    pass
+_reptdat1 = Dummy()
+_reptdat1.reptdate = FIXED_DATE
+# -----------------------------------------------------------
 
-    value_width = value_specs[0][2]
-    label_width = max(rts - 2, 10)
+SDESC   = "PUBLIC BANK BERHAD"
+RDATE   = _reptdat1.reptdate.strftime("%d/%m/%y")   # DDMMYY8.
+RYEAR   = _reptdat1.reptdate.strftime("%Y")          # YEAR4.
+MTHNAM  = _reptdat1.reptdate.strftime("%B").upper()  # MONNAME.
+MTHEND  = f"{_reptdat1.reptdate.day:02d}"            # Z2.
 
-    # Flatten columns: (class, spec) pairs
-    flat_cols = [(cv, spec) for cv in class_vals for spec in value_specs]
-    # Determine how many columns fit in 132 chars
-    # Total line = " " + "|" + label_area + "|" + value_area + "|"
-    # value_area = n * value_width + (n - 1)
-    # We want total data width (excluding ASA) = 132
-    max_value_area = 132 - label_width - 3  # -3 for two pipes and an extra? Actually 2 pipes? Let's compute: data part = "|" + label + "|" + value + "|" => 2 pipes + label_width + value_area => 132 -> value_area = 132 - label_width - 2. We'll use 3 for safety.
-    max_value_area = 132 - label_width - 2  # two outer pipes
-    cols_per_page = max(1, (max_value_area + 1) // (value_width + 1))
-    pages = [flat_cols[i:i + cols_per_page] for i in range(0, len(flat_cols), cols_per_page)]
-
-    # Pre-aggregate data for lookup
-    sums = (
-        df.group_by([row_col, class_col])
-        .agg([pl.col(c).sum().alias(c) for (c, _, _, _) in value_specs])
-    )
-    grand = (
-        df.group_by(class_col)
-        .agg([pl.col(c).sum().alias(c) for (c, _, _, _) in value_specs])
-    )
-    sum_lookup = {(r[row_col], r[class_col]): r for r in sums.iter_rows(named=True)}
-    grand_lookup = {r[class_col]: r for r in grand.iter_rows(named=True)}
-
-    def cell(row_val, cv, col_name):
-        rec = sum_lookup.get((row_val, cv))
-        return rec[col_name] if rec else 0.0
-
-    def grand_cell(cv, col_name):
-        rec = grand_lookup.get(cv)
-        return rec[col_name] if rec else 0.0
-
-    out: list[str] = []
-
-    for page_num, page_cols in enumerate(pages, start=1):
-        n = len(page_cols)
-        value_area_width = n * value_width + (n - 1)
-        # Compute actual label_width to make total data width 132
-        # data width = label_width + value_area_width + 2 (pipes) = 132
-        # We'll use a fixed label_width, but we may need to adjust if value_area_width too big
-        # Use the earlier computed label_width, but ensure it's not negative
-        # We'll compute a label_width that fits
-        actual_label_width = 132 - value_area_width - 2  # -2 for the two outer pipes
-        if actual_label_width < 5:
-            # Too many columns; we need to reduce value_width
-            # This case is unlikely with our page splitting, but handle it
-            # We'll shrink value_width proportionally
-            scale = (132 - 2 - 5) / (value_area_width + 1)
-            new_value_width = max(5, int(value_width * scale))
-            # Recalc with new width
-            value_area_width = n * new_value_width + (n - 1)
-            actual_label_width = 132 - value_area_width - 2
-            value_width = new_value_width
-        label_width = actual_label_width
-
-        blank_label = " " * label_width
-
-        if page_num == 1:
-            out.extend(_title_lines(*base_titles))
-        else:
-            out.append(" ")   # blank line before continuation
-            out.extend(_title_lines("(Continued)", *base_titles))
-
-        # Top border (full width of dashes)
-        border = " " + "-" * (label_width + value_area_width + 2)  # +2 for pipes
-        out.append(border)
-
-        # ELDAY spanning header
-        out.append(f" |{blank_label}|{class_col.center(value_area_width)}|")
-        # Dashed line under ELDAY (only in value area)
-        out.append(f" |{blank_label}|{'-' * value_area_width}|")
-
-        # Class (day) header row – one centered label per contiguous run
-        class_header_parts = []
-        i = 0
-        while i < n:
-            cv = page_cols[i][0]
-            j = i
-            while j < n and page_cols[j][0] == cv:
-                j += 1
-            span_w = (j - i) * value_width + (j - i - 1)
-            class_header_parts.append(str(cv).center(span_w))
-            i = j
-        out.append(f" |{blank_label}|" + "|".join(class_header_parts) + "|")
-
-        # Full separator after day headers (dashes with pluses)
-        sep_full = "-" * label_width + "+" + "+".join("-" * value_width for _ in range(n))
-        out.append(f" |{sep_full}|")
-
-        # Row label header (e.g., "BNMCODE") with blank data cells
-        out.append(f" |{row_label.ljust(label_width)}|" + "|".join(" " * value_width for _ in range(n)) + "|")
-
-        # PARTIAL separator: dashes only under row label, spaces under data
-        sep_partial = "-" * label_width + "|" + "|".join(" " * value_width for _ in range(n))
-        out.append(f" |{sep_partial}|")
-
-        # Data rows
-        for rv in row_vals:
-            vals = [
-                _fmt_num_fit(cell(rv, cv, spec[0]), value_width, spec[3])
-                for (cv, spec) in page_cols
-            ]
-            out.append(f" |{str(rv).ljust(label_width)[:label_width]}|" + "|".join(vals) + "|")
-            out.append(f" |{sep_full}|")   # full separator between data rows (SAS has this)
-
-        # Full separator before total
-        out.append(f" |{sep_full}|")
-
-        # Grand total row(s)
-        label_txt = all_label.rstrip()
-        if len(label_txt) <= label_width:
-            vals = [
-                _fmt_num_fit(grand_cell(cv, spec[0]), value_width, spec[3])
-                for (cv, spec) in page_cols
-            ]
-            out.append(f" |{label_txt.ljust(label_width)}|" + "|".join(vals) + "|")
-        else:
-            words = label_txt.split()
-            first_line, second_line = " ".join(words[:-1]), words[-1]
-            blank_vals = "|".join(" " * value_width for _ in range(n))
-            out.append(f" |{first_line.ljust(label_width)[:label_width]}|{blank_vals}|")
-            vals = [
-                _fmt_num_fit(grand_cell(cv, spec[0]), value_width, spec[3])
-                for (cv, spec) in page_cols
-            ]
-            out.append(f" |{second_line.ljust(label_width)[:label_width]}|" + "|".join(vals) + "|")
-
-        # Bottom border (same as top)
-        out.append(border)
-
-    return out
+print(f"  SDESC  : {SDESC}")
+print(f"  RDATE  : {RDATE}")
+print(f"  RYEAR  : {RYEAR}")
+print(f"  MTHNAM : {MTHNAM}")
+print(f"  MTHEND : {MTHEND}")
