@@ -1,3 +1,11 @@
+Step 10: Building Rev Repo report...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWKAPE_AII.py", line 859, in <module>
+    report3_lines = _render_pivot_report(
+TypeError: _render_pivot_report() missing 1 required positional argument: 'class_vals'
+
+
+
 # Combine all reports: EL details first, then RENTAS, then Variance
 all_lines = paginated_pbbelq + paginated_reports
 
