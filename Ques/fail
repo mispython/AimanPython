@@ -1,65 +1,179 @@
-def _get_day_title_lines(include_bank: bool, day_code: str, rdate: str, sdesc: str = None) -> list[str]:
+# Combine all reports: EL details first, then RENTAS, then Variance
+all_lines = paginated_pbbelq + paginated_reports
+
+
+
+# Get sorted ELDAY values from rep2
+elday_values = sorted(rep2["ELDAY"].drop_nulls().unique().to_list())
+
+# Split into two pages if more than 6 days (original SAS behaviour)
+MAX_DAYS_PER_PAGE = 6
+if len(elday_values) > MAX_DAYS_PER_PAGE:
+    first_elday = elday_values[:MAX_DAYS_PER_PAGE]
+    second_elday = elday_values[MAX_DAYS_PER_PAGE:]
+
+    # First part: DAYA–DAYF
+    report1_lines = _render_pivot_report(
+        rep2, title1,
+        row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
+        class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)],
+        rts=30, class_vals=first_elday, page_num=1
+    )
+
+    # Second part: DAYG–DAYI (with continuation header)
+    cont_title = _title_lines(
+        "(Continued)",
+        "PUBLIC BANK BERHAD -REPORT DATE " + RDATE,
+        "SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK",
+        "(DAILY KAPITI STOCK REPORT) WEEK " + WK + " " + MTHNAM + " " + RYEAR,
+    )
+    report1_lines += _render_pivot_report(
+        rep2, cont_title,
+        row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
+        class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)],
+        rts=30, class_vals=second_elday, page_num=2
+    )
+else:
+    report1_lines = _render_pivot_report(
+        rep2, title1,
+        row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
+        class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)],
+        rts=30, class_vals=elday_values, page_num=1
+    )
+
+
+
+def _render_pivot_report(
+    df: pl.DataFrame,
+    title_lines: list[str],
+    row_col: str,
+    all_label: str,
+    class_col: str,
+    value_specs: list[tuple],
+    rts: int,
+    class_vals: list,
+    page_num: int = 1,
+) -> list[str]:
     """
-    Return the title lines for a day's report (no column header).
-    include_bank: True for DAYA-DAYH, False for DAYI.
-    Includes a blank line after the report date.
+    Render a PROC TABULATE grid with borders, spanning header, and fixed column widths.
+    class_vals : list of values to use as columns (subset of class_col)
+    page_num   : used to decide whether to add extra spacing before the grid (only for first page)
     """
-    titles = []
-    if include_bank and sdesc:
-        titles.append(sdesc)
-    titles.append(f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}")
-    titles.append(f"REPORT DATE : {rdate}")
-    titles.append("")  # blank line after report date
-    return _title_lines(*titles)
+    # If no data or no class_vals, return empty
+    if df.is_empty() or not class_vals:
+        return []
 
-def _get_full_header(include_bank: bool, day_code: str, rdate: str, sdesc: str = None) -> list[str]:
-    """
-    Return the complete header: title lines + column header + dashed line.
-    """
-    title_lines = _get_day_title_lines(include_bank, day_code, rdate, sdesc)
-    return title_lines + _render_table_header()
+    lines = list(title_lines)
 
+    # Add a blank line before the grid (only for first page)
+    if page_num == 1:
+        lines.append("")
 
+    # Column widths
+    row_label_width = rts
+    col_width = 16   # for COMMA16.2 numbers
+    # Total width: row_label_width + (len(class_vals) * col_width) + (len(class_vals) - 1) + 2 borders?
+    # But we'll build with vertical bars.
 
+    # Build top border (dashes and plus signs at column boundaries)
+    def top_border():
+        parts = ["-" * (row_label_width + 2)]   # +2 for padding spaces
+        for _ in class_vals:
+            parts.append("-" * (col_width + 2))
+        return "+" + "+".join(parts) + "+"
 
-    # Build the full header (titles + column header + dashed line) for this day
-    full_header = _get_full_header(True, day_code, rdate, sdesc)
+    # Build header row: "ELDAY" centered over all value columns
+    def header_row():
+        # First cell: row label header (empty)
+        row_label_header = " " * (row_label_width + 2)
+        # For each column, we need to center the header text (e.g., "ELDAY") over the group of columns?
+        # But the original SAS has a single row with "ELDAY" centered over the entire set of columns.
+        # So we just put "ELDAY" centered over all columns.
+        # The total width for all value columns is (len(class_vals) * col_width) + (len(class_vals)-1) + 2.
+        total_value_width = len(class_vals) * (col_width + 2)  # each column has a leading/trailing space? Actually we have bars.
+        # We'll build a string with "ELDAY" centered over the value columns.
+        header_text = "ELDAY"
+        # Pad left and right to center
+        left_pad = (total_value_width - len(header_text)) // 2
+        right_pad = total_value_width - len(header_text) - left_pad
+        value_header = " " * left_pad + header_text + " " * right_pad
+        # Combine with row label cell (empty)
+        return "|" + " " * (row_label_width + 2) + "|" + value_header + "|"
 
-    # Render the A-RMEL and B-RMEA groups (includes subtotal lines)
-    rmel_lines = _render_report_rmel(combined)
+    # Build sub-header row: actual day names (e.g., "      DAYA      ")
+    def sub_header_row():
+        parts = [f" {row_col:<{row_label_width}} "]   # left-aligned with padding
+        for cv in class_vals:
+            # Center the day name within col_width+2 (including leading/trailing space)
+            day_str = str(cv).center(col_width + 2)
+            parts.append(day_str)
+        return "|" + "|".join(parts) + "|"
 
-    # Render the remaining groups
-    rest_lines = _render_report_rest(combined)
+    # Build separator rows (dashed lines between row blocks)
+    def separator():
+        parts = ["-" * (row_label_width + 2)]
+        for _ in class_vals:
+            parts.append("-" * (col_width + 2))
+        return "|" + "|".join(parts) + "|"
 
-    # Assemble output
-    lines = full_header + rmel_lines
-    if rest_lines:
-        # Add only the title lines (no column header) before the rest groups
-        title_only = _get_day_title_lines(True, day_code, rdate, sdesc)
-        # Add a blank line between the subtotal and the repeated title? Actually the subtotal already has short dashes,
-        # and the original has a blank line after the subtotal and before the repeated title.
-        # We'll add an extra blank line.
-        lines += [""] + title_only + rest_lines
-    else:
-        lines += rest_lines
+    # Build data row for a given row value
+    def data_row(row_val):
+        parts = [f" {row_val:<{row_label_width}} "]
+        for cv in class_vals:
+            sub = df.filter((pl.col(row_col) == row_val) & (pl.col(class_col) == cv))
+            val = float(sub["AMOUNT"].sum()) if len(sub) > 0 else 0.0
+            # Format as COMMA16.2 and right-align
+            fmt = _fmt_comma(val, col_width, 2)
+            parts.append(f" {fmt} ")
+        return "|" + "|".join(parts) + "|"
+
+    # Build total row
+    def total_row():
+        # Compute totals for each column
+        parts = [f" {all_label:<{row_label_width}} "]  # left-aligned within width
+        for cv in class_vals:
+            sub = df.filter(pl.col(class_col) == cv)
+            val = float(sub["AMOUNT"].sum())
+            fmt = _fmt_comma(val, col_width, 2)
+            parts.append(f" {fmt} ")
+        return "|" + "|".join(parts) + "|"
+
+    # Build bottom border (same as top)
+    def bottom_border():
+        return top_border()
+
+    # Assemble the grid
+    lines.append(top_border())
+    lines.append(header_row())
+    lines.append(separator())
+    lines.append(sub_header_row())
+    lines.append(separator())
+
+    # Get unique row values (sorted)
+    row_vals = sorted(df[row_col].drop_nulls().unique().to_list())
+    for rv in row_vals:
+        lines.append(data_row(rv))
+    lines.append(separator())
+    lines.append(total_row())
+    lines.append(bottom_border())
+
     return lines
 
 
 
-
-    full_header = _get_full_header(False, day_code, rdate)   # no bank name
-
-    rmel_lines = _render_report_rmel(combined)
-    rest_lines = _render_report_rest(combined)
-
-    lines = full_header + rmel_lines
-    if rest_lines:
-        title_only = _get_day_title_lines(False, day_code, rdate)
-        lines += [""] + title_only + rest_lines
-    else:
-        lines += rest_lines
-    return lines
-
+report2_lines = _render_pivot_report(
+    variance_df, title2,
+    row_col="BNMCODE", all_label="TOTAL ",
+    class_col="ELDAY",
+    value_specs=[
+        ("AMOUNT", "KAPITI", 16, 2),
+        ("WALWAMT", "WALKER", 16, 2),
+        ("VARIANC", "VARIANCE", 16, 2),
+    ],
+    rts=34,
+    class_vals=elday_values,
+    page_num=1
+)
 
 
 
