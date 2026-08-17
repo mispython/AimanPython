@@ -294,59 +294,283 @@ def _title_lines(*titles: str) -> list[str]:
     return lines
 
 
+# def _render_pivot_report(
+#     df: pl.DataFrame,
+#     title_lines: list[str],
+#     row_col: str,
+#     all_label: str,
+#     class_col: str,
+#     value_specs: list[tuple],
+#     rts: int,
+# ) -> list[str]:
+#     """
+#     Generic emulation of PROC TABULATE: rows = distinct row_col values plus
+#     an ALL/grand-total row, columns = distinct class_col values, each
+#     showing one or more summed value columns (COMMA-formatted).
+#     """
+#     # If there is no data, return nothing (no titles, no headers)
+#     if df.is_empty():
+#         return []
+
+#     lines = list(title_lines)
+
+#     class_vals = sorted(df[class_col].drop_nulls().unique().to_list())
+#     hdr = _new_buf()
+#     pos = rts + 1
+#     col_starts = {}
+#     for cv in class_vals:
+#         for (col, label, width, dec) in value_specs:
+#             col_starts[(cv, col)] = pos
+#             seg = cv if len(value_specs) == 1 else f"{cv[:width - len(label) - 1]} {label}"
+#             _put(hdr, pos, seg[:width].rjust(width))
+#             pos += width
+#     lines.append(_line(hdr))
+#     lines.append(" " + "-" * (pos - 2))
+
+#     grand = {}
+#     row_vals = sorted(df[row_col].drop_nulls().unique().to_list())
+#     for rv in row_vals:
+#         buf = _new_buf()
+#         _put(buf, 1, str(rv)[:rts])
+#         sub = df.filter(pl.col(row_col) == rv)
+#         for cv in class_vals:
+#             cell = sub.filter(pl.col(class_col) == cv)
+#             for (col, label, width, dec) in value_specs:
+#                 val = float(cell[col].sum()) if len(cell) else 0.0
+#                 grand[(cv, col)] = grand.get((cv, col), 0.0) + val
+#                 _put(buf, col_starts[(cv, col)], _fmt_comma(val, width, dec))
+#         lines.append(_line(buf))
+
+#     buf = _new_buf()
+#     _put(buf, 1, all_label[:rts])
+#     for cv in class_vals:
+#         for (col, label, width, dec) in value_specs:
+#             _put(buf, col_starts[(cv, col)], _fmt_comma(grand.get((cv, col), 0.0), width, dec))
+#     lines.append(_line(buf))
+#     return lines
+
+
 def _render_pivot_report(
     df: pl.DataFrame,
     title_lines: list[str],
     row_col: str,
     all_label: str,
     class_col: str,
-    value_specs: list[tuple],
+    value_specs: list[tuple],   # (col_name, label, width, decimals)
     rts: int,
+    class_vals: list,
+    page_num: int = 1,
 ) -> list[str]:
     """
-    Generic emulation of PROC TABULATE: rows = distinct row_col values plus
-    an ALL/grand-total row, columns = distinct class_col values, each
-    showing one or more summed value columns (COMMA-formatted).
+    Render a PROC TABULATE grid with fixed width, borders, and split total label.
     """
-    # If there is no data, return nothing (no titles, no headers)
-    if df.is_empty():
+    if df.is_empty() or not class_vals:
         return []
 
     lines = list(title_lines)
+    if page_num == 1:
+        lines.append("")                # blank line before first table
 
-    class_vals = sorted(df[class_col].drop_nulls().unique().to_list())
-    hdr = _new_buf()
-    pos = rts + 1
-    col_starts = {}
-    for cv in class_vals:
+    num_classes = len(class_vals)
+    num_sub = len(value_specs)
+
+    # ---- Determine sub-column widths ----
+    # We want the total line width to be exactly 132
+    # Total = 2 (outer pipes) + row_label_width + (sum of sub_widths) + (num_sub * num_classes - 1) pipes
+    # Let's first compute suggested widths from value_specs
+    base_widths = [w for (_, _, w, _) in value_specs]
+    # Total width needed for value area (including internal pipes)
+    value_area_needed = sum(base_widths) + (num_sub * num_classes - 1)
+    # Max row label width we can afford (we want at least 10 chars)
+    max_row_label = 132 - 2 - value_area_needed
+    if max_row_label < 10:
+        # Need to shrink sub-columns
+        scale = (132 - 2 - 10) / (value_area_needed - (num_sub * num_classes - 1) + 1)  # approximate
+        # Actually we need to reduce widths proportionally
+        total_base = sum(base_widths)
+        target_value_area = 132 - 2 - 10  # 120
+        # We need sum(new_widths) + (num_sub*num_classes - 1) = target_value_area
+        # => sum(new_widths) = target_value_area - (num_sub*num_classes - 1)
+        target_sum = target_value_area - (num_sub * num_classes - 1)
+        scale = target_sum / total_base if total_base > 0 else 1
+        sub_widths = [max(5, int(w * scale)) for w in base_widths]  # minimum 5
+        # Recompute actual value area
+        value_area_width = sum(sub_widths) + (num_sub * num_classes - 1)
+        row_label_width = 132 - 2 - value_area_width
+    else:
+        sub_widths = base_widths
+        row_label_width = max_row_label
+        # Cap row_label_width at rts (we can reduce it further if needed)
+        if row_label_width > rts:
+            row_label_width = rts
+            # Recompute value area
+            value_area_width = 132 - 2 - row_label_width
+            # Adjust sub_widths proportionally to fit value_area_width
+            total_base = sum(base_widths)
+            target_sum = value_area_width - (num_sub * num_classes - 1)
+            scale = target_sum / total_base if total_base > 0 else 1
+            sub_widths = [max(5, int(w * scale)) for w in base_widths]
+            # Recompute
+            value_area_width = sum(sub_widths) + (num_sub * num_classes - 1)
+            row_label_width = 132 - 2 - value_area_width
+
+    # Ensure row_label_width at least 5
+    if row_label_width < 5:
+        row_label_width = 5
+        # Recompute value_area_width accordingly
+        value_area_width = 132 - 2 - row_label_width
+
+    # ---- Helper to format numbers with fixed width ----
+    def fmt_val(val, width, dec):
+        if pd.isna(val) or val is None:
+            return ' ' * width
+        try:
+            v = float(val)
+        except:
+            return ' ' * width
+        # Try with commas
+        s = f"{v:,.{dec}f}"
+        if len(s) <= width:
+            return s.rjust(width)
+        # If overflow, try without commas
+        s2 = f"{v:.{dec}f}"
+        if len(s2) <= width:
+            return s2.rjust(width)
+        # Still overflow? truncate decimal places
+        # Reduce decimals until it fits
+        for d in range(dec-1, -1, -1):
+            s3 = f"{v:.{d}f}"
+            if len(s3) <= width:
+                return s3.rjust(width)
+        # Last resort: use scientific notation? Not needed.
+        return ('*' * width)  # indicate overflow
+
+    # ---- Build cell strings ----
+    def make_cells(data_list):
+        # data_list is list of (value, width) pairs
+        return [fmt_val(val, w, dec) for (val, w, dec) in data_list]
+
+    def get_value_cells(row_val, cv):
+        # Returns list of formatted strings for this row and class
+        sub = df.filter((pl.col(row_col) == row_val) & (pl.col(class_col) == cv))
+        cells = []
         for (col, label, width, dec) in value_specs:
-            col_starts[(cv, col)] = pos
-            seg = cv if len(value_specs) == 1 else f"{cv[:width - len(label) - 1]} {label}"
-            _put(hdr, pos, seg[:width].rjust(width))
-            pos += width
-    lines.append(_line(hdr))
-    lines.append(" " + "-" * (pos - 2))
+            val = sub[col].sum() if len(sub) > 0 else 0.0
+            cells.append(fmt_val(val, width, dec))
+        return cells
 
-    grand = {}
+    # ---- Build lines ----
+    def border_line() -> str:
+        # Build a line of '-' and '+': outer pipes and '+' at boundaries
+        # Parts: row_label_area, then for each sub-column group (day) we have a block of dashes with '+' between sub-columns
+        # We'll build a list of segments: first the row label part (dashes), then for each sub-column, dashes of its width
+        segments = ['-' * row_label_width]
+        for cv in class_vals:
+            for w in sub_widths:
+                segments.append('-' * w)
+        return '|' + '|'.join(segments) + '|'
+
+    def span_header() -> str:
+        # Row label: spaces
+        label_part = ' ' * row_label_width
+        # Value part: center "ELDAY" over the entire value area (including pipes)
+        total_value_width = value_area_width
+        header_text = 'ELDAY'
+        left = (total_value_width - len(header_text)) // 2
+        right = total_value_width - len(header_text) - left
+        value_part = ' ' * left + header_text + ' ' * right
+        return '|' + label_part + '|' + value_part + '|'
+
+    def class_header() -> str:
+        label_part = ' ' * row_label_width
+        # For each class, center the day name over its group of sub-columns
+        # The group width = sum of sub_widths for this class + (num_sub-1) pipes
+        group_width = sum(sub_widths) + (num_sub - 1)
+        day_cells = []
+        for cv in class_vals:
+            cv_str = str(cv)
+            left = (group_width - len(cv_str)) // 2
+            right = group_width - len(cv_str) - left
+            day_cells.append(' ' * left + cv_str + ' ' * right)
+        # Join with '|' (these are internal separators between day groups)
+        value_part = '|'.join(day_cells)
+        return '|' + label_part + '|' + value_part + '|'
+
+    def sub_header() -> str:
+        label_part = ' ' * row_label_width
+        sub_cells = []
+        for cv in class_vals:
+            for (_, label, width, _) in value_specs:
+                # Center the sub-label within its width
+                sub_cells.append(label.center(width))
+        value_part = '|'.join(sub_cells)
+        return '|' + label_part + '|' + value_part + '|'
+
+    def data_row(row_val) -> str:
+        label_part = str(row_val).ljust(row_label_width)[:row_label_width]
+        value_parts = []
+        for cv in class_vals:
+            sub = df.filter((pl.col(row_col) == row_val) & (pl.col(class_col) == cv))
+            for (col, label, width, dec) in value_specs:
+                val = sub[col].sum() if len(sub) > 0 else 0.0
+                value_parts.append(fmt_val(val, width, dec))
+        value_part = '|'.join(value_parts)
+        return '|' + label_part + '|' + value_part + '|'
+
+    def total_row(first_part: bool) -> str:
+        # first_part: True for first line of total (label, no numbers), False for second line (numbers)
+        if first_part:
+            # Split all_label into two parts: e.g., "TOTAL RM MARKETABLE" and "SECURITIES"
+            # We'll take the part before the last space
+            words = all_label.split()
+            if len(words) == 1:
+                # No space, just put the whole thing and numbers on same line? But we'll put numbers on second line.
+                first_label = all_label
+                second_label = ''
+            else:
+                first_label = ' '.join(words[:-1])
+                second_label = words[-1]
+            # For first line: label part is first_label, value part all spaces
+            label_part = first_label.ljust(row_label_width)[:row_label_width]
+            # Value part: for each sub-column, spaces of width
+            value_parts = [' ' * w for w in sub_widths for _ in class_vals]
+            value_part = '|'.join(value_parts)
+            return '|' + label_part + '|' + value_part + '|'
+        else:
+            # second line: label part is second_label (or empty), numbers
+            words = all_label.split()
+            if len(words) == 1:
+                second_label = ''
+            else:
+                second_label = words[-1]
+            label_part = second_label.ljust(row_label_width)[:row_label_width]
+            value_parts = []
+            for cv in class_vals:
+                sub = df.filter(pl.col(class_col) == cv)
+                for (col, label, width, dec) in value_specs:
+                    val = sub[col].sum() if len(sub) > 0 else 0.0
+                    value_parts.append(fmt_val(val, width, dec))
+            value_part = '|'.join(value_parts)
+            return '|' + label_part + '|' + value_part + '|'
+
+    # ---- Assemble ----
+    lines.append(border_line())
+    lines.append(span_header())
+    lines.append(border_line())    # separator after span header
+    lines.append(class_header())
+    lines.append(sub_header())
+    lines.append(border_line())    # separator before data
+
     row_vals = sorted(df[row_col].drop_nulls().unique().to_list())
     for rv in row_vals:
-        buf = _new_buf()
-        _put(buf, 1, str(rv)[:rts])
-        sub = df.filter(pl.col(row_col) == rv)
-        for cv in class_vals:
-            cell = sub.filter(pl.col(class_col) == cv)
-            for (col, label, width, dec) in value_specs:
-                val = float(cell[col].sum()) if len(cell) else 0.0
-                grand[(cv, col)] = grand.get((cv, col), 0.0) + val
-                _put(buf, col_starts[(cv, col)], _fmt_comma(val, width, dec))
-        lines.append(_line(buf))
+        lines.append(data_row(rv))
 
-    buf = _new_buf()
-    _put(buf, 1, all_label[:rts])
-    for cv in class_vals:
-        for (col, label, width, dec) in value_specs:
-            _put(buf, col_starts[(cv, col)], _fmt_comma(grand.get((cv, col), 0.0), width, dec))
-    lines.append(_line(buf))
+    lines.append(border_line())    # separator before total
+    # Total rows: first line with first part of label, no numbers; second line with second part and numbers
+    lines.append(total_row(True))  # first part
+    lines.append(total_row(False)) # second part with numbers
+    lines.append(border_line())    # bottom border
+
     return lines
 
 
@@ -602,11 +826,53 @@ title1 = _title_lines(
     "SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK",
     f"(DAILY KAPITI STOCK REPORT) WEEK {WK} {MTHNAM} {RYEAR}",
 )
-report1_lines = _render_pivot_report(
-    rep2, title1,
-    row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
-    class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)], rts=30,
-)
+# report1_lines = _render_pivot_report(
+#     rep2, title1,
+#     row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
+#     class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)], rts=30,
+# )
+
+# Get sorted ELDAY values from rep2
+elday_values = sorted(rep2["ELDAY"].drop_nulls().unique().to_list())
+
+# Split into two pages if more than 6 days (original SAS behaviour)
+MAX_DAYS_PER_PAGE = 6
+if len(elday_values) > MAX_DAYS_PER_PAGE:
+    first_elday = elday_values[:MAX_DAYS_PER_PAGE]
+    second_elday = elday_values[MAX_DAYS_PER_PAGE:]
+
+    # First part: DAYA–DAYF
+    report1_lines = _render_pivot_report(
+        rep2, title1,
+        row_col="BNMCODG",
+        all_label="TOTAL RM MARKETABLE SECURITIES",
+        class_col="ELDAY",
+        value_specs=[("AMOUNT", "", 16, 2)],
+        rts=30,
+        class_vals=first_elday,
+        page_num=1
+    )
+
+    # Second part: DAYG–DAYI (with continuation header)
+    cont_title = _title_lines(
+        "(Continued)",
+        "PUBLIC BANK BERHAD -REPORT DATE " + RDATE,
+        "SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK",
+        "(DAILY KAPITI STOCK REPORT) WEEK " + WK + " " + MTHNAM + " " + RYEAR,
+    )
+    report1_lines += _render_pivot_report(
+        rep2, cont_title,
+        row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
+        class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)],
+        rts=30, class_vals=second_elday, page_num=2
+    )
+else:
+    report1_lines = _render_pivot_report(
+        rep2, title1,
+        row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
+        class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)],
+        rts=30, class_vals=elday_values, page_num=1
+    )
 
 # ============================================================================
 # STEP 9: VARIANCE REPORT  (INPUT: BNM ELW only — no BNMS in this
@@ -659,9 +925,22 @@ variance_df = repov.join(walw, on=["BNMCODE", "ELDAY"], how="left").with_columns
 )
 
 title2 = _title_lines("VARIANCE BETWEEN KAPITI AND WALKER")
+# report2_lines = _render_pivot_report(
+#     variance_df, title2,
+#     row_col="BNMCODE", all_label="TOTAL ",
+#     class_col="ELDAY",
+#     value_specs=[
+#         ("AMOUNT", "KAPITI", 16, 2),
+#         ("WALWAMT", "WALKER", 16, 2),
+#         ("VARIANC", "VARIANCE", 16, 2),
+#     ],
+#     rts=34,
+# )
+
 report2_lines = _render_pivot_report(
     variance_df, title2,
-    row_col="BNMCODE", all_label="TOTAL ",
+    row_col="BNMCODE",
+    all_label="TOTAL ",
     class_col="ELDAY",
     value_specs=[
         ("AMOUNT", "KAPITI", 16, 2),
@@ -669,6 +948,8 @@ report2_lines = _render_pivot_report(
         ("VARIANC", "VARIANCE", 16, 2),
     ],
     rts=34,
+    class_vals=elday_values,
+    page_num=1
 )
 
 # ============================================================================
@@ -687,6 +968,18 @@ rep0 = rep2_filtered.filter(pl.col("BNMCODE") == "3250000000000Y").with_columns(
 )
 
 title3 = _title_lines("REV REPO AT PURCHASE PROCEEDS")
+# report3_lines = _render_pivot_report(
+#     rep0, title3,
+#     row_col="BNMCODG", all_label="TOTAL ",
+#     class_col="ELDAY",
+#     value_specs=[
+#         ("AMOUNT", "AMOUNT", 16, 2),
+#         ("COSTDED", "(-) PURC PROC.", 16, 2),
+#         ("NETAMT", "MARKET SEC ", 16, 2),
+#     ],
+#     rts=30,
+# )
+
 report3_lines = _render_pivot_report(
     rep0, title3,
     row_col="BNMCODG", all_label="TOTAL ",
@@ -697,6 +990,8 @@ report3_lines = _render_pivot_report(
         ("NETAMT", "MARKET SEC ", 16, 2),
     ],
     rts=30,
+    class_vals=elday_values,
+    page_num=1
 )
 
 del repov, elw_wk_raw, walw_base, walw_extra, walw_raw, walw
@@ -774,8 +1069,11 @@ paginated_pbbelq = []
 for block in day_blocks:
     paginated_pbbelq.extend(paginate_block(block, PAGE_SIZE, with_groups=True))
 
-# Combine all reports
-all_lines = paginated_reports + paginated_pbbelq
+# # Combine all reports
+# all_lines = paginated_reports + paginated_pbbelq
+
+# Combine all reports: EL details first, then RENTAS, then Variance
+all_lines = paginated_pbbelq + paginated_reports
 
 # Write output
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
