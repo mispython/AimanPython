@@ -1,45 +1,4 @@
 con = duckdb.connect(database=":memory:")
-rep2_filtered = con.execute(f"""
-    SELECT
-        TRIM(CAST(BNMCODE AS VARCHAR)) AS BNMCODE,
-        TRIM(CAST(UTSTY   AS VARCHAR)) AS UTSTY,
-        TRIM(CAST(UTREF   AS VARCHAR)) AS UTREF,
-        TRIM(CAST(ELDAY   AS VARCHAR)) AS ELDAY,
-        CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
-        CAST(NETAMT  AS DOUBLE)  AS NETAMT,
-        CAST(COSTDED AS DOUBLE)  AS COSTDED
-    FROM read_parquet('{rep2_cache.as_posix()}')
-    WHERE NOT (
-        UTSTY IN ('CB1','CF1','CNT','SAC','SMC','ISB')
-        AND UTREF NOT IN ('DLG','IDLG')
-    )
-""").pl()
-con.close()
-print(f"  REP2 (filtered) rows: {len(rep2_filtered):,}")
-
-
-
-
-con = duckdb.connect(database=":memory:")
-rep4_raw = con.execute(f"""
-    SELECT
-        TRIM(CAST(BNMCODE AS VARCHAR)) AS BNMCODE,
-        TRIM(CAST(UTSTY   AS VARCHAR)) AS UTSTY,
-        TRIM(CAST(UTREF   AS VARCHAR)) AS UTREF,
-        TRIM(CAST(ELDAY   AS VARCHAR)) AS ELDAY,
-        CAST(AMOUNT  AS DOUBLE)  AS AMOUNT
-    FROM read_parquet('{rep4_cache.as_posix()}')
-    WHERE NOT (
-        UTSTY IN ('CB1','CF1','CNT','SAC','SMC','ISB')
-        AND UTREF NOT IN ('DLG','IDLG')
-    )
-""").pl()
-con.close()
-
-
-
-
-con = duckdb.connect(database=":memory:")
 elw_wk_raw = con.execute(f"""
     SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
            CAST(AMOUNT AS DOUBLE) AMOUNT
@@ -47,69 +6,21 @@ elw_wk_raw = con.execute(f"""
 """).pl()
 con.close()
 
+# ---- DIAGNOSTIC (temporary — remove after use) ----
+print("\n[DIAG] repov BNMCODE samples (repr):")
+for v in repov["BNMCODE"].unique().sort().to_list()[:5]:
+    print(f"    {v!r}  len={len(v)}")
+print("[DIAG] repov ELDAY samples (repr):")
+for v in repov["ELDAY"].unique().sort().to_list():
+    print(f"    {v!r}  len={len(v)}")
 
+print("\n[DIAG] elw_wk_raw BNMCODE samples (repr):")
+for v in elw_wk_raw["BNMCODE"].unique().sort().to_list()[:5]:
+    print(f"    {v!r}  len={len(v)}")
+print("[DIAG] elw_wk_raw ELDAY samples (repr):")
+for v in elw_wk_raw["ELDAY"].unique().sort().to_list():
+    print(f"    {v!r}  len={len(v)}")
 
-
-elw1_raw = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE,
-               TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{elw1_cache.as_posix()}')
-    """).pl()
-    con.close()
-
-
-
-
-con = duckdb.connect(database=":memory:")
-    gold = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{gold_cache.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-    con.close()
-    return gold
-
-
-
-
-con = duckdb.connect(database=":memory:")
-    tbl1_df = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{tbl1_cache.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-
-    # (DROP=REPTDATS) -- REPTDATS is simply not selected below
-    dci_df = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{dci_cache.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-    con.close()
-
-
-
-
-con = duckdb.connect(database=":memory:")
-    dci_df = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{dci_cache.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-
-    tbl1_df = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{tbl1_cache.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-    con.close()
-
-
-
-
+print("\n[DIAG] Does elw_wk_raw contain 3721000000000Y at all?")
+print(elw_wk_raw.filter(pl.col("BNMCODE") == "3721000000000Y"))
+# ---- END DIAGNOSTIC ----
