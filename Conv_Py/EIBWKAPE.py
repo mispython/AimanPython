@@ -101,7 +101,7 @@ STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
 # UAT Input
 INPUT_BNMK_REP2_DIR = STG_DIR / "EIB/BNMK" / "rep2081.sas7bdat"
 INPUT_BNMK_REP4_DIR = STG_DIR / "EIB/BNMK" / "rep4081.sas7bdat"
-INPUT_BNM_ELW_DIR   = STG_DIR / "EII/BNM"  / "elw081.sas7bdat"
+INPUT_BNM_ELW_DIR   = STG_DIR / "EII/BNMB"  / "elw081.sas7bdat"
 
 OUTPUT_DIR      = BASE_DIR / "output" / "EIBWKAPE"
 OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIBWKAPE" / "nsrs"
@@ -184,11 +184,24 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # ============================================================================
 print("Step 1: Deriving report date (REPTDAT1)...")
 
-_reptdat1 = get_reptdate_values(year_format="%Y")
+# _reptdat1 = get_reptdate_values(year_format="%Y")
+
+# ---- FOR VALIDATION: force report date to 8 August 2026 ----
+# Comment out this override and uncomment the original line below for production.
+from datetime import date
+FIXED_DATE = date(2026, 8, 9) - timedelta(days=1)
+# _reptdat1 = get_reptdate_values(year_format="%Y")
+# Create a simple object with the fixed date
+class Dummy:
+    pass
+_reptdat1 = Dummy()
+_reptdat1.reptdate = FIXED_DATE
+# -----------------------------------------------------------
+
 SDESC   = "PUBLIC BANK BERHAD"
-RDATE   = _reptdat1.reptdate.strftime("%d/%m/%y")   # DDMMYY8.
+RDATE   = _reptdat1.reptdate.strftime("%d/%m/%y")    # DDMMYY8.
 RYEAR   = _reptdat1.reptdate.strftime("%Y")          # YEAR4.
-MTHNAM  = _reptdat1.reptdate.strftime("%B").upper()  # MONNAME.
+MTHNAM  = _reptdat1.reptdate.strftime("%B")          # MONNAME.
 MTHEND  = f"{_reptdat1.reptdate.day:02d}"            # Z2.
 
 print(f"  SDESC  : {SDESC}")
@@ -207,6 +220,7 @@ print(f"  MTHEND : {MTHEND}")
 print("\nStep 2: Deriving week/month bucket (REPTDATE)...")
 
 SXDATE = _reptdat1.reptdate
+# SXDATE = date(2026, 8, 8)
 _day = SXDATE.day
 if 1 <= _day <= 8:
     WK = "4"
@@ -625,12 +639,28 @@ rep2_sas = INPUT_BNMK_REP2_DIR
 rep2_cache = _load_cached(rep2_sas, "BNMK_REP2")
 
 con = duckdb.connect(database=":memory:")
+# rep2_filtered = con.execute(f"""
+#     SELECT
+#         CAST(BNMCODE AS VARCHAR) AS BNMCODE,
+#         CAST(UTSTY   AS VARCHAR) AS UTSTY,
+#         CAST(UTREF   AS VARCHAR) AS UTREF,
+#         CAST(ELDAY   AS VARCHAR) AS ELDAY,
+#         CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
+#         CAST(NETAMT  AS DOUBLE)  AS NETAMT,
+#         CAST(COSTDED AS DOUBLE)  AS COSTDED
+#     FROM read_parquet('{rep2_cache.as_posix()}')
+#     WHERE NOT (
+#         UTSTY IN ('CB1','CF1','CNT','SAC','SMC','ISB')
+#         AND UTREF NOT IN ('DLG','IDLG')
+#     )
+# """).pl()
+
 rep2_filtered = con.execute(f"""
     SELECT
-        CAST(BNMCODE AS VARCHAR) AS BNMCODE,
-        CAST(UTSTY   AS VARCHAR) AS UTSTY,
-        CAST(UTREF   AS VARCHAR) AS UTREF,
-        CAST(ELDAY   AS VARCHAR) AS ELDAY,
+        TRIM(CAST(BNMCODE AS VARCHAR)) AS BNMCODE,
+        TRIM(CAST(UTSTY   AS VARCHAR)) AS UTSTY,
+        TRIM(CAST(UTREF   AS VARCHAR)) AS UTREF,
+        TRIM(CAST(ELDAY   AS VARCHAR)) AS ELDAY,
         CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
         CAST(NETAMT  AS DOUBLE)  AS NETAMT,
         CAST(COSTDED AS DOUBLE)  AS COSTDED
@@ -660,12 +690,26 @@ rep4_sas = INPUT_BNMK_REP4_DIR
 rep4_cache = _load_cached(rep4_sas, "BNMK_REP4")
 
 con = duckdb.connect(database=":memory:")
+# rep4_raw = con.execute(f"""
+#     SELECT
+#         CAST(BNMCODE AS VARCHAR) AS BNMCODE,
+#         CAST(UTSTY   AS VARCHAR) AS UTSTY,
+#         CAST(UTREF   AS VARCHAR) AS UTREF,
+#         CAST(ELDAY   AS VARCHAR) AS ELDAY,
+#         CAST(AMOUNT  AS DOUBLE)  AS AMOUNT
+#     FROM read_parquet('{rep4_cache.as_posix()}')
+#     WHERE NOT (
+#         UTSTY IN ('CB1','CF1','CNT','SAC','SMC','ISB')
+#         AND UTREF NOT IN ('DLG','IDLG')
+#     )
+# """).pl()
+
 rep4_raw = con.execute(f"""
     SELECT
-        CAST(BNMCODE AS VARCHAR) AS BNMCODE,
-        CAST(UTSTY   AS VARCHAR) AS UTSTY,
-        CAST(UTREF   AS VARCHAR) AS UTREF,
-        CAST(ELDAY   AS VARCHAR) AS ELDAY,
+        TRIM(CAST(BNMCODE AS VARCHAR)) AS BNMCODE,
+        TRIM(CAST(UTSTY   AS VARCHAR)) AS UTSTY,
+        TRIM(CAST(UTREF   AS VARCHAR)) AS UTREF,
+        TRIM(CAST(ELDAY   AS VARCHAR)) AS ELDAY,
         CAST(AMOUNT  AS DOUBLE)  AS AMOUNT
     FROM read_parquet('{rep4_cache.as_posix()}')
     WHERE NOT (
@@ -814,6 +858,7 @@ report1_lines = _render_pivot_table(
         f"PUBLIC BANK BERHAD -REPORT DATE {RDATE}",
         "SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK",
         f"(DAILY KAPITI STOCK REPORT) WEEK {WK} {MTHNAM} {RYEAR}",
+        ""
     ],
     row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
     class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)], rts=30,
@@ -839,8 +884,14 @@ elw_wk_sas = INPUT_BNM_ELW_DIR
 elw_wk_cache = _load_cached(elw_wk_sas, "BNM_ELW_WK")
 
 con = duckdb.connect(database=":memory:")
+# elw_wk_raw = con.execute(f"""
+#     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+#            CAST(AMOUNT AS DOUBLE) AMOUNT
+#     FROM read_parquet('{elw_wk_cache.as_posix()}')
+# """).pl()
+
 elw_wk_raw = con.execute(f"""
-    SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+    SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
            CAST(AMOUNT AS DOUBLE) AMOUNT
     FROM read_parquet('{elw_wk_cache.as_posix()}')
 """).pl()
@@ -898,7 +949,7 @@ variance_df = repov.join(walw, on=["BNMCODE", "ELDAY"], how="left").with_columns
 # )
 
 report2_lines = _render_pivot_table(
-    variance_df, ["VARIANCE BETWEEN KAPITI AND WALKER"],
+    variance_df, ["VARIANCE BETWEEN KAPITI AND WALKER", ""],
     row_col="BNMCODE", all_label="TOTAL ",
     class_col="ELDAY",
     value_specs=[
