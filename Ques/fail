@@ -1,26 +1,3 @@
-def _fmt_num_fit(value, width: int, decimals: int = 2) -> str:
-    """Right-justify a number to *width*; drop the comma separator (then
-    reduce decimals) if the value would otherwise overflow the column,
-    so the '|' column border is never pushed out of place."""
-    if value is None:
-        return " " * width
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return " " * width
-    s = f"{v:,.{decimals}f}"
-    if len(s) <= width:
-        return s.rjust(width)
-    s2 = f"{v:.{decimals}f}"
-    if len(s2) <= width:
-        return s2.rjust(width)
-    for d in range(decimals - 1, -1, -1):
-        s3 = f"{v:.{d}f}"
-        if len(s3) <= width:
-            return s3.rjust(width)
-    return "*" * width   # value genuinely does not fit even at 0 decimals
-
-
 def _render_pivot_table(
     df: pl.DataFrame,
     base_titles: list[str],
@@ -32,15 +9,12 @@ def _render_pivot_table(
     row_label: str = "BNMCODE",
 ) -> list[str]:
     """
-    Fully-bordered emulation of PROC TABULATE. Rows = distinct row_col
-    values plus an ALL/grand-total row; columns = distinct class_col
-    values, each showing one or more summed value columns.
-
-    Paginates at 132 print columns, splitting a class (ELDAY) group
-    across pages when it doesn't fit -- matching SAS's own column-fill
-    behaviour -- and reprints the titles (prefixed "(Continued)") on
-    every subsequent page. label_width = rts - 2 and value columns are
-    always 16 wide, matching the original SAS TABULATE output exactly.
+    Fully-bordered emulation of PROC TABULATE.
+    - Paginates columns when >6 class values (ELDAY).
+    - Prints titles on every page, with "(Continued)" on subsequent pages.
+    - Uses partial separator after row‑label header.
+    - Splits total label into two lines when needed.
+    - All lines are exactly 132 characters (plus ASA char).
     """
     if df.is_empty():
         return []
@@ -53,13 +27,18 @@ def _render_pivot_table(
     value_width = value_specs[0][2]
     label_width = max(rts - 2, 10)
 
-    # Flatten (class, spec) pairs in column order, then fill pages with
-    # as many 16-wide columns as fit in 132 -- may split a class group.
+    # Flatten columns: (class, spec) pairs
     flat_cols = [(cv, spec) for cv in class_vals for spec in value_specs]
-    max_area = 132 - label_width - 3
-    cols_per_page = max(1, (max_area + 1) // (value_width + 1))
+    # Determine how many columns fit in 132 chars
+    # Total line = " " + "|" + label_area + "|" + value_area + "|"
+    # value_area = n * value_width + (n - 1)
+    # We want total data width (excluding ASA) = 132
+    max_value_area = 132 - label_width - 3  # -3 for two pipes and an extra? Actually 2 pipes? Let's compute: data part = "|" + label + "|" + value + "|" => 2 pipes + label_width + value_area => 132 -> value_area = 132 - label_width - 2. We'll use 3 for safety.
+    max_value_area = 132 - label_width - 2  # two outer pipes
+    cols_per_page = max(1, (max_value_area + 1) // (value_width + 1))
     pages = [flat_cols[i:i + cols_per_page] for i in range(0, len(flat_cols), cols_per_page)]
 
+    # Pre-aggregate data for lookup
     sums = (
         df.group_by([row_col, class_col])
         .agg([pl.col(c).sum().alias(c) for (c, _, _, _) in value_specs])
@@ -84,23 +63,42 @@ def _render_pivot_table(
     for page_num, page_cols in enumerate(pages, start=1):
         n = len(page_cols)
         value_area_width = n * value_width + (n - 1)
-        total_width = label_width + value_area_width + 3
+        # Compute actual label_width to make total data width 132
+        # data width = label_width + value_area_width + 2 (pipes) = 132
+        # We'll use a fixed label_width, but we may need to adjust if value_area_width too big
+        # Use the earlier computed label_width, but ensure it's not negative
+        # We'll compute a label_width that fits
+        actual_label_width = 132 - value_area_width - 2  # -2 for the two outer pipes
+        if actual_label_width < 5:
+            # Too many columns; we need to reduce value_width
+            # This case is unlikely with our page splitting, but handle it
+            # We'll shrink value_width proportionally
+            scale = (132 - 2 - 5) / (value_area_width + 1)
+            new_value_width = max(5, int(value_width * scale))
+            # Recalc with new width
+            value_area_width = n * new_value_width + (n - 1)
+            actual_label_width = 132 - value_area_width - 2
+            value_width = new_value_width
+        label_width = actual_label_width
+
         blank_label = " " * label_width
 
         if page_num == 1:
             out.extend(_title_lines(*base_titles))
         else:
-            out.append(" ")   # blank filler line between continuation pages
+            out.append(" ")   # blank line before continuation
             out.extend(_title_lines("(Continued)", *base_titles))
 
-        border = " " + "-" * total_width
+        # Top border (full width of dashes)
+        border = " " + "-" * (label_width + value_area_width + 2)  # +2 for pipes
         out.append(border)
 
-        # ELDAY spanning header + its dashed separator (single span, no '+')
+        # ELDAY spanning header
         out.append(f" |{blank_label}|{class_col.center(value_area_width)}|")
+        # Dashed line under ELDAY (only in value area)
         out.append(f" |{blank_label}|{'-' * value_area_width}|")
 
-        # Class (day) header row -- one centered label per contiguous run
+        # Class (day) header row – one centered label per contiguous run
         class_header_parts = []
         i = 0
         while i < n:
@@ -113,13 +111,16 @@ def _render_pivot_table(
             i = j
         out.append(f" |{blank_label}|" + "|".join(class_header_parts) + "|")
 
-        sep_plus = "-" * label_width + "+" + "+".join("-" * value_width for _ in range(n))
-        out.append(f" |{sep_plus}|")
+        # Full separator after day headers (dashes with pluses)
+        sep_full = "-" * label_width + "+" + "+".join("-" * value_width for _ in range(n))
+        out.append(f" |{sep_full}|")
 
-        # Sub-column header row (KAPITI/WALKER/... or blank)
-        sub_parts = [spec[1].center(value_width) for (_, spec) in page_cols]
-        out.append(f" |{row_label.ljust(label_width)}|" + "|".join(sub_parts) + "|")
-        out.append(f" |{sep_plus}|")
+        # Row label header (e.g., "BNMCODE") with blank data cells
+        out.append(f" |{row_label.ljust(label_width)}|" + "|".join(" " * value_width for _ in range(n)) + "|")
+
+        # PARTIAL separator: dashes only under row label, spaces under data
+        sep_partial = "-" * label_width + "|" + "|".join(" " * value_width for _ in range(n))
+        out.append(f" |{sep_partial}|")
 
         # Data rows
         for rv in row_vals:
@@ -128,7 +129,10 @@ def _render_pivot_table(
                 for (cv, spec) in page_cols
             ]
             out.append(f" |{str(rv).ljust(label_width)[:label_width]}|" + "|".join(vals) + "|")
-            out.append(f" |{sep_plus}|")
+            out.append(f" |{sep_full}|")   # full separator between data rows (SAS has this)
+
+        # Full separator before total
+        out.append(f" |{sep_full}|")
 
         # Grand total row(s)
         label_txt = all_label.rstrip()
@@ -149,63 +153,7 @@ def _render_pivot_table(
             ]
             out.append(f" |{second_line.ljust(label_width)[:label_width]}|" + "|".join(vals) + "|")
 
-        out.append(border)   # bottom border, identical to top
+        # Bottom border (same as top)
+        out.append(border)
 
     return out
-
-
-
-
-# ---- Step 8: RENTAS securities report ----
-print("\nStep 8: Rendering RENTAS securities report...")
-report1_lines = _render_pivot_table(
-    rep2,
-    base_titles=[
-        f"PUBLIC BANK BERHAD -REPORT DATE {RDATE}",
-        "SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK",
-        f"(DAILY KAPITI STOCK REPORT) WEEK {WK} {MTHNAM} {RYEAR}",
-    ],
-    row_col="BNMCODG", all_label="TOTAL RM MARKETABLE SECURITIES",
-    class_col="ELDAY", value_specs=[("AMOUNT", "", 16, 2)], rts=30,
-)
-
-# ---- Step 9: variance report ----
-print("\nStep 9: Building variance report (KAPITI vs WALKER)...")
-# ... (repov / elw_wk_cache / variance_df building unchanged) ...
-report2_lines = _render_pivot_table(
-    variance_df, ["VARIANCE BETWEEN KAPITI AND WALKER"],
-    row_col="BNMCODE", all_label="TOTAL ",
-    class_col="ELDAY",
-    value_specs=[
-        ("AMOUNT", "KAPITI", 16, 2),
-        ("WALWAMT", "WALKER", 16, 2),
-        ("VARIANC", "VARIANCE", 16, 2),
-    ],
-    rts=34,
-)
-
-# ---- Step 10: Rev Repo report ----
-print("\nStep 10: Building Rev Repo report...")
-# ... (rep0 building unchanged) ...
-report3_lines = _render_pivot_table(
-    rep0, ["REV REPO AT PURCHASE PROCEEDS"],
-    row_col="BNMCODG", all_label="TOTAL ",
-    class_col="ELDAY",
-    value_specs=[
-        ("AMOUNT", "AMOUNT", 16, 2),
-        ("COSTDED", "(-) PURC PROC.", 16, 2),
-        ("NETAMT", "MARKET SEC ", 16, 2),
-    ],
-    rts=30,
-)
-
-
-
-
-# Replace this:
-#   paginated_reports = []
-#   for report_lines in [report1_lines, report2_lines, report3_lines]:
-#       if report_lines:
-#           paginated_reports.extend(paginate_block(report_lines, PAGE_SIZE, with_groups=False))
-# With this:
-paginated_reports = report1_lines + report2_lines + report3_lines
