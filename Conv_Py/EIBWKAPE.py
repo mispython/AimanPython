@@ -82,7 +82,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
-from PBBELQ import prtel, prteli
+from PBBELQ_AII import prtel, prteli
 
 # NOTE: %INC PGM stated in JCL, but PBB.PROGRAM library holds SAS source
 # code (compiled macros), not data - it has no python equivalent to import.
@@ -91,15 +91,17 @@ from PBBELQ import prtel, prteli
 # PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_FIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
 
-INPUT_BNMK_REP2_DIR = STG_FIR / "BNMK"                  # bnmk_rep2
-INPUT_BNMK_REP4_DIR = STG_FIR / "BNMK"                  # bnmk_rep4
-INPUT_BNM_ELW_DIR   = STG_FIR / "BNM"                   # bnm_elw
+# # PROD Input
+# INPUT_BNMK_REP2_DIR = STG_DIR / "EIB" / "BNMK"                  # bnmk_rep2
+# INPUT_BNMK_REP4_DIR = STG_DIR / "EIB" / "BNMK"                  # bnmk_rep4
+# INPUT_BNM_ELW_DIR   = STG_DIR / "EII" / "BNM"                   # bnm_elw
 
-# INPUT_BNMK_REP2_DIR = STG_FIR / "BNMK" / "rep2081.sas7bdat"
-# INPUT_BNMK_REP4_DIR = STG_FIR / "BNMK" / "rep4081.sas7bdat"
-# INPUT_BNM_ELW_DIR   = STG_FIR / "BNM"  / "elw081.sas7bdat"
+# UAT Input
+INPUT_BNMK_REP2_DIR = STG_DIR / "EIB/BNMK" / "rep2081.sas7bdat"
+INPUT_BNMK_REP4_DIR = STG_DIR / "EIB/BNMK" / "rep4081.sas7bdat"
+INPUT_BNM_ELW_DIR   = STG_DIR / "EII/BNM"  / "elw081.sas7bdat"
 
 OUTPUT_DIR      = BASE_DIR / "output" / "EIBWKAPE"
 OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIBWKAPE" / "nsrs"
@@ -458,7 +460,11 @@ def _paginate_with_groups(lines: list[str], page_size: int, header_lines: list[s
 # ============================================================================
 print("\nStep 4: Building REP2 (filtered)...")
 
-rep2_sas = INPUT_BNMK_REP2_DIR / f"rep2{REPTMON}{WK}.sas7bdat"
+# # PROD Input
+# rep2_sas = INPUT_BNMK_REP2_DIR / f"rep2{REPTMON}{WK}.sas7bdat"
+
+# UAT Input
+rep2_sas = INPUT_BNMK_REP2_DIR
 rep2_cache = _load_cached(rep2_sas, "BNMK_REP2")
 
 con = duckdb.connect(database=":memory:")
@@ -489,7 +495,11 @@ print(f"  REP2 (filtered) rows: {len(rep2_filtered):,}")
 # ============================================================================
 print("\nStep 5: Building REP4 (filtered)...")
 
-rep4_sas = INPUT_BNMK_REP4_DIR / f"rep4{REPTMON}{WK}.sas7bdat"
+# # PROD Input
+# rep4_sas = INPUT_BNMK_REP4_DIR / f"rep4{REPTMON}{WK}.sas7bdat"
+
+# UAT Input
+rep4_sas = INPUT_BNMK_REP4_DIR
 rep4_cache = _load_cached(rep4_sas, "BNMK_REP4")
 
 con = duckdb.connect(database=":memory:")
@@ -527,7 +537,7 @@ print("\nStep 6: Rendering PBBELQ daily EL detail reports...")
 
 elw1 = None  # loaded lazily inside PBBELQ on first call via build_elw1()
 
-from PBBELQ import build_elw1 as _pbbelq_build_elw1
+from PBBELQ_AII import build_elw1 as _pbbelq_build_elw1
 elw1 = _pbbelq_build_elw1(REPTMON, NOWK)
 
 pbbelq_lines: list[str] = []
@@ -610,7 +620,11 @@ print("\nStep 9: Building variance report (KAPITI vs WALKER)...")
 
 repov = rep2.group_by(["BNMCODE", "ELDAY"]).agg(pl.col("AMOUNT").sum().alias("AMOUNT"))
 
-elw_wk_sas = INPUT_BNM_ELW_DIR / f"elw{REPTMON}{WK}.sas7bdat"
+# # PROD Input
+# elw_wk_sas = INPUT_BNM_ELW_DIR / f"elw{REPTMON}{WK}.sas7bdat"
+
+# UAT Input
+elw_wk_sas = INPUT_BNM_ELW_DIR
 elw_wk_cache = _load_cached(elw_wk_sas, "BNM_ELW_WK")
 
 con = duckdb.connect(database=":memory:")
