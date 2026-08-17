@@ -86,12 +86,19 @@ from PBBELF import EL_DEFINITIONS, ELI_DEFINITIONS
 # PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_FIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
 
-INPUT_BNMK_TBL1_DIR = STG_FIR / "BNMK"              # bnmk_tbl1
-INPUT_BNMK_DCI_DIR  = STG_FIR / "BNMK"              # bnmk_dci
-INPUT_BNM_ELW_DIR   = STG_FIR / "BNM"               # bnm_elw
-INPUT_ELG_GOLD_DIR  = STG_FIR / "ELG"               # elg_gold
+# # PROD Input
+# INPUT_BNMK_TBL1_DIR = STG_DIR / "EIB" / "BNMK"              # bnmk_tbl1
+# INPUT_BNMK_DCI_DIR  = STG_DIR / "EIB" / "BNMK"              # bnmk_dci
+# INPUT_BNM_ELW_DIR   = STG_DIR / "EII" / "BNM"               # bnm_elw
+# INPUT_ELG_GOLD_DIR  = STG_DIR / "EIB" / "ELG"               # elg_gold
+
+# UAT Input
+INPUT_BNMK_TBL1_DIR = STG_DIR / "EIB" / "BNMK" / "tbl1081.sas7bdat"             # bnmk_tbl1
+INPUT_BNMK_DCI_DIR  = STG_DIR / "EIB" / "BNMK" / "dci081.sas7bdat"              # bnmk_dci
+INPUT_BNM_ELW_DIR   = STG_DIR / "EII" / "BNM"  / "elw081.sas7bdat"              # bnm_elw
+INPUT_ELG_GOLD_DIR  = STG_DIR / "EIB" / "ELG"  / "gold081.sas7bdat"             # elg_gold
 
 # Parquet cache directory (shared with EIBWKAPE.py — same BNMK-family
 # datasets may be reused across programs for the same REPTMON/NOWK)
@@ -243,7 +250,12 @@ def _el_catalogue(definitions: list) -> pl.DataFrame:
 def build_elw1(reptmon: str, nowk: str) -> pl.DataFrame:
     print("  Loading BNM ELW (build_elw1)...")
 
-    elw1_sas = INPUT_BNM_ELW_DIR / f"elw{reptmon}{nowk}.sas7bdat"
+    # # PROD Input
+    # elw1_sas = INPUT_BNM_ELW_DIR / f"elw{reptmon}{nowk}.sas7bdat"
+
+    # UAT Input
+    elw1_sas = INPUT_BNM_ELW_DIR
+
     elw1_cache = _load_cached(elw1_sas, "BNM_ELW")
 
     con = duckdb.connect(database=":memory:")
@@ -298,7 +310,13 @@ def _elw_for_day(elw1: pl.DataFrame, day_code: str) -> pl.DataFrame:
 
 def _load_gold(reptmon: str, nowk: str, day_code: str) -> pl.DataFrame:
     """DATA ELG; SET ELG.GOLD&REPTMON&NOWK; IF ELDAY="&I"; -- physical input."""
-    gold_sas = INPUT_ELG_GOLD_DIR / f"gold{reptmon}{nowk}.sas7bdat"
+
+    # # PROD Input
+    # gold_sas = INPUT_ELG_GOLD_DIR / f"gold{reptmon}{nowk}.sas7bdat"
+
+    # UAT Input
+    gold_sas = INPUT_ELG_GOLD_DIR
+
     gold_cache = _load_cached(gold_sas, "ELG_GOLD")
 
     con = duckdb.connect(database=":memory:")
@@ -497,10 +515,21 @@ def prtel(day_code: str, *, reptmon: str, nowk: str, sdesc: str, rdate: str,
 
     # DATA PMM; SET BNMK.TBL1&REPTMON&NOWK BNMK.DCI&REPTMON&NOWK(DROP=REPTDATS);
     #           IF ELDAY="&I";
-    tbl1_sas = INPUT_BNMK_TBL1_DIR / f"tbl1{reptmon}{nowk}.sas7bdat"
+
+    # # PROD Input
+    # tbl1_sas = INPUT_BNMK_TBL1_DIR / f"tbl1{reptmon}{nowk}.sas7bdat"
+
+    # UAT Input
+    tbl1_sas = INPUT_BNMK_TBL1_DIR
+
     tbl1_cache = _load_cached(tbl1_sas, "BNMK_TBL1")
 
-    dci_sas = INPUT_BNMK_DCI_DIR / f"dci{reptmon}{nowk}.sas7bdat"
+    # # PROD Input
+    # dci_sas = INPUT_BNMK_DCI_DIR / f"dci{reptmon}{nowk}.sas7bdat"
+
+    # UATInput
+    dci_sas = INPUT_BNMK_DCI_DIR
+
     dci_cache = _load_cached(dci_sas, "BNMK_DCI")
 
     con = duckdb.connect(database=":memory:")
@@ -603,10 +632,21 @@ def prteli(day_code: str, *, reptmon: str, nowk: str, rdate: str,
 
     # DATA PMM; SET BNMK.DCI&REPTMON&NOWK(DROP=REPTDATS) BNMK.TBL1&REPTMON&NOWK;
     #           IF ELDAY="&I";  -- note DCI-then-TBL1 order (swapped vs prtel)
-    dci_sas = INPUT_BNMK_DCI_DIR / f"dci{reptmon}{nowk}.sas7bdat"
+    
+    # # PROD Input
+    # dci_sas = INPUT_BNMK_DCI_DIR / f"dci{reptmon}{nowk}.sas7bdat"
+
+    # UAT Input
+    dci_sas = INPUT_BNMK_DCI_DIR
+
     dci_cache = _load_cached(dci_sas, "BNMK_DCI")
 
-    tbl1_sas = INPUT_BNMK_TBL1_DIR / f"tbl1{reptmon}{nowk}.sas7bdat"
+    # # PROD Input
+    # tbl1_sas = INPUT_BNMK_TBL1_DIR / f"tbl1{reptmon}{nowk}.sas7bdat"
+
+    # UAT Input
+    tbl1_sas = INPUT_BNMK_TBL1_DIR
+
     tbl1_cache = _load_cached(tbl1_sas, "BNMK_TBL1")
 
     con = duckdb.connect(database=":memory:")
