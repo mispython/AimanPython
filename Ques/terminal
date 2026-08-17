@@ -1,15 +1,37 @@
-Step 10: Rendering PIBELQ daily EL detail reports...
-  Loading BNM ELW / BNMB ELW (build_elw1)...
-  [BNM_ELW] Cache fresh — skipping conversion.
-  [BNMB_ELW] Cache fresh — skipping conversion.
-  [PIBELQ] prtel(DAYA)...
-  [BNMK_TBL1] Cache fresh — skipping conversion.
-  [BNMK_REP2] Cache fresh — skipping conversion.
+/sas/python/virt_edw_dev/bin/python3 /sas/python/v(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWKAPE_AII.py
+Step 1: Deriving report date (REPTDAT1)...
+  SDESC  : PUBLIC BANK BERHAD
+  RDATE  : 16/08/26
+  RYEAR  : 2026
+  MTHNAM : AUGUST
+  MTHEND : 16
+
+Step 2: Deriving week/month bucket (REPTDATE)...
+  WK / NOWK : 2
+  REPTMON   : 08
+  REPTYEAR  : 2026
+  RPDATE    : 16/08/26
+  Output file        : EIBWKAPD.txt
+  NSRS copy          : EIBWKAPD.txt
+  SFTP remote name   : EIBWKAPD_WK2.TXT
+
+Step 4: Building REP2 (filtered)...
+  [BNMK_REP2] Converting rep2081.sas7bdat -> BNMK_rep2081.parquet ...
+  [BNMK_REP2] Done — 0 rows cached.
+  REP2 (filtered) rows: 0
+
+Step 5: Building REP4 (filtered)...
+  [BNMK_REP4] Converting rep4081.sas7bdat -> BNMK_rep4081.parquet ...
+  [BNMK_REP4] Done — 94 rows cached.
+  REP4 (filtered) rows: 78
+
+Step 6: Rendering PBBELQ daily EL detail reports...
+  Loading BNM ELW (build_elw1)...
+  [BNM_ELW] Converting elw081.sas7bdat -> BNM_elw081.parquet ...
+  [BNM_ELW] Done — 272 rows cached.
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWKAPE.py", line 651, in <module>
-    prtel(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 509, in prtel
-    elw_final = _finalize_elw(elw_stack, elitem, drop_4019=True)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PIBELQ.py", line 300, in _finalize_elw
-    merged = merged.filter(pl.col("IDX").str.strip() != "")
-AttributeError: 'ExprStringNameSpace' object has no attribute 'strip'
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWKAPE_AII.py", line 541, in <module>
+    elw1 = _pbbelq_build_elw1(REPTMON, NOWK)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PBBELQ_AII.py", line 262, in build_elw1
+    elw1_raw = con.execute(f"""
+_duckdb.BinderException: Binder Error: Column "BRANCH" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
