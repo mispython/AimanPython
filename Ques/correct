@@ -1,60 +1,1187 @@
-1PUBLIC BANK BERHAD -REPORT DATE 16/08/26                                                                                            
- SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK                                                                       
- (DAILY KAPITI STOCK REPORT) WEEK 2 AUGUST 2026                                                                                      
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYA                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
                                                                                                                                      
-|------------------------------+----------------|                                                                                    
-|                              |        ELDAY        |                                                                               
-|------------------------------+----------------|                                                                                    
-|                              |      DAYA      |      DAYB      |      DAYC      |      DAYD      |      DAYE      |      DAYF      
-|                              |                |                |                |                |                |                
-|------------------------------+----------------|                                                                                    
-|3721000000000Y-MGS AFS        |7,708,662,462.00|7,708,662,462.00|7,789,617,462.00|7,730,083,362.00|7,730,083,362.00|7,740,747,162.00
-|3721000000000Y-MGS AFSLI      |5,866,112,880.40|5,866,112,880.40|5,866,112,880.40|5,866,112,880.40|5,866,112,880.40|5,918,554,680.40
-|3721000000000Y-MGS DLG        |  483,182,500.00|  483,182,500.00|  493,002,500.00|  514,148,500.00|  504,328,500.00|  494,293,500.00
-|3721000000000Y-MGS INV        |3,324,518,116.60|3,324,518,116.60|3,324,518,116.60|3,324,518,116.60|3,324,518,116.60|3,324,518,116.60
-|3722000000000Y-ITB AFS        |  231,830,158.62|  231,830,158.62|  231,830,158.62|  231,830,158.62|  231,830,158.62|  231,830,158.62
-|3722000000000Y-MTB DLG        |  196,991,780.80|  196,991,780.80|  196,991,780.80|  196,991,780.80|  196,991,780.80|  196,991,780.80
-|3723000000000Y-MGI AFS        |6,681,998,108.90|6,681,998,108.90|6,682,014,108.90|6,682,014,108.90|6,682,014,108.90|6,631,783,108.90
-|3723000000000Y-MGI AFSLI      |5,831,925,497.60|5,831,925,497.60|5,831,925,497.60|5,982,160,997.60|5,982,160,997.60|5,982,160,997.60
-|3723000000000Y-MGI DLG        |1,265,506,110.20|1,265,506,110.20|1,245,255,610.20|1,143,965,110.20|1,133,910,110.20|1,054,041,110.20
-|3723000000000Y-MGI INV        |3,422,899,124.00|3,422,899,124.00|3,422,899,124.00|3,422,899,124.00|3,524,183,124.00|3,524,183,124.00
-|------------------------------+----------------|                                                                                    
-|TOTAL RM MARKETABLE SECURITIES|35,013,626,739.1|35,013,626,739.1|35,084,167,239.1|35,094,724,139.1|35,176,133,139.1|35,099,103,739.1
-|------------------------------+----------------|                                                                                    
-1(Continued)                                                                                                                         
- PUBLIC BANK BERHAD -REPORT DATE 16/08/26                                                                                            
- SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK                                                                       
- (DAILY KAPITI STOCK REPORT) WEEK 2 AUGUST 2026                                                                                      
-|------------------------------+----------------|                                                                                    
-|                              |      ELDAY      |                                                                                   
-|------------------------------+----------------|                                                                                    
-|                              |      DAYG      |      DAYI      |                                                                   
-|                              |                |                |                                                                   
-|------------------------------+----------------|                                                                                    
-|3721000000000Y-MGS AFS        |7,801,362,162.00|7,801,362,162.00|                                                                   
-|3721000000000Y-MGS AFSLI      |6,231,782,680.40|6,231,782,680.40|                                                                   
-|3721000000000Y-MGS DLG        |  413,975,500.00|  413,975,500.00|                                                                   
-|3721000000000Y-MGS INV        |3,324,518,116.60|3,324,518,116.60|                                                                   
-|3722000000000Y-ITB AFS        |  231,830,158.62|  231,830,158.62|                                                                   
-|3722000000000Y-MTB DLG        |            0.00|            0.00|                                                                   
-|3723000000000Y-MGI AFS        |6,631,783,108.90|6,631,783,108.90|                                                                   
-|3723000000000Y-MGI AFSLI      |6,032,787,097.60|6,032,787,097.60|                                                                   
-|3723000000000Y-MGI DLG        |1,054,041,110.20|1,054,041,110.20|                                                                   
-|3723000000000Y-MGI INV        |3,524,183,124.00|3,524,183,124.00|                                                                   
-|------------------------------+----------------|                                                                                    
-|TOTAL RM MARKETABLE SECURITIES|35,246,263,058.3|35,246,263,058.3|                                                                   
-|------------------------------+----------------|                                                                                    
-1VARIANCE BETWEEN KAPITI AND WALKER                                                                                                  
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  A-RMEL   4211000000000Y  RM DEMAND DEPOSITS ACCEPTED               +          58,306,293,283.45       58,306,293,283.45            
+           4212000000000Y  RM SAVINGS DEPOSITS ACCEPTED              +          34,434,755,062.10       34,434,755,062.10            
+           4213000000000Y  RM FIXED DEPOSITS ACCEPTED                +         152,563,194,587.63      152,563,194,587.63            
+           4213100000000Y  RM SPECIAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213200000000Y  RM GENERAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213300000000Y  RM COMMODITY MURABAHAH                    +                       0.00                    0.00            
+           4215000000000Y  RM NID ISSUED                             +             700,000,000.00          700,000,000.00            
+           4216000000000Y  RM REPURCHASE AGREEMENTS                  +          11,256,809,165.12       11,256,809,165.12            
+           4217071000000Y  RM SPECIAL DEPOSITS                       +                       0.00                    0.00            
+           4218000000000Y  RM HOUSING DEVELOPMENT ACCOUNTS           +           1,698,069,617.68        1,698,069,617.68            
+           4219000000000Y  RM SHORT TERM DEPOSIT ACCEPTED            +          58,559,165,377.68       58,559,165,377.68            
+           4219100000000Y  RM INVESTMENT LINKED TO DERIVATIVES       +             378,515,968.00          378,515,968.00            
+           4219900000000Y  RM OTHER DEPOSITS ACCEPTED                +              36,592,310.97           36,592,310.97            
+           4310000000000Y  RM AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00            
+           4311002000000Y  RM VOSTRO ACCOUNTS OF CB                  +                 396,525.10              396,525.10            
+           4311003000000Y  RM VOSTRO ACCOUNTS OF IB                  +             173,077,727.51          173,077,727.51            
+           4311081000000Y  RM VOSTRO ACCOUNTS OF FBI                 +             111,001,794.58          111,001,794.58            
+           4312002000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH CB      +                       0.00                    0.00            
+           4312003000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH IB      +                       0.00                    0.00            
+           4313000000000Y  RM DEFICIT IN SPICK                       +              89,603,179.48           89,603,179.48            
+           4313002000000Y  RM AMOUNT BORROWING FROM SPICK POOL CB    +                       0.00                    0.00            
+           4313003000000Y  RM AMOUNT BORROWING FROM SPICK POOL IB    +                       0.00                    0.00            
+           4314001000000Y  RM INTERBANK BORROWINGS FROM BNM          +                       0.00                    0.00            
+           4314002000000Y  RM INTERBANK BORROWINGS FROM CB           +           1,405,000,000.00        1,405,000,000.00            
+           4314003000000Y  RM INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00            
+           4314011000000Y  RM INTERBANK BORROWINGS FROM FC           +                       0.00                    0.00            
+           4314012000000Y  RM INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00            
+           4314013000000Y  RM INTERBANK BORROWINGS FROM DH           +                       0.00                    0.00            
+           4314017000000Y  O/W RM IBB FROM CAGAMAS           0.00    +                       0.00                    0.00            
+           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +                       0.00                    0.00            
+           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +             180,000,000.00          180,000,000.00            
+           4410000000000Y  RM MISC BORROWINGS                        +          10,198,026,952.23       10,198,026,952.23            
+           4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              84,957,089.82           84,957,089.82            
+           4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  25,260.96               25,260.96            
+           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00            
+           4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.75                    0.75            
+           4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              39,115,634.18           39,115,634.18            
+           4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84            
+           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           4,998,010,114.90        4,998,010,114.90            
+           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00            
+           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00            
+           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -           5,200,016,837.33        5,200,016,837.33            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR A-RMEL                                                    320,016,573,373.85      320,016,573,373.85            
+                                                                         ------------------------------------------------            
+  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00            
+           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00            
+           3213002000000Y  RM FIXED DEPOSITS PLACED WITH CB          +                       0.00                    0.00            
+           3213011000000Y  RM FIXED DEPOSITS PLACED WITH FC          +                       0.00                    0.00            
+           3213012000000Y  RM FIXED DEPOSITS PLACED WITH MB          +                       0.00                    0.00            
+           3213013000000Y  RM FIXED DEPOSITS PLACED WITH DH          +                       0.00                    0.00            
+           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00            
+           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00            
+           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYA                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
                                                                                                                                      
-|----------------------------------+----------------+----------------+----------------|                                              
-|                                  |                                 ELDAY                                 |                         
-|----------------------------------+----------------+----------------+----------------|                                              
-|                                  |                       DAYA                       |                       DAYB                   
-|                                  |     KAPITI     |     WALKER     |    VARIANCE    |     KAPITI     |     WALKER     |    VARIANCE
-|----------------------------------+----------------+----------------+----------------|                                              
-|3721000000000Y                    |17,382,475,959.0|            0.00|17,382,475,959.0|17,382,475,959.0|            0.00|17,382,475,9
-|3722000000000Y                    |  428,821,939.42|            0.00|  428,821,939.42|  428,821,939.42|            0.00|  428,821,93
-|3723000000000Y                    |17,202,328,840.7|14,896,644,805.2|2,305,684,035.43|17,202,328,840.7|14,898,184,639.2|2,304,144,20
-|----------------------------------+----------------+----------------+----------------|                                              
-|TOTAL                             |35,013,626,739.1|14,896,644,805.2|20,116,981,933.8|35,013,626,739.1|14,898,184,639.2|20,115,442,0
-|----------------------------------+----------------+----------------+----------------|                                              
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  B-RMEA   3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00            
+           3213113000000Y  RM SPECIAL INV DEP PLACED WITH DH         +                       0.00                    0.00            
+           3213202000000Y  RM GEN INVESTMENT DEP PLACED WITH CB      +                       0.00                    0.00            
+           3213203000000Y  RM GEN INVESTMENT DEP PLACED WITH IB      +                       0.00                    0.00            
+           3213211000000Y  RM GEN INVESTMENT DEP PLACED WITH FC      +                       0.00                    0.00            
+           3213212000000Y  RM GEN INVESTMENT DEP PLACED WITH MB      +                       0.00                    0.00            
+           3213213000000Y  RM GEN INVESTMENT DEP PLACED WITH DH      +                       0.00                    0.00            
+           3219910000000Y  RM OTHER DEPOSITS PLACED WITH DBI         +                       0.00                    0.00            
+           3250001000000Y  RM REVERSE REPOS WITH BNM                 +                       0.00                    0.00            
+           3250002000000Y  RM REVERSE REPOS WITH CB                  +                       0.00                    0.00            
+           3250011000000Y  RM REVERSE REPOS WITH FC                  +                       0.00                    0.00            
+           3250012000000Y  RM REVERSE REPOS WITH MB                  +                       0.00                    0.00            
+           3250013000000Y  RM REVERSE REPOS WITH DH                  +                       0.00                    0.00            
+           3311002000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF CB        +                       0.00                    0.00            
+           3311003000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF IB        +                       0.00                    0.00            
+           3312002000000Y  RM NOSTRO ACCOUNT BALANCES WITH CB        +                       0.00                    0.00            
+           3312003000000Y  RM NOSTRO ACCOUNT BALANCES WITH IB        +                       0.00                    0.00            
+           3313000000000Y  RM SURPLUS IN SPICK                       +                       0.00                    0.00            
+           3314001000000Y  RM INTERBANK PLACEMENTS WITH BNM          +             950,000,000.00          950,000,000.00            
+           3314002000000Y  RM INTERBANK PLACEMENTS WITH CB           +           2,141,000,000.00        2,141,000,000.00            
+           3314003000000Y  RM INTERBANK PLACEMENTS WITH IB           +             150,000,000.00          150,000,000.00            
+           3314011000000Y  RM INTERBANK PLACEMENTS WITH FC           +                       0.00                    0.00            
+           3314012000000Y  RM INTERBANK PLACEMENTS WITH MB           +             610,000,000.00          610,000,000.00            
+           3314013000000Y  RM INTERBANK PLACEMENTS WITH DH           +                       0.00                    0.00            
+           3314017000000Y  RM INTERBANK PLACEMENTS WITH CAGAMAS      +              45,000,000.00           45,000,000.00            
+           3410002000000Y  RM LOANS TO CB                            +                       0.00                    0.00            
+           3410003000000Y  RM LOANS TO IB                            +                       0.00                    0.00            
+           3410011000000Y  RM LOANS TO FC                            +                       0.00                    0.00            
+           3410012000000Y  RM LOANS TO MB                            +                      52.00                   52.00            
+           3410013000000Y  RM LOANS TO DH                            +                       0.00                    0.00            
+           3410017000000Y  RM LOANS TO CAGAMAS                       +                       0.00                    0.00            
+           3703000000000Y  RM NIDS HELD                              +           1,144,818,296.93        1,144,818,296.93            
+           3803000000000Y  NIDS SOLD UNDER REPO                      +                       0.00                    0.00            
+           4015000000000Y  ELIGIBLE CAGAMAS TIER-2 BONDS (DAY I)     +                       0.00                    0.00            
+           3314013110000Y  RM INTERBKS PLACEMENTS WITH DH OVRNIGHT   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                      5,040,818,348.93        5,040,818,348.93            
+                                                                         ------------------------------------------------            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYA                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,013,626,739.12       35,013,626,739.12            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +         279,962,128,285.80      279,962,128,285.80            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYB                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  A-RMEL   4211000000000Y  RM DEMAND DEPOSITS ACCEPTED               +          58,393,174,105.67       58,393,174,105.67            
+           4212000000000Y  RM SAVINGS DEPOSITS ACCEPTED              +          34,339,670,655.80       34,339,670,655.80            
+           4213000000000Y  RM FIXED DEPOSITS ACCEPTED                +         152,567,792,422.24      152,567,792,422.24            
+           4213100000000Y  RM SPECIAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213200000000Y  RM GENERAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213300000000Y  RM COMMODITY MURABAHAH                    +                       0.00                    0.00            
+           4215000000000Y  RM NID ISSUED                             +             700,000,000.00          700,000,000.00            
+           4216000000000Y  RM REPURCHASE AGREEMENTS                  +          11,256,809,165.12       11,256,809,165.12            
+           4217071000000Y  RM SPECIAL DEPOSITS                       +                       0.00                    0.00            
+           4218000000000Y  RM HOUSING DEVELOPMENT ACCOUNTS           +           1,698,693,678.32        1,698,693,678.32            
+           4219000000000Y  RM SHORT TERM DEPOSIT ACCEPTED            +          58,559,165,377.68       58,559,165,377.68            
+           4219100000000Y  RM INVESTMENT LINKED TO DERIVATIVES       +             378,515,968.00          378,515,968.00            
+           4219900000000Y  RM OTHER DEPOSITS ACCEPTED                +              36,655,447.19           36,655,447.19            
+           4310000000000Y  RM AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00            
+           4311002000000Y  RM VOSTRO ACCOUNTS OF CB                  +                 396,525.10              396,525.10            
+           4311003000000Y  RM VOSTRO ACCOUNTS OF IB                  +             162,374,858.50          162,374,858.50            
+           4311081000000Y  RM VOSTRO ACCOUNTS OF FBI                 +             111,001,794.58          111,001,794.58            
+           4312002000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH CB      +                       0.00                    0.00            
+           4312003000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH IB      +                       0.00                    0.00            
+           4313000000000Y  RM DEFICIT IN SPICK                       +              89,603,179.48           89,603,179.48            
+           4313002000000Y  RM AMOUNT BORROWING FROM SPICK POOL CB    +                       0.00                    0.00            
+           4313003000000Y  RM AMOUNT BORROWING FROM SPICK POOL IB    +                       0.00                    0.00            
+           4314001000000Y  RM INTERBANK BORROWINGS FROM BNM          +                       0.00                    0.00            
+           4314002000000Y  RM INTERBANK BORROWINGS FROM CB           +           1,405,000,000.00        1,405,000,000.00            
+           4314003000000Y  RM INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00            
+           4314011000000Y  RM INTERBANK BORROWINGS FROM FC           +                       0.00                    0.00            
+           4314012000000Y  RM INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00            
+           4314013000000Y  RM INTERBANK BORROWINGS FROM DH           +                       0.00                    0.00            
+           4314017000000Y  O/W RM IBB FROM CAGAMAS           0.00    +                       0.00                    0.00            
+           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +                       0.00                    0.00            
+           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +             180,000,000.00          180,000,000.00            
+           4410000000000Y  RM MISC BORROWINGS                        +          10,198,026,952.23       10,198,026,952.23            
+           4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              86,334,643.61           86,334,643.61            
+           4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  25,942.50               25,942.50            
+           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00            
+           4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.75                    0.75            
+           4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              39,115,634.18           39,115,634.18            
+           4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84            
+           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           4,998,010,114.90        4,998,010,114.90            
+           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00            
+           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00            
+           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -           5,200,016,837.33        5,200,016,837.33            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR A-RMEL                                                    320,004,330,187.56      320,004,330,187.56            
+                                                                         ------------------------------------------------            
+  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00            
+           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00            
+           3213002000000Y  RM FIXED DEPOSITS PLACED WITH CB          +                       0.00                    0.00            
+           3213011000000Y  RM FIXED DEPOSITS PLACED WITH FC          +                       0.00                    0.00            
+           3213012000000Y  RM FIXED DEPOSITS PLACED WITH MB          +                       0.00                    0.00            
+           3213013000000Y  RM FIXED DEPOSITS PLACED WITH DH          +                       0.00                    0.00            
+           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00            
+           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00            
+           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYB                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  B-RMEA   3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00            
+           3213113000000Y  RM SPECIAL INV DEP PLACED WITH DH         +                       0.00                    0.00            
+           3213202000000Y  RM GEN INVESTMENT DEP PLACED WITH CB      +                       0.00                    0.00            
+           3213203000000Y  RM GEN INVESTMENT DEP PLACED WITH IB      +                       0.00                    0.00            
+           3213211000000Y  RM GEN INVESTMENT DEP PLACED WITH FC      +                       0.00                    0.00            
+           3213212000000Y  RM GEN INVESTMENT DEP PLACED WITH MB      +                       0.00                    0.00            
+           3213213000000Y  RM GEN INVESTMENT DEP PLACED WITH DH      +                       0.00                    0.00            
+           3219910000000Y  RM OTHER DEPOSITS PLACED WITH DBI         +                       0.00                    0.00            
+           3250001000000Y  RM REVERSE REPOS WITH BNM                 +                       0.00                    0.00            
+           3250002000000Y  RM REVERSE REPOS WITH CB                  +                       0.00                    0.00            
+           3250011000000Y  RM REVERSE REPOS WITH FC                  +                       0.00                    0.00            
+           3250012000000Y  RM REVERSE REPOS WITH MB                  +                       0.00                    0.00            
+           3250013000000Y  RM REVERSE REPOS WITH DH                  +                       0.00                    0.00            
+           3311002000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF CB        +                       0.00                    0.00            
+           3311003000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF IB        +                       0.00                    0.00            
+           3312002000000Y  RM NOSTRO ACCOUNT BALANCES WITH CB        +                       0.00                    0.00            
+           3312003000000Y  RM NOSTRO ACCOUNT BALANCES WITH IB        +                       0.00                    0.00            
+           3313000000000Y  RM SURPLUS IN SPICK                       +                       0.00                    0.00            
+           3314001000000Y  RM INTERBANK PLACEMENTS WITH BNM          +             950,000,000.00          950,000,000.00            
+           3314002000000Y  RM INTERBANK PLACEMENTS WITH CB           +           2,141,000,000.00        2,141,000,000.00            
+           3314003000000Y  RM INTERBANK PLACEMENTS WITH IB           +             150,000,000.00          150,000,000.00            
+           3314011000000Y  RM INTERBANK PLACEMENTS WITH FC           +                       0.00                    0.00            
+           3314012000000Y  RM INTERBANK PLACEMENTS WITH MB           +             610,000,000.00          610,000,000.00            
+           3314013000000Y  RM INTERBANK PLACEMENTS WITH DH           +                       0.00                    0.00            
+           3314017000000Y  RM INTERBANK PLACEMENTS WITH CAGAMAS      +              45,000,000.00           45,000,000.00            
+           3410002000000Y  RM LOANS TO CB                            +                       0.00                    0.00            
+           3410003000000Y  RM LOANS TO IB                            +                       0.00                    0.00            
+           3410011000000Y  RM LOANS TO FC                            +                       0.00                    0.00            
+           3410012000000Y  RM LOANS TO MB                            +                      52.00                   52.00            
+           3410013000000Y  RM LOANS TO DH                            +                       0.00                    0.00            
+           3410017000000Y  RM LOANS TO CAGAMAS                       +                       0.00                    0.00            
+           3703000000000Y  RM NIDS HELD                              +           1,144,948,864.76        1,144,948,864.76            
+           3803000000000Y  NIDS SOLD UNDER REPO                      +                       0.00                    0.00            
+           4015000000000Y  ELIGIBLE CAGAMAS TIER-2 BONDS (DAY I)     +                       0.00                    0.00            
+           3314013110000Y  RM INTERBKS PLACEMENTS WITH DH OVRNIGHT   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                      5,040,948,916.76        5,040,948,916.76            
+                                                                         ------------------------------------------------            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYB                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,013,626,739.12       35,013,626,739.12            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +         279,949,754,531.68      279,949,754,531.68            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYC                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  A-RMEL   4211000000000Y  RM DEMAND DEPOSITS ACCEPTED               +          58,204,366,157.86       58,204,366,157.86            
+           4212000000000Y  RM SAVINGS DEPOSITS ACCEPTED              +          34,516,281,392.17       34,516,281,392.17            
+           4213000000000Y  RM FIXED DEPOSITS ACCEPTED                +         153,061,205,753.58      153,061,205,753.58            
+           4213100000000Y  RM SPECIAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213200000000Y  RM GENERAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213300000000Y  RM COMMODITY MURABAHAH                    +                       0.00                    0.00            
+           4215000000000Y  RM NID ISSUED                             +             700,000,000.00          700,000,000.00            
+           4216000000000Y  RM REPURCHASE AGREEMENTS                  +          11,256,528,223.28       11,256,528,223.28            
+           4217071000000Y  RM SPECIAL DEPOSITS                       +                       0.00                    0.00            
+           4218000000000Y  RM HOUSING DEVELOPMENT ACCOUNTS           +           1,688,421,127.53        1,688,421,127.53            
+           4219000000000Y  RM SHORT TERM DEPOSIT ACCEPTED            +          59,044,043,919.71       59,044,043,919.71            
+           4219100000000Y  RM INVESTMENT LINKED TO DERIVATIVES       +             378,512,968.00          378,512,968.00            
+           4219900000000Y  RM OTHER DEPOSITS ACCEPTED                +              36,920,376.69           36,920,376.69            
+           4310000000000Y  RM AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00            
+           4311002000000Y  RM VOSTRO ACCOUNTS OF CB                  +                 376,959.35              376,959.35            
+           4311003000000Y  RM VOSTRO ACCOUNTS OF IB                  +             380,740,756.11          380,740,756.11            
+           4311081000000Y  RM VOSTRO ACCOUNTS OF FBI                 +             108,190,568.95          108,190,568.95            
+           4312002000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH CB      +                       0.00                    0.00            
+           4312003000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH IB      +                       0.00                    0.00            
+           4313000000000Y  RM DEFICIT IN SPICK                       +                       0.00                    0.00            
+           4313002000000Y  RM AMOUNT BORROWING FROM SPICK POOL CB    +                       0.00                    0.00            
+           4313003000000Y  RM AMOUNT BORROWING FROM SPICK POOL IB    +                       0.00                    0.00            
+           4314001000000Y  RM INTERBANK BORROWINGS FROM BNM          +                       0.00                    0.00            
+           4314002000000Y  RM INTERBANK BORROWINGS FROM CB           +           1,405,000,000.00        1,405,000,000.00            
+           4314003000000Y  RM INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00            
+           4314011000000Y  RM INTERBANK BORROWINGS FROM FC           +                       0.00                    0.00            
+           4314012000000Y  RM INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00            
+           4314013000000Y  RM INTERBANK BORROWINGS FROM DH           +                       0.00                    0.00            
+           4314017000000Y  O/W RM IBB FROM CAGAMAS           0.00    +                       0.00                    0.00            
+           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +                       0.00                    0.00            
+           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +             180,000,000.00          180,000,000.00            
+           4410000000000Y  RM MISC BORROWINGS                        +          10,198,026,952.23       10,198,026,952.23            
+           4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              52,762,053.66           52,762,053.66            
+           4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  26,624.06               26,624.06            
+           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00            
+           4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       2.59                    2.59            
+           4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              39,162,056.85           39,162,056.85            
+           4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84            
+           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           4,998,010,114.90        4,998,010,114.90            
+           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00            
+           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00            
+           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -           5,200,016,837.33        5,200,016,837.33            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR A-RMEL                                                    321,052,539,729.23      321,052,539,729.23            
+                                                                         ------------------------------------------------            
+  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00            
+           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00            
+           3213002000000Y  RM FIXED DEPOSITS PLACED WITH CB          +                       0.00                    0.00            
+           3213011000000Y  RM FIXED DEPOSITS PLACED WITH FC          +                       0.00                    0.00            
+           3213012000000Y  RM FIXED DEPOSITS PLACED WITH MB          +                       0.00                    0.00            
+           3213013000000Y  RM FIXED DEPOSITS PLACED WITH DH          +                       0.00                    0.00            
+           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00            
+           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00            
+           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYC                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  B-RMEA   3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00            
+           3213113000000Y  RM SPECIAL INV DEP PLACED WITH DH         +                       0.00                    0.00            
+           3213202000000Y  RM GEN INVESTMENT DEP PLACED WITH CB      +                       0.00                    0.00            
+           3213203000000Y  RM GEN INVESTMENT DEP PLACED WITH IB      +                       0.00                    0.00            
+           3213211000000Y  RM GEN INVESTMENT DEP PLACED WITH FC      +                       0.00                    0.00            
+           3213212000000Y  RM GEN INVESTMENT DEP PLACED WITH MB      +                       0.00                    0.00            
+           3213213000000Y  RM GEN INVESTMENT DEP PLACED WITH DH      +                       0.00                    0.00            
+           3219910000000Y  RM OTHER DEPOSITS PLACED WITH DBI         +                       0.00                    0.00            
+           3250001000000Y  RM REVERSE REPOS WITH BNM                 +                       0.00                    0.00            
+           3250002000000Y  RM REVERSE REPOS WITH CB                  +                       0.00                    0.00            
+           3250011000000Y  RM REVERSE REPOS WITH FC                  +                       0.00                    0.00            
+           3250012000000Y  RM REVERSE REPOS WITH MB                  +                       0.00                    0.00            
+           3250013000000Y  RM REVERSE REPOS WITH DH                  +                       0.00                    0.00            
+           3311002000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF CB        +                       0.00                    0.00            
+           3311003000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF IB        +                       0.00                    0.00            
+           3312002000000Y  RM NOSTRO ACCOUNT BALANCES WITH CB        +                       0.00                    0.00            
+           3312003000000Y  RM NOSTRO ACCOUNT BALANCES WITH IB        +                       0.00                    0.00            
+           3313000000000Y  RM SURPLUS IN SPICK                       +             122,492,267.53          122,492,267.53            
+           3314001000000Y  RM INTERBANK PLACEMENTS WITH BNM          +             900,000,000.00          900,000,000.00            
+           3314002000000Y  RM INTERBANK PLACEMENTS WITH CB           +           2,285,000,000.00        2,285,000,000.00            
+           3314003000000Y  RM INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00            
+           3314011000000Y  RM INTERBANK PLACEMENTS WITH FC           +                       0.00                    0.00            
+           3314012000000Y  RM INTERBANK PLACEMENTS WITH MB           +             560,000,000.00          560,000,000.00            
+           3314013000000Y  RM INTERBANK PLACEMENTS WITH DH           +                       0.00                    0.00            
+           3314017000000Y  RM INTERBANK PLACEMENTS WITH CAGAMAS      +              45,000,000.00           45,000,000.00            
+           3410002000000Y  RM LOANS TO CB                            +                       0.00                    0.00            
+           3410003000000Y  RM LOANS TO IB                            +                       0.00                    0.00            
+           3410011000000Y  RM LOANS TO FC                            +                       0.00                    0.00            
+           3410012000000Y  RM LOANS TO MB                            +                      28.00                   28.00            
+           3410013000000Y  RM LOANS TO DH                            +                       0.00                    0.00            
+           3410017000000Y  RM LOANS TO CAGAMAS                       +                       0.00                    0.00            
+           3703000000000Y  RM NIDS HELD                              +           1,145,079,447.49        1,145,079,447.49            
+           3803000000000Y  NIDS SOLD UNDER REPO                      +                       0.00                    0.00            
+           4015000000000Y  ELIGIBLE CAGAMAS TIER-2 BONDS (DAY I)     +                       0.00                    0.00            
+           3314013110000Y  RM INTERBKS PLACEMENTS WITH DH OVRNIGHT   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                      5,057,571,743.02        5,057,571,743.02            
+                                                                         ------------------------------------------------            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYC                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,084,167,239.12       35,084,167,239.12            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +         280,910,800,747.10      280,910,800,747.10            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYD                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  A-RMEL   4211000000000Y  RM DEMAND DEPOSITS ACCEPTED               +          57,965,233,102.26       57,965,233,102.26            
+           4212000000000Y  RM SAVINGS DEPOSITS ACCEPTED              +          34,592,448,039.71       34,592,448,039.71            
+           4213000000000Y  RM FIXED DEPOSITS ACCEPTED                +         153,116,119,136.29      153,116,119,136.29            
+           4213100000000Y  RM SPECIAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213200000000Y  RM GENERAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213300000000Y  RM COMMODITY MURABAHAH                    +                       0.00                    0.00            
+           4215000000000Y  RM NID ISSUED                             +             700,000,000.00          700,000,000.00            
+           4216000000000Y  RM REPURCHASE AGREEMENTS                  +          11,162,331,149.82       11,162,331,149.82            
+           4217071000000Y  RM SPECIAL DEPOSITS                       +                       0.00                    0.00            
+           4218000000000Y  RM HOUSING DEVELOPMENT ACCOUNTS           +           1,680,936,164.62        1,680,936,164.62            
+           4219000000000Y  RM SHORT TERM DEPOSIT ACCEPTED            +          58,985,449,393.47       58,985,449,393.47            
+           4219100000000Y  RM INVESTMENT LINKED TO DERIVATIVES       +             379,262,968.00          379,262,968.00            
+           4219900000000Y  RM OTHER DEPOSITS ACCEPTED                +              36,842,193.40           36,842,193.40            
+           4310000000000Y  RM AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00            
+           4311002000000Y  RM VOSTRO ACCOUNTS OF CB                  +                 376,909.35              376,909.35            
+           4311003000000Y  RM VOSTRO ACCOUNTS OF IB                  +             365,003,042.10          365,003,042.10            
+           4311081000000Y  RM VOSTRO ACCOUNTS OF FBI                 +             113,166,192.14          113,166,192.14            
+           4312002000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH CB      +                       0.00                    0.00            
+           4312003000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH IB      +                       0.00                    0.00            
+           4313000000000Y  RM DEFICIT IN SPICK                       +                       0.00                    0.00            
+           4313002000000Y  RM AMOUNT BORROWING FROM SPICK POOL CB    +                       0.00                    0.00            
+           4313003000000Y  RM AMOUNT BORROWING FROM SPICK POOL IB    +                       0.00                    0.00            
+           4314001000000Y  RM INTERBANK BORROWINGS FROM BNM          +                       0.00                    0.00            
+           4314002000000Y  RM INTERBANK BORROWINGS FROM CB           +           1,405,000,000.00        1,405,000,000.00            
+           4314003000000Y  RM INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00            
+           4314011000000Y  RM INTERBANK BORROWINGS FROM FC           +                       0.00                    0.00            
+           4314012000000Y  RM INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00            
+           4314013000000Y  RM INTERBANK BORROWINGS FROM DH           +                       0.00                    0.00            
+           4314017000000Y  O/W RM IBB FROM CAGAMAS           0.00    +                       0.00                    0.00            
+           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +                       0.00                    0.00            
+           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +             170,000,000.00          170,000,000.00            
+           4410000000000Y  RM MISC BORROWINGS                        +          10,198,026,952.23       10,198,026,952.23            
+           4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              54,000,231.77           54,000,231.77            
+           4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  27,305.69               27,305.69            
+           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00            
+           4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.75                    0.75            
+           4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              39,187,464.90           39,187,464.90            
+           4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84            
+           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           4,998,010,114.90        4,998,010,114.90            
+           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00            
+           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00            
+           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -           5,200,016,837.33        5,200,016,837.33            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR A-RMEL                                                    320,765,384,083.11      320,765,384,083.11            
+                                                                         ------------------------------------------------            
+  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00            
+           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00            
+           3213002000000Y  RM FIXED DEPOSITS PLACED WITH CB          +                       0.00                    0.00            
+           3213011000000Y  RM FIXED DEPOSITS PLACED WITH FC          +                       0.00                    0.00            
+           3213012000000Y  RM FIXED DEPOSITS PLACED WITH MB          +                       0.00                    0.00            
+           3213013000000Y  RM FIXED DEPOSITS PLACED WITH DH          +                       0.00                    0.00            
+           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00            
+           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00            
+           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYD                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  B-RMEA   3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00            
+           3213113000000Y  RM SPECIAL INV DEP PLACED WITH DH         +                       0.00                    0.00            
+           3213202000000Y  RM GEN INVESTMENT DEP PLACED WITH CB      +                       0.00                    0.00            
+           3213203000000Y  RM GEN INVESTMENT DEP PLACED WITH IB      +                       0.00                    0.00            
+           3213211000000Y  RM GEN INVESTMENT DEP PLACED WITH FC      +                       0.00                    0.00            
+           3213212000000Y  RM GEN INVESTMENT DEP PLACED WITH MB      +                       0.00                    0.00            
+           3213213000000Y  RM GEN INVESTMENT DEP PLACED WITH DH      +                       0.00                    0.00            
+           3219910000000Y  RM OTHER DEPOSITS PLACED WITH DBI         +                       0.00                    0.00            
+           3250001000000Y  RM REVERSE REPOS WITH BNM                 +                       0.00                    0.00            
+           3250002000000Y  RM REVERSE REPOS WITH CB                  +                       0.00                    0.00            
+           3250011000000Y  RM REVERSE REPOS WITH FC                  +                       0.00                    0.00            
+           3250012000000Y  RM REVERSE REPOS WITH MB                  +                       0.00                    0.00            
+           3250013000000Y  RM REVERSE REPOS WITH DH                  +                       0.00                    0.00            
+           3311002000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF CB        +                       0.00                    0.00            
+           3311003000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF IB        +                       0.00                    0.00            
+           3312002000000Y  RM NOSTRO ACCOUNT BALANCES WITH CB        +                       0.00                    0.00            
+           3312003000000Y  RM NOSTRO ACCOUNT BALANCES WITH IB        +                       0.00                    0.00            
+           3313000000000Y  RM SURPLUS IN SPICK                       +              31,126,504.81           31,126,504.81            
+           3314001000000Y  RM INTERBANK PLACEMENTS WITH BNM          +                       0.00                    0.00            
+           3314002000000Y  RM INTERBANK PLACEMENTS WITH CB           +           3,550,000,000.00        3,550,000,000.00            
+           3314003000000Y  RM INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00            
+           3314011000000Y  RM INTERBANK PLACEMENTS WITH FC           +                       0.00                    0.00            
+           3314012000000Y  RM INTERBANK PLACEMENTS WITH MB           +             580,000,000.00          580,000,000.00            
+           3314013000000Y  RM INTERBANK PLACEMENTS WITH DH           +                       0.00                    0.00            
+           3314017000000Y  RM INTERBANK PLACEMENTS WITH CAGAMAS      +              45,000,000.00           45,000,000.00            
+           3410002000000Y  RM LOANS TO CB                            +                       0.00                    0.00            
+           3410003000000Y  RM LOANS TO IB                            +                       0.00                    0.00            
+           3410011000000Y  RM LOANS TO FC                            +                       0.00                    0.00            
+           3410012000000Y  RM LOANS TO MB                            +                       0.00                    0.00            
+           3410013000000Y  RM LOANS TO DH                            +                       0.00                    0.00            
+           3410017000000Y  RM LOANS TO CAGAMAS                       +                       0.00                    0.00            
+           3703000000000Y  RM NIDS HELD                              +           1,145,210,045.12        1,145,210,045.12            
+           3803000000000Y  NIDS SOLD UNDER REPO                      +                       0.00                    0.00            
+           4015000000000Y  ELIGIBLE CAGAMAS TIER-2 BONDS (DAY I)     +                       0.00                    0.00            
+           3314013110000Y  RM INTERBKS PLACEMENTS WITH DH OVRNIGHT   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                      5,351,336,549.93        5,351,336,549.93            
+                                                                         ------------------------------------------------            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYD                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,094,724,139.12       35,094,724,139.12            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +         280,319,323,394.06      280,319,323,394.06            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYE                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  A-RMEL   4211000000000Y  RM DEMAND DEPOSITS ACCEPTED               +          57,821,779,366.78       57,821,779,366.78            
+           4212000000000Y  RM SAVINGS DEPOSITS ACCEPTED              +          34,712,085,641.56       34,712,085,641.56            
+           4213000000000Y  RM FIXED DEPOSITS ACCEPTED                +         153,243,101,597.07      153,243,101,597.07            
+           4213100000000Y  RM SPECIAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213200000000Y  RM GENERAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213300000000Y  RM COMMODITY MURABAHAH                    +                       0.00                    0.00            
+           4215000000000Y  RM NID ISSUED                             +             700,000,000.00          700,000,000.00            
+           4216000000000Y  RM REPURCHASE AGREEMENTS                  +          11,162,331,149.82       11,162,331,149.82            
+           4217071000000Y  RM SPECIAL DEPOSITS                       +                       0.00                    0.00            
+           4218000000000Y  RM HOUSING DEVELOPMENT ACCOUNTS           +           1,690,386,795.83        1,690,386,795.83            
+           4219000000000Y  RM SHORT TERM DEPOSIT ACCEPTED            +          59,082,977,054.70       59,082,977,054.70            
+           4219100000000Y  RM INVESTMENT LINKED TO DERIVATIVES       +             381,068,203.00          381,068,203.00            
+           4219900000000Y  RM OTHER DEPOSITS ACCEPTED                +              36,830,617.30           36,830,617.30            
+           4310000000000Y  RM AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00            
+           4311002000000Y  RM VOSTRO ACCOUNTS OF CB                  +                 369,810.35              369,810.35            
+           4311003000000Y  RM VOSTRO ACCOUNTS OF IB                  +             483,538,457.48          483,538,457.48            
+           4311081000000Y  RM VOSTRO ACCOUNTS OF FBI                 +             108,472,297.67          108,472,297.67            
+           4312002000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH CB      +                       0.00                    0.00            
+           4312003000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH IB      +                       0.00                    0.00            
+           4313000000000Y  RM DEFICIT IN SPICK                       +                       0.00                    0.00            
+           4313002000000Y  RM AMOUNT BORROWING FROM SPICK POOL CB    +                       0.00                    0.00            
+           4313003000000Y  RM AMOUNT BORROWING FROM SPICK POOL IB    +                       0.00                    0.00            
+           4314001000000Y  RM INTERBANK BORROWINGS FROM BNM          +                       0.00                    0.00            
+           4314002000000Y  RM INTERBANK BORROWINGS FROM CB           +           1,405,000,000.00        1,405,000,000.00            
+           4314003000000Y  RM INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00            
+           4314011000000Y  RM INTERBANK BORROWINGS FROM FC           +                       0.00                    0.00            
+           4314012000000Y  RM INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00            
+           4314013000000Y  RM INTERBANK BORROWINGS FROM DH           +                       0.00                    0.00            
+           4314017000000Y  O/W RM IBB FROM CAGAMAS           0.00    +                       0.00                    0.00            
+           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +                       0.00                    0.00            
+           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +             150,000,000.00          150,000,000.00            
+           4410000000000Y  RM MISC BORROWINGS                        +          10,198,026,952.23       10,198,026,952.23            
+           4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              55,266,579.94           55,266,579.94            
+           4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  27,987.26               27,987.26            
+           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00            
+           4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       1.44                    1.44            
+           4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              40,202,439.56           40,202,439.56            
+           4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     788.84                  788.84            
+           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           4,998,010,114.90        4,998,010,114.90            
+           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00            
+           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00            
+           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -           5,200,016,837.33        5,200,016,837.33            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR A-RMEL                                                    321,073,438,788.60      321,073,438,788.60            
+                                                                         ------------------------------------------------            
+  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00            
+           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00            
+           3213002000000Y  RM FIXED DEPOSITS PLACED WITH CB          +                       0.00                    0.00            
+           3213011000000Y  RM FIXED DEPOSITS PLACED WITH FC          +                       0.00                    0.00            
+           3213012000000Y  RM FIXED DEPOSITS PLACED WITH MB          +                       0.00                    0.00            
+           3213013000000Y  RM FIXED DEPOSITS PLACED WITH DH          +                       0.00                    0.00            
+           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00            
+           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00            
+           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYE                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  B-RMEA   3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00            
+           3213113000000Y  RM SPECIAL INV DEP PLACED WITH DH         +                       0.00                    0.00            
+           3213202000000Y  RM GEN INVESTMENT DEP PLACED WITH CB      +                       0.00                    0.00            
+           3213203000000Y  RM GEN INVESTMENT DEP PLACED WITH IB      +                       0.00                    0.00            
+           3213211000000Y  RM GEN INVESTMENT DEP PLACED WITH FC      +                       0.00                    0.00            
+           3213212000000Y  RM GEN INVESTMENT DEP PLACED WITH MB      +                       0.00                    0.00            
+           3213213000000Y  RM GEN INVESTMENT DEP PLACED WITH DH      +                       0.00                    0.00            
+           3219910000000Y  RM OTHER DEPOSITS PLACED WITH DBI         +                       0.00                    0.00            
+           3250001000000Y  RM REVERSE REPOS WITH BNM                 +                       0.00                    0.00            
+           3250002000000Y  RM REVERSE REPOS WITH CB                  +                       0.00                    0.00            
+           3250011000000Y  RM REVERSE REPOS WITH FC                  +                       0.00                    0.00            
+           3250012000000Y  RM REVERSE REPOS WITH MB                  +                       0.00                    0.00            
+           3250013000000Y  RM REVERSE REPOS WITH DH                  +                       0.00                    0.00            
+           3311002000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF CB        +                       0.00                    0.00            
+           3311003000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF IB        +                       0.00                    0.00            
+           3312002000000Y  RM NOSTRO ACCOUNT BALANCES WITH CB        +                       0.00                    0.00            
+           3312003000000Y  RM NOSTRO ACCOUNT BALANCES WITH IB        +                       0.00                    0.00            
+           3313000000000Y  RM SURPLUS IN SPICK                       +               3,574,289.25            3,574,289.25            
+           3314001000000Y  RM INTERBANK PLACEMENTS WITH BNM          +             300,000,000.00          300,000,000.00            
+           3314002000000Y  RM INTERBANK PLACEMENTS WITH CB           +           3,350,000,000.00        3,350,000,000.00            
+           3314003000000Y  RM INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00            
+           3314011000000Y  RM INTERBANK PLACEMENTS WITH FC           +                       0.00                    0.00            
+           3314012000000Y  RM INTERBANK PLACEMENTS WITH MB           +             580,000,000.00          580,000,000.00            
+           3314013000000Y  RM INTERBANK PLACEMENTS WITH DH           +                       0.00                    0.00            
+           3314017000000Y  RM INTERBANK PLACEMENTS WITH CAGAMAS      +              45,000,000.00           45,000,000.00            
+           3410002000000Y  RM LOANS TO CB                            +                       0.00                    0.00            
+           3410003000000Y  RM LOANS TO IB                            +                       0.00                    0.00            
+           3410011000000Y  RM LOANS TO FC                            +                       0.00                    0.00            
+           3410012000000Y  RM LOANS TO MB                            +                       0.00                    0.00            
+           3410013000000Y  RM LOANS TO DH                            +                       0.00                    0.00            
+           3410017000000Y  RM LOANS TO CAGAMAS                       +                       0.00                    0.00            
+           3703000000000Y  RM NIDS HELD                              +           1,145,340,657.60        1,145,340,657.60            
+           3803000000000Y  NIDS SOLD UNDER REPO                      +                       0.00                    0.00            
+           4015000000000Y  ELIGIBLE CAGAMAS TIER-2 BONDS (DAY I)     +                       0.00                    0.00            
+           3314013110000Y  RM INTERBKS PLACEMENTS WITH DH OVRNIGHT   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                      5,423,914,946.85        5,423,914,946.85            
+                                                                         ------------------------------------------------            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYE                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,176,133,139.12       35,176,133,139.12            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +         280,473,390,702.63      280,473,390,702.63            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYF                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  A-RMEL   4211000000000Y  RM DEMAND DEPOSITS ACCEPTED               +          57,586,906,511.81       57,586,906,511.81            
+           4212000000000Y  RM SAVINGS DEPOSITS ACCEPTED              +          34,733,295,386.30       34,733,295,386.30            
+           4213000000000Y  RM FIXED DEPOSITS ACCEPTED                +         153,292,780,694.37      153,292,780,694.37            
+           4213100000000Y  RM SPECIAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213200000000Y  RM GENERAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213300000000Y  RM COMMODITY MURABAHAH                    +                       0.00                    0.00            
+           4215000000000Y  RM NID ISSUED                             +             700,000,000.00          700,000,000.00            
+           4216000000000Y  RM REPURCHASE AGREEMENTS                  +          11,198,724,045.04       11,198,724,045.04            
+           4217071000000Y  RM SPECIAL DEPOSITS                       +                       0.00                    0.00            
+           4218000000000Y  RM HOUSING DEVELOPMENT ACCOUNTS           +           1,696,614,957.80        1,696,614,957.80            
+           4219000000000Y  RM SHORT TERM DEPOSIT ACCEPTED            +          59,341,021,426.79       59,341,021,426.79            
+           4219100000000Y  RM INVESTMENT LINKED TO DERIVATIVES       +             377,404,839.00          377,404,839.00            
+           4219900000000Y  RM OTHER DEPOSITS ACCEPTED                +              36,752,098.63           36,752,098.63            
+           4310000000000Y  RM AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00            
+           4311002000000Y  RM VOSTRO ACCOUNTS OF CB                  +                 375,303.35              375,303.35            
+           4311003000000Y  RM VOSTRO ACCOUNTS OF IB                  +             507,264,819.51          507,264,819.51            
+           4311081000000Y  RM VOSTRO ACCOUNTS OF FBI                 +             108,611,588.10          108,611,588.10            
+           4312002000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH CB      +                       0.00                    0.00            
+           4312003000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH IB      +                       0.00                    0.00            
+           4313000000000Y  RM DEFICIT IN SPICK                       +                       0.00                    0.00            
+           4313002000000Y  RM AMOUNT BORROWING FROM SPICK POOL CB    +                       0.00                    0.00            
+           4313003000000Y  RM AMOUNT BORROWING FROM SPICK POOL IB    +                       0.00                    0.00            
+           4314001000000Y  RM INTERBANK BORROWINGS FROM BNM          +                       0.00                    0.00            
+           4314002000000Y  RM INTERBANK BORROWINGS FROM CB           +           1,405,000,000.00        1,405,000,000.00            
+           4314003000000Y  RM INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00            
+           4314011000000Y  RM INTERBANK BORROWINGS FROM FC           +                       0.00                    0.00            
+           4314012000000Y  RM INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00            
+           4314013000000Y  RM INTERBANK BORROWINGS FROM DH           +                       0.00                    0.00            
+           4314017000000Y  O/W RM IBB FROM CAGAMAS           0.00    +                       0.00                    0.00            
+           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +                       0.00                    0.00            
+           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +             150,000,000.00          150,000,000.00            
+           4410000000000Y  RM MISC BORROWINGS                        +          10,198,026,952.23       10,198,026,952.23            
+           4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              56,063,662.22           56,063,662.22            
+           4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  28,683.34               28,683.34            
+           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00            
+           4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.75                    0.75            
+           4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              41,375,964.15           41,375,964.15            
+           4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     862.20                  862.20            
+           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           4,998,010,114.90        4,998,010,114.90            
+           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00            
+           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00            
+           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -           5,200,016,837.33        5,200,016,837.33            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR A-RMEL                                                    321,232,220,843.35      321,232,220,843.35            
+                                                                         ------------------------------------------------            
+  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00            
+           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00            
+           3213002000000Y  RM FIXED DEPOSITS PLACED WITH CB          +                       0.00                    0.00            
+           3213011000000Y  RM FIXED DEPOSITS PLACED WITH FC          +                       0.00                    0.00            
+           3213012000000Y  RM FIXED DEPOSITS PLACED WITH MB          +                       0.00                    0.00            
+           3213013000000Y  RM FIXED DEPOSITS PLACED WITH DH          +                       0.00                    0.00            
+           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00            
+           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00            
+           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYF                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  B-RMEA   3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00            
+           3213113000000Y  RM SPECIAL INV DEP PLACED WITH DH         +                       0.00                    0.00            
+           3213202000000Y  RM GEN INVESTMENT DEP PLACED WITH CB      +                       0.00                    0.00            
+           3213203000000Y  RM GEN INVESTMENT DEP PLACED WITH IB      +                       0.00                    0.00            
+           3213211000000Y  RM GEN INVESTMENT DEP PLACED WITH FC      +                       0.00                    0.00            
+           3213212000000Y  RM GEN INVESTMENT DEP PLACED WITH MB      +                       0.00                    0.00            
+           3213213000000Y  RM GEN INVESTMENT DEP PLACED WITH DH      +                       0.00                    0.00            
+           3219910000000Y  RM OTHER DEPOSITS PLACED WITH DBI         +                       0.00                    0.00            
+           3250001000000Y  RM REVERSE REPOS WITH BNM                 +                       0.00                    0.00            
+           3250002000000Y  RM REVERSE REPOS WITH CB                  +                       0.00                    0.00            
+           3250011000000Y  RM REVERSE REPOS WITH FC                  +                       0.00                    0.00            
+           3250012000000Y  RM REVERSE REPOS WITH MB                  +                       0.00                    0.00            
+           3250013000000Y  RM REVERSE REPOS WITH DH                  +                       0.00                    0.00            
+           3311002000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF CB        +                       0.00                    0.00            
+           3311003000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF IB        +                       0.00                    0.00            
+           3312002000000Y  RM NOSTRO ACCOUNT BALANCES WITH CB        +                       0.00                    0.00            
+           3312003000000Y  RM NOSTRO ACCOUNT BALANCES WITH IB        +                       0.00                    0.00            
+           3313000000000Y  RM SURPLUS IN SPICK                       +              23,429,795.08           23,429,795.08            
+           3314001000000Y  RM INTERBANK PLACEMENTS WITH BNM          +                       0.00                    0.00            
+           3314002000000Y  RM INTERBANK PLACEMENTS WITH CB           +           3,300,000,000.00        3,300,000,000.00            
+           3314003000000Y  RM INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00            
+           3314011000000Y  RM INTERBANK PLACEMENTS WITH FC           +                       0.00                    0.00            
+           3314012000000Y  RM INTERBANK PLACEMENTS WITH MB           +             560,000,000.00          560,000,000.00            
+           3314013000000Y  RM INTERBANK PLACEMENTS WITH DH           +                       0.00                    0.00            
+           3314017000000Y  RM INTERBANK PLACEMENTS WITH CAGAMAS      +              45,000,000.00           45,000,000.00            
+           3410002000000Y  RM LOANS TO CB                            +                       0.00                    0.00            
+           3410003000000Y  RM LOANS TO IB                            +                       0.00                    0.00            
+           3410011000000Y  RM LOANS TO FC                            +                       0.00                    0.00            
+           3410012000000Y  RM LOANS TO MB                            +                       0.00                    0.00            
+           3410013000000Y  RM LOANS TO DH                            +                       0.00                    0.00            
+           3410017000000Y  RM LOANS TO CAGAMAS                       +                       0.00                    0.00            
+           3703000000000Y  RM NIDS HELD                              +           1,145,471,285.03        1,145,471,285.03            
+           3803000000000Y  NIDS SOLD UNDER REPO                      +                       0.00                    0.00            
+           4015000000000Y  ELIGIBLE CAGAMAS TIER-2 BONDS (DAY I)     +                       0.00                    0.00            
+           3314013110000Y  RM INTERBKS PLACEMENTS WITH DH OVRNIGHT   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                      5,073,901,080.11        5,073,901,080.11            
+                                                                         ------------------------------------------------            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYF                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,099,103,739.12       35,099,103,739.12            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +         281,059,216,024.12      281,059,216,024.12            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYG                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  A-RMEL   4211000000000Y  RM DEMAND DEPOSITS ACCEPTED               +          57,342,709,139.61       57,342,709,139.61            
+           4212000000000Y  RM SAVINGS DEPOSITS ACCEPTED              +          34,848,038,971.44       34,848,038,971.44            
+           4213000000000Y  RM FIXED DEPOSITS ACCEPTED                +         153,792,571,377.03      153,792,571,377.03            
+           4213100000000Y  RM SPECIAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213200000000Y  RM GENERAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213300000000Y  RM COMMODITY MURABAHAH                    +                       0.00                    0.00            
+           4215000000000Y  RM NID ISSUED                             +             700,000,000.00          700,000,000.00            
+           4216000000000Y  RM REPURCHASE AGREEMENTS                  +          10,896,069,077.83       10,896,069,077.83            
+           4217071000000Y  RM SPECIAL DEPOSITS                       +                       0.00                    0.00            
+           4218000000000Y  RM HOUSING DEVELOPMENT ACCOUNTS           +           1,704,401,270.05        1,704,401,270.05            
+           4219000000000Y  RM SHORT TERM DEPOSIT ACCEPTED            +          59,507,037,035.36       59,507,037,035.36            
+           4219100000000Y  RM INVESTMENT LINKED TO DERIVATIVES       +             377,998,839.00          377,998,839.00            
+           4219900000000Y  RM OTHER DEPOSITS ACCEPTED                +              37,024,999.40           37,024,999.40            
+           4310000000000Y  RM AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00            
+           4311002000000Y  RM VOSTRO ACCOUNTS OF CB                  +                 345,359.03              345,359.03            
+           4311003000000Y  RM VOSTRO ACCOUNTS OF IB                  +             535,043,871.17          535,043,871.17            
+           4311081000000Y  RM VOSTRO ACCOUNTS OF FBI                 +             111,519,386.95          111,519,386.95            
+           4312002000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH CB      +                       0.00                    0.00            
+           4312003000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH IB      +                       0.00                    0.00            
+           4313000000000Y  RM DEFICIT IN SPICK                       +              75,030,915.67           75,030,915.67            
+           4313002000000Y  RM AMOUNT BORROWING FROM SPICK POOL CB    +                       0.00                    0.00            
+           4313003000000Y  RM AMOUNT BORROWING FROM SPICK POOL IB    +                       0.00                    0.00            
+           4314001000000Y  RM INTERBANK BORROWINGS FROM BNM          +                       0.00                    0.00            
+           4314002000000Y  RM INTERBANK BORROWINGS FROM CB           +           1,405,000,000.00        1,405,000,000.00            
+           4314003000000Y  RM INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00            
+           4314011000000Y  RM INTERBANK BORROWINGS FROM FC           +                       0.00                    0.00            
+           4314012000000Y  RM INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00            
+           4314013000000Y  RM INTERBANK BORROWINGS FROM DH           +                       0.00                    0.00            
+           4314017000000Y  O/W RM IBB FROM CAGAMAS           0.00    +                       0.00                    0.00            
+           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +                       0.00                    0.00            
+           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +             160,000,000.00          160,000,000.00            
+           4410000000000Y  RM MISC BORROWINGS                        +          10,198,026,952.23       10,198,026,952.23            
+           4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              57,341,730.89           57,341,730.89            
+           4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  29,372.26               29,372.26            
+           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00            
+           4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       3.68                    3.68            
+           4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              41,610,929.73           41,610,929.73            
+           4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     862.20                  862.20            
+           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           4,998,010,114.90        4,998,010,114.90            
+           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00            
+           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00            
+           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -           5,200,016,837.33        5,200,016,837.33            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR A-RMEL                                                    321,591,773,141.29      321,591,773,141.29            
+                                                                         ------------------------------------------------            
+  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00            
+           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00            
+           3213002000000Y  RM FIXED DEPOSITS PLACED WITH CB          +                       0.00                    0.00            
+           3213011000000Y  RM FIXED DEPOSITS PLACED WITH FC          +                       0.00                    0.00            
+           3213012000000Y  RM FIXED DEPOSITS PLACED WITH MB          +                       0.00                    0.00            
+           3213013000000Y  RM FIXED DEPOSITS PLACED WITH DH          +                       0.00                    0.00            
+           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00            
+           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00            
+           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYG                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  B-RMEA   3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00            
+           3213113000000Y  RM SPECIAL INV DEP PLACED WITH DH         +                       0.00                    0.00            
+           3213202000000Y  RM GEN INVESTMENT DEP PLACED WITH CB      +                       0.00                    0.00            
+           3213203000000Y  RM GEN INVESTMENT DEP PLACED WITH IB      +                       0.00                    0.00            
+           3213211000000Y  RM GEN INVESTMENT DEP PLACED WITH FC      +                       0.00                    0.00            
+           3213212000000Y  RM GEN INVESTMENT DEP PLACED WITH MB      +                       0.00                    0.00            
+           3213213000000Y  RM GEN INVESTMENT DEP PLACED WITH DH      +                       0.00                    0.00            
+           3219910000000Y  RM OTHER DEPOSITS PLACED WITH DBI         +                       0.00                    0.00            
+           3250001000000Y  RM REVERSE REPOS WITH BNM                 +                       0.00                    0.00            
+           3250002000000Y  RM REVERSE REPOS WITH CB                  +                       0.00                    0.00            
+           3250011000000Y  RM REVERSE REPOS WITH FC                  +                       0.00                    0.00            
+           3250012000000Y  RM REVERSE REPOS WITH MB                  +                       0.00                    0.00            
+           3250013000000Y  RM REVERSE REPOS WITH DH                  +                       0.00                    0.00            
+           3311002000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF CB        +                       0.00                    0.00            
+           3311003000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF IB        +                       0.00                    0.00            
+           3312002000000Y  RM NOSTRO ACCOUNT BALANCES WITH CB        +                       0.00                    0.00            
+           3312003000000Y  RM NOSTRO ACCOUNT BALANCES WITH IB        +                       0.00                    0.00            
+           3313000000000Y  RM SURPLUS IN SPICK                       +                       0.00                    0.00            
+           3314001000000Y  RM INTERBANK PLACEMENTS WITH BNM          +                       0.00                    0.00            
+           3314002000000Y  RM INTERBANK PLACEMENTS WITH CB           +           2,440,000,000.00        2,440,000,000.00            
+           3314003000000Y  RM INTERBANK PLACEMENTS WITH IB           +           1,000,000,000.00        1,000,000,000.00            
+           3314011000000Y  RM INTERBANK PLACEMENTS WITH FC           +                       0.00                    0.00            
+           3314012000000Y  RM INTERBANK PLACEMENTS WITH MB           +             560,000,000.00          560,000,000.00            
+           3314013000000Y  RM INTERBANK PLACEMENTS WITH DH           +                       0.00                    0.00            
+           3314017000000Y  RM INTERBANK PLACEMENTS WITH CAGAMAS      +              45,000,000.00           45,000,000.00            
+           3410002000000Y  RM LOANS TO CB                            +                       0.00                    0.00            
+           3410003000000Y  RM LOANS TO IB                            +                       0.00                    0.00            
+           3410011000000Y  RM LOANS TO FC                            +                       0.00                    0.00            
+           3410012000000Y  RM LOANS TO MB                            +                       0.00                    0.00            
+           3410013000000Y  RM LOANS TO DH                            +                       0.00                    0.00            
+           3410017000000Y  RM LOANS TO CAGAMAS                       +                       0.00                    0.00            
+           3703000000000Y  RM NIDS HELD                              +           1,145,601,927.34        1,145,601,927.34            
+           3803000000000Y  NIDS SOLD UNDER REPO                      +                       0.00                    0.00            
+           4015000000000Y  ELIGIBLE CAGAMAS TIER-2 BONDS (DAY I)     +                       0.00                    0.00            
+           3314013110000Y  RM INTERBKS PLACEMENTS WITH DH OVRNIGHT   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                      5,190,601,927.34        5,190,601,927.34            
+                                                                         ------------------------------------------------            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYG                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,246,263,058.32       35,246,263,058.32            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +         281,154,908,155.63      281,154,908,155.63            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYH                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  A-RMEL   4211000000000Y  RM DEMAND DEPOSITS ACCEPTED               +                       0.00                    0.00            
+           4212000000000Y  RM SAVINGS DEPOSITS ACCEPTED              +                       0.00                    0.00            
+           4213000000000Y  RM FIXED DEPOSITS ACCEPTED                +                       0.00                    0.00            
+           4213100000000Y  RM SPECIAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213200000000Y  RM GENERAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213300000000Y  RM COMMODITY MURABAHAH                    +                       0.00                    0.00            
+           4215000000000Y  RM NID ISSUED                             +                       0.00                    0.00            
+           4216000000000Y  RM REPURCHASE AGREEMENTS                  +                       0.00                    0.00            
+           4217071000000Y  RM SPECIAL DEPOSITS                       +                       0.00                    0.00            
+           4218000000000Y  RM HOUSING DEVELOPMENT ACCOUNTS           +                       0.00                    0.00            
+           4219000000000Y  RM SHORT TERM DEPOSIT ACCEPTED            +                       0.00                    0.00            
+           4219100000000Y  RM INVESTMENT LINKED TO DERIVATIVES       +                       0.00                    0.00            
+           4219900000000Y  RM OTHER DEPOSITS ACCEPTED                +                       0.00                    0.00            
+           4310000000000Y  RM AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00            
+           4311002000000Y  RM VOSTRO ACCOUNTS OF CB                  +                       0.00                    0.00            
+           4311003000000Y  RM VOSTRO ACCOUNTS OF IB                  +                       0.00                    0.00            
+           4311081000000Y  RM VOSTRO ACCOUNTS OF FBI                 +                       0.00                    0.00            
+           4312002000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH CB      +                       0.00                    0.00            
+           4312003000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH IB      +                       0.00                    0.00            
+           4313000000000Y  RM DEFICIT IN SPICK                       +                       0.00                    0.00            
+           4313002000000Y  RM AMOUNT BORROWING FROM SPICK POOL CB    +                       0.00                    0.00            
+           4313003000000Y  RM AMOUNT BORROWING FROM SPICK POOL IB    +                       0.00                    0.00            
+           4314001000000Y  RM INTERBANK BORROWINGS FROM BNM          +                       0.00                    0.00            
+           4314002000000Y  RM INTERBANK BORROWINGS FROM CB           +                       0.00                    0.00            
+           4314003000000Y  RM INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00            
+           4314011000000Y  RM INTERBANK BORROWINGS FROM FC           +                       0.00                    0.00            
+           4314012000000Y  RM INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00            
+           4314013000000Y  RM INTERBANK BORROWINGS FROM DH           +                       0.00                    0.00            
+           4314017000000Y  O/W RM IBB FROM CAGAMAS           0.00    +                       0.00                    0.00            
+           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +                       0.00                    0.00            
+           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +                       0.00                    0.00            
+           4410000000000Y  RM MISC BORROWINGS                        +                       0.00                    0.00            
+           4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +                       0.00                    0.00            
+           4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                       0.00                    0.00            
+           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00            
+           4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       0.00                    0.00            
+           4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +                       0.00                    0.00            
+           4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                       0.00                    0.00            
+           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -                       0.00                    0.00            
+           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00            
+           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00            
+           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR A-RMEL                                                                  0.00                    0.00            
+                                                                         ------------------------------------------------            
+  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00            
+           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00            
+           3213002000000Y  RM FIXED DEPOSITS PLACED WITH CB          +                       0.00                    0.00            
+           3213011000000Y  RM FIXED DEPOSITS PLACED WITH FC          +                       0.00                    0.00            
+           3213012000000Y  RM FIXED DEPOSITS PLACED WITH MB          +                       0.00                    0.00            
+           3213013000000Y  RM FIXED DEPOSITS PLACED WITH DH          +                       0.00                    0.00            
+           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00            
+           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00            
+           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYH                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  B-RMEA   3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00            
+           3213113000000Y  RM SPECIAL INV DEP PLACED WITH DH         +                       0.00                    0.00            
+           3213202000000Y  RM GEN INVESTMENT DEP PLACED WITH CB      +                       0.00                    0.00            
+           3213203000000Y  RM GEN INVESTMENT DEP PLACED WITH IB      +                       0.00                    0.00            
+           3213211000000Y  RM GEN INVESTMENT DEP PLACED WITH FC      +                       0.00                    0.00            
+           3213212000000Y  RM GEN INVESTMENT DEP PLACED WITH MB      +                       0.00                    0.00            
+           3213213000000Y  RM GEN INVESTMENT DEP PLACED WITH DH      +                       0.00                    0.00            
+           3219910000000Y  RM OTHER DEPOSITS PLACED WITH DBI         +                       0.00                    0.00            
+           3250001000000Y  RM REVERSE REPOS WITH BNM                 +                       0.00                    0.00            
+           3250002000000Y  RM REVERSE REPOS WITH CB                  +                       0.00                    0.00            
+           3250011000000Y  RM REVERSE REPOS WITH FC                  +                       0.00                    0.00            
+           3250012000000Y  RM REVERSE REPOS WITH MB                  +                       0.00                    0.00            
+           3250013000000Y  RM REVERSE REPOS WITH DH                  +                       0.00                    0.00            
+           3311002000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF CB        +                       0.00                    0.00            
+           3311003000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF IB        +                       0.00                    0.00            
+           3312002000000Y  RM NOSTRO ACCOUNT BALANCES WITH CB        +                       0.00                    0.00            
+           3312003000000Y  RM NOSTRO ACCOUNT BALANCES WITH IB        +                       0.00                    0.00            
+           3313000000000Y  RM SURPLUS IN SPICK                       +                       0.00                    0.00            
+           3314001000000Y  RM INTERBANK PLACEMENTS WITH BNM          +                       0.00                    0.00            
+           3314002000000Y  RM INTERBANK PLACEMENTS WITH CB           +                       0.00                    0.00            
+           3314003000000Y  RM INTERBANK PLACEMENTS WITH IB           +                       0.00                    0.00            
+           3314011000000Y  RM INTERBANK PLACEMENTS WITH FC           +                       0.00                    0.00            
+           3314012000000Y  RM INTERBANK PLACEMENTS WITH MB           +                       0.00                    0.00            
+           3314013000000Y  RM INTERBANK PLACEMENTS WITH DH           +                       0.00                    0.00            
+           3314017000000Y  RM INTERBANK PLACEMENTS WITH CAGAMAS      +                       0.00                    0.00            
+           3410002000000Y  RM LOANS TO CB                            +                       0.00                    0.00            
+           3410003000000Y  RM LOANS TO IB                            +                       0.00                    0.00            
+           3410011000000Y  RM LOANS TO FC                            +                       0.00                    0.00            
+           3410012000000Y  RM LOANS TO MB                            +                       0.00                    0.00            
+           3410013000000Y  RM LOANS TO DH                            +                       0.00                    0.00            
+           3410017000000Y  RM LOANS TO CAGAMAS                       +                       0.00                    0.00            
+           3703000000000Y  RM NIDS HELD                              +                       0.00                    0.00            
+           3803000000000Y  NIDS SOLD UNDER REPO                      +                       0.00                    0.00            
+           4015000000000Y  ELIGIBLE CAGAMAS TIER-2 BONDS (DAY I)     +                       0.00                    0.00            
+           3314013110000Y  RM INTERBKS PLACEMENTS WITH DH OVRNIGHT   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                                  0.00                    0.00            
+                                                                         ------------------------------------------------            
+PUBLIC BANK BERHAD                                                                                                                   
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYH                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -                       0.00                    0.00            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +                       0.00                    0.00            
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYI                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  A-RMEL   4211000000000Y  RM DEMAND DEPOSITS ACCEPTED               +          57,330,669,143.13       57,330,669,143.13            
+           4212000000000Y  RM SAVINGS DEPOSITS ACCEPTED              +          34,705,524,193.85       34,705,524,193.85            
+           4213000000000Y  RM FIXED DEPOSITS ACCEPTED                +         153,806,357,090.17      153,806,357,090.17            
+           4213100000000Y  RM SPECIAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213200000000Y  RM GENERAL INVESTMENT DEPOSIT ACCEPTED    +                       0.00                    0.00            
+           4213300000000Y  RM COMMODITY MURABAHAH                    +                       0.00                    0.00            
+           4215000000000Y  RM NID ISSUED                             +             700,000,000.00          700,000,000.00            
+           4216000000000Y  RM REPURCHASE AGREEMENTS                  +          10,896,069,077.83       10,896,069,077.83            
+           4217071000000Y  RM SPECIAL DEPOSITS                       +                       0.00                    0.00            
+           4218000000000Y  RM HOUSING DEVELOPMENT ACCOUNTS           +           1,705,026,086.25        1,705,026,086.25            
+           4219000000000Y  RM SHORT TERM DEPOSIT ACCEPTED            +          59,507,037,035.36       59,507,037,035.36            
+           4219100000000Y  RM INVESTMENT LINKED TO DERIVATIVES       +             377,998,839.00          377,998,839.00            
+           4219900000000Y  RM OTHER DEPOSITS ACCEPTED                +              37,145,683.09           37,145,683.09            
+           4310000000000Y  RM AMOUNT DUE TO DESIGNATED FI            +                       0.00                    0.00            
+           4311002000000Y  RM VOSTRO ACCOUNTS OF CB                  +                 345,359.03              345,359.03            
+           4311003000000Y  RM VOSTRO ACCOUNTS OF IB                  +             537,324,536.39          537,324,536.39            
+           4311081000000Y  RM VOSTRO ACCOUNTS OF FBI                 +             111,519,386.95          111,519,386.95            
+           4312002000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH CB      +                       0.00                    0.00            
+           4312003000000Y  RM OVERDRAWN NOSTRO ACCOUNTS WITH IB      +                       0.00                    0.00            
+           4313000000000Y  RM DEFICIT IN SPICK                       +              75,030,915.67           75,030,915.67            
+           4313002000000Y  RM AMOUNT BORROWING FROM SPICK POOL CB    +                       0.00                    0.00            
+           4313003000000Y  RM AMOUNT BORROWING FROM SPICK POOL IB    +                       0.00                    0.00            
+           4314001000000Y  RM INTERBANK BORROWINGS FROM BNM          +                       0.00                    0.00            
+           4314002000000Y  RM INTERBANK BORROWINGS FROM CB           +           1,405,000,000.00        1,405,000,000.00            
+           4314003000000Y  RM INTERBANK BORROWINGS FROM IB           +                       0.00                    0.00            
+           4314011000000Y  RM INTERBANK BORROWINGS FROM FC           +                       0.00                    0.00            
+           4314012000000Y  RM INTERBANK BORROWINGS FROM MB           +                       0.00                    0.00            
+           4314013000000Y  RM INTERBANK BORROWINGS FROM DH           +                       0.00                    0.00            
+           4314017000000Y  O/W RM IBB FROM CAGAMAS           0.00    +                       0.00                    0.00            
+           4314020000000Y  RM INTERBANK BORROWINGS FROM DNBFI        +                       0.00                    0.00            
+           4314081100000Y  RM INTERBANK BORROWINGS FROM FBI <= 1 YR  +             160,000,000.00          160,000,000.00            
+           4410000000000Y  RM MISC BORROWINGS                        +          10,198,026,952.23       10,198,026,952.23            
+           4911080000000Y  RM INTEREST PAYABLE TO NON-RESIDENTS      +              58,665,661.31           58,665,661.31            
+           4911095000000Y  RM INTEREST PAYABLE TO NON-RES - DCI/CRA  +                  30,061.11               30,061.11            
+           4912080000000Y  RM BILLS PAYABLE TO NON-RESIDENTS         +                       0.00                    0.00            
+           4929980000000Y  OTHER RM MISC LIAB NIE DUE TO NON-RES     +                       3.68                    3.68            
+           4929995000000Y  RM GOLD INVESTMENT FROM NON-RESIDENTS     +              41,639,797.08           41,639,797.08            
+           4929996000000Y  OTHR RM MISC LIAB NIE DUE TO NON-RES-DCI  +                     862.20                  862.20            
+           4411100000000Y  RM SUBORDINATED DEBT CAPITAL              -           4,998,010,114.90        4,998,010,114.90            
+           4411200000000Y  RM EXEMPT SUBORDINATED DEBT CAPITAL       -                       0.00                    0.00            
+           4411300000000Y  RM SUBORDIN DEBT CAPITAL W APPR FR BNM    -                       0.00                    0.00            
+           4414000000000Y  RM RESOURCE OBLIQ ON LN SOLD TO CAGAMAS   -           5,200,016,837.33        5,200,016,837.33            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR A-RMEL                                                    321,455,383,732.10      321,455,383,732.10            
+                                                                         ------------------------------------------------            
+  B-RMEA   3212002000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH CB   +                       0.00                    0.00            
+           3212003000000Y  RM BALANCES IN CURRENT ACCOUNTS WITH IB   +                       0.00                    0.00            
+           3213002000000Y  RM FIXED DEPOSITS PLACED WITH CB          +                       0.00                    0.00            
+           3213011000000Y  RM FIXED DEPOSITS PLACED WITH FC          +                       0.00                    0.00            
+           3213012000000Y  RM FIXED DEPOSITS PLACED WITH MB          +                       0.00                    0.00            
+           3213013000000Y  RM FIXED DEPOSITS PLACED WITH DH          +                       0.00                    0.00            
+           3213102000000Y  RM SPECIAL INV DEP PLACED WITH CB         +                       0.00                    0.00            
+           3213103000000Y  RM SPECIAL INV DEP PLACED WITH IB         +                       0.00                    0.00            
+           3213111000000Y  RM SPECIAL INV DEP PLACED WITH FC         +                       0.00                    0.00            
+           3213112000000Y  RM SPECIAL INV DEP PLACED WITH MB         +                       0.00                    0.00            
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYI                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+  FMTNAME  BNMCODE         DESC                                      SIGN                  AMOUNT                   TOTAL            
+  -----------------------------------------------------------------------------------------------------------------------            
+  B-RMEA   3213113000000Y  RM SPECIAL INV DEP PLACED WITH DH         +                       0.00                    0.00            
+           3213202000000Y  RM GEN INVESTMENT DEP PLACED WITH CB      +                       0.00                    0.00            
+           3213203000000Y  RM GEN INVESTMENT DEP PLACED WITH IB      +                       0.00                    0.00            
+           3213211000000Y  RM GEN INVESTMENT DEP PLACED WITH FC      +                       0.00                    0.00            
+           3213212000000Y  RM GEN INVESTMENT DEP PLACED WITH MB      +                       0.00                    0.00            
+           3213213000000Y  RM GEN INVESTMENT DEP PLACED WITH DH      +                       0.00                    0.00            
+           3219910000000Y  RM OTHER DEPOSITS PLACED WITH DBI         +                       0.00                    0.00            
+           3250001000000Y  RM REVERSE REPOS WITH BNM                 +                       0.00                    0.00            
+           3250002000000Y  RM REVERSE REPOS WITH CB                  +                       0.00                    0.00            
+           3250011000000Y  RM REVERSE REPOS WITH FC                  +                       0.00                    0.00            
+           3250012000000Y  RM REVERSE REPOS WITH MB                  +                       0.00                    0.00            
+           3250013000000Y  RM REVERSE REPOS WITH DH                  +                       0.00                    0.00            
+           3311002000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF CB        +                       0.00                    0.00            
+           3311003000000Y  RM OVERDRAWN VOSTRO ACCOUNTS OF IB        +                       0.00                    0.00            
+           3312002000000Y  RM NOSTRO ACCOUNT BALANCES WITH CB        +                       0.00                    0.00            
+           3312003000000Y  RM NOSTRO ACCOUNT BALANCES WITH IB        +                       0.00                    0.00            
+           3313000000000Y  RM SURPLUS IN SPICK                       +                       0.00                    0.00            
+           3314001000000Y  RM INTERBANK PLACEMENTS WITH BNM          +                       0.00                    0.00            
+           3314002000000Y  RM INTERBANK PLACEMENTS WITH CB           +           2,440,000,000.00        2,440,000,000.00            
+           3314003000000Y  RM INTERBANK PLACEMENTS WITH IB           +           1,000,000,000.00        1,000,000,000.00            
+           3314011000000Y  RM INTERBANK PLACEMENTS WITH FC           +                       0.00                    0.00            
+           3314012000000Y  RM INTERBANK PLACEMENTS WITH MB           +             560,000,000.00          560,000,000.00            
+           3314013000000Y  RM INTERBANK PLACEMENTS WITH DH           +                       0.00                    0.00            
+           3314017000000Y  RM INTERBANK PLACEMENTS WITH CAGAMAS      +              45,000,000.00           45,000,000.00            
+           3410002000000Y  RM LOANS TO CB                            +                       0.00                    0.00            
+           3410003000000Y  RM LOANS TO IB                            +                       0.00                    0.00            
+           3410011000000Y  RM LOANS TO FC                            +                       0.00                    0.00            
+           3410012000000Y  RM LOANS TO MB                            +                       0.00                    0.00            
+           3410013000000Y  RM LOANS TO DH                            +                       0.00                    0.00            
+           3410017000000Y  RM LOANS TO CAGAMAS                       +                       0.00                    0.00            
+           3703000000000Y  RM NIDS HELD                              +           1,145,732,584.56        1,145,732,584.56            
+           3803000000000Y  NIDS SOLD UNDER REPO                      +                       0.00                    0.00            
+           4015000000000Y  ELIGIBLE CAGAMAS TIER-2 BONDS (DAY I)     +                       0.00                    0.00            
+           3314013110000Y  RM INTERBKS PLACEMENTS WITH DH OVRNIGHT   -                       0.00                    0.00            
+  -----------------------------------------------------------------------------------------------------------------------            
+           TOTAL FOR B-RMEA                                                      5,190,732,584.56        5,190,732,584.56            
+                                                                         ------------------------------------------------            
+DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR :  DAYI                                                                                  
+REPORT DATE :  08/08/26                                                                                                              
+                                                                                                                                     
+                                                                                                                                     
+                                                                                                                                     
+  C-RMET   4014000000000Y  ELIGIBLE TIER 2 LOANS SOLD TO CAGAMAS     +                       0.00                    0.00            
+  D-RMMS   4017100000000Y  TOTAL RM MARKETABLE SECURITIES            -          35,246,263,058.32       35,246,263,058.32            
+  E-ELSRR  4013000000000Y  ELIGIBLE LIABILITIES FOR SRR NEXT MONTH   +         281,018,388,089.22      281,018,388,089.22            
+PUBLIC BANK BERHAD -REPORT DATE  08/08/26                                                                                            
+SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK                                                                        
+(DAILY KAPITI STOCK REPORT) WEEK 1    August   2026                                                                                  
+                                                                                                                                     
+------------------------------------------------------------------------------------------------------------------------------------ 
+|                            |                                                ELDAY                                                | 
+|                            |-----------------------------------------------------------------------------------------------------| 
+|                            |      DAYA      |      DAYB      |      DAYC      |      DAYD      |      DAYE      |      DAYF      | 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|BNMCODE                     |                |                |                |                |                |                | 
+|----------------------------|                |                |                |                |                |                | 
+|3721000000000Y-MGS AFS      |7,708,662,462.00|7,708,662,462.00|7,789,617,462.00|7,730,083,362.00|7,730,083,362.00|7,740,747,162.00| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|3721000000000Y-MGS AFSLI    |5,866,112,880.40|5,866,112,880.40|5,866,112,880.40|5,866,112,880.40|5,866,112,880.40|5,918,554,680.40| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|3721000000000Y-MGS DLG      |  483,182,500.00|  483,182,500.00|  493,002,500.00|  514,148,500.00|  504,328,500.00|  494,293,500.00| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|3721000000000Y-MGS INV      |3,324,518,116.60|3,324,518,116.60|3,324,518,116.60|3,324,518,116.60|3,324,518,116.60|3,324,518,116.60| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|3722000000000Y-ITB AFS      |  231,830,158.62|  231,830,158.62|  231,830,158.62|  231,830,158.62|  231,830,158.62|  231,830,158.62| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|3722000000000Y-MTB DLG      |  196,991,780.80|  196,991,780.80|  196,991,780.80|  196,991,780.80|  196,991,780.80|  196,991,780.80| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|3723000000000Y-MGI AFS      |6,681,998,108.90|6,681,998,108.90|6,682,014,108.90|6,682,014,108.90|6,682,014,108.90|6,631,783,108.90| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|3723000000000Y-MGI AFSLI    |5,831,925,497.60|5,831,925,497.60|5,831,925,497.60|5,982,160,997.60|5,982,160,997.60|5,982,160,997.60| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|3723000000000Y-MGI DLG      |1,265,506,110.20|1,265,506,110.20|1,245,255,610.20|1,143,965,110.20|1,133,910,110.20|1,054,041,110.20| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|3723000000000Y-MGI INV      |3,422,899,124.00|3,422,899,124.00|3,422,899,124.00|3,422,899,124.00|3,524,183,124.00|3,524,183,124.00| 
+|----------------------------+----------------+----------------+----------------+----------------+----------------+----------------| 
+|TOTAL RM MARKETABLE         |                |                |                |                |                |                | 
+|SECURITIES                  |  35013626739.12|  35013626739.12|  35084167239.12|  35094724139.12|  35176133139.12|  35099103739.12| 
+------------------------------------------------------------------------------------------------------------------------------------ 
+                                                                                                                                     
+(Continued)                                                                                                                          
+PUBLIC BANK BERHAD -REPORT DATE  08/08/26                                                                                            
+SPECIFIED & NON-SPECIFIED RENTAS SECURITIES FROM TRADING BOOK                                                                        
+(DAILY KAPITI STOCK REPORT) WEEK 1    August   2026                                                                                  
+                                                                                                                                     
+----------------------------------------------------------------                                                                     
+|                            |              ELDAY              |                                                                     
+|                            |---------------------------------|                                                                     
+|                            |      DAYG      |      DAYI      |                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|BNMCODE                     |                |                |                                                                     
+|----------------------------|                |                |                                                                     
+|3721000000000Y-MGS AFS      |7,801,362,162.00|7,801,362,162.00|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|3721000000000Y-MGS AFSLI    |6,231,782,680.40|6,231,782,680.40|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|3721000000000Y-MGS DLG      |  413,975,500.00|  413,975,500.00|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|3721000000000Y-MGS INV      |3,324,518,116.60|3,324,518,116.60|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|3722000000000Y-ITB AFS      |  231,830,158.62|  231,830,158.62|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|3722000000000Y-MTB DLG      |               0|               0|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|3723000000000Y-MGI AFS      |6,631,783,108.90|6,631,783,108.90|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|3723000000000Y-MGI AFSLI    |6,032,787,097.60|6,032,787,097.60|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|3723000000000Y-MGI DLG      |1,054,041,110.20|1,054,041,110.20|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|3723000000000Y-MGI INV      |3,524,183,124.00|3,524,183,124.00|                                                                     
+|----------------------------+----------------+----------------|                                                                     
+|TOTAL RM MARKETABLE         |                |                |                                                                     
+|SECURITIES                  |  35246263058.32|  35246263058.32|                                                                     
+----------------------------------------------------------------                                                                     
+VARIANCE BETWEEN KAPITI AND WALKER                                                                                                   
+                                                                                                                                     
+-----------------------------------------------------------------------------------------------------------------------              
+|                                |                                       ELDAY                                        |              
+|                                |------------------------------------------------------------------------------------|              
+|                                |                       DAYA                       |              DAYB               |              
+|                                |--------------------------------------------------+---------------------------------|              
+|                                |     KAPITI     |     WALKER     |    VARIANCE    |     KAPITI     |     WALKER     |              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|BNMCODE                         |                |                |                |                |                |              
+|--------------------------------|                |                |                |                |                |              
+|3721000000000Y                  |  17382475959.00|  23673695252.83|  -6291219293.83|  17382475959.00|  23676048215.95|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|3722000000000Y                  |  428,821,939.42|  431,522,318.32|   -2,700,378.90|  428,821,939.42|  431,522,318.33|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|3723000000000Y                  |  17202328840.70|  22689111824.39|  -5486782983.69|  17202328840.70|  22691404125.96|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|TOTAL                           |  35013626739.12|  46794329395.54| -11780702656.42|  35013626739.12|  46798974660.24|              
+-----------------------------------------------------------------------------------------------------------------------              
+                                                                                                                                     
+(Continued)                                                                                                                          
+VARIANCE BETWEEN KAPITI AND WALKER                                                                                                   
+                                                                                                                                     
+-----------------------------------------------------------------------------------------------------------------------              
+|                                |                                       ELDAY                                        |              
+|                                |------------------------------------------------------------------------------------|              
+|                                |      DAYB      |                       DAYC                       |      DAYD      |              
+|                                |----------------+--------------------------------------------------+----------------|              
+|                                |    VARIANCE    |     KAPITI     |     WALKER     |    VARIANCE    |     KAPITI     |              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|BNMCODE                         |                |                |                |                |                |              
+|--------------------------------|                |                |                |                |                |              
+|3721000000000Y                  |  -6293572256.95|  17473250959.00|  23762671811.47|  -6289420852.47|  17434862859.00|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|3722000000000Y                  |   -2,700,378.91|  428,821,939.42|  431,559,283.42|   -2,737,344.00|  428,821,939.42|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|3723000000000Y                  |  -5489075285.26|  17182094340.70|  22669972356.19|  -5487878015.49|  17231039340.70|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|TOTAL                           | -11785347921.12|  35084167239.12|  46864203451.08| -11780036211.96|  35094724139.12|              
+-----------------------------------------------------------------------------------------------------------------------              
+                                                                                                                                     
+(Continued)                                                                                                                          
+VARIANCE BETWEEN KAPITI AND WALKER                                                                                                   
+                                                                                                                                     
+-----------------------------------------------------------------------------------------------------------------------              
+|                                |                                       ELDAY                                        |              
+|                                |------------------------------------------------------------------------------------|              
+|                                |              DAYD               |                       DAYE                       |              
+|                                |---------------------------------+--------------------------------------------------|              
+|                                |     WALKER     |    VARIANCE    |     KAPITI     |     WALKER     |    VARIANCE    |              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|BNMCODE                         |                |                |                |                |                |              
+|--------------------------------|                |                |                |                |                |              
+|3721000000000Y                  |  23779135581.87|  -6344272722.87|  17425042859.00|  23770410678.29|  -6345367819.29|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|3722000000000Y                  |  431,601,960.60|   -2,780,021.18|  428,821,939.42|  431,656,543.28|   -2,834,603.86|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|3723000000000Y                  |  22562252344.54|  -5331213003.84|  17322268340.70|  22657758124.13|  -5335489783.43|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|TOTAL                           |  46772989887.01| -11678265747.89|  35176133139.12|  46859825345.70| -11683692206.58|              
+-----------------------------------------------------------------------------------------------------------------------              
+                                                                                                                                     
+(Continued)                                                                                                                          
+VARIANCE BETWEEN KAPITI AND WALKER                                                                                                   
+                                                                                                                                     
+-----------------------------------------------------------------------------------------------------------------------              
+|                                |                                       ELDAY                                        |              
+|                                |------------------------------------------------------------------------------------|              
+|                                |                       DAYF                       |              DAYG               |              
+|                                |--------------------------------------------------+---------------------------------|              
+|                                |     KAPITI     |     WALKER     |    VARIANCE    |     KAPITI     |     WALKER     |              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|BNMCODE                         |                |                |                |                |                |              
+|--------------------------------|                |                |                |                |                |              
+|3721000000000Y                  |  17478113459.00|  23817130335.02|  -6339016876.02|  17771638459.00|  23799883508.34|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|3722000000000Y                  |  428,821,939.42|  431,703,765.94|   -2,881,826.52|  231,830,158.62|  234,295,077.23|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|3723000000000Y                  |  17192168340.70|  22580975875.60|  -5388807534.90|  17242794440.70|  22632844432.05|              
+|--------------------------------+----------------+----------------+----------------+----------------+----------------|              
+|TOTAL                           |  35099103739.12|  46829809976.56| -11730706237.44|  35246263058.32|  46667023017.62|              
+-----------------------------------------------------------------------------------------------------------------------              
+                                                                                                                                     
+(Continued)                                                                                                                          
+VARIANCE BETWEEN KAPITI AND WALKER                                                                                                   
+                                                                                                                                     
+------------------------------------------------------------------------------------------------------                               
+|                                |                               ELDAY                               |                               
+|                                |-------------------------------------------------------------------|                               
+|                                |      DAYG      |                       DAYI                       |                               
+|                                |----------------+--------------------------------------------------|                               
+|                                |    VARIANCE    |     KAPITI     |     WALKER     |    VARIANCE    |                               
+|--------------------------------+----------------+----------------+----------------+----------------|                               
+|BNMCODE                         |                |                |                |                |                               
+|--------------------------------|                |                |                |                |                               
+|3721000000000Y                  |  -6028245049.34|  17771638459.00|  23802253135.67|  -6030614676.67|                               
+|--------------------------------+----------------+----------------+----------------+----------------|                               
+|3722000000000Y                  |   -2,464,918.61|  231,830,158.62|  234,295,077.23|   -2,464,918.61|                               
+|--------------------------------+----------------+----------------+----------------+----------------|                               
+|3723000000000Y                  |  -5390049991.35|  17242794440.70|  22636679845.90|  -5393885405.20|                               
+|--------------------------------+----------------+----------------+----------------+----------------|                               
+|TOTAL                           | -11420759959.30|  35246263058.32|  46673228058.80| -11426965000.48|                               
+------------------------------------------------------------------------------------------------------                               
