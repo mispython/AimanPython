@@ -1,592 +1,406 @@
 #!/usr/bin/env python3
 """
-Program             : DALWPBBD
-Invoke by program   : EIBWEEK1-3
-PBB deposit manipulation extracted from SAP.PBB.MNITB
+Program : DALWPBBD.py
+Function: PBB deposit manipulation extracted from SAP.PBB.MNITB
+          (SAVING and CURRENT accounts) — invoked by weekly BNM
+          reporting jobs (e.g. EIIWREXL) via %INC PGM(DALWPBBD).
 
-This program manipulates the extracted savings and current accounts database.
-It applies formatting to codes, filters records based on account status and balance,
-    and performs branch-level summarization.
+Original : DALWPBBD (invoked by job EIBWEEK1-3)
+
+Dependency (format library):
+    %INC PGM(PBBDPFMT);  -> already converted as PBBDPFMT.py
+    from PBBDPFMT import (statecd_format, saprod_format, sadenom_format,
+                           sacustcd_format, caprod_format, cadenom_format,
+                           ddcustcd_format, ACE_PRODUCTS)
+
+============================================================================
+PHYSICAL INPUT DATASETS USED BY THIS PROGRAM  (all .sas7bdat, cached to
+Parquet on first read per EIBDLN1M.py's chunked-conversion pattern)
+============================================================================
+1. DEPOSIT.SAVING  (SAP.PBB.MNITB savings extract)
+   File     : sa<mmwyy>.sas7bdat  (weekly, e.g. sa07226 — filename
+              convention assumed per project convention; unconfirmed)
+   Path     : INPUT_SAVING_DIR, resolved via input_date.get_latest_file()
+   Used in  : Step 2 - build BNM_SAVG (CUSTCD/STATECD/PRODCD/AMTIND
+              formats applied; filtered OPENIND NOT IN ('B','C','P')
+              AND CURBAL >= 0)
+
+2. DEPOSIT.CURRENT  (SAP.PBB.MNITB current extract)
+   File     : ca<mmwyy>.sas7bdat  (weekly — filename convention assumed;
+              unconfirmed)
+   Path     : INPUT_CURRENT_DIR, resolved via input_date.get_latest_file()
+   Used in  : Step 3 - build BNM_CURN / BNM_FCY (STATECD/PRODCD/AMTIND/
+              CUSTCD formats + ACE / FCY-range branching)
+
+3. CISDP.DEPOSIT  (CIS deposit customer-number extension — fixed
+   filename, no date token; same physical source used by EIBDLN1M.py)
+   File     : CISDP_deposit.sas7bdat
+   Path     : INPUT_CISDP_DIR
+   Used in  : Step 3 - left join onto BNM_FCY rows (BY ACCTNO, IF A) to
+              attach CUSTNO before appending FCY rows onto BNM_CURN
+
+------------------------------------------------------------------------
+NON-FILE / DERIVED / TEMPORARY OUTPUTS PRODUCED BY THIS PROGRAM
+------------------------------------------------------------------------
+This module is designed to be IMPORTED (module-level execution, mirroring
+SAS %INC PGM(DALWPBBD)) by downstream programs such as EIIWREXL.py. It
+produces the following in-memory/cached artefacts for their consumption —
+none of these are physical mainframe inputs, they are built here:
+
+- BNM_SAVG  (module-level polars DataFrame) : SAP.PBB.MNITB savings, BNM
+  library equivalent of BNM.SAVG&REPTMON&NOWK
+- BNM_CURN  (module-level polars DataFrame) : SAP.PBB.MNITB current +
+  appended FCY rows, equivalent of BNM.CURN&REPTMON&NOWK
+- BNM_DEPT  (module-level polars DataFrame) : branch-level PROC SUMMARY
+  rollup of SAVG + CURN, equivalent of BNM.DEPT&REPTMON&NOWK
+- SAVG<REPTMON><NOWK>.parquet / CURN<REPTMON><NOWK>.parquet /
+  DEPT<REPTMON><NOWK>.parquet, written under OUTPUT_CACHE_DIR — persisted
+  copies of the three DataFrames above so other programs in the same
+  pipeline can read them via read_parquet() without re-running this module.
+
+REPTDATE.py / no reptdate.parquet:
+  DEPOSIT.REPTDATE has no physical Parquet/SAS equivalent in this project;
+  REPTDATE is derived from REPTDATE.py's get_reptdate_values() (Step 0).
+  NOWK here replicates the SAS SELECT(DAY(REPTDATE)) EXACT-MATCH logic
+  (WHEN 8/15/22/OTHERWISE) — intentionally NOT the ranged NOWK returned
+  by get_reptdate_values(); this program only fires on exact cut-off days.
 """
 
-import duckdb
-import polars as pl
+import gc
 from pathlib import Path
-from typing import Optional, Dict, Tuple
-import logging
+
+import duckdb
+import pandas as pd
+import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+from PBBDPFMT import (
+    statecd_format,
+    saprod_format,
+    sadenom_format,
+    sacustcd_format,
+    caprod_format,
+    cadenom_format,
+    ddcustcd_format,
+    ACE_PRODUCTS,
+)
 
 # ============================================================================
-# CONFIGURATION AND SETUP
+# PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+INPUT_SAVING_DIR = BASE_DIR / "input" / "prod" / "DALWPBBD" / "saving"   # deposit_saving
+SAVING_PREFIX     = "sa"
 
-# Define paths
-BASE_PATH = Path(__file__).parent
-DATA_INPUT_PATH = BASE_PATH / "data" / "input"
-DATA_OUTPUT_PATH = BASE_PATH / "data" / "output"
+INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "DALWPBBD" / "current"  # deposit_current
+CURRENT_PREFIX     = "ca"
 
-# Ensure output directories exist
-DATA_OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+INPUT_CISDP_DIR = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"  # cisdp_deposit
 
-# Input parquet file paths
-DEPOSIT_SAVING_PATH = DATA_INPUT_PATH / "DEPOSIT_SAVING.parquet"
-DEPOSIT_CURRENT_PATH = DATA_INPUT_PATH / "DEPOSIT_CURRENT.parquet"
-CISDP_DEPOSIT_PATH = DATA_INPUT_PATH / "CISDP_DEPOSIT.parquet"
+# Parquet cache directory for the .sas7bdat -> Parquet conversion step
+CACHE_DIR = BASE_DIR / "cache" / "DALWPBBD"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Format mapping dictionaries (simulating SAS formats)
-# These would typically come from PBBDPFMT include
-SACUSTCD_FORMAT = {
-    '001': '01', '002': '02', '003': '03', '004': '04', '005': '05',
-    '010': '10', '020': '20', '030': '30', '040': '40', '050': '50',
-    '077': '77', '078': '78', '081': '81', '095': '95'
-}
+# Output cache directory — where BNM_SAVG/BNM_CURN/BNM_DEPT are persisted
+# for downstream programs (e.g. EIIWREXL.py) to read via read_parquet()
+OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
+OUTPUT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-STATECD_FORMAT = {
-    'A': '1', 'B': '2', 'C': '3', 'D': '4', 'E': '5', 'F': '6'
-}
-
-SAPROD_FORMAT = {
-    '100': '00100', '104': '00104', '105': '00105', '177': '00177',
-    '200': '00200', '300': '00300'
-}
-
-SADENOM_FORMAT = {
-    '100': 'A', '104': 'B', '105': 'C', '177': 'D',
-    '200': 'E', '300': 'F'
-}
-
-CAPROD_FORMAT = {
-    '104': '00104', '105': '00105', '400': '00400', '450': '00450'
-}
-
-CADENOM_FORMAT = {
-    '104': 'B', '105': 'C', '400': 'D', '450': 'E'
-}
-
-DDCUSTCD_FORMAT = {
-    '001': '01', '002': '02', '003': '03', '004': '04', '005': '05',
-    '010': '10', '020': '20', '030': '30', '040': '40', '050': '50'
-}
-
-# ACE Products (from PBBDPFMT)
-ACE_PRODUCTS = [177]
-
+CHUNK_ROWS = 500_000
 
 # ============================================================================
-# UTILITY FUNCTIONS
+# STEP 0: REPORT DATE / WEEK NUMBER  (DATA REPTDATE; SET DEPOSIT.REPTDATE;
+# SELECT(DAY(REPTDATE)) ...  — no physical file, see module docstring)
 # ============================================================================
+print("Step 0: Deriving report date / week number...")
 
-def apply_format(value: Optional[str], format_dict: Dict[str, str], default: str = '') -> str:
-    """Apply SAS format mapping to a value."""
-    if value is None:
-        return default
-    str_value = str(value).strip()
-    return format_dict.get(str_value, default)
+_reptdate_values = get_reptdate_values()
+REPTDATE = _reptdate_values.reptdate
 
+_day = REPTDATE.day
+if _day == 8:
+    NOWK = "1"
+elif _day == 15:
+    NOWK = "2"
+elif _day == 22:
+    NOWK = "3"
+else:
+    NOWK = "4"
 
-def safe_int(value) -> Optional[int]:
-    """Safely convert value to integer."""
-    try:
-        if value is None:
-            return None
-        return int(value)
-    except (ValueError, TypeError):
-        return None
+REPTMON = f"{REPTDATE.month:02d}"        # PUT(MONTH(REPTDATE),Z2.)
+
+print(f"  REPTDATE : {REPTDATE}")
+print(f"  REPTMON  : {REPTMON}")
+print(f"  NOWK     : {NOWK}")
+
+SAVG_CACHE = OUTPUT_CACHE_DIR / f"SAVG{REPTMON}{NOWK}.parquet"
+CURN_CACHE = OUTPUT_CACHE_DIR / f"CURN{REPTMON}{NOWK}.parquet"
+DEPT_CACHE = OUTPUT_CACHE_DIR / f"DEPT{REPTMON}{NOWK}.parquet"
 
 
 # ============================================================================
-# MAIN PROCESSING FUNCTIONS
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
+# (identical pattern to EIBDLN1M.py: freshness check via mtime, PyArrow
+# ParquetWriter with schema locked on first chunk)
 # ============================================================================
-
-def process_savings_data(
-        reptmon: str,
-        nowk: str
-) -> Tuple[Optional[pl.DataFrame], Dict[str, int]]:
-    """
-    Process savings account data.
-
-    Equivalent to:
-    DATA BNM.SAVG&REPTMON&NOWK &SAVG2;
-    """
-    logger.info(f"Processing savings data for REPTMON={reptmon}, NOWK={nowk}")
-
-    try:
-        # Read savings data using DuckDB
-        conn = duckdb.connect(':memory:')
-
-        # Load and process savings data
-        query = f"""
-        SELECT 
-            BRANCH,
-            PRODUCT,
-            OPENIND,
-            CUSTCODE,
-            NAME,
-            ACCTNO,
-            CURBAL,
-            INTPAYBL,
-            COSTCTR,
-            DNBFISME,
-            CURCODE
-        FROM read_parquet('{DEPOSIT_SAVING_PATH}')
-        WHERE OPENIND NOT IN ('B', 'C', 'P')
-        AND CURBAL >= 0
-        """
-
-        result = conn.execute(query).fetch_all()
-        conn.close()
-
-        if not result:
-            logger.warning("No savings data found after filtering")
-            return None, {'processed': 0}
-
-        # Convert to Polars DataFrame
-        df = pl.DataFrame(result, schema={
-            'BRANCH': pl.Utf8,
-            'PRODUCT': pl.Int32,
-            'OPENIND': pl.Utf8,
-            'CUSTCODE': pl.Utf8,
-            'NAME': pl.Utf8,
-            'ACCTNO': pl.Utf8,
-            'CURBAL': pl.Float64,
-            'INTPAYBL': pl.Float64,
-            'COSTCTR': pl.Utf8,
-            'DNBFISME': pl.Utf8,
-            'CURCODE': pl.Utf8
-        })
-
-        # Apply formatting transformations
-        df = df.with_columns([
-            pl.col('CUSTCODE').map_elements(
-                lambda x: apply_format(str(x), SACUSTCD_FORMAT),
-                return_dtype=pl.Utf8
-            ).alias('CUSTCD'),
-            pl.col('BRANCH').map_elements(
-                lambda x: apply_format(str(x), STATECD_FORMAT),
-                return_dtype=pl.Utf8
-            ).alias('STATECD'),
-            pl.col('PRODUCT').cast(pl.Utf8).map_elements(
-                lambda x: apply_format(x, SAPROD_FORMAT),
-                return_dtype=pl.Utf8
-            ).alias('PRODCD'),
-            pl.col('PRODUCT').cast(pl.Utf8).map_elements(
-                lambda x: apply_format(x, SADENOM_FORMAT),
-                return_dtype=pl.Utf8
-            ).alias('AMTIND')
-        ])
-
-        # Select final columns (SAVG2)
-        df = df.select([
-            'BRANCH', 'PRODUCT', 'CUSTCD', 'STATECD', 'PRODCD', 'NAME', 'ACCTNO',
-            'CURBAL', 'INTPAYBL', 'AMTIND', 'COSTCTR', 'DNBFISME', 'CURCODE'
-        ])
-
-        output_file = DATA_OUTPUT_PATH / f"SAVG_{reptmon}_{nowk}.txt"
-        df.write_csv(str(output_file), separator='\t')
-        logger.info(f"Savings data written to {output_file}")
-
-        return df, {'processed': len(df)}
-
-    except Exception as e:
-        logger.error(f"Error processing savings data: {e}")
-        return None, {'error': str(e)}
-
-
-def process_current_data(
-        reptmon: str,
-        nowk: str
-) -> Tuple[Optional[pl.DataFrame], Optional[pl.DataFrame], Dict[str, int]]:
-    """
-    Process current account data.
-    Splits output into CURN (current accounts) and FCY (foreign currency/facility).
-
-    Equivalent to:
-    DATA BNM.CURN&REPTMON&NOWK &CURN2
-         BNM.FCY&REPTMON&NOWK &CURN2;
-    """
-    logger.info(f"Processing current data for REPTMON={reptmon}, NOWK={nowk}")
-
-    try:
-        # Read current account data using DuckDB
-        conn = duckdb.connect(':memory:')
-
-        query = f"""
-        SELECT 
-            BRANCH,
-            PRODUCT,
-            OPENIND,
-            CUSTCODE,
-            NAME,
-            ACCTNO,
-            CURBAL,
-            INTPAYBL,
-            ODINTACC,
-            COSTCTR,
-            SECTOR,
-            DNBFISME,
-            CURCODE,
-            INTRATE,
-            BILLERIND
-        FROM read_parquet('{DEPOSIT_CURRENT_PATH}')
-        WHERE OPENIND NOT IN ('B', 'C', 'P')
-        AND CURBAL >= 0
-        """
-
-        result = conn.execute(query).fetch_all()
-        conn.close()
-
-        if not result:
-            logger.warning("No current data found after filtering")
-            return None, None, {'processed': 0}
-
-        # Convert to Polars DataFrame
-        df = pl.DataFrame(result, schema={
-            'BRANCH': pl.Utf8,
-            'PRODUCT': pl.Int32,
-            'OPENIND': pl.Utf8,
-            'CUSTCODE': pl.Utf8,
-            'NAME': pl.Utf8,
-            'ACCTNO': pl.Utf8,
-            'CURBAL': pl.Float64,
-            'INTPAYBL': pl.Float64,
-            'ODINTACC': pl.Float64,
-            'COSTCTR': pl.Utf8,
-            'SECTOR': pl.Int32,
-            'DNBFISME': pl.Utf8,
-            'CURCODE': pl.Utf8,
-            'INTRATE': pl.Float64,
-            'BILLERIND': pl.Utf8
-        })
-
-        # Apply formatting transformations
-        df = df.with_columns([
-            pl.col('BRANCH').map_elements(
-                lambda x: apply_format(str(x), STATECD_FORMAT),
-                return_dtype=pl.Utf8
-            ).alias('STATECD'),
-            pl.col('PRODUCT').cast(pl.Utf8).map_elements(
-                lambda x: apply_format(x, CAPROD_FORMAT),
-                return_dtype=pl.Utf8
-            ).alias('PRODCD'),
-            pl.col('PRODUCT').cast(pl.Utf8).map_elements(
-                lambda x: apply_format(x, CADENOM_FORMAT),
-                return_dtype=pl.Utf8
-            ).alias('AMTIND')
-        ])
-
-        # Add CUSTCD column with conditional logic for VOSTRO accounts
-        def get_custcd(product: int, custcode: str) -> str:
-            if product == 104:
-                return '02'
-            elif product == 105:
-                return '81'
-            else:
-                return apply_format(custcode, DDCUSTCD_FORMAT)
-
-        df = df.with_columns(
-            pl.struct(['PRODUCT', 'CUSTCODE']).map_elements(
-                lambda x: get_custcd(x['PRODUCT'], x['CUSTCODE']),
-                return_dtype=pl.Utf8
-            ).alias('CUSTCD')
-        )
-
-        # Process ACE products and sector adjustments
-        curn_rows = []
-        fcy_rows = []
-
-        for row in df.iter_rows(named=True):
-            row_dict = dict(row)
-
-            if row_dict['PRODUCT'] in ACE_PRODUCTS:
-                # ACE products: set INTPAYBL to 0 and output to CURN
-                row_dict['INTPAYBL'] = 0
-                row_dict['PRODCD'] = apply_format(str(row_dict['PRODUCT']), CAPROD_FORMAT)
-                row_dict['AMTIND'] = apply_format(str(row_dict['PRODUCT']), CADENOM_FORMAT)
-                curn_rows.append(row_dict)
-
-            elif 400 <= row_dict['PRODUCT'] <= 444 or row_dict['PRODUCT'] in range(450, 455):
-                # Facility products: adjust SECTOR and output to FCY
-                custcd = row_dict['CUSTCD']
-                sector = row_dict['SECTOR']
-
-                if custcd in ['77', '78', '95']:
-                    if sector in [4, 5]:
-                        row_dict['SECTOR'] = 1
-                    elif sector not in [1, 2, 3, 4, 5]:
-                        row_dict['SECTOR'] = 1
-                else:
-                    if sector in [1, 2, 3]:
-                        row_dict['SECTOR'] = 4
-                    elif sector not in [1, 2, 3, 4, 5]:
-                        row_dict['SECTOR'] = 4
-
-                fcy_rows.append(row_dict)
-
-            else:
-                # Other products: output to CURN
-                curn_rows.append(row_dict)
-
-        # Convert results to Polars DataFrames
-        curn_df = None
-        fcy_df = None
-
-        if curn_rows:
-            curn_df = pl.DataFrame(curn_rows)
-            # Select CURN2 columns
-            curn_df = curn_df.select([
-                'BRANCH', 'PRODUCT', 'CUSTCD', 'STATECD', 'PRODCD', 'NAME', 'ACCTNO',
-                'CURBAL', 'INTPAYBL', 'AMTIND', 'ODINTACC', 'COSTCTR', 'SECTOR',
-                'DNBFISME', 'CURCODE', 'INTRATE', 'BILLERIND'
-            ])
-            output_file = DATA_OUTPUT_PATH / f"CURN_{reptmon}_{nowk}.txt"
-            curn_df.write_csv(str(output_file), separator='\t')
-            logger.info(f"Current accounts data written to {output_file}")
-
-        if fcy_rows:
-            fcy_df = pl.DataFrame(fcy_rows)
-            # Select CURN2 columns (same as CURN)
-            fcy_df = fcy_df.select([
-                'BRANCH', 'PRODUCT', 'CUSTCD', 'STATECD', 'PRODCD', 'NAME', 'ACCTNO',
-                'CURBAL', 'INTPAYBL', 'AMTIND', 'ODINTACC', 'COSTCTR', 'SECTOR',
-                'DNBFISME', 'CURCODE', 'INTRATE', 'BILLERIND'
-            ])
-            output_file = DATA_OUTPUT_PATH / f"FCY_{reptmon}_{nowk}.txt"
-            fcy_df.write_csv(str(output_file), separator='\t')
-            logger.info(f"Facility accounts data written to {output_file}")
-
-        return curn_df, fcy_df, {'curn': len(curn_rows), 'fcy': len(fcy_rows)}
-
-    except Exception as e:
-        logger.error(f"Error processing current data: {e}")
-        return None, None, {'error': str(e)}
-
-
-def merge_fcy_with_cisdp(
-        fcy_df: pl.DataFrame,
-        reptmon: str,
-        nowk: str
-) -> Optional[pl.DataFrame]:
-    """
-    Merge FCY data with CISDP deposit data.
-
-    Equivalent to:
-    PROC SORT DATA=CISDP.DEPOSIT OUT=CISDP(KEEP=ACCTNO CUSTNO);
-       BY ACCTNO;
-    DATA BNM.FCY&REPTMON&NOWK;
-       MERGE BNM.FCY&REPTMON&NOWK(IN=A) CISDP;
-       BY ACCTNO;
-       IF A;
-    """
-    logger.info(f"Merging FCY data with CISDP deposit data")
-
-    try:
-        if fcy_df is None or len(fcy_df) == 0:
-            logger.warning("FCY dataframe is empty, skipping merge")
-            return fcy_df
-
-        # Read CISDP data
-        cisdp_df = pl.read_parquet(str(CISDP_DEPOSIT_PATH)).select(['ACCTNO', 'CUSTNO'])
-
-        # Merge FCY with CISDP
-        merged_df = fcy_df.join(
-            cisdp_df,
-            on='ACCTNO',
-            how='inner'
-        )
-
-        logger.info(f"Merged {len(merged_df)} records from FCY with CISDP")
-        return merged_df
-
-    except Exception as e:
-        logger.error(f"Error merging FCY with CISDP: {e}")
-        return fcy_df
-
-
-def summarize_savings_data(
-        savings_df: Optional[pl.DataFrame],
-        reptmon: str,
-        nowk: str
-) -> Optional[pl.DataFrame]:
-    """
-    Summarize savings data at branch level.
-
-    Equivalent to:
-    PROC SUMMARY DATA=BNM.SAVG&REPTMON&NOWK NWAY;
-    CLASS BRANCH STATECD PRODCD CUSTCD AMTIND;
-    VAR CURBAL INTPAYBL;
-    OUTPUT OUT=DEPT SUM=CURBAL INTPAYBL;
-    """
-    logger.info(f"Summarizing savings data at branch level")
-
-    try:
-        if savings_df is None or len(savings_df) == 0:
-            logger.warning("Savings dataframe is empty, skipping summarization")
-            return None
-
-        dept_df = savings_df.group_by(
-            ['BRANCH', 'STATECD', 'PRODCD', 'CUSTCD', 'AMTIND']
-        ).agg([
-            pl.col('CURBAL').sum(),
-            pl.col('INTPAYBL').sum()
-        ])
-
-        logger.info(f"Savings summary created with {len(dept_df)} groups")
-        return dept_df
-
-    except Exception as e:
-        logger.error(f"Error summarizing savings data: {e}")
-        return None
-
-
-def summarize_current_data(
-        curn_df: Optional[pl.DataFrame],
-        reptmon: str,
-        nowk: str
-) -> Optional[pl.DataFrame]:
-    """
-    Summarize current account data at branch level.
-
-    Equivalent to:
-    PROC SUMMARY DATA=BNM.CURN&REPTMON&NOWK NWAY MISSING;
-    CLASS BRANCH STATECD PRODCD CUSTCD SECTOR AMTIND;
-    VAR CURBAL INTPAYBL;
-    OUTPUT OUT=DEPT SUM=CURBAL INTPAYBL;
-    """
-    logger.info(f"Summarizing current accounts data at branch level")
-
-    try:
-        if curn_df is None or len(curn_df) == 0:
-            logger.warning("Current accounts dataframe is empty, skipping summarization")
-            return None
-
-        # Include MISSING in PROC SUMMARY by not filtering nulls
-        dept_df = curn_df.group_by(
-            ['BRANCH', 'STATECD', 'PRODCD', 'CUSTCD', 'SECTOR', 'AMTIND'],
-            maintain_order=True
-        ).agg([
-            pl.col('CURBAL').sum(),
-            pl.col('INTPAYBL').sum()
-        ])
-
-        logger.info(f"Current accounts summary created with {len(dept_df)} groups")
-        return dept_df
-
-    except Exception as e:
-        logger.error(f"Error summarizing current accounts data: {e}")
-        return None
-
-
-def append_to_department_summary(
-        savings_summary: Optional[pl.DataFrame],
-        current_summary: Optional[pl.DataFrame],
-        reptmon: str,
-        nowk: str
-) -> Optional[pl.DataFrame]:
-    """
-    Append savings and current account summaries to create final DEPT dataset.
-
-    Equivalent to:
-    PROC APPEND DATA=DEPT BASE=BNM.DEPT&REPTMON&NOWK;
-    """
-    logger.info(f"Combining savings and current summaries into department summary")
-
-    try:
-        dept_list = []
-
-        if savings_summary is not None and len(savings_summary) > 0:
-            # Ensure SECTOR column exists for savings (fill with null or default)
-            if 'SECTOR' not in savings_summary.columns:
-                savings_summary = savings_summary.with_columns(
-                    pl.lit(None).cast(pl.Int32).alias('SECTOR')
-                )
-            dept_list.append(savings_summary)
-
-        if current_summary is not None and len(current_summary) > 0:
-            dept_list.append(current_summary)
-
-        if not dept_list:
-            logger.warning("No summaries to append")
-            return None
-
-        # Concatenate all summaries
-        dept_df = pl.concat(dept_list, how='diagonal_relaxed')
-
-        # Output to file
-        output_file = DATA_OUTPUT_PATH / f"DEPT_{reptmon}_{nowk}.txt"
-        dept_df.write_csv(str(output_file), separator='\t')
-        logger.info(f"Department summary written to {output_file}")
-
-        return dept_df
-
-    except Exception as e:
-        logger.error(f"Error combining summaries: {e}")
-        return None
-
-
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
-
-def main(reptmon: str = "202601", nowk: str = "W01"):
-    """
-    Main execution function.
-
-    Args:
-        reptmon: Report month in YYYYMM format
-        nowk: Week number (e.g., W01, W02)
-    """
-    logger.info(f"Starting DALWPBBD processing for REPTMON={reptmon}, NOWK={nowk}")
-
-    try:
-        # Step 1: Process savings data
-        savings_df, savings_stats = process_savings_data(reptmon, nowk)
-        logger.info(f"Savings processing stats: {savings_stats}")
-
-        # Step 2: Process current data
-        curn_df, fcy_df, current_stats = process_current_data(reptmon, nowk)
-        logger.info(f"Current processing stats: {current_stats}")
-
-        # Step 3: Merge FCY with CISDP
-        if fcy_df is not None:
-            fcy_merged = merge_fcy_with_cisdp(fcy_df, reptmon, nowk)
-            # Append FCY to CURN
-            if fcy_merged is not None and len(fcy_merged) > 0 and curn_df is not None:
-                curn_df = pl.concat([curn_df, fcy_merged.drop('CUSTNO')])
-                logger.info(f"FCY data merged and appended to CURN")
-
-        # Step 4: Summarize at branch level
-        savings_summary = summarize_savings_data(savings_df, reptmon, nowk)
-        current_summary = summarize_current_data(curn_df, reptmon, nowk)
-
-        # Step 5: Append summaries
-        final_dept = append_to_department_summary(
-            savings_summary,
-            current_summary,
-            reptmon,
-            nowk
-        )
-
-        logger.info(f"DALWPBBD processing completed successfully")
-        if 'error' in savings_stats or 'error' in current_stats:
-            return {'status': 'ERROR'}
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
+
+
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        if schema is None:
+            schema = table.schema
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
         else:
-            return {
-            'status': 'SUCCESS',
-            'savings_records': savings_stats.get('processed', 0),
-            'current_records': current_stats.get('curn', 0) + current_stats.get('fcy', 0),
-            'dept_summary_records': len(final_dept) if final_dept is not None else 0
-        }
+            cast_arrays = []
+            for field in schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING casting '{field.name}': {e}")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=schema)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
 
-    except Exception as e:
-        logger.error(f"Fatal error in main processing: {e}")
-        return {'status': 'ERROR', 'error': str(e)}
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
-if __name__ == "__main__":
-    # Example execution with default parameters
-    # For production use, parameters should be passed from job scheduling system
-    result = main()
-    logger.info(f"Final result: {result}")
+def _load_cached(sas_path: Path, cache_path: Path, tag: str) -> Path:
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
+    else:
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
+
+
+# ============================================================================
+# STEP 1: RESOLVE & CACHE INPUT FILES  (see module docstring items 1-3)
+# ============================================================================
+print("\nStep 1: Resolving and caching input files...")
+
+saving_path  = get_latest_file(INPUT_SAVING_DIR, prefix=SAVING_PREFIX)
+current_path = get_latest_file(INPUT_CURRENT_DIR, prefix=CURRENT_PREFIX)
+
+SAVING_SAS_CACHE  = CACHE_DIR / f"{saving_path.stem}.parquet"
+CURRENT_SAS_CACHE = CACHE_DIR / f"{current_path.stem}.parquet"
+CISDP_SAS_CACHE   = CACHE_DIR / "cisdp.parquet"
+
+_load_cached(saving_path, SAVING_SAS_CACHE, "SAVING")
+_load_cached(current_path, CURRENT_SAS_CACHE, "CURRENT")
+_load_cached(INPUT_CISDP_DIR, CISDP_SAS_CACHE, "CISDP")
+
+
+# ============================================================================
+# STEP 2: BUILD BNM.SAVG&REPTMON&NOWK  (input: item 1 — DEPOSIT.SAVING)
+# DATA BNM.SAVG&REPTMON&NOWK &SAVG2;
+#   SET DEPOSIT.SAVING &SAVG1;
+#   IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
+#   CUSTCD=PUT(CUSTCODE, SACUSTCD.); STATECD=PUT(BRANCH, STATECD.);
+#   PRODCD=PUT(PRODUCT, SAPROD.);    AMTIND=PUT(PRODUCT, SADENOM.);
+# ============================================================================
+print("\nStep 2: Building BNM_SAVG...")
+
+con = duckdb.connect(database=":memory:")
+_savg_raw = con.execute(f"""
+    SELECT
+        CAST(BRANCH   AS INTEGER) AS BRANCH,
+        CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+        CAST(CUSTCODE AS INTEGER) AS CUSTCODE,
+        CAST(NAME     AS VARCHAR) AS NAME,
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+        CAST(INTPAYBL AS DOUBLE)  AS INTPAYBL,
+        CAST(COSTCTR  AS VARCHAR) AS COSTCTR,
+        CAST(DNBFISME AS VARCHAR) AS DNBFISME,
+        CAST(CURCODE  AS VARCHAR) AS CURCODE
+    FROM read_parquet('{SAVING_SAS_CACHE.as_posix()}')
+    WHERE OPENIND NOT IN ('B','C','P') AND CURBAL >= 0
+""").pl()
+con.close()
+
+BNM_SAVG = _savg_raw.with_columns([
+    pl.col("CUSTCODE").map_elements(sacustcd_format, return_dtype=pl.Utf8).alias("CUSTCD"),
+    pl.col("BRANCH").map_elements(statecd_format, return_dtype=pl.Utf8).alias("STATECD"),
+    pl.col("PRODUCT").map_elements(saprod_format, return_dtype=pl.Utf8).alias("PRODCD"),
+    pl.col("PRODUCT").map_elements(sadenom_format, return_dtype=pl.Utf8).alias("AMTIND"),
+]).select([
+    "BRANCH", "PRODUCT", "CUSTCD", "STATECD", "PRODCD", "NAME", "ACCTNO",
+    "CURBAL", "INTPAYBL", "AMTIND", "COSTCTR", "DNBFISME", "CURCODE",
+])
+
+del _savg_raw
+gc.collect()
+print(f"  BNM_SAVG rows: {len(BNM_SAVG):,}")
+
+
+# ============================================================================
+# STEP 3: BUILD BNM.CURN&REPTMON&NOWK / BNM.FCY&REPTMON&NOWK
+# (inputs: item 2 — DEPOSIT.CURRENT; item 3 — CISDP.DEPOSIT)
+# ============================================================================
+print("\nStep 3: Building BNM_CURN / BNM_FCY...")
+
+con = duckdb.connect(database=":memory:")
+_curn_raw = con.execute(f"""
+    SELECT
+        CAST(BRANCH     AS INTEGER) AS BRANCH,
+        CAST(PRODUCT    AS INTEGER) AS PRODUCT,
+        CAST(CUSTCODE   AS INTEGER) AS CUSTCODE,
+        CAST(NAME       AS VARCHAR) AS NAME,
+        CAST(ACCTNO     AS BIGINT)  AS ACCTNO,
+        CAST(CURBAL     AS DOUBLE)  AS CURBAL,
+        CAST(INTPAYBL   AS DOUBLE)  AS INTPAYBL,
+        CAST(ODINTACC   AS VARCHAR) AS ODINTACC,
+        CAST(COSTCTR    AS VARCHAR) AS COSTCTR,
+        CAST(SECTOR     AS INTEGER) AS SECTOR,
+        CAST(DNBFISME   AS VARCHAR) AS DNBFISME,
+        CAST(CURCODE    AS VARCHAR) AS CURCODE,
+        CAST(INTRATE    AS DOUBLE)  AS INTRATE,
+        CAST(BILLERIND  AS VARCHAR) AS BILLERIND
+    FROM read_parquet('{CURRENT_SAS_CACHE.as_posix()}')
+    WHERE OPENIND NOT IN ('B','C','P') AND CURBAL >= 0
+""").pl()
+con.close()
+
+_curn_raw = _curn_raw.with_columns([
+    pl.col("BRANCH").map_elements(statecd_format, return_dtype=pl.Utf8).alias("STATECD"),
+    pl.col("PRODUCT").map_elements(caprod_format, return_dtype=pl.Utf8).alias("PRODCD"),
+    pl.col("PRODUCT").map_elements(cadenom_format, return_dtype=pl.Utf8).alias("AMTIND"),
+])
+
+# SELECT(PRODUCT): 104 -> '02', 105 -> '81', OTHERWISE PUT(CUSTCODE, DDCUSTCD.)
+_curn_raw = _curn_raw.with_columns(
+    pl.when(pl.col("PRODUCT") == 104).then(pl.lit("02"))
+      .when(pl.col("PRODUCT") == 105).then(pl.lit("81"))
+      .otherwise(pl.col("CUSTCODE").map_elements(ddcustcd_format, return_dtype=pl.Utf8))
+      .alias("CUSTCD")
+)
+
+is_ace = pl.col("PRODUCT").is_in(list(ACE_PRODUCTS))
+is_fcy_range = (
+    ((pl.col("PRODUCT") >= 400) & (pl.col("PRODUCT") <= 444))
+    | pl.col("PRODUCT").is_in([450, 451, 452, 453, 454])
+)
+
+# ACE branch: INTPAYBL forced to 0; PRODCD/AMTIND recomputed (same formula,
+# same result as the initial computation above — replicated for fidelity).
+_ace_rows = _curn_raw.filter(is_ace).with_columns([
+    pl.lit(0.0).alias("INTPAYBL"),
+    pl.col("PRODUCT").map_elements(caprod_format, return_dtype=pl.Utf8).alias("PRODCD"),
+    pl.col("PRODUCT").map_elements(cadenom_format, return_dtype=pl.Utf8).alias("AMTIND"),
+])
+
+# FCY branch: SECTOR reclassification based on CUSTCD residency grouping.
+_fcy_rows = _curn_raw.filter(~is_ace & is_fcy_range)
+_is_resident = pl.col("CUSTCD").is_in(["77", "78", "95"])
+_fcy_rows = _fcy_rows.with_columns(
+    pl.when(_is_resident & pl.col("SECTOR").is_in([4, 5])).then(1)
+      .when(_is_resident & ~pl.col("SECTOR").is_in([1, 2, 3, 4, 5])).then(1)
+      .when(~_is_resident & pl.col("SECTOR").is_in([1, 2, 3])).then(4)
+      .when(~_is_resident & ~pl.col("SECTOR").is_in([1, 2, 3, 4, 5])).then(4)
+      .otherwise(pl.col("SECTOR"))
+      .alias("SECTOR")
+)
+
+# Remaining rows: neither ACE nor FCY range -> straight to CURN.
+_plain_rows = _curn_raw.filter(~is_ace & ~is_fcy_range)
+
+_curn_out_cols = [
+    "BRANCH", "PRODUCT", "CUSTCD", "STATECD", "PRODCD", "NAME", "ACCTNO",
+    "CURBAL", "INTPAYBL", "AMTIND", "ODINTACC", "COSTCTR", "SECTOR",
+    "DNBFISME", "CURCODE", "INTRATE", "BILLERIND",
+]
+
+BNM_CURN_BASE = pl.concat(
+    [_ace_rows.select(_curn_out_cols), _plain_rows.select(_curn_out_cols)]
+)
+BNM_FCY = _fcy_rows.select(_curn_out_cols + ["CUSTCODE"])
+
+del _curn_raw, _ace_rows, _plain_rows
+gc.collect()
+
+# ----------------------------------------------------------------------------
+# PROC SORT DATA=CISDP.DEPOSIT OUT=CISDP(KEEP=ACCTNO CUSTNO); BY ACCTNO;
+# MERGE BNM.FCY(IN=A) CISDP; BY ACCTNO; IF A;   -- left join FCY -> CISDP
+# PROC APPEND FCY(DROP=CUSTNO) BASE=CURN         -- append FCY rows to CURN
+# ----------------------------------------------------------------------------
+print("  Joining FCY with CISDP and appending onto CURN...")
+
+con = duckdb.connect(database=":memory:")
+cisdp = con.execute(f"""
+    SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(CUSTNO AS VARCHAR) AS CUSTNO
+    FROM read_parquet('{CISDP_SAS_CACHE.as_posix()}')
+""").pl()
+con.close()
+
+BNM_FCY = BNM_FCY.join(cisdp, on="ACCTNO", how="left")  # IF A -> keep all FCY rows
+BNM_FCY_FOR_APPEND = BNM_FCY.select(_curn_out_cols)      # DROP=CUSTNO
+
+BNM_CURN = pl.concat([BNM_CURN_BASE, BNM_FCY_FOR_APPEND])
+
+del BNM_CURN_BASE, BNM_FCY_FOR_APPEND, cisdp
+gc.collect()
+print(f"  BNM_CURN rows: {len(BNM_CURN):,}  (incl. FCY appended)")
+
+
+# ============================================================================
+# STEP 4: BUILD BNM.DEPT&REPTMON&NOWK  (branch-level summary; not a
+# physical input — built from BNM_SAVG/BNM_CURN produced in Steps 2-3)
+# PROC DATASETS ... DELETE DEPT&REPTMON&NOWK;   -- fresh rebuild every run
+# PROC SUMMARY SAVG NWAY CLASS BRANCH STATECD PRODCD CUSTCD AMTIND -> DEPT
+# PROC SUMMARY CURN NWAY MISSING CLASS BRANCH STATECD PRODCD CUSTCD SECTOR
+#              AMTIND -> DEPT (FORCE append, differing class columns)
+# ============================================================================
+print("\nStep 4: Building BNM_DEPT (branch-level summary)...")
+
+_dept_savg = (
+    BNM_SAVG.group_by(["BRANCH", "STATECD", "PRODCD", "CUSTCD", "AMTIND"])
+    .agg([pl.col("CURBAL").sum(), pl.col("INTPAYBL").sum()])
+)
+
+_dept_curn = (
+    BNM_CURN.group_by(["BRANCH", "STATECD", "PRODCD", "CUSTCD", "SECTOR", "AMTIND"])
+    .agg([pl.col("CURBAL").sum(), pl.col("INTPAYBL").sum()])
+)
+
+# PROC APPEND FORCE: differing columns (SECTOR only in CURN summary) are
+# unioned; SAVG summary rows get SECTOR = null.
+BNM_DEPT = pl.concat([_dept_savg, _dept_curn], how="diagonal_relaxed")
+
+del _dept_savg, _dept_curn
+gc.collect()
+print(f"  BNM_DEPT rows: {len(BNM_DEPT):,}")
+
+
+# ============================================================================
+# STEP 5: WRITE PARQUET CACHE  (temporary artefacts for this program's own
+# and downstream programs' use — see module docstring "NON-FILE / DERIVED /
+# TEMPORARY OUTPUTS")
+# ============================================================================
+BNM_SAVG.write_parquet(SAVG_CACHE)
+BNM_CURN.write_parquet(CURN_CACHE)
+BNM_DEPT.write_parquet(DEPT_CACHE)
+
+print(f"\nDALWPBBD complete. Cached: {SAVG_CACHE.name}, {CURN_CACHE.name}, {DEPT_CACHE.name}")
