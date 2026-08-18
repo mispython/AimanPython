@@ -1,10 +1,19 @@
-Step 2: Building BNM_FDWKLY...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWREXL.py", line 74, in <module>
-    import FALWPBBD
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/FALWPBBD.py", line 224, in <module>
-    _fd_raw = con.execute(f"""
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column MATDATE
-
-LINE 13:         CAST(MATDATE  AS DATE)    AS MATDATE,
-                 ^
+con = duckdb.connect(database=":memory:")
+_fd_raw = con.execute(f"""
+    SELECT
+        CAST(BRANCH   AS INTEGER) AS BRANCH,
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(CUSTCD   AS INTEGER) AS CUSTCD,
+        CAST(NAME     AS VARCHAR) AS NAME,
+        CAST(ACCTTYPE AS INTEGER) AS ACCTTYPE,
+        CAST(OPENIND  AS VARCHAR) AS OPENIND,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+        CAST(INTPAY   AS DOUBLE)  AS INTPAY,
+        CAST(TERM     AS INTEGER) AS TERM,
+        CAST(INTPLAN  AS INTEGER) AS INTPLAN,
+        DATE '1960-01-01' + CAST(MATDATE AS BIGINT) AS MATDATE,
+        CAST(PURPOSE  AS VARCHAR) AS PURPOSE
+    FROM read_parquet('{FD_SAS_CACHE.as_posix()}')
+    WHERE OPENIND = 'O' OR OPENIND = 'D'
+""").pl()
+con.close()
