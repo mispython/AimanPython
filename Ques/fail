@@ -1,3 +1,8 @@
+print(f"  SAVING_SAS_CACHE path: {SAVING_SAS_CACHE.as_posix()}")
+print(f"  File exists? {SAVING_SAS_CACHE.exists()}")
+print(f"  File size: {SAVING_SAS_CACHE.stat().st_size if SAVING_SAS_CACHE.exists() else 'N/A'}")
+
+
 SELECT
     CAST("BRANCH"   AS INTEGER) AS "BRANCH",
     CAST("PRODUCT"  AS INTEGER) AS "PRODUCT",
