@@ -1,13 +1,13 @@
-ls -la /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBWKAPE/
-
-
-total 56
-drwxrwxr-x+  2 sas_edw_dev sas_edw_dev_grp 4096 Aug 17 19:14 .
-drwxrwxr-x+ 23 sas_edw_dev sas_edw_dev_grp 4096 Aug 17 19:14 ..
--rw-rw-r--+  1 sas_edw_dev sas_edw_dev_grp 6432 Aug 17 19:14 BNMB_elw081.parquet
--rw-rw-r--+  1 sas_edw_dev sas_edw_dev_grp 4179 Aug 17 19:14 BNM_elw081.parquet
--rw-rw-r--+  1 sas_edw_dev sas_edw_dev_grp 3260 Aug 17 19:14 BNMK_dci081.parquet
--rw-rw-r--+  1 sas_edw_dev sas_edw_dev_grp 4125 Aug 17 19:14 BNMK_rep2081.parquet
--rw-rw-r--+  1 sas_edw_dev sas_edw_dev_grp 4010 Aug 17 19:14 BNMK_rep4081.parquet
--rw-rw-r--+  1 sas_edw_dev sas_edw_dev_grp 2527 Aug 17 19:14 BNMK_tbl1081.parquet
--rw-rw-r--+  1 sas_edw_dev sas_edw_dev_grp 2516 Aug 17 19:14 ELG_gold081.parquet
+SELECT
+    CAST("BRANCH"   AS INTEGER) AS "BRANCH",
+    CAST("PRODUCT"  AS INTEGER) AS "PRODUCT",
+    CAST("CUSTCODE" AS INTEGER) AS "CUSTCODE",
+    CAST("NAME"     AS VARCHAR) AS "NAME",
+    CAST("ACCTNO"   AS BIGINT)  AS "ACCTNO",
+    CAST("CURBAL"   AS DOUBLE)  AS "CURBAL",
+    CAST("INTPAYBL" AS DOUBLE)  AS "INTPAYBL",
+    CAST("COSTCTR"  AS VARCHAR) AS "COSTCTR",
+    CAST("DNBFISME" AS VARCHAR) AS "DNBFISME",
+    CAST("CURCODE"  AS VARCHAR) AS "CURCODE"
+FROM read_parquet('...')
+WHERE "OPENIND" NOT IN ('B','C','P') AND "CURBAL" >= 0
