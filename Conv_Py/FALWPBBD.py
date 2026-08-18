@@ -76,20 +76,22 @@ from PBBDPFMT import (
 # PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_FD_DIR = BASE_DIR / "input" / "prod" / "FALWPBBD" / "fd"    # fd_fd
-FD_PREFIX     = "fd"
+INPUT_FD_DIR = BASE_DIR / "input" / "prod" / "deposit"    # fd_fd
+FD_PREFIX     = "ifdcd"
 
-INPUT_UMA_DIR = BASE_DIR / "input" / "prod" / "FALWPBBD" / "uma"  # deposit_uma
-UMA_PREFIX     = "uma"
+INPUT_UMA_DIR = BASE_DIR / "input" / "prod" / "deposit"   # deposit_uma
+UMA_PREFIX     = "iuma"
 
 # Parquet cache directory for the .sas7bdat -> Parquet conversion step
-CACHE_DIR = BASE_DIR / "cache" / "FALWPBBD"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWREXL"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Output cache directory — where BNM_FDWKLY/BNM_UMA are persisted for
 # downstream programs (e.g. EIIWREXL.py) to read via read_parquet()
-OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
+# OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
+OUTPUT_CACHE_DIR = BASE_DIR / "input" / "prod" / "EIIWREXL" / "BNM"
 OUTPUT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
