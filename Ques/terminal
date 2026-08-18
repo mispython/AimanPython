@@ -2,6 +2,9 @@ Step 2: Building BNM_SAVG...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWREXL.py", line 73, in <module>
     import DALWPBBD
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/DALWPBBD.py", line 229, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/DALWPBBD.py", line 247, in <module>
     _savg_raw = con.execute(f"""
-_duckdb.BinderException: Binder Error: Column "NAME" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+_duckdb.IOException: IO Error: No files found that match the pattern "..."
+
+LINE 13:     FROM read_parquet('...')
+                  ^
