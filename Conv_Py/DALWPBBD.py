@@ -92,22 +92,24 @@ from PBBDPFMT import (
 # PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_SAVING_DIR = BASE_DIR / "input" / "prod" / "DALWPBBD" / "saving"   # deposit_saving
-SAVING_PREFIX     = "sa"
+INPUT_SAVING_DIR = BASE_DIR / "input" / "prod" / "deposit"   # deposit_saving
+SAVING_PREFIX    = "isa"
 
-INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "DALWPBBD" / "current"  # deposit_current
-CURRENT_PREFIX     = "ca"
+INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "deposit"  # deposit_current
+CURRENT_PREFIX    = "ica"
 
-INPUT_CISDP_DIR = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"  # cisdp_deposit
+INPUT_CISDP_DIR = STG_DIR / "EIIWREXL" / "CISDP_deposit.sas7bdat"  # cisdp_deposit
 
 # Parquet cache directory for the .sas7bdat -> Parquet conversion step
-CACHE_DIR = BASE_DIR / "cache" / "DALWPBBD"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWREXL"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Output cache directory — where BNM_SAVG/BNM_CURN/BNM_DEPT are persisted
 # for downstream programs (e.g. EIIWREXL.py) to read via read_parquet()
-OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
+# OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
+OUTPUT_CACHE_DIR = BASE_DIR / "input" / "prod" / "EIIWREXL" / "BNM"
 OUTPUT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
