@@ -1,23 +1,2 @@
-Step 2: Building BNM_SAVG...
-  SAVING_SAS_CACHE path: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIWREXL/isa08226.parquet
-  File exists? True
-  File size: 125668007
-
-print(f"  SAVING_SAS_CACHE path: {SAVING_SAS_CACHE.as_posix()}")
-print(f"  File exists? {SAVING_SAS_CACHE.exists()}")
-print(f"  File size: {SAVING_SAS_CACHE.stat().st_size if SAVING_SAS_CACHE.exists() else 'N/A'}")
-
-
-SELECT
-    CAST("BRANCH"   AS INTEGER) AS "BRANCH",
-    CAST("PRODUCT"  AS INTEGER) AS "PRODUCT",
-    CAST("CUSTCODE" AS INTEGER) AS "CUSTCODE",
-    CAST("NAME"     AS VARCHAR) AS "NAME",
-    CAST("ACCTNO"   AS BIGINT)  AS "ACCTNO",
-    CAST("CURBAL"   AS DOUBLE)  AS "CURBAL",
-    CAST("INTPAYBL" AS DOUBLE)  AS "INTPAYBL",
-    CAST("COSTCTR"  AS VARCHAR) AS "COSTCTR",
-    CAST("DNBFISME" AS VARCHAR) AS "DNBFISME",
-    CAST("CURCODE"  AS VARCHAR) AS "CURCODE"
-FROM read_parquet('...')
-WHERE "OPENIND" NOT IN ('B','C','P') AND "CURBAL" >= 0
+test = con.execute(f"SELECT * FROM read_parquet('{SAVING_SAS_CACHE.as_posix()}') LIMIT 1").pl()
+print("Columns in Parquet:", test.columns)
