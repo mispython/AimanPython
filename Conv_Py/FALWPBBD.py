@@ -1,382 +1,334 @@
 #!/usr/bin/env python3
 """
-Program  : FALWPBBD
-To filter out invalid customer code & product code
+Program : FALWPBBD.py
+Function: Filter out invalid customer code & product code — builds
+          BNM.FDWKLY (fixed-deposit weekly extract) and BNM.UMA
+          (unclaimed moneys account) datasets.
+
+Original : FALWPBBD (invoked via %INC PGM(FALWPBBD), e.g. by EIIWREXL)
+
+Dependency (format library):
+    %INC PGM(PBBDPFMT);  -> already converted as PBBDPFMT.py
+    from PBBDPFMT import (fdprod_format, fddenom_format, statecd_format,
+                           fdcustcd_format, ifdcuscd_format)
+
+============================================================================
+PHYSICAL INPUT DATASETS USED BY THIS PROGRAM  (all .sas7bdat, cached to
+Parquet on first read per EIBDLN1M.py's chunked-conversion pattern)
+============================================================================
+1. FD.FD  (fixed deposit master extract)
+   File     : fd<yymmdd>.sas7bdat  (filename convention assumed 'fd'
+              prefix per project convention; unconfirmed)
+   Path     : INPUT_FD_DIR, resolved via input_date.get_latest_file()
+   Used in  : Step 2 - build BNM_FDWKLY (BIC/AMTIND/STATE/CUSTCODE
+              derivation, ACCTTYPE override, OPENIND filter)
+
+2. DEPOSIT.UMA  (unclaimed moneys account extract)
+   File     : uma<yymmdd>.sas7bdat  (filename convention assumed 'uma'
+              prefix; unconfirmed)
+   Path     : INPUT_UMA_DIR, resolved via input_date.get_latest_file()
+   Used in  : Step 3 - build BNM_UMA (CUSTCODE/AMTIND/STATE derivation,
+              BIC fixed '42199', OPENIND filter)
+
+------------------------------------------------------------------------
+NON-FILE / DERIVED / TEMPORARY OUTPUTS PRODUCED BY THIS PROGRAM
+------------------------------------------------------------------------
+This module is designed to be IMPORTED (module-level execution, mirroring
+SAS %INC PGM(FALWPBBD)) by downstream programs such as EIIWREXL.py. It
+produces the following in-memory/cached artefacts for their consumption —
+none of these are physical mainframe inputs, they are built here:
+
+- BNM_FDWKLY (module-level polars DataFrame) : equivalent of BNM.FDWKLY
+- BNM_UMA    (module-level polars DataFrame) : equivalent of BNM.UMA
+- FDWKLY<REPTMON><NOWK>.parquet / UMA<REPTMON><NOWK>.parquet, written
+  under OUTPUT_CACHE_DIR — persisted copies of the two DataFrames above
+  so other programs in the same pipeline can read them via
+  read_parquet() without re-running this module.
+
+REPTDATE.py / no reptdate.parquet:
+  This program shares REPTMON/NOWK macro variables (via %INC) with
+  DALWPBBD in the original SAS job, so the same exact-match
+  SELECT(DAY(REPTDATE)) logic (WHEN 8/15/22/OTHERWISE) is replicated here
+  from REPTDATE.py's get_reptdate_values() rather than the module's
+  ranged NOWK — see DALWPBBD.py Step 0 for the identical derivation.
 """
 
-import duckdb
-import polars as pl
+import gc
 from pathlib import Path
 
-# ============================================================================
-# CONFIGURATION AND PATHS
-# ============================================================================
+import duckdb
+import pandas as pd
+import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-# Define macro variables (these should be set according to your environment)
-REPTMON = "202401"  # Example: Report month
-NOWK = "01"  # Example: Week number
-
-# Define paths
-# BASE_PATH = Path("/data")
-BASE_PATH = Path(__file__).resolve().parent
-
-BNM_PATH = BASE_PATH / "bnm"
-FD_PATH = BASE_PATH / "fd"
-DEPOSIT_PATH = BASE_PATH / "deposit"
-
-# Input files
-FD_FILE = FD_PATH / "fd.parquet"
-UMA_FILE = DEPOSIT_PATH / "uma.parquet"
-
-# Output files
-FDWKLY_OUTPUT = BNM_PATH / f"fdwkly{REPTMON}{NOWK}.parquet"
-UMA_OUTPUT = BNM_PATH / "uma.parquet"
-
-# Ensure output directories exist
-BNM_PATH.mkdir(parents=True, exist_ok=True)
-
+from REPTDATE import get_reptdate_values
+from input_date import get_latest_file
+from PBBDPFMT import (
+    fdprod_format,
+    fddenom_format,
+    statecd_format,
+    fdcustcd_format,
+    ifdcuscd_format,
+)
 
 # ============================================================================
-# FORMAT MAPPING FUNCTIONS
+# PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-def format_fdprod(intplan):
-    """
-    Map INTPLAN to BIC product code (FDPROD format)
-    """
-    if intplan is None:
-        return None
+INPUT_FD_DIR = BASE_DIR / "input" / "prod" / "FALWPBBD" / "fd"    # fd_fd
+FD_PREFIX     = "fd"
 
-    # RM Fixed Deposit mappings
-    fdprod_map = {
-        # RM Fixed Deposits
-        1: '42130', 2: '42130', 3: '42130', 4: '42130', 5: '42130',
-        6: '42130', 7: '42130', 8: '42130', 9: '42130', 10: '42130',
-        11: '42130', 12: '42130', 13: '42130', 14: '42130', 15: '42130',
-        16: '42130', 17: '42130', 18: '42130', 19: '42130', 20: '42130',
-        21: '42130', 22: '42130', 23: '42130', 24: '42130', 25: '42130',
-        26: '42130', 27: '42130', 28: '42130', 29: '42130', 30: '42130',
+INPUT_UMA_DIR = BASE_DIR / "input" / "prod" / "FALWPBBD" / "uma"  # deposit_uma
+UMA_PREFIX     = "uma"
 
-        # FX Fixed Deposits
-        272: '42630', 273: '42630', 274: '42630', 275: '42630',
-        276: '42630', 277: '42630', 278: '42630', 279: '42630',
-        280: '42630', 281: '42630', 282: '42630', 283: '42630',
-        284: '42630', 285: '42630', 286: '42630', 287: '42630',
-        288: '42630', 289: '42630', 290: '42630', 291: '42630',
-        292: '42630', 293: '42630', 294: '42630', 295: '42630',
-    }
+# Parquet cache directory for the .sas7bdat -> Parquet conversion step
+CACHE_DIR = BASE_DIR / "cache" / "FALWPBBD"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    return fdprod_map.get(intplan, '42130')
+# Output cache directory — where BNM_FDWKLY/BNM_UMA are persisted for
+# downstream programs (e.g. EIIWREXL.py) to read via read_parquet()
+OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
+OUTPUT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+CHUNK_ROWS = 500_000
+
+# ============================================================================
+# STEP 0: REPORT DATE / WEEK NUMBER  (shared exact-match logic with
+# DALWPBBD.py — see module docstring; no physical file)
+# ============================================================================
+print("Step 0: Deriving report date / week number...")
+
+_reptdate_values = get_reptdate_values()
+REPTDATE = _reptdate_values.reptdate
+
+_day = REPTDATE.day
+if _day == 8:
+    NOWK = "1"
+elif _day == 15:
+    NOWK = "2"
+elif _day == 22:
+    NOWK = "3"
+else:
+    NOWK = "4"
+
+REPTMON = f"{REPTDATE.month:02d}"
+
+print(f"  REPTDATE : {REPTDATE}")
+print(f"  REPTMON  : {REPTMON}")
+print(f"  NOWK     : {NOWK}")
+
+FDWKLY_CACHE = OUTPUT_CACHE_DIR / f"FDWKLY{REPTMON}{NOWK}.parquet"
+UMA_CACHE    = OUTPUT_CACHE_DIR / f"UMA{REPTMON}{NOWK}.parquet"
 
 
-def format_fddenom(intplan):
-    """
-    Map INTPLAN to currency denomination (FDDENOM format)
-    D = Domestic (RM), I = International (FX)
-    """
-    if intplan is None:
-        return 'D'
+# ============================================================================
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
+# (identical pattern to EIBDLN1M.py: freshness check via mtime, PyArrow
+# ParquetWriter with schema locked on first chunk)
+# ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
 
-    # FX intplan codes (272-295) return 'I', all others return 'D'
-    if 272 <= intplan <= 295:
-        return 'I'
+
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        if schema is None:
+            schema = table.schema
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        else:
+            cast_arrays = []
+            for field in schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING casting '{field.name}': {e}")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=schema)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def _load_cached(sas_path: Path, cache_path: Path, tag: str) -> Path:
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
-        return 'D'
-
-
-def format_statecd(branch):
-    """
-    Map BRANCH to STATE code (STATECD format)
-    """
-    if branch is None:
-        return None
-
-    # State code mapping based on branch ranges
-    # This is a simplified version - actual mapping may be more complex
-    branch_str = str(branch).zfill(4)
-
-    # Mapping based on first 2 digits of branch code
-    state_map = {
-        '01': 'A', '02': 'B', '03': 'C', '04': 'D', '05': 'E',
-        '06': 'F', '07': 'G', '08': 'H', '09': 'I', '10': 'J',
-        '11': 'K', '12': 'L', '13': 'M', '14': 'N', '15': 'O',
-        '16': 'P', '20': 'W', '21': 'X', '22': 'Y', '23': 'Z',
-    }
-
-    prefix = branch_str[:2]
-    return state_map.get(prefix, 'A')
-
-
-def format_fdcustcd(custcd):
-    """
-    Map CUSTCD to standardized customer code for FD (FDCUSTCD format)
-    """
-    if custcd is None:
-        return None
-
-    custcd_str = str(custcd).strip()
-
-    # Direct mapping for known customer codes
-    fdcustcd_map = {
-        '1': '01', '2': '02', '3': '03', '4': '04', '5': '05',
-        '6': '06', '7': '07', '10': '10', '11': '11', '12': '12',
-        '13': '13', '17': '17', '20': '20', '30': '30', '31': '31',
-        '32': '32', '33': '33', '34': '34', '35': '35', '36': '36',
-        '37': '37', '38': '38', '39': '39', '40': '40', '41': '41',
-        '42': '42', '43': '43', '44': '44', '45': '45', '46': '46',
-        '47': '47', '48': '48', '49': '49', '51': '51', '52': '52',
-        '53': '53', '54': '54', '57': '57', '59': '59', '60': '60',
-        '61': '61', '62': '62', '63': '63', '64': '64', '65': '65',
-        '66': '66', '67': '67', '68': '68', '69': '69', '70': '70',
-        '71': '71', '72': '72', '73': '73', '74': '74', '75': '75',
-        '76': '76', '77': '77', '78': '78', '79': '79', '80': '80',
-        '81': '81', '82': '82', '83': '83', '84': '84', '85': '85',
-        '86': '86', '87': '87', '88': '88', '89': '89', '90': '90',
-        '91': '91', '92': '92', '95': '95', '96': '96', '98': '98',
-        '99': '99',
-    }
-
-    # Try direct mapping first
-    if custcd_str in fdcustcd_map:
-        return fdcustcd_map[custcd_str]
-
-    # Try with leading zeros removed
-    custcd_int = str(int(custcd_str)) if custcd_str.isdigit() else custcd_str
-    if custcd_int in fdcustcd_map:
-        return fdcustcd_map[custcd_int]
-
-    # Return padded to 2 digits if numeric
-    if custcd_str.isdigit():
-        return custcd_str.zfill(2)
-
-    return custcd_str
-
-
-def format_ifdcuscd(custcd):
-    """
-    Map CUSTCD to standardized customer code for IFD (IFDCUSCD format)
-    International FD customer codes - similar to FDCUSTCD but may have different rules
-    """
-    # For this implementation, using same logic as FDCUSTCD
-    # Actual format may differ based on business rules
-    return format_fdcustcd(custcd)
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
 
 
 # ============================================================================
-# MAIN PROCESSING
+# STEP 1: RESOLVE & CACHE INPUT FILES  (see module docstring items 1-2)
 # ============================================================================
+print("\nStep 1: Resolving and caching input files...")
 
-def main():
-    """Main processing function"""
+fd_path  = get_latest_file(INPUT_FD_DIR, prefix=FD_PREFIX)
+uma_path = get_latest_file(INPUT_UMA_DIR, prefix=UMA_PREFIX)
 
-    conn = duckdb.connect()
+FD_SAS_CACHE  = CACHE_DIR / f"{fd_path.stem}.parquet"
+UMA_SAS_CACHE = CACHE_DIR / f"{uma_path.stem}.parquet"
 
-    print("Starting FALWPBBD processing...")
-
-    # ========================================================================
-    # SECTION 1: Process FD.FD file to create BNM.FDWKLY
-    # ========================================================================
-
-    print("\nProcessing FD.FD file...")
-
-    # Load FD data
-    fd_data = pl.read_parquet(FD_FILE)
-    print(f"Loaded {len(fd_data)} records from FD file")
-
-    # Apply transformations
-    fd_processed = fd_data.with_columns([
-        # Apply BIC format
-        pl.col('intplan').map_elements(
-            format_fdprod,
-            return_dtype=pl.Utf8
-        ).alias('bic'),
-
-        # Apply AMTIND format
-        pl.col('intplan').map_elements(
-            format_fddenom,
-            return_dtype=pl.Utf8
-        ).alias('amtind'),
-
-        # Apply STATE format
-        pl.col('branch').map_elements(
-            format_statecd,
-            return_dtype=pl.Utf8
-        ).alias('state'),
-    ])
-
-    # Apply conditional customer code formatting
-    def apply_custcode(row):
-        """Apply customer code formatting based on BIC"""
-        bic = row['bic']
-        custcd = row['custcd']
-
-        if bic in ['42130', '42630']:
-            return format_fdcustcd(custcd)
-        else:
-            return format_ifdcuscd(custcd)
-
-    # Create custcode column
-    fd_with_custcode = []
-    for row in fd_processed.iter_rows(named=True):
-        custcode = apply_custcode(row)
-        fd_with_custcode.append(custcode)
-
-    fd_processed = fd_processed.with_columns(
-        pl.Series('custcode', fd_with_custcode, dtype=pl.Utf8)
-    )
-
-    # Handle PURPOSE field for BIC='42630'
-    def adjust_purpose(row):
-        """Adjust PURPOSE field based on BIC and CUSTCODE"""
-        bic = row['bic']
-        custcode = row['custcode']
-        purpose = row.get('purpose')
-
-        if bic == '42630':
-            if custcode in ['77', '78', '95']:
-                if purpose not in ['1', '2', '3']:
-                    return '1'
-            else:
-                if purpose not in ['4', '5']:
-                    return '4'
-
-        return purpose
-
-    # Apply purpose adjustments if PURPOSE column exists
-    if 'purpose' in fd_processed.columns:
-        purpose_adjusted = []
-        for row in fd_processed.iter_rows(named=True):
-            purpose_adjusted.append(adjust_purpose(row))
-
-        fd_processed = fd_processed.with_columns(
-            pl.Series('purpose', purpose_adjusted, dtype=pl.Utf8)
-        )
-
-    # Override BIC based on ACCTTYPE
-    fd_processed = fd_processed.with_columns(
-        pl.when(pl.col('accttype').is_in([315, 394]))
-        .then(pl.lit('42132'))
-        .when(pl.col('accttype').is_in([397, 398]))
-        .then(pl.lit('42199'))
-        .otherwise(pl.col('bic'))
-        .alias('bic')
-    )
-
-    # Filter for valid OPENIND values
-    fd_processed = fd_processed.filter(
-        pl.col('openind').is_in(['O', 'D'])
-    )
-
-    # Select required columns for output
-    fdwkly = fd_processed.select([
-        'branch', 'acctno', 'custcode', 'name', 'amtind', 'accttype',
-        'openind', 'curbal', 'bic', 'intpay', 'state', 'term',
-        'intplan', 'matdate'
-    ])
-
-    # Save FDWKLY output
-    fdwkly.write_parquet(FDWKLY_OUTPUT)
-    print(f"Saved {len(fdwkly)} records to {FDWKLY_OUTPUT}")
-
-    # ========================================================================
-    # SECTION 2: Process DEPOSIT.UMA file to create BNM.UMA
-    # ========================================================================
-
-    print("\nProcessing DEPOSIT.UMA file...")
-
-    # Load UMA data
-    uma_data = pl.read_parquet(UMA_FILE)
-    print(f"Loaded {len(uma_data)} records from UMA file")
-
-    # Rename custcode to custcd if needed
-    if 'custcode' in uma_data.columns:
-        uma_data = uma_data.rename({'custcode': 'custcd'})
-
-    # Apply transformations
-    def process_uma_row(row):
-        """Process UMA row to determine custcode and amtind"""
-        product = row['product']
-        custcd = row['custcd']
-
-        if product == 297:
-            custcode = format_fdcustcd(custcd)
-            amtind = 'D'
-        else:
-            custcode = format_ifdcuscd(custcd)
-            amtind = 'I'
-
-        return custcode, amtind
-
-    # Process each row
-    custcodes = []
-    amtinds = []
-
-    for row in uma_data.iter_rows(named=True):
-        custcode, amtind = process_uma_row(row)
-        custcodes.append(custcode)
-        amtinds.append(amtind)
-
-    # Add processed columns
-    uma_processed = uma_data.with_columns([
-        pl.Series('custcode', custcodes, dtype=pl.Utf8),
-        pl.Series('amtind', amtinds, dtype=pl.Utf8),
-
-        # Apply STATE format
-        pl.col('branch').map_elements(
-            format_statecd,
-            return_dtype=pl.Utf8
-        ).alias('state'),
-
-        # Set BIC to constant value
-        pl.lit('42199').alias('bic')
-    ])
-
-    # Filter for valid OPENIND values
-    uma_processed = uma_processed.filter(
-        pl.col('openind').is_in(['O', 'D'])
-    )
-
-    # Select required columns for output
-    uma_output = uma_processed.select([
-        'branch', 'acctno', 'custcode', 'name', 'amtind',
-        'openind', 'curbal', 'bic', 'state'
-    ])
-
-    # Save UMA output
-    uma_output.write_parquet(UMA_OUTPUT)
-    print(f"Saved {len(uma_output)} records to {UMA_OUTPUT}")
-
-    # ========================================================================
-    # Summary
-    # ========================================================================
-
-    print("\n" + "=" * 70)
-    print("Processing Summary:")
-    print("=" * 70)
-    print(f"FDWKLY records created: {len(fdwkly):>10,}")
-    print(f"UMA records created:    {len(uma_output):>10,}")
-    print("=" * 70)
-
-    # Display sample statistics
-    if len(fdwkly) > 0:
-        print("\nFDWKLY BIC Distribution:")
-        bic_counts = fdwkly.group_by('bic').agg(pl.count()).sort('bic')
-        for row in bic_counts.iter_rows(named=True):
-            print(f"  {row['bic']}: {row['count']:>10,}")
-
-    if len(uma_output) > 0:
-        print("\nUMA AMTIND Distribution:")
-        amtind_counts = uma_output.group_by('amtind').agg(pl.count()).sort('amtind')
-        for row in amtind_counts.iter_rows(named=True):
-            print(f"  {row['amtind']}: {row['count']:>10,}")
-
-    conn.close()
-    print("\nProcessing complete!")
+_load_cached(fd_path, FD_SAS_CACHE, "FD")
+_load_cached(uma_path, UMA_SAS_CACHE, "UMA")
 
 
 # ============================================================================
-# ENTRY POINT
+# STEP 2: BUILD BNM.FDWKLY  (input: item 1 — FD.FD)
+# DATA BNM.FDWKLY(KEEP=BRANCH ACCTNO CUSTCODE NAME AMTIND ACCTTYPE OPENIND
+#                      CURBAL BIC INTPAY STATE TERM INTPLAN MATDATE);
+#   SET FD.FD;
+#   BIC = PUT(INTPLAN, FDPROD.);   AMTIND = PUT(INTPLAN, FDDENOM.);
+#   STATE = PUT(BRANCH, STATECD.);
+#   IF BIC IN ('42130','42630') THEN CUSTCODE = PUT(CUSTCD, FDCUSTCD.);
+#      ELSE CUSTCODE = PUT(CUSTCD, IFDCUSCD.);
+#   IF BIC = '42630' THEN <adjust PURPOSE>;   -- PURPOSE is not in the KEEP
+#      list, so this mutation has no effect on the final BNM.FDWKLY output;
+#      replicated below only for behavioral fidelity per project convention
+#      of preserving intentional SAS logic even when it is dead w.r.t. output.
+#   IF ACCTTYPE IN (315,394) THEN BIC='42132'; ELSE
+#   IF ACCTTYPE IN (397,398) THEN BIC='42199';
+#   IF OPENIND = 'O' OR OPENIND = 'D' THEN OUTPUT;
 # ============================================================================
+print("\nStep 2: Building BNM_FDWKLY...")
 
-if __name__ == "__main__":
-    main()
+con = duckdb.connect(database=":memory:")
+_fd_raw = con.execute(f"""
+    SELECT
+        CAST(BRANCH   AS INTEGER) AS BRANCH,
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(CUSTCD   AS INTEGER) AS CUSTCD,
+        CAST(NAME     AS VARCHAR) AS NAME,
+        CAST(ACCTTYPE AS INTEGER) AS ACCTTYPE,
+        CAST(OPENIND  AS VARCHAR) AS OPENIND,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+        CAST(INTPAY   AS DOUBLE)  AS INTPAY,
+        CAST(TERM     AS INTEGER) AS TERM,
+        CAST(INTPLAN  AS INTEGER) AS INTPLAN,
+        CAST(MATDATE  AS DATE)    AS MATDATE,
+        CAST(PURPOSE  AS VARCHAR) AS PURPOSE
+    FROM read_parquet('{FD_SAS_CACHE.as_posix()}')
+    WHERE OPENIND = 'O' OR OPENIND = 'D'
+""").pl()
+con.close()
+
+_fd_raw = _fd_raw.with_columns([
+    pl.col("INTPLAN").map_elements(fdprod_format, return_dtype=pl.Utf8).alias("BIC"),
+    pl.col("INTPLAN").map_elements(fddenom_format, return_dtype=pl.Utf8).alias("AMTIND"),
+    pl.col("BRANCH").map_elements(statecd_format, return_dtype=pl.Utf8).alias("STATE"),
+])
+
+_fd_raw = _fd_raw.with_columns(
+    pl.when(pl.col("BIC").is_in(["42130", "42630"]))
+      .then(pl.col("CUSTCD").map_elements(fdcustcd_format, return_dtype=pl.Utf8))
+      .otherwise(pl.col("CUSTCD").map_elements(ifdcuscd_format, return_dtype=pl.Utf8))
+      .alias("CUSTCODE")
+)
+
+# PURPOSE adjustment — dead code w.r.t. output (PURPOSE dropped by KEEP=),
+# replicated only for behavioral fidelity; does not affect BNM_FDWKLY output.
+_is_resident_purpose = pl.col("CUSTCODE").is_in(["77", "78", "95"])
+_fd_raw = _fd_raw.with_columns(
+    pl.when(pl.col("BIC") == "42630")
+      .then(
+          pl.when(_is_resident_purpose & ~pl.col("PURPOSE").is_in(["1", "2", "3"]))
+            .then(pl.lit("1"))
+            .when(~_is_resident_purpose & ~pl.col("PURPOSE").is_in(["4", "5"]))
+            .then(pl.lit("4"))
+            .otherwise(pl.col("PURPOSE"))
+      )
+      .otherwise(pl.col("PURPOSE"))
+      .alias("PURPOSE")
+)
+
+_fd_raw = _fd_raw.with_columns(
+    pl.when(pl.col("ACCTTYPE").is_in([315, 394])).then(pl.lit("42132"))
+      .when(pl.col("ACCTTYPE").is_in([397, 398])).then(pl.lit("42199"))
+      .otherwise(pl.col("BIC"))
+      .alias("BIC")
+)
+
+BNM_FDWKLY = _fd_raw.select([
+    "BRANCH", "ACCTNO", "CUSTCODE", "NAME", "AMTIND", "ACCTTYPE", "OPENIND",
+    "CURBAL", "BIC", "INTPAY", "STATE", "TERM", "INTPLAN", "MATDATE",
+])
+
+del _fd_raw
+gc.collect()
+print(f"  BNM_FDWKLY rows: {len(BNM_FDWKLY):,}")
+
+
+# ============================================================================
+# STEP 3: BUILD BNM.UMA  (input: item 2 — DEPOSIT.UMA)
+# DATA BNM.UMA(KEEP=BRANCH ACCTNO CUSTCODE NAME AMTIND OPENIND CURBAL BIC STATE);
+#   SET DEPOSIT.UMA(RENAME=(CUSTCODE=CUSTCD));
+#   IF PRODUCT = 297 THEN DO; CUSTCODE=PUT(CUSTCD,FDCUSTCD.); AMTIND='D'; END;
+#   ELSE DO; CUSTCODE=PUT(CUSTCD,IFDCUSCD.); AMTIND='I'; END;
+#   STATE = PUT(BRANCH, STATECD.);  BIC='42199';
+#   IF OPENIND = 'O' OR OPENIND = 'D' THEN OUTPUT;
+# ============================================================================
+print("\nStep 3: Building BNM_UMA...")
+
+con = duckdb.connect(database=":memory:")
+_uma_raw = con.execute(f"""
+    SELECT
+        CAST(BRANCH   AS INTEGER) AS BRANCH,
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(CUSTCODE AS INTEGER) AS CUSTCD,   -- RENAME=(CUSTCODE=CUSTCD)
+        CAST(NAME     AS VARCHAR) AS NAME,
+        CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+        CAST(OPENIND  AS VARCHAR) AS OPENIND,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL
+    FROM read_parquet('{UMA_SAS_CACHE.as_posix()}')
+    WHERE OPENIND = 'O' OR OPENIND = 'D'
+""").pl()
+con.close()
+
+_uma_raw = _uma_raw.with_columns([
+    pl.when(pl.col("PRODUCT") == 297)
+      .then(pl.col("CUSTCD").map_elements(fdcustcd_format, return_dtype=pl.Utf8))
+      .otherwise(pl.col("CUSTCD").map_elements(ifdcuscd_format, return_dtype=pl.Utf8))
+      .alias("CUSTCODE"),
+    pl.when(pl.col("PRODUCT") == 297).then(pl.lit("D")).otherwise(pl.lit("I")).alias("AMTIND"),
+    pl.col("BRANCH").map_elements(statecd_format, return_dtype=pl.Utf8).alias("STATE"),
+    pl.lit("42199").alias("BIC"),
+])
+
+BNM_UMA = _uma_raw.select([
+    "BRANCH", "ACCTNO", "CUSTCODE", "NAME", "AMTIND", "OPENIND", "CURBAL",
+    "BIC", "STATE",
+])
+
+del _uma_raw
+gc.collect()
+print(f"  BNM_UMA rows: {len(BNM_UMA):,}")
+
+
+# ============================================================================
+# STEP 4: WRITE PARQUET CACHE  (temporary artefacts for this program's own
+# and downstream programs' use — see module docstring "NON-FILE / DERIVED /
+# TEMPORARY OUTPUTS")
+# ============================================================================
+BNM_FDWKLY.write_parquet(FDWKLY_CACHE)
+BNM_UMA.write_parquet(UMA_CACHE)
+
+print(f"\nFALWPBBD complete. Cached: {FDWKLY_CACHE.name}, {UMA_CACHE.name}")
