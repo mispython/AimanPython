@@ -1,3 +1,8 @@
+Step 2: Building BNM_SAVG...
+  SAVING_SAS_CACHE path: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIWREXL/isa08226.parquet
+  File exists? True
+  File size: 125668007
+
 print(f"  SAVING_SAS_CACHE path: {SAVING_SAS_CACHE.as_posix()}")
 print(f"  File exists? {SAVING_SAS_CACHE.exists()}")
 print(f"  File size: {SAVING_SAS_CACHE.stat().st_size if SAVING_SAS_CACHE.exists() else 'N/A'}")
