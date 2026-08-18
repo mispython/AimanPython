@@ -11,16 +11,12 @@ Ext. 8452
 
 
 
-Hi IzzatAemyr,
-
 Apologies for the issue.
 
 Upon checking, the report for the 16th position was not generated due to a misconfiguration in the Flow Manager setup, which caused the program not to be triggered properly for the specific date.
 
-We are currently rectifying the configuration and will ensure that the required setup and updates are properly implemented. The reconfiguration and related updates will be tracked under eJS A2026-37958.
+As an immediate action, I will perform an ADHOC run of the program to generate the required report and will verify that the report is successfully generated and sent to DRR.
 
-We will also verify the report generation and ensure that the report is properly generated and sent to DRR accordingly.
+The Flow Manager configuration will also be rectified accordingly to prevent the issue from recurring. All the updates and reconfiguration setup will be tracked under eJS A2026-37958.
 
 Apologies again for the oversight and inconvenience caused.
-
-Thanks and Regards,
