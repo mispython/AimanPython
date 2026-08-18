@@ -133,7 +133,7 @@ print(f"  NOWK     : {NOWK}")
 print(f"  REPTDT   : {REPTDT}")
 
 OUTPUT_FILE = OUTPUT_DIR / "SAP_PIBB_REXL.txt"
-REMOTE_FILENAME = f"REXL_49299_{REPTDT}.XLS"
+REMOTE_FILENAME = f"REXL_49299_{REPTDT}.xls"
 
 
 # ============================================================================
