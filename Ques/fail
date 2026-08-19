@@ -1,19 +1,18 @@
-con = duckdb.connect(database=":memory:")
-_fd_raw = con.execute(f"""
+from datetime import date
+
+SAS_EPOCH = date(1960, 1, 1)
+sas_sdate = (SDATE - SAS_EPOCH).days   # integer SAS date for first of month
+sas_xdate = (XDATE - SAS_EPOCH).days   # integer SAS date for report date
+
+fcy_filtered = con.execute(f"""
     SELECT
+        CAST(ACCTNO   AS VARCHAR) AS ACCTNO,
+        CAST(CDNO     AS VARCHAR) AS CDNO,
+        REPTDATE,                       -- keep as numeric (no cast to DATE)
+        CAST(CURCODE  AS VARCHAR) AS CURCODE,
         CAST(BRANCH   AS INTEGER) AS BRANCH,
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(CUSTCD   AS INTEGER) AS CUSTCD,
-        CAST(NAME     AS VARCHAR) AS NAME,
-        CAST(ACCTTYPE AS INTEGER) AS ACCTTYPE,
-        CAST(OPENIND  AS VARCHAR) AS OPENIND,
-        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
-        CAST(INTPAY   AS DOUBLE)  AS INTPAY,
-        CAST(TERM     AS INTEGER) AS TERM,
-        CAST(INTPLAN  AS INTEGER) AS INTPLAN,
-        DATE '1960-01-01' + CAST(MATDATE AS INTEGER) AS MATDATE,
-        CAST(PURPOSE  AS VARCHAR) AS PURPOSE
-    FROM read_parquet('{FD_SAS_CACHE.as_posix()}')
-    WHERE OPENIND = 'O' OR OPENIND = 'D'
+        CAST(TENURE   AS VARCHAR) AS TENURE,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL
+    FROM read_parquet('{fcy_cache.as_posix()}')
+    WHERE REPTDATE BETWEEN {sas_sdate} AND {sas_xdate}
 """).pl()
-con.close()
