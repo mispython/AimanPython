@@ -1,18 +1,4 @@
-from datetime import date
-
-SAS_EPOCH = date(1960, 1, 1)
-sas_sdate = (SDATE - SAS_EPOCH).days   # integer SAS date for first of month
-sas_xdate = (XDATE - SAS_EPOCH).days   # integer SAS date for report date
-
-fcy_filtered = con.execute(f"""
-    SELECT
-        CAST(ACCTNO   AS VARCHAR) AS ACCTNO,
-        CAST(CDNO     AS VARCHAR) AS CDNO,
-        REPTDATE,                       -- keep as numeric (no cast to DATE)
-        CAST(CURCODE  AS VARCHAR) AS CURCODE,
-        CAST(BRANCH   AS INTEGER) AS BRANCH,
-        CAST(TENURE   AS VARCHAR) AS TENURE,
-        CAST(CURBAL   AS DOUBLE)  AS CURBAL
-    FROM read_parquet('{fcy_cache.as_posix()}')
-    WHERE REPTDATE BETWEEN {sas_sdate} AND {sas_xdate}
-""").pl()
+Dates                             
+ Creation date . . . : 2010/06/01 
+ Referenced date . . : 2026/08/19 
+ Expiration date . . : ***None*** 
