@@ -70,9 +70,9 @@ from output_date import build_output_file
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII/FCFD")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_FDM_FCY_DIR = STG_DIR / "FDM"                      # fcy<REPTMON>.sas7bdat
+INPUT_FDM_FCY_DIR = STG_DIR / "EIBRFCFD"                      # fcy<REPTMON>.sas7bdat
 
 CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIBRFCFD"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBRFCFD"
