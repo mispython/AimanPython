@@ -53,6 +53,7 @@ summary table only.
 
 import gc
 from pathlib import Path
+from datetime import date
 
 import duckdb
 import polars as pl
@@ -61,7 +62,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
-from output_date import build_output_file
+# from output_date import build_output_file
 # from input_date import get_latest_file
 # --- NOT used: FCY filename is fully deterministic from REPTMON, so no
 #     latest-file directory scan is required (see module docstring).
@@ -98,18 +99,25 @@ DAYS = int(REPTDAY)                          # DAYS=&REPTDAY (divisor for averag
 
 SDATE = reptdate.replace(day=1)              # (REPTDATE-DD)+1 -> first day of month
 XDATE = reptdate                             # REPTDATE itself (upper bound of filter)
+RDATE = reptdate.strftime("%y%m%d")
+
+# SDATE = date(2026, 7, 1)
+# XDATE = date(2026, 7, 31)
+# RDATE = reptdate.strftime("%y%m%d")
 
 print(f"  Report date  : {reptdate.isoformat()}")
 print(f"  REPTMON/DAY  : {REPTMON}/{REPTDAY}  (year {REPTYRA})")
 print(f"  SDATE..XDATE : {SDATE.isoformat()} .. {XDATE.isoformat()}")
 
-OUTPUT_FILE = Path(str(build_output_file(OUTPUT_DIR, "FCYFDA", "ddmmyy")) + ".txt")
+# OUTPUT_FILE = Path(str(build_output_file(OUTPUT_DIR, "FCYFDA", "ddmmyy")) + ".txt")
+OUTPUT_FILE = OUTPUT_DIR / f"FCYFDA_{RDATE}.txt"
 print(f"  Output file  : {OUTPUT_FILE.name}")
 
 # ============================================================================
 # STEP 2: RESOLVE FCY MONTHLY INPUT FILE  (deterministic from REPTMON)
 # ============================================================================
 fcy_sas_path = INPUT_FDM_FCY_DIR / f"fcy{REPTMON}.sas7bdat"
+# fcy_sas_path = INPUT_FDM_FCY_DIR / f"fcy07.sas7bdat"
 print(f"\nStep 2: FCY input file -> {fcy_sas_path}")
 
 # ============================================================================
@@ -182,19 +190,36 @@ print(f"  FDDUM rows: {len(fddum):,}")
 # ============================================================================
 print("\nStep 5: Reading and filtering FCY monthly data...")
 
+SAS_EPOCH = date(1960, 1, 1)
+sas_sdate = (SDATE - SAS_EPOCH).days   # integer SAS date for first of month
+sas_xdate = (XDATE - SAS_EPOCH).days   # integer SAS date for report date
+
 con = duckdb.connect(database=":memory:")
+# fcy_filtered = con.execute(f"""
+#     SELECT
+#         CAST(ACCTNO   AS VARCHAR) AS ACCTNO,
+#         CAST(CDNO     AS VARCHAR) AS CDNO,
+#         CAST(REPTDATE AS DATE)    AS REPTDATE,
+#         CAST(CURCODE  AS VARCHAR) AS CURCODE,
+#         CAST(BRANCH   AS INTEGER) AS BRANCH,
+#         CAST(TENURE   AS VARCHAR) AS TENURE,
+#         CAST(CURBAL   AS DOUBLE)  AS CURBAL
+#     FROM read_parquet('{fcy_cache.as_posix()}')
+#     WHERE CAST(REPTDATE AS DATE) BETWEEN DATE '{SDATE.isoformat()}'
+#                                       AND DATE '{XDATE.isoformat()}'
+# """).pl()
+
 fcy_filtered = con.execute(f"""
     SELECT
         CAST(ACCTNO   AS VARCHAR) AS ACCTNO,
         CAST(CDNO     AS VARCHAR) AS CDNO,
-        CAST(REPTDATE AS DATE)    AS REPTDATE,
+        REPTDATE,
         CAST(CURCODE  AS VARCHAR) AS CURCODE,
         CAST(BRANCH   AS INTEGER) AS BRANCH,
         CAST(TENURE   AS VARCHAR) AS TENURE,
         CAST(CURBAL   AS DOUBLE)  AS CURBAL
     FROM read_parquet('{fcy_cache.as_posix()}')
-    WHERE CAST(REPTDATE AS DATE) BETWEEN DATE '{SDATE.isoformat()}'
-                                      AND DATE '{XDATE.isoformat()}'
+    WHERE REPTDATE BETWEEN {sas_sdate} AND {sas_xdate}
 """).pl()
 con.close()
 gc.collect()
@@ -432,9 +457,9 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(output_lines):,}")
 
-print("\n--- FDFA extract content ---")
-for ln in output_lines:
-    print(ln)
+# print("\n--- FDFA extract content ---")
+# for ln in output_lines:
+#     print(ln)
 
 # ============================================================================
 # STEP 12: TERMINAL-ONLY SUMMARY  (PROC SUMMARY CLASS CURCODE; PROC PRINT;)
