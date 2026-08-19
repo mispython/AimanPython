@@ -78,11 +78,15 @@ from PBBDPFMT import (
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_FD_DIR = BASE_DIR / "input" / "prod" / "deposit"    # fd_fd
-FD_PREFIX     = "ifdcd"
+# INPUT_FD_DIR = BASE_DIR / "input" / "prod" / "deposit"    # fd_fd
+# FD_PREFIX     = "ifdcd"
 
-INPUT_UMA_DIR = BASE_DIR / "input" / "prod" / "deposit"   # deposit_uma
-UMA_PREFIX     = "iuma"
+# INPUT_UMA_DIR = BASE_DIR / "input" / "prod" / "deposit"   # deposit_uma
+# UMA_PREFIX     = "iuma"
+
+INPUT_FD_DIR  = STG_DIR / "MNIFD" / "fd.sas7bdat"
+
+INPUT_UMA_DIR = STG_DIR / "MNITB" / "uma.sas7bdat"
 
 # Parquet cache directory for the .sas7bdat -> Parquet conversion step
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWREXL"
@@ -91,7 +95,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Output cache directory — where BNM_FDWKLY/BNM_UMA are persisted for
 # downstream programs (e.g. EIIWREXL.py) to read via read_parquet()
 # OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
-OUTPUT_CACHE_DIR = BASE_DIR / "input" / "prod" / "EIIWREXL" / "BNM"
+OUTPUT_CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWREXL"
 OUTPUT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -184,8 +188,11 @@ def _load_cached(sas_path: Path, cache_path: Path, tag: str) -> Path:
 # ============================================================================
 print("\nStep 1: Resolving and caching input files...")
 
-fd_path  = get_latest_file(INPUT_FD_DIR, prefix=FD_PREFIX)
-uma_path = get_latest_file(INPUT_UMA_DIR, prefix=UMA_PREFIX)
+# fd_path  = get_latest_file(INPUT_FD_DIR, prefix=FD_PREFIX)
+# uma_path = get_latest_file(INPUT_UMA_DIR, prefix=UMA_PREFIX)
+
+fd_path  = INPUT_FD_DIR
+uma_path = INPUT_UMA_DIR
 
 FD_SAS_CACHE  = CACHE_DIR / f"{fd_path.stem}.parquet"
 UMA_SAS_CACHE = CACHE_DIR / f"{uma_path.stem}.parquet"
@@ -226,7 +233,7 @@ _fd_raw = con.execute(f"""
         CAST(INTPAY   AS DOUBLE)  AS INTPAY,
         CAST(TERM     AS INTEGER) AS TERM,
         CAST(INTPLAN  AS INTEGER) AS INTPLAN,
-        CAST(MATDATE  AS DATE)    AS MATDATE,
+        DATE '1960-01-01' + CAST(MATDATE AS INTEGER) AS MATDATE,
         CAST(PURPOSE  AS VARCHAR) AS PURPOSE
     FROM read_parquet('{FD_SAS_CACHE.as_posix()}')
     WHERE OPENIND = 'O' OR OPENIND = 'D'
