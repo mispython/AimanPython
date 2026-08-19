@@ -94,11 +94,15 @@ from PBBDPFMT import (
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_SAVING_DIR = BASE_DIR / "input" / "prod" / "deposit"   # deposit_saving
-SAVING_PREFIX    = "isa"
+# INPUT_SAVING_DIR = BASE_DIR / "input" / "prod" / "deposit"   # deposit_saving
+# SAVING_PREFIX    = "isa"
 
-INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "deposit"  # deposit_current
-CURRENT_PREFIX    = "ica"
+# INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "deposit"  # deposit_current
+# CURRENT_PREFIX    = "ica"
+
+INPUT_SAVING_DIR = STG_DIR / "MNITB" / "saving.sas7bdat"
+
+INPUT_CURRENT_DIR = STG_DIR / "MNITB" / "current.sas7bdat"
 
 INPUT_CISDP_DIR = STG_DIR / "EIIWREXL" / "CISDP_deposit.sas7bdat"  # cisdp_deposit
 
@@ -109,7 +113,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Output cache directory — where BNM_SAVG/BNM_CURN/BNM_DEPT are persisted
 # for downstream programs (e.g. EIIWREXL.py) to read via read_parquet()
 # OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
-OUTPUT_CACHE_DIR = BASE_DIR / "input" / "prod" / "EIIWREXL" / "BNM"
+OUTPUT_CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWREXL"
 OUTPUT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -203,8 +207,11 @@ def _load_cached(sas_path: Path, cache_path: Path, tag: str) -> Path:
 # ============================================================================
 print("\nStep 1: Resolving and caching input files...")
 
-saving_path  = get_latest_file(INPUT_SAVING_DIR, prefix=SAVING_PREFIX)
-current_path = get_latest_file(INPUT_CURRENT_DIR, prefix=CURRENT_PREFIX)
+# saving_path  = get_latest_file(INPUT_SAVING_DIR, prefix=SAVING_PREFIX)
+# current_path = get_latest_file(INPUT_CURRENT_DIR, prefix=CURRENT_PREFIX)
+
+saving_path  = INPUT_SAVING_DIR
+current_path = INPUT_CURRENT_DIR
 
 SAVING_SAS_CACHE  = CACHE_DIR / f"{saving_path.stem}.parquet"
 CURRENT_SAS_CACHE = CACHE_DIR / f"{current_path.stem}.parquet"
@@ -242,6 +249,28 @@ _savg_raw = con.execute(f"""
     WHERE OPENIND NOT IN ('B','C','P') AND CURBAL >= 0
 """).pl()
 con.close()
+
+con = duckdb.connect(database=":memory:")
+
+# test = con.execute(f"SELECT * FROM read_parquet('{SAVING_SAS_CACHE.as_posix()}') LIMIT 1").pl()
+# print("Columns in Parquet:", test.columns)
+
+# _savg_raw = con.execute(f"""
+#     SELECT
+#         CAST("BRANCH"   AS INTEGER) AS "BRANCH",
+#         CAST("PRODUCT"  AS INTEGER) AS "PRODUCT",
+#         CAST("CUSTCODE" AS INTEGER) AS "CUSTCODE",
+#         CAST("NAME"     AS VARCHAR) AS "NAME",
+#         CAST("ACCTNO"   AS BIGINT)  AS "ACCTNO",
+#         CAST("CURBAL"   AS DOUBLE)  AS "CURBAL",
+#         CAST("INTPAYBL" AS DOUBLE)  AS "INTPAYBL",
+#         CAST("COSTCTR"  AS VARCHAR) AS "COSTCTR",
+#         CAST("DNBFISME" AS VARCHAR) AS "DNBFISME",
+#         CAST("CURCODE"  AS VARCHAR) AS "CURCODE"
+#     FROM read_parquet('{SAVING_SAS_CACHE.as_posix()}')
+#     WHERE "OPENIND" NOT IN ('B','C','P') AND "CURBAL" >= 0
+# """).pl()
+# con.close()
 
 BNM_SAVG = _savg_raw.with_columns([
     pl.col("CUSTCODE").map_elements(sacustcd_format, return_dtype=pl.Utf8).alias("CUSTCD"),
