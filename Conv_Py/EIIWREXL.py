@@ -126,13 +126,14 @@ else:
 
 REPTMON = f"{REPTDATE.month:02d}"          # PUT(MONTH(REPTDATE),Z2.)
 REPTDT  = REPTDATE.strftime("%d%m%y")      # PUT(REPTDATE,DDMMYYN6.)
+RDATE   = REPTDATE.strftime("%y%m%d")
 
 print(f"  REPTDATE : {REPTDATE}")
 print(f"  REPTMON  : {REPTMON}")
 print(f"  NOWK     : {NOWK}")
 print(f"  REPTDT   : {REPTDT}")
 
-OUTPUT_FILE = OUTPUT_DIR / "SAP_PIBB_REXL.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"EIIWREXL_report_{RDATE}.txt"
 REMOTE_FILENAME = f"REXL_49299_{REPTDT}.xls"
 
 
@@ -259,24 +260,24 @@ print(f"  Grand total (SPTF): {_comma_fmt(GRAND_TOTAL)}")
 # DATA _NULL_; FILE SFTP01; PUT @1 "PUT //SAP.PIBB.REXL.TEXT  REXL_49299_&REPTDT..XLS";
 # RUNSFTP job step: cd "FD-BNM REPORTING/PIBB/BNM RPTG"
 # ============================================================================
-print("\nStep 3: Uploading via SFTP...")
+# print("\nStep 3: Uploading via SFTP...")
 
-try:
-    sftp_info = get_sftp_info(HOST_DESC)
-    transport = paramiko.Transport((sftp_info["HOST"], sftp_info.get("PORT", 22)))
-    transport.connect(username=sftp_info["USER"], password=sftp_info["PASSWORD"])
-    sftp = paramiko.SFTPClient.from_transport(transport)
+# try:
+#     sftp_info = get_sftp_info(HOST_DESC)
+#     transport = paramiko.Transport((sftp_info["HOST"], sftp_info.get("PORT", 22)))
+#     transport.connect(username=sftp_info["USER"], password=sftp_info["PASSWORD"])
+#     sftp = paramiko.SFTPClient.from_transport(transport)
 
-    remote_path = f"{SFTP_REMOTE_DIR}/{REMOTE_FILENAME}"
-    sftp.put(str(OUTPUT_FILE), remote_path)
+#     remote_path = f"{SFTP_REMOTE_DIR}/{REMOTE_FILENAME}"
+#     sftp.put(str(OUTPUT_FILE), remote_path)
 
-    sftp.close()
-    transport.close()
-    print(f"  Uploaded {OUTPUT_FILE.name} -> {remote_path}")
-except Exception as e:
-    print(f"  SFTP upload failed: {e}")
-    print(f"  Remote dir  : {SFTP_REMOTE_DIR}")
-    print(f"  Remote name : {REMOTE_FILENAME}")
-    print("  (HOST_DESC key unconfirmed against ctl_dwh_sftp_info.sas7bdat)")
+#     sftp.close()
+#     transport.close()
+#     print(f"  Uploaded {OUTPUT_FILE.name} -> {remote_path}")
+# except Exception as e:
+#     print(f"  SFTP upload failed: {e}")
+#     print(f"  Remote dir  : {SFTP_REMOTE_DIR}")
+#     print(f"  Remote name : {REMOTE_FILENAME}")
+#     print("  (HOST_DESC key unconfirmed against ctl_dwh_sftp_info.sas7bdat)")
 
 print("\nEIIWREXL complete.")
