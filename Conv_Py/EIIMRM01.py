@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Program : EIIMRM01.py (converted from SAS EIIMRM01, ISLAMIC)
+Program : EIIMRM01.py
 Purpose : Deposits, By Time To Maturity For ALCO
           (Weighted Average Cost By Maturity Profile) - Islamic book.
 
@@ -68,20 +68,27 @@ from PBBDPFMT import fdprod_format, caprod_format
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
+# BASE_DIR = Path("/sas/deposit/dwh")
+
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_FD_DIR      = BASE_DIR / "input" / "prod" / "EIIMRM01" / "FD"
-INPUT_SAVING_DIR  = BASE_DIR / "input" / "prod" / "EIIMRM01" / "SAVING"
-INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "EIIMRM01" / "CURRENT"
+# INPUT_FD_DIR      = BASE_DIR / "enrichment"
+# INPUT_SAVING_DIR  = BASE_DIR / "integration"
+# INPUT_CURRENT_DIR = BASE_DIR / "integration"
 
-INPUT_FD_FILE      = INPUT_FD_DIR / "fd.sas7bdat"
-INPUT_SAVING_FILE  = INPUT_SAVING_DIR / "saving.sas7bdat"
-INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "current.sas7bdat"
+INPUT_FD_DIR      = STG_DIR / "sasdata"
+INPUT_SAVING_DIR  = STG_DIR / "sasdata"
+INPUT_CURRENT_DIR = STG_DIR / "sasdata"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRM01"
+INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
+INPUT_SAVING_FILE  = INPUT_SAVING_DIR / "intg_dp_acct_saving_d19.sas7bdat"
+INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "intg_dp_acct_current_d19.sas7bdat"
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRM01"
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIIMRM01.txt"
 
