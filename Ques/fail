@@ -1,3 +1,14 @@
+def _fmt_num(value, width, decimals):
+    if value is None:
+        return "0".rjust(width)
+    v = float(value)
+    if abs(v) < 0.5 * 10 ** -decimals:   # threshold for rounding to zero
+        v = 0.0
+    # ... rest of formatting
+
+
+
+
 import pandas as pd
 import pyarrow as pa
 
