@@ -1,10 +1,35 @@
-def _fmt_num(value, width, decimals):
-    if value is None:
-        return "0".rjust(width)
-    v = float(value)
-    if abs(v) < 0.5 * 10 ** -decimals:   # threshold for rounding to zero
-        v = 0.0
-    # ... rest of formatting
+print(f"  FD raw columns: {fd_raw.columns}")
+print(f"  First 3 rows of fd_raw (sample):")
+print(fd_raw.head(3))
+
+
+
+
+debug_count = 0
+for r in fd_raw.iter_rows(named=True):
+    if debug_count < 5:
+        print(f"DEBUG {debug_count}:")
+        print(f"  intplan  = {r['INT_PLAN']}  (type: {type(r['INT_PLAN'])})")
+        print(f"  curbal   = {r['CURR_BAL']}")
+        print(f"  rate     = {r['RT']}")
+        print(f"  openind  = {r['OPEN_IND']!r}")
+        print(f"  matdate  = {r['MATURE_DT']!r}")
+        # parse matdt and print
+        matdt = _parse_matdate(r['MATURE_DT'])
+        print(f"  parsed matdt = {matdt}")
+        print(f"  reptdate = {reptdate}")
+        print(f"  matdt < reptdate? {matdt < reptdate}")
+        # also print bnmcode
+        bnmcode = fdprod_format(r['INT_PLAN'])
+        print(f"  bnmcode = {bnmcode}")
+        debug_count += 1
+
+
+
+
+import pyarrow.parquet as pq
+schema = pq.read_schema(FD_CACHE)
+print("FD Parquet schema columns:", schema.names)
 
 
 
