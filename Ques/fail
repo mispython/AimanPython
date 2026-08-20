@@ -1,102 +1,26 @@
-# --- DIAGNOSTIC 1: Count PIBB accounts in MAIN_FD ---
-con = duckdb.connect(database=":memory:")
-pibb_count = con.execute(f"""
-    SELECT COUNT(DISTINCT ACCTNO) 
-    FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-    WHERE ENTITY_CD = 'PIBB'
-""").fetchone()[0]
-print(f"  PIBB accounts in MAIN_FD: {pibb_count:,}")
-con.close()
-
-
-
-
-# --- DIAGNOSTIC 2: Total rows in FD ---
-con = duckdb.connect(database=":memory:")
-fd_count = con.execute(f"""
-    SELECT COUNT(*) 
-    FROM read_parquet('{FD_CACHE.as_posix()}')
-""").fetchone()[0]
-print(f"  Total rows in FD: {fd_count:,}")
-con.close()
-
-
-
-
-# --- DIAGNOSTIC 3: Column names ---
-import pyarrow.parquet as pq
-fd_schema = pq.read_schema(FD_CACHE)
-main_schema = pq.read_schema(MAIN_FD_CACHE)
-print("  FD columns:", fd_schema.names)
-print("  MAIN_FD columns:", main_schema.names)
-
-
-
-
-# --- DIAGNOSTIC 4: Sample account numbers ---
-con = duckdb.connect(database=":memory:")
-sample_fd = con.execute(f"""
-    SELECT ACCT_NUM FROM read_parquet('{FD_CACHE.as_posix()}') LIMIT 5
-""").pl()
-print("  Sample FD ACCT_NUM:", sample_fd)
-con.close()
-
-con = duckdb.connect(database=":memory:")
-sample_main = con.execute(f"""
-    SELECT ACCTNO FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-    WHERE ENTITY_CD = 'PIBB' LIMIT 5
-""").pl()
-print("  Sample MAIN_FD ACCTNO:", sample_main)
-con.close()
-
-
-
-
-# --- DIAGNOSTIC 5: Join counts with different casts ---
-con = duckdb.connect(database=":memory:")
-join_count = con.execute(f"""
-    SELECT COUNT(*) 
-    FROM read_parquet('{FD_CACHE.as_posix()}') f
-    INNER JOIN read_parquet('{MAIN_FD_CACHE.as_posix()}') m
-        ON f.ACCT_NUM = m.ACCTNO
-    WHERE m.ENTITY_CD = 'PIBB'
-""").fetchone()[0]
-print(f"  Join count (no cast): {join_count:,}")
-con.close()
-
-con = duckdb.connect(database=":memory:")
-join_count_varchar = con.execute(f"""
-    SELECT COUNT(*) 
-    FROM read_parquet('{FD_CACHE.as_posix()}') f
-    INNER JOIN read_parquet('{MAIN_FD_CACHE.as_posix()}') m
-        ON CAST(f.ACCT_NUM AS VARCHAR) = CAST(m.ACCTNO AS VARCHAR)
-    WHERE m.ENTITY_CD = 'PIBB'
-""").fetchone()[0]
-print(f"  Join count (VARCHAR): {join_count_varchar:,}")
-con.close()
-
-
-
-
-# --- TEMPORARY: Read FD without filter (for debugging only) ---
-con = duckdb.connect(database=":memory:")
-fd_raw = con.execute(f"""
-    SELECT * FROM read_parquet('{FD_CACHE.as_posix()}')
-""").pl()
-con.close()
-print(f"  FD rows (unfiltered): {len(fd_raw):,}")
-
-
-
-
-con = duckdb.connect(database=":memory:")
-fd_raw = con.execute(f"""
-    SELECT
-        CAST(INT_PLAN  AS INTEGER) AS INTPLAN,
-        CAST(CURR_BAL  AS DOUBLE)  AS CURBAL,
-        CAST(RT        AS DOUBLE)  AS RATE,
-        CAST(MATURE_DT AS VARCHAR) AS MATDATE,
-        CAST(OPEN_IND  AS VARCHAR) AS OPENIND
-    FROM read_parquet('{FD_CACHE.as_posix()}')
-""").pl()
-con.close()
+def _parse_matdate(matdate) -> date:
+    """
+    Parse either:
+      - 'DDMONYYYY:HH:MM:SS'   (SAS datetime string)
+      - 'YYYY-MM-DD'           (ISO date)
+      - 'YYYY-MM-DD HH:MM:SS'  (ISO with time)
+    """
+    s = str(matdate).strip().upper()
+    
+    # If the string contains '-' it's likely ISO format (YYYY-MM-DD)
+    if '-' in s:
+        # Split by '-' to get year, month, day
+        parts = s.split('-')
+        year = int(parts[0])
+        mon = int(parts[1])
+        # The day part might have a trailing time, e.g., "26 00:00:00"
+        day_part = parts[2].split()[0]  # take only the date part
+        day = int(day_part)
+        return date(year, mon, day)
+    
+    # Otherwise assume SAS datetime format 'DDMONYYYY:HH:MM:SS'
+    date_part = s.split(":")[0]           # e.g., "25SEP2026"
+    day = int(date_part[0:2])
+    mon = _MONTH_MAP[date_part[2:5]]      # "SEP" -> 9
+    year = int(date_part[5:9])
+    return date(year, mon, day)
