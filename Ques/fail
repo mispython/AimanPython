@@ -1,26 +1,6 @@
-def _parse_matdate(matdate) -> date:
-    """
-    Parse either:
-      - 'DDMONYYYY:HH:MM:SS'   (SAS datetime string)
-      - 'YYYY-MM-DD'           (ISO date)
-      - 'YYYY-MM-DD HH:MM:SS'  (ISO with time)
-    """
-    s = str(matdate).strip().upper()
-    
-    # If the string contains '-' it's likely ISO format (YYYY-MM-DD)
-    if '-' in s:
-        # Split by '-' to get year, month, day
-        parts = s.split('-')
-        year = int(parts[0])
-        mon = int(parts[1])
-        # The day part might have a trailing time, e.g., "26 00:00:00"
-        day_part = parts[2].split()[0]  # take only the date part
-        day = int(day_part)
-        return date(year, mon, day)
-    
-    # Otherwise assume SAS datetime format 'DDMONYYYY:HH:MM:SS'
-    date_part = s.split(":")[0]           # e.g., "25SEP2026"
-    day = int(date_part[0:2])
-    mon = _MONTH_MAP[date_part[2:5]]      # "SEP" -> 9
-    year = int(date_part[5:9])
-    return date(year, mon, day)
+con = duckdb.connect(database=":memory:")
+distinct_entity = con.execute(f"""
+    SELECT DISTINCT ENTITY_CD FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+""").pl()
+print("  Distinct ENTITY_CD values:", distinct_entity)
+con.close()
