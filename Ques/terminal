@@ -1,4 +1,4 @@
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM01.py", line 548, in <module>
-    intplan = r["INTPLAN"]
-KeyError: 'INTPLAN'
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM01.py", line 584, in <module>
+    matdt = _parse_matdate(r["MATURE_DT"])
+KeyError: 'MATURE_DT'
