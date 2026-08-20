@@ -23,10 +23,11 @@ from typing import Iterable
 #   PARQUET_FILE_PATH = r"C:\Users\you\Downloads\report.parquet"
 #   PARQUET_FILE_PATH = "/home/you/downloads/report.parquet"
 #   PARQUET_FILE_PATH = "./report.parquet"
-PARQUET_FILE_PATH = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBXODLC/PBB/ODLC_OVERDRAFT1_06.parquet")
+# PARQUET_FILE_PATH = Path("/stgsrcsys/host/uat/AII/STG_DP_DPTRBLGS.parquet/part.0.parquet")
+PARQUET_FILE_PATH = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMCC/DPCC06.parquet")
 
 # None means display the whole file. Set to a number such as 100 if you only
-# want to display the first 100 rows.
+# want to display the first 10 rows.
 ROWS_TO_DISPLAY: int | 10 = 10
 
 
