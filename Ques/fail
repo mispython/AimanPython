@@ -1,11 +1,11 @@
-        columns = _parse_columns(args.columns)
-        dataframe = _read_parquet(parquet_file, columns)
-        
-        # --- FILTER: Keep only rows where RT equals 3.75 ---
-        if 'RT' in dataframe.columns:
-            dataframe = dataframe[dataframe['RT'] == 3.75]
-        else:
-            print("Warning: Column 'RT' not found. Showing all data.", file=sys.stderr)
-        # ---------------------------------------------------
-        
-        _print_basic_info(parquet_file, dataframe)
+columns = _parse_columns(args.columns)
+dataframe = _read_parquet(parquet_file, columns)
+
+# --- Keep only rows where 'RT' equals 3.75 ---
+if 'RT' in dataframe.columns:
+    dataframe = dataframe[dataframe['RT'] == 3.75]
+else:
+    print("Warning: Column 'RT' not found. Showing all data.", file=sys.stderr)
+# ---------------------------------------------
+
+_print_basic_info(parquet_file, dataframe)
