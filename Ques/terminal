@@ -1,44 +1,4 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM01.py
-Step 1: Deriving report date...
-  RDATE        : 19/08/26
-  REPTMON/DAY  : 08/19  REPTYEAR: 2026
-  Output file  : EIIMRM01.txt
-
-Step 2: Caching input SAS datasets to Parquet...
-  [MAIN_FD] Cache fresh - skipping conversion.
-  [FD] Cache fresh - skipping conversion.
-  [SAVING] Cache fresh - skipping conversion.
-  [CURRENT] Cache fresh - skipping conversion.
-
-Step 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...
-  FD rows after PIBB account filter: 0
-  FD  rows: 0   TD rows: 0   FDN rows: 0
-
-Step 4: Building SA from BNM.SAVING (PIBB only)...
-  SA rows: 2,210,167
-
-Step 5: Building CA / CAG / CAS from BNM.CURRENT (PIBB only)...
-  CA rows: 6,280   CAG rows: 1,161   CAS rows: 0
-
-Step 6: Summarising TD / FD / FDN / SA / CA / CAG / CAS...
-  FDN summary rows after MISSING-option filter: 0 (RM deposits excluded because TERM/REMMTH is missing there)
-
-Step 7: Combining TD+FD+FDN and computing REMMTH1...
-  FD (final) rows after DUMMY padding: 0
-
-Step 8: Building DEP...
-
-Step 9: Applying DEP transform...
-
-Step 10: Building DEPFINAL (non-FD PRODTYP)...
-  DEPFINAL rows: 24
-
-Step 11: Building FD (FIXED DEPT RM/FCY) table...
-  FD table rows: 0
-
-Step 12: Rendering report...
-
-  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIMRPTS/EIIMRM01.txt
-  Total lines    : 50
-
-EIIMRM01 complete.
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM01.py", line 548, in <module>
+    intplan = r["INTPLAN"]
+KeyError: 'INTPLAN'
