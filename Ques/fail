@@ -1,6 +1,6 @@
 con = duckdb.connect(database=":memory:")
-distinct_entity = con.execute(f"""
-    SELECT DISTINCT ENTITY_CD FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-""").pl()
-print("  Distinct ENTITY_CD values:", distinct_entity)
-con.close()
+pibb_count = con.execute(f"""
+    SELECT COUNT(DISTINCT ACCTNO)
+    FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+    WHERE TRIM(CAST(ENTITY_CD AS VARCHAR)) = 'PIBB'
+""").fetchone()[0]
