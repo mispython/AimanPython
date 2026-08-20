@@ -1,6 +1,57 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM01.py
+Step 1: Deriving report date...
+  RDATE        : 19/08/26
+  REPTMON/DAY  : 08/19  REPTYEAR: 2026
+  Output file  : EIIMRM01.txt
+
 Step 2: Caching input SAS datasets to Parquet...
-  [MAIN_FD] Converting intg_dp_acct_fd_d19.sas7bdat -> intg_dp_acct_fd_d19.parquet ...
-  [MAIN_FD] WARNING: cannot cast 'FORATE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [MAIN_FD] WARNING: cannot cast 'FORATE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [MAIN_FD] WARNING: cannot cast 'ENTITY_CD' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
-  [MAIN_FD] Done - 1,894,540 rows cached.
+  [MAIN_FD] Cache fresh - skipping conversion.
+  [FD] Cache fresh - skipping conversion.
+  [SAVING] Cache fresh - skipping conversion.
+  [CURRENT] Cache fresh - skipping conversion.
+
+Step 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...
+  FD Parquet schema columns: ['BANK_NO', 'REPT_NO', 'FORMAT_CODE', 'BRANCH_CD', 'ACCT_NUM', 'PURPOSE_CD', 'CUSTOMER_CD', 'DEPOSIT_DT', 'CERT_NUM', 'OPEN_IND', 'CURR_BAL', 'ORIG_AMT', 'ORIG_DT', 'MATURE_DT', 'RT', 'ACCOUNT_TYPE_CD', 'TERM', 'MATUREITY_TERM_CD', 'INT_PLAN', 'PAYMENT_IND', 'RENEWAL_IND', 'INT_PAID_YTD', 'INT_PAYABLE', 'INT_DT', 'LAST_ACTIVE_DT', 'INT_FREQ', 'INT_FREQ_CD', 'PENDING_INT', 'CURRENCY_CD', 'LAST_MATURE_DT', 'PRO_RATIO', 'CERT_HOLD_IND', 'COST_CENTRE', 'COLL_NUM', 'INT_TRANSFER_ACCT_NUM', 'NEW_RT', 'OLD_RT', 'EFFECTIVE_DT', 'DEALERS_NAME', 'USER_ID', 'STATUS', 'SPECIAL_RT_DTTM', 'STATUS_DTTM', 'CURR_DEALER_NAME_ID']
+  FD raw columns: ['INTPLAN', 'CURBAL', 'RATE', 'MATDATE', 'OPENIND']
+  First 3 rows of fd_raw (sample):
+shape: (3, 5)
+┌─────────┬───────────┬──────┬─────────────────────┬─────────┐
+│ INTPLAN ┆ CURBAL    ┆ RATE ┆ MATDATE             ┆ OPENIND │
+│ ---     ┆ ---       ┆ ---  ┆ ---                 ┆ ---     │
+│ i32     ┆ f64       ┆ f64  ┆ str                 ┆ str     │
+╞═════════╪═══════════╪══════╪═════════════════════╪═════════╡
+│ 277     ┆ 0.0       ┆ 3.65 ┆ 2026-07-22 00:00:00 ┆ C       │
+│ 275     ┆ 1.5446e7  ┆ 3.75 ┆ 2026-08-20 00:00:00 ┆ D       │
+│ 278     ┆ 191916.76 ┆ 3.85 ┆ 2026-12-30 00:00:00 ┆ O       │
+└─────────┴───────────┴──────┴─────────────────────┴─────────┘
+  FD rows after PIBB account filter: 481,311
+  FD  rows: 433,895   TD rows: 9   FDN rows: 433,895
+
+Step 4: Building SA from BNM.SAVING (PIBB only)...
+  SA rows: 2,210,167
+
+Step 5: Building CA / CAG / CAS from BNM.CURRENT (PIBB only)...
+  CA rows: 6,280   CAG rows: 1,161   CAS rows: 0
+
+Step 6: Summarising TD / FD / FDN / SA / CA / CAG / CAS...
+  FDN summary rows after MISSING-option filter: 0 (RM deposits excluded because TERM/REMMTH is missing there)
+
+Step 7: Combining TD+FD+FDN and computing REMMTH1...
+  FD (final) rows after DUMMY padding: 28
+
+Step 8: Building DEP...
+
+Step 9: Applying DEP transform...
+
+Step 10: Building DEPFINAL (non-FD PRODTYP)...
+  DEPFINAL rows: 24
+
+Step 11: Building FD (FIXED DEPT RM/FCY) table...
+  FD table rows: 60
+
+Step 12: Rendering report...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIMRPTS/EIIMRM01.txt
+  Total lines    : 95
+
+EIIMRM01 complete.
