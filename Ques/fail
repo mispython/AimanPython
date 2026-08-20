@@ -4,3 +4,22 @@ pibb_count = con.execute(f"""
     FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
     WHERE TRIM(CAST(ENTITY_CD AS VARCHAR)) = 'PIBB'
 """).fetchone()[0]
+
+
+
+
+FORCE_REFRESH = {"MAIN_FD"}   # tags that must always reconvert regardless of cache
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    if tag not in FORCE_REFRESH and _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
+    else:
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
+
+
+
+
+
