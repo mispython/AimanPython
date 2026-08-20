@@ -1,1 +1,138 @@
-25SEP2026:00:00:00
+"""
+...
+============================================================================
+PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
+same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py)
+============================================================================
+1. main_fd.sas7bdat   (PBB+PIBB combined account master for FD)
+   File : INPUT_MAIN_FD_FILE   -> main_fd.sas7bdat
+   Cols used : ACCTNO, ENTITY_CD
+   Used to build the list of PIBB-only account numbers, since fd.sas7bdat
+   itself is a mixed PBB/PIBB dataset with no ENTITY_CD column.
+
+2. fd.sas7bdat        (JCL //FD  DD DSN=SAP.PIBB.MNIFD(0))
+   File : INPUT_FD_FILE        -> fd.sas7bdat
+   Cols used : ACCT_NUM, INTPLAN, CURBAL, RATE, MATDATE, OPENIND
+   Used : DATA FD/TD/FDN step. Filtered to PIBB-only rows by inner-joining
+          ACCT_NUM against the PIBB ACCTNO list derived from main_fd.sas7bdat.
+   MATDATE format : SAS datetime-style string 'DDMONYYYY:HH:MM:SS'
+                     (e.g. '25SEP2026:00:00:00'), parsed accordingly.
+
+3. saving.sas7bdat    (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member SAVING)
+   File : INPUT_SAVING_FILE    -> saving.sas7bdat
+   Cols used : PRODUCT, OPENIND, CURBAL, INTRATE, ENTITY_CD
+   Used : DATA SA step. Filtered directly by ENTITY_CD = 'PIBB'.
+
+4. current.sas7bdat   (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
+   File : INPUT_CURRENT_FILE   -> current.sas7bdat
+   Cols used : PRODUCT, OPENIND, CURBAL, INTRATE, ENTITY_CD
+   Used : DATA CA/CAG/CAS step. Filtered directly by ENTITY_CD = 'PIBB'.
+...
+"""
+
+
+
+
+INPUT_MAIN_FD_DIR = BASE_DIR / "input" / "prod" / "EIIMRM01" / "MAIN_FD"
+INPUT_FD_DIR      = BASE_DIR / "input" / "prod" / "EIIMRM01" / "FD"
+INPUT_SAVING_DIR  = BASE_DIR / "input" / "prod" / "EIIMRM01" / "SAVING"
+INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "EIIMRM01" / "CURRENT"
+
+INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "main_fd.sas7bdat"
+INPUT_FD_FILE       = INPUT_FD_DIR / "fd.sas7bdat"
+INPUT_SAVING_FILE   = INPUT_SAVING_DIR / "saving.sas7bdat"
+INPUT_CURRENT_FILE  = INPUT_CURRENT_DIR / "current.sas7bdat"
+
+
+
+
+_MONTH_MAP = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+
+def _parse_matdate(matdate) -> date:
+    """MATDATE is now sourced as a SAS datetime-style string of the form
+    'DDMONYYYY:HH:MM:SS' (e.g. '25SEP2026:00:00:00'). Only the date
+    portion (before the first ':') is relevant here; the time component
+    is always 00:00:00 and is discarded, matching the original SAS
+    MATDT derivation which only ever used the date value."""
+    date_part = str(matdate).split(":")[0].strip().upper()
+    day = int(date_part[0:2])
+    mon = _MONTH_MAP[date_part[2:5]]
+    year = int(date_part[5:9])
+    return date(year, mon, day)
+
+
+
+
+print("\nStep 2: Caching input SAS datasets to Parquet...")
+MAIN_FD_CACHE = _load_cached(INPUT_MAIN_FD_FILE, "MAIN_FD")
+FD_CACHE      = _load_cached(INPUT_FD_FILE, "FD")
+SAVING_CACHE  = _load_cached(INPUT_SAVING_FILE, "SAVING")
+CURRENT_CACHE = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
+
+
+
+
+print("\nStep 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...")
+
+con = duckdb.connect(database=":memory:")
+fd_raw = con.execute(f"""
+    WITH main_fd_pibb AS (
+        SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
+        FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+        WHERE ENTITY_CD = 'PIBB'
+    )
+    SELECT
+        CAST(f.INTPLAN AS INTEGER) AS INTPLAN,
+        CAST(f.CURBAL  AS DOUBLE)  AS CURBAL,
+        CAST(f.RATE    AS DOUBLE)  AS RATE,
+        CAST(f.MATDATE AS VARCHAR) AS MATDATE,
+        CAST(f.OPENIND AS VARCHAR) AS OPENIND
+    FROM read_parquet('{FD_CACHE.as_posix()}') f
+    INNER JOIN main_fd_pibb m
+        ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
+""").pl()
+con.close()
+
+print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
+
+
+
+
+print("\nStep 4: Building SA from BNM.SAVING (PIBB only)...")
+
+con = duckdb.connect(database=":memory:")
+saving_raw = con.execute(f"""
+    SELECT
+        CAST(PRODUCT AS INTEGER) AS PRODUCT,
+        CAST(OPENIND AS VARCHAR) AS OPENIND,
+        CAST(CURBAL  AS DOUBLE)  AS CURBAL,
+        CAST(INTRATE AS DOUBLE)  AS INTRATE
+    FROM read_parquet('{SAVING_CACHE.as_posix()}')
+    WHERE ENTITY_CD = 'PIBB'
+""").pl()
+con.close()
+
+
+
+
+print("\nStep 5: Building CA / CAG / CAS from BNM.CURRENT (PIBB only)...")
+
+con = duckdb.connect(database=":memory:")
+current_raw = con.execute(f"""
+    SELECT
+        CAST(PRODUCT AS INTEGER) AS PRODUCT,
+        CAST(OPENIND AS VARCHAR) AS OPENIND,
+        CAST(CURBAL  AS DOUBLE)  AS CURBAL,
+        CAST(INTRATE AS DOUBLE)  AS INTRATE
+    FROM read_parquet('{CURRENT_CACHE.as_posix()}')
+    WHERE ENTITY_CD = 'PIBB'
+""").pl()
+con.close()
+
+
+
+
