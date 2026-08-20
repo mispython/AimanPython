@@ -1,1157 +1,976 @@
 #!/usr/bin/env python3
 """
-Program : EIIMRM01.py (ISLAMIC)
-Date    : 01.04.08
-Report  : DEPOSITS, BY TIME TO MATURITY FOR ALCO
-          (WEIGHTED AVERAGE COST BY MATURITY PROFILE)
+Program : EIIMRM01.py (converted from SAS EIIMRM01, ISLAMIC)
+Purpose : Deposits, By Time To Maturity For ALCO
+          (Weighted Average Cost By Maturity Profile) - Islamic book.
+
+Dependency:
+    %INC PGM(PBBDPFMT); -> from PBBDPFMT import fdprod_format, caprod_format
+    FDPROD.  is used (BNMCODE drives FCY vs RM classification / SPTF flag).
+    CAPROD.  is used (BNMCODE drives the Islamic CA subset filter).
+    SAPROD.  is called in the original SAS ("BNMCODE=PUT(PRODUCT,SAPROD.);")
+             but the resulting BNMCODE is never referenced again anywhere in
+             the SA data step -- it has zero effect on the output. It is
+             therefore intentionally NOT imported/called here; PRODUCT is
+             tested directly, exactly as the original logic actually does.
+
+============================================================================
+PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
+same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py)
+============================================================================
+1. FD.FD        (JCL //FD  DD DSN=SAP.PIBB.MNIFD(0))
+   File : INPUT_FD_FILE        -> fd.sas7bdat
+   Used : DATA FD/TD/FDN step - fixed deposit detail (INTPLAN, CURBAL,
+          RATE, MATDATE, OPENIND).
+
+2. BNM.SAVING   (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member SAVING)
+   File : INPUT_SAVING_FILE    -> saving.sas7bdat
+   Used : DATA SA step - savings account detail (PRODUCT, OPENIND, CURBAL,
+          INTRATE).
+
+3. BNM.CURRENT  (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
+   File : INPUT_CURRENT_FILE   -> current.sas7bdat
+   Used : DATA CA/CAG/CAS step - current account detail (PRODUCT, OPENIND,
+          CURBAL, INTRATE).
+
+Both BNM.SAVING and BNM.CURRENT physically live under the same //BNM DD in
+the JCL, but are treated here as two independent physical inputs (own path,
+own cache) since they are logically distinct SAS datasets read separately.
+
+============================================================================
+OUTPUT
+============================================================================
+//TEMP DD DSN=SAP.PIBB.EIIMRM01.TEXT, DISP=OLD, DCB=(RECFM=FB,LRECL=256,...)
+This is a fixed-name GDG-style catalogued dataset (no date token in the
+name), so the Python output file uses a fixed filename, not a dated one.
+
+RECFM=FB (NOT FBA) on the //TEMP DD means this particular report carries
+NO ASA carriage-control byte (per project convention: RECFM=FBA implies
+ASA control, RECFM=FB does not). The output below is therefore plain
+fixed-width text; page boundaries (PAGESIZE=60, not otherwise specified in
+the SAS source) are marked with a form-feed character instead of an ASA
+'1' byte.
 """
 
-# ============================================================================
-# DEPENDENCIES
-# ============================================================================
-# PBBDPFMT - provides fdprod_format (PUT(x, FDPROD.)),
-#                      saprod_format (PUT(x, SAPROD.)),
-#                      caprod_format (PUT(x, CAPROD.))
-from PBBDPFMT import fdprod_format, saprod_format, caprod_format
+import gc
+from pathlib import Path
+from datetime import date
 
 import duckdb
+import pandas as pd
 import polars as pl
-from datetime import date, datetime
-import math
-import os
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from REPTDATE import get_reptdate_values
+from PBBDPFMT import fdprod_format, caprod_format
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-PARQUET_DIR  = os.path.join(BASE_DIR, "data")
-OUTPUT_DIR   = os.path.join(BASE_DIR, "output")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-REPTDATE_PARQUET = os.path.join(PARQUET_DIR, "REPTDATE.parquet")
-FD_PARQUET       = os.path.join(PARQUET_DIR, "FD.parquet")
-SAVING_PARQUET   = os.path.join(PARQUET_DIR, "SAVING.parquet")
-CURRENT_PARQUET  = os.path.join(PARQUET_DIR, "CURRENT.parquet")
+INPUT_FD_DIR      = BASE_DIR / "input" / "prod" / "EIIMRM01" / "FD"
+INPUT_SAVING_DIR  = BASE_DIR / "input" / "prod" / "EIIMRM01" / "SAVING"
+INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "EIIMRM01" / "CURRENT"
 
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "EIIMRM01.txt")
+INPUT_FD_FILE      = INPUT_FD_DIR / "fd.sas7bdat"
+INPUT_SAVING_FILE  = INPUT_SAVING_DIR / "saving.sas7bdat"
+INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "current.sas7bdat"
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRM01"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRM01"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / "EIIMRM01.txt"
+
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
 
 # ============================================================================
-# FORMAT DEFINITIONS
+# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
 # ============================================================================
+print("Step 1: Deriving report date...")
 
-def remfmt(remmth):
-    """
-    REMFMT format: maps remaining months value to display label.
-    Special values 91-97, 99 are sentinel codes set during processing.
-    """
-    if remmth is None:
-        return '  '
-    if remmth <= 0:
-        return '       '
-    if remmth <= 1:
-        return '>  0-1 MTH'
-    if remmth <= 2:
-        return '>  1-2 MTHS'
-    if remmth <= 3:
-        return '>  2-3 MTHS'
-    if remmth <= 4:
-        return '>  3-4 MTHS'
-    if remmth <= 5:
-        return '>  4-5 MTHS'
-    if remmth <= 6:
-        return '>  5-6 MTHS'
-    if remmth <= 7:
-        return '>  6-7 MTHS'
-    if remmth <= 8:
-        return '>  7-8 MTHS'
-    if remmth <= 9:
-        return '>  8-9 MTHS'
-    if remmth <= 10:
-        return '>  9-10 MTHS'
-    if remmth <= 11:
-        return '> 10-11 MTHS'
-    if remmth <= 12:
-        return '> 11-12 MTHS'
-    if remmth <= 13:
-        return '> 12-13 MTHS'
-    if remmth <= 14:
-        return '> 13-14 MTHS'
-    if remmth <= 15:
-        return '> 14-15 MTHS'
-    if remmth <= 16:
-        return '> 15-16 MTHS'
-    if remmth <= 17:
-        return '> 16-17 MTHS'
-    if remmth <= 18:
-        return '> 17-18 MTHS'
-    if remmth <= 19:
-        return '> 18-19 MTHS'
-    if remmth <= 20:
-        return '> 19-20 MTHS'
-    if remmth <= 21:
-        return '> 20-21 MTHS'
-    if remmth <= 22:
-        return '> 21-22 MTHS'
-    if remmth <= 23:
-        return '> 22-23 MTHS'
-    if remmth <= 24:
-        return '> 23-24 MTHS'
-    if remmth <= 36:
-        return '>2-3 YRS'
-    if remmth <= 48:
-        return '>3-4 YRS'
-    if remmth <= 60:
-        return '>4-5 YRS'
-    if remmth == 91:
-        return ' 1 MONTH'
-    if remmth == 92:
-        return ' 3 MONTHS'
-    if remmth == 93:
-        return ' 6 MONTHS'
-    if remmth == 94:
-        return ' 9 MONTHS'
-    if remmth == 95:
-        return '12 MONTHS'
-    if remmth == 96:
-        return '15 MONTHS'
-    if remmth == 97:
-        return 'ABOVE 15 MONTHS'
-    if remmth == 99:
-        return 'OVERDUE FD'
-    return '  '
+reptdate_values = get_reptdate_values(year_format="%Y")
+reptdate = reptdate_values.reptdate
+
+# NOWK in the original SAS is derived by exact-day matching
+# (day=8/15/22 else 4), which differs from REPTDATE.py's range-based NOWK.
+# NOWK is set via CALL SYMPUT but is never referenced again anywhere else
+# in this program, so it has no effect on the report and is only kept here
+# for documentation parity with the SAS source.
+_day = reptdate.day
+NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
+
+REPTYRS  = reptdate.strftime("%y")
+REPTYEAR = reptdate.strftime("%Y")
+REPTMON  = reptdate.strftime("%m")
+REPTDAY  = reptdate.strftime("%d")
+RDATE    = reptdate.strftime("%d/%m/%y")          # PUT(REPTDATE,DDMMYY8.)
+
+RPYR, RPMTH, RPDAY = reptdate.year, reptdate.month, reptdate.day
+
+# DCLVAR macro's RD1-RD12 array (days-per-month for the report year), used
+# by %REMMTH. D1-D12 (LDAY) and MD1-MD12 (MDDAYS) are also RETAINed/declared
+# by the original DCLVAR macro but are never referenced anywhere else in the
+# program body -- they are dead declarations, omitted here.
+RD_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+if RPYR % 4 == 0:
+    RD_DAYS[1] = 29
+
+print(f"  RDATE        : {RDATE}")
+print(f"  REPTMON/DAY  : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}")
+print(f"  Output file  : {OUTPUT_FILE.name}")
+
+# ============================================================================
+# PROC FORMAT EQUIVALENTS (local to this program)
+# ============================================================================
+_REMFMT_ORDER = [
+    "       ", ">  0-1 MTH", ">  1-2 MTHS", ">  2-3 MTHS", ">  3-4 MTHS",
+    ">  4-5 MTHS", ">  5-6 MTHS", ">  6-7 MTHS", ">  7-8 MTHS", ">  8-9 MTHS",
+    ">  9-10 MTHS", "> 10-11 MTHS", "> 11-12 MTHS", "> 12-13 MTHS", "> 13-14 MTHS",
+    "> 14-15 MTHS", "> 15-16 MTHS", "> 16-17 MTHS", "> 17-18 MTHS", "> 18-19 MTHS",
+    "> 19-20 MTHS", "> 20-21 MTHS", "> 21-22 MTHS", "> 22-23 MTHS", "> 23-24 MTHS",
+    ">2-3 YRS", ">3-4 YRS", ">4-5 YRS",
+    " 1 MONTH", " 3 MONTHS", " 6 MONTHS", " 9 MONTHS", "12 MONTHS", "15 MONTHS",
+    "ABOVE 15 MONTHS", "OVERDUE FD", "  ",
+]
+_REMFMT_ORDER_INDEX = {label: i for i, label in enumerate(_REMFMT_ORDER)}
+_REMFMT_ORDER_INDEX["SUB-TOTAL"] = len(_REMFMT_ORDER) + 1
+
+
+def remfmt_format(value):
+    """PROC FORMAT VALUE REMFMT. SAS numeric missing sorts as LOW, so a
+    None value (SAS missing) falls into the LOW-0 (blank) bucket. Ranges
+    are checked in the same order as the SAS format definition, so an
+    exact boundary value (e.g. 1.0) matches the FIRST listed range."""
+    if value is None or value <= 0:
+        return "       "
+    if value <= 1:
+        return ">  0-1 MTH"
+    if value <= 2:
+        return ">  1-2 MTHS"
+    if value <= 3:
+        return ">  2-3 MTHS"
+    if value <= 4:
+        return ">  3-4 MTHS"
+    if value <= 5:
+        return ">  4-5 MTHS"
+    if value <= 6:
+        return ">  5-6 MTHS"
+    if value <= 7:
+        return ">  6-7 MTHS"
+    if value <= 8:
+        return ">  7-8 MTHS"
+    if value <= 9:
+        return ">  8-9 MTHS"
+    if value <= 10:
+        return ">  9-10 MTHS"
+    if value <= 11:
+        return "> 10-11 MTHS"
+    if value <= 12:
+        return "> 11-12 MTHS"
+    if value <= 13:
+        return "> 12-13 MTHS"
+    if value <= 14:
+        return "> 13-14 MTHS"
+    if value <= 15:
+        return "> 14-15 MTHS"
+    if value <= 16:
+        return "> 15-16 MTHS"
+    if value <= 17:
+        return "> 16-17 MTHS"
+    if value <= 18:
+        return "> 17-18 MTHS"
+    if value <= 19:
+        return "> 18-19 MTHS"
+    if value <= 20:
+        return "> 19-20 MTHS"
+    if value <= 21:
+        return "> 20-21 MTHS"
+    if value <= 22:
+        return "> 21-22 MTHS"
+    if value <= 23:
+        return "> 22-23 MTHS"
+    if value <= 24:
+        return "> 23-24 MTHS"
+    if value <= 36:
+        return ">2-3 YRS"
+    if value <= 48:
+        return ">3-4 YRS"
+    if value <= 60:
+        return ">4-5 YRS"
+    if value == 91:
+        return " 1 MONTH"
+    if value == 92:
+        return " 3 MONTHS"
+    if value == 93:
+        return " 6 MONTHS"
+    if value == 94:
+        return " 9 MONTHS"
+    if value == 95:
+        return "12 MONTHS"
+    if value == 96:
+        return "15 MONTHS"
+    if value == 97:
+        return "ABOVE 15 MONTHS"
+    if value == 99:
+        return "OVERDUE FD"
+    return "  "
+
+
+def _remfmt_sort_key(label: str) -> int:
+    return _REMFMT_ORDER_INDEX.get(label, len(_REMFMT_ORDER))
+
+
+_SUBTTL_LABELS = {
+    "A": "REMAINING MATURITY",
+    "B": "OVERDUE FD",
+    "C": "NEW FD FOR THE MONTH",
+    "D1": "SAVING ACCOUNTS  ",
+    "D2": "WADIAH SAVING A/C",
+    "E1": "NORMAL CURRENT A/C",
+    "E2": "WADIAH CURRENT A/C",
+    "E3": "FCY CURRENT A/C",
+    "E4": "OD A/C",
+    "F1": "INT-BEAR. GOV.  ACCT",
+    "F2": "INT-BEAR. HSING ACCT",
+    "F3": "ACE < 5K            ",
+    "F4": "ACE > 5K            ",
+    "F5": "VOSTRO LOCAL        ",
+    "F6": "VOSTRO FOREIGN      ",
+    "F7": "PB SHARE LINK       ",
+    "H": "PORTION FROM ACE ACC",
+    "I": "SUB-TOTAL",
+}
 
 
 def subttl_format(code):
-    """
-    $SUBTTL format: maps subtotal code to display label.
-    """
-    _map = {
-        'A':  'REMAINING MATURITY',
-        'B':  'OVERDUE FD',
-        'C':  'NEW FD FOR THE MONTH',
-        'D1': 'SAVING ACCOUNTS  ',
-        'D2': 'WADIAH SAVING A/C',
-        'E1': 'NORMAL CURRENT A/C',
-        'E2': 'WADIAH CURRENT A/C',
-        'E3': 'FCY CURRENT A/C',
-        'E4': 'OD A/C',
-        'F1': 'INT-BEAR. GOV.  ACCT',
-        'F2': 'INT-BEAR. HSING ACCT',
-        'F3': 'ACE < 5K            ',
-        'F4': 'ACE > 5K            ',
-        'F5': 'VOSTRO LOCAL        ',
-        'F6': 'VOSTRO FOREIGN      ',
-        'F7': 'PB SHARE LINK       ',
-        'H':  'PORTION FROM ACE ACC',
-        'I':  'SUB-TOTAL',
-    }
-    return _map.get(code, code if code else '')
+    if code is None:
+        return ""
+    return _SUBTTL_LABELS.get(code, code)
 
 
-# TERMFMT: maps FCY interest plan codes to term in months
-_TERMFMT_MAP = {}
-for _c in [470, 471, 476, 477, 482, 483, 488, 489, 494, 495, 548, 549, 554, 555]:
-    _TERMFMT_MAP[_c] = 1
-for _c in [472, 473, 478, 479, 484, 485, 490, 491, 496, 497, 550, 551, 556, 557]:
-    _TERMFMT_MAP[_c] = 3
-for _c in [474, 475, 480, 481, 486, 487, 492, 493, 498, 499, 552, 553, 558, 559]:
-    _TERMFMT_MAP[_c] = 6
+# TERMFMT is a PROC FORMAT declared locally inside this program and is a
+# DIFFERENT value set from PBBDPFMT's FCYTERM format -- it must not be
+# confused with / substituted by fcyterm_format().
+_TERMFMT_1 = {470, 471, 476, 477, 482, 483, 488, 489, 494, 495, 548, 549, 554, 555}
+_TERMFMT_3 = {472, 473, 478, 479, 484, 485, 490, 491, 496, 497, 550, 551, 556, 557}
+_TERMFMT_6 = {474, 475, 480, 481, 486, 487, 492, 493, 498, 499, 552, 553, 558, 559}
 
 
-def termfmt(intplan):
-    """TERMFMT: maps FCY intplan code to term in months (1, 3, or 6)."""
-    return _TERMFMT_MAP.get(intplan, None)
-
-
-# ============================================================================
-# HELPER: DAYS IN MONTH (SAS simple leap-year rule: year % 4 == 0)
-# ============================================================================
-
-def days_in_month(year, month):
-    """Returns days in the given month using SAS simple leap-year rule."""
-    if month in (1, 3, 5, 7, 8, 10, 12):
-        return 31
-    elif month in (4, 6, 9, 11):
-        return 30
-    elif month == 2:
-        return 29 if (year % 4 == 0) else 28
-    return 30
-
-
-# ============================================================================
-# HELPER: PARSE YYMMDD8 WITH YEARCUTOFF=1950
-# ============================================================================
-
-def parse_yymmdd8(val):
-    """
-    Parse an integer in YYMMDD format using YEARCUTOFF=1950.
-    Year 50-99 => 1950-1999; year 00-49 => 2000-2049.
-    Returns a date object or None.
-    """
-    if val is None or val == 0:
+def termfmt_format(intplan):
+    if intplan is None:
         return None
-    s = f"{int(val):08d}"
-    yy = int(s[0:2])
-    mm = int(s[2:4])
-    dd = int(s[4:6])
-    if yy >= 50:
-        yyyy = 1900 + yy
+    if intplan in _TERMFMT_1:
+        return 1
+    if intplan in _TERMFMT_3:
+        return 3
+    if intplan in _TERMFMT_6:
+        return 6
+    return None
+
+
+def _sas_round(x: float) -> float:
+    """SAS ROUND() with no scale argument: round to nearest integer,
+    halves away from zero."""
+    if x >= 0:
+        return float(int(x + 0.5))
+    return float(-int(-x + 0.5))
+
+
+def _parse_matdate(matdate) -> date:
+    """MATDT = INPUT(PUT(MATDATE,Z8.),YYMMDD8.) -- MATDATE is stored as an
+    8-digit YYYYMMDD integer."""
+    s = f"{int(matdate):08d}"
+    return date(int(s[0:4]), int(s[4:6]), int(s[6:8]))
+
+
+def _remmth(matdt: date) -> float:
+    """%REMMTH macro."""
+    mdyr, mdmth, mdday = matdt.year, matdt.month, matdt.day
+    days_in_rpmth = RD_DAYS[RPMTH - 1]
+    if mdday > days_in_rpmth:
+        mdday = days_in_rpmth
+    remy = mdyr - RPYR
+    remm = mdmth - RPMTH
+    remd = mdday - RPDAY
+    return remy * 12 + remm + remd / days_in_rpmth
+
+
+# ============================================================================
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
+# ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
+
+
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        if schema is None:
+            schema = table.schema
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        else:
+            cast_arrays = []
+            for field in schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
+                              f"from {col.type} to {field.type}: {e} - filling nulls")
+                        col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=schema)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
-        yyyy = 2000 + yy
-    try:
-        return date(yyyy, mm, dd)
-    except ValueError:
-        return None
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
 
 
 # ============================================================================
-# HELPER: CALCULATE REMAINING MONTHS (REMMTH macro)
+# STEP 2: CACHE INPUT SAS FILES TO PARQUET
 # ============================================================================
-
-def calc_remmth(matdt, reptdate):
-    """
-    Replicates the SAS %REMMTH macro.
-    Returns fractional remaining months from reptdate to matdt.
-
-    Logic:
-      MDDAY is capped at RPDAYS(RPMTH) - days in reptdate's month.
-      REMMTH = (MDYR - RPYR)*12 + (MDMTH - RPMTH) + (MDDAY - RPDAY) / RPDAYS(RPMTH)
-    """
-    if matdt is None or reptdate is None:
-        return 0.0
-
-    rpyr  = reptdate.year
-    rpmth = reptdate.month
-    rpday = reptdate.day
-
-    # RPDAYS array: days in each month of the report year (using SAS rule)
-    rpdays = [days_in_month(rpyr, m) for m in range(1, 13)]  # index 0=Jan
-
-    mdyr  = matdt.year
-    mdmth = matdt.month
-    mdday = matdt.day
-
-    # Cap MDDAY at days in report month
-    rp_mth_days = rpdays[rpmth - 1]
-    if mdday > rp_mth_days:
-        mdday = rp_mth_days
-
-    remy = mdyr - rpyr
-    remm = mdmth - rpmth
-    remd = mdday - rpday
-
-    return remy * 12 + remm + remd / rp_mth_days
-
+print("\nStep 2: Caching input SAS datasets to Parquet...")
+FD_CACHE      = _load_cached(INPUT_FD_FILE, "FD")
+SAVING_CACHE  = _load_cached(INPUT_SAVING_FILE, "SAVING")
+CURRENT_CACHE = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
 
 # ============================================================================
-# STEP 1: READ REPTDATE
+# STEP 3: BUILD FD / TD / FDN  (DATA FD TD FDN; SET FD.FD; ...)
 # ============================================================================
+print("\nStep 3: Building FD / TD / FDN from FD.FD...")
 
-def get_reptdate():
-    """Load REPTDATE from parquet and compute macro variables."""
-    con = duckdb.connect()
-    row = con.execute(f"SELECT reptdate FROM '{REPTDATE_PARQUET}' LIMIT 1").fetchone()
-    con.close()
+con = duckdb.connect(database=":memory:")
+fd_raw = con.execute(f"""
+    SELECT
+        CAST(INTPLAN AS INTEGER) AS INTPLAN,
+        CAST(CURBAL  AS DOUBLE)  AS CURBAL,
+        CAST(RATE    AS DOUBLE)  AS RATE,
+        CAST(MATDATE AS BIGINT)  AS MATDATE,
+        CAST(OPENIND AS VARCHAR) AS OPENIND
+    FROM read_parquet('{FD_CACHE.as_posix()}')
+""").pl()
+con.close()
 
-    # reptdate stored as integer days since 1960-01-01
-    epoch = date(1960, 1, 1)
-    reptdate = epoch + __import__('datetime').timedelta(days=int(row[0]))
 
-    day = reptdate.day
-    if day == 8:
-        nowk = '1'
-    elif day == 15:
-        nowk = '2'
-    elif day == 22:
-        nowk = '3'
+def _row(prodtyp, subtyp, subttl, amount, cost, remmth, remm):
+    return {"PRODTYP": prodtyp, "SUBTYP": subtyp, "SUBTTL": subttl,
+            "AMOUNT": amount, "COST": cost, "REMMTH": remmth, "REMM": remm}
+
+
+fd_rows, td_rows, fdn_rows = [], [], []
+
+for r in fd_raw.iter_rows(named=True):
+    intplan = r["INTPLAN"]
+    curbal  = r["CURBAL"]
+    rate    = r["RATE"] or 0.0
+    openind = r["OPENIND"]
+
+    if curbal is None:
+        continue
+
+    bnmcode = fdprod_format(intplan)
+    term = None   # RETAIN-less: reset to missing every DATA-step iteration
+    if bnmcode == "42630":
+        prodtyp = "FIXED DEPT(FCY)"
+        term = termfmt_format(intplan)
     else:
-        nowk = '4'
+        prodtyp = "FIXED DEPT(RM)"
 
-    reptyrs   = str(reptdate.year % 100).zfill(2)
-    reptyear  = str(reptdate.year)
-    reptmon   = str(reptdate.month).zfill(2)
-    reptday   = str(reptdate.day).zfill(2)
-    rdate     = f"{reptdate.day:02d}/{reptdate.month:02d}/{reptdate.year}"
+    # IF OPENIND = 'O' OR OPENIND = 'D' AND CURBAL > 0  (AND binds tighter)
+    if openind == "O" or (openind == "D" and curbal > 0):
+        matdt = _parse_matdate(r["MATDATE"])
 
-    return reptdate, nowk, reptyrs, reptyear, reptmon, reptday, rdate
-
-
-# ============================================================================
-# STEP 2: PROCESS FIXED DEPOSITS
-# ============================================================================
-
-def process_fd(reptdate):
-    """
-    Replicates the DATA FD / TD / FDN step.
-    Returns three lists of dicts: fd_rows, td_rows, fdn_rows.
-    """
-    con = duckdb.connect()
-    df = con.execute(f"SELECT * FROM '{FD_PARQUET}'").df()
-    con.close()
-    df = pl.from_pandas(df)
-
-    rpyr  = reptdate.year
-    rpmth = reptdate.month
-    rpday = reptdate.day
-    rpdays = [days_in_month(rpyr, m) for m in range(1, 13)]
-
-    fd_rows  = []
-    td_rows  = []
-    fdn_rows = []
-
-    _keep = ['prodtyp', 'subtyp', 'subttl', 'remmth', 'term', 'amount',
-             'cost', 'matdt', 'intdate', 'intplan', 'openind', 'reptdate',
-             'rate', 'acctno', 'cdno', 'remm']
-
-    for row in df.iter_rows(named=True):
-        intplan  = row.get('intplan')
-        curbal   = row.get('curbal', 0) or 0
-        openind  = (row.get('openind') or '').strip()
-        matdate  = row.get('matdate')
-        rate     = row.get('rate', 0) or 0
-        acctno   = row.get('acctno')
-        cdno     = row.get('cdno')
-        intdate  = row.get('intdate')
-
-        bnmcode = fdprod_format(intplan)
-
-        if bnmcode == '42630':
-            prodtyp = 'FIXED DEPT(FCY)'
-            term = termfmt(intplan)
-            if term is None:
-                term = 0
+        if openind == "D" or matdt < reptdate:
+            subtyp = "SPTF" if bnmcode == "42132" else "CONVENTIONAL"
+            cost = curbal * rate
+            td_rows.append(_row(prodtyp, subtyp, "B", curbal, cost, 99.0, None))
         else:
-            prodtyp = 'FIXED DEPT(RM)'
-            term = 0
+            remmth = _remmth(matdt)
+            subtyp = "SPTF" if bnmcode == "42132" else "CONVENTIONAL"
+            cost = curbal * rate
+            remm = curbal * remmth
+            fd_rows.append(_row(prodtyp, subtyp, "A", curbal, cost, remmth, remm))
 
-        if openind not in ('O', 'D') or curbal <= 0:
-            continue
+            # IF ((TERM - REMMTH) < 1) THEN DO ... OUTPUT FDN; END;
+            # TERM is un-RETAINed and only ever assigned for FCY deposits
+            # (BNMCODE='42630'); for RM deposits TERM stays missing here.
+            # SAS treats a missing numeric operand as smaller than any real
+            # number, so (missing - REMMTH) < 1 is ALWAYS TRUE for RM
+            # deposits -- this branch fires for every RM FD row, not only
+            # ones maturing within the current month. Preserved as-is.
+            fires = (term is None) or ((term - remmth) < 1)
+            if fires:
+                cost2 = curbal * rate
+                remm2 = remmth * curbal
+                remmth2 = term   # REMMTH = TERM (missing for RM deposits)
+                fdn_rows.append(_row(prodtyp, subtyp, "C", curbal, cost2, remmth2, remm2))
 
-        matdt = parse_yymmdd8(matdate)
-
-        rec_base = {
-            'prodtyp':  prodtyp,
-            'intdate':  intdate,
-            'intplan':  intplan,
-            'openind':  openind,
-            'reptdate': reptdate,
-            'rate':     rate,
-            'acctno':   acctno,
-            'cdno':     cdno,
-            'term':     term,
-            'matdt':    matdt,
-            'amount':   curbal,
-        }
-
-        if openind == 'D' or (matdt is not None and matdt < reptdate):
-            # Overdue / deleted → TD dataset
-            subttl = 'B'
-            subtyp = 'SPTF' if bnmcode == '42132' else 'CONVENTIONAL'
-            cost   = curbal * rate
-            remmth = 99
-            remm   = 0.0
-            rec = {**rec_base,
-                   'subttl': subttl, 'subtyp': subtyp,
-                   'cost': cost, 'remmth': remmth, 'remm': remm}
-            td_rows.append(rec)
-        else:
-            remmth = calc_remmth(matdt, reptdate)
-            subttl = 'A'
-            subtyp = 'SPTF' if bnmcode == '42132' else 'CONVENTIONAL'
-            cost   = curbal * rate
-            remm   = curbal * remmth
-            rec = {**rec_base,
-                   'subttl': subttl, 'subtyp': subtyp,
-                   'cost': cost, 'remmth': remmth, 'remm': remm}
-            fd_rows.append(rec)
-
-            # New FD for the month (term - remmth < 1)
-            if (term - remmth) < 1:
-                subttl2 = 'C'
-                subtyp2 = 'SPTF' if bnmcode == '42132' else 'CONVENTIONAL'
-                cost2   = curbal * rate
-                # REM = REMMTH * CURBAL  (original REM variable, not REMM)
-                # REMMTH = TERM for FDN output
-                rec2 = {**rec_base,
-                        'subttl': subttl2, 'subtyp': subtyp2,
-                        'cost': cost2, 'remmth': term,
-                        'remm': remmth * curbal}
-                fdn_rows.append(rec2)
-
-    return fd_rows, td_rows, fdn_rows
-
+print(f"  FD  rows: {len(fd_rows):,}   TD rows: {len(td_rows):,}   FDN rows: {len(fdn_rows):,}")
 
 # ============================================================================
-# STEP 3: PROCESS SAVINGS
+# STEP 4: BUILD SA  (DATA SA; SET BNM.SAVING; ...)
 # ============================================================================
+print("\nStep 4: Building SA from BNM.SAVING...")
 
-def process_savings():
-    """Replicates DATA SA step."""
-    con = duckdb.connect()
-    df = con.execute(f"SELECT * FROM '{SAVING_PARQUET}'").df()
-    con.close()
-    df = pl.from_pandas(df)
+con = duckdb.connect(database=":memory:")
+saving_raw = con.execute(f"""
+    SELECT
+        CAST(PRODUCT AS INTEGER) AS PRODUCT,
+        CAST(OPENIND AS VARCHAR) AS OPENIND,
+        CAST(CURBAL  AS DOUBLE)  AS CURBAL,
+        CAST(INTRATE AS DOUBLE)  AS INTRATE
+    FROM read_parquet('{SAVING_CACHE.as_posix()}')
+""").pl()
+con.close()
 
-    sa_rows = []
-    for row in df.iter_rows(named=True):
-        openind = (row.get('openind') or '').strip()
-        curbal  = row.get('curbal', 0) or 0
-        product = row.get('product')
-        intrate = row.get('intrate', 0) or 0
+sa_rows = []
+_REMMTH_SA = 0.0   # RETAIN ... REMMTH 0
 
-        if openind in ('B', 'C', 'P'):
-            continue
-        if curbal < 0:
-            continue
+for r in saving_raw.iter_rows(named=True):
+    openind = r["OPENIND"]
+    curbal  = r["CURBAL"]
+    if curbal is None or openind in ("B", "C", "P") or curbal < 0:
+        continue
+    product = r["PRODUCT"]
+    intrate = r["INTRATE"] or 0.0
+    if product in (204, 214, 215):
+        subtyp, subttl = "SPTF", "D2"
+    else:
+        subtyp, subttl = "CONVENTIONAL", "D1"
+    cost = curbal * intrate
+    remm = _REMMTH_SA * curbal
+    sa_rows.append(_row("SAVINGS DEPOSIT", subtyp, subttl, curbal, cost, _REMMTH_SA, remm))
 
-        if product in (204, 214, 215):
-            subtyp = 'SPTF'
-            subttl = 'D2'
-        else:
-            subtyp = 'CONVENTIONAL'
-            subttl = 'D1'
-
-        cost   = curbal * intrate
-        remmth = 0
-        remm   = remmth * curbal
-
-        sa_rows.append({
-            'prodtyp': 'SAVINGS DEPOSIT',
-            'subtyp':  subtyp,
-            'subttl':  subttl,
-            'amount':  curbal,
-            'cost':    cost,
-            'remmth':  remmth,
-            'remm':    remm,
-        })
-
-    return sa_rows
-
+print(f"  SA rows: {len(sa_rows):,}")
 
 # ============================================================================
-# STEP 4: PROCESS CURRENT ACCOUNTS
+# STEP 5: BUILD CA / CAG / CAS  (DATA CA CAG CAS; SET BNM.CURRENT; ...)
 # ============================================================================
+print("\nStep 5: Building CA / CAG / CAS from BNM.CURRENT...")
 
-def process_current():
-    """
-    Replicates DATA CA / CAG / CAS step.
-    Filter: BNMCODE='42310' OR BNMCODE='42180' OR PRODUCT=166
-    """
-    con = duckdb.connect()
-    df = con.execute(f"SELECT * FROM '{CURRENT_PARQUET}'").df()
-    con.close()
-    df = pl.from_pandas(df)
+con = duckdb.connect(database=":memory:")
+current_raw = con.execute(f"""
+    SELECT
+        CAST(PRODUCT AS INTEGER) AS PRODUCT,
+        CAST(OPENIND AS VARCHAR) AS OPENIND,
+        CAST(CURBAL  AS DOUBLE)  AS CURBAL,
+        CAST(INTRATE AS DOUBLE)  AS INTRATE
+    FROM read_parquet('{CURRENT_CACHE.as_posix()}')
+""").pl()
+con.close()
 
-    ca_rows  = []
-    cag_rows = []
-    cas_rows = []
+ca_rows, cag_rows, cas_rows = [], [], []
+_REMMTH_CA = 0.0   # RETAIN REMMTH 0
 
-    for row in df.iter_rows(named=True):
-        product = row.get('product')
-        openind = (row.get('openind') or '').strip()
-        curbal  = row.get('curbal', 0) or 0
-        intrate = row.get('intrate', 0) or 0
-        remmth  = 0
+for r in current_raw.iter_rows(named=True):
+    product = r["PRODUCT"]
+    bnmcode = caprod_format(product)
 
-        bnmcode = caprod_format(product)
+    # IF BNMCODE='42310' OR BNMCODE='42180' OR PRODUCT=166;  (subsetting IF)
+    if not (bnmcode == "42310" or bnmcode == "42180" or product == 166):
+        continue
 
-        # Filter: BNMCODE='42310' OR BNMCODE='42180' OR PRODUCT=166
-        if bnmcode not in ('42310', '42180') and product != 166:
-            continue
+    openind = r["OPENIND"]
+    curbal  = r["CURBAL"]
+    if curbal is None:
+        continue
+    intrate = r["INTRATE"] or 0.0
 
-        if openind in ('B', 'C', 'P'):
-            continue
-        if bnmcode == 'N':
-            continue
-
-        def _ca_rec(prodtyp, subtyp, subttl, bal, cost_, remm_):
-            return {
-                'prodtyp': prodtyp,
-                'subtyp':  subtyp,
-                'subttl':  subttl,
-                'amount':  bal,
-                'cost':    cost_,
-                'remmth':  remmth,
-                'remm':    remm_,
-            }
-
+    if openind not in ("B", "C", "P") and bnmcode != "N":
         if curbal > 0:
             if product in (101, 103, 161, 163):
-                subtyp2 = 'SPTF'
-                if product in (101, 103):
-                    subtyp2 = 'CONVENTIONAL'
-                prodtyp2 = 'DEMAND DEPOSIT'
-                subttl2 = 'F1' if product in (101, 161) else 'F2'
-                cost2  = curbal * intrate
-                remm2  = curbal * remmth
-                cag_rows.append(_ca_rec(prodtyp2, subtyp2, subttl2, curbal, cost2, remm2))
-
+                subtyp = "CONVENTIONAL" if product in (101, 103) else "SPTF"
+                subttl = "F1" if product in (101, 161) else "F2"
+                cost = curbal * intrate
+                remm = curbal * _REMMTH_CA
+                cag_rows.append(_row("DEMAND DEPOSIT", subtyp, subttl, curbal, cost, _REMMTH_CA, remm))
             elif product in (150, 151, 152, 181):
-                subtyp2 = 'CONVENTIONAL'
+                subtyp = "CONVENTIONAL"
                 if curbal <= 5000:
-                    ca_rows.append(_ca_rec('DEMAND DEPOSIT', subtyp2, 'F3',
-                                           curbal, 0.0, 0.0))
+                    ca_rows.append(_row("DEMAND DEPOSIT", subtyp, "F3", curbal, 0.0, _REMMTH_CA, None))
                 else:
-                    bal_over = curbal - 5000
-                    cost_over = bal_over * intrate
-                    remm_over = bal_over * remmth
-                    cas_rows.append(_ca_rec('SAVINGS DEPOSIT', subtyp2, 'H',
-                                            bal_over, cost_over, remm_over))
-                    cost_5k = 0.0
-                    remm_5k = 5000 * remmth
-                    ca_rows.append(_ca_rec('DEMAND DEPOSIT', subtyp2, 'F4',
-                                           5000, cost_5k, remm_5k))
-
+                    curbal2 = curbal - 5000
+                    cost2 = curbal2 * intrate
+                    remm2 = curbal2 * _REMMTH_CA
+                    cas_rows.append(_row("SAVINGS DEPOSIT", subtyp, "H", curbal2, cost2, _REMMTH_CA, remm2))
+                    curbal3 = 5000.0
+                    remm3 = curbal3 * _REMMTH_CA
+                    ca_rows.append(_row("DEMAND DEPOSIT", subtyp, "F4", curbal3, 0.0, _REMMTH_CA, remm3))
             elif product in (60, 61, 62, 63, 64, 160, 162, 164, 165, 166, 182):
-                cost2 = curbal * intrate
-                remm2 = curbal * remmth
-                ca_rows.append(_ca_rec('DEMAND DEPOSIT', 'SPTF', 'E2',
-                                       curbal, cost2, remm2))
-
+                cost = curbal * intrate
+                remm = curbal * _REMMTH_CA
+                ca_rows.append(_row("DEMAND DEPOSIT", "SPTF", "E2", curbal, cost, _REMMTH_CA, remm))
             elif 400 <= product <= 410:
-                cost2 = curbal * intrate
-                remm2 = curbal * remmth
-                ca_rows.append(_ca_rec('DEMAND DEPOSIT', 'CONVENTIONAL', 'E3',
-                                       curbal, cost2, remm2))
-
+                cost = curbal * intrate
+                remm = curbal * _REMMTH_CA
+                ca_rows.append(_row("DEMAND DEPOSIT", "CONVENTIONAL", "E3", curbal, cost, _REMMTH_CA, remm))
             elif product in (104, 105, 177, 189, 190, 178):
-                subttl2 = 'F7'
-                if product == 104:
-                    subttl2 = 'F5'
-                elif product == 105:
-                    subttl2 = 'F6'
-                cost2 = curbal * intrate
-                remm2 = curbal * remmth
-                ca_rows.append(_ca_rec('DEMAND DEPOSIT', 'CONVENTIONAL', subttl2,
-                                       curbal, cost2, remm2))
-
-            elif product not in (101, 104, 105, 107, 113, 150, 151, 152,
-                                  178, 189, 190):
-                cost2 = curbal * intrate
-                remm2 = curbal * remmth
-                ca_rows.append(_ca_rec('DEMAND DEPOSIT', 'CONVENTIONAL', 'E1',
-                                       curbal, cost2, remm2))
+                subttl = "F5" if product == 104 else "F6" if product == 105 else "F7"
+                cost = curbal * intrate
+                remm = curbal * _REMMTH_CA
+                ca_rows.append(_row("DEMAND DEPOSIT", "CONVENTIONAL", subttl, curbal, cost, _REMMTH_CA, remm))
+            elif product not in (101, 104, 105, 107, 113, 150, 151, 152, 178, 189, 190):
+                cost = curbal * intrate
+                remm = curbal * _REMMTH_CA
+                ca_rows.append(_row("DEMAND DEPOSIT", "CONVENTIONAL", "E1", curbal, cost, _REMMTH_CA, remm))
 
         if curbal <= 0:
-            cost2 = curbal * intrate
-            remm2 = curbal * remmth
-            ca_rows.append(_ca_rec('DEMAND DEPOSIT', 'SPTF', 'E4',
-                                   curbal, cost2, remm2))
+            cost = curbal * intrate
+            remm = curbal * _REMMTH_CA
+            ca_rows.append(_row("DEMAND DEPOSIT", "SPTF", "E4", curbal, cost, _REMMTH_CA, remm))
 
-    return ca_rows, cag_rows, cas_rows
+print(f"  CA rows: {len(ca_rows):,}   CAG rows: {len(cag_rows):,}   CAS rows: {len(cas_rows):,}")
 
+del fd_raw, saving_raw, current_raw
+gc.collect()
 
 # ============================================================================
-# STEP 5: SUMMARISE USING PROC SUMMARY equivalents
+# STEP 6: PROC SUMMARY (per-source) -- CLASS PRODTYP SUBTYP SUBTTL REMMTH
 # ============================================================================
-
-def summarise(rows, group_cols, sum_cols):
-    """Group-by sum over rows (list of dicts)."""
-    if not rows:
-        return []
-    df = pl.DataFrame(rows)
-    # Ensure all sum_cols exist
-    for c in sum_cols:
-        if c not in df.columns:
-            df = df.with_columns(pl.lit(0.0).alias(c))
-    agg = df.group_by(group_cols).agg(
-        [pl.col(c).sum().alias(c) for c in sum_cols]
-    )
-    return agg.to_dicts()
+print("\nStep 6: Summarising TD / FD / FDN / SA / CA / CAG / CAS...")
 
 
-def apply_remfmt_label(rows):
-    """Add remmth1 column (REMFMT label) to each row."""
-    out = []
+def _group_sum(rows, key_fields, sum_fields=("AMOUNT", "COST", "REMM")):
+    """PROC SUMMARY NWAY; CLASS <key_fields>; VAR <sum_fields>; SUM=;
+    PROC SUMMARY's SUM statistic ignores missing values rather than
+    propagating them; if every contributing value is missing the result
+    stays missing (None)."""
+    groups = {}
     for r in rows:
-        r2 = dict(r)
-        r2['remmth1'] = remfmt(r.get('remmth'))
-        out.append(r2)
+        key = tuple(r.get(f) for f in key_fields)
+        g = groups.setdefault(key, {f: None for f in sum_fields})
+        for f in sum_fields:
+            v = r.get(f)
+            if v is not None:
+                g[f] = (g[f] or 0.0) + v
+    out = []
+    for key, sums in groups.items():
+        rec = dict(zip(key_fields, key))
+        rec.update(sums)
+        out.append(rec)
     return out
 
 
-# ============================================================================
-# STEP 6: BUILD DUMMY ROWS (expanding maturity labels 1..60)
-# ============================================================================
+def _proc_summary_by_bucket(rows, allow_missing: bool):
+    """CLASS PRODTYP SUBTYP SUBTTL REMMTH; FORMAT REMMTH REMFMT.;
+    Without the MISSING option (the default -- only TD uses MISSING), SAS
+    PROC SUMMARY drops any observation with a missing CLASS value before
+    summarising. For FDN this removes every RM-deposit row (TERM/REMMTH is
+    always missing there), so only FCY 'NEW FD FOR THE MONTH' rows survive
+    into the aggregated FD dataset -- a deliberate preservation of the
+    original SAS behaviour."""
+    filtered = [r for r in rows if allow_missing or r["REMMTH"] is not None]
+    for r in filtered:
+        r["REMMTH_BKT"] = remfmt_format(r["REMMTH"])
+    grouped = _group_sum(filtered, ["PRODTYP", "SUBTYP", "SUBTTL", "REMMTH_BKT"])
+    for g in grouped:
+        g["REMMTH1"] = None
+    return grouped
 
-def build_dummy(fd_summarised):
-    """
-    Replicates DATA DUMMY step.
-    For each unique (PRODTYP, SUBTTL, SUBTYP) where SUBTTL IN ('A','C','E3'),
-    emit rows for remmth=1..60 with their remmth1 label.
-    """
-    seen = {}
-    for r in fd_summarised:
-        subttl = r.get('subttl', '')
-        if subttl not in ('A', 'C', 'E3'):
-            continue
-        key = (r.get('prodtyp'), r.get('subttl'), r.get('subtyp'))
-        seen[key] = True
 
-    dummy = []
-    for (prodtyp, subttl, subtyp) in seen:
-        for rm in range(1, 61):
-            dummy.append({
-                'prodtyp': prodtyp,
-                'subttl':  subttl,
-                'subtyp':  subtyp,
-                'remmth':  rm,
-                'remmth1': remfmt(rm),
-                'amount':  None,
-                'cost':    None,
-                'remm':    None,
-            })
+td_summary  = _proc_summary_by_bucket(td_rows,  allow_missing=True)
+fd_summary  = _proc_summary_by_bucket(fd_rows,  allow_missing=False)
+fdn_summary = _proc_summary_by_bucket(fdn_rows, allow_missing=False)
+sa_summary  = _proc_summary_by_bucket(sa_rows,  allow_missing=False)
+ca_summary  = _proc_summary_by_bucket(ca_rows,  allow_missing=False)
+cag_summary = _proc_summary_by_bucket(cag_rows, allow_missing=False)
+cas_summary = _proc_summary_by_bucket(cas_rows, allow_missing=False)
 
-    # PROC SORT NODUPKEYS by prodtyp, subttl, subtyp, remmth1
-    seen_keys = set()
-    deduped = []
-    for r in dummy:
-        k = (r['prodtyp'], r['subttl'], r['subtyp'], r['remmth1'])
-        if k not in seen_keys:
-            seen_keys.add(k)
-            deduped.append(r)
-    return deduped
-
+print(f"  FDN summary rows after MISSING-option filter: {len(fdn_summary):,} "
+      f"(RM deposits excluded because TERM/REMMTH is missing there)")
 
 # ============================================================================
-# STEP 7: MERGE FD with DUMMY
+# STEP 7: DATA FD; SET TD FD FDN; REMMTH1 = PUT(REMMTH,REMFMT.);
+#         PROC SORT; BY PRODTYP SUBTTL SUBTYP REMMTH1;
 # ============================================================================
+print("\nStep 7: Combining TD+FD+FDN and computing REMMTH1...")
 
-def merge_fd_dummy(fd_sum, dummy):
-    """
-    MERGE FD DUMMY BY PRODTYP SUBTTL SUBTYP REMMTH1.
-    Dummy rows fill in any missing remmth1 labels (amount/cost/remm=None→0).
-    """
-    # Build lookup from fd_sum keyed by (prodtyp, subttl, subtyp, remmth1)
-    fd_lookup = {}
-    for r in fd_sum:
-        k = (r.get('prodtyp'), r.get('subttl'), r.get('subtyp'), r.get('remmth1'))
-        fd_lookup[k] = r
+fd_combined = []
+for src in (td_summary, fd_summary, fdn_summary):
+    for r in src:
+        fd_combined.append({**r, "REMMTH1": r["REMMTH_BKT"]})
+fd_combined.sort(key=lambda r: (r["PRODTYP"], r["SUBTTL"], r["SUBTYP"], r["REMMTH1"]))
 
-    # Collect all keys from both
-    all_keys = set(fd_lookup.keys())
-    for r in dummy:
-        k = (r.get('prodtyp'), r.get('subttl'), r.get('subtyp'), r.get('remmth1'))
-        all_keys.add(k)
-
-    merged = []
-    for k in all_keys:
-        if k in fd_lookup:
-            merged.append(dict(fd_lookup[k]))
-        else:
-            prodtyp, subttl, subtyp, remmth1 = k
-            merged.append({
-                'prodtyp': prodtyp, 'subttl': subttl,
-                'subtyp':  subtyp,  'remmth1': remmth1,
-                'remmth':  0,
-                'amount':  0.0, 'cost': 0.0, 'remm': 0.0,
-            })
-    return merged
-
-
-# ============================================================================
-# REPORT HELPERS
-# ============================================================================
-
-PAGE_WIDTH = 132
-LINES_PER_PAGE = 60
-
-_SUBTYP_ORDER = ['CONVENTIONAL', 'SPTF', 'TOTAL']
-
-
-def fmt_comma12(val):
-    if val is None:
-        return ' ' * 12
-    return f"{round(val):>12,.0f}"
-
-
-def fmt_comma12_2(val):
-    if val is None:
-        return ' ' * 12
-    return f"{val:>12,.2f}"
-
-
-def fmt_comma5_2(val):
-    if val is None:
-        return ' ' * 5
-    return f"{val:>5,.2f}"
-
-
-def safe_div(num, denom):
-    if denom and denom != 0:
-        return num / denom
-    return 0.0
-
-
-# ============================================================================
-# STEP 8: BUILD DEP DATASET AND COMPUTE WACOST / WAREMM
-# ============================================================================
-
-def build_dep(fd_merged, sa_summarised, ca_summarised,
-              cag_summarised, cas_summarised):
-    """
-    DATA DEP = SET FD SA CA CAG CAS, then compute WACOST, WAREMM, AMOUNT/1000,
-    reclassify PRODTYP for CA lines.
-    """
-    dep = []
-    for r in (fd_merged + sa_summarised + ca_summarised +
-              cag_summarised + cas_summarised):
-        r2 = dict(r)
-        amount = r2.get('amount') or 0.0
-        cost   = r2.get('cost')   or 0.0
-        remm   = r2.get('remm')   or 0.0
-        subtyp = r2.get('subtyp', '')
-        subttl = r2.get('subttl', '')
-
-        if subtyp in ('SPTF', 'CONVENTIONAL'):
-            wacost = safe_div(cost, amount) if amount > 0 else 0.0
-        else:
-            wacost = 0.0
-        waremm = safe_div(remm, amount) if amount != 0 else 0.0
-
-        r2['wacost']  = wacost
-        r2['waremm']  = waremm
-        r2['amount']  = round(amount / 1000)
-
-        if subttl in ('E1', 'E2', 'E3'):
-            r2['prodtyp'] = 'CA NON-INT BEARING'
-        elif subttl in ('F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'):
-            r2['prodtyp'] = 'CA INT BEARING'
-
-        dep.append(r2)
-    return dep
-
-
-# ============================================================================
-# STEP 9: BUILD DEPTOTAL (SA & CA totals per PRODTYP/SUBTTL/REMMTH)
-# ============================================================================
-
-def build_deptotal(dep):
-    """
-    PROC SUMMARY DATA=DEP NWAY CLASS PRODTYP SUBTTL REMMTH → DEPTOTAL
-    Then compute WACOST/WAREMM from raw cost/remm over amount*1000.
-    """
-    groups = {}
-    for r in dep:
-        k = (r.get('prodtyp'), r.get('subttl'), r.get('remmth'))
-        if k not in groups:
-            groups[k] = {'amount': 0.0, 'cost': 0.0, 'remm': 0.0}
-        groups[k]['amount'] += r.get('amount') or 0.0
-        groups[k]['cost']   += r.get('cost')   or 0.0
-        groups[k]['remm']   += r.get('remm')   or 0.0
-
-    rows = []
-    for (prodtyp, subttl, remmth), vals in groups.items():
-        amt_raw = round(vals['amount'] * 1000)
-        wacost  = safe_div(vals['cost'], amt_raw)
-        waremm  = safe_div(vals['remm'], amt_raw)
-        rows.append({
-            'prodtyp': prodtyp, 'subttl': subttl,
-            'remmth':  remmth,
-            'amount':  vals['amount'],
-            'cost':    vals['cost'],
-            'remm':    vals['remm'],
-            'wacost':  wacost,
-            'waremm':  waremm,
-            'subtyp':  'TOTAL',
-            'remmth1': remfmt(remmth) if remmth is not None else '',
+# ----------------------------------------------------------------------
+# DATA DUMMY; ... WHERE SUBTTL IN ('A','C','E3'); (E3 never occurs among
+# TD/FD/FDN records, so only 'A' and 'C' apply in practice.) For the first
+# occurrence of each PRODTYP/SUBTTL/SUBTYP group, emit a placeholder for
+# every month 1-60 so all maturity buckets are represented in the report
+# even when no deposits fall into them.
+# ----------------------------------------------------------------------
+seen_groups = set()
+dummy_rows = []
+for r in fd_combined:
+    if r["SUBTTL"] not in ("A", "C", "E3"):
+        continue
+    key = (r["PRODTYP"], r["SUBTTL"], r["SUBTYP"])
+    if key in seen_groups:
+        continue
+    seen_groups.add(key)
+    for m in range(1, 61):
+        bkt = remfmt_format(float(m))
+        dummy_rows.append({
+            "PRODTYP": r["PRODTYP"], "SUBTTL": r["SUBTTL"], "SUBTYP": r["SUBTYP"],
+            "REMMTH_BKT": bkt, "REMMTH1": bkt, "AMOUNT": None, "COST": None, "REMM": None,
         })
-    return rows
 
+# PROC SORT DATA=DUMMY NODUPKEYS; BY PRODTYP SUBTTL SUBTYP REMMTH1;
+dummy_by_key = {}
+for r in dummy_rows:
+    key = (r["PRODTYP"], r["SUBTTL"], r["SUBTYP"], r["REMMTH1"])
+    dummy_by_key.setdefault(key, r)
+
+# DATA FD; MERGE FD DUMMY; BY PRODTYP SUBTTL SUBTYP REMMTH1;
+# DUMMY carries no AMOUNT/COST/REMM of its own for keys that already exist
+# in fd_combined, so real records are never overwritten -- only genuinely
+# absent buckets get added as zero-data placeholder rows.
+existing_keys = {(r["PRODTYP"], r["SUBTTL"], r["SUBTYP"], r["REMMTH1"]) for r in fd_combined}
+fd_final = list(fd_combined)
+for key, r in dummy_by_key.items():
+    if key not in existing_keys:
+        fd_final.append(r)
+
+print(f"  FD (final) rows after DUMMY padding: {len(fd_final):,}")
 
 # ============================================================================
-# STEP 10: BUILD DEPTOTA2 (grand subtotal per PRODTYP/SUBTYP)
+# STEP 8: DATA DEP; SET FD SA CA CAG CAS;
 # ============================================================================
+print("\nStep 8: Building DEP...")
 
-def build_deptota2(depfinal):
-    """
-    PROC SUMMARY DATA=DEPFINAL NWAY CLASS PRODTYP SUBTYP → DEPTOTA2
-    SUBTTL='I'
-    """
-    groups = {}
-    for r in depfinal:
-        k = (r.get('prodtyp'), r.get('subtyp'))
-        if k not in groups:
-            groups[k] = {'amount': 0.0, 'cost': 0.0, 'remm': 0.0}
-        groups[k]['amount'] += r.get('amount') or 0.0
-        groups[k]['cost']   += r.get('cost')   or 0.0
-        groups[k]['remm']   += r.get('remm')   or 0.0
-
-    rows = []
-    for (prodtyp, subtyp), vals in groups.items():
-        amt_raw = round(vals['amount'] * 1000)
-        wacost  = safe_div(vals['cost'], amt_raw)
-        waremm  = safe_div(vals['remm'], amt_raw)
-        rows.append({
-            'prodtyp': prodtyp, 'subtyp': subtyp,
-            'subttl':  'I',
-            'amount':  vals['amount'],
-            'cost':    vals['cost'],
-            'remm':    vals['remm'],
-            'wacost':  wacost,
-            'waremm':  waremm,
-            'remmth':  None,
-            'remmth1': '',
+dep_rows = []
+for r in fd_final:
+    dep_rows.append({
+        "PRODTYP": r["PRODTYP"], "SUBTYP": r["SUBTYP"], "SUBTTL": r["SUBTTL"],
+        "AMOUNT": r["AMOUNT"], "COST": r["COST"], "REMM": r["REMM"],
+        "REMMTH_BKT": r["REMMTH_BKT"], "REMMTH1": r["REMMTH1"],
+    })
+for src in (sa_summary, ca_summary, cag_summary, cas_summary):
+    for r in src:
+        dep_rows.append({
+            "PRODTYP": r["PRODTYP"], "SUBTYP": r["SUBTYP"], "SUBTTL": r["SUBTTL"],
+            "AMOUNT": r["AMOUNT"], "COST": r["COST"], "REMM": r["REMM"],
+            "REMMTH_BKT": r["REMMTH_BKT"], "REMMTH1": None,
         })
-    return rows
-
 
 # ============================================================================
-# STEP 11: FD TOTALS
+# STEP 9: DATA DEP; SET DEP;  (dangling-ELSE bug preserved exactly)
 # ============================================================================
+print("\nStep 9: Applying DEP transform...")
 
-def build_fdtotal(dep, deptotal_sum):
-    """
-    FDTOTAL = DEP + DEPTOTAL rows where PRODTYP IN ('FIXED DEPT(RM)','FIXED DEPT(FCY)')
-    """
-    fd_prodtyps = {'FIXED DEPT(RM)', 'FIXED DEPT(FCY)'}
-    fd_dep = [r for r in dep if r.get('prodtyp') in fd_prodtyps]
-    fd_tot = [r for r in deptotal_sum if r.get('prodtyp') in fd_prodtyps]
-    return fd_dep + fd_tot
+dep2_rows = []
+for r in dep_rows:
+    subtyp = r["SUBTYP"]
+    amount = r["AMOUNT"]          # keep None (missing) distinct from 0.0
+    cost   = r["COST"]
+    remm   = r["REMM"]
 
-
-def build_fdtota2(fdtotal):
-    """
-    PROC SUMMARY DATA=FDTOTAL NWAY CLASS PRODTYP SUBTTL SUBTYP → FDTOTA2
-    REMMTH1='SUB-TOTAL'
-    """
-    groups = {}
-    for r in fdtotal:
-        k = (r.get('prodtyp'), r.get('subttl'), r.get('subtyp'))
-        if k not in groups:
-            groups[k] = {'amount': 0.0, 'cost': 0.0, 'remm': 0.0}
-        groups[k]['amount'] += r.get('amount') or 0.0
-        groups[k]['cost']   += r.get('cost')   or 0.0
-        groups[k]['remm']   += r.get('remm')   or 0.0
-
-    rows = []
-    for (prodtyp, subttl, subtyp), vals in groups.items():
-        amt_raw = round(vals['amount'] * 1000)
-        wacost  = safe_div(vals['cost'], amt_raw)
-        waremm  = safe_div(vals['remm'], amt_raw)
-        rows.append({
-            'prodtyp': prodtyp, 'subttl': subttl, 'subtyp': subtyp,
-            'amount':  vals['amount'],
-            'cost':    vals['cost'],
-            'remm':    vals['remm'],
-            'wacost':  wacost,
-            'waremm':  waremm,
-            'remmth':  None,
-            'remmth1': 'SUB-TOTAL',
-        })
-    return rows
-
-
-# ============================================================================
-# REPORT RENDERING
-# ============================================================================
-
-class ReportWriter:
-    """ASA carriage-control report writer."""
-
-    ASA_SINGLE  = ' '   # single space (next line)
-    ASA_DOUBLE  = '0'   # double space (skip 1 line)
-    ASA_NEW_PAGE = '1'  # new page
-
-    def __init__(self, filepath, lines_per_page=LINES_PER_PAGE):
-        self.filepath       = filepath
-        self.lines_per_page = lines_per_page
-        self.lines          = []
-        self.page_line_count = 0
-        self.page_num        = 1
-
-    def _emit(self, asa, text):
-        self.lines.append(asa + text)
-        if asa == self.ASA_NEW_PAGE:
-            self.page_line_count = 1
-        elif asa == self.ASA_DOUBLE:
-            self.page_line_count += 2
+    # IF SUBTYP IN ('SPTF','CONVENTIONAL') THEN
+    #    IF AMOUNT > 0 THEN WACOST = COST / AMOUNT; ELSE WACOST = 0;
+    # -- only this nested IF-ELSE is scoped to the outer condition; every
+    # statement below runs UNCONDITIONALLY for every row regardless of
+    # SUBTYP (a dangling-ELSE scoping artefact in the original SAS),
+    # preserved here exactly as written.
+    if subtyp in ("SPTF", "CONVENTIONAL"):
+        if amount is not None and amount > 0:
+            wacost = (cost or 0.0) / amount
         else:
-            self.page_line_count += 1
+            wacost = 0.0   # SAS: missing AMOUNT is not > 0 -> ELSE branch
+    else:
+        wacost = None
 
-    def new_page(self, text=''):
-        self._emit(self.ASA_NEW_PAGE, text)
-        self.page_num += 1
+    waremm = (remm / amount) if (remm is not None and amount not in (None, 0)) else None
+    amount_k = None if amount is None else _sas_round(amount / 1000)
 
-    def single(self, text=''):
-        self._emit(self.ASA_SINGLE, text)
+    prodtyp = r["PRODTYP"]
+    if r["SUBTTL"] in ("E1", "E2", "E3"):
+        prodtyp = "CA NON-INT BEARING"
+    elif r["SUBTTL"] in ("F1", "F2", "F3", "F4", "F5", "F6", "F7"):
+        prodtyp = "CA INT BEARING"
 
-    def double(self, text=''):
-        self._emit(self.ASA_DOUBLE, text)
+    dep2_rows.append({
+        "PRODTYP": prodtyp, "SUBTYP": subtyp, "SUBTTL": r["SUBTTL"],
+        "AMOUNT": amount_k, "COST": cost, "REMM": remm,
+        "REMMTH_BKT": r["REMMTH_BKT"], "REMMTH1": r["REMMTH1"],
+        "WACOST": wacost, "WAREMM": waremm,
+    })
 
-    def check_page(self, title_lines):
-        """Start a new page if close to bottom."""
-        if self.page_line_count >= self.lines_per_page - 4:
-            for tl in title_lines:
-                self.new_page(tl) if self.page_line_count == 0 else self.single(tl)
-            self.page_line_count = len(title_lines)
 
-    def save(self):
-        with open(self.filepath, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(self.lines))
-            f.write('\n')
+def _wacost_waremm(amount_k, cost, remm):
+    """WACOST = COST / ROUND(AMOUNT*1000); WAREMM = REMM / ROUND(AMOUNT*1000).
+    Unconditional division at these aggregate levels: a missing AMOUNT
+    propagates to a missing result, it is NOT special-cased to zero the way
+    the row-level WACOST assignment above is."""
+    if amount_k is None:
+        return None, None
+    denom = _sas_round(amount_k * 1000)
+    wacost = (cost / denom) if (cost is not None and denom != 0) else None
+    waremm = (remm / denom) if (remm is not None and denom != 0) else None
+    return wacost, waremm
 
 
 # ============================================================================
-# REPORT 1: DEPFINAL (non-FD deposits)
+# STEP 10: DEPTOTAL / DEPFINAL / DEPTOTA2  (non-FD table source)
 # ============================================================================
+print("\nStep 10: Building DEPFINAL (non-FD PRODTYP)...")
 
-def report_depfinal(writer, depfinal, titles):
-    """
-    PROC TABULATE DATA=DEPFINAL WHERE PRODTYP NOT IN FD types.
-    Rows: PRODTYP * SUBTTL * REMMTH
-    Cols: SUBTYP * (AMOUNT, WACOST, WAREMM)
-    """
-    fd_prodtyps = {'FIXED DEPT(RM)', 'FIXED DEPT(FCY)'}
-    rows = [r for r in depfinal if r.get('prodtyp') not in fd_prodtyps]
+deptotal = _group_sum(dep2_rows, ["PRODTYP", "SUBTTL", "REMMTH_BKT"])
+deptotal_rows = []
+for r in deptotal:
+    wacost, waremm = _wacost_waremm(r["AMOUNT"], r["COST"], r["REMM"])
+    deptotal_rows.append({
+        "PRODTYP": r["PRODTYP"], "SUBTTL": r["SUBTTL"], "REMMTH_BKT": r["REMMTH_BKT"],
+        "SUBTYP": "TOTAL", "AMOUNT": r["AMOUNT"], "COST": r["COST"], "REMM": r["REMM"],
+        "WACOST": wacost, "WAREMM": waremm,
+    })
 
-    # Sort by PRODTYP, SUBTTL, SUBTYP, REMMTH
-    def sort_key(r):
-        return (r.get('prodtyp', ''), r.get('subttl', ''),
-                r.get('subtyp', ''), r.get('remmth') or 0)
-    rows.sort(key=sort_key)
+depfinal_rows = [
+    {k: r[k] for k in ("PRODTYP", "SUBTTL", "REMMTH_BKT", "SUBTYP", "AMOUNT", "COST", "REMM", "WACOST", "WAREMM")}
+    for r in dep2_rows
+] + deptotal_rows
 
-    # Group by PRODTYP > SUBTTL > REMMTH, cols = SUBTYP
-    header = _build_header_depfinal()
+deptota2 = _group_sum(depfinal_rows, ["PRODTYP", "SUBTYP"])
+deptota2_rows = []
+for r in deptota2:
+    wacost, waremm = _wacost_waremm(r["AMOUNT"], r["COST"], r["REMM"])
+    deptota2_rows.append({
+        "PRODTYP": r["PRODTYP"], "SUBTYP": r["SUBTYP"], "SUBTTL": "I", "REMMTH_BKT": None,
+        "AMOUNT": r["AMOUNT"], "COST": r["COST"], "REMM": r["REMM"],
+        "WACOST": wacost, "WAREMM": waremm,
+    })
 
-    def _write_titles(w):
-        for t in titles:
-            w.single(t)
-        w.single('')
+depfinal_all = depfinal_rows + deptota2_rows
+depfinal_all = [r for r in depfinal_all
+                if r["PRODTYP"] not in ("FIXED DEPT(RM)", "FIXED DEPT(FCY)")]
+print(f"  DEPFINAL rows: {len(depfinal_all):,}")
 
-    _write_titles(writer)
-    writer.single(header['separator'])
-    writer.single(header['col_header1'])
-    writer.single(header['col_header2'])
-    writer.single(header['separator'])
+# ============================================================================
+# STEP 11: DEPTOTAL(REMMTH1) / FDTOTAL / FDTOTA2  (FD-only table source)
+# ============================================================================
+print("\nStep 11: Building FD (FIXED DEPT RM/FCY) table...")
 
-    # Pivot: for each (prodtyp, subttl, remmth) row → show CONVENTIONAL, SPTF, TOTAL cols
-    # Build pivot table
-    pivot = {}
+deptotal_r1 = _group_sum(dep2_rows, ["PRODTYP", "SUBTTL", "REMMTH1"])
+
+fdtotal_rows = []
+for r in deptotal_r1:
+    if r["PRODTYP"] not in ("FIXED DEPT(RM)", "FIXED DEPT(FCY)"):
+        continue
+    wacost, waremm = _wacost_waremm(r["AMOUNT"], r["COST"], r["REMM"])
+    fdtotal_rows.append({
+        "PRODTYP": r["PRODTYP"], "SUBTTL": r["SUBTTL"], "REMMTH1": r["REMMTH1"],
+        "SUBTYP": "TOTAL", "AMOUNT": r["AMOUNT"], "COST": r["COST"], "REMM": r["REMM"],
+        "WACOST": wacost, "WAREMM": waremm,
+    })
+
+fdtotal_combined = [
+    {k: r[k] for k in ("PRODTYP", "SUBTTL", "REMMTH1", "SUBTYP", "AMOUNT", "COST", "REMM", "WACOST", "WAREMM")}
+    for r in dep2_rows if r["PRODTYP"] in ("FIXED DEPT(RM)", "FIXED DEPT(FCY)")
+] + fdtotal_rows
+
+fdtota2 = _group_sum(fdtotal_combined, ["PRODTYP", "SUBTTL", "SUBTYP"])
+fdtota2_rows = []
+for r in fdtota2:
+    wacost, waremm = _wacost_waremm(r["AMOUNT"], r["COST"], r["REMM"])
+    fdtota2_rows.append({
+        "PRODTYP": r["PRODTYP"], "SUBTTL": r["SUBTTL"], "SUBTYP": r["SUBTYP"],
+        "REMMTH1": "SUB-TOTAL",
+        "AMOUNT": r["AMOUNT"], "COST": r["COST"], "REMM": r["REMM"],
+        "WACOST": wacost, "WAREMM": waremm,
+    })
+
+fd_table_rows = fdtotal_combined + fdtota2_rows
+print(f"  FD table rows: {len(fd_table_rows):,}")
+
+# ============================================================================
+# STEP 12: REPORT RENDERING
+# (plain fixed-width text, no ASA -- see module docstring re. RECFM=FB)
+# ============================================================================
+print("\nStep 12: Rendering report...")
+
+ROW_LABEL_WIDTH = 65   # RTS=65
+COL_WIDTHS = {"AMOUNT": 14, "WACOST": 14, "WAREMM": 9}
+MEASURE_LABELS = {
+    "AMOUNT": "BAL OUSTANDING (RM'000)",
+    "WACOST": "W.A. COST %",
+    "WAREMM": "REMAINING MATURITY",
+}
+SUBTYP_ORDER = ["CONVENTIONAL", "SPTF", "TOTAL"]
+FF = "\f"
+
+
+def _new_buf(width: int = 200) -> list:
+    return [" "] * width
+
+
+def _put(buf: list, col: int, text: str) -> None:
+    start = col - 1
+    for i, ch in enumerate(str(text)):
+        if 0 <= start + i < len(buf):
+            buf[start + i] = ch
+
+
+def _line(buf: list) -> str:
+    return "".join(buf).rstrip()
+
+
+def _fmt_comma(value, width: int, decimals: int = 0) -> str:
+    """COMMAw.d format. OPTIONS MISSING=0 substitutes a bare '0' (not
+    decimal-formatted) for a genuinely missing value, distinguishing a
+    bucket with no underlying records from one that summed to a real zero
+    (which prints '0.00' / '0')."""
+    if value is None:
+        return "0".rjust(width)
+    v = float(value)
+    s = f"{v:,.{decimals}f}"
+    return s.rjust(width)
+
+
+def _title_block() -> list:
+    titles = [
+        "PUBLIC ISLAMIC BANK BERHAD",
+        f"TIME TO MATURITY AS AT {RDATE}",
+        "RISK MANAGEMENT REPORT : EIIMRM01",
+        "RM DENOMINATION",
+        "",
+    ]
+    out = []
+    for t in titles:
+        buf = _new_buf()
+        _put(buf, 1, t)
+        out.append(_line(buf))
+    return out
+
+
+def _column_header(box_label: str) -> list:
+    lines = []
+    col_group_width = sum(COL_WIDTHS.values())
+
+    buf = _new_buf()
+    _put(buf, 1, box_label)
+    col = ROW_LABEL_WIDTH + 1
+    for st in SUBTYP_ORDER:
+        _put(buf, col, st.center(col_group_width))
+        col += col_group_width
+    lines.append(_line(buf))
+
+    buf = _new_buf()
+    col = ROW_LABEL_WIDTH + 1
+    for _ in SUBTYP_ORDER:
+        _put(buf, col, MEASURE_LABELS["AMOUNT"][:COL_WIDTHS["AMOUNT"]])
+        col += COL_WIDTHS["AMOUNT"]
+        _put(buf, col, MEASURE_LABELS["WACOST"][:COL_WIDTHS["WACOST"]])
+        col += COL_WIDTHS["WACOST"]
+        _put(buf, col, MEASURE_LABELS["WAREMM"][:COL_WIDTHS["WAREMM"]])
+        col += COL_WIDTHS["WAREMM"]
+    lines.append(_line(buf))
+
+    total_width = ROW_LABEL_WIDTH + len(SUBTYP_ORDER) * col_group_width
+    buf = _new_buf()
+    _put(buf, 1, "-" * min(total_width, 199))
+    lines.append(_line(buf))
+    return lines
+
+
+def _render_tabulate(rows: list, bucket_key: str, box_label: str) -> list:
+    cell = {}
+    row_keys = set()
     for r in rows:
-        k = (r.get('prodtyp', ''), r.get('subttl', ''), r.get('remmth1', ''))
-        s = r.get('subtyp', '')
-        if k not in pivot:
-            pivot[k] = {}
-        pivot[k][s] = r
+        key = (r["PRODTYP"], r["SUBTTL"], r.get(bucket_key) or "")
+        cell.setdefault(key, {})[r["SUBTYP"]] = r
+        row_keys.add(key)
 
-    # Sort keys
-    def pkey(k):
-        prodtyp, subttl, remmth1 = k
-        return (prodtyp, subttl, remmth1)
-    sorted_keys = sorted(pivot.keys(), key=pkey)
+    ordered_keys = sorted(row_keys, key=lambda k: (k[0], k[1], _remfmt_sort_key(k[2])))
 
-    last_prodtyp = None
-    last_subttl  = None
+    output = []
+    lines_on_page = 0
+    prev_prodtyp = prev_subttl = None
 
-    for k in sorted_keys:
-        prodtyp, subttl, remmth1 = k
-        subtypes = pivot[k]
+    def start_page():
+        nonlocal lines_on_page, prev_prodtyp, prev_subttl
+        output.append(FF)
+        output.extend(_title_block())
+        output.extend(_column_header(box_label))
+        lines_on_page = 5 + 3
+        prev_prodtyp = None
+        prev_subttl = None
 
-        if prodtyp != last_prodtyp:
-            writer.double(f"  {prodtyp}")
-            last_prodtyp = prodtyp
-            last_subttl  = None
+    start_page()
 
-        if subttl != last_subttl:
-            writer.single(f"    {subttl_format(subttl)}")
-            last_subttl = subttl
+    for prodtyp, subttl, bucket in ordered_keys:
+        if lines_on_page >= PAGE_SIZE:
+            start_page()
 
-        row_parts = []
-        for st in _SUBTYP_ORDER:
-            r = subtypes.get(st, {})
-            amt    = r.get('amount', 0.0) or 0.0
-            wacost = r.get('wacost', 0.0) or 0.0
-            waremm = r.get('waremm', 0.0) or 0.0
-            row_parts.append(
-                f"{fmt_comma12(amt)}{fmt_comma12_2(wacost)}{fmt_comma5_2(waremm)}"
-            )
-        label = f"{remmth1:<20}" if remmth1 else ' ' * 20
-        writer.single(f"      {label}  {'  '.join(row_parts)}")
+        buf = _new_buf()
+        if prodtyp != prev_prodtyp:
+            _put(buf, 1, prodtyp[:20])
+            prev_prodtyp = prodtyp
+            prev_subttl = None
+        if subttl != prev_subttl:
+            _put(buf, 22, subttl_format(subttl)[:22])
+            prev_subttl = subttl
+        _put(buf, 45, bucket[:20])
 
-    writer.single(header['separator'])
+        vcol = ROW_LABEL_WIDTH + 1
+        for st in SUBTYP_ORDER:
+            rec = cell[(prodtyp, subttl, bucket)].get(st)
+            amount = rec["AMOUNT"] if rec else None
+            wacost = rec["WACOST"] if rec else None
+            waremm = rec["WAREMM"] if rec else None
+            _put(buf, vcol, _fmt_comma(amount, COL_WIDTHS["AMOUNT"], 0))
+            vcol += COL_WIDTHS["AMOUNT"]
+            _put(buf, vcol, _fmt_comma(wacost, COL_WIDTHS["WACOST"], 2))
+            vcol += COL_WIDTHS["WACOST"]
+            _put(buf, vcol, _fmt_comma(waremm, COL_WIDTHS["WAREMM"], 2))
+            vcol += COL_WIDTHS["WAREMM"]
 
+        output.append(_line(buf))
+        lines_on_page += 1
 
-def _build_header_depfinal():
-    col_labels = ['CONVENTIONAL', 'SPTF', 'TOTAL']
-    sub_headers = ['BAL OUSTANDING (RM\'000)', 'W.A. COST %', 'REMAINING MATURITY']
-    widths       = [12, 12, 5]
-    sep = '-' * PAGE_WIDTH
-    h1 = 'DEPOSITS' + ' ' * 57
-    for lbl in col_labels:
-        h1 += f"{lbl:^31}"
-    h2 = ' ' * 65
-    for _ in col_labels:
-        for sub, w in zip(sub_headers, widths):
-            h2 += f"{sub:>{w+2}}"
-    return {'separator': sep, 'col_header1': h1, 'col_header2': h2}
+    return output
 
 
-# ============================================================================
-# REPORT 2: FD dataset
-# ============================================================================
-
-def report_fd(writer, fd_data, titles):
-    """
-    PROC TABULATE DATA=FD WHERE PRODTYP IN FD types.
-    Rows: PRODTYP * SUBTTL * REMMTH1
-    Cols: SUBTYP * (AMOUNT, WACOST, WAREMM)
-    """
-    fd_prodtyps = {'FIXED DEPT(RM)', 'FIXED DEPT(FCY)'}
-    rows = [r for r in fd_data if r.get('prodtyp') in fd_prodtyps]
-
-    def sort_key(r):
-        return (r.get('prodtyp', ''), r.get('subttl', ''),
-                r.get('remmth1', ''), r.get('subtyp', ''))
-    rows.sort(key=sort_key)
-
-    header = _build_header_depfinal()
-
-    def _write_titles(w):
-        for t in titles:
-            w.single(t)
-        w.single('')
-
-    _write_titles(writer)
-    writer.single(header['separator'])
-    writer.single(header['col_header1'])
-    writer.single(header['col_header2'])
-    writer.single(header['separator'])
-
-    pivot = {}
-    for r in rows:
-        k = (r.get('prodtyp', ''), r.get('subttl', ''), r.get('remmth1', ''))
-        s = r.get('subtyp', '')
-        if k not in pivot:
-            pivot[k] = {}
-        pivot[k][s] = r
-
-    def pkey(k):
-        return k
-    sorted_keys = sorted(pivot.keys(), key=pkey)
-
-    last_prodtyp = None
-    last_subttl  = None
-
-    for k in sorted_keys:
-        prodtyp, subttl, remmth1 = k
-        subtypes = pivot[k]
-
-        if prodtyp != last_prodtyp:
-            writer.double(f"  {prodtyp}")
-            last_prodtyp = prodtyp
-            last_subttl  = None
-
-        if subttl != last_subttl:
-            writer.single(f"    {subttl_format(subttl)}")
-            last_subttl = subttl
-
-        row_parts = []
-        for st in _SUBTYP_ORDER:
-            r = subtypes.get(st, {})
-            amt    = r.get('amount', 0.0) or 0.0
-            wacost = r.get('wacost', 0.0) or 0.0
-            waremm = r.get('waremm', 0.0) or 0.0
-            row_parts.append(
-                f"{fmt_comma12(amt)}{fmt_comma12_2(wacost)}{fmt_comma5_2(waremm)}"
-            )
-        label = f"{remmth1:<20}" if remmth1 else ' ' * 20
-        writer.single(f"      {label}  {'  '.join(row_parts)}")
-
-    writer.single(header['separator'])
-
+report_lines = []
+report_lines += _render_tabulate(depfinal_all, "REMMTH_BKT", "DEPOSITS")
+report_lines += _render_tabulate(fd_table_rows, "REMMTH1", "DEPOSITS")
 
 # ============================================================================
-# MAIN
+# STEP 13: WRITE OUTPUT
 # ============================================================================
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in report_lines:
+        fh.write(ln + "\n")
 
-def main():
-    # ---- REPTDATE ----
-    reptdate, nowk, reptyrs, reptyear, reptmon, reptday, rdate = get_reptdate()
+print(f"\n  Output written : {OUTPUT_FILE}")
+print(f"  Total lines    : {len(report_lines):,}")
+print("\n--- Report preview (first 40 lines) ---")
+for ln in report_lines[:40]:
+    print(ln)
 
-    # ---- FIXED DEPOSITS ----
-    fd_rows, td_rows, fdn_rows = process_fd(reptdate)
-
-    # Summarise TD, FD, FDN
-    grp = ['prodtyp', 'subtyp', 'subttl', 'remmth']
-    sv  = ['amount', 'cost', 'remm']
-    td_sum  = apply_remfmt_label(summarise(td_rows,  grp, sv))
-    fd_sum  = apply_remfmt_label(summarise(fd_rows,  grp, sv))
-    fdn_sum = apply_remfmt_label(summarise(fdn_rows, grp, sv))
-
-    # Combine TD + FD + FDN, add remmth1
-    fd_all = td_sum + fd_sum + fdn_sum
-    # Sort by prodtyp, subttl, subtyp, remmth1
-    fd_all.sort(key=lambda r: (r.get('prodtyp',''), r.get('subttl',''),
-                                r.get('subtyp',''), r.get('remmth1','')))
-
-    # Build DUMMY and MERGE
-    dummy     = build_dummy(fd_all)
-    fd_merged = merge_fd_dummy(fd_all, dummy)
-
-    # ---- SAVINGS ----
-    sa_rows = process_savings()
-    sa_sum  = apply_remfmt_label(summarise(sa_rows, grp, sv))
-
-    # ---- CURRENT ----
-    ca_rows, cag_rows, cas_rows = process_current()
-    ca_sum  = apply_remfmt_label(summarise(ca_rows,  grp, sv))
-    cag_sum = apply_remfmt_label(summarise(cag_rows, grp, sv))
-    cas_sum = apply_remfmt_label(summarise(cas_rows, grp, sv))
-
-    # ---- DEP ----
-    dep = build_dep(fd_merged, sa_sum, ca_sum, cag_sum, cas_sum)
-
-    # ---- DEPTOTAL (SA & CA per PRODTYP/SUBTTL/REMMTH) ----
-    deptotal = build_deptotal(dep)
-
-    # ---- DEPFINAL = DEP + DEPTOTAL ----
-    depfinal = dep + deptotal
-
-    # ---- DEPTOTA2 (grand subtotal per PRODTYP/SUBTYP) ----
-    deptota2 = build_deptota2(depfinal)
-
-    # ---- DEPFINAL = DEPFINAL + DEPTOTA2 ----
-    depfinal = depfinal + deptota2
-
-    # ---- FD TOTALS ----
-    # PROC SUMMARY on DEP for FD prodtyps by PRODTYP/SUBTTL/REMMTH1
-    fd_prodtyps = {'FIXED DEPT(RM)', 'FIXED DEPT(FCY)'}
-    dep_fd_only = [r for r in dep if r.get('prodtyp') in fd_prodtyps]
-
-    # build deptotal (subtyp=TOTAL) for FD rows
-    fd_deptotal = build_deptotal([r for r in dep if r.get('prodtyp') in fd_prodtyps])
-
-    fdtotal  = build_fdtotal(dep, fd_deptotal)
-    fdtota2  = build_fdtota2(fdtotal)
-    fd_final = fdtotal + fdtota2
-
-    # ---- TITLES ----
-    title1 = 'PUBLIC ISLAMIC BANK BERHAD'
-    title2 = f'TIME TO MATURITY AS AT {rdate}'
-    title3 = 'RISK MANAGEMENT REPORT : EIIMRM01'
-    title4 = 'RM DENOMINATION'
-    titles = [title1, title2, title3, title4]
-
-    # ---- WRITE REPORT ----
-    writer = ReportWriter(OUTPUT_FILE, LINES_PER_PAGE)
-    writer.new_page(title1)
-    writer.single(title2)
-    writer.single(title3)
-    writer.single(title4)
-
-    report_depfinal(writer, depfinal, titles)
-
-    writer.new_page(title1)
-    writer.single(title2)
-    writer.single(title3)
-    writer.single(title4)
-
-    report_fd(writer, fd_final, titles)
-
-    writer.save()
-    print(f"Report written to {OUTPUT_FILE}")
-
-
-if __name__ == '__main__':
-    main()
+print("\nEIIMRM01 complete.")
