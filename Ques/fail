@@ -85,3 +85,18 @@ fd_raw = con.execute(f"""
 """).pl()
 con.close()
 print(f"  FD rows (unfiltered): {len(fd_raw):,}")
+
+
+
+
+con = duckdb.connect(database=":memory:")
+fd_raw = con.execute(f"""
+    SELECT
+        CAST(INT_PLAN  AS INTEGER) AS INTPLAN,
+        CAST(CURR_BAL  AS DOUBLE)  AS CURBAL,
+        CAST(RT        AS DOUBLE)  AS RATE,
+        CAST(MATURE_DT AS VARCHAR) AS MATDATE,
+        CAST(OPEN_IND  AS VARCHAR) AS OPENIND
+    FROM read_parquet('{FD_CACHE.as_posix()}')
+""").pl()
+con.close()
