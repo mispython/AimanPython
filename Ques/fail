@@ -1,229 +1,87 @@
-# ============================================================================
-# STEP 12: REPORT RENDERING  (PROC TABULATE emulation)
-# BOX='DEPOSITS' RTS=65 CONDENSE  -- row-label width 65 (PRODTYP is LENGTH $16,
-# SUBTTL formatted label occupies 20 chars, REMMTH/REMMTH1 bucket the rest).
-# LINE_SIZE assumed 132 (SAS default) -- this bounds how many SUBTYP column
-# groups (CONVENTIONAL / SPTF / TOTAL) fit side-by-side before PROC TABULATE
-# horizontally wraps to a "(Continued)" segment.
-# (plain fixed-width text, no ASA -- see module docstring re. RECFM=FB)
-# ============================================================================
-print("\nStep 12: Rendering report...")
-
-LINE_SIZE          = 132
-LABEL_WIDTH         = 65    # RTS=65
-PRODTYP_WIDTH       = 16    # SAS: LENGTH PRODTYP $16
-SUBTTL_LABEL_WIDTH  = 20    # widest $SUBTTL. label (e.g. 'NEW FD FOR THE MONTH')
-BUCKET_COL_START    = 43    # fixed column where REMMTH/REMMTH1 bucket text begins
-HEADER_ROWS         = 4     # stacked column-header lines per measure
-SUBTYP_ORDER        = ["CONVENTIONAL", "SPTF", "TOTAL"]
-FF                  = "\f"
-
-# Measure column widths, matching F=COMMA12. / COMMA12.2 / COMMA5.2
-_MEASURE_SPECS = {"AMOUNT": (12, 0), "WACOST": (12, 2), "WAREMM": (5, 2)}
-GROUP_INNER_WIDTH = sum(w for w, _ in _MEASURE_SPECS.values()) + (len(_MEASURE_SPECS) - 1)  # 12+12+5+2 = 31
-GROUP_WIDTH       = GROUP_INNER_WIDTH + 1                                                   # +1 trailing pipe = 32
+# --- DIAGNOSTIC 1: Count PIBB accounts in MAIN_FD ---
+con = duckdb.connect(database=":memory:")
+pibb_count = con.execute(f"""
+    SELECT COUNT(DISTINCT ACCTNO) 
+    FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+    WHERE ENTITY_CD = 'PIBB'
+""").fetchone()[0]
+print(f"  PIBB accounts in MAIN_FD: {pibb_count:,}")
+con.close()
 
 
-def _total_width(n_groups: int) -> str:
-    return LABEL_WIDTH + 2 + n_groups * GROUP_WIDTH
 
 
-def _center(text: str, width: int) -> str:
-    text = text[:width]
-    pad = width - len(text)
-    left = pad // 2
-    right = pad - left
-    return " " * left + text + " " * right
+# --- DIAGNOSTIC 2: Total rows in FD ---
+con = duckdb.connect(database=":memory:")
+fd_count = con.execute(f"""
+    SELECT COUNT(*) 
+    FROM read_parquet('{FD_CACHE.as_posix()}')
+""").fetchone()[0]
+print(f"  Total rows in FD: {fd_count:,}")
+con.close()
 
 
-def _dashes(width: int) -> str:
-    return "-" * width
 
 
-# Stacked column-header content (fixed, since only these 3 measures ever appear).
-# AMOUNT / WACOST wrap by whole words (SAS splits a too-long label word-by-word,
-# bottom-anchored); WAREMM's label ("REMAINING MATURITY") is narrower than any
-# single word, so SAS hyphenates mid-word -- that wrap is hardcoded verbatim.
-_AMOUNT_HEADER = [_center(w, 12) for w in ("", "BAL", "OUSTANDING", "(RM'000)")]
-_WACOST_HEADER = [_center(w, 12) for w in ("", "", "", "W.A. COST %")]
-_WAREMM_HEADER = ["REMA-", "INING", "MATU-", "RITY "]
+# --- DIAGNOSTIC 3: Column names ---
+import pyarrow.parquet as pq
+fd_schema = pq.read_schema(FD_CACHE)
+main_schema = pq.read_schema(MAIN_FD_CACHE)
+print("  FD columns:", fd_schema.names)
+print("  MAIN_FD columns:", main_schema.names)
 
 
-def _build_label(prodtyp: str, subttl_label: str, bucket_label: str) -> str:
-    """Fixed-column row label: PRODTYP(1-16) + gap + SUBTTL(22-41) + gap + bucket(43-65)."""
-    buf = [" "] * LABEL_WIDTH
-    if prodtyp:
-        for i, ch in enumerate(prodtyp[:PRODTYP_WIDTH]):
-            buf[i] = ch
-    if subttl_label:
-        for i, ch in enumerate(subttl_label[:SUBTTL_LABEL_WIDTH]):
-            buf[21 + i] = ch
-    if bucket_label:
-        for i, ch in enumerate(bucket_label[:LABEL_WIDTH - (BUCKET_COL_START - 1)]):
-            buf[BUCKET_COL_START - 1 + i] = ch
-    return "".join(buf)
 
 
-def _fmt_num(value, width: int, decimals: int) -> str:
-    """COMMAw.d with comma-drop-on-overflow. MISSING=0 semantics: a genuinely
-    absent cell (no contributing rows -> None) renders as a bare '0', while a
-    real computed zero renders fully decimal-formatted."""
-    if value is None:
-        return "0".rjust(width)
-    v = float(value)
-    s = f"{v:,.{decimals}f}"
-    if len(s) > width:
-        s = f"{v:.{decimals}f}"        # drop commas if it doesn't fit
-    if len(s) > width:
-        s = s[-width:]                  # last-resort truncation
-    return s.rjust(width)
+# --- DIAGNOSTIC 4: Sample account numbers ---
+con = duckdb.connect(database=":memory:")
+sample_fd = con.execute(f"""
+    SELECT ACCT_NUM FROM read_parquet('{FD_CACHE.as_posix()}') LIMIT 5
+""").pl()
+print("  Sample FD ACCT_NUM:", sample_fd)
+con.close()
+
+con = duckdb.connect(database=":memory:")
+sample_main = con.execute(f"""
+    SELECT ACCTNO FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+    WHERE ENTITY_CD = 'PIBB' LIMIT 5
+""").pl()
+print("  Sample MAIN_FD ACCTNO:", sample_main)
+con.close()
 
 
-def _merged_row(box_label: str, groups: list) -> str:
-    label_cell = box_label.ljust(LABEL_WIDTH)[:LABEL_WIDTH]
-    group_cells = [_center(g, GROUP_INNER_WIDTH) for g in groups]
-    return "|" + label_cell + "|" + "|".join(group_cells) + "|"
 
 
-def _divider1(n_groups: int) -> str:
-    """Divider between the merged group-header row and the stacked sub-headers.
-    Label side stays blank (spaces); '+' only appears between dash groups."""
-    return "|" + " " * LABEL_WIDTH + "|" + "+".join([_dashes(GROUP_INNER_WIDTH)] * n_groups) + "|"
+# --- DIAGNOSTIC 5: Join counts with different casts ---
+con = duckdb.connect(database=":memory:")
+join_count = con.execute(f"""
+    SELECT COUNT(*) 
+    FROM read_parquet('{FD_CACHE.as_posix()}') f
+    INNER JOIN read_parquet('{MAIN_FD_CACHE.as_posix()}') m
+        ON f.ACCT_NUM = m.ACCTNO
+    WHERE m.ENTITY_CD = 'PIBB'
+""").fetchone()[0]
+print(f"  Join count (no cast): {join_count:,}")
+con.close()
+
+con = duckdb.connect(database=":memory:")
+join_count_varchar = con.execute(f"""
+    SELECT COUNT(*) 
+    FROM read_parquet('{FD_CACHE.as_posix()}') f
+    INNER JOIN read_parquet('{MAIN_FD_CACHE.as_posix()}') m
+        ON CAST(f.ACCT_NUM AS VARCHAR) = CAST(m.ACCTNO AS VARCHAR)
+    WHERE m.ENTITY_CD = 'PIBB'
+""").fetchone()[0]
+print(f"  Join count (VARCHAR): {join_count_varchar:,}")
+con.close()
 
 
-def _stacked_header_row(groups: list, line_idx: int) -> str:
-    parts = [" " * LABEL_WIDTH]
-    for _ in groups:
-        parts.append(_AMOUNT_HEADER[line_idx])
-        parts.append(_WACOST_HEADER[line_idx])
-        parts.append(_WAREMM_HEADER[line_idx])
-    return "|" + "|".join(parts) + "|"
 
 
-def _divider2(n_groups: int) -> str:
-    """Full divider before data rows: dashes everywhere, '+' at every boundary."""
-    group_dash = "-" * 12 + "+" + "-" * 12 + "+" + "-" * 5
-    return "|" + "-" * LABEL_WIDTH + "+" + "+".join([group_dash] * n_groups) + "|"
-
-
-def _full_row(label: str, group_cells: list) -> str:
-    parts = [label]
-    for amount_s, wacost_s, waremm_s in group_cells:
-        parts.append(amount_s)
-        parts.append(wacost_s)
-        parts.append(waremm_s)
-    return "|" + "|".join(parts) + "|"
-
-
-def _title_block() -> list:
-    titles = [
-        "PUBLIC ISLAMIC BANK BERHAD",
-        f"TIME TO MATURITY AS AT {RDATE}",
-        "RISK MANAGEMENT REPORT : EIIMRM01",
-        "RM DENOMINATION",
-        "",
-    ]
-    return titles
-
-
-def _render_tabulate(rows: list, bucket_key: str) -> list:
-    """
-    Emulates: TABLE PRODTYP*SUBTTL*<bucket>, (SUBTYP)*SUM*(AMOUNT WACOST WAREMM)
-              / BOX='DEPOSITS' RTS=65 CONDENSE;
-
-    - Horizontal pagination: when the SUBTYP groups present don't all fit
-      within LINE_SIZE, splits into column-group chunks separated by
-      '(Continued)' (no new page, no title repeat, same rows re-rendered
-      for the next chunk of columns).
-    - Vertical pagination: when rows exceed PAGE_SIZE within one chunk,
-      starts a new page (form feed + repeated titles + full header block).
-    """
-    present_groups = [g for g in SUBTYP_ORDER if any(r["SUBTYP"] == g for r in rows)]
-    if not present_groups:
-        return []
-
-    cell = {}
-    seen_keys = set()
-    row_keys = []
-    for r in rows:
-        bucket = r.get(bucket_key) or ""
-        key = (r["PRODTYP"], r["SUBTTL"], bucket)
-        cell.setdefault(key, {})[r["SUBTYP"]] = r
-        if key not in seen_keys:
-            seen_keys.add(key)
-            row_keys.append(key)
-
-    row_keys.sort(key=lambda k: (k[0], k[1], _remfmt_sort_key(k[2])))
-
-    max_groups_per_chunk = max(1, (LINE_SIZE - (LABEL_WIDTH + 2)) // GROUP_WIDTH)
-    chunks = [
-        present_groups[i:i + max_groups_per_chunk]
-        for i in range(0, len(present_groups), max_groups_per_chunk)
-    ]
-
-    output: list = []
-
-    for chunk_idx, groups in enumerate(chunks):
-        n = len(groups)
-        state = {"lines_on_page": 0}
-
-        def _emit_page(with_titles: bool):
-            block = []
-            if with_titles:
-                block.append(FF)
-                block.extend(_title_block())
-            block.append(_dashes(_total_width(n)))
-            block.append(_merged_row("DEPOSITS", groups))
-            block.append(_divider1(n))
-            for line_idx in range(HEADER_ROWS):
-                block.append(_stacked_header_row(groups, line_idx))
-            block.append(_divider2(n))
-            output.extend(block)
-            state["lines_on_page"] = len(block)
-
-        _emit_page(with_titles=(chunk_idx == 0))
-        prev_prodtyp = prev_subttl = None
-
-        for key in row_keys:
-            prodtyp, subttl, bucket = key
-
-            if state["lines_on_page"] >= PAGE_SIZE:
-                _emit_page(with_titles=True)
-                prev_prodtyp = prev_subttl = None
-
-            show_subttl = (subttl != prev_subttl) or (prodtyp != prev_prodtyp)
-            subttl_label = subttl_format(subttl) if show_subttl else ""
-            prodtyp_label = prodtyp if prodtyp != prev_prodtyp else ""
-            prev_prodtyp, prev_subttl = prodtyp, subttl
-
-            label = _build_label(prodtyp_label, subttl_label, bucket)
-
-            group_cells = []
-            for g in groups:
-                rec = cell[key].get(g)
-                amount = rec["AMOUNT"] if rec else None
-                wacost = rec["WACOST"] if rec else None
-                waremm = rec["WAREMM"] if rec else None
-                group_cells.append((
-                    _fmt_num(amount, 12, 0),
-                    _fmt_num(wacost, 12, 2),
-                    _fmt_num(waremm, 5, 2),
-                ))
-
-            output.append(_full_row(label, group_cells))
-            state["lines_on_page"] += 1
-
-        output.append(_dashes(_total_width(n)))
-
-        if chunk_idx < len(chunks) - 1:
-            output.append("")
-            output.append("(Continued)")
-            output.append("")
-            output.append("")
-
-    return output
-
-
-report_lines = []
-report_lines += _render_tabulate(depfinal_all, "REMMTH_BKT")
-report_lines += _render_tabulate(fd_table_rows, "REMMTH1")
+# --- TEMPORARY: Read FD without filter (for debugging only) ---
+con = duckdb.connect(database=":memory:")
+fd_raw = con.execute(f"""
+    SELECT * FROM read_parquet('{FD_CACHE.as_posix()}')
+""").pl()
+con.close()
+print(f"  FD rows (unfiltered): {len(fd_raw):,}")
