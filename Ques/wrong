@@ -4,26 +4,47 @@ TIME TO MATURITY AS AT 19/08/26
 RISK MANAGEMENT REPORT : EIIMRM01
 RM DENOMINATION
 
-DEPOSITS                                                                      CONVENTIONAL                             SPTF                                TOTAL
-                                                                 BAL OUSTANDINGW.A. COST %   REMAININGBAL OUSTANDINGW.A. COST %   REMAININGBAL OUSTANDINGW.A. COST %   REMAINING
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-CA INT BEARING       INT-BEAR. GOV.  ACCT                                     0             0        0       728,135          0.76     0.00       728,135          0.76     0.00
-                     INT-BEAR. HSING ACCT                                     0             0        0       145,935          0.69     0.00       145,935          0.69     0.00
-                     SUB-TOTAL                                                0             0        0       874,070          0.75     0.00       874,070          0.75     0.00
-CA NON-INT BEARING   NORMAL CURRENT A/C                                 199,719          0.11     0.00             0             0        0       199,719          0.11     0.00
-                     WADIAH CURRENT A/C                                       0             0        0       230,800          0.01     0.00       230,800          0.01     0.00
-                     SUB-TOTAL                                          199,719          0.11     0.00       230,800          0.01     0.00       430,519          0.06     0.00
-DEMAND DEPOSIT       OD A/C                                                   0             0        0    -1,003,823          0.00    -0.00    -1,003,823          0.00    -0.00
-                     SUB-TOTAL                                                0             0        0    -1,003,823          0.00    -0.00    -1,003,823          0.00    -0.00
-SAVINGS DEPOSIT      SAVING ACCOUNTS                                  9,827,700          0.01     0.00             0             0        0     9,827,700          0.01     0.00
-                     WADIAH SAVING A/C                                        0             0        0        23,128          0.00     0.00        23,128          0.00     0.00
-                     SUB-TOTAL                                        9,827,700          0.01     0.00        23,128          0.00     0.00     9,850,828          0.01     0.00
-
-PUBLIC ISLAMIC BANK BERHAD
-TIME TO MATURITY AS AT 19/08/26
-RISK MANAGEMENT REPORT : EIIMRM01
-RM DENOMINATION
+-----------------------------------------------------------------------------------------------------------------------------------
+|DEPOSITS                                                         |         CONVENTIONAL          |             SPTF              |
+|                                                                 |-------------------------------+-------------------------------|
+|                                                                 |            |            |REMA-|            |            |REMA-|
+|                                                                 |    BAL     |            |INING|    BAL     |            |INING|
+|                                                                 | OUSTANDING |            |MATU-| OUSTANDING |            |MATU-|
+|                                                                 |  (RM'000)  |W.A. COST % |RITY |  (RM'000)  |W.A. COST % |RITY |
+|-----------------------------------------------------------------+------------+------------+-----+------------+------------+-----|
+|CA INT BEARING       INT-BEAR. GOV.  ACCT                        |           0|           0|    0|     728,135|        0.76| 0.00|
+|                     INT-BEAR. HSING ACCT                        |           0|           0|    0|     145,935|        0.69| 0.00|
+|                     SUB-TOTAL                                   |           0|           0|    0|     874,070|        0.75| 0.00|
+|CA NON-INT BEARI     NORMAL CURRENT A/C                          |     199,719|        0.11| 0.00|           0|           0|    0|
+|                     WADIAH CURRENT A/C                          |           0|           0|    0|     230,800|        0.01| 0.00|
+|                     SUB-TOTAL                                   |     199,719|        0.11| 0.00|     230,800|        0.01| 0.00|
+|DEMAND DEPOSIT       OD A/C                                      |           0|           0|    0|  -1,003,823|        0.00|-0.00|
+|                     SUB-TOTAL                                   |           0|           0|    0|  -1,003,823|        0.00|-0.00|
+|SAVINGS DEPOSIT      SAVING ACCOUNTS                             |   9,827,700|        0.01| 0.00|           0|           0|    0|
+|                     WADIAH SAVING A/C                           |           0|           0|    0|      23,128|        0.00| 0.00|
+|                     SUB-TOTAL                                   |   9,827,700|        0.01| 0.00|      23,128|        0.00| 0.00|
+-----------------------------------------------------------------------------------------------------------------------------------
 
-DEPOSITS                                                                      CONVENTIONAL                             SPTF                                TOTAL
-                                                                 BAL OUSTANDINGW.A. COST %   REMAININGBAL OUSTANDINGW.A. COST %   REMAININGBAL OUSTANDINGW.A. COST %   REMAINING
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+(Continued)
+
+
+---------------------------------------------------------------------------------------------------
+|DEPOSITS                                                         |             TOTAL             |
+|                                                                 |-------------------------------|
+|                                                                 |            |            |REMA-|
+|                                                                 |    BAL     |            |INING|
+|                                                                 | OUSTANDING |            |MATU-|
+|                                                                 |  (RM'000)  |W.A. COST % |RITY |
+|-----------------------------------------------------------------+------------+------------+-----|
+|CA INT BEARING       INT-BEAR. GOV.  ACCT                        |     728,135|        0.76| 0.00|
+|                     INT-BEAR. HSING ACCT                        |     145,935|        0.69| 0.00|
+|                     SUB-TOTAL                                   |     874,070|        0.75| 0.00|
+|CA NON-INT BEARI     NORMAL CURRENT A/C                          |     199,719|        0.11| 0.00|
+|                     WADIAH CURRENT A/C                          |     230,800|        0.01| 0.00|
+|                     SUB-TOTAL                                   |     430,519|        0.06| 0.00|
+|DEMAND DEPOSIT       OD A/C                                      |  -1,003,823|        0.00|-0.00|
+|                     SUB-TOTAL                                   |  -1,003,823|        0.00|-0.00|
+|SAVINGS DEPOSIT      SAVING ACCOUNTS                             |   9,827,700|        0.01| 0.00|
+|                     WADIAH SAVING A/C                           |      23,128|        0.00| 0.00|
+|                     SUB-TOTAL                                   |   9,850,828|        0.01| 0.00|
+---------------------------------------------------------------------------------------------------
