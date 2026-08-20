@@ -1,25 +1,38 @@
-con = duckdb.connect(database=":memory:")
-pibb_count = con.execute(f"""
-    SELECT COUNT(DISTINCT ACCTNO)
-    FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-    WHERE TRIM(CAST(ENTITY_CD AS VARCHAR)) = 'PIBB'
-""").fetchone()[0]
+import pandas as pd
+import pyarrow as pa
 
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
 
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        # Build schema from the first chunk's dtypes
+        if schema is None:
+            fields = []
+            for col, dtype in chunk.dtypes.items():
+                if dtype == 'object':
+                    pa_type = pa.string()          # treat all object columns as string
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    # fallback (e.g., datetime, bool)
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
 
+        # Convert chunk to PyArrow Table using the fixed schema
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
 
-FORCE_REFRESH = {"MAIN_FD"}   # tags that must always reconvert regardless of cache
-
-
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-    if tag not in FORCE_REFRESH and _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
-
-
-
-
-
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
