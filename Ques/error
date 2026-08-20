@@ -1,22 +1,17 @@
-Hi Aiman
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM01.py
+Step 1: Deriving report date...
+  RDATE        : 19/08/26
+  REPTMON/DAY  : 08/19  REPTYEAR: 2026
+  Output file  : EIIMRM01.txt
 
-User informed that below report for 16th position have yet to be generated.
-Further checking report we generated thru host job EIWFRMCR. Found that this job have been set to dummy thru eJS A2026-35788.
-Please check is the report generated and sent to DRR?
-
-Thanks and Regards
-IzzatAemyr
-Data Warehouse | IT Division
-Ext. 8452
-
-
-
-Apologies for the issue.
-
-Upon checking, the report for the 16th position was not generated due to a misconfiguration in the Flow Manager setup, which caused the program not to be triggered properly for the specific date.
-
-As an immediate action, I will perform an ADHOC run of the program to generate the required report and will verify that the report is successfully generated and sent to DRR.
-
-The Flow Manager configuration will also be rectified accordingly to prevent the issue from recurring. All the updates and reconfiguration setup will be tracked under eJS A2026-37958.
-
-Apologies again for the oversight and inconvenience caused.
+Step 2: Caching input SAS datasets to Parquet...
+  [FD] Converting enrh_dp_fd_cert_d19.sas7bdat -> enrh_dp_fd_cert_d19.parquet ...
+  [FD] Done - 3,324,449 rows cached.
+  [SAVING] Converting intg_dp_acct_saving_d19.sas7bdat -> intg_dp_acct_saving_d19.parquet ...
+  [SAVING] WARNING: cannot cast 'RATE_GOLD' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
+  [SAVING] Done - 6,689,529 rows cached.
+  [CURRENT] Converting intg_dp_acct_current_d19.sas7bdat -> intg_dp_acct_current_d19.parquet ...
+  [CURRENT] WARNING: cannot cast 'FORATE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
+  [CURRENT] WARNING: cannot cast 'BILLERIND' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
+  [CURRENT] WARNING: cannot cast 'FORATE' from string to null: Unsupported cast from string to null using function cast_null - filling nulls
+  [CURRENT] Done - 1,130,120 rows cached.
