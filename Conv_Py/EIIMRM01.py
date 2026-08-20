@@ -18,20 +18,29 @@ Dependency:
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
 same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py)
 ============================================================================
-1. FD.FD        (JCL //FD  DD DSN=SAP.PIBB.MNIFD(0))
+1. main_fd.sas7bdat   (JCL DD DSN=SAP.PIBB.MNITB(0)) (PBB+PIBB combined account master for FD)
+   File : INPUT_MAIN_FD_FILE   -> main_fd.sas7bdat
+   Cols used : ACCTNO, ENTITY_CD
+   Used to build the list of PIBB-only account numbers, since fd.sas7bdat
+   itself is a mixed PBB/PIBB dataset with no ENTITY_CD column.
+
+2. fd.sas7bdat        (JCL //FD  DD DSN=SAP.PIBB.MNIFD(0))
    File : INPUT_FD_FILE        -> fd.sas7bdat
-   Used : DATA FD/TD/FDN step - fixed deposit detail (INTPLAN, CURBAL,
-          RATE, MATDATE, OPENIND).
+   Cols used : ACCT_NUM, INTPLAN, CURBAL, RATE, MATDATE, OPENIND
+   Used : DATA FD/TD/FDN step. Filtered to PIBB-only rows by inner-joining
+          ACCT_NUM against the PIBB ACCTNO list derived from main_fd.sas7bdat.
+   MATDATE format : SAS datetime-style string 'DDMONYYYY:HH:MM:SS'
+                     (e.g. '25SEP2026:00:00:00'), parsed accordingly.
 
-2. BNM.SAVING   (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member SAVING)
+3. saving.sas7bdat    (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member SAVING)
    File : INPUT_SAVING_FILE    -> saving.sas7bdat
-   Used : DATA SA step - savings account detail (PRODUCT, OPENIND, CURBAL,
-          INTRATE).
+   Cols used : PRODUCT, OPENIND, CURBAL, INTRATE, ENTITY_CD
+   Used : DATA SA step. Filtered directly by ENTITY_CD = 'PIBB'.
 
-3. BNM.CURRENT  (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
+4. current.sas7bdat   (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
    File : INPUT_CURRENT_FILE   -> current.sas7bdat
-   Used : DATA CA/CAG/CAS step - current account detail (PRODUCT, OPENIND,
-          CURBAL, INTRATE).
+   Cols used : PRODUCT, OPENIND, CURBAL, INTRATE, ENTITY_CD
+   Used : DATA CA/CAG/CAS step. Filtered directly by ENTITY_CD = 'PIBB'.
 
 Both BNM.SAVING and BNM.CURRENT physically live under the same //BNM DD in
 the JCL, but are treated here as two independent physical inputs (own path,
@@ -73,14 +82,17 @@ from PBBDPFMT import fdprod_format, caprod_format
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
+# INPUT_MAIN_FD_DIR = BASE_DIR / "input" / "prod" / "EIIMRM01" / "MAIN_FD"
 # INPUT_FD_DIR      = BASE_DIR / "enrichment"
 # INPUT_SAVING_DIR  = BASE_DIR / "integration"
 # INPUT_CURRENT_DIR = BASE_DIR / "integration"
 
+INPUT_MAIN_FD_DIR = STG_DIR / "sasdata"
 INPUT_FD_DIR      = STG_DIR / "sasdata"
 INPUT_SAVING_DIR  = STG_DIR / "sasdata"
 INPUT_CURRENT_DIR = STG_DIR / "sasdata"
 
+INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
 INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
 INPUT_SAVING_FILE  = INPUT_SAVING_DIR / "intg_dp_acct_saving_d19.sas7bdat"
 INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "intg_dp_acct_current_d19.sas7bdat"
@@ -288,11 +300,30 @@ def _sas_round(x: float) -> float:
     return float(-int(-x + 0.5))
 
 
+# def _parse_matdate(matdate) -> date:
+#     """MATDT = INPUT(PUT(MATDATE,Z8.),YYMMDD8.) -- MATDATE is stored as an
+#     8-digit YYYYMMDD integer."""
+#     s = f"{int(matdate):08d}"
+#     return date(int(s[0:4]), int(s[4:6]), int(s[6:8]))
+
+
+_MONTH_MAP = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+
 def _parse_matdate(matdate) -> date:
-    """MATDT = INPUT(PUT(MATDATE,Z8.),YYMMDD8.) -- MATDATE is stored as an
-    8-digit YYYYMMDD integer."""
-    s = f"{int(matdate):08d}"
-    return date(int(s[0:4]), int(s[4:6]), int(s[6:8]))
+    """MATDATE is now sourced as a SAS datetime-style string of the form
+    'DDMONYYYY:HH:MM:SS' (e.g. '25SEP2026:00:00:00'). Only the date
+    portion (before the first ':') is relevant here; the time component
+    is always 00:00:00 and is discarded, matching the original SAS
+    MATDT derivation which only ever used the date value."""
+    date_part = str(matdate).split(":")[0].strip().upper()
+    day = int(date_part[0:2])
+    mon = _MONTH_MAP[date_part[2:5]]
+    year = int(date_part[5:9])
+    return date(year, mon, day)
 
 
 def _remmth(matdt: date) -> float:
@@ -365,6 +396,7 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # STEP 2: CACHE INPUT SAS FILES TO PARQUET
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
+MAIN_FD_CACHE = _load_cached(INPUT_MAIN_FD_FILE, "MAIN_FD")
 FD_CACHE      = _load_cached(INPUT_FD_FILE, "FD")
 SAVING_CACHE  = _load_cached(INPUT_SAVING_FILE, "SAVING")
 CURRENT_CACHE = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
@@ -372,19 +404,64 @@ CURRENT_CACHE = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
 # ============================================================================
 # STEP 3: BUILD FD / TD / FDN  (DATA FD TD FDN; SET FD.FD; ...)
 # ============================================================================
-print("\nStep 3: Building FD / TD / FDN from FD.FD...")
+print("\nStep 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...")
+
+# con = duckdb.connect(database=":memory:")
+# fd_raw = con.execute(f"""
+#     WITH main_fd_pibb AS (
+#         SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
+#         FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+#         WHERE ENTITY_CD = 'PIBB'
+#     )
+#     SELECT
+#         CAST(f.INTPLAN AS INTEGER) AS INTPLAN,
+#         CAST(f.CURBAL  AS DOUBLE)  AS CURBAL,
+#         CAST(f.RATE    AS DOUBLE)  AS RATE,
+#         CAST(f.MATDATE AS VARCHAR) AS MATDATE,
+#         CAST(f.OPENIND AS VARCHAR) AS OPENIND
+#     FROM read_parquet('{FD_CACHE.as_posix()}') f
+#     INNER JOIN main_fd_pibb m
+#         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
+# """).pl()
+# con.close()
+
+# print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
+
+# con = duckdb.connect(database=":memory:")
+# fd_raw = con.execute(f"""
+#     WITH main_fd_pibb AS (
+#         SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
+#         FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+#         WHERE ENTITY_CD = 'PIBB'
+#     )
+#     SELECT * FROM read_parquet('{FD_CACHE.as_posix()}') f
+#     INNER JOIN main_fd_pibb m
+#         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
+# """).pl()
+# con.close()
+
+# print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
 
 con = duckdb.connect(database=":memory:")
 fd_raw = con.execute(f"""
+    WITH main_fd_pibb AS (
+        SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
+        FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+        WHERE ENTITY_CD = 'PIBB'
+    )
     SELECT
-        CAST(INTPLAN AS INTEGER) AS INTPLAN,
-        CAST(CURBAL  AS DOUBLE)  AS CURBAL,
-        CAST(RATE    AS DOUBLE)  AS RATE,
-        CAST(MATDATE AS BIGINT)  AS MATDATE,
-        CAST(OPENIND AS VARCHAR) AS OPENIND
-    FROM read_parquet('{FD_CACHE.as_posix()}')
+        CAST(f.INT_PLAN     AS INTEGER) AS INTPLAN,
+        CAST(f.CURR_BAL     AS DOUBLE)  AS CURBAL,
+        CAST(f.RT           AS DOUBLE)  AS RATE,
+        CAST(f.MATURE_DT    AS VARCHAR) AS MATDATE,
+        CAST(f.OPEN_IND     AS VARCHAR) AS OPENIND
+    FROM read_parquet('{FD_CACHE.as_posix()}') f
+    INNER JOIN main_fd_pibb m
+        ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
 """).pl()
 con.close()
+
+print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
 
 
 def _row(prodtyp, subtyp, subttl, amount, cost, remmth, remm):
@@ -395,10 +472,15 @@ def _row(prodtyp, subtyp, subttl, amount, cost, remmth, remm):
 fd_rows, td_rows, fdn_rows = [], [], []
 
 for r in fd_raw.iter_rows(named=True):
-    intplan = r["INTPLAN"]
-    curbal  = r["CURBAL"]
-    rate    = r["RATE"] or 0.0
-    openind = r["OPENIND"]
+    # intplan = r["INTPLAN"]
+    # curbal  = r["CURBAL"]
+    # rate    = r["RATE"] or 0.0
+    # openind = r["OPENIND"]
+
+    intplan = r["INT_PLAN"]
+    curbal  = r["CURR_BAL"]
+    rate    = r["RT"] or 0.0
+    openind = r["OPEN_IND"]
 
     if curbal is None:
         continue
@@ -413,7 +495,8 @@ for r in fd_raw.iter_rows(named=True):
 
     # IF OPENIND = 'O' OR OPENIND = 'D' AND CURBAL > 0  (AND binds tighter)
     if openind == "O" or (openind == "D" and curbal > 0):
-        matdt = _parse_matdate(r["MATDATE"])
+        # matdt = _parse_matdate(r["MATDATE"])
+        matdt = _parse_matdate(r["MATURE_DT"])
 
         if openind == "D" or matdt < reptdate:
             subtyp = "SPTF" if bnmcode == "42132" else "CONVENTIONAL"
@@ -445,7 +528,7 @@ print(f"  FD  rows: {len(fd_rows):,}   TD rows: {len(td_rows):,}   FDN rows: {le
 # ============================================================================
 # STEP 4: BUILD SA  (DATA SA; SET BNM.SAVING; ...)
 # ============================================================================
-print("\nStep 4: Building SA from BNM.SAVING...")
+print("\nStep 4: Building SA from BNM.SAVING (PIBB only)...")
 
 con = duckdb.connect(database=":memory:")
 saving_raw = con.execute(f"""
@@ -455,8 +538,16 @@ saving_raw = con.execute(f"""
         CAST(CURBAL  AS DOUBLE)  AS CURBAL,
         CAST(INTRATE AS DOUBLE)  AS INTRATE
     FROM read_parquet('{SAVING_CACHE.as_posix()}')
+    WHERE ENTITY_CD = 'PIBB'
 """).pl()
 con.close()
+
+# con = duckdb.connect(database=":memory:")
+# saving_raw = con.execute(f"""
+#     SELECT * FROM read_parquet('{SAVING_CACHE.as_posix()}')
+#     WHERE ENTITY_CD = 'PIBB'
+# """).pl()
+# con.close()
 
 sa_rows = []
 _REMMTH_SA = 0.0   # RETAIN ... REMMTH 0
@@ -481,7 +572,7 @@ print(f"  SA rows: {len(sa_rows):,}")
 # ============================================================================
 # STEP 5: BUILD CA / CAG / CAS  (DATA CA CAG CAS; SET BNM.CURRENT; ...)
 # ============================================================================
-print("\nStep 5: Building CA / CAG / CAS from BNM.CURRENT...")
+print("\nStep 5: Building CA / CAG / CAS from BNM.CURRENT (PIBB only)...")
 
 con = duckdb.connect(database=":memory:")
 current_raw = con.execute(f"""
@@ -491,8 +582,16 @@ current_raw = con.execute(f"""
         CAST(CURBAL  AS DOUBLE)  AS CURBAL,
         CAST(INTRATE AS DOUBLE)  AS INTRATE
     FROM read_parquet('{CURRENT_CACHE.as_posix()}')
+    WHERE ENTITY_CD = 'PIBB'
 """).pl()
 con.close()
+
+# con = duckdb.connect(database=":memory:")
+# current_raw = con.execute(f"""
+#     SELECT * FROM read_parquet('{CURRENT_CACHE.as_posix()}')
+#     WHERE ENTITY_CD = 'PIBB'
+# """).pl()
+# con.close()
 
 ca_rows, cag_rows, cas_rows = [], [], []
 _REMMTH_CA = 0.0   # RETAIN REMMTH 0
@@ -816,47 +915,120 @@ fd_table_rows = fdtotal_combined + fdtota2_rows
 print(f"  FD table rows: {len(fd_table_rows):,}")
 
 # ============================================================================
-# STEP 12: REPORT RENDERING
+# STEP 12: REPORT RENDERING  (PROC TABULATE emulation)
+# BOX='DEPOSITS' RTS=65 CONDENSE  -- row-label width 65 (PRODTYP is LENGTH $16,
+# SUBTTL formatted label occupies 20 chars, REMMTH/REMMTH1 bucket the rest).
+# LINE_SIZE assumed 132 (SAS default) -- this bounds how many SUBTYP column
+# groups (CONVENTIONAL / SPTF / TOTAL) fit side-by-side before PROC TABULATE
+# horizontally wraps to a "(Continued)" segment.
 # (plain fixed-width text, no ASA -- see module docstring re. RECFM=FB)
 # ============================================================================
 print("\nStep 12: Rendering report...")
 
-ROW_LABEL_WIDTH = 65   # RTS=65
-COL_WIDTHS = {"AMOUNT": 14, "WACOST": 14, "WAREMM": 9}
-MEASURE_LABELS = {
-    "AMOUNT": "BAL OUSTANDING (RM'000)",
-    "WACOST": "W.A. COST %",
-    "WAREMM": "REMAINING MATURITY",
-}
-SUBTYP_ORDER = ["CONVENTIONAL", "SPTF", "TOTAL"]
-FF = "\f"
+LINE_SIZE          = 132
+LABEL_WIDTH         = 65    # RTS=65
+PRODTYP_WIDTH       = 16    # SAS: LENGTH PRODTYP $16
+SUBTTL_LABEL_WIDTH  = 20    # widest $SUBTTL. label (e.g. 'NEW FD FOR THE MONTH')
+BUCKET_COL_START    = 43    # fixed column where REMMTH/REMMTH1 bucket text begins
+HEADER_ROWS         = 4     # stacked column-header lines per measure
+SUBTYP_ORDER        = ["CONVENTIONAL", "SPTF", "TOTAL"]
+FF                  = "\f"
+
+# Measure column widths, matching F=COMMA12. / COMMA12.2 / COMMA5.2
+_MEASURE_SPECS = {"AMOUNT": (12, 0), "WACOST": (12, 2), "WAREMM": (5, 2)}
+GROUP_INNER_WIDTH = sum(w for w, _ in _MEASURE_SPECS.values()) + (len(_MEASURE_SPECS) - 1)  # 12+12+5+2 = 31
+GROUP_WIDTH       = GROUP_INNER_WIDTH + 1                                                   # +1 trailing pipe = 32
 
 
-def _new_buf(width: int = 200) -> list:
-    return [" "] * width
+def _total_width(n_groups: int) -> str:
+    return LABEL_WIDTH + 2 + n_groups * GROUP_WIDTH
 
 
-def _put(buf: list, col: int, text: str) -> None:
-    start = col - 1
-    for i, ch in enumerate(str(text)):
-        if 0 <= start + i < len(buf):
-            buf[start + i] = ch
+def _center(text: str, width: int) -> str:
+    text = text[:width]
+    pad = width - len(text)
+    left = pad // 2
+    right = pad - left
+    return " " * left + text + " " * right
 
 
-def _line(buf: list) -> str:
-    return "".join(buf).rstrip()
+def _dashes(width: int) -> str:
+    return "-" * width
 
 
-def _fmt_comma(value, width: int, decimals: int = 0) -> str:
-    """COMMAw.d format. OPTIONS MISSING=0 substitutes a bare '0' (not
-    decimal-formatted) for a genuinely missing value, distinguishing a
-    bucket with no underlying records from one that summed to a real zero
-    (which prints '0.00' / '0')."""
+# Stacked column-header content (fixed, since only these 3 measures ever appear).
+# AMOUNT / WACOST wrap by whole words (SAS splits a too-long label word-by-word,
+# bottom-anchored); WAREMM's label ("REMAINING MATURITY") is narrower than any
+# single word, so SAS hyphenates mid-word -- that wrap is hardcoded verbatim.
+_AMOUNT_HEADER = [_center(w, 12) for w in ("", "BAL", "OUSTANDING", "(RM'000)")]
+_WACOST_HEADER = [_center(w, 12) for w in ("", "", "", "W.A. COST %")]
+_WAREMM_HEADER = ["REMA-", "INING", "MATU-", "RITY "]
+
+
+def _build_label(prodtyp: str, subttl_label: str, bucket_label: str) -> str:
+    """Fixed-column row label: PRODTYP(1-16) + gap + SUBTTL(22-41) + gap + bucket(43-65)."""
+    buf = [" "] * LABEL_WIDTH
+    if prodtyp:
+        for i, ch in enumerate(prodtyp[:PRODTYP_WIDTH]):
+            buf[i] = ch
+    if subttl_label:
+        for i, ch in enumerate(subttl_label[:SUBTTL_LABEL_WIDTH]):
+            buf[21 + i] = ch
+    if bucket_label:
+        for i, ch in enumerate(bucket_label[:LABEL_WIDTH - (BUCKET_COL_START - 1)]):
+            buf[BUCKET_COL_START - 1 + i] = ch
+    return "".join(buf)
+
+
+def _fmt_num(value, width: int, decimals: int) -> str:
+    """COMMAw.d with comma-drop-on-overflow. MISSING=0 semantics: a genuinely
+    absent cell (no contributing rows -> None) renders as a bare '0', while a
+    real computed zero renders fully decimal-formatted."""
     if value is None:
         return "0".rjust(width)
     v = float(value)
     s = f"{v:,.{decimals}f}"
+    if len(s) > width:
+        s = f"{v:.{decimals}f}"        # drop commas if it doesn't fit
+    if len(s) > width:
+        s = s[-width:]                  # last-resort truncation
     return s.rjust(width)
+
+
+def _merged_row(box_label: str, groups: list) -> str:
+    label_cell = box_label.ljust(LABEL_WIDTH)[:LABEL_WIDTH]
+    group_cells = [_center(g, GROUP_INNER_WIDTH) for g in groups]
+    return "|" + label_cell + "|" + "|".join(group_cells) + "|"
+
+
+def _divider1(n_groups: int) -> str:
+    """Divider between the merged group-header row and the stacked sub-headers.
+    Label side stays blank (spaces); '+' only appears between dash groups."""
+    return "|" + " " * LABEL_WIDTH + "|" + "+".join([_dashes(GROUP_INNER_WIDTH)] * n_groups) + "|"
+
+
+def _stacked_header_row(groups: list, line_idx: int) -> str:
+    parts = [" " * LABEL_WIDTH]
+    for _ in groups:
+        parts.append(_AMOUNT_HEADER[line_idx])
+        parts.append(_WACOST_HEADER[line_idx])
+        parts.append(_WAREMM_HEADER[line_idx])
+    return "|" + "|".join(parts) + "|"
+
+
+def _divider2(n_groups: int) -> str:
+    """Full divider before data rows: dashes everywhere, '+' at every boundary."""
+    group_dash = "-" * 12 + "+" + "-" * 12 + "+" + "-" * 5
+    return "|" + "-" * LABEL_WIDTH + "+" + "+".join([group_dash] * n_groups) + "|"
+
+
+def _full_row(label: str, group_cells: list) -> str:
+    parts = [label]
+    for amount_s, wacost_s, waremm_s in group_cells:
+        parts.append(amount_s)
+        parts.append(wacost_s)
+        parts.append(waremm_s)
+    return "|" + "|".join(parts) + "|"
 
 
 def _title_block() -> list:
@@ -867,105 +1039,110 @@ def _title_block() -> list:
         "RM DENOMINATION",
         "",
     ]
-    out = []
-    for t in titles:
-        buf = _new_buf()
-        _put(buf, 1, t)
-        out.append(_line(buf))
-    return out
+    return titles
 
 
-def _column_header(box_label: str) -> list:
-    lines = []
-    col_group_width = sum(COL_WIDTHS.values())
+def _render_tabulate(rows: list, bucket_key: str) -> list:
+    """
+    Emulates: TABLE PRODTYP*SUBTTL*<bucket>, (SUBTYP)*SUM*(AMOUNT WACOST WAREMM)
+              / BOX='DEPOSITS' RTS=65 CONDENSE;
 
-    buf = _new_buf()
-    _put(buf, 1, box_label)
-    col = ROW_LABEL_WIDTH + 1
-    for st in SUBTYP_ORDER:
-        _put(buf, col, st.center(col_group_width))
-        col += col_group_width
-    lines.append(_line(buf))
+    - Horizontal pagination: when the SUBTYP groups present don't all fit
+      within LINE_SIZE, splits into column-group chunks separated by
+      '(Continued)' (no new page, no title repeat, same rows re-rendered
+      for the next chunk of columns).
+    - Vertical pagination: when rows exceed PAGE_SIZE within one chunk,
+      starts a new page (form feed + repeated titles + full header block).
+    """
+    present_groups = [g for g in SUBTYP_ORDER if any(r["SUBTYP"] == g for r in rows)]
+    if not present_groups:
+        return []
 
-    buf = _new_buf()
-    col = ROW_LABEL_WIDTH + 1
-    for _ in SUBTYP_ORDER:
-        _put(buf, col, MEASURE_LABELS["AMOUNT"][:COL_WIDTHS["AMOUNT"]])
-        col += COL_WIDTHS["AMOUNT"]
-        _put(buf, col, MEASURE_LABELS["WACOST"][:COL_WIDTHS["WACOST"]])
-        col += COL_WIDTHS["WACOST"]
-        _put(buf, col, MEASURE_LABELS["WAREMM"][:COL_WIDTHS["WAREMM"]])
-        col += COL_WIDTHS["WAREMM"]
-    lines.append(_line(buf))
-
-    total_width = ROW_LABEL_WIDTH + len(SUBTYP_ORDER) * col_group_width
-    buf = _new_buf()
-    _put(buf, 1, "-" * min(total_width, 199))
-    lines.append(_line(buf))
-    return lines
-
-
-def _render_tabulate(rows: list, bucket_key: str, box_label: str) -> list:
     cell = {}
-    row_keys = set()
+    seen_keys = set()
+    row_keys = []
     for r in rows:
-        key = (r["PRODTYP"], r["SUBTTL"], r.get(bucket_key) or "")
+        bucket = r.get(bucket_key) or ""
+        key = (r["PRODTYP"], r["SUBTTL"], bucket)
         cell.setdefault(key, {})[r["SUBTYP"]] = r
-        row_keys.add(key)
+        if key not in seen_keys:
+            seen_keys.add(key)
+            row_keys.append(key)
 
-    ordered_keys = sorted(row_keys, key=lambda k: (k[0], k[1], _remfmt_sort_key(k[2])))
+    row_keys.sort(key=lambda k: (k[0], k[1], _remfmt_sort_key(k[2])))
 
-    output = []
-    lines_on_page = 0
-    prev_prodtyp = prev_subttl = None
+    max_groups_per_chunk = max(1, (LINE_SIZE - (LABEL_WIDTH + 2)) // GROUP_WIDTH)
+    chunks = [
+        present_groups[i:i + max_groups_per_chunk]
+        for i in range(0, len(present_groups), max_groups_per_chunk)
+    ]
 
-    def start_page():
-        nonlocal lines_on_page, prev_prodtyp, prev_subttl
-        output.append(FF)
-        output.extend(_title_block())
-        output.extend(_column_header(box_label))
-        lines_on_page = 5 + 3
-        prev_prodtyp = None
-        prev_subttl = None
+    output: list = []
 
-    start_page()
+    for chunk_idx, groups in enumerate(chunks):
+        n = len(groups)
+        state = {"lines_on_page": 0}
 
-    for prodtyp, subttl, bucket in ordered_keys:
-        if lines_on_page >= PAGE_SIZE:
-            start_page()
+        def _emit_page(with_titles: bool):
+            block = []
+            if with_titles:
+                block.append(FF)
+                block.extend(_title_block())
+            block.append(_dashes(_total_width(n)))
+            block.append(_merged_row("DEPOSITS", groups))
+            block.append(_divider1(n))
+            for line_idx in range(HEADER_ROWS):
+                block.append(_stacked_header_row(groups, line_idx))
+            block.append(_divider2(n))
+            output.extend(block)
+            state["lines_on_page"] = len(block)
 
-        buf = _new_buf()
-        if prodtyp != prev_prodtyp:
-            _put(buf, 1, prodtyp[:20])
-            prev_prodtyp = prodtyp
-            prev_subttl = None
-        if subttl != prev_subttl:
-            _put(buf, 22, subttl_format(subttl)[:22])
-            prev_subttl = subttl
-        _put(buf, 45, bucket[:20])
+        _emit_page(with_titles=(chunk_idx == 0))
+        prev_prodtyp = prev_subttl = None
 
-        vcol = ROW_LABEL_WIDTH + 1
-        for st in SUBTYP_ORDER:
-            rec = cell[(prodtyp, subttl, bucket)].get(st)
-            amount = rec["AMOUNT"] if rec else None
-            wacost = rec["WACOST"] if rec else None
-            waremm = rec["WAREMM"] if rec else None
-            _put(buf, vcol, _fmt_comma(amount, COL_WIDTHS["AMOUNT"], 0))
-            vcol += COL_WIDTHS["AMOUNT"]
-            _put(buf, vcol, _fmt_comma(wacost, COL_WIDTHS["WACOST"], 2))
-            vcol += COL_WIDTHS["WACOST"]
-            _put(buf, vcol, _fmt_comma(waremm, COL_WIDTHS["WAREMM"], 2))
-            vcol += COL_WIDTHS["WAREMM"]
+        for key in row_keys:
+            prodtyp, subttl, bucket = key
 
-        output.append(_line(buf))
-        lines_on_page += 1
+            if state["lines_on_page"] >= PAGE_SIZE:
+                _emit_page(with_titles=True)
+                prev_prodtyp = prev_subttl = None
+
+            show_subttl = (subttl != prev_subttl) or (prodtyp != prev_prodtyp)
+            subttl_label = subttl_format(subttl) if show_subttl else ""
+            prodtyp_label = prodtyp if prodtyp != prev_prodtyp else ""
+            prev_prodtyp, prev_subttl = prodtyp, subttl
+
+            label = _build_label(prodtyp_label, subttl_label, bucket)
+
+            group_cells = []
+            for g in groups:
+                rec = cell[key].get(g)
+                amount = rec["AMOUNT"] if rec else None
+                wacost = rec["WACOST"] if rec else None
+                waremm = rec["WAREMM"] if rec else None
+                group_cells.append((
+                    _fmt_num(amount, 12, 0),
+                    _fmt_num(wacost, 12, 2),
+                    _fmt_num(waremm, 5, 2),
+                ))
+
+            output.append(_full_row(label, group_cells))
+            state["lines_on_page"] += 1
+
+        output.append(_dashes(_total_width(n)))
+
+        if chunk_idx < len(chunks) - 1:
+            output.append("")
+            output.append("(Continued)")
+            output.append("")
+            output.append("")
 
     return output
 
 
 report_lines = []
-report_lines += _render_tabulate(depfinal_all, "REMMTH_BKT", "DEPOSITS")
-report_lines += _render_tabulate(fd_table_rows, "REMMTH1", "DEPOSITS")
+report_lines += _render_tabulate(depfinal_all, "REMMTH_BKT")
+report_lines += _render_tabulate(fd_table_rows, "REMMTH1")
 
 # ============================================================================
 # STEP 13: WRITE OUTPUT
@@ -976,8 +1153,8 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
-print("\n--- Report preview (first 40 lines) ---")
-for ln in report_lines[:40]:
-    print(ln)
+# print("\n--- Report preview (first 40 lines) ---")
+# for ln in report_lines[:40]:
+#     print(ln)
 
 print("\nEIIMRM01 complete.")
