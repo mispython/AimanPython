@@ -1,5 +1,4 @@
-[sas_edw_dev@svdwh004 Data_Warehouse]$ source /sas/python/virt_edw_dev/bin/activate
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM01.py
+virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM01.py
 Step 1: Deriving report date...
   RDATE        : 20/08/26
   REPTMON/DAY  : 08/20  REPTYEAR: 2026
@@ -26,6 +25,7 @@ shape: (3, 5)
 │ 278     ┆ 191916.76 ┆ 3.85 ┆ 2026-12-30 ┆ O       │
 └─────────┴───────────┴──────┴────────────┴─────────┘
   FD rows after PIBB account filter: 481,311
+  FCY deposits in FD: 0
   FD  rows: 433,895   TD rows: 9   FDN rows: 433,895
 
 Step 4: Building SA from BNM.SAVING (PIBB only)...
