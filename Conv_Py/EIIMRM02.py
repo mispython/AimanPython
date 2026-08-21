@@ -324,6 +324,28 @@ fd_raw = con.execute(f"""
 """).pl()
 con.close()
 
+# # DEBUG
+# con = duckdb.connect(database=":memory:")
+# fd_raw = con.execute(f"""
+#     WITH main_fd_pibb AS (
+#         SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
+#         FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+#         WHERE ENTITY_CD = 'PIBB'
+#     )
+#     SELECT
+#         CAST(f.INT_PLAN     AS INTEGER) AS INTPLAN,
+#         CAST(f.CURR_BAL     AS DOUBLE)  AS CURBAL,
+#         CAST(f.RT           AS DOUBLE)  AS RATE,
+#         CAST(f.MATURE_DT    AS DATE)    AS MATDATE,
+#         CAST(f.OPEN_IND     AS VARCHAR) AS OPENIND,
+#         CAST(f.CUSTOMER_CD  AS INTEGER) AS CUSTCD
+#     FROM read_parquet('{FD_CACHE.as_posix()}') f
+#     INNER JOIN main_fd_pibb m
+#         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
+#     LIMIT 10
+# """).pl()
+# con.close()
+
 print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
 
 
@@ -340,6 +362,20 @@ for r in fd_raw.iter_rows(named=True):
     rate    = r["RATE"] or 0.0
     openind = r["OPENIND"]
     custcd  = r["CUSTCD"]
+
+    # # DEBUG
+    # debug_count = 0
+    # for r in fd_raw.iter_rows(named=True):
+    #     if debug_count < 5:
+    #         print(f"DEBUG {debug_count}:")
+    #         print(f"  openind = {r['OPENIND']!r}")
+    #         print(f"  matdt   = {r['MATDATE']} (type: {type(r['MATDATE'])})")
+    #         print(f"  reptdate= {reptdate} (type: {type(reptdate)})")
+    #         print(f"  matdt < reptdate? {r['MATDATE'] < reptdate}")
+    #         print(f"  curbal  = {r['CURBAL']}")
+    #         print(f"  custcd  = {r['CUSTCD']}")
+    #         print(f"  intplan = {r['INTPLAN']}")
+    #         debug_count += 1
 
     if curbal is None:
         continue
