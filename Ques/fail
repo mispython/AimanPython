@@ -1,68 +1,13 @@
-============================================================================
-PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
-same chunked sas7bdat -> Parquet -> cache pattern as EIIMRM01.py / EIBDLN1M.py)
-============================================================================
-1. main_fd.sas7bdat   (JCL DD DSN=SAP.PIBB.MNITB(0)) (PBB+PIBB combined account master for FD)
-   File : INPUT_MAIN_FD_FILE   -> intg_dp_acct_fd_d19.sas7bdat
-   Cols used : ACCTNO, ENTITY_CD
-   Used to build the list of PIBB-only account numbers, since fd.sas7bdat
-   itself is a mixed PBB/PIBB dataset with no ENTITY_CD column (same
-   dependency as EIIMRM01.py).
-
-2. fd.sas7bdat        (JCL //FD  DD DSN=SAP.PIBB.MNIFD(0))
-   File : INPUT_FD_FILE        -> enrh_dp_fd_cert_d19.sas7bdat
-   Cols used : ACCT_NUM, INT_PLAN, CURR_BAL, RT, MATURE_DT, OPEN_IND, CUST_CD
-   Used  : DATA FD/TD/FDN step (SET FD.FD). Filtered to PIBB-only rows by
-           inner-joining ACCT_NUM against the PIBB ACCTNO list derived from
-           main_fd.sas7bdat.
-   ACCT_NUM is required here purely as the join key against main_fd; it is
-   NOT part of this program's own KEEP list (unlike EIIMRM01, EIIMRM02's
-   SAS KEEP= never lists ACCTNO), so it is dropped again immediately after
-   the join and never enters fd_rows/td_rows/fdn_rows.
-============================================================================
-
-
-
-
-# INPUT_MAIN_FD_DIR = BASE_DIR / "input" / "prod" / "EIIMRM02" / "MAIN_FD"
-INPUT_MAIN_FD_DIR = STG_DIR / "sasdata"
-
-INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
-
-
-
-
-print("\nStep 2: Caching input SAS datasets to Parquet...")
-MAIN_FD_CACHE = _load_cached(INPUT_MAIN_FD_FILE, "MAIN_FD")
-FD_CACHE      = _load_cached(INPUT_FD_FILE, "FD")
-
-
-
-
-print("\nStep 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...")
-
-con = duckdb.connect(database=":memory:")
-fd_raw = con.execute(f"""
-    WITH main_fd_pibb AS (
-        SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
-        FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-        WHERE ENTITY_CD = 'PIBB'
-    )
-    SELECT
-        CAST(f.INT_PLAN  AS INTEGER) AS INTPLAN,
-        CAST(f.CURR_BAL  AS DOUBLE)  AS CURBAL,
-        CAST(f.RT        AS DOUBLE)  AS RATE,
-        CAST(f.MATURE_DT AS DATE)    AS MATDATE,
-        CAST(f.OPEN_IND  AS VARCHAR) AS OPENIND,
-        CAST(f.CUST_CD   AS INTEGER) AS CUSTCD
-    FROM read_parquet('{FD_CACHE.as_posix()}') f
-    INNER JOIN main_fd_pibb m
-        ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
-""").pl()
-con.close()
-
-print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
-
-
-
-
+debug_count = 0
+for r in fd_raw.iter_rows(named=True):
+    if debug_count < 5:
+        print(f"DEBUG {debug_count}:")
+        print(f"  openind = {r['OPENIND']!r}")
+        print(f"  matdt   = {r['MATDATE']} (type: {type(r['MATDATE'])})")
+        print(f"  reptdate= {reptdate} (type: {type(reptdate)})")
+        print(f"  matdt < reptdate? {r['MATDATE'] < reptdate}")
+        print(f"  curbal  = {r['CURBAL']}")
+        print(f"  custcd  = {r['CUSTCD']}")
+        print(f"  intplan = {r['INTPLAN']}")
+        debug_count += 1
+    # ... rest of your loop ...
