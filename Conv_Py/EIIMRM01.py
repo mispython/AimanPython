@@ -300,13 +300,6 @@ def _sas_round(x: float) -> float:
     return float(-int(-x + 0.5))
 
 
-# def _parse_matdate(matdate) -> date:
-#     """MATDT = INPUT(PUT(MATDATE,Z8.),YYMMDD8.) -- MATDATE is stored as an
-#     8-digit YYYYMMDD integer."""
-#     s = f"{int(matdate):08d}"
-#     return date(int(s[0:4]), int(s[4:6]), int(s[6:8]))
-
-
 _MONTH_MAP = {
     "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
     "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
@@ -328,7 +321,7 @@ _MONTH_MAP = {
 
 def _parse_matdate(matdate) -> date:
     """
-    
+
     Parse either:
       - 'DDMONYYYY:HH:MM:SS'   (SAS datetime string)
       - 'YYYY-MM-DD'           (ISO date)
@@ -437,134 +430,6 @@ CURRENT_CACHE = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
 # ============================================================================
 print("\nStep 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...")
 
-# # --- DIAGNOSTIC 1: Count PIBB accounts in MAIN_FD ---
-# con = duckdb.connect(database=":memory:")
-# pibb_count = con.execute(f"""
-#     SELECT COUNT(DISTINCT ACCTNO)
-#     FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-#     WHERE TRIM(CAST(ENTITY_CD AS VARCHAR)) = 'PIBB'
-# """).fetchone()[0]
-# print(f"  PIBB accounts in MAIN_FD: {pibb_count:,}")
-# con.close()
-
-# con = duckdb.connect(database=":memory:")
-# distinct_entity = con.execute(f"""
-#     SELECT DISTINCT ENTITY_CD FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-# """).pl()
-# print("  Distinct ENTITY_CD values:", distinct_entity)
-# con.close()
-
-# # --- DIAGNOSTIC 2: Total rows in FD ---
-# con = duckdb.connect(database=":memory:")
-# fd_count = con.execute(f"""
-#     SELECT COUNT(*) 
-#     FROM read_parquet('{FD_CACHE.as_posix()}')
-# """).fetchone()[0]
-# print(f"  Total rows in FD: {fd_count:,}")
-# con.close()
-
-# # --- DIAGNOSTIC 3: Column names ---
-# import pyarrow.parquet as pq
-# fd_schema = pq.read_schema(FD_CACHE)
-# main_schema = pq.read_schema(MAIN_FD_CACHE)
-# print("  FD columns:", fd_schema.names)
-# print("  MAIN_FD columns:", main_schema.names)
-
-# # --- DIAGNOSTIC 4: Sample account numbers ---
-# con = duckdb.connect(database=":memory:")
-# sample_fd = con.execute(f"""
-#     SELECT ACCT_NUM FROM read_parquet('{FD_CACHE.as_posix()}') LIMIT 5
-# """).pl()
-# print("  Sample FD ACCT_NUM:", sample_fd)
-# con.close()
-
-# con = duckdb.connect(database=":memory:")
-# sample_main = con.execute(f"""
-#     SELECT ACCTNO FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-#     WHERE ENTITY_CD = 'PIBB' LIMIT 5
-# """).pl()
-# print("  Sample MAIN_FD ACCTNO:", sample_main)
-# con.close()
-
-# # --- DIAGNOSTIC 5: Join counts with different casts ---
-# con = duckdb.connect(database=":memory:")
-# join_count = con.execute(f"""
-#     SELECT COUNT(*) 
-#     FROM read_parquet('{FD_CACHE.as_posix()}') f
-#     INNER JOIN read_parquet('{MAIN_FD_CACHE.as_posix()}') m
-#         ON f.ACCT_NUM = m.ACCTNO
-#     WHERE m.ENTITY_CD = 'PIBB'
-# """).fetchone()[0]
-# print(f"  Join count (no cast): {join_count:,}")
-# con.close()
-
-# con = duckdb.connect(database=":memory:")
-# join_count_varchar = con.execute(f"""
-#     SELECT COUNT(*) 
-#     FROM read_parquet('{FD_CACHE.as_posix()}') f
-#     INNER JOIN read_parquet('{MAIN_FD_CACHE.as_posix()}') m
-#         ON CAST(f.ACCT_NUM AS VARCHAR) = CAST(m.ACCTNO AS VARCHAR)
-#     WHERE m.ENTITY_CD = 'PIBB'
-# """).fetchone()[0]
-# print(f"  Join count (VARCHAR): {join_count_varchar:,}")
-# con.close()
-
-# # --- TEMPORARY: Read FD without filter (for debugging only) ---
-# con = duckdb.connect(database=":memory:")
-# fd_raw = con.execute(f"""
-#     SELECT * FROM read_parquet('{FD_CACHE.as_posix()}')
-# """).pl()
-# con.close()
-# print(f"  FD rows (unfiltered): {len(fd_raw):,}")
-
-# con = duckdb.connect(database=":memory:")
-# fd_raw = con.execute(f"""
-#     SELECT
-#         CAST(INT_PLAN  AS INTEGER) AS INTPLAN,
-#         CAST(CURR_BAL  AS DOUBLE)  AS CURBAL,
-#         CAST(RT        AS DOUBLE)  AS RATE,
-#         CAST(MATURE_DT AS VARCHAR) AS MATURE_DT,
-#         CAST(OPEN_IND  AS VARCHAR) AS OPENIND
-#     FROM read_parquet('{FD_CACHE.as_posix()}')
-# """).pl()
-# con.close()
-
-# con = duckdb.connect(database=":memory:")
-# fd_raw = con.execute(f"""
-#     WITH main_fd_pibb AS (
-#         SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
-#         FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-#         WHERE ENTITY_CD = 'PIBB'
-#     )
-#     SELECT
-#         CAST(f.INTPLAN AS INTEGER) AS INTPLAN,
-#         CAST(f.CURBAL  AS DOUBLE)  AS CURBAL,
-#         CAST(f.RATE    AS DOUBLE)  AS RATE,
-#         CAST(f.MATDATE AS VARCHAR) AS MATDATE,
-#         CAST(f.OPENIND AS VARCHAR) AS OPENIND
-#     FROM read_parquet('{FD_CACHE.as_posix()}') f
-#     INNER JOIN main_fd_pibb m
-#         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
-# """).pl()
-# con.close()
-
-# print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
-
-# con = duckdb.connect(database=":memory:")
-# fd_raw = con.execute(f"""
-#     WITH main_fd_pibb AS (
-#         SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
-#         FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-#         WHERE ENTITY_CD = 'PIBB'
-#     )
-#     SELECT * FROM read_parquet('{FD_CACHE.as_posix()}') f
-#     INNER JOIN main_fd_pibb m
-#         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
-# """).pl()
-# con.close()
-
-# print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
-
 con = duckdb.connect(database=":memory:")
 fd_raw = con.execute(f"""
     WITH main_fd_pibb AS (
@@ -593,6 +458,8 @@ con.close()
 
 print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
 
+fcy_count = sum(1 for r in fd_raw.iter_rows(named=True) if fdprod_format(r['INTPLAN']) == '42630')
+print(f"  FCY deposits in FD: {fcy_count}")
 
 def _row(prodtyp, subtyp, subttl, amount, cost, remmth, remm):
     return {"PRODTYP": prodtyp, "SUBTYP": subtyp, "SUBTTL": subttl,
@@ -606,28 +473,6 @@ for r in fd_raw.iter_rows(named=True):
     curbal  = r["CURBAL"]
     rate    = r["RATE"] or 0.0
     openind = r["OPENIND"]
-
-    # # DEBUG
-    # debug_count = 0
-    # for r in fd_raw.iter_rows(named=True):
-    #     if debug_count >= 5:
-    #         print(f"DEBUG {debug_count}:")
-    #         print(f"  intplan  = {r['INTPLAN']}  (type: {type(r['INTPLAN'])})")
-    #         print(f"  curbal   = {r['CURBAL']}")
-    #         print(f"  rate     = {r['RATE']}")
-    #         print(f"  openind  = {r['OPENIND']!r}")
-    #         print(f"  matdate  = {r['MATDATE']!r}")
-    #         # parse matdt and print
-    #         matdt = _parse_matdate(r['MATDATE'])
-    #         print(f"  parsed matdt = {matdt}")
-    #         print(f"  reptdate = {reptdate}")
-    #         print(f"  matdt < reptdate? {matdt < reptdate}")
-    #         # also print bnmcode
-    #         bnmcode = fdprod_format(r['INTPLAN'])
-    #         print(f"  bnmcode = {bnmcode}")
-    #         debug_count += 1
-    #     else:
-    #         break
 
     if curbal is None:
         continue
@@ -689,13 +534,6 @@ saving_raw = con.execute(f"""
 """).pl()
 con.close()
 
-# con = duckdb.connect(database=":memory:")
-# saving_raw = con.execute(f"""
-#     SELECT * FROM read_parquet('{SAVING_CACHE.as_posix()}')
-#     WHERE ENTITY_CD = 'PIBB'
-# """).pl()
-# con.close()
-
 sa_rows = []
 _REMMTH_SA = 0.0   # RETAIN ... REMMTH 0
 
@@ -732,13 +570,6 @@ current_raw = con.execute(f"""
     WHERE ENTITY_CD = 'PIBB'
 """).pl()
 con.close()
-
-# con = duckdb.connect(database=":memory:")
-# current_raw = con.execute(f"""
-#     SELECT * FROM read_parquet('{CURRENT_CACHE.as_posix()}')
-#     WHERE ENTITY_CD = 'PIBB'
-# """).pl()
-# con.close()
 
 ca_rows, cag_rows, cas_rows = [], [], []
 _REMMTH_CA = 0.0   # RETAIN REMMTH 0
