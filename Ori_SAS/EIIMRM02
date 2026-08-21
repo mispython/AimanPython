@@ -1,4 +1,24 @@
- *+--------------------------------------------------------------+
+//DELETE   EXEC PGM=IEFBR14
+//DD2      DD DSN=SAP.PIBB.EIIMRM02.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//CREATE   EXEC PGM=IEFBR14
+//CRT02    DD DSN=SAP.PIBB.EIIMRM02.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//*********************************************************************
+//* REPORT : FD-BY INDIVIDUAL AND NON-INDIVIDUAL, BY TIME
+//*          TO MATURITY FOR ALCO  - PART 1
+//*          (WEIGHTED AVERAGE COST BY MATURITY PROFILE)
+//*********************************************************************
+//EIIMRM02 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//FD       DD DSN=SAP.PIBB.MNIFD(0),DISP=SHR
+//TEMP     DD DSN=SAP.PIBB.EIIMRM02.TEXT,DISP=OLD
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRM02),DISP=SHR
+*+--------------------------------------------------------------+
   |  PROGRAM : EIIMRM02
   |  DATE    : 01.04.08                                          |
   |  REPORT  : FD-BY INDIVIDUAL AND NON-INDIVIDUAL, BY TIME      |
