@@ -1,7 +1,8 @@
+[sas_edw_dev@svdwh004 Data_Warehouse]$ source /sas/python/virt_edw_dev/bin/activate
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM01.py
 Step 1: Deriving report date...
-  RDATE        : 19/08/26
-  REPTMON/DAY  : 08/19  REPTYEAR: 2026
+  RDATE        : 20/08/26
+  REPTMON/DAY  : 08/20  REPTYEAR: 2026
   Output file  : EIIMRM01.txt
 
 Step 2: Caching input SAS datasets to Parquet...
@@ -15,15 +16,15 @@ Step 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...
   FD raw columns: ['INTPLAN', 'CURBAL', 'RATE', 'MATDATE', 'OPENIND']
   First 3 rows of fd_raw (sample):
 shape: (3, 5)
-┌─────────┬───────────┬──────┬─────────────────────┬─────────┐
-│ INTPLAN ┆ CURBAL    ┆ RATE ┆ MATDATE             ┆ OPENIND │
-│ ---     ┆ ---       ┆ ---  ┆ ---                 ┆ ---     │
-│ i32     ┆ f64       ┆ f64  ┆ str                 ┆ str     │
-╞═════════╪═══════════╪══════╪═════════════════════╪═════════╡
-│ 277     ┆ 0.0       ┆ 3.65 ┆ 2026-07-22 00:00:00 ┆ C       │
-│ 275     ┆ 1.5446e7  ┆ 3.75 ┆ 2026-08-20 00:00:00 ┆ D       │
-│ 278     ┆ 191916.76 ┆ 3.85 ┆ 2026-12-30 00:00:00 ┆ O       │
-└─────────┴───────────┴──────┴─────────────────────┴─────────┘
+┌─────────┬───────────┬──────┬────────────┬─────────┐
+│ INTPLAN ┆ CURBAL    ┆ RATE ┆ MATDATE    ┆ OPENIND │
+│ ---     ┆ ---       ┆ ---  ┆ ---        ┆ ---     │
+│ i32     ┆ f64       ┆ f64  ┆ date       ┆ str     │
+╞═════════╪═══════════╪══════╪════════════╪═════════╡
+│ 277     ┆ 0.0       ┆ 3.65 ┆ 2026-07-22 ┆ C       │
+│ 275     ┆ 1.5446e7  ┆ 3.75 ┆ 2026-08-20 ┆ D       │
+│ 278     ┆ 191916.76 ┆ 3.85 ┆ 2026-12-30 ┆ O       │
+└─────────┴───────────┴──────┴────────────┴─────────┘
   FD rows after PIBB account filter: 481,311
   FD  rows: 433,895   TD rows: 9   FDN rows: 433,895
 
