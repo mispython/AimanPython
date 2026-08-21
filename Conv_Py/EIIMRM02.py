@@ -14,24 +14,25 @@ Dependency:
              therefore intentionally NOT imported here.
 
 ============================================================================
-PHYSICAL INPUT DATASETS  (cached to Parquet independently, using the same
-chunked sas7bdat -> Parquet -> cache pattern as EIIMRM01.py / EIBDLN1M.py)
+PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
-1. fd.sas7bdat  (JCL //FD DD DSN=SAP.PIBB.MNIFD(0))
-   File : INPUT_FD_FILE -> enrh_dp_fd_cert_d19.sas7bdat
-   Cols used : INT_PLAN, CURR_BAL, RT, MATURE_DT, OPEN_IND, CUST_CD
-   Used  : DATA FD/TD/FDN step (SET FD.FD).
-   MATURE_DT is assumed already stored as a native DATE column in the
-   cached Parquet (same convention as EIIMRM01.py's FD_CACHE).
-   CUST_CD is assumed to carry the BNM customer-code (SAS var CUSTCD),
-   following the same "SAS var name -> underscore-inserted physical name"
-   convention already established for this dataset in EIIMRM01.py
-   (ACCTNO->ACCT_NUM, INTPLAN->INT_PLAN, CURBAL->CURR_BAL, RATE->RT,
-   OPENIND->OPEN_IND).
+1. main_fd.sas7bdat   (JCL DD DSN=SAP.PIBB.MNITB(0)) (PBB+PIBB combined account master for FD)
+   File : INPUT_MAIN_FD_FILE   -> intg_dp_acct_fd_d19.sas7bdat
+   Cols used : ACCTNO, ENTITY_CD
+   Used to build the list of PIBB-only account numbers, since fd.sas7bdat
+   itself is a mixed PBB/PIBB dataset with no ENTITY_CD column (same
+   dependency as EIIMRM01.py).
 
-   NOTE: Unlike EIIMRM01, this program's JCL has NO //BNM DD at all, so
-   there is no BNM.SAVING / BNM.CURRENT processing and no PIBB-account
-   cross-filter against a main_fd dataset -- fd.sas7bdat is read directly.
+2. fd.sas7bdat        (JCL //FD  DD DSN=SAP.PIBB.MNIFD(0))
+   File : INPUT_FD_FILE        -> enrh_dp_fd_cert_d19.sas7bdat
+   Cols used : ACCT_NUM, INT_PLAN, CURR_BAL, RT, MATURE_DT, OPEN_IND, CUST_CD
+   Used  : DATA FD/TD/FDN step (SET FD.FD). Filtered to PIBB-only rows by
+           inner-joining ACCT_NUM against the PIBB ACCTNO list derived from
+           main_fd.sas7bdat.
+   ACCT_NUM is required here purely as the join key against main_fd; it is
+   NOT part of this program's own KEEP list (unlike EIIMRM01, EIIMRM02's
+   SAS KEEP= never lists ACCTNO), so it is dropped again immediately after
+   the join and never enters fd_rows/td_rows/fdn_rows.
 
 ============================================================================
 OUTPUT
@@ -68,9 +69,11 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
 # INPUT_FD_DIR = BASE_DIR / "enrichment"
-INPUT_FD_DIR = STG_DIR / "sasdata"
+INPUT_MAIN_FD_DIR = STG_DIR / "sasdata"
+INPUT_FD_DIR      = STG_DIR / "sasdata"
 
-INPUT_FD_FILE = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
+INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
+INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -292,28 +295,36 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # ============================================================================
 # STEP 2: CACHE INPUT SAS FILE TO PARQUET
 # ============================================================================
-print("\nStep 2: Caching input SAS dataset to Parquet...")
-FD_CACHE = _load_cached(INPUT_FD_FILE, "FD")
+print("\nStep 2: Caching input SAS datasets to Parquet...")
+MAIN_FD_CACHE = _load_cached(INPUT_MAIN_FD_FILE, "MAIN_FD")
+FD_CACHE      = _load_cached(INPUT_FD_FILE, "FD")
 
 # ============================================================================
 # STEP 3: BUILD FD / TD / FDN  (DATA FD TD FDN; SET FD.FD; ...)
 # ============================================================================
-print("\nStep 3: Building FD / TD / FDN from FD.FD...")
+print("\nStep 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...")
 
 con = duckdb.connect(database=":memory:")
 fd_raw = con.execute(f"""
+    WITH main_fd_pibb AS (
+        SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
+        FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+        WHERE ENTITY_CD = 'PIBB'
+    )
     SELECT
-        CAST(INT_PLAN AS INTEGER) AS INTPLAN,
-        CAST(CURR_BAL AS DOUBLE)  AS CURBAL,
-        CAST(RT       AS DOUBLE)  AS RATE,
-        CAST(MATURE_DT AS DATE)   AS MATDATE,
-        CAST(OPEN_IND AS VARCHAR) AS OPENIND,
-        CAST(CUST_CD  AS INTEGER) AS CUSTCD
-    FROM read_parquet('{FD_CACHE.as_posix()}')
+        CAST(f.INT_PLAN     AS INTEGER) AS INTPLAN,
+        CAST(f.CURR_BAL     AS DOUBLE)  AS CURBAL,
+        CAST(f.RT           AS DOUBLE)  AS RATE,
+        CAST(f.MATURE_DT    AS DATE)    AS MATDATE,
+        CAST(f.OPEN_IND     AS VARCHAR) AS OPENIND,
+        CAST(f.CUSTOMER_CD  AS INTEGER) AS CUSTCD
+    FROM read_parquet('{FD_CACHE.as_posix()}') f
+    INNER JOIN main_fd_pibb m
+        ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
 """).pl()
 con.close()
 
-print(f"  FD rows: {len(fd_raw):,}")
+print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
 
 
 def _row(prodtyp, subtyp, subttl, type_, amount, cost, remmth, origin):
@@ -882,8 +893,8 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
-print("\n--- Report preview (first 40 lines) ---")
-for ln in report_lines[:40]:
-    print(ln)
+# print("\n--- Report preview (first 40 lines) ---")
+# for ln in report_lines[:40]:
+#     print(ln)
 
 print("\nEIIMRM02 complete.")
