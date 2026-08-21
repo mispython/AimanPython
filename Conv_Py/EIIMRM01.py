@@ -19,13 +19,13 @@ PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
 same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py)
 ============================================================================
 1. main_fd.sas7bdat   (JCL DD DSN=SAP.PIBB.MNITB(0)) (PBB+PIBB combined account master for FD)
-   File : INPUT_MAIN_FD_FILE   -> main_fd.sas7bdat
+   File : INPUT_MAIN_FD_FILE   -> intg_dp_acct_fd.sas7bdat
    Cols used : ACCTNO, ENTITY_CD
    Used to build the list of PIBB-only account numbers, since fd.sas7bdat
    itself is a mixed PBB/PIBB dataset with no ENTITY_CD column.
 
 2. fd.sas7bdat        (JCL //FD  DD DSN=SAP.PIBB.MNIFD(0))
-   File : INPUT_FD_FILE        -> fd.sas7bdat
+   File : INPUT_FD_FILE        -> enrh_dp_fd_cert.sas7bdat
    Cols used : ACCT_NUM, INTPLAN, CURBAL, RATE, MATDATE, OPENIND
    Used : DATA FD/TD/FDN step. Filtered to PIBB-only rows by inner-joining
           ACCT_NUM against the PIBB ACCTNO list derived from main_fd.sas7bdat.
@@ -33,12 +33,12 @@ same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py)
                      (e.g. '25SEP2026:00:00:00'), parsed accordingly.
 
 3. saving.sas7bdat    (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member SAVING)
-   File : INPUT_SAVING_FILE    -> saving.sas7bdat
+   File : INPUT_SAVING_FILE    -> intg_dp_acct_saving.sas7bdat
    Cols used : PRODUCT, OPENIND, CURBAL, INTRATE, ENTITY_CD
    Used : DATA SA step. Filtered directly by ENTITY_CD = 'PIBB'.
 
 4. current.sas7bdat   (JCL //BNM DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
-   File : INPUT_CURRENT_FILE   -> current.sas7bdat
+   File : INPUT_CURRENT_FILE   -> intg_dp_acct_current.sas7bdat
    Cols used : PRODUCT, OPENIND, CURBAL, INTRATE, ENTITY_CD
    Used : DATA CA/CAG/CAS step. Filtered directly by ENTITY_CD = 'PIBB'.
 
@@ -313,15 +313,44 @@ _MONTH_MAP = {
 }
 
 
+# def _parse_matdate(matdate) -> date:
+#     """MATDATE is now sourced as a SAS datetime-style string of the form
+#     'DDMONYYYY:HH:MM:SS' (e.g. '25SEP2026:00:00:00'). Only the date
+#     portion (before the first ':') is relevant here; the time component
+#     is always 00:00:00 and is discarded, matching the original SAS
+#     MATDT derivation which only ever used the date value."""
+#     date_part = str(matdate).split(":")[0].strip().upper()
+#     day = int(date_part[0:2])
+#     mon = _MONTH_MAP[date_part[2:5]]
+#     year = int(date_part[5:9])
+#     return date(year, mon, day)
+
+
 def _parse_matdate(matdate) -> date:
-    """MATDATE is now sourced as a SAS datetime-style string of the form
-    'DDMONYYYY:HH:MM:SS' (e.g. '25SEP2026:00:00:00'). Only the date
-    portion (before the first ':') is relevant here; the time component
-    is always 00:00:00 and is discarded, matching the original SAS
-    MATDT derivation which only ever used the date value."""
-    date_part = str(matdate).split(":")[0].strip().upper()
+    """
+    
+    Parse either:
+      - 'DDMONYYYY:HH:MM:SS'   (SAS datetime string)
+      - 'YYYY-MM-DD'           (ISO date)
+      - 'YYYY-MM-DD HH:MM:SS'  (ISO with time)
+    """
+    s = str(matdate).strip().upper()
+    
+    # If the string contains '-' it's likely ISO format (YYYY-MM-DD)
+    if '-' in s:
+        # Split by '-' to get year, month, day
+        parts = s.split('-')
+        year = int(parts[0])
+        mon = int(parts[1])
+        # The day part might have a trailing time, e.g., "26 00:00:00"
+        day_part = parts[2].split()[0]  # take only the date part
+        day = int(day_part)
+        return date(year, mon, day)
+    
+    # Otherwise assume SAS datetime format 'DDMONYYYY:HH:MM:SS'
+    date_part = s.split(":")[0]           # e.g., "25SEP2026"
     day = int(date_part[0:2])
-    mon = _MONTH_MAP[date_part[2:5]]
+    mon = _MONTH_MAP[date_part[2:5]]      # "SEP" -> 9
     year = int(date_part[5:9])
     return date(year, mon, day)
 
@@ -356,23 +385,25 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
     for chunk in reader:
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        # Build schema from the first chunk's dtypes
         if schema is None:
-            schema = table.schema
+            fields = []
+            for col, dtype in chunk.dtypes.items():
+                if dtype == 'object':
+                    pa_type = pa.string()          # treat all object columns as string
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    # fallback (e.g., datetime, bool)
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        else:
-            cast_arrays = []
-            for field in schema:
-                col = table.column(field.name)
-                if col.type != field.type:
-                    try:
-                        col = col.cast(field.type, safe=False)
-                    except Exception as e:
-                        print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
-                              f"from {col.type} to {field.type}: {e} - filling nulls")
-                        col = pa.nulls(len(col), type=field.type)
-                cast_arrays.append(col)
-            table = pa.Table.from_arrays(cast_arrays, schema=schema)
+
+        # Convert chunk to PyArrow Table using the fixed schema
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
         writer.write_table(table)
         total += len(chunk)
         del chunk, table
@@ -405,6 +436,98 @@ CURRENT_CACHE = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
 # STEP 3: BUILD FD / TD / FDN  (DATA FD TD FDN; SET FD.FD; ...)
 # ============================================================================
 print("\nStep 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...")
+
+# # --- DIAGNOSTIC 1: Count PIBB accounts in MAIN_FD ---
+# con = duckdb.connect(database=":memory:")
+# pibb_count = con.execute(f"""
+#     SELECT COUNT(DISTINCT ACCTNO)
+#     FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+#     WHERE TRIM(CAST(ENTITY_CD AS VARCHAR)) = 'PIBB'
+# """).fetchone()[0]
+# print(f"  PIBB accounts in MAIN_FD: {pibb_count:,}")
+# con.close()
+
+# con = duckdb.connect(database=":memory:")
+# distinct_entity = con.execute(f"""
+#     SELECT DISTINCT ENTITY_CD FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+# """).pl()
+# print("  Distinct ENTITY_CD values:", distinct_entity)
+# con.close()
+
+# # --- DIAGNOSTIC 2: Total rows in FD ---
+# con = duckdb.connect(database=":memory:")
+# fd_count = con.execute(f"""
+#     SELECT COUNT(*) 
+#     FROM read_parquet('{FD_CACHE.as_posix()}')
+# """).fetchone()[0]
+# print(f"  Total rows in FD: {fd_count:,}")
+# con.close()
+
+# # --- DIAGNOSTIC 3: Column names ---
+# import pyarrow.parquet as pq
+# fd_schema = pq.read_schema(FD_CACHE)
+# main_schema = pq.read_schema(MAIN_FD_CACHE)
+# print("  FD columns:", fd_schema.names)
+# print("  MAIN_FD columns:", main_schema.names)
+
+# # --- DIAGNOSTIC 4: Sample account numbers ---
+# con = duckdb.connect(database=":memory:")
+# sample_fd = con.execute(f"""
+#     SELECT ACCT_NUM FROM read_parquet('{FD_CACHE.as_posix()}') LIMIT 5
+# """).pl()
+# print("  Sample FD ACCT_NUM:", sample_fd)
+# con.close()
+
+# con = duckdb.connect(database=":memory:")
+# sample_main = con.execute(f"""
+#     SELECT ACCTNO FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+#     WHERE ENTITY_CD = 'PIBB' LIMIT 5
+# """).pl()
+# print("  Sample MAIN_FD ACCTNO:", sample_main)
+# con.close()
+
+# # --- DIAGNOSTIC 5: Join counts with different casts ---
+# con = duckdb.connect(database=":memory:")
+# join_count = con.execute(f"""
+#     SELECT COUNT(*) 
+#     FROM read_parquet('{FD_CACHE.as_posix()}') f
+#     INNER JOIN read_parquet('{MAIN_FD_CACHE.as_posix()}') m
+#         ON f.ACCT_NUM = m.ACCTNO
+#     WHERE m.ENTITY_CD = 'PIBB'
+# """).fetchone()[0]
+# print(f"  Join count (no cast): {join_count:,}")
+# con.close()
+
+# con = duckdb.connect(database=":memory:")
+# join_count_varchar = con.execute(f"""
+#     SELECT COUNT(*) 
+#     FROM read_parquet('{FD_CACHE.as_posix()}') f
+#     INNER JOIN read_parquet('{MAIN_FD_CACHE.as_posix()}') m
+#         ON CAST(f.ACCT_NUM AS VARCHAR) = CAST(m.ACCTNO AS VARCHAR)
+#     WHERE m.ENTITY_CD = 'PIBB'
+# """).fetchone()[0]
+# print(f"  Join count (VARCHAR): {join_count_varchar:,}")
+# con.close()
+
+# # --- TEMPORARY: Read FD without filter (for debugging only) ---
+# con = duckdb.connect(database=":memory:")
+# fd_raw = con.execute(f"""
+#     SELECT * FROM read_parquet('{FD_CACHE.as_posix()}')
+# """).pl()
+# con.close()
+# print(f"  FD rows (unfiltered): {len(fd_raw):,}")
+
+# con = duckdb.connect(database=":memory:")
+# fd_raw = con.execute(f"""
+#     SELECT
+#         CAST(INT_PLAN  AS INTEGER) AS INTPLAN,
+#         CAST(CURR_BAL  AS DOUBLE)  AS CURBAL,
+#         CAST(RT        AS DOUBLE)  AS RATE,
+#         CAST(MATURE_DT AS VARCHAR) AS MATURE_DT,
+#         CAST(OPEN_IND  AS VARCHAR) AS OPENIND
+#     FROM read_parquet('{FD_CACHE.as_posix()}')
+# """).pl()
+# con.close()
 
 # con = duckdb.connect(database=":memory:")
 # fd_raw = con.execute(f"""
@@ -453,12 +576,19 @@ fd_raw = con.execute(f"""
         CAST(f.INT_PLAN     AS INTEGER) AS INTPLAN,
         CAST(f.CURR_BAL     AS DOUBLE)  AS CURBAL,
         CAST(f.RT           AS DOUBLE)  AS RATE,
-        CAST(f.MATURE_DT    AS VARCHAR) AS MATDATE,
+        CAST(f.MATURE_DT    AS DATE) AS MATDATE,
         CAST(f.OPEN_IND     AS VARCHAR) AS OPENIND
     FROM read_parquet('{FD_CACHE.as_posix()}') f
     INNER JOIN main_fd_pibb m
         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
 """).pl()
+
+# DEBUG
+print(f"  FD Parquet schema columns:", pq.read_schema(FD_CACHE).names)
+print(f"  FD raw columns: {fd_raw.columns}")
+print(f"  First 3 rows of fd_raw (sample):")
+print(fd_raw.head(3))
+
 con.close()
 
 print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
@@ -472,15 +602,32 @@ def _row(prodtyp, subtyp, subttl, amount, cost, remmth, remm):
 fd_rows, td_rows, fdn_rows = [], [], []
 
 for r in fd_raw.iter_rows(named=True):
-    # intplan = r["INTPLAN"]
-    # curbal  = r["CURBAL"]
-    # rate    = r["RATE"] or 0.0
-    # openind = r["OPENIND"]
+    intplan = r["INTPLAN"]
+    curbal  = r["CURBAL"]
+    rate    = r["RATE"] or 0.0
+    openind = r["OPENIND"]
 
-    intplan = r["INT_PLAN"]
-    curbal  = r["CURR_BAL"]
-    rate    = r["RT"] or 0.0
-    openind = r["OPEN_IND"]
+    # # DEBUG
+    # debug_count = 0
+    # for r in fd_raw.iter_rows(named=True):
+    #     if debug_count >= 5:
+    #         print(f"DEBUG {debug_count}:")
+    #         print(f"  intplan  = {r['INTPLAN']}  (type: {type(r['INTPLAN'])})")
+    #         print(f"  curbal   = {r['CURBAL']}")
+    #         print(f"  rate     = {r['RATE']}")
+    #         print(f"  openind  = {r['OPENIND']!r}")
+    #         print(f"  matdate  = {r['MATDATE']!r}")
+    #         # parse matdt and print
+    #         matdt = _parse_matdate(r['MATDATE'])
+    #         print(f"  parsed matdt = {matdt}")
+    #         print(f"  reptdate = {reptdate}")
+    #         print(f"  matdt < reptdate? {matdt < reptdate}")
+    #         # also print bnmcode
+    #         bnmcode = fdprod_format(r['INTPLAN'])
+    #         print(f"  bnmcode = {bnmcode}")
+    #         debug_count += 1
+    #     else:
+    #         break
 
     if curbal is None:
         continue
@@ -496,7 +643,7 @@ for r in fd_raw.iter_rows(named=True):
     # IF OPENIND = 'O' OR OPENIND = 'D' AND CURBAL > 0  (AND binds tighter)
     if openind == "O" or (openind == "D" and curbal > 0):
         # matdt = _parse_matdate(r["MATDATE"])
-        matdt = _parse_matdate(r["MATURE_DT"])
+        matdt = r["MATDATE"]
 
         if openind == "D" or matdt < reptdate:
             subtyp = "SPTF" if bnmcode == "42132" else "CONVENTIONAL"
@@ -987,11 +1134,13 @@ def _fmt_num(value, width: int, decimals: int) -> str:
     if value is None:
         return "0".rjust(width)
     v = float(value)
+    if abs(v) < 0.5 * 10 ** -decimals:   # threshold for rounding to zero
+        v = 0.0
     s = f"{v:,.{decimals}f}"
     if len(s) > width:
-        s = f"{v:.{decimals}f}"        # drop commas if it doesn't fit
+        s = f"{v:.{decimals}f}"          # drop commas if it doesn't fit
     if len(s) > width:
-        s = s[-width:]                  # last-resort truncation
+        s = s[-width:]                   # last-resort truncation
     return s.rjust(width)
 
 
