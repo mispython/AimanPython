@@ -1,1401 +1,1461 @@
 #!/usr/bin/env python3
 """
-Program : EIIMRM04.py (ISLAMIC)
-Report  : REPRICING GAP AS AT <RDATE>
-          RISK MANAGEMENT REPORT : EIIMRM04
-          RM DENOMINATION
+Program : EIIMRM04.py
+Purpose : Loans & Advances, By Time To Maturity For ALCO
+          (Weighted Average Yield By Maturity Profile) - repricing gap
+          report, split by FIXED-RATE vs BLR (base-lending-rate) interest
+          type, each rendered at PRODUCT-detail level and PRODBIG-summary
+          level (4 PROC TABULATE reports total).
+
+          Structurally in the same EIIMRM0x family as EIIMRM01-03.py (same
+          REPTDATE-driven date derivation style, same chunked sas7bdat ->
+          Parquet -> cache pattern), but this program is a full loan/OD
+          book repricing-gap engine, not a deposit-maturity report: it
+          combines an overdraft-limit file, the monthly/weekly loan ledger,
+          note-level terms, and pending rate-override records, then walks
+          each account's billing schedule to bucket balances into
+          maturity/repricing bands.
+
+Dependency:
+    %INC PGM(PBBLNFMT); -> from PBBLNFMT import format_lnprod, format_odprod
+    LNPROD.  is used ("IF PUT(PRODUCT,LNPROD.)='N' THEN DELETE" -- drops
+             write-off/inactive loan products before they enter START).
+    ODPROD.  is used ("IF PUT(PRODUCT,ODPROD.)='N' THEN DELETE" -- same
+             purpose for OD products).
+    LNPRDF., SLNPRDF., ODPRDF., SODPRDF., SUBTYPF., REMFMT., $RATEFMT. are
+    ALL declared locally inside THIS SAS program's own PROC FORMAT block
+    (not part of PBBLNFMT.py) and are therefore implemented as local Python
+    functions/dicts below, not imported from PBBLNFMT. $RATEFMT. in
+    particular is declared but never referenced anywhere else in the SAS
+    source body -- it is dead code and is kept here only for documentation
+    parity (see rate_format() below).
+
+============================================================================
+PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
+same chunked sas7bdat -> Parquet -> cache pattern as EIIMRM01.py)
+============================================================================
+1. overdft.sas7bdat  (JCL //OD DD DSN=SAP.PIBB.MNILIMT(0), a GDG(0)
+   "current generation" catalogued dataset -> treated as a fixed filename,
+   same convention as EIBDLN1M.py's INPUT_BRANCH_FILE).
+   File : INPUT_OD_FILE
+   Cols used : ACCTNO, LMTENDDT, RISKCODE
+   Used  : DATA OD step -- derives LMTEND from LMTENDDT, dedupes to one row
+           per ACCTNO, and is later merged onto LOAN by ACCTNO to enrich OD
+           accounts with limit-expiry date / risk code.
+
+2. loan<REPTMON><NOWK>.sas7bdat  (JCL //BNM DD DSN=SAP.PIBB.SASDATA,
+   member BNM.LOAN&REPTMON&NOWK). Filename is fully deterministic from
+   REPTMON + NOWK (the week-of-month code derived below), so
+   input_date.get_latest_file() is NOT used here (per project convention:
+   only used when a filename is date-scanned, not when it is directly
+   constructible from macro-style values) -- the path is built directly.
+   File : INPUT_LOAN_FILE
+   Cols used : ACCTNO, NOTENO, PRODUCT, PRODCD, ACCTYPE, AMTIND, CURBAL,
+               BALANCE, INTRATE, FEEAMT, NTINT, INTEARN, INTAMT, INTEARN2,
+               INTEARN3, EXPRDATE, PAYFREQ, PAYAMT, ISSDTE, RISKRTE
+   Used  : the master loan/OD ledger for the report period; RISKRTE is
+           assumed to already be a physical column on this ledger for LN
+           accounts (the SAS source only ever assigns RISKRTE explicitly in
+           the OD branch via "RISKRTE = RISKCODE" -- for LN accounts it is
+           never assigned anywhere in the visible DATA START step, so it
+           must already exist on this source dataset).
+
+3. lnnote.sas7bdat  (JCL //LNNOTE DD DSN=SAP.PIBB.MNILN(0), GDG(0) ->
+   fixed filename).
+   File : INPUT_LNNOTE_FILE
+   Cols used : ACCTNO, NOTENO, NTINDEX, LOANTYPE, CENSUS, PAYEFFDT
+   Used  : note-level terms, merged onto LOAN by ACCTNO+NOTENO after being
+           enriched with PENDFIN (pending-rate-override) fields.
+
+4. pend.sas7bdat  (same //LNNOTE DD, member PEND -> fixed filename).
+   File : INPUT_PEND_FILE
+   Cols used : ACCTNO, NOTENO, RATEOVER, RELDTE
+   Used  : pending rate-override records, processed into
+           REALPEND/SECOND/THIRD/REPRPEND and UPDATE-chained into PENDFIN.
+
+No reptdate.parquet is read -- REPTDATE.py supplies the report date, and
+the SDD/WK/WK1/MM/MM1 week-of-month derivation (an exact-day match on
+8/15/22/otherwise, DIFFERENT from REPTDATE.py's day-range-based NOWK) is
+computed locally below because it feeds the LOAN input filename directly.
+
+output_date.py is NOT used: the output //TEMP DD (SAP.PIBB.EIIMRM04.TEXT)
+is a fixed GDG-style catalogued name carrying no date token, so the output
+file uses a static filename, per project convention.
+
+============================================================================
+OUTPUT
+============================================================================
+//TEMP DD DSN=SAP.PIBB.EIIMRM04.TEXT, DISP=OLD (JCL header for this member
+was not supplied in full, but PROC PRINTTO PRINT=TEMP NEW; matches the same
+//TEMP DD convention used by EIIMRM01-03). RECFM is assumed FB (fixed name,
+no ASA byte) consistent with the rest of the EIIMRM family; PROC TABULATE
+here uses FORMCHAR='           ' (all blank), meaning NO box-drawing
+characters at all -- the report is plain columnar text with no borders,
+unlike EIIMRM01-03's boxed layout. Page length defaults to 60 lines;
+page boundaries are marked with a form-feed character (no ASA byte).
+
+============================================================================
+KNOWN SAS SOURCE BUG -- TITLE4 LAG ACROSS THE FOUR REPORTS
+============================================================================
+The four TITLE4 statements are set BEFORE/AFTER the wrong PROC TABULATE
+calls in the original source, so each report actually displays the title
+text that was *intended* for the report before it:
+  Report 1 (FIX  detail)          displays "RM DENOMINATION (FIXED RATE)"
+  Report 2 (BLR  detail)          displays "RM DENOMINATION (FIXED RATE)"
+  Report 3 (FIX  PRODBIG summary) displays "RM DENOMINATION (BLR)"
+  Report 4 (BLR  PRODBIG summary) displays "RM DENOMINATION (FIXED RATE) SUMMARY"
+This is preserved verbatim below (see REPORT_TITLES) rather than corrected.
 """
 
-# ============================================================================
-# DEPENDENCIES
-# ============================================================================
-# PBBLNFMT - provides format_lnprod (PUT(x, LNPROD.)) and
-#                      format_odprod (PUT(x, ODPROD.))
-#            Both are called in the DATA START step.
-#            format_lnrate is NOT called directly here; repricing type is
-#            derived from NTINDEX/INTTYPE logic embedded in the program.
-from PBBLNFMT import format_lnprod, format_odprod
+import gc
+from pathlib import Path
+from datetime import date
 
 import duckdb
+import pandas as pd
 import polars as pl
-from datetime import date, datetime, timedelta
-import os
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from REPTDATE import get_reptdate_values
+from PBBLNFMT import format_lnprod, format_odprod
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-PARQUET_DIR = os.path.join(BASE_DIR, "data")
-OUTPUT_DIR  = os.path.join(BASE_DIR, "output")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# BASE_DIR = Path("/sas/loan/dwh")
 
-REPTDATE_PARQUET = os.path.join(PARQUET_DIR, "REPTDATE.parquet")
-OVERDFT_PARQUET  = os.path.join(PARQUET_DIR, "OVERDFT.parquet")
-LNNOTE_PARQUET   = os.path.join(PARQUET_DIR, "LNNOTE.parquet")
-PEND_PARQUET     = os.path.join(PARQUET_DIR, "PEND.parquet")
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "EIIMRM04.txt")
+INPUT_OD_DIR     = STG_DIR / "sasdata"
+INPUT_LOAN_DIR   = STG_DIR / "sasdata"
+INPUT_LNNOTE_DIR = STG_DIR / "sasdata"
+INPUT_PEND_DIR   = STG_DIR / "sasdata"
 
-# Loan monthly snapshot parquet is named by reptmon+nowk; resolved after
-# REPTDATE is read.
+INPUT_OD_FILE     = INPUT_OD_DIR / "overdft.sas7bdat"
+INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "lnnote.sas7bdat"
+INPUT_PEND_FILE   = INPUT_PEND_DIR / "pend.sas7bdat"
+# INPUT_LOAN_FILE is resolved after REPTMON/NOWK are derived (Step 1 below).
 
-# ============================================================================
-# FORMAT DEFINITIONS
-# ============================================================================
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-def slnprdf(product):
-    """SLNPRDF format: summary loan product group (used as PRODBIG)."""
-    p = product
-    if p in (227, 228, 230, 231, 232, 233, 241, 243):
-        return '  1.HOME 1YR FIX'
-    if p in (237, 238):
-        return '  1.HOME 3YRS FIX'
-    if p in (239, 240):
-        return '  1.HOME 5YRS FIX'
-    if p == 234:
-        return '  1.MORE 1YR FIX'
-    if p == 235:
-        return '  1.MORE 3YRS FIX'
-    if p == 236:
-        return '  1.MORE 5YRS FIX'
-    if p == 242:
-        return '  1.MORE 1YR FIX'
-    if p in (380, 381):
-        return '  2.HIRE PURCHASE'
-    if p == 390:
-        return '  9.LEASING'
-    if p in (209, 210, 211, 212, 214, 215, 204, 205, 200, 201,
-             219, 220, 225, 226, 245, 246, 247):
-        return '  1.OTHER HOUSING'
-    if p in (309, 310, 904, 905):
-        return '  5.BRIDGING'
-    if p in (300, 301, 900, 901, 530, 362):
-        return '  6.FIXED TIER'
-    if 1 <= p <= 100:
-        return ' 10.STAFF'
-    if p in (359, 906, 363):
-        return '  3.SWIFT'
-    if p in (360, 908):
-        return '  6.FIXED LOAN'
-    if p in (361, 907):
-        return '  4.SMILAX'
-    if p == 531:
-        return ' 12.FUNDED BNM'
-    if 110 <= p <= 118 or p in (139, 140):
-        return ' 11.ABBA HOUSE'
-    if p == 120:
-        return ' 11.ABBA OTH TERM'
-    if p in (194, 195, 196):
-        return ' 11.ABBA CONSUMER'
-    if p == 181:
-        return ' 11.ABBA SYNDICATE'
-    if p in (180, 183):
-        return ' 11.ABBA SYNDICATE(FIXED)'
-    if p in (127, 126):
-        return ' 11.ABBA SWIFT'
-    if p == 129:
-        return ' 11.ABBA SMILAX'
-    if p == 193:
-        return ' 11.ABBA OTH TERM'
-    if p == 137:
-        return ' 11.ABBA OTH TERM'
-    if p in (135, 136, 138):
-        return ' 11.ABBA PERSONAL'
-    if p in (197, 170):
-        return ' 11.ABBA OTH TERM'
-    if p == 122:
-        return ' 11.ABBA UNIT TRST'
-    if p in (141, 142):
-        return ' 11.ABBA HOUSE BFR'
-    if p == 143:
-        return ' 11.ABBA TERM BFR'
-    if p == 182:
-        return ' 11.ABBA SYN.BULLET(FIXED)'
-    if p in (564, 565, 569, 561, 559, 560, 567, 555, 556,
-             566, 568, 570, 573, 909):
-        return ' 12.FUNDED BNM'
-    if p in (521, 522, 523, 528, 517, 527, 524, 525, 526):
-        return ' 13.CGC'
-    if p in (910, 350, 925, 302, 902, 903, 951):
-        return '  8.REVOLVING CRDT'
-    if p in (914, 915, 919, 920, 950):
-        return '  7.SYNDICATED'
-    if p in (345, 304, 305, 355, 356, 504, 505, 509, 510, 515,
-             325, 357, 518, 519, 335, 358, 320, 391, 330, 364, 365, 506):
-        return '  6.FIXED LOAN'
-    if p in (131, 132):
-        return ' 14.AITAB VARIABLE'
-    if p in (720, 725):
-        return ' 15.HP VARIABLE'
-    return ' 16.OTHERS'
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / "EIIMRM04.txt"
 
-
-def lnprdf(product):
-    """LNPRDF format: detailed loan product group (used as PRODTYP)."""
-    p = product
-    if p in (227, 228):
-        return '  1.HOME PLAN 1'
-    if p in (230, 231):
-        return '  1.HOME PLAN 2'
-    if p in (232, 233):
-        return '  1.HOME PLAN 3'
-    if p in (237, 238):
-        return '  1.HOME PLAN 6'
-    if p in (239, 240):
-        return '  1.HOME PLAN 7'
-    if p in (241, 243):
-        return '  1.HOME PLAN 8'
-    if p == 234:
-        return '  1.MORE PLAN 1'
-    if p == 235:
-        return '  1.MORE PLAN 2'
-    if p == 236:
-        return '  1.MORE PLAN 3'
-    if p == 242:
-        return '  1.MORE PLAN 4'
-    if p in (380, 381):
-        return '  2.HIRE PURCHASE'
-    if p == 390:
-        return '  3.LEASING'
-    if p in (209, 210, 211, 212, 214, 215):
-        return '  1.HOME OWN BEF 5'
-    if p in (204, 205, 200, 201, 219, 220, 225, 226, 245, 246, 247):
-        return '  1.OTHER HOUSING'
-    if p in (309, 310, 904, 905):
-        return '  6.BRIDGING'
-    if p in (300, 301, 900, 901, 530, 362, 364, 365, 506):
-        return '  7.FIXED'
-    if 1 <= p <= 100:
-        return '  4.STAFF'
-    if p in (359, 906, 363):
-        return '  5.SWIFT'
-    if p in (360, 908):
-        return ' 17.BLOCK DISC'
-    if p in (361, 907):
-        return '  9.SMILAX'
-    if p == 531:
-        return ' 11.SRGF'
-    if p in (160, 162, 163, 164):
-        return ' 12.ABBA OD'
-    if 110 <= p <= 118 or p in (139, 140):
-        return ' 12.ABBA HOUSE'
-    if p == 120:
-        return ' 12.ABBA TERM'
-    if p in (194, 195, 196):
-        return ' 12.ABBA CONSUMER'
-    if p == 181:
-        return ' 12.ABBA SYNDICATE'
-    if p in (180, 183):
-        return ' 12.ABBA SYNDICATE(FIXED)'
-    if p in (127, 126):
-        return ' 12.ABBA SWIFT'
-    if p == 129:
-        return ' 12.ABBA SMILAX'
-    if p == 193:
-        return ' 12.ABBA LEASE'
-    if p == 137:
-        return ' 12.ABBA OTHR PLAN'
-    if p in (135, 136, 138):
-        return ' 12.ABBA PERSONAL'
-    if p in (197, 170):
-        return ' 12.ABBA OTHER'
-    if p == 122:
-        return ' 12.ABBA UNIT TRST'
-    if p in (141, 142):
-        return ' 12.ABBA HOUSE BFR'
-    if p == 143:
-        return ' 12.ABBA TERM BFR'
-    if p == 182:
-        return ' 12.ABBA SYN.BULLET(FIXED)'
-    if p in (564, 565):
-        return ' 13.FUND FOR FOOD'
-    if p == 561:
-        return ' 13.L&MCOST HOUSE'
-    if p in (559, 560, 567):
-        return ' 13.NEF LOAN'
-    if p in (555, 556):
-        return ' 14.SFT LOAN'
-    if p in (566, 568, 570, 573, 909):
-        return ' 15.SMI'
-    if p == 569:
-        return ' 15.SFSMI2'
-    if p in (521, 522, 523, 528):
-        return ' 16.CGC TUK'
-    if p == 517:
-        return ' 16.CGC ASL'
-    if p == 527:
-        return ' 16.CGC NEF'
-    if p in (524, 525):
-        return ' 16.CGC FSMI'
-    if p == 526:
-        return ' 16.CGC FFF'
-    if p in (910, 350, 925, 302, 902, 903, 951):
-        return ' 10.REVOLVING CRDT'
-    if p in (914, 915, 919, 920, 950):
-        return '  8.SYNDICATED'
-    if p == 345:
-        return ' 18.(MISC)CONTRACT'
-    if p in (304, 305):
-        return ' 18.(MISC)FLASH'
-    if p == 355:
-        return ' 18.(MISC)PB EXEC'
-    if p == 356:
-        return ' 18.(MISC)HOME FURNH'
-    if p in (504, 505, 509, 510, 515):
-        return ' 18.(MISC)PRIN GUARAN'
-    if p == 325:
-        return ' 18.(MISC)PROF.ADVAN'
-    if p == 357:
-        return ' 18.(MISC)SHARE'
-    if p in (518, 519):
-        return ' 18.(MISC)SLS-FIXED'
-    if p == 335:
-        return ' 18.(MISC)UNIT TRUST'
-    if p == 358:
-        return ' 18.(MISC)UNIFLEX'
-    if p == 320:
-        return ' 18.(MISC)UNSECURED'
-    if p == 391:
-        return ' 18.(MISC)CON.DURABLE'
-    if p == 330:
-        return ' 18.(MISC)QUICK CASH'
-    if p in (131, 132):
-        return ' 19.AITAB VARIABLE'
-    if p in (720, 725):
-        return ' 20.HP VARIABLE'
-    return ' 21.OTHERS'
-
-
-def odprdf(product):
-    """ODPRDF format: OD product type for PRODTYP."""
-    if 60 <= product <= 64 or 160 <= product <= 166:
-        return ' 12.ABBA OD'
-    return '  1.CONV OD'
-
-
-def sodprdf(product):
-    """SODPRDF format: OD product type for PRODBIG."""
-    if 60 <= product <= 64 or 160 <= product <= 166:
-        return ' 11.ABBA OD'
-    return '  1.CONV OD'
-
-
-def subtypf(subtyp):
-    """SUBTYPF format: subtype numeric code to label."""
-    _map = {
-        5:    'PRINCIPAL',
-        5.5:  'WAREMM(MTH)',
-        11:   'INSTALMENT ',
-        12:   'REPRICING  ',
-        13:   'NO-REPRICE',
-        6:    'UNEARN INT',
-        7:    'ACCRUED INT',
-        8:    'FEE AMOUNT',
-        9:    'NPL',
-    }
-    return _map.get(subtyp, str(subtyp))
-
-
-def remfmt(remmth):
-    """
-    REMFMT format: remaining months to maturity bucket label.
-    Note: LOW-1 maps to '>  0-1 MTH' (i.e. anything <= 1).
-    """
-    if remmth is None:
-        return '  '
-    if remmth <= 1:
-        return '>  0-1 MTH'
-    if remmth <= 2:
-        return '>  1-2 MTHS'
-    if remmth <= 3:
-        return '>  2-3 MTHS'
-    if remmth <= 4:
-        return '>  3-4 MTHS'
-    if remmth <= 5:
-        return '>  4-5 MTHS'
-    if remmth <= 6:
-        return '>  5-6 MTHS'
-    if remmth <= 7:
-        return '>  6-7 MTHS'
-    if remmth <= 8:
-        return '>  7-8 MTHS'
-    if remmth <= 9:
-        return '>  8-9 MTHS'
-    if remmth <= 10:
-        return '>  9-10 MTHS'
-    if remmth <= 11:
-        return '> 10-11 MTHS'
-    if remmth <= 12:
-        return '> 11-12 MTHS'
-    if remmth <= 13:
-        return '> 12-13 MTHS'
-    if remmth <= 14:
-        return '> 13-14 MTHS'
-    if remmth <= 15:
-        return '> 14-15 MTHS'
-    if remmth <= 16:
-        return '> 15-16 MTHS'
-    if remmth <= 17:
-        return '> 16-17 MTHS'
-    if remmth <= 18:
-        return '> 17-18 MTHS'
-    if remmth <= 19:
-        return '> 18-19 MTHS'
-    if remmth <= 20:
-        return '> 19-20 MTHS'
-    if remmth <= 21:
-        return '> 20-21 MTHS'
-    if remmth <= 22:
-        return '> 21-22 MTHS'
-    if remmth <= 23:
-        return '> 22-23 MTHS'
-    if remmth <= 24:
-        return '> 23-24 MTHS'
-    if remmth <= 36:
-        return '>2-3 YRS    '
-    if remmth <= 48:
-        return '>3-4 YRS    '
-    if remmth <= 60:
-        return '>4-5 YRS    '
-    return '>5 YRS      '
-
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
 
 # ============================================================================
-# HELPERS: DATE ARITHMETIC
+# STEP 1: REPORT DATE / WEEK-OF-MONTH DERIVATION
+# (DATA _NULL_; SET LNNOTE.REPTDATE; SELECT(DAY(REPTDATE)) ...)
+# This exact-day match (8/15/22/otherwise) is DIFFERENT from REPTDATE.py's
+# day-RANGE-based NOWK, and unlike EIIMRM01-03 (where the equivalent value
+# was dead/unused), WK here directly feeds the LOAN input filename, so it
+# is computed locally rather than sourced from REPTDATE.get_reptdate_values.
 # ============================================================================
+print("Step 1: Deriving report date and week-of-month code...")
 
-_SAS_EPOCH = date(1960, 1, 1)
+reptdate_values = get_reptdate_values(year_format="%Y")
+reptdate = reptdate_values.reptdate
 
+_day = reptdate.day
+if _day == 8:
+    SDD, WK, WK1 = 1, "1", "4"
+elif _day == 15:
+    SDD, WK, WK1 = 9, "2", "1"
+elif _day == 22:
+    SDD, WK, WK1 = 16, "3", "2"
+else:
+    SDD, WK, WK1 = 23, "4", "3"
 
-def sas_to_date(sas_int):
-    """Convert SAS date integer (days since 1960-01-01) to Python date."""
-    if sas_int is None or sas_int == 0:
-        return None
-    try:
-        return _SAS_EPOCH + timedelta(days=int(sas_int))
-    except (TypeError, ValueError, OverflowError):
-        return None
+MM = reptdate.month
+if WK == "1":
+    MM1 = MM - 1
+    if MM1 == 0:
+        MM1 = 12
+else:
+    MM1 = MM
 
+SDATE = date(reptdate.year, MM, SDD)
 
-def days_in_month(year, month):
-    """Days in month using SAS simple leap-year rule (year % 4 == 0)."""
-    if month in (1, 3, 5, 7, 8, 10, 12):
-        return 31
-    if month in (4, 6, 9, 11):
-        return 30
-    if month == 2:
-        return 29 if (year % 4 == 0) else 28
-    return 30
+NOWK      = WK
+NOWK1     = WK1
+REPTMON   = f"{MM:02d}"
+REPTMON1  = f"{MM1:02d}"
+REPTYEAR  = reptdate.strftime("%Y")
+REPTDAY   = reptdate.strftime("%d")
+RDATE     = reptdate.strftime("%d/%m/%y")            # PUT(REPTDATE,DDMMYY8.)
+SDATE_STR = SDATE.strftime("%d/%m/%y")               # PUT(SDATE,DDMMYY8.)
+# BTYPE = PUT('PBB',$3.) is set via SYMPUT in the SAS source but never
+# referenced again anywhere else in the program body -- dead code, kept
+# here only for documentation parity.
+BTYPE = "PBB"
 
+RPYR, RPMTH, RPDAY = reptdate.year, reptdate.month, reptdate.day
 
-def calc_remmth(matdt, reptdate):
-    """
-    Replicates %REMMTH macro.
-    REMMTH = (MDYR-RPYR)*12 + (MDMTH-RPMTH) + (MDDAY-RPDAY) / RPDAYS(RPMTH)
-    MDDAY capped at RPDAYS(RPMTH).
-    """
-    if matdt is None or reptdate is None:
-        return 0.0
-    rpyr  = reptdate.year
-    rpmth = reptdate.month
-    rpday = reptdate.day
-    rp_days = days_in_month(rpyr, rpmth)
+print(f"  RDATE            : {RDATE}   SDATE: {SDATE_STR}")
+print(f"  REPTMON/NOWK     : {REPTMON}/{NOWK}   REPTMON1/NOWK1: {REPTMON1}/{NOWK1}")
+print(f"  Output file      : {OUTPUT_FILE.name}")
 
-    mdyr  = matdt.year
-    mdmth = matdt.month
-    mdday = matdt.day
+# LOAN input filename is fully deterministic from REPTMON+NOWK -- built
+# directly, not resolved via input_date.get_latest_file().
+INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
 
-    if mdday > rp_days:
-        mdday = rp_days
-
-    return (mdyr - rpyr) * 12 + (mdmth - rpmth) + (mdday - rpday) / rp_days
-
-
-def add_months_day(base_date, months, day_anchor):
-    """
-    Advance base_date by <months> months, using day_anchor as the target day.
-    Caps day at month end. Used in %NXTBLDT for non-biweekly PAYFREQ.
-    """
-    mm = base_date.month + months
-    yy = base_date.year
-    while mm > 12:
-        mm -= 12
-        yy += 1
-    dd = day_anchor
-    max_dd = days_in_month(yy, mm)
-    if dd > max_dd:
-        dd = max_dd
-    return date(yy, mm, dd)
+# ============================================================================
+# DAYS-IN-MONTH HELPER  (equivalent of the RETAIN D1-D12/RD1-RD12 arrays --
+# functionally identical to the SAS RETAIN pattern of 31/28-or-29/31/30/...,
+# so a plain calendar lookup replaces the mutable array bookkeeping)
+# ============================================================================
+_DAYS_IN_MONTH_BASE = {1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
+                       7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
 
 
-def add_biweekly(bldate):
-    """
-    %NXTBLDT for PAYFREQ='6': add 14 days, overflow to next month.
-    Uses SAS simple leap-year rule for February.
-    """
-    dd = bldate.day + 14
-    mm = bldate.month
-    yy = bldate.year
-    max_dd = days_in_month(yy, mm)
-    if dd > max_dd:
-        dd -= max_dd
-        mm += 1
+def _ldays(mm: int, yy: int) -> int:
+    if mm == 2:
+        return 29 if (yy % 4 == 0) else 28
+    return _DAYS_IN_MONTH_BASE[mm]
+
+
+def _remmth_04(rpt_date: date, matdt: date) -> float:
+    """%REMMTH macro (this program's variant, parameterised by &REPTDATE
+    and recomputed on every call). MDDAYS/MD2 are computed in the SAS
+    source but the clip is applied against RPDAYS(RPMTH) only (MDDAYS is
+    never referenced in the REMMTH formula itself) -- that unused
+    MD2/MDDAYS bookkeeping is therefore omitted here as dead code, exactly
+    mirroring what the formula actually uses."""
+    rpyr, rpmth, rpday = rpt_date.year, rpt_date.month, rpt_date.day
+    mdyr, mdmth, mdday = matdt.year, matdt.month, matdt.day
+    days_in_rpmth = _ldays(rpmth, rpyr)
+    if mdday > days_in_rpmth:
+        mdday = days_in_rpmth
+    remy = mdyr - rpyr
+    remm = mdmth - rpmth
+    remd = mdday - rpday
+    return remy * 12 + remm + remd / days_in_rpmth
+
+
+def _nxtbldt(bldate: date, payfreq, freq, issdte: date) -> date:
+    """%NXTBLDT macro -- computes the next billing date."""
+    if payfreq == "6":
+        dd = bldate.day + 14
+        mm = bldate.month
+        yy = bldate.year
+        if dd > _ldays(mm, yy):
+            dd -= _ldays(mm, yy)
+            mm += 1
+            if mm > 12:
+                mm -= 12
+                yy += 1
+    else:
+        dd = issdte.day
+        mm = bldate.month + (freq or 0)
+        yy = bldate.year
         if mm > 12:
             mm -= 12
             yy += 1
-    max_dd2 = days_in_month(yy, mm)
-    if dd > max_dd2:
-        dd = max_dd2
+    if dd > _ldays(mm, yy):
+        dd = _ldays(mm, yy)
     return date(yy, mm, dd)
 
 
-def next_bldate(bldate, issdte, payfreq, freq):
-    """
-    Replicates %NXTBLDT macro.
-    payfreq: string '1','2','3','4','6'
-    freq: integer months per period (from PAYFREQ mapping)
-    issdte: issue date (date object), used as day anchor for non-biweekly
-    """
-    if payfreq == '6':
-        return add_biweekly(bldate)
+_PAYFREQ_TO_FREQ = {"1": 1, "2": 3, "3": 6, "4": 12}   # SELECT(PAYFREQ); OTHERWISE -> missing
+
+
+def _sas_round(x: float) -> float:
+    if x >= 0:
+        return float(int(x + 0.5))
+    return float(-int(-x + 0.5))
+
+
+# ============================================================================
+# PROC FORMAT EQUIVALENTS (all LOCAL to this program -- see docstring)
+# ============================================================================
+def _ranges_to_set(*specs) -> set:
+    """Expand a mix of ints and (lo, hi) inclusive-range tuples into a set."""
+    out = set()
+    for s in specs:
+        if isinstance(s, tuple):
+            out.update(range(s[0], s[1] + 1))
+        else:
+            out.add(s)
+    return out
+
+
+# --- VALUE REMFMT (local to EIIMRM04 -- LOW-1, then 1-mth increments to
+# 24, then year-range buckets, then 60-HIGH, OTHER=blank; NO special
+# 91-97/99 codes here, unlike EIIMRM01-03's REMFMT) ---------------------
+def remfmt_format(value) -> str:
+    if value is None or value <= 1:
+        return ">  0-1 MTH"
+    if value <= 2:
+        return ">  1-2 MTHS"
+    if value <= 3:
+        return ">  2-3 MTHS"
+    if value <= 4:
+        return ">  3-4 MTHS"
+    if value <= 5:
+        return ">  4-5 MTHS"
+    if value <= 6:
+        return ">  5-6 MTHS"
+    if value <= 7:
+        return ">  6-7 MTHS"
+    if value <= 8:
+        return ">  7-8 MTHS"
+    if value <= 9:
+        return ">  8-9 MTHS"
+    if value <= 10:
+        return ">  9-10 MTHS"
+    if value <= 11:
+        return "> 10-11 MTHS"
+    if value <= 12:
+        return "> 11-12 MTHS"
+    if value <= 13:
+        return "> 12-13 MTHS"
+    if value <= 14:
+        return "> 13-14 MTHS"
+    if value <= 15:
+        return "> 14-15 MTHS"
+    if value <= 16:
+        return "> 15-16 MTHS"
+    if value <= 17:
+        return "> 16-17 MTHS"
+    if value <= 18:
+        return "> 17-18 MTHS"
+    if value <= 19:
+        return "> 18-19 MTHS"
+    if value <= 20:
+        return "> 19-20 MTHS"
+    if value <= 21:
+        return "> 20-21 MTHS"
+    if value <= 22:
+        return "> 21-22 MTHS"
+    if value <= 23:
+        return "> 22-23 MTHS"
+    if value <= 24:
+        return "> 23-24 MTHS"
+    if value <= 36:
+        return ">2-3 YRS    "
+    if value <= 48:
+        return ">3-4 YRS    "
+    if value <= 60:
+        return ">4-5 YRS    "
+    return ">5 YRS      "
+
+
+_REMFMT_ORDER = [
+    ">  0-1 MTH", ">  1-2 MTHS", ">  2-3 MTHS", ">  3-4 MTHS", ">  4-5 MTHS",
+    ">  5-6 MTHS", ">  6-7 MTHS", ">  7-8 MTHS", ">  8-9 MTHS", ">  9-10 MTHS",
+    "> 10-11 MTHS", "> 11-12 MTHS", "> 12-13 MTHS", "> 13-14 MTHS", "> 14-15 MTHS",
+    "> 15-16 MTHS", "> 16-17 MTHS", "> 17-18 MTHS", "> 18-19 MTHS", "> 19-20 MTHS",
+    "> 20-21 MTHS", "> 21-22 MTHS", "> 22-23 MTHS", "> 23-24 MTHS",
+    ">2-3 YRS    ", ">3-4 YRS    ", ">4-5 YRS    ", ">5 YRS      ",
+    "     TOTAL", "  ",
+]
+_REMFMT_ORDER_INDEX = {label: i for i, label in enumerate(_REMFMT_ORDER)}
+
+
+def _remmth1_sort_key(label: str) -> int:
+    return _REMFMT_ORDER_INDEX.get(label, len(_REMFMT_ORDER))
+
+
+# --- VALUE SUBTYPF ------------------------------------------------------
+_SUBTYPF_MAP = {
+    5: "PRINCIPAL",
+    5.5: "WAREMM(MTH)",
+    11: "INSTALMENT ",
+    12: "REPRICING  ",
+    13: "NO-REPRICE",
+    6: "UNEARN INT",
+    7: "ACCRUED INT",
+    8: "FEE AMOUNT",
+    9: "NPL",
+}
+
+
+def subtypf_format(code) -> str:
+    return _SUBTYPF_MAP.get(code, "")
+
+
+# --- VALUE $RATEFMT -- declared in the SAS source but never referenced
+# anywhere else in the program body; kept here only for parity, unused. ---
+_RATEFMT_MAP = {
+    "30591": "FIXED RATE", "30592": "FIXED RATE", "30593": "FIXED RATE",
+    "30595": "FLOATING RATE", "30596": "FLOATING RATE", "30597": "FLOATING RATE",
+}
+
+
+def rate_format(code) -> str:
+    return _RATEFMT_MAP.get(code, "")
+
+
+# --- VALUE LNPRDF (PRODTYP for LN accounts) -----------------------------
+_LNPRDF_ENTRIES = [
+    (_ranges_to_set(227, 228), "  1.HOME PLAN 1"),
+    (_ranges_to_set(230, 231), "  1.HOME PLAN 2"),
+    (_ranges_to_set(232, 233), "  1.HOME PLAN 3"),
+    (_ranges_to_set(237, 238), "  1.HOME PLAN 6"),
+    (_ranges_to_set(239, 240), "  1.HOME PLAN 7"),
+    (_ranges_to_set(241, 243), "  1.HOME PLAN 8"),
+    (_ranges_to_set(234), "  1.MORE PLAN 1"),
+    (_ranges_to_set(235), "  1.MORE PLAN 2"),
+    (_ranges_to_set(236), "  1.MORE PLAN 3"),
+    (_ranges_to_set(242), "  1.MORE PLAN 4"),
+    (_ranges_to_set(380, 381), "  2.HIRE PURCHASE"),
+    (_ranges_to_set(390), "  3.LEASING"),
+    (_ranges_to_set(209, 210, 211, 212, 214, 215), "  1.HOME OWN BEF 5"),
+    (_ranges_to_set(204, 205, 200, 201, 219, 220, 225, 226, 245, 246, 247), "  1.OTHER HOUSING"),
+    (_ranges_to_set(309, 310, 904, 905), "  6.BRIDGING"),
+    (_ranges_to_set(300, 301, 900, 901, 530, 362, 364, 365, 506), "  7.FIXED"),
+    (_ranges_to_set((1, 100)), "  4.STAFF"),
+    (_ranges_to_set(359, 906, 363), "  5.SWIFT"),
+    (_ranges_to_set(360, 908), " 17.BLOCK DISC"),
+    (_ranges_to_set(361, 907), "  9.SMILAX"),
+    (_ranges_to_set(531), " 11.SRGF"),
+    (_ranges_to_set(160, 162, 163, 164), " 12.ABBA OD"),
+    (_ranges_to_set((110, 118), 139, 140), " 12.ABBA HOUSE"),
+    (_ranges_to_set(120), " 12.ABBA TERM"),
+    (_ranges_to_set((194, 196)), " 12.ABBA CONSUMER"),
+    (_ranges_to_set(181), " 12.ABBA SYNDICATE"),
+    (_ranges_to_set(180, 183), " 12.ABBA SYNDICATE(FIXED)"),
+    (_ranges_to_set(127, 126), " 12.ABBA SWIFT"),
+    (_ranges_to_set(129), " 12.ABBA SMILAX"),
+    (_ranges_to_set(193), " 12.ABBA LEASE"),
+    (_ranges_to_set(137), " 12.ABBA OTHR PLAN"),
+    (_ranges_to_set(135, 136, 138), " 12.ABBA PERSONAL"),
+    (_ranges_to_set(197, 170), " 12.ABBA OTHER"),
+    (_ranges_to_set(122), " 12.ABBA UNIT TRST"),
+    (_ranges_to_set(141, 142), " 12.ABBA HOUSE BFR"),
+    (_ranges_to_set(143), " 12.ABBA TERM BFR"),
+    (_ranges_to_set(182), " 12.ABBA SYN.BULLET(FIXED)"),
+    (_ranges_to_set(564, 565), " 13.FUND FOR FOOD"),
+    (_ranges_to_set(561), " 13.L&MCOST HOUSE"),
+    (_ranges_to_set(559, 560, 567), " 13.NEF LOAN"),
+    (_ranges_to_set(555, 556), " 14.SFT LOAN"),
+    (_ranges_to_set(566, 568, 570, 573, 909), " 15.SMI"),
+    (_ranges_to_set(569), " 15.SFSMI2"),
+    (_ranges_to_set(521, 522, 523, 528), " 16.CGC TUK"),
+    (_ranges_to_set(517), " 16.CGC ASL"),
+    (_ranges_to_set(527), " 16.CGC NEF"),
+    (_ranges_to_set(524, 525), " 16.CGC FSMI"),
+    (_ranges_to_set(526), " 16.CGC FFF"),
+    (_ranges_to_set(910, 350, 925, 302, 902, 903, 951), " 10.REVOLVING CRDT"),
+    (_ranges_to_set(914, 915, 919, 920, 950), "  8.SYNDICATED"),
+    (_ranges_to_set(345), " 18.(MISC)CONTRACT"),
+    (_ranges_to_set(304, 305), " 18.(MISC)FLASH"),
+    (_ranges_to_set(355), " 18.(MISC)PB EXEC"),
+    (_ranges_to_set(356), " 18.(MISC)HOME FURNH"),
+    (_ranges_to_set(504, 505, 509, 510, 515), " 18.(MISC)PRIN GUARAN"),
+    (_ranges_to_set(325), " 18.(MISC)PROF.ADVAN"),
+    (_ranges_to_set(357), " 18.(MISC)SHARE"),
+    (_ranges_to_set(518, 519), " 18.(MISC)SLS-FIXED"),
+    (_ranges_to_set(335), " 18.(MISC)UNIT TRUST"),
+    (_ranges_to_set(358), " 18.(MISC)UNIFLEX"),
+    (_ranges_to_set(320), " 18.(MISC)UNSECURED"),
+    (_ranges_to_set(391), " 18.(MISC)CON.DURABLE"),
+    (_ranges_to_set(330), " 18.(MISC)QUICK CASH"),
+    (_ranges_to_set(131, 132), " 19.AITAB VARIABLE"),
+    (_ranges_to_set(720, 725), " 20.HP VARIABLE"),
+]
+_LNPRDF_OTHER = " 21.OTHERS"
+
+
+def lnprdf_format(product) -> str:
+    for codes, label in _LNPRDF_ENTRIES:
+        if product in codes:
+            return label
+    return _LNPRDF_OTHER
+
+
+# --- VALUE SLNPRDF (PRODBIG for LN accounts) ----------------------------
+_SLNPRDF_ENTRIES = [
+    (_ranges_to_set(227, 228, 230, 231, 232, 233), "  1.HOME 1YR FIX"),
+    (_ranges_to_set(237, 238), "  1.HOME 3YRS FIX"),
+    (_ranges_to_set(239, 240), "  1.HOME 5YRS FIX"),
+    (_ranges_to_set(241, 243), "  1.HOME 1YR FIX"),
+    (_ranges_to_set(234), "  1.MORE 1YR FIX"),
+    (_ranges_to_set(235), "  1.MORE 3YRS FIX"),
+    (_ranges_to_set(236), "  1.MORE 5YRS FIX"),
+    (_ranges_to_set(242), "  1.MORE 1YR FIX"),
+    (_ranges_to_set(380, 381), "  2.HIRE PURCHASE"),
+    (_ranges_to_set(390), "  9.LEASING"),
+    (_ranges_to_set(209, 210, 211, 212, 214, 215, 204, 205, 200, 201, 219, 220, 225, 226, 245, 246, 247), "  1.OTHER HOUSING"),
+    (_ranges_to_set(309, 310, 904, 905), "  5.BRIDGING"),
+    (_ranges_to_set(300, 301, 900, 901, 530, 362), "  6.FIXED TIER"),
+    (_ranges_to_set((1, 100)), " 10.STAFF"),
+    (_ranges_to_set(359, 906, 363), "  3.SWIFT"),
+    (_ranges_to_set(360, 908), "  6.FIXED LOAN"),
+    (_ranges_to_set(361, 907), "  4.SMILAX"),
+    (_ranges_to_set(531), " 12.FUNDED BNM"),
+    (_ranges_to_set((110, 118), 139, 140), " 11.ABBA HOUSE"),
+    (_ranges_to_set(120), " 11.ABBA OTH TERM"),
+    (_ranges_to_set((194, 196)), " 11.ABBA CONSUMER"),
+    (_ranges_to_set(181), " 11.ABBA SYNDICATE"),
+    (_ranges_to_set(180, 183), " 11.ABBA SYNDICATE(FIXED)"),
+    (_ranges_to_set(127, 126), " 11.ABBA SWIFT"),
+    (_ranges_to_set(129), " 11.ABBA SMILAX"),
+    (_ranges_to_set(193), " 11.ABBA OTH TERM"),
+    (_ranges_to_set(137), " 11.ABBA OTH TERM"),
+    (_ranges_to_set(135, 136, 138), " 11.ABBA PERSONAL"),
+    (_ranges_to_set(197, 170), " 11.ABBA OTH TERM"),
+    (_ranges_to_set(122), " 11.ABBA UNIT TRST"),
+    (_ranges_to_set(141, 142), " 11.ABBA HOUSE BFR"),
+    (_ranges_to_set(143), " 11.ABBA TERM BFR"),
+    (_ranges_to_set(182), " 11.ABBA SYN.BULLET(FIXED)"),
+    (_ranges_to_set(564, 565, 569), " 12.FUNDED BNM"),
+    (_ranges_to_set(561), " 12.FUNDED BNM"),
+    (_ranges_to_set(559, 560, 567), " 12.FUNDED BNM"),
+    (_ranges_to_set(555, 556), " 12.FUNDED BNM"),
+    (_ranges_to_set(566, 568, 570, 573, 909), " 12.FUNDED BNM"),
+    (_ranges_to_set(521, 522, 523, 528), " 13.CGC"),
+    (_ranges_to_set(517), " 13.CGC"),
+    (_ranges_to_set(527), " 13.CGC"),
+    (_ranges_to_set(524, 525), " 13.CGC"),
+    (_ranges_to_set(526), " 13.CGC"),
+    (_ranges_to_set(910, 350, 925, 302, 902, 903, 951), "  8.REVOLVING CRDT"),
+    (_ranges_to_set(914, 915, 919, 920, 950), "  7.SYNDICATED"),
+    (_ranges_to_set(345), "  6.FIXED LOAN"),
+    (_ranges_to_set(304, 305), "  6.FIXED LOAN"),
+    (_ranges_to_set(355), "  6.FIXED LOAN"),
+    (_ranges_to_set(356), "  6.FIXED LOAN"),
+    (_ranges_to_set(504, 505, 509, 510, 515), "  6.FIXED LOAN"),
+    (_ranges_to_set(325), "  6.FIXED LOAN"),
+    (_ranges_to_set(357), "  6.FIXED LOAN"),
+    (_ranges_to_set(518, 519), "  6.FIXED LOAN"),
+    (_ranges_to_set(335), "  6.FIXED LOAN"),
+    (_ranges_to_set(358), "  6.FIXED LOAN"),
+    (_ranges_to_set(320), "  6.FIXED LOAN"),
+    (_ranges_to_set(391), "  6.FIXED LOAN"),
+    (_ranges_to_set(330, 364, 365, 506), "  6.FIXED LOAN"),
+    (_ranges_to_set(131, 132), " 14.AITAB VARIABLE"),
+    (_ranges_to_set(720, 725), " 15.HP VARIABLE"),
+]
+_SLNPRDF_OTHER = " 16.OTHERS"
+
+
+def slnprdf_format(product) -> str:
+    for codes, label in _SLNPRDF_ENTRIES:
+        if product in codes:
+            return label
+    return _SLNPRDF_OTHER
+
+
+# --- VALUE ODPRDF / SODPRDF (PRODTYP/PRODBIG for OD accounts) -----------
+_ODPRDF_ABBA = _ranges_to_set((60, 64), (160, 166))
+
+
+def odprdf_format(product) -> str:
+    return " 12.ABBA OD" if product in _ODPRDF_ABBA else "  1.CONV OD"
+
+
+def sodprdf_format(product) -> str:
+    return " 11.ABBA OD" if product in _ODPRDF_ABBA else "  1.CONV OD"
+
+
+# ============================================================================
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIIMRM01.py pattern)
+# ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
+
+
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        if schema is None:
+            fields = []
+            for col, dtype in chunk.dtypes.items():
+                if dtype == 'object':
+                    pa_type = pa.string()
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
-        day_anchor = issdte.day if issdte else bldate.day
-        return add_months_day(bldate, freq, day_anchor)
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
 
 
-def parse_mmddyy8_from_z11(val):
-    """
-    Replicates INPUT(SUBSTR(PUT(val,Z11.),1,8), MMDDYY8.) pattern.
-    Z11 pads to 11 digits; MMDDYY8 reads MMDDYYYY from first 8 chars.
-    YEARCUTOFF=1950: YY>=50 → 19YY, else 20YY.
-    """
-    if val is None or val == 0:
-        return None
-    s = f"{int(val):011d}"
-    mmddyyyy = s[:8]
+# ============================================================================
+# STEP 2: CACHE INPUT SAS DATASETS TO PARQUET
+# ============================================================================
+print("\nStep 2: Caching input SAS datasets to Parquet...")
+OD_CACHE     = _load_cached(INPUT_OD_FILE, "OD")
+LOAN_CACHE   = _load_cached(INPUT_LOAN_FILE, "LOAN")
+LNNOTE_CACHE = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
+PEND_CACHE   = _load_cached(INPUT_PEND_FILE, "PEND")
+
+# ============================================================================
+# STEP 3: DATA OD; SET OD.OVERDFT; WHERE LMTENDDT NE . AND LMTENDDT > 0;
+#         LMTEND = INPUT(SUBSTR(PUT(LMTENDDT,Z11.),1,8),MMDDYY8.);
+#         IF LMTEND = . THEN DELETE;
+#         PROC SORT ... NODUPKEYS; BY ACCTNO;
+# ============================================================================
+print("\nStep 3: Building OD (limit-expiry lookup, deduped by ACCTNO)...")
+
+con = duckdb.connect(database=":memory:")
+od_raw = con.execute(f"""
+    SELECT
+        CAST(ACCTNO    AS BIGINT) AS ACCTNO,
+        CAST(LMTENDDT  AS DOUBLE) AS LMTENDDT,
+        CAST(RISKCODE  AS INTEGER) AS RISKCODE
+    FROM read_parquet('{OD_CACHE.as_posix()}')
+    WHERE LMTENDDT IS NOT NULL AND LMTENDDT > 0
+""").pl()
+con.close()
+
+
+def _parse_lmtend(lmtenddt: float):
+    """LMTEND = INPUT(SUBSTR(PUT(LMTENDDT,Z11.),1,8),MMDDYY8.);
+    LMTENDDT is zero-padded to an 11-character string; the first 8 digits
+    are taken as an unseparated MMDDYYYY date (8-char width, 4-digit year --
+    the only self-consistent reading of an unseparated MMDDYYw. informat
+    with no delimiters present)."""
     try:
-        mm = int(mmddyyyy[0:2])
-        dd = int(mmddyyyy[2:4])
-        yy = int(mmddyyyy[4:8])
-        if yy == 0:
-            return None
-        return date(yy, mm, dd)
-    except (ValueError, TypeError):
-        return None
-
-
-def parse_reldte_to_date(reldte):
-    """
-    Replicates INPUT(SUBSTR(RELDTE,6,4)||SUBSTR(RELDTE,2,4), MMDDYY8.).
-    RELDTE is a string; chars are 1-indexed in SAS.
-    Result = SUBSTR(RELDTE,6,4) || SUBSTR(RELDTE,2,4) → MMDDYYYY.
-    """
-    if not reldte or len(reldte) < 9:
-        return None
-    # SAS 1-indexed: substr(reldte,6,4) = chars 5-8 (0-indexed)
-    #                substr(reldte,2,4) = chars 1-4 (0-indexed)
-    part1 = reldte[5:9]   # 4 chars starting at index 5 (SAS pos 6)
-    part2 = reldte[1:5]   # 4 chars starting at index 1 (SAS pos 2)
-    mmddyyyy = part1 + part2
-    try:
-        mm = int(mmddyyyy[0:2])
-        dd = int(mmddyyyy[2:4])
-        yyyy = int(mmddyyyy[4:8])
-        if yyyy == 0:
-            return None
+        s = f"{int(lmtenddt):011d}"[:8]
+        mm, dd, yyyy = int(s[0:2]), int(s[2:4]), int(s[4:8])
         return date(yyyy, mm, dd)
-    except (ValueError, TypeError):
+    except (ValueError, OverflowError):
         return None
 
 
-def fix_payeffdt(payeffdt_int):
-    """
-    Replicates LNNOTE payeffdt parsing:
-      PAYCY = SUBSTR(PUT(PAYEFFDT,Z11.),1,4)
-      PAYMM = SUBSTR(PUT(PAYEFFDT,Z11.),8,2)
-      PAYDD = SUBSTR(PUT(PAYEFFDT,Z11.),10,2)
-    Then clamped to valid day for the month.
-    Returns a date or None.
-    """
-    if payeffdt_int is None or payeffdt_int == 0:
+od_by_acct = {}
+for r in od_raw.iter_rows(named=True):
+    lmtend = _parse_lmtend(r["LMTENDDT"])
+    if lmtend is None:
+        continue
+    acctno = r["ACCTNO"]
+    # PROC SORT NODUPKEYS BY ACCTNO -- keep first occurrence per ACCTNO.
+    if acctno not in od_by_acct:
+        od_by_acct[acctno] = {
+            "ACCTNO": acctno, "LMTEND": lmtend,
+            "LMTENDDT": r["LMTENDDT"], "RISKCODE": r["RISKCODE"],
+        }
+
+del od_raw
+gc.collect()
+print(f"  OD rows (deduped): {len(od_by_acct):,}")
+
+# ============================================================================
+# STEP 4: LOAN LEDGER  (PROC SORT DATA=BNM.LOAN&REPTMON&NOWK OUT=LOAN;
+#         BY ACCTNO NOTENO; WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520);)
+# ============================================================================
+print("\nStep 4: Loading LOAN ledger...")
+
+con = duckdb.connect(database=":memory:")
+loan_raw = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+        CAST(PRODCD   AS VARCHAR) AS PRODCD,
+        CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
+        CAST(AMTIND   AS VARCHAR) AS AMTIND,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+        CAST(INTRATE  AS DOUBLE)  AS INTRATE,
+        CAST(FEEAMT   AS DOUBLE)  AS FEEAMT,
+        CAST(NTINT    AS VARCHAR) AS NTINT,
+        CAST(INTEARN  AS DOUBLE)  AS INTEARN,
+        CAST(INTAMT   AS DOUBLE)  AS INTAMT,
+        CAST(INTEARN2 AS DOUBLE)  AS INTEARN2,
+        CAST(INTEARN3 AS DOUBLE)  AS INTEARN3,
+        CAST(EXPRDATE AS DATE)    AS EXPRDATE,
+        CAST(PAYFREQ  AS VARCHAR) AS PAYFREQ,
+        CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
+        CAST(ISSDTE   AS DATE)    AS ISSDTE,
+        CAST(RISKRTE  AS INTEGER) AS RISKRTE
+    FROM read_parquet('{LOAN_CACHE.as_posix()}')
+    WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
+    ORDER BY ACCTNO, NOTENO
+""").pl()
+con.close()
+print(f"  LOAN rows: {len(loan_raw):,}")
+
+# DATA LOAN; MERGE LOAN(IN=A) OD(IN=B); BY ACCTNO; IF A;
+# Enrich each loan row with OD's limit-expiry/risk-code where a match
+# exists by ACCTNO; keep every LOAN row regardless of OD match (IF A).
+loan_enriched = []
+for r in loan_raw.iter_rows(named=True):
+    od = od_by_acct.get(r["ACCTNO"])
+    row = dict(r)
+    row["LMTEND"] = od["LMTEND"] if od else None
+    row["OD_RISKCODE"] = od["RISKCODE"] if od else None
+    loan_enriched.append(row)
+
+del loan_raw, od_by_acct
+gc.collect()
+
+# ============================================================================
+# STEP 5: LNNOTE  (PROC SORT DATA=LNNOTE.LNNOTE OUT=LNNOTE
+#         (KEEP=ACCTNO NOTENO NTINT PAYEFFDT NTINDEX LOANTYPE CENSUS);
+#         BY ACCTNO NOTENO; WHERE LOANTYPE NOT IN (...);)
+# ============================================================================
+print("\nStep 5: Loading LNNOTE...")
+
+con = duckdb.connect(database=":memory:")
+lnnote_raw = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(PAYEFFDT AS DOUBLE)  AS PAYEFFDT,
+        CAST(NTINDEX  AS INTEGER) AS NTINDEX,
+        CAST(LOANTYPE AS INTEGER) AS LOANTYPE,
+        CAST(CENSUS   AS VARCHAR) AS CENSUS
+    FROM read_parquet('{LNNOTE_CACHE.as_posix()}')
+    WHERE LOANTYPE NOT IN (700,705,380,381,128,130,500,520)
+""").pl()
+con.close()
+print(f"  LNNOTE rows: {len(lnnote_raw):,}")
+
+# ============================================================================
+# STEP 6: PEND  (PROC SORT DATA=LNNOTE.PEND OUT=PEND(KEEP=ACCTNO NOTENO
+#         RATEOVER RELDTE); BY ACCTNO NOTENO;)
+# ============================================================================
+print("\nStep 6: Loading PEND and building PENDFIN...")
+
+con = duckdb.connect(database=":memory:")
+pend_raw = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(RATEOVER AS DOUBLE)  AS RATEOVER,
+        CAST(RELDTE   AS VARCHAR) AS RELDTE
+    FROM read_parquet('{PEND_CACHE.as_posix()}')
+    ORDER BY ACCTNO, NOTENO
+""").pl()
+con.close()
+
+
+def _parse_reldte(reldte: str):
+    """INPUT(SUBSTR(RELDTE,6,4)||SUBSTR(RELDTE,2,4),MMDDYY8.)
+    RELDTE positions are 1-based in SAS; position 6 for 4 chars, then
+    position 2 for 4 chars, concatenated and parsed as an 8-digit MMDDYYYY
+    string (0-based Python slices: [5:9] then [1:5])."""
+    if reldte is None:
         return None
-    s = f"{int(payeffdt_int):011d}"
+    s = (reldte[5:9] + reldte[1:5])
     try:
-        paycy = int(s[0:4])
-        paymm = int(s[7:9])
-        paydd = int(s[9:11])
+        mm, dd, yyyy = int(s[0:2]), int(s[2:4]), int(s[4:8])
+        return date(yyyy, mm, dd)
     except (ValueError, IndexError):
         return None
-    if paymm == 0 or paycy == 0:
-        return None
-    # Clamp day
-    if paymm == 2:
-        max_dd = 29 if (paycy % 4 == 0) else 28
-        if paydd > max_dd:
-            paydd = max_dd
-    elif paymm in (1, 3, 5, 7, 8, 10, 12):
-        if paydd > 31:
-            paydd = 31
-    elif paymm in (4, 6, 9, 11):
-        if paydd > 30:
-            paydd = 30
+
+
+# DATA REALPEND SECOND THIRD REPRPEND; SET PEND; BY ACCTNO NOTENO;
+# "FIRST.ACCTNO OR FIRST.NOTENO" / "LAST.ACCTNO OR LAST.NOTENO" collapse to
+# plain FIRST.NOTENO / LAST.NOTENO since FIRST.ACCTNO always implies
+# FIRST.NOTENO under nested BY ACCTNO NOTENO -- so position is simply the
+# row's position within its own (ACCTNO,NOTENO) group.
+groups: dict = {}
+for r in pend_raw.iter_rows(named=True):
+    groups.setdefault((r["ACCTNO"], r["NOTENO"]), []).append(r)
+
+realpend_rows, second_rows, third_rows, reprpend_rows = [], [], [], []
+for (acctno, noteno), rows in groups.items():
+    n = len(rows)
+    for i, r in enumerate(rows):
+        rateover = r["RATEOVER"] or 0.0
+        if rateover > 0:
+            if i == 0:
+                realpend_rows.append({
+                    "ACCTNO": acctno, "NOTENO": noteno,
+                    "REALISDT": _parse_reldte(r["RELDTE"]),
+                })
+            elif i == n - 1:
+                third_rows.append({
+                    "ACCTNO": acctno, "NOTENO": noteno,
+                    "REALISD3": _parse_reldte(r["RELDTE"]), "RATEOVE3": rateover,
+                })
+            else:
+                second_rows.append({
+                    "ACCTNO": acctno, "NOTENO": noteno,
+                    "REALISD2": _parse_reldte(r["RELDTE"]), "RATEOVE2": rateover,
+                })
+        else:
+            reprpend_rows.append({
+                "ACCTNO": acctno, "NOTENO": noteno,
+                "REPRICDT": _parse_reldte(r["RELDTE"]),
+            })
+
+del pend_raw, groups
+gc.collect()
+
+# PROC SORT DATA=REPRPEND NODUPKEYS; BY ACCTNO NOTENO;  -- keep first per key
+reprpend_dedup = {}
+for r in reprpend_rows:
+    key = (r["ACCTNO"], r["NOTENO"])
+    if key not in reprpend_dedup:
+        reprpend_dedup[key] = r
+
+
+def _sas_update(master: dict, trans_rows: list, key_fields) -> dict:
+    """DATA out; UPDATE master transaction; BY key_fields; RUN;
+    master: dict keyed by key-tuple -> row dict.
+    Returns a new dict: every master key is kept, transaction-only keys are
+    added, and for matching keys, non-missing transaction field values
+    overwrite master values (later transaction rows win for repeated keys)."""
+    result = {k: dict(v) for k, v in master.items()}
+    for t in trans_rows:
+        key = tuple(t[f] for f in key_fields)
+        if key not in result:
+            result[key] = {f: t[f] for f in key_fields}
+        for f, v in t.items():
+            if f in key_fields:
+                continue
+            if v is not None:
+                result[key][f] = v
+    return result
+
+
+realpend_by_key = {(r["ACCTNO"], r["NOTENO"]): r for r in realpend_rows}
+realpen2 = _sas_update(realpend_by_key, second_rows, ("ACCTNO", "NOTENO"))
+realpen2 = _sas_update(realpen2, third_rows, ("ACCTNO", "NOTENO"))
+pendfin = _sas_update(realpen2, list(reprpend_dedup.values()), ("ACCTNO", "NOTENO"))
+
+del realpend_rows, second_rows, third_rows, reprpend_rows, reprpend_dedup, realpend_by_key, realpen2
+gc.collect()
+print(f"  PENDFIN rows: {len(pendfin):,}")
+
+# ============================================================================
+# STEP 7: DATA LNNOTE; MERGE LNNOTE(IN=A) PENDFIN(IN=B); BY ACCTNO NOTENO;
+#         IF B THEN PENDIND='Y'; [PAYEFFDT -> PAYEFDT reconstruction]
+# ============================================================================
+print("\nStep 7: Merging LNNOTE with PENDFIN and deriving PAYEFDT...")
+
+
+def _derive_payefdt(payeffdt):
+    """PAYCY/PAYMM/PAYDD are sliced from PUT(PAYEFFDT,Z11.). Only PAYCY is
+    scoped to "IF PAYEFFDT NOT IN (.,0)"; PAYMM, PAYDD and the final
+    PAYEFDT assignment run UNCONDITIONALLY for every row regardless of that
+    condition (a dangling-scope artefact in the SAS source, same pattern as
+    documented in other EIIMRM0x programs), preserved here verbatim -- so
+    PAYCY can be missing (None) while PAYMM/PAYDD are still computed from
+    PUT(PAYEFFDT,Z11.), which for a missing/zero PAYEFFDT still yields a
+    zero-string slice. The trailing "ELSE" with no statement inside the
+    DD-clamp block (PAYMM NE 2 AND PAYDD > 31) is unreachable dead code in
+    the SAS source (every month other than February is covered by the two
+    listed month sets), so it is a no-op here too."""
+    z11 = f"{int(payeffdt or 0):011d}"
+    payCY = int(z11[0:4]) if (payeffdt not in (None, 0)) else None
+    payMM = int(z11[7:9])
+    payDD = int(z11[9:11])
+    if payMM == 2 and payDD > 29:
+        payDD = 29 if (payCY is not None and payCY % 4 == 0) else 28
+    if payMM != 2 and payDD > 31:
+        if payMM in (1, 3, 5, 7, 8, 10, 12):
+            payDD = 31
+        elif payMM in (4, 6, 9, 11):
+            payDD = 30
+        # else: unreachable (see docstring) -- no-op
     try:
-        return date(paycy, paymm, paydd)
+        return date(payCY if payCY is not None else 1, payMM, payDD) if payCY else None
     except ValueError:
         return None
 
 
-def safe_div(num, denom):
-    if denom and denom != 0:
-        return (num or 0.0) / denom
-    return 0.0
+lnnote_final = {}
+for r in lnnote_raw.iter_rows(named=True):
+    key = (r["ACCTNO"], r["NOTENO"])
+    row = dict(r)
+    pend = pendfin.get(key)
+    row["PENDIND"] = "Y" if pend else None
+    if pend:
+        row.update({k: v for k, v in pend.items() if k not in ("ACCTNO", "NOTENO")})
+    row["PAYEFDT"] = _derive_payefdt(row["PAYEFFDT"])
+    lnnote_final[key] = row
 
+del lnnote_raw, pendfin
+gc.collect()
+print(f"  LNNOTE (final) rows: {len(lnnote_final):,}")
 
 # ============================================================================
-# STEP 1: REPTDATE
+# STEP 8: DATA LOAN&REPTMON&NOWK; MERGE LOAN(IN=A) LNNOTE(IN=C);
+#         BY ACCTNO NOTENO; [INTTYPE derivation]; IF A AND LOANTYPE NOT IN (...);
 # ============================================================================
+print("\nStep 8: Merging LOAN with LNNOTE and deriving INTTYPE...")
 
-def get_reptdate():
-    con = duckdb.connect()
-    row = con.execute(f"SELECT reptdate FROM '{REPTDATE_PARQUET}' LIMIT 1").fetchone()
-    con.close()
+_LOANTYPE_EXCLUDE = {700, 705, 128, 130, 380, 381, 500, 520}
+_FIX_PRODUCTS = {350, 910, 925, 302, 902, 903, 951}
 
-    reptdate = sas_to_date(row[0])
-    day = reptdate.day
+merged_records = []
+for row in loan_enriched:
+    key = (row["ACCTNO"], row["NOTENO"])
+    note = lnnote_final.get(key)
 
-    if day == 8:
-        sdd, wk, wk1 = 1, '1', '4'
-    elif day == 15:
-        sdd, wk, wk1 = 9, '2', '1'
-    elif day == 22:
-        sdd, wk, wk1 = 16, '3', '2'
+    ntindex = note["NTINDEX"] if note else None
+    acctype = row["ACCTYPE"]
+    amtind = row["AMTIND"]
+
+    if ntindex in (1, 30, 997) or (acctype == "OD" and amtind != "I"):
+        inttype = "BLR"
+    elif ntindex != 1 or (acctype == "OD" and amtind == "I"):
+        inttype = "FIX"
     else:
-        sdd, wk, wk1 = 23, '4', '3'
+        inttype = "OTH"
+    if row["PRODUCT"] in _FIX_PRODUCTS:
+        inttype = "FIX"
 
-    mm = reptdate.month
-    if wk == '1':
-        mm1 = mm - 1
-        if mm1 == 0:
-            mm1 = 12
-    else:
-        mm1 = mm
+    loantype = note["LOANTYPE"] if note else None
+    # IF A AND LOANTYPE NOT IN (...)  -- LOAN(A) is always true here since
+    # we are iterating LOAN's own rows; a missing LOANTYPE (no LNNOTE
+    # match) is "not in" the exclude set, so unmatched LOAN rows pass too.
+    if loantype in _LOANTYPE_EXCLUDE:
+        continue
 
-    sdate = date(reptdate.year, mm, sdd)
-    reptmon  = str(mm).zfill(2)
-    reptmon1 = str(mm1).zfill(2)
-    reptyear = str(reptdate.year)
-    reptday  = str(reptdate.day).zfill(2)
-    rdate    = f"{reptdate.day:02d}/{reptdate.month:02d}/{reptdate.year}"
-    sdate_str = f"{sdate.day:02d}/{sdate.month:02d}/{sdate.year}"
-    btype    = 'PBB'
+    rec = dict(row)
+    rec["INTTYPE"] = inttype
+    rec["NTINDEX"] = ntindex
+    rec["LOANTYPE"] = loantype
+    rec["CENSUS"] = note["CENSUS"] if note else None
+    rec["PAYEFDT"] = note["PAYEFDT"] if note else None
+    rec["REPRICDT"] = note.get("REPRICDT") if note else None
+    # IF PAYFREQ IN ('5','9',' ') OR PRODUCT IN (...) THEN REPRICDT = PAYEFDT;
+    if rec["PAYFREQ"] in ("5", "9", " ", None) or rec["PRODUCT"] in _FIX_PRODUCTS:
+        rec["REPRICDT"] = rec["PAYEFDT"]
+    merged_records.append(rec)
 
-    return (reptdate, wk, wk1, reptmon, reptmon1, reptyear,
-            reptday, rdate, sdate_str, btype)
-
-
-# ============================================================================
-# STEP 2: OD – filter, parse LMTEND, dedup by ACCTNO
-# ============================================================================
-
-def load_od():
-    """
-    DATA OD: WHERE LMTENDDT NE . AND LMTENDDT > 0
-    LMTEND = INPUT(SUBSTR(PUT(LMTENDDT,Z11.),1,8), MMDDYY8.)
-    PROC SORT NODUPKEYS BY ACCTNO → keep ACCTNO, LMTEND, LMTENDDT, RISKCODE
-    """
-    con = duckdb.connect()
-    df = con.execute(f"SELECT * FROM '{OVERDFT_PARQUET}'").df()
-    con.close()
-    df = pl.from_pandas(df)
-
-    rows = {}
-    for r in df.iter_rows(named=True):
-        lmtenddt = r.get('lmtenddt')
-        if lmtenddt is None or lmtenddt == 0:
-            continue
-        lmtend = parse_mmddyy8_from_z11(lmtenddt)
-        if lmtend is None:
-            continue
-        acctno = r.get('acctno')
-        # NODUPKEYS: keep first occurrence
-        if acctno not in rows:
-            rows[acctno] = {
-                'acctno':   acctno,
-                'lmtend':   lmtend,
-                'lmtenddt': lmtenddt,
-                'riskcode': r.get('riskcode'),
-            }
-    return rows  # dict keyed by acctno
-
+del loan_enriched, lnnote_final
+gc.collect()
+print(f"  Merged loan/OD records: {len(merged_records):,}")
 
 # ============================================================================
-# STEP 3: LNNOTE – load and merge PEND
+# STEP 9: DATA START (COMPRESS=YES); SET LOAN&REPTMON&NOWK;
+#         WHERE (SUBSTR(PRODCD,1,2) IN ('34','54') AND LOANTYPE NOT IN (...))
+#               OR LOANTYPE IN (131,132,720,725);
+#         [full per-account repricing/maturity bucket engine]
 # ============================================================================
-
-def load_lnnote_pend():
-    """
-    Loads LNNOTE and PEND, replicates:
-      DATA REALPEND / SECOND / THIRD / REPRPEND from PEND
-      DATA REALPEN2 (UPDATE REALPEND + SECOND)
-      DATA REALPEN2 (UPDATE REALPEN2 + THIRD)
-      DATA PENDFIN (UPDATE REALPEN2 + REPRPEND)
-      DATA LNNOTE (MERGE LNNOTE + PENDFIN, parse PAYEFFDT → PAYEFDT)
-    Returns dict keyed by (acctno, noteno).
-    """
-    con = duckdb.connect()
-    pend_df   = con.execute(f"SELECT acctno, noteno, rateover, reldte FROM '{PEND_PARQUET}'").df()
-    lnnote_df = con.execute(
-        f"SELECT acctno, noteno, ntint, payeffdt, ntindex, loantype, census "
-        f"FROM '{LNNOTE_PARQUET}' "
-        f"WHERE loantype NOT IN (700,705,380,381,128,130,500,520)"
-    ).df()
-    con.close()
-
-    pend_df   = pl.from_pandas(pend_df)
-    lnnote_df = pl.from_pandas(lnnote_df)
-
-    # ---- PEND processing ----
-    # Sort by acctno, noteno
-    pend_rows = sorted(pend_df.iter_rows(named=True),
-                       key=lambda r: (r.get('acctno',''), r.get('noteno',0)))
-
-    # Group by (acctno, noteno) to identify first/last
-    from itertools import groupby
-
-    realpend  = {}   # keyed by (acctno, noteno) → first rateover>0
-    second    = {}   # keyed by (acctno, noteno) → intermediate rateover>0
-    third     = {}   # keyed by (acctno, noteno) → last rateover>0
-    reprpend  = {}   # keyed by (acctno, noteno) → rateover=0
-
-    def _grp_key(r):
-        return (r.get('acctno',''), r.get('noteno', 0))
-
-    for key, grp in groupby(pend_rows, key=_grp_key):
-        items = list(grp)
-        positive = [x for x in items if (x.get('rateover') or 0) > 0]
-        zero_rte = [x for x in items if (x.get('rateover') or 0) <= 0]
-
-        for x in zero_rte:
-            repricdt = parse_reldte_to_date(x.get('reldte',''))
-            reprpend[key] = {'acctno': key[0], 'noteno': key[1],
-                             'repricdt': repricdt}
-
-        if positive:
-            # first
-            x = positive[0]
-            realpend[key] = {
-                'acctno':    key[0], 'noteno': key[1],
-                'rateover':  x.get('rateover'),
-                'realisdt':  parse_reldte_to_date(x.get('reldte','')),
-            }
-            # middle items → second (keep last middle)
-            if len(positive) > 2:
-                x2 = positive[1]
-                second[key] = {
-                    'acctno': key[0], 'noteno': key[1],
-                    'rateove2': x2.get('rateover'),
-                    'realisd2': parse_reldte_to_date(x2.get('reldte','')),
-                }
-            # last
-            if len(positive) > 1:
-                x3 = positive[-1]
-                third[key] = {
-                    'acctno': key[0], 'noteno': key[1],
-                    'rateove3': x3.get('rateover'),
-                    'realisd3': parse_reldte_to_date(x3.get('reldte','')),
-                }
-
-    # UPDATE REALPEND + SECOND → REALPEN2
-    realpen2 = {k: dict(v) for k, v in realpend.items()}
-    for k, v in second.items():
-        if k in realpen2:
-            realpen2[k]['rateove2'] = v.get('rateove2')
-            realpen2[k]['realisd2'] = v.get('realisd2')
-        else:
-            realpen2[k] = {'acctno': k[0], 'noteno': k[1],
-                           'rateove2': v.get('rateove2'),
-                           'realisd2': v.get('realisd2')}
-
-    # UPDATE REALPEN2 + THIRD
-    for k, v in third.items():
-        if k in realpen2:
-            realpen2[k]['rateove3'] = v.get('rateove3')
-            realpen2[k]['realisd3'] = v.get('realisd3')
-        else:
-            realpen2[k] = {'acctno': k[0], 'noteno': k[1],
-                           'rateove3': v.get('rateove3'),
-                           'realisd3': v.get('realisd3')}
-
-    # UPDATE REALPEN2 + REPRPEND → PENDFIN
-    pendfin = {k: dict(v) for k, v in realpen2.items()}
-    for k, v in reprpend.items():
-        if k in pendfin:
-            pendfin[k]['repricdt'] = v.get('repricdt')
-        else:
-            pendfin[k] = {'acctno': k[0], 'noteno': k[1],
-                          'repricdt': v.get('repricdt')}
-
-    # ---- LNNOTE merge with PENDFIN ----
-    lnnote_out = {}
-    for r in lnnote_df.iter_rows(named=True):
-        acctno = r.get('acctno')
-        noteno = r.get('noteno')
-        key    = (acctno, noteno)
-
-        pf = pendfin.get(key, {})
-        pendind = 'Y' if key in pendfin else None
-
-        payeffdt_int = r.get('payeffdt')
-        payefdt = fix_payeffdt(payeffdt_int)
-
-        lnnote_out[key] = {
-            'acctno':   acctno,
-            'noteno':   noteno,
-            'ntint':    r.get('ntint'),
-            'ntindex':  r.get('ntindex'),
-            'loantype': r.get('loantype'),
-            'census':   r.get('census'),
-            'pendind':  pendind,
-            'payefdt':  payefdt,
-            'repricdt': pf.get('repricdt'),
-        }
-
-    return lnnote_out
+print("\nStep 9: Running DATA START (repricing/maturity bucket engine)...")
 
 
-# ============================================================================
-# STEP 4: BUILD START DATASET
-# ============================================================================
-
-_RC_PRODUCTS = {350, 910, 925, 302, 902, 903, 951}
-_EXCL_LOAN   = {700, 705, 380, 381, 128, 130, 500, 520}
-_HP_VAR      = {131, 132, 720, 725}
+def _prodcd_prefix_ok(prodcd) -> bool:
+    return isinstance(prodcd, str) and prodcd[:2] in ("34", "54")
 
 
-def _payfreq_to_freq(payfreq):
-    """Map PAYFREQ code to months per period."""
-    return {'1': 1, '2': 3, '3': 6, '4': 12}.get(payfreq, None)
+def _in_or_missing(value, exclude_set) -> bool:
+    """SAS 'NOT IN' with a missing value is TRUE (missing is never IN a
+    list of real values)."""
+    return value not in exclude_set
 
 
-def build_start(reptdate, reptmon, nowk):
-    """
-    Loads BNM.LOAN{reptmon}{nowk} parquet, merges OD and LNNOTE,
-    builds the START dataset with instalment schedule expansion.
-    Returns list of output row dicts.
-    """
-    loan_parquet = os.path.join(PARQUET_DIR, f"LOAN{reptmon}{nowk}.parquet")
+_LOANTYPE_900_901 = {900, 901}
+_LOANTYPE_244_245_247 = {244, 245, 247}
+_START_LOANTYPE_EXCLUDE = {700, 705, 128, 130, 380, 381, 500, 520}
+_START_LOANTYPE_INCLUDE = {131, 132, 720, 725}
 
-    con = duckdb.connect()
-    loan_df = con.execute(
-        f"SELECT * FROM '{loan_parquet}' "
-        f"WHERE product NOT IN (700,705,380,381,128,130,500,520)"
-    ).df()
-    con.close()
-    loan_df = pl.from_pandas(loan_df)
 
-    od_map     = load_od()
-    lnnote_map = load_lnnote_pend()
+def _run_start(rec: dict) -> list:
+    """Emulates the DATA START step body for one merged loan/OD record.
+    Returns a list of emitted output row dicts (each OUTPUT statement in
+    the SAS source -> one dict here)."""
+    out = []
 
-    start_rows = []
+    prodcd = rec["PRODCD"]
+    loantype = rec["LOANTYPE"]
+    if not (
+        (_prodcd_prefix_ok(prodcd) and _in_or_missing(loantype, _START_LOANTYPE_EXCLUDE))
+        or (loantype in _START_LOANTYPE_INCLUDE)
+    ):
+        return out
 
-    for row in loan_df.iter_rows(named=True):
-        acctno   = row.get('acctno')
-        noteno   = row.get('noteno')
-        product  = row.get('product') or 0
-        acctype  = (row.get('acctype') or '').strip()
-        prodcd   = (row.get('prodcd') or '').strip()
-        loantype = row.get('loantype') or product
+    acctype = rec["ACCTYPE"]
+    product = rec["PRODUCT"]
+    ntindex = rec["NTINDEX"]
+    census = rec["CENSUS"]
+    exprdate = rec["EXPRDATE"]
+    repricdt = rec["REPRICDT"]
+    payfreq = rec["PAYFREQ"]
+    payamt = rec["PAYAMT"] or 0.0
+    intrate = rec["INTRATE"] or 0.0
+    issdte = rec["ISSDTE"]
 
-        # WHERE clause from DATA START:
-        # (SUBSTR(PRODCD,1,2) IN ('34','54') AND LOANTYPE NOT IN excl)
-        # OR LOANTYPE IN (131,132,720,725)
-        prodcd_prefix = prodcd[:2] if len(prodcd) >= 2 else ''
-        qualifies = (
-            (prodcd_prefix in ('34', '54') and loantype not in _EXCL_LOAN)
-            or loantype in _HP_VAR
-        )
-        if not qualifies:
-            continue
+    riskrte = rec["RISKRTE"]
+    curbal = rec["CURBAL"]
+    acrint = 0.0
+    feeamt = rec["FEEAMT"] or 0.0
+    matdt = None
 
-        # Merge OD
-        od_rec    = od_map.get(acctno, {})
-        lmtend    = od_rec.get('lmtend')
-        riskcode  = od_rec.get('riskcode')
+    if acctype == "LN":
+        if format_lnprod(product) == "N":
+            return out
+        prodtyp = lnprdf_format(product)
+        prodbig = slnprdf_format(product)
 
-        # Merge LNNOTE
-        ln_key = (acctno, noteno)
-        ln_rec = lnnote_map.get(ln_key, {})
-        ntindex  = ln_rec.get('ntindex') or row.get('ntindex')
-        ntint    = (ln_rec.get('ntint') or row.get('ntint') or '').strip()
-        census   = (ln_rec.get('census') or row.get('census') or '').strip()
-        payefdt  = ln_rec.get('payefdt')
-        repricdt_ln = ln_rec.get('repricdt')
-
-        # Loan fields
-        balance  = row.get('balance', 0) or 0.0
-        curbal   = row.get('curbal', 0) or 0.0
-        intamt   = row.get('intamt', 0) or 0.0
-        intearn  = row.get('intearn', 0) or 0.0
-        intearn2 = row.get('intearn2', 0) or 0.0
-        intearn3 = row.get('intearn3', 0) or 0.0
-        feeamt   = row.get('feeamt', 0) or 0.0
-        intrate  = row.get('intrate', 0) or 0.0
-        payfreq  = (row.get('payfreq') or '').strip()
-        payamt   = row.get('payamt', 0) or 0.0
-        costfund = row.get('costfund', 0) or 0.0
-        amtind   = (row.get('amtind') or '').strip()
-
-        exprdate_raw = row.get('exprdate')
-        exprdate = sas_to_date(exprdate_raw)
-        issdte_raw = row.get('issdte')
-        issdte   = sas_to_date(issdte_raw)
-        bldate_raw = row.get('bldate')
-        bldate0  = sas_to_date(bldate_raw)
-
-        # Determine INTTYPE
-        if ntindex in (1, 30, 997) or (acctype == 'OD' and amtind != 'I'):
-            inttype = 'BLR'
-        elif ntindex != 1 or (acctype == 'OD' and amtind == 'I'):
-            inttype = 'FIX'
-        else:
-            inttype = 'OTH'
-        if product in _RC_PRODUCTS:
-            inttype = 'FIX'
-
-        # Adjust REPRICDT / EXPRDATE from LNNOTE (DATA LOAN step)
-        repricdt = repricdt_ln
-        if payfreq in ('5', '9', '') or product in _RC_PRODUCTS:
-            repricdt = payefdt
-
-        # ---- ACCTYPE = 'LN' branch ----
-        if acctype == 'LN':
-            if format_lnprod(product) == 'N':
-                continue
-            prodtyp = lnprdf(product)
-            prodbig = slnprdf(product)
-
-            # CBL loans override
-            if loantype in (900, 901):
-                if ntindex == '1':
-                    prodtyp = '  6.FIXED CORPORATE BLR'
-                    prodbig = '  7.FIXED CORPORATE BLR'
-                elif costfund == 0 and (payfreq == '5' or payamt == 0):
-                    prodtyp = '  6.FIXED CORPORATE BULLET(FIXED RATE)'
-                    prodbig = '  7.FIXED CORPORATE BULLET(FIXED RATE)'
-                    repricdt = exprdate
-                elif costfund != 0 and (payfreq == '5' or payamt == 0):
-                    prodtyp = '  6.FIXED COF BULLET(FIXED RATE)'
-                    prodbig = '  7.FIXED COF BULLET(FIXED RATE)'
-                    repricdt = exprdate
-                else:
-                    prodtyp = '  6.CORPORATE FIXED'
-                    prodbig = '  7.CORPORATE FIXED'
-
-            # HOME/MORE plan override for products 244,245,247
-            if loantype in (244, 245, 247):
-                censusx = census.lstrip()
-                if censusx and censusx[0] == '8':
-                    plan = censusx[1] if len(censusx) > 1 else '1'
-                    prodtyp = f'  1.HOME PLAN {plan}'
-                    pi = int(plan) if plan.isdigit() else 1
-                    if pi <= 3:
-                        prodbig = '  1.HOME 1YR FIX'
-                    elif pi <= 6:
-                        prodbig = '  1.HOME 3YRS FIX'
-                    elif pi <= 7:
-                        prodbig = '  1.HOME 5YRS FIX'
-                    else:
-                        prodbig = '  1.HOME 1YR FIX'
-                elif censusx and censusx[0] == '3':
-                    plan = censusx[1] if len(censusx) > 1 else '1'
-                    prodtyp = f'  1.MORE PLAN {plan}'
-                    pi = int(plan) if plan.isdigit() else 1
-                    if pi == 1:
-                        prodbig = '  1.MORE 1YR FIX'
-                    elif pi == 2:
-                        prodbig = '  1.MORE 3YRS FIX'
-                    elif pi == 3:
-                        prodbig = '  1.HOME 5YRS FIX'
-                    else:
-                        prodbig = '  1.MORE 1YR FIX'
-                elif censusx and censusx[0] == '2':
-                    plan = censusx[3] if len(censusx) > 3 else ''
-                    if plan in ('1', '2'):
-                        prodbig = '  1.HOME 9 FIX'
-                        prodtyp = '  1.HOME PLAN 9'
-                    elif plan in ('3', '4'):
-                        prodbig = '  1.MORE 9 FIX'
-                        prodtyp = '  1.MORE PLAN 9'
-                else:
-                    prodtyp = '  1.HOME PLAN 1'
-                    prodbig = '  1.HOME 1YR FIX'
-
-            if prodbig == '  1.OTHER HOUSING' and ntindex == 2:
-                prodbig = '  1.OTHER PRESCRB'
-
-            # Accrued interest / unearned
-            if ntint != 'A':
-                acrint = balance - curbal - feeamt
-                unearn = 0.0
+        if loantype in _LOANTYPE_900_901:
+            costfund = rec.get("COSTFUND", 0.0) or 0.0
+            if ntindex == 1:
+                prodtyp = "  6.FIXED CORPORATE BLR"
+                prodbig = "  7.FIXED CORPORATE BLR"
+            elif costfund == 0 and (payfreq == "5" or payamt == 0):
+                prodtyp = "  6.FIXED CORPORATE BULLET(FIXED RATE)"
+                prodbig = "  7.FIXED CORPORATE BULLET(FIXED RATE)"
+                repricdt = rec.get("EXPRDATE")
+            elif costfund != 0 and (payfreq == "5" or payamt == 0):
+                prodtyp = "  6.FIXED COF BULLET(FIXED RATE)"
+                prodbig = "  7.FIXED COF BULLET(FIXED RATE)"
+                repricdt = rec.get("EXPRDATE")
             else:
-                acrint  = intearn
-                unearn  = intamt - intearn2 + intearn3
+                prodtyp = "  6.CORPORATE FIXED"
+                prodbig = "  7.CORPORATE FIXED"
 
-            matdt = exprdate
-            if repricdt:
-                exprdate = repricdt
-            riskrte = row.get('riskrte') or row.get('riskcode') or 0
+        if loantype in _LOANTYPE_244_245_247:
+            censusx = (census or "").strip()
+            if censusx[:1] == "8":
+                plan = censusx[1:2]
+                prodtyp = f"  1.HOME PLAN {plan}"
+                plan_i = int(plan) if plan.isdigit() else 0
+                if plan_i <= 3:
+                    prodbig = "  1.HOME 1YR FIX"
+                elif plan_i <= 6:
+                    prodbig = "  1.HOME 3YRS FIX"
+                elif plan_i <= 7:
+                    prodbig = "  1.HOME 5YRS FIX"
+                else:
+                    prodbig = "  1.HOME 1YR FIX"
+            elif censusx[:1] == "3":
+                plan = censusx[1:2]
+                prodtyp = f"  1.MORE PLAN {plan}"
+                if plan == "1":
+                    prodbig = "  1.MORE 1YR FIX"
+                elif plan == "2":
+                    prodbig = "  1.MORE 3YRS FIX"
+                elif plan == "3":
+                    prodbig = "  1.HOME 5YRS FIX"
+                else:
+                    prodbig = "  1.MORE 1YR FIX"
+            elif censusx[:1] == "2":
+                plan = censusx[3:4] if len(censusx) > 3 else ""
+                if plan in ("1", "2"):
+                    prodbig = "  1.HOME 9 FIX"
+                    prodtyp = "  1.HOME PLAN 9"
+                elif plan in ("3", "4"):
+                    prodbig = "  1.MORE 9 FIX"
+                    prodtyp = "  1.MORE PLAN 9"
+            else:
+                prodtyp = "  1.HOME PLAN 1"
+                prodbig = "  1.HOME 1YR FIX"
 
-        # ---- ACCTYPE = 'OD' branch ----
+        if prodbig == "  1.OTHER HOUSING" and ntindex == 2:
+            prodbig = "  1.OTHER PRESCRB"
+
+        ntint = rec["NTINT"]
+        balance = rec["BALANCE"] or 0.0
+        if ntint != "A":
+            acrint = balance - curbal - feeamt
+            unearn = 0.0
         else:
-            if format_odprod(product) == 'N':
-                continue
-            prodtyp  = odprdf(product)
-            prodbig  = sodprdf(product)
-            exprdate = lmtend
-            riskrte  = riskcode or 0
-            curbal   = balance
-            acrint   = 0.0
-            feeamt   = 0.0
-            unearn   = 0.0
-            matdt    = exprdate
+            acrint = rec["INTEARN"] or 0.0
+            unearn = (rec["INTAMT"] or 0.0) - (rec["INTEARN2"] or 0.0) + (rec["INTEARN3"] or 0.0)
 
-        def _out(subtyp, amount, yield_val, remmth1_val, matdt_val=None):
-            return {
-                'prodtyp':  prodtyp,
-                'prodbig':  prodbig,
-                'product':  product,
-                'ntindex':  ntindex,
-                'inttype':  inttype,
-                'subtyp':   subtyp,
-                'amount':   amount if amount is not None else 0.0,
-                'yield':    yield_val if yield_val is not None else 0.0,
-                'remmth1':  remmth1_val,
-                'intrate':  intrate,
-            }
+        matdt = exprdate
+        if repricdt is not None and repricdt > date(1, 1, 1):
+            exprdate = repricdt
+    else:
+        if format_odprod(product) == "N":
+            return out
+        prodtyp = odprdf_format(product)
+        prodbig = sodprdf_format(product)
+        exprdate = rec["LMTEND"]
+        riskrte = rec["OD_RISKCODE"]
+        curbal = rec["BALANCE"]
+        acrint = 0.0
+        feeamt = 0.0
+        unearn = 0.0
+        matdt = exprdate
 
-        # NPL output (RISKRTE in 1,2,3,4)
-        if riskrte in (1, 2, 3, 4):
-            amt = curbal if curbal is not None else 0.0
-            start_rows.append(_out(9, amt, 0.0, '     TOTAL'))
+    risk_flag = riskrte in (1, 2, 3, 4)
 
-        # SUBTYP 7,8,6 (accrued int, fee, unearned)
-        start_rows.append(_out(7, acrint, 0.0, '     TOTAL'))
-        start_rows.append(_out(8, feeamt, 0.0, '     TOTAL'))
-        start_rows.append(_out(6, unearn, 0.0, '     TOTAL'))
+    if risk_flag:
+        amount = curbal if curbal is not None else 0.0
+        out.append(dict(PRODTYP=prodtyp, PRODBIG=prodbig, PRODUCT=product, NTINDEX=ntindex,
+                         SUBTYP=9, REMMTH1="     TOTAL", AMOUNT=amount, YIELD=0.0, INTTYPE=rec["INTTYPE"]))
 
-        # %REMMTH for maturity
-        remmth_val = calc_remmth(matdt, reptdate)
+    for subtyp, amt in ((7, acrint), (8, feeamt), (6, unearn)):
+        out.append(dict(PRODTYP=prodtyp, PRODBIG=prodbig, PRODUCT=product, NTINDEX=ntindex,
+                         SUBTYP=subtyp, REMMTH1="     TOTAL", AMOUNT=amt, YIELD=0.0, INTTYPE=rec["INTTYPE"]))
 
-        # SUBTYP 5.5 (WAREMM)
-        if riskrte not in (1, 2, 3, 4):
-            amt_55  = curbal if curbal is not None else 0.0
-            yld_55  = amt_55 * remmth_val
-        else:
-            amt_55 = 0.0
-            yld_55 = 0.0
-        start_rows.append(_out(5.5, amt_55, yld_55, '     TOTAL'))
+    remmth = _remmth_04(reptdate, matdt) if matdt else 0.0
+    if not risk_flag:
+        amount55 = curbal
+        yield55 = (curbal or 0.0) * remmth
+    else:
+        amount55 = 0.0
+        yield55 = 0.0
+    out.append(dict(PRODTYP=prodtyp, PRODBIG=prodbig, PRODUCT=product, NTINDEX=ntindex,
+                     SUBTYP=5.5, REMMTH1="     TOTAL", AMOUNT=amount55, YIELD=yield55, INTTYPE=rec["INTTYPE"]))
 
-        # SUBTYP 5 (PRINCIPAL)
-        amt_5  = curbal if curbal is not None else 0.0
-        yld_5  = (amt_5 * intrate) if riskrte not in (1, 2, 3, 4) else 0.0
-        start_rows.append(_out(5, amt_5, yld_5, '     TOTAL'))
+    amount5 = curbal
+    yield5 = ((curbal or 0.0) * intrate) if not risk_flag else 0.0
+    out.append(dict(PRODTYP=prodtyp, PRODBIG=prodbig, PRODUCT=product, NTINDEX=ntindex,
+                     SUBTYP=5, REMMTH1="     TOTAL", AMOUNT=amount5, YIELD=yield5, INTTYPE=rec["INTTYPE"]))
 
-        # Instalment schedule (RISKRTE not in 1,2,3,4 only)
-        if riskrte in (1, 2, 3, 4):
-            continue
+    if not risk_flag:
+        freq = _PAYFREQ_TO_FREQ.get(payfreq)
 
-        # Determine FREQ
-        freq = _payfreq_to_freq(payfreq)
-
-        # Determine starting BLDATE
-        if payfreq in ('5', '9', '') or product in _RC_PRODUCTS:
+        bldate = None
+        if payfreq in ("5", "9", " ", None) or product in _FIX_PRODUCTS:
             bldate = exprdate
-        elif bldate0 is None:
-            # Advance from ISSDTE until > reptdate
+        else:
             bldate = issdte
-            if bldate is None:
-                bldate = reptdate
-            safety = 0
-            while bldate is not None and bldate <= reptdate:
-                bldate = next_bldate(bldate, issdte, payfreq, freq or 1)
-                safety += 1
-                if safety > 600:
-                    break
-        else:
-            bldate = bldate0
+            while bldate is not None and exprdate is not None and bldate <= reptdate:
+                bldate = _nxtbldt(bldate, payfreq, freq, issdte)
 
-        if bldate is None or exprdate is None:
-            # Cannot schedule; emit repricing/no-reprice only
-            pass
-        else:
-            if bldate > exprdate or curbal <= payamt:
+        if exprdate is not None and (bldate is None or bldate > exprdate or (curbal or 0.0) <= payamt):
+            bldate = exprdate
+
+        totbal = curbal
+        subtyp_inst = 11 if acctype == "LN" else None
+
+        cur_curbal = curbal or 0.0
+        while exprdate is not None and bldate is not None and bldate <= exprdate:
+            matdt_i = bldate
+            remmth_i = _remmth_04(reptdate, matdt_i)
+            remmth1_i = remfmt_format(remmth_i)
+            if bldate == exprdate:
+                break
+            amount_i = payamt
+            yield_i = amount_i * intrate
+            out.append(dict(PRODTYP=prodtyp, PRODBIG=prodbig, PRODUCT=product, NTINDEX=ntindex,
+                             SUBTYP=(subtyp_inst if subtyp_inst is not None else 11),
+                             REMMTH1=remmth1_i, AMOUNT=amount_i, YIELD=yield_i, INTTYPE=rec["INTTYPE"]))
+            cur_curbal -= payamt
+            if cur_curbal <= payamt:
+                amount_i = cur_curbal
+            bldate = _nxtbldt(bldate, payfreq, freq, issdte)
+            if bldate > exprdate or cur_curbal <= payamt:
                 bldate = exprdate
 
-            totbal = curbal
-            cur    = curbal
-            subtyp_inst = 11 if acctype == 'LN' else None
-
-            safety = 0
-            while bldate is not None and bldate <= exprdate:
-                mat2   = bldate
-                rem2   = calc_remmth(mat2, reptdate)
-                r1     = remfmt(rem2)
-
-                if bldate == exprdate:
-                    # Last instalment: emit repricing/no-reprice outside loop
-                    break
-
-                amt_i = payamt
-                yld_i = amt_i * intrate
-                if subtyp_inst is not None:
-                    start_rows.append(_out(subtyp_inst, amt_i, yld_i, r1))
-
-                cur = cur - payamt
-                if cur <= payamt:
-                    amt_i = cur
-
-                bldate = next_bldate(bldate, issdte, payfreq, freq or 1)
-                if bldate is None:
-                    break
-                if bldate > exprdate or cur <= payamt:
-                    bldate = exprdate
-
-                safety += 1
-                if safety > 600:
-                    break
-
-        # Repricing / No-reprice row
-        remmth_reprice = calc_remmth(exprdate, reptdate) if exprdate else 0.0
-        r_label = remfmt(remmth_reprice)
-
-        if repricdt is not None or product in _RC_PRODUCTS or inttype == 'BLR':
-            amt_r = totbal if 'totbal' in dir() else curbal
-            yld_r = (amt_r * intrate) if riskrte not in (1, 2, 3, 4) else 0.0
-            subtyp_r = 12
-            if inttype == 'BLR':
-                r_label = '>  0-1 MTH'
+        if repricdt is not None or product in _FIX_PRODUCTS or rec["INTTYPE"] == "BLR":
+            amount_f = totbal
+            yield_f = (totbal or 0.0) * intrate
+            subtyp_f = 12
         elif repricdt is None and ntindex != 1:
-            amt_r = totbal if 'totbal' in dir() else curbal
-            yld_r = (amt_r * intrate) if riskrte not in (1, 2, 3, 4) else 0.0
-            subtyp_r = 13
+            amount_f = totbal
+            yield_f = (totbal or 0.0) * intrate
+            subtyp_f = 13
         else:
-            amt_r = None
+            amount_f, yield_f, subtyp_f = None, None, None
 
-        if amt_r is not None:
-            start_rows.append(_out(subtyp_r, amt_r, yld_r, r_label))
+        remmth1_final = ">  0-1 MTH" if rec["INTTYPE"] == "BLR" else remfmt_format(
+            _remmth_04(reptdate, bldate) if bldate else None
+        )
+        if subtyp_f is not None:
+            out.append(dict(PRODTYP=prodtyp, PRODBIG=prodbig, PRODUCT=product, NTINDEX=ntindex,
+                             SUBTYP=subtyp_f, REMMTH1=remmth1_final, AMOUNT=amount_f, YIELD=yield_f,
+                             INTTYPE=rec["INTTYPE"]))
 
-    return start_rows
+    return out
 
+
+start_rows = []
+for rec in merged_records:
+    start_rows.extend(_run_start(rec))
+
+del merged_records
+gc.collect()
+print(f"  START rows emitted: {len(start_rows):,}")
 
 # ============================================================================
-# STEP 5: SUMMARISE HELPERS
+# STEP 10: PROC SUMMARY (detail level) -- CLASS PRODTYP PRODUCT NTINDEX
+#          SUBTYP REMMTH1; WHERE INTTYPE='FIX'/'BLR'; then WAYLD=YIELD/AMOUNT
 # ============================================================================
+print("\nStep 10: Building detail-level FIX/BLR summaries...")
 
-def summarise(rows, group_cols, sum_cols):
-    """Group-by SUM over list of dicts."""
-    if not rows:
-        return []
+
+def _group_sum(rows, key_fields, sum_fields):
     groups = {}
     for r in rows:
-        key = tuple(r.get(c) for c in group_cols)
-        if key not in groups:
-            groups[key] = {c: 0.0 for c in sum_cols}
-            for c in group_cols:
-                groups[key][c] = r.get(c)
-        for c in sum_cols:
-            groups[key][c] = (groups[key][c] or 0.0) + (r.get(c) or 0.0)
+        key = tuple(r.get(f) for f in key_fields)
+        g = groups.setdefault(key, {f: None for f in sum_fields})
+        for f in sum_fields:
+            v = r.get(f)
+            if v is not None:
+                g[f] = (g[f] or 0.0) + v
     out = []
-    for key, vals in groups.items():
-        rec = {}
-        for i, c in enumerate(group_cols):
-            rec[c] = key[i]
-        for c in sum_cols:
-            rec[c] = vals[c]
+    for key, sums in groups.items():
+        rec = dict(zip(key_fields, key))
+        rec.update(sums)
         out.append(rec)
     return out
 
 
-def add_wayld(rows):
-    """Compute WAYLD = YIELD / AMOUNT for each row."""
-    out = []
+def _wayld(amount, yld):
+    if amount in (None, 0):
+        return None
+    return (yld or 0.0) / amount
+
+
+def _build_fixblr(rows, inttype, key_fields):
+    subset = [r for r in rows if r["INTTYPE"] == inttype]
+    grouped = _group_sum(subset, key_fields, ("AMOUNT", "YIELD"))
+    for g in grouped:
+        g["WAYLD"] = _wayld(g["AMOUNT"], g["YIELD"])
+    return grouped
+
+
+DETAIL_KEYS = ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP", "REMMTH1")
+
+fix_detail = _build_fixblr(start_rows, "FIX", DETAIL_KEYS)
+blr_detail = _build_fixblr(start_rows, "BLR", DETAIL_KEYS)
+
+
+def _build_fixblr2_grand(detail_rows, id_fields):
+    """PROC SUMMARY WHERE SUBTYP IN (11,12,13); CLASS <id_fields>;
+    then SET fix fix2; IF REMMTH1 NE blank; GRANDTOT='GRAND TOTAL';
+    IF REMMTH1 NE TOTAL AND SUBTYP=13 THEN AMOUNT=0; WAYLD=0;
+    then a further GRANDTOT/SUBTYP/REMMTH1-level PROC SUMMARY (FIX3/BLR3)."""
+    subset2 = [r for r in detail_rows if r["SUBTYP"] in (11, 12, 13)]
+    grouped2 = _group_sum(subset2, id_fields + ("SUBTYP",), ("AMOUNT", "YIELD"))
+    for g in grouped2:
+        g["WAYLD"] = _wayld(g["AMOUNT"], g["YIELD"])
+        g["REMMTH1"] = "     TOTAL"
+
+    combined = [dict(r) for r in detail_rows] + grouped2
+    combined = [r for r in combined if (r.get("REMMTH1") or "").strip() != ""]
+    for r in combined:
+        r["GRANDTOT"] = "GRAND TOTAL"
+        if r["REMMTH1"] != "     TOTAL" and r["SUBTYP"] == 13:
+            r["AMOUNT"] = 0.0
+            r["WAYLD"] = 0.0
+    return combined
+
+
+def _build_fix3_style(combined_rows, sum_yield: bool):
+    grand = _group_sum(combined_rows, ("GRANDTOT", "SUBTYP", "REMMTH1"),
+                        ("AMOUNT", "YIELD") if sum_yield else ("AMOUNT",))
+    for g in grand:
+        if "YIELD" not in g:
+            g["YIELD"] = None
+        g["WAYLD"] = _wayld(g["AMOUNT"], g["YIELD"])
+    final = combined_rows + grand
+    for r in final:
+        if not (r.get("PRODTYP") or "").strip():
+            r["PRODTYP"] = "GRAND TOTAL"
+    return final
+
+
+fix2_combined = _build_fixblr2_grand(fix_detail, ("PRODTYP", "PRODUCT", "NTINDEX"))
+fix3 = _build_fix3_style(fix2_combined, sum_yield=True)
+
+blr2_combined = _build_fixblr2_grand(blr_detail, ("PRODTYP", "PRODUCT", "NTINDEX"))
+blr3 = _build_fix3_style(blr2_combined, sum_yield=False)
+
+print(f"  FIX3 (detail) rows: {len(fix3):,}   BLR3 (detail) rows: {len(blr3):,}")
+
+# ============================================================================
+# STEP 11: PRODBIG-LEVEL SUMMARY (/* MORE SUMMARY */) -- same pipeline as
+# Step 10 but grouped by PRODBIG only (no PRODUCT/NTINDEX split).
+# ============================================================================
+print("\nStep 11: Building PRODBIG-level FIX/BLR summaries...")
+
+SUMMARY_KEYS = ("PRODBIG", "SUBTYP", "REMMTH1")
+
+fix_summary = _build_fixblr(start_rows, "FIX", SUMMARY_KEYS)
+blr_summary = _build_fixblr(start_rows, "BLR", SUMMARY_KEYS)
+
+
+def _build_fixblr2_grand_prodbig(detail_rows):
+    subset2 = [r for r in detail_rows if r["SUBTYP"] in (11, 12, 13)]
+    grouped2 = _group_sum(subset2, ("PRODBIG", "SUBTYP"), ("AMOUNT", "YIELD"))
+    for g in grouped2:
+        g["WAYLD"] = _wayld(g["AMOUNT"], g["YIELD"])
+        g["REMMTH1"] = "     TOTAL"
+
+    combined = [dict(r) for r in detail_rows] + grouped2
+    combined = [r for r in combined if (r.get("REMMTH1") or "").strip() != ""]
+    for r in combined:
+        r["GRANDTOT"] = "GRAND TOTAL"
+        if r["REMMTH1"] != "     TOTAL" and r["SUBTYP"] == 13:
+            r["AMOUNT"] = 0.0
+            r["WAYLD"] = 0.0
+    return combined
+
+
+def _build_fix3_style_prodbig(combined_rows, sum_yield: bool):
+    grand = _group_sum(combined_rows, ("GRANDTOT", "SUBTYP", "REMMTH1"),
+                        ("AMOUNT", "YIELD") if sum_yield else ("AMOUNT",))
+    for g in grand:
+        if "YIELD" not in g:
+            g["YIELD"] = None
+        g["WAYLD"] = _wayld(g["AMOUNT"], g["YIELD"])
+    final = combined_rows + grand
+    for r in final:
+        if not (r.get("PRODBIG") or "").strip():
+            r["PRODBIG"] = "GRAND TOTAL"
+    return final
+
+
+fix2_pb_combined = _build_fixblr2_grand_prodbig(fix_summary)
+fix3_pb = _build_fix3_style_prodbig(fix2_pb_combined, sum_yield=True)
+
+blr2_pb_combined = _build_fixblr2_grand_prodbig(blr_summary)
+blr3_pb = _build_fix3_style_prodbig(blr2_pb_combined, sum_yield=False)
+
+print(f"  FIX3 (PRODBIG summary) rows: {len(fix3_pb):,}   BLR3 (PRODBIG summary) rows: {len(blr3_pb):,}")
+
+del start_rows
+gc.collect()
+
+# ============================================================================
+# STEP 12: REPORT RENDERING  (PROC TABULATE emulation, FORMCHAR all-blank
+# -> no box-drawing characters at all; RTS=40 row-label width; CONDENSE)
+# ============================================================================
+print("\nStep 12: Rendering reports...")
+
+LABEL_WIDTH   = 40   # RTS=40
+AMOUNT_WIDTH  = 12   # F=COMMA12.
+WAYLD_WIDTH   = 6    # F=4.2 with a little breathing room
+HEADER_ROWS   = 2
+FF            = "\f"
+
+# See docstring "KNOWN SAS SOURCE BUG" section -- each report displays the
+# title text that was intended for the PREVIOUS report, preserved verbatim.
+REPORT_TITLES = [
+    "RM DENOMINATION (FIXED RATE)",
+    "RM DENOMINATION (FIXED RATE)",
+    "RM DENOMINATION (BLR)",
+    "RM DENOMINATION (FIXED RATE) SUMMARY",
+]
+
+
+def _fmt_amount(value) -> str:
+    if value is None:
+        return "0".rjust(AMOUNT_WIDTH)
+    v = float(value)
+    s = f"{v:,.0f}"
+    if len(s) > AMOUNT_WIDTH:
+        s = f"{v:.0f}"
+    return s.rjust(AMOUNT_WIDTH)
+
+
+def _fmt_wayld(value) -> str:
+    if value is None:
+        return "0".rjust(WAYLD_WIDTH)
+    return f"{float(value):.2f}".rjust(WAYLD_WIDTH)
+
+
+def _title_block(program_title4: str) -> list:
+    return [
+        "PUBLIC ISLAMIC BANK BERHAD",
+        f"REPRICING GAP AS AT {RDATE}",
+        "RISK MANAGEMENT REPORT : EIIMRM04",
+        program_title4,
+        "",
+    ]
+
+
+def _remmth1_present_order(rows) -> list:
+    present = sorted({r.get("REMMTH1") or "" for r in rows}, key=_remmth1_sort_key)
+    return present
+
+
+def _render_detail_tabulate(rows: list, title4: str, group_dims) -> list:
+    """TABLE (PRODTYP)*(PRODUCT*NTINDEX*SUBTYP), (REMMTH1)*SUM*(AMOUNT WAYLD)
+    / BOX='LOANS AND ADVANCES' RTS=40 CONDENSE;
+    Row key = group_dims (PRODTYP,PRODUCT,NTINDEX,SUBTYP) or (PRODBIG,SUBTYP);
+    each present REMMTH1 bucket becomes a repeating AMOUNT/WAYLD column."""
+    if not rows:
+        return []
+
+    remmth1_cols = _remmth1_present_order(rows)
+    cell = {}
+    row_keys, seen = [], set()
     for r in rows:
-        r2 = dict(r)
-        r2['wayld'] = safe_div(r2.get('yield', 0.0), r2.get('amount'))
-        out.append(r2)
-    return out
+        key = tuple(r.get(f) for f in group_dims)
+        cell.setdefault(key, {})[r.get("REMMTH1") or ""] = r
+        if key not in seen:
+            seen.add(key)
+            row_keys.append(key)
+    row_keys.sort()
+
+    output: list = []
+    lines_on_page = 0
+
+    def _emit_header(with_titles: bool):
+        nonlocal lines_on_page
+        block = []
+        if with_titles:
+            block.append(FF)
+            block.extend(_title_block(title4))
+        header1 = " " * LABEL_WIDTH
+        header2 = " " * LABEL_WIDTH
+        for col in remmth1_cols:
+            header1 += col.strip().rjust(AMOUNT_WIDTH + WAYLD_WIDTH + 1)
+            header2 += "BAL O/S (RM)".rjust(AMOUNT_WIDTH) + "YIELD".rjust(WAYLD_WIDTH) + " "
+        block.append(header1)
+        block.append(header2)
+        output.extend(block)
+        lines_on_page = len(block)
+
+    _emit_header(with_titles=True)
+
+    for key in row_keys:
+        if lines_on_page >= PAGE_SIZE:
+            _emit_header(with_titles=True)
+
+        label_parts = [str(v) if v is not None else "" for v in key]
+        label = " ".join(label_parts)[:LABEL_WIDTH].ljust(LABEL_WIDTH)
+
+        line = label
+        for col in remmth1_cols:
+            rec = cell[key].get(col)
+            amount = rec["AMOUNT"] if rec else None
+            wayld = rec["WAYLD"] if rec else None
+            line += _fmt_amount(amount) + _fmt_wayld(wayld) + " "
+        output.append(line)
+        lines_on_page += 1
+
+    return output
 
 
-def build_subtotals(rows, group_cols_detail, sum_cols):
-    """
-    Replicates the 'TOTAL FOR INSTALMENT & REPRICING' PROC SUMMARY+DATA step.
-    Groups by <group_cols_detail> (no REMMTH1), sums, sets REMMTH1='     TOTAL'.
-    Then concatenates original + totals, filters REMMTH1 != '          ',
-    sets GRANDTOT='GRAND TOTAL', zeroes rows where REMMTH1!='     TOTAL' & SUBTYP=13.
-    """
-    total_rows = summarise(
-        [r for r in rows if r.get('subtyp') in (11, 12, 13)],
-        group_cols_detail, sum_cols
-    )
-    for r in total_rows:
-        r['remmth1'] = '     TOTAL'
-        r['wayld']   = safe_div(r.get('yield', 0.0), r.get('amount'))
-
-    combined = rows + total_rows
-    combined = [r for r in combined if r.get('remmth1', '').rstrip() != '']
-
-    for r in combined:
-        r['grandtot'] = 'GRAND TOTAL'
-        if r.get('remmth1') != '     TOTAL' and r.get('subtyp') == 13:
-            r['amount'] = 0.0
-            r['wayld']  = 0.0
-
-    return combined
-
-
-def build_grandtotal(rows, group_cols, sum_cols, label_col):
-    """
-    Replicates PROC SUMMARY CLASS GRANDTOT SUBTYP REMMTH1 → FIX3/BLR3
-    Then SET original + grand totals, rename blank PRODTYP/PRODBIG → 'GRAND TOTAL'.
-    """
-    gt_rows = summarise(rows, ['grandtot', 'subtyp', 'remmth1'], sum_cols)
-    for r in gt_rows:
-        r['wayld'] = safe_div(r.get('yield', 0.0), r.get('amount'))
-        if not r.get(label_col, '').strip():
-            r[label_col] = 'GRAND TOTAL'
-
-    combined = rows + gt_rows
-    for r in combined:
-        if not r.get(label_col, '').strip():
-            r[label_col] = 'GRAND TOTAL'
-    return combined
-
-
-# ============================================================================
-# REPORT WRITER
-# ============================================================================
-
-LINES_PER_PAGE = 60
-PAGE_WIDTH     = 132
-
-
-class ReportWriter:
-    """ASA carriage-control fixed-width report writer."""
-    def __init__(self, filepath):
-        self.filepath = filepath
-        self.lines    = []
-        self.page_lines = 0
-
-    def _emit(self, asa, text):
-        self.lines.append(asa + text)
-        if asa == '1':
-            self.page_lines = 1
-        elif asa == '0':
-            self.page_lines += 2
-        else:
-            self.page_lines += 1
-
-    def new_page(self, text=''):  self._emit('1', text)
-    def single(self, text=''):    self._emit(' ', text)
-    def double(self, text=''):    self._emit('0', text)
-
-    def save(self):
-        with open(self.filepath, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(self.lines) + '\n')
-
+report_lines = []
+report_lines += _render_detail_tabulate(fix3, REPORT_TITLES[0], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"))
+report_lines += _render_detail_tabulate(blr3, REPORT_TITLES[1], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"))
+report_lines += _render_detail_tabulate(fix3_pb, REPORT_TITLES[2], ("PRODBIG", "SUBTYP"))
+report_lines += _render_detail_tabulate(blr3_pb, REPORT_TITLES[3], ("PRODBIG", "SUBTYP"))
 
 # ============================================================================
-# REPORT RENDERING
+# STEP 13: WRITE OUTPUT
 # ============================================================================
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in report_lines:
+        fh.write(ln + "\n")
 
-_REMMTH_ORDER = [
-    '>  0-1 MTH', '>  1-2 MTHS', '>  2-3 MTHS', '>  3-4 MTHS',
-    '>  4-5 MTHS', '>  5-6 MTHS', '>  6-7 MTHS', '>  7-8 MTHS',
-    '>  8-9 MTHS', '>  9-10 MTHS', '> 10-11 MTHS', '> 11-12 MTHS',
-    '> 12-13 MTHS', '> 13-14 MTHS', '> 14-15 MTHS', '> 15-16 MTHS',
-    '> 16-17 MTHS', '> 17-18 MTHS', '> 18-19 MTHS', '> 19-20 MTHS',
-    '> 20-21 MTHS', '> 21-22 MTHS', '> 22-23 MTHS', '> 23-24 MTHS',
-    '>2-3 YRS    ', '>3-4 YRS    ', '>4-5 YRS    ', '>5 YRS      ',
-    '     TOTAL',
-]
+print(f"\n  Output written : {OUTPUT_FILE}")
+print(f"  Total lines    : {len(report_lines):,}")
+print("\n--- Report preview (first 40 lines) ---")
+for ln in report_lines[:40]:
+    print(ln)
 
-_SUBTYP_LABEL_ORDER = [
-    (5,   'PRINCIPAL'),
-    (5.5, 'WAREMM(MTH)'),
-    (11,  'INSTALMENT '),
-    (12,  'REPRICING  '),
-    (13,  'NO-REPRICE'),
-    (6,   'UNEARN INT'),
-    (7,   'ACCRUED INT'),
-    (8,   'FEE AMOUNT'),
-    (9,   'NPL'),
-]
-
-
-def fmt_comma12(val):
-    if val is None:
-        return ' ' * 12
-    return f"{round(val or 0):>12,}"
-
-
-def fmt_4_2(val):
-    if val is None:
-        return '    '
-    v = val or 0.0
-    return f"{v:>4.2f}"
-
-
-def _write_report_block(writer, data, group_col, title_str):
-    """
-    Renders one PROC TABULATE block:
-    Rows: <group_col> * SUBTYP
-    Cols: REMMTH1 * (AMOUNT, WAYLD)
-    """
-    # Build pivot: key=(group_val, subtyp) → {remmth1: (amount, wayld)}
-    pivot = {}
-    for r in data:
-        gv  = r.get(group_col, '')
-        st  = r.get('subtyp')
-        rm1 = r.get('remmth1', '')
-        key = (gv, st)
-        if key not in pivot:
-            pivot[key] = {}
-        pivot[key][rm1] = (r.get('amount', 0.0) or 0.0,
-                           r.get('wayld', 0.0) or 0.0)
-
-    # Collect all REMMTH1 labels present, preserve order
-    all_rm1 = []
-    seen_rm1 = set()
-    for lbl in _REMMTH_ORDER:
-        for key in pivot:
-            if lbl in pivot[key] and lbl not in seen_rm1:
-                all_rm1.append(lbl)
-                seen_rm1.add(lbl)
-
-    if not all_rm1:
-        return
-
-    # Header
-    writer.new_page(title_str)
-    sep = '-' * min(PAGE_WIDTH, 40 + len(all_rm1) * 18)
-    writer.single(sep)
-
-    # Column header: REMMTH1 labels
-    hdr = f"{'LOANS AND ADVANCES':<40}"
-    for lbl in all_rm1:
-        hdr += f"{'BALANCE O/S (RM)':>12}{'W.A. YIELD':>6}"
-    writer.single(hdr)
-
-    sub_hdr = ' ' * 40
-    for lbl in all_rm1:
-        sub_hdr += f"{lbl[:12]:>12}{'':>6}"
-    writer.single(sub_hdr)
-    writer.single(sep)
-
-    # Group rows
-    current_group = None
-    for gv, st in sorted(pivot.keys(),
-                         key=lambda k: (k[0] or '', _subtyp_sort(k[1]))):
-        if gv != current_group:
-            writer.double(f"  {gv}")
-            current_group = gv
-
-        st_lbl = subtypf(st)
-        line = f"    {st_lbl:<36}"
-        for lbl in all_rm1:
-            amt, wld = pivot.get((gv, st), {}).get(lbl, (0.0, 0.0))
-            line += f"{fmt_comma12(amt)}{fmt_4_2(wld):>6}"
-        writer.single(line)
-
-    writer.single(sep)
-
-
-def _subtyp_sort(st):
-    order = {5: 0, 5.5: 1, 11: 2, 12: 3, 13: 4, 6: 5, 7: 6, 8: 7, 9: 8}
-    return order.get(st, 99)
-
-
-# ============================================================================
-# MAIN
-# ============================================================================
-
-def main():
-    # ---- REPTDATE ----
-    (reptdate, nowk, nowk1, reptmon, reptmon1,
-     reptyear, reptday, rdate, sdate_str, btype) = get_reptdate()
-
-    title1 = 'PUBLIC ISLAMIC BANK BERHAD'
-    title2 = f'REPRICING GAP AS AT {rdate}'
-    title3 = 'RISK MANAGEMENT REPORT : EIIMRM04'
-
-    # ---- BUILD START ----
-    start_rows = build_start(reptdate, reptmon, nowk)
-
-    sv = ['amount', 'yield']
-
-    # ============================================================
-    # DETAILED SECTION: CLASS PRODTYP PRODUCT NTINDEX SUBTYP REMMTH1
-    # ============================================================
-    fix_start = [r for r in start_rows if r.get('inttype') == 'FIX']
-    blr_start = [r for r in start_rows if r.get('inttype') == 'BLR']
-
-    grp_det = ['prodtyp', 'product', 'ntindex', 'subtyp', 'remmth1']
-
-    fix_sum = add_wayld(summarise(fix_start, grp_det, sv))
-    blr_sum = add_wayld(summarise(blr_start, grp_det, sv))
-
-    fix2 = build_subtotals(fix_sum, ['prodtyp', 'product', 'ntindex', 'subtyp'], sv)
-    blr2 = build_subtotals(blr_sum, ['prodtyp', 'product', 'ntindex', 'subtyp'], sv)
-
-    fix3 = build_grandtotal(fix2, ['grandtot', 'subtyp', 'remmth1'], sv, 'prodtyp')
-    blr3 = build_grandtotal(blr2, ['grandtot', 'subtyp', 'remmth1'], sv, 'prodtyp')
-
-    # ============================================================
-    # SUMMARY SECTION: CLASS PRODBIG SUBTYP REMMTH1
-    # ============================================================
-    grp_sum = ['prodbig', 'subtyp', 'remmth1']
-
-    fix_s   = add_wayld(summarise(fix_start, grp_sum, sv))
-    blr_s   = add_wayld(summarise(blr_start, grp_sum, sv))
-
-    fix2s   = build_subtotals(fix_s, ['prodbig', 'subtyp'], sv)
-    blr2s   = build_subtotals(blr_s, ['prodbig', 'subtyp'], sv)
-
-    fix3s   = build_grandtotal(fix2s, ['grandtot', 'subtyp', 'remmth1'], sv, 'prodbig')
-    blr3s   = build_grandtotal(blr2s, ['grandtot', 'subtyp', 'remmth1'], sv, 'prodbig')
-
-    # ============================================================
-    # WRITE REPORTS
-    # ============================================================
-    writer = ReportWriter(OUTPUT_FILE)
-
-    # Report 1: Detailed Fixed Rate
-    _write_report_block(
-        writer, fix3, 'prodtyp',
-        f"{title1}  |  {title2}  |  {title3}  |  RM DENOMINATION (FIXED RATE)"
-    )
-
-    # Report 2: Detailed BLR
-    _write_report_block(
-        writer, blr3, 'prodtyp',
-        f"{title1}  |  {title2}  |  {title3}  |  RM DENOMINATION (BLR)"
-    )
-
-    # Report 3: Summary Fixed Rate
-    _write_report_block(
-        writer, fix3s, 'prodbig',
-        f"{title1}  |  {title2}  |  {title3}  |  RM DENOMINATION (FIXED RATE) SUMMARY"
-    )
-
-    # Report 4: Summary BLR
-    _write_report_block(
-        writer, blr3s, 'prodbig',
-        f"{title1}  |  {title2}  |  {title3}  |  RM DENOMINATION (BLR) SUMMARY"
-    )
-
-    writer.save()
-    print(f"Report written to {OUTPUT_FILE}")
-
-
-if __name__ == '__main__':
-    main()
+print("\nEIIMRM04 complete.")
