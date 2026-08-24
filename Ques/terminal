@@ -1,4 +1,4 @@
-/sas/python/virt_edw_dev/bin/python3 /sas/python/v(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM03.py
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM03.py
 Step 1: Deriving report date...
   RDATE        : 23/08/26
   REPTMON/DAY  : 08/23  REPTYEAR: 2026
@@ -10,6 +10,26 @@ Step 2: Caching input SAS datasets to Parquet...
 
 Step 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...
   FD rows after PIBB account filter: 481,311
+  Debug: sample BNMCODE values (first 10 rows):
+    intplan=277 -> bnmcode=42133
+    intplan=275 -> bnmcode=42133
+    intplan=278 -> bnmcode=42133
+    intplan=781 -> bnmcode=42133
+    intplan=781 -> bnmcode=42133
+    intplan=791 -> bnmcode=42133
+    intplan=782 -> bnmcode=42133
+    intplan=780 -> bnmcode=42133
+    intplan=780 -> bnmcode=42133
+    intplan=283 -> bnmcode=42133
+  Distinct BNMCODE counts:
+shape: (1, 2)
+┌─────────┬────────┐
+│ BNMCODE ┆ len    │
+│ ---     ┆ ---    │
+│ str     ┆ u32    │
+╞═════════╪════════╡
+│ 42133   ┆ 481311 │
+└─────────┴────────┘
   FD  rows: 0   TD rows: 0   FDN rows: 0
 
 Step 4: Summarising TD / FD / FDN...
