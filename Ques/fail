@@ -1,13 +1,18 @@
-debug_count = 0
-for r in fd_raw.iter_rows(named=True):
-    if debug_count < 5:
-        print(f"DEBUG {debug_count}:")
-        print(f"  openind = {r['OPENIND']!r}")
-        print(f"  matdt   = {r['MATDATE']} (type: {type(r['MATDATE'])})")
-        print(f"  reptdate= {reptdate} (type: {type(reptdate)})")
-        print(f"  matdt < reptdate? {r['MATDATE'] < reptdate}")
-        print(f"  curbal  = {r['CURBAL']}")
-        print(f"  custcd  = {r['CUSTCD']}")
-        print(f"  intplan = {r['INTPLAN']}")
-        debug_count += 1
-    # ... rest of your loop ...
+print("  Debug: sample BNMCODE values (first 10 rows):")
+for i, r in enumerate(fd_raw.iter_rows(named=True)):
+    if i >= 10:
+        break
+    bnmcode = fdprod_format(r["INTPLAN"])
+    print(f"    intplan={r['INTPLAN']} -> bnmcode={bnmcode}")
+
+
+
+
+import polars as pl
+# Create a new column with bnmcode using map_elements
+fd_with_bnm = fd_raw.with_columns(
+    pl.col('INTPLAN').map_elements(lambda x: fdprod_format(x), return_dtype=pl.String).alias('BNMCODE')
+)
+counts = fd_with_bnm.group_by('BNMCODE').agg(pl.len())
+print("  Distinct BNMCODE counts:")
+print(counts)
