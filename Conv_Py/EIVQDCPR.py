@@ -14,49 +14,48 @@ Purpose : Automate the Financial Inclusion Data Collection
                               technique.
 """
 
-from pathlib import Path
-
+import sys
+import paramiko
 import polars as pl
 
-from REPTDATE import get_monthly_reptdate_values
-# NOTE: The original SAS step computes:
-#           REPTDATE = TODAY() - DAY(TODAY())
-#       which is TODAY minus its own day-of-month number, i.e. the
-#       LAST CALENDAR DAY OF THE PREVIOUS MONTH. This matches
-#       get_monthly_reptdate_values() in REPTDATE.py, not the daily
-#       get_reptdate_values() variant. REPTDT is only stored via
-#       CALL SYMPUT and is never referenced again in this program,
-#       so it is derived and printed here for parity/traceability
-#       only; it does not affect file naming or processing.
+from pathlib import Path
+from datetime import date, datetime, timedelta
 
-# NOTE: input_date.py (get_latest_file) is NOT used here. The
-# source datasets (SAP.PIVB.UTGE231.TXT and SAP.PIVB.BOS1204.CSV)
-# are GDG "current generation" (0) references with no date token
-# embedded in the filename, so there is no "latest file by date"
-# resolution to perform.
+from GET_BATCH_DATE import first_date_of_month, get_past_n_date
+from EDW_TRANSFORMATION import get_sftp_info
 
-# NOTE: output_date.py (build_output_file) is NOT used here. The
-# SAS output DSNs (SAP.PIVB.FIDCPR.CSV / .XLS) carry no date
-# component; the date-stamped name only appears later, at the FTP
-# step, as the remote filename - which is outside the scope of
-# this DATA-step conversion.
+# ------------------------------------------------------------
+# COMPUTE REPORT DATE (last day of previous month) via GET_BATCH_DATE
+# ------------------------------------------------------------
+_today_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+_first_day_str = first_date_of_month(_today_str)            # "YYYY-MM-DD 00:00:00"
+_prev_month_last_day_str = get_past_n_date(_first_day_str, 1)
+
+reptdate: date = datetime.strptime(_prev_month_last_day_str, "%Y-%m-%d %H:%M:%S").date()
+
+# Filename suffix: YYMMDD only, no dashes, no time (e.g. "260731")
+_ts: str = reptdate.strftime("%y%m%d")
 
 # ------------------------------------------------------------
 # Path setup
 # ------------------------------------------------------------
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# INPUT_DIR = BASE_DIR / "input"
-# OUTPUT_DIR = BASE_DIR / "output"
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = Path("/stgsrcsys/host/uat/AII")
+# OUTPUT_DIR = BASE_DIR / "output" / "EIVQDCPR"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-INPUT_DIR  = Path("/stgsrcsys/host/uat")
-OUTPUT_DIR = BASE_DIR / "output" / "EIVQDCPR"
+# Production Path
+BASE_DIR   = Path("/host_pq/mis")
+INPUT_DIR  = BASE_DIR / "input" / "pivb"
+OUTPUT_DIR = BASE_DIR / "output" / "pivb"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-EQU_FILE = INPUT_DIR / "UTGE231.txt"
-BOS_FILE = INPUT_DIR / "BOS1204.txt"
+EQU_FILE = INPUT_DIR / f"UTGE231_{_ts}.txt"
+BOS_FILE = INPUT_DIR / f"BOS1204_{_ts}.txt"
 
-OUTPUT_CSV_FILE = OUTPUT_DIR / "FIDCPR.csv"
-OUTPUT_XLS_FILE = OUTPUT_DIR / "FIDCPR.xls"
+OUTPUT_CSV_FILE = OUTPUT_DIR / f"FIDCPR_{_ts}.csv"
+OUTPUT_XLS_FILE = OUTPUT_DIR / f"FIDCPR_{_ts}.xls"
 
 FILE_ENCODING = "latin1"
 
@@ -79,12 +78,11 @@ HEADER_FIELDS = [
 
 
 # ------------------------------------------------------------
-# DATA REPTDATE step equivalent
+# DATA REPTDATE step equivalent (using GET_BATCH_DATE)
 # ------------------------------------------------------------
 def print_reptdate() -> None:
     """Equivalent of: DATA REPTDATE; REPTDATE = TODAY()-DAY(TODAY());"""
-    monthly_reptdate_values = get_monthly_reptdate_values()
-    print(f"[REPTDATE] Report date (REPTDT): {monthly_reptdate_values.reptdate}")
+    print(f"[REPTDATE] Report date (REPTDT): {reptdate}")
 
 
 # ------------------------------------------------------------
@@ -239,12 +237,12 @@ def main() -> None:
     write_csv_output(conso, OUTPUT_CSV_FILE)
     write_xls_output(conso, OUTPUT_XLS_FILE)
 
-    print("\n[RESULT] Consolidated records (FICODE, UTCIC, UTDOB, BRANCH, UTDOC):")
-    for rec in conso:
-        print(
-            f"{rec['FICODE']},{rec['UTCIC']},{rec['UTDOB']},"
-            f"{rec['BRANCH']},{rec['UTDOC']}"
-        )
+    # print("\n[RESULT] Consolidated records (FICODE, UTCIC, UTDOB, BRANCH, UTDOC):")
+    # for rec in conso:
+    #     print(
+    #         f"{rec['FICODE']},{rec['UTCIC']},{rec['UTDOB']},"
+    #         f"{rec['BRANCH']},{rec['UTDOC']}"
+    #     )
 
     print(f"[OUTPUT] CSV written to : {OUTPUT_CSV_FILE}")
     print(f"[OUTPUT] XLS written to : {OUTPUT_XLS_FILE}")
@@ -252,19 +250,86 @@ def main() -> None:
     # ------------------------------------------------------------
     # //RUNSFTP EXEC COZBATCH ... (FTP TO PIVSVFIL101 - PIVB FILE SERVER)
     # ------------------------------------------------------------
-    # This is a separate JCL step invoking cozsftp to push the two output
-    # files to the PIVB file server, renaming them on arrival:
-    #   PUT //SAP.PIVB.FIDCPR.CSV   1204D.csv
-    #   PUT //SAP.PIVB.FIDCPR.XLS   1204D(%ODD.%OMM.%OYY.).xls
-    # It is infrastructure/transport, not part of the SAS DATA step logic,
-    # and is left as a placeholder only:
-    #
-    # def sftp_upload_outputs(csv_path: Path, xls_path: Path) -> None:
-    #     """Upload OUTPUT_CSV_FILE / OUTPUT_XLS_FILE to PIVSVFIL101."""
-    #     raise NotImplementedError(
-    #         "SFTP transport step - implement using project-approved "
-    #         "SFTP client/credentials if this step needs to be automated."
-    #     )
+    print("\nUploading reports to PIVSVFIL101 - PIVB File Server via SFTP...")
+    sftp_upload_to_pivb(OUTPUT_CSV_FILE, OUTPUT_XLS_FILE)
+
+# ============================================================
+# SFTP CONFIGURATION (PIVSVFIL101 - PIVB File Server)
+# ============================================================
+# NOTE: Original JCL connects directly to sas2lcr@192.168.56.10 via
+# cozsftp, using credentials from OPER.PBB.CONTROL(SAS#SFTP) - a
+# DIFFERENT control dataset than ctl_dwh_sftp_info.sas7bdat used
+# elsewhere in this project.
+PIVB_HOST_DESC = "PIVB File Server"
+
+# Remote folder on the PIVB file server (from JCL: cd "...")
+PIVB_REMOTE_DIR = "Financial Inclusion Data Collection Package"
+
+# ============================================================
+# SFTP UPLOAD TO PIVSVFIL101 - PIVB File Server
+# ============================================================
+def _pivb_remote_filenames() -> tuple[str, str]:
+    """
+    Build the two remote filenames per the JCL PUT lines:
+        PUT //SAP.PIVB.FIDCPR.CSV   1204D.csv
+        PUT //SAP.PIVB.FIDCPR.XLS   1204D(%ODD.%OMM.%OYY.).xls
+
+    NOTE: Original JCL's %ODD.%OMM.%OYY. tokens represent the FTP
+    run date, not the report date. This has been changed on request
+    to instead follow REPTDT (the same date used to name the local
+    input/output files, e.g. UTGE231_260731.txt), so the remote XLS
+    filename date matches the report period rather than today's date.
+    """
+    # today = datetime.now() - timedelta(days=1)
+    csv_name = "1204D.csv"
+    xls_name = f"1204D({reptdate:%d%m%y}).xls"
+    return csv_name, xls_name
+
+
+def sftp_upload_to_pivb(csv_path: Path, xls_path: Path) -> None:
+    """
+    Upload FIDCPR.csv / FIDCPR.xls to the PIVB file server.
+
+    Equivalent of the JCL RUNSFTP step:
+        //RUNSFTP  EXEC COZBATCH
+        export PASSWD_DSN='OPER.PBB.CONTROL(SAS#SFTP)'
+        $coz_bin/cozsftp $ssh_opts -b- sas2lcr@192.168.56.10 <<EOB
+        lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+        lzopts linerule=$lr
+        cd "Financial Inclusion Data Collection Package"
+        PUT //SAP.PIVB.FIDCPR.CSV   1204D.csv
+        PUT //SAP.PIVB.FIDCPR.XLS   1204D(%ODD.%OMM.%OYY.).xls
+        EOB
+    """
+    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(PIVB_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    # NOTE: HOST_KEY format unconfirmed (see EIWFRMCR.py note) - using
+    # AutoAddPolicy() in the interim.
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to PIVB host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+
+    try:
+        sftp.chdir(PIVB_REMOTE_DIR)
+    except IOError:
+        sftp.close()
+        ssh.close()
+        sys.exit(f"Aborting: Remote PIVB folder '{PIVB_REMOTE_DIR}' not found")
+
+    csv_name, xls_name = _pivb_remote_filenames()
+
+    print(f"  SFTP upload: {csv_path.name} -> {PIVB_REMOTE_DIR}/{csv_name}")
+    sftp.put(str(csv_path), csv_name)
+
+    print(f"  SFTP upload: {xls_path.name} -> {PIVB_REMOTE_DIR}/{xls_name}")
+    sftp.put(str(xls_path), xls_name)
+
+    sftp.close()
+    ssh.close()
+    print("  PIVB upload complete.")
 
 
 if __name__ == "__main__":
