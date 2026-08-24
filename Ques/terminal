@@ -1,11 +1,38 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIDE1ERR.py
-[ctl_dwh_batch_dttm.sas7bdat] header length 65536 != 8192
-[INFO] Reading DETICA file : /stgsrcsys/host/uat/AII/EIDE1ERR/COUNTD_NEW_250911.txt
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIDE1ERR.py", line 319, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIDE1ERR.py", line 306, in main
-    detica = read_detica(DETFL_PATH)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIDE1ERR.py", line 71, in read_detica
-    with open(path, encoding="latin1") as fh:
-FileNotFoundError: [Errno 2] No such file or directory: '/stgsrcsys/host/uat/AII/EIDE1ERR/COUNTD_NEW_250911.txt'
+/sas/python/virt_edw_dev/bin/python3 /sas/python/v(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM03.py
+Step 1: Deriving report date...
+  RDATE        : 23/08/26
+  REPTMON/DAY  : 08/23  REPTYEAR: 2026
+  Output file  : EIIMRM03.txt
+
+Step 2: Caching input SAS datasets to Parquet...
+  [MAIN_FD] Cache fresh - skipping conversion.
+  [FD] Cache fresh - skipping conversion.
+
+Step 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...
+  FD rows after PIBB account filter: 481,311
+  FD  rows: 0   TD rows: 0   FDN rows: 0
+
+Step 4: Summarising TD / FD / FDN...
+  TD summary rows : 0
+  FD summary rows : 0
+  FDN summary rows: 0 (always 0 for this program -- REMMTH is always missing for FDN given the BNMCODE='42132' subsetting filter, and FDN's PROC SUMMARY has no MISSING option)
+
+Step 5: Combining TD+FD+FDN...
+  DEP rows after DUMMY padding: 0
+
+Step 6: Applying DEP transform...
+
+Step 7: Building DEPTOTAL (SUBTYP='TOTAL')...
+
+Step 8: Building DEPTOTA2 (TYPE='TOTAL')...
+  DEPFINAL rows after TOTAL levels: 0
+
+Step 9: Building grand SUB-TOTAL rows...
+  DEPFINAL final row count: 0
+
+Step 10: Rendering report...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIMRPTS/EIIMRM03.txt
+  Total lines    : 0
+
+EIIMRM03 complete.
