@@ -19,8 +19,7 @@ Dependency:
              intentionally NOT imported here.
 
 ============================================================================
-PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
-same chunked sas7bdat -> Parquet -> cache pattern as EIIMRM01.py / EIIMRM02.py)
+PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
 1. main_fd.sas7bdat   (JCL DD DSN=SAP.PIBB.MNITB(0)) (PBB+PIBB combined account master for FD)
    File : INPUT_MAIN_FD_FILE   -> intg_dp_acct_fd_d19.sas7bdat
@@ -390,12 +389,12 @@ fd_raw = con.execute(f"""
         WHERE ENTITY_CD = 'PIBB'
     )
     SELECT
-        CAST(f.INT_PLAN  AS INTEGER) AS INTPLAN,
-        CAST(f.CURR_BAL  AS DOUBLE)  AS CURBAL,
-        CAST(f.RT        AS DOUBLE)  AS RATE,
-        CAST(f.MATURE_DT AS DATE)    AS MATDATE,
-        CAST(f.OPEN_IND  AS VARCHAR) AS OPENIND,
-        CAST(f.CUST_CD   AS INTEGER) AS CUSTCD
+        CAST(f.INT_PLAN     AS INTEGER) AS INTPLAN,
+        CAST(f.CURR_BAL     AS DOUBLE)  AS CURBAL,
+        CAST(f.RT           AS DOUBLE)  AS RATE,
+        CAST(f.MATURE_DT    AS DATE)    AS MATDATE,
+        CAST(f.OPEN_IND     AS VARCHAR) AS OPENIND,
+        CAST(f.CUSTOMER_CD  AS INTEGER) AS CUSTCD
     FROM read_parquet('{FD_CACHE.as_posix()}') f
     INNER JOIN main_fd_pibb m
         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
@@ -968,8 +967,8 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
-print("\n--- Report preview (first 40 lines) ---")
-for ln in report_lines[:40]:
-    print(ln)
+# print("\n--- Report preview (first 40 lines) ---")
+# for ln in report_lines[:40]:
+#     print(ln)
 
 print("\nEIIMRM03 complete.")
