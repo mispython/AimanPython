@@ -632,6 +632,7 @@ od_raw = con.execute(f"""
         CAST(RISKCODE  AS INTEGER) AS RISKCODE
     FROM read_parquet('{OD_CACHE.as_posix()}')
     WHERE LMTENDDT IS NOT NULL AND LMTENDDT > 0
+      AND ENTITY_CD = 'PIBB'
 """).pl()
 con.close()
 
@@ -698,6 +699,7 @@ loan_raw = con.execute(f"""
         CAST(RISKRTE  AS INTEGER) AS RISKRTE
     FROM read_parquet('{LOAN_CACHE.as_posix()}')
     WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
+      AND ENTITY_CD = 'PIBB'
     ORDER BY ACCTNO, NOTENO
 """).pl()
 con.close()
@@ -735,6 +737,7 @@ lnnote_raw = con.execute(f"""
         CAST(CENSUS   AS VARCHAR) AS CENSUS
     FROM read_parquet('{LNNOTE_CACHE.as_posix()}')
     WHERE LOANTYPE NOT IN (700,705,380,381,128,130,500,520)
+      AND ENTITY_CD = 'PIBB'
 """).pl()
 con.close()
 print(f"  LNNOTE rows: {len(lnnote_raw):,}")
@@ -753,6 +756,7 @@ pend_raw = con.execute(f"""
         CAST(RATEOVER AS DOUBLE)  AS RATEOVER,
         CAST(RELDTE   AS VARCHAR) AS RELDTE
     FROM read_parquet('{PEND_CACHE.as_posix()}')
+    WHERE ENTITY_CD = 'PIBB'
     ORDER BY ACCTNO, NOTENO
 """).pl()
 con.close()
