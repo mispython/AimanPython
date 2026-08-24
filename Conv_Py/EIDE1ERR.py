@@ -7,39 +7,60 @@ Purpose : Validation Error Report (IBM vs DETICA)
 
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import duckdb
 import polars as pl
 
-from REPTDATE import get_reptdate_values
+from GET_BATCH_DATE import get_batch_date_dwh
 
 # ------------------------------------------------------------
 # Paths
 # ------------------------------------------------------------
+# Testing Path
 BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input/uat/EIDE1ERR"
+STG_DIR    = Path("/stgsrcsys/host/uat/AII")
+INPUT_DIR  = STG_DIR  / "EIDE1ERR"
 OUTPUT_DIR = BASE_DIR / "output/EIDE1ERR"
+
+# # Production Path
+# BASE_DIR   = Path("/host_pq/mis")
+# INPUT_DIR  = BASE_DIR / "input" / "detica"
+# OUTPUT_DIR = BASE_DIR / "output" / "detica"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-DATEFL_PATH = INPUT_DIR / "COUNTI_NEW.txt"   # IBM counts    (IBMFL in SAS)
-DETFL_PATH  = INPUT_DIR / "COUNTD_NEW.txt"   # DETICA counts (DETFL in SAS)
+# ------------------------------------------------------------
+# Report-date derivation via GET_BATCH_DATE.py
+# Follows SOURCE_SYSTEM_CD = 'DET_CC' batch date from
+# ctl_dwh_batch_dttm.sas7bdat (DET_CC = DETICA source system).
+# ------------------------------------------------------------
+SOURCE_SYSTEM_CD = 'DET_CC'
+_batch_date_str = get_batch_date_dwh(SOURCE_SYSTEM_CD)            # "YYYY-MM-DD HH:MM:SS"
+BATCH_DT        = datetime.strptime(_batch_date_str, "%Y-%m-%d %H:%M:%S")
+BATCH_DT_INPUT  = datetime.strptime(_batch_date_str, "%Y-%m-%d %H:%M:%S") - timedelta(days=1)
+
+DAY     = f"{BATCH_DT.day:02d}"        # Z2. day
+MTH     = f"{BATCH_DT.month:02d}"      # Z2. month
+YEAR    = BATCH_DT.strftime("%Y")      # YEAR4.
+TIME    = datetime.now().strftime("%I:%M:%S %p").upper()  # TIMEAMPM11. (report-run time)
 
 # ------------------------------------------------------------
-# Report-date derivation  (equivalent of DATA REPTDATE step)
+# Input filenames  (date-suffixed, driven by DET_CC batch date)
+# e.g. COUNTI_NEW_260810.txt / COUNTD_NEW_260810.txt
 # ------------------------------------------------------------
-rv      = get_reptdate_values()
-DAY     = rv.reptday                                      # Z2. day
-MTH     = rv.reptmon                                      # Z2. month
-YEAR    = rv.rdate.strftime("%Y")                         # YEAR4.
-TIME    = datetime.now().strftime("%I:%M:%S %p").upper()  # TIMEAMPM11.
+# _file_date_suffix = BATCH_DT.strftime("%y%m%d")
+_file_date_suffix = BATCH_DT_INPUT.strftime("%y%m%d")
+
+DATEFL_PATH = INPUT_DIR / f"COUNTI_NEW_{_file_date_suffix}.txt"   # IBM counts    (IBMFL in SAS)
+DETFL_PATH  = INPUT_DIR / f"COUNTD_NEW_{_file_date_suffix}.txt"   # DETICA counts (DETFL in SAS)
 
 # ------------------------------------------------------------
 # Output filename  (date + time encoded)
 # ------------------------------------------------------------
-_ts          = datetime.now().strftime("%Y%m%d_%H%M%S")
-OUTPUT_PATH  = OUTPUT_DIR / f"EIDE1ERR_{_ts}.txt"
+# _ts          = datetime.now().strftime("%Y%m%d_%H%M%S")
+# OUTPUT_PATH  = OUTPUT_DIR / f"EIDE1ERR_{_ts}.txt"
+OUTPUT_PATH  = OUTPUT_DIR / f"EIDE1ERR_{_file_date_suffix}.txt"
 
 # ============================================================
 # Read DETFL  (DETICA counts)
