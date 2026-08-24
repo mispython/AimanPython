@@ -403,6 +403,40 @@ con.close()
 
 print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
 
+# # >>>>> DEBUG STARTS <<<<<
+# print("  Debug: sample BNMCODE values (first 10 rows):")
+# for i, r in enumerate(fd_raw.iter_rows(named=True)):
+#     if i >= 10:
+#         break
+#     bnmcode = fdprod_format(r["INTPLAN"])
+#     print(f"    intplan={r['INTPLAN']} -> bnmcode={bnmcode}")
+
+# # Create a new column with bnmcode using map_elements
+# fd_with_bnm = fd_raw.with_columns(
+#     pl.col('INTPLAN').map_elements(lambda x: fdprod_format(x), return_dtype=pl.String).alias('BNMCODE')
+# )
+# counts = fd_with_bnm.group_by('BNMCODE').agg(pl.len())
+# print("  Distinct BNMCODE counts:")
+# print(counts)
+
+# # Add BNMCODE column
+# fd_with_bnm = fd_raw.with_columns(
+#     pl.col('INTPLAN').map_elements(lambda x: fdprod_format(x), return_dtype=pl.String).alias('BNMCODE')
+# )
+
+# # Write to CSV (you can change the path)
+# csv_path = OUTPUT_DIR / "EIIMRM03_fd_42132.csv"
+# fd_with_bnm.write_csv(csv_path)
+# print(f"  Saved all {len(fd_with_bnm):,} rows with BNMCODE to {csv_path}")
+
+# # Optionally, filter for only 42132
+# filt = fd_with_bnm.filter(pl.col('BNMCODE') == '42132')
+# print(f"  Rows with BNMCODE='42132': {filt.height}")
+# if filt.height > 0:
+#     filt.write_csv("EIIMRM03_fd_42132.csv")
+#     print("  Saved rows with BNMCODE='42132' to EIIMRM03_fd_42132.csv")
+# # >>>>> DEBUG ENDS <<<<<
+
 
 def _row(prodtyp, subtyp, subttl, type_, amount, cost, remmth, remm):
     return {"PRODTYP": prodtyp, "SUBTYP": subtyp, "SUBTTL": subttl, "TYPE": type_,
