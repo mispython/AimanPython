@@ -1,5 +1,4 @@
 import pandas as pd
-from sas7bdat import SAS7BDAT
 from datetime import datetime, timedelta
 import calendar
 import os
@@ -14,7 +13,8 @@ devops_base_url = os.getenv("AZDO_BASE_URL")
 devops_pat = os.getenv("AZDO_PAT")
 server_env = os.getenv("SERVER_ENV")
 
-cert = "Data_Warehouse/Common/Cert/Public Bank Group Root CA.pem"
+# cert = "Data_Warehouse/Common/Cert/Public Bank Group Root CA.pem"
+cert = "/sas/python/virt_edw/Data_Warehouse/Common/Cert/Public Bank Group Root CA.pem"
 base_dir = sys.prefix
 parquet_path = os.path.join(base_dir, cert)
 
@@ -60,8 +60,7 @@ def _batch_date_access(ctl_path, source_system_cd, system_name):
     # === LOCAL SAS FILE ===
     if os.path.exists(ctl_path):
         try:
-            with SAS7BDAT(ctl_path) as reader:
-                df = reader.to_data_frame()
+            df = pd.read_sas(ctl_path)
             batch_date = df.loc[df["SOURCE_SYSTEM_CD"] == source_system_cd]
             return _format_datetime(pd.to_datetime(batch_date.iloc[0]["BATCH_DTTM"]))
         except Exception as e:
