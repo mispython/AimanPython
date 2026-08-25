@@ -1,7 +1,9 @@
-Step 9: Running DATA START (repricing/maturity bucket engine)...
+Step 4: Loading LOAN ledger...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 1239, in <module>
-    start_rows.extend(_run_start(rec))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 1187, in _run_start
-    while bldate is not None and exprdate is not None and bldate <= reptdate:
-TypeError: can't compare datetime.datetime to datetime.date
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 684, in <module>
+    loan_raw = con.execute(f"""
+_duckdb.CatalogException: Catalog Error: Scalar Function with name dateadd does not exist!
+Did you mean "date_add"?
+
+LINE 19:              THEN DATEADD('day', CAST(EXPRDATE AS INTEGER), '1960-01-01':...
+                           ^
