@@ -2,8 +2,9 @@ Step 4: Loading LOAN ledger...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 684, in <module>
     loan_raw = con.execute(f"""
-_duckdb.CatalogException: Catalog Error: Scalar Function with name dateadd does not exist!
-Did you mean "date_add"?
+_duckdb.BinderException: Binder Error: Macro date_add() does not support the supplied arguments. You might need to add explicit type casts.
+Candidate macros:
+        date_add(date, interval)
 
-LINE 19:              THEN DATEADD('day', CAST(EXPRDATE AS INTEGER), '1960-01-01':...
+LINE 19:              THEN date_add('day', CAST(EXPRDATE AS INTEGER), '1960-01-01'...
                            ^
