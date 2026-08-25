@@ -1,54 +1,27 @@
-loan_raw = con.execute(f"""
-    SELECT ...
-""").pl()
-
-# Convert date columns from Datetime to Date
-for col in ['EXPRDATE', 'ISSDTE']:
-    if loan_raw[col].dtype == pl.Datetime:
-        loan_raw = loan_raw.with_columns(pl.col(col).dt.date())
-
-
-
-
-print("\nStep 4: Loading LOAN ledger...")
-
-con = duckdb.connect(database=":memory:")
-loan_raw = con.execute(f"""
-    SELECT
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(NOTENO   AS BIGINT)  AS NOTENO,
-        CAST(PRODUCT  AS INTEGER) AS PRODUCT,
-        CAST(PRODCD   AS VARCHAR) AS PRODCD,
-        CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
-        CAST(AMTIND   AS VARCHAR) AS AMTIND,
-        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
-        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-        CAST(INTRATE  AS DOUBLE)  AS INTRATE,
-        CAST(FEEAMT   AS DOUBLE)  AS FEEAMT,
-        CAST(NTINT    AS VARCHAR) AS NTINT,
-        CAST(INTEARN  AS DOUBLE)  AS INTEARN,
-        CAST(INTAMT   AS DOUBLE)  AS INTAMT,
-        CAST(INTEARN2 AS DOUBLE)  AS INTEARN2,
-        CAST(INTEARN3 AS DOUBLE)  AS INTEARN3,
         CASE WHEN EXPRDATE IS NOT NULL 
-             THEN date_add(DATE '1960-01-01', INTERVAL (CAST(EXPRDATE AS INTEGER)) DAY)
+             THEN CAST(date_add(DATE '1960-01-01', INTERVAL (CAST(EXPRDATE AS INTEGER)) DAY) AS DATE)
              ELSE NULL END AS EXPRDATE,
         CAST(PAYFREQ  AS VARCHAR) AS PAYFREQ,
         CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
         CASE WHEN ISSDTE IS NOT NULL 
-             THEN date_add(DATE '1960-01-01', INTERVAL (CAST(ISSDTE AS INTEGER)) DAY)
+             THEN CAST(date_add(DATE '1960-01-01', INTERVAL (CAST(ISSDTE AS INTEGER)) DAY) AS DATE)
              ELSE NULL END AS ISSDTE,
-        CAST(RISKRTE  AS INTEGER) AS RISKRTE
-    FROM read_parquet('{LOAN_CACHE.as_posix()}')
-    WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
-      AND ENTITY_CD = 'PIBB'
-    ORDER BY ACCTNO, NOTENO
-""").pl()
 
-# Convert datetime columns to date (ensure pure date objects)
-for col in ['EXPRDATE', 'ISSDTE']:
-    if loan_raw[col].dtype == pl.Datetime:
-        loan_raw = loan_raw.with_columns(pl.col(col).dt.date())
 
-con.close()
-print(f"  LOAN rows: {len(loan_raw):,}")
+
+
+def _as_date(v):
+    """Coerce a date or datetime value to a plain date; pass through None."""
+    if v is None:
+        return None
+    if hasattr(v, "date") and not isinstance(v, date):
+        return v.date()
+    return v
+
+
+
+
+loan_raw = loan_raw.with_columns(
+    pl.col("EXPRDATE").cast(pl.Date),
+    pl.col("ISSDTE").cast(pl.Date),
+)
