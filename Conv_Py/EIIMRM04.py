@@ -118,7 +118,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
-from PBBLNFMT import format_lnprod, format_odprod
+from PBBLNFMT_AII import format_lnprod, format_odprod
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -133,8 +133,8 @@ INPUT_LOAN_DIR   = STG_DIR / "sasdata"
 INPUT_LNNOTE_DIR = STG_DIR / "sasdata"
 INPUT_PEND_DIR   = STG_DIR / "sasdata"
 
-INPUT_OD_FILE     = INPUT_OD_DIR / "overdft.sas7bdat"
-INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "lnnote.sas7bdat"
+INPUT_OD_FILE     = INPUT_OD_DIR / "intg_dp_acct_overdft_d23.sas7bdat"
+INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d23.sas7bdat"
 INPUT_PEND_FILE   = INPUT_PEND_DIR / "pend.sas7bdat"
 # INPUT_LOAN_FILE is resolved after REPTMON/NOWK are derived (Step 1 below).
 
@@ -185,7 +185,7 @@ NOWK      = WK
 NOWK1     = WK1
 REPTMON   = f"{MM:02d}"
 REPTMON1  = f"{MM1:02d}"
-REPTYEAR  = reptdate.strftime("%Y")
+REPTYEAR  = reptdate.strftime("%y")
 REPTDAY   = reptdate.strftime("%d")
 RDATE     = reptdate.strftime("%d/%m/%y")            # PUT(REPTDATE,DDMMYY8.)
 SDATE_STR = SDATE.strftime("%d/%m/%y")               # PUT(SDATE,DDMMYY8.)
@@ -202,7 +202,9 @@ print(f"  Output file      : {OUTPUT_FILE.name}")
 
 # LOAN input filename is fully deterministic from REPTMON+NOWK -- built
 # directly, not resolved via input_date.get_latest_file().
-INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"ln{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"ln08326.sas7bdat"
 
 # ============================================================================
 # DAYS-IN-MONTH HELPER  (equivalent of the RETAIN D1-D12/RD1-RD12 arrays --
@@ -699,11 +701,41 @@ loan_raw = con.execute(f"""
         CAST(RISKRTE  AS INTEGER) AS RISKRTE
     FROM read_parquet('{LOAN_CACHE.as_posix()}')
     WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
-      AND ENTITY_CD = 'PIBB'
     ORDER BY ACCTNO, NOTENO
 """).pl()
 con.close()
 print(f"  LOAN rows: {len(loan_raw):,}")
+
+# con = duckdb.connect(database=":memory:")
+# loan_raw = con.execute(f"""
+#     SELECT
+#         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+#         CAST(NOTENO   AS BIGINT)  AS NOTENO,
+#         CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+#         CAST(PRODCD   AS VARCHAR) AS PRODCD,
+#         CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
+#         CAST(AMTIND   AS VARCHAR) AS AMTIND,
+#         CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+#         CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+#         CAST(INTRATE  AS DOUBLE)  AS INTRATE,
+#         CAST(FEEAMT   AS DOUBLE)  AS FEEAMT,
+#         CAST(NTINT    AS VARCHAR) AS NTINT,
+#         CAST(INTEARN  AS DOUBLE)  AS INTEARN,
+#         CAST(INTAMT   AS DOUBLE)  AS INTAMT,
+#         CAST(INTEARN2 AS DOUBLE)  AS INTEARN2,
+#         CAST(INTEARN3 AS DOUBLE)  AS INTEARN3,
+#         CAST(EXPRDATE AS DATE)    AS EXPRDATE,
+#         CAST(PAYFREQ  AS VARCHAR) AS PAYFREQ,
+#         CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
+#         CAST(ISSDTE   AS DATE)    AS ISSDTE,
+#         CAST(RISKRTE  AS INTEGER) AS RISKRTE
+#     FROM read_parquet('{LOAN_CACHE.as_posix()}')
+#     WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
+#       AND ENTITY_CD = 'PIBB'
+#     ORDER BY ACCTNO, NOTENO
+# """).pl()
+# con.close()
+# print(f"  LOAN rows: {len(loan_raw):,}")
 
 # DATA LOAN; MERGE LOAN(IN=A) OD(IN=B); BY ACCTNO; IF A;
 # Enrich each loan row with OD's limit-expiry/risk-code where a match
