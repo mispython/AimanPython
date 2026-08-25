@@ -1,9 +1,31 @@
-tep 9: Running DATA START (repricing/maturity bucket engine)...
-Type of reptdate: <class 'datetime.date'>
-reptdate value: 2026-08-24
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 1243, in <module>
-    start_rows.extend(_run_start(rec))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 1191, in _run_start
-    while bldate is not None and exprdate is not None and bldate <= reptdate:
-TypeError: can't compare datetime.datetime to datetime.date
+loan_raw = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+        CAST(PRODCD   AS VARCHAR) AS PRODCD,
+        CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
+        CAST(AMTIND   AS VARCHAR) AS AMTIND,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+        CAST(INTRATE  AS DOUBLE)  AS INTRATE,
+        CAST(FEEAMT   AS DOUBLE)  AS FEEAMT,
+        CAST(NTINT    AS VARCHAR) AS NTINT,
+        CAST(INTEARN  AS DOUBLE)  AS INTEARN,
+        CAST(INTAMT   AS DOUBLE)  AS INTAMT,
+        CAST(INTEARN2 AS DOUBLE)  AS INTEARN2,
+        CAST(INTEARN3 AS DOUBLE)  AS INTEARN3,
+        CASE WHEN EXPRDATE IS NOT NULL 
+             THEN DATEADD('day', CAST(EXPRDATE AS INTEGER), '1960-01-01'::DATE) 
+             ELSE NULL END AS EXPRDATE,
+        CAST(PAYFREQ  AS VARCHAR) AS PAYFREQ,
+        CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
+        CASE WHEN ISSDTE IS NOT NULL 
+             THEN DATEADD('day', CAST(ISSDTE AS INTEGER), '1960-01-01'::DATE) 
+             ELSE NULL END AS ISSDTE,
+        CAST(RISKRTE  AS INTEGER) AS RISKRTE
+    FROM read_parquet('{LOAN_CACHE.as_posix()}')
+    WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
+      AND ENTITY_CD = 'PIBB'
+    ORDER BY ACCTNO, NOTENO
+""").pl()
