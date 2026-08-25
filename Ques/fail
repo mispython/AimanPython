@@ -1,2 +1,2 @@
-if isinstance(reptdate, datetime):
-    reptdate = reptdate.date()
+print(f"Type of reptdate: {type(reptdate)}")
+print(f"reptdate value: {reptdate}")
