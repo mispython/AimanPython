@@ -1,19 +1,31 @@
-# ---- Dump all rows with BNMCODE to CSV ----
-import polars as pl
-
-# Add BNMCODE column
-fd_with_bnm = fd_raw.with_columns(
-    pl.col('INTPLAN').map_elements(lambda x: fdprod_format(x), return_dtype=pl.String).alias('BNMCODE')
-)
-
-# Write to CSV (you can change the path)
-csv_path = "/tmp/fd_with_bnmcode.csv"
-fd_with_bnm.write_csv(csv_path)
-print(f"  Saved all {len(fd_with_bnm):,} rows with BNMCODE to {csv_path}")
-
-# Optionally, filter for only 42132
-filt = fd_with_bnm.filter(pl.col('BNMCODE') == '42132')
-print(f"  Rows with BNMCODE='42132': {filt.height}")
-if filt.height > 0:
-    filt.write_csv("/tmp/fd_42132.csv")
-    print("  Saved rows with BNMCODE='42132' to /tmp/fd_42132.csv")
+loan_raw = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+        CAST(PRODCD   AS VARCHAR) AS PRODCD,
+        CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
+        CAST(AMTIND   AS VARCHAR) AS AMTIND,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+        CAST(INTRATE  AS DOUBLE)  AS INTRATE,
+        CAST(FEEAMT   AS DOUBLE)  AS FEEAMT,
+        CAST(NTINT    AS VARCHAR) AS NTINT,
+        CAST(INTEARN  AS DOUBLE)  AS INTEARN,
+        CAST(INTAMT   AS DOUBLE)  AS INTAMT,
+        CAST(INTEARN2 AS DOUBLE)  AS INTEARN2,
+        CAST(INTEARN3 AS DOUBLE)  AS INTEARN3,
+        CASE WHEN EXPRDATE IS NOT NULL 
+             THEN DATE '1960-01-01' + CAST(EXPRDATE AS INTEGER) * INTERVAL '1' DAY 
+             ELSE NULL END AS EXPRDATE,
+        CAST(PAYFREQ  AS VARCHAR) AS PAYFREQ,
+        CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
+        CASE WHEN ISSDTE IS NOT NULL 
+             THEN DATE '1960-01-01' + CAST(ISSDTE AS INTEGER) * INTERVAL '1' DAY 
+             ELSE NULL END AS ISSDTE,
+        CAST(RISKRTE  AS INTEGER) AS RISKRTE
+    FROM read_parquet('{LOAN_CACHE.as_posix()}')
+    WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
+      AND ENTITY_CD = 'PIBB'
+    ORDER BY ACCTNO, NOTENO
+""").pl()
