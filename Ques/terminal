@@ -2,4 +2,7 @@ Step 4: Loading LOAN ledger...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 680, in <module>
     loan_raw = con.execute(f"""
-_duckdb.BinderException: Binder Error: Column "PRODCD" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column EXPRDATE
+
+LINE 18:         CAST(EXPRDATE AS DATE)    AS EXPRDATE,
+                 ^
