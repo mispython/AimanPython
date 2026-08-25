@@ -109,7 +109,7 @@ This is preserved verbatim below (see REPORT_TITLES) rather than corrected.
 
 import gc
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 
 import duckdb
 import pandas as pd
@@ -161,6 +161,10 @@ print("Step 1: Deriving report date and week-of-month code...")
 reptdate_values = get_reptdate_values(year_format="%Y")
 reptdate = reptdate_values.reptdate
 
+# Ensure reptdate is a date, not a datetime
+if hasattr(reptdate, 'date'):
+    reptdate = reptdate.date()
+
 _day = reptdate.day
 if _day == 8:
     SDD, WK, WK1 = 1, "1", "4"
@@ -203,8 +207,8 @@ print(f"  Output file      : {OUTPUT_FILE.name}")
 # LOAN input filename is fully deterministic from REPTMON+NOWK -- built
 # directly, not resolved via input_date.get_latest_file().
 # INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
-# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"ln{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"ln08326.sas7bdat"
+# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"iln{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"iloan083.sas7bdat"
 
 # ============================================================================
 # DAYS-IN-MONTH HELPER  (equivalent of the RETAIN D1-D12/RD1-RD12 arrays --
@@ -694,10 +698,14 @@ loan_raw = con.execute(f"""
         CAST(INTAMT   AS DOUBLE)  AS INTAMT,
         CAST(INTEARN2 AS DOUBLE)  AS INTEARN2,
         CAST(INTEARN3 AS DOUBLE)  AS INTEARN3,
-        CAST(EXPRDATE AS DATE)    AS EXPRDATE,
+        CASE WHEN EXPRDATE IS NOT NULL 
+             THEN date_add(DATE '1960-01-01', INTERVAL (CAST(EXPRDATE AS INTEGER)) DAY)
+             ELSE NULL END AS EXPRDATE,
         CAST(PAYFREQ  AS VARCHAR) AS PAYFREQ,
         CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
-        CAST(ISSDTE   AS DATE)    AS ISSDTE,
+        CASE WHEN ISSDTE IS NOT NULL 
+             THEN date_add(DATE '1960-01-01', INTERVAL (CAST(ISSDTE AS INTEGER)) DAY)
+             ELSE NULL END AS ISSDTE,
         CAST(RISKRTE  AS INTEGER) AS RISKRTE
     FROM read_parquet('{LOAN_CACHE.as_posix()}')
     WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
@@ -788,10 +796,22 @@ pend_raw = con.execute(f"""
         CAST(RATEOVER AS DOUBLE)  AS RATEOVER,
         CAST(RELDTE   AS VARCHAR) AS RELDTE
     FROM read_parquet('{PEND_CACHE.as_posix()}')
-    WHERE ENTITY_CD = 'PIBB'
     ORDER BY ACCTNO, NOTENO
 """).pl()
 con.close()
+
+# con = duckdb.connect(database=":memory:")
+# pend_raw = con.execute(f"""
+#     SELECT
+#         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+#         CAST(NOTENO   AS BIGINT)  AS NOTENO,
+#         CAST(RATEOVER AS DOUBLE)  AS RATEOVER,
+#         CAST(RELDTE   AS VARCHAR) AS RELDTE
+#     FROM read_parquet('{PEND_CACHE.as_posix()}')
+#     WHERE ENTITY_CD = 'PIBB'
+#     ORDER BY ACCTNO, NOTENO
+# """).pl()
+# con.close()
 
 
 def _parse_reldte(reldte: str):
@@ -1010,6 +1030,10 @@ _LOANTYPE_244_245_247 = {244, 245, 247}
 _START_LOANTYPE_EXCLUDE = {700, 705, 128, 130, 380, 381, 500, 520}
 _START_LOANTYPE_INCLUDE = {131, 132, 720, 725}
 
+# DEBUG
+print(f"Type of reptdate: {type(reptdate)}")
+print(f"reptdate value: {reptdate}")
+
 
 def _run_start(rec: dict) -> list:
     """Emulates the DATA START step body for one merged loan/OD record.
@@ -1164,6 +1188,8 @@ def _run_start(rec: dict) -> list:
             bldate = exprdate
         else:
             bldate = issdte
+            # DEBUG
+            print(f"bldate type: {type(bldate)}, exprdate type: {type(exprdate)}, reptdate type: {type(reptdate)}")
             while bldate is not None and exprdate is not None and bldate <= reptdate:
                 bldate = _nxtbldt(bldate, payfreq, freq, issdte)
 
