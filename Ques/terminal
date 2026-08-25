@@ -1,8 +1,7 @@
-Step 4: Loading LOAN ledger...
+Step 9: Running DATA START (repricing/maturity bucket engine)...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 680, in <module>
-    loan_raw = con.execute(f"""
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column EXPRDATE
-
-LINE 18:         CAST(EXPRDATE AS DATE)    AS EXPRDATE,
-                 ^
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 1235, in <module>
+    start_rows.extend(_run_start(rec))
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 1183, in _run_start
+    while bldate is not None and exprdate is not None and bldate <= reptdate:
+TypeError: can't compare datetime.datetime to datetime.date
