@@ -29,3 +29,15 @@ loan_raw = con.execute(f"""
       AND ENTITY_CD = 'PIBB'
     ORDER BY ACCTNO, NOTENO
 """).pl()
+
+
+
+
+print(f"bldate type: {type(bldate)}, exprdate type: {type(exprdate)}, reptdate type: {type(reptdate)}")
+
+
+
+
+reptdate = reptdate_values.reptdate
+if hasattr(reptdate, 'date'):
+    reptdate = reptdate.date()
