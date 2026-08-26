@@ -143,7 +143,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIIMRM04.txt"
+OUTPUT_FILE = OUTPUT_DIR / "EIIMRM04_260826_v2.txt"
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
@@ -1410,11 +1410,28 @@ gc.collect()
 # ============================================================================
 print("\nStep 12: Rendering reports...")
 
-LABEL_WIDTH   = 40   # RTS=40
-AMOUNT_WIDTH  = 12   # F=COMMA12.
-WAYLD_WIDTH   = 6    # F=4.2 with a little breathing room
-HEADER_ROWS   = 2
-FF            = "\f"
+# LABEL_WIDTH   = 40   # RTS=40
+# AMOUNT_WIDTH  = 12   # F=COMMA12.
+# WAYLD_WIDTH   = 6    # F=4.2 with a little breathing room
+# HEADER_ROWS   = 2
+# FF            = "\f"
+
+LABEL_WIDTH    = 40    # RTS=40
+AMOUNT_WIDTH   = 12    # F=COMMA12.
+WAYLD_WIDTH    = 4     # F=4.2
+COL_WIDTH      = AMOUNT_WIDTH + 1 + WAYLD_WIDTH + 1   # 18 (amount+gap+wayld+gap)
+LINE_SIZE      = 132   # OPTIONS LS=132 -> drives column-block wrapping
+COLS_PER_BLOCK = (LINE_SIZE - LABEL_WIDTH) // COL_WIDTH   # 5
+HEADER_LINES   = 12    # 4 titles + 2 blank + box row + blank + 3 subheader rows + blank
+FOOTER_LINES   = 3     # 2 blank + "(Continued)"
+
+# Row-label sub-field widths, one report layout per TABLE statement.
+# Detail report:  PRODTYP(9) + PRODUCT(9) + NTINDEX(9) + SUBTYP-label(12) = 40
+DETAIL_FIELD_WIDTHS = (9, 9, 9, 12)
+DETAIL_FIELD_FMT    = (str, str, str, subtypf_format)
+# PRODBIG summary report: PRODBIG(28) + SUBTYP-label(12) = 40
+PRODBIG_FIELD_WIDTHS = (28, 12)
+PRODBIG_FIELD_FMT    = (str, subtypf_format)
 
 # See docstring "KNOWN SAS SOURCE BUG" section -- each report displays the
 # title text that was intended for the PREVIOUS report, preserved verbatim.
@@ -1426,20 +1443,41 @@ REPORT_TITLES = [
 ]
 
 
+# def _fmt_amount(value) -> str:
+#     if value is None:
+#         return "0".rjust(AMOUNT_WIDTH)
+#     v = float(value)
+#     s = f"{v:,.0f}"
+#     if len(s) > AMOUNT_WIDTH:
+#         s = f"{v:.0f}"
+#     return s.rjust(AMOUNT_WIDTH)
+
+
 def _fmt_amount(value) -> str:
     if value is None:
-        return "0".rjust(AMOUNT_WIDTH)
+        return ".".rjust(AMOUNT_WIDTH)
     v = float(value)
     s = f"{v:,.0f}"
     if len(s) > AMOUNT_WIDTH:
-        s = f"{v:.0f}"
+        s = f"{v:.0f}"          # drop commas once it no longer fits
     return s.rjust(AMOUNT_WIDTH)
+
+
+# def _fmt_wayld(value) -> str:
+#     if value is None:
+#         return "0".rjust(WAYLD_WIDTH)
+#     return f"{float(value):.2f}".rjust(WAYLD_WIDTH)
 
 
 def _fmt_wayld(value) -> str:
     if value is None:
-        return "0".rjust(WAYLD_WIDTH)
-    return f"{float(value):.2f}".rjust(WAYLD_WIDTH)
+        return ".".rjust(WAYLD_WIDTH)
+    v = float(value)
+    for dec in (2, 1, 0):
+        s = f"{v:.{dec}f}"
+        if len(s) <= WAYLD_WIDTH:
+            return s.rjust(WAYLD_WIDTH)
+    return f"{v:.0f}"[:WAYLD_WIDTH].rjust(WAYLD_WIDTH)
 
 
 def _title_block(program_title4: str) -> list:
@@ -1452,20 +1490,108 @@ def _title_block(program_title4: str) -> list:
     ]
 
 
+# def _remmth1_present_order(rows) -> list:
+#     present = sorted({r.get("REMMTH1") or "" for r in rows}, key=_remmth1_sort_key)
+#     return present
+
+
 def _remmth1_present_order(rows) -> list:
-    present = sorted({r.get("REMMTH1") or "" for r in rows}, key=_remmth1_sort_key)
-    return present
+    # Plain lexicographic sort reproduces SAS's default unformatted CLASS
+    # order for REMMTH1 (a character value, not a numeric with a format):
+    # '     TOTAL' (starts with a space, 0x20) sorts before every '>...'
+    # bucket (0x3E), and the buckets themselves were padded so ASCII order
+    # already matches numeric/chronological order.
+    return sorted({r.get("REMMTH1") or "" for r in rows})
 
 
-def _render_detail_tabulate(rows: list, title4: str, group_dims) -> list:
-    """TABLE (PRODTYP)*(PRODUCT*NTINDEX*SUBTYP), (REMMTH1)*SUM*(AMOUNT WAYLD)
-    / BOX='LOANS AND ADVANCES' RTS=40 CONDENSE;
-    Row key = group_dims (PRODTYP,PRODUCT,NTINDEX,SUBTYP) or (PRODBIG,SUBTYP);
-    each present REMMTH1 bucket becomes a repeating AMOUNT/WAYLD column."""
+# def _render_detail_tabulate(rows: list, title4: str, group_dims) -> list:
+#     """TABLE (PRODTYP)*(PRODUCT*NTINDEX*SUBTYP), (REMMTH1)*SUM*(AMOUNT WAYLD)
+#     / BOX='LOANS AND ADVANCES' RTS=40 CONDENSE;
+#     Row key = group_dims (PRODTYP,PRODUCT,NTINDEX,SUBTYP) or (PRODBIG,SUBTYP);
+#     each present REMMTH1 bucket becomes a repeating AMOUNT/WAYLD column."""
+#     if not rows:
+#         return []
+
+#     remmth1_cols = _remmth1_present_order(rows)
+#     cell = {}
+#     row_keys, seen = [], set()
+#     for r in rows:
+#         key = tuple(r.get(f) for f in group_dims)
+#         cell.setdefault(key, {})[r.get("REMMTH1") or ""] = r
+#         if key not in seen:
+#             seen.add(key)
+#             row_keys.append(key)
+#     row_keys.sort()
+
+#     output: list = []
+#     lines_on_page = 0
+
+#     def _emit_header(with_titles: bool):
+#         nonlocal lines_on_page
+#         block = []
+#         if with_titles:
+#             block.append(FF)
+#             block.extend(_title_block(title4))
+#         header1 = " " * LABEL_WIDTH
+#         header2 = " " * LABEL_WIDTH
+#         for col in remmth1_cols:
+#             header1 += col.strip().rjust(AMOUNT_WIDTH + WAYLD_WIDTH + 1)
+#             header2 += "BAL O/S (RM)".rjust(AMOUNT_WIDTH) + "YIELD".rjust(WAYLD_WIDTH) + " "
+#         block.append(header1)
+#         block.append(header2)
+#         output.extend(block)
+#         lines_on_page = len(block)
+
+#     _emit_header(with_titles=True)
+
+#     for key in row_keys:
+#         if lines_on_page >= PAGE_SIZE:
+#             _emit_header(with_titles=True)
+
+#         label_parts = [str(v) if v is not None else "" for v in key]
+#         label = " ".join(label_parts)[:LABEL_WIDTH].ljust(LABEL_WIDTH)
+
+#         line = label
+#         for col in remmth1_cols:
+#             rec = cell[key].get(col)
+#             amount = rec["AMOUNT"] if rec else None
+#             wayld = rec["WAYLD"] if rec else None
+#             line += _fmt_amount(amount) + _fmt_wayld(wayld) + " "
+#         output.append(line)
+#         lines_on_page += 1
+
+#     return output
+
+
+def _split_label(key, field_widths, field_fmt, last_shown):
+    """CONDENSE emulation: a sub-field is only printed when it (or any
+    outer/left-hand field) changed since the previous printed row. Once one
+    level changes, every nested level to its right is re-shown too, which
+    matches PROC TABULATE's row-tree behaviour."""
+    parts = []
+    changed = last_shown is None
+    new_shown = list(last_shown) if last_shown is not None else [None] * len(key)
+    for i, (val, width, fmt) in enumerate(zip(key, field_widths, field_fmt)):
+        if changed or val != last_shown[i]:
+            text = fmt(val) if val is not None else ""
+            parts.append(str(text)[:width].ljust(width))
+            new_shown[i] = val
+            changed = True
+        else:
+            parts.append(" " * width)
+    return "".join(parts), new_shown
+
+
+def _render_detail_tabulate(rows: list, title4: str, group_dims,
+                             field_widths, field_fmt) -> list:
+    """TABLE (...)*(...), (REMMTH1)*SUM*(AMOUNT WAYLD) / RTS=40 CONDENSE;
+    with OPTIONS LS=132 -> the REMMTH1 columns are split into blocks of
+    COLS_PER_BLOCK, and the full row set is reprinted from the top for each
+    block on a fresh page."""
     if not rows:
         return []
 
-    remmth1_cols = _remmth1_present_order(rows)
+    remmth1_cols_all = _remmth1_present_order(rows)
     cell = {}
     row_keys, seen = [], set()
     for r in rows:
@@ -1477,57 +1603,96 @@ def _render_detail_tabulate(rows: list, title4: str, group_dims) -> list:
     row_keys.sort()
 
     output: list = []
-    lines_on_page = 0
 
-    def _emit_header(with_titles: bool):
-        nonlocal lines_on_page
-        block = []
-        if with_titles:
-            block.append(FF)
-            block.extend(_title_block(title4))
-        header1 = " " * LABEL_WIDTH
-        header2 = " " * LABEL_WIDTH
-        for col in remmth1_cols:
-            header1 += col.strip().rjust(AMOUNT_WIDTH + WAYLD_WIDTH + 1)
-            header2 += "BAL O/S (RM)".rjust(AMOUNT_WIDTH) + "YIELD".rjust(WAYLD_WIDTH) + " "
-        block.append(header1)
-        block.append(header2)
-        output.extend(block)
-        lines_on_page = len(block)
+    for block_start in range(0, len(remmth1_cols_all), COLS_PER_BLOCK):
+        remmth1_cols = remmth1_cols_all[block_start: block_start + COLS_PER_BLOCK]
 
-    _emit_header(with_titles=True)
+        lines_on_page = 0
+        last_shown = None
 
-    for key in row_keys:
-        if lines_on_page >= PAGE_SIZE:
-            _emit_header(with_titles=True)
+        def _emit_header():
+            nonlocal lines_on_page
+            block = []
+            block.extend(_title_block(title4))   # 4 titles + 1 blank
+            block.append("")                     # 2nd blank line
 
-        label_parts = [str(v) if v is not None else "" for v in key]
-        label = " ".join(label_parts)[:LABEL_WIDTH].ljust(LABEL_WIDTH)
+            header0 = " LOANS AND ADVANCES".ljust(LABEL_WIDTH)
+            for col in remmth1_cols:
+                header0 += col.strip()[:COL_WIDTH].center(COL_WIDTH)
+            block.append(header0.rstrip())
+            block.append("")
 
-        line = label
-        for col in remmth1_cols:
-            rec = cell[key].get(col)
-            amount = rec["AMOUNT"] if rec else None
-            wayld = rec["WAYLD"] if rec else None
-            line += _fmt_amount(amount) + _fmt_wayld(wayld) + " "
-        output.append(line)
-        lines_on_page += 1
+            wa_row = " " * LABEL_WIDTH
+            hdr1 = " " * LABEL_WIDTH
+            hdr2 = " " * LABEL_WIDTH
+            for _ in remmth1_cols:
+                # wa_row += "W.A.".center(AMOUNT_WIDTH + 1 + WAYLD_WIDTH) + " "
+                wa_row += "W.A.".rjust(AMOUNT_WIDTH + 1 + WAYLD_WIDTH) + " "
+                hdr1 += "BALANCE O/S".rjust(AMOUNT_WIDTH) + " " + "YIE-".rjust(WAYLD_WIDTH) + " "
+                # hdr2 += "(RM)".rjust(AMOUNT_WIDTH) + " " + "LD".rjust(WAYLD_WIDTH) + " "
+                hdr2 += "(RM)".center(AMOUNT_WIDTH) + " " + "LD".rjust(WAYLD_WIDTH) + " "
+            block.append(wa_row)
+            block.append(hdr1)
+            block.append(hdr2)
+            block.append("")
+
+            output.extend(block)
+            lines_on_page = len(block)
+
+        _emit_header()
+
+        for key in row_keys:
+            if lines_on_page >= PAGE_SIZE - FOOTER_LINES:
+                output.append("")
+                output.append("")
+                output.append("(Continued)")
+                _emit_header()
+                last_shown = None   # force full label redisplay on new page
+
+            label, last_shown = _split_label(key, field_widths, field_fmt, last_shown)
+
+            line = label
+            for col in remmth1_cols:
+                rec = cell[key].get(col)
+                amount = rec["AMOUNT"] if rec else None
+                wayld = rec["WAYLD"] if rec else None
+                line += _fmt_amount(amount) + " " + _fmt_wayld(wayld) + " "
+            output.append(line)
+            lines_on_page += 1
 
     return output
 
 
+# report_lines = []
+# report_lines += _render_detail_tabulate(fix3, REPORT_TITLES[0], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"))
+# report_lines += _render_detail_tabulate(blr3, REPORT_TITLES[1], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"))
+# report_lines += _render_detail_tabulate(fix3_pb, REPORT_TITLES[2], ("PRODBIG", "SUBTYP"))
+# report_lines += _render_detail_tabulate(blr3_pb, REPORT_TITLES[3], ("PRODBIG", "SUBTYP"))
+
 report_lines = []
-report_lines += _render_detail_tabulate(fix3, REPORT_TITLES[0], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"))
-report_lines += _render_detail_tabulate(blr3, REPORT_TITLES[1], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"))
-report_lines += _render_detail_tabulate(fix3_pb, REPORT_TITLES[2], ("PRODBIG", "SUBTYP"))
-report_lines += _render_detail_tabulate(blr3_pb, REPORT_TITLES[3], ("PRODBIG", "SUBTYP"))
+report_lines += _render_detail_tabulate(
+    fix3, REPORT_TITLES[0], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"),
+    DETAIL_FIELD_WIDTHS, DETAIL_FIELD_FMT)
+report_lines += _render_detail_tabulate(
+    blr3, REPORT_TITLES[1], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"),
+    DETAIL_FIELD_WIDTHS, DETAIL_FIELD_FMT)
+report_lines += _render_detail_tabulate(
+    fix3_pb, REPORT_TITLES[2], ("PRODBIG", "SUBTYP"),
+    PRODBIG_FIELD_WIDTHS, PRODBIG_FIELD_FMT)
+report_lines += _render_detail_tabulate(
+    blr3_pb, REPORT_TITLES[3], ("PRODBIG", "SUBTYP"),
+    PRODBIG_FIELD_WIDTHS, PRODBIG_FIELD_FMT)
 
 # ============================================================================
 # STEP 13: WRITE OUTPUT
 # ============================================================================
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+# with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+#     for ln in report_lines:
+#         fh.write(ln + "\n")
+
+with open(OUTPUT_FILE, "w", encoding="latin1", newline="") as fh:
     for ln in report_lines:
-        fh.write(ln + "\n")
+        fh.write(ln[:256].ljust(256) + "\r\n")
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
