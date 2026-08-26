@@ -1,3 +1,24 @@
+//DD4      DD DSN=SAP.PIBB.EIIMRM04.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//CREATE   EXEC PGM=IEFBR14
+//CRT05    DD DSN=SAP.PIBB.EIBWSTAF,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=256,BLKSIZE=25600),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//*------------------------------------------------------------------
+//* WEEKLY LISTING FOR STAFF NEW LOAN AND PAID LOAN
+//*------------------------------------------------------------------
+//EIIWSTAF EXEC SAS609
+//MNILN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//IMNILN    DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
+//PAY       DD DSN=SAP.PBB.LNPAYSCH.WEEK,DISP=SHR
+//IPAY      DD DSN=SAP.PIBB.LNPAYSCH.WEEK,DISP=SHR
+//SASLIST   DD DSN=SAP.PIBB.EIIWSTAF(+1),
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=133,BLKSIZE=0),
+//             SPACE=(CYL,(10,5),RLSE),UNIT=SYSDA
+//SYSIN     DD DSN=SAP.BNM.PROGRAM(EIIWSTAF),DISP=SHR
 * ******************************************************
 * WEEKLY LISTING FOR STAFF NEW LOAN AND PAID LOAN
 * ******************************************************;
