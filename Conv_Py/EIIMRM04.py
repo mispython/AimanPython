@@ -225,6 +225,15 @@ def _ldays(mm: int, yy: int) -> int:
     return _DAYS_IN_MONTH_BASE[mm]
 
 
+def _as_date(v):
+    """Coerce a date or datetime value to a plain date; pass through None."""
+    if v is None:
+        return None
+    if hasattr(v, "date") and not isinstance(v, date):
+        return v.date()
+    return v
+
+
 def _remmth_04(rpt_date: date, matdt: date) -> float:
     """%REMMTH macro (this program's variant, parameterised by &REPTDATE
     and recomputed on every call). MDDAYS/MD2 are computed in the SAS
@@ -699,12 +708,12 @@ loan_raw = con.execute(f"""
         CAST(INTEARN2 AS DOUBLE)  AS INTEARN2,
         CAST(INTEARN3 AS DOUBLE)  AS INTEARN3,
         CASE WHEN EXPRDATE IS NOT NULL 
-             THEN date_add(DATE '1960-01-01', INTERVAL (CAST(EXPRDATE AS INTEGER)) DAY)
+             THEN CAST(date_add(DATE '1960-01-01', INTERVAL (CAST(EXPRDATE AS INTEGER)) DAY) AS DATE)
              ELSE NULL END AS EXPRDATE,
         CAST(PAYFREQ  AS VARCHAR) AS PAYFREQ,
         CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
         CASE WHEN ISSDTE IS NOT NULL 
-             THEN date_add(DATE '1960-01-01', INTERVAL (CAST(ISSDTE AS INTEGER)) DAY)
+             THEN CAST(date_add(DATE '1960-01-01', INTERVAL (CAST(ISSDTE AS INTEGER)) DAY) AS DATE)
              ELSE NULL END AS ISSDTE,
         CAST(RISKRTE  AS INTEGER) AS RISKRTE
     FROM read_parquet('{LOAN_CACHE.as_posix()}')
@@ -712,6 +721,12 @@ loan_raw = con.execute(f"""
     ORDER BY ACCTNO, NOTENO
 """).pl()
 con.close()
+
+loan_raw = loan_raw.with_columns(
+    pl.col("EXPRDATE").cast(pl.Date),
+    pl.col("ISSDTE").cast(pl.Date),
+)
+
 print(f"  LOAN rows: {len(loan_raw):,}")
 
 # con = duckdb.connect(database=":memory:")
@@ -1061,7 +1076,7 @@ def _run_start(rec: dict) -> list:
     issdte = rec["ISSDTE"]
 
     riskrte = rec["RISKRTE"]
-    curbal = rec["CURBAL"]
+    curbal = rec["CURBAL"] or 0.0
     acrint = 0.0
     feeamt = rec["FEEAMT"] or 0.0
     matdt = None
@@ -1188,10 +1203,10 @@ def _run_start(rec: dict) -> list:
             bldate = exprdate
         else:
             bldate = issdte
-            # DEBUG
-            print(f"bldate type: {type(bldate)}, exprdate type: {type(exprdate)}, reptdate type: {type(reptdate)}")
-            while bldate is not None and exprdate is not None and bldate <= reptdate:
-                bldate = _nxtbldt(bldate, payfreq, freq, issdte)
+            # # DEBUG
+            # print(f"bldate type: {type(bldate)}, exprdate type: {type(exprdate)}, reptdate type: {type(reptdate)}")
+            # while bldate is not None and exprdate is not None and bldate <= reptdate:
+            #     bldate = _nxtbldt(bldate, payfreq, freq, issdte)
 
         if exprdate is not None and (bldate is None or bldate > exprdate or (curbal or 0.0) <= payamt):
             bldate = exprdate
@@ -1516,8 +1531,8 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
-print("\n--- Report preview (first 40 lines) ---")
-for ln in report_lines[:40]:
-    print(ln)
+# print("\n--- Report preview (first 40 lines) ---")
+# for ln in report_lines[:40]:
+#     print(ln)
 
 print("\nEIIMRM04 complete.")
