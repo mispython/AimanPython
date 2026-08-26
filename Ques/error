@@ -18,3 +18,34 @@ Step 3: Building OD (limit-expiry lookup, deduped by ACCTNO)...
   OD rows (deduped): 0
 
 Step 4: Loading LOAN ledger...
+  LOAN rows: 244,066
+
+Step 5: Loading LNNOTE...
+  LNNOTE rows: 616,944
+
+Step 6: Loading PEND and building PENDFIN...
+  PENDFIN rows: 255
+
+Step 7: Merging LNNOTE with PENDFIN and deriving PAYEFDT...
+  LNNOTE (final) rows: 616,944
+
+Step 8: Merging LOAN with LNNOTE and deriving INTTYPE...
+  Merged loan/OD records: 244,066
+
+Step 9: Running DATA START (repricing/maturity bucket engine)...
+Type of reptdate: <class 'datetime.date'>
+reptdate value: 2026-08-24
+  START rows emitted: 33,943,875
+
+Step 10: Building detail-level FIX/BLR summaries...
+  FIX3 (detail) rows: 4,893   BLR3 (detail) rows: 1,746
+
+Step 11: Building PRODBIG-level FIX/BLR summaries...
+  FIX3 (PRODBIG summary) rows: 578   BLR3 (PRODBIG summary) rows: 218
+
+Step 12: Rendering reports...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIMRPTS/EIIMRM04.txt
+  Total lines    : 2,137
+
+EIIMRM04 complete.
