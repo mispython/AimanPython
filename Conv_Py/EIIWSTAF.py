@@ -74,6 +74,7 @@ from pathlib import Path
 from datetime import date, timedelta
 
 import duckdb
+import pyreadstat
 import pandas as pd
 import polars as pl
 import pyarrow as pa
@@ -219,6 +220,32 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     if writer:
         writer.close()
     print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+# def _sas_to_parquet(sas_path, cache_path, tag):
+#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    
+#     # Read the entire SAS file into a DataFrame (fast)
+#     df, meta = pyreadstat.read_sas7bdat(sas_path, encoding="latin1")
+#     total = len(df)
+#     print(f"  [{tag}] Read {total:,} rows. Writing to Parquet in chunks...")
+    
+#     writer = None
+#     for start in range(0, total, CHUNK_ROWS):
+#         chunk = df.iloc[start:start + CHUNK_ROWS]
+#         table = pa.Table.from_pandas(chunk, preserve_index=False)
+#         if writer is None:
+#             writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
+#         writer.write_table(table)
+#         print(f"    [{tag}] chunk written: rows {start+1:,}–{min(start+CHUNK_ROWS, total):,} (total {total:,})")
+#         del chunk, table
+#         gc.collect()
+    
+#     if writer:
+#         writer.close()
+#     del df
+#     gc.collect()
+#     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
