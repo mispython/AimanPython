@@ -87,24 +87,28 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_LNNOTE_PBB_DIR  = STG_DIR / "sasdata"
-INPUT_LNCOMM_PBB_DIR  = STG_DIR / "sasdata"
-INPUT_LNNOTE_PIBB_DIR = STG_DIR / "sasdata"
-INPUT_LNCOMM_PIBB_DIR = STG_DIR / "sasdata"
+# INPUT_LNNOTE_PBB_DIR  = STG_DIR / "sasdata"
+# INPUT_LNCOMM_PBB_DIR  = STG_DIR / "sasdata"
+# INPUT_LNNOTE_PIBB_DIR = STG_DIR / "sasdata"
+# INPUT_LNCOMM_PIBB_DIR = STG_DIR / "sasdata"
+INPUT_LNNOTE_DIR      = STG_DIR / "sasdata"
+INPUT_LNCOMM_DIR      = STG_DIR / "sasdata"
 INPUT_LNPAY_PBB_DIR   = STG_DIR / "sasdata"
 INPUT_LNPAY_PIBB_DIR  = STG_DIR / "sasdata"
 INPUT_ISBASE_DIR      = STG_DIR / "sasdata"
 
-INPUT_LNNOTE_PBB_FILE  = INPUT_LNNOTE_PBB_DIR  / "mnln_lnnote_pbb.sas7bdat"     # MNILN.LNNOTE
-INPUT_LNCOMM_PBB_FILE  = INPUT_LNCOMM_PBB_DIR  / "mnln_lncomm_pbb.sas7bdat"     # MNILN.LNCOMM
-INPUT_LNNOTE_PIBB_FILE = INPUT_LNNOTE_PIBB_DIR / "imnln_lnnote_pibb.sas7bdat"   # IMNILN.LNNOTE
-INPUT_LNCOMM_PIBB_FILE = INPUT_LNCOMM_PIBB_DIR / "imnln_lncomm_pibb.sas7bdat"   # IMNILN.LNCOMM
-INPUT_ISBASE_FILE      = INPUT_ISBASE_DIR / "lnhist_isbase.sas7bdat"            # LNHIST.ISBASE
+# INPUT_LNNOTE_PBB_FILE  = INPUT_LNNOTE_PBB_DIR  / "mnln_lnnote_pbb.sas7bdat"     # MNILN.LNNOTE
+# INPUT_LNCOMM_PBB_FILE  = INPUT_LNCOMM_PBB_DIR  / "mnln_lncomm_pbb.sas7bdat"     # MNILN.LNCOMM
+# INPUT_LNNOTE_PIBB_FILE = INPUT_LNNOTE_PIBB_DIR / "imnln_lnnote_pibb.sas7bdat"   # IMNILN.LNNOTE
+# INPUT_LNCOMM_PIBB_FILE = INPUT_LNCOMM_PIBB_DIR / "imnln_lncomm_pibb.sas7bdat"   # IMNILN.LNCOMM
+INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"         # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
+INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "enrh_ln_comm_d22.sas7bdat"         # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
+INPUT_ISBASE_FILE = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWSTAF"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_DIR  = BASE_DIR / "output" / "EIIWSTAF"
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIIWSTAF.txt"
 
@@ -136,7 +140,7 @@ else:
 
 RPYR, RPMTH = reptdate.year, reptdate.month
 PDATE = date(RPYR, RPMTH, 1)                 # MDY(MMP,01,YYP)
-EDATE = reptdate                              # PUT(REPTDATE,Z5.) -- used only for date-range comparisons
+EDATE = reptdate                             # PUT(REPTDATE,Z5.) -- used only for date-range comparisons
 
 # SDATE = MDY(MMP,SDD,YYP) is SYMPUT'd in the original SAS but &SDATE is
 # never referenced anywhere else in the program body -- dead value, kept
@@ -168,8 +172,10 @@ print(f"  Output file  : {OUTPUT_FILE.name}")
 
 # Weekly input filenames depend on NOWK, which is only known after Step 1 --
 # constructed directly (deterministic), per project convention.
-INPUT_LNPAY_PBB_FILE  = INPUT_LNPAY_PBB_DIR  / f"lnpay{NOWK}.sas7bdat"    # PAY.LNPAY&NOWK
-INPUT_LNPAY_PIBB_FILE = INPUT_LNPAY_PIBB_DIR / f"ilnpay{NOWK}.sas7bdat"   # IPAY.ILNPAY&NOWK
+# INPUT_LNPAY_PBB_FILE  = INPUT_LNPAY_PBB_DIR  / f"lnpay{NOWK}.sas7bdat"    # PAY.LNPAY&NOWK
+# INPUT_LNPAY_PIBB_FILE = INPUT_LNPAY_PIBB_DIR / f"ilnpay{NOWK}.sas7bdat"   # IPAY.ILNPAY&NOWK
+INPUT_LNPAY_PBB_FILE  = INPUT_LNPAY_PBB_DIR  / f"lnpay03.sas7bdat"    # PAY.LNPAY&NOWK
+INPUT_LNPAY_PIBB_FILE = INPUT_LNPAY_PIBB_DIR / f"ilnpay03.sas7bdat"   # IPAY.ILNPAY&NOWK
 
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
@@ -228,10 +234,12 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # STEP 2: CACHE INPUT SAS FILES TO PARQUET
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-LNNOTE_PBB_CACHE  = _load_cached(INPUT_LNNOTE_PBB_FILE, "LNNOTE_PBB")
-LNCOMM_PBB_CACHE  = _load_cached(INPUT_LNCOMM_PBB_FILE, "LNCOMM_PBB")
-LNNOTE_PIBB_CACHE = _load_cached(INPUT_LNNOTE_PIBB_FILE, "LNNOTE_PIBB")
-LNCOMM_PIBB_CACHE = _load_cached(INPUT_LNCOMM_PIBB_FILE, "LNCOMM_PIBB")
+# LNNOTE_PBB_CACHE  = _load_cached(INPUT_LNNOTE_PBB_FILE, "LNNOTE_PBB")
+# LNCOMM_PBB_CACHE  = _load_cached(INPUT_LNCOMM_PBB_FILE, "LNCOMM_PBB")
+# LNNOTE_PIBB_CACHE = _load_cached(INPUT_LNNOTE_PIBB_FILE, "LNNOTE_PIBB")
+# LNCOMM_PIBB_CACHE = _load_cached(INPUT_LNCOMM_PIBB_FILE, "LNCOMM_PIBB")
+LNNOTE_CACHE      = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
+LNCOMM_CACHE      = _load_cached(INPUT_LNCOMM_FILE, "LNCOMM")
 LNPAY_PBB_CACHE   = _load_cached(INPUT_LNPAY_PBB_FILE, "LNPAY_PBB")
 LNPAY_PIBB_CACHE  = _load_cached(INPUT_LNPAY_PIBB_FILE, "LNPAY_PIBB")
 ISBASE_CACHE      = _load_cached(INPUT_ISBASE_FILE, "ISBASE")
@@ -319,17 +327,34 @@ def _sas_merge_retain(left_rows, right_rows, key_fields):
 # STEP 3/4: BUILD LNNOTE (PBB) AND ILNNOTE (PIBB)
 # DATA LNNOTE; MERGE LNNOTE(IN=A) LNCOMM; BY ACCTNO COMMNO; IF A; ...
 # ============================================================================
-def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str) -> list:
+# def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str) -> list:
+#     con = duckdb.connect(database=":memory:")
+#     note_pl = con.execute(f"""
+#         SELECT *
+#         FROM read_parquet('{note_cache.as_posix()}')
+#         WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
+#           AND {costctr_sql}
+#         ORDER BY ACCTNO, COMMNO
+#     """).pl()
+#     comm_pl = con.execute(f"""
+#         SELECT * FROM read_parquet('{comm_cache.as_posix()}')
+#         ORDER BY ACCTNO, COMMNO
+#     """).pl()
+#     con.close()
+
+def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, entity_sql: str, costctr_sql: str) -> list:
     con = duckdb.connect(database=":memory:")
     note_pl = con.execute(f"""
         SELECT *
         FROM read_parquet('{note_cache.as_posix()}')
         WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
+          AND {entity_sql}
           AND {costctr_sql}
         ORDER BY ACCTNO, COMMNO
     """).pl()
     comm_pl = con.execute(f"""
         SELECT * FROM read_parquet('{comm_cache.as_posix()}')
+        WHERE {entity_sql}
         ORDER BY ACCTNO, COMMNO
     """).pl()
     con.close()
@@ -353,12 +378,22 @@ def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str
     return out_rows
 
 
-print("\nStep 3: Building LNNOTE (PBB, COSTCTR=8044)...")
-lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COSTCTR = 8044")
+# print("\nStep 3: Building LNNOTE (PBB, COSTCTR=8044)...")
+# lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COSTCTR = 8044")
 
-print("\nStep 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...")
-lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
-                                  "COSTCTR BETWEEN 3000 AND 3999")
+print("\nStep 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...")
+lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
+                                 entity_sql="ENTITY_CD <> 'PIBB'",
+                                 costctr_sql="COSTCTR = 8044")
+
+# print("\nStep 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...")
+# lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
+#                                   "COSTCTR BETWEEN 3000 AND 3999")
+
+print("\nStep 4: Building ILNNOTE (PIBB, ENTITY_CD = 'PIBB', 3000<=COSTCTR<=3999)...")
+lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_CACHE, LNCOMM_CACHE,
+                                  entity_sql="ENTITY_CD = 'PIBB'",
+                                  costctr_sql="COSTCTR BETWEEN 3000 AND 3999")
 
 # ============================================================================
 # STEP 5: DATA LOAN &INTGRVAR;  SET LNNOTE ILNNOTE;  ...
