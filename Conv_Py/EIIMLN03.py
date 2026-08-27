@@ -63,6 +63,7 @@ OUTPUTS
 """
 
 import gc
+import pyreadstat
 from pathlib import Path
 
 import duckdb
@@ -177,13 +178,47 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
 
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+
+    # 1. Read first chunk to get schema and data
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    first_chunk = None
+    try:
+        first_chunk = next(reader)
+    except StopIteration:
+        # File is empty: read entire file to get column schema (zero rows)
+        empty_df = pd.read_sas(sas_path, encoding="latin1")
+        if len(empty_df.columns) == 0:
+            # Fallback: create a completely empty Parquet file
+            pq.write_table(pa.Table.from_pandas(pd.DataFrame()), cache_path)
+        else:
+            fields = []
+            for col, dtype in empty_df.dtypes.items():
+                if dtype == 'object':
+                    pa_type = pa.string()
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
+            empty_table = pa.Table.from_pandas(empty_df, schema=schema, preserve_index=False)
+            pq.write_table(empty_table, cache_path)
+        print(f"  [{tag}] Done - 0 rows cached (empty file).")
+        return
+
+    # 2. File has at least one row – process chunks
     writer = None
     schema = None
     total = 0
 
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
+    # Process the first chunk we already fetched
+    chunks = [first_chunk] + list(reader)
+
+    for chunk in chunks:
         if schema is None:
+            # Build schema from this chunk's dtypes
             fields = []
             for col, dtype in chunk.dtypes.items():
                 if dtype == 'object':
@@ -459,17 +494,19 @@ alm3_rows = _class_summary(alm2_rows, ["INTRATE"], ["BALANCE", "PRODUCT"])
 print("\nStep 11: Rendering PROC PRINT reports...")
 
 FF = "\f"
-OBS_WIDTH = 6
-INTRATE_WIDTH = 9
-AMT_WIDTH = 18   # COMMA18.2
+OBS_LABEL_MAXLEN = 3      # width of the literal "Obs" text
+INTRATE_WIDTH    = 11     # not covered by SUM -> never totalled/dashed
+AMT_COL_WIDTH    = 22     # full column width for a COMMA18.2 field
+AMT_FMT_WIDTH    = 18     # formatted-number width inside that column
 
-_COL_WIDTH = {"Obs": OBS_WIDTH, "INTRATE": INTRATE_WIDTH, "BALANCE": AMT_WIDTH, "PRODUCT": AMT_WIDTH}
+
+def _obs_width(by_field):
+    """Obs column widens to fit the BY-variable NAME itself, since the
+    SUMBY subtotal row prints that name (e.g. 'LOANTYP') in this column."""
+    return max(OBS_LABEL_MAXLEN, len(by_field)) if by_field else OBS_LABEL_MAXLEN
 
 
-def _fmt_comma(value, width=AMT_WIDTH, decimals=2):
-    """COMMAw.d format. OPTIONS MISSING=0 makes SAS substitute a single
-    '0' character (right-justified) for a missing numeric value instead of
-    the default '.'; a genuine computed zero still prints fully formatted."""
+def _fmt_comma(value, width=AMT_FMT_WIDTH, decimals=2):
     if value is None:
         return "0".rjust(width)
     v = float(value)
@@ -482,7 +519,6 @@ def _fmt_comma(value, width=AMT_WIDTH, decimals=2):
 
 
 def _fmt_best(value, width=INTRATE_WIDTH):
-    """Default SAS BESTw. display for INTRATE (no explicit FORMAT given)."""
     if value is None:
         return "0".rjust(width)
     v = float(value)
@@ -494,91 +530,121 @@ def _fmt_best(value, width=INTRATE_WIDTH):
     return s.rjust(width)
 
 
-def _fmt_value(field, value):
-    if field in ("BALANCE", "PRODUCT"):
-        return _fmt_comma(value)
-    if field == "INTRATE":
-        return _fmt_best(value)
-    return str(value) if value is not None else ""
+def _amount_cell(value):
+    """Right-justify a COMMA18.2 value inside its full 22-wide column."""
+    return _fmt_comma(value).rjust(AMT_COL_WIDTH)
 
 
 def _title_lines(titles):
     return [t for t in titles if t]
 
 
-def _render_proc_print(rows, by_field, value_fields, sum_fields, titles, lnfmt_label=None):
+def _render_proc_print(rows, by_field, sum_fields, titles, lnfmt_label=None):
     """
-    Emulates:
-        PROC PRINT;
-           FORMAT LOANTYP $LNFMT. BALANCE PRODUCT COMMA18.2;
-           [BY <by_field>; PAGEBY <by_field>; SUMBY <by_field>;]
-           SUM <sum_fields>;
-           TITLE1-4 ...;
+    Emulates PROC PRINT with (optionally) BY/PAGEBY/SUMBY <by_field> and
+    SUM <sum_fields>, FORMAT LOANTYP $LNFMT. BALANCE PRODUCT COMMA18.2.
 
-    - Obs continuously numbered across the whole listing (not reset per
-      BY group), matching default PROC PRINT behaviour.
-    - PAGEBY starts a brand-new page (titles + column headers reprinted)
-      at the first row of every BY group; without a BY statement, a
-      single grand-total SUM line closes the listing instead.
-    - No ASA carriage control -- SASLIST is RECFM=FB (not FBA); a plain
-      form-feed character marks page breaks, per project convention.
+    Fixed-column layout, no extra separator -- the padding itself is the
+    gutter (Obs | INTRATE | each summed field @ 22 wide).
+
+    Structural rules reproduced from the SAS listing:
+      - Titles + blank + 'BY=value' line ('(continued)' directly under it,
+        NO blank line above, on PAGEBY continuation pages) + blank +
+        header + blank + data rows (no blank between data rows).
+      - End of each BY group: NO blank line, then a dash line ('-------'
+        under Obs, blank under INTRATE, 18 dashes per summed column),
+        then immediately the subtotal row with the BY-VARIABLE NAME
+        (e.g. 'LOANTYP') in the Obs column.
+      - After the LAST BY group only: one more block -- blank Obs/INTRATE,
+        '==================' per summed column, then the grand total
+        across ALL BY groups combined.
+      - When by_field is None (no BY statement): no BY line, no dash/
+        subtotal rows, just data rows followed directly by the single
+        '=' grand-total block.
     """
-    output = []
-    header_cols = ["Obs"] + value_fields
+    obs_w = _obs_width(by_field)
+    header_line = (
+        "Obs".rjust(obs_w) + "INTRATE".rjust(INTRATE_WIDTH)
+        + "".join(f.rjust(AMT_COL_WIDTH) for f in sum_fields)
+    )
+    blank_lead = " " * (obs_w + INTRATE_WIDTH)
 
-    def _header_line():
-        return "  ".join(h.rjust(_COL_WIDTH[h]) for h in header_cols)
-
+    output: list = []
     lines_on_page = [0]
 
-    def _new_page(by_label):
-        block = [FF]
-        block.extend(_title_lines(titles))
+    def _new_page(by_label, continued):
+        block = []
+        t = _title_lines(titles)
+        block.append(FF + (t[0] if t else ""))
+        block.extend(t[1:])
         block.append("")
         if by_label is not None:
             block.append(by_label)
+            if continued:
+                block.append("(continued)")
             block.append("")
-        block.append(_header_line())
+        block.append(header_line)
+        block.append("")
         output.extend(block)
         lines_on_page[0] = len(block)
 
     if by_field:
-        groups = sorted({r[by_field] for r in rows if r.get(by_field) is not None})
+        groups, seen = [], set()
+        for r in rows:
+            v = r.get(by_field)
+            if v not in seen:
+                seen.add(v)
+                groups.append(v)
     else:
         groups = [None]
 
+    grand_totals = {f: 0.0 for f in sum_fields}
     obs = 0
-    for grp in groups:
-        grp_rows = rows if by_field is None else [r for r in rows if r.get(by_field) == grp]
-        by_label = None
-        if by_field:
-            label_val = lnfmt_label(grp) if lnfmt_label else grp
-            by_label = f"{by_field}={label_val}"
 
-        _new_page(by_label)  # PAGEBY: new page for every group (incl. first)
+    for gi, grp in enumerate(groups):
+        grp_rows = rows if by_field is None else [r for r in rows if r.get(by_field) == grp]
+        by_label = f"{by_field}={lnfmt_label(grp) if lnfmt_label else grp}" if by_field else None
+
+        _new_page(by_label, continued=False)
 
         for r in grp_rows:
             if lines_on_page[0] >= PAGE_SIZE:
-                _new_page(by_label)
+                _new_page(by_label, continued=True)
             obs += 1
-            cells = [str(obs).rjust(OBS_WIDTH)]
-            for f in value_fields:
-                cells.append(_fmt_value(f, r.get(f)))
-            output.append("  ".join(cells))
+            line = str(obs).rjust(obs_w) + _fmt_best(r.get("INTRATE"))
+            for f in sum_fields:
+                line += _amount_cell(r.get(f))
+            output.append(line)
             lines_on_page[0] += 1
 
-        if lines_on_page[0] >= PAGE_SIZE:
-            _new_page(by_label)
+        group_sum = {f: 0.0 for f in sum_fields}
+        for r in grp_rows:
+            for f in sum_fields:
+                v = r.get(f)
+                if v is not None:
+                    group_sum[f] += v
+                    grand_totals[f] += v
 
-        sum_cells = [" " * OBS_WIDTH]
-        for f in value_fields:
-            if f in sum_fields:
-                total = sum(r.get(f) or 0.0 for r in grp_rows if r.get(f) is not None)
-                sum_cells.append(_fmt_value(f, total))
-            else:
-                sum_cells.append(" " * _COL_WIDTH[f])
-        output.append("  ".join(sum_cells))
-        lines_on_page[0] += 1
+        if by_field:
+            dash_line = (
+                ("-" * obs_w) + (" " * INTRATE_WIDTH)
+                + "".join((" " * (AMT_COL_WIDTH - AMT_FMT_WIDTH) + "-" * AMT_FMT_WIDTH) for _ in sum_fields)
+            )
+            sum_line = (
+                by_field.ljust(obs_w) + (" " * INTRATE_WIDTH)
+                + "".join(_amount_cell(group_sum[f]) for f in sum_fields)
+            )
+            output.append(dash_line)
+            output.append(sum_line)
+            lines_on_page[0] += 2
+
+        if gi == len(groups) - 1:
+            eq_line = blank_lead + "".join(
+                (" " * (AMT_COL_WIDTH - AMT_FMT_WIDTH) + "=" * AMT_FMT_WIDTH) for _ in sum_fields
+            )
+            total_line = blank_lead + "".join(_amount_cell(grand_totals[f]) for f in sum_fields)
+            output.append(eq_line)
+            output.append(total_line)
 
     return output
 
@@ -587,7 +653,6 @@ _TITLE1 = "REPORT ID : EIIMLN03"
 titles_report1 = [
     _TITLE1, SDESC,
     f"WEIGHTED AVERAGE LENDING RATE AS AT {RDATE}",
-    "",
 ]
 titles_report23 = [
     _TITLE1, SDESC,
@@ -597,16 +662,13 @@ titles_report23 = [
 
 report_lines = []
 report_lines += _render_proc_print(
-    alm1_rows, "LOANTYP", ["INTRATE", "BALANCE", "PRODUCT"], ["BALANCE", "PRODUCT"],
-    titles_report1, lnfmt_label=_lnfmt_label,
+    alm1_rows, "LOANTYP", ["BALANCE", "PRODUCT"], titles_report1, lnfmt_label=_lnfmt_label,
 )
 report_lines += _render_proc_print(
-    alm2_rows, "LOANTYP", ["INTRATE", "BALANCE", "PRODUCT"], ["BALANCE", "PRODUCT"],
-    titles_report23, lnfmt_label=_lnfmt_label,
+    alm2_rows, "LOANTYP", ["BALANCE", "PRODUCT"], titles_report23, lnfmt_label=_lnfmt_label,
 )
 report_lines += _render_proc_print(
-    alm3_rows, None, ["INTRATE", "BALANCE", "PRODUCT"], ["BALANCE", "PRODUCT"],
-    titles_report23,
+    alm3_rows, None, ["BALANCE", "PRODUCT"], titles_report23,
 )
 
 with open(OUTPUT_REPORT_FILE, "w", encoding="latin1") as fh:
@@ -631,13 +693,21 @@ alm_srs1 = _class_summary(
     [r for r in loan_final_rows if r["LOANSTAT"] == 1 and r["LOANTYP"] in ("P1", "P2")],
     ["INTRATE"], ["BALANCE"],
 )
+# Sort by INTRATE ascending (matches SAS PROC SUMMARY default)
+alm_srs1.sort(key=lambda x: x["INTRATE"])
+
 alm1_srs4 = _class_summary(
     [r for r in loan_final_rows if r["LOANSTAT"] == 1 and r["PRODCD"] != "34111"],
     ["INTRATE"], ["BALANCE"],
 )
+# Sort by INTRATE ascending
+alm1_srs4.sort(key=lambda x: x["INTRATE"])
+
 loan_srs9 = _class_summary(
     loan_final_rows, ["BRHNO", "INTRATE"], ["BALANCE"],
 )
+# Sort by BRHNO ascending, then INTRATE ascending
+loan_srs9.sort(key=lambda x: (x["BRHNO"], x["INTRATE"]))
 
 
 def _z_pad(value, width):
