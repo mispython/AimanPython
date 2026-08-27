@@ -1,3 +1,18 @@
+Step 2: Caching input SAS datasets to Parquet...
+  [LNNOTE] Converting enrh_ln_note_d22.sas7bdat -> enrh_ln_note_d22.parquet ...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 265, in <module>
+    LNNOTE_CACHE      = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 253, in _load_cached
+    _sas_to_parquet(sas_path, cache_path, tag)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 230, in _sas_to_parquet
+    reader = pyreadstat.read_sas7bdat(sas_path, chunksize=CHUNK_ROWS, encoding="latin1")
+  File "pyreadstat/pyreadstat.pyx", line 42, in pyreadstat.pyreadstat.read_sas7bdat
+TypeError: read_sas7bdat() got an unexpected keyword argument 'chunksize'
+
+
+
+
 /sas/python/virt_edw_dev/bin/python3 /sas/python/v(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py
 Step 1: Deriving report date...
   RDATE        : 26/08/2026
