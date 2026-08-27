@@ -1,29 +1,60 @@
-import pyreadstat
-import pyarrow as pa
-import pyarrow.parquet as pq
-import gc
-
-def _sas_to_parquet(sas_path, cache_path, tag):
+def _sas_to_parquet(
+    sas_path: Path,
+    cache_path: Path,
+    tag: str,
+    encoding: str = "latin1",   # <-- ADD THIS
+    chunk_size: int = CHUNK_ROWS
+) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+
+    # ------------------------------------------------------------
+    # 1. PEEK at the file to check if it is EMPTY (0 rows)
+    #    and to capture the column metadata.
+    # ------------------------------------------------------------
+    empty_preview = pd.read_sas(sas_path, encoding=encoding, nrows=0)  # <-- USE encoding
     
-    # Read the entire SAS file into a DataFrame (fast)
-    df, meta = pyreadstat.read_sas7bdat(sas_path, encoding="latin1")
-    total = len(df)
-    print(f"  [{tag}] Read {total:,} rows. Writing to Parquet in chunks...")
-    
+    # Build PyArrow schema from the column metadata (even if rows = 0)
+    fields = []
+    for col, dtype in empty_preview.dtypes.items():
+        if dtype == 'object':
+            pa_type = pa.string()
+        elif pd.api.types.is_integer_dtype(dtype):
+            pa_type = pa.int64()
+        elif pd.api.types.is_float_dtype(dtype):
+            pa_type = pa.float64()
+        else:
+            pa_type = pa.from_numpy_dtype(dtype)
+        fields.append(pa.field(col, pa_type))
+    schema = pa.schema(fields)
+
+    # ------------------------------------------------------------
+    # 2. If the file has ZERO rows, write an empty Parquet file
+    #    and exit immediately.
+    # ------------------------------------------------------------
+    if empty_preview.empty:
+        empty_table = pa.Table.from_pandas(empty_preview, schema=schema, preserve_index=False)
+        pq.write_table(empty_table, cache_path)
+        print(f"  [{tag}] Done - 0 rows cached (empty file).")
+        return
+
+    # ------------------------------------------------------------
+    # 3. NORMAL case: File has rows -> stream in chunks
+    # ------------------------------------------------------------
     writer = None
-    for start in range(0, total, CHUNK_ROWS):
-        chunk = df.iloc[start:start + CHUNK_ROWS]
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding=encoding, chunksize=chunk_size)  # <-- USE encoding & chunk_size
+    for chunk in reader:
         if writer is None:
-            writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False, safe=False)
         writer.write_table(table)
-        print(f"    [{tag}] chunk written: rows {start+1:,}–{min(start+CHUNK_ROWS, total):,} (total {total:,})")
+        total += len(chunk)
         del chunk, table
         gc.collect()
-    
+
     if writer:
         writer.close()
-    del df
-    gc.collect()
+
     print(f"  [{tag}] Done - {total:,} rows cached.")
