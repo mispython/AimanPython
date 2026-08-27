@@ -1,46 +1,9 @@
-INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "mnln_lnnote.sas7bdat"   # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
-INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "mnln_lncomm.sas7bdat"   # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
+import pyarrow.parquet as pq
 
-
-
-
-LNNOTE_CACHE = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
-LNCOMM_CACHE = _load_cached(INPUT_LNCOMM_FILE, "LNCOMM")
-
-
-
-
-def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, entity_sql: str, costctr_sql: str) -> list:
-    con = duckdb.connect(database=":memory:")
-    note_pl = con.execute(f"""
-        SELECT *
-        FROM read_parquet('{note_cache.as_posix()}')
-        WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
-          AND {entity_sql}
-          AND {costctr_sql}
-        ORDER BY ACCTNO, COMMNO
-    """).pl()
-    comm_pl = con.execute(f"""
-        SELECT * FROM read_parquet('{comm_cache.as_posix()}')
-        WHERE {entity_sql}
-        ORDER BY ACCTNO, COMMNO
-    """).pl()
-    con.close()
-    ...
-
-
-
-
-print("\nStep 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...")
-lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
-                                 entity_sql="ENTITY_CD <> 'PIBB'",
-                                 costctr_sql="COSTCTR = 8044")
-
-print("\nStep 4: Building ILNNOTE (PIBB, ENTITY_CD = 'PIBB', 3000<=COSTCTR<=3999)...")
-lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_CACHE, LNCOMM_CACHE,
-                                  entity_sql="ENTITY_CD = 'PIBB'",
-                                  costctr_sql="COSTCTR BETWEEN 3000 AND 3999")
-
-
-
-
+cache_path = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIMRPTS/enrh_ln_note_d22.parquet"
+try:
+    # Read just the metadata without loading data
+    md = pq.read_metadata(cache_path)
+    print(f"✅ Valid Parquet file – rows: {md.num_rows:,}, columns: {md.num_columns}")
+except Exception as e:
+    print(f"❌ Invalid or incomplete file: {e}")
