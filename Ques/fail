@@ -1,19 +1,15 @@
-alm_srs1 = _class_summary(
-    [r for r in loan_final_rows if r["LOANSTAT"] == 1 and r["LOANTYP"] in ("P1", "P2")],
-    ["INTRATE"], ["BALANCE"],
+HEADER_LINE = (
+    " " * MARGIN
+    + HDR_BRANCH.rjust(COL_BRANCH_W)
+    + " " * GAP
+    + HDR_BALANCE.rjust(COL_BALANCE_W)
+    + " " * GAP
+    + HDR_WAMT.rjust(COL_WAMT_W)
+    + " " * GAP
+    + HDR_WAVRATE.rjust(COL_WAVRATE_W)
 )
-# Sort by INTRATE ascending (matches SAS PROC SUMMARY default)
-alm_srs1.sort(key=lambda x: x["INTRATE"])
 
-alm1_srs4 = _class_summary(
-    [r for r in loan_final_rows if r["LOANSTAT"] == 1 and r["PRODCD"] != "34111"],
-    ["INTRATE"], ["BALANCE"],
+_DASH_SPAN = (
+    COL_BRANCH_W + GAP + COL_BALANCE_W + GAP + COL_WAMT_W + GAP + COL_WAVRATE_W
 )
-# Sort by INTRATE ascending
-alm1_srs4.sort(key=lambda x: x["INTRATE"])
-
-loan_srs9 = _class_summary(
-    loan_final_rows, ["BRHNO", "INTRATE"], ["BALANCE"],
-)
-# Sort by BRHNO ascending, then INTRATE ascending
-loan_srs9.sort(key=lambda x: (x["BRHNO"], x["INTRATE"]))
+HEADLINE_DASH = " " * MARGIN + "-" * _DASH_SPAN
