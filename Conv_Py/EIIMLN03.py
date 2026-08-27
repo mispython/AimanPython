@@ -72,7 +72,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
-from PBBLNFMT import format_ln03fmt
+from PBBLNFMT_AII import format_ln03fmt
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -121,7 +121,8 @@ REPTMON  = reptdate.strftime("%m")   # PUT(MONTH(REPTDATE),Z2.)
 REPTDAY  = reptdate.strftime("%d")   # PUT(DAY(REPTDATE),Z2.)
 RDATE    = reptdate.strftime("%d/%m/%y")   # PUT(REPTDATE,DDMMYY8.)
 
-INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"iloan083.sas7bdat"
 
 print(f"  REPTYEAR/MON/DAY : {REPTYEAR}/{REPTMON}/{REPTDAY}   NOWK: {NOWK}")
 print(f"  RDATE            : {RDATE}")
