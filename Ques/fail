@@ -1,69 +1,51 @@
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-
-    # 1. Read first chunk to get schema and data
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    first_chunk = None
-    try:
-        first_chunk = next(reader)
-    except StopIteration:
-        # File is empty: create an empty Parquet file with no columns
-        # (or with columns if you know them, but SAS always has columns)
-        # We'll build schema from an empty DataFrame with columns from the SAS metadata.
-        # Simpler: use pd.read_sas(..., nrows=0) to get column names and dtypes.
-        empty_df = pd.read_sas(sas_path, encoding="latin1", nrows=0)
-        if len(empty_df.columns) == 0:
-            # Fallback: write an empty table with no schema (DuckDB can read it)
-            pq.write_table(pa.Table.from_pandas(pd.DataFrame()), cache_path)
-        else:
-            fields = []
-            for col, dtype in empty_df.dtypes.items():
-                if dtype == 'object':
-                    pa_type = pa.string()
-                elif pd.api.types.is_integer_dtype(dtype):
-                    pa_type = pa.int64()
-                elif pd.api.types.is_float_dtype(dtype):
-                    pa_type = pa.float64()
-                else:
-                    pa_type = pa.from_numpy_dtype(dtype)
-                fields.append(pa.field(col, pa_type))
-            schema = pa.schema(fields)
-            empty_table = pa.Table.from_pandas(empty_df, schema=schema, preserve_index=False)
-            pq.write_table(empty_table, cache_path)
-        print(f"  [{tag}] Done - 0 rows cached (empty file).")
+    
+    # 1. Get column names and dtypes from the SAS file (even if empty)
+    empty_df = pd.read_sas(sas_path, encoding="latin1", nrows=0)
+    if len(empty_df.columns) == 0:
+        # No columns? Write an empty file with no schema? But SAS files always have columns.
+        # As a fallback, we create an empty Parquet file without schema (but that's unusual).
+        # We'll just create an empty DataFrame with no columns and write it.
+        empty_table = pa.Table.from_pandas(pd.DataFrame())
+        pq.write_table(empty_table, cache_path)
+        print(f"  [{tag}] Done - 0 rows cached (empty file with no columns).")
         return
 
-    # 2. File has at least one row – process chunks
+    # Build PyArrow schema from the empty DataFrame
+    fields = []
+    for col, dtype in empty_df.dtypes.items():
+        if dtype == 'object':
+            pa_type = pa.string()
+        elif pd.api.types.is_integer_dtype(dtype):
+            pa_type = pa.int64()
+        elif pd.api.types.is_float_dtype(dtype):
+            pa_type = pa.float64()
+        else:
+            pa_type = pa.from_numpy_dtype(dtype)
+        fields.append(pa.field(col, pa_type))
+    schema = pa.schema(fields)
+
+    # Write the empty table (ensures the file exists)
+    empty_table = pa.Table.from_pandas(empty_df, schema=schema, preserve_index=False)
+    pq.write_table(empty_table, cache_path)
+
+    # 2. Now read the actual data in chunks and append (or overwrite)
     writer = None
-    schema = None
     total = 0
-
-    # Process the first chunk we already fetched
-    chunks = [first_chunk] + list(reader)
-
-    for chunk in chunks:
-        if schema is None:
-            # Build schema from this chunk's dtypes
-            fields = []
-            for col, dtype in chunk.dtypes.items():
-                if dtype == 'object':
-                    pa_type = pa.string()
-                elif pd.api.types.is_integer_dtype(dtype):
-                    pa_type = pa.int64()
-                elif pd.api.types.is_float_dtype(dtype):
-                    pa_type = pa.float64()
-                else:
-                    pa_type = pa.from_numpy_dtype(dtype)
-                fields.append(pa.field(col, pa_type))
-            schema = pa.schema(fields)
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        if writer is None:
+            # Create new writer (overwrites the empty file we just wrote)
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-
         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
         writer.write_table(table)
         total += len(chunk)
         del chunk, table
         gc.collect()
 
-    if writer:
+    if writer is not None:
         writer.close()
+    # If writer is None, we already wrote the empty file, so nothing more to do.
+
     print(f"  [{tag}] Done - {total:,} rows cached.")
