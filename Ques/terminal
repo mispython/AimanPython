@@ -2,10 +2,10 @@ Step 2: Caching input SAS datasets to Parquet...
   [SDESC] Cache fresh - skipping conversion.
   [GP3] Converting gp3.sas7bdat -> gp3.parquet ...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 288, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 292, in <module>
     GP3_CACHE   = _load_cached(INPUT_GP3_FILE, "GP3")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 279, in _load_cached
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 283, in _load_cached
     _sas_to_parquet(sas_path, cache_path, tag)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 225, in _sas_to_parquet
-    empty_preview = pd.read_sas(sas_path, encoding=encoding, nrows=0)  # USE encoding
-TypeError: read_sas() got an unexpected keyword argument 'nrows'
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 230, in _sas_to_parquet
+    col_names = meta.column_names
+AttributeError: 'tuple' object has no attribute 'column_names'
