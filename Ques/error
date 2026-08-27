@@ -1,51 +1,31 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py
-Step 1: Deriving report date and week-of-month code...
-  RDATE            : 24/08/26   SDATE: 23/08/26
-  REPTMON/NOWK     : 08/4   REPTMON1/NOWK1: 08/3
-  Output file      : EIIMRM04.txt
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py
+Step 1: Deriving report date...
+  RDATE        : 26/08/2026
+  NOWK (week)  : 04   STRDAY: 23   REPTDAY: 26
+  PDATE..EDATE : 2026-08-01 .. 2026-08-26
+  Output file  : EIIWSTAF.txt
 
 Step 2: Caching input SAS datasets to Parquet...
-  [OD] Converting intg_dp_acct_overdft_d23.sas7bdat -> intg_dp_acct_overdft_d23.parquet ...
-  [OD] Done - 1,092,496 rows cached.
-  [LOAN] Converting iloan083.sas7bdat -> iloan083.parquet ...
-  [LOAN] Done - 630,274 rows cached.
-  [LNNOTE] Converting enrh_ln_note_d23.sas7bdat -> enrh_ln_note_d23.parquet ...
-  [LNNOTE] Done - 8,077,831 rows cached.
-  [PEND] Converting pend.sas7bdat -> pend.parquet ...
-  [PEND] Done - 338 rows cached.
+  [LNNOTE] Converting enrh_ln_note_d22.sas7bdat -> enrh_ln_note_d22.parquet ...
+  [LNNOTE] Done - 8,077,765 rows cached.
+  [LNCOMM] Converting enrh_ln_comm_d22.sas7bdat -> enrh_ln_comm_d22.parquet ...
+  [LNCOMM] Done - 1,065,316 rows cached.
+  [LNPAY_PBB] Converting lnpay03.sas7bdat -> lnpay03.parquet ...
+  [LNPAY_PBB] Done - 8,174,794 rows cached.
+  [LNPAY_PIBB] Converting ilnpay03.sas7bdat -> ilnpay03.parquet ...
+  [LNPAY_PIBB] Done - 2,252,669 rows cached.
+  [ISBASE] Converting isbase.sas7bdat -> isbase.parquet ...
+  [ISBASE] Done - 1 rows cached.
 
-Step 3: Building OD (limit-expiry lookup, deduped by ACCTNO)...
-  OD rows (deduped): 0
+Step 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 412, in <module>
+    lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 382, in _build_lnnote
+    comm_pl = con.execute(f"""
+_duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
+Candidate bindings: "ACTIND", "HSTNCDOR", "EXPIREDT", "CSTATE", "CSECTOR"
 
-Step 4: Loading LOAN ledger...
-  LOAN rows: 244,066
-
-Step 5: Loading LNNOTE...
-  LNNOTE rows: 616,944
-
-Step 6: Loading PEND and building PENDFIN...
-  PENDFIN rows: 255
-
-Step 7: Merging LNNOTE with PENDFIN and deriving PAYEFDT...
-  LNNOTE (final) rows: 616,944
-
-Step 8: Merging LOAN with LNNOTE and deriving INTTYPE...
-  Merged loan/OD records: 244,066
-
-Step 9: Running DATA START (repricing/maturity bucket engine)...
-Type of reptdate: <class 'datetime.date'>
-reptdate value: 2026-08-24
-  START rows emitted: 33,943,875
-
-Step 10: Building detail-level FIX/BLR summaries...
-  FIX3 (detail) rows: 4,893   BLR3 (detail) rows: 1,746
-
-Step 11: Building PRODBIG-level FIX/BLR summaries...
-  FIX3 (PRODBIG summary) rows: 578   BLR3 (PRODBIG summary) rows: 218
-
-Step 12: Rendering reports...
-
-  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIMRPTS/EIIMRM04.txt
-  Total lines    : 2,137
-
-EIIMRM04 complete.
+LINE 3:         WHERE ENTITY_CD <> 'PIBB'
+                      ^
+You have mail in /var/spool/mail/sas_edw_dev
