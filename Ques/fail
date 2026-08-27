@@ -1,35 +1,49 @@
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
 
-    # Peek at the file to check if it's empty and get column metadata
-    empty_preview = pd.read_sas(sas_path, encoding="latin1", nrows=0)
-    if empty_preview.empty:
-        # Build schema from column metadata (even though there are no rows)
-        fields = []
-        for col, dtype in empty_preview.dtypes.items():
-            if dtype == 'object':
-                pa_type = pa.string()
-            elif pd.api.types.is_integer_dtype(dtype):
-                pa_type = pa.int64()
-            elif pd.api.types.is_float_dtype(dtype):
-                pa_type = pa.float64()
-            else:
-                pa_type = pa.from_numpy_dtype(dtype)
-            fields.append(pa.field(col, pa_type))
-        schema = pa.schema(fields)
-        empty_table = pa.Table.from_pandas(empty_preview, schema=schema, preserve_index=False)
-        pq.write_table(empty_table, cache_path)
+    # 1. Read first chunk to get schema and data
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    first_chunk = None
+    try:
+        first_chunk = next(reader)
+    except StopIteration:
+        # File is empty: create an empty Parquet file with no columns
+        # (or with columns if you know them, but SAS always has columns)
+        # We'll build schema from an empty DataFrame with columns from the SAS metadata.
+        # Simpler: use pd.read_sas(..., nrows=0) to get column names and dtypes.
+        empty_df = pd.read_sas(sas_path, encoding="latin1", nrows=0)
+        if len(empty_df.columns) == 0:
+            # Fallback: write an empty table with no schema (DuckDB can read it)
+            pq.write_table(pa.Table.from_pandas(pd.DataFrame()), cache_path)
+        else:
+            fields = []
+            for col, dtype in empty_df.dtypes.items():
+                if dtype == 'object':
+                    pa_type = pa.string()
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
+            empty_table = pa.Table.from_pandas(empty_df, schema=schema, preserve_index=False)
+            pq.write_table(empty_table, cache_path)
         print(f"  [{tag}] Done - 0 rows cached (empty file).")
         return
 
-    # Normal chunked processing (exactly as you wrote it)
+    # 2. File has at least one row – process chunks
     writer = None
     schema = None
     total = 0
 
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
+    # Process the first chunk we already fetched
+    chunks = [first_chunk] + list(reader)
+
+    for chunk in chunks:
         if schema is None:
+            # Build schema from this chunk's dtypes
             fields = []
             for col, dtype in chunk.dtypes.items():
                 if dtype == 'object':
