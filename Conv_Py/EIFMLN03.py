@@ -115,19 +115,19 @@ REPTMON = reptdate.strftime("%m")   # PUT(MONTH(REPTDATE),Z2.)
 
 
 def _worddatx18(d) -> str:
-    """WORDDATX18. -- 'DD MonthName YYYY' word-date, character-like output
-    left-justified/padded to a total field width of 18 (SAS word-date
-    formats are treated as character output, not right-justified numerics).
-    """
-    text = f"{d.day:d} {d.strftime('%B').upper()} {d.year:d}"
+    """WORDDATX18. -- 'DD MonthName YYYY' word-date, right-justified
+    within an 18-character field (SAS date/word formats are
+    right-justified, not left-justified)."""
+    text = f"{d.day:d} {d.strftime('%B')} {d.year:d}"   # %B alone = Title Case
     if len(text) > 18:
         text = text[:18]
-    return text.ljust(18)
+    return text.rjust(18)
 
 
 RDATE = _worddatx18(reptdate)
 
-INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"iloan083.sas7bdat"
 
 print(f"  REPTMON : {REPTMON}   NOWK : {NOWK}")
 print(f"  RDATE   : '{RDATE}'")
@@ -375,14 +375,17 @@ GAP = 2
 COL_BRANCH_W  = 7
 COL_BALANCE_W = 20
 COL_WAMT_W    = 20
-COL_WAVRATE_W = 15
+COL_WAVRATE_W = 10
 
 HDR_BRANCH  = "BRANCH"
 HDR_BALANCE = "BALANCE"
 HDR_WAMT    = "WEIGHTED AMOUNT"
-HDR_WAVRATE = "WGTED AV.RATE  "
+HDR_WAVRATE = "AV.RATE"
 
-TITLE1 = f"{SDESC} REPORT AS AT {RDATE}"
+_PREFIX_W = MARGIN + COL_BRANCH_W + GAP + COL_BALANCE_W + GAP + COL_WAMT_W + GAP
+HEADER_LINE_TOP = " " * _PREFIX_W + "WGTED".rjust(COL_WAVRATE_W)   # new
+
+TITLE1 = SDESC + " " + " REPORT AS AT " + " " + RDATE
 TITLE3 = "WEIGHTED AVERAGE LENDING RATE ON HPD (RDIR II)"
 # TITLE2 was never assigned in the SAS source (only TITLE/TITLE1 and
 # TITLE3 are set) -- SAS still reserves that title line as blank.
@@ -390,25 +393,19 @@ TITLES = [TITLE1, "", TITLE3]
 
 HEADER_LINE = (
     " " * MARGIN
-    + HDR_BRANCH.center(COL_BRANCH_W)
+    + HDR_BRANCH.rjust(COL_BRANCH_W)
     + " " * GAP
-    + HDR_BALANCE.center(COL_BALANCE_W)
+    + HDR_BALANCE.rjust(COL_BALANCE_W)
     + " " * GAP
-    + HDR_WAMT.center(COL_WAMT_W)
+    + HDR_WAMT.rjust(COL_WAMT_W)
     + " " * GAP
-    + HDR_WAVRATE
+    + HDR_WAVRATE.rjust(COL_WAVRATE_W)
 )
 
-HEADLINE_DASH = (
-    " " * MARGIN
-    + "-" * COL_BRANCH_W
-    + " " * GAP
-    + "-" * COL_BALANCE_W
-    + " " * GAP
-    + "-" * COL_WAMT_W
-    + " " * GAP
-    + "-" * COL_WAVRATE_W
+_DASH_SPAN = (
+    COL_BRANCH_W + GAP + COL_BALANCE_W + GAP + COL_WAMT_W + GAP + COL_WAVRATE_W
 )
+HEADLINE_DASH = " " * MARGIN + "-" * _DASH_SPAN
 
 
 def _fmt_int(value, width):
@@ -465,7 +462,7 @@ def _data_line(row) -> str:
         + " " * GAP
         + _fmt_comma(row.get("WAMT"), COL_WAMT_W, 2)
         + " " * GAP
-        + _fmt_plain(row.get("WAVRATE"), 10, 8).rjust(COL_WAVRATE_W)
+        + _fmt_plain(row.get("WAVRATE"), 10, 8)
     )
 
 
@@ -492,6 +489,7 @@ def _render_report(rows, titles):
         for t in titles[1:]:
             block.append(t)
         block.append("")
+        block.append(HEADER_LINE_TOP)   # NEW
         block.append(HEADER_LINE)
         block.append(HEADLINE_DASH)
         block.append("")  # HEADSKIP
