@@ -1,60 +1,72 @@
+import pyreadstat
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import gc
+from pathlib import Path
+
+CHUNK_ROWS = 500_000  # adjust as needed
+
 def _sas_to_parquet(
     sas_path: Path,
     cache_path: Path,
     tag: str,
-    encoding: str = "latin1",   # <-- ADD THIS
-    chunk_size: int = CHUNK_ROWS
+    encoding: str = "latin1"
 ) -> None:
+    """
+    Convert a SAS .sas7bdat file to Parquet, always producing a file.
+    Uses pyreadstat to get metadata (column names and types) even for empty files,
+    then streams data with pandas chunking.
+    """
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
 
     # ------------------------------------------------------------
-    # 1. PEEK at the file to check if it is EMPTY (0 rows)
-    #    and to capture the column metadata.
+    # 1. Use pyreadstat to get column metadata (no data loaded)
     # ------------------------------------------------------------
-    empty_preview = pd.read_sas(sas_path, encoding=encoding, nrows=0)  # <-- USE encoding
-    
-    # Build PyArrow schema from the column metadata (even if rows = 0)
+    meta = pyreadstat.read_sas7bdat(sas_path, row_limit=0)
+    col_names = meta.column_names
+    col_types = meta.column_types  # e.g., 'int32', 'float64', 'object'
+
+    # Build PyArrow schema from pyreadstat types
     fields = []
-    for col, dtype in empty_preview.dtypes.items():
-        if dtype == 'object':
-            pa_type = pa.string()
-        elif pd.api.types.is_integer_dtype(dtype):
+    for name, typ in zip(col_names, col_types):
+        if typ.startswith('int'):
             pa_type = pa.int64()
-        elif pd.api.types.is_float_dtype(dtype):
+        elif typ.startswith('float'):
             pa_type = pa.float64()
+        elif typ == 'object':
+            pa_type = pa.string()
         else:
-            pa_type = pa.from_numpy_dtype(dtype)
-        fields.append(pa.field(col, pa_type))
+            pa_type = pa.string()  # fallback
+        fields.append(pa.field(name, pa_type))
     schema = pa.schema(fields)
 
     # ------------------------------------------------------------
-    # 2. If the file has ZERO rows, write an empty Parquet file
-    #    and exit immediately.
+    # 2. Read the actual data in chunks using pandas
     # ------------------------------------------------------------
-    if empty_preview.empty:
-        empty_table = pa.Table.from_pandas(empty_preview, schema=schema, preserve_index=False)
-        pq.write_table(empty_table, cache_path)
-        print(f"  [{tag}] Done - 0 rows cached (empty file).")
-        return
-
-    # ------------------------------------------------------------
-    # 3. NORMAL case: File has rows -> stream in chunks
-    # ------------------------------------------------------------
+    reader = pd.read_sas(sas_path, encoding=encoding, chunksize=CHUNK_ROWS)
     writer = None
     total = 0
 
-    reader = pd.read_sas(sas_path, encoding=encoding, chunksize=chunk_size)  # <-- USE encoding & chunk_size
     for chunk in reader:
         if writer is None:
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
 
+        # safe=False allows coercion (e.g., int → float) without crashing
         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False, safe=False)
         writer.write_table(table)
         total += len(chunk)
         del chunk, table
         gc.collect()
 
-    if writer:
+    # ------------------------------------------------------------
+    # 3. If there were NO chunks (empty file), write an empty Parquet
+    # ------------------------------------------------------------
+    if writer is None:
+        # Create empty Table with the schema we built from metadata
+        empty_table = pa.Table.from_arrays([], schema=schema)
+        pq.write_table(empty_table, cache_path)
+        print(f"  [{tag}] Done - 0 rows cached (empty file).")
+    else:
         writer.close()
-
-    print(f"  [{tag}] Done - {total:,} rows cached.")
+        print(f"  [{tag}] Done - {total:,} rows cached.")
