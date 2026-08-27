@@ -1,9 +1,23 @@
-import pyarrow.parquet as pq
+import pyreadstat
 
-cache_path = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIMRPTS/enrh_ln_note_d22.parquet"
-try:
-    # Read just the metadata without loading data
-    md = pq.read_metadata(cache_path)
-    print(f"✅ Valid Parquet file – rows: {md.num_rows:,}, columns: {md.num_columns}")
-except Exception as e:
-    print(f"❌ Invalid or incomplete file: {e}")
+def _sas_to_parquet(sas_path, cache_path, tag):
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    total = 0
+    # Use chunksize – it returns an iterator of DataFrames
+    reader = pyreadstat.read_sas7bdat(sas_path, chunksize=CHUNK_ROWS, encoding="latin1")
+    for df in reader:
+        if df is None or len(df) == 0:
+            break
+        # Convert to Arrow table (schema inferred from first chunk, then enforced)
+        table = pa.Table.from_pandas(df, preserve_index=False)
+        if writer is None:
+            writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
+        writer.write_table(table)
+        total += len(df)
+        print(f"    [{tag}] chunk written: {len(df):,} rows (total {total:,})")
+        del df, table
+        gc.collect()
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
