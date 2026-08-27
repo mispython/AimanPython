@@ -1,3 +1,20 @@
+//DELETE   EXEC PGM=IEFBR14
+//DD8      DD DSN=SAP.PIBB.EIFMLN03,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10))
+//CREATE   EXEC PGM=IEFBR14
+//CRT08    DD DSN=SAP.PIBB.EIFMLN03,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//*------------------------------------------------------------------
+//* WEIGHTED AVERAGE LENDING RATE ON HPD (RDIR II)
+//*------------------------------------------------------------------
+//EIFMLN03 EXEC SAS609
+//BNM      DD DSN=SAP.PIBB.SASDATA,DISP=SHR
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST  DD DSN=SAP.PIBB.EIFMLN03,DISP=OLD
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMLN03),DISP=SHR
 *+--------------------------------------------------------------+
  |  PROGRAM : EIFMLN03                                          |
  |  DATE    : 22.05.99                                          |
