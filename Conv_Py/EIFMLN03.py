@@ -1,300 +1,552 @@
 #!/usr/bin/env python3
 """
 Program : EIFMLN03.py
-Date    : 22.05.99
-Report  : WEIGHTED AVERAGE LENDING RATE ON OUTSTANDING,
-          PRESCRIBED & NON-PRESCRIBED LOANS (RDIR II)
+Purpose : Weighted Average Lending Rate on HPD (RDIR II)
+
+Dependency:
+    %INC PGM(PBBELF); -> from PBBELF import format_brchcd
+    BRCHCD.  is the only PUT() format referenced in this program body
+    ("BRCH=PUT(BRANCH,BRCHCD.);"). All other PBBELF definitions
+    (EL_DEFINITIONS, CACBRCH_MAP, REGIOFF_MAP, REGNEW_MAP, CTYPE_MAP,
+    BRCHRVR_MAP, branch-list helpers, etc.) have no traceable PUT()/direct
+    call anywhere in this program, so they are intentionally NOT imported.
+    NOTE: BRCH itself is computed in the SAS DATA LOAN step but is never
+    referenced again afterwards (not in the CLASS/VAR list of PROC SUMMARY,
+    not in the PROC REPORT COLUMN list) -- it is a dead variable in the
+    original SAS. It is still computed here for logic fidelity, but has no
+    effect on any output.
+
+============================================================================
+PHYSICAL INPUT DATASETS (each cached to Parquet independently, using the
+same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py /
+EIIMLN03.py)
+============================================================================
+1. BNM.SDESC              (JCL //BNM DD DSN=SAP.PIBB.SASDATA)
+   File : INPUT_SDESC_FILE -> sdesc.sas7bdat
+   Cols used : SDESC
+   Used : DATA DESC; SET BNM.SDESC; CALL SYMPUT('SDESC',PUT(SDESC,$26.));
+          No BY / no RUN before the next DATA step -- SAS loops over every
+          row of SDESC, overwriting the SDESC macro variable each time, so
+          the FINAL value is the LAST observation's SDESC value. Reproduced
+          here by taking the last row.
+
+2. BNM.LOAN&REPTMON&NOWK  (JCL //BNM DD DSN=SAP.PIBB.SASDATA)
+   File : INPUT_LOAN_FILE -> constructed directly as
+          loan{REPTMON}{NOWK}.sas7bdat. NOWK is a LITERAL constant '4'
+          in this program (CALL SYMPUT('NOWK',PUT('4',$1.));) -- it is
+          NOT derived from the report day (unlike EIIMLN03's exact-day
+          NOWK). Because the resulting filename is still fully
+          deterministic from REPTMON + the fixed NOWK, input_date.py's
+          get_latest_file() is NOT used here, per project convention for
+          deterministic month/week-suffixed inputs.
+   Cols used : PRODCD, LOANSTAT, NOTETERM, INTRATE, BALANCE, BRANCH
+
+REPTDATE / RDATE derivation differs from REPTDATE.py's default NOWK/RDATE:
+  - NOWK is the hardcoded literal '4' (SAS: PUT('4',$1.)).
+  - REPTMON = PUT(MONTH(REPTDATE),Z2.) -- same shape as REPTDATE.py.
+  - RDATE = PUT(REPTDATE,WORDDATX18.) -- a "DD MonthName YYYY" word-date
+    format, left-justified/padded to 18 characters (SAS word-date formats
+    behave as character-like output). This is DIFFERENT from REPTDATE.py's
+    default RDATE (DDMMYY8-style) and is therefore computed locally with a
+    dedicated helper, reusing only get_reptdate_values() for the base
+    REPTDATE value (TODAY()-1).
+
+============================================================================
+OUTPUTS
+============================================================================
+1. //SASLIST DD DSN=SAP.PIBB.EIFMLN03, DCB=(RECFM=FB,LRECL=133,BLKSIZE=0)
+   -> OUTPUT_REPORT_FILE (EIFMLN03.txt). Fixed catalogued (GDG-style) name,
+      no date token -> output_date.py NOT applicable. RECFM=FB (not FBA)
+      => NO ASA carriage control byte, per project convention (page breaks
+      are embedded as literal form-feed characters instead, matching
+      EIIMLN03.py's convention).
 """
 
+import gc
+import math
+from pathlib import Path
+
 import duckdb
-import polars as pl
+import pandas as pd
 import pyarrow as pa
-import sys
-import os
-from datetime import datetime, date
+import pyarrow.parquet as pq
 
-# ---------------------------------------------------------------------------
-# PATH CONFIGURATION
-# ---------------------------------------------------------------------------
-BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
-INPUT_DIR = os.path.join(BASE_DIR, "input")
-OUTPUT_DIR = os.path.join(BASE_DIR, "output")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-# Input parquet paths
-REPTDATE_PATH = os.path.join(INPUT_DIR, "bnm_reptdate.parquet")
-SDESC_PATH    = os.path.join(INPUT_DIR, "bnm_sdesc.parquet")
-# BNM.LOAN{REPTMON}{NOWK} – resolved at runtime from REPTDATE
-LOAN_DIR      = INPUT_DIR   # loan parquet files sit in the same input directory
-
-# Output report file (ASA carriage-control text)
-OUTPUT_REPORT = os.path.join(OUTPUT_DIR, "EIFMLN03_REPORT.txt")
-
-# ---------------------------------------------------------------------------
-# DEPENDENCY: PBBELF – branch-code formatter
-# ---------------------------------------------------------------------------
+from REPTDATE import get_reptdate_values
 from PBBELF import format_brchcd
 
-# ---------------------------------------------------------------------------
-# CONSTANTS  (mirroring SAS OPTIONS / hard-coded values)
-# ---------------------------------------------------------------------------
-NOWK     = '4'       # CALL SYMPUT('NOWK', PUT('4',$1.)) – hard-coded literal
-PAGE_LENGTH = 60     # lines per page (ASA carriage control)
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-# ---------------------------------------------------------------------------
-# ASA REPORT WRITER
-# ---------------------------------------------------------------------------
+INPUT_SDESC_DIR = STG_DIR / "sasdata"
+INPUT_LOAN_DIR  = STG_DIR / "sasdata"
 
-def asa_line(cc: str, text: str) -> str:
-    return f"{cc}{text}\n"
+INPUT_SDESC_FILE = INPUT_SDESC_DIR / "sdesc.sas7bdat"
+# INPUT_LOAN_FILE is built below once REPTMON / NOWK are known.
 
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIFMLN03"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-class ReportWriter:
-    """Simple ASA carriage-control report writer with automatic page breaks."""
+OUTPUT_DIR = BASE_DIR / "output" / "EIFMLN03"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_REPORT_FILE = OUTPUT_DIR / "EIFMLN03.txt"
 
-    def __init__(self, filepath: str, titles: list[str]):
-        self.filepath   = filepath
-        self.titles     = titles
-        self.lines: list[str] = []
-        self.body_count = 0
-        self.page_num   = 1
-        self._emit_page_header()
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60      # lines per page (not specified in SAS -> default)
+LINE_WIDTH = 133     # DCB LRECL for SASLIST
 
-    def _emit_page_header(self):
-        # '1' = form-feed / new page
-        self.lines.append(asa_line('1', self.titles[0] if self.titles else ''))
-        for t in self.titles[1:]:
-            self.lines.append(asa_line(' ', t))
-        self.lines.append(asa_line(' ', ''))   # blank line after titles
-        self.body_count = 0
+# ============================================================================
+# STEP 1: DATA REPTDATE; SET BNM.REPTDATE;
+#         CALL SYMPUT('NOWK',PUT('4',$1.));
+#         CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+#         CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
+# ============================================================================
+print("Step 1: Deriving report date...")
 
-    def write(self, cc: str, text: str):
-        if self.body_count >= PAGE_LENGTH:
-            self.page_num += 1
-            self._emit_page_header()
-        self.lines.append(asa_line(cc, text))
-        self.body_count += 1
+reptdate_values = get_reptdate_values()
+reptdate = reptdate_values.reptdate
 
-    def blank(self, n: int = 1):
-        for _ in range(n):
-            self.write(' ', '')
-
-    def save(self):
-        with open(self.filepath, 'w', encoding='utf-8') as f:
-            f.writelines(self.lines)
+# NOWK is a LITERAL constant in this program (not day-derived) -- preserved
+# verbatim from the SAS source.
+NOWK = "4"
+REPTMON = reptdate.strftime("%m")   # PUT(MONTH(REPTDATE),Z2.)
 
 
-# ---------------------------------------------------------------------------
-# READ REPORT DATE & DESCRIPTOR
-# ---------------------------------------------------------------------------
-
-def get_meta() -> tuple[str, str, str]:
+def _worddatx18(d) -> str:
+    """WORDDATX18. -- 'DD MonthName YYYY' word-date, character-like output
+    left-justified/padded to a total field width of 18 (SAS word-date
+    formats are treated as character output, not right-justified numerics).
     """
-    Returns (reptmon_str, rdate_str, sdesc_str).
-    NOWK is hard-coded as '4' per the SAS CALL SYMPUT.
-    REPTMON -> zero-padded 2-digit month (e.g. '03').
-    RDATE   -> WORDDATX18 equivalent (e.g. '22 May          1999').
-    SDESC   -> 26-char padded descriptor string.
-    """
-    con = duckdb.connect()
+    text = f"{d.day:d} {d.strftime('%B').upper()} {d.year:d}"
+    if len(text) > 18:
+        text = text[:18]
+    return text.ljust(18)
 
-    # reptdate
-    row = con.execute(
-        f"SELECT reptdate FROM read_parquet('{REPTDATE_PATH}') LIMIT 1"
-    ).fetchone()
-    if not row:
-        con.close()
-        raise RuntimeError("No row found in bnm_reptdate")
 
-    reptdate_val = row[0]
-    if isinstance(reptdate_val, (datetime, date)):
-        d = reptdate_val if isinstance(reptdate_val, date) else reptdate_val.date()
+RDATE = _worddatx18(reptdate)
+
+INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+
+print(f"  REPTMON : {REPTMON}   NOWK : {NOWK}")
+print(f"  RDATE   : '{RDATE}'")
+print(f"  LOAN input file : {INPUT_LOAN_FILE.name}")
+
+
+# ============================================================================
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
+# ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
+
+
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    first_chunk = None
+    try:
+        first_chunk = next(reader)
+    except StopIteration:
+        empty_df = pd.read_sas(sas_path, encoding="latin1")
+        if len(empty_df.columns) == 0:
+            pq.write_table(pa.Table.from_pandas(pd.DataFrame()), cache_path)
+        else:
+            fields = []
+            for col, dtype in empty_df.dtypes.items():
+                if dtype == 'object':
+                    pa_type = pa.string()
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
+            empty_table = pa.Table.from_pandas(empty_df, schema=schema, preserve_index=False)
+            pq.write_table(empty_table, cache_path)
+        print(f"  [{tag}] Done - 0 rows cached (empty file).")
+        return
+
+    writer = None
+    schema = None
+    total = 0
+    chunks = [first_chunk] + list(reader)
+
+    for chunk in chunks:
+        if schema is None:
+            fields = []
+            for col, dtype in chunk.dtypes.items():
+                if dtype == 'object':
+                    pa_type = pa.string()
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
-        d = datetime.strptime(str(reptdate_val), '%Y-%m-%d').date()
-
-    reptmon = f"{d.month:02d}"
-
-    # WORDDATX18: e.g. "22 May          1999"  (day  month_abbr padded  year)
-    month_name = d.strftime('%B')           # full month name
-    rdate = f"{d.day} {month_name:<14} {d.year}"   # width ~18
-
-    # sdesc
-    row2 = con.execute(
-        f"SELECT sdesc FROM read_parquet('{SDESC_PATH}') LIMIT 1"
-    ).fetchone()
-    sdesc = f"{(row2[0] if row2 else ''):<26}"
-
-    con.close()
-    return reptmon, rdate, sdesc.strip()
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
 
 
-# ---------------------------------------------------------------------------
-# DATA PREPARATION: LOAN dataset
-# ---------------------------------------------------------------------------
+# ============================================================================
+# STEP 2: CACHE INPUT SAS FILES TO PARQUET
+# ============================================================================
+print("\nStep 2: Caching input SAS datasets to Parquet...")
+SDESC_CACHE = _load_cached(INPUT_SDESC_FILE, "SDESC")
+LOAN_CACHE  = _load_cached(INPUT_LOAN_FILE, "LOAN")
 
-def prepare_loan(reptmon: str) -> pl.DataFrame:
-    """
-    Reads BNM.LOAN{REPTMON}{NOWK}, filters on PRODCD='34111' and LOANSTAT=1,
-    computes APR and WAMT per loan, then summarises by BRANCH.
-    """
-    loan_path = os.path.join(LOAN_DIR, f"bnm_loan{reptmon}{NOWK}.parquet")
+# ============================================================================
+# STEP 3: DATA DESC; SET BNM.SDESC; CALL SYMPUT('SDESC',PUT(SDESC,$26.));
+# ============================================================================
+print("\nStep 3: Deriving &SDESC (last observation of BNM.SDESC)...")
 
-    con = duckdb.connect()
+con = duckdb.connect(database=":memory:")
+sdesc_df = con.execute(f"""
+    SELECT CAST(SDESC AS VARCHAR) AS SDESC
+    FROM read_parquet('{SDESC_CACHE.as_posix()}')
+""").pl()
+con.close()
 
-    # Read raw loan rows
-    raw_sql = f"""
-        SELECT
-            BRANCH,
-            BALANCE,
-            NOTETERM,
-            INTRATE
-        FROM read_parquet('{loan_path}')
-        WHERE PRODCD = '34111'
-          AND LOANSTAT = 1
-    """
-    loan_raw = con.execute(raw_sql).pl()
-    con.close()
+_sdesc_raw = sdesc_df["SDESC"][-1] if len(sdesc_df) > 0 else ""
+SDESC = (_sdesc_raw or "")[:26].ljust(26)
+print(f"  SDESC: '{SDESC}'")
 
-    if loan_raw.is_empty():
-        return pl.DataFrame(schema={
-            "BRANCH":  pl.Int64,
-            "BRCH":    pl.Utf8,
-            "BALANCE": pl.Float64,
-            "WAMT":    pl.Float64,
-            "WAVRATE": pl.Float64,
-            "TYPE":    pl.Utf8,
-        })
+# ============================================================================
+# STEP 4: DATA LOAN; SET BNM.LOAN&REPTMON&NOWK;
+#   IF PRODCD='34111' AND LOANSTAT=1;
+#   IF NOTETERM > 12 THEN TERM=12; ELSE TERM=NOTETERM;
+#   TRATE = NOTETERM*INTRATE;
+#   APR = TRATE*(300*TERM+TRATE)/((NOTETERM*TRATE)+(150*TERM*(NOTETERM+1)));
+#   WAMT = BALANCE*APR;
+#   BRHNO=BRANCH; BRCH=PUT(BRANCH,BRCHCD.);
+# ============================================================================
+print("\nStep 4: Loading LOAN dataset and computing weighted amount...")
 
-    # Compute TERM, TRATE, APR, WAMT
-    # TERM  = min(NOTETERM, 12)
-    # TRATE = NOTETERM * INTRATE
-    # APR   = TRATE * (300*TERM + TRATE) / (NOTETERM*TRATE + 150*TERM*(NOTETERM+1))
-    # WAMT  = BALANCE * APR
-    # (The commented-out SAS formula includes *12/TERM – kept commented below)
-    loan_raw = loan_raw.with_columns([
-        pl.when(pl.col("NOTETERM") > 12)
-          .then(pl.lit(12))
-          .otherwise(pl.col("NOTETERM"))
-          .alias("TERM"),
-        (pl.col("NOTETERM") * pl.col("INTRATE")).alias("TRATE"),
-    ]).with_columns([
-        (
-            pl.col("TRATE") * (300 * pl.col("TERM") + pl.col("TRATE")) /
-            (pl.col("NOTETERM") * pl.col("TRATE") + 150 * pl.col("TERM") * (pl.col("NOTETERM") + 1))
-            # SAS commented-out variant:
-            # * 12 / pl.col("TERM")
-        ).alias("APR"),
-    ]).with_columns([
-        (pl.col("BALANCE") * pl.col("APR")).alias("WAMT"),
-    ])
+con = duckdb.connect(database=":memory:")
+loan_raw = con.execute(f"""
+    SELECT
+        CAST(PRODCD   AS VARCHAR) AS PRODCD,
+        CAST(LOANSTAT AS DOUBLE)  AS LOANSTAT,
+        CAST(NOTETERM AS DOUBLE)  AS NOTETERM,
+        CAST(INTRATE  AS DOUBLE)  AS INTRATE,
+        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+        CAST(BRANCH   AS INTEGER) AS BRANCH
+    FROM read_parquet('{LOAN_CACHE.as_posix()}')
+    WHERE PRODCD = '34111' AND LOANSTAT = 1
+""").pl()
+con.close()
 
-    # Summarise by BRANCH  (PROC SUMMARY NWAY SUM)
-    loan_sum = (
-        loan_raw
-        .group_by("BRANCH")
-        .agg([
-            pl.col("BALANCE").sum().alias("BALANCE"),
-            pl.col("WAMT").sum().alias("WAMT"),
-        ])
-        .sort("BRANCH")
+print(f"  LOAN rows after subsetting IF: {len(loan_raw):,}")
+
+
+def _process_loan_row(row: dict) -> dict:
+    noteterm = row["NOTETERM"]
+    intrate  = row["INTRATE"]
+    balance  = row["BALANCE"]
+    branch   = row["BRANCH"]
+
+    if noteterm is None:
+        term = None
+    else:
+        term = 12.0 if noteterm > 12 else float(noteterm)
+
+    trate = None if (noteterm is None or intrate is None) else noteterm * intrate
+
+    apr = None
+    if trate is not None and term is not None and noteterm is not None:
+        denom = (noteterm * trate) + (150 * term * (noteterm + 1))
+        if denom:
+            apr = trate * (300 * term + trate) / denom
+
+    wamt = (balance * apr) if (balance is not None and apr is not None) else None
+
+    brhno = branch
+    # BRCH: dead variable in the original SAS -- computed here for logic
+    # fidelity only; it is never referenced by PROC SUMMARY or PROC REPORT
+    # below.
+    _brch = format_brchcd(branch) if branch is not None else ""  # noqa: F841
+
+    return {"BRANCH": branch, "BALANCE": balance, "WAMT": wamt, "BRHNO": brhno}
+
+
+loan_final_rows = []
+for r in loan_raw.iter_rows(named=True):
+    loan_final_rows.append(_process_loan_row(r))
+
+del loan_raw
+gc.collect()
+
+print(f"  LOAN (final) rows: {len(loan_final_rows):,}")
+
+
+# ============================================================================
+# STEP 5: PROC SUMMARY helper (NWAY, default MISSING-exclusion, SUM ignores
+# missing contributions, matching PROC SUMMARY's SUM statistic semantics)
+# ============================================================================
+def _class_summary(rows, class_fields, sum_fields):
+    filtered = [r for r in rows if all(r.get(f) is not None for f in class_fields)]
+    groups = {}
+    for r in filtered:
+        key = tuple(r[f] for f in class_fields)
+        g = groups.setdefault(key, {f: None for f in sum_fields})
+        for f in sum_fields:
+            v = r.get(f)
+            if v is not None:
+                g[f] = (g[f] or 0.0) + v
+    out = []
+    for key, sums in groups.items():
+        rec = dict(zip(class_fields, key))
+        rec.update(sums)
+        out.append(rec)
+    return out
+
+
+# ============================================================================
+# STEP 6: PROC SUMMARY DATA=LOAN NWAY; CLASS BRANCH; VAR BALANCE WAMT;
+#         OUTPUT OUT=LOAN1(DROP=_TYPE_ _FREQ_) SUM=;
+#   DATA LOAN1; KEEP BRANCH BALANCE WAMT WAVRATE TYPE; SET LOAN1;
+#         WAVRATE = WAMT/BALANCE; TYPE='A';
+# ============================================================================
+print("\nStep 6: Summarizing BALANCE/WAMT by BRANCH...")
+
+loan1_rows = _class_summary(loan_final_rows, ["BRANCH"], ["BALANCE", "WAMT"])
+for r in loan1_rows:
+    balance = r.get("BALANCE")
+    wamt = r.get("WAMT")
+    r["WAVRATE"] = (wamt / balance) if (balance is not None and balance != 0 and wamt is not None) else None
+    r["TYPE"] = "A"
+
+# PROC SUMMARY with a single CLASS variable outputs groups in ascending
+# sorted order of that variable -- replicate that ordering explicitly.
+loan1_rows.sort(key=lambda x: x["BRANCH"])
+
+print(f"  Branch groups: {len(loan1_rows):,}")
+
+# ============================================================================
+# STEP 7: REPORT RENDERING  (PROC REPORT emulation)
+#
+# COLUMN TYPE BRANCH BALANCE WAMT WAVRATE AVGRTS;
+# TYPE and AVGRTS are NOPRINT. Column field layout derived directly from the
+# absolute-column LINE statements in the COMPUTE AFTER TYPE block (which
+# anchor exactly against the BALANCE/WAMT/WAVRATE column boundaries):
+#   margin(2) BRANCH(7) gap(2) BALANCE(20) gap(2) WAMT(20) gap(2) WAVRATE(15)
+#   -> BRANCH  cols 3-9      BALANCE cols 12-31
+#      WAMT    cols 34-53    WAVRATE cols 56-70
+# which matches "LINE @009 80*'-'", "@014 BALANCE.SUM COMMA18.2",
+# "@036 WAMT.SUM COMMA18.2", "@056 AVGRTS COMMA10.8" precisely.
+#
+# Since TYPE is a single constant value ('A') for the whole dataset,
+# BREAK AFTER TYPE / COMPUTE AFTER TYPE fires exactly once, after ALL data
+# rows, producing the report's single grand-total bar. That 3-line block
+# (dash / values / dash) is never split across a page break.
+# ============================================================================
+print("\nStep 7: Rendering PROC REPORT...")
+
+FF = "\f"
+
+MARGIN = 2
+GAP = 2
+COL_BRANCH_W  = 7
+COL_BALANCE_W = 20
+COL_WAMT_W    = 20
+COL_WAVRATE_W = 15
+
+HDR_BRANCH  = "BRANCH"
+HDR_BALANCE = "BALANCE"
+HDR_WAMT    = "WEIGHTED AMOUNT"
+HDR_WAVRATE = "WGTED AV.RATE  "
+
+TITLE1 = f"{SDESC} REPORT AS AT {RDATE}"
+TITLE3 = "WEIGHTED AVERAGE LENDING RATE ON HPD (RDIR II)"
+# TITLE2 was never assigned in the SAS source (only TITLE/TITLE1 and
+# TITLE3 are set) -- SAS still reserves that title line as blank.
+TITLES = [TITLE1, "", TITLE3]
+
+HEADER_LINE = (
+    " " * MARGIN
+    + HDR_BRANCH.center(COL_BRANCH_W)
+    + " " * GAP
+    + HDR_BALANCE.center(COL_BALANCE_W)
+    + " " * GAP
+    + HDR_WAMT.center(COL_WAMT_W)
+    + " " * GAP
+    + HDR_WAVRATE
+)
+
+HEADLINE_DASH = (
+    " " * MARGIN
+    + "-" * COL_BRANCH_W
+    + " " * GAP
+    + "-" * COL_BALANCE_W
+    + " " * GAP
+    + "-" * COL_WAMT_W
+    + " " * GAP
+    + "-" * COL_WAVRATE_W
+)
+
+
+def _fmt_int(value, width):
+    """FORMAT=7. -- plain zero/blank-on-missing integer, right-justified.
+    OPTIONS MISSING=0 => a missing value prints as a single '0' character
+    right-justified in the field."""
+    if value is None:
+        return "0".rjust(width)
+    return str(int(value)).rjust(width)
+
+
+def _fmt_comma(value, width, decimals):
+    """COMMAw.d -- thousands-separated, right-justified. Missing -> '0'
+    right-justified (OPTIONS MISSING=0)."""
+    if value is None:
+        return "0".rjust(width)
+    v = float(value)
+    s = f"{v:,.{decimals}f}"
+    if len(s) > width:
+        s = f"{v:.{decimals}f}"
+    if len(s) > width:
+        s = s[-width:]
+    return s.rjust(width)
+
+
+def _fmt_plain(value, width, decimals):
+    """w.d -- fixed decimal, NO thousands separator, right-justified.
+    Missing -> '0' right-justified (OPTIONS MISSING=0)."""
+    if value is None:
+        return "0".rjust(width)
+    v = float(value)
+    s = f"{v:.{decimals}f}"
+    if len(s) > width:
+        s = s[-width:]
+    return s.rjust(width)
+
+
+def _sas_round_unit(x, unit):
+    """SAS ROUND(number, round-unit) -- round to nearest multiple of
+    round-unit, halves away from zero."""
+    if x is None:
+        return None
+    if x >= 0:
+        return math.floor(x / unit + 0.5) * unit
+    return math.ceil(x / unit - 0.5) * unit
+
+
+def _data_line(row) -> str:
+    return (
+        " " * MARGIN
+        + _fmt_int(row.get("BRANCH"), COL_BRANCH_W)
+        + " " * GAP
+        + _fmt_comma(row.get("BALANCE"), COL_BALANCE_W, 2)
+        + " " * GAP
+        + _fmt_comma(row.get("WAMT"), COL_WAMT_W, 2)
+        + " " * GAP
+        + _fmt_plain(row.get("WAVRATE"), 10, 8).rjust(COL_WAVRATE_W)
     )
 
-    # BRHNO = BRANCH (kept as numeric reference)
-    # BRCH  = PUT(BRANCH, BRCHCD.) – branch name via PBBELF format_brchcd
-    # WAVRATE = WAMT / BALANCE ; TYPE = 'A'
-    loan1 = loan_sum.with_columns([
-        pl.col("BRANCH").map_elements(
-            lambda b: format_brchcd(int(b)), return_dtype=pl.Utf8
-        ).alias("BRCH"),
-        (pl.col("WAMT") / pl.col("BALANCE")).alias("WAVRATE"),
-        pl.lit("A").alias("TYPE"),
-    ])
 
-    return loan1
+def _line_at(width, segments):
+    """Build a fixed-width line, placing each (col, text) segment starting
+    at its 1-indexed absolute column -- replicates SAS LINE @n semantics."""
+    buf = [" "] * width
+    for col, text in segments:
+        start = col - 1
+        for i, ch in enumerate(text):
+            pos = start + i
+            if 0 <= pos < width:
+                buf[pos] = ch
+    return "".join(buf)
 
 
-# ---------------------------------------------------------------------------
-# REPORT: WEIGHTED AVERAGE LENDING RATE ON HPD (RDIR II)
-# ---------------------------------------------------------------------------
+def _render_report(rows, titles):
+    output: list = []
+    lines_on_page = [0]
 
-def report_wavg(df: pl.DataFrame, sdesc: str, rdate: str):
-    """
-    Equivalent to PROC REPORT with BREAK AFTER TYPE including a custom
-    COMPUTE block that prints the grand-total summary line.
+    def _new_page():
+        block = []
+        block.append(FF + titles[0])
+        for t in titles[1:]:
+            block.append(t)
+        block.append("")
+        block.append(HEADER_LINE)
+        block.append(HEADLINE_DASH)
+        block.append("")  # HEADSKIP
+        output.extend(block)
+        lines_on_page[0] = len(block)
 
-    Column layout (matching SAS DEFINE widths):
-      BRANCH   : FORMAT=7.          -> numeric branch code, right-aligned 7
-      BRCH     : PUT(BRANCH,BRCHCD.)-> branch name displayed in BRANCH column
-      BALANCE  : FORMAT=COMMA20.2   -> right-aligned 20
-      WAMT     : FORMAT=COMMA20.2   -> right-aligned 20
-      WAVRATE  : FORMAT=10.8        -> right-aligned 10 (8 decimal places)
+    _new_page()
 
-    Note: In the SAS DATA step, BRCH = PUT(BRANCH, BRCHCD.) derives the
-    branch name using the PBBELF BRCHCD format. PROC REPORT then uses
-    BRHNO (the numeric copy) for ORDER and displays BRANCH (the name) in
-    the report body. We render BRCH as the visible branch identifier.
-    """
-    title_line = f"{sdesc}  REPORT AS AT  {rdate}"
-    title3     = 'WEIGHTED AVERAGE LENDING RATE ON HPD (RDIR II)'
-    titles     = [title_line, '', title3]
+    for r in rows:
+        if lines_on_page[0] >= PAGE_SIZE:
+            _new_page()
+        output.append(_data_line(r))
+        lines_on_page[0] += 1
 
-    rw = ReportWriter(OUTPUT_REPORT, titles)
+    # COMPUTE AFTER TYPE (fires once -- TYPE is a single constant value)
+    grand_balance = 0.0
+    grand_wamt = 0.0
+    for r in rows:
+        b = r.get("BALANCE")
+        w = r.get("WAMT")
+        if b is not None:
+            grand_balance += b
+        if w is not None:
+            grand_wamt += w
 
-    sep = '-' * 80   # 80-char separator (SAS LINE @009 80*'-' -> col 9 + 80 chars)
+    avgrts = None
+    if grand_balance:
+        avgrts = _sas_round_unit(grand_wamt / grand_balance, 0.00000001)
 
-    # Column headers  (HEADLINE / HEADSKIP equivalent)
-    rw.write(' ', ' ' * 8 + f"{'BRANCH':>7}  {'BALANCE':>20}  {'WEIGHTED AMOUNT':>20}  {'WGTED AV.RATE':>10}")
-    rw.write(' ', ' ' * 8 + sep)
-
-    # Detail rows – sorted by BRANCH numeric (already sorted from prepare_loan)
-    # BRCH (branch name via format_brchcd / PBBELF BRCHCD format) is displayed
-    # in the BRANCH column as per SAS:  BRCH = PUT(BRANCH, BRCHCD.)
-    for row in df.iter_rows(named=True):
-        branch_str  = f"{row['BRCH']:>7}"       # formatted branch name (BRCHCD format)
-        balance_str = f"{row['BALANCE']:>20,.2f}"
-        wamt_str    = f"{row['WAMT']:>20,.2f}"
-        wavrate_str = f"{row['WAVRATE']:>10.8f}"
-        rw.write(' ', f"        {branch_str}  {balance_str}  {wamt_str}  {wavrate_str}")
-
-    # COMPUTE AFTER TYPE block (grand total summary)
-    total_balance = df["BALANCE"].sum() or 0.0
-    total_wamt    = df["WAMT"].sum() or 0.0
-    avgrts        = round(total_wamt / total_balance, 8) if total_balance else 0.0
-
-    rw.write(' ', ' ' * 8 + sep)
-    # LINE @009 ' ' @014 BALANCE.SUM @036 WAMT.SUM @056 AVGRTS
-    # Positional: col 9 = offset 8, col 14 = offset 13, col 36 = offset 35, col 56 = offset 55
-    grand_line = (
-        f"{' ':8}"                         # @009 = col 9 (0-indexed: 8 spaces)
-        f"{'':5}"                           # padding to col 14
-        f"{total_balance:>18,.2f}"         # BALANCE.SUM COMMA18.2  (ends ~col 35)
-        f"  "
-        f"{total_wamt:>18,.2f}"            # WAMT.SUM COMMA18.2     (ends ~col 55)
-        f"  "
-        f"{avgrts:>10.8f}"                 # AVGRTS COMMA10.8
+    dash_line = _line_at(LINE_WIDTH, [(9, "-" * 80)])
+    sum_line = _line_at(
+        LINE_WIDTH,
+        [
+            (9, " "),
+            (14, _fmt_comma(grand_balance, 18, 2)),
+            (36, _fmt_comma(grand_wamt, 18, 2)),
+            (56, _fmt_comma(avgrts, 10, 8)),
+        ],
     )
-    rw.write(' ', grand_line)
-    rw.write(' ', ' ' * 8 + sep)
 
-    rw.save()
-    print(f"[EIFMLN03] Report written -> {OUTPUT_REPORT}")
+    break_block = [dash_line, sum_line, dash_line]
+    if lines_on_page[0] + len(break_block) > PAGE_SIZE:
+        _new_page()
+    output.extend(break_block)
 
-
-# ---------------------------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------------------------
-
-def main():
-    reptmon, rdate, sdesc = get_meta()
-    print(f"[EIFMLN03] reptmon={reptmon}, NOWK={NOWK}, rdate={rdate}, sdesc={sdesc!r}")
-
-    df = prepare_loan(reptmon)
-    if df.is_empty():
-        print("[EIFMLN03] WARNING: No loan data found. Empty report will be produced.")
-
-    report_wavg(df, sdesc, rdate)
-    print("[EIFMLN03] Done.")
+    return output
 
 
-if __name__ == "__main__":
-    main()
+report_lines = _render_report(loan1_rows, TITLES)
+
+with open(OUTPUT_REPORT_FILE, "w", encoding="latin1") as fh:
+    for ln in report_lines:
+        fh.write(ln.ljust(LINE_WIDTH) + "\n")
+
+print(f"  Report written : {OUTPUT_REPORT_FILE}")
+print(f"  Report lines   : {len(report_lines):,}")
+
+print("\nEIFMLN03 complete.")
