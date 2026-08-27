@@ -1,72 +1,55 @@
-import pyreadstat
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
-import gc
-from pathlib import Path
-
-CHUNK_ROWS = 500_000  # adjust as needed
-
-def _sas_to_parquet(
-    sas_path: Path,
-    cache_path: Path,
-    tag: str,
-    encoding: str = "latin1"
-) -> None:
-    """
-    Convert a SAS .sas7bdat file to Parquet, always producing a file.
-    Uses pyreadstat to get metadata (column names and types) even for empty files,
-    then streams data with pandas chunking.
-    """
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
 
-    # ------------------------------------------------------------
-    # 1. Use pyreadstat to get column metadata (no data loaded)
-    # ------------------------------------------------------------
-    meta = pyreadstat.read_sas7bdat(sas_path, row_limit=0)
-    col_names = meta.column_names
-    col_types = meta.column_types  # e.g., 'int32', 'float64', 'object'
+    # Peek at the file to check if it's empty and get column metadata
+    empty_preview = pd.read_sas(sas_path, encoding="latin1", nrows=0)
+    if empty_preview.empty:
+        # Build schema from column metadata (even though there are no rows)
+        fields = []
+        for col, dtype in empty_preview.dtypes.items():
+            if dtype == 'object':
+                pa_type = pa.string()
+            elif pd.api.types.is_integer_dtype(dtype):
+                pa_type = pa.int64()
+            elif pd.api.types.is_float_dtype(dtype):
+                pa_type = pa.float64()
+            else:
+                pa_type = pa.from_numpy_dtype(dtype)
+            fields.append(pa.field(col, pa_type))
+        schema = pa.schema(fields)
+        empty_table = pa.Table.from_pandas(empty_preview, schema=schema, preserve_index=False)
+        pq.write_table(empty_table, cache_path)
+        print(f"  [{tag}] Done - 0 rows cached (empty file).")
+        return
 
-    # Build PyArrow schema from pyreadstat types
-    fields = []
-    for name, typ in zip(col_names, col_types):
-        if typ.startswith('int'):
-            pa_type = pa.int64()
-        elif typ.startswith('float'):
-            pa_type = pa.float64()
-        elif typ == 'object':
-            pa_type = pa.string()
-        else:
-            pa_type = pa.string()  # fallback
-        fields.append(pa.field(name, pa_type))
-    schema = pa.schema(fields)
-
-    # ------------------------------------------------------------
-    # 2. Read the actual data in chunks using pandas
-    # ------------------------------------------------------------
-    reader = pd.read_sas(sas_path, encoding=encoding, chunksize=CHUNK_ROWS)
+    # Normal chunked processing (exactly as you wrote it)
     writer = None
+    schema = None
     total = 0
 
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
     for chunk in reader:
-        if writer is None:
+        if schema is None:
+            fields = []
+            for col, dtype in chunk.dtypes.items():
+                if dtype == 'object':
+                    pa_type = pa.string()
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
 
-        # safe=False allows coercion (e.g., int → float) without crashing
-        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False, safe=False)
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
         writer.write_table(table)
         total += len(chunk)
         del chunk, table
         gc.collect()
 
-    # ------------------------------------------------------------
-    # 3. If there were NO chunks (empty file), write an empty Parquet
-    # ------------------------------------------------------------
-    if writer is None:
-        # Create empty Table with the schema we built from metadata
-        empty_table = pa.Table.from_arrays([], schema=schema)
-        pq.write_table(empty_table, cache_path)
-        print(f"  [{tag}] Done - 0 rows cached (empty file).")
-    else:
+    if writer:
         writer.close()
-        print(f"  [{tag}] Done - {total:,} rows cached.")
+    print(f"  [{tag}] Done - {total:,} rows cached.")
