@@ -1,25 +1,11 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py
-Step 1: Deriving report date...
-  REPTYEAR/MON/DAY : 2026/08/26   NOWK: 4
-  RDATE            : 26/08/26
-  LOAN input file  : iloan083.sas7bdat
-
 Step 2: Caching input SAS datasets to Parquet...
-  [SDESC] Converting sdesc.sas7bdat -> sdesc.parquet ...
-  [SDESC] Done - 1 rows cached.
+  [SDESC] Cache fresh - skipping conversion.
   [GP3] Converting gp3.sas7bdat -> gp3.parquet ...
-  [GP3] Done - 0 rows cached.
-  [LOAN] Converting iloan083.sas7bdat -> iloan083.parquet ...
-  [LOAN] Done - 630,274 rows cached.
-
-Step 3: Deriving &SDESC (last observation of BNM.SDESC)...
-  SDESC: 'PUBLIC ISLAMIC BANK BERHAD'
-
-Step 4: Building GP3 (RISKRTE / LOANSTAT)...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 252, in <module>
-    gp3_raw = con.execute(f"""
-_duckdb.IOException: IO Error: No files found that match the pattern "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIMLN03/gp3.parquet"
-
-LINE 5:     FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS...
-                 ^
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 288, in <module>
+    GP3_CACHE   = _load_cached(INPUT_GP3_FILE, "GP3")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 279, in _load_cached
+    _sas_to_parquet(sas_path, cache_path, tag)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMLN03.py", line 225, in _sas_to_parquet
+    empty_preview = pd.read_sas(sas_path, encoding=encoding, nrows=0)  # USE encoding
+TypeError: read_sas() got an unexpected keyword argument 'nrows'
