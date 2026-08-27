@@ -1,9 +1,9 @@
-Step 9: Running DATA START (repricing/maturity bucket engine)...
-Type of reptdate: <class 'datetime.date'>
-reptdate value: 2026-08-24
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 1260, in <module>
-    start_rows.extend(_run_start(rec))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRM04.py", line 1150, in _run_start
-    acrint = balance - curbal - feeamt
-TypeError: unsupported operand type(s) for -: 'float' and 'NoneType'
+/sas/python/virt_edw_dev/bin/python3 /sas/python/v(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py
+Step 1: Deriving report date...
+  RDATE        : 26/08/2026
+  NOWK (week)  : 04   STRDAY: 23   REPTDAY: 26
+  PDATE..EDATE : 2026-08-01 .. 2026-08-26
+  Output file  : EIIWSTAF.txt
+
+Step 2: Caching input SAS datasets to Parquet...
+  [LNNOTE] Converting enrh_ln_note_d22.sas7bdat -> enrh_ln_note_d22.parquet ...
