@@ -21,23 +21,132 @@ import pyarrow.parquet as pq
 
 # from REPTDATE import get_reptdate_values
 # from input_date import get_latest_file
-from GET_BATCH_DATE import get_batch_date_dwh
-from EDW_TRANSFORMATION import get_sftp_info
+
+# ------------------------------------------------------------------
+# NOTE ON REMOVED IMPORTS:
+#   from GET_BATCH_DATE import get_batch_date_dwh
+#   from EDW_TRANSFORMATION import get_sftp_info
+#
+# These modules are NOT imported directly because importing them also
+# executes their unrelated top-level dependencies (sas7bdat library,
+# requests/HTTPBasicAuth for Azure DevOps, oracledb, and
+# PASSWORD_DECRYPTOR.decrypt_password), several of which are not
+# installed on this server and are not needed by this program. Only
+# the two functions actually used here — get_batch_date_dwh() and
+# get_sftp_info() — are reproduced below, using libraries this program
+# already imports (pandas). This keeps the batch-date-driven file
+# discovery and SFTP behaviour identical to the original design.
+# ------------------------------------------------------------------
+
+BATCH_DATE_CTL_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+
+
+def get_batch_date_dwh(source_system_cd: str) -> str:
+    """
+    Return the batch date string ("YYYY-MM-DD HH:MM:SS") for the given
+    SOURCE_SYSTEM_CD, read directly from the DWH batch control file.
+
+    Original GET_BATCH_DATE.get_batch_date_dwh() also fell back to an
+    Azure DevOps variable group lookup (via `requests`) whenever the
+    local read failed for ANY reason (missing file, bad row, schema
+    mismatch, etc. — the original wraps the whole read in a broad
+    try/except that falls through to the network call). That fallback
+    is intentionally NOT reproduced here: it depends on AZDO_BASE_URL /
+    AZDO_PAT / a cert file that this server does not have configured,
+    and silently masking a local read failure with a network call is
+    not desirable behaviour for this program. If the control file is
+    missing or the source system code is not found, this raises
+    immediately instead.
+    """
+    if not BATCH_DATE_CTL_FILE.exists():
+        raise FileNotFoundError(
+            f"Batch date control file not found: {BATCH_DATE_CTL_FILE}"
+        )
+
+    ctl = pd.read_sas(BATCH_DATE_CTL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    rows = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd]
+    if rows.empty:
+        raise RuntimeError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {BATCH_DATE_CTL_FILE}"
+        )
+
+    batch_dttm = pd.to_datetime(rows.iloc[0]["BATCH_DTTM"])
+    return batch_dttm.strftime("%Y-%m-%d %H:%M:%S")
+
+
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+
+
+def get_sftp_info(host_desc: str):
+    """
+    Read one SFTP configuration row directly from the DWH control file.
+
+    Original EDW_TRANSFORMATION.get_sftp_info() is not imported because
+    importing EDW_TRANSFORMATION also imports oracledb and
+    PASSWORD_DECRYPTOR.decrypt_password (which in turn has its own
+    dependencies), none of which this program needs and which are not
+    available on this server.
+    """
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(
+            f"SFTP control file not found: {SFTP_CONTROL_FILE}"
+        )
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError(
+            "SFTP control file is missing columns: " + ", ".join(missing_columns)
+        )
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(
+            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
+        )
+
+    row = rows.iloc[0]
+
+    # SAS character values can contain fixed-width padding.
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(
+            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
+        )
+
+    return sftp_id, sftp_pw, host_ip, host_key
+
 
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-# # Testing Path
-# BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# INPUT_DIR   = BASE_DIR / "input" / "prod" / "remittance"
-# CACHE_DIR   = BASE_DIR / "input" / "cache" / "EIWFRMCR"
-# OUTPUT_DIR  = BASE_DIR / "output" / "EIWFRMCR"
+# Testing Path
+BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR   = BASE_DIR / "input" / "prod" / "remittance"
+CACHE_DIR   = BASE_DIR / "input" / "cache" / "EIWFRMCR"
+OUTPUT_DIR  = BASE_DIR / "output" / "EIWFRMCR"
 
-# Prodcution Path
-BASE_DIR   = Path("/dwh")
-INPUT_DIR  = BASE_DIR / "cmsbdptr"
-OUTPUT_DIR = Path("/host_pq/mis/output/rmt")
-CACHE_DIR  = Path("/host_pq/mis/parquet/rmt")
+# # Prodcution Path
+# BASE_DIR   = Path("/dwh")
+# INPUT_DIR  = BASE_DIR / "cmsbdptr"
+# OUTPUT_DIR = Path("/host_pq/mis/output/rmt")
+# CACHE_DIR  = Path("/host_pq/mis/parquet/rmt")
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
