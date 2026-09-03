@@ -1,1 +1,4 @@
-/build/azure-pipelines.yml: (Line: 23, Col: 1, Idx: 559) - (Line: 23, Col: 1, Idx: 559): While scanning a simple key, could not find expected ':'.
+> git push origin DEV:DEV
+To https://bgnvmtfa001/tfs/MISCollection/MIS/_git/MIS
+ ! [remote rejected] DEV -> DEV (TF402455: Pushes to this branch are not permitted; you must use a pull request to update this branch.)
+error: failed to push some refs to 'https://bgnvmtfa001/tfs/MISCollection/MIS/_git/MIS'
