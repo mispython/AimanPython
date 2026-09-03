@@ -8,24 +8,36 @@ Purpose : Generate Foreign Remittance Report (Inward & Outward) for
 """
 
 import gc
+import sys
 from pathlib import Path
+from datetime import date, datetime, timedelta
 
 import duckdb
+import paramiko
 import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
+# from REPTDATE import get_reptdate_values
+# from input_date import get_latest_file
+from GET_BATCH_DATE import get_batch_date_dwh
+from EDW_TRANSFORMATION import get_sftp_info
 
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR = BASE_DIR / "input" / "prod" / "remittance"
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIWFRMCR"
-OUTPUT_DIR = BASE_DIR / "output" / "EIWFRMCR"
+# # Testing Path
+# BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR   = BASE_DIR / "input" / "prod" / "remittance"
+# CACHE_DIR   = BASE_DIR / "input" / "cache" / "EIWFRMCR"
+# OUTPUT_DIR  = BASE_DIR / "output" / "EIWFRMCR"
+
+# Prodcution Path
+BASE_DIR   = Path("/dwh")
+INPUT_DIR  = BASE_DIR / "cmsbdptr"
+OUTPUT_DIR = Path("/host_pq/mis/output/rmt")
+CACHE_DIR  = Path("/host_pq/mis/parquet/rmt")
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -34,10 +46,18 @@ RMT_PREFIX = "remtran"
 
 # Original DSNs: SAP.PBB.COMP.INWARD.REPT / SAP.PBB.COMP.OUTWARD.REPT
 # No date component is present in these SAS-catalogued output DSNs, so
-# output_date.py's date-stamped naming is not applicable here; filenames
-# are static.
-INWARD_REPORT_FILE = OUTPUT_DIR / "ForeignInwardRemittances.txt"
-OUTWARD_REPORT_FILE = OUTPUT_DIR / "ForeignOutwardRemittances.txt"
+# output_date.py's date-stamped naming is not applicable here;
+# filenames are static.
+
+# Generate time stamp
+reptdate = date.today() - timedelta(days=1)
+_ts = reptdate.strftime("%y%m%d")
+
+# _ts = datetime.now().strftime("%y%m%d_%H%M%S")
+# _ts = datetime.now().strftime("%y%m%d")
+
+INWARD_REPORT_FILE = OUTPUT_DIR / f"ForeignInwardRemittances_{_ts}.txt"
+OUTWARD_REPORT_FILE = OUTPUT_DIR / f"ForeignOutwardRemittances_{_ts}.txt"
 
 # Delimiter used in SAS: DLM = '05'X (hex 05 / ASCII ENQ control character)
 # DLM = chr(0x05)
@@ -48,52 +68,51 @@ DLM = "\t"
 # ============================================================
 CHUNK_ROWS = 500_000
 
-# NOTE: Original JCL DELETE step (PGM=IEFBR14) removed the previously
-# catalogued INWARD/OUTWARD datasets before the SAS step ran. This is not
-# needed in Python: writing the output files below (open in write mode)
-# recreates/overwrites them automatically.
-
 # ============================================================
-# REPORT DATE DERIVATION
+# REPORT DATE DERIVATION  (from batch control, not REPTDATE)
 # ============================================================
-# NOTE: Original SAS reads DEPOSIT.REPTDATE (DD DEPOSIT, DSN=SAP.PBB.MNITB)
-# to derive REPTYEAR / REPTMON / NOWK via macro variables, then builds the
-# input dataset name RMT.REMTRAN&REPTMON&NOWK&REPTYEAR. No reptdate.parquet
-# exists in production, so report-date values are derived through
-# REPTDATE.py instead, and the latest RMT input file is resolved directly
-# by filename (see below) rather than by manually reconstructing the name.
-reptdate_values = get_reptdate_values()
+SOURCE_SYSTEM_CD = 'REMIT'
 
-REPTYEAR = reptdate_values.reptyear
-REPTMON = reptdate_values.reptmon
-RDATE = reptdate_values.rdate
+# Fetch batch date string (format: "YYYY-MM-DD HH:MM:SS")
+batch_date_str = get_batch_date_dwh(SOURCE_SYSTEM_CD)
 
-# NOTE: Original SAS NOWK derivation (kept here for reference only; no
-# longer needed since get_latest_file() below resolves the RMT file by
-# scanning the input directory for the most recent remtran{MM}{W}{YY} file):
-#
-# DATA REPTDATE;
-#    SET DEPOSIT.REPTDATE;
-#    SELECT(DAY(REPTDATE));
-#       WHEN(8)   CALL SYMPUT('NOWK', PUT('1', $1.));
-#       WHEN(15)  CALL SYMPUT('NOWK', PUT('2', $1.));
-#       WHEN(22)  CALL SYMPUT('NOWK', PUT('3', $1.));
-#       OTHERWISE CALL SYMPUT('NOWK', PUT('4', $1.));
-#    END;
-#    CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
-#    CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-# RUN;
+# Parse to datetime
+batch_dt = datetime.strptime(batch_date_str, "%Y-%m-%d %H:%M:%S")
+
+# Derive the report-date components
+RDATE = batch_dt.date()
+REPTYEAR = batch_dt.strftime("%y")   # two-digit year
+REPTMON = batch_dt.strftime("%m")    # zero-padded month
+
+# Compute NOWK (same logic as SAS SELECT(DAY(REPTDATE)))
+day_of_month = batch_dt.day
+if 1 <= day_of_month <= 8:
+    NOWK = '1'
+elif 9 <= day_of_month <= 15:
+    NOWK = '2'
+elif 16 <= day_of_month <= 22:
+    NOWK = '3'
+else:
+    NOWK = '4'
 
 print(f"Report Date  : {RDATE}")
 print(f"Report Year  : {REPTYEAR}")
 print(f"Report Month : {REPTMON}")
+print(f"Report Week  : {NOWK}")
 
 # ============================================================
-# LOCATE LATEST RMT (REMITTANCE TRANSACTION) FILE
+# BUILD RMT FILENAME from derived components  (matches SAS naming)
 # ============================================================
 # Original: SET RMT.REMTRAN&REPTMON&NOWK&REPTYEAR;
-# Filename pattern: remtran{MM}{W}{YY}.sas7bdat  (e.g. remtran07126.sas7bdat)
-rmt_file = get_latest_file(INPUT_DIR, prefix=RMT_PREFIX)
+rmt_filename = f"remtran{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+rmt_file = INPUT_DIR / rmt_filename
+
+if not rmt_file.exists():
+    raise FileNotFoundError(
+        f"Expected RMT file not found: {rmt_file}\n"
+        f"Derived from batch date {batch_dt.date()} with NOWK={NOWK}."
+    )
+
 print(f"Input RMT File : {rmt_file}")
 
 RMT_CACHE = CACHE_DIR / f"{rmt_file.stem}.parquet"
@@ -187,15 +206,15 @@ else:
     print(f"  [RMT] Cache fresh — skipping conversion.")
 
 
-# TEMPORARY DIAGNOSTIC — remove after confirming the fix
-con = duckdb.connect(database=":memory:")
-print(con.execute(f"""
-    SELECT BRANCHABB, BNAD1, ANAD1, CURRENCY, COUNTRY
-    FROM read_parquet('{RMT_CACHE}')
-    WHERE BRANCHABB IS NOT NULL
-    LIMIT 10
-""").pl())
-con.close()
+# # TEMPORARY DIAGNOSTIC — remove after confirming the fix
+# con = duckdb.connect(database=":memory:")
+# print(con.execute(f"""
+#     SELECT BRANCHABB, BNAD1, ANAD1, CURRENCY, COUNTRY
+#     FROM read_parquet('{RMT_CACHE}')
+#     WHERE BRANCHABB IS NOT NULL
+#     LIMIT 10
+# """).pl())
+# con.close()
 
 
 # ============================================================
@@ -448,15 +467,15 @@ outward_lines = _write_report(outward_df, OUTWARD_HEADERS, _build_outward_line, 
 # ============================================================
 print(f"\nInward Report Output Path  : {INWARD_REPORT_FILE}")
 print(f"Inward Records Written     : {inward_df.height}")
-print("Inward Report Preview:")
-for line in inward_lines[:5]:
-    print(line.replace(DLM, "|"))
+# print("Inward Report Preview:")
+# for line in inward_lines[:5]:
+#     print(line.replace(DLM, "|"))
 
 print(f"\nOutward Report Output Path : {OUTWARD_REPORT_FILE}")
 print(f"Outward Records Written    : {outward_df.height}")
-print("Outward Report Preview:")
-for line in outward_lines[:5]:
-    print(line.replace(DLM, "|"))
+# print("Outward Report Preview:")
+# for line in outward_lines[:5]:
+#     print(line.replace(DLM, "|"))
 
 # ============================================================
 # CACHE NOTE
@@ -470,21 +489,85 @@ del inward_df, outward_df
 gc.collect()
 
 # ============================================================
-# NOTE: Original JCL step RUNSFTP transmits the two output files to the
-# Data Report Repository (DRR) system via SFTP. This is an external file
-# transfer step outside the scope of this SAS-to-Python data conversion
-# and is not implemented here:
-#
-# //RUNSFTP  EXEC COZBATCH
-# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
-# //           DD *
-# lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-# lzopts linerule=$lr
-# CD CD-BRC
-# PUT //SAP.PBB.COMP.INWARD.REPT   \
-#           ForeignInwardRemittances_%OYYYY.%OMM.%ODD..txt
-# PUT //SAP.PBB.COMP.OUTWARD.REPT  \
-#           ForeignOutwardRemittances_%OYYYY.%OMM.%ODD..txt
-# EOB
+# SFTP CONFIGURATION (DRR - Data Report Repository System)
+# ============================================================
+# HOST_DESC value that identifies the DRR entry in
+# ctl_dwh_sftp_info.sas7bdat.
+DRR_HOST_DESC = "Data Report Repository (DRR)"
+
+# Remote folder on the DRR server (from JCL: CD CD-BRC)
+DRR_REMOTE_DIR = "CD-BRC"
+
+# ============================================================
+# SFTP UPLOAD TO DRR
+# ============================================================
+def _drr_remote_filename(prefix: str) -> str:
+    """
+    Build the DRR filename using the run date, matching the JCL's
+    %OYYYY.%OMM.%ODD token. %O-prefixed variables in the original
+    COZBATCH/NDM script represent the file-transfer run date (today),
+    not the report date (REPTYEAR/REPTMON) — kept distinct on purpose.
+    """
+    today = datetime.now() - timedelta(days=1)
+    return f"{prefix}_{today:%Y%m%d}.txt"
+
+
+def sftp_upload_to_drr(local_files: list) -> None:
+    """
+    Upload output report file(s) to the DRR server.
+
+    Equivalent of the JCL RUNSFTP step:
+        //RUNSFTP  EXEC COZBATCH
+        //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+        lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+        lzopts linerule=$lr
+        CD CD-BRC
+        PUT //SAP.PBB.COMP.INWARD.REPT   \
+                  ForeignInwardRemittances_%OYYYY.%OMM.%ODD..txt
+        PUT //SAP.PBB.COMP.OUTWARD.REPT  \
+                  ForeignOutwardRemittances_%OYYYY.%OMM.%ODD..txt
+        EOB
+
+    Parameters:
+        local_files: list of (local_path: Path, remote_filename_prefix: str)
+    """
+    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    # NOTE: HOST_KEY from ctl_dwh_sftp_info.sas7bdat is available for strict
+    # host-key pinning, but its stored format (hex blob / OpenSSH pubkey
+    # string / fingerprint) is not confirmed yet — CONFIRM with infra team
+    # before enabling strict pinning. AutoAddPolicy is used in the interim.
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+
+    try:
+        sftp.chdir(DRR_REMOTE_DIR)
+    except IOError:
+        sftp.close()
+        ssh.close()
+        sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
+
+    for local_path, remote_prefix in local_files:
+        remote_name = _drr_remote_filename(remote_prefix)
+        print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
+        sftp.put(str(local_path), remote_name)
+
+    sftp.close()
+    ssh.close()
+    print("  DRR upload complete.")
+
+# ============================================================
+# SFTP REPORTS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# ============================================================
+print("\nUploading reports to DRR via SFTP...")
+sftp_upload_to_drr([
+    (INWARD_REPORT_FILE, "ForeignInwardRemittances"),
+    (OUTWARD_REPORT_FILE, "ForeignOutwardRemittances"),
+])
+
 
 print("\nEIWFRMCR complete.")
