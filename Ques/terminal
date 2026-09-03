@@ -2,3 +2,6 @@
 To https://bgnvmtfa001/tfs/MISCollection/MIS/_git/MIS
  ! [remote rejected] DEV -> DEV (TF402455: Pushes to this branch are not permitted; you must use a pull request to update this branch.)
 error: failed to push some refs to 'https://bgnvmtfa001/tfs/MISCollection/MIS/_git/MIS'
+
+
+The terminal process failed to launch: Windows cannot open this program because it has been prevented by a software restriction policy. For more information, open Event Viewer or contact your system Administrator.
