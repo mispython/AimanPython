@@ -17,15 +17,107 @@ Purpose : Automate the Financial Inclusion Data Collection
 import sys
 import paramiko
 import polars as pl
+import pandas as pd
 
 from pathlib import Path
 from datetime import date, datetime, timedelta
 
-from GET_BATCH_DATE import first_date_of_month, get_past_n_date
-from EDW_TRANSFORMATION import get_sftp_info
+# ------------------------------------------------------------------
+# NOTE ON REMOVED IMPORTS:
+#   from GET_BATCH_DATE import first_date_of_month, get_past_n_date
+#   from EDW_TRANSFORMATION import get_sftp_info
+#
+# These modules are NOT imported directly because importing them also
+# executes their unrelated top-level dependencies (sas7bdat library,
+# requests/HTTPBasicAuth for Azure DevOps, oracledb, and
+# PASSWORD_DECRYPTOR.decrypt_password), several of which are not
+# installed on this server and are not needed by this program. Only
+# the three functions actually used here — first_date_of_month(),
+# get_past_n_date(), and get_sftp_info() — are reproduced below,
+# using libraries this program already imports (pandas, datetime).
+# This keeps report-date derivation and SFTP behaviour identical to
+# the original design.
+# ------------------------------------------------------------------
+
+def first_date_of_month(date_str: str) -> str:
+    """
+    Return the first day of the month (00:00:00) for the given
+    "YYYY-MM-DD HH:MM:SS" string. Pure date-math — no external
+    dependency beyond the standard library.
+    """
+    dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+    return dt.replace(day=1, hour=0, minute=0, second=0).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_past_n_date(date_str: str, n: int) -> str:
+    """
+    Return the datetime n days before the given "YYYY-MM-DD HH:MM:SS"
+    string. Pure date-math — no external dependency beyond the
+    standard library.
+    """
+    dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+    return (dt - timedelta(days=n)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+
+
+def get_sftp_info(host_desc: str):
+    """
+    Read one SFTP configuration row directly from the DWH control file.
+
+    Original EDW_TRANSFORMATION.get_sftp_info() is not imported because
+    importing EDW_TRANSFORMATION also imports oracledb and
+    PASSWORD_DECRYPTOR.decrypt_password (which in turn has its own
+    dependencies), none of which this program needs and which are not
+    available on this server.
+    """
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(
+            f"SFTP control file not found: {SFTP_CONTROL_FILE}"
+        )
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError(
+            "SFTP control file is missing columns: " + ", ".join(missing_columns)
+        )
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(
+            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
+        )
+
+    row = rows.iloc[0]
+
+    # SAS character values can contain fixed-width padding.
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(
+            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
+        )
+
+    return sftp_id, sftp_pw, host_ip, host_key
+
 
 # ------------------------------------------------------------
-# COMPUTE REPORT DATE (last day of previous month) via GET_BATCH_DATE
+# COMPUTE REPORT DATE (last day of previous month) via inlined helpers
 # ------------------------------------------------------------
 _today_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 _first_day_str = first_date_of_month(_today_str)            # "YYYY-MM-DD 00:00:00"
@@ -78,7 +170,7 @@ HEADER_FIELDS = [
 
 
 # ------------------------------------------------------------
-# DATA REPTDATE step equivalent (using GET_BATCH_DATE)
+# DATA REPTDATE step equivalent (using inlined helpers)
 # ------------------------------------------------------------
 def print_reptdate() -> None:
     """Equivalent of: DATA REPTDATE; REPTDATE = TODAY()-DAY(TODAY());"""
