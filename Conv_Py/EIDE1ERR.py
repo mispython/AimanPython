@@ -11,8 +11,56 @@ from datetime import datetime, timedelta
 
 import duckdb
 import polars as pl
+import pandas as pd
 
-from GET_BATCH_DATE import get_batch_date_dwh
+# ------------------------------------------------------------------
+# NOTE ON REMOVED IMPORT:
+#   from GET_BATCH_DATE import get_batch_date_dwh
+#
+# GET_BATCH_DATE is NOT imported directly because importing it also
+# executes its unrelated top-level dependencies (sas7bdat library,
+# requests/HTTPBasicAuth for Azure DevOps), which are not installed
+# on this server and are not needed by this program. Only the
+# function actually used here — get_batch_date_dwh() — is reproduced
+# below, using a library this program already imports (pandas). This
+# keeps batch-date-driven behaviour identical to the original design.
+# ------------------------------------------------------------------
+
+BATCH_DATE_CTL_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+
+
+def get_batch_date_dwh(source_system_cd: str) -> str:
+    """
+    Return the batch date string ("YYYY-MM-DD HH:MM:SS") for the given
+    SOURCE_SYSTEM_CD, read directly from the DWH batch control file.
+
+    Original GET_BATCH_DATE.get_batch_date_dwh() also fell back to an
+    Azure DevOps variable group lookup (via `requests`) whenever the
+    local read failed for ANY reason (missing file, bad row, schema
+    mismatch, etc.). That fallback is intentionally NOT reproduced
+    here: it depends on AZDO_BASE_URL / AZDO_PAT / a cert file that
+    this server does not have configured, and silently masking a
+    local read failure with a network call is not desirable behaviour
+    for this program. If the control file is missing or the source
+    system code is not found, this raises immediately instead.
+    """
+    if not BATCH_DATE_CTL_FILE.exists():
+        raise FileNotFoundError(
+            f"Batch date control file not found: {BATCH_DATE_CTL_FILE}"
+        )
+
+    ctl = pd.read_sas(BATCH_DATE_CTL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    rows = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd]
+    if rows.empty:
+        raise RuntimeError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {BATCH_DATE_CTL_FILE}"
+        )
+
+    batch_dttm = pd.to_datetime(rows.iloc[0]["BATCH_DTTM"])
+    return batch_dttm.strftime("%Y-%m-%d %H:%M:%S")
+
 
 # ------------------------------------------------------------
 # Paths
@@ -31,7 +79,7 @@ OUTPUT_DIR = BASE_DIR / "output/EIDE1ERR"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ------------------------------------------------------------
-# Report-date derivation via GET_BATCH_DATE.py
+# Report-date derivation via inlined get_batch_date_dwh()
 # Follows SOURCE_SYSTEM_CD = 'DET_CC' batch date from
 # ctl_dwh_batch_dttm.sas7bdat (DET_CC = DETICA source system).
 # ------------------------------------------------------------
