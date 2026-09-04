@@ -1,74 +1,156 @@
 #!/usr/bin/env python3
 """
 Program : EIIMRPTS.py
-Purpose : Master driver converted from SAS JCL program EIIMRPTS.
-          Orchestrates report-generation programs and pre-run file handling.
+Purpose : JCL driver -- EIIMRPTS job.
+          Orchestrates deletion of prior output datasets, (re)allocation of
+          fresh output datasets, and sequential execution of the following
+          batch report/reconciliation programs, in the same order as the
+          original MVS JCL EXEC steps:
+
+              1. EIIMRM01  - Deposits, By Time To Maturity For ALCO (Islamic)
+              2. EIIMRM02  - FD by Individual/Non-Individual, Time To Maturity - Part 1
+              3. EIIMRM03  - FD by Individual/Non-Individual, Time To Maturity - Part 2
+              4. EIIMRM04  - Loans & Advances, By Time To Maturity For ALCO
+              5. EIIWSTAF  - Weekly listing for staff new/paid loan
+              6. EIIMLN03  - Weighted Average Lending Rate on Loan (RDIR II)
+              7. EIFMLN03  - Weighted Average Lending Rate on HPD (RDIR II)
+
+JCL DELETE step (PGM=IEFBR14) physically deletes and recatalogs 8 output
+datasets before the CREATE step reallocates them fresh (DISP=(MOD,DELETE,
+DELETE) followed by DISP=(NEW,CATLG,DELETE)). This is replicated below by
+removing each corresponding output file up front, independent of each
+program's own OUTPUT_FILE constant, so this driver can perform cleanup
+BEFORE any program module is imported/executed.
+
+JOB-level COND=(4,LT): a step is bypassed if the return code of ANY
+previously-executed step is greater than 4. Since the converted Python
+programs raise exceptions on failure rather than returning MVS-style
+condition codes, this is emulated here: a step failure sets RC=8 and halts
+the remaining chain; success keeps RC=0 and the chain continues.
+
+TYPRUN=SCAN on the JOB card means the original JCL was submitted for a
+syntax scan only (no steps actually executed) -- preserved here only as a
+comment, since a Python driver script has no equivalent "scan-only"
+submission mode.
+
+DD statements PRINT1 / PRINT9 (SYSOUT class R, with room/building/dept
+distribution info for physical report routing) and the commented-out
+PRINTS step (IEBGENER copy of SAP.PIBB.EIBWSTAF to a second print
+destination via *.PRINT9) configure mainframe print/output-class routing,
+not data transformation -- they have no Python equivalent and are omitted
+here (kept as documentation only).
+
+//SASLIST DD DSN=SAP.PIBB.EIIWSTAF(+1) under EIIWSTAF is a GDG "+1" (new
+generation) allocation; generation handling is the responsibility of
+EIIWSTAF.py itself and is not re-implemented in this driver.
 """
 
-from __future__ import annotations
-
+import sys
 from pathlib import Path
-from typing import Callable
+
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+# ============================================================================
+# JCL DELETE STEP (PGM=IEFBR14) equivalent
+# DD1-DD8 -> SAP.PIBB.EIIMRM01.TEXT / EIIMRM02.TEXT / EIIMRM03.TEXT /
+#            EIIMRM04.TEXT / EIBWSTAF / EIIMLN03 / M4LOAN / EIFMLN03
+# Paths below mirror each program's own OUTPUT_FILE definition but are kept
+# independent (not imported) so cleanup can happen before any program
+# module is loaded.
+# ============================================================================
+_DELETE_TARGETS = [
+    BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM01.txt",   # DD1 / CRT01
+    BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM02.txt",   # DD2 / CRT02
+    BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM03.txt",   # DD3 / CRT03
+    BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM04.txt",   # DD4 / CRT04
+    BASE_DIR / "output" / "EIIWSTAF" / "EIBWSTAF.txt",   # DD5 / CRT05 (GDG +1)
+    BASE_DIR / "output" / "EIIMLN03"  / "EIIMLN03.txt",  # DD6 / CRT06
+    BASE_DIR / "output" / "EIIMLN03"  / "M4LOAN.txt",    # DD7 / CRT07
+    BASE_DIR / "output" / "EIFMLN03"  / "EIFMLN03.txt",  # DD8 / CRT08
+]
 
 
-from EIIMRM01 import main as run_eiimrm01
-from EIIMRM02 import main as run_eiimrm02
-from EIIMRM03 import main as run_eiimrm03
-from EIIMRM04 import main as run_eiimrm04
-from EIIWSTAF import main as run_eiiwstaf
-from EIIMLN03 import main as run_eiimln03
-from EIFMLN03 import main as run_eifmln03
+def _delete_step() -> None:
+    print("Step DELETE: removing prior output datasets (IEFBR14 equivalent)...")
+    for target in _DELETE_TARGETS:
+        if target.exists():
+            target.unlink()
+            print(f"  Deleted   : {target}")
+        else:
+            print(f"  Not present (skip): {target}")
 
 
 # ============================================================================
-# PATH CONFIGURATION (defined early)
+# JCL CREATE STEP (PGM=IEFBR14) equivalent
+# CRT01-04: RECFM=FB LRECL=256 BLKSIZE=25600
+# CRT05   : RECFM=FB LRECL=133 BLKSIZE=0
+# CRT06   : RECFM=FB LRECL=133 BLKSIZE=0
+# CRT07   : RECFM=FB LRECL=50  BLKSIZE=0
+# CRT08   : RECFM=FB LRECL=133 BLKSIZE=0
+# DCB attributes govern physical record layout on MVS and have no direct
+# Python equivalent; each downstream program's own report-writer already
+# honours the equivalent fixed-width layout. This step therefore only
+# guarantees the output directories exist ahead of time.
 # ============================================================================
-BASE_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = BASE_DIR / "output"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# JCL pre-created output datasets mapped to local text outputs.
-OUTPUT_FILES = {
-    "EIIMRM01": OUTPUT_DIR / "EIIMRM01.txt",
-    "EIIMRM02": OUTPUT_DIR / "EIIMRM02.txt",
-    "EIIMRM03": OUTPUT_DIR / "EIIMRM03.txt",
-    "EIIMRM04": OUTPUT_DIR / "EIIMRM04.txt",
-    "EIBWSTAF": OUTPUT_DIR / "EIBWSTAF.txt",
-    "EIIMLN03": OUTPUT_DIR / "EIIMLN03.txt",
-    "M4LOAN": OUTPUT_DIR / "M4LOAN.txt",
-    "EIFMLN03": OUTPUT_DIR / "EIFMLN03.txt",
-}
+_CREATE_DIRS = [
+    BASE_DIR / "output" / "EIIMRPTS",
+    BASE_DIR / "output" / "EIIWSTAF",
+    BASE_DIR / "output" / "EIIMLN03",
+    BASE_DIR / "output" / "EIFMLN03",
+]
 
 
-def reset_output_files() -> None:
-    """Replicate JCL DELETE + CREATE steps by recreating expected output files."""
-    for file_path in OUTPUT_FILES.values():
-        if file_path.exists():
-            file_path.unlink()
-        file_path.touch()
+def _create_step() -> None:
+    print("Step CREATE: allocating output directories (IEFBR14 equivalent)...")
+    for d in _CREATE_DIRS:
+        d.mkdir(parents=True, exist_ok=True)
+        print(f"  Ensured   : {d}")
 
 
-def run_step(step_name: str, step_func: Callable[[], None]) -> None:
-    """Run one converted SAS step in sequence."""
-    print(f"[EIIMRPTS] Running {step_name}...")
-    step_func()
-    print(f"[EIIMRPTS] Completed {step_name}.")
+# ============================================================================
+# STEP EXECUTION CHAIN
+# Each JCL EXEC step is run as a module import (module-level execution on
+# import), per project convention for JCL driver jobs.
+# ============================================================================
+_STEPS = [
+    ("EIIMRM01", "Deposits, By Time To Maturity For ALCO (Islamic book)"),
+    ("EIIMRM02", "FD - Individual/Non-Individual, Time To Maturity - Part 1"),
+    ("EIIMRM03", "FD - Individual/Non-Individual, Time To Maturity - Part 2"),
+    ("EIIMRM04", "Loans & Advances, By Time To Maturity For ALCO"),
+    ("EIIWSTAF", "Weekly listing for staff new/paid loan"),
+    ("EIIMLN03", "Weighted Average Lending Rate on Loan (RDIR II)"),
+    ("EIFMLN03", "Weighted Average Lending Rate on HPD (RDIR II)"),
+]
 
 
-def main() -> None:
-    """Run the full EIIMRPTS chain in original execution order."""
-    reset_output_files()
+def _run_steps() -> int:
+    """COND=(4,LT) emulation: once RC exceeds 4, all remaining steps are
+    bypassed rather than executed, mirroring the JOB-card condition test
+    applied against every prior step's return code."""
+    rc = 0
+    for step_name, purpose in _STEPS:
+        if rc > 4:
+            print(f"Step {step_name} SKIPPED (COND=(4,LT): prior RC={rc} > 4).")
+            continue
+        print(f"\n=== EXEC {step_name} : {purpose} ===")
+        try:
+            __import__(step_name)
+            print(f"=== {step_name} completed (RC=0) ===")
+        except Exception as exc:
+            rc = 8
+            print(f"=== {step_name} FAILED (RC=8): {exc} ===", file=sys.stderr)
+    return rc
 
-    run_step("EIIMRM01", run_eiimrm01)
-    run_step("EIIMRM02", run_eiimrm02)
-    run_step("EIIMRM03", run_eiimrm03)
-    run_step("EIIMRM04", run_eiimrm04)
-    run_step("EIIWSTAF", run_eiiwstaf)
-    run_step("EIIMLN03", run_eiimln03)
-    run_step("EIFMLN03", run_eifmln03)
 
-    print("[EIIMRPTS] All programs completed successfully.")
+def main() -> int:
+    # TYPRUN=SCAN on the original JOB card meant syntax-scan only, no steps
+    # actually executed -- documentation-only note; this driver always runs.
+    _delete_step()
+    _create_step()
+    rc = _run_steps()
+    print(f"\nEIIMRPTS job complete. Final RC={rc}")
+    return 0 if rc == 0 else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
