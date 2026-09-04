@@ -63,10 +63,10 @@ _DELETE_TARGETS = [
     BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM02.txt",   # DD2 / CRT02
     BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM03.txt",   # DD3 / CRT03
     BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM04.txt",   # DD4 / CRT04
-    BASE_DIR / "output" / "EIIWSTAF" / "EIBWSTAF.txt",   # DD5 / CRT05 (GDG +1)
-    BASE_DIR / "output" / "EIIMLN03"  / "EIIMLN03.txt",  # DD6 / CRT06
-    BASE_DIR / "output" / "EIIMLN03"  / "M4LOAN.txt",    # DD7 / CRT07
-    BASE_DIR / "output" / "EIFMLN03"  / "EIFMLN03.txt",  # DD8 / CRT08
+    BASE_DIR / "output" / "EIIMRPTS" / "EIIWSTAF.txt",   # DD5 / CRT05 (GDG +1)
+    BASE_DIR / "output" / "EIIMRPTS" / "EIIMLN03.txt",   # DD6 / CRT06
+    BASE_DIR / "output" / "EIIMRPTS" / "M4LOAN.txt",     # DD7 / CRT07
+    BASE_DIR / "output" / "EIIMRPTS" / "EIFMLN03.txt",   # DD8 / CRT08
 ]
 
 
@@ -94,9 +94,6 @@ def _delete_step() -> None:
 # ============================================================================
 _CREATE_DIRS = [
     BASE_DIR / "output" / "EIIMRPTS",
-    BASE_DIR / "output" / "EIIWSTAF",
-    BASE_DIR / "output" / "EIIMLN03",
-    BASE_DIR / "output" / "EIFMLN03",
 ]
 
 
