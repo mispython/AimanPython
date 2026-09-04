@@ -1,0 +1,380 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBMNPL1                                          |
+ |  DATE    : 12.01.98                                          |
+ |  REPORT  : TOTAL OVERDUE LOANS                               |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950;
+*;
+%INC PGM(PBBLNFMT,PBBELF);
+*;
+PROC FORMAT;
+   VALUE RISK 0 = '(0-7 DAYS)'
+              1 = '(8-30 DAYS)'
+              2 = '(31-59 DAYS)'
+              3 = '(60-89 DAYS)'
+              4 = '(90-121 DAYS)'
+              5 = '(122-151 DAYS)'
+              6 = '(152-182 DAYS)'
+              7 = '(183-213 DAYS)'
+              8 = '(214-243 DAYS)'
+              9 = '(244-273 DAYS)'
+             10 = '(274-364 DAYS)'
+             11 = '(365 - 547 DAYS)'
+             12 = '(548 - 729 DAYS)'
+             13 = '(730 - 1094 DAYS)'
+             14 = '(1095 & ABOVE DAYS)';
+*;
+   VALUE ID1F 1 = 'OVERDUE (IMTH - BAD) (30 DAYS & ABOVE)';
+   VALUE ID2F 1 = 'DELINQUENT (SS1- BAD) (90 DAYS & ABOVE)';
+   VALUE ID3F 1 = 'NON PERFORMING LOANS (SS2- BAD) (183 DAYS & ABOVE)';
+*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+*;
+%LET TBL1=(LOANS);
+%LET TBL2=(HP);
+%LET TBL3=(O/D);
+%LET TBL4=(LOANS & O/D);
+*;
+*------------------------------------------------*
+*  MACRO TO PRODUCE 3 SETS OF REPORTS - LOANS,   *
+*  O/D, LOANS & O/D                              *
+*------------------------------------------------*;
+%MACRO TBLS;
+   %DO I = 1 %TO 4;
+*------------------------------------------------*
+*  SUMMARISE TOTAL LOAN AMOUNT                   *
+*------------------------------------------------*;
+      PROC SUMMARY DATA=LOAN&I NWAY;
+         CLASS BRANCH;
+         VAR BALANCE;
+         WHERE BALANCE ^= .;
+         OUTPUT OUT=TLA(DROP=_TYPE_
+                        RENAME=(_FREQ_=TLNO BALANCE=TLAMT)) SUM=;
+ *;
+*------------------------------------------------*
+*  SUMMARISE OVERDUE (1MTH - BAD) FIGURES        *
+*------------------------------------------------*;
+      PROC SUMMARY DATA=LOAN&I NWAY;
+         CLASS BRANCH;
+         VAR BALANCE;
+         WHERE RISKRATE > 0 & BALANCE ^= .;
+         OUTPUT OUT=SUM1(DROP=_TYPE_
+                         RENAME=(_FREQ_=S1NO BALANCE=S1AMT)) SUM=;
+*;
+*------------------------------------------------*
+*  SUMMARISE DELINGUENT (CA - BAD) FIGURES       *
+*------------------------------------------------*;
+      PROC SUMMARY DATA=LOAN&I NWAY;
+         CLASS BRANCH;
+         VAR BALANCE;
+         WHERE RISKRATE > 3 & BALANCE ^= .;
+         OUTPUT OUT=SUM2(DROP=_TYPE_
+                         RENAME=(_FREQ_=S2NO BALANCE=S2AMT)) SUM=;
+*;
+*------------------------------------------------*
+*  SUMMARISE NON PERFORMING (SS - BAD) FIGURES   *
+*------------------------------------------------*;
+      PROC SUMMARY DATA=LOAN&I NWAY;
+         CLASS BRANCH;
+         VAR BALANCE;
+         WHERE RISKRATE > 6 & BALANCE ^= .;
+         OUTPUT OUT=SUM3(DROP=_TYPE_
+                         RENAME=(_FREQ_=S3NO BALANCE=S3AMT)) SUM=;
+*;
+*------------------------------------------------*
+*  MERGE SUMMARISED FIGURES                      *
+*------------------------------------------------*;
+      DATA LOAN;
+         RETAIN ID1 ID2 ID3 1;
+         MERGE TLA SUM1 SUM2 SUM3;
+         BY BRANCH;
+*;
+      TITLE1 'TOTAL OVERDUE LOANS AS AT' &RDATE &&TBL&I;
+      TITLE2 'FREQUENCY : MONTHLY';
+*;
+*------------------------------------------------*
+*  REPORT BY DETAIL RISK RATING BREAKDOWN        *
+*------------------------------------------------*;
+      PROC TABULATE DATA=LOAN&I MISSING;
+         FORMAT RISKRATE RISK.;
+
+         CLASS BRANCH RISKRATE ;
+         VAR BALANCE RISKBAL;
+*;
+         TABLE (BRANCH=' ' ALL='TOTAL')*
+               (BALANCE='O/S LOANS IN ARREARS (RMM)'
+               RISKBAL='O/S LOANS CLASSIFIED AS NPL(RMM) 2,3,4'),
+               N*F=COMMA7. SUM='TOTAL AMOUNT'*F=COMMA14.
+               RISKRATE=' '*
+               (N*F=COMMA6.
+               SUM*F=COMMA14.)
+               / BOX='BRANCH' RTS=30 CONDENSE;
+*;
+         TABLE ALL='TOTAL'*
+               (BALANCE='TOTAL O/S LOANS IN ARREARS (RMM)'
+               RISKBAL='TOTAL O/S LOANS CLASSIFIED AS NPL (RMM) 2,3,4'),
+               N*F=COMMA7. SUM*F=COMMA14.
+               RISKRATE='%AG. TLA'*
+               (SUM*F=COMMA14. PCTSUM<RISKRATE>*F=7.2)
+               / BOX='BRANCH' RTS=30 CONDENSE;
+*;
+         KEYLABEL SUM='AMOUNT' N='NO.' PCTN='%' PCTSUM='%';
+*;
+*------------------------------------------------*
+*  REPORT BY RISK RATING GROUPED INTO OVERDUE,   *
+*  DELINQUENT AND NON PERFORMING                 *
+*------------------------------------------------*;
+      PROC TABULATE DATA=LOAN MISSING NOSEPS;
+         FORMAT ID1 ID1F. ID2 ID2F. ID3 ID3F.;
+         CLASS BRANCH ID1 ID2 ID3;
+         VAR TLNO TLAMT S1NO S1AMT S2NO S2AMT S3NO S3AMT;
+*;
+         TABLE BRANCH=' ' ALL='TOTAL',
+               SUM='TOTAL LOANS (TLA)'*
+               (TLNO='NO.'*F=6. TLAMT='AMOUNT'*F=12.)
+               ID1=' '*(S1NO=' '*(SUM='NO.'*F=5.
+                                  PCTSUM<TLNO>*F=6.2)
+                        S1AMT=' '*(SUM='AMOUNT'*F=12.
+                                   PCTSUM<TLAMT>*F=6.2))
+               ID2=' '*(S2NO=' '*(SUM='NO.'*F=5.
+                                  PCTSUM<TLNO>*F=6.2)
+                        S2AMT=' '*(SUM='AMOUNT'*F=12.
+                                   PCTSUM<TLAMT>*F=6.2))
+               ID3=' '*(S3NO=' '*(SUM='NO.'*F=5.
+                                  PCTSUM<TLNO>*F=6.2)
+                        S3AMT=' '*(SUM='AMOUNT'*F=12.
+                                   PCTSUM<TLAMT>*F=6.2))
+               / BOX='BRANCH' RTS=8 CONDENSE;
+         KEYLABEL PCTN='%' PCTSUM='%';
+*;
+   %END;
+%MEND TBLS;
+*;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE;
+   SET BNM1.REPTDATE;
+   CALL SYMPUT('NOWK',PUT('4',$1.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+*------------------------------------------------*
+*  GET LOANS DATA, CLASSIFY RISK BY DAYS OVERDUE *
+*------------------------------------------------*;
+DATA LOAN1 LOAN2;
+   KEEP BRCH BALANCE RISKRATE RISKRTE RISKBAL ACCTNO DAYS;
+   SET BNM.LOAN&REPTMON&NOWK;
+   IF _N_ = 1 THEN SET REPTDATE;
+   IF NOTENO < 90000; /* REMOVE HP FACILITIES */
+   IF ACCTYPE = 'LN' AND BRANCH ^= . AND BALANCE >= 1.00 AND
+      PRODUCT NOT IN (517,500);
+   BRCH = PUT(BRANCH,BRCHCD.);
+   IF RISKRTE IN (1,2,3,4) THEN DO;
+     RISKBAL = BALANCE;
+   END;
+   IF BLDATE > 0 THEN DAYS = REPTDATE - BLDATE;
+   SELECT;
+
+      WHEN (DAYS>1094) RISKRATE = 14;
+      WHEN (DAYS>729) RISKRATE = 13;
+      WHEN (DAYS>547) RISKRATE = 12;
+      WHEN (DAYS>364) RISKRATE = 11;
+      WHEN (DAYS>273) RISKRATE = 10;
+      WHEN (DAYS>243) RISKRATE = 9;
+      WHEN (DAYS>213) RISKRATE = 8;
+      WHEN (DAYS>182) RISKRATE = 7;
+      WHEN (DAYS>151) RISKRATE = 6;
+      WHEN (DAYS>121) RISKRATE = 5;
+      WHEN (DAYS>89)  RISKRATE = 4;
+      WHEN (DAYS>59)  RISKRATE = 3;
+      WHEN (DAYS>30)  RISKRATE = 2;
+      WHEN (DAYS>7)   RISKRATE = 1;
+      OTHERWISE       RISKRATE = 0;
+   END;
+   RENAME BRCH=BRANCH;
+   IF PRODUCT IN (380,381) THEN OUTPUT LOAN2;
+   ELSE OUTPUT LOAN1;
+RUN;
+PROC SORT DATA=LOAN1;
+   BY BRANCH RISKRATE;
+RUN;
+PROC SORT DATA=LOAN2;
+   BY BRANCH RISKRATE;
+RUN;
+*;
+*-------------------------------------------------------*
+*  CREATE OBS FOR ALL BRANCHES ALL RISKRTES (LOANS)     *
+*-------------------------------------------------------*;
+DATA DUMMY;
+   KEEP BRANCH RISKRATE;
+   SET LOAN1 (KEEP=BRANCH);
+   BY BRANCH;
+   IF FIRST.BRANCH THEN
+      DO RISKRATE = 0 TO 14;
+         OUTPUT;
+      END;
+*;
+DATA LOAN1;
+   MERGE LOAN1 DUMMY;
+   BY BRANCH RISKRATE;
+RUN;
+*-------------------------------------------------------*
+*  CREATE OBS FOR ALL BRANCHES ALL RISKRTES (HP)        *
+*-------------------------------------------------------*;
+DATA DUMMY;
+   KEEP BRANCH RISKRATE;
+   SET LOAN2 (KEEP=BRANCH);
+   BY BRANCH;
+   IF FIRST.BRANCH THEN
+      DO RISKRATE = 0 TO 14;
+         OUTPUT;
+      END;
+*;
+DATA LOAN2;
+   MERGE LOAN2 DUMMY;
+   BY BRANCH RISKRATE;
+RUN;
+*;
+*------------------------------------------------*
+*  GET O/D DATA, CLASSIFY RISK BY DAYS OVERDUE   *
+*------------------------------------------------*;
+PROC SORT DATA=BNM.LOAN&REPTMON&NOWK
+          OUT=LOAN3 (KEEP=ACCTNO BRANCH BALANCE PRODUCT);
+   BY ACCTNO;
+   WHERE ACCTYPE = 'OD' AND (APPRLIMT >= 0 OR BALANCE < 0) AND
+   (ACCTNO <= 3900000000 OR ACCTNO > 3999999999);
+*;
+PROC SORT DATA=OD.OVERDFT NODUPKEY
+          OUT=OD (KEEP=ACCTNO EXCESSDT TODDATE RISKCODE);
+   BY ACCTNO;
+   WHERE EXCESSDT > 0 OR TODDATE > 0;
+*;
+DATA LOAN3;
+   KEEP BRCH BALANCE RISKRTE RISKCODE RISKBAL RISKRATE EXCESSDT TODDATE
+   BLDATE TODDT ACCTNO DAYS;
+   MERGE LOAN3(IN=AA) OD;
+   BY ACCTNO;
+   LENGTH RISKRTE 2;
+   IF _N_ = 1 THEN SET REPTDATE;
+   IF AA & BRANCH ^= . & PRODUCT NOT IN (517,500);
+   BRCH = PUT(BRANCH,BRCHCD.);
+   RISKRTE = RISKCODE;
+   IF RISKCODE IN ('1','2','3','4') THEN DO;
+   RISKBAL = BALANCE;
+   END;
+   IF EXCESSDT > 0 THEN DO;
+     EXCDAY = SUBSTR(PUT(EXCESSDT,Z11.),3,2);
+     EXCMONTH = SUBSTR(PUT(EXCESSDT,Z11.),1,2);
+     EXCYEAR = SUBSTR(PUT(EXCESSDT,Z11.),5,4);
+     EXCDATE = MDY(EXCMONTH,EXCDAY,EXCYEAR);
+   END;
+   IF TODDATE > 0 THEN DO;
+     TODDAY = INPUT(SUBSTR(PUT(TODDATE,Z11.),3,2),2.);
+     TODMONTH = INPUT(SUBSTR(PUT(TODDATE,Z11.),1,2),2.);
+     TODYEAR = INPUT(SUBSTR(PUT(TODDATE,Z11.),5,4),4.);
+     TODDT = MDY(TODMONTH,TODDAY,TODYEAR);
+   END;
+   IF EXCESSDT NE 0 AND TODDATE NE 0 THEN DO;
+   IF EXCDATE <= TODDT THEN
+      BLDATE = INPUT(SUBSTR(PUT(EXCESSDT,Z11.),1,8),MMDDYY8.);
+   IF EXCDATE > TODDT THEN
+      BLDATE = INPUT(SUBSTR(PUT(TODDATE,Z11.),1,8),MMDDYY8.);
+   END;
+   ELSE IF EXCESSDT > 0 THEN
+      BLDATE = INPUT(SUBSTR(PUT(EXCESSDT,Z11.),1,8),MMDDYY8.);
+   ELSE IF TODDATE > 0 THEN
+      BLDATE = INPUT(SUBSTR(PUT(TODDATE,Z11.),1,8),MMDDYY8.);
+   IF BLDATE > 0 THEN DAYS = REPTDATE - BLDATE + 1;
+   SELECT;
+      WHEN (DAYS>1094) RISKRATE = 14;
+      WHEN (DAYS>729) RISKRATE = 13;
+      WHEN (DAYS>547) RISKRATE = 12;
+      WHEN (DAYS>364) RISKRATE = 11;
+      WHEN (DAYS>273) RISKRATE = 10;
+      WHEN (DAYS>243) RISKRATE = 9;
+      WHEN (DAYS>213) RISKRATE = 8;
+      WHEN (DAYS>182) RISKRATE = 7;
+      WHEN (DAYS>151) RISKRATE = 6;
+      WHEN (DAYS>121) RISKRATE = 5;
+      WHEN (DAYS>89)  RISKRATE = 4;
+      WHEN (DAYS>59)  RISKRATE = 3;
+      WHEN (DAYS>30)  RISKRATE = 2;
+      WHEN (DAYS>7)   RISKRATE = 1;
+      OTHERWISE       RISKRATE = 0;
+   END;
+   RENAME BRCH=BRANCH;
+
+*;
+PROC SORT DATA=LOAN3;
+   BY BRANCH RISKRATE;
+
+*;
+*------------------------------------------------*
+*  CREATE OBS FOR ALL BRANCHES ALL RISKRTES      *
+*------------------------------------------------*;
+DATA DUMMY;
+   KEEP BRANCH RISKRATE;
+   SET LOAN3 (KEEP=BRANCH);
+   BY BRANCH;
+   IF FIRST.BRANCH THEN
+      DO RISKRATE = 0 TO 14;
+         OUTPUT;
+      END;
+*;
+DATA LOAN3;
+   MERGE LOAN3 DUMMY;
+   BY BRANCH RISKRATE;
+*;
+*------------------------------------------------*
+*  COMBINE LOANS AND O/D DATA                    *
+*------------------------------------------------*;
+DATA LOAN4;
+   SET LOAN1 LOAN2 LOAN3;
+*;
+%TBLS;
+*;
+PROC PRINTTO PRINT=TEMP NEW;
+
+OPTION LINESIZE=256;
+
+ /*****************************************************************/
+ /*  PRINT TEXT FILE TO THE USER                                  */
+ /*****************************************************************/
+
+PROC TABULATE DATA=LOAN4 NOSEPS FORMCHAR='           ';
+TITLE1 ' ';
+TITLE2 ' ';
+  CLASS BRANCH RISKRATE;
+  VAR BALANCE;
+TABLE BRANCH=' ', RISKRATE=' '*(BALANCE=' '*(N=' '*F=5. SUM=' '))
+      / RTS=5 CONDENSE;
+PROC TABULATE DATA=LOAN4 NOSEPS FORMCHAR='           ';
+TITLE1 '    ';
+TITLE2 ' ';
+  CLASS BRANCH RISKRATE;
+  VAR RISKBAL;
+TABLE BRANCH=' ', RISKRATE=' '*(RISKBAL=' '*(N=' '*F=5. SUM=' '))
+      / RTS=5 CONDENSE;
+
+OPTION LINESIZE=132;
+  /****************************************************************/
+  /*  PRINT HARDCOPY IN THE SPOOL                                 */
+  /****************************************************************/;
+PROC PRINTTO PRINT=ODTLLIST NEW;
+PROC SORT DATA=LOAN4;
+  BY BRANCH;
+PROC TABULATE DATA=LOAN4 MISSING;
+         FORMAT RISKRATE RISK.;
+         BY BRANCH;
+         CLASS BRANCH RISKRATE ;
+         VAR BALANCE RISKBAL;
+         TABLE RISKRATE=' ' ALL='TOTAL',
+               (BALANCE='O/S LOANS IN ARREARS (RMM)'
+               RISKBAL='O/S LOANS CLASSIFIED AS NPL(RMM) 2,3,4')*
+               (N='NO.'*F=COMMA6. SUM='AMOUNT'*F=COMMA18.2)
+               / BOX=' ' RTS=30 CONDENSE;
+      TITLE1 'AGEING OF ALL OVERDUE OD & TERM LOANS';
+      TITLE2 'AS AT '&RDATE;
+%INC PGM1(EIBMNPL2);
