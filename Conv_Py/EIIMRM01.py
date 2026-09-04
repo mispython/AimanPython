@@ -15,8 +15,7 @@ Dependency:
              tested directly, exactly as the original logic actually does.
 
 ============================================================================
-PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
-same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py)
+PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
 1. main_fd.sas7bdat   (JCL DD DSN=SAP.PIBB.MNITB(0)) (PBB+PIBB combined account master for FD)
    File : INPUT_MAIN_FD_FILE   -> intg_dp_acct_fd.sas7bdat
