@@ -1,27 +1,26 @@
-(DATE '1960-01-01' + CAST(BLDATE AS INTEGER)) AS BLDATE
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py
+Step 1: Deriving report date...
+  RDATE           : 04/09/26
+  REPTMON/NOWK    : 09/4
+  PBB LOAN input  : loan084.sas7bdat
+  PIBB LOAN input : iloan084.sas7bdat
+  OVERDFT input   : intg_dp_acct_overdft_d31.sas7bdat
 
+Step 2: Caching input SAS datasets to Parquet...
+  [LOAN_PBB] Converting loan084.sas7bdat -> loan084.parquet ...
+  [LOAN_PBB] Done - 2,022,747 rows cached.
+  [LOAN_PIBB] Converting iloan084.sas7bdat -> iloan084.parquet ...
+  [LOAN_PIBB] Done - 632,482 rows cached.
+  [OVERDFT] Converting intg_dp_acct_overdft_d31.sas7bdat -> intg_dp_acct_overdft_d31.parquet ...
+  [OVERDFT] Done - 1,093,140 rows cached.
+Step 1: Deriving report date...
+  RDATE           : 04/09/26
+  REPTMON/NOWK    : 09/4
+  PBB LOAN input  : loan084.sas7bdat
+  PIBB LOAN input : iloan084.sas7bdat
+  OVERDFT input   : intg_dp_acct_overdft_d31.sas7bdat
 
-
-
-Step 3 [PBB]: Building LOAN1 / LOAN2 (LN facilities)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 736, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 699, in main
-    loan1, loan2 = _build_loan1_loan2(entity)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 398, in _build_loan1_loan2
-    raw = con.execute(f"""
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column BLDATE
-
-LINE 9:             CAST(BLDATE   AS DATE)    AS BLDATE,
-                    ^
-
-
-
-
-24400
-24352
-24352
-24352
-24352
-24352
+Step 2: Caching input SAS datasets to Parquet...
+  [LOAN_PBB] Cache fresh - skipping conversion.
+  [LOAN_PIBB] Cache fresh - skipping conversion.
+  [OVERDFT] Cache fresh - skipping conversion.
