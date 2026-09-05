@@ -37,8 +37,8 @@ render_mnpl2_print_loan1/2() calls below.
 from EIBMNPL1 import (
     REPTDATE,
     RDATE,
-    LOAN_CACHE,
     OVERDFT_CACHE,
+    _loan_cache_for,
     AsaWriter,
     format_brchcd,
     parse_excessdt,
@@ -79,9 +79,8 @@ def build_mnpl2_loan1(entity: str) -> list:
             CAST(BLDATE        AS DATE)    AS BLDATE,
             CAST(SECURE        AS VARCHAR) AS SECURE,
             CAST(OLDNOTEDAYARR AS INTEGER) AS OLDNOTEDAYARR
-        FROM read_parquet('{LOAN_CACHE.as_posix()}')
-        WHERE ENTITY_CD = '{entity}'
-          AND ACCTYPE = 'LN'
+        FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
+        WHERE ACCTYPE = 'LN'
           AND BRANCH IS NOT NULL
           AND BALANCE >= 1.00
           AND PRODUCT NOT IN (517, 500)
@@ -138,8 +137,8 @@ def build_mnpl2_loan2(entity: str) -> list:
             CAST(STATECD  AS VARCHAR) AS STATECD,
             CAST(BALANCE  AS DOUBLE)  AS BALANCE,
             CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT
-        FROM read_parquet('{LOAN_CACHE.as_posix()}')
-        WHERE ENTITY_CD = '{entity}' AND ACCTYPE = 'OD'
+        FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
+        WHERE ACCTYPE = 'OD'
         ORDER BY ACCTNO
     """).pl()
     od_ref = con.execute(f"""
