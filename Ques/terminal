@@ -1,24 +1,8 @@
-Step 3 [PBB]: Building LOAN1 / LOAN2 (LN facilities)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 737, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 700, in main
-    loan1, loan2 = _build_loan1_loan2(entity)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 399, in _build_loan1_loan2
-    raw = con.execute(f"""
-_duckdb.ParserException: Parser Error: syntax error at or near "CAST"
-
-LINE 10:             CAST(RISKRTE  AS INTEGER) AS RISKRTE
-                     ^
-.
-.
-.
-4
-.
-4
-.
-.
-.
+with open(OUTPUT_DIR / f"{entity}_TBLS.log", "w") as f:
+    import sys
+    sys.stdout = f
+    _run_tbls(...)
+    sys.stdout = sys.__stdout__
 
 
 
