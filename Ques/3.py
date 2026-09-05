@@ -1,326 +1,286 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
-Program  : EIBMDPIC.py
-Purpose  : Extraction for Inward Clearing Cheques from Deposits (PBB)
-           Transferred dataset to SAS Server under folder: DP_CA
-           Dataset: ICLRGYYMMDD
-ESMR     : 2008-1270
-Date     : 09-10-08 (HHH)
-Entity   : Public Bank Berhad (PBB)
+Program : EIBMNPL2
+Purpose : Continuation program of EIBMNPL1 (original SAS: %INC PGM1(EIBMNPL2)
+          run inline, in the same session, after EIBMNPL1's ageing table).
+          Produces the "TOTAL OVERDUE LOANS DETAILS" PROC PRINT listings:
+            - LOAN1 (loans, PAGEBY BRCH)
+            - LOAN2 (O/D, PAGEBY BRCH)
+          appended to the SAME ODTLLIST.COLD output opened by EIBMNPL1
+          (RECFM=FBA, ASA carriage control, LRECL=136).
+
+Dependency:
+    All shared paths, caches, report-date values, and helper functions are
+    imported directly from EIBMNPL1.py ("from EIBMNPL1 import ..."), since
+    the original %INC PGM1(EIBMNPL2) executes inline in EIBMNPL1's already
+    -established SAS session (same librefs BNM/OD, same REPTDATE macro
+    variables, same open ODTLLIST destination).
+    - PBBELF  : format_brchcd() used again here (PUT(BRANCH,BRCHCD.)).
+    - PBBLNFMT: same as EIBMNPL1 -- included at session level but no live
+      PUT(x,<PBBLNFMT format>.) call appears in EIBMNPL2's body either.
+      # from PBBLNFMT import ...   (NOT USED -- no live format call)
+
+CACHING NOTE (convert -> use -> delete):
+    LOAN_CACHE and OVERDFT_CACHE are imported directly from EIBMNPL1. They
+    are only valid Paths WHILE EIBMNPL1.main() has them set (i.e. between
+    _convert_inputs() and _cleanup_inputs()) -- this module is only ever
+    imported and its run() function only ever called from inside that
+    window (see EIBMNPL1.main()'s deferred "import EIBMNPL2" placement),
+    so no re-conversion and no reference to a deleted file ever occurs.
+
+The original EIBMNPL2 does NOT re-read BNM.LOAN&REPTMON&NOWK / OD.OVERDFT
+from disk (DATA LOAN2 MERGEs LOAN(subset) with OD, both re-derived from the
+same already-opened librefs); Python mirrors this by re-querying the SAME
+temporary Parquet files (LOAN_CACHE / OVERDFT_CACHE) that EIBMNPL1 already
+converted for this run, rather than converting anything a second time.
+
+EIBMNPL2's first %PRT call (PROC PRINTTO PRINT=PRINT) targets the default
+SAS listing (SASLIST DD is commented out in the JCL), so it is not captured
+to any catalogued dataset in the original job -- not written to a file here
+either, matching that behaviour. Only the second %PRT call
+(PROC PRINTTO PRINT=ODTLLIST, no NEW -> append) is captured, i.e. the
+render_mnpl2_print_loan1/2() calls below.
 """
 
-import os
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from EIBMNPL1 import (
+    REPTDATE,
+    RDATE,
+    LOAN_CACHE,
+    OVERDFT_CACHE,
+    AsaWriter,
+    format_brchcd,
+    parse_excessdt,
+    parse_toddate,
+    compute_bldate,
+    comma,
+)
+from PBBELF import format_brchcd  # noqa: F811  (re-import kept explicit for
+                                   # parity with EIBMNPL2's own %INC PBBELF;
+                                   # identical function already imported above)
 
-import polars as pl
-
-# =============================================================================
-# PATH CONFIGURATION
-# =============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
-INPUT_DIR   = BASE_DIR / "input" / "uat"
-OUTPUT_DIR  = BASE_DIR / "output" / "EIBMDPIC"
-
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Input paths
-RPTFILE2      = INPUT_DIR / "INWARD_KL_20260513.txt"           # fixed-width flat file
-RPTFILE       = INPUT_DIR / "CTCS_KL_20260513.txt"             # fixed-width flat file
-BRHCODE       = INPUT_DIR / "SPICK_REG_20260513.txt"           # fixed-width flat file
-
-# =============================================================================
-# DATE / WEEK DERIVATION  (equivalent of DATA REPTDATE step)
-# =============================================================================
-# REPTDATE = TODAY() - 1  (SAS: OPTIONS YEARCUTOFF=1950)
-reptdate: date = date.today() - timedelta(days=1)
-
-day_of_month = reptdate.day
-if 1 <= day_of_month <= 8:
-    nowk = 1
-elif 9 <= day_of_month <= 15:
-    nowk = 2
-elif 16 <= day_of_month <= 22:
-    nowk = 3
-else:
-    nowk = 4
-
-# Macro variable equivalents
-REPTYEAR = reptdate.strftime("%Y")           # 2-digit year  (PUT(REPTDATE,YEAR2.))
-REPTMON  = reptdate.strftime("%m")           # zero-padded month (Z2.)
-REPTDAY  = reptdate.strftime("%d")           # zero-padded day   (Z2.)
-REPTDT   = reptdate.toordinal()              # raw SAS date integer equivalent (used for filter)
-RDATE    = reptdate                          # date object used in DATA ECP step
-NOWK     = f"{nowk:01d}"                     # zero-padded 1-digit week number (Z1.)
-
-# =============================================================================
-# OUTPUT PATHS  (derived after macro variables are known)
-# =============================================================================
-# ICLRGD library   → SAP.PBB.ICLRG.INPUT
-ICLRGD_FILE   = OUTPUT_DIR / f"ICLRGA_{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
-# ICLRGNEW library → SAP.PBB.ICLRG.INPUTX
-ICLRGNEW_FILE = OUTPUT_DIR  / f"ICLRG_{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
-# SAP.PBB.ICLRGFTP (FTP staging — PROC CPORT replacement)
-ICLRGFTP_FILE = OUTPUT_DIR  / f"ICLRGNEW_ICLRGFTP_{REPTMON}{NOWK}{REPTYEAR}.parquet"
-
-# =============================================================================
-# FIXED-WIDTH FLAT FILE PARSERS
-# All @positions are 1-based in SAS; Python uses 0-based slicing [pos-1 : pos-1+len].
-# =============================================================================
-
-def _slice_str(line: bytes, start1: int, length: int) -> str:
-    """Extract a character field from a fixed-width byte line (1-based start)."""
-    s = start1 - 1
-    chunk = line[s: s + length]
-    return chunk.decode("cp037", errors="replace").rstrip()
+import duckdb
 
 
-def _slice_num(line: bytes, start1: int, length: int) -> int:
-    """Extract a zoned-decimal / display numeric field (1-based start)."""
-    s = start1 - 1
-    chunk = line[s: s + length]
-    try:
-        return int(chunk.decode("cp037", errors="replace").strip() or "0")
-    except ValueError:
-        return 0
+# ============================================================================
+# LOAN1 (loans detail)
+# ============================================================================
+def build_mnpl2_loan1(entity: str) -> list:
+    """DATA LOAN1: KEEP BRCH ACCTNO NAME PRODUCT CUSTCD SECTORCD COLLCD
+    NOTENO STATECD RISKRTE BALANCE APPRLIMT BLDATE SECURE DAYS;
+    (no RENAME BRCH=BRANCH here -- output var name stays BRCH)."""
+    print(f"\nStep 8 [{entity}]: EIBMNPL2 LOAN1 (loans detail)...")
+    con = duckdb.connect(database=":memory:")
+    raw = con.execute(f"""
+        SELECT
+            CAST(BRANCH        AS INTEGER) AS BRANCH,
+            CAST(ACCTNO        AS BIGINT)  AS ACCTNO,
+            CAST(NAME          AS VARCHAR) AS NAME,
+            CAST(PRODUCT       AS INTEGER) AS PRODUCT,
+            CAST(CUSTCD        AS VARCHAR) AS CUSTCD,
+            CAST(SECTORCD      AS VARCHAR) AS SECTORCD,
+            CAST(COLLCD        AS VARCHAR) AS COLLCD,
+            CAST(NOTENO        AS INTEGER) AS NOTENO,
+            CAST(STATECD       AS VARCHAR) AS STATECD,
+            CAST(RISKRTE       AS INTEGER) AS RISKRTE,
+            CAST(BALANCE       AS DOUBLE)  AS BALANCE,
+            CAST(APPRLIMT      AS DOUBLE)  AS APPRLIMT,
+            CAST(BLDATE        AS DATE)    AS BLDATE,
+            CAST(SECURE        AS VARCHAR) AS SECURE,
+            CAST(OLDNOTEDAYARR AS INTEGER) AS OLDNOTEDAYARR
+        FROM read_parquet('{LOAN_CACHE.as_posix()}')
+        WHERE ENTITY_CD = '{entity}'
+          AND ACCTYPE = 'LN'
+          AND BRANCH IS NOT NULL
+          AND BALANCE >= 1.00
+          AND PRODUCT NOT IN (517, 500)
+    """).pl()
+    con.close()
+
+    out = []
+    for r in raw.iter_rows(named=True):
+        bldate = r["BLDATE"]
+        days = (REPTDATE - bldate).days if bldate is not None else None
+
+        oldarr = r["OLDNOTEDAYARR"]
+        noteno = r["NOTENO"]
+        if oldarr is not None and oldarr > 0 and 98000 <= noteno <= 98999:
+            if days is None or days < 0:
+                days = 0
+            days = days + oldarr   # SUM(DAYS,OLDNOTEDAYARR) -- ignores missing
+
+        riskrte = r["RISKRTE"]
+        if riskrte not in (1, 2, 3, 4):
+            if days is None or days < 30:
+                continue   # DELETE
+
+        out.append({
+            "BRCH": format_brchcd(r["BRANCH"]), "ACCTNO": r["ACCTNO"],
+            "NAME": r["NAME"], "PRODUCT": r["PRODUCT"], "CUSTCD": r["CUSTCD"],
+            "SECTORCD": r["SECTORCD"], "COLLCD": r["COLLCD"],
+            "NOTENO": noteno, "STATECD": r["STATECD"], "RISKRTE": riskrte,
+            "BALANCE": r["BALANCE"], "APPRLIMT": r["APPRLIMT"],
+            "BLDATE": bldate, "SECURE": r["SECURE"], "DAYS": days,
+        })
+
+    out.sort(key=lambda x: (x["BRCH"], x["DAYS"] if x["DAYS"] is not None else -1, x["RISKRTE"] or 0))
+    print(f"  LOAN1 (mnpl2) rows: {len(out):,}")
+    return out
 
 
-def _slice_num_float(line: bytes, start1: int, length: int,
-                     decimals: int = 0) -> float:
-    """
-    Extract a display numeric with implied decimals (e.g. SAS 10.2 informat).
-    SAS 10.2 means 10-char field with 2 implied decimal places.
-    """
-    s = start1 - 1
-    chunk = line[s: s + length]
-    raw = chunk.decode("cp037", errors="replace").strip()
-    try:
-        value = float(raw)
-    except ValueError:
-        value = 0.0
-    # If SAS informat specifies implied decimals and no decimal point in data
-    if "." not in raw and decimals:
-        value /= 10 ** decimals
-    return value
+# ============================================================================
+# LOAN2 (O/D detail)
+# ============================================================================
+def build_mnpl2_loan2(entity: str) -> list:
+    """DATA LOAN2: MERGE LOAN(ACCTYPE='OD') OD; BY ACCTNO;"""
+    print(f"\nStep 9 [{entity}]: EIBMNPL2 LOAN2 (O/D detail)...")
+    con = duckdb.connect(database=":memory:")
+    od_base = con.execute(f"""
+        SELECT
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            CAST(NAME     AS VARCHAR) AS NAME,
+            CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+            CAST(CUSTCD   AS VARCHAR) AS CUSTCD,
+            CAST(SECTORCD AS VARCHAR) AS SECTORCD,
+            CAST(COLLCD   AS VARCHAR) AS COLLCD,
+            CAST(STATECD  AS VARCHAR) AS STATECD,
+            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT
+        FROM read_parquet('{LOAN_CACHE.as_posix()}')
+        WHERE ENTITY_CD = '{entity}' AND ACCTYPE = 'OD'
+        ORDER BY ACCTNO
+    """).pl()
+    od_ref = con.execute(f"""
+        SELECT
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(EXCESSDT AS BIGINT)  AS EXCESSDT,
+            CAST(TODDATE  AS BIGINT)  AS TODDATE,
+            CAST(RISKCODE AS VARCHAR) AS RISKCODE
+        FROM read_parquet('{OVERDFT_CACHE.as_posix()}')
+        WHERE ENTITY_CD = '{entity}'
+          AND (EXCESSDT > 0 OR TODDATE > 0)
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY ACCTNO) = 1
+    """).pl()
+    con.close()
 
-# -----------------------------------------------------------------------------
-# DATA ICLRGORI — INFILE RPTFILE2
-# Fixed-width field layout:
-#   @001 BNKTYPE  $2.    → [0:2]   char
-#   @003 BNKCODE   2.    → [2:4]   num
-#   @005 YY        4.    → [4:8]   num
-#   @009 MM        2.    → [8:10]  num
-#   @011 DD        2.    → [10:12] num
-#   @015 CHKNUM   $6.    → [14:20] char
-#   @021 PAYBANK   2.    → [20:22] num
-#   @023 MICRPAY   7.    → [22:29] num
-#   @030 ACCTNO   10.    → [29:39] num
-#   @040 TRXCODE  $2.    → [39:41] char
-#   @042 AMOUNT   10.2   → [41:51] float (implied 2 dec)
-#   @052 PREBANK   2.    → [51:53] num
-#   @054 MICRPRE   7.    → [53:60] num
-#   @061 CHKTYPE   2.    → [60:62] num
-#   @063 BRCODE    5.    → [62:67] num
-#   @068 UICCODE  $30.   → [67:97] char
-# -----------------------------------------------------------------------------
-def parse_rptfile2(filepath: Path) -> pl.DataFrame:
-    """
-    Read RPTFILE2 (INWARD.SAS.KL) fixed-width flat file.
-    Returns a DataFrame with raw columns; CLRGDT is computed afterwards.
-    """
-    rows = []
-    with open(filepath, "rb") as fh:
-        for raw_line in fh:
-            line = raw_line.rstrip(b"\r\n")
-            if not line:
-                continue
-            rows.append({
-                "BNKTYPE": _slice_str(line,   1,  2),
-                "BNKCODE": _slice_num(line,   3,  2),
-                "YY":      _slice_num(line,   5,  4),
-                "MM":      _slice_num(line,   9,  2),
-                "DD":      _slice_num(line,  11,  2),
-                "CHKNUM":  _slice_str(line,  15,  6),
-                "PAYBANK": _slice_num(line,  21,  2),
-                "MICRPAY": _slice_num(line,  23,  7),
-                "ACCTNO":  _slice_num(line,  30, 10),
-                "TRXCODE": _slice_str(line,  40,  2),
-                "AMOUNT":  _slice_num_float(line, 42, 10, decimals=2),
-                "PREBANK": _slice_num(line,  52,  2),
-                "MICRPRE": _slice_num(line,  54,  7),
-                "CHKTYPE": _slice_num(line,  61,  2),
-                "BRCODE":  _slice_num(line,  63,  5),
-                "UICCODE": _slice_str(line,  68, 30),
-            })
-    df = pl.DataFrame(rows) if rows else pl.DataFrame()
-    return df
+    od_ref_map = {r["ACCTNO"]: r for r in od_ref.iter_rows(named=True)}
 
-# -----------------------------------------------------------------------------
-# DATA BR — INFILE BRHCODE
-# Fixed-width field layout:
-#   @007 MICRPAY  7.  → [6:13]  num
-#   @017 BRANCH   3.  → [16:19] num
-# Note: *IF (001<=BRANCH<=500) is commented out in SAS — not applied here.
-# -----------------------------------------------------------------------------
-def parse_brhcode(filepath: Path) -> pl.DataFrame:
-    """Read BRHCODE fixed-width flat file. Returns MICRPAY, BRANCH."""
-    rows = []
-    with open(filepath, "rb") as fh:
-        for raw_line in fh:
-            line = raw_line.rstrip(b"\r\n")
-            if not line:
-                continue
-            rows.append({
-                "MICRPAY": _slice_num(line,  7, 7),
-                "BRANCH":  _slice_num(line, 17, 3),
-            })
-    return pl.DataFrame(rows) if rows else pl.DataFrame()
+    out = []
+    for r in od_base.iter_rows(named=True):
+        od = od_ref_map.get(r["ACCTNO"])
+        if od is None:
+            continue
+        if r["PRODUCT"] in (517, 500):
+            continue
 
-# -----------------------------------------------------------------------------
-# DATA ICLRGUIC — INFILE RPTFILE
-# Fixed-width field layout (only RCRDTYPE=02 records are kept):
-#   @001 RCRDTYPE   2.    → [0:2]   num   (filter: keep only == 2)
-#   @003 CHKNUM    $6.    → [2:8]   char
-#   @009 MICRPAY    7.    → [8:15]  num
-#   @016 ACCTNO    10.    → [15:25] num
-#   @026 TRXCODE   $2.    → [25:27] char
-#   @028 TRXAMT    10.2   → [27:37] float (PBB field name: TRXAMT, not AMOUNT)
-#   @038 MICR       7.    → [37:44] num   (PBB field name: MICR, not MICRPRE)
-#   @045 REJECT    $2.    → [44:46] char
-#   @057 TRXIND    $1.    → [56:57] char
-#   @058 TRXTYPE   $1.    → [57:58] char
-#   @059 YY2        4.    → [58:62] num
-#   @063 MM2        2.    → [62:64] num
-#   @065 DD2        2.    → [64:66] num
-#   @070 UICCODE   $30.   → [69:99] char
-#
-# Note: PBB RPTFILE uses TRXAMT and MICR — different from PIBB which uses
-#       AMOUNT and MICRPRE for the same positional fields.
-# -----------------------------------------------------------------------------
-def parse_rptfile_pbb(filepath: Path) -> pl.DataFrame:
-    """
-    Read RPTFILE (CCIPS.HOSTDR.KL.CTCS) fixed-width flat file for PBB.
-    Filters to RCRDTYPE == 2. Returns DataFrame with DRDATE computed.
-    """
-    rows = []
-    with open(filepath, "rb") as fh:
-        for raw_line in fh:
-            line = raw_line.rstrip(b"\r\n")
-            if not line:
-                continue
-            rcrdtype = _slice_num(line, 1, 2)
-            if rcrdtype != 2:
-                continue
-            rows.append({
-                "CHKNUM":  _slice_str(line,   3,  6),
-                "MICRPAY": _slice_num(line,   9,  7),
-                "ACCTNO":  _slice_num(line,  16, 10),
-                "TRXCODE": _slice_str(line,  26,  2),
-                "TRXAMT":  _slice_num_float(line, 28, 10, decimals=2),
-                "MICR":    _slice_num(line,  38,  7),
-                "REJECT":  _slice_str(line,  45,  2),
-                "TRXIND":  _slice_str(line,  57,  1),
-                "TRXTYPE": _slice_str(line,  58,  1),
-                "YY2":     _slice_num(line,  59,  4),
-                "MM2":     _slice_num(line,  63,  2),
-                "DD2":     _slice_num(line,  65,  2),
-                "UICCODE": _slice_str(line,  70, 30),
-            })
-    df = pl.DataFrame(rows) if rows else pl.DataFrame()
-    if not df.is_empty():
-        df = df.with_columns(
-            pl.date(pl.col("YY2"), pl.col("MM2"), pl.col("DD2")).alias("DRDATE")
+        excessdt, toddate = od["EXCESSDT"], od["TODDATE"]
+        excdate = parse_excessdt(excessdt) if excessdt else None
+        toddt1 = parse_toddate(toddate) if toddate else None
+        excesdt_str = excdate.strftime("%d/%m/%y") if excdate else ""
+        toddt_str = toddt1.strftime("%d/%m/%y") if toddt1 else ""
+
+        bldate = compute_bldate(excessdt, toddate)
+        days = (REPTDATE - bldate).days + 1 if bldate is not None else None
+
+        riskcode = od["RISKCODE"]
+        if riskcode not in ("1", "2", "3", "4"):
+            if days is None or days < 30:
+                continue   # DELETE
+
+        out.append({
+            "BRCH": format_brchcd(r["BRANCH"]), "ACCTNO": r["ACCTNO"],
+            "NAME": r["NAME"], "PRODUCT": r["PRODUCT"], "CUSTCD": r["CUSTCD"],
+            "SECTORCD": r["SECTORCD"], "COLLCD": r["COLLCD"],
+            "STATECD": r["STATECD"], "RISKCODE": riskcode,
+            "BALANCE": r["BALANCE"], "APPRLIMT": r["APPRLIMT"],
+            "BLDATE": bldate, "DAYS": days,
+            "EXCESDT": excesdt_str, "TODDT": toddt_str,
+        })
+
+    out.sort(key=lambda x: (x["BRCH"], x["DAYS"] if x["DAYS"] is not None else -1, x["RISKCODE"] or ""))
+    print(f"  LOAN2 (mnpl2) rows: {len(out):,}")
+    return out
+
+
+def _mnpl2_title_block(suffix: str) -> list:
+    return ["TOTAL OVERDUE LOANS DETAILS", f"AS AT {RDATE} {suffix}"]
+
+
+# ============================================================================
+# PROC PRINT renderers (appended to EIBMNPL1's ASA writer / ODTLLIST.COLD)
+# ============================================================================
+def render_mnpl2_print_loan1(asa: AsaWriter, rows: list) -> None:
+    """PROC PRINT DATA=LOAN1 LABEL; BY BRCH; PAGEBY BRCH;
+    VAR BRCH ACCTNO NAME PRODUCT CUSTCD SECTORCD COLLCD NOTENO STATECD
+        RISKRTE BALANCE APPRLIMT BLDATE SECURE DAYS;
+    LABEL BRCH='BRANCH' RISKRTE='RISKCODE';"""
+    title_lines = _mnpl2_title_block("(LOANS)")
+    header = (f"{'OBS':>4} {'BRANCH':<7}{'ACCTNO':>12} {'NAME':<20}{'PRODUCT':>8}"
+              f"{'CUSTCD':>7}{'SECTORCD':>9}{'COLLCD':>7}{'NOTENO':>7}{'STATECD':>8}"
+              f"{'RISKCODE':>9}{'BALANCE':>16}{'APPRLIMT':>16}{'BLDATE':>11}"
+              f"{'SECURE':>7}{'DAYS':>6}")
+
+    current_branch = None
+    obs = 0
+    for r in rows:
+        if r["BRCH"] != current_branch:
+            current_branch = r["BRCH"]
+            obs = 0
+            asa.new_page(title_lines)
+            asa.add(header)
+        obs += 1
+        bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
+        asa.ensure_space(1, title_lines)
+        asa.add(
+            f"{obs:>4} {r['BRCH']:<7}{r['ACCTNO']:>12} "
+            f"{(r['NAME'] or '')[:20]:<20}{r['PRODUCT']:>8}"
+            f"{(r['CUSTCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
+            f"{(r['COLLCD'] or ''):>7}{r['NOTENO']:>7}{(r['STATECD'] or ''):>8}"
+            f"{(r['RISKRTE'] if r['RISKRTE'] is not None else ''):>9}"
+            f"{comma(r['BALANCE'], 16, 2)}{comma(r['APPRLIMT'], 16, 2)}"
+            f"{bldate_s:>11}{(r['SECURE'] or ''):>7}"
+            f"{(r['DAYS'] if r['DAYS'] is not None else ''):>6}"
         )
-    return df
 
-# =============================================================================
-# DATA ICLRGORI  — parse and derive CLRGDT
-# PROC SORT; BY MICRPAY  — removed; Polars joins do not require pre-sorting.
-# =============================================================================
-ICLRGORI = parse_rptfile2(RPTFILE2)
-ICLRGORI = ICLRGORI.with_columns(
-    pl.date(pl.col("YY"), pl.col("MM"), pl.col("DD")).alias("CLRGDT")
-)
 
-# =============================================================================
-# DATA BR  — parse BRHCODE
-# *IF (001<=BRANCH<=500) is commented out in SAS — not applied here.
-# PROC SORT; BY MICRPAY  — removed.
-# =============================================================================
-BR = parse_brhcode(BRHCODE)
+def render_mnpl2_print_loan2(asa: AsaWriter, rows: list) -> None:
+    """PROC PRINT DATA=LOAN2 LABEL; BY BRCH; PAGEBY BRCH;
+    VAR BLDATE NAME CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD ACCTNO
+        BALANCE APPRLIMT EXCESDT TODDT DAYS BRCH; LABEL BRCH='BRANCH';"""
+    title_lines = _mnpl2_title_block("(O/D)")
+    header = (f"{'OBS':>4} {'BLDATE':>10} {'NAME':<20}{'CUSTCD':>7}{'PRODUCT':>8}"
+              f"{'RISKCODE':>9}{'COLLCD':>7}{'SECTORCD':>9}{'STATECD':>8}"
+              f"{'ACCTNO':>12}{'BALANCE':>16}{'APPRLIMT':>16}{'EXCESDT':>10}"
+              f"{'TODDT':>10}{'DAYS':>6} {'BRANCH':<7}")
 
-# =============================================================================
-# DATA ICLRG1 — MERGE ICLRGORI(IN=A) BR(IN=B); BY MICRPAY; IF A AND B;
-# Both A and B must match → inner join on MICRPAY.
-# =============================================================================
-ICLRG1 = ICLRGORI.join(
-    BR,
-    on="MICRPAY",
-    how="inner",
-)
+    current_branch = None
+    obs = 0
+    for r in rows:
+        if r["BRCH"] != current_branch:
+            current_branch = r["BRCH"]
+            obs = 0
+            asa.new_page(title_lines)
+            asa.add(header)
+        obs += 1
+        bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
+        asa.ensure_space(1, title_lines)
+        asa.add(
+            f"{obs:>4} {bldate_s:>10} {(r['NAME'] or '')[:20]:<20}"
+            f"{(r['CUSTCD'] or ''):>7}{r['PRODUCT']:>8}{r['RISKCODE']:>9}"
+            f"{(r['COLLCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
+            f"{(r['STATECD'] or ''):>8}{r['ACCTNO']:>12}"
+            f"{comma(r['BALANCE'], 16, 2)}{comma(r['APPRLIMT'], 16, 2)}"
+            f"{r['EXCESDT']:>10}{r['TODDT']:>10}"
+            f"{(r['DAYS'] if r['DAYS'] is not None else ''):>6} {r['BRCH']:<7}"
+        )
 
-# =============================================================================
-# DATA ICLRGD.ICLRGA&REPTYEAR&REPTMON&REPTDAY — KEEP specified columns
-# PROC SORT BY UICCODE  — applied; downstream merge requires UICCODE ordering.
-# Sort is retained here because the SAS program explicitly PROC SORTs this
-# intermediate dataset before the second merge.
-# =============================================================================
-ICLRGD = ICLRG1.select([
-    "BNKTYPE", "BNKCODE", "CLRGDT", "CHKNUM", "PAYBANK", "CHKTYPE",
-    "MICRPAY", "ACCTNO",  "AMOUNT", "TRXCODE", "PREBANK", "MICRPRE",
-    "BRCODE",  "UICCODE", "BRANCH",
-]).sort("UICCODE")
 
-ICLRGD.write_parquet(ICLRGD_FILE)
-print(f"ICLRGD written: {ICLRGD_FILE}  ({len(ICLRGD)} rows)")
-
-# =============================================================================
-# DATA ICLRGUIC — parse RPTFILE; filter RCRDTYPE=02; compute DRDATE
-# PROC SORT BY UICCODE  — removed; Polars left join does not require pre-sort.
-# =============================================================================
-ICLRGUIC = parse_rptfile_pbb(RPTFILE)
-
-# =============================================================================
-# DATA ICLRG5 — MERGE ICLRGD(IN=A) ICLRGUIC; BY UICCODE; IF A;
-# IF A (not IF A AND B) → left join: keep all rows from ICLRGD regardless of
-# whether ICLRGUIC has a matching UICCODE.
-# =============================================================================
-ICLRG5 = ICLRGD.join(
-    ICLRGUIC,
-    on="UICCODE",
-    how="left",
-)
-
-# =============================================================================
-# DATA ICLRGNEW.ICLRG&REPTYEAR&REPTMON&REPTDAY — KEEP specified columns
-# Note: AMOUNT comes from the ICLRGD side (the original clearing record).
-#       TRXAMT / MICR from ICLRGUIC are not retained in the final KEEP list.
-# =============================================================================
-# Columns available after the left join; suffix "_right" added by Polars for
-# duplicated names from the right-hand side — select only the required columns.
-ICLRGNEW = ICLRG5.select([
-    "BNKTYPE",  "CLRGDT",   "MICRPRE",  "ACCTNO",  "TRXCODE", "AMOUNT",
-    "MICRPAY",  "REJECT",   "TRXIND",   "TRXTYPE", "DRDATE",  "UICCODE",
-    "BNKCODE",  "CHKNUM",   "PAYBANK",  "PREBANK", "CHKTYPE", "BRANCH",
-])
-
-ICLRGNEW.write_parquet(ICLRGNEW_FILE)
-print(f"ICLRGNEW written: {ICLRGNEW_FILE}  ({len(ICLRGNEW)} rows)")
-
-# =============================================================================
-# FILENAME TRANFILE / PROC CPORT LIBRARY=ICLRGNEW
-# PROC CPORT exports the entire ICLRGNEW library as a SAS transport file.
-# Replaced by writing a staging Parquet for FTP/downstream consumption.
-# (SAP.PBB.ICLRGFTP equivalent)
-# =============================================================================
-ICLRGNEW.write_parquet(ICLRGFTP_FILE)
-print(f"FTP staging file written: {ICLRGFTP_FILE}  ({len(ICLRGNEW)} rows)")
-
-print("[EIBMDPIC] Program completed successfully.")
-
-# To show data - For testing purposes only
-print("\n ========== PREVIEW ========== \n")
-print(ICLRGD_FILE)
-print(ICLRGNEW_FILE)
-print(ICLRGFTP_FILE)
+# ============================================================================
+# ENTRY POINT (called from EIBMNPL1.main() once per entity, in lieu of the
+# plain "%INC PGM1(EIBMNPL2)" inline-execution -- see EIBMNPL1.py docstring)
+# ============================================================================
+def run(entity: str, asa: AsaWriter) -> None:
+    loan1 = build_mnpl2_loan1(entity)
+    loan2 = build_mnpl2_loan2(entity)
+    render_mnpl2_print_loan1(asa, loan1)
+    render_mnpl2_print_loan2(asa, loan2)
