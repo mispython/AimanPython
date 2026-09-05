@@ -1,23 +1,16 @@
-======================================================================
-Processing entity: PBB
-======================================================================
-
-Step 3 [PBB]: Building LOAN1 / LOAN2 (LN facilities)...
-  LOAN1 rows: 702,021   LOAN2 rows: 0
-
-Step 4 [PBB]: Building LOAN3 (O/D facilities)...
-  LOAN3 rows: 0
-
-Step 6: Writing TEMP (ODTLLIST.TEXT, no ASA) -> PBB_ODTLLIST_TEXT.txt
-  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMNPL/PBB_ODTLLIST_TEXT.txt
-
-Step 8 [PBB]: EIBMNPL2 LOAN1 (loans detail)...
-  LOAN1 (mnpl2) rows: 86,332
-
-Step 9 [PBB]: EIBMNPL2 LOAN2 (O/D detail)...
-  LOAN2 (mnpl2) rows: 0
-  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMNPL/PBB_ODTLLIST_COLD.txt
-  Total lines    : 95,578
+Step 4 [PIBB]: Building LOAN3 (O/D facilities)...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 743, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 703, in main
+    loan3 = _build_loan3(entity)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 514, in _build_loan3
+    bldate = compute_bldate(od["EXCESSDT"], od["TODDATE"])
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 261, in compute_bldate
+    excdate = parse_excessdt(excessdt)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 232, in parse_excessdt
+    return date(int(s[4:8]), int(s[0:2]), int(s[2:4]))
+ValueError: month must be in 1..12
 
 
 
