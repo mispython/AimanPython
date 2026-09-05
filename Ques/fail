@@ -1,60 +1,79 @@
-def _parse_date_from_z11(value) -> date | None:
-    """
-    Parse date from the first 8 characters of a Z11.-padded numeric value.
-    Returns None if the value is missing/zero or if month/day are invalid.
-    SAS YEARCUTOFF=1950 is applied (years 00-49 -> 2000, 50-99 -> 1900).
-    """
-    if value is None or value == 0:
-        return None
-    try:
-        s = f"{int(value):011d}"
-        mm = int(s[0:2])
-        dd = int(s[2:4])
-        yy = int(s[4:6])
-        year = 1900 + yy if yy >= 50 else 2000 + yy
-        # Validate month and day
-        if not (1 <= mm <= 12) or not (1 <= dd <= 31):
-            # Optional: print warning for debugging
-            # print(f"Warning: invalid date components in {s[:8]} (value={value})")
-            return None
-        return date(year, mm, dd)
-    except (ValueError, IndexError):
-        return None
+LINESIZE_TEMP     = 256
+TEMP_LABEL_WIDTH  = 5     # RTS=5
+TEMP_N_WIDTH      = 5     # F=5. on N
+TEMP_SUM_WIDTH    = 12    # unformatted SUM -> default BESTw. width
+TEMP_SEP          = " "   # single-space separator between sub-cells
 
 
+def _best_format(value, width: int = TEMP_SUM_WIDTH) -> str:
+    """Emulates BESTw. for an unformatted TABULATE SUM cell: no comma
+    grouping, decimals reduced (2 -> 1 -> 0) until the value fits exactly
+    in `width` characters. MISSING=0 -> None renders as '0'."""
+    if value is None:
+        return "0".rjust(width)
+    v = float(value)
+    sign = "-" if v < 0 else ""
+    v_abs = abs(v)
+    for decimals in (2, 1, 0):
+        s = f"{sign}{v_abs:.{decimals}f}"
+        if len(s) <= width:
+            return s.rjust(width)
+    s = f"{sign}{v_abs:.0f}"
+    return s[-width:].rjust(width)
 
 
-def parse_excessdt(excessdt):
-    return _parse_date_from_z11(excessdt)
+def _n_format(value, width: int = TEMP_N_WIDTH) -> str:
+    v = 0 if value is None else int(value)
+    s = str(v)
+    return (s[-width:] if len(s) > width else s).rjust(width)
 
 
+def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
+    """PROC PRINTTO PRINT=TEMP NEW; OPTION LINESIZE=256;
+    Two PROC TABULATE calls (BALANCE, then RISKBAL), FORMCHAR blank,
+    NOSEPS, TITLE1/TITLE2 blank, RTS=5 CONDENSE. No ASA, no vertical
+    pagination -- only horizontal (LINESIZE) wrapping via (Continued)."""
+    riskrates = list(range(0, 15))
+    branches = sorted({r["BRANCH"] for r in loan4_padded})
 
+    def _crosstab(field: str) -> dict:
+        agg = {}
+        for r in loan4_padded:
+            val = r[field]
+            key = (r["BRANCH"], r["RISKRATE"])
+            n, s = agg.get(key, (0, None))
+            if val is not None:
+                n += 1
+                s = (s or 0.0) + val
+            agg[key] = (n, s)
+        return agg
 
-def parse_toddate(toddate):
-    return _parse_date_from_z11(toddate)
+    group_width = len(TEMP_SEP) + TEMP_N_WIDTH + len(TEMP_SEP) + TEMP_SUM_WIDTH
+    max_groups = max(1, (LINESIZE_TEMP - TEMP_LABEL_WIDTH) // group_width)
+    chunks = [riskrates[i:i + max_groups] for i in range(0, len(riskrates), max_groups)]
 
+    lines = []
+    for field in ("BALANCE", "RISKBAL"):
+        cross = _crosstab(field)
+        for chunk_idx, group in enumerate(chunks):
+            lines.append("")   # TITLE1 ' '
+            lines.append("")   # TITLE2 ' '
+            header = " " * TEMP_LABEL_WIDTH
+            for rr in group:
+                header += TEMP_SEP + " " * TEMP_N_WIDTH + TEMP_SEP + str(rr).rjust(TEMP_SUM_WIDTH)
+            lines.append(header)
+            lines.append("")
+            for b in branches:
+                row = b.ljust(TEMP_LABEL_WIDTH)
+                for rr in group:
+                    n, s = cross.get((b, rr), (0, None))
+                    row += TEMP_SEP + _n_format(n) + TEMP_SEP + _best_format(s)
+                lines.append(row)
+            if chunk_idx < len(chunks) - 1:
+                lines.append("")
+                lines.append("(Continued)")
+                lines.append("")
 
-
-
-def _bldate_from_z11_mmddyy8(raw_value):
-    return _parse_date_from_z11(raw_value)
-
-
-
-
-def compute_bldate(excessdt, toddate):
-    bldate = None
-    if excessdt != 0 and toddate != 0:
-        excdate = parse_excessdt(excessdt)
-        toddt = parse_toddate(toddate)
-        # Only compare if both are valid dates
-        if excdate is not None and toddt is not None:
-            if excdate <= toddt:
-                bldate = _bldate_from_z11_mmddyy8(excessdt)
-            else:
-                bldate = _bldate_from_z11_mmddyy8(toddate)
-    elif excessdt is not None and excessdt != 0:
-        bldate = _bldate_from_z11_mmddyy8(excessdt)
-    elif toddate is not None and toddate != 0:
-        bldate = _bldate_from_z11_mmddyy8(toddate)
-    return bldate
+    with open(out_path, "w", encoding="latin1") as fh:
+        for ln in lines:
+            fh.write(ln + "\n")
