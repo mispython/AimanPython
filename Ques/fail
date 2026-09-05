@@ -1,169 +1,60 @@
-INPUT_LOAN_PBB_DIR  = STG_DIR / "sasdata"
-INPUT_LOAN_PIBB_DIR = STG_DIR / "sasdata"
+def _parse_date_from_z11(value) -> date | None:
+    """
+    Parse date from the first 8 characters of a Z11.-padded numeric value.
+    Returns None if the value is missing/zero or if month/day are invalid.
+    SAS YEARCUTOFF=1950 is applied (years 00-49 -> 2000, 50-99 -> 1900).
+    """
+    if value is None or value == 0:
+        return None
+    try:
+        s = f"{int(value):011d}"
+        mm = int(s[0:2])
+        dd = int(s[2:4])
+        yy = int(s[4:6])
+        year = 1900 + yy if yy >= 50 else 2000 + yy
+        # Validate month and day
+        if not (1 <= mm <= 12) or not (1 <= dd <= 31):
+            # Optional: print warning for debugging
+            # print(f"Warning: invalid date components in {s[:8]} (value={value})")
+            return None
+        return date(year, mm, dd)
+    except (ValueError, IndexError):
+        return None
 
 
 
 
-INPUT_LOAN_PBB_FILE  = INPUT_LOAN_PBB_DIR  / f"loan{REPTMON}{NOWK}_d19.sas7bdat"
-INPUT_LOAN_PIBB_FILE = INPUT_LOAN_PIBB_DIR / f"iloan{REPTMON}{NOWK}_d19.sas7bdat"
+def parse_excessdt(excessdt):
+    return _parse_date_from_z11(excessdt)
 
 
 
 
-print("\nStep 2: Caching input SAS datasets to Parquet...")
-LOAN_PBB_CACHE  = _load_cached(INPUT_LOAN_PBB_FILE, "LOAN_PBB")
-LOAN_PIBB_CACHE = _load_cached(INPUT_LOAN_PIBB_FILE, "LOAN_PIBB")
-OVERDFT_CACHE   = _load_cached(INPUT_OVERDFT_FILE, "OVERDFT")
+def parse_toddate(toddate):
+    return _parse_date_from_z11(toddate)
 
 
 
 
-def _loan_cache_for(entity: str) -> Path:
-    return LOAN_PBB_CACHE if entity == "PBB" else LOAN_PIBB_CACHE
+def _bldate_from_z11_mmddyy8(raw_value):
+    return _parse_date_from_z11(raw_value)
 
 
 
 
-def _build_loan1_loan2(entity: str):
-    print(f"\nStep 3 [{entity}]: Building LOAN1 / LOAN2 (LN facilities)...")
-    con = duckdb.connect(database=":memory:")
-    raw = con.execute(f"""
-        SELECT
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-            CAST(PRODUCT  AS INTEGER) AS PRODUCT,
-            CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
-            CAST(NOTENO   AS INTEGER) AS NOTENO,
-            CAST(BLDATE   AS DATE)    AS BLDATE,
-            CAST(RISKRTE  AS INTEGER) AS RISKRTE
-        FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
-        WHERE NOTENO < 90000
-          AND ACCTYPE = 'LN'
-          AND BRANCH IS NOT NULL
-          AND BALANCE >= 1.00
-          AND PRODUCT NOT IN (517, 500)
-    """).pl()
-    con.close()
-    ...
-
-
-
-
-def _build_loan3(entity: str) -> list:
-    print(f"\nStep 4 [{entity}]: Building LOAN3 (O/D facilities)...")
-    con = duckdb.connect(database=":memory:")
-    od_base = con.execute(f"""
-        SELECT
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-            CAST(PRODUCT  AS INTEGER) AS PRODUCT
-        FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
-        WHERE ACCTYPE = 'OD'
-          AND (APPRLIMT >= 0 OR BALANCE < 0)
-          AND (ACCTNO <= 3900000000 OR ACCTNO > 3999999999)
-        ORDER BY ACCTNO
-    """).pl()
-
-    od_ref = con.execute(f"""
-        SELECT
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(EXCESSDT AS BIGINT)  AS EXCESSDT,
-            CAST(TODDATE  AS BIGINT)  AS TODDATE,
-            CAST(RISKCODE AS VARCHAR) AS RISKCODE
-        FROM read_parquet('{OVERDFT_CACHE.as_posix()}')
-        WHERE ENTITY_CD = '{entity}'
-          AND (EXCESSDT > 0 OR TODDATE > 0)
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY ACCTNO) = 1
-    """).pl()
-    con.close()
-    ...
-
-
-
-
-from EIBMNPL1 import (
-    ...
-    LOAN_PBB_CACHE,
-    LOAN_PIBB_CACHE,
-    OVERDFT_CACHE,
-    _loan_cache_for,
-    ...
-)
-
-
-
-
-def build_mnpl2_loan1(entity: str) -> list:
-    """DATA LOAN1: KEEP BRCH ACCTNO NAME PRODUCT CUSTCD SECTORCD COLLCD
-    NOTENO STATECD RISKRTE BALANCE APPRLIMT BLDATE SECURE DAYS;
-    (no RENAME BRCH=BRANCH here -- output var name stays BRCH)."""
-    print(f"\nStep 8 [{entity}]: EIBMNPL2 LOAN1 (loans detail)...")
-    con = duckdb.connect(database=":memory:")
-    raw = con.execute(f"""
-        SELECT
-            CAST(BRANCH        AS INTEGER) AS BRANCH,
-            CAST(ACCTNO        AS BIGINT)  AS ACCTNO,
-            CAST(NAME          AS VARCHAR) AS NAME,
-            CAST(PRODUCT       AS INTEGER) AS PRODUCT,
-            CAST(CUSTCD        AS VARCHAR) AS CUSTCD,
-            CAST(SECTORCD      AS VARCHAR) AS SECTORCD,
-            CAST(COLLCD        AS VARCHAR) AS COLLCD,
-            CAST(NOTENO        AS INTEGER) AS NOTENO,
-            CAST(STATECD       AS VARCHAR) AS STATECD,
-            CAST(RISKRTE       AS INTEGER) AS RISKRTE,
-            CAST(BALANCE       AS DOUBLE)  AS BALANCE,
-            CAST(APPRLIMT      AS DOUBLE)  AS APPRLIMT,
-            CAST(BLDATE        AS DATE)    AS BLDATE,
-            CAST(SECURE        AS VARCHAR) AS SECURE,
-            CAST(OLDNOTEDAYARR AS INTEGER) AS OLDNOTEDAYARR
-        FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
-        WHERE ACCTYPE = 'LN'
-          AND BRANCH IS NOT NULL
-          AND BALANCE >= 1.00
-          AND PRODUCT NOT IN (517, 500)
-    """).pl()
-    con.close()
-    ...
-
-
-
-
-def build_mnpl2_loan2(entity: str) -> list:
-    """DATA LOAN2: MERGE LOAN(ACCTYPE='OD') OD; BY ACCTNO;"""
-    print(f"\nStep 9 [{entity}]: EIBMNPL2 LOAN2 (O/D detail)...")
-    con = duckdb.connect(database=":memory:")
-    od_base = con.execute(f"""
-        SELECT
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            CAST(NAME     AS VARCHAR) AS NAME,
-            CAST(PRODUCT  AS INTEGER) AS PRODUCT,
-            CAST(CUSTCD   AS VARCHAR) AS CUSTCD,
-            CAST(SECTORCD AS VARCHAR) AS SECTORCD,
-            CAST(COLLCD   AS VARCHAR) AS COLLCD,
-            CAST(STATECD  AS VARCHAR) AS STATECD,
-            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-            CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT
-        FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
-        WHERE ACCTYPE = 'OD'
-        ORDER BY ACCTNO
-    """).pl()
-    od_ref = con.execute(f"""
-        SELECT
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(EXCESSDT AS BIGINT)  AS EXCESSDT,
-            CAST(TODDATE  AS BIGINT)  AS TODDATE,
-            CAST(RISKCODE AS VARCHAR) AS RISKCODE
-        FROM read_parquet('{OVERDFT_CACHE.as_posix()}')
-        WHERE ENTITY_CD = '{entity}'
-          AND (EXCESSDT > 0 OR TODDATE > 0)
-        QUALIFY ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY ACCTNO) = 1
-    """).pl()
-    con.close()
-    ...
-
-
-
-
+def compute_bldate(excessdt, toddate):
+    bldate = None
+    if excessdt != 0 and toddate != 0:
+        excdate = parse_excessdt(excessdt)
+        toddt = parse_toddate(toddate)
+        # Only compare if both are valid dates
+        if excdate is not None and toddt is not None:
+            if excdate <= toddt:
+                bldate = _bldate_from_z11_mmddyy8(excessdt)
+            else:
+                bldate = _bldate_from_z11_mmddyy8(toddate)
+    elif excessdt is not None and excessdt != 0:
+        bldate = _bldate_from_z11_mmddyy8(excessdt)
+    elif toddate is not None and toddate != 0:
+        bldate = _bldate_from_z11_mmddyy8(toddate)
+    return bldate
