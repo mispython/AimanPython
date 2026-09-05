@@ -88,10 +88,11 @@ from PBBELF import format_brchcd
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_LOAN_DIR    = STG_DIR / "sasdata"
-INPUT_OVERDFT_DIR = STG_DIR / "sasdata"
+INPUT_LOAN_PBB_DIR  = STG_DIR / "EIBMNPL"
+INPUT_LOAN_PIBB_DIR = STG_DIR / "EIBMNPL"
+INPUT_OVERDFT_DIR   = STG_DIR / "EIBMNPL"
 
-INPUT_OVERDFT_FILE = INPUT_OVERDFT_DIR / "overdft_d19.sas7bdat"
+INPUT_OVERDFT_FILE = INPUT_OVERDFT_DIR / "intg_dp_acct_overdft_d31.sas7bdat"
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMNPL"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -122,12 +123,17 @@ RDATE    = REPTDATE.strftime("%d/%m/%y")     # PUT(REPTDATE,DDMMYY8.)
 # verbatim (not corrected to the range-based NOWK used elsewhere).
 NOWK = "4"
 
-INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}_d19.sas7bdat"
+# INPUT_LOAN_PBB_FILE  = INPUT_LOAN_PBB_DIR  / f"loan{REPTMON}{NOWK}.sas7bdat"
+# INPUT_LOAN_PIBB_FILE = INPUT_LOAN_PIBB_DIR / f"iloan{REPTMON}{NOWK}.sas7bdat"
 
-print(f"  RDATE        : {RDATE}")
-print(f"  REPTMON/NOWK : {REPTMON}/{NOWK}")
-print(f"  LOAN input   : {INPUT_LOAN_FILE.name}")
-print(f"  OVERDFT input: {INPUT_OVERDFT_FILE.name}")
+INPUT_LOAN_PBB_FILE  = INPUT_LOAN_PBB_DIR  / f"loan084.sas7bdat"
+INPUT_LOAN_PIBB_FILE = INPUT_LOAN_PIBB_DIR / f"iloan084.sas7bdat"
+
+print(f"  RDATE           : {RDATE}")
+print(f"  REPTMON/NOWK    : {REPTMON}/{NOWK}")
+print(f"  PBB LOAN input  : {INPUT_LOAN_PBB_FILE.name}")
+print(f"  PIBB LOAN input : {INPUT_LOAN_PIBB_FILE.name}")
+print(f"  OVERDFT input   : {INPUT_OVERDFT_FILE.name}")
 
 TBL_LABELS = {1: "(LOANS)", 2: "(HP)", 3: "(O/D)", 4: "(LOANS & O/D)"}
 
@@ -318,8 +324,13 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 
 
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-LOAN_CACHE    = _load_cached(INPUT_LOAN_FILE, "LOAN")
-OVERDFT_CACHE = _load_cached(INPUT_OVERDFT_FILE, "OVERDFT")
+LOAN_PBB_CACHE  = _load_cached(INPUT_LOAN_PBB_FILE, "LOAN_PBB")
+LOAN_PIBB_CACHE = _load_cached(INPUT_LOAN_PIBB_FILE, "LOAN_PIBB")
+OVERDFT_CACHE   = _load_cached(INPUT_OVERDFT_FILE, "OVERDFT")
+
+
+def _loan_cache_for(entity: str) -> Path:
+    return LOAN_PBB_CACHE if entity == "PBB" else LOAN_PIBB_CACHE
 
 # ============================================================================
 # ASA / PAGINATION HELPERS  (also used by EIBMNPL2 for the same COLD output)
@@ -394,9 +405,8 @@ def _build_loan1_loan2(entity: str):
             CAST(NOTENO   AS INTEGER) AS NOTENO,
             CAST(BLDATE   AS DATE)    AS BLDATE,
             CAST(RISKRTE  AS INTEGER) AS RISKRTE
-        FROM read_parquet('{LOAN_CACHE.as_posix()}')
-        WHERE ENTITY_CD = '{entity}'
-          AND NOTENO < 90000
+        FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
+        WHERE NOTENO < 90000
           AND ACCTYPE = 'LN'
           AND BRANCH IS NOT NULL
           AND BALANCE >= 1.00
@@ -463,9 +473,8 @@ def _build_loan3(entity: str) -> list:
             CAST(BRANCH   AS INTEGER) AS BRANCH,
             CAST(BALANCE  AS DOUBLE)  AS BALANCE,
             CAST(PRODUCT  AS INTEGER) AS PRODUCT
-        FROM read_parquet('{LOAN_CACHE.as_posix()}')
-        WHERE ENTITY_CD = '{entity}'
-          AND ACCTYPE = 'OD'
+        FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
+        WHERE ACCTYPE = 'OD'
           AND (APPRLIMT >= 0 OR BALANCE < 0)
           AND (ACCTNO <= 3900000000 OR ACCTNO > 3999999999)
         ORDER BY ACCTNO
