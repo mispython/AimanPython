@@ -127,3 +127,501 @@
  |----------------------------+------+------------------+------+------------------|                                                     
  |TOTAL                       | 3,320|    809,694,696.17|    17|      2,644,066.51|                                                     
  ----------------------------------------------------------------------------------
+
+
+
+
+
+1TOTAL OVERDUE LOANS DETAILS                                                                                                            
+ AS AT 31/08/26 (LOANS)                                                                                                                 
+                                                                                                                                        
+ BRANCH=AKH                                                                                                                             
+                                                                                                                                        
+   Obs    BRANCH        ACCTNO    NAME                        PRODUCT    CUSTCD    SECTORCD    COLLCD                                   
+                                                                                                                                        
+     1     AKH      2900595010    MUHAMMAD SHAFIQ BIN OMAR      152        77        9700      30570                                    
+     2     AKH      2900595204    MOHD ANUAR BIN BABA           152        77        9700      30570                                    
+     3     AKH      2900596915    NUR NAZMIN ABU BAKAR          152        77        9700      30570                                    
+     4     AKH      2901920415    TAN HOON CHENG                422        78        9700      30570                                    
+     5     AKH      2901923109    TAN YEN CHUAN                 152        78        9700      30570                                    
+     6     AKH      2901923534    MOHD ANUAR BIN BABA           152        77        9700      30570                                    
+     7     AKH      2903438822    HAZFARIZAL BIN ABDUL HAL      152        77        9700      30570                                    
+     8     AKH      2905670010    REWATHI A/P MARIMUTHU         152        78        9700      30570                                    
+     9     AKH      2905671721    NURZAWANI BINTI ABDUL RA      152        77        9700      30570                                    
+    10     AKH      2905673420    LEE ZHI PAY                   152        78        9700      30570                                    
+    11     AKH      2906099101    TAN CHU HUA                   152        78        9700      30570                                    
+    12     AKH      2906790628    PUTERI NOOR AMIRA BINTI       152        77        9700      30570                                    
+    13     AKH      2907241432    MANEESA BINTI ABDUL RAHM      464        77        9700      30570                                    
+    14     AKH      2907243713    NURUL AIN BINTI ZAINAL        152        77        9700      30570                                    
+    15     AKH      2907740128    NOORFATIN NAJJUA BINTI M      152        77        9700      30570                                    
+    16     AKH      2909003215    MUNIRA ATIKA BINTI RAZAL      152        77        9700      30570                                    
+    17     AKH      2910000607    MAHATHIR MUHAMMAD BIN MU      152        77        9700      30570                                    
+    18     AKH      2910677605    NOR SURIANA BINTI BAHARU      152        77        9700      30570                                    
+    19     AKH      2911158716    SITI NORHAYATI BINTI ISM      152        77        9700      30570                                    
+    20     AKH      2961569104    ABU ZARIM & NOR HASLIZA       142        77        9700      30570                                    
+    21     AKH      2961571622    MOHD HANIF BIN AHAMAD         142        77        9700      30570                                    
+    22     AKH      2968326600    SURIYATI BINTI ABDULLAH       152        77        9700      30570                                    
+    23     AKH      2968844033    MUHAMMAD FAUZI BIN ASHAA      152        77        9700      30570                                    
+    24     AKH      2968844518    FATIN AMIRA BINTI ADNAN       152        77        9700      30570                                    
+    25     AKH      2968844712    ASIAH BINTI HUSAIN            152        77        9700      30570                                    
+                                                                                                                                        
+   Obs    NOTENO    STATECD    RISKCODE     BALANCE      APPRLIMT      BLDATE    SECURE    DAYS                                         
+                                                                                                                                        
+     1    10010        M           0       495702.29    501220.00    01/08/26      S        30                                          
+     2    10010        M           0       239441.55    246200.00    01/08/26      S        30                                          
+     3    30010        M           0       167913.87    181250.00    01/08/26      S        30                                          
+     4       10        B           0        49886.96    150000.00    01/08/26      S        30                                          
+     5    30010        M           0       482723.57    527830.00    01/08/26      S        30                                          
+     6    10010        M           0       211513.16    217000.00    01/08/26      S        30                                          
+     7       10        M           0       283297.09    305381.34    01/08/26      S        30                                          
+     8    30010        M           0        99878.58    101900.00    01/08/26      S        30                                          
+     9    30010        M           0       397052.68    414300.00    01/08/26      S        30                                          
+    10    30010        M           0       430246.93    442050.00    01/08/26      S        30                                          
+    11       10        M           0       118752.53    120200.00    01/08/26      S        30                                          
+    12    30010        M           0       206733.24    225150.00    01/08/26      S        30                                          
+    13       10        M           0       135632.96    152421.00    01/08/26      S        30                                          
+    14    30010        M           0       292889.77    301100.00    01/08/26      S        30                                          
+    15    10010        M           0       383713.80    382060.00    01/08/26      S        30                                          
+    16       10        M           0       391274.22    372833.91    01/08/26      S        30                                          
+    17    30010        M           0       300229.94    302202.00    01/08/26      S        30                                          
+    18    30010        A           0       294163.81    294028.00    01/08/26      S        30                                          
+    19    30010        M           0       196023.77    310347.00    01/08/26      S        30                                          
+    20       10        M           0        41066.23     64195.86    01/08/26      S        30                                          
+    21    30010        M           0       138692.76    179150.00    01/08/26      S        30                                          
+    22       10        M           0       301960.63    341167.53    01/08/26      S        30                                          
+    23    30010        M           0        92711.47    202165.00    01/08/26      S        30                                          
+    24    30010        M           0       178630.07    219070.00    01/08/26      S        30                                          
+    25    30010        M           0       231201.79    289800.00    01/08/26      S        30                                          
+1TOTAL OVERDUE LOANS DETAILS                                                                                                            
+ AS AT 31/08/26 (LOANS)                                                                                                                 
+                                                                                                                                        
+ BRANCH=AKH                                                                                                                             
+ (continued)                                                                                                                            
+                                                                                                                                        
+   Obs    BRANCH        ACCTNO    NAME                        PRODUCT    CUSTCD    SECTORCD    COLLCD                                   
+                                                                                                                                        
+    26     AKH      2968845707    MOHD ZAKI BIN MUSLAINI        409        77        9700      30570                                    
+    27     AKH      2968846702    MOHD ZAINI BIN MOHD SHUK      152        77        9700      30570                                    
+    28     AKH      2968847600    MOHD KHAIRULNIZAM BIN SH      152        77        9700      30570                                    
+    29     AKH      2969312711    MOHD SAIFUL BIN LIMAN         152        77        9700      30570                                    
+    30     AKH      2969583224    HASHIM BIN SALAM              152        77        9700      30570                                    
+    31     AKH      2969585117    ASWAD BIN HUSSAIN             175        77        9700      30570                                    
+    32     AKH      2969990225    ANA SALWA HO BINTI ABDUL      152        77        9700      30570                                    
+    33     AKH      2969991936    VIJAYANDRAN A/L NALLATAM      152        78        9700      30570                                    
+    34     AKH      2970444829    ZAMRIE BIN SHAMSUDDIN         175        77        9700      30570                                    
+    35     AKH      2970447001    CHU HAN NEE                   152        78        9700      30570                                    
+    36     AKH      2970858735    LAU KAK BOON                  152        78        9700      30570                                    
+    37     AKH      2970859402    NUR HIDAYU BINTI NOORDIN      409        77        9700      30570                                    
+    38     AKH      2970859827    MOHD AMIR SAUFI BIN MUHA      152        77        9700      30570                                    
+    39     AKH      2970862721    EFFLIZA BINTI ABDUL JALI      152        77        9700      30570                                    
+    40     AKH      2971493010    ONG SIEW HUI                  464        78        9700      30570                                    
+    41     AKH      2971496226    MOHD YUSOF BIN LONG           154        77        9700      30570                                    
+    42     AKH      2971497706    WAN AZMAN BIN WAN YAAKOB      152        77        9700      30570                                    
+    43     AKH      2972253301    CHANG PEK YAH                 152        78        9700      30570                                    
+    44     AKH      2972254721    MOHAMMED SHAFEEQ BIN ZUL      152        77        9700      30570                                    
+    45     AKH      2972256614    NOOR JALILAH BINTI KAMAR      409        77        9700      30570                                    
+    46     AKH      2972560313    MOHAMMED SHAFEEQ BIN ZUL      176        77        9700      30570                                    
+    47     AKH      2972562534    VIMAL A/L KRISNANSAMY         410        78        9700      30570                                    
+    48     AKH      2972993635    MAHADI BIN SALLEH             135        77        9700      30580                                    
+    49     AKH      2972995528    RAJU A/L GANASAKARAN          410        78        9700      30570                                    
+                                                                                                                                        
+   Obs    NOTENO    STATECD    RISKCODE     BALANCE      APPRLIMT      BLDATE    SECURE    DAYS                                         
+                                                                                                                                        
+    26       10        M           0        56446.70     64502.89    01/08/26      S        30                                          
+    27       10        M           0       237444.15    262488.95    01/08/26      S        30                                          
+    28       10        M           0       195153.07    210638.81    01/08/26      S        30                                          
+    29    30010        M           0       156315.82    158850.00    01/08/26      S        30                                          
+    30    30010        M           0       168604.18    198900.00    01/08/26      S        30                                          
+    31    30010        M           0        59503.29     65150.00    01/08/26      S        30                                          
+    32       10        M           0        91556.91    156200.00    01/08/26      S        30                                          
+    33    30010        M           0        24416.65    122500.00    01/08/26      S        30                                          
+    34       10        M           0        55565.66     58316.93    01/08/26      S        30                                          
+    35    30010        M           0       425098.26    485400.00    01/08/26      S        30                                          
+    36    30010        M           0       305212.29    356950.00    01/08/26      S        30                                          
+    37    10010        M           0        48650.08     78200.00    01/08/26      S        30                                          
+    38    30010        M           0       644362.14    698630.00    01/08/26      S        30                                          
+    39    30010        M           0       103752.42    133200.00    01/08/26      S        30                                          
+    40    30010        M           0       132546.06    138000.00    01/08/26      S        30                                          
+    41       10        M           0       125628.28    218314.00    01/08/26      S        30                                          
+    42       10        M           0       120203.86    158408.55    01/08/26      S        30                                          
+    43    30010        M           0       163141.80    183100.00    01/08/26      S        30                                          
+    44       10        M           0       412639.22    454701.31    01/08/26      S        30                                          
+    45       10        M           0        50142.05     54143.44    01/08/26      S        30                                          
+    46       10        M           0        95113.85    116018.84    01/08/26      S        30                                          
+    47       10        M           0        93371.23    108720.15    01/08/26      S        30                                          
+    48       10        M           0         3099.29     28760.00    01/08/26      S        30                                          
+    49       10        M           0       105469.14    112321.08    01/08/26      S        30                                          
+1TOTAL OVERDUE LOANS DETAILS                                                                                                            
+ AS AT 31/08/26 (LOANS)                                                                                                                 
+                                                                                                                                        
+ BRANCH=AKH                                                                                                                             
+ (continued)                                                                                                                            
+                                                                                                                                        
+   Obs    BRANCH        ACCTNO    NAME                        PRODUCT    CUSTCD    SECTORCD    COLLCD                                   
+                                                                                                                                        
+    50     AKH      2972995916    PANG SWEE YEN                 152        78        9700      30570                                    
+    51     AKH      2973333813    PERNIAGAAN CERGAS GAS         176        42        6130      30570                                    
+    52     AKH      2974312528    MOHD NIZAM BIN MOHAMAD Y      150        77        9700      30570                                    
+    53     AKH      2975444413    ROSMAINY BIN GULAM MOHD       151        77        9700      30570                                    
+    54     AKH      2976763007    LIM KHAI MING                 422        78        9700      30570                                    
+    55     AKH      2976765519    KHAIRIEL BIN MOKTAR           135        77        9700      30580                                    
+    56     AKH      2976766708    HELMIZA BINTI A.BAKAR         135        77        9700      30580                                    
+    57     AKH      2977462226    ANUSUYAH A/P RAMACHINDRA      135        78        9700      30580                                    
+    58     AKH      2978193026    SA'AYAH BINTI YACOB           151        77        9700      30570                                    
+    59     AKH      2978196824    JOHARI BIN RAJA MOHAMMAD      464        77        9700      30570                                    
+    60     AKH      2979093509    TEO GIA CHING                 152        78        9700      30570                                    
+    61     AKH      2980024214    TEO GIA CHING                 175        78        9700      30570                                    
+    62     AKH      2980025015    TEO SAR WEI                   152        78        9700      30570                                    
+    63     AKH      2980025403    TAN CHU HUA                   152        78        9700      30570                                    
+    64     AKH      2981983019    TAN CHU HUA                   152        78        9700      30570                                    
+    65     AKH      2982522411    MOHD SAUFI BIN MOHD YUSO      152        77        9700      30570                                    
+    66     AKH      2983520214    HUDA SHAZANA BINTI AB HA      152        77        9700      30570                                    
+    67     AKH      2983520833    TAN CHU HUA                   175        78        9700      30570                                    
+    68     AKH      2984363217    NORFAIZAH BINTI ABDUL AZ      152        77        9700      30570                                    
+    69     AKH      2984364406    HAZMIN BIN AHMAD              152        77        9700      30570                                    
+    70     AKH      2986053134    ANUAR BIN ISMAIL              152        77        9700      30570                                    
+    71     AKH      2986053425    MOHD ZARALI BIN KHALID        152        77        9700      30570                                    
+    72     AKH      2986056022    CHANDRAN A/L MANICKAM         152        78        9700      30570                                    
+    73     AKH      2986610730    FAUZIAH BINTI JEBAH           152        77        9700      30570                                    
+                                                                                                                                        
+   Obs    NOTENO    STATECD    RISKCODE     BALANCE      APPRLIMT      BLDATE    SECURE    DAYS                                         
+                                                                                                                                        
+    50       10        M           0       277205.03    352218.96    01/08/26      S        30                                          
+    51       10        M           0       229565.82    448218.04    01/08/26      S        30                                          
+    52    30010        M           0       145996.93    168750.00    01/08/26      S        30                                          
+    53    10010        M           0       577540.34    603200.00    01/08/26      S        30                                          
+    54       10        M           0        54815.12    156448.50    01/08/26      S        30                                          
+    55       10        M           0        17486.98     95420.00    01/08/26      S        30                                          
+    56       10        M           0         3782.03     18240.00    01/08/26      S        30                                          
+    57       10        M           0        21284.12     71760.00    01/08/26      S        30                                          
+    58    30010        M           0       251402.04    332570.00    01/08/26      S        30                                          
+    59       10        M           0        80129.16     95095.91    01/08/26      S        30                                          
+    60    30010        M           0       212861.35    242200.00    01/08/26      S        30                                          
+    61       10        M           0        69717.06     70320.60    01/08/26      S        30                                          
+    62       10        M           0       152428.73    159131.28    01/08/26      S        30                                          
+    63       10        M           0       175860.63    180793.80    01/08/26      S        30                                          
+    64       10        M           0       130792.73    133595.84    01/08/26      S        30                                          
+    65       10        M           0       149247.29    162000.00    01/08/26      S        30                                          
+    66       10        M           0       111224.78    114517.17    01/08/26      S        30                                          
+    67    30010        M           0        68582.09     74000.00    01/08/26      S        30                                          
+    68    10010        M           0       454080.14    516110.00    01/08/26      S        30                                          
+    69    10010        M           0       241766.12    223700.00    01/08/26      S        30                                          
+    70    30010        M           0       683205.25    831500.00    01/08/26      S        30                                          
+    71    30010        M           0       643169.61    746400.00    01/08/26      S        30                                          
+    72    30010        M           0       455946.67    523640.00    01/08/26      S        30                                          
+    73    10010        W           0       168835.43    172300.00    01/08/26      S        30                                          
+1TOTAL OVERDUE LOANS DETAILS                                                                                                            
+ AS AT 31/08/26 (LOANS)                                                                                                                 
+                                                                                                                                        
+ BRANCH=AKH                                                                                                                             
+ (continued)                                                                                                                            
+                                                                                                                                        
+   Obs    BRANCH        ACCTNO    NAME                        PRODUCT    CUSTCD    SECTORCD    COLLCD                                   
+                                                                                                                                        
+    74     AKH      2986611300    MOHD FAIZ SYAZWAN BIN KA      152        77        9700      30570                                    
+    75     AKH      2986611919    MUHAMMAD IZZUDDIN BIN SO      152        77        9700      30570                                    
+    76     AKH      2986612720    MOHD BAZLI BIN OTHMAN         152        77        9700      30570                                    
+    77     AKH      2987368130    AMIR HAZIQ BIN HARIS          152        77        9700      30570                                    
+    78     AKH      2988619830    MUHAMAD FAUZAN BIN BOYAM      177        77        9700      30570                                    
+    79     AKH      2988620600    NUR ALIFF BIN FADZILAH        152        77        9700      30570                                    
+    80     AKH      2989378328    MOHD SHAUQAT BIN BAHARI       152        77        9700      30570                                    
+    81     AKH      2989378813    ZAINA BINTI ZAINAL            152        77        9700      30570                                    
+    82     AKH      2989382023    FADZLYATON BINTI SAAD         152        77        9700      30570                                    
+    83     AKH      2989382314    ZAINUDIN BIN YASIN            152        77        9700      30570                                    
+    84     AKH      2989923225    NORAZIAH BINTI SALLEH         152        77        9700      30570                                    
+    85     AKH      2989924802    MUHAMMAD HANAFFI BIN MUH      154        77        9700      30570                                    
+    86     AKH      2906095934    SITI KHALIJAH BINTI DOSA      152        77        9700      30570                                    
+    87     AKH      2906790106    MUHAMAD FAIDHI BIN ISMAI      152        77        9700      30570                                    
+    88     AKH      2911158000    MOHD HAFIZAN BIN KAMARUL      152        77        9700      30570                                    
+    89     AKH      2968843135    MOHAMAD FAIZ BIN SAADON       152        77        9700      30570                                    
+    90     AKH      2995715436    NORAISHAH BINTI MOHD ADN      142        77        9700      30570                                    
+    91     AKH      2958013113    NORHISAM BIN ABU & WAN        142        77        9700      30570                                    
+    92     AKH      2963557714    MOHAMMAD AZHAR BIN SHOIB      141        77        9700      30570                                    
+    93     AKH      2968327535    NURJIHAN BT ABOO BAKER        152        77        9700      30570                                    
+    94     AKH      2989923710    NURHANIM BINTI ISHAK          152        77        9700      30570                                    
+    95     AKH      2951447022    UZIR BIN MUNADI & SETH        113        77        9700      30570                                    
+    96     AKH      2965457117    MUHAMMAD TAUFIK BIN ABD       141        77        9700      30570                                    
+    97     AKH      2961572132    RASHDI BIN OMAR               142        77        9700      30570                                    
+                                                                                                                                        
+   Obs    NOTENO    STATECD    RISKCODE     BALANCE      APPRLIMT      BLDATE    SECURE    DAYS                                         
+                                                                                                                                        
+    74    30010        M           0       375609.16    381720.00    01/08/26      S         30                                         
+    75    30010        M           0       386081.50    404599.00    01/08/26      S         30                                         
+    76       10        M           0       695622.38    722318.69    01/08/26      S         30                                         
+    77    30010        M           0       373191.63    390700.00    01/08/26      S         30                                         
+    78       10        M           0        69035.42     72027.90    01/08/26      S         30                                         
+    79    10010        M           0       284646.69    297800.00    01/08/26      S         30                                         
+    80       10        M           0       223748.07    235469.59    01/08/26      S         30                                         
+    81    30010        M           0       613575.60    732210.00    01/08/26      S         30                                         
+    82    30010        M           0       211265.80    250000.00    01/08/26      S         30                                         
+    83    30010        M           0       345291.87    469700.00    01/08/26      S         30                                         
+    84    10010        M           0       347321.86    363760.00    01/08/26      S         30                                         
+    85       10        M           0       199475.76    213307.00    01/08/26      S         30                                         
+    86    10010        M           0       239477.04    354940.00    31/07/26      S         31                                         
+    87    10010        M           0       235188.90    349210.00    31/07/26      S         31                                         
+    88    10010        M           0       241240.07    366673.00    31/07/26      S         31                                         
+    89    30010        M           0        97460.54    113750.00    31/07/26      S         31                                         
+    90    30010        M           0        83248.66    383760.00    31/07/26      S         31                                         
+    91    30010        M           0       231937.24    770280.00    30/07/26      S         32                                         
+    92    30010        M           0        80612.22     85900.00    30/07/26      S         32                                         
+    93    30010        M           0       256008.33    276050.00    30/07/26      S         32                                         
+    94       10        M           0       696325.54    702869.40    30/07/26      S         32                                         
+    95    30010        M           0       107110.25    345636.95    28/07/26      S         34                                         
+    96       10        M           0        40809.27     49517.08    26/07/26      S         36                                         
+    97    30010        M           0       119619.83    170000.00    21/07/26      S         41                                         
+1TOTAL OVERDUE LOANS DETAILS                                                                                                            
+ AS AT 31/08/26 (LOANS)                                                                                                                 
+                                                                                                                                        
+ BRANCH=AKH                                                                                                                             
+ (continued)                                                                                                                            
+                                                                                                                                        
+   Obs    BRANCH        ACCTNO    NAME                        PRODUCT    CUSTCD    SECTORCD    COLLCD                                   
+                                                                                                                                        
+    98     AKH      2952855915    SHARUL ANUAR & JUNAI          112        77        9700      30570                                    
+    99     AKH      2901919705    NURSILIN BINTI NASIRIN        152        77        9700      30570                                    
+   100     AKH      2906096832    MUHAMMAD SYAHMI BIN SYUK      152        77        9700      30570                                    
+   101     AKH      2969310102    MOHD FAHIZAL BIN MOHD         177        77        9700      30570                                    
+   102     AKH      2969311522    SHAIFUL RIZAL BIN ABDUL       154        77        9700      30570                                    
+   103     AKH      2969582908    MOHD KHAIRUL NIZAM BIN A      152        77        9700      30570                                    
+   104     AKH      2969582908    MOHD KHAIRUL NIZAM BIN A      152        77        9700      30570                                    
+   105     AKH      2971495716    INDIRAN A/L MAYAWAN           152        78        9700      30570                                    
+   106     AKH      2972255716    SER CHOON EN                  152        78        9700      30570                                    
+   107     AKH      2973336410    I KITCH SDN. BHD.             154        46        6120      30570                                    
+   108     AKH      2973336507    I KITCH SDN. BHD.             154        46        6120      30570                                    
+   109     AKH      2976060510    PANG YEOW LONG                151        78        9700      30570                                    
+   110     AKH      2985119813    MUHAMMAD HAZIQ BIN MOHD       152        77        9700      30570                                    
+   111     AKH      2989377915    NUR SYUHADAH BINTI KAMAR      152        77        9700      30570                                    
+   112     AKH      2989378522    ABDUL HAKIM BIN KAMAL NA      152        77        9700      30570                                    
+   113     AKH      2989924026    SAKATO ENTERPRISE             154        42        5008      30570                                    
+   114     AKH      2911156726    MOHAMAD FIRDAUS HAZIM BI      152        77        9700      30570                                    
+   115     AKH      2959602605    MOHD KHAIRUL NIZAM BIN A      142        77        9700      30570                                    
+   116     AKH      2996417021    KALAISELVAN A/L GOVINDAS      142        78        9700      30570                                    
+   117     AKH      2963555202    ROSNIZAM BIN ACHEN            141        77        9700      30570                                    
+   118     AKH      2961570530    IRMAN HADI BIN HASSAN         142        77        9700      30570                                    
+   119     AKH      2968847309    BAHARINSHAH BIN BORHAN        152        77        9700      30570                                    
+   120     AKH      2973336604    I KITCH SDN. BHD.             154        46        6120      30570                                    
+   121     AKH      2983517902    NORHAYATI BINTI CHE KAR       152        77        9700      30570                                    
+                                                                                                                                        
+   Obs    NOTENO    STATECD    RISKCODE     BALANCE      APPRLIMT      BLDATE    SECURE    DAYS                                         
+                                                                                                                                        
+    98       10        M           0        29554.65    104370.69    07/07/26      S         55                                         
+    99       10        M           0       213910.82    219817.44    01/07/26      S         61                                         
+   100    30010        M           0       249592.99    253200.00    01/07/26      S         61                                         
+   101       10        M           0        61599.07     78340.29    01/07/26      S         61                                         
+   102    10010        M           0       334078.01    322519.00    01/07/26      S         61                                         
+   103    30010        M           0       208161.38    237571.00    01/07/26      S         61                                         
+   104    30011        M           0       187385.25    300000.00    01/07/26      S         61                                         
+   105    30010        M           0       181623.02    226640.00    01/07/26      S         61                                         
+   106       10        M           0       293783.93    325972.88    01/07/26      S         61                                         
+   107    30010        M           0       108277.04    140000.00    01/07/26      S         61                                         
+   108    30010        M           0       109232.59    140000.00    01/07/26      S         61                                         
+   109    30010        M           0       564440.00    812700.00    01/07/26      S         61                                         
+   110    10010        M           0       221842.81    227120.00    01/07/26      S         61                                         
+   111    30010        M           0       406477.70    440450.00    01/07/26      S         61                                         
+   112    10010        M           0       380940.91    385440.00    01/07/26      S         61                                         
+   113    30010        M           0       579272.48    626100.00    01/07/26      S         61                                         
+   114    10010        M           0       313361.37    436734.00    30/06/26      S         62                                         
+   115    30010        M           0       214906.50    250000.00    30/06/26      S         62                                         
+   116       10        M           0        92610.45     95000.00    30/06/26      S         62                                         
+   117       10        M           0        50182.45     59149.10    08/06/26      S         84                                         
+   118       10        M           0       101752.63    120538.96    05/06/26      S         87                                         
+   119    30010        M           1       377485.02    413450.00    01/06/26      S         91                                         
+   120    30010        M           1       110182.92    140000.00    01/06/26      S         91                                         
+   121    30010        M           1       420754.49    478650.00    01/06/26      S         91                                         
+1TOTAL OVERDUE LOANS DETAILS                                                                                                            
+ AS AT 31/08/26 (LOANS)                                                                                                                 
+                                                                                                                                        
+ BRANCH=AKH                                                                                                                             
+ (continued)                                                                                                                            
+                                                                                                                                        
+   Obs    BRANCH        ACCTNO    NAME                        PRODUCT    CUSTCD    SECTORCD    COLLCD                                   
+                                                                                                                                        
+   122     AKH      2968322814    ROSLAN BIN YA'ACOB            412        77        9700      30570                                    
+   123     AKH      2983518412    LIM HAU JAN                   152        78        9700      30570                                    
+   124     AKH      2971496517    HABIBAH BINTI AHMAD           154        77        9700      30570                                    
+   125     AKH      2903437536    MUHAMMAD SHAZWANN BIN BA      152        77        9700      30570                                    
+   126     AKH      2986610827    HERMEE BIN RAMLI              154        77        9700      30570                                    
+   127     AKH      2951443333    SUHAIMI & SITI Z              142        77        9700      30570                                    
+   128     AKH      2959602023    RATHA A/P RAMASAMY            141        78        9700      30570                                    
+   129     AKH      2975446015    SHAHRIL SARDI BIN SAARI       135        77        9700      30580                                    
+   130     AKH      2983521500    MOK CHERN HUN                 152        78        9700      30570                                    
+   131     AKH      2973335318    NG BEE BEE                    176        78        9700      30570                                    
+   132     AKH      2988618701    MUSLIM BIN ARSAD              664        77        9700      30570                                    
+                                                                                                                                        
+   Obs    NOTENO    STATECD    RISKCODE     BALANCE      APPRLIMT      BLDATE    SECURE    DAYS                                         
+                                                                                                                                        
+   122       10        M           1        18859.28     51750.00    05/05/26      S        118                                         
+   123    10010        M           1       597476.25    639750.00    01/05/26      S        122                                         
+   124    30010        M           1       243326.26    271320.00    30/04/26      S        123                                         
+   125       10        M           1       362460.81    356469.89    01/04/26      S        152                                         
+   126       10        M           2        99129.57    124122.90    01/03/26      S        183                                         
+   127    30012        M           2        87114.89    426480.00    26/02/26      S        186                                         
+   128       10        M           2        45328.18     51000.00    07/12/25      S        267                                         
+   129       10        M           2        15590.99     47616.00    01/12/25      S        273                                         
+   130    30010        B           4       761788.16    807400.00    01/04/25      S        517                                         
+   131       10        M           4        60940.19     91426.50    01/03/25      S        548                                         
+   132    30010        M           4       256760.79    456050.00    01/06/24      S        821                                         
+1TOTAL OVERDUE LOANS DETAILS                                                                                                            
+ AS AT 31/08/26 (LOANS)                                                                                                                 
+                                                                                                                                        
+ BRANCH=APG                                                                                                                             
+                                                                                                                                        
+   Obs    BRANCH        ACCTNO    NAME                        PRODUCT    CUSTCD    SECTORCD    COLLCD                                   
+                                                                                                                                        
+   133     APG      2901198026    RAJA AL AMIR FIRDAUZ BIN      152        77        9700      30570                                    
+   134     APG      2903802829    MUHAMAD TARMIZI BIN IBRA      152        77        9700      30570                                    
+   135     APG      2906390501    NOR ASMAH BINTI AHMAD &       152        77        9700      30570                                    
+   136     APG      2906391727    MOHD SHAHNAZ BIN SANI &       152        77        9700      30570                                    
+   137     APG      2906392200    ISMAIL BIN MASIOD             152        77        9700      30570                                    
+   138     APG      2906392722    MOHD ANWAR BIN MOHD AMIN      152        77        9700      30570                                    
+   139     APG      2906393523    MOHD NIZAM BIN JOHARI         464        77        9700      30570                                    
+   140     APG      2909495500    NURIZA BINTI ABU              154        77        9700      30570                                    
+   141     APG      2964529421    NORMAH BINTI JOHARI & NO      151        77        9700      30570                                    
+   142     APG      2971392802    KALISWARAN & K LOGANATHA      152        78        9700      30570                                    
+   143     APG      2971393409    ABDUL KHADER BIN ABDUL R      152        78        9700      30570                                    
+   144     APG      2974176331    LATHA LI LI A/P RAVEENDR      152        78        9700      30570                                    
+   145     APG      2976128427    ZALIHA BINTI HUSIN            410        77        9700      30570                                    
+   146     APG      2976130035    MOHAMMAD REEZAIREE BIN O      152        77        9700      30570                                    
+   147     APG      2976131224    MOHAMAD ZAKRI BIN ABDUL       152        77        9700      30570                                    
+   148     APG      2976132704    MOHD ANNYZAN BIN MOD SAL      152        77        9700      30570                                    
+   149     APG      2977573203    SHAHARIN & NAZLINA            152        77        9700      30570                                    
+   150     APG      2979247211    ABDUL RAHMAN BIN AHMAD        412        77        9700      30570                                    
+   151     APG      2987450420    AHMAD SHAHAMAH & SITI SO      152        77        9700      30570                                    
+   152     APG      2987450711    FARALIZA BINTI KHALID         152        77        9700      30570                                    
+   153     APG      2987451318    NORAINI BINTI IDRIS & MO      152        77        9700      30570                                    
+   154     APG      2992256326    PRAKASH JAYARAM               464        78        9700      30570                                    
+   155     APG      2963451621    MUHAMMAD SAKRI BIN MUHAM      141        77        9700      30570                                    
+   156     APG      2966039406    NORRULHISHAM B SHAFRI&SY      152        77        9700      30570                                    
+   157     APG      2966040832    MOHD KAMARUZZAMAN BIN MU      152        77        9700      30570                                    
+                                                                                                                                        
+   Obs    NOTENO    STATECD    RISKCODE     BALANCE      APPRLIMT      BLDATE    SECURE    DAYS                                         
+                                                                                                                                        
+   133    10010        B           0       515549.80    512985.00    01/08/26      S        30                                          
+   134    10010        B           0       436862.72    430914.00    01/08/26      S        30                                          
+   135    10010        B           0       774241.66    771650.00    01/08/26      S        30                                          
+   136    10010        B           0       723121.79    733665.00    01/08/26      S        30                                          
+   137    10010        C           0       338386.56    346500.00    01/08/26      S        30                                          
+   138       10        B           0       407188.82    411310.00    01/08/26      S        30                                          
+   139       10        B           0        79365.85     85520.40    01/08/26      S        30                                          
+   140    10010        B           0       607043.14    604300.00    01/08/26      S        30                                          
+   141       10        B           0       277681.42    347007.00    01/08/26      S        30                                          
+   142       10        B           0       413783.50    487000.00    01/08/26      S        30                                          
+   143       10        B           0       351372.79    375000.00    01/08/26      S        30                                          
+   144    10010        B           0       159516.76    168000.00    01/08/26      S        30                                          
+   145       10        W           0       117038.80    120000.00    01/08/26      S        30                                          
+   146       10        B           0       114504.13    126000.00    01/08/26      S        30                                          
+   147    10010        B           0       797712.75    875820.00    01/08/26      S        30                                          
+   148       10        B           0       141952.32    144000.00    01/08/26      S        30                                          
+   149    10010        B           0       369476.48    409500.00    01/08/26      S        30                                          
+   150       10        B           0        52798.13     55587.13    01/08/26      S        30                                          
+   151       10        B           0       272076.49    284637.16    01/08/26      S        30                                          
+   152    10010        W           0       272641.73    275600.00    01/08/26      S        30                                          
+   153       10        B           0       172501.69    185825.70    01/08/26      S        30                                          
+   154       11        B           0        14624.86     50534.50    01/08/26      S        30                                          
+   155       10        B           0        57595.98     57557.00    31/07/26      S        31                                          
+   156    10010        Q           0       336139.66    363503.00    31/07/26      S        31                                          
+   157       11        B           0       440145.10    560000.00    31/07/26      S        31                                          
+1TOTAL OVERDUE LOANS DETAILS                                                                                                            
+ AS AT 31/08/26 (LOANS)                                                                                                                 
+                                                                                                                                        
+ BRANCH=APG                                                                                                                             
+ (continued)                                                                                                                            
+                                                                                                                                        
+   Obs    BRANCH        ACCTNO    NAME                        PRODUCT    CUSTCD    SECTORCD    COLLCD                                   
+                                                                                                                                        
+   158     APG      2974176100    AIMAN BIN AZLI                152        77        9700      30570                                    
+   159     APG      2974176622    NAZRIN AMRIN BIN SHOKERI      152        77        9700      30570                                    
+   160     APG      2979243425    MUHD KHAIRUL AKMAL BIN W      409        77        9700      30570                                    
+   161     APG      2980371101    AZMAN BIN KAMARUDDIN          151        78        9700      30570                                    
+   162     APG      2994266718    RAHISHAM & SITI HAJAR         113        77        9700      30570                                    
+   163     APG      2994509518    OTHMAN BIN RAZALI             113        77        9700      30570                                    
+   164     APG      2977573531    NUR SYAZWANI BINTI HALEK      152        77        9700      30570                                    
+   165     APG      2963449431    NADIAH BINTI SAAD             151        77        9700      30570                                    
+   166     APG      2959879707    SHARIF BIN SHAMSUDIN          142        77        9700      30570                                    
+   167     APG      8957541629    ARNUAR BIN ABU SAPIAN         113        77        9700      30570                                    
+   168     APG      2964530519    SHALMA BT MOHAMAD SYAFII      141        77        9700      30570                                    
+   169     APG      8957270221    MUNIANDY MUKESH A/L MUNU      112        78        9700      30570                                    
+   170     APG      2964532606    MUHAMMAD SALEHUDDIN BIN       151        77        9700      30570                                    
+   171     APG      2957991032    MOHAMED PUHAD BIN & NOOR      142        77        9700      30570                                    
+   172     APG      2964529227    NAZREENA BINTI NOH            151        77        9700      30570                                    
+   173     APG      2964530034    ROHAYA BT MOHD RAZALI&MO      151        77        9700      30570                                    
+   174     APG      2966038836    ZUL AZMI BIN MAT ADAM         142        77        9700      30570                                    
+   175     APG      2901195817    AHMAD FIRDAUS BIN ZULKIP      152        77        9700      30570                                    
+   176     APG      2901199021    LIEW KIM CHUAN                422        78        9700      30570                                    
+   177     APG      2903800802    YUGENTHIRAN & 2 OTHERS        152        78        9700      30570                                    
+   178     APG      2903802113    NORHIDAYAH BINTI MUHAMMA      152        78        9700      30570                                    
+   179     APG      2906390113    NIK NUR'AIN BINTI NIK PA      152        77        9700      30570                                    
+   180     APG      2966042300    RADZIAH BINTI NAWAWI          152        77        9700      30570                                    
+   181     APG      2966042300    RADZIAH BINTI NAWAWI          152        77        9700      30570                                    
+                                                                                                                                        
+   Obs    NOTENO    STATECD    RISKCODE      BALANCE     APPRLIMT      BLDATE    SECURE    DAYS                                         
+                                                                                                                                        
+   158       10        B           0       624942.29    569060.00    31/07/26      S         31                                         
+   159       10        B           0       190545.84    186400.00    31/07/26      S         31                                         
+   160       10        B           0        81516.82     73448.20    31/07/26      S         31                                         
+   161    10010        W           0       260950.50    260510.00    31/07/26      S         31                                         
+   162    30010        B           0       105631.15    274921.98    31/07/26      S         31                                         
+   163    30010        B           0        99878.32    335565.02    31/07/26      S         31                                         
+   164       10        B           0       303382.59    304719.00    30/07/26      S         32                                         
+   165       10        B           0       188464.83    207780.00    25/07/26      S         37                                         
+   166    20010        B           0       155828.96    266043.10    21/07/26      S         41                                         
+   167    20010        B           0        30691.47    226651.96    21/07/26      S         41                                         
+   168       10        B           0        56911.01     74134.00    18/07/26      S         44                                         
+   169    20010        B           0        54431.16    204900.68    17/07/26      S         45                                         
+   170       10        B           0       249891.68    240106.00    15/07/26      S         47                                         
+   171    30010        B           0       568032.79    618367.00    07/07/26      S         55                                         
+   172    20010        B           0       107336.83    113501.19    07/07/26      S         55                                         
+   173       10        B           0       255908.02    290074.00    04/07/26      S         58                                         
+   174    10010        B           0       152799.50    202282.00    03/07/26      S         59                                         
+   175       10        B           0       382574.10    382950.00    01/07/26      S         61                                         
+   176       10        B           0       235337.86    259444.08    01/07/26      S         61                                         
+   177       10        B           0       202250.87    198923.18    01/07/26      S         61                                         
+   178       10        B           0       291267.51    296000.00    01/07/26      S         61                                         
+   179    10010        B           0       531581.39    542383.00    01/07/26      S         61                                         
+   180    10010        B           0       198158.77    265230.00    01/07/26      S         61                                         
+   181    10011        B           0       204535.95    265230.00    01/07/26      S         61                                         
+1TOTAL OVERDUE LOANS DETAILS                                                                                                            
+ AS AT 31/08/26 (LOANS)                                                                                                                 
+                                                                                                                                        
+ BRANCH=APG                                                                                                                             
+ (continued)                                                                                                                            
+                                                                                                                                        
+   Obs    BRANCH        ACCTNO    NAME                        PRODUCT    CUSTCD    SECTORCD    COLLCD                                   
+                                                                                                                                        
+   182     APG      2966042300    RADZIAH BINTI NAWAWI          152        77        9700      30570                                    
+   183     APG      2967983012    AHMAD BIN BERAHIM & SAFA      152        77        9700      30570                                    
+   184     APG      2976131030    AMALINA DIANAH BINTI ABD      152        77        9700      30570                                    
+   185     APG      2977574720    MUHAMMAD SAMSUL BIN SULH      152        77        9700      30570                                    
+   186     APG      2977577220    MUHAMMAD SAFII BIN MAS D      152        77        9700      30570                                    
+   187     APG      2977577317    HELMI BIN HALIM & JAMNAH      410        77        9700      30570                                    
+   188     APG      2980372133    ZULHAMIDI BIN MUSTAPHA @      410        77        9700      30570                                    
+   189     APG      2981949502    ARIFF AMBIA BIN CHE UDIN      152        77        9700      30570                                    
+   190     APG      2987448812    SHAHARBANUN BINTI MD HUS      152        77        9700      30570                                    
+   191     APG      2980369627    HURASHEAH BINTI HAMZAH        152        77        9700      30570                                    
+   192     APG      2994268417    KAMARUDIN B YUSOFF            112        77        9700      30570                                    
+   193     APG      2957989327    TAN KUMAR A/L TAN HONG H      135        78        9700      30580                                    
+   194     APG      2954049114    MOHAMAD NAZIF BIN NAGUR       135        77        9700      30580                                    
+   195     APG      2979242915    RUSNANI BINTI MANSOR          152        77        9700      30570                                    
+   196     APG      2954123535    ROFIDAH BINTI ABDULLAH        135        77        9700      30580                                    
+   197     APG      2963450201    THULASI THARAN A PAL&SAM      142        78        9700      30570                                    
+   198     APG      2994269509    CHONG CHOY HONG               112        78        9700      30570                                    
+                                                                                                                                        
+   Obs    NOTENO    STATECD    RISKCODE      BALANCE     APPRLIMT      BLDATE    SECURE    DAYS                                         
+                                                                                                                                        
+   182    10012        B           0       231669.13    300000.00    01/07/26      S         61                                         
+   183    10010        B           0       124775.16    153200.00    01/07/26      S         61                                         
+   184    10010        B           0        60699.78    105400.00    01/07/26      S         61                                         
+   185       10        W           0       157966.77    163400.00    01/07/26      S         61                                         
+   186       10        W           0       153795.40    162000.00    01/07/26      S         61                                         
+   187       10        W           0       153122.30    151510.10    01/07/26      S         61                                         
+   188    10010        B           0       154179.01    162900.00    01/07/26      S         61                                         
+   189       10        B           0       207403.21    228433.50    01/07/26      S         61                                         
+   190       10        B           0       264029.15    302167.12    01/07/26      S         61                                         
+   191       10        W           1       299330.98    345308.50    31/05/26      S         92                                         
+   192    20010        B           1        22224.14     89451.14    31/03/26      S        153                                         
+   193       11        B           3          963.09     62946.00    30/11/25      S        274                                         
+   194       13        B           3        30801.20     28234.74    31/10/25      S        304                                         
+   195    10010        B           4       182558.68    326800.00    31/08/25      S        365                                         
+   196       12        B           4          317.21     73000.00    28/02/25      S        549                                         
+   197       10        B           4       132862.27     87256.00    11/03/24      S        903                                         
+   198    30010        B           4         4607.56     57438.62    28/07/20      S       2225                                         
