@@ -1,3 +1,63 @@
+def _branch_col_widths(branch_rows: list, obs_width: int) -> dict:
+    """
+    PROC PRINT's default (non-UNIFORM) column sizing: width = max(label
+    length, widest formatted value) computed independently for THIS
+    BY-group only.
+    OBS width is passed separately (global max observation number).
+    """
+    widths = {}
+    for key, label, _just, fmt in LOAN2_COLS:
+        if key == "OBS":
+            widths[key] = obs_width
+            continue
+        max_data = max((len(fmt(r[key])) for r in branch_rows), default=0)
+        widths[key] = max(len(label), max_data)
+    return widths
+
+
+def render_mnpl2_print_loan2(asa: AsaWriter, rows: list) -> None:
+    title1, title2 = _mnpl2_title_block("(O/D)")
+
+    # group rows by BRCH
+    branches: list = []
+    for r in rows:
+        if not branches or branches[-1][0] != r["BRCH"]:
+            branches.append((r["BRCH"], []))
+        branches[-1][1].append(r)
+
+    # compute global OBS width based on total number of rows
+    total_rows = len(rows)
+    obs_width = max(len("Obs"), len(str(total_rows)))
+
+    obs = 0
+    for branch, branch_rows in branches:
+        widths = _branch_col_widths(branch_rows, obs_width)  # pass obs_width
+        idx = 0
+        is_continued = False
+        while idx < len(branch_rows):
+            n = _loan2_page_capacity(is_continued)
+            chunk = branch_rows[idx: idx + n]
+
+            asa.new_page([title1, title2])
+            asa.add("")
+            asa.add(f"BRANCH={branch}")
+            if is_continued:
+                asa.add("(continued)")
+            asa.add("")
+            asa.add(_loan2_header(widths))
+            asa.add("")
+
+            for r in chunk:
+                obs += 1
+                values = dict(r)
+                values["OBS"] = obs          # OBS is now present
+                asa.add(_loan2_line(values, widths))
+
+            idx += n
+            is_continued = True
+
+=====================
+
 LOAN2_COLS = [
     # (key, label, justify, formatter)
     ("OBS",      "Obs",      "R", lambda v: str(v)),
