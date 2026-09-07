@@ -67,9 +67,21 @@ def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
 
 
 
+TBL_LABELS = {1: "(LOANS)", 2: "(HP)", 3: "(O/D)", 4: "(LOANS & O/D)"}
+
+# ============================================================================
+# %TBLS COLUMN CHUNKING (RISKRATE horizontal groups per LINESIZE=132 page)
+# ============================================================================
+# TABLE ... RISKRATE=' '*(N*F=COMMA6./7. SUM*F=COMMA14.) columns are wider
+# than the plain-BEST TEMP-output table, so fewer RISKRATE groups fit per
+# line before PROC TABULATE wraps horizontally. Break points observed from
+# the actual SAS output: [0:6), [6:13), [13:15) RISKRATE columns per chunk.
 TBLS_CHUNK_BOUNDARIES = [6, 13, 15]   # RISKRATE cols: [0:6), [6:13), [13:15)
 
+
 def _tbls_chunks(riskrates: list) -> list:
+    """Splits RISKRATE columns (0-14) into the 3 horizontal chunks that
+    PROC TABULATE's page-wrap produces for this specific table."""
     chunks = []
     start = 0
     for end in TBLS_CHUNK_BOUNDARIES:
