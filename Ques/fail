@@ -1,38 +1,45 @@
-LINESIZE_TEMP     = 256
-TEMP_LABEL_WIDTH  = 5     # RTS=5
-TEMP_N_WIDTH      = 5     # F=5. on N
-TEMP_SUM_WIDTH    = 12    # unformatted SUM -> default BESTw. width
-TEMP_SEP          = " "   # single-space separator between sub-cells
+TEMP_PAGE_LEN     = 60
+TEMP_TOP_MARGIN   = 4     # blank lines before header
+TEMP_BOTTOM_BLANK = 2     # blank lines before "(Continued)"
+TEMP_DATA_ROWS_PER_PAGE = (
+    TEMP_PAGE_LEN - TEMP_TOP_MARGIN - 1  # header line
+    - 1                                   # blank after header
+    - TEMP_BOTTOM_BLANK - 1               # "(Continued)" line
+)  # = 51
 
 
-def _best_format(value, width: int = TEMP_SUM_WIDTH) -> str:
-    """Emulates BESTw. for an unformatted TABULATE SUM cell: no comma
-    grouping, decimals reduced (2 -> 1 -> 0) until the value fits exactly
-    in `width` characters. MISSING=0 -> None renders as '0'."""
-    if value is None:
-        return "0".rjust(width)
-    v = float(value)
-    sign = "-" if v < 0 else ""
-    v_abs = abs(v)
-    for decimals in (2, 1, 0):
-        s = f"{sign}{v_abs:.{decimals}f}"
-        if len(s) <= width:
-            return s.rjust(width)
-    s = f"{sign}{v_abs:.0f}"
-    return s[-width:].rjust(width)
+class _TempPager:
+    """Vertical pager for ODTLLIST.TEXT: no ASA byte, plain blank-line
+    page breaks. Each page = 60 lines: 4 blank top margin, header line,
+    1 blank, up to 51 data rows, 2 blank, then '(Continued)' if more
+    branches remain for this column chunk."""
+
+    def __init__(self, header_line: str):
+        self.header_line = header_line
+        self.lines: list = []
+        self.rows_on_page = 0
+
+    def _new_page(self) -> None:
+        self.lines.extend([""] * TEMP_TOP_MARGIN)
+        self.lines.append(self.header_line)
+        self.lines.append("")
+        self.rows_on_page = 0
+
+    def start(self) -> None:
+        self._new_page()
+
+    def add_row(self, row: str) -> None:
+        if self.rows_on_page >= TEMP_DATA_ROWS_PER_PAGE:
+            self.lines.extend([""] * TEMP_BOTTOM_BLANK)
+            self.lines.append("(Continued)")
+            self._new_page()
+        self.lines.append(row)
+        self.rows_on_page += 1
 
 
-def _n_format(value, width: int = TEMP_N_WIDTH) -> str:
-    v = 0 if value is None else int(value)
-    s = str(v)
-    return (s[-width:] if len(s) > width else s).rjust(width)
 
 
 def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
-    """PROC PRINTTO PRINT=TEMP NEW; OPTION LINESIZE=256;
-    Two PROC TABULATE calls (BALANCE, then RISKBAL), FORMCHAR blank,
-    NOSEPS, TITLE1/TITLE2 blank, RTS=5 CONDENSE. No ASA, no vertical
-    pagination -- only horizontal (LINESIZE) wrapping via (Continued)."""
     riskrates = list(range(0, 15))
     branches = sorted({r["BRANCH"] for r in loan4_padded})
 
@@ -52,28 +59,25 @@ def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
     max_groups = max(1, (LINESIZE_TEMP - TEMP_LABEL_WIDTH) // group_width)
     chunks = [riskrates[i:i + max_groups] for i in range(0, len(riskrates), max_groups)]
 
-    lines = []
+    all_lines = []
     for field in ("BALANCE", "RISKBAL"):
         cross = _crosstab(field)
-        for chunk_idx, group in enumerate(chunks):
-            lines.append("")   # TITLE1 ' '
-            lines.append("")   # TITLE2 ' '
+        for group in chunks:
             header = " " * TEMP_LABEL_WIDTH
             for rr in group:
-                header += TEMP_SEP + " " * TEMP_N_WIDTH + TEMP_SEP + str(rr).rjust(TEMP_SUM_WIDTH)
-            lines.append(header)
-            lines.append("")
+                cell = str(rr).rjust(TEMP_SUM_WIDTH)
+                header += TEMP_SEP + " " * TEMP_N_WIDTH + TEMP_SEP + cell
+
+            pager = _TempPager(header)
+            pager.start()
             for b in branches:
                 row = b.ljust(TEMP_LABEL_WIDTH)
                 for rr in group:
                     n, s = cross.get((b, rr), (0, None))
                     row += TEMP_SEP + _n_format(n) + TEMP_SEP + _best_format(s)
-                lines.append(row)
-            if chunk_idx < len(chunks) - 1:
-                lines.append("")
-                lines.append("(Continued)")
-                lines.append("")
+                pager.add_row(row)
+            all_lines.extend(pager.lines)
 
     with open(out_path, "w", encoding="latin1") as fh:
-        for ln in lines:
+        for ln in all_lines:
             fh.write(ln + "\n")
