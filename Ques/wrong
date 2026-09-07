@@ -1,218 +1,297 @@
 1TOTAL OVERDUE LOANS DETAILS
- AS AT 06/09/26 (LOANS)
-  OBS BRANCH       ACCTNO NAME                 PRODUCT CUSTCD SECTORCD COLLCD NOTENO STATECD RISKCODE         BALANCE        APPRLIMT     BLDATE SECURE  DAYS
-    1 AKH      2967258108 ROSMAWANI BINTI HASS     152     77     9700  30570     10       M               162,543.49      292,172.27   07/08/26      S    30
-    2 AKH      2992571535 SUBRAMANIAM A/L PERU     112     78     9700  30570  30010       M                 7,528.71      121,253.03   07/08/26      S    30
-    3 AKH      2964847906 MOHD HAPEZI BIN OMAR     141     77     9700  30570  30010       M                 7,485.51       30,000.00   06/08/26      S    31
-    4 AKH      2965453525 MOHD. RAZALI BIN ABD     151     77     9700  30570     10       M                93,592.38      114,773.12   05/08/26      S    32
-    5 AKH      2952854301 SUPRAMANIAM A/L SINN     112     78     9700  30570  30010       M                31,410.76      105,371.70   04/08/26      S    33
-    6 AKH      2966262107 SANDUSI BIN SHUKOR       175     77     9700  30570  30010       M                53,275.66       74,750.00   04/08/26      S    33
-    7 AKH      2959599301 IRWAN & NURSAHIDA        142     77     9700  30570     10       M               114,731.74      108,000.00   03/08/26      S    34
-    8 AKH      2965455903 EMILIA AIDA BINTI MA     142     77     9700  30570     10       M                46,207.37       51,673.55   03/08/26      S    34
-    9 AKH      2900595010 MUHAMMAD SHAFIQ BIN      152     77     9700  30570  10010       M               495,702.29      501,220.00   01/08/26      S    36
-   10 AKH      2900595204 MOHD ANUAR BIN BABA      152     77     9700  30570  10010       M               239,441.55      246,200.00   01/08/26      S    36
-   11 AKH      2900596915 NUR NAZMIN ABU BAKAR     152     77     9700  30570  30010       M               167,913.87      181,250.00   01/08/26      S    36
-   12 AKH      2901920415 TAN HOON CHENG           422     78     9700  30570     10       B                49,886.96      150,000.00   01/08/26      S    36
-   13 AKH      2901923109 TAN YEN CHUAN            152     78     9700  30570  30010       M               482,723.57      527,830.00   01/08/26      S    36
-   14 AKH      2901923534 MOHD ANUAR BIN BABA      152     77     9700  30570  10010       M               211,513.16      217,000.00   01/08/26      S    36
-   15 AKH      2903438822 HAZFARIZAL BIN ABDUL     152     77     9700  30570     10       M               283,297.09      305,381.34   01/08/26      S    36
-   16 AKH      2905670010 REWATHI A/P MARIMUTH     152     78     9700  30570  30010       M                99,878.58      101,900.00   01/08/26      S    36
-   17 AKH      2905671721 NURZAWANI BINTI ABDU     152     77     9700  30570  30010       M               397,052.68      414,300.00   01/08/26      S    36
-   18 AKH      2905673420 LEE ZHI PAY              152     78     9700  30570  30010       M               430,246.93      442,050.00   01/08/26      S    36
-   19 AKH      2906099101 TAN CHU HUA              152     78     9700  30570     10       M               118,752.53      120,200.00   01/08/26      S    36
-   20 AKH      2906790628 PUTERI NOOR AMIRA BI     152     77     9700  30570  30010       M               206,733.24      225,150.00   01/08/26      S    36
-   21 AKH      2907241432 MANEESA BINTI ABDUL      464     77     9700  30570     10       M               135,632.96      152,421.00   01/08/26      S    36
-   22 AKH      2907243713 NURUL AIN BINTI ZAIN     152     77     9700  30570  30010       M               292,889.77      301,100.00   01/08/26      S    36
-   23 AKH      2907740128 NOORFATIN NAJJUA BIN     152     77     9700  30570  10010       M               383,713.80      382,060.00   01/08/26      S    36
-   24 AKH      2909003215 MUNIRA ATIKA BINTI R     152     77     9700  30570     10       M               391,274.22      372,833.91   01/08/26      S    36
-   25 AKH      2910000607 MAHATHIR MUHAMMAD BI     152     77     9700  30570  30010       M               300,229.94      302,202.00   01/08/26      S    36
-   26 AKH      2910677605 NOR SURIANA BINTI BA     152     77     9700  30570  30010       A               294,163.81      294,028.00   01/08/26      S    36
-   27 AKH      2911158716 SITI NORHAYATI BINTI     152     77     9700  30570  30010       M               196,023.77      310,347.00   01/08/26      S    36
-   28 AKH      2961569104 ABU ZARIM & NOR HASL     142     77     9700  30570     10       M                41,066.23       64,195.86   01/08/26      S    36
-   29 AKH      2961571622 MOHD HANIF BIN AHAMA     142     77     9700  30570  30010       M               138,692.76      179,150.00   01/08/26      S    36
-   30 AKH      2968326600 SURIYATI BINTI ABDUL     152     77     9700  30570     10       M               301,960.63      341,167.53   01/08/26      S    36
-   31 AKH      2968844033 MUHAMMAD FAUZI BIN A     152     77     9700  30570  30010       M                92,711.47      202,165.00   01/08/26      S    36
-   32 AKH      2968844518 FATIN AMIRA BINTI AD     152     77     9700  30570  30010       M               178,630.07      219,070.00   01/08/26      S    36
-   33 AKH      2968844712 ASIAH BINTI HUSAIN       152     77     9700  30570  30010       M               231,201.79      289,800.00   01/08/26      S    36
-   34 AKH      2968845707 MOHD ZAKI BIN MUSLAI     409     77     9700  30570     10       M                56,446.70       64,502.89   01/08/26      S    36
-   35 AKH      2968846702 MOHD ZAINI BIN MOHD      152     77     9700  30570     10       M               237,444.15      262,488.95   01/08/26      S    36
-   36 AKH      2968847600 MOHD KHAIRULNIZAM BI     152     77     9700  30570     10       M               195,153.07      210,638.81   01/08/26      S    36
-   37 AKH      2969312711 MOHD SAIFUL BIN LIMA     152     77     9700  30570  30010       M               156,315.82      158,850.00   01/08/26      S    36
-   38 AKH      2969583224 HASHIM BIN SALAM         152     77     9700  30570  30010       M               168,604.18      198,900.00   01/08/26      S    36
-   39 AKH      2969585117 ASWAD BIN HUSSAIN        175     77     9700  30570  30010       M                59,503.29       65,150.00   01/08/26      S    36
-   40 AKH      2969990225 ANA SALWA HO BINTI A     152     77     9700  30570     10       M                91,556.91      156,200.00   01/08/26      S    36
-   41 AKH      2969991936 VIJAYANDRAN A/L NALL     152     78     9700  30570  30010       M                24,416.65      122,500.00   01/08/26      S    36
-   42 AKH      2970444829 ZAMRIE BIN SHAMSUDDI     175     77     9700  30570     10       M                55,565.66       58,316.93   01/08/26      S    36
-   43 AKH      2970447001 CHU HAN NEE              152     78     9700  30570  30010       M               425,098.26      485,400.00   01/08/26      S    36
-   44 AKH      2970858735 LAU KAK BOON             152     78     9700  30570  30010       M               305,212.29      356,950.00   01/08/26      S    36
-   45 AKH      2970859402 NUR HIDAYU BINTI NOO     409     77     9700  30570  10010       M                48,650.08       78,200.00   01/08/26      S    36
-   46 AKH      2970859827 MOHD AMIR SAUFI BIN      152     77     9700  30570  30010       M               644,362.14      698,630.00   01/08/26      S    36
-   47 AKH      2970862721 EFFLIZA BINTI ABDUL      152     77     9700  30570  30010       M               103,752.42      133,200.00   01/08/26      S    36
-   48 AKH      2971493010 ONG SIEW HUI             464     78     9700  30570  30010       M               132,546.06      138,000.00   01/08/26      S    36
-   49 AKH      2971496226 MOHD YUSOF BIN LONG      154     77     9700  30570     10       M               125,628.28      218,314.00   01/08/26      S    36
-   50 AKH      2971497706 WAN AZMAN BIN WAN YA     152     77     9700  30570     10       M               120,203.86      158,408.55   01/08/26      S    36
-   51 AKH      2972253301 CHANG PEK YAH            152     78     9700  30570  30010       M               163,141.80      183,100.00   01/08/26      S    36
-   52 AKH      2972254721 MOHAMMED SHAFEEQ BIN     152     77     9700  30570     10       M               412,639.22      454,701.31   01/08/26      S    36
-   53 AKH      2972256614 NOOR JALILAH BINTI K     409     77     9700  30570     10       M                50,142.05       54,143.44   01/08/26      S    36
-   54 AKH      2972560313 MOHAMMED SHAFEEQ BIN     176     77     9700  30570     10       M                95,113.85      116,018.84   01/08/26      S    36
-   55 AKH      2972562534 VIMAL A/L KRISNANSAM     410     78     9700  30570     10       M                93,371.23      108,720.15   01/08/26      S    36
-   56 AKH      2972993635 MAHADI BIN SALLEH        135     77     9700  30580     10       M                 3,099.29       28,760.00   01/08/26      S    36
-   57 AKH      2972995528 RAJU A/L GANASAKARAN     410     78     9700  30570     10       M               105,469.14      112,321.08   01/08/26      S    36
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            LEE KWOK HENG&C          78      32        4  30570     9700       K  3812730433            0.00            0.00                           ASR    
 1TOTAL OVERDUE LOANS DETAILS
- AS AT 06/09/26 (LOANS)
-   58 AKH      2972995916 PANG SWEE YEN            152     78     9700  30570     10       M               277,205.03      352,218.96   01/08/26      S    36
-   59 AKH      2973333813 PERNIAGAAN CERGAS GA     176     42     6130  30570     10       M               229,565.82      448,218.04   01/08/26      S    36
-   60 AKH      2974312528 MOHD NIZAM BIN MOHAM     150     77     9700  30570  30010       M               145,996.93      168,750.00   01/08/26      S    36
-   61 AKH      2975444413 ROSMAINY BIN GULAM M     151     77     9700  30570  10010       M               577,540.34      603,200.00   01/08/26      S    36
-   62 AKH      2976763007 LIM KHAI MING            422     78     9700  30570     10       M                54,815.12      156,448.50   01/08/26      S    36
-   63 AKH      2976765519 KHAIRIEL BIN MOKTAR      135     77     9700  30580     10       M                17,486.98       95,420.00   01/08/26      S    36
-   64 AKH      2976766708 HELMIZA BINTI A.BAKA     135     77     9700  30580     10       M                 3,782.03       18,240.00   01/08/26      S    36
-   65 AKH      2977462226 ANUSUYAH A/P RAMACHI     135     78     9700  30580     10       M                21,284.12       71,760.00   01/08/26      S    36
-   66 AKH      2978193026 SA'AYAH BINTI YACOB      151     77     9700  30570  30010       M               251,402.04      332,570.00   01/08/26      S    36
-   67 AKH      2978196824 JOHARI BIN RAJA MOHA     464     77     9700  30570     10       M                80,129.16       95,095.91   01/08/26      S    36
-   68 AKH      2979093509 TEO GIA CHING            152     78     9700  30570  30010       M               212,861.35      242,200.00   01/08/26      S    36
-   69 AKH      2980024214 TEO GIA CHING            175     78     9700  30570     10       M                69,717.06       70,320.60   01/08/26      S    36
-   70 AKH      2980025015 TEO SAR WEI              152     78     9700  30570     10       M               152,428.73      159,131.28   01/08/26      S    36
-   71 AKH      2980025403 TAN CHU HUA              152     78     9700  30570     10       M               175,860.63      180,793.80   01/08/26      S    36
-   72 AKH      2981983019 TAN CHU HUA              152     78     9700  30570     10       M               130,792.73      133,595.84   01/08/26      S    36
-   73 AKH      2982522411 MOHD SAUFI BIN MOHD      152     77     9700  30570     10       M               149,247.29      162,000.00   01/08/26      S    36
-   74 AKH      2983520214 HUDA SHAZANA BINTI A     152     77     9700  30570     10       M               111,224.78      114,517.17   01/08/26      S    36
-   75 AKH      2983520833 TAN CHU HUA              175     78     9700  30570  30010       M                68,582.09       74,000.00   01/08/26      S    36
-   76 AKH      2984363217 NORFAIZAH BINTI ABDU     152     77     9700  30570  10010       M               454,080.14      516,110.00   01/08/26      S    36
-   77 AKH      2984364406 HAZMIN BIN AHMAD         152     77     9700  30570  10010       M               241,766.12      223,700.00   01/08/26      S    36
-   78 AKH      2986053134 ANUAR BIN ISMAIL         152     77     9700  30570  30010       M               683,205.25      831,500.00   01/08/26      S    36
-   79 AKH      2986053425 MOHD ZARALI BIN KHAL     152     77     9700  30570  30010       M               643,169.61      746,400.00   01/08/26      S    36
-   80 AKH      2986056022 CHANDRAN A/L MANICKA     152     78     9700  30570  30010       M               455,946.67      523,640.00   01/08/26      S    36
-   81 AKH      2986610730 FAUZIAH BINTI JEBAH      152     77     9700  30570  10010       W               168,835.43      172,300.00   01/08/26      S    36
-   82 AKH      2986611300 MOHD FAIZ SYAZWAN BI     152     77     9700  30570  30010       M               375,609.16      381,720.00   01/08/26      S    36
-   83 AKH      2986611919 MUHAMMAD IZZUDDIN BI     152     77     9700  30570  30010       M               386,081.50      404,599.00   01/08/26      S    36
-   84 AKH      2986612720 MOHD BAZLI BIN OTHMA     152     77     9700  30570     10       M               695,622.38      722,318.69   01/08/26      S    36
-   85 AKH      2987368130 AMIR HAZIQ BIN HARIS     152     77     9700  30570  30010       M               373,191.63      390,700.00   01/08/26      S    36
-   86 AKH      2988619830 MUHAMAD FAUZAN BIN B     177     77     9700  30570     10       M                69,035.42       72,027.90   01/08/26      S    36
-   87 AKH      2988620600 NUR ALIFF BIN FADZIL     152     77     9700  30570  10010       M               284,646.69      297,800.00   01/08/26      S    36
-   88 AKH      2989378328 MOHD SHAUQAT BIN BAH     152     77     9700  30570     10       M               223,748.07      235,469.59   01/08/26      S    36
-   89 AKH      2989378813 ZAINA BINTI ZAINAL       152     77     9700  30570  30010       M               613,575.60      732,210.00   01/08/26      S    36
-   90 AKH      2989382023 FADZLYATON BINTI SAA     152     77     9700  30570  30010       M               211,265.80      250,000.00   01/08/26      S    36
-   91 AKH      2989382314 ZAINUDIN BIN YASIN       152     77     9700  30570  30010       M               345,291.87      469,700.00   01/08/26      S    36
-   92 AKH      2989923225 NORAZIAH BINTI SALLE     152     77     9700  30570  10010       M               347,321.86      363,760.00   01/08/26      S    36
-   93 AKH      2989924802 MUHAMMAD HANAFFI BIN     154     77     9700  30570     10       M               199,475.76      213,307.00   01/08/26      S    36
-   94 AKH      2906095934 SITI KHALIJAH BINTI      152     77     9700  30570  10010       M               239,477.04      354,940.00   31/07/26      S    37
-   95 AKH      2906790106 MUHAMAD FAIDHI BIN I     152     77     9700  30570  10010       M               235,188.90      349,210.00   31/07/26      S    37
-   96 AKH      2911158000 MOHD HAFIZAN BIN KAM     152     77     9700  30570  10010       M               241,240.07      366,673.00   31/07/26      S    37
-   97 AKH      2968843135 MOHAMAD FAIZ BIN SAA     152     77     9700  30570  30010       M                97,460.54      113,750.00   31/07/26      S    37
-   98 AKH      2995715436 NORAISHAH BINTI MOHD     142     77     9700  30570  30010       M                83,248.66      383,760.00   31/07/26      S    37
-   99 AKH      2958013113 NORHISAM BIN ABU & W     142     77     9700  30570  30010       M               231,937.24      770,280.00   30/07/26      S    38
-  100 AKH      2963557714 MOHAMMAD AZHAR BIN S     141     77     9700  30570  30010       M                80,612.22       85,900.00   30/07/26      S    38
-  101 AKH      2968327535 NURJIHAN BT ABOO BAK     152     77     9700  30570  30010       M               256,008.33      276,050.00   30/07/26      S    38
-  102 AKH      2989923710 NURHANIM BINTI ISHAK     152     77     9700  30570     10       M               696,325.54      702,869.40   30/07/26      S    38
-  103 AKH      2951447022 UZIR BIN MUNADI & SE     113     77     9700  30570  30010       M               107,110.25      345,636.95   28/07/26      S    40
-  104 AKH      2965457117 MUHAMMAD TAUFIK BIN      141     77     9700  30570     10       M                40,809.27       49,517.08   26/07/26      S    42
-  105 AKH      2961572132 RASHDI BIN OMAR          142     77     9700  30570  30010       M               119,619.83      170,000.00   21/07/26      S    47
-  106 AKH      2952855915 SHARUL ANUAR & JUNAI     112     77     9700  30570     10       M                29,554.65      104,370.69   07/07/26      S    61
-  107 AKH      2901919705 NURSILIN BINTI NASIR     152     77     9700  30570     10       M               213,910.82      219,817.44   01/07/26      S    67
-  108 AKH      2906096832 MUHAMMAD SYAHMI BIN      152     77     9700  30570  30010       M               249,592.99      253,200.00   01/07/26      S    67
-  109 AKH      2969310102 MOHD FAHIZAL BIN MOH     177     77     9700  30570     10       M                61,599.07       78,340.29   01/07/26      S    67
-  110 AKH      2969311522 SHAIFUL RIZAL BIN AB     154     77     9700  30570  10010       M               334,078.01      322,519.00   01/07/26      S    67
-  111 AKH      2969582908 MOHD KHAIRUL NIZAM B     152     77     9700  30570  30010       M               208,161.38      237,571.00   01/07/26      S    67
-  112 AKH      2969582908 MOHD KHAIRUL NIZAM B     152     77     9700  30570  30011       M               187,385.25      300,000.00   01/07/26      S    67
-  113 AKH      2971495716 INDIRAN A/L MAYAWAN      152     78     9700  30570  30010       M               181,623.02      226,640.00   01/07/26      S    67
-  114 AKH      2972255716 SER CHOON EN             152     78     9700  30570     10       M               293,783.93      325,972.88   01/07/26      S    67
-  115 AKH      2973336410 I KITCH SDN. BHD.        154     46     6120  30570  30010       M               108,277.04      140,000.00   01/07/26      S    67
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            TAN PENG YEOW            78      13        1  30570     9700       A  3800749036      610,398.61      600,000.00                           ATR    
 1TOTAL OVERDUE LOANS DETAILS
- AS AT 06/09/26 (LOANS)
-  116 AKH      2973336507 I KITCH SDN. BHD.        154     46     6120  30570  30010       M               109,232.59      140,000.00   01/07/26      S    67
-  117 AKH      2976060510 PANG YEOW LONG           151     78     9700  30570  30010       M               564,440.00      812,700.00   01/07/26      S    67
-  118 AKH      2985119813 MUHAMMAD HAZIQ BIN M     152     77     9700  30570  10010       M               221,842.81      227,120.00   01/07/26      S    67
-  119 AKH      2989377915 NUR SYUHADAH BINTI K     152     77     9700  30570  30010       M               406,477.70      440,450.00   01/07/26      S    67
-  120 AKH      2989378522 ABDUL HAKIM BIN KAMA     152     77     9700  30570  10010       M               380,940.91      385,440.00   01/07/26      S    67
-  121 AKH      2989924026 SAKATO ENTERPRISE        154     42     5008  30570  30010       M               579,272.48      626,100.00   01/07/26      S    67
-  122 AKH      2911156726 MOHAMAD FIRDAUS HAZI     152     77     9700  30570  10010       M               313,361.37      436,734.00   30/06/26      S    68
-  123 AKH      2959602605 MOHD KHAIRUL NIZAM B     142     77     9700  30570  30010       M               214,906.50      250,000.00   30/06/26      S    68
-  124 AKH      2996417021 KALAISELVAN A/L GOVI     142     78     9700  30570     10       M                92,610.45       95,000.00   30/06/26      S    68
-  125 AKH      2963555202 ROSNIZAM BIN ACHEN       141     77     9700  30570     10       M                50,182.45       59,149.10   08/06/26      S    90
-  126 AKH      2961570530 IRMAN HADI BIN HASSA     142     77     9700  30570     10       M               101,752.63      120,538.96   05/06/26      S    93
-  127 AKH      2968847309 BAHARINSHAH BIN BORH     152     77     9700  30570  30010       M      1.0      377,485.02      413,450.00   01/06/26      S    97
-  128 AKH      2973336604 I KITCH SDN. BHD.        154     46     6120  30570  30010       M      1.0      110,182.92      140,000.00   01/06/26      S    97
-  129 AKH      2983517902 NORHAYATI BINTI CHE      152     77     9700  30570  30010       M      1.0      420,754.49      478,650.00   01/06/26      S    97
-  130 AKH      2968322814 ROSLAN BIN YA'ACOB       412     77     9700  30570     10       M      1.0       18,859.28       51,750.00   05/05/26      S   124
-  131 AKH      2983518412 LIM HAU JAN              152     78     9700  30570  10010       M      1.0      597,476.25      639,750.00   01/05/26      S   128
-  132 AKH      2971496517 HABIBAH BINTI AHMAD      154     77     9700  30570  30010       M      1.0      243,326.26      271,320.00   30/04/26      S   129
-  133 AKH      2903437536 MUHAMMAD SHAZWANN BI     152     77     9700  30570     10       M      1.0      362,460.81      356,469.89   01/04/26      S   158
-  134 AKH      2986610827 HERMEE BIN RAMLI         154     77     9700  30570     10       M      2.0       99,129.57      124,122.90   01/03/26      S   189
-  135 AKH      2951443333 SUHAIMI & SITI Z         142     77     9700  30570  30012       M      2.0       87,114.89      426,480.00   26/02/26      S   192
-  136 AKH      2959602023 RATHA A/P RAMASAMY       141     78     9700  30570     10       M      2.0       45,328.18       51,000.00   07/12/25      S   273
-  137 AKH      2975446015 SHAHRIL SARDI BIN SA     135     77     9700  30580     10       M      2.0       15,590.99       47,616.00   01/12/25      S   279
-  138 AKH      2983521500 MOK CHERN HUN            152     78     9700  30570  30010       B      4.0      761,788.16      807,400.00   01/04/25      S   523
-  139 AKH      2973335318 NG BEE BEE               176     78     9700  30570     10       M      4.0       60,940.19       91,426.50   01/03/25      S   554
-  140 AKH      2988618701 MUSLIM BIN ARSAD         664     77     9700  30570  30010       M      4.0      256,760.79      456,050.00   01/06/24      S   827
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            ARMONTE VENTURE          41      25        4  30570     6130       B  3982399922        1,253.96            0.00                           BBG    
+    2            JAMALUDDIN BIN           77      25        4  30570     9700       B  3983711111        1,691.77            0.00                           BBG    
+    3            SDIPPACK (M) SD          61      25        4  30570     6130       B  3993739114        2,905.94            0.00                           BBG    
 1TOTAL OVERDUE LOANS DETAILS
- AS AT 06/09/26 (LOANS)
-  OBS BRANCH       ACCTNO NAME                 PRODUCT CUSTCD SECTORCD COLLCD NOTENO STATECD RISKCODE         BALANCE        APPRLIMT     BLDATE SECURE  DAYS
-    1 APG      2901198026 RAJA AL AMIR FIRDAUZ     152     77     9700  30570  10010       B               515,549.80      512,985.00   01/08/26      S    36
-    2 APG      2903802829 MUHAMAD TARMIZI BIN      152     77     9700  30570  10010       B               436,862.72      430,914.00   01/08/26      S    36
-    3 APG      2906390501 NOR ASMAH BINTI AHMA     152     77     9700  30570  10010       B               774,241.66      771,650.00   01/08/26      S    36
-    4 APG      2906391727 MOHD SHAHNAZ BIN SAN     152     77     9700  30570  10010       B               723,121.79      733,665.00   01/08/26      S    36
-    5 APG      2906392200 ISMAIL BIN MASIOD        152     77     9700  30570  10010       C               338,386.56      346,500.00   01/08/26      S    36
-    6 APG      2906392722 MOHD ANWAR BIN MOHD      152     77     9700  30570     10       B               407,188.82      411,310.00   01/08/26      S    36
-    7 APG      2906393523 MOHD NIZAM BIN JOHAR     464     77     9700  30570     10       B                79,365.85       85,520.40   01/08/26      S    36
-    8 APG      2909495500 NURIZA BINTI ABU         154     77     9700  30570  10010       B               607,043.14      604,300.00   01/08/26      S    36
-    9 APG      2964529421 NORMAH BINTI JOHARI      151     77     9700  30570     10       B               277,681.42      347,007.00   01/08/26      S    36
-   10 APG      2971392802 KALISWARAN & K LOGAN     152     78     9700  30570     10       B               413,783.50      487,000.00   01/08/26      S    36
-   11 APG      2971393409 ABDUL KHADER BIN ABD     152     78     9700  30570     10       B               351,372.79      375,000.00   01/08/26      S    36
-   12 APG      2974176331 LATHA LI LI A/P RAVE     152     78     9700  30570  10010       B               159,516.76      168,000.00   01/08/26      S    36
-   13 APG      2976128427 ZALIHA BINTI HUSIN       410     77     9700  30570     10       W               117,038.80      120,000.00   01/08/26      S    36
-   14 APG      2976130035 MOHAMMAD REEZAIREE B     152     77     9700  30570     10       B               114,504.13      126,000.00   01/08/26      S    36
-   15 APG      2976131224 MOHAMAD ZAKRI BIN AB     152     77     9700  30570  10010       B               797,712.75      875,820.00   01/08/26      S    36
-   16 APG      2976132704 MOHD ANNYZAN BIN MOD     152     77     9700  30570     10       B               141,952.32      144,000.00   01/08/26      S    36
-   17 APG      2977573203 SHAHARIN & NAZLINA       152     77     9700  30570  10010       B               369,476.48      409,500.00   01/08/26      S    36
-   18 APG      2979247211 ABDUL RAHMAN BIN AHM     412     77     9700  30570     10       B                52,798.13       55,587.13   01/08/26      S    36
-   19 APG      2987450420 AHMAD SHAHAMAH & SIT     152     77     9700  30570     10       B               272,076.49      284,637.16   01/08/26      S    36
-   20 APG      2987450711 FARALIZA BINTI KHALI     152     77     9700  30570  10010       W               272,641.73      275,600.00   01/08/26      S    36
-   21 APG      2987451318 NORAINI BINTI IDRIS      152     77     9700  30570     10       B               172,501.69      185,825.70   01/08/26      S    36
-   22 APG      2992256326 PRAKASH JAYARAM          464     78     9700  30570     11       B                14,624.86       50,534.50   01/08/26      S    36
-   23 APG      2963451621 MUHAMMAD SAKRI BIN M     141     77     9700  30570     10       B                57,595.98       57,557.00   31/07/26      S    37
-   24 APG      2966039406 NORRULHISHAM B SHAFR     152     77     9700  30570  10010       Q               336,139.66      363,503.00   31/07/26      S    37
-   25 APG      2966040832 MOHD KAMARUZZAMAN BI     152     77     9700  30570     11       B               440,145.10      560,000.00   31/07/26      S    37
-   26 APG      2974176100 AIMAN BIN AZLI           152     77     9700  30570     10       B               624,942.29      569,060.00   31/07/26      S    37
-   27 APG      2974176622 NAZRIN AMRIN BIN SHO     152     77     9700  30570     10       B               190,545.84      186,400.00   31/07/26      S    37
-   28 APG      2979243425 MUHD KHAIRUL AKMAL B     409     77     9700  30570     10       B                81,516.82       73,448.20   31/07/26      S    37
-   29 APG      2980371101 AZMAN BIN KAMARUDDIN     151     78     9700  30570  10010       W               260,950.50      260,510.00   31/07/26      S    37
-   30 APG      2994266718 RAHISHAM & SITI HAJA     113     77     9700  30570  30010       B               105,631.15      274,921.98   31/07/26      S    37
-   31 APG      2994509518 OTHMAN BIN RAZALI        113     77     9700  30570  30010       B                99,878.32      335,565.02   31/07/26      S    37
-   32 APG      2977573531 NUR SYAZWANI BINTI H     152     77     9700  30570     10       B               303,382.59      304,719.00   30/07/26      S    38
-   33 APG      2963449431 NADIAH BINTI SAAD        151     77     9700  30570     10       B               188,464.83      207,780.00   25/07/26      S    43
-   34 APG      2959879707 SHARIF BIN SHAMSUDIN     142     77     9700  30570  20010       B               155,828.96      266,043.10   21/07/26      S    47
-   35 APG      8957541629 ARNUAR BIN ABU SAPIA     113     77     9700  30570  20010       B                30,691.47      226,651.96   21/07/26      S    47
-   36 APG      2964530519 SHALMA BT MOHAMAD SY     141     77     9700  30570     10       B                56,911.01       74,134.00   18/07/26      S    50
-   37 APG      8957270221 MUNIANDY MUKESH A/L      112     78     9700  30570  20010       B                54,431.16      204,900.68   17/07/26      S    51
-   38 APG      2964532606 MUHAMMAD SALEHUDDIN      151     77     9700  30570     10       B               249,891.68      240,106.00   15/07/26      S    53
-   39 APG      2957991032 MOHAMED PUHAD BIN &      142     77     9700  30570  30010       B               568,032.79      618,367.00   07/07/26      S    61
-   40 APG      2964529227 NAZREENA BINTI NOH       151     77     9700  30570  20010       B               107,336.83      113,501.19   07/07/26      S    61
-   41 APG      2964530034 ROHAYA BT MOHD RAZAL     151     77     9700  30570     10       B               255,908.02      290,074.00   04/07/26      S    64
-   42 APG      2966038836 ZUL AZMI BIN MAT ADA     142     77     9700  30570  10010       B               152,799.50      202,282.00   03/07/26      S    65
-   43 APG      2901195817 AHMAD FIRDAUS BIN ZU     152     77     9700  30570     10       B               382,574.10      382,950.00   01/07/26      S    67
-   44 APG      2901199021 LIEW KIM CHUAN           422     78     9700  30570     10       B               235,337.86      259,444.08   01/07/26      S    67
-   45 APG      2903800802 YUGENTHIRAN & 2 OTHE     152     78     9700  30570     10       B               202,250.87      198,923.18   01/07/26      S    67
-   46 APG      2903802113 NORHIDAYAH BINTI MUH     152     78     9700  30570     10       B               291,267.51      296,000.00   01/07/26      S    67
-   47 APG      2906390113 NIK NUR'AIN BINTI NI     152     77     9700  30570  10010       B               531,581.39      542,383.00   01/07/26      S    67
-   48 APG      2966042300 RADZIAH BINTI NAWAWI     152     77     9700  30570  10010       B               198,158.77      265,230.00   01/07/26      S    67
-   49 APG      2966042300 RADZIAH BINTI NAWAWI     152     77     9700  30570  10011       B               204,535.95      265,230.00   01/07/26      S    67
-   50 APG      2966042300 RADZIAH BINTI NAWAWI     152     77     9700  30570  10012       B               231,669.13      300,000.00   01/07/26      S    67
-   51 APG      2967983012 AHMAD BIN BERAHIM &      152     77     9700  30570  10010       B               124,775.16      153,200.00   01/07/26      S    67
-   52 APG      2976131030 AMALINA DIANAH BINTI     152     77     9700  30570  10010       B                60,699.78      105,400.00   01/07/26      S    67
-   53 APG      2977574720 MUHAMMAD SAMSUL BIN      152     77     9700  30570     10       W               157,966.77      163,400.00   01/07/26      S    67
-   54 APG      2977577220 MUHAMMAD SAFII BIN M     152     77     9700  30570     10       W               153,795.40      162,000.00   01/07/26      S    67
-   55 APG      2977577317 HELMI BIN HALIM & JA     410     77     9700  30570     10       W               153,122.30      151,510.10   01/07/26      S    67
-   56 APG      2980372133 ZULHAMIDI BIN MUSTAP     410     77     9700  30570  10010       B               154,179.01      162,900.00   01/07/26      S    67
-   57 APG      2981949502 ARIFF AMBIA BIN CHE      152     77     9700  30570     10       B               207,403.21      228,433.50   01/07/26      S    67
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            THILLAINAYAGAM           78      32        4  30570     9700       A  3801021625            0.00            0.00                           BCM    
 1TOTAL OVERDUE LOANS DETAILS
- AS AT 06/09/26 (LOANS)
-   58 APG      2987448812 SHAHARBANUN BINTI MD     152     77     9700  30570     10       B               264,029.15      302,167.12   01/07/26      S    67
-   59 APG      2980369627 HURASHEAH BINTI HAMZ     152     77     9700  30570     10       W      1.0      299,330.98      345,308.50   31/05/26      S    98
-   60 APG      2994268417 KAMARUDIN B YUSOFF       112     77     9700  30570  20010       B      1.0       22,224.14       89,451.14   31/03/26      S   159
-   61 APG      2957989327 TAN KUMAR A/L TAN HO     135     78     9700  30580     11       B      3.0          963.09       62,946.00   30/11/25      S   280
-   62 APG      2954049114 MOHAMAD NAZIF BIN NA     135     77     9700  30580     13       B      3.0       30,801.20       28,234.74   31/10/25      S   310
-   63 APG      2979242915 RUSNANI BINTI MANSOR     152     77     9700  30570  10010       B      4.0      182,558.68      326,800.00   31/08/25      S   371
-   64 APG      2954123535 ROFIDAH BINTI ABDULL     135     77     9700  30580     12       B      4.0          317.21       73,000.00   28/02/25      S   555
-   65 APG      2963450201 THULASI THARAN A PAL     142     78     9700  30570     10       B      4.0      132,862.27       87,256.00   11/03/24      S   909
-   66 APG      2994269509 CHONG CHOY HONG          112     78     9700  30570  30010       B      4.0        4,607.56       57,438.62   28/07/20      S  2231
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            JG CONSTRUCTION          44      25        2  30570     5030       B  3821885917            8.89            0.00                           BKR    
+    2            MK TRANS AND LO          46      25        4  30570     7112       B  3817010713           16.39            0.00                           BKR    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            CHEONG WENG CHU          78      32        4  30570     9700       B  3801805120            0.00            0.00                           BMC    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            SENGUAT MOTOR C          46     166        1  30570     6110       J  3800100803    1,118,761.45    1,050,000.00                           BPT    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            NADHIRAH BINTI           41      25        1  30570     6130       W  3816666027            2.00            0.00                           BWK    
+    2            KL ARKED PRINT           41      25        4  30570     3242       W  3984287014           16.00            0.00                           BWK    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            AL JANNAH RESOU          41      25        4  30570     6130       J  3986946115           22.74            0.00                           EDU    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            CORAL INTOIL SD          42      32        4  30570     8914       W  3800480534            0.00            0.00                           HSL    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            TAN TEE HUI              78      13        2  30570     9700       K  3803095119      157,244.67      150,907.00                           IJK    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            VIJERSH KS RESO          44      25        1  30570     9499       W  3814650307            7.10            0.00                           IPJ    
+    2            ZAFRAN PADU RES          41      25        1  30570     8922       W  3816127516            3.68            0.00                           IPJ    
+    3            EYO MOBILE LEGA          41      25        1  30570     6130       W  3823644521            7.00            0.00                           IPJ    
+    4            MUTIARA TEKNOLO          42      32        4  30570     8340       W  3802100426            0.00            0.00                           IPJ    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            CHUA JUI KIM &           78      13        2  30570     9700       J  3802921005      330,390.58      280,000.00                           JAH    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            SYED ANWARULLAH          78      25        1  30570     9700       W  3816444036            6.55            0.00                           JHL    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            TLT LOGISTIC SE          44      25        1  30570     7112       W  3820107323            3.96            0.00                           JJG    
+    2            CZ SHOP SOLUTIO          44      25        3  30570     6130       W  3819166722            8.00            0.00                           JJG    
+    3            YAP KOK ENG              78      25        4  30570     9700       W  3995114835          103.47            0.00                           JJG    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            LOKE YOKE KIM            78      32        4  30570     9700       A  3986697011            0.00            0.00                           JLP    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            ADDONLIFE SDN.           46     166        3  30570     9450       P  3989433832      203,524.71            0.00                           JMR    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            VONG TECK YOUNG          78      32        4  30570     9700       Q  3801526328            0.00            0.00                           JPN    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            PERSONA IMRIANA          41      25        1  30570     6120       C  3825066731            8.00            0.00                           JRT    
+    2            LONG PROJECT CO          41      25        4  30570     5999       C  3812276721        2,862.35            0.00                           JRT    
+    3            LOKMAN BIN MOHA          77      32        4  30570     9700       C  3985254328            0.00            0.00                           JRT    
+    4            BUANA INDAH ENT          41      32        4  30570     8999       C  3995987831            0.00            0.00                           JRT    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            YC RENOVATION &          44      25        4  30570     5999       A  3822701529           27.89            0.00                           JSI    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            ABDUL RAHIM B A          77      25        2  30570     9700       W  3990009103            5.66            0.00                           JSS    
+    2            ABDUL MUTALIF B          77      25        4  30570     9700       W  3818193207            9.83            0.00                           JSS    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            ADIWARNA KENARI          44     166        1  30570     6120       A  3813401626      520,146.76      500,000.00                           JYK    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            BBKK GLOBAL ENT          44      25        1  30570     6130       B  3819866331            7.95            0.00                           KBG    
+    2            BUKHARI LEGACY           42      25        1  30570     5001       B  3821588413            6.91            0.00                           KBG    
+    3            AZ SITI RESOURC          41      25        1  30570     6130       B  3822528502            7.45            0.00                           KBG    
+    4            J&F GLOBAL TRAN          44      25        3  30570     7112       B  3815845910            7.00            0.00                           KBG    
+    5            ASFALI ENTERPRI          41      25        3  30570     5050       B  3817239124            1.92            0.00                           KBG    
+    6            BIBIT CONSTRUCT          41      25        4  30570     5999       B  3817236005            9.51            0.00                           KBG    
+    7            PAK MALAU LEGAC          41      25        4  30570     8999       B  3819866719           23.04            0.00                           KBG    
+    8            REZQI DAPUR IBU          41      25        4  30570     6130       B  3821590021            9.53            0.00                           KBG    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            ROSLI BIN ABDUL          77     166        4  30570     9700       P  3800805036           48.75            0.00                           KBS    
+    2            KAH BRICKS ENTE          46      32        4  30570     3619       P  3981514532            0.00            0.00                           KBS    
+    3            KEJURUTERAAN LI          42      32        4  30570     8999       P  3991787115            0.00            0.00                           KBS    
+    4            PROSPEK IDAMAN           41      25        4  30570     5001       P  3995718920        1,851.66            0.00                           KBS    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            AMAT GIEMON RES          41      25        1  30570     6120       B  3813623035            0.28            0.00                           KDA    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            HKL BARBERSHOP           41      24        1  30570     8999       R  3824824209            4.00            0.00                           KGR    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            RIA AUTOMOBILE           41     166        4  30570     6110       D  3800570821      657,849.57            0.00                           KKI    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            NYN AUTO IMPIAN          41      25        1  30570     6110       C  3826017129          129.75            0.00                           KTN    
+    2            KUANTAN BIKE WA          41      25        2  30570     6110       C  3818503808            6.94            0.00                           KTN    
+    3            KEDAI RUNCIT CZ          44      25        2  30570     6130       C  3824566920            0.79            0.00                           KTN    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            DLAN HARDWARE &          41      25        2  30570     6130       T  3823331114            1.44            0.00                           KTU    
+    2            AZS RESTU BONDA          41      25        2  30570     5001       T  3823331733            2.56            0.00                           KTU    
+    3            PERNIAGAAN MOHD          61      32        4  30570     6130       T  3985465622            0.00            0.00                           KTU    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            M/S ZAITUNIZAN           42      25        3  30570     5999       K  3814702418            2.72            0.00                           KUM    
+    2            AGIE SOLUTIONS           41      25        3  30570     6320       K  3821320600            0.80            0.00                           KUM    
+    3            GADGET UNIVERSE          41      25        3  30570     6130       K  3822546401            7.00            0.00                           KUM    
+    4            PIDOIH MEJA LEG          41      25        3  30570     6110       K  3822549035            1.99            0.00                           KUM    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            WONG KWOK CHUEN          78     166        3  30570     9700       S  3988773202      194,347.76      175,000.00                           LDO    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            H H ENTERPRISE           42      32        4  30570     5001       S  3986674719            0.00            0.00                           LDU    
+    2            HAFIZ ARIF MANA          42      32        4  30570     9499       S  3987569020            0.00            0.00                           LDU    
+    3            IJR ENTERPRISE           42      32        4  30570     8999       S  3987569930            0.00            0.00                           LDU    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            AZMEER BIN MOHD          77     166        4  30570     9700       W  3800875024      223,746.26            0.00                           MIN    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            AHMAD SHAKIR BI          77      25        4  30570     9700       W  3986011731           10.55            0.00                           MKA    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            CHAI SET CHOO            78     166        2  30570     9700       Q  3802221008      186,496.26      150,000.00                           MRI    
+    2            SUCCESS MEGACIT          46      32        4  30570     5001       Q  3800922123            0.00            0.00                           MRI    
+    3            EPIC EVENTS              42      32        4  30570     8999       Q  3993002718            0.00            0.00                           MRI    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            BANU CURRY HOUS          42      32        4  30570     6310       J  3993572106            0.00            0.00                           MSI    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            CHUA JUI KIM &           78      13        1  30570     9700       J  3802817515      178,703.35      175,000.00                           MUA    
+    2            CHONG FUCK QUEK          78     166        2  30570     9700       J  3800138622       38,307.26       15,000.00                           MUA    
+    3            ALVIN TIMO TRAD          44      25        4  30570     6120       J  3823192417           40.00            0.00                           MUA    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            ZODIAC DIVINE C          44      25        2  30570     6130       W  3815174509            6.92            0.00                           PJA    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            GIGAPIX INNOVAT          44      25        2  30570     8999       B  3818122030            3.35            0.00                           PJO    
+    2            THEJES RECYCLIN          44      25        3  30570     3957       B  3818848833            8.00            0.00                           PJO    
+    3            SANTAPAN DESA E          41      25        4  30570     6310       B  3822922234          129.72            0.00                           PJO    
+    4            NOUR ENTERPRISE          41      25        4  30570     6120       B  3991589806           16.00            0.00                           PJO    
+    5            SAMBASIVAM VICK          78      25        4  30570     9700       B  3996132624           11.29            0.00                           PJO    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            RAY FIFTY NINE           42      25        1  30570     6320       K  3813057411            2.52            0.00                           PLI    
+    2            DEEPA A/P MUNIA          78      25        1  30570     9700       K  3817767423            8.00            0.00                           PLI    
+    3            AIMS TEGUH ENTE          41      25        2  30570     5999       K  3819950514            1.25            0.00                           PLI    
+    4            REZEKI LANGKAWI          41      25        2  30570     6310       K  3820671226            2.13            0.00                           PLI    
+    5            FR SHOP ENTERPR          41      25        3  30570     6130       K  3821187134            5.87            0.00                           PLI    
+    6            TALIAN TEGUH EN          41      25        3  30570     6310       K  3821679307            8.33            0.00                           PLI    
+    7            AS DAYANG BUNTI          41      25        4  30570     8320       K  3814118410            8.00            0.00                           PLI    
+    8            BEACH WALK COLL          41      25        4  30570     6130       K  3989659124            8.77            0.00                           PLI    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            THOO AI LIN              78     166        1  30570     9700       S  3800356536      153,121.44      150,000.00                           PPR    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            AMAZON ADVANCE           46      13        1  30570     3313       P  3820626915      582,925.94            0.00                           PRA    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            FARAWAHIDA BINT          77     166        2  30570     9700       J  3987503309       95,228.48       85,000.00                           PRJ    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            IMPIAN MUHIBBAH          42      32        4  30570     5999       K  3982321221            0.00            0.00                           PSA    
+    2            LADA IT SDN BHD          41      32        4  30570     6120       K  3983627801            0.00            0.00                           PSA    
+    3            MF NORTHERN ENT          42      32        4  30570     5001       K  3983630635            0.00            0.00                           PSA    
+    4            ROHANA BINTI MO          77      32        4  30570     9700       K  3984652635            0.00            0.00                           PSA    
+    5            TANAMERA PADU J          42      32        4  30570     9430       P  3986992622            0.00            0.00                           PSA    
+    6            CHONG CHOON YEE          78      32        4  30570     9700       K  3994161112            0.00            0.00                           PSA    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            ZHUAN SION TRAD          47      32        4  30570     6120       P  3800336804            0.00            0.00                           SAT    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            NC DREAMS ENTER          41      25        1  30570     9499       B  3816952834            7.05            0.00                           SBH    
+    2            TAKLUK GLOBAL V          41      25        1  30570     8912       B  3818651712            2.00            0.00                           SBH    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            NURSURIATY BINT          77     166        1  30570     9700       B  3812096535       61,175.02       60,000.00                           SEA    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            PANG SOON FU MO          44     166        1  30570     6110       J  3801460207      300,923.27      290,000.00                           SGM    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            SYPRESS MEDIA S          41      25        4  30570     6110       B  3993966026           48.63            0.00                           SPG    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            MANSOR BIN SYED          77      25        4  30570     9700       B  3817125319            2.49            0.00                           SSA    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            T.M. TRANSPORTS          43      25        4  30570     7112       W  3817072116            5.42            0.00                           STL    
+    2            NORSHAM BIN ABD          77      25        4  30570     9700       W  3986632332           50.00            0.00                           STL    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            MAS EMYLIA BINT          77      25        4  30570     9700       W  3988444311           12.00            0.00                           TCS    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            SYED SHAZMIR BI          77      25        4  30570     9700       W  3814417807        2,192.44            0.00                           TDI    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            MOHD NURUDDIN S          77      25        2  30570     9700       W  3811345033            6.89            0.00                           TMI    
+    2            CNOR ENTERPRISE          41      25        2  30570     6310       W  3821419103            7.35            0.00                           TMI    
+    3            SOON LI AIRCOND          44      25        2  30570     5030       W  3822080809            5.10            0.00                           TMI    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            AISYAH TAN ENTE          41      25        4  30570     6130       C  3814577925           23.44            0.00                           TML    
+    2            LEONG MUDGUARD           62      25        4  30570     6110       C  3991200016           48.13            0.00                           TML    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            S JEYAKUMAR              78     166        4  30570     9700       B  3800576306       51,587.33            0.00                           TMW    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            ABD RAZAK B M D          77      32        4  30570     9700       N  3990166721            0.00            0.00                           TPN    
+    2            RMD NIAGA                41      32        4  30570     6130       N  3992837514            0.00            0.00                           TPN    
+    3            AL AZIM DOUBLE           42      32        4  30570     6130       N  3992841500            0.00            0.00                           TPN    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            RAQIB REUSSI RE          44      25        2  30570     3114       B  3989924525            7.63            0.00                           TTJ    
+    2            GOH LAI QUI (SO          44      25        3  30570     7199       B  3822069136            1.75            0.00                           TTJ    
+    3            WARISAN MAJU BI          44     166        4  30570     5008       B  3800761801      236,101.81      200,000.00                           TTJ    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+  OBS     BLDATE NAME                 CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD      ACCTNO         BALANCE        APPRLIMT   EXCESDT     TODDT  DAYS BRANCH 
+    1            GREENLEAF FOOD           46      13        1  30570     3113       Q  3801606331      317,319.95      300,000.00                           WSS    
