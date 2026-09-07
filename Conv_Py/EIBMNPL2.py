@@ -73,10 +73,10 @@ def build_mnpl2_loan1(entity: str) -> list:
             CAST(COLLCD        AS VARCHAR) AS COLLCD,
             CAST(NOTENO        AS INTEGER) AS NOTENO,
             CAST(STATECD       AS VARCHAR) AS STATECD,
-            CAST(RISKRTE       AS INTEGER) AS RISKRTE,
+            CAST(RISKRTE       AS DOUBLE) AS RISKRTE,
             CAST(BALANCE       AS DOUBLE)  AS BALANCE,
             CAST(APPRLIMT      AS DOUBLE)  AS APPRLIMT,
-            CAST(BLDATE        AS DATE)    AS BLDATE,
+            (DATE '1960-01-01' + CAST(BLDATE AS INTEGER)) AS BLDATE,
             CAST(SECURE        AS VARCHAR) AS SECURE,
             CAST(OLDNOTEDAYARR AS INTEGER) AS OLDNOTEDAYARR
         FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
