@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+print("===== SCRIPT START=====")
 """
 Program : EIBMNPL1.py
 Purpose : Total Overdue Loans report (Loans / HP / O/D / Loans & O/D),
@@ -73,6 +74,7 @@ NOT written to an output file, matching the original job's behaviour.
 import gc
 from pathlib import Path
 from datetime import date
+from typing import Optional
 
 import duckdb
 import pandas as pd
@@ -136,6 +138,26 @@ print(f"  PIBB LOAN input : {INPUT_LOAN_PIBB_FILE.name}")
 print(f"  OVERDFT input   : {INPUT_OVERDFT_FILE.name}")
 
 TBL_LABELS = {1: "(LOANS)", 2: "(HP)", 3: "(O/D)", 4: "(LOANS & O/D)"}
+
+# ============================================================================
+# %TBLS COLUMN CHUNKING (RISKRATE horizontal groups per LINESIZE=132 page)
+# ============================================================================
+# TABLE ... RISKRATE=' '*(N*F=COMMA6./7. SUM*F=COMMA14.) columns are wider
+# than the plain-BEST TEMP-output table, so fewer RISKRATE groups fit per
+# line before PROC TABULATE wraps horizontally. Break points observed from
+# the actual SAS output: [0:6), [6:13), [13:15) RISKRATE columns per chunk.
+TBLS_CHUNK_BOUNDARIES = [6, 13, 15]   # RISKRATE cols: [0:6), [6:13), [13:15)
+
+
+def _tbls_chunks(riskrates: list) -> list:
+    """Splits RISKRATE columns (0-14) into the 3 horizontal chunks that
+    PROC TABULATE's page-wrap produces for this specific table."""
+    chunks = []
+    start = 0
+    for end in TBLS_CHUNK_BOUNDARIES:
+        chunks.append(riskrates[start:end])
+        start = end
+    return chunks
 
 # ============================================================================
 # LOCAL PROC FORMAT EQUIVALENTS
@@ -217,55 +239,109 @@ def risk_rate_from_days(days) -> int:
 # EXCESSDT / TODDATE / BLDATE PARSING  (LOAN3 here; also used by EIBMNPL2's
 # LOAN2/O-D detail build, hence exposed as public module-level functions)
 # ============================================================================
+def _parse_date_from_z11(value) -> Optional[date]:
+    """
+    Parse date from the first 8 characters of a Z11.-padded numeric value.
+    Returns None if the value is missing/zero or if month/day are invalid.
+    SAS YEARCUTOFF=1950 is applied (years 00-49 -> 2000, 50-99 -> 1900).
+    """
+    if value is None or value == 0:
+        return None
+    try:
+        s = f"{int(value):011d}"
+        mm = int(s[0:2])
+        dd = int(s[2:4])
+        yy = int(s[4:6])
+        year = 1900 + yy if yy >= 50 else 2000 + yy
+        # Validate month and day
+        if not (1 <= mm <= 12) or not (1 <= dd <= 31):
+            # Optional: print warning for debugging
+            # print(f"Warning: invalid date components in {s[:8]} (value={value})")
+            return None
+        return date(year, mm, dd)
+    except (ValueError, IndexError):
+        return None
+
+
 def _z11(value) -> str:
     """PUT(value,Z11.) -- zero-padded 11-digit numeric string."""
     return f"{int(value):011d}"
 
 
-def parse_excessdt(excessdt) -> date:
-    """EXCMONTH=SUBSTR(...,1,2); EXCDAY=SUBSTR(...,3,2); EXCYEAR=SUBSTR(...,5,4);
-    EXCDATE=MDY(EXCMONTH,EXCDAY,EXCYEAR). Offsets preserved verbatim from
-    the SAS source (against the Z11.-padded string) even though this reuses
-    leading zero-pad digits -- this is a legacy quirk, not corrected here."""
-    s = _z11(excessdt)
-    return date(int(s[4:8]), int(s[0:2]), int(s[2:4]))
+# def parse_excessdt(excessdt) -> date:
+#     """EXCMONTH=SUBSTR(...,1,2); EXCDAY=SUBSTR(...,3,2); EXCYEAR=SUBSTR(...,5,4);
+#     EXCDATE=MDY(EXCMONTH,EXCDAY,EXCYEAR). Offsets preserved verbatim from
+#     the SAS source (against the Z11.-padded string) even though this reuses
+#     leading zero-pad digits -- this is a legacy quirk, not corrected here."""
+#     s = _z11(excessdt)
+#     return date(int(s[4:8]), int(s[0:2]), int(s[2:4]))
 
 
-def parse_toddate(toddate) -> date:
-    """TODDAY=INPUT(SUBSTR(...,3,2),2.); TODMONTH=INPUT(SUBSTR(...,1,2),2.);
-    TODYEAR=INPUT(SUBSTR(...,5,4),4.); TODDT=MDY(TODMONTH,TODDAY,TODYEAR)."""
-    s = _z11(toddate)
-    return date(int(s[4:8]), int(s[0:2]), int(s[2:4]))
+# def parse_toddate(toddate) -> date:
+#     """TODDAY=INPUT(SUBSTR(...,3,2),2.); TODMONTH=INPUT(SUBSTR(...,1,2),2.);
+#     TODYEAR=INPUT(SUBSTR(...,5,4),4.); TODDT=MDY(TODMONTH,TODDAY,TODYEAR)."""
+#     s = _z11(toddate)
+#     return date(int(s[4:8]), int(s[0:2]), int(s[2:4]))
 
 
-def _bldate_from_z11_mmddyy8(raw_value) -> date:
-    """BLDATE=INPUT(SUBSTR(PUT(raw,Z11.),1,8),MMDDYY8.) -- parses the first
-    8 chars of the Z11.-padded 11-digit string as MMDDYY (2-digit year,
-    YEARCUTOFF=1950). Preserved exactly as written in the SAS source."""
-    s = _z11(raw_value)[0:8]
-    mm, dd, yy = int(s[0:2]), int(s[2:4]), int(s[4:6])
-    year = 1900 + yy if yy >= 50 else 2000 + yy
-    return date(year, mm, dd)
+# def _bldate_from_z11_mmddyy8(raw_value) -> date:
+#     """BLDATE=INPUT(SUBSTR(PUT(raw,Z11.),1,8),MMDDYY8.) -- parses the first
+#     8 chars of the Z11.-padded 11-digit string as MMDDYY (2-digit year,
+#     YEARCUTOFF=1950). Preserved exactly as written in the SAS source."""
+#     s = _z11(raw_value)[0:8]
+#     mm, dd, yy = int(s[0:2]), int(s[2:4]), int(s[4:6])
+#     year = 1900 + yy if yy >= 50 else 2000 + yy
+#     return date(year, mm, dd)
+
+
+# def compute_bldate(excessdt, toddate):
+#     """IF EXCESSDT NE 0 AND TODDATE NE 0 THEN DO;
+#          IF EXCDATE<=TODDT THEN BLDATE=...(EXCESSDT);
+#          IF EXCDATE> TODDT THEN BLDATE=...(TODDATE);
+#        END;
+#        ELSE IF EXCESSDT>0 THEN BLDATE=...(EXCESSDT);
+#        ELSE IF TODDATE>0  THEN BLDATE=...(TODDATE);"""
+#     bldate = None
+#     if excessdt != 0 and toddate != 0:
+#         excdate = parse_excessdt(excessdt)
+#         toddt = parse_toddate(toddate)
+#         if excdate <= toddt:
+#             bldate = _bldate_from_z11_mmddyy8(excessdt)
+#         if excdate > toddt:
+#             bldate = _bldate_from_z11_mmddyy8(toddate)
+#     elif excessdt is not None and excessdt > 0:
+#         bldate = _bldate_from_z11_mmddyy8(excessdt)
+#     elif toddate is not None and toddate > 0:
+#         bldate = _bldate_from_z11_mmddyy8(toddate)
+#     return bldate
+
+
+def parse_excessdt(excessdt):
+    return _parse_date_from_z11(excessdt)
+
+
+def parse_toddate(toddate):
+    return _parse_date_from_z11(toddate)
+
+
+def _bldate_from_z11_mmddyy8(raw_value):
+    return _parse_date_from_z11(raw_value)
 
 
 def compute_bldate(excessdt, toddate):
-    """IF EXCESSDT NE 0 AND TODDATE NE 0 THEN DO;
-         IF EXCDATE<=TODDT THEN BLDATE=...(EXCESSDT);
-         IF EXCDATE> TODDT THEN BLDATE=...(TODDATE);
-       END;
-       ELSE IF EXCESSDT>0 THEN BLDATE=...(EXCESSDT);
-       ELSE IF TODDATE>0  THEN BLDATE=...(TODDATE);"""
     bldate = None
     if excessdt != 0 and toddate != 0:
         excdate = parse_excessdt(excessdt)
         toddt = parse_toddate(toddate)
-        if excdate <= toddt:
-            bldate = _bldate_from_z11_mmddyy8(excessdt)
-        if excdate > toddt:
-            bldate = _bldate_from_z11_mmddyy8(toddate)
-    elif excessdt is not None and excessdt > 0:
+        # Only compare if both are valid dates
+        if excdate is not None and toddt is not None:
+            if excdate <= toddt:
+                bldate = _bldate_from_z11_mmddyy8(excessdt)
+            else:
+                bldate = _bldate_from_z11_mmddyy8(toddate)
+    elif excessdt is not None and excessdt != 0:
         bldate = _bldate_from_z11_mmddyy8(excessdt)
-    elif toddate is not None and toddate > 0:
+    elif toddate is not None and toddate != 0:
         bldate = _bldate_from_z11_mmddyy8(toddate)
     return bldate
 
@@ -403,7 +479,7 @@ def _build_loan1_loan2(entity: str):
             CAST(PRODUCT  AS INTEGER) AS PRODUCT,
             CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
             CAST(NOTENO   AS INTEGER) AS NOTENO,
-            CAST(BLDATE   AS DATE)    AS BLDATE,
+            (DATE '1960-01-01' + CAST(BLDATE AS INTEGER)) AS BLDATE,
             CAST(RISKRTE  AS INTEGER) AS RISKRTE
         FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
         WHERE NOTENO < 90000
@@ -581,15 +657,161 @@ def _run_tbls(loan1, loan2, loan3, loan4) -> None:
 # ============================================================================
 # STEP 6: TEMP OUTPUT (ODTLLIST.TEXT) -- FORMCHAR=' ', no ASA, no box chars
 # ============================================================================
+TEMP_LABEL_WIDTH = 5     # RTS=5
+TEMP_N_WIDTH     = 5     # F=5. on N
+TEMP_SUM_WIDTH   = 12    # unformatted SUM -> default BESTw. width
+TEMP_SEP_WIDTH   = 1     # one blank column preceding every cell
+
+TEMP_PAGE_LEN     = 60
+TEMP_TOP_MARGIN   = 4    # blank lines before the header line
+TEMP_BOTTOM_BLANK = 2    # blank lines before "(Continued)"
+TEMP_DATA_ROWS_PER_PAGE = (
+    TEMP_PAGE_LEN - TEMP_TOP_MARGIN - 1  # header line
+    - 1                                   # blank after header
+    - TEMP_BOTTOM_BLANK - 1               # "(Continued)" line
+)  # = 51
+
+# Explicit horizontal-split points, in flat cell-index terms, where the
+# flat cell sequence is [N0, SUM0, N1, SUM1, ..., N14, SUM14] (30 cells,
+# indices 0-29). A break value B means "start a new chunk before cell B".
+#
+# BALANCE splits cleanly between whole RISKRATE groups: groups 0-12
+# together, then 13-14 -- one break, after group 12's SUM cell (index 25),
+# i.e. before index 26.
+TEMP_BALANCE_BREAKS = [26]
+
+# RISKBAL splits mid-group at column 6: groups 0-5 plus N6 in chunk 1;
+# SUM6 plus groups 7-12 in chunk 2; groups 13-14 in chunk 3.
+TEMP_RISKBAL_BREAKS = [13, 26]
+
+
+def _best_format(value, width: int = TEMP_SUM_WIDTH) -> str:
+    """Emulates BESTw. for an unformatted TABULATE SUM cell: no comma
+    grouping; decimals step down 2 -> 1 -> 0 until the value fits exactly
+    in `width` characters. MISSING=0 -> None renders as '0'."""
+    if value is None:
+        return "0".rjust(width)
+    v = float(value)
+    sign = "-" if v < 0 else ""
+    v_abs = abs(v)
+    for decimals in (2, 1, 0):
+        s = f"{sign}{v_abs:.{decimals}f}"
+        if len(s) <= width:
+            return s.rjust(width)
+    s = f"{sign}{v_abs:.0f}"
+    return s[-width:].rjust(width)
+
+
+def _n_format(value, width: int = TEMP_N_WIDTH) -> str:
+    v = 0 if value is None else int(value)
+    s = str(v)
+    return (s[-width:] if len(s) > width else s).rjust(width)
+
+
+def _build_cell_layout(riskrates: list) -> list:
+    """Flat list of (riskrate, kind, width) cells in print order:
+    N0, SUM0, N1, SUM1, ... A chunk boundary can fall between a group's
+    N cell and its SUM cell, so cells are tracked individually rather
+    than as N/SUM pairs."""
+    cells = []
+    for rr in riskrates:
+        cells.append((rr, "N", TEMP_N_WIDTH))
+        cells.append((rr, "SUM", TEMP_SUM_WIDTH))
+    return cells
+
+
+def _split_by_breaks(cells: list, breaks: list) -> list:
+    """Splits `cells` into chunks at the given flat cell-index breakpoints."""
+    chunks, start = [], 0
+    for b in breaks:
+        chunks.append(cells[start:b])
+        start = b
+    chunks.append(cells[start:])
+    return [c for c in chunks if c]
+
+
+def _build_chunk_line(chunk: list, label_width: int, cross: dict, branch=None) -> str:
+    """Builds either the header line (branch=None) or one data row for
+    `branch`, for a single horizontal chunk. Consecutive cells sharing
+    the same RISKRATE are grouped so the header label is centered over
+    however much of that group (N only, SUM only, or both) is present
+    in this chunk -- this is what lets column 6's label appear once at
+    the end of one chunk and again at the start of the next."""
+    groups = []
+    for cell in chunk:
+        rr = cell[0]
+        if groups and groups[-1][0] == rr:
+            groups[-1][1].append(cell)
+        else:
+            groups.append((rr, [cell]))
+
+    if branch is None:
+        out = " " * label_width
+        for rr, group_cells in groups:
+            total_width = sum(TEMP_SEP_WIDTH + w for (_, _, w) in group_cells)
+            out += str(rr).center(total_width)
+        return out
+
+    out = branch.ljust(label_width)
+    for rr, group_cells in groups:
+        n, s = cross.get((branch, rr), (0, None))
+        for (_, kind, width) in group_cells:
+            value = _n_format(n, width) if kind == "N" else _best_format(s, width)
+            out += " " * TEMP_SEP_WIDTH + value
+    return out
+
+
+def _render_table_pages(branches: list, cross: dict, riskrates: list,
+                         breaks: list, is_last_table: bool) -> list:
+    """Renders one full TABULATE table across all its horizontal chunks
+    (per `breaks`) and vertical (60-line) pages. '(Continued)' prints
+    after every page except the very last page of the very last chunk
+    of the very last table in this output file."""
+    cells = _build_cell_layout(riskrates)
+    chunks = _split_by_breaks(cells, breaks)
+
+    lines = []
+    for chunk_idx, chunk in enumerate(chunks):
+        header = _build_chunk_line(chunk, TEMP_LABEL_WIDTH, cross, branch=None)
+        is_last_chunk = chunk_idx == len(chunks) - 1
+
+        idx = 0
+        n_branches = len(branches)
+        while True:
+            page_branches = branches[idx: idx + TEMP_DATA_ROWS_PER_PAGE]
+            lines.extend([""] * TEMP_TOP_MARGIN)
+            lines.append(header)
+            lines.append("")
+            for b in page_branches:
+                lines.append(_build_chunk_line(chunk, TEMP_LABEL_WIDTH, cross, branch=b))
+
+            idx += TEMP_DATA_ROWS_PER_PAGE
+            more_branches_remain = idx < n_branches
+            is_last_page_overall = (
+                is_last_table and is_last_chunk and not more_branches_remain
+            )
+
+            if not is_last_page_overall:
+                lines.extend([""] * TEMP_BOTTOM_BLANK)
+                lines.append("(Continued)")
+
+            if not more_branches_remain:
+                break
+
+    return lines
+
+
 def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
     """PROC PRINTTO PRINT=TEMP NEW; OPTION LINESIZE=256;
     Two PROC TABULATE calls (BALANCE, then RISKBAL), FORMCHAR blank,
-    NOSEPS, TITLE1/TITLE2 blank, RTS=5 CONDENSE.
-    RECFM=FB -> no ASA control byte; plain fixed-width numeric columns."""
+    NOSEPS, TITLE1/TITLE2 blank, RTS=5 CONDENSE. RECFM=FB -> no ASA byte;
+    pagination is blank-line based only (no '1' carriage-control byte).
+    BALANCE (primary var) wraps once at column 12/13; RISKBAL (secondary
+    var) wraps twice, splitting mid-group at column 6 and again at 12/13."""
     print(f"\nStep 6: Writing TEMP (ODTLLIST.TEXT, no ASA) -> {out_path.name}")
 
-    branches = sorted({r["BRANCH"] for r in loan4_padded})
     riskrates = list(range(0, 15))
+    branches = sorted({r["BRANCH"] for r in loan4_padded})
 
     def _crosstab(field: str) -> dict:
         agg: dict = {}
@@ -603,29 +825,147 @@ def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
             agg[key] = (n, s)
         return agg
 
-    lines = []
-    for field, width_n, width_s in (("BALANCE", 5, 12), ("RISKBAL", 5, 12)):
+    all_lines = []
+    table_specs = [
+        ("BALANCE", TEMP_BALANCE_BREAKS),
+        ("RISKBAL", TEMP_RISKBAL_BREAKS),
+    ]
+    for i, (field, breaks) in enumerate(table_specs):
         cross = _crosstab(field)
-        lines.append("")  # TITLE1/TITLE2 blank
-        lines.append("")
-        for b in branches:
-            parts = [b.ljust(5)]
-            for rr in riskrates:
-                n, s = cross.get((b, rr), (0, None))
-                parts.append(str(n).rjust(width_n))
-                parts.append(comma(s, width_s, 0))
-            lines.append(" ".join(parts))
+        is_last_table = (i == len(table_specs) - 1)
+        all_lines.extend(_render_table_pages(branches, cross, riskrates, breaks, is_last_table))
 
     with open(out_path, "w", encoding="latin1") as fh:
-        for ln in lines:
+        for ln in all_lines:
             fh.write(ln + "\n")
 
 
 # ============================================================================
 # STEP 7: ODTLLIST OUTPUT (ODTLLIST.COLD) -- ASA control, LRECL=136
 # ============================================================================
-def _ageing_title_block() -> list:
-    return ["AGEING OF ALL OVERDUE OD & TERM LOANS", f"AS AT {RDATE}"]
+# def _ageing_title_block() -> list:
+#     return ["AGEING OF ALL OVERDUE OD & TERM LOANS", f"AS AT {RDATE}"]
+
+
+# def _render_ageing_table(asa: AsaWriter, loan4_padded: list) -> None:
+#     """PROC TABULATE DATA=LOAN4 MISSING; FORMAT RISKRATE RISK.; BY BRANCH;
+#     CLASS BRANCH RISKRATE; VAR BALANCE RISKBAL;
+#     TABLE RISKRATE=' ' ALL='TOTAL', (BALANCE=... RISKBAL=...)*(N SUM)
+#     / BOX=' ' RTS=30 CONDENSE;
+#     BY BRANCH -> one table (new page) per branch, columns: BALANCE(N,SUM),
+#     RISKBAL(N,SUM)."""
+#     label_w = 30
+#     branches = sorted({r["BRANCH"] for r in loan4_padded})
+#     by_branch: dict = {}
+#     for r in loan4_padded:
+#         by_branch.setdefault(r["BRANCH"], []).append(r)
+
+#     header_line1 = (" " * label_w + "|" + center("O/S LOANS IN ARREARS (RMM)", 27) +
+#                      "|" + center("O/S LOANS CLASSIFIED AS NPL(RMM) 2,3,4", 27))
+#     header_line2 = (" " * label_w + "|" + center("NO.", 8) + center("AMOUNT", 19) +
+#                      "|" + center("NO.", 8) + center("AMOUNT", 19))
+
+#     for branch in branches:
+#         rows = by_branch[branch]
+#         by_rr = {}
+#         for r in rows:
+#             key = r["RISKRATE"]
+#             n_bal, s_bal, n_rb, s_rb = by_rr.get(key, (0, 0.0, 0, 0.0))
+#             if r["BALANCE"] is not None:
+#                 n_bal += 1
+#                 s_bal += r["BALANCE"]
+#             if r["RISKBAL"] is not None:
+#                 n_rb += 1
+#                 s_rb += r["RISKBAL"]
+#             by_rr[key] = (n_bal, s_bal, n_rb, s_rb)
+
+#         title_lines = _ageing_title_block()
+#         asa.new_page(title_lines)
+#         asa.add(header_line1)
+#         asa.add(header_line2)
+
+#         tot_n_bal = tot_s_bal = tot_n_rb = tot_s_rb = 0
+#         for rr in range(0, 15):
+#             n_bal, s_bal, n_rb, s_rb = by_rr.get(rr, (0, 0.0, 0, 0.0))
+#             tot_n_bal += n_bal
+#             tot_s_bal += s_bal
+#             tot_n_rb += n_rb
+#             tot_s_rb += s_rb
+#             label = format_risk(rr).ljust(label_w)[:label_w]
+#             asa.ensure_space(1, title_lines)
+#             asa.add(f"{label}|{comma(n_bal, 6)}  {comma(s_bal, 18, 2)}"
+#                     f"|{comma(n_rb, 6)}  {comma(s_rb, 18, 2)}")
+
+#         asa.ensure_space(1, title_lines)
+#         asa.add(f"{'TOTAL'.ljust(label_w)}|{comma(tot_n_bal, 6)}  {comma(tot_s_bal, 18, 2)}"
+#                 f"|{comma(tot_n_rb, 6)}  {comma(tot_s_rb, 18, 2)}")
+
+AGE_LABEL_W = 28
+AGE_NO_W    = 6
+AGE_AMT_W   = 18
+AGE_GROUP_W = AGE_NO_W + 1 + AGE_AMT_W                       # 25
+AGE_BORDER_W = AGE_LABEL_W + 4 * 1 + 2 * AGE_NO_W + 2 * AGE_AMT_W + 2  # 82
+
+AGE_GROUP1_LINE1 = "O/S LOANS IN ARREARS"
+AGE_GROUP1_LINE2 = "(RMM)"
+AGE_GROUP2_LINE1 = "O/S LOANS CLASSIFIED AS"
+AGE_GROUP2_LINE2 = "NPL(RMM) 2,3,4"
+
+
+def _ageing_title_block(branch: str) -> list:
+    """TITLE1/TITLE2 plus the default BY-line block PROC TABULATE prints
+    for 'BY BRANCH;' (blank, 'BRANCH=xxx', blank) before the table."""
+    return [
+        "AGEING OF ALL OVERDUE OD & TERM LOANS",
+        f"AS AT {RDATE}",
+        "",
+        f"BRANCH={branch}",
+        "",
+    ]
+
+
+def _ageing_count(value, width: int = AGE_NO_W) -> str:
+    """N statistic -- a count, never missing; always COMMA-formatted."""
+    v = 0 if value is None else int(value)
+    return f"{v:,}".rjust(width)
+
+
+def _ageing_amount(value, n_count, width: int = AGE_AMT_W) -> str:
+    """SUM statistic under OPTIONS MISSING=0: a cell with zero
+    contributing observations is genuinely missing, not a computed
+    zero, and prints as a bare '0' with no decimals/commas -- the
+    MISSING= substitution bypasses the numeric FORMAT entirely. A cell
+    with at least one contributing observation is always a real number
+    and gets the normal COMMA18.2 treatment."""
+    if not n_count:
+        return "0".rjust(width)
+    return f"{float(value):,.2f}".rjust(width)
+
+
+def _age_row(label: str, n_bal, s_bal, n_rb, s_rb) -> str:
+    return (
+        "|" + label.ljust(AGE_LABEL_W)[:AGE_LABEL_W]
+        + "|" + _ageing_count(n_bal)
+        + "|" + _ageing_amount(s_bal, n_bal)
+        + "|" + _ageing_count(n_rb)
+        + "|" + _ageing_amount(s_rb, n_rb)
+        + "|"
+    )
+
+
+def _age_divider_full() -> str:
+    return (
+        "|" + "-" * AGE_LABEL_W
+        + "+" + "-" * AGE_NO_W
+        + "+" + "-" * AGE_AMT_W
+        + "+" + "-" * AGE_NO_W
+        + "+" + "-" * AGE_AMT_W
+        + "|"
+    )
+
+
+def _age_border() -> str:
+    return "-" * AGE_BORDER_W
 
 
 def _render_ageing_table(asa: AsaWriter, loan4_padded: list) -> None:
@@ -633,53 +973,77 @@ def _render_ageing_table(asa: AsaWriter, loan4_padded: list) -> None:
     CLASS BRANCH RISKRATE; VAR BALANCE RISKBAL;
     TABLE RISKRATE=' ' ALL='TOTAL', (BALANCE=... RISKBAL=...)*(N SUM)
     / BOX=' ' RTS=30 CONDENSE;
-    BY BRANCH -> one table (new page) per branch, columns: BALANCE(N,SUM),
-    RISKBAL(N,SUM)."""
-    label_w = 30
+    PROC TABULATE starts a new page for every BY-group by default, so
+    each branch gets its own full-page box-drawn table -- there is no
+    mid-branch pagination or multi-branch packing to manage, since the
+    fixed 15-bucket + TOTAL layout (~44 lines) always fits well under
+    PAGESIZE=60."""
     branches = sorted({r["BRANCH"] for r in loan4_padded})
     by_branch: dict = {}
     for r in loan4_padded:
         by_branch.setdefault(r["BRANCH"], []).append(r)
 
-    header_line1 = (" " * label_w + "|" + center("O/S LOANS IN ARREARS (RMM)", 27) +
-                     "|" + center("O/S LOANS CLASSIFIED AS NPL(RMM) 2,3,4", 27))
-    header_line2 = (" " * label_w + "|" + center("NO.", 8) + center("AMOUNT", 19) +
-                     "|" + center("NO.", 8) + center("AMOUNT", 19))
-
     for branch in branches:
         rows = by_branch[branch]
-        by_rr = {}
+        by_rr: dict = {}
         for r in rows:
             key = r["RISKRATE"]
-            n_bal, s_bal, n_rb, s_rb = by_rr.get(key, (0, 0.0, 0, 0.0))
+            n_bal, s_bal, n_rb, s_rb = by_rr.get(key, (0, None, 0, None))
             if r["BALANCE"] is not None:
                 n_bal += 1
-                s_bal += r["BALANCE"]
+                s_bal = (s_bal or 0.0) + r["BALANCE"]
             if r["RISKBAL"] is not None:
                 n_rb += 1
-                s_rb += r["RISKBAL"]
+                s_rb = (s_rb or 0.0) + r["RISKBAL"]
             by_rr[key] = (n_bal, s_bal, n_rb, s_rb)
 
-        title_lines = _ageing_title_block()
-        asa.new_page(title_lines)
-        asa.add(header_line1)
-        asa.add(header_line2)
+        asa.new_page(_ageing_title_block(branch))
 
-        tot_n_bal = tot_s_bal = tot_n_rb = tot_s_rb = 0
+        asa.add(_age_border())
+        asa.add(
+            "|" + " " * AGE_LABEL_W
+            + "|" + center(AGE_GROUP1_LINE1, AGE_GROUP_W)
+            + "|" + center(AGE_GROUP2_LINE1, AGE_GROUP_W)
+            + "|"
+        )
+        asa.add(
+            "|" + " " * AGE_LABEL_W
+            + "|" + center(AGE_GROUP1_LINE2, AGE_GROUP_W)
+            + "|" + center(AGE_GROUP2_LINE2, AGE_GROUP_W)
+            + "|"
+        )
+        asa.add(
+            "|" + " " * AGE_LABEL_W
+            + "|" + "-" * AGE_GROUP_W
+            + "+" + "-" * AGE_GROUP_W
+            + "|"
+        )
+        asa.add(
+            "|" + " " * AGE_LABEL_W
+            + "|" + center("NO.", AGE_NO_W)
+            + "|" + center("AMOUNT", AGE_AMT_W)
+            + "|" + center("NO.", AGE_NO_W)
+            + "|" + center("AMOUNT", AGE_AMT_W)
+            + "|"
+        )
+        asa.add(_age_divider_full())
+
+        tot_n_bal = tot_n_rb = 0
+        tot_s_bal = tot_s_rb = None
         for rr in range(0, 15):
-            n_bal, s_bal, n_rb, s_rb = by_rr.get(rr, (0, 0.0, 0, 0.0))
+            n_bal, s_bal, n_rb, s_rb = by_rr.get(rr, (0, None, 0, None))
             tot_n_bal += n_bal
-            tot_s_bal += s_bal
             tot_n_rb += n_rb
-            tot_s_rb += s_rb
-            label = format_risk(rr).ljust(label_w)[:label_w]
-            asa.ensure_space(1, title_lines)
-            asa.add(f"{label}|{comma(n_bal, 6)}  {comma(s_bal, 18, 2)}"
-                    f"|{comma(n_rb, 6)}  {comma(s_rb, 18, 2)}")
+            if s_bal is not None:
+                tot_s_bal = (tot_s_bal or 0.0) + s_bal
+            if s_rb is not None:
+                tot_s_rb = (tot_s_rb or 0.0) + s_rb
 
-        asa.ensure_space(1, title_lines)
-        asa.add(f"{'TOTAL'.ljust(label_w)}|{comma(tot_n_bal, 6)}  {comma(tot_s_bal, 18, 2)}"
-                f"|{comma(tot_n_rb, 6)}  {comma(tot_s_rb, 18, 2)}")
+            asa.add(_age_row(format_risk(rr), n_bal, s_bal, n_rb, s_rb))
+            asa.add(_age_divider_full())
+
+        asa.add(_age_row("TOTAL", tot_n_bal, tot_s_bal, tot_n_rb, tot_s_rb))
+        asa.add(_age_border())
 
 
 # ============================================================================
@@ -703,7 +1067,13 @@ def main() -> None:
         loan3_p = _pad_all_riskrates(loan3)
         loan4_p = loan1_p + loan2_p + loan3_p   # DATA LOAN4; SET LOAN1 LOAN2 LOAN3;
 
-        _run_tbls(loan1_p, loan2_p, loan3_p, loan4_p)
+        # _run_tbls(loan1_p, loan2_p, loan3_p, loan4_p)
+
+        with open(OUTPUT_DIR / f"{entity}_TBLS.log", "w") as f:
+            import sys
+            sys.stdout = f
+            _run_tbls(loan1_p, loan2_p, loan3_p, loan4_p)
+            sys.stdout = sys.__stdout__
 
         temp_out = OUTPUT_DIR / f"{entity}_ODTLLIST_TEXT.txt"
         _write_temp_output(loan4_p, temp_out)
@@ -722,9 +1092,9 @@ def main() -> None:
         print(f"  Output written : {cold_out}")
         print(f"  Total lines    : {len(asa.lines):,}")
 
-        print("\n--- Console preview (ageing + detail titles) ---")
-        for ln in asa.lines[:20]:
-            print(ln)
+        # print("\n--- Console preview (ageing + detail titles) ---")
+        # for ln in asa.lines[:20]:
+        #     print(ln)
 
         del loan1, loan2, loan3, loan1_p, loan2_p, loan3_p, loan4_p, loan4_sorted
         gc.collect()
