@@ -1,33 +1,233 @@
-def _parse_date_from_sas_date(value):
-    if value is None or value == 0:
-        return None
-    try:
-        return date(1960, 1, 1) + timedelta(days=int(value))
-    except (TypeError, ValueError):
-        return None
+# Ranges that map to 'HOE': 3000-3001, 7000, 7500-8000, 8050-8750
+_BRCHCD_HOE_RANGES = [(3000, 3001), (7000, 7000), (7500, 8000), (8050, 8750)]
+# All other 3xxx codes map to their own code (same as subtracting 3000 from key)
+_BRCHCD_3XXX = {(3000 + k): v for k, v in _BRCHCD_MAP.items() if 1 <= k <= 296}
+# 3701-3704 also map to their own code (Islamic branch series 701-704)
+_BRCHCD_3XXX.update({(3000 + k): v for k, v in _BRCHCD_MAP.items() if 701 <= k <= 704})
 
-def parse_excessdt(excessdt):
-    return _parse_date_from_sas_date(excessdt)
 
-def parse_toddate(toddate):
-    return _parse_date_from_sas_date(toddate)
 
-def _bldate_from_sas_date(raw_value):
-    return _parse_date_from_sas_date(raw_value)
 
-# Update compute_bldate to use the new function
-def compute_bldate(excessdt, toddate):
-    bldate = None
-    if excessdt != 0 and toddate != 0:
-        excdate = parse_excessdt(excessdt)
-        toddt = parse_toddate(toddate)
-        if excdate is not None and toddt is not None:
-            if excdate <= toddt:
-                bldate = _bldate_from_sas_date(excessdt)
-            else:
-                bldate = _bldate_from_sas_date(toddate)
-    elif excessdt is not None and excessdt != 0:
-        bldate = _bldate_from_sas_date(excessdt)
-    elif toddate is not None and toddate != 0:
-        bldate = _bldate_from_sas_date(toddate)
-    return bldate
+def format_profplus(income: Optional[float]) -> str:
+    """PROFPLUS: 50-plus savings income profile."""
+    if income is None:
+        return ''
+    v = float(income)
+    if v <= 2000:  return '1)UP TO RM 2,000.00'
+    if v <= 5000:  return '1)UP TO RM 5,000.00'
+    if v <= 10000: return '2)UP TO RM10,000.00'
+    if v <= 30000: return '3)UP TO RM30,000.00'
+    if v <= 50000: return '4)UP TO RM50,000.00'
+    if v <= 75000: return '5)UP TO RM75,000.00'
+    return              '6)ABOVE RM75,000.00'
+
+
+
+
+def format_sa1prg(amount: Optional[float]) -> str:
+    """SA1PRG: Savings account deposit range variant (54 bands)."""
+    if amount is None:
+        return ''
+    v = float(amount)
+    if v <= 5:       return '01)RM        1.00 - RM         5.00'
+    if v <= 10:      return '02)RM        5.01 - RM        10.00'
+    if v <= 50:      return '03)RM       10.01 - RM        50.00'
+    if v <= 100:     return '04)RM       50.01 - RM       100.00'
+    if v <= 500:     return '05)RM      100.01 - RM       500.00'
+    if v <= 1000:    return '06)RM      500.01 - RM     1,000.00'
+    if v <= 1500:    return '07)RM    1,000.01 - RM     1,500.00'
+    if v <= 2000:    return '08)RM    1,500.01 - RM     2,000.00'
+    if v <= 2500:    return '09)RM    2,000.01 - RM     2,500.00'
+    if v <= 3000:    return '10)RM    2,500.01 - RM     3,000.00'
+    if v <= 3500:    return '11)RM    3,000.01 - RM     3,500.00'
+    if v <= 4000:    return '12)RM    3,500.01 - RM     4,000.00'
+    if v <= 4500:    return '13)RM    4,000.01 - RM     4,500.00'
+    if v <= 5000:    return '14)RM    4,500.01 - RM     5,000.00'
+    if v <= 6000:    return '15)RM    5,000.01 - RM     6,000.00'
+    if v <= 7000:    return '16)RM    6,000.01 - RM     7,000.00'
+    if v <= 8000:    return '17)RM    7,000.01 - RM     8,000.00'
+    if v <= 9000:    return '18)RM    8,000.01 - RM     9,000.00'
+    if v <= 10000:   return '19)RM    9,000.01 - RM    10,000.00'
+    if v <= 15000:   return '20)RM   10,000.01 - RM    15,000.00'
+    if v <= 20000:   return '21)RM   15,000.01 - RM    20,000.00'
+    if v <= 25000:   return '22)RM   20,000.01 - RM    25,000.00'
+    if v <= 30000:   return '23)RM   25,000.01 - RM    30,000.00'
+    if v <= 35000:   return '24)RM   30,000.01 - RM    35,000.00'
+    if v <= 40000:   return '25)RM   35,000.01 - RM    40,000.00'
+    if v <= 45000:   return '26)RM   40,000.01 - RM    45,000.00'
+    if v <= 50000:   return '27)RM   45,000.01 - RM    50,000.00'
+    if v <= 55000:   return '28)RM   50,000.01 - RM    55,000.00'
+    if v <= 60000:   return '29)RM   55,000.01 - RM    60,000.00'
+    if v <= 65000:   return '30)RM   60,000.01 - RM    65,000.00'
+    if v <= 70000:   return '31)RM   65,000.01 - RM    70,000.00'
+    if v <= 75000:   return '32)RM   70,000.01 - RM    75,000.00'
+    if v <= 80000:   return '33)RM   75,000.01 - RM    80,000.00'
+    if v <= 85000:   return '34)RM   80,000.01 - RM    85,000.00'
+    if v <= 90000:   return '35)RM   85,000.01 - RM    90,000.00'
+    if v <= 95000:   return '36)RM   90,000.01 - RM    95,000.00'
+    if v <= 100000:  return '37)RM   95,000.01 - RM   100,000.00'
+    if v <= 150000:  return '38)RM  100,000.01 - RM   150,000.00'
+    if v <= 200000:  return '39)RM  150,000.01 - RM   200,000.00'
+    if v <= 300000:  return '40)RM  200,000.01 - RM   300,000.00'
+    if v <= 350000:  return '41)RM  300,000.01 - RM   350,000.00'
+    if v <= 360000:  return '42)RM  350,000.01 - RM   360,000.00'
+    if v <= 500000:  return '43)RM  360,000.01 - RM   500,000.00'
+    if v <= 510000:  return '44)RM  500,000.01 - RM   510,000.00'
+    if v <= 550000:  return '45)RM  510,000.01 - RM   550,000.00'
+    if v <= 850000:  return '46)RM  550,000.01 - RM   850,000.00'
+    if v <= 860000:  return '47)RM  850,000.01 - RM   860,000.00'
+    if v <= 1000000: return '48)RM  860,000.01 - RM 1,000,000.00'
+    if v <= 2000000: return '49)RM1,000,000.01 - RM 2,000,000.00'
+    if v <= 3000000: return '50)RM2,000,000.01 - RM 3,000,000.00'
+    if v <= 4000000: return '51)RM3,000,000.01 - RM 4,000,000.00'
+    if v <= 5000000: return '52)RM4,000,000.01 - RM 5,000,000.00'
+    if v <= 10000000:return '53)RM5,000,000.01 - RM10,000,000.00'
+    return              '54)          ABOVE RM 10,000,000.00'
+
+
+def format_sa2prg(amount: Optional[float]) -> str:
+    """SA2PRG: Savings account deposit range with explicit zero-balance band (67 bands)."""
+    if amount is None:
+        return ''
+    v = float(amount)
+    if v <= 0:       return 'ZERO BALANCE                             '
+    if v <= 5:       return '01)RM              1.00 - RM         5.00'
+    if v <= 10:      return '02)ABOVE RM        5.00 - RM        10.00'
+    if v <= 50:      return '03)ABOVE RM       10.00 - RM        50.00'
+    if v <= 100:     return '04)ABOVE RM       50.00 - RM       100.00'
+    if v <= 500:     return '05)ABOVE RM      100.00 - RM       500.00'
+    if v <= 1000:    return '06)ABOVE RM      500.00 - RM     1,000.00'
+    if v <= 1500:    return '07)ABOVE RM    1,000.00 - RM     1,500.00'
+    if v <= 2000:    return '08)ABOVE RM    1,500.00 - RM     2,000.00'
+    if v <= 2500:    return '09)ABOVE RM    2,000.00 - RM     2,500.00'
+    if v <= 3000:    return '10)ABOVE RM    2,500.00 - RM     3,000.00'
+    if v <= 3500:    return '11)ABOVE RM    3,000.00 - RM     3,500.00'
+    if v <= 4000:    return '12)ABOVE RM    3,500.00 - RM     4,000.00'
+    if v <= 4500:    return '13)ABOVE RM    4,000.00 - RM     4,500.00'
+    if v <= 5000:    return '14)ABOVE RM    4,500.00 - RM     5,000.00'
+    if v <= 6000:    return '15)ABOVE RM    5,000.00 - RM     6,000.00'
+    if v <= 7000:    return '16)ABOVE RM    6,000.00 - RM     7,000.00'
+    if v <= 8000:    return '17)ABOVE RM    7,000.00 - RM     8,000.00'
+    if v <= 9000:    return '18)ABOVE RM    8,000.00 - RM     9,000.00'
+    if v <= 10000:   return '19)ABOVE RM    9,000.00 - RM    10,000.00'
+    if v <= 15000:   return '20)ABOVE RM   10,000.00 - RM    15,000.00'
+    if v <= 20000:   return '21)ABOVE RM   15,000.00 - RM    20,000.00'
+    if v <= 25000:   return '22)ABOVE RM   20,000.00 - RM    25,000.00'
+    if v <= 30000:   return '23)ABOVE RM   25,000.00 - RM    30,000.00'
+    if v <= 35000:   return '24)ABOVE RM   30,000.00 - RM    35,000.00'
+    if v <= 40000:   return '25)ABOVE RM   35,000.00 - RM    40,000.00'
+    if v <= 45000:   return '26)ABOVE RM   40,000.00 - RM    45,000.00'
+    if v <= 50000:   return '27)ABOVE RM   45,000.00 - RM    50,000.00'
+    if v <= 55000:   return '28)ABOVE RM   50,000.00 - RM    55,000.00'
+    if v <= 60000:   return '29)ABOVE RM   55,000.00 - RM    60,000.00'
+    if v <= 65000:   return '30)ABOVE RM   60,000.00 - RM    65,000.00'
+    if v <= 70000:   return '31)ABOVE RM   65,000.00 - RM    70,000.00'
+    if v <= 75000:   return '32)ABOVE RM   70,000.00 - RM    75,000.00'
+    if v <= 80000:   return '33)ABOVE RM   75,000.00 - RM    80,000.00'
+    if v <= 85000:   return '34)ABOVE RM   80,000.00 - RM    85,000.00'
+    if v <= 90000:   return '35)ABOVE RM   85,000.00 - RM    90,000.00'
+    if v <= 95000:   return '36)ABOVE RM   90,000.00 - RM    95,000.00'
+    if v <= 100000:  return '37)ABOVE RM   95,000.00 - RM   100,000.00'
+    if v <= 150000:  return '38)ABOVE RM  100,000.00 - RM   150,000.00'
+    if v <= 200000:  return '39)ABOVE RM  150,000.00 - RM   200,000.00'
+    if v <= 300000:  return '40)ABOVE RM  200,000.00 - RM   300,000.00'
+    if v <= 350000:  return '41)ABOVE RM  300,000.00 - RM   350,000.00'
+    if v <= 360000:  return '42)ABOVE RM  350,000.00 - RM   360,000.00'
+    if v <= 500000:  return '43)ABOVE RM  360,000.00 - RM   500,000.00'
+    if v <= 510000:  return '44)ABOVE RM  500,000.00 - RM   510,000.00'
+    if v <= 550000:  return '45)ABOVE RM  510,000.00 - RM   550,000.00'
+    if v <= 600000:  return '46)ABOVE RM  550,000.00 - RM   600,000.00'
+    if v <= 700000:  return '47)ABOVE RM  600,000.00 - RM   700,000.00'
+    if v <= 800000:  return '48)ABOVE RM  700,000.00 - RM   800,000.00'
+    if v <= 850000:  return '49)ABOVE RM  800,000.00 - RM   850,000.00'
+    if v <= 860000:  return '50)ABOVE RM  850,000.00 - RM   860,000.00'
+    if v <= 900000:  return '51)ABOVE RM  860,000.00 - RM   900,000.00'
+    if v <= 1000000: return '52)ABOVE RM  900,000.00 - RM 1,000,000.00'
+    if v <= 1100000: return '53)ABOVE RM1,000,000.00 - RM 1,100,000.00'
+    if v <= 1200000: return '54)ABOVE RM1,100,000.00 - RM 1,200,000.00'
+    if v <= 1300000: return '55)ABOVE RM1,200,000.00 - RM 1,300,000.00'
+    if v <= 1400000: return '56)ABOVE RM1,300,000.00 - RM 1,400,000.00'
+    if v <= 1500000: return '57)ABOVE RM1,400,000.00 - RM 1,500,000.00'
+    if v <= 1600000: return '58)ABOVE RM1,500,000.00 - RM 1,600,000.00'
+    if v <= 1700000: return '59)ABOVE RM1,600,000.00 - RM 1,700,000.00'
+    if v <= 1800000: return '60)ABOVE RM1,700,000.00 - RM 1,800,000.00'
+    if v <= 1900000: return '61)ABOVE RM1,800,000.00 - RM 1,900,000.00'
+    if v <= 2000000: return '62)ABOVE RM1,900,000.00 - RM 2,000,000.00'
+    if v <= 3000000: return '63)ABOVE RM2,000,000.00 - RM 3,000,000.00'
+    if v <= 4000000: return '64)ABOVE RM3,000,000.00 - RM 4,000,000.00'
+    if v <= 5000000: return '65)ABOVE RM4,000,000.00 - RM 5,000,000.00'
+    if v <= 10000000:return '66)ABOVE RM5,000,000.00 - RM10,000,000.00'
+    return              '67)                ABOVE RM 10,000,000.00'
+
+
+def format_sa3prg(amount: Optional[float]) -> str:
+    """SA3PRG: Savings account deposit range with negative/zero bands and
+    strictly-exclusive lower bounds (SAS '<-' operator, 56 bands)."""
+    if amount is None:
+        return ''
+    v = float(amount)
+    if v < 0:        return '01)NEGATIVE BALANCE                      '
+    if v == 0:        return '02)ZERO BALANCE                          '
+    if v <= 5:       return '03)ABOVE RM        0.00 - RM         5.00'
+    if v <= 10:      return '04)ABOVE RM        5.00 - RM        10.00'
+    if v <= 50:      return '05)ABOVE RM       10.00 - RM        50.00'
+    if v <= 100:     return '06)ABOVE RM       50.00 - RM       100.00'
+    if v <= 500:     return '07)ABOVE RM      100.00 - RM       500.00'
+    if v <= 1000:    return '08)ABOVE RM      500.00 - RM     1,000.00'
+    if v <= 1500:    return '09)ABOVE RM    1,000.00 - RM     1,500.00'
+    if v <= 2000:    return '10)ABOVE RM    1,500.00 - RM     2,000.00'
+    if v <= 2500:    return '11)ABOVE RM    2,000.00 - RM     2,500.00'
+    if v <= 3000:    return '12)ABOVE RM    2,500.00 - RM     3,000.00'
+    if v <= 3500:    return '13)ABOVE RM    3,000.00 - RM     3,500.00'
+    if v <= 4000:    return '14)ABOVE RM    3,500.00 - RM     4,000.00'
+    if v <= 4500:    return '15)ABOVE RM    4,000.00 - RM     4,500.00'
+    if v <= 5000:    return '16)ABOVE RM    4,500.00 - RM     5,000.00'
+    if v <= 6000:    return '17)ABOVE RM    5,000.00 - RM     6,000.00'
+    if v <= 7000:    return '18)ABOVE RM    6,000.00 - RM     7,000.00'
+    if v <= 8000:    return '19)ABOVE RM    7,000.00 - RM     8,000.00'
+    if v <= 9000:    return '20)ABOVE RM    8,000.00 - RM     9,000.00'
+    if v <= 10000:   return '21)ABOVE RM    9,000.00 - RM    10,000.00'
+    if v <= 15000:   return '22)ABOVE RM   10,000.00 - RM    15,000.00'
+    if v <= 20000:   return '23)ABOVE RM   15,000.00 - RM    20,000.00'
+    if v <= 25000:   return '24)ABOVE RM   20,000.00 - RM    25,000.00'
+    if v <= 30000:   return '25)ABOVE RM   25,000.00 - RM    30,000.00'
+    if v <= 35000:   return '26)ABOVE RM   30,000.00 - RM    35,000.00'
+    if v <= 40000:   return '27)ABOVE RM   35,000.00 - RM    40,000.00'
+    if v <= 45000:   return '28)ABOVE RM   40,000.00 - RM    45,000.00'
+    if v <= 50000:   return '29)ABOVE RM   45,000.00 - RM    50,000.00'
+    if v <= 55000:   return '30)ABOVE RM   50,000.00 - RM    55,000.00'
+    if v <= 60000:   return '31)ABOVE RM   55,000.00 - RM    60,000.00'
+    if v <= 65000:   return '32)ABOVE RM   60,000.00 - RM    65,000.00'
+    if v <= 70000:   return '33)ABOVE RM   65,000.00 - RM    70,000.00'
+    if v <= 75000:   return '34)ABOVE RM   70,000.00 - RM    75,000.00'
+    if v <= 80000:   return '35)ABOVE RM   75,000.00 - RM    80,000.00'
+    if v <= 85000:   return '36)ABOVE RM   80,000.00 - RM    85,000.00'
+    if v <= 90000:   return '37)ABOVE RM   85,000.00 - RM    90,000.00'
+    if v <= 95000:   return '38)ABOVE RM   90,000.00 - RM    95,000.00'
+    if v <= 100000:  return '39)ABOVE RM   95,000.00 - RM   100,000.00'
+    if v <= 150000:  return '40)ABOVE RM  100,000.00 - RM   150,000.00'
+    if v <= 200000:  return '41)ABOVE RM  150,000.00 - RM   200,000.00'
+    if v <= 300000:  return '42)ABOVE RM  200,000.00 - RM   300,000.00'
+    if v <= 350000:  return '43)ABOVE RM  300,000.00 - RM   350,000.00'
+    if v <= 360000:  return '44)ABOVE RM  350,000.00 - RM   360,000.00'
+    if v <= 500000:  return '45)ABOVE RM  360,000.00 - RM   500,000.00'
+    if v <= 510000:  return '46)ABOVE RM  500,000.00 - RM   510,000.00'
+    if v <= 550000:  return '47)ABOVE RM  510,000.00 - RM   550,000.00'
+    if v <= 850000:  return '48)ABOVE RM  550,000.00 - RM   850,000.00'
+    if v <= 860000:  return '49)ABOVE RM  850,000.00 - RM   860,000.00'
+    if v <= 1000000: return '50)ABOVE RM  860,000.00 - RM  1000,000.00'
+    if v <= 2000000: return '51)ABOVE RM 1000,000.00 - RM  2000,000.00'
+    if v <= 3000000: return '52)ABOVE RM 2000,000.00 - RM  3000,000.00'
+    if v <= 4000000: return '53)ABOVE RM 3000,000.00 - RM  4000,000.00'
+    if v <= 5000000: return '54)ABOVE RM 4000,000.00 - RM  5000,000.00'
+    if v <= 10000000:return '55)ABOVE RM 5000,000.00 - RM10,000,000.00'
+    return              '56)ABOVE RM 10,000,000.00                '
+
+
+
+
+    'format_sadprg',
+    'format_sa1prg',
+    'format_sa2prg',
+    'format_sa3prg',
+    'format_iwsrnge',
