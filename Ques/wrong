@@ -1,26 +1,26 @@
-1TOTAL OVERDUE LOANS DETAILS                                                                                                            
- AS AT 31/08/26 (O/D)                                                                                                                   
-                                                                                                                                        
- BRANCH=ASR                                                                                                                             
-                                                                                                                                        
- Obs   BLDATE      NAME       CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD     ACCTNO  BALANCE APPRLIMT EXCESDT   TODDT   DAYS BRANCH
-                                                                                                                                        
-   1 01/08/26 ROHANA BINTI JA   77     166      0     30570    9700      K    3801552424 62370.49   62040  01/08/26        0   31  ASR  
-   2 29/07/22 LEE KWOK HENG&C   78      32      4     30570    9700      K    3812730433     0.00       0  29/07/22 29/07/22 1495  ASR  
-1TOTAL OVERDUE LOANS DETAILS                                                                                                            
- AS AT 31/08/26 (O/D)                                                                                                                   
-                                                                                                                                        
- BRANCH=ATR                                                                                                                             
-                                                                                                                                        
- Obs   BLDATE     NAME      CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD     ACCTNO  BALANCE  APPRLIMT EXCESDT  TODDT DAYS BRANCH    
-                                                                                                                                        
-   3 01/06/26 TAN PENG YEOW   78      13      1     30570    9700      A    3800749036 610398.61  600000  01/06/26   0    92   ATR      
-1TOTAL OVERDUE LOANS DETAILS                                                                                                            
- AS AT 31/08/26 (O/D)                                                                                                                   
-                                                                                                                                        
- BRANCH=BBA                                                                                                                             
-                                                                                                                                        
- Obs   BLDATE      NAME       CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD     ACCTNO  BALANCE  APPRLIMT EXCESDT  TODDT DAYS BRANCH  
-                                                                                                                                        
-   4 01/08/26 CHIANG SIEW MEI   78     166      0     30570    9700      P    3800555810 201115.74  200000  01/08/26   0    31   BBA    
-   5 01/08/26 CHEW KUANG PENG   78     166      0     30570    9700      P    3817336710 303575.07  300000  01/08/26   0    31   BBA    
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+ 
+ BRANCH=ASR
+ 
+ Obs  BLDATE        NAME      CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD   ACCTNO   BALANCE  APPRLIMT EXCESDT   TODDT   DAYS BRANCH
+ 
+   1          LEE KWOK HENG&C     78      32        4  30570     9700       K 3812730433     0.00        0                        ASR
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+ 
+ BRANCH=ATR
+ 
+ Obs  BLDATE       NAME     CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD   ACCTNO    BALANCE  APPRLIMT EXCESDT   TODDT   DAYS BRANCH
+ 
+   2          TAN PENG YEOW     78      13        1  30570     9700       A 3800749036 610398.61   600000                        ATR
+1TOTAL OVERDUE LOANS DETAILS
+ AS AT 06/09/26 (O/D)
+ 
+ BRANCH=BBG
+ 
+ Obs  BLDATE        NAME      CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD   ACCTNO   BALANCE  APPRLIMT EXCESDT   TODDT   DAYS BRANCH
+ 
+   3          ARMONTE VENTURE     41      25        4  30570     6130       B 3982399922  1253.96        0                        BBG
+   4          JAMALUDDIN BIN      77      25        4  30570     9700       B 3983711111  1691.77        0                        BBG
+   5          SDIPPACK (M) SD     61      25        4  30570     6130       B 3993739114  2905.94        0                        BBG
