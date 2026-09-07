@@ -1,7 +1,19 @@
+Step 9 [PIBB]: EIBMNPL2 LOAN2 (O/D detail)...
+  LOAN2 (mnpl2) rows: 120
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 221, in <module>
-    def _parse_date_from_z11(value) -> date | None:
-TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 1066, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 1048, in main
+    EIBMNPL2.run(entity, asa)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL2.py", line 521, in run
+    render_mnpl2_print_loan2(asa, loan2)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL2.py", line 487, in render_mnpl2_print_loan2
+    widths = _branch_col_widths(branch_rows)  # computed once per BY-group
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL2.py", line 448, in _branch_col_widths
+    max_data = max((len(fmt(r[key])) for r in branch_rows), default=0)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL2.py", line 448, in <genexpr>
+    max_data = max((len(fmt(r[key])) for r in branch_rows), default=0)
+KeyError: 'OBS'
 
 ===============================
 
