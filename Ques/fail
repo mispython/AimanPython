@@ -15,6 +15,19 @@ TEMP_DATA_ROWS_PER_PAGE = (
     - TEMP_BOTTOM_BLANK - 1               # "(Continued)" line
 )  # = 51
 
+# Explicit horizontal-split points, in flat cell-index terms, where the
+# flat cell sequence is [N0, SUM0, N1, SUM1, ..., N14, SUM14] (30 cells,
+# indices 0-29). A break value B means "start a new chunk before cell B".
+#
+# BALANCE splits cleanly between whole RISKRATE groups: groups 0-12
+# together, then 13-14 -- one break, after group 12's SUM cell (index 25),
+# i.e. before index 26.
+TEMP_BALANCE_BREAKS = [26]
+
+# RISKBAL splits mid-group at column 6: groups 0-5 plus N6 in chunk 1;
+# SUM6 plus groups 7-12 in chunk 2; groups 13-14 in chunk 3.
+TEMP_RISKBAL_BREAKS = [13, 26]
+
 
 def _best_format(value, width: int = TEMP_SUM_WIDTH) -> str:
     """Emulates BESTw. for an unformatted TABULATE SUM cell: no comma
@@ -41,8 +54,9 @@ def _n_format(value, width: int = TEMP_N_WIDTH) -> str:
 
 def _build_cell_layout(riskrates: list) -> list:
     """Flat list of (riskrate, kind, width) cells in print order:
-    N0, SUM0, N1, SUM1, ... Each cell is packed independently, since a
-    chunk boundary can fall between a group's N cell and its SUM cell."""
+    N0, SUM0, N1, SUM1, ... A chunk boundary can fall between a group's
+    N cell and its SUM cell, so cells are tracked individually rather
+    than as N/SUM pairs."""
     cells = []
     for rr in riskrates:
         cells.append((rr, "N", TEMP_N_WIDTH))
@@ -50,24 +64,14 @@ def _build_cell_layout(riskrates: list) -> list:
     return cells
 
 
-def _pack_horizontal_chunks(cells: list, label_width: int, linesize: int) -> list:
-    """Greedily packs (riskrate, kind, width) cells into chunks that fit
-    within `linesize` character columns (label + cells). This allows a
-    chunk boundary to fall between a group's N and SUM sub-cells,
-    matching PROC TABULATE CONDENSE's exact-character horizontal wrap --
-    it does not treat a class value's N/SUM pair as an atomic unit."""
-    budget = linesize - label_width
-    chunks, current, used = [], [], 0
-    for cell in cells:
-        cost = TEMP_SEP_WIDTH + cell[2]
-        if current and used + cost > budget:
-            chunks.append(current)
-            current, used = [], 0
-        current.append(cell)
-        used += cost
-    if current:
-        chunks.append(current)
-    return chunks
+def _split_by_breaks(cells: list, breaks: list) -> list:
+    """Splits `cells` into chunks at the given flat cell-index breakpoints."""
+    chunks, start = [], 0
+    for b in breaks:
+        chunks.append(cells[start:b])
+        start = b
+    chunks.append(cells[start:])
+    return [c for c in chunks if c]
 
 
 def _build_chunk_line(chunk: list, label_width: int, cross: dict, branch=None) -> str:
@@ -75,7 +79,8 @@ def _build_chunk_line(chunk: list, label_width: int, cross: dict, branch=None) -
     `branch`, for a single horizontal chunk. Consecutive cells sharing
     the same RISKRATE are grouped so the header label is centered over
     however much of that group (N only, SUM only, or both) is present
-    in this chunk."""
+    in this chunk -- this is what lets column 6's label appear once at
+    the end of one chunk and again at the start of the next."""
     groups = []
     for cell in chunk:
         rr = cell[0]
@@ -101,13 +106,13 @@ def _build_chunk_line(chunk: list, label_width: int, cross: dict, branch=None) -
 
 
 def _render_table_pages(branches: list, cross: dict, riskrates: list,
-                         is_last_table: bool) -> list:
+                         breaks: list, is_last_table: bool) -> list:
     """Renders one full TABULATE table across all its horizontal chunks
-    and vertical (60-line) pages. '(Continued)' is printed after every
-    page except the very last page of the very last horizontal chunk of
-    the very last table in this output file."""
+    (per `breaks`) and vertical (60-line) pages. '(Continued)' prints
+    after every page except the very last page of the very last chunk
+    of the very last table in this output file."""
     cells = _build_cell_layout(riskrates)
-    chunks = _pack_horizontal_chunks(cells, TEMP_LABEL_WIDTH, LINESIZE_TEMP)
+    chunks = _split_by_breaks(cells, breaks)
 
     lines = []
     for chunk_idx, chunk in enumerate(chunks):
@@ -144,7 +149,9 @@ def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
     """PROC PRINTTO PRINT=TEMP NEW; OPTION LINESIZE=256;
     Two PROC TABULATE calls (BALANCE, then RISKBAL), FORMCHAR blank,
     NOSEPS, TITLE1/TITLE2 blank, RTS=5 CONDENSE. RECFM=FB -> no ASA byte;
-    pagination is blank-line based only (no '1' carriage-control byte)."""
+    pagination is blank-line based only (no '1' carriage-control byte).
+    BALANCE (primary var) wraps once at column 12/13; RISKBAL (secondary
+    var) wraps twice, splitting mid-group at column 6 and again at 12/13."""
     print(f"\nStep 6: Writing TEMP (ODTLLIST.TEXT, no ASA) -> {out_path.name}")
 
     riskrates = list(range(0, 15))
@@ -163,11 +170,14 @@ def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
         return agg
 
     all_lines = []
-    fields = ("BALANCE", "RISKBAL")
-    for i, field in enumerate(fields):
+    table_specs = [
+        ("BALANCE", TEMP_BALANCE_BREAKS),
+        ("RISKBAL", TEMP_RISKBAL_BREAKS),
+    ]
+    for i, (field, breaks) in enumerate(table_specs):
         cross = _crosstab(field)
-        is_last_table = (i == len(fields) - 1)
-        all_lines.extend(_render_table_pages(branches, cross, riskrates, is_last_table))
+        is_last_table = (i == len(table_specs) - 1)
+        all_lines.extend(_render_table_pages(branches, cross, riskrates, breaks, is_last_table))
 
     with open(out_path, "w", encoding="latin1") as fh:
         for ln in all_lines:
