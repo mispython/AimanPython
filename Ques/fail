@@ -1,26 +1,5 @@
-1TOTAL OVERDUE LOANS DETAILS
- AS AT 06/09/26 (O/D)
- 
- BRANCH=ASR
- 
- Obs  BLDATE        NAME      CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD   ACCTNO   BALANCE  APPRLIMT EXCESDT   TODDT   DAYS BRANCH
- 
-   1          LEE KWOK HENG&C     78      32        4  30570     9700       K 3812730433     0.00        0                        ASR
-1TOTAL OVERDUE LOANS DETAILS
- AS AT 06/09/26 (O/D)
- 
- BRANCH=ATR
- 
- Obs  BLDATE       NAME     CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD   ACCTNO    BALANCE  APPRLIMT EXCESDT   TODDT   DAYS BRANCH
- 
-   2          TAN PENG YEOW     78      13        1  30570     9700       A 3800749036 610398.61   600000                        ATR
-1TOTAL OVERDUE LOANS DETAILS
- AS AT 06/09/26 (O/D)
- 
- BRANCH=BBG
- 
- Obs  BLDATE        NAME      CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD   ACCTNO   BALANCE  APPRLIMT EXCESDT   TODDT   DAYS BRANCH
- 
-   3          ARMONTE VENTURE     41      25        4  30570     6130       B 3982399922  1253.96        0                        BBG
-   4          JAMALUDDIN BIN      77      25        4  30570     9700       B 3983711111  1691.77        0                        BBG
-   5          SDIPPACK (M) SD     61      25        4  30570     6130       B 3993739114  2905.94        0                        BBG
+# After od_ref_map is built
+sample_accts = list(od_ref_map.keys())[:5]
+for acct in sample_accts:
+    od = od_ref_map[acct]
+    print(f"DEBUG: ACCTNO={acct}, EXCESSDT={od['EXCESSDT']}, TODDATE={od['TODDATE']}")
