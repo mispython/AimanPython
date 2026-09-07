@@ -1,42 +1,33 @@
-TEMP_PAGE_LEN     = 60
-TEMP_TOP_MARGIN   = 4     # blank lines before header
-TEMP_BOTTOM_BLANK = 2     # blank lines before "(Continued)"
-TEMP_DATA_ROWS_PER_PAGE = (
-    TEMP_PAGE_LEN - TEMP_TOP_MARGIN - 1  # header line
-    - 1                                   # blank after header
-    - TEMP_BOTTOM_BLANK - 1               # "(Continued)" line
-)  # = 51
+def _render_chunk_pages(branches, group, cross, header_text, is_last_chunk) -> list:
+    """Renders all pages for one column-chunk. Prints '(Continued)' after
+    every page except the very last page of the very last chunk."""
+    lines = []
+    n_branches = len(branches)
+    idx = 0
+    while True:
+        page_branches = branches[idx: idx + TEMP_DATA_ROWS_PER_PAGE]
+        lines.extend([""] * TEMP_TOP_MARGIN)
+        lines.append(header_text)
+        lines.append("")
+        for b in page_branches:
+            row = b.ljust(TEMP_LABEL_WIDTH)
+            for rr in group:
+                n, s = cross.get((b, rr), (0, None))
+                row += TEMP_SEP + _n_format(n) + TEMP_SEP + _best_format(s)
+            lines.append(row)
 
+        idx += TEMP_DATA_ROWS_PER_PAGE
+        more_branches_remain = idx < n_branches
+        is_last_page_overall = is_last_chunk and not more_branches_remain
 
-class _TempPager:
-    """Vertical pager for ODTLLIST.TEXT: no ASA byte, plain blank-line
-    page breaks. Each page = 60 lines: 4 blank top margin, header line,
-    1 blank, up to 51 data rows, 2 blank, then '(Continued)' if more
-    branches remain for this column chunk."""
+        if not is_last_page_overall:
+            lines.extend([""] * TEMP_BOTTOM_BLANK)
+            lines.append("(Continued)")
 
-    def __init__(self, header_line: str):
-        self.header_line = header_line
-        self.lines: list = []
-        self.rows_on_page = 0
+        if not more_branches_remain:
+            break
 
-    def _new_page(self) -> None:
-        self.lines.extend([""] * TEMP_TOP_MARGIN)
-        self.lines.append(self.header_line)
-        self.lines.append("")
-        self.rows_on_page = 0
-
-    def start(self) -> None:
-        self._new_page()
-
-    def add_row(self, row: str) -> None:
-        if self.rows_on_page >= TEMP_DATA_ROWS_PER_PAGE:
-            self.lines.extend([""] * TEMP_BOTTOM_BLANK)
-            self.lines.append("(Continued)")
-            self._new_page()
-        self.lines.append(row)
-        self.rows_on_page += 1
-
-
+    return lines
 
 
 def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
@@ -62,22 +53,26 @@ def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
     all_lines = []
     for field in ("BALANCE", "RISKBAL"):
         cross = _crosstab(field)
-        for group in chunks:
+        for chunk_idx, group in enumerate(chunks):
             header = " " * TEMP_LABEL_WIDTH
             for rr in group:
-                cell = str(rr).rjust(TEMP_SUM_WIDTH)
-                header += TEMP_SEP + " " * TEMP_N_WIDTH + TEMP_SEP + cell
-
-            pager = _TempPager(header)
-            pager.start()
-            for b in branches:
-                row = b.ljust(TEMP_LABEL_WIDTH)
-                for rr in group:
-                    n, s = cross.get((b, rr), (0, None))
-                    row += TEMP_SEP + _n_format(n) + TEMP_SEP + _best_format(s)
-                pager.add_row(row)
-            all_lines.extend(pager.lines)
+                header += TEMP_SEP + " " * TEMP_N_WIDTH + TEMP_SEP + str(rr).rjust(TEMP_SUM_WIDTH)
+            is_last_chunk = chunk_idx == len(chunks) - 1
+            all_lines.extend(_render_chunk_pages(branches, group, cross, header, is_last_chunk))
 
     with open(out_path, "w", encoding="latin1") as fh:
         for ln in all_lines:
             fh.write(ln + "\n")
+
+
+
+
+TBLS_CHUNK_BOUNDARIES = [6, 13, 15]   # RISKRATE cols: [0:6), [6:13), [13:15)
+
+def _tbls_chunks(riskrates: list) -> list:
+    chunks = []
+    start = 0
+    for end in TBLS_CHUNK_BOUNDARIES:
+        chunks.append(riskrates[start:end])
+        start = end
+    return chunks
