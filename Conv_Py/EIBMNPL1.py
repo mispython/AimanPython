@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-print("===== SCRIPT START=====")
+print("===== SCRIPT START =====")
 """
 Program : EIBMNPL1.py
 Purpose : Total Overdue Loans report (Loans / HP / O/D / Loans & O/D),
@@ -25,8 +25,7 @@ Dependency:
         entity inside the loop below (see main()).
 
 ============================================================================
-PHYSICAL INPUT DATASETS (independent cache, sas7bdat -> parquet, following
-the chunked-conversion pattern used in EIIMRM01.py / EIBDLN1M.py)
+PHYSICAL INPUT DATASETS (independent cache, sas7bdat -> parquet
 ============================================================================
 1. LOAN dataset   (JCL //BNM DD DSN=SAP.<PBB|PIBB>.SASDATA, member
    LOAN&REPTMON&NOWK). NOWK is HARD-CODED to '4' by
@@ -73,7 +72,7 @@ NOT written to an output file, matching the original job's behaviour.
 
 import gc
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 import duckdb
@@ -239,62 +238,38 @@ def risk_rate_from_days(days) -> int:
 # EXCESSDT / TODDATE / BLDATE PARSING  (LOAN3 here; also used by EIBMNPL2's
 # LOAN2/O-D detail build, hence exposed as public module-level functions)
 # ============================================================================
-def _parse_date_from_z11(value) -> Optional[date]:
-    """
-    Parse date from the first 8 characters of a Z11.-padded numeric value.
-    Returns None if the value is missing/zero or if month/day are invalid.
-    SAS YEARCUTOFF=1950 is applied (years 00-49 -> 2000, 50-99 -> 1900).
-    """
+def _parse_date_from_sas_date(value):
     if value is None or value == 0:
         return None
     try:
-        s = f"{int(value):011d}"
-        mm = int(s[0:2])
-        dd = int(s[2:4])
-        yy = int(s[4:6])
-        year = 1900 + yy if yy >= 50 else 2000 + yy
-        # Validate month and day
-        if not (1 <= mm <= 12) or not (1 <= dd <= 31):
-            # Optional: print warning for debugging
-            # print(f"Warning: invalid date components in {s[:8]} (value={value})")
-            return None
-        return date(year, mm, dd)
-    except (ValueError, IndexError):
+        return date(1960, 1, 1) + timedelta(days=int(value))
+    except (TypeError, ValueError):
         return None
 
-
-def _z11(value) -> str:
-    """PUT(value,Z11.) -- zero-padded 11-digit numeric string."""
-    return f"{int(value):011d}"
-
-
 def parse_excessdt(excessdt):
-    return _parse_date_from_z11(excessdt)
-
+    return _parse_date_from_sas_date(excessdt)
 
 def parse_toddate(toddate):
-    return _parse_date_from_z11(toddate)
+    return _parse_date_from_sas_date(toddate)
 
+def _bldate_from_sas_date(raw_value):
+    return _parse_date_from_sas_date(raw_value)
 
-def _bldate_from_z11_mmddyy8(raw_value):
-    return _parse_date_from_z11(raw_value)
-
-
+# Update compute_bldate to use the new function
 def compute_bldate(excessdt, toddate):
     bldate = None
     if excessdt != 0 and toddate != 0:
         excdate = parse_excessdt(excessdt)
         toddt = parse_toddate(toddate)
-        # Only compare if both are valid dates
         if excdate is not None and toddt is not None:
             if excdate <= toddt:
-                bldate = _bldate_from_z11_mmddyy8(excessdt)
+                bldate = _bldate_from_sas_date(excessdt)
             else:
-                bldate = _bldate_from_z11_mmddyy8(toddate)
+                bldate = _bldate_from_sas_date(toddate)
     elif excessdt is not None and excessdt != 0:
-        bldate = _bldate_from_z11_mmddyy8(excessdt)
+        bldate = _bldate_from_sas_date(excessdt)
     elif toddate is not None and toddate != 0:
-        bldate = _bldate_from_z11_mmddyy8(toddate)
+        bldate = _bldate_from_sas_date(toddate)
     return bldate
 
 
