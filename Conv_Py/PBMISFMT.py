@@ -1,6 +1,6 @@
 # !/usr/bin/env python3
 """
-Program : PBMISFMT
+Program : PBMISFMT.py
 Purpose : Python equivalent of SAS PBMISFMT PROC FORMAT definitions.
           Provides branch code, group, product, denomination, customer-type,
             state, deposit-range and various other format mappings used across
