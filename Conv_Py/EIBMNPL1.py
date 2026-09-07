@@ -299,7 +299,7 @@ def compute_bldate(excessdt, toddate):
 
 
 # ============================================================================
-# CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py / EIIMRM01.py pattern)
+# CACHE STAMP + STREAM .sas7bdat -> PARQUET
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
@@ -408,6 +408,14 @@ def comma(value, width: int, decimals: int = 0) -> str:
     if len(s) > width:
         s = s[-width:]
     return s.rjust(width)
+
+
+def _num_nocomma(value, width: int, decimals: int = 2) -> str:
+    """Plain numeric PUT with no COMMA format — SAS default numeric-missing
+    prints blank, not 0."""
+    if value is None:
+        return " " * width
+    return f"{float(value):.{decimals}f}".rjust(width)
 
 
 def center(text: str, width: int) -> str:
@@ -795,63 +803,6 @@ def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
 # ============================================================================
 # STEP 7: ODTLLIST OUTPUT (ODTLLIST.COLD) -- ASA control, LRECL=136
 # ============================================================================
-# def _ageing_title_block() -> list:
-#     return ["AGEING OF ALL OVERDUE OD & TERM LOANS", f"AS AT {RDATE}"]
-
-
-# def _render_ageing_table(asa: AsaWriter, loan4_padded: list) -> None:
-#     """PROC TABULATE DATA=LOAN4 MISSING; FORMAT RISKRATE RISK.; BY BRANCH;
-#     CLASS BRANCH RISKRATE; VAR BALANCE RISKBAL;
-#     TABLE RISKRATE=' ' ALL='TOTAL', (BALANCE=... RISKBAL=...)*(N SUM)
-#     / BOX=' ' RTS=30 CONDENSE;
-#     BY BRANCH -> one table (new page) per branch, columns: BALANCE(N,SUM),
-#     RISKBAL(N,SUM)."""
-#     label_w = 30
-#     branches = sorted({r["BRANCH"] for r in loan4_padded})
-#     by_branch: dict = {}
-#     for r in loan4_padded:
-#         by_branch.setdefault(r["BRANCH"], []).append(r)
-
-#     header_line1 = (" " * label_w + "|" + center("O/S LOANS IN ARREARS (RMM)", 27) +
-#                      "|" + center("O/S LOANS CLASSIFIED AS NPL(RMM) 2,3,4", 27))
-#     header_line2 = (" " * label_w + "|" + center("NO.", 8) + center("AMOUNT", 19) +
-#                      "|" + center("NO.", 8) + center("AMOUNT", 19))
-
-#     for branch in branches:
-#         rows = by_branch[branch]
-#         by_rr = {}
-#         for r in rows:
-#             key = r["RISKRATE"]
-#             n_bal, s_bal, n_rb, s_rb = by_rr.get(key, (0, 0.0, 0, 0.0))
-#             if r["BALANCE"] is not None:
-#                 n_bal += 1
-#                 s_bal += r["BALANCE"]
-#             if r["RISKBAL"] is not None:
-#                 n_rb += 1
-#                 s_rb += r["RISKBAL"]
-#             by_rr[key] = (n_bal, s_bal, n_rb, s_rb)
-
-#         title_lines = _ageing_title_block()
-#         asa.new_page(title_lines)
-#         asa.add(header_line1)
-#         asa.add(header_line2)
-
-#         tot_n_bal = tot_s_bal = tot_n_rb = tot_s_rb = 0
-#         for rr in range(0, 15):
-#             n_bal, s_bal, n_rb, s_rb = by_rr.get(rr, (0, 0.0, 0, 0.0))
-#             tot_n_bal += n_bal
-#             tot_s_bal += s_bal
-#             tot_n_rb += n_rb
-#             tot_s_rb += s_rb
-#             label = format_risk(rr).ljust(label_w)[:label_w]
-#             asa.ensure_space(1, title_lines)
-#             asa.add(f"{label}|{comma(n_bal, 6)}  {comma(s_bal, 18, 2)}"
-#                     f"|{comma(n_rb, 6)}  {comma(s_rb, 18, 2)}")
-
-#         asa.ensure_space(1, title_lines)
-#         asa.add(f"{'TOTAL'.ljust(label_w)}|{comma(tot_n_bal, 6)}  {comma(tot_s_bal, 18, 2)}"
-#                 f"|{comma(tot_n_rb, 6)}  {comma(tot_s_rb, 18, 2)}")
-
 AGE_LABEL_W = 28
 AGE_NO_W    = 6
 AGE_AMT_W   = 18
