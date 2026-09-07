@@ -1,61 +1,100 @@
-LOAN1_HEADER1 = ("  Obs    BRANCH        ACCTNO    NAME                        "
-                 "PRODUCT    CUSTCD    SECTORCD    COLLCD")
-LOAN1_HEADER2 = ("  Obs    NOTENO    STATECD    RISKCODE     BALANCE      "
-                 "APPRLIMT      BLDATE    SECURE    DAYS")
+LOAN2_COLS = [
+    # (key, label, justify, formatter)
+    ("OBS",      "Obs",      "R", lambda v: str(v)),
+    ("BLDATE",   "BLDATE",   "R", lambda v: v.strftime("%d/%m/%y") if v else ""),
+    ("NAME",     "NAME",     "L", lambda v: (v or "")[:15]),
+    ("CUSTCD",   "CUSTCD",   "R", lambda v: v or ""),
+    ("PRODUCT",  "PRODUCT",  "R", lambda v: str(v)),
+    ("RISKCODE", "RISKCODE", "R", lambda v: v or ""),
+    ("COLLCD",   "COLLCD",   "R", lambda v: v or ""),
+    ("SECTORCD", "SECTORCD", "R", lambda v: v or ""),
+    ("STATECD",  "STATECD",  "R", lambda v: v or ""),
+    ("ACCTNO",   "ACCTNO",   "R", lambda v: str(v)),
+    ("BALANCE",  "BALANCE",  "R", lambda v: f"{v:.2f}" if v is not None else ""),
+    ("APPRLIMT", "APPRLIMT", "R", lambda v: _best_trim(v)),
+    ("EXCESDT",  "EXCESDT",  "R", lambda v: v or ""),
+    ("TODDT",    "TODDT",    "R", lambda v: v or ""),
+    ("DAYS",     "DAYS",     "R", lambda v: "" if v is None else str(v)),
+    ("BRCH",     "BRANCH",   "L", lambda v: v or ""),
+]
+COL_GAP = 1  # spaces between columns; adjust if your reference needs 2
 
 
-
-
-def _num_nocomma(value, width: int, decimals: int = 2) -> str:
-    """Plain numeric PUT with no COMMA format — SAS default numeric-missing
-    prints blank, not 0."""
+def _best_trim(value) -> str:
+    """SAS default BEST-format numeric PUT: no forced decimals, trailing
+    .00 dropped when the value is a whole number."""
     if value is None:
-        return " " * width
-    return f"{float(value):.{decimals}f}".rjust(width)
+        return ""
+    v = float(value)
+    return str(int(v)) if v.is_integer() else f"{v:.2f}"
 
 
+def _branch_col_widths(branch_rows: list) -> dict:
+    """PROC PRINT's default (non-UNIFORM) column sizing: width = max(label
+    length, widest formatted value) computed independently for THIS
+    BY-group only -- this is why header spacing shifts between branches."""
+    widths = {}
+    for key, label, _just, fmt in LOAN2_COLS:
+        max_data = max((len(fmt(r[key])) for r in branch_rows), default=0)
+        widths[key] = max(len(label), max_data)
+    return widths
 
 
-def _place(buf: list, start: int, text: str) -> None:
-    """Overwrite buf[start:start+len(text)] in place, extending buf with
-    spaces if the target line isn't long enough yet."""
-    end = start + len(text)
-    if end > len(buf):
-        buf.extend([" "] * (end - len(buf)))
-    buf[start:end] = list(text)
+def _loan2_line(values: dict, widths: dict) -> str:
+    parts = []
+    for key, _label, just, fmt in LOAN2_COLS:
+        text = fmt(values[key])
+        w = widths[key]
+        parts.append(text.rjust(w) if just == "R" else text.ljust(w))
+    return (" " * COL_GAP).join(parts).rstrip()
 
 
-def _loan1_block1_line(obs: int, r: dict) -> str:
-    buf = [" "] * 105
-    _place(buf, 5 - 5, str(obs).rjust(5))                       # OBS   end=5
-    _place(buf, 10, (r["BRCH"] or "").ljust(9))                 # BRANCH start=10
-    _place(buf, 19, str(r["ACCTNO"]).rjust(10))                 # ACCTNO end=29
-    _place(buf, 33, (r["NAME"] or "")[:30].ljust(30))           # NAME   start=33
-    _place(buf, 66 - 3, str(r["PRODUCT"]).rjust(3))             # PRODUCT end=66
-    _place(buf, 76 - 2, (r["CUSTCD"] or "").rjust(2))           # CUSTCD end=76
-    _place(buf, 88 - 4, (r["SECTORCD"] or "").rjust(4))         # SECTORCD end=88
-    _place(buf, 99 - 5, (r["COLLCD"] or "").rjust(5))           # COLLCD end=99
-    return "".join(buf).rstrip()
+def _loan2_header(widths: dict) -> str:
+    parts = []
+    for key, label, _just, _fmt in LOAN2_COLS:
+        parts.append(label.center(widths[key]))
+    return (" " * COL_GAP).join(parts).rstrip()
 
 
-def _loan1_block2_line(obs: int, r: dict) -> str:
-    riskrte = r["RISKRTE"]
-    riskrte_s = "" if riskrte is None else str(int(riskrte))
-    bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
-
-    buf = [" "] * 105
-    _place(buf, 0, str(obs).rjust(5))                           # OBS   end=5
-    _place(buf, 14 - 5, str(r["NOTENO"]).rjust(5))               # NOTENO end=14
-    _place(buf, 23 - 1, (r["STATECD"] or "").rjust(1))           # STATECD end=23
-    _place(buf, 35 - 1, riskrte_s.rjust(1))                      # RISKCODE end=35
-    _place(buf, 51 - 12, _num_nocomma(r["BALANCE"], 12))         # BALANCE end=51
-    _place(buf, 64 - 12, _num_nocomma(r["APPRLIMT"], 12))        # APPRLIMT end=64
-    _place(buf, 76 - 8, bldate_s.rjust(8))                       # BLDATE end=76
-    _place(buf, 83 - 1, (r["SECURE"] or "").rjust(1))            # SECURE end=83
-    _place(buf, 91, "" if r["DAYS"] is None else str(r["DAYS"])) # DAYS start=91 (left-anchored)
-    return "".join(buf).rstrip()
+def _loan2_page_capacity(is_continued: bool) -> int:
+    """title(2) + blank + BRANCH= + [continued] + blank + header + blank
+    = 7 (first page) / 8 (continued); remainder goes to data rows."""
+    overhead = 8 if is_continued else 7
+    return max(1, PAGE_SIZE - overhead)
 
 
+def render_mnpl2_print_loan2(asa: AsaWriter, rows: list) -> None:
+    title1, title2 = _mnpl2_title_block("(O/D)")
 
+    branches: list = []
+    for r in rows:
+        if not branches or branches[-1][0] != r["BRCH"]:
+            branches.append((r["BRCH"], []))
+        branches[-1][1].append(r)
 
-asa.add(LOAN1_HEADER1)
+    obs = 0
+    for branch, branch_rows in branches:
+        widths = _branch_col_widths(branch_rows)  # computed once per BY-group
+        idx = 0
+        is_continued = False
+        while idx < len(branch_rows):
+            n = _loan2_page_capacity(is_continued)
+            chunk = branch_rows[idx: idx + n]
+
+            asa.new_page([title1, title2])
+            asa.add("")
+            asa.add(f"BRANCH={branch}")
+            if is_continued:
+                asa.add("(continued)")
+            asa.add("")
+            asa.add(_loan2_header(widths))
+            asa.add("")
+
+            for r in chunk:
+                obs += 1
+                values = dict(r)
+                values["OBS"] = obs
+                asa.add(_loan2_line(values, widths))
+
+            idx += n
+            is_continued = True
