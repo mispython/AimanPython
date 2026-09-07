@@ -268,54 +268,6 @@ def _z11(value) -> str:
     return f"{int(value):011d}"
 
 
-# def parse_excessdt(excessdt) -> date:
-#     """EXCMONTH=SUBSTR(...,1,2); EXCDAY=SUBSTR(...,3,2); EXCYEAR=SUBSTR(...,5,4);
-#     EXCDATE=MDY(EXCMONTH,EXCDAY,EXCYEAR). Offsets preserved verbatim from
-#     the SAS source (against the Z11.-padded string) even though this reuses
-#     leading zero-pad digits -- this is a legacy quirk, not corrected here."""
-#     s = _z11(excessdt)
-#     return date(int(s[4:8]), int(s[0:2]), int(s[2:4]))
-
-
-# def parse_toddate(toddate) -> date:
-#     """TODDAY=INPUT(SUBSTR(...,3,2),2.); TODMONTH=INPUT(SUBSTR(...,1,2),2.);
-#     TODYEAR=INPUT(SUBSTR(...,5,4),4.); TODDT=MDY(TODMONTH,TODDAY,TODYEAR)."""
-#     s = _z11(toddate)
-#     return date(int(s[4:8]), int(s[0:2]), int(s[2:4]))
-
-
-# def _bldate_from_z11_mmddyy8(raw_value) -> date:
-#     """BLDATE=INPUT(SUBSTR(PUT(raw,Z11.),1,8),MMDDYY8.) -- parses the first
-#     8 chars of the Z11.-padded 11-digit string as MMDDYY (2-digit year,
-#     YEARCUTOFF=1950). Preserved exactly as written in the SAS source."""
-#     s = _z11(raw_value)[0:8]
-#     mm, dd, yy = int(s[0:2]), int(s[2:4]), int(s[4:6])
-#     year = 1900 + yy if yy >= 50 else 2000 + yy
-#     return date(year, mm, dd)
-
-
-# def compute_bldate(excessdt, toddate):
-#     """IF EXCESSDT NE 0 AND TODDATE NE 0 THEN DO;
-#          IF EXCDATE<=TODDT THEN BLDATE=...(EXCESSDT);
-#          IF EXCDATE> TODDT THEN BLDATE=...(TODDATE);
-#        END;
-#        ELSE IF EXCESSDT>0 THEN BLDATE=...(EXCESSDT);
-#        ELSE IF TODDATE>0  THEN BLDATE=...(TODDATE);"""
-#     bldate = None
-#     if excessdt != 0 and toddate != 0:
-#         excdate = parse_excessdt(excessdt)
-#         toddt = parse_toddate(toddate)
-#         if excdate <= toddt:
-#             bldate = _bldate_from_z11_mmddyy8(excessdt)
-#         if excdate > toddt:
-#             bldate = _bldate_from_z11_mmddyy8(toddate)
-#     elif excessdt is not None and excessdt > 0:
-#         bldate = _bldate_from_z11_mmddyy8(excessdt)
-#     elif toddate is not None and toddate > 0:
-#         bldate = _bldate_from_z11_mmddyy8(toddate)
-#     return bldate
-
-
 def parse_excessdt(excessdt):
     return _parse_date_from_z11(excessdt)
 
