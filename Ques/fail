@@ -1,184 +1,147 @@
 # ============================================================================
-# STEP 6: TEMP OUTPUT (ODTLLIST.TEXT) -- FORMCHAR=' ', no ASA, no box chars
+# STEP 7: ODTLLIST OUTPUT (ODTLLIST.COLD) -- ASA control, LRECL=136
 # ============================================================================
-TEMP_LABEL_WIDTH = 5     # RTS=5
-TEMP_N_WIDTH     = 5     # F=5. on N
-TEMP_SUM_WIDTH   = 12    # unformatted SUM -> default BESTw. width
-TEMP_SEP_WIDTH   = 1     # one blank column preceding every cell
+AGE_LABEL_W = 28
+AGE_NO_W    = 6
+AGE_AMT_W   = 18
+AGE_GROUP_W = AGE_NO_W + 1 + AGE_AMT_W                       # 25
+AGE_BORDER_W = AGE_LABEL_W + 4 * 1 + 2 * AGE_NO_W + 2 * AGE_AMT_W + 2  # 82
 
-TEMP_PAGE_LEN     = 60
-TEMP_TOP_MARGIN   = 4    # blank lines before the header line
-TEMP_BOTTOM_BLANK = 2    # blank lines before "(Continued)"
-TEMP_DATA_ROWS_PER_PAGE = (
-    TEMP_PAGE_LEN - TEMP_TOP_MARGIN - 1  # header line
-    - 1                                   # blank after header
-    - TEMP_BOTTOM_BLANK - 1               # "(Continued)" line
-)  # = 51
-
-# Explicit horizontal-split points, in flat cell-index terms, where the
-# flat cell sequence is [N0, SUM0, N1, SUM1, ..., N14, SUM14] (30 cells,
-# indices 0-29). A break value B means "start a new chunk before cell B".
-#
-# BALANCE splits cleanly between whole RISKRATE groups: groups 0-12
-# together, then 13-14 -- one break, after group 12's SUM cell (index 25),
-# i.e. before index 26.
-TEMP_BALANCE_BREAKS = [26]
-
-# RISKBAL splits mid-group at column 6: groups 0-5 plus N6 in chunk 1;
-# SUM6 plus groups 7-12 in chunk 2; groups 13-14 in chunk 3.
-TEMP_RISKBAL_BREAKS = [13, 26]
+AGE_GROUP1_LINE1 = "O/S LOANS IN ARREARS"
+AGE_GROUP1_LINE2 = "(RMM)"
+AGE_GROUP2_LINE1 = "O/S LOANS CLASSIFIED AS"
+AGE_GROUP2_LINE2 = "NPL(RMM) 2,3,4"
 
 
-def _best_format(value, width: int = TEMP_SUM_WIDTH) -> str:
-    """Emulates BESTw. for an unformatted TABULATE SUM cell: no comma
-    grouping; decimals step down 2 -> 1 -> 0 until the value fits exactly
-    in `width` characters. MISSING=0 -> None renders as '0'."""
-    if value is None:
-        return "0".rjust(width)
-    v = float(value)
-    sign = "-" if v < 0 else ""
-    v_abs = abs(v)
-    for decimals in (2, 1, 0):
-        s = f"{sign}{v_abs:.{decimals}f}"
-        if len(s) <= width:
-            return s.rjust(width)
-    s = f"{sign}{v_abs:.0f}"
-    return s[-width:].rjust(width)
-
-
-def _n_format(value, width: int = TEMP_N_WIDTH) -> str:
-    v = 0 if value is None else int(value)
-    s = str(v)
-    return (s[-width:] if len(s) > width else s).rjust(width)
-
-
-def _build_cell_layout(riskrates: list) -> list:
-    """Flat list of (riskrate, kind, width) cells in print order:
-    N0, SUM0, N1, SUM1, ... A chunk boundary can fall between a group's
-    N cell and its SUM cell, so cells are tracked individually rather
-    than as N/SUM pairs."""
-    cells = []
-    for rr in riskrates:
-        cells.append((rr, "N", TEMP_N_WIDTH))
-        cells.append((rr, "SUM", TEMP_SUM_WIDTH))
-    return cells
-
-
-def _split_by_breaks(cells: list, breaks: list) -> list:
-    """Splits `cells` into chunks at the given flat cell-index breakpoints."""
-    chunks, start = [], 0
-    for b in breaks:
-        chunks.append(cells[start:b])
-        start = b
-    chunks.append(cells[start:])
-    return [c for c in chunks if c]
-
-
-def _build_chunk_line(chunk: list, label_width: int, cross: dict, branch=None) -> str:
-    """Builds either the header line (branch=None) or one data row for
-    `branch`, for a single horizontal chunk. Consecutive cells sharing
-    the same RISKRATE are grouped so the header label is centered over
-    however much of that group (N only, SUM only, or both) is present
-    in this chunk -- this is what lets column 6's label appear once at
-    the end of one chunk and again at the start of the next."""
-    groups = []
-    for cell in chunk:
-        rr = cell[0]
-        if groups and groups[-1][0] == rr:
-            groups[-1][1].append(cell)
-        else:
-            groups.append((rr, [cell]))
-
-    if branch is None:
-        out = " " * label_width
-        for rr, group_cells in groups:
-            total_width = sum(TEMP_SEP_WIDTH + w for (_, _, w) in group_cells)
-            out += str(rr).center(total_width)
-        return out
-
-    out = branch.ljust(label_width)
-    for rr, group_cells in groups:
-        n, s = cross.get((branch, rr), (0, None))
-        for (_, kind, width) in group_cells:
-            value = _n_format(n, width) if kind == "N" else _best_format(s, width)
-            out += " " * TEMP_SEP_WIDTH + value
-    return out
-
-
-def _render_table_pages(branches: list, cross: dict, riskrates: list,
-                         breaks: list, is_last_table: bool) -> list:
-    """Renders one full TABULATE table across all its horizontal chunks
-    (per `breaks`) and vertical (60-line) pages. '(Continued)' prints
-    after every page except the very last page of the very last chunk
-    of the very last table in this output file."""
-    cells = _build_cell_layout(riskrates)
-    chunks = _split_by_breaks(cells, breaks)
-
-    lines = []
-    for chunk_idx, chunk in enumerate(chunks):
-        header = _build_chunk_line(chunk, TEMP_LABEL_WIDTH, cross, branch=None)
-        is_last_chunk = chunk_idx == len(chunks) - 1
-
-        idx = 0
-        n_branches = len(branches)
-        while True:
-            page_branches = branches[idx: idx + TEMP_DATA_ROWS_PER_PAGE]
-            lines.extend([""] * TEMP_TOP_MARGIN)
-            lines.append(header)
-            lines.append("")
-            for b in page_branches:
-                lines.append(_build_chunk_line(chunk, TEMP_LABEL_WIDTH, cross, branch=b))
-
-            idx += TEMP_DATA_ROWS_PER_PAGE
-            more_branches_remain = idx < n_branches
-            is_last_page_overall = (
-                is_last_table and is_last_chunk and not more_branches_remain
-            )
-
-            if not is_last_page_overall:
-                lines.extend([""] * TEMP_BOTTOM_BLANK)
-                lines.append("(Continued)")
-
-            if not more_branches_remain:
-                break
-
-    return lines
-
-
-def _write_temp_output(loan4_padded: list, out_path: Path) -> None:
-    """PROC PRINTTO PRINT=TEMP NEW; OPTION LINESIZE=256;
-    Two PROC TABULATE calls (BALANCE, then RISKBAL), FORMCHAR blank,
-    NOSEPS, TITLE1/TITLE2 blank, RTS=5 CONDENSE. RECFM=FB -> no ASA byte;
-    pagination is blank-line based only (no '1' carriage-control byte).
-    BALANCE (primary var) wraps once at column 12/13; RISKBAL (secondary
-    var) wraps twice, splitting mid-group at column 6 and again at 12/13."""
-    print(f"\nStep 6: Writing TEMP (ODTLLIST.TEXT, no ASA) -> {out_path.name}")
-
-    riskrates = list(range(0, 15))
-    branches = sorted({r["BRANCH"] for r in loan4_padded})
-
-    def _crosstab(field: str) -> dict:
-        agg: dict = {}
-        for r in loan4_padded:
-            val = r[field]
-            key = (r["BRANCH"], r["RISKRATE"])
-            n, s = agg.get(key, (0, None))
-            if val is not None:
-                n += 1
-                s = (s or 0.0) + val
-            agg[key] = (n, s)
-        return agg
-
-    all_lines = []
-    table_specs = [
-        ("BALANCE", TEMP_BALANCE_BREAKS),
-        ("RISKBAL", TEMP_RISKBAL_BREAKS),
+def _ageing_title_block(branch: str) -> list:
+    """TITLE1/TITLE2 plus the default BY-line block PROC TABULATE prints
+    for 'BY BRANCH;' (blank, 'BRANCH=xxx', blank) before the table."""
+    return [
+        "AGEING OF ALL OVERDUE OD & TERM LOANS",
+        f"AS AT {RDATE}",
+        "",
+        f"BRANCH={branch}",
+        "",
     ]
-    for i, (field, breaks) in enumerate(table_specs):
-        cross = _crosstab(field)
-        is_last_table = (i == len(table_specs) - 1)
-        all_lines.extend(_render_table_pages(branches, cross, riskrates, breaks, is_last_table))
 
-    with open(out_path, "w", encoding="latin1") as fh:
-        for ln in all_lines:
-            fh.write(ln + "\n")
+
+def _ageing_count(value, width: int = AGE_NO_W) -> str:
+    """N statistic -- a count, never missing; always COMMA-formatted."""
+    v = 0 if value is None else int(value)
+    return f"{v:,}".rjust(width)
+
+
+def _ageing_amount(value, n_count, width: int = AGE_AMT_W) -> str:
+    """SUM statistic under OPTIONS MISSING=0: a cell with zero
+    contributing observations is genuinely missing, not a computed
+    zero, and prints as a bare '0' with no decimals/commas -- the
+    MISSING= substitution bypasses the numeric FORMAT entirely. A cell
+    with at least one contributing observation is always a real number
+    and gets the normal COMMA18.2 treatment."""
+    if not n_count:
+        return "0".rjust(width)
+    return f"{float(value):,.2f}".rjust(width)
+
+
+def _age_row(label: str, n_bal, s_bal, n_rb, s_rb) -> str:
+    return (
+        "|" + label.ljust(AGE_LABEL_W)[:AGE_LABEL_W]
+        + "|" + _ageing_count(n_bal)
+        + "|" + _ageing_amount(s_bal, n_bal)
+        + "|" + _ageing_count(n_rb)
+        + "|" + _ageing_amount(s_rb, n_rb)
+        + "|"
+    )
+
+
+def _age_divider_full() -> str:
+    return (
+        "|" + "-" * AGE_LABEL_W
+        + "+" + "-" * AGE_NO_W
+        + "+" + "-" * AGE_AMT_W
+        + "+" + "-" * AGE_NO_W
+        + "+" + "-" * AGE_AMT_W
+        + "|"
+    )
+
+
+def _age_border() -> str:
+    return "-" * AGE_BORDER_W
+
+
+def _render_ageing_table(asa: AsaWriter, loan4_padded: list) -> None:
+    """PROC TABULATE DATA=LOAN4 MISSING; FORMAT RISKRATE RISK.; BY BRANCH;
+    CLASS BRANCH RISKRATE; VAR BALANCE RISKBAL;
+    TABLE RISKRATE=' ' ALL='TOTAL', (BALANCE=... RISKBAL=...)*(N SUM)
+    / BOX=' ' RTS=30 CONDENSE;
+    PROC TABULATE starts a new page for every BY-group by default, so
+    each branch gets its own full-page box-drawn table -- there is no
+    mid-branch pagination or multi-branch packing to manage, since the
+    fixed 15-bucket + TOTAL layout (~44 lines) always fits well under
+    PAGESIZE=60."""
+    branches = sorted({r["BRANCH"] for r in loan4_padded})
+    by_branch: dict = {}
+    for r in loan4_padded:
+        by_branch.setdefault(r["BRANCH"], []).append(r)
+
+    for branch in branches:
+        rows = by_branch[branch]
+        by_rr: dict = {}
+        for r in rows:
+            key = r["RISKRATE"]
+            n_bal, s_bal, n_rb, s_rb = by_rr.get(key, (0, None, 0, None))
+            if r["BALANCE"] is not None:
+                n_bal += 1
+                s_bal = (s_bal or 0.0) + r["BALANCE"]
+            if r["RISKBAL"] is not None:
+                n_rb += 1
+                s_rb = (s_rb or 0.0) + r["RISKBAL"]
+            by_rr[key] = (n_bal, s_bal, n_rb, s_rb)
+
+        asa.new_page(_ageing_title_block(branch))
+
+        asa.add(_age_border())
+        asa.add(
+            "|" + " " * AGE_LABEL_W
+            + "|" + center(AGE_GROUP1_LINE1, AGE_GROUP_W)
+            + "|" + center(AGE_GROUP2_LINE1, AGE_GROUP_W)
+            + "|"
+        )
+        asa.add(
+            "|" + " " * AGE_LABEL_W
+            + "|" + center(AGE_GROUP1_LINE2, AGE_GROUP_W)
+            + "|" + center(AGE_GROUP2_LINE2, AGE_GROUP_W)
+            + "|"
+        )
+        asa.add(
+            "|" + " " * AGE_LABEL_W
+            + "|" + "-" * AGE_GROUP_W
+            + "+" + "-" * AGE_GROUP_W
+            + "|"
+        )
+        asa.add(
+            "|" + " " * AGE_LABEL_W
+            + "|" + center("NO.", AGE_NO_W)
+            + "|" + center("AMOUNT", AGE_AMT_W)
+            + "|" + center("NO.", AGE_NO_W)
+            + "|" + center("AMOUNT", AGE_AMT_W)
+            + "|"
+        )
+        asa.add(_age_divider_full())
+
+        tot_n_bal = tot_n_rb = 0
+        tot_s_bal = tot_s_rb = None
+        for rr in range(0, 15):
+            n_bal, s_bal, n_rb, s_rb = by_rr.get(rr, (0, None, 0, None))
+            tot_n_bal += n_bal
+            tot_n_rb += n_rb
+            if s_bal is not None:
+                tot_s_bal = (tot_s_bal or 0.0) + s_bal
+            if s_rb is not None:
+                tot_s_rb = (tot_s_rb or 0.0) + s_rb
+
+            asa.add(_age_row(format_risk(rr), n_bal, s_bal, n_rb, s_rb))
+            asa.add(_age_divider_full())
+
+        asa.add(_age_row("TOTAL", tot_n_bal, tot_s_bal, tot_n_rb, tot_s_rb))
+        asa.add(_age_border())
