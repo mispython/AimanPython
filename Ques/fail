@@ -1,147 +1,94 @@
-# ============================================================================
-# STEP 7: ODTLLIST OUTPUT (ODTLLIST.COLD) -- ASA control, LRECL=136
-# ============================================================================
-AGE_LABEL_W = 28
-AGE_NO_W    = 6
-AGE_AMT_W   = 18
-AGE_GROUP_W = AGE_NO_W + 1 + AGE_AMT_W                       # 25
-AGE_BORDER_W = AGE_LABEL_W + 4 * 1 + 2 * AGE_NO_W + 2 * AGE_AMT_W + 2  # 82
-
-AGE_GROUP1_LINE1 = "O/S LOANS IN ARREARS"
-AGE_GROUP1_LINE2 = "(RMM)"
-AGE_GROUP2_LINE1 = "O/S LOANS CLASSIFIED AS"
-AGE_GROUP2_LINE2 = "NPL(RMM) 2,3,4"
+def _loan1_page_capacity(is_continued: bool) -> int:
+    """Rows per page for LOAN1's two-block PROC PRINT layout.
+    Fixed overhead = 2 title lines + blank + BRANCH= line
+    + (1 more if continued) + blank + header1 + blank + header2 + blank
+    = 10 (first page of a BY group) / 11 (continued page); the rest of
+    PAGE_SIZE is split evenly between the two row blocks."""
+    overhead = 11 if is_continued else 10
+    return max(1, (PAGE_SIZE - overhead) // 2)
 
 
-def _ageing_title_block(branch: str) -> list:
-    """TITLE1/TITLE2 plus the default BY-line block PROC TABULATE prints
-    for 'BY BRANCH;' (blank, 'BRANCH=xxx', blank) before the table."""
-    return [
-        "AGEING OF ALL OVERDUE OD & TERM LOANS",
-        f"AS AT {RDATE}",
-        "",
-        f"BRANCH={branch}",
-        "",
-    ]
-
-
-def _ageing_count(value, width: int = AGE_NO_W) -> str:
-    """N statistic -- a count, never missing; always COMMA-formatted."""
-    v = 0 if value is None else int(value)
-    return f"{v:,}".rjust(width)
-
-
-def _ageing_amount(value, n_count, width: int = AGE_AMT_W) -> str:
-    """SUM statistic under OPTIONS MISSING=0: a cell with zero
-    contributing observations is genuinely missing, not a computed
-    zero, and prints as a bare '0' with no decimals/commas -- the
-    MISSING= substitution bypasses the numeric FORMAT entirely. A cell
-    with at least one contributing observation is always a real number
-    and gets the normal COMMA18.2 treatment."""
-    if not n_count:
-        return "0".rjust(width)
-    return f"{float(value):,.2f}".rjust(width)
-
-
-def _age_row(label: str, n_bal, s_bal, n_rb, s_rb) -> str:
+def _loan1_block1_line(obs: int, r: dict) -> str:
     return (
-        "|" + label.ljust(AGE_LABEL_W)[:AGE_LABEL_W]
-        + "|" + _ageing_count(n_bal)
-        + "|" + _ageing_amount(s_bal, n_bal)
-        + "|" + _ageing_count(n_rb)
-        + "|" + _ageing_amount(s_rb, n_rb)
-        + "|"
+        f"{obs:>4}    {r['BRCH']:<7}{r['ACCTNO']:>13}    "
+        f"{(r['NAME'] or '')[:25]:<25} {r['PRODUCT']:>8}"
+        f"{(r['CUSTCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
+        f"{(r['COLLCD'] or ''):>7}"
     )
 
 
-def _age_divider_full() -> str:
+def _loan1_block2_line(obs: int, r: dict) -> str:
+    riskrte = r["RISKRTE"]
+    riskrte_s = "" if riskrte is None else str(int(riskrte))
+    bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
     return (
-        "|" + "-" * AGE_LABEL_W
-        + "+" + "-" * AGE_NO_W
-        + "+" + "-" * AGE_AMT_W
-        + "+" + "-" * AGE_NO_W
-        + "+" + "-" * AGE_AMT_W
-        + "|"
+        f"{obs:>4}    {r['NOTENO']:>6}    {(r['STATECD'] or ''):>7}    "
+        f"{riskrte_s:>8} {comma(r['BALANCE'], 12, 2)}    "
+        f"{comma(r['APPRLIMT'], 12, 2)}    {bldate_s:>8}    "
+        f"{(r['SECURE'] or ''):>6}    "
+        f"{'' if r['DAYS'] is None else r['DAYS']:>4}"
     )
 
 
-def _age_border() -> str:
-    return "-" * AGE_BORDER_W
+def render_mnpl2_print_loan1(asa: AsaWriter, rows: list) -> None:
+    """PROC PRINT DATA=LOAN1 LABEL; BY BRCH; PAGEBY BRCH; ...
+    Two-block column wrap, OBS numbered continuously across the whole
+    report (not reset per BY group), page broken every N rows per the
+    fixed-overhead budget in _loan1_page_capacity()."""
+    header1 = (f"{'Obs':>4}    {'BRANCH':<7}{'ACCTNO':>13}    "
+               f"{'NAME':<25} {'PRODUCT':>8}{'CUSTCD':>7}"
+               f"{'SECTORCD':>9}{'COLLCD':>7}")
+    header2 = (f"{'Obs':>4}    {'NOTENO':>6}    {'STATECD':>7}    "
+               f"{'RISKCODE':>8} {'BALANCE':>12}    {'APPRLIMT':>12}    "
+               f"{'BLDATE':>8}    {'SECURE':>6}    {'DAYS':>4}")
+
+    title1, title2 = _mnpl2_title_block("(LOANS)")
+
+    obs = 0
+    idx = 0
+    current_branch = None
+    is_continued = False
+
+    # Pre-group rows by branch (rows are already sorted by BRCH upstream)
+    branches: list = []
+    for r in rows:
+        if not branches or branches[-1][0] != r["BRCH"]:
+            branches.append((r["BRCH"], []))
+        branches[-1][1].append(r)
+
+    for branch, branch_rows in branches:
+        idx = 0
+        is_continued = False
+        while idx < len(branch_rows):
+            n = _loan1_page_capacity(is_continued)
+            chunk = branch_rows[idx: idx + n]
+
+            asa.new_page([title1, title2])
+            asa.add("")
+            asa.add(f"BRANCH={branch}")
+            if is_continued:
+                asa.add("(continued)")
+            asa.add("")
+            asa.add(header1)
+            asa.add("")
+
+            chunk_obs_start = obs
+            for r in chunk:
+                obs += 1
+                asa.add(_loan1_block1_line(obs, r))
+
+            asa.add("")
+            asa.add(header2)
+            asa.add("")
+
+            obs = chunk_obs_start
+            for r in chunk:
+                obs += 1
+                asa.add(_loan1_block2_line(obs, r))
+
+            idx += n
+            is_continued = True
 
 
-def _render_ageing_table(asa: AsaWriter, loan4_padded: list) -> None:
-    """PROC TABULATE DATA=LOAN4 MISSING; FORMAT RISKRATE RISK.; BY BRANCH;
-    CLASS BRANCH RISKRATE; VAR BALANCE RISKBAL;
-    TABLE RISKRATE=' ' ALL='TOTAL', (BALANCE=... RISKBAL=...)*(N SUM)
-    / BOX=' ' RTS=30 CONDENSE;
-    PROC TABULATE starts a new page for every BY-group by default, so
-    each branch gets its own full-page box-drawn table -- there is no
-    mid-branch pagination or multi-branch packing to manage, since the
-    fixed 15-bucket + TOTAL layout (~44 lines) always fits well under
-    PAGESIZE=60."""
-    branches = sorted({r["BRANCH"] for r in loan4_padded})
-    by_branch: dict = {}
-    for r in loan4_padded:
-        by_branch.setdefault(r["BRANCH"], []).append(r)
 
-    for branch in branches:
-        rows = by_branch[branch]
-        by_rr: dict = {}
-        for r in rows:
-            key = r["RISKRATE"]
-            n_bal, s_bal, n_rb, s_rb = by_rr.get(key, (0, None, 0, None))
-            if r["BALANCE"] is not None:
-                n_bal += 1
-                s_bal = (s_bal or 0.0) + r["BALANCE"]
-            if r["RISKBAL"] is not None:
-                n_rb += 1
-                s_rb = (s_rb or 0.0) + r["RISKBAL"]
-            by_rr[key] = (n_bal, s_bal, n_rb, s_rb)
 
-        asa.new_page(_ageing_title_block(branch))
-
-        asa.add(_age_border())
-        asa.add(
-            "|" + " " * AGE_LABEL_W
-            + "|" + center(AGE_GROUP1_LINE1, AGE_GROUP_W)
-            + "|" + center(AGE_GROUP2_LINE1, AGE_GROUP_W)
-            + "|"
-        )
-        asa.add(
-            "|" + " " * AGE_LABEL_W
-            + "|" + center(AGE_GROUP1_LINE2, AGE_GROUP_W)
-            + "|" + center(AGE_GROUP2_LINE2, AGE_GROUP_W)
-            + "|"
-        )
-        asa.add(
-            "|" + " " * AGE_LABEL_W
-            + "|" + "-" * AGE_GROUP_W
-            + "+" + "-" * AGE_GROUP_W
-            + "|"
-        )
-        asa.add(
-            "|" + " " * AGE_LABEL_W
-            + "|" + center("NO.", AGE_NO_W)
-            + "|" + center("AMOUNT", AGE_AMT_W)
-            + "|" + center("NO.", AGE_NO_W)
-            + "|" + center("AMOUNT", AGE_AMT_W)
-            + "|"
-        )
-        asa.add(_age_divider_full())
-
-        tot_n_bal = tot_n_rb = 0
-        tot_s_bal = tot_s_rb = None
-        for rr in range(0, 15):
-            n_bal, s_bal, n_rb, s_rb = by_rr.get(rr, (0, None, 0, None))
-            tot_n_bal += n_bal
-            tot_n_rb += n_rb
-            if s_bal is not None:
-                tot_s_bal = (tot_s_bal or 0.0) + s_bal
-            if s_rb is not None:
-                tot_s_rb = (tot_s_rb or 0.0) + s_rb
-
-            asa.add(_age_row(format_risk(rr), n_bal, s_bal, n_rb, s_rb))
-            asa.add(_age_divider_full())
-
-        asa.add(_age_row("TOTAL", tot_n_bal, tot_s_bal, tot_n_rb, tot_s_rb))
-        asa.add(_age_border())
