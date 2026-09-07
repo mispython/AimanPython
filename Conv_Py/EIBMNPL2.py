@@ -46,13 +46,20 @@ from EIBMNPL1 import (
     compute_bldate,
     comma,
     PAGE_SIZE,
-    _num_nocomma
+    _num_nocomma,
 )
 from PBBELF import format_brchcd  # noqa: F811  (re-import kept explicit for
                                    # parity with EIBMNPL2's own %INC PBBELF;
                                    # identical function already imported above)
 
 import duckdb
+
+FIXED_WIDTHS = {
+    "BLDATE": 8,
+    "EXCESDT": 8,
+    "TODDT": 8,
+    "BALANCE": 7,
+}
 
 
 # ============================================================================
@@ -158,6 +165,12 @@ def build_mnpl2_loan2(entity: str) -> list:
 
     od_ref_map = {r["ACCTNO"]: r for r in od_ref.iter_rows(named=True)}
 
+    # # DEBUG
+    # sample_accts = list(od_ref_map.keys())[:10]
+    # for acct in sample_accts:
+    #     od = od_ref_map[acct]
+    #     print(f"DEBUG: ACCTNO={acct}, EXCESSDT={od['EXCESSDT']}, TODDATE={od['TODDATE']}")
+
     out = []
     for r in od_base.iter_rows(named=True):
         od = od_ref_map.get(r["ACCTNO"])
@@ -208,40 +221,6 @@ LOAN1_HEADER2 = ("  Obs    NOTENO    STATECD    RISKCODE     BALANCE      "
                  "APPRLIMT      BLDATE    SECURE    DAYS")
 
 
-# def render_mnpl2_print_loan1(asa: AsaWriter, rows: list) -> None:
-#     """PROC PRINT DATA=LOAN1 LABEL; BY BRCH; PAGEBY BRCH;
-#     VAR BRCH ACCTNO NAME PRODUCT CUSTCD SECTORCD COLLCD NOTENO STATECD
-#         RISKRTE BALANCE APPRLIMT BLDATE SECURE DAYS;
-#     LABEL BRCH='BRANCH' RISKRTE='RISKCODE';"""
-#     title_lines = _mnpl2_title_block("(LOANS)")
-#     header = (f"{'OBS':>4} {'BRANCH':<7}{'ACCTNO':>12} {'NAME':<20}{'PRODUCT':>8}"
-#               f"{'CUSTCD':>7}{'SECTORCD':>9}{'COLLCD':>7}{'NOTENO':>7}{'STATECD':>8}"
-#               f"{'RISKCODE':>9}{'BALANCE':>16}{'APPRLIMT':>16}{'BLDATE':>11}"
-#               f"{'SECURE':>7}{'DAYS':>6}")
-
-#     current_branch = None
-#     obs = 0
-#     for r in rows:
-#         if r["BRCH"] != current_branch:
-#             current_branch = r["BRCH"]
-#             obs = 0
-#             asa.new_page(title_lines)
-#             asa.add(header)
-#         obs += 1
-#         bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
-#         asa.ensure_space(1, title_lines)
-#         asa.add(
-#             f"{obs:>4} {r['BRCH']:<7}{r['ACCTNO']:>12} "
-#             f"{(r['NAME'] or '')[:20]:<20}{r['PRODUCT']:>8}"
-#             f"{(r['CUSTCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
-#             f"{(r['COLLCD'] or ''):>7}{r['NOTENO']:>7}{(r['STATECD'] or ''):>8}"
-#             f"{(r['RISKRTE'] if r['RISKRTE'] is not None else ''):>9}"
-#             f"{comma(r['BALANCE'], 16, 2)}{comma(r['APPRLIMT'], 16, 2)}"
-#             f"{bldate_s:>11}{(r['SECURE'] or ''):>7}"
-#             f"{(r['DAYS'] if r['DAYS'] is not None else ''):>6}"
-#         )
-
-
 def _loan1_page_capacity(is_continued: bool) -> int:
     """Rows per page for LOAN1's two-block PROC PRINT layout.
     Fixed overhead = 2 title lines + blank + BRANCH= line
@@ -250,28 +229,6 @@ def _loan1_page_capacity(is_continued: bool) -> int:
     PAGE_SIZE is split evenly between the two row blocks."""
     overhead = 11 if is_continued else 10
     return max(1, (PAGE_SIZE - overhead) // 2)
-
-
-# def _loan1_block1_line(obs: int, r: dict) -> str:
-#     return (
-#         f"{obs:>4}    {r['BRCH']:<7}{r['ACCTNO']:>13}    "
-#         f"{(r['NAME'] or '')[:25]:<25} {r['PRODUCT']:>8}"
-#         f"{(r['CUSTCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
-#         f"{(r['COLLCD'] or ''):>7}"
-#     )
-
-
-# def _loan1_block2_line(obs: int, r: dict) -> str:
-#     riskrte = r["RISKRTE"]
-#     riskrte_s = "" if riskrte is None else str(int(riskrte))
-#     bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
-#     return (
-#         f"{obs:>4}    {r['NOTENO']:>6}    {(r['STATECD'] or ''):>7}    "
-#         f"{riskrte_s:>8} {comma(r['BALANCE'], 12, 2)}    "
-#         f"{comma(r['APPRLIMT'], 12, 2)}    {bldate_s:>8}    "
-#         f"{(r['SECURE'] or ''):>6}    "
-#         f"{'' if r['DAYS'] is None else r['DAYS']:>4}"
-#     )
 
 
 def _place(buf: list, start: int, text: str) -> None:
@@ -298,7 +255,7 @@ def _loan1_block1_line(obs: int, r: dict) -> str:
 
 def _loan1_block2_line(obs: int, r: dict) -> str:
     riskrte = r["RISKRTE"]
-    riskrte_s = "" if riskrte is None else str(int(riskrte))
+    riskrte_s = "0" if riskrte is None else str(int(riskrte))
     bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
 
     buf = [" "] * 105
@@ -376,58 +333,25 @@ def render_mnpl2_print_loan1(asa: AsaWriter, rows: list) -> None:
             is_continued = True
 
 
-# def render_mnpl2_print_loan2(asa: AsaWriter, rows: list) -> None:
-#     """PROC PRINT DATA=LOAN2 LABEL; BY BRCH; PAGEBY BRCH;
-#     VAR BLDATE NAME CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD ACCTNO
-#         BALANCE APPRLIMT EXCESDT TODDT DAYS BRCH; LABEL BRCH='BRANCH';"""
-#     title_lines = _mnpl2_title_block("(O/D)")
-#     header = (f"{'OBS':>4} {'BLDATE':>10} {'NAME':<20}{'CUSTCD':>7}{'PRODUCT':>8}"
-#               f"{'RISKCODE':>9}{'COLLCD':>7}{'SECTORCD':>9}{'STATECD':>8}"
-#               f"{'ACCTNO':>12}{'BALANCE':>16}{'APPRLIMT':>16}{'EXCESDT':>10}"
-#               f"{'TODDT':>10}{'DAYS':>6} {'BRANCH':<7}")
-
-#     current_branch = None
-#     obs = 0
-#     for r in rows:
-#         if r["BRCH"] != current_branch:
-#             current_branch = r["BRCH"]
-#             obs = 0
-#             asa.new_page(title_lines)
-#             asa.add(header)
-#         obs += 1
-#         bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
-#         asa.ensure_space(1, title_lines)
-#         asa.add(
-#             f"{obs:>4} {bldate_s:>10} {(r['NAME'] or '')[:20]:<20}"
-#             f"{(r['CUSTCD'] or ''):>7}{r['PRODUCT']:>8}{r['RISKCODE']:>9}"
-#             f"{(r['COLLCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
-#             f"{(r['STATECD'] or ''):>8}{r['ACCTNO']:>12}"
-#             f"{comma(r['BALANCE'], 16, 2)}{comma(r['APPRLIMT'], 16, 2)}"
-#             f"{r['EXCESDT']:>10}{r['TODDT']:>10}"
-#             f"{(r['DAYS'] if r['DAYS'] is not None else ''):>6} {r['BRCH']:<7}"
-#         )
-
-
 LOAN2_COLS = [
-    # (key, label, justify, formatter)
     ("OBS",      "Obs",      "R", lambda v: str(v)),
-    ("BLDATE",   "BLDATE",   "R", lambda v: v.strftime("%d/%m/%y") if v else ""),
+    ("BLDATE",   "BLDATE",   "R", lambda v: v.strftime("%d/%m/%y") if v else ""),   # dot for missing
     ("NAME",     "NAME",     "L", lambda v: (v or "")[:15]),
     ("CUSTCD",   "CUSTCD",   "R", lambda v: v or ""),
     ("PRODUCT",  "PRODUCT",  "R", lambda v: str(v)),
-    ("RISKCODE", "RISKCODE", "R", lambda v: v or ""),
+    ("RISKCODE", "RISKCODE", "R", lambda v: v if v else "0"),
     ("COLLCD",   "COLLCD",   "R", lambda v: v or ""),
     ("SECTORCD", "SECTORCD", "R", lambda v: v or ""),
     ("STATECD",  "STATECD",  "R", lambda v: v or ""),
     ("ACCTNO",   "ACCTNO",   "R", lambda v: str(v)),
-    ("BALANCE",  "BALANCE",  "R", lambda v: f"{v:.2f}" if v is not None else ""),
+    ("BALANCE",  "BALANCE",  "R", lambda v: f"{v:.2f}" if v is not None else "."),   # dot for missing
     ("APPRLIMT", "APPRLIMT", "R", lambda v: _best_trim(v)),
     ("EXCESDT",  "EXCESDT",  "R", lambda v: v or ""),
     ("TODDT",    "TODDT",    "R", lambda v: v or ""),
     ("DAYS",     "DAYS",     "R", lambda v: "" if v is None else str(v)),
     ("BRCH",     "BRANCH",   "L", lambda v: v or ""),
 ]
-COL_GAP = 1  # spaces between columns; adjust if your reference needs 2
+COL_GAP = 1  # spaces between columns; adjust if needs more
 
 
 def _best_trim(value) -> str:
@@ -439,14 +363,20 @@ def _best_trim(value) -> str:
     return str(int(v)) if v.is_integer() else f"{v:.2f}"
 
 
-def _branch_col_widths(branch_rows: list) -> dict:
-    """PROC PRINT's default (non-UNIFORM) column sizing: width = max(label
-    length, widest formatted value) computed independently for THIS
-    BY-group only -- this is why header spacing shifts between branches."""
+def _branch_col_widths(branch_rows: list, obs_width: int) -> dict:
     widths = {}
     for key, label, _just, fmt in LOAN2_COLS:
+        if key == "OBS":
+            widths[key] = obs_width
+            continue
+        # compute max data length
         max_data = max((len(fmt(r[key])) for r in branch_rows), default=0)
-        widths[key] = max(len(label), max_data)
+        # start with max of label and data
+        width = max(len(label), max_data)
+        # apply fixed width if defined
+        if key in FIXED_WIDTHS:
+            width = max(width, FIXED_WIDTHS[key])
+        widths[key] = width
     return widths
 
 
@@ -476,15 +406,20 @@ def _loan2_page_capacity(is_continued: bool) -> int:
 def render_mnpl2_print_loan2(asa: AsaWriter, rows: list) -> None:
     title1, title2 = _mnpl2_title_block("(O/D)")
 
+    # group rows by BRCH
     branches: list = []
     for r in rows:
         if not branches or branches[-1][0] != r["BRCH"]:
             branches.append((r["BRCH"], []))
         branches[-1][1].append(r)
 
+    # compute global OBS width based on total number of rows
+    total_rows = len(rows)
+    obs_width = max(len("Obs"), len(str(total_rows)))
+
     obs = 0
     for branch, branch_rows in branches:
-        widths = _branch_col_widths(branch_rows)  # computed once per BY-group
+        widths = _branch_col_widths(branch_rows, obs_width)  # pass obs_width
         idx = 0
         is_continued = False
         while idx < len(branch_rows):
@@ -503,7 +438,7 @@ def render_mnpl2_print_loan2(asa: AsaWriter, rows: list) -> None:
             for r in chunk:
                 obs += 1
                 values = dict(r)
-                values["OBS"] = obs
+                values["OBS"] = obs          # OBS is now present
                 asa.add(_loan2_line(values, widths))
 
             idx += n
