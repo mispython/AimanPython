@@ -45,6 +45,8 @@ from EIBMNPL1 import (
     parse_toddate,
     compute_bldate,
     comma,
+    PAGE_SIZE,
+    _num_nocomma
 )
 from PBBELF import format_brchcd  # noqa: F811  (re-import kept explicit for
                                    # parity with EIBMNPL2's own %INC PBBELF;
@@ -200,70 +202,312 @@ def _mnpl2_title_block(suffix: str) -> list:
 # ============================================================================
 # PROC PRINT renderers (appended to EIBMNPL1's ASA writer / ODTLLIST.COLD)
 # ============================================================================
-def render_mnpl2_print_loan1(asa: AsaWriter, rows: list) -> None:
-    """PROC PRINT DATA=LOAN1 LABEL; BY BRCH; PAGEBY BRCH;
-    VAR BRCH ACCTNO NAME PRODUCT CUSTCD SECTORCD COLLCD NOTENO STATECD
-        RISKRTE BALANCE APPRLIMT BLDATE SECURE DAYS;
-    LABEL BRCH='BRANCH' RISKRTE='RISKCODE';"""
-    title_lines = _mnpl2_title_block("(LOANS)")
-    header = (f"{'OBS':>4} {'BRANCH':<7}{'ACCTNO':>12} {'NAME':<20}{'PRODUCT':>8}"
-              f"{'CUSTCD':>7}{'SECTORCD':>9}{'COLLCD':>7}{'NOTENO':>7}{'STATECD':>8}"
-              f"{'RISKCODE':>9}{'BALANCE':>16}{'APPRLIMT':>16}{'BLDATE':>11}"
-              f"{'SECURE':>7}{'DAYS':>6}")
+LOAN1_HEADER1 = ("  Obs    BRANCH        ACCTNO    NAME                        "
+                 "PRODUCT    CUSTCD    SECTORCD    COLLCD")
+LOAN1_HEADER2 = ("  Obs    NOTENO    STATECD    RISKCODE     BALANCE      "
+                 "APPRLIMT      BLDATE    SECURE    DAYS")
 
-    current_branch = None
+
+# def render_mnpl2_print_loan1(asa: AsaWriter, rows: list) -> None:
+#     """PROC PRINT DATA=LOAN1 LABEL; BY BRCH; PAGEBY BRCH;
+#     VAR BRCH ACCTNO NAME PRODUCT CUSTCD SECTORCD COLLCD NOTENO STATECD
+#         RISKRTE BALANCE APPRLIMT BLDATE SECURE DAYS;
+#     LABEL BRCH='BRANCH' RISKRTE='RISKCODE';"""
+#     title_lines = _mnpl2_title_block("(LOANS)")
+#     header = (f"{'OBS':>4} {'BRANCH':<7}{'ACCTNO':>12} {'NAME':<20}{'PRODUCT':>8}"
+#               f"{'CUSTCD':>7}{'SECTORCD':>9}{'COLLCD':>7}{'NOTENO':>7}{'STATECD':>8}"
+#               f"{'RISKCODE':>9}{'BALANCE':>16}{'APPRLIMT':>16}{'BLDATE':>11}"
+#               f"{'SECURE':>7}{'DAYS':>6}")
+
+#     current_branch = None
+#     obs = 0
+#     for r in rows:
+#         if r["BRCH"] != current_branch:
+#             current_branch = r["BRCH"]
+#             obs = 0
+#             asa.new_page(title_lines)
+#             asa.add(header)
+#         obs += 1
+#         bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
+#         asa.ensure_space(1, title_lines)
+#         asa.add(
+#             f"{obs:>4} {r['BRCH']:<7}{r['ACCTNO']:>12} "
+#             f"{(r['NAME'] or '')[:20]:<20}{r['PRODUCT']:>8}"
+#             f"{(r['CUSTCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
+#             f"{(r['COLLCD'] or ''):>7}{r['NOTENO']:>7}{(r['STATECD'] or ''):>8}"
+#             f"{(r['RISKRTE'] if r['RISKRTE'] is not None else ''):>9}"
+#             f"{comma(r['BALANCE'], 16, 2)}{comma(r['APPRLIMT'], 16, 2)}"
+#             f"{bldate_s:>11}{(r['SECURE'] or ''):>7}"
+#             f"{(r['DAYS'] if r['DAYS'] is not None else ''):>6}"
+#         )
+
+
+def _loan1_page_capacity(is_continued: bool) -> int:
+    """Rows per page for LOAN1's two-block PROC PRINT layout.
+    Fixed overhead = 2 title lines + blank + BRANCH= line
+    + (1 more if continued) + blank + header1 + blank + header2 + blank
+    = 10 (first page of a BY group) / 11 (continued page); the rest of
+    PAGE_SIZE is split evenly between the two row blocks."""
+    overhead = 11 if is_continued else 10
+    return max(1, (PAGE_SIZE - overhead) // 2)
+
+
+# def _loan1_block1_line(obs: int, r: dict) -> str:
+#     return (
+#         f"{obs:>4}    {r['BRCH']:<7}{r['ACCTNO']:>13}    "
+#         f"{(r['NAME'] or '')[:25]:<25} {r['PRODUCT']:>8}"
+#         f"{(r['CUSTCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
+#         f"{(r['COLLCD'] or ''):>7}"
+#     )
+
+
+# def _loan1_block2_line(obs: int, r: dict) -> str:
+#     riskrte = r["RISKRTE"]
+#     riskrte_s = "" if riskrte is None else str(int(riskrte))
+#     bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
+#     return (
+#         f"{obs:>4}    {r['NOTENO']:>6}    {(r['STATECD'] or ''):>7}    "
+#         f"{riskrte_s:>8} {comma(r['BALANCE'], 12, 2)}    "
+#         f"{comma(r['APPRLIMT'], 12, 2)}    {bldate_s:>8}    "
+#         f"{(r['SECURE'] or ''):>6}    "
+#         f"{'' if r['DAYS'] is None else r['DAYS']:>4}"
+#     )
+
+
+def _place(buf: list, start: int, text: str) -> None:
+    """Overwrite buf[start:start+len(text)] in place, extending buf with
+    spaces if the target line isn't long enough yet."""
+    end = start + len(text)
+    if end > len(buf):
+        buf.extend([" "] * (end - len(buf)))
+    buf[start:end] = list(text)
+
+
+def _loan1_block1_line(obs: int, r: dict) -> str:
+    buf = [" "] * 105
+    _place(buf, 5 - 5, str(obs).rjust(5))                       # OBS   end=5
+    _place(buf, 10, (r["BRCH"] or "").ljust(9))                 # BRANCH start=10
+    _place(buf, 19, str(r["ACCTNO"]).rjust(10))                 # ACCTNO end=29
+    _place(buf, 33, (r["NAME"] or "")[:30].ljust(30))           # NAME   start=33
+    _place(buf, 66 - 3, str(r["PRODUCT"]).rjust(3))             # PRODUCT end=66
+    _place(buf, 76 - 2, (r["CUSTCD"] or "").rjust(2))           # CUSTCD end=76
+    _place(buf, 88 - 4, (r["SECTORCD"] or "").rjust(4))         # SECTORCD end=88
+    _place(buf, 99 - 5, (r["COLLCD"] or "").rjust(5))           # COLLCD end=99
+    return "".join(buf).rstrip()
+
+
+def _loan1_block2_line(obs: int, r: dict) -> str:
+    riskrte = r["RISKRTE"]
+    riskrte_s = "" if riskrte is None else str(int(riskrte))
+    bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
+
+    buf = [" "] * 105
+    _place(buf, 0, str(obs).rjust(5))                           # OBS   end=5
+    _place(buf, 14 - 5, str(r["NOTENO"]).rjust(5))               # NOTENO end=14
+    _place(buf, 23 - 1, (r["STATECD"] or "").rjust(1))           # STATECD end=23
+    _place(buf, 35 - 1, riskrte_s.rjust(1))                      # RISKCODE end=35
+    _place(buf, 51 - 12, _num_nocomma(r["BALANCE"], 12))         # BALANCE end=51
+    _place(buf, 64 - 12, _num_nocomma(r["APPRLIMT"], 12))        # APPRLIMT end=64
+    _place(buf, 76 - 8, bldate_s.rjust(8))                       # BLDATE end=76
+    _place(buf, 83 - 1, (r["SECURE"] or "").rjust(1))            # SECURE end=83
+    _place(buf, 91, "" if r["DAYS"] is None else str(r["DAYS"])) # DAYS start=91 (left-anchored)
+    return "".join(buf).rstrip()
+
+
+def render_mnpl2_print_loan1(asa: AsaWriter, rows: list) -> None:
+    """PROC PRINT DATA=LOAN1 LABEL; BY BRCH; PAGEBY BRCH; ...
+    Two-block column wrap, OBS numbered continuously across the whole
+    report (not reset per BY group), page broken every N rows per the
+    fixed-overhead budget in _loan1_page_capacity()."""
+    header1 = (f"{'Obs':>4}    {'BRANCH':<7}{'ACCTNO':>13}    "
+               f"{'NAME':<25} {'PRODUCT':>8}{'CUSTCD':>7}"
+               f"{'SECTORCD':>9}{'COLLCD':>7}")
+    header2 = (f"{'Obs':>4}    {'NOTENO':>6}    {'STATECD':>7}    "
+               f"{'RISKCODE':>8} {'BALANCE':>12}    {'APPRLIMT':>12}    "
+               f"{'BLDATE':>8}    {'SECURE':>6}    {'DAYS':>4}")
+
+    title1, title2 = _mnpl2_title_block("(LOANS)")
+
     obs = 0
+    idx = 0
+    current_branch = None
+    is_continued = False
+
+    # Pre-group rows by branch (rows are already sorted by BRCH upstream)
+    branches: list = []
     for r in rows:
-        if r["BRCH"] != current_branch:
-            current_branch = r["BRCH"]
-            obs = 0
-            asa.new_page(title_lines)
-            asa.add(header)
-        obs += 1
-        bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
-        asa.ensure_space(1, title_lines)
-        asa.add(
-            f"{obs:>4} {r['BRCH']:<7}{r['ACCTNO']:>12} "
-            f"{(r['NAME'] or '')[:20]:<20}{r['PRODUCT']:>8}"
-            f"{(r['CUSTCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
-            f"{(r['COLLCD'] or ''):>7}{r['NOTENO']:>7}{(r['STATECD'] or ''):>8}"
-            f"{(r['RISKRTE'] if r['RISKRTE'] is not None else ''):>9}"
-            f"{comma(r['BALANCE'], 16, 2)}{comma(r['APPRLIMT'], 16, 2)}"
-            f"{bldate_s:>11}{(r['SECURE'] or ''):>7}"
-            f"{(r['DAYS'] if r['DAYS'] is not None else ''):>6}"
-        )
+        if not branches or branches[-1][0] != r["BRCH"]:
+            branches.append((r["BRCH"], []))
+        branches[-1][1].append(r)
+
+    for branch, branch_rows in branches:
+        idx = 0
+        is_continued = False
+        while idx < len(branch_rows):
+            n = _loan1_page_capacity(is_continued)
+            chunk = branch_rows[idx: idx + n]
+
+            asa.new_page([title1, title2])
+            asa.add("")
+            asa.add(f"BRANCH={branch}")
+            if is_continued:
+                asa.add("(continued)")
+            asa.add("")
+            # asa.add(header1)
+            asa.add(LOAN1_HEADER1)
+            asa.add("")
+
+            chunk_obs_start = obs
+            for r in chunk:
+                obs += 1
+                asa.add(_loan1_block1_line(obs, r))
+
+            asa.add("")
+            # asa.add(header2)
+            asa.add(LOAN1_HEADER2)
+            asa.add("")
+
+            obs = chunk_obs_start
+            for r in chunk:
+                obs += 1
+                asa.add(_loan1_block2_line(obs, r))
+
+            idx += n
+            is_continued = True
+
+
+# def render_mnpl2_print_loan2(asa: AsaWriter, rows: list) -> None:
+#     """PROC PRINT DATA=LOAN2 LABEL; BY BRCH; PAGEBY BRCH;
+#     VAR BLDATE NAME CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD ACCTNO
+#         BALANCE APPRLIMT EXCESDT TODDT DAYS BRCH; LABEL BRCH='BRANCH';"""
+#     title_lines = _mnpl2_title_block("(O/D)")
+#     header = (f"{'OBS':>4} {'BLDATE':>10} {'NAME':<20}{'CUSTCD':>7}{'PRODUCT':>8}"
+#               f"{'RISKCODE':>9}{'COLLCD':>7}{'SECTORCD':>9}{'STATECD':>8}"
+#               f"{'ACCTNO':>12}{'BALANCE':>16}{'APPRLIMT':>16}{'EXCESDT':>10}"
+#               f"{'TODDT':>10}{'DAYS':>6} {'BRANCH':<7}")
+
+#     current_branch = None
+#     obs = 0
+#     for r in rows:
+#         if r["BRCH"] != current_branch:
+#             current_branch = r["BRCH"]
+#             obs = 0
+#             asa.new_page(title_lines)
+#             asa.add(header)
+#         obs += 1
+#         bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
+#         asa.ensure_space(1, title_lines)
+#         asa.add(
+#             f"{obs:>4} {bldate_s:>10} {(r['NAME'] or '')[:20]:<20}"
+#             f"{(r['CUSTCD'] or ''):>7}{r['PRODUCT']:>8}{r['RISKCODE']:>9}"
+#             f"{(r['COLLCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
+#             f"{(r['STATECD'] or ''):>8}{r['ACCTNO']:>12}"
+#             f"{comma(r['BALANCE'], 16, 2)}{comma(r['APPRLIMT'], 16, 2)}"
+#             f"{r['EXCESDT']:>10}{r['TODDT']:>10}"
+#             f"{(r['DAYS'] if r['DAYS'] is not None else ''):>6} {r['BRCH']:<7}"
+#         )
+
+
+LOAN2_COLS = [
+    # (key, label, justify, formatter)
+    ("OBS",      "Obs",      "R", lambda v: str(v)),
+    ("BLDATE",   "BLDATE",   "R", lambda v: v.strftime("%d/%m/%y") if v else ""),
+    ("NAME",     "NAME",     "L", lambda v: (v or "")[:15]),
+    ("CUSTCD",   "CUSTCD",   "R", lambda v: v or ""),
+    ("PRODUCT",  "PRODUCT",  "R", lambda v: str(v)),
+    ("RISKCODE", "RISKCODE", "R", lambda v: v or ""),
+    ("COLLCD",   "COLLCD",   "R", lambda v: v or ""),
+    ("SECTORCD", "SECTORCD", "R", lambda v: v or ""),
+    ("STATECD",  "STATECD",  "R", lambda v: v or ""),
+    ("ACCTNO",   "ACCTNO",   "R", lambda v: str(v)),
+    ("BALANCE",  "BALANCE",  "R", lambda v: f"{v:.2f}" if v is not None else ""),
+    ("APPRLIMT", "APPRLIMT", "R", lambda v: _best_trim(v)),
+    ("EXCESDT",  "EXCESDT",  "R", lambda v: v or ""),
+    ("TODDT",    "TODDT",    "R", lambda v: v or ""),
+    ("DAYS",     "DAYS",     "R", lambda v: "" if v is None else str(v)),
+    ("BRCH",     "BRANCH",   "L", lambda v: v or ""),
+]
+COL_GAP = 1  # spaces between columns; adjust if your reference needs 2
+
+
+def _best_trim(value) -> str:
+    """SAS default BEST-format numeric PUT: no forced decimals, trailing
+    .00 dropped when the value is a whole number."""
+    if value is None:
+        return ""
+    v = float(value)
+    return str(int(v)) if v.is_integer() else f"{v:.2f}"
+
+
+def _branch_col_widths(branch_rows: list) -> dict:
+    """PROC PRINT's default (non-UNIFORM) column sizing: width = max(label
+    length, widest formatted value) computed independently for THIS
+    BY-group only -- this is why header spacing shifts between branches."""
+    widths = {}
+    for key, label, _just, fmt in LOAN2_COLS:
+        max_data = max((len(fmt(r[key])) for r in branch_rows), default=0)
+        widths[key] = max(len(label), max_data)
+    return widths
+
+
+def _loan2_line(values: dict, widths: dict) -> str:
+    parts = []
+    for key, _label, just, fmt in LOAN2_COLS:
+        text = fmt(values[key])
+        w = widths[key]
+        parts.append(text.rjust(w) if just == "R" else text.ljust(w))
+    return (" " * COL_GAP).join(parts).rstrip()
+
+
+def _loan2_header(widths: dict) -> str:
+    parts = []
+    for key, label, _just, _fmt in LOAN2_COLS:
+        parts.append(label.center(widths[key]))
+    return (" " * COL_GAP).join(parts).rstrip()
+
+
+def _loan2_page_capacity(is_continued: bool) -> int:
+    """title(2) + blank + BRANCH= + [continued] + blank + header + blank
+    = 7 (first page) / 8 (continued); remainder goes to data rows."""
+    overhead = 8 if is_continued else 7
+    return max(1, PAGE_SIZE - overhead)
 
 
 def render_mnpl2_print_loan2(asa: AsaWriter, rows: list) -> None:
-    """PROC PRINT DATA=LOAN2 LABEL; BY BRCH; PAGEBY BRCH;
-    VAR BLDATE NAME CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD ACCTNO
-        BALANCE APPRLIMT EXCESDT TODDT DAYS BRCH; LABEL BRCH='BRANCH';"""
-    title_lines = _mnpl2_title_block("(O/D)")
-    header = (f"{'OBS':>4} {'BLDATE':>10} {'NAME':<20}{'CUSTCD':>7}{'PRODUCT':>8}"
-              f"{'RISKCODE':>9}{'COLLCD':>7}{'SECTORCD':>9}{'STATECD':>8}"
-              f"{'ACCTNO':>12}{'BALANCE':>16}{'APPRLIMT':>16}{'EXCESDT':>10}"
-              f"{'TODDT':>10}{'DAYS':>6} {'BRANCH':<7}")
+    title1, title2 = _mnpl2_title_block("(O/D)")
 
-    current_branch = None
-    obs = 0
+    branches: list = []
     for r in rows:
-        if r["BRCH"] != current_branch:
-            current_branch = r["BRCH"]
-            obs = 0
-            asa.new_page(title_lines)
-            asa.add(header)
-        obs += 1
-        bldate_s = r["BLDATE"].strftime("%d/%m/%y") if r["BLDATE"] else ""
-        asa.ensure_space(1, title_lines)
-        asa.add(
-            f"{obs:>4} {bldate_s:>10} {(r['NAME'] or '')[:20]:<20}"
-            f"{(r['CUSTCD'] or ''):>7}{r['PRODUCT']:>8}{r['RISKCODE']:>9}"
-            f"{(r['COLLCD'] or ''):>7}{(r['SECTORCD'] or ''):>9}"
-            f"{(r['STATECD'] or ''):>8}{r['ACCTNO']:>12}"
-            f"{comma(r['BALANCE'], 16, 2)}{comma(r['APPRLIMT'], 16, 2)}"
-            f"{r['EXCESDT']:>10}{r['TODDT']:>10}"
-            f"{(r['DAYS'] if r['DAYS'] is not None else ''):>6} {r['BRCH']:<7}"
-        )
+        if not branches or branches[-1][0] != r["BRCH"]:
+            branches.append((r["BRCH"], []))
+        branches[-1][1].append(r)
+
+    obs = 0
+    for branch, branch_rows in branches:
+        widths = _branch_col_widths(branch_rows)  # computed once per BY-group
+        idx = 0
+        is_continued = False
+        while idx < len(branch_rows):
+            n = _loan2_page_capacity(is_continued)
+            chunk = branch_rows[idx: idx + n]
+
+            asa.new_page([title1, title2])
+            asa.add("")
+            asa.add(f"BRANCH={branch}")
+            if is_continued:
+                asa.add("(continued)")
+            asa.add("")
+            asa.add(_loan2_header(widths))
+            asa.add("")
+
+            for r in chunk:
+                obs += 1
+                values = dict(r)
+                values["OBS"] = obs
+                asa.add(_loan2_line(values, widths))
+
+            idx += n
+            is_continued = True
 
 
 # ============================================================================
