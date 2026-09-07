@@ -1,376 +1,380 @@
 #!/usr/bin/env python3
 """
-File Name : DMMISRI3
-PUBLIC ISLAMIC BANK BERHAD (IBU)
-BREAKDOWN OF ISLAMIC SAVINGS ACCOUNT DEPOSIT
-Generating Islamic Savings Account deposit reports.
+Program : DMMISRI3.py
+Purpose : Breakdown Of Islamic Savings Account Deposit (PIBB, IBU)
+          Converted from SAS job DMMISRI3.
+
+Dependency:
+    %INC PGM(PBBDPFMT,PBMISFMT);
+    -> from PBBDPFMT import sdrange_format
+       (SDRANGE. invalue format -- used to bucket CURBAL into the
+        upper-bound RANGE value consumed by SADPRG.)
+       PBBDPFMT is otherwise NOT used any further in this program -- none
+       of its other formats (FDPROD, CAPROD, CADENOM, etc.) are invoked
+       anywhere in the SAS source body, so only sdrange_format is imported.
+    -> from PBMISFMT import format_sadprg, format_sdname
+       (SADPRG.  -- deposit-range display label applied to RANGE)
+       (SDNAME.  -- FORMAT PRODUCT SDNAME. in PROC TABULATE, also used to
+        resolve the BOX=_PAGE_ page-corner label for each PRODUCT page.)
+
+============================================================================
+PHYSICAL INPUT DATASET  (cached to Parquet using the same chunked
+sas7bdat -> Parquet -> cache pattern as EIIMRM01.py / EIBDLN1M.py)
+============================================================================
+1. BNM.ISA&REPTMON&NOWK&REPTYEAR  (JCL //BNM DD DSN=SAP.PIBB.SADATAWH)
+   The SAS dataset name is built entirely from macro variables that are
+   all deterministically derivable from REPTDATE.py (REPTMON, NOWK,
+   REPTYEAR) -- there is no non-deterministic component, so the physical
+   filename below is constructed directly and get_latest_file() from
+   input_date.py is intentionally NOT used (per project convention for
+   deterministic filenames).
+   File : INPUT_ISA_FILE -> isa<REPTMON><NOWK><REPTYEAR>.sas7bdat
+          (physical lowercase filename assumed; adjust prefix if the
+          actual staging convention differs)
+   Cols used : PRODUCT, CURBAL
+
+============================================================================
+OUTPUT
+============================================================================
+SASLIST DD SYSOUT=(,),OUTPUT=(*.PRINT7) -- a printer listing (PROC TABULATE
+report), not a catalogued dataset with a date token in its name, so the
+Python output uses a fixed filename (output_date.py is not applicable here).
+
+This is a printed report, so per project convention the output carries ASA
+carriage-control characters (RECFM=FBA equivalent): the first character of
+every physical line is the ASA control byte ('1' = skip to new page,
+' ' = single space then print). PAGESIZE is not specified in the SAS
+source, so the project default of 60 lines/page is assumed.
+
+OPTIONS NOCENTER -- titles are left-justified (column 1), not centred.
 """
 
-import duckdb
-import polars as pl
-from datetime import datetime
+import gc
 from pathlib import Path
-import sys
+
+import duckdb
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from REPTDATE import get_reptdate_values
+from PBBDPFMT import sdrange_format
+from PBMISFMT import format_sadprg, format_sdname
 
 # ============================================================================
-# Configuration and Path Setup
+# PATH CONFIGURATION
 # ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-# Input/Output paths
-INPUT_DIR = Path("input")
-OUTPUT_DIR = Path("output")
+INPUT_ISA_DIR = STG_DIR / "sasdata"
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "DMMISRI3"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_DIR = BASE_DIR / "output" / "DMMISRI3"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / "DMMISRI3.txt"
 
-# Input files
-REPTDATE_FILE = INPUT_DIR / "reptdate.parquet"
-ISA_FILE_TEMPLATE = INPUT_DIR / "isa{month}{week}{year}.parquet"
-
-# Output file (report with ASA carriage control)
-OUTPUT_FILE = OUTPUT_DIR / "dmmisri3_report.txt"
-
-# Report configuration
-PAGE_LENGTH = 60  # lines per page
-MISSING_VALUE = 0
-
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
 
 # ============================================================================
-# Format Definitions (equivalent to SAS formats)
+# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
 # ============================================================================
+print("Step 1: Deriving report date...")
 
-def get_deposit_range(amount):
-    """
-    Equivalent to SDRANGE. format
-    Maps deposit amount to range code
-    """
-    if amount < 0:
-        return 0
-    elif amount < 100:
-        return 1
-    elif amount < 500:
-        return 2
-    elif amount < 1000:
-        return 3
-    elif amount < 5000:
-        return 4
-    elif amount < 10000:
-        return 5
-    elif amount < 50000:
-        return 6
-    elif amount < 100000:
-        return 7
-    elif amount < 500000:
-        return 8
-    elif amount < 1000000:
-        return 9
-    elif amount < 5000000:
-        return 10
+reptdate_values = get_reptdate_values()          # year_format="%y" -> YEAR2.
+REPTYEAR = reptdate_values.reptyear              # 2-digit year
+REPTMON  = reptdate_values.reptmon                # zero-padded month (Z2.)
+REPTDAY  = reptdate_values.reptday                # zero-padded day   (Z2.)
+# NOWK: SAS SELECT/WHEN uses 1<=day<=8 -> '1', 9<=day<=15 -> '2',
+# 16<=day<=22 -> '3', OTHERWISE -> '4'. This is IDENTICAL to the range
+# logic already implemented in REPTDATE.get_reptdate_values(), so NOWK is
+# taken directly from it (no local recomputation needed, unlike programs
+# where the SAS source used a different day-matching rule).
+NOWK = reptdate_values.nowk
+RDATE = f"{REPTDAY}/{REPTMON}/{REPTYEAR}"        # PUT(REPTDATE, DDMMYY8.)
+
+print(f"  RDATE   : {RDATE}")
+print(f"  REPTMON : {REPTMON}  NOWK: {NOWK}  REPTYEAR: {REPTYEAR}")
+
+# Deterministic physical input filename (see module docstring).
+INPUT_ISA_FILE = INPUT_ISA_DIR / f"isa{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+print(f"  Input file  : {INPUT_ISA_FILE.name}")
+print(f"  Output file : {OUTPUT_FILE.name}")
+
+# ============================================================================
+# TITLES  (OPTIONS NOCENTER -- left-justified, not centred)
+# ============================================================================
+TITLE1 = "REPORT ID : DMMISRI3"
+TITLE2 = "PUBLIC ISLAMIC BANK BERHAD (IBU)"
+TITLE3 = "BREAKDOWN OF ISLAMIC SAVINGS ACCOUNT DEPOSIT"
+TITLE4 = f"REPORT AS AT {RDATE}"
+TITLE_BLOCK = [TITLE1, TITLE2, TITLE3, TITLE4]
+
+# ============================================================================
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIIMRM01.py pattern)
+# ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
+
+
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        if schema is None:
+            fields = []
+            for col, dtype in chunk.dtypes.items():
+                if dtype == 'object':
+                    pa_type = pa.string()
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
-        return 11
-
-
-def format_deposit_range(range_code):
-    """
-    Equivalent to SADPRG. format
-    Maps range code to display string
-    """
-    range_labels = {
-        1: "LESS THAN RM100",
-        2: "RM100 - RM499",
-        3: "RM500 - RM999",
-        4: "RM1,000 - RM4,999",
-        5: "RM5,000 - RM9,999",
-        6: "RM10,000 - RM49,999",
-        7: "RM50,000 - RM99,999",
-        8: "RM100,000 - RM499,999",
-        9: "RM500,000 - RM999,999",
-        10: "RM1,000,000 - RM4,999,999",
-        11: "RM5,000,000 AND ABOVE",
-    }
-    return range_labels.get(range_code, "UNKNOWN")
-
-
-def format_product(product_code):
-    """
-    Equivalent to SDNAME. format
-    Maps product code to product name
-    """
-    product_names = {
-        204: "ISLAMIC SAVINGS ACCOUNT",
-        215: "ISLAMIC SAVINGS ACCOUNT-i",
-    }
-    return product_names.get(product_code, f"PRODUCT {product_code}")
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
 
 
 # ============================================================================
-# Main Processing Functions
+# STEP 2: CACHE INPUT SAS FILE TO PARQUET
 # ============================================================================
+print("\nStep 2: Caching input SAS dataset to Parquet...")
+ISA_CACHE = _load_cached(INPUT_ISA_FILE, "ISA")
 
-def process_reptdate():
-    """
-    Process REPTDATE to extract macro variables
-    Returns: dict with NOWK, REPTYEAR, REPTMON, REPTDAY, RDATE
-    """
-    # Read REPTDATE file
-    df = pl.read_parquet(REPTDATE_FILE)
+# ============================================================================
+# STEP 3: DATA SAVE;  SET BNM.ISA...; IF PRODUCT IN (204,215); IF CURBAL GE 0;
+#         RANGE = INPUT(CURBAL, SDRANGE.); DEPRANGE = PUT(RANGE, SADPRG.);
+# ============================================================================
+print("\nStep 3: Building SAVE (PRODUCT in (204,215), CURBAL >= 0)...")
 
-    if len(df) == 0:
-        raise ValueError("REPTDATE file is empty")
+con = duckdb.connect(database=":memory:")
+save_raw = con.execute(f"""
+    SELECT
+        CAST(PRODUCT AS INTEGER) AS PRODUCT,
+        CAST(CURBAL  AS DOUBLE)  AS CURBAL
+    FROM read_parquet('{ISA_CACHE.as_posix()}')
+    WHERE CAST(PRODUCT AS INTEGER) IN (204, 215)
+      AND CAST(CURBAL AS DOUBLE) >= 0
+""").pl()
+con.close()
 
-    reptdate = df['REPTDATE'][0]
+print(f"  SAVE rows: {len(save_raw):,}")
 
-    # Extract day
-    day = reptdate.day
+save_rows = []
+for r in save_raw.iter_rows(named=True):
+    curbal = r["CURBAL"]
+    range_val = sdrange_format(curbal)         # INPUT(CURBAL, SDRANGE.)
+    deprange = format_sadprg(range_val)        # PUT(RANGE, SADPRG.)
+    save_rows.append({
+        "PRODUCT": r["PRODUCT"],
+        "CURBAL": curbal,
+        "RANGE": range_val,
+        "DEPRANGE": deprange,
+    })
 
-    # Determine week number (NOWK)
-    if 1 <= day <= 8:
-        nowk = '1'
-    elif 9 <= day <= 15:
-        nowk = '2'
-    elif 16 <= day <= 22:
-        nowk = '3'
-    else:
-        nowk = '4'
+del save_raw
+gc.collect()
 
-    # Extract year (2-digit), month, day
-    reptyear = str(reptdate.year)[-2:]  # Last 2 digits
-    reptmon = f"{reptdate.month:02d}"
-    reptday = f"{reptdate.day:02d}"
+# ============================================================================
+# STEP 4: PROC SUMMARY NWAY; CLASS DEPRANGE PRODUCT; VAR CURBAL;
+#         OUTPUT OUT=SDRNGE (RENAME=(_FREQ_=NOACCT)) SUM=CURBAL;
+# ============================================================================
+print("\nStep 4: Summarising by DEPRANGE x PRODUCT (NWAY)...")
 
-    # Format date as DDMMYY (8 chars with slashes: DD/MM/YY)
-    rdate = f"{reptday}/{reptmon}/{reptyear}"
+_summary = {}
+for r in save_rows:
+    key = (r["DEPRANGE"], r["PRODUCT"])
+    g = _summary.setdefault(key, {"NOACCT": 0, "CURBAL": 0.0})
+    g["NOACCT"] += 1
+    g["CURBAL"] += r["CURBAL"]
 
-    return {
-        'NOWK': nowk,
-        'REPTYEAR': reptyear,
-        'REPTMON': reptmon,
-        'REPTDAY': reptday,
-        'RDATE': rdate,
-        'reptdate_obj': reptdate
-    }
+summary_rows = [
+    {"DEPRANGE": dep, "PRODUCT": prod, "NOACCT": v["NOACCT"], "CURBAL": v["CURBAL"]}
+    for (dep, prod), v in _summary.items()
+]
+print(f"  SDRNGE summary rows: {len(summary_rows):,}")
 
+# ============================================================================
+# ALL 48 SDRANGE / SADPRG BANDS  (for PROC TABULATE PRINTMISS)
+# ------------------------------------------------------------------------
+# PRINTMISS forces every DEPRANGE band to print on every PRODUCT page even
+# when it has zero matching rows. This list of upper-bound bucket values
+# MUST mirror the breakpoints list inside PBBDPFMT.sdrange_format() exactly
+# -- it is duplicated here (rather than introspected) purely to enumerate
+# the full set of 48 bands in ascending order for report rendering.
+# ============================================================================
+_ALL_RANGE_BREAKPOINTS = [
+    5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
+    3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
+    15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
+    55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
+    95000, 100000, 150000, 200000, 300000, 500000,
+    1000000, 2000000, 3000000, 4000000, 5000000, 10000000,
+    10000001,   # overflow bucket (band 48)
+]
+ALL_RANGE_LABELS = [format_sadprg(float(bp)) for bp in _ALL_RANGE_BREAKPOINTS]
 
-def process_isa_data(macro_vars):
-    """
-    Process ISA data: filter, classify into ranges, and summarize
-    """
-    # Construct ISA filename
-    isa_file = INPUT_DIR / f"isa{macro_vars['REPTMON']}{macro_vars['NOWK']}{macro_vars['REPTYEAR']}.parquet"
+# ============================================================================
+# STEP 5: PROC TABULATE  (PAGE=PRODUCT ALL='BANK TOTAL',
+#         ROW=DEPRANGE ALL='TOTAL', COL=NOACCT CURBAL)
+# BOX=_PAGE_ RTS=35 PRINTMISS CONDENSE NOSEPS MISSING
+# ============================================================================
+print("\nStep 5: Rendering PROC TABULATE report...")
 
-    if not isa_file.exists():
-        raise FileNotFoundError(f"ISA file not found: {isa_file}")
+LABEL_WIDTH   = 35   # RTS=35
+NOACCT_WIDTH  = 12   # COMMA12.
+AMOUNT_WIDTH  = 20   # DOLLAR20.2
 
-    # Use DuckDB to process the parquet file
-    con = duckdb.connect()
-
-    # Register UDF for deposit range calculation
-    con.create_function("get_deposit_range", get_deposit_range, return_type="INTEGER")
-    con.create_function("format_deposit_range", format_deposit_range, return_type="VARCHAR")
-
-    # Read and filter data, then add deposit range
-    query = f"""
-    SELECT 
-        PRODUCT,
-        CURBAL,
-        get_deposit_range(CURBAL) as RANGE,
-        format_deposit_range(get_deposit_range(CURBAL)) as DEPRANGE
-    FROM read_parquet('{isa_file}')
-    WHERE PRODUCT IN (204, 215)
-      AND CURBAL >= 0
-    """
-
-    df = con.execute(query).pl()
-
-    # Summarize by DEPRANGE and PRODUCT
-    summary = df.group_by(['DEPRANGE', 'RANGE', 'PRODUCT']).agg([
-        pl.count().alias('NOACCT'),
-        pl.col('CURBAL').sum().alias('CURBAL')
-    ]).sort(['PRODUCT', 'RANGE'])
-
-    con.close()
-
-    return summary
-
-
-def format_number(value, width=12, decimals=0, with_commas=True):
-    """Format number with commas"""
-    if decimals > 0:
-        formatted = f"{value:,.{decimals}f}"
-    else:
-        formatted = f"{value:,.0f}"
-
-    return formatted.rjust(width)
+PRODUCT_PAGES = [204, 215, None]   # None represents the ALL='BANK TOTAL' page
 
 
-def format_currency(value, width=20, decimals=2):
-    """Format currency with $ and commas"""
-    formatted = f"${value:,.{decimals}f}"
-    return formatted.rjust(width)
+def _comma_int(value: int, width: int) -> str:
+    return f"{int(value):,d}".rjust(width)
 
 
-def generate_report(summary_df, macro_vars):
-    """
-    Generate tabular report with ASA carriage control characters
-    Equivalent to PROC TABULATE output
-    """
-    lines = []
+def _dollar(value: float, width: int, decimals: int = 2) -> str:
+    v = float(value)
+    neg = v < 0
+    v = abs(v)
+    s = f"${v:,.{decimals}f}"
+    if neg:
+        s = "-" + s
+    return s.rjust(width)
 
-    # ASA carriage control: '1' = new page, ' ' = single space, '0' = double space, '-' = triple space
 
-    # Title section (new page)
-    lines.append('1' + ' ' * 131)  # New page
-    lines.append(' ' + 'REPORT ID : DMMISRI3'.center(131))
-    lines.append(' ' + 'PUBLIC ISLAMIC BANK BERHAD (IBU)'.center(131))
-    lines.append(' ' + 'BREAKDOWN OF ISLAMIC SAVINGS ACCOUNT DEPOSIT'.center(131))
-    lines.append(' ' + f"REPORT AS AT {macro_vars['RDATE']}".center(131))
-    lines.append('0' + ' ' * 131)  # Double space
+def _center(text: str, width: int) -> str:
+    text = text[:width]
+    pad = width - len(text)
+    left = pad // 2
+    right = pad - left
+    return " " * left + text + " " * right
 
-    # Get unique products
-    products = sorted(summary_df['PRODUCT'].unique().to_list())
 
-    # Build deposit range order (for proper display order)
-    range_order = [
-        "LESS THAN RM100",
-        "RM100 - RM499",
-        "RM500 - RM999",
-        "RM1,000 - RM4,999",
-        "RM5,000 - RM9,999",
-        "RM10,000 - RM49,999",
-        "RM50,000 - RM99,999",
-        "RM100,000 - RM499,999",
-        "RM500,000 - RM999,999",
-        "RM1,000,000 - RM4,999,999",
-        "RM5,000,000 AND ABOVE",
-    ]
+def _box_label(product) -> str:
+    """BOX=_PAGE_ -- shows the current page's formatted class value."""
+    if product is None:
+        return "BANK TOTAL"          # ALL='BANK TOTAL' literal label
+    return format_sdname(product)    # FORMAT PRODUCT SDNAME.
 
-    # Process each product
-    for product in products:
-        product_name = format_product(product)
-        product_data = summary_df.filter(pl.col('PRODUCT') == product)
 
-        # Header for product section
-        lines.append(' ' + '-' * 131)
-        header_line = ' ' + product_name.ljust(35) + '|' + 'NO OF A/C'.rjust(12) + ' |' + 'AMOUNT'.rjust(20) + ' |'
-        lines.append(header_line)
-        lines.append(' ' + '-' * 131)
+def _band_sums(rows, product) -> dict:
+    sums = {}
+    for r in rows:
+        if product is not None and r["PRODUCT"] != product:
+            continue
+        d = sums.setdefault(r["DEPRANGE"], {"NOACCT": 0, "CURBAL": 0.0})
+        d["NOACCT"] += r["NOACCT"]
+        d["CURBAL"] += r["CURBAL"]
+    return sums
 
-        # Initialize product totals
-        product_total_acct = 0
-        product_total_amt = 0
 
-        # Process each deposit range in order
-        for deprange in range_order:
-            range_data = product_data.filter(pl.col('DEPRANGE') == deprange)
+def _header_lines(box_label: str) -> list:
+    div = "-" * LABEL_WIDTH + "+" + "-" * NOACCT_WIDTH + "+" + "-" * AMOUNT_WIDTH
+    hdr = (
+        box_label.ljust(LABEL_WIDTH)[:LABEL_WIDTH] + "|"
+        + _center("NO OF A/C", NOACCT_WIDTH) + "|"
+        + _center("AMOUNT", AMOUNT_WIDTH)
+    )
+    return [div, hdr, div]
 
-            if len(range_data) > 0:
-                noacct = range_data['NOACCT'][0]
-                curbal = range_data['CURBAL'][0]
-            else:
-                noacct = 0
-                curbal = 0.0
 
-            product_total_acct += noacct
-            product_total_amt += curbal
+def _data_row(label: str, noacct: int, curbal: float) -> str:
+    return (
+        label.ljust(LABEL_WIDTH)[:LABEL_WIDTH] + "|"
+        + _comma_int(noacct, NOACCT_WIDTH) + "|"
+        + _dollar(curbal, AMOUNT_WIDTH)
+    )
 
-            # Format and add line
-            deprange_display = 'DEPOSIT RANGE/' + deprange
-            line = ' ' + deprange_display.ljust(35) + '|' + format_number(noacct, 12) + ' |' + format_currency(curbal,
-                                                                                                               20) + ' |'
-            lines.append(line)
 
-        # Product total line
-        lines.append(' ' + '-' * 131)
-        total_line = ' ' + 'TOTAL'.ljust(35) + '|' + format_number(product_total_acct, 12) + ' |' + format_currency(
-            product_total_amt, 20) + ' |'
-        lines.append(total_line)
-        lines.append(' ' + '-' * 131)
-        lines.append(' ')
+def _render_page(product) -> list:
+    """Returns a list of (asa_char, text) tuples for one PRODUCT page,
+    including internal PAGESIZE=60 pagination if the band count ever
+    exceeds one physical page."""
+    sums = _band_sums(summary_rows, product)
+    box_label = _box_label(product)
 
-    # Bank total section
-    lines.append(' ' + '=' * 131)
-    lines.append(' ' + 'BANK TOTAL'.ljust(35) + '|' + 'NO OF A/C'.rjust(12) + ' |' + 'AMOUNT'.rjust(20) + ' |')
-    lines.append(' ' + '=' * 131)
+    lines: list = []
+    page_line_count = {"n": 0}
 
-    # Calculate bank totals by deposit range
-    bank_total_acct = 0
-    bank_total_amt = 0
+    def _emit_page_start():
+        lines.append(("1", TITLE1))
+        for t in TITLE_BLOCK[1:]:
+            lines.append((" ", t))
+        lines.append((" ", ""))
+        for h in _header_lines(box_label):
+            lines.append((" ", h))
+        page_line_count["n"] = 4 + 1 + len(_header_lines(box_label))
 
-    for deprange in range_order:
-        range_data = summary_df.filter(pl.col('DEPRANGE') == deprange)
+    _emit_page_start()
 
-        if len(range_data) > 0:
-            noacct = range_data['NOACCT'].sum()
-            curbal = range_data['CURBAL'].sum()
-        else:
-            noacct = 0
-            curbal = 0.0
+    grand_noacct = 0
+    grand_curbal = 0.0
 
-        bank_total_acct += noacct
-        bank_total_amt += curbal
+    for label in ALL_RANGE_LABELS:
+        if page_line_count["n"] >= PAGE_SIZE:
+            _emit_page_start()
 
-        # Format and add line
-        deprange_display = 'DEPOSIT RANGE/' + deprange
-        line = ' ' + deprange_display.ljust(35) + '|' + format_number(noacct, 12) + ' |' + format_currency(curbal,
-                                                                                                           20) + ' |'
-        lines.append(line)
+        band = sums.get(label, {"NOACCT": 0, "CURBAL": 0.0})
+        grand_noacct += band["NOACCT"]
+        grand_curbal += band["CURBAL"]
 
-    # Grand total line
-    lines.append(' ' + '=' * 131)
-    total_line = ' ' + 'TOTAL'.ljust(35) + '|' + format_number(bank_total_acct, 12) + ' |' + format_currency(
-        bank_total_amt, 20) + ' |'
-    lines.append(total_line)
-    lines.append(' ' + '=' * 131)
+        lines.append((" ", _data_row(label, band["NOACCT"], band["CURBAL"])))
+        page_line_count["n"] += 1
+
+    if page_line_count["n"] >= PAGE_SIZE:
+        _emit_page_start()
+
+    lines.append((" ", _data_row("TOTAL", grand_noacct, grand_curbal)))
+    lines.append((" ", "-" * LABEL_WIDTH + "+" + "-" * NOACCT_WIDTH + "+" + "-" * AMOUNT_WIDTH))
 
     return lines
 
 
-def write_report_with_asa(lines, output_file):
-    """
-    Write report with ASA carriage control characters
-    Each line already has ASA control character as first character
-    """
-    with open(output_file, 'w', encoding='utf-8') as f:
-        for line in lines:
-            f.write(line + '\n')
+report_lines: list = []
+for product in PRODUCT_PAGES:
+    report_lines.extend(_render_page(product))
 
+print(f"  Total report lines: {len(report_lines):,}")
 
 # ============================================================================
-# Main Execution
+# STEP 6: WRITE OUTPUT  (RECFM=FBA -- ASA carriage-control byte + text)
 # ============================================================================
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for asa, text in report_lines:
+        fh.write(asa + text + "\n")
 
-def main():
-    """Main execution function"""
-    try:
-        print("Starting DMMISRI3 Report Generation...")
+print(f"\n  Output written : {OUTPUT_FILE}")
+print(f"  Total lines    : {len(report_lines):,}")
 
-        # Step 1: Process REPTDATE to get macro variables
-        print("Processing REPTDATE...")
-        macro_vars = process_reptdate()
-        print(f"  Report Date: {macro_vars['RDATE']}")
-        print(f"  Week: {macro_vars['NOWK']}, Month: {macro_vars['REPTMON']}, Year: {macro_vars['REPTYEAR']}")
-
-        # Step 2: Process ISA data
-        print("\nProcessing ISA data...")
-        summary_df = process_isa_data(macro_vars)
-        print(f"  Processed {len(summary_df)} summary records")
-
-        # Step 3: Generate report
-        print("\nGenerating report...")
-        report_lines = generate_report(summary_df, macro_vars)
-
-        # Step 4: Write report with ASA carriage control
-        print(f"\nWriting report to {OUTPUT_FILE}...")
-        write_report_with_asa(report_lines, OUTPUT_FILE)
-
-        print(f"\n✓ Report generation complete!")
-        print(f"  Output file: {OUTPUT_FILE}")
-        print(f"  Total lines: {len(report_lines)}")
-
-    except Exception as e:
-        print(f"\n✗ Error: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
+print("\nDMMISRI3 complete.")
