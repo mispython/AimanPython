@@ -11,36 +11,26 @@ Purpose : Branch Deposit Position Report (BR-DEP-POS) for Public Islamic
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
 same chunked sas7bdat -> Parquet -> cache pattern)
 ============================================================================
-1. main_fd.sas7bdat    (JCL DD DSN=SAP.PIBB.MNITB(0)) (PBB+PIBB combined
-   account master for FD)
-   File : INPUT_MAIN_FD_FILE -> intg_dp_acct_fd_d19.sas7bdat
-   Cols used : ACCTNO, ENTITY_CD
-   Used only to build the list of PIBB-only account numbers, since
-   fd.sas7bdat itself is a mixed PBB/PIBB dataset with no ENTITY_CD column.
-
-2. fd.sas7bdat         (JCL //FD DD DSN=SAP.PIBB.MNIFD(0))
-   File : INPUT_FD_FILE -> enrh_dp_fd_cert_d19.sas7bdat
+1. fdcd{REPTMON}{NOWK}{REPTYRS}.sas7bdat (JCL //FD DD DSN=SAP.PIBB.MNIFD(0))
+   File : INPUT_FD_FILE -> fdcd{REPTMON}{NOWK}{REPTYRS}.sas7bdat
    Cols used : ACCT_NUM, CD_NO, INT_PLAN, OPEN_IND, CURR_BAL, BRANCH
-   Used : DATA FD(RENAME=(INTPLAN=PRODUCT)) step. Filtered to PIBB-only
-          rows by inner-joining ACCT_NUM against the PIBB ACCTNO list
-          derived from main_fd.sas7bdat.
+   Used : DATA FD(RENAME=(INTPLAN=PRODUCT)) step.
 
-3. saving.sas7bdat     (JCL //DEPOSIT DD DSN=SAP.PIBB.MNITB(0), member
-   SAVING)
-   File : INPUT_SAVING_FILE -> intg_dp_acct_saving_d19.sas7bdat
+2. isa{REPTMON}{NOWK}{REPTYRS}.sas7bdat
+   (JCL //DEPOSIT DD DSN=SAP.PIBB.MNITB(0), member SAVING)
+   File : INPUT_SAVING_FILE -> isa{REPTMON}{NOWK}{REPTYRS}.sas7bdat
    Cols used : PRODUCT, OPENIND, USER3, CURBAL, BRANCH, ENTITY_CD
-   Used : DATA SAVING PBSAVE step. Filtered by ENTITY_CD='PIBB' (same
-          physical dataset as EIIMRM01's SAVING file).
+   Used : DATA SAVING PBSAVE step.
 
-4. current.sas7bdat    (JCL //DEPOSIT DD DSN=SAP.PIBB.MNITB(0), member
-   CURRENT)
-   File : INPUT_CURRENT_FILE -> intg_dp_acct_current_d19.sas7bdat
+3. ica{REPTMON}{NOWK}{REPTYRS}.sas7bdat
+   (JCL //DEPOSIT DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
+   File : INPUT_CURRENT_FILE -> ica{REPTMON}{NOWK}{REPTYRS}.sas7bdat
    Cols used : PRODUCT, OPENIND, USER3, CURBAL, BRANCH, ENTITY_CD
-   Used : DATA CURRENT PBCURR step. Filtered by ENTITY_CD='PIBB'.
+   Used : DATA CURRENT PBCURR step.
 
-5. lnnote.sas7bdat     (JCL //LOAN DD DSN=SAP.PIBB.MNILN(0), member
+4. lnnote.sas7bdat     (JCL //LOAN DD DSN=SAP.PIBB.MNILN(0), member
    LNNOTE)
-   File : INPUT_LNNOTE_FILE -> intg_ln_note_pibb_d19.sas7bdat
+   File : INPUT_LNNOTE_FILE -> enrh_ln_note_m08.sas7bdat
    Cols used : ACCTNO, NOTENO, REVERSED, PAIDIND, FLAG1, LOANTYPE,
                RISKRATE, CUSTCODE, ORGTYPE, BRANCH
    Used : PROC SORT DATA=LOAN.LNNOTE ... NODUPKEY step. This is an
@@ -48,9 +38,9 @@ same chunked sas7bdat -> Parquet -> cache pattern)
           needed (same convention as the LOAN PBB/PIBB entity-specific
           files used in the EIBMNPL suite).
 
-6. LOAN&REPTMON&NOWK.sas7bdat (JCL //SASDATA DD DSN=SAP.PIBB.SASDATA,
+5. LOAN&REPTMON&NOWK.sas7bdat (JCL //SASDATA DD DSN=SAP.PIBB.SASDATA,
    member built from &REPTMON&NOWK)
-   File : INPUT_SASDATA_LOAN_FILE -> loan{REPTMON}{NOWK}.sas7bdat
+   File : INPUT_LOAN_FILE -> iln{REPTMON}{NOWK}{REPTYRS}.sas7bdat
    Cols used : ACCTNO, NOTENO, PRODUCT, APPRLIMT, NETPROC
    The member name is fully predictable from REPTMON/NOWK, so it is
    built deterministically here rather than via input_date.py's
@@ -60,7 +50,7 @@ same chunked sas7bdat -> Parquet -> cache pattern)
    logic -- this differs from REPTDATE.py's own range-based NOWK, so it
    is computed locally exactly as in EIIMRM01.py.
 
-7. kapiti5.txt         (JCL //KAPITI5 DD DSN=SAP.PBB.KAPITI5(0)) -- fixed
+6. kapiti5.txt         (JCL //KAPITI5 DD DSN=SAP.PBB.KAPITI5(0)) -- fixed
    width flat file, NOT converted to Parquet (kept as .txt per project
    convention for mainframe flat files).
    File : INPUT_KAPITI5_FILE
@@ -114,7 +104,7 @@ never referenced afterwards, so it is not computed here.
 
 import gc
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 
 import duckdb
 import pandas as pd
@@ -129,46 +119,29 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_MAIN_FD_DIR   = STG_DIR / "sasdata"
-INPUT_FD_DIR        = STG_DIR / "sasdata"
-INPUT_SAVING_DIR    = STG_DIR / "sasdata"
-INPUT_CURRENT_DIR   = STG_DIR / "sasdata"
 INPUT_LNNOTE_DIR    = STG_DIR / "sasdata"
-INPUT_SASDATA_LOAN_DIR = STG_DIR / "sasdata"
-INPUT_KAPITI5_DIR   = STG_DIR / "flatfile"
+INPUT_FD_DIR        = STG_DIR / "from_dwh"
+INPUT_SAVING_DIR    = STG_DIR / "from_dwh"
+INPUT_CURRENT_DIR   = STG_DIR / "from_dwh"
+INPUT_LOAN_DIR      = STG_DIR / "from_dwh"
+INPUT_KAPITI5_DIR   = STG_DIR / "EIIMBPOS"
 
-INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
-INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
-INPUT_SAVING_FILE  = INPUT_SAVING_DIR / "intg_dp_acct_saving_d19.sas7bdat"
-INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "intg_dp_acct_current_d19.sas7bdat"
-INPUT_LNNOTE_FILE  = INPUT_LNNOTE_DIR / "intg_ln_note_pibb_d19.sas7bdat"
-INPUT_KAPITI5_FILE = INPUT_KAPITI5_DIR / "kapiti5.txt"
-
-# BRHFILE DD DSN=RBP2.B033.PBB.BRANCH,DISP=SHR -- declared in JCL but never
-# referenced (no INFILE BRHFILE) anywhere in the SAS program body. Dead
-# physical input; intentionally not converted.
-#
-# PGM DD DSN=SAP.BNM.PROGRAM,DISP=SHR -- declared in JCL but never used via
-# %INC or any other reference in the SAS program body. Dead physical input;
-# intentionally not converted.
+INPUT_LNNOTE_FILE  = INPUT_LNNOTE_DIR  / "enrh_ln_note_m08.sas7bdat"
+INPUT_KAPITI5_FILE = INPUT_KAPITI5_DIR / "KAPITI5_INPUT.TXT"
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMBPOS"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR  = BASE_DIR / "output" / "EIIMBPOS"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIIMBPOS.txt"
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 65     # OPTIONS PS=65
 LINE_WIDTH = 132    # OPTIONS LS=132 (RECFM=FBA LRECL=133 = 1 ASA + 132)
 
-# ============================================================================
-# STEP 0: DELETE STALE OUTPUT DATASET  (JCL //DELETE EXEC PGM=IEFBR14)
-# ============================================================================
-if OUTPUT_FILE.exists():
-    OUTPUT_FILE.unlink()
-    print(f"Step 0: Deleted stale output dataset -> {OUTPUT_FILE}")
+# # ============================================================================
+# # STEP 0: DELETE STALE OUTPUT DATASET  (JCL //DELETE EXEC PGM=IEFBR14)
+# # ============================================================================
+# if OUTPUT_FILE.exists():
+#     OUTPUT_FILE.unlink()
+#     print(f"Step 0: Deleted stale output dataset -> {OUTPUT_FILE}")
 
 # ============================================================================
 # STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
@@ -195,18 +168,36 @@ REPTMON  = reptdate.strftime("%m")
 REPTDAY  = reptdate.strftime("%d")
 RDATE    = reptdate.strftime("%d/%m/%y")     # PUT(REPTDATE,DDMMYY8.)
 
+# Generate time stamp
+reptdate = date.today() - timedelta(days=1)
+ts = reptdate.strftime("%y%m%d")
+
 # SASDATA.LOAN&REPTMON&NOWK: fully predictable filename built directly from
 # REPTMON/NOWK -- input_date.py's get_latest_file() is not used here since
 # there is nothing to search for (the member name is deterministic).
-INPUT_SASDATA_LOAN_FILE = INPUT_SASDATA_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+# INPUT_LOAN_FILE    = INPUT_LOAN_DIR    / f"iln{REPTMON}{NOWK}{REPTYRS}.sas7bdat"
+# INPUT_SAVING_FILE  = INPUT_SAVING_DIR  / f"isa{REPTMON}{NOWK}{REPTYRS}.sas7bdat"
+# INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / f"ica{REPTMON}{NOWK}{REPTYRS}.sas7bdat"
+# INPUT_FD_FILE      = INPUT_FD_DIR      / f"ifdcd{REPTMON}{NOWK}{REPTYRS}.sas7bdat"
+INPUT_FD_FILE      = INPUT_FD_DIR      / "ifdcd08426.sas7bdat"
+INPUT_LOAN_FILE    = INPUT_LOAN_DIR    / "iln08426.sas7bdat"
+INPUT_SAVING_FILE  = INPUT_SAVING_DIR  / "isa08426.sas7bdat"
+INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "ica08426.sas7bdat"
 
-print(f"  RDATE        : {RDATE}")
-print(f"  REPTMON/NOWK : {REPTMON}/{NOWK}")
-print(f"  SASDATA LOAN input : {INPUT_SASDATA_LOAN_FILE.name}")
-print(f"  Output file  : {OUTPUT_FILE.name}")
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMBPOS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / f"EIIMBPOS_{ts}.txt"
+
+print(f"  RDATE         : {RDATE}")
+print(f"  REPTMON/NOWK  : {REPTMON}/{NOWK}")
+print(f"  FD input      : {INPUT_FD_FILE.name}")
+print(f"  LOAN input    : {INPUT_LOAN_FILE.name}")
+print(f"  SAVING input  : {INPUT_SAVING_FILE.name}")
+print(f"  CURRENT input : {INPUT_CURRENT_FILE.name}")
+print(f"  Output file   : {OUTPUT_FILE.name}")
 
 # ============================================================================
-# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
@@ -262,12 +253,11 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # STEP 2: CACHE INPUT SAS FILES TO PARQUET
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-MAIN_FD_CACHE       = _load_cached(INPUT_MAIN_FD_FILE, "MAIN_FD")
 FD_CACHE            = _load_cached(INPUT_FD_FILE, "FD")
 SAVING_CACHE        = _load_cached(INPUT_SAVING_FILE, "SAVING")
 CURRENT_CACHE       = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
 LNNOTE_CACHE        = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
-SASDATA_LOAN_CACHE  = _load_cached(INPUT_SASDATA_LOAN_FILE, "SASDATA_LOAN")
+SASDATA_LOAN_CACHE  = _load_cached(INPUT_LOAN_FILE, "SASDATA_LOAN")
 
 # ============================================================================
 # STEP 3: DATA SAVING PBSAVE;  SET DEPOSIT.SAVING;  (PIBB only)
@@ -283,7 +273,6 @@ saving_raw = con.execute(f"""
         CAST(CURBAL  AS DOUBLE)  AS CURBAL,
         CAST(BRANCH  AS INTEGER) AS BRANCH
     FROM read_parquet('{SAVING_CACHE.as_posix()}')
-    WHERE ENTITY_CD = 'PIBB'
 """).pl()
 con.close()
 
@@ -346,7 +335,6 @@ current_raw = con.execute(f"""
         CAST(CURBAL  AS DOUBLE)  AS CURBAL,
         CAST(BRANCH  AS INTEGER) AS BRANCH
     FROM read_parquet('{CURRENT_CACHE.as_posix()}')
-    WHERE ENTITY_CD = 'PIBB'
 """).pl()
 con.close()
 
@@ -420,27 +408,53 @@ _FD_PLUS = {
     534, 535, 536, 537, 538, 539,
 }
 
+# con = duckdb.connect(database=":memory:")
+# fd_raw = con.execute(f"""
+#     WITH main_fd_pibb AS (
+#         SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
+#         FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+#         WHERE ENTITY_CD = 'PIBB'
+#     )
+#     SELECT
+#         CAST(f.ACCT_NUM AS BIGINT)  AS ACCTNO,
+#         CAST(f.CD_NO    AS INTEGER) AS CDNO,
+#         CAST(f.INT_PLAN AS INTEGER) AS PRODUCT,
+#         CAST(f.OPEN_IND AS VARCHAR) AS OPENIND,
+#         CAST(f.CURR_BAL AS DOUBLE)  AS CURBAL,
+#         CAST(f.BRANCH   AS INTEGER) AS BRANCH
+#     FROM read_parquet('{FD_CACHE.as_posix()}') f
+#     INNER JOIN main_fd_pibb m
+#         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
+# """).pl()
+# con.close()
+
+# print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
+
+# con = duckdb.connect(database=":memory:")
+# fd_raw = con.execute(f"""
+#     SELECT
+#         CAST(f.ACCT_NUM AS BIGINT)  AS ACCTNO,
+#         CAST(f.CD_NO    AS INTEGER) AS CDNO,
+#         CAST(f.INT_PLAN AS INTEGER) AS PRODUCT,
+#         CAST(f.OPEN_IND AS VARCHAR) AS OPENIND,
+#         CAST(f.CURR_BAL AS DOUBLE)  AS CURBAL,
+#         CAST(f.BRANCH   AS INTEGER) AS BRANCH
+#     FROM read_parquet('{FD_CACHE.as_posix()}') f
+# """).pl()
+# con.close()
+
 con = duckdb.connect(database=":memory:")
 fd_raw = con.execute(f"""
-    WITH main_fd_pibb AS (
-        SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
-        FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-        WHERE ENTITY_CD = 'PIBB'
-    )
     SELECT
-        CAST(f.ACCT_NUM AS BIGINT)  AS ACCTNO,
-        CAST(f.CD_NO    AS INTEGER) AS CDNO,
-        CAST(f.INT_PLAN AS INTEGER) AS PRODUCT,
-        CAST(f.OPEN_IND AS VARCHAR) AS OPENIND,
-        CAST(f.CURR_BAL AS DOUBLE)  AS CURBAL,
-        CAST(f.BRANCH   AS INTEGER) AS BRANCH
+        CAST(ACCTNO AS BIGINT)  AS ACCTNO,
+        CAST(CDNO    AS INTEGER) AS CDNO,
+        CAST(INTPLAN AS INTEGER) AS PRODUCT,
+        CAST(OPENIND AS VARCHAR) AS OPENIND,
+        CAST(CURBAL AS DOUBLE)  AS CURBAL,
+        CAST(BRANCH   AS INTEGER) AS BRANCH
     FROM read_parquet('{FD_CACHE.as_posix()}') f
-    INNER JOIN main_fd_pibb m
-        ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
 """).pl()
 con.close()
-
-print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
 
 
 def _process_fd(rows):
@@ -540,7 +554,7 @@ print(f"  LNNOTE (filtered, deduped) rows: {len(lnnote_raw):,}")
 # ============================================================================
 # STEP 7: PROC SORT DATA=SASDATA.LOAN&REPTMON&NOWK ... NODUPKEY
 # ============================================================================
-print("\nStep 7: Filtering SASDATA.LOAN{REPTMON}{NOWK}...")
+print("\nStep 7: Filtering iln{REPTMON}{NOWK}...")
 
 _SLOAN_PRODUCT_A = (200, 201, 204, 205, 209, 210, 211, 212, 214, 215,
                      225, 226, 227, 228, 230, 231, 232, 233, 234)
