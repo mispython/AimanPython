@@ -1,0 +1,256 @@
+DATA K1TBL (KEEP=PART ITEM MATDT AMOUNT AMTUSD AMTSGD);
+   SET BNMK.K1TBL&REPTMON&NOWK (RENAME=(GWMDT=MATDT GWBALC=AMOUNT));
+   IF GWAB > 2000;
+   IF GWOCY='XAU' THEN DELETE;
+   IF GWCCY='XAU' THEN DELETE;
+   IF GWMVT = 'P';
+   IF GWCCY  = 'MYR' THEN DO;
+      PART = '95';
+      AMTUSD = 0;
+      AMTSGD = 0;
+      IF GWMVTS = 'M' THEN DO;
+         IF GWDLP IN ('BCD','BCI') THEN DO;
+            ITEM = '830'; OUTPUT;
+         END;
+         IF SUBSTR(GWCTP,1,1) = 'B' THEN
+            SELECT (GWDLP);
+               WHEN ('LO','LC','LF','LS','LOI','LSI','LSC',
+                     'FDA','FDB','FDS','FDL') DO;
+                  ITEM = '610'; OUTPUT;
+               END;
+               WHEN ('BO','BF','BOI','BFI','BSC') DO;
+                  ITEM = '810'; OUTPUT;
+               END;
+               OTHERWISE;
+            END;
+         SELECT (SUBSTR(GWDLP,2,2));
+            WHEN ('MI','MT') DO;
+               IF SUBSTR(GWCTP,1,1) = 'B' THEN ITEM = '820';
+               ELSE ITEM = '830';
+               OUTPUT;
+            END;
+            WHEN ('XI','XT') DO;
+               ITEM = '620'; OUTPUT;
+            END;
+            OTHERWISE;
+         END;
+      END;
+      ELSE IF GWDLP IN ('FXS','FXO','FXF','TS1','TS2','SF1','SF2',
+         'FF1','FF2') THEN DO;
+         IF GWMVTS = 'P' THEN ITEM = '711';
+         ELSE IF GWMVTS = 'S' THEN ITEM = '911';
+         OUTPUT;
+      END;
+   END;
+*;
+   ELSE DO;
+      PART = '96';
+      IF GWCCY = 'USD' THEN AMTUSD = AMOUNT;
+      ELSE AMTUSD = 0;
+      IF GWCCY = 'SGD' THEN AMTSGD = AMOUNT;
+      ELSE AMTSGD = 0;
+      IF GWMVTS = 'M' THEN DO;
+         IF SUBSTR(GWCTP,1,1) = 'B' THEN
+            SELECT (GWDLP);
+               WHEN ('LO','LC','LS','LF','LOI','LSI','LSC',
+                     'FDA','FDB','FDS','FDL') DO;
+                  ITEM = '610'; OUTPUT;
+               END;
+               WHEN ('BC','BF','BO','BSC') DO;
+                  IF SUBSTR(GWSHN,1,6) ^= 'FCY-FD' THEN DO;
+                     ITEM = '810'; OUTPUT;
+                  END;
+               END;
+               OTHERWISE;
+            END;
+      END;
+      ELSE IF GWDLP IN ('FXS','FXO','FXF','TS1','TS2','SF1','SF2',
+         'FF1','FF2') AND GWACT NOT IN ('RV','RW') THEN DO;
+         IF GWMVTS = 'P' THEN ITEM = '711';
+         ELSE IF GWMVTS = 'S' THEN ITEM = '911';
+         OUTPUT;
+      END;
+   END;
+*;
+DATA K3TBL (KEEP=PART ITEM MATDT AMOUNT AMTUSD AMTSGD);
+   RETAIN PART '95';
+   SET BNMK.K3TBL&REPTMON&NOWK;
+   IF  SUBSTR(UTREF,1,1)='I' AND SUBSTR(UTREF,1,4) NE '  ';
+   AMOUNT = UTAMOC - UTDPF;
+   IF UTSTY='IDC' THEN AMOUNT = UTAMOC + UTDPF;
+   IF &INST='PBB' THEN DO;
+      IF UTCCY = 'USD' THEN AMTUSD = AMOUNT;
+      ELSE AMTUSD = 0;
+      IF UTCCY = 'SGD' THEN AMTSGD = AMOUNT;
+      ELSE AMTSGD = 0;
+   END;
+   ELSE DO;
+      AMTUSD = 0;
+      AMTSGD = 0;
+   END;
+*  IF UTREF IN ('INV','TRD','TAP') THEN DO;
+   IF UTREF IN ('INV','DRI','DLG') THEN DO;
+      SELECT (UTSTY);
+         WHEN ('CB1','CB2','CF1','CF2','CNT','MGS','MTB','BNB','BNN',
+               'SCD','BMN','BMC','CMB','MGI','SMC','BMF') DO;
+            ITEM = '631';
+            IF &INST='PBB' THEN DO;
+               AMOUNT = AMOUNT + UTAICT;
+            END;
+            OUTPUT;
+         END;
+         WHEN ('SLD','SSD','SFD','SZD') DO;
+            ITEM = '632';
+            IF &INST='PBB' THEN DO;
+               AMOUNT = AMOUNT + UTAICT;
+            END;
+            OUTPUT;
+         END;
+         WHEN ('SBA') DO;
+            IF UTDLP NOT IN ('MOS','MSS') THEN DO;
+               ITEM = '633'; OUTPUT;
+            END;
+         END;
+         WHEN ('ISB','DHB','KHA','PNB') DO;
+            ITEM = '636'; OUTPUT;
+         END;
+         WHEN ('SIP') DO;
+            ITEM = '610'; OUTPUT;
+         END;
+         WHEN ('DBD') DO;
+            ITEM = '634'; OUTPUT;
+         END;
+         WHEN ('DMB','DBD','GRL','MTL','RUL') DO;
+            ITEM = '635'; OUTPUT;
+         END;
+         WHEN ('PBA') DO;
+            IF UTDLP IN ('MOS','MSS') THEN DO;
+               ITEM = '850'; OUTPUT;
+            END;
+         END;
+         OTHERWISE;
+      END;
+   END;
+   ELSE IF UTREF IN ('PFD','PLD','PSD','PZD','PDC') THEN DO;
+      IF UTSTY IN ('IFD','ILD','ISD','IZD','IDC') THEN DO;
+         ITEM = '840'; OUTPUT;
+      END;
+   END;
+*  ELSE IF UTREF IN ('IINV','ITRD','ITAP') THEN DO;
+   ELSE IF UTREF IN ('IINV','IDRI','IDLG') THEN DO;
+      IF UTSTY IN ('SBA') AND UTDLP IN ('IOP') THEN DO;
+         ITEM = '633'; OUTPUT;
+      END;
+      ELSE IF UTSTY IN ('CB1','CB2','CF1','CF2','CNT','MGI',
+                        'BMN','BMC','BMF','SCD',
+                        'MGS','MTB','BNB','BNN','CMB','SMC') THEN DO;
+         ITEM = '631';
+         IF &INST='PBB' THEN DO;
+            AMOUNT = AMOUNT + UTAICT;
+         END;
+         OUTPUT;
+      END;
+      ELSE IF UTSTY IN ('ISB','DHB','KHA') THEN DO;
+         ITEM = '636'; OUTPUT;
+      END;
+      ELSE IF UTSTY IN ('DBD') THEN DO;
+         ITEM = '634'; OUTPUT;
+      END;
+      ELSE IF UTSTY IN ('SIP') THEN DO;
+         ITEM = '610'; OUTPUT;
+      END;
+   END;
+*;
+DATA KTBL (KEEP=BNMCODE AMOUNT AMTUSD AMTSGD);
+   %DCLVAR
+   SET K1TBL K3TBL;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF ITEM ^= ' ';
+   IF MATDT - REPTDATE < 8 THEN REMMTH = 0.1;
+   ELSE DO;
+      %REMMTH
+   END;
+   BNMCODE = PART||ITEM||'00'||PUT(REMMTH,REMFMT.)||'0000Y';
+   OUTPUT;
+   *------------------------------------------------*
+   *  DUPLICATE ANOTHER SET FOR PART 1              *
+   *  95 = PART 2-RM, 96 = PART 2-FX                *
+   *  93 = PART 1-RM, 94 = PART 1-FX                *
+   *------------------------------------------------*;
+   IF PART = '95' THEN SUBSTR(BNMCODE,1,2) = '93';
+   ELSE SUBSTR(BNMCODE,1,2) = '94';
+   OUTPUT;
+*;
+*----------------------------------------------------------------*
+*  DISTRIBUTION PROFILE OF CUSTOMER DEPOSITS (PART 3)            *
+*----------------------------------------------------------------*;
+*------------------------------------------------*
+*  NON-INTERBANK REPOS                           *
+*------------------------------------------------*;
+DATA K1TBL;
+   KEEP CAT NAME AMOUNT;
+   LENGTH CAT $20 NAME $24;
+   SET BNMK.K1TBL&REPTMON&NOWK (RENAME=(GWBALC=AMOUNT GWSHN=NAME));
+   IF GWCCY = 'MYR' AND GWMVT = 'P' AND GWMVTS = 'M';
+   IF SUBSTR(GWCTP,1,1) ^= 'B' AND SUBSTR(GWDLP,2,2) IN ('MI','MT');
+   CAT = 'NON-INTERBANK REPOS';
+//EIBMLIQI JOB MIS,MISEIS,COND=(4,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//PRINT1   OUTPUT CLASS=R,
+//         NAME='MR TING CHEE CHONG',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='STATISTICS',
+//         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//*
+//EIBMRLFI EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPOSIT  DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//CISLN    DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
+//CISDP    DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
+//BNMTBL1  DD DSN=SAP.PBB.KAPITI1(0),DISP=SHR
+//BNMTBL3  DD DSN=SAP.PBB.KAPITI3(0),DISP=SHR
+//BNMK     DD DSN=SAP.PBB.KAPITI.SASDATA,DISP=SHR
+//BNM      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(600,300)),UNIT=(SYSDA,5)
+//BNM1     DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.LIQP.ISLM(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0),
+//            SPACE=(CYL,(2,2)),UNIT=SYSDA
+//SYSIN     DD *
+
+*;
+*------------------------------------------------*
+*  NON-INTERBANK NIDS                            *
+*------------------------------------------------*;
+DATA K3TBL;
+   KEEP CAT NAME AMOUNT;
+   LENGTH CAT $20 NAME $24;
+   SET BNMK.K3TBL&REPTMON&NOWK;
+   IF SUBSTR(UTCTP,1,1) ^= 'B' AND
+      UTREF IN ('PFD','PLD','PSD','PZD','PDC') AND
+      UTSTY IN ('IFD','ILD','ISD','IZD','IDC');
+   AMOUNT = UTAMOC - UTDPF;
+   IF UTSTY='IDC' THEN AMOUNT = UTAMOC + UTDPF;
+   NAME = UTCUS || UTCLC;
+   CAT = 'NON-INTERBANK NIDS';
+*;
+PROC APPEND BASE=K1TBL DATA=K3TBL;
+*;
+PROC SUMMARY DATA=K1TBL NWAY;
+   CLASS CAT NAME;
+   VAR AMOUNT;
+   OUTPUT OUT=K1TBL (DROP=_TYPE_ _FREQ_) SUM=;
+RUN;
