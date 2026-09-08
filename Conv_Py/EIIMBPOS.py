@@ -408,41 +408,6 @@ _FD_PLUS = {
     534, 535, 536, 537, 538, 539,
 }
 
-# con = duckdb.connect(database=":memory:")
-# fd_raw = con.execute(f"""
-#     WITH main_fd_pibb AS (
-#         SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
-#         FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
-#         WHERE ENTITY_CD = 'PIBB'
-#     )
-#     SELECT
-#         CAST(f.ACCT_NUM AS BIGINT)  AS ACCTNO,
-#         CAST(f.CD_NO    AS INTEGER) AS CDNO,
-#         CAST(f.INT_PLAN AS INTEGER) AS PRODUCT,
-#         CAST(f.OPEN_IND AS VARCHAR) AS OPENIND,
-#         CAST(f.CURR_BAL AS DOUBLE)  AS CURBAL,
-#         CAST(f.BRANCH   AS INTEGER) AS BRANCH
-#     FROM read_parquet('{FD_CACHE.as_posix()}') f
-#     INNER JOIN main_fd_pibb m
-#         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
-# """).pl()
-# con.close()
-
-# print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
-
-# con = duckdb.connect(database=":memory:")
-# fd_raw = con.execute(f"""
-#     SELECT
-#         CAST(f.ACCT_NUM AS BIGINT)  AS ACCTNO,
-#         CAST(f.CD_NO    AS INTEGER) AS CDNO,
-#         CAST(f.INT_PLAN AS INTEGER) AS PRODUCT,
-#         CAST(f.OPEN_IND AS VARCHAR) AS OPENIND,
-#         CAST(f.CURR_BAL AS DOUBLE)  AS CURBAL,
-#         CAST(f.BRANCH   AS INTEGER) AS BRANCH
-#     FROM read_parquet('{FD_CACHE.as_posix()}') f
-# """).pl()
-# con.close()
-
 con = duckdb.connect(database=":memory:")
 fd_raw = con.execute(f"""
     SELECT
@@ -806,14 +771,6 @@ def _catg_line(catg_text: str) -> str:
     _place(buf, 5, catg_text)
     return _finalize(buf)
 
-
-# def _data_line(item, noacct, noofcd, amount) -> str:
-#     buf = _new_buf()
-#     _place(buf, 9, item)
-#     _place(buf, 43, _fmt_comma(noacct, 7, 0))
-#     _place(buf, 67, _fmt_comma(noofcd, 7, 0))
-#     _place(buf, 83, _fmt_comma(amount, 18, 2))
-#     return _finalize(buf)
 
 def _data_line(item, noacct, noofcd, amount) -> str:
     buf = _new_buf()
