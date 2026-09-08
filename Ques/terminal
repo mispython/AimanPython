@@ -1,45 +1,39 @@
-Step 9 [PIBB]: EIBMNPL2 LOAN2 (O/D detail)...
-  LOAN2 (mnpl2) rows: 120
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMBPOS.py
+Step 1: Deriving report date...
+  RDATE         : 07/09/26
+  REPTMON/NOWK  : 09/4
+  FD input      : ifdcd08426.sas7bdat
+  LOAN input    : iln08426.sas7bdat
+  SAVING input  : isa08426.sas7bdat
+  CURRENT input : ica08426.sas7bdat
+  Output file   : EIIMBPOS_260907.txt
+
+Step 2: Caching input SAS datasets to Parquet...
+  [MAIN_FD] Converting intg_dp_acct_fd_m08.sas7bdat -> intg_dp_acct_fd_m08.parquet ...
+  [MAIN_FD] Done - 1,899,517 rows cached.
+  [FD] Converting enrh_dp_fd_cert_m08.sas7bdat -> enrh_dp_fd_cert_m08.parquet ...
+  [FD] Done - 3,299,440 rows cached.
+  [SAVING] Converting isa08426.sas7bdat -> isa08426.parquet ...
+  [SAVING] Done - 2,227,654 rows cached.
+  [CURRENT] Converting ica08426.sas7bdat -> ica08426.parquet ...
+  [CURRENT] Done - 154,761 rows cached.
+  [LNNOTE] Converting enrh_ln_note_m08.sas7bdat -> enrh_ln_note_m08.parquet ...
+  [LNNOTE] Done - 8,086,749 rows cached.
+  [SASDATA_LOAN] Converting iln08426.sas7bdat -> iln08426.parquet ...
+  [SASDATA_LOAN] Done - 632,481 rows cached.
+
+Step 3: Building SAVING / PBSAVE from DEPOSIT.SAVING (PIBB)...
+  SAVING rows: 0   PBSAVE rows: 6,528
+
+Step 4: Building CURRENT / PBCURR from DEPOSIT.CURRENT (PIBB)...
+  CURRENT rows: 0   PBCURR rows: 13
+
+Step 5: Building FD from FD.FD (PIBB-only via main_fd)...
+  FD (item-matched) rows: 2,878
+  FDSORT (per-account) rows: 952
+
+Step 6: Filtering LOAN.LNNOTE...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 1066, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py", line 1048, in main
-    EIBMNPL2.run(entity, asa)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL2.py", line 521, in run
-    render_mnpl2_print_loan2(asa, loan2)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL2.py", line 487, in render_mnpl2_print_loan2
-    widths = _branch_col_widths(branch_rows)  # computed once per BY-group
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL2.py", line 448, in _branch_col_widths
-    max_data = max((len(fmt(r[key])) for r in branch_rows), default=0)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL2.py", line 448, in <genexpr>
-    max_data = max((len(fmt(r[key])) for r in branch_rows), default=0)
-KeyError: 'OBS'
-
-===============================
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMNPL1.py
-Step 1: Deriving report date...
-  RDATE           : 04/09/26
-  REPTMON/NOWK    : 09/4
-  PBB LOAN input  : loan084.sas7bdat
-  PIBB LOAN input : iloan084.sas7bdat
-  OVERDFT input   : intg_dp_acct_overdft_d31.sas7bdat
-
-Step 2: Caching input SAS datasets to Parquet...
-  [LOAN_PBB] Converting loan084.sas7bdat -> loan084.parquet ...
-  [LOAN_PBB] Done - 2,022,747 rows cached.
-  [LOAN_PIBB] Converting iloan084.sas7bdat -> iloan084.parquet ...
-  [LOAN_PIBB] Done - 632,482 rows cached.
-  [OVERDFT] Converting intg_dp_acct_overdft_d31.sas7bdat -> intg_dp_acct_overdft_d31.parquet ...
-  [OVERDFT] Done - 1,093,140 rows cached.
-Step 1: Deriving report date...
-  RDATE           : 04/09/26
-  REPTMON/NOWK    : 09/4
-  PBB LOAN input  : loan084.sas7bdat
-  PIBB LOAN input : iloan084.sas7bdat
-  OVERDFT input   : intg_dp_acct_overdft_d31.sas7bdat
-
-Step 2: Caching input SAS datasets to Parquet...
-  [LOAN_PBB] Cache fresh - skipping conversion.
-  [LOAN_PIBB] Cache fresh - skipping conversion.
-  [OVERDFT] Cache fresh - skipping conversion.
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMBPOS.py", line 541, in <module>
+    lnnote_raw = con.execute(f"""
+_duckdb.BinderException: Binder Error: Column "BRANCH" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
