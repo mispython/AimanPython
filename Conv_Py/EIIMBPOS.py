@@ -527,9 +527,9 @@ con = duckdb.connect(database=":memory:")
 lnnote_raw = con.execute(f"""
     SELECT ACCTNO, NOTENO, BRANCH FROM (
         SELECT
-            CAST(ACCTNO AS BIGINT)    AS ACCTNO,
-            CAST(NOTENO AS BIGINT)    AS NOTENO,
-            CAST(BRANCH AS INTEGER)   AS BRANCH,
+            CAST(ACCTNO  AS BIGINT)    AS ACCTNO,
+            CAST(NOTENO  AS BIGINT)    AS NOTENO,
+            CAST(ACCBRCH AS INTEGER)   AS BRANCH,
             ROW_NUMBER() OVER (PARTITION BY ACCTNO, NOTENO
                                ORDER BY ACCTNO, NOTENO) AS RN
         FROM read_parquet('{LNNOTE_CACHE.as_posix()}')
@@ -807,11 +807,26 @@ def _catg_line(catg_text: str) -> str:
     return _finalize(buf)
 
 
+# def _data_line(item, noacct, noofcd, amount) -> str:
+#     buf = _new_buf()
+#     _place(buf, 9, item)
+#     _place(buf, 43, _fmt_comma(noacct, 7, 0))
+#     _place(buf, 67, _fmt_comma(noofcd, 7, 0))
+#     _place(buf, 83, _fmt_comma(amount, 18, 2))
+#     return _finalize(buf)
+
 def _data_line(item, noacct, noofcd, amount) -> str:
     buf = _new_buf()
     _place(buf, 9, item)
     _place(buf, 43, _fmt_comma(noacct, 7, 0))
-    _place(buf, 67, _fmt_comma(noofcd, 7, 0))
+
+    # Format NOOFCD with a dot if missing
+    if noofcd is None:
+        noofcd_str = " " * 6 + "."
+    else:
+        noofcd_str = _fmt_comma(noofcd, 7, 0)
+    _place(buf, 67, noofcd_str)
+
     _place(buf, 83, _fmt_comma(amount, 18, 2))
     return _finalize(buf)
 
@@ -822,7 +837,8 @@ _lines_on_page = 0
 
 def _start_new_page(branch) -> None:
     global _lines_on_page
-    report_lines.append(("1", _title_line(branch)))
+    report_lines.append(("1", ""))
+    report_lines.append((" ", _title_line(branch)))
     report_lines.append((" ", _line2()))
     report_lines.append((" ", _line3()))
     report_lines.append((" ", _line4()))
@@ -856,9 +872,9 @@ for idx, r in enumerate(pdrdata):
         _start_new_page(branch)                # PUT _PAGE_ (forced break)
 
     if first_group:
-        _emit("0", _group_line(group))          # PUT //@001 GROUP;
+        _emit("-", _group_line(group))          # PUT //@001 GROUP;
     if first_catg:
-        _emit("0", _catg_line(catg))            # PUT //@005 CATG;
+        _emit("-", _catg_line(catg))            # PUT //@005 CATG;
 
     amount = r["AMOUNT"]
     if item.strip() == "3 HOUSING LOANS":
@@ -884,8 +900,8 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
 
-print("\n--- Report preview (first 30 lines, ASA byte shown as first char) ---")
-for asa, text in report_lines[:30]:
-    print(asa + text)
+# print("\n--- Report preview (first 30 lines, ASA byte shown as first char) ---")
+# for asa, text in report_lines[:30]:
+#     print(asa + text)
 
 print("\nEIIMBPOS complete.")
