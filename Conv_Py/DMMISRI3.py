@@ -67,7 +67,7 @@ from PBMISFMT import format_sadprg, format_sdname
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_ISA_DIR = STG_DIR / "sasdata"
+INPUT_ISA_DIR = STG_DIR / "from_dwh"
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "DMMISRI3"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -86,8 +86,8 @@ print("Step 1: Deriving report date...")
 
 reptdate_values = get_reptdate_values()          # year_format="%y" -> YEAR2.
 REPTYEAR = reptdate_values.reptyear              # 2-digit year
-REPTMON  = reptdate_values.reptmon                # zero-padded month (Z2.)
-REPTDAY  = reptdate_values.reptday                # zero-padded day   (Z2.)
+REPTMON  = reptdate_values.reptmon               # zero-padded month (Z2.)
+REPTDAY  = reptdate_values.reptday               # zero-padded day   (Z2.)
 # NOWK: SAS SELECT/WHEN uses 1<=day<=8 -> '1', 9<=day<=15 -> '2',
 # 16<=day<=22 -> '3', OTHERWISE -> '4'. This is IDENTICAL to the range
 # logic already implemented in REPTDATE.get_reptdate_values(), so NOWK is
@@ -100,7 +100,8 @@ print(f"  RDATE   : {RDATE}")
 print(f"  REPTMON : {REPTMON}  NOWK: {NOWK}  REPTYEAR: {REPTYEAR}")
 
 # Deterministic physical input filename (see module docstring).
-INPUT_ISA_FILE = INPUT_ISA_DIR / f"isa{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+# INPUT_ISA_FILE = INPUT_ISA_DIR / f"isa{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_ISA_FILE = INPUT_ISA_DIR / f"isa08426.sas7bdat"
 print(f"  Input file  : {INPUT_ISA_FILE.name}")
 print(f"  Output file : {OUTPUT_FILE.name}")
 
