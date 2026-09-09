@@ -31,11 +31,14 @@ directory scan, so input_date.get_latest_file() is used here (per project
 convention: deterministic dates are built directly; get_latest_file() is
 reserved for exactly this GDG-style "scan for latest" case).
 
-The parsed rows are still cached to Parquet (chunked read -> parse -> write,
-DuckDB reads the cache afterwards) to avoid re-parsing the raw flat file on
-every run, mirroring the EIBDLN1M / EIIMRM01 sas7bdat->Parquet cache pattern
--- adapted here to a raw byte-offset + packed-decimal source instead of a
-pandas read_sas() source.
+The raw flat file is parsed directly into memory (byte-offset slicing +
+packed-decimal unpacking, chunked purely to bound memory usage) rather than
+being staged to a Parquet cache. Unlike the large multi-GB .sas7bdat inputs
+elsewhere in this project (e.g. EIBDLN1M / EIIMRM01) where a persistent
+Parquet cache avoids repeatedly re-parsing an expensive source across runs,
+BNMTBL4 is a single flat file read once per run -- caching it would only
+add a write-then-read round trip without reducing the amount of parsing
+work actually done, so no cache is used here.
 
 //PGM DD DSN=SAP.BNM.PROGRAM,DISP=SHR is the source-code library used only
 for the %INC PGM(MATDTEX) compile-time include above; it is not read as
@@ -93,10 +96,7 @@ import gc
 from pathlib import Path
 from datetime import date, timedelta
 
-import duckdb
 import polars as pl
-import pyarrow as pa
-import pyarrow.parquet as pq
 
 from input_date import get_latest_file
 from MATDTEX import calc_remmth
@@ -110,9 +110,6 @@ STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 # Physical input #1: BNMTBL4 -- SAP.PBB.KAPITI4(0), raw flat file, GDG-latest.
 INPUT_KAPITI4_DIR = STG_DIR / "sasdata"
 INPUT_KAPITI4_PREFIX = "kapiti4"
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLI4I"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMLI4I"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -165,12 +162,13 @@ RECORD_LENGTH = 193
 
 _FIELD_NAMES = [f[0] for f in FIELDS]
 
-
-def _build_arrow_schema() -> pa.Schema:
-    return pa.schema([
-        pa.field(name, pa.float64() if ftype == "pd" else pa.string())
-        for name, _, _, ftype, _ in FIELDS
-    ])
+# Explicit Polars schema for the parsed rows -- keeps every chunk's dtypes
+# consistent (e.g. all-null "pd" columns in a chunk would otherwise infer
+# as Null instead of Float64) so pl.concat() across chunks never fails.
+_POLARS_SCHEMA = {
+    name: (pl.Float64 if ftype == "pd" else pl.Utf8)
+    for name, _, _, ftype, _ in FIELDS
+}
 
 
 def _unpack_pd(raw: bytes, decimals: int):
@@ -398,21 +396,19 @@ CHKDT = date(2004, 9, 4)          # CHKDT='04SEP04'D
 
 
 # ============================================================================
-# STEP 1: CACHE STAMP + STREAM RAW FLAT FILE -> PARQUET
+# STEP 1: PARSE RAW FLAT FILE DIRECTLY INTO MEMORY (no Parquet cache -- see
+# module docstring: BNMTBL4 is read once per run, so a persistent cache
+# would only add a write-then-read round trip, not reduce parsing work)
 # ============================================================================
-def _cache_is_fresh(src_path: Path, cache_path: Path) -> bool:
-    return (
-        cache_path.exists()
-        and cache_path.stat().st_mtime >= src_path.stat().st_mtime
-    )
-
-
-def _flat_file_to_parquet(flat_path: Path, cache_path: Path, tag: str) -> None:
-    print(f"  [{tag}] Parsing {flat_path.name} -> {cache_path.name} ...")
-    schema = _build_arrow_schema()
-    writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+def _parse_flatfile_to_polars(flat_path: Path) -> pl.DataFrame:
+    """Read BNMTBL4 in RECORD_LENGTH-aligned byte blocks (purely to bound
+    memory while parsing -- not to persist an intermediate cache), applying
+    the packed-decimal unpack and the UTREF1/UTREF4 subsetting filter, and
+    return the kept rows as a single Polars DataFrame."""
+    print(f"  [BNMTBL4] Parsing {flat_path.name} directly (no cache) ...")
     total = 0
     kept = 0
+    chunks = []
     batch = []
 
     with open(flat_path, "rb") as fh:
@@ -429,24 +425,19 @@ def _flat_file_to_parquet(flat_path: Path, cache_path: Path, tag: str) -> None:
                     batch.append(rec)
                     kept += 1
             if len(batch) >= CHUNK_ROWS:
-                writer.write_table(pa.Table.from_pylist(batch, schema=schema))
+                chunks.append(pl.DataFrame(batch, schema=_POLARS_SCHEMA))
                 batch = []
                 gc.collect()
 
     if batch:
-        writer.write_table(pa.Table.from_pylist(batch, schema=schema))
-    writer.close()
-    print(f"  [{tag}] Done - {total:,} records read, {kept:,} rows kept "
+        chunks.append(pl.DataFrame(batch, schema=_POLARS_SCHEMA))
+
+    print(f"  [BNMTBL4] Done - {total:,} records read, {kept:,} rows kept "
           f"(UTREF1='I' AND UTREF4 not blank).")
 
-
-def _load_cached_flatfile(flat_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{flat_path.stem}.parquet"
-    if _cache_is_fresh(flat_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
-    else:
-        _flat_file_to_parquet(flat_path, cache_path, tag)
-    return cache_path
+    if not chunks:
+        return pl.DataFrame(schema=_POLARS_SCHEMA)
+    return pl.concat(chunks, how="vertical")
 
 
 def _read_reptdate(flat_path: Path) -> date:
@@ -919,21 +910,17 @@ def main():
     rdate_str = reptdate.strftime("%d/%m/%y")   # PUT(REPTDATE,DDMMYY8.)
     print(f"  REPTDATE : {reptdate.isoformat()}   RDATE: {rdate_str}")
 
-    print("\nStep 3: Caching BNMTBL4 to Parquet (byte-offset + packed-decimal parse)...")
-    cache_path = _load_cached_flatfile(kapiti4_path, "BNMTBL4")
-
-    print("\nStep 4: Loading cached rows via DuckDB...")
-    con = duckdb.connect(database=":memory:")
-    base_df = con.execute(f"SELECT * FROM read_parquet('{cache_path.as_posix()}')").pl()
-    con.close()
+    print("\nStep 3: Parsing BNMTBL4 flat file directly (byte-offset + "
+          "packed-decimal parse, no Parquet cache)...")
+    base_df = _parse_flatfile_to_polars(kapiti4_path)
     print(f"  Rows loaded: {len(base_df):,}")
 
-    print("\nStep 5: Building LIQCLASS base rows (AMOUNT/STATUS/ISSDT/C2)...")
+    print("\nStep 4: Building LIQCLASS base rows (AMOUNT/STATUS/ISSDT/C2)...")
     base_rows = [_augment_base(r, reptdate) for r in base_df.iter_rows(named=True)]
     del base_df
     gc.collect()
 
-    print("\nStep 6: Building LIQCLAS1 / LIQCLAS2 / LIQCLAS3...")
+    print("\nStep 5: Building LIQCLAS1 / LIQCLAS2 / LIQCLAS3...")
     liqclas1_rows = [r for r in (_build_liqclas1(rec) for rec in base_rows) if r is not None]
     liqclas2_rows = [r for rec in base_rows for r in _build_liqclas2(rec)]
     liqclas3_rows = _build_liqclas3(liqclas2_rows)
@@ -941,23 +928,23 @@ def main():
     print(f"  LIQCLAS1: {len(liqclas1_rows):,}  LIQCLAS2: {len(liqclas2_rows):,}  "
           f"LIQCLAS3: {len(liqclas3_rows):,}  Combined: {len(liqclass_combined):,}")
 
-    print("\nStep 7: Computing pricing (Appendix 1 formulae) per row...")
+    print("\nStep 6: Computing pricing (Appendix 1 formulae) per row...")
     priced_rows = [_compute_pricing(r) for r in liqclass_combined]
 
-    print("\nStep 8: PROC SORT BY UTSTY CLASS (stable)...")
+    print("\nStep 7: PROC SORT BY UTSTY CLASS (stable)...")
     priced_rows.sort(key=lambda r: (r["UTSTY"], r["CLASS"]))
 
-    print("\nStep 9: Applying MATDTEX (%INC PGM(MATDTEX)) REMMTH reclassification...")
+    print("\nStep 8: Applying MATDTEX (%INC PGM(MATDTEX)) REMMTH reclassification...")
     for r in priced_rows:
         r["REMMTH"] = calc_remmth(r["REPTDATE"], r["MATDT"], current_remmth=r["REMMTH"])
         r["MRNGE"] = remfmt_label(r["REMMTH"])
 
-    print("\nStep 10: Building LIQASSET (PROC SUMMARY + BY-group accumulation)...")
+    print("\nStep 9: Building LIQASSET (PROC SUMMARY + BY-group accumulation)...")
     liqasset_summary = _build_liqasset_summary(priced_rows)
     liqasset_rows = _build_liqasset(liqasset_summary)
     print(f"  LIQASSET rows: {len(liqasset_rows):,}")
 
-    print("\nStep 11: Rendering report...")
+    print("\nStep 10: Rendering report...")
     report_lines = []
     report_lines += _render_print(priced_rows, rdate_str)
 
@@ -992,7 +979,7 @@ def main():
                                       "CLASS-2 LIQUID ASSETS BY",
                                       ["MKVNIDY"], 30, measure_width=20)
 
-    print(f"\nStep 12: Writing output to {OUTPUT_FILE} ...")
+    print(f"\nStep 11: Writing output to {OUTPUT_FILE} ...")
     with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
         for asa, text in report_lines:
             fh.write(asa + text + "\n")
