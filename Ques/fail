@@ -1,3 +1,16 @@
+# Physical input #1: BNMTBL4 -- SAP.PBB.KAPITI4(0), raw flat file, static name.
+KAPITI4_FILE = STG_DIR / "sasdata" / "kapiti4.dat"
+
+
+
+    print("Step 1: Locating BNMTBL4 (KAPITI4) flat file...")
+    kapiti4_path = KAPITI4_FILE
+    if not kapiti4_path.exists():
+        raise FileNotFoundError(f"Expected BNMTBL4 file not found: {kapiti4_path}")
+    print(f"  Using: {kapiti4_path}")
+
+
+
 print("\nStep 9: Applying MATDTEX (%INC PGM(MATDTEX)) REMMTH reclassification...")
 for r in priced_rows:
     r["REMMTH"] = calc_remmth(r["REPTDATE"], r["MATDT"], current_remmth=r["REMMTH"])
