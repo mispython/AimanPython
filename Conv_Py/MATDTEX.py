@@ -1,5 +1,28 @@
 # ============================================================================
-# FILE: MATDTEX.py  (updated)
+# FILE: MATDTEX.py
+# PURPOSE: %INC PGM(MATDTEX) member -- reproduces the BNM remaining-maturity
+#          band classification (REMMTH = 1..6) used by EIBMLI4I.
+#
+# Original SAS (source-library member, textually inserted at the %INC point
+# inside EIBMLI4I's own DATA LIQCLASS step -- NOT a macro definition, and NOT
+# a runtime data input):
+#
+#   DATA LIQCLASS;
+#     SET LIQCLASS;
+#     DAYA =REPTDATE+1;
+#     MM0  =MONTH(DAYA);  YY0=YEAR(DAYA);  YY1=YY0+1;
+#     MM1=MM0+01; MM2=MM0+03; MM3=MM0+06; MM4=MM0+12;
+#     IF (01<=MM0<=06) THEN DO ... END;
+#     IF (07<=MM0<=09) THEN DO ... END;
+#     IF (10<=MM0<=12) THEN DO ... END;
+#     IF (DAYA<=MATDT<DAYB) THEN REMMTH=01; ELSE ... ELSE
+#     IF (MATDT>DAYF) THEN REMMTH=06;
+#   RUN;
+#
+# This %INC executes AFTER EIBMLI4I's PROC SORT and OVERWRITES the earlier,
+# continuous REMMTH value (ROUND((TSM/365)*12,.01)) computed in EIBMLI4I's
+# main DATA step, with this 1..6 band classification. EIBMLI4I's later
+# "MRNGE=PUT(REMMTH,REMFMT.);" formats THIS value, not the earlier one.
 # ============================================================================
 
 from datetime import date, timedelta
