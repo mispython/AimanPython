@@ -949,7 +949,7 @@ def main():
 
     print("\nStep 9: Applying MATDTEX (%INC PGM(MATDTEX)) REMMTH reclassification...")
     for r in priced_rows:
-        r["REMMTH"] = calc_remmth(r["REPTDATE"], r["MATDT"])
+        r["REMMTH"] = calc_remmth(r["REPTDATE"], r["MATDT"], current_remmth=r["REMMTH"])
         r["MRNGE"] = remfmt_label(r["REMMTH"])
 
     print("\nStep 10: Building LIQASSET (PROC SUMMARY + BY-group accumulation)...")
