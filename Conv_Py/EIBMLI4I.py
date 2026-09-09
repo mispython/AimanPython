@@ -1,275 +1,284 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
-PROGRAM : EIBMLI4I
-JCL     : EIBMLI4I JOB MISEIS,EIBMLIQ4,CLASS=A
-PURPOSE : ADHOC - SAIFUL ADZLIM  ISLAMIC PART 4
-          READS FIXED-WIDTH BINARY INPUT (BNMTBL4), CLASSIFIES LIQUEFIABLE ASSETS, COMPUTES DISCOUNT AMOUNTS,
-            AND PRODUCES PROC PRINT + PROC TABULATE
-          REPORTS WITH ASA CARRIAGE CONTROL CHARACTERS.
-INPUT   : BNMTBL4  -- SAP.PBB.KAPITI4(0)  (binary .dat)
-OUTPUT  : REPORT   -- EIBMLI4I_report.txt (ASA CC, PS=60)
+Program : EIBMLI4I.py
+Purpose : ADHOC (Islamic Part 4) - Stock of Liquefiable Assets report for
+          BNM statutory liquidity-framework classification (Report ID:
+          EIBMLIQ4). Classifies portfolio positions into liquidity classes
+          A-F/R/X/Y, computes discount/pricing (Appendix 1 bond formulae),
+          and reports market value, discounted value and remaining
+          maturity by security type and BNM liquidity class.
+
+Dependency:
+    %INC PGM(MATDTEX);  -> from MATDTEX import calc_remmth
+        Source-library member (//PGM DD DSN=SAP.BNM.PROGRAM), NOT a runtime
+        data input. Textually inserted after PROC SORT in the original SAS;
+        overwrites LIQCLASS.REMMTH (previously a continuous value) with a
+        1-6 maturity-band classification. Converted to its own module,
+        MATDTEX.py, and imported here.
+
+============================================================================
+INPUT CONFIRMATION -- FLAT FILE (NOT .sas7bdat)
+============================================================================
+//BNMTBL4 DD DSN=SAP.PBB.KAPITI4(0),DISP=SHR  -- GDG(0) = latest generation.
+The SAS INFILE/INPUT statement reads this by ABSOLUTE BYTE OFFSET, with
+several fields declared as PDw.d (packed-decimal / COMP-3 binary), e.g.
+"@27 UTCPR PD6.7". This is unambiguous proof the physical input is a raw
+mainframe flat file, not a .sas7bdat dataset -- per project convention this
+requires byte-offset slicing and packed-decimal unpacking, never
+read_parquet()/read_csv() on the raw file. The GDG(0) reference (no literal
+date token in the DSN) means the "latest" physical copy must be resolved by
+directory scan, so input_date.get_latest_file() is used here (per project
+convention: deterministic dates are built directly; get_latest_file() is
+reserved for exactly this GDG-style "scan for latest" case).
+
+The parsed rows are still cached to Parquet (chunked read -> parse -> write,
+DuckDB reads the cache afterwards) to avoid re-parsing the raw flat file on
+every run, mirroring the EIBDLN1M / EIIMRM01 sas7bdat->Parquet cache pattern
+-- adapted here to a raw byte-offset + packed-decimal source instead of a
+pandas read_sas() source.
+
+//PGM DD DSN=SAP.BNM.PROGRAM,DISP=SHR is the source-code library used only
+for the %INC PGM(MATDTEX) compile-time include above; it is not read as
+data at runtime and has no Python counterpart beyond the MATDTEX.py import.
+
+============================================================================
+REPORT DATE
+============================================================================
+DATA REPTDATE; INFILE BNMTBL4 OBS=1; INPUT @113 UTRPT $10.;
+REPTDATE=INPUT(UTRPT,DDMMYY10.);
+This reads ONLY the first physical record of the flat file and derives the
+report date from the record's own embedded UTRPT field (byte 113, 10 chars).
+This is the authoritative, data-driven "as-at" date for the whole batch.
+REPTDATE.py's get_reptdate_values() ("today - 1") is intentionally NOT used
+to compute this program's REPTDATE -- substituting a calendar default here
+would silently diverge from the batch's actual as-of date embedded in the
+source file. get_reptdate_values() is not imported, for the same reason
+(there is nothing correct to import it for in this program).
+
+============================================================================
+OUTPUT
+============================================================================
+//SASLIST DD SYSOUT=X -- a printed report only (PROC PRINT + PROC TABULATE),
+no dated output dataset. OPTIONS NOCENTER YEARCUTOFF=1950 PS=60 LS=132;
+no explicit RECFM=FBA override -> default SAS print-file behaviour applies,
+i.e. every output line carries a leading ASA carriage-control byte ('1' =
+new page/form-feed, ' ' = single space). Since the filename has no date
+token, output_date.build_output_file() is not applicable here (per project
+convention: fixed/catalogued output names stay fixed) -- OUTPUT_FILE is a
+plain fixed name, EIBMLI4I.txt.
+
+============================================================================
+KNOWN SAS SOURCE QUIRKS -- PRESERVED VERBATIM (dead-code preservation)
+============================================================================
+- "IF CLASS NE ' ' OR CLASS NE . ;" (near the top of the pricing DATA step)
+  uses OR of two conditions that can never both be false for any value of a
+  character variable -- this subsetting IF is always TRUE (a no-op, likely
+  meant as AND). Preserved: no filtering happens at this point.
+- "IF _N_=1 THEN DO; SET REPTDATE; RPYR=...; RPMTH=...; RPDAY=...; IF MOD
+  (RPYR,4)=0 THEN RD2=29; END;" re-derives RPYR/RPMTH/RPDAY/RD2 from the
+  one-row REPTDATE dataset, but ONLY for the first output row, and these
+  variables are never referenced again anywhere else in the program. This
+  block (and the near-identical RPYR/RPMTH/RPDAY/RD2 assignment earlier,
+  from each row's own UTRPT) has zero effect on the final report and is
+  intentionally NOT implemented as active logic, only documented here.
+- WHEN('CB1','CNT','SMC','SAC') SLD dead-branch: 'SLD' also appears in the
+  later "WHEN('SSD','SLD')" DISTAMT SELECT -- since SAS SELECT/WHEN takes
+  the FIRST matching WHEN, 'SLD' always matches the earlier
+  WHEN('MGS','CBB','SLD','CB1','CB2','CMB','PNB') DISTAMT formula; the SLD
+  branch inside WHEN('SSD','SLD') is unreachable dead code. Preserved as
+  coded (see _compute_distamt()).
 """
 
-import struct
-import datetime
-import math
-import sys
-import polars as pl
+import gc
 from pathlib import Path
-from collections import defaultdict
+from datetime import date, timedelta
 
-# ---------------------------------------------------------------------------
-# Dependency: MATDTEX (%INC PGM(MATDTEX))
-# ---------------------------------------------------------------------------
-from MATDTEX import apply_matdtex, _mdy, _month, _year, SAS_EPOCH
+import duckdb
+import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-# ---------------------------------------------------------------------------
-# Path Configuration
-# ---------------------------------------------------------------------------
-INPUT_DIR   = Path("input")
-OUTPUT_DIR  = Path("output")
+from input_date import get_latest_file
+from MATDTEX import calc_remmth
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# Physical input #1: BNMTBL4 -- SAP.PBB.KAPITI4(0), raw flat file, GDG-latest.
+INPUT_KAPITI4_DIR = STG_DIR / "sasdata"
+INPUT_KAPITI4_PREFIX = "kapiti4"
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLI4I"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_DIR = BASE_DIR / "output" / "EIBMLI4I"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / "EIBMLI4I.txt"
 
-# //BNMTBL4 DD DSN=SAP.PBB.KAPITI4(0) -- binary fixed-width input
-INPUT_FILE  = INPUT_DIR / "bnmtbl4.dat"
-OUTPUT_FILE = OUTPUT_DIR / "EIBMLI4I_report.txt"
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60    # OPTIONS PS=60
+LINE_SIZE  = 132   # OPTIONS LS=132
 
-# Report page settings
-PAGE_LENGTH = 60    # PS=60
-LINE_SIZE   = 132   # LS=132
+# ============================================================================
+# FLAT FILE RECORD LAYOUT (byte offsets are 1-indexed, as in the SAS INPUT
+# statement; "pd" = packed-decimal / COMP-3, decoded then divided by 10**d)
+# ============================================================================
+# (name, start_col, length, type, decimals)
+FIELDS = [
+    ("UTOSD",   1,  10, "char", None),  # SETTLEMENT/TRANSACTION DATE
+    ("UTSMN",  11,  16, "char", None),  # SECURITY MNEMONIC/STOCK CODE
+    ("UTCPR",  27,   6, "pd",   7),     # DISCOUNT/COUPON RATE
+    ("UTYLD",  33,   4, "pd",   4),     # YIELD
+    ("UTFCV",  37,   8, "pd",   2),     # FACE VALUE
+    ("UTDCV",  45,   8, "pd",   2),     # COST/CAPITAL VALUE
+    ("UTMKV",  53,   8, "pd",   2),     # MARKET VALUE
+    ("UTMDT",  61,  10, "char", None),  # MATURITY DATE
+    ("UTINT",  71,   8, "pd",   2),     # INTEREST AMOUNT
+    ("UTPLS",  79,   8, "pd",   2),     # PROFIT & LOSS
+    ("UTSTY",  87,   3, "char", None),  # SECURITY TYPE
+    ("UTTTY",  90,   1, "char", None),  # TRANSACTION TYPE
+    ("UTITY",  91,   1, "char", None),  # INSTRUMENT TYPE
+    ("UTIPI",  92,   1, "char", None),  # INTEREST PAYMENT INDICATOR
+    ("UTLCD",  93,  10, "char", None),  # LAST INTEREST PAYMENT DATE
+    ("UTNCD", 103,  10, "char", None),  # NEXT INTEREST PAYMENT DATE
+    ("UTRPT", 113,  10, "char", None),  # REPORTING DATE
+    ("UTSTS", 123,   5, "char", None),  # STATUS
+    ("UTAMS", 128,   8, "pd",   2),     # SALES PROCEEDS
+    ("UTCLS", 136,   1, "char", None),  # CLASS
+    ("UTPGMID",137, 10, "char", None),  # PROGRAM ID
+    ("UTIDT", 147,  10, "char", None),  # ISSUE DATE (MM-DD-YYYY)
+    ("UTRMD", 157,  10, "char", None),  # REPO MAT DATE
+    ("UTAMP", 167,   8, "pd",   2),     # PURCHASE PROCEEDS
+    ("UTREF", 175,   4, "char", None),  # PORTFOLIO REF
+    ("UTREF1",175,   1, "char", None),  # PORTFOLIO REF, redefinition: 1st char
+    ("UTREF4",178,   1, "char", None),  # PORTFOLIO REF, redefinition: 4th char
+    ("UTTYP", 191,   3, "char", None),  # PORTFOLIO TYP
+]
 
-# ---------------------------------------------------------------------------
-# OPTIONS NOCENTER YEARCUTOFF=1950 PS=60 LS=132
-# ---------------------------------------------------------------------------
+# Highest referenced field extent (@191 UTTYP $3. -> ends at byte 193). No
+# RECFM/LRECL is given explicitly in the JCL/INFILE, so this is the minimum
+# record length implied by the layout and is used as-is (no padding assumed).
+RECORD_LENGTH = 193
 
-# ---------------------------------------------------------------------------
-# PROC FORMAT equivalents
-# ---------------------------------------------------------------------------
-def fmt_remfmt(remmth) -> str:
-    """VALUE REMFMT bucketed remaining-maturity label (15 chars)."""
-    try:
-        v = float(remmth)
-    except (TypeError, ValueError):
-        return '>1 YEAR        '
-    if   v <= 0.255:                 return 'UP TO 1 WK     '
-    elif 0.255 < v <= 1:             return '>1 WK - 1 MTH  '
-    elif 1     < v <= 3:             return '>1 MTH - 3 MTHS'
-    elif 3     < v <= 6:             return '>3 - 6 MTHS    '
-    elif 6     < v <= 12:            return '>6 MTHS - 1 YR '
-    else:                            return '>1 YEAR        '
-
-
-def fmt_remfmta(remmth) -> str:
-    """VALUE REMFMTA -- 2-char bucket code."""
-    try:
-        v = float(remmth)
-    except (TypeError, ValueError):
-        return '06'
-    if   v <= 0.255:                 return '01'
-    elif 0.255 < v <= 1:             return '02'
-    elif 1     < v <= 3:             return '03'
-    elif 3     < v <= 6:             return '04'
-    elif 6     < v <= 12:            return '05'
-    else:                            return '06'
-
-
-CLASSF_MAP = {
-    'A': 'RM MKTBL SECUR/PAPERS ISSUED BY FED GOVT/BNM',
-    'B': 'CAGAMAS BONDS & NOTES',
-    'C': 'BAS ISSUED BY TIER1/AAA-RATED INST.',
-    'D': 'BAS ISSUED BY TIER2 & NON-AAA',
-    'E': 'NIDS ISSUED BY RATING',
-    'F': 'STOCK                ',
-    'R': 'REVERSE REPO            ',
-    'X': 'NIDS UDR REPO (LIABILITIES)',
-    'Y': 'NIDS UDR REPO (ASSETS)  ',
-}
+_FIELD_NAMES = [f[0] for f in FIELDS]
 
 
-# ---------------------------------------------------------------------------
-# Packed-decimal (PD) decoder
-# SAS PD format: PDw.d  -> w bytes packed decimal, d implied decimal places
-# ---------------------------------------------------------------------------
-def decode_pd(raw: bytes, d: int = 0) -> float:
-    """
-    Decode IBM packed-decimal bytes into a Python float.
-    Last nibble: C/F = positive, D = negative.
-    d = number of implied decimal places.
-    """
-    if not raw or all(b == 0 for b in raw):
-        return 0.0
-    hex_str = raw.hex()
-    sign_nibble = hex_str[-1].upper()
-    digits      = hex_str[:-1]
-    try:
-        value = int(digits)
-    except ValueError:
-        return 0.0
-    if sign_nibble == 'D':
+def _build_arrow_schema() -> pa.Schema:
+    return pa.schema([
+        pa.field(name, pa.float64() if ftype == "pd" else pa.string())
+        for name, _, _, ftype, _ in FIELDS
+    ])
+
+
+def _unpack_pd(raw: bytes, decimals: int):
+    """Unpack a COMP-3 / packed-decimal (PDw.d) field. Each byte holds two
+    BCD digits except the last byte, whose low nibble is the sign
+    (0xD = negative; 0xC/0xF = positive). Returns None (SAS missing) if the
+    bytes are not valid packed decimal (e.g. blank-filled field)."""
+    if not raw:
+        return None
+    digits = []
+    for b in raw[:-1]:
+        digits.append((b >> 4) & 0x0F)
+        digits.append(b & 0x0F)
+    last = raw[-1]
+    digits.append((last >> 4) & 0x0F)
+    sign_nibble = last & 0x0F
+    if any(d > 9 for d in digits):
+        return None
+    value = 0
+    for d in digits:
+        value = value * 10 + d
+    if sign_nibble == 0x0D:
         value = -value
-    return value / (10 ** d)
+    return value / (10 ** decimals)
 
 
-# ---------------------------------------------------------------------------
-# Date helpers (SAS date integer <-> Python date)
-# ---------------------------------------------------------------------------
-def sas_to_date(sas_int) -> datetime.date | None:
-    if sas_int is None:
+def _parse_record(raw: bytes):
+    """Parse one RECORD_LENGTH-byte record into a dict, applying the
+    subsetting filter 'IF UTREF1 EQ 'I' AND UTREF4 NE '  ';'. Returns None
+    if the record does not pass the filter."""
+    rec = {}
+    for name, start, length, ftype, decimals in FIELDS:
+        segment = raw[start - 1:start - 1 + length]
+        if ftype == "char":
+            rec[name] = segment.decode("latin1")
+        else:
+            rec[name] = _unpack_pd(segment, decimals)
+
+    if rec["UTREF1"].strip() != "I":
         return None
-    try:
-        return SAS_EPOCH + datetime.timedelta(days=int(sas_int))
-    except (ValueError, OverflowError):
+    # UTREF4 (1 char) compared against '  ' (2 blanks) in SAS: the shorter
+    # operand is blank-padded for the comparison, so this is equivalent to
+    # "UTREF4 is not blank".
+    if rec["UTREF4"].strip() == "":
         return None
+    return rec
 
 
-def date_to_sas(dt: datetime.date | None) -> int | None:
-    if dt is None:
+def _parse_ddmmyy10(s: str):
+    """DDMMYY10. informat -- a 10-char date string such as 'DD/MM/YYYY'
+    (or '-'/'.' separated). Returns None for blank/unparseable input,
+    mirroring SAS producing a missing value (with a log note) rather than
+    aborting."""
+    if s is None:
         return None
-    return (dt - SAS_EPOCH).days
-
-
-def parse_ddmmyy10(s: str) -> int | None:
-    """Parse DD-MM-YYYY or DD/MM/YYYY string -> SAS date int."""
-    s = str(s).strip()
-    for fmt in ('%d-%m-%Y', '%d/%m/%Y', '%d%m%Y'):
+    s = s.strip()
+    if not s:
+        return None
+    for sep in ("/", "-", "."):
+        if sep in s:
+            parts = s.split(sep)
+            if len(parts) == 3:
+                dd, mm, yyyy = parts
+                try:
+                    return date(int(yyyy), int(mm), int(dd))
+                except ValueError:
+                    return None
+    if len(s) == 8 and s.isdigit():
         try:
-            dt = datetime.datetime.strptime(s, fmt).date()
-            return date_to_sas(dt)
+            return date(int(s[4:8]), int(s[2:4]), int(s[0:2]))
         except ValueError:
-            pass
+            return None
     return None
 
 
-def parse_ddmmyy8(s: str) -> int | None:
-    """Parse DDMMYYYY or DD-MM-YY string -> SAS date int."""
-    s = str(s).strip()
-    for fmt in ('%d%m%Y', '%d-%m-%y', '%d/%m/%y', '%d-%m-%Y'):
-        try:
-            dt = datetime.datetime.strptime(s, fmt).date()
-            return date_to_sas(dt)
-        except ValueError:
-            pass
-    return None
+# ============================================================================
+# SAFE ARITHMETIC HELPERS (SAS missing-value propagation: any missing
+# operand -> missing result, rather than raising)
+# ============================================================================
+def _sadd(a, b): return None if a is None or b is None else a + b
+def _ssub(a, b): return None if a is None or b is None else a - b
+def _smul(a, b): return None if a is None or b is None else a * b
+def _sdiv(a, b): return None if a is None or b is None or b == 0 else a / b
+def _spow(a, b): return None if a is None or b is None else a ** b
 
 
-def fmt_ddmmyy8(sas_int) -> str:
-    """Format SAS date as DDMMYYYY (8 chars)."""
-    dt = sas_to_date(sas_int)
-    if dt is None:
-        return '        '
-    return dt.strftime('%d/%m/%y')
+def _sas_round(x, unit=1.0):
+    """SAS ROUND(x, unit): rounds to nearest multiple of unit, halves away
+    from zero (not Python's default banker's rounding)."""
+    if x is None:
+        return None
+    scaled = x / unit
+    r = int(scaled + 0.5) if scaled >= 0 else -int(-scaled + 0.5)
+    return r * unit
 
 
-def fmt_date_display(sas_int) -> str:
-    """Display date for report, blank if missing."""
-    if sas_int is None:
-        return '        '
-    return fmt_ddmmyy8(sas_int)
+def _days_between(a, b):
+    """(a - b).days for two dates, propagating missing as None."""
+    return None if a is None or b is None else (a - b).days
 
 
-# ---------------------------------------------------------------------------
-# Read binary input file (BNMTBL4)
-# Record length from field layout: last field ends at @191+3=194 bytes -> LRECL=194
-#
-# Field layout (1-based SAS positions -> 0-based Python slices):
-#   @1   UTOSD  $10   -> [0:10]
-#   @11  UTSMN  $16   -> [10:26]
-#   @27  UTCPR  PD6.7 -> [26:32]   6 bytes, 7 dec
-#   @33  UTYLD  PD4.4 -> [32:36]   4 bytes, 4 dec
-#   @37  UTFCV  PD8.2 -> [36:44]   8 bytes, 2 dec
-#   @45  UTDCV  PD8.2 -> [44:52]   8 bytes, 2 dec
-#   @53  UTMKV  PD8.2 -> [52:60]   8 bytes, 2 dec
-#   @61  UTMDT  $10   -> [60:70]
-#   @71  UTINT  PD8.2 -> [70:78]   8 bytes, 2 dec
-#   @79  UTPLS  PD8.2 -> [78:86]   8 bytes, 2 dec
-#   @87  UTSTY  $3    -> [86:89]
-#   @90  UTTTY  $1    -> [89:90]
-#   @91  UTITY  $1    -> [90:91]
-#   @92  UTIPI  $1    -> [91:92]
-#   @93  UTLCD  $10   -> [92:102]
-#   @103 UTNCD  $10   -> [102:112]
-#   @113 UTRPT  $10   -> [112:122]
-#   @123 UTSTS  $5    -> [122:127]
-#   @128 UTAMS  PD8.2 -> [127:135]  8 bytes, 2 dec
-#   @136 UTCLS  $1    -> [135:136]
-#   @137 UTPGMID $10  -> [136:146]
-#   @147 UTIDT  $10   -> [146:156]
-#   @157 UTRMD  $10   -> [156:166]
-#   @167 UTAMP  PD8.2 -> [166:174]  8 bytes, 2 dec
-#   @175 UTREF  $4    -> [174:178]
-#   @175 UTREF1 $1    -> [174:175]   (overlaps UTREF)
-#   @178 UTREF4 $1    -> [177:178]   (SAS @178 = position 178 = index 177)
-#   @191 UTTYP  $3    -> [190:193]
-# ---------------------------------------------------------------------------
-LRECL = 193   # last field ends at position 193 (0-based index 190+3)
-
-
-def read_input_records(path: Path) -> list[dict]:
-    """Read fixed-width binary BNMTBL4 file, decode all fields per record."""
-    records = []
-    raw_bytes = path.read_bytes()
-    # Records are LRECL bytes each (no newline in true mainframe FB format).
-    # If file has newline-delimited records, strip them.
-    if b'\n' in raw_bytes:
-        lines = raw_bytes.split(b'\n')
-    else:
-        lines = [raw_bytes[i:i+LRECL] for i in range(0, len(raw_bytes), LRECL)]
-
-    for line in lines:
-        if len(line) < LRECL:
-            if len(line) == 0:
-                continue
-            line = line.ljust(LRECL, b' ')
-
-        def s(start, end):
-            return line[start:end].decode('cp037', errors='replace').strip()
-
-        def pd(start, end, d):
-            return decode_pd(line[start:end], d)
-
-        rec = {
-            'UTOSD'  : s(0,   10),
-            'UTSMN'  : s(10,  26),
-            'UTCPR'  : pd(26, 32, 7),
-            'UTYLD'  : pd(32, 36, 4),
-            'UTFCV'  : pd(36, 44, 2),
-            'UTDCV'  : pd(44, 52, 2),
-            'UTMKV'  : pd(52, 60, 2),
-            'UTMDT'  : s(60,  70),
-            'UTINT'  : pd(70, 78, 2),
-            'UTPLS'  : pd(78, 86, 2),
-            'UTSTY'  : s(86,  89),
-            'UTTTY'  : s(89,  90),
-            'UTITY'  : s(90,  91),
-            'UTIPI'  : s(91,  92),
-            'UTLCD'  : s(92,  102),
-            'UTNCD'  : s(102, 112),
-            'UTRPT'  : s(112, 122),
-            'UTSTS'  : s(122, 127),
-            'UTAMS'  : pd(127, 135, 2),
-            'UTCLS'  : s(135, 136),
-            'UTPGMID': s(136, 146),
-            'UTIDT'  : s(146, 156),
-            'UTRMD'  : s(156, 166),
-            'UTAMP'  : pd(166, 174, 2),
-            'UTREF'  : s(174, 178),
-            'UTREF1' : s(174, 175),
-            'UTREF4' : s(177, 178),
-            'UTTYP'  : s(190, 193),
-        }
-        records.append(rec)
-    return records
-
-
-# ---------------------------------------------------------------------------
-# %MACRO MTHENDDT — adjust DAYTRAN to month-end day when MTHEND='Y'
-# ---------------------------------------------------------------------------
-def macro_mthenddt(mthend: str, mthipd: int, yrtran: int, daytran: int) -> int:
-    """
-    Replicate %MTHENDDT macro.
-    Returns adjusted DAYTRAN.
-    """
-    if mthend != 'Y':
+# ============================================================================
+# %CALCIPD / %MTHENDDT (SAS program-local macros -- only ever called for
+# this program's own DATA step; not a shared dependency, kept inline)
+# ============================================================================
+def _mthend_adjust(mthend, mthipd, yrtran, daytran):
+    """%MTHENDDT macro."""
+    if mthend != "Y" or mthipd is None or yrtran is None:
         return daytran
     if mthipd in (1, 3, 5, 7, 8, 10, 12):
         mthday = 31
@@ -277,929 +286,724 @@ def macro_mthenddt(mthend: str, mthipd: int, yrtran: int, daytran: int) -> int:
         mthday = 30
     else:
         mthday = 29 if (yrtran % 4 == 0) else 28
-    if daytran > mthday:
+    if daytran is not None and daytran > mthday:
         daytran = mthday
     return daytran
 
 
-# ---------------------------------------------------------------------------
-# %MACRO CALCIPD — calculate PREINTDT and CURINTDT
-# ---------------------------------------------------------------------------
-def macro_calcipd(matdt_sas: int, reptdt_sas: int):
-    """
-    Replicate %CALCIPD macro.
-    Returns (preintdt_sas, curintdt_sas) as SAS date integers or None.
-    """
-    dt_mat  = sas_to_date(matdt_sas)
-    if dt_mat is None:
+def _mdy_safe(month, day, year):
+    """SAS MDY() -- None (SAS missing) for an out-of-range month/day."""
+    if month is None or day is None or year is None:
+        return None
+    month = int(month)
+    if not (1 <= month <= 12):
+        return None
+    try:
+        return date(int(year), month, int(day))
+    except ValueError:
+        return None
+
+
+def _calc_ipd(matdt, reptdt):
+    """%CALCIPD macro -- returns (preintdt, curintdt)."""
+    if matdt is None or reptdt is None:
         return None, None
 
-    mthend  = 'N'
-    npay    = 6
-    nyear   = 0
+    mthend = "Y" if (matdt + timedelta(days=1)).day == 1 else "N"
+    npay = 6
 
-    # IF DAY(MATDT+1)=1 THEN MTHEND='Y'
-    dt_mat_plus1 = sas_to_date(matdt_sas + 1)
-    if dt_mat_plus1 and dt_mat_plus1.day == 1:
-        mthend = 'Y'
+    daytran = matdt.day
+    yrtran = matdt.year
+    mthtran = matdt.month
 
-    daytran = dt_mat.day
-    yrtran  = dt_mat.year
-    mthtran = dt_mat.month
-
-    trandays = matdt_sas - reptdt_sas
-    numofn   = int(trandays / (npay * 30))
-    nummth   = numofn * npay
-    nyear    = int(nummth / 12)
-    nmth     = nummth % 12
-    mthipd   = (mthtran - nmth) - npay
-
+    trandays = (matdt - reptdt).days
+    numofn = int(trandays / (npay * 30))
+    nummth = numofn * npay
+    nyear = int(nummth / 12)
+    nmth = nummth % 12
+    mthipd = (mthtran - nmth) - npay
     if mthipd <= 0:
-        mthipd  = mthipd + 12
-        nyear  += 1
-
+        mthipd += 12
+        nyear += 1
     yrtran = yrtran - nyear
-    daytran = macro_mthenddt(mthend, mthipd, yrtran, daytran)
 
-    preintdt_sas = _mdy(mthipd, daytran, yrtran)
-    if preintdt_sas is None:
-        return None, None
+    daytran = _mthend_adjust(mthend, mthipd, yrtran, daytran)
+    preintdt = _mdy_safe(mthipd, daytran, yrtran)
 
-    # Recalculate from PREINTDT
-    pre_dt  = sas_to_date(preintdt_sas)
-    if pre_dt is None:
-        return None, None
+    curintdt = None
+    if preintdt is not None:
+        daytran = preintdt.day
+        yrtran = preintdt.year
+        mthipd = preintdt.month
 
-    daytran = pre_dt.day
-    yrtran  = pre_dt.year
-    mthipd  = pre_dt.month
+        mthipd += npay
+        if mthipd > 12:
+            yrtran += 1
+            mthipd = mthipd % 12
 
-    mthipd += npay
-    if mthipd > 12:
-        yrtran += 1
-        mthipd  = mthipd % 12
+        daytran = _mthend_adjust(mthend, mthipd, yrtran, daytran)
+        curintdt = _mdy_safe(mthipd, daytran, yrtran)
 
-    daytran = macro_mthenddt(mthend, mthipd, yrtran, daytran)
-    curintdt_sas = _mdy(mthipd, daytran, yrtran)
-
-    return preintdt_sas, curintdt_sas
+    return preintdt, curintdt
 
 
-# ---------------------------------------------------------------------------
-# Process REPTDATE (first record only, @113 UTRPT $10.)
-# ---------------------------------------------------------------------------
-def get_reptdate(records: list[dict]) -> tuple[int, str]:
-    """Returns (reptdate_sas_int, rdate_ddmmyy8_str)."""
-    utrpt      = records[0]['UTRPT']
-    reptdate   = parse_ddmmyy10(utrpt)
-    rdate_str  = fmt_ddmmyy8(reptdate)
-    return reptdate, rdate_str
+# ============================================================================
+# PROC FORMAT EQUIVALENTS
+# ============================================================================
+def remfmt_label(value):
+    """VALUE REMFMT. Ranges are inclusive; overlapping boundaries (e.g. 3
+    appears in both '1-3' and '3-6') resolve to the FIRST listed range, as
+    in SAS. SAS missing sorts as LOW, so None maps to the lowest bucket."""
+    if value is None:
+        value = float("-inf")
+    if value <= 0.255:
+        return "UP TO 1 WK     "
+    if value <= 1:
+        return ">1 WK - 1 MTH  "
+    if value <= 3:
+        return ">1 MTH - 3 MTHS"
+    if value <= 6:
+        return ">3 - 6 MTHS    "
+    if value <= 12:
+        return ">6 MTHS - 1 YR "
+    return ">1 YEAR        "
 
 
-# ---------------------------------------------------------------------------
-# Build LIQCLASS DataFrame from raw records
-# ---------------------------------------------------------------------------
-def build_liqclass(records: list[dict], reptdate_global: int) -> pl.DataFrame:
-    """
-    Replicate:
-      DATA LIQCLASS; INFILE BNMTBL4; INPUT ...; IF UTREF1 EQ 'I' AND UTREF4 NE '  ';
-      DATA LIQCLASS; SET LIQCLASS; AMOUNT=UTMKV; REPTDATE=...; STATUS=...; ISSDT=...; C2=...;
-    """
-    rows = []
-    chkdt_sas = date_to_sas(datetime.date(2004, 9, 4))   # CHKDT='04SEP04'D
-
-    for rec in records:
-        # IF UTREF1 EQ 'I' AND UTREF4 NE '  '
-        if rec['UTREF1'] != 'I':
-            continue
-        if rec['UTREF4'].strip() == '':
-            continue
-
-        amount   = rec['UTMKV'] if rec['UTMKV'] != 0 else 0.0
-        reptdate = parse_ddmmyy10(rec['UTRPT'])
-        if reptdate is None:
-            reptdate = reptdate_global
-
-        rpyr  = _year(reptdate)
-        rpmth = _month(reptdate)
-        rpday = sas_to_date(reptdate).day if sas_to_date(reptdate) else 0
-
-        rd2 = 29 if (rpyr % 4 == 0) else 28
-
-        status = rec['UTSTS'][:2] if len(rec['UTSTS']) >= 2 else rec['UTSTS']
-
-        # ISSDT parsing from UTIDT (format MM-DD-YYYY per label)
-        issdt_sas = 0
-        utidt     = rec['UTIDT'].strip()
-        if utidt and utidt != '':
-            issdd_s = utidt[3:5] if len(utidt) >= 5 else ''
-            issmm_s = utidt[0:2] if len(utidt) >= 2 else ''
-            issyy_s = utidt[6:10] if len(utidt) >= 10 else ''
-            try:
-                issdt_sas = _mdy(int(issmm_s), int(issdd_s), int(issyy_s)) or 0
-            except (ValueError, TypeError):
-                issdt_sas = 0
-
-        c2 = 'R' if issdt_sas <= chkdt_sas else 'Y'
-
-        row = dict(rec)
-        row.update({
-            'AMOUNT'  : amount,
-            'REPTDATE': reptdate,
-            'RPYR'    : rpyr,
-            'RPMTH'   : rpmth,
-            'RPDAY'   : rpday,
-            'RD2'     : rd2,
-            'CHKDT'   : chkdt_sas,
-            'STATUS'  : status,
-            'ISSDT'   : issdt_sas,
-            'C2'      : c2,
-            'CLASS'   : '',
-            'SLIPPAGE': 0,
-        })
-        rows.append(row)
-
-    return pl.DataFrame(rows)
+def _remfmt_sort_key(value):
+    """Ordering for REMMTH buckets in the by-REMMTH TABULATE reports,
+    following the VALUE REMFMT declaration order."""
+    order = ["UP TO 1 WK     ", ">1 WK - 1 MTH  ", ">1 MTH - 3 MTHS",
+             ">3 - 6 MTHS    ", ">6 MTHS - 1 YR ", ">1 YEAR        "]
+    label = remfmt_label(value)
+    return order.index(label) if label in order else len(order)
 
 
-# ---------------------------------------------------------------------------
-# Classify records -> LIQCLAS1, LIQCLAS2, LIQCLAS3
-# ---------------------------------------------------------------------------
-def classify(df: pl.DataFrame) -> pl.DataFrame:
-    """
-    Replicate DATA LIQCLAS1, LIQCLAS2, LIQCLAS3 classification logic.
-    Returns combined DataFrame equivalent to:
-      DATA LIQCLASS; SET LIQCLAS1 LIQCLAS2 LIQCLAS3;
-    """
-    liqclas1_rows = []
-    liqclas2_rows = []
+# VALUE REMFMTA. is declared in the SAS source but never referenced by any
+# PUT(...,REMFMTA.) call anywhere in this program -- intentionally not
+# implemented, per project convention (dead PROC FORMAT declaration).
 
-    for row in df.to_dicts():
-        utsty = row['UTSTY'].strip()
-        uttty = row['UTTTY'].strip()
-        c2    = row['C2']
-        utsts = row['UTSTS'].strip()
-        cls   = ''
-        slip  = 0
+_CLASSF = {
+    "A": "RM MKTBL SECUR/PAPERS ISSUED BY FED GOVT/BNM",
+    "B": "CAGAMAS BONDS & NOTES",
+    "C": "BAS ISSUED BY TIER1/AAA-RATED INST.",
+    "D": "BAS ISSUED BY TIER2 & NON-AAA",
+    "E": "NIDS ISSUED BY RATING",
+    "F": "STOCK",
+    "R": "REVERSE REPO",
+    "X": "NIDS UDR REPO (LIABILITIES)",
+    "Y": "NIDS UDR REPO (ASSETS)",
+}
 
-        # ----- LIQCLAS1 classification -----
-        if utsty in ('MGS','MTB','BNB','BNN','BMN','BMC','KHA','MGI','ITB'):
-            cls = 'A'; slip = 2
-            if uttty == 'X': cls = 'R'
-
-        elif utsty in ('IDS','DHB'):
-            cls = 'A'; slip = 3
-            if uttty == 'X': cls = 'R'
-
-        elif utsty == 'DMB':
-            cls = 'A'; slip = 4
-            if uttty == 'X': cls = 'R'
-
-        elif utsty in ('CB2','CF1','CF2','CMB','PNB'):
-            cls = 'B'; slip = 4
-            if utsty == 'CB2' and uttty == 'X' and c2 == 'R':
-                cls = 'R'
-
-        elif utsty in ('CB1','CNT','SMC','SAC'):
-            cls = 'B'; slip = 4
-            if uttty == 'X' and c2 == 'R':
-                cls = 'R'
-            if c2 == 'Y':
-                cls = 'F'; slip = 6
-
-        elif utsty == 'SBA':
-            status2 = utsts[:2] if len(utsts) >= 2 else utsts
-            if status2 in ('P1','P2','AA'):
-                cls = 'C'; slip = 4
-            else:
-                cls = 'D'; slip = 6
-
-        if cls:
-            r = dict(row); r['CLASS'] = cls; r['SLIPPAGE'] = slip
-            liqclas1_rows.append(r)
-
-        # ----- LIQCLAS2 classification -----
-        cls2 = ''; slip2 = 0
-        if utsty in ('SSD','SDC') and utsts == 'P1':
-            cls2 = 'E'; slip2 = 6
-            r = dict(row); r['CLASS'] = cls2; r['SLIPPAGE'] = slip2
-            liqclas2_rows.append(r)
-
-        if utsty in ('SLD','SFD','SZD') and utsts in ('AA','AAA','MARC1','MARC2'):
-            cls2 = 'E'; slip2 = 6
-            r = dict(row); r['CLASS'] = cls2; r['SLIPPAGE'] = slip2
-            liqclas2_rows.append(r)
-
-    # ----- LIQCLAS3: expand UTTTY='R' rows from LIQCLAS2 into X and Y -----
-    liqclas3_rows = []
-    for row in liqclas2_rows:
-        if row['UTTTY'].strip() == 'R':
-            rx = dict(row); rx['CLASS'] = 'X'; liqclas3_rows.append(rx)
-            ry = dict(row); ry['CLASS'] = 'Y'; liqclas3_rows.append(ry)
-
-    all_rows = liqclas1_rows + liqclas2_rows + liqclas3_rows
-    if not all_rows:
-        return pl.DataFrame()
-
-    return pl.DataFrame(all_rows)
+CHKDT = date(2004, 9, 4)          # CHKDT='04SEP04'D
 
 
-# ---------------------------------------------------------------------------
-# Compute financial fields (discount, DISTAMT, interest dates)
-# Replicates the large DATA LIQCLASS SET LIQCLASS computation block
-# ---------------------------------------------------------------------------
-def compute_financials(df: pl.DataFrame, reptdate_global: int) -> pl.DataFrame:
-    """
-    For each row apply the discount/DISTAMT/interest-date calculations.
-    """
-    out_rows = []
+# ============================================================================
+# STEP 1: CACHE STAMP + STREAM RAW FLAT FILE -> PARQUET
+# ============================================================================
+def _cache_is_fresh(src_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= src_path.stat().st_mtime
+    )
 
-    for row in df.to_dicts():
-        cls     = row.get('CLASS', '')
-        # IF CLASS NE ' ' OR CLASS NE .
-        if not cls or cls == ' ':
-            continue
 
-        utsty   = row['UTSTY'].strip()
-        uttty   = row['UTTTY'].strip()
-        utity   = row['UTITY'].strip()
-        utipi   = row['UTIPI'].strip()
-        slippage= float(row.get('SLIPPAGE', 0))
+def _flat_file_to_parquet(flat_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Parsing {flat_path.name} -> {cache_path.name} ...")
+    schema = _build_arrow_schema()
+    writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+    total = 0
+    kept = 0
+    batch = []
 
-        # FORMAT DISCOUNT P 15.6
-        distyld  = float(row['UTYLD']) + slippage
-        discount = (distyld / 100) * float(row['UTMKV'])
-        p        = discount
-        cpn      = float(row['UTCPR'])
-        yld      = distyld
-        rv       = 100.0
-        distamt  = 0.0
+    with open(flat_path, "rb") as fh:
+        while True:
+            block = fh.read(RECORD_LENGTH * CHUNK_ROWS)
+            if not block:
+                break
+            n_full = len(block) // RECORD_LENGTH
+            for i in range(n_full):
+                raw = block[i * RECORD_LENGTH:(i + 1) * RECORD_LENGTH]
+                total += 1
+                rec = _parse_record(raw)
+                if rec is not None:
+                    batch.append(rec)
+                    kept += 1
+            if len(batch) >= CHUNK_ROWS:
+                writer.write_table(pa.Table.from_pylist(batch, schema=schema))
+                batch = []
+                gc.collect()
 
-        reptdt   = parse_ddmmyy10(row['UTRPT']) or reptdate_global
-        settledt = parse_ddmmyy10(row['UTOSD'])
-        preintdt = parse_ddmmyy10(row['UTLCD'])
-        curintdt = parse_ddmmyy10(row['UTNCD'])
-        matdt    = parse_ddmmyy10(row['UTMDT'])
+    if batch:
+        writer.write_table(pa.Table.from_pylist(batch, schema=schema))
+    writer.close()
+    print(f"  [{tag}] Done - {total:,} records read, {kept:,} rows kept "
+          f"(UTREF1='I' AND UTREF4 not blank).")
 
-        if uttty == 'X':
-            matdt = parse_ddmmyy10(row['UTRMD'])
-        if uttty == 'R':
-            if cls == 'X':
-                matdt = parse_ddmmyy10(row['UTMDT'])
-            elif cls == 'Y':
-                matdt = parse_ddmmyy10(row['UTRMD'])
 
-        if matdt is None:
-            out_rows.append(row)
-            continue
+def _load_cached_flatfile(flat_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{flat_path.stem}.parquet"
+    if _cache_is_fresh(flat_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
+    else:
+        _flat_file_to_parquet(flat_path, cache_path, tag)
+    return cache_path
 
-        tsm = matdt - reptdt
 
-        # TM
-        if curintdt is None or curintdt == 0:
-            tm = matdt - reptdt
+def _read_reptdate(flat_path: Path) -> date:
+    """DATA REPTDATE; INFILE BNMTBL4 OBS=1; INPUT @113 UTRPT $10.;
+    REPTDATE=INPUT(UTRPT,DDMMYY10.); -- read only the FIRST physical
+    record of the flat file."""
+    with open(flat_path, "rb") as fh:
+        raw = fh.read(RECORD_LENGTH)
+    utrpt = raw[112:122].decode("latin1")   # @113, length 10 (0-indexed 112)
+    reptdate = _parse_ddmmyy10(utrpt)
+    if reptdate is None:
+        raise ValueError(f"Could not derive REPTDATE from UTRPT={utrpt!r}")
+    return reptdate
+
+
+# ============================================================================
+# LIQCLAS1 / LIQCLAS2 / LIQCLAS3 CLASSIFICATION
+# ============================================================================
+_CLASS_A2 = {"MGS", "MTB", "BNB", "BNN", "BMN", "BMC", "KHA", "MGI", "ITB"}
+_CLASS_A3 = {"IDS", "DHB"}
+_CLASS_A4 = {"DMB"}
+_CLASS_B4A = {"CB2", "CF1", "CF2", "CMB", "PNB"}
+_CLASS_B4B = {"CB1", "CNT", "SMC", "SAC"}
+
+
+def _augment_base(rec, reptdate):
+    """DATA LIQCLASS; SET LIQCLASS; AMOUNT=...; REPTDATE=...; STATUS=...;
+    ISSDT/C2=... (see module docstring re. RPYR/RPMTH/RPDAY/RD2 dead code)."""
+    rec = dict(rec)
+    rec["AMOUNT"] = rec["UTMKV"] if rec["UTMKV"] is not None else 0.0
+    rec["REPTDATE"] = reptdate
+
+    rec["STATUS"] = rec["UTSTS"][:2]
+
+    issdt = date(1959, 12, 31)   # ISSDT=0 (SAS day-0 default) when UTIDT blank
+    utidt = rec["UTIDT"]
+    if utidt.strip():
+        try:
+            issmm = int(utidt[0:2])
+            issdd = int(utidt[3:5])
+            issyy = int(utidt[6:10])
+            issdt = date(issyy, issmm, issdd)
+        except (ValueError, IndexError):
+            issdt = date(1959, 12, 31)
+    rec["C2"] = "R" if issdt <= CHKDT else "Y"
+    return rec
+
+
+def _build_liqclas1(rec):
+    """DATA LIQCLAS1; SET LIQCLASS; SELECT(UTSTY) ... IF CLASS NE '   '
+    THEN OUTPUT LIQCLAS1;"""
+    utsty, utty = rec["UTSTY"], rec["UTTTY"]
+    cls = slippage = None
+
+    if utsty in _CLASS_A2:
+        cls, slippage = "A", 2
+        if utty == "X":
+            cls = "R"
+    elif utsty in _CLASS_A3:
+        cls, slippage = "A", 3
+        if utty == "X":
+            cls = "R"
+    elif utsty in _CLASS_A4:
+        cls, slippage = "A", 4
+        if utty == "X":
+            cls = "R"
+    elif utsty in _CLASS_B4A:
+        cls, slippage = "B", 4
+        if utsty == "CB2" and utty == "X" and rec["C2"] == "R":
+            cls = "R"
+    elif utsty in _CLASS_B4B:
+        cls, slippage = "B", 4
+        if utty == "X" and rec["C2"] == "R":
+            cls = "R"
+        if rec["C2"] == "Y":
+            cls, slippage = "F", 6
+    elif utsty == "SBA":
+        if rec["STATUS"] in ("P1", "P2", "AA"):
+            cls, slippage = "C", 4
         else:
-            tm = curintdt - reptdt
+            cls, slippage = "D", 6
 
-        remmth = round((tsm / 365) * 12, 2)
-        if tsm < 8:
-            remmth = 0.1   # FIXED THIS TO BE MORE ACCURATE
+    if cls is None:
+        return None
+    out = dict(rec)
+    out["CLASS"] = cls
+    out["SLIPPAGE"] = slippage
+    return out
 
-        # Interest calculation block
-        npay = 6
-        dsc  = None
-        dcs  = None
-        dcc  = None
-        ndays= None
 
-        if (utity in ('I', 'F') and utipi != '') or \
-           (utsty in ('SZD','DHB','DMB','IDS','KHA','MGI')):
+def _build_liqclas2(rec):
+    """DATA LIQCLAS2; SET LIQCLASS; two independent OUTPUT conditions
+    (UTSTY groups are disjoint, so at most one fires per row)."""
+    out = []
+    utsty, utsts = rec["UTSTY"], rec["UTSTS"]
+    if utsty in ("SSD", "SDC") and utsts == "P1":
+        r = dict(rec); r["CLASS"] = "E"; r["SLIPPAGE"] = 6
+        out.append(r)
+    if utsty in ("SLD", "SFD", "SZD") and utsts in ("AA", "AAA", "MARC1", "MARC2"):
+        r = dict(rec); r["CLASS"] = "E"; r["SLIPPAGE"] = 6
+        out.append(r)
+    return out
 
-            # %CALCIPD for specific types
-            if utsty in ('DHB','IDS','KHA','DMB','MGI'):
-                # CALCULATE INTEREST PAYMENT DATES
-                preintdt, curintdt = macro_calcipd(matdt, reptdt)
 
-            if preintdt is not None and curintdt is not None:
-                dsc   = curintdt - reptdt
-                dcs   = reptdt   - preintdt
-                dcc   = curintdt - preintdt
-                ndays = matdt    - curintdt
-            else:
-                dsc = dcs = dcc = ndays = None
+def _build_liqclas3(liqclas2_rows):
+    """DATA LIQCLAS3; SET LIQCLAS2; IF UTTTY='R' THEN DO; CLASS='X';
+    OUTPUT; CLASS='Y'; OUTPUT; END; -- rows not matching UTTTY='R' produce
+    no output (OUTPUT present in the DATA step suppresses auto-output)."""
+    out = []
+    for rec in liqclas2_rows:
+        if rec["UTTTY"] == "R":
+            r1 = dict(rec); r1["CLASS"] = "X"
+            r2 = dict(rec); r2["CLASS"] = "Y"
+            out.append(r1)
+            out.append(r2)
+    return out
 
-            if utsty in ('SZD','DHB','DMB','IDS','KHA'):
-                cpn = 0.0
 
-            if remmth < 6 and utity == 'I' and dsc is not None and dcc is not None:
-                cpn2     = cpn / 100
-                yld_frac = yld / 100
-                accint   = cpn2 * (dcs / (2 * dcc))
-                discount = (1 + cpn2 / 2) / (1 + yld_frac * (tsm / (2 * dcc))) - accint
-                p        = discount * 100
-            else:
-                # APPENDIX 1 FORMULA
-                if utsty not in ('SFD','CF1','CF2','CFB','SSD') and \
-                   dsc is not None and dcc is not None and ndays is not None:
-                    # NPAY from UTIPI
-                    if   utipi == 'Q': npay = 3
-                    elif utipi == 'H': npay = 6
-                    elif utipi == 'Y': npay = 12
+# ============================================================================
+# MAIN PRICING (Appendix 1 bond-discount formulae)
+# ============================================================================
+def _compute_pricing(rec):
+    utsty, utty = rec["UTSTY"], rec["UTTTY"]
+    utity, utipi = rec["UTITY"], rec["UTIPI"]
+    cls, slippage = rec["CLASS"], rec["SLIPPAGE"]
 
-                    nmth = round(ndays / 365 * 12, 1)
-                    n    = int(nmth / npay) + 1
+    distyld = _sadd(rec["UTYLD"], slippage)
+    p = _smul(_sdiv(distyld, 100), rec["UTMKV"])
+    discount = p
+    cpn = rec["UTCPR"]
+    yld = distyld
+    rv = 100.0
 
-                    poweri = n - 1 + dsc / dcc
-                    i_val  = rv / ((1 + yld / 200) ** poweri)
+    reptdt = _parse_ddmmyy10(rec["UTRPT"])
+    settledt = _parse_ddmmyy10(rec["UTOSD"])
+    preintdt = _parse_ddmmyy10(rec["UTLCD"])
+    curintdt = _parse_ddmmyy10(rec["UTNCD"])
+    matdt = _parse_ddmmyy10(rec["UTMDT"])
+
+    if utty == "X":
+        matdt = _parse_ddmmyy10(rec["UTRMD"])
+    if utty == "R":
+        if cls == "X":
+            matdt = _parse_ddmmyy10(rec["UTMDT"])
+        if cls == "Y":
+            matdt = _parse_ddmmyy10(rec["UTRMD"])
+
+    tsm = _days_between(matdt, reptdt)
+
+    if curintdt is None or curintdt == 0:
+        tm = tsm
+    else:
+        tm = _days_between(curintdt, reptdt)
+
+    remmth = _sas_round(_smul(_sdiv(tsm, 365), 12), 0.01) if tsm is not None else None
+    if tsm is not None and tsm < 8:
+        remmth = 0.1
+
+    dsc = dcs = dcc = ndays = None
+    npay = None   # per-row local -- SAS variable is not RETAINed
+
+    qualifies = (
+        (utity in ("I", "F") and utipi not in (None, " ", ""))
+        or (utsty in ("SZD", "DHB", "DMB", "IDS", "KHA", "MGI"))
+    )
+
+    if qualifies:
+        if utsty in ("DHB", "IDS", "KHA", "DMB", "MGI"):
+            preintdt, curintdt = _calc_ipd(matdt, reptdt)
+
+        dsc = _days_between(curintdt, reptdt)
+        dcs = _days_between(reptdt, preintdt)
+        dcc = _days_between(curintdt, preintdt)
+        ndays = _days_between(matdt, curintdt)
+
+        if utsty in ("SZD", "DHB", "DMB", "IDS", "KHA"):
+            cpn = 0.0
+
+        if remmth is not None and remmth < 6 and utity == "I":
+            cpn2 = _sdiv(cpn, 100)
+            yld = _sdiv(yld, 100)
+            accint = _smul(cpn2, _sdiv(dcs, _smul(2, dcc)))
+            denom = _sadd(1.0, _smul(yld, _sdiv(tsm, _smul(2, dcc))))
+            numer = _sadd(1.0, _sdiv(cpn2, 2))
+            discount = _ssub(_sdiv(numer, denom), accint)
+            p = _smul(discount, 100)
+        else:
+            if utsty not in ("SFD", "CF1", "CF2", "CFB", "SSD"):
+                if utipi == "Q":
+                    npay = 3
+                elif utipi == "H":
+                    npay = 6
+                elif utipi == "Y":
+                    npay = 12
+                # OTHERWISE: npay stays None (not retained across rows)
+
+                nmth = _sas_round(_smul(_sdiv(ndays, 365), 12), 0.1) if ndays is not None else None
+                n = int(_sdiv(nmth, npay)) + 1 if (nmth is not None and npay) else None
+
+                if n is not None and dcc is not None and dsc is not None:
+                    poweri = _sadd(n - 1, _sdiv(dsc, dcc))
+                    i_val = _sdiv(rv, _spow(_sadd(1.0, _sdiv(yld, 200)), poweri))
                     ii_val = 0.0
-
                     for k in range(1, n + 1):
-                        powerii = k - 1 + dsc / dcc
-                        ii_val += (cpn / 2) / ((1 + yld / 200) ** powerii)
-
-                    iii_val  = 100 * ((cpn / 200) * (dcs / dcc))
-                    discount = i_val + ii_val - iii_val
-                    p        = discount
-
-        reptdays = reptdt - (preintdt if preintdt else reptdt)
-        orgtenor = matdt  - (preintdt if preintdt else matdt)
-        cpn2     = cpn / 100
-        yld2     = yld / 100
-
-        # DISTAMT SELECT(UTSTY)
-        if dcc is None or dcc == 0:
-            dcc_safe = 1
-        else:
-            dcc_safe = dcc
-
-        if utsty in ('MGS','CBB','SLD','CB1','CB2','CMB','PNB'):
-            distamt = float(row['UTFCV']) * ((p / 100) + (cpn2 * reptdays) / (dcc_safe * 2))
-
-        elif utsty in ('CFB','SFD','CF1','CF2'):
-            distamt = float(row['UTFCV']) * ((36500 + (cpn * dcc_safe)) /
-                                              (36500 + (yld  * tm)))
-
-        elif utsty in ('SZD','KHA','IDS','DHB','DMB'):
-            # WHEN('SZD','KHA','IDS','DHB','DMB') -- ISB was commented out
-            distamt = float(row['UTFCV']) * (p / 100)
-
-        elif utsty in ('SSD','SLD'):
-            distamt = float(row['UTFCV']) * (36500 + cpn * orgtenor) / \
-                                             (36500 + yld  * tsm)
-
-        else:
-            distamt = float(row['UTFCV']) * (1 - (yld * tsm) / 36500)
-
-        r = dict(row)
-        r.update({
-            'DISCOUNT' : discount,
-            'P'        : p,
-            'CPN'      : cpn,
-            'YLD'      : yld,
-            'DISTAMT'  : distamt,
-            'REPTDT'   : reptdt,
-            'SETTLEDT' : settledt,
-            'PREINTDT' : preintdt,
-            'CURINTDT' : curintdt,
-            'MATDT'    : matdt,
-            'TSM'      : tsm,
-            'TM'       : tm,
-            'REMMTH'   : remmth,
-            'DSC'      : dsc,
-            'DCS'      : dcs,
-            'DCC'      : dcc_safe,
-            'NDAYS'    : ndays,
-            'REPTDAYS' : reptdays,
-            'ORGTENOR' : orgtenor,
-        })
-        out_rows.append(r)
-
-    return pl.DataFrame(out_rows)
-
-
-# ---------------------------------------------------------------------------
-# ASA report writer
-# ---------------------------------------------------------------------------
-class ReportWriter:
-    def __init__(self, path: Path, page_length: int = PAGE_LENGTH,
-                 line_size: int = LINE_SIZE):
-        self.path        = path
-        self.page_length = page_length
-        self.line_size   = line_size
-        self._lines      = []
-        self._page_lines = 0
-        self._titles     = []
-
-    def set_titles(self, *titles):
-        self._titles = list(titles)
-
-    def _emit(self, cc: str, text: str = ''):
-        self._lines.append(cc + text[:self.line_size])
-
-    def _check_page(self):
-        """Emit page break + title header if page is full."""
-        if self._page_lines >= self.page_length:
-            self._new_page()
-
-    def _new_page(self):
-        if not self._titles:
-            self._emit('1')
-        else:
-            first = True
-            for t in self._titles:
-                cc = '1' if first else ' '
-                self._emit(cc, t.center(self.line_size))
-                first = False
-        self._emit(' ')
-        self._page_lines = len(self._titles) + 2
-
-    def begin(self):
-        self._new_page()
-
-    def detail(self, text: str, double_space: bool = False):
-        self._check_page()
-        cc = '0' if double_space else ' '
-        self._emit(cc, text)
-        self._page_lines += 1
-
-    def blank(self):
-        self._emit(' ')
-        self._page_lines += 1
-
-    def separator(self, char: str = '-'):
-        self._emit(' ', char * min(self.line_size, 132))
-        self._page_lines += 1
-
-    def save(self):
-        with open(self.path, 'w', encoding='utf-8') as fh:
-            for line in self._lines:
-                fh.write(line + '\n')
-
-
-# ---------------------------------------------------------------------------
-# Formatting helpers for report columns
-# ---------------------------------------------------------------------------
-def fmt_comma16_2(v) -> str:
-    try:
-        return f"{float(v):>16,.2f}"
-    except (TypeError, ValueError):
-        return f"{'0.00':>16}"
-
-
-def fmt_num(v, width: int = 12, dec: int = 6) -> str:
-    try:
-        return f"{float(v):>{width}.{dec}f}"
-    except (TypeError, ValueError):
-        return ' ' * width
-
-
-# ---------------------------------------------------------------------------
-# PROC PRINT equivalent
-# VAR UTOSD CPN YLD UTMKV UTMDT UTSTY UTFCV PREINTDT CURINTDT
-#     DISCOUNT DISTAMT UTTTY STATUS UTRMD MRNGE;
-# SUM DISTAMT;
-# FORMAT PREINTDT CURINTDT DDMMYY8.;
-# ---------------------------------------------------------------------------
-def proc_print(df: pl.DataFrame, rw: ReportWriter):
-    # Column headers (SPLIT='*' in SAS wraps on '*'; we use plain labels)
-    hdr = (
-        f"{'OBS':<5} {'UTOSD':<10} {'CPN':>10} {'YLD':>10} {'UTMKV':>14} "
-        f"{'UTMDT':<10} {'UTSTY':<6} {'UTFCV':>14} {'PREINTDT':<10} "
-        f"{'CURINTDT':<10} {'DISCOUNT':>12} {'DISTAMT':>14} "
-        f"{'UTTTY':<6} {'STATUS':<8} {'UTRMD':<10} {'MRNGE':<15}"
-    )
-    rw.detail(hdr)
-    rw.separator('-')
-
-    distamt_sum = 0.0
-    for i, row in enumerate(df.to_dicts(), 1):
-        distamt_val = float(row.get('DISTAMT') or 0)
-        distamt_sum += distamt_val
-        line = (
-            f"{i:<5} "
-            f"{str(row.get('UTOSD') or ''):<10} "
-            f"{fmt_num(row.get('CPN'), 10, 4)} "
-            f"{fmt_num(row.get('YLD'), 10, 4)} "
-            f"{fmt_comma16_2(row.get('UTMKV')):>14} "
-            f"{str(row.get('UTMDT') or ''):<10} "
-            f"{str(row.get('UTSTY') or ''):<6} "
-            f"{fmt_comma16_2(row.get('UTFCV')):>14} "
-            f"{fmt_date_display(row.get('PREINTDT')):<10} "
-            f"{fmt_date_display(row.get('CURINTDT')):<10} "
-            f"{fmt_num(row.get('DISCOUNT'), 12, 6)} "
-            f"{fmt_comma16_2(distamt_val):>14} "
-            f"{str(row.get('UTTTY') or ''):<6} "
-            f"{str(row.get('STATUS') or ''):<8} "
-            f"{str(row.get('UTRMD') or ''):<10} "
-            f"{str(row.get('MRNGE') or ''):<15}"
-        )
-        rw.detail(line)
-
-    rw.separator('=')
-    # SUM DISTAMT
-    sum_line = (
-        f"{'':5} {'':10} {'':10} {'':10} {'':14} "
-        f"{'':10} {'':6} {'':14} {'':10} "
-        f"{'':10} {'':12} {fmt_comma16_2(distamt_sum):>14} "
-        f"{'':6} {'':8} {'':10} {'':15}"
-    )
-    rw.detail(sum_line)
-    rw.blank()
-
-
-# ---------------------------------------------------------------------------
-# PROC TABULATE equivalent
-# Renders a simple cross-tab table with CLASS rows and UTSTY/REMMTH columns
-# ---------------------------------------------------------------------------
-def _tabulate_by_utsty(
-    df: pl.DataFrame,
-    rw: ReportWriter,
-    box_label: str,
-    var_specs: list,   # [(col, label, fmt_fn)]
-    class_filter,      # list of CLASS values or single value
-    where_col: str = 'CLASS',
-):
-    """
-    Replicate:
-      PROC TABULATE; CLASS CLASS UTSTY; VAR ...; TABLE CLASS,UTSTY ALL, vars;
-    """
-    if isinstance(class_filter, str):
-        class_filter = [class_filter]
-
-    sub = df.filter(pl.col(where_col).is_in(class_filter))
-    if sub.is_empty():
-        return
-
-    utst_vals = sorted(sub['UTSTY'].cast(pl.Utf8).unique().to_list())
-    cls_vals  = sorted(sub[where_col].cast(pl.Utf8).unique().to_list())
-
-    # Header
-    col_w = 18
-    rw.detail(f" {box_label}")
-    rw.separator('-')
-
-    # Variable header row
-    var_header = f"{'CLASS':<8} {'UTSTY':<8}"
-    for _, lbl, _ in var_specs:
-        var_header += f" {lbl:>{col_w}}"
-    rw.detail(var_header)
-    rw.separator('-')
-
-    totals = {lbl: 0.0 for _, lbl, _ in var_specs}
-
-    for cls in cls_vals:
-        cls_label = CLASSF_MAP.get(cls, cls)
-        rw.detail(f" {cls_label}")
-        cls_sub   = sub.filter(pl.col(where_col) == cls)
-        utsty_tot = {lbl: 0.0 for _, lbl, _ in var_specs}
-
-        for utsty in utst_vals:
-            u_sub = cls_sub.filter(pl.col('UTSTY') == utsty)
-            if u_sub.is_empty():
-                continue
-            row_str = f"  {'':<6} {utsty:<8}"
-            for col, lbl, fmt_fn in var_specs:
-                val = u_sub[col].sum() if col in u_sub.columns else 0.0
-                utsty_tot[lbl] += float(val or 0)
-                row_str += f" {fmt_fn(val):>{col_w}}"
-            rw.detail(row_str)
-
-        # UTSTY TOTAL row
-        tot_str = f"  {'TOTAL':<14}"
-        for _, lbl, fmt_fn in var_specs:
-            totals[lbl] += utsty_tot[lbl]
-            tot_str += f" {fmt_fn(utsty_tot[lbl]):>{col_w}}"
-        rw.detail(tot_str)
-
-    rw.separator('=')
-    # ALL / TOTAL row
-    all_str = f" {'TOTAL':<14}"
-    for _, lbl, fmt_fn in var_specs:
-        all_str += f" {fmt_fn(totals[lbl]):>{col_w}}"
-    rw.detail(all_str)
-    rw.blank()
-
-
-def _tabulate_by_remmth(
-    df: pl.DataFrame,
-    rw: ReportWriter,
-    box_label: str,
-    var_specs: list,
-    class_filter,
-):
-    """
-    Replicate:
-      PROC TABULATE; FORMAT REMMTH REMFMT.; CLASS CLASS REMMTH;
-      TABLE CLASS,REMMTH ALL, vars;
-    """
-    if isinstance(class_filter, str):
-        class_filter = [class_filter]
-
-    sub = df.filter(pl.col('CLASS').is_in(class_filter))
-    if sub.is_empty():
-        return
-
-    # Bucket order
-    bucket_order = ['UP TO 1 WK     ', '>1 WK - 1 MTH  ', '>1 MTH - 3 MTHS',
-                    '>3 - 6 MTHS    ', '>6 MTHS - 1 YR ', '>1 YEAR        ']
-
-    col_w      = 22
-    cls_vals   = sorted(sub['CLASS'].cast(pl.Utf8).unique().to_list())
-
-    rw.detail(f" {box_label}")
-    rw.separator('-')
-
-    var_header = f"{'CLASS':<8} {'REMAINING MATURITY':<18}"
-    for _, lbl, _ in var_specs:
-        var_header += f" {lbl:>{col_w}}"
-    rw.detail(var_header)
-    rw.separator('-')
-
-    totals = {lbl: 0.0 for _, lbl, _ in var_specs}
-
-    for cls in cls_vals:
-        cls_label = CLASSF_MAP.get(cls, cls)
-        rw.detail(f" {cls_label}")
-        cls_sub   = sub.filter(pl.col('CLASS') == cls)
-        bkt_tot   = {lbl: 0.0 for _, lbl, _ in var_specs}
-
-        for bkt in bucket_order:
-            # Filter rows whose REMMTH maps to this bucket label
-            bkt_rows = [r for r in cls_sub.to_dicts()
-                        if fmt_remfmt(r.get('REMMTH')) == bkt]
-            if not bkt_rows:
-                continue
-            row_str = f"  {'':<6} {bkt:<18}"
-            for col, lbl, fmt_fn in var_specs:
-                val = sum(float(r.get(col) or 0) for r in bkt_rows)
-                bkt_tot[lbl] += val
-                row_str += f" {fmt_fn(val):>{col_w}}"
-            rw.detail(row_str)
-
-        tot_str = f"  {'TOTAL':<24}"
-        for _, lbl, fmt_fn in var_specs:
-            totals[lbl] += bkt_tot[lbl]
-            tot_str += f" {fmt_fn(bkt_tot[lbl]):>{col_w}}"
-        rw.detail(tot_str)
-
-    rw.separator('=')
-    all_str = f" {'TOTAL':<26}"
-    for _, lbl, fmt_fn in var_specs:
-        all_str += f" {fmt_fn(totals[lbl]):>{col_w}}"
-    rw.detail(all_str)
-    rw.blank()
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-def main():
-    # ---------------------------------------------------------------------------
-    # Read binary input
-    # ---------------------------------------------------------------------------
-    raw_records = read_input_records(INPUT_FILE)
-    if not raw_records:
-        print("ERROR: No records read from input file.", file=sys.stderr)
-        sys.exit(1)
-
-    # DATA REPTDATE: INFILE BNMTBL4 OBS=1; INPUT @113 UTRPT $10.;
-    reptdate_global, rdate_str = get_reptdate(raw_records)
-
-    # DATA LIQCLASS: full read + filter (UTREF1='I', UTREF4 NE '  ')
-    liqclass_df = build_liqclass(raw_records, reptdate_global)
-
-    # DATA LIQCLAS1/2/3 + combine
-    liqclass_df = classify(liqclass_df)
-    if liqclass_df.is_empty():
-        print("WARNING: No records after classification.", file=sys.stderr)
-
-    # DATA LIQCLASS (re-read REPTDATE into first obs) + financial computations
-    liqclass_df = compute_financials(liqclass_df, reptdate_global)
-
-    # PROC SORT DATA=LIQCLASS OUT=LIQCLASS; BY UTSTY CLASS;
-    liqclass_df = liqclass_df.sort(['UTSTY', 'CLASS'])
-
-    # %INC PGM(MATDTEX) — compute REMMTH from REPTDATE/MATDT
-    liqclass_df = apply_matdtex(liqclass_df)
-
-    # DATA LIQCLASS; SET LIQCLASS; MRNGE=PUT(REMMTH,REMFMT.);
-    mrnge_vals  = [fmt_remfmt(v) for v in liqclass_df['REMMTH'].to_list()]
-    liqclass_df = liqclass_df.with_columns(pl.Series('MRNGE', mrnge_vals))
-
-    # ---------------------------------------------------------------------------
-    # Report titles
-    # TITLE1 'REPORT ID: EIBMLIQ4';
-    # TITLE2 'PUBLIC BANK BERHAD - STATISTICS DEPARTMENT';
-    # TITLE3 'STOCK OF LIQUEFIABLE ASSETS (PART 4)';
-    # TITLE4 'AS AT ' &RDATE;
-    # ---------------------------------------------------------------------------
-    titles = [
-        'REPORT ID: EIBMLIQ4',
-        'PUBLIC BANK BERHAD - STATISTICS DEPARTMENT',
-        'STOCK OF LIQUEFIABLE ASSETS (PART 4)',
-        f'AS AT {rdate_str}',
-    ]
-
-    rw = ReportWriter(OUTPUT_FILE, page_length=PAGE_LENGTH, line_size=LINE_SIZE)
-    rw.set_titles(*titles)
-    rw.begin()
-
-    # ---------------------------------------------------------------------------
-    # PROC PRINT DATA=LIQCLASS
-    # ---------------------------------------------------------------------------
-    proc_print(liqclass_df, rw)
-
-    # ---------------------------------------------------------------------------
-    # PROC SUMMARY -> LIQASSET
-    # CLASS UTSTY CLASS REMMTH UTTTY; VAR DISTAMT UTMKV UTAMP;
-    # ---------------------------------------------------------------------------
-    # Build LIQASSET via the DATA LIQASSET step logic
-    liqasset_rows = []
-
-    for (utsty, cls, remmth), grp in liqclass_df.to_pandas().groupby(
-            ['UTSTY', 'CLASS', 'REMMTH'], sort=True):
-        stknid  = 0.0; repnid  = 0.0
-        amtstk  = 0.0; amtrepo = 0.0; amtrev  = 0.0; totdsct = 0.0
-
-        for _, row in grp.iterrows():
-            uttty_r = str(row.get('UTTTY') or '').strip()
-            distamt = float(row.get('DISTAMT') or 0)
-            utmkv   = float(row.get('UTMKV')   or 0)
-            utamp_v = float(row.get('UTAMP')    or 0)
-            cls_r   = str(row.get('CLASS') or '')
-            utsty_r = str(row.get('UTSTY') or '').strip()
-
-            if uttty_r == 'S':
-                amtstk += utmkv
-            elif uttty_r == 'R':
-                amtrepo += utmkv
-                if cls_r == 'X': stknid += utamp_v
-                if cls_r == 'Y': repnid += utamp_v
-            elif uttty_r == 'X':
-                amtrev += utmkv
-
-            if utsty_r in ('SSD', 'SLD'):
-                if uttty_r == 'R':
-                    totdsct -= distamt
-                else:
-                    totdsct += distamt
+                        powerii = _sadd(k - 1, _sdiv(dsc, dcc))
+                        term = _sdiv(_sdiv(cpn, 2), _spow(_sadd(1.0, _sdiv(yld, 200)), powerii))
+                        if term is not None:
+                            ii_val += term
+                    iii_val = _smul(100, _smul(_sdiv(cpn, 200), _sdiv(dcs, dcc)))
+                    if i_val is not None and iii_val is not None:
+                        discount = _ssub(_sadd(i_val, ii_val), iii_val)
+                        p = discount
+
+    reptdays = _days_between(reptdt, preintdt)
+    orgtenor = _days_between(matdt, preintdt)
+    cpn2 = _sdiv(cpn, 100)
+
+    distamt = _compute_distamt(utsty, rec["UTFCV"], p, cpn, cpn2, reptdays,
+                                dcc, tm, orgtenor, tsm, yld)
+
+    out = dict(rec)
+    out.update({
+        "DISTYLD": distyld, "DISCOUNT": discount, "CPN": cpn, "YLD": yld,
+        "RV": rv, "DISTAMT": distamt, "REPTDT": reptdt, "SETTLEDT": settledt,
+        "PREINTDT": preintdt, "CURINTDT": curintdt, "MATDT": matdt,
+        "TSM": tsm, "TM": tm, "REMMTH": remmth,
+    })
+    return out
+
+
+def _compute_distamt(utsty, utfcv, p, cpn, cpn2, reptdays, dcc, tm,
+                      orgtenor, tsm, yld):
+    """SELECT(UTSTY) DISTAMT formulae. Runs unconditionally for every row
+    regardless of whether the pricing block above executed."""
+    if utsty in ("MGS", "CBB", "SLD", "CB1", "CB2", "CMB", "PNB"):
+        term = _sadd(_sdiv(p, 100), _sdiv(_smul(cpn2, reptdays), _smul(dcc, 2)))
+        return _smul(utfcv, term)
+    if utsty in ("CFB", "SFD", "CF1", "CF2"):
+        numer = _sadd(36500, _smul(cpn, dcc))
+        denom = _sadd(36500, _smul(yld, tm))
+        return _smul(utfcv, _sdiv(numer, denom))
+    if utsty in ("SZD", "KHA", "IDS", "DHB", "DMB"):
+        return _smul(utfcv, _sdiv(p, 100))
+    if utsty in ("SSD", "SLD"):
+        # NOTE: 'SLD' here is unreachable (see module docstring) -- the
+        # earlier WHEN('MGS','CBB','SLD',...) branch always matches first.
+        numer = _sadd(36500, _smul(cpn, orgtenor))
+        denom = _sadd(36500, _smul(yld, tsm))
+        return _smul(utfcv, _sdiv(numer, denom))
+    return _smul(utfcv, _ssub(1.0, _sdiv(_smul(yld, tsm), 36500)))
+
+
+# ============================================================================
+# PROC SUMMARY (NWAY, no MISSING option -> rows with any missing CLASS
+# variable are dropped) + LIQASSET BY-group running accumulation
+# ============================================================================
+def _build_liqasset_summary(rows):
+    groups = {}
+    for r in rows:
+        key = (r["UTSTY"], r["CLASS"], r["REMMTH"], r["UTTTY"])
+        if any(k is None for k in key):
+            continue   # PROC SUMMARY NWAY without MISSING drops these
+        g = groups.setdefault(key, {"DISTAMT": None, "UTMKV": None, "UTAMP": None})
+        for f in ("DISTAMT", "UTMKV", "UTAMP"):
+            v = r.get(f)
+            if v is not None:
+                g[f] = (g[f] or 0.0) + v
+    out = []
+    for key, sums in groups.items():
+        utsty, cls, remmth, utty = key
+        out.append({"UTSTY": utsty, "CLASS": cls, "REMMTH": remmth,
+                     "UTTTY": utty, **sums})
+    out.sort(key=lambda r: (r["UTSTY"], r["CLASS"], r["REMMTH"], r["UTTTY"]))
+    return out
+
+
+def _build_liqasset(summary_rows):
+    """DATA LIQASSET; SET LIQASSET; BY UTSTY CLASS REMMTH; ... (see SAS)."""
+    out = []
+    n = len(summary_rows)
+    amtstk = amtrepo = amtrev = totdsct = stknid = repnid = 0.0
+
+    for i, r in enumerate(summary_rows):
+        utsty, cls, remmth, utty = r["UTSTY"], r["CLASS"], r["REMMTH"], r["UTTTY"]
+        prev = summary_rows[i - 1] if i > 0 else None
+        nxt = summary_rows[i + 1] if i < n - 1 else None
+
+        first_class = prev is None or (prev["UTSTY"], prev["CLASS"]) != (utsty, cls)
+        first_remmth = (prev is None
+                         or (prev["UTSTY"], prev["CLASS"], prev["REMMTH"]) != (utsty, cls, remmth))
+        last_utsty = nxt is None or nxt["UTSTY"] != utsty
+        last_class = nxt is None or (nxt["UTSTY"], nxt["CLASS"]) != (utsty, cls)
+        last_remmth = (nxt is None
+                        or (nxt["UTSTY"], nxt["CLASS"], nxt["REMMTH"]) != (utsty, cls, remmth))
+
+        if first_class or first_remmth:
+            stknid = repnid = 0.0
+            amtstk = amtrepo = amtrev = totdsct = 0.0
+
+        utmkv = r["UTMKV"] or 0.0
+        utamp = r["UTAMP"] or 0.0
+        distamt = r["DISTAMT"] or 0.0
+
+        if utty == "S":
+            amtstk += utmkv
+        elif utty == "R":
+            amtrepo += utmkv
+            if cls == "X":
+                stknid += utamp
+            if cls == "Y":
+                repnid += utamp
+        elif utty == "X":
+            amtrev += utmkv
+        # OTHERWISE: no-op
+
+        if utsty in ("SSD", "SLD"):
+            if utty == "R":
+                totdsct -= distamt
             else:
                 totdsct += distamt
+        else:
+            totdsct += distamt
 
-        mkvbook = amtstk - amtrepo
-        liqasset_rows.append({
-            'CLASS'   : cls,
-            'UTSTY'   : utsty,
-            'REMMTH'  : remmth,
-            'AMTSTK'  : amtstk,
-            'AMTREPO' : amtrepo,
-            'AMTREV'  : amtrev,
-            'TOTDSCT' : totdsct,
-            'MKVBOOK' : mkvbook,
-            'MKVREV'  : amtrev,
-            'MKVNIDX' : stknid,
-            'MKVNIDY' : repnid,
-            'UTAMP'   : grp['UTAMP'].sum(),
-        })
+        if last_utsty or last_class or last_remmth:
+            out.append({
+                "UTSTY": utsty, "CLASS": cls, "REMMTH": remmth,
+                "AMTSTK": amtstk, "AMTREPO": amtrepo,
+                "MKVBOOK": amtstk - amtrepo, "MKVREV": amtrev,
+                "MKVNIDX": stknid, "MKVNIDY": repnid,
+                "TOTDSCT": totdsct, "UTAMP": utamp,
+            })
+    return out
 
-    liqasset_df = pl.DataFrame(liqasset_rows) if liqasset_rows else pl.DataFrame()
 
-    # Shared var_specs helpers
-    mkvbook_totdsct = [
-        ('MKVBOOK', 'MKT VALUE SECUR REPT IN BOOKS',       fmt_comma16_2),
-        ('MKVREV',  'MKT VALUE SECUR RECV UDR REV REPO',   fmt_comma16_2),
-        ('TOTDSCT', 'TOTAL VALUE OF SECUR AFTER DISCOUNT',  fmt_comma16_2),
+# ============================================================================
+# REPORT RENDERING (RECFM=FBA -- leading ASA control byte per line)
+# ============================================================================
+def _fmt_comma(value, width=18, decimals=2):
+    if value is None:
+        value = 0.0
+    return f"{value:,.{decimals}f}".rjust(width)
+
+
+def _title_block(rdate_str: str):
+    return [
+        "REPORT ID: EIBMLIQ4",
+        "PUBLIC BANK BERHAD - STATISTICS DEPARTMENT",
+        "STOCK OF LIQUEFIABLE ASSETS (PART 4)",
+        f"AS AT {rdate_str}",
+        "",
     ]
 
-    if not liqasset_df.is_empty():
-        # ------------------------------------------------------------------
-        # PROC TABULATE 1: CLASS IN ('A','B')  BOX='CLASS-1 LIQUIFIABLE ASSETS'
-        # ------------------------------------------------------------------
-        rw.set_titles(*titles)
-        rw._new_page()
-        _tabulate_by_utsty(
-            liqasset_df, rw,
-            box_label='CLASS-1 LIQUIFIABLE ASSETS',
-            var_specs=mkvbook_totdsct,
-            class_filter=['A', 'B'],
-        )
 
-        # ------------------------------------------------------------------
-        # PROC TABULATE 2: CLASS='R'  BOX='CLASS-1 LIQUIFIABLE ASSETS'
-        # ------------------------------------------------------------------
-        _tabulate_by_utsty(
-            liqasset_df, rw,
-            box_label='CLASS-1 LIQUIFIABLE ASSETS',
-            var_specs=mkvbook_totdsct,
-            class_filter=['R'],
-        )
+def _render_print(detail_rows, rdate_str):
+    """PROC PRINT DATA=LIQCLASS SPLIT='*'; VAR ...; SUM DISTAMT;
+    FORMAT PREINTDT CURINTDT DDMMYY8.;
+    (column headers simplified to plain variable names -- the SAS LABEL
+    text is documented in the field-layout table above but is not rendered
+    label-for-label here, a formatting simplification.)"""
+    cols = ["UTOSD", "CPN", "YLD", "UTMKV", "UTMDT", "UTSTY", "UTFCV",
+            "PREINTDT", "CURINTDT", "DISCOUNT", "DISTAMT", "UTTTY",
+            "STATUS", "UTRMD", "MRNGE"]
+    widths = {"UTOSD": 10, "CPN": 10, "YLD": 10, "UTMKV": 14, "UTMDT": 10,
+              "UTSTY": 6, "UTFCV": 14, "PREINTDT": 10, "CURINTDT": 10,
+              "DISCOUNT": 14, "DISTAMT": 14, "UTTTY": 6, "STATUS": 6,
+              "UTRMD": 10, "MRNGE": 16}
 
-        # ------------------------------------------------------------------
-        # PROC TABULATE 3: CLASS='R' BY REMMTH
-        # ------------------------------------------------------------------
-        _tabulate_by_remmth(
-            liqasset_df, rw,
-            box_label='CLASS-1 LIQUID ASSETS BY',
-            var_specs=[
-                ('MKVREV',  'MKT VALUE SECUR RECV UDR REV REPO',  fmt_comma16_2),
-                ('TOTDSCT', 'TOTAL VALUE OF SECUR AFTER DISCOUNT', fmt_comma16_2),
-            ],
-            class_filter=['R'],
-        )
+    def _fmt_cell(col, val):
+        if col in ("PREINTDT", "CURINTDT"):
+            return (val.strftime("%d/%m/%y") if val else "").rjust(widths[col])
+        if col in ("CPN", "YLD", "UTMKV", "UTFCV", "DISCOUNT", "DISTAMT"):
+            return _fmt_comma(val, widths[col])
+        return str(val if val is not None else "").ljust(widths[col])
 
-        # ------------------------------------------------------------------
-        # PROC TABULATE 4: CLASS='F'  BOX='CLASS-2 LIQUIFIABLE ASSETS FOR CLASS F'
-        # ------------------------------------------------------------------
-        _tabulate_by_utsty(
-            liqasset_df, rw,
-            box_label='CLASS-2 LIQUIFIABLE ASSETS FOR CLASS F',
-            var_specs=mkvbook_totdsct,
-            class_filter=['F'],
-        )
+    lines = [("1", t) for t in _title_block(rdate_str)]
+    lines.append((" ", " ".join(c.ljust(widths[c]) for c in cols)))
+    total_distamt = 0.0
+    n_on_page = len(lines)
+    for r in detail_rows:
+        if n_on_page >= PAGE_SIZE:
+            lines += [("1", t) for t in _title_block(rdate_str)]
+            lines.append((" ", " ".join(c.ljust(widths[c]) for c in cols)))
+            n_on_page = len(_title_block(rdate_str)) + 1
+        row_text = " ".join(_fmt_cell(c, r.get(c)) for c in cols)
+        lines.append((" ", row_text))
+        total_distamt += r.get("DISTAMT") or 0.0
+        n_on_page += 1
+    lines.append((" ", "SUM".ljust(sum(widths[c] + 1 for c in cols) - widths["DISTAMT"])
+                  + _fmt_comma(total_distamt, widths["DISTAMT"])))
+    return lines
 
-        # ------------------------------------------------------------------
-        # PROC TABULATE 5: CLASS='F' BY REMMTH
-        # ------------------------------------------------------------------
-        _tabulate_by_remmth(
-            liqasset_df, rw,
-            box_label='CLASS-2 LIQUIFIABLE ASSETS FOR CLASS F',
-            var_specs=mkvbook_totdsct,
-            class_filter=['F'],
-        )
 
-        # ------------------------------------------------------------------
-        # PROC TABULATE 6: CLASS IN ('C','D','E')
-        #   BOX='CLASS-2 LIQUID ASSETS & CREDIT LINES'
-        # ------------------------------------------------------------------
-        _tabulate_by_utsty(
-            liqasset_df, rw,
-            box_label='CLASS-2 LIQUID ASSETS & CREDIT LINES',
-            var_specs=mkvbook_totdsct,
-            class_filter=['C', 'D', 'E'],
-        )
+def _render_tabulate(liqasset_rows, class_filter, dim, box_title, measures,
+                      rts, measure_width=18):
+    """Generic emulation of:
+        TABLE CLASS=' ',<dim> ALL, measure*F=COMMAw.d ... /RTS=rts BOX=...;
+    FORMCHAR='           ' (all blank) means SAS itself draws no
+    box/border characters here -- this renderer likewise uses plain
+    whitespace-separated columns (no '+'/'-'/'|'), matching that FORMCHAR
+    setting; exact SAS PROC TABULATE column-width arithmetic is
+    approximated, as already accepted practice for TABULATE-style output
+    in this project (see EIIMRM01.py)."""
+    if isinstance(class_filter, str):
+        class_filter = {class_filter}
+    else:
+        class_filter = set(class_filter)
 
-        # ------------------------------------------------------------------
-        # PROC TABULATE 7: CLASS IN ('C','D','E') BY REMMTH
-        #   BOX='CLASS-2 LIQUID ASSETS BY'
-        # ------------------------------------------------------------------
-        _tabulate_by_remmth(
-            liqasset_df, rw,
-            box_label='CLASS-2 LIQUID ASSETS BY',
-            var_specs=[
-                ('MKVBOOK', 'MKT VALUE SECUR REPT IN BOOKS',       fmt_comma16_2),
-                ('TOTDSCT', 'TOTAL VALUE OF SECUR AFTER DISCOUNT',  fmt_comma16_2),
-            ],
-            class_filter=['C', 'D', 'E'],
-        )
+    rows = [r for r in liqasset_rows if r["CLASS"] in class_filter]
+    lines = [("1", box_title), (" ", "")]
+    if not rows:
+        lines.append((" ", "(no data)"))
+        return lines
 
-        # ------------------------------------------------------------------
-        # PROC TABULATE 8: CLASS='Y'
-        #   BOX='CLASS-2 LIQUID ASSETS'
-        #   VAR MKVNIDY='PURCHASE PROCEEDS FOR NIDS UDR REPO'
-        # ------------------------------------------------------------------
-        _tabulate_by_utsty(
-            liqasset_df, rw,
-            box_label='CLASS-2 LIQUID ASSETS',
-            var_specs=[
-                ('MKVNIDY', 'PURCHASE PROCEEDS FOR NIDS UDR REPO', fmt_comma16_2),
-            ],
-            class_filter=['Y'],
-        )
+    dim_is_remmth = dim == "REMMTH"
 
-        # ------------------------------------------------------------------
-        # PROC TABULATE 9: CLASS='X' BY REMMTH
-        #   BOX='CLASS-2 LIQUID ASSETS BY'
-        #   VAR MKVNIDX='STOCK MATURITY DATE'   FORMAT COMMA20.2
-        # ------------------------------------------------------------------
-        def fmt_comma20_2(v) -> str:
-            try: return f"{float(v):>20,.2f}"
-            except: return f"{'0.00':>20}"
+    def _dim_label(v):
+        return remfmt_label(v) if dim_is_remmth else (v or "")
 
-        _tabulate_by_remmth(
-            liqasset_df, rw,
-            box_label='CLASS-2 LIQUID ASSETS BY',
-            var_specs=[
-                ('MKVNIDX', 'STOCK MATURITY DATE', fmt_comma20_2),
-            ],
-            class_filter=['X'],
-        )
+    def _dim_sort(v):
+        return _remfmt_sort_key(v) if dim_is_remmth else str(v)
 
-        # ------------------------------------------------------------------
-        # PROC TABULATE 10: CLASS='Y' BY REMMTH
-        #   BOX='CLASS-2 LIQUID ASSETS BY'
-        #   VAR MKVNIDY='REPO MATURITY DATE'   FORMAT COMMA20.2
-        # ------------------------------------------------------------------
-        _tabulate_by_remmth(
-            liqasset_df, rw,
-            box_label='CLASS-2 LIQUID ASSETS BY',
-            var_specs=[
-                ('MKVNIDY', 'REPO MATURITY DATE', fmt_comma20_2),
-            ],
-            class_filter=['Y'],
-        )
+    groups = {}
+    for r in rows:
+        key = (r["CLASS"], r[dim])
+        g = groups.setdefault(key, {m: 0.0 for m in measures})
+        for m in measures:
+            g[m] += r.get(m) or 0.0
 
-    rw.save()
-    print(f"Report written to: {OUTPUT_FILE}  ({len(rw._lines)} lines)")
+    header = " ".ljust(rts) + "".join(m.rjust(measure_width) for m in measures)
+    lines.append((" ", header))
+
+    keys_sorted = sorted(groups.keys(), key=lambda k: (k[0], _dim_sort(k[1])))
+    prev_class = None
+    class_total = {m: 0.0 for m in measures}
+    grand_total = {m: 0.0 for m in measures}
+
+    for key in keys_sorted:
+        cls, dv = key
+        if cls != prev_class:
+            if prev_class is not None:
+                lines.append((" ", "  ALL".ljust(rts)
+                              + "".join(_fmt_comma(class_total[m], measure_width) for m in measures)))
+            class_total = {m: 0.0 for m in measures}
+            prev_class = cls
+            lines.append((" ", _CLASSF.get(cls, cls).ljust(rts)))
+        g = groups[key]
+        for m in measures:
+            class_total[m] += g[m]
+            grand_total[m] += g[m]
+        label = f"  {_dim_label(dv)}".ljust(rts)
+        lines.append((" ", label + "".join(_fmt_comma(g[m], measure_width) for m in measures)))
+
+    lines.append((" ", "  ALL".ljust(rts)
+                  + "".join(_fmt_comma(class_total[m], measure_width) for m in measures)))
+    lines.append((" ", "TOTAL".ljust(rts)
+                  + "".join(_fmt_comma(grand_total[m], measure_width) for m in measures)))
+    return lines
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
+def main():
+    print("Step 1: Resolving latest BNMTBL4 (KAPITI4) flat file...")
+    kapiti4_path = get_latest_file(INPUT_KAPITI4_DIR, prefix=INPUT_KAPITI4_PREFIX)
+    print(f"  Using: {kapiti4_path}")
+
+    print("\nStep 2: Deriving REPTDATE from first record of BNMTBL4...")
+    reptdate = _read_reptdate(kapiti4_path)
+    rdate_str = reptdate.strftime("%d/%m/%y")   # PUT(REPTDATE,DDMMYY8.)
+    print(f"  REPTDATE : {reptdate.isoformat()}   RDATE: {rdate_str}")
+
+    print("\nStep 3: Caching BNMTBL4 to Parquet (byte-offset + packed-decimal parse)...")
+    cache_path = _load_cached_flatfile(kapiti4_path, "BNMTBL4")
+
+    print("\nStep 4: Loading cached rows via DuckDB...")
+    con = duckdb.connect(database=":memory:")
+    base_df = con.execute(f"SELECT * FROM read_parquet('{cache_path.as_posix()}')").pl()
+    con.close()
+    print(f"  Rows loaded: {len(base_df):,}")
+
+    print("\nStep 5: Building LIQCLASS base rows (AMOUNT/STATUS/ISSDT/C2)...")
+    base_rows = [_augment_base(r, reptdate) for r in base_df.iter_rows(named=True)]
+    del base_df
+    gc.collect()
+
+    print("\nStep 6: Building LIQCLAS1 / LIQCLAS2 / LIQCLAS3...")
+    liqclas1_rows = [r for r in (_build_liqclas1(rec) for rec in base_rows) if r is not None]
+    liqclas2_rows = [r for rec in base_rows for r in _build_liqclas2(rec)]
+    liqclas3_rows = _build_liqclas3(liqclas2_rows)
+    liqclass_combined = liqclas1_rows + liqclas2_rows + liqclas3_rows
+    print(f"  LIQCLAS1: {len(liqclas1_rows):,}  LIQCLAS2: {len(liqclas2_rows):,}  "
+          f"LIQCLAS3: {len(liqclas3_rows):,}  Combined: {len(liqclass_combined):,}")
+
+    print("\nStep 7: Computing pricing (Appendix 1 formulae) per row...")
+    priced_rows = [_compute_pricing(r) for r in liqclass_combined]
+
+    print("\nStep 8: PROC SORT BY UTSTY CLASS (stable)...")
+    priced_rows.sort(key=lambda r: (r["UTSTY"], r["CLASS"]))
+
+    print("\nStep 9: Applying MATDTEX (%INC PGM(MATDTEX)) REMMTH reclassification...")
+    for r in priced_rows:
+        r["REMMTH"] = calc_remmth(r["REPTDATE"], r["MATDT"])
+        r["MRNGE"] = remfmt_label(r["REMMTH"])
+
+    print("\nStep 10: Building LIQASSET (PROC SUMMARY + BY-group accumulation)...")
+    liqasset_summary = _build_liqasset_summary(priced_rows)
+    liqasset_rows = _build_liqasset(liqasset_summary)
+    print(f"  LIQASSET rows: {len(liqasset_rows):,}")
+
+    print("\nStep 11: Rendering report...")
+    report_lines = []
+    report_lines += _render_print(priced_rows, rdate_str)
+
+    report_lines += _render_tabulate(liqasset_rows, ("A", "B"), "UTSTY",
+                                      "CLASS-1 LIQUIFIABLE ASSETS",
+                                      ["MKVBOOK", "MKVREV", "TOTDSCT"], 50)
+    report_lines += _render_tabulate(liqasset_rows, "R", "UTSTY",
+                                      "CLASS-1 LIQUIFIABLE ASSETS",
+                                      ["MKVBOOK", "MKVREV", "TOTDSCT"], 50)
+    report_lines += _render_tabulate(liqasset_rows, "R", "REMMTH",
+                                      "CLASS-1 LIQUID ASSETS BY",
+                                      ["MKVREV", "TOTDSCT"], 30)
+    report_lines += _render_tabulate(liqasset_rows, "F", "UTSTY",
+                                      "CLASS-2 LIQUIFIABLE ASSETS FOR CLASS F",
+                                      ["MKVBOOK", "MKVREV", "TOTDSCT"], 50)
+    report_lines += _render_tabulate(liqasset_rows, "F", "REMMTH",
+                                      "CLASS-2 LIQUIFIABLE ASSETS FOR CLASS F",
+                                      ["MKVBOOK", "MKVREV", "TOTDSCT"], 50)
+    report_lines += _render_tabulate(liqasset_rows, ("C", "D", "E"), "UTSTY",
+                                      "CLASS-2 LIQUID ASSETS & CREDIT LINES",
+                                      ["MKVBOOK", "MKVREV", "TOTDSCT"], 50)
+    report_lines += _render_tabulate(liqasset_rows, ("C", "D", "E"), "REMMTH",
+                                      "CLASS-2 LIQUID ASSETS BY",
+                                      ["MKVBOOK", "TOTDSCT"], 30)
+    report_lines += _render_tabulate(liqasset_rows, "Y", "UTSTY",
+                                      "CLASS-2 LIQUID ASSETS",
+                                      ["MKVNIDY"], 50, measure_width=20)
+    report_lines += _render_tabulate(liqasset_rows, "X", "REMMTH",
+                                      "CLASS-2 LIQUID ASSETS BY",
+                                      ["MKVNIDX"], 30, measure_width=20)
+    report_lines += _render_tabulate(liqasset_rows, "Y", "REMMTH",
+                                      "CLASS-2 LIQUID ASSETS BY",
+                                      ["MKVNIDY"], 30, measure_width=20)
+
+    print(f"\nStep 12: Writing output to {OUTPUT_FILE} ...")
+    with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+        for asa, text in report_lines:
+            fh.write(asa + text + "\n")
+
+    print(f"\n  Output written : {OUTPUT_FILE}")
+    print(f"  Total lines    : {len(report_lines):,}")
+    print("\n--- Report preview (first 30 lines) ---")
+    for asa, text in report_lines[:30]:
+        print(f"[{asa}]{text}")
+
+    print("\nEIBMLI4I complete.")
 
 
 if __name__ == "__main__":
