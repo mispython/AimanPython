@@ -1,28 +1,5 @@
 # ============================================================================
-# FILE: MATDTEX.py
-# PURPOSE: %INC PGM(MATDTEX) member -- reproduces the BNM remaining-maturity
-#          band classification (REMMTH = 1..6) used by EIBMLI4I.
-#
-# Original SAS (source-library member, textually inserted at the %INC point
-# inside EIBMLI4I's own DATA LIQCLASS step -- NOT a macro definition, and NOT
-# a runtime data input):
-#
-#   DATA LIQCLASS;
-#     SET LIQCLASS;
-#     DAYA =REPTDATE+1;
-#     MM0  =MONTH(DAYA);  YY0=YEAR(DAYA);  YY1=YY0+1;
-#     MM1=MM0+01; MM2=MM0+03; MM3=MM0+06; MM4=MM0+12;
-#     IF (01<=MM0<=06) THEN DO ... END;
-#     IF (07<=MM0<=09) THEN DO ... END;
-#     IF (10<=MM0<=12) THEN DO ... END;
-#     IF (DAYA<=MATDT<DAYB) THEN REMMTH=01; ELSE ... ELSE
-#     IF (MATDT>DAYF) THEN REMMTH=06;
-#   RUN;
-#
-# This %INC executes AFTER EIBMLI4I's PROC SORT and OVERWRITES the earlier,
-# continuous REMMTH value (ROUND((TSM/365)*12,.01)) computed in EIBMLI4I's
-# main DATA step, with this 1..6 band classification. EIBMLI4I's later
-# "MRNGE=PUT(REMMTH,REMFMT.);" formats THIS value, not the earlier one.
+# FILE: MATDTEX.py  (updated)
 # ============================================================================
 
 from datetime import date, timedelta
@@ -42,22 +19,37 @@ def _mdy(month: int, day: int, year: int):
         return None
 
 
-def calc_remmth(reptdate: date, matdt):
+def calc_remmth(reptdate: date, matdt, current_remmth=None):
     """
     Port of the MATDTEX %INC member.
 
+    IMPORTANT -- preservation semantics:
+    In the original SAS, this code is textually inserted into
+    "DATA LIQCLASS; SET LIQCLASS; ...", i.e. REMMTH is read back in from
+    the existing dataset via SET, and the chained
+    "IF...THEN REMMTH=01; ELSE IF...THEN REMMTH=02; ... ELSE IF...THEN
+    REMMTH=06;" ONLY overwrites it when one of the six band conditions is
+    true. If MATDT is missing, or does not fall into any of the six bands
+    (e.g. MATDT < DAYA), none of the conditions fire and SAS silently
+    KEEPS whatever REMMTH value the row already had (the continuous value
+    computed earlier in EIBMLI4I's main DATA step). This function
+    reproduces that: pass the row's pre-existing REMMTH in via
+    `current_remmth`, and it is returned unchanged whenever no band
+    matches -- it is NEVER discarded/blanked out here.
+
     Args:
-        reptdate: EIBMLI4I's report date (LIQCLASS.REPTDATE column -- the
-                   value derived from DATA REPTDATE / UTRPT).
-        matdt:    The row's maturity date (LIQCLASS.MATDT column).
+        reptdate:       EIBMLI4I's report date (LIQCLASS.REPTDATE column).
+        matdt:          The row's maturity date (LIQCLASS.MATDT column).
+        current_remmth: The row's REMMTH value as it stood BEFORE this
+                         %INC ran (i.e. EIBMLI4I's own REMMTH computation).
+                         Returned as-is if no band matches.
 
     Returns:
-        int 1-6 maturity-band classification, or None if MATDT does not
-        fall in any of the six bands (mirrors SAS leaving REMMTH missing
-        when none of the chained IF/ELSE IF conditions are true).
+        int 1-6 if a band matches, otherwise `current_remmth` unchanged
+        (mirrors SAS's SET-then-conditionally-overwrite behaviour).
     """
     if matdt is None or reptdate is None:
-        return None
+        return current_remmth
 
     daya = reptdate + timedelta(days=1)
     mm0 = daya.month
@@ -98,7 +90,10 @@ def calc_remmth(reptdate: date, matdt):
         dayf = _mdy(mm4, 1, yy1)
 
     if None in (dayb, dayc, dayd, daye, dayf):
-        return None
+        # A date computation failed (SAS: comparison against a missing
+        # date evaluates false) -- no band condition can fire, so REMMTH
+        # is preserved, exactly as SAS would leave it.
+        return current_remmth
 
     if daya <= matdt < dayb:
         return 1
@@ -112,4 +107,7 @@ def calc_remmth(reptdate: date, matdt):
         return 5
     if matdt > dayf:
         return 6
-    return None
+
+    # No condition matched (e.g. MATDT < DAYA) -- SAS keeps the pre-existing
+    # REMMTH value from the SET statement, not missing.
+    return current_remmth
