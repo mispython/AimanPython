@@ -1,3 +1,36 @@
+cd /sas/python/virt_edw/Data_Warehouse/MIS/XMIS
+/sas/python/virt_edw_dev/bin/python3 - <<'PY'
+import polars as pl
+import DALWPBBD
+print("SAVG AMTIND:")
+print(DALWPBBD.BNM_SAVG["AMTIND"].value_counts().sort("count", descending=True).head(10))
+print("\nCURN AMTIND:")
+print(DALWPBBD.BNM_CURN["AMTIND"].value_counts().sort("count", descending=True).head(10))
+print("\nCURN PRODCD[:3] top:")
+print(
+    DALWPBBD.BNM_CURN
+    .with_columns(pl.col("PRODCD").str.slice(0, 3).alias("p3"))
+    .select("p3").to_series().value_counts().sort("count", descending=True).head(10)
+)
+PY
+
+
+
+
+/sas/python/virt_edw_dev/bin/python3 - <<'PY'
+import duckdb
+BASE = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI"
+for name, f in [("FD", "fdcd09126.parquet"), ("CURRENT", "ca09126.parquet")]:
+    con = duckdb.connect()
+    p = f"{BASE}/{f}"
+    print(f"\n=== {name} : {p} ===")
+    print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{p}')").df().to_string())
+PY
+
+
+
+
+
 /sas/python/virt_edw_dev/bin/python3 - <<'PY'
 import duckdb
 p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/k3tbl091.parquet"
