@@ -24,30 +24,27 @@ Dependency:
                    BNMCODE detail (%INC PGM(KALMLIQI) equivalent).
 
 ============================================================================
-PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
-same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py)
+PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
-1. LOAN.REPTDATE      -> no physical file; derived via REPTDATE.py.
-
-2. BNM1.LOAN&REPTMON&NOWK  (loan master, RM-denominated + Islamic subset)
+1. BNM1.LOAN&REPTMON&NOWK  (loan master, RM-denominated + Islamic subset)
    File : loan<REPTMON><NOWK>.sas7bdat  (deterministic REPTMON+NOWK name)
    Path : INPUT_LOAN_FILE
    Cols used : ACCTNO, NOTENO, AMTIND, PAIDIND, PRODCD, PRODUCT, CUSTCD,
                ACCTYPE, BALANCE, COMMNO, APPRLIM2, BLDATE, EXPRDATE,
                PAYFREQ, ISSDTE, PAYAMT, LOANSTAT, UNDRAWN, APPRDATE
 
-3. FD.FD  (fixed deposit certificate extract, fixed name -- no date token)
+2. FD.FD  (fixed deposit certificate extract, fixed name -- no date token)
    File : fd.sas7bdat
    Path : INPUT_FD_FILE
    Cols used : INTPLAN, CURBAL, CUSTCD, MATDATE, OPENIND
 
-4. DEPOSIT.CURRENT  (current-account extract, read directly here -- a
+3. DEPOSIT.CURRENT  (current-account extract, read directly here -- a
    separate physical read from BNM.CURN built by DALWPBBD.py)
    File : current.sas7bdat
    Path : INPUT_CURRENT_FILE
    Cols used : PRODUCT, CUSTCODE, CURBAL
 
-5. LOAN.LNCOMM  (loan-commitment linkage, used only to establish the
+4. LOAN.LNCOMM  (loan-commitment linkage, used only to establish the
    ACCTNO/COMMNO merge boundary in the undrawn-portion logic below)
    File : lncomm.sas7bdat
    Path : INPUT_LNCOMM_FILE
@@ -83,7 +80,7 @@ import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
 from output_date import build_output_file
-from PBBLNFMT import format_liqpfmt
+from PBBLNFMT_AII import format_liqpfmt
 from PBBDPFMT import fddenom_format, fdprod_format
 # from PBBELF import ...   # %INC PGM(PBBELF) in SAS source, but no direct
 #                          # PUT(var,fmt.) call against any PBBELF format
@@ -91,7 +88,7 @@ from PBBDPFMT import fddenom_format, fdprod_format
 #                          # boilerplate include only, intentionally not a
 #                          # live import (per project convention).
 
-import DALWPBBD          # %INC PGM(DALWPBBD) equivalent -- module-level
+import DALWPBBD           # %INC PGM(DALWPBBD) equivalent -- module-level
                           # execution builds BNM_SAVG / BNM_CURN / BNM_DEPT.
 import KALMLIQI           # %INC PGM(KALMLIQI) equivalent -- driven via
                           # KALMLIQI.main() below with this program's
@@ -103,19 +100,19 @@ import KALMLIQI           # %INC PGM(KALMLIQI) equivalent -- driven via
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_LOAN_DIR = STG_DIR / "MNILN" / "sasdata"
-INPUT_FD_DIR = STG_DIR / "MNIFD" / "sasdata"
-INPUT_CURRENT_DIR = STG_DIR / "MNITB" / "sasdata"
-INPUT_LNCOMM_DIR = STG_DIR / "MNILN" / "sasdata"
+INPUT_LOAN_DIR     = STG_DIR / "sasdata"
+INPUT_FD_DIR       = STG_DIR / "from_dwh"
+INPUT_CURRENT_DIR  = STG_DIR / "from_dwh"
+INPUT_LNCOMM_DIR   = STG_DIR / "sasdata"
 
-INPUT_FD_FILE = INPUT_FD_DIR / "fd.sas7bdat"
-INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "current.sas7bdat"
-INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "lncomm.sas7bdat"
+INPUT_FD_FILE      = INPUT_FD_DIR      / "fdcd09126.sas7bdat"
+INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "ca09126.sas7bdat"
+INPUT_LNCOMM_FILE  = INPUT_LNCOMM_DIR  / "enrh_ln_comm_d08.sas7bdat"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRLFI"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQI"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMRLFI"
+OUTPUT_DIR = BASE_DIR / "output" / "EIBMLIQI"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -589,15 +586,15 @@ def _render_note_print(note_df: pl.DataFrame, rdate: str) -> list:
     lines = []
     title1 = "PUBLIC BANK BERHAD"
     title2 = f"NEW LIQUIDITY FRAMEWORK (ISLAMIC) AS AT {rdate}"
-    header = f"{'OBS':>5} {'BNMCODE':<14} {'AMOUNT':>17} {'AMTUSD':>17} {'AMTSGD':>17}"
-    rule = "-" * len(header)
+    header = f"{'Obs':>5} {'BNMCODE':<14} {'AMOUNT':>17} {'AMTUSD':>17} {'AMTSGD':>17}"
+    # rule = "-" * len(header)
 
     def _page_header():
         lines.append(title1)
         lines.append(title2)
         lines.append("")
         lines.append(header)
-        lines.append(rule)
+        lines.append("")
 
     _page_header()
     lines_on_page = 5
@@ -679,7 +676,8 @@ def main() -> None:
     # STEP 1: RESOLVE & CACHE INPUT FILES
     # ------------------------------------------------------------------
     print("\nStep 1: Caching input SAS datasets to Parquet...")
-    loan_sas = INPUT_LOAN_DIR / f"loan{reptmon}{nowk}.sas7bdat"
+    # loan_sas = INPUT_LOAN_DIR / f"loan{reptmon}{nowk}.sas7bdat"       # Prod file
+    loan_sas = INPUT_LOAN_DIR / f"loan091.sas7bdat"                     # Test file
     loan_cache = _load_cached(loan_sas, "LOAN")
     fd_cache = _load_cached(INPUT_FD_FILE, "FD")
     current_cache = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
@@ -704,14 +702,14 @@ def main() -> None:
             CAST(BALANCE AS DOUBLE) AS BALANCE,
             CAST(COMMNO AS INTEGER) AS COMMNO,
             CAST(APPRLIM2 AS DOUBLE) AS APPRLIM2,
-            CAST(BLDATE AS DATE) AS BLDATE,
-            CAST(EXPRDATE AS DATE) AS EXPRDATE,
+            (DATE '1960-01-01' + CAST(BLDATE AS INTEGER)) AS BLDATE,
+            (DATE '1960-01-01' + CAST(EXPRDATE AS INTEGER)) AS EXPRDATE,
             CAST(PAYFREQ AS VARCHAR) AS PAYFREQ,
-            CAST(ISSDTE AS DATE) AS ISSDTE,
+            (DATE '1960-01-01' + CAST(ISSDTE AS INTEGER)) AS ISSDTE,
             CAST(PAYAMT AS DOUBLE) AS PAYAMT,
             CAST(LOANSTAT AS INTEGER) AS LOANSTAT,
             CAST(UNDRAWN AS DOUBLE) AS UNDRAWN,
-            CAST(APPRDATE AS DATE) AS APPRDATE
+            (DATE '1960-01-01' + CAST(APPRDATE AS INTEGER)) AS APPRDATE
         FROM read_parquet('{loan_cache.as_posix()}')
         WHERE AMTIND = 'I' AND PAIDIND NOT IN ('P','C')
     """).pl()
@@ -841,9 +839,9 @@ def main() -> None:
 
     print(f"\nOutput written : {output_file}")
     print(f"Total lines    : {len(report_lines):,}")
-    print("\n--- Report preview (first 30 lines) ---")
-    for ln in report_lines[:30]:
-        print(ln)
+    # print("\n--- Report preview (first 30 lines) ---")
+    # for ln in report_lines[:30]:
+    #     print(ln)
 
     print("\nEIBMRLFI complete.")
 
