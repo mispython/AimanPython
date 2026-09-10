@@ -1,26 +1,21 @@
-1TOTAL OVERDUE LOANS DETAILS                                                                                                            
- AS AT 31/08/26 (O/D)                                                                                                                   
-                                                                                                                                        
- BRANCH=ASR                                                                                                                             
-                                                                                                                                        
- Obs   BLDATE      NAME       CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD     ACCTNO  BALANCE APPRLIMT EXCESDT   TODDT   DAYS BRANCH
-                                                                                                                                        
-   1 01/08/26 ROHANA BINTI JA   77     166      0     30570    9700      K    3801552424 62370.49   62040  01/08/26        0   31  ASR  
-   2 29/07/22 LEE KWOK HENG&C   78      32      4     30570    9700      K    3812730433     0.00       0  29/07/22 29/07/22 1495  ASR  
-1TOTAL OVERDUE LOANS DETAILS                                                                                                            
- AS AT 31/08/26 (O/D)                                                                                                                   
-                                                                                                                                        
- BRANCH=ATR                                                                                                                             
-                                                                                                                                        
- Obs   BLDATE     NAME      CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD     ACCTNO  BALANCE  APPRLIMT EXCESDT  TODDT DAYS BRANCH    
-                                                                                                                                        
-   3 01/06/26 TAN PENG YEOW   78      13      1     30570    9700      A    3800749036 610398.61  600000  01/06/26   0    92   ATR      
-1TOTAL OVERDUE LOANS DETAILS                                                                                                            
- AS AT 31/08/26 (O/D)                                                                                                                   
-                                                                                                                                        
- BRANCH=BBA                                                                                                                             
-                                                                                                                                        
- Obs   BLDATE      NAME       CUSTCD PRODUCT RISKCODE COLLCD SECTORCD STATECD     ACCTNO  BALANCE  APPRLIMT EXCESDT  TODDT DAYS BRANCH  
-                                                                                                                                        
-   4 01/08/26 CHIANG SIEW MEI   78     166      0     30570    9700      P    3800555810 201115.74  200000  01/08/26   0    31   BBA    
-   5 01/08/26 CHEW KUANG PENG   78     166      0     30570    9700      P    3817336710 303575.07  300000  01/08/26   0    31   BBA    
+PUBLIC BANK BERHAD                                                                                                                   
+NEW LIQUIDITY FRAMEWORK (ISLAMIC) AS AT 08/09/26                                                                                     
+                                                                                                                                     
+Obs       BNMCODE            AMOUNT        AMTUSD    AMTSGD                                                                          
+                                                                                                                                     
+  1    9363100020000Y      600811491.62       0         0                                                                            
+  2    9363100030000Y      192224953.72       0         0                                                                            
+  3    9363100050000Y     3204381310.35       0         0                                                                            
+  4    9363100060000Y    14733479839.31       0         0                                                                            
+  5    9363400050000Y      145051632.51       0         0                                                                            
+  6    9363400060000Y      915498992.89       0         0                                                                            
+  7    9363600050000Y      260000000.00       0         0                                                                            
+  8    9363600060000Y     1589936692.02       0         0                                                                            
+  9    9563100020000Y      600811491.62       0         0                                                                            
+ 10    9563100030000Y      192224953.72       0         0                                                                            
+ 11    9563100050000Y     3204381310.35       0         0                                                                            
+ 12    9563100060000Y    14733479839.31       0         0                                                                            
+ 13    9563400050000Y      145051632.51       0         0                                                                            
+ 14    9563400060000Y      915498992.89       0         0                                                                            
+ 15    9563600050000Y      260000000.00       0         0                                                                            
+ 16    9563600060000Y     1589936692.02       0         0                                                                            
