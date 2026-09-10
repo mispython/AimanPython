@@ -1,123 +1,26 @@
-cd /sas/python/virt_edw/Data_Warehouse/MIS/XMIS
 /sas/python/virt_edw_dev/bin/python3 - <<'PY'
-import polars as pl
-import DALWPBBD
-print("SAVG AMTIND:")
-print(DALWPBBD.BNM_SAVG["AMTIND"].value_counts().sort("count", descending=True).head(10))
-print("\nCURN AMTIND:")
-print(DALWPBBD.BNM_CURN["AMTIND"].value_counts().sort("count", descending=True).head(10))
-print("\nCURN PRODCD[:3] top:")
-print(
-    DALWPBBD.BNM_CURN
-    .with_columns(pl.col("PRODCD").str.slice(0, 3).alias("p3"))
-    .select("p3").to_series().value_counts().sort("count", descending=True).head(10)
-)
-PY
-
-
-
-
-/sas/python/virt_edw_dev/bin/python3 - <<'PY'
-import duckdb
-BASE = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI"
-for name, f in [("FD", "fdcd09126.parquet"), ("CURRENT", "ca09126.parquet")]:
-    con = duckdb.connect()
-    p = f"{BASE}/{f}"
-    print(f"\n=== {name} : {p} ===")
-    print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{p}')").df().to_string())
-PY
-
-
-
-
-
-/sas/python/virt_edw_dev/bin/python3 - <<'PY'
-import duckdb
-p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/k3tbl091.parquet"
+import duckdb, polars as pl
+from PBBDPFMT import fddenom_format
+p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/fdcd09126.parquet"
 con = duckdb.connect()
-print("=== SCHEMA ===")
-print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{p}')").df().to_string())
-print("\n=== FIRST 3 ROWS ===")
-print(con.execute(f"SELECT * FROM read_parquet('{p}') LIMIT 3").df().to_string())
+vals = con.execute(f"SELECT INTPLAN, COUNT(*) AS n FROM read_parquet('{p}') GROUP BY 1").pl()
+vals = vals.with_columns(
+    pl.col("INTPLAN").map_elements(fddenom_format, return_dtype=pl.Utf8).alias("denom")
+)
+print(vals.sort("n", descending=True).head(30))
 PY
-
-
-
-
-    raw = con.execute(f"""
-        SELECT
-            CAST(UTREF  AS VARCHAR) AS UTREF,
-            CAST(UTSTY  AS VARCHAR) AS UTSTY,
-            CAST(UTCCY  AS VARCHAR) AS UTCCY,
-            CAST(UTAMOC AS DOUBLE)  AS UTAMOC,
-            CAST(UTDPF  AS DOUBLE)  AS UTDPF,
-            CAST(UTDLP  AS VARCHAR) AS UTDLP,
-            CAST(UTAICT AS DOUBLE)  AS UTAICT,
-            CAST(UTCTP  AS VARCHAR) AS UTCTP,
-            CAST(UTCUS  AS VARCHAR) AS UTCUS,
-            CAST(UTCLC  AS VARCHAR) AS UTCLC,
-            CAST(<REAL_MATDT_COL> AS DATE) AS MATDT
-        FROM read_parquet('{k3_cache.as_posix()}')
-    """).pl()
-
-
-
-
-(DATE '1960-01-01' + CAST(<REAL_MATDT_COL> AS INTEGER)) AS MATDT
-
-
-
-
-        utdlp = r["UTDLP"]
-        utaict = r["UTAICT"] or 0.0
-        matdt = r["MATDT"]
 
 
 
 
 /sas/python/virt_edw_dev/bin/python3 - <<'PY'
 import duckdb
-p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/loan091.parquet"
+p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/ca09126.parquet"
 con = duckdb.connect()
 print(con.execute(f"""
-    SELECT AMTIND, LENGTH(AMTIND) AS len, PAIDIND, LENGTH(PAIDIND) AS plen, COUNT(*) AS n
+    SELECT COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE PRODUCT BETWEEN 400 AND 410) AS in_fcy_range,
+           MIN(PRODUCT) AS minp, MAX(PRODUCT) AS maxp
     FROM read_parquet('{p}')
-    GROUP BY 1,2,3,4 ORDER BY n DESC LIMIT 20
 """).df().to_string())
 PY
-
-
-
-
-/sas/python/virt_edw_dev/bin/python3 - <<'PY'
-import DALWPBBD
-print("SAVG AMTIND:"); print(DALWPBBD.BNM_SAVG["AMTIND"].value_counts().sort("count", descending=True).head(10))
-print("CURN AMTIND:"); print(DALWPBBD.BNM_CURN["AMTIND"].value_counts().sort("count", descending=True).head(10))
-print("CURN PRODCD[:3] top:"); print(
-    DALWPBBD.BNM_CURN.with_columns(__import__("polars").col("PRODCD").str.slice(0,3).alias("p3"))
-        ["p3"].value_counts().sort("count", descending=True).head(10)
-)
-PY
-
-
-
-
-/sas/python/virt_edw_dev/bin/python3 - <<'PY'
-import duckdb
-for name, p in [
-    ("FD",      ".../fdcd09126.parquet"),
-    ("CURRENT", ".../ca09126.parquet"),
-]:
-    con = duckdb.connect()
-    print(f"\n=== {name} ===")
-    print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{p}')").df().to_string())
-PY
-
-
-
-
-import polars as pl, duckdb
-from PBBDPFMT import fddenom_format
-con = duckdb.connect()
-vals = con.execute("SELECT DISTINCT INTPLAN FROM read_parquet('.../fdcd09126.parquet')").pl()
-print(vals.with_columns(pl.col("INTPLAN").map_elements(fddenom_format, return_dtype=pl.Utf8).alias("denom")))
