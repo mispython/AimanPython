@@ -1,3 +1,277 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 XMIS]$ /sas/python/virt_edw_dev/bin/python3 - <<'PY'
+> import polars as pl
+> import DALWPBBD
+> print("SAVG AMTIND:")
+> print(DALWPBBD.BNM_SAVG["AMTIND"].value_counts().sort("count", descending=True).head(10))
+> print("\nCURN AMTIND:")
+> print(DALWPBBD.BNM_CURN["AMTIND"].value_counts().sort("count", descending=True).head(10))
+> print("\nCURN PRODCD[:3] top:")
+> print(
+>     DALWPBBD.BNM_CURN
+>     .with_columns(pl.col("PRODCD").str.slice(0, 3).alias("p3"))
+>     .select("p3").to_series().value_counts().sort("count", descending=True).head(10)
+> )
+> PY
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+FileNotFoundError: [Errno 2] No such file or directory: '-'
+Step 0: Deriving report date / week number...
+  REPTDATE : 2026-09-09
+  REPTMON  : 09
+  NOWK     : 4
+
+Step 1: Resolving and caching input files...
+  [SAVING] Cache fresh - skipping conversion.
+  [CURRENT] Cache fresh - skipping conversion.
+  [CISDP] Cache fresh - skipping conversion.
+
+Step 2: Building BNM_SAVG...
+  BNM_SAVG rows: 4,250,521
+
+Step 3: Building BNM_CURN / BNM_FCY...
+  Joining FCY with CISDP and appending onto CURN...
+  BNM_CURN rows: 901,990  (incl. FCY appended)
+
+Step 4: Building BNM_DEPT (branch-level summary)...
+  BNM_DEPT rows: 74,881
+
+DALWPBBD complete. Cached: SAVG094.parquet, CURN094.parquet, DEPT094.parquet
+
+==================================================
+SAVG AMTIND:
+shape: (1, 2)
+┌────────┬─────────┐
+│ AMTIND ┆ count   │
+│ ---    ┆ ---     │
+│ str    ┆ u32     │
+╞════════╪═════════╡
+│ D      ┆ 4250521 │
+└────────┴─────────┘
+
+CURN AMTIND:
+shape: (1, 2)
+┌────────┬────────┐
+│ AMTIND ┆ count  │
+│ ---    ┆ ---    │
+│ str    ┆ u32    │
+╞════════╪════════╡
+│ D      ┆ 901990 │
+└────────┴────────┘
+
+CURN PRODCD[:3] top:
+shape: (6, 2)
+┌─────┬────────┐
+│ p3  ┆ count  │
+│ --- ┆ ---    │
+│ str ┆ u32    │
+╞═════╪════════╡
+│ 421 ┆ 826204 │
+│ 426 ┆ 71163  │
+│ N   ┆ 3934   │
+│ 341 ┆ 662    │
+│ 431 ┆ 24     │
+│ 342 ┆ 3      │
+└─────┴────────┘
+(virt_edw_dev) [sas_edw_dev@svdwh004 XMIS]$ /sas/python/virt_edw_dev/bin/python3 - <<'PY'
+> import duckdb
+> BASE = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI"
+> for name, f in [("FD", "fdcd09126.parquet"), ("CURRENT", "ca09126.parquet")]:
+>     con = duckdb.connect()
+>     p = f"{BASE}/{f}"
+>     print(f"\n=== {name} : {p} ===")
+>     print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{p}')").df().to_string())
+> PY
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+FileNotFoundError: [Errno 2] No such file or directory: '-'
+
+=== FD : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/fdcd09126.parquet ===
+     column_name column_type null   key default extra
+0         BRANCH      DOUBLE  YES  None    None  None
+1         ACCTNO      DOUBLE  YES  None    None  None
+2         STATEC     VARCHAR  YES  None    None  None
+3        PURPOSE     VARCHAR  YES  None    None  None
+4         CUSTCD      DOUBLE  YES  None    None  None
+5           CDNO      DOUBLE  YES  None    None  None
+6        OPENIND     VARCHAR  YES  None    None  None
+7         CURBAL      DOUBLE  YES  None    None  None
+8        ORIGAMT      DOUBLE  YES  None    None  None
+9        ORGDATE      DOUBLE  YES  None    None  None
+10       MATDATE      DOUBLE  YES  None    None  None
+11          RATE      DOUBLE  YES  None    None  None
+12       PRODUCT      DOUBLE  YES  None    None  None
+13          TERM      DOUBLE  YES  None    None  None
+14         MATID     VARCHAR  YES  None    None  None
+15       INTPLAN      DOUBLE  YES  None    None  None
+16       PAYMENT     VARCHAR  YES  None    None  None
+17       RENEWAL     VARCHAR  YES  None    None  None
+18        INTPAY      DOUBLE  YES  None    None  None
+19      LASTACTV      DOUBLE  YES  None    None  None
+20       INTFREQ      DOUBLE  YES  None    None  None
+21     INTFREQID     VARCHAR  YES  None    None  None
+22  PEND_INTPLAN      DOUBLE  YES  None    None  None
+23        FDHOLD     VARCHAR  YES  None    None  None
+24        COLLNO      DOUBLE  YES  None    None  None
+25    INTTFRACCT      DOUBLE  YES  None    None  None
+26  PRN_DISP_OPT     VARCHAR  YES  None    None  None
+27     PRN_RENEW      DOUBLE  YES  None    None  None
+28  PRN_TFR_ACCT      DOUBLE  YES  None    None  None
+29       DEPDATE      DOUBLE  YES  None    None  None
+30      MAILCODE     VARCHAR  YES  None    None  None
+
+=== CURRENT : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/ca09126.parquet ===
+                   column_name column_type null   key default extra
+0                       DOBCIS      DOUBLE  YES  None    None  None
+1                       ACCTNO      DOUBLE  YES  None    None  None
+2                         RACE     VARCHAR  YES  None    None  None
+3                      COUNTRY     VARCHAR  YES  None    None  None
+4                       BRANCH      DOUBLE  YES  None    None  None
+5                      CLOSEDT      DOUBLE  YES  None    None  None
+6                     REOPENDT      DOUBLE  YES  None    None  None
+7                     CUSTCODE      DOUBLE  YES  None    None  None
+8                       ODPLAN      DOUBLE  YES  None    None  None
+9                        RATE1      DOUBLE  YES  None    None  None
+10                       RATE2      DOUBLE  YES  None    None  None
+11                       RATE3      DOUBLE  YES  None    None  None
+12                       RATE4      DOUBLE  YES  None    None  None
+13                       RATE5      DOUBLE  YES  None    None  None
+14                    FLATRATE      DOUBLE  YES  None    None  None
+15                     ORGCODE     VARCHAR  YES  None    None  None
+16                     ORGTYPE     VARCHAR  YES  None    None  None
+17                      LIMIT1      DOUBLE  YES  None    None  None
+18                      LIMIT2      DOUBLE  YES  None    None  None
+19                      LIMIT3      DOUBLE  YES  None    None  None
+20                      LIMIT4      DOUBLE  YES  None    None  None
+21                      LIMIT5      DOUBLE  YES  None    None  None
+22                      INTYTD      DOUBLE  YES  None    None  None
+23                     PURPOSE     VARCHAR  YES  None    None  None
+24                      SECTOR      DOUBLE  YES  None    None  None
+25                       USER2     VARCHAR  YES  None    None  None
+26                       USER3     VARCHAR  YES  None    None  None
+27                    RISKCODE     VARCHAR  YES  None    None  None
+28                     LEDGBAL      DOUBLE  YES  None    None  None
+29                       L_DEP      DOUBLE  YES  None    None  None
+30                     OPENIND     VARCHAR  YES  None    None  None
+31                    LASTTRAN      DOUBLE  YES  None    None  None
+32                   RETURNS_Y      DOUBLE  YES  None    None  None
+33                      CHGIND      DOUBLE  YES  None    None  None
+34                      AVGAMT      DOUBLE  YES  None    None  None
+35                     PRODUCT      DOUBLE  YES  None    None  None
+36                     DEPTYPE     VARCHAR  YES  None    None  None
+37                       INTPD      DOUBLE  YES  None    None  None
+38                     INTPLAN      DOUBLE  YES  None    None  None
+39                      CURBAL      DOUBLE  YES  None    None  None
+40                    CHQFLOAT      DOUBLE  YES  None    None  None
+41                       STATE     VARCHAR  YES  None    None  None
+42                   INTCYCODE     VARCHAR  YES  None    None  None
+43                    APPRLIMT      DOUBLE  YES  None    None  None
+44                    ODINTCHR      DOUBLE  YES  None    None  None
+45                    ODINTACC      DOUBLE  YES  None    None  None
+46                    YTDAVAMT      DOUBLE  YES  None    None  None
+47                    INACTIVE     VARCHAR  YES  None    None  None
+48                      SECOND      DOUBLE  YES  None    None  None
+49                    BONUTYPE      DOUBLE  YES  None    None  None
+50                     SERVICE      DOUBLE  YES  None    None  None
+51                    BONUSANO      DOUBLE  YES  None    None  None
+52                       USER5     VARCHAR  YES  None    None  None
+53                    PREVBRNO      DOUBLE  YES  None    None  None
+54                     COSTCTR      DOUBLE  YES  None    None  None
+55             AUTHORISE_LIMIT      DOUBLE  YES  None    None  None
+56                    POST_IND     VARCHAR  YES  None    None  None
+57                     CENSUST      DOUBLE  YES  None    None  None
+58                     ACCPROF      DOUBLE  YES  None    None  None
+59                     MAXPROF      DOUBLE  YES  None    None  None
+60                    INTRSTPD      DOUBLE  YES  None    None  None
+61                    MTDAVBAL      DOUBLE  YES  None    None  None
+62                   BILLERIND     VARCHAR  YES  None    None  None
+63       MODIFIED_FACILITY_IND     VARCHAR  YES  None    None  None
+64                   DTLSTCUST      DOUBLE  YES  None    None  None
+65                      OPENDT      DOUBLE  YES  None    None  None
+66                    DNBFISME     VARCHAR  YES  None    None  None
+67                DATE_LST_DEP      DOUBLE  YES  None    None  None
+68           NXT_STMT_CYCLE_DT      DOUBLE  YES  None    None  None
+69                  STMT_CYCLE     VARCHAR  YES  None    None  None
+70                    INTPAYBL      DOUBLE  YES  None    None  None
+71                    MAILCODE     VARCHAR  YES  None    None  None
+72                       RRIND     VARCHAR  YES  None    None  None
+73                   RRCOMPLDT      DOUBLE  YES  None    None  None
+74                      REASON     VARCHAR  YES  None    None  None
+75                INSTRUCTIONS     VARCHAR  YES  None    None  None
+76                    OMNILOAN      DOUBLE  YES  None    None  None
+77                    OMNITRDB      DOUBLE  YES  None    None  None
+78                         DSR      DOUBLE  YES  None    None  None
+79              MTD_REPAID_AMT      DOUBLE  YES  None    None  None
+80        INDUSTRIAL_SECTOR_CD     VARCHAR  YES  None    None  None
+81           MTD_DISBURSED_AMT      DOUBLE  YES  None    None  None
+82        MTD_REPAY_TYPE10_AMT      DOUBLE  YES  None    None  None
+83        MTD_REPAY_TYPE20_AMT      DOUBLE  YES  None    None  None
+84        MTD_REPAY_TYPE30_AMT      DOUBLE  YES  None    None  None
+85                 COV_OPT_OUT     VARCHAR  YES  None    None  None
+86               REPAY_TYPE_CD     VARCHAR  YES  None    None  None
+87        PB_ENTERPRISE_REG_DT      DOUBLE  YES  None    None  None
+88           PB_ENTERPRISE_TAG     VARCHAR  YES  None    None  None
+89              WRITE_DOWN_BAL      DOUBLE  YES  None    None  None
+90                      FEEYTD      DOUBLE  YES  None    None  None
+91                      FAACRR     VARCHAR  YES  None    None  None
+92                     CRRCODE     VARCHAR  YES  None    None  None
+93                 ASCORE_PERM     VARCHAR  YES  None    None  None
+94                 ASCORE_LTST     VARCHAR  YES  None    None  None
+95                 ASCORE_COMM     VARCHAR  YES  None    None  None
+96                   ACSTATUS4     VARCHAR  YES  None    None  None
+97                   ACSTATUS5     VARCHAR  YES  None    None  None
+98                   ACSTATUS6     VARCHAR  YES  None    None  None
+99                   ACSTATUS7     VARCHAR  YES  None    None  None
+100                  ACSTATUS8     VARCHAR  YES  None    None  None
+101                  ACSTATUS9     VARCHAR  YES  None    None  None
+102                 ACSTATUS10     VARCHAR  YES  None    None  None
+103                   CUSTFISS     VARCHAR  YES  None    None  None
+104                   RISKRATE     VARCHAR  YES  None    None  None
+105                     DOBMNI      DOUBLE  YES  None    None  None
+106                RR_EXP_DATE      DOUBLE  YES  None    None  None
+107                RR_EFF_DATE      DOUBLE  YES  None    None  None
+108                  DNBFI_ORI     VARCHAR  YES  None    None  None
+109                 ESIGNATURE     VARCHAR  YES  None    None  None
+110                  CONDIMODE     VARCHAR  YES  None    None  None
+111               MTDAVBAL_MIS      DOUBLE  YES  None    None  None
+112                    NOCRDAY      DOUBLE  YES  None    None  None
+113                     ACCMCR      DOUBLE  YES  None    None  None
+114                    NODRDAY      DOUBLE  YES  None    None  None
+115                     ACCMDR      DOUBLE  YES  None    None  None
+116                  MTDAVCBAL      DOUBLE  YES  None    None  None
+117                  MTDAVDBAL      DOUBLE  YES  None    None  None
+118       PROP_DEVELOP_FIN_IND     VARCHAR  YES  None    None  None
+119               INTPLAN_IBCA      DOUBLE  YES  None    None  None
+120   PB_ENTERPRISE_PACKAGE_CD     VARCHAR  YES  None    None  None
+121             DIA_PAST01_MTH      DOUBLE  YES  None    None  None
+122             DIA_PAST02_MTH      DOUBLE  YES  None    None  None
+123             DIA_PAST03_MTH      DOUBLE  YES  None    None  None
+124             DIA_PAST04_MTH      DOUBLE  YES  None    None  None
+125             DIA_PAST05_MTH      DOUBLE  YES  None    None  None
+126             DIA_PAST06_MTH      DOUBLE  YES  None    None  None
+127             DIA_PAST07_MTH      DOUBLE  YES  None    None  None
+128             DIA_PAST08_MTH      DOUBLE  YES  None    None  None
+129             DIA_PAST09_MTH      DOUBLE  YES  None    None  None
+130             DIA_PAST10_MTH      DOUBLE  YES  None    None  None
+131             DIA_PAST11_MTH      DOUBLE  YES  None    None  None
+132             DIA_PAST12_MTH      DOUBLE  YES  None    None  None
+133              E_INVOICE_IND     VARCHAR  YES  None    None  None
+134     CASH_DEPOSIT_LIMIT_IND      DOUBLE  YES  None    None  None
+135  SOURCE_INCOME_CURRENCY_CD     VARCHAR  YES  None    None  None
+136    CASH_DEPOSIT_AMOUNT_AGG      DOUBLE  YES  None    None  None
+137          POST_IND_MAINT_DT      DOUBLE  YES  None    None  None
+138            POST_IND_EXP_DT      DOUBLE  YES  None    None  None
+139                    FDB_TAG     VARCHAR  YES  None    None  None
+140                 FDB_TAG_DT      DOUBLE  YES  None    None  None
+141             FDB_SCORING_DT      DOUBLE  YES  None    None  None
+142            REFERRAL_BRANCH      DOUBLE  YES  None    None  None
+143             ACCTNO_SAVE_LN      DOUBLE  YES  None    None  None
+144             SUB_OD_PRODUCT      DOUBLE  YES  None    None  None
+145        APPL_COMMERCIAL_TAG     VARCHAR  YES  None    None  None
+146                    OKU_IND     VARCHAR  YES  None    None  None
+147      WRIOFF_CLOSE_FILE_TAG     VARCHAR  YES  None    None  None
+148   WRIOFF_CLOSE_FILE_TAG_DT      DOUBLE  YES  None    None  None
+
+
+
+
 [sas_edw_dev@svdwh004 Data_Warehouse]$ source /sas/python/virt_edw_dev/bin/activate
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 - <<'PY'
 > import duckdb
