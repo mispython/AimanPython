@@ -6,6 +6,56 @@ KALMLIQI: Building K1TBL / K3TBL detail (PART 1/2)...
   K1TBL detail rows: 0   K3TBL detail rows: 475
 EIBMLIQI: job failed - unsupported operand type(s) for -: 'datetime.datetime' and 'datetime.date'
 
+
+
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 XMIS]$ /sas/python/virt_edw_dev/bin/python3 - <<'PY'
+> import duckdb, polars as pl
+> from PBBDPFMT import fddenom_format
+> p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/fdcd09126.parquet"
+> con = duckdb.connect()
+> vals = con.execute(f"SELECT INTPLAN, COUNT(*) AS n FROM read_parquet('{p}') GROUP BY 1").pl()
+> vals = vals.with_columns(
+>     pl.col("INTPLAN").map_elements(fddenom_format, return_dtype=pl.Utf8).alias("denom")
+> )
+> print(vals.sort("n", descending=True).head(30))
+> PY
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+FileNotFoundError: [Errno 2] No such file or directory: '-'
+shape: (30, 3)
+┌─────────┬────────┬───────┐
+│ INTPLAN ┆ n      ┆ denom │
+│ ---     ┆ ---    ┆ ---   │
+│ f64     ┆ i64    ┆ str   │
+╞═════════╪════════╪═══════╡
+│ 304.0   ┆ 607141 ┆ D     │
+│ 302.0   ┆ 347722 ┆ D     │
+│ 982.0   ┆ 264142 ┆ D     │
+│ 300.0   ┆ 220066 ┆ D     │
+│ 301.0   ┆ 191314 ┆ D     │
+│ …       ┆ …      ┆ …     │
+│ 895.0   ┆ 9639   ┆ D     │
+│ 260.0   ┆ 9193   ┆ D     │
+│ 385.0   ┆ 8325   ┆ D     │
+│ 236.0   ┆ 7512   ┆ D     │
+│ 265.0   ┆ 7268   ┆ D     │
+└─────────┴────────┴───────┘
+(virt_edw_dev) [sas_edw_dev@svdwh004 XMIS]$ /sas/python/virt_edw_dev/bin/python3 - <<'PY'
+> import duckdb
+> p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/ca09126.parquet"
+> con = duckdb.connect()
+> print(con.execute(f"""
+>     SELECT COUNT(*) AS total,
+>            COUNT(*) FILTER (WHERE PRODUCT BETWEEN 400 AND 410) AS in_fcy_range,
+>            MIN(PRODUCT) AS minp, MAX(PRODUCT) AS maxp
+>     FROM read_parquet('{p}')
+> """).df().to_string())
+> PY
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+FileNotFoundError: [Errno 2] No such file or directory: '-'
+    total  in_fcy_range  minp   maxp
+0  854848             0   3.0  550.0
+
 ============================
 
 [sas_edw_dev@svdwh004 Data_Warehouse]$ source /sas/python/virt_edw_dev/bin/activate
