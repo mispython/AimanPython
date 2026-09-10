@@ -1,17 +1,90 @@
-# Physical input #1: BNMTBL4 -- SAP.PBB.KAPITI4(0), raw flat file, static name.
-KAPITI4_FILE = STG_DIR / "sasdata" / "kapiti4.dat"
+/sas/python/virt_edw_dev/bin/python3 - <<'PY'
+import duckdb
+p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/k3tbl091.parquet"
+con = duckdb.connect()
+print("=== SCHEMA ===")
+print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{p}')").df().to_string())
+print("\n=== FIRST 3 ROWS ===")
+print(con.execute(f"SELECT * FROM read_parquet('{p}') LIMIT 3").df().to_string())
+PY
 
 
 
-    print("Step 1: Locating BNMTBL4 (KAPITI4) flat file...")
-    kapiti4_path = KAPITI4_FILE
-    if not kapiti4_path.exists():
-        raise FileNotFoundError(f"Expected BNMTBL4 file not found: {kapiti4_path}")
-    print(f"  Using: {kapiti4_path}")
+
+    raw = con.execute(f"""
+        SELECT
+            CAST(UTREF  AS VARCHAR) AS UTREF,
+            CAST(UTSTY  AS VARCHAR) AS UTSTY,
+            CAST(UTCCY  AS VARCHAR) AS UTCCY,
+            CAST(UTAMOC AS DOUBLE)  AS UTAMOC,
+            CAST(UTDPF  AS DOUBLE)  AS UTDPF,
+            CAST(UTDLP  AS VARCHAR) AS UTDLP,
+            CAST(UTAICT AS DOUBLE)  AS UTAICT,
+            CAST(UTCTP  AS VARCHAR) AS UTCTP,
+            CAST(UTCUS  AS VARCHAR) AS UTCUS,
+            CAST(UTCLC  AS VARCHAR) AS UTCLC,
+            CAST(<REAL_MATDT_COL> AS DATE) AS MATDT
+        FROM read_parquet('{k3_cache.as_posix()}')
+    """).pl()
 
 
 
-print("\nStep 9: Applying MATDTEX (%INC PGM(MATDTEX)) REMMTH reclassification...")
-for r in priced_rows:
-    r["REMMTH"] = calc_remmth(r["REPTDATE"], r["MATDT"], current_remmth=r["REMMTH"])
-    r["MRNGE"] = remfmt_label(r["REMMTH"])
+
+(DATE '1960-01-01' + CAST(<REAL_MATDT_COL> AS INTEGER)) AS MATDT
+
+
+
+
+        utdlp = r["UTDLP"]
+        utaict = r["UTAICT"] or 0.0
+        matdt = r["MATDT"]
+
+
+
+
+/sas/python/virt_edw_dev/bin/python3 - <<'PY'
+import duckdb
+p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQI/loan091.parquet"
+con = duckdb.connect()
+print(con.execute(f"""
+    SELECT AMTIND, LENGTH(AMTIND) AS len, PAIDIND, LENGTH(PAIDIND) AS plen, COUNT(*) AS n
+    FROM read_parquet('{p}')
+    GROUP BY 1,2,3,4 ORDER BY n DESC LIMIT 20
+""").df().to_string())
+PY
+
+
+
+
+/sas/python/virt_edw_dev/bin/python3 - <<'PY'
+import DALWPBBD
+print("SAVG AMTIND:"); print(DALWPBBD.BNM_SAVG["AMTIND"].value_counts().sort("count", descending=True).head(10))
+print("CURN AMTIND:"); print(DALWPBBD.BNM_CURN["AMTIND"].value_counts().sort("count", descending=True).head(10))
+print("CURN PRODCD[:3] top:"); print(
+    DALWPBBD.BNM_CURN.with_columns(__import__("polars").col("PRODCD").str.slice(0,3).alias("p3"))
+        ["p3"].value_counts().sort("count", descending=True).head(10)
+)
+PY
+
+
+
+
+/sas/python/virt_edw_dev/bin/python3 - <<'PY'
+import duckdb
+for name, p in [
+    ("FD",      ".../fdcd09126.parquet"),
+    ("CURRENT", ".../ca09126.parquet"),
+]:
+    con = duckdb.connect()
+    print(f"\n=== {name} ===")
+    print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{p}')").df().to_string())
+PY
+
+
+
+
+import polars as pl, duckdb
+from PBBDPFMT import fddenom_format
+con = duckdb.connect()
+vals = con.execute("SELECT DISTINCT INTPLAN FROM read_parquet('.../fdcd09126.parquet')").pl()
+print(vals.with_columns(pl.col("INTPLAN").map_elements(fddenom_format, return_dtype=pl.Utf8).alias("denom")))
