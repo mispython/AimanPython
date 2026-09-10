@@ -24,8 +24,7 @@ Dependency:
                    ever reads the two KAPITI (BNMK) sources below.
 
 ============================================================================
-PHYSICAL INPUT DATASETS (each cached to Parquet independently, using the
-same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py)
+PHYSICAL INPUT DATASETS (each cached to Parquet independently)
 ============================================================================
 1. BNMK.K1TBL&REPTMON&NOWK  (KAPITI treasury/GW deal extract)
    File : k1tbl<REPTMON><NOWK>.sas7bdat
@@ -74,10 +73,10 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_K1TBL_DIR = STG_DIR / "KAPITI" / "sasdata"
-INPUT_K3TBL_DIR = STG_DIR / "KAPITI" / "sasdata"
+INPUT_K1TBL_DIR = STG_DIR / "sasdata"
+INPUT_K3TBL_DIR = STG_DIR / "sasdata"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "KALMLIQI"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQI"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -457,8 +456,10 @@ def build_distribution_profile(k1_cache: Path, k3_cache: Path) -> pl.DataFrame:
 def main(reptdate: date, rpyr: int, rpmth: int, rpday: int, rd_days: list,
          reptmon: str, nowk: str, inst: str = "PBB") -> dict:
     print("KALMLIQI: Caching KAPITI input datasets to Parquet...")
-    k1_sas = INPUT_K1TBL_DIR / f"k1tbl{reptmon}{nowk}.sas7bdat"
-    k3_sas = INPUT_K3TBL_DIR / f"k3tbl{reptmon}{nowk}.sas7bdat"
+    # k1_sas = INPUT_K1TBL_DIR / f"k1tbl{reptmon}{nowk}.sas7bdat"       # Prod file
+    # k3_sas = INPUT_K3TBL_DIR / f"k3tbl{reptmon}{nowk}.sas7bdat"       # Prod file
+    k1_sas = INPUT_K1TBL_DIR / f"k1tbl091.sas7bdat"         # Test file
+    k3_sas = INPUT_K3TBL_DIR / f"k3tbl091.sas7bdat"         # Test file
     k1_cache = _load_cached(k1_sas, "K1TBL")
     k3_cache = _load_cached(k3_sas, "K3TBL")
 
