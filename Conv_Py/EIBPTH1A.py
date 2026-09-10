@@ -1,573 +1,540 @@
 #!/usr/bin/env python3
 """
-Program: EIBPTH1A
-Purpose: PBB RDAL/NSRS Report Generation
+Program : EIBPTH1A.py
+Purpose : JCL orchestrator (EIBMTH1A step) -- builds the weekly/monthly
+          RDAL (Related Data Analysis Ledger) BNM submission. Combines a
+          weekly-code snapshot (BNM.ALWKM + PBCS.CCLW), a loan/share-margin
+          add-on (LOAN.LNNOTE, via PBBLNFMT), and treasury deal roll-ups
+          from EIBMSAPC (KAPX) and KALMLIFE (K3FEI), producing two flat
+          reports (RDALKM and NSRSKM) and an SFTP hand-off control file.
 
-- This program generates RDAL and NSRS formatted text files for Public Bank Berhad,
-    including Assets and Liabilities (AL), Off-Balance Sheet (OB), and Special (SP) sections.
-Supports D (Domestic), I (Islamic), and F (Foreign) amount indicators.
+Dependencies (module-level execution, matching EIBDRBDP.py JCL pattern):
+    from REPTDATE import get_monthly_reptdate_values
+    from PBBLNFMT import format_lnprod, format_lndenom
+    import KALMLIFE      -> KALMLIFE.K3FEI
+    import EIBMSAPC      -> EIBMSAPC.KAPX
+
+============================================================================
+PHYSICAL INPUTS (each cached/resolved independently)
+============================================================================
+1. LOAN.LNNOTE       (JCL //LOAN DD DSN=SAP.PBB.MNILN(0))  -- GDG(0), latest
+   generation -> non-deterministic filename -> input_date.get_latest_file().
+   Cols used: PZIPCODE, LOANTYPE, BALANCE.
+
+2. BNM.ALWKM&REPTMON&NOWK   (LIBNAME BNM "SAP.PBB.D&REPTYEAR")
+   Deterministic filename built from REPTMON/NOWK/REPTYEAR -> constructed
+   directly (per project convention), NOT via get_latest_file().
+   Cols used: ITCODE, AMTIND, AMOUNT (post SAS-side aggregation already;
+   summary-level dataset).
+
+3. PBCS.CCLW&REPTMON&NOWK   (LIBNAME PBCS "SAP.PBB.RDAL.PBCS")
+   Deterministic filename, constructed directly. Same column shape as #2.
+
+Both #2 and #3 are stacked together (SAS: SET BNM.ALWKM... PBCS.CCLW...).
+
+============================================================================
+OUTPUTS
+============================================================================
+- RDALKM  (JCL //RDALKM DD DSN=SAP.PBB.KAPMNI.RDAL.PBCS, RECFM=FB LRECL=80)
+  Fixed catalogued dataset recreated each run (DISP=NEW,CATLG,DELETE) --
+  no date token in the name -> fixed output filename.
+- NSRSKM  (JCL //NSRSKM DD DSN=SAP.PBB.NSRS.KAPMNI.RDAL.PBCS, RECFM=FB LRECL=80)
+  Same: fixed output filename.
+- SFTP01  control-file content embeds FDATE (DDMMYYYY, no separators) in the
+  target filename text, not in the physical filename of the control file
+  itself.
+
+RECFM=FB (not FBA) on both report DDs -> plain fixed-width text, NO ASA
+carriage-control byte (per project convention). Records are padded/
+truncated to LRECL=80.
 """
 
-import os
-import sys
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import date
+
+import duckdb
+import pandas as pd
 import polars as pl
+import pyarrow as pa
 import pyarrow.parquet as pq
-from typing import Dict, Tuple
+import gc
+
+from REPTDATE import get_monthly_reptdate_values
+from PBBLNFMT import format_lnprod, format_lndenom
+from input_date import get_latest_file
+
+import KALMLIFE
+import EIBMSAPC
+
+# FLAG-03: EDW_TRANSFORMATION.py (get_sftp_info()) is referenced by project
+# convention for SFTP uploads but was not supplied as an attached dependency
+# for this conversion. Kept as a commented placeholder import.
+# from EDW_TRANSFORMATION import get_sftp_info
+# import paramiko
+
+# ============================================================================
+# STEP 0: REPORT-DATE / MACRO-VARIABLE CONTEXT
+# (Paths below depend on REPTMON/NOWK, so this must run before path setup.)
+# ============================================================================
 
 
-class PathConfig:
-    """Path configuration"""
+def _derive_context() -> dict:
+    monthly = get_monthly_reptdate_values(year_format="%Y")
+    reptdate = monthly.reptdate  # last day of previous month
 
-    def __init__(self):
-        base_path = Path(os.getenv('BNM_DATA_PATH', '/data'))
-        output_path = Path(os.getenv('BNM_OUTPUT_PATH', '/data/output'))
+    day_of_month = reptdate.day
+    # SELECT(DAY(REPTDATE)): REPTDATE is always a month-end date (28-31), so
+    # WHEN(8)/WHEN(15)/WHEN(22) never fire in practice -- OTHERWISE always
+    # applies. Dead branches preserved verbatim below.
+    if day_of_month == 8:
+        sdd, wk = 1, "1"
+    elif day_of_month == 15:
+        sdd, wk = 9, "2"
+    elif day_of_month == 22:
+        sdd, wk = 16, "3"
+    else:
+        sdd, wk = 23, "4"
 
-        # Input paths
-        self.loan_lib = base_path / "LOAN"
-        self.pbcs_lib = base_path / "PBCS"
+    mm = reptdate.month
+    if wk == "1":
+        mm1 = mm - 1 if mm - 1 != 0 else 12
+    else:
+        mm1 = mm
+    mm2 = mm - 1 if mm - 1 != 0 else 12
 
-        # BNM library
-        self.bnm_lib = output_path / "BNM"
-        self.bnm_lib.mkdir(parents=True, exist_ok=True)
+    return {
+        "reptdate": reptdate,
+        "reptyear": reptdate.strftime("%Y"),
+        "reptyr": reptdate.strftime("%y"),
+        "reptmon": reptdate.strftime("%m"),
+        "reptmon1": f"{mm1:02d}",
+        "reptmon2": f"{mm2:02d}",
+        "reptday": f"{day_of_month:02d}",
+        "rdate": reptdate.strftime("%d/%m/%y"),
+        "fdate": reptdate.strftime("%d%m%Y"),
+        "tdate": reptdate,
+        "sdate": date(reptdate.year, mm, sdd),
+        "sdesc": "PUBLIC BANK BERHAD",
+        "nowk": wk,
+        # BUG (preserved): the original SAS hardcodes NOWK1/2/3 to constants
+        # '1'/'2'/'3' regardless of the computed WK1/WK2/WK3 values --
+        # CALL SYMPUT('NOWK1',PUT('1',$1.)); etc. Neither NOWK1/2/3 nor
+        # WK1/WK2/WK3 are referenced anywhere else in the visible program,
+        # so this only affects dead macro-variable documentation, not output.
+        "nowk1": "1",
+        "nowk2": "2",
+        "nowk3": "3",
+    }
 
-        # Calculate reporting date
-        self.calculate_dates()
 
-        # Output files
-        self.rdalkm_file = output_path / "SAP.PBB.KAPMNI.RDAL.PBCS.txt"
-        self.nsrskm_file = output_path / "SAP.PBB.NSRS.KAPMNI.RDAL.PBCS.txt"
-        self.sftp01_file = output_path / "FTPPUT.txt"
+_CTX = _derive_context()
+REPTDATE = _CTX["reptdate"]
+REPTYEAR = _CTX["reptyear"]
+REPTMON = _CTX["reptmon"]
+REPTDAY = _CTX["reptday"]
+NOWK = _CTX["nowk"]
+RDATE = _CTX["rdate"]
+FDATE = _CTX["fdate"]
 
-    def calculate_dates(self):
-        """Calculate reporting dates - last day of previous month"""
-        today = datetime.now()
-        first_of_month = datetime(today.year, today.month, 1)
-        self.reptdate = first_of_month - timedelta(days=1)
+print("EIBPTH1A: Deriving report-date context...")
+print(f"  REPTDATE : {REPTDATE.isoformat()}   RDATE : {RDATE}   FDATE : {FDATE}")
+print(f"  REPTMON  : {REPTMON}   NOWK : {NOWK}   REPTYEAR : {REPTYEAR}")
 
-        day = self.reptdate.day
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-        # Determine week and SDD
-        if day == 8:
-            self.sdd = 1
-            self.wk = '1'
-            self.wk1 = '4'
-            self.wk2 = None
-            self.wk3 = None
-        elif day == 15:
-            self.sdd = 9
-            self.wk = '2'
-            self.wk1 = '1'
-            self.wk2 = None
-            self.wk3 = None
-        elif day == 22:
-            self.sdd = 16
-            self.wk = '3'
-            self.wk1 = '2'
-            self.wk2 = None
-            self.wk3 = None
+INPUT_LNNOTE_DIR = STG_DIR / "sasdata"
+INPUT_LNNOTE_FILE = get_latest_file(INPUT_LNNOTE_DIR, prefix="lnnote")
+
+INPUT_ALWKM_DIR = BASE_DIR / "input" / "prod" / f"BNM_D{REPTYEAR}"
+INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / f"alwkm{REPTMON}{NOWK}.sas7bdat"
+
+INPUT_CCLW_DIR = BASE_DIR / "input" / "prod" / "PBCS"
+INPUT_CCLW_FILE = INPUT_CCLW_DIR / f"cclw{REPTMON}{NOWK}.sas7bdat"
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBPTH1A"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_DIR = BASE_DIR / "output" / "EIBPTH1A"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+RDALKM_FILE = OUTPUT_DIR / "RDALKM.txt"
+NSRSKM_FILE = OUTPUT_DIR / "NSRSKM.txt"
+SFTP01_FILE = OUTPUT_DIR / "SFTP01.txt"
+
+CHUNK_ROWS = 500_000
+LRECL = 80
+
+# ============================================================================
+# HELPERS: sas7bdat -> parquet cache (EIBDLN1M.py / EIIMRM01.py pattern)
+# ============================================================================
+
+
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
+
+
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        if schema is None:
+            fields = []
+            for col, dtype in chunk.dtypes.items():
+                if dtype == "object":
+                    pa_type = pa.string()
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
+                else:
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
+    else:
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
+
+
+def _sas_round(x: float) -> float:
+    if x >= 0:
+        return float(int(x + 0.5))
+    return float(-int(-x + 0.5))
+
+
+def _group_sum_itcode_amtind(rows) -> list:
+    """PROC SUMMARY NWAY; CLASS ITCODE AMTIND; VAR AMOUNT; SUM=;"""
+    groups: dict = {}
+    for r in rows:
+        key = (r["ITCODE"], r["AMTIND"])
+        groups[key] = (groups.get(key, 0.0) or 0.0) + (r["AMOUNT"] or 0.0)
+    out = [{"ITCODE": k[0], "AMTIND": k[1], "AMOUNT": v} for k, v in groups.items()]
+    out.sort(key=lambda r: (r["ITCODE"], r["AMTIND"]))
+    return out
+
+
+# ============================================================================
+# STEP 1: CACHE LNNOTE / ALWKM / CCLW INPUTS
+# ============================================================================
+print("\nStep 1: Caching input SAS datasets to Parquet...")
+LNNOTE_CACHE = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
+ALWKM_CACHE = _load_cached(INPUT_ALWKM_FILE, "ALWKM")
+CCLW_CACHE = _load_cached(INPUT_CCLW_FILE, "CCLW")
+
+# ============================================================================
+# STEP 2: %WEEKLY -> DATA RDALKM; SET BNM.ALWKM... PBCS.CCLW...;
+# Excludes rows whose ITCODE(1:5) falls within any of 4 code ranges.
+# ============================================================================
+print("\nStep 2: Building RDALKM base (ALWKM + CCLW, range-excluded)...")
+
+_EXCLUDE_RANGES = [
+    ("30221", "30228"),
+    ("30231", "30238"),
+    ("30091", "30098"),
+    ("40151", "40158"),
+]
+
+con = duckdb.connect(database=":memory:")
+alwkm_cclw = con.execute(f"""
+    SELECT CAST(ITCODE AS VARCHAR) AS ITCODE,
+           CAST(AMTIND AS VARCHAR) AS AMTIND,
+           CAST(AMOUNT AS DOUBLE)  AS AMOUNT
+    FROM read_parquet('{ALWKM_CACHE.as_posix()}')
+    UNION ALL
+    SELECT CAST(ITCODE AS VARCHAR) AS ITCODE,
+           CAST(AMTIND AS VARCHAR) AS AMTIND,
+           CAST(AMOUNT AS DOUBLE)  AS AMOUNT
+    FROM read_parquet('{CCLW_CACHE.as_posix()}')
+""").pl()
+con.close()
+
+
+def _in_excluded_range(itcode: str) -> bool:
+    prefix5 = itcode[0:5]
+    return any(lo <= prefix5 <= hi for lo, hi in _EXCLUDE_RANGES)
+
+
+rdalkm_base = [
+    r for r in alwkm_cclw.iter_rows(named=True) if not _in_excluded_range(r["ITCODE"])
+]
+print(f"  RDALKM base rows after range exclusion: {len(rdalkm_base):,}")
+
+# ============================================================================
+# STEP 3: DATA CAG; SET LOAN.LNNOTE; (PZIPCODE filter) -> PROC SUMMARY
+# ============================================================================
+print("\nStep 3: Building CAG from LOAN.LNNOTE (PZIPCODE filter)...")
+
+_CAG_ZIPCODES = (
+    2002, 2013, 3039, 3047, 800003098, 800003114, 800004016, 800004022,
+    800004029, 800040050, 800040053, 800050024, 800060024, 800060045,
+    800060081, 80060085,
+)
+
+con = duckdb.connect(database=":memory:")
+zip_list_sql = ",".join(str(z) for z in _CAG_ZIPCODES)
+lnnote_raw = con.execute(f"""
+    SELECT CAST(LOANTYPE AS INTEGER) AS LOANTYPE,
+           CAST(BALANCE  AS DOUBLE)  AS BALANCE
+    FROM read_parquet('{LNNOTE_CACHE.as_posix()}')
+    WHERE CAST(PZIPCODE AS BIGINT) IN ({zip_list_sql})
+""").pl()
+con.close()
+
+cag_rows = []
+for r in lnnote_raw.iter_rows(named=True):
+    loantype = r["LOANTYPE"]
+    # PRODCD computed (PUT(LOANTYPE,LNPROD.)) but never used in the
+    # subsequent CLASS/summary -- dead column, computed only for parity.
+    _prodcd = format_lnprod(loantype)
+    amtind = format_lndenom(loantype)
+    cag_rows.append({"ITCODE": "7511100000000Y", "AMTIND": amtind, "AMOUNT": r["BALANCE"]})
+
+cag_summary = _group_sum_itcode_amtind(cag_rows)
+print(f"  CAG summary rows: {len(cag_summary):,}")
+
+# ============================================================================
+# STEP 4: DATA RDALKM; SET RDALKM CAG; PROC SORT BY ITCODE AMTIND;
+# ============================================================================
+rdalkm_combined = rdalkm_base + cag_summary
+rdalkm_combined.sort(key=lambda r: (r["ITCODE"], r["AMTIND"]))
+
+# ============================================================================
+# STEP 5: DATA AL OB SP; SET RDALKM; ... (split #1, pre '#'->'Y' transform)
+# ============================================================================
+
+
+def _split_al_ob_sp(rows):
+    """
+    WHERE SUBSTR(ITCODE,14,1) NOT IN ('F','#');
+    IF AMTIND ^= ' ' THEN DO;
+       IF SUBSTR(ITCODE,1,3) IN ('307') THEN OUTPUT SP;
+       ELSE IF SUBSTR(ITCODE,1,1) ^= '5' THEN DO;
+          IF SUBSTR(ITCODE,1,3) IN ('685','785') THEN OUTPUT SP;
+          ELSE OUTPUT AL;
+       END;
+       ELSE OUTPUT OB; END;
+    ELSE IF SUBSTR(ITCODE,2,1)='0' THEN OUTPUT SP;
+    """
+    al, ob, sp = [], [], []
+    for r in rows:
+        itcode = r["ITCODE"]
+        if len(itcode) < 14 or itcode[13] in ("F", "#"):
+            continue
+        amtind = r["AMTIND"]
+        if amtind and amtind != " ":
+            if itcode[0:3] == "307":
+                sp.append(r)
+            elif itcode[0:1] != "5":
+                if itcode[0:3] in ("685", "785"):
+                    sp.append(r)
+                else:
+                    al.append(r)
+            else:
+                ob.append(r)
         else:
-            self.sdd = 23
-            self.wk = '4'
-            self.wk1 = '3'
-            self.wk2 = '2'
-            self.wk3 = '1'
-
-        self.mm = self.reptdate.month
-
-        if self.wk == '1':
-            self.mm1 = self.mm - 1
-            if self.mm1 == 0:
-                self.mm1 = 12
-        else:
-            self.mm1 = self.mm
-
-        self.mm2 = self.mm - 1
-        if self.mm2 == 0:
-            self.mm2 = 12
-
-        self.sdate = datetime(self.reptdate.year, self.mm, self.sdd)
-        self.sdesc = 'PUBLIC BANK BERHAD'
-
-        # Format strings
-        self.nowk = self.wk
-        self.reptmon = f"{self.mm:02d}"
-        self.reptmon1 = f"{self.mm1:02d}"
-        self.reptmon2 = f"{self.mm2:02d}"
-        self.reptyear = f"{self.reptdate.year}"
-        self.reptyr = f"{self.reptdate.year % 100:02d}"
-        self.reptday = f"{self.reptdate.day:02d}"
-        self.rdate = self.reptdate.strftime('%d%m%Y')
-        self.fdate = self.reptdate.strftime('%d%m%y')
-        self.tdate = self.reptdate
-
-    def get_input_path(self, dataset_name: str) -> Path:
-        """Get input path for a dataset"""
-        return self.bnm_lib / f"{dataset_name}.parquet"
-
-    def get_pbcs_path(self, dataset_name: str) -> Path:
-        """Get PBCS library path"""
-        return self.pbcs_lib / f"{dataset_name}.parquet"
-
-    def get_loan_path(self, dataset_name: str) -> Path:
-        """Get loan library path"""
-        return self.loan_lib / f"{dataset_name}.parquet"
-
-
-class PBBRDALProcessor:
-    """Main processor for PBB RDAL/NSRS generation"""
-
-    def __init__(self, paths: PathConfig):
-        self.paths = paths
-
-    def load_weekly_data(self) -> pl.DataFrame:
-        """Load and combine weekly data from ALWKM and PBCS"""
-        print("Loading weekly data...")
-
-        datasets = []
-
-        # Read ALWKM dataset
-        alwkm_file = self.paths.get_input_path(f"ALWKM{self.paths.reptmon}{self.paths.nowk}")
-        if alwkm_file.exists():
-            df_alwkm = pl.read_parquet(alwkm_file)
-            datasets.append(df_alwkm)
-            print(f"  Loaded ALWKM: {len(df_alwkm)} records")
-
-        # Read PBCS CCLW dataset
-        cclw_file = self.paths.get_pbcs_path(f"CCLW{self.paths.reptmon}{self.paths.nowk}")
-        if cclw_file.exists():
-            df_cclw = pl.read_parquet(cclw_file)
-            datasets.append(df_cclw)
-            print(f"  Loaded CCLW: {len(df_cclw)} records")
-
-        if not datasets:
-            return pl.DataFrame({'ITCODE': [], 'AMTIND': [], 'AMOUNT': []})
-
-        df = pl.concat(datasets, how='diagonal')
-
-        # Filter out specific code ranges
-        df = df.with_columns([
-            pl.col('ITCODE').str.slice(0, 5).alias('CODE5')
-        ])
-
-        df = df.filter(
-            ~((pl.col('CODE5') >= '30221') & (pl.col('CODE5') <= '30228')) &
-            ~((pl.col('CODE5') >= '30231') & (pl.col('CODE5') <= '30238')) &
-            ~((pl.col('CODE5') >= '30091') & (pl.col('CODE5') <= '30098')) &
-            ~((pl.col('CODE5') >= '40151') & (pl.col('CODE5') <= '40158'))
-        )
-
-        df = df.drop('CODE5')
-
-        print(f"  After filtering: {len(df)} records")
-        return df
-
-    def process_cag_loans(self) -> pl.DataFrame:
-        """Process CAG loans"""
-        print("Processing CAG loans...")
-
-        lnnote_file = self.paths.get_loan_path('LNNOTE')
-        if not lnnote_file.exists():
-            print("  LNNOTE file not found, skipping CAG processing")
-            return pl.DataFrame({'ITCODE': [], 'AMTIND': [], 'AMOUNT': []})
-
-        df = pl.read_parquet(lnnote_file)
-
-        # Filter by PZIPCODE
-        cag_codes = [2002, 2013, 3039, 3047, 800003098, 800003114,
-                     800004016, 800004022, 800004029, 800040050,
-                     800040053, 800050024, 800060024, 800060045,
-                     800060081, 80060085]
-
-        df = df.filter(pl.col('PZIPCODE').is_in(cag_codes))
-
-        # Note: PRODCD and AMTIND would need LNPROD and LNDENOM format mappings
-        # For now, using placeholder logic
-        df = df.with_columns([
-            pl.lit('I').alias('AMTIND'),  # Placeholder - should use LNDENOM format
-            pl.lit('7511100000000Y').alias('ITCODE')
-        ])
-
-        # Summarize
-        cag = df.group_by(['ITCODE', 'AMTIND']).agg([
-            pl.col('BALANCE').sum().alias('AMOUNT')
-        ])
-
-        print(f"  CAG loans: {len(cag)} records")
-        return cag
-
-    def split_into_sections(self, df: pl.DataFrame) -> Tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-        """Split data into AL, OB, and SP sections"""
-        print("Splitting into sections...")
-
-        # Filter: SUBSTR(ITCODE,14,1) NOT IN ('F','#')
-        df = df.filter(~pl.col('ITCODE').str.slice(13, 1).is_in(['F', '#']))
-
-        # Add helper columns
-        df = df.with_columns([
-            pl.col('ITCODE').str.slice(0, 3).alias('CODE3'),
-            pl.col('ITCODE').str.slice(0, 1).alias('CODE1'),
-            pl.col('ITCODE').str.slice(1, 1).alias('CODE2')
-        ])
-
-        # Split logic
-        df_with_amtind = df.filter(pl.col('AMTIND') != ' ')
-
-        df_sp_307 = df_with_amtind.filter(pl.col('CODE3') == '307')
-        df_not_5 = df_with_amtind.filter((pl.col('CODE3') != '307') & (pl.col('CODE1') != '5'))
-        df_sp_685_785 = df_not_5.filter(pl.col('CODE3').is_in(['685', '785']))
-        df_al_part = df_not_5.filter(~pl.col('CODE3').is_in(['685', '785']))
-        df_ob_part = df_with_amtind.filter((pl.col('CODE3') != '307') & (pl.col('CODE1') == '5'))
-        df_sp_blank = df.filter((pl.col('AMTIND') == ' ') & (pl.col('CODE2') == '0'))
-
-        df_al = df_al_part.select(['ITCODE', 'AMTIND', 'AMOUNT'])
-        df_ob = df_ob_part.select(['ITCODE', 'AMTIND', 'AMOUNT'])
-        df_sp = pl.concat([df_sp_307, df_sp_685_785, df_sp_blank], how='diagonal').select(
-            ['ITCODE', 'AMTIND', 'AMOUNT'])
-
-        print(f"  AL: {len(df_al)}, OB: {len(df_ob)}, SP: {len(df_sp)}")
-
-        return df_al, df_ob, df_sp
-
-    def process_hash_codes(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Process codes with # - replace with Y and negate amount"""
-        print("Processing hash codes...")
-
-        df = df.with_columns([
-            pl.when(pl.col('ITCODE').str.slice(13, 1) == '#')
-            .then(pl.col('ITCODE').str.slice(0, 13) + 'Y')
-            .otherwise(pl.col('ITCODE'))
-            .alias('ITCODE'),
-
-            pl.when(pl.col('ITCODE').str.slice(13, 1) == '#')
-            .then(pl.col('AMOUNT') * -1)
-            .otherwise(pl.col('AMOUNT'))
-            .alias('AMOUNT')
-        ])
-
-        # Summarize after hash processing
-        df = df.group_by(['ITCODE', 'AMTIND']).agg([
-            pl.col('AMOUNT').sum().alias('AMOUNT')
-        ])
-
-        print(f"  After hash processing: {len(df)} records")
-        return df
-
-    def write_rdal_file(self, df_al: pl.DataFrame, df_ob: pl.DataFrame, df_sp: pl.DataFrame,
-                        df_k3fei: pl.DataFrame, df_kapx: pl.DataFrame):
-        """Write RDAL formatted file"""
-        print("Writing RDAL file...")
-
-        phead = f"RDAL{self.paths.reptday}{self.paths.reptmon}{self.paths.reptyear}"
-
-        with open(self.paths.rdalkm_file, 'w') as f:
-            # Write header
-            f.write(f"{phead}\n")
-
-            # Write AL section
-            f.write("AL\n")
-            current_itcode = None
-            amountd = amounti = amountf = 0
-
-            for row in df_al.sort(['ITCODE', 'AMTIND']).iter_rows(named=True):
-                itcode = row['ITCODE']
-                amtind = row['AMTIND']
-                amount = row['AMOUNT']
-
-                # Check PROCEED logic
-                proceed = True
-                if self.paths.reptday in ['08', '22']:
-                    if itcode == '4003000000000Y' and itcode[:2] in ['68', '78']:
-                        proceed = False
-
-                if proceed:
-                    if current_itcode is None:
-                        current_itcode = itcode
-
-                    if itcode != current_itcode:
-                        # Write previous ITCODE
-                        total = amountd + amounti + amountf
-                        f.write(f"{current_itcode};{total};{amounti};{amountf}\n")
-                        current_itcode = itcode
-                        amountd = amounti = amountf = 0
-
-                    amount_rounded = round(amount / 1000)
-                    if amtind == 'D':
-                        amountd += amount_rounded
-                    elif amtind == 'I':
-                        amounti += amount_rounded
-                    elif amtind == 'F':
-                        amountf += amount_rounded
-
-            # Write last ITCODE
-            if current_itcode is not None:
-                total = amountd + amounti + amountf
-                f.write(f"{current_itcode};{total};{amounti};{amountf}\n")
-
-            # Write OB section
-            f.write("OB\n")
-            current_itcode = None
-            amountd = amounti = amountf = 0
-
-            for row in df_ob.sort(['ITCODE', 'AMTIND']).iter_rows(named=True):
-                itcode = row['ITCODE']
-                amtind = row['AMTIND']
-                amount = row['AMOUNT']
-
-                if current_itcode is None:
-                    current_itcode = itcode
-
-                if itcode != current_itcode:
-                    total = amountd + amounti + amountf
-                    f.write(f"{current_itcode};{total};{amounti};{amountf}\n")
-                    current_itcode = itcode
-                    amountd = amounti = amountf = 0
-
-                amount_rounded = round(amount / 1000)
-                if amtind == 'D':
-                    amountd += amount_rounded
-                elif amtind == 'I':
-                    amounti += amount_rounded
-                elif amtind == 'F':
-                    amountf += amount_rounded
-
-            if current_itcode is not None:
-                total = amountd + amounti + amountf
-                f.write(f"{current_itcode};{total};{amounti};{amountf}\n")
-
-            # Write SP section
-            f.write("SP\n")
-
-            # Combine SP, K3FEI, and KAPX
-            df_sp_combined = pl.concat([df_sp, df_k3fei, df_kapx], how='diagonal')
-            df_sp_combined = df_sp_combined.sort('ITCODE')
-
-            current_itcode = None
-            amountd = amountf = 0
-
-            for row in df_sp_combined.iter_rows(named=True):
-                itcode = row['ITCODE']
-                amtind = row.get('AMTIND', 'D')
-                amount = row['AMOUNT']
-
-                if current_itcode is None:
-                    current_itcode = itcode
-
-                if itcode != current_itcode:
-                    total = amountd + amountf
-                    f.write(f"{current_itcode};{total};{amountf}\n")
-                    current_itcode = itcode
-                    amountd = amountf = 0
-
-                amount_rounded = round(amount / 1000)
-                if amtind == 'D':
-                    amountd += amount_rounded
-                elif amtind == 'F':
-                    amountf += amount_rounded
-
-            if current_itcode is not None:
-                total = amountd + amountf
-                f.write(f"{current_itcode};{total};{amountf}\n")
-
-        print(f"  Written to {self.paths.rdalkm_file}")
-
-    def write_nsrs_file(self, df_al: pl.DataFrame, df_ob: pl.DataFrame, df_sp: pl.DataFrame,
-                        df_k3fei: pl.DataFrame, df_kapx: pl.DataFrame):
-        """Write NSRS formatted file"""
-        print("Writing NSRS file...")
-
-        phead = f"RDAL{self.paths.reptday}{self.paths.reptmon}{self.paths.reptyear}"
-
-        with open(self.paths.nsrskm_file, 'w') as f:
-            # Write header
-            f.write(f"{phead}\n")
-
-            # Write AL section
-            f.write("AL\n")
-            current_itcode = None
-            amountd = amounti = amountf = 0
-
-            for row in df_al.sort(['ITCODE', 'AMTIND']).iter_rows(named=True):
-                itcode = row['ITCODE']
-                amtind = row['AMTIND']
-                amount = row['AMOUNT']
-
-                proceed = True
-                if self.paths.reptday in ['08', '22']:
-                    if itcode == '4003000000000Y' and itcode[:2] in ['68', '78']:
-                        proceed = False
-
-                if proceed:
-                    if current_itcode is None:
-                        current_itcode = itcode
-
-                    if itcode != current_itcode:
-                        total = amountd + amounti + amountf
-                        f.write(f"{current_itcode};{total};{amounti};{amountf}\n")
-                        current_itcode = itcode
-                        amountd = amounti = amountf = 0
-
-                    amount_rounded = round(amount)
-                    if itcode[:2] == '80':
-                        amount_rounded = round(amount / 1000)
-
-                    if amtind == 'D':
-                        amountd += amount_rounded
-                    elif amtind == 'I':
-                        amounti += amount_rounded
-                    elif amtind == 'F':
-                        amountf += amount_rounded
-
-            if current_itcode is not None:
-                total = amountd + amounti + amountf
-                f.write(f"{current_itcode};{total};{amounti};{amountf}\n")
-
-            # Write OB section
-            f.write("OB\n")
-            current_itcode = None
-            amountd = amounti = amountf = 0
-
-            for row in df_ob.sort(['ITCODE', 'AMTIND']).iter_rows(named=True):
-                itcode = row['ITCODE']
-                amtind = row['AMTIND']
-                amount = row['AMOUNT']
-
-                if current_itcode is None:
-                    current_itcode = itcode
-
-                if itcode != current_itcode:
-                    total = amountd + amounti + amountf
-                    f.write(f"{current_itcode};{total};{amounti};{amountf}\n")
-                    current_itcode = itcode
-                    amountd = amounti = amountf = 0
-
-                if itcode[:2] == '80':
-                    amount = round(amount / 1000)
-
-                amount_rounded = round(amount)
-                if amtind == 'D':
-                    amountd += amount_rounded
-                elif amtind == 'I':
-                    amounti += amount_rounded
-                elif amtind == 'F':
-                    amountf += amount_rounded
-
-            if current_itcode is not None:
-                total = amountd + amounti + amountf
-                f.write(f"{current_itcode};{total};{amounti};{amountf}\n")
-
-            # Write SP section
-            f.write("SP\n")
-
-            df_sp_combined = pl.concat([df_sp, df_k3fei, df_kapx], how='diagonal')
-            df_sp_combined = df_sp_combined.sort('ITCODE')
-
-            current_itcode = None
-            amountd = amountf = 0
-
-            for row in df_sp_combined.iter_rows(named=True):
-                itcode = row['ITCODE']
-                amtind = row.get('AMTIND', 'D')
-                amount = row['AMOUNT']
-
-                if current_itcode is None:
-                    current_itcode = itcode
-
-                if itcode != current_itcode:
-                    total = amountd + amountf
-                    if current_itcode[:2] == '80':
-                        total = round(total / 1000)
-                    f.write(f"{current_itcode};{total};{amountf}\n")
-                    current_itcode = itcode
-                    amountd = amountf = 0
-
-                amount_rounded = round(amount)
-                if amtind == 'D':
-                    amountd += amount_rounded
-                elif amtind == 'F':
-                    amountf += amount_rounded
-
-            if current_itcode is not None:
-                total = amountd + amountf
-                if current_itcode[:2] == '80':
-                    total = round(total / 1000)
-                f.write(f"{current_itcode};{total};{amountf}\n")
-
-        print(f"  Written to {self.paths.nsrskm_file}")
-
-    def generate_sftp_commands(self):
-        """Generate SFTP commands file"""
-        print("Generating SFTP commands...")
-
-        with open(self.paths.sftp01_file, 'w') as f:
-            f.write(f'PUT //SAP.PBB.NSRS.KAPMNI.RDAL.PBCS kapmni_EAB_PBCS_{self.paths.fdate}.txt\n')
-
-        print(f"  Written to {self.paths.sftp01_file}")
-
-    def run(self):
-        """Execute full processing"""
-        print("=" * 80)
-        print("EIBPTH1A - PBB RDAL/NSRS Report Generation")
-        print("=" * 80)
-        print(f"Bank: {self.paths.sdesc}")
-        print(f"Report Date: {self.paths.rdate}")
-        print(f"Week: {self.paths.nowk}")
-        print("=" * 80)
-
-        # Load weekly data
-        df_weekly = self.load_weekly_data()
-
-        # Process CAG loans
-        df_cag = self.process_cag_loans()
-
-        # Combine
-        df_rdalkm = pl.concat([df_weekly, df_cag], how='diagonal')
-        df_rdalkm = df_rdalkm.sort(['ITCODE', 'AMTIND'])
-
-        # Split into initial sections
-        df_al_init, df_ob_init, df_sp_init = self.split_into_sections(df_rdalkm)
-
-        # Load K3FEI and KAPX
-        k3fei_file = self.paths.get_input_path('K3FEI')
-        df_k3fei = pl.read_parquet(k3fei_file) if k3fei_file.exists() else pl.DataFrame(
-            {'ITCODE': [], 'AMTIND': [], 'AMOUNT': []})
-
-        kapx_file = self.paths.get_input_path('KAPX')
-        df_kapx = pl.read_parquet(kapx_file) if kapx_file.exists() else pl.DataFrame(
-            {'ITCODE': [], 'AMTIND': [], 'AMOUNT': []})
-
-        # Write RDAL file
-        self.write_rdal_file(df_al_init, df_ob_init, df_sp_init, df_k3fei, df_kapx)
-
-        # Process hash codes for NSRS
-        df_rdalkm_hash = self.process_hash_codes(df_rdalkm)
-        df_al_final, df_ob_final, df_sp_final = self.split_into_sections(df_rdalkm_hash)
-
-        # Write NSRS file
-        self.write_nsrs_file(df_al_final, df_ob_final, df_sp_final, df_k3fei, df_kapx)
-
-        # Generate SFTP commands
-        self.generate_sftp_commands()
-
-        print("=" * 80)
-        print("EIBPTH1A processing completed successfully")
-        print("=" * 80)
-
-
-def main():
-    """Main entry point"""
-    try:
-        paths = PathConfig()
-        processor = PBBRDALProcessor(paths)
-        processor.run()
-        return 0
-    except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+            if len(itcode) >= 2 and itcode[1:2] == "0":
+                sp.append(r)
+    return al, ob, sp
+
+
+print("\nStep 5: Splitting RDALKM (pre-transform) into AL / OB / SP...")
+al_1, ob_1, sp_1 = _split_al_ob_sp(rdalkm_combined)
+print(f"  AL: {len(al_1):,}   OB: {len(ob_1):,}   SP: {len(sp_1):,}")
+
+# ============================================================================
+# STEP 6: Emit AL / OB / SP group lines (RDALKM report rounding rules)
+# ============================================================================
+
+
+def _emit_al_ob(rows, round_fn):
+    """
+    RETAIN AMOUNTD AMOUNTI AMOUNTF;
+    <contribution accumulated per AMTIND bucket>
+    IF LAST.ITCODE THEN DO;
+       AMOUNTD=AMOUNTD+AMOUNTI+AMOUNTF;
+       PUT ITCODE;AMOUNTD;AMOUNTI;AMOUNTF;
+       reset;
+    END;
+    Rows assumed pre-sorted BY ITCODE AMTIND.
+    """
+    lines = []
+    acc = {"D": 0.0, "I": 0.0, "F": 0.0}
+    n = len(rows)
+    for idx, r in enumerate(rows):
+        itcode, amtind = r["ITCODE"], r["AMTIND"]
+        contrib = round_fn(r["AMOUNT"], itcode)
+        if amtind in acc:
+            acc[amtind] += contrib
+        is_last = (idx == n - 1) or (rows[idx + 1]["ITCODE"] != itcode)
+        if is_last:
+            total = acc["D"] + acc["I"] + acc["F"]
+            lines.append(f"{itcode};{int(total)};{int(acc['I'])};{int(acc['F'])}")
+            acc = {"D": 0.0, "I": 0.0, "F": 0.0}
+    return lines
+
+
+def _emit_sp(rows, round_fn, dead_recompute=False):
+    """SP block only has D/F buckets (no I)."""
+    lines = []
+    acc = {"D": 0.0, "F": 0.0}
+    n = len(rows)
+    for idx, r in enumerate(rows):
+        itcode, amtind = r["ITCODE"], r["AMTIND"]
+        contrib = round_fn(r["AMOUNT"], itcode)
+        if amtind in acc:
+            acc[amtind] += contrib
+        is_last = (idx == n - 1) or (rows[idx + 1]["ITCODE"] != itcode)
+        if is_last:
+            total = acc["D"] + acc["F"]
+            # NSRSKM's SP block computes a further-scaled AMOUNT for '80'-
+            # prefixed ITCODEs at this point but never actually prints it
+            # (PUT still writes AMOUNTD, not AMOUNT) -- dead recompute,
+            # preserved only as a no-op comment per source fidelity.
+            if dead_recompute and itcode[0:2] == "80":
+                _dead_amount = _sas_round(total / 1000)  # noqa: F841 (unused, matches SAS bug)
+            lines.append(f"{itcode};{int(total)};{int(acc['F'])}")
+            acc = {"D": 0.0, "F": 0.0}
+    return lines
+
+
+def _rdalkm_round(amount, _itcode):
+    return _sas_round((amount or 0.0) / 1000)
+
+
+print("\nStep 6: Emitting RDALKM report lines...")
+
+phead = f"RDAL{REPTDAY}{REPTMON}{REPTYEAR}"
+rdalkm_lines = [phead, "AL"]
+rdalkm_lines += _emit_al_ob(al_1, _rdalkm_round)
+rdalkm_lines.append("OB")
+rdalkm_lines += _emit_al_ob(ob_1, _rdalkm_round)
+
+# DATA SP; SET SP K3FEI KAPX; PROC SORT; BY ITCODE;
+sp_1_combined = sp_1 + KALMLIFE.K3FEI.to_dicts() + EIBMSAPC.KAPX.to_dicts()
+sp_1_combined.sort(key=lambda r: r["ITCODE"])
+rdalkm_lines.append("SP")
+rdalkm_lines += _emit_sp(sp_1_combined, _rdalkm_round)
+
+with open(RDALKM_FILE, "w", encoding="latin1") as fh:
+    for ln in rdalkm_lines:
+        fh.write(ln.ljust(LRECL)[:LRECL] + "\n")
+
+print(f"  RDALKM lines written: {len(rdalkm_lines):,} -> {RDALKM_FILE}")
+
+# ============================================================================
+# STEP 7: DATA RDALKM; SET RDALKM; '#'->'Y' sign-flip normalisation, then
+#         re-summarise (PROC SUMMARY NWAY; CLASS ITCODE AMTIND; SUM=;)
+# ============================================================================
+print("\nStep 7: Applying '#'->'Y' normalisation and re-summarising...")
+
+normalised_rows = []
+for r in rdalkm_combined:
+    itcode, amount = r["ITCODE"], r["AMOUNT"]
+    if len(itcode) >= 14 and itcode[13] == "#":
+        itcode = itcode[:13] + "Y"
+        amount = (amount or 0.0) * -1
+    normalised_rows.append({"ITCODE": itcode, "AMTIND": r["AMTIND"], "AMOUNT": amount})
+
+rdalkm_normalised = _group_sum_itcode_amtind(normalised_rows)
+
+# ============================================================================
+# STEP 8: DATA AL OB SP; SET RDALKM; ... (split #2, post-transform, for NSRS)
+# ============================================================================
+print("\nStep 8: Splitting normalised RDALKM into AL / OB / SP (NSRS pass)...")
+al_2, ob_2, sp_2 = _split_al_ob_sp(rdalkm_normalised)
+print(f"  AL: {len(al_2):,}   OB: {len(ob_2):,}   SP: {len(sp_2):,}")
+
+# ============================================================================
+# STEP 9: Emit AL / OB / SP group lines (NSRSKM report rounding rules)
+# ============================================================================
+
+
+def _nsrskm_round_al(amount, itcode):
+    amt = _sas_round(amount or 0.0)
+    if itcode[0:2] == "80":
+        amt = _sas_round(amt / 1000)
+    return amt
+
+
+def _nsrskm_round_ob(amount, itcode):
+    amt = amount or 0.0
+    if itcode[0:2] == "80":
+        amt = _sas_round(amt / 1000)
+    return _sas_round(amt)
+
+
+def _nsrskm_round_sp(amount, _itcode):
+    return _sas_round(amount or 0.0)
+
+
+print("\nStep 9: Emitting NSRSKM report lines...")
+
+nsrskm_lines = [phead, "AL"]
+nsrskm_lines += _emit_al_ob(al_2, _nsrskm_round_al)
+nsrskm_lines.append("OB")
+nsrskm_lines += _emit_al_ob(ob_2, _nsrskm_round_ob)
+
+# DATA SP; SET SP K3FEI KAPX; PROC SORT; BY ITCODE;   (second SET, per source)
+sp_2_combined = sp_2 + KALMLIFE.K3FEI.to_dicts() + EIBMSAPC.KAPX.to_dicts()
+sp_2_combined.sort(key=lambda r: r["ITCODE"])
+nsrskm_lines.append("SP")
+nsrskm_lines += _emit_sp(sp_2_combined, _nsrskm_round_sp, dead_recompute=True)
+
+with open(NSRSKM_FILE, "w", encoding="latin1") as fh:
+    for ln in nsrskm_lines:
+        fh.write(ln.ljust(LRECL)[:LRECL] + "\n")
+
+print(f"  NSRSKM lines written: {len(nsrskm_lines):,} -> {NSRSKM_FILE}")
+
+# ============================================================================
+# STEP 10: SFTP01 control file + SFTP hand-off
+# ============================================================================
+print("\nStep 10: Writing SFTP01 control file...")
+
+sftp_line = (
+    f'PUT //SAP.PBB.NSRS.KAPMNI.RDAL.PBCS  kapmni_EAB_PBCS_{FDATE}.txt'
+)
+with open(SFTP01_FILE, "w", encoding="latin1") as fh:
+    fh.write(sftp_line.ljust(LRECL)[:LRECL] + "\n")
+
+print(f"  SFTP01 control file -> {SFTP01_FILE}")
+
+# FLAG-03: actual SFTP transfer (RUNSFTP / COZBATCH step) uses the project's
+# EDW_TRANSFORMATION.get_sftp_info(HOST_DESC) + paramiko pattern. HOST_DESC
+# for this program is not yet confirmed, so the transfer is left as a
+# documented placeholder rather than guessed.
+#
+# host_info = get_sftp_info(HOST_DESC="<TO_BE_CONFIRMED>")
+# with paramiko.Transport((host_info["host"], host_info["port"])) as t:
+#     t.connect(username=host_info["user"], password=host_info["password"])
+#     sftp = paramiko.SFTPClient.from_transport(t)
+#     sftp.put(str(NSRSKM_FILE), f"FD-BNM REPORTING/PBB/BNM RPTG/EAB_PBCS/kapmni_EAB_PBCS_{FDATE}.txt")
+#     sftp.close()
+
+print("\nEIBPTH1A complete.")
