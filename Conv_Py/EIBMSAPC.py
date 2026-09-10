@@ -1,469 +1,414 @@
 #!/usr/bin/env python3
 """
-Program: EIBMSAPC
-Purpose: KAPX Processing - BNM Table X Securities Processing
+Program : EIBMSAPC.py
+Purpose : BNM treasury purchase/sale deal BNM-code derivation from the
+          BNMTBLX flat-file feed, rolled up at four granularities
+          (per-code, per-7-char-prefix, per-2-char-category, and per
+          category+maturity), producing KAPX.
 
-This program reads BNMTBLX text file containing securities transactions,
-    calculates remaining months to maturity, and maps them to BNM codes.
+          Originally %INC PGM(EIBMSAPC) inside EIBPTH1A -- a SAS open-code
+          fragment (no own JCL). Unlike KALMLIFE, this program owns a
+          complete DATA REPTDATE step of its own, so it is fully
+          self-contained for report-date purposes. KAPX is later appended
+          by EIBPTH1A into its SP dataset ("DATA SP; SET SP K3FEI KAPX;").
+
+Dependency:
+    REPTDATE.py -> get_monthly_reptdate_values() (REPTDATE = last day of the
+        previous month, matching the SAS REPTDATE formula).
+
+Physical input:
+    BNMTBLX  (JCL //BNMTBLX DD DSN=SAP.PBB.KAPITIX.TXT(0))
+        This is NOT a SAS dataset -- the ".TXT" DSN and GDG(0) relative
+        generation confirm a plain fixed-width mainframe flat file, read
+        here via byte-offset slicing (never parquet/read_csv), and resolved
+        via input_date.get_latest_file() since the physical filename is
+        non-deterministic (GDG "latest generation").
 """
 
-import os
-import sys
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import date
+
 import polars as pl
-import pyarrow.parquet as pq
-from typing import List, Dict
-
-
-class PathConfig:
-    """Path configuration"""
-
-    def __init__(self):
-        base_path = Path(os.getenv('BNM_DATA_PATH', '/data'))
-        output_path = Path(os.getenv('BNM_OUTPUT_PATH', '/data/output'))
-
-        # Input file
-        self.bnmtblx_file = base_path / "SAP.PBB.KAPITIX.TXT.0.txt"
-
-        # BNM library
-        self.bnm_lib = output_path / "BNM"
-        self.bnm_lib.mkdir(parents=True, exist_ok=True)
-
-        # Calculate reporting date
-        self.calculate_dates()
-
-    def calculate_dates(self):
-        """Calculate reporting dates - last day of previous month"""
-        today = datetime.now()
-        first_of_month = datetime(today.year, today.month, 1)
-        self.reptdate = first_of_month - timedelta(days=1)
-
-        day = self.reptdate.day
-
-        if day == 8:
-            self.sdd = 1
-            self.wk = '1'
-            self.wk1 = '4'
-        elif day == 15:
-            self.sdd = 9
-            self.wk = '2'
-            self.wk1 = '1'
-        elif day == 22:
-            self.sdd = 16
-            self.wk = '3'
-            self.wk1 = '2'
-        else:
-            self.sdd = 23
-            self.wk = '4'
-            self.wk1 = '3'
-
-        self.mm = self.reptdate.month
-        self.sdesc = 'PUBLIC BANK BERHAD'
-        self.reptmon = f"{self.mm:02d}"
-        self.reptyear = f"{self.reptdate.year}"
-        self.reptday = f"{self.reptdate.day:02d}"
-        self.rdate = self.reptdate.strftime('%d%m%Y')
-
-    def get_output_path(self, dataset_name: str) -> Path:
-        """Get output path for a dataset"""
-        return self.bnm_lib / f"{dataset_name}.parquet"
-
-
-class DateCalculator:
-    """Calculate remaining months to maturity"""
-
-    def __init__(self, reptdate: datetime):
-        self.reptdate = reptdate
-        self.rpyr = reptdate.year
-        self.rpmth = reptdate.month
-        self.rpday = reptdate.day
-
-        # Days in each month
-        self.days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-
-        # Adjust February for leap year in reporting year
-        if self.is_leap_year(self.rpyr):
-            self.days_in_month[1] = 29
-
-    @staticmethod
-    def is_leap_year(year: int) -> bool:
-        """Check if year is a leap year"""
-        return year % 4 == 0
-
-    def calculate_remaining_months(self, utmdt: datetime) -> float:
-        """Calculate remaining months from reptdate to maturity date"""
-        mdyr = utmdt.year
-        mdmth = utmdt.month
-        mdday = utmdt.day
-
-        # Adjust February for maturity year
-        md_days = self.days_in_month.copy()
-        if self.is_leap_year(mdyr):
-            md_days[1] = 29
-
-        # Get days in reporting month
-        rpdays = self.days_in_month[self.rpmth - 1]
-
-        # Adjust mdday if it exceeds days in reporting month
-        if mdday > rpdays:
-            mdday = rpdays
-
-        # Calculate remaining months
-        remy = mdyr - self.rpyr
-        remm = mdmth - self.rpmth
-        remd = mdday - self.rpday
-
-        remmth = remy * 12 + remm + remd / rpdays
-
-        return remmth
-
-    def get_origdate_category(self, remmth: float) -> str:
-        """Get origdate category based on remaining months"""
-        if remmth < 12:
-            return '50'
-        else:
-            return '60'
-
-
-class KAPXProcessor:
-    """Main processor for KAPX data"""
-
-    def __init__(self, paths: PathConfig):
-        self.paths = paths
-        self.date_calc = DateCalculator(paths.reptdate)
-
-    def read_bnmtblx(self) -> pl.DataFrame:
-        """Read BNMTBLX text file with fixed-width format"""
-        print("Reading BNMTBLX file...")
-
-        if not self.paths.bnmtblx_file.exists():
-            print(f"  Warning: {self.paths.bnmtblx_file} not found")
-            return pl.DataFrame()
-
-        # Read file with fixed-width columns (skip first row - header)
-        with open(self.paths.bnmtblx_file, 'r') as f:
-            lines = f.readlines()[1:]  # FIRSTOBS=2
-
-        records = []
-        for line in lines:
-            if len(line) < 101:
-                continue
-
-            record = {
-                'UTDLP': line[0:3].strip(),
-                'UTDLR': line[3:16].strip(),
-                'UTSTY': line[16:19].strip(),
-                'UTCUS': line[19:25].strip(),
-                'UTCLC': line[25:28].strip(),
-                'GFCTP': line[28:30].strip(),
-                'GFCNAL': line[30:32].strip(),
-                'SVTLX': line[32:52].strip(),
-                'UTOSD': line[52:62].strip(),
-                'UTTRD': line[62:72].strip(),
-                'UTMDD': line[72:75].strip(),
-                'UTMMM': line[75:78].strip(),
-                'UTMYY': line[78:83].strip(),
-                'UTFCV': line[82:101].strip(),
-                'UTBFCY': line[100:103].strip() if len(line) > 100 else ''
-            }
-            records.append(record)
-
-        if not records:
-            return pl.DataFrame()
-
-        df = pl.DataFrame(records)
-
-        # Parse UTFCV as float
-        df = df.with_columns([
-            pl.col('UTFCV').cast(pl.Float64)
-        ])
-
-        # Create UTMDT from components
-        df = df.with_columns([
-            pl.struct(['UTMDD', 'UTMMM', 'UTMYY']).map_elements(
-                lambda x: self.parse_maturity_date(x['UTMMM'], x['UTMDD'], x['UTMYY']),
-                return_dtype=pl.Date
-            ).alias('UTMDT')
-        ])
-
-        # Filter out FT deals
-        df = df.filter(~pl.col('UTDLP').str.slice(0, 2).eq('FT'))
-
-        print(f"  Loaded {len(df)} records")
-        return df
-
-    def parse_maturity_date(self, mm: str, dd: str, yyyy: str) -> datetime:
-        """Parse maturity date from components"""
-        try:
-            month = int(mm)
-            day = int(dd)
-            year = int(yyyy)
-            return datetime(year, month, day)
-        except:
-            return None
-
-    def create_dummy_codes(self) -> pl.DataFrame:
-        """Create dummy BNM codes for all possible combinations"""
-        print("Creating dummy BNM codes...")
-
-        records = []
-        for h in [6, 7]:
-            for i in [0, 3, 4, 10, 21, 22, 23, 50, 70, 90]:
-                for j in [0, 50, 60]:
-                    bnmcode = f"{h}87{i:02d}80{j:02d}0000Y"
-                    records.append({'BNMCODE': bnmcode})
-
-        df = pl.DataFrame(records).sort('BNMCODE')
-        print(f"  Created {len(df)} dummy codes")
-        return df
-
-    def split_purchase_sale(self, df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
-        """Split data into purchase and sale transactions"""
-        print("Splitting purchase and sale...")
-
-        # Extract transaction type from position 3 of UTDLP
-        df = df.with_columns([
-            pl.col('UTDLP').str.slice(2, 1).alias('TYPEPRSL')
-        ])
-
-        # Calculate remaining months
-        df = df.with_columns([
-            pl.col('UTMDT').map_elements(
-                lambda x: self.date_calc.calculate_remaining_months(x) if x else 0,
-                return_dtype=pl.Float64
-            ).alias('REMMTH')
-        ])
-
-        df_purchase = df.filter(pl.col('TYPEPRSL') == 'P')
-        df_sale = df.filter(pl.col('TYPEPRSL') == 'S')
-
-        print(f"  Purchase: {len(df_purchase)}, Sale: {len(df_sale)}")
-        return df_purchase, df_sale
-
-    def map_purchase_codes(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Map purchase transactions to BNM codes"""
-        print("Mapping purchase codes...")
-
-        results = []
-        for row in df.iter_rows(named=True):
-            utsty = row['UTSTY']
-            amount = row['UTFCV']
-            remmth = row['REMMTH']
-
-            origdate = self.date_calc.get_origdate_category(remmth)
-            bnmcode = None
-
-            if utsty in ['SSD', 'SLD', 'SDC', 'LDC', 'SZD', 'SFD']:
-                bnmcode = f'6870380{origdate}0000Y'
-            elif utsty in ['PBA', 'SBA']:
-                bnmcode = f'6870480{origdate}0000Y'
-            elif utsty in ['DBD', 'DBZ', 'MTN', 'PNB']:
-                bnmcode = f'6871080{origdate}0000Y'
-            elif utsty == 'MGS':
-                bnmcode = f'6872180{origdate}0000Y'
-            elif utsty == 'MTB':
-                bnmcode = f'6872280{origdate}0000Y'
-            elif utsty == 'MGI':
-                bnmcode = f'6872380{origdate}0000Y'
-            elif utsty in ['CB1', 'CNT']:
-                bnmcode = f'6875080{origdate}0000Y'
-            elif utsty in ['ISB', 'IDS', 'IBZ', 'KHA', 'SAC', 'SCM', 'SCD', 'SMC', 'ITB', 'BMC']:
-                bnmcode = f'6877080{origdate}0000Y'
-            elif utsty in ['BMN', 'BMF']:
-                bnmcode = f'6879080{origdate}0000Y'
-
-            if bnmcode:
-                results.append({'BNMCODE': bnmcode, 'AMOUNT': amount})
-
-        if results:
-            df_result = pl.DataFrame(results)
-            print(f"  Mapped {len(df_result)} purchase codes")
-            return df_result
-        else:
-            return pl.DataFrame({'BNMCODE': [], 'AMOUNT': []})
-
-    def map_sale_codes(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Map sale transactions to BNM codes"""
-        print("Mapping sale codes...")
-
-        results = []
-        for row in df.iter_rows(named=True):
-            utsty = row['UTSTY']
-            amount = row['UTFCV']
-            remmth = row['REMMTH']
-
-            origdate = self.date_calc.get_origdate_category(remmth)
-            bnmcode = None
-
-            if utsty in ['SSD', 'SLD', 'SDC', 'LDC', 'SZD', 'SFD']:
-                bnmcode = f'7870380{origdate}0000Y'
-            elif utsty in ['PBA', 'SBA']:
-                bnmcode = f'7870480{origdate}0000Y'
-            elif utsty in ['DBD', 'DBZ', 'MTN', 'PNB']:
-                bnmcode = f'7871080{origdate}0000Y'
-            elif utsty == 'MGS':
-                bnmcode = f'7872180{origdate}0000Y'
-            elif utsty == 'MTB':
-                bnmcode = f'7872280{origdate}0000Y'
-            elif utsty == 'MGI':
-                bnmcode = f'7872380{origdate}0000Y'
-            elif utsty in ['CB1', 'CNT']:
-                bnmcode = f'7875080{origdate}0000Y'
-            elif utsty in ['ISB', 'IDS', 'IBZ', 'KHA', 'SAC', 'SCM', 'SCD', 'SMC', 'ITB', 'BMC']:
-                bnmcode = f'7877080{origdate}0000Y'
-            elif utsty in ['BMN', 'BMF']:
-                bnmcode = f'7879080{origdate}0000Y'
-
-            if bnmcode:
-                results.append({'BNMCODE': bnmcode, 'AMOUNT': amount})
-
-        if results:
-            df_result = pl.DataFrame(results)
-            print(f"  Mapped {len(df_result)} sale codes")
-            return df_result
-        else:
-            return pl.DataFrame({'BNMCODE': [], 'AMOUNT': []})
-
-    def create_aggregates(self, df_merged: pl.DataFrame) -> pl.DataFrame:
-        """Create aggregate codes at different levels"""
-        print("Creating aggregate codes...")
-
-        # Add helper columns
-        df_merged = df_merged.with_columns([
-            pl.col('BNMCODE').str.slice(0, 7).alias('PREX'),
-            pl.col('BNMCODE').str.slice(0, 2).alias('CATX'),
-            pl.col('BNMCODE').str.slice(7, 2).alias('MATX')
-        ])
-
-        # Aggregate by PREX (first 7 chars)
-        df_prex = df_merged.group_by('PREX').agg([
-            pl.col('AMOUNT').sum().alias('AMOUNT')
-        ]).with_columns([
-            (pl.col('PREX') + '000000Y').alias('BNMCODE')
-        ]).select(['BNMCODE', 'AMOUNT'])
-
-        # Aggregate by CATX (first 2 chars)
-        df_catx = df_merged.group_by('CATX').agg([
-            pl.col('AMOUNT').sum().alias('AMOUNT')
-        ]).with_columns([
-            (pl.col('CATX') + '70080000000Y').alias('BNMCODE')
-        ]).select(['BNMCODE', 'AMOUNT'])
-
-        # Aggregate by CATX + MATX
-        df_matx = df_merged.group_by(['CATX', 'MATX']).agg([
-            pl.col('AMOUNT').sum().alias('AMOUNT')
-        ]).filter(
-            pl.col('MATX') != '00'
-        ).with_columns([
-            (pl.col('CATX') + '70080' + pl.col('MATX') + '0000Y').alias('BNMCODE')
-        ]).select(['BNMCODE', 'AMOUNT'])
-
-        print(f"  PREX aggregates: {len(df_prex)}")
-        print(f"  CATX aggregates: {len(df_catx)}")
-        print(f"  MATX aggregates: {len(df_matx)}")
-
-        return df_prex, df_catx, df_matx
-
-    def run(self) -> pl.DataFrame:
-        """Execute full processing"""
-        print("=" * 80)
-        print("KAPX Processing - BNM Table X Securities")
-        print("=" * 80)
-        print(f"Report Date: {self.paths.rdate}")
-        print("=" * 80)
-
-        # Read BNMTBLX
-        df_raw = self.read_bnmtblx()
-
-        if len(df_raw) == 0:
-            print("No data to process")
-            return pl.DataFrame({'ITCODE': [], 'AMTIND': [], 'AMOUNT': []})
-
-        # Create dummy codes
-        df_dummy = self.create_dummy_codes()
-
-        # Split purchase and sale
-        df_purchase, df_sale = self.split_purchase_sale(df_raw)
-
-        # Map to BNM codes
-        df_purcode = self.map_purchase_codes(df_purchase)
-        df_salcode = self.map_sale_codes(df_sale)
-
-        # Combine purchase and sale
-        df_salpur = pl.concat([df_purcode, df_salcode], how='diagonal')
-
-        if len(df_salpur) > 0:
-            df_salpur = df_salpur.group_by('BNMCODE').agg([
-                pl.col('AMOUNT').sum().alias('AMOUNT')
-            ]).sort('BNMCODE')
-
-        # Merge with dummy codes (fill missing with 0)
-        df_merged = df_dummy.join(df_salpur, on='BNMCODE', how='left')
-        df_merged = df_merged.with_columns([
-            pl.col('AMOUNT').fill_null(0.0)
-        ])
-
-        # Summarize by BNMCODE
-        df_mergx = df_merged.group_by('BNMCODE').agg([
-            pl.col('AMOUNT').sum().alias('AMOUNT')
-        ]).sort('BNMCODE')
-
-        # Create aggregates
-        df_prex, df_catx, df_matx = self.create_aggregates(df_merged)
-
-        # Combine all
-        df_kapx = pl.concat([df_mergx, df_prex, df_catx, df_matx], how='diagonal')
-
-        # Add AMTIND and ITCODE
-        df_kapx = df_kapx.with_columns([
-            pl.lit('D').alias('AMTIND'),
-            pl.col('BNMCODE').alias('ITCODE')
-        ])
-
-        # Final summary
-        df_kapx = df_kapx.group_by(['ITCODE', 'AMTIND']).agg([
-            pl.col('AMOUNT').sum().alias('AMOUNT')
-        ])
-
-        # Write output
-        output_file = self.paths.get_output_path('KAPX')
-        df_kapx.write_parquet(output_file)
-        print(f"\nWritten to {output_file}")
-
-        # Display summary
-        print("\n" + "=" * 80)
-        print("Processing Summary:")
-        print("=" * 80)
-        print(f"Total Records: {len(df_kapx)}")
-
-        if len(df_kapx) > 0:
-            total_amount = df_kapx['AMOUNT'].sum()
-            print(f"Total Amount: {total_amount:,.2f}")
-
-            print("\nSample Records (first 20):")
-            print(df_kapx.sort(['ITCODE', 'AMTIND']).head(20))
-
-        print("=" * 80)
-        print("KAPX processing completed successfully")
-        print("=" * 80)
-
-        return df_kapx
-
-
-def main():
-    """Main entry point"""
+
+from REPTDATE import get_monthly_reptdate_values
+from input_date import get_latest_file
+
+# ============================================================================
+# STEP 0: REPORT-DATE / MACRO-VARIABLE CONTEXT
+# ============================================================================
+
+
+def _derive_context() -> dict:
+    monthly = get_monthly_reptdate_values(year_format="%Y")
+    reptdate = monthly.reptdate  # last day of previous month
+
+    day_of_month = reptdate.day
+    # SELECT(DAY(REPTDATE)): REPTDATE is always a month-end date (28-31), so
+    # WHEN(8)/WHEN(15)/WHEN(22) never fire in practice -- OTHERWISE always
+    # applies. Preserved verbatim (dead branches kept, see below).
+    if day_of_month == 8:
+        sdd, wk, wk1, wk2, wk3 = 1, "1", "4", None, None
+    elif day_of_month == 15:
+        sdd, wk, wk1, wk2, wk3 = 9, "2", "1", None, None
+    elif day_of_month == 22:
+        sdd, wk, wk1, wk2, wk3 = 16, "3", "2", None, None
+    else:
+        sdd, wk, wk1, wk2, wk3 = 23, "4", "3", "2", "1"
+
+    mm = reptdate.month
+    if wk == "1":
+        mm1 = mm - 1 if mm - 1 != 0 else 12
+    else:
+        mm1 = mm
+    mm2 = mm - 1 if mm - 1 != 0 else 12
+
+    return {
+        "reptdate": reptdate,
+        "reptyear": reptdate.strftime("%Y"),
+        "reptmon": reptdate.strftime("%m"),
+        "reptmon1": f"{mm1:02d}",
+        "reptmon2": f"{mm2:02d}",
+        "reptday": f"{day_of_month:02d}",
+        "rdate": reptdate.strftime("%d/%m/%y"),
+        "sdate": date(reptdate.year, mm, sdd),
+        "sdesc": "PUBLIC BANK BERHAD",
+        # NOWK1/2/3 computed properly here (unlike EIBPTH1A's own copy of
+        # this step, which hardcodes them to '1'/'2'/'3' -- a SAS quirk).
+        # Neither this program nor EIBPTH1A references NOWK1/2/3 downstream,
+        # so this only affects documentation/macro-var parity, not output.
+        "nowk": wk,
+        "nowk1": wk1,
+        "nowk2": wk2,
+        "nowk3": wk3,
+    }
+
+
+_CTX = _derive_context()
+REPTDATE = _CTX["reptdate"]
+REPTYEAR = _CTX["reptyear"]
+REPTMON = _CTX["reptmon"]
+
+RPYR, RPMTH, RPDAY = REPTDATE.year, REPTDATE.month, REPTDATE.day
+
+print("EIBMSAPC: Deriving report-date context...")
+print(f"  REPTDATE : {REPTDATE.isoformat()}   RDATE : {_CTX['rdate']}")
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR = Path("/stgsrcsys/host/uat/AII")
+
+INPUT_BNMTBLX_DIR = STG_DIR / "flatfile"
+INPUT_BNMTBLX_FILE = get_latest_file(INPUT_BNMTBLX_DIR, prefix="bnmtblx")
+
+# ============================================================================
+# PROC FORMAT VALUE ORGMT.  LOW-12='50'; 12-HIGH='60';
+# (Overlap at 12 resolves to the FIRST-listed range per SAS format rules.)
+# ============================================================================
+
+
+def format_orgmt(remmth: float) -> str:
+    return "50" if remmth <= 12 else "60"
+
+
+# ============================================================================
+# %DCLVAR / %REMMTH macros
+# RPDAYS (RD1-RD12) is fixed per DCLVAR's RETAIN statement -- Feb is fixed
+# at 28 and is NEVER adjusted for the report year's leap-year status here
+# (unlike EIIMRM01.py's local RD_DAYS, which does adjust). D1-D12 (LDAY) and
+# MD1-MD12 (MDDAYS, only MD2 ever assigned) are declared in DCLVAR but never
+# referenced elsewhere in the program body -- dead declarations, omitted.
+# ============================================================================
+RPDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+
+def _remmth(matdt: date) -> float:
+    mdyr, mdmth, mdday = matdt.year, matdt.month, matdt.day
+    days_in_rpmth = RPDAYS[RPMTH - 1]
+    if mdday > days_in_rpmth:
+        mdday = days_in_rpmth
+    remy = mdyr - RPYR
+    remm = mdmth - RPMTH
+    remd = mdday - RPDAY
+    return remy * 12 + remm + remd / days_in_rpmth
+
+
+def _sas_round(x: float) -> float:
+    if x >= 0:
+        return float(int(x + 0.5))
+    return float(-int(-x + 0.5))
+
+
+# ============================================================================
+# STEP 1: DATA RAW; INFILE BNMTBLX FIRSTOBS=2; INPUT @col ... ;
+# Fixed-width byte-offset parsing (1-indexed SAS column -> 0-indexed slice).
+# ============================================================================
+print("\nEIBMSAPC Step 1: Parsing BNMTBLX fixed-width flat file...")
+
+
+def _num_informat(raw: str, decimals: int) -> float:
+    """Numeric informat w.d (e.g. 16.2): implied decimal point 'decimals'
+    places from the right UNLESS the text already contains a literal '.'."""
+    raw = raw.strip()
+    if raw == "":
+        return 0.0
+    if "." in raw:
+        return float(raw)
+    sign = -1 if raw.startswith("-") else 1
+    raw = raw.lstrip("+-")
+    if not raw.isdigit():
+        return 0.0
+    return sign * int(raw) / (10 ** decimals)
+
+
+_MONTHS_RANGE = range(1, 13)
+
+raw_rows = []
+with open(INPUT_BNMTBLX_FILE, "r", encoding="latin1") as fh:
+    lines = fh.readlines()
+
+for line in lines[1:]:  # FIRSTOBS=2 -> skip header line
+    line = line.rstrip("\n").ljust(120)
+
+    utdlp = line[0:3]
+    utdlr = line[3:16]        # dead beyond this point, parsed for parity
+    utsty = line[16:19]
+    utcus = line[19:25]       # dead
+    utclc = line[25:28]       # dead
+    gfctp = line[28:30]       # dead
+    gfcnal = line[30:32]      # dead
+    svtlx = line[32:52]       # dead
+    utosd = line[52:62]       # dead
+    uttrd = line[62:72]       # dead
+    utmdd = line[72:74]
+    utmmm = line[75:77]
+    utmyy = line[78:82]
+    utfcv_raw = line[82:98]
+    utbfcy = line[100:103]    # dead
+
+    if utdlp[0:2] == "FT":  # IF SUBSTR(UTDLP,1,2)='FT' THEN DELETE;
+        continue
+
     try:
-        paths = PathConfig()
-        processor = KAPXProcessor(paths)
-        processor.run()
-        return 0
-    except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return 1
+        utmdt = date(int(utmyy), int(utmmm), int(utmdd))
+    except ValueError:
+        continue
+
+    utfcv = _num_informat(utfcv_raw, 2)
+
+    raw_rows.append({
+        "UTDLP": utdlp, "UTSTY": utsty, "UTMDT": utmdt, "UTFCV": utfcv,
+    })
+
+print(f"  RAW rows after 'FT' delete filter: {len(raw_rows):,}")
+
+# ============================================================================
+# STEP 2: DATA DUMMY (KEEP=BNMCODE); nested-loop placeholder BNMCODEs
+# ============================================================================
+print("\nEIBMSAPC Step 2: Building DUMMY BNMCODE placeholders...")
+
+dummy_codes = []
+for h in (6, 7):
+    for i in (0, 3, 4, 10, 21, 22, 23, 50, 70, 90):
+        for j in (0, 50, 60):
+            dummy_codes.append(f"{h}87{i:02d}80{j:02d}0000Y")
+dummy_codes.sort()
+
+# ============================================================================
+# STEP 3: DATA PURCHASE SALE; SET RAW; ... %REMMTH;
+# ============================================================================
+print("\nEIBMSAPC Step 3: Splitting into PURCHASE / SALE with REMMTH...")
+
+purchase_rows, sale_rows = [], []
+for r in raw_rows:
+    typeprsl = r["UTDLP"][2:3]
+    remmth = _remmth(r["UTMDT"])
+    rec = {"UTSTY": r["UTSTY"], "UTFCV": r["UTFCV"], "REMMTH": remmth}
+    if typeprsl == "P":
+        purchase_rows.append(rec)
+    if typeprsl == "S":
+        sale_rows.append(rec)
+
+print(f"  PURCHASE rows: {len(purchase_rows):,}   SALE rows: {len(sale_rows):,}")
+
+# ============================================================================
+# STEP 4: DATA PURCODE / SALCODE (KEEP=BNMCODE AMOUNT)
+# ============================================================================
+print("\nEIBMSAPC Step 4: Building PURCODE / SALCODE BNMCODEs...")
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+def _purcode_bnmcode(utsty: str, origdate: str):
+    if utsty in ("SSD", "SLD", "SDC", "LDC", "SZD", "SFD"):
+        return f"6870380{origdate}0000Y"
+    elif utsty in ("PBA", "SBA"):
+        return f"6870480{origdate}0000Y"
+    elif utsty in ("DBD", "DBZ", "MTN", "PNB"):
+        return f"6871080{origdate}0000Y"
+    elif utsty in ("MGS",):
+        return f"6872180{origdate}0000Y"
+    elif utsty in ("MTB",):
+        return f"6872280{origdate}0000Y"
+    elif utsty in ("MGI",):
+        return f"6872380{origdate}0000Y"
+    elif utsty in ("CB1", "CNT"):
+        return f"6875080{origdate}0000Y"
+    elif utsty in ("ISB", "IDS", "IBZ", "KHA", "SAC", "SCM", "SCD", "SMC", "ITB", "BMC"):
+        return f"6877080{origdate}0000Y"
+    elif utsty in ("BMN", "BMF"):
+        return f"6879080{origdate}0000Y"
+    return None  # no branch matched -> BNMCODE stays blank (preserved as-is)
+
+
+def _salcode_bnmcode(utsty: str, origdate: str):
+    if utsty in ("SSD", "SLD", "SDC", "LDC", "SZD", "SFD"):
+        return f"7870380{origdate}0000Y"
+    elif utsty in ("PBA", "SBA"):
+        return f"7870480{origdate}0000Y"
+    elif utsty in ("DBD", "DBZ", "MTN", "PNB"):
+        return f"7871080{origdate}0000Y"
+    elif utsty in ("MGS",):
+        return f"7872180{origdate}0000Y"
+    elif utsty in ("MTB",):
+        return f"7872280{origdate}0000Y"
+    elif utsty in ("MGI",):
+        return f"7872380{origdate}0000Y"
+    elif utsty in ("CB1", "CNT"):
+        return f"7875080{origdate}0000Y"
+    elif utsty in ("ISB", "IDS", "IBZ", "KHA", "SAC", "SCM", "SCD", "SMC", "ITB", "BMC"):
+        return f"7877080{origdate}0000Y"
+    elif utsty in ("BMN", "BMF"):
+        # Source re-invokes PUT(REMMTH,ORGMT.) explicitly on this final
+        # branch rather than reusing the already-computed ORIGDATE; the
+        # value is identical either way, kept as a plain reuse here.
+        return f"7879080{origdate}0000Y"
+    return None
+
+
+purcode_rows = []
+for r in purchase_rows:
+    origdate = format_orgmt(r["REMMTH"])
+    bnmcode = _purcode_bnmcode(r["UTSTY"], origdate)
+    purcode_rows.append({"BNMCODE": bnmcode or "", "AMOUNT": r["UTFCV"]})
+
+salcode_rows = []
+for r in sale_rows:
+    origdate = format_orgmt(r["REMMTH"])
+    bnmcode = _salcode_bnmcode(r["UTSTY"], origdate)
+    salcode_rows.append({"BNMCODE": bnmcode or "", "AMOUNT": r["UTFCV"]})
+
+purcode_rows.sort(key=lambda r: r["BNMCODE"])
+salcode_rows.sort(key=lambda r: r["BNMCODE"])
+
+# ============================================================================
+# STEP 5: DATA SALPUR; MERGE PURCODE SALCODE; BY BNMCODE;
+# Real purchase/sale codes never collide (prefix '6' vs '7'), so this is a
+# key union. FLAG-02: rows with an unmatched UTSTY keep a blank BNMCODE and
+# COULD collide across PURCODE/SALCODE on that blank key; SAS MERGE would
+# apply "last-dataset-wins" (SALCODE overwrites PURCODE) for such a
+# collision. Reproduced here via ordered dict overlay (last-write-wins),
+# which matches SAS MERGE semantics for the common (non-duplicate) case.
+# ============================================================================
+print("\nEIBMSAPC Step 5: Merging PURCODE + SALCODE by BNMCODE...")
+
+salpur: dict = {}
+for r in purcode_rows:
+    salpur[r["BNMCODE"]] = r["AMOUNT"]
+for r in salcode_rows:
+    salpur[r["BNMCODE"]] = r["AMOUNT"]
+
+# ============================================================================
+# STEP 6: DATA MERG; MERGE DUMMY SALPUR; BY BNMCODE; IF AMOUNT=. THEN 0.00;
+# ============================================================================
+print("\nEIBMSAPC Step 6: Merging DUMMY + SALPUR...")
+
+merg: dict = {code: None for code in dummy_codes}
+for code, amt in salpur.items():
+    merg[code] = amt
+merg = {code: (amt if amt is not None else 0.00) for code, amt in merg.items()}
+
+merg_rows = [{"BNMCODE": code, "AMOUNT": amt} for code, amt in merg.items()]
+
+# ============================================================================
+# STEP 7: DATA MESS; SET MERG; PREX/CATX/MATX derived substrings.
+# ============================================================================
+mess_rows = [
+    {
+        "BNMCODE": r["BNMCODE"],
+        "AMOUNT": r["AMOUNT"],
+        "PREX": r["BNMCODE"][0:7],
+        "CATX": r["BNMCODE"][0:2],
+        "MATX": r["BNMCODE"][7:9],
+    }
+    for r in merg_rows
+]
+
+# ============================================================================
+# STEP 8: PROC SUMMARY roll-ups -- MERGX (by BNMCODE), PREX, CATX, MATX
+# ============================================================================
+print("\nEIBMSAPC Step 8: Building roll-up summaries...")
+
+
+def _group_sum(rows, key_fields, val_field="AMOUNT"):
+    groups: dict = {}
+    for r in rows:
+        key = tuple(r[f] for f in key_fields)
+        groups[key] = (groups.get(key, 0.0) or 0.0) + (r[val_field] or 0.0)
+    return groups
+
+
+mergx = _group_sum(merg_rows, ["BNMCODE"])
+prex_sum = _group_sum(mess_rows, ["PREX"])
+catx_sum = _group_sum(mess_rows, ["CATX"])
+matx_sum = _group_sum(mess_rows, ["CATX", "MATX"])
+
+# DATA PREX(KEEP=BNMCODE AMOUNT): BNMCODE=COMPRESS(PREX||'000000Y');
+prex_rows = [
+    {"BNMCODE": f"{prex}000000Y", "AMOUNT": amt}
+    for (prex,), amt in prex_sum.items()
+]
+
+# DATA CATX(KEEP=BNMCODE AMOUNT): BNMCODE=COMPRESS(CATX||'70080000000Y');
+catx_rows = [
+    {"BNMCODE": f"{catx}70080000000Y", "AMOUNT": amt}
+    for (catx,), amt in catx_sum.items()
+]
+
+# DATA MATX(KEEP=BNMCODE AMOUNT): IF MATX='00' THEN DELETE;
+#                                  BNMCODE=COMPRESS(CATX||'70080'||MATX||'0000Y');
+matx_rows = [
+    {"BNMCODE": f"{catx}70080{matx}0000Y", "AMOUNT": amt}
+    for (catx, matx), amt in matx_sum.items()
+    if matx != "00"
+]
+
+mergx_rows = [{"BNMCODE": k[0], "AMOUNT": v} for k, v in mergx.items()]
+mergx_rows.sort(key=lambda r: r["BNMCODE"])
+prex_rows.sort(key=lambda r: r["BNMCODE"])
+catx_rows.sort(key=lambda r: r["BNMCODE"])
+matx_rows.sort(key=lambda r: r["BNMCODE"])
+
+# ============================================================================
+# STEP 9: DATA KAPX; MERGE MERGX PREX CATX MATX; BY BNMCODE;
+#         AMTIND='D'; ITCODE=BNMCODE;
+# Last-dataset-wins overlay in MERGE statement order (MERGX, PREX, CATX,
+# MATX); the four code-construction patterns are disjoint in practice, so
+# this behaves as a straightforward union of roll-up rows.
+# ============================================================================
+print("\nEIBMSAPC Step 9: Building KAPX...")
+
+kapx_map: dict = {}
+for src in (mergx_rows, prex_rows, catx_rows, matx_rows):
+    for r in src:
+        kapx_map[r["BNMCODE"]] = r["AMOUNT"]
+
+kapx_pre = [{"ITCODE": code, "AMTIND": "D", "AMOUNT": amt} for code, amt in kapx_map.items()]
+
+# PROC SUMMARY DATA=KAPX NWAY; CLASS ITCODE AMTIND; VAR AMOUNT; SUM=;
+_kapx_groups = _group_sum(kapx_pre, ["ITCODE", "AMTIND"])
+KAPX = pl.DataFrame(
+    [{"ITCODE": k[0], "AMTIND": k[1], "AMOUNT": v} for k, v in _kapx_groups.items()]
+)
+
+print(f"  KAPX rows (module-level output): {KAPX.height:,}")
+print("EIBMSAPC complete.")
