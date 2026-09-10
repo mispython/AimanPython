@@ -57,13 +57,6 @@ none of these are physical mainframe inputs, they are built here:
   DEPT<REPTMON><NOWK>.parquet, written under OUTPUT_CACHE_DIR — persisted
   copies of the three DataFrames above so other programs in the same
   pipeline can read them via read_parquet() without re-running this module.
-
-REPTDATE.py / no reptdate.parquet:
-  DEPOSIT.REPTDATE has no physical Parquet/SAS equivalent in this project;
-  REPTDATE is derived from REPTDATE.py's get_reptdate_values() (Step 0).
-  NOWK here replicates the SAS SELECT(DAY(REPTDATE)) EXACT-MATCH logic
-  (WHEN 8/15/22/OTHERWISE) — intentionally NOT the ranged NOWK returned
-  by get_reptdate_values(); this program only fires on exact cut-off days.
 """
 
 import gc
@@ -100,20 +93,24 @@ STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 # INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "deposit"  # deposit_current
 # CURRENT_PREFIX    = "ica"
 
-INPUT_SAVING_DIR = STG_DIR / "MNITB" / "saving.sas7bdat"
-
+INPUT_SAVING_DIR  = STG_DIR / "MNITB" / "saving.sas7bdat"
 INPUT_CURRENT_DIR = STG_DIR / "MNITB" / "current.sas7bdat"
+INPUT_CISDP_DIR   = STG_DIR / "CIS"   / "deposit.sas7bdat"  # cisdp_deposit
 
-INPUT_CISDP_DIR = STG_DIR / "EIIWREXL" / "CISDP_deposit.sas7bdat"  # cisdp_deposit
+# # EIIWREXL job
+# # Parquet cache directory for the .sas7bdat -> Parquet conversion step
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWREXL"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# EIBMLIQI job
 # Parquet cache directory for the .sas7bdat -> Parquet conversion step
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWREXL"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQI"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Output cache directory — where BNM_SAVG/BNM_CURN/BNM_DEPT are persisted
 # for downstream programs (e.g. EIIWREXL.py) to read via read_parquet()
 # OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
-OUTPUT_CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWREXL"
+OUTPUT_CACHE_DIR = BASE_DIR / "input" / "cache" / "DALWPBBD"
 OUTPUT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -434,4 +431,5 @@ BNM_SAVG.write_parquet(SAVG_CACHE)
 BNM_CURN.write_parquet(CURN_CACHE)
 BNM_DEPT.write_parquet(DEPT_CACHE)
 
-print(f"\nDALWPBBD complete. Cached: {SAVG_CACHE.name}, {CURN_CACHE.name}, {DEPT_CACHE.name}")
+print(f"\nDALWPBBD complete. Cached: {SAVG_CACHE.name}, {CURN_CACHE.name}, {DEPT_CACHE.name}\n")
+print("==================================================")
