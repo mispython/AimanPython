@@ -1,18 +1,23 @@
-4219976PBCARD;8051486;0;0                                                       
-4219976UMA;0;0;0                                                                
-4219976000000Y;21022187;0;0                                                     
-4219979000000Y;30303;0;0                                                        
-4219985PBCARD;324735;0;0                                                        
-4219985UMA;0;0;0                                                                
-4219985000000Y;7702589;0;0                                                      
+def _ebc(s: str) -> bytes:
+    """SAS on z/OS sorts using the EBCDIC collating sequence (cp037).
+    Encoded bytes compare identically to mainframe SAS PROC SORT / BY."""
+    return s.encode("cp037")
 
 
 
-4219976000000Y;21022187;0;0                                                     
-4219976PBCARD;8051486;0;0                                                       
-4219976UMA;0;0;0                                                                
-4219979000000Y;30303;0;0                                                        
-4219985000000Y;7702589;0;0                                                      
-4219985PBCARD;324735;0;0                                                        
-4219985UMA;0;0;0                                                                
+
+# 1. _group_sum_itcode_amtind
+out.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
+
+# 2. Step 4
+rdalkm_combined.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
+
+# 3. Step 6
+sp_1_combined.sort(key=lambda r: _ebc(r["ITCODE"]))
+
+# 4. Step 9
+sp_2_combined.sort(key=lambda r: _ebc(r["ITCODE"]))
+
+
+
 
