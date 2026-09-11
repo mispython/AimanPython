@@ -1,15 +1,10 @@
-def _group_sum_itcode_amtind(rows) -> list:
-    """PROC SUMMARY NWAY; CLASS ITCODE AMTIND; VAR AMOUNT; SUM=;
-    Matches SAS default: observations with a missing (blank) CLASS value
-    are excluded from the output (no MISSING option was specified)."""
-    groups: dict = {}
-    for r in rows:
-        amtind = r["AMTIND"]
-        # SAS treats blank character values as missing for CLASS exclusion
-        if amtind is None or (isinstance(amtind, str) and amtind.strip() == ""):
-            continue
-        key = (r["ITCODE"], amtind)
-        groups[key] = (groups.get(key, 0.0) or 0.0) + (r["AMOUNT"] or 0.0)
-    out = [{"ITCODE": k[0], "AMTIND": k[1], "AMOUNT": v} for k, v in groups.items()]
-    out.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
-    return out
+def _sas_round(x: float) -> float:
+    """SAS ROUND() equivalent: round half away from zero, with the same
+    small relative fuzz SAS applies around the halfway point to absorb
+    IEEE-754 representation noise (e.g. 129701.49999999999 -> 129702)."""
+    if x == 0.0:
+        return 0.0
+    fuzz = abs(x) * 1e-10
+    if x > 0:
+        return float(int(x + 0.5 + fuzz))
+    return float(-int(-x + 0.5 + fuzz))
