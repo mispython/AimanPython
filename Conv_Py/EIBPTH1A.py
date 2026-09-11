@@ -151,13 +151,13 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
 INPUT_LNNOTE_DIR  = STG_DIR / "sasdata"
-INPUT_LNNOTE_FILE = "enrh_ln_note_m08.sas7bdat"
+INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_m08.sas7bdat"
 
 INPUT_ALWKM_DIR  = STG_DIR / "EIBPTH1A"
 # INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / f"alwkm{REPTMON}{NOWK}.sas7bdat"
 INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / "alwkm084.sas7bdat"
 
-INPUT_CCLW_DIR  = BASE_DIR / "EIBPTH1A"
+INPUT_CCLW_DIR  = STG_DIR / "EIBPTH1A"
 # INPUT_CCLW_FILE = INPUT_CCLW_DIR / f"cclw{REPTMON}{NOWK}.sas7bdat"
 INPUT_CCLW_FILE = INPUT_CCLW_DIR / "cclw084.sas7bdat"
 
@@ -229,20 +229,45 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 
 
 def _sas_round(x: float) -> float:
-    if x >= 0:
-        return float(int(x + 0.5))
-    return float(-int(-x + 0.5))
+    """SAS ROUND() equivalent: round half away from zero.
+    Uses a machine-epsilon-scale fuzz (|x| * 1e-15), NOT the 1e-10
+    figure — that one is large enough to overtake genuinely below-half
+    values at large magnitudes."""
+    if x == 0.0:
+        return 0.0
+    fuzz = abs(x) * 1e-15
+    if x > 0:
+        return float(int(x + 0.5 + fuzz))
+    return float(-int(-x + 0.5 + fuzz))
 
 
 def _group_sum_itcode_amtind(rows) -> list:
-    """PROC SUMMARY NWAY; CLASS ITCODE AMTIND; VAR AMOUNT; SUM=;"""
+    """PROC SUMMARY NWAY; CLASS ITCODE AMTIND; VAR AMOUNT; SUM=;
+    Matches SAS default: observations with a missing (blank) CLASS value
+    are excluded from the output (no MISSING option was specified)."""
     groups: dict = {}
     for r in rows:
-        key = (r["ITCODE"], r["AMTIND"])
+        amtind = r["AMTIND"]
+        # SAS treats blank character values as missing for CLASS exclusion
+        if amtind is None or (isinstance(amtind, str) and amtind.strip() == ""):
+            continue
+        key = (r["ITCODE"], amtind)
         groups[key] = (groups.get(key, 0.0) or 0.0) + (r["AMOUNT"] or 0.0)
     out = [{"ITCODE": k[0], "AMTIND": k[1], "AMOUNT": v} for k, v in groups.items()]
-    out.sort(key=lambda r: (r["ITCODE"], r["AMTIND"]))
+    out.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
     return out
+
+
+def _char_at(s: str, pos1: int) -> str:
+    """SAS-style SUBSTR(s, pos, 1): 1-indexed, blank-padded past end."""
+    i = pos1 - 1
+    return s[i] if i < len(s) else " "
+
+
+def _ebc(s) -> bytes:
+    """SAS on z/OS sorts using the EBCDIC collating sequence (cp037).
+    SAS character missing / blank -> 0x40 (lowest printable byte)."""
+    return (s if s is not None else " ").encode("cp037")
 
 
 # ============================================================================
@@ -328,29 +353,18 @@ print(f"  CAG summary rows: {len(cag_summary):,}")
 # STEP 4: DATA RDALKM; SET RDALKM CAG; PROC SORT BY ITCODE AMTIND;
 # ============================================================================
 rdalkm_combined = rdalkm_base + cag_summary
-rdalkm_combined.sort(key=lambda r: (r["ITCODE"], r["AMTIND"]))
+rdalkm_combined.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
 
 # ============================================================================
 # STEP 5: DATA AL OB SP; SET RDALKM; ... (split #1, pre '#'->'Y' transform)
 # ============================================================================
 
 
-def _split_al_ob_sp(rows):
-    """
-    WHERE SUBSTR(ITCODE,14,1) NOT IN ('F','#');
-    IF AMTIND ^= ' ' THEN DO;
-       IF SUBSTR(ITCODE,1,3) IN ('307') THEN OUTPUT SP;
-       ELSE IF SUBSTR(ITCODE,1,1) ^= '5' THEN DO;
-          IF SUBSTR(ITCODE,1,3) IN ('685','785') THEN OUTPUT SP;
-          ELSE OUTPUT AL;
-       END;
-       ELSE OUTPUT OB; END;
-    ELSE IF SUBSTR(ITCODE,2,1)='0' THEN OUTPUT SP;
-    """
+def _split_al_ob_sp(rows, apply_where_filter=True):
     al, ob, sp = [], [], []
     for r in rows:
         itcode = r["ITCODE"]
-        if len(itcode) < 14 or itcode[13] in ("F", "#"):
+        if apply_where_filter and _char_at(itcode, 14) in ("F", "#"):
             continue
         amtind = r["AMTIND"]
         if amtind and amtind != " ":
@@ -364,13 +378,13 @@ def _split_al_ob_sp(rows):
             else:
                 ob.append(r)
         else:
-            if len(itcode) >= 2 and itcode[1:2] == "0":
+            if _char_at(itcode, 2) == "0":
                 sp.append(r)
     return al, ob, sp
 
 
 print("\nStep 5: Splitting RDALKM (pre-transform) into AL / OB / SP...")
-al_1, ob_1, sp_1 = _split_al_ob_sp(rdalkm_combined)
+al_1, ob_1, sp_1 = _split_al_ob_sp(rdalkm_combined)                    # default True
 print(f"  AL: {len(al_1):,}   OB: {len(ob_1):,}   SP: {len(sp_1):,}")
 
 # ============================================================================
@@ -443,7 +457,7 @@ rdalkm_lines += _emit_al_ob(ob_1, _rdalkm_round)
 
 # DATA SP; SET SP K3FEI KAPX; PROC SORT; BY ITCODE;
 sp_1_combined = sp_1 + KALMLIFE.K3FEI.to_dicts() + EIBMSAPC.KAPX.to_dicts()
-sp_1_combined.sort(key=lambda r: r["ITCODE"])
+sp_1_combined.sort(key=lambda r: _ebc(r["ITCODE"]))
 rdalkm_lines.append("SP")
 rdalkm_lines += _emit_sp(sp_1_combined, _rdalkm_round)
 
@@ -473,7 +487,7 @@ rdalkm_normalised = _group_sum_itcode_amtind(normalised_rows)
 # STEP 8: DATA AL OB SP; SET RDALKM; ... (split #2, post-transform, for NSRS)
 # ============================================================================
 print("\nStep 8: Splitting normalised RDALKM into AL / OB / SP (NSRS pass)...")
-al_2, ob_2, sp_2 = _split_al_ob_sp(rdalkm_normalised)
+al_2, ob_2, sp_2 = _split_al_ob_sp(rdalkm_normalised, apply_where_filter=False)
 print(f"  AL: {len(al_2):,}   OB: {len(ob_2):,}   SP: {len(sp_2):,}")
 
 # ============================================================================
@@ -508,7 +522,7 @@ nsrskm_lines += _emit_al_ob(ob_2, _nsrskm_round_ob)
 
 # DATA SP; SET SP K3FEI KAPX; PROC SORT; BY ITCODE;   (second SET, per source)
 sp_2_combined = sp_2 + KALMLIFE.K3FEI.to_dicts() + EIBMSAPC.KAPX.to_dicts()
-sp_2_combined.sort(key=lambda r: r["ITCODE"])
+sp_2_combined.sort(key=lambda r: _ebc(r["ITCODE"]))
 nsrskm_lines.append("SP")
 nsrskm_lines += _emit_sp(sp_2_combined, _nsrskm_round_sp, dead_recompute=True)
 
