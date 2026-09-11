@@ -1,7 +1,7 @@
-def _ebc(s: str) -> bytes:
+def _ebc(s) -> bytes:
     """SAS on z/OS sorts using the EBCDIC collating sequence (cp037).
-    Encoded bytes compare identically to mainframe SAS PROC SORT / BY."""
-    return s.encode("cp037")
+    SAS character missing / blank -> 0x40 (lowest printable byte)."""
+    return (s if s is not None else " ").encode("cp037")
 
 
 
