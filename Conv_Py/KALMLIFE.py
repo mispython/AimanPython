@@ -101,12 +101,14 @@ print(f"  REPTMON  : {REPTMON}   NOWK : {NOWK}   REPTYEAR : {REPTYEAR}")
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
 # FLAG-01: BNMK library is not defined in the supplied EIBPTH1A/EIBMSAPC
 # source (only BNM = SAP.PBB.D&REPTYEAR and BNM1 = SAP.PBB.SASDATA are).
 # Assumed, pending confirmation, to live alongside BNM1's physical area.
-INPUT_K3TBL_DIR = BASE_DIR / "input" / "prod" / "BNMK"
-INPUT_K3TBL_FILE = INPUT_K3TBL_DIR / f"k3tbl{REPTMON}{NOWK}.sas7bdat"
+INPUT_K3TBL_DIR = STG_DIR / "EIBPTH1A"
+# INPUT_K3TBL_FILE = INPUT_K3TBL_DIR / f"k3tbl{REPTMON}{NOWK}.sas7bdat"
+INPUT_K3TBL_FILE = INPUT_K3TBL_DIR / "k3tbl084.sas7bdat"
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBPTH1A"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -114,7 +116,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CHUNK_ROWS = 500_000
 
 # ============================================================================
-# HELPERS: sas7bdat -> parquet cache (EIBDLN1M.py / EIIMRM01.py pattern)
+# HELPERS: sas7bdat -> parquet cache
 # ============================================================================
 
 
