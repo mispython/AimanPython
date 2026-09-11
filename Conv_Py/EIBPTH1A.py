@@ -50,7 +50,7 @@ truncated to LRECL=80.
 """
 
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 
 import duckdb
 import pandas as pd
@@ -60,8 +60,8 @@ import pyarrow.parquet as pq
 import gc
 
 from REPTDATE import get_monthly_reptdate_values
-from PBBLNFMT import format_lnprod, format_lndenom
-from input_date import get_latest_file
+from PBBLNFMT_AII import format_lnprod, format_lndenom
+# from input_date import get_latest_file
 
 import KALMLIFE
 import EIBMSAPC
@@ -126,6 +126,10 @@ def _derive_context() -> dict:
         "nowk3": "3",
     }
 
+# Generate time stamp
+reptdate = date.today() - timedelta(days=1)
+ts = reptdate.strftime("%y%m%d")
+
 
 _CTX = _derive_context()
 REPTDATE = _CTX["reptdate"]
@@ -146,29 +150,31 @@ print(f"  REPTMON  : {REPTMON}   NOWK : {NOWK}   REPTYEAR : {REPTYEAR}")
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_LNNOTE_DIR = STG_DIR / "sasdata"
-INPUT_LNNOTE_FILE = get_latest_file(INPUT_LNNOTE_DIR, prefix="lnnote")
+INPUT_LNNOTE_DIR  = STG_DIR / "sasdata"
+INPUT_LNNOTE_FILE = "enrh_ln_note_m08.sas7bdat"
 
-INPUT_ALWKM_DIR = BASE_DIR / "input" / "prod" / f"BNM_D{REPTYEAR}"
-INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / f"alwkm{REPTMON}{NOWK}.sas7bdat"
+INPUT_ALWKM_DIR  = STG_DIR / "EIBPTH1A"
+# INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / f"alwkm{REPTMON}{NOWK}.sas7bdat"
+INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / "alwkm084.sas7bdat"
 
-INPUT_CCLW_DIR = BASE_DIR / "input" / "prod" / "PBCS"
-INPUT_CCLW_FILE = INPUT_CCLW_DIR / f"cclw{REPTMON}{NOWK}.sas7bdat"
+INPUT_CCLW_DIR  = BASE_DIR / "EIBPTH1A"
+# INPUT_CCLW_FILE = INPUT_CCLW_DIR / f"cclw{REPTMON}{NOWK}.sas7bdat"
+INPUT_CCLW_FILE = INPUT_CCLW_DIR / "cclw084.sas7bdat"
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBPTH1A"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBPTH1A"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-RDALKM_FILE = OUTPUT_DIR / "RDALKM.txt"
-NSRSKM_FILE = OUTPUT_DIR / "NSRSKM.txt"
-SFTP01_FILE = OUTPUT_DIR / "SFTP01.txt"
+RDALKM_FILE = OUTPUT_DIR / f"RDALKM_{ts}.txt"
+NSRSKM_FILE = OUTPUT_DIR / f"NSRSKM_{ts}.txt"
+SFTP01_FILE = OUTPUT_DIR / f"SFTP01_{ts}.txt"
 
 CHUNK_ROWS = 500_000
 LRECL = 80
 
 # ============================================================================
-# HELPERS: sas7bdat -> parquet cache (EIBDLN1M.py / EIIMRM01.py pattern)
+# HELPERS: sas7bdat -> parquet cache
 # ============================================================================
 
 
@@ -536,5 +542,19 @@ print(f"  SFTP01 control file -> {SFTP01_FILE}")
 #     sftp = paramiko.SFTPClient.from_transport(t)
 #     sftp.put(str(NSRSKM_FILE), f"FD-BNM REPORTING/PBB/BNM RPTG/EAB_PBCS/kapmni_EAB_PBCS_{FDATE}.txt")
 #     sftp.close()
+
+# //******************************************************************
+# //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# //******************************************************************
+# //RUNSFTP  EXEC COZBATCH
+# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+# //           DD *
+# lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# lzopts linerule=$lr
+# cd "FD-BNM REPORTING/PBB/BNM RPTG/EAB_PBCS"
+# //           DD DISP=SHR,DSN=&&FTPPUT
+# //           DD *
+# EOB
+# /*
 
 print("\nEIBPTH1A complete.")
