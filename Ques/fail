@@ -1,15 +1,15 @@
-import duckdb
-con = duckdb.connect(":memory:")
-print("DEBUG raw AMTIND:",
-    con.execute(f"""
-        SELECT 'ALWKM' AS src, AMTIND, AMOUNT FROM read_parquet('{ALWKM_CACHE.as_posix()}')
-        WHERE ITCODE = '3051000000000Y'
-        UNION ALL
-        SELECT 'CCLW',  AMTIND, AMOUNT FROM read_parquet('{CCLW_CACHE.as_posix()}')
-        WHERE ITCODE = '3051000000000Y'
-    """).fetchall())
-con.close()
-
-for r in rdalkm_normalised:
-    if r["ITCODE"] == "3051000000000Y":
-        print("DEBUG normalised:", r)
+def _group_sum_itcode_amtind(rows) -> list:
+    """PROC SUMMARY NWAY; CLASS ITCODE AMTIND; VAR AMOUNT; SUM=;
+    Matches SAS default: observations with a missing (blank) CLASS value
+    are excluded from the output (no MISSING option was specified)."""
+    groups: dict = {}
+    for r in rows:
+        amtind = r["AMTIND"]
+        # SAS treats blank character values as missing for CLASS exclusion
+        if amtind is None or (isinstance(amtind, str) and amtind.strip() == ""):
+            continue
+        key = (r["ITCODE"], amtind)
+        groups[key] = (groups.get(key, 0.0) or 0.0) + (r["AMOUNT"] or 0.0)
+    out = [{"ITCODE": k[0], "AMTIND": k[1], "AMOUNT": v} for k, v in groups.items()]
+    out.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
+    return out
