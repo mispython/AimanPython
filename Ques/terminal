@@ -1,10 +1,3 @@
-Step 3: Building CAG from LOAN.LNNOTE (PZIPCODE filter)...
-  CAG summary rows: 1
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBPTH1A.py", line 343, in <module>
-    rdalkm_combined.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBPTH1A.py", line 343, in <lambda>
-    rdalkm_combined.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBPTH1A.py", line 257, in _ebc
-    return s.encode("cp037")
-AttributeError: 'NoneType' object has no attribute 'encode'
+Step 7: Applying '#'->'Y' normalisation and re-summarising...
+DEBUG raw AMTIND: [('ALWKM', None, 340509256058.6863), ('ALWKM', None, 287456450.4207345)]
+DEBUG normalised: {'ITCODE': '3051000000000Y', 'AMTIND': None, 'AMOUNT': 340796712509.107}
