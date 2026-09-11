@@ -1,48 +1,5 @@
-[sas_edw_dev@svdwh004 Data_Warehouse]$ source /sas/python/virt_edw_dev/bin/activate
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBPTH1A.py
-KALMLIFE: Deriving report-date context...
-  REPTDATE : 2026-08-31
-  REPTMON  : 08   NOWK : 4   REPTYEAR : 2026
-
-KALMLIFE Step 1: Caching K3TBL...
-  [K3TBL] Cache fresh - skipping conversion.
-
-KALMLIFE Step 2: Building K3TBLFE...
-  K3TBLFE rows: 0
-
-KALMLIFE Step 3: Summarising into K3FEI...
-  K3FEI rows (module-level output): 0
-KALMLIFE complete.
-EIBMSAPC: Deriving report-date context...
-  REPTDATE : 2026-08-31   RDATE : 31/08/26
-
-EIBMSAPC Step 1: Parsing BNMTBLX fixed-width flat file...
-  RAW rows after 'FT' delete filter: 0
-
-EIBMSAPC Step 2: Building DUMMY BNMCODE placeholders...
-
-EIBMSAPC Step 3: Splitting into PURCHASE / SALE with REMMTH...
-  PURCHASE rows: 0   SALE rows: 0
-
-EIBMSAPC Step 4: Building PURCODE / SALCODE BNMCODEs...
-
-EIBMSAPC Step 5: Merging PURCODE + SALCODE by BNMCODE...
-
-EIBMSAPC Step 6: Merging DUMMY + SALPUR...
-
-EIBMSAPC Step 8: Building roll-up summaries...
-
-EIBMSAPC Step 9: Building KAPX...
-  KAPX rows (module-level output): 60
-EIBMSAPC complete.
-EIBPTH1A: Deriving report-date context...
-  REPTDATE : 2026-08-31   RDATE : 31/08/26   FDATE : 31082026
-  REPTMON  : 08   NOWK : 4   REPTYEAR : 2026
-
-Step 1: Caching input SAS datasets to Parquet...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBPTH1A.py", line 252, in <module>
-    LNNOTE_CACHE = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBPTH1A.py", line 223, in _load_cached
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-AttributeError: 'str' object has no attribute 'stem'
+4219960UMA;0;0;0                                                                
+4219976PBCARD;8051;0;0                                                          
+4219976UMA;0;0;0 
+4219985PBCARD;325;0;0                                                           
+4219985UMA;0;0;0
