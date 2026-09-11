@@ -1,22 +1,33 @@
-def _ebc(s) -> bytes:
-    """SAS on z/OS sorts using the EBCDIC collating sequence (cp037).
-    SAS character missing / blank -> 0x40 (lowest printable byte)."""
-    return (s if s is not None else " ").encode("cp037")
+def _split_al_ob_sp(rows, apply_where_filter=True):
+    al, ob, sp = [], [], []
+    for r in rows:
+        itcode = r["ITCODE"]
+        if apply_where_filter and _char_at(itcode, 14) in ("F", "#"):
+            continue
+        amtind = r["AMTIND"]
+        if amtind and amtind != " ":
+            if itcode[0:3] == "307":
+                sp.append(r)
+            elif itcode[0:1] != "5":
+                if itcode[0:3] in ("685", "785"):
+                    sp.append(r)
+                else:
+                    al.append(r)
+            else:
+                ob.append(r)
+        else:
+            if _char_at(itcode, 2) == "0":
+                sp.append(r)
+    return al, ob, sp
 
 
 
 
-# 1. _group_sum_itcode_amtind
-out.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
+# Step 5 (first split, for RDALKM): keep the WHERE filter
+al_1, ob_1, sp_1 = _split_al_ob_sp(rdalkm_combined)                    # default True
 
-# 2. Step 4
-rdalkm_combined.sort(key=lambda r: (_ebc(r["ITCODE"]), _ebc(r["AMTIND"])))
-
-# 3. Step 6
-sp_1_combined.sort(key=lambda r: _ebc(r["ITCODE"]))
-
-# 4. Step 9
-sp_2_combined.sort(key=lambda r: _ebc(r["ITCODE"]))
+# Step 8 (second split, for NSRS): DO NOT apply the WHERE filter
+al_2, ob_2, sp_2 = _split_al_ob_sp(rdalkm_normalised, apply_where_filter=False)
 
 
 
