@@ -1,10 +1,16 @@
 def _sas_round(x: float) -> float:
-    """SAS ROUND() equivalent: round half away from zero, with the same
-    small relative fuzz SAS applies around the halfway point to absorb
-    IEEE-754 representation noise (e.g. 129701.49999999999 -> 129702)."""
+    """SAS ROUND() equivalent: round half away from zero.
+    Uses a machine-epsilon-scale fuzz (|x| * 1e-15), NOT the 1e-10
+    figure — that one is large enough to overtake genuinely below-half
+    values at large magnitudes."""
     if x == 0.0:
         return 0.0
-    fuzz = abs(x) * 1e-10
+    fuzz = abs(x) * 1e-15
     if x > 0:
         return float(int(x + 0.5 + fuzz))
     return float(-int(-x + 0.5 + fuzz))
+
+
+
+
+fuzz = abs(x) * 1e-16
