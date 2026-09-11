@@ -31,7 +31,7 @@ from datetime import date
 import polars as pl
 
 from REPTDATE import get_monthly_reptdate_values
-from input_date import get_latest_file
+# from input_date import get_latest_file
 
 # ============================================================================
 # STEP 0: REPORT-DATE / MACRO-VARIABLE CONTEXT
@@ -99,8 +99,8 @@ print(f"  REPTDATE : {REPTDATE.isoformat()}   RDATE : {_CTX['rdate']}")
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_BNMTBLX_DIR = STG_DIR / "flatfile"
-INPUT_BNMTBLX_FILE = get_latest_file(INPUT_BNMTBLX_DIR, prefix="bnmtblx")
+INPUT_BNMTBLX_DIR  = STG_DIR / "EIBPTH1A"
+INPUT_BNMTBLX_FILE = INPUT_BNMTBLX_DIR / "BNMTBLX_INPUT.TXT"
 
 # ============================================================================
 # PROC FORMAT VALUE ORGMT.  LOW-12='50'; 12-HIGH='60';
