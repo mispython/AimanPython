@@ -1,3 +1,5 @@
-Step 7: Applying '#'->'Y' normalisation and re-summarising...
-DEBUG raw AMTIND: [('ALWKM', None, 340509256058.6863), ('ALWKM', None, 287456450.4207345)]
-DEBUG normalised: {'ITCODE': '3051000000000Y', 'AMTIND': None, 'AMOUNT': 340796712509.107}
+Step 5: Applying per-bucket transforms...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIDETFRM.py", line 535, in <module>
+    row["ACCOUNT_SOURCE_UNIQUE_ID"] = ("DP" + (row["PAYREF"] or "")).replace(" ", "")
+TypeError: can only concatenate str (not "float") to str
