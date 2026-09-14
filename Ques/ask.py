@@ -1,90 +1,94 @@
 #!/usr/bin/env python3
 """
-Program : EIDETLRM.py
-Purpose : Extract remittance LOCAL transaction IFS for DETICA (AML
-          interface feed) -- local (RM) remittance transactions are
-          pulled from the daily remittance transaction file, enriched
-          with account/customer identifiers, and written as a
-          pipe(0x1D)-delimited flat file for DETICA.
+Program : EIDETRTS.py
+Purpose : Extract remittance transaction IFS for DETICA (AML interface
+          feed) -- RENTAS (RENTAS wholesale settlement) inward, outward
+          and bank-transfer (BT) records are pulled from the daily RENTAS
+          warehouse file, enriched with account/customer identifiers, and
+          written as a pipe(0x1D)-delimited flat file for DETICA.
 
 Dependency:
     %INC PGM(PBBELF);
-        -> from PBBELF import format_brchcd
-        PUT(ISSBRANCH,BRCHCD.)   -> format_brchcd(branch_code)  (code->name)
-        PUT(ACCTBRCH,BRCHCD.)    -> format_brchcd(branch_code)  (code->name)
-    EIDETLRM never uses PUT(x,$BRCHRVR.) anywhere in the source, so
-    format_brchrvr is intentionally NOT imported here (unlike EIDETFRM).
+        -> from PBBELF import format_brchrvr, format_brchcd
+        PUT(BRANCHABB,$BRCHRVR.)  -> format_brchrvr(branch_name)  (name->code)
+        PUT(ACCTBRCH,BRCHCD.)     -> format_brchcd(branch_code)   (code->name)
 
 ============================================================================
 REPORT DATE
 ============================================================================
 The original SAS reads DP.REPTDATE (a one-row control dataset) to obtain
-REPTDATE. No such control dataset/parquet exists for this program, so a
-local report-date function is used instead (see get_reptdate() below),
-mirroring the same "yesterday" batch convention used in EIDETFRM.py. NOWK
-is derived by EXACT day match (8/15/22/else 4), matching the SELECT(DAY
-(REPTDATE)) logic in the SAS source.
+REPTDATE, then derives WK/WK1 from an exact-day match (day 8/15/22/else),
+with NOWK = WK. No such control dataset/parquet exists for this program,
+so a local report-date function is used instead (see get_reptdate()
+below), mirroring the same "yesterday" batch convention used in
+EIDETFRM.py / EIDETLRM.py. WK1 is SYMPUT'd in the original SAS but never
+referenced again anywhere else in the program -- a dead symbolic
+variable, kept only for documentation parity (not reproduced below).
 
 ============================================================================
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
- 1. DP.CURRENT   (JCL //DP  DD DSN=SAP.PBB.MNITB(0),  member CURRENT)
-    File : INPUT_DP_CURRENT_FILE  -> dp_current.sas7bdat
- 2. IDP.CURRENT  (JCL //IDP DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
-    File : INPUT_IDP_CURRENT_FILE -> idp_current.sas7bdat
- 3. DP.SAVING    (member SAVING, //DP)
-    File : INPUT_DP_SAVING_FILE   -> dp_saving.sas7bdat
- 4. IDP.SAVING   (member SAVING, //IDP)
-    File : INPUT_IDP_SAVING_FILE  -> idp_saving.sas7bdat
- 5. DP.FD        (member FD, //DP)
-    File : INPUT_DP_FD_FILE       -> dp_fd.sas7bdat
- 6. IDP.FD       (member FD, //IDP)
-    File : INPUT_IDP_FD_FILE      -> idp_fd.sas7bdat
- 7. DP.UMA       (member UMA, //DP)
-    File : INPUT_DP_UMA_FILE      -> dp_uma.sas7bdat
- 8. IDP.UMA      (member UMA, //IDP)
-    File : INPUT_IDP_UMA_FILE     -> idp_uma.sas7bdat
- 9. DP.VOSTRO    (member VOSTRO, //DP)  -- NOTE: no IDP.VOSTRO is read in
+ 1. LN.LNNOTE   (JCL //LN  DD DSN=SAP.PBB.MNILN(0))
+    File : INPUT_LN_LNNOTE_FILE   -> ln_lnnote.sas7bdat
+    Cols used : ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
+ 2. ILN.LNNOTE  (JCL //ILN DD DSN=SAP.PIBB.MNILN(0))
+    File : INPUT_ILN_LNNOTE_FILE  -> iln_lnnote.sas7bdat
+    Cols used : ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
+ 3. DP.CURRENT  (JCL //DP  DD DSN=SAP.PBB.MNITB(0),  member CURRENT)
+    File : INPUT_DP_CURRENT_FILE  -> ca09126.sas7bdat
+ 4. IDP.CURRENT (JCL //IDP DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
+    File : INPUT_IDP_CURRENT_FILE -> ica09126.sas7bdat
+ 5. DP.SAVING   (member SAVING, //DP)
+    File : INPUT_DP_SAVING_FILE   -> sa09126.sas7bdat
+ 6. IDP.SAVING  (member SAVING, //IDP)
+    File : INPUT_IDP_SAVING_FILE  -> isa09126.sas7bdat
+ 7. DP.FD       (member FD, //DP)
+    File : INPUT_DP_FD_FILE       -> fd09126.sas7bdat
+ 8. IDP.FD      (member FD, //IDP)
+    File : INPUT_IDP_FD_FILE      -> ifd09126.sas7bdat
+ 9. DP.UMA      (member UMA, //DP)
+    File : INPUT_DP_UMA_FILE      -> uma.sas7bdat
+10. IDP.UMA     (member UMA, //IDP)
+    File : INPUT_IDP_UMA_FILE     -> iuma.sas7bdat
+11. DP.VOSTRO   (member VOSTRO, //DP)  -- NOTE: no IDP.VOSTRO is read in
     the original SAS (DATA DEPO_ACCT only SETs DP.VOSTRO).
-    File : INPUT_DP_VOSTRO_FILE   -> dp_vostro.sas7bdat
+    File : INPUT_DP_VOSTRO_FILE   -> vostro08426.sas7bdat
     Cols used (1-3): ACCTNO, PRODUCT, BRANCH
 
-    NOTE: unlike EIDETFRM, EIDETLRM has NO loan (LN.LNNOTE/ILN.LNNOTE)
-    input at all -- local remittance transactions only ever resolve
-    against deposit accounts (ACCOUNT_SOURCE_UNIQUE_ID is always 'DP'
-    prefixed), so no LOAN dataset/ACCT-concat step exists here.
+12. BT.MAST&REPTDAY&REPTMON   (JCL //BT  DD DSN=SAP.PBB.BTRADE.SASDATA)
+    File : INPUT_BT_MAST_FILE     -> mast_{REPTDAY}{REPTMON}.sas7bdat
+13. BT.MAST2&REPTDAY&REPTMON
+    File : INPUT_BT_MAST2_FILE    -> mast2_{REPTDAY}{REPTMON}.sas7bdat
+14. IBT.IMAST&REPTDAY&REPTMON (JCL //IBT DD DSN=SAP.PIBB.BTRADE.SASDATA)
+    File : INPUT_IBT_IMAST_FILE   -> imast_{REPTDAY}{REPTMON}.sas7bdat
+15. IBT.IMAST2&REPTDAY&REPTMON
+    File : INPUT_IBT_IMAST2_FILE  -> imast2_{REPTDAY}{REPTMON}.sas7bdat
+    Cols used (12-15): ACCTNOX, FICODE
+    Deterministic filenames (fully derived from REPTDAY/REPTMON tokens)
+    -> constructed directly, input_date.get_latest_file() NOT used.
 
-10. REM.REMTRAN&REPTMON&NOWK&REPTYEAR (JCL //REM DD DSN=SAP.PBB.CRM.RMTRNSAC(0))
+16. RENTAS.RENTAS&REPTMON&NOWK&REPTYEAR (JCL //RENTAS DD DSN=SAP.PBB.RENTASWH)
     Deterministic filename (fully derived from REPTMON/NOWK/REPTYEAR
     tokens) -> constructed directly, input_date.get_latest_file() NOT used.
-    File : INPUT_REMTRAN_FILE -> remtran_{REPTMON}{NOWK}{REPTYEAR}.sas7bdat
-    Cols used : REMTYPE, APPLNAME, BENENAME, BNAD1, BNAD2, ANAD1, ANAD2,
-                ISSBRANCH, PAYMODE, REFNO, ISTTYPE, STATUS, SERIAL,
-                ISSDTE, LASTTRAN, TIMESTAMP, BENEBANK, APPLID, BENEID,
-                USERID, AMOUNT
-    Assumption: ISSDTE is a SAS numeric date (days since 1960-01-01),
-    converted per project convention. LASTTRAN and TIMESTAMP are assumed
-    to be character fields as manipulated by the SAS source (COMPRESS /
-    fixed-position SUBSTR respectively).
+    File : INPUT_RENTAS_FILE -> rentas_{REPTMON}{NOWK}{REPTYEAR}.sas7bdat
+    Cols used : BANKNO, ISTTYPE, VALUEDTE, TRANSREF, UMRNO, BRANCHABB,
+                TTIMESTAMP, PTIMESTAMP, AMOUNT, PAYMODE, STATUS,
+                APPLNAME, APPLNAME2, BENENAME, BENENAME2, USERID,
+                APPLID, TRACKCODE, APPLACCTNO, BENEACCTNO, ACCTNO
 
-11. CIS.CUSTDLY  (JCL //CIS DD DSN=RBP2.B033.CIS.CUST.DAILY)
+17. CIS.CUSTDLY (JCL //CIS DD DSN=RBP2.B033.CIS.CUST.DAILY)
     File : INPUT_CIS_CUSTDLY_FILE -> cis_custdly.sas7bdat
-    Cols used : ACCTCODE, ACCTNO, CUSTNO, ALIAS, PRISEC, INDORG
-    NOTE: EIDETLRM's CIS step filters ACCTCODE IN ('DP') only (EIDETFRM's
-    equivalent CIS step filters ('DP','LN') -- there is no 'LN' here
-    because there is no loan account resolution in this program).
+    Cols used : ACCTCODE, ACCTNO, CUSTNO, ALIAS, PRISEC
 
 ============================================================================
 OUTPUT
 ============================================================================
-//LOCRMT DD DSN=SAP.AML.DETICA.REMTRAN.LOCAL.TEXT, DISP=OLD
+//RENTRAN DD DSN=SAP.AML.DETICA.REMTRAN.RENTAS.TEXT, DISP=OLD
 Fixed catalogued name (no date token) -> static output filename.
 Pipe-delimited (delimiter = hex '1D'X, ASCII 0x1D Group Separator) flat
 file, 75 fields per record, most fields blank. No ASA control byte (this
-is a data feed, not a report). Unlike EIDETFRM (field 21=FORAMT,
-field 22=AMOUNT), EIDETLRM puts AMOUNT in BOTH field 21 and field 22
-(local transactions have no separate foreign-amount column).
-File : OUTPUT_FILE -> EIDETLRM_LOCAL_<ts>.txt (encoding='latin1' so the
+is a data feed, not a report).
+File : OUTPUT_FILE -> EIDETRTS_RENTAS_<ts>.txt (encoding='latin1' so the
 0x1D delimiter byte round-trips safely)
 
 //DELETE (PGM=IEFBR14) removes any pre-existing backup at job start;
@@ -94,39 +98,35 @@ end. Both are reproduced as file operations below.
 ============================================================================
 PRESERVED SAS QUIRKS
 ============================================================================
-- ISSDTE_DAY = DAY(ISSDTE) is computed in the SAS source but never
-  referenced again anywhere else in the program -- a dead derived
-  variable, kept here (commented) only for documentation parity.
-- MM / YYYY SYMPUTs are likewise dead symbolic variables (same pattern as
-  EIDETFRM.py) -- computed, never referenced again.
-- DEPO_ACCT's PROD = COMPRESS('DP'||PRODUCT) uses NO explicit numeric
-  format (unlike EIDETFRM's DEPO, which uses PUT(PRODUCT,Z3.)). SAS's
-  default BEST-format numeric-to-character conversion applies here, i.e.
-  no zero-padding -- preserved exactly via `_num_to_str()`.
-- In the first DATA LOCAL data step, ACCOUNT_SOURCE_UNIQUE_ID is only
-  reassigned inside the VERIFY(...)=1 branch of the second ISTTYPE/STATUS
-  condition; there is no ELSE. Because ACCOUNT_SOURCE_UNIQUE_ID is a
-  computed (non-SET) PDV variable, SAS retains its value from whichever
-  prior loop iteration last assigned it (standard DATA-step PDV
-  carry-over for derived variables). This cross-row carry-over is
-  reproduced explicitly below via a module-level "last assigned" tracker
-  rather than resetting the field to missing every row.
-- DATA TRAN.LOCAL_GETMNI (first pass) MERGE LOCAL(IN=A) DEPO_ACCT(IN=B):
-  PROD is a variable common to both LOCAL and DEPO_ACCT; on a matched
-  BY-group SAS's last-dataset-wins MERGE semantics mean DEPO_ACCT's PROD
-  overwrites LOCAL's PROD='RT108', exactly as with ORG_UNIT_CODE/PROD in
-  EIDETFRM's ACCT merges -- reproduced the same way here.
+- COMPRESS(x,chars,'A') removes the listed punctuation/space characters
+  AND all alphabetic characters, leaving only digits (and any character
+  not in the explicit list that also is not a letter) -- same convention
+  established in EIDETFRM.py's temp_acct derivation.
+- IFC(x=:'0', SUBSTR(x,VERIFY(x,'0')), x) strips leading zeros only when
+  the string starts with '0'; if the string is entirely zeros, VERIFY
+  returns 0 and SAS's SUBSTR(x,0) is treated as SUBSTR(x,1) (a NOTE, not
+  an error) -- reproduced as returning the string unchanged in that
+  degenerate case.
+- The OUT data step here has NO "remove ending @" logic and NO INDORG
+  corporate-pass logic (unlike EIDETLRM.py) -- neither exists in the
+  original EIDETRTS source, so neither is reproduced.
+- DATA OUTWARD contains a stray duplicated RUN;RUN; in the original SAS
+  source -- a harmless quirk with no behavioural effect, not reproduced.
 """
 
+import gc
 import shutil
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
 import duckdb
+import pandas as pd
 import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-from PBBELF import format_brchcd
+from PBBELF import format_brchrvr, format_brchcd
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -134,21 +134,28 @@ from PBBELF import format_brchcd
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_DIR = STG_DIR / "from_dwh"
+INPUT_DP_DIR   = STG_DIR / "from_dwh"
+INPUT_LN_DIR   = STG_DIR / "MNILN"
+INPUT_BT_DIR   = STG_DIR / "btrade"
+INPUT_RENTAS_DIR = STG_DIR / "rentaswh"
+INPUT_DETIC_DIR = STG_DIR / "detic2"
 
-INPUT_DP_CURRENT_FILE   = INPUT_DIR / "ca09126.sas7bdat"
-INPUT_IDP_CURRENT_FILE  = INPUT_DIR / "ica09126.sas7bdat"
-INPUT_DP_SAVING_FILE    = INPUT_DIR / "sa09126.sas7bdat"
-INPUT_IDP_SAVING_FILE   = INPUT_DIR / "isa09126.sas7bdat"
-INPUT_DP_FD_FILE        = INPUT_DIR / "fd09126.sas7bdat"
-INPUT_IDP_FD_FILE       = INPUT_DIR / "ifd09126.sas7bdat"
-INPUT_DP_UMA_FILE       = STG_DIR / "detic2" / "uma.sas7bdat"
-INPUT_IDP_UMA_FILE      = STG_DIR / "detic2" / "iuma.sas7bdat"
-INPUT_DP_VOSTRO_FILE    = STG_DIR / "detic2" / "vostro08426.sas7bdat"
+INPUT_LN_LNNOTE_FILE   = INPUT_LN_DIR / "enrh_ln_note_d08.sas7bdat"
+INPUT_ILN_LNNOTE_FILE  = INPUT_LN_DIR / "enrh_iln_note_d08.sas7bdat"
 
-INPUT_CIS_CUSTDLY_FILE  = STG_DIR / "custdly.sas7bdat"
+INPUT_DP_CURRENT_FILE  = INPUT_DP_DIR / "ca09126.sas7bdat"
+INPUT_IDP_CURRENT_FILE = INPUT_DP_DIR / "ica09126.sas7bdat"
+INPUT_DP_SAVING_FILE   = INPUT_DP_DIR / "sa09126.sas7bdat"
+INPUT_IDP_SAVING_FILE  = INPUT_DP_DIR / "isa09126.sas7bdat"
+INPUT_DP_FD_FILE       = INPUT_DP_DIR / "fd09126.sas7bdat"
+INPUT_IDP_FD_FILE      = INPUT_DP_DIR / "ifd09126.sas7bdat"
+INPUT_DP_UMA_FILE      = INPUT_DETIC_DIR / "uma.sas7bdat"
+INPUT_IDP_UMA_FILE     = INPUT_DETIC_DIR / "iuma.sas7bdat"
+INPUT_DP_VOSTRO_FILE   = INPUT_DETIC_DIR / "vostro08426.sas7bdat"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "detic2"
+INPUT_CIS_CUSTDLY_FILE = STG_DIR / "custdly.sas7bdat"
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "detic3"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
@@ -164,39 +171,46 @@ def get_reptdate() -> date:
     """
     Local report-date derivation (no reptdate.parquet control dataset
     exists for this program). Mirrors the standard daily/yesterday batch
-    convention: the report date is the calendar day prior to the run date.
+    convention used by EIDETFRM.py / EIDETLRM.py: the report date is the
+    calendar day prior to the run date.
     """
     return date.today() - timedelta(days=1)
 
 
 reptdate = get_reptdate()
 
-# NOWK: exact-day match (8/15/22/else 4) -- SELECT(DAY(REPTDATE)) equivalent.
+# WK / NOWK: exact-day match (8/15/22/else 4) -- SELECT(DAY(REPTDATE))
+# equivalent. WK1 is SYMPUT'd in the original SAS but never referenced
+# again anywhere else in the program -- a dead symbolic variable, not
+# reproduced here.
 _day = reptdate.day
 NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
 
 REPTYEAR = reptdate.strftime("%y")     # PUT(REPTDATE,YEAR2.)
-REPTMON  = reptdate.strftime("%m")     # PUT(MONTH(REPTDATE),Z2.)
+REPTMON  = reptdate.strftime("%m")     # PUT(MM,Z2.)
+REPTDAY  = reptdate.strftime("%d")     # PUT(DAY(REPTDATE),Z2.)
 RDATE    = reptdate.strftime("%Y%m%d") # PUT(REPTDATE,YYMMDDN8.)
 
 ts = reptdate.strftime("%y%m%d")
 
-# MM / YYYY are SYMPUT'd in the original SAS but never referenced again
-# anywhere else in the program body -- dead symbolic variables, kept only
-# for documentation parity (same pattern as EIDETFRM.py).
-MM   = REPTMON
+# YYYY is SYMPUT'd in the original SAS but never referenced again anywhere
+# else in the program body -- dead symbolic variable, kept only for
+# documentation parity.
 YYYY = reptdate.strftime("%Y")
 
-print(f"  REPTDATE : {reptdate}   NOWK: {NOWK}   REPTMON: {REPTMON}   REPTYEAR: {REPTYEAR}")
-print(f"  RDATE    : {RDATE}")
+print(f"  REPTDATE : {reptdate}   NOWK: {NOWK}   REPTMON: {REPTMON}   REPTDAY: {REPTDAY}")
+print(f"  REPTYEAR : {REPTYEAR}   RDATE: {RDATE}")
 
-# INPUT_REMTRAN_FILE = INPUT_DIR / f"remtran{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-INPUT_REMTRAN_FILE = INPUT_DIR / f"remtran09126.sas7bdat"
+INPUT_RENTAS_FILE = INPUT_RENTAS_DIR / f"rentas_{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_BT_MAST_FILE   = INPUT_BT_DIR / f"mast_{REPTDAY}{REPTMON}.sas7bdat"
+INPUT_BT_MAST2_FILE  = INPUT_BT_DIR / f"mast2_{REPTDAY}{REPTMON}.sas7bdat"
+INPUT_IBT_IMAST_FILE  = INPUT_BT_DIR / f"imast_{REPTDAY}{REPTMON}.sas7bdat"
+INPUT_IBT_IMAST2_FILE = INPUT_BT_DIR / f"imast2_{REPTDAY}{REPTMON}.sas7bdat"
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIDETLRM"
+OUTPUT_DIR    = BASE_DIR / "output" / "EIDETRTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE   = OUTPUT_DIR / f"EIDETLRM_LOCAL_{ts}.txt"
-OUTPUT_BACKUP = OUTPUT_DIR / f"EIDETLRM_LOCAL_{ts}_BKP.txt"
+OUTPUT_FILE   = OUTPUT_DIR / f"EIDETRTS_RENTAS_{ts}.txt"
+OUTPUT_BACKUP = OUTPUT_DIR / f"EIDETRTS_RENTAS_{ts}_BKP.txt"
 
 # ============================================================================
 # STEP 0: DELETE OLD BACKUP  (//DELETE EXEC PGM=IEFBR14)
@@ -232,73 +246,55 @@ COMPANY_EXCLUDE_LIST = {
     'PIBB',
 }
 
+
+def _in_exclude_list(value) -> bool:
+    return value is not None and str(value).strip().upper() in COMPANY_EXCLUDE_LIST
+
+
 # ============================================================================
-# %BRH branch-override lookup table
-# ----------------------------------------------------------------------
-# Every %BRH(BRH_ID,ACCT_ID,CUST_ID) call in the original SAS follows a
-# strict, mechanical naming pattern:
-#     ACCT_ID = 'RMT' || ZFILL(BRH_ID,5) || 'TLOA'
-#     CUST_ID = 'RMT' || ZFILL(BRH_ID,5) || 'TLC'
-# The SAME branch-ID list / suffix pattern is reused verbatim in all three
-# places the macro is invoked in the SAS source (DATA LOCAL, the first
-# DATA TRAN.LOCAL_GETMNI, and the second DATA TRAN.LOCAL_GETMNI). Rather
-# than reproduce ~200 IF/DO blocks per data step verbatim, the exact
-# branch-ID list is preserved below and the ACCT_ID/CUST_ID strings are
-# generated by that same pattern -- byte-identical results.
+# HELPERS: SAS COMPRESS/IFC/VERIFY emulation
 # ============================================================================
-_FULL_BRANCH_LIST = [
-    2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-    23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58,
-    59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76,
-    77, 78, 79, 80, 81, 83, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96,
-    97, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114,
-    115, 116, 117, 118, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
-    130, 131, 133, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145,
-    146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
-    160, 161, 162, 163, 164, 165, 167, 168, 169, 170, 171, 172, 173, 174,
-    175, 176, 177, 178, 179, 180, 183, 184, 185, 186, 189, 190, 191, 192,
-    193, 194, 195, 196, 197, 198, 199, 201, 202, 203, 204, 205, 206, 207,
-    208, 209, 210, 211, 216, 217, 220, 221, 222, 224, 225, 226, 228, 230,
-    231, 232, 233, 234, 235, 237, 704, 239, 240, 241, 242, 243, 244, 245,
-    247, 248, 249, 251, 252, 254, 256, 257, 258, 259, 260, 261, 262, 263,
-    264, 265, 266, 267, 268, 269, 270, 273, 274, 275, 276, 703, 278, 280,
-    281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294,
-    295, 296, 701, 702, 800, 801, 802, 803, 804, 805, 806, 807, 808, 809,
-    811, 812, 813, 814, 815, 816, 817, 818, 819, 820, 821, 822, 823, 824,
-    825, 826, 827, 828, 844, 845, 846, 847, 848, 849, 850, 851, 852, 853,
-    854, 855, 856, 857, 858, 859, 860, 861, 862, 863,
-]
+def _compress_digits_only(s: Optional[str], extra_strip: str = "") -> str:
+    """COMPRESS(source, extra_strip, 'A'): removes the explicit
+    extra_strip characters AND all alphabetic characters, leaving only
+    digits (and any other non-letter character not in extra_strip)."""
+    if not s:
+        return ""
+    out = []
+    for ch in s:
+        if ch.isalpha():
+            continue
+        if ch in extra_strip:
+            continue
+        out.append(ch)
+    return "".join(out)
 
 
-def _brh_lookup(branch_ids: list, acct_suffix: str, cust_suffix: str) -> dict:
-    return {
-        bid: (f"RMT{bid:05d}{acct_suffix}", f"RMT{bid:05d}{cust_suffix}")
-        for bid in branch_ids
-    }
+def _strip_leading_zeros_if_starts_with_zero(s: str) -> str:
+    """IFC(x=:'0', SUBSTR(x,VERIFY(x,'0')), x). VERIFY(x,'0') returns the
+    1-based position of the first character in x that is NOT '0'; if x is
+    entirely zeros, VERIFY returns 0 and SAS's SUBSTR(x,0) is treated as
+    SUBSTR(x,1) (a NOTE, not an error) -- preserved here as returning the
+    string unchanged in that degenerate case."""
+    if not s or not s.startswith("0"):
+        return s
+    for i, ch in enumerate(s):
+        if ch != "0":
+            return s[i:]
+    return s
 
 
-LOCAL_BRH = _brh_lookup(_FULL_BRANCH_LIST, "TLOA", "TLC")
-
-
-def _apply_brh(branch_id: Optional[object], lookup: dict,
-                default_acct: str, default_cust: str) -> tuple:
-    """Applies the %BRH(BRANCH_ID,...) IF-chain: returns (acct_id, cust_id),
-    falling back to the pre-computed defaults when BRANCH_ID doesn't match
-    any entry (i.e. none of the IF conditions fired)."""
-    try:
-        bid = int(str(branch_id).strip())
-    except (TypeError, ValueError):
-        return default_acct, default_cust
-    return lookup.get(bid, (default_acct, default_cust))
+def _compress_blanks(s: Optional[str]) -> str:
+    """COMPRESS(x) with no args: removes all blanks."""
+    if s is None:
+        return ""
+    return str(s).replace(" ", "")
 
 
 def _num_to_str(v) -> str:
-    """Mirrors SAS implicit numeric-to-character coercion used in
-    COMPRESS('DP'||REFNO) / COMPRESS('DP'||PRODUCT): integral floats
-    render without a decimal point, everything else falls back to
-    str(). No zero-padding is applied anywhere this helper is used,
-    matching the SAS source's lack of an explicit PUT(...,Zn.) format."""
+    """Mirrors SAS implicit numeric-to-character coercion: integral
+    floats render without a decimal point, everything else falls back to
+    str()."""
     if v is None:
         return ""
     if isinstance(v, float):
@@ -306,14 +302,11 @@ def _num_to_str(v) -> str:
     return str(v)
 
 
-def _verify_first_char_nondigit(value) -> bool:
-    """VERIFY(PAYMODE,'1234567890')=1 -- true when the first character of
-    PAYMODE is NOT a digit. A blank/None PAYMODE is treated as SAS-blank
-    (a leading space), which is itself not a digit, so this returns True."""
-    v = value if value else ""
-    if v == "":
-        return True
-    return not v[0].isdigit()
+def _substr_timestamp(ts_val: Optional[str], start: int, length: int) -> str:
+    """SAS 1-based SUBSTR emulation for fixed-position timestamp parses."""
+    if ts_val is None:
+        return ""
+    return ts_val[start - 1:start - 1 + length]
 
 
 # ============================================================================
@@ -327,11 +320,6 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
 
 
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    import gc
-    import pandas as pd
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     writer = None
     schema = None
@@ -378,157 +366,318 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # STEP 2: CACHE INPUT SAS FILES TO PARQUET
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-DP_CURRENT_CACHE   = _load_cached(INPUT_DP_CURRENT_FILE, "DP_CURRENT")
-IDP_CURRENT_CACHE  = _load_cached(INPUT_IDP_CURRENT_FILE, "IDP_CURRENT")
-DP_SAVING_CACHE    = _load_cached(INPUT_DP_SAVING_FILE, "DP_SAVING")
-IDP_SAVING_CACHE   = _load_cached(INPUT_IDP_SAVING_FILE, "IDP_SAVING")
-DP_FD_CACHE        = _load_cached(INPUT_DP_FD_FILE, "DP_FD")
-IDP_FD_CACHE       = _load_cached(INPUT_IDP_FD_FILE, "IDP_FD")
-DP_UMA_CACHE       = _load_cached(INPUT_DP_UMA_FILE, "DP_UMA")
-IDP_UMA_CACHE      = _load_cached(INPUT_IDP_UMA_FILE, "IDP_UMA")
-DP_VOSTRO_CACHE    = _load_cached(INPUT_DP_VOSTRO_FILE, "DP_VOSTRO")
-REMTRAN_CACHE      = _load_cached(INPUT_REMTRAN_FILE, "REMTRAN")
-CIS_CUSTDLY_CACHE  = _load_cached(INPUT_CIS_CUSTDLY_FILE, "CIS_CUSTDLY")
+LN_LNNOTE_CACHE   = _load_cached(INPUT_LN_LNNOTE_FILE, "LN_LNNOTE")
+ILN_LNNOTE_CACHE  = _load_cached(INPUT_ILN_LNNOTE_FILE, "ILN_LNNOTE")
+DP_CURRENT_CACHE  = _load_cached(INPUT_DP_CURRENT_FILE, "DP_CURRENT")
+IDP_CURRENT_CACHE = _load_cached(INPUT_IDP_CURRENT_FILE, "IDP_CURRENT")
+DP_SAVING_CACHE   = _load_cached(INPUT_DP_SAVING_FILE, "DP_SAVING")
+IDP_SAVING_CACHE  = _load_cached(INPUT_IDP_SAVING_FILE, "IDP_SAVING")
+DP_FD_CACHE       = _load_cached(INPUT_DP_FD_FILE, "DP_FD")
+IDP_FD_CACHE      = _load_cached(INPUT_IDP_FD_FILE, "IDP_FD")
+DP_UMA_CACHE      = _load_cached(INPUT_DP_UMA_FILE, "DP_UMA")
+IDP_UMA_CACHE     = _load_cached(INPUT_IDP_UMA_FILE, "IDP_UMA")
+DP_VOSTRO_CACHE   = _load_cached(INPUT_DP_VOSTRO_FILE, "DP_VOSTRO")
+BT_MAST_CACHE     = _load_cached(INPUT_BT_MAST_FILE, "BT_MAST")
+BT_MAST2_CACHE    = _load_cached(INPUT_BT_MAST2_FILE, "BT_MAST2")
+IBT_IMAST_CACHE   = _load_cached(INPUT_IBT_IMAST_FILE, "IBT_IMAST")
+IBT_IMAST2_CACHE  = _load_cached(INPUT_IBT_IMAST2_FILE, "IBT_IMAST2")
+RENTAS_CACHE      = _load_cached(INPUT_RENTAS_FILE, "RENTAS")
+CIS_CUSTDLY_CACHE = _load_cached(INPUT_CIS_CUSTDLY_FILE, "CIS_CUSTDLY")
 
 # ============================================================================
-# STEP 3: DATA LOCAL  (SET REM.REMTRAN...; IF REMTYPE='L'; exclusion filter)
+# STEP 3: DATA INWARD OUTWARD BT;  SET RENTAS.RENTAS...; (routing + exclusion)
 # ============================================================================
-print("\nStep 3: Building LOCAL...")
+print("\nStep 3: Building INWARD / OUTWARD / BT from RENTAS...")
 
 con = duckdb.connect(database=":memory:")
-local_pl = con.execute(f"""
+rentas_pl = con.execute(f"""
     SELECT
-        REMTYPE, APPLNAME, BENENAME, BNAD1, BNAD2, ANAD1, ANAD2,
-        ISSBRANCH, PAYMODE, REFNO, ISTTYPE, STATUS, SERIAL, ISSDTE,
-        LASTTRAN, TIMESTAMP, BENEBANK, APPLID, BENEID, USERID, AMOUNT
-    FROM read_parquet('{REMTRAN_CACHE.as_posix()}')
-    WHERE REMTYPE = 'L'
+        BANKNO, ISTTYPE, VALUEDTE, TRANSREF, UMRNO, BRANCHABB,
+        TTIMESTAMP, PTIMESTAMP, AMOUNT, PAYMODE, STATUS,
+        APPLNAME, APPLNAME2, BENENAME, BENENAME2, USERID,
+        APPLID, TRACKCODE, APPLACCTNO, BENEACCTNO, ACCTNO
+    FROM read_parquet('{RENTAS_CACHE.as_posix()}')
 """).pl()
 con.close()
 
+inward_rows, outward_rows, bt_rows = [], [], []
 
-def _in_exclude_list(value) -> bool:
-    return value is not None and value.strip().upper() in COMPANY_EXCLUDE_LIST
-
-
-local_src_rows = []
-for r in local_pl.iter_rows(named=True):
+for r in rentas_pl.iter_rows(named=True):
     # *2017-2058;
-    if (_in_exclude_list(r["APPLNAME"]) or _in_exclude_list(r["BENENAME"])
-            or _in_exclude_list(r["BNAD1"]) or _in_exclude_list(r["BNAD2"])
-            or _in_exclude_list(r["ANAD1"]) or _in_exclude_list(r["ANAD2"])):
+    if _in_exclude_list(r["APPLNAME"]) or _in_exclude_list(r["BENENAME"]):
         continue
-    local_src_rows.append(r)
 
-print(f"  LOCAL rows: {len(local_src_rows):,}")
-
-# ============================================================================
-# STEP 4: DATA LOCAL; SET LOCAL; ... (transforms + conditional OUTPUT)
-# ============================================================================
-print("\nStep 4: Applying LOCAL transforms and routing...")
-
-
-def _format_issdte(issdte) -> str:
-    """PUT(ISSDTE,YYMMDDN8.). ISSDTE assumed to be a SAS numeric date
-    (days since 1960-01-01)."""
-    if issdte is None:
-        return ""
-    d = date(1960, 1, 1) + timedelta(days=int(issdte))
-    return d.strftime("%Y%m%d")
-
-
-def _substr_timestamp(ts: str, start: int, length: int) -> str:
-    """SAS 1-based SUBSTR emulation for the fixed-position TIMESTAMP parse."""
-    if ts is None:
-        return ""
-    return ts[start - 1:start - 1 + length]
-
-
-# SAS DATA-step PDV carry-over: ACCOUNT_SOURCE_UNIQUE_ID is a computed
-# (non-SET) variable that is only conditionally reassigned inside the
-# second ISTTYPE/STATUS branch (no ELSE). It therefore retains its value
-# from whichever prior loop iteration last set it -- see module docstring.
-_carry_acct_id: Optional[str] = None
-
-local_rows = []
-for r in local_src_rows:
     row = dict(r)
-    row["RUN_TIMESTAMP"] = (RDATE + "000000")[:14]
-    row["BRANCH_ID"] = r["ISSBRANCH"]
+    row["RUN_TIMESTAMP"] = _compress_blanks(RDATE + "000000")[:14]
+    row["SOURCE_TXN_UNIQUE_ID"] = _compress_blanks(
+        f"RM{_num_to_str(r['BANKNO'])}{r['ISTTYPE'] or ''}"
+        f"{_num_to_str(r['VALUEDTE'])}{r['TRANSREF'] or ''}{_num_to_str(r['UMRNO'])}"
+    )
+    row["BRANCH_ID"] = format_brchrvr(r["BRANCHABB"])
     row["CURCODE"] = "MYR"
     row["CURBASE"] = "MYR"
-    # ISSDTE_DAY = DAY(ISSDTE);  -- dead variable, never referenced again.
-    # row["ISSDTE_DAY"] = date(1960, 1, 1) + timedelta(days=int(r["ISSDTE"])).day
-    row["ORIGINATION_DATE"] = _format_issdte(r["ISSDTE"])
-    row["POSTING_DATE"] = (r["LASTTRAN"] or "").replace("-", "")
+    row["ORIGINATION_DATE"] = r["VALUEDTE"]
 
-    ts_val = r["TIMESTAMP"] or ""
-    yyyy = _substr_timestamp(ts_val, 1, 4)
-    mm   = _substr_timestamp(ts_val, 6, 2)
-    dd   = _substr_timestamp(ts_val, 9, 2)
-    hour = _substr_timestamp(ts_val, 12, 2)
-    minute = _substr_timestamp(ts_val, 15, 2)
-    sec  = _substr_timestamp(ts_val, 18, 2)
+    tts = r["TTIMESTAMP"] or ""
+    yyyy = _substr_timestamp(tts, 1, 4)
+    mm   = _substr_timestamp(tts, 6, 2)
+    dd   = _substr_timestamp(tts, 9, 2)
+    hour = _substr_timestamp(tts, 12, 2)
+    minute = _substr_timestamp(tts, 15, 2)
+    sec  = _substr_timestamp(tts, 18, 2)
     row["LOCAL_TIMESTAMP"] = (yyyy + mm + dd + hour + minute + sec)[:14]
 
-    row["CRDR"] = "D"
-    row["MENTION"] = r["PAYMODE"]
-    row["CHANNEL"] = 999
-    row["EMPLOYEE_ID"] = 88888
-    row["ORIGINATOR_NAME"] = r["APPLNAME"]
-    row["BENEFICIARY_NAME"] = r["BENENAME"]
-    row["ORIGINATOR_BANK"] = format_brchcd(r["ISSBRANCH"])
-    row["BENEFICIARY_BANK"] = r["BENEBANK"]
-    row["SENDER_BRANCH"] = format_brchcd(r["ISSBRANCH"])
-    row["BENE_BRANCH"] = "0"
-    row["ORIGINATOR_ID"] = r["APPLID"]
-    row["BENEFICIARY_ID"] = r["BENEID"]
-    row["PROD"] = "RT108"
-    row["TXN_CODE"] = "RMT002"
+    pts = r["PTIMESTAMP"] or ""
+    p_yyyy = _substr_timestamp(pts, 1, 4)
+    p_mm   = _substr_timestamp(pts, 6, 2)
+    p_dd   = _substr_timestamp(pts, 9, 2)
+    if p_yyyy == "0101":
+        row["POSTING_DATE"] = row["LOCAL_TIMESTAMP"][:8]
+    else:
+        row["POSTING_DATE"] = _compress_blanks(p_yyyy + p_mm + p_dd)
 
-    if r["ISSBRANCH"] in (701, 702):
+    row["TXN_AMOUNT_ORIG"] = r["AMOUNT"]
+    trans_ref_desc_parts = [p for p in (r["PAYMODE"], r["TRANSREF"]) if p not in (None, "")]
+    row["TRANS_REF_DESC"] = " ".join(trans_ref_desc_parts)
+    row["MENTION"] = r["PAYMODE"]
+    row["TXN_STATUS_CODE"] = r["STATUS"]
+    row["CHANNEL"] = 999
+    orig_name_parts = [p for p in (r["APPLNAME"], r["APPLNAME2"]) if p not in (None, "")]
+    row["ORIGINATOR_NAME"] = ",".join(orig_name_parts)
+    bene_name_parts = [p for p in (r["BENENAME"], r["BENENAME2"]) if p not in (None, "")]
+    row["BENEFICIARY_NAME"] = ",".join(bene_name_parts)
+    row["TELLER_ID"] = r["USERID"]
+    row["ORIGINATOR_ID"] = r["APPLID"]
+    row["BENEFICIARY_ID"] = r["TRACKCODE"]
+    row["REMITTANCE_REF_NO"] = r["TRANSREF"]
+    row["INCOMING_OUTGOING_TRANS"] = r["STATUS"]
+    row["EMPLOYEE_ID"] = 88888
+
+    if r["BRANCHABB"] in ("701", "702", "IKB", "IPJ"):
         row["ORG_UNIT_CODE"] = "PIBBTRSRY"
     else:
         row["ORG_UNIT_CODE"] = "PBBTRSRY"
 
     isttype, status = r["ISTTYPE"], r["STATUS"]
+    if isttype == "RI" and status == "TI":
+        inward_rows.append(row)
+    elif isttype == "RO" and status == "TO":
+        outward_rows.append(row)
+    elif isttype == "BT" and status == "TO":
+        bt_rows.append(row)
 
-    if isttype == "IG" and status == "SE":
-        if r["PAYMODE"] == "DEBIT ACC":
-            row["ACCOUNT_SOURCE_UNIQUE_ID"] = ("DP" + _num_to_str(r["REFNO"])).replace(" ", "")
-        else:
-            acct_id = "RMT00001A"
-            cust_id = "RMT00001C"
-            acct_id, cust_id = _apply_brh(row["BRANCH_ID"], LOCAL_BRH, acct_id, cust_id)
-            row["ACCOUNT_SOURCE_UNIQUE_ID"] = acct_id
-            row["CUSTOMER_SOURCE_UNIQUE_ID"] = cust_id
-        _carry_acct_id = row["ACCOUNT_SOURCE_UNIQUE_ID"]
-        local_rows.append(row)
-
-    elif isttype in ("A", "A1", "B", "C", "G", "H", "K", "L", "M",
-                      "Q", "R", "S", "T") and status in ("L", "O", "IS"):
-        row["SERIAL"] = (format_brchcd(r["ISSBRANCH"]) + _num_to_str(r["SERIAL"])).replace(" ", "")
-        if _verify_first_char_nondigit(r["PAYMODE"]):
-            row["ACCOUNT_SOURCE_UNIQUE_ID"] = ("DP" + (r["PAYMODE"] or "")).replace(" ", "")
-            _carry_acct_id = row["ACCOUNT_SOURCE_UNIQUE_ID"]
-        else:
-            # VERIFY condition false: no reassignment in the SAS source --
-            # ACCOUNT_SOURCE_UNIQUE_ID carries over from the last iteration
-            # that set it (see _carry_acct_id note above).
-            row["ACCOUNT_SOURCE_UNIQUE_ID"] = _carry_acct_id
-        local_rows.append(row)
-    # else: neither branch fires -> no OUTPUT in the SAS source, row dropped.
-    # (The PDV state, including _carry_acct_id, is still whatever it was
-    # left at by the last branch that assigned it -- nothing to update here
-    # since this branch never touches ACCOUNT_SOURCE_UNIQUE_ID.)
-
-print(f"  LOCAL (post-routing) rows: {len(local_rows):,}")
+print(f"  INWARD:{len(inward_rows):,}  OUTWARD:{len(outward_rows):,}  BT:{len(bt_rows):,}")
 
 # ============================================================================
-# STEP 5: DATA DEPO_ACCT;  (SET DP.CURRENT IDP.CURRENT DP.SAVING IDP.SAVING
-#                               DP.FD IDP.FD DP.UMA IDP.UMA DP.VOSTRO; ...)
+# STEP 4: DATA INWARD1 LOANS_INWARD INWARD2;  SET INWARD; (account resolution)
 # ============================================================================
-print("\nStep 5: Building DEPO_ACCT...")
+print("\nStep 4: Resolving INWARD accounts (INWARD1 / LOANS_INWARD / INWARD2)...")
+
+inward1_rows, loans_inward_rows, inward2_rows = [], [], []
+
+for row in inward_rows:
+    row["TXN_CODE"] = "RMT001"
+    row["CRDR"] = "C"
+    row["BENEFICIARY_BANK"] = row["BRANCHABB"]
+    row["INCOMING_OUTGOING_FLG"] = "I"
+    row["BENE_BRANCH"] = row["BRANCHABB"]
+    row["SENDER_BRANCH"] = "0"
+
+    compress_bene = _compress_digits_only(row["BENEACCTNO"], ",:.()-/ ")
+    compress_bene = _strip_leading_zeros_if_starts_with_zero(compress_bene)
+    bene_ac_len = len(compress_bene)
+    temp_bene_ac = compress_bene[:10]
+    row["COMPRESS_BENE"] = compress_bene
+    row["BENE_AC_LEN"] = bene_ac_len
+    row["TEMP_BENE_AC"] = temp_bene_ac
+
+    acctno_compressed = _compress_blanks(row["ACCTNO"])
+
+    if temp_bene_ac == acctno_compressed:
+        first_digit = temp_bene_ac[:1]
+        temp_acctcode = "LN" if first_digit in ("2", "8") else "DP"
+        row["TEMP_ACCTCODE"] = temp_acctcode
+        row["ACCOUNT_SOURCE_UNIQUE_ID"] = _compress_blanks(temp_acctcode + temp_bene_ac)
+        inward1_rows.append(row)
+    elif temp_bene_ac != acctno_compressed:
+        bene_acctno = row["BENEACCTNO"] or ""
+        if bene_ac_len == 19 or (bene_ac_len == 15 and bene_acctno[:1] == "2"):
+            if compress_bene[4:5] in ("2", "8"):
+                row["ACCOUNT_SOURCE_UNIQUE_ID"] = _compress_blanks(
+                    "LN" + compress_bene[4:19])
+                loans_inward_rows.append(row)
+            else:
+                inward2_rows.append(row)
+        else:
+            inward2_rows.append(row)
+
+# DATA INWARD2; SET INWARD2; IF TEMP_BENE_AC NOT IN ('0','') THEN DO ...
+for row in inward2_rows:
+    temp_bene_ac = row.get("TEMP_BENE_AC", "")
+    if temp_bene_ac not in ("0", ""):
+        first_digit = temp_bene_ac[:1]
+        temp_acctcode = "LN" if first_digit in ("2", "8") else "DP"
+        row["TEMP_ACCTCODE"] = temp_acctcode
+        row["ACCOUNT_SOURCE_UNIQUE_ID"] = _compress_blanks(temp_acctcode + temp_bene_ac)
+
+print(f"  INWARD1:{len(inward1_rows):,}  LOANS_INWARD:{len(loans_inward_rows):,}  "
+      f"INWARD2:{len(inward2_rows):,}")
+
+# ============================================================================
+# STEP 5: DATA OUTWARD;  SET OUTWARD; (account resolution)
+# ============================================================================
+print("\nStep 5: Resolving OUTWARD accounts...")
+
+for row in outward_rows:
+    row["TXN_CODE"] = "RMT002"
+    row["CRDR"] = "D"
+    row["ORIGINATOR_BANK"] = row["BRANCHABB"]
+    row["INCOMING_OUTGOING_FLG"] = "O"
+    row["BENE_BRANCH"] = "0"
+    row["SENDER_BRANCH"] = row["BRANCHABB"]
+
+    compress_appl = _compress_digits_only(row["APPLACCTNO"], ",:.()-/")
+    compress_appl = _strip_leading_zeros_if_starts_with_zero(compress_appl)
+    appl_ac_len = len(compress_appl)
+    row["COMPRESS_APPL"] = compress_appl
+    row["APPL_AC_LEN"] = appl_ac_len
+
+    if appl_ac_len == 10:
+        applacctno = row["APPLACCTNO"] or ""
+        if applacctno[:1] in ("1", "3", "4", "6"):
+            temp_acctcode = "DP"
+        else:
+            temp_acctcode = "LN"
+        row["TEMP_ACCTCODE"] = temp_acctcode
+        row["ACCOUNT_SOURCE_UNIQUE_ID"] = _compress_blanks(temp_acctcode + applacctno)
+    # ELSE USE HARDCODED ACCOUNT NO;  (no assignment -- stays missing)
+
+# ============================================================================
+# STEP 6: DATA BT;  SET BT; (account resolution + ACCTNOX derivation)
+# ============================================================================
+print("\nStep 6: Resolving BT accounts and ACCTNOX...")
+
+for row in bt_rows:
+    row["TXN_CODE"] = "RMT002"
+    row["CRDR"] = "D"
+    row["ORIGINATOR_BANK"] = row["BRANCHABB"]
+    row["INCOMING_OUTGOING_FLG"] = "O"
+    row["BENE_BRANCH"] = "0"
+    row["SENDER_BRANCH"] = row["BRANCHABB"]
+
+    compress_appl = _compress_digits_only(row["APPLACCTNO"], ",:.()-/")
+    compress_appl = _strip_leading_zeros_if_starts_with_zero(compress_appl)
+    row["COMPRESS_APPL"] = compress_appl
+    row["APPL_AC_LEN"] = len(compress_appl)
+
+    # IF APPL_AC_LEN = 10 AND SUBSTR(APPLACCTNO,1,1) ^= '0' THEN DO;
+    #    IF SUBSTR(APPLACCTNO,1,1) = '2' THEN TEMP_ACCTCODE='LN';
+    #    ACCOUNT_SOURCE_UNIQUE_ID = COMPRESS(TEMP_ACCTCODE||APPLACCTNO);
+    # END;   -- commented out in the original SAS, not reproduced.
+
+    applacctno = row["APPLACCTNO"] or ""
+    acctnox = None
+    if applacctno[:2] == "25" or applacctno[:3] == "285":
+        acctnox = applacctno
+    row["ACCTNOX"] = acctnox
+
+    row["ACCOUNT_SOURCE_UNIQUE_ID"] = "RMT00001A"
+    row["CUSTOMER_SOURCE_UNIQUE_ID"] = "RMT00001C"
+    # ELSE USE HARDCODED ACCOUNT NO;  (comment only, no further action)
+
+# PROC SORT DATA=BT; BY ACCTNOX;
+bt_rows.sort(key=lambda r: (r["ACCTNOX"] is None, r["ACCTNOX"] or ""))
+
+# ============================================================================
+# STEP 7: DATA BTMAST;  SET BT.MAST... BT.MAST2... IBT.IMAST... IBT.IMAST2...
+# ============================================================================
+print("\nStep 7: Building BTMAST (ACCTNOX -> ACCTBRCH)...")
+
+con = duckdb.connect(database=":memory:")
+btmast_pl = con.execute(f"""
+    SELECT CAST(ACCTNOX AS VARCHAR) AS ACCTNOX, FICODE
+    FROM read_parquet('{BT_MAST_CACHE.as_posix()}')
+    UNION ALL
+    SELECT CAST(ACCTNOX AS VARCHAR) AS ACCTNOX, FICODE
+    FROM read_parquet('{BT_MAST2_CACHE.as_posix()}')
+    UNION ALL
+    SELECT CAST(ACCTNOX AS VARCHAR) AS ACCTNOX, FICODE
+    FROM read_parquet('{IBT_IMAST_CACHE.as_posix()}')
+    UNION ALL
+    SELECT CAST(ACCTNOX AS VARCHAR) AS ACCTNOX, FICODE
+    FROM read_parquet('{IBT_IMAST2_CACHE.as_posix()}')
+""").pl()
+con.close()
+
+btmast_pl = btmast_pl.filter(
+    (pl.col("ACCTNOX").str.slice(0, 2) == "25")
+    | (pl.col("ACCTNOX").str.slice(0, 3) == "285")
+).with_columns(pl.col("FICODE").alias("ACCTBRCH")).select(["ACCTNOX", "ACCTBRCH"])
+
+# PROC SORT DATA=BTMAST NODUPKEY; BY ACCTNOX;  (first wins, source order preserved)
+btmast_pl = btmast_pl.unique(subset=["ACCTNOX"], keep="first")
+_btmast_lookup = {
+    r["ACCTNOX"]: r["ACCTBRCH"] for r in btmast_pl.iter_rows(named=True)
+}
+print(f"  BTMAST rows: {len(_btmast_lookup):,}")
+
+# ============================================================================
+# STEP 8: DATA BT;  MERGE BT(IN=A) BTMAST(IN=B); BY ACCTNOX; IF A;
+# ============================================================================
+print("\nStep 8: Merging BTMAST onto BT...")
+
+for row in bt_rows:
+    acctbrch = _btmast_lookup.get(row.get("ACCTNOX"))
+    if acctbrch is not None:
+        row["BRANCH_ID"] = acctbrch
+        try:
+            acctbrch_int = int(acctbrch)
+        except (TypeError, ValueError):
+            acctbrch_int = None
+        row["SENDER_BRANCH"] = format_brchcd(acctbrch_int) if acctbrch_int is not None else ""
+
+# ============================================================================
+# STEP 9: DATA LOAN;  SET LN.LNNOTE ILN.LNNOTE; (LOAN_ACCT / CTR)
+# ============================================================================
+print("\nStep 9: Building LOAN_ACCT / CTR from LN.LNNOTE + ILN.LNNOTE...")
+
+con = duckdb.connect(database=":memory:")
+loan_pl = con.execute(f"""
+    SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
+    FROM read_parquet('{LN_LNNOTE_CACHE.as_posix()}')
+    UNION ALL
+    SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
+    FROM read_parquet('{ILN_LNNOTE_CACHE.as_posix()}')
+""").pl()
+con.close()
+
+# ORG_UNIT_CODE derivation from COSTCTR is commented out in the original
+# SAS (dead code, same PIBBLN/PBBLN pattern as EIDETFRM.py) -- not
+# reproduced.
+loan_pl = loan_pl.with_columns([
+    pl.lit("LN").alias("MNI_ACCTCODE"),
+    ("LN" + pl.col("LOANTYPE").cast(pl.Int64).cast(pl.Utf8).str.zfill(3)).alias("PROD"),
+    pl.col("NTBRCH").alias("ACCTBRCH"),
+])
+
+# PROC SORT DATA=LOAN OUT=LOAN_ACCT NODUPKEY; BY ACCTNO NOTENO;
+loan_acct_pl = loan_pl.sort(["ACCTNO", "NOTENO"]).unique(
+    subset=["ACCTNO", "NOTENO"], keep="first")
+
+# PROC SORT DATA=LOAN(DROP=NOTENO) OUT=CTR NODUPKEY; BY ACCTNO;
+ctr_pl = (
+    loan_pl.drop("NOTENO")
+    .sort(["ACCTNO"])
+    .unique(subset=["ACCTNO"], keep="first")
+    .with_columns(pl.lit(None, dtype=pl.Int64).alias("NOTENO"))
+)
+print(f"  LOAN_ACCT rows: {loan_acct_pl.height:,}   CTR rows: {ctr_pl.height:,}")
+
+# ============================================================================
+# STEP 10: DATA DEPO_ACCT;  SET DP.CURRENT IDP.CURRENT DP.SAVING IDP.SAVING
+#                                DP.FD IDP.FD DP.UMA IDP.UMA DP.VOSTRO;
+# ============================================================================
+print("\nStep 10: Building DEPO_ACCT...")
 
 _depo_sources = [
     DP_CURRENT_CACHE, IDP_CURRENT_CACHE, DP_SAVING_CACHE, IDP_SAVING_CACHE,
@@ -550,63 +699,122 @@ _union_sql = " UNION ALL ".join(_depo_select(p) for p in _depo_sources)
 depo_acct_pl = con.execute(_union_sql).pl()
 con.close()
 
-_depo_acct_lookup: dict = {}
-for r in depo_acct_pl.iter_rows(named=True):
-    acct_id = ("DP" + (r["ACCTNO"] or "")).replace(" ", "")
-    _depo_acct_lookup[acct_id] = {
-        "PROD": ("DP" + _num_to_str(r["PRODUCT"])).replace(" ", ""),
-        "ACCTBRCH": r["BRANCH"],
-    }
-print(f"  DEPO_ACCT rows: {len(_depo_acct_lookup):,}")
+# ORG_UNIT_CODE derivation from COSTCTR is commented out in the original
+# SAS -- not reproduced.
+depo_acct_pl = depo_acct_pl.with_columns([
+    pl.lit("DP").alias("MNI_ACCTCODE"),
+    ("DP" + pl.col("PRODUCT").cast(pl.Int64).cast(pl.Utf8).str.zfill(3)).alias("PROD"),
+    pl.col("BRANCH").alias("ACCTBRCH"),
+    pl.lit(None, dtype=pl.Int64).alias("NOTENO"),
+])
+print(f"  DEPO_ACCT rows: {depo_acct_pl.height:,}")
 
 # ============================================================================
-# STEP 6: DATA TRAN.LOCAL_GETMNI (1st pass);
-#         MERGE LOCAL(IN=A) DEPO_ACCT(IN=B); BY ACCOUNT_SOURCE_UNIQUE_ID; IF A;
+# STEP 11: DATA ACCT;  SET DEPO_ACCT LOAN_ACCT CTR;
 # ============================================================================
-print("\nStep 6: Merging DEPO_ACCT onto LOCAL...")
+print("\nStep 11: Building ACCT...")
 
-for row in local_rows:
-    key = row.get("ACCOUNT_SOURCE_UNIQUE_ID")
-    depo_match = _depo_acct_lookup.get(key) if key else None
+acct_cols = ["ACCTNO", "NOTENO", "MNI_ACCTCODE", "PROD", "ACCTBRCH"]
+acct_pl = pl.concat(
+    [depo_acct_pl.select(acct_cols), loan_acct_pl.select(acct_cols), ctr_pl.select(acct_cols)],
+    how="vertical_relaxed",
+)
 
-    if depo_match is not None:
-        # SAS MERGE last-dataset-wins: DEPO_ACCT's PROD overwrites LOCAL's
-        # PROD='RT108' on every matched row (see module docstring).
-        row["PROD"] = depo_match["PROD"]
-        acctbrch = depo_match["ACCTBRCH"]
-        try:
-            acctbrch_int = int(acctbrch)
-        except (TypeError, ValueError):
-            acctbrch_int = None
-
-        issbranch = row.get("ISSBRANCH")
-        cond = (
-            row.get("ISTTYPE") == "IB"
-            or (
-                (
-                    (row.get("ISTTYPE") == "IG" and issbranch == 168)
-                    or (row.get("USERID") == "CMSECP" and row.get("BRANCH_ID") == 0)
-                )
-                and row.get("PAYMODE") == "DEBIT ACC"
-            )
-        )
-        if cond:
-            row["BRANCH_ID"] = acctbrch_int
-            row["SENDER_BRANCH"] = format_brchcd(acctbrch_int) if acctbrch_int is not None else ""
+_acct_lookup: dict = {}
+for r in acct_pl.iter_rows(named=True):
+    acctno = r["ACCTNO"] or ""
+    if r["NOTENO"] is not None:
+        acct_id = _compress_blanks(
+            r["MNI_ACCTCODE"] + acctno + f"{int(r['NOTENO']):05d}")
     else:
-        acct_id = "RMT00001A"
-        cust_id = "RMT00001C"
-        acct_id, cust_id = _apply_brh(row.get("BRANCH_ID"), LOCAL_BRH, acct_id, cust_id)
-        row["ACCOUNT_SOURCE_UNIQUE_ID"] = acct_id
-        row["CUSTOMER_SOURCE_UNIQUE_ID"] = cust_id
-
-print(f"  TRAN.LOCAL_GETMNI (1st pass) rows: {len(local_rows):,}")
+        acct_id = _compress_blanks(r["MNI_ACCTCODE"] + acctno)
+    _acct_lookup[acct_id] = {
+        "BANK_ACC_IND": "Y",
+        "MNI_ACCTCODE": r["MNI_ACCTCODE"],
+        "PROD": r["PROD"],
+        "ACCTBRCH": r["ACCTBRCH"],
+    }
+print(f"  ACCT rows: {len(_acct_lookup):,}")
 
 # ============================================================================
-# STEP 7: DATA CIS;  (SET CIS.CUSTDLY; WHERE PRISEC=901 AND ACCTCODE IN
-#                          ('DP'); ...)
+# STEP 12: DATA INWARD_OUTWARD TRAN.INOUT;  SET INWARD1 LOANS_INWARD
+#                                                INWARD2 OUTWARD;
 # ============================================================================
-print("\nStep 7: Building CIS...")
+print("\nStep 12: Combining INWARD1/LOANS_INWARD/INWARD2/OUTWARD into INWARD_OUTWARD...")
+
+inward_outward_rows = inward1_rows + loans_inward_rows + inward2_rows + outward_rows
+print(f"  INWARD_OUTWARD rows: {len(inward_outward_rows):,}")
+
+# ============================================================================
+# STEP 13: PROC SQL;  LEFT JOIN INWARD_OUTWARD TO ACCT ON ACCOUNT_SOURCE_UNIQUE_ID
+# ============================================================================
+print("\nStep 13: Left-joining ACCT onto INWARD_OUTWARD...")
+
+for row in inward_outward_rows:
+    key = row.get("ACCOUNT_SOURCE_UNIQUE_ID")
+    match = _acct_lookup.get(key) if key else None
+    if match is not None:
+        row["BANK_ACC_IND"] = match["BANK_ACC_IND"]
+        row["MNI_ACCTCODE"] = match["MNI_ACCTCODE"]
+        row["PROD"] = match["PROD"]
+        row["ACCTBRCH"] = match["ACCTBRCH"]
+    else:
+        row["BANK_ACC_IND"] = None
+        row["MNI_ACCTCODE"] = None
+        row["PROD"] = None
+        row["ACCTBRCH"] = None
+
+# ============================================================================
+# STEP 14: DATA INWARD_OUTWARD;  SET INWARD_OUTWARD; (EBK/CPC branch override)
+# ============================================================================
+print("\nStep 14: Applying EBK/CPC branch override...")
+
+for row in inward_outward_rows:
+    branchabb = row.get("BRANCHABB")
+    paymode = row.get("PAYMODE")
+    if (branchabb == "EBK" and paymode == "DR A/C") or (
+            branchabb == "CPC" and paymode in ("AUTO CR", "INWARD")):
+        acctbrch = row.get("ACCTBRCH")
+        if acctbrch is not None:
+            row["BRANCH_ID"] = acctbrch
+            try:
+                acctbrch_int = int(acctbrch)
+            except (TypeError, ValueError):
+                acctbrch_int = None
+            if row.get("ISTTYPE") == "RI":
+                row["BENE_BRANCH"] = format_brchcd(acctbrch_int) if acctbrch_int is not None else ""
+            elif row.get("ISTTYPE") == "RO":
+                row["SENDER_BRANCH"] = format_brchcd(acctbrch_int) if acctbrch_int is not None else ""
+
+# ============================================================================
+# STEP 15: DATA TRAN.INWARD_OUTWARD;  SET INWARD_OUTWARD(IN=A) BT(IN=B);
+# ============================================================================
+print("\nStep 15: Combining INWARD_OUTWARD + BT into TRAN.INWARD_OUTWARD...")
+
+for row in inward_outward_rows:
+    if row.get("BANK_ACC_IND") != "Y":
+        if row.get("INCOMING_OUTGOING_FLG") == "O":
+            row["ACCOUNT_SOURCE_UNIQUE_ID"] = "RMT00001A"
+            row["CUSTOMER_SOURCE_UNIQUE_ID"] = "RMT00001C"
+            row["PROD"] = "RT108"
+        else:
+            row["ACCOUNT_SOURCE_UNIQUE_ID"] = "RMT00002A"
+            row["CUSTOMER_SOURCE_UNIQUE_ID"] = "RMT00002C"
+            row["PROD"] = "RT109"
+    row["TEMP_ACCT_SOURCE"] = (row.get("ACCOUNT_SOURCE_UNIQUE_ID") or "")[:12]
+
+for row in bt_rows:
+    row["PROD"] = "RT108"
+    row["TEMP_ACCT_SOURCE"] = (row.get("ACCOUNT_SOURCE_UNIQUE_ID") or "")[:12]
+
+tran_inward_outward_rows = inward_outward_rows + bt_rows
+print(f"  TRAN.INWARD_OUTWARD rows: {len(tran_inward_outward_rows):,}")
+
+# ============================================================================
+# STEP 16: DATA CIS;  SET CIS.CUSTDLY; WHERE PRISEC=901 AND ACCTCODE IN
+#                          ('DP','LN'); PROC SORT NODUPKEY BY ACCTNO;
+# ============================================================================
+print("\nStep 16: Building CIS...")
 
 con = duckdb.connect(database=":memory:")
 cis_pl = con.execute(f"""
@@ -614,10 +822,9 @@ cis_pl = con.execute(f"""
         CAST(ACCTCODE AS VARCHAR) AS ACCTCODE,
         CAST(ACCTNO AS VARCHAR)   AS ACCTNO,
         CAST(CUSTNO AS VARCHAR)   AS CUSTNO,
-        CAST(ALIAS AS VARCHAR)    AS ALIAS,
-        CAST(INDORG AS VARCHAR)   AS INDORG
+        CAST(ALIAS AS VARCHAR)    AS ALIAS
     FROM read_parquet('{CIS_CUSTDLY_CACHE.as_posix()}')
-    WHERE PRISEC = 901 AND ACCTCODE IN ('DP')
+    WHERE PRISEC = 901 AND ACCTCODE IN ('DP','LN')
 """).pl()
 con.close()
 
@@ -626,50 +833,54 @@ cis_pl = cis_pl.with_columns([
     .alias("ACCOUNT_SOURCE_UNIQUE_ID"),
     ("CIS" + pl.col("CUSTNO").fill_null("")).str.replace_all(" ", "").alias("CIS"),
 ])
-# PROC SORT DATA=CIS NODUPKEY; BY ACCOUNT_SOURCE_UNIQUE_ID;  (first wins)
-cis_pl = cis_pl.sort("ACCOUNT_SOURCE_UNIQUE_ID").unique(
-    subset=["ACCOUNT_SOURCE_UNIQUE_ID"], keep="first")
+# PROC SORT DATA=CIS NODUPKEY; BY ACCTNO;  (dedup key is ACCTNO, not
+# ACCOUNT_SOURCE_UNIQUE_ID -- preserved exactly as in the original SAS.)
+cis_pl = cis_pl.sort("ACCTNO").unique(subset=["ACCTNO"], keep="first")
 _cis_lookup = {
-    r["ACCOUNT_SOURCE_UNIQUE_ID"]: {"CIS": r["CIS"], "ALIAS": r["ALIAS"], "INDORG": r["INDORG"]}
+    r["ACCOUNT_SOURCE_UNIQUE_ID"]: (r["CIS"], r["ALIAS"])
     for r in cis_pl.iter_rows(named=True)
 }
-print(f"  CIS rows: {len(_cis_lookup):,}")
+print(f"  CIS rows: {cis_pl.height:,}")
 
 # ============================================================================
-# STEP 8: DATA TRAN.LOCAL_GETMNI (2nd pass);
-#         MERGE TRAN.LOCAL_GETMNI(IN=A) CIS; BY ACCOUNT_SOURCE_UNIQUE_ID; IF A;
+# STEP 17: PROC SQL;  LEFT JOIN TRAN.INWARD_OUTWARD TO CIS ON
+#                     TEMP_ACCT_SOURCE = CIS.ACCOUNT_SOURCE_UNIQUE_ID
 # ============================================================================
-print("\nStep 8: Merging CIS onto TRAN.LOCAL_GETMNI...")
+print("\nStep 17: Left-joining CIS onto TRAN.INWARD_OUTWARD (RENTAS_CIS)...")
 
-for row in local_rows:
-    key = row.get("ACCOUNT_SOURCE_UNIQUE_ID")
-    cis_match = _cis_lookup.get(key) if key else None
-
-    if cis_match is not None:
-        row["ALIAS"] = cis_match["ALIAS"]
-        row["INDORG"] = cis_match["INDORG"]
-        cis_val = cis_match["CIS"]
+for row in tran_inward_outward_rows:
+    key = row.get("TEMP_ACCT_SOURCE")
+    hit = _cis_lookup.get(key) if key else None
+    if hit is not None:
+        row["CIS"], row["ALIAS"] = hit
+        row["CIS_ACCTNO"] = key
     else:
+        row["CIS"] = None
         row["ALIAS"] = None
-        row["INDORG"] = None
-        cis_val = None
+        row["CIS_ACCTNO"] = None
 
-    if cis_val:
-        row["CUSTOMER_SOURCE_UNIQUE_ID"] = cis_val
+# ============================================================================
+# STEP 18: DATA TRAN.RENTAS_CIS;  SET TRAN.RENTAS_CIS; (CIS fallback)
+# ============================================================================
+print("\nStep 18: Applying CIS fallback...")
+
+for row in tran_inward_outward_rows:
+    if row.get("CIS"):
+        row["CUSTOMER_SOURCE_UNIQUE_ID"] = row["CIS"]
     else:
-        acct_id = "RMT00001A"
-        cust_id = "RMT00001C"
-        row["PROD"] = "RT108"
-        acct_id, cust_id = _apply_brh(row.get("BRANCH_ID"), LOCAL_BRH, acct_id, cust_id)
-        row["ACCOUNT_SOURCE_UNIQUE_ID"] = acct_id
-        row["CUSTOMER_SOURCE_UNIQUE_ID"] = cust_id
-
-print(f"  TRAN.LOCAL_GETMNI (final) rows: {len(local_rows):,}")
+        if row.get("INCOMING_OUTGOING_FLG") == "O":
+            row["CUSTOMER_SOURCE_UNIQUE_ID"] = "RMT00001C"
+            row["ACCOUNT_SOURCE_UNIQUE_ID"] = "RMT00001A"
+            row["PROD"] = "RT108"
+        else:
+            row["CUSTOMER_SOURCE_UNIQUE_ID"] = "RMT00002C"
+            row["ACCOUNT_SOURCE_UNIQUE_ID"] = "RMT00002A"
+            row["PROD"] = "RT109"
 
 # ============================================================================
-# STEP 9: DATA OUT;  SET TRAN.LOCAL_GETMNI; ... (alias/@ cleanup + deletes)
+# STEP 19: DATA OUT;  SET TRAN.RENTAS_CIS; (alias fallback + cleanup + delete)
 # ============================================================================
-print("\nStep 9: Building OUT and applying alias/@ cleanup...")
+print("\nStep 19: Building OUT and applying alias cleanup...")
 
 
 def _strip_double_alias(value: str) -> str:
@@ -687,8 +898,8 @@ def _strip_double_alias(value: str) -> str:
 _DELETE_IDS = {"0000000000000006463H", "0000000000000014328V"}
 
 out_rows = []
-for row in local_rows:
-    flg = row.get("INCOMING_OUTGOING_FLG")  # always 'O' -- LOCAL never sets 'I'
+for row in tran_inward_outward_rows:
+    flg = row.get("INCOMING_OUTGOING_FLG")
     ben_id = row.get("BENEFICIARY_ID") or ""
     orig_id = row.get("ORIGINATOR_ID") or ""
     alias = row.get("ALIAS") or ""
@@ -698,13 +909,7 @@ for row in local_rows:
     elif flg == "O" and orig_id == "" and alias != "":
         orig_id = alias
 
-    # IF INDEX(BENEFICIARY_ID,'00'X) > 0 THEN BENEFICIARY_ID='';
-    if "\x00" in ben_id:
-        ben_id = ""
-    if "\x00" in orig_id:
-        orig_id = ""
-
-    if ben_id in ("", "UNKNOWN"):
+    if ben_id == "":
         ben_id = row.get("BENEFICIARY_NAME") or ""
     if orig_id == "":
         orig_id = row.get("ORIGINATOR_NAME") or ""
@@ -713,17 +918,7 @@ for row in local_rows:
         continue  # IF ORIGINATOR_ID='' OR BENEFICIARY_ID='' THEN DELETE;
 
     orig_id = _strip_double_alias(orig_id)
-    ben_id  = _strip_double_alias(ben_id)
-
-    # 2019-2828 REMOVE ENDING @
-    if orig_id and orig_id[-1] == "@":
-        orig_id = orig_id[:-1]
-    if ben_id and ben_id[-1] == "@":
-        ben_id = ben_id[:-1]
-
-    # SMR 2021-2221 FOR CORPORATE PASS BR/CI INTO ORIGINATOR_ID
-    if row.get("INDORG") == "O" and row.get("PAYMODE") == "DEBIT ACC" and alias != "":
-        orig_id = alias
+    ben_id = _strip_double_alias(ben_id)
 
     row["ORIGINATOR_ID"] = orig_id
     row["BENEFICIARY_ID"] = ben_id
@@ -737,9 +932,9 @@ for row in local_rows:
 print(f"  OUT rows: {len(out_rows):,}")
 
 # ============================================================================
-# STEP 10: WRITE OUTPUT  (delimited flat file, delimiter = '1D'X)
+# STEP 20: WRITE OUTPUT  (delimited flat file, delimiter = '1D'X)
 # ============================================================================
-print("\nStep 10: Writing output...")
+print("\nStep 20: Writing output...")
 
 
 def _s(row: dict, field: str) -> str:
@@ -750,7 +945,9 @@ def _s(row: dict, field: str) -> str:
 lines = []
 count = 1
 for row in out_rows:
-    source_txn_id = f"LRM{RDATE}{count:010d}"
+    # SOURCE_TXN_UNIQUE_ID recomputed here, overwriting the RM... value
+    # assigned earlier in DATA INWARD/OUTWARD/BT.
+    source_txn_id = f"RTS{RDATE}{count:010d}"
     fields = [
         _s(row, "RUN_TIMESTAMP"),                   # 1
         source_txn_id,                              # 2
@@ -789,7 +986,7 @@ for row in out_rows:
         "", "", "", "", "",                         # 65-69
         _s(row, "BENEFICIARY_ID"),                  # 70
         _s(row, "ORIGINATOR_ID"),                   # 71
-        _s(row, "SERIAL"),                          # 72
+        _s(row, "TRANSREF"),                         # 72
         _s(row, "INCOMING_OUTGOING_FLG"),           # 73
         _s(row, "SENDER_BRANCH"),                   # 74
         _s(row, "BENE_BRANCH"),                     # 75
@@ -807,13 +1004,15 @@ print(f"  Total records  : {len(lines):,}")
 TRAN_DIR = OUTPUT_DIR / "TRAN"
 TRAN_DIR.mkdir(parents=True, exist_ok=True)
 if out_rows:
-    pl.DataFrame(out_rows).write_parquet(TRAN_DIR / "LOCAL_GETMNI.parquet")
+    pl.DataFrame(out_rows).write_parquet(TRAN_DIR / "RENTAS_CIS.parquet")
+if tran_inward_outward_rows:
+    pl.DataFrame(tran_inward_outward_rows).write_parquet(TRAN_DIR / "INOUT.parquet")
 
 # ============================================================================
-# STEP 11: BACKUP INTERFACE FILE  (//COPYFILE EXEC PGM=ICEGENER)
+# STEP 21: BACKUP INTERFACE FILE  (//COPYFILE EXEC PGM=ICEGENER)
 # ============================================================================
-print("\nStep 11: Backing up interface file...")
+print("\nStep 21: Backing up interface file...")
 shutil.copy2(OUTPUT_FILE, OUTPUT_BACKUP)
 print(f"  Backup written : {OUTPUT_BACKUP}")
 
-print("\nEIDETLRM complete.")
+print("\nEIDETRTS complete.")
