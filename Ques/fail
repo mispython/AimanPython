@@ -1,16 +1,12 @@
-def _sas_round(x: float) -> float:
-    """SAS ROUND() equivalent: round half away from zero.
-    Uses a machine-epsilon-scale fuzz (|x| * 1e-15), NOT the 1e-10
-    figure — that one is large enough to overtake genuinely below-half
-    values at large magnitudes."""
-    if x == 0.0:
-        return 0.0
-    fuzz = abs(x) * 1e-15
-    if x > 0:
-        return float(int(x + 0.5 + fuzz))
-    return float(-int(-x + 0.5 + fuzz))
+con = duckdb.connect(database=":memory:")
+loan_pl = con.execute(f"""
+    SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO, NOTENO, COSTCTR, LOANTYPE,
+           CAST(ENTITY_CD AS VARCHAR) AS ENTITY_CD
+    FROM read_parquet('{LN_LNNOTE_CACHE.as_posix()}')
+    WHERE ENTITY_CD IS NOT NULL
+""").pl()
+con.close()
 
 
 
 
-fuzz = abs(x) * 1e-16
