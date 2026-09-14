@@ -1,11 +1,38 @@
-con = duckdb.connect(database=":memory:")
-loan_pl = con.execute(f"""
-    SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO, NOTENO, COSTCTR, LOANTYPE,
-           CAST(ENTITY_CD AS VARCHAR) AS ENTITY_CD
-    FROM read_parquet('{LN_LNNOTE_CACHE.as_posix()}')
-    WHERE ENTITY_CD IS NOT NULL
+cis_pl = con.execute(f"""
+    SELECT
+        CAST(ACCTCODE AS VARCHAR) AS ACCTCODE,
+        CAST(ACCTNO AS VARCHAR)   AS ACCTNO,
+        CAST(CUSTNO AS VARCHAR)   AS CUSTNO,
+        CAST(ALIAS AS VARCHAR)    AS ALIAS
+    FROM read_parquet('{CIS_CUSTDLY_CACHE.as_posix()}')
+    WHERE PRISEC = 901 AND ACCTCODE IN ('DP','LN')
 """).pl()
-con.close()
+
+
+
+
+_cis_lookup = {
+    r["ACCOUNT_SOURCE_UNIQUE_ID"]: (r["CIS"], r["ALIAS"])
+    for r in cis_pl.iter_rows(named=True)
+}
+
+
+
+
+        key = row.get("ACCOUNT_SOURCE_UNIQUE_ID")
+        acct_match = _acct_lookup.get(key) if key else None
+        cis_hit = _cis_lookup.get(key) if key else None
+        cis_value, cis_alias = cis_hit if cis_hit else (None, None)
+
+
+
+
+        row["CIS"] = cis_value
+        # SAS MERGE last-dataset-wins: CIS.Alias overwrites on matched rows.
+        # On unmatched rows the SET-to-missing rule leaves ALIAS as whatever
+        # it already was (from REMTRAN, if that column exists there).
+        if cis_hit is not None:
+            row["ALIAS"] = cis_alias
 
 
 
