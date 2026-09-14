@@ -1,39 +1,25 @@
-cis_pl = con.execute(f"""
-    SELECT
-        CAST(ACCTCODE AS VARCHAR) AS ACCTCODE,
-        CAST(ACCTNO AS VARCHAR)   AS ACCTNO,
-        CAST(CUSTNO AS VARCHAR)   AS CUSTNO,
-        CAST(ALIAS AS VARCHAR)    AS ALIAS
-    FROM read_parquet('{CIS_CUSTDLY_CACHE.as_posix()}')
-    WHERE PRISEC = 901 AND ACCTCODE IN ('DP','LN')
-""").pl()
+def _num_to_str(v) -> str:
+    """Mirrors SAS implicit numeric-to-character coercion used in
+    COMPRESS('DP'||PAYREF): integral floats render without a decimal
+    point, everything else falls back to str()."""
+    if v is None:
+        return ""
+    if isinstance(v, float):
+        return str(int(v)) if v.is_integer() else str(v)
+    return str(v)
 
 
 
 
-_cis_lookup = {
-    r["ACCOUNT_SOURCE_UNIQUE_ID"]: (r["CIS"], r["ALIAS"])
-    for r in cis_pl.iter_rows(named=True)
-}
+    if row["PAYMODE"] == "CR A/C":
+        row["ACCOUNT_SOURCE_UNIQUE_ID"] = ("DP" + _num_to_str(row["PAYREF"])).replace(" ", "")
+    else:
+        row["ACCOUNT_SOURCE_UNIQUE_ID"] = None
 
 
 
 
-        key = row.get("ACCOUNT_SOURCE_UNIQUE_ID")
-        acct_match = _acct_lookup.get(key) if key else None
-        cis_hit = _cis_lookup.get(key) if key else None
-        cis_value, cis_alias = cis_hit if cis_hit else (None, None)
-
-
-
-
-        row["CIS"] = cis_value
-        # SAS MERGE last-dataset-wins: CIS.Alias overwrites on matched rows.
-        # On unmatched rows the SET-to-missing rule leaves ALIAS as whatever
-        # it already was (from REMTRAN, if that column exists there).
-        if cis_hit is not None:
-            row["ALIAS"] = cis_alias
-
-
-
-
+    if row["PAYMODE"] == "EBNK DEBIT":
+        row["ACCOUNT_SOURCE_UNIQUE_ID"] = ("DP" + _num_to_str(row["PAYREF"])).replace(" ", "")
+    else:
+        row["ACCOUNT_SOURCE_UNIQUE_ID"] = None
