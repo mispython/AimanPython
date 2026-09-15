@@ -1,11 +1,32 @@
-def _qualify(select_sql: str) -> str:
-    """Prefix every bare source column inside CAST(...) with `src.` so DuckDB
-    binds it to the parquet source column and never to the SELECT alias of
-    the same name."""
-    return re.sub(r"CAST\(\s*(\w+)\s+AS\b", r"CAST(src.\1 AS", select_sql)
+def _read_rows(parquet_path: Path, select_sql: str) -> list:
+    """Read a Parquet cache through DuckDB with explicit CASTs and return
+    a plain list of dict rows. For any source column referenced by the
+    SELECT but missing from the parquet, substitute NULL of the CAST's
+    target type -- mirroring SAS's behaviour, where a KEEP/RENAME of a
+    column the source does not carry simply yields a missing value."""
+    con = duckdb.connect(database=":memory:")
 
+    src_cols = {
+        row[0]
+        for row in con.execute(
+            f"DESCRIBE SELECT * FROM read_parquet('{parquet_path.as_posix()}') AS src"
+        ).fetchall()
+    }
 
-LOAN_SELECT   = _qualify(LOAN_SELECT)
-IBTRAD_SELECT = _qualify(IBTRAD_SELECT)
-DISPAY_SELECT = _qualify(DISPAY_SELECT)
-LNCOMM_SELECT = _qualify(LNCOMM_SELECT)
+    def _fix(m):
+        col, typ, alias = m.group(1), m.group(2), m.group(3)
+        if col in src_cols:
+            return m.group(0)
+        return f"CAST(NULL AS {typ}) AS {alias}"
+
+    fixed_sql = re.sub(
+        r"CAST\(src\.(\w+) AS ([A-Z0-9]+(?:\([0-9,]+\))?)\)(?:\s+AS\s+(\w+))?",
+        _fix,
+        select_sql,
+    )
+
+    df = con.execute(
+        f"SELECT {fixed_sql} FROM read_parquet('{parquet_path.as_posix()}') AS src"
+    ).pl()
+    con.close()
+    return df.to_dicts()
