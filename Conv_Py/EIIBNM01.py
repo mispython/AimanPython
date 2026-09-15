@@ -1,1423 +1,1100 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
-Program Name: EIIBNM01.py
-Purpose: Public Islamic Bank Berhad - Monthly Loan Summary Reports
-         Generates multiple PROC PRINT reports covering:
-         - All Loans (disbursement, repayment, outstanding)
-         - Retail Loans breakdown
-         - Commercial Retail Loans (individual vs non-individual)
-         - SME Loans (DBE, DNBFI, FBE sub-categories)
-         - Bank Trade (Bills) summary
-         - Total Commercial Retail by Facility and by Sector
+Program : EIIBNM01.py
+Purpose : All Loans / Bank Trade report for BNM/PIBB submission -- builds a
+          combined loan (ALM) and bank-trade (ALMBT) book, classifies every
+          facility into a PRODESC category (housing, hire purchase, OD
+          corporate/retail, bank trade, etc.), then produces a family of
+          PROC PRINT style summary reports (All / Retail / SME / DBE / DNBFI /
+          Foreign-Entity cuts, for both loans and bank trade) plus two
+          PROC TABULATE style breakdowns (by facility TYPE and by sector).
 
-ESMR: 2009-0744
-ESMR: 2013-813 (JKA)
-ESMR: 2014-632 (RST)
-ESMR: 2014-2252 (TBC)
-ESMR: 2015-1190 (TBC)
-ESMR: 2015-1044 (TBC)
-ESMR: 2016-630 (NSA)
-ESMR: 2016-579 (TBC)
+Dependency:
+    %INC PGM(PBBLNFMT);  -> only PUT(SECTORCD,$FISSTYPE.) and
+                             PUT(SECTORCD,$FISSGROUP.) are actually called
+                             anywhere in this program's body, so only
+                             format_fisstype()/format_fissgroup() are
+                             imported from PBBLNFMT.py. No other PBBLNFMT
+                             format (LNPROD, LNDENOM, ODPROD, LNRATE, ...) is
+                             referenced anywhere in EIIBNM01, so they are
+                             intentionally NOT imported here.
 
-Dependencies:
-  %INC PGM(PBBLNFMT):
-    The SAS source uses three formats from PBBLNFMT:
-      - LIQPFMT   -> PUT(PRODUCT, LIQPFMT.)  classifies products as FL/HL/RC
-      - $FISSTYPE  -> PUT(SECTORCD, $FISSTYPE.)  maps sector code to type string
-      - $FISSGROUP -> PUT(SECTORCD, $FISSGROUP.) maps sector code to group letter
+    //PGM DD DSN=SAP.BNM.PROGRAM is the SAS program library the %INC pulls
+    from -- it carries no data and has no physical Parquet input.
 
-    None of these three formats are present in the converted PBBLNFMT.py
-        (which covers ODDENOM, LNDENOM, LNPROD, CUSTCD, STATECD, APPRLIMT,
-        LOANSIZE, MTHPASS, LNORMT, LNRMMT, COLLCD, RISKCD, BUSIND).
-    They are implemented locally below (liqpfmt, format_fisstype,
-        format_fissgroup) with approximations based on contextual usage.
+============================================================================
+PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
+============================================================================
+1. isasd_loan.sas7bdat      (JCL //ISASD DD DSN=SAP.PIBB.STORE.SASDATA,
+                              member LOAN&REPTMON)
+   Store-book loan master for the report month. Deterministic filename
+   (fully derived from REPTMON) -- built directly, no input_date scan.
 
-    format_lnprod and format_lndenom ARE present in PBBLNFMT.py but are
-        NOT used anywhere in this program, so they are not imported.
+2. bnm_loan_cur.sas7bdat     (JCL //BNM DD DSN=SAP.PIBB.SASDATA,
+                               member LOAN&REPTMON&NOWK)
+   Current-week/-month loan master. Read TWICE in the original SAS: once
+   sorted BY ACCTNO NOTENO (-> MLOAN) and once, completely independently,
+   sorted BY ACCTNO COMMNO (-> LOAN2) for the ALM/ALMBT build.
+
+3. bnm_loan_prev.sas7bdat    (BNM.LOAN&REPTMON2&NOWK -- prior month)
+4. bnm_lnwof_cur.sas7bdat    (BNM.LNWOF&REPTMON&NOWK  -- write-off, current)
+5. bnm_lnwod_cur.sas7bdat    (BNM.LNWOD&REPTMON&NOWK  -- write-down, current)
+6. bnm_lnwof_prev.sas7bdat   (BNM.LNWOF&REPTMON2&NOWK -- write-off, prior)
+7. bnm_lnwod_prev.sas7bdat   (BNM.LNWOD&REPTMON2&NOWK -- write-down, prior)
+   Datasets 2-7 all share the same loan-record layout (ACCTNO, NOTENO,
+   FISSPURP, PRODUCT, NOTETERM, EARNTERM, BALANCE, BAL_AFT_EIR, PAIDIND,
+   APPRDATE, APPRLIM2, PRODCD, CUSTCD, AMTIND, SECTORCD, ACCTYPE, BRANCH,
+   DNBFISME, NOACCT, COMMNO, EIR_ADJ, RLEASAMT, CJFEE) -- the SAS source
+   never KEEPs/DROPs any of these before the MERGEs, so all are assumed to
+   carry the full loan-record layout.
+
+8. btbnm_ibtrad.sas7bdat     (JCL //BTBNM DD DSN=SAP.IBT.SASDATA,
+                               member IBTRAD&REPTMON&NOWK)
+   Bank-trade (bill) transactions.
+
+9. dispay_idispaymth.sas7bdat (JCL //DISPAY DD DSN=SAP.PIBB.DISPAY,
+                                 member IDISPAYMTH&REPTMON)
+   Monthly disbursement/repayment feed.
+
+10. loan_lncomm.sas7bdat     (JCL //LOAN DD DSN=SAP.PIBB.MNILN(0),
+                               member LNCOMM)
+    Commitment-linked utilisation. No date token in the member name (a
+    fixed "(0)" generation) -- fixed filename, not date-scanned.
+
+============================================================================
+OUTPUT
+============================================================================
+//SASLIST DD DSN=SAP.PIBB.EIIBNM01.TEXT, DISP=(NEW,CATLG,DELETE),
+   DCB=(RECFM=FB,LRECL=133,BLKSIZE=0)
+RECFM=FB (NOT FBA) means this report carries NO ASA carriage-control byte
+(per project convention: RECFM=FBA implies ASA control, RECFM=FB does not,
+exactly as established for EIIMRM01's //TEMP DD). Page breaks are marked
+with a form-feed character; PAGESIZE is not specified in the SAS source so
+the project default of 60 lines/page is used.
+The preceding //DELETE EXEC PGM=IEFBR14 step exists only to purge/recreate
+the catalogued dataset before the run -- opening OUTPUT_FILE in "w" mode
+achieves the same effect, so no separate delete step is coded.
+
+//MFRS DD DSN=SAP.PIBB.MFRS.DETAILS, DISP=OLD is an existing SAS library
+that two data-extract "members" are written into:
+   MFRS.MAST_BR (KEEP=ACCTNO PRODESC NOACCT)
+   MFRS.ALM_CR  (KEEP=ACCTNO NOTENO PRODESC NOACCT)
+Neither member name carries a date token, so both are written as fixed-name
+Parquet files (not report text, since they are data extracts feeding other
+downstream programs, not print output).
 """
 
-import os
-import sys
-from datetime import date, timedelta
-import calendar
-from typing import Optional
-import math
+import gc
+from pathlib import Path
+from datetime import date
 
 import duckdb
+import pandas as pd
 import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-# =============================================================================
+from REPTDATE import get_monthly_reptdate_values
+from PBBLNFMT import format_fisstype, format_fissgroup
+
+# ============================================================================
 # PATH CONFIGURATION
-# =============================================================================
+# ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-# Input parquet paths
-BNM_LOAN_PREFIX       = "input/bnm/loan"          # loan<MM><WK>.parquet
-BNM_LNWOF_PREFIX      = "input/bnm/lnwof"         # lnwof<MM><WK>.parquet
-BNM_LNWOD_PREFIX      = "input/bnm/lnwod"         # lnwod<MM><WK>.parquet
-ISASD_LOAN_PREFIX     = "input/isasd/loan"         # loan<MM>.parquet
-DISPAY_PREFIX         = "input/dispay/idispaymth"  # idispaymth<MM>.parquet
-LOAN_LNCOMM_PARQUET   = "input/loan/lncomm.parquet"
-BTBNM_IBTRAD_PREFIX   = "input/btbnm/ibtrad"       # ibtrad<MM><WK>.parquet
+INPUT_ISASD_DIR  = STG_DIR / "sasdata"    # //ISASD  DD DSN=SAP.PIBB.STORE.SASDATA
+INPUT_BNM_DIR    = STG_DIR / "sasdata"    # //BNM    DD DSN=SAP.PIBB.SASDATA
+INPUT_BTBNM_DIR  = STG_DIR / "sasdata"    # //BTBNM  DD DSN=SAP.IBT.SASDATA
+INPUT_DISPAY_DIR = STG_DIR / "sasdata"    # //DISPAY DD DSN=SAP.PIBB.DISPAY
+INPUT_LOAN_DIR   = STG_DIR / "sasdata"    # //LOAN   DD DSN=SAP.PIBB.MNILN(0)
 
-# Output paths
-OUTPUT_DIR            = "output/eiibnm01"
-REPORT_TXT            = os.path.join(OUTPUT_DIR, "eiibnm01_report.txt")
-MFRS_MAST_BR_PARQUET  = "output/mfrs/mast_br.parquet"
-MFRS_ALM_CR_PARQUET   = "output/mfrs/alm_cr.parquet"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIBNM01"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-os.makedirs("output/mfrs", exist_ok=True)
+OUTPUT_DIR = BASE_DIR / "output" / "EIIBNM01"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / "EIIBNM01.txt"
 
-# =============================================================================
-# PRODUCT/CUSTOMER CODE MACRO CONSTANTS
-# =============================================================================
+OUTPUT_MFRS_DIR = BASE_DIR / "output" / "MFRS"     # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
+OUTPUT_MFRS_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_MFRS_MAST_BR_FILE = OUTPUT_MFRS_DIR / "MFRS_MAST_BR.parquet"
+OUTPUT_MFRS_ALM_CR_FILE  = OUTPUT_MFRS_DIR / "MFRS_ALM_CR.parquet"
 
-ODCORP = {50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,70,71,33}
-ODFISS = {'0311','0312','0313','0314','0315','0316'}
-FLCORP = {180,181,182,183,184,185,186,187,188,189,190,191,192,
-          193,195,197,199,851,852,853,854,855,856,857,858,859,
-          860,900,901,902,903,904,905,906,907,908,909,910,
-          914,915,919,920,925,950,951,
-          680,681,682,683,684,685,686,687,688,689,690}
-HLWOF  = {423,650,651,664}
-REWOF  = {425,654,655,656,657,658,659,660,661,662,663,665,666,667,421,671}
-STFLN  = {102,103,104,105,106,107,108}
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60          # lines per page -- not specified in SAS -> project default
 
-# Customer codes for SME sub-categories
-DBE_CUSTCDS   = {'41','42','43','44','46','47','48','49','51','52','53','54'}
-FBE_CUSTCDS   = {'87','88','89'}
-DNBFI_VALS    = {'1','2','3'}
-SME_CUSTCDS   = DBE_CUSTCDS | FBE_CUSTCDS
-INDIV_CUSTCDS = {'77','78','95','96'}
+# ============================================================================
+# MACRO VARIABLE LISTS  (equivalent to SAS %LET declarations)
+# ============================================================================
+ODCORP = (50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+          60, 61, 62, 63, 64, 65, 70, 71, 33)
+# %LET ODFISS=(0311,0312,0313,0314,0315,0316); -- unquoted numeric literals,
+# so SAS drops the leading zero (0311 == 311) when substituted into the IN().
+ODFISS = (311, 312, 313, 314, 315, 316)
+FLCORP = (180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192,
+          193, 195, 197, 199, 851, 852, 853, 854, 855, 856, 857, 858, 859,
+          860, 900, 901, 902, 903, 904, 905, 906, 907, 908, 909, 910,
+          914, 915, 919, 920, 925, 950, 951,
+          680, 681, 682, 683, 684, 685, 686, 687, 688, 689, 690)
+HLWOF  = (423, 650, 651, 664)
+REWOF  = (425, 654, 655, 656, 657, 658, 659, 660, 661, 662, 663, 665, 666, 667,
+          421, 671)
+STFLN  = (102, 103, 104, 105, 106, 107, 108)
 
-# =============================================================================
-# FORMAT: LIQPFMT  (local approximation — not present in PBBLNFMT.py)
-#         Used as PUT(PRODUCT, LIQPFMT.) to classify products as 'FL', 'HL', 'RC'.
-#         Approximated from product range patterns in PBBLNFMT.LNPROD_MAP and
-#         contextual ITEM-derivation logic throughout the SAS suite.
-# =============================================================================
+# ============================================================================
+# STEP 1: REPORT DATE
+# ============================================================================
+print("Step 1: Deriving report date...")
 
-_LIQPFMT_HL = frozenset([
-    110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
-    139, 140, 141, 142, 147, 173, 225, 226,
-    400, 409, 410, 412, 413, 414, 415, 423, 431, 432, 433, 440,
-    466, 472, 473, 474, 479, 484, 486, 489, 494,
-    600, 638, 650, 651, 664, 677, 911,
-    *range(200, 249), *range(250, 261),
-])
+reptdate_values = get_monthly_reptdate_values(year_format="%Y")
+reptdate = reptdate_values.reptdate     # last day of the previous month
 
-_LIQPFMT_RC = frozenset([
-    146, 184, 192, 195, 196, 302, 350, 351, 364, 365,
-    495, 506, 604, 605, 634, 641, 660, 685, 689,
-    802, 803, 806, 808, 810, 812, 814, 817, 818,
-    856, 857, 858, 859, 860,
-    902, 903, 910, 917, 925, 951,
-])
+_day = reptdate.day
+# SELECT(DAY(REPTDATE)): the WHEN(8)/WHEN(15)/WHEN(22) branches are
+# unreachable in practice, since REPTDATE is always the last day of the
+# previous month (day 28-31) -- OTHERWISE always fires. Preserved verbatim
+# for source fidelity.
+if _day == 8:
+    SDD, WK, WK1, WK2, WK3 = 1, "1", "4", None, None
+elif _day == 15:
+    SDD, WK, WK1, WK2, WK3 = 9, "2", "1", None, None
+elif _day == 22:
+    SDD, WK, WK1, WK2, WK3 = 16, "3", "2", None, None
+else:
+    SDD, WK, WK1, WK2, WK3 = 23, "4", "3", "2", "1"
 
+MM = reptdate.month
+if WK == "1":
+    MM1 = MM - 1 if MM - 1 != 0 else 12
+else:
+    MM1 = MM
+MM2 = MM - 1 if MM - 1 != 0 else 12
+SDATE = date(reptdate.year, MM, SDD)   # CALL SYMPUT('SDATE',...) -- never
+                                        # referenced again anywhere in the
+                                        # SAS body; kept only for parity.
 
-def liqpfmt(product: int) -> str:
-    """
-    Approximate LIQPFMT format: classify product as 'HL', 'RC', or 'FL'.
-    LIQPFMT is absent from PBBLNFMT.py; implemented locally.
-    """
-    if product in _LIQPFMT_HL:
-        return 'HL'
-    if product in _LIQPFMT_RC:
-        return 'RC'
-    return 'FL'
+NOWK     = WK
+REPTMON  = f"{MM:02d}"
+REPTMON1 = f"{MM1:02d}"   # CALL SYMPUT'd but never referenced again -- dead.
+REPTMON2 = f"{MM2:02d}"
+REPTYEAR = f"{reptdate.year:04d}"
+REPTDAY  = f"{reptdate.day:02d}"  # CALL SYMPUT'd but never referenced -- dead.
+RDATE    = reptdate.strftime("%d/%m/%y")
 
+print(f"  REPTMON/REPTMON2/NOWK : {REPTMON}/{REPTMON2}/{NOWK}")
+print(f"  REPTYEAR              : {REPTYEAR}")
+print(f"  RDATE                 : {RDATE}")
 
-# =============================================================================
-# FORMAT: $FISSTYPE  (local approximation — not present in PBBLNFMT.py)
-# Used as PUT(SECTORCD, $FISSTYPE.) to map FISS sector code to type string.
-# Approximated from standard BNM FISS sector classification scheme.
-# =============================================================================
+# ============================================================================
+# DYNAMIC PHYSICAL INPUT FILES  (deterministic -- built directly from
+# REPTMON/REPTMON2/NOWK, no input_date.get_latest_file() needed)
+# ============================================================================
+INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR / f"isasd_loan{REPTMON}.sas7bdat"
+INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR / f"bnm_loan{REPTMON}{NOWK}.sas7bdat"
+INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR / f"bnm_loan{REPTMON2}{NOWK}.sas7bdat"
+INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR / f"bnm_lnwof{REPTMON}{NOWK}.sas7bdat"
+INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR / f"bnm_lnwod{REPTMON}{NOWK}.sas7bdat"
+INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR / f"bnm_lnwof{REPTMON2}{NOWK}.sas7bdat"
+INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR / f"bnm_lnwod{REPTMON2}{NOWK}.sas7bdat"
+INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR / f"btbnm_ibtrad{REPTMON}{NOWK}.sas7bdat"
+INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"dispay_idispaymth{REPTMON}.sas7bdat"
+INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR / "loan_lncomm.sas7bdat"   # fixed -- no date token
 
-def format_fisstype(sectorcd) -> str:
-    """$FISSTYPE. format — map FISS sector code to type string."""
-    if sectorcd is None:
-        return ''
-    s = str(sectorcd).strip().zfill(4)
-    prefix = s[:2]
-    mapping = {
-        '01': 'AGRICULTURE', '02': 'MINING',     '03': 'MANUFACTURING',
-        '04': 'ELECTRICITY', '05': 'WATER',       '06': 'CONSTRUCTION',
-        '07': 'WHOLESALE',   '08': 'TRANSPORT',   '09': 'FINANCE',
-        '10': 'REAL ESTATE', '11': 'EDUCATION',   '12': 'HEALTH',
-        '13': 'ARTS',        '14': 'OTHER SVC',   '15': 'GOVERNMENT',
-        '16': 'HOUSEHOLD',   '17': 'EXTRA-TERR',  '18': 'UNKNOWN',
-    }
-    return mapping.get(prefix, 'OTHERS')
-
-
-# =============================================================================
-# FORMAT: $FISSGROUP  (local approximation — not present in PBBLNFMT.py)
-# Used as PUT(SECTORCD, $FISSGROUP.) to map FISS sector code to group letter.
-# Approximated from standard BNM FISS sector classification scheme.
-# =============================================================================
-
-def format_fissgroup(sectorcd) -> str:
-    """$FISSGROUP. format — map FISS sector code to group string."""
-    if sectorcd is None:
-        return ''
-    s = str(sectorcd).strip().zfill(4)
-    prefix2 = s[:2]
-    grp_map = {
-        '01': 'A', '02': 'B', '03': 'C', '04': 'D', '05': 'D',
-        '06': 'E', '07': 'F', '08': 'G', '09': 'H', '10': 'I',
-        '11': 'J', '12': 'K', '13': 'L', '14': 'M', '15': 'N',
-        '16': 'O', '17': 'P',
-    }
-    return grp_map.get(prefix2, 'Z')
-
-
-# =============================================================================
-# ASA CARRIAGE CONTROL & REPORT UTILITIES
-# =============================================================================
-
-PAGE_LENGTH = 60  # lines per page (default)
-
-class ReportWriter:
-    """Writes ASA carriage-control report lines to a file."""
-
-    def __init__(self, filepath: str):
-        self.filepath  = filepath
-        self.lines     = []
-        self.page_num  = 0
-        self.line_cnt  = PAGE_LENGTH + 1  # force header on first write
-
-    def _page_eject(self):
-        """ASA '1' = skip to new page."""
-        self.page_num += 1
-        self.line_cnt  = 0
-
-    def write_titles(self, title1: str, title2: str, title3: str = ''):
-        """Write page-top titles with ASA page-eject on first line."""
-        self._page_eject()
-        self.lines.append('1' + title1.center(132))
-        self.lines.append(' ' + title2.center(132))
-        if title3:
-            self.lines.append(' ' + title3.center(132))
-        self.lines.append(' ' + '')
-        self.line_cnt += 4
-
-    def write_line(self, text: str = '', asa: str = ' '):
-        if self.line_cnt >= PAGE_LENGTH:
-            # no auto page break within proc print body; handled by write_titles
-            pass
-        self.lines.append(asa + text)
-        self.line_cnt += 1
-
-    def blank(self):
-        self.write_line()
-
-    def flush(self, fh):
-        for ln in self.lines:
-            fh.write(ln + '\n')
-        self.lines = []
-
-
-# =============================================================================
-# DATE CALCULATION
-# =============================================================================
-
-def get_report_vars() -> dict:
-    """
-    DATA REPTDATE:
-    REPTDATE = INPUT('01'||PUT(MONTH(TODAY()),Z2.)||PUT(YEAR(TODAY()),4.), DDMMYY8.) - 1
-    = last day of previous month.
-    Derive WK, WK1, WK2, WK3, MM, MM1, MM2, SDD, SDATE, and string macro vars.
-    """
-    today    = date.today()
-    # First day of current month minus 1 = last day of previous month
-    reptdate = date(today.year, today.month, 1) - timedelta(days=1)
-
-    day = reptdate.day
-    if day == 8:
-        sdd = 1;  wk = '1'; wk1 = '4'; wk2 = '';  wk3 = ''
-    elif day == 15:
-        sdd = 9;  wk = '2'; wk1 = '1'; wk2 = '';  wk3 = ''
-    elif day == 22:
-        sdd = 16; wk = '3'; wk1 = '2'; wk2 = '';  wk3 = ''
-    else:
-        sdd = 23; wk = '4'; wk1 = '3'; wk2 = '2'; wk3 = '1'
-
-    mm  = reptdate.month
-    mm1 = (mm - 1) if wk != '1' else (mm - 1 if mm > 1 else 12)
-    if mm1 == 0:
-        mm1 = 12
-    mm2 = mm - 1
-    if mm2 == 0:
-        mm2 = 12
-
-    sdate    = date(reptdate.year, mm, sdd)
-    reptmon  = str(mm).zfill(2)
-    reptmon1 = str(mm1).zfill(2)
-    reptmon2 = str(mm2).zfill(2)
-    reptyear = str(reptdate.year)
-    reptday  = str(day).zfill(2)
-    rdate    = reptdate.strftime('%d/%m/%y')     # DDMMYY8.
-    sdate_s  = sdate.strftime('%d/%m/%y')
-
-    return {
-        'reptdate':  reptdate,
-        'sdate':     sdate,
-        'wk':        wk,
-        'wk1':       wk1,
-        'wk2':       wk2,
-        'wk3':       wk3,
-        'mm':        mm,
-        'mm1':       mm1,
-        'mm2':       mm2,
-        'sdd':       sdd,
-        'reptmon':   reptmon,
-        'reptmon1':  reptmon1,
-        'reptmon2':  reptmon2,
-        'reptyear':  reptyear,
-        'reptday':   reptday,
-        'rdate':     rdate,
-        'sdate_s':   sdate_s,
-        'nowk':      wk,
-        'nowk1':     wk1,
-        'nowk2':     wk2,
-        'nowk3':     wk3,
-    }
-
-# =============================================================================
-# PARQUET LOADERS
-# =============================================================================
-
-def load_parquet(path: str, columns: list = None) -> pl.DataFrame:
-    if not os.path.exists(path):
-        return pl.DataFrame()
-    con = duckdb.connect()
-    col_str = ', '.join(columns) if columns else '*'
-    df = con.execute(f"SELECT {col_str} FROM read_parquet('{path}')").pl()
-    con.close()
-    return df
-
-def load_parquet_where(path: str, where: str) -> pl.DataFrame:
-    if not os.path.exists(path):
-        return pl.DataFrame()
-    con = duckdb.connect()
-    df  = con.execute(f"SELECT * FROM read_parquet('{path}') WHERE {where}").pl()
-    con.close()
-    return df
-
-# =============================================================================
-# BUILD BASE LOAN DATASET
-# =============================================================================
-
-def build_loan_dataset(rv: dict) -> pl.DataFrame:
-    """
-    PROC SORT DATA=ISASD.LOAN<MM>   OUT=DLOAN;
-    PROC SORT DATA=BNM.LOAN<MM><WK>  OUT=MLOAN;
-    PROC SORT DATA=BNM.LNWOF<MM><WK> OUT=LNWOF;
-    PROC SORT DATA=BNM.LNWOD<MM><WK> OUT=LNWOD;
-    PROC SORT DATA=BNM.LNWOF<MM2><WK> OUT=PLNWOF;
-    PROC SORT DATA=BNM.LNWOD<MM2><WK> OUT=PLNWOD;
-
-    DATA LOANDM: MERGE DLOAN(IN=A) MLOAN(IN=B); IF A AND NOT B;
-    DATA LOAN<MM><WK>: MERGE PLNWOF PLNWOD LOANDM BNM.LOAN<MM2><WK> MLOAN LNWOF LNWOD;
-    """
-    mm   = rv['reptmon'];  mm2 = rv['reptmon2'];  wk = rv['nowk']
-
-    dloan  = load_parquet(f"{ISASD_LOAN_PREFIX}{mm}.parquet")
-    mloan  = load_parquet(f"{BNM_LOAN_PREFIX}{mm}{wk}.parquet")
-    lnwof  = load_parquet(f"{BNM_LNWOF_PREFIX}{mm}{wk}.parquet")
-    lnwod  = load_parquet(f"{BNM_LNWOD_PREFIX}{mm}{wk}.parquet")
-    plnwof = load_parquet(f"{BNM_LNWOF_PREFIX}{mm2}{wk}.parquet")
-    plnwod = load_parquet(f"{BNM_LNWOD_PREFIX}{mm2}{wk}.parquet")
-    loan_prev = load_parquet(f"{BNM_LOAN_PREFIX}{mm2}{wk}.parquet")
-
-    # DATA LOANDM: MERGE DLOAN(IN=A) MLOAN(IN=B); BY ACCTNO NOTENO; IF A AND NOT B
-    if not dloan.is_empty() and not mloan.is_empty():
-        key_cols = ['acctno','noteno']
-        mloan_keys = mloan.select(key_cols).with_columns(pl.lit(True).alias('_in_b'))
-        loandm = dloan.join(mloan_keys, on=key_cols, how='left')
-        loandm = loandm.filter(pl.col('_in_b').is_null()).drop('_in_b')
-    elif not dloan.is_empty():
-        loandm = dloan
-    else:
-        loandm = pl.DataFrame()
-
-    # DATA LOAN<MM><WK>: MERGE PLNWOF PLNWOD LOANDM BNM.LOAN<MM2><WK> MLOAN LNWOF LNWOD
-    # Last writer wins in SAS MERGE without IN= conditions; stack all and keep last non-null
-    frames = [f for f in [plnwof, plnwod, loandm, loan_prev, mloan, lnwof, lnwod]
-              if not f.is_empty()]
-    if not frames:
-        return pl.DataFrame()
-
-    # Collect all columns
-    all_cols = set()
-    for f in frames:
-        all_cols.update(f.columns)
-
-    # SAS merge by ACCTNO NOTENO — last value wins; implement via successive left-join overwrite
-    key = ['acctno','noteno']
-    base = frames[0]
-    for f in frames[1:]:
-        common_non_key = [c for c in f.columns if c not in key]
-        merged = base.join(f.select(key + common_non_key), on=key, how='outer', suffix='_r')
-        for col in common_non_key:
-            rc = f"{col}_r"
-            if rc in merged.columns:
-                merged = merged.with_columns(
-                    pl.when(pl.col(rc).is_not_null())
-                      .then(pl.col(rc))
-                      .otherwise(pl.col(col) if col in merged.columns else pl.lit(None))
-                      .alias(col)
-                ).drop(rc)
-        base = merged
-
-    # * IF ACCTYPE='OD' AND PRODUCT IN (150,151,152,181) THEN DELETE;
-    return base
-
-# =============================================================================
-# BUILD DISPAY DATASET
-# =============================================================================
-
-def build_dispay(rv: dict, loan_df: pl.DataFrame) -> pl.DataFrame:
-    """
-    DATA DISPAY: SET DISPAY.IDISPAYMTH<MM>;
-      DISBURSE=ROUND(DISBURSE,0.01); REPAID=ROUND(REPAID,0.01);
-      WHERE DISBURSE>0 OR REPAID>0;
-    DATA DISPAY: MERGE LOAN(IN=A) DISPAY(IN=B DROP=PRODCD); BY ACCTNO NOTENO; IF A & B;
-    """
-    path = f"{DISPAY_PREFIX}{rv['reptmon']}.parquet"
-    raw  = load_parquet(path)
-    if raw.is_empty():
-        return pl.DataFrame()
-
-    dispay = raw.with_columns([
-        pl.col('disburse').round(2),
-        pl.col('repaid').round(2),
-    ]).filter(
-        (pl.col('disburse') > 0) | (pl.col('repaid') > 0)
+# ============================================================================
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
+# ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
     )
 
-    if 'prodcd' in dispay.columns:
-        dispay = dispay.drop('prodcd')
 
-    # MERGE LOAN(IN=A) DISPAY(IN=B); IF A & B
-    merged = loan_df.join(dispay, on=['acctno','noteno'], how='inner', suffix='_dp')
-    for col in dispay.columns:
-        dc = f"{col}_dp"
-        if dc in merged.columns:
-            merged = merged.with_columns(
-                pl.when(pl.col(dc).is_not_null())
-                  .then(pl.col(dc))
-                  .otherwise(pl.col(col) if col in merged.columns else pl.lit(None))
-                  .alias(col)
-            ).drop(dc)
-    return merged
-
-# =============================================================================
-# BUILD ALM DATASET (All Loans Master)
-# =============================================================================
-
-def build_alm(loan_df: pl.DataFrame, rv: dict) -> pl.DataFrame:
-    """
-    PROC SORT DATA=LOAN.LNCOMM OUT=LNCOMM(KEEP=ACCTNO COMMNO CUSEDAMT); BY ACCTNO COMMNO;
-    PROC SORT DATA=BNM.LOAN<MM><WK> OUT=LOAN; BY ACCTNO COMMNO;
-    DATA ALM ALMBT: MERGE LOAN(IN=A RENAME=(BALANCE=ORIBAL BAL_AFT_EIR=BALANCE)) LNCOMM;
-      BY ACCTNO COMMNO; IF A; ... complex filtering and NOACCT logic
-    """
-    mm  = rv['reptmon'];  wk  = rv['nowk']
-
-    lncomm = load_parquet(LOAN_LNCOMM_PARQUET, ['acctno','commno','cusedamt'])
-
-    loan_raw = load_parquet(f"{BNM_LOAN_PREFIX}{mm}{wk}.parquet")
-    if loan_raw.is_empty():
-        return pl.DataFrame(), pl.DataFrame()
-
-    # RENAME: BALANCE->ORIBAL, BAL_AFT_EIR->BALANCE
-    renames = {}
-    if 'balance' in loan_raw.columns:
-        renames['balance'] = 'oribal'
-    if 'bal_aft_eir' in loan_raw.columns:
-        renames['bal_aft_eir'] = 'balance'
-    if renames:
-        loan_raw = loan_raw.rename(renames)
-
-    # Merge with LNCOMM by ACCTNO COMMNO
-    if not lncomm.is_empty() and 'commno' in loan_raw.columns:
-        merged = loan_raw.join(lncomm, on=['acctno','commno'], how='left', suffix='_lc')
-        for col in lncomm.columns:
-            lc = f"{col}_lc"
-            if lc in merged.columns:
-                merged = merged.with_columns(
-                    pl.when(pl.col(lc).is_not_null())
-                      .then(pl.col(lc))
-                      .otherwise(pl.col(col) if col in merged.columns else pl.lit(None))
-                      .alias(col)
-                ).drop(lc)
-    else:
-        merged = loan_raw
-
-    # Apply filters row-wise
-    keep_cols = ['acctno','noteno','fisspurp','product','noteterm','earnterm',
-                 'balance','paidind','apprdate','apprlim2','prodcd','custcd',
-                 'amtind','sectorcd','acctype','branch','oribal','dnbfisme',
-                 'noacct','commno','cusedamt','rleasamt','cjfee','retailid',
-                 'eir_adj']
-    avail = [c for c in keep_cols if c in merged.columns]
-    merged = merged.select(avail)
-
-    rows     = merged.to_dicts()
-    alm_rows = []
-    almbt_rows = []
-
-    for row in rows:
-        paidind  = str(row.get('paidind') or '').strip()
-        eir_adj  = row.get('eir_adj')
-        oribal   = row.get('oribal') or 0.0
-        balance  = row.get('balance') or 0.0
-        prodcd   = str(row.get('prodcd') or '').strip()
-        acctype  = str(row.get('acctype') or '').strip()
-        acctno   = row.get('acctno') or 0
-        noteno   = row.get('noteno') or 0
-        product  = row.get('product') or 0
-        commno   = row.get('commno') or 0
-        cusedamt = row.get('cusedamt') or 0.0
-        rleasamt = row.get('rleasamt') or 0.0
-        cjfee    = row.get('cjfee') or 0.0
-
-        # IF PAIDIND NOT IN ('P','C') OR EIR_ADJ NE .
-        eir_adj_not_null = (eir_adj is not None and
-                            not (isinstance(eir_adj, float) and eir_adj != eir_adj))
-        if paidind in ('P', 'C') and not eir_adj_not_null:
-            continue
-
-        # *  IF ACCTYPE='OD' AND PRODUCT IN (150,151,152,181) THEN DELETE;
-        # IF ORIBAL=-.00 THEN DELETE
-        if oribal == -0.0 and str(oribal) in ('-0.0', '-0.00'):
-            continue
-
-        balx = round(oribal, 2)
-        xind = ' '
-        if balx in (0.0, -0.0):
-            xind = 'Y'
-
-        # *  IF PAIDIND IN ('P','C') OR XIND='Y' THEN DELETE;
-        # IF XIND='Y' THEN DELETE
-        if xind == 'Y':
-            continue
-
-        # IF SUBSTR(PRODCD,1,2) = '34' OR PRODCD = '54120'
-        if not (prodcd[:2] == '34' or prodcd == '54120'):
-            continue
-
-        # NOACCT logic for LN
-        noacct = row.get('noacct') or 0
-        if acctype == 'LN':
-            eligible = False
-            if rleasamt != 0.0 and paidind not in ('P','C') and oribal > 0 and cjfee != oribal:
-                eligible = True
-            elif rleasamt == 0.0 and paidind not in ('P','C') and oribal > 0 and \
-                 600 <= product <= 699:
-                eligible = True
-            elif rleasamt == 0.0 and paidind not in ('P','C') and oribal > 0 and \
-                 commno > 0 and cusedamt > 0:
-                eligible = True
-            if not eligible:
-                noacct = 0
-
-        # IF PAIDIND NOT IN ('P','C') AND NOACCT^=0 AND ROUND(ORIBAL,.01) NOT IN (0,0) AND ORIBAL NE ' '
-        if paidind not in ('P','C') and noacct != 0 and \
-           round(oribal, 2) not in (0.0, -0.0) and oribal is not None:
-            noacct = 1
-
-        row['noacct'] = noacct
-
-        # Split ALMBT vs ALM
-        if (2850000000 <= acctno <= 2859999999 and 40000 <= noteno <= 49999) or product == 444:
-            almbt_rows.append(row)
-        else:
-            alm_rows.append(row)
-
-    alm_df   = pl.from_dicts(alm_rows)   if alm_rows   else pl.DataFrame()
-    almbt_df = pl.from_dicts(almbt_rows) if almbt_rows else pl.DataFrame()
-
-    # DATA ALM: BY ACCTNO COMMNO — deduplicate NOACCT for revolving products
-    if not alm_df.is_empty() and 'commno' in alm_df.columns:
-        alm_df = alm_df.sort(['acctno','commno'])
-        rows2  = alm_df.to_dicts()
-        prev_acctno = None; prev_commno = None; unq = 0
-        for row in rows2:
-            ac = row['acctno']; cm = row.get('commno')
-            prodcd = str(row.get('prodcd') or '')
-            if ac != prev_acctno or cm != prev_commno:
-                unq = 0
-            if prodcd in ('34170','34190','34690'):
-                unq += (row.get('noacct') or 0)  # *17-513
-                if unq > 1:
-                    row['noacct'] = 0
-            prev_acctno = ac; prev_commno = cm
-        alm_df = pl.from_dicts(rows2)
-
-    # DATA ALMBT: BY ACCTNO — first row per ACCTNO gets NOACCT=1, rest 0
-    if not almbt_df.is_empty():
-        almbt_df = almbt_df.sort('acctno')
-        rows3    = almbt_df.to_dicts()
-        prev_ac  = None
-        for row in rows3:
-            ac = row['acctno']
-            row['noacct'] = 1 if ac != prev_ac else 0
-            prev_ac = ac
-        almbt_df = pl.from_dicts(rows3)
-
-    # DATA ALM: SET ALM ALMBT
-    alm_df = pl.concat([alm_df, almbt_df], how='diagonal') if not almbt_df.is_empty() else alm_df
-
-    return alm_df
-
-# =============================================================================
-# APPLY PRODESC, SECTTYPE, SECTGROUP
-# Uses liqpfmt(), format_fisstype(), format_fissgroup() — all defined locally
-# above since they are absent from PBBLNFMT.py.
-# =============================================================================
-
-def apply_prodesc(df: pl.DataFrame) -> pl.DataFrame:
-    """Apply PRODESC, SECTTYPE, SECTGROUP to ALM dataset."""
-    if df.is_empty():
-        return df
-
-    rows = df.to_dicts()
-    for row in rows:
-        product = row.get('product') or 0
-        acctype = str(row.get('acctype') or '').strip()
-        prodcd  = str(row.get('prodcd')  or '').strip()
-        scd     = row.get('sectorcd')
-
-        p = product
-        prodesc = ''
-
-        if p in {135,136,138,419,420,422,424,426,464,465,468,469,470,
-                 441,443,475,477,482,483,490,491,492,493,496,497,498,
-                 652,653,668,669,672,673,674,675,693}:
-            prodesc = 'PERSONAL LOANS'
-        elif (acctype == 'LN' and prodcd == '34111') or p in {698,699,983}:
-            prodesc = 'HIRE PURCHASE'
-        elif acctype == 'LN' and prodcd == '54120':
-            prodesc = 'HOUSE FINANCING SOLD TO CAGAMAS'
-        elif (acctype == 'LN' and prodcd == '34120') or p in HLWOF:
-            prodesc = 'HOUSING LOANS'
-        elif acctype == 'OD' and prodcd in ('34180','34240') and p in ODCORP:
-            prodesc = 'OD CORPORATE'
-        elif acctype == 'OD' and prodcd in ('34180','34240') and p not in ODCORP:
-            prodesc = 'OD RETAIL'
-        elif acctype == 'LN' and prodcd not in ('34111','34120','N','M') and p in FLCORP:
-            prodesc = 'OTHERS CORPORATE'
-        elif (acctype == 'LN' and prodcd not in ('34111','34120','N','M') and
-              p not in FLCORP) or p in REWOF:
-            prodesc = 'OTHERS RETAIL'
-
-        row['prodesc']   = prodesc
-        row['secttype']  = format_fisstype(scd)
-        row['sectgroup'] = format_fissgroup(scd)
-
-    return pl.from_dicts(rows)
-
-# =============================================================================
-# BUILD BTRADE DATASET
-# Uses liqpfmt(), format_fisstype(), format_fissgroup() — all defined locally.
-# =============================================================================
-
-def build_btrade(rv: dict) -> tuple:
-    """
-    PROC SORT DATA=BTBNM.IBTRAD<MM><WK> OUT=BTRAD;
-      WHERE DIRCTIND='D' AND CUSTCD NE ' '; BY ACCTNO DESCENDING APPRLIMT;
-    PROC SUMMARY (DISBURSE REPAID by ACCTNO CUSTCD RETAILID SECTORCD DNBFISME) -> BTRAD1
-    PROC SUMMARY (BALANCE where APPRLIMT>0 by ACCTNO CUSTCD RETAILID SECTORCD) -> BTRAD
-    DATA OVC MAST: MERGE BTRAD BTRAD1; ...
-    PROC SORT ALMBT (BTRADE detail); ...
-    Returns: (almbt_df, almbtrd_df, mast_df)
-    """
-    mm = rv['reptmon'];  wk = rv['nowk']
-    path = f"{BTBNM_IBTRAD_PREFIX}{mm}{wk}.parquet"
-
-    raw = load_parquet_where(path, "dirctind = 'D' AND custcd IS NOT NULL AND custcd <> ' '")
-    if raw.is_empty():
-        empty = pl.DataFrame()
-        return empty, empty, empty
-
-    # Sort by ACCTNO DESC APPRLIMT (for nodupkey-like behavior later)
-    if 'apprlimt' in raw.columns:
-        btrad = raw.sort(['acctno', 'apprlimt'], descending=[False, True])
-    else:
-        btrad = raw.sort('acctno')
-
-    # Re-sort by ACCTNO CUSTCD RETAILID
-    grp_cols1 = [c for c in ['acctno','custcd','retailid','sectorcd','dnbfisme'] if c in btrad.columns]
-    btrad     = btrad.sort(grp_cols1)
-
-    # PROC SUMMARY: DISBURSE REPAID grouped by ACCTNO CUSTCD RETAILID SECTORCD DNBFISME
-    agg_cols1  = [c for c in ['disburse','repaid'] if c in btrad.columns]
-    grp_key1   = [c for c in ['acctno','custcd','retailid','sectorcd','dnbfisme'] if c in btrad.columns]
-    if agg_cols1 and grp_key1:
-        btrad1 = btrad.group_by(grp_key1).agg(
-            [pl.col(c).sum().alias(c) for c in agg_cols1]
-        )
-    else:
-        btrad1 = pl.DataFrame()
-
-    # PROC SUMMARY: BALANCE where APPRLIMT>0 grouped by ACCTNO CUSTCD RETAILID SECTORCD
-    grp_key2 = [c for c in ['acctno','custcd','retailid','sectorcd'] if c in btrad.columns]
-    if 'apprlimt' in btrad.columns and 'balance' in btrad.columns and grp_key2:
-        btrad_bal = btrad.filter(pl.col('apprlimt') > 0).group_by(grp_key2).agg(
-            pl.col('balance').sum()
-        )
-    else:
-        btrad_bal = pl.DataFrame()
-
-    # DATA OVC MAST: MERGE BTRAD(IN=A) BTRAD1(IN=B); BY ACCTNO CUSTCD RETAILID SECTORCD; IF B
-    merge_key = [c for c in ['acctno','custcd','retailid','sectorcd'] if c in btrad1.columns]
-    if not btrad_bal.is_empty() and not btrad1.is_empty():
-        mast_merged = btrad1.join(btrad_bal, on=merge_key, how='left', suffix='_bal')
-        if 'balance_bal' in mast_merged.columns:
-            mast_merged = mast_merged.with_columns(
-                pl.when(pl.col('balance_bal').is_not_null())
-                  .then(pl.col('balance_bal'))
-                  .otherwise(pl.col('balance') if 'balance' in mast_merged.columns else pl.lit(None))
-                  .alias('balance')
-            ).drop('balance_bal')
-    else:
-        mast_merged = btrad1
-
-    mast_merged = mast_merged.with_columns([
-        pl.when(pl.col('disburse') > 0).then(pl.lit(1)).otherwise(pl.lit(0)).alias('disbno'),
-        pl.when(pl.col('repaid')   > 0).then(pl.lit(1)).otherwise(pl.lit(0)).alias('repayno'),
-    ])
-    # IF A AND ROUND(BALANCE,0.01) NOT IN (.,0) AND NOACCT^=0 THEN NOACCT=1
-    if 'balance' in mast_merged.columns:
-        mast_merged = mast_merged.with_columns(
-            pl.when(
-                pl.col('balance').round(2).is_not_null() &
-                (pl.col('balance').round(2) != 0)
-            ).then(pl.lit(1)).otherwise(pl.lit(0)).alias('noacct')
-        )
-
-    # OVC: KEEP ACCTNO RETAILID
-    ovc_df = mast_merged.select([c for c in ['acctno','retailid'] if c in mast_merged.columns])
-
-    # MAST: KEEP ACCTNO CUSTCD BALANCE RETAILID DISBNO REPAYNO NOACCT SECTORCD DNBFISME
-    mast_keep = [c for c in ['acctno','custcd','balance','retailid','disbno','repayno',
-                               'noacct','sectorcd','dnbfisme'] if c in mast_merged.columns]
-    mast_df   = mast_merged.select(mast_keep)
-
-    # PROC SORT ALMBT from BTBNM with WHERE SUBSTR(PRODCD,1,2)='34'
-    almbt_raw = load_parquet_where(path, "SUBSTR(CAST(prodcd AS VARCHAR), 1, 2) = '34'")
-    if almbt_raw.is_empty():
-        return pl.DataFrame(), pl.DataFrame(), mast_df
-
-    almbt_keep = [c for c in ['acctno','subacct','fisspurp','product','noteterm','balance',
-                               'apprlim2','prodcd','custcd','amtind','transref','sectorcd',
-                               'disburse','repaid','dnbfisme'] if c in almbt_raw.columns]
-    almbt_df = almbt_raw.select(almbt_keep)
-
-    # DATA ALMBT: MERGE OVC ALMBT(IN=A); BY ACCTNO; IF A
-    if not ovc_df.is_empty():
-        almbt_df = almbt_df.join(ovc_df, on='acctno', how='inner', suffix='_ovc')
-        if 'retailid_ovc' in almbt_df.columns:
-            almbt_df = almbt_df.with_columns(
-                pl.when(pl.col('retailid_ovc').is_not_null())
-                  .then(pl.col('retailid_ovc'))
-                  .otherwise(pl.col('retailid') if 'retailid' in almbt_df.columns else pl.lit(None))
-                  .alias('retailid')
-            ).drop('retailid_ovc')
-
-    # PROC SUMMARY ALMBT -> ALMBTX (sum BALANCE by key)
-    bt_grp = [c for c in ['acctno','transref','custcd','fisspurp','sectorcd'] if c in almbt_df.columns]
-    if bt_grp and 'balance' in almbt_df.columns:
-        almbtx = almbt_df.group_by(bt_grp).agg(pl.col('balance').sum().alias('balance'))
-        almbt_df = almbt_df.sort(bt_grp).unique(subset=bt_grp, keep='first')
-        almbt_df = almbt_df.drop('balance').join(almbtx, on=bt_grp, how='left')
-
-    # ALMBT summary
-    almbt_df = almbt_df.with_columns([
-        pl.col('disburse').cast(pl.Float64) if 'disburse' in almbt_df.columns else pl.lit(0.0).alias('disburse'),
-        pl.col('repaid').cast(pl.Float64)   if 'repaid'   in almbt_df.columns else pl.lit(0.0).alias('repaid'),
-        pl.col('balance').cast(pl.Float64)  if 'balance'  in almbt_df.columns else pl.lit(0.0).alias('balance'),
-    ])
-
-    # DATA ALMBT: apply SECTTYPE/SECTGROUP/PRODESC using local format functions
-    rows = almbt_df.to_dicts()
-    for row in rows:
-        scd      = row.get('sectorcd')
-        retailid = str(row.get('retailid') or '').strip()
-        row['secttype']  = format_fisstype(scd)
-        row['sectgroup'] = format_fissgroup(scd)
-        row['prodesc']   = 'BILLS CORPORATE' if retailid == 'C' else 'BILLS RETAIL'
-    almbt_df = pl.from_dicts(rows)
-
-    # DATA MAST: apply SECTTYPE/SECTGROUP/PRODESC + output MFRS.MAST_BR
-    mast_rows = mast_df.to_dicts()
-    mast_out  = []
-    mast_br_rows = []
-    for row in mast_rows:
-        scd      = row.get('sectorcd')
-        retailid = str(row.get('retailid') or '').strip()
-        acctno1  = row.get('acctno')
-        row['secttype']  = format_fisstype(scd)
-        row['sectgroup'] = format_fissgroup(scd)
-        row['prodesc']   = 'BILLS CORPORATE' if retailid == 'C' else 'BILLS RETAIL'
-        try:
-            row['acctno'] = int(str(acctno1))
-        except (ValueError, TypeError):
-            row['acctno'] = 0
-        mast_out.append(row)
-        mast_br_rows.append({'acctno': row['acctno'],
-                              'prodesc': row['prodesc'],
-                              'noacct': row.get('noacct', 0)})
-
-    mast_df = pl.from_dicts(mast_out)
-
-    # Save MFRS.MAST_BR
-    if mast_br_rows:
-        pl.from_dicts(mast_br_rows).write_parquet(MFRS_MAST_BR_PARQUET)
-
-    # PROC SUMMARY: ALMBT grouped by PRODESC
-    almbtrd_df = pl.DataFrame()
-    if not almbt_df.is_empty():
-        agg_v  = [c for c in ['disburse','repaid','balance'] if c in almbt_df.columns]
-        almbtrd = almbt_df.group_by('prodesc').agg(
-            [pl.col(c).sum() for c in agg_v]
-        )
-        # Merge MASTLOAN counts
-        mast_agg_v = [c for c in ['disbno','repayno','noacct'] if c in mast_df.columns]
-        if mast_agg_v:
-            mastloan = mast_df.group_by('prodesc').agg(
-                [pl.col(c).sum() for c in mast_agg_v]
-            )
-            almbtrd = almbtrd.join(mastloan, on='prodesc', how='left')
-        almbtrd_df = almbtrd
-
-    return almbt_df, almbtrd_df, mast_df
-
-# =============================================================================
-# PROC PRINT EQUIVALENT — formatted report table
-# =============================================================================
-
-NUM_COLS = ['disburse','repaid','balance','disbno','repayno','noacct']
-
-def fmt_num(val, decimals: int = 2) -> str:
-    if val is None or (isinstance(val, float) and val != val):
-        return ' ' * (16 if decimals == 2 else 10)
-    if decimals == 2:
-        return f"{float(val):16.2f}"
-    else:
-        return f"{float(val):10.0f}"
-
-def print_table(df: pl.DataFrame, rw: ReportWriter,
-                title1: str, title2: str, title3: str,
-                where_expr=None):
-    """Equivalent to PROC PRINT with SUM statement."""
-    if df.is_empty():
-        return
-
-    if where_expr is not None:
-        df = df.filter(where_expr)
-    if df.is_empty():
-        return
-
-    rw.write_titles(title1, title2, title3)
-
-    # Header row
-    hdr = (f"{'PRODESC':<35}"
-           f"{'DISBURSE':>16}"
-           f"{'REPAID':>16}"
-           f"{'BALANCE':>16}"
-           f"{'DISBNO':>10}"
-           f"{'REPAYNO':>10}"
-           f"{'NOACCT':>10}")
-    rw.write_line(' ' + hdr)
-    rw.write_line(' ' + '-' * len(hdr))
-
-    # Totals accumulators
-    tot = {c: 0.0 for c in NUM_COLS}
-
-    for row in df.sort('prodesc').iter_rows(named=True):
-        prodesc = str(row.get('prodesc') or '').strip()[:35]
-        line = (f"{prodesc:<35}"
-                f"{fmt_num(row.get('disburse'))}"
-                f"{fmt_num(row.get('repaid'))}"
-                f"{fmt_num(row.get('balance'))}"
-                f"{fmt_num(row.get('disbno'), 0)}"
-                f"{fmt_num(row.get('repayno'), 0)}"
-                f"{fmt_num(row.get('noacct'), 0)}")
-        rw.write_line(' ' + line)
-        for c in NUM_COLS:
-            v = row.get(c)
-            # if v is not None and not (isinstance(v, float) and v != val):
-            # if v is not None and not (isinstance(v, float) and v != v):
-            if v is not None and not (isinstance(v, float) and math.isnan(v)):
-                tot[c] += float(v)
-
-    # SUM line
-    rw.write_line(' ' + '=' * len(hdr))
-    sum_line = (f"{'SUM':<35}"
-                f"{fmt_num(tot['disburse'])}"
-                f"{fmt_num(tot['repaid'])}"
-                f"{fmt_num(tot['balance'])}"
-                f"{fmt_num(tot['disbno'], 0)}"
-                f"{fmt_num(tot['repayno'], 0)}"
-                f"{fmt_num(tot['noacct'], 0)}")
-    rw.write_line(' ' + sum_line)
-    rw.blank()
-
-
-def print_tabulate_facility(df: pl.DataFrame, rw: ReportWriter,
-                             title1: str, title2: str):
-    """
-    PROC TABULATE: TABLE TYPE ALL, SUM*(BALANCE NOACCT) / BOX='FACILITY'
-    """
-    if df.is_empty():
-        return
-    fdf = df.filter(
-        (pl.col('prodesc') == 'TOTAL COMMERCIAL RETAILS') &
-        pl.col('balance').is_not_null() & (pl.col('balance') != 0)
-    )
-    if fdf.is_empty():
-        return
-
-    rw.write_titles(title1, title2)
-
-    grp_df = fdf.group_by('type').agg([
-        pl.col('balance').sum().alias('balance'),
-        pl.col('noacct').sum().alias('noacct'),
-    ]).sort('type')
-
-    hdr = f"{'FACILITY':<25}{'AMOUNT':>18}{'NO. OF ACCT':>12}"
-    rw.write_line(' ' + hdr)
-    rw.write_line(' ' + '-' * len(hdr))
-
-    tot_bal = 0.0; tot_noacct = 0.0
-    for row in grp_df.iter_rows(named=True):
-        typ  = str(row.get('type') or '').strip()[:25]
-        bal  = float(row.get('balance') or 0.0)
-        noa  = float(row.get('noacct')  or 0.0)
-        rw.write_line(' ' + f"{typ:<25}{bal:18.2f}{noa:12.0f}")
-        tot_bal += bal; tot_noacct += noa
-
-    rw.write_line(' ' + '=' * len(hdr))
-    rw.write_line(' ' + f"{'GRAND TOTAL':<25}{tot_bal:18.2f}{tot_noacct:12.0f}")
-    rw.blank()
-
-
-def print_tabulate_sector(df: pl.DataFrame, rw: ReportWriter,
-                           title1: str, title2: str):
-    """
-    PROC TABULATE: TABLE SECTGROUP*(SECTTYPE ALL) ALL, SUM*(BALANCE NOACCT) / BOX='SECTFISS'
-    """
-    if df.is_empty():
-        return
-    fdf = df.filter(
-        (pl.col('prodesc') == 'TOTAL COMMERCIAL RETAILS') &
-        pl.col('balance').is_not_null() & (pl.col('balance') != 0)
-    )
-    if fdf.is_empty():
-        return
-
-    rw.write_titles(title1, title2)
-
-    hdr = f"{'SECTFISS':<25}{'AMOUNT':>18}{'NO. OF ACCT':>12}"
-    rw.write_line(' ' + hdr)
-    rw.write_line(' ' + '-' * len(hdr))
-
-    grp = fdf.group_by(['sectgroup','secttype']).agg([
-        pl.col('balance').sum(),
-        pl.col('noacct').sum(),
-    ]).sort(['sectgroup','secttype'])
-
-    grand_bal = 0.0; grand_noa = 0.0
-    for sg, sub_df in grp.group_by('sectgroup', maintain_order=True):
-        sub_bal = 0.0; sub_noa = 0.0
-        for row in sub_df.sort('secttype').iter_rows(named=True):
-            st  = str(row.get('secttype') or '').strip()[:25]
-            bal = float(row.get('balance') or 0.0)
-            noa = float(row.get('noacct')  or 0.0)
-            rw.write_line(' ' + f"  {st:<23}{bal:18.2f}{noa:12.0f}")
-            sub_bal += bal; sub_noa += noa
-        rw.write_line(' ' + f"{'  SUB-TOTAL':<25}{sub_bal:18.2f}{sub_noa:12.0f}")
-        grand_bal += sub_bal; grand_noa += sub_noa
-
-    rw.write_line(' ' + '=' * len(hdr))
-    rw.write_line(' ' + f"{'GRAND TOTAL':<25}{grand_bal:18.2f}{grand_noa:12.0f}")
-    rw.blank()
-
-# =============================================================================
-# MAIN
-# =============================================================================
-
-def main():
-    print("EIIBNM01: Starting Public Islamic Bank Berhad loan summary reports...")
-
-    rv = get_report_vars()
-    print(f"  Report date: {rv['reptdate']} MM={rv['reptmon']} YY={rv['reptyear']} WK={rv['nowk']}")
-
-    rw = ReportWriter(REPORT_TXT)
-
-    BANK   = 'PUBLIC ISLAMIC BANK BERHAD'
-    RPT_ID = 'REPORT ID : EIIBNM01'
-    mm_yy  = f"{rv['reptmon']}/{rv['reptyear']}"
-    rdate  = rv['rdate']
-
-    # -------------------------------------------------------------------------
-    # Build base loan dataset
-    # -------------------------------------------------------------------------
-    loan_df = build_loan_dataset(rv)
-
-    # -------------------------------------------------------------------------
-    # Build DISPAY
-    # -------------------------------------------------------------------------
-    dispay_df = build_dispay(rv, loan_df)
-
-    # -------------------------------------------------------------------------
-    # Build ALM (all loans master)
-    # -------------------------------------------------------------------------
-    # alm_df = build_alm(loan_df, rv)
-    # return alm_df
-    alm_df, almbt_df = build_alm(loan_df, rv)
-
-    # Merge DISPAY into ALM (sorted by ACCTNO NOTENO)
-    dispay_keep = [c for c in ['acctno','noteno','fisspurp','product','dnbfisme',
-                                'prodcd','custcd','amtind','sectorcd','disburse',
-                                'repaid','branch','acctype'] if c in dispay_df.columns]
-    if not dispay_df.is_empty() and not alm_df.is_empty():
-        dispay_filt = dispay_df.select(dispay_keep)
-        if 'prodcd' in dispay_filt.columns:
-            dispay_filt = dispay_filt.filter(
-                pl.col('prodcd').str.slice(0,2) == '34' |
-                (pl.col('prodcd') == '54120') |
-                pl.col('product').is_in([698,699,983])
-            )
-        alm_merged = alm_df.join(
-            dispay_filt.select(['acctno','noteno','disburse','repaid']),
-            on=['acctno','noteno'], how='left', suffix='_dp'
-        )
-        for c in ['disburse','repaid']:
-            dc = f"{c}_dp"
-            if dc in alm_merged.columns:
-                alm_merged = alm_merged.with_columns(
-                    pl.when(pl.col(dc).is_not_null())
-                      .then(pl.col(dc))
-                      .otherwise(pl.col(c) if c in alm_merged.columns else pl.lit(None))
-                      .alias(c)
-                ).drop(dc)
-        alm_df = alm_merged
-
-    alm_df = alm_df.with_columns([
-        pl.when(pl.col('repaid')   > 0).then(pl.lit(1)).otherwise(pl.lit(0)).alias('repayno'),
-        pl.when(pl.col('disburse') > 0).then(pl.lit(1)).otherwise(pl.lit(0)).alias('disbno'),
-    ]) if not alm_df.is_empty() else alm_df
-
-    # Apply PRODESC — uses liqpfmt(), format_fisstype(), format_fissgroup() locally
-    alm_df = apply_prodesc(alm_df)
-
-    # -------------------------------------------------------------------------
-    # PROC SUMMARY ALM -> ALMLOAN (by PRODESC)
-    # -------------------------------------------------------------------------
-    # agg_vars = [c for c in NUM_COLS if c in alm_df.columns]
-    # if not alm_df.is_empty() and agg_vars:
-    #     almloan_df = alm_df.group_by('prodesc').agg(
-    #         [pl.col(c).sum() for c in agg_vars]
-    #     )
-    # else:
-    #     almloan_df = pl.DataFrame()
-
-    agg_vars = [c for c in NUM_COLS if c in alm_df.columns]
-
-    if not alm_df.is_empty() and agg_vars:
-        almloan_df = (
-            alm_df
-            .group_by('prodesc')
-            .agg([pl.col(c).sum().alias(c) for c in agg_vars])
-        )
-    else:
-        almloan_df = pl.DataFrame()
-
-    # -------------------------------------------------------------------------
-    # Build BT (Bank Trade) datasets
-    # -------------------------------------------------------------------------
-    almbt_df, almbtrd_df, mast_df = build_btrade(rv)
-
-    # -------------------------------------------------------------------------
-    # Split ALMLOAN into non-HFSC and ALMHFSC
-    # -------------------------------------------------------------------------
-    if not almloan_df.is_empty():
-        almhfsc_df   = almloan_df.filter(pl.col('prodesc') == 'HOUSE FINANCING SOLD TO CAGAMAS')
-        almloan_main = almloan_df.filter(pl.col('prodesc') != 'HOUSE FINANCING SOLD TO CAGAMAS')
-    else:
-        almhfsc_df   = pl.DataFrame()
-        almloan_main = pl.DataFrame()
-
-    # -------------------------------------------------------------------------
-    # PROC PRINT: ALL LOANS
-    # -------------------------------------------------------------------------
-    print_table(almloan_main, rw, BANK, f"ALL LOANS AS AT {mm_yy}", RPT_ID)
-    print_table(almhfsc_df,   rw, BANK, f"ALL LOANS AS AT {mm_yy}", RPT_ID)
-
-    # -------------------------------------------------------------------------
-    # ALM2: Retail OD/Others breakdown
-    # -------------------------------------------------------------------------
-    if not alm_df.is_empty():
-        alm2_df = alm_df.filter(pl.col('prodesc').is_in(['OD RETAIL','OTHERS RETAIL']))
-        rows2   = alm2_df.to_dicts()
-        for row in rows2:
-            pd_ = str(row.get('prodesc') or '')
-            if pd_ == 'OD RETAIL':
-                fiss = str(row.get('fisspurp') or '').strip()
-                row['prodesc'] = 'PURCHASE OF RESIDENTIAL PROPERTY' if fiss in ODFISS \
-                                 else 'TOTAL COMMERCIAL RETAILS'
-                row['type'] = 'CASH LINE FACILITY'
-            elif pd_ == 'OTHERS RETAIL':
-                prod = row.get('product') or 0
-                row['prodesc'] = 'STAFF FINANCING' if prod in STFLN \
-                                 else 'TOTAL COMMERCIAL RETAILS'
-                row['type'] = 'FIXED FINANCING'
-        alm2_df = pl.from_dicts(rows2)
-    else:
-        alm2_df = pl.DataFrame()
-
-    # -------------------------------------------------------------------------
-    # ALMBTCR: Bills Retail -> Total Commercial Retails
-    # -------------------------------------------------------------------------
-    if not almbtrd_df.is_empty():
-        almbtcr_df = almbtrd_df.filter(pl.col('prodesc') == 'BILLS RETAIL').with_columns([
-            pl.lit('TOTAL COMMERCIAL RETAILS').alias('prodesc'),
-            pl.lit('BANK TRADE').alias('type'),
-        ])
-    else:
-        almbtcr_df = pl.DataFrame()
-
-    # -------------------------------------------------------------------------
-    # DATA ALMLOAN2 ALM2CRF MFRS.ALM_CR: SET ALM2 ALMBTCR
-    # -------------------------------------------------------------------------
-    almloan2_src = pl.concat(
-        [f for f in [alm2_df, almbtcr_df] if not f.is_empty()], how='diagonal'
-    ) if any(not f.is_empty() for f in [alm2_df, almbtcr_df]) else pl.DataFrame()
-
-    # Save MFRS.ALM_CR (KEEP=ACCTNO NOTENO PRODESC NOACCT)
-    if not almloan2_src.is_empty():
-        alm_cr_keep = [c for c in ['acctno','noteno','prodesc','noacct']
-                       if c in almloan2_src.columns]
-        almloan2_src.select(alm_cr_keep).write_parquet(MFRS_ALM_CR_PARQUET)
-
-    # ALM2CRF: TOTAL COMMERCIAL RETAILS -> split by CUSTCD
-    alm2crf_rows = []
-    if not almloan2_src.is_empty():
-        for row in almloan2_src.to_dicts():
-            if str(row.get('prodesc') or '') == 'TOTAL COMMERCIAL RETAILS':
-                custcd = str(row.get('custcd') or '').strip()
-                row2   = dict(row)
-                if custcd in INDIV_CUSTCDS:
-                    row2['prodesc'] = 'COMMERCIAL RETAIL - IND'
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        if schema is None:
+            fields = []
+            for col, dtype in chunk.dtypes.items():
+                if dtype == "object":
+                    pa_type = pa.string()
+                elif pd.api.types.is_integer_dtype(dtype):
+                    pa_type = pa.int64()
+                elif pd.api.types.is_float_dtype(dtype):
+                    pa_type = pa.float64()
                 else:
-                    row2['prodesc'] = 'COMMERCIAL RETAIL - NON IND'
-                alm2crf_rows.append(row2)
-    alm2crf_df = pl.from_dicts(alm2crf_rows) if alm2crf_rows else pl.DataFrame()
+                    pa_type = pa.from_numpy_dtype(dtype)
+                fields.append(pa.field(col, pa_type))
+            schema = pa.schema(fields)
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
 
-    # PROC SUMMARY ALMLOAN2
-    if not almloan2_src.is_empty():
-        agg_v2 = [c for c in NUM_COLS if c in almloan2_src.columns]
-        almloan2_df = almloan2_src.group_by('prodesc').agg([pl.col(c).sum() for c in agg_v2])
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
-        almloan2_df = pl.DataFrame()
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
 
-    # PROC PRINT: RETAIL LOANS
-    print_table(almloan2_df, rw, BANK, f"RETAILS LOANS AS AT {mm_yy}", RPT_ID)
 
-    # PROC SUMMARY ALM2CRF
-    if not alm2crf_df.is_empty():
-        agg_v3 = [c for c in NUM_COLS if c in alm2crf_df.columns]
-        alm2crf_sum = alm2crf_df.group_by('prodesc').agg([pl.col(c).sum() for c in agg_v3])
-    else:
-        alm2crf_sum = pl.DataFrame()
+def _read_rows(parquet_path: Path, select_sql: str) -> list:
+    """Read a Parquet cache through DuckDB with explicit CASTs and return
+    a plain list of dict rows -- the row-oriented representation used
+    throughout this program (mirrors EIIMRM01.py's `iter_rows(named=True)`
+    style) so the many SAS MERGE / conditional-logic DATA steps below can
+    be transcribed directly."""
+    con = duckdb.connect(database=":memory:")
+    df = con.execute(
+        f"SELECT {select_sql} FROM read_parquet('{parquet_path.as_posix()}')"
+    ).pl()
+    con.close()
+    return df.to_dicts()
 
-    # PROC PRINT: COMMERCIAL RETAIL LOANS
-    print_table(alm2crf_sum, rw, BANK, f"COMMERCIAL RETAIL LOANS AS AT {mm_yy}", RPT_ID)
 
-    # -------------------------------------------------------------------------
-    # SME datasets
-    # -------------------------------------------------------------------------
-    def is_sme(row) -> bool:
-        custcd = str(row.get('custcd') or '').strip()
-        dnbfi  = str(row.get('dnbfisme') or '').strip()
-        return custcd in SME_CUSTCDS or dnbfi in DNBFI_VALS
+# ============================================================================
+# STEP 2: CACHE INPUT SAS FILES TO PARQUET
+# ============================================================================
+print("\nStep 2: Caching input SAS datasets to Parquet...")
 
-    def is_dbe(row) -> bool:
-        return str(row.get('custcd') or '').strip() in DBE_CUSTCDS
+ISASD_LOAN_CACHE     = _load_cached(INPUT_ISASD_LOAN_FILE, "ISASD_LOAN")
+BNM_LOAN_CUR_CACHE    = _load_cached(INPUT_BNM_LOAN_CUR_FILE, "BNM_LOAN_CUR")
+BNM_LOAN_PREV_CACHE   = _load_cached(INPUT_BNM_LOAN_PREV_FILE, "BNM_LOAN_PREV")
+BNM_LNWOF_CUR_CACHE   = _load_cached(INPUT_BNM_LNWOF_CUR_FILE, "BNM_LNWOF_CUR")
+BNM_LNWOD_CUR_CACHE   = _load_cached(INPUT_BNM_LNWOD_CUR_FILE, "BNM_LNWOD_CUR")
+BNM_LNWOF_PREV_CACHE  = _load_cached(INPUT_BNM_LNWOF_PREV_FILE, "BNM_LNWOF_PREV")
+BNM_LNWOD_PREV_CACHE  = _load_cached(INPUT_BNM_LNWOD_PREV_FILE, "BNM_LNWOD_PREV")
+BTBNM_IBTRAD_CACHE    = _load_cached(INPUT_BTBNM_IBTRAD_FILE, "BTBNM_IBTRAD")
+DISPAY_CACHE          = _load_cached(INPUT_DISPAY_FILE, "DISPAY")
+LNCOMM_CACHE          = _load_cached(INPUT_LOAN_LNCOMM_FILE, "LNCOMM")
 
-    def is_dnbfi(row) -> bool:
-        return str(row.get('dnbfisme') or '').strip() in DNBFI_VALS
+# ============================================================================
+# COLUMN CASTS
+# ============================================================================
+LOAN_SELECT = (
+    "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO, "
+    "CAST(FISSPURP AS INTEGER) AS FISSPURP, CAST(PRODUCT AS INTEGER) AS PRODUCT, "
+    "CAST(NOTETERM AS DOUBLE) AS NOTETERM, CAST(EARNTERM AS DOUBLE) AS EARNTERM, "
+    "CAST(BALANCE AS DOUBLE) AS BALANCE, CAST(BAL_AFT_EIR AS DOUBLE) AS BAL_AFT_EIR, "
+    "CAST(PAIDIND AS VARCHAR) AS PAIDIND, CAST(APPRDATE AS DOUBLE) AS APPRDATE, "
+    "CAST(APPRLIM2 AS DOUBLE) AS APPRLIM2, CAST(PRODCD AS VARCHAR) AS PRODCD, "
+    "CAST(CUSTCD AS VARCHAR) AS CUSTCD, CAST(AMTIND AS VARCHAR) AS AMTIND, "
+    "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(ACCTYPE AS VARCHAR) AS ACCTYPE, "
+    "CAST(BRANCH AS VARCHAR) AS BRANCH, CAST(DNBFISME AS VARCHAR) AS DNBFISME, "
+    "CAST(NOACCT AS DOUBLE) AS NOACCT, CAST(COMMNO AS DOUBLE) AS COMMNO, "
+    "CAST(EIR_ADJ AS DOUBLE) AS EIR_ADJ, CAST(RLEASAMT AS DOUBLE) AS RLEASAMT, "
+    "CAST(CJFEE AS DOUBLE) AS CJFEE"
+)
 
-    def is_fbe(row) -> bool:
-        return str(row.get('custcd') or '').strip() in FBE_CUSTCDS
+IBTRAD_SELECT = (
+    "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(SUBACCT AS DOUBLE) AS SUBACCT, "
+    "CAST(DIRCTIND AS VARCHAR) AS DIRCTIND, CAST(CUSTCD AS VARCHAR) AS CUSTCD, "
+    "CAST(APPRLIMT AS DOUBLE) AS APPRLIMT, CAST(RETAILID AS VARCHAR) AS RETAILID, "
+    "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(DNBFISME AS VARCHAR) AS DNBFISME, "
+    "CAST(DISBURSE AS DOUBLE) AS DISBURSE, CAST(REPAID AS DOUBLE) AS REPAID, "
+    "CAST(BALANCE AS DOUBLE) AS BALANCE, CAST(FISSPURP AS INTEGER) AS FISSPURP, "
+    "CAST(PRODUCT AS INTEGER) AS PRODUCT, CAST(NOTETERM AS DOUBLE) AS NOTETERM, "
+    "CAST(PRODCD AS VARCHAR) AS PRODCD, CAST(AMTIND AS VARCHAR) AS AMTIND, "
+    "CAST(TRANSREF AS VARCHAR) AS TRANSREF"
+)
 
-    almsme_df = pl.DataFrame(); dbe_df   = pl.DataFrame()
-    dnbfi_df  = pl.DataFrame(); fbe_df   = pl.DataFrame()
-    if not alm_df.is_empty():
-        rows_all = alm_df.to_dicts()
-        almsme_r = [r for r in rows_all if is_sme(r)]
-        dbe_r    = [r for r in rows_all if is_dbe(r)]
-        dnbfi_r  = [r for r in rows_all if is_dnbfi(r)]
-        fbe_r    = [r for r in rows_all if is_fbe(r)]
-        almsme_df = pl.from_dicts(almsme_r) if almsme_r else pl.DataFrame()
-        dbe_df    = pl.from_dicts(dbe_r)    if dbe_r    else pl.DataFrame()
-        dnbfi_df  = pl.from_dicts(dnbfi_r)  if dnbfi_r  else pl.DataFrame()
-        fbe_df    = pl.from_dicts(fbe_r)    if fbe_r    else pl.DataFrame()
+DISPAY_SELECT = (
+    "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO, "
+    "CAST(DISBURSE AS DOUBLE) AS DISBURSE, CAST(REPAID AS DOUBLE) AS REPAID, "
+    "CAST(FISSPURP AS INTEGER) AS FISSPURP, CAST(PRODUCT AS INTEGER) AS PRODUCT, "
+    "CAST(DNBFISME AS VARCHAR) AS DNBFISME, CAST(PRODCD AS VARCHAR) AS PRODCD, "
+    "CAST(CUSTCD AS VARCHAR) AS CUSTCD, CAST(AMTIND AS VARCHAR) AS AMTIND, "
+    "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(BRANCH AS VARCHAR) AS BRANCH, "
+    "CAST(ACCTYPE AS VARCHAR) AS ACCTYPE"
+)
 
-    # PROC SUMMARY ALMSME -> ALMLOAN (by PRODESC)
-    if not almsme_df.is_empty():
-        agg_v = [c for c in NUM_COLS if c in almsme_df.columns]
-        almloan_sme = almsme_df.group_by('prodesc').agg([pl.col(c).sum() for c in agg_v])
-    else:
-        almloan_sme = pl.DataFrame()
+LNCOMM_SELECT = (
+    "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(COMMNO AS DOUBLE) AS COMMNO, "
+    "CAST(CUSEDAMT AS DOUBLE) AS CUSEDAMT"
+)
 
-    # ALMSMEBT: SME filter on ALMBT
-    almsmebt_df = pl.DataFrame()
-    mastsme_df  = pl.DataFrame()
-    if not almbt_df.is_empty():
-        rows_bt = almbt_df.to_dicts()
-        almsme_bt_r = [r for r in rows_bt if is_sme(r)]
-        almsmebt_df = pl.from_dicts(almsme_bt_r) if almsme_bt_r else pl.DataFrame()
-    if not mast_df.is_empty():
-        rows_m = mast_df.to_dicts()
-        mastsme_r = [r for r in rows_m if is_sme(r)]
-        mastsme_df = pl.from_dicts(mastsme_r) if mastsme_r else pl.DataFrame()
+print("\nStep 3: Loading cached inputs...")
+isasd_loan_rows    = _read_rows(ISASD_LOAN_CACHE, LOAN_SELECT)
+bnm_loan_cur_rows   = _read_rows(BNM_LOAN_CUR_CACHE, LOAN_SELECT)
+bnm_loan_prev_rows  = _read_rows(BNM_LOAN_PREV_CACHE, LOAN_SELECT)
+bnm_lnwof_cur_rows  = _read_rows(BNM_LNWOF_CUR_CACHE, LOAN_SELECT)
+bnm_lnwod_cur_rows  = _read_rows(BNM_LNWOD_CUR_CACHE, LOAN_SELECT)
+bnm_lnwof_prev_rows = _read_rows(BNM_LNWOF_PREV_CACHE, LOAN_SELECT)
+bnm_lnwod_prev_rows = _read_rows(BNM_LNWOD_PREV_CACHE, LOAN_SELECT)
+ibtrad_rows         = _read_rows(BTBNM_IBTRAD_CACHE, IBTRAD_SELECT)
+dispay_raw_rows     = _read_rows(DISPAY_CACHE, DISPAY_SELECT)
+lncomm_rows         = _read_rows(LNCOMM_CACHE, LNCOMM_SELECT)
+print(f"  ISASD LOAN rows: {len(isasd_loan_rows):,}   BNM LOAN(cur) rows: {len(bnm_loan_cur_rows):,}")
+print(f"  IBTRAD rows: {len(ibtrad_rows):,}   DISPAY rows: {len(dispay_raw_rows):,}   LNCOMM rows: {len(lncomm_rows):,}")
 
-    # PROC SUMMARY ALMSMEBT + MASTSME by PRODESC CUSTCD DNBFISME -> merge
-    if not almsmebt_df.is_empty():
-        agg_bt = [c for c in ['disburse','repaid','balance'] if c in almsmebt_df.columns]
-        grp_bt = [c for c in ['prodesc','custcd','dnbfisme'] if c in almsmebt_df.columns]
-        almsmebt_sum = almsmebt_df.group_by(grp_bt).agg([pl.col(c).sum() for c in agg_bt])
-    else:
-        almsmebt_sum = pl.DataFrame()
+# ============================================================================
+# GENERIC SAS-STYLE HELPERS
+# ============================================================================
+def _sort_key(v):
+    """SAS missing sorts LOW -- treat None as sorting before any real value."""
+    return (0,) if v is None else (1, v)
 
-    if not mastsme_df.is_empty():
-        agg_ms = [c for c in ['disbno','repayno','noacct'] if c in mastsme_df.columns]
-        grp_ms = [c for c in ['prodesc','custcd','dnbfisme'] if c in mastsme_df.columns]
-        mastsme_sum = mastsme_df.group_by(grp_ms).agg([pl.col(c).sum() for c in agg_ms])
-    else:
-        mastsme_sum = pl.DataFrame()
 
-    # Merge ALMSMEBT + MASTSME
-    if not almsmebt_sum.is_empty() and not mastsme_sum.is_empty():
-        merge_key2 = [c for c in ['prodesc','custcd','dnbfisme']
-                      if c in almsmebt_sum.columns and c in mastsme_sum.columns]
-        almsmebt_merged = almsmebt_sum.join(mastsme_sum, on=merge_key2, how='outer')
-    elif not almsmebt_sum.is_empty():
-        almsmebt_merged = almsmebt_sum
-    else:
-        almsmebt_merged = mastsme_sum
+def proc_sort(rows: list, by: list, descending: set | None = None) -> list:
+    """PROC SORT ... BY <by>; -- descending is a set of column names sorted
+    DESCENDING (e.g. {'APPRLIMT'} for `BY ACCTNO DESCENDING APPRLIMT`)."""
+    descending = descending or set()
 
-    # Split merged into sub-categories
-    dbebt_df    = pl.DataFrame(); dnbfibt_df = pl.DataFrame(); fbebt_df = pl.DataFrame()
-    if not almsmebt_merged.is_empty():
-        rows_m2  = almsmebt_merged.to_dicts()
-        dbebt_r  = [r for r in rows_m2 if str(r.get('custcd') or '').strip() in DBE_CUSTCDS]
-        dnbfibt_r= [r for r in rows_m2 if str(r.get('dnbfisme') or '').strip() in DNBFI_VALS]
-        fbebt_r  = [r for r in rows_m2 if str(r.get('custcd') or '').strip() in FBE_CUSTCDS]
-        dbebt_df  = pl.from_dicts(dbebt_r)  if dbebt_r  else pl.DataFrame()
-        dnbfibt_df= pl.from_dicts(dnbfibt_r) if dnbfibt_r else pl.DataFrame()
-        fbebt_df  = pl.from_dicts(fbebt_r)  if fbebt_r  else pl.DataFrame()
+    def key(r):
+        parts = []
+        for b in by:
+            k = _sort_key(r.get(b))
+            if b in descending:
+                # invert ordering for descending numeric/text keys
+                k = tuple(-x if isinstance(x, (int, float)) else x for x in k)
+            parts.append(k)
+        return parts
 
-    # PROC SUMMARY ALMSMEBT -> ALMBTRD2
-    if not almsmebt_merged.is_empty():
-        agg_all = [c for c in NUM_COLS if c in almsmebt_merged.columns]
-        almbtrd2_df = almsmebt_merged.group_by('prodesc').agg([pl.col(c).sum() for c in agg_all])
-    else:
-        almbtrd2_df = pl.DataFrame()
+    return sorted(rows, key=key)
 
-    # PROC PRINT: SME LOANS
-    if not almloan_sme.is_empty():
-        almloan_sme_main = almloan_sme.filter(pl.col('prodesc') != 'HOUSE FINANCING SOLD TO CAGAMAS')
-        almloan_sme_hfsc = almloan_sme.filter(pl.col('prodesc') == 'HOUSE FINANCING SOLD TO CAGAMAS')
-    else:
-        almloan_sme_main = pl.DataFrame(); almloan_sme_hfsc = pl.DataFrame()
 
-    print_table(almloan_sme_main, rw, BANK, f"SME LOANS AS AT {mm_yy}", RPT_ID)
-    print_table(almloan_sme_hfsc, rw, BANK, f"SME LOANS AS AT {mm_yy}", RPT_ID)
+def sas_merge(datasets: list, by: list) -> tuple:
+    """Emulates a plain `MERGE ds1 ds2 ... dsN; BY <by>;` (no IN=). Each
+    input in `datasets` must already be sorted BY `by` (as PROC SORT
+    would ensure). For a BY value present in more than one dataset,
+    columns from datasets listed LATER in the argument list overwrite
+    those from earlier ones -- SAS's last-dataset-wins rule within a BY
+    group. Returns (merged_rows, contributed_flags) where
+    contributed_flags[i] is a tuple of booleans (one per input dataset)
+    recording whether that dataset had an observation for this BY value
+    -- this is what IF A / IF B / IF A AND B subsetting checks against."""
+    indexed = []
+    for rows in datasets:
+        d = {}
+        for r in rows:
+            d[tuple(r[b] for b in by)] = r
+        indexed.append(d)
+    all_keys = sorted(set().union(*[d.keys() for d in indexed]), key=lambda k: [_sort_key(x) for x in k])
 
-    # -------------------------------------------------------------------------
-    # ALMSME2 / DBE2 / DNBFI2 / FBE2 from ALM2
-    # -------------------------------------------------------------------------
-    almsme2_df = pl.DataFrame(); dbe2_df = pl.DataFrame()
-    dnbfi2_df  = pl.DataFrame(); fbe2_df = pl.DataFrame()
-    if not alm2_df.is_empty():
-        rows_a2 = alm2_df.to_dicts()
-        almsme2_r = [r for r in rows_a2 if is_sme(r)]
-        dbe2_r    = [r for r in rows_a2 if is_dbe(r)]
-        dnbfi2_r  = [r for r in rows_a2 if is_dnbfi(r)]
-        fbe2_r    = [r for r in rows_a2 if is_fbe(r)]
-        almsme2_df = pl.from_dicts(almsme2_r) if almsme2_r else pl.DataFrame()
-        dbe2_df    = pl.from_dicts(dbe2_r)    if dbe2_r    else pl.DataFrame()
-        dnbfi2_df  = pl.from_dicts(dnbfi2_r)  if dnbfi2_r  else pl.DataFrame()
-        fbe2_df    = pl.from_dicts(fbe2_r)    if fbe2_r    else pl.DataFrame()
+    merged, flags = [], []
+    for key in all_keys:
+        row, flag = {}, []
+        for d in indexed:
+            present = key in d
+            flag.append(present)
+            if present:
+                row.update(d[key])
+        merged.append(row)
+        flags.append(tuple(flag))
+    return merged, flags
 
-    # ALMBTCR2 / DBEBT2 from ALMSMEBT (Bills Retail)
-    almbtcr2_df = pl.DataFrame(); dbebt2_df = pl.DataFrame()
-    if not almsmebt_merged.is_empty():
-        rows_bt2 = almsmebt_merged.to_dicts()
-        cr2_r  = []
-        dbt2_r = []
-        for row in rows_bt2:
-            if str(row.get('prodesc') or '') == 'BILLS RETAIL':
-                r2 = dict(row); r2['prodesc'] = 'TOTAL COMMERCIAL RETAILS'
-                cr2_r.append(r2)
-                if str(r2.get('custcd') or '').strip() in DBE_CUSTCDS:
-                    dbt2_r.append(r2)
-        almbtcr2_df = pl.from_dicts(cr2_r)  if cr2_r  else pl.DataFrame()
-        dbebt2_df   = pl.from_dicts(dbt2_r) if dbt2_r else pl.DataFrame()
 
-    # DATA ALMLOAN2 (SME Retail): SET ALMSME2 ALMBTCR2
-    almloan2_sme_src = pl.concat(
-        [f for f in [almsme2_df, almbtcr2_df] if not f.is_empty()], how='diagonal'
-    ) if any(not f.is_empty() for f in [almsme2_df, almbtcr2_df]) else pl.DataFrame()
+def proc_summary(rows: list, class_cols: list, sum_cols: list, missing: bool) -> list:
+    """PROC SUMMARY NWAY [MISSING]; CLASS <class_cols>; VAR <sum_cols>;
+    OUTPUT OUT=... SUM=; -- when `missing` is False, observations with any
+    missing CLASS value are dropped before summarising (SAS default
+    behaviour without the MISSING option). SUM ignores missing values
+    within a group; a group where every contributing value is missing
+    stays missing (None), matching SAS's SUM statistic."""
+    groups = {}
+    for r in rows:
+        if not missing and any(r.get(c) is None for c in class_cols):
+            continue
+        key = tuple(r.get(c) for c in class_cols)
+        g = groups.setdefault(key, {c: None for c in sum_cols})
+        for c in sum_cols:
+            v = r.get(c)
+            if v is not None:
+                g[c] = (g[c] or 0.0) + v
+    out = []
+    for key, sums in groups.items():
+        rec = dict(zip(class_cols, key))
+        rec.update(sums)
+        out.append(rec)
+    return out
 
-    if not almloan2_sme_src.is_empty():
-        agg_v4 = [c for c in NUM_COLS if c in almloan2_sme_src.columns]
-        almloan2_sme = almloan2_sme_src.group_by('prodesc').agg([pl.col(c).sum() for c in agg_v4])
-    else:
-        almloan2_sme = pl.DataFrame()
 
-    # PROC PRINT: RETAIL SME LOANS
-    print_table(almloan2_sme, rw, BANK, f"RETAILS SME LOANS AS AT {mm_yy}", RPT_ID)
+# ============================================================================
+# STEP 4: LOAN MASTER BUILD  (DLOAN / MLOAN / LNWOF / LNWOD / PLNWOF / PLNWOD)
+# ============================================================================
+print("\nStep 4: Building loan master (DLOAN/MLOAN/LNWOF/LNWOD)...")
 
-    # PROC SUMMARY / PRINT: DBE
-    for df_in, title2_str in [
-        (dbe_df,    f"OF WHICH : SME DBE AS AT {mm_yy}"),
-    ]:
-        if not df_in.is_empty():
-            agg_v = [c for c in NUM_COLS if c in df_in.columns]
-            dbe_sum = df_in.group_by('prodesc').agg([pl.col(c).sum() for c in agg_v])
-            dbe_main = dbe_sum.filter(pl.col('prodesc') != 'HOUSE FINANCING SOLD TO CAGAMAS')
-            dbe_hfsc = dbe_sum.filter(pl.col('prodesc') == 'HOUSE FINANCING SOLD TO CAGAMAS')
-            print_table(dbe_main, rw, BANK, title2_str, RPT_ID)
-            print_table(dbe_hfsc, rw, BANK, title2_str, RPT_ID)
+DLOAN  = proc_sort(isasd_loan_rows, ["ACCTNO", "NOTENO"])
+MLOAN  = proc_sort(bnm_loan_cur_rows, ["ACCTNO", "NOTENO"])
+LNWOF  = proc_sort(bnm_lnwof_cur_rows, ["ACCTNO", "NOTENO"])
+LNWOD  = proc_sort(bnm_lnwod_cur_rows, ["ACCTNO", "NOTENO"])
+PLNWOF = proc_sort(bnm_lnwof_prev_rows, ["ACCTNO", "NOTENO"])
+PLNWOD = proc_sort(bnm_lnwod_prev_rows, ["ACCTNO", "NOTENO"])
+BNM_LOAN_PREV_SORTED = proc_sort(bnm_loan_prev_rows, ["ACCTNO", "NOTENO"])
 
-    # DATA ALMLOAN3: SET DBE2 DBEBT2
-    almloan3_src = pl.concat(
-        [f for f in [dbe2_df, dbebt2_df] if not f.is_empty()], how='diagonal'
-    ) if any(not f.is_empty() for f in [dbe2_df, dbebt2_df]) else pl.DataFrame()
-    if not almloan3_src.is_empty():
-        agg_v5 = [c for c in NUM_COLS if c in almloan3_src.columns]
-        almloan3 = almloan3_src.group_by('prodesc').agg([pl.col(c).sum() for c in agg_v5])
-    else:
-        almloan3 = pl.DataFrame()
-    print_table(almloan3, rw, BANK, f"OF WHICH : RETAILS SME DBE AS AT {mm_yy}", RPT_ID)
+# DATA LOANDM; MERGE DLOAN(IN=A) MLOAN(IN=B); BY ACCTNO NOTENO; IF A AND NOT B;
+_dm_merged, _dm_flags = sas_merge([DLOAN, MLOAN], by=["ACCTNO", "NOTENO"])
+LOANDM = [r for r, (a, b) in zip(_dm_merged, _dm_flags) if a and not b]
 
-    # PROC SUMMARY / PRINT: DNBFI
-    for df_in, t2 in [
-        (dnbfi_df, f"OF WHICH : SME DNBFI AS AT {mm_yy}"),
-    ]:
-        if not df_in.is_empty():
-            agg_v = [c for c in NUM_COLS if c in df_in.columns]
-            dn_sum  = df_in.group_by('prodesc').agg([pl.col(c).sum() for c in agg_v])
-            dn_main = dn_sum.filter(pl.col('prodesc') != 'HOUSE FINANCING SOLD TO CAGAMAS')
-            dn_hfsc = dn_sum.filter(pl.col('prodesc') == 'HOUSE FINANCING SOLD TO CAGAMAS')
-            print_table(dn_main, rw, BANK, t2, RPT_ID)
-            print_table(dn_hfsc, rw, BANK, t2, RPT_ID)
+# DATA LOAN&REPTMON&NOWK (WORK dataset -- the current-month "candidate"
+# loan master, distinct from BNM.LOAN&REPTMON&NOWK read again later):
+# MERGE PLNWOF PLNWOD LOANDM BNM.LOAN&REPTMON2&NOWK MLOAN LNWOF LNWOD;
+loan_work, _ = sas_merge(
+    [PLNWOF, PLNWOD, LOANDM, BNM_LOAN_PREV_SORTED, MLOAN, LNWOF, LNWOD],
+    by=["ACCTNO", "NOTENO"],
+)
+# * IF ACCTYPE='OD' AND PRODUCT IN (150,151,152,181) THEN DELETE;  -- commented
+#   out in the original SAS; preserved as dead/disabled logic, not applied.
+print(f"  loan_work rows: {len(loan_work):,}")
 
-    if not dnbfi2_df.is_empty():
-        agg_vd = [c for c in NUM_COLS if c in dnbfi2_df.columns]
-        dnbfi2_sum = dnbfi2_df.group_by('prodesc').agg([pl.col(c).sum() for c in agg_vd])
-        print_table(dnbfi2_sum, rw, BANK, f"OF WHICH : RETAILS SME DNBFI AS AT {mm_yy}", RPT_ID)
+# ============================================================================
+# STEP 5: DISPAY BUILD  (disbursement / repayment feed, merged onto loan_work)
+# ============================================================================
+print("\nStep 5: Building DISPAY (disbursement/repayment)...")
 
-    # PROC SUMMARY / PRINT: FBE
-    for df_in, t2 in [
-        (fbe_df, f"OF WHICH : SME FE AS AT {mm_yy}"),
-    ]:
-        if not df_in.is_empty():
-            agg_v = [c for c in NUM_COLS if c in df_in.columns]
-            fb_sum  = df_in.group_by('prodesc').agg([pl.col(c).sum() for c in agg_v])
-            fb_main = fb_sum.filter(pl.col('prodesc') != 'HOUSE FINANCING SOLD TO CAGAMAS')
-            fb_hfsc = fb_sum.filter(pl.col('prodesc') == 'HOUSE FINANCING SOLD TO CAGAMAS')
-            print_table(fb_main, rw, BANK, t2, RPT_ID)
-            print_table(fb_hfsc, rw, BANK, t2, RPT_ID)
 
-    if not fbe2_df.is_empty():
-        agg_vf = [c for c in NUM_COLS if c in fbe2_df.columns]
-        fbe2_sum = fbe2_df.group_by('prodesc').agg([pl.col(c).sum() for c in agg_vf])
-        print_table(fbe2_sum, rw, BANK, f"OF WHICH : RETAILS SME FE AS AT {mm_yy}", RPT_ID)
+def _sas_round2(x):
+    return None if x is None else round(x, 2)
 
-    # -------------------------------------------------------------------------
-    # PROC PRINT: BANK TRADE
-    # -------------------------------------------------------------------------
-    print_table(almbtrd_df,  rw, BANK, f"BANK TRADE AS AT {mm_yy}",         RPT_ID)
-    print_table(almbtrd2_df, rw, BANK, f"SME BANK TRADE AS AT {mm_yy}",     RPT_ID)
 
-    # PROC SUMMARY / PRINT: DBEBT / DNBFIBT / FBEBT
-    for df_in, t2 in [
-        (dbebt_df,   f"OF WHICH : SME DBE BANK TRADE AS AT {mm_yy}"),
-        (dnbfibt_df, f"OF WHICH : SME DNBFI BANK TRADE AS AT {mm_yy}"),
-        (fbebt_df,   f"OF WHICH : SME FE BANK TRADE AS AT {mm_yy}"),
-    ]:
-        if not df_in.is_empty():
-            agg_v = [c for c in NUM_COLS if c in df_in.columns]
-            df_sum = df_in.group_by('prodesc').agg([pl.col(c).sum() for c in agg_v])
-            print_table(df_sum, rw, BANK, t2, RPT_ID)
+dispay_rows = []
+for r in dispay_raw_rows:
+    disburse = _sas_round2(r.get("DISBURSE"))
+    repaid = _sas_round2(r.get("REPAID"))
+    if (disburse or 0) > 0 or (repaid or 0) > 0:
+        rr = dict(r)
+        rr["DISBURSE"], rr["REPAID"] = disburse, repaid
+        dispay_rows.append(rr)
+DISPAY_raw = proc_sort(dispay_rows, ["ACCTNO", "NOTENO"])
 
-    # -------------------------------------------------------------------------
-    # PROC TABULATE: RETAIL BILLS BY FACILITY
-    # -------------------------------------------------------------------------
-    almprod_df = pl.concat(
-        [f for f in [alm2_df, almbtcr_df] if not f.is_empty()], how='diagonal'
-    ) if any(not f.is_empty() for f in [alm2_df, almbtcr_df]) else pl.DataFrame()
+# DATA DISPAY; MERGE LOAN&REPTMON&NOWK(IN=A) DISPAY(IN=B DROP=PRODCD);
+#   BY ACCTNO NOTENO; IF A & B;
+_dispay_wo_prodcd = [{k: v for k, v in r.items() if k != "PRODCD"} for r in DISPAY_raw]
+_dp_merged, _dp_flags = sas_merge([loan_work, _dispay_wo_prodcd], by=["ACCTNO", "NOTENO"])
+DISPAY_work = [r for r, (a, b) in zip(_dp_merged, _dp_flags) if a and b]
+print(f"  DISPAY_work rows: {len(DISPAY_work):,}")
 
-    print_tabulate_facility(
-        almprod_df, rw, BANK,
-        f"TOTAL COMMERCIAL RETAIL FINANCING BY FACILITY AS AT {rdate}"
-    )
+# ============================================================================
+# STEP 6: ALL LOAN - DISBURSEMENT, REPAYMENT, O/S
+# ============================================================================
+print("\nStep 6: Building ALM / ALMBT (loan level)...")
 
-    # -------------------------------------------------------------------------
-    # PROC TABULATE: RETAIL BILLS BY SECTOR
-    # -------------------------------------------------------------------------
-    mastsec_df = pl.DataFrame(); almbtsec_df = pl.DataFrame()
-    if not mast_df.is_empty():
-        sg_key = [c for c in ['sectgroup','secttype'] if c in mast_df.columns]
-        if sg_key and 'noacct' in mast_df.columns:
-            mastsec_df = mast_df.group_by(sg_key).agg(pl.col('noacct').sum())
+# PROC SORT DATA=LOAN.LNCOMM OUT=LNCOMM(KEEP=ACCTNO COMMNO CUSEDAMT);
+#   BY ACCTNO COMMNO;
+LNCOMM = proc_sort(lncomm_rows, ["ACCTNO", "COMMNO"])
 
-    if not almbt_df.is_empty():
-        sg_key2 = [c for c in ['sectgroup','secttype'] if c in almbt_df.columns]
-        if sg_key2 and 'balance' in almbt_df.columns:
-            almbtsec_df = almbt_df.group_by(sg_key2).agg(pl.col('balance').sum())
+# PROC SORT DATA=BNM.LOAN&REPTMON&NOWK OUT=LOAN; BY ACCTNO COMMNO;
+LOAN2 = proc_sort(bnm_loan_cur_rows, ["ACCTNO", "COMMNO"])
+# RENAME=(BALANCE=ORIBAL BAL_AFT_EIR=BALANCE)
+LOAN2_renamed = []
+for r in LOAN2:
+    rr = dict(r)
+    rr["ORIBAL"] = rr.pop("BALANCE")
+    rr["BALANCE"] = rr.pop("BAL_AFT_EIR")
+    LOAN2_renamed.append(rr)
 
-    if not mastsec_df.is_empty():
-        sg_join = [c for c in ['sectgroup','secttype']
-                   if c in mastsec_df.columns and c in (almbtsec_df.columns if not almbtsec_df.is_empty() else [])]
-        if sg_join and not almbtsec_df.is_empty():
-            almbtsec_merged = mastsec_df.join(almbtsec_df, on=sg_join, how='left')
-        else:
-            almbtsec_merged = mastsec_df
-        almbtsec_merged = almbtsec_merged.with_columns(
-            pl.lit('TOTAL COMMERCIAL RETAILS').alias('prodesc')
+_almbase_merged, _almbase_flags = sas_merge([LOAN2_renamed, LNCOMM], by=["ACCTNO", "COMMNO"])
+_almbase = [r for r, (a, b) in zip(_almbase_merged, _almbase_flags) if a]
+
+ALM_KEEP = ["ACCTNO", "NOTENO", "FISSPURP", "PRODUCT", "NOTETERM", "EARNTERM",
+            "BALANCE", "PAIDIND", "APPRDATE", "APPRLIM2", "PRODCD", "CUSTCD",
+            "AMTIND", "SECTORCD", "ACCTYPE", "BRANCH", "ORIBAL", "DNBFISME",
+            "NOACCT", "COMMNO"]
+
+
+def _alm_almbt_row(r: dict):
+    """DATA ALM ALMBT; ... one observation's worth of the big conditional
+    block; returns (kept_row_or_None, is_almbt)."""
+    paidind = r.get("PAIDIND")
+    if paidind in ("P", "C") and r.get("EIR_ADJ") is None:
+        return None, False
+    oribal = r.get("ORIBAL")
+    if oribal == 0.0:
+        return None, False
+    balx = round(oribal, 2) if oribal is not None else None
+    xind = "Y" if balx in (0.0, -0.0) else " "
+    if xind == "Y":
+        return None, False
+    prodcd = r.get("PRODCD") or ""
+    if not (prodcd[:2] == "34" or prodcd == "54120"):
+        return None, False
+
+    noacct = r.get("NOACCT")
+    if r.get("ACCTYPE") == "LN":
+        rlease = r.get("RLEASAMT")
+        cjfee = r.get("CJFEE")
+        product = r.get("PRODUCT")
+        commno = r.get("COMMNO") or 0
+        cusedamt = r.get("CUSEDAMT") or 0
+        keep_noacct = (
+            (rlease not in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and cjfee != oribal)
+            or (rlease in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and product is not None and 600 <= product <= 699)
+            or (rlease in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and commno > 0 and cusedamt > 0)
         )
-    else:
-        almbtsec_merged = almbtsec_df.with_columns(
-            pl.lit('TOTAL COMMERCIAL RETAILS').alias('prodesc')
-        ) if not almbtsec_df.is_empty() else pl.DataFrame()
+        if not keep_noacct:
+            noacct = 0
+    if paidind not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.0, -0.0) and oribal != 0:
+        noacct = 1
 
-    almsec_df = pl.concat(
-        [f for f in [alm2_df, almbtsec_merged] if not f.is_empty()], how='diagonal'
-    ) if any(not f.is_empty() for f in [alm2_df, almbtsec_merged]) else pl.DataFrame()
-
-    print_tabulate_sector(
-        almsec_df, rw, BANK,
-        f"TOTAL COMMERCIAL RETAIL FINANCING BY SECTOR AS AT {rdate}"
+    out = {k: r.get(k) for k in ALM_KEEP}
+    out["NOACCT"] = noacct
+    acctno, noteno, product = r.get("ACCTNO"), r.get("NOTENO"), r.get("PRODUCT")
+    is_almbt = (
+        (2850000000 <= acctno <= 2859999999 and noteno is not None and 40000 <= noteno <= 49999)
+        or product == 444
     )
-
-    # -------------------------------------------------------------------------
-    # Write report
-    # -------------------------------------------------------------------------
-    with open(REPORT_TXT, 'w', encoding='utf-8') as fh:
-        rw.flush(fh)
-
-    print(f"  Written: {REPORT_TXT}")
-    print("EIIBNM01: Processing complete.")
+    return out, is_almbt
 
 
-if __name__ == '__main__':
-    main()
+ALM_rows, ALMBT_rows = [], []
+for r in _almbase:
+    out, is_bt = _alm_almbt_row(r)
+    if out is None:
+        continue
+    (ALMBT_rows if is_bt else ALM_rows).append(out)
+
+# DATA ALM; SET ALM; BY ACCTNO COMMNO; dedup UNQ counter for PRODCD in
+# ('34170','34190','34690') -- zero NOACCT once more than one such row
+# appears within an (ACCTNO,COMMNO) group.
+ALM_rows = proc_sort(ALM_rows, ["ACCTNO", "COMMNO"])
+_unq_prodcds = {"34170", "34190", "34690"}
+_unq = 0
+_prev_key = None
+for r in ALM_rows:
+    key = (r["ACCTNO"], r["COMMNO"])
+    if key != _prev_key:
+        _unq = 0
+        _prev_key = key
+    if r.get("PRODCD") in _unq_prodcds:
+        _unq += (r.get("NOACCT") or 0)
+        if _unq > 1:
+            r["NOACCT"] = 0
+
+# DATA ALMBT; SET ALMBT; BY ACCTNO; IF FIRST.ACCTNO THEN NOACCT=1; ELSE NOACCT=0;
+ALMBT_rows = proc_sort(ALMBT_rows, ["ACCTNO"])
+_prev_acct = None
+for r in ALMBT_rows:
+    r["NOACCT"] = 1 if r["ACCTNO"] != _prev_acct else 0
+    _prev_acct = r["ACCTNO"]
+
+# DATA ALM; SET ALM ALMBT;
+ALM_all = ALM_rows + ALMBT_rows
+print(f"  ALM rows: {len(ALM_rows):,}   ALMBT rows: {len(ALMBT_rows):,}")
+
+# PROC SORT DATA=DISPAY(KEEP=...) BY ACCTNO NOTENO CUSTCD FISSPURP SECTORCD;
+#   WHERE SUBSTR(PRODCD,1,2)='34' OR PRODCD='54120' OR PRODUCT IN (698,699,983);
+DISPAY_KEEP = ["ACCTNO", "NOTENO", "FISSPURP", "PRODUCT", "DNBFISME", "PRODCD",
+               "CUSTCD", "AMTIND", "SECTORCD", "DISBURSE", "REPAID", "BRANCH", "ACCTYPE"]
+DISPAY_final = []
+for r in DISPAY_work:
+    prodcd = r.get("PRODCD") or ""
+    if prodcd[:2] == "34" or prodcd == "54120" or r.get("PRODUCT") in (698, 699, 983):
+        DISPAY_final.append({k: r.get(k) for k in DISPAY_KEEP})
+DISPAY_final = proc_sort(DISPAY_final, ["ACCTNO", "NOTENO", "CUSTCD", "FISSPURP", "SECTORCD"])
+
+# PROC SORT DATA=ALM; BY ACCTNO NOTENO;
+# DATA ALM; MERGE ALM(IN=B) DISPAY(IN=A); BY ACCTNO NOTENO;
+#   IF REPAID>0 THEN REPAYNO=1; IF DISBURSE>0 THEN DISBNO=1;
+ALM_all = proc_sort(ALM_all, ["ACCTNO", "NOTENO"])
+ALM_final, _ = sas_merge([ALM_all, DISPAY_final], by=["ACCTNO", "NOTENO"])
+for r in ALM_final:
+    if (r.get("REPAID") or 0) > 0:
+        r["REPAYNO"] = 1
+    if (r.get("DISBURSE") or 0) > 0:
+        r["DISBNO"] = 1
+print(f"  ALM_final rows: {len(ALM_final):,}")
+
+# ============================================================================
+# STEP 7: PRODESC CLASSIFICATION  (DATA ALM; SET ALM; ... big IF/ELSE chain)
+# ============================================================================
+print("\nStep 7: Classifying PRODESC...")
+
+_HP_PRODCDS = {"34111"}
+PERSONAL_LOAN_PRODUCTS = {135, 136, 138, 419, 420, 422, 424, 426, 464, 465, 468, 469, 470,
+                           441, 443, 475, 477, 482, 483, 490, 491, 492, 493, 496, 497, 498,
+                           652, 653, 668, 669, 672, 673, 674, 675, 693}
+
+
+def _classify_prodesc(r: dict) -> str:
+    acctype, prodcd, product = r.get("ACCTYPE"), r.get("PRODCD") or "", r.get("PRODUCT")
+    if product in PERSONAL_LOAN_PRODUCTS:
+        return "PERSONAL LOANS"
+    if (acctype == "LN" and prodcd in _HP_PRODCDS) or product in (698, 699, 983):
+        return "HIRE PURCHASE"
+    if acctype == "LN" and prodcd == "54120":
+        return "HOUSE FINANCING SOLD TO CAGAMAS"
+    if (acctype == "LN" and prodcd == "34120") or product in HLWOF:
+        return "HOUSING LOANS"
+    if acctype == "OD" and prodcd in ("34180", "34240") and product in ODCORP:
+        return "OD CORPORATE"
+    if acctype == "OD" and prodcd in ("34180", "34240") and product not in ODCORP:
+        return "OD RETAIL"
+    if acctype == "LN" and prodcd not in ("34111", "34120", "N", "M") and product in FLCORP:
+        return "OTHERS CORPORATE"
+    if (acctype == "LN" and prodcd not in ("34111", "34120", "N", "M") and product not in FLCORP) or product in REWOF:
+        return "OTHERS RETAIL"
+    return None
+
+
+for r in ALM_final:
+    r["PRODESC"] = _classify_prodesc(r)
+    sectorcd = r.get("SECTORCD")
+    r["SECTTYPE"] = format_fisstype(sectorcd)
+    r["SECTGROUP"] = format_fissgroup(sectorcd)
+
+MEASURE_COLS = ["DISBURSE", "REPAID", "BALANCE", "DISBNO", "REPAYNO", "NOACCT"]
+
+ALMLOAN_v1 = proc_summary(ALM_final, ["PRODESC"], MEASURE_COLS, missing=True)
+ALMLOAN_v2 = [r for r in ALMLOAN_v1 if r["PRODESC"] != "HOUSE FINANCING SOLD TO CAGAMAS"]
+ALMHFSC = [r for r in ALMLOAN_v1 if r["PRODESC"] == "HOUSE FINANCING SOLD TO CAGAMAS"]
+
+# MFRS.ALM_CR is populated later (KEEP=ACCTNO NOTENO PRODESC NOACCT); collect
+# the rows contributing to it as we build ALM2/ALMBTCR below.
+mfrs_alm_cr_rows = []
+mfrs_mast_br_rows = []
+
+# ============================================================================
+# STEP 8: BTRADE - DISBURSEMENT, REPAYMENT & O/S
+# ============================================================================
+print("\nStep 8: Building bank-trade (BTRAD/OVC/MAST) section...")
+
+# *** CURRENT MTH ***
+btrad_src = [r for r in ibtrad_rows if r.get("DIRCTIND") == "D" and (r.get("CUSTCD") or "").strip() not in ("", None)]
+BTRAD = proc_sort(btrad_src, ["ACCTNO", "APPRLIMT"], descending={"APPRLIMT"})
+BTRAD = proc_sort(BTRAD, ["ACCTNO", "CUSTCD", "RETAILID"])
+
+BTRAD1 = proc_summary(BTRAD, ["ACCTNO", "CUSTCD", "RETAILID", "SECTORCD", "DNBFISME"],
+                       ["DISBURSE", "REPAID"], missing=False)
+BTRAD_bal_src = [r for r in BTRAD if (r.get("APPRLIMT") or 0) > 0]
+BTRAD_bal = proc_summary(BTRAD_bal_src, ["ACCTNO", "CUSTCD", "RETAILID", "SECTORCD"],
+                          ["BALANCE"], missing=False)
+
+# DATA OVC(KEEP=ACCTNO RETAILID) MAST(KEEP=ACCTNO CUSTCD BALANCE RETAILID
+#   DISBNO REPAYNO NOACCT SECTORCD DNBFISME);
+#   MERGE BTRAD(IN=A) BTRAD1(IN=B); BY ACCTNO CUSTCD RETAILID SECTORCD; IF B;
+# BTRAD1 also carries DNBFISME (an extra CLASS var not in this BY list);
+# matched here on the 4 shared BY columns -- assumes a 1:1 relationship
+# between DNBFISME and the (ACCTNO,CUSTCD,RETAILID,SECTORCD) combination,
+# consistent with how the source data is populated.
+_bal_by_key = {}
+for r in BTRAD_bal:
+    _bal_by_key[(r["ACCTNO"], r["CUSTCD"], r["RETAILID"], r["SECTORCD"])] = r
+
+OVC_rows, MAST_rows = [], []
+for r in BTRAD1:
+    bal_key = (r["ACCTNO"], r["CUSTCD"], r["RETAILID"], r["SECTORCD"])
+    bal_row = _bal_by_key.get(bal_key)
+    balance = bal_row["BALANCE"] if bal_row else None
+    disbno = 1 if (r.get("DISBURSE") or 0) > 0 else None
+    repayno = 1 if (r.get("REPAID") or 0) > 0 else None
+    noacct = None
+    if bal_row is not None and round(balance, 2) not in (None, 0.0) and noacct != 0:
+        noacct = 1
+    OVC_rows.append({"ACCTNO": r["ACCTNO"], "RETAILID": r["RETAILID"]})
+    MAST_rows.append({
+        "ACCTNO": r["ACCTNO"], "CUSTCD": r["CUSTCD"], "BALANCE": balance,
+        "RETAILID": r["RETAILID"], "DISBNO": disbno, "REPAYNO": repayno,
+        "NOACCT": noacct, "SECTORCD": r["SECTORCD"], "DNBFISME": r["DNBFISME"],
+    })
+OVC = proc_sort(OVC_rows, ["ACCTNO"])
+MAST = proc_sort(MAST_rows, ["ACCTNO"])
+
+# PROC SORT DATA=BTBNM.IBTRAD&REPTMON&NOWK OUT=ALMBT(KEEP=...)
+#   BY ACCTNO SUBACCT TRANSREF CUSTCD FISSPURP SECTORCD;
+#   WHERE SUBSTR(PRODCD,1,2) EQ '34';
+ALMBT_KEEP2 = ["ACCTNO", "SUBACCT", "FISSPURP", "PRODUCT", "NOTETERM", "BALANCE",
+               "APPRLIM2", "PRODCD", "CUSTCD", "AMTIND", "TRANSREF", "SECTORCD",
+               "DISBURSE", "REPAID", "DNBFISME"]
+ALMBT_bt = [{k: r.get(k) for k in ALMBT_KEEP2} for r in ibtrad_rows if (r.get("PRODCD") or "")[:2] == "34"]
+ALMBT_bt = proc_sort(ALMBT_bt, ["ACCTNO", "SUBACCT", "TRANSREF", "CUSTCD", "FISSPURP", "SECTORCD"])
+
+# DATA ALMBT; MERGE OVC ALMBT(IN=A); BY ACCTNO; IF A;
+_ovc_merged, _ovc_flags = sas_merge([OVC, ALMBT_bt], by=["ACCTNO"])
+ALMBT_bt2 = [r for r, (a, b) in zip(_ovc_merged, _ovc_flags) if b]
+
+ALMBTX = proc_summary(ALMBT_bt2, ["ACCTNO", "TRANSREF", "CUSTCD", "FISSPURP", "SECTORCD"],
+                       ["BALANCE"], missing=True)
+
+# PROC SORT DATA=ALMBT NODUPKEYS; BY ACCTNO TRANSREF CUSTCD FISSPURP SECTORCD;
+_seen_bt_keys = set()
+ALMBT_bt2_dedup = []
+for r in proc_sort(ALMBT_bt2, ["ACCTNO", "TRANSREF", "CUSTCD", "FISSPURP", "SECTORCD"]):
+    key = (r["ACCTNO"], r["TRANSREF"], r["CUSTCD"], r["FISSPURP"], r["SECTORCD"])
+    if key not in _seen_bt_keys:
+        _seen_bt_keys.add(key)
+        ALMBT_bt2_dedup.append(r)
+
+# DATA ALMBT; MERGE ALMBT ALMBTX; BY ACCTNO TRANSREF CUSTCD FISSPURP SECTORCD;
+ALMBT_final, _ = sas_merge([ALMBT_bt2_dedup, ALMBTX], by=["ACCTNO", "TRANSREF", "CUSTCD", "FISSPURP", "SECTORCD"])
+
+# *** SUMMARY ***  DATA ALMBT; KEEP FISSPURP DISBURSE REPAID APPRLIM2 BALANCE
+#   RETAILID AMTIND CUSTCD PRODCD SECTORCD PRODUCT PRODESC SECTTYPE SECTGROUP DNBFISME;
+for r in ALMBT_final:
+    r["SECTTYPE"] = format_fisstype(r.get("SECTORCD"))
+    r["SECTGROUP"] = format_fissgroup(r.get("SECTORCD"))
+    r["PRODESC"] = "BILLS CORPORATE" if r.get("RETAILID") == "C" else "BILLS RETAIL"
+
+# *** NO OF A/C ***  DATA MAST(...) MFRS.MAST_BR(KEEP=ACCTNO PRODESC NOACCT);
+for r in MAST:
+    r["SECTTYPE"] = format_fisstype(r.get("SECTORCD"))
+    r["SECTGROUP"] = format_fissgroup(r.get("SECTORCD"))
+    r["PRODESC"] = "BILLS CORPORATE" if r.get("RETAILID") == "C" else "BILLS RETAIL"
+    acctno = int(r["ACCTNO"]) if r.get("ACCTNO") is not None else None
+    mfrs_mast_br_rows.append({"ACCTNO": acctno, "PRODESC": r["PRODESC"], "NOACCT": r["NOACCT"]})
+
+ALMBTRD = proc_summary(ALMBT_final, ["PRODESC"], MEASURE_COLS[:3], missing=True)
+MASTLOAN = proc_summary(MAST, ["PRODESC"], ["DISBNO", "REPAYNO", "NOACCT"], missing=True)
+ALMBTRD, _ = sas_merge([ALMBTRD], by=["PRODESC"])  # no-op single-input merge kept for symmetry with SAS
+_almbtrd_by_key = {r["PRODESC"]: r for r in ALMBTRD}
+for r in MASTLOAN:
+    tgt = _almbtrd_by_key.setdefault(r["PRODESC"], {"PRODESC": r["PRODESC"], "DISBURSE": None, "REPAID": None, "BALANCE": None})
+    tgt.update({k: r[k] for k in ("DISBNO", "REPAYNO", "NOACCT")})
+ALMBTRD = list(_almbtrd_by_key.values())
+
+# DATA ALMLOAN ALMHFSC; SET ALMLOAN; -- (the /* */ commented SET ALMBTRD
+# ALMLOAN; RUN; block above is intentionally never executed in the source
+# and is preserved only as a comment there; not reproduced as live code.)
+print(f"  ALMBTRD rows: {len(ALMBTRD):,}")
+
+# ============================================================================
+# STEP 9: RETAIL / COMMERCIAL RETAIL BREAKDOWN  (ALM2 / ALMBTCR)
+# ============================================================================
+print("\nStep 9: Building retail/commercial-retail breakdown...")
+
+
+def _classify_alm2(r: dict) -> tuple:
+    """DATA ALM2; SET ALM; WHERE PRODESC IN ('OD RETAIL','OTHERS RETAIL');
+    returns (new_prodesc, type_label) or None if the row is filtered out."""
+    prodesc = r.get("PRODESC")
+    if prodesc not in ("OD RETAIL", "OTHERS RETAIL"):
+        return None
+    if prodesc == "OD RETAIL":
+        new_desc = "PURCHASE OF RESIDENTIAL PROPERTY" if r.get("FISSPURP") in ODFISS else "TOTAL COMMERCIAL RETAILS"
+        return new_desc, "CASH LINE FACILITY"
+    new_desc = "STAFF FINANCING" if r.get("PRODUCT") in STFLN else "TOTAL COMMERCIAL RETAILS"
+    return new_desc, "FIXED FINANCING"
+
+
+ALM2 = []
+for r in ALM_final:
+    res = _classify_alm2(r)
+    if res is None:
+        continue
+    rr = dict(r)
+    rr["PRODESC"], rr["TYPE"] = res
+    ALM2.append(rr)
+
+ALMBTCR = []
+for r in ALMBTRD:
+    if r.get("PRODESC") != "BILLS RETAIL":
+        continue
+    rr = dict(r)
+    rr["PRODESC"] = "TOTAL COMMERCIAL RETAILS"
+    rr["TYPE"] = "BANK TRADE"
+    ALMBTCR.append(rr)
+
+# DATA ALMLOAN2 ALM2CRF MFRS.ALM_CR(KEEP=ACCTNO NOTENO PRODESC NOACCT);
+#   SET ALM2 ALMBTCR; OUTPUT ALMLOAN2; OUTPUT MFRS.ALM_CR;
+#   IF PRODESC='TOTAL COMMERCIAL RETAILS' THEN ... OUTPUT ALM2CRF;
+ALMLOAN2_pre, ALM2CRF_pre = [], []
+for r in (ALM2 + ALMBTCR):
+    ALMLOAN2_pre.append(r)
+    mfrs_alm_cr_rows.append({
+        "ACCTNO": int(r["ACCTNO"]) if r.get("ACCTNO") is not None else None,
+        "NOTENO": int(r["NOTENO"]) if r.get("NOTENO") is not None else None,
+        "PRODESC": r.get("PRODESC"), "NOACCT": r.get("NOACCT"),
+    })
+    if r.get("PRODESC") == "TOTAL COMMERCIAL RETAILS":
+        rr = dict(r)
+        custcd = r.get("CUSTCD")
+        rr["PRODESC"] = "COMMERCIAL RETAIL - IND" if custcd in ("77", "78", "95", "96") else "COMMERCIAL RETAIL - NON IND"
+        ALM2CRF_pre.append(rr)
+
+ALMLOAN2_v1 = proc_summary(ALMLOAN2_pre, ["PRODESC"], MEASURE_COLS, missing=True)
+ALM2CRF_v1 = proc_summary(ALM2CRF_pre, ["PRODESC"], MEASURE_COLS, missing=True)
+print(f"  ALMLOAN2 rows: {len(ALMLOAN2_v1):,}   ALM2CRF rows: {len(ALM2CRF_v1):,}")
+
+# ============================================================================
+# STEP 10: SME / DBE / DNBFI / FOREIGN-ENTITY BREAKDOWN
+# ============================================================================
+print("\nStep 10: Building SME/DBE/DNBFI/FBE breakdown...")
+
+DBE_CODES = {"41", "42", "43", "44", "46", "47", "48", "49", "51", "52", "53", "54"}
+FBE_CODES = {"87", "88", "89"}
+SME_CODES = DBE_CODES | FBE_CODES
+DNBFI_CODES = {"1", "2", "3"}
+
+
+def _sme_split(rows: list) -> tuple:
+    sme, dbe, dnbfi, fbe = [], [], [], []
+    for r in rows:
+        custcd, dnb = r.get("CUSTCD"), r.get("DNBFISME")
+        if custcd in SME_CODES or dnb in DNBFI_CODES:
+            sme.append(r)
+        if custcd in DBE_CODES:
+            dbe.append(r)
+        if dnb in DNBFI_CODES:
+            dnbfi.append(r)
+        if custcd in FBE_CODES:
+            fbe.append(r)
+    return sme, dbe, dnbfi, fbe
+
+
+ALMSME, DBE, DNBFI, FBE = _sme_split(ALM_final)
+
+ALMLOAN_v3 = proc_summary(ALMSME, ["PRODESC"], MEASURE_COLS, missing=True)
+
+ALMSMEBT_pre = [r for r in ALMBT_final if r.get("CUSTCD") in SME_CODES or r.get("DNBFISME") in DNBFI_CODES]
+MASTSME_pre = [r for r in MAST if r.get("CUSTCD") in SME_CODES or r.get("DNBFISME") in DNBFI_CODES]
+
+ALMSMEBT_sum = proc_summary(ALMSMEBT_pre, ["PRODESC", "CUSTCD", "DNBFISME"], ["DISBURSE", "REPAID", "BALANCE"], missing=True)
+MASTSME_sum = proc_summary(MASTSME_pre, ["PRODESC", "CUSTCD", "DNBFISME"], ["DISBNO", "REPAYNO", "NOACCT"], missing=True)
+
+_mastsme_by_key = {(r["PRODESC"], r["CUSTCD"], r["DNBFISME"]): r for r in MASTSME_sum}
+ALMSMEBT_merged = []
+for r in ALMSMEBT_sum:
+    key = (r["PRODESC"], r["CUSTCD"], r["DNBFISME"])
+    rr = dict(r)
+    m = _mastsme_by_key.get(key, {})
+    rr["DISBNO"], rr["REPAYNO"], rr["NOACCT"] = m.get("DISBNO"), m.get("REPAYNO"), m.get("NOACCT")
+    ALMSMEBT_merged.append(rr)
+
+DBEBT_pre = [r for r in ALMSMEBT_merged if r.get("CUSTCD") in DBE_CODES]
+DNBFIBT_pre = [r for r in ALMSMEBT_merged if r.get("DNBFISME") in DNBFI_CODES]
+FBEBT_pre = [r for r in ALMSMEBT_merged if r.get("CUSTCD") in FBE_CODES]
+
+ALMBTRD2 = proc_summary(ALMSMEBT_merged, ["PRODESC"], MEASURE_COLS, missing=True)
+
+ALMSME2, DBE2, DNBFI2, FBE2 = _sme_split(ALM2)
+
+ALMBTCR2, DBEBT2 = [], []
+for r in ALMSMEBT_merged:
+    if r.get("PRODESC") != "BILLS RETAIL":
+        continue
+    rr = dict(r)
+    rr["PRODESC"] = "TOTAL COMMERCIAL RETAILS"
+    ALMBTCR2.append(rr)
+    if r.get("CUSTCD") in DBE_CODES:
+        DBEBT2.append(dict(rr))
+
+ALMLOAN2_v2 = proc_summary(ALMSME2 + ALMBTCR2, ["PRODESC"], MEASURE_COLS, missing=True)
+ALMLOAN3 = proc_summary(DBE2 + DBEBT2, ["PRODESC"], MEASURE_COLS, missing=True)
+DBE_v2 = proc_summary(DBE, ["PRODESC"], MEASURE_COLS, missing=True)
+DNBFI_v2 = proc_summary(DNBFI, ["PRODESC"], MEASURE_COLS, missing=True)
+FBE_v2 = proc_summary(FBE, ["PRODESC"], MEASURE_COLS, missing=True)
+DNBFI2_v2 = proc_summary(DNBFI2, ["PRODESC"], MEASURE_COLS, missing=True)
+FBE2_v2 = proc_summary(FBE2, ["PRODESC"], MEASURE_COLS, missing=True)
+DBEBT_v2 = proc_summary(DBEBT_pre, ["PRODESC"], MEASURE_COLS, missing=True)
+DNBFIBT_v2 = proc_summary(DNBFIBT_pre, ["PRODESC"], MEASURE_COLS, missing=True)
+FBEBT_v2 = proc_summary(FBEBT_pre, ["PRODESC"], MEASURE_COLS, missing=True)
+print("  SME/DBE/DNBFI/FBE summaries built.")
+
+# ============================================================================
+# STEP 11: FACILITY / SECTOR BREAKDOWN  (feeds the two PROC TABULATE reports)
+# ============================================================================
+print("\nStep 11: Building facility/sector breakdown...")
+
+ALMPROD = ALM2 + ALMBTCR
+
+MASTSEC = proc_summary(MAST, ["SECTGROUP", "SECTTYPE"], ["NOACCT"], missing=False)
+ALMBTSEC_raw = proc_summary(ALMBT_final, ["SECTGROUP", "SECTTYPE"], ["BALANCE"], missing=False)
+_almbtsec_by_key = {(r["SECTGROUP"], r["SECTTYPE"]): r for r in ALMBTSEC_raw}
+ALMBTSEC = []
+for r in MASTSEC:
+    key = (r["SECTGROUP"], r["SECTTYPE"])
+    rr = dict(r)
+    b = _almbtsec_by_key.get(key)
+    rr["BALANCE"] = b["BALANCE"] if b else None
+    rr["PRODESC"] = "TOTAL COMMERCIAL RETAILS"
+    ALMBTSEC.append(rr)
+
+ALMSEC = ALM2 + ALMBTSEC
+print(f"  ALMPROD rows: {len(ALMPROD):,}   ALMSEC rows: {len(ALMSEC):,}")
+
+# ============================================================================
+# STEP 12: REPORT RENDERING
+# ============================================================================
+print("\nStep 12: Rendering report...")
+
+LINE_SIZE = 132
+FF = "\f"
+
+
+def _center(text: str, width: int) -> str:
+    text = text[:width]
+    pad = width - len(text)
+    left = pad // 2
+    return " " * left + text + " " * (pad - left)
+
+
+def _fmt_amt(value, width=16, decimals=2) -> str:
+    if value is None:
+        return "0".rjust(width)
+    s = f"{float(value):.{decimals}f}"
+    return s.rjust(width) if len(s) <= width else s[-width:]
+
+
+def _fmt_cnt(value, width=9) -> str:
+    if value is None:
+        return "0".rjust(width)
+    return f"{int(value)}".rjust(width)
+
+
+_TITLE1 = "PUBLIC ISLAMIC BANK BERHAD"
+_TITLE3 = "REPORT ID : EIIBNM01"
+
+
+class _Pager:
+    """Tracks lines-on-page and emits form-feed + titles at PAGE_SIZE."""
+
+    def __init__(self, lines: list):
+        self.lines = lines
+        self.on_page = 0
+
+    def new_page(self, title2: str, header_lines: list):
+        self.lines.append(FF)
+        self.lines.append(_TITLE1)
+        self.lines.append(title2)
+        self.lines.append(_TITLE3)
+        self.lines.append("")
+        self.lines.extend(header_lines)
+        self.on_page = 5 + len(header_lines)
+
+    def add(self, line: str):
+        if self.on_page >= PAGE_SIZE:
+            self.new_page(self._title2, self._header)
+        self.lines.append(line)
+        self.on_page += 1
+
+    def start(self, title2: str, header_lines: list):
+        self._title2, self._header = title2, header_lines
+        self.new_page(title2, header_lines)
+
+
+def proc_print_prodesc(pager: _Pager, rows: list, title2: str, where=None) -> None:
+    """PROC PRINT DATA=...; [WHERE ...;] SUM DISBURSE REPAID BALANCE DISBNO
+    REPAYNO NOACCT; TITLE2 <title2>;"""
+    data = [r for r in rows if (where is None or where(r))]
+    header = [
+        "OBS  PRODESC" + " " * 29 + "DISBURSE".rjust(16) + "REPAID".rjust(16)
+        + "BALANCE".rjust(16) + "DISBNO".rjust(9) + "REPAYNO".rjust(9) + "NOACCT".rjust(9),
+        "-" * LINE_SIZE,
+    ]
+    pager.start(title2, header)
+    totals = {c: 0.0 for c in MEASURE_COLS}
+    for i, r in enumerate(data, start=1):
+        line = (
+            f"{i:<5}{(r.get('PRODESC') or ''):<35}"
+            f"{_fmt_amt(r.get('DISBURSE'))}{_fmt_amt(r.get('REPAID'))}{_fmt_amt(r.get('BALANCE'))}"
+            f"{_fmt_cnt(r.get('DISBNO'))}{_fmt_cnt(r.get('REPAYNO'))}{_fmt_cnt(r.get('NOACCT'))}"
+        )
+        pager.add(line)
+        for c in MEASURE_COLS:
+            totals[c] += r.get(c) or 0.0
+    pager.add("-" * LINE_SIZE)
+    total_line = (
+        f"{'':<5}{'TOTAL':<35}"
+        f"{_fmt_amt(totals['DISBURSE'])}{_fmt_amt(totals['REPAID'])}{_fmt_amt(totals['BALANCE'])}"
+        f"{_fmt_cnt(totals['DISBNO'])}{_fmt_cnt(totals['REPAYNO'])}{_fmt_cnt(totals['NOACCT'])}"
+    )
+    pager.add(total_line)
+
+
+def proc_tabulate_type(pager: _Pager, rows: list, title2: str) -> None:
+    """PROC TABULATE ... TABLE TYPE=' ' ALL='GRAND TOTAL', SUM=' '*(BALANCE=
+    'AMOUNT' NOACCT='NO. OF ACCT'*F=10.) / BOX='FACILITY' RTS=25;"""
+    data = [r for r in rows if r.get("PRODESC") == "TOTAL COMMERCIAL RETAILS" and (r.get("BALANCE") or 0) != 0]
+    groups = proc_summary(data, ["TYPE"], ["BALANCE", "NOACCT"], missing=True)
+    header = [_center("FACILITY", 25) + "AMOUNT".rjust(16) + "NO. OF ACCT".rjust(12), "-" * LINE_SIZE]
+    pager.start(title2, header)
+    grand_bal, grand_acct = 0.0, 0
+    for g in groups:
+        pager.add(f"{(g.get('TYPE') or ''):<25}{_fmt_amt(g.get('BALANCE'))}{_fmt_cnt(g.get('NOACCT'), 12)}")
+        grand_bal += g.get("BALANCE") or 0.0
+        grand_acct += int(g.get("NOACCT") or 0)
+    pager.add("-" * LINE_SIZE)
+    pager.add(f"{'GRAND TOTAL':<25}{_fmt_amt(grand_bal)}{_fmt_cnt(grand_acct, 12)}")
+
+
+def proc_tabulate_sector(pager: _Pager, rows: list, title2: str) -> None:
+    """PROC TABULATE ... TABLE SECTGROUP=' '*(SECTTYPE='' ALL='SUB-TOTAL')
+    ALL='GRAND TOTAL', SUM=' '*(BALANCE='AMOUNT' NOACCT='NO. OF ACCT'*F=10.)
+    / BOX='SECTFISS' RTS=25;"""
+    data = [r for r in rows if r.get("PRODESC") == "TOTAL COMMERCIAL RETAILS" and (r.get("BALANCE") or 0) != 0]
+    header = [_center("SECTFISS", 25) + "AMOUNT".rjust(16) + "NO. OF ACCT".rjust(12), "-" * LINE_SIZE]
+    pager.start(title2, header)
+    by_group = {}
+    for r in data:
+        by_group.setdefault(r.get("SECTGROUP"), []).append(r)
+    grand_bal, grand_acct = 0.0, 0
+    for group_key in sorted(by_group, key=_sort_key):
+        subs = proc_summary(by_group[group_key], ["SECTTYPE"], ["BALANCE", "NOACCT"], missing=True)
+        sub_bal, sub_acct = 0.0, 0
+        for s in subs:
+            pager.add(f"{(group_key or ''):<12}{(s.get('SECTTYPE') or ''):<13}{_fmt_amt(s.get('BALANCE'))}{_fmt_cnt(s.get('NOACCT'), 12)}")
+            sub_bal += s.get("BALANCE") or 0.0
+            sub_acct += int(s.get("NOACCT") or 0)
+        pager.add(f"{(group_key or ''):<12}{'SUB-TOTAL':<13}{_fmt_amt(sub_bal)}{_fmt_cnt(sub_acct, 12)}")
+        grand_bal += sub_bal
+        grand_acct += sub_acct
+    pager.add("-" * LINE_SIZE)
+    pager.add(f"{'GRAND TOTAL':<25}{_fmt_amt(grand_bal)}{_fmt_cnt(grand_acct, 12)}")
+
+
+report_lines: list = []
+pager = _Pager(report_lines)
+
+_T = lambda label: f'{label} AS AT {REPTMON}/{REPTYEAR}'  # noqa: E731 -- mirrors "&REPTMON/&REPTYEAR" title text
+
+proc_print_prodesc(pager, ALMLOAN_v2, _T("ALL LOANS"), where=lambda r: r["PRODESC"] != "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, ALMHFSC, _T("ALL LOANS"), where=lambda r: r["PRODESC"] == "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, ALMLOAN2_v1, _T("RETAILS LOANS"))
+proc_print_prodesc(pager, ALM2CRF_v1, _T("COMMERCIAL RETAIL LOANS"))
+proc_print_prodesc(pager, ALMLOAN_v3, _T("SME LOANS"), where=lambda r: r["PRODESC"] != "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, ALMLOAN_v3, _T("SME LOANS"), where=lambda r: r["PRODESC"] == "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, ALMLOAN2_v2, _T("RETAILS SME LOANS"))
+proc_print_prodesc(pager, DBE_v2, _T("OF WHICH : SME DBE"), where=lambda r: r["PRODESC"] != "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, DBE_v2, _T("OF WHICH : SME DBE"), where=lambda r: r["PRODESC"] == "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, ALMLOAN3, _T("OF WHICH : RETAILS SME DBE"))
+proc_print_prodesc(pager, DNBFI_v2, _T("OF WHICH : SME DNBFI"), where=lambda r: r["PRODESC"] != "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, DNBFI_v2, _T("OF WHICH : SME DNBFI"), where=lambda r: r["PRODESC"] == "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, DNBFI2_v2, _T("OF WHICH : RETAILS SME DNBFI"))
+proc_print_prodesc(pager, FBE_v2, _T("OF WHICH : SME FE"), where=lambda r: r["PRODESC"] != "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, FBE_v2, _T("OF WHICH : SME FE"), where=lambda r: r["PRODESC"] == "HOUSE FINANCING SOLD TO CAGAMAS")
+proc_print_prodesc(pager, FBE2_v2, _T("OF WHICH : RETAILS SME FE"))
+proc_print_prodesc(pager, ALMBTRD, _T("BANK TRADE"))
+proc_print_prodesc(pager, ALMBTRD2, _T("SME BANK TRADE"))
+proc_print_prodesc(pager, DBEBT_v2, _T("OF WHICH : SME DBE BANK TRADE"))
+proc_print_prodesc(pager, DNBFIBT_v2, _T("OF WHICH : SME DNBFI BANK TRADE"))
+proc_print_prodesc(pager, FBEBT_v2, _T("OF WHICH : SME FE BANK TRADE"))
+
+proc_tabulate_type(pager, ALMPROD, f"TOTAL COMMERCIAL RETAIL FINANCING BY FACILITY AS AT {RDATE}")
+proc_tabulate_sector(pager, ALMSEC, f"TOTAL COMMERCIAL RETAIL FINANCING BY SECTOR AS AT {RDATE}")
+
+# ============================================================================
+# STEP 13: WRITE OUTPUTS
+# ============================================================================
+print("\nStep 13: Writing outputs...")
+
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in report_lines:
+        fh.write(ln + "\n")
+print(f"  SASLIST report written : {OUTPUT_FILE}  ({len(report_lines):,} lines)")
+
+pl.DataFrame(mfrs_mast_br_rows, schema={"ACCTNO": pl.Int64, "PRODESC": pl.Utf8, "NOACCT": pl.Float64}) \
+    .write_parquet(OUTPUT_MFRS_MAST_BR_FILE)
+print(f"  MFRS.MAST_BR written   : {OUTPUT_MFRS_MAST_BR_FILE}  ({len(mfrs_mast_br_rows):,} rows)")
+
+pl.DataFrame(
+    mfrs_alm_cr_rows,
+    schema={"ACCTNO": pl.Int64, "NOTENO": pl.Int64, "PRODESC": pl.Utf8, "NOACCT": pl.Float64},
+).write_parquet(OUTPUT_MFRS_ALM_CR_FILE)
+print(f"  MFRS.ALM_CR written    : {OUTPUT_MFRS_ALM_CR_FILE}  ({len(mfrs_alm_cr_rows):,} rows)")
+
+print("\nEIIBNM01 complete.")
