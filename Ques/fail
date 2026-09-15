@@ -1,7 +1,11 @@
-Step 3: Loading cached inputs...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 367, in <module>
-    isasd_loan_rows    = _read_rows(ISASD_LOAN_CACHE, LOAN_SELECT)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 284, in _read_rows
-    df = con.execute(
-_duckdb.BinderException: Binder Error: Column "NOTETERM" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+def _qualify(select_sql: str) -> str:
+    """Prefix every bare source column inside CAST(...) with `src.` so DuckDB
+    binds it to the parquet source column and never to the SELECT alias of
+    the same name."""
+    return re.sub(r"CAST\(\s*(\w+)\s+AS\b", r"CAST(src.\1 AS", select_sql)
+
+
+LOAN_SELECT   = _qualify(LOAN_SELECT)
+IBTRAD_SELECT = _qualify(IBTRAD_SELECT)
+DISPAY_SELECT = _qualify(DISPAY_SELECT)
+LNCOMM_SELECT = _qualify(LNCOMM_SELECT)
