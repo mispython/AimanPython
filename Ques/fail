@@ -1,25 +1,11 @@
-def _num_to_str(v) -> str:
-    """Mirrors SAS implicit numeric-to-character coercion used in
-    COMPRESS('DP'||PAYREF): integral floats render without a decimal
-    point, everything else falls back to str()."""
-    if v is None:
-        return ""
-    if isinstance(v, float):
-        return str(int(v)) if v.is_integer() else str(v)
-    return str(v)
-
-
-
-
-    if row["PAYMODE"] == "CR A/C":
-        row["ACCOUNT_SOURCE_UNIQUE_ID"] = ("DP" + _num_to_str(row["PAYREF"])).replace(" ", "")
-    else:
-        row["ACCOUNT_SOURCE_UNIQUE_ID"] = None
-
-
-
-
-    if row["PAYMODE"] == "EBNK DEBIT":
-        row["ACCOUNT_SOURCE_UNIQUE_ID"] = ("DP" + _num_to_str(row["PAYREF"])).replace(" ", "")
-    else:
-        row["ACCOUNT_SOURCE_UNIQUE_ID"] = None
+con = duckdb.connect(database=":memory:")
+loan_pl = con.execute(f"""
+    SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO,
+           NOTENO,
+           COSTCTR,
+           LOANTYPE,
+           NTBRCH,
+           CAST(ENTITY_CD AS VARCHAR) AS ENTITY_CD
+    FROM read_parquet('{LN_LNNOTE_CACHE.as_posix()}')
+""").pl()
+con.close()
