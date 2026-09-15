@@ -156,3 +156,10 @@ for r in (ALM2 + ALMBTCR):
         custcd = r.get("CUSTCD")
         rr["PRODESC"] = "COMMERCIAL RETAIL - IND" if custcd in ("77", "78", "95", "96") else "COMMERCIAL RETAIL - NON IND"
         ALM2CRF_pre.append(rr)
+
+
+
+
+
+    if paidind not in ("P", "C") and noacct != 0 and balx not in (0.0, -0.0) and oribal is not None:
+        noacct = 1
