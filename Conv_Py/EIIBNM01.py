@@ -320,10 +320,24 @@ LOAN_SELECT = (
     "CAST(CJFEE AS DOUBLE) AS CJFEE"
 )
 
+# IBTRAD_SELECT = (
+#     "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(SUBACCT AS DOUBLE) AS SUBACCT, "
+#     "CAST(DIRCTIND AS VARCHAR) AS DIRCTIND, CAST(CUSTCD AS VARCHAR) AS CUSTCD, "
+#     "CAST(APPRLIMT AS DOUBLE) AS APPRLIMT, CAST(RETAILID AS VARCHAR) AS RETAILID, "
+#     "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(DNBFISME AS VARCHAR) AS DNBFISME, "
+#     "CAST(DISBURSE AS DOUBLE) AS DISBURSE, CAST(REPAID AS DOUBLE) AS REPAID, "
+#     "CAST(BALANCE AS DOUBLE) AS BALANCE, CAST(FISSPURP AS INTEGER) AS FISSPURP, "
+#     "CAST(PRODUCT AS INTEGER) AS PRODUCT, CAST(NOTETERM AS DOUBLE) AS NOTETERM, "
+#     "CAST(PRODCD AS VARCHAR) AS PRODCD, CAST(AMTIND AS VARCHAR) AS AMTIND, "
+#     "CAST(TRANSREF AS VARCHAR) AS TRANSREF"
+# )
+
 IBTRAD_SELECT = (
     "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(SUBACCT AS DOUBLE) AS SUBACCT, "
     "CAST(DIRCTIND AS VARCHAR) AS DIRCTIND, CAST(CUSTCD AS VARCHAR) AS CUSTCD, "
-    "CAST(APPRLIMT AS DOUBLE) AS APPRLIMT, CAST(RETAILID AS VARCHAR) AS RETAILID, "
+    "CAST(APPRLIMT AS DOUBLE) AS APPRLIMT, "
+    "CAST(APPRLIM2 AS DOUBLE) AS APPRLIM2, "
+    "CAST(RETAILID AS VARCHAR) AS RETAILID, "
     "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(DNBFISME AS VARCHAR) AS DNBFISME, "
     "CAST(DISBURSE AS DOUBLE) AS DISBURSE, CAST(REPAID AS DOUBLE) AS REPAID, "
     "CAST(BALANCE AS DOUBLE) AS BALANCE, CAST(FISSPURP AS INTEGER) AS FISSPURP, "
@@ -387,34 +401,102 @@ def proc_sort(rows: list, by: list, descending: set | None = None) -> list:
     return sorted(rows, key=key)
 
 
+# def sas_merge(datasets: list, by: list) -> tuple:
+#     """Emulates a plain `MERGE ds1 ds2 ... dsN; BY <by>;` (no IN=). Each
+#     input in `datasets` must already be sorted BY `by` (as PROC SORT
+#     would ensure). For a BY value present in more than one dataset,
+#     columns from datasets listed LATER in the argument list overwrite
+#     those from earlier ones -- SAS's last-dataset-wins rule within a BY
+#     group. Returns (merged_rows, contributed_flags) where
+#     contributed_flags[i] is a tuple of booleans (one per input dataset)
+#     recording whether that dataset had an observation for this BY value
+#     -- this is what IF A / IF B / IF A AND B subsetting checks against."""
+#     indexed = []
+#     for rows in datasets:
+#         d = {}
+#         for r in rows:
+#             d[tuple(r[b] for b in by)] = r
+#         indexed.append(d)
+#     all_keys = sorted(set().union(*[d.keys() for d in indexed]), key=lambda k: [_sort_key(x) for x in k])
+
+#     merged, flags = [], []
+#     for key in all_keys:
+#         row, flag = {}, []
+#         for d in indexed:
+#             present = key in d
+#             flag.append(present)
+#             if present:
+#                 row.update(d[key])
+#         merged.append(row)
+#         flags.append(tuple(flag))
+#     return merged, flags
+
+
 def sas_merge(datasets: list, by: list) -> tuple:
-    """Emulates a plain `MERGE ds1 ds2 ... dsN; BY <by>;` (no IN=). Each
-    input in `datasets` must already be sorted BY `by` (as PROC SORT
-    would ensure). For a BY value present in more than one dataset,
-    columns from datasets listed LATER in the argument list overwrite
-    those from earlier ones -- SAS's last-dataset-wins rule within a BY
-    group. Returns (merged_rows, contributed_flags) where
-    contributed_flags[i] is a tuple of booleans (one per input dataset)
-    recording whether that dataset had an observation for this BY value
-    -- this is what IF A / IF B / IF A AND B subsetting checks against."""
+    """Emulates a plain `MERGE ds1 ds2 ... dsN; BY <by>;`.
+
+    Multi-row BY-group semantics (matching SAS exactly):
+      * For each unique BY-group, output max(n_1, n_2, ...) rows, where
+        n_i is the number of rows input i contributes to that group.
+      * The k-th output row of a group combines the k-th row of each
+        input within that group.
+      * If an input has fewer rows in the group, its LAST row within
+        the group is RETAINED for the remaining output rows (IN flag=0).
+      * If an input has 0 rows in the group but had rows in a previous
+        group, its LAST row overall is RETAINED (IN flag=0).
+      * Columns from datasets listed LATER in `datasets` overwrite those
+        from earlier ones (SAS last-dataset-wins).
+      * contributed_flags[i] is True only where input i actually
+        supplied a new observation for that output row (never for
+        retained rows).
+
+    Each input must already be sorted BY `by` (as PROC SORT would
+    ensure). Returns (merged_rows, contributed_flags)."""
+    # Index each input: BY-key -> ordered list of all its rows.
     indexed = []
     for rows in datasets:
         d = {}
         for r in rows:
-            d[tuple(r[b] for b in by)] = r
+            key = tuple(r[b] for b in by)
+            d.setdefault(key, []).append(r)
         indexed.append(d)
-    all_keys = sorted(set().union(*[d.keys() for d in indexed]), key=lambda k: [_sort_key(x) for x in k])
+
+    all_keys = sorted(
+        set().union(*[d.keys() for d in indexed]),
+        key=lambda k: [_sort_key(x) for x in k],
+    )
 
     merged, flags = [], []
+    last_known = [None] * len(datasets)   # for cross-group retention
+
     for key in all_keys:
-        row, flag = {}, []
-        for d in indexed:
-            present = key in d
-            flag.append(present)
-            if present:
-                row.update(d[key])
-        merged.append(row)
-        flags.append(tuple(flag))
+        per_ds = [indexed[i].get(key, []) for i in range(len(datasets))]
+        n = max((len(rows) for rows in per_ds), default=0)
+        if n == 0:
+            continue
+
+        for pos in range(n):
+            row, flag = {}, []
+            for i, rows_i in enumerate(per_ds):
+                if pos < len(rows_i):
+                    row.update(rows_i[pos])
+                    flag.append(True)
+                else:
+                    # Retain within-group last row if any; else cross-group
+                    # last_known.
+                    src = rows_i[-1] if rows_i else last_known[i]
+                    if src is not None:
+                        row.update(src)
+                    flag.append(False)
+            merged.append(row)
+            flags.append(tuple(flag))
+
+        # Remember each input's last row in this group for cross-group
+        # retention.
+        for i, rows_i in enumerate(per_ds):
+            if rows_i:
+                last_known[i] = rows_i[-1]
+
     return merged, flags
 
 
@@ -543,6 +625,23 @@ def _alm_almbt_row(r: dict):
     if not (prodcd[:2] == "34" or prodcd == "54120"):
         return None, False
 
+    # noacct = r.get("NOACCT")
+    # if r.get("ACCTYPE") == "LN":
+    #     rlease = r.get("RLEASAMT")
+    #     cjfee = r.get("CJFEE")
+    #     product = r.get("PRODUCT")
+    #     commno = r.get("COMMNO") or 0
+    #     cusedamt = r.get("CUSEDAMT") or 0
+    #     keep_noacct = (
+    #         (rlease not in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and cjfee != oribal)
+    #         or (rlease in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and product is not None and 600 <= product <= 699)
+    #         or (rlease in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and commno > 0 and cusedamt > 0)
+    #     )
+    #     if not keep_noacct:
+    #         noacct = 0
+    # if paidind not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.0, -0.0) and oribal != 0:
+    #     noacct = 1
+
     noacct = r.get("NOACCT")
     if r.get("ACCTYPE") == "LN":
         rlease = r.get("RLEASAMT")
@@ -550,14 +649,19 @@ def _alm_almbt_row(r: dict):
         product = r.get("PRODUCT")
         commno = r.get("COMMNO") or 0
         cusedamt = r.get("CUSEDAMT") or 0
+        # SAS: `RLEASAMT ^= 0.00` is TRUE when RLEASAMT is missing
+        # (missing is not equal to any number); `RLEASAMT = 0.00` is
+        # TRUE only when RLEASAMT is exactly 0.  So a None RLEASAMT
+        # belongs to the "!= 0" branch, not the "= 0" branch.
+        rlease_is_zero = (rlease == 0.0)   # None == 0.0 -> False
         keep_noacct = (
-            (rlease not in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and cjfee != oribal)
-            or (rlease in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and product is not None and 600 <= product <= 699)
-            or (rlease in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and commno > 0 and cusedamt > 0)
+            ((not rlease_is_zero) and paidind not in ("P", "C") and (oribal or 0) > 0 and cjfee != oribal)
+            or (rlease_is_zero and paidind not in ("P", "C") and (oribal or 0) > 0 and product is not None and 600 <= product <= 699)
+            or (rlease_is_zero and paidind not in ("P", "C") and (oribal or 0) > 0 and commno > 0 and cusedamt > 0)
         )
         if not keep_noacct:
             noacct = 0
-    if paidind not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.0, -0.0) and oribal != 0:
+    if paidind not in ("P", "C") and noacct != 0 and balx not in (0.0, -0.0) and oribal != 0:
         noacct = 1
 
     out = {k: r.get(k) for k in ALM_KEEP}
@@ -595,8 +699,16 @@ for r in ALM_rows:
             r["NOACCT"] = 0
 
 # DATA ALMBT; SET ALMBT; BY ACCTNO; IF FIRST.ACCTNO THEN NOACCT=1; ELSE NOACCT=0;
+# ALMBT_rows = proc_sort(ALMBT_rows, ["ACCTNO"])
+# _prev_acct = None
+# for r in ALMBT_rows:
+#     r["NOACCT"] = 1 if r["ACCTNO"] != _prev_acct else 0
+#     _prev_acct = r["ACCTNO"]
+
 ALMBT_rows = proc_sort(ALMBT_rows, ["ACCTNO"])
-_prev_acct = None
+_FIRST_ACCT_SENTINEL = object()   # guarantees the first row is treated as
+                                   # a new ACCTNO even if ACCTNO itself is None
+_prev_acct = _FIRST_ACCT_SENTINEL
 for r in ALMBT_rows:
     r["NOACCT"] = 1 if r["ACCTNO"] != _prev_acct else 0
     _prev_acct = r["ACCTNO"]
@@ -711,9 +823,14 @@ for r in BTRAD1:
     balance = bal_row["BALANCE"] if bal_row else None
     disbno = 1 if (r.get("DISBURSE") or 0) > 0 else None
     repayno = 1 if (r.get("REPAID") or 0) > 0 else None
+    # noacct = None
+    # if bal_row is not None and round(balance, 2) not in (None, 0.0) and noacct != 0:
+    #     noacct = 1
     noacct = None
-    if bal_row is not None and round(balance, 2) not in (None, 0.0) and noacct != 0:
-        noacct = 1
+    if bal_row is not None:
+        rounded_bal = None if balance is None else round(balance, 2)
+        if rounded_bal not in (None, 0.0) and noacct != 0:
+            noacct = 1
     OVC_rows.append({"ACCTNO": r["ACCTNO"], "RETAILID": r["RETAILID"]})
     MAST_rows.append({
         "ACCTNO": r["ACCTNO"], "CUSTCD": r["CUSTCD"], "BALANCE": balance,
@@ -820,12 +937,35 @@ for r in ALMBTRD:
 # DATA ALMLOAN2 ALM2CRF MFRS.ALM_CR(KEEP=ACCTNO NOTENO PRODESC NOACCT);
 #   SET ALM2 ALMBTCR; OUTPUT ALMLOAN2; OUTPUT MFRS.ALM_CR;
 #   IF PRODESC='TOTAL COMMERCIAL RETAILS' THEN ... OUTPUT ALM2CRF;
+# ALMLOAN2_pre, ALM2CRF_pre = [], []
+# for r in (ALM2 + ALMBTCR):
+#     ALMLOAN2_pre.append(r)
+#     mfrs_alm_cr_rows.append({
+#         "ACCTNO": int(r["ACCTNO"]) if r.get("ACCTNO") is not None else None,
+#         "NOTENO": int(r["NOTENO"]) if r.get("NOTENO") is not None else None,
+#         "PRODESC": r.get("PRODESC"), "NOACCT": r.get("NOACCT"),
+#     })
+#     if r.get("PRODESC") == "TOTAL COMMERCIAL RETAILS":
+#         rr = dict(r)
+#         custcd = r.get("CUSTCD")
+#         rr["PRODESC"] = "COMMERCIAL RETAIL - IND" if custcd in ("77", "78", "95", "96") else "COMMERCIAL RETAIL - NON IND"
+#         ALM2CRF_pre.append(rr)
+
 ALMLOAN2_pre, ALM2CRF_pre = [], []
+# SAS `SET ALM2 ALMBTCR;` retains non-contributed variables (notably
+# ACCTNO and NOTENO, which ALMBTCR does not carry) from the last ALM2
+# observation, so those retained values land in MFRS.ALM_CR for the
+# bank-trade rows.  Emulate that retention here.
+_last_acctno, _last_noteno = None, None
 for r in (ALM2 + ALMBTCR):
     ALMLOAN2_pre.append(r)
+    if r.get("ACCTNO") is not None:
+        _last_acctno = r["ACCTNO"]
+    if r.get("NOTENO") is not None:
+        _last_noteno = r["NOTENO"]
     mfrs_alm_cr_rows.append({
-        "ACCTNO": int(r["ACCTNO"]) if r.get("ACCTNO") is not None else None,
-        "NOTENO": int(r["NOTENO"]) if r.get("NOTENO") is not None else None,
+        "ACCTNO": int(_last_acctno) if _last_acctno is not None else None,
+        "NOTENO": int(_last_noteno) if _last_noteno is not None else None,
         "PRODESC": r.get("PRODESC"), "NOACCT": r.get("NOACCT"),
     })
     if r.get("PRODESC") == "TOTAL COMMERCIAL RETAILS":
