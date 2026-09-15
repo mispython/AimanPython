@@ -29,45 +29,43 @@ variable, kept only for documentation parity (not reproduced below).
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
  1. LN.LNNOTE   (JCL //LN  DD DSN=SAP.PBB.MNILN(0))
+    ILN.LNNOTE  (JCL //ILN DD DSN=SAP.PIBB.MNILN(0))
     File : INPUT_LN_LNNOTE_FILE   -> ln_lnnote.sas7bdat
     Cols used : ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
- 2. ILN.LNNOTE  (JCL //ILN DD DSN=SAP.PIBB.MNILN(0))
-    File : INPUT_ILN_LNNOTE_FILE  -> iln_lnnote.sas7bdat
-    Cols used : ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
- 3. DP.CURRENT  (JCL //DP  DD DSN=SAP.PBB.MNITB(0),  member CURRENT)
+ 2. DP.CURRENT  (JCL //DP  DD DSN=SAP.PBB.MNITB(0),  member CURRENT)
     File : INPUT_DP_CURRENT_FILE  -> ca09126.sas7bdat
- 4. IDP.CURRENT (JCL //IDP DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
+ 3. IDP.CURRENT (JCL //IDP DD DSN=SAP.PIBB.MNITB(0), member CURRENT)
     File : INPUT_IDP_CURRENT_FILE -> ica09126.sas7bdat
- 5. DP.SAVING   (member SAVING, //DP)
+ 4. DP.SAVING   (member SAVING, //DP)
     File : INPUT_DP_SAVING_FILE   -> sa09126.sas7bdat
- 6. IDP.SAVING  (member SAVING, //IDP)
+ 5. IDP.SAVING  (member SAVING, //IDP)
     File : INPUT_IDP_SAVING_FILE  -> isa09126.sas7bdat
- 7. DP.FD       (member FD, //DP)
+ 6. DP.FD       (member FD, //DP)
     File : INPUT_DP_FD_FILE       -> fd09126.sas7bdat
- 8. IDP.FD      (member FD, //IDP)
+ 7. IDP.FD      (member FD, //IDP)
     File : INPUT_IDP_FD_FILE      -> ifd09126.sas7bdat
- 9. DP.UMA      (member UMA, //DP)
+ 8. DP.UMA      (member UMA, //DP)
     File : INPUT_DP_UMA_FILE      -> uma.sas7bdat
-10. IDP.UMA     (member UMA, //IDP)
+ 9. IDP.UMA     (member UMA, //IDP)
     File : INPUT_IDP_UMA_FILE     -> iuma.sas7bdat
-11. DP.VOSTRO   (member VOSTRO, //DP)  -- NOTE: no IDP.VOSTRO is read in
+10. DP.VOSTRO   (member VOSTRO, //DP)  -- NOTE: no IDP.VOSTRO is read in
     the original SAS (DATA DEPO_ACCT only SETs DP.VOSTRO).
     File : INPUT_DP_VOSTRO_FILE   -> vostro08426.sas7bdat
     Cols used (1-3): ACCTNO, PRODUCT, BRANCH
 
-12. BT.MAST&REPTDAY&REPTMON   (JCL //BT  DD DSN=SAP.PBB.BTRADE.SASDATA)
+11. BT.MAST&REPTDAY&REPTMON   (JCL //BT  DD DSN=SAP.PBB.BTRADE.SASDATA)
     File : INPUT_BT_MAST_FILE     -> mast_{REPTDAY}{REPTMON}.sas7bdat
-13. BT.MAST2&REPTDAY&REPTMON
+12. BT.MAST2&REPTDAY&REPTMON
     File : INPUT_BT_MAST2_FILE    -> mast2_{REPTDAY}{REPTMON}.sas7bdat
-14. IBT.IMAST&REPTDAY&REPTMON (JCL //IBT DD DSN=SAP.PIBB.BTRADE.SASDATA)
+13. IBT.IMAST&REPTDAY&REPTMON (JCL //IBT DD DSN=SAP.PIBB.BTRADE.SASDATA)
     File : INPUT_IBT_IMAST_FILE   -> imast_{REPTDAY}{REPTMON}.sas7bdat
-15. IBT.IMAST2&REPTDAY&REPTMON
+14. IBT.IMAST2&REPTDAY&REPTMON
     File : INPUT_IBT_IMAST2_FILE  -> imast2_{REPTDAY}{REPTMON}.sas7bdat
     Cols used (12-15): ACCTNOX, FICODE
     Deterministic filenames (fully derived from REPTDAY/REPTMON tokens)
     -> constructed directly, input_date.get_latest_file() NOT used.
 
-16. RENTAS.RENTAS&REPTMON&NOWK&REPTYEAR (JCL //RENTAS DD DSN=SAP.PBB.RENTASWH)
+15. RENTAS.RENTAS&REPTMON&NOWK&REPTYEAR (JCL //RENTAS DD DSN=SAP.PBB.RENTASWH)
     Deterministic filename (fully derived from REPTMON/NOWK/REPTYEAR
     tokens) -> constructed directly, input_date.get_latest_file() NOT used.
     File : INPUT_RENTAS_FILE -> rentas_{REPTMON}{NOWK}{REPTYEAR}.sas7bdat
@@ -76,7 +74,7 @@ PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
                 APPLNAME, APPLNAME2, BENENAME, BENENAME2, USERID,
                 APPLID, TRACKCODE, APPLACCTNO, BENEACCTNO, ACCTNO
 
-17. CIS.CUSTDLY (JCL //CIS DD DSN=RBP2.B033.CIS.CUST.DAILY)
+16. CIS.CUSTDLY (JCL //CIS DD DSN=RBP2.B033.CIS.CUST.DAILY)
     File : INPUT_CIS_CUSTDLY_FILE -> cis_custdly.sas7bdat
     Cols used : ACCTCODE, ACCTNO, CUSTNO, ALIAS, PRISEC
 
@@ -141,7 +139,7 @@ INPUT_RENTAS_DIR = STG_DIR / "rentaswh"
 INPUT_DETIC_DIR = STG_DIR / "detic2"
 
 INPUT_LN_LNNOTE_FILE   = INPUT_LN_DIR / "enrh_ln_note_d08.sas7bdat"
-INPUT_ILN_LNNOTE_FILE  = INPUT_LN_DIR / "enrh_iln_note_d08.sas7bdat"
+# INPUT_ILN_LNNOTE_FILE  = INPUT_LN_DIR / "enrh_iln_note_d08.sas7bdat"
 
 INPUT_DP_CURRENT_FILE  = INPUT_DP_DIR / "ca09126.sas7bdat"
 INPUT_IDP_CURRENT_FILE = INPUT_DP_DIR / "ica09126.sas7bdat"
@@ -367,7 +365,7 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
 LN_LNNOTE_CACHE   = _load_cached(INPUT_LN_LNNOTE_FILE, "LN_LNNOTE")
-ILN_LNNOTE_CACHE  = _load_cached(INPUT_ILN_LNNOTE_FILE, "ILN_LNNOTE")
+# ILN_LNNOTE_CACHE  = _load_cached(INPUT_ILN_LNNOTE_FILE, "ILN_LNNOTE")
 DP_CURRENT_CACHE  = _load_cached(INPUT_DP_CURRENT_FILE, "DP_CURRENT")
 IDP_CURRENT_CACHE = _load_cached(INPUT_IDP_CURRENT_FILE, "IDP_CURRENT")
 DP_SAVING_CACHE   = _load_cached(INPUT_DP_SAVING_FILE, "DP_SAVING")
@@ -641,13 +639,22 @@ for row in bt_rows:
 # ============================================================================
 print("\nStep 9: Building LOAN_ACCT / CTR from LN.LNNOTE + ILN.LNNOTE...")
 
+# con = duckdb.connect(database=":memory:")
+# loan_pl = con.execute(f"""
+#     SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
+#     FROM read_parquet('{LN_LNNOTE_CACHE.as_posix()}')
+#     UNION ALL
+#     SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
+#     FROM read_parquet('{ILN_LNNOTE_CACHE.as_posix()}')
+# """).pl()
+# con.close()
+
 con = duckdb.connect(database=":memory:")
 loan_pl = con.execute(f"""
     SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
+           CAST(ENTITY_CD AS VARCHAR) AS ENTITY_CD
     FROM read_parquet('{LN_LNNOTE_CACHE.as_posix()}')
-    UNION ALL
-    SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO, NOTENO, COSTCTR, LOANTYPE, NTBRCH
-    FROM read_parquet('{ILN_LNNOTE_CACHE.as_posix()}')
+    WHERE ENTITY_CD IS NOT NULL
 """).pl()
 con.close()
 
