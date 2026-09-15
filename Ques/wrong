@@ -1,272 +1,330 @@
 
-PUBLIC ISLAMIC BANK BERHAD
-ALL LOANS AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1                                          2259642969.90   1985828644.33 110371514676.83     8988   670378   673186
-2    PERSONAL LOANS                         143705156.79    125910274.87  16056614733.44     1607    64111    65658
-3    HOUSING LOANS                                     0      8250625.34    228894975.65        0      623      623
-4    OTHERS RETAIL                                     0      5585229.80    399473145.32        0      687      687
-5    HIRE PURCHASE                                     0      1157761.39     21169887.52        0      725      725
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                 2403348126.69   2126732535.73 127077667418.76    10595   736524   740879
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026   1 
+ALL LOANS AS AT 08/2026                                                                                                              
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1                                             2259642969.90      1985828644.33    110371514676.83     8988    670378   673186       
+ 2    PERSONAL LOANS                            143705156.79       125910274.87     16056614733.44     1607     64111    65658       
+ 3    HOUSING LOANS                                        .         8250625.34       228894975.65        .       623      623       
+ 4    OTHERS RETAIL                                        .         5585229.80       399473145.32        .       687      687       
+ 5    HIRE PURCHASE                                        .         1157761.39        21169887.52        .       725      725       
+                                            ================   ================   ================   ======   =======   ======       
+                                               2403348126.69      2126732535.73    127077667418.76    10595    736524   740879       
 
-PUBLIC ISLAMIC BANK BERHAD
-ALL LOANS AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026   2 
+ALL LOANS AS AT 08/2026                                                                                                              
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-RETAILS LOANS AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1    TOTAL COMMERCIAL RETAILS                96765670.90    100768986.01    696305200.23      265      948     1086
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                   96765670.90    100768986.01    696305200.23      265      948     1086
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026   3 
+RETAILS LOANS AS AT 08/2026                                                                                                          
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1    TOTAL COMMERCIAL RETAILS                   96765670.90       100768986.01       696305200.23      265       948     1086       
+                                            ================   ================   ================   ======   =======   ======       
+                                                 96765670.90       100768986.01       696305200.23      265       948     1086       
 
-PUBLIC ISLAMIC BANK BERHAD
-COMMERCIAL RETAIL LOANS AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1    COMMERCIAL RETAIL - IND                           0       945488.36     68987405.19        0      155      155
-2    COMMERCIAL RETAIL - NON IND             96765670.90     99823497.65    627317795.05      265      793      931
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                   96765670.90    100768986.01    696305200.23      265      948     1086
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026   4 
+COMMERCIAL RETAIL LOANS AS AT 08/2026                                                                                                
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1    COMMERCIAL RETAIL - IND                              .          945488.36        68987405.19        .       155      155       
+ 2    COMMERCIAL RETAIL - NON IND                96765670.90        99823497.65       627317795.05      265       793      931       
+                                            ================   ================   ================   ======   =======   ======       
+                                                 96765670.90       100768986.01       696305200.23      265       948     1086       
 
-PUBLIC ISLAMIC BANK BERHAD
-SME LOANS AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1                                          1073795951.52    752934963.18   9981734824.68     2259    17592    18117
-2    OTHERS RETAIL                                     0      4577636.44    326197076.63        0      520      520
-3    HIRE PURCHASE                                     0        20447.81       602857.94        0       12       12
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                 1073795951.52    757533047.43  10308534759.25     2259    18124    18649
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026   5 
+SME LOANS AS AT 08/2026                                                                                                              
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1                                             1073795951.52       752934963.18      9981734824.68     2259     17592    18117       
+ 2    OTHERS RETAIL                                        .         4577636.44       326197076.63        .       520      520       
+ 3    HIRE PURCHASE                                        .           20447.81          602857.94        .        12       12       
+                                            ================   ================   ================   ======   =======   ======       
+                                               1073795951.52       757533047.43     10308534759.25     2259     18124    18649       
 
-PUBLIC ISLAMIC BANK BERHAD
-SME LOANS AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026   6 
+SME LOANS AS AT 08/2026                                                                                                              
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-RETAILS SME LOANS AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1    TOTAL COMMERCIAL RETAILS                78797303.71     89126281.18    584921347.22      254      769      903
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                   78797303.71     89126281.18    584921347.22      254      769      903
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026   7 
+RETAILS SME LOANS AS AT 08/2026                                                                                                      
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1    TOTAL COMMERCIAL RETAILS                   78797303.71        89126281.18       584921347.22      254       769      903       
+                                            ================   ================   ================   ======   =======   ======       
+                                                 78797303.71        89126281.18       584921347.22      254       769      903       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : SME DBE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1                                          1071614743.79    751844491.93   9968954511.39     2255    17548    18073
-2    OTHERS RETAIL                                     0      4577636.44    326197076.63        0      520      520
-3    HIRE PURCHASE                                     0        20447.81       602857.94        0       12       12
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                 1071614743.79    756442576.18  10295754445.96     2255    18080    18605
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026   8 
+OF WHICH : SME DBE AS AT 08/2026                                                                                                     
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1                                             1071614743.79       751844491.93      9968954511.39     2255     17548    18073       
+ 2    OTHERS RETAIL                                        .         4577636.44       326197076.63        .       520      520       
+ 3    HIRE PURCHASE                                        .           20447.81          602857.94        .        12       12       
+                                            ================   ================   ================   ======   =======   ======       
+                                               1071614743.79       756442576.18     10295754445.96     2255     18080    18605       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : SME DBE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026   9 
+OF WHICH : SME DBE AS AT 08/2026                                                                                                     
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : RETAILS SME DBE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1    TOTAL COMMERCIAL RETAILS                78797303.71     89126281.18    584921347.22      254      769      903
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                   78797303.71     89126281.18    584921347.22      254      769      903
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  10 
+OF WHICH : RETAILS SME DBE AS AT 08/2026                                                                                             
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1    TOTAL COMMERCIAL RETAILS                   78797303.71        89126281.18       584921347.22      254       769      903       
+                                            ================   ================   ================   ======   =======   ======       
+                                                 78797303.71        89126281.18       584921347.22      254       769      903       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : SME DNBFI AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1                                             2181207.73      1090471.25     12780313.29        4       44       44
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                    2181207.73      1090471.25     12780313.29        4       44       44
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  11 
+OF WHICH : SME DNBFI AS AT 08/2026                                                                                                   
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1                                                2181207.73         1090471.25        12780313.29        4        44       44       
+                                            ================   ================   ================   ======   =======   ======       
+                                                  2181207.73         1090471.25        12780313.29        4        44       44       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : SME DNBFI AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  12 
+OF WHICH : SME DNBFI AS AT 08/2026                                                                                                   
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : RETAILS SME DNBFI AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  13 
+OF WHICH : RETAILS SME DNBFI AS AT 08/2026                                                                                           
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : SME FE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  14 
+OF WHICH : SME FE AS AT 08/2026                                                                                                      
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : SME FE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  15 
+OF WHICH : SME FE AS AT 08/2026                                                                                                      
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : RETAILS SME FE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  16 
+OF WHICH : RETAILS SME FE AS AT 08/2026                                                                                              
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-BANK TRADE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1    BILLS RETAIL                            96765670.90     95183756.21    296832054.91      265      261      399
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                   96765670.90     95183756.21    296832054.91      265      261      399
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  17 
+BANK TRADE AS AT 08/2026                                                                                                             
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1    BILLS RETAIL                               96765670.90        95183756.21       296832054.91      265       261      399       
+                                            ================   ================   ================   ======   =======   ======       
+                                                 96765670.90        95183756.21       296832054.91      265       261      399       
 
-PUBLIC ISLAMIC BANK BERHAD
-SME BANK TRADE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1    BILLS RETAIL                            78797303.71     84548644.74    258724270.59      254      249      383
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                   78797303.71     84548644.74    258724270.59      254      249      383
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  18 
+SME BANK TRADE AS AT 08/2026                                                                                                         
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1    BILLS RETAIL                               78797303.71        84548644.74       258724270.59      254       249      383       
+                                            ================   ================   ================   ======   =======   ======       
+                                                 78797303.71        84548644.74       258724270.59      254       249      383       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : SME DBE BANK TRADE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-1    BILLS RETAIL                            78797303.71     84548644.74    258724270.59      254      249      383
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                   78797303.71     84548644.74    258724270.59      254      249      383
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  19 
+OF WHICH : SME DBE BANK TRADE AS AT 08/2026                                                                                          
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+ 1    BILLS RETAIL                               78797303.71        84548644.74       258724270.59      254       249      383       
+                                            ================   ================   ================   ======   =======   ======       
+                                                 78797303.71        84548644.74       258724270.59      254       249      383       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : SME DNBFI BANK TRADE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  20 
+OF WHICH : SME DNBFI BANK TRADE AS AT 08/2026                                                                                        
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-OF WHICH : SME FE BANK TRADE AS AT 08/2026
-REPORT ID : EIIBNM01
-
-OBS  PRODESC                                     DISBURSE          REPAID         BALANCE   DISBNO  REPAYNO   NOACCT
-------------------------------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------------------------------
-     TOTAL                                          0.00            0.00            0.00        0        0        0
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  21 
+OF WHICH : SME FE BANK TRADE AS AT 08/2026                                                                                           
+REPORT ID : EIIBNM01                                                                                                                 
+                                                                                                                                     
+Obs   PRODESC                                       DISBURSE             REPAID            BALANCE   DISBNO   REPAYNO   NOACCT       
+                                                                                                                                     
+                                            ================   ================   ================   ======   =======   ======       
+                                                        0.00               0.00               0.00        0         0        0       
 
-PUBLIC ISLAMIC BANK BERHAD
-TOTAL COMMERCIAL RETAIL FINANCING BY FACILITY AS AT 31/08/26
-REPORT ID : EIIBNM01
-
-        FACILITY                   AMOUNT NO. OF ACCT
-------------------------------------------------------------------------------------------------------------------------------------
-FIXED FINANCING              399473145.32         687
-BANK TRADE                   296832054.91         399
-------------------------------------------------------------------------------------------------------------------------------------
-GRAND TOTAL                  696305200.23        1086
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  22 
+TOTAL COMMERCIAL RETAIL FINANCING BY FACILITY AS AT 31/08/26                                                                         
+                                                                                                                                     
+-------------------------------------------------
+|FACILITY               |            |  NO. OF  |
+|                       |   AMOUNT   |   ACCT   |
+|-----------------------+------------+----------|
+|BANK TRADE             |296832054.91|       399|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|FIXED FINANCING        |399473145.32|       687|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|GRAND TOTAL            |696305200.23|      1086|                                                                                    
+-------------------------------------------------                                                                                    
 
-PUBLIC ISLAMIC BANK BERHAD
-TOTAL COMMERCIAL RETAIL FINANCING BY SECTOR AS AT 31/08/26
-REPORT ID : EIIBNM01
-
-        SECTFISS                   AMOUNT NO. OF ACCT
-------------------------------------------------------------------------------------------------------------------------------------
-                              68987405.19         155
-            SUB-TOTAL         68987405.19         155
-1000                          13689569.84          16
-1000        1100                547666.05           2
-1000        SUB-TOTAL         14237235.89          18
-2000                           1316836.10           2
-2000        SUB-TOTAL          1316836.10           2
-3000        3610              10169732.38          15
-3000        3210               1664962.07           4
-3000        3910              22905638.08          25
-3000        3220                879451.05           3
-3000        3100              11793720.91          25
-3000        3260               2633000.97           6
-3000        3800              12327702.98          24
-3000        3310               1619689.68           6
-3000        3550               3039086.31           7
-3000        3870                758514.18           3
-3000        3240                700623.19           4
-3000        3831               3232685.11           2
-3000        3700               6218050.94           9
-3000        3950                696354.28           1
-3000        3860               7747300.62           1
-3000        3841               1932055.30           2
-3000        3850               3232176.99           2
-3000        3230                 91044.01           1
-3000                           3343392.22           2
-3000        SUB-TOTAL         94985181.27         142
-5000                         110732428.14         173
-5000        SUB-TOTAL        110732428.14         173
-6000                         272260748.06         444
-6000        SUB-TOTAL        272260748.06         444
-7000        7110               4290290.63          13
-7000        7120               4405296.58           4
-7000        7200              11845856.84           6
-7000        7190               2879828.65           6
-7000        SUB-TOTAL         23421272.70          29
-8000        8300              90027600.25          79
-8000        8900              15752863.30          33
-8000        SUB-TOTAL        105780463.55         112
-9000        9200                754989.94           3
-9000        9300               1237550.62           2
-9000        9400               2591088.79           6
-9000        SUB-TOTAL          4583629.34          11
-------------------------------------------------------------------------------------------------------------------------------------
-GRAND TOTAL                  696305200.23        1086
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  23 
+TOTAL COMMERCIAL RETAIL FINANCING BY SECTOR AS AT 31/08/26                                                                           
+                                                                                                                                     
+-------------------------------------------------
+|SECTFISS               |            |  NO. OF  |
+|                       |   AMOUNT   |   ACCT   |
+|-----------------------+------------+----------|
+|           |           | 68987405.19|       155|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |SUB-TOTAL  | 68987405.19|       155|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|1000       |           | 13689569.84|        16|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |1100       |   547666.05|         2|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |SUB-TOTAL  | 14237235.89|        18|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|2000       |           |  1316836.10|         2|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |SUB-TOTAL  |  1316836.10|         2|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|3000       |           |  3343392.22|         2|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3100       | 11793720.91|        25|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3210       |  1664962.07|         4|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3220       |   879451.05|         3|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3230       |    91044.01|         1|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3240       |   700623.19|         4|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3260       |  2633000.97|         6|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3310       |  1619689.68|         6|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3550       |  3039086.31|         7|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3610       | 10169732.38|        15|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3700       |  6218050.94|         9|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3800       | 12327702.98|        24|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3831       |  3232685.11|         2|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3841       |  1932055.30|         2|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3850       |  3232176.99|         2|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3860       |  7747300.62|         1|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3870       |   758514.18|         3|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3910       | 22905638.08|        25|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |3950       |   696354.28|         1|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+-------------------------------------------------                                                                                    
+                                                                                                                                     
+(Continued)                                                                                                                          
+
+PUBLIC ISLAMIC BANK BERHAD                                                                     19:10 Tuesday, September 15, 2026  24 
+TOTAL COMMERCIAL RETAIL FINANCING BY SECTOR AS AT 31/08/26                                                                           
+                                                                                                                                     
+-------------------------------------------------
+|SECTFISS               |            |  NO. OF  |
+|                       |   AMOUNT   |   ACCT   |
+|-----------------------+------------+----------|
+|           |SUB-TOTAL  | 94985181.27|       142|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|5000       |           |110732428.14|       173|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |SUB-TOTAL  |110732428.14|       173|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|6000       |           |272260748.06|       444|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |SUB-TOTAL  |272260748.06|       444|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|7000       |7110       |  4290290.63|        13|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |7120       |  4405296.58|         4|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |7190       |  2879828.65|         6|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |7200       | 11845856.84|         6|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |SUB-TOTAL  | 23421272.70|        29|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|8000       |8300       | 90027600.25|        79|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |8900       | 15752863.30|        33|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |SUB-TOTAL  |105780463.55|       112|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|9000       |9200       |   754989.94|         3|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |9300       |  1237550.62|         2|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |9400       |  2591088.79|         6|                                                                                    
+|           |-----------+------------+----------|                                                                                    
+|           |SUB-TOTAL  |  4583629.34|        11|                                                                                    
+|-----------------------+------------+----------|                                                                                    
+|GRAND TOTAL            |696305200.23|      1086|                                                                                    
+-------------------------------------------------                                                                                    
