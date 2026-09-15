@@ -1,6 +1,5 @@
 def _read_rows(parquet_path: Path, select_sql: str) -> list:
-    """Read a Parquet cache through DuckDB with explicit CASTs and return
-    a plain list of dict rows. ..."""
+    """..."""
     con = duckdb.connect(database=":memory:")
 
     src_cols = {
@@ -9,10 +8,11 @@ def _read_rows(parquet_path: Path, select_sql: str) -> list:
             f"DESCRIBE SELECT * FROM read_parquet('{parquet_path.as_posix()}') AS src"
         ).fetchall()
     }
+    src_cols_upper = {c.upper() for c in src_cols}
 
     def _fix(m):
         col, typ, alias = m.group(1), m.group(2), m.group(3)
-        if col in src_cols:
+        if col.upper() in src_cols_upper:
             return m.group(0)
         return f"CAST(NULL AS {typ}) AS {alias}"
 
@@ -26,13 +26,19 @@ def _read_rows(parquet_path: Path, select_sql: str) -> list:
         f"SELECT {fixed_sql} FROM read_parquet('{parquet_path.as_posix()}') AS src"
     ).pl()
     con.close()
-
-    # SAS fixed-width CHAR columns are space-padded on disk; SAS character
-    # comparisons treat trailing blanks as insignificant, so strip them here
-    # to preserve that semantic before any downstream equality/IN checks
-    # (PRODCD == '54120', ACCTYPE == 'LN', CUSTCD IN (...), etc.).
-    str_cols = [c for c, dt in zip(df.columns, df.dtypes) if dt == pl.Utf8]
-    if str_cols:
-        df = df.with_columns([pl.col(c).str.strip_chars() for c in str_cols])
-
     return df.to_dicts()
+
+
+
+
+missing = sorted({r.get("SECTORCD") for r in ALM_final if r.get("SECTTYPE") == "" and r.get("SECTORCD")})
+print(missing[:30])
+
+
+
+
+import duckdb
+con = duckdb.connect()
+print(con.execute(
+    "DESCRIBE SELECT * FROM read_parquet('.../input/cache/EIIBNM01/loan084.parquet')"
+).fetchall())
