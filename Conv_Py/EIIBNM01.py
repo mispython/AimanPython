@@ -86,7 +86,7 @@ downstream programs, not print output).
 
 import gc
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 
 import duckdb
 import pandas as pd
@@ -95,7 +95,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_monthly_reptdate_values
-from PBBLNFMT import format_fisstype, format_fissgroup
+from PBBLNFMT_AII import format_fisstype, format_fissgroup
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -103,20 +103,21 @@ from PBBLNFMT import format_fisstype, format_fissgroup
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_ISASD_DIR  = STG_DIR / "sasdata"    # //ISASD  DD DSN=SAP.PIBB.STORE.SASDATA
-INPUT_BNM_DIR    = STG_DIR / "sasdata"    # //BNM    DD DSN=SAP.PIBB.SASDATA
-INPUT_BTBNM_DIR  = STG_DIR / "sasdata"    # //BTBNM  DD DSN=SAP.IBT.SASDATA
-INPUT_DISPAY_DIR = STG_DIR / "sasdata"    # //DISPAY DD DSN=SAP.PIBB.DISPAY
-INPUT_LOAN_DIR   = STG_DIR / "sasdata"    # //LOAN   DD DSN=SAP.PIBB.MNILN(0)
+INPUT_BTBNM_DIR  = STG_DIR / "from_dwh"   # //BTBNM  DD DSN=SAP.IBT.SASDATA
+INPUT_DISPAY_DIR = STG_DIR / "from_dwh"   # //DISPAY DD DSN=SAP.PIBB.DISPAY
+INPUT_ISASD_DIR  = STG_DIR / "mth_bnm"    # //ISASD  DD DSN=SAP.PIBB.STORE.SASDATA
+INPUT_BNM_DIR    = STG_DIR / "mth_bnm"    # //BNM    DD DSN=SAP.PIBB.SASDATA
+INPUT_LOAN_DIR   = STG_DIR / "MNILN"      # //LOAN   DD DSN=SAP.PIBB.MNILN(0)
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIBNM01"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIIBNM01"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIIBNM01.txt"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIIBNM01"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_FILE = OUTPUT_DIR / "EIIBNM01.txt"
 
-OUTPUT_MFRS_DIR = BASE_DIR / "output" / "MFRS"     # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
+# OUTPUT_MFRS_DIR = BASE_DIR / "output" / "MFRS"     # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
+OUTPUT_MFRS_DIR = BASE_DIR / "input" / "cache" / "EIIBNM01" / "MFRS"     # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
 OUTPUT_MFRS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_MFRS_MAST_BR_FILE = OUTPUT_MFRS_DIR / "MFRS_MAST_BR.parquet"
 OUTPUT_MFRS_ALM_CR_FILE  = OUTPUT_MFRS_DIR / "MFRS_ALM_CR.parquet"
@@ -182,6 +183,12 @@ REPTYEAR = f"{reptdate.year:04d}"
 REPTDAY  = f"{reptdate.day:02d}"  # CALL SYMPUT'd but never referenced -- dead.
 RDATE    = reptdate.strftime("%d/%m/%y")
 
+ts = reptdate.strftime("%y%m%d") - timedelta(days=1)
+
+OUTPUT_DIR = BASE_DIR / "output" / "EIIBNM01"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / f"EIIBNM01_{ts}.txt"
+
 print(f"  REPTMON/REPTMON2/NOWK : {REPTMON}/{REPTMON2}/{NOWK}")
 print(f"  REPTYEAR              : {REPTYEAR}")
 print(f"  RDATE                 : {RDATE}")
@@ -190,16 +197,27 @@ print(f"  RDATE                 : {RDATE}")
 # DYNAMIC PHYSICAL INPUT FILES  (deterministic -- built directly from
 # REPTMON/REPTMON2/NOWK, no input_date.get_latest_file() needed)
 # ============================================================================
-INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR / f"isasd_loan{REPTMON}.sas7bdat"
-INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR / f"bnm_loan{REPTMON}{NOWK}.sas7bdat"
-INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR / f"bnm_loan{REPTMON2}{NOWK}.sas7bdat"
-INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR / f"bnm_lnwof{REPTMON}{NOWK}.sas7bdat"
-INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR / f"bnm_lnwod{REPTMON}{NOWK}.sas7bdat"
-INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR / f"bnm_lnwof{REPTMON2}{NOWK}.sas7bdat"
-INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR / f"bnm_lnwod{REPTMON2}{NOWK}.sas7bdat"
-INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR / f"btbnm_ibtrad{REPTMON}{NOWK}.sas7bdat"
-INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"dispay_idispaymth{REPTMON}.sas7bdat"
-INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR / "loan_lncomm.sas7bdat"   # fixed -- no date token
+# INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR  / f"btbnm_ibtrad{REPTMON}{NOWK}.sas7bdat"
+# INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"dispay_idispaymth{REPTMON}.sas7bdat"
+# INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR  / f"isasd_loan{REPTMON}.sas7bdat"
+# INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR    / f"bnm_loan{REPTMON}{NOWK}.sas7bdat"
+# INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR    / f"bnm_loan{REPTMON2}{NOWK}.sas7bdat"
+# INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"bnm_lnwof{REPTMON}{NOWK}.sas7bdat"
+# INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"bnm_lnwod{REPTMON}{NOWK}.sas7bdat"
+# INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"bnm_lnwof{REPTMON2}{NOWK}.sas7bdat"
+# INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"bnm_lnwod{REPTMON2}{NOWK}.sas7bdat"
+# INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR   / "ilncomm.sas7bdat"   # fixed -- no date token
+
+INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR  / f"ibtrad08426.sas7bdat"
+INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"idispaymth0826.sas7bdat"
+INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR  / f"loan08.sas7bdat"
+INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR    / f"loan084.sas7bdat"
+INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR    / f"loan074.sas7bdat"
+INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"bnm_lnwof084.sas7bdat"
+INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"bnm_lnwof074.sas7bdat"
+INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"bnm_lnwod084.sas7bdat"
+INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"bnm_lnwod074.sas7bdat"
+INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR   / "ilncomm.sas7bdat"   # fixed -- no date token
 
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
