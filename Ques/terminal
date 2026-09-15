@@ -1,12 +1,10 @@
 Step 3: Loading cached inputs...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 381, in <module>
-    isasd_loan_rows     = _read_rows(ISASD_LOAN_CACHE, LOAN_SELECT)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 285, in _read_rows
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 468, in <module>
+    ibtrad_rows         = _read_rows(BTBNM_IBTRAD_CACHE, IBTRAD_SELECT)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 365, in _read_rows
     df = con.execute(
-_duckdb.BinderException: Binder Error: Table "src" does not have a column named "NOTETERM"
+_duckdb.ConversionException: Conversion Error: Could not convert string '1ABX2' to DOUBLE when casting from source column SUBACCT
 
-Candidate bindings: : "NOTENO"
-
-LINE 1: ...) AS FISSPURP, CAST(src.PRODUCT AS INTEGER) AS PRODUCT, CAST(src.NOTETERM AS DOUBLE) AS NOTETERM, CAST(src.EARNTERM AS...
-                                                                        ^
+LINE 1: SELECT CAST(src.ACCTNO AS BIGINT) AS ACCTNO, CAST(src.SUBACCT AS DOUBLE) AS SUBACCT, CAST(src.DIRCTIND...
+                                                     ^
