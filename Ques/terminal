@@ -1,10 +1,7 @@
 Step 3: Loading cached inputs...
+  ISASD LOAN rows: 634,393   BNM LOAN(cur) rows: 632,482
+  IBTRAD rows: 3,773   DISPAY rows: 571,232   LNCOMM rows: 162,374
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 468, in <module>
-    ibtrad_rows         = _read_rows(BTBNM_IBTRAD_CACHE, IBTRAD_SELECT)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 365, in _read_rows
-    df = con.execute(
-_duckdb.ConversionException: Conversion Error: Could not convert string '1ABX2' to DOUBLE when casting from source column SUBACCT
-
-LINE 1: SELECT CAST(src.ACCTNO AS BIGINT) AS ACCTNO, CAST(src.SUBACCT AS DOUBLE) AS SUBACCT, CAST(src.DIRCTIND...
-                                                     ^
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 482, in <module>
+    def proc_sort(rows: list, by: list, descending: set | None = None) -> list:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
