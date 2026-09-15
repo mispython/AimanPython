@@ -233,40 +233,6 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     )
 
 
-# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-#     writer = None
-#     schema = None
-#     total = 0
-
-#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-#     for chunk in reader:
-#         if schema is None:
-#             fields = []
-#             for col, dtype in chunk.dtypes.items():
-#                 if dtype == "object":
-#                     pa_type = pa.string()
-#                 elif pd.api.types.is_integer_dtype(dtype):
-#                     pa_type = pa.int64()
-#                 elif pd.api.types.is_float_dtype(dtype):
-#                     pa_type = pa.float64()
-#                 else:
-#                     pa_type = pa.from_numpy_dtype(dtype)
-#                 fields.append(pa.field(col, pa_type))
-#             schema = pa.schema(fields)
-#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-
-#         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
-#         writer.write_table(table)
-#         total += len(chunk)
-#         del chunk, table
-#         gc.collect()
-
-#     if writer:
-#         writer.close()
-#     print(f"  [{tag}] Done - {total:,} rows cached.")
-
-
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     writer = None
@@ -320,20 +286,6 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
     else:
         _sas_to_parquet(sas_path, cache_path, tag)
     return cache_path
-
-
-# def _read_rows(parquet_path: Path, select_sql: str) -> list:
-#     """Read a Parquet cache through DuckDB with explicit CASTs and return
-#     a plain list of dict rows -- the row-oriented representation used
-#     throughout this program (mirrors EIIMRM01.py's `iter_rows(named=True)`
-#     style) so the many SAS MERGE / conditional-logic DATA steps below can
-#     be transcribed directly."""
-#     con = duckdb.connect(database=":memory:")
-#     df = con.execute(
-#         f"SELECT {select_sql} FROM read_parquet('{parquet_path.as_posix()}') AS src"
-#     ).pl()
-#     con.close()
-#     return df.to_dicts()
 
 
 def _read_rows(parquet_path: Path, select_sql: str) -> list:
@@ -403,18 +355,6 @@ LOAN_SELECT = (
     "CAST(EIR_ADJ AS DOUBLE) AS EIR_ADJ, CAST(RLEASAMT AS DOUBLE) AS RLEASAMT, "
     "CAST(CJFEE AS DOUBLE) AS CJFEE"
 )
-
-# IBTRAD_SELECT = (
-#     "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(SUBACCT AS DOUBLE) AS SUBACCT, "
-#     "CAST(DIRCTIND AS VARCHAR) AS DIRCTIND, CAST(CUSTCD AS VARCHAR) AS CUSTCD, "
-#     "CAST(APPRLIMT AS DOUBLE) AS APPRLIMT, CAST(RETAILID AS VARCHAR) AS RETAILID, "
-#     "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(DNBFISME AS VARCHAR) AS DNBFISME, "
-#     "CAST(DISBURSE AS DOUBLE) AS DISBURSE, CAST(REPAID AS DOUBLE) AS REPAID, "
-#     "CAST(BALANCE AS DOUBLE) AS BALANCE, CAST(FISSPURP AS INTEGER) AS FISSPURP, "
-#     "CAST(PRODUCT AS INTEGER) AS PRODUCT, CAST(NOTETERM AS DOUBLE) AS NOTETERM, "
-#     "CAST(PRODCD AS VARCHAR) AS PRODCD, CAST(AMTIND AS VARCHAR) AS AMTIND, "
-#     "CAST(TRANSREF AS VARCHAR) AS TRANSREF"
-# )
 
 IBTRAD_SELECT = (
     "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(SUBACCT AS VARCHAR) AS SUBACCT, "
@@ -496,37 +436,6 @@ def proc_sort(rows: list, by: list, descending: Optional[set] = None) -> list:
         return parts
 
     return sorted(rows, key=key)
-
-
-# def sas_merge(datasets: list, by: list) -> tuple:
-#     """Emulates a plain `MERGE ds1 ds2 ... dsN; BY <by>;` (no IN=). Each
-#     input in `datasets` must already be sorted BY `by` (as PROC SORT
-#     would ensure). For a BY value present in more than one dataset,
-#     columns from datasets listed LATER in the argument list overwrite
-#     those from earlier ones -- SAS's last-dataset-wins rule within a BY
-#     group. Returns (merged_rows, contributed_flags) where
-#     contributed_flags[i] is a tuple of booleans (one per input dataset)
-#     recording whether that dataset had an observation for this BY value
-#     -- this is what IF A / IF B / IF A AND B subsetting checks against."""
-#     indexed = []
-#     for rows in datasets:
-#         d = {}
-#         for r in rows:
-#             d[tuple(r[b] for b in by)] = r
-#         indexed.append(d)
-#     all_keys = sorted(set().union(*[d.keys() for d in indexed]), key=lambda k: [_sort_key(x) for x in k])
-
-#     merged, flags = [], []
-#     for key in all_keys:
-#         row, flag = {}, []
-#         for d in indexed:
-#             present = key in d
-#             flag.append(present)
-#             if present:
-#                 row.update(d[key])
-#         merged.append(row)
-#         flags.append(tuple(flag))
-#     return merged, flags
 
 
 def sas_merge(datasets: list, by: list) -> tuple:
@@ -722,23 +631,6 @@ def _alm_almbt_row(r: dict):
     if not (prodcd[:2] == "34" or prodcd == "54120"):
         return None, False
 
-    # noacct = r.get("NOACCT")
-    # if r.get("ACCTYPE") == "LN":
-    #     rlease = r.get("RLEASAMT")
-    #     cjfee = r.get("CJFEE")
-    #     product = r.get("PRODUCT")
-    #     commno = r.get("COMMNO") or 0
-    #     cusedamt = r.get("CUSEDAMT") or 0
-    #     keep_noacct = (
-    #         (rlease not in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and cjfee != oribal)
-    #         or (rlease in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and product is not None and 600 <= product <= 699)
-    #         or (rlease in (0.0, None) and paidind not in ("P", "C") and (oribal or 0) > 0 and commno > 0 and cusedamt > 0)
-    #     )
-    #     if not keep_noacct:
-    #         noacct = 0
-    # if paidind not in ("P", "C") and noacct != 0 and round(oribal, 2) not in (0.0, -0.0) and oribal != 0:
-    #     noacct = 1
-
     noacct = r.get("NOACCT")
     if r.get("ACCTYPE") == "LN":
         rlease = r.get("RLEASAMT")
@@ -794,13 +686,6 @@ for r in ALM_rows:
         _unq += (r.get("NOACCT") or 0)
         if _unq > 1:
             r["NOACCT"] = 0
-
-# DATA ALMBT; SET ALMBT; BY ACCTNO; IF FIRST.ACCTNO THEN NOACCT=1; ELSE NOACCT=0;
-# ALMBT_rows = proc_sort(ALMBT_rows, ["ACCTNO"])
-# _prev_acct = None
-# for r in ALMBT_rows:
-#     r["NOACCT"] = 1 if r["ACCTNO"] != _prev_acct else 0
-#     _prev_acct = r["ACCTNO"]
 
 ALMBT_rows = proc_sort(ALMBT_rows, ["ACCTNO"])
 _FIRST_ACCT_SENTINEL = object()   # guarantees the first row is treated as
@@ -1030,23 +915,6 @@ for r in ALMBTRD:
     rr["PRODESC"] = "TOTAL COMMERCIAL RETAILS"
     rr["TYPE"] = "BANK TRADE"
     ALMBTCR.append(rr)
-
-# DATA ALMLOAN2 ALM2CRF MFRS.ALM_CR(KEEP=ACCTNO NOTENO PRODESC NOACCT);
-#   SET ALM2 ALMBTCR; OUTPUT ALMLOAN2; OUTPUT MFRS.ALM_CR;
-#   IF PRODESC='TOTAL COMMERCIAL RETAILS' THEN ... OUTPUT ALM2CRF;
-# ALMLOAN2_pre, ALM2CRF_pre = [], []
-# for r in (ALM2 + ALMBTCR):
-#     ALMLOAN2_pre.append(r)
-#     mfrs_alm_cr_rows.append({
-#         "ACCTNO": int(r["ACCTNO"]) if r.get("ACCTNO") is not None else None,
-#         "NOTENO": int(r["NOTENO"]) if r.get("NOTENO") is not None else None,
-#         "PRODESC": r.get("PRODESC"), "NOACCT": r.get("NOACCT"),
-#     })
-#     if r.get("PRODESC") == "TOTAL COMMERCIAL RETAILS":
-#         rr = dict(r)
-#         custcd = r.get("CUSTCD")
-#         rr["PRODESC"] = "COMMERCIAL RETAIL - IND" if custcd in ("77", "78", "95", "96") else "COMMERCIAL RETAIL - NON IND"
-#         ALM2CRF_pre.append(rr)
 
 ALMLOAN2_pre, ALM2CRF_pre = [], []
 # SAS `SET ALM2 ALMBTCR;` retains non-contributed variables (notably
