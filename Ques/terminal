@@ -1,7 +1,12 @@
 Step 3: Loading cached inputs...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 367, in <module>
-    isasd_loan_rows    = _read_rows(ISASD_LOAN_CACHE, LOAN_SELECT)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 284, in _read_rows
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 381, in <module>
+    isasd_loan_rows     = _read_rows(ISASD_LOAN_CACHE, LOAN_SELECT)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py", line 285, in _read_rows
     df = con.execute(
-_duckdb.BinderException: Binder Error: Column "NOTETERM" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+_duckdb.BinderException: Binder Error: Table "src" does not have a column named "NOTETERM"
+
+Candidate bindings: : "NOTENO"
+
+LINE 1: ...) AS FISSPURP, CAST(src.PRODUCT AS INTEGER) AS PRODUCT, CAST(src.NOTETERM AS DOUBLE) AS NOTETERM, CAST(src.EARNTERM AS...
+                                                                        ^
