@@ -84,8 +84,10 @@ Parquet files (not report text, since they are data extracts feeding other
 downstream programs, not print output).
 """
 
+import re
 import gc
 from pathlib import Path
+from typing import Optional
 from datetime import date, timedelta
 
 import duckdb
@@ -183,7 +185,9 @@ REPTYEAR = f"{reptdate.year:04d}"
 REPTDAY  = f"{reptdate.day:02d}"  # CALL SYMPUT'd but never referenced -- dead.
 RDATE    = reptdate.strftime("%d/%m/%y")
 
-ts = reptdate.strftime("%y%m%d") - timedelta(days=1)
+# Generate time stamp
+report_date = date.today() - timedelta(days=1)
+ts = report_date.strftime("%y%m%d")
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIIBNM01"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -213,10 +217,10 @@ INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"idispaymth0826.sas7bdat"
 INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR  / f"loan08.sas7bdat"
 INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR    / f"loan084.sas7bdat"
 INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR    / f"loan074.sas7bdat"
-INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"bnm_lnwof084.sas7bdat"
-INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"bnm_lnwof074.sas7bdat"
-INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"bnm_lnwod084.sas7bdat"
-INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"bnm_lnwod074.sas7bdat"
+INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"lnwof084.sas7bdat"
+INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"lnwof074.sas7bdat"
+INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"lnwod084.sas7bdat"
+INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"lnwod074.sas7bdat"
 INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR   / "ilncomm.sas7bdat"   # fixed -- no date token
 
 # ============================================================================
@@ -229,27 +233,64 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     )
 
 
+# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+#     writer = None
+#     schema = None
+#     total = 0
+
+#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+#     for chunk in reader:
+#         if schema is None:
+#             fields = []
+#             for col, dtype in chunk.dtypes.items():
+#                 if dtype == "object":
+#                     pa_type = pa.string()
+#                 elif pd.api.types.is_integer_dtype(dtype):
+#                     pa_type = pa.int64()
+#                 elif pd.api.types.is_float_dtype(dtype):
+#                     pa_type = pa.float64()
+#                 else:
+#                     pa_type = pa.from_numpy_dtype(dtype)
+#                 fields.append(pa.field(col, pa_type))
+#             schema = pa.schema(fields)
+#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+
+#         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+#         writer.write_table(table)
+#         total += len(chunk)
+#         del chunk, table
+#         gc.collect()
+
+#     if writer:
+#         writer.close()
+#     print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     writer = None
     schema = None
     total = 0
 
+    def _build_schema(df: "pd.DataFrame") -> pa.Schema:
+        fields = []
+        for col, dtype in df.dtypes.items():
+            if dtype == "object":
+                pa_type = pa.string()
+            elif pd.api.types.is_integer_dtype(dtype):
+                pa_type = pa.int64()
+            elif pd.api.types.is_float_dtype(dtype):
+                pa_type = pa.float64()
+            else:
+                pa_type = pa.from_numpy_dtype(dtype)
+            fields.append(pa.field(col, pa_type))
+        return pa.schema(fields)
+
     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
     for chunk in reader:
         if schema is None:
-            fields = []
-            for col, dtype in chunk.dtypes.items():
-                if dtype == "object":
-                    pa_type = pa.string()
-                elif pd.api.types.is_integer_dtype(dtype):
-                    pa_type = pa.int64()
-                elif pd.api.types.is_float_dtype(dtype):
-                    pa_type = pa.float64()
-                else:
-                    pa_type = pa.from_numpy_dtype(dtype)
-                fields.append(pa.field(col, pa_type))
-            schema = pa.schema(fields)
+            schema = _build_schema(chunk)
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
 
         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
@@ -258,8 +299,17 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
         del chunk, table
         gc.collect()
 
-    if writer:
+    if writer is not None:
         writer.close()
+    else:
+        # Source file has 0 rows -- the chunked reader yielded nothing.
+        # Read once without chunksize to obtain the schema, then write a
+        # zero-row parquet so downstream read_parquet() finds the file.
+        empty = pd.read_sas(sas_path, encoding="latin1")
+        schema = _build_schema(empty)
+        empty_table = pa.Table.from_pandas(empty, schema=schema, preserve_index=False)
+        pq.write_table(empty_table, cache_path)
+
     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
@@ -272,15 +322,49 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
     return cache_path
 
 
+# def _read_rows(parquet_path: Path, select_sql: str) -> list:
+#     """Read a Parquet cache through DuckDB with explicit CASTs and return
+#     a plain list of dict rows -- the row-oriented representation used
+#     throughout this program (mirrors EIIMRM01.py's `iter_rows(named=True)`
+#     style) so the many SAS MERGE / conditional-logic DATA steps below can
+#     be transcribed directly."""
+#     con = duckdb.connect(database=":memory:")
+#     df = con.execute(
+#         f"SELECT {select_sql} FROM read_parquet('{parquet_path.as_posix()}') AS src"
+#     ).pl()
+#     con.close()
+#     return df.to_dicts()
+
+
 def _read_rows(parquet_path: Path, select_sql: str) -> list:
     """Read a Parquet cache through DuckDB with explicit CASTs and return
-    a plain list of dict rows -- the row-oriented representation used
-    throughout this program (mirrors EIIMRM01.py's `iter_rows(named=True)`
-    style) so the many SAS MERGE / conditional-logic DATA steps below can
-    be transcribed directly."""
+    a plain list of dict rows. For any source column referenced by the
+    SELECT but missing from the parquet, substitute NULL of the CAST's
+    target type -- mirroring SAS's behaviour, where a KEEP/RENAME of a
+    column the source does not carry simply yields a missing value."""
     con = duckdb.connect(database=":memory:")
+
+    src_cols = {
+        row[0]
+        for row in con.execute(
+            f"DESCRIBE SELECT * FROM read_parquet('{parquet_path.as_posix()}') AS src"
+        ).fetchall()
+    }
+
+    def _fix(m):
+        col, typ, alias = m.group(1), m.group(2), m.group(3)
+        if col in src_cols:
+            return m.group(0)
+        return f"CAST(NULL AS {typ}) AS {alias}"
+
+    fixed_sql = re.sub(
+        r"CAST\(src\.(\w+) AS ([A-Z0-9]+(?:\([0-9,]+\))?)\)(?:\s+AS\s+(\w+))?",
+        _fix,
+        select_sql,
+    )
+
     df = con.execute(
-        f"SELECT {select_sql} FROM read_parquet('{parquet_path.as_posix()}')"
+        f"SELECT {fixed_sql} FROM read_parquet('{parquet_path.as_posix()}') AS src"
     ).pl()
     con.close()
     return df.to_dicts()
@@ -291,7 +375,7 @@ def _read_rows(parquet_path: Path, select_sql: str) -> list:
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
 
-ISASD_LOAN_CACHE     = _load_cached(INPUT_ISASD_LOAN_FILE, "ISASD_LOAN")
+ISASD_LOAN_CACHE      = _load_cached(INPUT_ISASD_LOAN_FILE, "ISASD_LOAN")
 BNM_LOAN_CUR_CACHE    = _load_cached(INPUT_BNM_LOAN_CUR_FILE, "BNM_LOAN_CUR")
 BNM_LOAN_PREV_CACHE   = _load_cached(INPUT_BNM_LOAN_PREV_FILE, "BNM_LOAN_PREV")
 BNM_LNWOF_CUR_CACHE   = _load_cached(INPUT_BNM_LNWOF_CUR_FILE, "BNM_LNWOF_CUR")
@@ -333,7 +417,7 @@ LOAN_SELECT = (
 # )
 
 IBTRAD_SELECT = (
-    "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(SUBACCT AS DOUBLE) AS SUBACCT, "
+    "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(SUBACCT AS VARCHAR) AS SUBACCT, "
     "CAST(DIRCTIND AS VARCHAR) AS DIRCTIND, CAST(CUSTCD AS VARCHAR) AS CUSTCD, "
     "CAST(APPRLIMT AS DOUBLE) AS APPRLIMT, "
     "CAST(APPRLIM2 AS DOUBLE) AS APPRLIM2, "
@@ -361,8 +445,21 @@ LNCOMM_SELECT = (
     "CAST(CUSEDAMT AS DOUBLE) AS CUSEDAMT"
 )
 
+
+def _qualify(select_sql: str) -> str:
+    """Prefix every bare source column inside CAST(...) with `src.` so DuckDB
+    binds it to the parquet source column and never to the SELECT alias of
+    the same name."""
+    return re.sub(r"CAST\(\s*(\w+)\s+AS\b", r"CAST(src.\1 AS", select_sql)
+
+
+LOAN_SELECT   = _qualify(LOAN_SELECT)
+IBTRAD_SELECT = _qualify(IBTRAD_SELECT)
+DISPAY_SELECT = _qualify(DISPAY_SELECT)
+LNCOMM_SELECT = _qualify(LNCOMM_SELECT)
+
 print("\nStep 3: Loading cached inputs...")
-isasd_loan_rows    = _read_rows(ISASD_LOAN_CACHE, LOAN_SELECT)
+isasd_loan_rows     = _read_rows(ISASD_LOAN_CACHE, LOAN_SELECT)
 bnm_loan_cur_rows   = _read_rows(BNM_LOAN_CUR_CACHE, LOAN_SELECT)
 bnm_loan_prev_rows  = _read_rows(BNM_LOAN_PREV_CACHE, LOAN_SELECT)
 bnm_lnwof_cur_rows  = _read_rows(BNM_LNWOF_CUR_CACHE, LOAN_SELECT)
@@ -383,7 +480,7 @@ def _sort_key(v):
     return (0,) if v is None else (1, v)
 
 
-def proc_sort(rows: list, by: list, descending: set | None = None) -> list:
+def proc_sort(rows: list, by: list, descending: Optional[set] = None) -> list:
     """PROC SORT ... BY <by>; -- descending is a set of column names sorted
     DESCENDING (e.g. {'APPRLIMT'} for `BY ACCTNO DESCENDING APPRLIMT`)."""
     descending = descending or set()
@@ -661,7 +758,7 @@ def _alm_almbt_row(r: dict):
         )
         if not keep_noacct:
             noacct = 0
-    if paidind not in ("P", "C") and noacct != 0 and balx not in (0.0, -0.0) and oribal != 0:
+    if paidind not in ("P", "C") and noacct != 0 and balx not in (0.0, -0.0) and oribal is not None:
         noacct = 1
 
     out = {k: r.get(k) for k in ALM_KEEP}
