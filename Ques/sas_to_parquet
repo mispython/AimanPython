@@ -1,0 +1,44 @@
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    def _build_schema(df: "pd.DataFrame") -> pa.Schema:
+        fields = []
+        for col, dtype in df.dtypes.items():
+            if dtype == "object":
+                pa_type = pa.string()
+            elif pd.api.types.is_integer_dtype(dtype):
+                pa_type = pa.int64()
+            elif pd.api.types.is_float_dtype(dtype):
+                pa_type = pa.float64()
+            else:
+                pa_type = pa.from_numpy_dtype(dtype)
+            fields.append(pa.field(col, pa_type))
+        return pa.schema(fields)
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        if schema is None:
+            schema = _build_schema(chunk)
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer is not None:
+        writer.close()
+    else:
+        # Source file has 0 rows -- the chunked reader yielded nothing.
+        # Read once without chunksize to obtain the schema, then write a
+        # zero-row parquet so downstream read_parquet() finds the file.
+        empty = pd.read_sas(sas_path, encoding="latin1")
+        schema = _build_schema(empty)
+        empty_table = pa.Table.from_pandas(empty, schema=schema, preserve_index=False)
+        pq.write_table(empty_table, cache_path)
+
+    print(f"  [{tag}] Done - {total:,} rows cached.")
