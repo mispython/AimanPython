@@ -1,44 +1,18 @@
-def _read_rows(parquet_path: Path, select_sql: str) -> list:
-    """..."""
-    con = duckdb.connect(database=":memory:")
+def format_fisstype(code: str) -> str:
+    """Format FISS type. SAS's $FISSTYPE format has no OTHER clause, so
+    PUT() returns an unmatched value unchanged rather than blank."""
+    c = str(code).strip()
+    return FISSTYPE_MAP.get(c, c)
 
-    src_cols = {
-        row[0]
-        for row in con.execute(
-            f"DESCRIBE SELECT * FROM read_parquet('{parquet_path.as_posix()}') AS src"
-        ).fetchall()
-    }
-    src_cols_upper = {c.upper() for c in src_cols}
 
-    def _fix(m):
-        col, typ, alias = m.group(1), m.group(2), m.group(3)
-        if col.upper() in src_cols_upper:
-            return m.group(0)
-        return f"CAST(NULL AS {typ}) AS {alias}"
-
-    fixed_sql = re.sub(
-        r"CAST\(src\.(\w+) AS ([A-Z0-9]+(?:\([0-9,]+\))?)\)(?:\s+AS\s+(\w+))?",
-        _fix,
-        select_sql,
-    )
-
-    df = con.execute(
-        f"SELECT {fixed_sql} FROM read_parquet('{parquet_path.as_posix()}') AS src"
-    ).pl()
-    con.close()
-    return df.to_dicts()
+def format_fissgroup(code: str) -> str:
+    """Format FISS group. Same no-OTHER-clause semantics as $FISSTYPE."""
+    c = str(code).strip()
+    return FISSGROUP_MAP.get(c, c)
 
 
 
 
-missing = sorted({r.get("SECTORCD") for r in ALM_final if r.get("SECTTYPE") == "" and r.get("SECTORCD")})
-print(missing[:30])
-
-
-
-
-import duckdb
-con = duckdb.connect()
-print(con.execute(
-    "DESCRIBE SELECT * FROM read_parquet('.../input/cache/EIIBNM01/loan084.parquet')"
-).fetchall())
+_sample = [r.get("ACCTYPE") for r in ALM_final if r.get("ACCTYPE") is not None][:20]
+print("ACCTYPE repr sample:", [repr(v) for v in _sample])
+print("ACCTYPE distinct (raw):", sorted({repr(r.get("ACCTYPE")) for r in ALM_final})[:10])
