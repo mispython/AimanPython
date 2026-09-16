@@ -1,4 +1,1 @@
-ACCTYPE
-LN    627473
-OD      5009
-Name: count, dtype: int64
+print("  DEBUG bnm_loan_cur ACCTYPE non-null:", sum(1 for r in bnm_loan_cur_rows if r.get("ACCTYPE") is not None))
