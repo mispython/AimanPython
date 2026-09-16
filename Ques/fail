@@ -1,6 +1,4 @@
-import pyarrow.parquet as pq
-t = pq.read_table(
-    "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/loan084.parquet",
-    columns=["ACCTYPE"]
-)
-print(t.to_pandas()["ACCTYPE"].value_counts(dropna=False).head(20))
+ACCTYPE
+LN    627473
+OD      5009
+Name: count, dtype: int64
