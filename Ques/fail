@@ -1,2 +1,7 @@
-print("  DEBUG ALM_all ACCTYPE non-null:", sum(1 for r in ALM_all if r.get("ACCTYPE") is not None), "of", len(ALM_all))
-print("  DEBUG DISPAY_final ACCTYPE non-null:", sum(1 for r in DISPAY_final if r.get("ACCTYPE") is not None), "of", len(DISPAY_final))
+Step 6: Building ALM / ALMBT (loan level)...
+  ALM rows: 626,077   ALMBT rows: 0
+  DEBUG ALM_all ACCTYPE non-null: 626077 of 626077
+  DEBUG DISPAY_final ACCTYPE non-null: 0 of 214185
+  ALM_final rows: 740,919
+ACCTYPE repr sample: []
+ACCTYPE distinct (raw): ['None']
