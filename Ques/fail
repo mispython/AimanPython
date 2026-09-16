@@ -1,8 +1,3 @@
-Step 6: Building ALM / ALMBT (loan level)...
-  ALM rows: 626,077   ALMBT rows: 0
-  DEBUG DISPAY_final HP rows: 424  (with DISBURSE>0: 0)
-  DEBUG ALM_all ACCTYPE non-null: 626077 of 626077
-  DEBUG DISPAY_final ACCTYPE non-null: 214185 of 214185
-  ALM_final rows: 740,919
-ACCTYPE repr sample: ["'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'"]
-ACCTYPE distinct (raw): ["'LN'", "'OD'"]
+print(f"  DEBUG DISPAY_raw  DISBURSE>0: {sum(1 for r in DISPAY_raw  if (r.get('DISBURSE') or 0) > 0)} of {len(DISPAY_raw)}")
+print(f"  DEBUG DISPAY_work DISBURSE>0: {sum(1 for r in DISPAY_work if (r.get('DISBURSE') or 0) > 0)} of {len(DISPAY_work)}")
+print(f"  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': {sum(1 for r in DISPAY_work if (r.get('DISBURSE') or 0) > 0 and (r.get('PRODCD') or '').startswith('34'))}")
