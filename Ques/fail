@@ -1,14 +1,6 @@
-Step 5: Building DISPAY (disbursement/repayment)...
-  DEBUG loan_work distinct keys: 669560  DISPAY_raw DISBURSE>0 matched: 14040/14040
-  DEBUG DISPAY_raw distinct keys: 571161  missing from loan_work: 0
-  DEBUG sample missing keys: []
-  DEBUG NULL NOTENO: DISPAY_raw=4600  loan_work=6328
-  DISPAY_work rows: 571,161
-  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
-  DEBUG DISPAY_work DISBURSE>0: 14040 of 571161
-  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 7347
-  DEBUG excluded DISBURSE>0 count: 6693
-  DEBUG excluded (PRODCD, PRODUCT, ACCTYPE) top:
-      ('N', 131, 'LN') : 6388
-      ('N', 128, 'LN') : 302
-      ('N', 130, 'LN') : 3
+_mloan_prodcd_by_key = {(r["ACCTNO"], r["NOTENO"]): r.get("PRODCD") for r in MLOAN}
+_excl_prodcds = Counter(
+    _mloan_prodcd_by_key.get((r["ACCTNO"], r["NOTENO"]), "<not in MLOAN>")
+    for r in _excluded
+)
+print(f"  DEBUG MLOAN PRODCD for the {len(_excluded)} excluded keys: {dict(_excl_prodcds)}")
