@@ -252,6 +252,24 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
                 pa_type = pa.from_numpy_dtype(dtype)
             fields.append(pa.field(col, pa_type))
         return pa.schema(fields)
+    
+    # def _build_schema(df: "pd.DataFrame") -> pa.Schema:
+    #     fields = []
+    #     for col, dtype in df.dtypes.items():
+    #         if dtype == "object":
+    #             pa_type = pa.string()
+    #         elif pd.api.types.is_integer_dtype(dtype):
+    #             pa_type = pa.int64()
+    #         elif pd.api.types.is_float_dtype(dtype):
+    #             # A column that is entirely blank/NaN in only the FIRST chunk
+    #             # (e.g. a CHAR field with no values yet) must not be locked to
+    #             # float64 for the whole file -- later chunks with real string
+    #             # data would then be silently nulled out against that schema.
+    #             pa_type = pa.string() if df[col].isna().all() and dtype == "float64" else pa.float64()
+    #         else:
+    #             pa_type = pa.from_numpy_dtype(dtype)
+    #         fields.append(pa.field(col, pa_type))
+    #     return pa.schema(fields)
 
     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
     for chunk in reader:
@@ -323,6 +341,18 @@ def _read_rows(parquet_path: Path, select_sql: str) -> list:
     return df.to_dicts()
 
 
+# DEBUG
+raw = pd.read_sas(
+    "/stgsrcsys/host/uat/AII/mth_bnm/loan084.sas7bdat",
+    encoding="latin1",
+    chunksize=500_000,
+)
+first_chunk = next(raw)
+print("dtype:", first_chunk["ACCTYPE"].dtype)
+print("raw sample:", first_chunk["ACCTYPE"].head(10).tolist())
+print("all-null in first chunk?", first_chunk["ACCTYPE"].isna().all())
+
+
 # ============================================================================
 # STEP 2: CACHE INPUT SAS FILES TO PARQUET
 # ============================================================================
@@ -371,14 +401,23 @@ IBTRAD_SELECT = (
     "CAST(TRANSREF AS VARCHAR) AS TRANSREF"
 )
 
+# DISPAY_SELECT = (
+#     "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO, "
+#     "CAST(DISBURSE AS DOUBLE) AS DISBURSE, CAST(REPAID AS DOUBLE) AS REPAID, "
+#     "CAST(FISSPURP AS INTEGER) AS FISSPURP, CAST(PRODUCT AS INTEGER) AS PRODUCT, "
+#     "CAST(DNBFISME AS VARCHAR) AS DNBFISME, CAST(PRODCD AS VARCHAR) AS PRODCD, "
+#     "CAST(CUSTCD AS VARCHAR) AS CUSTCD, CAST(AMTIND AS VARCHAR) AS AMTIND, "
+#     "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(BRANCH AS VARCHAR) AS BRANCH, "
+#     "CAST(ACCTYPE AS VARCHAR) AS ACCTYPE"
+# )
+
 DISPAY_SELECT = (
     "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO, "
     "CAST(DISBURSE AS DOUBLE) AS DISBURSE, CAST(REPAID AS DOUBLE) AS REPAID, "
     "CAST(FISSPURP AS INTEGER) AS FISSPURP, CAST(PRODUCT AS INTEGER) AS PRODUCT, "
     "CAST(DNBFISME AS VARCHAR) AS DNBFISME, CAST(PRODCD AS VARCHAR) AS PRODCD, "
     "CAST(CUSTCD AS VARCHAR) AS CUSTCD, CAST(AMTIND AS VARCHAR) AS AMTIND, "
-    "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(BRANCH AS VARCHAR) AS BRANCH, "
-    "CAST(ACCTYPE AS VARCHAR) AS ACCTYPE"
+    "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(BRANCH AS VARCHAR) AS BRANCH"
 )
 
 LNCOMM_SELECT = (
@@ -411,6 +450,10 @@ ibtrad_rows         = _read_rows(BTBNM_IBTRAD_CACHE, IBTRAD_SELECT)
 dispay_raw_rows     = _read_rows(DISPAY_CACHE, DISPAY_SELECT)
 lncomm_rows         = _read_rows(LNCOMM_CACHE, LNCOMM_SELECT)
 print(f"  ISASD LOAN rows: {len(isasd_loan_rows):,}   BNM LOAN(cur) rows: {len(bnm_loan_cur_rows):,}")
+
+# DEBUG
+print("  DEBUG bnm_loan_cur ACCTYPE non-null:", sum(1 for r in bnm_loan_cur_rows if r.get("ACCTYPE") is not None))
+
 print(f"  IBTRAD rows: {len(ibtrad_rows):,}   DISPAY rows: {len(dispay_raw_rows):,}   LNCOMM rows: {len(lncomm_rows):,}")
 
 # ============================================================================
@@ -619,8 +662,8 @@ def _alm_almbt_row(r: dict):
     """DATA ALM ALMBT; ... one observation's worth of the big conditional
     block; returns (kept_row_or_None, is_almbt)."""
     paidind = r.get("PAIDIND")
-    if paidind in ("P", "C") and r.get("EIR_ADJ") is None:
-        return None, False
+    # if paidind in ("P", "C") and r.get("EIR_ADJ") is None:
+    #     return None, False
     oribal = r.get("ORIBAL")
     if oribal == 0.0:
         return None, False
@@ -628,9 +671,9 @@ def _alm_almbt_row(r: dict):
     xind = "Y" if balx in (0.0, -0.0) else " "
     if xind == "Y":
         return None, False
-    prodcd = r.get("PRODCD") or ""
-    if not (prodcd[:2] == "34" or prodcd == "54120"):
-        return None, False
+    # prodcd = r.get("PRODCD") or ""
+    # if not (prodcd[:2] == "34" or prodcd == "54120"):
+    #     return None, False
 
     noacct = r.get("NOACCT")
     if r.get("ACCTYPE") == "LN":
@@ -715,6 +758,11 @@ DISPAY_final = proc_sort(DISPAY_final, ["ACCTNO", "NOTENO", "CUSTCD", "FISSPURP"
 # DATA ALM; MERGE ALM(IN=B) DISPAY(IN=A); BY ACCTNO NOTENO;
 #   IF REPAID>0 THEN REPAYNO=1; IF DISBURSE>0 THEN DISBNO=1;
 ALM_all = proc_sort(ALM_all, ["ACCTNO", "NOTENO"])
+
+#DEBUG
+print("  DEBUG ALM_all ACCTYPE non-null:", sum(1 for r in ALM_all if r.get("ACCTYPE") is not None), "of", len(ALM_all))
+print("  DEBUG DISPAY_final ACCTYPE non-null:", sum(1 for r in DISPAY_final if r.get("ACCTYPE") is not None), "of", len(DISPAY_final))
+
 ALM_final, _ = sas_merge([ALM_all, DISPAY_final], by=["ACCTNO", "NOTENO"])
 for r in ALM_final:
     if (r.get("REPAID") or 0) > 0:
