@@ -1,5 +1,13 @@
-Step 5: Building DISPAY (disbursement/repayment)...
-  DISPAY_work rows: 214,185
-  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
-  DEBUG DISPAY_work DISBURSE>0: 6951 of 214185
-  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 6951
+print(f"  DEBUG input sizes: ISASD={len(isasd_loan_rows)} BNM_CUR={len(bnm_loan_cur_rows)} BNM_PREV={len(bnm_loan_prev_rows)} LNWOF_CUR={len(bnm_lnwof_cur_rows)} LNWOD_CUR={len(bnm_lnwod_cur_rows)} LNWOF_PREV={len(bnm_lnwof_prev_rows)} LNWOD_PREV={len(bnm_lnwod_prev_rows)}")
+
+
+
+
+_lw_keys = set((r["ACCTNO"], r["NOTENO"]) for r in loan_work)
+_dr_disb = [r for r in DISPAY_raw if (r.get("DISBURSE") or 0) > 0]
+_matched = sum(1 for r in _dr_disb if (r["ACCTNO"], r["NOTENO"]) in _lw_keys)
+print(f"  DEBUG loan_work distinct keys: {len(_lw_keys)}  DISPAY_raw DISBURSE>0 matched: {_matched}/{len(_dr_disb)}")
+
+
+
+
