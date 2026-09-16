@@ -1,10 +1,14 @@
-_excluded = [r for r in DISPAY_work
-             if (r.get("DISBURSE") or 0) > 0
-             and not (r.get("PRODCD") or "").startswith("34")
-             and r.get("PRODCD") != "54120"
-             and r.get("PRODUCT") not in (698, 699, 983)]
-print(f"  DEBUG excluded DISBURSE>0 count: {len(_excluded)}")
-from collections import Counter as _C
-print("  DEBUG excluded (PRODCD, PRODUCT, ACCTYPE) top:")
-for k, n in _C((r.get("PRODCD"), r.get("PRODUCT"), r.get("ACCTYPE")) for r in _excluded).most_common(10):
-    print(f"      {k} : {n}")
+Step 5: Building DISPAY (disbursement/repayment)...
+  DEBUG loan_work distinct keys: 669560  DISPAY_raw DISBURSE>0 matched: 14040/14040
+  DEBUG DISPAY_raw distinct keys: 571161  missing from loan_work: 0
+  DEBUG sample missing keys: []
+  DEBUG NULL NOTENO: DISPAY_raw=4600  loan_work=6328
+  DISPAY_work rows: 571,161
+  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
+  DEBUG DISPAY_work DISBURSE>0: 14040 of 571161
+  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 7347
+  DEBUG excluded DISBURSE>0 count: 6693
+  DEBUG excluded (PRODCD, PRODUCT, ACCTYPE) top:
+      ('N', 131, 'LN') : 6388
+      ('N', 128, 'LN') : 302
+      ('N', 130, 'LN') : 3
