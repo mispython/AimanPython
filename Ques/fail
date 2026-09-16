@@ -1,1 +1,4 @@
-print("  DEBUG bnm_loan_cur ACCTYPE non-null:", sum(1 for r in bnm_loan_cur_rows if r.get("ACCTYPE") is not None))
+Step 3: Loading cached inputs...
+  ISASD LOAN rows: 634,393   BNM LOAN(cur) rows: 632,482
+  DEBUG bnm_loan_cur ACCTYPE non-null: 632482
+  IBTRAD rows: 3,773   DISPAY rows: 571,232   LNCOMM rows: 162,374
