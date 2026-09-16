@@ -1,3 +1,5 @@
-print(f"  DEBUG MLOAN distinct keys: {len(set((r['ACCTNO'], r['NOTENO']) for r in MLOAN))} of {len(MLOAN)} rows")
-print(f"  DEBUG BNM_PREV distinct keys: {len(set((r['ACCTNO'], r['NOTENO']) for r in BNM_LOAN_PREV_SORTED))} of {len(BNM_LOAN_PREV_SORTED)} rows")
-print(f"  DEBUG DLOAN distinct keys: {len(set((r['ACCTNO'], r['NOTENO']) for r in DLOAN))} of {len(DLOAN)} rows")
+Step 4: Building loan master (DLOAN/MLOAN/LNWOF/LNWOD)...
+  DEBUG MLOAN distinct keys: 632482 of 632482 rows
+  DEBUG BNM_PREV distinct keys: 628303 of 628303 rows
+  DEBUG DLOAN distinct keys: 634393 of 634393 rows
+  loan_work rows: 669,228
