@@ -1,7 +1,9 @@
-_dr_keys = set((r["ACCTNO"], r["NOTENO"]) for r in DISPAY_raw)
-_lw_missing = [k for k in _dr_keys if k not in _lw_keys]
-print(f"  DEBUG DISPAY_raw distinct keys: {len(_dr_keys)}  missing from loan_work: {len(_lw_missing)}")
-print(f"  DEBUG sample missing keys: {_lw_missing[:5]}")
-_null_noteno_dispay = sum(1 for r in DISPAY_raw if r.get("NOTENO") is None)
-_null_noteno_lw     = sum(1 for r in loan_work  if r.get("NOTENO") is None)
-print(f"  DEBUG NULL NOTENO: DISPAY_raw={_null_noteno_dispay}  loan_work={_null_noteno_lw}")
+Step 5: Building DISPAY (disbursement/repayment)...
+  DEBUG loan_work distinct keys: 263340  DISPAY_raw DISBURSE>0 matched: 6951/14040
+  DEBUG DISPAY_raw distinct keys: 571161  missing from loan_work: 356976
+  DEBUG sample missing keys: [(8787655518, 90010), (8773043425, 90010), (8768824021, 99010), (8907759947, 90010), (8794808307, 90010)]
+  DEBUG NULL NOTENO: DISPAY_raw=4600  loan_work=5957
+  DISPAY_work rows: 214,185
+  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
+  DEBUG DISPAY_work DISBURSE>0: 6951 of 214185
+  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 6951
