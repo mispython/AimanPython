@@ -1,32 +1,14 @@
-import pandas as pd
-
-raw = pd.read_sas(
-    "/stgsrcsys/host/uat/AII/mth_bnm/loan084.sas7bdat",
-    encoding="latin1",
-    chunksize=500_000,
-)
-first_chunk = next(raw)
-print("dtype:", first_chunk["ACCTYPE"].dtype)
-print("raw sample:", first_chunk["ACCTYPE"].head(10).tolist())
-print("all-null in first chunk?", first_chunk["ACCTYPE"].isna().all())
+_a = [r.get("ACCTYPE") for r in bnm_loan_cur_rows[:20]]
+print("CHECKPOINT A (bnm_loan_cur_rows) ACCTYPE:", _a)
 
 
 
 
-def _build_schema(df: "pd.DataFrame") -> pa.Schema:
-    fields = []
-    for col, dtype in df.dtypes.items():
-        if dtype == "object":
-            pa_type = pa.string()
-        elif pd.api.types.is_integer_dtype(dtype):
-            pa_type = pa.int64()
-        elif pd.api.types.is_float_dtype(dtype):
-            # A column that is entirely blank/NaN in only the FIRST chunk
-            # (e.g. a CHAR field with no values yet) must not be locked to
-            # float64 for the whole file -- later chunks with real string
-            # data would then be silently nulled out against that schema.
-            pa_type = pa.string() if df[col].isna().all() and dtype == "float64" else pa.float64()
-        else:
-            pa_type = pa.from_numpy_dtype(dtype)
-        fields.append(pa.field(col, pa_type))
-    return pa.schema(fields)
+_b = [r.get("ACCTYPE") for r in LOAN2_renamed[:20]]
+print("CHECKPOINT B (LOAN2_renamed) ACCTYPE:", _b)
+
+
+
+
+_c = [r.get("ACCTYPE") for r in _almbase[:20]]
+print("CHECKPOINT C (_almbase, post sas_merge with LNCOMM) ACCTYPE:", _c)
