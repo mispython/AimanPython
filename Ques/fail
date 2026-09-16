@@ -1,13 +1,15 @@
-print(f"  DEBUG input sizes: ISASD={len(isasd_loan_rows)} BNM_CUR={len(bnm_loan_cur_rows)} BNM_PREV={len(bnm_loan_prev_rows)} LNWOF_CUR={len(bnm_lnwof_cur_rows)} LNWOD_CUR={len(bnm_lnwod_cur_rows)} LNWOF_PREV={len(bnm_lnwof_prev_rows)} LNWOD_PREV={len(bnm_lnwod_prev_rows)}")
+Step 3: Loading cached inputs...
+  ISASD LOAN rows: 634,393   BNM LOAN(cur) rows: 632,482
+  DEBUG bnm_loan_cur ACCTYPE non-null: 632482
+  IBTRAD rows: 3,773   DISPAY rows: 571,232   LNCOMM rows: 162,374
+  DEBUG input sizes: ISASD=634393 BNM_CUR=632482 BNM_PREV=628303 LNWOF_CUR=31146 LNWOD_CUR=0 LNWOF_PREV=31189 LNWOD_PREV=0
 
 
 
 
-_lw_keys = set((r["ACCTNO"], r["NOTENO"]) for r in loan_work)
-_dr_disb = [r for r in DISPAY_raw if (r.get("DISBURSE") or 0) > 0]
-_matched = sum(1 for r in _dr_disb if (r["ACCTNO"], r["NOTENO"]) in _lw_keys)
-print(f"  DEBUG loan_work distinct keys: {len(_lw_keys)}  DISPAY_raw DISBURSE>0 matched: {_matched}/{len(_dr_disb)}")
-
-
-
-
+Step 5: Building DISPAY (disbursement/repayment)...
+  DEBUG loan_work distinct keys: 263340  DISPAY_raw DISBURSE>0 matched: 6951/14040
+  DISPAY_work rows: 214,185
+  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
+  DEBUG DISPAY_work DISBURSE>0: 6951 of 214185
+  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 6951
