@@ -1,15 +1,16 @@
-Step 5: Building DISPAY (disbursement/repayment)...
-  DEBUG loan_work distinct keys: 669560  DISPAY_raw DISBURSE>0 matched: 14040/14040
-  DEBUG DISPAY_raw distinct keys: 571161  missing from loan_work: 0
-  DEBUG sample missing keys: []
-  DEBUG NULL NOTENO: DISPAY_raw=4600  loan_work=6328
-  DISPAY_work rows: 571,161
-  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
-  DEBUG DISPAY_work DISBURSE>0: 14040 of 571161
-  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 7347
-  DEBUG excluded DISBURSE>0 count: 6693
-  DEBUG MLOAN PRODCD for the 6693 excluded keys: {'34111': 6693}
-  DEBUG excluded (PRODCD, PRODUCT, ACCTYPE) top:
-      ('N', 131, 'LN') : 6388
-      ('N', 128, 'LN') : 302
-      ('N', 130, 'LN') : 3
+loan_work, loan_work_flags = sas_merge(
+    [PLNWOF, PLNWOD, LOANDM, BNM_LOAN_PREV_SORTED, MLOAN, LNWOF, LNWOD],
+    by=["ACCTNO", "NOTENO"],
+)
+
+# SAS MERGE BY retains non-BY variables from datasets that didn't
+# contribute for a given key. LNWOF's PRODCD is 'N' for write-offs, so
+# that retained 'N' clobbers MLOAN's real PRODCD for HP accounts that are
+# NOT write-offs. Restore PRODCD from MLOAN wherever MLOAN contributed
+# but LNWOF did not.
+_mloan_prodcd_map = {(r["ACCTNO"], r["NOTENO"]): r.get("PRODCD") for r in MLOAN}
+for r, flags in zip(loan_work, loan_work_flags):
+    if flags[4] and not flags[5]:     # MLOAN contributed, LNWOF did not
+        key = (r["ACCTNO"], r["NOTENO"])
+        if key in _mloan_prodcd_map:
+            r["PRODCD"] = _mloan_prodcd_map[key]
