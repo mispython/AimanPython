@@ -1,9 +1,3 @@
-Step 5: Building DISPAY (disbursement/repayment)...
-  DEBUG loan_work distinct keys: 263340  DISPAY_raw DISBURSE>0 matched: 6951/14040
-  DEBUG DISPAY_raw distinct keys: 571161  missing from loan_work: 356976
-  DEBUG sample missing keys: [(8787655518, 90010), (8773043425, 90010), (8768824021, 99010), (8907759947, 90010), (8794808307, 90010)]
-  DEBUG NULL NOTENO: DISPAY_raw=4600  loan_work=5957
-  DISPAY_work rows: 214,185
-  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
-  DEBUG DISPAY_work DISBURSE>0: 6951 of 214185
-  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 6951
+print(f"  DEBUG MLOAN distinct keys: {len(set((r['ACCTNO'], r['NOTENO']) for r in MLOAN))} of {len(MLOAN)} rows")
+print(f"  DEBUG BNM_PREV distinct keys: {len(set((r['ACCTNO'], r['NOTENO']) for r in BNM_LOAN_PREV_SORTED))} of {len(BNM_LOAN_PREV_SORTED)} rows")
+print(f"  DEBUG DLOAN distinct keys: {len(set((r['ACCTNO'], r['NOTENO']) for r in DLOAN))} of {len(DLOAN)} rows")
