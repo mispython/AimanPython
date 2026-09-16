@@ -1,14 +1,3 @@
-_a = [r.get("ACCTYPE") for r in bnm_loan_cur_rows[:20]]
-print("CHECKPOINT A (bnm_loan_cur_rows) ACCTYPE:", _a)
-
-
-
-
-_b = [r.get("ACCTYPE") for r in LOAN2_renamed[:20]]
-print("CHECKPOINT B (LOAN2_renamed) ACCTYPE:", _b)
-
-
-
-
-_c = [r.get("ACCTYPE") for r in _almbase[:20]]
-print("CHECKPOINT C (_almbase, post sas_merge with LNCOMM) ACCTYPE:", _c)
+import pyarrow.parquet as pq
+p = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/loan084.parquet"
+print(pq.ParquetFile(p).schema_arrow.names)
