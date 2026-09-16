@@ -1,15 +1,7 @@
-Step 3: Loading cached inputs...
-  ISASD LOAN rows: 634,393   BNM LOAN(cur) rows: 632,482
-  DEBUG bnm_loan_cur ACCTYPE non-null: 632482
-  IBTRAD rows: 3,773   DISPAY rows: 571,232   LNCOMM rows: 162,374
-  DEBUG input sizes: ISASD=634393 BNM_CUR=632482 BNM_PREV=628303 LNWOF_CUR=31146 LNWOD_CUR=0 LNWOF_PREV=31189 LNWOD_PREV=0
-
-
-
-
-Step 5: Building DISPAY (disbursement/repayment)...
-  DEBUG loan_work distinct keys: 263340  DISPAY_raw DISBURSE>0 matched: 6951/14040
-  DISPAY_work rows: 214,185
-  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
-  DEBUG DISPAY_work DISBURSE>0: 6951 of 214185
-  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 6951
+_dr_keys = set((r["ACCTNO"], r["NOTENO"]) for r in DISPAY_raw)
+_lw_missing = [k for k in _dr_keys if k not in _lw_keys]
+print(f"  DEBUG DISPAY_raw distinct keys: {len(_dr_keys)}  missing from loan_work: {len(_lw_missing)}")
+print(f"  DEBUG sample missing keys: {_lw_missing[:5]}")
+_null_noteno_dispay = sum(1 for r in DISPAY_raw if r.get("NOTENO") is None)
+_null_noteno_lw     = sum(1 for r in loan_work  if r.get("NOTENO") is None)
+print(f"  DEBUG NULL NOTENO: DISPAY_raw={_null_noteno_dispay}  loan_work={_null_noteno_lw}")
