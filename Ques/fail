@@ -1,12 +1,8 @@
-_hp_disb = sum(1 for r in DISPAY_final
-               if ((r.get("ACCTYPE") == "LN" and r.get("PRODCD") == "34111")
-                   or r.get("PRODUCT") in (698, 699, 983)))
-_hp_disb_pos = sum(1 for r in DISPAY_final
-                   if ((r.get("ACCTYPE") == "LN" and r.get("PRODCD") == "34111")
-                       or r.get("PRODUCT") in (698, 699, 983))
-                   and (r.get("DISBURSE") or 0) > 0)
-print(f"  DEBUG DISPAY_final HP rows: {_hp_disb}  (with DISBURSE>0: {_hp_disb_pos})")
-
-
-
-
+Step 6: Building ALM / ALMBT (loan level)...
+  ALM rows: 626,077   ALMBT rows: 0
+  DEBUG DISPAY_final HP rows: 424  (with DISBURSE>0: 0)
+  DEBUG ALM_all ACCTYPE non-null: 626077 of 626077
+  DEBUG DISPAY_final ACCTYPE non-null: 214185 of 214185
+  ALM_final rows: 740,919
+ACCTYPE repr sample: ["'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'"]
+ACCTYPE distinct (raw): ["'LN'", "'OD'"]
