@@ -1,5 +1,20 @@
-Step 4: Building loan master (DLOAN/MLOAN/LNWOF/LNWOD)...
-  DEBUG MLOAN distinct keys: 632482 of 632482 rows
-  DEBUG BNM_PREV distinct keys: 628303 of 628303 rows
-  DEBUG DLOAN distinct keys: 634393 of 634393 rows
-  loan_work rows: 669,228
+        for pos in range(n):
+            row, flag = {}, []
+            for i, rows_i in enumerate(per_ds):
+                if pos < len(rows_i):
+                    row.update(rows_i[pos])
+                    flag.append(True)
+                else:
+                    # Retain within-group last row if any; else cross-group
+                    # last_known.
+                    src = rows_i[-1] if rows_i else last_known[i]
+                    if src is not None:
+                        row.update(src)
+                    flag.append(False)
+            # SAS MERGE BY semantics: BY variables are ALWAYS set to the
+            # current group's values -- they are never retained from an
+            # earlier group. Only the non-BY variables retain.
+            for b, kv in zip(by, key):
+                row[b] = kv
+            merged.append(row)
+            flags.append(tuple(flag))
