@@ -1,4 +1,2 @@
-Step 3: Loading cached inputs...
-  ISASD LOAN rows: 634,393   BNM LOAN(cur) rows: 632,482
-  DEBUG bnm_loan_cur ACCTYPE non-null: 632482
-  IBTRAD rows: 3,773   DISPAY rows: 571,232   LNCOMM rows: 162,374
+print("  DEBUG ALM_all ACCTYPE non-null:", sum(1 for r in ALM_all if r.get("ACCTYPE") is not None), "of", len(ALM_all))
+print("  DEBUG DISPAY_final ACCTYPE non-null:", sum(1 for r in DISPAY_final if r.get("ACCTYPE") is not None), "of", len(DISPAY_final))
