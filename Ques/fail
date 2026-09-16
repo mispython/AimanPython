@@ -1,3 +1,5 @@
-print(f"  DEBUG DISPAY_raw  DISBURSE>0: {sum(1 for r in DISPAY_raw  if (r.get('DISBURSE') or 0) > 0)} of {len(DISPAY_raw)}")
-print(f"  DEBUG DISPAY_work DISBURSE>0: {sum(1 for r in DISPAY_work if (r.get('DISBURSE') or 0) > 0)} of {len(DISPAY_work)}")
-print(f"  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': {sum(1 for r in DISPAY_work if (r.get('DISBURSE') or 0) > 0 and (r.get('PRODCD') or '').startswith('34'))}")
+Step 5: Building DISPAY (disbursement/repayment)...
+  DISPAY_work rows: 214,185
+  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
+  DEBUG DISPAY_work DISBURSE>0: 6951 of 214185
+  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 6951
