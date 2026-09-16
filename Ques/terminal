@@ -1,13 +1,57 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
-[('ACCTNO', 'DOUBLE', 'YES', None, None, None), ('NOTENO', 'DOUBLE', 'YES', None, None, None), ('EIR_ADJ', 'DOUBLE', 'YES', None, None, None), ('EXPRDATE', 'DOUBLE', 'YES', None, None, None), ('SECTOR', 'VARCHAR', 'YES', None, None, None), ('NAME', 'VARCHAR', 'YES', None, None, None), ('COMMNO', 'DOUBLE', 'YES', None, None, None), ('CUSTCD', 'VARCHAR', 'YES', None, None, None), ('ORIGMT', 'VARCHAR', 'YES', None, None, None), ('PRODCD', 'VARCHAR', 'YES', None, None, None), ('RISKCD', 'VARCHAR', 'YES', None, None, None), ('COLLCD', 'VARCHAR', 'YES', None, None, None), ('ORIGMX', 'VARCHAR', 'YES', None, None, None), ('REMAINMX', 'VARCHAR', 'YES', None, None, None), ('SECTORCD', 'VARCHAR', 'YES', None, None, None), ('STATECD', 'VARCHAR', 'YES', None, None, None), ('RISKRTE', 'DOUBLE', 'YES', None, None, None), ('AMTIND', 'VARCHAR', 'YES', None, None, None), ('CGCREF', 'VARCHAR', 'YES', None, None, None), ('CUSTCODE', 'DOUBLE', 'YES', None, None, None), ('PRODUCT', 'DOUBLE', 'YES', None, None, None), ('BRANCH', 'DOUBLE', 'YES', None, None, None), ('ASSMDATE', 'DOUBLE', 'YES', None, None, None), ('INTAMT', 'DOUBLE', 'YES', None, None, None), ('APPVALUE', 'DOUBLE', 'YES', None, None, None), ('NOTETERM', 'DOUBLE', 'YES', None, None, None), ('COLLDESC', 'VARCHAR', 'YES', None, None, None), ('FLAG3', 'VARCHAR', 'YES', None, None, None), ('COSTCTR', 'DOUBLE', 'YES', None, None, None), ('CENSUS', 'DOUBLE', 'YES', None, None, None), ('BILLTYPE', 'VARCHAR', 'YES', None, None, None), ('NETPROC', 'DOUBLE', 'YES', None, None, None), ('INTRATE', 'DOUBLE', 'YES', None, None, None), ('SPREAD', 'DOUBLE', 'YES', None, None, None), ('NTINT', 'VARCHAR', 'YES', None, None, None), ('REBATE', 'DOUBLE', 'YES', None, None, None), ('INTEARN', 'DOUBLE', 'YES', None, None, None), ('ACCRUAL', 'DOUBLE', 'YES', None, None, None), ('SECURE', 'VARCHAR', 'YES', None, None, None), ('LIABCODE', 'VARCHAR', 'YES', None, None, None), ('LOANSTAT', 'DOUBLE', 'YES', None, None, None), ('BORSTAT', 'VARCHAR', 'YES', None, None, None), ('MARKETVL', 'DOUBLE', 'YES', None, None, None), ('EARNTERM', 'DOUBLE', 'YES', None, None, None), ('USURYIDX', 'DOUBLE', 'YES', None, None, None), ('INTEARN2', 'DOUBLE', 'YES', None, None, None), ('INTEARN3', 'DOUBLE', 'YES', None, None, None), ('INTEARN4', 'DOUBLE', 'YES', None, None, None), ('PAYAMT', 'DOUBLE', 'YES', None, None, None), ('PAYFREQ', 'VARCHAR', 'YES', None, None, None), ('BILTOT', 'DOUBLE', 'YES', None, None, None), ('BILPAY', 'DOUBLE', 'YES', None, None, None), ('PAYTYPE', 'VARCHAR', 'YES', None, None, None), ('FEEAMT4', 'DOUBLE', 'YES', None, None, None), ('APPRDATE', 'DOUBLE', 'YES', None, None, None), ('TOTPDEOP', 'DOUBLE', 'YES', None, None, None), ('INTPDYTD', 'DOUBLE', 'YES', None, None, None), ('ACCRUYTD', 'DOUBLE', 'YES', None, None, None), ('ACCRUEOP', 'DOUBLE', 'YES', None, None, None), ('NTINDEX', 'DOUBLE', 'YES', None, None, None), ('REBATEI', 'DOUBLE', 'YES', None, None, None), ('ACCTYIND', 'DOUBLE', 'YES', None, None, None), ('HSTPRIN', 'DOUBLE', 'YES', None, None, None), ('COSTFUND', 'DOUBLE', 'YES', None, None, None), ('RESTBALC', 'DOUBLE', 'YES', None, None, None), ('NXBILDT', 'DOUBLE', 'YES', None, None, None), ('PAYIND', 'VARCHAR', 'YES', None, None, None), ('FEEAMT', 'DOUBLE', 'YES', None, None, None), ('NXTBIL', 'DOUBLE', 'YES', None, None, None), ('BLDATE', 'DOUBLE', 'YES', None, None, None), ('SECTOLD', 'VARCHAR', 'YES', None, None, None), ('CLOSEDTE', 'DOUBLE', 'YES', None, None, None), ('ISSDTE', 'DOUBLE', 'YES', None, None, None), ('SECTORMA', 'VARCHAR', 'YES', None, None, None), ('FISSPURP', 'VARCHAR', 'YES', None, None, None), ('NEWSEC', 'VARCHAR', 'YES', None, None, None), ('CENSUS4', 'VARCHAR', 'YES', None, None, None), ('CUSTIDNO', 'VARCHAR', 'YES', None, None, None), ('RLEASAMT', 'DOUBLE', 'YES', None, None, None), ('APPRLIMT', 'DOUBLE', 'YES', None, None, None), ('UNDRAWN', 'DOUBLE', 'YES', None, None, None), ('APPRLMTACCT', 'DOUBLE', 'YES', None, None, None), ('ODPLAN', 'DOUBLE', 'YES', None, None, None), ('RATE1', 'DOUBLE', 'YES', None, None, None), ('RATE2', 'DOUBLE', 'YES', None, None, None), ('TODRATE', 'DOUBLE', 'YES', None, None, None), ('FLATRATE', 'DOUBLE', 'YES', None, None, None), ('BASERATE', 'DOUBLE', 'YES', None, None, None), ('ODSTAT', 'VARCHAR', 'YES', None, None, None), ('ORGCODE', 'VARCHAR', 'YES', None, None, None), ('LIMIT1', 'DOUBLE', 'YES', None, None, None), ('LIMIT2', 'DOUBLE', 'YES', None, None, None), ('COL1', 'VARCHAR', 'YES', None, None, None), ('COL2', 'VARCHAR', 'YES', None, None, None), ('AVGAMT', 'DOUBLE', 'YES', None, None, None), ('ODINTACC', 'DOUBLE', 'YES', None, None, None), ('CENSUST', 'DOUBLE', 'YES', None, None, None), ('ACCTYPE', 'VARCHAR', 'YES', None, None, None), ('CCRICODE', 'DOUBLE', 'YES', None, None, None), ('CRISPURP', 'VARCHAR', 'YES', None, None, None), ('SECTORZ', 'VARCHAR', 'YES', None, None, None), ('SECTORZZ', 'VARCHAR', 'YES', None, None, None), ('SECVALID', 'VARCHAR', 'YES', None, None, None), ('FISSPORI', 'VARCHAR', 'YES', None, None, None), ('SECTPORI', 'VARCHAR', 'YES', None, None, None), ('SECCUST', 'VARCHAR', 'YES', None, None, None), ('NEWICIND', 'VARCHAR', 'YES', None, None, None), ('BUSSIND', 'VARCHAR', 'YES', None, None, None), ('CUSTORI', 'VARCHAR', 'YES', None, None, None), ('CURCODE', 'VARCHAR', 'YES', None, None, None), ('BAL_AFT_EIR', 'DOUBLE', 'YES', None, None, None), ('EIRIND', 'DOUBLE', 'YES', None, None, None), ('REMMTH', 'DOUBLE', 'YES', None, None, None), ('CCY', 'VARCHAR', 'YES', None, None, None), ('FORATE', 'VARCHAR', 'YES', None, None, None), ('FCYBAL', 'DOUBLE', 'YES', None, None, None), ('APPR2FCY', 'DOUBLE', 'YES', None, None, None), ('CJFEE', 'DOUBLE', 'YES', None, None, None), ('CFINDEX', 'DOUBLE', 'YES', None, None, None), ('WRITE_DOWN_BAL', 'DOUBLE', 'YES', None, None, None), ('ORIBAL_AFT_EIR', 'DOUBLE', 'YES', None, None, None), ('ORIBALANCE', 'DOUBLE', 'YES', None, None, None), ('ORIBALMNI', 'DOUBLE', 'YES', None, None, None), ('OLDNOTEBLDATE', 'DOUBLE', 'YES', None, None, None), ('OLDNOTEDAYARR', 'DOUBLE', 'YES', None, None, None), ('DNBFISME', 'VARCHAR', 'YES', None, None, None), ('DNBFI_ORI', 'VARCHAR', 'YES', None, None, None), ('VB', 'VARCHAR', 'YES', None, None, None), ('FRELEAS', 'DOUBLE', 'YES', None, None, None), ('ESCRACCT', 'DOUBLE', 'YES', None, None, None), ('SIACCTNO', 'DOUBLE', 'YES', None, None, None), ('ABM_HL', 'VARCHAR', 'YES', None, None, None), ('IA_LRU', 'VARCHAR', 'YES', None, None, None), ('ASCORE_PERM', 'VARCHAR', 'YES', None, None, None), ('ASCORE_LTST', 'VARCHAR', 'YES', None, None, None), ('UNEARNED1', 'DOUBLE', 'YES', None, None, None), ('UNEARNED2', 'DOUBLE', 'YES', None, None, None), ('UNEARNED', 'DOUBLE', 'YES', None, None, None), ('FDCERTNO', 'DOUBLE', 'YES', None, None, None), ('FDACCTNO', 'DOUBLE', 'YES', None, None, None), ('CCRIS_INSTLAMT', 'DOUBLE', 'YES', None, None, None), ('INDUSTRIAL_SECTOR_CD', 'VARCHAR', 'YES', None, None, None), ('SECTORCD_ORI', 'VARCHAR', 'YES', None, None, None), ('INVALID_LOC', 'VARCHAR', 'YES', None, None, None), ('STATE', 'VARCHAR', 'YES', None, None, None), ('ASCORE_COMM', 'VARCHAR', 'YES', None, None, None), ('APPRLIM2ORI', 'DOUBLE', 'YES', None, None, None), ('INFEE', 'DOUBLE', 'YES', None, None, None), ('BALMNIM', 'DOUBLE', 'YES', None, None, None), ('SCH_REPAY_TERM', 'DOUBLE', 'YES', None, None, None), ('WRIOFF_CLOSE_FILE_TAG', 'VARCHAR', 'YES', None, None, None), ('WRIOFF_CLOSE_FILE_TAG_DT', 'DOUBLE', 'YES', None, None, None), ('PAIDIND', 'VARCHAR', 'YES', None, None, None), ('REMAINMT', 'VARCHAR', 'YES', None, None, None), ('REMAINMH', 'DOUBLE', 'YES', None, None, None), ('CURBAL', 'DOUBLE', 'YES', None, None, None), ('BALANCE', 'DOUBLE', 'YES', None, None, None), ('BALMNI', 'DOUBLE', 'YES', None, None, None), ('APPRLIM2', 'DOUBLE', 'YES', None, None, None)]
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py
+Step 1: Deriving report date...
+  REPTMON/REPTMON2/NOWK : 08/07/4
+  REPTYEAR              : 2026
+  RDATE                 : 31/08/26
 
+Step 2: Caching input SAS datasets to Parquet...
+  [ISASD_LOAN] Cache fresh - skipping conversion.
+  [BNM_LOAN_CUR] Cache fresh - skipping conversion.
+  [BNM_LOAN_PREV] Cache fresh - skipping conversion.
+  [BNM_LNWOF_CUR] Cache fresh - skipping conversion.
+  [BNM_LNWOD_CUR] Cache fresh - skipping conversion.
+  [BNM_LNWOF_PREV] Cache fresh - skipping conversion.
+  [BNM_LNWOD_PREV] Cache fresh - skipping conversion.
+  [BTBNM_IBTRAD] Cache fresh - skipping conversion.
+  [DISPAY] Cache fresh - skipping conversion.
+  [LNCOMM] Cache fresh - skipping conversion.
 
+Step 3: Loading cached inputs...
+  ISASD LOAN rows: 634,393   BNM LOAN(cur) rows: 632,482
+  IBTRAD rows: 3,773   DISPAY rows: 571,232   LNCOMM rows: 162,374
 
+Step 4: Building loan master (DLOAN/MLOAN/LNWOF/LNWOD)...
+  loan_work rows: 669,228
+
+Step 5: Building DISPAY (disbursement/repayment)...
+  DISPAY_work rows: 214,185
+
+Step 6: Building ALM / ALMBT (loan level)...
+  ALM rows: 626,077   ALMBT rows: 0
+  ALM_final rows: 740,919
+ACCTYPE repr sample: []
+ACCTYPE distinct (raw): ['None']
 
 Step 7: Classifying PRODESC...
-['1200', '1300', '1400', '2100', '2900', '3250', '4010', '4020', '5001', '5002', '5003', '5004', '5006', '5008', '5020', '5030', '5040', '5050', '5999', '6110', '6120', '6130', '6310', '6320', '9700', '9999']
+[]
 
+Step 8: Building bank-trade (BTRAD/OVC/MAST) section...
+  ALMBTRD rows: 1
 
+Step 9: Building retail/commercial-retail breakdown...
+  ALMLOAN2 rows: 1   ALM2CRF rows: 2
 
+Step 10: Building SME/DBE/DNBFI/FBE breakdown...
+  SME/DBE/DNBFI/FBE summaries built.
 
+Step 11: Building facility/sector breakdown...
+  ALMPROD rows: 688   ALMSEC rows: 722
 
+Step 12: Rendering report...
+
+Step 13: Writing outputs...
+  SASLIST report written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIBNM01/EIIBNM01_260915.txt  (367 lines)
+  MFRS.MAST_BR written   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/MFRS/MFRS_MAST_BR.parquet  (425 rows)
+  MFRS.ALM_CR written    : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/MFRS/MFRS_ALM_CR.parquet  (688 rows)
+
+EIIBNM01 complete.
