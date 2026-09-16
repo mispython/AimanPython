@@ -1,20 +1,75 @@
-        for pos in range(n):
-            row, flag = {}, []
-            for i, rows_i in enumerate(per_ds):
-                if pos < len(rows_i):
-                    row.update(rows_i[pos])
-                    flag.append(True)
-                else:
-                    # Retain within-group last row if any; else cross-group
-                    # last_known.
-                    src = rows_i[-1] if rows_i else last_known[i]
-                    if src is not None:
-                        row.update(src)
-                    flag.append(False)
-            # SAS MERGE BY semantics: BY variables are ALWAYS set to the
-            # current group's values -- they are never retained from an
-            # earlier group. Only the non-BY variables retain.
-            for b, kv in zip(by, key):
-                row[b] = kv
-            merged.append(row)
-            flags.append(tuple(flag))
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py
+Step 1: Deriving report date...
+  REPTMON/REPTMON2/NOWK : 08/07/4
+  REPTYEAR              : 2026
+  RDATE                 : 31/08/26
+dtype: object
+raw sample: ['LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN']
+all-null in first chunk? False
+
+Step 2: Caching input SAS datasets to Parquet...
+  [ISASD_LOAN] Cache fresh - skipping conversion.
+  [BNM_LOAN_CUR] Cache fresh - skipping conversion.
+  [BNM_LOAN_PREV] Cache fresh - skipping conversion.
+  [BNM_LNWOF_CUR] Cache fresh - skipping conversion.
+  [BNM_LNWOD_CUR] Cache fresh - skipping conversion.
+  [BNM_LNWOF_PREV] Cache fresh - skipping conversion.
+  [BNM_LNWOD_PREV] Cache fresh - skipping conversion.
+  [BTBNM_IBTRAD] Cache fresh - skipping conversion.
+  [DISPAY] Cache fresh - skipping conversion.
+  [LNCOMM] Cache fresh - skipping conversion.
+
+Step 3: Loading cached inputs...
+  ISASD LOAN rows: 634,393   BNM LOAN(cur) rows: 632,482
+  DEBUG bnm_loan_cur ACCTYPE non-null: 632482
+  IBTRAD rows: 3,773   DISPAY rows: 571,232   LNCOMM rows: 162,374
+  DEBUG input sizes: ISASD=634393 BNM_CUR=632482 BNM_PREV=628303 LNWOF_CUR=31146 LNWOD_CUR=0 LNWOF_PREV=31189 LNWOD_PREV=0
+
+Step 4: Building loan master (DLOAN/MLOAN/LNWOF/LNWOD)...
+  DEBUG MLOAN distinct keys: 632482 of 632482 rows
+  DEBUG BNM_PREV distinct keys: 628303 of 628303 rows
+  DEBUG DLOAN distinct keys: 634393 of 634393 rows
+  loan_work rows: 669,560
+
+Step 5: Building DISPAY (disbursement/repayment)...
+  DEBUG loan_work distinct keys: 669560  DISPAY_raw DISBURSE>0 matched: 14040/14040
+  DEBUG DISPAY_raw distinct keys: 571161  missing from loan_work: 0
+  DEBUG sample missing keys: []
+  DEBUG NULL NOTENO: DISPAY_raw=4600  loan_work=6328
+  DISPAY_work rows: 571,161
+  DEBUG DISPAY_raw  DISBURSE>0: 14040 of 571161
+  DEBUG DISPAY_work DISBURSE>0: 14040 of 571161
+  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': 7347
+
+Step 6: Building ALM / ALMBT (loan level)...
+  ALM rows: 626,077   ALMBT rows: 0
+  DEBUG DISPAY_final HP rows: 424  (with DISBURSE>0: 0)
+  DEBUG ALM_all ACCTYPE non-null: 626077 of 626077
+  DEBUG DISPAY_final ACCTYPE non-null: 215491 of 215491
+  ALM_final rows: 628,797
+ACCTYPE repr sample: ["'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'"]
+ACCTYPE distinct (raw): ["'LN'", "'OD'"]
+
+Step 7: Classifying PRODESC...
+[]
+
+Step 8: Building bank-trade (BTRAD/OVC/MAST) section...
+  ALMBTRD rows: 1
+
+Step 9: Building retail/commercial-retail breakdown...
+  ALMLOAN2 rows: 3   ALM2CRF rows: 2
+
+Step 10: Building SME/DBE/DNBFI/FBE breakdown...
+  SME/DBE/DNBFI/FBE summaries built.
+
+Step 11: Building facility/sector breakdown...
+  ALMPROD rows: 34,554   ALMSEC rows: 34,588
+
+Step 12: Rendering report...
+
+Step 13: Writing outputs...
+  SASLIST report written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIBNM01/EIIBNM01_260915.txt  (411 lines)
+  MFRS.MAST_BR written   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/MFRS/MFRS_MAST_BR.parquet  (425 rows)
+  MFRS.ALM_CR written    : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/MFRS/MFRS_ALM_CR.parquet  (34,554 rows)
+
+EIIBNM01 complete.
