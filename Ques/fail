@@ -1,18 +1,32 @@
-def format_fisstype(code: str) -> str:
-    """Format FISS type. SAS's $FISSTYPE format has no OTHER clause, so
-    PUT() returns an unmatched value unchanged rather than blank."""
-    c = str(code).strip()
-    return FISSTYPE_MAP.get(c, c)
+import pandas as pd
+
+raw = pd.read_sas(
+    "/stgsrcsys/host/uat/AII/mth_bnm/loan084.sas7bdat",
+    encoding="latin1",
+    chunksize=500_000,
+)
+first_chunk = next(raw)
+print("dtype:", first_chunk["ACCTYPE"].dtype)
+print("raw sample:", first_chunk["ACCTYPE"].head(10).tolist())
+print("all-null in first chunk?", first_chunk["ACCTYPE"].isna().all())
 
 
-def format_fissgroup(code: str) -> str:
-    """Format FISS group. Same no-OTHER-clause semantics as $FISSTYPE."""
-    c = str(code).strip()
-    return FISSGROUP_MAP.get(c, c)
 
 
-
-
-_sample = [r.get("ACCTYPE") for r in ALM_final if r.get("ACCTYPE") is not None][:20]
-print("ACCTYPE repr sample:", [repr(v) for v in _sample])
-print("ACCTYPE distinct (raw):", sorted({repr(r.get("ACCTYPE")) for r in ALM_final})[:10])
+def _build_schema(df: "pd.DataFrame") -> pa.Schema:
+    fields = []
+    for col, dtype in df.dtypes.items():
+        if dtype == "object":
+            pa_type = pa.string()
+        elif pd.api.types.is_integer_dtype(dtype):
+            pa_type = pa.int64()
+        elif pd.api.types.is_float_dtype(dtype):
+            # A column that is entirely blank/NaN in only the FIRST chunk
+            # (e.g. a CHAR field with no values yet) must not be locked to
+            # float64 for the whole file -- later chunks with real string
+            # data would then be silently nulled out against that schema.
+            pa_type = pa.string() if df[col].isna().all() and dtype == "float64" else pa.float64()
+        else:
+            pa_type = pa.from_numpy_dtype(dtype)
+        fields.append(pa.field(col, pa_type))
+    return pa.schema(fields)
