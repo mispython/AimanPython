@@ -1,8 +1,24 @@
-from collections import Counter
-_top_disb = Counter(
-    (r.get("PRODCD"), r.get("PRODUCT"))
-    for r in DISPAY_final if (r.get("DISBURSE") or 0) > 0
-)
-print("  DEBUG top (PRODCD,PRODUCT) among DISBURSE>0 rows in DISPAY_final:")
-for k, n in _top_disb.most_common(15):
-    print(f"      {k} : {n}")
+Step 6: Building ALM / ALMBT (loan level)...
+  ALM rows: 626,077   ALMBT rows: 0
+  DEBUG DISPAY_final HP rows: 424  (with DISBURSE>0: 0)
+  DEBUG top (PRODCD,PRODUCT) among DISBURSE>0 rows in DISPAY_final:
+      ('34180', 166) : 2457
+      ('34120', 152) : 2239
+      ('34180', 13) : 1085
+      ('34117', 135) : 816
+      ('34149', 154) : 437
+      ('34149', 153) : 73
+      ('34180', 25) : 51
+      ('34117', 422) : 24
+      ('34120', 175) : 24
+      ('34120', 413) : 24
+      ('34180', 73) : 24
+      ('34149', 434) : 14
+      ('34180', 168) : 13
+      ('34180', 15) : 10
+      ('34230', 102) : 7
+  DEBUG ALM_all ACCTYPE non-null: 626077 of 626077
+  DEBUG DISPAY_final ACCTYPE non-null: 215491 of 215491
+  ALM_final rows: 628,797
+ACCTYPE repr sample: ["'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'", "'LN'"]
+ACCTYPE distinct (raw): ["'LN'", "'OD'"]
