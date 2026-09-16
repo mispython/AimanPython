@@ -1994,8 +1994,10 @@ FISSTYPE_MAP: Dict[str, str] = _build_fisstype_map()
 
 
 def format_fisstype(code: str) -> str:
-    """Format FISS type"""
-    return FISSTYPE_MAP.get(str(code).strip(), '')
+    """Format FISS type. SAS's $FISSTYPE format has no OTHER clause, so
+    PUT() returns an unmatched value unchanged rather than blank."""
+    c = str(code).strip()
+    return FISSTYPE_MAP.get(c, c)
 
 
 # ============================================================================
@@ -2062,8 +2064,9 @@ FISSGROUP_MAP: Dict[str, str] = _build_fissgroup_map()
 
 
 def format_fissgroup(code: str) -> str:
-    """Format FISS group"""
-    return FISSGROUP_MAP.get(str(code).strip(), '')
+    """Format FISS group. Same no-OTHER-clause semantics as $FISSTYPE."""
+    c = str(code).strip()
+    return FISSGROUP_MAP.get(c, c)
 
 
 # ============================================================================
