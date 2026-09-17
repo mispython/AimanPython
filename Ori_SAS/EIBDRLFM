@@ -1,0 +1,568 @@
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIBDRLFX (UAT VERSION)                            |
+ |  DATE    : 27.07.06                                          |
+ |  REPORT  : FISS - NEW LIQUIDITY FRAMEWORK FOR RM & FCY DEP   |
+ |  MODIFY  : 26.07.06 (ESMR 2006-1012)                         |
+ +--------------------------------------------------------------+;
+OPTIONS YEARCUTOFF=1950;
+*;
+%INC PGM(PBBELF,PBBDPFMT);
+*;
+PROC FORMAT;
+   VALUE REMFMT
+      LOW-0.1 = '01'   /*  UP TO 1 WK       */
+      0.1-1   = '02'   /*  >1 WK - 1 MTH    */
+      1-3     = '03'   /*  >1 MTH - 3 MTHS  */
+      3-6     = '04'   /*  >3 - 6 MTHS      */
+      6-12    = '05'   /*  >6 MTHS - 1 YR   */
+      OTHER   = '06';  /*  > 1 YEAR         */
+   VALUE GLPROD
+          117='3301' /* M&I --> WALKER */
+          110='3302'
+          108='3303'
+          118='3304'
+          157='3305'
+          102='3305'
+          101='3306'
+          121='3307'
+          194='3308'
+          195='3308'
+          155='3308'
+          192='3308'
+          137='3308'
+          154='3308'
+          119='3308'
+          120='3308'
+          138='3308'
+          193='3308'
+          116='3309'
+          114='3311'
+          091='3313'
+          093='3313'
+          179='3313'
+          174='3313'
+          175='3313'
+          100='3313'
+          156='3313'
+          198='3313'
+          090='3313'
+          085='3313'
+          086='3313'
+          087='3313'
+          088='3313'
+          089='3313'
+          180='3313'
+          197='3313'
+          123='3314'
+          176='3314'
+          196='3314'
+          112='3315'
+          115='3316'
+          111='3317'
+          113='3318'
+          189='3318'
+          177='3318'
+          190='3318'
+          178='3318'
+          122='3319'
+          109='3320'
+          165='3322'
+          124='3322'
+          191='3322'
+          159='3323'
+          125='3323'
+          150='3324'
+          181='3324'
+          151='3325'
+          152='3326'
+          170='3327'
+          153='3328'
+          135='3328'
+          182='3330'
+          160='3330'
+          166='3330'
+          183='3330'
+          161='3331'
+          162='3332'
+          164='3334'
+          167='3334'
+          168='3334'
+          169='3334'
+          106='7101'
+          158='7101'
+          050='C001'
+          051='C002'
+          055='C006'
+          056='C007'
+          065='C008'
+          057='C008'
+          058='C009'
+          060='CI01'
+          061='CI01'
+          064='CI06'
+          066='CI06'
+          067='CI06'
+          068='CI06'
+          069='CI06'
+          070='CI06'
+          071='CI06'
+          073='CI06'
+          074='CI06'
+          075='CI06'
+          076='CI06'
+          077='CI06'
+          078='CI06'
+          081='CI06'
+          082='CI06'
+          083='CI06'
+          084='CI06'
+          092='CI06'
+          094='CI06'
+          095='CI06'
+          096='CI06'
+          097='CI06'
+          131='CI06'
+          132='CI06'
+          133='CI06'
+          134='CI06'
+          184='CI06'
+          185='CI06'
+          186='CI06'
+          187='CI06'
+          188='CI06'
+          020='CI06'
+          021='CI06'
+          022='CI06'
+          023='CI06'
+          024='CI06'
+          025='CI06'
+          040='CI06'
+          041='CI06'
+          042='CI06'
+          043='CI06'
+          026='CI06'
+          027='CI06'
+          013='CI06'
+          014='CI06'
+          015='CI06'
+          016='CI06'
+          005='CI06'
+          006='CI06'
+          007='CI06'
+          008='CI06'
+          009='CI06'
+          010='CI06'
+          011='CI06'
+          012='CI06'
+          53,63,103,163='HDA0' /* EXCLUDE FROM RDAL */
+          OTHER='C999';
+*;
+*------------------------------------------------*
+*  MACRO TO DECLARE VARIABLES                    *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30
+          RD1-RD12 MD1-MD12 31 RD2 MD2 28 RD4 RD6 RD9 RD11
+          MD4 MD6 MD9 MD11 30 RPYR RPMTH RPDAY;
+   ARRAY LDAY D1-D12;
+   ARRAY RPDAYS RD1-RD12;
+   ARRAY MDDAYS MD1-MD12;
+%MEND DCLVAR;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE NEXT BLDATE                *
+*------------------------------------------------*;
+%MACRO NXTBLDT;
+   IF PAYFREQ = '6' THEN DO;
+      DD = DAY(BLDATE) + 14;
+      MM = MONTH(BLDATE);
+      YY = YEAR(BLDATE);
+      IF MM = 2 THEN
+         IF MOD(YY,4) = 0 THEN D2 = 29;
+         ELSE D2 = 28;
+      IF DD > LDAY(MM) THEN DO;
+         DD = DD - LDAY(MM);
+         MM + 1;
+         IF MM > 12 THEN DO;
+            MM = MM - 12; YY + 1;
+         END;
+      END;
+   END;
+   ELSE DO;
+      DD = DAY(ISSDTE);
+      MM = MONTH(BLDATE) + FREQ;
+      YY = YEAR(BLDATE);
+      IF MM > 12 THEN DO;
+         MM = MM - 12; YY + 1;
+      END;
+   END;
+   IF MM = 2 THEN
+      IF MOD(YY,4) = 0 THEN D2 = 29;
+      ELSE D2 = 28;
+   IF DD > LDAY(MM) THEN DD = LDAY(MM);
+   BLDATE = MDY(MM,DD,YY);
+%MEND NXTBLDT;
+*;
+*------------------------------------------------*
+*  MACRO TO CALCULATE REMAIN MONTH               *
+*------------------------------------------------*;
+%MACRO REMMTH;
+   MDYR  = YEAR(MATDT);
+   MDMTH = MONTH(MATDT);
+   MDDAY = DAY(MATDT);
+   IF MDMTH = 2 THEN
+      IF MOD(MDYR,4) = 0 THEN MD2 = 29;
+      ELSE MD2 = 28;
+   IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH);
+   REMY = MDYR - RPYR;
+   REMM = MDMTH - RPMTH;
+   REMD = MDDAY - RPDAY;
+   REMMTH = REMY*12 + REMM + REMD/RPDAYS(RPMTH);
+   REM30D = (MATDT-REPTDATE)/30;
+%MEND REMMTH;
+*;
+*------------------------------------------------*
+*  GET REPTDATE                                  *
+*------------------------------------------------*;
+DATA REPTDATE;
+   SET DEPOSIT.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN (8)  CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+*----------------------------------------------------------------*
+*  BREAKDOWN BY MATURITY PROFILE (PART 1 & 2 - RM)               *
+*----------------------------------------------------------------*;
+*------------------------------------------------*
+*  LOANS - FL/HL USE REPAYMENT DATE              *
+*        - OD/RC USE EXPIRY DATE                 *
+*------------------------------------------------*;
+*;
+*------------------------------------------------*
+*  FIXED DEPOSITS                                *
+*------------------------------------------------*;
+DATA FD (KEEP=BNMCODE AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD)
+     LCR.FD&REPTDAY (KEEP=BNMCODE BRANCH ACCTNO AMOUNT CURCODE CUSTCD
+                          PRODUCT REMMTH REM30D FDHOLD INTPLAN)
+     CLSFD (KEEP=BRANCH ACCTNO NAME AMOUNT CUSTCD PRODUCT OPENIND
+                 CURCODE MYRAMOUNT);
+   %DCLVAR
+   SET FD.FD;
+   IF _N_ = 1 THEN DO;
+      SET DEPOSIT.REPTDATE;
+      RPYR  = YEAR(REPTDATE);
+      RPMTH = MONTH(REPTDATE);
+      RPDAY = DAY(REPTDATE);
+      IF MOD(RPYR,4) = 0 THEN RD2 = 29;
+   END;
+   IF ACCTTYPE NOT IN (397,398);
+   IF CURBAL > 0;
+   IF CUSTCD IN (77,78,95,96) THEN CUST = '08';
+   ELSE CUST = '09';
+   MATDT = INPUT(PUT(MATDATE,Z8.),YYMMDD8.);
+   IF OPENIND = 'D' OR MATDT - REPTDATE < 8 THEN REMMTH = 0.1;
+   ELSE DO;
+      %REMMTH
+   END;
+   AMTUSD=0; AMTSGD=0; AMTHKD=0; AMTAUD=0;
+   BIC=PUT(INTPLAN,FDPROD.);
+   IF BIC='42630'  THEN DO;
+      IF CURCODE = 'USD' THEN AMTUSD=CURBAL; ELSE
+      IF CURCODE = 'SGD' THEN AMTSGD=CURBAL; ELSE
+      IF CURCODE = 'HKD' THEN AMTHKD=CURBAL; ELSE
+      IF CURCODE = 'AUD' THEN AMTAUD=CURBAL;
+
+      BNMCODE ='96311'||CUST||PUT(REMMTH,REMFMT.)||'0000Y';
+      IF CURCODE NE 'MYR' THEN DO;
+         FORATE = PUT(CURCODE,$FORATE.);
+         MYRAMOUNT = CURBAL * FORATE;
+      END;
+   END;
+   ELSE IF BIC='42133' OR ACCTTYPE IN (302,315,394,396)
+      THEN BNMCODE ='95317'||CUST||PUT(REMMTH,REMFMT.)||'0000Y';
+   ELSE IF BIC='42132'
+      THEN BNMCODE ='95315'||CUST||PUT(REMMTH,REMFMT.)||'0000Y';
+   ELSE IF BIC='49999'
+      THEN BNMCODE ='95999'||CUST||PUT(REMMTH,REMFMT.)||'0000Y';
+   ELSE BNMCODE ='95311'||CUST||PUT(REMMTH,REMFMT.)||'0000Y';
+   RENAME CURBAL=AMOUNT ACCTTYPE=PRODUCT;
+   OUTPUT LCR.FD&REPTDAY FD;
+   IF OPENIND IN ('B','C','P') THEN OUTPUT CLSFD;
+*;
+*------------------------------------------------*
+*  SAVINGS                                       *
+*------------------------------------------------*;
+DATA SA (KEEP=BNMCODE AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD)
+     LCR.SA&REPTDAY (KEEP=BNMCODE BRANCH ACCTNO AMOUNT CURCODE CUSTCD
+                          PRODUCT REMMTH REM30D);
+   SET BNM.SAVG&REPTMON&NOWK;
+   AMTUSD=0; AMTSGD=0; AMTHKD=0; AMTAUD=0;
+   IF CUSTCD IN ('77','78','95','96') THEN CUST = '08';
+   ELSE CUST = '09';
+   BNMCODE = '95312'||CUST||'01'||'0000Y';
+   RENAME CURBAL=AMOUNT;
+   IF PRODCD NE 'N' OR CURCODE='XAU' THEN OUTPUT LCR.SA&REPTDAY;
+   IF PRODCD NE 'N'                  THEN OUTPUT SA;
+*;
+*------------------------------------------------*
+*  CURRENT                                       *
+*------------------------------------------------*;
+DATA CA (KEEP=BNMCODE AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD)
+     LCR.CA&REPTDAY (KEEP=BNMCODE BRANCH ACCTNO AMOUNT CURCODE CUSTCD
+                          PRODUCT REMMTH REM30D INTRATE BILLERIND);
+   SET BNM.CURN&REPTMON&NOWK;
+   GLPROX=PUT(PRODUCT,GLPROD.);
+   IF GLPROX NE 'C999';
+   AMTUSD=0; AMTSGD=0; AMTHKD=0; AMTAUD=0;
+   IF CUSTCD IN ('77','78','95','96') THEN CUST = '08';
+   ELSE CUST = '09';
+   BNMCODE = '95313'||CUST||'01'||'0000Y';
+   RENAME CURBAL=AMOUNT;
+*;
+*------------------------------------------------*
+*  FCY CURRENT                                   *
+*------------------------------------------------*;
+DATA FCYCA (KEEP=BNMCODE AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD)
+     LCR.FCYCA&REPTDAY(KEEP=BNMCODE BRANCH ACCTNO AMOUNT CURCODE CUSTCD
+                            PRODUCT REMMTH REM30D INTRATE BILLERIND)
+     CLSFCYCA(KEEP=BRANCH ACCTNO NAME AMOUNT CUSTCODE PRODUCT OPENIND
+                   CURCODE MYRAMOUNT RENAME=(CUSTCODE=CUSTCD));
+   SET DEPOSIT.CURRENT;
+   LENGTH CUSTCD $2.;
+   CUSTCD=PUT(CUSTCODE, DDCUSTCD.);
+   IF (400<=PRODUCT<=444) OR PRODUCT IN (450:454);
+   IF PRODUCT=413 THEN DELETE;
+   AMTUSD=0; AMTSGD=0; AMTHKD=0; AMTAUD=0;
+   IF CUSTCD IN ('77','78','95','96') THEN CUST = '08';
+   ELSE CUST = '09';
+   BNMCODE = '96313'||CUST||'01'||'0000Y';
+   IF PRODUCT IN (400,420,440,450) THEN AMTUSD=CURBAL;
+   IF PRODUCT IN (403,423) THEN AMTSGD=CURBAL;
+   IF PRODUCT IN (406,426) THEN AMTHKD=CURBAL;
+   IF PRODUCT IN (402,422,442,452) THEN AMTAUD=CURBAL;
+   IF CURCODE NE 'MYR' THEN DO;
+      FORATE = PUT(CURCODE,$FORATE.);
+      MYRAMOUNT = CURBAL * FORATE;
+   END;
+   RENAME CURBAL=AMOUNT;
+   OUTPUT FCYCA LCR.FCYCA&REPTDAY;
+   IF OPENIND IN ('B','C','P') AND CURBAL NE 0 THEN OUTPUT CLSFCYCA;
+*------------------------------------------------*
+*  UNDRAWN PORTION                               *
+*------------------------------------------------*;
+*;
+*------------------------------------------------*
+*  SUMMARISE AND CONSOLIDATE                     *
+*------------------------------------------------*;
+*;
+PROC SUMMARY DATA=FD NWAY;
+   CLASS BNMCODE;
+   VAR   AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD;
+   OUTPUT OUT=FD (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=SA NWAY;
+   CLASS BNMCODE;
+   VAR   AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD;
+   OUTPUT OUT=SA (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=CA NWAY;
+   CLASS BNMCODE;
+   VAR   AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD;
+   OUTPUT OUT=CA (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+PROC SUMMARY DATA=FCYCA NWAY;
+   CLASS BNMCODE;
+   VAR   AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD;
+   OUTPUT OUT=FCYCA (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA NOTE;
+   SET FD SA CA FCYCA;
+   BNMCODE1=SUBSTR(BNMCODE,1,7)||'000000Y';
+*;
+PROC SUMMARY DATA=NOTE NWAY;
+CLASS BNMCODE1;
+VAR   AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD;
+OUTPUT OUT=NOTE1 (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA _NULL_;
+   SET NOTE1;
+   FILE FISS;
+   IF _N_ = 1 THEN
+      PUT @1 'RLFM' "&REPTDAY" "&REPTMON" "&REPTYEAR";
+   AMOUNT = ABS(ROUND(AMOUNT/1000));
+   AMTUSD = ABS(ROUND(AMTUSD/1000));
+   AMTSGD = ABS(ROUND(AMTSGD/1000));
+   AMTHKD = ABS(ROUND(AMTHKD/1000));
+   AMTAUD = ABS(ROUND(AMTAUD/1000));
+   IF AMTUSD = . THEN AMTUSD = 0;
+   IF AMTSGD = . THEN AMTSGD = 0;
+   IF AMTHKD = . THEN AMTHKD = 0;
+   IF AMTAUD = . THEN AMTAUD = 0;
+   PUT @1 BNMCODE1 $14. ';' AMOUNT +(-1) ';' AMTUSD +(-1) ';'
+                            AMTSGD +(-1) ';' AMTHKD +(-1) ';'
+                            AMTAUD;
+*;
+DATA _NULL_;
+   SET NOTE1;
+   FILE NSRS;
+   IF _N_ = 1 THEN
+      PUT @1 'RLFM' "&REPTDAY" "&REPTMON" "&REPTYEAR";
+   AMOUNT = ABS(ROUND(AMOUNT));
+   AMTUSD = ABS(ROUND(AMTUSD));
+   AMTSGD = ABS(ROUND(AMTSGD));
+   AMTHKD = ABS(ROUND(AMTHKD));
+   AMTAUD = ABS(ROUND(AMTAUD));
+   IF AMTUSD = . THEN AMTUSD = 0;
+   IF AMTSGD = . THEN AMTSGD = 0;
+   IF AMTHKD = . THEN AMTHKD = 0;
+   IF AMTAUD = . THEN AMTAUD = 0;
+   PUT @1 BNMCODE1 $14. ';' AMOUNT +(-1) ';' AMTUSD +(-1) ';'
+                            AMTSGD +(-1) ';' AMTHKD +(-1) ';'
+                            AMTAUD;
+*;
+PROC SUMMARY DATA=NOTE NWAY;
+CLASS BNMCODE;
+VAR   AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD;
+OUTPUT OUT=NOTE (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA NLF.NOTE&REPTYEAR&REPTMON&REPTDAY;
+   SET NOTE;
+RUN;
+DATA _NULL_;
+   SET NOTE;
+   FILE FISS;
+   IF _N_ = 1 THEN
+      PUT @1 '**';
+   AMOUNT = ABS(ROUND(AMOUNT/1000));
+   AMTUSD = ABS(ROUND(AMTUSD/1000));
+   AMTSGD = ABS(ROUND(AMTSGD/1000));
+   AMTHKD = ABS(ROUND(AMTHKD/1000));
+   AMTAUD = ABS(ROUND(AMTAUD/1000));
+   IF AMTUSD = . THEN AMTUSD = 0;
+   IF AMTSGD = . THEN AMTSGD = 0;
+   IF AMTHKD = . THEN AMTHKD = 0;
+   IF AMTAUD = . THEN AMTAUD = 0;
+   PUT @1 BNMCODE $14. ';' AMOUNT +(-1) ';'
+                           AMTUSD +(-1) ';' AMTSGD +(-1) ';'
+                           AMTHKD +(-1) ';' AMTAUD;
+*;
+DATA _NULL_;
+   SET NOTE;
+   FILE NSRS;
+   IF _N_ = 1 THEN
+      PUT @1 '**';
+   AMOUNT = ABS(ROUND(AMOUNT));
+   AMTUSD = ABS(ROUND(AMTUSD));
+   AMTSGD = ABS(ROUND(AMTSGD));
+   AMTHKD = ABS(ROUND(AMTHKD));
+   AMTAUD = ABS(ROUND(AMTAUD));
+   IF AMTUSD = . THEN AMTUSD = 0;
+   IF AMTSGD = . THEN AMTSGD = 0;
+   IF AMTHKD = . THEN AMTHKD = 0;
+   IF AMTAUD = . THEN AMTAUD = 0;
+   PUT @1 BNMCODE $14. ';' AMOUNT +(-1) ';'
+                           AMTUSD +(-1) ';' AMTSGD +(-1) ';'
+                           AMTHKD +(-1) ';' AMTAUD;
+*;
+DATA FDWKLY;
+     LENGTH CUSTCODE $2. BIC $5.;
+     LSTMATDT=0;
+     SET FD.FD;
+     CUSTCODE = PUT(CUSTCD, IFDCUSCD.);
+     IF ACCTTYPE IN (302,315,394,396) THEN BIC='42133';
+     IF OPENIND = 'D' OR OPENIND = 'O' THEN OUTPUT;
+RUN;
+PROC SUMMARY DATA = FDWKLY NWAY;
+   CLASS BIC CUSTCODE AMTIND;
+   VAR CURBAL;
+   OUTPUT OUT = ALW
+          SUM = AMOUNT;
+*;
+DATA ALWDEPT (KEEP=BNMCODE AMOUNT AMTIND);
+   LENGTH BNMCODE $14.;
+   SET ALW;
+   IF AMOUNT = . THEN AMOUNT = 0;
+   SELECT(CUSTCODE);
+   WHEN('01') DO;
+       BNMCODE = BIC||'01000000Y'; OUTPUT;
+   END;
+   WHEN('10','02','03','11','12') DO;
+       BNMCODE = BIC||CUSTCODE||'000000Y'; OUTPUT;
+   END;
+   WHEN('20','13','17','30','31',
+        '04','05','06','32','33','34','35',
+        '36','37','38','39','40','45') DO;
+       BNMCODE = BIC||'20000000Y'; OUTPUT;
+       IF CUSTCODE = '17' THEN DO;
+          BNMCODE = BIC||'17000000Y'; OUTPUT;
+       END;
+   END;
+   WHEN('60','61','62','63','64','65','66','67','68','69',
+        '41','42','43','44','46','47','48','49','51',
+        '52','53','54','59','75','57') DO;
+       BNMCODE = BIC||'60000000Y'; OUTPUT;
+       IF CUSTCODE = '75' THEN DO;
+          BNMCODE = BIC||'75000000Y'; OUTPUT;
+       END;
+       IF CUSTCODE = '57' THEN DO;
+          BNMCODE = BIC||'57000000Y'; OUTPUT;
+          BNMCODE = BIC||'75000000Y'; OUTPUT;
+       END;
+   END;
+   WHEN('70','71','72','73','74') DO;
+       BNMCODE = BIC||CUSTCODE||'000000Y'; OUTPUT;
+   END;
+   WHEN('76','77','78') DO;
+       BNMCODE = BIC||'76000000Y'; OUTPUT;
+   END;
+   WHEN('79') DO;
+       BNMCODE = BIC||'79000000Y'; OUTPUT;
+   END;
+   WHEN('81','82','83','84') DO;
+       BNMCODE = BIC||'81000000Y'; OUTPUT;
+   END;
+   WHEN('85','86','90','91','92','95','96','98','99') DO;
+       BNMCODE = BIC||'85000000Y'; OUTPUT;
+   END;
+   OTHERWISE;
+   END;
+RUN;
+PROC SUMMARY DATA=ALWDEPT NWAY;
+CLASS BNMCODE;
+VAR   AMOUNT;
+OUTPUT OUT=ALWDEPT (DROP=_TYPE_ _FREQ_) SUM=;
+DATA _NULL_;
+   SET ALWDEPT;
+   FILE FISS;
+   AMOUNT = ABS(ROUND(AMOUNT/1000));
+   PUT @1 BNMCODE $14. ';' AMOUNT ;
+*;
+DATA _NULL_;
+   SET ALWDEPT;
+   FILE NSRS;
+   AMOUNT = ABS(ROUND(AMOUNT));
+   PUT @1 BNMCODE $14. ';' AMOUNT ;
+*;
+
+DATA _NULL_;
+   SET CLSFD CLSFCYCA;
+   FILE NSRS MOD;
+   IF _N_ = 1 THEN DO;
+      PUT @1 ' ';
+      PUT @1 'BRANCH' ';' 'ACCOUNT NO.' ';' 'CUSTOMER NAME' ';'
+             'FORBAL' ';' 'CURBAL MYR'  ';' 'CUSTOMER CODE' ';'
+             'PRODUCT CODE' ';' 'STATUS' ';' ;
+   END;
+   PUT @1 BRANCH  ';' ACCTNO    ';' NAME   ';'
+          AMOUNT  ';' MYRAMOUNT ';' CUSTCD ';'
+          PRODUCT ';' OPENIND   ';'
+   ;
+*;
