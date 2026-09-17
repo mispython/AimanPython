@@ -1,17 +1,6 @@
-Step 20: Writing output...
-  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIDETRTS/EIDETRTS_RENTAS_260916.txt
-  Total records  : 12,932
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIDETRTS.py", line 1043, in <module>
-    pl.DataFrame(out_rows).write_parquet(TRAN_DIR / "RENTAS_CIS.parquet")
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 391, in __init__
-    self._df = sequence_to_pydf(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 466, in sequence_to_pydf
-    return _sequence_to_pydf_dispatcher(
-  File "/usr/lib64/python3.9/functools.py", line 888, in wrapper
-    return dispatch(args[0].__class__)(*args, **kw)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 722, in _sequence_of_dict_to_pydf
-    pydf = PyDataFrame.from_dicts(
-polars.exceptions.ComputeError: could not append value: "240064A" of type: str to the builder; make sure that all rows have the same schema or consider increasing `infer_schema_length`
-
-it might also be that a value overflows the data-type's capacity
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLIQP.py", line 49, in <module>
+    from EIBDRLFM import run_eibdrlfm
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRLFM.py", line 75, in <module>
+    def _safe_write_parquet(rows, path: Path, schema: dict | None = None) -> None:
+TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
