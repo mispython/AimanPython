@@ -68,7 +68,7 @@ INPUT_CURRENT_FILE = STG_DIR / "MNITB" / "intg_dp_acct_current_d16.sas7bdat"
 
 # FD: cert-level (no ENTITY_CD) + account-level (has ACCTNO + ENTITY_CD).
 INPUT_FD_CERT_FILE = STG_DIR / "MNIFD" / "enrh_dp_fd_cert_d16.sas7bdat"
-INPUT_FD_ACCT_FILE = STG_DIR / "MNIFD" / "intg_dp_acct_fd_d16.sas7bdat"     # <- confirm actual name
+INPUT_FD_ACCT_FILE = STG_DIR / "MNITB" / "intg_dp_acct_fd_d16.sas7bdat"
 
 # Shared PBB files (unchanged).
 INPUT_CISDP_FILE   = STG_DIR / "CIS"      / "deposit.sas7bdat"
@@ -124,16 +124,16 @@ CHUNK_ROWS = 500_000
 # so they are NOT redeclared here; the existing CISDP_CACHE / FORATE_CACHE
 # (and FORATE_MAP) are reused.
 # ============================================================================
-INPUT_SAVING_FILE_PIBB  = STG_DIR / "MNITB" / "saving_pibb.sas7bdat"
-INPUT_CURRENT_FILE_PIBB = STG_DIR / "MNITB" / "current_pibb.sas7bdat"
-INPUT_FD_FILE_PIBB      = STG_DIR / "MNIFD" / "fd_pibb.sas7bdat"
+# INPUT_SAVING_FILE_PIBB  = STG_DIR / "MNITB" / "saving_pibb.sas7bdat"
+# INPUT_CURRENT_FILE_PIBB = STG_DIR / "MNITB" / "current_pibb.sas7bdat"
+# INPUT_FD_FILE_PIBB      = STG_DIR / "MNIFD" / "fd_pibb.sas7bdat"
 
-CACHE_DIR_PIBB = BASE_DIR / "input" / "cache" / "EIIDLIQP"
-CACHE_DIR_PIBB.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR_PIBB = BASE_DIR / "input" / "cache" / "EIIDLIQP"
+# CACHE_DIR_PIBB.mkdir(parents=True, exist_ok=True)
 
-SAVING_CACHE_PIBB  = CACHE_DIR_PIBB / f"{INPUT_SAVING_FILE_PIBB.stem}.parquet"
-CURRENT_CACHE_PIBB = CACHE_DIR_PIBB / f"{INPUT_CURRENT_FILE_PIBB.stem}.parquet"
-FD_CACHE_PIBB      = CACHE_DIR_PIBB / f"{INPUT_FD_FILE_PIBB.stem}.parquet"
+# SAVING_CACHE_PIBB  = CACHE_DIR_PIBB / f"{INPUT_SAVING_FILE_PIBB.stem}.parquet"
+# CURRENT_CACHE_PIBB = CACHE_DIR_PIBB / f"{INPUT_CURRENT_FILE_PIBB.stem}.parquet"
+# FD_CACHE_PIBB      = CACHE_DIR_PIBB / f"{INPUT_FD_FILE_PIBB.stem}.parquet"
 
 DALWPBBD_OUTPUT_CACHE_DIR_PIBB = BASE_DIR / "input" / "cache" / "DALWPBBD_PIBB"
 
@@ -250,7 +250,17 @@ ENTITY_COL   = "ENTITY_CD"
 PIBB_VALUE   = "PIBB"
 
 
+def _split_is_fresh(src: Path, *outputs: Path) -> bool:
+    if not all(p.exists() for p in outputs):
+        return False
+    src_mtime = src.stat().st_mtime
+    return all(p.stat().st_mtime >= src_mtime for p in outputs)
+
+
 def _split_by_entity(src_cache: Path, out_pbb: Path, out_pibb: Path, tag: str):
+    if _split_is_fresh(src_cache, out_pbb, out_pibb):
+        print(f"  [{tag}] Split fresh - skipping.")
+        return
     con = duckdb.connect(database=":memory:")
     con.execute(f"""
         COPY (
@@ -280,6 +290,10 @@ def _split_fd_by_entity(cert_cache: Path, acct_cache: Path,
     Uses DISTINCT account numbers from the account-level file so a
     one-to-many relationship on the account side does not duplicate
     cert-level rows."""
+    if _split_is_fresh(cert_cache, out_pbb, out_pibb) and \
+       _split_is_fresh(acct_cache, out_pbb, out_pibb):
+        print("  [FD] Split fresh - skipping.")
+        return
     con = duckdb.connect(database=":memory:")
     for op, out_path in [("<>", out_pbb), ("=", out_pibb)]:
         con.execute(f"""
@@ -287,11 +301,11 @@ def _split_fd_by_entity(cert_cache: Path, acct_cache: Path,
                 SELECT c.*
                 FROM read_parquet('{cert_cache.as_posix()}') c
                 INNER JOIN (
-                    SELECT DISTINCT ACCTNO
+                    SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
                     FROM read_parquet('{acct_cache.as_posix()}')
                     WHERE CAST({ENTITY_COL} AS VARCHAR) {op} '{PIBB_VALUE}'
                 ) a
-                ON c.ACCTNO = a.ACCTNO
+                ON CAST(c.ACCTNO AS BIGINT) = a.ACCTNO
             ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
         """)
     n_pbb  = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_pbb.as_posix()}')").fetchone()[0]
@@ -434,9 +448,10 @@ print("=" * 70)
 # _load_cached(INPUT_FD_FILE_PIBB,      FD_CACHE_PIBB,      "FD-PIBB")
 
 print("\nStep 8a: Using PIBB entity-split caches (from Step 2b) ...")
-SAVING_CACHE_PIBB  = SAVING_PIBB_CACHE
-CURRENT_CACHE_PIBB = CURRENT_PIBB_CACHE
-FD_CACHE_PIBB      = FD_PIBB_CACHE
+# in Step 2b; the PIBB pass below consumes them directly.
+# SAVING_CACHE_PIBB  = SAVING_PIBB_CACHE
+# CURRENT_CACHE_PIBB = CURRENT_PIBB_CACHE
+# FD_CACHE_PIBB      = FD_PIBB_CACHE
 
 # Step 8b: $FORATE is identical to PBB (same FORATE.FORATEBKP) -> reuse
 # FORATE_MAP built in Step 3. No re-query needed.
@@ -446,8 +461,8 @@ FD_CACHE_PIBB      = FD_PIBB_CACHE
 # ----------------------------------------------------------------------------
 print("\nStep 8c: Running DALWPBBD (PIBB) ...")
 BNM_SAVG_PIBB, BNM_CURN_PIBB, BNM_DEPT_PIBB = build_savg_curn_dept(
-    saving_cache=SAVING_CACHE_PIBB,
-    current_cache=CURRENT_CACHE_PIBB,
+    saving_cache=SAVING_PIBB_CACHE,
+    current_cache=CURRENT_PIBB_CACHE,
     cisdp_cache=CISDP_CACHE,                       # shared PBB file
     reptmon=REPTMON,
     nowk=NOWK,
@@ -461,8 +476,8 @@ print(f"  PIBB BNM_SAVG: {len(BNM_SAVG_PIBB):,} rows   "
 # ----------------------------------------------------------------------------
 print("\nStep 8d: Running EIBDRLFM (PIBB) ...")
 report_lines_pibb = run_eibdrlfm(
-    fd_cache=FD_CACHE_PIBB,
-    current_cache=CURRENT_CACHE_PIBB,
+    fd_cache=FD_PIBB_CACHE,
+    current_cache=CURRENT_PIBB_CACHE,
     bnm_savg=BNM_SAVG_PIBB,
     bnm_curn=BNM_CURN_PIBB,
     forate_map=FORATE_MAP,                         # shared from PBB pass
