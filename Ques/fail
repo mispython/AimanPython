@@ -1,24 +1,29 @@
-#!/usr/bin/env python3
-"""Throwaway diagnostic: inspect ENTITY_CD values in the raw caches."""
-import duckdb
-from pathlib import Path
+    con.execute(f"""
+        COPY (
+            SELECT * FROM read_parquet('{src_cache.as_posix()}')
+            WHERE {ENTITY_COL} IS NULL
+               OR TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) <> '{PIBB_VALUE}'
+        ) TO '{out_pbb.as_posix()}' (FORMAT PARQUET)
+    """)
 
-CACHE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP")
 
-SAVING_CACHE_FULL  = CACHE_DIR / "saving_full.parquet"
-CURRENT_CACHE_FULL = CACHE_DIR / "current_full.parquet"
 
-con = duckdb.connect(database=":memory:")
-for tag, cache in [("SAVING", SAVING_CACHE_FULL), ("CURRENT", CURRENT_CACHE_FULL)]:
-    print(f"--- {tag} ENTITY_CD distinct values ---")
-    rows = con.execute(f"""
-        SELECT
-            TRIM(CAST(ENTITY_CD AS VARCHAR)) AS ENTITY_CD,
-            COUNT(*)                         AS N
-        FROM read_parquet('{cache.as_posix()}')
-        GROUP BY 1
-        ORDER BY N DESC
-    """).fetchall()
-    for v, n in rows:
-        print(f"  {v!r:20} {n:,}")
-con.close()
+
+    con = duckdb.connect(database=":memory:")
+    for filter_sql, out_path in [
+        (f"({ENTITY_COL} IS NULL OR "
+         f"TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) <> '{PIBB_VALUE}')", out_pbb),
+        (f"(TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) = '{PIBB_VALUE}')",   out_pibb),
+    ]:
+        con.execute(f"""
+            COPY (
+                SELECT c.*
+                FROM read_parquet('{cert_cache.as_posix()}') c
+                INNER JOIN (
+                    SELECT DISTINCT CAST(ACCT_NUM AS BIGINT) AS ACCT_NUM
+                    FROM read_parquet('{acct_cache.as_posix()}')
+                    WHERE {filter_sql}
+                ) a
+                ON CAST(c.ACCT_NUM AS BIGINT) = a.ACCT_NUM
+            ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
+        """)
