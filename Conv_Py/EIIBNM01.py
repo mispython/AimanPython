@@ -253,24 +253,6 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
             fields.append(pa.field(col, pa_type))
         return pa.schema(fields)
     
-    # def _build_schema(df: "pd.DataFrame") -> pa.Schema:
-    #     fields = []
-    #     for col, dtype in df.dtypes.items():
-    #         if dtype == "object":
-    #             pa_type = pa.string()
-    #         elif pd.api.types.is_integer_dtype(dtype):
-    #             pa_type = pa.int64()
-    #         elif pd.api.types.is_float_dtype(dtype):
-    #             # A column that is entirely blank/NaN in only the FIRST chunk
-    #             # (e.g. a CHAR field with no values yet) must not be locked to
-    #             # float64 for the whole file -- later chunks with real string
-    #             # data would then be silently nulled out against that schema.
-    #             pa_type = pa.string() if df[col].isna().all() and dtype == "float64" else pa.float64()
-    #         else:
-    #             pa_type = pa.from_numpy_dtype(dtype)
-    #         fields.append(pa.field(col, pa_type))
-    #     return pa.schema(fields)
-
     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
     for chunk in reader:
         if schema is None:
@@ -401,16 +383,6 @@ IBTRAD_SELECT = (
     "CAST(TRANSREF AS VARCHAR) AS TRANSREF"
 )
 
-# DISPAY_SELECT = (
-#     "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO, "
-#     "CAST(DISBURSE AS DOUBLE) AS DISBURSE, CAST(REPAID AS DOUBLE) AS REPAID, "
-#     "CAST(FISSPURP AS INTEGER) AS FISSPURP, CAST(PRODUCT AS INTEGER) AS PRODUCT, "
-#     "CAST(DNBFISME AS VARCHAR) AS DNBFISME, CAST(PRODCD AS VARCHAR) AS PRODCD, "
-#     "CAST(CUSTCD AS VARCHAR) AS CUSTCD, CAST(AMTIND AS VARCHAR) AS AMTIND, "
-#     "CAST(SECTORCD AS VARCHAR) AS SECTORCD, CAST(BRANCH AS VARCHAR) AS BRANCH, "
-#     "CAST(ACCTYPE AS VARCHAR) AS ACCTYPE"
-# )
-
 DISPAY_SELECT = (
     "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO, "
     "CAST(DISBURSE AS DOUBLE) AS DISBURSE, CAST(REPAID AS DOUBLE) AS REPAID, "
@@ -455,6 +427,10 @@ print(f"  ISASD LOAN rows: {len(isasd_loan_rows):,}   BNM LOAN(cur) rows: {len(b
 print("  DEBUG bnm_loan_cur ACCTYPE non-null:", sum(1 for r in bnm_loan_cur_rows if r.get("ACCTYPE") is not None))
 
 print(f"  IBTRAD rows: {len(ibtrad_rows):,}   DISPAY rows: {len(dispay_raw_rows):,}   LNCOMM rows: {len(lncomm_rows):,}")
+
+# DEBUG
+print(f"  DEBUG input sizes: ISASD={len(isasd_loan_rows)} BNM_CUR={len(bnm_loan_cur_rows)} BNM_PREV={len(bnm_loan_prev_rows)} LNWOF_CUR={len(bnm_lnwof_cur_rows)} LNWOD_CUR={len(bnm_lnwod_cur_rows)} LNWOF_PREV={len(bnm_lnwof_prev_rows)} LNWOD_PREV={len(bnm_lnwod_prev_rows)}")
+
 
 # ============================================================================
 # GENERIC SAS-STYLE HELPERS
@@ -517,7 +493,6 @@ def sas_merge(datasets: list, by: list) -> tuple:
     )
 
     merged, flags = [], []
-    last_known = [None] * len(datasets)   # for cross-group retention
 
     for key in all_keys:
         per_ds = [indexed[i].get(key, []) for i in range(len(datasets))]
@@ -532,20 +507,18 @@ def sas_merge(datasets: list, by: list) -> tuple:
                     row.update(rows_i[pos])
                     flag.append(True)
                 else:
-                    # Retain within-group last row if any; else cross-group
-                    # last_known.
-                    src = rows_i[-1] if rows_i else last_known[i]
-                    if src is not None:
-                        row.update(src)
+                    # Within-group retention only -- SAS resets non-BY
+                    # variables to missing when a new BY group starts, so
+                    # we must NOT carry observations across groups.
+                    if rows_i:
+                        row.update(rows_i[-1])
                     flag.append(False)
+            # SAS MERGE BY semantics: BY variables are always set to the
+            # current group's values -- never retained.
+            for b, kv in zip(by, key):
+                row[b] = kv
             merged.append(row)
             flags.append(tuple(flag))
-
-        # Remember each input's last row in this group for cross-group
-        # retention.
-        for i, rows_i in enumerate(per_ds):
-            if rows_i:
-                last_known[i] = rows_i[-1]
 
     return merged, flags
 
@@ -588,6 +561,11 @@ PLNWOF = proc_sort(bnm_lnwof_prev_rows, ["ACCTNO", "NOTENO"])
 PLNWOD = proc_sort(bnm_lnwod_prev_rows, ["ACCTNO", "NOTENO"])
 BNM_LOAN_PREV_SORTED = proc_sort(bnm_loan_prev_rows, ["ACCTNO", "NOTENO"])
 
+# DEBUG
+print(f"  DEBUG MLOAN distinct keys: {len(set((r['ACCTNO'], r['NOTENO']) for r in MLOAN))} of {len(MLOAN)} rows")
+print(f"  DEBUG BNM_PREV distinct keys: {len(set((r['ACCTNO'], r['NOTENO']) for r in BNM_LOAN_PREV_SORTED))} of {len(BNM_LOAN_PREV_SORTED)} rows")
+print(f"  DEBUG DLOAN distinct keys: {len(set((r['ACCTNO'], r['NOTENO']) for r in DLOAN))} of {len(DLOAN)} rows")
+
 # DATA LOANDM; MERGE DLOAN(IN=A) MLOAN(IN=B); BY ACCTNO NOTENO; IF A AND NOT B;
 _dm_merged, _dm_flags = sas_merge([DLOAN, MLOAN], by=["ACCTNO", "NOTENO"])
 LOANDM = [r for r, (a, b) in zip(_dm_merged, _dm_flags) if a and not b]
@@ -595,10 +573,22 @@ LOANDM = [r for r, (a, b) in zip(_dm_merged, _dm_flags) if a and not b]
 # DATA LOAN&REPTMON&NOWK (WORK dataset -- the current-month "candidate"
 # loan master, distinct from BNM.LOAN&REPTMON&NOWK read again later):
 # MERGE PLNWOF PLNWOD LOANDM BNM.LOAN&REPTMON2&NOWK MLOAN LNWOF LNWOD;
-loan_work, _ = sas_merge(
+loan_work, loan_work_flags = sas_merge(
     [PLNWOF, PLNWOD, LOANDM, BNM_LOAN_PREV_SORTED, MLOAN, LNWOF, LNWOD],
     by=["ACCTNO", "NOTENO"],
 )
+
+# SAS MERGE BY retains non-BY variables from datasets that didn't
+# contribute for a given key. LNWOF's PRODCD is 'N' for write-offs, so
+# that retained 'N' clobbers MLOAN's real PRODCD for HP accounts that are
+# NOT write-offs. Restore PRODCD from MLOAN wherever MLOAN contributed
+# but LNWOF did not.
+_mloan_prodcd_map = {(r["ACCTNO"], r["NOTENO"]): r.get("PRODCD") for r in MLOAN}
+for r, flags in zip(loan_work, loan_work_flags):
+    if flags[4] and not flags[5]:     # MLOAN contributed, LNWOF did not
+        key = (r["ACCTNO"], r["NOTENO"])
+        if key in _mloan_prodcd_map:
+            r["PRODCD"] = _mloan_prodcd_map[key]
 # * IF ACCTYPE='OD' AND PRODUCT IN (150,151,152,181) THEN DELETE;  -- commented
 #   out in the original SAS; preserved as dead/disabled logic, not applied.
 print(f"  loan_work rows: {len(loan_work):,}")
@@ -628,7 +618,48 @@ DISPAY_raw = proc_sort(dispay_rows, ["ACCTNO", "NOTENO"])
 _dispay_wo_prodcd = [{k: v for k, v in r.items() if k != "PRODCD"} for r in DISPAY_raw]
 _dp_merged, _dp_flags = sas_merge([loan_work, _dispay_wo_prodcd], by=["ACCTNO", "NOTENO"])
 DISPAY_work = [r for r, (a, b) in zip(_dp_merged, _dp_flags) if a and b]
+
+# DEBUG
+_lw_keys = set((r["ACCTNO"], r["NOTENO"]) for r in loan_work)
+_dr_disb = [r for r in DISPAY_raw if (r.get("DISBURSE") or 0) > 0]
+_matched = sum(1 for r in _dr_disb if (r["ACCTNO"], r["NOTENO"]) in _lw_keys)
+print(f"  DEBUG loan_work distinct keys: {len(_lw_keys)}  DISPAY_raw DISBURSE>0 matched: {_matched}/{len(_dr_disb)}")
+
+# DEBUG
+_dr_keys = set((r["ACCTNO"], r["NOTENO"]) for r in DISPAY_raw)
+_lw_missing = [k for k in _dr_keys if k not in _lw_keys]
+print(f"  DEBUG DISPAY_raw distinct keys: {len(_dr_keys)}  missing from loan_work: {len(_lw_missing)}")
+print(f"  DEBUG sample missing keys: {_lw_missing[:5]}")
+_null_noteno_dispay = sum(1 for r in DISPAY_raw if r.get("NOTENO") is None)
+_null_noteno_lw     = sum(1 for r in loan_work  if r.get("NOTENO") is None)
+print(f"  DEBUG NULL NOTENO: DISPAY_raw={_null_noteno_dispay}  loan_work={_null_noteno_lw}")
+
 print(f"  DISPAY_work rows: {len(DISPAY_work):,}")
+
+# DEBUG
+print(f"  DEBUG DISPAY_raw  DISBURSE>0: {sum(1 for r in DISPAY_raw  if (r.get('DISBURSE') or 0) > 0)} of {len(DISPAY_raw)}")
+print(f"  DEBUG DISPAY_work DISBURSE>0: {sum(1 for r in DISPAY_work if (r.get('DISBURSE') or 0) > 0)} of {len(DISPAY_work)}")
+print(f"  DEBUG DISPAY_work DISBURSE>0 & PRODCD starts with '34': {sum(1 for r in DISPAY_work if (r.get('DISBURSE') or 0) > 0 and (r.get('PRODCD') or '').startswith('34'))}")
+
+# DEBUG
+_excluded = [r for r in DISPAY_work
+             if (r.get("DISBURSE") or 0) > 0
+             and not (r.get("PRODCD") or "").startswith("34")
+             and r.get("PRODCD") != "54120"
+             and r.get("PRODUCT") not in (698, 699, 983)]
+print(f"  DEBUG excluded DISBURSE>0 count: {len(_excluded)}")
+
+# DEBUG
+from collections import Counter as _C
+_mloan_prodcd_by_key = {(r["ACCTNO"], r["NOTENO"]): r.get("PRODCD") for r in MLOAN}
+_excl_prodcds = _C(
+    _mloan_prodcd_by_key.get((r["ACCTNO"], r["NOTENO"]), "<not in MLOAN>")
+    for r in _excluded
+)
+print(f"  DEBUG MLOAN PRODCD for the {len(_excluded)} excluded keys: {dict(_excl_prodcds)}")
+print("  DEBUG excluded (PRODCD, PRODUCT, ACCTYPE) top:")
+for k, n in _C((r.get("PRODCD"), r.get("PRODUCT"), r.get("ACCTYPE")) for r in _excluded).most_common(10):
+    print(f"      {k} : {n}")
 
 # ============================================================================
 # STEP 6: ALL LOAN - DISBURSEMENT, REPAYMENT, O/S
@@ -662,8 +693,8 @@ def _alm_almbt_row(r: dict):
     """DATA ALM ALMBT; ... one observation's worth of the big conditional
     block; returns (kept_row_or_None, is_almbt)."""
     paidind = r.get("PAIDIND")
-    # if paidind in ("P", "C") and r.get("EIR_ADJ") is None:
-    #     return None, False
+    if paidind in ("P", "C") and r.get("EIR_ADJ") is None:
+        return None, False
     oribal = r.get("ORIBAL")
     if oribal == 0.0:
         return None, False
@@ -671,9 +702,9 @@ def _alm_almbt_row(r: dict):
     xind = "Y" if balx in (0.0, -0.0) else " "
     if xind == "Y":
         return None, False
-    # prodcd = r.get("PRODCD") or ""
-    # if not (prodcd[:2] == "34" or prodcd == "54120"):
-    #     return None, False
+    prodcd = r.get("PRODCD") or ""
+    if not (prodcd[:2] == "34" or prodcd == "54120"):
+        return None, False
 
     noacct = r.get("NOACCT")
     if r.get("ACCTYPE") == "LN":
@@ -754,12 +785,32 @@ for r in DISPAY_work:
         DISPAY_final.append({k: r.get(k) for k in DISPAY_KEEP})
 DISPAY_final = proc_sort(DISPAY_final, ["ACCTNO", "NOTENO", "CUSTCD", "FISSPURP", "SECTORCD"])
 
+# DEBUG
+_hp_disb = sum(1 for r in DISPAY_final
+               if ((r.get("ACCTYPE") == "LN" and r.get("PRODCD") == "34111")
+                   or r.get("PRODUCT") in (698, 699, 983)))
+_hp_disb_pos = sum(1 for r in DISPAY_final
+                   if ((r.get("ACCTYPE") == "LN" and r.get("PRODCD") == "34111")
+                       or r.get("PRODUCT") in (698, 699, 983))
+                   and (r.get("DISBURSE") or 0) > 0)
+print(f"  DEBUG DISPAY_final HP rows: {_hp_disb}  (with DISBURSE>0: {_hp_disb_pos})")
+
+# DEBUG
+from collections import Counter
+_top_disb = Counter(
+    (r.get("PRODCD"), r.get("PRODUCT"))
+    for r in DISPAY_final if (r.get("DISBURSE") or 0) > 0
+)
+print("  DEBUG top (PRODCD,PRODUCT) among DISBURSE>0 rows in DISPAY_final:")
+for k, n in _top_disb.most_common(15):
+    print(f"      {k} : {n}")
+
 # PROC SORT DATA=ALM; BY ACCTNO NOTENO;
 # DATA ALM; MERGE ALM(IN=B) DISPAY(IN=A); BY ACCTNO NOTENO;
 #   IF REPAID>0 THEN REPAYNO=1; IF DISBURSE>0 THEN DISBNO=1;
 ALM_all = proc_sort(ALM_all, ["ACCTNO", "NOTENO"])
 
-#DEBUG
+# DEBUG
 print("  DEBUG ALM_all ACCTYPE non-null:", sum(1 for r in ALM_all if r.get("ACCTYPE") is not None), "of", len(ALM_all))
 print("  DEBUG DISPAY_final ACCTYPE non-null:", sum(1 for r in DISPAY_final if r.get("ACCTYPE") is not None), "of", len(DISPAY_final))
 
@@ -863,9 +914,6 @@ for r in BTRAD1:
     balance = bal_row["BALANCE"] if bal_row else None
     disbno = 1 if (r.get("DISBURSE") or 0) > 0 else None
     repayno = 1 if (r.get("REPAID") or 0) > 0 else None
-    # noacct = None
-    # if bal_row is not None and round(balance, 2) not in (None, 0.0) and noacct != 0:
-    #     noacct = 1
     noacct = None
     if bal_row is not None:
         rounded_bal = None if balance is None else round(balance, 2)
@@ -1162,33 +1210,6 @@ _TITLE1 = "PUBLIC ISLAMIC BANK BERHAD"
 _TITLE3 = "REPORT ID : EIIBNM01"
 
 
-# class _Pager:
-#     """Tracks lines-on-page and emits form-feed + titles at PAGE_SIZE."""
-
-#     def __init__(self, lines: list):
-#         self.lines = lines
-#         self.on_page = 0
-
-#     def new_page(self, title2: str, header_lines: list):
-#         self.lines.append(FF)
-#         self.lines.append(_TITLE1)
-#         self.lines.append(title2)
-#         self.lines.append(_TITLE3)
-#         self.lines.append("")
-#         self.lines.extend(header_lines)
-#         self.on_page = 5 + len(header_lines)
-
-#     def add(self, line: str):
-#         if self.on_page >= PAGE_SIZE:
-#             self.new_page(self._title2, self._header)
-#         self.lines.append(line)
-#         self.on_page += 1
-
-#     def start(self, title2: str, header_lines: list):
-#         self._title2, self._header = title2, header_lines
-#         self.new_page(title2, header_lines)
-
-
 class _Pager:
     """Tracks lines-on-page and emits form-feed + titles at PAGE_SIZE."""
 
@@ -1240,8 +1261,8 @@ class _Pager:
         fit `widths`. Reprints the box header on each new page and marks a
         page that overflows with '(Continued)'."""
         header = self._box_header(box_label, widths)
-        header_len = 3 + len(header)              # TITLE1 + TITLE2 + blank + box header
-        room_lines = PAGE_SIZE - header_len - 1    # reserve 1 line for closing border
+        header_len = 3 + len(header)                # TITLE1 + TITLE2 + blank + box header
+        room_lines = PAGE_SIZE - header_len - 1     # reserve 1 line for closing border
         idx, n = 0, len(row_blocks)
         while True:
             self.page_no += 1
@@ -1269,35 +1290,6 @@ class _Pager:
                 break
 
 
-# def proc_print_prodesc(pager: _Pager, rows: list, title2: str, where=None) -> None:
-#     """PROC PRINT DATA=...; [WHERE ...;] SUM DISBURSE REPAID BALANCE DISBNO
-#     REPAYNO NOACCT; TITLE2 <title2>;"""
-#     data = [r for r in rows if (where is None or where(r))]
-#     header = [
-#         "OBS  PRODESC" + " " * 29 + "DISBURSE".rjust(16) + "REPAID".rjust(16)
-#         + "BALANCE".rjust(16) + "DISBNO".rjust(9) + "REPAYNO".rjust(9) + "NOACCT".rjust(9),
-#         "-" * LINE_SIZE,
-#     ]
-#     pager.start(title2, header)
-#     totals = {c: 0.0 for c in MEASURE_COLS}
-#     for i, r in enumerate(data, start=1):
-#         line = (
-#             f"{i:<5}{(r.get('PRODESC') or ''):<35}"
-#             f"{_fmt_amt(r.get('DISBURSE'))}{_fmt_amt(r.get('REPAID'))}{_fmt_amt(r.get('BALANCE'))}"
-#             f"{_fmt_cnt(r.get('DISBNO'))}{_fmt_cnt(r.get('REPAYNO'))}{_fmt_cnt(r.get('NOACCT'))}"
-#         )
-#         pager.add(line)
-#         for c in MEASURE_COLS:
-#             totals[c] += r.get(c) or 0.0
-#     pager.add("-" * LINE_SIZE)
-#     total_line = (
-#         f"{'':<5}{'TOTAL':<35}"
-#         f"{_fmt_amt(totals['DISBURSE'])}{_fmt_amt(totals['REPAID'])}{_fmt_amt(totals['BALANCE'])}"
-#         f"{_fmt_cnt(totals['DISBNO'])}{_fmt_cnt(totals['REPAYNO'])}{_fmt_cnt(totals['NOACCT'])}"
-#     )
-#     pager.add(total_line)
-
-
 def _pp_row(obs, prodesc, disburse, repaid, balance, disbno, repayno, noacct) -> str:
     g = " " * GAP
     line = (
@@ -1317,6 +1309,9 @@ def proc_print_prodesc(pager: _Pager, rows: list, title2: str, where=None) -> No
     """PROC PRINT DATA=...; [WHERE ...;] SUM DISBURSE REPAID BALANCE DISBNO
     REPAYNO NOACCT; TITLE2 <title2>;"""
     data = [r for r in rows if (where is None or where(r))]
+    if not data:
+        return
+    data.sort(key=lambda r: _sort_key(r.get("PRODESC")))
     g = " " * GAP
     header = [
         (
@@ -1346,22 +1341,6 @@ def proc_print_prodesc(pager: _Pager, rows: list, title2: str, where=None) -> No
                        totals["DISBNO"], totals["REPAYNO"], totals["NOACCT"]))
 
 
-# def proc_tabulate_type(pager: _Pager, rows: list, title2: str) -> None:
-#     """PROC TABULATE ... TABLE TYPE=' ' ALL='GRAND TOTAL', SUM=' '*(BALANCE=
-#     'AMOUNT' NOACCT='NO. OF ACCT'*F=10.) / BOX='FACILITY' RTS=25;"""
-#     data = [r for r in rows if r.get("PRODESC") == "TOTAL COMMERCIAL RETAILS" and (r.get("BALANCE") or 0) != 0]
-#     groups = proc_summary(data, ["TYPE"], ["BALANCE", "NOACCT"], missing=True)
-#     header = [_center("FACILITY", 25) + "AMOUNT".rjust(16) + "NO. OF ACCT".rjust(12), "-" * LINE_SIZE]
-#     pager.start(title2, header)
-#     grand_bal, grand_acct = 0.0, 0
-#     for g in groups:
-#         pager.add(f"{(g.get('TYPE') or ''):<25}{_fmt_amt(g.get('BALANCE'))}{_fmt_cnt(g.get('NOACCT'), 12)}")
-#         grand_bal += g.get("BALANCE") or 0.0
-#         grand_acct += int(g.get("NOACCT") or 0)
-#     pager.add("-" * LINE_SIZE)
-#     pager.add(f"{'GRAND TOTAL':<25}{_fmt_amt(grand_bal)}{_fmt_cnt(grand_acct, 12)}")
-
-
 def proc_tabulate_type(pager: _Pager, rows: list, title2: str) -> None:
     """PROC TABULATE ... TABLE TYPE=' ' ALL='GRAND TOTAL', SUM=' '*(BALANCE=
     'AMOUNT' NOACCT='NO. OF ACCT'*F=10.) / BOX='FACILITY' RTS=25;"""
@@ -1382,31 +1361,6 @@ def proc_tabulate_type(pager: _Pager, rows: list, title2: str) -> None:
     row_blocks.append((_box_border(FAC_W, AMT2_W, ACC_W), None))
 
     pager.render_box(title2, "FACILITY", (FAC_W, AMT2_W, ACC_W), row_blocks)
-
-
-# def proc_tabulate_sector(pager: _Pager, rows: list, title2: str) -> None:
-#     """PROC TABULATE ... TABLE SECTGROUP=' '*(SECTTYPE='' ALL='SUB-TOTAL')
-#     ALL='GRAND TOTAL', SUM=' '*(BALANCE='AMOUNT' NOACCT='NO. OF ACCT'*F=10.)
-#     / BOX='SECTFISS' RTS=25;"""
-#     data = [r for r in rows if r.get("PRODESC") == "TOTAL COMMERCIAL RETAILS" and (r.get("BALANCE") or 0) != 0]
-#     header = [_center("SECTFISS", 25) + "AMOUNT".rjust(16) + "NO. OF ACCT".rjust(12), "-" * LINE_SIZE]
-#     pager.start(title2, header)
-#     by_group = {}
-#     for r in data:
-#         by_group.setdefault(r.get("SECTGROUP"), []).append(r)
-#     grand_bal, grand_acct = 0.0, 0
-#     for group_key in sorted(by_group, key=_sort_key):
-#         subs = proc_summary(by_group[group_key], ["SECTTYPE"], ["BALANCE", "NOACCT"], missing=True)
-#         sub_bal, sub_acct = 0.0, 0
-#         for s in subs:
-#             pager.add(f"{(group_key or ''):<12}{(s.get('SECTTYPE') or ''):<13}{_fmt_amt(s.get('BALANCE'))}{_fmt_cnt(s.get('NOACCT'), 12)}")
-#             sub_bal += s.get("BALANCE") or 0.0
-#             sub_acct += int(s.get("NOACCT") or 0)
-#         pager.add(f"{(group_key or ''):<12}{'SUB-TOTAL':<13}{_fmt_amt(sub_bal)}{_fmt_cnt(sub_acct, 12)}")
-#         grand_bal += sub_bal
-#         grand_acct += sub_acct
-#     pager.add("-" * LINE_SIZE)
-#     pager.add(f"{'GRAND TOTAL':<25}{_fmt_amt(grand_bal)}{_fmt_cnt(grand_acct, 12)}")
 
 
 def proc_tabulate_sector(pager: _Pager, rows: list, title2: str) -> None:
