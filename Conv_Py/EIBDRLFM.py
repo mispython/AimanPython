@@ -70,6 +70,31 @@ from PBBDPFMT import fdprod_format, ddcustcd_format, ifdcuscd_format
 # PBBELF import intentionally omitted - see module docstring.
 
 # ============================================================================
+# PARQUET WRITE HELPER - tolerates empty row lists
+# ============================================================================
+def _safe_write_parquet(rows, path: Path, schema: dict | None = None) -> None:
+    """Write a list of dicts to parquet.
+
+    Polars cannot infer a schema from an empty list, so if `rows` is empty
+    we fall back to:
+      - the caller-supplied `schema` if provided, or
+      - a single dummy column so the file is still a valid parquet.
+
+    This matches SAS behaviour where PROC SUMMARY / DATA _NULL_ writing an
+    empty dataset still produces a valid (zero-row) output member.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if rows:
+        pl.DataFrame(rows).write_parquet(path)
+        return
+    if schema is not None:
+        empty = pl.DataFrame({k: pl.Series([], dtype=v) for k, v in schema.items()})
+    else:
+        empty = pl.DataFrame({"_empty": pl.Series([], dtype=pl.Boolean)})
+    empty.write_parquet(path)
+
+
+# ============================================================================
 # LOCAL FORMAT: REMFMT (distinct bucket set from EIIMRM01.py's own REMFMT)
 # ============================================================================
 def remfmt_format(value: Optional[float]) -> str:
@@ -139,6 +164,52 @@ def _sas_round(x: float) -> float:
     if x >= 0:
         return float(int(x + 0.5))
     return float(-int(-x + 0.5))
+
+
+def _sas_best12_rewind1(v) -> str:
+    """Emulate `PUT var (BEST12.) +(-1)`.
+
+    SAS writes the number right-justified in a 12-column field, then the
+    subsequent +(-1) overwrites the LAST column with whatever comes next
+    (here, ';'). So the visible result is an 11-column right-justified
+    number, with the 12th column effectively replaced.
+
+    We return the 11 visible columns only; the caller appends ';' just
+    as the SAS PUT does.
+    """
+    if v is None or v == "" :
+        # SAS missing numeric under BEST12. prints as a single '.'
+        # right-justified in 12 columns -> visible 11 cols after rewind
+        return ".".rjust(11)
+    # Integers vs floats: SAS BEST12. prints whole floats as ints if the
+    # value is integral.
+    if isinstance(v, float) and v.is_integer():
+        body = str(int(v))
+    else:
+        body = str(v)
+    # SAS switches to scientific notation when the value won't fit in 12.
+    if len(body) > 11:
+        body = f"{v:.5E}" if isinstance(v, float) else body[-11:]
+    return body.rjust(11)
+
+
+def _sas_best12_full(v) -> str:
+    """PUT var (BEST12.) with NO +(-1) rewind - 12 visible columns."""
+    if v is None:
+        return ".".rjust(12)
+    if isinstance(v, float) and v.is_integer():
+        body = str(int(v))
+    else:
+        body = str(v)
+    return body.rjust(12)
+
+
+def _sas_line(bnmcode14: str, *numbers) -> str:
+    """Build one FISS/NSRS line matching the SAS PUT pattern:
+       @1 bnmcode $14. ';' n1 +(-1) ';' n2 +(-1) ';' ...
+    """
+    return bnmcode14 + ";" + ";".join(_sas_best12_rewind1(n) for n in numbers)
+
 
 
 # ============================================================================
@@ -224,6 +295,35 @@ def run_eibdrlfm(
     fiss_lines: List[str] = []
     nsrs_lines: List[str] = []
 
+    # -- Schemas used when a row list comes out empty ------------------------
+    _LCR_FD_SCHEMA = {
+        "BNMCODE": pl.Utf8, "BRANCH": pl.Int64, "ACCTNO": pl.Int64,
+        "AMOUNT": pl.Float64, "CURCODE": pl.Utf8, "CUSTCD": pl.Int64,
+        "PRODUCT": pl.Int64, "REMMTH": pl.Float64, "REM30D": pl.Float64,
+        "FDHOLD": pl.Utf8, "INTPLAN": pl.Int64,
+    }
+    _LCR_SA_SCHEMA = {
+        "BNMCODE": pl.Utf8, "BRANCH": pl.Int64, "ACCTNO": pl.Int64,
+        "AMOUNT": pl.Float64, "CURCODE": pl.Utf8, "CUSTCD": pl.Utf8,
+        "PRODUCT": pl.Int64, "REMMTH": pl.Float64, "REM30D": pl.Float64,
+    }
+    _LCR_CA_SCHEMA = {
+        "BNMCODE": pl.Utf8, "BRANCH": pl.Int64, "ACCTNO": pl.Int64,
+        "AMOUNT": pl.Float64, "CURCODE": pl.Utf8, "CUSTCD": pl.Utf8,
+        "PRODUCT": pl.Int64, "REMMTH": pl.Float64, "REM30D": pl.Float64,
+        "INTRATE": pl.Float64, "BILLERIND": pl.Utf8,
+    }
+    _LCR_FCYCA_SCHEMA = {
+        "BNMCODE": pl.Utf8, "BRANCH": pl.Int64, "ACCTNO": pl.Int64,
+        "AMOUNT": pl.Float64, "CURCODE": pl.Utf8, "CUSTCD": pl.Utf8,
+        "PRODUCT": pl.Int64, "REMMTH": pl.Float64, "REM30D": pl.Float64,
+        "INTRATE": pl.Float64, "BILLERIND": pl.Utf8,
+    }
+    _NOTE_SCHEMA = {
+        "BNMCODE": pl.Utf8, "AMOUNT": pl.Float64, "AMTUSD": pl.Float64,
+        "AMTSGD": pl.Float64, "AMTHKD": pl.Float64, "AMTAUD": pl.Float64,
+    }
+
     # ------------------------------------------------------------------
     # DATA FD ... SET FD.FD;
     # ------------------------------------------------------------------
@@ -257,12 +357,19 @@ def run_eibdrlfm(
         cust = '08' if r["CUSTCD"] in (77, 78, 95, 96) else '09'
         matdt = r["MATDT"]
 
+        # if r["OPENIND"] == 'D' or (matdt is not None and (matdt - reptdate).days < 8):
+        #     remmth = 0.1
+        #     remd30 = None if matdt is None else (matdt - reptdate).days / 30.0
+        # else:
+        #     remmth = _remmth(matdt, reptdate, rpyr, rpmth, rpday, rd_days)
+        #     remd30 = (matdt - reptdate).days / 30.0
+
         if r["OPENIND"] == 'D' or (matdt is not None and (matdt - reptdate).days < 8):
             remmth = 0.1
-            remd30 = None if matdt is None else (matdt - reptdate).days / 30.0
+            remd30 = None                              # <- matches SAS: not computed
         else:
             remmth = _remmth(matdt, reptdate, rpyr, rpmth, rpday, rd_days)
-            remd30 = (matdt - reptdate).days / 30.0
+            remd30 = None if matdt is None else (matdt - reptdate).days / 30.0
 
         amtusd = amtsgd = amthkd = amtaud = 0.0
         bic = fdprod_format(r["INTPLAN"])
@@ -304,24 +411,33 @@ def run_eibdrlfm(
                 "OPENIND": r["OPENIND"], "CURCODE": r["CURCODE"], "MYRAMOUNT": myramount,
             })
 
-    pl.DataFrame(fd_lcr_rows).write_parquet(lcr_output_dir / f"FD{reptday}.parquet")
+    # pl.DataFrame(fd_lcr_rows).write_parquet(lcr_output_dir / f"FD{reptday}.parquet")
+    _safe_write_parquet(fd_lcr_rows, lcr_output_dir / f"FD{reptday}.parquet", _LCR_FD_SCHEMA)
     del fd_raw
     print(f"  FD rows -> LCR: {len(fd_lcr_rows):,}  Closed FD (CLSFD): {len(clsfd_rows):,}")
 
     # ------------------------------------------------------------------
     # DATA SA ... SET BNM.SAVG&REPTMON&NOWK;
     # ------------------------------------------------------------------
+    # sa_lcr_rows, sa_sum_rows = [], []
+    # for r in bnm_savg.iter_rows(named=True):
+    #     cust = '08' if r["CUSTCD"] in ('77', '78', '95', '96') else '09'
+    #     bnmcode = '95312' + cust + '01' + '0000Y'
+    #     sa_lcr_rows.append({
+    #         "BNMCODE": bnmcode, "BRANCH": r["BRANCH"], "ACCTNO": r["ACCTNO"],
+    #         "AMOUNT": r["CURBAL"], "CURCODE": r["CURCODE"], "CUSTCD": r["CUSTCD"],
+    #         "PRODUCT": r["PRODUCT"], "REMMTH": None, "REM30D": None,
+    #     })
+    #     if r["PRODCD"] != 'N' or r["CURCODE"] == 'XAU':
+    #         pass  # output LCR.SA (already appended above regardless of gate below)
+    #     if r["PRODCD"] != 'N':
+    #         sa_sum_rows.append(_row(bnmcode, r["CURBAL"], 0.0, 0.0, 0.0, 0.0))
     sa_lcr_rows, sa_sum_rows = [], []
     for r in bnm_savg.iter_rows(named=True):
         cust = '08' if r["CUSTCD"] in ('77', '78', '95', '96') else '09'
         bnmcode = '95312' + cust + '01' + '0000Y'
-        sa_lcr_rows.append({
-            "BNMCODE": bnmcode, "BRANCH": r["BRANCH"], "ACCTNO": r["ACCTNO"],
-            "AMOUNT": r["CURBAL"], "CURCODE": r["CURCODE"], "CUSTCD": r["CUSTCD"],
-            "PRODUCT": r["PRODUCT"], "REMMTH": None, "REM30D": None,
-        })
         if r["PRODCD"] != 'N' or r["CURCODE"] == 'XAU':
-            pass  # output LCR.SA (already appended above regardless of gate below)
+            sa_lcr_rows.append({...})
         if r["PRODCD"] != 'N':
             sa_sum_rows.append(_row(bnmcode, r["CURBAL"], 0.0, 0.0, 0.0, 0.0))
 
@@ -330,7 +446,8 @@ def run_eibdrlfm(
         row for row, r in zip(sa_lcr_rows, bnm_savg.iter_rows(named=True))
         if r["PRODCD"] != 'N' or r["CURCODE"] == 'XAU'
     ]
-    pl.DataFrame(sa_lcr_rows).write_parquet(lcr_output_dir / f"SA{reptday}.parquet")
+    # pl.DataFrame(sa_lcr_rows).write_parquet(lcr_output_dir / f"SA{reptday}.parquet")
+    _safe_write_parquet(sa_lcr_rows, lcr_output_dir / f"SA{reptday}.parquet", _LCR_SA_SCHEMA)
     print(f"  SA rows -> LCR: {len(sa_lcr_rows):,}")
 
     # ------------------------------------------------------------------
@@ -349,7 +466,8 @@ def run_eibdrlfm(
             "INTRATE": r["INTRATE"], "BILLERIND": r["BILLERIND"],
         })
         ca_sum_rows.append(_row(bnmcode, r["CURBAL"], 0.0, 0.0, 0.0, 0.0))
-    pl.DataFrame(ca_lcr_rows).write_parquet(lcr_output_dir / f"CA{reptday}.parquet")
+    # pl.DataFrame(ca_lcr_rows).write_parquet(lcr_output_dir / f"CA{reptday}.parquet")
+    _safe_write_parquet(ca_lcr_rows, lcr_output_dir / f"CA{reptday}.parquet", _LCR_CA_SCHEMA)
     print(f"  CA rows -> LCR: {len(ca_lcr_rows):,}")
 
     # ------------------------------------------------------------------
@@ -404,7 +522,8 @@ def run_eibdrlfm(
                 "AMOUNT": curbal, "CUSTCD": curcd, "PRODUCT": r["PRODUCT"],
                 "OPENIND": r["OPENIND"], "CURCODE": r["CURCODE"], "MYRAMOUNT": myramount,
             })
-    pl.DataFrame(fcyca_lcr_rows).write_parquet(lcr_output_dir / f"FCYCA{reptday}.parquet")
+    # pl.DataFrame(fcyca_lcr_rows).write_parquet(lcr_output_dir / f"FCYCA{reptday}.parquet")
+    _safe_write_parquet(fcyca_lcr_rows, lcr_output_dir / f"FCYCA{reptday}.parquet", _LCR_FCYCA_SCHEMA)
     del cur_raw
     print(f"  FCYCA rows -> LCR: {len(fcyca_lcr_rows):,}  Closed FCYCA: {len(clsfcyca_rows):,}")
 
@@ -435,58 +554,112 @@ def run_eibdrlfm(
     note_rows = _group_sum(all_rows, "BNMCODE")
     note_rows.sort(key=lambda r: r["BNMCODE"])
 
-    def _fmt_amt(v, divide_by_1000: bool) -> str:
+    # def _fmt_amt(v, divide_by_1000: bool) -> str:
+    #     if v is None:
+    #         v = 0.0
+    #     v = v / 1000.0 if divide_by_1000 else v
+    #     return str(int(abs(_sas_round(v))))
+    def _fmt_amt_num(v, divide_by_1000: bool):
+        """Return the already-rounded, abs-ed numeric value (int or None)
+        for use with _sas_best12_rewind1. Keeps SAS semantics:
+        ABS(ROUND(x)) with missing propagating as None."""
         if v is None:
-            v = 0.0
+            return None
         v = v / 1000.0 if divide_by_1000 else v
-        return str(int(abs(_sas_round(v))))
+        return int(abs(_sas_round(v)))
 
     for i, r in enumerate(note1_rows):
         if i == 0:
             fiss_lines.append(f"RLFM{reptday}{reptmon}{reptyear}")
             nsrs_lines.append(f"RLFM{reptday}{reptmon}{reptyear}")
-        fiss_lines.append(";".join([
-            r["BNMCODE1"].ljust(14)[:14], _fmt_amt(r["AMOUNT"], True),
-            _fmt_amt(r["AMTUSD"], True), _fmt_amt(r["AMTSGD"], True),
-            _fmt_amt(r["AMTHKD"], True), _fmt_amt(r["AMTAUD"], True),
-        ]))
-        nsrs_lines.append(";".join([
-            r["BNMCODE1"].ljust(14)[:14], _fmt_amt(r["AMOUNT"], False),
-            _fmt_amt(r["AMTUSD"], False), _fmt_amt(r["AMTSGD"], False),
-            _fmt_amt(r["AMTHKD"], False), _fmt_amt(r["AMTAUD"], False),
-        ]))
+
+        # fiss_lines.append(";".join([
+        #     r["BNMCODE1"].ljust(14)[:14], _fmt_amt(r["AMOUNT"], True),
+        #     _fmt_amt(r["AMTUSD"], True), _fmt_amt(r["AMTSGD"], True),
+        #     _fmt_amt(r["AMTHKD"], True), _fmt_amt(r["AMTAUD"], True),
+        # ]))
+        fiss_lines.append(_sas_line(
+            r["BNMCODE1"].ljust(14)[:14],
+            _fmt_amt_num(r["AMOUNT"], True),
+            _fmt_amt_num(r["AMTUSD"], True),
+            _fmt_amt_num(r["AMTSGD"], True),
+            _fmt_amt_num(r["AMTHKD"], True),
+            _fmt_amt_num(r["AMTAUD"], True),
+        ))
+
+        # nsrs_lines.append(";".join([
+        #     r["BNMCODE1"].ljust(14)[:14], _fmt_amt(r["AMOUNT"], False),
+        #     _fmt_amt(r["AMTUSD"], False), _fmt_amt(r["AMTSGD"], False),
+        #     _fmt_amt(r["AMTHKD"], False), _fmt_amt(r["AMTAUD"], False),
+        # ]))
+        nsrs_lines.append(_sas_line(
+            r["BNMCODE1"].ljust(14)[:14],
+            _fmt_amt_num(r["AMOUNT"], False),
+            _fmt_amt_num(r["AMTUSD"], False),
+            _fmt_amt_num(r["AMTSGD"], False),
+            _fmt_amt_num(r["AMTHKD"], False),
+            _fmt_amt_num(r["AMTAUD"], False),
+        ))
 
     # DATA NLF.NOTE&REPTYEAR&REPTMON&REPTDAY; SET NOTE; -- persist as parquet
-    pl.DataFrame(note_rows).write_parquet(
-        nlf_output_dir / f"NOTE{reptyear}{reptmon}{reptday}.parquet"
+    # pl.DataFrame(note_rows).write_parquet(
+    #     nlf_output_dir / f"NOTE{reptyear}{reptmon}{reptday}.parquet"
+    # )
+    _safe_write_parquet(
+        note_rows,
+        nlf_output_dir / f"NOTE{reptyear}{reptmon}{reptday}.parquet",
+        _NOTE_SCHEMA,
     )
 
     for i, r in enumerate(note_rows):
         if i == 0:
             fiss_lines.append("**")
             nsrs_lines.append("**")
-        fiss_lines.append(";".join([
-            r["BNMCODE"].ljust(14)[:14], _fmt_amt(r["AMOUNT"], True),
-            _fmt_amt(r["AMTUSD"], True), _fmt_amt(r["AMTSGD"], True),
-            _fmt_amt(r["AMTHKD"], True), _fmt_amt(r["AMTAUD"], True),
-        ]))
-        nsrs_lines.append(";".join([
-            r["BNMCODE"].ljust(14)[:14], _fmt_amt(r["AMOUNT"], False),
-            _fmt_amt(r["AMTUSD"], False), _fmt_amt(r["AMTSGD"], False),
-            _fmt_amt(r["AMTHKD"], False), _fmt_amt(r["AMTAUD"], False),
-        ]))
+
+        # fiss_lines.append(";".join([
+        #     r["BNMCODE"].ljust(14)[:14], _fmt_amt(r["AMOUNT"], True),
+        #     _fmt_amt(r["AMTUSD"], True), _fmt_amt(r["AMTSGD"], True),
+        #     _fmt_amt(r["AMTHKD"], True), _fmt_amt(r["AMTAUD"], True),
+        # ]))
+        fiss_lines.append(_sas_line(
+            r["BNMCODE"].ljust(14)[:14],
+            _fmt_amt_num(r["AMOUNT"], True),
+            _fmt_amt_num(r["AMTUSD"], True),
+            _fmt_amt_num(r["AMTSGD"], True),
+            _fmt_amt_num(r["AMTHKD"], True),
+            _fmt_amt_num(r["AMTAUD"], True),
+        ))
+
+        # nsrs_lines.append(";".join([
+        #     r["BNMCODE"].ljust(14)[:14], _fmt_amt(r["AMOUNT"], False),
+        #     _fmt_amt(r["AMTUSD"], False), _fmt_amt(r["AMTSGD"], False),
+        #     _fmt_amt(r["AMTHKD"], False), _fmt_amt(r["AMTAUD"], False),
+        # ]))
+        nsrs_lines.append(_sas_line(
+            r["BNMCODE"].ljust(14)[:14],
+            _fmt_amt_num(r["AMOUNT"], False),
+            _fmt_amt_num(r["AMTUSD"], False),
+            _fmt_amt_num(r["AMTSGD"], False),
+            _fmt_amt_num(r["AMTHKD"], False),
+            _fmt_amt_num(r["AMTAUD"], False),
+        ))        
 
     # ------------------------------------------------------------------
     # DATA FDWKLY; SET FD.FD; ... PROC SUMMARY -> ALW -> ALWDEPT
     # ------------------------------------------------------------------
     alw_input = []
-    for r in fd_raw_for_wkly(fd_cache):
+    # for r in fd_raw_for_wkly(fd_cache):
+    for r in fd_raw_for_wkly(fd_cache).iter_rows(named=True):
         if r["OPENIND"] not in ('D', 'O'):
             continue
         bic = '42133' if r["ACCTTYPE"] in (302, 315, 394, 396) else None
         if bic is None:
             continue  # BIC missing -> excluded by NWAY without MISSING option
+        # custcode = ifdcuscd_format(r["CUSTCD"])
+        # alw_input.append((bic, custcode, r["AMTIND"], r["CURBAL"]))
         custcode = ifdcuscd_format(r["CUSTCD"])
+        if custcode is None:
+            continue
         alw_input.append((bic, custcode, r["AMTIND"], r["CURBAL"]))
 
     alw_groups: Dict[tuple, float] = {}
@@ -502,8 +675,11 @@ def run_eibdrlfm(
 
     for bnmcode in sorted(alwdept_groups):
         amount = alwdept_groups[bnmcode]
-        fiss_lines.append(f"{bnmcode.ljust(14)[:14]};{_fmt_amt(amount, True)}")
-        nsrs_lines.append(f"{bnmcode.ljust(14)[:14]};{_fmt_amt(amount, False)}")
+        # fiss_lines.append(f"{bnmcode.ljust(14)[:14]};{_fmt_amt(amount, True)}")
+        # nsrs_lines.append(f"{bnmcode.ljust(14)[:14]};{_fmt_amt(amount, False)}")
+        fiss_lines.append(bnmcode.ljust(14)[:14] + ";" + _sas_best12_full(_fmt_amt_num(amount, True)))
+        nsrs_lines.append(bnmcode.ljust(14)[:14] + ";" + _sas_best12_full(_fmt_amt_num(amount, False)))
+
 
     # ------------------------------------------------------------------
     # SET CLSFD CLSFCYCA; FILE NSRS MOD; (closed-account listing, NSRS only)
@@ -516,7 +692,7 @@ def run_eibdrlfm(
         for r in closed:
             nsrs_lines.append(";".join([
                 str(r["BRANCH"]), str(r["ACCTNO"]), str(r["NAME"] or ""),
-                str(r["AMOUNT"]), "" if r["MYRAMOUNT"] is None else str(r["MYRAMOUNT"]),
+                str(r["AMOUNT"]), "." if r["MYRAMOUNT"] is None else str(r["MYRAMOUNT"]),
                 str(r["CUSTCD"]), str(r["PRODUCT"]), str(r["OPENIND"]), "",
             ]))
 
@@ -539,4 +715,5 @@ def fd_raw_for_wkly(fd_cache: Path):
         FROM read_parquet('{fd_cache.as_posix()}')
     """).pl()
     con.close()
-    return df.iter_rows(named=True)
+    # return df.iter_rows(named=True)
+    return df
