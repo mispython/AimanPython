@@ -1,3 +1,77 @@
+import gc
+from pathlib import Path
+
+import duckdb
+import polars as pl
+
+from PBBDPFMT import (
+    statecd_format,
+    saprod_format,
+    sadenom_format,
+    sacustcd_format,
+    caprod_format,
+    cadenom_format,
+    ddcustcd_format,
+    ACE_PRODUCTS,
+)
+
+
+
+
+# ============================================================================
+# STEP 0: REPORT DATE / WEEK NUMBER  (DATA REPTDATE; SET DEPOSIT.REPTDATE;
+# SELECT(DAY(REPTDATE)) ...  — no physical file, see module docstring)
+# ============================================================================
+print("Step 0: Deriving report date / week number...")
+
+_reptdate_values = get_reptdate_values()
+REPTDATE = _reptdate_values.reptdate
+
+_day = REPTDATE.day
+if _day == 8:
+    NOWK = "1"
+elif _day == 15:
+    NOWK = "2"
+elif _day == 22:
+    NOWK = "3"
+else:
+    NOWK = "4"
+
+REPTMON = f"{REPTDATE.month:02d}"        # PUT(MONTH(REPTDATE),Z2.)
+
+print(f"  REPTDATE : {REPTDATE}")
+print(f"  REPTMON  : {REPTMON}")
+print(f"  NOWK     : {NOWK}")
+
+SAVG_CACHE = OUTPUT_CACHE_DIR / f"SAVG{REPTMON}{NOWK}.parquet"
+CURN_CACHE = OUTPUT_CACHE_DIR / f"CURN{REPTMON}{NOWK}.parquet"
+DEPT_CACHE = OUTPUT_CACHE_DIR / f"DEPT{REPTMON}{NOWK}.parquet"
+
+
+
+
+# ============================================================================
+# STEP 1: RESOLVE & CACHE INPUT FILES  (see module docstring items 1-3)
+# ============================================================================
+print("\nStep 1: Resolving and caching input files...")
+
+# saving_path  = get_latest_file(INPUT_SAVING_DIR, prefix=SAVING_PREFIX)
+# current_path = get_latest_file(INPUT_CURRENT_DIR, prefix=CURRENT_PREFIX)
+
+saving_path  = INPUT_SAVING_DIR
+current_path = INPUT_CURRENT_DIR
+
+SAVING_SAS_CACHE  = CACHE_DIR / f"{saving_path.stem}.parquet"
+CURRENT_SAS_CACHE = CACHE_DIR / f"{current_path.stem}.parquet"
+CISDP_SAS_CACHE   = CACHE_DIR / "cisdp.parquet"
+
+_load_cached(saving_path, SAVING_SAS_CACHE, "SAVING")
+_load_cached(current_path, CURRENT_SAS_CACHE, "CURRENT")
+_load_cached(INPUT_CISDP_DIR, CISDP_SAS_CACHE, "CISDP")
+
+
+
+
 def build_savg_curn_dept(
     saving_cache: Path,
     current_cache: Path,
@@ -7,21 +81,52 @@ def build_savg_curn_dept(
     output_cache_dir: Path,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """
-    Builds BNM_SAVG / BNM_CURN / BNM_DEPT from PRE-CACHED parquet paths
-    supplied by the calling job (e.g. EIBDLIQP.py), instead of resolving
-    or caching its own inputs. Returns (BNM_SAVG, BNM_CURN, BNM_DEPT) and
-    also persists them under output_cache_dir for downstream re-use
-    (EIIWREXL.py etc.), exactly as before.
+    Builds BNM_SAVG / BNM_CURN / BNM_DEPT (equivalent of BNM.SAVG&REPTMON&NOWK,
+    BNM.CURN&REPTMON&NOWK, BNM.DEPT&REPTMON&NOWK) from PRE-CACHED parquet
+    files. DALWPBBD no longer resolves, dates, or converts its own inputs —
+    every physical path and the REPTMON/NOWK values are owned and supplied
+    by the calling job (e.g. EIBDLIQP.py), since this program is shared
+    across several jobs whose input file dates differ.
+
+    Returns (BNM_SAVG, BNM_CURN, BNM_DEPT) and also persists them under
+    output_cache_dir for downstream re-use (e.g. EIIWREXL.py), same as
+    before.
     """
     output_cache_dir.mkdir(parents=True, exist_ok=True)
     SAVG_CACHE = output_cache_dir / f"SAVG{reptmon}{nowk}.parquet"
     CURN_CACHE = output_cache_dir / f"CURN{reptmon}{nowk}.parquet"
     DEPT_CACHE = output_cache_dir / f"DEPT{reptmon}{nowk}.parquet"
 
-    # ... (Step 2, Step 3, Step 4 bodies unchanged, but using saving_cache /
-    #      current_cache / cisdp_cache instead of SAVING_SAS_CACHE / etc.) ...
+    SAVING_SAS_CACHE  = saving_cache
+    CURRENT_SAS_CACHE = current_cache
+    CISDP_SAS_CACHE   = cisdp_cache
+
+    # ========================================================================
+    # STEP 2: BUILD BNM.SAVG&REPTMON&NOWK  (input: item 1 — DEPOSIT.SAVING)
+    ...
+    print("Step 2: Building BNM_SAVG...")
+
+
+
 
     BNM_SAVG.write_parquet(SAVG_CACHE)
     BNM_CURN.write_parquet(CURN_CACHE)
     BNM_DEPT.write_parquet(DEPT_CACHE)
+
+    print(f"  Cached: {SAVG_CACHE.name}, {CURN_CACHE.name}, {DEPT_CACHE.name}")
     return BNM_SAVG, BNM_CURN, BNM_DEPT
+    print("==================================================")
+
+
+
+
+from DALWPBBD import build_savg_curn_dept
+
+BNM_SAVG, BNM_CURN, BNM_DEPT = build_savg_curn_dept(
+    saving_cache=SAVING_CACHE,
+    current_cache=CURRENT_CACHE,
+    cisdp_cache=CISDP_CACHE,
+    reptmon=REPTMON,
+    nowk=NOWK,
+    output_cache_dir=DALWPBBD_OUTPUT_CACHE_DIR,
+)
