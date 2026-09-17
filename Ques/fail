@@ -1,10 +1,18 @@
-import duckdb
-con = duckdb.connect(database=":memory:")
-for tag, path in [
-    ("FD-CERT", "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_cert_full.parquet"),
-    ("FD-ACCT", "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_acct_full.parquet"),
-]:
-    print(f"--- {tag} ---")
-    for name, dtype, *_ in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{path}')").fetchall():
-        print(f"  {name:25} {dtype}")
-con.close()
+    con = duckdb.connect(database=":memory:")
+    for filter_sql, out_path in [
+        (f"({ENTITY_COL} IS NULL OR "
+         f"TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) <> '{PIBB_VALUE}')", out_pbb),
+        (f"(TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) = '{PIBB_VALUE}')",   out_pibb),
+    ]:
+        con.execute(f"""
+            COPY (
+                SELECT c.*
+                FROM read_parquet('{cert_cache.as_posix()}') c
+                INNER JOIN (
+                    SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS acct_key
+                    FROM read_parquet('{acct_cache.as_posix()}')
+                    WHERE {filter_sql}
+                ) a
+                    ON CAST(c.ACCT_NUM AS BIGINT) = a.acct_key
+            ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
+        """)
