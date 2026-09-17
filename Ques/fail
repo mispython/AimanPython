@@ -1,8 +1,25 @@
+    con = duckdb.connect(database=":memory:")
+    for filter_sql, out_path in [
+        (f"({ENTITY_COL} IS NULL OR "
+         f"TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) <> '{PIBB_VALUE}')", out_pbb),
+        (f"(TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) = '{PIBB_VALUE}')",   out_pibb),
+    ]:
+        con.execute(f"""
+            COPY (
+                WITH acct_keys AS (
+                    SELECT DISTINCT CAST(ACCT_NUM AS BIGINT) AS ACCT_NUM
+                    FROM read_parquet('{acct_cache.as_posix()}')
+                    WHERE {filter_sql}
+                )
+                SELECT c.*
+                FROM read_parquet('{cert_cache.as_posix()}') c
+                INNER JOIN acct_keys a
+                    ON CAST(c.ACCT_NUM AS BIGINT) = a.ACCT_NUM
+            ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
+        """)
+
+
+
+
 CACHE=/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP
-cd $CACHE
-rm -f saving_pbb.parquet saving_pibb.parquet current_pbb.parquet current_pibb.parquet fd_pbb.parquet fd_pibb.parquet
-
-
-
-
-ls -l $CACHE/*_pbb.parquet $CACHE/*_pibb.parquet
+rm -f $CACHE/fd_pbb.parquet $CACHE/fd_pibb.parquet
