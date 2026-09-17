@@ -55,21 +55,50 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
 # ---- Inputs (all .sas7bdat) ------------------------------------------------
-INPUT_SAVING_FILE  = STG_DIR / "MNITB" / "saving.sas7bdat"    # DEPOSIT.SAVING
-INPUT_CURRENT_FILE = STG_DIR / "MNITB" / "current.sas7bdat"   # DEPOSIT.CURRENT
-INPUT_FD_FILE      = STG_DIR / "MNIFD" / "fd.sas7bdat"        # FD.FD
-INPUT_CISDP_FILE   = STG_DIR / "CIS"   / "deposit.sas7bdat"   # CISDP.DEPOSIT
-INPUT_FORATE_FILE  = STG_DIR / "FCYCA" / "foratebkp.sas7bdat" # FORATE.FORATEBKP
+# INPUT_SAVING_FILE  = STG_DIR / "MNITB" / "saving.sas7bdat"    # DEPOSIT.SAVING
+# INPUT_CURRENT_FILE = STG_DIR / "MNITB" / "current.sas7bdat"   # DEPOSIT.CURRENT
+# INPUT_FD_FILE      = STG_DIR / "MNIFD" / "fd.sas7bdat"        # FD.FD
+# INPUT_CISDP_FILE   = STG_DIR / "CIS"   / "deposit.sas7bdat"   # CISDP.DEPOSIT
+# INPUT_FORATE_FILE  = STG_DIR / "FCYCA" / "foratebkp.sas7bdat" # FORATE.FORATEBKP
+
+# Saving / Current: single PBB-version files containing BOTH entities,
+# discriminated by ENTITY_CD.
+INPUT_SAVING_FILE  = STG_DIR / "MNITB" / "intg_dp_acct_saving_d16.sas7bdat"
+INPUT_CURRENT_FILE = STG_DIR / "MNITB" / "intg_dp_acct_current_d16.sas7bdat"
+
+# FD: cert-level (no ENTITY_CD) + account-level (has ACCTNO + ENTITY_CD).
+INPUT_FD_CERT_FILE = STG_DIR / "MNIFD" / "enrh_dp_fd_cert_d16.sas7bdat"
+INPUT_FD_ACCT_FILE = STG_DIR / "MNIFD" / "intg_dp_acct_fd_d16.sas7bdat"     # <- confirm actual name
+
+# Shared PBB files (unchanged).
+INPUT_CISDP_FILE   = STG_DIR / "CIS"      / "deposit.sas7bdat"
+INPUT_FORATE_FILE  = STG_DIR / "EIBDLIQP" / "foratebkp.sas7bdat"
 
 # ---- Parquet caches (converted once, shared by DALWPBBD + EIBDRLFM) -------
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDLIQP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-SAVING_CACHE  = CACHE_DIR / f"{INPUT_SAVING_FILE.stem}.parquet"
-CURRENT_CACHE = CACHE_DIR / f"{INPUT_CURRENT_FILE.stem}.parquet"
-FD_CACHE      = CACHE_DIR / f"{INPUT_FD_FILE.stem}.parquet"
-CISDP_CACHE   = CACHE_DIR / f"{INPUT_CISDP_FILE.stem}.parquet"
-FORATE_CACHE  = CACHE_DIR / f"{INPUT_FORATE_FILE.stem}.parquet"
+# SAVING_CACHE  = CACHE_DIR / f"{INPUT_SAVING_FILE.stem}.parquet"
+# CURRENT_CACHE = CACHE_DIR / f"{INPUT_CURRENT_FILE.stem}.parquet"
+# FD_CACHE      = CACHE_DIR / f"{INPUT_FD_FILE.stem}.parquet"
+# CISDP_CACHE   = CACHE_DIR / f"{INPUT_CISDP_FILE.stem}.parquet"
+# FORATE_CACHE  = CACHE_DIR / f"{INPUT_FORATE_FILE.stem}.parquet"
+
+# Raw caches (one per physical file, cached once)
+SAVING_CACHE_FULL  = CACHE_DIR / "saving_full.parquet"
+CURRENT_CACHE_FULL = CACHE_DIR / "current_full.parquet"
+FD_CERT_CACHE      = CACHE_DIR / "fd_cert_full.parquet"
+FD_ACCT_CACHE      = CACHE_DIR / "fd_acct_full.parquet"
+CISDP_CACHE        = CACHE_DIR / "cisdp_deposit.parquet"
+FORATE_CACHE       = CACHE_DIR / "foratebkp.parquet"
+
+# Entity-split caches (derived from the raw caches)
+SAVING_PBB_CACHE   = CACHE_DIR / "saving_pbb.parquet"
+SAVING_PIBB_CACHE  = CACHE_DIR / "saving_pibb.parquet"
+CURRENT_PBB_CACHE  = CACHE_DIR / "current_pbb.parquet"
+CURRENT_PIBB_CACHE = CACHE_DIR / "current_pibb.parquet"
+FD_PBB_CACHE       = CACHE_DIR / "fd_pbb.parquet"
+FD_PIBB_CACHE      = CACHE_DIR / "fd_pibb.parquet"
 
 # ---- Output cache dir for DALWPBBD's BNM_SAVG/BNM_CURN/BNM_DEPT parquet ----
 DALWPBBD_OUTPUT_CACHE_DIR = BASE_DIR / "input" / "cache" / "DALWPBBD_PBB"
@@ -193,12 +222,85 @@ def _load_cached(sas_path: Path, cache_path: Path, tag: str) -> Path:
     return cache_path
 
 
+# print("\nStep 2: Caching input SAS datasets to Parquet...")
+# _load_cached(INPUT_SAVING_FILE, SAVING_CACHE, "SAVING")
+# _load_cached(INPUT_CURRENT_FILE, CURRENT_CACHE, "CURRENT")
+# _load_cached(INPUT_FD_FILE, FD_CACHE, "FD")
+# _load_cached(INPUT_CISDP_FILE, CISDP_CACHE, "CISDP")
+# _load_cached(INPUT_FORATE_FILE, FORATE_CACHE, "FORATE")
+
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-_load_cached(INPUT_SAVING_FILE, SAVING_CACHE, "SAVING")
-_load_cached(INPUT_CURRENT_FILE, CURRENT_CACHE, "CURRENT")
-_load_cached(INPUT_FD_FILE, FD_CACHE, "FD")
-_load_cached(INPUT_CISDP_FILE, CISDP_CACHE, "CISDP")
-_load_cached(INPUT_FORATE_FILE, FORATE_CACHE, "FORATE")
+_load_cached(INPUT_SAVING_FILE,  SAVING_CACHE_FULL,  "SAVING")
+_load_cached(INPUT_CURRENT_FILE, CURRENT_CACHE_FULL, "CURRENT")
+_load_cached(INPUT_FD_CERT_FILE, FD_CERT_CACHE,      "FD-CERT")
+_load_cached(INPUT_FD_ACCT_FILE, FD_ACCT_CACHE,      "FD-ACCT")
+_load_cached(INPUT_CISDP_FILE,   CISDP_CACHE,        "CISDP")
+_load_cached(INPUT_FORATE_FILE,  FORATE_CACHE,       "FORATE")
+
+# ============================================================================
+# STEP 2b: Split raw caches into PBB / PIBB entity-specific parquets
+# ----------------------------------------------------------------------------
+#  - SAVING / CURRENT: filter by ENTITY_CD ( 'PIBB' = PIBB, else PBB )
+#  - FD: cert-level has no ENTITY_CD, so join to the FD account-level file
+#        on ACCTNO to obtain each account's entity, then split.
+# ============================================================================
+print("\nStep 2b: Splitting caches by ENTITY_CD (PBB vs PIBB)...")
+
+ENTITY_COL   = "ENTITY_CD"
+PIBB_VALUE   = "PIBB"
+
+
+def _split_by_entity(src_cache: Path, out_pbb: Path, out_pibb: Path, tag: str):
+    con = duckdb.connect(database=":memory:")
+    con.execute(f"""
+        COPY (
+            SELECT * FROM read_parquet('{src_cache.as_posix()}')
+            WHERE CAST({ENTITY_COL} AS VARCHAR) <> '{PIBB_VALUE}'
+        ) TO '{out_pbb.as_posix()}' (FORMAT PARQUET)
+    """)
+    con.execute(f"""
+        COPY (
+            SELECT * FROM read_parquet('{src_cache.as_posix()}')
+            WHERE CAST({ENTITY_COL} AS VARCHAR) = '{PIBB_VALUE}'
+        ) TO '{out_pibb.as_posix()}' (FORMAT PARQUET)
+    """)
+    n_pbb  = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_pbb.as_posix()}')").fetchone()[0]
+    n_pibb = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_pibb.as_posix()}')").fetchone()[0]
+    con.close()
+    print(f"  [{tag}] PBB rows: {n_pbb:,}   PIBB rows: {n_pibb:,}")
+
+_split_by_entity(SAVING_CACHE_FULL,  SAVING_PBB_CACHE,  SAVING_PIBB_CACHE,  "SAVING")
+_split_by_entity(CURRENT_CACHE_FULL, CURRENT_PBB_CACHE, CURRENT_PIBB_CACHE, "CURRENT")
+
+
+def _split_fd_by_entity(cert_cache: Path, acct_cache: Path,
+                        out_pbb: Path, out_pibb: Path):
+    """FD cert-level has no ENTITY_CD; join to FD account-level (by ACCTNO)
+    to obtain each account's entity, then split cert rows accordingly.
+    Uses DISTINCT account numbers from the account-level file so a
+    one-to-many relationship on the account side does not duplicate
+    cert-level rows."""
+    con = duckdb.connect(database=":memory:")
+    for op, out_path in [("<>", out_pbb), ("=", out_pibb)]:
+        con.execute(f"""
+            COPY (
+                SELECT c.*
+                FROM read_parquet('{cert_cache.as_posix()}') c
+                INNER JOIN (
+                    SELECT DISTINCT ACCTNO
+                    FROM read_parquet('{acct_cache.as_posix()}')
+                    WHERE CAST({ENTITY_COL} AS VARCHAR) {op} '{PIBB_VALUE}'
+                ) a
+                ON c.ACCTNO = a.ACCTNO
+            ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
+        """)
+    n_pbb  = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_pbb.as_posix()}')").fetchone()[0]
+    n_pibb = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_pibb.as_posix()}')").fetchone()[0]
+    con.close()
+    print(f"  [FD] PBB rows: {n_pbb:,}   PIBB rows: {n_pibb:,}")
+
+_split_fd_by_entity(FD_CERT_CACHE, FD_ACCT_CACHE, FD_PBB_CACHE, FD_PIBB_CACHE)
+
 
 # ============================================================================
 # STEP 3: BUILD $FORATE LOOKUP
@@ -230,9 +332,17 @@ print(f"  Currencies in $FORATE: {len(FORATE_MAP)}")
 # ============================================================================
 print("\nStep 4: Running DALWPBBD (BNM_SAVG / BNM_CURN / BNM_DEPT)...")
 
+# BNM_SAVG, BNM_CURN, BNM_DEPT = build_savg_curn_dept(
+#     saving_cache=SAVING_CACHE,
+#     current_cache=CURRENT_CACHE,
+#     cisdp_cache=CISDP_CACHE,
+#     reptmon=REPTMON,
+#     nowk=NOWK,
+#     output_cache_dir=DALWPBBD_OUTPUT_CACHE_DIR,
+# )
 BNM_SAVG, BNM_CURN, BNM_DEPT = build_savg_curn_dept(
-    saving_cache=SAVING_CACHE,
-    current_cache=CURRENT_CACHE,
+    saving_cache=SAVING_PBB_CACHE,
+    current_cache=CURRENT_PBB_CACHE,
     cisdp_cache=CISDP_CACHE,
     reptmon=REPTMON,
     nowk=NOWK,
@@ -245,9 +355,23 @@ print(f"  BNM_SAVG: {len(BNM_SAVG):,} rows   BNM_CURN: {len(BNM_CURN):,} rows")
 # ============================================================================
 print("\nStep 5: Running EIBDRLFM (FISS / NSRS / LCR / NLF)...")
 
+# report_lines = run_eibdrlfm(
+#     fd_cache=FD_CACHE,
+#     current_cache=CURRENT_CACHE,
+#     bnm_savg=BNM_SAVG,
+#     bnm_curn=BNM_CURN,
+#     forate_map=FORATE_MAP,
+#     reptdate=REPTDATE,
+#     rpyr=RPYR, rpmth=RPMTH, rpday=RPDAY,
+#     rd_days=RD_DAYS,
+#     reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
+#     lcr_output_dir=LCR_OUTPUT_DIR,
+#     nlf_output_dir=NLF_OUTPUT_DIR,
+# )
+
 report_lines = run_eibdrlfm(
-    fd_cache=FD_CACHE,
-    current_cache=CURRENT_CACHE,
+    fd_cache=FD_PBB_CACHE,
+    current_cache=CURRENT_PBB_CACHE,
     bnm_savg=BNM_SAVG,
     bnm_curn=BNM_CURN,
     forate_map=FORATE_MAP,
@@ -304,10 +428,15 @@ print("\n" + "=" * 70)
 print("EIIDLIQP (PIBB) - starting")
 print("=" * 70)
 
-print("\nStep 8a: Caching PIBB input SAS datasets to Parquet...")
-_load_cached(INPUT_SAVING_FILE_PIBB,  SAVING_CACHE_PIBB,  "SAVING-PIBB")
-_load_cached(INPUT_CURRENT_FILE_PIBB, CURRENT_CACHE_PIBB, "CURRENT-PIBB")
-_load_cached(INPUT_FD_FILE_PIBB,      FD_CACHE_PIBB,      "FD-PIBB")
+# print("\nStep 8a: Caching PIBB input SAS datasets to Parquet...")
+# _load_cached(INPUT_SAVING_FILE_PIBB,  SAVING_CACHE_PIBB,  "SAVING-PIBB")
+# _load_cached(INPUT_CURRENT_FILE_PIBB, CURRENT_CACHE_PIBB, "CURRENT-PIBB")
+# _load_cached(INPUT_FD_FILE_PIBB,      FD_CACHE_PIBB,      "FD-PIBB")
+
+print("\nStep 8a: Using PIBB entity-split caches (from Step 2b) ...")
+SAVING_CACHE_PIBB  = SAVING_PIBB_CACHE
+CURRENT_CACHE_PIBB = CURRENT_PIBB_CACHE
+FD_CACHE_PIBB      = FD_PIBB_CACHE
 
 # Step 8b: $FORATE is identical to PBB (same FORATE.FORATEBKP) -> reuse
 # FORATE_MAP built in Step 3. No re-query needed.
