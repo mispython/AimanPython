@@ -1,7 +1,27 @@
-if out_rows:
-    pl.DataFrame(out_rows, infer_schema_length=None).write_parquet(
-        TRAN_DIR / "RENTAS_CIS.parquet")
+def build_savg_curn_dept(
+    saving_cache: Path,
+    current_cache: Path,
+    cisdp_cache: Path,
+    reptmon: str,
+    nowk: str,
+    output_cache_dir: Path,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """
+    Builds BNM_SAVG / BNM_CURN / BNM_DEPT from PRE-CACHED parquet paths
+    supplied by the calling job (e.g. EIBDLIQP.py), instead of resolving
+    or caching its own inputs. Returns (BNM_SAVG, BNM_CURN, BNM_DEPT) and
+    also persists them under output_cache_dir for downstream re-use
+    (EIIWREXL.py etc.), exactly as before.
+    """
+    output_cache_dir.mkdir(parents=True, exist_ok=True)
+    SAVG_CACHE = output_cache_dir / f"SAVG{reptmon}{nowk}.parquet"
+    CURN_CACHE = output_cache_dir / f"CURN{reptmon}{nowk}.parquet"
+    DEPT_CACHE = output_cache_dir / f"DEPT{reptmon}{nowk}.parquet"
 
-if tran_inward_outward_rows:
-    pl.DataFrame(tran_inward_outward_rows, infer_schema_length=None).write_parquet(
-        TRAN_DIR / "INOUT.parquet")
+    # ... (Step 2, Step 3, Step 4 bodies unchanged, but using saving_cache /
+    #      current_cache / cisdp_cache instead of SAVING_SAS_CACHE / etc.) ...
+
+    BNM_SAVG.write_parquet(SAVG_CACHE)
+    BNM_CURN.write_parquet(CURN_CACHE)
+    BNM_DEPT.write_parquet(DEPT_CACHE)
+    return BNM_SAVG, BNM_CURN, BNM_DEPT
