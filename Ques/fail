@@ -1,132 +1,125 @@
-import gc
-from pathlib import Path
+    - The second job step (EIIDLIQP, the PIBB counterpart) is a real,
+      active JCL step in the same job. The "/*" lines in the JCL are
+      in-stream data terminators (end of "EOB" blocks for the COZBATCH
+      RUNSFTP steps), NOT a SAS block comment, so the PIBB step runs in
+      production. It is reproduced below as a second execution of the
+      same functions, using PIBB input paths and PIBB output targets,
+      running after the PBB step.
+"""
 
-import duckdb
-import polars as pl
 
-from PBBDPFMT import (
-    statecd_format,
-    saprod_format,
-    sadenom_format,
-    sacustcd_format,
-    caprod_format,
-    cadenom_format,
-    ddcustcd_format,
-    ACE_PRODUCTS,
-)
+
+
+CHUNK_ROWS = 500_000
+
+# ============================================================================
+# PIBB (EIIDLIQP) PATH CONFIGURATION - second pass, same logic as PBB.
+# CISDP.DEPOSIT and FORATE.FORATEBKP are PBB files shared by both passes,
+# so they are NOT redeclared here; the existing CISDP_CACHE / FORATE_CACHE
+# (and FORATE_MAP) are reused.
+# ============================================================================
+INPUT_SAVING_FILE_PIBB  = STG_DIR / "MNITB" / "saving_pibb.sas7bdat"
+INPUT_CURRENT_FILE_PIBB = STG_DIR / "MNITB" / "current_pibb.sas7bdat"
+INPUT_FD_FILE_PIBB      = STG_DIR / "MNIFD" / "fd_pibb.sas7bdat"
+
+CACHE_DIR_PIBB = BASE_DIR / "input" / "cache" / "EIIDLIQP"
+CACHE_DIR_PIBB.mkdir(parents=True, exist_ok=True)
+
+SAVING_CACHE_PIBB  = CACHE_DIR_PIBB / f"{INPUT_SAVING_FILE_PIBB.stem}.parquet"
+CURRENT_CACHE_PIBB = CACHE_DIR_PIBB / f"{INPUT_CURRENT_FILE_PIBB.stem}.parquet"
+FD_CACHE_PIBB      = CACHE_DIR_PIBB / f"{INPUT_FD_FILE_PIBB.stem}.parquet"
+
+DALWPBBD_OUTPUT_CACHE_DIR_PIBB = BASE_DIR / "input" / "cache" / "DALWPBBD_PIBB"
+
+OUTPUT_DIR_PIBB     = BASE_DIR / "output" / "EIIDLIQP"
+OUTPUT_DIR_PIBB.mkdir(parents=True, exist_ok=True)
+LCR_OUTPUT_DIR_PIBB = OUTPUT_DIR_PIBB / "LCR"   # SAP.PIBB.LCR.SASDATA.DAILY(+1)
+NLF_OUTPUT_DIR_PIBB = OUTPUT_DIR_PIBB / "NLF"   # SAP.PIBB.NLF.DAILY
+FISS_FILE_PIBB      = OUTPUT_DIR_PIBB / "PIBB_FISS_TEXT_DAILY.txt"
+NSRS_FILE_PIBB      = OUTPUT_DIR_PIBB / "PIBB_NSRS_TEXT_DAILY.txt"
+SFTP_CMD_FILE_PIBB  = OUTPUT_DIR_PIBB / "PIBB_DAILY_NSRS_FTP.txt"  # &&FTPPUT2
+
+for d in (LCR_OUTPUT_DIR_PIBB, NLF_OUTPUT_DIR_PIBB):
+    d.mkdir(parents=True, exist_ok=True)
 
 
 
 
 # ============================================================================
-# STEP 0: REPORT DATE / WEEK NUMBER  (DATA REPTDATE; SET DEPOSIT.REPTDATE;
-# SELECT(DAY(REPTDATE)) ...  — no physical file, see module docstring)
+# STEP 8: EIIDLIQP - PIBB pass (active second execution of the same logic)
+# Runs strictly AFTER the PBB pass above. CISDP.DEPOSIT and
+# FORATE.FORATEBKP are the PBB files, shared; their caches / FORATE_MAP
+# from Steps 2-3 are reused as-is. Only SAVING / CURRENT / FD differ.
 # ============================================================================
-print("Step 0: Deriving report date / week number...")
+print("\n" + "=" * 70)
+print("EIIDLIQP (PIBB) - starting")
+print("=" * 70)
 
-_reptdate_values = get_reptdate_values()
-REPTDATE = _reptdate_values.reptdate
+print("\nStep 8a: Caching PIBB input SAS datasets to Parquet...")
+_load_cached(INPUT_SAVING_FILE_PIBB,  SAVING_CACHE_PIBB,  "SAVING-PIBB")
+_load_cached(INPUT_CURRENT_FILE_PIBB, CURRENT_CACHE_PIBB, "CURRENT-PIBB")
+_load_cached(INPUT_FD_FILE_PIBB,      FD_CACHE_PIBB,      "FD-PIBB")
 
-_day = REPTDATE.day
-if _day == 8:
-    NOWK = "1"
-elif _day == 15:
-    NOWK = "2"
-elif _day == 22:
-    NOWK = "3"
-else:
-    NOWK = "4"
+# Step 8b: $FORATE is identical to PBB (same FORATE.FORATEBKP) -> reuse
+# FORATE_MAP built in Step 3. No re-query needed.
 
-REPTMON = f"{REPTDATE.month:02d}"        # PUT(MONTH(REPTDATE),Z2.)
-
-print(f"  REPTDATE : {REPTDATE}")
-print(f"  REPTMON  : {REPTMON}")
-print(f"  NOWK     : {NOWK}")
-
-SAVG_CACHE = OUTPUT_CACHE_DIR / f"SAVG{REPTMON}{NOWK}.parquet"
-CURN_CACHE = OUTPUT_CACHE_DIR / f"CURN{REPTMON}{NOWK}.parquet"
-DEPT_CACHE = OUTPUT_CACHE_DIR / f"DEPT{REPTMON}{NOWK}.parquet"
-
-
-
-
-# ============================================================================
-# STEP 1: RESOLVE & CACHE INPUT FILES  (see module docstring items 1-3)
-# ============================================================================
-print("\nStep 1: Resolving and caching input files...")
-
-# saving_path  = get_latest_file(INPUT_SAVING_DIR, prefix=SAVING_PREFIX)
-# current_path = get_latest_file(INPUT_CURRENT_DIR, prefix=CURRENT_PREFIX)
-
-saving_path  = INPUT_SAVING_DIR
-current_path = INPUT_CURRENT_DIR
-
-SAVING_SAS_CACHE  = CACHE_DIR / f"{saving_path.stem}.parquet"
-CURRENT_SAS_CACHE = CACHE_DIR / f"{current_path.stem}.parquet"
-CISDP_SAS_CACHE   = CACHE_DIR / "cisdp.parquet"
-
-_load_cached(saving_path, SAVING_SAS_CACHE, "SAVING")
-_load_cached(current_path, CURRENT_SAS_CACHE, "CURRENT")
-_load_cached(INPUT_CISDP_DIR, CISDP_SAS_CACHE, "CISDP")
-
-
-
-
-def build_savg_curn_dept(
-    saving_cache: Path,
-    current_cache: Path,
-    cisdp_cache: Path,
-    reptmon: str,
-    nowk: str,
-    output_cache_dir: Path,
-) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """
-    Builds BNM_SAVG / BNM_CURN / BNM_DEPT (equivalent of BNM.SAVG&REPTMON&NOWK,
-    BNM.CURN&REPTMON&NOWK, BNM.DEPT&REPTMON&NOWK) from PRE-CACHED parquet
-    files. DALWPBBD no longer resolves, dates, or converts its own inputs —
-    every physical path and the REPTMON/NOWK values are owned and supplied
-    by the calling job (e.g. EIBDLIQP.py), since this program is shared
-    across several jobs whose input file dates differ.
-
-    Returns (BNM_SAVG, BNM_CURN, BNM_DEPT) and also persists them under
-    output_cache_dir for downstream re-use (e.g. EIIWREXL.py), same as
-    before.
-    """
-    output_cache_dir.mkdir(parents=True, exist_ok=True)
-    SAVG_CACHE = output_cache_dir / f"SAVG{reptmon}{nowk}.parquet"
-    CURN_CACHE = output_cache_dir / f"CURN{reptmon}{nowk}.parquet"
-    DEPT_CACHE = output_cache_dir / f"DEPT{reptmon}{nowk}.parquet"
-
-    SAVING_SAS_CACHE  = saving_cache
-    CURRENT_SAS_CACHE = current_cache
-    CISDP_SAS_CACHE   = cisdp_cache
-
-    # ========================================================================
-    # STEP 2: BUILD BNM.SAVG&REPTMON&NOWK  (input: item 1 — DEPOSIT.SAVING)
-    ...
-    print("Step 2: Building BNM_SAVG...")
-
-
-
-
-    BNM_SAVG.write_parquet(SAVG_CACHE)
-    BNM_CURN.write_parquet(CURN_CACHE)
-    BNM_DEPT.write_parquet(DEPT_CACHE)
-
-    print(f"  Cached: {SAVG_CACHE.name}, {CURN_CACHE.name}, {DEPT_CACHE.name}")
-    return BNM_SAVG, BNM_CURN, BNM_DEPT
-    print("==================================================")
-
-
-
-
-from DALWPBBD import build_savg_curn_dept
-
-BNM_SAVG, BNM_CURN, BNM_DEPT = build_savg_curn_dept(
-    saving_cache=SAVING_CACHE,
-    current_cache=CURRENT_CACHE,
-    cisdp_cache=CISDP_CACHE,
+# ----------------------------------------------------------------------------
+# Step 8c: DALWPBBD (PIBB) - BNM_SAVG / BNM_CURN / BNM_DEPT for PIBB
+# ----------------------------------------------------------------------------
+print("\nStep 8c: Running DALWPBBD (PIBB) ...")
+BNM_SAVG_PIBB, BNM_CURN_PIBB, BNM_DEPT_PIBB = build_savg_curn_dept(
+    saving_cache=SAVING_CACHE_PIBB,
+    current_cache=CURRENT_CACHE_PIBB,
+    cisdp_cache=CISDP_CACHE,                       # shared PBB file
     reptmon=REPTMON,
     nowk=NOWK,
-    output_cache_dir=DALWPBBD_OUTPUT_CACHE_DIR,
+    output_cache_dir=DALWPBBD_OUTPUT_CACHE_DIR_PIBB,
 )
+print(f"  PIBB BNM_SAVG: {len(BNM_SAVG_PIBB):,} rows   "
+      f"PIBB BNM_CURN: {len(BNM_CURN_PIBB):,} rows")
+
+# ----------------------------------------------------------------------------
+# Step 8d: EIBDRLFM (PIBB) - FISS / NSRS / LCR / NLF for PIBB
+# ----------------------------------------------------------------------------
+print("\nStep 8d: Running EIBDRLFM (PIBB) ...")
+report_lines_pibb = run_eibdrlfm(
+    fd_cache=FD_CACHE_PIBB,
+    current_cache=CURRENT_CACHE_PIBB,
+    bnm_savg=BNM_SAVG_PIBB,
+    bnm_curn=BNM_CURN_PIBB,
+    forate_map=FORATE_MAP,                         # shared from PBB pass
+    reptdate=REPTDATE,
+    rpyr=RPYR, rpmth=RPMTH, rpday=RPDAY,
+    rd_days=RD_DAYS,
+    reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
+    lcr_output_dir=LCR_OUTPUT_DIR_PIBB,
+    nlf_output_dir=NLF_OUTPUT_DIR_PIBB,
+)
+
+# ----------------------------------------------------------------------------
+# Step 8e: Write PIBB FISS / NSRS
+# ----------------------------------------------------------------------------
+print("\nStep 8e: Writing PIBB FISS / NSRS ...")
+with open(FISS_FILE_PIBB, "w", encoding="latin1") as fh:
+    for ln in report_lines_pibb["FISS"]:
+        fh.write(ln + "\n")
+
+with open(NSRS_FILE_PIBB, "w", encoding="latin1") as fh:
+    for ln in report_lines_pibb["NSRS"]:
+        fh.write(ln + "\n")
+
+print(f"  PIBB FISS lines: {len(report_lines_pibb['FISS']):,}  -> {FISS_FILE_PIBB}")
+print(f"  PIBB NSRS lines: {len(report_lines_pibb['NSRS']):,}  -> {NSRS_FILE_PIBB}")
+
+# ----------------------------------------------------------------------------
+# Step 8f: SFTP02 command file (actual COZBATCH RUNSFTP transfer out of scope)
+# ----------------------------------------------------------------------------
+sftp_cmd_pibb = (
+    'CD "FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"\n'
+    f"PUT {NSRS_FILE_PIBB.as_posix()} PIBB_DAILY_NSRS_{REPTDAY}.TXT\n"
+)
+with open(SFTP_CMD_FILE_PIBB, "w", encoding="latin1") as fh:
+    fh.write(sftp_cmd_pibb)
+print(f"  PIBB SFTP command file -> {SFTP_CMD_FILE_PIBB}")
+
+print("\nEIIDLIQP (PIBB) complete.")
