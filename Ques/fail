@@ -27,3 +27,11 @@
                 ON CAST(c.ACCT_NUM AS BIGINT) = a.ACCT_NUM
             ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
         """)
+
+
+
+
+CACHE=/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP
+rm -f $CACHE/saving_pbb.parquet $CACHE/saving_pibb.parquet
+rm -f $CACHE/current_pbb.parquet $CACHE/current_pibb.parquet
+rm -f $CACHE/fd_pbb.parquet $CACHE/fd_pibb.parquet
