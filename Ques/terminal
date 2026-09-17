@@ -1,138 +1,17 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py
-Step 1: Deriving report date...
-  REPTMON/REPTMON2/NOWK : 08/07/4
-  REPTYEAR              : 2026
-  RDATE                 : 31/08/26
-dtype: object
-raw sample: ['LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN']
-all-null in first chunk? False
+Step 20: Writing output...
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIDETRTS/EIDETRTS_RENTAS_260916.txt
+  Total records  : 12,932
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIDETRTS.py", line 1043, in <module>
+    pl.DataFrame(out_rows).write_parquet(TRAN_DIR / "RENTAS_CIS.parquet")
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 391, in __init__
+    self._df = sequence_to_pydf(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 466, in sequence_to_pydf
+    return _sequence_to_pydf_dispatcher(
+  File "/usr/lib64/python3.9/functools.py", line 888, in wrapper
+    return dispatch(args[0].__class__)(*args, **kw)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 722, in _sequence_of_dict_to_pydf
+    pydf = PyDataFrame.from_dicts(
+polars.exceptions.ComputeError: could not append value: "240064A" of type: str to the builder; make sure that all rows have the same schema or consider increasing `infer_schema_length`
 
-Step 2: Caching input SAS datasets to Parquet...
-  [ISASD_LOAN] Cache fresh - skipping conversion.
-  [BNM_LOAN_CUR] Cache fresh - skipping conversion.
-  [BNM_LOAN_PREV] Cache fresh - skipping conversion.
-  [BNM_LNWOF_CUR] Cache fresh - skipping conversion.
-  [BNM_LNWOD_CUR] Cache fresh - skipping conversion.
-  [BNM_LNWOF_PREV] Cache fresh - skipping conversion.
-  [BNM_LNWOD_PREV] Cache fresh - skipping conversion.
-  [BTBNM_IBTRAD] Cache fresh - skipping conversion.
-  [DISPAY] Cache fresh - skipping conversion.
-  [LNCOMM] Cache fresh - skipping conversion.
-
-Step 3: Loading cached inputs...
-CHECKPOINT A (bnm_loan_cur_rows) ACCTYPE: ['LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN']
-  ISASD LOAN rows: 634,393   BNM LOAN(cur) rows: 632,482
-  IBTRAD rows: 3,773   DISPAY rows: 571,232   LNCOMM rows: 162,374
-
-Step 4: Building loan master (DLOAN/MLOAN/LNWOF/LNWOD)...
-  loan_work rows: 669,228
-
-Step 5: Building DISPAY (disbursement/repayment)...
-  DISPAY_work rows: 214,185
-
-Step 6: Building ALM / ALMBT (loan level)...
-CHECKPOINT B (LOAN2_renamed) ACCTYPE: ['LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN']
-CHECKPOINT C (_almbase, post sas_merge with LNCOMM) ACCTYPE: ['LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN']
-  ALM rows: 626,077   ALMBT rows: 0
-  ALM_final rows: 740,919
-ACCTYPE repr sample: []
-ACCTYPE distinct (raw): ['None']
-
-Step 7: Classifying PRODESC...
-[]
-
-Step 8: Building bank-trade (BTRAD/OVC/MAST) section...
-  ALMBTRD rows: 1
-
-Step 9: Building retail/commercial-retail breakdown...
-  ALMLOAN2 rows: 1   ALM2CRF rows: 2
-
-Step 10: Building SME/DBE/DNBFI/FBE breakdown...
-  SME/DBE/DNBFI/FBE summaries built.
-
-Step 11: Building facility/sector breakdown...
-  ALMPROD rows: 688   ALMSEC rows: 722
-
-Step 12: Rendering report...
-
-Step 13: Writing outputs...
-  SASLIST report written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIBNM01/EIIBNM01_260915.txt  (367 lines)
-  MFRS.MAST_BR written   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/MFRS/MFRS_MAST_BR.parquet  (425 rows)
-  MFRS.ALM_CR written    : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/MFRS/MFRS_ALM_CR.parquet  (688 rows)
-
-EIIBNM01 complete.
-
-
-
-
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIBNM01.py
-Step 1: Deriving report date...
-  REPTMON/REPTMON2/NOWK : 08/07/4
-  REPTYEAR              : 2026
-  RDATE                 : 31/08/26
-dtype: object
-raw sample: ['LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN', 'LN']
-all-null in first chunk? False
-
-Step 2: Caching input SAS datasets to Parquet...
-  [ISASD_LOAN] Converting loan08.sas7bdat -> loan08.parquet ...
-  [ISASD_LOAN] Done - 634,393 rows cached.
-  [BNM_LOAN_CUR] Converting loan084.sas7bdat -> loan084.parquet ...
-  [BNM_LOAN_CUR] Done - 632,482 rows cached.
-  [BNM_LOAN_PREV] Converting loan074.sas7bdat -> loan074.parquet ...
-  [BNM_LOAN_PREV] Done - 628,303 rows cached.
-  [BNM_LNWOF_CUR] Converting lnwof084.sas7bdat -> lnwof084.parquet ...
-  [BNM_LNWOF_CUR] Done - 31,146 rows cached.
-  [BNM_LNWOD_CUR] Converting lnwod084.sas7bdat -> lnwod084.parquet ...
-  [BNM_LNWOD_CUR] Done - 0 rows cached.
-  [BNM_LNWOF_PREV] Converting lnwof074.sas7bdat -> lnwof074.parquet ...
-  [BNM_LNWOF_PREV] Done - 31,189 rows cached.
-  [BNM_LNWOD_PREV] Converting lnwod074.sas7bdat -> lnwod074.parquet ...
-  [BNM_LNWOD_PREV] Done - 0 rows cached.
-  [BTBNM_IBTRAD] Converting ibtrad08426.sas7bdat -> ibtrad08426.parquet ...
-  [BTBNM_IBTRAD] Done - 3,773 rows cached.
-  [DISPAY] Converting idispaymth0826.sas7bdat -> idispaymth0826.parquet ...
-  [DISPAY] Done - 571,232 rows cached.
-  [LNCOMM] Converting ilncomm.sas7bdat -> ilncomm.parquet ...
-  [LNCOMM] Done - 162,374 rows cached.
-
-Step 3: Loading cached inputs...
-  ISASD LOAN rows: 634,393   BNM LOAN(cur) rows: 632,482
-  IBTRAD rows: 3,773   DISPAY rows: 571,232   LNCOMM rows: 162,374
-
-Step 4: Building loan master (DLOAN/MLOAN/LNWOF/LNWOD)...
-  loan_work rows: 669,228
-
-Step 5: Building DISPAY (disbursement/repayment)...
-  DISPAY_work rows: 214,185
-
-Step 6: Building ALM / ALMBT (loan level)...
-  ALM rows: 626,077   ALMBT rows: 0
-  ALM_final rows: 740,919
-ACCTYPE repr sample: []
-ACCTYPE distinct (raw): ['None']
-
-Step 7: Classifying PRODESC...
-[]
-
-Step 8: Building bank-trade (BTRAD/OVC/MAST) section...
-  ALMBTRD rows: 1
-
-Step 9: Building retail/commercial-retail breakdown...
-  ALMLOAN2 rows: 1   ALM2CRF rows: 2
-
-Step 10: Building SME/DBE/DNBFI/FBE breakdown...
-  SME/DBE/DNBFI/FBE summaries built.
-
-Step 11: Building facility/sector breakdown...
-  ALMPROD rows: 688   ALMSEC rows: 722
-
-Step 12: Rendering report...
-
-Step 13: Writing outputs...
-  SASLIST report written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIBNM01/EIIBNM01_260915.txt  (367 lines)
-  MFRS.MAST_BR written   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/MFRS/MFRS_MAST_BR.parquet  (425 rows)
-  MFRS.ALM_CR written    : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIBNM01/MFRS/MFRS_ALM_CR.parquet  (688 rows)
-
-EIIBNM01 complete.
+it might also be that a value overflows the data-type's capacity
