@@ -4,21 +4,16 @@ Program : EIBDLIQP.py
 Invoke  : JCL job EIBDLIQP (SAS609 step). Owns ALL physical input paths
           for this job and its two dependency programs (EIBDRLFM and
           DALWPBBD), caches every .sas7bdat input to parquet ONCE here
-          (per EIIMRM01.py's cache pattern), then calls the dependency
-          modules passing in the already-cached parquet paths - this
-          avoids each dependency resolving/caching its own inputs
-          independently, since DALWPBBD in particular is shared by
-          several unrelated jobs whose input dates vary.
+          then calls the dependency modules passing in the
+          already-cached parquet paths - this avoids each dependency
+          resolving/caching its own inputs independently, since DALWPBBD
+          in particular is shared by several unrelated jobs whose input
+          dates vary.
 
 Dependencies:
     DALWPBBD.build_savg_curn_dept(...) -> BNM_SAVG / BNM_CURN / BNM_DEPT
     EIBDRLFM.run_eibdrlfm(...)         -> FISS / NSRS report lines,
                                            LCR.*/NLF.* persisted extracts
-
-Report date:
-    No reptdate.parquet exists; the report date is derived via
-    REPTDATE.get_reptdate_values(), exactly as EIIMRM01.py / DALWPBBD.py
-    already do (this replaces "DATA BNM.REPTDATE; SET DEPOSIT.REPTDATE").
 
 JCL notes reproduced as comments (not executed):
     - DD1-DD4 delete/recreate the FISS/NSRS text datasets at the start of
@@ -30,11 +25,13 @@ JCL notes reproduced as comments (not executed):
       logic; only the FTP *command* file (SFTP01/&&FTPPUT) is built here.
       Actual file transfer is out of scope for this conversion and is
       left as a placeholder comment.
-    - The second job step (EIIDLIQP, the PIBB counterpart) is wrapped in
-      a SAS/JCL comment block ("/* ... */") in the original source,
-      i.e. DISABLED in production. It is reproduced below as a commented
-      block only, calling the same functions with PIBB paths, and is
-      NOT executed.
+    - The second job step (EIIDLIQP, the PIBB counterpart) is a real,
+      active JCL step in the same job. The "/*" lines in the JCL are
+      in-stream data terminators (end of "EOB" blocks for the COZBATCH
+      RUNSFTP steps), NOT a SAS block comment, so the PIBB step runs in
+      production. It is reproduced below as a second execution of the
+      same functions, using PIBB input paths and PIBB output targets,
+      running after the PBB step.
 """
 
 import gc
@@ -75,7 +72,7 @@ CISDP_CACHE   = CACHE_DIR / f"{INPUT_CISDP_FILE.stem}.parquet"
 FORATE_CACHE  = CACHE_DIR / f"{INPUT_FORATE_FILE.stem}.parquet"
 
 # ---- Output cache dir for DALWPBBD's BNM_SAVG/BNM_CURN/BNM_DEPT parquet ----
-DALWPBBD_OUTPUT_CACHE_DIR = BASE_DIR / "input" / "cache" / "DALWPBBD"
+DALWPBBD_OUTPUT_CACHE_DIR = BASE_DIR / "input" / "cache" / "DALWPBBD_PBB"
 
 # ---- Outputs ----------------------------------------------------------------
 OUTPUT_DIR = BASE_DIR / "output" / "EIBDLIQP"
@@ -91,6 +88,36 @@ for d in (LCR_OUTPUT_DIR, NLF_OUTPUT_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
+
+# ============================================================================
+# PIBB (EIIDLIQP) PATH CONFIGURATION - second pass, same logic as PBB.
+# CISDP.DEPOSIT and FORATE.FORATEBKP are PBB files shared by both passes,
+# so they are NOT redeclared here; the existing CISDP_CACHE / FORATE_CACHE
+# (and FORATE_MAP) are reused.
+# ============================================================================
+INPUT_SAVING_FILE_PIBB  = STG_DIR / "MNITB" / "saving_pibb.sas7bdat"
+INPUT_CURRENT_FILE_PIBB = STG_DIR / "MNITB" / "current_pibb.sas7bdat"
+INPUT_FD_FILE_PIBB      = STG_DIR / "MNIFD" / "fd_pibb.sas7bdat"
+
+CACHE_DIR_PIBB = BASE_DIR / "input" / "cache" / "EIIDLIQP"
+CACHE_DIR_PIBB.mkdir(parents=True, exist_ok=True)
+
+SAVING_CACHE_PIBB  = CACHE_DIR_PIBB / f"{INPUT_SAVING_FILE_PIBB.stem}.parquet"
+CURRENT_CACHE_PIBB = CACHE_DIR_PIBB / f"{INPUT_CURRENT_FILE_PIBB.stem}.parquet"
+FD_CACHE_PIBB      = CACHE_DIR_PIBB / f"{INPUT_FD_FILE_PIBB.stem}.parquet"
+
+DALWPBBD_OUTPUT_CACHE_DIR_PIBB = BASE_DIR / "input" / "cache" / "DALWPBBD_PIBB"
+
+OUTPUT_DIR_PIBB     = BASE_DIR / "output" / "EIIDLIQP"
+OUTPUT_DIR_PIBB.mkdir(parents=True, exist_ok=True)
+LCR_OUTPUT_DIR_PIBB = OUTPUT_DIR_PIBB / "LCR"   # SAP.PIBB.LCR.SASDATA.DAILY(+1)
+NLF_OUTPUT_DIR_PIBB = OUTPUT_DIR_PIBB / "NLF"   # SAP.PIBB.NLF.DAILY
+FISS_FILE_PIBB      = OUTPUT_DIR_PIBB / "PIBB_FISS_TEXT_DAILY.txt"
+NSRS_FILE_PIBB      = OUTPUT_DIR_PIBB / "PIBB_NSRS_TEXT_DAILY.txt"
+SFTP_CMD_FILE_PIBB  = OUTPUT_DIR_PIBB / "PIBB_DAILY_NSRS_FTP.txt"  # &&FTPPUT2
+
+for d in (LCR_OUTPUT_DIR_PIBB, NLF_OUTPUT_DIR_PIBB):
+    d.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
@@ -265,20 +292,83 @@ print(f"  SFTP command file -> {SFTP_CMD_FILE}")
 # Placeholder: actual SFTP transfer (RUNSFTP EXEC COZBATCH) is an external
 # job step and is not executed by this program.
 
-print("\nEIBDLIQP complete.")
+print("\nEIBDLIQP (PBB) complete.")
 
 # ============================================================================
-# DISABLED IN PRODUCTION - the SAS source wraps this whole second step
-# (EIIDLIQP, the PIBB counterpart of this job) inside a "/* ... */" SAS
-# comment block, i.e. it never actually runs. Reproduced here as a
-# commented placeholder only, for documentation parity:
-#
-# INPUT_SAVING_FILE_PIBB  = STG_DIR / "MNITB" / "saving_pibb.sas7bdat"
-# INPUT_CURRENT_FILE_PIBB = STG_DIR / "MNITB" / "current_pibb.sas7bdat"
-# INPUT_FD_FILE_PIBB      = STG_DIR / "MNIFD" / "fd_pibb.sas7bdat"
-# INPUT_CISDP_FILE_PIBB   = STG_DIR / "CIS"   / "deposit.sas7bdat"  # shared
-# INPUT_FORATE_FILE_PIBB  = STG_DIR / "FCYCA" / "foratebkp.sas7bdat"  # shared
-# ... (same caching / FORATE / DALWPBBD / EIBDRLFM calls with PIBB paths,
-#      writing to SAP.PIBB.FISS.TEXT.DAILY / SAP.PIBB.NSRS.TEXT.DAILY,
-#      SAP.PIBB.LCR.SASDATA.DAILY(+1), NLF library on the PIBB side) ...
+# STEP 8: EIIDLIQP - PIBB pass (active second execution of the same logic)
+# Runs strictly AFTER the PBB pass above. CISDP.DEPOSIT and
+# FORATE.FORATEBKP are the PBB files, shared; their caches / FORATE_MAP
+# from Steps 2-3 are reused as-is. Only SAVING / CURRENT / FD differ.
 # ============================================================================
+print("\n" + "=" * 70)
+print("EIIDLIQP (PIBB) - starting")
+print("=" * 70)
+
+print("\nStep 8a: Caching PIBB input SAS datasets to Parquet...")
+_load_cached(INPUT_SAVING_FILE_PIBB,  SAVING_CACHE_PIBB,  "SAVING-PIBB")
+_load_cached(INPUT_CURRENT_FILE_PIBB, CURRENT_CACHE_PIBB, "CURRENT-PIBB")
+_load_cached(INPUT_FD_FILE_PIBB,      FD_CACHE_PIBB,      "FD-PIBB")
+
+# Step 8b: $FORATE is identical to PBB (same FORATE.FORATEBKP) -> reuse
+# FORATE_MAP built in Step 3. No re-query needed.
+
+# ----------------------------------------------------------------------------
+# Step 8c: DALWPBBD (PIBB) - BNM_SAVG / BNM_CURN / BNM_DEPT for PIBB
+# ----------------------------------------------------------------------------
+print("\nStep 8c: Running DALWPBBD (PIBB) ...")
+BNM_SAVG_PIBB, BNM_CURN_PIBB, BNM_DEPT_PIBB = build_savg_curn_dept(
+    saving_cache=SAVING_CACHE_PIBB,
+    current_cache=CURRENT_CACHE_PIBB,
+    cisdp_cache=CISDP_CACHE,                       # shared PBB file
+    reptmon=REPTMON,
+    nowk=NOWK,
+    output_cache_dir=DALWPBBD_OUTPUT_CACHE_DIR_PIBB,
+)
+print(f"  PIBB BNM_SAVG: {len(BNM_SAVG_PIBB):,} rows   "
+      f"PIBB BNM_CURN: {len(BNM_CURN_PIBB):,} rows")
+
+# ----------------------------------------------------------------------------
+# Step 8d: EIBDRLFM (PIBB) - FISS / NSRS / LCR / NLF for PIBB
+# ----------------------------------------------------------------------------
+print("\nStep 8d: Running EIBDRLFM (PIBB) ...")
+report_lines_pibb = run_eibdrlfm(
+    fd_cache=FD_CACHE_PIBB,
+    current_cache=CURRENT_CACHE_PIBB,
+    bnm_savg=BNM_SAVG_PIBB,
+    bnm_curn=BNM_CURN_PIBB,
+    forate_map=FORATE_MAP,                         # shared from PBB pass
+    reptdate=REPTDATE,
+    rpyr=RPYR, rpmth=RPMTH, rpday=RPDAY,
+    rd_days=RD_DAYS,
+    reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
+    lcr_output_dir=LCR_OUTPUT_DIR_PIBB,
+    nlf_output_dir=NLF_OUTPUT_DIR_PIBB,
+)
+
+# ----------------------------------------------------------------------------
+# Step 8e: Write PIBB FISS / NSRS
+# ----------------------------------------------------------------------------
+print("\nStep 8e: Writing PIBB FISS / NSRS ...")
+with open(FISS_FILE_PIBB, "w", encoding="latin1") as fh:
+    for ln in report_lines_pibb["FISS"]:
+        fh.write(ln + "\n")
+
+with open(NSRS_FILE_PIBB, "w", encoding="latin1") as fh:
+    for ln in report_lines_pibb["NSRS"]:
+        fh.write(ln + "\n")
+
+print(f"  PIBB FISS lines: {len(report_lines_pibb['FISS']):,}  -> {FISS_FILE_PIBB}")
+print(f"  PIBB NSRS lines: {len(report_lines_pibb['NSRS']):,}  -> {NSRS_FILE_PIBB}")
+
+# ----------------------------------------------------------------------------
+# Step 8f: SFTP02 command file (actual COZBATCH RUNSFTP transfer out of scope)
+# ----------------------------------------------------------------------------
+sftp_cmd_pibb = (
+    'CD "FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"\n'
+    f"PUT {NSRS_FILE_PIBB.as_posix()} PIBB_DAILY_NSRS_{REPTDAY}.TXT\n"
+)
+with open(SFTP_CMD_FILE_PIBB, "w", encoding="latin1") as fh:
+    fh.write(sftp_cmd_pibb)
+print(f"  PIBB SFTP command file -> {SFTP_CMD_FILE_PIBB}")
+
+print("\nEIIDLIQP (PIBB) complete.")
