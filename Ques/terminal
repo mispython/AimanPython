@@ -1,6 +1,15 @@
+Step 2b: Splitting caches by ENTITY_CD (PBB vs PIBB)...
+100% ▕██████████████████████████████████████▏ (00:00:11.51 elapsed)     
+  [SAVING] PBB rows: 0   PIBB rows: 2,321,173
+  [CURRENT] PBB rows: 0   PIBB rows: 165,079
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLIQP.py", line 49, in <module>
-    from EIBDRLFM import run_eibdrlfm
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRLFM.py", line 75, in <module>
-    def _safe_write_parquet(rows, path: Path, schema: dict | None = None) -> None:
-TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLIQP.py", line 316, in <module>
+    _split_fd_by_entity(FD_CERT_CACHE, FD_ACCT_CACHE, FD_PBB_CACHE, FD_PIBB_CACHE)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLIQP.py", line 299, in _split_fd_by_entity
+    con.execute(f"""
+_duckdb.BinderException: Binder Error: Table "c" does not have a column named "ACCTNO"
+
+Candidate bindings: : "ACCT_NUM", "ACCOUNT_TYPE_CD"
+
+LINE 10:                 ON CAST(c.ACCTNO AS BIGINT) = a.ACCTNO
+                                 ^
