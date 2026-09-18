@@ -1,11 +1,110 @@
-    cust = '08' if r["CUSTCD"] in (77, 78, 95, 96) else '09'
-    matdt = r["MATDT"]
-    lastmat = r["LASTMAT"]          # <- new
-    if matdt is None:
-        continue
-    if r["OPENIND"] == 'D' or (matdt - reptdate).days < 8:
-        rem = 0.1
-    elif lastmat is not None and -8 <= (lastmat - reptdate).days <= 8:
-        rem = 0.1                    # <- new: recent last maturity => immediate
-    else:
-        rem = remmth(matdt)
+#!/usr/bin/env python3
+"""Test multiple MATDATE selection rules against expected SAS output."""
+import duckdb
+from datetime import date
+from collections import defaultdict
+from PBBDPFMT import fdprod_format
+
+EXPECTED = {
+    '9531108010000Y':  5778647,
+    '9531108020000Y': 19904592,
+    '9531108030000Y': 24084280,
+    '9531108040000Y': 26951373,
+    '9531108050000Y': 39703122,
+    '9531108060000Y':  5087037,
+    '9531109010000Y':  2586590,
+    '9531109020000Y':  9479998,
+    '9531109030000Y': 12272958,
+    '9531109040000Y':  5108081,
+    '9531109050000Y':  5710689,
+    '9531109060000Y':     7451,
+}
+
+con = duckdb.connect(":memory:")
+df = con.execute("""
+    SELECT
+        CAST(ACCOUNT_TYPE_CD  AS INTEGER) AS ACCTTYPE,
+        CAST(CUSTOMER_CD      AS INTEGER) AS CUSTCD,
+        CAST(CURR_BAL         AS DOUBLE)  AS CURBAL,
+        CAST(MATURE_DT        AS DATE)    AS MATDT,
+        CAST(LAST_MATURE_DT   AS DATE)    AS LASTMAT,
+        CAST(OPEN_IND         AS VARCHAR) AS OPENIND,
+        CAST(INT_PLAN         AS INTEGER) AS INTPLAN
+    FROM read_parquet(
+        '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_pbb.parquet'
+    )
+""").pl()
+con.close()
+
+reptdate = date(2026, 9, 16)
+rpyr, rpmth, rpday = 2026, 9, 16
+rd_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+def remfmt(v):
+    if v <= 0.1: return '01'
+    if v <= 1:   return '02'
+    if v <= 3:   return '03'
+    if v <= 6:   return '04'
+    if v <= 12:  return '05'
+    return '06'
+
+def remmth(matdt):
+    mdyr, mdmth, mdday = matdt.year, matdt.month, matdt.day
+    days = rd_days[rpmth - 1]
+    if mdday > days: mdday = days
+    return (mdyr - rpyr)*12 + (mdmth - rpmth) + (mdday - rpday)/days
+
+def prefix_from_bic(bic, accttype):
+    if bic == '42630': return '96311'
+    if bic == '42133' or accttype in (302, 315, 394, 396): return '95317'
+    if bic == '42132': return '95315'
+    if bic == '49999': return '95999'
+    return '95311'
+
+# ---- Candidate rules: pick which date to use as effective MATDT ----
+def rule_A(r):  # baseline: always MATURE_DT
+    return r["MATDT"]
+
+def rule_B(r):  # LAST_MATURE_DT if it is in the future, else MATURE_DT
+    m, lm = r["MATDT"], r["LASTMAT"]
+    if lm is not None and lm > reptdate: return lm
+    return m
+
+def rule_C(r):  # LAST_MATURE_DT if within +-8 days, else MATURE_DT
+    m, lm = r["MATDT"], r["LASTMAT"]
+    if lm is not None and -8 <= (lm - reptdate).days <= 8: return lm
+    return m
+
+def rule_D(r):  # earliest non-null of the two that is >= REPTDATE
+    m, lm = r["MATDT"], r["LASTMAT"]
+    candidates = [d for d in (m, lm) if d is not None and d >= reptdate]
+    return min(candidates) if candidates else m
+
+RULES = {'A': rule_A, 'B': rule_B, 'C': rule_C, 'D': rule_D}
+
+for name, rule in RULES.items():
+    buckets = defaultdict(float)
+    for r in df.iter_rows(named=True):
+        if r["ACCTTYPE"] in (397, 398): continue
+        if r["CURBAL"] is None or r["CURBAL"] <= 0: continue
+        bic = fdprod_format(r["INTPLAN"])
+        if prefix_from_bic(bic, r["ACCTTYPE"]) != '95311': continue
+        cust = '08' if r["CUSTCD"] in (77, 78, 95, 96) else '09'
+        eff = rule(r)
+        if eff is None: continue
+        if r["OPENIND"] == 'D' or (eff - reptdate).days < 8:
+            rem = 0.1
+        else:
+            rem = remmth(eff)
+        key = f"95311{cust}{remfmt(rem)}0000Y"
+        buckets[key] += r["CURBAL"]
+
+    print(f"\n=== Rule {name} ===")
+    all_ok = True
+    for k in sorted(EXPECTED):
+        got = int(round(buckets.get(k, 0) / 1000))
+        exp = EXPECTED[k]
+        ok = "OK " if got == exp else "DIFF"
+        if got != exp: all_ok = False
+        print(f"  {k};{got:>12}   expected {exp:>12}   {ok}")
+    print(f"  ALL MATCH: {all_ok}")
