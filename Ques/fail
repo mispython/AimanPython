@@ -1,27 +1,55 @@
-def _safe_write_parquet(rows, path: Path, schema: dict | None = None) -> None:
-    """Write a list of dicts to parquet.
+def _sas_best12_rewind1(v) -> str:
+    if v is None or v == "":
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
 
-    The schema is applied in BOTH paths:
-      - non-empty: build with infer_schema_length=None so Polars reads
-        every row before inferring, then cast each column to the declared
-        dtype. Without this, Polars infers types from the first 100 rows
-        only and can fail on a late-arriving value (e.g. a 'Y' in a string
-        column that looked all-blank in the sample).
-      - empty: fall back to an explicit zero-row frame so the file is
-        still a valid parquet, matching SAS PROC SUMMARY / DATA _NULL_
-        writing a zero-row output member.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
 
-    if rows:
-        df = pl.DataFrame(rows, infer_schema_length=None)
-        if schema is not None:
-            df = df.select([pl.col(k).cast(v) for k, v in schema.items()])
-        df.write_parquet(path)
-        return
 
-    if schema is not None:
-        empty = pl.DataFrame({k: pl.Series([], dtype=v) for k, v in schema.items()})
-    else:
-        empty = pl.DataFrame({"_empty": pl.Series([], dtype=pl.Boolean)})
-    empty.write_parquet(path)
+
+import duckdb
+from PBBDPFMT import fdprod_format
+
+CERT = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_cert_full.parquet"
+ACCT = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_acct_full.parquet"
+PBB  = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_pbb.parquet"
+
+con = duckdb.connect(database=":memory:")
+
+print("\n[1] Total cert rows:", con.execute(f"SELECT COUNT(*) FROM read_parquet('{CERT}')").fetchone()[0])
+print("[2] Total acct rows:", con.execute(f"SELECT COUNT(*) FROM read_parquet('{ACCT}')").fetchone()[0])
+
+print("\n[3] Cert rows with no matching account in FD-ACCT:")
+print(con.execute(f"""
+    SELECT COUNT(*) FROM read_parquet('{CERT}') c
+    LEFT JOIN (SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS k FROM read_parquet('{ACCT}')) a
+    ON CAST(c.ACCT_NUM AS BIGINT) = a.k
+    WHERE a.k IS NULL
+""").fetchone()[0])
+
+print("\n[4] PBB split row count:", con.execute(f"SELECT COUNT(*) FROM read_parquet('{PBB}')").fetchone()[0])
+
+print("\n[5] CURCODE distinct values in PBB split (raw + trimmed):")
+for row in con.execute(f"""
+    SELECT
+        CAST(CURRENCY_CD AS VARCHAR)                            AS raw_v,
+        TRIM(CAST(CURRENCY_CD AS VARCHAR))                      AS trimmed_v,
+        LENGTH(CAST(CURRENCY_CD AS VARCHAR))                    AS raw_len,
+        COUNT(*)                                                AS n
+    FROM read_parquet('{PBB}')
+    GROUP BY 1,2,3 ORDER BY n DESC
+""").fetchall():
+    print(f"  raw={row[0]!r:10} trimmed={row[1]!r:10} raw_len={row[2]:3} n={row[3]}")
+
+print("\n[6] INTPLAN distribution in PBB split, with fdprod_format():")
+rows = con.execute(f"""
+    SELECT CAST(INT_PLAN AS INTEGER) AS iplan, COUNT(*) AS n
+    FROM read_parquet('{PBB}')
+    GROUP BY 1 ORDER BY 1
+""").fetchall()
+for iplan, n in rows:
+    bic = fdprod_format(iplan)
+    print(f"  INTPLAN={iplan:<6} n={n:<10} bic={bic}")
+
+con.close()
