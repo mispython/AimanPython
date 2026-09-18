@@ -8,6 +8,22 @@ def _sas_best12_rewind1(v) -> str:
 
 
 
+def _sas_best12_full(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
+
+
+fiss_lines.append(bnmcode + ";" + _sas_best12_full(_fmt_amt_num(amount, True)))
+nsrs_lines.append(bnmcode + ";" + _sas_best12_full(_fmt_amt_num(amount, False)))
+
+
+
+
 import duckdb
 from PBBDPFMT import fdprod_format
 
