@@ -156,6 +156,9 @@ print("Step 1: Deriving report date...")
 reptdate_values = get_reptdate_values()
 REPTDATE = reptdate_values.reptdate
 
+# DEBUG (UAT OVERRRIDE - Need to be removed before production)
+REPTDATE = date(2026, 9, 16)
+
 _day = REPTDATE.day
 NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
 
@@ -265,7 +268,8 @@ def _split_by_entity(src_cache: Path, out_pbb: Path, out_pibb: Path, tag: str):
     con.execute(f"""
         COPY (
             SELECT * FROM read_parquet('{src_cache.as_posix()}')
-            WHERE CAST({ENTITY_COL} AS VARCHAR) <> '{PIBB_VALUE}'
+            WHERE {ENTITY_COL} IS NULL
+               OR TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) <> '{PIBB_VALUE}'
         ) TO '{out_pbb.as_posix()}' (FORMAT PARQUET)
     """)
     con.execute(f"""
@@ -295,17 +299,27 @@ def _split_fd_by_entity(cert_cache: Path, acct_cache: Path,
         print("  [FD] Split fresh - skipping.")
         return
     con = duckdb.connect(database=":memory:")
-    for op, out_path in [("<>", out_pbb), ("=", out_pibb)]:
+    # (filter_sql, amtind_value, out_path): 'D' for PBB, 'I' for PIBB.
+    for filter_sql, amtind_value, out_path in [
+        (f"({ENTITY_COL} IS NULL OR "
+         f"TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) <> '{PIBB_VALUE}')", 'D', out_pbb),
+        (f"(TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) = '{PIBB_VALUE}')",   'I', out_pibb),
+    ]:
         con.execute(f"""
             COPY (
-                SELECT c.*
+                SELECT c.*,
+                       a.CUST_NAME,
+                       CAST('{amtind_value}' AS VARCHAR) AS AMTIND
                 FROM read_parquet('{cert_cache.as_posix()}') c
                 INNER JOIN (
-                    SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
+                    SELECT
+                        CAST(ACCTNO AS BIGINT) AS acct_key,
+                        ANY_VALUE(NAME)        AS CUST_NAME
                     FROM read_parquet('{acct_cache.as_posix()}')
-                    WHERE CAST({ENTITY_COL} AS VARCHAR) {op} '{PIBB_VALUE}'
+                    WHERE {filter_sql}
+                    GROUP BY 1
                 ) a
-                ON CAST(c.ACCTNO AS BIGINT) = a.ACCTNO
+                    ON CAST(c.ACCT_NUM AS BIGINT) = a.acct_key
             ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
         """)
     n_pbb  = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_pbb.as_posix()}')").fetchone()[0]
@@ -329,10 +343,15 @@ _forate_df = con.execute(f"""
         SELECT
             CAST(CURCODE  AS VARCHAR) AS CURCODE,
             CAST(SPOTRATE AS DOUBLE)  AS SPOTRATE,
-            CAST(REPTDATE AS DATE)    AS REPTDATE,
-            ROW_NUMBER() OVER (PARTITION BY CURCODE ORDER BY REPTDATE DESC) AS RN
+            (DATE '1960-01-01' + CAST(CAST(REPTDATE AS INTEGER) AS INTEGER) * INTERVAL 1 DAY) AS REPTDATE,
+            ROW_NUMBER() OVER (
+                PARTITION BY CURCODE
+                ORDER BY CAST(REPTDATE AS INTEGER) DESC
+            ) AS RN
         FROM read_parquet('{FORATE_CACHE.as_posix()}')
-        WHERE CAST(REPTDATE AS DATE) <= DATE '{REPTDATE.isoformat()}'
+        WHERE (DATE '1960-01-01'
+               + CAST(CAST(REPTDATE AS INTEGER) AS INTEGER) * INTERVAL 1 DAY)
+              <= DATE '{REPTDATE.isoformat()}'
     ) WHERE RN = 1
 """).pl()
 con.close()
