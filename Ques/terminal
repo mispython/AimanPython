@@ -1,7 +1,235 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLIQP.py
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLIQP.py", line 49, in <module>
-    from EIBDRLFM import run_eibdrlfm
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRLFM.py", line 75, in <module>
-    def _safe_write_parquet(rows, path: Path, schema: dict | None = None) -> None:
-TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
+
+[1] Total cert rows: 3300148
+[2] Total acct rows: 1907500
+
+[3] Cert rows with no matching account in FD-ACCT:
+905
+
+[4] PBB split row count: 2822433
+
+[5] CURCODE distinct values in PBB split (raw + trimmed):
+  raw='MYR'      trimmed='MYR'      raw_len=  3 n=2782150
+  raw='AUD'      trimmed='AUD'      raw_len=  3 n=14633
+  raw='USD'      trimmed='USD'      raw_len=  3 n=8858
+  raw='SGD'      trimmed='SGD'      raw_len=  3 n=5041
+  raw='CNY'      trimmed='CNY'      raw_len=  3 n=3964
+  raw='GBP'      trimmed='GBP'      raw_len=  3 n=3835
+  raw='NZD'      trimmed='NZD'      raw_len=  3 n=3033
+  raw='EUR'      trimmed='EUR'      raw_len=  3 n=372
+  raw='CAD'      trimmed='CAD'      raw_len=  3 n=196
+  raw='JPY'      trimmed='JPY'      raw_len=  3 n=189
+  raw='HKD'      trimmed='HKD'      raw_len=  3 n=142
+  raw='THB'      trimmed='THB'      raw_len=  3 n=11
+  raw='CHF'      trimmed='CHF'      raw_len=  3 n=9
+
+[6] INTPLAN distribution in PBB split, with fdprod_format():
+  INTPLAN=233    n=79426      bic=42130
+  INTPLAN=234    n=6689       bic=42130
+  INTPLAN=235    n=46175      bic=42130
+  INTPLAN=236    n=8235       bic=42130
+  INTPLAN=237    n=611        bic=42130
+  INTPLAN=238    n=66118      bic=42130
+  INTPLAN=239    n=2325       bic=42130
+  INTPLAN=240    n=236        bic=42130
+  INTPLAN=241    n=1324       bic=42130
+  INTPLAN=242    n=191        bic=42130
+  INTPLAN=243    n=101        bic=42130
+  INTPLAN=244    n=28384      bic=42130
+  INTPLAN=245    n=3108       bic=42130
+  INTPLAN=246    n=43         bic=42130
+  INTPLAN=247    n=703        bic=42130
+  INTPLAN=248    n=17         bic=42130
+  INTPLAN=249    n=7          bic=42130
+  INTPLAN=250    n=87         bic=42130
+  INTPLAN=251    n=5          bic=42130
+  INTPLAN=252    n=14         bic=42130
+  INTPLAN=253    n=2          bic=42130
+  INTPLAN=254    n=2          bic=42130
+  INTPLAN=255    n=4          bic=42130
+  INTPLAN=256    n=189        bic=42130
+  INTPLAN=257    n=40         bic=42130
+  INTPLAN=258    n=13         bic=42130
+  INTPLAN=259    n=191        bic=42130
+  INTPLAN=260    n=9489       bic=42130
+  INTPLAN=261    n=112        bic=42130
+  INTPLAN=262    n=4798       bic=42130
+  INTPLAN=263    n=51         bic=42130
+  INTPLAN=264    n=11         bic=42130
+  INTPLAN=265    n=7504       bic=42130
+  INTPLAN=266    n=42         bic=42130
+  INTPLAN=267    n=18         bic=42130
+  INTPLAN=268    n=67         bic=42130
+  INTPLAN=269    n=7          bic=42130
+  INTPLAN=270    n=10         bic=42130
+  INTPLAN=271    n=15914      bic=42130
+  INTPLAN=284    n=13         bic=42130
+  INTPLAN=285    n=23         bic=42130
+  INTPLAN=286    n=25         bic=42130
+  INTPLAN=287    n=12         bic=42130
+  INTPLAN=288    n=3          bic=42130
+  INTPLAN=289    n=4          bic=42130
+  INTPLAN=290    n=20         bic=42130
+  INTPLAN=291    n=2          bic=42130
+  INTPLAN=292    n=3          bic=42130
+  INTPLAN=293    n=10         bic=42130
+  INTPLAN=294    n=2          bic=42130
+  INTPLAN=295    n=15         bic=42130
+  INTPLAN=300    n=229273     bic=42130
+  INTPLAN=301    n=203336     bic=42130
+  INTPLAN=302    n=398464     bic=42130
+  INTPLAN=303    n=3715       bic=42130
+  INTPLAN=304    n=629531     bic=42130
+  INTPLAN=305    n=967        bic=42130
+  INTPLAN=306    n=144        bic=42130
+  INTPLAN=307    n=4          bic=42130
+  INTPLAN=308    n=182        bic=42130
+  INTPLAN=309    n=35         bic=42130
+  INTPLAN=311    n=67         bic=42130
+  INTPLAN=312    n=34120      bic=42130
+  INTPLAN=313    n=2657       bic=42130
+  INTPLAN=314    n=366        bic=42130
+  INTPLAN=315    n=586        bic=42130
+  INTPLAN=316    n=25842      bic=42130
+  INTPLAN=317    n=94         bic=42130
+  INTPLAN=318    n=233        bic=42130
+  INTPLAN=320    n=10         bic=42130
+  INTPLAN=321    n=8          bic=42130
+  INTPLAN=322    n=11         bic=42130
+  INTPLAN=324    n=25         bic=42130
+  INTPLAN=325    n=2          bic=42130
+  INTPLAN=328    n=1          bic=42130
+  INTPLAN=337    n=6          bic=42130
+  INTPLAN=360    n=1157       bic=42130
+  INTPLAN=361    n=13         bic=42130
+  INTPLAN=363    n=23         bic=42130
+  INTPLAN=385    n=8466       bic=42130
+  INTPLAN=400    n=2183       bic=42130
+  INTPLAN=401    n=953        bic=42130
+  INTPLAN=402    n=1140       bic=42130
+  INTPLAN=403    n=16         bic=42130
+  INTPLAN=404    n=1233       bic=42130
+  INTPLAN=405    n=1          bic=42130
+  INTPLAN=408    n=2          bic=42130
+  INTPLAN=412    n=854        bic=42130
+  INTPLAN=413    n=21         bic=42130
+  INTPLAN=415    n=7          bic=42130
+  INTPLAN=416    n=85         bic=42130
+  INTPLAN=418    n=44         bic=42130
+  INTPLAN=421    n=1061       bic=42630
+  INTPLAN=423    n=599        bic=42630
+  INTPLAN=425    n=551        bic=42630
+  INTPLAN=427    n=1753       bic=42630
+  INTPLAN=429    n=5          bic=42630
+  INTPLAN=430    n=2          bic=42630
+  INTPLAN=432    n=2          bic=42630
+  INTPLAN=433    n=2          bic=42630
+  INTPLAN=435    n=3          bic=42630
+  INTPLAN=436    n=6          bic=42630
+  INTPLAN=445    n=19         bic=42130
+  INTPLAN=446    n=51         bic=42630
+  INTPLAN=447    n=45         bic=42130
+  INTPLAN=448    n=61534      bic=42130
+  INTPLAN=449    n=1567       bic=42130
+  INTPLAN=450    n=67575      bic=42130
+  INTPLAN=452    n=71         bic=42130
+  INTPLAN=470    n=2414       bic=42630
+  INTPLAN=472    n=3438       bic=42630
+  INTPLAN=474    n=1051       bic=42630
+  INTPLAN=476    n=1327       bic=42630
+  INTPLAN=478    n=1011       bic=42630
+  INTPLAN=480    n=554        bic=42630
+  INTPLAN=482    n=4053       bic=42630
+  INTPLAN=484    n=3218       bic=42630
+  INTPLAN=486    n=2360       bic=42630
+  INTPLAN=488    n=1132       bic=42630
+  INTPLAN=490    n=1924       bic=42630
+  INTPLAN=492    n=710        bic=42630
+  INTPLAN=494    n=95         bic=42630
+  INTPLAN=496    n=41         bic=42630
+  INTPLAN=498    n=33         bic=42630
+  INTPLAN=500    n=1          bic=42130
+  INTPLAN=508    n=43         bic=42130
+  INTPLAN=509    n=6          bic=42130
+  INTPLAN=510    n=40         bic=42130
+  INTPLAN=511    n=3          bic=42130
+  INTPLAN=512    n=4          bic=42130
+  INTPLAN=513    n=4          bic=42130
+  INTPLAN=515    n=4          bic=42130
+  INTPLAN=518    n=1          bic=42130
+  INTPLAN=533    n=1          bic=42130
+  INTPLAN=540    n=4975       bic=42130
+  INTPLAN=541    n=4029       bic=42130
+  INTPLAN=545    n=1136       bic=42130
+  INTPLAN=546    n=2116       bic=42130
+  INTPLAN=547    n=1057       bic=42130
+  INTPLAN=548    n=180        bic=42630
+  INTPLAN=550    n=96         bic=42630
+  INTPLAN=552    n=43         bic=42630
+  INTPLAN=554    n=37         bic=42630
+  INTPLAN=556    n=46         bic=42630
+  INTPLAN=558    n=27         bic=42630
+  INTPLAN=560    n=1955       bic=42630
+  INTPLAN=561    n=943        bic=42630
+  INTPLAN=562    n=5002       bic=42630
+  INTPLAN=563    n=1275       bic=42630
+  INTPLAN=564    n=20         bic=42630
+  INTPLAN=565    n=53         bic=42630
+  INTPLAN=566    n=32         bic=42630
+  INTPLAN=567    n=839        bic=42630
+  INTPLAN=568    n=18280      bic=42130
+  INTPLAN=569    n=605        bic=42630
+  INTPLAN=570    n=392        bic=42130
+  INTPLAN=571    n=435        bic=42630
+  INTPLAN=572    n=445        bic=42130
+  INTPLAN=573    n=1154       bic=42630
+  INTPLAN=574    n=75         bic=42630
+  INTPLAN=576    n=57         bic=42630
+  INTPLAN=578    n=13         bic=42630
+  INTPLAN=720    n=12321      bic=42130
+  INTPLAN=721    n=4856       bic=42130
+  INTPLAN=741    n=196        bic=42130
+  INTPLAN=742    n=179        bic=42130
+  INTPLAN=747    n=26369      bic=42130
+  INTPLAN=748    n=369        bic=42130
+  INTPLAN=749    n=62         bic=42130
+  INTPLAN=750    n=139        bic=42130
+  INTPLAN=776    n=97         bic=42130
+  INTPLAN=864    n=3199       bic=42130
+  INTPLAN=865    n=287        bic=42130
+  INTPLAN=866    n=943        bic=42130
+  INTPLAN=867    n=117        bic=42130
+  INTPLAN=868    n=12         bic=42130
+  INTPLAN=869    n=1067       bic=42130
+  INTPLAN=870    n=42         bic=42130
+  INTPLAN=871    n=5          bic=42130
+  INTPLAN=872    n=17         bic=42130
+  INTPLAN=873    n=3          bic=42130
+  INTPLAN=874    n=1          bic=42130
+  INTPLAN=875    n=451        bic=42130
+  INTPLAN=876    n=36         bic=42130
+  INTPLAN=878    n=2          bic=42130
+  INTPLAN=887    n=1          bic=42130
+  INTPLAN=888    n=1          bic=42130
+  INTPLAN=890    n=6          bic=42130
+  INTPLAN=895    n=10935      bic=42130
+  INTPLAN=904    n=12228      bic=42130
+  INTPLAN=905    n=11         bic=42130
+  INTPLAN=968    n=23125      bic=42130
+  INTPLAN=969    n=168        bic=42130
+  INTPLAN=970    n=55123      bic=42130
+  INTPLAN=971    n=89         bic=42130
+  INTPLAN=972    n=14         bic=42130
+  INTPLAN=973    n=376        bic=42130
+  INTPLAN=974    n=30103      bic=42130
+  INTPLAN=975    n=72326      bic=42130
+  INTPLAN=976    n=420        bic=42130
+  INTPLAN=977    n=120714     bic=42130
+  INTPLAN=978    n=117252     bic=42130
+  INTPLAN=979    n=359        bic=42130
+  INTPLAN=980    n=1569       bic=42130
+  INTPLAN=981    n=4          bic=42130
+  INTPLAN=982    n=273013     bic=42130
+  INTPLAN=983    n=400        bic=42130
+  INTPLAN=985    n=21499      bic=42130
+  INTPLAN=986    n=24         bic=42130
