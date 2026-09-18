@@ -1,20 +1,42 @@
-import duckdb
-con = duckdb.connect(":memory:")
-rows = con.execute("""
-    SELECT
-        TRIM(UPPER(CAST(CURRENCY_CD AS VARCHAR))) AS CUR,
-        COUNT(*)                                  AS N,
-        SUM(CAST(CURR_BAL AS DOUBLE))             AS RAW_SUM
-    FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_pbb.parquet')
-    WHERE CAST(INT_PLAN AS INTEGER) IN (
-        421, 423, 425, 427, 429, 430, 432, 433, 435, 436, 446,
-        470, 472, 474, 476, 478, 480, 482, 484, 486, 488, 490, 492, 494, 496, 498,
-        548, 550, 552, 554, 556, 558, 560, 561, 562, 563, 564, 565, 566, 567,
-        569, 571, 573, 574, 576, 578, 579
-    )
-    GROUP BY 1
-    ORDER BY RAW_SUM DESC
-""").fetchall()
-for cur, n, s in rows:
-    print(f"  {cur:6} n={n:<8} raw_sum={s:>20,.2f}")
-con.close()
+        amtusd = amtsgd = amthkd = amtaud = 0.0
+        bic = fdprod_format(r["INTPLAN"])
+        myramount = None
+
+        if bic == '42630':
+            # FCY FD: the original SAS FD.FD member carried CURBAL already
+            # converted to MYR for every FCY account (the ETL pre-converted
+            # it). The new cert file carries CURR_BAL in original currency.
+            # Convert via $FORATE so AMOUNT and the currency buckets match
+            # the SAS output.
+            rate = forate_format(r["CURCODE"], forate_map)
+            curbal_myr = curbal if (r["CURCODE"] == 'MYR' or rate is None) \
+                         else curbal * rate
+
+            if r["CURCODE"] == 'USD':
+                amtusd = curbal_myr
+            elif r["CURCODE"] == 'SGD':
+                amtsgd = curbal_myr
+            elif r["CURCODE"] == 'HKD':
+                amthkd = curbal_myr
+            elif r["CURCODE"] == 'AUD':
+                amtaud = curbal_myr
+
+            bnmcode = '96311' + cust + remfmt_format(remmth) + '0000Y'
+            myramount = None if r["CURCODE"] == 'MYR' else curbal_myr
+
+            fd_sum_rows.append(
+                _row(bnmcode, curbal_myr, amtusd, amtsgd, amthkd, amtaud)
+            )
+        else:
+            if bic == '42133' or r["ACCTTYPE"] in (302, 315, 394, 396):
+                bnmcode = '95317' + cust + remfmt_format(remmth) + '0000Y'
+            elif bic == '42132':
+                bnmcode = '95315' + cust + remfmt_format(remmth) + '0000Y'
+            elif bic == '49999':
+                bnmcode = '95999' + cust + remfmt_format(remmth) + '0000Y'
+            else:
+                bnmcode = '95311' + cust + remfmt_format(remmth) + '0000Y'
+
+            fd_sum_rows.append(
+                _row(bnmcode, curbal, amtusd, amtsgd, amthkd, amtaud)
+            )
