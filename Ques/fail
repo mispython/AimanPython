@@ -1,71 +1,20 @@
-def _sas_best12_rewind1(v) -> str:
-    if v is None or v == "":
-        return ""
-    if isinstance(v, float) and v.is_integer():
-        return str(int(v))
-    return str(v)
-
-
-
-
-def _sas_best12_full(v) -> str:
-    if v is None:
-        return ""
-    if isinstance(v, float) and v.is_integer():
-        return str(int(v))
-    return str(v)
-
-
-
-
-fiss_lines.append(bnmcode + ";" + _sas_best12_full(_fmt_amt_num(amount, True)))
-nsrs_lines.append(bnmcode + ";" + _sas_best12_full(_fmt_amt_num(amount, False)))
-
-
-
-
 import duckdb
-from PBBDPFMT import fdprod_format
-
-CERT = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_cert_full.parquet"
-ACCT = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_acct_full.parquet"
-PBB  = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_pbb.parquet"
-
-con = duckdb.connect(database=":memory:")
-
-print("\n[1] Total cert rows:", con.execute(f"SELECT COUNT(*) FROM read_parquet('{CERT}')").fetchone()[0])
-print("[2] Total acct rows:", con.execute(f"SELECT COUNT(*) FROM read_parquet('{ACCT}')").fetchone()[0])
-
-print("\n[3] Cert rows with no matching account in FD-ACCT:")
-print(con.execute(f"""
-    SELECT COUNT(*) FROM read_parquet('{CERT}') c
-    LEFT JOIN (SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS k FROM read_parquet('{ACCT}')) a
-    ON CAST(c.ACCT_NUM AS BIGINT) = a.k
-    WHERE a.k IS NULL
-""").fetchone()[0])
-
-print("\n[4] PBB split row count:", con.execute(f"SELECT COUNT(*) FROM read_parquet('{PBB}')").fetchone()[0])
-
-print("\n[5] CURCODE distinct values in PBB split (raw + trimmed):")
-for row in con.execute(f"""
+con = duckdb.connect(":memory:")
+rows = con.execute("""
     SELECT
-        CAST(CURRENCY_CD AS VARCHAR)                            AS raw_v,
-        TRIM(CAST(CURRENCY_CD AS VARCHAR))                      AS trimmed_v,
-        LENGTH(CAST(CURRENCY_CD AS VARCHAR))                    AS raw_len,
-        COUNT(*)                                                AS n
-    FROM read_parquet('{PBB}')
-    GROUP BY 1,2,3 ORDER BY n DESC
-""").fetchall():
-    print(f"  raw={row[0]!r:10} trimmed={row[1]!r:10} raw_len={row[2]:3} n={row[3]}")
-
-print("\n[6] INTPLAN distribution in PBB split, with fdprod_format():")
-rows = con.execute(f"""
-    SELECT CAST(INT_PLAN AS INTEGER) AS iplan, COUNT(*) AS n
-    FROM read_parquet('{PBB}')
-    GROUP BY 1 ORDER BY 1
+        TRIM(UPPER(CAST(CURRENCY_CD AS VARCHAR))) AS CUR,
+        COUNT(*)                                  AS N,
+        SUM(CAST(CURR_BAL AS DOUBLE))             AS RAW_SUM
+    FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_pbb.parquet')
+    WHERE CAST(INT_PLAN AS INTEGER) IN (
+        421, 423, 425, 427, 429, 430, 432, 433, 435, 436, 446,
+        470, 472, 474, 476, 478, 480, 482, 484, 486, 488, 490, 492, 494, 496, 498,
+        548, 550, 552, 554, 556, 558, 560, 561, 562, 563, 564, 565, 566, 567,
+        569, 571, 573, 574, 576, 578, 579
+    )
+    GROUP BY 1
+    ORDER BY RAW_SUM DESC
 """).fetchall()
-for iplan, n in rows:
-    bic = fdprod_format(iplan)
-    print(f"  INTPLAN={iplan:<6} n={n:<10} bic={bic}")
-
+for cur, n, s in rows:
+    print(f"  {cur:6} n={n:<8} raw_sum={s:>20,.2f}")
 con.close()
