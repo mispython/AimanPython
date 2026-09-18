@@ -1,42 +1,60 @@
-        amtusd = amtsgd = amthkd = amtaud = 0.0
-        bic = fdprod_format(r["INTPLAN"])
-        myramount = None
+import duckdb
+from datetime import date
+from PBBDPFMT import fdprod_format
 
-        if bic == '42630':
-            # FCY FD: the original SAS FD.FD member carried CURBAL already
-            # converted to MYR for every FCY account (the ETL pre-converted
-            # it). The new cert file carries CURR_BAL in original currency.
-            # Convert via $FORATE so AMOUNT and the currency buckets match
-            # the SAS output.
-            rate = forate_format(r["CURCODE"], forate_map)
-            curbal_myr = curbal if (r["CURCODE"] == 'MYR' or rate is None) \
-                         else curbal * rate
+con = duckdb.connect(":memory:")
+df = con.execute("""
+    SELECT
+        CAST(ACCOUNT_TYPE_CD AS INTEGER) AS ACCTTYPE,
+        CAST(CUSTOMER_CD     AS INTEGER) AS CUSTCD,
+        CAST(CURR_BAL        AS DOUBLE)  AS CURBAL,
+        CAST(MATURE_DT       AS DATE)    AS MATDT,
+        CAST(OPEN_IND        AS VARCHAR) AS OPENIND,
+        CAST(INT_PLAN        AS INTEGER) AS INTPLAN
+    FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_pbb.parquet')
+""").pl()
+con.close()
 
-            if r["CURCODE"] == 'USD':
-                amtusd = curbal_myr
-            elif r["CURCODE"] == 'SGD':
-                amtsgd = curbal_myr
-            elif r["CURCODE"] == 'HKD':
-                amthkd = curbal_myr
-            elif r["CURCODE"] == 'AUD':
-                amtaud = curbal_myr
+reptdate = date(2026, 9, 16)
+rpyr, rpmth, rpday = 2026, 9, 16
+rd_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
-            bnmcode = '96311' + cust + remfmt_format(remmth) + '0000Y'
-            myramount = None if r["CURCODE"] == 'MYR' else curbal_myr
+def remfmt(v):
+    if v <= 0.1: return '01'
+    if v <= 1:   return '02'
+    if v <= 3:   return '03'
+    if v <= 6:   return '04'
+    if v <= 12:  return '05'
+    return '06'
 
-            fd_sum_rows.append(
-                _row(bnmcode, curbal_myr, amtusd, amtsgd, amthkd, amtaud)
-            )
-        else:
-            if bic == '42133' or r["ACCTTYPE"] in (302, 315, 394, 396):
-                bnmcode = '95317' + cust + remfmt_format(remmth) + '0000Y'
-            elif bic == '42132':
-                bnmcode = '95315' + cust + remfmt_format(remmth) + '0000Y'
-            elif bic == '49999':
-                bnmcode = '95999' + cust + remfmt_format(remmth) + '0000Y'
-            else:
-                bnmcode = '95311' + cust + remfmt_format(remmth) + '0000Y'
+def remmth(matdt):
+    mdyr, mdmth, mdday = matdt.year, matdt.month, matdt.day
+    days = rd_days[rpmth - 1]
+    if mdday > days: mdday = days
+    remy = mdyr - rpyr
+    remm = mdmth - rpmth
+    remd = mdday - rpday
+    return remy*12 + remm + remd/days
 
-            fd_sum_rows.append(
-                _row(bnmcode, curbal, amtusd, amtsgd, amthkd, amtaud)
-            )
+from collections import defaultdict
+buckets = defaultdict(float)
+counts  = defaultdict(int)
+
+for r in df.iter_rows(named=True):
+    if r["ACCTTYPE"] in (397, 398): continue
+    if r["CURBAL"] is None or r["CURBAL"] <= 0: continue
+    bic = fdprod_format(r["INTPLAN"])
+    if bic != '95311': continue
+    cust = '08' if r["CUSTCD"] in (77, 78, 95, 96) else '09'
+    matdt = r["MATDT"]
+    if r["OPENIND"] == 'D' or (matdt is not None and (matdt - reptdate).days < 8):
+        rem = 0.1
+    else:
+        rem = remmth(matdt)
+    b = remfmt(rem)
+    key = f"95311{cust}{b}0000Y"
+    buckets[key] += r["CURBAL"]
+    counts[key]  += 1
+
+for k in sorted(buckets):
+    print(f"{k};{int(buckets[k]/1000):>12}   n={counts[k]:>8}")
