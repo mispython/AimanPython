@@ -1,12 +1,15 @@
-            CAST(
-                CASE
-                    WHEN LAST_MATURE_DT IS NOT NULL
-                         AND CAST(LAST_MATURE_DT AS DATE) > DATE '{reptdate.isoformat()}'
-                    THEN CAST(LAST_MATURE_DT AS DATE)
-                    ELSE CAST(MATURE_DT AS DATE)
-                END
-            AS DATE) AS MATDT,
+        def _sas_best12_short(v) -> str:
+            """Approximate SAS BEST12. for the closed-account tail: about
+            11 significant digits, no trailing zeros."""
+            if v is None:
+                return "."
+            s = f"{v:.11g}"
+            return s
 
-
-
-
+        for r in closed:
+            nsrs_lines.append(";".join([
+                str(r["BRANCH"]), str(r["ACCTNO"]), str(r["NAME"] or ""),
+                _sas_best12_short(r["AMOUNT"]),
+                _sas_best12_short(r["MYRAMOUNT"]),
+                str(r["CUSTCD"]), str(r["PRODUCT"]), str(r["OPENIND"]), "",
+            ]))
