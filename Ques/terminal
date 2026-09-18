@@ -1,47 +1,384 @@
-=== FD-CERT ===
-shape: (3, 44)
-┌─────────┬─────────┬─────────────┬───────────┬───┬────────┬─────────────────┬─────────────┬─────────────────────┐
-│ BANK_NO ┆ REPT_NO ┆ FORMAT_CODE ┆ BRANCH_CD ┆ … ┆ STATUS ┆ SPECIAL_RT_DTTM ┆ STATUS_DTTM ┆ CURR_DEALER_NAME_ID │
-│ ---     ┆ ---     ┆ ---         ┆ ---       ┆   ┆ ---    ┆ ---             ┆ ---         ┆ ---                 │
-│ f64     ┆ f64     ┆ f64         ┆ f64       ┆   ┆ str    ┆ str             ┆ str         ┆ str                 │
-╞═════════╪═════════╪═════════════╪═══════════╪═══╪════════╪═════════════════╪═════════════╪═════════════════════╡
-│ 33.0    ┆ 4001.0  ┆ 1.0         ┆ 2.0       ┆ … ┆ null   ┆ null            ┆ null        ┆ null                │
-│ 33.0    ┆ 4001.0  ┆ 1.0         ┆ 2.0       ┆ … ┆ null   ┆ null            ┆ null        ┆ null                │
-│ 33.0    ┆ 4001.0  ┆ 1.0         ┆ 2.0       ┆ … ┆ null   ┆ null            ┆ null        ┆ null                │
-└─────────┴─────────┴─────────────┴───────────┴───┴────────┴─────────────────┴─────────────┴─────────────────────┘
+====================================================================================================
+=== FD-CERT  (fd_cert_full.parquet)
+====================================================================================================
+Total columns: 44
 
-=== FD-ACCT ===
-shape: (3, 73)
-┌────────┬──────────┬────────────────┬─────────┬───┬───────────┬───────────────┬───────────────────┬─────────────────┐
-│ BRANCH ┆ ACCTNO   ┆ NAME           ┆ TAXNO   ┆ … ┆ ENTITY_CD ┆ E_INVOICE_IND ┆ POST_IND_MAINT_DT ┆ POST_IND_EXP_DT │
-│ ---    ┆ ---      ┆ ---            ┆ ---     ┆   ┆ ---       ┆ ---           ┆ ---               ┆ ---             │
-│ f64    ┆ f64      ┆ str            ┆ str     ┆   ┆ str       ┆ str           ┆ f64               ┆ f64             │
-╞════════╪══════════╪════════════════╪═════════╪═══╪═══════════╪═══════════════╪═══════════════════╪═════════════════╡
-│ 2.0    ┆ 1.0000e9 ┆ TAN AH CHOO    ┆ 7654002 ┆ … ┆ null      ┆ null          ┆ null              ┆ null            │
-│ 2.0    ┆ 1.0000e9 ┆ HO SOOK LAN&HO ┆ 3832133 ┆ … ┆ null      ┆ null          ┆ null              ┆ null            │
-│ 2.0    ┆ 1.0000e9 ┆ LIM BOON BENG  ┆ 5087273 ┆ … ┆ null      ┆ null          ┆ null              ┆ null            │
-└────────┴──────────┴────────────────┴─────────┴───┴───────────┴───────────────┴───────────────────┴─────────────────┘
+  #  COLUMN                              TYPE        SAMPLES
+----------------------------------------------------------------------------------------------------
+  1  BANK_NO                             DOUBLE      | 33.0 | 33.0 | 33.0
+  2  REPT_NO                             DOUBLE      | 4001.0 | 4001.0 | 4001.0
+  3  FORMAT_CODE                         DOUBLE      | 1.0 | 1.0 | 1.0
+  4  BRANCH_CD                           DOUBLE      | 2.0 | 2.0 | 2.0
+  5  ACCT_NUM                            DOUBLE      | 1000001725.0 | 1000001725.0 | 1000001725.0
+  6  PURPOSE_CD                          VARCHAR     | 1 | 1 | 1
+  7  CUSTOMER_CD                         DOUBLE      | 78.0 | 78.0 | 78.0
+  8  DEPOSIT_DT                          TIMESTAMP   | 2026-03-25 00:00:00 | 2026-08-11 00:00:00 | 2026-06-17 00:00:00
+  9  CERT_NUM                            DOUBLE      | 50173.0 | 141706.0 | 142169.0
+ 10  OPEN_IND                            VARCHAR     | O | O | O
+ 11  CURR_BAL                            DOUBLE      | 1364.4299999999998 | 3587.2099999999996 | 1530.07
+ 12  ORIG_AMT                            DOUBLE      | 1000.0 | 3000.0 | 1300.0
+ 13  ORIG_DT                             TIMESTAMP   | 2014-09-25 00:00:00 | 2019-02-11 00:00:00 | 2019-06-17 00:00:00
+ 14  MATURE_DT                           TIMESTAMP   | 2026-09-25 00:00:00 | 2027-02-11 00:00:00 | 2026-12-17 00:00:00
+ 15  RT                                  DOUBLE      | 2.05 | 1.7999999999999998 | 1.75
+ 16  ACCOUNT_TYPE_CD                     DOUBLE      | 300.0 | 300.0 | 300.0
+ 17  TERM                                DOUBLE      | 6.0 | 6.0 | 3.0
+ 18  MATUREITY_TERM_CD                   VARCHAR     | M | M | M
+ 19  INT_PLAN                            DOUBLE      | 302.0 | 302.0 | 301.0
+ 20  PAYMENT_IND                         VARCHAR     | A | A | A
+ 21  RENEWAL_IND                         VARCHAR     | N | N | N
+ 22  INT_PAID_YTD                        DOUBLE      | 13.729999999999999 | 74.17999999999999 | 21.43
+ 23  INT_PAYABLE                         DOUBLE      | 13.489999999999998 | 6.539999999999999 | 0.0
+ 24  INT_DT                              TIMESTAMP   | 2026-03-24 00:00:00 | 2026-08-10 00:00:00 | 2026-09-16 00:00:00
+ 25  LAST_ACTIVE_DT                      TIMESTAMP   | 2014-09-25 00:00:00 | 2019-02-11 00:00:00 | 2019-06-17 00:00:00
+ 26  INT_FREQ                            DOUBLE      | 6.0 | 6.0 | 3.0
+ 27  INT_FREQ_CD                         VARCHAR     | M | M | M
+ 28  PENDING_INT                         DOUBLE      | 0.0 | 0.0 | 0.0
+ 29  CURRENCY_CD                         VARCHAR     | MYR | MYR | MYR
+ 30  LAST_MATURE_DT                      TIMESTAMP   | 2026-03-25 00:00:00 | 2026-08-11 00:00:00 | 2026-09-17 00:00:00
+ 31  PRO_RATIO                           DOUBLE      | 0.0 | 0.0 | 0.0
+ 32  CERT_HOLD_IND                       VARCHAR     |  |  | 
+ 33  COST_CENTRE                         DOUBLE      | 2.0 | 2.0 | 2.0
+ 34  COLL_NUM                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 35  INT_TRANSFER_ACCT_NUM               DOUBLE      | 0.0 | 0.0 | 0.0
+ 36  NEW_RT                              DOUBLE      |  |  | 
+ 37  OLD_RT                              DOUBLE      |  |  | 
+ 38  EFFECTIVE_DT                        TIMESTAMP   |  |  | 
+ 39  DEALERS_NAME                        VARCHAR     |  |  | 
+ 40  USER_ID                             VARCHAR     |  |  | 
+ 41  STATUS                              VARCHAR     |  |  | 
+ 42  SPECIAL_RT_DTTM                     VARCHAR     |  |  | 
+ 43  STATUS_DTTM                         VARCHAR     |  |  | 
+ 44  CURR_DEALER_NAME_ID                 VARCHAR     |  |  | 
 
-=== SAVING ===
-shape: (3, 87)
-┌────────┬──────────┬─────────────────┬──────────┬───┬───────────────────────────┬─────────────────────────┬───────────────────┬─────────────────┐
-│ BRANCH ┆ ACCTNO   ┆ NAME            ┆ TAXNO    ┆ … ┆ SOURCE_INCOME_CURRENCY_CD ┆ CASH_DEPOSIT_AMOUNT_AGG ┆ POST_IND_MAINT_DT ┆ POST_IND_EXP_DT │
-│ ---    ┆ ---      ┆ ---             ┆ ---      ┆   ┆ ---                       ┆ ---                     ┆ ---               ┆ ---             │
-│ f64    ┆ f64      ┆ str             ┆ str      ┆   ┆ str                       ┆ f64                     ┆ f64               ┆ f64             │
-╞════════╪══════════╪═════════════════╪══════════╪═══╪═══════════════════════════╪═════════════════════════╪═══════════════════╪═════════════════╡
-│ 2.0    ┆ 4.0000e9 ┆ MOHD EZRI BIN Z ┆ A3538109 ┆ … ┆ null                      ┆ 0.0                     ┆ null              ┆ null            │
-│ 2.0    ┆ 4.0000e9 ┆ BANG KIM LAN    ┆ 7614771  ┆ … ┆ null                      ┆ 0.0                     ┆ null              ┆ null            │
-│ 2.0    ┆ 4.0000e9 ┆ HO SWEE KHONG   ┆ A2955672 ┆ … ┆ null                      ┆ 0.0                     ┆ null              ┆ null            │
-└────────┴──────────┴─────────────────┴──────────┴───┴───────────────────────────┴─────────────────────────┴───────────────────┴─────────────────┘
+====================================================================================================
+=== FD-ACCT  (fd_acct_full.parquet)
+====================================================================================================
+Total columns: 73
 
-=== CURRENT ===
-shape: (3, 149)
-┌────────┬──────────┬─────────────────┬──────────┬───┬────────────┬────────────────┬───────────────────────┬──────────────────────────┐
-│ BRANCH ┆ ACCTNO   ┆ NAME            ┆ TAXNO    ┆ … ┆ FDB_TAG_DT ┆ FDB_SCORING_DT ┆ WRIOFF_CLOSE_FILE_TAG ┆ WRIOFF_CLOSE_FILE_TAG_DT │
-│ ---    ┆ ---      ┆ ---             ┆ ---      ┆   ┆ ---        ┆ ---            ┆ ---                   ┆ ---                      │
-│ f64    ┆ f64      ┆ str             ┆ str      ┆   ┆ f64        ┆ f64            ┆ str                   ┆ f64                      │
-╞════════╪══════════╪═════════════════╪══════════╪═══╪════════════╪════════════════╪═══════════════════════╪══════════════════════════╡
-│ 168.0  ┆ 3.0000e9 ┆ TSD DR. TEH HON ┆ 8310000  ┆ … ┆ 14976.0    ┆ 14976.0        ┆ null                  ┆ null                     │
-│ 2.0    ┆ 3.0600e9 ┆ SURESH A/L MUN* ┆ A2888315 ┆ … ┆ 14976.0    ┆ 14976.0        ┆ null                  ┆ null                     │
-│ 2.0    ┆ 3.0600e9 ┆ CHOOI WAI KUAN  ┆ A3057840 ┆ … ┆ 14976.0    ┆ 14976.0        ┆ null                  ┆ null                     │
-└────────┴──────────┴─────────────────┴──────────┴───┴────────────┴────────────────┴───────────────────────┴──────────────────────────┘
+  #  COLUMN                              TYPE        SAMPLES
+----------------------------------------------------------------------------------------------------
+  1  BRANCH                              DOUBLE      | 2.0 | 2.0 | 2.0
+  2  ACCTNO                              DOUBLE      | 1000001725.0 | 1000002004.0 | 1000002720.0
+  3  NAME                                VARCHAR     | TAN AH CHOO | HO SOOK LAN&HO | LIM BOON BENG
+  4  TAXNO                               VARCHAR     | 7654002 | 3832133 | 5087273
+  5  DEBIT                               DOUBLE      | 0.0 | 0.0 | 0.0
+  6  CREDIT                              DOUBLE      | 6.72 | 0.0 | 0.0
+  7  CLOSEDT                             DOUBLE      |  | 24087.0 | 
+  8  REOPENDT                            DOUBLE      |  |  | 
+  9  CUSTCODE                            DOUBLE      | 78.0 | 78.0 | 78.0
+ 10  ORGCODE                             VARCHAR     | 000 | 000 | 000
+ 11  ORGTYPE                             VARCHAR     |  |  | 
+ 12  INTYTD                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 13  FEEPD                               DOUBLE      | 0.0 | 0.0 | 0.0
+ 14  PURPOSE                             VARCHAR     | 1 | 2 | 1
+ 15  SECTOR                              DOUBLE      | 9999.0 | 9999.0 | 0.0
+ 16  USER2                               VARCHAR     |  |  | 
+ 17  USER3                               VARCHAR     |  | S | 
+ 18  RISKCODE                            VARCHAR     |  |  | 
+ 19  LEDGBAL                             DOUBLE      | 154537.86 | 0.0 | 358870.93
+ 20  OPENIND                             VARCHAR     | O | Z | O
+ 21  STATCD                              VARCHAR     | O********* | Z*****V*** | O*********
+ 22  LASTTRAN                            DOUBLE      | 24301.0 | 24087.0 | 23940.0
+ 23  AVGAMT                              DOUBLE      | 153347.0 | 0.0 | 356473.0
+ 24  PRODUCT                             DOUBLE      | 300.0 | 300.0 | 300.0
+ 25  RACE                                VARCHAR     | 2 | 2 | 2
+ 26  DEPTYPE                             VARCHAR     | C | C | C
+ 27  INT1                                DOUBLE      | 504.5 | 0.0 | 2472.6299999999997
+ 28  INTPD                               DOUBLE      | 2170.0 | 0.0 | 5229.49
+ 29  INTPLAN                             DOUBLE      | 304.0 | 304.0 | 304.0
+ 30  CURBAL                              DOUBLE      | 154537.86 | 0.0 | 358870.93
+ 31  STATE                               VARCHAR     | 14 | 14 | 14
+ 32  INTCYCODE                           VARCHAR     | 182 | 182 | 182
+ 33  CURCODE                             VARCHAR     | MYR | MYR | MYR
+ 34  INTRATE                             DOUBLE      | 1.8499999999999999 | 1.8499999999999999 | 1.8499999999999999
+ 35  YTDAVAMT                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 36  BDATE                               DOUBLE      | -4586.0 | -3433.0 | -1099.0
+ 37  INACTIVE                            VARCHAR     |  |  | 
+ 38  SECOND                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 39  ODXSAMT                             DOUBLE      | 154537.86 | 0.0 | 358870.93
+ 40  BONUTYPE                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 41  SERVICE                             DOUBLE      | 210.0 | 210.0 | 210.0
+ 42  BONUSANO                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 43  USER5                               VARCHAR     |  |  | 
+ 44  TRACKCD                             VARCHAR     | 470612015550 |  | 561228105475
+ 45  PREVBRNO                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 46  AVGBAL                              DOUBLE      | 154537.86 | 116.36999999999999 | 358870.93
+ 47  COSTCTR                             DOUBLE      | 2.0 | 2.0 | 2.0
+ 48  POST_IND                            VARCHAR     |  |  | 
+ 49  INTRSTPD                            DOUBLE      | 6.72 | 0.0 | 0.0
+ 50  MTDAVBAL                            DOUBLE      | 154492.67375 | 0.0 | 358870.93
+ 51  DTLSTCUST                           DOUBLE      | 24301.0 | 24087.0 | 23940.0
+ 52  INTPDPYR                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 53  OPENDT                              DOUBLE      | 13703.0 | 13703.0 | 13703.0
+ 54  MAILCODE                            VARCHAR     | 0 | 0 | 0
+ 55  DSR                                 DOUBLE      |  |  | 
+ 56  PSREASON                            VARCHAR     |  |  | 
+ 57  INSTRUCTIONS                        VARCHAR     |  |  | 
+ 58  NXT_STMT_CYCLE_DT                   DOUBLE      | 24379.0 | 24365.0 | 24379.0
+ 59  DPMTDBAL                            DOUBLE      | 2471882.78 | 0.0 | 5741934.88
+ 60  INTPAYBL                            DOUBLE      | 504.5 | 0.0 | 2472.6299999999997
+ 61  OPENMH                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 62  CLOSEMH                             DOUBLE      | 0.0 | 0.0 | 0.0
+ 63  ACCYTD                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 64  DNBFISME                            VARCHAR     | 0 | 0 | 0
+ 65  FORATE                              VARCHAR     |  |  | 
+ 66  FORBAL                              DOUBLE      |  |  | 
+ 67  CURBALUS                            DOUBLE      | 37835.196474476674 | 0.0 | 87861.65503733627
+ 68  PRIN_ACCT                           DOUBLE      | 0.0 | 0.0 | 0.0
+ 69  STMT_CYCLE                          VARCHAR     | 30 | 30 | 30
+ 70  ENTITY_CD                           VARCHAR     |  |  | 
+ 71  E_INVOICE_IND                       VARCHAR     |  |  | 
+ 72  POST_IND_MAINT_DT                   DOUBLE      |  |  | 
+ 73  POST_IND_EXP_DT                     DOUBLE      |  |  | 
+
+====================================================================================================
+=== SAVING  (saving_full.parquet)
+====================================================================================================
+Total columns: 87
+
+  #  COLUMN                              TYPE        SAMPLES
+----------------------------------------------------------------------------------------------------
+  1  BRANCH                              DOUBLE      | 2.0 | 2.0 | 2.0
+  2  ACCTNO                              DOUBLE      | 4000000213.0 | 4000000310.0 | 4000003004.0
+  3  NAME                                VARCHAR     | MOHD EZRI BIN Z | BANG KIM LAN | HO SWEE KHONG
+  4  TAXNO                               VARCHAR     | A3538109 | 7614771 | A2955672
+  5  DEBIT                               DOUBLE      | 41.599999999999994 | 0.0 | 0.0
+  6  CREDIT                              DOUBLE      | 0.0 | 0.0 | 0.0
+  7  CLOSEDT                             DOUBLE      |  |  | 
+  8  REOPENDT                            DOUBLE      |  |  | 
+  9  CUSTCODE                            DOUBLE      | 77.0 | 78.0 | 78.0
+ 10  ORGCODE                             VARCHAR     | 000 | 000 | 000
+ 11  ORGTYPE                             VARCHAR     | 3 | 1 | 1
+ 12  INTYTD                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 13  FEEPD                               DOUBLE      | 0.0 | 0.0 | 0.0
+ 14  PURPOSE                             VARCHAR     | 4 | 1 | 1
+ 15  SECTOR                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 16  USER2                               VARCHAR     |  |  | 
+ 17  USER3                               VARCHAR     |  |  | 
+ 18  RISKCODE                            VARCHAR     |  |  | 
+ 19  LEDGBAL                             DOUBLE      | 700.3699999999999 | 8076.86 | 12.969999999999999
+ 20  OPENIND                             VARCHAR     | O | O | O
+ 21  STATCD                              VARCHAR     | O**F**U*** | O********* | O*********
+ 22  LASTTRAN                            DOUBLE      | 24365.0 | 24336.0 | 24077.0
+ 23  CHGIND                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 24  AVGAMT                              DOUBLE      | 6756.0 | 7398.0 | 18.0
+ 25  PRODUCT                             DOUBLE      | 201.0 | 203.0 | 200.0
+ 26  RACE                                VARCHAR     | 1 | 2 | 2
+ 27  DEPTYPE                             VARCHAR     | S | S | S
+ 28  INT1                                DOUBLE      | 8.469999999999999 | 0.0 | 0.0
+ 29  INTPD                               DOUBLE      | 39.98 | 0.0 | 0.0
+ 30  INTPLAN                             DOUBLE      | 201.0 | 203.0 | 200.0
+ 31  CURBAL                              DOUBLE      | 700.3699999999999 | 8076.86 | 12.969999999999999
+ 32  CHQFLOAT                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 33  MTDLOWBA                            DOUBLE      | 700.3699999999999 | 8069.419999999999 | 12.969999999999999
+ 34  BENINTPD                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 35  STATE                               VARCHAR     | 00 | 00 | 06
+ 36  INTCYCODE                           VARCHAR     | 182 | 030 | 182
+ 37  CURCODE                             VARCHAR     | MYR | MYR | MYR
+ 38  PBIND                               VARCHAR     | N | Y | N
+ 39  INTRATE                             DOUBLE      | 0.0 | 0.0 | 0.0
+ 40  YTDAVAMT                            DOUBLE      | 6756.219999999999 | 7397.969999999999 | 17.72
+ 41  BDATE                               DOUBLE      | 6160.0 | -5465.0 | 5473.0
+ 42  INACTIVE                            VARCHAR     |  |  | 
+ 43  SECOND                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 44  ODXSAMT                             DOUBLE      | 700.3699999999999 | 8076.86 | 12.969999999999999
+ 45  BONUTYPE                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 46  SERVICE                             DOUBLE      | 210.0 | 210.0 | 210.0
+ 47  BONUSANO                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 48  USER5                               VARCHAR     |  |  | 
+ 49  TRACKCD                             VARCHAR     |  | 450114105168 | 741226145615
+ 50  EXODDATE                            DOUBLE      |  |  | 
+ 51  TEMPODDT                            DOUBLE      |  |  | 
+ 52  SCHIND                              VARCHAR     |  |  | 
+ 53  PREVBRNO                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 54  AVGBAL                              DOUBLE      | 3965.9799999999996 | 8075.929999999999 | 12.969999999999999
+ 55  COSTCTR                             DOUBLE      | 2.0 | 2.0 | 2.0
+ 56  POST_IND                            VARCHAR     |  |  | 
+ 57  INTRSTPD                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 58  MTDAVBAL                            DOUBLE      | 1553.9724999999999 | 8075.929999999999 | 12.969999999999999
+ 59  DTLSTCUST                           DOUBLE      | 24365.0 | 24336.0 | 24077.0
+ 60  INTPDPYR                            DOUBLE      | 81.94 | 0.0 | 0.0
+ 61  OPENDT                              DOUBLE      | 13488.0 | 13492.0 | 13497.0
+ 62  PRIN_ACCT                           DOUBLE      | 0.0 | 0.0 | 0.0
+ 63  NXT_STMT_CYCLE_DT                   DOUBLE      | 24369.0 | 24369.0 | 24369.0
+ 64  STMT_CYCLE                          VARCHAR     | 401 | 20 | 401
+ 65  DNBFISME                            VARCHAR     | 0 | 0 | 0
+ 66  DPMTDBAL                            DOUBLE      | 24863.559999999998 | 129214.87999999999 | 207.51999999999998
+ 67  INTPAYBL                            DOUBLE      | 8.469999999999999 | 0.0 | 0.0
+ 68  OPENMH                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 69  CLOSEMH                             DOUBLE      | 0.0 | 0.0 | 0.0
+ 70  ACCYTD                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 71  MAILCODE                            VARCHAR     | E | 0 | E
+ 72  CONVDT                              DOUBLE      | 23223.0 |  | 23223.0
+ 73  PSREASON                            VARCHAR     |  |  | 
+ 74  INSTRUCTIONS                        VARCHAR     |  |  | 
+ 75  SSADATE                             DOUBLE      | 23223.0 |  | 23223.0
+ 76  AC_OPEN_STATUS_CD                   VARCHAR     | 000 | 000 | 000
+ 77  CURBALGMS_GOLD                      DOUBLE      |  |  | 
+ 78  CURBALRM_GOLD                       DOUBLE      |  |  | 
+ 79  RATE_GOLD                           VARCHAR     |  |  | 
+ 80  INTPAID                             DOUBLE      | 0.0 | 0.0 | 0.0
+ 81  ENTITY_CD                           VARCHAR     |  |  | 
+ 82  E_INVOICE_IND                       VARCHAR     |  |  | 
+ 83  CASH_DEPOSIT_LIMIT_IND              DOUBLE      |  |  | 
+ 84  SOURCE_INCOME_CURRENCY_CD           VARCHAR     |  |  | 
+ 85  CASH_DEPOSIT_AMOUNT_AGG             DOUBLE      | 0.0 | 0.0 | 0.0
+ 86  POST_IND_MAINT_DT                   DOUBLE      |  |  | 
+ 87  POST_IND_EXP_DT                     DOUBLE      |  |  | 
+
+====================================================================================================
+=== CURRENT  (current_full.parquet)
+====================================================================================================
+Total columns: 149
+
+  #  COLUMN                              TYPE        SAMPLES
+----------------------------------------------------------------------------------------------------
+  1  BRANCH                              DOUBLE      | 168.0 | 2.0 | 2.0
+  2  ACCTNO                              DOUBLE      | 3000000333.0 | 3060000633.0 | 3060000730.0
+  3  NAME                                VARCHAR     | TSD DR. TEH HON | SURESH A/L MUN* | CHOOI WAI KUAN
+  4  TAXNO                               VARCHAR     | 8310000 | A2888315 | A3057840
+  5  DEBIT                               DOUBLE      | 0.0 | 46.599999999999994 | 0.0
+  6  CREDIT                              DOUBLE      | 0.0 | 0.0 | 0.0
+  7  CLOSEDT                             DOUBLE      |  |  | 
+  8  REOPENDT                            DOUBLE      |  |  | 
+  9  CUSTCODE                            DOUBLE      | 78.0 | 78.0 | 78.0
+ 10  ODPLAN                              DOUBLE      | 100.0 | 100.0 | 100.0
+ 11  RATE1                               DOUBLE      | 0.0 | 0.0 | 0.0
+ 12  RATE2                               DOUBLE      | 0.0 | 0.0 | 0.0
+ 13  RATE3                               DOUBLE      | 0.0 | 0.0 | 0.0
+ 14  RATE4                               DOUBLE      | 0.0 | 0.0 | 0.0
+ 15  RATE5                               DOUBLE      | 0.0 | 0.0 | 0.0
+ 16  TODRATE                             DOUBLE      | 9.969999999999999 | 9.969999999999999 | 9.969999999999999
+ 17  FLATRATE                            DOUBLE      | 9.969999999999999 | 9.969999999999999 | 9.969999999999999
+ 18  BASERATE                            DOUBLE      | 6.47 | 6.47 | 6.47
+ 19  ODSTAT                              VARCHAR     | AC | AC | AC
+ 20  ORGCODE                             VARCHAR     | 0 | 000 | 000
+ 21  ORGTYPE                             VARCHAR     | 4 | 1 | 4
+ 22  LIMIT1                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 23  LIMIT2                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 24  LIMIT3                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 25  LIMIT4                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 26  LIMIT5                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 27  INTYTD                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 28  FEEPD                               DOUBLE      | 0.0 | 0.0 | 0.0
+ 29  PURPOSE                             VARCHAR     | 1 | 4 | 1
+ 30  COL1                                VARCHAR     |  |  | 
+ 31  COL2                                VARCHAR     |  |  | 
+ 32  COL3                                VARCHAR     |  |  | 
+ 33  COL4                                VARCHAR     |  |  | 
+ 34  COL5                                VARCHAR     |  |  | 
+ 35  SECTOR                              DOUBLE      | 9700.0 | 9700.0 | 9700.0
+ 36  USER2                               VARCHAR     | 0 |  | 
+ 37  USER3                               VARCHAR     | 0 |  | 
+ 38  RISKCODE                            VARCHAR     | 0 | 0 | 0
+ 39  LEDGBAL                             DOUBLE      | 172611.25999999998 | 2456.6699999999996 | 373.38
+ 40  DATE_LST_DEP                        DOUBLE      | 24353.0 | 24363.0 | 24327.0
+ 41  OPENIND                             VARCHAR     | O | O | O
+ 42  STATCD                              VARCHAR     | OX****U*** | O**F****** | O*****UV**
+ 43  LASTTRAN                            DOUBLE      | 24353.0 | 24365.0 | 24337.0
+ 44  RETURNS_Y                           DOUBLE      | 0.0 | 0.0 | 0.0
+ 45  CHGIND                              DOUBLE      | 0.0 | 0.0 | 0.0
+ 46  AVGAMT                              DOUBLE      | 166383.0 | 6976.0 | 12776.0
+ 47  PRODUCT                             DOUBLE      | 42.0 | 106.0 | 100.0
+ 48  RACE                                VARCHAR     | 2 | 3 | 2
+ 49  DEPTYPE                             VARCHAR     | N | D | D
+ 50  INT1                                DOUBLE      | 0.8899999999999999 | 0.0 | 0.0
+ 51  INTPD                               DOUBLE      | 234.72 | 0.0 | 0.0
+ 52  INTPLAN                             DOUBLE      | 12.0 | 0.0 | 0.0
+ 53  CURBAL                              DOUBLE      | 172611.25999999998 | 2456.6699999999996 | 373.38
+ 54  CHQFLOAT                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 55  IA_LRU                              VARCHAR     |  |  | 
+ 56  MTDLOWBA                            DOUBLE      | 166156.84999999998 | 2431.0299999999997 | 373.38
+ 57  BENINTPD                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 58  STATE                               VARCHAR     | 14 | 14 | 14
+ 59  INTCYCODE                           VARCHAR     | 015 | 000 | 000
+ 60  APPRLIMT                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 61  ODINTCHR                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 62  ODINTACC                            DOUBLE      | 0.0 | 0.0 | 0.008387971999999999
+ 63  CURCODE                             VARCHAR     | MYR | MYR | MYR
+ 64  INTRATE                             DOUBLE      | 0.0 | 0.0 | 0.0
+ 65  YTDAVAMT                            DOUBLE      | 166382.71 | 6975.73 | 12775.699999999999
+ 66  BDATE                               DOUBLE      |  | 5410.0 | 5648.0
+ 67  INACTIVE                            VARCHAR     |  |  | 
+ 68  SECOND                              DOUBLE      | 99993.0 | 0.0 | 0.0
+ 69  ODXSAMT                             DOUBLE      | 172611.25999999998 | 2456.6699999999996 | 373.38
+ 70  BONUTYPE                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 71  SERVICE                             DOUBLE      | 150.0 | 100.0 | 100.0
+ 72  BONUSANO                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 73  USER5                               VARCHAR     |  |  | 
+ 74  TRACKCD                             VARCHAR     | 300314715063 | 741024145203 | 750619145768
+ 75  EXODDATE                            DOUBLE      |  |  | 
+ 76  TEMPODDT                            DOUBLE      |  |  | 
+ 77  PREVBRNO                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 78  AVGBAL                              DOUBLE      | 172611.25999999998 | 172611.25999999998 | 172611.25999999998
+ 79  COSTCTR                             DOUBLE      | 168.0 | 2.0 | 2.0
+ 80  AUTHORISE_LIMIT                     DOUBLE      | 0.0 | 0.0 | 0.0
+ 81  CRRCODE                             VARCHAR     |  |  | 
+ 82  CCRICODE                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 83  FAACRR                              VARCHAR     |  |  | 
+ 84  POST_IND                            VARCHAR     | X |  | 
+ 85  CENSUST                             DOUBLE      | 0.0 | 0.0 | 0.0
+ 86  ACCPROF                             DOUBLE      | 0.0 | 0.0 | 0.0
+ 87  MAXPROF                             DOUBLE      | 0.0 | 0.0 | 0.0
+ 88  INTRSTPD                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 89  MTDAVBAL                            DOUBLE      | 171382.53 | 3536.3275 | 373.38
+ 90  VB                                  VARCHAR     |  |  | 
+ 91  BILLERIND                           VARCHAR     |  |  | 
+ 92  MODIFIED_FACILITY_IND               VARCHAR     |  |  | 
+ 93  DTLSTCUST                           DOUBLE      | 24353.0 | 24365.0 | 24337.0
+ 94  INTPDPYR                            DOUBLE      | 648.7199999999999 | 0.0 | 0.0
+ 95  OPENDT                              DOUBLE      | 13150.0 | 13497.0 | 13499.0
+ 96  MAILCODE                            VARCHAR     | E | E | E
+ 97  OMNILOAN                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 98  OMNITRDB                            DOUBLE      | 0.0 | 0.0 | 0.0
+ 99  DSR                                 DOUBLE      | 0.0 | 0.0 | 0.0
+100  REPAY_TYPE_CD                       VARCHAR     | 10 | 10 | 00
+101  MTD_REPAID_AMT                      DOUBLE      | 0.0 | 0.0 | 0.0
+102  INDUSTRIAL_SECTOR_CD                VARCHAR     |  |  | 
+103  MTD_DISBURSED_AMT                   DOUBLE      | 0.0 | 0.0 | 0.0
+104  MTD_REPAY_TYPE10_AMT                DOUBLE      | 0.0 | 0.0 | 0.0
+105  MTD_REPAY_TYPE20_AMT                DOUBLE      | 0.0 | 0.0 | 0.0
+106  MTD_REPAY_TYPE30_AMT                DOUBLE      | 0.0 | 0.0 | 0.0
+107  RRIND                               VARCHAR     |  |  | 
+108  RRCOUNT                             DOUBLE      |  |  | 
+109  RRAPPRVDT                           DOUBLE      |  |  | 
+110  RREXPIRYDT                          DOUBLE      |  |  | 
+111  RRMAINDT                            DOUBLE      |  |  | 
+112  RRPERIOD                            DOUBLE      |  |  | 
+113  RRCOMPLDT                           DOUBLE      |  |  | 
+114  PB_ENTERPRISE_REG_DT                DOUBLE      |  |  | 
+115  PSREASON                            VARCHAR     |  |  | 
+116  INSTRUCTIONS                        VARCHAR     | BOD-HEAD |  | 
+117  WRITE_DOWN_BAL                      DOUBLE      |  |  | 
+118  PROP_DEVELOP_FIN_IND                VARCHAR     |  |  | 
+119  NXT_STMT_CYCLE_DT                   DOUBLE      | 24379.0 | 24377.0 | 24377.0
+120  DPMTDBAL                            DOUBLE      | 2742120.48 | 56581.24 | 5974.08
+121  INTPAYBL                            DOUBLE      | 0.8899999999999999 | 0.0 | 0.0
+122  OPENMH                              DOUBLE      | 0.0 | 0.0 | 0.0
+123  CLOSEMH                             DOUBLE      | 0.0 | 0.0 | 0.0
+124  ACCYTD                              DOUBLE      | 0.0 | 0.0 | 0.0
+125  PB_ENTERPRISE_TAG                   VARCHAR     | N | N | N
+126  DNBFISME                            VARCHAR     | 0 | 0 | 0
+127  FORATE                              VARCHAR     |  |  | 
+128  FORBAL                              DOUBLE      |  |  | 
+129  CURBALUS                            DOUBLE      | 42260.07100012241 | 601.4616232096951 | 91.41388174807197
+130  PRIN_ACCT                           DOUBLE      | 0.0 | 0.0 | 0.0
+131  STMT_CYCLE                          VARCHAR     | 30 | 401 | 401
+132  ENTITY_CD                           VARCHAR     |  |  | 
+133  COV_OPT_OUT                         VARCHAR     |  |  | 
+134  INTPLAN_IBCA                        DOUBLE      |  |  | 
+135  PB_ENTERPRISE_PACKAGE_CD            VARCHAR     |  |  | 
+136  L_DEP                               DOUBLE      | 6427.459999999999 | 372.23999999999995 | 150.0
+137  E_INVOICE_IND                       VARCHAR     |  |  | 
+138  CASH_DEPOSIT_LIMIT_IND              DOUBLE      |  |  | 
+139  SOURCE_INCOME_CURRENCY_CD           VARCHAR     |  |  | 
+140  CASH_DEPOSIT_AMOUNT_AGG             DOUBLE      | 0.0 | 0.0 | 0.0
+141  POST_IND_MAINT_DT                   DOUBLE      | 24191.0 |  | 
+142  POST_IND_EXP_DT                     DOUBLE      |  |  | 
+143  LAST_LIMIT_REV_DATE                 DOUBLE      | 13848.0 |  | 
+144  NEXT_LIMIT_REV_DATE                 DOUBLE      | 17312.0 | 13862.0 | 13864.0
+145  FDB_TAG                             VARCHAR     |  |  | 
+146  FDB_TAG_DT                          DOUBLE      | 14976.0 | 14976.0 | 14976.0
+147  FDB_SCORING_DT                      DOUBLE      | 14976.0 | 14976.0 | 14976.0
+148  WRIOFF_CLOSE_FILE_TAG               VARCHAR     |  |  | 
+149  WRIOFF_CLOSE_FILE_TAG_DT            DOUBLE      |  |  | 
