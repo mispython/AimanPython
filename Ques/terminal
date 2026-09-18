@@ -1,7 +1,7 @@
 Step 5: Running EIBDRLFM (FISS / NSRS / LCR / NLF)...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLIQP.py", line 396, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLIQP.py", line 401, in <module>
     report_lines = run_eibdrlfm(
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRLFM.py", line 330, in run_eibdrlfm
     fd_raw = con.execute(f"""
-_duckdb.BinderException: Binder Error: Column "ACCTTYPE" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
+_duckdb.BinderException: Binder Error: Column "NAME" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
