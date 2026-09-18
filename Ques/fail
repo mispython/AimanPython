@@ -1,75 +1,11 @@
-import duckdb
-from datetime import date
-from PBBDPFMT import fdprod_format
-from collections import defaultdict
-
-con = duckdb.connect(":memory:")
-df = con.execute("""
-    SELECT
-        CAST(ACCOUNT_TYPE_CD AS INTEGER) AS ACCTTYPE,
-        CAST(CUSTOMER_CD     AS INTEGER) AS CUSTCD,
-        CAST(CURR_BAL        AS DOUBLE)  AS CURBAL,
-        CAST(MATURE_DT       AS DATE)    AS MATDT,
-        CAST(OPEN_IND        AS VARCHAR) AS OPENIND,
-        CAST(INT_PLAN        AS INTEGER) AS INTPLAN
-    FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_pbb.parquet')
-""").pl()
-con.close()
-
-reptdate = date(2026, 9, 16)
-rpyr, rpmth, rpday = 2026, 9, 16
-rd_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-
-def remfmt(v):
-    if v <= 0.1: return '01'
-    if v <= 1:   return '02'
-    if v <= 3:   return '03'
-    if v <= 6:   return '04'
-    if v <= 12:  return '05'
-    return '06'
-
-def remmth(matdt):
-    mdyr, mdmth, mdday = matdt.year, matdt.month, matdt.day
-    days = rd_days[rpmth - 1]
-    if mdday > days: mdday = days
-    remy = mdyr - rpyr
-    remm = mdmth - rpmth
-    remd = mdday - rpday
-    return remy*12 + remm + remd/days
-
-def prefix_from_bic(bic, accttype):
-    if bic == '42630':
-        return '96311'
-    if bic == '42133' or accttype in (302, 315, 394, 396):
-        return '95317'
-    if bic == '42132':
-        return '95315'
-    if bic == '49999':
-        return '95999'
-    return '95311'
-
-buckets = defaultdict(float)
-counts  = defaultdict(int)
-
-for r in df.iter_rows(named=True):
-    if r["ACCTTYPE"] in (397, 398): continue
-    if r["CURBAL"] is None or r["CURBAL"] <= 0: continue
-
-    bic = fdprod_format(r["INTPLAN"])
-    prefix = prefix_from_bic(bic, r["ACCTTYPE"])
-    if prefix != '95311':
-        continue
-
     cust = '08' if r["CUSTCD"] in (77, 78, 95, 96) else '09'
     matdt = r["MATDT"]
-    if r["OPENIND"] == 'D' or (matdt is not None and (matdt - reptdate).days < 8):
+    lastmat = r["LASTMAT"]          # <- new
+    if matdt is None:
+        continue
+    if r["OPENIND"] == 'D' or (matdt - reptdate).days < 8:
         rem = 0.1
+    elif lastmat is not None and -8 <= (lastmat - reptdate).days <= 8:
+        rem = 0.1                    # <- new: recent last maturity => immediate
     else:
         rem = remmth(matdt)
-    b = remfmt(rem)
-    key = f"{prefix}{cust}{b}0000Y"
-    buckets[key] += r["CURBAL"]
-    counts[key]  += 1
-
-for k in sorted(buckets):
-    print(f"{k};{int(round(buckets[k]/1000)):>12}   n={counts[k]:>8}")
