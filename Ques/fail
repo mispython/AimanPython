@@ -1,12 +1,41 @@
+#!/usr/bin/env python3
+"""Dump full column list + types + 3 sample values for every raw cache."""
 import duckdb
+from pathlib import Path
+
+CACHE = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP")
+
+FILES = [
+    ("FD-CERT", CACHE / "fd_cert_full.parquet"),
+    ("FD-ACCT", CACHE / "fd_acct_full.parquet"),
+    ("SAVING",  CACHE / "saving_full.parquet"),
+    ("CURRENT", CACHE / "current_full.parquet"),
+]
+
 con = duckdb.connect(database=":memory:")
-for tag, path in [
-    ("FD-CERT", "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_cert_full.parquet"),
-    ("FD-ACCT", "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_acct_full.parquet"),
-    ("SAVING",  "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/saving_full.parquet"),
-    ("CURRENT", "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/current_full.parquet"),
-]:
-    print(f"\n=== {tag} ===")
-    df = con.execute(f"SELECT * FROM read_parquet('{path}') LIMIT 3").pl()
-    print(df)
+
+for tag, path in FILES:
+    print(f"\n{'='*100}\n=== {tag}  ({path.name})\n{'='*100}")
+
+    cols = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{path.as_posix()}')").fetchall()
+    print(f"Total columns: {len(cols)}\n")
+
+    # pull 3 sample rows as python objects
+    sample = con.execute(
+        f"SELECT * FROM read_parquet('{path.as_posix()}') LIMIT 3"
+    ).fetchall()
+
+    # header
+    print(f"{'#':>3}  {'COLUMN':<35} {'TYPE':<10}  SAMPLES")
+    print("-" * 100)
+    for i, (name, dtype, *_rest) in enumerate(cols, 1):
+        vals = []
+        for row in sample:
+            v = row[i-1]
+            s = "" if v is None else str(v)
+            if len(s) > 22:
+                s = s[:19] + "..."
+            vals.append(s)
+        print(f"{i:>3}  {name:<35} {dtype:<10}  | " + " | ".join(vals))
+
 con.close()
