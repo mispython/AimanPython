@@ -1,21 +1,2 @@
-Step 5: Running EIBDRLFM (FISS / NSRS / LCR / NLF)...
-  FD rows -> LCR: 2,636,345  Closed FD (CLSFD): 0
-  SA rows -> LCR: 4,254,044
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDLIQP.py", line 402, in <module>
-    report_lines = run_eibdrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRLFM.py", line 447, in run_eibdrlfm
-    _safe_write_parquet(ca_lcr_rows, lcr_output_dir / f"CA{reptday}.parquet", _LCR_CA_SCHEMA)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRLFM.py", line 88, in _safe_write_parquet
-    pl.DataFrame(rows).write_parquet(path)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 391, in __init__
-    self._df = sequence_to_pydf(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 466, in sequence_to_pydf
-    return _sequence_to_pydf_dispatcher(
-  File "/usr/lib64/python3.9/functools.py", line 888, in wrapper
-    return dispatch(args[0].__class__)(*args, **kw)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/construction/dataframe.py", line 722, in _sequence_of_dict_to_pydf
-    pydf = PyDataFrame.from_dicts(
-polars.exceptions.ComputeError: could not append value: "Y" of type: str to the builder; make sure that all rows have the same schema or consider increasing `infer_schema_length`
-
-it might also be that a value overflows the data-type's capacity
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
+[('O', 2636327, 2636327), ('C', 186088, 0), ('D', 18, 18)]
