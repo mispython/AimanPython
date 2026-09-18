@@ -1,6 +1,7 @@
 import duckdb
 from datetime import date
 from PBBDPFMT import fdprod_format
+from collections import defaultdict
 
 con = duckdb.connect(":memory:")
 df = con.execute("""
@@ -36,15 +37,29 @@ def remmth(matdt):
     remd = mdday - rpday
     return remy*12 + remm + remd/days
 
-from collections import defaultdict
+def prefix_from_bic(bic, accttype):
+    if bic == '42630':
+        return '96311'
+    if bic == '42133' or accttype in (302, 315, 394, 396):
+        return '95317'
+    if bic == '42132':
+        return '95315'
+    if bic == '49999':
+        return '95999'
+    return '95311'
+
 buckets = defaultdict(float)
 counts  = defaultdict(int)
 
 for r in df.iter_rows(named=True):
     if r["ACCTTYPE"] in (397, 398): continue
     if r["CURBAL"] is None or r["CURBAL"] <= 0: continue
+
     bic = fdprod_format(r["INTPLAN"])
-    if bic != '95311': continue
+    prefix = prefix_from_bic(bic, r["ACCTTYPE"])
+    if prefix != '95311':
+        continue
+
     cust = '08' if r["CUSTCD"] in (77, 78, 95, 96) else '09'
     matdt = r["MATDT"]
     if r["OPENIND"] == 'D' or (matdt is not None and (matdt - reptdate).days < 8):
@@ -52,9 +67,9 @@ for r in df.iter_rows(named=True):
     else:
         rem = remmth(matdt)
     b = remfmt(rem)
-    key = f"95311{cust}{b}0000Y"
+    key = f"{prefix}{cust}{b}0000Y"
     buckets[key] += r["CURBAL"]
     counts[key]  += 1
 
 for k in sorted(buckets):
-    print(f"{k};{int(buckets[k]/1000):>12}   n={counts[k]:>8}")
+    print(f"{k};{int(round(buckets[k]/1000)):>12}   n={counts[k]:>8}")
