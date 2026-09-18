@@ -1,18 +1,16 @@
-    con = duckdb.connect(database=":memory:")
-    for filter_sql, out_path in [
-        (f"({ENTITY_COL} IS NULL OR "
-         f"TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) <> '{PIBB_VALUE}')", out_pbb),
-        (f"(TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) = '{PIBB_VALUE}')",   out_pibb),
-    ]:
-        con.execute(f"""
-            COPY (
-                SELECT c.*
-                FROM read_parquet('{cert_cache.as_posix()}') c
-                INNER JOIN (
-                    SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS acct_key
-                    FROM read_parquet('{acct_cache.as_posix()}')
-                    WHERE {filter_sql}
-                ) a
-                    ON CAST(c.ACCT_NUM AS BIGINT) = a.acct_key
-            ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
-        """)
+_forate_df = con.execute(f"""
+    SELECT CURCODE, SPOTRATE FROM (
+        SELECT
+            CAST(CURCODE  AS VARCHAR) AS CURCODE,
+            CAST(SPOTRATE AS DOUBLE)  AS SPOTRATE,
+            (DATE '1960-01-01' + CAST(CAST(REPTDATE AS INTEGER) AS INTEGER) * INTERVAL 1 DAY) AS REPTDATE,
+            ROW_NUMBER() OVER (
+                PARTITION BY CURCODE
+                ORDER BY CAST(REPTDATE AS INTEGER) DESC
+            ) AS RN
+        FROM read_parquet('{FORATE_CACHE.as_posix()}')
+        WHERE (DATE '1960-01-01'
+               + CAST(CAST(REPTDATE AS INTEGER) AS INTEGER) * INTERVAL 1 DAY)
+              <= DATE '{REPTDATE.isoformat()}'
+    ) WHERE RN = 1
+""").pl()
