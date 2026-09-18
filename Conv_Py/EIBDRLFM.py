@@ -66,27 +66,34 @@ from typing import Dict, List, Optional
 import duckdb
 import polars as pl
 
-from PBBDPFMT import fdprod_format, ddcustcd_format, ifdcuscd_format
+from PBBDPFMT_AII import fdprod_format, ddcustcd_format, ifdcuscd_format
 # PBBELF import intentionally omitted - see module docstring.
 
 # ============================================================================
 # PARQUET WRITE HELPER - tolerates empty row lists
 # ============================================================================
-def _safe_write_parquet(rows, path: Path, schema: dict | None = None) -> None:
+def _safe_write_parquet(rows, path: Path, schema: Optional[dict] = None) -> None:
     """Write a list of dicts to parquet.
 
-    Polars cannot infer a schema from an empty list, so if `rows` is empty
-    we fall back to:
-      - the caller-supplied `schema` if provided, or
-      - a single dummy column so the file is still a valid parquet.
-
-    This matches SAS behaviour where PROC SUMMARY / DATA _NULL_ writing an
-    empty dataset still produces a valid (zero-row) output member.
+    The schema is applied in BOTH paths:
+      - non-empty: build with infer_schema_length=None so Polars reads
+        every row before inferring, then cast each column to the declared
+        dtype. Without this, Polars infers types from the first 100 rows
+        only and can fail on a late-arriving value (e.g. a 'Y' in a string
+        column that looked all-blank in the sample).
+      - empty: fall back to an explicit zero-row frame so the file is
+        still a valid parquet, matching SAS PROC SUMMARY / DATA _NULL_
+        writing a zero-row output member.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+
     if rows:
-        pl.DataFrame(rows).write_parquet(path)
+        df = pl.DataFrame(rows, infer_schema_length=None)
+        if schema is not None:
+            df = df.select([pl.col(k).cast(v) for k, v in schema.items()])
+        df.write_parquet(path)
         return
+
     if schema is not None:
         empty = pl.DataFrame({k: pl.Series([], dtype=v) for k, v in schema.items()})
     else:
@@ -167,41 +174,19 @@ def _sas_round(x: float) -> float:
 
 
 def _sas_best12_rewind1(v) -> str:
-    """Emulate `PUT var (BEST12.) +(-1)`.
-
-    SAS writes the number right-justified in a 12-column field, then the
-    subsequent +(-1) overwrites the LAST column with whatever comes next
-    (here, ';'). So the visible result is an 11-column right-justified
-    number, with the 12th column effectively replaced.
-
-    We return the 11 visible columns only; the caller appends ';' just
-    as the SAS PUT does.
-    """
-    if v is None or v == "" :
-        # SAS missing numeric under BEST12. prints as a single '.'
-        # right-justified in 12 columns -> visible 11 cols after rewind
-        return " ".rjust(11)
-    # Integers vs floats: SAS BEST12. prints whole floats as ints if the
-    # value is integral.
+    if v is None or v == "":
+        return ""
     if isinstance(v, float) and v.is_integer():
-        body = str(int(v))
-    else:
-        body = str(v)
-    # SAS switches to scientific notation when the value won't fit in 12.
-    if len(body) > 11:
-        body = f"{v:.5E}" if isinstance(v, float) else body[-11:]
-    return body.rjust(11)
+        return str(int(v))
+    return str(v)
 
 
 def _sas_best12_full(v) -> str:
-    """PUT var (BEST12.) with NO +(-1) rewind - 12 visible columns."""
     if v is None:
-        return ".".rjust(12)
+        return ""
     if isinstance(v, float) and v.is_integer():
-        body = str(int(v))
-    else:
-        body = str(v)
-    return body.rjust(12)
+        return str(int(v))
+    return str(v)
 
 
 def _sas_line(bnmcode14: str, *numbers) -> str:
@@ -326,20 +311,45 @@ def run_eibdrlfm(
     # ------------------------------------------------------------------
     # DATA FD ... SET FD.FD;
     # ------------------------------------------------------------------
+    # con = duckdb.connect(database=":memory:")
+    # fd_raw = con.execute(f"""
+    #     SELECT
+    #         CAST(ACCOUNT_TYPE_CD AS INTEGER) AS ACCTTYPE,
+    #         CAST(CURR_BAL        AS DOUBLE)  AS CURBAL,
+    #         CAST(CUSTOMER_CD     AS INTEGER) AS CUSTCD,
+    #         CAST(MATURE_DT       AS DATE)    AS MATDT,
+    #         CAST(OPEN_IND        AS VARCHAR) AS OPENIND,
+    #         CAST(INT_PLAN        AS INTEGER) AS INTPLAN,
+    #         CAST(BRANCH_CD       AS INTEGER) AS BRANCH,
+    #         CAST(ACCT_NUM        AS BIGINT)  AS ACCTNO,
+    #         CAST(CURRENCY_CD     AS VARCHAR) AS CURCODE,
+    #         CAST(CUST_NAME       AS VARCHAR) AS NAME,
+    #         CAST(CERT_HOLD_IND   AS VARCHAR) AS FDHOLD
+    #     FROM read_parquet('{fd_cache.as_posix()}')
+    # """).pl()
+    # con.close()
+
     con = duckdb.connect(database=":memory:")
     fd_raw = con.execute(f"""
         SELECT
-            CAST(ACCTTYPE AS INTEGER) AS ACCTTYPE,
-            CAST(CURBAL   AS DOUBLE)  AS CURBAL,
-            CAST(CUSTCD   AS INTEGER) AS CUSTCD,
-            CAST(MATDATE  AS DATE)    AS MATDT,
-            CAST(OPENIND  AS VARCHAR) AS OPENIND,
-            CAST(INTPLAN  AS INTEGER) AS INTPLAN,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-            CAST(CURCODE  AS VARCHAR) AS CURCODE,
-            CAST(NAME     AS VARCHAR) AS NAME,
-            CAST(FDHOLD   AS VARCHAR) AS FDHOLD
+            CAST(ACCOUNT_TYPE_CD AS INTEGER) AS ACCTTYPE,
+            CAST(CURR_BAL        AS DOUBLE)  AS CURBAL,
+            CAST(CUSTOMER_CD     AS INTEGER) AS CUSTCD,
+            CAST(
+                CASE
+                    WHEN LAST_MATURE_DT IS NOT NULL
+                         AND CAST(LAST_MATURE_DT AS DATE) > DATE '{reptdate.isoformat()}'
+                    THEN CAST(LAST_MATURE_DT AS DATE)
+                    ELSE CAST(MATURE_DT AS DATE)
+                END
+            AS DATE) AS MATDT,
+            CAST(OPEN_IND        AS VARCHAR) AS OPENIND,
+            CAST(INT_PLAN        AS INTEGER) AS INTPLAN,
+            CAST(BRANCH_CD       AS INTEGER) AS BRANCH,
+            CAST(ACCT_NUM        AS BIGINT)  AS ACCTNO,
+            CAST(CURRENCY_CD     AS VARCHAR) AS CURCODE,
+            CAST(CUST_NAME       AS VARCHAR) AS NAME,
+            CAST(CERT_HOLD_IND   AS VARCHAR) AS FDHOLD
         FROM read_parquet('{fd_cache.as_posix()}')
     """).pl()
     con.close()
@@ -363,33 +373,77 @@ def run_eibdrlfm(
             remmth = _remmth(matdt, reptdate, rpyr, rpmth, rpday, rd_days)
             remd30 = None if matdt is None else (matdt - reptdate).days / 30.0
 
+        # amtusd = amtsgd = amthkd = amtaud = 0.0
+        # bic = fdprod_format(r["INTPLAN"])
+        # myramount = None
+
+        # if bic == '42630':
+        #     if r["CURCODE"] == 'USD':
+        #         amtusd = curbal
+        #     elif r["CURCODE"] == 'SGD':
+        #         amtsgd = curbal
+        #     elif r["CURCODE"] == 'HKD':
+        #         amthkd = curbal
+        #     elif r["CURCODE"] == 'AUD':
+        #         amtaud = curbal
+        #     bnmcode = '96311' + cust + remfmt_format(remmth) + '0000Y'
+        #     if r["CURCODE"] != 'MYR':
+        #         rate = forate_format(r["CURCODE"], forate_map)
+        #         myramount = None if rate is None else curbal * rate
+        # elif bic == '42133' or r["ACCTTYPE"] in (302, 315, 394, 396):
+        #     bnmcode = '95317' + cust + remfmt_format(remmth) + '0000Y'
+        # elif bic == '42132':
+        #     bnmcode = '95315' + cust + remfmt_format(remmth) + '0000Y'
+        # elif bic == '49999':
+        #     bnmcode = '95999' + cust + remfmt_format(remmth) + '0000Y'
+        # else:
+        #     bnmcode = '95311' + cust + remfmt_format(remmth) + '0000Y'
+
+        # fd_sum_rows.append(_row(bnmcode, curbal, amtusd, amtsgd, amthkd, amtaud))
+
         amtusd = amtsgd = amthkd = amtaud = 0.0
         bic = fdprod_format(r["INTPLAN"])
         myramount = None
 
         if bic == '42630':
-            if r["CURCODE"] == 'USD':
-                amtusd = curbal
-            elif r["CURCODE"] == 'SGD':
-                amtsgd = curbal
-            elif r["CURCODE"] == 'HKD':
-                amthkd = curbal
-            elif r["CURCODE"] == 'AUD':
-                amtaud = curbal
-            bnmcode = '96311' + cust + remfmt_format(remmth) + '0000Y'
-            if r["CURCODE"] != 'MYR':
-                rate = forate_format(r["CURCODE"], forate_map)
-                myramount = None if rate is None else curbal * rate
-        elif bic == '42133' or r["ACCTTYPE"] in (302, 315, 394, 396):
-            bnmcode = '95317' + cust + remfmt_format(remmth) + '0000Y'
-        elif bic == '42132':
-            bnmcode = '95315' + cust + remfmt_format(remmth) + '0000Y'
-        elif bic == '49999':
-            bnmcode = '95999' + cust + remfmt_format(remmth) + '0000Y'
-        else:
-            bnmcode = '95311' + cust + remfmt_format(remmth) + '0000Y'
+            # FCY FD: the original SAS FD.FD member carried CURBAL already
+            # converted to MYR for every FCY account (the ETL pre-converted
+            # it). The new cert file carries CURR_BAL in original currency.
+            # Convert via $FORATE so AMOUNT and the currency buckets match
+            # the SAS output.
+            rate = forate_format(r["CURCODE"], forate_map)
+            curbal_myr = curbal if (r["CURCODE"] == 'MYR' or rate is None) \
+                         else curbal * rate
 
-        fd_sum_rows.append(_row(bnmcode, curbal, amtusd, amtsgd, amthkd, amtaud))
+            if r["CURCODE"] == 'USD':
+                amtusd = curbal_myr
+            elif r["CURCODE"] == 'SGD':
+                amtsgd = curbal_myr
+            elif r["CURCODE"] == 'HKD':
+                amthkd = curbal_myr
+            elif r["CURCODE"] == 'AUD':
+                amtaud = curbal_myr
+
+            bnmcode = '96311' + cust + remfmt_format(remmth) + '0000Y'
+            myramount = None if r["CURCODE"] == 'MYR' else curbal_myr
+
+            fd_sum_rows.append(
+                _row(bnmcode, curbal_myr, amtusd, amtsgd, amthkd, amtaud)
+            )
+        else:
+            if bic == '42133' or r["ACCTTYPE"] in (302, 315, 394, 396):
+                bnmcode = '95317' + cust + remfmt_format(remmth) + '0000Y'
+            elif bic == '42132':
+                bnmcode = '95315' + cust + remfmt_format(remmth) + '0000Y'
+            elif bic == '49999':
+                bnmcode = '95999' + cust + remfmt_format(remmth) + '0000Y'
+            else:
+                bnmcode = '95311' + cust + remfmt_format(remmth) + '0000Y'
+
+            fd_sum_rows.append(
+                _row(bnmcode, curbal, amtusd, amtsgd, amthkd, amtaud)
+            )
+
         fd_lcr_rows.append({
             "BNMCODE": bnmcode, "BRANCH": r["BRANCH"], "ACCTNO": r["ACCTNO"],
             "AMOUNT": curbal, "CURCODE": r["CURCODE"], "CUSTCD": r["CUSTCD"],
@@ -519,6 +573,31 @@ def run_eibdrlfm(
                     g[f] += v
         return [{key: k, **v} for k, v in groups.items()]
 
+    # _SUM_FIELDS = ("AMOUNT", "AMTUSD", "AMTSGD", "AMTHKD", "AMTAUD")
+
+    # def _group_sum(rows: List[dict], key: str) -> List[dict]:
+    #     """Group-sum by `key`.
+
+    #     Accumulate in integer cents (amount * 100) rather than float, then
+    #     divide by 100 at the end. This matches SAS's higher-precision IBM
+    #     hexadecimal floating point on z/OS and eliminates the +/-1 drift
+    #     that float accumulation produces on large sums.
+    #     """
+    #     groups: Dict[str, Dict[str, int]] = {}
+    #     for r in rows:
+    #         g = groups.setdefault(r[key], {f: 0 for f in _SUM_FIELDS})
+    #         for f in _SUM_FIELDS:
+    #             v = r.get(f)
+    #             if v is not None:
+    #                 g[f] += int(round(v * 100))
+    #     out = []
+    #     for k, vs in groups.items():
+    #         row = {key: k}
+    #         for f in _SUM_FIELDS:
+    #             row[f] = vs[f] / 100.0
+    #         out.append(row)
+    #     return out
+
     all_rows = (
         _group_sum(fd_sum_rows, "BNMCODE") + _group_sum(sa_sum_rows, "BNMCODE")
         + _group_sum(ca_sum_rows, "BNMCODE") + _group_sum(fcyca_sum_rows, "BNMCODE")
@@ -621,8 +700,8 @@ def run_eibdrlfm(
 
     for bnmcode in sorted(alwdept_groups):
         amount = alwdept_groups[bnmcode]
-        fiss_lines.append(bnmcode.ljust(14)[:14] + ";" + _sas_best12_full(_fmt_amt_num(amount, True)))
-        nsrs_lines.append(bnmcode.ljust(14)[:14] + ";" + _sas_best12_full(_fmt_amt_num(amount, False)))
+        fiss_lines.append(bnmcode + ";" + _sas_best12_full(_fmt_amt_num(amount, True)))
+        nsrs_lines.append(bnmcode + ";" + _sas_best12_full(_fmt_amt_num(amount, False)))
 
 
     # ------------------------------------------------------------------
@@ -633,17 +712,29 @@ def run_eibdrlfm(
         nsrs_lines.append(" ")
         nsrs_lines.append("BRANCH;ACCOUNT NO.;CUSTOMER NAME;FORBAL;CURBAL MYR;"
                            "CUSTOMER CODE;PRODUCT CODE;STATUS;")
+
+
+        def _sas_best12_short(v) -> str:
+            """Approximate SAS BEST12. for the closed-account tail: about
+            11 significant digits, no trailing zeros."""
+            if v is None:
+                return "."
+            s = f"{v:.11g}"
+            return s
+
+
         for r in closed:
             nsrs_lines.append(";".join([
                 str(r["BRANCH"]), str(r["ACCTNO"]), str(r["NAME"] or ""),
-                str(r["AMOUNT"]), "." if r["MYRAMOUNT"] is None else str(r["MYRAMOUNT"]),
+                _sas_best12_short(r["AMOUNT"]),
+                _sas_best12_short(r["MYRAMOUNT"]),
                 str(r["CUSTCD"]), str(r["PRODUCT"]), str(r["OPENIND"]), "",
             ]))
 
     return {"FISS": fiss_lines, "NSRS": nsrs_lines}
 
 
-def fd_raw_for_wkly(fd_cache: Path):
+def fd_raw_for_wkly(fd_cache: Path) -> pl.DataFrame:
     """Re-reads FD.FD for the FDWKLY step (kept as a separate lightweight
     read - only the 4 columns FDWKLY needs - rather than re-using the
     fully-typed fd_raw frame from the FD step, matching the original SAS
@@ -651,11 +742,11 @@ def fd_raw_for_wkly(fd_cache: Path):
     con = duckdb.connect(database=":memory:")
     df = con.execute(f"""
         SELECT
-            CAST(ACCTTYPE AS INTEGER) AS ACCTTYPE,
-            CAST(CUSTCD   AS INTEGER) AS CUSTCD,
-            CAST(OPENIND  AS VARCHAR) AS OPENIND,
-            CAST(CURBAL   AS DOUBLE)  AS CURBAL,
-            CAST(AMTIND   AS VARCHAR) AS AMTIND
+            CAST(ACCOUNT_TYPE_CD AS INTEGER) AS ACCTTYPE,
+            CAST(CUSTOMER_CD     AS INTEGER) AS CUSTCD,
+            CAST(OPEN_IND        AS VARCHAR) AS OPENIND,
+            CAST(CURR_BAL        AS DOUBLE)  AS CURBAL,
+            AMTIND
         FROM read_parquet('{fd_cache.as_posix()}')
     """).pl()
     con.close()
