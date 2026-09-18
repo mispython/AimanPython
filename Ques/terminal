@@ -1,13 +1,14 @@
+[sas_edw_dev@svdwh004 Data_Warehouse]$ source /sas/python/virt_edw_dev/bin/activate
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
-  USD    n=8858     raw_sum=    5,944,742,511.69
-  JPY    n=189      raw_sum=    3,314,126,748.00
-  SGD    n=5041     raw_sum=      423,263,114.35
-  AUD    n=14633    raw_sum=      421,416,736.97
-  CNY    n=3964     raw_sum=      358,898,154.98
-  HKD    n=142      raw_sum=       74,183,878.51
-  NZD    n=3033     raw_sum=       65,469,999.69
-  GBP    n=3835     raw_sum=       48,239,437.57
-  EUR    n=372      raw_sum=       10,121,070.12
-  CAD    n=196      raw_sum=        5,964,195.87
-  THB    n=11       raw_sum=        2,760,976.14
-  CHF    n=9        raw_sum=          277,087.24
+9531108010000Y;     4762482   n=  116007
+9531108020000Y;    19904592   n=  477202
+9531108030000Y;    24403285   n=  571381
+9531108040000Y;    27043419   n=  595779
+9531108050000Y;    40227304   n=  695597
+9531108060000Y;     5167968   n=   66530
+9531109010000Y;     2162214   n=    6910
+9531109020000Y;     9479998   n=   28325
+9531109030000Y;    12510535   n=   16843
+9531109040000Y;     5122492   n=   11114
+9531109050000Y;     5872916   n=   11122
+9531109060000Y;       17611   n=     174
