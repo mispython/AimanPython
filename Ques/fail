@@ -1,12 +1,27 @@
-import duckdb
-con = duckdb.connect(database=":memory:")
-print(con.execute("""
-    SELECT
-        CAST(OPEN_IND AS VARCHAR)               AS OPEN_IND,
-        COUNT(*)                                AS N,
-        SUM(CASE WHEN CAST(CURR_BAL AS DOUBLE) > 0 THEN 1 ELSE 0 END) AS N_POS_BAL
-    FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDLIQP/fd_pbb.parquet')
-    GROUP BY 1
-    ORDER BY N DESC
-""").fetchall())
-con.close()
+def _safe_write_parquet(rows, path: Path, schema: dict | None = None) -> None:
+    """Write a list of dicts to parquet.
+
+    The schema is applied in BOTH paths:
+      - non-empty: build with infer_schema_length=None so Polars reads
+        every row before inferring, then cast each column to the declared
+        dtype. Without this, Polars infers types from the first 100 rows
+        only and can fail on a late-arriving value (e.g. a 'Y' in a string
+        column that looked all-blank in the sample).
+      - empty: fall back to an explicit zero-row frame so the file is
+        still a valid parquet, matching SAS PROC SUMMARY / DATA _NULL_
+        writing a zero-row output member.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if rows:
+        df = pl.DataFrame(rows, infer_schema_length=None)
+        if schema is not None:
+            df = df.select([pl.col(k).cast(v) for k, v in schema.items()])
+        df.write_parquet(path)
+        return
+
+    if schema is not None:
+        empty = pl.DataFrame({k: pl.Series([], dtype=v) for k, v in schema.items()})
+    else:
+        empty = pl.DataFrame({"_empty": pl.Series([], dtype=pl.Boolean)})
+    empty.write_parquet(path)
