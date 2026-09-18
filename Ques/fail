@@ -1,16 +1,57 @@
-_forate_df = con.execute(f"""
-    SELECT CURCODE, SPOTRATE FROM (
+    fd_raw = con.execute(f"""
         SELECT
-            CAST(CURCODE  AS VARCHAR) AS CURCODE,
-            CAST(SPOTRATE AS DOUBLE)  AS SPOTRATE,
-            (DATE '1960-01-01' + CAST(CAST(REPTDATE AS INTEGER) AS INTEGER) * INTERVAL 1 DAY) AS REPTDATE,
-            ROW_NUMBER() OVER (
-                PARTITION BY CURCODE
-                ORDER BY CAST(REPTDATE AS INTEGER) DESC
-            ) AS RN
-        FROM read_parquet('{FORATE_CACHE.as_posix()}')
-        WHERE (DATE '1960-01-01'
-               + CAST(CAST(REPTDATE AS INTEGER) AS INTEGER) * INTERVAL 1 DAY)
-              <= DATE '{REPTDATE.isoformat()}'
-    ) WHERE RN = 1
-""").pl()
+            CAST(ACCOUNT_TYPE_CD AS INTEGER) AS ACCTTYPE,
+            CAST(CURR_BAL        AS DOUBLE)  AS CURBAL,
+            CAST(CUSTOMER_CD     AS INTEGER) AS CUSTCD,
+            CAST(MATURE_DT       AS DATE)    AS MATDT,
+            CAST(OPEN_IND        AS VARCHAR) AS OPENIND,
+            CAST(INT_PLAN        AS INTEGER) AS INTPLAN,
+            CAST(BRANCH_CD       AS INTEGER) AS BRANCH,
+            CAST(ACCT_NUM        AS BIGINT)  AS ACCTNO,
+            CAST(CURRENCY_CD     AS VARCHAR) AS CURCODE,
+            CAST(NAME            AS VARCHAR) AS NAME,
+            CAST(CERT_HOLD_IND   AS VARCHAR) AS FDHOLD
+        FROM read_parquet('{fd_cache.as_posix()}')
+    """).pl()
+
+
+
+
+def fd_raw_for_wkly(fd_cache: Path) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    df = con.execute(f"""
+        SELECT
+            CAST(ACCOUNT_TYPE_CD AS INTEGER) AS ACCTTYPE,
+            CAST(CUSTOMER_CD     AS INTEGER) AS CUSTCD,
+            CAST(OPEN_IND        AS VARCHAR) AS OPENIND,
+            CAST(CURR_BAL        AS DOUBLE)  AS CURBAL,
+            CAST(AMTIND          AS VARCHAR) AS AMTIND
+        FROM read_parquet('{fd_cache.as_posix()}')
+    """).pl()
+    con.close()
+    return df
+
+
+
+
+        con.execute(f"""
+            COPY (
+                SELECT c.*,
+                       a.NAME,
+                       CAST(' ' AS VARCHAR) AS AMTIND
+                FROM read_parquet('{cert_cache.as_posix()}') c
+                INNER JOIN (
+                    SELECT
+                        CAST(ACCTNO AS BIGINT) AS acct_key,
+                        ANY_VALUE(NAME)        AS NAME
+                    FROM read_parquet('{acct_cache.as_posix()}')
+                    WHERE {filter_sql}
+                    GROUP BY 1
+                ) a
+                    ON CAST(c.ACCT_NUM AS BIGINT) = a.acct_key
+            ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
+        """)
+
+
+
+
