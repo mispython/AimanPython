@@ -1,24 +1,31 @@
-    _SUM_FIELDS = ("AMOUNT", "AMTUSD", "AMTSGD", "AMTHKD", "AMTAUD")
+btdtl_raw = con.execute(f"""
+    SELECT
+        CAST(t.ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(t.DIRCTIND AS VARCHAR) AS DIRCTIND,
+        CAST(t.LIABCODE AS VARCHAR) AS LIABCODE,
+        CAST(t.OUTSTAND AS DOUBLE)  AS BALANCE,
+        CAST(t.BRANCH   AS VARCHAR) AS BRANCH,
+        CAST(t.UNDRAWN  AS DOUBLE)  AS UNDRAWN,
+        CAST(t.ISSDTE   AS DATE)    AS ISSDTE,
+        CAST(t.EXPRDATE AS DATE)    AS EXPRDATE,
+        CAST(t.ORIGMT   AS VARCHAR) AS ORIGMT,
+        CAST(t.LIABCOD1 AS VARCHAR) AS LIABCOD1,
+        CAST(t.CDOLARV  AS DOUBLE)  AS CDOLARV
+    FROM read_parquet('{BTDTL_CACHE.as_posix()}') AS t
+    WHERE CAST(t.ACCTNO AS BIGINT) BETWEEN 2500000000 AND 2599999999
+      AND t.DIRCTIND = 'I'
+      AND t.LIABCODE NOT IN ('LCE','SGE','BGE','SBE','FBE')
+""").pl()
 
-    def _group_sum(rows: List[dict], key: str) -> List[dict]:
-        """Group-sum by `key`.
 
-        Accumulate in integer cents (amount * 100) rather than float, then
-        divide by 100 at the end. This matches SAS's higher-precision IBM
-        hexadecimal floating point on z/OS and eliminates the +/-1 drift
-        that float accumulation produces on large sums.
-        """
-        groups: Dict[str, Dict[str, int]] = {}
-        for r in rows:
-            g = groups.setdefault(r[key], {f: 0 for f in _SUM_FIELDS})
-            for f in _SUM_FIELDS:
-                v = r.get(f)
-                if v is not None:
-                    g[f] += int(round(v * 100))
-        out = []
-        for k, vs in groups.items():
-            row = {key: k}
-            for f in _SUM_FIELDS:
-                row[f] = vs[f] / 100.0
-            out.append(row)
-        return out
+
+
+collater_raw = con.execute(f"""
+    SELECT
+        CAST(t.ACCTNO  AS BIGINT)  AS ACCTNO,
+        CAST(t.CCLASSC AS VARCHAR) AS LIABCODE,
+        CAST(t.CDOLARV AS DOUBLE)  AS CDOLARV
+    FROM read_parquet('{COLLATER_CACHE.as_posix()}') AS t
+    WHERE CAST(t.ACCTNO AS BIGINT) > 2500000000
+      AND CAST(t.ACCTNO AS BIGINT) < 2600000000
+""").pl()
