@@ -2,7 +2,7 @@ Step 3: Building BTRADIX from BTDTL...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWBTR1C.py", line 369, in <module>
     btdtl_raw = con.execute(f"""
-_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column ISSDTE
+_duckdb.ConversionException: Conversion Error: Unimplemented type for cast (DOUBLE -> DATE) when casting from source column EXPRDATE
 
-LINE 8:         CAST(t.ISSDTE   AS DATE)    AS ISSDTE,
+LINE 8:         CAST(t.EXPRDATE AS DATE)    AS EXPRDATE,
                 ^
