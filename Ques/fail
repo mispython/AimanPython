@@ -1,13 +1,140 @@
-btdtl_raw = con.execute(f"""
-    SELECT
-        CAST(t.ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(t.DIRCTIND AS VARCHAR) AS DIRCTIND,
-        CAST(t.LIABCODE AS VARCHAR) AS LIABCODE,
-        CAST(t.OUTSTAND AS DOUBLE)  AS BALANCE,
-        CAST(t.BRANCH   AS VARCHAR) AS BRANCH,
-        (DATE '1960-01-01' + CAST(t.EXPRDATE AS INTEGER)) AS EXPRDATE
-    FROM read_parquet('{BTDTL_CACHE.as_posix()}') AS t
-    WHERE CAST(t.ACCTNO AS BIGINT) BETWEEN 2500000000 AND 2599999999
-      AND t.DIRCTIND = 'I'
-      AND t.LIABCODE NOT IN ('LCE','SGE','BGE','SBE','FBE')
-""").pl()
+def _wrap_words(text, width):
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        cand = (cur + " " + w).strip() if cur else w
+        if len(cand) <= width:
+            cur = cand
+        else:
+            if cur:
+                lines.append(cur); cur = ""
+            while len(w) > width:
+                lines.append(w[:width - 1] + "-")
+                w = w[width - 1:]
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines or [""]
+
+
+
+
+def _render_crosstab(cell_sums, row_vals, col_defs, box_label):
+    # Suppress columns whose cells are all 0/missing on this page
+    col_defs = [
+        (ck, lbl) for ck, lbl in col_defs
+        if any(cell_sums.get((rv, ck)) not in (None, 0.0) for rv in row_vals)
+    ]
+    n_cols = len(col_defs) + 1  # +1 for TOTAL
+
+    header_texts = [lbl for _, lbl in col_defs] + ["TOTAL"]
+    wrapped = [_wrap_words(t, NUM_WIDTH) for t in header_texts]
+    n_header_lines = max(len(w) for w in wrapped)
+    wrapped = [w + [""] * (n_header_lines - len(w)) for w in wrapped]
+
+    box_wrapped = _wrap_words(box_label, LABEL_WIDTH)
+    box_wrapped += [""] * (n_header_lines - len(box_wrapped))
+    box_wrapped = [t.ljust(LABEL_WIDTH)[:LABEL_WIDTH] for t in box_wrapped]
+
+    total_width = LABEL_WIDTH + 2 + n_cols * (NUM_WIDTH + 1)
+    lines = ["-" * total_width]
+    for li in range(n_header_lines):
+        parts = [box_wrapped[li]]
+        for ci in range(n_cols):
+            parts.append(wrapped[ci][li].center(NUM_WIDTH)[:NUM_WIDTH])
+        lines.append("|" + "|".join(parts) + "|")
+
+    sep = "|" + "-" * LABEL_WIDTH + "+"
+    sep += "+".join("-" * NUM_WIDTH for _ in range(n_cols)) + "|"
+    lines.append(sep)
+
+    col_totals = [0.0] * len(col_defs); col_has = [False] * len(col_defs)
+    grand = 0.0; grand_has = False
+    for rv in row_vals:
+        row_cells, row_total = [], None
+        for ci, (ck, _lbl) in enumerate(col_defs):
+            v = cell_sums.get((rv, ck))
+            row_cells.append(v)
+            if v is not None:
+                row_total = (row_total or 0.0) + v
+                col_totals[ci] += v; col_has[ci] = True
+                grand += v; grand_has = True
+        row_label = str(rv)[:LABEL_WIDTH].ljust(LABEL_WIDTH)
+        cells_txt = [_fmt_num13(v) for v in row_cells] + [_fmt_num13(row_total)]
+        lines.append("|" + row_label + "|" + "|".join(cells_txt) + "|")
+    total_label = "TOTAL".ljust(LABEL_WIDTH)
+    total_cells = [_fmt_num13(col_totals[i] if col_has[i] else None) for i in range(len(col_defs))]
+    total_cells.append(_fmt_num13(grand if grand_has else None))
+    lines.append("|" + total_label + "|" + "|".join(total_cells) + "|")
+    lines.append("-" * total_width)
+    return lines
+
+
+
+
+def _title_lines(title3, page_extra=None, page_no=None):
+    line1 = "REPORT ID: EIWBTR1C"
+    if page_no is not None:
+        line1 = line1.ljust(150 - len(str(page_no))) + str(page_no)
+    lines = [FF, line1,
+             f"PUBLIC BANK BERHAD            DATE : {RDATE}",
+             f" {title3}",
+             ""]
+    if page_extra:
+        lines.append(page_extra)   # <-- no extra "" here
+    return lines
+
+
+
+
+def _branch_key(b):
+    s = str(b)
+    try:
+        return (0, int(float(s)))
+    except ValueError:
+        return (1, s)
+
+branches = sorted(
+    {r["BRANCH"] for r in loan_rows_ if not _is_blank(r["BRANCH"])},
+    key=_branch_key,
+)
+
+
+
+
+b_int = int(float(branch)) if str(branch).replace(".", "").lstrip("-").isdigit() else branch
+page_extra = f"BRANCH {b_int}"           # single space
+
+
+
+
+def render_report_collateral(loan_rows_, page_no):
+    ...
+    for branch in branches + [None]:
+        ...
+        out.extend(_title_lines(" REPORT ON COLLATERAL", page_extra, page_no))
+        out.extend(_render_crosstab(cell_sums, row_vals, col_defs, "BNMCODE"))
+        page_no += 1
+    return out, page_no
+
+def render_report_remaining_maturity(loan2_rows_, bucket_fn, labels, page_no, title3):
+    ...
+    out = _title_lines(title3, None, page_no)
+    out.extend(_render_crosstab(cell_sums, row_vals, col_defs, "BNMCODE"))
+    return out, page_no + 1
+
+
+
+
+report_lines = []
+page_no = 1
+rpt, page_no = render_report_collateral(loan_rows, page_no)
+report_lines += rpt
+rpt, page_no = render_report_remaining_maturity(loan2_rows, remfmt_format, REMFMT_LABELS, page_no, " REPORT ON REMAINING MATURITY")
+report_lines += rpt
+rpt, page_no = render_report_remaining_maturity(loan2_rows, remfmts_format, REMFMTS_LABELS, page_no, " REPORT ON REMAINING MATURITY")
+report_lines += rpt
+
+
+
+
