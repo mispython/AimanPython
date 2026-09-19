@@ -89,7 +89,7 @@ TABULATE table definition, not a display nicety.
 
 import gc
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 
 import duckdb
 import polars as pl
@@ -98,7 +98,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
-from PBBLNFMT import format_btproda
+from PBBLNFMT_AII import format_btproda
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -108,16 +108,12 @@ STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
 # Each physical input gets its own directory/path variable, per project
 # convention, for clear traceability.
-INPUT_BTDTL_DIR    = STG_DIR / "sasdata"
-INPUT_BTMAST_DIR   = STG_DIR / "sasdata"
-INPUT_COLLATER_DIR = STG_DIR / "sasdata"
+INPUT_BTDTL_DIR    = STG_DIR / "from_dwh"
+INPUT_BTMAST_DIR   = STG_DIR / "from_dwh"
+INPUT_COLLATER_DIR = STG_DIR / "MNICOL"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIWBTR1C"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "BTRD"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR  = BASE_DIR / "output" / "EIWBTR1C"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIWBTR1C.txt"
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
@@ -149,14 +145,26 @@ RPYR, RPMTH, RPDAY = reptdate.year, reptdate.month, reptdate.day
 _day = reptdate.day
 NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
 
+# Generate time stamp
+report_date = date.today() - timedelta(days=1)
+ts = report_date.strftime("%y%m%d")
+
+OUTPUT_DIR  = BASE_DIR / "output" / "BTRD"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / f"EIWBTR1C_{ts}.txt"
+
 print(f"  RDATE        : {RDATE}")
 print(f"  REPTMON/DAY  : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}  NOWK: {NOWK}")
 
 # ============================================================================
 # INPUT FILE NAMES (deterministic, built directly from date tokens)
 # ============================================================================
-INPUT_BTDTL_FILE    = INPUT_BTDTL_DIR / f"btdtl{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast{REPTMON}{NOWK}.sas7bdat"
+# INPUT_BTDTL_FILE    = INPUT_BTDTL_DIR / f"btdtl{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+# INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast{REPTMON}{NOWK}.sas7bdat"
+# INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / "collater.sas7bdat"   # fixed name, no date token
+
+INPUT_BTDTL_FILE    = INPUT_BTDTL_DIR / f"btdtl260831.sas7bdat"
+INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast08426.sas7bdat"
 INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / "collater.sas7bdat"   # fixed name, no date token
 
 print(f"  Input BTDTL     : {INPUT_BTDTL_FILE}")
