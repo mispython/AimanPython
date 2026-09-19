@@ -1,61 +1,8 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
+Step 3: Building BTRADIX from BTDTL...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIWBTR1C.py", line 369, in <module>
+    btdtl_raw = con.execute(f"""
+_duckdb.BinderException: Binder Error: Cannot mix values of type VARCHAR and INTEGER_LITERAL in BETWEEN clause - an explicit cast is required
 
-=== Rule A ===
-  9531108010000Y;     4762482   expected      5778647   DIFF
-  9531108020000Y;    19904592   expected     19904592   OK 
-  9531108030000Y;    24403285   expected     24084280   DIFF
-  9531108040000Y;    27043419   expected     26951373   DIFF
-  9531108050000Y;    40227304   expected     39703122   DIFF
-  9531108060000Y;     5167968   expected      5087037   DIFF
-  9531109010000Y;     2162214   expected      2586590   DIFF
-  9531109020000Y;     9479998   expected      9479998   OK 
-  9531109030000Y;    12510535   expected     12272958   DIFF
-  9531109040000Y;     5122492   expected      5108081   DIFF
-  9531109050000Y;     5872916   expected      5710689   DIFF
-  9531109060000Y;       17611   expected         7451   DIFF
-  ALL MATCH: False
-
-=== Rule B ===
-  9531108010000Y;     5778647   expected      5778647   OK 
-  9531108020000Y;    19904592   expected     19904592   OK 
-  9531108030000Y;    24084280   expected     24084280   OK 
-  9531108040000Y;    26951373   expected     26951373   OK 
-  9531108050000Y;    39703122   expected     39703122   OK 
-  9531108060000Y;     5087037   expected      5087037   OK 
-  9531109010000Y;     2586590   expected      2586590   OK 
-  9531109020000Y;     9479998   expected      9479998   OK 
-  9531109030000Y;    12272958   expected     12272958   OK 
-  9531109040000Y;     5108081   expected      5108081   OK 
-  9531109050000Y;     5710689   expected      5710689   OK 
-  9531109060000Y;        7451   expected         7451   OK 
-  ALL MATCH: True
-
-=== Rule C ===
-  9531108010000Y;    11283800   expected      5778647   DIFF
-  9531108020000Y;    16989702   expected     19904592   DIFF
-  9531108030000Y;    23276469   expected     24084280   DIFF
-  9531108040000Y;    25694652   expected     26951373   DIFF
-  9531108050000Y;    39178786   expected     39703122   DIFF
-  9531108060000Y;     5085641   expected      5087037   DIFF
-  9531109010000Y;     5157449   expected      2586590   DIFF
-  9531109020000Y;     7567899   expected      9479998   DIFF
-  9531109030000Y;    11768572   expected     12272958   DIFF
-  9531109040000Y;     5019998   expected      5108081   DIFF
-  9531109050000Y;     5644487   expected      5710689   DIFF
-  9531109060000Y;        7363   expected         7451   DIFF
-  ALL MATCH: False
-
-=== Rule D ===
-  9531108010000Y;     6445510   expected      5778647   DIFF
-  9531108020000Y;    19608778   expected     19904592   DIFF
-  9531108030000Y;    23966500   expected     24084280   DIFF
-  9531108040000Y;    26705695   expected     26951373   DIFF
-  9531108050000Y;    39695608   expected     39703122   DIFF
-  9531108060000Y;     5086959   expected      5087037   DIFF
-  9531109010000Y;     2788541   expected      2586590   DIFF
-  9531109020000Y;     9322902   expected      9479998   DIFF
-  9531109030000Y;    12232003   expected     12272958   DIFF
-  9531109040000Y;     5104460   expected      5108081   DIFF
-  9531109050000Y;     5710410   expected      5710689   DIFF
-  9531109060000Y;        7451   expected         7451   OK 
-  ALL MATCH: False
+LINE 15:     WHERE ACCTNO BETWEEN 2500000000 AND 2599999999
+                          ^
