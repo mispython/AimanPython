@@ -2,9 +2,9 @@ Step 3: Loading BTRAD...
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMBTLIQ.py", line 296, in <module>
     btrad_raw = con.execute(f"""
-_duckdb.BinderException: Binder Error: Table "t" does not have a column named "PRODUCT"
+_duckdb.BinderException: Binder Error: Table "t" does not have a column named "PAYAMT"
 
-Candidate bindings: : "PRODCD"
+Candidate bindings: : "AADATE"
 
-LINE 5:         CAST(t.PRODUCT  AS INTEGER) AS PRODUCT,
-                     ^
+LINE 10:         CAST(t.PAYAMT   AS DOUBLE)  AS PAYAMT,
+                      ^
