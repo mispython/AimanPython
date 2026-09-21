@@ -6,14 +6,6 @@ Purpose : Bank's Total Loans And Advances By Collaterals.
           Two reports: (1) collateral breakdown by branch/risk category/
           BNM code, (2) summary report for all loans (trade bills).
 
-Dependency:
-    No %INC PGM(...) is present in the original SAS source. BNMCODE and
-    RISKCAT are derived entirely by an inline SELECT(LIABCODE) DO-block,
-    never via PUT(var, fmt.) against an external format library, so no
-    PBBLNFMT/PBBDPFMT import applies here. The RISK. format used for
-    display (0/10/20/50/100 -> '  0%'/' 10%'/' 20%'/' 50%'/'100%') is
-    declared locally in this program and reproduced as risk_format().
-
 ============================================================================
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
@@ -82,7 +74,7 @@ SUMBY subtotal lines, and PAGEBY-driven page breaks with title repeats.
 
 import gc
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 
 import duckdb
 import polars as pl
@@ -103,12 +95,8 @@ STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 INPUT_BTMAST_DIR   = STG_DIR / "from_dwh"
 INPUT_COLLATER_DIR = STG_DIR / "MNICOL"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIMBTCOL"
+CACHE_DIR = BASE_DIR / "input" / "cache" / "BTRD"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR  = BASE_DIR / "output" / "EIMBTCOL"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIMBTCOL.txt"   # fixed-name catalogued dataset, no date token
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 65          # OPTIONS PS=65 (explicit in the SAS source)
@@ -148,6 +136,14 @@ MM = reptdate.month
 REPTMON  = f"{MM:02d}"                        # PUT(MONTH(REPTDATE),Z2.)
 RDATE    = reptdate.strftime("%d/%m/%y")      # PUT(REPTDATE,DDMMYY8.)
 
+# Generate time stamp
+report_date = date.today() - timedelta(days=1)
+ts = report_date.strftime("%y%m%d")
+
+OUTPUT_DIR  = BASE_DIR / "output" / "BTRD"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / f"EIMBTCOL_{ts}.txt"   # fixed-name catalogued dataset, no date token
+
 print(f"  RDATE        : {RDATE}")
 print(f"  REPTMON/NOWK : {REPTMON}/{NOWK}")
 print(f"  Output file  : {OUTPUT_FILE.name}")
@@ -155,7 +151,10 @@ print(f"  Output file  : {OUTPUT_FILE.name}")
 # ============================================================================
 # INPUT FILE NAMES
 # ============================================================================
-INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast{REPTMON}{NOWK}.sas7bdat"
+# INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast{REPTMON}{NOWK}.sas7bdat"
+# INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / "collater.sas7bdat"   # fixed name, no date token
+
+INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast08426.sas7bdat"
 INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / "collater.sas7bdat"   # fixed name, no date token
 
 # INPUT_BTRAD_FILE = STG_DIR / "from_dwh" / f"btrad{REPTMON}{NOWK}.sas7bdat"
