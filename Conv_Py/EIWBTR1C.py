@@ -115,11 +115,11 @@ INPUT_COLLATER_DIR = STG_DIR / "MNICOL"
 CACHE_DIR = BASE_DIR / "input" / "cache" / "BTRD"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CHUNK_ROWS = 500_000
-PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
-LINE_SIZE  = 150         # matches LRECL=150 on the //EIWBTR1C DD
-LABEL_WIDTH = 8          # RTS=8
-NUM_WIDTH   = 13         # FORMAT=13.2 (plain w.d, no thousands separator)
+CHUNK_ROWS  = 500_000
+PAGE_SIZE   = 60          # lines per page (not specified in SAS -> default)
+LINE_SIZE   = 150         # matches LRECL=150 on the //EIWBTR1C DD
+LABEL_WIDTH = 6           # RTS=8 (was 8)
+NUM_WIDTH   = 13          # FORMAT=13.2 (plain w.d, no thousands separator)
 FF = "\f"
 
 # ============================================================================
@@ -128,7 +128,10 @@ FF = "\f"
 print("Step 1: Deriving report date...")
 
 reptdate_values = get_reptdate_values(year_format="%Y")
-reptdate = reptdate_values.reptdate
+# reptdate = reptdate_values.reptdate
+
+# DEBUG (UAT OVERRRIDE - Need to be removed before production)
+reptdate = date(2026, 8, 31)
 
 REPTYEAR = reptdate.strftime("%y")            # PUT(REPTDATE,YEAR2.)
 REPTMON  = reptdate.strftime("%m")            # PUT(MONTH(REPTDATE),Z2.)
@@ -368,21 +371,16 @@ print("\nStep 3: Building BTRADIX from BTDTL...")
 con = duckdb.connect(database=":memory:")
 btdtl_raw = con.execute(f"""
     SELECT
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(DIRCTIND AS VARCHAR) AS DIRCTIND,
-        CAST(LIABCODE AS VARCHAR) AS LIABCODE,
-        CAST(OUTSTAND AS DOUBLE)  AS BALANCE,
-        CAST(BRANCH   AS VARCHAR) AS BRANCH,
-        CAST(UNDRAWN  AS DOUBLE)  AS UNDRAWN,
-        CAST(ISSDTE   AS DATE)    AS ISSDTE,
-        CAST(EXPRDATE AS DATE)    AS EXPRDATE,
-        CAST(ORIGMT   AS VARCHAR) AS ORIGMT,
-        CAST(LIABCOD1 AS VARCHAR) AS LIABCOD1,
-        CAST(CDOLARV  AS DOUBLE)  AS CDOLARV
-    FROM read_parquet('{BTDTL_CACHE.as_posix()}')
-    WHERE ACCTNO BETWEEN 2500000000 AND 2599999999
-      AND DIRCTIND = 'I'
-      AND LIABCODE NOT IN ('LCE','SGE','BGE','SBE','FBE')
+        CAST(t.ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(t.DIRCTIND AS VARCHAR) AS DIRCTIND,
+        CAST(t.LIABCODE AS VARCHAR) AS LIABCODE,
+        CAST(t.OUTSTAND AS DOUBLE)  AS BALANCE,
+        CAST(t.BRANCH   AS VARCHAR) AS BRANCH,
+        (DATE '1960-01-01' + CAST(t.EXPRDATE AS INTEGER)) AS EXPRDATE
+    FROM read_parquet('{BTDTL_CACHE.as_posix()}') AS t
+    WHERE CAST(t.ACCTNO AS BIGINT) BETWEEN 2500000000 AND 2599999999
+      AND t.DIRCTIND = 'I'
+      AND t.LIABCODE NOT IN ('LCE','SGE','BGE','SBE','FBE')
 """).pl()
 con.close()
 
@@ -442,11 +440,12 @@ print("\nStep 7: Building COLLATER / BTCOLL (deduped by ACCTNO)...")
 con = duckdb.connect(database=":memory:")
 collater_raw = con.execute(f"""
     SELECT
-        CAST(ACCTNO  AS BIGINT)  AS ACCTNO,
-        CAST(CCLASSC AS VARCHAR) AS LIABCODE,
-        CAST(CDOLARV AS DOUBLE)  AS CDOLARV
-    FROM read_parquet('{COLLATER_CACHE.as_posix()}')
-    WHERE ACCTNO > 2500000000 AND ACCTNO < 2600000000
+        CAST(t.ACCTNO  AS BIGINT)  AS ACCTNO,
+        CAST(t.CCLASSC AS VARCHAR) AS LIABCODE,
+        CAST(t.CDOLARV AS DOUBLE)  AS CDOLARV
+    FROM read_parquet('{COLLATER_CACHE.as_posix()}') AS t
+    WHERE CAST(t.ACCTNO AS BIGINT) > 2500000000
+      AND CAST(t.ACCTNO AS BIGINT) < 2600000000
 """).pl()
 con.close()
 
@@ -573,19 +572,19 @@ gc.collect()
 print("\nStep 11: Rendering reports...")
 
 
-def _wrap_words(text: str, width: int) -> list:
+def _wrap_words(text, width):
     words = text.split()
     lines, cur = [], ""
     for w in words:
-        cand = (cur + " " + w).strip()
+        cand = (cur + " " + w).strip() if cur else w
         if len(cand) <= width:
             cur = cand
         else:
             if cur:
-                lines.append(cur)
+                lines.append(cur); cur = ""
             while len(w) > width:
-                lines.append(w[:width])
-                w = w[width:]
+                lines.append(w[:width - 1] + "-")
+                w = w[width - 1:]
             cur = w
     if cur:
         lines.append(cur)
@@ -607,83 +606,88 @@ def _fmt_num13(value) -> str:
     return s.rjust(NUM_WIDTH)
 
 
-def _title_lines(title3: str, page_extra: str = None) -> list:
-    lines = [
-        FF,
-        "REPORT ID: EIWBTR1C",
-        f"PUBLIC BANK BERHAD            DATE : {RDATE}",
-        f" {title3}",
-        "",
-    ]
+def _title_lines(title3, page_extra=None, page_no=None):
+    line1 = "REPORT ID: EIWBTR1C"
+    if page_no is not None:
+        line1 = line1.ljust(150 - len(str(page_no))) + str(page_no)
+    lines = [FF, line1,
+             f"PUBLIC BANK BERHAD            DATE : {RDATE}",
+             f" {title3}",
+             ""]
     if page_extra:
-        lines.append(page_extra)
-        lines.append("")
+        lines.append(page_extra)   # <-- no extra "" here
     return lines
 
 
-def _render_crosstab(cell_sums: dict, row_vals: list, col_defs: list, box_label: str) -> list:
-    """Emulates: TABLE (ROW=' ' ALL='TOTAL'),(COL=' ' ALL='TOTAL')
-                       *VAR=' '*SUM=' ' / BOX=<box_label> RTS=8
-                       FORMAT=13.2 MISSING NOSEPS;
-    cell_sums: dict[(row_val, col_key)] -> summed measure (or absent)
-    col_defs : ordered list of (col_key, col_label_text)
-    """
-    n_cols = len(col_defs) + 1  # +1 for the TOTAL column
+def _render_crosstab(cell_sums, row_vals, col_defs, box_label):
+    # Suppress columns whose cells are all 0/missing on this page
+    col_defs = [
+        (ck, lbl) for ck, lbl in col_defs
+        if any(cell_sums.get((rv, ck)) not in (None, 0.0) for rv in row_vals)
+    ]
+    n_cols = len(col_defs) + 1  # +1 for TOTAL
+
     header_texts = [lbl for _, lbl in col_defs] + ["TOTAL"]
     wrapped = [_wrap_words(t, NUM_WIDTH) for t in header_texts]
     n_header_lines = max(len(w) for w in wrapped)
     wrapped = [w + [""] * (n_header_lines - len(w)) for w in wrapped]
 
-    total_width = LABEL_WIDTH + 1 + n_cols * (NUM_WIDTH + 1)
+    box_wrapped = _wrap_words(box_label, LABEL_WIDTH)
+    box_wrapped += [""] * (n_header_lines - len(box_wrapped))
+    box_wrapped = [t.ljust(LABEL_WIDTH)[:LABEL_WIDTH] for t in box_wrapped]
+
+    total_width = LABEL_WIDTH + 2 + n_cols * (NUM_WIDTH + 1)
     lines = ["-" * total_width]
     for li in range(n_header_lines):
-        parts = []
-        # BOX label bottom-anchored in the row-label corner cell
-        if li == n_header_lines - 1:
-            parts.append(box_label.ljust(LABEL_WIDTH)[:LABEL_WIDTH])
-        else:
-            parts.append(" " * LABEL_WIDTH)
+        parts = [box_wrapped[li]]
         for ci in range(n_cols):
             parts.append(wrapped[ci][li].center(NUM_WIDTH)[:NUM_WIDTH])
         lines.append("|" + "|".join(parts) + "|")
-    lines.append("-" * total_width)
 
-    col_totals = [0.0] * len(col_defs)
-    col_has_val = [False] * len(col_defs)
-    grand_total = 0.0
-    grand_has_val = False
+    sep = "|" + "-" * LABEL_WIDTH + "+"
+    sep += "+".join("-" * NUM_WIDTH for _ in range(n_cols)) + "|"
+    lines.append(sep)
 
+    col_totals = [0.0] * len(col_defs); col_has = [False] * len(col_defs)
+    grand = 0.0; grand_has = False
     for rv in row_vals:
-        row_cells = []
-        row_total = None
+        row_cells, row_total = [], None
         for ci, (ck, _lbl) in enumerate(col_defs):
             v = cell_sums.get((rv, ck))
             row_cells.append(v)
             if v is not None:
                 row_total = (row_total or 0.0) + v
-                col_totals[ci] += v
-                col_has_val[ci] = True
-                grand_total += v
-                grand_has_val = True
+                col_totals[ci] += v; col_has[ci] = True
+                grand += v; grand_has = True
         row_label = str(rv)[:LABEL_WIDTH].ljust(LABEL_WIDTH)
         cells_txt = [_fmt_num13(v) for v in row_cells] + [_fmt_num13(row_total)]
         lines.append("|" + row_label + "|" + "|".join(cells_txt) + "|")
-
-    total_label = "TOTAL".ljust(LABEL_WIDTH)[:LABEL_WIDTH]
-    total_cells = [_fmt_num13(col_totals[i] if col_has_val[i] else None) for i in range(len(col_defs))]
-    total_cells.append(_fmt_num13(grand_total if grand_has_val else None))
+    total_label = "TOTAL".ljust(LABEL_WIDTH)
+    total_cells = [_fmt_num13(col_totals[i] if col_has[i] else None) for i in range(len(col_defs))]
+    total_cells.append(_fmt_num13(grand if grand_has else None))
     lines.append("|" + total_label + "|" + "|".join(total_cells) + "|")
     lines.append("-" * total_width)
     return lines
 
 
-def render_report_collateral(loan_rows_: list) -> list:
+def _branch_key(b):
+    s = str(b)
+    try:
+        return (0, int(float(s)))
+    except ValueError:
+        return (1, s)
+
+
+def render_report_collateral(loan_rows_, page_no):
     """TABLE (BRANCH ALL='GRAND TOTAL'),(BNMCODE=' ' ALL='TOTAL'),
              (TYP=' ' ALL='TOTAL')*XBALANCE=' '*SUM=' ' / BOX='BNMCODE' RTS=8;
     PAGE dimension = BRANCH (one page per branch, plus a GRAND TOTAL page
     that combines every branch)."""
     col_defs = [(t, TYPFMT_MAP[t]) for t in TYPFMT_ORDER]
-    branches = sorted({r["BRANCH"] for r in loan_rows_ if not _is_blank(r["BRANCH"])})
+    branches = sorted(
+        {r["BRANCH"] for r in loan_rows_ if not _is_blank(r["BRANCH"])},
+        key=_branch_key,
+    )
 
     out = []
     for branch in branches + [None]:  # None sentinel = the ALL='GRAND TOTAL' page
@@ -692,7 +696,7 @@ def render_report_collateral(loan_rows_: list) -> list:
             page_extra = "GRAND TOTAL"
         else:
             subset = [r for r in loan_rows_ if r["BRANCH"] == branch]
-            page_extra = f"BRANCH  {branch}"
+            page_extra = f"BRANCH {int(float(branch))}"
 
         cell_sums = {}
         for r in subset:
@@ -700,12 +704,13 @@ def render_report_collateral(loan_rows_: list) -> list:
             cell_sums[key] = (cell_sums.get(key) or 0.0) + (r["XBALANCE"] or 0.0)
         row_vals = sorted({r["BNMCODE"] for r in subset})
 
-        out.extend(_title_lines(" REPORT ON COLLATERAL", page_extra))
+        out.extend(_title_lines(" REPORT ON COLLATERAL", page_extra, page_no))
         out.extend(_render_crosstab(cell_sums, row_vals, col_defs, "BNMCODE"))
-    return out
+        page_no += 1
+    return out, page_no
 
 
-def render_report_remaining_maturity(loan2_rows_: list, bucket_fn, labels: list) -> list:
+def render_report_remaining_maturity(loan2_rows_, bucket_fn, labels, page_no, title3):
     """TABLE (BNMCODE=' ' ALL='TOTAL'),(REMMTH=' ' ALL='TOTAL')
              *BALANCE=' '*SUM=' ' / BOX='BNMCODE' RTS=8;
     Used for both the REMFMT. and REMFMTS. variants (same TITLE3 text in
@@ -718,15 +723,19 @@ def render_report_remaining_maturity(loan2_rows_: list, bucket_fn, labels: list)
         cell_sums[key] = (cell_sums.get(key) or 0.0) + (r["BALANCE"] or 0.0)
     row_vals = sorted({r["BNMCODE"] for r in loan2_rows_})
 
-    out = _title_lines(" REPORT ON REMAINING MATURITY")
+    out = _title_lines(title3, None, page_no)
     out.extend(_render_crosstab(cell_sums, row_vals, col_defs, "BNMCODE"))
-    return out
+    return out, page_no + 1
 
 
 report_lines = []
-report_lines += render_report_collateral(loan_rows)
-report_lines += render_report_remaining_maturity(loan2_rows, remfmt_format, REMFMT_LABELS)
-report_lines += render_report_remaining_maturity(loan2_rows, remfmts_format, REMFMTS_LABELS)
+page_no = 1
+rpt, page_no = render_report_collateral(loan_rows, page_no)
+report_lines += rpt
+rpt, page_no = render_report_remaining_maturity(loan2_rows, remfmt_format, REMFMT_LABELS, page_no, " REPORT ON REMAINING MATURITY")
+report_lines += rpt
+rpt, page_no = render_report_remaining_maturity(loan2_rows, remfmts_format, REMFMTS_LABELS, page_no, " REPORT ON REMAINING MATURITY")
+report_lines += rpt
 
 # ============================================================================
 # STEP 12: WRITE OUTPUT
