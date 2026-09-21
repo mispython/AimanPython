@@ -20,6 +20,19 @@ title4 = "BY BRANCHES"      # was " BY BRANCHES"
 
 
 
+def _fmt_comma(value, width=NUM_WIDTH, decimals=2) -> str:
+    """COMMAw.d. Absent cell (None) prints blank (PROC PRINT default)."""
+    if value is None:
+        return " " * width
+    v = float(value)
+    if abs(v) < 0.5 * 10 ** -decimals:
+        v = 0.0
+    s = f"{v:,.{decimals}f}"
+    if len(s) > width:
+        s = s[-width:]
+    return s.rjust(width)
+
+
 def _pad(line: str) -> str:
     """Pad every written line to LRECL=150 (RECFM=FB)."""
     return line.ljust(LINE_SIZE)
@@ -30,6 +43,18 @@ def _title_line(title: str, page_num: int) -> str:
     PAGE_NUM_COL, then padded to LINE_SIZE."""
     return _pad(title + str(page_num).rjust(PAGE_NUM_COL - len(title)))
 
+
+def _page_header(title4: str, page_num: int, first_page: bool = False) -> list:
+    title_line = _title_line("REPORT ID: EIMBTCOL", page_num)
+    if not first_page:
+        title_line = FF + title_line      # FF embedded at start of line 1
+    return [
+        title_line,
+        _pad("PUBLIC BANK BERHAD"),
+        _pad(f"TOTAL TRADE BILLS BY COLLATERAL AS AT : {RDATE}"),
+        _pad(title4),
+        _pad(""),
+    ]
 
 
 
