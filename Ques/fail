@@ -1,14 +1,107 @@
-import pandas as pd
-df = pd.read_sas(
-    "/stgsrcsys/host/uat/AII/from_dwh/btrad08426.sas7bdat",
-    format="sas7bdat",
-)
-print(sorted(df.columns.tolist()))
+LABEL_WIDTH = 43      # RTS=45 (the two border '|' chars account for the other 2)
 
 
 
 
-import pyarrow.parquet as pq
-print(pq.ParquetFile(
-    "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/BTRD/btrad08426.parquet"
-).schema_arrow.names)
+def _dashes(width: int) -> str:
+    return "-" * width
+
+
+def _pad80(s: str) -> str:
+    """LRECL=80 on //SASLIST: every physical line is exactly 80 chars —
+    longer lines are truncated, shorter lines are right-padded with
+    spaces. This is what produces the trailing whitespace you see on
+    SAS title lines and the mid-word cut-offs on wide crosstab rows."""
+    return s[:LINE_SIZE].ljust(LINE_SIZE)
+
+
+
+
+def _render_tabulate(rows: list, box_label: str) -> list:
+    """
+    Emulates: TABLE ITEM=' ',(REMMTH=' ' ALL='TOTAL')*
+                     (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+              / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+
+    SAS renders the full crosstab on a single logical line, then LRECL=80
+    truncates it. Columns beyond the 80-char boundary are lost from the
+    listing (matching SAS behaviour exactly). REMMTH is grouped here by
+    its formatted REMFMT. bucket, matching how PROC TABULATE re-aggregates
+    a CLASS variable under its display format even though the preceding
+    PROC SUMMARY (NWAY) grouped by the raw, un-formatted REMMTH value.
+    """
+    col_keys = list(REMFMT_LABELS)
+
+    cell = {}
+    for r in rows:
+        bucket = remfmt_format(r["REMMTH"])
+        key = (r["ITEM"], bucket)
+        cell[key] = (cell.get(key) or 0.0) + (r["AMOUNT"] or 0.0)
+
+    row_vals = sorted({r["ITEM"] for r in rows})
+
+    row_totals = {}
+    for item in row_vals:
+        tot = None
+        for bucket in col_keys:
+            v = cell.get((item, bucket))
+            if v is not None:
+                tot = (tot or 0.0) + v
+        row_totals[item] = tot
+
+    cols = col_keys + ["TOTAL"]
+
+    def _title_lines():
+        # SAS title lines are padded to LRECL=80 too.
+        return [_pad80(t) for t in _title_block()]
+
+    def _header_lines():
+        return [
+            _pad80(_dashes(LINE_SIZE)),
+            _pad80(
+                "|" + box_label.ljust(LABEL_WIDTH)[:LABEL_WIDTH] + "|"
+                + "|".join(_center(c, NUM_WIDTH) for c in cols) + "|"
+            ),
+            _pad80(
+                "|" + _dashes(LABEL_WIDTH) + "+"
+                + "+".join(_dashes(NUM_WIDTH) for _ in cols) + "+"
+            ),
+        ]
+
+    output: list = []
+    titles = _title_lines()
+    header = _header_lines()
+
+    # First page: titles + header. No leading form-feed.
+    output.extend(titles)
+    output.extend(header)
+    lines_on_page = len(titles) + len(header)
+
+    for item in row_vals:
+        if lines_on_page >= PAGE_SIZE:
+            output.append(FF)            # form feed before subsequent pages only
+            output.extend(titles)
+            output.extend(header)
+            lines_on_page = len(titles) + len(header)
+
+        label = itemf_format(item).ljust(LABEL_WIDTH)[:LABEL_WIDTH]
+        row_cells = [
+            _fmt_comma20(row_totals[item] if c == "TOTAL" else cell.get((item, c)))
+            for c in cols
+        ]
+        output.append(_pad80("|" + label + "|" + "|".join(row_cells) + "|"))
+        lines_on_page += 1
+
+    output.append(_pad80(_dashes(LINE_SIZE)))
+    return output
+
+
+
+
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in report_lines:
+        fh.write(ln[:LINE_SIZE].ljust(LINE_SIZE) + "\n")
+
+
+
+
