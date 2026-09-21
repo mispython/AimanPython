@@ -1,107 +1,129 @@
-LABEL_WIDTH = 43      # RTS=45 (the two border '|' chars account for the other 2)
+Purpose : Treasury Life/Islamic deal BNM code derivation and summarisation.
+          Originally %INC PGM(KALMLIFE) inside EIBPTH1A -- a SAS open-code
+          fragment that consumes macro variables (&REPTMON, &REPTYEAR) and
+          produces K3FEI, which EIBPTH1A later appends into its SP dataset
+          ("DATA SP; SET SP K3FEI KAPX;").
+
+          Designed to be IMPORTED by the calling job (mirroring %INC
+          PGM(KALMLIFE)), same pattern as DALWPBBD.py. KALMLIFE no longer
+          resolves, dates, or converts its own inputs -- the calling job owns
+          the K3TBL physical path, the .sas7bdat -> Parquet caching, and the
+          REPTMON/REPTYEAR values, and passes them into build_k3fei().
+
+Input   : BNMK.K3TBL&REPTMON&NOWK -- supplied by the caller as an already
+          cached Parquet file.
+          Cols used : UTCTP, UTREF, UTMDT, UTOSD, UTAMTS, UTDLP, UTSTY
+Output  : K3FEI (polars DataFrame: ITCODE, AMTIND, AMOUNT), returned by
+          build_k3fei().
 
 
 
 
-def _dashes(width: int) -> str:
-    return "-" * width
+from pathlib import Path
+from datetime import date
 
-
-def _pad80(s: str) -> str:
-    """LRECL=80 on //SASLIST: every physical line is exactly 80 chars —
-    longer lines are truncated, shorter lines are right-padded with
-    spaces. This is what produces the trailing whitespace you see on
-    SAS title lines and the mid-word cut-offs on wide crosstab rows."""
-    return s[:LINE_SIZE].ljust(LINE_SIZE)
+import duckdb
+import polars as pl
 
 
 
 
-def _render_tabulate(rows: list, box_label: str) -> list:
+def build_k3fei(k3tbl_cache: Path, reptmon: str, reptyear: str) -> pl.DataFrame:
     """
-    Emulates: TABLE ITEM=' ',(REMMTH=' ' ALL='TOTAL')*
-                     (SUM=' '*AMOUNT=' '*F=COMMA20.2)
-              / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+    Builds K3FEI (equivalent of the K3FEI dataset produced by %INC
+    PGM(KALMLIFE)) from a PRE-CACHED K3TBL parquet file.
 
-    SAS renders the full crosstab on a single logical line, then LRECL=80
-    truncates it. Columns beyond the 80-char boundary are lost from the
-    listing (matching SAS behaviour exactly). REMMTH is grouped here by
-    its formatted REMFMT. bucket, matching how PROC TABULATE re-aggregates
-    a CLASS variable under its display format even though the preceding
-    PROC SUMMARY (NWAY) grouped by the raw, un-formatted REMMTH value.
+    k3tbl_cache : Parquet cache of BNMK.K3TBL&REPTMON&NOWK, supplied by the caller
+    reptmon     : &REPTMON  ('01'-'12'), supplied by the caller
+    reptyear    : &REPTYEAR ('YYYY'), supplied by the caller
     """
-    col_keys = list(REMFMT_LABELS)
+    # ========================================================================
+    # STEP 2: DATA K3TBLFE; SET BNMK.K3TBL&REPTMON&NOWK; ...
+    # ========================================================================
+    print("\nKALMLIFE Step 2: Building K3TBLFE...")
 
-    cell = {}
-    for r in rows:
-        bucket = remfmt_format(r["REMMTH"])
-        key = (r["ITEM"], bucket)
-        cell[key] = (cell.get(key) or 0.0) + (r["AMOUNT"] or 0.0)
+    con = duckdb.connect(database=":memory:")
+    k3tbl_raw = con.execute(f"""
+        SELECT
+            CAST(UTCTP AS VARCHAR)  AS UTCTP,
+            CAST(UTREF AS VARCHAR)  AS UTREF,
+            CAST(UTMDT AS VARCHAR)  AS UTMDT,
+            CAST(UTOSD AS VARCHAR)  AS UTOSD,
+            CAST(UTAMTS AS DOUBLE) AS UTAMTS,
+            CAST(UTDLP AS VARCHAR)  AS UTDLP,
+            CAST(UTSTY AS VARCHAR)  AS UTSTY
+        FROM read_parquet('{k3tbl_cache.as_posix()}')
+        WHERE UTCTP IN ('BW','BA','BE','EB','CE','GA')
+    """).pl()
+    con.close()
 
-    row_vals = sorted({r["ITEM"] for r in rows})
+    reptmon_int = int(reptmon)
+    reptyear_int = int(reptyear)
 
-    row_totals = {}
-    for item in row_vals:
-        tot = None
-        for bucket in col_keys:
-            v = cell.get((item, bucket))
-            if v is not None:
-                tot = (tot or 0.0) + v
-        row_totals[item] = tot
+    k3tblfe_rows = []
+    for r in k3tbl_raw.iter_rows(named=True):
+        utref = r["UTREF"] or ""
+        isl1 = utref[0:1]
+        isl2 = utref[3:4]
+        islm = "Y" if (isl1 == "I" and isl2 != " ") else "N"
 
-    cols = col_keys + ["TOTAL"]
+        utosd = r["UTOSD"]
+        if utosd is None or str(utosd).strip() == "":
+            # ISSDT never assigned -> TRMM/TRYY stay missing -> subsetting IF
+            # below always drops this row (missing never equals REPTMON/REPTYEAR).
+            continue
+        issdt = _parse_iso_date(utosd)
+        trmm, tryy = issdt.month, issdt.year
+        if not (trmm == reptmon_int and tryy == reptyear_int):
+            continue
 
-    def _title_lines():
-        # SAS title lines are padded to LRECL=80 too.
-        return [_pad80(t) for t in _title_block()]
+        amount = r["UTAMTS"]
+        utdlp = r["UTDLP"] or ""
+        utsty = r["UTSTY"] or ""
 
-    def _header_lines():
-        return [
-            _pad80(_dashes(LINE_SIZE)),
-            _pad80(
-                "|" + box_label.ljust(LABEL_WIDTH)[:LABEL_WIDTH] + "|"
-                + "|".join(_center(c, NUM_WIDTH) for c in cols) + "|"
-            ),
-            _pad80(
-                "|" + _dashes(LABEL_WIDTH) + "+"
-                + "+".join(_dashes(NUM_WIDTH) for _ in cols) + "+"
-            ),
-        ]
+        # DAYS=MATDT-REPTDATE bug -> REMMTH is unconditionally '05' (see module
+        # docstring for the full explanation of this preserved SAS defect).
+        remmth = "05"
 
-    output: list = []
-    titles = _title_lines()
-    header = _header_lines()
+        bnmcode = _build_bnmcode(utdlp, utsty, islm, remmth)
+        if bnmcode is None:  # IF BNMCODE NE ' ';
+            continue
 
-    # First page: titles + header. No leading form-feed.
-    output.extend(titles)
-    output.extend(header)
-    lines_on_page = len(titles) + len(header)
+        k3tblfe_rows.append({"ITCODE": bnmcode, "AMOUNT": amount, "AMTIND": "D"})
 
-    for item in row_vals:
-        if lines_on_page >= PAGE_SIZE:
-            output.append(FF)            # form feed before subsequent pages only
-            output.extend(titles)
-            output.extend(header)
-            lines_on_page = len(titles) + len(header)
+    print(f"  K3TBLFE rows: {len(k3tblfe_rows):,}")
 
-        label = itemf_format(item).ljust(LABEL_WIDTH)[:LABEL_WIDTH]
-        row_cells = [
-            _fmt_comma20(row_totals[item] if c == "TOTAL" else cell.get((item, c)))
-            for c in cols
-        ]
-        output.append(_pad80("|" + label + "|" + "|".join(row_cells) + "|"))
-        lines_on_page += 1
+    # ========================================================================
+    # STEP 3: PROC SUMMARY DATA=K3TBLFE NWAY; CLASS ITCODE AMTIND; VAR AMOUNT;
+    #         OUTPUT OUT=K3FEI SUM=;
+    # ========================================================================
+    print("\nKALMLIFE Step 3: Summarising into K3FEI...")
 
-    output.append(_pad80(_dashes(LINE_SIZE)))
-    return output
+    _groups: dict = {}
+    for r in k3tblfe_rows:
+        key = (r["ITCODE"], r["AMTIND"])
+        _groups[key] = (_groups.get(key, 0.0) or 0.0) + (r["AMOUNT"] or 0.0)
 
+    K3FEI = pl.DataFrame(
+        [{"ITCODE": k[0], "AMTIND": k[1], "AMOUNT": v} for k, v in _groups.items()],
+        schema={"ITCODE": pl.Utf8, "AMTIND": pl.Utf8, "AMOUNT": pl.Float64},
+    )
 
-
-
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-    for ln in report_lines:
-        fh.write(ln[:LINE_SIZE].ljust(LINE_SIZE) + "\n")
+    print(f"  K3FEI rows: {K3FEI.height:,}")
+    print("KALMLIFE complete.")
+    return K3FEI
 
 
 
 
+from KALMLIFE import build_k3fei
+
+# EIBPTH1A already has REPTMON / REPTYEAR / NOWK from its own REPTDATE step
+# FLAG-01 (moved from KALMLIFE): BNMK physical path still needs confirming.
+INPUT_K3TBL_FILE = STG_DIR / "EIBPTH1A" / f"k3tbl{REPTMON}{NOWK}.sas7bdat"
+# INPUT_K3TBL_FILE = STG_DIR / "EIBPTH1A" / "k3tbl084.sas7bdat"   # hardcoded test file previously in KALMLIFE
+
+K3TBL_CACHE = _load_cached(INPUT_K3TBL_FILE, "K3TBL")   # EIBPTH1A's own caching helper
+
+K3FEI = build_k3fei(K3TBL_CACHE, REPTMON, REPTYEAR)     # %INC PGM(KALMLIFE)
+# DATA SP; SET SP K3FEI KAPX; -> pl.concat([...]) as already done in EIBPTH1A
