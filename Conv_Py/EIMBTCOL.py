@@ -102,6 +102,14 @@ CHUNK_ROWS = 500_000
 PAGE_SIZE  = 65          # OPTIONS PS=65 (explicit in the SAS source)
 LINE_SIZE  = 150         # matches LRECL=150 on the //SASLIST DD
 FF = "\f"
+PAGE_NUM_COL  = 132         # page number right-edge on title line
+
+# Report 2 column layout (total = 44 chars)
+R2_ID_TOTAL   = 12          # RISK value right-justified in 6 + 6 trailing
+R2_ID_VALUE   = 6           # risk label right-justified in this
+R2_ID_TRAIL   = 6           # trailing spaces after value
+R2_BNM_WIDTH  = 12          # BNMCODE column, left-justified
+R2_NUM_WIDTH  = 20          # BALANCE, right-justified
 
 # ============================================================================
 # STEP 1: REPORT DATE  (DATA REPTDATE; SET BNM.REPTDATE; ...)
@@ -459,14 +467,12 @@ gc.collect()
 # ============================================================================
 print("\nStep 9: Rendering reports...")
 
-ID_WIDTH  = 12   # BNMCODE / RISKCAT ID column
-NUM_WIDTH = 20   # COMMA20.2
+ID_WIDTH      = 11          # report 1: BNMCODE ID column (was 12)
+NUM_WIDTH     = 20          # COMMA20.2
 
 
 def _fmt_comma(value, width=NUM_WIDTH, decimals=2) -> str:
-    """COMMAw.d. No MISSING=0 option is set in this program, so a
-    genuinely absent cell (None) prints blank (PROC PRINT default),
-    unlike EIWBTR1C's MISSING=0 behaviour."""
+    """COMMAw.d. Absent cell (None) prints blank (PROC PRINT default)."""
     if value is None:
         return " " * width
     v = float(value)
@@ -474,161 +480,205 @@ def _fmt_comma(value, width=NUM_WIDTH, decimals=2) -> str:
         v = 0.0
     s = f"{v:,.{decimals}f}"
     if len(s) > width:
-        s = f"{v:.{decimals}f}"
-    if len(s) > width:
         s = s[-width:]
     return s.rjust(width)
 
 
-def _title_block(title4: str) -> list:
+def _pad(line: str) -> str:
+    """Pad every written line to LRECL=150 (RECFM=FB)."""
+    return line.ljust(LINE_SIZE)
+
+
+def _title_line(title: str, page_num: int) -> str:
+    """TITLE1 line: text + right-aligned page number ending at
+    PAGE_NUM_COL, then padded to LINE_SIZE."""
+    return _pad(title + str(page_num).rjust(PAGE_NUM_COL - len(title)))
+
+
+def _page_header(title4: str, page_num: int, first_page: bool = False) -> list:
+    title_line = _title_line("REPORT ID: EIMBTCOL", page_num)
+    if not first_page:
+        title_line = FF + title_line      # FF embedded at start of line 1
     return [
-        "REPORT ID: EIMBTCOL",
-        "PUBLIC BANK BERHAD",
-        f"TOTAL TRADE BILLS BY COLLATERAL AS AT : {RDATE}",
-        title4,
-        "",
+        title_line,
+        _pad("PUBLIC BANK BERHAD"),
+        _pad(f"TOTAL TRADE BILLS BY COLLATERAL AS AT : {RDATE}"),
+        _pad(title4),
+        _pad(""),
     ]
 
 
-def _fmt_branch(branch) -> str:
-    try:
-        return str(int(float(branch)))
-    except (TypeError, ValueError):
-        return str(branch)
+def _r1_header() -> str:
+    return _pad("BNMCODE".ljust(ID_WIDTH) + "BALANCE (RM)".rjust(NUM_WIDTH))
 
 
-def _emit_page(output: list, title4: str, by_line: str, header: str) -> int:
-    """FF + title block + BY-line + column header. Returns lines emitted."""
-    block = [FF, *_title_block(title4), by_line, "", header]
-    output.extend(block)
-    return len(block)
+def _r1_rule() -> str:
+    # "-------" under BNMCODE (7 dashes) + 4 spaces + 20 dashes
+    return _pad("-" * 7 + " " * (ID_WIDTH - 7) + "-" * NUM_WIDTH)
 
 
-def _report1_header() -> str:
-    return "BNMCODE".ljust(ID_WIDTH) + "BALANCE (RM)".rjust(NUM_WIDTH)
+def _r1_grand_rule() -> str:
+    return _pad(" " * ID_WIDTH + "=" * NUM_WIDTH)
 
 
-def _subtotal_block(label: str) -> list:
-    return ["".ljust(ID_WIDTH) + "-" * NUM_WIDTH, label]
+def _r1_row(bnmcode, amount) -> str:
+    return _pad(str(bnmcode).ljust(ID_WIDTH) + _fmt_comma(amount))
 
 
-def render_report1(rows: list) -> list:
-    """PROC PRINT DATA=LNBR; VAR XBALANCE; ID BNMCODE; BY BRANCH RISKCAT;
-    SUMBY RISKCAT; PAGEBY BRANCH; SUM XBALANCE;
-    LABEL RISKCAT='RISK CATEGORY' XBALANCE='BALANCE (RM)';
-    FORMAT RISKCAT RISK. XBALANCE COMMA20.2;"""
+def _r1_subtotal(label: str, amount) -> str:
+    return _pad(label.ljust(ID_WIDTH) + _fmt_comma(amount))
+
+
+def _r1_grand_total(amount) -> str:
+    return _pad(" " * ID_WIDTH + _fmt_comma(amount))
+
+
+def render_report1(rows: list) -> tuple:
+    """PROC PRINT DATA=LNBR; VAR XBALANCE; ID BNMCODE;
+       BY BRANCH RISKCAT; SUMBY RISKCAT; PAGEBY BRANCH; SUM XBALANCE;
+       (SUMBY/SUM lines suppressed when the owning BY group has <= 1 obs.)"""
     output: list = []
-    title4 = " BY BRANCHES"
+    page_num = 1
+    first_page = True
 
-    branches = sorted({r["BRANCH"] for r in rows}, key=lambda b: (0, int(float(b))))
-    grand_total = 0.0
-    grand_has = False
+    def _group_sum(group):
+        s = 0.0
+        for r in group:
+            if r["XBALANCE"] is not None:
+                s += r["XBALANCE"]
+        return s
+
+    branches = sorted({r["BRANCH"] for r in rows}, key=lambda b: int(float(b)))
 
     for branch in branches:
+        # ---- new page for this branch (PAGEBY BRANCH) ----
+        output.extend(_page_header("BY BRANCHES", page_num, first_page))
+        first_page = False
+        page_num += 1
+
         branch_rows = [r for r in rows if r["BRANCH"] == branch]
         riskcats = sorted({r["RISKCAT"] for r in branch_rows})
 
-        by_line = f"BRANCH={_fmt_branch(branch)}"
-        lines_on_page = _emit_page(output, title4, by_line, _report1_header())
-
-        for riskcat in riskcats:
+        for r_idx, riskcat in enumerate(riskcats):
             group_rows = [r for r in branch_rows if r["RISKCAT"] == riskcat]
-            if lines_on_page >= PAGE_SIZE:
-                lines_on_page = _emit_page(output, title4, by_line, _report1_header())
 
-            output.append(f"RISK CATEGORY={risk_format(riskcat)}")
-            lines_on_page += 1
+            # combined BY-line
+            output.append(_pad(
+                f"BRANCH={int(float(branch))} "
+                f"RISK CATEGORY={risk_format(riskcat)}"
+            ))
+            output.append(_pad(""))
+            output.append(_r1_header())
+            output.append(_pad(""))
 
-            subtotal = 0.0
-            subtotal_has = False
             for r in group_rows:
-                amount = r["XBALANCE"]
-                if lines_on_page >= PAGE_SIZE:
-                    lines_on_page = _emit_page(output, title4, by_line, _report1_header())
-                output.append(r["BNMCODE"].ljust(ID_WIDTH) + _fmt_comma(amount))
-                lines_on_page += 1
-                if amount is not None:
-                    subtotal = subtotal + amount
-                    subtotal_has = True
-                    grand_total = grand_total + amount
-                    grand_has = True
+                output.append(_r1_row(r["BNMCODE"], r["XBALANCE"]))
 
-            sub_lines = _subtotal_block(
-                "".ljust(ID_WIDTH) + _fmt_comma(subtotal if subtotal_has else None)
-            )
-            output.extend(sub_lines)
-            lines_on_page += len(sub_lines)
+            # SUMBY RISKCAT (only when riskcat group has > 1 obs)
+            if len(group_rows) > 1:
+                output.append(_r1_rule())
+                output.append(_r1_subtotal("RISKCAT", _group_sum(group_rows)))
 
-    output.append("")
-    output.append("GRAND TOTAL".ljust(ID_WIDTH) + _fmt_comma(grand_total if grand_has else None))
-    return output
+            # 2 blank lines before next riskcat group inside the branch
+            if r_idx < len(riskcats) - 1:
+                output.append(_pad(""))
+                output.append(_pad(""))
+
+        # SUM (BRANCH subtotal) — only when branch has > 1 obs
+        if len(branch_rows) > 1:
+            last_group = [r for r in branch_rows if r["RISKCAT"] == riskcats[-1]]
+            if len(last_group) <= 1:        # last riskcat didn't emit a rule
+                output.append(_r1_rule())
+            output.append(_r1_subtotal("BRANCH", _group_sum(branch_rows)))
+
+    # final report total (=====), appended after the last branch
+    output.append(_r1_grand_rule())
+    output.append(_r1_grand_total(
+        sum(r["XBALANCE"] for r in rows if r["XBALANCE"] is not None)
+    ))
+
+    return output, page_num
 
 
-def _report2_header() -> str:
-    return ("RISK CATEGORY".ljust(ID_WIDTH)
-            + "BNMCODE".rjust(ID_WIDTH)
-            + "BALANCE (RM)".rjust(NUM_WIDTH))
+def _r2_header_line1() -> str:
+    return _pad("RISK".rjust(R2_ID_VALUE))                       # "  RISK"
 
 
-def render_report2(rows: list) -> list:
+def _r2_header_line2() -> str:
+    return _pad(
+        "CATEGORY".ljust(R2_ID_TOTAL)
+        + "BNMCODE".ljust(R2_BNM_WIDTH)
+        + "BALANCE (RM)".rjust(R2_NUM_WIDTH)
+    )
+
+
+def _r2_rule() -> str:
+    # 8 dashes + 16 spaces + 20 dashes = 44
+    return _pad("-" * 8 + " " * (R2_ID_TOTAL + R2_BNM_WIDTH - 8) + "-" * R2_NUM_WIDTH)
+
+
+def _r2_grand_rule() -> str:
+    return _pad(" " * (R2_ID_TOTAL + R2_BNM_WIDTH) + "=" * R2_NUM_WIDTH)
+
+
+def _r2_row(risk_label: str, bnmcode, amount, first_in_group: bool) -> str:
+    id_part = (risk_label.rjust(R2_ID_VALUE) + " " * R2_ID_TRAIL) \
+              if first_in_group else " " * R2_ID_TOTAL
+    return _pad(id_part + str(bnmcode).ljust(R2_BNM_WIDTH)
+                + _fmt_comma(amount).rjust(R2_NUM_WIDTH))
+
+
+def _r2_subtotal_row(risk_label: str, amount) -> str:
+    return _pad(
+        risk_label.rjust(R2_ID_VALUE) + " " * R2_ID_TRAIL
+        + " " * R2_BNM_WIDTH
+        + _fmt_comma(amount).rjust(R2_NUM_WIDTH)
+    )
+
+
+def _r2_grand_total_row(amount) -> str:
+    return _pad(" " * (R2_ID_TOTAL + R2_BNM_WIDTH)
+                + _fmt_comma(amount).rjust(R2_NUM_WIDTH))
+
+
+def render_report2(rows: list, start_page: int) -> list:
     """PROC PRINT DATA=LN; VAR BNMCODE XBALANCE; ID RISKCAT; BY RISKCAT;
-    SUMBY RISKCAT; SUM XBALANCE;
-    LABEL RISKCAT='RISK*CATEGORY' XBALANCE='BALANCE (RM)';
-    FORMAT RISKCAT RISK. XBALANCE COMMA20.2;
-    (No PAGEBY here -- continuous listing, one page unless PAGE_SIZE
-    overflow forces a title/header repeat.)"""
-    title4 = "SUMMARY REPORT FOR ALL LOANS (TRADE BILLS)"
-    output = [FF, *_title_block(title4), "", _report2_header()]
-    lines_on_page = len(output)
+       SUMBY RISKCAT; SUM XBALANCE; WHERE _TYPE_=6;"""
+    output: list = []
+    output.extend(_page_header(
+        "SUMMARY REPORT FOR ALL LOANS (TRADE BILLS)", start_page, first_page=False
+    ))
+    output.append(_r2_header_line1())
+    output.append(_r2_header_line2())
+    output.append(_pad(""))
 
     riskcats = sorted({r["RISKCAT"] for r in rows})
     grand_total = 0.0
-    grand_has = False
 
     for riskcat in riskcats:
         group_rows = [r for r in rows if r["RISKCAT"] == riskcat]
-        if lines_on_page >= PAGE_SIZE:
-            output.extend([FF, *_title_block(title4), "", _report2_header()])
-            lines_on_page = 5
+        label = risk_format(riskcat)
 
-        risk_label = risk_format(riskcat)
-        output.append(f"RISK CATEGORY={risk_label}")
-        lines_on_page += 1
+        group_sum = 0.0
+        for i, r in enumerate(group_rows):
+            output.append(_r2_row(label, r["BNMCODE"], r["XBALANCE"], i == 0))
+            if r["XBALANCE"] is not None:
+                group_sum += r["XBALANCE"]
 
-        subtotal = 0.0
-        subtotal_has = False
-        for r in group_rows:
-            amount = r["XBALANCE"]
-            if lines_on_page >= PAGE_SIZE:
-                output.extend([FF, *_title_block(title4), "", _report2_header()])
-                lines_on_page = 5
-            output.append(
-                risk_label.ljust(ID_WIDTH) + r["BNMCODE"].rjust(ID_WIDTH) + _fmt_comma(amount)
-            )
-            lines_on_page += 1
-            if amount is not None:
-                subtotal = subtotal + amount
-                subtotal_has = True
-                grand_total = grand_total + amount
-                grand_has = True
+        output.append(_r2_rule())
+        output.append(_r2_subtotal_row(label, group_sum))
+        output.append(_pad(""))
 
-        sub_lines = _subtotal_block(
-            "".ljust(ID_WIDTH) + "".ljust(ID_WIDTH) + _fmt_comma(subtotal if subtotal_has else None)
-        )
-        output.extend(sub_lines)
-        lines_on_page += len(sub_lines)
+        grand_total += group_sum
 
-    output.append("")
-    output.append(
-        "GRAND TOTAL".ljust(ID_WIDTH) + "".ljust(ID_WIDTH)
-        + _fmt_comma(grand_total if grand_has else None)
-    )
+    output.append(_r2_grand_rule())
+    output.append(_r2_grand_total_row(grand_total))
     return output
 
 
-report_lines = []
-report_lines += render_report1(lnbr_rows)
-report_lines += render_report2(ln_rows)
+r1_lines, next_page = render_report1(lnbr_rows)
+r2_lines = render_report2(ln_rows, start_page=next_page - 1)   # same number as last R1 page
+report_lines = r1_lines + r2_lines
 
 # ============================================================================
 # STEP 10: WRITE OUTPUT
