@@ -31,14 +31,6 @@ PHYSICAL INPUT DATASETS  (cached to Parquet independently)
        ACCTNO, PRODCD, PRODUCT, CUSTCD, ISSDTE, EXPRDATE, BALANCE,
        PAYAMT, LOANSTAT.
 
-------------------------------------------------------------------------
-There is no reptdate.parquet: the report date is sourced from REPTDATE.py
-(no direct .sas7bdat read of a REPTDATE dataset), and the run-off date
-(last calendar day of the report month, %LET via the DATA _NULL_ /
-RUNOFFDT derivation in the SAS source) is computed programmatically from
-it in Step 1.
-------------------------------------------------------------------------
-
 ============================================================================
 OUTPUT
 ============================================================================
@@ -54,8 +46,7 @@ paginated into '(Continued)' column-group segments, following the same
 established PROC TABULATE chunk-wrap renderer pattern used in
 EIIMRM01.py / EIWBTR1C.py. Fixed-name catalogued dataset (no date token
 in the DSN) -> a static base filename is used, with the same date-stamp
-suffix convention already used for EIWBTR1C.py / EIMBTCOL.py's output in
-this program family.
+suffix convention.
 
 NOTE on rendering: PROC TABULATE's exact character-level box drawing
 cannot be reproduced byte-for-byte without a reference listing (same
@@ -141,9 +132,11 @@ if reptdate.year % 4 == 0:
 # RUNOFFDT = MDY(RPMTH,RPDAYS(RPMTH),RPYR); -- last day of the report month
 RUNOFFDT = date(reptdate.year, reptdate.month, RD_DAYS[reptdate.month - 1])
 
+# Generate time stamp
 report_date = date.today() - timedelta(days=1)
 ts = report_date.strftime("%y%m%d")
-OUTPUT_FILE = OUTPUT_DIR / f"EIMBTLIQ_{ts}.txt"   # fixed-name catalogued dataset, no date token
+
+OUTPUT_FILE = OUTPUT_DIR / f"EIMBTLIQ_{ts}.txt"
 
 print(f"  RDATE        : {RDATE}")
 print(f"  REPTMON/NOWK : {REPTMON}/{NOWK}")
@@ -154,6 +147,7 @@ print(f"  Output file  : {OUTPUT_FILE.name}")
 # INPUT FILE NAME  (deterministic, built directly from date tokens)
 # ============================================================================
 INPUT_BTRAD_FILE = INPUT_BTRAD_DIR / f"btrad{REPTMON}{NOWK}.sas7bdat"
+INPUT_BTRAD_FILE = INPUT_BTRAD_DIR / f"btrad08426.sas7bdat"
 print(f"  Input BTRAD  : {INPUT_BTRAD_FILE}")
 
 # ============================================================================
