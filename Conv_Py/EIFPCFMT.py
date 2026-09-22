@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
 """
 Program : EIFPCFMT.py
-Purpose : PROC FORMAT library (originally invoked via %INC PGM(EIFPCFMT), in
-          the same family as PBBLNFMT / PBBELF / PBBDPFMT). Defines all
-          BNM/MIS format, informat and picture-format lookups used by
-          downstream reporting programs.
-
-Dependency:
-    This file has NO dependency on any other converted Python program - it
-    is itself a leaf-level format-definition library (originally produced
-    via PROC FORMAT CNTLOUT=PFMISFMT in SAS). Other programs are expected
-    to do `from EIFPCFMT import <format_name>_format` for whichever formats
-    they need.
+Purpose : PROC FORMAT library (originally invoked via %INC PGM(EIFPCFMT))
+          Defines all BNM/MIS format, informat and picture-format lookups
+          used by downstream reporting programs.
 
 Notes:
     - The original DATA _NULL_ step derives AGELIMIT/MAXAGE/AGEBELOW via
