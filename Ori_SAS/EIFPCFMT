@@ -1,0 +1,421 @@
+DATA _NULL_;
+  CALL SYMPUT('AGELIMIT',12);
+  CALL SYMPUT('MAXAGE',18);
+  CALL SYMPUT('AGEBELOW',11);
+RUN;
+
+PROC FORMAT CNTLOUT=PFMISFMT;
+   VALUE BRCHCD
+     1,3001     = 'KLM'    /* KL MAIN                             */
+     2,3002     = 'PMO'    /* PENANG MAIN                         */
+     3,3003     = 'MLK'    /* MELAKA                              */
+     4,3004     = 'IMO'    /* IPOH MAIN                           */
+     5,3005     = 'TPG'    /* TAIPING                             */
+     6,3006     = 'JBU'    /* JOHOR BAHRU                         */
+     7,3007     = 'JPU'    /* JALAN PUDU                          */
+     8,3008     = 'JSI'    /* JALAN SULTAN ISKANDAR               */
+     9,3009     = 'KLC'    /* KL CITY                             */
+     10,3010    = 'JBA'    /* JALAN BURMA                         */
+     11,3011    = 'SST'    /* SUNGAI SIPUT                        */
+     12,3012    = 'BTW'    /* BUTTERWORTH                         */
+     13,3013    = 'KKU'    /* KOTA KINABALU                       */
+     14,3014    = 'SRB'    /* SEREMBAN                            */
+     15,3015    = 'JPR'    /* JALAN PASAR                         */
+     16,3016    = 'ASR'    /* ALUR SETAR                          */
+     17,3017    = 'KLG'    /* KELUANG                             */
+     18,3018    = 'KPR'    /* KAMPAR                              */
+     19,3019    = 'BGH'    /* BATU GAJAH                          */
+     20,3020    = 'KLS'    /* KUALA LIPIS                         */
+     21,3021    = 'KPH'    /* KUALA PILAH                         */
+     22,3022    = 'TRI'    /* TRIANG                              */
+     23,3023    = 'SGM'    /* SEGAMAT                             */
+     24,3024    = 'SMG'    /* SERI MANJUNG                        */
+     25,3025    = 'PKG'    /* PORT KELANG                         */
+     26,3026    = 'MUA'    /* MUAR                                */
+     27,3027    = 'KTN'    /* KUANTAN                             */
+     28,3028    = 'STP'    /* SETAPAK                             */
+     29,3029    = 'KCG'    /* KUCHING                             */
+     30,3030    = 'SKC'    /* SEKINCHAN                           */
+     31,3031    = 'LBN'    /* LABUAN                              */
+     32,3032    = 'MSG'    /* MERSING                             */
+     33,3033    = 'KBH'    /* KULIM                               */
+     34,3034    = 'PJN'    /* PJ NEW TOWN                         */
+     35,3035    = 'RWG'    /* RAWANG                              */
+     36,3036    = 'KPG'    /* KEPONG BARU                         */
+     37,3037    = 'TMH'    /* TAMAN MIDAH                         */
+     38,3038    = 'PDN'    /* PORT DICKSON                        */
+     39,3039    = 'KDN'    /* KUALA DUNGUN                        */
+     40,3040    = 'DJA'    /* DAMANSARA                           */
+     41,3041    = 'APG'    /* AMPANG                              */
+     42,3042    = 'TWU'    /* TAWAU                               */
+     43,3043    = 'SJA'    /* SUBANG JAYA                         */
+     44,3044    = 'MTK'    /* MENTAKAB                            */
+     45,3045    = 'BMM'    /* BUKIT MERTAJAM                      */
+     46,3046    = 'TIN'    /* TELUK INTAN                         */
+     47,3047    = 'PKL'    /* PONTIAN                             */
+     48,3048    = 'KGR'    /* KANGAR                              */
+     49,3049    = 'KJG'    /* KAJANG                              */
+     50,3050    = 'KTU'    /* K. TERENGGANU                       */
+     51,3051    = 'JKL'    /* JALAN KELANG LAMA                   */
+     52,3052    = 'BPR'    /* BUKIT PASIR                         */
+     53,3053    = 'EDU'    /* ENDAU                               */
+     54,3054    = 'KHG'    /* KAHANG                              */
+     55,3055    = 'TKK'    /* TANGKAK                             */
+     56,3056    = 'SPI'    /* SUNGAI PETANI                       */
+     57,3057    = 'BBU'    /* BANGSAR                             */
+     58,3058    = 'SKN'    /* SERI KEMBANGAN                      */
+     59,3059    = 'CKI'    /* CHUKAI                              */
+     60,3060    = 'TPN'    /* TAMPIN                              */
+     61,3061    = 'SBU'    /* SIBU                                */
+     62,3062    = 'BDR'    /* BIDOR                               */
+     63,3063    = 'AIM'    /* AIR ITAM                            */
+     64,3064    = 'YPG'    /* YONG PENG                           */
+     65,3065    = 'KKI'    /* KUALA KERAI                         */
+     66,3066    = 'BTG'    /* BANTING                             */
+     67,3067    = 'SDN'    /* SANDAKAN                            */
+     68,3068    = 'MRI'    /* MIRI                                */
+     69,3069    = 'KKB'    /* KUALA KUBU BAHRU                    */
+     70,3070    = 'KTI'    /* KOTA TINGGI                         */
+     71,3071    = 'KLI'    /* KULAI                               */
+     72,3072    = 'JTA'    /* JITRA                               */
+     73,3073    = 'SRM'    /* SIMPANG RENGGAM                     */
+     74,3074    = 'SRR'    /* SLIM RIVER                          */
+     75,3075    = 'KKR'    /* KUALA KANGSAR                       */
+     76,3076    = 'PJA'    /* PANDAN JAYA                         */
+     77,3077    = 'BEN'    /* BENTUNG                             */
+     78,3078    = 'LDU'    /* LAHAD DATU                          */
+     79,3079    = 'BPT'    /* BATU PAHAT                          */
+     80,3080    = 'KAP'    /* KAPAR                               */
+     81,3081    = 'PRI'    /* PRAI                                */
+     82,3082    = 'GMG'    /* GUA MUSANG                          */
+     83,3083    = 'TST'    /* TAMAN SRI TEBRAU                    */
+     84,3084    = 'PLH'    /* PALOH                               */
+     85,3085    = 'SBP'    /* SUNGAI BAKAP                        */
+     86,3086    = 'KLA'    /* KELANG                              */
+     87,3087    = 'TDI'    /* TAMAN TUN DR ISMAIL                 */
+     88,3088    = 'CAH'    /* CHAAH                               */
+     89,3089    = 'JSN'    /* JASIN                               */
+     90,3090    = 'RAU'    /* RAUB                                */
+     91,3091    = 'SBR'    /* SUNGAI BESAR                        */
+     92,3092    = 'LLG'    /* LAYANG-LAYANG                       */
+     93,3093    = 'JLP'    /* JELAPANG                            */
+     94,3094    = 'TSP'    /* TANJUNG SEPAT                       */
+     95,3095    = 'BSI'    /* BAGAN SERAI                         */
+     96,3096    = 'JMH'    /* JEMENTAH                            */
+     97,3097    = 'PBR'    /* PARIT BUNTAR                        */
+     98,3098    = 'MLB'    /* MENGLEMBU                           */
+     99,3099    = 'BTL'    /* BINTULU                             */
+     100,3100   = 'SAM'    /* SHAH ALAM                           */
+     101,3101   = 'KBU'    /* KOTA BAHRU                          */
+     102,3102   = 'KBS'    /* KEPALA BATAS                        */
+     103,3103   = 'SAN'    /* SRI AMAN                            */
+     104,3104   = 'SJY'    /* SEBERANG JAYA                       */
+     105,3105   = 'JJG'    /* JINJANG                             */
+     106,3106   = 'TML'    /* TEMERLOH                            */
+     107,3107   = 'JIH'    /* JALAN IPOH                          */
+     108,3108   = 'BBB'    /* BANDAR BAYAN BARU                   */
+     109,3109   = 'INN'    /* INANAM                              */
+     110,3110   = 'SBM'    /* SABAK BERNAM                        */
+     111,3111   = 'SEA'    /* SEA PARK                            */
+     112,3112   = 'PJO'    /* PJ OLD TOWN                         */
+     113,3113   = 'IGN'    /* IPOH GARDEN                         */
+     114,3114   = 'BBI'    /* BANDAR BARU BANGI                   */
+     115,3115   = 'WMU'    /* WANGSA MAJU                         */
+     116,3116   = 'GRT'    /* GUNUNG RAPAT                        */
+     117,3117   = 'SGB'    /* SEGAMBUT                            */
+     118,3118   = 'UYB'    /* ULU YAM BHARU                       */
+     119,3119   = 'KMY'    /* KEMAYAN                             */
+     120,3120   = 'BTA'    /* BENTA                               */
+     121,3121   = 'KRK'    /* KARAK                               */
+     122,3122   = 'TRJ'    /* TAMAN RASAH JAYA                    */
+     123,3123   = 'SLY'    /* SELAYANG                            */
+     124,3124   = 'NLI'    /* NILAI                               */
+     125,3125   = 'SSA'    /* SERI SETIA                          */
+     126,3126   = 'SPG'    /* SEPANG                              */
+     127,3127   = 'SBH'    /* SUNGAI BULOH                        */
+     128,3128   = 'SSH'    /* SALAK SOUTH                         */
+     129,3129   = 'TIH'    /* TAMAN INDAH                         */
+     130,3130   = 'RTU'    /* RANTAU                              */
+     131,3131   = 'TJJ'    /* TAMAN JOHOR JAYA                    */
+     132,3132   = 'PCG'    /* PUCHONG BRANCH                      */
+     133,3133   = 'SNI'    /* SENAI                               */
+     134,3134   = 'JRT'    /* JERANTUT                            */
+     135,3135   = 'SGK'    /* TAMAN SERI GOMBAK                   */
+     136,3136   = 'STL'    /* SENTUL                              */
+     137,3137   = 'JTS'    /* JALAN TUN SAMBANTHAN                */
+     138,3138   = 'JKA'    /* JALAN KENANGA                       */
+     139,3139   = 'JDK'    /* JALAN DATUK KERAMAT                 */
+     140,3140   = 'SAB'    /* NEW SHAH ALAM                       */
+     141,3141   = 'SDI'    /* SKUDAI                              */
+     142,3142   = 'TPI'    /* TAMPOI                              */
+     143,3143   = 'TCT'    /* TAMAN CONNAUGHT                     */
+     144,3144   = 'NTL'    /* NIBONG TEBAL                        */
+     145,3145   = 'MSI'    /* MASAI                               */
+     146,3146   = 'CCE'    /* KL CITY CENTER                      */
+     147,3147   = 'KJA'    /* KELANA JAYA                         */
+     148,3148   = 'JLT'    /* JELUTONG                            */
+     149,3149   = 'BDA'    /* BUKIT DAMANSARA                     */
+     150,3150   = 'BBM'    /* BATU BERENDAM                       */
+     151,3151   = 'AST'    /* TAMAN AST                           */
+     152,3152   = 'TMA'    /* TAMAN MUDA AMPANG                   */
+     153,3153   = 'USJ'    /* USJ, SUBANG JAYA, SELANGOR          */
+     154,3154   = 'TMI'    /* TAMAN MALURI                        */
+     155,3155   = 'TMK'    /* TAMAN MOLEK                         */
+     156,3156   = 'DUA'    /* DAMANSARA UTAMA                     */
+     157,3157   = 'JSB'    /* JALAN SUNGAI BESI                   */
+     158,3158   = 'PIH'    /* PANDAN INDAH                        */
+     159,3159   = 'SS2'    /* SS2                                 */
+     160,3160   = 'TSJ'    /* TAMAN SELAYANG JAYA                 */
+     161,3161   = 'TCL'    /* TAMAN CHI LIUNG                     */
+     162,3162   = 'TEA'    /* TAMAN ENG ANN                       */
+     163,3163   = 'SFN'    /* SECTION 14                          */
+     164,3164   = 'JTT'    /* JALAN TANJUNG TOKONG                */
+     165,3165   = 'JBH'    /* JALAN BESERAH                       */
+     166,3166   = 'BAM'    /* BAGAN AJAM                          */
+     167,3167   = 'JPA'    /* JALAN PUTERA                        */
+     168,3168   = 'STW';   /* SITIAWAN                            */
+
+
+   VALUE SAPROD
+     200    = 'SD    '   /* NORMAL SAVINGS            */
+     201    = 'SD    '   /* STAFF SAVINGS             */
+     202    = 'SD    '   /* YOUNG ACHIEVER ACCOUNT    */
+     203    = 'SD    '   /* 50 PLUS SAVINGS           */
+     204    = 'SPTFSD'   /* ISLAMIC BANKING AL-WADIAH */
+     205    = 'SD    '   /* KIDDIE CLUB SAVINGS       */
+     212    = 'SD    '   /* WISE ACCOUNT              */
+     213    = 'SD    '   /* PB SAVELINK ACCOUNT       */
+     220    = 'SD    '   /* BOON SIEW SAVINGS         */
+     OTHER  = 'SD    ';  /* ALL OTHER SAVING CODES    */
+
+  VALUE SADPRG
+       LOW -       5 = '01)$       1.00 - $         5.00'
+         5 -      10 = '02)$       5.01 - $        10.00'
+        10 -      50 = '03)$      10.01 - $        50.00'
+        50 -     100 = '04)$      50.01 - $       100.00'
+       100 -     500 = '05)$     100.01 - $       500.00'
+       500 -    1000 = '06)$     500.01 - $     1,000.00'
+      1000 -    1500 = '07)$   1,000.01 - $     1,500.00'
+      1500 -    2000 = '08)$   1,500.01 - $     2,000.00'
+      2000 -    2500 = '09)$   2,000.01 - $     2,500.00'
+      2500 -    3000 = '10)$   2,500.01 - $     3,000.00'
+      3000 -    3500 = '11)$   3,000.01 - $     3,500.00'
+      3500 -    4000 = '12)$   3,500.01 - $     4,000.00'
+      4000 -    4500 = '13)$   4,000.01 - $     4,500.00'
+      4500 -    5000 = '14)$   4,500.01 - $     5,000.00'
+      5000 -    6000 = '15)$   5,000.01 - $     6,000.00'
+      6000 -    7000 = '16)$   6,000.01 - $     7,000.00'
+      7000 -    8000 = '17)$   7,000.01 - $     8,000.00'
+      8000 -    9000 = '18)$   8,000.01 - $     9,000.00'
+      9000 -   10000 = '19)$   9,000.01 - $    10,000.00'
+     10000 -   15000 = '20)$  10,000.01 - $    15,000.00'
+     15000 -   20000 = '21)$  15,000.01 - $    20,000.00'
+     20000 -   25000 = '22)$  20,000.01 - $    25,000.00'
+     25000 -   30000 = '23)$  25,000.01 - $    30,000.00'
+     30000 -   35000 = '24)$  30,000.01 - $    35,000.00'
+     35000 -   40000 = '25)$  35,000.01 - $    40,000.00'
+     40000 -   45000 = '26)$  40,000.01 - $    45,000.00'
+     45000 -   50000 = '27)$  45,000.01 - $    50,000.00'
+     50000 -   55000 = '28)$  50,000.01 - $    55,000.00'
+     55000 -   60000 = '29)$  55,000.01 - $    60,000.00'
+     60000 -   65000 = '30)$  60,000.01 - $    65,000.00'
+     65000 -   70000 = '31)$  65,000.01 - $    70,000.00'
+     70000 -   75000 = '32)$  70,000.01 - $    75,000.00'
+     75000 -   80000 = '33)$  75,000.01 - $    80,000.00'
+     80000 -   85000 = '34)$  80,000.01 - $    85,000.00'
+     85000 -   90000 = '35)$  85,000.01 - $    90,000.00'
+     90000 -   95000 = '36)$  90,000.01 - $    95,000.00'
+     95000 -  100000 = '37)$  95,000.01 - $   100,000.00'
+    100000 -  150000 = '38)$ 100,000.01 - $   150,000.00'
+    150000 -  200000 = '39)$ 150,000.01 - $   200,000.00'
+    200000 -  300000 = '40)$ 200,000.01 - $   300,000.00'
+    300000 -  500000 = '41)$ 300,000.01 - $   500,000.00'
+    500000 - 1000000 = '42)$ 500,000.01 - $ 1,000,000.00'
+   1000000 - HIGH    = '43)ABOVE  $ 1,000,000.00';
+
+  VALUE PROFNORM
+       LOW -    5000 = '1)UP TO RM 5,000.00'
+      5000 -   10000 = '2)UP TO RM10,000.00'
+     10000 -   30000 = '3)UP TO RM30,000.00'
+     30000 -   50000 = '4)UP TO RM50,000.00'
+     50000 -   75000 = '5)UP TO RM75,000.00'
+     75000 -   HIGH  = '6)ABOVE RM75,000.00';
+
+  VALUE SEXNORM
+       LOW -   12    = '1)BELOW 12 YRS'
+       12  -   18    = '2)12 - 18 YRS'
+       18  -   50    = '3)18 - 50 YRS'
+       50  -   HIGH  = '4)50 YRS AND ABOVE';
+
+  VALUE PROFYAA
+       LOW -     500 = '1)BELOW RM   500.00'
+       500 -    2000 = '2)UP TO RM 2,000.00'
+      2000 -    5000 = '3)UP TO RM 5,000.00'
+      5000 -   10000 = '4)UP TO RM10,000.00'
+     10000 -   30000 = '5)UP TO RM30,000.00'
+     30000 -   50000 = '6)UP TO RM50,000.00'
+     50000 -   75000 = '7)UP TO RM75,000.00'
+     75000 -   HIGH  = '8)ABOVE RM75,000.00';
+
+  VALUE SEXYW
+       LOW -   12    = '1)BELOW 12 YRS'
+       12  -   18    = '2)12 - 18 YRS';
+
+  VALUE PROFPLUS
+       LOW -    2000 = '1)UP TO RM 2,000.00'
+      2000 -    5000 = '1)UP TO RM 5,000.00'
+      5000 -   10000 = '2)UP TO RM10,000.00'
+     10000 -   30000 = '3)UP TO RM30,000.00'
+     30000 -   50000 = '4)UP TO RM50,000.00'
+     50000 -   75000 = '5)UP TO RM75,000.00'
+     75000 -   HIGH  = '6)ABOVE RM75,000.00';
+
+  VALUE PROFWISE
+       LOW -    5000 = '1)UP TO RM 5,000.00'
+      5000 -   10000 = '2)UP TO RM10,000.00'
+     10000 -   20000 = '3)UP TO RM20,000.00'
+     20000 -   30000 = '4)UP TO RM30,000.00'
+     30000 -   50000 = '5)UP TO RM50,000.00'
+     50000 -   HIGH  = '6)ABOVE RM50,000.00';
+
+  VALUE SDNAME
+   200  = 'NORMAL SAVINGS'
+   201  = 'STAFF SAVINGS'
+   202  = 'YOUNG ACHIEVER'
+   203  = '50 PLUS SAVINGS'
+   204  = 'ISLAMIC SAVINGS'
+   205  = 'KIDDIE CLUB'
+   212  = 'WISE ACCOUNT'
+   213  = 'PB SAVELINK'
+   220  = 'BOON SIEW SAVINGS';
+
+  VALUE $RACE
+   '0'  = 'OTHERS'
+   '1'  = 'MALAY'
+   '2'  = 'CHINESE'
+   '3'  = 'INDIAN'
+   OTHER = 'OTHERS';
+
+   VALUE CADPRG
+     1000 = ' 1)         RM0 -     RM1,000'
+     2000 = ' 2)     RM1,001 -     RM2,000'
+     2500 = ' 3)     RM2,001 -     RM2,500'
+     3000,5000 = ' 4)     RM2,501 -     RM5,000'
+    10000 = ' 5)     RM5,001 -    RM10,000'
+    20000 = ' 6)    RM10,001 -    RM20,000'
+    30000 = ' 7)    RM20,001 -    RM30,000'
+    40000 = ' 8)    RM30,001 -    RM40,000'
+    50000 = ' 9)    RM40,001 -    RM50,000'
+  75000,100000 = '10)   RM50,001 -   RM100,000'
+   150000 = '11)  RM100,001 -   RM150,000'
+   200000 = '12)  RM150,001 -   RM200,000'
+   250000 = '13)  RM200,001 -   RM250,000'
+   500000 = '14)  RM250,001 -   RM500,000'
+  1000000 = '15)  RM500,001 - RM1,000,000'
+  2000000 = '16)RM1,000,001 - RM2,000,000'
+  3000000 = '17)RM2,000,001 - RM3,000,000'
+  4000000 = '18)RM3,000,001 - RM4,000,000'
+  5000000 = '19)RM4,000,001 - RM5,000,000'
+  OTHER   = '20)RM5,000,001 AND ABOVE';
+
+   VALUE ICADPRG
+     1000,2000  = ' 1)     BELOW  RM2,000'
+     2500,3000  = ' 2) RM2,000 -  RM3,000'
+     5000       = ' 3) RM3,000 -  RM5,000'
+    10000       = ' 4) RM5,000 -  RM10,000'
+    20000,30000 = ' 5) RM10,000 - RM30,000'
+    40000,50000 = ' 6) RM30,000 - RM50,000'
+    75000       = ' 7) RM50,000 - RM75,000'
+    100000      = ' 8) RM75,000 - RM100,000'
+    150000      = ' 9) RM100,000 -  RM150,000'
+    200000      = '10) RM150,000 -  RM200,000'
+    OTHER       = '11) RM200,000 AND ABOVE';
+
+
+
+   VALUE $PURPOSE
+     '1'  = 'PERSONAL'
+     '2'  = 'JOINT'
+     '4'  = 'PERSONAL'  /* IS A STAFF A/C BUT STATES AS PERSONAL  */;
+
+   VALUE CARANGED
+     2000  = ' 1)         BELOW RM2,000'
+     3000  = ' 2)     RM2,000 - RM3,000'
+     5000  = ' 3)     RM3,000 - RM5,000'
+    10000  = ' 4)    RM5,000 - RM10,000'
+    30000  = ' 5)   RM10,000 - RM30,000'
+    50000  = ' 6)   RM30,000 - RM50,000'
+    75000  = ' 7)   RM50,000 - RM75,000'
+   100000  = ' 8)  RM75,000 - RM100,000'
+   150000  = ' 9) RM100,000 - RM150,000'
+   200000  = '10) RM150,000 - RM200,000'
+   200001  = '11) RM200,000 AND ABOVE  ';
+
+   VALUE PROD
+     150 = 'ACE ACCOUNT'
+     160 = 'AL-WADIAH CURRENT A/C';
+
+   VALUE AGEDESC
+     0         = 'WITHOUT BIRTHDATE'
+     &AGEBELOW = 'BELOW 12 YEARS'
+     &AGELIMIT = '12 TO BELOW 18 YEARS'
+     &MAXAGE   = '18 AND ABOVE';
+
+   VALUE $STATE
+     'A' = 'PERAK'
+     'B' = 'SELANGOR'
+     'C' = 'PAHANG'
+     'D' = 'KELANTAN'
+     'J' = 'JOHOR'
+     'K' = 'KEDAH'
+     'L' = 'LABUAN'
+     'M' = 'MELAKA'
+     'N' = 'NEGERI SEMBILAN'
+     'P' = 'PULAU PINANG'
+     'Q' = 'SARAWAK'
+     'R' = 'PERLIS'
+     'S' = 'SABAH'
+     'T' = 'TERENGGANU'
+     'W' = 'WILAYAH PERSEKUTUAN';
+
+   VALUE FDPROD
+    340 = '1 MONTH'
+    341 = '3 MONTHS'
+    342 = '6 MONTHS'
+    343 = '9 MONTHS'
+    344 = '12 MONTHS'
+    345 = '15 MONTHS'
+    346 = '18 MONTHS'
+    347 = '21 MONTHS'
+    348 = '24 MONTHS'
+    349 = '36 MONTHS'
+    350 = '48 MONTHS'
+    351 = '60 MONTHS'
+    OTHER = ' ';
+
+   INVALUE CARANGE
+      LOW -  2000  = 2000
+     2000 - 3000   = 3000
+     3000 - 5000   = 5000
+     5000 - 10000  = 10000
+    10000 - 30000  = 30000
+    30000 - 50000  = 50000
+    50000 - 75000  = 75000
+    75000 - 100000 = 100000
+   100000 - 150000 = 150000
+   150000 - 200000 = 200000
+   200000 - HIGH   = 200001;
+
+   PICTURE HUNDRED
+     LOW - <0  = '0,000,009.99' (PREFIX='-' MULT=1)
+     0-HIGH    = '0,000,009.99' (MULT=1);
+
+   PICTURE THOUSAND
+     LOW - <0 = '0,000,000,009' (PREFIX='-' MULT=.001)
+     0-HIGH   = '0,000,000,009' (MULT=.001);
+
+   PICTURE MILLION
+     LOW - <0 = '0,000,000,009' (PREFIX='-' MULT=.000001)
+     0-HIGH   = '0,000,000,009' (MULT=.000001);
+
+RUN;
