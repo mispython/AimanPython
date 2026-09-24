@@ -1,57 +1,6 @@
-def _yy_mm_dd(d: date) -> str:
-    """Return 'YYMMDD' string, e.g. 2026-09-23 -> '260923'."""
-    return d.strftime("%y%m%d")
+# Period-boundary key  → used ONLY for the weekly CARD member
+PERIOD_YYMMDD = f"{REPTYEAR}{REPTMON}{REPTDAY}"          # '260915'  ← NOT for daily files
 
-
-
-
-# --- Dated file keys -------------------------------------------------------
-# current day = the report date itself (matches GDG (0))
-# previous day = report date - 1 day      (matches GDG (-1))
-CUR_DATE_STR  = _yy_mm_dd(REPTDATE)                       # e.g. 260923
-PREV_DATE_STR = _yy_mm_dd(REPTDATE - timedelta(days=1))   # e.g. 260922
-
-# equivalent to f"{REPTYEAR}{REPTMON}{REPTDAY}" for the current day:
-CUR_DATE_STR_ALT = f"{REPTYEAR}{REPTMON}{REPTDAY}"        # also '260923'
-
-
-
-
-# ---- DEPO  (current day, PBB) --------------------------------------------
-DEPO_SAVING_FILE   = INPUT_DIR / f"saving{CUR_DATE_STR}.sas7bdat"
-DEPO_CURRENT_FILE  = INPUT_DIR / f"current{CUR_DATE_STR}.sas7bdat"
-DEPO_FD_FILE       = INPUT_DIR / f"fd{CUR_DATE_STR}.sas7bdat"
-
-# ---- IDEPO (current day, PIBB) -------------------------------------------
-IDEPO_SAVING_FILE   = INPUT_DIR / f"saving{CUR_DATE_STR}.sas7bdat"
-IDEPO_CURRENT_FILE  = INPUT_DIR / f"current{CUR_DATE_STR}.sas7bdat"
-IDEPO_FD_FILE       = INPUT_DIR / f"fd{CUR_DATE_STR}.sas7bdat"
-
-# ---- PDEPO (previous day, PBB) -------------------------------------------
-PDEPO_SAVING_FILE   = INPUT_DIR / f"saving{PREV_DATE_STR}.sas7bdat"
-PDEPO_CURRENT_FILE  = INPUT_DIR / f"current{PREV_DATE_STR}.sas7bdat"
-PDEPO_FD_FILE       = INPUT_DIR / f"fd{PREV_DATE_STR}.sas7bdat"
-
-# ---- PIDEPO (previous day, PIBB) -----------------------------------------
-PIDEPO_SAVING_FILE  = INPUT_DIR / f"saving{PREV_DATE_STR}.sas7bdat"
-PIDEPO_CURRENT_FILE = INPUT_DIR / f"current{PREV_DATE_STR}.sas7bdat"
-PIDEPO_FD_FILE      = INPUT_DIR / f"fd{PREV_DATE_STR}.sas7bdat"
-
-# ---- CIS extracts --------------------------------------------------------
-CISDP_FILE   = INPUT_DIR / "cisbext_dp.sas7bdat"
-CISSAFD_FILE = INPUT_DIR / "crm_cisbext.sas7bdat"
-
-# ---- CARD weekly member (already dated) ----------------------------------
-CARD_FILE = INPUT_DIR / f"unicard{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
-
-
-
-
-DEPO_SAVING_FILE   = INPUT_DIR / f"pbb_saving{CUR_DATE_STR}.sas7bdat"
-IDEPO_SAVING_FILE  = INPUT_DIR / f"pibb_saving{CUR_DATE_STR}.sas7bdat"
-PDEPO_SAVING_FILE  = INPUT_DIR / f"pbb_saving{PREV_DATE_STR}.sas7bdat"
-PIDEPO_SAVING_FILE = INPUT_DIR / f"pibb_saving{PREV_DATE_STR}.sas7bdat"
-
-
-
-
+# Daily data keys → used for DEPO/IDEPO/PDEPO/PIDEPO
+CUR_DATE_STR  = _rdate.strftime("%y%m%d")                # '260923'  ← today's daily file
+PREV_DATE_STR = _rdate1.strftime("%y%m%d")               # '260922'  ← yesterday's daily file
