@@ -1,18 +1,9 @@
-Step 7: Combining DEPO / PDEPO and calculating withdrawals...
-  DEPO rows : 76,836
-=== depo_final rows for EK9320493 ===
-        ACCTNO TYPE     CURBAL  PRE_CURBAL
-0   1310432535   FD   30778.81    30778.81
-1   1599500135   FD  497826.19   497826.19
-2   1815007914   FD    4538.00     4538.00
-3   1835254621   FD   50000.00    50000.00
-4   3213272209   CA     632.63      632.63
-5   3218808633   CA   20306.62    20306.62
-6   6370055712   SA   17737.17    17737.17
-7   6488702305   SA    4734.82     4734.82
-8   6488702402   SA    4734.82     4734.82
-9   6598003207   SA      50.00       50.00
-10  6900888413   SA    5960.54     5423.64
-count: 11
-CURBAL sum: 637299.6
-  ZHONG NEWICs in depo_final : ['EF1567003', 'EK9320493', '040223101535', 'EJ8129732', '940614075809']
+def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
+    base_sorted  = base_df.sort("ACCTNO")
+    value_sorted = (
+        value_df
+        .sort("ACCTNO", maintain_order=True)
+        .unique(subset=["ACCTNO"], keep="first")
+    )
+    return base_sorted.join_asof(value_sorted.select(["ACCTNO", value_col]),
+                                  on="ACCTNO", strategy="backward")
