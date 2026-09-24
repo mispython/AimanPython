@@ -1,13 +1,16 @@
-Step 6: Building SA / CA / FD (current-period balances)...
-=== fd_bal rows for probed ACCTNOs ===
-       ACCTNO     CURBAL
-0  1311043808  390770.86
-=== fd_df result for probed ACCTNOs ===
-       ACCTNO         NEWIC     CURBAL
-0  1311043808  540213075346  390770.86
-1  1311043808  500318075303  390770.86
-2  1595256021  540213075346       0.00
-3  1595256021  500318075303       0.00
-4  1599500135     EK9320493       0.00
-5  1815007914     EK9320493       0.00
-  SA rows : 32,910   CA rows : 8,646   FD rows : 35,280
+print("=== raw DEPO_FD cache ===")
+raw_fd = pl.read_parquet(DEPO_FD_CACHE)
+print("rows:", raw_fd.height)
+print("cols:", raw_fd.columns)
+_probe_bal = [1311043808, 1595256021, 1599500135, 1815007914]
+sub_fd = raw_fd.filter(pl.col("ACCTNO").cast(pl.Int64).is_in(_probe_bal))
+print("probe rows in DEPO_FD:")
+print(sub_fd.to_pandas().to_string())
+
+print("=== raw IDEPO_FD cache ===")
+raw_ifd = pl.read_parquet(IDEPO_FD_CACHE)
+print("rows:", raw_ifd.height)
+print("cols:", raw_ifd.columns)
+sub_ifd = raw_ifd.filter(pl.col("ACCTNO").cast(pl.Int64).is_in(_probe_bal))
+print("probe rows in IDEPO_FD:")
+print(sub_ifd.to_pandas().to_string())
