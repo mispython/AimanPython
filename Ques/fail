@@ -1,8 +1,7 @@
-=== row #3826238 ===
-CUSTNAME    ZHONG, FANGXIANG
-NEWIC                       
-OLDIC              EK9320493
-MONITOR                    Z
-SOURCE            PRCBSC0524
-ACCTYPE                    I
-CLOSECD 
+_sub = depo_final.filter(pl.col("NEWIC") == "EK9320493").select(
+    ["ACCTNO", "TYPE", "CURBAL", "PRE_CURBAL"]
+).sort(["ACCTNO"])
+print("=== depo_final rows for EK9320493 ===")
+print(_sub.to_pandas().to_string())
+print("count:", _sub.height)
+print("CURBAL sum:", _sub["CURBAL"].sum())
