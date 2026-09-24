@@ -1,45 +1,51 @@
-import pyreadstat
+import duckdb
 from pathlib import Path
 
-D = Path("/stgsrcsys/host/uat/AII/EIBDUNDP")
+CACHE = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDUNDP")
 TARGET_ACCT   = 1595256021
 TARGET_CURBAL = 11630.87
 
-for f in sorted(D.glob("*.sas7bdat")):
+con = duckdb.connect()
+
+for pq in sorted(CACHE.glob("*.parquet")):
     try:
-        df, _ = pyreadstat.read_sas7bdat(str(f))
+        cols = con.execute(
+            f"SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('{pq.as_posix()}'))"
+        ).fetchall()
+        cols = [c[0] for c in cols]
     except Exception as e:
-        print(f"{f.name:40s}  SKIP ({e})")
+        print(f"{pq.name:50s}  SKIP ({e})")
         continue
 
-    if "ACCTNO" not in df.columns:
-        print(f"{f.name:40s}  no ACCTNO column, rows={len(df)}")
+    if "ACCTNO" not in cols:
+        print(f"{pq.name:50s}  no ACCTNO column")
         continue
 
-    df["_A"] = df["ACCTNO"].astype("float").astype("int64")
+    q = f"""
+        SELECT
+            COUNT(*) FILTER (WHERE CAST(ACCTNO AS BIGINT) = {TARGET_ACCT})                AS exact_hits,
+            COUNT(*) FILTER (WHERE CAST(ACCTNO AS BIGINT) BETWEEN 1595256000 AND 1595256100) AS near_hits,
+            COUNT(*) FILTER (WHERE ABS(CAST(CURBAL AS DOUBLE) - {TARGET_CURBAL}) < 0.5)  AS curbal_hits,
+            COUNT(*)                                                                     AS total_rows
+        FROM read_parquet('{pq.as_posix()}')
+    """
+    if "CURBAL" not in cols:
+        q = q.replace(
+            f"COUNT(*) FILTER (WHERE ABS(CAST(CURBAL AS DOUBLE) - {TARGET_CURBAL}) < 0.5)  AS curbal_hits,",
+            "0 AS curbal_hits,"
+        )
 
-    hit_exact  = df[df["_A"] == TARGET_ACCT]
-    hit_near   = df[(df["_A"] >= 1595256000) & (df["_A"] <= 1595256100)]
+    try:
+        exact, near, curbal, total = con.execute(q).fetchone()
+    except Exception as e:
+        print(f"{pq.name:50s}  QUERY ERROR ({e})")
+        continue
 
-    hit_curbal = None
-    if "CURBAL" in df.columns:
-        hit_curbal = df[df["CURBAL"].astype("float").between(TARGET_CURBAL - 0.5,
-                                                              TARGET_CURBAL + 0.5)]
+    flags = []
+    if exact:  flags.append(f"EXACT={exact}")
+    if near:   flags.append(f"NEAR={near}")
+    if curbal: flags.append(f"CURBAL={curbal}")
 
-    tag = []
-    if len(hit_exact):   tag.append(f"EXACT={len(hit_exact)}")
-    if len(hit_near):    tag.append(f"NEAR={len(hit_near)}")
-    if hit_curbal is not None and len(hit_curbal):
-        tag.append(f"CURBAL={len(hit_curbal)}")
+    print(f"{pq.name:50s}  rows={total:>10,}  {'  '.join(flags) if flags else '-'}")
 
-    print(f"{f.name:40s}  rows={len(df):>10,}  {'  '.join(tag) if tag else '-'}")
-
-    if len(hit_exact):
-        print("   exact rows:")
-        print(hit_exact[["ACCTNO"] + (["CURBAL"] if "CURBAL" in df.columns else [])].to_string())
-    if len(hit_near):
-        print("   nearby rows:")
-        print(hit_near[["ACCTNO"] + (["CURBAL"] if "CURBAL" in df.columns else [])].head(10).to_string())
-    if hit_curbal is not None and len(hit_curbal):
-        print("   balance-match rows:")
-        print(hit_curbal[["ACCTNO"] + (["CURBAL"] if "CURBAL" in df.columns else [])].head(10).to_string())
+con.close()
