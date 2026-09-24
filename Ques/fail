@@ -1,25 +1,29 @@
-# --- TEMP DIAGNOSTIC ----------------------------------------------------
-con2 = duckdb.connect()
-print("--- distinct MONITOR values (top 20) ---")
-print(con2.execute(f"""
-    SELECT MONITOR, LENGTH(MONITOR) AS len,
-           ASCII(SUBSTR(MONITOR,1,1)) AS a1,
-           ASCII(SUBSTR(MONITOR,2,1)) AS a2,
-           COUNT(*) AS n
-    FROM read_parquet('{CARD_CACHE.as_posix()}')
-    GROUP BY 1,2,3,4 ORDER BY n DESC LIMIT 20
-""").fetchall())
+import pandas as pd
+from pathlib import Path
 
-print("--- distinct SOURCE values that look like GCPIFD ---")
-print(con2.execute(f"""
-    SELECT SOURCE, LENGTH(SOURCE) AS len, COUNT(*) AS n
-    FROM read_parquet('{CARD_CACHE.as_posix()}')
-    WHERE SOURCE LIKE '%GCPIFD%'
-    GROUP BY 1,2 ORDER BY n DESC LIMIT 10
-""").fetchall())
-con2.close()
-# --- END TEMP -----------------------------------------------------------
+sas_path = Path("/stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat")
 
+reader = pd.read_sas(sas_path, encoding="latin1", chunksize=100_000)
+chunk = next(reader)
 
+print("Columns :", list(chunk.columns))
+print()
+print("dtypes  :")
+print(chunk.dtypes)
+print()
+print("First chunk rows:", len(chunk))
+print()
 
-
+for col in ["MONITOR", "SOURCE", "CLOSECD", "ACCTYPE", "CARDHOLD"]:
+    print(f"--- {col} ---")
+    if col not in chunk.columns:
+        print("  COLUMN NOT FOUND")
+        print()
+        continue
+    s = chunk[col]
+    print("  dtype           :", s.dtype)
+    print("  notna count     :", s.notna().sum(), "/", len(s))
+    print("  sample values   :", s.dropna().head(5).tolist())
+    print("  top 5 value_counts:")
+    print(s.value_counts(dropna=False).head(5).to_string())
+    print()
