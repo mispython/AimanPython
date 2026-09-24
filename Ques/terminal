@@ -1,17 +1,9 @@
-import pyreadstat
-
-path = "/stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat"
-df, meta = pyreadstat.read_sas7bdat(path)
-
-print("shape         :", df.shape)
-print("MONITOR notna :", df["MONITOR"].notna().sum())
-print("MONITOR values:", df["MONITOR"].value_counts(dropna=False).head(10).to_dict())
-print("SOURCE notna  :", df["SOURCE"].notna().sum())
-print("SOURCE sample :", df["SOURCE"].dropna().head(5).tolist())
-
-print(df["MONITOR"].value_counts(dropna=False))
-print("MONITOR = Z:", (df["MONITOR"] == "Z").sum())
-print("MONITOR = I:", (df["MONITOR"] == "I").sum())
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
+shape         : (4360393, 54)
+MONITOR notna : 4360393
+MONITOR values: {'': 4360364, 'A': 12, 'B': 9, 'I': 3, '4': 3, '1': 1, 'C': 1}
+SOURCE notna  : 4360393
+SOURCE sample : ['', '', '', '', '']
 
 
 
