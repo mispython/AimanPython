@@ -50,47 +50,37 @@ Step 2: Caching input SAS datasets to Parquet...
   [CISSAFD] Done - 11,013,394 rows cached.
 
 Step 3: Processing CARD file...
-100% ▕██████████████████████████████████████▏ (00:00:02.84 elapsed)     
-  CARD raw rows after filter : 4,360,344
-  CARD  rows : 1
-  CARD1 rows : 0
+  CARD raw rows after filter : 1,297,485
+--- distinct MONITOR values (top 20) ---
+[(None, None, None, None, 3377915), ('A', 1, 65, 0, 466124), ('1', 1, 49, 0, 153962), ('4', 1, 52, 0, 124043), ('B', 1, 66, 0, 96030), ('I', 1, 73, 0, 59257), ('C', 1, 67, 0, 42845), ('S', 1, 83, 0, 12179), ('Z', 1, 90, 0, 10477), ('R', 1, 82, 0, 5142), ('D', 1, 68, 0, 4598), ('T', 1, 84, 0, 3057), ('M', 1, 77, 0, 2177), ('O', 1, 79, 0, 2119), ('Y', 1, 89, 0, 802), ('V', 1, 86, 0, 277), ('2', 1, 50, 0, 93), ('3', 1, 51, 0, 15), ('W', 1, 87, 0, 12), ('F', 1, 70, 0, 6)]
+--- distinct SOURCE values that look like GCPIFD ---
+[('GCPIFD0209', 10, 416)]
+  CARD  rows : 13,754
+  CARD1 rows : 5,187
 
 Step 4: Building CISCA / CISSA / CISFD...
-  CISCA rows : 0
-  CISSA rows : 0
-  CISFD rows : 0
+  CISCA rows : 8,646
+  CISSA rows : 32,910
+  CISFD rows : 35,280
 
 Step 5: Building PSA / PCA / PFD (previous-period balances)...
-  PSA rows : 0   PCA rows : 0   PFD rows : 0
+  PSA rows : 32,910   PCA rows : 8,646   PFD rows : 35,280
 
 Step 6: Building SA / CA / FD (current-period balances)...
-  SA rows : 0   CA rows : 0   FD rows : 0
+  SA rows : 32,910   CA rows : 8,646   FD rows : 35,280
 
 Step 7: Combining DEPO / PDEPO and calculating withdrawals...
-  DEPO rows : 0
-
-Step 8: Summarising DEPO by NEWIC...
-  DEPO1 rows : 0
-
-Step 9: Splitting into DEPO2 / DEPO3...
-  DEPO2 rows : 0   DEPO3 rows : 0
-
-Step 10: Building TOT...
-  TOT rows : 0
-
-Step 11: Building FINAL dataset...
-  FINAL rows : 0
-shape: (0, 12)
-┌────────┬─────────┬────────┬─────────┬───┬────────┬──────┬────────┬────────┐
-│ CARDNO ┆ MONITOR ┆ SOURCE ┆ CLOSECD ┆ … ┆ ACCTNO ┆ TYPE ┆ CURBAL ┆ SUMBAL │
-│ ---    ┆ ---     ┆ ---    ┆ ---     ┆   ┆ ---    ┆ ---  ┆ ---    ┆ ---    │
-│ str    ┆ str     ┆ str    ┆ str     ┆   ┆ i64    ┆ str  ┆ f64    ┆ f64    │
-╞════════╪═════════╪════════╪═════════╪═══╪════════╪══════╪════════╪════════╡
-└────────┴─────────┴────────┴─────────┴───┴────────┴──────┴────────┴────────┘
-
-Step 12: Generating report...
-
-  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
-  Total lines    : 8
-
-EIBDUNDP complete.
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 580, in <module>
+    depo_final = _merge_depo_pdepo(depo_df, pdepo_df)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 501, in _merge_depo_pdepo
+    return exact.with_columns(asof_pre["PRE_CURBAL"])
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ShapeError: unable to add a column of length 76836 to a DataFrame of height 79948
