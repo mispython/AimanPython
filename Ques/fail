@@ -1,17 +1,23 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
-=== SOURCE .sas7bdat ===
-                NEWIC MONITOR      SOURCE ACCTYPE CLOSECD
-1208071  040223101535       I  GMACFD0125       I        
-2563348  940614075809       I  GMACFD0523       I        
-4119671  940614075809       I  GMACFD0523       I        
-rows : 3
+import pyreadstat
+import polars as pl
+from pathlib import Path
 
-=== CACHED .parquet ===
-          NEWIC MONITOR      SOURCE
-0  040223101535       I  GMACFD0125
-1  940614075809       I  GMACFD0523
-2  940614075809       I  GMACFD0523
-rows : 3
+CARD_SAS = Path("/stgsrcsys/host/uat/AII/EIBDUNDP/host_unicard260902.sas7bdat")
 
-source mtime : 1790233229.9866922
-cache  mtime : 1790233370.3406816
+print("=== SOURCE .sas7bdat — search CUSTNAME contains 'FANGXIANG' ===")
+df, _ = pyreadstat.read_sas7bdat(str(CARD_SAS))
+print("total rows :", len(df))
+
+# search by any spelling
+mask = df["CUSTNAME"].astype(str).str.upper().str.contains("FANGXIANG", na=False) \
+     | df["CUSTNAME"].astype(str).str.upper().str.contains("ZHANG", na=False) \
+     | df["CUSTNAME"].astype(str).str.upper().str.contains("ZHONG", na=False)
+sub = df[mask]
+print(sub[["CUSTNAME", "NEWIC", "OLDIC", "MONITOR", "SOURCE", "ACCTYPE", "CLOSECD"]].to_string())
+print("rows :", len(sub))
+
+# also dump what's at row #3826238 (0-indexed -> 3826237)
+print()
+print("=== row #3826238 ===")
+row = df.iloc[3826237]
+print(row[["CUSTNAME", "NEWIC", "OLDIC", "MONITOR", "SOURCE", "ACCTYPE", "CLOSECD"]].to_string())
