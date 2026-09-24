@@ -1,26 +1,14 @@
-ls -la /stgsrcsys/host/uat/AII/EIBDUNDP/ | grep -iE "fd2[0-9]{5}|ifd2[0-9]{5}" | head -40
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ ls -la /stgsrcsys/host/uat/AII/EIBDUNDP/ | grep -iE "fd2[0-9]{5}|ifd2[0-9]{5}" | head -40
+-rw-r--r--  1 sftpedw         sas            267124736 Sep 23 06:38 fd260922.sas7bdat
+-rw-r--r--  1 sftpedw         sas            266993664 Sep 24 08:14 fd260923.sas7bdat
+-rw-r--r--  1 sftpedw         sas             50200576 Sep 23 06:38 ifd260922.sas7bdat
+-rw-r--r--  1 sftpedw         sas             50135040 Sep 24 08:14 ifd260923.sas7bdat
 
 
 
 
-import pyreadstat
-from pathlib import Path
-
-D = Path("/stgsrcsys/host/uat/AII/EIBDUNDP")
-probe = 1595256021
-
-for f in sorted(D.glob("*.sas7bdat")):
-    n = f.name.lower()
-    if not (n.startswith("fd") or n.startswith("ifd")):
-        continue
-    try:
-        df, _ = pyreadstat.read_sas7bdat(str(f))
-        if "ACCTNO" not in df.columns:
-            continue
-        hit = df[df["ACCTNO"].astype("float").astype("int64") == probe]
-        if len(hit):
-            print(f"{f.name} : FOUND  CURBAL={hit.iloc[0]['CURBAL']}  total_rows={len(df)}")
-        else:
-            print(f"{f.name} : -")
-    except Exception as e:
-        print(f"{f.name} : ERROR {e}")
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
+fd260922.sas7bdat : -
+fd260923.sas7bdat : -
+ifd260922.sas7bdat : -
+ifd260923.sas7bdat : -
