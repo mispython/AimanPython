@@ -1,99 +1,18 @@
-Step 9: Splitting into DEPO2 / DEPO3...
-  DEPO2 rows : 14   DEPO3 rows : 8,556
-  ZHONG in card1    : 1
-  ZHONG in depo2_df : []
-  ZHONG in depo3_df : ['EJ8129732', 'EF1567003', '040223101535', '940614075809']
-  ZHONG depo1 PERCEN:
-shape: (5, 5)
-┌──────────────┬────────────┬──────────┬────────┬──────────┐
-│ NEWIC        ┆ PRE_CURBAL ┆ CURBAL   ┆ WITHDR ┆ PERCEN   │
-│ ---          ┆ ---        ┆ ---      ┆ ---    ┆ ---      │
-│ str          ┆ f64        ┆ f64      ┆ f64    ┆ f64      │
-╞══════════════╪════════════╪══════════╪════════╪══════════╡
-│ EF1567003    ┆ 47142.84   ┆ 47133.39 ┆ 9.45   ┆ 0.020045 │
-│ EK9320493    ┆ 636762.7   ┆ 637299.6 ┆ 0.0    ┆ 0.0      │
-│ EJ8129732    ┆ 55140.19   ┆ 55140.19 ┆ 0.0    ┆ 0.0      │
-│ 940614075809 ┆ 45943.37   ┆ 45840.57 ┆ 102.8  ┆ 0.223754 │
-│ 040223101535 ┆ 18071.53   ┆ 18071.53 ┆ 0.0    ┆ 0.0      │
-└──────────────┴────────────┴──────────┴────────┴──────────┘
-
-
-
-
-=================
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py
-Step 1: Deriving report date...
-  REPTDATE : 2026-09-15  (WK=02)
-  RDTEA    : 23/09/26   RDTEB : 22/09/26
-  REPTYEAR=26  REPTMON=09  REPTDAY=15  NOWK=02
-  CARD file: unicard260902.sas7bdat
-  Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
-
-Step 2: Caching input SAS datasets to Parquet...
-  [DEPO_SAVING] Converting sa260923.sas7bdat -> sa260923.parquet ...
-  [DEPO_SAVING] Done - 4,283,748 rows cached.
-  [DEPO_CURRENT] Converting ca260923.sas7bdat -> ca260923.parquet ...
-  [DEPO_CURRENT] Done - 855,633 rows cached.
-  [DEPO_FD] Converting fd260923.sas7bdat -> fd260923.parquet ...
-  [DEPO_FD] Done - 1,205,423 rows cached.
-  [IDEPO_SAVING] Converting isa260923.sas7bdat -> isa260923.parquet ...
-  [IDEPO_SAVING] Done - 2,235,001 rows cached.
-  [IDEPO_CURRENT] Converting ica260923.sas7bdat -> ica260923.parquet ...
-  [IDEPO_CURRENT] Done - 155,246 rows cached.
-  [IDEPO_FD] Converting ifd260923.sas7bdat -> ifd260923.parquet ...
-  [IDEPO_FD] Done - 223,128 rows cached.
-  [PDEPO_SAVING] Converting sa260922.sas7bdat -> sa260922.parquet ...
-  [PDEPO_SAVING] Done - 4,283,021 rows cached.
-  [PDEPO_CURRENT] Converting ca260922.sas7bdat -> ca260922.parquet ...
-  [PDEPO_CURRENT] Done - 855,524 rows cached.
-  [PDEPO_FD] Converting fd260922.sas7bdat -> fd260922.parquet ...
-  [PDEPO_FD] Done - 1,205,199 rows cached.
-  [PIDEPO_SAVING] Converting isa260922.sas7bdat -> isa260922.parquet ...
-  [PIDEPO_SAVING] Done - 2,234,544 rows cached.
-  [PIDEPO_CURRENT] Converting ica260922.sas7bdat -> ica260922.parquet ...
-  [PIDEPO_CURRENT] Done - 155,207 rows cached.
-  [PIDEPO_FD] Converting ifd260922.sas7bdat -> ifd260922.parquet ...
-  [PIDEPO_FD] Done - 223,095 rows cached.
-  [CARD] Converting host_unicard260902.sas7bdat -> host_unicard260902.parquet ...
-  [CARD] Done - 4,361,160 rows cached.
-  [CISDP] Converting cisbext_dp_deposit.sas7bdat -> cisbext_dp_deposit.parquet ...
-  [CISDP] Done - 1,250,295 rows cached.
-  [CISSAFD] Converting crm_cisbext_deposit.sas7bdat -> crm_cisbext_deposit.parquet ...
-  [CISSAFD] Done - 11,013,394 rows cached.
-
 Step 3: Processing CARD file...
   CARD raw rows after filter : 1,297,485
 --- distinct MONITOR values (top 20) ---
 [(None, None, None, None, 3377915), ('A', 1, 65, 0, 466124), ('1', 1, 49, 0, 153962), ('4', 1, 52, 0, 124043), ('B', 1, 66, 0, 96030), ('I', 1, 73, 0, 59257), ('C', 1, 67, 0, 42845), ('S', 1, 83, 0, 12179), ('Z', 1, 90, 0, 10477), ('R', 1, 82, 0, 5142), ('D', 1, 68, 0, 4598), ('T', 1, 84, 0, 3057), ('M', 1, 77, 0, 2177), ('O', 1, 79, 0, 2119), ('Y', 1, 89, 0, 802), ('V', 1, 86, 0, 277), ('2', 1, 50, 0, 93), ('3', 1, 51, 0, 15), ('W', 1, 87, 0, 12), ('F', 1, 70, 0, 6)]
 --- distinct SOURCE values that look like GCPIFD ---
 [('GCPIFD0209', 10, 416)]
+          NEWIC MONITOR      SOURCE ACCTYPE CLOSECD
+0  040223101535       I  GMACFD0125       I    None
+1  940614075809       I  GMACFD0523       I    None
+2  940614075809       I  GMACFD0523       I    None
+--- card_main breakdown by first letter ---
+  W : 1097
+  X : 29
+  Y : 1051
+  Z : 47
+  total : 18810
   CARD  rows : 13,754
   CARD1 rows : 5,187
-
-Step 4: Building CISCA / CISSA / CISFD...
-  CISCA rows : 8,646
-  CISSA rows : 32,910
-  CISFD rows : 35,280
-
-Step 5: Building PSA / PCA / PFD (previous-period balances)...
-  PSA rows : 32,910   PCA rows : 8,646   PFD rows : 35,280
-
-Step 6: Building SA / CA / FD (current-period balances)...
-  SA rows : 32,910   CA rows : 8,646   FD rows : 35,280
-
-Step 7: Combining DEPO / PDEPO and calculating withdrawals...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 580, in <module>
-    depo_final = _merge_depo_pdepo(depo_df, pdepo_df)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 501, in _merge_depo_pdepo
-    return exact.with_columns(asof_pre["PRE_CURBAL"])
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ShapeError: unable to add a column of length 76836 to a DataFrame of height 79948
