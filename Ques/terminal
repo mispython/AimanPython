@@ -1,9 +1,24 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
-shape         : (4360393, 54)
-MONITOR notna : 4360393
-MONITOR values: {'': 4360364, 'A': 12, 'B': 9, 'I': 3, '4': 3, '1': 1, 'C': 1}
-SOURCE notna  : 4360393
-SOURCE sample : ['', '', '', '', '']
+Last 5 customer names in Python output:
+  YONG WO MOI
+  YONG YEN LONG
+  YU LEE MUI
+  YU MEA LIAN
+  YU YONG SOOI
+
+
+
+
+ZHONG, FANGXIANG
+
+
+
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ grep -c "^ [A-Z]" /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
+1784
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ grep -c "^ [A-Z]" /stgsrcsys/host/uat/AII/EIBDUNDP/EIBDUNDP_OUTPUT.TXT
+0
+
 
 
 
