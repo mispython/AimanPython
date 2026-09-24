@@ -1,7 +1,9 @@
-print(f"FINAL rows in dataframe : {final_df.height}")
-print(f"Last 5 CUSTNAME in data : {final_df.select('CUSTNAME').tail(5).to_series().to_list()}")
+Step 12: Generating report...
+FINAL rows in dataframe : 8463
+Last 5 CUSTNAME in data : ['YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI']
 
 
 
 
-grep -c "^0" /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ grep -c "^0" /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
+0
