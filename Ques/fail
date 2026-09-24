@@ -1,10 +1,8 @@
-_zids = ['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493']
-print("  ZHONG in card1    :", card1.filter(pl.col("NEWIC").is_in(_zids)).height)
-print("  ZHONG in depo2_df :", depo2_df.filter(pl.col("NEWIC").is_in(_zids)).select("NEWIC").unique().to_series().to_list())
-print("  ZHONG in depo3_df :", depo3_df.filter(pl.col("NEWIC").is_in(_zids)).select("NEWIC").unique().to_series().to_list())
-print("  ZHONG depo1 PERCEN:")
-print(depo1_df.filter(pl.col("NEWIC").is_in(_zids)).select(["NEWIC", "PRE_CURBAL", "CURBAL", "WITHDR", "PERCEN"]))
+zhong = ['040223101535', '940614075809', 'E64283528',
+         'EF1567003', 'EJ8129732', 'EK9320493']
 
-
-
-
+raw = pl.read_parquet(CARD_CACHE)
+sub = raw.filter(
+    pl.col("NEWIC").cast(pl.Utf8).str.strip_chars().is_in(zhong)
+)
+print(sub.select(["NEWIC", "MONITOR", "SOURCE", "ACCTYPE", "CLOSECD"]).to_pandas().to_string())
