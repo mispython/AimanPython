@@ -1,23 +1,8 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
-Last 5 customer names in Python output:
-  YONG WO MOI
-  YONG YEN LONG
-  YU LEE MUI
-  YU MEA LIAN
-  YU YONG SOOI
-
-
-
-
-ZHONG, FANGXIANG
-
-
-
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ grep -c "^ [A-Z]" /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
-1784
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ grep -c "^ [A-Z]" /stgsrcsys/host/uat/AII/EIBDUNDP/EIBDUNDP_OUTPUT.TXT
-0
+print("--- card_main breakdown by first letter ---")
+for letter in ["W", "X", "Y", "Z"]:
+    n = card_main.filter(pl.col("CUSTNAME").str.starts_with(letter)).height
+    print(f"  {letter} : {n}")
+print("  total :", card_main.height)
 
 
 
