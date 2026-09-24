@@ -1,17 +1,7 @@
-ls -la  /stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat
-stat   /stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat
-
-
-
-
-from sas7bdat import SAS7BDAT
-
-path = "/stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat"
-
-with SAS7BDAT(path) as reader:
-    df = reader.to_data_frame()
-
-print("shape        :", df.shape)
-print("MONITOR vc   :", df["MONITOR"].value_counts(dropna=False).head(10).to_dict())
-print("SOURCE vc    :", df["SOURCE"].value_counts(dropna=False).head(5).to_dict())
-print("CLOSECD vc   :", df["CLOSECD"].value_counts(dropna=False).head(5).to_dict())
+def _merge_depo_pdepo(depo_df: pl.DataFrame, pdepo_df: pl.DataFrame) -> pl.DataFrame:
+    depo_sorted  = depo_df.sort("ACCTNO")
+    pdepo_sorted = (
+        pdepo_df.sort("ACCTNO")
+                 .unique(subset=["ACCTNO"], keep="first")
+    )
+    ...
