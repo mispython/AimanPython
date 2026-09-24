@@ -1,7 +1,20 @@
-zhong_card = card_main.filter(pl.col("CUSTNAME").str.contains("ZHONG"))
-zhong_tot  = tot_df.filter(pl.col("NEWIC").is_in(zhong_card.select("NEWIC").to_series().to_list()))
-zhong_final= final_df.filter(pl.col("CUSTNAME").str.contains("ZHONG"))
-print("ZHONG in card_main :", zhong_card.height)
-print("ZHONG in tot_df    :", zhong_tot.height)
-print("ZHONG in final_df  :", zhong_final.height)
-print("ZHONG NEWICs in card_main :", card_main.filter(pl.col("CUSTNAME").str.contains("ZHONG")).select("NEWIC").unique().to_series().to_list())
+print("  ZHONG NEWICs in cissa_df :", cissa_df.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
+
+
+
+
+print("  ZHONG NEWICs in sa_df :", sa_df.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
+
+
+
+
+print("  ZHONG NEWICs in depo_final :", depo_final.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
+
+
+
+
+print("  ZHONG NEWICs in depo1_df :", depo1_df.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
+
+
+
+
