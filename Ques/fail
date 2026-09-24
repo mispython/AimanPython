@@ -1,23 +1,8 @@
-import pyreadstat
-import polars as pl
-from pathlib import Path
-
-CARD_SAS = Path("/stgsrcsys/host/uat/AII/EIBDUNDP/host_unicard260902.sas7bdat")
-
-print("=== SOURCE .sas7bdat — search CUSTNAME contains 'FANGXIANG' ===")
-df, _ = pyreadstat.read_sas7bdat(str(CARD_SAS))
-print("total rows :", len(df))
-
-# search by any spelling
-mask = df["CUSTNAME"].astype(str).str.upper().str.contains("FANGXIANG", na=False) \
-     | df["CUSTNAME"].astype(str).str.upper().str.contains("ZHANG", na=False) \
-     | df["CUSTNAME"].astype(str).str.upper().str.contains("ZHONG", na=False)
-sub = df[mask]
-print(sub[["CUSTNAME", "NEWIC", "OLDIC", "MONITOR", "SOURCE", "ACCTYPE", "CLOSECD"]].to_string())
-print("rows :", len(sub))
-
-# also dump what's at row #3826238 (0-indexed -> 3826237)
-print()
-print("=== row #3826238 ===")
-row = df.iloc[3826237]
-print(row[["CUSTNAME", "NEWIC", "OLDIC", "MONITOR", "SOURCE", "ACCTYPE", "CLOSECD"]].to_string())
+=== row #3826238 ===
+CUSTNAME    ZHONG, FANGXIANG
+NEWIC                       
+OLDIC              EK9320493
+MONITOR                    Z
+SOURCE            PRCBSC0524
+ACCTYPE                    I
+CLOSECD 
