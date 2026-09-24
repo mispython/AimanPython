@@ -93,36 +93,36 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIBDUNDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ---- DEPO (current day, PBB)  : //DEPO DD DSN=SAP.PBB.MNITB.DAILY(0) ------
-DEPO_SAVING_FILE   = INPUT_DIR / "mnitb_daily_pbb_saving_d0.sas7bdat"
-DEPO_CURRENT_FILE  = INPUT_DIR / "mnitb_daily_pbb_current_d0.sas7bdat"
-DEPO_FD_FILE       = INPUT_DIR / "mnitb_daily_pbb_fd_d0.sas7bdat"
+# # ---- DEPO (current day, PBB)  : //DEPO DD DSN=SAP.PBB.MNITB.DAILY(0) ------
+# DEPO_SAVING_FILE   = INPUT_DIR / "mnitb_daily_pbb_saving_d0.sas7bdat"
+# DEPO_CURRENT_FILE  = INPUT_DIR / "mnitb_daily_pbb_current_d0.sas7bdat"
+# DEPO_FD_FILE       = INPUT_DIR / "mnitb_daily_pbb_fd_d0.sas7bdat"
 
-# ---- IDEPO (current day, PIBB): //IDEPO DD DSN=SAP.PIBB.MNITB.DAILY(0) ----
-IDEPO_SAVING_FILE   = INPUT_DIR / "mnitb_daily_pibb_saving_d0.sas7bdat"
-IDEPO_CURRENT_FILE  = INPUT_DIR / "mnitb_daily_pibb_current_d0.sas7bdat"
-IDEPO_FD_FILE       = INPUT_DIR / "mnitb_daily_pibb_fd_d0.sas7bdat"
+# # ---- IDEPO (current day, PIBB): //IDEPO DD DSN=SAP.PIBB.MNITB.DAILY(0) ----
+# IDEPO_SAVING_FILE   = INPUT_DIR / "mnitb_daily_pibb_saving_d0.sas7bdat"
+# IDEPO_CURRENT_FILE  = INPUT_DIR / "mnitb_daily_pibb_current_d0.sas7bdat"
+# IDEPO_FD_FILE       = INPUT_DIR / "mnitb_daily_pibb_fd_d0.sas7bdat"
 
-# ---- PDEPO (previous day, PBB): //PDEPO DD DSN=SAP.PBB.MNITB.DAILY(-1) ----
-PDEPO_SAVING_FILE   = INPUT_DIR / "mnitb_daily_pbb_saving_d-1.sas7bdat"
-PDEPO_CURRENT_FILE  = INPUT_DIR / "mnitb_daily_pbb_current_d-1.sas7bdat"
-PDEPO_FD_FILE       = INPUT_DIR / "mnitb_daily_pbb_fd_d-1.sas7bdat"
+# # ---- PDEPO (previous day, PBB): //PDEPO DD DSN=SAP.PBB.MNITB.DAILY(-1) ----
+# PDEPO_SAVING_FILE   = INPUT_DIR / "mnitb_daily_pbb_saving_d-1.sas7bdat"
+# PDEPO_CURRENT_FILE  = INPUT_DIR / "mnitb_daily_pbb_current_d-1.sas7bdat"
+# PDEPO_FD_FILE       = INPUT_DIR / "mnitb_daily_pbb_fd_d-1.sas7bdat"
 
-# ---- PIDEPO (previous day, PIBB): //PIDEPO DD DSN=SAP.PIBB.MNITB.DAILY(-1)-
-PIDEPO_SAVING_FILE  = INPUT_DIR / "mnitb_daily_pibb_saving_d-1.sas7bdat"
-PIDEPO_CURRENT_FILE = INPUT_DIR / "mnitb_daily_pibb_current_d-1.sas7bdat"
-PIDEPO_FD_FILE      = INPUT_DIR / "mnitb_daily_pibb_fd_d-1.sas7bdat"
+# # ---- PIDEPO (previous day, PIBB): //PIDEPO DD DSN=SAP.PIBB.MNITB.DAILY(-1)-
+# PIDEPO_SAVING_FILE  = INPUT_DIR / "mnitb_daily_pibb_saving_d-1.sas7bdat"
+# PIDEPO_CURRENT_FILE = INPUT_DIR / "mnitb_daily_pibb_current_d-1.sas7bdat"
+# PIDEPO_FD_FILE      = INPUT_DIR / "mnitb_daily_pibb_fd_d-1.sas7bdat"
 
-# ---- CIS : //CISDP (CA side) and //CISSAFD (SA+FD side, split later) -----
-CISDP_FILE   = INPUT_DIR / "cisbext_dp.sas7bdat"
-CISSAFD_FILE = INPUT_DIR / "crm_cisbext.sas7bdat"
+# # ---- CIS : //CISDP (CA side) and //CISSAFD (SA+FD side, split later) -----
+# CISDP_FILE   = INPUT_DIR / "cisbext_dp.sas7bdat"
+# CISSAFD_FILE = INPUT_DIR / "crm_cisbext.sas7bdat"
 
 # ---- Output ----------------------------------------------------------------
 # Generate time stamp
 report_date = date.today() - timedelta(days=1)
 ts = report_date.strftime("%y%m%d")
 
-OUTPUT_FILE = OUTPUT_DIR / "CARD_DPACTV.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"CARD_DPACTV_{ts}.txt"
 
 CHUNK_ROWS = 500_000
 
@@ -143,6 +143,11 @@ def _derive_reptdate() -> date:
     boundary exactly as in the original DATA step.
     """
     return date.today() - timedelta(days=1)
+
+
+def _yy_mm_dd(d: date) -> str:
+    """Return 'YYMMDD' string, e.g. 2026-09-23 -> '260923'."""
+    return d.strftime("%y%m%d")
 
 
 _rdate  = _derive_reptdate()             # RDATE  = REPTDATE (pre-adjustment)
@@ -171,11 +176,51 @@ REPTMON  = f"{REPTDATE.month:02d}"              # CALL SYMPUT('REPTMON',...)
 REPTYEAR = f"{REPTDATE.year % 100:02d}"         # PUT(REPTDATE,YEAR2.)
 NOWK     = WK
 
+# --- Dated file keys -------------------------------------------------------
+# Period-boundary key  → used ONLY for the weekly CARD member
+PERIOD_YYMMDD = f"{REPTYEAR}{REPTMON}{REPTDAY}"          # '260915'  ← NOT for daily files
+
+# Daily data keys → used for DEPO/IDEPO/PDEPO/PIDEPO
+# current day = the report date itself      (matches GDG (0))
+CUR_DATE_STR  = _rdate.strftime("%y%m%d")       # '260923'  ← today's daily file
+# previous day = report date - 1 day        (matches GDG (-1))
+PREV_DATE_STR = _rdate1.strftime("%y%m%d")      # '260922'  ← yesterday's daily file
+
+# equivalent to f"{REPTYEAR}{REPTMON}{REPTDAY}" for the current day:
+CUR_DATE_STR_ALT = f"{REPTYEAR}{REPTMON}{REPTDAY}"        # also '260923'
+
 RDTEA = _rdate.strftime("%d/%m/%y")             # PUT(RDATE,  DDMMYY8.)
 RDTEB = _rdate1.strftime("%d/%m/%y")            # PUT(RDATE1, DDMMYY8.)
 
-# ---- CARD : //CARD DD DSN=SAP.PBB.CRM.CARD, member UNICARD&YY&MM&WK ------
-CARD_FILE = INPUT_DIR / f"unicard{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
+# # ---- CARD : //CARD DD DSN=SAP.PBB.CRM.CARD, member UNICARD&YY&MM&WK ------
+# CARD_FILE = INPUT_DIR / f"unicard{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
+
+# ---- DEPO  (current day, PBB) --------------------------------------------
+DEPO_SAVING_FILE   = INPUT_DIR / f"sa{CUR_DATE_STR}.sas7bdat"
+DEPO_CURRENT_FILE  = INPUT_DIR / f"ca{CUR_DATE_STR}.sas7bdat"
+DEPO_FD_FILE       = INPUT_DIR / f"fd{CUR_DATE_STR}.sas7bdat"
+
+# ---- IDEPO (current day, PIBB) -------------------------------------------
+IDEPO_SAVING_FILE   = INPUT_DIR / f"isa{CUR_DATE_STR}.sas7bdat"
+IDEPO_CURRENT_FILE  = INPUT_DIR / f"ica{CUR_DATE_STR}.sas7bdat"
+IDEPO_FD_FILE       = INPUT_DIR / f"ifd{CUR_DATE_STR}.sas7bdat"
+
+# ---- PDEPO (previous day, PBB) -------------------------------------------
+PDEPO_SAVING_FILE   = INPUT_DIR / f"sa{PREV_DATE_STR}.sas7bdat"
+PDEPO_CURRENT_FILE  = INPUT_DIR / f"ca{PREV_DATE_STR}.sas7bdat"
+PDEPO_FD_FILE       = INPUT_DIR / f"fd{PREV_DATE_STR}.sas7bdat"
+
+# ---- PIDEPO (previous day, PIBB) -----------------------------------------
+PIDEPO_SAVING_FILE  = INPUT_DIR / f"isa{PREV_DATE_STR}.sas7bdat"
+PIDEPO_CURRENT_FILE = INPUT_DIR / f"ica{PREV_DATE_STR}.sas7bdat"
+PIDEPO_FD_FILE      = INPUT_DIR / f"ifd{PREV_DATE_STR}.sas7bdat"
+
+# ---- CIS extracts --------------------------------------------------------
+CISDP_FILE   = INPUT_DIR / "cisbext_dp_deposit.sas7bdat"
+CISSAFD_FILE = INPUT_DIR / "crm_cisbext_deposit.sas7bdat"
+
+# ---- CARD weekly member (already dated) ----------------------------------
+CARD_FILE = INPUT_DIR / f"host_unicard{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
 
 print(f"  REPTDATE : {REPTDATE}  (WK={WK})")
 print(f"  RDTEA    : {RDTEA}   RDTEB : {RDTEB}")
@@ -297,6 +342,28 @@ gc.collect()
 
 print(f"  CARD raw rows after filter : {len(card_df):,}")
 
+# --- DEBUG: TEMP DIAGNOSTIC ----------------------------------------------------
+con2 = duckdb.connect()
+print("--- distinct MONITOR values (top 20) ---")
+print(con2.execute(f"""
+    SELECT MONITOR, LENGTH(MONITOR) AS len,
+           ASCII(SUBSTR(MONITOR,1,1)) AS a1,
+           ASCII(SUBSTR(MONITOR,2,1)) AS a2,
+           COUNT(*) AS n
+    FROM read_parquet('{CARD_CACHE.as_posix()}')
+    GROUP BY 1,2,3,4 ORDER BY n DESC LIMIT 20
+""").fetchall())
+
+print("--- distinct SOURCE values that look like GCPIFD ---")
+print(con2.execute(f"""
+    SELECT SOURCE, LENGTH(SOURCE) AS len, COUNT(*) AS n
+    FROM read_parquet('{CARD_CACHE.as_posix()}')
+    WHERE SOURCE LIKE '%GCPIFD%'
+    GROUP BY 1,2 ORDER BY n DESC LIMIT 10
+""").fetchall())
+con2.close()
+# --- DEBUG: END TEMP -----------------------------------------------------------
+
 # IF NEWIC=' ' THEN NEWIC=OLDIC
 card_df = card_df.with_columns(
     pl.when(pl.col("NEWIC").is_null() | (pl.col("NEWIC") == ""))
@@ -312,6 +379,13 @@ CARD_KEEP_COLS = ["CARDNO", "MONITOR", "SOURCE", "CLOSECD",
 card_main = card_df.filter(
     pl.col("MONITOR").is_in(["Z", "I"]) | (pl.col("SOURCE") == "GCPIFD0209")
 ).select(CARD_KEEP_COLS)
+
+# DEBUG
+print("--- card_main breakdown by first letter ---")
+for letter in ["W", "X", "Y", "Z"]:
+    n = card_main.filter(pl.col("CUSTNAME").str.starts_with(letter)).height
+    print(f"  {letter} : {n}")
+print("  total :", card_main.height)
 
 # CARD1 : MONITOR IN ('Z')
 card1 = card_df.filter(pl.col("MONITOR").is_in(["Z"])).select(["NEWIC"])
@@ -415,8 +489,14 @@ def _merge_depo_pdepo(depo_df: pl.DataFrame, pdepo_df: pl.DataFrame) -> pl.DataF
     freshly-read value stands. That is a plain exact left join with a
     coalesce back to DEPO's own value on a miss.
     """
+    # depo_sorted  = depo_df.sort("ACCTNO")
+    # pdepo_sorted = pdepo_df.sort("ACCTNO")
+    
     depo_sorted  = depo_df.sort("ACCTNO")
-    pdepo_sorted = pdepo_df.sort("ACCTNO")
+    pdepo_sorted = (
+        pdepo_df.sort("ACCTNO")
+                 .unique(subset=["ACCTNO"], keep="first")
+    )
 
     asof_pre = depo_sorted.select(["ACCTNO"]).join_asof(
         pdepo_sorted.select(["ACCTNO", "PRE_CURBAL"]), on="ACCTNO", strategy="backward"
@@ -642,36 +722,66 @@ print(final_df.head(10))
 print("\nStep 12: Generating report...")
 
 PAGE_SIZE    = 60
-HEADER_LINES = 7   # 3 title lines + 1 blank + 2 column header lines + 1 separator
+HEADER_LINES = 9   # 3 title lines + 1 blank + 4 column header lines + 1 separator
 
 TITLE1 = "P U B L I C   B A N K   B E R H A D"
 TITLE2 = f"REPORT PERIOD : {RDTEB} - {RDTEA}"
 TITLE3 = "CARDHOLDERS DEPOSITS ACCOUNT"
 
-COL_HDR1 = (
+# ---------------------------------------------------------------------------
+# Header block: 4 column-header lines that mirror SAS PROC REPORT's
+# bottom-aligned stacking of wrapped headers.
+# ---------------------------------------------------------------------------
+COL_HDR_L1 = (
+    f"{'':<27s}  "
+    f"{'':<12s}  "
+    f"{'':<12s}  "
+    f"{'':<16s}  "
+    f"{'':>9s}  "
+    f"{'C':>1s}  "
+    f"{'':<2s}  "
+    f"{'':>13s}  "
+    f"{'':>15s}"
+)
+
+COL_HDR_L2 = (
+    f"{'':<27s}  "
+    f"{'':<12s}  "
+    f"{'':<12s}  "
+    f"{'':<16s}  "
+    f"{'CREDIT':>9s}  "
+    f"{'O':>1s}  "
+    f"{'':<2s}  "
+    f"{'':>13s}  "
+    f"{'':>15s}"
+)
+
+COL_HDR_L3 = (
+    f"{'':<27s}  "
+    f"{'':<12s}  "
+    f"{'':<12s}  "
+    f"{'':<16s}  "
+    f"{'CARD':>9s}  "
+    f"{'D':>1s}  "
+    f"{'TY':<2s}  "
+    f"{'':>13s}  "
+    f"{'':>15s}"
+)
+
+COL_HDR_L4 = (
     f"{'CUSTOMER NAME':<27s}  "
-    f"{'NEW ICNO':<15s}  "
-    f"{'OLD ICNO':<15s}  "
+    f"{'NEW ICNO':<12s}  "
+    f"{'OLD ICNO':<12s}  "
     f"{'CARD NUMBER':<16s}  "
-    f"{'CREDIT CARD LIMIT':>17s}  "
-    f"{'CO':>2s}  "
-    f"{'TY':>2s}  "
+    f"{'LIMIT':>9s}  "
+    f"{'E':>1s}  "
+    f"{'PE':<2s}  "
     f"{'ACCTNO':>13s}  "
     f"{'BALANCE':>15s}"
 )
-COL_HDR2 = (
-    f"{'':27s}  "
-    f"{'':15s}  "
-    f"{'':15s}  "
-    f"{'':16s}  "
-    f"{'':17s}  "
-    f"{'DE':>2s}  "
-    f"{'PE':>2s}  "
-    f"{'':13s}  "
-    f"{'':15s}"
-)
 
-SEPARATOR = "-" * 132
+SEPARATOR = " " + "-" * 123
+HEADER_LINES = 3 + 1 + 4 + 1   # 3 titles + blank + 4 col headers + dashes = 9
 
 
 def _page_header(new_page: bool) -> list:
@@ -681,9 +791,11 @@ def _page_header(new_page: bool) -> list:
         f" {TITLE2:^132s}",
         f" {TITLE3:^132s}",
         f" ",
-        f" {COL_HDR1}",
-        f" {COL_HDR2}",
-        f" {SEPARATOR}",
+        f" {COL_HDR_L1}",
+        f" {COL_HDR_L2}",
+        f" {COL_HDR_L3}",
+        f" {COL_HDR_L4}",
+        f"{SEPARATOR}",
     ]
 
 
@@ -700,40 +812,47 @@ def _fmt_comma15_2(val) -> str:
 
 def _fmt_apprlimt(val) -> str:
     if val is None:
-        return ".".rjust(17)
+        return ".".rjust(9)
     try:
-        return f"{float(val):>17,.0f}"
+        return f"{float(val):>9.0f}"
     except (TypeError, ValueError):
-        return ".".rjust(17)
+        return ".".rjust(9)
 
 
-def _detail_line(row: dict, asa: str = " ") -> str:
-    custname = str(row.get("CUSTNAME") or "")[:27]
-    newic    = str(row.get("NEWIC")    or "")[:15]
-    oldic    = str(row.get("OLDIC")    or "")[:15]
+def _detail_line(row: dict,
+                 asa: str = " ",
+                 hide_custname: bool = False) -> str:
+    custname = "" if hide_custname else str(row.get("CUSTNAME") or "")[:27]
+    newic    = str(row.get("NEWIC")    or "")[:12]
+    oldic    = str(row.get("OLDIC")    or "")[:12]
     cardno   = str(row.get("CARDNO")   or "")[:16]
     apprlimt = _fmt_apprlimt(row.get("APPRLIMT"))
-    monitor  = str(row.get("MONITOR")  or "")[:2]
+    monitor  = str(row.get("MONITOR")  or "")[:1]
     typ      = str(row.get("TYPE")     or "")[:2]
     acctno   = f"{int(row.get('ACCTNO') or 0):>13d}"
     curbal   = _fmt_comma15_2(row.get("CURBAL"))
 
     body = (
         f"{custname:<27s}  "
-        f"{newic:<15s}  "
-        f"{oldic:<15s}  "
+        f"{newic:<12s}  "
+        f"{oldic:<12s}  "
         f"{cardno:<16s}  "
         f"{apprlimt}  "
-        f"{monitor:>2s}  "
-        f"{typ:>2s}  "
+        f"{monitor:>1s}  "
+        f"{typ:<2s}  "
         f"{acctno}  "
         f"{curbal}"
     )
     return f"{asa}{body}"
 
 
+# DEBUG
+print(f"FINAL rows in dataframe : {final_df.height}")
+print(f"Last 5 CUSTNAME in data : {final_df.select('CUSTNAME').tail(5).to_series().to_list()}")
+
+
 output_lines = []
-lines_on_page = PAGE_SIZE   # force a header on the very first customer group
+lines_on_page = PAGE_SIZE
 first_page    = True
 all_rows      = list(final_df.iter_rows(named=True))
 
@@ -750,7 +869,7 @@ while i < len(all_rows):
         cust_group.append(all_rows[i])
         i += 1
 
-    rows_needed = len(cust_group) + 3   # detail rows + overline + summary + skip
+    rows_needed = len(cust_group) + 3    # detail rows + overline + sum + skip
 
     if lines_on_page + rows_needed > PAGE_SIZE:
         output_lines.extend(_page_header(not first_page))
@@ -759,26 +878,39 @@ while i < len(all_rows):
 
     cust_total = 0.0
     for j, row in enumerate(cust_group):
-        asa = "0" if (j == 0 and lines_on_page == HEADER_LINES) else " "
-        output_lines.append(_detail_line(row, asa))
+        hide = (j > 0)
+        output_lines.append(_detail_line(row, " ", hide_custname=hide))
         lines_on_page += 1
         try:
             cust_total += float(row.get("CURBAL") or 0)
         except (TypeError, ValueError):
             pass
 
-    output_lines.append(f" {'=' * 132}")
+    # SAS BREAK AFTER CUSTNAME / OL SUMMARIZE: overline is 15 dashes
+    # right-aligned in the CURBAL column.
+    overline = (
+        f"{'':<27s}  "
+        f"{'':<12s}  "
+        f"{'':<12s}  "
+        f"{'':<16s}  "
+        f"{'':>9s}  "
+        f"{'':>1s}  "
+        f"{'':<2s}  "
+        f"{'':>13s}  "
+        f"{'-' * 15:>15s}"
+    )
+    output_lines.append(f" {overline}")
     lines_on_page += 1
 
     sum_body = (
-        f"{'':27s}  "
-        f"{'':15s}  "
-        f"{'':15s}  "
-        f"{'':16s}  "
-        f"{'':17s}  "
-        f"{'':2s}  "
-        f"{'':2s}  "
-        f"{'':13s}  "
+        f"{'':<27s}  "
+        f"{'':<12s}  "
+        f"{'':<12s}  "
+        f"{'':<16s}  "
+        f"{'':>9s}  "
+        f"{'':>1s}  "
+        f"{'':<2s}  "
+        f"{'':>13s}  "
         f"{_fmt_comma15_2(cust_total)}"
     )
     output_lines.append(f" {sum_body}")
