@@ -193,3 +193,34 @@ output_lines.append(" ")   # COMPUTE AFTER; LINE ' '; ENDCOMP;
 
 
 
+def _detail_line(row: dict,
+                 asa: str = " ",
+                 hide_custname: bool = False) -> str:
+    custname = "" if hide_custname else str(row.get("CUSTNAME") or "")[:27]
+    newic    = str(row.get("NEWIC")    or "")[:12]
+    oldic    = str(row.get("OLDIC")    or "")[:12]
+    cardno   = str(row.get("CARDNO")   or "")[:16]
+    apprlimt = _fmt_apprlimt(row.get("APPRLIMT"))
+    monitor  = str(row.get("MONITOR")  or "")[:1]
+    typ      = str(row.get("TYPE")     or "")[:2]
+    acctno   = f"{int(row.get('ACCTNO') or 0):>13d}"
+    curbal   = _fmt_comma15_2(row.get("CURBAL"))
+
+    body = (
+        f"{custname:<27s}  "
+        f"{newic:<12s}  "
+        f"{oldic:<12s}  "
+        f"{cardno:<16s}  "
+        f"{apprlimt}  "
+        f"{monitor:>1s}  "
+        f"{typ:<2s}  "
+        f"{acctno}  "
+        f"{curbal}"
+    )
+    return f"{asa}{body}"
+
+
+
+
+PAGE_SIZE    = 60
+HEADER_LINES = 9   # 3 title lines + 1 blank + 4 column header lines + 1 separator
