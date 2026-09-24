@@ -1,6 +1,5 @@
-print("=== FD file — records in [1.595B, 1.596B] ===")
-around = fd_bal.filter(
-    (pl.col("ACCTNO") >= 1595000000) & (pl.col("ACCTNO") <= 1596000000)
-).sort("ACCTNO")
-print("count:", around.height)
-print(around.to_pandas().to_string())
+=== FD file — records in [1.595B, 1.596B] ===
+count: 0
+Empty DataFrame
+Columns: [ACCTNO, CURBAL]
+Index: []
