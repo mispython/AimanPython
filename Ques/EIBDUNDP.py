@@ -238,27 +238,64 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     )
 
 
+# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+#     writer = None
+#     schema = None
+#     total = 0
+
+#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+#     for chunk in reader:
+#         if schema is None:
+#             fields = []
+#             for col, dtype in chunk.dtypes.items():
+#                 if dtype == 'object':
+#                     pa_type = pa.string()
+#                 elif pd.api.types.is_integer_dtype(dtype):
+#                     pa_type = pa.int64()
+#                 elif pd.api.types.is_float_dtype(dtype):
+#                     pa_type = pa.float64()
+#                 else:
+#                     pa_type = pa.from_numpy_dtype(dtype)
+#                 fields.append(pa.field(col, pa_type))
+#             schema = pa.schema(fields)
+#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+
+#         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+#         writer.write_table(table)
+#         total += len(chunk)
+#         del chunk, table
+#         gc.collect()
+
+#     if writer:
+#         writer.close()
+#     print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     writer = None
     schema = None
     total = 0
 
+    def _build_schema(df: "pd.DataFrame") -> pa.Schema:
+        fields = []
+        for col, dtype in df.dtypes.items():
+            if dtype == "object":
+                pa_type = pa.string()
+            elif pd.api.types.is_integer_dtype(dtype):
+                pa_type = pa.int64()
+            elif pd.api.types.is_float_dtype(dtype):
+                pa_type = pa.float64()
+            else:
+                pa_type = pa.from_numpy_dtype(dtype)
+            fields.append(pa.field(col, pa_type))
+        return pa.schema(fields)
+    
     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
     for chunk in reader:
         if schema is None:
-            fields = []
-            for col, dtype in chunk.dtypes.items():
-                if dtype == 'object':
-                    pa_type = pa.string()
-                elif pd.api.types.is_integer_dtype(dtype):
-                    pa_type = pa.int64()
-                elif pd.api.types.is_float_dtype(dtype):
-                    pa_type = pa.float64()
-                else:
-                    pa_type = pa.from_numpy_dtype(dtype)
-                fields.append(pa.field(col, pa_type))
-            schema = pa.schema(fields)
+            schema = _build_schema(chunk)
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
 
         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
@@ -267,8 +304,17 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
         del chunk, table
         gc.collect()
 
-    if writer:
+    if writer is not None:
         writer.close()
+    else:
+        # Source file has 0 rows -- the chunked reader yielded nothing.
+        # Read once without chunksize to obtain the schema, then write a
+        # zero-row parquet so downstream read_parquet() finds the file.
+        empty = pd.read_sas(sas_path, encoding="latin1")
+        schema = _build_schema(empty)
+        empty_table = pa.Table.from_pandas(empty, schema=schema, preserve_index=False)
+        pq.write_table(empty_table, cache_path)
+
     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
@@ -364,6 +410,16 @@ print(con2.execute(f"""
 con2.close()
 # --- DEBUG: END TEMP -----------------------------------------------------------
 
+# DEBUG
+zhong = ['040223101535', '940614075809', 'E64283528',
+         'EF1567003', 'EJ8129732', 'EK9320493']
+
+raw = pl.read_parquet(CARD_CACHE)
+sub = raw.filter(
+    pl.col("NEWIC").cast(pl.Utf8).str.strip_chars().is_in(zhong)
+)
+print(sub.select(["NEWIC", "MONITOR", "SOURCE", "ACCTYPE", "CLOSECD"]).to_pandas().to_string())
+
 # IF NEWIC=' ' THEN NEWIC=OLDIC
 card_df = card_df.with_columns(
     pl.when(pl.col("NEWIC").is_null() | (pl.col("NEWIC") == ""))
@@ -455,6 +511,9 @@ print(f"  CISCA rows : {len(cisca_df):,}")
 print(f"  CISSA rows : {len(cissa_df):,}")
 print(f"  CISFD rows : {len(cisfd_df):,}")
 
+# DEBUG
+print("  ZHONG NEWICs in cissa_df :", cissa_df.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
+
 # ============================================================================
 # HELPERS: SAS "MERGE X(IN=A) BAL(IN=B); BY ACCTNO; IF A;" WHERE BAL
 # CONTRIBUTES ONLY A VALUE COLUMN THAT DOESN'T EXIST IN X.
@@ -468,9 +527,20 @@ print(f"  CISFD rows : {len(cisfd_df):,}")
 # SAS MERGE artifact, and it is reproduced exactly (not "fixed" to 0/
 # missing) via a backward as-of join on the sorted ACCTNO key.
 # ============================================================================
+# def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
+#     base_sorted  = base_df.sort("ACCTNO")
+#     value_sorted = value_df.sort("ACCTNO")
+#     return base_sorted.join_asof(value_sorted.select(["ACCTNO", value_col]),
+#                                   on="ACCTNO", strategy="backward")
+
+
 def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
     base_sorted  = base_df.sort("ACCTNO")
-    value_sorted = value_df.sort("ACCTNO")
+    value_sorted = (
+        value_df
+        .sort("ACCTNO", maintain_order=True)
+        .unique(subset=["ACCTNO"], keep="first")
+    )
     return base_sorted.join_asof(value_sorted.select(["ACCTNO", value_col]),
                                   on="ACCTNO", strategy="backward")
 
@@ -574,6 +644,9 @@ gc.collect()
 
 print(f"  SA rows : {len(sa_df):,}   CA rows : {len(ca_df):,}   FD rows : {len(fd_df):,}")
 
+# DEBUG
+print("  ZHONG NEWICs in sa_df :", sa_df.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
+
 # ============================================================================
 # STEP 7: DATA DEPO; SET SA CA FD;  DATA PDEPO; SET PSA PCA PFD;
 # PROC SORT DATA=DEPO;  BY ACCTNO;
@@ -599,6 +672,18 @@ depo_final = depo_final.with_columns(
 )
 
 print(f"  DEPO rows : {len(depo_final):,}")
+
+# DEBUG
+_sub = depo_final.filter(pl.col("NEWIC") == "EK9320493").select(
+    ["ACCTNO", "TYPE", "CURBAL", "PRE_CURBAL"]
+).sort(["ACCTNO"])
+print("=== depo_final rows for EK9320493 ===")
+print(_sub.to_pandas().to_string())
+print("count:", _sub.height)
+print("CURBAL sum:", _sub["CURBAL"].sum())
+
+# DEBUG
+print("  ZHONG NEWICs in depo_final :", depo_final.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
 
 del pdepo_df
 gc.collect()
@@ -627,6 +712,9 @@ con.close()
 gc.collect()
 
 print(f"  DEPO1 rows : {len(depo1_df):,}")
+
+# DEBUG
+print("  ZHONG NEWICs in depo1_df :", depo1_df.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
 
 # ============================================================================
 # STEP 9: DATA DEPO2 DEPO3; SET DEPO1;
@@ -657,10 +745,24 @@ depo3_df = (
     .select([pl.col("NEWIC"), pl.col("CURBAL").alias("SUMBAL")])
 )
 
-del depo1_df
+# DEBUG
+print(f"  DEPO2 rows : {len(depo2_df):,}   DEPO3 rows : {len(depo3_df):,}")
+
+# DEBUG
+_zids = ['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493']
+print("  ZHONG in card1    :", card1.filter(pl.col("NEWIC").is_in(_zids)).height)
+print("  ZHONG in depo2_df :", depo2_df.filter(pl.col("NEWIC").is_in(_zids)).select("NEWIC").unique().to_series().to_list())
+print("  ZHONG in depo3_df :", depo3_df.filter(pl.col("NEWIC").is_in(_zids)).select("NEWIC").unique().to_series().to_list())
+print("  ZHONG depo1 PERCEN:")
+print(depo1_df.filter(pl.col("NEWIC").is_in(_zids)).select(["NEWIC", "PRE_CURBAL", "CURBAL", "WITHDR", "PERCEN"]))
+
+# del depo1_df
 gc.collect()
 
-print(f"  DEPO2 rows : {len(depo2_df):,}   DEPO3 rows : {len(depo3_df):,}")
+# # Ori
+# print(f"  DEPO2 rows : {len(depo2_df):,}   DEPO3 rows : {len(depo3_df):,}")
+
+
 
 # ============================================================================
 # STEP 10: DATA DEPO3A; MERGE DEPO3(IN=A) CARD1(IN=B); BY NEWIC; IF A AND B;
@@ -695,11 +797,20 @@ print("\nStep 11: Building FINAL dataset...")
 depo_acct_df = pl.concat([sa_df, ca_df, fd_df])
 final_df = depo_acct_df.join(tot_df, on="NEWIC", how="inner").sort(["CUSTNAME", "ACCTNO"])
 
+# DEBUG
+zhong_card = card_main.filter(pl.col("CUSTNAME").str.contains("ZHONG"))
+zhong_tot  = tot_df.filter(pl.col("NEWIC").is_in(zhong_card.select("NEWIC").to_series().to_list()))
+zhong_final= final_df.filter(pl.col("CUSTNAME").str.contains("ZHONG"))
+print("ZHONG in card_main :", zhong_card.height)
+print("ZHONG in tot_df    :", zhong_tot.height)
+print("ZHONG in final_df  :", zhong_final.height)
+print("ZHONG NEWICs in card_main :", card_main.filter(pl.col("CUSTNAME").str.contains("ZHONG")).select("NEWIC").unique().to_series().to_list())
+
 del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, depo_acct_df, tot_df, depo_final, depo_df
 gc.collect()
 
 print(f"  FINAL rows : {len(final_df):,}")
-print(final_df.head(10))
+# print(final_df.head(10))
 
 # ============================================================================
 # STEP 12: PROC REPORT  (ASA carriage control, LRECL=133, RECFM=FB)
