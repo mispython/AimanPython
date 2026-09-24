@@ -1,29 +1,17 @@
-import pandas as pd
-from pathlib import Path
+ls -la  /stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat
+stat   /stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat
 
-sas_path = Path("/stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat")
 
-reader = pd.read_sas(sas_path, encoding="latin1", chunksize=100_000)
-chunk = next(reader)
 
-print("Columns :", list(chunk.columns))
-print()
-print("dtypes  :")
-print(chunk.dtypes)
-print()
-print("First chunk rows:", len(chunk))
-print()
 
-for col in ["MONITOR", "SOURCE", "CLOSECD", "ACCTYPE", "CARDHOLD"]:
-    print(f"--- {col} ---")
-    if col not in chunk.columns:
-        print("  COLUMN NOT FOUND")
-        print()
-        continue
-    s = chunk[col]
-    print("  dtype           :", s.dtype)
-    print("  notna count     :", s.notna().sum(), "/", len(s))
-    print("  sample values   :", s.dropna().head(5).tolist())
-    print("  top 5 value_counts:")
-    print(s.value_counts(dropna=False).head(5).to_string())
-    print()
+from sas7bdat import SAS7BDAT
+
+path = "/stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat"
+
+with SAS7BDAT(path) as reader:
+    df = reader.to_data_frame()
+
+print("shape        :", df.shape)
+print("MONITOR vc   :", df["MONITOR"].value_counts(dropna=False).head(10).to_dict())
+print("SOURCE vc    :", df["SOURCE"].value_counts(dropna=False).head(5).to_dict())
+print("CLOSECD vc   :", df["CLOSECD"].value_counts(dropna=False).head(5).to_dict())
