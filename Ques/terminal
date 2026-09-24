@@ -1,3 +1,43 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py
+Step 1: Deriving report date...
+  REPTDATE : 2026-09-15  (WK=02)
+  RDTEA    : 23/09/26   RDTEB : 22/09/26
+  REPTYEAR=26  REPTMON=09  REPTDAY=15  NOWK=02
+  CARD file: host_unicard260902.sas7bdat
+  Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
+
+Step 2: Caching input SAS datasets to Parquet...
+  [DEPO_SAVING] Converting sa260923.sas7bdat -> sa260923.parquet ...
+  [DEPO_SAVING] Done - 4,283,748 rows cached.
+  [DEPO_CURRENT] Converting ca260923.sas7bdat -> ca260923.parquet ...
+  [DEPO_CURRENT] Done - 855,633 rows cached.
+  [DEPO_FD] Converting fd260923.sas7bdat -> fd260923.parquet ...
+  [DEPO_FD] Done - 1,205,423 rows cached.
+  [IDEPO_SAVING] Converting isa260923.sas7bdat -> isa260923.parquet ...
+  [IDEPO_SAVING] Done - 2,235,001 rows cached.
+  [IDEPO_CURRENT] Converting ica260923.sas7bdat -> ica260923.parquet ...
+  [IDEPO_CURRENT] Done - 155,246 rows cached.
+  [IDEPO_FD] Converting ifd260923.sas7bdat -> ifd260923.parquet ...
+  [IDEPO_FD] Done - 223,128 rows cached.
+  [PDEPO_SAVING] Converting sa260922.sas7bdat -> sa260922.parquet ...
+  [PDEPO_SAVING] Done - 4,283,021 rows cached.
+  [PDEPO_CURRENT] Converting ca260922.sas7bdat -> ca260922.parquet ...
+  [PDEPO_CURRENT] Done - 855,524 rows cached.
+  [PDEPO_FD] Converting fd260922.sas7bdat -> fd260922.parquet ...
+  [PDEPO_FD] Done - 1,205,199 rows cached.
+  [PIDEPO_SAVING] Converting isa260922.sas7bdat -> isa260922.parquet ...
+  [PIDEPO_SAVING] Done - 2,234,544 rows cached.
+  [PIDEPO_CURRENT] Converting ica260922.sas7bdat -> ica260922.parquet ...
+  [PIDEPO_CURRENT] Done - 155,207 rows cached.
+  [PIDEPO_FD] Converting ifd260922.sas7bdat -> ifd260922.parquet ...
+  [PIDEPO_FD] Done - 223,095 rows cached.
+  [CARD] Converting host_unicard260902.sas7bdat -> host_unicard260902.parquet ...
+  [CARD] Done - 4,361,160 rows cached.
+  [CISDP] Converting cisbext_dp_deposit.sas7bdat -> cisbext_dp_deposit.parquet ...
+  [CISDP] Done - 1,250,295 rows cached.
+  [CISSAFD] Converting crm_cisbext_deposit.sas7bdat -> crm_cisbext_deposit.parquet ...
+  [CISSAFD] Done - 11,013,394 rows cached.
+
 Step 3: Processing CARD file...
   CARD raw rows after filter : 1,297,485
 --- distinct MONITOR values (top 20) ---
@@ -16,3 +56,77 @@ Step 3: Processing CARD file...
   total : 18810
   CARD  rows : 13,754
   CARD1 rows : 5,187
+
+Step 4: Building CISCA / CISSA / CISFD...
+  CISCA rows : 8,646
+  CISSA rows : 32,910
+  CISFD rows : 35,280
+  ZHONG NEWICs in cissa_df : ['EF1567003', '940614075809', 'EJ8129732', 'EK9320493', '040223101535']
+
+Step 5: Building PSA / PCA / PFD (previous-period balances)...
+  PSA rows : 32,910   PCA rows : 8,646   PFD rows : 35,280
+
+Step 6: Building SA / CA / FD (current-period balances)...
+  SA rows : 32,910   CA rows : 8,646   FD rows : 35,280
+  ZHONG NEWICs in sa_df : ['940614075809', 'EJ8129732', '040223101535', 'EF1567003', 'EK9320493']
+
+Step 7: Combining DEPO / PDEPO and calculating withdrawals...
+  DEPO rows : 76,836
+=== depo_final rows for EK9320493 ===
+        ACCTNO TYPE     CURBAL  PRE_CURBAL
+0   1310432535   FD   30778.81    30778.81
+1   1599500135   FD  497826.19   497826.19
+2   1815007914   FD    4538.00     4538.00
+3   1835254621   FD   50000.00    50000.00
+4   3213272209   CA     632.63      632.63
+5   3218808633   CA   20306.62    20306.62
+6   6370055712   SA   17737.17    17737.17
+7   6488702305   SA    4734.82     4734.82
+8   6488702402   SA    4734.82     4734.82
+9   6598003207   SA      50.00       50.00
+10  6900888413   SA    5960.54     5423.64
+count: 11
+CURBAL sum: 637299.6
+  ZHONG NEWICs in depo_final : ['040223101535', 'EK9320493', 'EJ8129732', 'EF1567003', '940614075809']
+
+Step 8: Summarising DEPO by NEWIC...
+  DEPO1 rows : 13,491
+  ZHONG NEWICs in depo1_df : ['EF1567003', 'EJ8129732', 'EK9320493', '040223101535', '940614075809']
+
+Step 9: Splitting into DEPO2 / DEPO3...
+  DEPO2 rows : 14   DEPO3 rows : 8,556
+  ZHONG in card1    : 1
+  ZHONG in depo2_df : []
+  ZHONG in depo3_df : ['EJ8129732', '040223101535', 'EF1567003', '940614075809']
+  ZHONG depo1 PERCEN:
+shape: (5, 5)
+┌──────────────┬────────────┬──────────┬────────┬──────────┐
+│ NEWIC        ┆ PRE_CURBAL ┆ CURBAL   ┆ WITHDR ┆ PERCEN   │
+│ ---          ┆ ---        ┆ ---      ┆ ---    ┆ ---      │
+│ str          ┆ f64        ┆ f64      ┆ f64    ┆ f64      │
+╞══════════════╪════════════╪══════════╪════════╪══════════╡
+│ EF1567003    ┆ 47142.84   ┆ 47133.39 ┆ 9.45   ┆ 0.020045 │
+│ EK9320493    ┆ 636762.7   ┆ 637299.6 ┆ 0.0    ┆ 0.0      │
+│ EJ8129732    ┆ 55140.19   ┆ 55140.19 ┆ 0.0    ┆ 0.0      │
+│ 940614075809 ┆ 45943.37   ┆ 45840.57 ┆ 102.8  ┆ 0.223754 │
+│ 040223101535 ┆ 18071.53   ┆ 18071.53 ┆ 0.0    ┆ 0.0      │
+└──────────────┴────────────┴──────────┴────────┴──────────┘
+
+Step 10: Building TOT...
+  TOT rows : 1,509
+
+Step 11: Building FINAL dataset...
+ZHONG in card_main : 6
+ZHONG in tot_df    : 0
+ZHONG in final_df  : 0
+ZHONG NEWICs in card_main : ['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493']
+  FINAL rows : 8,463
+
+Step 12: Generating report...
+FINAL rows in dataframe : 8463
+Last 5 CUSTNAME in data : ['YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI']
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
+  Total lines    : 15,490
+
+EIBDUNDP complete.
