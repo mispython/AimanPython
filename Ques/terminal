@@ -1,3 +1,31 @@
+Step 6: Building SA / CA / FD (current-period balances)...
+=== fd_bal rows for probed ACCTNOs ===
+Empty DataFrame
+Columns: [ACCTNO, CURBAL]
+Index: []
+nearest-count: 6582
+nearest head:        ACCTNO    CURBAL
+0  1814000306  80000.00
+1  1814000500  34761.34
+2  1814001010  31573.21
+3  1814001107  40000.00
+4  1814001204  10000.00
+nearest tail:        ACCTNO     CURBAL
+0  1815998410    7928.67
+1  1815999211       0.00
+2  1815999308  181319.69
+3  1815999502       0.00
+4  1815999830   43851.80
+=== fd_df result for probed ACCTNOs ===
+       ACCTNO      NEWIC     CURBAL
+0  1599500135  EK9320493  497826.19
+1  1815007914  EK9320493    4538.00
+  SA rows : 32,910   CA rows : 8,646   FD rows : 35,280
+  ZHONG NEWICs in sa_df : ['940614075809', '040223101535', 'EK9320493', 'EF1567003', 'EJ8129732']
+
+
+
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py
 Step 1: Deriving report date...
   REPTDATE : 2026-09-15  (WK=02)
