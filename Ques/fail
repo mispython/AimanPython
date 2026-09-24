@@ -1,6 +1,25 @@
-# Period-boundary key  → used ONLY for the weekly CARD member
-PERIOD_YYMMDD = f"{REPTYEAR}{REPTMON}{REPTDAY}"          # '260915'  ← NOT for daily files
+# --- TEMP DIAGNOSTIC ----------------------------------------------------
+con2 = duckdb.connect()
+print("--- distinct MONITOR values (top 20) ---")
+print(con2.execute(f"""
+    SELECT MONITOR, LENGTH(MONITOR) AS len,
+           ASCII(SUBSTR(MONITOR,1,1)) AS a1,
+           ASCII(SUBSTR(MONITOR,2,1)) AS a2,
+           COUNT(*) AS n
+    FROM read_parquet('{CARD_CACHE.as_posix()}')
+    GROUP BY 1,2,3,4 ORDER BY n DESC LIMIT 20
+""").fetchall())
 
-# Daily data keys → used for DEPO/IDEPO/PDEPO/PIDEPO
-CUR_DATE_STR  = _rdate.strftime("%y%m%d")                # '260923'  ← today's daily file
-PREV_DATE_STR = _rdate1.strftime("%y%m%d")               # '260922'  ← yesterday's daily file
+print("--- distinct SOURCE values that look like GCPIFD ---")
+print(con2.execute(f"""
+    SELECT SOURCE, LENGTH(SOURCE) AS len, COUNT(*) AS n
+    FROM read_parquet('{CARD_CACHE.as_posix()}')
+    WHERE SOURCE LIKE '%GCPIFD%'
+    GROUP BY 1,2 ORDER BY n DESC LIMIT 10
+""").fetchall())
+con2.close()
+# --- END TEMP -----------------------------------------------------------
+
+
+
+
