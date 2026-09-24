@@ -1,21 +1,10 @@
-import pyreadstat
-import pandas as pd
-from pathlib import Path
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
+=== pyreadstat read of fd260923.sas7bdat ===
+total rows : 1205423
+              ACCTNO     CURBAL
+387383  1.311044e+09  390770.86
 
-F = Path("/stgsrcsys/host/uat/AII/EIBDUNDP/fd260923.sas7bdat")
-probe = [1311043808, 1595256021, 1599500135, 1815007914]
-
-print("=== pyreadstat read of", F.name, "===")
-df, _ = pyreadstat.read_sas7bdat(str(F))
-print("total rows :", len(df))
-df["ACCTNO_I"] = df["ACCTNO"].astype("float").astype("int64")
-sub = df[df["ACCTNO_I"].isin(probe)]
-print(sub[["ACCTNO", "CURBAL"]].to_string())
-
-print()
-print("=== pandas read of", F.name, "===")
-df2 = pd.read_sas(F, encoding="latin1")
-print("total rows :", len(df2))
-df2["ACCTNO_I"] = df2["ACCTNO"].astype("float").astype("int64")
-sub2 = df2[df2["ACCTNO_I"].isin(probe)]
-print(sub2[["ACCTNO", "CURBAL"]].to_string())
+=== pandas read of fd260923.sas7bdat ===
+total rows : 1205423
+              ACCTNO     CURBAL
+387383  1.311044e+09  390770.86
