@@ -1,7 +1,195 @@
-def _merge_depo_pdepo(depo_df: pl.DataFrame, pdepo_df: pl.DataFrame) -> pl.DataFrame:
-    depo_sorted  = depo_df.sort("ACCTNO")
-    pdepo_sorted = (
-        pdepo_df.sort("ACCTNO")
-                 .unique(subset=["ACCTNO"], keep="first")
+def _fmt_apprlimt(val) -> str:
+    if val is None:
+        return ".".rjust(9)
+    try:
+        return f"{float(val):>9.0f}"
+    except (TypeError, ValueError):
+        return ".".rjust(9)
+
+
+
+
+# ---------------------------------------------------------------------------
+# Header block: 4 column-header lines that mirror SAS PROC REPORT's
+# bottom-aligned stacking of wrapped headers.
+# ---------------------------------------------------------------------------
+COL_HDR_L1 = (
+    f"{'':<27s}  "
+    f"{'':<12s}  "
+    f"{'':<12s}  "
+    f"{'':<16s}  "
+    f"{'':>9s}  "
+    f"{'C':>1s}  "
+    f"{'':<2s}  "
+    f"{'':>13s}  "
+    f"{'':>15s}"
+)
+
+COL_HDR_L2 = (
+    f"{'':<27s}  "
+    f"{'':<12s}  "
+    f"{'':<12s}  "
+    f"{'':<16s}  "
+    f"{'CREDIT':>9s}  "
+    f"{'O':>1s}  "
+    f"{'':<2s}  "
+    f"{'':>13s}  "
+    f"{'':>15s}"
+)
+
+COL_HDR_L3 = (
+    f"{'':<27s}  "
+    f"{'':<12s}  "
+    f"{'':<12s}  "
+    f"{'':<16s}  "
+    f"{'CARD':>9s}  "
+    f"{'D':>1s}  "
+    f"{'TY':<2s}  "
+    f"{'':>13s}  "
+    f"{'':>15s}"
+)
+
+COL_HDR_L4 = (
+    f"{'CUSTOMER NAME':<27s}  "
+    f"{'NEW ICNO':<12s}  "
+    f"{'OLD ICNO':<12s}  "
+    f"{'CARD NUMBER':<16s}  "
+    f"{'LIMIT':>9s}  "
+    f"{'E':>1s}  "
+    f"{'PE':<2s}  "
+    f"{'ACCTNO':>13s}  "
+    f"{'BALANCE':>15s}"
+)
+
+SEPARATOR = " " + "-" * 123
+HEADER_LINES = 3 + 1 + 4 + 1   # 3 titles + blank + 4 col headers + dashes = 9
+
+
+def _page_header(new_page: bool) -> list:
+    asa = "1" if new_page else " "
+    return [
+        f"{asa}{TITLE1:^132s}",
+        f" {TITLE2:^132s}",
+        f" {TITLE3:^132s}",
+        f" ",
+        f" {COL_HDR_L1}",
+        f" {COL_HDR_L2}",
+        f" {COL_HDR_L3}",
+        f" {COL_HDR_L4}",
+        f"{SEPARATOR}",
+    ]
+
+
+
+
+def _fmt_comma15_2(val) -> str:
+    if val is None:
+        return ".".rjust(15)
+    try:
+        return f"{float(val):>15,.2f}"
+    except (TypeError, ValueError):
+        return ".".rjust(15)
+
+
+def _detail_line(row: dict,
+                 asa: str = " ",
+                 hide_custname: bool = False) -> str:
+    custname = "" if hide_custname else str(row.get("CUSTNAME") or "")[:27]
+    newic    = str(row.get("NEWIC")    or "")[:12]
+    oldic    = str(row.get("OLDIC")    or "")[:12]
+    cardno   = str(row.get("CARDNO")   or "")[:16]
+    apprlimt = _fmt_apprlimt(row.get("APPRLIMT"))
+    monitor  = str(row.get("MONITOR")  or "")[:1]
+    typ      = str(row.get("TYPE")     or "")[:2]
+    acctno   = f"{int(row.get('ACCTNO') or 0):>13d}"
+    curbal   = _fmt_comma15_2(row.get("CURBAL"))
+
+    body = (
+        f"{custname:<27s}  "
+        f"{newic:<12s}  "
+        f"{oldic:<12s}  "
+        f"{cardno:<16s}  "
+        f"{apprlimt}  "
+        f"{monitor:>1s}  "
+        f"{typ:<2s}  "
+        f"{acctno}  "
+        f"{curbal}"
     )
-    ...
+    return f"{asa}{body}"
+
+
+
+
+output_lines = []
+lines_on_page = PAGE_SIZE
+first_page    = True
+all_rows      = list(final_df.iter_rows(named=True))
+
+if not all_rows:
+    output_lines.extend(_page_header(True))
+    lines_on_page = HEADER_LINES
+
+i = 0
+while i < len(all_rows):
+    cust = str(all_rows[i].get("CUSTNAME") or "")
+
+    cust_group = []
+    while i < len(all_rows) and str(all_rows[i].get("CUSTNAME") or "") == cust:
+        cust_group.append(all_rows[i])
+        i += 1
+
+    rows_needed = len(cust_group) + 3    # detail rows + overline + sum + skip
+
+    if lines_on_page + rows_needed > PAGE_SIZE:
+        output_lines.extend(_page_header(not first_page))
+        first_page    = False
+        lines_on_page = HEADER_LINES
+
+    cust_total = 0.0
+    for j, row in enumerate(cust_group):
+        hide = (j > 0)
+        output_lines.append(_detail_line(row, " ", hide_custname=hide))
+        lines_on_page += 1
+        try:
+            cust_total += float(row.get("CURBAL") or 0)
+        except (TypeError, ValueError):
+            pass
+
+    # SAS BREAK AFTER CUSTNAME / OL SUMMARIZE: overline is 15 dashes
+    # right-aligned in the CURBAL column.
+    overline = (
+        f"{'':<27s}  "
+        f"{'':<12s}  "
+        f"{'':<12s}  "
+        f"{'':<16s}  "
+        f"{'':>9s}  "
+        f"{'':>1s}  "
+        f"{'':<2s}  "
+        f"{'':>13s}  "
+        f"{'-' * 15:>15s}"
+    )
+    output_lines.append(f" {overline}")
+    lines_on_page += 1
+
+    sum_body = (
+        f"{'':<27s}  "
+        f"{'':<12s}  "
+        f"{'':<12s}  "
+        f"{'':<16s}  "
+        f"{'':>9s}  "
+        f"{'':>1s}  "
+        f"{'':<2s}  "
+        f"{'':>13s}  "
+        f"{_fmt_comma15_2(cust_total)}"
+    )
+    output_lines.append(f" {sum_body}")
+    lines_on_page += 1
+
+    output_lines.append(" ")
+    lines_on_page += 1
+
+output_lines.append(" ")   # COMPUTE AFTER; LINE ' '; ENDCOMP;
+
+
+
+
