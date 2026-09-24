@@ -1,12 +1,5 @@
-def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
-    base_sorted = base_df.sort("ACCTNO")
-    value_dedup = (
-        value_df
-        .sort("ACCTNO", maintain_order=True)
-        .unique(subset=["ACCTNO"], keep="first")
-    )
-    joined = base_sorted.join(
-        value_dedup.select(["ACCTNO", value_col]),
-        on="ACCTNO", how="left",
-    )
-    return joined.with_columns(pl.col(value_col).fill_null(0.0))
+_probe = [1599500135, 1815007914, 1595256021, 1311043808]
+print("=== fd_bal rows for probed ACCTNOs ===")
+print(fd_bal.filter(pl.col("ACCTNO").is_in(_probe)).to_pandas().to_string())
+print("=== fd_df result for probed ACCTNOs ===")
+print(fd_df.filter(pl.col("ACCTNO").is_in(_probe)).select(["ACCTNO", "NEWIC", "CURBAL"]).to_pandas().to_string())
