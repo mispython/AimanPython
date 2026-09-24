@@ -1,65 +1,210 @@
 def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
-    base_sorted = base_df.sort("ACCTNO")
-    value_dedup = (
+    """MERGE BASE(IN=A) VAL(IN=B); BY ACCTNO; IF A;
+    A variable that exists only on the B side is retained across iterations,
+    so an unmatched ACCTNO inherits the value of the nearest lower ACCTNO in B
+    (backward as-of). Accounts below the first B key stay missing (None)."""
+    base_sorted = base_df.sort("ACCTNO", maintain_order=True)
+    value_sorted = (
         value_df
         .sort("ACCTNO", maintain_order=True)
-        .unique(subset=["ACCTNO"], keep="first")
+        .unique(subset=["ACCTNO"], keep="last", maintain_order=True)
+        .select(["ACCTNO", value_col])
     )
-    # SAS MERGE-by-ACCTNO retain rule: a B-side value column is carried
-    # forward from the closest previous (smaller) ACCTNO when the current
-    # ACCTNO has no exact match; only null when nothing precedes it.
-    return base_sorted.join_asof(
-        value_dedup.select(["ACCTNO", value_col]),
-        on="ACCTNO", strategy="backward",
-    )
+    return base_sorted.join_asof(value_sorted, on="ACCTNO", strategy="backward")
 
 
 
 
-f"{'ACCTNO':>13s}  "      # current
-f"{'ACCTNO':^13s}  "      # correct
+_withdr = pl.col("PRE_CURBAL") - pl.col("CURBAL")
+depo_final = depo_final.with_columns(
+    pl.when(_withdr.is_null() | (_withdr < 0))
+    .then(0.0)
+    .otherwise(_withdr)
+    .alias("WITHDR")
+)
 
 
 
 
-# _page_header
-f"{asa} {TITLE1:^131s}"      # was f"{asa}{TITLE1:^132s}"
-f"  {TITLE2:^131s}"          # was f" {TITLE2:^132s}"
-...
-f"  {COL_HDR_L4}"            # was f" {COL_HDR_L4}"
-"  " + "-" * 123             # was " " + "-" * 123
+depo_sorted  = depo_df.sort("ACCTNO", maintain_order=True)
 
-# _detail_line
-return f"{asa} {body}"       # was f"{asa}{body}"
+
+
+
+pdepo_sorted = (
+    pdepo_df.sort("ACCTNO", maintain_order=True)
+             .unique(subset=["ACCTNO"], keep="last", maintain_order=True)
+)
+
+
+
+
+final_df = depo_acct_df.join(tot_df, on="NEWIC", how="inner").sort(["CUSTNAME", "ACCTNO"], maintain_order=True)
 
 
 
 
 def _fmt_comma15_2(val) -> str:
-    if val is None:
-        return f"{0.0:>15,.2f}"        # "0.00" right-justified in 15
-    ...
+    """COMMA15.2 with OPTIONS MISSING=0: a missing value prints as '0'."""
+    if val is None or val != val:
+        return "0".rjust(15)
+    try:
+        return f"{float(val):>15,.2f}"
+    except (TypeError, ValueError):
+        return "0".rjust(15)
+
+
 def _fmt_apprlimt(val) -> str:
-    if val is None:
-        return f"{0.0:>9.0f}"          # "0" right-justified in 9
-    ...
+    if val is None or val != val:
+        return "0".rjust(9)
+    try:
+        return f"{float(val):>9.0f}"
+    except (TypeError, ValueError):
+        return "0".rjust(9)
 
 
 
 
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
-ca260922.parquet                                    rows=   855,524  CURBAL=8
-ca260923.parquet                                    rows=   855,633  CURBAL=9
-cisbext_dp_deposit.parquet                          rows= 1,250,295  -
-crm_cisbext_deposit.parquet                         rows=11,013,394  EXACT=2  NEAR=2
-fd260922.parquet                                    rows= 1,205,199  CURBAL=6
-fd260923.parquet                                    rows= 1,205,423  CURBAL=6
-host_unicard260902.parquet                          rows= 4,361,160  CURBAL=4
-ica260922.parquet                                   rows=   155,207  CURBAL=2
-ica260923.parquet                                   rows=   155,246  -
-ifd260922.parquet                                   rows=   223,095  CURBAL=1
-ifd260923.parquet                                   rows=   223,128  CURBAL=1
-isa260922.parquet                                   rows= 2,234,544  CURBAL=13
-isa260923.parquet                                   rows= 2,235,001  CURBAL=11
-sa260922.parquet                                    rows= 4,283,021  CURBAL=36
-sa260923.parquet                                    rows= 4,283,748  CURBAL=39
+PAGE_SIZE   = 60
+LINE_WIDTH  = 133
+INDENT      = "  "
+BODY_WIDTH  = 123
+BREAK_LINES = 3      # overline + sum line + skip line (kept together on one page)
+
+TITLE1 = "P U B L I C   B A N K   B E R H A D"
+TITLE2 = f"REPORT PERIOD :{RDTEB} - {RDTEA}"     # SAS concatenates with no space after ':'
+TITLE3 = "CARDHOLDERS DEPOSITS ACCOUNT"
+
+COL_HDR_L1 = (f"{'':<27s}  {'':<12s}  {'':<12s}  {'':<16s}  {'':>9s}  "
+              f"{'C':>1s}  {'':<2s}  {'':>13s}  {'':>15s}")
+COL_HDR_L2 = (f"{'':<27s}  {'':<12s}  {'':<12s}  {'':<16s}  {'CREDIT':>9s}  "
+              f"{'O':>1s}  {'':<2s}  {'':>13s}  {'':>15s}")
+COL_HDR_L3 = (f"{'':<27s}  {'':<12s}  {'':<12s}  {'':<16s}  {'CARD':>9s}  "
+              f"{'D':>1s}  {'TY':<2s}  {'':>13s}  {'':>15s}")
+COL_HDR_L4 = (f"{'CUSTOMER NAME':<27s}  {'NEW ICNO':<12s}  {'OLD ICNO':<12s}  {'CARD NUMBER':<16s}  "
+              f"{'LIMIT':>9s}  {'E':>1s}  {'PE':<2s}  {'ACCTNO':^13s}  {'BALANCE':>15s}")
+SEPARATOR = INDENT + "-" * BODY_WIDTH
+
+HEADER_LINES = 9     # 3 titles + blank + 4 column-header lines + separator
+
+
+def _page_header() -> list:
+    """No carriage-control byte: titles start in column 1, everything else is indented 2."""
+    return [
+        TITLE1,
+        TITLE2,
+        TITLE3,
+        "",
+        INDENT + COL_HDR_L1,
+        INDENT + COL_HDR_L2,
+        INDENT + COL_HDR_L3,
+        INDENT + COL_HDR_L4,
+        SEPARATOR,
+    ]
+
+
+def _fmt_acctno(val) -> str:
+    try:
+        return f"{int(val):>13d}"
+    except (TypeError, ValueError):
+        return "0".rjust(13)
+
+
+def _detail_line(row: dict, hide_custname: bool = False) -> str:
+    custname = "" if hide_custname else str(row.get("CUSTNAME") or "")[:27]
+    newic    = str(row.get("NEWIC")  or "")[:12]
+    oldic    = str(row.get("OLDIC")  or "")[:12]
+    cardno   = str(row.get("CARDNO") or "")[:16]
+    monitor  = str(row.get("MONITOR") or "")[:1]
+    typ      = str(row.get("TYPE")   or "")[:2]
+    body = (
+        f"{custname:<27s}  {newic:<12s}  {oldic:<12s}  {cardno:<16s}  "
+        f"{_fmt_apprlimt(row.get('APPRLIMT'))}  {monitor:>1s}  {typ:<2s}  "
+        f"{_fmt_acctno(row.get('ACCTNO'))}  {_fmt_comma15_2(row.get('CURBAL'))}"
+    )
+    return INDENT + body
+
+
+def _blank_cols(last: str) -> str:
+    """Empty columns up to the CURBAL column, then `last` right-aligned in it."""
+    return INDENT + (
+        f"{'':<27s}  {'':<12s}  {'':<12s}  {'':<16s}  {'':>9s}  "
+        f"{'':>1s}  {'':<2s}  {'':>13s}  {last:>15s}"
+    )
+
+
+output_lines: list = []
+
+
+def _new_page() -> int:
+    output_lines.extend(_page_header())
+    return HEADER_LINES
+
+
+lines_on_page = _new_page()
+all_rows = list(final_df.iter_rows(named=True))
+n_rows   = len(all_rows)
+
+i = 0
+while i < n_rows:
+    cust = str(all_rows[i].get("CUSTNAME") or "")
+    j = i
+    while j < n_rows and str(all_rows[j].get("CUSTNAME") or "") == cust:
+        j += 1
+    cust_group = all_rows[i:j]
+    i = j
+
+    cust_total = None          # PROC REPORT SUM: all-missing group stays missing
+    for k, row in enumerate(cust_group):
+        show_name = (k == 0)
+        if lines_on_page >= PAGE_SIZE:          # detail rows fill pages to exactly 60 lines
+            lines_on_page = _new_page()
+            show_name = True                    # ORDER variable repeats after a page break
+        output_lines.append(_detail_line(row, hide_custname=not show_name))
+        lines_on_page += 1
+        v = row.get("CURBAL")
+        if v is not None and v == v:
+            cust_total = (cust_total or 0.0) + float(v)
+
+    # BREAK AFTER CUSTNAME / OL SUMMARIZE SKIP: overline, sum and skip line move together
+    if PAGE_SIZE - lines_on_page < BREAK_LINES:
+        lines_on_page = _new_page()
+    output_lines.append(_blank_cols("-" * 15))
+    output_lines.append(_blank_cols(_fmt_comma15_2(cust_total)))
+    output_lines.append("")
+    lines_on_page += BREAK_LINES
+
+output_lines.append("")     # COMPUTE AFTER; LINE ' '; ENDCOMP;
+
+# ============================================================================
+# WRITE OUTPUT  (RECFM=FB, LRECL=133, CRLF line endings, no carriage-control byte)
+# ============================================================================
+with open(OUTPUT_FILE, "w", encoding="latin1", newline="") as fh:
+    for ln in output_lines:
+        fh.write(f"{ln:<{LINE_WIDTH}s}\r\n")
+
+
+
+
+This is a GDG dataset (new generation each run), so the Python output
+uses a fixed filename rather than a dated one. The PROC REPORT output
+matches the reference listing: RECFM=FB, LRECL=133, CRLF line endings, no
+carriage-control byte (titles start in column 1, all other lines are
+indented 2), PAGE_SIZE=60 lines (not specified otherwise in the SAS
+source -> project default). OPTIONS MISSING=0 applies, so a missing
+numeric prints as '0'.
+
+
+
+
+# STEP 12: PROC REPORT  (no carriage-control byte, LRECL=133, RECFM=FB)
+
+
+
+
+# OPTIONS MISSING=0 is set in this JCL, so a genuinely missing numeric
+# value prints as a bare "0" under its numeric format.
+
+
+
+
