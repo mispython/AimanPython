@@ -1,12 +1,14 @@
 _probe = [1599500135, 1815007914]
-with open("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/diag_fd.txt", "w") as _f:
-    _f.write("=== fd_bal rows for probed ACCTNOs ===\n")
-    _f.write(fd_bal.filter(pl.col("ACCTNO").is_in(_probe)).to_pandas().to_string())
-    _f.write("\n\n=== nearest rows in fd_bal ===\n")
-    _f.write(fd_bal.filter(
-        ((pl.col("ACCTNO") >= 1595000000) & (pl.col("ACCTNO") <= 1600000000))
-        | ((pl.col("ACCTNO") >= 1814000000) & (pl.col("ACCTNO") <= 1816000000))
-    ).sort("ACCTNO").to_pandas().to_string())
-    _f.write("\n\n=== fd_df result for probed ACCTNOs ===\n")
-    _f.write(fd_df.filter(pl.col("ACCTNO").is_in(_probe)).select(["ACCTNO", "NEWIC", "CURBAL"]).to_pandas().to_string())
-print("diag written to /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/diag_fd.txt")
+print("=== fd_bal rows for probed ACCTNOs ===")
+print(fd_bal.filter(pl.col("ACCTNO").is_in(_probe)).to_pandas().to_string())
+
+nearest = fd_bal.filter(
+    ((pl.col("ACCTNO") >= 1595000000) & (pl.col("ACCTNO") <= 1600000000))
+    | ((pl.col("ACCTNO") >= 1814000000) & (pl.col("ACCTNO") <= 1816000000))
+).sort("ACCTNO")
+print("nearest-count:", nearest.height)
+print("nearest head:", nearest.head(5).to_pandas().to_string())
+print("nearest tail:", nearest.tail(5).to_pandas().to_string())
+
+print("=== fd_df result for probed ACCTNOs ===")
+print(fd_df.filter(pl.col("ACCTNO").is_in(_probe)).select(["ACCTNO", "NEWIC", "CURBAL"]).to_pandas().to_string())
