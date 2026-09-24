@@ -1,111 +1,13 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
-Columns : ['CUSTNBR', 'ACCTNO', 'CARDHOLD', 'ACCTSTAT', 'CARDNO', 'CARDTYPE', 'ISSDTE', 'CUSTNAME', 'GENDER', 'RACE', 'MARITAL', 'INCOME', 'OCCUCOD', 'OCCUPAT', 'EMAILADR', 'OLDIC', 'NEWIC', 'AGE', 'OPENDATE', 'APPRLIMT', 'ADDRES1', 'ADDRES2', 'ADDRES3', 'ADDRES4', 'ADDRES5', 'BILLCYCL', 'CLOSECD', 'RECLASS', 'CLASSCD', 'ACCTYPE', 'POSTCODE', 'BUSTELNO', 'HOMTELNO', 'BUCKET1', 'BUCKET2', 'BUCKET3', 'BUCKET4', 'BUCKET5', 'BUCKET6', 'CURBAL', 'SOURCE', 'MONITOR', 'CITIZEN', 'RESIDENT', 'HPHONENO', 'OADDRES1', 'OADDRES2', 'OADDRES3', 'OADDRES4', 'OADDRES5', 'MEGABNS', 'OVRDUE', 'INTEREST', 'K_CARD_BILL_ACCT_UCM']
+import pyreadstat
 
-dtypes  :
-CUSTNBR                  object
-ACCTNO                  float64
-CARDHOLD                float64
-ACCTSTAT                 object
-CARDNO                   object
-CARDTYPE                 object
-ISSDTE                  float64
-CUSTNAME                 object
-GENDER                   object
-RACE                     object
-MARITAL                  object
-INCOME                  float64
-OCCUCOD                  object
-OCCUPAT                  object
-EMAILADR                 object
-OLDIC                    object
-NEWIC                    object
-AGE                     float64
-OPENDATE                float64
-APPRLIMT                float64
-ADDRES1                  object
-ADDRES2                  object
-ADDRES3                  object
-ADDRES4                  object
-ADDRES5                  object
-BILLCYCL                 object
-CLOSECD                  object
-RECLASS                  object
-CLASSCD                 float64
-ACCTYPE                  object
-POSTCODE                 object
-BUSTELNO                 object
-HOMTELNO                 object
-BUCKET1                 float64
-BUCKET2                 float64
-BUCKET3                 float64
-BUCKET4                 float64
-BUCKET5                 float64
-BUCKET6                 float64
-CURBAL                  float64
-SOURCE                   object
-MONITOR                  object
-CITIZEN                  object
-RESIDENT                 object
-HPHONENO                 object
-OADDRES1                 object
-OADDRES2                 object
-OADDRES3                 object
-OADDRES4                 object
-OADDRES5                 object
-MEGABNS                 float64
-OVRDUE                   object
-INTEREST                float64
-K_CARD_BILL_ACCT_UCM     object
-dtype: object
+path = "/stgsrcsys/host/uat/AII/EIBDUNDP/unicard260902.sas7bdat"
+df, meta = pyreadstat.read_sas7bdat(path)
 
-First chunk rows: 100000
-
---- MONITOR ---
-  dtype           : object
-  notna count     : 0 / 100000
-  sample values   : []
-  top 5 value_counts:
-MONITOR
-NaN    100000
-
---- SOURCE ---
-  dtype           : object
-  notna count     : 4 / 100000
-  sample values   : ['DM00260992', 'DM00260992', 'DM00260992', 'DM00260992']
-  top 5 value_counts:
-SOURCE
-NaN           99996
-DM00260992        4
-
---- CLOSECD ---
-  dtype           : object
-  notna count     : 4 / 100000
-  sample values   : ['Q', 'Q', 'Q', 'Q']
-  top 5 value_counts:
-CLOSECD
-NaN    99996
-Q          4
-
---- ACCTYPE ---
-  dtype           : object
-  notna count     : 4 / 100000
-  sample values   : ['IA', 'IA', 'IA', 'IA']
-  top 5 value_counts:
-ACCTYPE
-NaN    99996
-IA         4
-
---- CARDHOLD ---
-  dtype           : float64
-  notna count     : 100000 / 100000
-  sample values   : [1.0, 1.0, 1.0, 1.0, 1.0]
-  top 5 value_counts:
-CARDHOLD
-1.0    88420
-2.0    11204
-3.0      309
-4.0       38
-5.0       11
+print("shape         :", df.shape)
+print("MONITOR notna :", df["MONITOR"].notna().sum())
+print("MONITOR values:", df["MONITOR"].value_counts(dropna=False).head(10).to_dict())
+print("SOURCE notna  :", df["SOURCE"].notna().sum())
+print("SOURCE sample :", df["SOURCE"].dropna().head(5).tolist())
 
 
 
