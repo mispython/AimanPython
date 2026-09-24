@@ -20,4 +20,4 @@ for n in names[-5:]:
 
 
 grep -c "^ [A-Z]" /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
-grep -c "^ [A-Z]" /path/to/correct.txt
+grep -c "^ [A-Z]" /stgsrcsys/host/uat/AII/EIBDUNDP/EIBDUNDP_OUTPUT.TXT
