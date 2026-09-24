@@ -1,19 +1,9 @@
-print("  ZHONG NEWICs in cissa_df :", cissa_df.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
-
-
-
-
-print("  ZHONG NEWICs in sa_df :", sa_df.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
-
-
-
-
-print("  ZHONG NEWICs in depo_final :", depo_final.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
-
-
-
-
-print("  ZHONG NEWICs in depo1_df :", depo1_df.filter(pl.col("NEWIC").is_in(['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493'])).select("NEWIC").unique().to_series().to_list())
+_zids = ['040223101535', '940614075809', 'E64283528', 'EF1567003', 'EJ8129732', 'EK9320493']
+print("  ZHONG in card1    :", card1.filter(pl.col("NEWIC").is_in(_zids)).height)
+print("  ZHONG in depo2_df :", depo2_df.filter(pl.col("NEWIC").is_in(_zids)).select("NEWIC").unique().to_series().to_list())
+print("  ZHONG in depo3_df :", depo3_df.filter(pl.col("NEWIC").is_in(_zids)).select("NEWIC").unique().to_series().to_list())
+print("  ZHONG depo1 PERCEN:")
+print(depo1_df.filter(pl.col("NEWIC").is_in(_zids)).select(["NEWIC", "PRE_CURBAL", "CURBAL", "WITHDR", "PERCEN"]))
 
 
 
