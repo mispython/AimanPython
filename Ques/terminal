@@ -4,21 +4,82 @@ Step 1: Deriving report date...
   RDTEA    : 23/09/26   RDTEB : 22/09/26
   REPTYEAR=26  REPTMON=09  REPTDAY=15  NOWK=02
   CARD file: unicard260902.sas7bdat
-  Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV.txt
+  Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
 
 Step 2: Caching input SAS datasets to Parquet...
-  [DEPO_SAVING] Converting sa260915.sas7bdat -> sa260915.parquet ...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 285, in <module>
-    DEPO_SAVING_CACHE    = _load_cached(DEPO_SAVING_FILE,   "DEPO_SAVING")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 276, in _load_cached
-    _sas_to_parquet(sas_path, cache_path, tag)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 243, in _sas_to_parquet
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/sas/sasreader.py", line 164, in read_sas
-    reader = SAS7BDATReader(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 207, in __init__
-    self.handles = get_handle(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/common.py", line 882, in get_handle
-    handle = open(handle, ioargs.mode)
-FileNotFoundError: [Errno 2] No such file or directory: '/stgsrcsys/host/uat/AII/EIBDUNDP/sa260915.sas7bdat'
+  [DEPO_SAVING] Converting sa260923.sas7bdat -> sa260923.parquet ...
+  [DEPO_SAVING] Done - 4,283,748 rows cached.
+  [DEPO_CURRENT] Converting ca260923.sas7bdat -> ca260923.parquet ...
+  [DEPO_CURRENT] Done - 855,633 rows cached.
+  [DEPO_FD] Converting fd260923.sas7bdat -> fd260923.parquet ...
+  [DEPO_FD] Done - 1,205,423 rows cached.
+  [IDEPO_SAVING] Converting isa260923.sas7bdat -> isa260923.parquet ...
+  [IDEPO_SAVING] Done - 2,235,001 rows cached.
+  [IDEPO_CURRENT] Converting ica260923.sas7bdat -> ica260923.parquet ...
+  [IDEPO_CURRENT] Done - 155,246 rows cached.
+  [IDEPO_FD] Converting ifd260923.sas7bdat -> ifd260923.parquet ...
+  [IDEPO_FD] Done - 223,128 rows cached.
+  [PDEPO_SAVING] Converting sa260922.sas7bdat -> sa260922.parquet ...
+  [PDEPO_SAVING] Done - 4,283,021 rows cached.
+  [PDEPO_CURRENT] Converting ca260922.sas7bdat -> ca260922.parquet ...
+  [PDEPO_CURRENT] Done - 855,524 rows cached.
+  [PDEPO_FD] Converting fd260922.sas7bdat -> fd260922.parquet ...
+  [PDEPO_FD] Done - 1,205,199 rows cached.
+  [PIDEPO_SAVING] Converting isa260922.sas7bdat -> isa260922.parquet ...
+  [PIDEPO_SAVING] Done - 2,234,544 rows cached.
+  [PIDEPO_CURRENT] Converting ica260922.sas7bdat -> ica260922.parquet ...
+  [PIDEPO_CURRENT] Done - 155,207 rows cached.
+  [PIDEPO_FD] Converting ifd260922.sas7bdat -> ifd260922.parquet ...
+  [PIDEPO_FD] Done - 223,095 rows cached.
+  [CARD] Converting unicard260902.sas7bdat -> unicard260902.parquet ...
+  [CARD] Done - 4,360,393 rows cached.
+  [CISDP] Converting cisbext_dp_deposit.sas7bdat -> cisbext_dp_deposit.parquet ...
+  [CISDP] Done - 1,250,295 rows cached.
+  [CISSAFD] Converting crm_cisbext_deposit.sas7bdat -> crm_cisbext_deposit.parquet ...
+  [CISSAFD] Done - 11,013,394 rows cached.
+
+Step 3: Processing CARD file...
+100% ▕██████████████████████████████████████▏ (00:00:02.84 elapsed)     
+  CARD raw rows after filter : 4,360,344
+  CARD  rows : 1
+  CARD1 rows : 0
+
+Step 4: Building CISCA / CISSA / CISFD...
+  CISCA rows : 0
+  CISSA rows : 0
+  CISFD rows : 0
+
+Step 5: Building PSA / PCA / PFD (previous-period balances)...
+  PSA rows : 0   PCA rows : 0   PFD rows : 0
+
+Step 6: Building SA / CA / FD (current-period balances)...
+  SA rows : 0   CA rows : 0   FD rows : 0
+
+Step 7: Combining DEPO / PDEPO and calculating withdrawals...
+  DEPO rows : 0
+
+Step 8: Summarising DEPO by NEWIC...
+  DEPO1 rows : 0
+
+Step 9: Splitting into DEPO2 / DEPO3...
+  DEPO2 rows : 0   DEPO3 rows : 0
+
+Step 10: Building TOT...
+  TOT rows : 0
+
+Step 11: Building FINAL dataset...
+  FINAL rows : 0
+shape: (0, 12)
+┌────────┬─────────┬────────┬─────────┬───┬────────┬──────┬────────┬────────┐
+│ CARDNO ┆ MONITOR ┆ SOURCE ┆ CLOSECD ┆ … ┆ ACCTNO ┆ TYPE ┆ CURBAL ┆ SUMBAL │
+│ ---    ┆ ---     ┆ ---    ┆ ---     ┆   ┆ ---    ┆ ---  ┆ ---    ┆ ---    │
+│ str    ┆ str     ┆ str    ┆ str     ┆   ┆ i64    ┆ str  ┆ f64    ┆ f64    │
+╞════════╪═════════╪════════╪═════════╪═══╪════════╪══════╪════════╪════════╡
+└────────┴─────────┴────────┴─────────┴───┴────────┴──────┴────────┴────────┘
+
+Step 12: Generating report...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
+  Total lines    : 8
+
+EIBDUNDP complete.
