@@ -1,5 +1,13 @@
-_probe = [1599500135, 1815007914, 1595256021, 1311043808]
-print("=== fd_bal rows for probed ACCTNOs ===")
-print(fd_bal.filter(pl.col("ACCTNO").is_in(_probe)).to_pandas().to_string())
-print("=== fd_df result for probed ACCTNOs ===")
-print(fd_df.filter(pl.col("ACCTNO").is_in(_probe)).select(["ACCTNO", "NEWIC", "CURBAL"]).to_pandas().to_string())
+Step 6: Building SA / CA / FD (current-period balances)...
+=== fd_bal rows for probed ACCTNOs ===
+       ACCTNO     CURBAL
+0  1311043808  390770.86
+=== fd_df result for probed ACCTNOs ===
+       ACCTNO         NEWIC     CURBAL
+0  1311043808  540213075346  390770.86
+1  1311043808  500318075303  390770.86
+2  1595256021  540213075346       0.00
+3  1595256021  500318075303       0.00
+4  1599500135     EK9320493       0.00
+5  1815007914     EK9320493       0.00
+  SA rows : 32,910   CA rows : 8,646   FD rows : 35,280
