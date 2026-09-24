@@ -1,3 +1,16 @@
+Step 3: Processing CARD file...
+100% ▕██████████████████████████████████████▏ (00:00:02.77 elapsed)     
+  CARD raw rows after filter : 4,360,344
+--- distinct MONITOR values (top 20) ---
+[(None, None, None, None, 4360364), ('A', 1, 65, 0, 12), ('B', 1, 66, 0, 9), ('4', 1, 52, 0, 3), ('I', 1, 73, 0, 3), ('1', 1, 49, 0, 1), ('C', 1, 67, 0, 1)]
+--- distinct SOURCE values that look like GCPIFD ---
+[]
+  CARD  rows : 1
+  CARD1 rows : 0
+
+
+=================
+
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py
 Step 1: Deriving report date...
   REPTDATE : 2026-09-15  (WK=02)
