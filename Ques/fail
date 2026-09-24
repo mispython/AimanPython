@@ -1,14 +1,45 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ ls -la /stgsrcsys/host/uat/AII/EIBDUNDP/ | grep -iE "fd2[0-9]{5}|ifd2[0-9]{5}" | head -40
--rw-r--r--  1 sftpedw         sas            267124736 Sep 23 06:38 fd260922.sas7bdat
--rw-r--r--  1 sftpedw         sas            266993664 Sep 24 08:14 fd260923.sas7bdat
--rw-r--r--  1 sftpedw         sas             50200576 Sep 23 06:38 ifd260922.sas7bdat
--rw-r--r--  1 sftpedw         sas             50135040 Sep 24 08:14 ifd260923.sas7bdat
+import pyreadstat
+from pathlib import Path
 
+D = Path("/stgsrcsys/host/uat/AII/EIBDUNDP")
+TARGET_ACCT   = 1595256021
+TARGET_CURBAL = 11630.87
 
+for f in sorted(D.glob("*.sas7bdat")):
+    try:
+        df, _ = pyreadstat.read_sas7bdat(str(f))
+    except Exception as e:
+        print(f"{f.name:40s}  SKIP ({e})")
+        continue
 
+    if "ACCTNO" not in df.columns:
+        print(f"{f.name:40s}  no ACCTNO column, rows={len(df)}")
+        continue
 
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
-fd260922.sas7bdat : -
-fd260923.sas7bdat : -
-ifd260922.sas7bdat : -
-ifd260923.sas7bdat : -
+    df["_A"] = df["ACCTNO"].astype("float").astype("int64")
+
+    hit_exact  = df[df["_A"] == TARGET_ACCT]
+    hit_near   = df[(df["_A"] >= 1595256000) & (df["_A"] <= 1595256100)]
+
+    hit_curbal = None
+    if "CURBAL" in df.columns:
+        hit_curbal = df[df["CURBAL"].astype("float").between(TARGET_CURBAL - 0.5,
+                                                              TARGET_CURBAL + 0.5)]
+
+    tag = []
+    if len(hit_exact):   tag.append(f"EXACT={len(hit_exact)}")
+    if len(hit_near):    tag.append(f"NEAR={len(hit_near)}")
+    if hit_curbal is not None and len(hit_curbal):
+        tag.append(f"CURBAL={len(hit_curbal)}")
+
+    print(f"{f.name:40s}  rows={len(df):>10,}  {'  '.join(tag) if tag else '-'}")
+
+    if len(hit_exact):
+        print("   exact rows:")
+        print(hit_exact[["ACCTNO"] + (["CURBAL"] if "CURBAL" in df.columns else [])].to_string())
+    if len(hit_near):
+        print("   nearby rows:")
+        print(hit_near[["ACCTNO"] + (["CURBAL"] if "CURBAL" in df.columns else [])].head(10).to_string())
+    if hit_curbal is not None and len(hit_curbal):
+        print("   balance-match rows:")
+        print(hit_curbal[["ACCTNO"] + (["CURBAL"] if "CURBAL" in df.columns else [])].head(10).to_string())
