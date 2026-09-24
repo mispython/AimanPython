@@ -1,51 +1,16 @@
-import duckdb
-from pathlib import Path
-
-CACHE = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDUNDP")
-TARGET_ACCT   = 1595256021
-TARGET_CURBAL = 11630.87
-
-con = duckdb.connect()
-
-for pq in sorted(CACHE.glob("*.parquet")):
-    try:
-        cols = con.execute(
-            f"SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('{pq.as_posix()}'))"
-        ).fetchall()
-        cols = [c[0] for c in cols]
-    except Exception as e:
-        print(f"{pq.name:50s}  SKIP ({e})")
-        continue
-
-    if "ACCTNO" not in cols:
-        print(f"{pq.name:50s}  no ACCTNO column")
-        continue
-
-    q = f"""
-        SELECT
-            COUNT(*) FILTER (WHERE CAST(ACCTNO AS BIGINT) = {TARGET_ACCT})                AS exact_hits,
-            COUNT(*) FILTER (WHERE CAST(ACCTNO AS BIGINT) BETWEEN 1595256000 AND 1595256100) AS near_hits,
-            COUNT(*) FILTER (WHERE ABS(CAST(CURBAL AS DOUBLE) - {TARGET_CURBAL}) < 0.5)  AS curbal_hits,
-            COUNT(*)                                                                     AS total_rows
-        FROM read_parquet('{pq.as_posix()}')
-    """
-    if "CURBAL" not in cols:
-        q = q.replace(
-            f"COUNT(*) FILTER (WHERE ABS(CAST(CURBAL AS DOUBLE) - {TARGET_CURBAL}) < 0.5)  AS curbal_hits,",
-            "0 AS curbal_hits,"
-        )
-
-    try:
-        exact, near, curbal, total = con.execute(q).fetchone()
-    except Exception as e:
-        print(f"{pq.name:50s}  QUERY ERROR ({e})")
-        continue
-
-    flags = []
-    if exact:  flags.append(f"EXACT={exact}")
-    if near:   flags.append(f"NEAR={near}")
-    if curbal: flags.append(f"CURBAL={curbal}")
-
-    print(f"{pq.name:50s}  rows={total:>10,}  {'  '.join(flags) if flags else '-'}")
-
-con.close()
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
+ca260922.parquet                                    rows=   855,524  CURBAL=8
+ca260923.parquet                                    rows=   855,633  CURBAL=9
+cisbext_dp_deposit.parquet                          rows= 1,250,295  -
+crm_cisbext_deposit.parquet                         rows=11,013,394  EXACT=2  NEAR=2
+fd260922.parquet                                    rows= 1,205,199  CURBAL=6
+fd260923.parquet                                    rows= 1,205,423  CURBAL=6
+host_unicard260902.parquet                          rows= 4,361,160  CURBAL=4
+ica260922.parquet                                   rows=   155,207  CURBAL=2
+ica260923.parquet                                   rows=   155,246  -
+ifd260922.parquet                                   rows=   223,095  CURBAL=1
+ifd260923.parquet                                   rows=   223,128  CURBAL=1
+isa260922.parquet                                   rows= 2,234,544  CURBAL=13
+isa260923.parquet                                   rows= 2,235,001  CURBAL=11
+sa260922.parquet                                    rows= 4,283,021  CURBAL=36
+sa260923.parquet                                    rows= 4,283,748  CURBAL=39
