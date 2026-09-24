@@ -1,10 +1,24 @@
-Step 3: Loading BTRAD...
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py
+Step 1: Deriving report date...
+  REPTDATE : 2026-09-15  (WK=02)
+  RDTEA    : 23/09/26   RDTEB : 22/09/26
+  REPTYEAR=26  REPTMON=09  REPTDAY=15  NOWK=02
+  CARD file: unicard260902.sas7bdat
+  Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV.txt
+
+Step 2: Caching input SAS datasets to Parquet...
+  [DEPO_SAVING] Converting sa260915.sas7bdat -> sa260915.parquet ...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMBTLIQ.py", line 297, in <module>
-    btrad_raw = con.execute(f"""
-_duckdb.BinderException: Binder Error: Table "t" does not have a column named "PAYAMT"
-
-Candidate bindings: : "IISAMT"
-
-LINE 10:         CAST(t.PAYAMT   AS DOUBLE)  AS PAYAMT,
-                      ^
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 285, in <module>
+    DEPO_SAVING_CACHE    = _load_cached(DEPO_SAVING_FILE,   "DEPO_SAVING")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 276, in _load_cached
+    _sas_to_parquet(sas_path, cache_path, tag)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py", line 243, in _sas_to_parquet
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/sas/sasreader.py", line 164, in read_sas
+    reader = SAS7BDATReader(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 207, in __init__
+    self.handles = get_handle(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/common.py", line 882, in get_handle
+    handle = open(handle, ioargs.mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/stgsrcsys/host/uat/AII/EIBDUNDP/sa260915.sas7bdat'
