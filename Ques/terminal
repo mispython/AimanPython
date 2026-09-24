@@ -1,8 +1,94 @@
-print("--- card_main breakdown by first letter ---")
-for letter in ["W", "X", "Y", "Z"]:
-    n = card_main.filter(pl.col("CUSTNAME").str.starts_with(letter)).height
-    print(f"  {letter} : {n}")
-print("  total :", card_main.height)
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP_AII.py
+Step 1: Deriving report date...
+  REPTDATE : 2026-09-15  (WK=02)
+  RDTEA    : 23/09/26   RDTEB : 22/09/26
+  REPTYEAR=26  REPTMON=09  REPTDAY=15  NOWK=02
+  CARD file: host_unicard260902.sas7bdat
+  Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
+
+Step 2: Caching input SAS datasets to Parquet...
+  [DEPO_SAVING] Cache fresh - skipping conversion.
+  [DEPO_CURRENT] Cache fresh - skipping conversion.
+  [DEPO_FD] Cache fresh - skipping conversion.
+  [IDEPO_SAVING] Cache fresh - skipping conversion.
+  [IDEPO_CURRENT] Cache fresh - skipping conversion.
+  [IDEPO_FD] Cache fresh - skipping conversion.
+  [PDEPO_SAVING] Cache fresh - skipping conversion.
+  [PDEPO_CURRENT] Cache fresh - skipping conversion.
+  [PDEPO_FD] Cache fresh - skipping conversion.
+  [PIDEPO_SAVING] Cache fresh - skipping conversion.
+  [PIDEPO_CURRENT] Cache fresh - skipping conversion.
+  [PIDEPO_FD] Cache fresh - skipping conversion.
+  [CARD] Cache fresh - skipping conversion.
+  [CISDP] Cache fresh - skipping conversion.
+  [CISSAFD] Cache fresh - skipping conversion.
+
+Step 3: Processing CARD file...
+  CARD raw rows after filter : 1,297,485
+--- distinct MONITOR values (top 20) ---
+[(None, None, None, None, 3377915), ('A', 1, 65, 0, 466124), ('1', 1, 49, 0, 153962), ('4', 1, 52, 0, 124043), ('B', 1, 66, 0, 96030), ('I', 1, 73, 0, 59257), ('C', 1, 67, 0, 42845), ('S', 1, 83, 0, 12179), ('Z', 1, 90, 0, 10477), ('R', 1, 82, 0, 5142), ('D', 1, 68, 0, 4598), ('T', 1, 84, 0, 3057), ('M', 1, 77, 0, 2177), ('O', 1, 79, 0, 2119), ('Y', 1, 89, 0, 802), ('V', 1, 86, 0, 277), ('2', 1, 50, 0, 93), ('3', 1, 51, 0, 15), ('W', 1, 87, 0, 12), ('F', 1, 70, 0, 6)]
+--- distinct SOURCE values that look like GCPIFD ---
+[('GCPIFD0209', 10, 416)]
+--- card_main breakdown by first letter ---
+  W : 1097
+  X : 29
+  Y : 1051
+  Z : 47
+  total : 18810
+  CARD  rows : 13,754
+  CARD1 rows : 5,187
+
+Step 4: Building CISCA / CISSA / CISFD...
+  CISCA rows : 8,646
+  CISSA rows : 32,910
+  CISFD rows : 35,280
+
+Step 5: Building PSA / PCA / PFD (previous-period balances)...
+  PSA rows : 32,910   PCA rows : 8,646   PFD rows : 35,280
+
+Step 6: Building SA / CA / FD (current-period balances)...
+  SA rows : 32,910   CA rows : 8,646   FD rows : 35,280
+
+Step 7: Combining DEPO / PDEPO and calculating withdrawals...
+  DEPO rows : 76,836
+
+Step 8: Summarising DEPO by NEWIC...
+  DEPO1 rows : 13,491
+
+Step 9: Splitting into DEPO2 / DEPO3...
+  DEPO2 rows : 14   DEPO3 rows : 8,556
+
+Step 10: Building TOT...
+  TOT rows : 1,509
+
+Step 11: Building FINAL dataset...
+  FINAL rows : 8,463
+shape: (10, 12)
+┌──────────────────┬─────────┬────────────┬─────────┬───┬────────────┬──────┬───────────┬───────────┐
+│ CARDNO           ┆ MONITOR ┆ SOURCE     ┆ CLOSECD ┆ … ┆ ACCTNO     ┆ TYPE ┆ CURBAL    ┆ SUMBAL    │
+│ ---              ┆ ---     ┆ ---        ┆ ---     ┆   ┆ ---        ┆ ---  ┆ ---       ┆ ---       │
+│ str              ┆ str     ┆ str        ┆ str     ┆   ┆ i64        ┆ str  ┆ f64       ┆ f64       │
+╞══════════════════╪═════════╪════════════╪═════════╪═══╪════════════╪══════╪═══════════╪═══════════╡
+│ 5472310500031761 ┆ Z       ┆ HLPAFW0603 ┆         ┆ … ┆ 1117260336 ┆ FD   ┆ 1.2081e6  ┆ -5.4054e6 │
+│ 5472310500031761 ┆ Z       ┆ HLPAFW0603 ┆         ┆ … ┆ 1445875013 ┆ FD   ┆ 0.0       ┆ -5.4054e6 │
+│ 5472310500031761 ┆ Z       ┆ HLPAFW0603 ┆         ┆ … ┆ 3067073432 ┆ CA   ┆ 11982.55  ┆ -5.4054e6 │
+│ 5472310500031761 ┆ Z       ┆ HLPAFW0603 ┆         ┆ … ┆ 3138315801 ┆ CA   ┆ -972201.3 ┆ -5.4054e6 │
+│ 5472310500031761 ┆ Z       ┆ HLPAFW0603 ┆         ┆ … ┆ 3138780225 ┆ CA   ┆ -5.6582e6 ┆ -5.4054e6 │
+│ 5472310500031761 ┆ Z       ┆ HLPAFW0603 ┆         ┆ … ┆ 3154537228 ┆ CA   ┆ 4921.56   ┆ -5.4054e6 │
+│ 5595890200251670 ┆ Z       ┆ GMACTO1025 ┆         ┆ … ┆ 1079311126 ┆ FD   ┆ 52726.9   ┆ 482814.35 │
+│ 5595890200251670 ┆ Z       ┆ GMACTO1025 ┆         ┆ … ┆ 1379783927 ┆ FD   ┆ 0.0       ┆ 482814.35 │
+│ 5595890200251670 ┆ Z       ┆ GMACTO1025 ┆         ┆ … ┆ 1422531929 ┆ FD   ┆ 424938.06 ┆ 482814.35 │
+│ 5595890200251670 ┆ Z       ┆ GMACTO1025 ┆         ┆ … ┆ 3073293103 ┆ CA   ┆ 69.52     ┆ 482814.35 │
+└──────────────────┴─────────┴────────────┴─────────┴───┴────────────┴──────┴───────────┴───────────┘
+
+Step 12: Generating report...
+FINAL rows in dataframe : 8463
+Last 5 CUSTNAME in data : ['YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI']
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
+  Total lines    : 15,490
+
+EIBDUNDP complete.
 
 
 
