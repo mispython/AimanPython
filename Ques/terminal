@@ -9,6 +9,10 @@ print("MONITOR values:", df["MONITOR"].value_counts(dropna=False).head(10).to_di
 print("SOURCE notna  :", df["SOURCE"].notna().sum())
 print("SOURCE sample :", df["SOURCE"].dropna().head(5).tolist())
 
+print(df["MONITOR"].value_counts(dropna=False))
+print("MONITOR = Z:", (df["MONITOR"] == "Z").sum())
+print("MONITOR = I:", (df["MONITOR"] == "I").sum())
+
 
 
 =================
