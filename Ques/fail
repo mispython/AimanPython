@@ -1,9 +1,10 @@
-def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
-    base_sorted  = base_df.sort("ACCTNO")
-    value_sorted = (
-        value_df
-        .sort("ACCTNO", maintain_order=True)
-        .unique(subset=["ACCTNO"], keep="first")
-    )
-    return base_sorted.join_asof(value_sorted.select(["ACCTNO", value_col]),
-                                  on="ACCTNO", strategy="backward")
+_probe = [1599500135, 1815007914]
+print("=== fd_bal rows for probed ACCTNOs ===")
+print(fd_bal.filter(pl.col("ACCTNO").is_in(_probe)).to_pandas().to_string())
+print("=== nearest rows in fd_bal around the probes ===")
+print(fd_bal.filter(
+    ((pl.col("ACCTNO") >= 1595000000) & (pl.col("ACCTNO") <= 1600000000))
+    | ((pl.col("ACCTNO") >= 1814000000) & (pl.col("ACCTNO") <= 1816000000))
+).sort("ACCTNO").to_pandas().to_string())
+print("=== fd_df result for probed ACCTNOs ===")
+print(fd_df.filter(pl.col("ACCTNO").is_in(_probe)).select(["ACCTNO", "NEWIC", "CURBAL"]).to_pandas().to_string())
