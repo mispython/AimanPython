@@ -1,129 +1,57 @@
-Purpose : Treasury Life/Islamic deal BNM code derivation and summarisation.
-          Originally %INC PGM(KALMLIFE) inside EIBPTH1A -- a SAS open-code
-          fragment that consumes macro variables (&REPTMON, &REPTYEAR) and
-          produces K3FEI, which EIBPTH1A later appends into its SP dataset
-          ("DATA SP; SET SP K3FEI KAPX;").
-
-          Designed to be IMPORTED by the calling job (mirroring %INC
-          PGM(KALMLIFE)), same pattern as DALWPBBD.py. KALMLIFE no longer
-          resolves, dates, or converts its own inputs -- the calling job owns
-          the K3TBL physical path, the .sas7bdat -> Parquet caching, and the
-          REPTMON/REPTYEAR values, and passes them into build_k3fei().
-
-Input   : BNMK.K3TBL&REPTMON&NOWK -- supplied by the caller as an already
-          cached Parquet file.
-          Cols used : UTCTP, UTREF, UTMDT, UTOSD, UTAMTS, UTDLP, UTSTY
-Output  : K3FEI (polars DataFrame: ITCODE, AMTIND, AMOUNT), returned by
-          build_k3fei().
+def _yy_mm_dd(d: date) -> str:
+    """Return 'YYMMDD' string, e.g. 2026-09-23 -> '260923'."""
+    return d.strftime("%y%m%d")
 
 
 
 
-from pathlib import Path
-from datetime import date
+# --- Dated file keys -------------------------------------------------------
+# current day = the report date itself (matches GDG (0))
+# previous day = report date - 1 day      (matches GDG (-1))
+CUR_DATE_STR  = _yy_mm_dd(REPTDATE)                       # e.g. 260923
+PREV_DATE_STR = _yy_mm_dd(REPTDATE - timedelta(days=1))   # e.g. 260922
 
-import duckdb
-import polars as pl
-
-
-
-
-def build_k3fei(k3tbl_cache: Path, reptmon: str, reptyear: str) -> pl.DataFrame:
-    """
-    Builds K3FEI (equivalent of the K3FEI dataset produced by %INC
-    PGM(KALMLIFE)) from a PRE-CACHED K3TBL parquet file.
-
-    k3tbl_cache : Parquet cache of BNMK.K3TBL&REPTMON&NOWK, supplied by the caller
-    reptmon     : &REPTMON  ('01'-'12'), supplied by the caller
-    reptyear    : &REPTYEAR ('YYYY'), supplied by the caller
-    """
-    # ========================================================================
-    # STEP 2: DATA K3TBLFE; SET BNMK.K3TBL&REPTMON&NOWK; ...
-    # ========================================================================
-    print("\nKALMLIFE Step 2: Building K3TBLFE...")
-
-    con = duckdb.connect(database=":memory:")
-    k3tbl_raw = con.execute(f"""
-        SELECT
-            CAST(UTCTP AS VARCHAR)  AS UTCTP,
-            CAST(UTREF AS VARCHAR)  AS UTREF,
-            CAST(UTMDT AS VARCHAR)  AS UTMDT,
-            CAST(UTOSD AS VARCHAR)  AS UTOSD,
-            CAST(UTAMTS AS DOUBLE) AS UTAMTS,
-            CAST(UTDLP AS VARCHAR)  AS UTDLP,
-            CAST(UTSTY AS VARCHAR)  AS UTSTY
-        FROM read_parquet('{k3tbl_cache.as_posix()}')
-        WHERE UTCTP IN ('BW','BA','BE','EB','CE','GA')
-    """).pl()
-    con.close()
-
-    reptmon_int = int(reptmon)
-    reptyear_int = int(reptyear)
-
-    k3tblfe_rows = []
-    for r in k3tbl_raw.iter_rows(named=True):
-        utref = r["UTREF"] or ""
-        isl1 = utref[0:1]
-        isl2 = utref[3:4]
-        islm = "Y" if (isl1 == "I" and isl2 != " ") else "N"
-
-        utosd = r["UTOSD"]
-        if utosd is None or str(utosd).strip() == "":
-            # ISSDT never assigned -> TRMM/TRYY stay missing -> subsetting IF
-            # below always drops this row (missing never equals REPTMON/REPTYEAR).
-            continue
-        issdt = _parse_iso_date(utosd)
-        trmm, tryy = issdt.month, issdt.year
-        if not (trmm == reptmon_int and tryy == reptyear_int):
-            continue
-
-        amount = r["UTAMTS"]
-        utdlp = r["UTDLP"] or ""
-        utsty = r["UTSTY"] or ""
-
-        # DAYS=MATDT-REPTDATE bug -> REMMTH is unconditionally '05' (see module
-        # docstring for the full explanation of this preserved SAS defect).
-        remmth = "05"
-
-        bnmcode = _build_bnmcode(utdlp, utsty, islm, remmth)
-        if bnmcode is None:  # IF BNMCODE NE ' ';
-            continue
-
-        k3tblfe_rows.append({"ITCODE": bnmcode, "AMOUNT": amount, "AMTIND": "D"})
-
-    print(f"  K3TBLFE rows: {len(k3tblfe_rows):,}")
-
-    # ========================================================================
-    # STEP 3: PROC SUMMARY DATA=K3TBLFE NWAY; CLASS ITCODE AMTIND; VAR AMOUNT;
-    #         OUTPUT OUT=K3FEI SUM=;
-    # ========================================================================
-    print("\nKALMLIFE Step 3: Summarising into K3FEI...")
-
-    _groups: dict = {}
-    for r in k3tblfe_rows:
-        key = (r["ITCODE"], r["AMTIND"])
-        _groups[key] = (_groups.get(key, 0.0) or 0.0) + (r["AMOUNT"] or 0.0)
-
-    K3FEI = pl.DataFrame(
-        [{"ITCODE": k[0], "AMTIND": k[1], "AMOUNT": v} for k, v in _groups.items()],
-        schema={"ITCODE": pl.Utf8, "AMTIND": pl.Utf8, "AMOUNT": pl.Float64},
-    )
-
-    print(f"  K3FEI rows: {K3FEI.height:,}")
-    print("KALMLIFE complete.")
-    return K3FEI
+# equivalent to f"{REPTYEAR}{REPTMON}{REPTDAY}" for the current day:
+CUR_DATE_STR_ALT = f"{REPTYEAR}{REPTMON}{REPTDAY}"        # also '260923'
 
 
 
 
-from KALMLIFE import build_k3fei
+# ---- DEPO  (current day, PBB) --------------------------------------------
+DEPO_SAVING_FILE   = INPUT_DIR / f"saving{CUR_DATE_STR}.sas7bdat"
+DEPO_CURRENT_FILE  = INPUT_DIR / f"current{CUR_DATE_STR}.sas7bdat"
+DEPO_FD_FILE       = INPUT_DIR / f"fd{CUR_DATE_STR}.sas7bdat"
 
-# EIBPTH1A already has REPTMON / REPTYEAR / NOWK from its own REPTDATE step
-# FLAG-01 (moved from KALMLIFE): BNMK physical path still needs confirming.
-INPUT_K3TBL_FILE = STG_DIR / "EIBPTH1A" / f"k3tbl{REPTMON}{NOWK}.sas7bdat"
-# INPUT_K3TBL_FILE = STG_DIR / "EIBPTH1A" / "k3tbl084.sas7bdat"   # hardcoded test file previously in KALMLIFE
+# ---- IDEPO (current day, PIBB) -------------------------------------------
+IDEPO_SAVING_FILE   = INPUT_DIR / f"saving{CUR_DATE_STR}.sas7bdat"
+IDEPO_CURRENT_FILE  = INPUT_DIR / f"current{CUR_DATE_STR}.sas7bdat"
+IDEPO_FD_FILE       = INPUT_DIR / f"fd{CUR_DATE_STR}.sas7bdat"
 
-K3TBL_CACHE = _load_cached(INPUT_K3TBL_FILE, "K3TBL")   # EIBPTH1A's own caching helper
+# ---- PDEPO (previous day, PBB) -------------------------------------------
+PDEPO_SAVING_FILE   = INPUT_DIR / f"saving{PREV_DATE_STR}.sas7bdat"
+PDEPO_CURRENT_FILE  = INPUT_DIR / f"current{PREV_DATE_STR}.sas7bdat"
+PDEPO_FD_FILE       = INPUT_DIR / f"fd{PREV_DATE_STR}.sas7bdat"
 
-K3FEI = build_k3fei(K3TBL_CACHE, REPTMON, REPTYEAR)     # %INC PGM(KALMLIFE)
-# DATA SP; SET SP K3FEI KAPX; -> pl.concat([...]) as already done in EIBPTH1A
+# ---- PIDEPO (previous day, PIBB) -----------------------------------------
+PIDEPO_SAVING_FILE  = INPUT_DIR / f"saving{PREV_DATE_STR}.sas7bdat"
+PIDEPO_CURRENT_FILE = INPUT_DIR / f"current{PREV_DATE_STR}.sas7bdat"
+PIDEPO_FD_FILE      = INPUT_DIR / f"fd{PREV_DATE_STR}.sas7bdat"
+
+# ---- CIS extracts --------------------------------------------------------
+CISDP_FILE   = INPUT_DIR / "cisbext_dp.sas7bdat"
+CISSAFD_FILE = INPUT_DIR / "crm_cisbext.sas7bdat"
+
+# ---- CARD weekly member (already dated) ----------------------------------
+CARD_FILE = INPUT_DIR / f"unicard{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
+
+
+
+
+DEPO_SAVING_FILE   = INPUT_DIR / f"pbb_saving{CUR_DATE_STR}.sas7bdat"
+IDEPO_SAVING_FILE  = INPUT_DIR / f"pibb_saving{CUR_DATE_STR}.sas7bdat"
+PDEPO_SAVING_FILE  = INPUT_DIR / f"pbb_saving{PREV_DATE_STR}.sas7bdat"
+PIDEPO_SAVING_FILE = INPUT_DIR / f"pibb_saving{PREV_DATE_STR}.sas7bdat"
+
+
+
+
