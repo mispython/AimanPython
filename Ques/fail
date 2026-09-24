@@ -1,9 +1,7 @@
-Step 12: Generating report...
-FINAL rows in dataframe : 8463
-Last 5 CUSTNAME in data : ['YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI', 'YU YONG SOOI']
-
-
-
-
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ grep -c "^0" /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260923.txt
-0
+zhong_card = card_main.filter(pl.col("CUSTNAME").str.contains("ZHONG"))
+zhong_tot  = tot_df.filter(pl.col("NEWIC").is_in(zhong_card.select("NEWIC").to_series().to_list()))
+zhong_final= final_df.filter(pl.col("CUSTNAME").str.contains("ZHONG"))
+print("ZHONG in card_main :", zhong_card.height)
+print("ZHONG in tot_df    :", zhong_tot.height)
+print("ZHONG in final_df  :", zhong_final.height)
+print("ZHONG NEWICs in card_main :", card_main.filter(pl.col("CUSTNAME").str.contains("ZHONG")).select("NEWIC").unique().to_series().to_list())
