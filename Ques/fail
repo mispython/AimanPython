@@ -1,26 +1,17 @@
-import pyreadstat
-import polars as pl
-from pathlib import Path
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
+=== SOURCE .sas7bdat ===
+                NEWIC MONITOR      SOURCE ACCTYPE CLOSECD
+1208071  040223101535       I  GMACFD0125       I        
+2563348  940614075809       I  GMACFD0523       I        
+4119671  940614075809       I  GMACFD0523       I        
+rows : 3
 
-CARD_SAS = Path("/stgsrcsys/host/uat/AII/EIBDUNDP/host_unicard260902.sas7bdat")
-CARD_PARQUET = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBDUNDP/host_unicard260902.parquet")
+=== CACHED .parquet ===
+          NEWIC MONITOR      SOURCE
+0  040223101535       I  GMACFD0125
+1  940614075809       I  GMACFD0523
+2  940614075809       I  GMACFD0523
+rows : 3
 
-zhong = ['040223101535', '940614075809', 'E64283528',
-         'EF1567003', 'EJ8129732', 'EK9320493']
-
-print("=== SOURCE .sas7bdat ===")
-df, _ = pyreadstat.read_sas7bdat(str(CARD_SAS))
-sub = df[df["NEWIC"].astype(str).str.strip().isin(zhong)]
-print(sub[["NEWIC", "MONITOR", "SOURCE", "ACCTYPE", "CLOSECD"]].to_string())
-print("rows :", len(sub))
-
-print()
-print("=== CACHED .parquet ===")
-pdf = pl.read_parquet(CARD_PARQUET)
-sub2 = pdf.filter(pl.col("NEWIC").cast(pl.Utf8).str.strip_chars().is_in(zhong))
-print(sub2.select(["NEWIC", "MONITOR", "SOURCE"]).to_pandas().to_string())
-print("rows :", sub2.height)
-
-print()
-print("source mtime :", CARD_SAS.stat().st_mtime)
-print("cache  mtime :", CARD_PARQUET.stat().st_mtime)
+source mtime : 1790233229.9866922
+cache  mtime : 1790233370.3406816
