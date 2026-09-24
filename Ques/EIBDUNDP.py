@@ -82,7 +82,11 @@ import pyarrow.parquet as pq
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR  = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBDUNDP"
+# INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBDUNDP"
+
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+INPUT_DIR = STG_DIR / "EIBDUNDP"
+
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDUNDP"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBDUNDP"
 
@@ -114,6 +118,10 @@ CISDP_FILE   = INPUT_DIR / "cisbext_dp.sas7bdat"
 CISSAFD_FILE = INPUT_DIR / "crm_cisbext.sas7bdat"
 
 # ---- Output ----------------------------------------------------------------
+# Generate time stamp
+report_date = date.today() - timedelta(days=1)
+ts = report_date.strftime("%y%m%d")
+
 OUTPUT_FILE = OUTPUT_DIR / "CARD_DPACTV.txt"
 
 CHUNK_ROWS = 500_000
