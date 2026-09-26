@@ -77,20 +77,16 @@ from EIFPCFMT import state_format
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_BRHFILE_DIR = STG_DIR / "sasdata"
-INPUT_LNNOTE_DIR  = STG_DIR / "sasdata"
-INPUT_LOAN_DIR    = STG_DIR / "sasdata"
+INPUT_BRHFILE_DIR = STG_DIR                      # /sasdata/rawdata/lookup
+INPUT_LNNOTE_DIR  = STG_DIR / "MNILN"
+INPUT_LOAN_DIR    = STG_DIR / "mth_bnm"
 
-INPUT_BRHFILE      = INPUT_BRHFILE_DIR / "branch.txt"
-INPUT_LNNOTE_FILE  = INPUT_LNNOTE_DIR / "lnnote.sas7bdat"
+INPUT_BRHFILE      = INPUT_BRHFILE_DIR / "LKP_BRANCH"
+INPUT_LNNOTE_FILE  = INPUT_LNNOTE_DIR / "enrh_ln_note_m08.sas7bdat"
 # INPUT_LOAN_FILE is resolved below once REPTMON / NOWK are known.
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBHTUKR"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR  = BASE_DIR / "output" / "EIBHTUKR"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIBHTUKR.txt"
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 65    # OPTIONS PS=65
@@ -125,9 +121,9 @@ else:
 
 NOWK     = WK
 RDATE    = REPTDATE.strftime("%d/%m/%Y")            # PUT(REPTDATE,DDMMYY10.)
-REPTMON  = _z(MTH, 2)                                # PUT(MTH,Z2.)
-LREPTMON = _z(LASTMTH, 2) if LASTMTH else "  "        # PUT(LASTMTH,Z2.)
-RYEAR    = _z(REPTDATE.year, 4)                       # PUT(YEAR(REPTDATE),Z4.)
+REPTMON  = _z(MTH, 2)                               # PUT(MTH,Z2.)
+LREPTMON = _z(LASTMTH, 2) if LASTMTH else "  "      # PUT(LASTMTH,Z2.)
+RYEAR    = _z(REPTDATE.year, 4)                     # PUT(YEAR(REPTDATE),Z4.)
 
 if REPTMON == "06":
     FULLDATE = "1 JANUARY TO 30 JUNE "
@@ -136,7 +132,16 @@ elif REPTMON == "12":
 else:
     FULLDATE = ""
 
-INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan_{REPTMON}{NOWK}.sas7bdat"
+# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan084.sas7bdat"  # -> NEED TO CHANGE. Current is PIBB dataset. Columns not available
+
+# Generate time stamp
+report_date = date.today() - timedelta(days=1)
+ts = report_date.strftime("%y%m%d")
+
+OUTPUT_DIR  = BASE_DIR / "output" / "EIBHTUKR"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / f"EIBHTUKR_{ts}.txt"
 
 print(f"  RDATE       : {RDATE}")
 print(f"  REPTMON/NOWK: {REPTMON}/{NOWK}   RYEAR: {RYEAR}   FULLDATE: {FULLDATE.strip()}")
@@ -283,10 +288,10 @@ if INPUT_BRHFILE.exists():
     with open(INPUT_BRHFILE, "r", encoding="latin1") as fh:
         for line in fh:
             line = line.rstrip("\n").ljust(80)
-            branch_s = line[1:4].strip()     # @02 BRANCH 3.
-            brh      = line[5:8].strip()     # @06 BRH $3.
-            brhname  = line[11:36].strip()   # @12 BRHNAME $25.
-            state_c  = line[44:45].strip()   # @45 STATE $1.
+            branch_s = line[1:4].strip()        # @02 BRANCH 3.
+            brh      = line[5:8].strip()        # @06 BRH $3.
+            brhname  = line[11:36].strip()      # @12 BRHNAME $25.
+            state_c  = line[44:45].strip()      # @45 STATE $1.
             if not branch_s:
                 continue
             brhdata_rows.append({
