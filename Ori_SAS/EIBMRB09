@@ -1,0 +1,209 @@
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;
+%INC PGM(PBBELF);
+
+DATA REPTDATE;
+   SET DEPOSIT.REPTDATE;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTMTH',TRIM(LEFT(UPCASE(PUT(REPTDATE,MONNAME9.)))));
+   CALL SYMPUT('RPTDATE',PUT(REPTDATE,8.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA WDRAW;
+   SET MIS.FDWDRW&REPTMON;
+   TYPE     = 1;
+   BRABBR   = PUT(BRANCH,BRCHCD.);
+RUN;
+
+%MACRO RMGROUP;
+DATA WDRAW1 WDRAW2;
+   SET WDRAW;
+   IF CURCODE EQ 'MYR' THEN DO;
+    IF PRODCD NOT IN (394,393);
+      IF CUSTCODE IN (77,78,95,96) THEN
+         OUTPUT WDRAW1;
+      ELSE
+         OUTPUT WDRAW2;
+   END;
+RUN;
+%MEND;
+
+%MACRO MAINPROC;
+%DO J=1 %TO 2;
+
+PROC SORT DATA=WDRAW&J;BY RSONCODE;
+DATA FDRAW&J;
+   SET WDRAW&J;BY RSONCODE;
+   KEEP RSONCODE C0 C1 C2 C3 C4 C5 C6 C7 C8 C9
+                 A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 TC TA PRODCD TYPE;
+   DO I=1 TO 16;
+      IF RSONCODE = 'W' || PUT(I, Z2.) THEN DO;
+         IF FIRST.RSONCODE THEN DO;
+            C0=0; C1=0; C2=0; C3=0; C4=0; C5=0; C6=0; C7=0;
+            A0=0; A1=0; A2=0; A3=0; A4=0; A5=0; A6=0; A7=0;
+            C8=0; C9=0;
+            A8=0; A9=0;
+         END;
+         IF PRODCD = 300 THEN DO;
+            C0+1;
+            A0+TRANAMT;
+         END;
+         IF PRODCD = 301 THEN DO;
+            C1+1;
+            A1+TRANAMT;
+         END;
+         IF PRODCD = 302 THEN DO;
+            C2+1;
+            A2+TRANAMT;
+         END;
+         IF PRODCD = 303 THEN DO;
+            C3+1;
+            A3+TRANAMT;
+         END;
+         IF PRODCD = 315 THEN DO;
+            C4+1;
+            A4+TRANAMT;
+         END;
+         IF PRODCD = 316 THEN DO;
+            C5+1;
+            A5+TRANAMT;
+         END;
+         IF PRODCD = 311 THEN DO;
+            C6+1;
+            A6+TRANAMT;
+         END;
+         IF PRODCD = 312 THEN DO;
+            C7+1;
+            A7+TRANAMT;
+         END;
+         IF PRODCD = 313 THEN DO;
+            C8+1;
+            A8+TRANAMT;
+         END;
+         IF PRODCD = 314 THEN DO;
+            C9+1;
+            A9+TRANAMT;
+         END;
+       END;
+   END;
+   TC=C0+C1+C2+C3+C4+C5+C6+C7+C8+C9;
+   TA=A0+A1+A2+A3+A4+A5+A6+A7+A8+A9;
+   IF LAST.RSONCODE THEN OUTPUT;
+RUN;
+
+PROC SUMMARY DATA=FDRAW&J;
+   CLASS TYPE;
+   VAR C0 C1 C2 C3 C4 C5 C6 C7 C8 C9
+       A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 TC TA;
+   OUTPUT OUT=TOTAL&J
+          SUM=RC0 RC1 RC2 RC3 RC4 RC5 RC6 RC7 RC8 RC9
+              RA0 RA1 RA2 RA3 RA4 RA5 RA6 RA7 RA8 RA9 GTC GTA;
+RUN;
+
+DATA TOTAL&J;
+   SET TOTAL&J;
+   FORMAT PC0 PC1 PC2 PC3 PC4 PC5 PC6 PC7 PC8 PC9
+          PA0 PA1 PA2 PA3 PA4 PA5 PA6 PA7 PA8 PA9 PGTC PGTA 3.;
+   %DO I=0 %TO 9;
+      PC&I=(RC&I/GTC)*100;   PA&I =(RA&I/GTA)*100;
+      PGTC+PC&I;             PGTA+PA&I;
+   %END;
+RUN;
+
+%END;
+%MEND;
+
+%MACRO REPORT;
+%DO J=1 %TO 2;
+%IF &J=1 %THEN %DO;
+DATA _NULL_;
+    FILE SASLIST;
+    PUT @1 'REPORT ID : EIBMRB09';
+    PUT @1 'TITLE : MONTHLY REPORT ON REASON FOR FD WITHDRAWALS '
+           'BY RECEIPTS';
+    PUT @9 '- BREAKDOWN BY PRODUCT TYPES';
+    PUT @1 'REPORTING DATE : ' "&RDATE";
+    PUT @1 ' ';
+    PUT @1 '(A) INDIVIDUAL CUSTOMER (CUSTOMER CODE: 77,78,95 AND 96)';
+%END;
+%IF &J=2 %THEN %DO;
+DATA _NULL_;
+    FILE SASLIST MOD;
+    PUT @1 ' ';
+    PUT @1 '(B) NON-INDIVIDUAL CUSTOMER';
+%END;
+DATA _NULL_;
+  SET FDRAW&J;
+  FORMAT A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 TA COMMA16.;
+  FILE SASLIST MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @1  ' ';
+    PUT @4  'TYPES OF REASON' ';'
+            'NO. OF RECEIPTS WITHDRAWN FOR THE MONTH OF '
+            "&REPTMTH " "&REPTYEAR" ';;;;;;;;'
+            'TOTAL BY REASONS';
+    PUT @4  ';'
+            'PLUS FD'           ';;'   'FD LIFE'            ';;'
+            'PB GOLDEN 50 PLUS' ';;'   'MGIA-I'             ';;'
+            'ISTISMAR'          ';;'   'TERM DEPOSIT-I'     ';;'
+            'EFD NON STAFF'     ';;'   'EFD STAFF'          ';;'
+            'ETDI NON STAFF'    ';;'   'ETDI STAFF';
+    PUT @4  ';'
+            'PRODUCT CODE: 300' ';;'   'PRODUCT CODE: 301'  ';;'
+            'PRODUCT CODE: 303' ';;'   'PRODUCT CODE: 302'  ';;'
+            'PRODUCT CODE: 315' ';;'   'PRODUCT CODE: 316'  ';;'
+            'PRODUCT CODE: 311' ';;'   'PRODUCT CODE: 312'  ';;'
+            'PRODUCT CODE: 313' ';;'   'PRODUCT CODE: 314';
+    PUT @4  ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM';
+  END;
+    PUT @4   RSONCODE  ';'
+             C0   ';'  A0   ';'  C1   ';'  A1   ';'  C3   ';'
+             A3   ';'  C2   ';'  A2   ';'  C4   ';'  A4   ';'
+             C5   ';'  A5   ';'  C6   ';'  A6   ';'  C7   ';'
+             A7   ';'  C8   ';'  A8   ';'  C9   ';'  A9   ';'
+             TC   ';'  TA;
+RUN;
+
+DATA _NULL_;
+  SET TOTAL&J;
+  FORMAT RA0 RA1 RA2 RA3 RA4 RA5 RA6 RA7 RA8 RA9 GTA COMMA16.;
+  FILE SASLIST MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @4   'TOTAL'   ';'
+             RC0  ';'  RA0  ';'  RC1  ';'  RA1  ';'  RC3  ';'
+             RA3  ';'  RC2  ';'  RA2  ';'  RC4  ';'  RA4  ';'
+             RA5  ';'  RC5  ';'  RA6  ';'  RC6  ';'  RA7  ';'
+             RC7  ';'  RA8  ';'  RC8  ';'  RA9  ';'  RC8  ';'
+             GTC  ';'  GTA;
+    PUT @4   '% COMPOSITION'     ';'
+             PC0  ';'  PA0  ';'  PC1  ';'  PA1  ';'  PC3  ';'
+             PA3  ';'  PC2  ';'  PA2  ';'  PC4  ';'  PA4  ';'
+             PC5  ';'  PA5  ';'  PC6  ';'  PA6  ';'  PC7  ';'
+             PA7  ';'  PC8  ';'  PA8  ';'  PC9  ';'  PA9  ';'
+             PGTC ';'  PGTA;
+  END;
+RUN;
+%END;
+%MEND;
+
+OPTIONS NOCENTER NONUMBER NODATE MISSING=0;
+
+*+--------------------------------------------------------------+
+ |  GENERATE REPORT FOR RM FIXED DEPOSIT                        |
+ +--------------------------------------------------------------+;
+DATA _NULL_;
+   CALL SYMPUT('RTITLE',PUT('FD WITHDRAWALS',$14.));
+   CALL SYMPUT('OUTPUT',PUT('RMWDRAW',$7.));
+RUN;
+
+%RMGROUP;
+%MAINPROC;
+%REPORT;
