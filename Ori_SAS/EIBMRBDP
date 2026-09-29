@@ -1,0 +1,160 @@
+//EIBMRBDP JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB22447
+/*JOBPARM S=S1M1
+//*-------------------------------------------------------------------
+//* PROGRAM  : EIBMRBDP
+//* ESMR     : 2010-1642 (AAB)
+//* DESC     : MONTHLY BRANCH DEPOSIT AND BRANCH PERFORMANCE REPORT
+//*            FOR PREPARATION OF BEC PAPER
+//* ESMR     : 2010-2431 (AAB)
+//* DESC     : REASONS FOR RM FD & FCY FD WITHDRAWALS OVER-THE-COUNTER
+//*-------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DD01     DD DSN=SAP.PBB.EIBMRB01,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD02     DD DSN=SAP.PBB.EIBMRB02,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD03     DD DSN=SAP.PBB.EIBMRB03,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD04     DD DSN=SAP.PBB.EIBMRB04,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD05     DD DSN=SAP.PBB.EIBMRB05,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD06     DD DSN=SAP.PBB.EIBMRB06,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD07     DD DSN=SAP.PBB.EIBMRB07,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD08     DD DSN=SAP.PBB.EIBMRB8A,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD09     DD DSN=SAP.PBB.EIBMRB8B,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD10     DD DSN=SAP.PBB.EIBMRB09,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*---------------------------------------------------------------
+//* EIBMRB01 - DAILY TOTAL OUTSTANDING BALANCE/ACCOUNT ON FCY FD
+//*---------------------------------------------------------------
+//EIBMRB01 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//MISFD    DD DSN=SAP.PBB.FCYFD,DISP=SHR
+//MIS2FD   DD DSN=SAP.PBB.FCFD,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB01,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=133,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB01),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB02 - MONTHLY SA/CA/FD ACCOUNT OUTSTANDING AMOUNT
+//*---------------------------------------------------------------
+//EIBMRB02 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB02,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=133,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB02),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB03 - LISTING OF NEW CA OPENED FOR THE MONTH
+//*---------------------------------------------------------------
+//EIBMRB03 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//CIS      DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB03,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=150,RECFM=FB,BLKSIZE=15000)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB03),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB04 - LISTING OF NEW FD ACCOUNT OPENED FOR THE MONTH
+//*---------------------------------------------------------------
+//EIBMRB04 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//CIS      DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB04,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=150,RECFM=FB,BLKSIZE=15000)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB04),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB05 - MONTH END REPORT BY BRANCH FOR FCY FD AND FCY CA
+//*---------------------------------------------------------------
+//EIBMRB05 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//MISFD    DD DSN=SAP.PBB.FCFD,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB05,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=133,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB05),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB06 - LISTING OF NEW FCY FD ACCOUNT OPENED FOR THE MONTH
+//*---------------------------------------------------------------
+//EIBMRB06 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//MISFD    DD DSN=SAP.PBB.FCFD,DISP=SHR
+//CIS      DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB06,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=155,RECFM=FB,BLKSIZE=15500)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB06),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB07 - LISTING OF NEW FCY CA ACCOUNT OPENED FOR THE MONTH
+//*---------------------------------------------------------------
+//EIBMRB07 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//MISCA    DD DSN=SAP.PBB.FCYCA,DISP=SHR
+//CIS      DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB07,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=155,RECFM=FB,BLKSIZE=15500)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB07),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB08 - MONTHLY FD RECEIPTS WITHDRAWALS BY ACCOUNT BALANCE
+//*---------------------------------------------------------------
+//EIBMRB08  EXEC SAS609
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//MIS       DD DSN=SAP.PBB.DP.SASDATA,DISP=SHR
+//RMWDRAW   DD DSN=SAP.PBB.EIBMRB8A,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(500,80),RLSE),UNIT=SYSDA,
+//          DCB=(LRECL=500,RECFM=FB,BLKSIZE=5000)
+//FCYWDRAW  DD DSN=SAP.PBB.EIBMRB8B,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(500,80),RLSE),UNIT=SYSDA,
+//          DCB=(LRECL=500,RECFM=FB,BLKSIZE=5000)
+//SYSIN     DD DSN=SAP.BNM.PROGRAM(EIBMRB08),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB09 - MONTHLY FD RECEIPTS WITHDRAWALS BY PRODUCT TYPES
+//*---------------------------------------------------------------
+//EIBMRB09  EXEC SAS609
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//MIS       DD DSN=SAP.PBB.DP.SASDATA,DISP=SHR
+//SASLIST   DD DSN=SAP.PBB.EIBMRB09,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(500,80),RLSE),UNIT=SYSDA,
+//          DCB=(LRECL=500,RECFM=FB,BLKSIZE=5000)
+//SYSIN     DD DSN=SAP.BNM.PROGRAM(EIBMRB09),DISP=SHR
