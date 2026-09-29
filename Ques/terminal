@@ -1,11 +1,5 @@
-Step 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...
+Step 3: Building LNNOTE (PBB, COSTCTR=8044)...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 462, in <module>
-    lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 432, in _build_lnnote
-    comm_pl = con.execute(f"""
-_duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
-Candidate bindings: "ACTIND", "HSTNCDOR", "EXPIREDT", "CSTATE", "CSECTOR"
-
-LINE 3:         WHERE ENTITY_CD <> 'PIBB'
-                      ^
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 459, in <module>
+    lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COSTCTR = 8044")
+TypeError: _build_lnnote() missing 1 required positional argument: 'costctr_sql'
