@@ -15,5 +15,29 @@ Step 2: Caching input SAS datasets to Parquet...
   [ISBASE] Existing Parquet found - skipping conversion.
 
 Step 3: Building LNNOTE (PBB, COSTCTR=8044)...
-100% ▕██████████████████████████████████████▏ (00:00:04.72 elapsed)     
   [PBB] LNNOTE rows after merge with LNCOMM: 350
+
+Step 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...
+  [PIBB] LNNOTE rows after merge with LNCOMM: 105
+
+Step 5: Building LOAN (date parsing, PAYEFF, FULRELDTE, NOOFAC)...
+  LOAN rows: 455
+
+Step 6: Building LNSETTLE (settled accounts for the week)...
+  LNSETTLE rows: 0
+
+Step 7: Rendering LNSETTLE (PAID LOAN LIST) report...
+
+Step 8: Building LNRELES / LNRELS1 (release/migration accounts)...
+  HIST (deduped ISBASE) rows: 1
+  LNRELES rows: 0
+  PROC APPEND equivalent: no new LNRELS1 rows to append.
+
+Step 9: Splitting into LNRPT1A (new loan) / LNRPT1B (migration)...
+  LNRPT1A rows: 0   LNRPT1B rows: 0
+
+Step 10: Building LNPAY (weekly payment schedule)...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 948, in <module>
+    payeff = f"99/{effdate.month:02d}/{effdate.strftime('%y')}" if effdate else None
+AttributeError: 'float' object has no attribute 'month'
