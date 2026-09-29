@@ -83,22 +83,22 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-# INPUT_LNNOTE_PBB_DIR  = STG_DIR / "sasdata"
-# INPUT_LNCOMM_PBB_DIR  = STG_DIR / "sasdata"
-# INPUT_LNNOTE_PIBB_DIR = STG_DIR / "sasdata"
-# INPUT_LNCOMM_PIBB_DIR = STG_DIR / "sasdata"
-INPUT_LNNOTE_DIR      = STG_DIR / "MNILN"
-INPUT_LNCOMM_DIR      = STG_DIR / "MNILN"
+INPUT_LNNOTE_PBB_DIR  = STG_DIR / "MNILN"
+INPUT_LNCOMM_PBB_DIR  = STG_DIR / "MNILN"
+INPUT_LNNOTE_PIBB_DIR = STG_DIR / "MNILN"
+INPUT_LNCOMM_PIBB_DIR = STG_DIR / "MNILN"
+# INPUT_LNNOTE_DIR      = STG_DIR / "MNILN"
+# INPUT_LNCOMM_DIR      = STG_DIR / "MNILN"
 INPUT_LNPAY_PBB_DIR   = STG_DIR / "sasdata"
 INPUT_LNPAY_PIBB_DIR  = STG_DIR / "sasdata"
 INPUT_ISBASE_DIR      = STG_DIR / "sasdata"
 
-# INPUT_LNNOTE_PBB_FILE  = INPUT_LNNOTE_PBB_DIR  / "mnln_lnnote_pbb.sas7bdat"     # MNILN.LNNOTE
-# INPUT_LNCOMM_PBB_FILE  = INPUT_LNCOMM_PBB_DIR  / "mnln_lncomm_pbb.sas7bdat"     # MNILN.LNCOMM
-# INPUT_LNNOTE_PIBB_FILE = INPUT_LNNOTE_PIBB_DIR / "imnln_lnnote_pibb.sas7bdat"   # IMNILN.LNNOTE
-# INPUT_LNCOMM_PIBB_FILE = INPUT_LNCOMM_PIBB_DIR / "imnln_lncomm_pibb.sas7bdat"   # IMNILN.LNCOMM
-INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"         # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
-INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "enrh_ln_comm_d22.sas7bdat"         # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
+INPUT_LNNOTE_PBB_FILE  = INPUT_LNNOTE_PBB_DIR  / "pbb_lnnote.sas7bdat"     # MNILN.LNNOTE
+INPUT_LNCOMM_PBB_FILE  = INPUT_LNCOMM_PBB_DIR  / "pbb_lncomm.sas7bdat"     # MNILN.LNCOMM
+INPUT_LNNOTE_PIBB_FILE = INPUT_LNNOTE_PIBB_DIR / "pibb_lnnote.sas7bdat"   # IMNILN.LNNOTE
+INPUT_LNCOMM_PIBB_FILE = INPUT_LNCOMM_PIBB_DIR / "pibb_lncomm.sas7bdat"   # IMNILN.LNCOMM
+# INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"         # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
+# INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "enrh_ln_comm_d22.sas7bdat"         # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
 INPUT_ISBASE_FILE = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
@@ -197,38 +197,38 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     )
 
 
-def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    writer = None
-    schema = None
-    total = 0
+# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+#     writer = None
+#     schema = None
+#     total = 0
 
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
-        if schema is None:
-            fields = []
-            for col, dtype in chunk.dtypes.items():
-                if dtype == "object":
-                    pa_type = pa.string()
-                elif pd.api.types.is_integer_dtype(dtype):
-                    pa_type = pa.int64()
-                elif pd.api.types.is_float_dtype(dtype):
-                    pa_type = pa.float64()
-                else:
-                    pa_type = pa.from_numpy_dtype(dtype)
-                fields.append(pa.field(col, pa_type))
-            schema = pa.schema(fields)
-            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+#     for chunk in reader:
+#         if schema is None:
+#             fields = []
+#             for col, dtype in chunk.dtypes.items():
+#                 if dtype == "object":
+#                     pa_type = pa.string()
+#                 elif pd.api.types.is_integer_dtype(dtype):
+#                     pa_type = pa.int64()
+#                 elif pd.api.types.is_float_dtype(dtype):
+#                     pa_type = pa.float64()
+#                 else:
+#                     pa_type = pa.from_numpy_dtype(dtype)
+#                 fields.append(pa.field(col, pa_type))
+#             schema = pa.schema(fields)
+#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
 
-        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
+#         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+#         writer.write_table(table)
+#         total += len(chunk)
+#         del chunk, table
+#         gc.collect()
 
-    if writer:
-        writer.close()
-    print(f"  [{tag}] Done - {total:,} rows cached.")
+#     if writer:
+#         writer.close()
+#     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
 # def _sas_to_parquet(sas_path, cache_path, tag):
@@ -257,10 +257,51 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 #     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    total = 0
+
+    reader = pyreadstat.read_file_in_chunks(
+        pyreadstat.read_sas7bdat,
+        str(sas_path),
+        chunksize=CHUNK_ROWS,
+        encoding="latin1",
+        disable_datetime_conversion=True,   # keep SAS numerics as-is, no date objects
+    )
+    for chunk, _meta in reader:
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        if writer is None:
+            schema = table.schema
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        else:
+            table = table.cast(schema)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+# def _load_cached(sas_path: Path, tag: str) -> Path:
+#     cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+#     if _cache_is_fresh(sas_path, cache_path):
+#         print(f"  [{tag}] Cache fresh - skipping conversion.")
+#     else:
+#         _sas_to_parquet(sas_path, cache_path, tag)
+#     return cache_path
+
+
+FORCE_RECONVERT = False   # set True to rebuild the Parquet cache from .sas7bdat
+
+
 def _load_cached(sas_path: Path, tag: str) -> Path:
     cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
+    if cache_path.exists() and not FORCE_RECONVERT:
+        print(f"  [{tag}] Existing Parquet found - skipping conversion.")
     else:
         _sas_to_parquet(sas_path, cache_path, tag)
     return cache_path
@@ -270,12 +311,12 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # STEP 2: CACHE INPUT SAS FILES TO PARQUET
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-# LNNOTE_PBB_CACHE  = _load_cached(INPUT_LNNOTE_PBB_FILE, "LNNOTE_PBB")
-# LNCOMM_PBB_CACHE  = _load_cached(INPUT_LNCOMM_PBB_FILE, "LNCOMM_PBB")
-# LNNOTE_PIBB_CACHE = _load_cached(INPUT_LNNOTE_PIBB_FILE, "LNNOTE_PIBB")
-# LNCOMM_PIBB_CACHE = _load_cached(INPUT_LNCOMM_PIBB_FILE, "LNCOMM_PIBB")
-LNNOTE_CACHE      = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
-LNCOMM_CACHE      = _load_cached(INPUT_LNCOMM_FILE, "LNCOMM")
+LNNOTE_PBB_CACHE  = _load_cached(INPUT_LNNOTE_PBB_FILE, "LNNOTE_PBB")
+LNCOMM_PBB_CACHE  = _load_cached(INPUT_LNCOMM_PBB_FILE, "LNCOMM_PBB")
+LNNOTE_PIBB_CACHE = _load_cached(INPUT_LNNOTE_PIBB_FILE, "LNNOTE_PIBB")
+LNCOMM_PIBB_CACHE = _load_cached(INPUT_LNCOMM_PIBB_FILE, "LNCOMM_PIBB")
+# LNNOTE_CACHE      = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
+# LNCOMM_CACHE      = _load_cached(INPUT_LNCOMM_FILE, "LNCOMM")
 LNPAY_PBB_CACHE   = _load_cached(INPUT_LNPAY_PBB_FILE, "LNPAY_PBB")
 LNPAY_PIBB_CACHE  = _load_cached(INPUT_LNPAY_PIBB_FILE, "LNPAY_PIBB")
 ISBASE_CACHE      = _load_cached(INPUT_ISBASE_FILE, "ISBASE")
@@ -414,22 +455,22 @@ def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, entity_sql: str,
     return out_rows
 
 
-# print("\nStep 3: Building LNNOTE (PBB, COSTCTR=8044)...")
-# lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COSTCTR = 8044")
+print("\nStep 3: Building LNNOTE (PBB, COSTCTR=8044)...")
+lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COSTCTR = 8044")
 
-print("\nStep 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...")
-lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
-                                 entity_sql="ENTITY_CD <> 'PIBB'",
-                                 costctr_sql="COSTCTR = 8044")
+# print("\nStep 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...")
+# lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
+#                                  entity_sql="ENTITY_CD <> 'PIBB'",
+#                                  costctr_sql="COSTCTR = 8044")
 
-# print("\nStep 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...")
-# lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
-#                                   "COSTCTR BETWEEN 3000 AND 3999")
+print("\nStep 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...")
+lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
+                                  "COSTCTR BETWEEN 3000 AND 3999")
 
-print("\nStep 4: Building ILNNOTE (PIBB, ENTITY_CD = 'PIBB', 3000<=COSTCTR<=3999)...")
-lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_CACHE, LNCOMM_CACHE,
-                                  entity_sql="ENTITY_CD = 'PIBB'",
-                                  costctr_sql="COSTCTR BETWEEN 3000 AND 3999")
+# print("\nStep 4: Building ILNNOTE (PIBB, ENTITY_CD = 'PIBB', 3000<=COSTCTR<=3999)...")
+# lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_CACHE, LNCOMM_CACHE,
+#                                   entity_sql="ENTITY_CD = 'PIBB'",
+#                                   costctr_sql="COSTCTR BETWEEN 3000 AND 3999")
 
 # ============================================================================
 # STEP 5: DATA LOAN &INTGRVAR;  SET LNNOTE ILNNOTE;  ...
