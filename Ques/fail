@@ -1,39 +1,51 @@
 def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str) -> list:
     con = duckdb.connect(database=":memory:")
-    note_pl = con.execute(f"""
-        SELECT *
-        FROM read_parquet('{note_cache.as_posix()}')
-        WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
+    out_rows = con.execute(f"""
+        SELECT
+            n.LOANTYPE, n.NTBRCH, n.ORGTYPE, n.ACCTNO, n.COMMNO, n.CURBAL,
+            n.NOTENO, n.NAME, n.ISSUEDT, n.PAIDIND, n.BLDATE, n.BILPAY,
+            n.PAYAMT, n.INTRATE, n.STAFFNO, n.PAYEFFDT, n.ORGBAL, n.LASTTRAN,
+            n.LSTTRNAM, n.LSTTRNCD, n.RESTIND, n.FLAG1, n.FRELEAS,
+            CASE
+                WHEN COALESCE(n.COMMNO, 0) > 0 AND c.REVOVLI = 'N' THEN c.CORGAMT
+                WHEN COALESCE(n.COMMNO, 0) > 0                     THEN c.CCURAMT
+                ELSE n.ORGBAL
+            END AS APPRLIMT
+        FROM read_parquet('{note_cache.as_posix()}') n
+        LEFT JOIN read_parquet('{comm_cache.as_posix()}') c
+               ON n.ACCTNO = c.ACCTNO AND n.COMMNO = c.COMMNO
+        WHERE (n.LOANTYPE IS NULL OR n.LOANTYPE <= 61
+               OR n.LOANTYPE IN (100,102,103,104,105))
           AND {costctr_sql}
-        ORDER BY ACCTNO, COMMNO
-    """).pl()
-    comm_pl = con.execute(f"""
-        SELECT * FROM read_parquet('{comm_cache.as_posix()}')
-        ORDER BY ACCTNO, COMMNO
-    """).pl()
+    """).pl().to_dicts()
     con.close()
-
-    left = note_pl.to_dicts()
-    right = comm_pl.to_dicts()
-    merged = _sas_merge_retain(left, right, key_fields=("ACCTNO", "COMMNO"))
-
-    out_rows = []
-    for r in merged:
-        if not r["_IN_LEFT"]:
-            continue  # IF A;
-        commno = r.get("COMMNO") or 0
-        if commno > 0:
-            apprlimt = r.get("CORGAMT") if r.get("REVOVLI") == "N" else r.get("CCURAMT")
-        else:
-            apprlimt = r.get("ORGBAL")
-        r["APPRLIMT"] = apprlimt
-        out_rows.append(r)
     print(f"  [{tag}] LNNOTE rows after merge with LNCOMM: {len(out_rows):,}")
     return out_rows
 
 
 
 
-lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COSTCTR = 8044")
+lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "n.COSTCTR = 8044")
 lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
-                                  "COSTCTR BETWEEN 3000 AND 3999")
+                                 "n.COSTCTR BETWEEN 3000 AND 3999")
+
+
+
+
+hist_keys = set(zip(hist_pl["ACCTNO"].to_list(), hist_pl["NOTENO"].to_list()))
+merged_hist = [
+    {**r, "_IN_LEFT": True, "_IN_RIGHT": False}
+    for r in loan_rows
+    if (r["ACCTNO"], r["NOTENO"]) not in hist_keys
+]
+
+
+
+
+/sas/python/virt_edw_dev/bin/python3 -c "
+import duckdb
+d = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIMRPTS/'
+for f in ['pbb_lncomm', 'pibb_lncomm']:
+    n = duckdb.sql(f\"SELECT COUNT(*) - COUNT(DISTINCT (ACCTNO, COMMNO)) FROM read_parquet('{d}{f}.parquet')\").fetchone()[0]
+    print(f, 'duplicate ACCTNO/COMMNO rows:', n)
+"
