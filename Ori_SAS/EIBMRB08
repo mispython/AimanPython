@@ -1,0 +1,349 @@
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;
+%INC PGM(PBBELF);
+
+PROC FORMAT;
+     VALUE FDRNGE
+            LOW - 5000     = '01'
+           5001 - 10000    = '02'
+          10001 - 15000    = '03'
+          15001 - 20000    = '04'
+          20001 - 25000    = '05'
+          25001 - 30000    = '06'
+          30001 - 35000    = '07'
+          35001 - 40000    = '08'
+          40001 - 45000    = '09'
+          45001 - 50000    = '10'
+          50001 - 55000    = '11'
+          55001 - 60000    = '12'
+          60001 - 65000    = '13'
+          65001 - 70000    = '14'
+          70001 - 75000    = '15'
+          75001 - 80000    = '16'
+          80001 - 85000    = '17'
+          85001 - 90000    = '18'
+          90001 - 95000    = '19'
+          95001 - 100000   = '20'
+         100001 - 150000   = '21'
+         150001 - 250000   = '22'
+         250001 - 500000   = '23'
+         500001 - 1000000  = '24'
+        1000001 - 2000000  = '25'
+        2000001 - 3000000  = '26'
+        3000001 - 4000000  = '27'
+        4000001 - 5000000  = '28'
+        5000001 - 10000000 = '29'
+       10000001 - HIGH     = '30';
+
+     VALUE $FDVALUE
+         '01'   = ' 5K & BELOW    '
+         '02'   = ' >  5K TO 10K  '
+         '03'   = ' > 10K TO 15K  '
+         '04'   = ' > 15K TO 20K  '
+         '05'   = ' > 20K TO 25K  '
+         '06'   = ' > 25K TO 30K  '
+         '07'   = ' > 30K TO 35K  '
+         '08'   = ' > 35K TO 40K  '
+         '09'   = ' > 40K TO 45K  '
+         '10'   = ' > 45K TO 50K  '
+         '11'   = ' > 50K TO 55K  '
+         '12'   = ' > 55K TO 60K  '
+         '13'   = ' > 60K TO 65K  '
+         '14'   = ' > 65K TO 70K  '
+         '15'   = ' > 70K TO 75K  '
+         '16'   = ' > 75K TO 80K  '
+         '17'   = ' > 80K TO 85K  '
+         '18'   = ' > 85K TO 90K  '
+         '19'   = ' > 90K TO 95K  '
+         '20'   = ' > 95K TO 100K '
+         '21'   = ' > 100K TO 150K'
+         '22'   = ' > 150K TO 250K'
+         '23'   = ' > 250K TO 500K'
+         '24'   = ' > 500K TO 1M  '
+         '25'   = ' > 1M TO 2M    '
+         '26'   = ' > 2M TO 3M    '
+         '27'   = ' > 3M TO 4M    '
+         '28'   = ' > 4M TO 5M    '
+         '29'   = ' > 5M TO 10M   '
+         '30'   = ' > 10M         ';
+RUN;
+
+DATA REPTDATE;
+   SET DEPOSIT.REPTDATE;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RPTDATE',PUT(REPTDATE,8.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA WDRAW;
+   SET MIS.FDWDRW&REPTMON;
+   TYPE    = 1;
+   BRABBR  = PUT(BRANCH,BRCHCD.);
+   FDVAL   = PUT(CURBAL,FDRNGE.);
+RUN;
+
+PROC SORT DATA=WDRAW;BY TRANAMT;
+%MACRO RMGROUP;
+DATA WDRAW1 WDRAW2 WDRAW3 WDRAW4;
+   SET WDRAW;
+   IF CURCODE EQ 'MYR' THEN DO;
+    IF PRODCD NOT IN (394,393);
+      IF ACCTTYPE='C' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW1;
+         ELSE
+            OUTPUT WDRAW3;
+      END;
+      ELSE IF ACCTTYPE='I' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW2;
+         ELSE
+            OUTPUT WDRAW4;
+      END;
+   END;
+RUN;
+%MEND;
+
+%MACRO FCYGROUP;
+DATA WDRAW1 WDRAW2 WDRAW3 WDRAW4;
+   SET WDRAW;
+   IF CURCODE NE 'MYR' THEN DO;
+      IF ACCTTYPE='C' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW1;
+         ELSE
+            OUTPUT WDRAW3;
+      END;
+      ELSE IF ACCTTYPE='I' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW2;
+         ELSE
+            OUTPUT WDRAW4;
+      END;
+   END;
+RUN;
+%MEND;
+
+*+--------------------------------------------------------------+
+ |  RM & FCY FIXED DEPOSIT BREAKDOWN BY REASON CODE             |
+ +--------------------------------------------------------------+;
+%MACRO RCODE;
+   IF FIRST.FDVAL THEN DO;
+      C1=0; C2=0; C3=0; C4=0; C5=0; C6=0; C7=0; C8=0;  C9=0;
+      C10=0; C11=0; C12=0; C13=0; C14=0; C15=0; A1=0;  A2=0;
+      A3=0; A4=0; A5=0; A6=0; A7=0; A8=0; A9=0; A10=0; A11=0;
+      A12=0; A13=0; A14=0; A15=0; C16=0; A16=0; TC=0; TA=0;
+   END;
+
+   %DO I=1 %TO 16;
+      IF RSONCODE = 'W' || PUT(&I, Z2.) THEN DO;
+         C&I+1;
+         A&I+TRANAMT;
+      END;
+   %END;
+
+   TC+1;
+   TA+TRANAMT;
+   IF LAST.FDVAL THEN OUTPUT;
+%MEND;
+
+%MACRO MAINPROC;
+%DO J=1 %TO 4;
+PROC SORT DATA=WDRAW&J;BY FDVAL;
+DATA FDRAW&J;
+   SET WDRAW&J;BY FDVAL;
+   KEEP FDVAL CURBAL C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 C11 C12 C13 C14 C15
+        A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14 A15 TC TA TYPE
+        C16 A16;
+
+   IF (         CURBAL<=5000 ) THEN DO;
+      %RCODE;
+   END;
+   IF (   5001<=CURBAL<=10000) THEN DO;
+      %RCODE;
+   END;
+   IF (  10001<=CURBAL<=15000) THEN DO;
+      %RCODE;
+   END;
+   IF (  15001<=CURBAL<=20000) THEN DO;
+      %RCODE;
+   END;
+   IF (  20001<=CURBAL<=25000) THEN DO;
+      %RCODE;
+   END;
+   IF (  25001<=CURBAL<=30000) THEN DO;
+      %RCODE;
+   END;
+   IF (  30001<=CURBAL<=35000) THEN DO;
+      %RCODE;
+   END;
+   IF (  35001<=CURBAL<=40000) THEN DO;
+      %RCODE;
+   END;
+   IF (  40001<=CURBAL<=45000) THEN DO;
+      %RCODE;
+   END;
+   IF (  45001<=CURBAL<=50000) THEN DO;
+      %RCODE;
+   END;
+   IF (  50001<=CURBAL<=55000) THEN DO;
+      %RCODE;
+   END;
+   IF (  55001<=CURBAL<=60000) THEN DO;
+      %RCODE;
+   END;
+   IF (  60001<=CURBAL<=65000) THEN DO;
+      %RCODE;
+   END;
+   IF (  65001<=CURBAL<=70000) THEN DO;
+      %RCODE;
+   END;
+   IF (  70001<=CURBAL<=75000) THEN DO;
+      %RCODE;
+   END;
+   IF (  75001<=CURBAL<=80000) THEN DO;
+      %RCODE;
+   END;
+   IF (  80001<=CURBAL<=85000) THEN DO;
+      %RCODE;
+   END;
+   IF (  85001<=CURBAL<=90000) THEN DO;
+      %RCODE;
+   END;
+   IF (  90001<=CURBAL<=95000) THEN DO;
+      %RCODE;
+   END;
+   IF (  95001<=CURBAL<=100000)    THEN DO;
+      %RCODE;
+   END;
+   IF (  100001<=CURBAL<=150000)   THEN DO;
+      %RCODE;
+   END;
+   IF (  150001<=CURBAL<=250000)   THEN DO;
+      %RCODE;
+   END;
+   IF (  250001<=CURBAL<=500000)   THEN DO;
+      %RCODE;
+   END;
+   IF (  500001<=CURBAL<=1000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 1000001<=CURBAL<=2000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 2000001<=CURBAL<=3000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 3000001<=CURBAL<=4000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 4000001<=CURBAL<=5000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 5000001<=CURBAL<=10000000) THEN DO;
+      %RCODE;
+   END;
+   IF (CURBAL>10000001) THEN DO;
+      %RCODE;
+   END;
+RUN;
+
+PROC SUMMARY DATA=FDRAW&J;
+   CLASS TYPE;
+   VAR C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 C11 C12 C13 C14 C15 C16 TC TA;
+   OUTPUT OUT=TOTAL&J
+          SUM=RC1 RC2 RC3 RC4 RC5 RC6 RC7 RC8 RC9 RC10 RC11 RC12 RC13
+              RC14 RC15 RC16 GTC GTA;
+RUN;
+%END;
+%MEND;
+
+%MACRO REPORT;
+%DO J=1 %TO 4;
+%IF &J=1 %THEN %DO;
+DATA _NULL_;
+    FILE &OUTPUT MOD;
+     PUT @1 'REPORT ID : EIBDRB08';
+     PUT @1 'TITLE : MONTHLY REPORT ON ' "&RTITLE " 'BY ACCOUNT '
+            'BALANCE';
+     PUT @1 'REPORTING DATE : ' "&RDATE";
+     PUT @1 ' ';
+     PUT @1 '(A) INDIVIDUAL CUSTOMER (CUSTOMER CODE: 77,78,95 AND 96)';
+%END;
+%IF &J=3 %THEN %DO;
+DATA _NULL_;
+    FILE &OUTPUT MOD;
+    PUT @1 ' ';
+    PUT @1 '(B) NON-INDIVIDUAL CUSTOMER';
+%END;
+DATA _NULL_;
+  SET FDRAW&J;
+  FORMAT TA     COMMA16.
+         FDVAL  $FDVALUE.;
+  FILE &OUTPUT MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @1  ' ';
+    PUT @4  "&&HDR&J";
+    PUT @1  ' ';
+    PUT @4  'ACCOUNT BALANCE AS ' ';' 'WITHDRAWAL' ';;'
+            'BREAKDOWN BY REASON CODE';
+    PUT @4  'MONTH-END FOR TOTAL' ';' 'NO. OF  '   ';'  'AMOUNT'  ';'
+            'W01' ';'  'W02' ';'  'W03' ';'  'W04' ';'  'W05'     ';'
+            'W06' ';'  'W07' ';'  'W08' ';'  'W09' ';'  'W10'     ';'
+            'W11' ';'  'W12' ';'  'W13' ';'  'W14' ';'  'W15'     ';'
+            'W16';
+    PUT @4  'RECEIPT (BY RANGE)'  ';' 'RECEIPTS'   ';'  ' (RM)';
+  END;
+    PUT @4   FDVAL ';'  TC    ';'  TA    ';'
+             C1    ';'  C2    ';'  C3    ';'  C4    ';'  C5   ';'
+             C6    ';'  C7    ';'  C8    ';'  C9    ';'  C10  ';'
+             C11   ';'  C12   ';'  C13   ';'  C14   ';'  C15  ';'
+             C16   ;
+RUN;
+
+DATA _NULL_;
+  SET TOTAL&J;
+  FORMAT GTA COMMA16.;
+  FILE &OUTPUT MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @4  'TOTAL'           ';'  GTC   ';'  GTA   ';'
+             RC1   ';'  RC2   ';'  RC3   ';'  RC4   ';'  RC5   ';'
+             RC6   ';'  RC7   ';'  RC8   ';'  RC9   ';'  RC10  ';'
+             RC11  ';'  RC12  ';'  RC13  ';'  RC14  ';'  RC15  ';'
+             RC16   ;
+  END;
+RUN;
+%END;
+%MEND;
+
+OPTIONS NOCENTER NONUMBER NODATE MISSING=0;
+
+%LET HDR1=(I) PBB;
+%LET HDR2=(II) PIBB;
+%LET HDR3=(I) PBB;
+%LET HDR4=(II) PIBB;
+
+*+--------------------------------------------------------------+
+ |  GENERATE REPORT FOR RM FIXED DEPOSIT                        |
+ +--------------------------------------------------------------+;
+DATA _NULL_;
+   CALL SYMPUT('RTITLE',PUT('FD RECEIPTS WITHDRAWALS (PBB&PIBB)',$34.));
+   CALL SYMPUT('OUTPUT',PUT('RMWDRAW',$7.));
+RUN;
+
+%RMGROUP;
+%MAINPROC;
+%REPORT;
+
+*+--------------------------------------------------------------+
+ |   GENERATE REPORT FOR FCY FIXED DEPOSIT                      |
+ +--------------------------------------------------------------+;
+DATA _NULL_;
+   CALL SYMPUT('RTITLE',PUT('FCY FD RECEIPTS WITHDRAWALS',$27.));
+   CALL SYMPUT('OUTPUT',PUT('FCYWDRAW',$8.));
+RUN;
+
+%FCYGROUP;
+%MAINPROC;
+%REPORT;
