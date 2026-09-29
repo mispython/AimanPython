@@ -1,22 +1,39 @@
-cd /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIMRPTS
-ls -l *.parquet
-/sas/python/virt_edw_dev/bin/python3 -c "
-import pyarrow.parquet as pq, glob
-for f in sorted(glob.glob('*.parquet')):
-    s = pq.read_schema(f)
-    print(f, pq.ParquetFile(f).metadata.num_rows, 'rows,', len(s.names), 'cols')
-"
+def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str) -> list:
+    con = duckdb.connect(database=":memory:")
+    note_pl = con.execute(f"""
+        SELECT *
+        FROM read_parquet('{note_cache.as_posix()}')
+        WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
+          AND {costctr_sql}
+        ORDER BY ACCTNO, COMMNO
+    """).pl()
+    comm_pl = con.execute(f"""
+        SELECT * FROM read_parquet('{comm_cache.as_posix()}')
+        ORDER BY ACCTNO, COMMNO
+    """).pl()
+    con.close()
+
+    left = note_pl.to_dicts()
+    right = comm_pl.to_dicts()
+    merged = _sas_merge_retain(left, right, key_fields=("ACCTNO", "COMMNO"))
+
+    out_rows = []
+    for r in merged:
+        if not r["_IN_LEFT"]:
+            continue  # IF A;
+        commno = r.get("COMMNO") or 0
+        if commno > 0:
+            apprlimt = r.get("CORGAMT") if r.get("REVOVLI") == "N" else r.get("CCURAMT")
+        else:
+            apprlimt = r.get("ORGBAL")
+        r["APPRLIMT"] = apprlimt
+        out_rows.append(r)
+    print(f"  [{tag}] LNNOTE rows after merge with LNCOMM: {len(out_rows):,}")
+    return out_rows
 
 
 
 
-FORCE_RECONVERT = False   # set True to rebuild the Parquet cache from .sas7bdat
-
-
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-    if cache_path.exists() and not FORCE_RECONVERT:
-        print(f"  [{tag}] Existing Parquet found - skipping conversion.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
+lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COSTCTR = 8044")
+lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
+                                  "COSTCTR BETWEEN 3000 AND 3999")
