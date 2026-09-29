@@ -1,25 +1,130 @@
-SAS_DATE_EPOCH = date(1960, 1, 1)
-
-
-def _sas_date_to_py(v):
-    """Convert a raw SAS date number (days since 1960-01-01) to a Python date.
-    Required because _sas_to_parquet uses disable_datetime_conversion=True."""
-    if v is None:
-        return None
-    return SAS_DATE_EPOCH + timedelta(days=int(v))
+del cisrm_rows, cisdp_rows, cisln_rows
+del coll_sorted, coll_stacked, icoll_rows, coll_rows
+gc.collect()
 
 
 
 
-lnpay_rows = []
-for r in (lnpay_pbb + lnpay_pibb):
-    effdate = _sas_date_to_py(r.get("EFFDATE"))
-    # PAYEFFDD is a constant 99; PAYEFF = LEFT(COMPBL(PAYEFFDD||'/'||PAYEFFMM||'/'||PAYEFFYY))
-    # -- with a constant 2-digit PAYEFFDD and no embedded blanks, LEFT/COMPBL
-    # reduce to a plain "99/MM/YY" string.
-    payeff = f"99/{effdate.month:02d}/{effdate.strftime('%y')}" if effdate else None
-    lnpay_rows.append({"ACCTNO": r.get("ACCTNO"), "NOTENO": r.get("NOTENO"),
-                        "PAYEFF": payeff, "PAYAMT": r.get("PAYAMT")})
+del cisrm_merged, cisdp_merged, cisln_merged
+gc.collect()
+
+
+
+
+print("\nStep 9: Merging CIS with TRANPCARD by NEWIC (DuckDB)...")
+
+con = duckdb.connect(":memory:")
+con.execute("PRAGMA memory_limit='24GB'")
+con.execute("PRAGMA threads=8")
+
+cis_tbl  = pa.Table.from_pylist(cis_rows)
+tranp_tbl = pa.Table.from_pylist(tranpcard_rows)
+del cis_rows, tranpcard_rows
+gc.collect()
+
+con.register("cis", cis_tbl)
+con.register("tranpcard", tranp_tbl)
+
+card_cols = ", ".join(f"b.CARD{i}" for i in range(1, N_CARDS + 1))
+
+ciscard_df = con.execute(f"""
+    WITH cis_rn AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY NEWIC) AS rn
+        FROM cis
+    ),
+    tp_rn AS (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY NEWIC) AS rn
+        FROM tranpcard
+    )
+    SELECT
+        COALESCE(a.NEWIC, b.NEWIC)       AS NEWIC,
+        a.ACCTNO, a.BUSSREG, a.NEWICIND, a.CCOLLNO,
+        COALESCE(b.CUSTNO,   a.CUSTNO)   AS CUSTNO,
+        COALESCE(b.OLDIC,    a.OLDIC)    AS OLDIC,
+        COALESCE(b.PRIPHONE, a.PRIPHONE) AS PRIPHONE,
+        COALESCE(b.SECPHONE, a.SECPHONE) AS SECPHONE,
+        COALESCE(b.MOBIPHON, a.MOBIPHON) AS MOBIPHON,
+        {card_cols}
+    FROM cis_rn a
+    FULL OUTER JOIN tp_rn b
+      ON a.NEWIC = b.NEWIC AND a.rn = b.rn
+""").pl()
+
+con.close()
+del cis_tbl, tranp_tbl
+gc.collect()
+print(f"  CISCARD rows: {len(ciscard_df):,}")
+
+
+
+
+print(f"  DLP.CUSTDATA rows: {len(ciscard_df):,}")
+# NOTE: no final_rows list is built. Step 11 streams ciscard_df directly.
+
+
+
+
+print("\nStep 11: Writing split customer extract + SFTP file list...")
+
+
+def _rtrim(s) -> str:
+    return (s or "").rstrip(" ")
+
+
+def _format_output_line(row: dict, n_cards: int) -> str:
+    fields = [
+        _rtrim(row["NEWIC"]),
+        _rtrim(row["PRIPHONE"]),
+        _rtrim(row["SECPHONE"]),
+        _rtrim(row["MOBIPHON"]),
+        _rtrim(row["ACCTNO"]),
+        _rtrim(row["BUSSREG"]),
+    ]
+    for idx in range(1, n_cards + 1):
+        fields.append(_rtrim(row.get(f"CARD{idx}")))
+    return "|".join(fields)
+
+
+NOBS = len(ciscard_df)
+NUMFILE = ceil(NOBS / OBSNUM) if NOBS else 0
+print(f"  NOBS: {NOBS:,}   OBSNUM: {OBSNUM:,}   NUMFILE: {NUMFILE}")
+
+sftp_lines = []
+current_fh = None
+current_no = 0
+rows_written = 0
+
+for idx, row in enumerate(ciscard_df.iter_rows(named=True)):
+    processed = process_row(row, N_CARDS)
+
+    file_no = idx // OBSNUM + 1
+    if file_no != current_no:
+        if current_fh:
+            current_fh.close()
+            print(f"  Written EIBWDLPS_C{current_no:03d}.txt ({rows_written:,} rows)")
+        current_no = file_no
+        rows_written = 0
+        out_path = OUTPUT_DIR / f"EIBWDLPS_C{file_no:03d}.txt"
+        current_fh = open(out_path, "w", encoding="latin1")
+
+    current_fh.write(_format_output_line(processed, N_CARDS) + "\n")
+    rows_written += 1
+
+if current_fh:
+    current_fh.close()
+    print(f"  Written EIBWDLPS_C{current_no:03d}.txt ({rows_written:,} rows)")
+
+for i in range(1, NUMFILE + 1):
+    no = f"{i:03d}"
+    files_str = f"//SAP.PBB.DLP.C{no}.TEXT  DLP{no}.CSV"
+    sftp_lines.append(f"PUT {files_str}")
+
+with open(SFTP_OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in sftp_lines:
+        fh.write(ln + "\n")
+print(f"  Written {SFTP_OUTPUT_FILE.name} ({len(sftp_lines)} lines)")
+
+print("\nEIBWDLPS complete.")
 
 
 
