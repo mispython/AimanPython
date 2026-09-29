@@ -419,19 +419,34 @@ def _sas_merge_retain(left_rows, right_rows, key_fields):
 #     """).pl()
 #     con.close()
 
-def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, entity_sql: str, costctr_sql: str) -> list:
+# def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, entity_sql: str, costctr_sql: str) -> list:
+#     con = duckdb.connect(database=":memory:")
+#     note_pl = con.execute(f"""
+#         SELECT *
+#         FROM read_parquet('{note_cache.as_posix()}')
+#         WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
+#           AND {entity_sql}
+#           AND {costctr_sql}
+#         ORDER BY ACCTNO, COMMNO
+#     """).pl()
+#     comm_pl = con.execute(f"""
+#         SELECT * FROM read_parquet('{comm_cache.as_posix()}')
+#         WHERE {entity_sql}
+#         ORDER BY ACCTNO, COMMNO
+#     """).pl()
+#     con.close()
+
+def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str) -> list:
     con = duckdb.connect(database=":memory:")
     note_pl = con.execute(f"""
         SELECT *
         FROM read_parquet('{note_cache.as_posix()}')
         WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
-          AND {entity_sql}
           AND {costctr_sql}
         ORDER BY ACCTNO, COMMNO
     """).pl()
     comm_pl = con.execute(f"""
         SELECT * FROM read_parquet('{comm_cache.as_posix()}')
-        WHERE {entity_sql}
         ORDER BY ACCTNO, COMMNO
     """).pl()
     con.close()
