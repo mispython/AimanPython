@@ -8,17 +8,15 @@ Step 1: Deriving report date...
 Step 2: Caching input SAS datasets to Parquet...
   [LNNOTE] Converting enrh_ln_note_d22.sas7bdat -> enrh_ln_note_d22.parquet ...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 323, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 306, in <module>
     LNNOTE_CACHE      = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 311, in _load_cached
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 294, in _load_cached
     _sas_to_parquet(sas_path, cache_path, tag)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 281, in _sas_to_parquet
-    for chunk in reader:
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 322, in __next__
-    da = self.read(nrows=self.chunksize or 1)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 685, in read
-    p.read(nrows)
-  File "sas.pyx", line 382, in pandas._libs.sas.Parser.read
-  File "sas.pyx", line 444, in pandas._libs.sas.Parser.readline
-  File "sas.pyx", line 502, in pandas._libs.sas.Parser.process_byte_array_with_data
-ValueError: Expected decompressed line of length 3278 bytes but decompressed 2096 bytes
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 272, in _sas_to_parquet
+    for chunk, _meta in reader:
+  File "pyreadstat/pyreadstat.pyx", line 596, in read_file_in_chunks
+  File "pyreadstat/pyreadstat.pyx", line 129, in pyreadstat.pyreadstat.read_sas7bdat
+  File "pyreadstat/_readstat_parser.pyx", line 1166, in pyreadstat._readstat_parser.run_conversion
+  File "pyreadstat/_readstat_parser.pyx", line 908, in pyreadstat._readstat_parser.run_readstat_parser
+  File "pyreadstat/_readstat_parser.pyx", line 830, in pyreadstat._readstat_parser.check_exit_status
+pyreadstat._readstat_parser.ReadstatError: A row in the file was not the expected length
