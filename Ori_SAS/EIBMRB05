@@ -1,0 +1,139 @@
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+%INC PGM(PBBDPFMT,PBBELF);
+
+PROC FORMAT;
+   VALUE FCYTYPE 1='FCY FD'
+                 2='FCY CA';
+
+DATA REPTDATE;
+   SET DEPO.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN(8)   CALL SYMPUT('NOWK', PUT('1', $1.));
+      WHEN(15)  CALL SYMPUT('NOWK', PUT('2', $1.));
+      WHEN(22)  CALL SYMPUT('NOWK', PUT('3', $1.));
+      OTHERWISE CALL SYMPUT('NOWK', PUT('4', $1.));
+   END;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTYEAR2',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA FCYFD;
+   SET MISFD.FCYFD&REPTMON&NOWK&REPTYEAR2;
+   WHERE PRODUCT IN (350,351,352,353,354,355,356,357,358,359,360,
+                     361,362);
+   CUSTCD = PUT(CUSTCODE,FDCUSTCD.);
+   IF CUSTCD NOT IN (02,03,07,10,12,81,82,83,84);
+   DROP PURPOSE;
+   FTYPE=1;
+RUN;
+
+DATA FCYCA;
+   SET DEPO.CURRENT IDEPO.CURRENT;
+   WHERE CURCODE NE 'MYR' AND
+         PRODUCT IN (400,401,402,403,404,405,406,407,408,409,410,411,
+                     420,421,422,423,424,425,426,427,428,429,430,431,
+                     440,441,442,443,444,450,451,452,453,454,432,433,
+                     434);
+   CUSTCD = PUT(CUSTCODE,DDCUSTCD.);
+   IF CUSTCD NOT IN (02,03,07,10,12,81,82,83,84);
+   DROP PURPOSE;
+   FTYPE=2;
+
+   IF OPENDT NOT IN (0,.) THEN
+      OPENDT = INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.);
+   IF CLOSEDT NOT IN (0,.) THEN
+      CLOSEDT = INPUT(SUBSTR(PUT(CLOSEDT,Z11.),1,8),MMDDYY8.);
+RUN;
+
+DATA FCY;
+   SET FCYFD
+       FCYCA;
+   KEEP BRANCH BRABBR CURBAL FTYPE OPENDT CLOSEDT ACNEW;
+   *WHERE CURBAL GT 0;
+
+   BRABBR=PUT(BRANCH,BRCHCD.);
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON) THEN DO;
+      ACNEW=1;
+   /* IF (YEAR(CLOSEDT)=YEAR(OPENDT)) & (MONTH(CLOSEDT)=MONTH(OPENDT))
+         THEN DELETE; */
+   END;
+   IF OPENIND NOT IN ('B','C','P');
+RUN;
+
+PROC SUMMARY DATA=FCY NWAY;
+   CLASS BRANCH BRABBR FTYPE;
+   VAR CURBAL ACNEW;
+   OUTPUT OUT=FFCY (RENAME=(_FREQ_=FREQ))
+          SUM=;
+RUN;
+
+PROC SORT DATA=FFCY; BY BRANCH;
+DATA TEMP;
+   SET FFCY;BY BRANCH;
+   IF FIRST.BRANCH THEN DO;
+      FD=0; CFD=0; NFD=0; CA=0; CCA=0; NCA=0; TA=0;
+   END;
+   IF FTYPE = 1 THEN DO;
+      FD+CURBAL;
+      CFD+FREQ;
+      NFD+ACNEW;
+   END;
+   ELSE DO;
+      CA+CURBAL;
+      CCA+FREQ;
+      NCA+ACNEW;
+   END;
+   TYPE=1;
+   TA=FD+CA;
+   IF LAST.BRANCH THEN OUTPUT;
+RUN;
+
+PROC SUMMARY DATA=TEMP;
+   CLASS TYPE;
+   VAR FD CFD NFD CA CCA NCA TA;
+   OUTPUT OUT=TOTAL
+          SUM=;
+RUN;
+
+DATA _NULL_;
+  SET TEMP;
+  FORMAT CFD NFD CCA NCA      10.
+         FD CA TA        COMMA20.2;
+  FILE SASLIST;
+  IF _N_ = 1 THEN DO;
+     PUT @1 'REPORT ID : EIBMRB05';
+     PUT @1 'MONTH END REPORT BY BRANCH FOR FCY FD AND FCY CA '
+            '(PBB & PIBB)';
+     PUT @1 'AS AT ' "&RDATE";
+     PUT @1 ' ';
+     PUT @2 'BRANCH CODE' ';'  'BRANCH ABBR' ';'                    ';'
+            'FCY FD'      ';'                ';'                    ';'
+            'FCY CA'      ';'                ';'                    ';';
+
+     PUT @2               ';'                ';'                    ';'
+            'NO OF O/S'   ';'  'NO OF NEW'   ';'                    ';'
+            'NO OF O/S'   ';'  'NO OF NEW'   ';'                    ';';
+
+     PUT @2               ';'                ';'  'CURRENT BALANCE' ';'
+            'ACCOUNT'     ';'  'ACC OPENED'  ';'  'CURRENT BALANCE' ';'
+            'ACCOUNT'     ';'  'ACC OPENED'  ';'  'TOT AMT O/S RM'  ';';
+  END;
+     PUT @2  BRANCH       ';'   BRABBR       ';'  FD                ';'
+             CFD          ';'   NFD          ';'  CA                ';'
+             CCA          ';'   NCA          ';'  TA                ';';
+RUN;
+
+DATA _NULL_;
+  SET TOTAL;
+  FORMAT CFD NFD CCA NCA      10.
+         FD CA TA        COMMA20.2;
+  FILE SASLIST MOD;
+  IF _N_ = 1 THEN DO;
+     PUT @2   'TOTAL'      ';'                ';'  FD              ';'
+              CFD          ';'   NFD          ';'  CA              ';'
+              CCA          ';'   NCA          ';'  TA              ';';
+  END;
+RUN;
