@@ -1,0 +1,98 @@
+*;                                                                      00010001
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;                       00020001
+%INC PGM(PBBELF);                                                       00030001
+                                                                        00040001
+DATA REPTDATE;                                                          00050001
+    SET DEPO.REPTDATE;                                                  00060001
+    CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));                        00070001
+    CALL SYMPUT('REPTMTH',TRIM(LEFT(UPCASE(PUT(REPTDATE,MONNAME9.))))); 00080001
+    CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));                    00090001
+    CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));                       00100001
+RUN;                                                                    00110001
+                                                                        00120001
+DATA CURRENT;                                                           00130001
+   SET DEPO.CURRENT;                                                    00140001
+   SNAME=PUT('PBB',4.);                                                 00150001
+   IF NOT (3590000000<=ACCTNO<=3599999999);                             00160001
+RUN;                                                                    00170001
+                                                                        00180001
+DATA ICURRENT;                                                          00190001
+   SET IDEPO.CURRENT;                                                   00200001
+   SNAME=PUT('PIBB',4.);                                                00210001
+   IF NOT (3790000000<=ACCTNO<=3799999999);                             00220001
+RUN;                                                                    00230001
+                                                                        00240001
+DATA CISCA;                                                             00250001
+   SET CIS.DEPOSIT;                                                     00260001
+   KEEP ACCTNO CUSTNAME;                                                00270001
+   IF INDORG EQ 'O';                                                    00280001
+   PROC SORT;                                                           00290001
+      BY ACCTNO;                                                        00300001
+RUN;                                                                    00310001
+                                                                        00320001
+DATA ALLCURRENT NOOBS;                                                  00330001
+   SET CURRENT ICURRENT;                                                00340001
+   KEEP SNAME BRANCH BRABBR NAME ACCTNO CURBAL OPENDT CLOSEDT;          00350001
+   WHERE CUSTCODE NOT IN (77,78,95,96) AND                              00360001
+         CURCODE EQ 'MYR' AND                                           00370001
+         PRODUCT NOT IN (400,401,402,403,404,405,406,407,408,409,410,   00380001
+                         79,80);                                        00390001
+                                                                        00400001
+   BRABBR=PUT(BRANCH,BRCHCD.);                                          00410001
+   IF OPENDT NOT IN (0,.) THEN                                          00420001
+      ODATES = INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.);            00430001
+      OPENDT = ODATES;                                                  00440001
+   IF CLOSEDT NOT IN (0,.) THEN                                         00450001
+      CDATES  = INPUT(SUBSTR(PUT(CLOSEDT,Z11.),1,8),MMDDYY8.);          00460001
+      CLOSEDT = CDATES;                                                 00470001
+                                                                        00480001
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON);          00490001
+   IF (YEAR(CLOSEDT) = &REPTYEAR) & (MONTH(CLOSEDT) = &REPTMON) THEN    00500001
+      DELETE;                                                           00510001
+RUN;                                                                    00520001
+                                                                        00530001
+PROC SORT DATA=ALLCURRENT;                                              00540001
+   BY ACCTNO;                                                           00550001
+RUN;                                                                    00560001
+                                                                        00570001
+DATA ALLCURRENT;                                                        00580001
+   MERGE ALLCURRENT(IN=A) CISCA;                                        00590001
+   BY ACCTNO;                                                           00600001
+   IF A;                                                                00610001
+RUN;                                                                    00620001
+                                                                        00630001
+PROC SORT DATA=ALLCURRENT;                                              00640001
+   BY SNAME BRANCH;                                                     00650001
+RUN;                                                                    00660001
+                                                                        00670001
+DATA _NULL_;                                                            00680001
+  SET ALLCURRENT;                                                       00690001
+  FILE SASLIST;                                                         00700001
+  IF _N_ = 1 THEN DO;                                                   00710001
+    PUT @1 ' ';                                                         00720001
+    PUT @1 'REPORT ID : EIBMRB03';                                      00730001
+    PUT @1 'LISTING OF NEW CA OPENED FOR THE MONTH OF ' "&REPTMTH"      00740001
+           ' OF YEAR ' "&REPTYEAR";                                     00750001
+    PUT @1 'AS AT ' "&RDATE";                                           00760001
+    PUT @1 ' ';                                                         00770001
+    PUT @3   ' '                                                        00780001
+        @12  'BRANCH CODE'                                              00790001
+        @27  'BRANCH ABBR'                                              00800001
+        @43  'ACCOUNT NAME'                                             00810001
+        @86  'ACCOUNT NO'                                               00820001
+        @103 'CURRENT BALANCE (RM)'                                     00830001
+        @128 'DATE ACCOUNT OPENED'                                      00840001
+        ;                                                               00850001
+    PUT @3 '------------------------------------------------'           00860001
+           "------------------------------------------------"           00870001
+           "------------------------------------------------";          00880001
+  END;                                                                  00890001
+    PUT @3   SNAME       $9.                                            00900001
+        @18  BRANCH                                                     00910001
+        @31  BRABBR                                                     00920001
+        @43  CUSTNAME                                                   00930001
+        @86  ACCTNO                                                     00940001
+        @109 CURBAL      COMMA14.2                                      00950001
+        @133 OPENDT      DDMMYY8.                                       00960001
+        ;                                                               00970001
+RUN;                                                                    00980001
