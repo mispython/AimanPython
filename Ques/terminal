@@ -1,22 +1,11 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py
-Step 1: Deriving report date...
-  RDATE        : 28/09/2026
-  NOWK (week)  : 04   STRDAY: 23   REPTDAY: 28
-  PDATE..EDATE : 2026-09-01 .. 2026-09-28
-  Output file  : EIIWSTAF.txt
-
-Step 2: Caching input SAS datasets to Parquet...
-  [LNNOTE] Converting enrh_ln_note_d22.sas7bdat -> enrh_ln_note_d22.parquet ...
+Step 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 306, in <module>
-    LNNOTE_CACHE      = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 294, in _load_cached
-    _sas_to_parquet(sas_path, cache_path, tag)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 272, in _sas_to_parquet
-    for chunk, _meta in reader:
-  File "pyreadstat/pyreadstat.pyx", line 596, in read_file_in_chunks
-  File "pyreadstat/pyreadstat.pyx", line 129, in pyreadstat.pyreadstat.read_sas7bdat
-  File "pyreadstat/_readstat_parser.pyx", line 1166, in pyreadstat._readstat_parser.run_conversion
-  File "pyreadstat/_readstat_parser.pyx", line 908, in pyreadstat._readstat_parser.run_readstat_parser
-  File "pyreadstat/_readstat_parser.pyx", line 830, in pyreadstat._readstat_parser.check_exit_status
-pyreadstat._readstat_parser.ReadstatError: A row in the file was not the expected length
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 462, in <module>
+    lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 432, in _build_lnnote
+    comm_pl = con.execute(f"""
+_duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
+Candidate bindings: "ACTIND", "HSTNCDOR", "EXPIREDT", "CSTATE", "CSECTOR"
+
+LINE 3:         WHERE ENTITY_CD <> 'PIBB'
+                      ^
