@@ -1,51 +1,26 @@
-def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str) -> list:
-    con = duckdb.connect(database=":memory:")
-    out_rows = con.execute(f"""
-        SELECT
-            n.LOANTYPE, n.NTBRCH, n.ORGTYPE, n.ACCTNO, n.COMMNO, n.CURBAL,
-            n.NOTENO, n.NAME, n.ISSUEDT, n.PAIDIND, n.BLDATE, n.BILPAY,
-            n.PAYAMT, n.INTRATE, n.STAFFNO, n.PAYEFFDT, n.ORGBAL, n.LASTTRAN,
-            n.LSTTRNAM, n.LSTTRNCD, n.RESTIND, n.FLAG1, n.FRELEAS,
-            CASE
-                WHEN COALESCE(n.COMMNO, 0) > 0 AND c.REVOVLI = 'N' THEN c.CORGAMT
-                WHEN COALESCE(n.COMMNO, 0) > 0                     THEN c.CCURAMT
-                ELSE n.ORGBAL
-            END AS APPRLIMT
-        FROM read_parquet('{note_cache.as_posix()}') n
-        LEFT JOIN read_parquet('{comm_cache.as_posix()}') c
-               ON n.ACCTNO = c.ACCTNO AND n.COMMNO = c.COMMNO
-        WHERE (n.LOANTYPE IS NULL OR n.LOANTYPE <= 61
-               OR n.LOANTYPE IN (100,102,103,104,105))
-          AND {costctr_sql}
-    """).pl().to_dicts()
-    con.close()
-    print(f"  [{tag}] LNNOTE rows after merge with LNCOMM: {len(out_rows):,}")
-    return out_rows
+SAS_DATE_EPOCH = date(1960, 1, 1)
+
+
+def _sas_date_to_py(v):
+    """Convert a raw SAS date number (days since 1960-01-01) to a Python date.
+    Required because _sas_to_parquet uses disable_datetime_conversion=True."""
+    if v is None:
+        return None
+    return SAS_DATE_EPOCH + timedelta(days=int(v))
 
 
 
 
-lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "n.COSTCTR = 8044")
-lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
-                                 "n.COSTCTR BETWEEN 3000 AND 3999")
+lnpay_rows = []
+for r in (lnpay_pbb + lnpay_pibb):
+    effdate = _sas_date_to_py(r.get("EFFDATE"))
+    # PAYEFFDD is a constant 99; PAYEFF = LEFT(COMPBL(PAYEFFDD||'/'||PAYEFFMM||'/'||PAYEFFYY))
+    # -- with a constant 2-digit PAYEFFDD and no embedded blanks, LEFT/COMPBL
+    # reduce to a plain "99/MM/YY" string.
+    payeff = f"99/{effdate.month:02d}/{effdate.strftime('%y')}" if effdate else None
+    lnpay_rows.append({"ACCTNO": r.get("ACCTNO"), "NOTENO": r.get("NOTENO"),
+                        "PAYEFF": payeff, "PAYAMT": r.get("PAYAMT")})
 
 
 
 
-hist_keys = set(zip(hist_pl["ACCTNO"].to_list(), hist_pl["NOTENO"].to_list()))
-merged_hist = [
-    {**r, "_IN_LEFT": True, "_IN_RIGHT": False}
-    for r in loan_rows
-    if (r["ACCTNO"], r["NOTENO"]) not in hist_keys
-]
-
-
-
-
-/sas/python/virt_edw_dev/bin/python3 -c "
-import duckdb
-d = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIMRPTS/'
-for f in ['pbb_lncomm', 'pibb_lncomm']:
-    n = duckdb.sql(f\"SELECT COUNT(*) - COUNT(DISTINCT (ACCTNO, COMMNO)) FROM read_parquet('{d}{f}.parquet')\").fetchone()[0]
-    print(f, 'duplicate ACCTNO/COMMNO rows:', n)
-"
