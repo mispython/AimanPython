@@ -1,15 +1,161 @@
-print("\nStep 2: Caching input SAS datasets to Parquet...")
-LNNOTE_CACHE = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
-LOAN_CACHE   = _load_cached(INPUT_LOAN_FILE, "LOAN")
-
-# ---- TEMPORARY DEBUG: inspect column dtypes of the LOAN parquet ----
-import pyarrow.parquet as pq
-print("\n[DEBUG] LOAN parquet schema:")
-print(pq.read_schema(LOAN_CACHE))
-
-import pandas as pd
-_df = pd.read_parquet(LOAN_CACHE, columns=["BLDATE"])
-print("[DEBUG] BLDATE dtype:", _df["BLDATE"].dtype)
-print("[DEBUG] BLDATE sample:", _df["BLDATE"].head().tolist())
-del _df
-# ---- END TEMPORARY DEBUG ----
+[DEBUG] LOAN parquet schema:
+ACCTNO: double
+NOTENO: double
+EIR_ADJ: double
+EXPRDATE: double
+SECTOR: string
+NAME: string
+COMMNO: double
+CUSTCD: string
+ORIGMT: string
+PRODCD: string
+RISKCD: string
+COLLCD: string
+ORIGMX: string
+REMAINMX: string
+SECTORCD: string
+STATECD: string
+RISKRTE: double
+AMTIND: string
+CGCREF: string
+CUSTCODE: double
+PRODUCT: double
+BRANCH: double
+ASSMDATE: double
+INTAMT: double
+APPVALUE: double
+NOTETERM: double
+COLLDESC: string
+FLAG3: string
+COSTCTR: double
+CENSUS: double
+BILLTYPE: string
+NETPROC: double
+INTRATE: double
+SPREAD: double
+NTINT: string
+REBATE: double
+INTEARN: double
+ACCRUAL: double
+SECURE: string
+LIABCODE: string
+LOANSTAT: double
+BORSTAT: string
+MARKETVL: double
+EARNTERM: double
+USURYIDX: double
+INTEARN2: double
+INTEARN3: double
+INTEARN4: double
+PAYAMT: double
+PAYFREQ: string
+BILTOT: double
+BILPAY: double
+PAYTYPE: string
+FEEAMT4: double
+APPRDATE: double
+TOTPDEOP: double
+INTPDYTD: double
+ACCRUYTD: double
+ACCRUEOP: double
+NTINDEX: double
+REBATEI: double
+ACCTYIND: double
+HSTPRIN: double
+COSTFUND: double
+RESTBALC: double
+NXBILDT: double
+PAYIND: string
+FEEAMT: double
+NXTBIL: double
+BLDATE: double
+SECTOLD: string
+CLOSEDTE: double
+ISSDTE: double
+SECTORMA: string
+FISSPURP: string
+NEWSEC: string
+CENSUS4: string
+CUSTIDNO: string
+RLEASAMT: double
+APPRLIMT: double
+UNDRAWN: double
+APPRLMTACCT: double
+ODPLAN: double
+RATE1: double
+RATE2: double
+TODRATE: double
+FLATRATE: double
+BASERATE: double
+ODSTAT: string
+ORGCODE: string
+LIMIT1: double
+LIMIT2: double
+COL1: string
+COL2: string
+AVGAMT: double
+ODINTACC: double
+CENSUST: double
+ACCTYPE: string
+CCRICODE: double
+CRISPURP: string
+SECTORZ: string
+SECTORZZ: string
+SECVALID: string
+FISSPORI: string
+SECTPORI: string
+SECCUST: string
+NEWICIND: string
+BUSSIND: string
+CUSTORI: string
+CURCODE: string
+BAL_AFT_EIR: double
+EIRIND: double
+REMMTH: double
+CCY: string
+FORATE: string
+FCYBAL: double
+APPR2FCY: double
+CJFEE: double
+CFINDEX: double
+WRITE_DOWN_BAL: double
+ORIBAL_AFT_EIR: double
+ORIBALANCE: double
+ORIBALMNI: double
+OLDNOTEBLDATE: double
+OLDNOTEDAYARR: double
+DNBFISME: string
+DNBFI_ORI: string
+VB: string
+FRELEAS: double
+ESCRACCT: double
+SIACCTNO: double
+ABM_HL: string
+IA_LRU: string
+ASCORE_PERM: string
+ASCORE_LTST: string
+UNEARNED1: double
+UNEARNED2: double
+UNEARNED: double
+FDCERTNO: double
+FDACCTNO: double
+CCRIS_INSTLAMT: double
+INDUSTRIAL_SECTOR_CD: string
+SECTORCD_ORI: string
+INVALID_LOC: string
+STATE: string
+ASCORE_COMM: string
+APPRLIM2ORI: double
+INFEE: double
+SCH_REPAY_TERM: double
+WRIOFF_CLOSE_FILE_TAG: string
+WRIOFF_CLOSE_FILE_TAG_DT: double
+PAIDIND: string
+REMAINMT: string
+REMAINMH: double
+CURBAL: double
+BALANCE: double
+BALMNI: double
+APPRLIM2: double
+[DEBUG] BLDATE dtype: float64
+[DEBUG] BLDATE sample: [nan, nan, nan, 24533.0, 18131.0]
