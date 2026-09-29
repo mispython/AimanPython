@@ -1,27 +1,22 @@
-def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    writer = None
-    total = 0
+cd /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIIMRPTS
+ls -l *.parquet
+/sas/python/virt_edw_dev/bin/python3 -c "
+import pyarrow.parquet as pq, glob
+for f in sorted(glob.glob('*.parquet')):
+    s = pq.read_schema(f)
+    print(f, pq.ParquetFile(f).metadata.num_rows, 'rows,', len(s.names), 'cols')
+"
 
-    reader = pyreadstat.read_file_in_chunks(
-        pyreadstat.read_sas7bdat,
-        str(sas_path),
-        chunksize=CHUNK_ROWS,
-        encoding="latin1",
-        disable_datetime_conversion=True,   # keep SAS numerics as-is, no date objects
-    )
-    for chunk, _meta in reader:
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
-        if writer is None:
-            schema = table.schema
-            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        else:
-            table = table.cast(schema)
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
 
-    if writer:
-        writer.close()
-    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+FORCE_RECONVERT = False   # set True to rebuild the Parquet cache from .sas7bdat
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    if cache_path.exists() and not FORCE_RECONVERT:
+        print(f"  [{tag}] Existing Parquet found - skipping conversion.")
+    else:
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
