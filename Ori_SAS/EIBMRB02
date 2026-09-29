@@ -1,0 +1,168 @@
+*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+%INC PGM(PBBELF);
+
+PROC FORMAT;
+   VALUE ACCTYPE 1='SAVING ACCOUNT (RM)'
+                 2='CURRENT ACCOUNT (RM)'
+                 3='FIXED DEPOSIT ACCOUNT (RM)';
+   VALUE BIZTYPE 1='PBB'
+                 2='PIBB';
+
+DATA REPTDATE;
+   SET DEPO.REPTDATE;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA SAVING;
+   SET DEPO.SAVING;
+   WHERE PRODUCT NOT IN (297,298,480,481,482,150,151,152,177,181);
+   ATYPE=1;
+   BTYPE=1;
+RUN;
+
+DATA ISAVING;
+   SET IDEPO.SAVING;
+   WHERE PRODUCT NOT IN (298);
+   ATYPE=1;
+   BTYPE=2;
+RUN;
+
+DATA CURRENT;
+   SET DEPO.CURRENT;
+   WHERE CURCODE EQ 'MYR' AND
+         PRODUCT NOT IN (104,105,107,126,127,128,129,130,131,132,133,
+                         134,135,136,139,140,141,142,143,144,145,146,
+                         147,148,149,167,171,172,173,549,550,68,69,79)
+         AND NOT (3590000000<=ACCTNO<=3599999999);
+
+   ATYPE=2;
+   BTYPE=1;
+RUN;
+
+DATA ICURRENT;
+   SET IDEPO.CURRENT;
+   WHERE PRODUCT NOT IN (66,67,149,80) AND
+         CURCODE EQ 'MYR' AND
+         NOT (3790000000<=ACCTNO<=3799999999);
+   ATYPE=2;
+   BTYPE=2;
+RUN;
+
+DATA FD;
+   SET DEPO.FD;
+   WHERE CURCODE EQ 'MYR' AND
+         PRODUCT NOT IN (395);
+   ATYPE=3;
+   BTYPE=1;
+RUN;
+
+DATA IFD;
+   SET IDEPO.FD;
+   WHERE CURCODE EQ 'MYR' AND
+         PRODUCT NOT IN (396);
+   ATYPE=3;
+   BTYPE=2;
+RUN;
+
+DATA DEPOSIT;
+   SET CURRENT ICURRENT SAVING ISAVING FD IFD;
+   WHERE CURBAL GT 0;
+   KEEP BRANCH BRABBR CURBAL ATYPE BTYPE;
+
+   BRABBR=PUT(BRANCH,BRCHCD.);
+   IF OPENDT NOT IN (0,.) THEN
+      OPENDT = INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.);
+   IF CLOSEDT NOT IN (0,.) THEN
+      CLOSEDT = INPUT(SUBSTR(PUT(CLOSEDT,Z11.),1,8),MMDDYY8.);
+
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON) THEN DO;
+      IF (YEAR(CLOSEDT)=YEAR(OPENDT)) & (MONTH(CLOSEDT)=MONTH(OPENDT))
+         THEN DELETE;
+   END;
+RUN;
+
+PROC SUMMARY DATA=DEPOSIT NWAY;
+   CLASS BRANCH BRABBR ATYPE BTYPE;
+   VAR CURBAL;
+   OUTPUT OUT=DEPO
+          SUM=CURBAL;
+RUN;
+
+PROC SORT DATA=DEPO; BY BRANCH;
+DATA TEMP;
+   SET DEPO;BY BRANCH;
+   IF FIRST.BRANCH THEN DO;
+      SA=0; ISA=0; CA=0; ICA=0; FD=0; IFD=0;
+      TSA=0; TCA=0; TFD=0;
+   END;
+   IF ATYPE = 1 THEN DO;
+      TSA+CURBAL;
+      IF BTYPE = 1 THEN
+         SA+CURBAL;
+      ELSE
+         ISA+CURBAL;
+   END;
+   IF ATYPE = 2 THEN DO;
+      TCA+CURBAL;
+      IF BTYPE = 1 THEN
+         CA+CURBAL;
+      ELSE
+         ICA+CURBAL;
+   END;
+   IF ATYPE = 3 THEN DO;
+      TFD+CURBAL;
+      IF BTYPE = 1 THEN
+         FD+CURBAL;
+      ELSE
+         IFD+CURBAL;
+   END;
+   TYPE=1;
+   IF LAST.BRANCH THEN OUTPUT;
+RUN;
+
+PROC SUMMARY DATA=TEMP;
+   CLASS TYPE;
+   VAR SA ISA CA ICA FD IFD TSA TCA TFD;
+   OUTPUT OUT=TOTAL
+          SUM=;
+RUN;
+
+DATA _NULL_;
+  SET TEMP;
+  FORMAT SA ISA TSA CA ICA TCA FD IFD TFD COMMA16.;
+  FILE SASLIST;
+  IF _N_ = 1 THEN DO;
+     PUT @1  'REPORT ID : EIBMRB02';
+     PUT @1  'MONTHLY SAVINGS/CURRENT/FIXED DEPOSIT ACCOUNT OUTSTANDING'
+             ' AMOUNT';
+     PUT @1  'AS AT ' "&RDATE";
+     PUT @1  ' ';
+     PUT @2  'BRANCH'  ';'  'BRANCH'            ';'
+                       ';'  'SAVING(RM) '       ';'             ';'
+                       ';'  'CURRENT(RM)'       ';'             ';'
+                       ';'  'FIXED DEPOSIT(RM)';
+     PUT @2  'CODE'    ';'  'ABBR'              ';'
+             'PBB'     ';'  'PIBB'              ';'  'TOTAL'    ';'
+             'PBB'     ';'  'PIBB'              ';'  'TOTAL'    ';'
+             'PBB'     ';'  'PIBB'              ';'  'TOTAL';
+  END;
+     PUT @2   BRANCH   ';'   BRABBR             ';'
+              SA       ';'   ISA                ';'   TSA       ';'
+              CA       ';'   ICA                ';'   TCA       ';'
+              FD       ';'   IFD                ';'   TFD;
+RUN;
+
+DATA _NULL_;
+  SET TOTAL;
+  FORMAT SA ISA TSA CA ICA TCA FD IFD TFD COMMA16.;
+  FILE SASLIST MOD;
+  IF _N_ = 1 THEN DO;
+     PUT @2   'TOTAL'  ';'                      ';'
+              SA       ';'   ISA                ';'   TSA       ';'
+              CA       ';'   ICA                ';'   TCA       ';'
+              FD       ';'   IFD                ';'   TFD;
+  END;
+RUN;
