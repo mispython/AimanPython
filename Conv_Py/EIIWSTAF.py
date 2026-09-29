@@ -4,14 +4,9 @@ Program : EIIWSTAF.py
 Purpose : Weekly Listing For Staff New Loan And Paid Loan (PBB + PIBB
            staff loan accounts, cost-centre based staff-loan population).
 
-Dependency:
-    No %INC PGM(...) statements are present anywhere in the original SAS
-    source (EIIWSTAF) -- there is therefore no external format-library or
-    macro-program dependency to import for this conversion.
-
 ============================================================================
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
-same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py / EIIMRM01.py)
+same chunked sas7bdat -> Parquet -> cache pattern)
 ============================================================================
 1. MNILN.LNNOTE   (JCL //MNILN  DD DSN=SAP.PBB.MNILN(0))
    File : INPUT_LNNOTE_PBB_FILE  -> mnln_lnnote_pbb.sas7bdat
@@ -92,8 +87,8 @@ STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 # INPUT_LNCOMM_PBB_DIR  = STG_DIR / "sasdata"
 # INPUT_LNNOTE_PIBB_DIR = STG_DIR / "sasdata"
 # INPUT_LNCOMM_PIBB_DIR = STG_DIR / "sasdata"
-INPUT_LNNOTE_DIR      = STG_DIR / "sasdata"
-INPUT_LNCOMM_DIR      = STG_DIR / "sasdata"
+INPUT_LNNOTE_DIR      = STG_DIR / "MNILN"
+INPUT_LNCOMM_DIR      = STG_DIR / "MNILN"
 INPUT_LNPAY_PBB_DIR   = STG_DIR / "sasdata"
 INPUT_LNPAY_PIBB_DIR  = STG_DIR / "sasdata"
 INPUT_ISBASE_DIR      = STG_DIR / "sasdata"
@@ -165,6 +160,20 @@ REPTDAY = reptdate.day
 REPTMTH = RPMTH
 REPTYEAR = RPYR
 RDATE = reptdate.strftime("%d/%m/%Y")   # PUT(REPTDATE, DDMMYY10.)
+
+# Define primary output path to EIIMRPTS folder
+PRIMARY_OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
+PRIMARY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+PRIMARY_OUTPUT_FILE = PRIMARY_OUTPUT_DIR / "EIIWSTAF.txt"
+
+# Force filename timestamp to yesterday's date (system date - 1 day)
+yes_date = date.today() - timedelta(days=1)
+ts       = yes_date.strftime("%y%m%d")
+
+# Define secondary output path to EIIWSTAF folder
+SECONDARY_OUTPUT_DIR = BASE_DIR / "output" / "EIIWSTAF"
+SECONDARY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+SECONDARY_OUTPUT_FILE = SECONDARY_OUTPUT_DIR / f"EIIWSTAF_{ts}.txt"
 
 print(f"  RDATE        : {RDATE}")
 print(f"  NOWK (week)  : {NOWK}   STRDAY: {STRDAY}   REPTDAY: {REPTDAY}")
@@ -1061,10 +1070,19 @@ for rep in newloan_reports:
         report_lines.append(FF)
         report_lines.extend(rep)
 
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+# Write to the driver-expected fixed-name file
+with open(PRIMARY_OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
         fh.write(ln + "\n")
 
-print(f"\n  Output written : {OUTPUT_FILE}")
+# Write the same content to the secondary archive file
+with open(SECONDARY_OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in report_lines:
+        fh.write(ln + "\n")
+
+print(f"\n  Output written to :")
+print(f"    {PRIMARY_OUTPUT_FILE}")
+print(f"    {SECONDARY_OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
+
 print("\nEIIWSTAF complete.")
