@@ -1,5 +1,19 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py
+Step 1: Deriving report date...
+  RDATE        : 28/09/2026
+  NOWK (week)  : 04   STRDAY: 23   REPTDAY: 28
+  PDATE..EDATE : 2026-09-01 .. 2026-09-28
+  Output file  : EIIWSTAF.txt
+
+Step 2: Caching input SAS datasets to Parquet...
+  [LNNOTE_PBB] Existing Parquet found - skipping conversion.
+  [LNCOMM_PBB] Existing Parquet found - skipping conversion.
+  [LNNOTE_PIBB] Existing Parquet found - skipping conversion.
+  [LNCOMM_PIBB] Existing Parquet found - skipping conversion.
+  [LNPAY_PBB] Existing Parquet found - skipping conversion.
+  [LNPAY_PIBB] Existing Parquet found - skipping conversion.
+  [ISBASE] Existing Parquet found - skipping conversion.
+
 Step 3: Building LNNOTE (PBB, COSTCTR=8044)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 459, in <module>
-    lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COSTCTR = 8044")
-TypeError: _build_lnnote() missing 1 required positional argument: 'costctr_sql'
+100% ▕██████████████████████████████████████▏ (00:00:04.72 elapsed)     
+  [PBB] LNNOTE rows after merge with LNCOMM: 350
