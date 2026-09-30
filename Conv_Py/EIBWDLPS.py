@@ -9,7 +9,6 @@ Purpose : Extraction of SAS customer data for the DLP (Data Loss Prevention)
           and writes a pipe-delimited customer extract split into
           5,000,000-row segments, plus an SFTP put-command list describing
           the segments.
-          E-SMR : 2012-1555 (MFM)
 
 Dependency:
     JCL //DELETE step (IEFBR14 + ADRDSSU DUMP DELETE PURGE of prior
@@ -18,23 +17,16 @@ Dependency:
     output directory is simply (re)written fresh on each run.
 
     BNM DD (DSN=SAP.PBB.MNITB(0)) is only ever used for `SET BNM.REPTDATE;`
-    to derive the report-date tokens. No `reptdate.parquet` exists, so
-    REPTDATE.py is the source of the report date instead, exactly as in
-    the other converted programs in this project.
+    to derive the report-date tokens.
 
 ============================================================================
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
 1. CARD.UNICARD&REPTYEAR&REPTMON&NOWK  (JCL //CARD DD DSN=SAP.PBB.CRM.CARD)
    Deterministic member name built directly from REPTYEAR/REPTMON/NOWK
-   tokens (YEAR2./Z2./exact-day-match respectively) -- input_date.py's
-   get_latest_file() is NOT used since the name is fully derivable, per
-   this project's established convention for deterministic filenames.
+   tokens (YEAR2./Z2./exact-day-match respectively)
    Cols used : CARDNO, CUSTNBR, NEWIC, OLDIC, BUSTELNO, HOMTELNO,
                HPHONENO, CLOSECD, RECLASS
-   Assumption: physical file named from the SAS member pattern
-   "unicard<REPTYEAR><REPTMON><WK>.sas7bdat" under the CRM.CARD staging
-   path; not independently verified against a production naming table.
 
 2. CISR.DEPOSIT  (JCL //CISR DD DSN=SAP.PBB.CRM.CISBEXT)
    File : INPUT_CISR_FILE -> crm_cisbext_deposit.sas7bdat
@@ -52,9 +44,6 @@ PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 5. COLL.COLLATER  (JCL //COLL DD DSN=SAP.PBB.MNICOL(0))
    File : INPUT_COLL_FILE -> pbb_mnicol_collater.sas7bdat
    Cols used : ACCTNO, CCOLLNO
-   Fixed filename (GDG relative-0 "current generation", no date token in
-   the member name), matching this project's "fixed output/input filename"
-   convention.
 
 6. ICOLL.COLLATER (JCL //ICOLL DD DSN=SAP.PIBB.MNICOL(0))
    File : INPUT_ICOLL_FILE -> pibb_mnicol_collater.sas7bdat
@@ -81,6 +70,7 @@ import gc
 import itertools
 from math import ceil
 from pathlib import Path
+from datetime import date, timedelta
 
 import duckdb
 import pandas as pd
@@ -96,26 +86,22 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_CARD_DIR  = STG_DIR / "sasdata"
-INPUT_CISR_DIR  = STG_DIR / "sasdata"
-INPUT_CISD_DIR  = STG_DIR / "sasdata"
-INPUT_CISL_DIR  = STG_DIR / "sasdata"
-INPUT_COLL_DIR  = STG_DIR / "sasdata"
-INPUT_ICOLL_DIR = STG_DIR / "sasdata"
+INPUT_CARD_DIR  = STG_DIR / "EIBWDLPS"
+INPUT_CISR_DIR  = STG_DIR / "EIBDUNDP"
+INPUT_CISD_DIR  = STG_DIR / "EIBDUNDP"
+INPUT_CISL_DIR  = STG_DIR / "EIBWDLPS"
+INPUT_COLL_DIR  = STG_DIR / "MNICOL"
+INPUT_ICOLL_DIR = STG_DIR / "MNICOL"
 
-INPUT_CISR_FILE  = INPUT_CISR_DIR / "crm_cisbext_deposit.sas7bdat"
-INPUT_CISD_FILE  = INPUT_CISD_DIR / "cisbext_dp_deposit.sas7bdat"
-INPUT_CISL_FILE  = INPUT_CISL_DIR / "cisbext_ln_loan.sas7bdat"
-INPUT_COLL_FILE  = INPUT_COLL_DIR / "pbb_mnicol_collater.sas7bdat"
-INPUT_ICOLL_FILE = INPUT_ICOLL_DIR / "pibb_mnicol_collater.sas7bdat"
+INPUT_CISR_FILE  = INPUT_CISR_DIR  / "crm_cisbext_deposit.sas7bdat"
+INPUT_CISD_FILE  = INPUT_CISD_DIR  / "cisbext_dp_deposit.sas7bdat"
+INPUT_CISL_FILE  = INPUT_CISL_DIR  / "cisbext_ln_loan.sas7bdat"
+INPUT_COLL_FILE  = INPUT_COLL_DIR  / "collater.sas7bdat"
+INPUT_ICOLL_FILE = INPUT_ICOLL_DIR / "icollater.sas7bdat"
 # INPUT_CARD_FILE is built below once REPTYEAR/REPTMON/WK are known.
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBWDLPS"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIBWDLPS"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-SFTP_OUTPUT_FILE = OUTPUT_DIR / "EIBWDLPS_SFTP.txt"
 
 CHUNK_ROWS = 500_000
 OBSNUM     = 5_000_000   # DATA DLP; OBSNUM = 5000000; (segment size)
@@ -151,8 +137,18 @@ REPTDAY  = reptdate.strftime("%d")   # CALL SYMPUT(...,PUT(DAY(REPTDATE),Z2.))
 # REPTDAY, like SDD/WK1 above, is SYMPUT'd but never referenced again in
 # the program body -- dead, kept for documentation parity only.
 
-CARD_MEMBER = f"UNICARD{REPTYEAR}{REPTMON}{WK}"
+# CARD_MEMBER = f"UNICARD{REPTYEAR}{REPTMON}{WK}"
+CARD_MEMBER = f"UNICARD260903"
 INPUT_CARD_FILE = INPUT_CARD_DIR / f"{CARD_MEMBER.lower()}.sas7bdat"
+
+# Generate time stamp
+report_date = date.today() - timedelta(days=1)
+ts = report_date.strftime("%y%m%d")
+
+OUTPUT_DIR = BASE_DIR / "output" / "EIBWDLPS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+SFTP_OUTPUT_FILE = OUTPUT_DIR / f"EIBWDLPS_SFTP_{ts}.txt"
+
 
 print(f"  REPTYEAR/MON : {REPTYEAR}/{REPTMON}   NOWK: {WK}")
 print(f"  CARD member  : {CARD_MEMBER}")
@@ -191,21 +187,24 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     schema = None
     total = 0
 
+    def _build_schema(df: "pd.DataFrame") -> pa.Schema:
+        fields = []
+        for col, dtype in df.dtypes.items():
+            if dtype == "object":
+                pa_type = pa.string()
+            elif pd.api.types.is_integer_dtype(dtype):
+                pa_type = pa.int64()
+            elif pd.api.types.is_float_dtype(dtype):
+                pa_type = pa.float64()
+            else:
+                pa_type = pa.from_numpy_dtype(dtype)
+            fields.append(pa.field(col, pa_type))
+        return pa.schema(fields)
+    
     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
     for chunk in reader:
         if schema is None:
-            fields = []
-            for col, dtype in chunk.dtypes.items():
-                if dtype == "object":
-                    pa_type = pa.string()
-                elif pd.api.types.is_integer_dtype(dtype):
-                    pa_type = pa.int64()
-                elif pd.api.types.is_float_dtype(dtype):
-                    pa_type = pa.float64()
-                else:
-                    pa_type = pa.from_numpy_dtype(dtype)
-                fields.append(pa.field(col, pa_type))
-            schema = pa.schema(fields)
+            schema = _build_schema(chunk)
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
 
         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
@@ -214,8 +213,17 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
         del chunk, table
         gc.collect()
 
-    if writer:
+    if writer is not None:
         writer.close()
+    else:
+        # Source file has 0 rows -- the chunked reader yielded nothing.
+        # Read once without chunksize to obtain the schema, then write a
+        # zero-row parquet so downstream read_parquet() finds the file.
+        empty = pd.read_sas(sas_path, encoding="latin1")
+        schema = _build_schema(empty)
+        empty_table = pa.Table.from_pandas(empty, schema=schema, preserve_index=False)
+        pq.write_table(empty_table, cache_path)
+
     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
@@ -238,6 +246,28 @@ CISD_CACHE  = _load_cached(INPUT_CISD_FILE, "CISD")
 CISL_CACHE  = _load_cached(INPUT_CISL_FILE, "CISL")
 COLL_CACHE  = _load_cached(INPUT_COLL_FILE, "COLL")
 ICOLL_CACHE = _load_cached(INPUT_ICOLL_FILE, "ICOLL")
+
+# ============================================================================
+# DUCKDB WORK DATABASE  (disk-backed, bounded memory)
+# ============================================================================
+WORK_DIR = BASE_DIR / "input" / "work" / "EIBWDLPS"
+TMP_DIR  = WORK_DIR / "tmp"
+TMP_DIR.mkdir(parents=True, exist_ok=True)
+DB_FILE  = WORK_DIR / "eibwdlps.duckdb"
+for _p in (DB_FILE, Path(str(DB_FILE) + ".wal")):
+    _p.unlink(missing_ok=True)
+
+con = duckdb.connect(str(DB_FILE))
+con.execute("SET memory_limit='16GB'")          # set to about 50% of server RAM
+con.execute(f"SET temp_directory='{TMP_DIR.as_posix()}'")
+con.execute("SET threads=4")
+con.execute("SET preserve_insertion_order=true")  # row_number() OVER () relies on file order
+
+
+def _s(col: str) -> str:
+    """SAS character semantics: missing -> blank."""
+    return f"COALESCE(CAST({col} AS VARCHAR),'')"
+
 
 # ============================================================================
 # SMALL SAS-SEMANTIC HELPERS
@@ -295,64 +325,36 @@ def _stable_sort(rows: list, field: str) -> list:
 # ============================================================================
 # STEP 3: CISRM / CISDP / CISLN  (PROC SORT ... KEEP=... BY ACCTNO)
 # ============================================================================
-print("\nStep 3: Loading + sorting CISR/CISD/CISL sources...")
-
+print("\nStep 3: Registering CISR/CISD/CISL sources...")
 _CIS_COLS = ["ACCTNO", "CUSTNO", "NEWIC", "OLDIC", "PRIPHONE",
              "SECPHONE", "MOBIPHON", "BUSSREG", "NEWICIND"]
 
 
-def _load_cis_source(cache_path: Path, tag: str) -> list:
-    con = duckdb.connect(database=":memory:")
-    df = con.execute(f"""
-        SELECT
-            CAST(ACCTNO   AS VARCHAR) AS ACCTNO,
-            CAST(CUSTNO   AS VARCHAR) AS CUSTNO,
-            CAST(NEWIC    AS VARCHAR) AS NEWIC,
-            CAST(OLDIC    AS VARCHAR) AS OLDIC,
-            CAST(PRIPHONE AS VARCHAR) AS PRIPHONE,
-            CAST(SECPHONE AS VARCHAR) AS SECPHONE,
-            CAST(MOBIPHON AS VARCHAR) AS MOBIPHON,
-            CAST(BUSSREG  AS VARCHAR) AS BUSSREG,
-            CAST(NEWICIND AS VARCHAR) AS NEWICIND
-        FROM read_parquet('{cache_path.as_posix()}')
-    """).pl()
-    con.close()
-    rows = df.to_dicts()
-    rows = _stable_sort(rows, "ACCTNO")
-    print(f"  [{tag}] {len(rows):,} rows loaded and sorted by ACCTNO.")
-    return rows
-
-
-cisrm_rows = _load_cis_source(CISR_CACHE, "CISRM")
-cisdp_rows = _load_cis_source(CISD_CACHE, "CISDP")
-cisln_rows = _load_cis_source(CISL_CACHE, "CISLN")
+def _cis_select(cache_path: Path) -> str:
+    cols = ", ".join(f"{_s(c)} AS {c}" for c in _CIS_COLS)
+    return (f"SELECT row_number() OVER () AS rid, {cols} "
+            f"FROM read_parquet('{cache_path.as_posix()}')")
 
 # ============================================================================
 # STEP 4: COLL  (DATA COLL; SET ICOLL.COLLATER COLL.COLLATER; PROC SORT)
 # ============================================================================
-print("\nStep 4: Building COLL (ICOLL + COLL, sorted by ACCTNO)...")
-
-
-def _load_coll_source(cache_path: Path, tag: str) -> list:
-    con = duckdb.connect(database=":memory:")
-    df = con.execute(f"""
-        SELECT CAST(ACCTNO AS VARCHAR) AS ACCTNO,
-               CAST(CCOLLNO AS VARCHAR) AS CCOLLNO
-        FROM read_parquet('{cache_path.as_posix()}')
-    """).pl()
-    con.close()
-    rows = df.to_dicts()
-    print(f"  [{tag}] {len(rows):,} rows loaded.")
-    return rows
-
-
-icoll_rows = _load_coll_source(ICOLL_CACHE, "ICOLL")
-coll_rows  = _load_coll_source(COLL_CACHE, "COLL")
-# SET ICOLL.COLLATER COLL.COLLATER -- Islamic (PIBB) rows stacked first,
-# then conventional (PBB) rows, before the stable sort below.
-coll_stacked = icoll_rows + coll_rows
-coll_sorted  = _stable_sort(coll_stacked, "ACCTNO")
-print(f"  COLL combined: {len(coll_sorted):,} rows.")
+print("\nStep 4: Building COLL (ICOLL first, then COLL, ordered by ACCTNO)...")
+con.execute(f"""
+    CREATE TABLE coll AS
+    SELECT ACCTNO, CCOLLNO,
+           row_number() OVER (PARTITION BY ACCTNO ORDER BY src, rid) AS rn
+    FROM (
+        SELECT 0 AS src, row_number() OVER () AS rid,
+               {_s('ACCTNO')} AS ACCTNO, CAST(CCOLLNO AS VARCHAR) AS CCOLLNO
+        FROM read_parquet('{ICOLL_CACHE.as_posix()}')
+        UNION ALL
+        SELECT 1 AS src, row_number() OVER () AS rid,
+               {_s('ACCTNO')} AS ACCTNO, CAST(CCOLLNO AS VARCHAR) AS CCOLLNO
+        FROM read_parquet('{COLL_CACHE.as_posix()}')
+    )
+""")
+con.execute("CREATE TABLE coll_cnt AS SELECT ACCTNO, COUNT(*) AS nb FROM coll GROUP BY ACCTNO")
+print(f"  COLL combined: {con.execute('SELECT COUNT(*) FROM coll').fetchone()[0]:,} rows.")
 
 # ============================================================================
 # GENERIC SAS MERGE SIMULATOR  (many-to-many + cross-group "leak" fidelity)
@@ -418,311 +420,232 @@ def sas_merge_by_group(a_rows: list, b_rows: list, by_key: str,
 # ============================================================================
 print("\nStep 5: Merging CISRM/CISDP/CISLN with COLL (IF A;)...")
 
-_A_COLS = ["CUSTNO", "NEWIC", "OLDIC", "PRIPHONE", "SECPHONE",
-           "MOBIPHON", "BUSSREG", "NEWICIND"]
-_B_COLS = ["CCOLLNO"]
-# FORMAT ACCTNO1/CUSTNO1/COLLNO1 $10. in the original SAS is a display
-# format only (no LENGTH statement accompanies it) and has no effect on
-# the stored value or subsequent COMPRESS()/comparison logic, so the
-# ACCTNO1/CUSTNO1/COLLNO1 -> ACCTNO/CUSTNO/CCOLLNO round-trip is a no-op
-# here and the merged fields are carried straight through.
 
-cisrm_merged = sas_merge_by_group(cisrm_rows, coll_sorted, "ACCTNO", _A_COLS, _B_COLS, keep_only_a=True)
-cisdp_merged = sas_merge_by_group(cisdp_rows, coll_sorted, "ACCTNO", _A_COLS, _B_COLS, keep_only_a=True)
-cisln_merged = sas_merge_by_group(cisln_rows, coll_sorted, "ACCTNO", _A_COLS, _B_COLS, keep_only_a=True)
-print(f"  CISRM: {len(cisrm_merged):,}   CISDP: {len(cisdp_merged):,}   CISLN: {len(cisln_merged):,}")
+def _merge_coll_sql(cache_path: Path, src: int) -> str:
+    # MERGE CISx(IN=A) COLL; BY ACCTNO; IF A;
+    # Rows are paired by position inside each ACCTNO. When COLL has fewer rows
+    # than CISx, SAS keeps COLL's last value (LEAST(rn, nb)). If ACCTNO is not in
+    # COLL, CCOLLNO is missing (NULL).
+    return f"""
+        WITH s AS ({_cis_select(cache_path)}),
+             a AS (SELECT *, row_number() OVER (PARTITION BY ACCTNO ORDER BY rid) AS rn FROM s)
+        SELECT {src} AS src, a.rid, a.ACCTNO, a.CUSTNO, a.NEWIC, a.OLDIC,
+               a.PRIPHONE, a.SECPHONE, a.MOBIPHON, a.BUSSREG, a.NEWICIND, c.CCOLLNO
+        FROM a
+        LEFT JOIN coll_cnt g ON g.ACCTNO = a.ACCTNO
+        LEFT JOIN coll c     ON c.ACCTNO = a.ACCTNO AND c.rn = LEAST(a.rn, g.nb)
+    """
+
+
+for _name, _cache, _src in (("cisrm", CISR_CACHE, 1),
+                            ("cisdp", CISD_CACHE, 2),
+                            ("cisln", CISL_CACHE, 3)):
+    con.execute(f"CREATE TABLE {_name} AS {_merge_coll_sql(_cache, _src)}")
+    print(f"  {_name.upper()}: {con.execute(f'SELECT COUNT(*) FROM {_name}').fetchone()[0]:,}")
+con.execute("DROP TABLE coll")
+con.execute("DROP TABLE coll_cnt")
 
 # ============================================================================
 # STEP 6: CIS  (SET CISRM CISDP CISLN; default NEWIC/NEWICIND)
 # ============================================================================
 print("\nStep 6: Stacking CIS and applying NEWIC default...")
-
-cis_rows = cisrm_merged + cisdp_merged + cisln_merged
-for r in cis_rows:
-    if _is_blank(r.get("NEWIC")):
-        r["NEWICIND"] = "OC"
-        r["NEWIC"] = r.get("OLDIC")
-print(f"  CIS rows: {len(cis_rows):,}")
+con.execute("""
+    CREATE TABLE cis AS
+    SELECT src, rid, ACCTNO, CUSTNO,
+           CASE WHEN TRIM(NEWIC)='' THEN OLDIC ELSE NEWIC END AS NEWIC,
+           OLDIC, PRIPHONE, SECPHONE, MOBIPHON, BUSSREG,
+           CASE WHEN TRIM(NEWIC)='' THEN 'OC' ELSE NEWICIND END AS NEWICIND,
+           CCOLLNO
+    FROM (SELECT * FROM cisrm UNION ALL SELECT * FROM cisdp UNION ALL SELECT * FROM cisln)
+""")
+for _t in ("cisrm", "cisdp", "cisln"):
+    con.execute(f"DROP TABLE {_t}")
+print(f"  CIS rows: {con.execute('SELECT COUNT(*) FROM cis').fetchone()[0]:,}")
 
 # ============================================================================
 # STEP 7: CCARD  (PROC SORT ... WHERE CLOSECD/RECLASS blank; BY CUSTNBR)
 # ============================================================================
-print("\nStep 7: Loading + filtering + sorting CARD.UNICARD...")
-
-con = duckdb.connect(database=":memory:")
-ccard_df = con.execute(f"""
-    SELECT
-        CAST(CARDNO   AS VARCHAR) AS CARDNO,
-        CAST(CUSTNBR  AS VARCHAR) AS CUSTNBR,
-        CAST(NEWIC    AS VARCHAR) AS NEWIC,
-        CAST(OLDIC    AS VARCHAR) AS OLDIC,
-        CAST(BUSTELNO AS VARCHAR) AS BUSTELNO,
-        CAST(HOMTELNO AS VARCHAR) AS HOMTELNO,
-        CAST(HPHONENO AS VARCHAR) AS HPHONENO
+print("\nStep 7: Loading + filtering CARD.UNICARD...")
+con.execute(f"""
+    CREATE TABLE ccard AS
+    SELECT row_number() OVER () AS rid,
+           {_s('CUSTNBR')} AS CUSTNBR, CAST(CARDNO AS VARCHAR) AS CARDNO,
+           {_s('NEWIC')} AS NEWIC, {_s('OLDIC')} AS OLDIC,
+           {_s('BUSTELNO')} AS BUSTELNO, {_s('HOMTELNO')} AS HOMTELNO,
+           {_s('HPHONENO')} AS HPHONENO
     FROM read_parquet('{CARD_CACHE.as_posix()}')
-    WHERE COALESCE(TRIM(CLOSECD), '') = ''
-      AND COALESCE(TRIM(RECLASS), '') = ''
-""").pl()
-con.close()
-ccard_rows = _stable_sort(ccard_df.to_dicts(), "CUSTNBR")
-print(f"  CCARD rows (post CLOSECD/RECLASS filter): {len(ccard_rows):,}")
+    WHERE COALESCE(TRIM(CLOSECD),'')='' AND COALESCE(TRIM(RECLASS),'')=''
+""")
+print(f"  CCARD rows: {con.execute('SELECT COUNT(*) FROM ccard').fetchone()[0]:,}")
 
 # ============================================================================
 # STEP 8: CARD FREQUENCY (&C, &CARD) + TRANSPOSE  (BASECARD padding folded in)
 # ============================================================================
 print("\nStep 8: Computing card-count width and building TRANPCARD...")
-
-_freqs = [len(list(g)) for _, g in itertools.groupby(ccard_rows, key=lambda r: r["CUSTNBR"])]
-_max_freq = max(_freqs) if _freqs else 0
-N_CARDS = _max_freq + 2
-# &C = max cards-per-customer + 2. DATA BASECARD (a DATA step with no
-# SET/MERGE/INPUT, hence one iteration only) declares ARRAY CARD $16.
-# CARD1-&C and is immediately subset out by "IF CARD1 NOT IN ('',' ');"
-# (CARD1 is uninitialised/blank), so it contributes zero rows -- its only
-# real effect is guaranteeing CARD1..CARD&C all exist (2 columns wider
-# than the natural transpose maximum) once stacked with TRANPCARD. That
-# padding is achieved directly below by padding every row to N_CARDS.
+_max_freq = con.execute(
+    "SELECT COALESCE(MAX(c),0) FROM (SELECT COUNT(*) AS c FROM ccard GROUP BY CUSTNBR)"
+).fetchone()[0]
+N_CARDS = _max_freq + 2                       # &C
+CARD_NAMES = [f"CARD{i}" for i in range(1, N_CARDS + 1)]
 print(f"  Max cards/customer: {_max_freq}  ->  N_CARDS (&C): {N_CARDS}")
 
-
-def build_tranpcard(rows: list, n_cards: int) -> list:
-    """PROC TRANSPOSE ... BY CUSTNBR; VAR CARDNO; COPY NEWIC OLDIC BUSTELNO
-    HOMTELNO HPHONENO; -- COPY variables take the FIRST observation's
-    value in each BY group, per documented PROC TRANSPOSE behaviour.
-    Then: default-NEWIC and RENAME CUSTNBR=CUSTNO HOMTELNO=PRIPHONE
-    BUSTELNO=SECPHONE HPHONENO=MOBIPHON.
-    `rows` must already be sorted (stably) by CUSTNBR.
-    """
-    out = []
-    for custnbr, group in itertools.groupby(rows, key=lambda r: r["CUSTNBR"]):
-        group = list(group)
-        first = group[0]
-        cards = [g["CARDNO"] for g in group][:n_cards]
-        cards += [None] * (n_cards - len(cards))
-
-        newic, oldic = first["NEWIC"], first["OLDIC"]
-        if _is_blank(newic):
-            newic = oldic
-
-        row = {
-            "CUSTNO": custnbr,
-            "NEWIC": newic,
-            "OLDIC": oldic,
-            "PRIPHONE": first["HOMTELNO"],
-            "SECPHONE": first["BUSTELNO"],
-            "MOBIPHON": first["HPHONENO"],
-        }
-        for idx, c in enumerate(cards, start=1):
-            row[f"CARD{idx}"] = c
-        out.append(row)
-    return out
-
-
-tranpcard_rows = build_tranpcard(ccard_rows, N_CARDS)
-print(f"  TRANPCARD rows (one per CUSTNBR): {len(tranpcard_rows):,}")
-
-del ccard_rows, ccard_df
-gc.collect()
+_card_pivot = ", ".join(f"MAX(CASE WHEN rn={i} THEN CARDNO END) AS CARD{i}"
+                        for i in range(1, N_CARDS + 1))
+# COPY vars (NEWIC OLDIC BUSTELNO HOMTELNO HPHONENO) = first obs per CUSTNBR.
+con.execute(f"""
+    CREATE TABLE tranpcard AS
+    SELECT CUSTNO,
+           CASE WHEN TRIM(NEWIC0)='' THEN OLDIC ELSE NEWIC0 END AS NEWIC,
+           OLDIC, PRIPHONE, SECPHONE, MOBIPHON, {", ".join(CARD_NAMES)}
+    FROM (
+        SELECT CUSTNBR AS CUSTNO,
+               MAX(CASE WHEN rn=1 THEN NEWIC    END) AS NEWIC0,
+               MAX(CASE WHEN rn=1 THEN OLDIC    END) AS OLDIC,
+               MAX(CASE WHEN rn=1 THEN HOMTELNO END) AS PRIPHONE,
+               MAX(CASE WHEN rn=1 THEN BUSTELNO END) AS SECPHONE,
+               MAX(CASE WHEN rn=1 THEN HPHONENO END) AS MOBIPHON,
+               {_card_pivot}
+        FROM (SELECT *, row_number() OVER (PARTITION BY CUSTNBR ORDER BY rid) AS rn FROM ccard)
+        GROUP BY CUSTNBR
+    )
+""")
+con.execute("DROP TABLE ccard")
+print(f"  TRANPCARD rows: {con.execute('SELECT COUNT(*) FROM tranpcard').fetchone()[0]:,}")
 
 # ============================================================================
 # STEP 9: SORT CIS + TRANPCARD BY NEWIC, THEN MERGE (no IF filter)
 # ============================================================================
 print("\nStep 9: Merging CIS with TRANPCARD by NEWIC...")
+# MERGE CIS(IN=A) TRANPCARD(IN=B); BY NEWIC;  (no IF filter)
+#  - per NEWIC group, row `pos` pairs the pos-th CIS row with the pos-th TRANPCARD row
+#  - a side that runs out keeps its LAST row's values (LEAST(pos, count))
+#  - a side absent from the group is missing (NULL)
+#  - variables in both (CUSTNO OLDIC PRIPHONE SECPHONE MOBIPHON): B wins when B
+#    contributes a fresh row (pos <= nb), otherwise A's value stays
+_common = ["CUSTNO", "OLDIC", "PRIPHONE", "SECPHONE", "MOBIPHON"]
+_common_sql = ", ".join(
+    f"CASE WHEN p.pos <= p.nb THEN b.{c} ELSE a.{c} END AS {c}" for c in _common)
+_cards_sql = ", ".join(f"b.{c} AS {c}" for c in CARD_NAMES)
 
-cis_sorted = _stable_sort(cis_rows, "NEWIC")
-tranp_sorted = _stable_sort(tranpcard_rows, "NEWIC")
-
-_CISCARD_A_COLS = ["ACCTNO", "CUSTNO", "OLDIC", "PRIPHONE", "SECPHONE",
-                    "MOBIPHON", "BUSSREG", "NEWICIND", "CCOLLNO"]
-_CISCARD_B_COLS = ["CUSTNO", "OLDIC", "PRIPHONE", "SECPHONE", "MOBIPHON"] + \
-                   [f"CARD{i}" for i in range(1, N_CARDS + 1)]
-# CUSTNO/OLDIC/PRIPHONE/SECPHONE/MOBIPHON exist in BOTH data sets; per
-# `MERGE CIS(IN=A) TRANPCARD(IN=B);` (B listed after A), B's value wins
-# whenever B contributes freshly in a given iteration -- handled by
-# sas_merge_by_group applying b_cols after a_cols, per iteration.
-# ACCTNO/BUSSREG/NEWICIND/CCOLLNO exist only in CIS, and CARD1..CARDn
-# exist only in TRANPCARD; unmatched-side "leak-forward" across BY groups
-# (see sas_merge_by_group docstring) is preserved for both.
-
-ciscard_rows = sas_merge_by_group(
-    cis_sorted, tranp_sorted, "NEWIC", _CISCARD_A_COLS, _CISCARD_B_COLS, keep_only_a=False,
-)
-print(f"  CISCARD rows: {len(ciscard_rows):,}")
-
-del cis_rows, cis_sorted, tranpcard_rows, tranp_sorted
-gc.collect()
+con.execute(f"""
+    CREATE TABLE ciscard AS
+    WITH a  AS (SELECT *, row_number() OVER (PARTITION BY NEWIC ORDER BY src, rid) AS rn FROM cis),
+         b  AS (SELECT *, row_number() OVER (PARTITION BY NEWIC ORDER BY CUSTNO)     AS rn FROM tranpcard),
+         ga AS (SELECT NEWIC, COUNT(*) AS na FROM cis GROUP BY NEWIC),
+         gb AS (SELECT NEWIC, COUNT(*) AS nb FROM tranpcard GROUP BY NEWIC),
+         g  AS (SELECT COALESCE(ga.NEWIC, gb.NEWIC) AS NEWIC,
+                       COALESCE(na,0) AS na, COALESCE(nb,0) AS nb
+                FROM ga FULL OUTER JOIN gb ON ga.NEWIC = gb.NEWIC),
+         p  AS (SELECT NEWIC, na, nb, UNNEST(range(1, GREATEST(na, nb) + 1)) AS pos FROM g)
+    SELECT p.NEWIC, p.pos,
+           a.ACCTNO, a.BUSSREG, a.NEWICIND, a.CCOLLNO,
+           {_common_sql},
+           {_cards_sql}
+    FROM p
+    LEFT JOIN a ON a.NEWIC = p.NEWIC AND a.rn = LEAST(p.pos, p.na)
+    LEFT JOIN b ON b.NEWIC = p.NEWIC AND b.rn = LEAST(p.pos, p.nb)
+""")
+con.execute("DROP TABLE cis")
+con.execute("DROP TABLE tranpcard")
+print(f"  CISCARD rows: {con.execute('SELECT COUNT(*) FROM ciscard').fetchone()[0]:,}")
 
 # ============================================================================
 # STEP 10: PER-ROW TRANSFORM PIPELINE  (CISCARD compress -> leading-zero ->
 #          blank masking -> NEWIC validation -> phone validation)
 # ============================================================================
 print("\nStep 10: Applying compress / mask / validation pipeline...")
+_M = f"'{MASK}'"
+_STRING_RE = "[" + "".join("\\" + ch if ch in "\\]^-[" else ch for ch in STRING).replace("'", "''") + "]"
+_FALSIC_SQL = ", ".join(f"'{x}'" for x in FALSIC)
 
+_card_list   = ", ".join(CARD_NAMES)
+_card_mask   = ", ".join(
+    f"CASE WHEN COALESCE(TRIM({c}),'')='' THEN {_M} ELSE {c} END AS {c}" for c in CARD_NAMES)
+_blank_mask  = lambda c: f"CASE WHEN {c} IN ('','.') THEN {_M} ELSE {c} END AS {c}"
 
-def _stage_compress(row: dict) -> dict:
-    """DATA CISCARD; SET CISCARD; ... COMPRESS(...) assignments."""
-    row["NEWIC"] = _compress_blanks(row.get("NEWIC"))
-    row["ACCTNO"] = _compress_blanks(row.get("ACCTNO"))
-    row["CUSTNO"] = _compress_blanks(row.get("CUSTNO"))
-    row["PRIPHONE"] = _compress_keep(row.get("PRIPHONE"), NUMBER)
-    row["SECPHONE"] = _compress_keep(row.get("SECPHONE"), NUMBER)
-    row["MOBIPHON"] = _compress_keep(row.get("MOBIPHON"), NUMBER)
-    row["BUSSREG"] = _compress_blanks(row.get("BUSSREG"))
-    row["CCOLLNO"] = _compress_blanks(row.get("CCOLLNO"))
-    return row
-
-
-def _stage_leading_zero(row: dict) -> dict:
-    """/*** REMOVE LEADING ZERO ***/ DATA TEMP / CISCARD steps. PR1PH0N3 /
-    S3CPH0N3 / M0B1PH0N are dropped from the final output, so only their
-    string content (needed for later LENGTH()/COMPRESS() tests) is kept."""
-    row["_PR1PH0N3"] = _leading_zero_str(row["PRIPHONE"])
-    row["_S3CPH0N3"] = _leading_zero_str(row["SECPHONE"])
-    row["_M0B1PH0N"] = _leading_zero_str(row["MOBIPHON"])
-    return row
-
-
-def _stage_mask_blanks(row: dict, n_cards: int) -> dict:
-    """ARRAY CARD loop + IN('','.') masking, still inside the CISCARD step."""
-    for idx in range(1, n_cards + 1):
-        key = f"CARD{idx}"
-        if _is_blank(row.get(key)):
-            row[key] = MASK
-    for key in ("NEWIC", "ACCTNO", "CUSTNO", "PRIPHONE", "SECPHONE",
-                "MOBIPHON", "BUSSREG", "CCOLLNO"):
-        if row.get(key) in (None, "", "."):
-            row[key] = MASK
-    return row
-
-
-def _stage_newic_validate(row: dict) -> dict:
-    """DLP.CUSTDATA NEWIC validation cascade -- sequential, each IF tests
-    the (possibly already-masked-by-an-earlier-IF) current NEWIC value."""
-    newic = row["NEWIC"]
-    newicind = row.get("NEWICIND")
-    numcheck = _compress_remove(newic, NUMBER)
-    strcheck = _compress_remove(newic, STRING)
-    zrocheck = _compress_remove(newic, ZERO)
-
-    if newicind == "IC" and len(newic) < 12:
-        newic = MASK
-    if newicind == "OC" and len(newic) < 7:
-        newic = MASK
-    if newicind in ("SA", "PC", "BC"):
-        newic = MASK
-    if numcheck == "" and len(newic) < 6:
-        newic = MASK
-    if strcheck == "":
-        newic = MASK
-    if newic in FALSIC:
-        newic = MASK
-    if len(newic) < 4:
-        newic = MASK
-    if zrocheck == "":
-        newic = MASK
-
-    row["NEWIC"] = newic
-    return row
-
-
-def _stage_phone_validate(row: dict) -> dict:
-    """DLP.CUSTDATA phone validation -- LENGTH()/ZRCHKx tests run against
-    the pre-masking leading-zero-stripped values, but MASK is applied to
-    PRIPHONE/SECPHONE/MOBIPHON (the post-compress digit values), exactly
-    mirroring the original SAS variable targets."""
-    pr1, s3c, m0b = row["_PR1PH0N3"], row["_S3CPH0N3"], row["_M0B1PH0N"]
-    zrchkpri = _compress_remove(pr1, ZERO)
-    zrchksec = _compress_remove(s3c, ZERO)
-    zrchkmob = _compress_remove(m0b, ZERO)
-
-    priphone, secphone, mobiphon = row["PRIPHONE"], row["SECPHONE"], row["MOBIPHON"]
-    if len(pr1) < 8:
-        priphone = MASK
-    if len(s3c) < 8:
-        secphone = MASK
-    if len(m0b) < 8:
-        mobiphon = MASK
-    if zrchkpri == "" or len(zrchkpri) < 4:
-        priphone = MASK
-    if zrchksec == "" or len(zrchksec) < 4:
-        secphone = MASK
-    if zrchkmob == "" or len(zrchkmob) < 4:
-        mobiphon = MASK
-
-    row["PRIPHONE"], row["SECPHONE"], row["MOBIPHON"] = priphone, secphone, mobiphon
-    return row
-
-
-def process_row(row: dict, n_cards: int) -> dict:
-    row = _stage_compress(row)
-    row = _stage_leading_zero(row)
-    row = _stage_mask_blanks(row, n_cards)
-    row = _stage_newic_validate(row)
-    row = _stage_phone_validate(row)
-    return row
-
-
-final_rows = [process_row(r, N_CARDS) for r in ciscard_rows]
-print(f"  DLP.CUSTDATA rows: {len(final_rows):,}")
-
-del ciscard_rows
-gc.collect()
+con.execute(f"""
+    CREATE TABLE custdata AS
+    WITH s1 AS (   -- COMPRESS(...)
+        SELECT NEWIC AS SORT_NEWIC, pos, COALESCE(NEWICIND,'') AS NEWICIND,
+               replace(COALESCE(NEWIC,''),' ','')  AS NEWIC,
+               replace(COALESCE(ACCTNO,''),' ','') AS ACCTNO,
+               regexp_replace(COALESCE(PRIPHONE,''),'[^0-9]','','g') AS PRIPHONE,
+               regexp_replace(COALESCE(SECPHONE,''),'[^0-9]','','g') AS SECPHONE,
+               regexp_replace(COALESCE(MOBIPHON,''),'[^0-9]','','g') AS MOBIPHON,
+               replace(COALESCE(BUSSREG,''),' ','') AS BUSSREG,
+               {_card_list}
+        FROM ciscard),
+    s2 AS (        -- REMOVE LEADING ZERO
+        SELECT *,
+               COALESCE(CAST(TRY_CAST(PRIPHONE AS HUGEINT) AS VARCHAR),'.') AS PR1PH0N3,
+               COALESCE(CAST(TRY_CAST(SECPHONE AS HUGEINT) AS VARCHAR),'.') AS S3CPH0N3,
+               COALESCE(CAST(TRY_CAST(MOBIPHON AS HUGEINT) AS VARCHAR),'.') AS M0B1PH0N
+        FROM s1),
+    s3 AS (        -- mask blanks
+        SELECT * REPLACE ({_blank_mask('NEWIC')}, {_blank_mask('ACCTNO')},
+                          {_blank_mask('PRIPHONE')}, {_blank_mask('SECPHONE')},
+                          {_blank_mask('MOBIPHON')}, {_blank_mask('BUSSREG')},
+                          {_card_mask})
+        FROM s2),
+    s4 AS (        -- check columns
+        SELECT *,
+               regexp_replace(NEWIC,'[0-9]','','g')        AS NUMCHECK,
+               regexp_replace(NEWIC,'{_STRING_RE}','','g') AS STRCHECK,
+               replace(NEWIC,'0','')     AS ZROCHECK,
+               replace(PR1PH0N3,'0','')  AS ZRCHKPRI,
+               replace(S3CPH0N3,'0','')  AS ZRCHKSEC,
+               replace(M0B1PH0N,'0','')  AS ZRCHKMOB
+        FROM s3)
+    SELECT row_number() OVER (ORDER BY SORT_NEWIC, pos) AS rn,
+           -- masking is idempotent, so the sequential IFs collapse into one OR
+           CASE WHEN (NEWICIND='IC' AND length(NEWIC) < 12)
+                  OR (NEWICIND='OC' AND length(NEWIC) < 7)
+                  OR NEWICIND IN ('SA','PC','BC')
+                  OR (NUMCHECK='' AND length(NEWIC) < 6)
+                  OR STRCHECK=''
+                  OR NEWIC IN ({_FALSIC_SQL})
+                  OR length(NEWIC) < 4
+                  OR ZROCHECK=''
+                THEN {_M} ELSE NEWIC END AS NEWIC,
+           CASE WHEN length(PR1PH0N3) < 8 OR ZRCHKPRI='' OR length(ZRCHKPRI) < 4
+                THEN {_M} ELSE PRIPHONE END AS PRIPHONE,
+           CASE WHEN length(S3CPH0N3) < 8 OR ZRCHKSEC='' OR length(ZRCHKSEC) < 4
+                THEN {_M} ELSE SECPHONE END AS SECPHONE,
+           CASE WHEN length(M0B1PH0N) < 8 OR ZRCHKMOB='' OR length(ZRCHKMOB) < 4
+                THEN {_M} ELSE MOBIPHON END AS MOBIPHON,
+           ACCTNO, BUSSREG, {_card_list}
+    FROM s4
+""")
+con.execute("DROP TABLE ciscard")
 
 # ============================================================================
 # STEP 11: WRITE SPLIT CUSTOMER EXTRACT + SFTP COMMAND LIST
 # ============================================================================
 print("\nStep 11: Writing split customer extract + SFTP file list...")
-
-
-def _rtrim(s) -> str:
-    return (s or "").rstrip(" ")
-
-
-def _format_output_line(row: dict, n_cards: int) -> str:
-    """PUT @001 NEWIC +(-1)'|' PRIPHONE +(-1)'|' SECPHONE +(-1)'|'
-    MOBIPHON +(-1)'|' /* CUSTNO +(-1)'|' */ ACCTNO +(-1)'|'
-    /* CCOLLNO +(-1)'|' */ BUSSREG +(-1)'|' @; ARRAY CARD loop.
-    The trailing "+(-1)" after each list-style character item backs the
-    column pointer over the single auto-inserted trailing blank that SAS
-    list-style PUT appends, substituting the literal '|' delimiter in its
-    place -- net effect: each field trimmed, pipe-delimited. CUSTNO and
-    CCOLLNO are intentionally NOT written (commented out in the source)."""
-    fields = [
-        _rtrim(row["NEWIC"]),
-        _rtrim(row["PRIPHONE"]),
-        _rtrim(row["SECPHONE"]),
-        _rtrim(row["MOBIPHON"]),
-        # CUSTNO omitted from the extract -- commented out in the original
-        # SAS PUT statement: /* CUSTNO +(-1)'|' */
-        _rtrim(row["ACCTNO"]),
-        # CCOLLNO omitted from the extract -- commented out in the
-        # original SAS PUT statement: /* CCOLLNO +(-1)'|' */
-        _rtrim(row["BUSSREG"]),
-    ]
-    for idx in range(1, n_cards + 1):
-        fields.append(_rtrim(row.get(f"CARD{idx}")))
-    return "|".join(fields)
-
-
-NOBS = len(final_rows)
+NOBS = con.execute("SELECT COUNT(*) FROM custdata").fetchone()[0]
+print(f"  DLP.CUSTDATA rows: {NOBS:,}")
 NUMFILE = ceil(NOBS / OBSNUM) if NOBS else 0
 print(f"  NOBS: {NOBS:,}   OBSNUM: {OBSNUM:,}   NUMFILE: {NUMFILE}")
+
+# CUSTNO and CCOLLNO are intentionally not in the extract (commented out in the SAS PUT).
+_FIELDS = ["NEWIC", "PRIPHONE", "SECPHONE", "MOBIPHON", "ACCTNO", "BUSSREG"] + CARD_NAMES
+_LINE_SQL = "concat_ws('|', " + ", ".join(f"rtrim({c})" for c in _FIELDS) + ")"
 
 sftp_lines = []
 for i in range(1, NUMFILE + 1):
     no = f"{i:03d}"
-    start = (i - 1) * OBSNUM
-    end = min(i * OBSNUM, NOBS)
-    chunk = final_rows[start:end]
-
+    start, end = (i - 1) * OBSNUM + 1, min(i * OBSNUM, NOBS)
     out_path = OUTPUT_DIR / f"EIBWDLPS_C{no}.txt"
+    cur = con.execute(
+        f"SELECT {_LINE_SQL} FROM custdata WHERE rn BETWEEN ? AND ? ORDER BY rn", [start, end])
     with open(out_path, "w", encoding="latin1") as fh:
-        for row in chunk:
-            fh.write(_format_output_line(row, N_CARDS) + "\n")
-    print(f"  Written {out_path.name} ({len(chunk):,} rows)")
+        while True:
+            batch = cur.fetchmany(200_000)
+            if not batch:
+                break
+            fh.write("\n".join(r[0] for r in batch) + "\n")
+    print(f"  Written {out_path.name} ({end - start + 1:,} rows)")
 
-    # DATA _NULL_; FILE SFTP; PUT @001 'PUT' @005 FILES;
-    # FILES = CAT("//SAP.PBB.DLP.C",NO,".TEXT","  DLP",NO,".CSV");
     files_str = f"//SAP.PBB.DLP.C{no}.TEXT  DLP{no}.CSV"
     sftp_lines.append(f"PUT {files_str}")
 
@@ -731,4 +654,6 @@ with open(SFTP_OUTPUT_FILE, "w", encoding="latin1") as fh:
         fh.write(ln + "\n")
 print(f"  Written {SFTP_OUTPUT_FILE.name} ({len(sftp_lines)} lines)")
 
+con.close()
+DB_FILE.unlink(missing_ok=True)
 print("\nEIBWDLPS complete.")
