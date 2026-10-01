@@ -1,18 +1,7 @@
-# DEBUG: Check duplicate ACCTNOs in all balance inputs
-for name, df in [
-    ("SA_CUR", sa_cur),
-    ("SA_PRE", sa_pre),
-    ("CA_CUR", ca_cur),
-    ("CA_PRE", ca_pre),
-    ("FD_CUR", fd_cur),
-    ("FD_PRE", fd_pre),
-]:
-    dup = (
-        df.group_by("ACCTNO")
-          .len()
-          .filter(pl.col("len") > 1)
-          .sort("len", descending=True)
-    )
-
-    print(f"\n{name} duplicate ACCTNOs: {len(dup):,}")
-    print(dup.head(20))
+for _a in [1595256021, 1408177326, 1019416021, 1373840635, 1283166924]:
+    _hits = fd_cur.filter(pl.col("ACCTNO") == _a)
+    _near = (fd_cur.filter(pl.col("ACCTNO") <= _a)
+                   .sort("ACCTNO")
+                   .tail(3))
+    print(f"  DBG FD acct={_a} exact_hits={_hits.height} vals={_hits['CURBAL'].to_list()}")
+    print(f"           nearest<=acct={_near.select(['ACCTNO','CURBAL']).to_dicts()}")
