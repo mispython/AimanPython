@@ -439,17 +439,37 @@ print(f"  CISFD rows : {len(cisfd_df):,}")
 #     )
 #     return joined.with_columns(pl.col(value_col).fill_null(0.0))
 
-def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
-    base_sorted = base_df.sort("ACCTNO", maintain_order=True)
+# def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
+#     base_sorted = base_df.sort("ACCTNO", maintain_order=True)
+#     value_sorted = (
+#         value_df
+#         .sort("ACCTNO", maintain_order=True)
+#         .unique(subset=["ACCTNO"], keep="last", maintain_order=True)
+#         .select(["ACCTNO", value_col])
+#     )
+#     # Backward as-of: exact match, else last balance record below this ACCTNO.
+#     # Stays null (SAS missing) when no earlier balance record exists.
+#     return base_sorted.join_asof(value_sorted, on="ACCTNO", strategy="backward")
+
+def _asof_carry(base_df, value_df, value_col):
+    """
+    Emulate SAS:  MERGE base(IN=A) value(IN=B); BY ACCTNO; IF A;
+
+    - Exact key match  -> value_col is taken from value_df
+    - No exact match   -> value_col is left NULL (SAS resets it to missing,
+                          which prints as 0 because OPTIONS MISSING=0)
+    - Duplicate keys on either side produce the SAS one-to-many fan-out
+      (base row duplicated once per value row with the same ACCTNO).
+    """
+    base_sorted  = base_df.sort("ACCTNO", maintain_order=True)
     value_sorted = (
         value_df
         .sort("ACCTNO", maintain_order=True)
-        .unique(subset=["ACCTNO"], keep="last", maintain_order=True)
         .select(["ACCTNO", value_col])
     )
-    # Backward as-of: exact match, else last balance record below this ACCTNO.
-    # Stays null (SAS missing) when no earlier balance record exists.
-    return base_sorted.join_asof(value_sorted, on="ACCTNO", strategy="backward")
+    # Left join = "IF A"; the join itself only fills value_col on exact match.
+    # Non-matching rows keep NULL, which is what SAS prints as 0.
+    return base_sorted.join(value_sorted, on="ACCTNO", how="left")
 
 
 # SHARED_CARD_COLS = ["NEWIC", "CARDNO", "MONITOR", "SOURCE", "CLOSECD", "OLDIC", "CUSTNAME", "APPRLIMT", "TYPE"]
@@ -620,6 +640,24 @@ ca_cur, ca_pre = _both([DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE],
 fd_cur, fd_pre = _both([DEPO_FD_CACHE, IDEPO_FD_CACHE],
                        [PDEPO_FD_CACHE, PIDEPO_FD_CACHE])
 
+# DEBUG 
+dbg_acct = 1373840635
+print("CISFD row:",
+      cisfd_df.filter(pl.col("ACCTNO") == dbg_acct))
+print("FD balance row:",
+      fd_cur.filter(pl.col("ACCTNO") == dbg_acct))
+print("FD balance neighbours (previous 3 keys ≤ this account):",
+      fd_cur.filter(pl.col("ACCTNO") <= dbg_acct)
+            .sort("ACCTNO").tail(5))
+
+# DEBUG
+print(
+    fd_cur.group_by("ACCTNO").len()
+          .filter(pl.col("len") > 1)
+          .sort("len", descending=True)
+          .head(20)
+)
+
 sa_df = _with_balances(cissa_df, sa_cur, sa_pre)
 ca_df = _with_balances(cisca_df, ca_cur, ca_pre)
 fd_df = _with_balances(cisfd_df, fd_cur, fd_pre)
@@ -644,6 +682,13 @@ depo_final = depo_final.with_columns(
 )
 
 print(f"  DEPO rows : {len(depo_final):,}")
+
+# DEBUG
+print(
+    depo_final
+    .filter(pl.col("ACCTNO").is_in([1408177326, 1019416021, 1373840635, 1283166924]))
+    .select(["ACCTNO", "CURBAL", "PRE_CURBAL", "WITHDR"])
+)
 
 # ============================================================================
 # STEP 8: PROC SUMMARY DATA=DEPO NWAY; CLASS NEWIC; VAR PRE_CURBAL CURBAL WITHDR;
@@ -816,11 +861,11 @@ def _fmt_acctno(val) -> str:
 def _fmt_comma15_2(val) -> str:
     """COMMA15.2 with OPTIONS MISSING=0: a missing value prints as '0'."""
     if val is None or val != val:
-        return "0".rjust(15)
+        return "0.00".rjust(15)
     try:
         return f"{float(val):>15,.2f}"
     except (TypeError, ValueError):
-        return "0".rjust(15)
+        return "0.00".rjust(15)
 
 
 def _fmt_apprlimt(val) -> str:
