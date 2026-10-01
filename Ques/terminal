@@ -1,6 +1,7 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDUNDP.py
 Step 1: Deriving report date...
   REPTDATE : 2026-09-22  (WK=03)
-  RDTEA    : 30/09/26   RDTEB : 29/09/26
+  RDTEA    : 23/09/26   RDTEB : 22/09/26
   REPTYEAR=26  REPTMON=09  REPTDAY=22  NOWK=03
   CARD file: host_unicard260902.sas7bdat
   Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260930.txt
@@ -23,40 +24,79 @@ Step 2: Caching input SAS datasets to Parquet...
   [CISSAFD] Cache fresh - skipping conversion.
 
 Step 3: Processing CARD file...
+100% ▕██████████████████████████████████████▏ (00:00:02.00 elapsed)     
   CARD raw rows after filter : 1,297,485
   CARD  rows : 13,754
   CARD1 rows : 5,187
 
 Step 4: Building CISCA / CISSA / CISFD...
-100% ▕██████████████████████████████████████▏ (00:00:02.25 elapsed)     
   CISCA rows : 8,646
   CISSA rows : 32,910
   CISFD rows : 35,280
 
-Step 5: Building PSA / PCA / PFD (previous-period balances)...
-  PSA rows : 32,910   PCA rows : 8,646   PFD rows : 35,280
-
-Step 6: Building SA / CA / FD (current-period balances)...
-  SA rows : 32,910   CA rows : 8,646   FD rows : 35,280
-
-Step 7: Combining DEPO / PDEPO and calculating withdrawals...
+Step 5-7: Building balances and withdrawals...
+CISFD row: shape: (1, 10)
+┌──────────────────┬─────────┬────────────┬─────────┬───┬────────────────┬──────────┬────────────┬──────┐
+│ CARDNO           ┆ MONITOR ┆ SOURCE     ┆ CLOSECD ┆ … ┆ CUSTNAME       ┆ APPRLIMT ┆ ACCTNO     ┆ TYPE │
+│ ---              ┆ ---     ┆ ---        ┆ ---     ┆   ┆ ---            ┆ ---      ┆ ---        ┆ ---  │
+│ str              ┆ str     ┆ str        ┆ str     ┆   ┆ str            ┆ f64      ┆ i64        ┆ str  │
+╞══════════════════╪═════════╪════════════╪═════════╪═══╪════════════════╪══════════╪════════════╪══════╡
+│ 4366880200003940 ┆ Z       ┆ PRCBFW0810 ┆         ┆ … ┆ ANG POH CHEANG ┆ 20000.0  ┆ 1373840635 ┆ FD   │
+└──────────────────┴─────────┴────────────┴─────────┴───┴────────────────┴──────────┴────────────┴──────┘
+FD balance row: shape: (0, 2)
+┌────────┬────────┐
+│ ACCTNO ┆ CURBAL │
+│ ---    ┆ ---    │
+│ i64    ┆ f64    │
+╞════════╪════════╡
+└────────┴────────┘
+FD balance neighbours (previous 3 keys ≤ this account): shape: (5, 2)
+┌────────────┬──────────┐
+│ ACCTNO     ┆ CURBAL   │
+│ ---        ┆ ---      │
+│ i64        ┆ f64      │
+╞════════════╪══════════╡
+│ 1373839925 ┆ 0.0      │
+│ 1373840210 ┆ 0.0      │
+│ 1373840307 ┆ 50885.62 │
+│ 1373840404 ┆ 16778.89 │
+│ 1373840501 ┆ 250000.0 │
+└────────────┴──────────┘
+shape: (0, 2)
+┌────────┬─────┐
+│ ACCTNO ┆ len │
+│ ---    ┆ --- │
+│ i64    ┆ u32 │
+╞════════╪═════╡
+└────────┴─────┘
   DEPO rows : 76,836
+shape: (4, 4)
+┌────────────┬────────┬────────────┬────────┐
+│ ACCTNO     ┆ CURBAL ┆ PRE_CURBAL ┆ WITHDR │
+│ ---        ┆ ---    ┆ ---        ┆ ---    │
+│ i64        ┆ f64    ┆ f64        ┆ f64    │
+╞════════════╪════════╪════════════╪════════╡
+│ 1019416021 ┆ null   ┆ null       ┆ 0.0    │
+│ 1283166924 ┆ null   ┆ null       ┆ 0.0    │
+│ 1373840635 ┆ null   ┆ null       ┆ 0.0    │
+│ 1408177326 ┆ null   ┆ null       ┆ 0.0    │
+└────────────┴────────┴────────────┴────────┘
 
 Step 8: Summarising DEPO by NEWIC...
-  DEPO1 rows : 13,491
+  DEPO1 rows : 13,517
 
 Step 9: Splitting into DEPO2 / DEPO3...
-  DEPO2 rows : 19   DEPO3 rows : 9,243
+  DEPO2 rows : 19   DEPO3 rows : 9,144
 
 Step 10: Building TOT...
-  TOT rows : 1,870
+  TOT rows : 1,779
 
 Step 11: Building FINAL dataset...
-  FINAL rows : 11,913
+  FINAL rows : 11,144
 
 Step 12: Generating report...
 
   Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260930.txt
-  Total lines    : 20,620
+  Total lines    : 19,401
 
 EIBDUNDP complete.
