@@ -5,22 +5,6 @@ Purpose : Deposit Activities for Credit Card Holders.
           Identifies cardholders with significant deposit withdrawals
           and summarises their current balances across SA/CA/FD accounts.
 
-Dependency:
-    This program intentionally does NOT depend on REPTDATE.py or
-    input_date.py. The original SAS reads its base date from an external
-    control dataset ("DATA REPTDATE; SET DEPO.REPTDATE;") which is not
-    provided/available in this environment, so the base date is derived
-    locally in _derive_reptdate() below (system date - 1 day, matching
-    the convention used elsewhere in this project), and the SAS SELECT
-    block that snaps that base date onto a reporting-period boundary
-    (day 8 / 15 / 22 / month-end) is reproduced exactly as written.
-    Likewise, the //DEPO //IDEPO //PDEPO //PIDEPO GDG generations, the
-    //CARD member, and the //CISDP //CISSAFD datasets are all resolved
-    to fixed, independently-named physical paths below rather than via
-    a "latest file" search utility, since their SAS generation numbers
-    (0 / -1) and dynamically-built member name are fully deterministic
-    from the report-date arithmetic alone.
-
 ============================================================================
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
@@ -92,30 +76,6 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIBDUNDP"
 
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# # ---- DEPO (current day, PBB)  : //DEPO DD DSN=SAP.PBB.MNITB.DAILY(0) ------
-# DEPO_SAVING_FILE   = INPUT_DIR / "mnitb_daily_pbb_saving_d0.sas7bdat"
-# DEPO_CURRENT_FILE  = INPUT_DIR / "mnitb_daily_pbb_current_d0.sas7bdat"
-# DEPO_FD_FILE       = INPUT_DIR / "mnitb_daily_pbb_fd_d0.sas7bdat"
-
-# # ---- IDEPO (current day, PIBB): //IDEPO DD DSN=SAP.PIBB.MNITB.DAILY(0) ----
-# IDEPO_SAVING_FILE   = INPUT_DIR / "mnitb_daily_pibb_saving_d0.sas7bdat"
-# IDEPO_CURRENT_FILE  = INPUT_DIR / "mnitb_daily_pibb_current_d0.sas7bdat"
-# IDEPO_FD_FILE       = INPUT_DIR / "mnitb_daily_pibb_fd_d0.sas7bdat"
-
-# # ---- PDEPO (previous day, PBB): //PDEPO DD DSN=SAP.PBB.MNITB.DAILY(-1) ----
-# PDEPO_SAVING_FILE   = INPUT_DIR / "mnitb_daily_pbb_saving_d-1.sas7bdat"
-# PDEPO_CURRENT_FILE  = INPUT_DIR / "mnitb_daily_pbb_current_d-1.sas7bdat"
-# PDEPO_FD_FILE       = INPUT_DIR / "mnitb_daily_pbb_fd_d-1.sas7bdat"
-
-# # ---- PIDEPO (previous day, PIBB): //PIDEPO DD DSN=SAP.PIBB.MNITB.DAILY(-1)-
-# PIDEPO_SAVING_FILE  = INPUT_DIR / "mnitb_daily_pibb_saving_d-1.sas7bdat"
-# PIDEPO_CURRENT_FILE = INPUT_DIR / "mnitb_daily_pibb_current_d-1.sas7bdat"
-# PIDEPO_FD_FILE      = INPUT_DIR / "mnitb_daily_pibb_fd_d-1.sas7bdat"
-
-# # ---- CIS : //CISDP (CA side) and //CISSAFD (SA+FD side, split later) -----
-# CISDP_FILE   = INPUT_DIR / "cisbext_dp.sas7bdat"
-# CISSAFD_FILE = INPUT_DIR / "crm_cisbext.sas7bdat"
 
 # ---- Output ----------------------------------------------------------------
 # Generate time stamp
@@ -196,31 +156,44 @@ RDTEB = _rdate1.strftime("%d/%m/%y")            # PUT(RDATE1, DDMMYY8.)
 # CARD_FILE = INPUT_DIR / f"unicard{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
 
 # ---- DEPO  (current day, PBB) --------------------------------------------
-DEPO_SAVING_FILE   = INPUT_DIR / f"sa{CUR_DATE_STR}.sas7bdat"
-DEPO_CURRENT_FILE  = INPUT_DIR / f"ca{CUR_DATE_STR}.sas7bdat"
-DEPO_FD_FILE       = INPUT_DIR / f"fd{CUR_DATE_STR}.sas7bdat"
+# DEPO_SAVING_FILE   = INPUT_DIR / f"sa{CUR_DATE_STR}.sas7bdat"
+# DEPO_CURRENT_FILE  = INPUT_DIR / f"ca{CUR_DATE_STR}.sas7bdat"
+# DEPO_FD_FILE       = INPUT_DIR / f"fd{CUR_DATE_STR}.sas7bdat"
+DEPO_SAVING_FILE   = INPUT_DIR / f"sa260923.sas7bdat"
+DEPO_CURRENT_FILE  = INPUT_DIR / f"ca260923.sas7bdat"
+DEPO_FD_FILE       = INPUT_DIR / f"fd260923.sas7bdat"
 
 # ---- IDEPO (current day, PIBB) -------------------------------------------
-IDEPO_SAVING_FILE   = INPUT_DIR / f"isa{CUR_DATE_STR}.sas7bdat"
-IDEPO_CURRENT_FILE  = INPUT_DIR / f"ica{CUR_DATE_STR}.sas7bdat"
-IDEPO_FD_FILE       = INPUT_DIR / f"ifd{CUR_DATE_STR}.sas7bdat"
+# IDEPO_SAVING_FILE   = INPUT_DIR / f"isa{CUR_DATE_STR}.sas7bdat"
+# IDEPO_CURRENT_FILE  = INPUT_DIR / f"ica{CUR_DATE_STR}.sas7bdat"
+# IDEPO_FD_FILE       = INPUT_DIR / f"ifd{CUR_DATE_STR}.sas7bdat"
+IDEPO_SAVING_FILE   = INPUT_DIR / f"isa260923.sas7bdat"
+IDEPO_CURRENT_FILE  = INPUT_DIR / f"ica260923.sas7bdat"
+IDEPO_FD_FILE       = INPUT_DIR / f"ifd260923.sas7bdat"
 
 # ---- PDEPO (previous day, PBB) -------------------------------------------
-PDEPO_SAVING_FILE   = INPUT_DIR / f"sa{PREV_DATE_STR}.sas7bdat"
-PDEPO_CURRENT_FILE  = INPUT_DIR / f"ca{PREV_DATE_STR}.sas7bdat"
-PDEPO_FD_FILE       = INPUT_DIR / f"fd{PREV_DATE_STR}.sas7bdat"
+# PDEPO_SAVING_FILE   = INPUT_DIR / f"sa{PREV_DATE_STR}.sas7bdat"
+# PDEPO_CURRENT_FILE  = INPUT_DIR / f"ca{PREV_DATE_STR}.sas7bdat"
+# PDEPO_FD_FILE       = INPUT_DIR / f"fd{PREV_DATE_STR}.sas7bdat"
+PDEPO_SAVING_FILE   = INPUT_DIR / f"sa260922.sas7bdat"
+PDEPO_CURRENT_FILE  = INPUT_DIR / f"ca260922.sas7bdat"
+PDEPO_FD_FILE       = INPUT_DIR / f"fd260922.sas7bdat"
 
 # ---- PIDEPO (previous day, PIBB) -----------------------------------------
-PIDEPO_SAVING_FILE  = INPUT_DIR / f"isa{PREV_DATE_STR}.sas7bdat"
-PIDEPO_CURRENT_FILE = INPUT_DIR / f"ica{PREV_DATE_STR}.sas7bdat"
-PIDEPO_FD_FILE      = INPUT_DIR / f"ifd{PREV_DATE_STR}.sas7bdat"
+# PIDEPO_SAVING_FILE  = INPUT_DIR / f"isa{PREV_DATE_STR}.sas7bdat"
+# PIDEPO_CURRENT_FILE = INPUT_DIR / f"ica{PREV_DATE_STR}.sas7bdat"
+# PIDEPO_FD_FILE      = INPUT_DIR / f"ifd{PREV_DATE_STR}.sas7bdat"
+PIDEPO_SAVING_FILE  = INPUT_DIR / f"isa260922.sas7bdat"
+PIDEPO_CURRENT_FILE = INPUT_DIR / f"ica260922.sas7bdat"
+PIDEPO_FD_FILE      = INPUT_DIR / f"ifd260922.sas7bdat"
 
 # ---- CIS extracts --------------------------------------------------------
 CISDP_FILE   = INPUT_DIR / "cisbext_dp_deposit.sas7bdat"
 CISSAFD_FILE = INPUT_DIR / "crm_cisbext_deposit.sas7bdat"
 
 # ---- CARD weekly member (already dated) ----------------------------------
-CARD_FILE = INPUT_DIR / f"host_unicard{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
+# CARD_FILE = INPUT_DIR / f"host_unicard{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
+CARD_FILE = INPUT_DIR / f"host_unicard260902.sas7bdat"
 
 print(f"  REPTDATE : {REPTDATE}  (WK={WK})")
 print(f"  RDTEA    : {RDTEA}   RDTEB : {RDTEB}")
@@ -236,40 +209,6 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
         cache_path.exists()
         and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
     )
-
-
-# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-#     writer = None
-#     schema = None
-#     total = 0
-
-#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-#     for chunk in reader:
-#         if schema is None:
-#             fields = []
-#             for col, dtype in chunk.dtypes.items():
-#                 if dtype == 'object':
-#                     pa_type = pa.string()
-#                 elif pd.api.types.is_integer_dtype(dtype):
-#                     pa_type = pa.int64()
-#                 elif pd.api.types.is_float_dtype(dtype):
-#                     pa_type = pa.float64()
-#                 else:
-#                     pa_type = pa.from_numpy_dtype(dtype)
-#                 fields.append(pa.field(col, pa_type))
-#             schema = pa.schema(fields)
-#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-
-#         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
-#         writer.write_table(table)
-#         total += len(chunk)
-#         del chunk, table
-#         gc.collect()
-
-#     if writer:
-#         writer.close()
-#     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
@@ -485,13 +424,6 @@ print(f"  CISFD rows : {len(cisfd_df):,}")
 # SAS MERGE artifact, and it is reproduced exactly (not "fixed" to 0/
 # missing) via a backward as-of join on the sorted ACCTNO key.
 # ============================================================================
-# def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
-#     base_sorted  = base_df.sort("ACCTNO")
-#     value_sorted = value_df.sort("ACCTNO")
-#     return base_sorted.join_asof(value_sorted.select(["ACCTNO", value_col]),
-#                                   on="ACCTNO", strategy="backward")
-
-
 def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
     base_sorted = base_df.sort("ACCTNO")
     value_dedup = (
@@ -520,9 +452,6 @@ def _merge_depo_pdepo(depo_df: pl.DataFrame, pdepo_df: pl.DataFrame) -> pl.DataF
     freshly-read value stands. That is a plain exact left join with a
     coalesce back to DEPO's own value on a miss.
     """
-    # depo_sorted  = depo_df.sort("ACCTNO")
-    # pdepo_sorted = pdepo_df.sort("ACCTNO")
-    
     depo_sorted  = depo_df.sort("ACCTNO")
     pdepo_sorted = (
         pdepo_df.sort("ACCTNO")
@@ -599,39 +528,6 @@ fd_bal = pl.concat([_read_acct_bal(DEPO_FD_CACHE,  "CURBAL"),
 sa_df = _asof_carry(cissa_df, sa_bal, "CURBAL")
 ca_df = _asof_carry(cisca_df, ca_bal, "CURBAL")
 fd_df = _asof_carry(cisfd_df, fd_bal, "CURBAL")
-
-# DEBUG
-_probe = [1599500135, 1815007914, 1595256021, 1311043808]
-print("=== fd_bal rows for probed ACCTNOs ===")
-print(fd_bal.filter(pl.col("ACCTNO").is_in(_probe)).to_pandas().to_string())
-print("=== fd_df result for probed ACCTNOs ===")
-print(fd_df.filter(pl.col("ACCTNO").is_in(_probe)).select(["ACCTNO", "NEWIC", "CURBAL"]).to_pandas().to_string())
-
-# DEBUG
-print("=== raw DEPO_FD cache ===")
-raw_fd = pl.read_parquet(DEPO_FD_CACHE)
-print("rows:", raw_fd.height)
-print("cols:", raw_fd.columns)
-_probe_bal = [1311043808, 1595256021, 1599500135, 1815007914]
-sub_fd = raw_fd.filter(pl.col("ACCTNO").cast(pl.Int64).is_in(_probe_bal))
-print("probe rows in DEPO_FD:")
-print(sub_fd.to_pandas().to_string())
-
-print("=== raw IDEPO_FD cache ===")
-raw_ifd = pl.read_parquet(IDEPO_FD_CACHE)
-print("rows:", raw_ifd.height)
-print("cols:", raw_ifd.columns)
-sub_ifd = raw_ifd.filter(pl.col("ACCTNO").cast(pl.Int64).is_in(_probe_bal))
-print("probe rows in IDEPO_FD:")
-print(sub_ifd.to_pandas().to_string())
-
-# DEBUG
-print("=== FD file — records in [1.595B, 1.596B] ===")
-around = fd_bal.filter(
-    (pl.col("ACCTNO") >= 1595000000) & (pl.col("ACCTNO") <= 1596000000)
-).sort("ACCTNO")
-print("count:", around.height)
-print(around.to_pandas().to_string())
 
 del sa_bal, ca_bal, fd_bal
 gc.collect()
@@ -721,9 +617,6 @@ depo3_df = (
     .select([pl.col("NEWIC"), pl.col("CURBAL").alias("SUMBAL")])
 )
 
-# # DEBUG
-# print(f"  DEPO2 rows : {len(depo2_df):,}   DEPO3 rows : {len(depo3_df):,}")
-
 del depo1_df
 gc.collect()
 
@@ -766,7 +659,6 @@ del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, depo_acct_df, tot_df, dep
 gc.collect()
 
 print(f"  FINAL rows : {len(final_df):,}")
-# print(final_df.head(10))
 
 # ============================================================================
 # STEP 12: PROC REPORT  (ASA carriage control, LRECL=133, RECFM=FB)
@@ -788,207 +680,142 @@ print(f"  FINAL rows : {len(final_df):,}")
 # ============================================================================
 print("\nStep 12: Generating report...")
 
-PAGE_SIZE    = 60
-HEADER_LINES = 9   # 3 title lines + 1 blank + 4 column header lines + 1 separator
+PAGE_SIZE   = 60
+LINE_WIDTH  = 133
+INDENT      = "  "
+BODY_WIDTH  = 123
+BREAK_LINES = 3      # overline + sum line + skip line (kept together on one page)
 
 TITLE1 = "P U B L I C   B A N K   B E R H A D"
-TITLE2 = f"REPORT PERIOD : {RDTEB} - {RDTEA}"
+TITLE2 = f"REPORT PERIOD :{RDTEB} - {RDTEA}"     # SAS concatenates with no space after ':'
 TITLE3 = "CARDHOLDERS DEPOSITS ACCOUNT"
 
-# ---------------------------------------------------------------------------
-# Header block: 4 column-header lines that mirror SAS PROC REPORT's
-# bottom-aligned stacking of wrapped headers.
-# ---------------------------------------------------------------------------
-COL_HDR_L1 = (
-    f"{'':<27s}  "
-    f"{'':<12s}  "
-    f"{'':<12s}  "
-    f"{'':<16s}  "
-    f"{'':>9s}  "
-    f"{'C':>1s}  "
-    f"{'':<2s}  "
-    f"{'':>13s}  "
-    f"{'':>15s}"
-)
+COL_HDR_L1 = (f"{'':<27s}  {'':<12s}  {'':<12s}  {'':<16s}  {'':>9s}  "
+              f"{'C':>1s}  {'':<2s}  {'':>13s}  {'':>15s}")
+COL_HDR_L2 = (f"{'':<27s}  {'':<12s}  {'':<12s}  {'':<16s}  {'CREDIT':>9s}  "
+              f"{'O':>1s}  {'':<2s}  {'':>13s}  {'':>15s}")
+COL_HDR_L3 = (f"{'':<27s}  {'':<12s}  {'':<12s}  {'':<16s}  {'CARD':>9s}  "
+              f"{'D':>1s}  {'TY':<2s}  {'':>13s}  {'':>15s}")
+COL_HDR_L4 = (f"{'CUSTOMER NAME':<27s}  {'NEW ICNO':<12s}  {'OLD ICNO':<12s}  {'CARD NUMBER':<16s}  "
+              f"{'LIMIT':>9s}  {'E':>1s}  {'PE':<2s}  {'ACCTNO':^13s}  {'BALANCE':>15s}")
+SEPARATOR = INDENT + "-" * BODY_WIDTH
 
-COL_HDR_L2 = (
-    f"{'':<27s}  "
-    f"{'':<12s}  "
-    f"{'':<12s}  "
-    f"{'':<16s}  "
-    f"{'CREDIT':>9s}  "
-    f"{'O':>1s}  "
-    f"{'':<2s}  "
-    f"{'':>13s}  "
-    f"{'':>15s}"
-)
-
-COL_HDR_L3 = (
-    f"{'':<27s}  "
-    f"{'':<12s}  "
-    f"{'':<12s}  "
-    f"{'':<16s}  "
-    f"{'CARD':>9s}  "
-    f"{'D':>1s}  "
-    f"{'TY':<2s}  "
-    f"{'':>13s}  "
-    f"{'':>15s}"
-)
-
-COL_HDR_L4 = (
-    f"{'CUSTOMER NAME':<27s}  "
-    f"{'NEW ICNO':<12s}  "
-    f"{'OLD ICNO':<12s}  "
-    f"{'CARD NUMBER':<16s}  "
-    f"{'LIMIT':>9s}  "
-    f"{'E':>1s}  "
-    f"{'PE':<2s}  "
-    f"{'ACCTNO':>13s}  "
-    f"{'BALANCE':>15s}"
-)
-
-SEPARATOR = " " + "-" * 123
-HEADER_LINES = 3 + 1 + 4 + 1   # 3 titles + blank + 4 col headers + dashes = 9
+HEADER_LINES = 9     # 3 titles + blank + 4 column-header lines + separator
 
 
-def _page_header(new_page: bool) -> list:
-    asa = "1" if new_page else " "
+def _page_header() -> list:
+    """No carriage-control byte: titles start in column 1, everything else is indented 2."""
     return [
-        f"{asa}{TITLE1:^132s}",
-        f" {TITLE2:^132s}",
-        f" {TITLE3:^132s}",
-        f" ",
-        f" {COL_HDR_L1}",
-        f" {COL_HDR_L2}",
-        f" {COL_HDR_L3}",
-        f" {COL_HDR_L4}",
-        f"{SEPARATOR}",
+        TITLE1,
+        TITLE2,
+        TITLE3,
+        "",
+        INDENT + COL_HDR_L1,
+        INDENT + COL_HDR_L2,
+        INDENT + COL_HDR_L3,
+        INDENT + COL_HDR_L4,
+        SEPARATOR,
     ]
 
 
+def _fmt_acctno(val) -> str:
+    try:
+        return f"{int(val):>13d}"
+    except (TypeError, ValueError):
+        return "0".rjust(13)
+
+
 def _fmt_comma15_2(val) -> str:
-    """COMMA15.2 -- default SAS missing character '.' when the value is
-    a genuine SAS missing numeric (no MISSING= option set in this JCL)."""
-    if val is None:
-        return ".".rjust(15)
+    """COMMA15.2 with OPTIONS MISSING=0: a missing value prints as '0'."""
+    if val is None or val != val:
+        return "0".rjust(15)
     try:
         return f"{float(val):>15,.2f}"
     except (TypeError, ValueError):
-        return ".".rjust(15)
+        return "0".rjust(15)
 
 
 def _fmt_apprlimt(val) -> str:
-    if val is None:
-        return ".".rjust(9)
+    if val is None or val != val:
+        return "0".rjust(9)
     try:
         return f"{float(val):>9.0f}"
     except (TypeError, ValueError):
-        return ".".rjust(9)
+        return "0".rjust(9)
 
 
-def _detail_line(row: dict,
-                 asa: str = " ",
-                 hide_custname: bool = False) -> str:
+def _detail_line(row: dict, hide_custname: bool = False) -> str:
     custname = "" if hide_custname else str(row.get("CUSTNAME") or "")[:27]
-    newic    = str(row.get("NEWIC")    or "")[:12]
-    oldic    = str(row.get("OLDIC")    or "")[:12]
-    cardno   = str(row.get("CARDNO")   or "")[:16]
-    apprlimt = _fmt_apprlimt(row.get("APPRLIMT"))
-    monitor  = str(row.get("MONITOR")  or "")[:1]
-    typ      = str(row.get("TYPE")     or "")[:2]
-    acctno   = f"{int(row.get('ACCTNO') or 0):>13d}"
-    curbal   = _fmt_comma15_2(row.get("CURBAL"))
-
+    newic    = str(row.get("NEWIC")  or "")[:12]
+    oldic    = str(row.get("OLDIC")  or "")[:12]
+    cardno   = str(row.get("CARDNO") or "")[:16]
+    monitor  = str(row.get("MONITOR") or "")[:1]
+    typ      = str(row.get("TYPE")   or "")[:2]
     body = (
-        f"{custname:<27s}  "
-        f"{newic:<12s}  "
-        f"{oldic:<12s}  "
-        f"{cardno:<16s}  "
-        f"{apprlimt}  "
-        f"{monitor:>1s}  "
-        f"{typ:<2s}  "
-        f"{acctno}  "
-        f"{curbal}"
+        f"{custname:<27s}  {newic:<12s}  {oldic:<12s}  {cardno:<16s}  "
+        f"{_fmt_apprlimt(row.get('APPRLIMT'))}  {monitor:>1s}  {typ:<2s}  "
+        f"{_fmt_acctno(row.get('ACCTNO'))}  {_fmt_comma15_2(row.get('CURBAL'))}"
     )
-    return f"{asa}{body}"
+    return INDENT + body
 
 
-output_lines = []
-lines_on_page = PAGE_SIZE
-first_page    = True
-all_rows      = list(final_df.iter_rows(named=True))
+def _blank_cols(last: str) -> str:
+    """Empty columns up to the CURBAL column, then `last` right-aligned in it."""
+    return INDENT + (
+        f"{'':<27s}  {'':<12s}  {'':<12s}  {'':<16s}  {'':>9s}  "
+        f"{'':>1s}  {'':<2s}  {'':>13s}  {last:>15s}"
+    )
 
-if not all_rows:
-    output_lines.extend(_page_header(True))
-    lines_on_page = HEADER_LINES
+
+output_lines: list = []
+
+
+def _new_page() -> int:
+    output_lines.extend(_page_header())
+    return HEADER_LINES
+
+
+lines_on_page = _new_page()
+all_rows = list(final_df.iter_rows(named=True))
+n_rows   = len(all_rows)
 
 i = 0
-while i < len(all_rows):
+while i < n_rows:
     cust = str(all_rows[i].get("CUSTNAME") or "")
+    j = i
+    while j < n_rows and str(all_rows[j].get("CUSTNAME") or "") == cust:
+        j += 1
+    cust_group = all_rows[i:j]
+    i = j
 
-    cust_group = []
-    while i < len(all_rows) and str(all_rows[i].get("CUSTNAME") or "") == cust:
-        cust_group.append(all_rows[i])
-        i += 1
-
-    rows_needed = len(cust_group) + 3    # detail rows + overline + sum + skip
-
-    if lines_on_page + rows_needed > PAGE_SIZE:
-        output_lines.extend(_page_header(not first_page))
-        first_page    = False
-        lines_on_page = HEADER_LINES
-
-    cust_total = 0.0
-    for j, row in enumerate(cust_group):
-        hide = (j > 0)
-        output_lines.append(_detail_line(row, " ", hide_custname=hide))
+    cust_total = None          # PROC REPORT SUM: all-missing group stays missing
+    for k, row in enumerate(cust_group):
+        show_name = (k == 0)
+        if lines_on_page >= PAGE_SIZE:          # detail rows fill pages to exactly 60 lines
+            lines_on_page = _new_page()
+            show_name = True                    # ORDER variable repeats after a page break
+        output_lines.append(_detail_line(row, hide_custname=not show_name))
         lines_on_page += 1
-        try:
-            cust_total += float(row.get("CURBAL") or 0)
-        except (TypeError, ValueError):
-            pass
+        v = row.get("CURBAL")
+        if v is not None and v == v:
+            cust_total = (cust_total or 0.0) + float(v)
 
-    # SAS BREAK AFTER CUSTNAME / OL SUMMARIZE: overline is 15 dashes
-    # right-aligned in the CURBAL column.
-    overline = (
-        f"{'':<27s}  "
-        f"{'':<12s}  "
-        f"{'':<12s}  "
-        f"{'':<16s}  "
-        f"{'':>9s}  "
-        f"{'':>1s}  "
-        f"{'':<2s}  "
-        f"{'':>13s}  "
-        f"{'-' * 15:>15s}"
-    )
-    output_lines.append(f" {overline}")
-    lines_on_page += 1
+    # BREAK AFTER CUSTNAME / OL SUMMARIZE SKIP: overline, sum and skip line move together
+    if PAGE_SIZE - lines_on_page < BREAK_LINES:
+        lines_on_page = _new_page()
+    output_lines.append(_blank_cols("-" * 15))
+    output_lines.append(_blank_cols(_fmt_comma15_2(cust_total)))
+    output_lines.append("")
+    lines_on_page += BREAK_LINES
 
-    sum_body = (
-        f"{'':<27s}  "
-        f"{'':<12s}  "
-        f"{'':<12s}  "
-        f"{'':<16s}  "
-        f"{'':>9s}  "
-        f"{'':>1s}  "
-        f"{'':<2s}  "
-        f"{'':>13s}  "
-        f"{_fmt_comma15_2(cust_total)}"
-    )
-    output_lines.append(f" {sum_body}")
-    lines_on_page += 1
-
-    output_lines.append(" ")
-    lines_on_page += 1
-
-output_lines.append(" ")   # COMPUTE AFTER; LINE ' '; ENDCOMP;
+output_lines.append("")     # COMPUTE AFTER; LINE ' '; ENDCOMP;
 
 # ============================================================================
 # WRITE OUTPUT  (RECFM=FB, LRECL=133, ASA carriage control)
 # ============================================================================
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+with open(OUTPUT_FILE, "w", encoding="latin1", newline="") as fh:
     for ln in output_lines:
-        fh.write(f"{ln:<133s}\n")
+        fh.write(f"{ln:<{LINE_WIDTH}s}\r\n")
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(output_lines):,}")
