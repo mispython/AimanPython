@@ -1,43 +1,62 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py
 Step 1: Deriving report date...
-  RDATE        : 28/09/2026
-  NOWK (week)  : 04   STRDAY: 23   REPTDAY: 28
-  PDATE..EDATE : 2026-09-01 .. 2026-09-28
-  Output file  : EIIWSTAF.txt
+  REPTDATE : 2026-09-22  (WK=03)
+  RDTEA    : 30/09/26   RDTEB : 29/09/26
+  REPTYEAR=26  REPTMON=09  REPTDAY=22  NOWK=03
+  CARD file: host_unicard260902.sas7bdat
+  Output   : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260930.txt
 
 Step 2: Caching input SAS datasets to Parquet...
-  [LNNOTE_PBB] Existing Parquet found - skipping conversion.
-  [LNCOMM_PBB] Existing Parquet found - skipping conversion.
-  [LNNOTE_PIBB] Existing Parquet found - skipping conversion.
-  [LNCOMM_PIBB] Existing Parquet found - skipping conversion.
-  [LNPAY_PBB] Existing Parquet found - skipping conversion.
-  [LNPAY_PIBB] Existing Parquet found - skipping conversion.
-  [ISBASE] Existing Parquet found - skipping conversion.
+  [DEPO_SAVING] Cache fresh - skipping conversion.
+  [DEPO_CURRENT] Cache fresh - skipping conversion.
+  [DEPO_FD] Cache fresh - skipping conversion.
+  [IDEPO_SAVING] Cache fresh - skipping conversion.
+  [IDEPO_CURRENT] Cache fresh - skipping conversion.
+  [IDEPO_FD] Cache fresh - skipping conversion.
+  [PDEPO_SAVING] Cache fresh - skipping conversion.
+  [PDEPO_CURRENT] Cache fresh - skipping conversion.
+  [PDEPO_FD] Cache fresh - skipping conversion.
+  [PIDEPO_SAVING] Cache fresh - skipping conversion.
+  [PIDEPO_CURRENT] Cache fresh - skipping conversion.
+  [PIDEPO_FD] Cache fresh - skipping conversion.
+  [CARD] Cache fresh - skipping conversion.
+  [CISDP] Cache fresh - skipping conversion.
+  [CISSAFD] Cache fresh - skipping conversion.
 
-Step 3: Building LNNOTE (PBB, COSTCTR=8044)...
-  [PBB] LNNOTE rows after merge with LNCOMM: 350
+Step 3: Processing CARD file...
+  CARD raw rows after filter : 1,297,485
+  CARD  rows : 13,754
+  CARD1 rows : 5,187
 
-Step 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...
-  [PIBB] LNNOTE rows after merge with LNCOMM: 105
+Step 4: Building CISCA / CISSA / CISFD...
+100% ▕██████████████████████████████████████▏ (00:00:02.25 elapsed)     
+  CISCA rows : 8,646
+  CISSA rows : 32,910
+  CISFD rows : 35,280
 
-Step 5: Building LOAN (date parsing, PAYEFF, FULRELDTE, NOOFAC)...
-  LOAN rows: 455
+Step 5: Building PSA / PCA / PFD (previous-period balances)...
+  PSA rows : 32,910   PCA rows : 8,646   PFD rows : 35,280
 
-Step 6: Building LNSETTLE (settled accounts for the week)...
-  LNSETTLE rows: 0
+Step 6: Building SA / CA / FD (current-period balances)...
+  SA rows : 32,910   CA rows : 8,646   FD rows : 35,280
 
-Step 7: Rendering LNSETTLE (PAID LOAN LIST) report...
+Step 7: Combining DEPO / PDEPO and calculating withdrawals...
+  DEPO rows : 76,836
 
-Step 8: Building LNRELES / LNRELS1 (release/migration accounts)...
-  HIST (deduped ISBASE) rows: 1
-  LNRELES rows: 0
-  PROC APPEND equivalent: no new LNRELS1 rows to append.
+Step 8: Summarising DEPO by NEWIC...
+  DEPO1 rows : 13,491
 
-Step 9: Splitting into LNRPT1A (new loan) / LNRPT1B (migration)...
-  LNRPT1A rows: 0   LNRPT1B rows: 0
+Step 9: Splitting into DEPO2 / DEPO3...
+  DEPO2 rows : 19   DEPO3 rows : 9,243
 
-Step 10: Building LNPAY (weekly payment schedule)...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWSTAF.py", line 948, in <module>
-    payeff = f"99/{effdate.month:02d}/{effdate.strftime('%y')}" if effdate else None
-AttributeError: 'float' object has no attribute 'month'
+Step 10: Building TOT...
+  TOT rows : 1,870
+
+Step 11: Building FINAL dataset...
+  FINAL rows : 11,913
+
+Step 12: Generating report...
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDUNDP/CARD_DPACTV_260930.txt
+  Total lines    : 20,620
+
+EIBDUNDP complete.
