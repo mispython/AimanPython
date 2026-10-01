@@ -3,10 +3,12 @@ def _asof_carry(base_df, value_df, value_col):
     Emulate SAS:  MERGE base(IN=A) value(IN=B); BY ACCTNO; IF A;
 
     - Exact key match  -> value_col is taken from value_df
-    - No exact match   -> value_col is left NULL (SAS resets it to missing,
-                          which prints as 0 because OPTIONS MISSING=0)
-    - Duplicate keys on either side produce the SAS one-to-many fan-out
-      (base row duplicated once per value row with the same ACCTNO).
+    - No exact match   -> value_col carries forward from the closest
+                          value_df row with ACCTNO <= current ACCTNO
+                          (this is the SAS MERGE auto-retain rule for a
+                          variable that only exists on the non-matching
+                          side of a BY-group merge).
+    - No earlier row   -> NULL (SAS missing, prints as 0 via MISSING=0).
     """
     base_sorted  = base_df.sort("ACCTNO", maintain_order=True)
     value_sorted = (
@@ -14,144 +16,25 @@ def _asof_carry(base_df, value_df, value_col):
         .sort("ACCTNO", maintain_order=True)
         .select(["ACCTNO", value_col])
     )
-    # Left join = "IF A"; the join itself only fills value_col on exact match.
-    # Non-matching rows keep NULL, which is what SAS prints as 0.
-    return base_sorted.join(value_sorted, on="ACCTNO", how="left")
-
-
-
-
-dbg_acct = 1373840635
-print("CISFD row:",
-      cisfd_df.filter(pl.col("ACCTNO") == dbg_acct))
-print("FD balance row:",
-      fd_cur.filter(pl.col("ACCTNO") == dbg_acct))
-print("FD balance neighbours (previous 3 keys ≤ this account):",
-      fd_cur.filter(pl.col("ACCTNO") <= dbg_acct)
-            .sort("ACCTNO").tail(5))
-
-
-
-
-print(
-    depo_final
-    .filter(pl.col("ACCTNO").is_in([1408177326, 1019416021, 1373840635, 1283166924]))
-    .select(["ACCTNO", "CURBAL", "PRE_CURBAL", "WITHDR"])
-)
-
-
-
-
-print(
-    fd_cur.group_by("ACCTNO").len()
-          .filter(pl.col("len") > 1)
-          .sort("len", descending=True)
-          .head(20)
-)
-
-
-========================
-
-# ============================================================================
-# STEP 5-7: CURRENT (CURBAL) AND PREVIOUS (PRE_CURBAL) BALANCES, WITHDRAWALS
-# SAS builds SA/CA/FD (CURBAL) and PSA/PCA/PFD (PRE_CURBAL) from the SAME
-# CISSA/CISCA/CISFD rows in the same order, then runs
-#   MERGE DEPO(IN=A) PDEPO(IN=B); BY ACCTNO; IF A;
-# which pairs the two sides row-for-row (shared accounts keep every holder).
-# Both balances are therefore attached to the same row here.
-# Each balance uses the SAS MERGE carry-forward (see _asof_carry); a balance
-# with no earlier record stays missing (prints as 0 via OPTIONS MISSING=0).
-# ============================================================================
-print("\nStep 5-7: Building balances and withdrawals...")
-
-
-def _with_balances(cis_df: pl.DataFrame, cur_bal: pl.DataFrame, pre_bal: pl.DataFrame) -> pl.DataFrame:
-    base = cis_df.sort("ACCTNO", maintain_order=True)
-    base = _asof_carry(base, cur_bal, "CURBAL")
-    return _asof_carry(base, pre_bal, "PRE_CURBAL")
-
-
-def _both(cur_files: list, pre_files: list, cur_col: str = "CURBAL", pre_col: str = "PRE_CURBAL"):
-    cur = pl.concat([_read_acct_bal(f, cur_col) for f in cur_files])
-    pre = pl.concat([_read_acct_bal(f, pre_col) for f in pre_files])
-    return cur, pre
-
-
-sa_cur, sa_pre = _both([DEPO_SAVING_CACHE, IDEPO_SAVING_CACHE],
-                       [PDEPO_SAVING_CACHE, PIDEPO_SAVING_CACHE])
-ca_cur, ca_pre = _both([DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE],
-                       [PDEPO_CURRENT_CACHE, PIDEPO_CURRENT_CACHE])
-fd_cur, fd_pre = _both([DEPO_FD_CACHE, IDEPO_FD_CACHE],
-                       [PDEPO_FD_CACHE, PIDEPO_FD_CACHE])
-
-sa_df = _with_balances(cissa_df, sa_cur, sa_pre)
-ca_df = _with_balances(cisca_df, ca_cur, ca_pre)
-fd_df = _with_balances(cisfd_df, fd_cur, fd_pre)
-
-del sa_cur, sa_pre, ca_cur, ca_pre, fd_cur, fd_pre
-gc.collect()
-
-# DATA DEPO; SET SA CA FD;  PROC SORT BY ACCTNO;  (stable)
-depo_final = pl.concat([sa_df, ca_df, fd_df]).sort("ACCTNO", maintain_order=True)
-
-# WITHDR=PRE_CURBAL-CURBAL; IF WITHDR < 0 THEN WITHDR=0;
-# (a missing difference sorts below 0 in SAS, so it also becomes 0)
-depo_final = depo_final.with_columns(
-    pl.when(
-        pl.col("PRE_CURBAL").is_null()
-        | pl.col("CURBAL").is_null()
-        | ((pl.col("PRE_CURBAL") - pl.col("CURBAL")) < 0)
+    return base_sorted.join_asof(
+        value_sorted, on="ACCTNO", strategy="backward"
     )
-    .then(0.0)
-    .otherwise(pl.col("PRE_CURBAL") - pl.col("CURBAL"))
-    .alias("WITHDR")
-)
-
-print(f"  DEPO rows : {len(depo_final):,}")
 
 
 
 
-del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, tot_df, depo_final
-
-
-
-
--------------------------------------------------
-
-def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
-    base_sorted = base_df.sort("ACCTNO", maintain_order=True)
-    value_sorted = (
-        value_df
-        .sort("ACCTNO", maintain_order=True)
-        .unique(subset=["ACCTNO"], keep="last", maintain_order=True)
-        .select(["ACCTNO", value_col])
-    )
-    # Backward as-of: exact match, else last balance record below this ACCTNO.
-    # Stays null (SAS missing) when no earlier balance record exists.
-    return base_sorted.join_asof(value_sorted, on="ACCTNO", strategy="backward")
-
-
-
-
-depo_final = depo_final.with_columns(
-    pl.when(
-        pl.col("PRE_CURBAL").is_null()
-        | pl.col("CURBAL").is_null()
-        | ((pl.col("PRE_CURBAL") - pl.col("CURBAL")) < 0)
-    )
-    .then(0.0)
-    .otherwise(pl.col("PRE_CURBAL") - pl.col("CURBAL"))
-    .alias("WITHDR")
-)
-
-
-
-
-final_df = depo_final.join(tot_df, on="NEWIC", how="inner").sort(["CUSTNAME", "ACCTNO"], maintain_order=True)
-
-del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, tot_df, depo_final, depo_df
-
-
-
-
+# --- one-shot verification (run, then re-comment) -----------------
+if False:
+    probe = 1690581911          # WONG YUN KIONG FD account
+    print("cis look-up rows :",
+          cisfd_df.filter(pl.col("ACCTNO") == probe))
+    print("fd value rows    :",
+          fd_cur.filter(pl.col("ACCTNO") == probe))
+    print("fd neighbours    :",
+          fd_cur.filter(pl.col("ACCTNO") <= probe)
+                .sort("ACCTNO").tail(5))
+    print("after asof       :",
+          _with_balances(cisfd_df, fd_cur, fd_pre)
+              .filter(pl.col("ACCTNO") == probe)
+              .select(["ACCTNO", "CURBAL", "PRE_CURBAL"]))
+# ------------------------------------------------------------------
