@@ -1,12 +1,20 @@
-_TARGET = "1595256021"
-for _tag, _p in [("DEPO_FD",   DEPO_FD_CACHE),
-                 ("IDEPO_FD",  IDEPO_FD_CACHE),
-                 ("PDEPO_FD",  PDEPO_FD_CACHE),
-                 ("PIDEPO_FD", PIDEPO_FD_CACHE)]:
-    _raw = pl.read_parquet(_p)
-    _hit = _raw.filter(
-        pl.col("ACCTNO").cast(pl.Utf8).str.strip_chars().str.contains(_TARGET)
-    )
-    print(f"  DBG {_tag}: schema={_raw.schema} rows={_raw.height} substring_hits={_hit.height}")
-    if _hit.height:
-        print("         hit rows:", _hit.to_dicts())
+_targets = [1595256021, 3591442711, 3591444701, 3593201934]
+for _tag, _cache in [
+    ("DEPO_SAVING",    DEPO_SAVING_CACHE),
+    ("DEPO_CURRENT",   DEPO_CURRENT_CACHE),
+    ("DEPO_FD",        DEPO_FD_CACHE),
+    ("IDEPO_SAVING",   IDEPO_SAVING_CACHE),
+    ("IDEPO_CURRENT",  IDEPO_CURRENT_CACHE),
+    ("IDEPO_FD",       IDEPO_FD_CACHE),
+    ("PDEPO_SAVING",   PDEPO_SAVING_CACHE),
+    ("PDEPO_CURRENT",  PDEPO_CURRENT_CACHE),
+    ("PDEPO_FD",       PDEPO_FD_CACHE),
+    ("PIDEPO_SAVING",  PIDEPO_SAVING_CACHE),
+    ("PIDEPO_CURRENT", PIDEPO_CURRENT_CACHE),
+    ("PIDEPO_FD",      PIDEPO_FD_CACHE),
+]:
+    _raw = pl.read_parquet(_cache).select(["ACCTNO", "CURBAL"])
+    for _a in _targets:
+        _hit = _raw.filter(pl.col("ACCTNO").cast(pl.Utf8).str.contains(str(_a)))
+        if _hit.height:
+            print(f"  DBG {_tag} acct={_a}: {_hit.to_dicts()}")
