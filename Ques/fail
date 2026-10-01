@@ -1,20 +1,19 @@
-_targets = [1595256021, 3591442711, 3591444701, 3593201934]
+print("DEBUG: reached, fd_cur height =", fd_cur.height)
+print("DEBUG: first 5 fd_cur rows:", fd_cur.head(5).to_dicts())
+print("DEBUG: sample ACCTNO dtype/values:",
+      fd_cur.select(pl.col("ACCTNO").head(3).cast(pl.Int64).cast(pl.Utf8)).to_series().to_list())
+
 for _tag, _cache in [
-    ("DEPO_SAVING",    DEPO_SAVING_CACHE),
-    ("DEPO_CURRENT",   DEPO_CURRENT_CACHE),
-    ("DEPO_FD",        DEPO_FD_CACHE),
-    ("IDEPO_SAVING",   IDEPO_SAVING_CACHE),
-    ("IDEPO_CURRENT",  IDEPO_CURRENT_CACHE),
-    ("IDEPO_FD",       IDEPO_FD_CACHE),
-    ("PDEPO_SAVING",   PDEPO_SAVING_CACHE),
-    ("PDEPO_CURRENT",  PDEPO_CURRENT_CACHE),
-    ("PDEPO_FD",       PDEPO_FD_CACHE),
-    ("PIDEPO_SAVING",  PIDEPO_SAVING_CACHE),
-    ("PIDEPO_CURRENT", PIDEPO_CURRENT_CACHE),
-    ("PIDEPO_FD",      PIDEPO_FD_CACHE),
+    ("DEPO_FD",   DEPO_FD_CACHE),
+    ("IDEPO_FD",  IDEPO_FD_CACHE),
+    ("PDEPO_FD",  PDEPO_FD_CACHE),
+    ("PIDEPO_FD", PIDEPO_FD_CACHE),
+    ("DEPO_CURRENT",  DEPO_CURRENT_CACHE),
+    ("IDEPO_CURRENT", IDEPO_CURRENT_CACHE),
 ]:
     _raw = pl.read_parquet(_cache).select(["ACCTNO", "CURBAL"])
-    for _a in _targets:
-        _hit = _raw.filter(pl.col("ACCTNO").cast(pl.Utf8).str.contains(str(_a)))
+    _as_int_str = _raw.with_columns(pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A"))
+    for _a in [1595256021, 3591442711, 3591444701, 3593201934]:
+        _hit = _as_int_str.filter(pl.col("A") == str(_a))
         if _hit.height:
-            print(f"  DBG {_tag} acct={_a}: {_hit.to_dicts()}")
+            print(f"  DBG {_tag} acct={_a}: {_hit.select(['ACCTNO','CURBAL']).to_dicts()}")
