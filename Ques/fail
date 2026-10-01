@@ -1,19 +1,38 @@
-print("DEBUG: reached, fd_cur height =", fd_cur.height)
-print("DEBUG: first 5 fd_cur rows:", fd_cur.head(5).to_dicts())
-print("DEBUG: sample ACCTNO dtype/values:",
-      fd_cur.select(pl.col("ACCTNO").head(3).cast(pl.Int64).cast(pl.Utf8)).to_series().to_list())
+_target_acct = "1595256021"
+_target_val  = 11630.87
 
 for _tag, _cache in [
-    ("DEPO_FD",   DEPO_FD_CACHE),
-    ("IDEPO_FD",  IDEPO_FD_CACHE),
-    ("PDEPO_FD",  PDEPO_FD_CACHE),
-    ("PIDEPO_FD", PIDEPO_FD_CACHE),
-    ("DEPO_CURRENT",  DEPO_CURRENT_CACHE),
-    ("IDEPO_CURRENT", IDEPO_CURRENT_CACHE),
+    ("DEPO_SAVING",    DEPO_SAVING_CACHE),
+    ("DEPO_CURRENT",   DEPO_CURRENT_CACHE),
+    ("DEPO_FD",        DEPO_FD_CACHE),
+    ("IDEPO_SAVING",   IDEPO_SAVING_CACHE),
+    ("IDEPO_CURRENT",  IDEPO_CURRENT_CACHE),
+    ("IDEPO_FD",       IDEPO_FD_CACHE),
+    ("PDEPO_SAVING",   PDEPO_SAVING_CACHE),
+    ("PDEPO_CURRENT",  PDEPO_CURRENT_CACHE),
+    ("PDEPO_FD",       PDEPO_FD_CACHE),
+    ("PIDEPO_SAVING",  PIDEPO_SAVING_CACHE),
+    ("PIDEPO_CURRENT", PIDEPO_CURRENT_CACHE),
+    ("PIDEPO_FD",      PIDEPO_FD_CACHE),
 ]:
     _raw = pl.read_parquet(_cache).select(["ACCTNO", "CURBAL"])
-    _as_int_str = _raw.with_columns(pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A"))
-    for _a in [1595256021, 3591442711, 3591444701, 3593201934]:
-        _hit = _as_int_str.filter(pl.col("A") == str(_a))
-        if _hit.height:
-            print(f"  DBG {_tag} acct={_a}: {_hit.select(['ACCTNO','CURBAL']).to_dicts()}")
+    _acct_str = _raw.with_columns(
+        pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A")
+    )
+    _hit_a = _acct_str.filter(pl.col("A") == _target_acct)
+    _hit_v = _raw.filter(
+        (pl.col("CURBAL").is_not_null()) &
+        ((pl.col("CURBAL") - _target_val).abs() < 0.01)
+    )
+    if _hit_a.height or _hit_v.height:
+        print(f"  DBG {_tag}: acct_hits={_hit_a.select(['ACCTNO','CURBAL']).to_dicts()} "
+              f"val_hits={_hit_v.to_dicts()}")
+
+# Also look on the CIS side — is the account even present in the CIS extract?
+for _tag, _cache in [("CISDP", CISDP_CACHE), ("CISSAFD", CISSAFD_CACHE)]:
+    _raw = pl.read_parquet(_cache).select(["ACCTNO", "NEWIC"])
+    _acct_str = _raw.with_columns(
+        pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A")
+    )
+    _hit = _acct_str.filter(pl.col("A") == _target_acct)
+    print(f"  DBG {_tag}: rows={_raw.height} acct_hits={_hit.select(['ACCTNO','NEWIC']).to_dicts()}")
