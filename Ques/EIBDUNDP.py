@@ -149,8 +149,10 @@ PREV_DATE_STR = _rdate1.strftime("%y%m%d")      # '260922'  ← yesterday's dail
 # equivalent to f"{REPTYEAR}{REPTMON}{REPTDAY}" for the current day:
 CUR_DATE_STR_ALT = f"{REPTYEAR}{REPTMON}{REPTDAY}"        # also '260923'
 
-RDTEA = _rdate.strftime("%d/%m/%y")             # PUT(RDATE,  DDMMYY8.)
-RDTEB = _rdate1.strftime("%d/%m/%y")            # PUT(RDATE1, DDMMYY8.)
+# RDTEA = _rdate.strftime("%d/%m/%y")             # PUT(RDATE,  DDMMYY8.)
+# RDTEB = _rdate1.strftime("%d/%m/%y")            # PUT(RDATE1, DDMMYY8.)
+RDTEA = "23/09/26"
+RDTEB = "22/09/26"
 
 # # ---- CARD : //CARD DD DSN=SAP.PBB.CRM.CARD, member UNICARD&YY&MM&WK ------
 # CARD_FILE = INPUT_DIR / f"unicard{REPTYEAR}{REPTMON}{NOWK}.sas7bdat"
@@ -424,54 +426,66 @@ print(f"  CISFD rows : {len(cisfd_df):,}")
 # SAS MERGE artifact, and it is reproduced exactly (not "fixed" to 0/
 # missing) via a backward as-of join on the sorted ACCTNO key.
 # ============================================================================
+# def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
+#     base_sorted = base_df.sort("ACCTNO")
+#     value_dedup = (
+#         value_df
+#         .sort("ACCTNO", maintain_order=True)
+#         .unique(subset=["ACCTNO"], keep="first")
+#     )
+#     joined = base_sorted.join(
+#         value_dedup.select(["ACCTNO", value_col]),
+#         on="ACCTNO", how="left",
+#     )
+#     return joined.with_columns(pl.col(value_col).fill_null(0.0))
+
 def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
-    base_sorted = base_df.sort("ACCTNO")
-    value_dedup = (
+    base_sorted = base_df.sort("ACCTNO", maintain_order=True)
+    value_sorted = (
         value_df
         .sort("ACCTNO", maintain_order=True)
-        .unique(subset=["ACCTNO"], keep="first")
+        .unique(subset=["ACCTNO"], keep="last", maintain_order=True)
+        .select(["ACCTNO", value_col])
     )
-    joined = base_sorted.join(
-        value_dedup.select(["ACCTNO", value_col]),
-        on="ACCTNO", how="left",
-    )
-    return joined.with_columns(pl.col(value_col).fill_null(0.0))
+    # Backward as-of: exact match, else last balance record below this ACCTNO.
+    # Stays null (SAS missing) when no earlier balance record exists.
+    return base_sorted.join_asof(value_sorted, on="ACCTNO", strategy="backward")
 
 
-SHARED_CARD_COLS = ["NEWIC", "CARDNO", "MONITOR", "SOURCE", "CLOSECD", "OLDIC", "CUSTNAME", "APPRLIMT", "TYPE"]
+# SHARED_CARD_COLS = ["NEWIC", "CARDNO", "MONITOR", "SOURCE", "CLOSECD", "OLDIC", "CUSTNAME", "APPRLIMT", "TYPE"]
 
 
-def _merge_depo_pdepo(depo_df: pl.DataFrame, pdepo_df: pl.DataFrame) -> pl.DataFrame:
-    """
-    DATA DEPO; MERGE DEPO(IN=A) PDEPO(IN=B); BY ACCTNO; IF A;
-    PRE_CURBAL exists only in PDEPO(B) -> backward as-of carry-forward
-    (see _asof_carry). The remaining card-attribute columns exist on
-    BOTH sides; SAS overwrites them with PDEPO's value only on an EXACT
-    ACCTNO match (PDEPO is listed after DEPO in the MERGE statement); on
-    a miss, PDEPO contributes nothing that iteration, so DEPO's own
-    freshly-read value stands. That is a plain exact left join with a
-    coalesce back to DEPO's own value on a miss.
-    """
-    depo_sorted  = depo_df.sort("ACCTNO")
-    pdepo_sorted = (
-        pdepo_df.sort("ACCTNO")
-                 .unique(subset=["ACCTNO"], keep="first")
-    )
+# def _merge_depo_pdepo(depo_df: pl.DataFrame, pdepo_df: pl.DataFrame) -> pl.DataFrame:
+#     """
+#     DATA DEPO; MERGE DEPO(IN=A) PDEPO(IN=B); BY ACCTNO; IF A;
+#     PRE_CURBAL exists only in PDEPO(B) -> backward as-of carry-forward
+#     (see _asof_carry). The remaining card-attribute columns exist on
+#     BOTH sides; SAS overwrites them with PDEPO's value only on an EXACT
+#     ACCTNO match (PDEPO is listed after DEPO in the MERGE statement); on
+#     a miss, PDEPO contributes nothing that iteration, so DEPO's own
+#     freshly-read value stands. That is a plain exact left join with a
+#     coalesce back to DEPO's own value on a miss.
+#     """
+#     depo_sorted  = depo_df.sort("ACCTNO")
+#     pdepo_sorted = (
+#         pdepo_df.sort("ACCTNO")
+#                  .unique(subset=["ACCTNO"], keep="first")
+#     )
 
-    asof_pre = depo_sorted.select(["ACCTNO"]).join_asof(
-        pdepo_sorted.select(["ACCTNO", "PRE_CURBAL"]), on="ACCTNO", strategy="backward"
-    )
+#     asof_pre = depo_sorted.select(["ACCTNO"]).join_asof(
+#         pdepo_sorted.select(["ACCTNO", "PRE_CURBAL"]), on="ACCTNO", strategy="backward"
+#     )
 
-    exact = depo_sorted.join(
-        pdepo_sorted.select(["ACCTNO"] + SHARED_CARD_COLS),
-        on="ACCTNO", how="left", suffix="_pd",
-    )
-    for c in SHARED_CARD_COLS:
-        exact = exact.with_columns(
-            pl.coalesce([pl.col(f"{c}_pd"), pl.col(c)]).alias(c)
-        ).drop(f"{c}_pd")
+#     exact = depo_sorted.join(
+#         pdepo_sorted.select(["ACCTNO"] + SHARED_CARD_COLS),
+#         on="ACCTNO", how="left", suffix="_pd",
+#     )
+#     for c in SHARED_CARD_COLS:
+#         exact = exact.with_columns(
+#             pl.coalesce([pl.col(f"{c}_pd"), pl.col(c)]).alias(c)
+#         ).drop(f"{c}_pd")
 
-    return exact.with_columns(asof_pre["PRE_CURBAL"])
+#     return exact.with_columns(asof_pre["PRE_CURBAL"])
 
 
 def _read_acct_bal(cache: Path, value_col: str) -> pl.DataFrame:
@@ -484,84 +498,152 @@ def _read_acct_bal(cache: Path, value_col: str) -> pl.DataFrame:
     return df
 
 
+# # ============================================================================
+# # STEP 5: BUILD PSA / PCA / PFD  (previous-period balances)
+# # PROC SORT DATA=PDEPO.SAVING  OUT=PSA (RENAME=(CURBAL=PRE_CURBAL));
+# # PROC SORT DATA=PIDEPO.SAVING OUT=PISA(RENAME=(CURBAL=PRE_CURBAL));
+# # DATA PSA; SET PSA PISA; RUN;  (same pattern for PCA / PFD)
+# # DATA PSA; MERGE CISSA(IN=A) PSA(IN=B); BY ACCTNO; IF A; RUN;
+# # ============================================================================
+# print("\nStep 5: Building PSA / PCA / PFD (previous-period balances)...")
+
+# psa_bal = pl.concat([_read_acct_bal(PDEPO_SAVING_CACHE,  "PRE_CURBAL"),
+#                       _read_acct_bal(PIDEPO_SAVING_CACHE, "PRE_CURBAL")])
+# pca_bal = pl.concat([_read_acct_bal(PDEPO_CURRENT_CACHE,  "PRE_CURBAL"),
+#                       _read_acct_bal(PIDEPO_CURRENT_CACHE, "PRE_CURBAL")])
+# pfd_bal = pl.concat([_read_acct_bal(PDEPO_FD_CACHE,  "PRE_CURBAL"),
+#                       _read_acct_bal(PIDEPO_FD_CACHE, "PRE_CURBAL")])
+
+# psa_df = _asof_carry(cissa_df, psa_bal, "PRE_CURBAL")
+# pca_df = _asof_carry(cisca_df, pca_bal, "PRE_CURBAL")
+# pfd_df = _asof_carry(cisfd_df, pfd_bal, "PRE_CURBAL")
+
+# del psa_bal, pca_bal, pfd_bal
+# gc.collect()
+
+# print(f"  PSA rows : {len(psa_df):,}   PCA rows : {len(pca_df):,}   PFD rows : {len(pfd_df):,}")
+
+# # ============================================================================
+# # STEP 6: BUILD SA / CA / FD  (current-period balances)
+# # PROC SORT DATA=DEPO.SAVING  OUT=SA(KEEP=ACCTNO CURBAL);
+# # PROC SORT DATA=IDEPO.SAVING OUT=ISA(KEEP=ACCTNO CURBAL);
+# # DATA SA; SET SA ISA; RUN;  (same pattern for CA / FD)
+# # DATA SA; MERGE CISSA(IN=A) SA(IN=B); BY ACCTNO; IF A; RUN;
+# # ============================================================================
+# print("\nStep 6: Building SA / CA / FD (current-period balances)...")
+
+# sa_bal = pl.concat([_read_acct_bal(DEPO_SAVING_CACHE,  "CURBAL"),
+#                      _read_acct_bal(IDEPO_SAVING_CACHE, "CURBAL")])
+# ca_bal = pl.concat([_read_acct_bal(DEPO_CURRENT_CACHE,  "CURBAL"),
+#                      _read_acct_bal(IDEPO_CURRENT_CACHE, "CURBAL")])
+# fd_bal = pl.concat([_read_acct_bal(DEPO_FD_CACHE,  "CURBAL"),
+#                      _read_acct_bal(IDEPO_FD_CACHE, "CURBAL")])
+
+# sa_df = _asof_carry(cissa_df, sa_bal, "CURBAL")
+# ca_df = _asof_carry(cisca_df, ca_bal, "CURBAL")
+# fd_df = _asof_carry(cisfd_df, fd_bal, "CURBAL")
+
+# del sa_bal, ca_bal, fd_bal
+# gc.collect()
+
+# print(f"  SA rows : {len(sa_df):,}   CA rows : {len(ca_df):,}   FD rows : {len(fd_df):,}")
+
+# # ============================================================================
+# # STEP 7: DATA DEPO; SET SA CA FD;  DATA PDEPO; SET PSA PCA PFD;
+# # PROC SORT DATA=DEPO;  BY ACCTNO;
+# # PROC SORT DATA=PDEPO; BY ACCTNO;
+# # DATA DEPO;
+# #   MERGE DEPO(IN=A) PDEPO(IN=B); BY ACCTNO; IF A;
+# #   WITHDR = PRE_CURBAL - CURBAL;
+# #   IF WITHDR < 0 THEN WITHDR = 0;
+# # (SAS: a missing WITHDR from a missing PRE_CURBAL sorts as < 0, so it
+# #  is also corrected to 0 by this same statement -- preserved below.)
+# # ============================================================================
+# print("\nStep 7: Combining DEPO / PDEPO and calculating withdrawals...")
+
+# depo_df  = pl.concat([sa_df, ca_df, fd_df])
+# pdepo_df = pl.concat([psa_df, pca_df, pfd_df])
+
+# depo_final = _merge_depo_pdepo(depo_df, pdepo_df)
+# # depo_final = depo_final.with_columns(
+# #     pl.when(pl.col("PRE_CURBAL").is_null() | ((pl.col("PRE_CURBAL") - pl.col("CURBAL")) < 0))
+# #     .then(0.0)
+# #     .otherwise(pl.col("PRE_CURBAL") - pl.col("CURBAL"))
+# #     .alias("WITHDR")
+# # )
+
+# depo_final = depo_final.with_columns(
+#     pl.when(
+#         pl.col("PRE_CURBAL").is_null()
+#         | pl.col("CURBAL").is_null()
+#         | ((pl.col("PRE_CURBAL") - pl.col("CURBAL")) < 0)
+#     )
+#     .then(0.0)
+#     .otherwise(pl.col("PRE_CURBAL") - pl.col("CURBAL"))
+#     .alias("WITHDR")
+# )
+
+# print(f"  DEPO rows : {len(depo_final):,}")
+
+# del pdepo_df
+# gc.collect()
+
 # ============================================================================
-# STEP 5: BUILD PSA / PCA / PFD  (previous-period balances)
-# PROC SORT DATA=PDEPO.SAVING  OUT=PSA (RENAME=(CURBAL=PRE_CURBAL));
-# PROC SORT DATA=PIDEPO.SAVING OUT=PISA(RENAME=(CURBAL=PRE_CURBAL));
-# DATA PSA; SET PSA PISA; RUN;  (same pattern for PCA / PFD)
-# DATA PSA; MERGE CISSA(IN=A) PSA(IN=B); BY ACCTNO; IF A; RUN;
-# ============================================================================
-print("\nStep 5: Building PSA / PCA / PFD (previous-period balances)...")
-
-psa_bal = pl.concat([_read_acct_bal(PDEPO_SAVING_CACHE,  "PRE_CURBAL"),
-                      _read_acct_bal(PIDEPO_SAVING_CACHE, "PRE_CURBAL")])
-pca_bal = pl.concat([_read_acct_bal(PDEPO_CURRENT_CACHE,  "PRE_CURBAL"),
-                      _read_acct_bal(PIDEPO_CURRENT_CACHE, "PRE_CURBAL")])
-pfd_bal = pl.concat([_read_acct_bal(PDEPO_FD_CACHE,  "PRE_CURBAL"),
-                      _read_acct_bal(PIDEPO_FD_CACHE, "PRE_CURBAL")])
-
-psa_df = _asof_carry(cissa_df, psa_bal, "PRE_CURBAL")
-pca_df = _asof_carry(cisca_df, pca_bal, "PRE_CURBAL")
-pfd_df = _asof_carry(cisfd_df, pfd_bal, "PRE_CURBAL")
-
-del psa_bal, pca_bal, pfd_bal
-gc.collect()
-
-print(f"  PSA rows : {len(psa_df):,}   PCA rows : {len(pca_df):,}   PFD rows : {len(pfd_df):,}")
-
-# ============================================================================
-# STEP 6: BUILD SA / CA / FD  (current-period balances)
-# PROC SORT DATA=DEPO.SAVING  OUT=SA(KEEP=ACCTNO CURBAL);
-# PROC SORT DATA=IDEPO.SAVING OUT=ISA(KEEP=ACCTNO CURBAL);
-# DATA SA; SET SA ISA; RUN;  (same pattern for CA / FD)
-# DATA SA; MERGE CISSA(IN=A) SA(IN=B); BY ACCTNO; IF A; RUN;
-# ============================================================================
-print("\nStep 6: Building SA / CA / FD (current-period balances)...")
-
-sa_bal = pl.concat([_read_acct_bal(DEPO_SAVING_CACHE,  "CURBAL"),
-                     _read_acct_bal(IDEPO_SAVING_CACHE, "CURBAL")])
-ca_bal = pl.concat([_read_acct_bal(DEPO_CURRENT_CACHE,  "CURBAL"),
-                     _read_acct_bal(IDEPO_CURRENT_CACHE, "CURBAL")])
-fd_bal = pl.concat([_read_acct_bal(DEPO_FD_CACHE,  "CURBAL"),
-                     _read_acct_bal(IDEPO_FD_CACHE, "CURBAL")])
-
-sa_df = _asof_carry(cissa_df, sa_bal, "CURBAL")
-ca_df = _asof_carry(cisca_df, ca_bal, "CURBAL")
-fd_df = _asof_carry(cisfd_df, fd_bal, "CURBAL")
-
-del sa_bal, ca_bal, fd_bal
-gc.collect()
-
-print(f"  SA rows : {len(sa_df):,}   CA rows : {len(ca_df):,}   FD rows : {len(fd_df):,}")
-
-# ============================================================================
-# STEP 7: DATA DEPO; SET SA CA FD;  DATA PDEPO; SET PSA PCA PFD;
-# PROC SORT DATA=DEPO;  BY ACCTNO;
-# PROC SORT DATA=PDEPO; BY ACCTNO;
-# DATA DEPO;
+# STEP 5-7: CURRENT (CURBAL) AND PREVIOUS (PRE_CURBAL) BALANCES, WITHDRAWALS
+# SAS builds SA/CA/FD (CURBAL) and PSA/PCA/PFD (PRE_CURBAL) from the SAME
+# CISSA/CISCA/CISFD rows in the same order, then runs
 #   MERGE DEPO(IN=A) PDEPO(IN=B); BY ACCTNO; IF A;
-#   WITHDR = PRE_CURBAL - CURBAL;
-#   IF WITHDR < 0 THEN WITHDR = 0;
-# (SAS: a missing WITHDR from a missing PRE_CURBAL sorts as < 0, so it
-#  is also corrected to 0 by this same statement -- preserved below.)
+# which pairs the two sides row-for-row (shared accounts keep every holder).
+# Both balances are therefore attached to the same row here.
+# Each balance uses the SAS MERGE carry-forward (see _asof_carry); a balance
+# with no earlier record stays missing (prints as 0 via OPTIONS MISSING=0).
 # ============================================================================
-print("\nStep 7: Combining DEPO / PDEPO and calculating withdrawals...")
+print("\nStep 5-7: Building balances and withdrawals...")
 
-depo_df  = pl.concat([sa_df, ca_df, fd_df])
-pdepo_df = pl.concat([psa_df, pca_df, pfd_df])
 
-depo_final = _merge_depo_pdepo(depo_df, pdepo_df)
+def _with_balances(cis_df: pl.DataFrame, cur_bal: pl.DataFrame, pre_bal: pl.DataFrame) -> pl.DataFrame:
+    base = cis_df.sort("ACCTNO", maintain_order=True)
+    base = _asof_carry(base, cur_bal, "CURBAL")
+    return _asof_carry(base, pre_bal, "PRE_CURBAL")
+
+
+def _both(cur_files: list, pre_files: list, cur_col: str = "CURBAL", pre_col: str = "PRE_CURBAL"):
+    cur = pl.concat([_read_acct_bal(f, cur_col) for f in cur_files])
+    pre = pl.concat([_read_acct_bal(f, pre_col) for f in pre_files])
+    return cur, pre
+
+
+sa_cur, sa_pre = _both([DEPO_SAVING_CACHE, IDEPO_SAVING_CACHE],
+                       [PDEPO_SAVING_CACHE, PIDEPO_SAVING_CACHE])
+ca_cur, ca_pre = _both([DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE],
+                       [PDEPO_CURRENT_CACHE, PIDEPO_CURRENT_CACHE])
+fd_cur, fd_pre = _both([DEPO_FD_CACHE, IDEPO_FD_CACHE],
+                       [PDEPO_FD_CACHE, PIDEPO_FD_CACHE])
+
+sa_df = _with_balances(cissa_df, sa_cur, sa_pre)
+ca_df = _with_balances(cisca_df, ca_cur, ca_pre)
+fd_df = _with_balances(cisfd_df, fd_cur, fd_pre)
+
+del sa_cur, sa_pre, ca_cur, ca_pre, fd_cur, fd_pre
+gc.collect()
+
+# DATA DEPO; SET SA CA FD;  PROC SORT BY ACCTNO;  (stable)
+depo_final = pl.concat([sa_df, ca_df, fd_df]).sort("ACCTNO", maintain_order=True)
+
+# WITHDR=PRE_CURBAL-CURBAL; IF WITHDR < 0 THEN WITHDR=0;
+# (a missing difference sorts below 0 in SAS, so it also becomes 0)
 depo_final = depo_final.with_columns(
-    pl.when(pl.col("PRE_CURBAL").is_null() | ((pl.col("PRE_CURBAL") - pl.col("CURBAL")) < 0))
+    pl.when(
+        pl.col("PRE_CURBAL").is_null()
+        | pl.col("CURBAL").is_null()
+        | ((pl.col("PRE_CURBAL") - pl.col("CURBAL")) < 0)
+    )
     .then(0.0)
     .otherwise(pl.col("PRE_CURBAL") - pl.col("CURBAL"))
     .alias("WITHDR")
 )
 
 print(f"  DEPO rows : {len(depo_final):,}")
-
-del pdepo_df
-gc.collect()
 
 # ============================================================================
 # STEP 8: PROC SUMMARY DATA=DEPO NWAY; CLASS NEWIC; VAR PRE_CURBAL CURBAL WITHDR;
@@ -652,10 +734,16 @@ print(f"  TOT rows : {len(tot_df):,}")
 # ============================================================================
 print("\nStep 11: Building FINAL dataset...")
 
-depo_acct_df = pl.concat([sa_df, ca_df, fd_df])
-final_df = depo_acct_df.join(tot_df, on="NEWIC", how="inner").sort(["CUSTNAME", "ACCTNO"])
+# depo_acct_df = pl.concat([sa_df, ca_df, fd_df])
+# final_df = depo_acct_df.join(tot_df, on="NEWIC", how="inner").sort(["CUSTNAME", "ACCTNO"])
 
-del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, depo_acct_df, tot_df, depo_final, depo_df
+# del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, depo_acct_df, tot_df, depo_final, depo_df
+# gc.collect()
+
+final_df = depo_final.join(tot_df, on="NEWIC", how="inner").sort(["CUSTNAME", "ACCTNO"], maintain_order=True)
+
+# del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, tot_df, depo_final, depo_df
+del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, tot_df, depo_final
 gc.collect()
 
 print(f"  FINAL rows : {len(final_df):,}")
