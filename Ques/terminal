@@ -24,7 +24,6 @@ Step 2: Caching input SAS datasets to Parquet...
   [CISSAFD] Cache fresh - skipping conversion.
 
 Step 3: Processing CARD file...
-100% ▕██████████████████████████████████████▏ (00:00:02.00 elapsed)     
   CARD raw rows after filter : 1,297,485
   CARD  rows : 13,754
   CARD1 rows : 5,187
@@ -62,6 +61,53 @@ FD balance neighbours (previous 3 keys ≤ this account): shape: (5, 2)
 │ 1373840404 ┆ 16778.89 │
 │ 1373840501 ┆ 250000.0 │
 └────────────┴──────────┘
+
+SA_CUR duplicate ACCTNOs: 0
+shape: (0, 2)
+┌────────┬─────┐
+│ ACCTNO ┆ len │
+│ ---    ┆ --- │
+│ i64    ┆ u32 │
+╞════════╪═════╡
+└────────┴─────┘
+
+SA_PRE duplicate ACCTNOs: 0
+shape: (0, 2)
+┌────────┬─────┐
+│ ACCTNO ┆ len │
+│ ---    ┆ --- │
+│ i64    ┆ u32 │
+╞════════╪═════╡
+└────────┴─────┘
+
+CA_CUR duplicate ACCTNOs: 0
+shape: (0, 2)
+┌────────┬─────┐
+│ ACCTNO ┆ len │
+│ ---    ┆ --- │
+│ i64    ┆ u32 │
+╞════════╪═════╡
+└────────┴─────┘
+
+CA_PRE duplicate ACCTNOs: 0
+shape: (0, 2)
+┌────────┬─────┐
+│ ACCTNO ┆ len │
+│ ---    ┆ --- │
+│ i64    ┆ u32 │
+╞════════╪═════╡
+└────────┴─────┘
+
+FD_CUR duplicate ACCTNOs: 0
+shape: (0, 2)
+┌────────┬─────┐
+│ ACCTNO ┆ len │
+│ ---    ┆ --- │
+│ i64    ┆ u32 │
+╞════════╪═════╡
+└────────┴─────┘
+
+FD_PRE duplicate ACCTNOs: 0
 shape: (0, 2)
 ┌────────┬─────┐
 │ ACCTNO ┆ len │
