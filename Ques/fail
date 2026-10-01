@@ -1,40 +1,18 @@
-def _asof_carry(base_df, value_df, value_col):
-    """
-    Emulate SAS:  MERGE base(IN=A) value(IN=B); BY ACCTNO; IF A;
-
-    - Exact key match  -> value_col is taken from value_df
-    - No exact match   -> value_col carries forward from the closest
-                          value_df row with ACCTNO <= current ACCTNO
-                          (this is the SAS MERGE auto-retain rule for a
-                          variable that only exists on the non-matching
-                          side of a BY-group merge).
-    - No earlier row   -> NULL (SAS missing, prints as 0 via MISSING=0).
-    """
-    base_sorted  = base_df.sort("ACCTNO", maintain_order=True)
-    value_sorted = (
-        value_df
-        .sort("ACCTNO", maintain_order=True)
-        .select(["ACCTNO", value_col])
-    )
-    return base_sorted.join_asof(
-        value_sorted, on="ACCTNO", strategy="backward"
+# DEBUG: Check duplicate ACCTNOs in all balance inputs
+for name, df in [
+    ("SA_CUR", sa_cur),
+    ("SA_PRE", sa_pre),
+    ("CA_CUR", ca_cur),
+    ("CA_PRE", ca_pre),
+    ("FD_CUR", fd_cur),
+    ("FD_PRE", fd_pre),
+]:
+    dup = (
+        df.group_by("ACCTNO")
+          .len()
+          .filter(pl.col("len") > 1)
+          .sort("len", descending=True)
     )
 
-
-
-
-# --- one-shot verification (run, then re-comment) -----------------
-if False:
-    probe = 1690581911          # WONG YUN KIONG FD account
-    print("cis look-up rows :",
-          cisfd_df.filter(pl.col("ACCTNO") == probe))
-    print("fd value rows    :",
-          fd_cur.filter(pl.col("ACCTNO") == probe))
-    print("fd neighbours    :",
-          fd_cur.filter(pl.col("ACCTNO") <= probe)
-                .sort("ACCTNO").tail(5))
-    print("after asof       :",
-          _with_balances(cisfd_df, fd_cur, fd_pre)
-              .filter(pl.col("ACCTNO") == probe)
-              .select(["ACCTNO", "CURBAL", "PRE_CURBAL"]))
-# ------------------------------------------------------------------
+    print(f"\n{name} duplicate ACCTNOs: {len(dup):,}")
+    print(dup.head(20))
