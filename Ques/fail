@@ -1,3 +1,57 @@
+def _asof_carry(base_df, value_df, value_col):
+    """
+    Emulate SAS:  MERGE base(IN=A) value(IN=B); BY ACCTNO; IF A;
+
+    - Exact key match  -> value_col is taken from value_df
+    - No exact match   -> value_col is left NULL (SAS resets it to missing,
+                          which prints as 0 because OPTIONS MISSING=0)
+    - Duplicate keys on either side produce the SAS one-to-many fan-out
+      (base row duplicated once per value row with the same ACCTNO).
+    """
+    base_sorted  = base_df.sort("ACCTNO", maintain_order=True)
+    value_sorted = (
+        value_df
+        .sort("ACCTNO", maintain_order=True)
+        .select(["ACCTNO", value_col])
+    )
+    # Left join = "IF A"; the join itself only fills value_col on exact match.
+    # Non-matching rows keep NULL, which is what SAS prints as 0.
+    return base_sorted.join(value_sorted, on="ACCTNO", how="left")
+
+
+
+
+dbg_acct = 1373840635
+print("CISFD row:",
+      cisfd_df.filter(pl.col("ACCTNO") == dbg_acct))
+print("FD balance row:",
+      fd_cur.filter(pl.col("ACCTNO") == dbg_acct))
+print("FD balance neighbours (previous 3 keys ≤ this account):",
+      fd_cur.filter(pl.col("ACCTNO") <= dbg_acct)
+            .sort("ACCTNO").tail(5))
+
+
+
+
+print(
+    depo_final
+    .filter(pl.col("ACCTNO").is_in([1408177326, 1019416021, 1373840635, 1283166924]))
+    .select(["ACCTNO", "CURBAL", "PRE_CURBAL", "WITHDR"])
+)
+
+
+
+
+print(
+    fd_cur.group_by("ACCTNO").len()
+          .filter(pl.col("len") > 1)
+          .sort("len", descending=True)
+          .head(20)
+)
+
+
+========================
+
 # ============================================================================
 # STEP 5-7: CURRENT (CURBAL) AND PREVIOUS (PRE_CURBAL) BALANCES, WITHDRAWALS
 # SAS builds SA/CA/FD (CURBAL) and PSA/PCA/PFD (PRE_CURBAL) from the SAME
