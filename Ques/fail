@@ -1,7 +1,12 @@
-for _a in [1595256021, 1408177326, 1019416021, 1373840635, 1283166924]:
-    _hits = fd_cur.filter(pl.col("ACCTNO") == _a)
-    _near = (fd_cur.filter(pl.col("ACCTNO") <= _a)
-                   .sort("ACCTNO")
-                   .tail(3))
-    print(f"  DBG FD acct={_a} exact_hits={_hits.height} vals={_hits['CURBAL'].to_list()}")
-    print(f"           nearest<=acct={_near.select(['ACCTNO','CURBAL']).to_dicts()}")
+_TARGET = "1595256021"
+for _tag, _p in [("DEPO_FD",   DEPO_FD_CACHE),
+                 ("IDEPO_FD",  IDEPO_FD_CACHE),
+                 ("PDEPO_FD",  PDEPO_FD_CACHE),
+                 ("PIDEPO_FD", PIDEPO_FD_CACHE)]:
+    _raw = pl.read_parquet(_p)
+    _hit = _raw.filter(
+        pl.col("ACCTNO").cast(pl.Utf8).str.strip_chars().str.contains(_TARGET)
+    )
+    print(f"  DBG {_tag}: schema={_raw.schema} rows={_raw.height} substring_hits={_hit.height}")
+    if _hit.height:
+        print("         hit rows:", _hit.to_dicts())
