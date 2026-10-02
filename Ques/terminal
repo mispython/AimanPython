@@ -1,5 +1,9 @@
-[DIAG] DPCC: sas7bdat rows=10,534 | cache rows=10,534 | cache SUM(TRANAMT)/1000=24,381.5567
-[DIAG]   src mtime=1790872197.6168823  cache mtime=1790911581.7128737
-[DIAG] DPLP: sas7bdat rows=44,478 | cache rows=44,478 | cache SUM(TRANAMT)/1000=128,753.7646
-[DIAG]   src mtime=1790871973.6398995  cache mtime=1790911581.6758738
-[DIAG] SAS expected CC cash: rows=10,055  value=23,145.3910
+  column_name column_type null   key default extra
+0      ACCTNO      DOUBLE  YES  None    None  None
+1     TRANAMT      DOUBLE  YES  None    None  None
+2      TRANDT      DOUBLE  YES  None    None  None
+3     TRANTME      DOUBLE  YES  None    None  None
+4     ONLTRAN      DOUBLE  YES  None    None  None
+5      CHEQNO      DOUBLE  YES  None    None  None
+6    CURRCODE     VARCHAR  YES  None    None  None
+7    REPTDATE      DOUBLE  YES  None    None  None
