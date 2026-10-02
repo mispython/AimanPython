@@ -1,26 +1,14 @@
-import os
-from datetime import datetime as _dt
+print("DPCC09 row count:", _read(DPCC_CACHE).height)
 
-for _tag, _sas, _cache in [
-    ("DEPO_FD",  DEPO_FD_FILE,  DEPO_FD_CACHE),
-    ("IDEPO_FD", IDEPO_FD_FILE, IDEPO_FD_CACHE),
-    ("PDEPO_FD", PDEPO_FD_FILE, PDEPO_FD_CACHE),
-    ("PIDEPO_FD", PIDEPO_FD_FILE, PIDEPO_FD_CACHE),
-]:
-    print(f"  DBG {_tag}: "
-          f"src_mtime={_dt.fromtimestamp(os.path.getmtime(_sas))}  "
-          f"cache_mtime={_dt.fromtimestamp(os.path.getmtime(_cache))}")
 
-for _tag, _sas in [("DEPO_FD",  DEPO_FD_FILE),
-                   ("IDEPO_FD", IDEPO_FD_FILE),
-                   ("PDEPO_FD", PDEPO_FD_FILE),
-                   ("PIDEPO_FD", PIDEPO_FD_FILE)]:
-    _df = pd.read_sas(_sas, encoding="latin1")
-    _hit = _df[_df["ACCTNO"].astype("float").astype("int64") == 1595256021]
-    print(f"  DBG raw {_tag}: total={len(_df):,} "
-          f"hit_1595256021={_hit[['ACCTNO','CURBAL']].to_dict('records')}")
 
-_df = pd.read_sas(CISSAFD_FILE, encoding="latin1")
-_hit = _df[_df["ACCTNO"].astype("float").astype("int64") == 1595256021]
-print(f"  DBG raw CISSAFD hit_1595256021: "
-      f"{_hit[['ACCTNO','NEWIC']].to_dict('records')}")
+
+_n  = pl.int_range(pl.len(), dtype=pl.Int64)
+pos = _n - _n.min().over(keys) + 1
+a = a.with_columns(pos.alias("_pos"))
+b = b.with_columns(pos.alias("_bpos"))
+
+
+
+
+print(f"  OTCLN after DPLP merge: {otcln.height:,}")
