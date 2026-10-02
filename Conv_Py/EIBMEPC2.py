@@ -299,40 +299,44 @@ def sas_merge(a: pl.DataFrame, b: pl.DataFrame, keys: list, inner: bool = False)
     """Emulates `MERGE a(IN=A) b(IN=B); BY keys; IF A;` (inner=False) or
     `IF A & B;` (inner=True), including the PROC SORT BY that precedes it.
       - inputs are stably sorted by `keys` (missing first);
-      - many-to-many groups are paired POSITIONALLY (never cross-joined);
-      - when B runs out inside a group, its B-only variables keep the last
-        B value read; variables present in both are taken from B only while B
-        contributes a fresh observation, otherwise A's own value stays;
-      - groups absent from B give missing B-only variables.
+      - every BY group present in A yields max(m, n) rows (m = rows from A,
+        n = rows from B); a dataset that runs out keeps its last values and
+        its IN= flag stays 1 for the rest of the group;
+      - variables present in both are taken from B while B still contributes
+        a fresh observation, otherwise A's own value stays;
+      - groups absent from B give missing B-only variables (IN=B = 0);
+      - groups absent from A are dropped (IF A).
     """
     a, b = _align_key_types(a, b, keys)
     a = a.sort(keys, maintain_order=True)
     b = b.sort(keys, maintain_order=True)
-    pos = pl.int_range(pl.len(), dtype=pl.Int64).over(keys) + 1
-    a = a.with_columns(pos.alias("_pos"))
-    b = b.with_columns(pos.alias("_bpos"))
-
-    a_cols = [c for c in a.columns if c != "_pos"]
-    b_cols = [c for c in b.columns if c not in keys and c != "_bpos"]
+    a_cols = list(a.columns)
+    b_cols = [c for c in b.columns if c not in keys]
     common = [c for c in b_cols if c in a_cols]
     b_only = [c for c in b_cols if c not in a_cols]
 
-    counts = b.group_by(keys).agg(pl.len().cast(pl.Int64).alias("_nb"))
-    b = b.rename({c: f"{c}__b" for c in b_cols})
+    seq = pl.int_range(pl.len(), dtype=pl.Int64).over(keys) + 1
+    a = a.with_columns(seq.alias("_ia"))
+    b = b.with_columns(seq.alias("_ib"))
 
-    out = _join(a, counts, keys)
-    out = out.with_columns(
-        pl.when(pl.col("_pos") <= pl.col("_nb")).then(pl.col("_pos"))
-          .otherwise(pl.col("_nb")).alias("_bpos"))
-    out = _join(out, b, keys + ["_bpos"])
-
-    fresh = pl.col("_pos") <= pl.col("_nb")
-    out = out.with_columns(
-        [pl.when(fresh).then(pl.col(f"{c}__b")).otherwise(pl.col(c)).alias(c) for c in common]
-        + [pl.col(f"{c}__b").alias(c) for c in b_only])
+    cnt_a = a.group_by(keys, maintain_order=True).agg(pl.len().cast(pl.Int64).alias("_m"))
+    cnt_b = b.group_by(keys, maintain_order=True).agg(pl.len().cast(pl.Int64).alias("_n"))
+    grid = _join(cnt_a, cnt_b, keys).with_columns(pl.col("_n").fill_null(0))
     if inner:
-        out = out.filter(fresh)
-    out = out.sort(keys + ["_pos"], maintain_order=True)
+        grid = grid.filter(pl.col("_n") > 0)            # IF A & B: B must exist in the group
+    grid = (grid.with_columns(pl.int_ranges(1, pl.max_horizontal("_m", "_n") + 1).alias("_i"))
+                .explode("_i")
+                .with_columns(pl.min_horizontal("_i", "_m").alias("_ia"),     # A row (last one retained)
+                              pl.min_horizontal("_i", "_n").alias("_ib")))    # B row (last one retained)
+
+    b = b.rename({c: f"{c}__b" for c in b_cols})
+    out = _join(grid, a, keys + ["_ia"])
+    out = _join(out, b, keys + ["_ib"])
+    fresh_b = pl.col("_i") <= pl.col("_n")
+    out = out.with_columns(
+        [pl.when(fresh_b).then(pl.col(f"{c}__b")).otherwise(pl.col(c)).alias(c) for c in common]
+        + [pl.col(f"{c}__b").alias(c) for c in b_only])
+    out = out.sort(keys + ["_i"], maintain_order=True)
     return out.select(a_cols + b_only)
 
 
@@ -402,7 +406,8 @@ print(f"  LNNOTE rows: {lnnote.height:,}")
 # STEP 4: CASH - LN   (BNM.DPLP, BNM.LNLP -> OTCLN)
 # ============================================================================
 print("\nStep 4: CASH - LN...")
-dplp = _read(DPLP_CACHE)                                       # BNM.DPLP
+# dplp = _read(DPLP_CACHE)                                       # BNM.DPLP
+dplp = _read(DPLP_CACHE, where=f"TRANDT < {RDATE}")            # TEMP TEST
 lnlp = _concat([_read(p) for p in LNLP_CACHES])                # BNM.LNLP
 lnlp = lnlp.with_columns(pl.col("REPTDATE").alias("TRANDT"))   # TRANDT=REPTDATE (data column)
 
@@ -417,7 +422,8 @@ print(f"  OTCLN: PBB {otcln_pbb.height:,}  PIBB {otcln_pibb.height:,}")
 # STEP 5: CASH - CC   (BNM.OTCCC)
 # ============================================================================
 print("\nStep 5: CASH - CC...")
-otccc = _read(DPCC_CACHE).with_columns(
+# otccc = _read(DPCC_CACHE).with_columns(
+otccc = _read(DPCC_CACHE, where=f"TRANDT < {RDATE}").with_columns(   # TEMP TEST
     pl.lit("CC").alias("PROD"), pl.lit("CASH").alias("ITEM"), pl.lit(1).alias("SEQ"))
 print(f"  OTCCC: {otccc.height:,}")
 
@@ -567,16 +573,22 @@ def _field_expr(schema: dict, col: str) -> pl.Expr:
     if col == "TRANDT" or dtype == pl.Date or isinstance(dtype, pl.Datetime):
         return _date_expr(col, dtype)
     if dtype == pl.Utf8:
-        return _c(col)
+        # blank character value is written as one blank
+        return pl.when(_c(col) == "").then(pl.lit(" ")).otherwise(_c(col))
+    if col == "ACCTNO":
+        # account numbers print in full (no E-notation), e.g. 16-digit card numbers
+        x = pl.col(col).cast(pl.Float64)
+        return (pl.when(x.is_null() | x.is_nan()).then(pl.lit("."))
+                  .otherwise(x.round(0).cast(pl.Int64).cast(pl.Utf8)))
     return _num_expr(col)
 
 
 def _brch_expr(schema: dict) -> pl.Expr:
-    """BRCH = PUT(ACCBRCH,Z3.)"""
+    """BRCH = PUT(ACCBRCH,Z3.)  (missing -> '.')"""
     if "ACCBRCH" not in schema:
-        return pl.lit("  .")
+        return pl.lit(".")
     b = pl.col("ACCBRCH").cast(pl.Int64)
-    return pl.when(b.is_null()).then(pl.lit("  .")).otherwise(b.cast(pl.Utf8).str.zfill(3))
+    return pl.when(b.is_null()).then(pl.lit(".")).otherwise(b.cast(pl.Utf8).str.zfill(3))
 
 
 def _write_records(path: Path, head: list, body: Optional[pl.Series]) -> None:
@@ -598,7 +610,7 @@ def _write_listing(df: pl.DataFrame, path: Path, title: str, columns: list, labe
         return
     schema = df.schema
     parts = [_brch_expr(schema) if c == "BRCH" else _field_expr(schema, c) for c in columns]
-    body = (df.select((pl.concat_str(parts, separator=";") + pl.lit(";"))
+    body = (df.select((pl.concat_str(parts, separator=" ;") + pl.lit(" ;"))
                       .str.pad_end(LRECL, " ").alias("L"))["L"])
     head = [title, " ", ";".join(labels) + ";"]
     _write_records(path, head, body)
@@ -687,7 +699,7 @@ def _write_summary(path: Path, head: list, rows: list) -> None:
 
 
 def _write_summary_file(path: Path, head: list, rows: list) -> None:
-    body = [";".join([label] + [_fmt_scalar(v) for v in values]) for label, values in rows]
+    body = [" ;".join([label] + [_fmt_scalar(v) for v in values]) for label, values in rows]
     _write_records(path, head,
                    pl.Series([ln.ljust(LRECL)[:LRECL] for ln in body], dtype=pl.Utf8)
                    if body else None)
