@@ -1,10 +1,12 @@
-print(con.execute(f"DESCRIBE SELECT * FROM read_parquet('{DPCC_CACHE.as_posix()}')").df().to_string())
-
-
-
-
 print(con.execute(f"""
-    SELECT TRANDT, COUNT(*) AS n, SUM(TRANAMT) AS amt
+    SELECT
+        CAST(DATE '1960-01-01' + CAST(TRANDT   AS INTEGER) AS DATE) AS trandt,
+        CAST(DATE '1960-01-01' + CAST(REPTDATE AS INTEGER) AS DATE) AS reptdate,
+        COUNT(*)                                                    AS n,
+        ROUND(SUM(TRANAMT) / 1000, 4)                               AS amt_k,
+        SUM(COUNT(*)) OVER (ORDER BY TRANDT, REPTDATE)              AS cum_n,
+        ROUND(SUM(SUM(TRANAMT)) OVER (ORDER BY TRANDT, REPTDATE) / 1000, 4) AS cum_amt_k
     FROM read_parquet('{DPCC_CACHE.as_posix()}')
-    GROUP BY 1 ORDER BY 1
+    GROUP BY TRANDT, REPTDATE
+    ORDER BY TRANDT, REPTDATE
 """).df().to_string())
