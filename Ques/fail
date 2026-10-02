@@ -1,43 +1,36 @@
-def sas_merge(a: pl.DataFrame, b: pl.DataFrame, keys: list, inner: bool = False) -> pl.DataFrame:
-    """Emulates `MERGE a(IN=A) b(IN=B); BY keys; IF A;` (inner=False) or
-    `IF A & B;` (inner=True), including the PROC SORT BY that precedes it.
-      - inputs are stably sorted by `keys` (missing first);
-      - every BY group present in A yields max(m, n) rows (m = rows from A,
-        n = rows from B); a dataset that runs out keeps its last values and
-        its IN= flag stays 1 for the rest of the group;
-      - variables present in both are taken from B while B still contributes
-        a fresh observation, otherwise A's own value stays;
-      - groups absent from B give missing B-only variables (IN=B = 0);
-      - groups absent from A are dropped (IF A).
-    """
-    a, b = _align_key_types(a, b, keys)
-    a = a.sort(keys, maintain_order=True)
-    b = b.sort(keys, maintain_order=True)
-    a_cols = list(a.columns)
-    b_cols = [c for c in b.columns if c not in keys]
-    common = [c for c in b_cols if c in a_cols]
-    b_only = [c for c in b_cols if c not in a_cols]
+def _brch_expr(schema: dict) -> pl.Expr:
+    """BRCH = PUT(ACCBRCH,Z3.)  (missing -> '.')"""
+    if "ACCBRCH" not in schema:
+        return pl.lit(".")
+    b = pl.col("ACCBRCH").cast(pl.Int64)
+    return pl.when(b.is_null()).then(pl.lit(".")).otherwise(b.cast(pl.Utf8).str.zfill(3))
 
-    seq = pl.int_range(pl.len(), dtype=pl.Int64).over(keys) + 1
-    a = a.with_columns(seq.alias("_ia"))
-    b = b.with_columns(seq.alias("_ib"))
 
-    cnt_a = a.group_by(keys, maintain_order=True).agg(pl.len().cast(pl.Int64).alias("_m"))
-    cnt_b = b.group_by(keys, maintain_order=True).agg(pl.len().cast(pl.Int64).alias("_n"))
-    grid = _join(cnt_a, cnt_b, keys).with_columns(pl.col("_n").fill_null(0))
-    if inner:
-        grid = grid.filter(pl.col("_n") > 0)            # IF A & B: B must exist in the group
-    grid = (grid.with_columns(pl.int_ranges(1, pl.max_horizontal("_m", "_n") + 1).alias("_i"))
-                .explode("_i")
-                .with_columns(pl.min_horizontal("_i", "_m").alias("_ia"),     # A row (last one retained)
-                              pl.min_horizontal("_i", "_n").alias("_ib")))    # B row (last one retained)
 
-    b = b.rename({c: f"{c}__b" for c in b_cols})
-    out = _join(grid, a, keys + ["_ia"])
-    out = _join(out, b, keys + ["_ib"])
-    fresh_b = pl.col("_i") <= pl.col("_n")
-    out = out.with_columns(
-        [pl.when(fresh_b).then(pl.col(f"{c}__b")).otherwise(pl.col(c)).alias(c) for c in common]
-        + [pl.col(f"{c}__b").alias(c) for c in b_only])
-    out = out.sort(keys + ["_i"], maintain_order=True)
-    return out.select(a_cols + b_only)
+
+def _field_expr(schema: dict, col: str) -> pl.Expr:
+    """Default-format list output of one variable, by its type."""
+    if col not in schema or schema[col] == pl.Null:
+        return pl.lit(".")
+    dtype = schema[col]
+    if col == "TRANDT" or dtype == pl.Date or isinstance(dtype, pl.Datetime):
+        return _date_expr(col, dtype)
+    if dtype == pl.Utf8:
+        # blank character value is written as one blank
+        return pl.when(_c(col) == "").then(pl.lit(" ")).otherwise(_c(col))
+    if col == "ACCTNO":
+        # account numbers print in full (no E-notation), e.g. 16-digit card numbers
+        x = pl.col(col).cast(pl.Float64)
+        return (pl.when(x.is_null() | x.is_nan()).then(pl.lit("."))
+                  .otherwise(x.round(0).cast(pl.Int64).cast(pl.Utf8)))
+    return _num_expr(col)
+
+
+
+
+    body = (df.select((pl.concat_str(parts, separator=" ;") + pl.lit(" ;"))
+                      .str.pad_end(LRECL, " ").alias("L"))["L"])
+
+
+
+
