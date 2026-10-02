@@ -1,14 +1,18 @@
-print("DPCC09 row count:", _read(DPCC_CACHE).height)
+# ---- TEMP DIAGNOSTIC (remove after check) ----
+for _tag, _src, _cache in (("DPCC", INPUT_DPCC_FILE, DPCC_CACHE),
+                           ("DPLP", INPUT_DPLP_FILE, DPLP_CACHE)):
+    _rdr = pd.read_sas(_src, encoding="latin1", iterator=True)
+    _src_rows = _rdr.row_count
+    _rdr.close()
+    _n, _s = con.execute(
+        f"SELECT COUNT(*), SUM(TRANAMT) FROM read_parquet('{_cache.as_posix()}')"
+    ).fetchone()
+    print(f"[DIAG] {_tag}: sas7bdat rows={_src_rows:,} | cache rows={_n:,} | "
+          f"cache SUM(TRANAMT)/1000={(_s or 0)/1000:,.4f}")
+    print(f"[DIAG]   src mtime={_src.stat().st_mtime}  cache mtime={_cache.stat().st_mtime}")
+print("[DIAG] SAS expected CC cash: rows=10,055  value=23,145.3910")
+# ---- END DIAGNOSTIC ----
 
 
 
 
-_n  = pl.int_range(pl.len(), dtype=pl.Int64)
-pos = _n - _n.min().over(keys) + 1
-a = a.with_columns(pos.alias("_pos"))
-b = b.with_columns(pos.alias("_bpos"))
-
-
-
-
-print(f"  OTCLN after DPLP merge: {otcln.height:,}")
