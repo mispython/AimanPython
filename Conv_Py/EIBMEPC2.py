@@ -74,52 +74,53 @@ print(f"  REPTDATE: {REPORTDT}   REPTYEAR/MON: {REPTYEAR}/{REPTMON}")
 # PATH CONFIGURATION  (every physical input / output declared independently)
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII/EIBMEPC2")
+STG_DIR2 = Path("/stgsrcsys/host/uat/AII/MNILN")
 
 # --- Inputs (.sas7bdat) -----------------------------------------------------
 # //DPLP DD  SAP.PBB.EPCU.LOANPYMT  -> member DPLP&REPTMON
-INPUT_DPLP_FILE = STG_DIR / "EPCU_LOANPYMT" / f"dplp{REPTMON}.sas7bdat"
+INPUT_DPLP_FILE = STG_DIR / "DPLP" / f"dplp{REPTMON}.sas7bdat"
 
 # //DPCC DD  SAP.PBB.EPCU.CRDTPYMT  -> member DPCC&REPTMON
-INPUT_DPCC_FILE = STG_DIR / "EPCU_CRDTPYMT" / f"dpcc{REPTMON}.sas7bdat"
+INPUT_DPCC_FILE = STG_DIR / "DPCC" / f"dpcc{REPTMON}.sas7bdat"
 
 # //LNLP1 DD SAP.PBB.CRM.LNTRNSAC(0) -> members LNTRAX&REPTYEAR&REPTMON1..4
 INPUT_LNLP_FILES = [
-    STG_DIR / "CRM_LNTRNSAC" / f"lntrax{REPTYEAR}{tok}.sas7bdat"
+    STG_DIR / "LNLP1" / f"lntrax{REPTYEAR}{tok}.sas7bdat"
     for tok in (REPTMON1, REPTMON2, REPTMON3, REPTMON4)
 ]
 
 # //DPTRN DD SAP.PBB.CRM.DPTRNSAC(0) -> members DPBTRAN&REPTYEAR&REPTMON1..4
 INPUT_DPTRN_FILES = [
-    STG_DIR / "CRM_DPTRNSAC" / f"dpbtran{REPTYEAR}{tok}.sas7bdat"
+    STG_DIR / "DPTRN" / f"dpbtran{REPTYEAR}{tok}.sas7bdat"
     for tok in (REPTMON1, REPTMON2, REPTMON3, REPTMON4)
 ]
 
 # //CTCS DD  SAP.PBB.EPCU.CTCS -> member CTCS&REPTMON
-INPUT_CTCS_FILE = STG_DIR / "EPCU_CTCS" / f"ctcs{REPTMON}.sas7bdat"
+INPUT_CTCS_FILE = STG_DIR / "CTCS" / f"ctcs{REPTMON}.sas7bdat"
 
 # //LOAN DD  SAP.PBB.MNILN(0)  -> LNNOTE   (REPTDATE member not needed)
-INPUT_LOAN_LNNOTE_FILE  = STG_DIR / "MNILN"      / "lnnote.sas7bdat"
+INPUT_LOAN_LNNOTE_FILE  = STG_DIR2 / "PBB"  / "lnnote.sas7bdat"
 
 # //ILOAN DD SAP.PIBB.MNILN(0) -> LNNOTE
-INPUT_ILOAN_LNNOTE_FILE = STG_DIR / "PIBB_MNILN" / "lnnote.sas7bdat"
+INPUT_ILOAN_LNNOTE_FILE = STG_DIR2 / "PIBB" / "ilnnote.sas7bdat"
 
 # //BNMW1..4 DD SAP.PBB.EPCUWH.WEEKLY(-3..0)  -> RENCC, RENLN
-INPUT_BNMW1_RENCC_FILE = STG_DIR / "EPCUWH_WEEKLY_W1" / "rencc.sas7bdat"
-INPUT_BNMW2_RENCC_FILE = STG_DIR / "EPCUWH_WEEKLY_W2" / "rencc.sas7bdat"
-INPUT_BNMW3_RENCC_FILE = STG_DIR / "EPCUWH_WEEKLY_W3" / "rencc.sas7bdat"
-INPUT_BNMW4_RENCC_FILE = STG_DIR / "EPCUWH_WEEKLY_W4" / "rencc.sas7bdat"
+INPUT_BNMW1_RENCC_FILE = STG_DIR / "BNMW1" / "rencc.sas7bdat"
+INPUT_BNMW2_RENCC_FILE = STG_DIR / "BNMW2" / "rencc.sas7bdat"
+INPUT_BNMW3_RENCC_FILE = STG_DIR / "BNMW3" / "rencc.sas7bdat"
+INPUT_BNMW4_RENCC_FILE = STG_DIR / "BNMW4" / "rencc.sas7bdat"
 
-INPUT_BNMW1_RENLN_FILE = STG_DIR / "EPCUWH_WEEKLY_W1" / "renln.sas7bdat"
-INPUT_BNMW2_RENLN_FILE = STG_DIR / "EPCUWH_WEEKLY_W2" / "renln.sas7bdat"
-INPUT_BNMW3_RENLN_FILE = STG_DIR / "EPCUWH_WEEKLY_W3" / "renln.sas7bdat"
-INPUT_BNMW4_RENLN_FILE = STG_DIR / "EPCUWH_WEEKLY_W4" / "renln.sas7bdat"
+INPUT_BNMW1_RENLN_FILE = STG_DIR / "BNMW1" / "renln.sas7bdat"
+INPUT_BNMW2_RENLN_FILE = STG_DIR / "BNMW2" / "renln.sas7bdat"
+INPUT_BNMW3_RENLN_FILE = STG_DIR / "BNMW3" / "renln.sas7bdat"
+INPUT_BNMW4_RENLN_FILE = STG_DIR / "BNMW4" / "renln.sas7bdat"
 
 # //IBNMW1..4 DD SAP.PIBB.EPCUWH.WEEKLY(-3..0) -> RENLN
-INPUT_IBNMW1_RENLN_FILE = STG_DIR / "PIBB_EPCUWH_WEEKLY_W1" / "renln.sas7bdat"
-INPUT_IBNMW2_RENLN_FILE = STG_DIR / "PIBB_EPCUWH_WEEKLY_W2" / "renln.sas7bdat"
-INPUT_IBNMW3_RENLN_FILE = STG_DIR / "PIBB_EPCUWH_WEEKLY_W3" / "renln.sas7bdat"
-INPUT_IBNMW4_RENLN_FILE = STG_DIR / "PIBB_EPCUWH_WEEKLY_W4" / "renln.sas7bdat"
+INPUT_IBNMW1_RENLN_FILE = STG_DIR / "IBNMW1" / "renln.sas7bdat"
+INPUT_IBNMW2_RENLN_FILE = STG_DIR / "IBNMW2" / "renln.sas7bdat"
+INPUT_IBNMW3_RENLN_FILE = STG_DIR / "IBNMW3" / "renln.sas7bdat"
+INPUT_IBNMW4_RENLN_FILE = STG_DIR / "IBNMW4" / "renln.sas7bdat"
 
 # --- Parquet cache / work ---------------------------------------------------
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMEPC2"
@@ -143,7 +144,7 @@ LRECL       = 1000            # DCB=(LRECL=1000,RECFM=FB)
 WRITE_BATCH = 500_000
 
 # ============================================================================
-# CACHE: .sas7bdat -> PARQUET  (EIBWDLPS.py pattern)
+# CACHE: .sas7bdat -> PARQUET
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
