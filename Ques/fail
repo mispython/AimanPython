@@ -1,6 +1,43 @@
-dplp = _read(DPLP_CACHE, where=f"TRANDT < {RDATE}")            # TEMP TEST
+def sas_merge(a: pl.DataFrame, b: pl.DataFrame, keys: list, inner: bool = False) -> pl.DataFrame:
+    """Emulates `MERGE a(IN=A) b(IN=B); BY keys; IF A;` (inner=False) or
+    `IF A & B;` (inner=True), including the PROC SORT BY that precedes it.
+      - inputs are stably sorted by `keys` (missing first);
+      - every BY group present in A yields max(m, n) rows (m = rows from A,
+        n = rows from B); a dataset that runs out keeps its last values and
+        its IN= flag stays 1 for the rest of the group;
+      - variables present in both are taken from B while B still contributes
+        a fresh observation, otherwise A's own value stays;
+      - groups absent from B give missing B-only variables (IN=B = 0);
+      - groups absent from A are dropped (IF A).
+    """
+    a, b = _align_key_types(a, b, keys)
+    a = a.sort(keys, maintain_order=True)
+    b = b.sort(keys, maintain_order=True)
+    a_cols = list(a.columns)
+    b_cols = [c for c in b.columns if c not in keys]
+    common = [c for c in b_cols if c in a_cols]
+    b_only = [c for c in b_cols if c not in a_cols]
 
+    seq = pl.int_range(pl.len(), dtype=pl.Int64).over(keys) + 1
+    a = a.with_columns(seq.alias("_ia"))
+    b = b.with_columns(seq.alias("_ib"))
 
+    cnt_a = a.group_by(keys, maintain_order=True).agg(pl.len().cast(pl.Int64).alias("_m"))
+    cnt_b = b.group_by(keys, maintain_order=True).agg(pl.len().cast(pl.Int64).alias("_n"))
+    grid = _join(cnt_a, cnt_b, keys).with_columns(pl.col("_n").fill_null(0))
+    if inner:
+        grid = grid.filter(pl.col("_n") > 0)            # IF A & B: B must exist in the group
+    grid = (grid.with_columns(pl.int_ranges(1, pl.max_horizontal("_m", "_n") + 1).alias("_i"))
+                .explode("_i")
+                .with_columns(pl.min_horizontal("_i", "_m").alias("_ia"),     # A row (last one retained)
+                              pl.min_horizontal("_i", "_n").alias("_ib")))    # B row (last one retained)
 
-
-otccc = _read(DPCC_CACHE, where=f"TRANDT < {RDATE}").with_columns(   # TEMP TEST
+    b = b.rename({c: f"{c}__b" for c in b_cols})
+    out = _join(grid, a, keys + ["_ia"])
+    out = _join(out, b, keys + ["_ib"])
+    fresh_b = pl.col("_i") <= pl.col("_n")
+    out = out.with_columns(
+        [pl.when(fresh_b).then(pl.col(f"{c}__b")).otherwise(pl.col(c)).alias(c) for c in common]
+        + [pl.col(f"{c}__b").alias(c) for c in b_only])
+    out = out.sort(keys + ["_i"], maintain_order=True)
+    return out.select(a_cols + b_only)
