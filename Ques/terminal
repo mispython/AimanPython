@@ -1,53 +1,5 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMEPC2.py
-Step 1: Deriving report date...
-  REPTDATE: 30/09/2026   REPTYEAR/MON: 26/09
-
-Step 2: Caching input SAS datasets to Parquet...
-  [DPLP] Cache fresh - skipping conversion.
-  [DPCC] Cache fresh - skipping conversion.
-  [LNLP1] Cache fresh - skipping conversion.
-  [LNLP2] Cache fresh - skipping conversion.
-  [LNLP3] Cache fresh - skipping conversion.
-  [LNLP4] Cache fresh - skipping conversion.
-  [DPTRN1] Cache fresh - skipping conversion.
-  [DPTRN2] Cache fresh - skipping conversion.
-  [DPTRN3] Cache fresh - skipping conversion.
-  [DPTRN4] Cache fresh - skipping conversion.
-  [CTCS] Cache fresh - skipping conversion.
-  [LOAN.LNNOTE] Cache fresh - skipping conversion.
-  [ILOAN.LNNOTE] Cache fresh - skipping conversion.
-  [BNMW1.RENCC] Cache fresh - skipping conversion.
-  [BNMW2.RENCC] Cache fresh - skipping conversion.
-  [BNMW3.RENCC] Cache fresh - skipping conversion.
-  [BNMW4.RENCC] Cache fresh - skipping conversion.
-  [BNMW1.RENLN] Cache fresh - skipping conversion.
-  [BNMW2.RENLN] Cache fresh - skipping conversion.
-  [BNMW3.RENLN] Cache fresh - skipping conversion.
-  [BNMW4.RENLN] Cache fresh - skipping conversion.
-  [IBNMW1.RENLN] Cache fresh - skipping conversion.
-  [IBNMW2.RENLN] Cache fresh - skipping conversion.
-  [IBNMW3.RENLN] Cache fresh - skipping conversion.
-  [IBNMW4.RENLN] Cache fresh - skipping conversion.
-DPCC09 row count: 10534
-
-Step 3: Building LNNOTE...
-  LNNOTE rows: 8,125,473
-
-Step 4: CASH - LN...
-  OTCLN after DPLP merge: 0
-  OTCLN: PBB 0  PIBB 0
-
-Step 5: CASH - CC...
-  OTCCC: 10,534
-
-Step 6: CTCS...
-  CTCS: PBB 15,324  PIBB 0
-
-Step 7: Electronic fund transfer...
-  EFT: PBB 33,166  PIBB 0
-
-Step 8: RENTAS...
-  RENCC: 38  RENLN: PBB 1,466  PIBB 0
-
-Step 9: Consolidation...
-  BNM.TRANX2: 60,528   IBNM.TRANX2: 0
+[DIAG] DPCC: sas7bdat rows=10,534 | cache rows=10,534 | cache SUM(TRANAMT)/1000=24,381.5567
+[DIAG]   src mtime=1790872197.6168823  cache mtime=1790911581.7128737
+[DIAG] DPLP: sas7bdat rows=44,478 | cache rows=44,478 | cache SUM(TRANAMT)/1000=128,753.7646
+[DIAG]   src mtime=1790871973.6398995  cache mtime=1790911581.6758738
+[DIAG] SAS expected CC cash: rows=10,055  value=23,145.3910
