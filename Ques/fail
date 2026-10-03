@@ -1,15 +1,143 @@
-python3 - <<'PY'
-import polars as pl
-import glob
+    loan_all = con.execute(f"""
+        SELECT * REPLACE (
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CAST(NOTENO AS BIGINT) AS NOTENO,
+            CAST(COMMNO AS BIGINT) AS COMMNO,
+            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
+            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
+            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
+        )
+        FROM read_parquet('{bnm1_loan_cache.as_posix()}')
+    """).pl()
 
-# adjust path if needed
-paths = glob.glob("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/*loan*.parquet")
-print("candidate caches:", paths)
 
-for p in paths:
-    df = pl.read_parquet(p)
-    print("\n==", p, "==")
-    for c in ("BLDATE", "ISSDTE", "EXPRDATE", "MATDATE", "APPRDATE", "STARTDT", "MATDT"):
-        if c in df.columns:
-            print(f"  {c:<10} dtype={df.schema[c]!s:<12} sample={df[c].drop_nulls().head(5).to_list()}")
-PY
+
+
+    con = duckdb.connect(database=":memory:")
+    pay_raw = con.execute(f"""
+        SELECT * REPLACE (
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CAST(NOTENO AS BIGINT) AS NOTENO,
+            CASE WHEN EFFDATE IS NULL OR ISNAN(EFFDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(EFFDATE) AS INTEGER) END AS EFFDATE
+        )
+        FROM read_parquet('{lnpay_cache.as_posix()}')
+    """).pl()
+    con.close()
+
+
+
+
+        days = (ctx["reptdate"] - bldate).days if bldate is not None else None
+
+
+
+
+    loan_all = con.execute(f"""
+        SELECT * REPLACE (
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CAST(NOTENO AS BIGINT) AS NOTENO,
+            CAST(COMMNO AS BIGINT) AS COMMNO,
+            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
+            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
+            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
+        )
+        FROM read_parquet('{bnm1_loan_cache.as_posix()}') WHERE PAIDIND NOT IN ('P','C')
+    """).pl()
+
+
+
+
+    uloan = con.execute(f"""
+        SELECT * REPLACE (
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
+            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE,
+            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE
+        )
+        FROM read_parquet('{bnm1_uloan_cache.as_posix()}')
+        WHERE NOT (ACCTNO BETWEEN 3000000000 AND 3999999999 AND PRODUCT IN (151,152,181) AND ACCTYPE = 'OD')
+    """).pl().sort(["ACCTNO"])
+
+
+
+
+        days = (ctx["reptdate"] - bldate).days if bldate is not None else None
+
+
+
+
+    fd = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN MATDATE IS NULL OR ISNAN(MATDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(MATDATE) AS INTEGER) END AS MATDATE
+        )
+        FROM read_parquet('{fd_fd_cache.as_posix()}') WHERE ACCTTYPE <> 397 AND CURBAL > 0
+    """).pl()
+
+
+
+
+    dci_raw = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN MATDT   IS NULL OR ISNAN(MATDT)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(MATDT)   AS INTEGER) END AS MATDT,
+            CASE WHEN STARTDT IS NULL OR ISNAN(STARTDT) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(STARTDT) AS INTEGER) END AS STARTDT
+        )
+        FROM read_parquet('{dciwh_dci_cache.as_posix()}') WHERE SPOTRT IS NULL OR TRUE
+    """).pl()
+
+
+
+
+    raw = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN DCMTYD IS NULL OR ISNAN(DCMTYD) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(DCMTYD) AS INTEGER) END AS DCMTYD
+        )
+        FROM read_parquet('{bnmk_dciwtb_cache.as_posix()}')
+        WHERE DCDLP = 'DCI' AND DCBSI = 'S' AND DCTRNT = 'I'
+    """).pl()
+
+
+
+
+    raw = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN MATDT   IS NULL OR ISNAN(MATDT)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(MATDT)   AS INTEGER) END AS MATDT,
+            CASE WHEN STARTDT IS NULL OR ISNAN(STARTDT) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(STARTDT) AS INTEGER) END AS STARTDT
+        )
+        FROM read_parquet('{nid_rnid_cache.as_posix()}') WHERE NIDSTAT = 'N' AND CURBAL > 0
+    """).pl()
+
+
+
+
+python3 -c "import polars as pl; print(pl.read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNMK__k3tbl094.parquet').schema)"
+
+
+
+
+python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT typeof(BLDATE) t, BLDATE FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet') LIMIT 5\").fetchall())"
+
+
+
+
