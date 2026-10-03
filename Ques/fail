@@ -1,8 +1,20 @@
-python3 -c "import pandas as pd; df=pd.read_sas('/stgsrcsys/host/uat/AII/EIBMLIQP/BNMK/k3tbl094.sas7bdat', encoding='latin1', chunksize=1); cols=next(df).columns.tolist(); print(len(cols)); print(cols)"
+    fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter((pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_excl)))
 
 
 
 
-            CAST(UTMM1  AS VARCHAR) AS UTMM1,
-            CAST(ISSDT  AS VARCHAR) AS ISSDT
-        FROM read_parquet('{k3tbl_cache.as_posix()}')
+    fdorg = (
+        fd.with_columns(pl.col("CURBAL").alias("FDBAL"))
+        .join(cisfd.sort("ACCTNO"), on="ACCTNO", how="inner")
+        .filter((pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_prod_excl)) & (pl.col("INDORG") == "O"))
+    )
+
+
+
+
+python3 -c "import polars as pl; p='/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/DEPOSIT__fd.parquet'; s=pl.read_parquet(p).schema; print('ACCTTYPE' in s, 'PRODUCT' in s)"
+
+
+
+
+python3 -c "import polars as pl, glob; p=glob.glob('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/*fd*.parquet')[0]; s=pl.read_parquet(p).schema; print(s.get('ACCTTYPE'))"
