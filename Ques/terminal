@@ -1,7 +1,12 @@
-python3 -c "
-import polars as pl
-d = pl.read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet')
-for c in ('PAYFREQ', 'PAYDAY'):
-    print(c, '->', d.schema.get(c))
-    print('   sample:', d[c].drop_nulls().unique().sort().head(15).to_list())
-"
+PAYFREQ -> String
+   sample: ['1', '2', '3', '4', '5', '6', '9']
+PAYDAY -> None
+Traceback (most recent call last):
+  File "<string>", line 6, in <module>
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 1403, in __getitem__
+    return get_df_item_by_key(self, key)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/getitem.py", line 163, in get_df_item_by_key
+    return df.get_column(key)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 9036, in get_column
+    return wrap_s(self._df.get_column(name))
+polars.exceptions.ColumnNotFoundError: "PAYDAY" not found
