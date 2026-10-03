@@ -19,6 +19,7 @@ Purpose : New Liquidity Framework (Kapiti items) -- pure contractual
 """
 from pathlib import Path
 from datetime import date
+from typing import Optional
 
 import duckdb
 import polars as pl
@@ -46,7 +47,7 @@ def _remfmt(remmth: float) -> str:
     return "06"
 
 
-def _parse_date(s) -> date | None:
+def _parse_date(s) -> Optional[date]:
     if s is None:
         return None
     s = str(s).strip()
