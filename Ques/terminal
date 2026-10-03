@@ -1,13 +1,13 @@
 Running EIBMRLFM...
   Building NOTE (loans)...
-100% ▕██████████████████████████████████████▏ (00:00:06.64 elapsed)     
+100% ▕██████████████████████████████████████▏ (00:00:06.74 elapsed)     
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
     main()
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
     run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 743, in run_eibmrlfm
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 748, in run_eibmrlfm
     note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 284, in _build_note
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 289, in _build_note
     if exprdate is not None and (exprdate - ctx["reptdate"]).days < 8:
 TypeError: unsupported operand type(s) for -: 'float' and 'datetime.date'
