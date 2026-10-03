@@ -1,56 +1,43 @@
-python3 - <<'PY'
 import duckdb
-con = duckdb.connect()
+
 K1 = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNMK__k1tbl094.parquet'
+con = duckdb.connect()
+q = lambda s: con.execute(s).fetchall()
 
-# 1. Column presence + general row count
-print("K1TBL columns:")
-for c in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{K1}')").fetchall():
-    print("  ", c[0], c[1])
+print("Total rows:", q(f"SELECT COUNT(*) FROM read_parquet('{K1}')")[0][0])
 
-print()
-print("Total rows:", con.execute(f"SELECT COUNT(*) FROM read_parquet('{K1}')").fetchone()[0])
+print("\n-- GWMVT counts --")
+for r in q(f"SELECT GWMVT, COUNT(*) FROM read_parquet('{K1}') GROUP BY 1 ORDER BY 2 DESC"):
+    print("  ", r)
 
-# 2. Cross-tab: what combination of GWCCY/GWMVTS/GWCTP-prefix/GWDLP exists,
-#    restricted to ROW1_BCXX DLPs (the ones that should produce item 610)
-print()
-print("Combinations producing candidate item 610 rows:")
-rows = con.execute(f"""
-    SELECT
-        GWCCY,
-        GWMVTS,
-        SUBSTR(GWCTP,1,1)                       AS GWCTP1,
-        GWDLP,
-        COUNT(*)                                AS n
-    FROM read_parquet('{K1}')
-    WHERE GWMVT = 'P'
-      AND GWOCY NOT IN ('XAU','XAT')
-      AND GWCCY NOT IN ('XAU','XAT')
-      AND GWDLP IN ('LO','LC','LF','LS','LOI','LSI','LSC','LSW',
-                    'FDA','FDB','FDS','FDL','LOC','LOW')
-    GROUP BY 1,2,3,4
-    ORDER BY 1,2,3,4
-""").fetchall()
-for r in rows:
-    print("   GWCCY=%-5s GWMVTS=%s GWCTP1=%s GWDLP=%-4s n=%d" % r)
+print("\n-- GWMVTS counts --")
+for r in q(f"SELECT GWMVTS, COUNT(*) FROM read_parquet('{K1}') GROUP BY 1 ORDER BY 2 DESC"):
+    print("  ", r)
 
-# 3. Same, but only for MYR rows (the ones that should hit the 95/93 branch)
-print()
-print("MYR ROW1_BCXX rows broken down by the exact filter that gates item 610:")
-rows = con.execute(f"""
-    SELECT
-        CASE WHEN GWMVTS = 'M' THEN 'Y' ELSE 'N' END AS mvts_is_M,
-        CASE WHEN SUBSTR(GWCTP,1,1) = 'B' THEN 'Y' ELSE 'N' END AS ctp_starts_B,
-        COUNT(*) AS n
-    FROM read_parquet('{K1}')
-    WHERE GWMVT = 'P'
-      AND GWOCY NOT IN ('XAU','XAT')
-      AND GWCCY = 'MYR'
-      AND GWDLP IN ('LO','LC','LF','LS','LOI','LSI','LSC','LSW',
-                    'FDA','FDB','FDS','FDL','LOC','LOW')
-    GROUP BY 1,2
-    ORDER BY 1,2
-""").fetchall()
-for r in rows:
-    print("   GWMVTS=M? %s  GWCTP starts B? %s  rows=%d" % r)
-PY
+print("\n-- GWCCY counts --")
+for r in q(f"SELECT GWCCY, COUNT(*) FROM read_parquet('{K1}') GROUP BY 1 ORDER BY 2 DESC"):
+    print("  ", r)
+
+print("\n-- GWOCY counts --")
+for r in q(f"SELECT GWOCY, COUNT(*) FROM read_parquet('{K1}') GROUP BY 1 ORDER BY 2 DESC"):
+    print("  ", r)
+
+print("\n-- GWDLP counts (top 30) --")
+for r in q(f"SELECT GWDLP, COUNT(*) FROM read_parquet('{K1}') GROUP BY 1 ORDER BY 2 DESC LIMIT 30"):
+    print("  ", r)
+
+print("\n-- 10 sample rows where GWMVT='P' --")
+for r in q(f"SELECT GWCCY, GWOCY, GWMVT, GWMVTS, GWCTP, GWDLP, GWDLR, GWBALC FROM read_parquet('{K1}') WHERE GWMVT='P' LIMIT 10"):
+    print("  ", r)
+
+print("\n-- 10 sample rows where GWCCY='MYR' --")
+for r in q(f"SELECT GWCCY, GWOCY, GWMVT, GWMVTS, GWCTP, GWDLP, GWDLR, GWBALC FROM read_parquet('{K1}') WHERE GWCCY='MYR' LIMIT 10"):
+    print("  ", r)
+
+print("\n-- 10 sample rows where GWDLP IN ('LO','LC','LF','LS','LOI','LSI','LSC','LSW','FDA','FDB','FDS','FDL','LOC','LOW') --")
+for r in q(f"SELECT GWCCY, GWOCY, GWMVT, GWMVTS, GWCTP, GWDLP, GWDLR, GWBALC FROM read_parquet('{K1}') WHERE GWDLP IN ('LO','LC','LF','LS','LOI','LSI','LSC','LSW','FDA','FDB','FDS','FDL','LOC','LOW') LIMIT 10"):
+    print("  ", r)
+
+print("\n-- distinct GWDLP values that start with 'B' --")
+for r in q(f"SELECT GWDLP, COUNT(*) FROM read_parquet('{K1}') WHERE GWDLP LIKE 'B%' GROUP BY 1 ORDER BY 2 DESC"):
+    print("  ", r)
