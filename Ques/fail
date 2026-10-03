@@ -1,3 +1,15 @@
-    loan_sorted = loan_all.sort(["ACCTNO", "NOTENO"])
-    if "EXPRDATE" in loan_sorted.columns:
-        loan_sorted = loan_sorted.drop("EXPRDATE")
+python3 - <<'PY'
+import polars as pl
+import glob
+
+# adjust path if needed
+paths = glob.glob("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/*loan*.parquet")
+print("candidate caches:", paths)
+
+for p in paths:
+    df = pl.read_parquet(p)
+    print("\n==", p, "==")
+    for c in ("BLDATE", "ISSDTE", "EXPRDATE", "MATDATE", "APPRDATE", "STARTDT", "MATDT"):
+        if c in df.columns:
+            print(f"  {c:<10} dtype={df.schema[c]!s:<12} sample={df[c].drop_nulls().head(5).to_list()}")
+PY
