@@ -1,7 +1,7 @@
 python3 - <<'PY'
 import duckdb
 con = duckdb.connect()
-K1 = '/s/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNMK__k1tbl094.parquet'
+K1 = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNMK__k1tbl094.parquet'
 
 # 1. Column presence + general row count
 print("K1TBL columns:")
