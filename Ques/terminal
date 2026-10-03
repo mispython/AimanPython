@@ -1,22 +1,18 @@
 Running EIBMRLFM...
   Building NOTE (loans)...
-100% ▕██████████████████████████████████████▏ (00:00:07.83 elapsed)     
+100% ▕██████████████████████████████████████▏ (00:00:06.95 elapsed)     
   Building FD / SA / CA / VOSTRO / FCYCA...
-
-thread '<unnamed>' (3595049) panicked at crates/polars-python/src/dataframe/export.rs:70:54:
-called `Result::unwrap()` on an `Err` value: PyErr { type: <class 'ValueError'>, value: ValueError('year 57458 is out of range'), traceback: None }
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
     main()
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
     run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 815, in run_eibmrlfm
-    fd = _build_fd(fd_fd_cache, ctx)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 361, in _build_fd
-    for r in fd.iter_rows(named=True):
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 11815, in iter_rows
-    for row in zerocopy_slice.rows(named=False):
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 11571, in rows
-    return self._df.row_tuples()
-pyo3_runtime.PanicException: called `Result::unwrap()` on an `Err` value: PyErr { type: <class 'ValueError'>, value: ValueError('year 57458 is out of range'), traceback: None }
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 818, in run_eibmrlfm
+    _vostro = _build_vostro(deposit_current_cache)  # LCR.VOSTRO -- passive output, no BNMCODE role downstream
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 423, in _build_vostro
+    vostro = con.execute(f"""
+_duckdb.BinderException: Binder Error: Referenced column "CUSTCD" not found in FROM clause!
+Candidate bindings: "CUSTCODE", "CURCODE", "STATCD", "COSTCTR", "ACCYTD"
+
+LINE 2:         SELECT BRANCH, ACCTNO, CURBAL AS AMOUNT, CURCODE, CUSTCD, PRODUCT
+                                                                  ^
