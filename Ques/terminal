@@ -1,18 +1,16 @@
 Running EIBMRLFM...
   Building NOTE (loans)...
-100% ▕██████████████████████████████████████▏ (00:00:06.95 elapsed)     
+100% ▕██████████████████████████████████████▏ (00:00:05.02 elapsed)     
   Building FD / SA / CA / VOSTRO / FCYCA...
+  Building UNOTE (undrawn portion)...
+100% ▕██████████████████████████████████████▏ (00:00:07.03 elapsed)     
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
     main()
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
     run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 818, in run_eibmrlfm
-    _vostro = _build_vostro(deposit_current_cache)  # LCR.VOSTRO -- passive output, no BNMCODE role downstream
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 423, in _build_vostro
-    vostro = con.execute(f"""
-_duckdb.BinderException: Binder Error: Referenced column "CUSTCD" not found in FROM clause!
-Candidate bindings: "CUSTCODE", "CURCODE", "STATCD", "COSTCTR", "ACCYTD"
-
-LINE 2:         SELECT BRANCH, ACCTNO, CURBAL AS AMOUNT, CURCODE, CUSTCD, PRODUCT
-                                                                  ^
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 822, in run_eibmrlfm
+    unote = _build_undrawn(bnm1_loan_cache, bnm1_uloan_cache, lncomm_cache, ctx)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 489, in _build_undrawn
+    uloan = con.execute(f"""
+_duckdb.BinderException: Binder Error: Column "BLDATE" in REPLACE list not found in FROM clause
