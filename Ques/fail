@@ -1,16 +1,3 @@
-    lncomm = con.execute(f"""
-        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
-               CAST(COMMNO AS BIGINT) AS COMMNO,
-               TRY_STRPTIME(
-                   SUBSTR(
-                       LPAD(CAST(CAST(EXPIREDT AS BIGINT) AS VARCHAR), 11, '0'),
-                       1, 8
-                   ),
-                   '%m%d%Y'
-               )::DATE AS EXPRDATE
-        FROM read_parquet('{lncomm_cache.as_posix()}')
-    """).pl().unique(subset=["ACCTNO", "COMMNO"], keep="first").sort(["ACCTNO", "COMMNO"])
-
-
-
-
+    loan_sorted = loan_all.sort(["ACCTNO", "NOTENO"])
+    if "EXPRDATE" in loan_sorted.columns:
+        loan_sorted = loan_sorted.drop("EXPRDATE")
