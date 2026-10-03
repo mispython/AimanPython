@@ -1,20 +1,2 @@
-    fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter((pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_excl)))
-
-
-
-
-    fdorg = (
-        fd.with_columns(pl.col("CURBAL").alias("FDBAL"))
-        .join(cisfd.sort("ACCTNO"), on="ACCTNO", how="inner")
-        .filter((pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_prod_excl)) & (pl.col("INDORG") == "O"))
-    )
-
-
-
-
-python3 -c "import polars as pl; p='/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/DEPOSIT__fd.parquet'; s=pl.read_parquet(p).schema; print('ACCTTYPE' in s, 'PRODUCT' in s)"
-
-
-
-
-python3 -c "import polars as pl, glob; p=glob.glob('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/*fd*.parquet')[0]; s=pl.read_parquet(p).schema; print(s.get('ACCTTYPE'))"
+    fd_ind = fd_j.filter(pl.col("CUSTCD").is_in(["77", "78", "95", "96"]))
+    fd_org = fd_j.filter((~pl.col("CUSTCD").is_in(["77", "78", "95", "96"])) & (pl.col("INDORG") == "O"))
