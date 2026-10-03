@@ -19,9 +19,18 @@
 
 
 python3 - <<'PY'
-import polars as pl
-from pathlib import Path
-loan = pl.read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet')
-print("EXPRDATE dtype in loan:", loan.schema.get('EXPRDATE'))
-print("null EXPRDATE in loan:", loan['EXPRDATE'].is_null().sum(), "of", loan.height)
+import polars as pl, duckdb
+loan_p = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
+con = duckdb.connect()
+loan_all = con.execute(f"""
+    SELECT * REPLACE (
+        CAST(ACCTNO AS BIGINT) AS ACCTNO,
+        CAST(NOTENO AS BIGINT) AS NOTENO,
+        CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+             ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE
+    )
+    FROM read_parquet('{loan_p}')
+""").pl()
+print("EXPRDATE dtype after conversion:", loan_all.schema['EXPRDATE'])
+print("null EXPRDATE after conversion:", loan_all['EXPRDATE'].is_null().sum(), "of", loan_all.height)
 PY
