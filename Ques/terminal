@@ -1,9 +1,88 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
 ======================================================================
-ACCTNO=2000001605.0 NOTENO=10014.0
-  BLDATE  = None   ISSDTE = 20367.0   EXPRDATE = 27758.0
+ACCTNO=2000001605 NOTENO=10014 PRODCD=34230
+  BLDATE  = None   ISSDTE = 2015-10-06   EXPRDATE = 2035-12-31
   PAYFREQ = '1'   PAYAMT = 3523.0   BALANCE = 349758.95682409994
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py", line 301, in <module>
-    print(f"  (EXPRDATE - REPTDATE).days = {(exp - REPTDATE).days}")
-TypeError: unsupported operand type(s) for -: 'float' and 'datetime.date'
+  (EXPRDATE - REPTDATE).days = 3377
+  branch: seed from ISSDTE, advanced 132 times -> bldate=2026-10-06
+  --- loop iterations (max 40 shown) ---
+   it0   bldate=2026-10-06  remmth=   0.129  bucket=02
+   it1   bldate=2026-11-06  remmth=   1.129  bucket=03
+   it2   bldate=2026-12-06  remmth=   2.129  bucket=03
+   it3   bldate=2027-01-06  remmth=   3.129  bucket=04
+   it4   bldate=2027-02-06  remmth=   4.129  bucket=04
+   it5   bldate=2027-03-06  remmth=   5.129  bucket=04
+   it6   bldate=2027-04-06  remmth=   6.129  bucket=05
+   it7   bldate=2027-05-06  remmth=   7.129  bucket=05
+   it8   bldate=2027-06-06  remmth=   8.129  bucket=05
+   it9   bldate=2027-07-06  remmth=   9.129  bucket=05
+   it10  bldate=2027-08-06  remmth=  10.129  bucket=05
+   it11  bldate=2027-09-06  remmth=  11.129  bucket=05
+   it12  bldate=2027-10-06  remmth=  12.129  bucket=06
+   -> break
+  final remmth after loop = 12.129  -> bucket 06 (applies to residual BALANCE)
+======================================================================
+ACCTNO=2000003304 NOTENO=16 PRODCD=34230
+  BLDATE  = None   ISSDTE = 2012-02-21   EXPRDATE = 2043-03-31
+  PAYFREQ = '1'   PAYAMT = 1095.0   BALANCE = 192633.42758189997
+  (EXPRDATE - REPTDATE).days = 6024
+  branch: seed from ISSDTE, advanced 176 times -> bldate=2026-10-21
+  --- loop iterations (max 40 shown) ---
+   it0   bldate=2026-10-21  remmth=   0.613  bucket=02
+   it1   bldate=2026-11-21  remmth=   1.613  bucket=03
+   it2   bldate=2026-12-21  remmth=   2.613  bucket=03
+   it3   bldate=2027-01-21  remmth=   3.613  bucket=04
+   it4   bldate=2027-02-21  remmth=   4.613  bucket=04
+   it5   bldate=2027-03-21  remmth=   5.613  bucket=04
+   it6   bldate=2027-04-21  remmth=   6.613  bucket=05
+   it7   bldate=2027-05-21  remmth=   7.613  bucket=05
+   it8   bldate=2027-06-21  remmth=   8.613  bucket=05
+   it9   bldate=2027-07-21  remmth=   9.613  bucket=05
+   it10  bldate=2027-08-21  remmth=  10.613  bucket=05
+   it11  bldate=2027-09-21  remmth=  11.613  bucket=05
+   it12  bldate=2027-10-21  remmth=  12.613  bucket=06
+   -> break
+  final remmth after loop = 12.613  -> bucket 06 (applies to residual BALANCE)
+======================================================================
+ACCTNO=2000004627 NOTENO=12 PRODCD=34230
+  BLDATE  = None   ISSDTE = 2005-08-05   EXPRDATE = 2030-07-31
+  PAYFREQ = '1'   PAYAMT = 976.0   BALANCE = 42935.020681999995
+  (EXPRDATE - REPTDATE).days = 1398
+  branch: seed from ISSDTE, advanced 254 times -> bldate=2026-10-05
+  --- loop iterations (max 40 shown) ---
+   it0   bldate=2026-10-05  remmth=   0.097  bucket=01
+   it1   bldate=2026-11-05  remmth=   1.097  bucket=03
+   it2   bldate=2026-12-05  remmth=   2.097  bucket=03
+   it3   bldate=2027-01-05  remmth=   3.097  bucket=04
+   it4   bldate=2027-02-05  remmth=   4.097  bucket=04
+   it5   bldate=2027-03-05  remmth=   5.097  bucket=04
+   it6   bldate=2027-04-05  remmth=   6.097  bucket=05
+   it7   bldate=2027-05-05  remmth=   7.097  bucket=05
+   it8   bldate=2027-06-05  remmth=   8.097  bucket=05
+   it9   bldate=2027-07-05  remmth=   9.097  bucket=05
+   it10  bldate=2027-08-05  remmth=  10.097  bucket=05
+   it11  bldate=2027-09-05  remmth=  11.097  bucket=05
+   it12  bldate=2027-10-05  remmth=  12.097  bucket=06
+   -> break
+  final remmth after loop = 12.097  -> bucket 06 (applies to residual BALANCE)
+======================================================================
+ACCTNO=2000005719 NOTENO=30010 PRODCD=34120
+  BLDATE  = 2027-05-03   ISSDTE = 2000-11-03   EXPRDATE = 2033-03-03
+  PAYFREQ = '1'   PAYAMT = 463.0   BALANCE = 26353.926987199997
+  (EXPRDATE - REPTDATE).days = 2344
+  branch: bldate kept = 2027-05-03
+  --- loop iterations (max 40 shown) ---
+   it0   bldate=2027-05-03  remmth=   7.032  bucket=05
+   it1   bldate=2027-06-03  remmth=   8.032  bucket=05
+   it2   bldate=2027-07-03  remmth=   9.032  bucket=05
+   it3   bldate=2027-08-03  remmth=  10.032  bucket=05
+   it4   bldate=2027-09-03  remmth=  11.032  bucket=05
+   it5   bldate=2027-10-03  remmth=  12.032  bucket=06
+   -> break
+  final remmth after loop = 12.032  -> bucket 06 (applies to residual BALANCE)
+======================================================================
+ACCTNO=2000006617 NOTENO=20010 PRODCD=34120
+  BLDATE  = 2009-08-22   ISSDTE = 1999-11-22   EXPRDATE = 2009-11-22
+  PAYFREQ = '1'   PAYAMT = 289.0   BALANCE = 526.3596042999999
+  (EXPRDATE - REPTDATE).days = -6158
+  branch: EXPRDATE within 8 days -> no loop, final remmth=0.1 (bucket 01)
