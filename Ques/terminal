@@ -1,17 +1,18 @@
-            CAST(ISSDT  AS VARCHAR) AS ISSDT
-        FROM read_parquet('{k3tbl_cache.as_posix()}')
-
-
-
-
-            elif utsty in ("ISB", "IDS", "IBZ", "ICN"):
-                # UTMM1 is not present in the physical source. SAS auto-creates
-                # it as missing, both comparisons fail, ITEM stays blank, and the
-                # row is filtered by the downstream "IF ITEM ^= ' '" check.
-                # Replicate that net effect: leave item unset, emit no row.
-                pass
-
-
-
-
-python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT ISSDT FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNMK__k3tbl094.parquet') LIMIT 3\").fetchall())"
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
+    run_eibmrlfm(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 873, in run_eibmrlfm
+    top_ind, top_org = _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 777, in _build_top100
+    fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter((pl.col("PURPOSE") != "2") & (~pl.col("PRODUCT").is_in(fd_excl)))
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 5325, in filter
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.ColumnNotFoundError: unable to find column "PRODUCT"; valid columns: ["ACCTNO", "INDORG", "CUSTNO", "GENDER", "CACCCODE", "SECCUST", "CITIZEN", "OCCUPAT", "HOBBIES", "RELIGION", "EDUCATN", "INCOME", "MARITAL", "BIRTHDAT", "OPENDAT", "RACE", "CUSTCONSENT", "BGC", "FILLER", "CONSENT_OLD", "CISCUSTCD1", "CISCUSTCD2", "CISCUSTCD3", "CISCUSTCD4", "CISCUSTCD5", "CISCUSTCD6", "CISCUSTCD7", "CISCUSTCD8", "CISCUSTCD9", "CISCUSTCD10", "CISCUSTCD11", "CISCUSTCD12", "CISCUSTCD13", "CISCUSTCD14", "CISCUSTCD15", "CONSDD", "CONSMM", "CONSCC", "CONSYY", "SECTOR_CODE", "INSTSECT", "RESTATUS", "SIC_ISS", "OCCUPAT_MASCO_CD", "CUST_CODE", "CONSENTEFFDT", "OLDIC", "NEWICIND", "NEWIC", "BUSSIND", "BUSSREG", "BRANCH", "RHOLD_IND", "CUSTNAME", "ADDREF", "PRIPHONE", "SECPHONE", "CUSTNAM1", "MOBIPHON", "LONGNAME", "EMAILADD", "UPD_DT_SALE", "TURNOVER2", "TURNOVER", "UPD_DT_EMPLOYEE", "NOEMPLO2", "NOEMPLO", "NEW_BUSS_REG_ID_TYPE", "NEW_BUSS_REG_ID", "ADDRLN1", "ADDRLN2", "ADDRLN3", "ADDRLN4", "ADDRLN5", "MAILCODE", "MAILSTAT", "ICNO", "BANKNO", "REPTNO", "FMTCODE", "BRANCH_right", "STATEC", "PURPOSE", "CUSTCD", "DEPODTE", "NAME", "CDNO", "OPENIND", "CURBAL", "ORIGAMT", "ORGDATE", "MATDATE", "RATE", "ACCTTYPE", "TERM", "MATID", "INTPLAN", "PAYMENT", "RENEWAL", "INTPDYTD", "INTPAY", "INTDATE", "LASTACTV", "INTFREQ", "INTFREQID", "PENDINT", "CURCODE", "LMATDATE", "PRORATIO", "FDHOLD", "COSTCTR", "COLLNO", "INTTFRACCT", "PRN_DISP_OPT", "PRN_RENEW", "PRN_TFR_ACCT", "AMTIND", "FORATE", "FORBAL", "CURBALUS", "FDBAL"]
