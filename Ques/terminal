@@ -1,18 +1,16 @@
 Running EIBMRLFM...
   Building NOTE (loans)...
-100% ▕██████████████████████████████████████▏ (00:00:06.80 elapsed)     
+100% ▕██████████████████████████████████████▏ (00:00:06.43 elapsed)     
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 292, in <module>
-    if __name__ == "__main__":
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 268, in main
-    print("\nRunning EIBMRLFM...")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 666, in run_eibmrlfm
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
+    run_eibmrlfm(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 732, in run_eibmrlfm
     note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 176, in _build_note
-    note = loan_sorted.join(rcnote, on=["ACCTNO", "NOTENO"], how="left").join(provsub, on=["ACCTNO", "NOTENO"], how="left")
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 217, in _build_note
+    note = note.with_columns(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
     self.lazy()
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
     return function(*args, **kwargs)
@@ -20,4 +18,4 @@ Traceback (most recent call last):
     return function(*args, **kwargs)
   File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
     return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.SchemaError: datatypes of join keys don't match - `ACCTNO`: f64 on left does not match `ACCTNO`: i64 on right (and no other type was available to cast to)
+polars.exceptions.InvalidOperationError: arithmetic on string and numeric not allowed, try an explicit cast first
