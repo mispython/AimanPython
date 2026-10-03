@@ -17,6 +17,7 @@ Purpose : NLF Kapiti bond-sale item allocation fragment (originally %INC
 """
 from pathlib import Path
 from datetime import date
+from typing import Optional
 
 import duckdb
 import polars as pl
@@ -29,7 +30,7 @@ NREP = {"13", "17", "20", "60", "71", "72", "74", "76", "79", "85"}
 _SCHEMA = {"PART": pl.Utf8, "ITEM": pl.Utf8, "AMOUNT": pl.Float64, "MATDT": pl.Date, "CUST": pl.Utf8}
 
 
-def _parse_sas_date(raw) -> date | None:
+def _parse_sas_date(raw) -> Optional[date]:
     if raw is None:
         return None
     s = str(raw).strip()
