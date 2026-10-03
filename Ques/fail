@@ -1,22 +1,13 @@
-    con = duckdb.connect(database=":memory:")
-    loan_all = con.execute(f"""
-        SELECT * REPLACE (
-            CAST(ACCTNO AS BIGINT) AS ACCTNO,
-            CAST(NOTENO AS BIGINT) AS NOTENO,
-            CAST(COMMNO AS BIGINT) AS COMMNO
+    if "FORATE" in note.columns:
+        note = note.with_columns(
+            pl.when(pl.col("PRODUCT").is_between(800, 899))
+            .then(
+                pl.col("PAYAMT").cast(pl.Float64, strict=False)
+                * pl.col("FORATE").cast(pl.Float64, strict=False)
+            )
+            .otherwise(pl.col("PAYAMT").cast(pl.Float64, strict=False))
+            .alias("PAYAMT")
         )
-        FROM read_parquet('{bnm1_loan_cache.as_posix()}')
-    """).pl()
-
-
-
-
-    lncomm = con.execute(f"""
-        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
-               CAST(COMMNO AS BIGINT) AS COMMNO,
-               EXPIREDT AS EXPRDATE
-        FROM read_parquet('{lncomm_cache.as_posix()}')
-    """).pl().unique(subset=["ACCTNO", "COMMNO"], keep="first").sort(["ACCTNO", "COMMNO"])
 
 
 
@@ -24,82 +15,10 @@
     con = duckdb.connect(database=":memory:")
     pay_raw = con.execute(f"""
         SELECT * REPLACE (
-            CAST(ACCTNO AS BIGINT) AS ACCTNO,
-            CAST(NOTENO AS BIGINT) AS NOTENO
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(NOTENO   AS BIGINT)  AS NOTENO,
+            CAST(PAYAMT   AS DOUBLE)  AS PAYAMT
         )
         FROM read_parquet('{lnpay_cache.as_posix()}')
     """).pl()
     con.close()
-
-
-
-
-    loan_all = con.execute(f"""
-        SELECT * REPLACE (
-            CAST(ACCTNO AS BIGINT) AS ACCTNO,
-            CAST(NOTENO AS BIGINT) AS NOTENO,
-            CAST(COMMNO AS BIGINT) AS COMMNO
-        )
-        FROM read_parquet('{bnm1_loan_cache.as_posix()}') WHERE PAIDIND NOT IN ('P','C')
-    """).pl()
-    lncomm = con.execute(f"""
-        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
-               CAST(COMMNO AS BIGINT) AS COMMNO
-        FROM read_parquet('{lncomm_cache.as_posix()}')
-    """).pl().sort(["ACCTNO", "COMMNO"])
-    uloan = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO)
-        FROM read_parquet('{bnm1_uloan_cache.as_posix()}')
-        WHERE NOT (ACCTNO BETWEEN 3000000000 AND 3999999999 AND PRODUCT IN (151,152,181) AND ACCTYPE = 'OD')
-    """).pl().sort(["ACCTNO"])
-
-
-
-
-    cisca = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO),
-               COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
-        FROM read_parquet('{cisln_deposit_cache.as_posix()}')
-        WHERE ACCTNO BETWEEN 3000000000 AND 3999999999
-    """).pl()
-    cisfd = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO),
-               COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
-        FROM read_parquet('{cisdp_deposit_cache.as_posix()}')
-        WHERE (ACCTNO BETWEEN 1000000000 AND 1999999999) OR (ACCTNO BETWEEN 7000000000 AND 7999999999)
-    """).pl()
-    ca = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO), CURBAL AS CABAL
-        FROM read_parquet('{deposit_current_cache.as_posix()}') WHERE CURBAL > 0
-    """).pl()
-    fd = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO), CURBAL AS FDBAL
-        FROM read_parquet('{deposit_fd_cache.as_posix()}') WHERE CURBAL > 0
-    """).pl()
-
-
-
-
-    cisca = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO)
-        FROM read_parquet('{cisln_deposit_cache.as_posix()}')
-        WHERE ACCTNO BETWEEN 3000000000 AND 3999999999
-    """).pl()
-    ca = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO)
-        FROM read_parquet('{deposit_current_cache.as_posix()}')
-    """).pl()
-    cisfd = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO)
-        FROM read_parquet('{cisdp_deposit_cache.as_posix()}')
-        WHERE (ACCTNO BETWEEN 1000000000 AND 1999999999)
-           OR (ACCTNO BETWEEN 7000000000 AND 7999999999)
-    """).pl()
-    fd = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO)
-        FROM read_parquet('{deposit_fd_cache.as_posix()}')
-    """).pl()
-
-
-
-
