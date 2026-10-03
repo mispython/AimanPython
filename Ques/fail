@@ -1,45 +1,8 @@
-    dci_raw = con.execute(f"""
-        SELECT * REPLACE (
-            CASE WHEN MATDT IS NULL OR ISNAN(MATDT) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(MATDT) AS INTEGER) END AS MATDT,
-            CASE WHEN STARTDT IS NULL OR ISNAN(STARTDT) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(STARTDT) AS INTEGER) END AS STARTDT
-        )
-        FROM read_parquet('{dciwh_dci_cache.as_posix()}') WHERE SPOTRT IS NULL OR TRUE
-    """).pl()
+python3 -c "import pandas as pd; df=pd.read_sas('/stgsrcsys/host/uat/AII/EIBMLIQP/BNMK/k3tbl094.sas7bdat', encoding='latin1', chunksize=1); cols=next(df).columns.tolist(); print(len(cols)); print(cols)"
 
 
 
 
-    raw = con.execute(f"""
-        SELECT * REPLACE (
-            CASE WHEN DCMTYD IS NULL OR ISNAN(DCMTYD) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(DCMTYD) AS INTEGER) END AS DCMTYD
-        )
-        FROM read_parquet('{bnmk_dciwtb_cache.as_posix()}')
-        WHERE DCDLP = 'DCI' AND DCBSI = 'S' AND DCTRNT = 'I'
-    """).pl()
-
-
-
-
-    raw = con.execute(f"""
-        SELECT * REPLACE (
-            CASE WHEN MATDT IS NULL OR ISNAN(MATDT) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(MATDT) AS INTEGER) END AS MATDT,
-            CASE WHEN STARTDT IS NULL OR ISNAN(STARTDT) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(STARTDT) AS INTEGER) END AS STARTDT
-        )
-        FROM read_parquet('{nid_rnid_cache.as_posix()}') WHERE NIDSTAT = 'N' AND CURBAL > 0
-    """).pl()
-
-
-
-
-python3 -c "
-import duckdb; con = duckdb.connect()
-base = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/'
-print('DCI :', con.execute(\"SELECT DATE '1960-01-01' + CAST(FLOOR(24399) AS INTEGER), DATE '1960-01-01' + CAST(FLOOR(24366) AS INTEGER)\").fetchall())
-print('DCIW:', con.execute(\"SELECT DATE '1960-01-01' + CAST(FLOOR(24384) AS INTEGER)\").fetchall())
-print('NID :', con.execute(\"SELECT DATE '1960-01-01' + CAST(FLOOR(21306) AS INTEGER), DATE '1960-01-01' + CAST(FLOOR(20852) AS INTEGER)\").fetchall())
-"
+            CAST(UTMM1  AS VARCHAR) AS UTMM1,
+            CAST(ISSDT  AS VARCHAR) AS ISSDT
+        FROM read_parquet('{k3tbl_cache.as_posix()}')
