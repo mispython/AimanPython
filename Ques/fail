@@ -1,2 +1,7 @@
-    fd_ind = fd_j.filter(pl.col("CUSTCD").is_in(["77", "78", "95", "96"]))
-    fd_org = fd_j.filter((~pl.col("CUSTCD").is_in(["77", "78", "95", "96"])) & (pl.col("INDORG") == "O"))
+    fd_ind = fd_j.filter(pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0]))
+    fd_org = fd_j.filter((~pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0])) & (pl.col("INDORG") == "O"))
+
+
+
+
+python3 -c "import polars as pl, glob; p=glob.glob('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/*fd*.parquet')[0]; d=pl.read_parquet(p); print(d['CUSTCD'].drop_nulls().unique().sort().head(20))"
