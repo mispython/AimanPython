@@ -1,17 +1,2 @@
-Running EIBMRLFM...
-  Building NOTE (loans)...
-100% ▕██████████████████████████████████████▏ (00:00:04.97 elapsed)     
-  Building FD / SA / CA / VOSTRO / FCYCA...
-  Building UNOTE (undrawn portion)...
-100% ▕██████████████████████████████████████▏ (00:00:05.22 elapsed)     
-  Building DCI / DCIW / NID...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
-    run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 822, in run_eibmrlfm
-    dci = pl.concat([_build_dci(dciwh_dci_cache, forate_cache, foratebkp_cache, ctx),
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 561, in _build_dci
-    if fdate is not None and fdate <= ctx["reptdate"]:
-TypeError: '<=' not supported between instances of 'float' and 'datetime.date'
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT REPTDATE FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/FORATE__forate.parquet') LIMIT 5\").fetchall())"
+[(24381.0,), (24381.0,), (24381.0,), (24381.0,), (24381.0,)]
