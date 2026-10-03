@@ -1,7 +1,33 @@
-    fd_ind = fd_j.filter(pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0]))
-    fd_org = fd_j.filter((~pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0])) & (pl.col("INDORG") == "O"))
+    ca = con.execute(f"""
+        SELECT * FROM read_parquet('{deposit_current_cache.as_posix()}') WHERE CURBAL > 0
+    """).pl().with_columns([
+        pl.col("ACCTNO").cast(pl.Int64),
+        pl.col("CURBAL").alias("CABAL"),
+    ])
+    fd = con.execute(f"""
+        SELECT * FROM read_parquet('{deposit_fd_cache.as_posix()}') WHERE CURBAL > 0
+    """).pl().with_columns([
+        pl.col("ACCTNO").cast(pl.Int64),
+        pl.col("CURBAL").alias("FDBAL"),
+    ])
 
 
 
 
-python3 -c "import polars as pl, glob; p=glob.glob('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/*fd*.parquet')[0]; d=pl.read_parquet(p); print(d['CUSTCD'].drop_nulls().unique().sort().head(20))"
+    def _top100(fd_part, ca_part, corp_excl=False):
+        if "CABAL" not in fd_part.columns:
+            fd_part = fd_part.with_columns(pl.lit(0.0).alias("CABAL"))
+        if "FDBAL" not in ca_part.columns:
+            ca_part = ca_part.with_columns(pl.lit(0.0).alias("FDBAL"))
+        common = [c for c in fd_part.columns if c in ca_part.columns]
+        data1 = pl.concat([fd_part.select(common), ca_part.select(common)]).with_columns(
+
+
+
+
+python3 -c "
+import polars as pl, glob
+p = glob.glob('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/*fd*.parquet')[0]
+d = pl.read_parquet(p).head(1).with_columns(pl.col('CURBAL').alias('FDBAL'))
+print('FDBAL present:', 'FDBAL' in d.columns)
+"
