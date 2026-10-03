@@ -1,14 +1,4 @@
-Error in sitecustomize; set PYTHONVERBOSE for traceback:
-FileNotFoundError: [Errno 2] No such file or directory: '-'
-candidate caches: ['/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet', '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__uloan094.parquet']
-
-== /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet ==
-  BLDATE     dtype=Float64      sample=[24594.0, 18131.0, 24555.0, 17433.0, 16404.0]
-  ISSDTE     dtype=Float64      sample=[20367.0, 19044.0, 16653.0, 14917.0, 14570.0]
-  EXPRDATE   dtype=Float64      sample=[27758.0, 30405.0, 25779.0, 26725.0, 18223.0]
-  APPRDATE   dtype=Float64      sample=[20367.0, 19044.0, 16653.0, 14917.0, 14570.0]
-
-== /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__uloan094.parquet ==
-  ISSDTE     dtype=Float64      sample=[]
-  EXPRDATE   dtype=Float64      sample=[14853.0, 15006.0, 15279.0, 17987.0, 17987.0]
-  APPRDATE   dtype=Float64      sample=[14203.0, 14285.0, 14907.0, 15105.0, 13636.0]
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ python3 -c "import polars as pl; print(pl.read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNMK__k3tbl094.parquet').schema)"
+Schema([('REPTDATE', Datetime(time_unit='ms', time_zone=None)), ('UTSTY', String), ('UTREF', String), ('UTDLP', String), ('UTDLR', String), ('UTSMN', String), ('UTCUS', String), ('UTCLC', String), ('UTCTP', String), ('UTFCV', Float64), ('UTIDT', String), ('UTLCD', String), ('UTNCD', String), ('UTMDT', String), ('UTCBD', String), ('UTCPR', Float64), ('UTQDS', Float64), ('UTPCP', Float64), ('UTAMOC', Float64), ('UTDPF', Float64), ('UTAICT', Float64), ('UTAICY', Float64), ('UTAIT', Float64), ('UTDPET', Float64), ('UTDPEY', Float64), ('UTDPE', Float64), ('UTASN', Float64), ('UTOSD', String), ('UTCA2', String), ('UTSAC', String), ('UTCNAP', String), ('UTCNAR', String), ('UTCNAL', String), ('UTCCY', String), ('UTAMTS', Float64), ('MATDT', Datetime(time_unit='ms', time_zone=None)), ('ISSDT', Datetime(time_unit='ms', time_zone=None)), ('DDATE', Float64), ('XDATE', Float64)])
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT typeof(BLDATE) t, BLDATE FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet') LIMIT 5\").fetchall())"
+[('DOUBLE', None), ('DOUBLE', None), ('DOUBLE', None), ('DOUBLE', 24594.0), ('DOUBLE', 18131.0)]
