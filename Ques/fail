@@ -1,25 +1,17 @@
-python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT REPTDATE FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/FORATE__forate.parquet') LIMIT 5\").fetchall())"
+        fcy = con.execute(f"""
+            SELECT * REPLACE (
+                DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER) AS REPTDATE
+            )
+            FROM read_parquet('{foratebkp_cache.as_posix()}')
+            WHERE (DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER))
+                  <= DATE '{ctx["reptdate"].isoformat()}'
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY CURCODE
+                ORDER BY (DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER)) DESC
+            ) = 1
+        """).pl()
 
 
 
 
-    con = duckdb.connect(database=":memory:")
-    fdate_row = con.execute(f"""
-        SELECT DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER) AS REPTDATE
-        FROM read_parquet('{forate_cache.as_posix()}') LIMIT 1
-    """).pl()
-    fdate = fdate_row["REPTDATE"][0] if len(fdate_row) else None
-
-
-
-
-    con = duckdb.connect(database=":memory:")
-    fdate_row = con.execute(f"""
-        SELECT STRPTIME(CAST(CAST(REPTDATE AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE AS REPTDATE
-        FROM read_parquet('{forate_cache.as_posix()}') LIMIT 1
-    """).pl()
-    fdate = fdate_row["REPTDATE"][0] if len(fdate_row) else None
-
-
-
-
+python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT DATE '1960-01-01' + CAST(FLOOR(24381) AS INTEGER) AS d\").fetchall())"
