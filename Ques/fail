@@ -1,17 +1,38 @@
-        fcy = con.execute(f"""
-            SELECT * REPLACE (
-                DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER) AS REPTDATE
-            )
-            FROM read_parquet('{foratebkp_cache.as_posix()}')
-            WHERE (DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER))
-                  <= DATE '{ctx["reptdate"].isoformat()}'
-            QUALIFY ROW_NUMBER() OVER (
-                PARTITION BY CURCODE
-                ORDER BY (DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER)) DESC
-            ) = 1
-        """).pl()
+python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT MATDT, STARTDT FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/DCIWH__dci094.parquet') WHERE MATDT IS NOT NULL LIMIT 5\").fetchall())"
 
 
 
 
-python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT DATE '1960-01-01' + CAST(FLOOR(24381) AS INTEGER) AS d\").fetchall())"
+    dci_raw = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN MATDT IS NULL OR ISNAN(MATDT) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(MATDT) AS INTEGER) END AS MATDT,
+            CASE WHEN STARTDT IS NULL OR ISNAN(STARTDT) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(STARTDT) AS INTEGER) END AS STARTDT
+        )
+        FROM read_parquet('{dciwh_dci_cache.as_posix()}') WHERE SPOTRT IS NULL OR TRUE
+    """).pl()
+
+
+
+
+    dci_raw = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN MATDT IS NULL OR ISNAN(MATDT) THEN NULL
+                 ELSE STRPTIME(CAST(CAST(MATDT AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE END AS MATDT,
+            CASE WHEN STARTDT IS NULL OR ISNAN(STARTDT) THEN NULL
+                 ELSE STRPTIME(CAST(CAST(STARTDT AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE END AS STARTDT
+        )
+        FROM read_parquet('{dciwh_dci_cache.as_posix()}') WHERE SPOTRT IS NULL OR TRUE
+    """).pl()
+
+
+
+
+python3 -c "
+import duckdb; con = duckdb.connect()
+base = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/'
+print('DCI :', con.execute(\"SELECT MATDT, STARTDT FROM read_parquet('\" + base + \"DCIWH__dci094.parquet') WHERE MATDT IS NOT NULL LIMIT 3\").fetchall())
+print('DCIW:', con.execute(\"SELECT DCMTYD FROM read_parquet('\" + base + \"BNMK__dciwtb094.parquet') WHERE DCMTYD IS NOT NULL LIMIT 3\").fetchall())
+print('NID :', con.execute(\"SELECT MATDT, STARTDT FROM read_parquet('\" + base + \"NID__rnid30.parquet') WHERE MATDT IS NOT NULL LIMIT 3\").fetchall())
+"
