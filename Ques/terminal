@@ -1,4 +1,22 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ python3 -c "import polars as pl; print(pl.read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNMK__k3tbl094.parquet').schema)"
-Schema([('REPTDATE', Datetime(time_unit='ms', time_zone=None)), ('UTSTY', String), ('UTREF', String), ('UTDLP', String), ('UTDLR', String), ('UTSMN', String), ('UTCUS', String), ('UTCLC', String), ('UTCTP', String), ('UTFCV', Float64), ('UTIDT', String), ('UTLCD', String), ('UTNCD', String), ('UTMDT', String), ('UTCBD', String), ('UTCPR', Float64), ('UTQDS', Float64), ('UTPCP', Float64), ('UTAMOC', Float64), ('UTDPF', Float64), ('UTAICT', Float64), ('UTAICY', Float64), ('UTAIT', Float64), ('UTDPET', Float64), ('UTDPEY', Float64), ('UTDPE', Float64), ('UTASN', Float64), ('UTOSD', String), ('UTCA2', String), ('UTSAC', String), ('UTCNAP', String), ('UTCNAR', String), ('UTCNAL', String), ('UTCCY', String), ('UTAMTS', Float64), ('MATDT', Datetime(time_unit='ms', time_zone=None)), ('ISSDT', Datetime(time_unit='ms', time_zone=None)), ('DDATE', Float64), ('XDATE', Float64)])
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT typeof(BLDATE) t, BLDATE FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet') LIMIT 5\").fetchall())"
-[('DOUBLE', None), ('DOUBLE', None), ('DOUBLE', None), ('DOUBLE', 24594.0), ('DOUBLE', 18131.0)]
+Running EIBMRLFM...
+  Building NOTE (loans)...
+100% ▕██████████████████████████████████████▏ (00:00:07.83 elapsed)     
+  Building FD / SA / CA / VOSTRO / FCYCA...
+
+thread '<unnamed>' (3595049) panicked at crates/polars-python/src/dataframe/export.rs:70:54:
+called `Result::unwrap()` on an `Err` value: PyErr { type: <class 'ValueError'>, value: ValueError('year 57458 is out of range'), traceback: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
+    run_eibmrlfm(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 815, in run_eibmrlfm
+    fd = _build_fd(fd_fd_cache, ctx)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 361, in _build_fd
+    for r in fd.iter_rows(named=True):
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 11815, in iter_rows
+    for row in zerocopy_slice.rows(named=False):
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 11571, in rows
+    return self._df.row_tuples()
+pyo3_runtime.PanicException: called `Result::unwrap()` on an `Err` value: PyErr { type: <class 'ValueError'>, value: ValueError('year 57458 is out of range'), traceback: None }
