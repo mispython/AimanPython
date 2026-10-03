@@ -1,119 +1,27 @@
-from datetime import date
-import duckdb
-
-LOAN = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
-
-REPTDATE = date(2026, 10, 2)
-RPYR, RPMTH, RPDAY = REPTDATE.year, REPTDATE.month, REPTDATE.day
-RD_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-if RPYR % 4 == 0:
-    RD_DAYS[1] = 29
+    loan_sorted = loan_all.sort(["ACCTNO", "NOTENO"])
+    # Do not drop EXPRDATE. SAS MERGE keeps RCNOTE's EXPRDATE where matched and
+    # falls back to LOAN's where not. Replicate that with a coalesce below.
 
 
-def remfmt(r):
-    return '01' if r <= 0.1 else '02' if r <= 1 else '03' if r <= 3 else '04' if r <= 6 else '05' if r <= 12 else '06'
 
 
-def remmth(matdt):
-    dim = RD_DAYS[RPMTH - 1]
-    mdday = min(matdt.day, dim)
-    remy, remm = matdt.year - RPYR, matdt.month - RPMTH
-    return remy * 12 + remm + (mdday - RPDAY) / dim
+    note = (
+        loan_sorted
+        .join(rcnote, on=["ACCTNO", "NOTENO"], how="left", suffix="_rc")
+        .with_columns(
+            pl.coalesce([pl.col("EXPRDATE_rc"), pl.col("EXPRDATE")]).alias("EXPRDATE")
+        )
+        .drop("EXPRDATE_rc")
+        .join(provsub, on=["ACCTNO", "NOTENO"], how="left")
+    )
 
 
-def nxtbldt(b, freq, payday):
-    def ld(y):
-        d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-        if y % 4 == 0:
-            d[1] = 29
-        return d
-    if freq == "6":
-        d_ = ld(b.year)
-        dd, mm, yy = b.day + 14, b.month, b.year
-        if dd > d_[mm - 1]:
-            dd -= d_[mm - 1]
-            mm += 1
-            if mm > 12:
-                mm -= 12
-                yy += 1
-    else:
-        f = {"1": 1, "2": 3, "3": 6, "4": 12}.get(freq, 0)
-        mm, yy = b.month + f, b.year
-        if mm > 12:
-            mm -= 12
-            yy += 1
-        dd = b.day if payday is None else (ld(yy)[mm - 1] if payday == 99 else payday)
-    d_ = ld(yy)
-    if dd > d_[mm - 1]:
-        dd = d_[mm - 1]
-    return date(yy, mm, dd)
 
 
-con = duckdb.connect(database=":memory:")
-rows = con.execute(f"""
-    SELECT
-        CAST(ACCTNO AS BIGINT) AS ACCTNO,
-        CAST(NOTENO AS BIGINT) AS NOTENO,
-        CAST(PRODCD AS VARCHAR) AS PRODCD,
-        CAST(PAYFREQ AS VARCHAR) AS PAYFREQ,
-        CAST(PAYAMT AS DOUBLE) AS PAYAMT,
-        CAST(BALANCE AS DOUBLE) AS BALANCE,
-        CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
-             ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
-        CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
-             ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
-        CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
-             ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE
-    FROM read_parquet('{LOAN}')
-    WHERE CAST(PRODCD AS VARCHAR) LIKE '34%'
-    LIMIT 5
-""").fetchall()
-con.close()
-
-for acct, note, prodcd, pf, pa, bal, bld, iss, exp in rows:
-    print("=" * 70)
-    print(f"ACCTNO={acct} NOTENO={note} PRODCD={prodcd}")
-    print(f"  BLDATE  = {bld}   ISSDTE = {iss}   EXPRDATE = {exp}")
-    print(f"  PAYFREQ = {pf!r}   PAYAMT = {pa}   BALANCE = {bal}")
-    if exp is None:
-        print("  EXPRDATE missing -> loop skipped, final emit at remmth=0.1 (bucket 01)")
-        continue
-    print(f"  (EXPRDATE - REPTDATE).days = {(exp - REPTDATE).days}")
-
-    rmmth = 0.1
-    b = bld
-    if (exp - REPTDATE).days < 8:
-        print("  branch: EXPRDATE within 8 days -> no loop, final remmth=0.1 (bucket 01)")
-    else:
-        if pf in ("5", "9", " ", None):
-            b = exp
-            print("  branch: PAYFREQ in (5,9,space,None) -> bldate=EXPRDATE")
-        elif b is None or b <= date(1900, 1, 1):
-            b = iss
-            if b is None:
-                print("  branch: bldate missing AND issdte missing -> bldate stays None")
-            else:
-                cnt = 0
-                while b is not None and b <= REPTDATE:
-                    b = nxtbldt(b, pf, None)
-                    cnt += 1
-                print(f"  branch: seed from ISSDTE, advanced {cnt} times -> bldate={b}")
-        else:
-            print(f"  branch: bldate kept = {b}")
-        if b is None or b > exp or (bal or 0) <= (pa or 0):
-            b = exp
-            print("  adjust: bldate forced to EXPRDATE")
-        print("  --- loop iterations (max 40 shown) ---")
-        i = 0
-        while b is not None and b <= exp and i < 40:
-            rmmth = remmth(b)
-            bucket = remfmt(rmmth)
-            print(f"   it{i:<3} bldate={b}  remmth={rmmth:8.3f}  bucket={bucket}")
-            if rmmth > 12 or b == exp:
-                print("   -> break")
-                break
-            b = nxtbldt(b, pf, None)
-            if b > exp or (bal or 0) <= (pa or 0):
-                b = exp
-            i += 1
-        print(f"  final remmth after loop = {rmmth:.3f}  -> bucket {remfmt(rmmth)} (applies to residual BALANCE)")
+python3 - <<'PY'
+import polars as pl
+from pathlib import Path
+loan = pl.read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet')
+print("EXPRDATE dtype in loan:", loan.schema.get('EXPRDATE'))
+print("null EXPRDATE in loan:", loan['EXPRDATE'].is_null().sum(), "of", loan.height)
+PY
