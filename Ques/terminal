@@ -1,10 +1,3 @@
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
-    run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 840, in run_eibmrlfm
-    dci = pl.concat([_build_dci(dciwh_dci_cache, forate_cache, foratebkp_cache, ctx),
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 605, in _build_dci
-    if not (matdt is not None and startdt is not None and matdt > ctx["reptdate"] and startdt <= ctx["reptdate"]):
-TypeError: '>' not supported between instances of 'float' and 'datetime.date'
+DCI : [(24399.0, 24366.0), (24386.0, 24356.0), (24387.0, 24380.0)]
+DCIW: [(24384.0,), (24384.0,), (24409.0,)]
+NID : [(21306.0, 20852.0), (21642.0, 21187.0), (21841.0, 21384.0)]
