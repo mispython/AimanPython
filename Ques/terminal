@@ -1,3 +1,12 @@
-DCI : [(24399.0, 24366.0), (24386.0, 24356.0), (24387.0, 24380.0)]
-DCIW: [(24384.0,), (24384.0,), (24409.0,)]
-NID : [(21306.0, 20852.0), (21642.0, 21187.0), (21841.0, 21384.0)]
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
+    run_eibmrlfm(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 845, in run_eibmrlfm
+    ktbl, dist_summary = build_kalmliq(k1tbl_cache, k3tbl_cache, ctx["reptdate"], ctx["rpyr"], ctx["rpmth"], ctx["rpday"], ctx["rd_days"], inst=inst)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/KALMLIQ.py", line 264, in build_kalmliq
+    k3tbl = _build_k3tbl(k3tbl_cache, inst)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/KALMLIQ.py", line 135, in _build_k3tbl
+    raw = con.execute(f"""
+_duckdb.BinderException: Binder Error: Column "UTMM1" referenced that exists in the SELECT clause - but this column cannot be referenced before it is defined
