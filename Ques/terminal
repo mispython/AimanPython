@@ -1,11 +1,23 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py
+Running EIBMRLFM...
+  Building NOTE (loans)...
+100% ▕██████████████████████████████████████▏ (00:00:06.80 elapsed)     
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 36, in <module>
-    from EIBMRLFM import run_eibmrlfm
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 37, in <module>
-    from KALMLIQ import build_kalmliq
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/KALMLIQ.py", line 27, in <module>
-    from KALMLIQ4 import build_k3tbl3
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/KALMLIQ4.py", line 32, in <module>
-    def _parse_sas_date(raw) -> date | None:
-TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 292, in <module>
+    if __name__ == "__main__":
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 268, in main
+    print("\nRunning EIBMRLFM...")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 666, in run_eibmrlfm
+    note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 176, in _build_note
+    note = loan_sorted.join(rcnote, on=["ACCTNO", "NOTENO"], how="left").join(provsub, on=["ACCTNO", "NOTENO"], how="left")
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 8242, in join
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.SchemaError: datatypes of join keys don't match - `ACCTNO`: f64 on left does not match `ACCTNO`: i64 on right (and no other type was available to cast to)
