@@ -1,33 +1,96 @@
-    ca = con.execute(f"""
-        SELECT * FROM read_parquet('{deposit_current_cache.as_posix()}') WHERE CURBAL > 0
-    """).pl().with_columns([
-        pl.col("ACCTNO").cast(pl.Int64),
-        pl.col("CURBAL").alias("CABAL"),
-    ])
-    fd = con.execute(f"""
-        SELECT * FROM read_parquet('{deposit_fd_cache.as_posix()}') WHERE CURBAL > 0
-    """).pl().with_columns([
-        pl.col("ACCTNO").cast(pl.Int64),
-        pl.col("CURBAL").alias("FDBAL"),
-    ])
+from datetime import date
+import polars as pl
+
+LOAN = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
+
+REPTDATE = date(2026, 10, 2)
+RPYR, RPMTH, RPDAY = REPTDATE.year, REPTDATE.month, REPTDATE.day
+RD_DAYS = [31, 28 if RPYR % 4 else 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+RD_DAYS[1] = 29 if RPYR % 4 == 0 else 28
 
 
+def remfmt(r):
+    return '01' if r <= 0.1 else '02' if r <= 1 else '03' if r <= 3 else '04' if r <= 6 else '05' if r <= 12 else '06'
 
 
-    def _top100(fd_part, ca_part, corp_excl=False):
-        if "CABAL" not in fd_part.columns:
-            fd_part = fd_part.with_columns(pl.lit(0.0).alias("CABAL"))
-        if "FDBAL" not in ca_part.columns:
-            ca_part = ca_part.with_columns(pl.lit(0.0).alias("FDBAL"))
-        common = [c for c in fd_part.columns if c in ca_part.columns]
-        data1 = pl.concat([fd_part.select(common), ca_part.select(common)]).with_columns(
+def remmth(matdt):
+    dim = RD_DAYS[RPMTH - 1]
+    mdday = min(matdt.day, dim)
+    remy, remm = matdt.year - RPYR, matdt.month - RPMTH
+    return remy * 12 + remm + (mdday - RPDAY) / dim
 
 
+def nxtbldt(b, freq, payday):
+    def ld(y):
+        d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        if y % 4 == 0: d[1] = 29
+        return d
+    if freq == "6":
+        d_ = ld(b.year); dd, mm, yy = b.day + 14, b.month, b.year
+        if dd > d_[mm - 1]:
+            dd -= d_[mm - 1]; mm += 1
+            if mm > 12: mm -= 12; yy += 1
+    else:
+        f = {"1": 1, "2": 3, "3": 6, "4": 12}.get(freq, 0)
+        mm, yy = b.month + f, b.year
+        if mm > 12: mm -= 12; yy += 1
+        dd = b.day if payday is None else (ld(yy)[mm - 1] if payday == 99 else payday)
+    d_ = ld(yy)
+    if dd > d_[mm - 1]: dd = d_[mm - 1]
+    return date(yy, mm, dd)
 
 
-python3 -c "
-import polars as pl, glob
-p = glob.glob('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/*fd*.parquet')[0]
-d = pl.read_parquet(p).head(1).with_columns(pl.col('CURBAL').alias('FDBAL'))
-print('FDBAL present:', 'FDBAL' in d.columns)
-"
+df = pl.read_parquet(LOAN)
+
+# Take up to 5 loans of the family that shows the mismatch (PRODCD beginning '34')
+sample = df.filter(pl.col("PRODCD").cast(pl.Utf8).str.starts_with("34")).head(5)
+
+for r in sample.iter_rows(named=True):
+    acct, note = r.get("ACCTNO"), r.get("NOTENO")
+    bld, iss, exp = r.get("BLDATE"), r.get("ISSDTE"), r.get("EXPRDATE")
+    pf, pa, bal = r.get("PAYFREQ"), r.get("PAYAMT"), r.get("BALANCE")
+    print("=" * 70)
+    print(f"ACCTNO={acct} NOTENO={note}")
+    print(f"  BLDATE  = {bld}   ISSDTE = {iss}   EXPRDATE = {exp}")
+    print(f"  PAYFREQ = {pf!r}   PAYAMT = {pa}   BALANCE = {bal}")
+    if exp is None:
+        print("  EXPRDATE missing -> loop skipped, final emit at remmth=0.1 (bucket 01)")
+        continue
+    print(f"  (EXPRDATE - REPTDATE).days = {(exp - REPTDATE).days}")
+
+    rmmth = 0.1
+    b = bld
+    if (exp - REPTDATE).days < 8:
+        print("  branch: EXPRDATE within 8 days -> no loop, final remmth=0.1 (bucket 01)")
+    else:
+        if pf in ("5", "9", " ", None):
+            b = exp
+            print("  branch: PAYFREQ in (5,9,space,None) -> bldate=EXPRDATE")
+        elif b is None or b <= date(1900, 1, 1):
+            b = iss
+            if b is None:
+                print("  branch: bldate missing AND issdte missing -> bldate stays None")
+            else:
+                cnt = 0
+                while b is not None and b <= REPTDATE:
+                    b = nxtbldt(b, pf, None); cnt += 1
+                print(f"  branch: seed from ISSDTE, advanced {cnt} times -> bldate={b}")
+        else:
+            print(f"  branch: bldate kept = {b}")
+        if b is None or b > exp or (bal or 0) <= (pa or 0):
+            b = exp
+            print("  adjust: bldate forced to EXPRDATE")
+        print("  --- loop iterations (max 40 shown) ---")
+        i = 0
+        while b is not None and b <= exp and i < 40:
+            rmmth = remmth(b)
+            bucket = remfmt(rmmth)
+            print(f"   it{i:<3} bldate={b}  remmth={rmmth:8.3f}  bucket={bucket}")
+            if rmmth > 12 or b == exp:
+                print("   -> break")
+                break
+            b = nxtbldt(b, pf, None)
+            if b > exp or (bal or 0) <= (pa or 0):
+                b = exp
+            i += 1
+        print(f"  final remmth after loop = {rmmth:.3f}  -> bucket {remfmt(rmmth)} (applies to residual BALANCE)")
