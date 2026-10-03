@@ -1,14 +1,16 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ python -c "import polars as pl; df = pl.read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/PBB__lncomm.parquet'); print(df.schema['EXPIREDT']); print(df.select('EXPIREDT').head(5))"
-Float64
-shape: (5, 1)
-┌──────────┐
-│ EXPIREDT │
-│ ---      │
-│ f64      │
-╞══════════╡
-│ 6.0920e9 │
-│ 7.3120e9 │
-│ 7.1620e9 │
-│ 2.2820e9 │
-│ 4.1220e9 │
-└──────────┘
+    lncomm = con.execute(f"""
+        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
+               CAST(COMMNO AS BIGINT) AS COMMNO,
+               TRY_STRPTIME(
+                   SUBSTR(
+                       LPAD(CAST(CAST(EXPIREDT AS BIGINT) AS VARCHAR), 11, '0'),
+                       1, 8
+                   ),
+                   '%m%d%Y'
+               )::DATE AS EXPRDATE
+        FROM read_parquet('{lncomm_cache.as_posix()}')
+    """).pl().unique(subset=["ACCTNO", "COMMNO"], keep="first").sort(["ACCTNO", "COMMNO"])
+
+
+
+
