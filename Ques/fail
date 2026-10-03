@@ -1,54 +1,24 @@
-    fd = con.execute(f"""
-        SELECT * REPLACE (
-            CASE WHEN MATDATE IS NULL OR ISNAN(MATDATE) THEN NULL
-                 ELSE STRPTIME(CAST(CAST(MATDATE AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE END AS MATDATE
-        )
-        FROM read_parquet('{fd_fd_cache.as_posix()}') WHERE ACCTTYPE <> 397 AND CURBAL > 0
+python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT REPTDATE FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/FORATE__forate.parquet') LIMIT 5\").fetchall())"
+
+
+
+
+    con = duckdb.connect(database=":memory:")
+    fdate_row = con.execute(f"""
+        SELECT DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER) AS REPTDATE
+        FROM read_parquet('{forate_cache.as_posix()}') LIMIT 1
     """).pl()
+    fdate = fdate_row["REPTDATE"][0] if len(fdate_row) else None
 
 
 
 
-    dci_raw = con.execute(f"""
-        SELECT * FROM read_parquet('{dciwh_dci_cache.as_posix()}') WHERE SPOTRT IS NULL OR TRUE
+    con = duckdb.connect(database=":memory:")
+    fdate_row = con.execute(f"""
+        SELECT STRPTIME(CAST(CAST(REPTDATE AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE AS REPTDATE
+        FROM read_parquet('{forate_cache.as_posix()}') LIMIT 1
     """).pl()
-
-
-
-
-    raw = con.execute(f"""
-        SELECT * FROM read_parquet('{bnmk_dciwtb_cache.as_posix()}')
-        WHERE DCDLP = 'DCI' AND DCBSI = 'S' AND DCTRNT = 'I'
-    """).pl()
-
-
-
-
-    raw = con.execute(f"""
-        SELECT * FROM read_parquet('{nid_rnid_cache.as_posix()}') WHERE NIDSTAT = 'N' AND CURBAL > 0
-    """).pl()
-
-
-
-
-python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT MATDATE, STRPTIME(CAST(CAST(MATDATE AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE AS converted FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/FD__fd.parquet') WHERE MATDATE IS NOT NULL LIMIT 5\").fetchall())"
-
-
-
-
-python3 -c "
-import polars as pl
-base='/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/'
-for name in ['DCIWH__dci094', 'BNMK__dciwtb094', 'NID__rnid30']:
-    try:
-        s = pl.read_parquet(base + name + '.parquet').schema
-        print('==', name, '==')
-        for c, t in s.items():
-            if any(k in c.upper() for k in ('DATE','DT','MAT','ISS','START','EFF')):
-                print(f'   {c:<12} {t}')
-    except Exception as e:
-        print('==', name, 'ERROR', e)
-"
+    fdate = fdate_row["REPTDATE"][0] if len(fdate_row) else None
 
 
 
