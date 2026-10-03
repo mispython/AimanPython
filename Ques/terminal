@@ -1,2 +1,10 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ python3 -c "import duckdb; con=duckdb.connect(); print(con.execute(\"SELECT REPTDATE FROM read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/FORATE__forate.parquet') LIMIT 5\").fetchall())"
-[(24381.0,), (24381.0,), (24381.0,), (24381.0,), (24381.0,)]
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
+    run_eibmrlfm(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 840, in run_eibmrlfm
+    dci = pl.concat([_build_dci(dciwh_dci_cache, forate_cache, foratebkp_cache, ctx),
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 605, in _build_dci
+    if not (matdt is not None and startdt is not None and matdt > ctx["reptdate"] and startdt <= ctx["reptdate"]):
+TypeError: '>' not supported between instances of 'float' and 'datetime.date'
