@@ -1,18 +1,1 @@
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
-    run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 874, in run_eibmrlfm
-    top_ind, top_org = _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 779, in _build_top100
-    fd_ind = fd_j.filter(pl.col("CUSTCODE").is_in([77, 78, 95, 96]))
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 5325, in filter
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "CUSTCODE"; valid columns: ["ACCTNO", "INDORG", "CUSTNO", "GENDER", "CACCCODE", "SECCUST", "CITIZEN", "OCCUPAT", "HOBBIES", "RELIGION", "EDUCATN", "INCOME", "MARITAL", "BIRTHDAT", "OPENDAT", "RACE", "CUSTCONSENT", "BGC", "FILLER", "CONSENT_OLD", "CISCUSTCD1", "CISCUSTCD2", "CISCUSTCD3", "CISCUSTCD4", "CISCUSTCD5", "CISCUSTCD6", "CISCUSTCD7", "CISCUSTCD8", "CISCUSTCD9", "CISCUSTCD10", "CISCUSTCD11", "CISCUSTCD12", "CISCUSTCD13", "CISCUSTCD14", "CISCUSTCD15", "CONSDD", "CONSMM", "CONSCC", "CONSYY", "SECTOR_CODE", "INSTSECT", "RESTATUS", "SIC_ISS", "OCCUPAT_MASCO_CD", "CUST_CODE", "CONSENTEFFDT", "OLDIC", "NEWICIND", "NEWIC", "BUSSIND", "BUSSREG", "BRANCH", "RHOLD_IND", "CUSTNAME", "ADDREF", "PRIPHONE", "SECPHONE", "CUSTNAM1", "MOBIPHON", "LONGNAME", "EMAILADD", "UPD_DT_SALE", "TURNOVER2", "TURNOVER", "UPD_DT_EMPLOYEE", "NOEMPLO2", "NOEMPLO", "NEW_BUSS_REG_ID_TYPE", "NEW_BUSS_REG_ID", "ADDRLN1", "ADDRLN2", "ADDRLN3", "ADDRLN4", "ADDRLN5", "MAILCODE", "MAILSTAT", "ICNO", "BANKNO", "REPTNO", "FMTCODE", "BRANCH_right", "STATEC", "PURPOSE", "CUSTCD", "DEPODTE", "NAME", "CDNO", "OPENIND", "CURBAL", "ORIGAMT", "ORGDATE", "MATDATE", "RATE", "ACCTTYPE", "TERM", "MATID", "INTPLAN", "PAYMENT", "RENEWAL", "INTPDYTD", "INTPAY", "INTDATE", "LASTACTV", "INTFREQ", "INTFREQID", "PENDINT", "CURCODE", "LMATDATE", "PRORATIO", "FDHOLD", "COSTCTR", "COLLNO", "INTTFRACCT", "PRN_DISP_OPT", "PRN_RENEW", "PRN_TFR_ACCT", "AMTIND", "FORATE", "FORBAL", "CURBALUS", "FDBAL"]
+python3 -c "import polars as pl, glob; p=glob.glob('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/*fd*.parquet')[0]; print(pl.read_parquet(p).schema.get('CUSTCD'))"
