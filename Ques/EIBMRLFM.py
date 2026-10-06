@@ -29,9 +29,10 @@ Purpose : New Liquidity Framework (FISS submission) -- deposit/loan
 from datetime import date, timedelta
 from pathlib import Path
 
+import math
 import duckdb
-import polars as pl
 import time as _t
+import polars as pl
 
 from PBBLNFMT_AII import format_liqpfmt
 from PBBDPFMT_AII import fdprod_format, ddcustcd_format
@@ -95,6 +96,24 @@ def _remfmt(remmth: float) -> str:
     if remmth <= 12:
         return "05"
     return "06"
+
+# def _remfmt(remmth: float) -> str:
+#     # SAS format ranges match on inclusive bounds with first-match-wins.
+#     # A tiny epsilon guards against float representation differences that
+#     # would otherwise move a value 1e-15 past a boundary.
+#     eps = 1e-9
+#     if remmth <= 0.1 + eps:
+#         return "01"
+#     if remmth <= 1 + eps:
+#         return "02"
+#     if remmth <= 3 + eps:
+#         return "03"
+#     if remmth <= 6 + eps:
+#         return "04"
+#     if remmth <= 12 + eps:
+#         return "05"
+#     return "06"
+
 
 
 def _remmth(ctx: dict, matdt: date):
@@ -188,7 +207,7 @@ def _summarize(df: pl.DataFrame) -> pl.DataFrame:
 # ============================================================================
 # NOTE (loans) -- BREAKDOWN BY MATURITY PROFILE (PART 1 & 2 - RM)  [VECTORISED]
 # ============================================================================
-_MAX_ROUNDS = 5000
+_MAX_ROUNDS = 500       # Before 5000
 _IND_CODES = [77.0, 78.0, 95.0, 96.0]
 _PAYFREQ_MONTHS = {"1": 1, "2": 3, "3": 6, "4": 12}
 _CCY_COLS = ("USD", "SGD", "HKD", "AUD")
@@ -201,6 +220,15 @@ def _remfmt_expr(rem: pl.Expr) -> pl.Expr:
             .when(rem <= 6).then(pl.lit("04"))
             .when(rem <= 12).then(pl.lit("05"))
             .otherwise(pl.lit("06")))
+
+# def _remfmt_expr(rem: pl.Expr) -> pl.Expr:
+#     eps = 1e-9
+#     return (pl.when(rem <= 0.1 + eps).then(pl.lit("01"))
+#             .when(rem <= 1 + eps).then(pl.lit("02"))
+#             .when(rem <= 3 + eps).then(pl.lit("03"))
+#             .when(rem <= 6 + eps).then(pl.lit("04"))
+#             .when(rem <= 12 + eps).then(pl.lit("05"))
+#             .otherwise(pl.lit("06")))
 
 
 def _dim_expr(y: pl.Expr, m: pl.Expr) -> pl.Expr:
@@ -238,13 +266,26 @@ def _nxt_date(df: pl.DataFrame, cur: str = "CUR") -> pl.Series:
            .then(pl.when(f_roll).then(f_d - _dim_expr(cy, cm)).otherwise(f_d))
            .otherwise(cd))
     dd = pl.min_horizontal(dd0, _dim_expr(yy, mm))
-    return df.select(pl.date(yy, mm, dd).alias("NXT"))["NXT"]
+    # return df.select(pl.date(yy, mm, dd).alias("NXT"))["NXT"]
+    return df.select(pl.date(yy, mm, dd).alias("NXT")).to_series()
 
 
 def _emit_agg(df: pl.DataFrame, kind: str, amt: str, rem: str) -> pl.DataFrame:
     """kind 'A' -> 95 (LCY) / 94 (FCY);  kind 'B' -> 93 (LCY) / 96 (FCY)."""
     lcy, fcy = ("95", "94") if kind == "A" else ("93", "96")
     fc = pl.col("IS_FCY")
+    # out = df.select([
+    #     pl.concat_str([
+    #         pl.when(fc).then(pl.lit(fcy)).otherwise(pl.lit(lcy)),
+    #         pl.col("ITEM"), pl.col("CUST"), _remfmt_expr(pl.col(rem)), pl.lit("0000Y"),
+    #     ]).alias("BNMCODE"),
+    #     pl.col(amt).alias("AMOUNT"),
+    #     *[pl.when(fc & (pl.col("CCY") == c)).then(pl.col(amt)).otherwise(0.0).alias(f"AMT{c}")
+    #       for c in _CCY_COLS],
+    # ])
+    _extra = []
+    if "DIAG_ACCT" in df.columns:
+        _extra = [pl.col("DIAG_ACCT"), pl.col("DIAG_CUR"), pl.col("DIAG_REMM")]
     out = df.select([
         pl.concat_str([
             pl.when(fc).then(pl.lit(fcy)).otherwise(pl.lit(lcy)),
@@ -253,7 +294,9 @@ def _emit_agg(df: pl.DataFrame, kind: str, amt: str, rem: str) -> pl.DataFrame:
         pl.col(amt).alias("AMOUNT"),
         *[pl.when(fc & (pl.col("CCY") == c)).then(pl.col(amt)).otherwise(0.0).alias(f"AMT{c}")
           for c in _CCY_COLS],
+        *_extra,
     ])
+
     return _summarize(out)
 
 
@@ -280,26 +323,70 @@ def _amortise(loop: pl.DataFrame, ctx: dict, parts: list) -> None:
         .otherwise(pl.col("BLDATE")).alias("CUR")
     )
 
-    # bldate = issdte, then roll forward while <= reptdate (only unfinished rows are re-processed)
-    pending = loop.filter(pl.col("ROLL"))
-    finished = []
-    for i in range(_MAX_ROUNDS):
-        is_due = pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
-        fin = pending.filter(~is_due)
-        if not fin.is_empty():
-            finished.append(fin)
-        pending = pending.filter(is_due)
-        if pending.is_empty():
-            break
-        pending = pending.with_columns(_nxt_date(pending).alias("NXT")).with_columns(
-            pl.when(pl.col("NXT") > pl.col("CUR")).then(pl.col("NXT"))
-            .otherwise(pl.lit(None, dtype=pl.Date)).alias("CUR")      # cannot advance -> EXPRDATE fallback
-        ).drop("NXT")
-        print(f"  [roll] round {i+1}: {pending.height:,} loans still rolling")
-    if not pending.is_empty():
-        finished.append(pending.with_columns(pl.lit(None, dtype=pl.Date).alias("CUR")))
-    rolled = pl.concat(finished, how="vertical") if finished else loop.clear()
-    loop = pl.concat([loop.filter(~pl.col("ROLL")), rolled], how="vertical")
+    # # bldate = issdte, then roll forward while <= reptdate (only unfinished rows are re-processed)
+    # pending = loop.filter(pl.col("ROLL"))
+    # finished = []
+    # for i in range(_MAX_ROUNDS):
+    #     is_due = pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
+    #     fin = pending.filter(~is_due)
+    #     if not fin.is_empty():
+    #         finished.append(fin)
+    #     pending = pending.filter(is_due)
+    #     if pending.is_empty():
+    #         break
+    #     pending = pending.with_columns(_nxt_date(pending).alias("NXT")).with_columns(
+    #         pl.when(pl.col("NXT") > pl.col("CUR")).then(pl.col("NXT"))
+    #         .otherwise(pl.lit(None, dtype=pl.Date)).alias("CUR")      # cannot advance -> EXPRDATE fallback
+    #     ).drop("NXT")
+    #     print(f"  [roll] round {i+1}: {pending.height:,} loans still rolling")
+    # if not pending.is_empty():
+    #     finished.append(pending.with_columns(pl.lit(None, dtype=pl.Date).alias("CUR")))
+    # rolled = pl.concat(finished, how="vertical") if finished else loop.clear()
+    # loop = pl.concat([loop.filter(~pl.col("ROLL")), rolled], how="vertical")
+
+    # bldate = issdte, then roll forward until CUR > reptdate. Instead of
+    # stepping one period at a time (up to 320 iterations for old loans),
+    # jump most of the way with a vectorised month arithmetic expression,
+    # then finish with a short corrective step loop (≤ 10 rounds).
+    rolling = loop.filter(pl.col("ROLL"))
+    if not rolling.is_empty():
+        # Coarse jump: skip ~months_gap / step months, minus a safety margin.
+        iss = pl.col("ISSDTE")
+        iss_y = iss.dt.year().cast(pl.Int64)
+        iss_m = iss.dt.month().cast(pl.Int64)
+        iss_d = iss.dt.day().cast(pl.Int64)
+        step_m = pl.col("PAYFREQ").replace_strict(_PAYFREQ_MONTHS, default=1, return_dtype=pl.Int64)
+        months_gap = ((rept.dt.year().cast(pl.Int64) - iss_y) * 12
+                      + (rept.dt.month().cast(pl.Int64) - iss_m))
+        k_jump = pl.max_horizontal(pl.lit(0, dtype=pl.Int64),
+                                    (months_gap // step_m) - 3)
+        offset_m = k_jump * step_m
+        total_m = iss_y * 12 + (iss_m - 1) + offset_m
+        jy = total_m // 12
+        jm = (total_m % 12) + 1
+        jd = pl.min_horizontal(iss_d, _dim_expr(jy, jm))
+        rolling = rolling.with_columns(pl.date(jy, jm, jd).alias("CUR"))
+
+        # Corrective steps: at most ~4-5 needed because the jump lands close.
+        for _ in range(10):
+            nxt = _nxt_date(rolling)
+            behind_mask = (pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
+                           & (nxt > pl.col("CUR")))
+            # Materialise the mask as a Series so .any() evaluates against data
+            behind_series = rolling.select(behind_mask.alias("B"))["B"]
+            if not behind_series.any():
+                break
+            rolling = rolling.with_columns(
+                pl.when(behind_mask).then(nxt).otherwise(pl.col("CUR")).alias("CUR")
+            )
+
+        # Rows that still could not advance past reptdate -> null (matches old fallback).
+        rolling = rolling.with_columns(
+            pl.when(pl.col("CUR") > rept).then(pl.col("CUR"))
+            .otherwise(pl.lit(None, dtype=pl.Date)).alias("CUR")
+        )
+
+    loop = pl.concat([loop.filter(~pl.col("ROLL")), rolling], how="vertical")
 
     loop = loop.with_columns(
         pl.when(pl.col("PAYAMT") < 0).then(0.0).otherwise(pl.col("PAYAMT")).alias("PAYAMT")
@@ -310,11 +397,33 @@ def _amortise(loop: pl.DataFrame, ctx: dict, parts: list) -> None:
         pl.col("BALANCE").alias("BAL"),
     )
 
+    # === DEBUG TEMPORARY DIAGNOSTIC ===
+    try:
+        _diag = pl.concat(parts, how="diagonal_relaxed")
+        _fam = _diag.filter(
+            pl.col("BNMCODE").str.contains("9421908")
+            | pl.col("BNMCODE").str.contains("9321109")
+        )
+        _fam.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv")
+        print(f"  [diag] wrote {_fam.height:,} rows to diag_parts.csv")
+    except Exception as _e:
+        print(f"  [diag] error: {_e}")
+    # === DEBUG END TEMPORARY DIAGNOSTIC ===
+
     active = loop
     for _ in range(_MAX_ROUNDS):
         if active.is_empty():
             break
         active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
+        
+        # DEBUG
+        if "ACCTNO" in active.columns:
+            active = active.with_columns(
+                pl.col("ACCTNO").cast(pl.Utf8).alias("DIAG_ACCT"),
+                pl.col("CUR").cast(pl.Utf8).alias("DIAG_CUR"),
+                pl.col("REMM").cast(pl.Utf8).alias("DIAG_REMM"),
+            )
+
         is_last = (pl.col("REMM") > 12) | (pl.col("CUR") == pl.col("EXPRDATE"))
 
         last = active.filter(is_last)                       # loop break -> residual balance
@@ -344,6 +453,25 @@ def _amortise(loop: pl.DataFrame, ctx: dict, parts: list) -> None:
         print(f"  [warn] {active.height:,} loans hit _MAX_ROUNDS; finalised at residual balance")
         active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
         parts.extend(_emit_pair(active, "BAL", "REMM"))
+
+        # === DEBUG TEMPORARY DIAGNOSTIC — dump parts for families of interest ===
+    try:
+        _diag = pl.concat(parts, how="diagonal_relaxed")
+        _fam = _diag.filter(
+            pl.col("BNMCODE").is_in([
+                "9521109010000Y", "9521109020000Y",
+                "9521408010000Y", "9521408020000Y", "9521408030000Y",
+                "9521408040000Y", "9521408050000Y", "9521408060000Y",
+                "9321109010000Y", "9321109020000Y",
+                "9321408010000Y", "9321408020000Y", "9321408030000Y",
+                "9321408040000Y", "9321408050000Y", "9321408060000Y",
+            ])
+        )
+        _fam.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv")
+        print(f"  [diag] dumped {_fam.height:,} rows to diag_parts.csv")
+    except Exception as _e:
+        print(f"  [diag] could not dump parts: {_e}")
+    # === DEBUG END TEMPORARY DIAGNOSTIC ===
 
 
 def _note_to_rows(note: pl.DataFrame, ctx: dict) -> pl.DataFrame:
@@ -840,9 +968,13 @@ def _write_fiss_nsrs(note_final, ctx, fiss_path, nsrs_path):
         with open(path, "w", encoding="latin1") as fh:
             fh.write(f"RLFM{ctx['reptday']}{ctx['reptmon']}{ctx['reptyear']}\n")
             for r in note_final.iter_rows(named=True):
+                # def _p(v):
+                #     v = 0.0 if v is None else v
+                #     return int(round(abs(v) / divisor))
                 def _p(v):
                     v = 0.0 if v is None else v
-                    return int(round(abs(v) / divisor))
+                    # SAS ROUND: half away from zero. Python round: banker's.
+                    return int(math.floor(abs(v) / divisor + 0.5))
                 fh.write(f"{r['BNMCODE']:<14};{_p(r['AMOUNT'])};{_p(r['AMTUSD'])};{_p(r['AMTSGD'])};{_p(r['AMTHKD'])};{_p(r['AMTAUD'])}\n")
     _emit(fiss_path, 1000)
     _emit(nsrs_path, 1)
