@@ -1,11 +1,3 @@
-        bldate, exprdate = t[col["BLDATE"]], t[col["EXPRDATE"]]
-        loanstat, imloan = t[col["LOANSTAT"]], t[col["IMLOAN"]]
-        balance, payamt = t[col["BALANCE"]] or 0.0, t[col["PAYAMT"]] or 0.0
-        payfreq, payday, issdte, currency = t[col["PAYFREQ"]], t[col["PAYDAY"]], t[col["ISSDTE"]], t[col["CCY"]]
-
-
-
-
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
     main()
@@ -13,6 +5,6 @@ Traceback (most recent call last):
     run_eibmrlfm(
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 906, in run_eibmrlfm
     note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 336, in _build_note
-    payfreq, payday, issdte, currency = t[col["PAYFREQ"]], t[col["PAYDAY"]], t[col["ISSDTE"]], t[col["CCY"]]
-KeyError: 'PAYDAY'
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 338, in _build_note
+    days = (ctx["reptdate"] - bldate).days if bldate is not None else None
+TypeError: unsupported operand type(s) for -: 'datetime.date' and 'NaTType'
