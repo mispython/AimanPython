@@ -1,18 +1,3 @@
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 298, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 274, in main
-    run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1449, in run_eibmrlfm
-    top_ind, top_org, det_ind, det_org = _build_top100(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 942, in _build_top100
-    fd_ind = fd_j.filter(is_ind)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 5325, in filter
-    self.lazy()
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ColumnNotFoundError: unable to find column "CUSTCODE"; valid columns: ["BANKNO", "REPTNO", "FMTCODE", "BRANCH", "ACCTNO", "STATEC", "PURPOSE", "CUSTCD", "DEPODTE", "NAME", "CDNO", "OPENIND", "CURBAL", "ORIGAMT", "ORGDATE", "MATDATE", "RATE", "ACCTTYPE", "TERM", "MATID", "INTPLAN", "PAYMENT", "RENEWAL", "INTPDYTD", "INTPAY", "INTDATE", "LASTACTV", "INTFREQ", "INTFREQID", "PENDINT", "CURCODE", "LMATDATE", "PRORATIO", "FDHOLD", "COSTCTR", "COLLNO", "INTTFRACCT", "PRN_DISP_OPT", "PRN_RENEW", "PRN_TFR_ACCT", "AMTIND", "FORATE", "FORBAL", "CURBALUS", "FDBAL", "CUSTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG", "PRODUCT"]
+  1    PETROLIAM NASIONAL BERHAD (PETRONAS)          10147889120.50      10147889120.50                 0                                                                                                                                                                                                                       
+  2    SURUHANJAYA KOMUNIKASI &MULTIMEDIA M'SIA    2,222,768,630.23    2,222,752,331.37           16,298.86                                                                                                                                                                                                                     
+  3    PUBLIC BANK BERHAD                          1,718,394,289.93                 0      1,718,394,289.93                         
