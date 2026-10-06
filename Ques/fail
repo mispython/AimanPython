@@ -1,33 +1,94 @@
-    # bldate = issdte, then roll forward while <= reptdate (only unfinished rows are re-processed)
-    pending = loop.filter(pl.col("ROLL"))
-    finished = []
-    for i in range(_MAX_ROUNDS):
-        is_due = pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
-        fin = pending.filter(~is_due)
-        if not fin.is_empty():
-            finished.append(fin)
-        pending = pending.filter(is_due)
-        if pending.is_empty():
-            break
-        pending = pending.with_columns(_nxt_date(pending).alias("NXT")).with_columns(
-            pl.when(pl.col("NXT") > pl.col("CUR")).then(pl.col("NXT"))
-            .otherwise(pl.lit(None, dtype=pl.Date)).alias("CUR")      # cannot advance -> EXPRDATE fallback
-        ).drop("NXT")
-        print(f"  [roll] round {i+1}: {pending.height:,} loans still rolling")
-    if not pending.is_empty():
-        finished.append(pending.with_columns(pl.lit(None, dtype=pl.Date).alias("CUR")))
-    rolled = pl.concat(finished, how="vertical") if finished else loop.clear()
-    loop = pl.concat([loop.filter(~pl.col("ROLL")), rolled], how="vertical")
+    # bldate = issdte, then roll forward until CUR > reptdate. Instead of
+    # stepping one period at a time (up to 320 iterations for old loans),
+    # jump most of the way with a vectorised month arithmetic expression,
+    # then finish with a short corrective step loop (≤ 10 rounds).
+    rolling = loop.filter(pl.col("ROLL"))
+    if not rolling.is_empty():
+        # Coarse jump: skip ~months_gap / step months, minus a safety margin.
+        iss = pl.col("ISSDTE")
+        iss_y = iss.dt.year().cast(pl.Int64)
+        iss_m = iss.dt.month().cast(pl.Int64)
+        iss_d = iss.dt.day().cast(pl.Int64)
+        step_m = pl.col("PAYFREQ").replace_strict(_PAYFREQ_MONTHS, default=1, return_dtype=pl.Int64)
+        months_gap = ((rept.dt.year().cast(pl.Int64) - iss_y) * 12
+                      + (rept.dt.month().cast(pl.Int64) - iss_m))
+        k_jump = pl.max_horizontal(pl.lit(0, dtype=pl.Int64),
+                                    (months_gap // step_m) - 3)
+        offset_m = k_jump * step_m
+        total_m = iss_y * 12 + (iss_m - 1) + offset_m
+        jy = total_m // 12
+        jm = (total_m % 12) + 1
+        jd = pl.min_horizontal(iss_d, _dim_expr(jy, jm))
+        rolling = rolling.with_columns(pl.date(jy, jm, jd).alias("CUR"))
+
+        # Corrective steps: at most ~4-5 needed because the jump lands close.
+        for _ in range(10):
+            nxt = _nxt_date(rolling)
+            still_behind = (pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
+                            & (nxt > pl.col("CUR")))
+            if not still_behind.any():
+                break
+            rolling = rolling.with_columns(
+                pl.when(still_behind).then(nxt).otherwise(pl.col("CUR")).alias("CUR")
+            )
+
+        # Rows that still could not advance past reptdate -> null (matches old fallback).
+        rolling = rolling.with_columns(
+            pl.when(pl.col("CUR") > rept).then(pl.col("CUR"))
+            .otherwise(pl.lit(None, dtype=pl.Date)).alias("CUR")
+        )
+
+    loop = pl.concat([loop.filter(~pl.col("ROLL")), rolling], how="vertical")
 
 
 
 
-        cont = cont.with_columns((pl.col("BAL") - pl.col("PAYAMT")).alias("BAL"))
-        cont = cont.with_columns(_nxt_date(cont).alias("NXT"))
-        active = cont.with_columns(
-            pl.when((pl.col("NXT") > pl.col("EXPRDATE"))
-                    | (pl.col("BAL") <= pl.col("PAYAMT"))
-                    | (pl.col("NXT") <= pl.col("CUR")))             # date did not advance -> stop at EXPRDATE
-            .then(pl.col("EXPRDATE")).otherwise(pl.col("NXT")).alias("CUR")
-        ).drop("NXT")
-        print(f"  [amortise] round {_+1}: {active.height:,} loans still active")
+    return df.select(pl.date(yy, mm, dd).alias("NXT")).to_series()
+
+
+
+
+_MAX_ROUNDS = 500
+
+
+
+
+python3 - <<'PY'
+import time
+import polars as pl
+from pathlib import Path
+import sys
+sys.path.insert(0, '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS')
+from EIBMRLFM import _amortise
+from REPTDATE import get_reptdate_values
+
+rd = get_reptdate_values()
+ctx = {"reptdate": rd.reptdate, "rpyr": rd.reptdate.year,
+       "rpmth": rd.reptdate.month, "rpday": rd.reptdate.day,
+       "rd_days": [31, 28 if rd.reptdate.year % 4 else 29, 31, 30, 31, 30,
+                   31, 31, 30, 31, 30, 31]}
+
+# Minimal synthetic frame that exercises the roll path
+df = pl.DataFrame({
+    "ISSDTE": [pl.date(2005, 8, 5)] * 200_000,
+    "BLDATE": [None] * 200_000,
+    "EXPRDATE": [pl.date(2030, 7, 31)] * 200_000,
+    "PAYFREQ": ["1"] * 200_000,
+    "PAYAMT": [976.0] * 200_000,
+    "BALANCE": [42935.0] * 200_000,
+    "PRODUCT": [34230] * 200_000,
+    "ITEM": ["429"] * 200_000,
+    "CUST": ["09"] * 200_000,
+    "IS_FCY": [False] * 200_000,
+    "CCY": ["MYR"] * 200_000,
+    "COND": [False] * 200_000,
+})
+df = df.with_columns((~pl.col("BLDATE").is_not_null()).alias("ROLL"),
+                     pl.lit(None, dtype=pl.Date).alias("CUR"),
+                     pl.lit(False).alias("FSKIP"))
+
+t0 = time.time()
+parts = []
+_amortise(df, ctx, parts)
+print(f"_amortise on 200k rows took {time.time()-t0:.1f}s")
+PY
