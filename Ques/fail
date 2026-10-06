@@ -1,70 +1,19 @@
-                def _p(v):
-                    v = 0.0 if v is None else v
-                    # SAS ROUND: half away from zero. Python round: banker's.
-                    return int(math.floor(abs(v) / divisor + 0.5))
-
-
-
-
-    if not active.is_empty():                               # safety net only
-        print(f"  [warn] {active.height:,} loans hit _MAX_ROUNDS; finalised at residual balance")
-        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
-        parts.extend(_emit_pair(active, "BAL", "REMM"))
-
-    # === TEMPORARY DIAGNOSTIC — dump parts for families of interest ===
-    try:
-        _diag = pl.concat(parts, how="diagonal_relaxed")
-        _fam = _diag.filter(
-            pl.col("BNMCODE").is_in([
-                "9521109010000Y", "9521109020000Y",
-                "9521408010000Y", "9521408020000Y", "9521408030000Y",
-                "9521408040000Y", "9521408050000Y", "9521408060000Y",
-                "9321109010000Y", "9321109020000Y",
-                "9321408010000Y", "9321408020000Y", "9321408030000Y",
-                "9321408040000Y", "9321408050000Y", "9321408060000Y",
-            ])
-        )
-        _fam.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv")
-        print(f"  [diag] dumped {_fam.height:,} rows to diag_parts.csv")
-    except Exception as _e:
-        print(f"  [diag] could not dump parts: {_e}")
+    # === TEMPORARY DIAGNOSTIC ===
+    _diag_rept = pl.lit(ctx["reptdate"])
+    _diag = loop.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
+    _band = _diag.filter((pl.col("REMM") > 0.1) & (pl.col("REMM") < 0.5))
+    _days_out = (pl.col("CUR") - _diag_rept).dt.total_days()
+    _fires = _band.filter(_days_out < 8).height
+    _not_fires = _band.height - _fires
+    print(f"  [diag] boundary band size: {_band.height}")
+    print(f"  [diag] 8-day rule WOULD fire: {_fires}")
+    print(f"  [diag] 8-day rule would NOT fire: {_not_fires}")
+    _sample = _band.select([
+        pl.col("REMM").round(4).alias("R"),
+        _days_out.alias("D"),
+    ]).head(15)
+    print(f"  [diag] sample (REMM, DAYS_OUT): {_sample.to_dicts()}")
     # === END TEMPORARY DIAGNOSTIC ===
 
-
-
-
-        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
-        if "ACCTNO" in active.columns:
-            active = active.with_columns(
-                pl.col("ACCTNO").cast(pl.Utf8).alias("DIAG_ACCT"),
-                pl.col("CUR").cast(pl.Utf8).alias("DIAG_CUR"),
-                pl.col("REMM").cast(pl.Utf8).alias("DIAG_REMM"),
-            )
-        is_last = (pl.col("REMM") > 12) | (pl.col("CUR") == pl.col("EXPRDATE"))
-
-
-
-
-    _extra = []
-    if "DIAG_ACCT" in df.columns:
-        _extra = [pl.col("DIAG_ACCT"), pl.col("DIAG_CUR"), pl.col("DIAG_REMM")]
-    out = df.select([
-        pl.concat_str([
-            pl.when(fc).then(pl.lit(fcy)).otherwise(pl.lit(lcy)),
-            pl.col("ITEM"), pl.col("CUST"), _remfmt_expr(pl.col(rem)), pl.lit("0000Y"),
-        ]).alias("BNMCODE"),
-        pl.col(amt).alias("AMOUNT"),
-        *[pl.when(fc & (pl.col("CCY") == c)).then(pl.col(amt)).otherwise(0.0).alias(f"AMT{c}")
-          for c in _CCY_COLS],
-        *_extra,
-    ])
-
-
-
-
-head -40 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv
-
-
-
-
-wc -l /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv
+    active = loop
+    for _ in range(_MAX_ROUNDS):
