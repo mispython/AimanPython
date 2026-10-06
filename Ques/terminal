@@ -1,10 +1,9 @@
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
-    run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 912, in run_eibmrlfm
-    note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 360, in _build_note
-    if not pd.isna(exprdate) and (exprdate - ctx["reptdate"]).days < 8:
-TypeError: unsupported operand type(s) for -: 'Timestamp' and 'datetime.date'
+Running EIBMRLFM...
+  Building NOTE (loans)...
+100% ▕██████████████████████████████████████▏ (00:00:06.22 elapsed)     
+[timing] to_pandas: 9.66s  rows=2,014,694
+[timing] date normalisation: 19.00s
+[timing] loop: 500,000 rows in 59.6s
+[timing] loop: 1,000,000 rows in 108.5s
+[timing] loop: 1,500,000 rows in 178.7s
+[timing] loop: 2,000,000 rows in 245.6s
