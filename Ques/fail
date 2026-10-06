@@ -1,81 +1,39 @@
-    # The exact columns the report needs, with the exact dtypes both sides must agree on.
-    _REPORT_COLS = [
-        ("BRANCH",   pl.Int64),
-        ("ACCTNO",   pl.Int64),
-        ("CUSTNAME", pl.Utf8),
-        ("CUSTNO",   pl.Int64),
-        ("NEWIC",    pl.Utf8),
-        ("OLDIC",    pl.Utf8),
-        ("CURBAL",   pl.Float64),
-        ("PRODUCT",  pl.Int64),
-        ("ICNO",     pl.Utf8),
-    ]
-
     def _shape(df: pl.DataFrame, is_fd: bool) -> pl.DataFrame:
         """Project df to exactly _REPORT_COLS with matching dtypes, adding the
-        FDBAL / CABAL side that is missing on the other dataset."""
+        FDBAL / CABAL side that is missing on the other dataset. Ends with an
+        explicit select so both sides have the same column order."""
         def col_or_null(src, name, dtype):
             if src in df.columns:
                 return pl.col(src).cast(dtype, strict=False).alias(name)
             return pl.lit(None, dtype=dtype).alias(name)
 
-        # FD-specific column name -> report name
-        product_src  = "ACCTTYPE" if is_fd else "PRODUCT"
-        cnic_src     = "NEWIC"    # present on both
-        col_src      = "OLDIC"    # present on both
+        product_src = "ACCTTYPE" if is_fd else "PRODUCT"
 
         out = df.select([
-            col_or_null("BRANCH",       "BRANCH",   pl.Int64),
-            col_or_null("ACCTNO",       "ACCTNO",   pl.Int64),
-            col_or_null("CUSTNAME",     "CUSTNAME", pl.Utf8),
-            col_or_null("CUSTNO",       "CUSTNO",   pl.Int64),
-            col_or_null(cnic_src,       "NEWIC",    pl.Utf8),
-            col_or_null(col_src,        "OLDIC",    pl.Utf8),
-            col_or_null("CURBAL",       "CURBAL",   pl.Float64),
-            col_or_null(product_src,    "PRODUCT",  pl.Int64),
-            col_or_null("ICNO",         "ICNO",     pl.Utf8),
+            col_or_null("BRANCH",    "BRANCH",   pl.Int64),
+            col_or_null("ACCTNO",    "ACCTNO",   pl.Int64),
+            col_or_null("CUSTNAME",  "CUSTNAME", pl.Utf8),
+            col_or_null("CUSTNO",    "CUSTNO",   pl.Int64),
+            col_or_null("NEWIC",     "NEWIC",    pl.Utf8),
+            col_or_null("OLDIC",     "OLDIC",    pl.Utf8),
+            col_or_null("CURBAL",    "CURBAL",   pl.Float64),
+            col_or_null(product_src, "PRODUCT",  pl.Int64),
+            col_or_null("ICNO",      "ICNO",     pl.Utf8),
         ])
-        # Add the missing side total
+
         if is_fd:
-            out = out.with_columns(pl.col("CURBAL").alias("FDBAL"),
-                                   pl.lit(0.0).alias("CABAL"))
+            out = out.with_columns(
+                pl.col("CURBAL").alias("FDBAL"),
+                pl.lit(0.0).alias("CABAL"),
+            )
         else:
-            out = out.with_columns(pl.col("CURBAL").alias("CABAL"),
-                                   pl.lit(0.0).alias("FDBAL"))
-        return out
+            out = out.with_columns(
+                pl.col("CURBAL").alias("FDBAL"),
+                pl.lit(0.0).alias("CABAL"),
+            )
 
-    def _top100(fd_part, ca_part, corp_excl=False):
-        fd_shaped = _shape(fd_part, is_fd=True)
-        ca_shaped = _shape(ca_part, is_fd=False)
-        data1 = pl.concat([fd_shaped, ca_shaped], how="vertical_relaxed").with_columns(
-            pl.when(pl.col("ICNO").is_null() | (pl.col("ICNO") == ""))
-            .then(pl.lit("XX"))
-            .otherwise(pl.col("ICNO")).alias("ICNO")
-        )
-        if corp_excl:
-            data1 = data1.filter(~(
-                pl.col("ACCTNO").is_between(1590000000, 1599999999)
-                | pl.col("ACCTNO").is_between(1689999999, 1699999999)
-                | pl.col("ACCTNO").is_between(1789999999, 1799999999)
-            ))
-        data1 = data1.filter(pl.col("ICNO") != "")
-
-        summary = (
-            data1.group_by(["ICNO", "CUSTNAME"])
-            .agg([pl.col("CURBAL").sum(), pl.col("FDBAL").sum(), pl.col("CABAL").sum()])
-            .sort("CURBAL", descending=True)
-            .head(100)
-        )
-        keys = summary.select(["ICNO", "CUSTNAME"])
-        detail = (
-            data1.join(keys, on=["ICNO", "CUSTNAME"], how="inner")
-            .sort(["ICNO", "CUSTNAME", "BRANCH", "ACCTNO"])
-        )
-        return summary, detail
-
-
-
-
-head -8 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/INDTOP50.txt
-grep -n "ICNO=" /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/INDTOP50.txt | head -5
-tail -4 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/INDTOP50.txt
+        # Force identical column order on both sides.
+        return out.select([
+            "BRANCH", "ACCTNO", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC",
+            "CURBAL", "PRODUCT", "ICNO", "FDBAL", "CABAL",
+        ])
