@@ -1,94 +1,60 @@
-import sys
-sys.path.insert(0, '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS')
+        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
+        if "ACCTNO" in active.columns:
+            active = active.with_columns(
+                pl.col("ACCTNO").cast(pl.Utf8).alias("DIAG_ACCT"),
+                pl.col("CUR").cast(pl.Utf8).alias("DIAG_CUR"),
+                pl.col("REMM").cast(pl.Utf8).alias("DIAG_REMM"),
+            )
+        is_last = (pl.col("REMM") > 12) | (pl.col("CUR") == pl.col("EXPRDATE"))
+
+
+
+
+    _extra = []
+    if "DIAG_ACCT" in df.columns:
+        _extra = [pl.col("DIAG_ACCT"), pl.col("DIAG_CUR"), pl.col("DIAG_REMM")]
+    out = df.select([
+        pl.concat_str([
+            pl.when(fc).then(pl.lit(fcy)).otherwise(pl.lit(lcy)),
+            pl.col("ITEM"), pl.col("CUST"), _remfmt_expr(pl.col(rem)), pl.lit("0000Y"),
+        ]).alias("BNMCODE"),
+        pl.col(amt).alias("AMOUNT"),
+        *[pl.when(fc & (pl.col("CCY") == c)).then(pl.col(amt)).otherwise(0.0).alias(f"AMT{c}")
+          for c in _CCY_COLS],
+        *_extra,
+    ])
+
+
+
+
+    # === TEMPORARY DIAGNOSTIC ===
+    try:
+        _diag = pl.concat(parts, how="diagonal_relaxed")
+        _fam = _diag.filter(
+            pl.col("BNMCODE").str.contains("9421908")
+            | pl.col("BNMCODE").str.contains("9321109")
+        )
+        _fam.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv")
+        print(f"  [diag] wrote {_fam.height:,} rows to diag_parts.csv")
+    except Exception as _e:
+        print(f"  [diag] error: {_e}")
+    # === END TEMPORARY DIAGNOSTIC ===
+
+
+
+
+/sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py > /tmp/run.log 2>&1
+head -40 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv
+
+
+
+
+python3 -c "
 import polars as pl
-import duckdb
-from datetime import date
-from EIBMRLFM import _remmth, _remfmt, _leap_days
-
-REPTDATE = date(2026, 9, 30)
-ctx = {
-    "reptdate": REPTDATE,
-    "rpyr": REPTDATE.year, "rpmth": REPTDATE.month, "rpday": REPTDATE.day,
-    "rd_days": [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
-}
-LOAN = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
-con = duckdb.connect()
-df = con.execute(f"""
-    SELECT
-        CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO,
-        CAST(PAYFREQ AS VARCHAR) AS PAYFREQ, CAST(PAYAMT AS DOUBLE) AS PAYAMT,
-        CAST(BALANCE AS DOUBLE) AS BALANCE, CAST(PRODCD AS VARCHAR) AS PRODCD,
-        CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
-             ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
-        CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
-             ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
-        CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
-             ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE
-    FROM read_parquet('{LOAN}')
-    WHERE SUBSTR(CAST(PRODCD AS VARCHAR),1,2)='34'
-      AND CAST(PAYFREQ AS VARCHAR)='1'
-      AND (CAST(BALANCE AS DOUBLE) BETWEEN 90000 AND 120000
-           OR CAST(BALANCE AS DOUBLE) BETWEEN 195000 AND 215000)
-    ORDER BY ACCTNO
-""").pl()
-
-rows = []
-from EIBMRLFM import _nxtbldt
-for r in df.iter_rows(named=True):
-    bld, iss, exp = r["BLDATE"], r["ISSDTE"], r["EXPRDATE"]
-    if exp is None:
-        continue
-    b = bld
-    if b is None or b <= date(1900, 1, 1):
-        b = iss
-        guard = 0
-        while b is not None and b <= REPTDATE and guard < 3000:
-            b = _nxtbldt(b, r["PAYFREQ"], None)
-            guard += 1
-    if b is None or b > exp or (r["BALANCE"] or 0) <= (r["PAYAMT"] or 0):
-        b = exp
-    if b is None:
-        continue
-    d = (b - REPTDATE).days
-    rem, _ = _remmth(ctx, b)
-    nat_bucket = _remfmt(rem)
-    if rem > 0.1 and d < 8:
-        rem_final, rule = 0.1, "FIRED"
-    else:
-        rem_final, rule = rem, "off"
-    final_bucket = _remfmt(rem_final)
-    rows.append({
-        "ACCTNO": r["ACCTNO"], "NOTENO": r["NOTENO"],
-        "BLDATE": bld, "ISSDTE": iss, "EXPR": exp,
-        "CUR": b, "D": d, "REMM": rem,
-        "NAT_BUCKET": nat_bucket, "RULE": rule,
-        "FINAL_BUCKET": final_bucket, "PAYAMT": r["PAYAMT"],
-    })
-
-res = pl.DataFrame(rows)
-res.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/near_boundary_detail.csv")
-
-print(f"Total loans in sample: {len(res)}")
-print()
-print("Bucket distribution (final):")
-print(res.group_by("FINAL_BUCKET").len().sort("FINAL_BUCKET"))
-print()
-print("8-day rule:")
-print(res.group_by("RULE").len().sort("RULE"))
-print()
-print("Loans where natural bucket != final bucket (rule fired and changed the bucket):")
-changed = res.filter(pl.col("NAT_BUCKET") != pl.col("FINAL_BUCKET"))
-print(f"  count = {changed.height}")
-print()
-print("First 10 rows of interest (RULE=FIRED, D between 3 and 7):")
-sample = res.filter((pl.col("RULE") == "FIRED") & (pl.col("D").is_between(3, 7))).head(10)
-for row in sample.iter_rows(named=True):
-    print(f"  ACCTNO={row['ACCTNO']} D={row['D']} REMM={row['REMM']:.4f} "
-          f"NAT={row['NAT_BUCKET']} FINAL={row['FINAL_BUCKET']} PAYAMT={row['PAYAMT']}")
-print()
-print("Detail file: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/near_boundary_detail.csv")
-
-
-
-
-head -20 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/near_boundary_detail.csv
+d = pl.read_csv('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv')
+r = (d.group_by('BNMCODE')
+      .agg(pl.col('AMOUNT').sum().round(0).alias('SUM'),
+           pl.len().alias('N'))
+      .sort('BNMCODE'))
+print(r)
+"
