@@ -62,9 +62,9 @@
 
 
 
-head -40 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/diag_parts.csv
+head -40 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv
 
 
 
 
-wc -l /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/diag_parts.csv
+wc -l /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv
