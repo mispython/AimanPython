@@ -72,3 +72,10 @@
             .sort(["ICNO", "CUSTNAME", "BRANCH", "ACCTNO"])
         )
         return summary, detail
+
+
+
+
+head -8 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/INDTOP50.txt
+grep -n "ICNO=" /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/INDTOP50.txt | head -5
+tail -4 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/INDTOP50.txt
