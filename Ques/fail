@@ -1,39 +1,260 @@
-    def _shape(df: pl.DataFrame, is_fd: bool) -> pl.DataFrame:
-        """Project df to exactly _REPORT_COLS with matching dtypes, adding the
-        FDBAL / CABAL side that is missing on the other dataset. Ends with an
-        explicit select so both sides have the same column order."""
-        def col_or_null(src, name, dtype):
-            if src in df.columns:
-                return pl.col(src).cast(dtype, strict=False).alias(name)
-            return pl.lit(None, dtype=dtype).alias(name)
-
-        product_src = "ACCTTYPE" if is_fd else "PRODUCT"
-
-        out = df.select([
-            col_or_null("BRANCH",    "BRANCH",   pl.Int64),
-            col_or_null("ACCTNO",    "ACCTNO",   pl.Int64),
-            col_or_null("CUSTNAME",  "CUSTNAME", pl.Utf8),
-            col_or_null("CUSTNO",    "CUSTNO",   pl.Int64),
-            col_or_null("NEWIC",     "NEWIC",    pl.Utf8),
-            col_or_null("OLDIC",     "OLDIC",    pl.Utf8),
-            col_or_null("CURBAL",    "CURBAL",   pl.Float64),
-            col_or_null(product_src, "PRODUCT",  pl.Int64),
-            col_or_null("ICNO",      "ICNO",     pl.Utf8),
-        ])
-
-        if is_fd:
-            out = out.with_columns(
-                pl.col("CURBAL").alias("FDBAL"),
-                pl.lit(0.0).alias("CABAL"),
-            )
-        else:
-            out = out.with_columns(
-                pl.col("CURBAL").alias("FDBAL"),
-                pl.lit(0.0).alias("CABAL"),
-            )
-
-        # Force identical column order on both sides.
+        out = out.with_columns(
+            (pl.col("CURBAL") if is_fd else pl.lit(0.0)).alias("FDBAL"),
+            (pl.lit(0.0) if is_fd else pl.col("CURBAL")).alias("CABAL"),
+            pl.lit(0 if is_fd else 1).cast(pl.Int8).alias("SRC"),   # FD first, then CA
+        )
         return out.select([
             "BRANCH", "ACCTNO", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC",
-            "CURBAL", "PRODUCT", "ICNO", "FDBAL", "CABAL",
+            "CURBAL", "PRODUCT", "ICNO", "FDBAL", "CABAL", "SRC",
         ])
+
+
+
+
+    def _ebcdic(col: str) -> pl.Expr:
+        return pl.col(col).map_elements(
+            lambda s: (s or "").ljust(60).encode("cp037").hex(), return_dtype=pl.Utf8)
+
+    def _top100(fd_part, ca_part, corp_excl=False):
+        fd_shaped = _shape(fd_part, is_fd=True)
+        ca_shaped = _shape(ca_part, is_fd=False)
+        data1 = pl.concat([fd_shaped, ca_shaped], how="vertical_relaxed").with_columns(
+            pl.when(pl.col("ICNO").is_null() | (pl.col("ICNO") == ""))
+            .then(pl.lit("XX"))
+            .otherwise(pl.col("ICNO")).alias("ICNO")
+        )
+        if corp_excl:
+            data1 = data1.filter(~(
+                pl.col("ACCTNO").is_between(1590000000, 1599999999)
+                | pl.col("ACCTNO").is_between(1689999999, 1699999999)
+                | pl.col("ACCTNO").is_between(1789999999, 1799999999)
+            ))
+        data1 = data1.filter(pl.col("ICNO") != "")
+
+        # one line per account (FD receipts are summed), as in the SAS report
+        data1 = data1.group_by(["SRC", "ACCTNO"], maintain_order=True).agg(
+            [pl.col(c).first() for c in ("BRANCH", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT", "ICNO")]
+            + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
+        )
+
+        summary = (
+            data1.group_by(["ICNO", "CUSTNAME"], maintain_order=True)
+            .agg([pl.col("CURBAL").sum(), pl.col("FDBAL").sum(), pl.col("CABAL").sum()])
+            .sort("CURBAL", descending=True, maintain_order=True)
+            .head(100)
+        )
+        keys = summary.select(["ICNO", "CUSTNAME"])
+        detail = (
+            data1.join(keys, on=["ICNO", "CUSTNAME"], how="inner")
+            .with_columns(_ebcdic("ICNO").alias("_K1"), _ebcdic("CUSTNAME").alias("_K2"))
+            .sort(["_K1", "_K2", "SRC", "ACCTNO"], maintain_order=True)
+            .drop(["_K1", "_K2"])
+        )
+        return summary, detail
+
+
+
+
+# ============================================================================
+# TOP 100 REPORT WRITER  (PROC PRINT look-alike, LRECL=320, PS=60, CRLF)
+# ============================================================================
+_T_LS, _T_PS, _T_OBSW, _T_MAXW = 320, 60, 8, 128   # linesize, pagesize, Obs col width, max row width
+_T_SEP = "-" * 16
+
+
+def _fnum(v) -> str:
+    return f"{float(v or 0.0):,.2f}"
+
+
+def _ctr(s: str, w: int, up: bool = False) -> str:
+    pad = w - len(s)
+    left = (pad + 1) // 2 if up else pad // 2
+    return " " * left + s + " " * (pad - left)
+
+
+def _fctr(txt: str, w: int, m: int) -> str:
+    """Right-align inside a field of the widest value (m), field centred (round up) in column w."""
+    start = (w - m + 1) // 2
+    return " " * start + txt.rjust(m) + " " * (w - start - m)
+
+
+def _wrap(label: str, w: int) -> list:
+    lines, cur = [], ""
+    for wd in label.split():
+        if not cur:
+            cur = wd
+        elif len(cur) + 1 + len(wd) <= w:
+            cur += " " + wd
+        else:
+            lines.append(cur)
+            cur = wd
+    return lines + [cur]
+
+
+def _cols(rows: list) -> dict:
+    """Column widths of one BY group (empty list -> minimum widths)."""
+    mx = lambda k, lo: max([lo] + [len(str(r[k])) for r in rows])
+    w = {"b": mx("BRANCH", 6), "a": mx("ACCTNO", 10 if rows else 6), "n": mx("CUSTNAME", 9),
+         "c": mx("CUSTNO", 6), "i": mx("NEWIC", 6),
+         "o": max([len(r["OLDIC"]) for r in rows] + [0]) or 3, "m": 16, "p": 7,
+         "mb": max([len(str(r["BRANCH"])) for r in rows] + [3]),
+         "mc": max([len(str(r["CUSTNO"])) for r in rows] + [0 if rows else 6]),
+         "mp": max([len(str(r["PRODUCT"])) for r in rows] + [0 if rows else 3])}
+    tot = _T_OBSW + w["b"] + w["a"] + w["n"] + w["c"] + w["i"] + w["o"] + w["m"] + w["p"]
+    g = 4
+    while g > 1 and tot + 7 * g > _T_MAXW:
+        g -= 1
+    w["g"] = g
+    return w
+
+
+def _mcol(w: dict) -> int:
+    """Start offset of the CURBAL column."""
+    return _T_OBSW + 7 * w["g"] + w["b"] + w["a"] + w["n"] + w["c"] + w["i"] + w["o"]
+
+
+def _hdr(rows: list, w: dict, sums: bool) -> list:
+    dat_m = max([len(_fnum(r["CURBAL"])) for r in rows] + [0])
+    nal = "r" if sums else "cn"
+    spec = [("BRANCH CODE", "b", "cn"), ("MNI NO", "a", nal), ("DEPOSITOR", "n", "c"), ("CIS NO", "c", nal),
+            ("NEW IC", "i", "c"), ("OLD IC", "o", "c"), ("CURRENT BALANCE", "m", "r"), ("PRODUCT", "p", "cn")]
+    labs = [_wrap(lbl, max(max(len(x) for x in lbl.split()), dat_m if k == "m" else w[k])) for lbl, k, _ in spec]
+    nl = max(len(x) for x in labs)
+    out = []
+    for ln in range(nl):
+        s = "Obs".rjust(_T_OBSW) if ln == nl - 1 else " " * _T_OBSW
+        for (lbl, k, al), L in zip(spec, labs):
+            t = ([""] * (nl - len(L)) + L)[ln]
+            cell = t.rjust(w[k]) if al == "r" else _ctr(t, w[k], up=(al == "cn"))
+            s += " " * w["g"] + cell
+        out.append(s.rstrip())
+    return out
+
+
+def _row(obs: int, r: dict, w: dict) -> str:
+    g = " " * w["g"]
+    return (str(obs).rjust(_T_OBSW) + g + _fctr(str(r["BRANCH"]), w["b"], w["mb"]) + g
+            + str(r["ACCTNO"]).rjust(w["a"]) + g + _ctr(r["CUSTNAME"], w["n"]) + g
+            + _fctr(str(r["CUSTNO"]), w["c"], w["mc"]) + g + _ctr(r["NEWIC"], w["i"]) + g
+            + _ctr(r["OLDIC"], w["o"]) + g + _fnum(r["CURBAL"]).rjust(w["m"]) + g
+            + _fctr(str(r["PRODUCT"]), w["p"], w["mp"])).rstrip()
+
+
+def _sumln(label: str, val, mc: int) -> str:
+    return label.rjust(_T_OBSW) + " " * (mc - _T_OBSW) + _fnum(val).rjust(16)
+
+
+def _dash(mc: int) -> str:
+    return "--------".rjust(_T_OBSW) + " " * (mc - _T_OBSW) + _T_SEP
+
+
+def _summary_lines(summary: pl.DataFrame, title: str) -> list:
+    rows = summary.to_dicts()
+    out, cap = [], _T_PS - 4
+    zero = lambda v: "0  " if not v else _fnum(v)
+    for p0 in range(0, len(rows), cap):
+        page = rows[p0:p0 + cap]
+        wn = max([9] + [len(str(r["CUSTNAME"] or "")[:40]) for r in page])
+        out += [title, "", f"{'Obs':<3}    {'DEPOSITOR':<{wn}}    {'TOTAL BALANCE':>16}    {'FD BALANCE':>16}    {'CA BALANCE':>16}", ""]
+        for k, r in enumerate(page, start=p0 + 1):
+            out.append(f"{k:>3}    {str(r['CUSTNAME'] or '')[:40]:<{wn}}    {_fnum(r['CURBAL']):>16}"
+                       f"    {zero(r['FDBAL']):>16}    {zero(r['CABAL']):>16}")
+    return out
+
+
+def _detail_lines(detail: pl.DataFrame, title: str) -> list:
+    rows = []
+    for r in detail.to_dicts():
+        rows.append({"ICNO": r["ICNO"] or "", "CUSTNAME": r["CUSTNAME"] or "", "BRANCH": r["BRANCH"] or 0,
+                     "ACCTNO": r["ACCTNO"] or 0, "CUSTNO": r["CUSTNO"] or 0, "NEWIC": r["NEWIC"] or "",
+                     "OLDIC": r["OLDIC"] or "", "CURBAL": r["CURBAL"] or 0.0, "PRODUCT": r["PRODUCT"] or 0})
+    groups = []
+    for r in rows:
+        k = (r["ICNO"], r["CUSTNAME"])
+        if not groups or groups[-1][0] != k:
+            groups.append((k, []))
+        groups[-1][1].append(r)
+
+    out, st, obs = [], {"u": 0}, 0
+
+    def emit(lines):
+        out.extend(lines)
+        st["u"] += len(lines)
+
+    def newpage():
+        out.extend([title, ""])
+        st["u"] = 2
+
+    newpage()
+    for gi, (k, grp) in enumerate(groups):
+        n, w = len(grp), _cols(grp)
+        mc, tot = _mcol(w), sum(r["CURBAL"] for r in grp)
+        by = f"ICNO={k[0]} DEPOSITOR={k[1]}"
+
+        def head(cont, sums):
+            return [by] + (["(continued)"] if cont else []) + [""] + _hdr(grp, w, sums) + [""]
+
+        def minhead():
+            wm = _cols([])
+            return [by, "(continued)", ""] + _hdr([], wm, True) + [""], _mcol(wm)
+
+        gap = 0 if gi == 0 else 2
+        if gi and st["u"] + gap + len(head(False, False)) + 1 > _T_PS - 1:
+            newpage()
+            gap = 0
+        idx, cont = 0, False
+        while idx < n:
+            hl = len(head(cont, False))
+            space = _T_PS - 1 - st["u"] - gap - hl
+            if space < 1:
+                newpage()
+                gap, cont = 0, True
+                continue
+            take = min(space, n - idx)
+            sums = idx + take == n and n > 1 and st["u"] + gap + hl + take + 2 <= _T_PS
+            emit([""] * gap + head(cont, sums))
+            gap = 0
+            por = grp[idx:idx + take]
+            wp = dict(w, mb=max(len(str(r["BRANCH"])) for r in por), mp=max(len(str(r["PRODUCT"])) for r in por))
+            for r in por:
+                obs += 1
+                emit([_row(obs, r, wp)])
+            idx += take
+            if idx < n:
+                newpage()
+                cont = True
+        if n > 1:
+            mcur = mc
+            if st["u"] + 2 > _T_PS:
+                newpage()
+                hl_, mcur = minhead()
+                emit(hl_)
+            emit([_dash(mcur), _sumln("CUSTNAME", tot, mcur)])
+            if st["u"] + 2 > _T_PS:
+                full = st["u"] >= _T_PS
+                newpage()
+                if full:
+                    hl_, mcur = minhead()
+                    emit(hl_)
+                    emit([_dash(mcur)])
+                else:
+                    emit(head(True, True))
+                    mcur = mc
+            emit([_sumln("ICNO", tot, mcur)])
+    mc = _mcol(_cols(groups[-1][1]))
+    grand = sum(r["CURBAL"] for r in rows)
+    out += [" " * mc + "=" * 16, " " * mc + _fnum(grand).rjust(16)]
+    return out
+
+
+def _write_top100_report(summary, detail, title, rdate, output_path):
+    ttl = f"{title} AS AT {rdate}"
+    lines = _summary_lines(summary, ttl)
+    if detail is not None and detail.height > 0:
+        lines += _detail_lines(detail, ttl)
+    with open(output_path, "w", encoding="latin1", newline="") as fh:
+        fh.write("".join(f"{ln:<{_T_LS}}\r\n" for ln in lines))
+
+
+
+
