@@ -1,1 +1,5 @@
-python3 -c "import sys; sys.path.insert(0, '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS'); import KALMLIQ; print(KALMLIQ.__file__); import inspect; src = inspect.getsource(KALMLIQ); print('has _read_sas_kapiti:', '_read_sas_kapiti' in src); print('has _build_k1tbl:', '_build_k1tbl' in src)"
+def _read_sas_kapiti(path) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    df = con.execute(f"SELECT * FROM read_parquet('{Path(path).as_posix()}')").pl()
+    con.close()
+    return df
