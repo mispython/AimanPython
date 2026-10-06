@@ -1,44 +1,90 @@
-def _remfmt(remmth: float) -> str:
-    # SAS format ranges match on inclusive bounds with first-match-wins.
-    # A tiny epsilon guards against float representation differences that
-    # would otherwise move a value 1e-15 past a boundary.
-    eps = 1e-9
-    if remmth <= 0.1 + eps:
-        return "01"
-    if remmth <= 1 + eps:
-        return "02"
-    if remmth <= 3 + eps:
-        return "03"
-    if remmth <= 6 + eps:
-        return "04"
-    if remmth <= 12 + eps:
-        return "05"
-    return "06"
+    fd_prod_excl = {350, 351, 352, 353, 354, 355, 356, 357}
+    fdorg = (
+        fd.with_columns([
+            pl.col("CURBAL").alias("FDBAL"),
+            # align FD source column names with the CA side so the concat keeps them
+            pl.col("CUSTCD").cast(pl.Int64, strict=False).alias("CUSTCODE"),
+            pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT"),
+        ])
+        .join(cisfd.sort("ACCTNO"), on="ACCTNO", how="inner")
+        .filter((pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_prod_excl)) & (pl.col("INDORG") == "O"))
+    )
 
 
 
 
-def _remfmt_expr(rem: pl.Expr) -> pl.Expr:
-    eps = 1e-9
-    return (pl.when(rem <= 0.1 + eps).then(pl.lit("01"))
-            .when(rem <= 1 + eps).then(pl.lit("02"))
-            .when(rem <= 3 + eps).then(pl.lit("03"))
-            .when(rem <= 6 + eps).then(pl.lit("04"))
-            .when(rem <= 12 + eps).then(pl.lit("05"))
-            .otherwise(pl.lit("06")))
+    common_cols = [c for c in fdorg.columns if c in caorg.columns]
+    # sanity: confirm the two columns we care about are present on both sides
+    for need in ("CUSTCODE", "PRODUCT"):
+        if need not in common_cols:
+            raise ValueError(f"EIBMTOP5: expected column {need!r} missing after alignment")
+
+    data1 = (
+        pl.concat([fdorg.select(common_cols), caorg.select(common_cols)], how="diagonal_relaxed")
+        .filter(pl.col("CUSTNO").is_in(TOP50_CUSTNOS))
+        .sort(["CUSTNO", "ACCTNO"])
+    )
 
 
 
 
-diff <(sort /path/to/expected_FISS.txt) <(sort /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIWP/FISS.txt) | head -40
+    def _int_str(v) -> str:
+        if v is None:
+            return ""
+        try:
+            return str(int(v))
+        except Exception:
+            return str(v)
+
+    def _header_block() -> list:
+        return [
+            f"{'':>6} {'BRANCH':>7}  {'MNI NO':>12}  {'DEPOSITOR':<26}  "
+            f"{'CIS NO':>8}  {'CUSTCD':>7}  {'CURRENT BALANCE':>18}  {'PRODUCT':>8}",
+            f"{'Obs':>6} {'CODE':>7}  {'':>12}  {'':<26}  "
+            f"{'':>8}  {'':>7}  {'':>18}  {'':>8}",
+        ]
+
+    lines = [
+        "PUBLIC BANK BERHAD      PROGRAM-ID: EIBMTOP5",
+        f"PB SUBSIDIARIES UNDER TOP 50 CORP DEPOSITORS @ {rdate}",
+    ]
+    grand_total = 0.0
+    obs_no = 0
+    current_custno = None
+    block_rows = 0
+
+    for r in data1.iter_rows(named=True):
+        custno = r.get("CUSTNO")
+        if custno != current_custno:
+            current_custno = custno
+            block_rows = 0
+            lines.append("")
+            lines.append(f"CIS NO={_int_str(custno)}")
+            lines.append("")
+            lines.extend(_header_block())
+            lines.append("")
+
+        obs_no += 1
+        block_rows += 1
+        curbal = r.get("CURBAL") or 0.0
+        grand_total += curbal
+        lines.append(
+            f"{obs_no:>6} {_int_str(r.get('BRANCH')):>7}  {_int_str(r.get('ACCTNO')):>12}  "
+            f"{str(r.get('CUSTNAME') or ''):<26}  {_int_str(r.get('CUSTNO')):>8}  "
+            f"{_int_str(r.get('CUSTCODE')):>7}  {curbal:>18,.2f}  {_int_str(r.get('PRODUCT')):>8}"
+        )
+
+    # grand total bar + sum at the end (SAS PROC PRINT SUM behaviour)
+    if obs_no > 0:
+        lines.append(f"{'':>77}{'=' * 16}")
+        lines.append(f"{'':>77}{grand_total:>18,.2f}")
+
+    with open(output_file, "w", encoding="latin1") as fh:
+        fh.write("\n".join(lines) + "\n")
 
 
 
 
-python3 -c "
-import polars as pl
-d = pl.read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet')
-# Find loans whose BALANCE is between 9,000,000 and 10,000,000 (candidate for the 9,349 K shift)
-s = d.filter(pl.col('BALANCE').is_between(9_000_000, 10_000_000)).head(5)
-print(s.select(['ACCTNO','NOTENO','PRODCD','PAYFREQ','PAYAMT','BALANCE','BLDATE','ISSDTE','EXPRDATE']))
-"
+            if block_rows > 1:
+                lines.append(f"{'':>77}{'=' * 16}")
+                lines.append(f"{'':>77}{block_total:>18,.2f}")
