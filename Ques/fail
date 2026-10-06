@@ -1,14 +1,43 @@
-    pdf = note.to_pandas()
-    col = {c: i for i, c in enumerate(pdf.columns)}
+_LEAP_DAYS_CACHE = {}
 
-    # pandas materialises Date columns as datetime64[ns] -> cells come out as
-    # pd.Timestamp (and missing as pd.NaT). The loop body does plain
-    # date arithmetic, so normalise to datetime.date / None once here.
-    for _c in ("BLDATE", "ISSDTE", "EXPRDATE", "APPRDATE"):
-        if _c in pdf.columns:
-            pdf[_c] = pdf[_c].apply(lambda x: None if pd.isna(x) else x.date())
+def _leap_days(year: int):
+    d = _LEAP_DAYS_CACHE.get(year)
+    if d is None:
+        d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        if year % 4 == 0:
+            d[1] = 29
+        _LEAP_DAYS_CACHE[year] = d
+    return d
 
-    rows = []
+
+
+
+def _nxtbldt(bldate: date, payfreq, payday) -> date:
+    """%NXTBLDT macro."""
+    if payfreq == "6":
+        d_ = _leap_days(bldate.year)
+        dd, mm, yy = bldate.day + 14, bldate.month, bldate.year
+        if dd > d_[mm - 1]:
+            dd -= d_[mm - 1]
+            mm += 1
+            if mm > 12:
+                mm -= 12
+                yy += 1
+    else:
+        freq = {"1": 1, "2": 3, "3": 6, "4": 12}.get(payfreq, 0)
+        mm, yy = bldate.month + freq, bldate.year
+        if mm > 12:
+            mm -= 12
+            yy += 1
+        if payday is not None:
+            d_tmp = _leap_days(yy)
+            dd = d_tmp[mm - 1] if payday == 99 else payday
+        else:
+            dd = bldate.day
+    d_final = _leap_days(yy)
+    if dd > d_final[mm - 1]:
+        dd = d_final[mm - 1]
+    return date(yy, mm, dd)
 
 ============================
 
