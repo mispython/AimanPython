@@ -1,39 +1,80 @@
-python3 - <<'PY'
-import time
-import polars as pl
-from pathlib import Path
+                def _p(v):
+                    v = 0.0 if v is None else v
+                    # SAS ROUND: half away from zero. Python round: banker's.
+                    return int(math.floor(abs(v) / divisor + 0.5))
+
+
+
+
 import sys
 sys.path.insert(0, '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS')
-from EIBMRLFM import _amortise
-from REPTDATE import get_reptdate_values
+import polars as pl
+import duckdb
+from datetime import date
+from EIBMRLFM import _remmth, _remfmt, _nxtbldt, _leap_days, _PAYFREQ_MONTHS
 
-rd = get_reptdate_values()
-ctx = {"reptdate": rd.reptdate, "rpyr": rd.reptdate.year,
-       "rpmth": rd.reptdate.month, "rpday": rd.reptdate.day,
-       "rd_days": [31, 28 if rd.reptdate.year % 4 else 29, 31, 30, 31, 30,
-                   31, 31, 30, 31, 30, 31]}
+REPTDATE = date(2026, 9, 30)
+ctx = {
+    "reptdate": REPTDATE,
+    "rpyr": REPTDATE.year,
+    "rpmth": REPTDATE.month,
+    "rpday": REPTDATE.day,
+    "rd_days": [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
+}
 
-# Minimal synthetic frame that exercises the roll path
-df = pl.DataFrame({
-    "ISSDTE": [pl.date(2005, 8, 5)] * 200_000,
-    "BLDATE": [None] * 200_000,
-    "EXPRDATE": [pl.date(2030, 7, 31)] * 200_000,
-    "PAYFREQ": ["1"] * 200_000,
-    "PAYAMT": [976.0] * 200_000,
-    "BALANCE": [42935.0] * 200_000,
-    "PRODUCT": [34230] * 200_000,
-    "ITEM": ["429"] * 200_000,
-    "CUST": ["09"] * 200_000,
-    "IS_FCY": [False] * 200_000,
-    "CCY": ["MYR"] * 200_000,
-    "COND": [False] * 200_000,
-})
-df = df.with_columns((~pl.col("BLDATE").is_not_null()).alias("ROLL"),
-                     pl.lit(None, dtype=pl.Date).alias("CUR"),
-                     pl.lit(False).alias("FSKIP"))
+LOAN = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
 
-t0 = time.time()
-parts = []
-_amortise(df, ctx, parts)
-print(f"_amortise on 200k rows took {time.time()-t0:.1f}s")
-PY
+con = duckdb.connect()
+df = con.execute(f"""
+    SELECT
+        CAST(ACCTNO AS BIGINT) AS ACCTNO,
+        CAST(NOTENO AS BIGINT) AS NOTENO,
+        CAST(PAYFREQ AS VARCHAR) AS PAYFREQ,
+        CAST(PAYAMT AS DOUBLE) AS PAYAMT,
+        CAST(BALANCE AS DOUBLE) AS BALANCE,
+        CAST(PRODCD AS VARCHAR) AS PRODCD,
+        CAST(CUSTCD AS VARCHAR) AS CUSTCD,
+        CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
+             ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
+        CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+             ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+        CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+             ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE
+    FROM read_parquet('{LOAN}')
+    WHERE SUBSTR(CAST(PRODCD AS VARCHAR),1,2) = '34'
+      AND CAST(CUSTCD AS VARCHAR) NOT IN ('77','78','95','96')
+      AND CAST(PAYFREQ AS VARCHAR) = '1'
+    LIMIT 200000
+""").pl()
+
+# Roll logic replicated inline (same as _amortise)
+out = []
+for r in df.iter_rows(named=True):
+    bld, iss, exp = r["BLDATE"], r["ISSDTE"], r["EXPRDATE"]
+    if exp is None or (exp - REPTDATE).days < 8:
+        continue
+    b = bld
+    if b is None or b <= date(1900, 1, 1):
+        b = iss
+        guard = 0
+        while b is not None and b <= REPTDATE and guard < 2000:
+            b = _nxtbldt(b, r["PAYFREQ"], None)
+            guard += 1
+    if b is None or b > exp or (r["BALANCE"] or 0) <= (r["PAYAMT"] or 0):
+        b = exp
+    if b is None:
+        continue
+    rem, _ = _remmth(ctx, b)
+    bucket = _remfmt(rem if rem > 0.1 or (b - REPTDATE).days >= 8 else 0.1)
+    out.append({
+        "ACCTNO": r["ACCTNO"], "NOTENO": r["NOTENO"],
+        "CUR": b, "REMM": rem, "BUCKET": bucket,
+        "BAL": r["BALANCE"], "RAW_K": round((r["BALANCE"] or 0)/1000),
+    })
+
+res = pl.DataFrame(out)
+print(f"loans considered: {len(res)}")
+print(f"buckets near 01/02 boundary (REMM between 0.05 and 0.5):")
+near = res.filter((pl.col("REMM") > 0.05) & (pl.col("REMM") < 0.5)).sort("REMM")
+for row in near.iter_rows(named=True):
+    print(f"  ACCTNO={row['ACCTNO']} NOTENO={row['NOTENO']} CUR={row['CUR']} REMM={row['REMM']:.6f} BUCKET={row['BUCKET']} RAW_K={row['RAW_K']}")
