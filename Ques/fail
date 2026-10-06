@@ -1,115 +1,42 @@
-_LEAP_DAYS_CACHE = {}
-
-def _leap_days(year: int):
-    d = _LEAP_DAYS_CACHE.get(year)
-    if d is None:
-        d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-        if year % 4 == 0:
-            d[1] = 29
-        _LEAP_DAYS_CACHE[year] = d
-    return d
-
-
-
-
 def _nxtbldt(bldate: date, payfreq, payday) -> date:
     """%NXTBLDT macro."""
-    if payfreq == "6":
-        d_ = _leap_days(bldate.year)
-        dd, mm, yy = bldate.day + 14, bldate.month, bldate.year
-        if dd > d_[mm - 1]:
-            dd -= d_[mm - 1]
-            mm += 1
-            if mm > 12:
-                mm -= 12
-                yy += 1
-    else:
-        freq = {"1": 1, "2": 3, "3": 6, "4": 12}.get(payfreq, 0)
-        mm, yy = bldate.month + freq, bldate.year
-        if mm > 12:
-            mm -= 12
-            yy += 1
-        if payday is not None:
-            d_tmp = _leap_days(yy)
-            dd = d_tmp[mm - 1] if payday == 99 else payday
-        else:
-            dd = bldate.day
-    d_final = _leap_days(yy)
-    if dd > d_final[mm - 1]:
-        dd = d_final[mm - 1]
-    return date(yy, mm, dd)
-
-============================
-
-loan_all = con.execute(f"""
-        SELECT * REPLACE (
-            CAST(ACCTNO AS BIGINT) AS ACCTNO,
-            CAST(NOTENO AS BIGINT) AS NOTENO,
-            CAST(COMMNO AS BIGINT) AS COMMNO,
-            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
-            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
-            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
-            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
-        )
-        FROM read_parquet('{bnm1_loan_cache.as_posix()}')
-        WHERE (COALESCE(PAIDIND,'') NOT IN ('P','C') OR EIR_ADJ IS NOT NULL)
-          AND (SUBSTR(CAST(PRODCD AS VARCHAR),1,2) = '34' OR PRODUCT IN (225,226))
-          AND ACCTYPE IN ('OD','LN')
-    """).pl()
-
-
-
-
-    # Precompute column-index map once; iterate as plain tuples (much faster
-    # than iter_rows(named=True)).
-    pdf = note.to_pandas()
-    col = {c: i for i, c in enumerate(pdf.columns)}
-    rows = []
-
-    for t in pdf.itertuples(index=False, name=None):
-        paidind   = t[col["PAIDIND"]]
-        eir_adj   = t[col["EIR_ADJ"]]
-        if not ((paidind not in ("P", "C") if paidind is not None else True)
-                or (eir_adj is not None and eir_adj == eir_adj)):  # NaN check
-            continue
-
-        prodcd    = str(t[col["PRODCD"]] or "")
-        product   = t[col["PRODUCT"]]
-        if not (prodcd[:2] == "34" or product in (225, 226)):
-            continue
-
-        custcd    = str(t[col["CUSTCD"]] or "")
-        cust      = "08" if custcd in ("77", "78", "95", "96") else "09"
-        is_fcy    = product in FCY_PRODUCTS
-        acctype   = t[col["ACCTYPE"]]
-
-        # ... rest of the loop body: replace every `r.get("X")` with t[col["X"]].
-
-
-
-
-def leap_days(year):
-    d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    if year % 4 == 0:
-        d[1] = 29
-    return d
-
-
-
-
-_LEAP_CACHE = {}
-def _leap_days(year: int):
-    d = _LEAP_CACHE.get(year)
-    if d is None:
+    def leap_days(year):
         d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
         if year % 4 == 0:
             d[1] = 29
-        _LEAP_CACHE[year] = d
-    return d
+        return d
+
+    if payfreq == "6":
+        d_ = leap_days(bldate.year)
+        ...
+
+
+
+
+    import time as _t
+    _t0 = _t.time()
+    pdf = note.to_pandas()
+    print(f"[timing] to_pandas: {_t.time()-_t0:.2f}s  rows={len(pdf):,}")
+    col = {c: i for i, c in enumerate(pdf.columns)}
+
+
+
+
+    _t0 = _t.time()
+    for _c in ("BLDATE", "ISSDTE", "EXPRDATE", "APPRDATE"):
+        if _c in pdf.columns:
+            pdf[_c] = pdf[_c].apply(lambda x: None if pd.isna(x) else x.date())
+    print(f"[timing] date normalisation: {_t.time()-_t0:.2f}s")
+
+
+
+
+    _t0 = _t.time()
+    _n_seen = 0
+    for t in pdf.itertuples(index=False, name=None):
+        _n_seen += 1
+        if _n_seen % 500_000 == 0:
+            print(f"[timing] loop: {_n_seen:,} rows in {_t.time()-_t0:.1f}s")
 
 
 
