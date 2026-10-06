@@ -1,3 +1,5 @@
+        days = (ctx["reptdate"] - bldate).days if not pd.isna(bldate) else None
+
         if not pd.isna(exprdate) and (exprdate - ctx["reptdate"]).days < 8:
 
             elif pd.isna(bldate) or bldate <= date(1900, 1, 1):
