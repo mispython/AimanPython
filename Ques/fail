@@ -30,7 +30,7 @@ def _remfmt_expr(rem: pl.Expr) -> pl.Expr:
 
 
 
-diff <(sort /path/to/expected_FISS.txt) <(sort /path/to/your_FISS.txt) | head -40
+diff <(sort /path/to/expected_FISS.txt) <(sort /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIWP/FISS.txt) | head -40
 
 
 
