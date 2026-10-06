@@ -1,19 +1,66 @@
-    # === TEMPORARY DIAGNOSTIC ===
-    _diag_rept = pl.lit(ctx["reptdate"])
-    _diag = loop.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
-    _band = _diag.filter((pl.col("REMM") > 0.1) & (pl.col("REMM") < 0.5))
-    _days_out = (pl.col("CUR") - _diag_rept).dt.total_days()
-    _fires = _band.filter(_days_out < 8).height
-    _not_fires = _band.height - _fires
-    print(f"  [diag] boundary band size: {_band.height}")
-    print(f"  [diag] 8-day rule WOULD fire: {_fires}")
-    print(f"  [diag] 8-day rule would NOT fire: {_not_fires}")
-    _sample = _band.select([
-        pl.col("REMM").round(4).alias("R"),
-        _days_out.alias("D"),
-    ]).head(15)
-    print(f"  [diag] sample (REMM, DAYS_OUT): {_sample.to_dicts()}")
-    # === END TEMPORARY DIAGNOSTIC ===
+import sys
+sys.path.insert(0, '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS')
+import polars as pl
+import duckdb
+from datetime import date
+from EIBMRLFM import _remmth, _remfmt, _leap_days
 
-    active = loop
-    for _ in range(_MAX_ROUNDS):
+REPTDATE = date(2026, 9, 30)
+ctx = {
+    "reptdate": REPTDATE,
+    "rpyr": REPTDATE.year, "rpmth": REPTDATE.month, "rpday": REPTDATE.day,
+    "rd_days": [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
+}
+LOAN = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
+con = duckdb.connect()
+df = con.execute(f"""
+    SELECT
+        CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO,
+        CAST(PAYFREQ AS VARCHAR) AS PAYFREQ, CAST(PAYAMT AS DOUBLE) AS PAYAMT,
+        CAST(BALANCE AS DOUBLE) AS BALANCE, CAST(PRODCD AS VARCHAR) AS PRODCD,
+        CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
+             ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
+        CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+             ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+        CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+             ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE
+    FROM read_parquet('{LOAN}')
+    WHERE SUBSTR(CAST(PRODCD AS VARCHAR),1,2)='34'
+      AND CAST(PAYFREQ AS VARCHAR)='1'
+      AND (CAST(BALANCE AS DOUBLE) BETWEEN 90000 AND 120000
+           OR CAST(BALANCE AS DOUBLE) BETWEEN 195000 AND 215000)
+    ORDER BY ACCTNO
+""").pl()
+
+for r in df.iter_rows(named=True):
+    bld, iss, exp = r["BLDATE"], r["ISSDTE"], r["EXPRDATE"]
+    if exp is None:
+        continue
+    # Simulate SAS roll
+    b = bld
+    if b is None or b <= date(1900, 1, 1):
+        b = iss
+        while b is not None and b <= REPTDATE:
+            from EIBMRLFM import _nxtbldt
+            b = _nxtbldt(b, r["PAYFREQ"], None)
+    if b is None or b > exp or (r["BALANCE"] or 0) <= (r["PAYAMT"] or 0):
+        b = exp
+    if b is None:
+        continue
+    d = (b - REPTDATE).days
+    rem, _ = _remmth(ctx, b)
+    natural_bucket = _remfmt(rem)
+    # 8-day rule
+    if rem > 0.1 and d < 8:
+        rem_final, rule = 0.1, "FIRED"
+    else:
+        rem_final, rule = rem, "off"
+    bucket_final = _remfmt(rem_final)
+    print(f"ACCTNO={r['ACCTNO']:>12} NOTENO={r['NOTENO']:>5}  BLDATE={bld}  ISSDTE={iss}  EXPR={exp}")
+    print(f"        CUR_after_roll={b}  D={d}  REMM={rem:.6f}  "
+          f"nat_bucket={natural_bucket}  8day_rule={rule}  final_REMM={rem_final:.6f}  final_bucket={bucket_final}  "
+          f"PAYAMT={r['PAYAMT']}")
+
+
+
+
