@@ -1,4 +1,16 @@
-    loan_all = con.execute(f"""
+    note_final = (
+        combined
+        .group_by("BNMCODE")
+        .agg([
+            pl.col("AMOUNT").sum(), pl.col("AMTUSD").sum(), pl.col("AMTSGD").sum(),
+            pl.col("AMTHKD").sum(), pl.col("AMTAUD").sum(),
+        ])
+        .sort("BNMCODE")
+    )
+
+============================
+
+loan_all = con.execute(f"""
         SELECT * REPLACE (
             CAST(ACCTNO AS BIGINT) AS ACCTNO,
             CAST(NOTENO AS BIGINT) AS NOTENO,
