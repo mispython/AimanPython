@@ -1,27 +1,12 @@
-Running EIBMRLFM...
-  Building NOTE (loans)...
-100% ▕██████████████████████████████████████▏ (00:00:09.22 elapsed)     
-[timing] loan read: 16.6s rows=2,014,694
-[timing] prep joins: 28.4s
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
-    run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1006, in run_eibmrlfm
-    note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 544, in _build_note
-    result = _note_to_rows(note, ctx)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 451, in _note_to_rows
-    _amortise(ln.filter(~simple_mask), ctx, parts)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 333, in _amortise
-    if not still_behind.any():
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/expr/expr.py", line 177, in __bool__
-    raise TypeError(msg)
-TypeError: the truth value of an Expr is ambiguous
+loans considered: 194988
+buckets near 01/02 boundary (REMM between 0.05 and 0.5):
+near-boundary rows (0.05 < REMM < 0.5): 56200
+  exactly 0.1 (bit-for-bit):            4513
+  REMM slightly > 0.1:                  47072
+  REMM slightly < 0.1:                  9128
+  classified as bucket 01:              9128
+  classified as bucket 02:              47072
 
-You probably got here by using a Python standard library function instead of the native expressions API.
-Here are some things you might want to try:
-- instead of `pl.col('a') and pl.col('b')`, use `pl.col('a') & pl.col('b')`
-- instead of `pl.col('a') in [y, z]`, use `pl.col('a').is_in([y, z])`
-- instead of `max(pl.col('a'), pl.col('b'))`, use `pl.max_horizontal(pl.col('a'), pl.col('b'))`
+Min/Max REMM in that band:
+  min = 0.06666666666666665
+  max = 0.4666666666666667
