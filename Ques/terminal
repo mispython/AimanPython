@@ -1,26 +1,27 @@
-Error in sitecustomize; set PYTHONVERBOSE for traceback:
-FileNotFoundError: [Errno 2] No such file or directory: '-'
-headers : RLFM30092026 vs RLFM05102026 match: False
-codes in SAS, not Python: ['9332900030000Y', '9371100050000Y', '9372100030000Y', '9392100030000Y', '9472200030000Y', '9491100050000Y', '9492200030000Y', '9532900030000Y', '9571100050000Y', '9572100030000Y', '9592100030000Y', '9672200030000Y', '9691100050000Y', '9692200030000Y']
-codes in Python, not SAS: ['9421908020000Y', '9442900020000Y', '9621908020000Y', '9642900020000Y']
-209 matching codes with differing amounts:
-  9531108030000Y  SAS=(24285531, 0, 0, 0, 0)  PY=(23690870, 0, 0, 0, 0)
-  9361000010000Y  SAS=(4910000, 0, 0, 0, 0)  PY=(5010000, 0, 0, 0, 0)
-  9583000040000Y  SAS=(10713551, 0, 0, 0, 0)  PY=(11774896, 0, 0, 0, 0)
-  9632900010000Y  SAS=(12614, 2454, 543, 0, 51)  PY=(15540, 5398, 638, 78, 844)
-  9521909030000Y  SAS=(193412, 0, 0, 0, 0)  PY=(193276, 0, 0, 0, 0)
-  9321209020000Y  SAS=(468513, 0, 0, 0, 0)  PY=(592043, 0, 0, 0, 0)
-  9321909040000Y  SAS=(58148, 0, 0, 0, 0)  PY=(57326, 0, 0, 0, 0)
-  9421209060000Y  SAS=(556025, 31028, 12629, 9394, 0)  PY=(450534, 31028, 12629, 369000, 0)
-  9491100010000Y  SAS=(2477726, 1344577, 226886, 0, 0)  PY=(3543697, 2225973, 226886, 0, 0)
-  9561000020000Y  SAS=(1030000, 0, 0, 0, 0)  PY=(930000, 0, 0, 0, 0)
-  9521109010000Y  SAS=(722920, 0, 0, 0, 0)  PY=(798427, 0, 0, 0, 0)
-  9471100040000Y  SAS=(10236608, 9667415, 217, 0, 0)  PY=(10324692, 9747659, 8057, 0, 0)
-  9321909010000Y  SAS=(473, 0, 0, 0, 0)  PY=(1751, 0, 0, 0, 0)
-  9591100010000Y  SAS=(2522472, 0, 0, 0, 0)  PY=(3823069, 0, 0, 0, 0)
-  9531208010000Y  SAS=(34820718, 0, 0, 0, 0)  PY=(34824390, 0, 0, 0, 0)
-  9421908060000Y  SAS=(14621, 0, 0, 0, 0)  PY=(14613, 0, 0, 0, 0)
-  9531209010000Y  SAS=(60627, 0, 0, 0, 0)  PY=(60648, 0, 0, 0, 0)
-  9542300030000Y  SAS=(20332, 0, 0, 0, 0)  PY=(8432, 0, 0, 0, 0)
-  9521408050000Y  SAS=(5655190, 0, 0, 0, 0)  PY=(5652237, 0, 0, 0, 0)
-  9631109030000Y  SAS=(9508441, 9332129, 102561, 25187, 19138)  PY=(9320743, 9151713, 97710, 24921, 17908)
+Running EIBMRLFM...
+  Building NOTE (loans)...
+100% ▕██████████████████████████████████████▏ (00:00:09.22 elapsed)     
+[timing] loan read: 16.6s rows=2,014,694
+[timing] prep joins: 28.4s
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
+    run_eibmrlfm(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1006, in run_eibmrlfm
+    note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 544, in _build_note
+    result = _note_to_rows(note, ctx)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 451, in _note_to_rows
+    _amortise(ln.filter(~simple_mask), ctx, parts)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 333, in _amortise
+    if not still_behind.any():
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/expr/expr.py", line 177, in __bool__
+    raise TypeError(msg)
+TypeError: the truth value of an Expr is ambiguous
+
+You probably got here by using a Python standard library function instead of the native expressions API.
+Here are some things you might want to try:
+- instead of `pl.col('a') and pl.col('b')`, use `pl.col('a') & pl.col('b')`
+- instead of `pl.col('a') in [y, z]`, use `pl.col('a').is_in([y, z])`
+- instead of `max(pl.col('a'), pl.col('b'))`, use `pl.max_horizontal(pl.col('a'), pl.col('b'))`
