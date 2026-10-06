@@ -86,4 +86,9 @@ for row in sample.iter_rows(named=True):
     print(f"  ACCTNO={row['ACCTNO']} D={row['D']} REMM={row['REMM']:.4f} "
           f"NAT={row['NAT_BUCKET']} FINAL={row['FINAL_BUCKET']} PAYAMT={row['PAYAMT']}")
 print()
-print("Detail file: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/near_boundary_detail.csv")
+print("Detail file: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/near_boundary_detail.csv")
+
+
+
+
+head -20 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/near_boundary_detail.csv
