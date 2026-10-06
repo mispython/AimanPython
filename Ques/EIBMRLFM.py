@@ -97,24 +97,6 @@ def _remfmt(remmth: float) -> str:
         return "05"
     return "06"
 
-# def _remfmt(remmth: float) -> str:
-#     # SAS format ranges match on inclusive bounds with first-match-wins.
-#     # A tiny epsilon guards against float representation differences that
-#     # would otherwise move a value 1e-15 past a boundary.
-#     eps = 1e-9
-#     if remmth <= 0.1 + eps:
-#         return "01"
-#     if remmth <= 1 + eps:
-#         return "02"
-#     if remmth <= 3 + eps:
-#         return "03"
-#     if remmth <= 6 + eps:
-#         return "04"
-#     if remmth <= 12 + eps:
-#         return "05"
-#     return "06"
-
-
 
 def _remmth(ctx: dict, matdt: date):
     """%REMMTH macro."""
@@ -127,39 +109,6 @@ def _remmth(ctx: dict, matdt: date):
     rem30d = (matdt - ctx["reptdate"]).days / 30
     return remmth, rem30d
 
-
-# def _nxtbldt(bldate: date, payfreq, payday) -> date:
-#     """%NXTBLDT macro."""
-#     def leap_days(year):
-#         d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-#         if year % 4 == 0:
-#             d[1] = 29
-#         return d
-
-#     if payfreq == "6":
-#         d_ = leap_days(bldate.year)
-#         dd, mm, yy = bldate.day + 14, bldate.month, bldate.year
-#         if dd > d_[mm - 1]:
-#             dd -= d_[mm - 1]
-#             mm += 1
-#             if mm > 12:
-#                 mm -= 12
-#                 yy += 1
-#     else:
-#         freq = {"1": 1, "2": 3, "3": 6, "4": 12}.get(payfreq, 0)
-#         mm, yy = bldate.month + freq, bldate.year
-#         if mm > 12:
-#             mm -= 12
-#             yy += 1
-#         if payday is not None:
-#             d_tmp = leap_days(yy)
-#             dd = d_tmp[mm - 1] if payday == 99 else payday
-#         else:
-#             dd = bldate.day
-#     d_final = leap_days(yy)
-#     if dd > d_final[mm - 1]:
-#         dd = d_final[mm - 1]
-#     return date(yy, mm, dd)
 
 def _nxtbldt(bldate: date, payfreq, payday) -> date:
     """%NXTBLDT macro."""
@@ -221,15 +170,6 @@ def _remfmt_expr(rem: pl.Expr) -> pl.Expr:
             .when(rem <= 12).then(pl.lit("05"))
             .otherwise(pl.lit("06")))
 
-# def _remfmt_expr(rem: pl.Expr) -> pl.Expr:
-#     eps = 1e-9
-#     return (pl.when(rem <= 0.1 + eps).then(pl.lit("01"))
-#             .when(rem <= 1 + eps).then(pl.lit("02"))
-#             .when(rem <= 3 + eps).then(pl.lit("03"))
-#             .when(rem <= 6 + eps).then(pl.lit("04"))
-#             .when(rem <= 12 + eps).then(pl.lit("05"))
-#             .otherwise(pl.lit("06")))
-
 
 def _dim_expr(y: pl.Expr, m: pl.Expr) -> pl.Expr:
     """Days in month (same leap rule as _leap_days: year % 4 == 0)."""
@@ -266,7 +206,6 @@ def _nxt_date(df: pl.DataFrame, cur: str = "CUR") -> pl.Series:
            .then(pl.when(f_roll).then(f_d - _dim_expr(cy, cm)).otherwise(f_d))
            .otherwise(cd))
     dd = pl.min_horizontal(dd0, _dim_expr(yy, mm))
-    # return df.select(pl.date(yy, mm, dd).alias("NXT"))["NXT"]
     return df.select(pl.date(yy, mm, dd).alias("NXT")).to_series()
 
 
@@ -274,15 +213,6 @@ def _emit_agg(df: pl.DataFrame, kind: str, amt: str, rem: str) -> pl.DataFrame:
     """kind 'A' -> 95 (LCY) / 94 (FCY);  kind 'B' -> 93 (LCY) / 96 (FCY)."""
     lcy, fcy = ("95", "94") if kind == "A" else ("93", "96")
     fc = pl.col("IS_FCY")
-    # out = df.select([
-    #     pl.concat_str([
-    #         pl.when(fc).then(pl.lit(fcy)).otherwise(pl.lit(lcy)),
-    #         pl.col("ITEM"), pl.col("CUST"), _remfmt_expr(pl.col(rem)), pl.lit("0000Y"),
-    #     ]).alias("BNMCODE"),
-    #     pl.col(amt).alias("AMOUNT"),
-    #     *[pl.when(fc & (pl.col("CCY") == c)).then(pl.col(amt)).otherwise(0.0).alias(f"AMT{c}")
-    #       for c in _CCY_COLS],
-    # ])
     _extra = []
     if "DIAG_ACCT" in df.columns:
         _extra = [pl.col("DIAG_ACCT"), pl.col("DIAG_CUR"), pl.col("DIAG_REMM")]
@@ -322,27 +252,6 @@ def _amortise(loop: pl.DataFrame, ctx: dict, parts: list) -> None:
         .when(pl.col("ROLL")).then(pl.col("ISSDTE"))
         .otherwise(pl.col("BLDATE")).alias("CUR")
     )
-
-    # # bldate = issdte, then roll forward while <= reptdate (only unfinished rows are re-processed)
-    # pending = loop.filter(pl.col("ROLL"))
-    # finished = []
-    # for i in range(_MAX_ROUNDS):
-    #     is_due = pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
-    #     fin = pending.filter(~is_due)
-    #     if not fin.is_empty():
-    #         finished.append(fin)
-    #     pending = pending.filter(is_due)
-    #     if pending.is_empty():
-    #         break
-    #     pending = pending.with_columns(_nxt_date(pending).alias("NXT")).with_columns(
-    #         pl.when(pl.col("NXT") > pl.col("CUR")).then(pl.col("NXT"))
-    #         .otherwise(pl.lit(None, dtype=pl.Date)).alias("CUR")      # cannot advance -> EXPRDATE fallback
-    #     ).drop("NXT")
-    #     print(f"  [roll] round {i+1}: {pending.height:,} loans still rolling")
-    # if not pending.is_empty():
-    #     finished.append(pending.with_columns(pl.lit(None, dtype=pl.Date).alias("CUR")))
-    # rolled = pl.concat(finished, how="vertical") if finished else loop.clear()
-    # loop = pl.concat([loop.filter(~pl.col("ROLL")), rolled], how="vertical")
 
     # bldate = issdte, then roll forward until CUR > reptdate. Instead of
     # stepping one period at a time (up to 320 iterations for old loans),
@@ -397,33 +306,17 @@ def _amortise(loop: pl.DataFrame, ctx: dict, parts: list) -> None:
         pl.col("BALANCE").alias("BAL"),
     )
 
-    # === DEBUG TEMPORARY DIAGNOSTIC ===
-    try:
-        _diag = pl.concat(parts, how="diagonal_relaxed")
-        _fam = _diag.filter(
-            pl.col("BNMCODE").str.contains("9421908")
-            | pl.col("BNMCODE").str.contains("9321109")
-        )
-        _fam.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv")
-        print(f"  [diag] wrote {_fam.height:,} rows to diag_parts.csv")
-    except Exception as _e:
-        print(f"  [diag] error: {_e}")
-    # === DEBUG END TEMPORARY DIAGNOSTIC ===
-
     active = loop
     for _ in range(_MAX_ROUNDS):
         if active.is_empty():
             break
         active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
-        
-        # DEBUG
         if "ACCTNO" in active.columns:
             active = active.with_columns(
                 pl.col("ACCTNO").cast(pl.Utf8).alias("DIAG_ACCT"),
                 pl.col("CUR").cast(pl.Utf8).alias("DIAG_CUR"),
                 pl.col("REMM").cast(pl.Utf8).alias("DIAG_REMM"),
             )
-
         is_last = (pl.col("REMM") > 12) | (pl.col("CUR") == pl.col("EXPRDATE"))
 
         last = active.filter(is_last)                       # loop break -> residual balance
@@ -453,25 +346,6 @@ def _amortise(loop: pl.DataFrame, ctx: dict, parts: list) -> None:
         print(f"  [warn] {active.height:,} loans hit _MAX_ROUNDS; finalised at residual balance")
         active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
         parts.extend(_emit_pair(active, "BAL", "REMM"))
-
-        # === DEBUG TEMPORARY DIAGNOSTIC — dump parts for families of interest ===
-    try:
-        _diag = pl.concat(parts, how="diagonal_relaxed")
-        _fam = _diag.filter(
-            pl.col("BNMCODE").is_in([
-                "9521109010000Y", "9521109020000Y",
-                "9521408010000Y", "9521408020000Y", "9521408030000Y",
-                "9521408040000Y", "9521408050000Y", "9521408060000Y",
-                "9321109010000Y", "9321109020000Y",
-                "9321408010000Y", "9321408020000Y", "9321408030000Y",
-                "9321408040000Y", "9321408050000Y", "9321408060000Y",
-            ])
-        )
-        _fam.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv")
-        print(f"  [diag] dumped {_fam.height:,} rows to diag_parts.csv")
-    except Exception as _e:
-        print(f"  [diag] could not dump parts: {_e}")
-    # === DEBUG END TEMPORARY DIAGNOSTIC ===
 
 
 def _note_to_rows(note: pl.DataFrame, ctx: dict) -> pl.DataFrame:
@@ -832,9 +706,6 @@ def _build_undrawn(bnm1_loan_cache, bnm1_uloan_cache, lncomm_cache, ctx) -> pl.D
 # DUAL CURRENCY INVESTMENT (DCI) / NID
 # ============================================================================
 def _build_dci(dciwh_dci_cache, forate_cache, foratebkp_cache, ctx) -> pl.DataFrame:
-    # con = duckdb.connect(database=":memory:")
-    # fdate_row = con.execute(f"SELECT REPTDATE FROM read_parquet('{forate_cache.as_posix()}') LIMIT 1").pl()
-    # fdate = fdate_row["REPTDATE"][0] if len(fdate_row) else None
     con = duckdb.connect(database=":memory:")
     fdate_row = con.execute(f"""
         SELECT DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER) AS REPTDATE
@@ -844,11 +715,6 @@ def _build_dci(dciwh_dci_cache, forate_cache, foratebkp_cache, ctx) -> pl.DataFr
     if fdate is not None and fdate <= ctx["reptdate"]:
         fcy = con.execute(f"SELECT * FROM read_parquet('{forate_cache.as_posix()}') ORDER BY CURCODE").pl()
     else:
-        # fcy = con.execute(f"""
-        #     SELECT * FROM read_parquet('{foratebkp_cache.as_posix()}')
-        #     WHERE REPTDATE <= DATE '{ctx["reptdate"].isoformat()}'
-        #     QUALIFY ROW_NUMBER() OVER (PARTITION BY CURCODE ORDER BY REPTDATE DESC) = 1
-        # """).pl()
         fcy = con.execute(f"""
             SELECT * REPLACE (
                 DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER) AS REPTDATE
@@ -968,9 +834,6 @@ def _write_fiss_nsrs(note_final, ctx, fiss_path, nsrs_path):
         with open(path, "w", encoding="latin1") as fh:
             fh.write(f"RLFM{ctx['reptday']}{ctx['reptmon']}{ctx['reptyear']}\n")
             for r in note_final.iter_rows(named=True):
-                # def _p(v):
-                #     v = 0.0 if v is None else v
-                #     return int(round(abs(v) / divisor))
                 def _p(v):
                     v = 0.0 if v is None else v
                     # SAS ROUND: half away from zero. Python round: banker's.
@@ -1031,23 +894,85 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
     ])
     con.close()
 
-    ca_excl, fd_excl = {400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411}, {350, 351, 352, 353, 354, 355, 356, 357}
-    ca_j = ca.join(cisca, on="ACCTNO", how="inner").filter((pl.col("PURPOSE") != "2") & (~pl.col("PRODUCT").is_in(ca_excl)))
+    ca_excl = {400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411}
+    fd_excl = {350, 351, 352, 353, 354, 355, 356, 357}
+
+    ca_j = ca.join(cisca, on="ACCTNO", how="inner").filter(
+        (pl.col("PURPOSE") != "2") & (~pl.col("PRODUCT").is_in(ca_excl))
+    )
+    fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter(
+        (pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_excl))
+    )
+    # Align FD-only column name to the CA-side name so PRODUCT survives the concat
+    fd_j = fd_j.with_columns(
+        pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT")
+    )
+
     ca_ind = ca_j.filter(pl.col("CUSTCODE").is_in([77, 78, 95, 96]))
     ca_org = ca_j.filter((~pl.col("CUSTCODE").is_in([77, 78, 95, 96])) & (pl.col("INDORG") == "O"))
-    fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter((pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_excl)))
     fd_ind = fd_j.filter(pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0]))
     fd_org = fd_j.filter((~pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0])) & (pl.col("INDORG") == "O"))
 
+    # The exact columns the report needs, with the exact dtypes both sides must agree on.
+    _REPORT_COLS = [
+        ("BRANCH",   pl.Int64),
+        ("ACCTNO",   pl.Int64),
+        ("CUSTNAME", pl.Utf8),
+        ("CUSTNO",   pl.Int64),
+        ("NEWIC",    pl.Utf8),
+        ("OLDIC",    pl.Utf8),
+        ("CURBAL",   pl.Float64),
+        ("PRODUCT",  pl.Int64),
+        ("ICNO",     pl.Utf8),
+    ]
+
+    def _shape(df: pl.DataFrame, is_fd: bool) -> pl.DataFrame:
+        """Project df to exactly _REPORT_COLS with matching dtypes, adding the
+        FDBAL / CABAL side that is missing on the other dataset. Ends with an
+        explicit select so both sides have the same column order."""
+        def col_or_null(src, name, dtype):
+            if src in df.columns:
+                return pl.col(src).cast(dtype, strict=False).alias(name)
+            return pl.lit(None, dtype=dtype).alias(name)
+
+        product_src = "ACCTTYPE" if is_fd else "PRODUCT"
+
+        out = df.select([
+            col_or_null("BRANCH",    "BRANCH",   pl.Int64),
+            col_or_null("ACCTNO",    "ACCTNO",   pl.Int64),
+            col_or_null("CUSTNAME",  "CUSTNAME", pl.Utf8),
+            col_or_null("CUSTNO",    "CUSTNO",   pl.Int64),
+            col_or_null("NEWIC",     "NEWIC",    pl.Utf8),
+            col_or_null("OLDIC",     "OLDIC",    pl.Utf8),
+            col_or_null("CURBAL",    "CURBAL",   pl.Float64),
+            col_or_null(product_src, "PRODUCT",  pl.Int64),
+            col_or_null("ICNO",      "ICNO",     pl.Utf8),
+        ])
+
+        if is_fd:
+            out = out.with_columns(
+                pl.col("CURBAL").alias("FDBAL"),
+                pl.lit(0.0).alias("CABAL"),
+            )
+        else:
+            out = out.with_columns(
+                pl.col("CURBAL").alias("FDBAL"),
+                pl.lit(0.0).alias("CABAL"),
+            )
+
+        # Force identical column order on both sides.
+        return out.select([
+            "BRANCH", "ACCTNO", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC",
+            "CURBAL", "PRODUCT", "ICNO", "FDBAL", "CABAL",
+        ])
 
     def _top100(fd_part, ca_part, corp_excl=False):
-        if "CABAL" not in fd_part.columns:
-            fd_part = fd_part.with_columns(pl.lit(0.0).alias("CABAL"))
-        if "FDBAL" not in ca_part.columns:
-            ca_part = ca_part.with_columns(pl.lit(0.0).alias("FDBAL"))
-        common = [c for c in fd_part.columns if c in ca_part.columns]
-        data1 = pl.concat([fd_part.select(common), ca_part.select(common)]).with_columns(
-            pl.when(pl.col("ICNO").is_null() | (pl.col("ICNO") == "")).then(pl.lit("XX")).otherwise(pl.col("ICNO")).alias("ICNO")
+        fd_shaped = _shape(fd_part, is_fd=True)
+        ca_shaped = _shape(ca_part, is_fd=False)
+        data1 = pl.concat([fd_shaped, ca_shaped], how="vertical_relaxed").with_columns(
+            pl.when(pl.col("ICNO").is_null() | (pl.col("ICNO") == ""))
+            .then(pl.lit("XX"))
+            .otherwise(pl.col("ICNO")).alias("ICNO")
         )
         if corp_excl:
             data1 = data1.filter(~(
@@ -1055,25 +980,122 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
                 | pl.col("ACCTNO").is_between(1689999999, 1699999999)
                 | pl.col("ACCTNO").is_between(1789999999, 1799999999)
             ))
-        return (
-            data1.filter(pl.col("ICNO") != "")
-            .group_by(["ICNO", "CUSTNAME"])
+        data1 = data1.filter(pl.col("ICNO") != "")
+
+        summary = (
+            data1.group_by(["ICNO", "CUSTNAME"])
             .agg([pl.col("CURBAL").sum(), pl.col("FDBAL").sum(), pl.col("CABAL").sum()])
             .sort("CURBAL", descending=True)
             .head(100)
         )
+        keys = summary.select(["ICNO", "CUSTNAME"])
+        detail = (
+            data1.join(keys, on=["ICNO", "CUSTNAME"], how="inner")
+            .sort(["ICNO", "CUSTNAME", "BRANCH", "ACCTNO"])
+        )
+        return summary, detail
 
-    return _top100(fd_ind, ca_ind), _top100(fd_org, ca_org, corp_excl=True)
+    ind_sum, ind_det = _top100(fd_ind, ca_ind)
+    org_sum, org_det = _top100(fd_org, ca_org, corp_excl=True)
+    return ind_sum, org_sum, ind_det, org_det
 
 
-def _write_top100_report(summary, title, rdate, output_path):
-    lines = [f"{title} AS AT {rdate}", ""]
-    tot_cur = tot_fd = tot_ca = 0.0
-    for r in summary.iter_rows(named=True):
-        curbal, fdbal, cabal = r.get("CURBAL") or 0.0, r.get("FDBAL") or 0.0, r.get("CABAL") or 0.0
-        lines.append(f"{str(r['CUSTNAME'])[:30]:<30}{curbal:>18,.2f}{fdbal:>18,.2f}{cabal:>18,.2f}")
-        tot_cur, tot_fd, tot_ca = tot_cur + curbal, tot_fd + fdbal, tot_ca + cabal
-    lines.append(f"{'TOTAL':<30}{tot_cur:>18,.2f}{tot_fd:>18,.2f}{tot_ca:>18,.2f}")
+def _write_top100_report(summary, detail, title, rdate, output_path):
+    def _d(v):
+        if v is None:
+            return ""
+        try:
+            return f"{float(v):,.2f}"
+        except Exception:
+            return str(v)
+
+    def _int_str(v) -> str:
+        if v is None:
+            return ""
+        try:
+            return str(int(v))
+        except Exception:
+            return str(v)
+
+    lines = []
+
+    # ==================== SECTION 1: SUMMARY ====================
+    lines.append(f"{title} AS AT {rdate}")
+    lines.append("")
+    lines.append(
+        f"{'Obs':>4}   {'DEPOSITOR':<40}  "
+        f"{'TOTAL BALANCE':>18}  {'FD BALANCE':>18}  {'CA BALANCE':>18}"
+    )
+    lines.append("")
+
+    for i, r in enumerate(summary.iter_rows(named=True), start=1):
+        lines.append(
+            f"{i:>4}   {str(r.get('CUSTNAME') or '')[:40]:<40}  "
+            f"{_d(r.get('CURBAL')):>18}  {_d(r.get('FDBAL')):>18}  {_d(r.get('CABAL')):>18}"
+        )
+
+    # ==================== SECTION 2: DETAIL ====================
+    if detail is not None and detail.height > 0:
+        lines.append("")
+        lines.append(f"{title} AS AT {rdate}")
+
+        obs_no = 0
+        current_key = None
+        group_total = 0.0
+
+        def _close_group(gt: float) -> None:
+            if gt == 0.0:
+                return
+            lines.append("")
+            lines.append(
+                f"{'--------':>4}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
+                f"{'':>14}  {'':>10}  {'----------------':>18}"
+            )
+            lines.append(
+                f"{'CUSTNAME':>8}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
+                f"{'':>14}  {'':>10}  {_d(gt):>18}"
+            )
+            lines.append(
+                f"{'    ICNO':>8}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
+                f"{'':>14}  {'':>10}  {_d(gt):>18}"
+            )
+            lines.append("")
+            lines.append("")
+
+        for r in detail.iter_rows(named=True):
+            key = (r.get("ICNO"), r.get("CUSTNAME"))
+            if key != current_key:
+                _close_group(group_total)
+                current_key = key
+                group_total = 0.0
+                lines.append("")
+                lines.append(f"ICNO={key[0]} DEPOSITOR={key[1]}")
+                lines.append("")
+                lines.append(
+                    f"{'Obs':>4}   {'CODE':>6}  {'MNI NO':>13}  {'DEPOSITOR':<24}  "
+                    f"{'CIS NO':>10}  {'NEW IC':>14}  {'OLD IC':>10}  "
+                    f"{'CURRENT BALANCE':>18}  {'PRODUCT':>8}"
+                )
+                lines.append("")
+
+            obs_no += 1
+            curbal = r.get("CURBAL") or 0.0
+            group_total += curbal
+            lines.append(
+                f"{obs_no:>4}   {_int_str(r.get('BRANCH')):>6}  {_int_str(r.get('ACCTNO')):>13}  "
+                f"{str(r.get('CUSTNAME') or '')[:24]:<24}  {_int_str(r.get('CUSTNO')):>10}  "
+                f"{str(r.get('NEWIC') or ''):>14}  {str(r.get('OLDIC') or ''):>10}  "
+                f"{_d(curbal):>18}  {_int_str(r.get('PRODUCT')):>8}"
+            )
+
+        _close_group(group_total)
+
+        # Grand total across the entire detail section
+        detail_grand = float(detail.select(pl.col("CURBAL").sum()).item() or 0.0)
+        lines.append("")
+        lines.append(f"{'':>77}{'=' * 16}")
+        lines.append(f"{'':>77}{_d(detail_grand):>18}")
+
     with open(output_path, "w", encoding="latin1") as fh:
         fh.write("\n".join(lines) + "\n")
 
@@ -1140,10 +1162,12 @@ def run_eibmrlfm(
     _write_suppl_report(dist_summary, ctx["rdate"], suppl_path)
 
     print("  Building TOP 100 individual/corporate reports...")
-    top_ind, top_org = _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache)
+    top_ind, top_org, det_ind, det_org = _build_top100(
+        cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache
+    )
     fd11_path, fd12_path = output_dir / "INDTOP50.txt", output_dir / "CORTOP50.txt"
-    _write_top100_report(top_ind, "TOP 100 LARGEST FD+CA INDIVIDUAL CUSTOMERS", ctx["rdate"], fd11_path)
-    _write_top100_report(top_org, "TOP 100 LARGEST FD+CA CORPORATE CUSTOMERS", ctx["rdate"], fd12_path)
+    _write_top100_report(top_ind, det_ind, "TOP 100 LARGEST FD+CA INDIVIDUAL CUSTOMERS", ctx["rdate"], fd11_path)
+    _write_top100_report(top_org, det_org, "TOP 100 LARGEST FD+CA CORPORATE CUSTOMERS", ctx["rdate"], fd12_path)
 
     print("EIBMRLFM complete. Outputs:")
     for p in (fiss_path, nsrs_path, suppl_path, fd11_path, fd12_path):
