@@ -1,43 +1,62 @@
-def _nxtbldt(bldate: date, payfreq, payday) -> date:
-    """%NXTBLDT macro."""
-    def leap_days(year):
-        d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-        if year % 4 == 0:
-            d[1] = 29
-        return d
-
-    if payfreq == "6":
-        d_ = leap_days(bldate.year)
-        ...
-
-
-
-
-    import time as _t
-    _t0 = _t.time()
-    pdf = note.to_pandas()
-    print(f"[timing] to_pandas: {_t.time()-_t0:.2f}s  rows={len(pdf):,}")
-    col = {c: i for i, c in enumerate(pdf.columns)}
-
+    loan_all = con.execute(f"""
+        SELECT * REPLACE (
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CAST(NOTENO AS BIGINT) AS NOTENO,
+            CAST(COMMNO AS BIGINT) AS COMMNO,
+            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
+            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
+            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
+        )
+        FROM read_parquet('{bnm1_loan_cache.as_posix()}')
+        WHERE (COALESCE(CAST(PAIDIND AS VARCHAR),'') NOT IN ('P','C') OR EIR_ADJ IS NOT NULL)
+          AND (SUBSTR(CAST(PRODCD AS VARCHAR),1,2) = '34' OR PRODUCT IN (225, 226))
+          AND CAST(ACCTYPE AS VARCHAR) IN ('OD','LN')
+    """).pl()
 
 
 
-    _t0 = _t.time()
+
+python3 - <<'PY'
+import duckdb
+con = duckdb.connect()
+p = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
+print("raw :", con.execute(f"SELECT COUNT(*) FROM read_parquet('{p}')").fetchone()[0])
+print("kept:", con.execute(f"""
+    SELECT COUNT(*) FROM read_parquet('{p}')
+    WHERE (COALESCE(CAST(PAIDIND AS VARCHAR),'') NOT IN ('P','C') OR EIR_ADJ IS NOT NULL)
+      AND (SUBSTR(CAST(PRODCD AS VARCHAR),1,2) = '34' OR PRODUCT IN (225,226))
+      AND CAST(ACCTYPE AS VARCHAR) IN ('OD','LN')
+""").fetchone()[0])
+PY
+
+
+
+
     for _c in ("BLDATE", "ISSDTE", "EXPRDATE", "APPRDATE"):
         if _c in pdf.columns:
-            pdf[_c] = pdf[_c].apply(lambda x: None if pd.isna(x) else x.date())
-    print(f"[timing] date normalisation: {_t.time()-_t0:.2f}s")
+            pdf[_c] = pd.to_datetime(pdf[_c], errors="coerce").dt.date
 
 
 
 
-    _t0 = _t.time()
-    _n_seen = 0
-    for t in pdf.itertuples(index=False, name=None):
-        _n_seen += 1
-        if _n_seen % 500_000 == 0:
-            print(f"[timing] loop: {_n_seen:,} rows in {_t.time()-_t0:.1f}s")
+    for _c in ("BLDATE", "ISSDTE", "EXPRDATE", "APPRDATE"):
+        if _c in pdf.columns:
+            s = pdf[_c].dt.date
+            pdf[_c] = s.where(s.notna(), None)
 
 
 
 
+python3 - <<'PY'
+import pandas as pd
+s = pd.Series(pd.to_datetime(['2027-05-03', None, '2026-10-02']))
+out = s.dt.date
+out = out.where(out.notna(), None)
+print(out.tolist())
+print(type(out.iloc[0]), type(out.iloc[1]))
+PY
