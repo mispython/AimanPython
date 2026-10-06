@@ -1,9 +1,5 @@
 Running EIBMRLFM...
   Building NOTE (loans)...
-100% ▕██████████████████████████████████████▏ (00:00:06.22 elapsed)     
-[timing] to_pandas: 9.66s  rows=2,014,694
-[timing] date normalisation: 19.00s
-[timing] loop: 500,000 rows in 59.6s
-[timing] loop: 1,000,000 rows in 108.5s
-[timing] loop: 1,500,000 rows in 178.7s
-[timing] loop: 2,000,000 rows in 245.6s
+100% ▕██████████████████████████████████████▏ (00:00:07.15 elapsed)     
+[timing] loan read: 10.3s rows=2,014,694
+[timing] prep joins: 20.6s
