@@ -32,35 +32,58 @@ df = con.execute(f"""
     ORDER BY ACCTNO
 """).pl()
 
+rows = []
+from EIBMRLFM import _nxtbldt
 for r in df.iter_rows(named=True):
     bld, iss, exp = r["BLDATE"], r["ISSDTE"], r["EXPRDATE"]
     if exp is None:
         continue
-    # Simulate SAS roll
     b = bld
     if b is None or b <= date(1900, 1, 1):
         b = iss
-        while b is not None and b <= REPTDATE:
-            from EIBMRLFM import _nxtbldt
+        guard = 0
+        while b is not None and b <= REPTDATE and guard < 3000:
             b = _nxtbldt(b, r["PAYFREQ"], None)
+            guard += 1
     if b is None or b > exp or (r["BALANCE"] or 0) <= (r["PAYAMT"] or 0):
         b = exp
     if b is None:
         continue
     d = (b - REPTDATE).days
     rem, _ = _remmth(ctx, b)
-    natural_bucket = _remfmt(rem)
-    # 8-day rule
+    nat_bucket = _remfmt(rem)
     if rem > 0.1 and d < 8:
         rem_final, rule = 0.1, "FIRED"
     else:
         rem_final, rule = rem, "off"
-    bucket_final = _remfmt(rem_final)
-    print(f"ACCTNO={r['ACCTNO']:>12} NOTENO={r['NOTENO']:>5}  BLDATE={bld}  ISSDTE={iss}  EXPR={exp}")
-    print(f"        CUR_after_roll={b}  D={d}  REMM={rem:.6f}  "
-          f"nat_bucket={natural_bucket}  8day_rule={rule}  final_REMM={rem_final:.6f}  final_bucket={bucket_final}  "
-          f"PAYAMT={r['PAYAMT']}")
+    final_bucket = _remfmt(rem_final)
+    rows.append({
+        "ACCTNO": r["ACCTNO"], "NOTENO": r["NOTENO"],
+        "BLDATE": bld, "ISSDTE": iss, "EXPR": exp,
+        "CUR": b, "D": d, "REMM": rem,
+        "NAT_BUCKET": nat_bucket, "RULE": rule,
+        "FINAL_BUCKET": final_bucket, "PAYAMT": r["PAYAMT"],
+    })
 
+res = pl.DataFrame(rows)
+res.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/near_boundary_detail.csv")
 
-
-
+print(f"Total loans in sample: {len(res)}")
+print()
+print("Bucket distribution (final):")
+print(res.group_by("FINAL_BUCKET").len().sort("FINAL_BUCKET"))
+print()
+print("8-day rule:")
+print(res.group_by("RULE").len().sort("RULE"))
+print()
+print("Loans where natural bucket != final bucket (rule fired and changed the bucket):")
+changed = res.filter(pl.col("NAT_BUCKET") != pl.col("FINAL_BUCKET"))
+print(f"  count = {changed.height}")
+print()
+print("First 10 rows of interest (RULE=FIRED, D between 3 and 7):")
+sample = res.filter((pl.col("RULE") == "FIRED") & (pl.col("D").is_between(3, 7))).head(10)
+for row in sample.iter_rows(named=True):
+    print(f"  ACCTNO={row['ACCTNO']} D={row['D']} REMM={row['REMM']:.4f} "
+          f"NAT={row['NAT_BUCKET']} FINAL={row['FINAL_BUCKET']} PAYAMT={row['PAYAMT']}")
+print()
+print("Detail file: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/near_boundary_detail.csv")
