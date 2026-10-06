@@ -1,20 +1,19 @@
+  Building KAPITI items (KALMLIQ + KALMLIFE)..
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 298, in <module>
     main()
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 274, in main
     run_eibmrlfm(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1407, in run_eibmrlfm
-    top_ind, top_org, det_ind, det_org = _build_top100(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1223, in _build_top100
-    ind_sum, ind_det = _top100(fd_ind, ca_ind)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1197, in _top100
-    data1 = pl.concat([fd_shaped, ca_shaped], how="vertical_relaxed").with_columns(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/functions/eager.py", line 236, in concat
-    out = wrap_ldf(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
-    return wrap_df(ldf.collect(engine, callback))
-polars.exceptions.ComputeError: schema names differ: got FDBAL, expected CABAL
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1383, in run_eibmrlfm
+    ktbl, dist_summary = build_kalmliq(k1tbl_cache, k3tbl_cache, ctx["reptdate"], ctx["rpyr"], ctx["rpmth"], ctx["rpday"], ctx["rd_days"], inst=inst)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/KALMLIQ.py", line 229, in build_kalmliq
+    k1tbl = _build_k1tbl(k1tbl_path)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/KALMLIQ.py", line 53, in _build_k1tbl
+    raw = _read_sas_kapiti(k1tbl_path)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/KALMLIQ.py", line 24, in _read_sas_kapiti
+    df_pd, _ = pyreadstat.read_sas7bdat(str(path))
+  File "pyreadstat/pyreadstat.pyx", line 129, in pyreadstat.pyreadstat.read_sas7bdat
+  File "pyreadstat/_readstat_parser.pyx", line 1166, in pyreadstat._readstat_parser.run_conversion
+  File "pyreadstat/_readstat_parser.pyx", line 908, in pyreadstat._readstat_parser.run_readstat_parser
+  File "pyreadstat/_readstat_parser.pyx", line 830, in pyreadstat._readstat_parser.check_exit_status
+pyreadstat._readstat_parser.ReadstatError: Invalid file, or file has unsupported features
