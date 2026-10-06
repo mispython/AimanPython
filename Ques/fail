@@ -1,12 +1,6 @@
-    # CA table uses CUSTCODE; FD table uses CUSTCD (the FD parquet has no CUSTCODE column)
-    ca_is_ind = pl.col("CUSTCODE").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
-    fd_is_ind = pl.col("CUSTCD").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
-
-    ca_ind = ca_j.filter(ca_is_ind)
-    ca_org = ca_j.filter(~ca_is_ind & (pl.col("INDORG") == "O"))
-    fd_ind = fd_j.filter(fd_is_ind)
-    fd_org = fd_j.filter(~fd_is_ind & (pl.col("INDORG") == "O"))
-
-
-
-
+        # SAS shows one line per MNI NO per customer: sum the FD receipts of that account.
+        # ICNO + CUSTNAME are in the key so joint holders are NOT added together.
+        data1 = data1.group_by(["SRC", "ACCTNO", "ICNO", "CUSTNAME"], maintain_order=True).agg(
+            [pl.col(c).first() for c in ("BRANCH", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT")]
+            + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
+        )
