@@ -1,80 +1,22 @@
-                def _p(v):
-                    v = 0.0 if v is None else v
-                    # SAS ROUND: half away from zero. Python round: banker's.
-                    return int(math.floor(abs(v) / divisor + 0.5))
-
-
-
-
-import sys
-sys.path.insert(0, '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS')
-import polars as pl
-import duckdb
-from datetime import date
-from EIBMRLFM import _remmth, _remfmt, _nxtbldt, _leap_days, _PAYFREQ_MONTHS
-
-REPTDATE = date(2026, 9, 30)
-ctx = {
-    "reptdate": REPTDATE,
-    "rpyr": REPTDATE.year,
-    "rpmth": REPTDATE.month,
-    "rpday": REPTDATE.day,
-    "rd_days": [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
-}
-
-LOAN = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
-
-con = duckdb.connect()
-df = con.execute(f"""
-    SELECT
-        CAST(ACCTNO AS BIGINT) AS ACCTNO,
-        CAST(NOTENO AS BIGINT) AS NOTENO,
-        CAST(PAYFREQ AS VARCHAR) AS PAYFREQ,
-        CAST(PAYAMT AS DOUBLE) AS PAYAMT,
-        CAST(BALANCE AS DOUBLE) AS BALANCE,
-        CAST(PRODCD AS VARCHAR) AS PRODCD,
-        CAST(CUSTCD AS VARCHAR) AS CUSTCD,
-        CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
-             ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
-        CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
-             ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
-        CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
-             ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE
-    FROM read_parquet('{LOAN}')
-    WHERE SUBSTR(CAST(PRODCD AS VARCHAR),1,2) = '34'
-      AND CAST(CUSTCD AS VARCHAR) NOT IN ('77','78','95','96')
-      AND CAST(PAYFREQ AS VARCHAR) = '1'
-    LIMIT 200000
-""").pl()
-
-# Roll logic replicated inline (same as _amortise)
-out = []
-for r in df.iter_rows(named=True):
-    bld, iss, exp = r["BLDATE"], r["ISSDTE"], r["EXPRDATE"]
-    if exp is None or (exp - REPTDATE).days < 8:
-        continue
-    b = bld
-    if b is None or b <= date(1900, 1, 1):
-        b = iss
-        guard = 0
-        while b is not None and b <= REPTDATE and guard < 2000:
-            b = _nxtbldt(b, r["PAYFREQ"], None)
-            guard += 1
-    if b is None or b > exp or (r["BALANCE"] or 0) <= (r["PAYAMT"] or 0):
-        b = exp
-    if b is None:
-        continue
-    rem, _ = _remmth(ctx, b)
-    bucket = _remfmt(rem if rem > 0.1 or (b - REPTDATE).days >= 8 else 0.1)
-    out.append({
-        "ACCTNO": r["ACCTNO"], "NOTENO": r["NOTENO"],
-        "CUR": b, "REMM": rem, "BUCKET": bucket,
-        "BAL": r["BALANCE"], "RAW_K": round((r["BALANCE"] or 0)/1000),
-    })
-
-res = pl.DataFrame(out)
-print(f"loans considered: {len(res)}")
-print(f"buckets near 01/02 boundary (REMM between 0.05 and 0.5):")
 near = res.filter((pl.col("REMM") > 0.05) & (pl.col("REMM") < 0.5)).sort("REMM")
-for row in near.iter_rows(named=True):
-    print(f"  ACCTNO={row['ACCTNO']} NOTENO={row['NOTENO']} CUR={row['CUR']} REMM={row['REMM']:.6f} BUCKET={row['BUCKET']} RAW_K={row['RAW_K']}")
+near.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/near_boundary.csv")
+
+total_near = near.height
+zero_point_one = near.filter((pl.col("REMM") - 0.1).abs() < 1e-9).height
+just_above = near.filter(pl.col("REMM") > 0.1).height
+just_below = near.filter(pl.col("REMM") < 0.1).height
+b01 = near.filter(pl.col("BUCKET") == "01").height
+b02 = near.filter(pl.col("BUCKET") == "02").height
+
+print(f"near-boundary rows (0.05 < REMM < 0.5): {total_near}")
+print(f"  exactly 0.1 (bit-for-bit):            {zero_point_one}")
+print(f"  REMM slightly > 0.1:                  {just_above}")
+print(f"  REMM slightly < 0.1:                  {just_below}")
+print(f"  classified as bucket 01:              {b01}")
+print(f"  classified as bucket 02:              {b02}")
+print()
+print("Min/Max REMM in that band:")
+print(f"  min = {near['REMM'].min()}")
+print(f"  max = {near['REMM'].max()}")
+print()
+print("Full list written to: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/near_boundary.csv")
