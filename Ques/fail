@@ -2,8 +2,8 @@ python3 - <<'PY'
 import re
 from pathlib import Path
 
-sas = Path("/path/to/expected_FISS.txt").read_text().splitlines()
-py  = Path("/path/to/your_FISS.txt").read_text().splitlines()
+sas = Path("/stgsrcsys/host/uat/AII/EIBMLIQP/FISS_OUTPUT.TXT").read_text().splitlines()
+py  = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/FISS.txt").read_text().splitlines()
 
 def parse(lines):
     hdr = lines[0].strip()
