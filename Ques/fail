@@ -1,12 +1,27 @@
-    note_final = (
-        combined
-        .group_by("BNMCODE")
-        .agg([
-            pl.col("AMOUNT").sum(), pl.col("AMTUSD").sum(), pl.col("AMTSGD").sum(),
-            pl.col("AMTHKD").sum(), pl.col("AMTAUD").sum(),
-        ])
-        .sort("BNMCODE")
-    )
+        if not pd.isna(exprdate) and (exprdate - ctx["reptdate"]).days < 8:
+
+            elif pd.isna(bldate) or bldate <= date(1900, 1, 1):
+
+            if pd.isna(bldate) or bldate > exprdate or balance <= payamt:
+
+        if not ((paidind not in ("P", "C")) or (eir_adj is not None and not pd.isna(eir_adj))):
+
+            if pd.isna(payfreq) or payfreq in ("5", "9", " ") or product in (350, 910, 925):
+
+
+
+
+python3 - <<'PY'
+import polars as pl
+p = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
+df = pl.read_parquet(p).head(5)
+pdf = df.to_pandas()
+for c in ('BLDATE','EXPRDATE','LOANSTAT','IMLOAN','BALANCE','PAYAMT','PAYFREQ','PAYDAY','ISSDTE','CCY'):
+    if c in pdf.columns:
+        print(f"  {c:<10} dtype={pdf[c].dtype}  first={pdf[c].iloc[0]!r}")
+    else:
+        print(f"  {c:<10} MISSING")
+PY
 
 ============================
 
