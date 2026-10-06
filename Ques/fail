@@ -1,29 +1,14 @@
-        days = (ctx["reptdate"] - bldate).days if not pd.isna(bldate) else None
+    pdf = note.to_pandas()
+    col = {c: i for i, c in enumerate(pdf.columns)}
 
-        if not pd.isna(exprdate) and (exprdate - ctx["reptdate"]).days < 8:
+    # pandas materialises Date columns as datetime64[ns] -> cells come out as
+    # pd.Timestamp (and missing as pd.NaT). The loop body does plain
+    # date arithmetic, so normalise to datetime.date / None once here.
+    for _c in ("BLDATE", "ISSDTE", "EXPRDATE", "APPRDATE"):
+        if _c in pdf.columns:
+            pdf[_c] = pdf[_c].apply(lambda x: None if pd.isna(x) else x.date())
 
-            elif pd.isna(bldate) or bldate <= date(1900, 1, 1):
-
-            if pd.isna(bldate) or bldate > exprdate or balance <= payamt:
-
-        if not ((paidind not in ("P", "C")) or (eir_adj is not None and not pd.isna(eir_adj))):
-
-            if pd.isna(payfreq) or payfreq in ("5", "9", " ") or product in (350, 910, 925):
-
-
-
-
-python3 - <<'PY'
-import polars as pl
-p = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet'
-df = pl.read_parquet(p).head(5)
-pdf = df.to_pandas()
-for c in ('BLDATE','EXPRDATE','LOANSTAT','IMLOAN','BALANCE','PAYAMT','PAYFREQ','PAYDAY','ISSDTE','CCY'):
-    if c in pdf.columns:
-        print(f"  {c:<10} dtype={pdf[c].dtype}  first={pdf[c].iloc[0]!r}")
-    else:
-        print(f"  {c:<10} MISSING")
-PY
+    rows = []
 
 ============================
 
