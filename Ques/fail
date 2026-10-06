@@ -1,60 +1,8 @@
-        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
-        if "ACCTNO" in active.columns:
-            active = active.with_columns(
-                pl.col("ACCTNO").cast(pl.Utf8).alias("DIAG_ACCT"),
-                pl.col("CUR").cast(pl.Utf8).alias("DIAG_CUR"),
-                pl.col("REMM").cast(pl.Utf8).alias("DIAG_REMM"),
-            )
-        is_last = (pl.col("REMM") > 12) | (pl.col("CUR") == pl.col("EXPRDATE"))
-
-
-
-
-    _extra = []
-    if "DIAG_ACCT" in df.columns:
-        _extra = [pl.col("DIAG_ACCT"), pl.col("DIAG_CUR"), pl.col("DIAG_REMM")]
-    out = df.select([
-        pl.concat_str([
-            pl.when(fc).then(pl.lit(fcy)).otherwise(pl.lit(lcy)),
-            pl.col("ITEM"), pl.col("CUST"), _remfmt_expr(pl.col(rem)), pl.lit("0000Y"),
-        ]).alias("BNMCODE"),
-        pl.col(amt).alias("AMOUNT"),
-        *[pl.when(fc & (pl.col("CCY") == c)).then(pl.col(amt)).otherwise(0.0).alias(f"AMT{c}")
-          for c in _CCY_COLS],
-        *_extra,
-    ])
-
-
-
-
-    # === TEMPORARY DIAGNOSTIC ===
-    try:
-        _diag = pl.concat(parts, how="diagonal_relaxed")
-        _fam = _diag.filter(
-            pl.col("BNMCODE").str.contains("9421908")
-            | pl.col("BNMCODE").str.contains("9321109")
-        )
-        _fam.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv")
-        print(f"  [diag] wrote {_fam.height:,} rows to diag_parts.csv")
-    except Exception as _e:
-        print(f"  [diag] error: {_e}")
-    # === END TEMPORARY DIAGNOSTIC ===
-
-
-
-
-/sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py > /tmp/run.log 2>&1
-head -40 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv
-
-
-
-
 python3 -c "
 import polars as pl
 d = pl.read_csv('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv')
-r = (d.group_by('BNMCODE')
-      .agg(pl.col('AMOUNT').sum().round(0).alias('SUM'),
-           pl.len().alias('N'))
-      .sort('BNMCODE'))
-print(r)
+sub = d.filter(pl.col('BNMCODE') == '9321109010000Y').sort('AMOUNT', descending=True)
+print(f'rows: {sub.height}')
+print(f'total: {sub[\"AMOUNT\"].sum():.2f}')
+print(sub)
 "
