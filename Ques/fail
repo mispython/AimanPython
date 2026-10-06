@@ -1,44 +1,73 @@
-            FROM read_parquet('{k1tbl_cache.as_posix()}')
-            WHERE GWMVT = 'P'
-              AND COALESCE(GWOCY, '') NOT IN ('XAU','XAT')
-              AND COALESCE(GWCCY, '') NOT IN ('XAU','XAT')
-        """).pl()
+    loan_all = con.execute(f"""
+        SELECT * REPLACE (
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CAST(NOTENO AS BIGINT) AS NOTENO,
+            CAST(COMMNO AS BIGINT) AS COMMNO,
+            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
+            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
+            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
+        )
+        FROM read_parquet('{bnm1_loan_cache.as_posix()}')
+        WHERE (COALESCE(PAIDIND,'') NOT IN ('P','C') OR EIR_ADJ IS NOT NULL)
+          AND (SUBSTR(CAST(PRODCD AS VARCHAR),1,2) = '34' OR PRODUCT IN (225,226))
+          AND ACCTYPE IN ('OD','LN')
+    """).pl()
 
 
 
 
-python3 - <<'PY'
-import duckdb
-con = duckdb.connect()
-K1 = '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNMK__k1tbl094.parquet'
+    # Precompute column-index map once; iterate as plain tuples (much faster
+    # than iter_rows(named=True)).
+    pdf = note.to_pandas()
+    col = {c: i for i, c in enumerate(pdf.columns)}
+    rows = []
 
-# How many M rows survive the current SQL filter?
-old = con.execute(f"""
-    SELECT COUNT(*) FROM read_parquet('{K1}')
-    WHERE GWMVT='P' AND GWOCY NOT IN ('XAU','XAT') AND GWCCY NOT IN ('XAU','XAT')
-""").fetchone()[0]
+    for t in pdf.itertuples(index=False, name=None):
+        paidind   = t[col["PAIDIND"]]
+        eir_adj   = t[col["EIR_ADJ"]]
+        if not ((paidind not in ("P", "C") if paidind is not None else True)
+                or (eir_adj is not None and eir_adj == eir_adj)):  # NaN check
+            continue
 
-# How many M rows survive with the COALESCE fix?
-new = con.execute(f"""
-    SELECT COUNT(*) FROM read_parquet('{K1}')
-    WHERE GWMVT='P'
-      AND COALESCE(GWOCY,'') NOT IN ('XAU','XAT')
-      AND COALESCE(GWCCY,'') NOT IN ('XAU','XAT')
-""").fetchone()[0]
+        prodcd    = str(t[col["PRODCD"]] or "")
+        product   = t[col["PRODUCT"]]
+        if not (prodcd[:2] == "34" or product in (225, 226)):
+            continue
 
-# Of those, how many are MYR with GWDLP in the ROW1_BCXX set and GWCTP starting with B
-# (the rows that should produce item 610 in RM)
-item610 = con.execute(f"""
-    SELECT COUNT(*) FROM read_parquet('{K1}')
-    WHERE GWMVT='P'
-      AND COALESCE(GWOCY,'') NOT IN ('XAU','XAT')
-      AND COALESCE(GWCCY,'') NOT IN ('XAU','XAT')
-      AND GWCCY='MYR' AND GWMVTS='M'
-      AND SUBSTR(GWCTP,1,1)='B'
-      AND GWDLP IN ('LO','LC','LF','LS','LOI','LSI','LSC','LSW',
-                    'FDA','FDB','FDS','FDL','LOC','LOW')
-""").fetchone()[0]
+        custcd    = str(t[col["CUSTCD"]] or "")
+        cust      = "08" if custcd in ("77", "78", "95", "96") else "09"
+        is_fcy    = product in FCY_PRODUCTS
+        acctype   = t[col["ACCTYPE"]]
 
-print("rows with old filter :", old)
-print("rows with COALESCE   :", new)
-print("rows producing 610   :", item610)
+        # ... rest of the loop body: replace every `r.get("X")` with t[col["X"]].
+
+
+
+
+def leap_days(year):
+    d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if year % 4 == 0:
+        d[1] = 29
+    return d
+
+
+
+
+_LEAP_CACHE = {}
+def _leap_days(year: int):
+    d = _LEAP_CACHE.get(year)
+    if d is None:
+        d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        if year % 4 == 0:
+            d[1] = 29
+        _LEAP_CACHE[year] = d
+    return d
+
+
+
+
