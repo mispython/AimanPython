@@ -1,12 +1,39 @@
-        # Corrective steps: at most ~4-5 needed because the jump lands close.
-        for _ in range(10):
-            nxt = _nxt_date(rolling)
-            behind_mask = (pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
-                           & (nxt > pl.col("CUR")))
-            # Materialise the mask as a Series so .any() evaluates against data
-            behind_series = rolling.select(behind_mask.alias("B"))["B"]
-            if not behind_series.any():
-                break
-            rolling = rolling.with_columns(
-                pl.when(behind_mask).then(nxt).otherwise(pl.col("CUR")).alias("CUR")
-            )
+python3 - <<'PY'
+import time
+import polars as pl
+from pathlib import Path
+import sys
+sys.path.insert(0, '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS')
+from EIBMRLFM import _amortise
+from REPTDATE import get_reptdate_values
+
+rd = get_reptdate_values()
+ctx = {"reptdate": rd.reptdate, "rpyr": rd.reptdate.year,
+       "rpmth": rd.reptdate.month, "rpday": rd.reptdate.day,
+       "rd_days": [31, 28 if rd.reptdate.year % 4 else 29, 31, 30, 31, 30,
+                   31, 31, 30, 31, 30, 31]}
+
+# Minimal synthetic frame that exercises the roll path
+df = pl.DataFrame({
+    "ISSDTE": [pl.date(2005, 8, 5)] * 200_000,
+    "BLDATE": [None] * 200_000,
+    "EXPRDATE": [pl.date(2030, 7, 31)] * 200_000,
+    "PAYFREQ": ["1"] * 200_000,
+    "PAYAMT": [976.0] * 200_000,
+    "BALANCE": [42935.0] * 200_000,
+    "PRODUCT": [34230] * 200_000,
+    "ITEM": ["429"] * 200_000,
+    "CUST": ["09"] * 200_000,
+    "IS_FCY": [False] * 200_000,
+    "CCY": ["MYR"] * 200_000,
+    "COND": [False] * 200_000,
+})
+df = df.with_columns((~pl.col("BLDATE").is_not_null()).alias("ROLL"),
+                     pl.lit(None, dtype=pl.Date).alias("CUR"),
+                     pl.lit(False).alias("FSKIP"))
+
+t0 = time.time()
+parts = []
+_amortise(df, ctx, parts)
+print(f"_amortise on 200k rows took {time.time()-t0:.1f}s")
+PY
