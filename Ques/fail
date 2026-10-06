@@ -1,6 +1,5 @@
-        # SAS shows one line per MNI NO per customer: sum the FD receipts of that account.
-        # ICNO + CUSTNAME are in the key so joint holders are NOT added together.
-        data1 = data1.group_by(["SRC", "ACCTNO", "ICNO", "CUSTNAME"], maintain_order=True).agg(
-            [pl.col(c).first() for c in ("BRANCH", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT")]
-            + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
-        )
+def _fnum(v) -> str:
+    """SAS COMMA16.2: keep the commas when the value fits in 16 characters, otherwise drop them."""
+    x = float(v or 0.0)
+    s = f"{x:,.2f}"
+    return s if len(s) <= 16 else f"{x:.2f}"
