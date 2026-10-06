@@ -1,136 +1,18 @@
-Running EIBMRLFM...
-  Building NOTE (loans)...
-100% ▕██████████████████████████████████████▏ (00:00:08.50 elapsed) 
+        bldate, exprdate = t[col["BLDATE"]], t[col["EXPRDATE"]]
+        loanstat, imloan = t[col["LOANSTAT"]], t[col["IMLOAN"]]
+        balance, payamt = t[col["BALANCE"]] or 0.0, t[col["PAYAMT"]] or 0.0
+        payfreq, payday, issdte, currency = t[col["PAYFREQ"]], t[col["PAYDAY"]], t[col["ISSDTE"]], t[col["CCY"]]
 
 
 
 
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/7_troubleshoot.py
-Total rows: 7056
-
--- GWMVT counts --
-   ('P', 7055)
-   (None, 1)
-
--- GWMVTS counts --
-   ('M', 4749)
-   ('S', 1153)
-   ('P', 1153)
-   (None, 1)
-
--- GWCCY counts --
-   ('MYR', 5476)
-   ('USD', 990)
-   ('JPY', 120)
-   ('AUD', 104)
-   ('CNY', 81)
-   ('EUR', 69)
-   ('SGD', 61)
-   ('HKD', 40)
-   ('GBP', 37)
-   ('CAD', 27)
-   ('THB', 13)
-   ('CHF', 11)
-   ('XAT', 7)
-   ('NZD', 4)
-   ('SEK', 4)
-   ('LAK', 3)
-   ('PHP', 2)
-   ('IDR', 2)
-   ('XAU', 2)
-   (None, 1)
-   ('TWD', 1)
-   ('KRW', 1)
-
--- GWOCY counts --
-   (None, 4750)
-   ('MYR', 891)
-   ('USD', 860)
-   ('JPY', 118)
-   ('AUD', 100)
-   ('CNY', 74)
-   ('EUR', 67)
-   ('SGD', 60)
-   ('HKD', 34)
-   ('GBP', 29)
-   ('CAD', 27)
-   ('THB', 13)
-   ('CHF', 10)
-   ('XAT', 7)
-   ('SEK', 4)
-   ('NZD', 4)
-   ('IDR', 2)
-   ('PHP', 2)
-   ('XAU', 2)
-   ('KRW', 1)
-   ('TWD', 1)
-
--- GWDLP counts (top 30) --
-   ('BCQ', 4097)
-   ('FXS', 916)
-   ('FXO', 858)
-   ('SF2', 482)
-   ('BCD', 260)
-   ('BF', 84)
-   ('BCC', 76)
-   ('LCC', 68)
-   ('LS', 44)
-   ('MMA', 27)
-   ('TS2', 26)
-   ('WMA', 23)
-   ('FF2', 16)
-   ('LO', 16)
-   ('WMI', 13)
-   ('MMI', 11)
-   ('MMQ', 11)
-   ('WMQ', 10)
-   ('BO', 7)
-   ('SF1', 4)
-   ('FF1', 2)
-   ('BFL', 2)
-   ('TS1', 2)
-   (None, 1)
-
--- 10 sample rows where GWMVT='P' --
-   ('AUD', 'USD', 'P', 'S', 'CB', 'FXS', 'S1255706', 2823792.11)
-   ('USD', 'CNY', 'P', 'S', 'BA', 'FXS', 'S1257763', 13070.41)
-   ('USD', 'MYR', 'P', 'S', 'CD', 'FXS', 'S1258214', 421984.08999999997)
-   ('USD', 'CNY', 'P', 'S', 'BA', 'FXS', 'S1257880', 669328.45)
-   ('AUD', 'MYR', 'P', 'S', 'CD', 'FXS', 'S1255704', 63203.59)
-   ('AUD', 'MYR', 'P', 'P', 'BB', 'FXS', 'S1256959', -343703.93)
-   ('AUD', 'MYR', 'P', 'P', 'BB', 'FXS', 'S1256961', -147607.49)
-   ('USD', 'JPY', 'P', 'S', 'BA', 'FXS', 'S1258614', 1020125.0)
-   ('USD', 'JPY', 'P', 'S', 'BA', 'FXS', 'S1256640', 7770259.56)
-   ('USD', 'JPY', 'P', 'S', 'BA', 'FXS', 'S1257044', 1428175.0)
-
--- 10 sample rows where GWCCY='MYR' --
-   ('MYR', 'USD', 'P', 'S', 'CA', 'FXS', 'S1257925', 2924869.3899999997)
-   ('MYR', 'USD', 'P', 'S', 'BB', 'FXS', 'S1258425', 4080000.0)
-   ('MYR', 'USD', 'P', 'S', 'CB', 'FXS', 'S1259143', 50950.0)
-   ('MYR', 'AUD', 'P', 'S', 'BB', 'FXS', 'S1256939', 400000.0)
-   ('MYR', 'AUD', 'P', 'S', 'BB', 'FXS', 'S1256953', 100000.0)
-   ('MYR', 'AUD', 'P', 'S', 'BB', 'FXS', 'S1259154', 120000.0)
-   ('MYR', 'CNY', 'P', 'P', 'CD', 'FXS', 'S1259336', -209036.56)
-   ('MYR', 'USD', 'P', 'P', 'CD', 'FXS', 'S1258979', -113149.51)
-   ('MYR', 'USD', 'P', 'P', 'CD', 'FXS', 'S1258986', -208712.87999999998)
-   ('MYR', 'USD', 'P', 'S', 'BB', 'FXS', 'S1259129', 8158000.0)
-
--- 10 sample rows where GWDLP IN ('LO','LC','LF','LS','LOI','LSI','LSC','LSW','FDA','FDB','FDS','FDL','LOC','LOW') --
-   ('CHF', None, 'P', 'M', 'BB', 'LS', 'D566561', -16642116.68)
-   ('EUR', None, 'P', 'M', 'BA', 'LS', 'D574571', -185336312.0)
-   ('USD', None, 'P', 'M', 'BA', 'LS', 'D568828', -240853473.79)
-   ('USD', None, 'P', 'M', 'BA', 'LS', 'D573733', -40805000.0)
-   ('USD', None, 'P', 'M', 'BA', 'LO', 'D578619', -204025000.0)
-   ('USD', None, 'P', 'M', 'BA', 'LS', 'D574459', -204025000.0)
-   ('USD', None, 'P', 'M', 'BA', 'LS', 'D574631', -215611009.26)
-   ('USD', None, 'P', 'M', 'BA', 'LS', 'D573577', -48966000.0)
-   ('GBP', None, 'P', 'M', 'BE', 'LS', 'D573244', -2171812.8)
-   ('GBP', None, 'P', 'M', 'BE', 'LO', 'D578013', -1840970.66)
-
--- distinct GWDLP values that start with 'B' --
-   ('BCQ', 4097)
-   ('BCD', 260)
-   ('BF', 84)
-   ('BCC', 76)
-   ('BO', 7)
-   ('BFL', 2)
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
+    run_eibmrlfm(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 906, in run_eibmrlfm
+    note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 336, in _build_note
+    payfreq, payday, issdte, currency = t[col["PAYFREQ"]], t[col["PAYDAY"]], t[col["ISSDTE"]], t[col["CCY"]]
+KeyError: 'PAYDAY'
