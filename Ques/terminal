@@ -1,10 +1,10 @@
-  BLDATE     dtype=float64  first=nan
-  EXPRDATE   dtype=float64  first=27758.0
-  LOANSTAT   dtype=float64  first=1.0
-  IMLOAN     MISSING
-  BALANCE    dtype=float64  first=349758.95682409994
-  PAYAMT     dtype=float64  first=3523.0
-  PAYFREQ    dtype=object  first='1'
-  PAYDAY     MISSING
-  ISSDTE     dtype=float64  first=20367.0
-  CCY        dtype=object  first='MYR'
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 293, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 269, in main
+    run_eibmrlfm(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 912, in run_eibmrlfm
+    note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 360, in _build_note
+    if not pd.isna(exprdate) and (exprdate - ctx["reptdate"]).days < 8:
+TypeError: unsupported operand type(s) for -: 'Timestamp' and 'datetime.date'
