@@ -1,57 +1,53 @@
-def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache):
-    con = duckdb.connect(database=":memory:")
-    cisca = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO),
-               COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
-        FROM read_parquet('{cisln_deposit_cache.as_posix()}')
-        WHERE ACCTNO BETWEEN 3000000000 AND 3999999999
-    """).pl()
-    cisfd = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO),
-               COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
-        FROM read_parquet('{cisdp_deposit_cache.as_posix()}')
-        WHERE (ACCTNO BETWEEN 1000000000 AND 1999999999) OR (ACCTNO BETWEEN 7000000000 AND 7999999999)
-    """).pl()
-    ca = con.execute(f"""
-        SELECT * FROM read_parquet('{deposit_current_cache.as_posix()}') WHERE CURBAL > 0
-    """).pl().with_columns([
-        pl.col("ACCTNO").cast(pl.Int64),
-        pl.col("CURBAL").alias("CABAL"),
-    ])
-    fd = con.execute(f"""
-        SELECT * FROM read_parquet('{deposit_fd_cache.as_posix()}') WHERE CURBAL > 0
-    """).pl().with_columns([
-        pl.col("ACCTNO").cast(pl.Int64),
-        pl.col("CURBAL").alias("FDBAL"),
-    ])
-    con.close()
+    # The exact columns the report needs, with the exact dtypes both sides must agree on.
+    _REPORT_COLS = [
+        ("BRANCH",   pl.Int64),
+        ("ACCTNO",   pl.Int64),
+        ("CUSTNAME", pl.Utf8),
+        ("CUSTNO",   pl.Int64),
+        ("NEWIC",    pl.Utf8),
+        ("OLDIC",    pl.Utf8),
+        ("CURBAL",   pl.Float64),
+        ("PRODUCT",  pl.Int64),
+        ("ICNO",     pl.Utf8),
+    ]
 
-    ca_excl = {400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411}
-    fd_excl = {350, 351, 352, 353, 354, 355, 356, 357}
+    def _shape(df: pl.DataFrame, is_fd: bool) -> pl.DataFrame:
+        """Project df to exactly _REPORT_COLS with matching dtypes, adding the
+        FDBAL / CABAL side that is missing on the other dataset."""
+        def col_or_null(src, name, dtype):
+            if src in df.columns:
+                return pl.col(src).cast(dtype, strict=False).alias(name)
+            return pl.lit(None, dtype=dtype).alias(name)
 
-    ca_j = ca.join(cisca, on="ACCTNO", how="inner").filter(
-        (pl.col("PURPOSE") != "2") & (~pl.col("PRODUCT").is_in(ca_excl))
-    )
-    fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter(
-        (pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_excl))
-    )
-    # Align FD-only column name to the CA-side name so PRODUCT survives the concat
-    fd_j = fd_j.with_columns(
-        pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT")
-    )
+        # FD-specific column name -> report name
+        product_src  = "ACCTTYPE" if is_fd else "PRODUCT"
+        cnic_src     = "NEWIC"    # present on both
+        col_src      = "OLDIC"    # present on both
 
-    ca_ind = ca_j.filter(pl.col("CUSTCODE").is_in([77, 78, 95, 96]))
-    ca_org = ca_j.filter((~pl.col("CUSTCODE").is_in([77, 78, 95, 96])) & (pl.col("INDORG") == "O"))
-    fd_ind = fd_j.filter(pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0]))
-    fd_org = fd_j.filter((~pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0])) & (pl.col("INDORG") == "O"))
+        out = df.select([
+            col_or_null("BRANCH",       "BRANCH",   pl.Int64),
+            col_or_null("ACCTNO",       "ACCTNO",   pl.Int64),
+            col_or_null("CUSTNAME",     "CUSTNAME", pl.Utf8),
+            col_or_null("CUSTNO",       "CUSTNO",   pl.Int64),
+            col_or_null(cnic_src,       "NEWIC",    pl.Utf8),
+            col_or_null(col_src,        "OLDIC",    pl.Utf8),
+            col_or_null("CURBAL",       "CURBAL",   pl.Float64),
+            col_or_null(product_src,    "PRODUCT",  pl.Int64),
+            col_or_null("ICNO",         "ICNO",     pl.Utf8),
+        ])
+        # Add the missing side total
+        if is_fd:
+            out = out.with_columns(pl.col("CURBAL").alias("FDBAL"),
+                                   pl.lit(0.0).alias("CABAL"))
+        else:
+            out = out.with_columns(pl.col("CURBAL").alias("CABAL"),
+                                   pl.lit(0.0).alias("FDBAL"))
+        return out
 
     def _top100(fd_part, ca_part, corp_excl=False):
-        if "CABAL" not in fd_part.columns:
-            fd_part = fd_part.with_columns(pl.lit(0.0).alias("CABAL"))
-        if "FDBAL" not in ca_part.columns:
-            ca_part = ca_part.with_columns(pl.lit(0.0).alias("FDBAL"))
-        common = [c for c in fd_part.columns if c in ca_part.columns]
-        data1 = pl.concat([fd_part.select(common), ca_part.select(common)]).with_columns(
+        fd_shaped = _shape(fd_part, is_fd=True)
+        ca_shaped = _shape(ca_part, is_fd=False)
+        data1 = pl.concat([fd_shaped, ca_shaped], how="vertical_relaxed").with_columns(
             pl.when(pl.col("ICNO").is_null() | (pl.col("ICNO") == ""))
             .then(pl.lit("XX"))
             .otherwise(pl.col("ICNO")).alias("ICNO")
@@ -70,134 +66,9 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
             .sort("CURBAL", descending=True)
             .head(100)
         )
-        # Detail rows for just the top-100 (ICNO, CUSTNAME) keys, in the same order SAS PRINTS
         keys = summary.select(["ICNO", "CUSTNAME"])
         detail = (
             data1.join(keys, on=["ICNO", "CUSTNAME"], how="inner")
             .sort(["ICNO", "CUSTNAME", "BRANCH", "ACCTNO"])
         )
         return summary, detail
-
-    ind_sum, ind_det = _top100(fd_ind, ca_ind)
-    org_sum, org_det = _top100(fd_org, ca_org, corp_excl=True)
-    return ind_sum, org_sum, ind_det, org_det
-
-
-
-
-def _write_top100_report(summary, detail, title, rdate, output_path):
-    def _d(v):
-        if v is None:
-            return ""
-        try:
-            return f"{float(v):,.2f}"
-        except Exception:
-            return str(v)
-
-    def _int_str(v) -> str:
-        if v is None:
-            return ""
-        try:
-            return str(int(v))
-        except Exception:
-            return str(v)
-
-    lines = []
-
-    # ==================== SECTION 1: SUMMARY ====================
-    lines.append(f"{title} AS AT {rdate}")
-    lines.append("")
-    lines.append(
-        f"{'Obs':>4}   {'DEPOSITOR':<40}  "
-        f"{'TOTAL BALANCE':>18}  {'FD BALANCE':>18}  {'CA BALANCE':>18}"
-    )
-    lines.append("")
-
-    for i, r in enumerate(summary.iter_rows(named=True), start=1):
-        lines.append(
-            f"{i:>4}   {str(r.get('CUSTNAME') or '')[:40]:<40}  "
-            f"{_d(r.get('CURBAL')):>18}  {_d(r.get('FDBAL')):>18}  {_d(r.get('CABAL')):>18}"
-        )
-
-    # ==================== SECTION 2: DETAIL ====================
-    if detail is not None and detail.height > 0:
-        lines.append("")
-        lines.append(f"{title} AS AT {rdate}")
-
-        obs_no = 0
-        current_key = None
-        group_total = 0.0
-
-        def _close_group(gt: float) -> None:
-            if gt == 0.0:
-                return
-            lines.append("")
-            lines.append(
-                f"{'--------':>4}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
-                f"{'':>14}  {'':>10}  {'----------------':>18}"
-            )
-            lines.append(
-                f"{'CUSTNAME':>8}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
-                f"{'':>14}  {'':>10}  {_d(gt):>18}"
-            )
-            lines.append(
-                f"{'    ICNO':>8}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
-                f"{'':>14}  {'':>10}  {_d(gt):>18}"
-            )
-            lines.append("")
-            lines.append("")
-
-        for r in detail.iter_rows(named=True):
-            key = (r.get("ICNO"), r.get("CUSTNAME"))
-            if key != current_key:
-                _close_group(group_total)
-                current_key = key
-                group_total = 0.0
-                lines.append("")
-                lines.append(f"ICNO={key[0]} DEPOSITOR={key[1]}")
-                lines.append("")
-                lines.append(
-                    f"{'Obs':>4}   {'CODE':>6}  {'MNI NO':>13}  {'DEPOSITOR':<24}  "
-                    f"{'CIS NO':>10}  {'NEW IC':>14}  {'OLD IC':>10}  "
-                    f"{'CURRENT BALANCE':>18}  {'PRODUCT':>8}"
-                )
-                lines.append("")
-
-            obs_no += 1
-            curbal = r.get("CURBAL") or 0.0
-            group_total += curbal
-            lines.append(
-                f"{obs_no:>4}   {_int_str(r.get('BRANCH')):>6}  {_int_str(r.get('ACCTNO')):>13}  "
-                f"{str(r.get('CUSTNAME') or '')[:24]:<24}  {_int_str(r.get('CUSTNO')):>10}  "
-                f"{str(r.get('NEWIC') or ''):>14}  {str(r.get('OLDIC') or ''):>10}  "
-                f"{_d(curbal):>18}  {_int_str(r.get('PRODUCT')):>8}"
-            )
-
-        _close_group(group_total)
-
-        # Grand total across the entire detail section
-        detail_grand = float(detail.select(pl.col("CURBAL").sum()).item() or 0.0)
-        lines.append("")
-        lines.append(f"{'':>77}{'=' * 16}")
-        lines.append(f"{'':>77}{_d(detail_grand):>18}")
-
-    with open(output_path, "w", encoding="latin1") as fh:
-        fh.write("\n".join(lines) + "\n")
-
-
-
-
-    print("  Building TOP 100 individual/corporate reports...")
-    top_ind, top_org, det_ind, det_org = _build_top100(
-        cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache
-    )
-    fd11_path, fd12_path = output_dir / "INDTOP50.txt", output_dir / "CORTOP50.txt"
-    _write_top100_report(top_ind, det_ind, "TOP 100 LARGEST FD+CA INDIVIDUAL CUSTOMERS", ctx["rdate"], fd11_path)
-    _write_top100_report(top_org, det_org, "TOP 100 LARGEST FD+CA CORPORATE CUSTOMERS", ctx["rdate"], fd12_path)
-
-
-
-
-head -8 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/INDTOP50.txt
-grep -n "ICNO=" /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/INDTOP50.txt | head -5
-tail -4 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/INDTOP50.txt
