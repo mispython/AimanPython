@@ -1,22 +1,70 @@
-near = res.filter((pl.col("REMM") > 0.05) & (pl.col("REMM") < 0.5)).sort("REMM")
-near.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/near_boundary.csv")
+                def _p(v):
+                    v = 0.0 if v is None else v
+                    # SAS ROUND: half away from zero. Python round: banker's.
+                    return int(math.floor(abs(v) / divisor + 0.5))
 
-total_near = near.height
-zero_point_one = near.filter((pl.col("REMM") - 0.1).abs() < 1e-9).height
-just_above = near.filter(pl.col("REMM") > 0.1).height
-just_below = near.filter(pl.col("REMM") < 0.1).height
-b01 = near.filter(pl.col("BUCKET") == "01").height
-b02 = near.filter(pl.col("BUCKET") == "02").height
 
-print(f"near-boundary rows (0.05 < REMM < 0.5): {total_near}")
-print(f"  exactly 0.1 (bit-for-bit):            {zero_point_one}")
-print(f"  REMM slightly > 0.1:                  {just_above}")
-print(f"  REMM slightly < 0.1:                  {just_below}")
-print(f"  classified as bucket 01:              {b01}")
-print(f"  classified as bucket 02:              {b02}")
-print()
-print("Min/Max REMM in that band:")
-print(f"  min = {near['REMM'].min()}")
-print(f"  max = {near['REMM'].max()}")
-print()
-print("Full list written to: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/near_boundary.csv")
+
+
+    if not active.is_empty():                               # safety net only
+        print(f"  [warn] {active.height:,} loans hit _MAX_ROUNDS; finalised at residual balance")
+        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
+        parts.extend(_emit_pair(active, "BAL", "REMM"))
+
+    # === TEMPORARY DIAGNOSTIC — dump parts for families of interest ===
+    try:
+        _diag = pl.concat(parts, how="diagonal_relaxed")
+        _fam = _diag.filter(
+            pl.col("BNMCODE").is_in([
+                "9521109010000Y", "9521109020000Y",
+                "9521408010000Y", "9521408020000Y", "9521408030000Y",
+                "9521408040000Y", "9521408050000Y", "9521408060000Y",
+                "9321109010000Y", "9321109020000Y",
+                "9321408010000Y", "9321408020000Y", "9321408030000Y",
+                "9321408040000Y", "9321408050000Y", "9321408060000Y",
+            ])
+        )
+        _fam.write_csv("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/diag_parts.csv")
+        print(f"  [diag] dumped {_fam.height:,} rows to diag_parts.csv")
+    except Exception as _e:
+        print(f"  [diag] could not dump parts: {_e}")
+    # === END TEMPORARY DIAGNOSTIC ===
+
+
+
+
+        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
+        if "ACCTNO" in active.columns:
+            active = active.with_columns(
+                pl.col("ACCTNO").cast(pl.Utf8).alias("DIAG_ACCT"),
+                pl.col("CUR").cast(pl.Utf8).alias("DIAG_CUR"),
+                pl.col("REMM").cast(pl.Utf8).alias("DIAG_REMM"),
+            )
+        is_last = (pl.col("REMM") > 12) | (pl.col("CUR") == pl.col("EXPRDATE"))
+
+
+
+
+    _extra = []
+    if "DIAG_ACCT" in df.columns:
+        _extra = [pl.col("DIAG_ACCT"), pl.col("DIAG_CUR"), pl.col("DIAG_REMM")]
+    out = df.select([
+        pl.concat_str([
+            pl.when(fc).then(pl.lit(fcy)).otherwise(pl.lit(lcy)),
+            pl.col("ITEM"), pl.col("CUST"), _remfmt_expr(pl.col(rem)), pl.lit("0000Y"),
+        ]).alias("BNMCODE"),
+        pl.col(amt).alias("AMOUNT"),
+        *[pl.when(fc & (pl.col("CCY") == c)).then(pl.col(amt)).otherwise(0.0).alias(f"AMT{c}")
+          for c in _CCY_COLS],
+        *_extra,
+    ])
+
+
+
+
+head -40 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/diag_parts.csv
+
+
+
+
+wc -l /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/diag_parts.csv
