@@ -1,5 +1,59 @@
-def _read_sas_kapiti(path) -> pl.DataFrame:
-    con = duckdb.connect(database=":memory:")
-    df = con.execute(f"SELECT * FROM read_parquet('{Path(path).as_posix()}')").pl()
-    con.close()
-    return df
+_CIS_KEEP = ["CUSTNO", "ACCTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"]
+
+
+
+
+        WHERE ACCTNO BETWEEN 3000000000 AND 3999999999
+    """).pl().select(_CIS_KEEP)
+
+
+
+
+        WHERE (ACCTNO BETWEEN 1000000000 AND 1999999999) OR (ACCTNO BETWEEN 7000000000 AND 7999999999)
+    """).pl().select(_CIS_KEEP)
+
+
+
+
+    cis_cols = [c for c in _CIS_KEEP if c != "ACCTNO"]
+
+    # SAS: MERGE CA(IN=A) CISCA  -> keep every CA row; CIS (later dataset) wins on shared columns
+    ca_j = (
+        ca.drop([c for c in cis_cols if c in ca.columns])
+        .join(cisca, on="ACCTNO", how="left")
+        .filter(
+            pl.col("PURPOSE").ne_missing("2")
+            & ~pl.col("PRODUCT").is_in(ca_excl).fill_null(False)
+        )
+    )
+
+    # SAS: MERGE CISFD FD(IN=A)  -> keep every FD row; FD (later dataset) wins on shared columns
+    fd_j = (
+        fd.join(cisfd.drop([c for c in cis_cols if c in fd.columns]), on="ACCTNO", how="left")
+        .filter(
+            pl.col("PURPOSE").ne_missing("2")
+            & ~pl.col("ACCTTYPE").is_in(fd_excl).fill_null(False)
+        )
+        .with_columns(pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT"))
+    )
+
+
+
+
+    is_ind = pl.col("CUSTCODE").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
+    ca_ind = ca_j.filter(is_ind)
+    ca_org = ca_j.filter(~is_ind & (pl.col("INDORG") == "O"))
+    fd_ind = fd_j.filter(is_ind)
+    fd_org = fd_j.filter(~is_ind & (pl.col("INDORG") == "O"))
+
+
+
+
+            .with_columns(_ebcdic("ICNO").alias("_K1"), _ebcdic("CUSTNAME").alias("_K2"))
+            .sort(["CURBAL", "_K1", "_K2"], descending=[True, False, False], maintain_order=True)
+            .drop(["_K1", "_K2"])
+            .head(100)
+
+
+
+
