@@ -1,61 +1,14 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ diff <(sort /path/to/expected_FISS.txt) <(sort /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/FISS.txt) | head -40
-sort: cannot read: /path/to/expected_FISS.txt: No such file or directory
-0a1,315
-> 9321109010000Y;613997;0;0;0;0
-> 9321109020000Y;432237;0;0;0;0
-> 9321109030000Y;3571024;0;0;0;0
-> 9321109040000Y;3028128;0;0;0;0
-> 9321109050000Y;7472818;0;0;0;0
-> 9321109060000Y;79755719;0;0;0;0
-> 9321209010000Y;1957;0;0;0;0
-> 9321209020000Y;592043;0;0;0;0
-> 9321209030000Y;1215072;0;0;0;0
-> 9321209040000Y;1989025;0;0;0;0
-> 9321209050000Y;818265;0;0;0;0
-> 9321209060000Y;378143;0;0;0;0
-> 9321408010000Y;736196;0;0;0;0
-> 9321408020000Y;175835;0;0;0;0
-> 9321408030000Y;1765852;0;0;0;0
-> 9321408040000Y;2654595;0;0;0;0
-> 9321408050000Y;5632274;0;0;0;0
-> 9321408060000Y;127919406;0;0;0;0
-> 9321908010000Y;761719;0;0;0;0
-> 9321908020000Y;811391;0;0;0;0
-> 9321908030000Y;2877920;0;0;0;0
-> 9321908040000Y;4381785;0;0;0;0
-> 9321908050000Y;8584552;0;0;0;0
-> 9321908060000Y;77028807;0;0;0;0
-> 9321909010000Y;473;0;0;0;0
-> 9321909020000Y;15477;0;0;0;0
-> 9321909030000Y;193412;0;0;0;0
-> 9321909040000Y;58148;0;0;0;0
-> 9321909060000Y;9;0;0;0;0
-> 9332900010000Y;15154;0;0;0;0
-> 9332900020000Y;23845;0;0;0;0
-> 9332900030000Y;300;0;0;0;0
-> 9342300060000Y;2620890;0;0;0;0
-> 9342400010000Y;28540;0;0;0;0
-> 9342400020000Y;27910;0;0;0;0
-> 9342400030000Y;440048;0;0;0;0
-> 9342400040000Y;318474;0;0;0;0
-> 9342400050000Y;183800;0;0;0;0
-> 9342400060000Y;2466328;0;0;0;0
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ python3 -c "
-> import polars as pl
-> d = pl.read_parquet('/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/cache/EIBMLIQP/BNM1__loan094.parquet')
-> # Find loans whose BALANCE is between 9,000,000 and 10,000,000 (candidate for the 9,349 K shift)
-> s = d.filter(pl.col('BALANCE').is_between(9_000_000, 10_000_000)).head(5)
-> print(s.select(['ACCTNO','NOTENO','PRODCD','PAYFREQ','PAYAMT','BALANCE','BLDATE','ISSDTE','EXPRDATE']))
-> "
-shape: (5, 9)
-┌──────────┬─────────┬────────┬─────────┬───┬──────────┬─────────┬─────────┬──────────┐
-│ ACCTNO   ┆ NOTENO  ┆ PRODCD ┆ PAYFREQ ┆ … ┆ BALANCE  ┆ BLDATE  ┆ ISSDTE  ┆ EXPRDATE │
-│ ---      ┆ ---     ┆ ---    ┆ ---     ┆   ┆ ---      ┆ ---     ┆ ---     ┆ ---      │
-│ f64      ┆ f64     ┆ str    ┆ str     ┆   ┆ f64      ┆ f64     ┆ f64     ┆ f64      │
-╞══════════╪═════════╪════════╪═════════╪═══╪══════════╪═════════╪═════════╪══════════╡
-│ 2.0025e9 ┆ 108.0   ┆ 34190  ┆ 1       ┆ … ┆ 9.0161e6 ┆ null    ┆ 21769.0 ┆ 24502.0  │
-│ 2.0241e9 ┆ 17.0    ┆ 34149  ┆ 1       ┆ … ┆ 9.7313e6 ┆ null    ┆ 19285.0 ┆ 27078.0  │
-│ 2.0549e9 ┆ 10020.0 ┆ 34149  ┆ 1       ┆ … ┆ 9.0487e6 ┆ 24380.0 ┆ 21068.0 ┆ 29189.0  │
-│ 2.0725e9 ┆ 13.0    ┆ 34149  ┆ 1       ┆ … ┆ 9.1506e6 ┆ null    ┆ 22851.0 ┆ 26504.0  │
-│ 2.0828e9 ┆ 30011.0 ┆ 34120  ┆ 1       ┆ … ┆ 9.6509e6 ┆ 24380.0 ┆ 21935.0 ┆ 35611.0  │
-└──────────┴─────────┴────────┴─────────┴───┴──────────┴─────────┴─────────┴──────────┘
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 298, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMLIQP.py", line 274, in main
+    run_eibmrlfm(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1332, in run_eibmrlfm
+    top_ind, top_org, det_ind, det_org = _build_top100(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1148, in _build_top100
+    ind_sum, ind_det = _top100(fd_ind, ca_ind)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRLFM.py", line 1121, in _top100
+    data1 = pl.concat([fd_part.select(common), ca_part.select(common)]).with_columns(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/functions/eager.py", line 234, in concat
+    out = wrap_df(plr.concat_df(elems))
+polars.exceptions.SchemaError: type Float64 is incompatible with expected type Int64
