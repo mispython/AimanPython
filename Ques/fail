@@ -1,27 +1,12 @@
-python3 - <<'PY'
-import re
-from pathlib import Path
-
-sas = Path("/stgsrcsys/host/uat/AII/EIBMLIQP/FISS_OUTPUT.TXT").read_text().splitlines()
-py  = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMLIQP/FISS.txt").read_text().splitlines()
-
-def parse(lines):
-    hdr = lines[0].strip()
-    d = {}
-    for ln in lines[1:]:
-        if not ln.strip():
-            continue
-        p = ln.split(";")
-        d[p[0]] = tuple(int(x) for x in p[1:6])
-    return hdr, d
-
-hs, ds = parse(sas)
-hp, dp = parse(py)
-print("headers :", hs, "vs", hp, "match:", hs == hp)
-print("codes in SAS, not Python:", sorted(set(ds) - set(dp)))
-print("codes in Python, not SAS:", sorted(set(dp) - set(ds)))
-diff = [k for k in ds.keys() & dp.keys() if ds[k] != dp[k]]
-print(f"{len(diff)} matching codes with differing amounts:")
-for k in diff[:20]:
-    print(f"  {k}  SAS={ds[k]}  PY={dp[k]}")
-PY
+        # Corrective steps: at most ~4-5 needed because the jump lands close.
+        for _ in range(10):
+            nxt = _nxt_date(rolling)
+            behind_mask = (pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
+                           & (nxt > pl.col("CUR")))
+            # Materialise the mask as a Series so .any() evaluates against data
+            behind_series = rolling.select(behind_mask.alias("B"))["B"]
+            if not behind_series.any():
+                break
+            rolling = rolling.with_columns(
+                pl.when(behind_mask).then(nxt).otherwise(pl.col("CUR")).alias("CUR")
+            )
