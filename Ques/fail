@@ -21,6 +21,18 @@
 
 
 
+    for t in pdf.itertuples(index=False, name=None):
+        eir_adj   = t[col["EIR_ADJ"]]
+        prodcd    = str(t[col["PRODCD"]] or "")
+        product   = t[col["PRODUCT"]]
+        custcd    = str(t[col["CUSTCD"]] or "")
+        cust      = "08" if custcd in ("77", "78", "95", "96") else "09"
+        is_fcy    = product in FCY_PRODUCTS
+        acctype   = t[col["ACCTYPE"]]
+
+
+
+
 python3 - <<'PY'
 import duckdb
 con = duckdb.connect()
