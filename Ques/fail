@@ -1,14 +1,107 @@
-def _fnum(v) -> str:
-    """SAS COMMA16.2: keep the commas when the value fits in 16 characters, otherwise drop them."""
-    x = float(v or 0.0)
-    s = f"{x:,.2f}"
-    return s if len(s) <= 16 else f"{x:.2f}"
+CELL = 16                   # FORMAT=COMMA16. column width
+DATE_W = 14                 # DATE (row title) column width
+LINESIZE = 133              # LRECL=133, every line padded to this width
+PAGESIZE = 60               # lines per page
+PANEL_COLS = (LINESIZE - DATE_W - 2) // (CELL + 1)   # 6 data columns fit per panel
+ROWS_CONT = (PAGESIZE - 12 + 1) // 2    # 24 date rows on a page that ends with "(Continued)"
+ROWS_LAST = (PAGESIZE - 10 + 1) // 2    # 25 date rows on the final page
+LABEL = "OUTSTANDING AMOUNT (RM 000)"
+CONTINUED = "(Continued)"
 
 
 
 
-def _read_sas_kapiti(path) -> pl.DataFrame:
-    con = duckdb.connect(database=":memory:")
-    df = con.execute(f"SELECT * FROM read_parquet('{Path(path).as_posix()}')").pl()
-    con.close()
-    return df
+def _pad(text: str) -> str:
+    return text.ljust(LINESIZE)
+
+
+def _rule(ncols: int) -> str:
+    return "|" + "-" * DATE_W + "+" + "+".join(["-" * CELL] * ncols) + "|"
+
+
+def _render_report(summ: pl.DataFrame) -> list:
+    """PROC TABULATE layout: panels of PANEL_COLS columns, paged by PAGESIZE, 133-wide lines."""
+    currencies = sorted(summ["CURCODE"].unique().to_list())
+    dates = sorted(summ["REPTDATE"].unique().to_list())
+    ncur = len(currencies)
+
+    bal = {(r, c): v for r, c, v in summ.select("REPTDATE", "CURCODE", "CURBAL").iter_rows()}
+    tot = {r: v for r, v in summ.group_by("REPTDATE").agg(pl.col("CURBAL").sum()).iter_rows()}
+    cnt = {r: v for r, v in summ.group_by("REPTDATE").agg(pl.col("N").sum()).iter_rows()}
+
+    headers = currencies + ["TOT AMT O/S RM", "NO OF ACCT"]
+    rows = {
+        d: [_comma(bal.get((d, c)), CELL) for c in currencies]
+        + [_comma(tot[d], CELL), str(int(cnt[d])).rjust(CELL)]      # NO OF ACCT: F=16. (no comma)
+        for d in dates
+    }
+
+    panels = [range(s, min(s + PANEL_COLS, len(headers))) for s in range(0, len(headers), PANEL_COLS)]
+    titles = ["REPORT ID : EIBMRB01", "DAILY TOTAL OUTSTANDING BALANCE/ACCOUNT ON FCY FD", f"AS AT {CTX['rdate']}"]
+
+    lines = []
+    page_no = 0
+    for pi, cols in enumerate(panels):
+        last_panel = pi == len(panels) - 1
+        k = len(cols)
+        c_in = max(0, min(cols.stop, ncur) - cols.start)       # currency columns in this panel
+        span = c_in * CELL + c_in - 1
+        blanks = "".join(" " * CELL + "|" for _ in range(k - c_in))
+        dash_blanks = "".join(" " * CELL + "|" for _ in range(k - c_in))
+        width = 1 + DATE_W + 1 + k * CELL + (k - 1) + 1
+
+        pos = 0
+        while pos < len(dates):
+            remaining = len(dates) - pos
+            if last_panel and remaining <= ROWS_LAST:
+                take, continued = remaining, False
+            else:
+                take, continued = min(ROWS_CONT, remaining), True
+            chunk = dates[pos:pos + take]
+            pos += take
+
+            lines.append((FF if page_no else "") + _pad(titles[0]))
+            lines.append(_pad(titles[1]))
+            lines.append(_pad(titles[2]))
+            lines.append(_pad(""))
+            lines.append(_pad("-" * width))
+            lines.append(_pad(
+                "|" + "DATE".ljust(DATE_W) + "|"
+                + (_center(LABEL, span) + "|" if c_in else "") + blanks
+            ))
+            lines.append(_pad(
+                "|" + " " * DATE_W + "|"
+                + ("-" * span + "|" if c_in else "") + dash_blanks
+            ))
+            lines.append(_pad(
+                "|" + " " * DATE_W + "|" + "|".join(_center(headers[i], CELL) for i in cols) + "|"
+            ))
+            lines.append(_pad(_rule(k)))
+            for n, d in enumerate(chunk):
+                if n:
+                    lines.append(_pad(_rule(k)))
+                lines.append(_pad(
+                    "|" + d.strftime("%d/%m/%y").ljust(DATE_W) + "|"
+                    + "|".join(rows[d][i] for i in cols) + "|"
+                ))
+            lines.append(_pad("-" * width))
+            if continued:
+                lines.append(_pad(""))
+                lines.append(_pad(CONTINUED))
+            page_no += 1
+    return lines
+
+
+report_lines = _render_report(summary) if not summary.is_empty() else []
+
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in report_lines:
+        fh.write(ln + "\n")
+
+print(f"\n  Output written : {OUTPUT_FILE}")
+print(f"  Total lines    : {len(report_lines):,}")
+print("\nEIBMRB01 complete.")
+
+
+
+
