@@ -1,31 +1,13 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py
-Step 1: Deriving report date...
-  RDATE: 06/10/26
-
-Step 2: Caching input SAS datasets to Parquet...
-  [DEPO.SAVING] Converting saving.sas7bdat -> saving.parquet ...
-  [DEPO.SAVING] Done - 4,403,545 rows cached.
-  [IDEPO.SAVING] Cache fresh - skipping conversion.
-  [DEPO.CURRENT] Converting current.sas7bdat -> current.parquet ...
-  [DEPO.CURRENT] Done - 972,553 rows cached.
-  [IDEPO.CURRENT] Cache fresh - skipping conversion.
-  [DEPO.FD] Converting fd.sas7bdat -> fd.parquet ...
-  [DEPO.FD] Done - 1,620,477 rows cached.
-  [IDEPO.FD] Cache fresh - skipping conversion.
-
-Step 3: Building DEPOSIT...
+Step 3: Building ALLCURRENT...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py", line 215, in <module>
-    deposit = pl.concat([_load_source(*src) for src in _SOURCES])
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py", line 215, in <listcomp>
-    deposit = pl.concat([_load_source(*src) for src in _SOURCES])
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py", line 209, in _load_source
-    return _read_pq(cache, _COLS, where).with_columns(
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py", line 130, in _read_pq
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py", line 206, in <module>
+    _load_current(DEPO_CURRENT_CACHE, "PBB", "PBB", 3590000000, 3599999999),
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py", line 201, in _load_current
+    return _read_pq(cache, _COLS, where).with_columns(pl.lit(sname).alias("SNAME"))
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py", line 125, in _read_pq
     return con.execute(
 _duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
 Candidate bindings: "INTYTD", "INTCYCODE", "STATCD", "OPENIND", "INTRSTPD"
 
-LINE 1: .../MIS/XMIS/input/cache/EIBMRBDP/current.parquet') WHERE TRIM(ENTITY_CD) = 'PBB' AND CURBAL > 0 AND TRIM(CURCODE) = 'MYR...
-                                                                       ^
-You have mail in /var/spool/mail/sas_edw_dev
+LINE 1: .../XMIS/input/cache/EIBMRBDP/DEPO_CURRENT.parquet') WHERE TRIM(ENTITY_CD) = 'PBB' AND NOT (COALESCE(ACCTNO,0) BETWEEN 3590...
+                                                                        ^
