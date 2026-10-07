@@ -1,3 +1,31 @@
-  1    PETROLIAM NASIONAL BERHAD (PETRONAS)          10147889120.50      10147889120.50                 0                                                                                                                                                                                                                       
-  2    SURUHANJAYA KOMUNIKASI &MULTIMEDIA M'SIA    2,222,768,630.23    2,222,752,331.37           16,298.86                                                                                                                                                                                                                     
-  3    PUBLIC BANK BERHAD                          1,718,394,289.93                 0      1,718,394,289.93                         
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py
+Step 1: Deriving report date...
+  RDATE: 06/10/26
+
+Step 2: Caching input SAS datasets to Parquet...
+  [DEPO.SAVING] Converting saving.sas7bdat -> saving.parquet ...
+  [DEPO.SAVING] Done - 4,403,545 rows cached.
+  [IDEPO.SAVING] Cache fresh - skipping conversion.
+  [DEPO.CURRENT] Converting current.sas7bdat -> current.parquet ...
+  [DEPO.CURRENT] Done - 972,553 rows cached.
+  [IDEPO.CURRENT] Cache fresh - skipping conversion.
+  [DEPO.FD] Converting fd.sas7bdat -> fd.parquet ...
+  [DEPO.FD] Done - 1,620,477 rows cached.
+  [IDEPO.FD] Cache fresh - skipping conversion.
+
+Step 3: Building DEPOSIT...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py", line 215, in <module>
+    deposit = pl.concat([_load_source(*src) for src in _SOURCES])
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py", line 215, in <listcomp>
+    deposit = pl.concat([_load_source(*src) for src in _SOURCES])
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py", line 209, in _load_source
+    return _read_pq(cache, _COLS, where).with_columns(
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB02.py", line 130, in _read_pq
+    return con.execute(
+_duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
+Candidate bindings: "INTYTD", "INTCYCODE", "STATCD", "OPENIND", "INTRSTPD"
+
+LINE 1: .../MIS/XMIS/input/cache/EIBMRBDP/current.parquet') WHERE TRIM(ENTITY_CD) = 'PBB' AND CURBAL > 0 AND TRIM(CURCODE) = 'MYR...
+                                                                       ^
+You have mail in /var/spool/mail/sas_edw_dev
