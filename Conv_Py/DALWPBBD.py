@@ -33,7 +33,7 @@ Parquet on first)
               CUSTCD formats + ACE / FCY-range branching)
 
 3. CISDP.DEPOSIT  (CIS deposit customer-number extension — fixed
-   filename, no date token; same physical source used by EIBDLN1M.py)
+   filename, no date token)
    File     : CISDP_deposit.sas7bdat
    Path     : INPUT_CISDP_DIR
    Used in  : Step 3 - left join onto BNM_FCY rows (BY ACCTNO, IF A) to
