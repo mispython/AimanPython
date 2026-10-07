@@ -38,8 +38,8 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_MISFD_DIR = STG_DIR / "sasdata" / "pbb_fcyfd"     # //MISFD  DD SAP.PBB.FCYFD
-INPUT_MIS2FD_DIR = STG_DIR / "sasdata" / "pbb_fcfd"     # //MIS2FD DD SAP.PBB.FCFD
+INPUT_MISFD_DIR  = STG_DIR / "EIBMRBDP"     # //MISFD  DD SAP.PBB.FCYFD
+INPUT_MIS2FD_DIR = STG_DIR / "EIBMRBDP"     # //MIS2FD DD SAP.PBB.FCFD
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -48,10 +48,18 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIBMRB01.txt"               # //SASLIST DD SAP.PBB.EIBMRB01
 
-CHUNK_ROWS = 500_000
-FF = "\f"
-MISSING_CHAR = "0"          # OPTIONS MISSING=0
-CELL = 16                   # FORMAT=COMMA16. / RTS=16
+CHUNK_ROWS   = 500_000
+FF           = "\f"
+MISSING_CHAR = "0"                                      # OPTIONS MISSING=0
+CELL         = 16                                       # FORMAT=COMMA16. column width
+DATE_W       = 14                                       # DATE (row title) column width
+LINESIZE     = 133                                      # LRECL=133, every line padded to this width
+PAGESIZE     = 60                                       # lines per page
+PANEL_COLS   = (LINESIZE - DATE_W - 2) // (CELL + 1)    # 6 data columns fit per panel
+ROWS_CONT    = (PAGESIZE - 12 + 1) // 2                 # 24 date rows on a page that ends with "(Continued)"
+ROWS_LAST    = (PAGESIZE - 10 + 1) // 2                 # 25 date rows on the final page
+LABEL        = "OUTSTANDING AMOUNT (RM 000)"
+CONTINUED    = "(Continued)"
 
 
 # ============================================================================
@@ -77,8 +85,11 @@ REPTYEAR_I = int(CTX["reptyear"])
 REPTMON_I = int(CTX["reptmon"])
 print(f"  RDATE: {CTX['rdate']}  NOWK: {CTX['nowk']}")
 
-INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}.sas7bdat"
-INPUT_MIS2FD_FILE = INPUT_MIS2FD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
+# INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}.sas7bdat"
+# INPUT_MIS2FD_FILE = INPUT_MIS2FD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
+
+INPUT_MISFD_FILE  = INPUT_MISFD_DIR / f"fcyfd09.sas7bdat"
+INPUT_MIS2FD_FILE = INPUT_MIS2FD_DIR / f"fcyfd09426.sas7bdat"
 
 
 # ============================================================================
@@ -170,7 +181,7 @@ def _center(text: str, width: int) -> str:
 # STEP 2: CACHE INPUTS
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-MISFD_CACHE = _load_cached(INPUT_MISFD_FILE, "MISFD")
+MISFD_CACHE  = _load_cached(INPUT_MISFD_FILE, "MISFD")
 MIS2FD_CACHE = _load_cached(INPUT_MIS2FD_FILE, "MIS2FD")
 
 # ============================================================================
@@ -240,41 +251,88 @@ summary = (
 )
 
 
-def _render_table(summ: pl.DataFrame) -> list:
+def _pad(text: str) -> str:
+    return text.ljust(LINESIZE)
+
+
+def _rule(ncols: int) -> str:
+    return "|" + "-" * DATE_W + "+" + "+".join(["-" * CELL] * ncols) + "|"
+
+
+def _render_report(summ: pl.DataFrame) -> list:
+    """PROC TABULATE layout: panels of PANEL_COLS columns, paged by PAGESIZE, 133-wide lines."""
     currencies = sorted(summ["CURCODE"].unique().to_list())
-    span = len(currencies) * CELL + len(currencies) - 1
-    total_width = 1 + CELL + 1 + span + 1 + CELL + 1 + CELL + 1
-    blank = " " * CELL
-    lines = [
-        "-" * total_width,
-        "|" + "DATE".ljust(CELL) + "|" + _center("OUTSTANDING AMOUNT (RM 000)", span) + "|" + blank + "|" + blank + "|",
-        "|" + blank + "|" + "+".join(["-" * CELL] * len(currencies)) + "|" + blank + "|" + blank + "|",
-        "|" + blank + "|" + "|".join(_center(c, CELL) for c in currencies) + "|"
-        + _center("TOT AMT O/S RM", CELL) + "|" + _center("NO OF ACCT", CELL) + "|",
-        "|" + "-" * CELL + "+" + "+".join(["-" * CELL] * len(currencies)) + "+" + "-" * CELL + "+" + "-" * CELL + "|",
-    ]
-    for rep in sorted(summ["REPTDATE"].unique().to_list()):
-        part = summ.filter(pl.col("REPTDATE") == rep)
-        by_cur = dict(zip(part["CURCODE"].to_list(), part["CURBAL"].to_list()))
-        cells = [_comma(by_cur.get(c), CELL) for c in currencies]
-        lines.append(
-            "|" + rep.strftime("%d/%m/%y").ljust(CELL) + "|" + "|".join(cells) + "|"
-            + _comma(part["CURBAL"].sum(), CELL) + "|" + _comma(part["N"].sum(), CELL) + "|"
-        )
-    lines.append("-" * total_width)
+    dates = sorted(summ["REPTDATE"].unique().to_list())
+    ncur = len(currencies)
+
+    bal = {(r, c): v for r, c, v in summ.select("REPTDATE", "CURCODE", "CURBAL").iter_rows()}
+    tot = {r: v for r, v in summ.group_by("REPTDATE").agg(pl.col("CURBAL").sum()).iter_rows()}
+    cnt = {r: v for r, v in summ.group_by("REPTDATE").agg(pl.col("N").sum()).iter_rows()}
+
+    headers = currencies + ["TOT AMT O/S RM", "NO OF ACCT"]
+    rows = {
+        d: [_comma(bal.get((d, c)), CELL) for c in currencies]
+        + [_comma(tot[d], CELL), str(int(cnt[d])).rjust(CELL)]      # NO OF ACCT: F=16. (no comma)
+        for d in dates
+    }
+
+    panels = [range(s, min(s + PANEL_COLS, len(headers))) for s in range(0, len(headers), PANEL_COLS)]
+    titles = ["REPORT ID : EIBMRB01", "DAILY TOTAL OUTSTANDING BALANCE/ACCOUNT ON FCY FD", f"AS AT {CTX['rdate']}"]
+
+    lines = []
+    page_no = 0
+    for pi, cols in enumerate(panels):
+        last_panel = pi == len(panels) - 1
+        k = len(cols)
+        c_in = max(0, min(cols.stop, ncur) - cols.start)       # currency columns in this panel
+        span = c_in * CELL + c_in - 1
+        blanks = "".join(" " * CELL + "|" for _ in range(k - c_in))
+        dash_blanks = "".join(" " * CELL + "|" for _ in range(k - c_in))
+        width = 1 + DATE_W + 1 + k * CELL + (k - 1) + 1
+
+        pos = 0
+        while pos < len(dates):
+            remaining = len(dates) - pos
+            if last_panel and remaining <= ROWS_LAST:
+                take, continued = remaining, False
+            else:
+                take, continued = min(ROWS_CONT, remaining), True
+            chunk = dates[pos:pos + take]
+            pos += take
+
+            lines.append((FF if page_no else "") + _pad(titles[0]))
+            lines.append(_pad(titles[1]))
+            lines.append(_pad(titles[2]))
+            lines.append(_pad(""))
+            lines.append(_pad("-" * width))
+            lines.append(_pad(
+                "|" + "DATE".ljust(DATE_W) + "|"
+                + (_center(LABEL, span) + "|" if c_in else "") + blanks
+            ))
+            lines.append(_pad(
+                "|" + " " * DATE_W + "|"
+                + ("-" * span + "|" if c_in else "") + dash_blanks
+            ))
+            lines.append(_pad(
+                "|" + " " * DATE_W + "|" + "|".join(_center(headers[i], CELL) for i in cols) + "|"
+            ))
+            lines.append(_pad(_rule(k)))
+            for n, d in enumerate(chunk):
+                if n:
+                    lines.append(_pad(_rule(k)))
+                lines.append(_pad(
+                    "|" + d.strftime("%d/%m/%y").ljust(DATE_W) + "|"
+                    + "|".join(rows[d][i] for i in cols) + "|"
+                ))
+            lines.append(_pad("-" * width))
+            if continued:
+                lines.append(_pad(""))
+                lines.append(_pad(CONTINUED))
+            page_no += 1
     return lines
 
 
-report_lines = []
-if not summary.is_empty():
-    report_lines += [
-        FF,
-        "REPORT ID : EIBMRB01",
-        "DAILY TOTAL OUTSTANDING BALANCE/ACCOUNT ON FCY FD",
-        f"AS AT {CTX['rdate']}",
-        "",
-    ]
-    report_lines += _render_table(summary)
+report_lines = _render_report(summary) if not summary.is_empty() else []
 
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
