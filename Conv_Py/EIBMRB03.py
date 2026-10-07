@@ -37,9 +37,9 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_DEPO_CURRENT_FILE = STG_DIR / "sasdata" / "intg_dp_acct_current_d19.sas7bdat"   # DEPO.CURRENT
-INPUT_IDEPO_CURRENT_FILE = STG_DIR / "sasdata" / "intg_dp_acct_current_d19.sas7bdat"  # IDEPO.CURRENT
-INPUT_CIS_DEPOSIT_FILE = STG_DIR / "sasdata" / "cisbext_dp_deposit_d19.sas7bdat"      # CIS.DEPOSIT
+INPUT_DEPO_CURRENT_FILE  = STG_DIR / "MNITB" / "PBB"        / "current.sas7bdat"   # DEPO.CURRENT
+INPUT_IDEPO_CURRENT_FILE = STG_DIR / "MNITB" / "PIBB"       / "current.sas7bdat"   # IDEPO.CURRENT
+INPUT_CIS_DEPOSIT_FILE   = STG_DIR / "CIS"   / "CISBEXT_DP" / "deposit.sas7bdat"   # CIS.DEPOSIT
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -111,7 +111,7 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    cache_path = CACHE_DIR / f"{tag.replace('.', '_')}.parquet"   # e.g. DEPO_SAVING.parquet / IDEPO_SAVING.parquet
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
@@ -173,9 +173,9 @@ def _comma(value, width: int, decimals: int = 0) -> str:
 # STEP 2: CACHE INPUTS
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-DEPO_CURRENT_CACHE = _load_cached(INPUT_DEPO_CURRENT_FILE, "DEPO.CURRENT")
+DEPO_CURRENT_CACHE  = _load_cached(INPUT_DEPO_CURRENT_FILE, "DEPO.CURRENT")
 IDEPO_CURRENT_CACHE = _load_cached(INPUT_IDEPO_CURRENT_FILE, "IDEPO.CURRENT")
-CIS_CACHE = _load_cached(INPUT_CIS_DEPOSIT_FILE, "CIS.DEPOSIT")
+CIS_CACHE           = _load_cached(INPUT_CIS_DEPOSIT_FILE, "CIS.DEPOSIT")
 
 # ============================================================================
 # STEP 3: DATA CURRENT / ICURRENT / CISCA / ALLCURRENT
@@ -190,11 +190,10 @@ _COLS = (
 _PRODUCT_EXCL = "400,401,402,403,404,405,406,407,408,409,410,79,80"
 
 
-def _load_current(cache: Path, entity: str, sname: str, acct_lo: int, acct_hi: int) -> pl.DataFrame:
+def _load_current(cache: Path, sname: str, acct_lo: int, acct_hi: int) -> pl.DataFrame:
     """DATA CURRENT/ICURRENT (acct-range exclusion) + WHERE of DATA ALLCURRENT."""
     where = (
-        f"TRIM(ENTITY_CD) = '{entity}' "
-        f"AND NOT (COALESCE(ACCTNO,0) BETWEEN {acct_lo} AND {acct_hi}) "
+        f"NOT (COALESCE(ACCTNO,0) BETWEEN {acct_lo} AND {acct_hi}) "
         "AND COALESCE(CUSTCODE,-1) NOT IN (77,78,95,96) AND TRIM(CURCODE) = 'MYR' "
         f"AND COALESCE(PRODUCT,-1) NOT IN ({_PRODUCT_EXCL})"
     )
@@ -203,8 +202,8 @@ def _load_current(cache: Path, entity: str, sname: str, acct_lo: int, acct_hi: i
 
 allcurrent = pl.concat(
     [
-        _load_current(DEPO_CURRENT_CACHE, "PBB", "PBB", 3590000000, 3599999999),
-        _load_current(IDEPO_CURRENT_CACHE, "PIBB", "PIBB", 3790000000, 3799999999),
+        _load_current(DEPO_CURRENT_CACHE, "PBB", 3590000000, 3599999999),
+        _load_current(IDEPO_CURRENT_CACHE, "PIBB", 3790000000, 3799999999),
     ]
 )
 
