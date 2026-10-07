@@ -1,6 +1,6 @@
-def _load_fd(cache: Path, entity: str, extra: str) -> pl.DataFrame:
-    """DATA FD/IFD + WHERE of DATA ALLFD. SNAME is PUT('PBB',4.) / PUT('PIBB',4.)."""
-    where = (
-        f"COALESCE(CUSTCODE,-1) NOT IN (77,78,95,96) AND TRIM(CURCODE) = 'MYR' {extra}"
-    )
-    return _read_pq(cache, _COLS, where).with_columns(pl.lit(entity).alias("SNAME"))
+print("Rows:", len(allfd), "| CUSTNAME null:", allfd["CUSTNAME"].null_count(),
+      "| CUSTNAME blank:", (allfd["CUSTNAME"].fill_null("").str.strip_chars() == "").sum())
+print(allfd.select("ACCTNO", "CUSTNAME").head(5))
+print(cisfd.select("ACCTNO", "CUSTNAME").head(5))
+print("CIS rows:", len(cisfd), "| ACCTNO range:", cisfd["ACCTNO"].min(), "-", cisfd["ACCTNO"].max())
+print("FD  ACCTNO range:", allfd["ACCTNO"].min(), "-", allfd["ACCTNO"].max())
