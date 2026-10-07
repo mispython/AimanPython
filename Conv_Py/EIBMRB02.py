@@ -8,9 +8,9 @@ Dependency:
     %INC PGM(PBBELF) -> from PBBELF import format_brchcd   (BRABBR=PUT(BRANCH,BRCHCD.))
 
 Physical inputs (each cached to Parquet independently):
-    DEPO.SAVING / IDEPO.SAVING   (SAP.PBB.MNITB / SAP.PIBB.MNITB) -> ENTITY_CD 'PBB' / 'PIBB'
-    DEPO.CURRENT / IDEPO.CURRENT                                 -> ENTITY_CD 'PBB' / 'PIBB'
-    DEPO.FD / IDEPO.FD                                           -> ENTITY_CD 'PBB' / 'PIBB'
+    DEPO.SAVING / IDEPO.SAVING   (SAP.PBB.MNITB / SAP.PIBB.MNITB)
+    DEPO.CURRENT / IDEPO.CURRENT
+    DEPO.FD / IDEPO.FD
     All file names are fixed (no date token), so input_date.py is not used.
     DEPO.REPTDATE is not read; the report date comes from REPTDATE.py.
 
@@ -25,6 +25,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pandas as pd
 import polars as pl
 import pyarrow as pa
@@ -39,12 +40,12 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_DEPO_SAVING_FILE = STG_DIR / "sasdata" / "intg_dp_acct_saving_d19.sas7bdat"    # DEPO.SAVING
-INPUT_IDEPO_SAVING_FILE = STG_DIR / "sasdata" / "intg_dp_acct_saving_d19.sas7bdat"   # IDEPO.SAVING
-INPUT_DEPO_CURRENT_FILE = STG_DIR / "sasdata" / "intg_dp_acct_current_d19.sas7bdat"  # DEPO.CURRENT
-INPUT_IDEPO_CURRENT_FILE = STG_DIR / "sasdata" / "intg_dp_acct_current_d19.sas7bdat" # IDEPO.CURRENT
-INPUT_DEPO_FD_FILE = STG_DIR / "sasdata" / "intg_dp_acct_fd_d19.sas7bdat"            # DEPO.FD
-INPUT_IDEPO_FD_FILE = STG_DIR / "sasdata" / "intg_dp_acct_fd_d19.sas7bdat"           # IDEPO.FD
+INPUT_DEPO_SAVING_FILE   = STG_DIR / "MNITB" / "PBB"  / "saving.sas7bdat"       # DEPO.SAVING
+INPUT_IDEPO_SAVING_FILE  = STG_DIR / "MNITB" / "PIBB" / "saving.sas7bdat"       # IDEPO.SAVING
+INPUT_DEPO_CURRENT_FILE  = STG_DIR / "MNITB" / "PBB"  / "current.sas7bdat"      # DEPO.CURRENT
+INPUT_IDEPO_CURRENT_FILE = STG_DIR / "MNITB" / "PIBB" / "current.sas7bdat"      # IDEPO.CURRENT
+INPUT_DEPO_FD_FILE       = STG_DIR / "MNITB" / "PBB"  / "fd.sas7bdat"           # DEPO.FD
+INPUT_IDEPO_FD_FILE      = STG_DIR / "MNITB" / "PIBB" / "fd.sas7bdat"           # IDEPO.FD
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -54,6 +55,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIBMRB02.txt"                # //SASLIST DD SAP.PBB.EIBMRB02
 
 CHUNK_ROWS = 500_000
+LRECL = 133                 # //SASLIST LRECL=133
 MISSING_CHAR = "0"          # OPTIONS MISSING=0
 
 
@@ -116,7 +118,7 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    cache_path = CACHE_DIR / f"{tag.replace('.', '_')}.parquet"   # e.g. DEPO_SAVING.parquet / IDEPO_SAVING.parquet
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
@@ -158,24 +160,37 @@ def _best(value) -> str:
     return str(int(v)) if v == int(v) else format(v, ".12g")
 
 
-def _comma(value, width: int, decimals: int = 0) -> str:
+def _comma_text(value) -> str:
+    """COMMA16. with leading blanks trimmed (list-style PUT). Rounds the exact double, as SAS does."""
     if value is None:
-        return MISSING_CHAR.rjust(width)
-    quant = Decimal(1).scaleb(-decimals)
-    text = f"{Decimal(repr(float(value))).quantize(quant, rounding=ROUND_HALF_UP):,.{decimals}f}"
-    return text.rjust(width)
+        return MISSING_CHAR
+    return f"{Decimal(float(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP):,.0f}"
+
+
+def _put_wrapped(start_col: int, parts: list) -> list:
+    """List-style PUT @start_col: each ('var', text) is written followed by one blank;
+    each ('lit', text) is written as is. Anything that does not fit in LRECL starts a new line at column 1."""
+    lines = []
+    buf = " " * (start_col - 1)
+    for kind, text in parts:
+        if len(buf) + len(text) > LRECL:
+            lines.append(buf)
+            buf = ""
+        buf += text + (" " if kind == "var" else "")
+    lines.append(buf)
+    return lines
 
 
 # ============================================================================
 # STEP 2: CACHE INPUTS
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-DEPO_SAVING_CACHE = _load_cached(INPUT_DEPO_SAVING_FILE, "DEPO.SAVING")
-IDEPO_SAVING_CACHE = _load_cached(INPUT_IDEPO_SAVING_FILE, "IDEPO.SAVING")
-DEPO_CURRENT_CACHE = _load_cached(INPUT_DEPO_CURRENT_FILE, "DEPO.CURRENT")
+DEPO_SAVING_CACHE   = _load_cached(INPUT_DEPO_SAVING_FILE, "DEPO.SAVING")
+IDEPO_SAVING_CACHE  = _load_cached(INPUT_IDEPO_SAVING_FILE, "IDEPO.SAVING")
+DEPO_CURRENT_CACHE  = _load_cached(INPUT_DEPO_CURRENT_FILE, "DEPO.CURRENT")
 IDEPO_CURRENT_CACHE = _load_cached(INPUT_IDEPO_CURRENT_FILE, "IDEPO.CURRENT")
-DEPO_FD_CACHE = _load_cached(INPUT_DEPO_FD_FILE, "DEPO.FD")
-IDEPO_FD_CACHE = _load_cached(INPUT_IDEPO_FD_FILE, "IDEPO.FD")
+DEPO_FD_CACHE       = _load_cached(INPUT_DEPO_FD_FILE, "DEPO.FD")
+IDEPO_FD_CACHE      = _load_cached(INPUT_IDEPO_FD_FILE, "IDEPO.FD")
 
 # ============================================================================
 # STEP 3: BUILD DEPOSIT  (SAVING / ISAVING / CURRENT / ICURRENT / FD / IFD)
@@ -204,8 +219,9 @@ _SOURCES = [
 ]
 
 
-def _load_source(cache: Path, entity: str, extra: str, atype: int, btype: int) -> pl.DataFrame:
-    where = f"TRIM(ENTITY_CD) = '{entity}' AND CURBAL > 0 AND {extra}"
+def _load_source(cache: Path, label: str, extra: str, atype: int, btype: int) -> pl.DataFrame:
+    # label ("PBB"/"PIBB") is informational only; the entity is determined by which file is read
+    where = f"CURBAL > 0 AND {extra}"
     return _read_pq(cache, _COLS, where).with_columns(
         pl.lit(atype, dtype=pl.Int8).alias("ATYPE"),
         pl.lit(btype, dtype=pl.Int8).alias("BTYPE"),
@@ -227,26 +243,37 @@ print(f"  DEPOSIT rows: {len(deposit):,}")
 # ============================================================================
 print("\nStep 4: Summarising by branch...")
 
-# CLASS BRANCH BRABBR ...: observations with a missing BRANCH or a blank BRABBR are dropped.
-branch_abbr = {int(b): format_brchcd(int(b)) for b in deposit["BRANCH"].drop_nulls().unique().to_list()}
-valid_branches = [b for b, a in branch_abbr.items() if a]
+
+def _abbr(branch: int) -> str:
+    """BRABBR=PUT(BRANCH,BRCHCD.): a branch with no mapping in the format prints as its own number (e.g. 998)."""
+    text = format_brchcd(branch)
+    text = str(text).strip() if text is not None else ""
+    return text or str(branch)
+
+
+# CLASS BRANCH: observations with a missing BRANCH are dropped.
+dep = deposit.filter(pl.col("BRANCH").is_not_null())
+branch_codes = np.sort(dep["BRANCH"].unique().to_numpy())
+branch_abbr = {int(b): _abbr(int(b)) for b in branch_codes}
 
 _PIVOT = {"SA": (1, 1), "ISA": (1, 2), "CA": (2, 1), "ICA": (2, 2), "FD": (3, 1), "IFD": (3, 2)}
-temp = (
-    deposit.filter(pl.col("BRANCH").is_in(valid_branches))
-    .group_by("BRANCH")
-    .agg(
-        [
-            pl.col("CURBAL").filter((pl.col("ATYPE") == a) & (pl.col("BTYPE") == b)).sum().alias(name)
-            for name, (a, b) in _PIVOT.items()
-        ]
-    )
-    .with_columns(
-        (pl.col("SA") + pl.col("ISA")).alias("TSA"),
-        (pl.col("CA") + pl.col("ICA")).alias("TCA"),
-        (pl.col("FD") + pl.col("IFD")).alias("TFD"),
-    )
-    .sort("BRANCH")
+
+slot = np.searchsorted(branch_codes, dep["BRANCH"].to_numpy())
+curbal = dep["CURBAL"].to_numpy()
+atype = dep["ATYPE"].to_numpy()
+btype = dep["BTYPE"].to_numpy()
+
+pivot = {}
+for name, (a, b) in _PIVOT.items():
+    mask = (atype == a) & (btype == b)
+    acc = np.zeros(len(branch_codes), dtype=np.float64)
+    np.add.at(acc, slot[mask], curbal[mask])      # sequential accumulation in input order, like PROC SUMMARY
+    pivot[name] = acc
+
+temp = pl.DataFrame({"BRANCH": branch_codes, **pivot}).with_columns(
+    (pl.col("SA") + pl.col("ISA")).alias("TSA"),
+    (pl.col("CA") + pl.col("ICA")).alias("TCA"),
+    (pl.col("FD") + pl.col("IFD")).alias("TFD"),
 )
 
 # ============================================================================
@@ -255,8 +282,13 @@ temp = (
 _VALUE_COLS = ["SA", "ISA", "TSA", "CA", "ICA", "TCA", "FD", "IFD", "TFD"]
 
 
-def _values(rec: dict) -> str:
-    return ";".join(_comma(rec[c], 16) for c in _VALUE_COLS)
+def _value_parts(rec: dict) -> list:
+    parts = []
+    for i, c in enumerate(_VALUE_COLS):
+        if i:
+            parts.append(("lit", ";"))
+        parts.append(("var", _comma_text(rec[c])))
+    return parts
 
 
 report_lines = []
@@ -270,17 +302,20 @@ if not temp.is_empty():
         _put(2, "CODE;ABBR;PBB;PIBB;TOTAL;PBB;PIBB;TOTAL;PBB;PIBB;TOTAL"),
     ]
     for rec in temp.iter_rows(named=True):
-        report_lines.append(
-            _put(2, _best(rec["BRANCH"]), ";", branch_abbr[int(rec["BRANCH"])], ";", _values(rec))
+        report_lines += _put_wrapped(
+            2,
+            [("var", _best(rec["BRANCH"])), ("lit", ";"), ("var", branch_abbr[int(rec["BRANCH"])]), ("lit", ";")]
+            + _value_parts(rec),
         )
-    # TOTAL (PROC SUMMARY without NWAY: first observation is the grand total)
-    grand = {c: temp[c].sum() for c in _VALUE_COLS}
-    report_lines.append(_put(2, "TOTAL", ";", ";", _values(grand)))
+    # TOTAL (PROC SUMMARY without NWAY: first observation is the grand total), summed sequentially
+    grand = {c: float(np.cumsum(temp[c].to_numpy())[-1]) for c in _VALUE_COLS}
+    report_lines += _put_wrapped(2, [("lit", "TOTAL;;")] + _value_parts(grand))
 
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+with open(OUTPUT_FILE, "w", encoding="latin1", newline="\n") as fh:
     for ln in report_lines:
-        fh.write(ln + "\n")
+        fh.write(ln[:LRECL].ljust(LRECL) + "\n")        # RECFM=FB, LRECL=133
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
+# print("\n".join(ln.rstrip() for ln in report_lines))
 print("\nEIBMRB02 complete.")
