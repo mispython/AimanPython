@@ -37,7 +37,6 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from REPTDATE import get_reptdate_values
 from DALWPBBD import build_savg_curn_dept
 from EIIMRLFM import run_eiimrlfm
 from EIBMTOP5 import run_eibmtop5
@@ -55,9 +54,6 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIIMLIQP"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
-
-# Set to a date to force the report date (testing); None = use REPTDATE.py.
-REPTDATE_OVERRIDE: Optional[date] = date(2026, 9, 30)
 
 # ---- Physical input datasets (per EIIMLIQP JCL DD statements) -------------
 # //DEPOSIT DD DSN=SAP.PIBB.MNITB(0) -- members SAVING / CURRENT / FD
@@ -165,7 +161,12 @@ def _derive_reptdate_context() -> dict:
     No reptdate.parquet exists for this job family -- the date value is
     sourced from REPTDATE.py, NOWK is derived locally with exact-day
     matching (8/15/22/else->4), matching the SAS source exactly."""
-    reptdate = REPTDATE_OVERRIDE or get_reptdate_values(year_format="%Y").reptdate
+    values = get_reptdate_values(year_format="%Y")
+    reptdate = values.reptdate
+
+    # DEBUG - Need to remove for production run
+    from datetime import date as _date
+    reptdate = _date(2026, 9, 30)
 
     day = reptdate.day
     nowk = "1" if day == 8 else "2" if day == 15 else "3" if day == 22 else "4"
@@ -180,7 +181,7 @@ def _derive_reptdate_context() -> dict:
         "rpyr": reptdate.year, "rpmth": reptdate.month, "rpday": reptdate.day,
         "rd_days": rd_days,
     }
-
+          
 
 def main() -> None:
     ctx = _derive_reptdate_context()
