@@ -1,144 +1,77 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
-Program Name : KALMLIQ4
-Purpose      : Filter and transform K3TBL data for liquidity reporting,
-                assigning ITEM codes based on customer type (CTYPE format).
+Program : KALMLIQ4.py
+Purpose : NLF Kapiti bond-sale item allocation fragment (originally %INC
+          PGM(KALMLIQ4) inside KALMLIQ). Filters BNMK.K3TBL&REPTMON&NOWK
+          for UTREF='RRS' AND UTSTY='MGS' AND UTDLP='MSS' and derives an
+          '820'/'830' item BNM code by customer type.
+
+          NOTE: the resulting K3TBL3 is never referenced anywhere else in
+          KALMLIQ or its callers -- it is preserved here as an orphaned
+          dataset for source fidelity (see project convention on
+          preserving dead SAS artefacts). Its result is built but never
+          merged downstream.
+
+          Designed to be imported by KALMLIQ.py, mirroring %INC
+          semantics. Owns no physical path of its own.
 """
+from pathlib import Path
+from datetime import date
+from typing import Optional
 
 import duckdb
 import polars as pl
-from datetime import date
 
-# ---------------------------------------------------------------------------
-# Path configuration
-# ---------------------------------------------------------------------------
-INPUT_PARQUET   = "data/K3TBL_{REPTMON}{NOWK}.parquet"   # resolved at runtime
-CTYPE_PARQUET   = "data/CTYPE_FORMAT.parquet"             # lookup: UTCTP -> CUST code
-OUTPUT_FILE     = "output/K3TBL3.txt"
+from PBBELF import format_ctype
 
-# Runtime parameters – set these before execution
-REPTMON = "202401"   # e.g. '202401'
-NOWK    = "1"        # e.g. '1'
-REPTDATE = date(2024, 1, 31)  # reporting date threshold
+IREP = {"01", "02", "11", "12", "81"}
+NREP = {"13", "17", "20", "60", "71", "72", "74", "76", "79", "85"}
 
-# ---------------------------------------------------------------------------
-# Macro variable equivalents
-# ---------------------------------------------------------------------------
-IREP = ('01', '02', '11', '12', '81')
-NREP = ('13', '17', '20', '60', '71', '72', '74', '76', '79', '85')
+_SCHEMA = {"PART": pl.Utf8, "ITEM": pl.Utf8, "AMOUNT": pl.Float64, "MATDT": pl.Date, "CUST": pl.Utf8}
 
-# ---------------------------------------------------------------------------
-# Resolve actual input path
-# ---------------------------------------------------------------------------
-input_path = INPUT_PARQUET.format(REPTMON=REPTMON, NOWK=NOWK)
 
-# ---------------------------------------------------------------------------
-# Load source data via DuckDB
-# ---------------------------------------------------------------------------
-con = duckdb.connect()
+def _parse_sas_date(raw) -> Optional[date]:
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    y, m, d = s.split("-")[:3]
+    return date(int(y), int(m), int(d[:2]))
 
-df = con.execute(f"""
-    SELECT *
-    FROM read_parquet('{input_path}')
-    WHERE UTREF = 'RRS'
-      AND UTSTY = 'MGS'
-      AND UTDLP = 'MSS'
-""").pl()
 
-# ---------------------------------------------------------------------------
-# Load CTYPE format lookup (UTCTP -> customer type code string)
-# CTYPE format: maps UTCTP value to a 2-char customer category code
-# ---------------------------------------------------------------------------
-ctype_df = con.execute(f"""
-    SELECT START AS UTCTP, LABEL AS CUST
-    FROM read_parquet('{CTYPE_PARQUET}')
-""").pl()
+def build_k3tbl3(k3tbl_cache: Path, reptdate: date) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    raw = con.execute(f"""
+        SELECT
+            CAST(UTPCP  AS DOUBLE)  AS UTPCP,
+            CAST(UTFCV  AS DOUBLE)  AS UTFCV,
+            CAST(UTAICT AS DOUBLE)  AS UTAICT,
+            CAST(UTCTP  AS VARCHAR) AS UTCTP,
+            CAST(UTIDT  AS VARCHAR) AS UTIDT,
+            CAST(ISSDT  AS VARCHAR) AS ISSDT
+        FROM read_parquet('{k3tbl_cache.as_posix()}')
+        WHERE UTREF = 'RRS' AND UTSTY = 'MGS' AND UTDLP = 'MSS'
+    """).pl()
+    con.close()
 
-con.close()
+    rows = []
+    for r in raw.iter_rows(named=True):
+        issdt = _parse_sas_date(r["ISSDT"])
+        if issdt is not None and issdt > reptdate:  # IF ISSDT > REPTDATE THEN DELETE
+            continue
+        amount = (r["UTPCP"] or 0.0) * (r["UTFCV"] or 0.0) * 0.01
+        amount = amount + (r["UTAICT"] or 0.0)  # SALES PROCEEDS
+        cust = format_ctype(r["UTCTP"] or "")
+        matdt = _parse_sas_date(r["UTIDT"]) if r["UTIDT"] not in (None, " ", "") else None
+        if cust in NREP:
+            item = "830"
+        elif cust in IREP:
+            item = "820"
+        else:
+            item = None
+        if cust.strip() == "":  # IF CUST NE '  '
+            continue
+        rows.append({"PART": "95", "ITEM": item, "AMOUNT": amount, "MATDT": matdt, "CUST": cust})
 
-# ---------------------------------------------------------------------------
-# Apply REPTDATE filter  (IF ISSDT > REPTDATE THEN DELETE)
-# ---------------------------------------------------------------------------
-reptdate_val = REPTDATE
-df = df.filter(pl.col("ISSDT") <= pl.lit(reptdate_val))
-
-# ---------------------------------------------------------------------------
-# Initialise amount fields
-# ---------------------------------------------------------------------------
-df = df.with_columns([
-    pl.lit(0).cast(pl.Float64).alias("AMTUSD"),
-    pl.lit(0).cast(pl.Float64).alias("AMTSGD"),
-])
-
-# AMOUNT = (UTPCP * UTFCV) * 0.01
-# AMOUNT = SUM(AMOUNT, UTAICT)   /* SALES PROCEEDS */
-df = df.with_columns([
-    (pl.col("UTPCP") * pl.col("UTFCV") * 0.01 + pl.col("UTAICT")).alias("AMOUNT"),
-])
-
-# ---------------------------------------------------------------------------
-# Apply CTYPE format lookup  (PUT(UTCTP,$CTYPE.) -> CUST)
-# ---------------------------------------------------------------------------
-df = df.join(ctype_df, on="UTCTP", how="left")
-# Where no match found, default CUST to empty string (mirrors SAS $CTYPE. miss)
-df = df.with_columns([
-    pl.col("CUST").fill_null("").alias("CUST"),
-])
-
-# ---------------------------------------------------------------------------
-# Derive MATDT from UTIDT (IF UTIDT NE ' ' THEN MATDT = INPUT(UTIDT,YYMMDD10.))
-# UTIDT is stored as a string 'YYYY-MM-DD' or similar; parse to date.
-# ---------------------------------------------------------------------------
-df = df.with_columns([
-    pl.when(pl.col("UTIDT").is_not_null() & (pl.col("UTIDT").str.strip_chars() != ""))
-      .then(pl.col("UTIDT").str.to_date("%Y-%m-%d", strict=False))
-      .otherwise(None)
-      .alias("MATDT"),
-])
-
-# ---------------------------------------------------------------------------
-# Assign ITEM based on CUST category
-# IF CUST IN NREP THEN ITEM='830'; ELSE
-# IF CUST IN IREP THEN ITEM='820';
-# ---------------------------------------------------------------------------
-df = df.with_columns([
-    pl.when(pl.col("CUST").is_in(list(NREP))).then(pl.lit("830"))
-      .when(pl.col("CUST").is_in(list(IREP))).then(pl.lit("820"))
-      .otherwise(None)
-      .alias("ITEM"),
-])
-
-# ---------------------------------------------------------------------------
-# PART = '95'
-# ---------------------------------------------------------------------------
-df = df.with_columns([
-    pl.lit("95").alias("PART"),
-])
-
-# ---------------------------------------------------------------------------
-# IF CUST NE '  '  (exclude blank / two-space customer codes)
-# ---------------------------------------------------------------------------
-df = df.filter(pl.col("CUST").str.strip_chars() != "")
-
-# ---------------------------------------------------------------------------
-# Column ordering to mirror SAS dataset column sequence
-# Bring derived columns to front; preserve remaining source columns.
-# ---------------------------------------------------------------------------
-derived_cols = ["PART", "MATDT", "AMTUSD", "AMTSGD", "AMOUNT", "CUST", "ITEM"]
-source_cols  = [c for c in df.columns if c not in derived_cols]
-df = df.select(derived_cols + source_cols)
-
-# ---------------------------------------------------------------------------
-# Format MATDT as YYMMDD8. (YY/MM/DD -> 'YYMMDD' 8-char, e.g. '24/01/31')
-# SAS YYMMDD8. format produces: YY/MM/DD
-# ---------------------------------------------------------------------------
-df = df.with_columns([
-    pl.col("MATDT").dt.strftime("%y/%m/%d").alias("MATDT"),
-])
-
-# ---------------------------------------------------------------------------
-# Write output as fixed-format text file
-# ---------------------------------------------------------------------------
-df.write_csv(OUTPUT_FILE, separator="|", null_value="")
-
-print(f"K3TBL3 written to {OUTPUT_FILE}  ({len(df)} rows)")
+    return pl.DataFrame(rows, schema=_SCHEMA) if rows else pl.DataFrame(schema=_SCHEMA)
