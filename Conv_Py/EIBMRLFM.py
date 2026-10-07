@@ -1,1874 +1,1471 @@
 #!/usr/bin/env python3
 """
-PROGRAM : EIBMRLFM.py
-DATE    : 25.05.98
-REPORT  : FISS - NEW LIQUIDITY FRAMEWORK
-MODIFY  : 13.08.04 (SMR-A520)
+Program : EIBMRLFM.py
+Purpose : New Liquidity Framework (FISS submission) -- deposit/loan
+          maturity profile, undrawn commitments, DCI/NID, KAPITI items,
+          distribution profile, and top-100 FD+CA depositor reports.
+          Originally %INC PGM(EIBMRLFM) inside EIBMLIQP.
 
-OPTIONS YEARCUTOFF=1950  (handled via Python date parsing with 2-digit year offset)
+          Dependencies:
+            PBBLNFMT.format_liqpfmt      -- PUT(PRODUCT,LIQPFMT.)
+            PBBDPFMT.fdprod_format       -- PUT(INTPLAN,FDPROD.)
+            PBBDPFMT.ddcustcd_format     -- PUT(CUSTCODE,DDCUSTCD.)
+            KALMLIQ.build_kalmliq        -- %INC PGM(KALMLIQ)
+            KALMLIFE.build_k3fei         -- %INC PGM(KALMLIFE)
+          PBBELF is %INC'd in the SAS source but no PUT(var,fmt.) call
+          from it appears in this program's body -- kept as comment only.
 
-%INC PGM(PBBLNFMT,PBBELF,PBBDPFMT)
+          K3FEI's only documented downstream use (per KALMLIFE.py's
+          docstring) is in EIBPTH1A's SP dataset, not shown being merged
+          anywhere in this program's visible SAS body. Since EIBMRLFM
+          does %INC PGM(KALMLIFE), K3FEI is built here and merged
+          defensively into the BNMCODE-keyed KTBL combination as the best
+          available reading of the source -- flagged for verification.
 
-PBBLNFMT: provides LIQPFMT format — PUT(PRODUCT, LIQPFMT.) — actively used in the NOTE
-          data step to map product code to loan category (HL, FL, RC, etc.).
-          Imported below as format_liqpfmt().
-
-PBBDPFMT: provides FDPROD format — PUT(INTPLAN, FDPROD.) — actively used in the FD
-          data step to derive BIC codes ('42630','42132').
-          Also provides DDCUSTCD format — PUT(CUSTCODE, DDCUSTCD.) — used in FCYCA.
-          Imported below as fdprod_format() and ddcustcd_format().
-
-PBBELF:   %INC'd at session level. No PBBELF-specific format or macro is directly
-          called by name in this program's logic. Its definitions may be consumed
-          indirectly by KALMLIQ/KALMLIFE sub-programs. Not imported here.
+          Designed to be imported by EIBMLIQP.py, mirroring %INC
+          semantics. Owns no physical path of its own -- every cache path
+          and REPTDATE context are supplied by the calling job.
 """
-
-from PBBLNFMT import format_liqpfmt    # LIQPFMT format: product -> HL/FL/RC/etc.
-from PBBDPFMT import fdprod_format     # FDPROD  format: intplan -> BIC code string
-from PBBDPFMT import ddcustcd_format   # DDCUSTCD format: custcode -> 2-char string
-
-import sys
-import os
-import math
-import duckdb
-import polars as pl
 from datetime import date, timedelta
-from calendar import monthrange
 from pathlib import Path
 
-# ===========================================================================
-# PATH CONFIGURATION
-# ===========================================================================
-DATA_DIR   = Path("data")
-OUTPUT_DIR = Path("output")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+import math
+import duckdb
+import time as _t
+import polars as pl
 
-# Input parquet paths (dynamic, resolved after macro vars are set)
-REPTDATE_PARQUET = DATA_DIR / "REPTDATE.parquet"
+from PBBLNFMT_AII import format_liqpfmt
+from PBBDPFMT_AII import fdprod_format, ddcustcd_format
+from KALMLIQ import build_kalmliq
+from KALMLIFE import build_k3fei
 
-# Output file paths
-FISS_OUTPUT  = OUTPUT_DIR / "FISS.txt"
-NSRS_OUTPUT  = OUTPUT_DIR / "NSRS.txt"
-FD11_OUTPUT  = OUTPUT_DIR / "FD11TEXT.txt"
-FD12_OUTPUT  = OUTPUT_DIR / "FD12TEXT.txt"
+FCY_PRODUCTS = {800, 801, 802, 803, 804, 805, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817,
+                851, 852, 853, 854, 855, 856, 857, 858, 859, 860}
 
-# LCR intermediate outputs
-LCR_FD_PARQUET     = DATA_DIR / "LCR_FD.parquet"
-LCR_SA_PARQUET     = DATA_DIR / "LCR_SA.parquet"
-LCR_CA_PARQUET     = DATA_DIR / "LCR_CA.parquet"
-LCR_FCYCA_PARQUET  = DATA_DIR / "LCR_FCYCA.parquet"
-LCR_DCI_PARQUET    = DATA_DIR / "LCR_DCI.parquet"
-LCR_NID_PARQUET    = DATA_DIR / "LCR_NID.parquet"
-LCR_VOSTRO_PARQUET = DATA_DIR / "LCR_VOSTRO.parquet"
-LCR_K1TBL_PARQUET  = DATA_DIR / "LCR_K1TBL.parquet"
-LCR_K3TBL_PARQUET  = DATA_DIR / "LCR_K3TBL.parquet"
+_LEAP_DAYS_CACHE = {}
 
-# ===========================================================================
-# FCY PRODUCT LIST
-# %LET FCY=(800,801,802,803,804,805,806,851,852,853,854,855,856,857,858,
-#           859,860,807,808,809,810,811,812,813,814,815,816,817)
-# ===========================================================================
-FCY_PRODUCTS = {
-    800, 801, 802, 803, 804, 805, 806, 851, 852, 853, 854, 855, 856, 857, 858,
-    859, 860, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817
+
+def _leap_days(year: int):
+    d = _LEAP_DAYS_CACHE.get(year)
+    if d is None:
+        d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        if year % 4 == 0:
+            d[1] = 29
+        _LEAP_DAYS_CACHE[year] = d
+    return d
+
+
+_BNMCODE_SCHEMA = {"BNMCODE": pl.Utf8, "AMOUNT": pl.Float64, "AMTUSD": pl.Float64,
+                   "AMTSGD": pl.Float64, "AMTHKD": pl.Float64, "AMTAUD": pl.Float64}
+
+GLPROD_MAP = {
+    117: "3301", 110: "3302", 108: "3303", 118: "3304", 157: "3305", 102: "3305", 101: "3306",
+    121: "3307", 194: "3308", 195: "3308", 155: "3308", 192: "3308", 137: "3308", 154: "3308",
+    119: "3308", 120: "3308", 138: "3308", 193: "3308", 116: "3309", 114: "3311", 85: "3311",
+    86: "3311", 87: "3313", 88: "3313", 89: "3313", 91: "3313", 179: "3313", 174: "3313",
+    175: "3313", 100: "3313", 156: "3313", 198: "3313", 90: "3313", 93: "3313", 180: "3313",
+    197: "3313", 123: "3314", 176: "3314", 196: "3314", 112: "3315", 115: "3316", 111: "3317",
+    113: "3318", 135: "3318", 189: "3318", 177: "3318", 190: "3318", 178: "3318", 122: "3319",
+    109: "3320", 165: "3322", 124: "3322", 191: "3322", 159: "3323", 125: "3323", 150: "3324",
+    181: "3324", 151: "3325", 152: "3326", 170: "3327", 153: "3328", 182: "3330", 183: "3330",
+    160: "3330", 166: "3330", 167: "3330", 168: "3330", 169: "3330", 161: "3331", 162: "3332",
+    164: "3334", 106: "7101", 158: "7101", 50: "C001", 51: "C002", 55: "C006", 56: "C007",
+    65: "C008", 57: "C008", 58: "C009", 60: "CI01", 64: "CI06", 66: "CI06", 67: "CI06",
+    68: "CI06", 69: "CI06", 70: "CI06", 71: "CI06", 77: "CI06", 78: "CI06", 81: "CI06",
+    82: "CI06", 83: "CI06", 84: "CI06", 94: "CI06", 95: "CI06", 96: "CI06", 97: "CI06",
+    131: "CI06", 132: "CI06", 133: "CI06", 134: "CI06", 184: "CI06", 40: "CI06", 41: "CI06",
+    35: "CI06", 36: "CI06", 37: "CI06", 38: "CI06", 39: "CI06", 42: "CI06", 43: "CI06",
+    26: "CI06", 27: "CI06", 3: "CI06", 4: "CI06", 9: "CI06", 10: "CI06", 11: "CI06", 12: "CI06",
+    53: "HDA0", 63: "HDA0", 103: "HDA0", 163: "HDA0",
 }
 
-# ===========================================================================
-# FORMAT: REMFMT — remaining maturity buckets
-# ===========================================================================
-def fmt_remfmt(remmth: float) -> str:
-    """
-    REMFMT:
-      LOW-0.1 = '01'   UP TO 1 WK
-      0.1-1   = '02'   >1 WK - 1 MTH
-      1-3     = '03'   >1 MTH - 3 MTHS
-      3-6     = '04'   >3 - 6 MTHS
-      6-12    = '05'   >6 MTHS - 1 YR
-      OTHER   = '06'   > 1 YEAR
-    SAS inclusive upper bound, exclusive lower bound (LOW-0.1 = up to and including 0.1)
-    """
+
+def _glprod(product) -> str:
+    return GLPROD_MAP.get(product, "C999")
+
+
+def _remfmt(remmth: float) -> str:
     if remmth <= 0.1:
-        return '01'
-    elif remmth <= 1:
-        return '02'
-    elif remmth <= 3:
-        return '03'
-    elif remmth <= 6:
-        return '04'
-    elif remmth <= 12:
-        return '05'
-    else:
-        return '06'
+        return "01"
+    if remmth <= 1:
+        return "02"
+    if remmth <= 3:
+        return "03"
+    if remmth <= 6:
+        return "04"
+    if remmth <= 12:
+        return "05"
+    return "06"
 
-# ===========================================================================
-# FORMAT: GLPROD — product code to GL code mapping
-# Full mapping from SAS PROC FORMAT VALUE GLPROD
-# ===========================================================================
-_GLPROD_MAP = {
-    117: '3301',  # M&I --> WALKER
-    110: '3302',
-    108: '3303',
-    118: '3304',
-    157: '3305',
-    102: '3305',
-    101: '3306',
-    121: '3307',
-    194: '3308', 195: '3308', 155: '3308', 192: '3308', 137: '3308',
-    154: '3308', 119: '3308', 120: '3308', 138: '3308', 193: '3308',
-    116: '3309',
-    114: '3311',  85: '3311',  86: '3311',
-     87: '3313',  88: '3313',  89: '3313',  91: '3313', 179: '3313',
-    174: '3313', 175: '3313', 100: '3313', 156: '3313', 198: '3313',
-     90: '3313',  93: '3313', 180: '3313', 197: '3313',
-     17: '3313',  18: '3313',  19: '3313',
-    123: '3314', 176: '3314', 196: '3314',
-    112: '3315',
-    115: '3316',
-    111: '3317',
-    113: '3318', 135: '3318', 189: '3318', 177: '3318', 190: '3318', 178: '3318',
-    122: '3319',
-    109: '3320',
-    165: '3322', 124: '3322', 191: '3322',
-    159: '3323', 125: '3323',
-    150: '3324', 181: '3324',
-    151: '3325',
-    152: '3326',
-    170: '3327',
-    153: '3328',
-    182: '3330', 183: '3330', 160: '3330', 166: '3330', 167: '3330',
-    168: '3330', 169: '3330',
-    161: '3331',
-    162: '3332',
-    164: '3334',
-    106: '7101', 158: '7101',
-     50: 'C001',  51: 'C002',  55: 'C006',  56: 'C007',
-     65: 'C008',  57: 'C008',  58: 'C009',
-     60: 'CI01',  61: 'CI01',
-     64: 'CI06',  66: 'CI06',  67: 'CI06',  68: 'CI06',  69: 'CI06',
-     70: 'CI06',  71: 'CI06',  73: 'CI06',  74: 'CI06',  77: 'CI06',
-     78: 'CI06',  81: 'CI06',  82: 'CI06',  83: 'CI06',  84: 'CI06',
-     92: 'CI06',  94: 'CI06',  95: 'CI06',  96: 'CI06',  97: 'CI06',
-    131: 'CI06', 132: 'CI06', 133: 'CI06', 134: 'CI06',
-    184: 'CI06', 185: 'CI06', 186: 'CI06', 187: 'CI06', 188: 'CI06',
-     40: 'CI06',  41: 'CI06',  35: 'CI06',  36: 'CI06',  37: 'CI06',
-     38: 'CI06',  39: 'CI06',  42: 'CI06',  43: 'CI06',
-     26: 'CI06',  27: 'CI06',
-      3: 'CI06',   4: 'CI06',   9: 'CI06',  10: 'CI06',  11: 'CI06',
-     12: 'CI06',
-     20: 'CI06',  21: 'CI06',  22: 'CI06',  23: 'CI06',  24: 'CI06',
-     25: 'CI06',  75: 'CI06',  76: 'CI06',  46: 'CI06',  47: 'CI06',
-     48: 'CI06',  49: 'CI06',  45: 'CI06',  13: 'CI06',  14: 'CI06',
-     15: 'CI06',  16: 'CI06',   5: 'CI06',   6: 'CI06',   7: 'CI06',
-      8: 'CI06',
-     53: 'HDA0',  63: 'HDA0', 103: 'HDA0', 163: 'HDA0',  # EXCLUDE FROM RDAL
-}
 
-def fmt_glprod(product: int) -> str:
-    return _GLPROD_MAP.get(product, 'C999')
+def _remmth(ctx: dict, matdt: date):
+    """%REMMTH macro."""
+    rd_days = ctx["rd_days"]
+    days_in_rpmth = rd_days[ctx["rpmth"] - 1]
+    mdday = min(matdt.day, days_in_rpmth)
+    remy, remm = matdt.year - ctx["rpyr"], matdt.month - ctx["rpmth"]
+    remd = mdday - ctx["rpday"]
+    remmth = remy * 12 + remm + remd / days_in_rpmth
+    rem30d = (matdt - ctx["reptdate"]).days / 30
+    return remmth, rem30d
 
-# ===========================================================================
-# MACRO %DCLVAR — day arrays for months (31 days default, adjust Feb/Apr/Jun etc.)
-# RETAIN D1-D12 31; D4=D6=D9=D11=30; D2=28 (leap: 29)
-# RD and MD arrays have the same initialisation.
-# ===========================================================================
-def _make_lday(yr: int) -> dict:
-    """Returns dict of month -> days in month for given year."""
-    return {m: monthrange(yr, m)[1] for m in range(1, 13)}
 
-# ===========================================================================
-# MACRO %NXTBLDT — calculate next billing date
-# ===========================================================================
-def nxt_bldate(bldate: date, payfreq: str, freq: int, payday,
-               lday: dict) -> date:
-    """Python equivalent of %NXTBLDT macro."""
-    if payfreq == '6':
-        dd = bldate.day + 14
-        mm = bldate.month
-        yy = bldate.year
-        if dd > lday[mm]:
-            dd -= lday[mm]
+def _nxtbldt(bldate: date, payfreq, payday) -> date:
+    """%NXTBLDT macro."""
+    def leap_days(year):
+        d = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        if year % 4 == 0:
+            d[1] = 29
+        return d
+
+    if payfreq == "6":
+        d_ = leap_days(bldate.year)
+        dd, mm, yy = bldate.day + 14, bldate.month, bldate.year
+        if dd > d_[mm - 1]:
+            dd -= d_[mm - 1]
             mm += 1
             if mm > 12:
                 mm -= 12
                 yy += 1
     else:
-        mm = bldate.month + freq
-        yy = bldate.year
+        freq = {"1": 1, "2": 3, "3": 6, "4": 12}.get(payfreq, 0)
+        mm, yy = bldate.month + freq, bldate.year
         if mm > 12:
             mm -= 12
             yy += 1
         if payday is not None:
-            if payday == 99:
-                dd = monthrange(yy, mm)[1]
-            else:
-                dd = payday
+            d_tmp = _leap_days(yy)
+            dd = d_tmp[mm - 1] if payday == 99 else payday
         else:
             dd = bldate.day
-    # Recompute max days for new month/year (handles Feb leap)
-    max_dd = monthrange(yy, mm)[1]
-    if dd > max_dd:
-        dd = max_dd
+    d_final = _leap_days(yy)
+    if dd > d_final[mm - 1]:
+        dd = d_final[mm - 1]
     return date(yy, mm, dd)
 
-# ===========================================================================
-# MACRO %REMMTH — calculate remaining months
-# ===========================================================================
-def calc_remmth(matdt: date, reptdate: date) -> tuple:
-    """
-    Python equivalent of %REMMTH macro.
-    Returns (remmth, rem30d).
-    """
-    rpyr   = reptdate.year
-    rpmth  = reptdate.month
-    rpday  = reptdate.day
-    rpdays = _make_lday(rpyr)
 
-    mdyr  = matdt.year
-    mdmth = matdt.month
-    mdday = matdt.day
-
-    # IF MDDAY > RPDAYS(RPMTH) THEN MDDAY = RPDAYS(RPMTH)
-    if mdday > rpdays[rpmth]:
-        mdday = rpdays[rpmth]
-
-    remy   = mdyr  - rpyr
-    remm   = mdmth - rpmth
-    remd   = mdday - rpday
-    remmth = remy * 12 + remm + remd / rpdays[rpmth]
-    rem30d = (matdt - reptdate).days / 30.0
-    return remmth, rem30d
-
-# ===========================================================================
-# LOAD REPTDATE
-# ===========================================================================
-def load_reptdate() -> dict:
-    """Load REPTDATE from parquet and extract macro variables."""
-    con = duckdb.connect()
-    row = con.execute(
-        f"SELECT * FROM read_parquet('{REPTDATE_PARQUET}') LIMIT 1"
-    ).fetchone()
-    cols = [d[0] for d in con.description]
-    con.close()
-    rec = dict(zip(cols, row))
-
-    reptdate_val = rec['REPTDATE']
-    if not isinstance(reptdate_val, date):
-        import pandas as pd
-        reptdate_val = pd.Timestamp(reptdate_val).date()
-
-    d = reptdate_val.day
-    if d == 8:
-        nowk = '1'
-    elif d == 15:
-        nowk = '2'
-    elif d == 22:
-        nowk = '3'
-    else:
-        nowk = '4'
-
-    return {
-        'REPTDATE': reptdate_val,
-        'NOWK':     nowk,
-        'REPTYEAR': str(reptdate_val.year),
-        'REPTYEA2': str(reptdate_val.year)[-2:],
-        'REPTMON':  str(reptdate_val.month).zfill(2),
-        'REPTDAY':  str(reptdate_val.day).zfill(2),
-        'RDATE':    reptdate_val.strftime('%d/%m/%Y'),
-        'TDATE':    reptdate_val,
-    }
-
-# ===========================================================================
-# PROCESS LOANS (NOTE)
-# LOANS - FL/HL USE REPAYMENT DATE; OD/RC USE EXPIRY DATE
-# ===========================================================================
-def process_loans(macro: dict) -> pl.DataFrame:
-    """Process NOTE (loan) records to produce BNMCODE rows."""
-    reptdate = macro['REPTDATE']
-    reptmon  = macro['REPTMON']
-    nowk     = macro['NOWK']
-    reptyea2 = macro['REPTYEA2']
-    tdate    = macro['TDATE']
-
-    loan_parquet   = DATA_DIR / f"LOAN{reptmon}{nowk}.parquet"
-    lncomm_parquet = DATA_DIR / "LNCOMM.parquet"
-    pay_parquet    = DATA_DIR / f"LNPAY{reptmon}{nowk}{reptyea2}.parquet"
-    provsub_txt    = DATA_DIR / "PROVSUB.txt"
-
-    con = duckdb.connect()
-
-    # -------------------------------------------------------------------
-    # PROC SORT DATA=BNM1.LOAN WHERE PRODCD IN ('34190','34690')
-    # MERGE with LNCOMM for expiry date
-    # -------------------------------------------------------------------
-    rcloan = con.execute(
-        f"SELECT * FROM read_parquet('{loan_parquet}') "
-        f"WHERE PRODCD IN ('34190','34690')"
-    ).pl()
-
-    lncomm = con.execute(
-        f"SELECT ACCTNO, COMMNO, EXPIREDT FROM read_parquet('{lncomm_parquet}')"
-    ).pl()
-
-    # Convert EXPIREDT: PUT(EXPIREDT, Z11.) -> substr(1,8) -> MMDDYY8.
-    # EXPIREDT is numeric 11-digit field; first 8 chars = MMDDYYYY
-    lncomm = lncomm.with_columns([
-        pl.col('EXPIREDT').cast(pl.Utf8).str.zfill(11)
-        .str.slice(0, 8)
-        .str.strptime(pl.Date, format='%m%d%Y', strict=False)
-        .alias('EXPRDATE')
-    ]).drop('EXPIREDT')
-
-    # PROC SORT LOAN.LNCOMM NODUPKEYS BY ACCTNO COMMNO
-    lncomm = lncomm.unique(subset=['ACCTNO', 'COMMNO'], keep='first')
-
-    # DATA RCNOTE(KEEP=ACCTNO NOTENO EXPRDATE):
-    #   MERGE LNCOMM(IN=A) RCLOAN(IN=B DROP=EXPRDATE); BY ACCTNO COMMNO; IF A & B;
-    rcnote = lncomm.join(
-        rcloan.select(['ACCTNO', 'COMMNO']).unique(subset=['ACCTNO', 'COMMNO']),
-        on=['ACCTNO', 'COMMNO'], how='inner'
-    ).select(['ACCTNO', 'COMMNO', 'EXPRDATE'])
-
-    # Full loan file: PROC SORT DATA=BNM1.LOAN BY ACCTNO NOTENO
-    loan_all = con.execute(f"SELECT * FROM read_parquet('{loan_parquet}')").pl()
-
-    # PROC SORT RCNOTE NODUPKEYS BY ACCTNO NOTENO
-    # COMMNO in RCNOTE corresponds to NOTENO in loan merge
-    rcnote = rcnote.rename({'COMMNO': 'NOTENO'})
-    rcnote = rcnote.unique(subset=['ACCTNO', 'NOTENO'], keep='first')
-
-    # -------------------------------------------------------------------
-    # PROVSUB: read impaired loan file
-    # INFILE PROVSUB FIRSTOBS=2;
-    # INPUT @001 ACCTNO 10. @012 NOTENO 5. @018 IMLOAN $1.
-    # IF IMLOAN = 'Y';
-    # -------------------------------------------------------------------
-    provsub_rows = []
-    if provsub_txt.exists():
-        with open(provsub_txt, 'r') as f:
-            lines = f.readlines()[1:]  # FIRSTOBS=2
-        for line in lines:
-            if len(line) >= 18:
-                try:
-                    acctno = int(line[0:10].strip())
-                    noteno = int(line[11:16].strip())
-                    imloan = line[17:18].strip()
-                    if imloan == 'Y':
-                        provsub_rows.append({'ACCTNO': acctno, 'NOTENO': noteno, 'IMLOAN': imloan})
-                except ValueError:
-                    continue
-    if provsub_rows:
-        provsub = pl.DataFrame(provsub_rows)
-        # PROC SORT PROVSUB NODUPKEY BY ACCTNO NOTENO
-        provsub = provsub.unique(subset=['ACCTNO', 'NOTENO'], keep='first')
-    else:
-        provsub = pl.DataFrame({'ACCTNO': pl.Series([], dtype=pl.Int64),
-                                'NOTENO': pl.Series([], dtype=pl.Int64),
-                                'IMLOAN': pl.Series([], dtype=pl.Utf8)})
-
-    # -------------------------------------------------------------------
-    # DATA NOTE: MERGE LOAN(IN=A) RCNOTE(IN=B) PROVSUB; BY ACCTNO NOTENO; IF A;
-    # -------------------------------------------------------------------
-    note = loan_all.join(rcnote, on=['ACCTNO', 'NOTENO'], how='left')
-    note = note.join(provsub, on=['ACCTNO', 'NOTENO'], how='left')
-
-    # -------------------------------------------------------------------
-    # PAY file: PAY.LNPAY&REPTMON&NOWK&REPTYEA2
-    # -------------------------------------------------------------------
-    pay_raw = con.execute(f"SELECT * FROM read_parquet('{pay_parquet}')").pl()
-
-    pay_raw = pay_raw.with_columns([
-        pl.when(pl.col('EFFDATE') <= pl.lit(tdate))
-          .then(pl.lit(1))
-          .otherwise(pl.lit(0))
-          .alias('SORT_IND'),
-        pl.when(pl.col('EFFDATE') <= pl.lit(tdate))
-          .then(pl.col('EFFDATE').cast(pl.Int64))
-          .otherwise(-pl.col('EFFDATE').cast(pl.Int64))
-          .alias('MANI_EFFDATE'),
+def _summarize(df: pl.DataFrame) -> pl.DataFrame:
+    if df.is_empty():
+        return pl.DataFrame(schema=_BNMCODE_SCHEMA)
+    return df.group_by("BNMCODE").agg([
+        pl.col("AMOUNT").sum(), pl.col("AMTUSD").sum(), pl.col("AMTSGD").sum(),
+        pl.col("AMTHKD").sum(), pl.col("AMTAUD").sum(),
     ])
 
-    # PROC SORT DATA=PAY BY ACCTNO NOTENO PAYAMT DESCENDING SORT_IND DESCENDING MANI_EFFDATE
-    pay_sorted = pay_raw.sort(
-        ['ACCTNO', 'NOTENO', 'PAYAMT', 'SORT_IND', 'MANI_EFFDATE'],
-        descending=[False, False, False, True, True]
-    )
-    # PROC SORT DATA=PAY NODUPKEY BY ACCTNO NOTENO PAYAMT
-    pay = pay_sorted.unique(subset=['ACCTNO', 'NOTENO', 'PAYAMT'], keep='first')
 
-    # PROC SORT NOTE BY ACCTNO NOTENO PAYAMT
-    note = note.sort(['ACCTNO', 'NOTENO', 'PAYAMT'])
-    pay  = pay.sort(['ACCTNO', 'NOTENO', 'PAYAMT'])
+# ============================================================================
+# NOTE (loans) -- BREAKDOWN BY MATURITY PROFILE (PART 1 & 2 - RM)  [VECTORISED]
+# ============================================================================
+_MAX_ROUNDS = 500       # Before 5000
+_IND_CODES = [77.0, 78.0, 95.0, 96.0]
+_CIS_KEEP = ["CUSTNO", "ACCTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"]
+_PAYFREQ_MONTHS = {"1": 1, "2": 3, "3": 6, "4": 12}
+_CCY_COLS = ("USD", "SGD", "HKD", "AUD")
 
-    # DATA NOTE: MERGE NOTE(IN=A) PAY(IN=B); BY ACCTNO NOTENO PAYAMT; IF A;
-    # IF PRODUCT IN (800:899) THEN PAYAMT = PAYAMT * FORATE;
-    pay_keep = pay.select(['ACCTNO', 'NOTENO', 'PAYAMT', 'PAYDAY', 'DAY_DIFF', 'SORT_IND', 'MANI_EFFDATE'])
-    note = note.join(pay_keep, on=['ACCTNO', 'NOTENO', 'PAYAMT'], how='left')
 
-    note = note.with_columns([
-        pl.when((pl.col('PRODUCT') >= 800) & (pl.col('PRODUCT') <= 899))
-          .then(pl.col('PAYAMT') * pl.col('FORATE'))
-          .otherwise(pl.col('PAYAMT'))
-          .alias('PAYAMT')
+def _remfmt_expr(rem: pl.Expr) -> pl.Expr:
+    return (pl.when(rem <= 0.1).then(pl.lit("01"))
+            .when(rem <= 1).then(pl.lit("02"))
+            .when(rem <= 3).then(pl.lit("03"))
+            .when(rem <= 6).then(pl.lit("04"))
+            .when(rem <= 12).then(pl.lit("05"))
+            .otherwise(pl.lit("06")))
+
+
+def _dim_expr(y: pl.Expr, m: pl.Expr) -> pl.Expr:
+    """Days in month (same leap rule as _leap_days: year % 4 == 0)."""
+    return (pl.when(m == 2).then(pl.when(y % 4 == 0).then(29).otherwise(28))
+            .when(m.is_in([4, 6, 9, 11])).then(30)
+            .otherwise(31)).cast(pl.Int64)
+
+
+def _remmth_expr(ctx: dict, d: pl.Expr) -> pl.Expr:
+    """Vectorised %REMMTH (months part only)."""
+    dim = ctx["rd_days"][ctx["rpmth"] - 1]
+    mdday = pl.min_horizontal(d.dt.day().cast(pl.Int64), pl.lit(dim, dtype=pl.Int64))
+    return ((d.dt.year().cast(pl.Int64) - ctx["rpyr"]) * 12
+            + (d.dt.month().cast(pl.Int64) - ctx["rpmth"])
+            + (mdday - ctx["rpday"]) / dim)
+
+
+def _nxt_date(df: pl.DataFrame, cur: str = "CUR") -> pl.Series:
+    """Vectorised %NXTBLDT (PAYDAY is always missing in this program)."""
+    c = pl.col(cur)
+    cy = c.dt.year().cast(pl.Int64)
+    cm = c.dt.month().cast(pl.Int64)
+    cd = c.dt.day().cast(pl.Int64)
+    fortnight = pl.col("PAYFREQ") == "6"
+    step = pl.col("PAYFREQ").replace_strict(_PAYFREQ_MONTHS, default=0, return_dtype=pl.Int64)
+    f_d = cd + 14
+    f_roll = f_d > _dim_expr(cy, cm)
+    mm0 = (pl.when(fortnight)
+           .then(pl.when(f_roll).then(cm + 1).otherwise(cm))
+           .otherwise(cm + step))
+    yy = pl.when(mm0 > 12).then(cy + 1).otherwise(cy)
+    mm = pl.when(mm0 > 12).then(mm0 - 12).otherwise(mm0)
+    dd0 = (pl.when(fortnight)
+           .then(pl.when(f_roll).then(f_d - _dim_expr(cy, cm)).otherwise(f_d))
+           .otherwise(cd))
+    dd = pl.min_horizontal(dd0, _dim_expr(yy, mm))
+    return df.select(pl.date(yy, mm, dd).alias("NXT")).to_series()
+
+
+def _emit_agg(df: pl.DataFrame, kind: str, amt: str, rem: str) -> pl.DataFrame:
+    """kind 'A' -> 95 (LCY) / 94 (FCY);  kind 'B' -> 93 (LCY) / 96 (FCY)."""
+    lcy, fcy = ("95", "94") if kind == "A" else ("93", "96")
+    fc = pl.col("IS_FCY")
+    _extra = []
+    if "DIAG_ACCT" in df.columns:
+        _extra = [pl.col("DIAG_ACCT"), pl.col("DIAG_CUR"), pl.col("DIAG_REMM")]
+    out = df.select([
+        pl.concat_str([
+            pl.when(fc).then(pl.lit(fcy)).otherwise(pl.lit(lcy)),
+            pl.col("ITEM"), pl.col("CUST"), _remfmt_expr(pl.col(rem)), pl.lit("0000Y"),
+        ]).alias("BNMCODE"),
+        pl.col(amt).alias("AMOUNT"),
+        *[pl.when(fc & (pl.col("CCY") == c)).then(pl.col(amt)).otherwise(0.0).alias(f"AMT{c}")
+          for c in _CCY_COLS],
+        *_extra,
     ])
 
-    con.close()
-
-    # -------------------------------------------------------------------
-    # DATA NOTE (KEEP=BNMCODE AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD):
-    # SET NOTE;
-    # IF _N_=1 THEN SET REPTDATE (RPYR, RPMTH, RPDAY initialisation);
-    # -------------------------------------------------------------------
-    output_rows = []
-    lday = _make_lday(reptdate.year)
-    rpyr  = reptdate.year
-    rpmth = reptdate.month
-    rpday = reptdate.day
-    if rpyr % 4 == 0:
-        lday[2] = 29
-
-    for row in note.iter_rows(named=True):
-        # IF PAIDIND NOT IN ('P','C') OR EIR_ADJ NE .
-        paidind = (row.get('PAIDIND') or '').strip()
-        eir_adj = row.get('EIR_ADJ')
-        if paidind in ('P', 'C') and (eir_adj is None or eir_adj == ''):
-            continue
-
-        amtusd = amtsgd = amthkd = amtaud = 0.0
-
-        prodcd  = str(row.get('PRODCD') or '').strip()
-        product = row.get('PRODUCT') or 0
-
-        # IF SUBSTR(PRODCD,1,2) = '34' OR PRODUCT IN (225,226)
-        if not (prodcd[:2] == '34' or product in (225, 226)):
-            continue
-
-        custcd_raw = str(row.get('CUSTCD') or '').strip()
-        if custcd_raw in ('77', '78', '95', '96'):
-            cust = '08'
-        else:
-            cust = '09'
-
-        acctype  = str(row.get('ACCTYPE') or '').strip()
-        balance  = row.get('BALANCE') or 0.0
-        bldate   = row.get('BLDATE')
-        exprdate = row.get('EXPRDATE')
-        issdte   = row.get('ISSDTE')
-        payfreq  = str(row.get('PAYFREQ') or '').strip()
-        payamt   = row.get('PAYAMT') or 0.0
-        payday   = row.get('PAYDAY')
-        loanstat = row.get('LOANSTAT')
-        imloan   = str(row.get('IMLOAN') or '').strip()
-        ccy      = str(row.get('CCY') or '').strip()
-
-        # IF BLDATE > 0 THEN DAYS = REPTDATE - BLDATE
-        if isinstance(bldate, date) and bldate > date(1960, 1, 1):
-            days_calc = (reptdate - bldate).days
-        else:
-            days_calc = row.get('DAYS') or 0
-
-        # IF ACCTYPE = 'OD'
-        if acctype == 'OD':
-            remmth_val = 0.1
-            amount = balance
-            bnmcode = '95213' + cust + fmt_remfmt(remmth_val) + '0000Y'
-            _append_note(output_rows, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-            continue
-
-        # IF ACCTYPE = 'LN'
-        if acctype != 'LN':
-            continue
-
-        # PROD = PUT(PRODUCT, LIQPFMT.) — from PBBLNFMT
-        prod = format_liqpfmt(product)
-        if custcd_raw in ('77', '78', '95', '96'):
-            if prod == 'HL':
-                item = '214'
-            else:
-                item = '219'
-        else:
-            if prod in ('FL', 'HL'):
-                item = '211'
-            elif prod == 'RC':
-                item = '212'
-            else:
-                item = '219'
-
-        # CONVERT PAYFREQ CODE TO MONTHS
-        freq = 0
-        if payfreq == '1':
-            freq = 1
-        elif payfreq == '2':
-            freq = 3
-        elif payfreq == '3':
-            freq = 6
-        elif payfreq == '4':
-            freq = 12
-
-        # IF EXPRDATE - REPTDATE < 8 THEN REMMTH = 0.1
-        if exprdate is not None and (exprdate - reptdate).days < 8:
-            remmth_val = 0.1
-        else:
-            # IF PAYFREQ IN ('5','9',' ') OR PRODUCT IN (350,910,925) THEN BLDATE=EXPRDATE
-            if payfreq in ('5', '9', ' ', '') or product in (350, 910, 925):
-                bldate = exprdate
-            elif bldate is None or \
-                 (isinstance(bldate, (int, float)) and bldate <= 0) or \
-                 (isinstance(bldate, date) and bldate <= date(1960, 1, 1)):
-                bldate = issdte
-                if bldate:
-                    local_lday = _make_lday(bldate.year)
-                    while bldate is not None and bldate <= reptdate:
-                        bldate = nxt_bldate(bldate, payfreq, freq, payday, local_lday)
-
-            # IF PAYAMT < 0 THEN PAYAMT = 0
-            if payamt is None or payamt < 0:
-                payamt = 0.0
-
-            # IF BLDATE > EXPRDATE | BALANCE <= PAYAMT THEN BLDATE = EXPRDATE
-            if exprdate and bldate and (bldate > exprdate or balance <= payamt):
-                bldate = exprdate
-
-            # DO WHILE (BLDATE <= EXPRDATE)
-            if exprdate and bldate:
-                local_lday = _make_lday(bldate.year if bldate else reptdate.year)
-                while bldate <= exprdate:
-                    matdt = bldate
-                    remmth_val, rem30d = calc_remmth(matdt, reptdate)
-
-                    if remmth_val > 12 or bldate == exprdate:
-                        break
-                    if remmth_val > 0.1 and (bldate - reptdate).days < 8:
-                        remmth_val = 0.1
-
-                    amount  = payamt
-                    balance = balance - payamt
-
-                    # FCY currency amounts
-                    amtusd = amtsgd = amthkd = amtaud = 0.0
-                    if 800 <= product <= 899:
-                        if   ccy == 'USD': amtusd = amount
-                        elif ccy == 'HKD': amthkd = amount
-                        elif ccy == 'AUD': amtaud = amount
-                        elif ccy == 'SGD': amtsgd = amount
-                        # NZD, EUR, GBP — captured in SAS AMTNZD/AMTEUR/AMTGBP;
-                        # those FCY columns are not in the KEEP list for FISS output,
-                        # so they are intentionally not carried forward here.
-
-                    if product not in FCY_PRODUCTS:
-                        bnmcode = '95' + item + cust + fmt_remfmt(remmth_val) + '0000Y'
-                        _append_note(output_rows, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-                    if product in FCY_PRODUCTS:
-                        bnmcode = '94' + item + cust + fmt_remfmt(remmth_val) + '0000Y'
-                        _append_note(output_rows, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-
-                    # IF DAYS > 89 OR LOANSTAT ^= 1 OR IMLOAN = 'Y' THEN REMMTH = 13
-                    if days_calc > 89 or loanstat != 1 or imloan == 'Y':
-                        remmth_val = 13
-                    if product not in FCY_PRODUCTS:
-                        bnmcode = '93' + item + cust + fmt_remfmt(remmth_val) + '0000Y'
-                        _append_note(output_rows, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-                    if product in FCY_PRODUCTS:
-                        bnmcode = '96' + item + cust + fmt_remfmt(remmth_val) + '0000Y'
-                        _append_note(output_rows, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-
-                    # %NXTBLDT — advance billing date
-                    local_lday = _make_lday(bldate.year)
-                    bldate = nxt_bldate(bldate, payfreq, freq, payday, local_lday)
-                    if exprdate and (bldate > exprdate or balance <= amount):
-                        bldate = exprdate
-
-            # End of DO WHILE — compute remmth for remaining balance using exprdate
-            remmth_val, _ = calc_remmth(exprdate, reptdate) if exprdate else (0.1, 0.0)
-
-        # AMOUNT = BALANCE (remaining)
-        amount = balance
-        amtusd = amtsgd = amthkd = amtaud = 0.0
-        if 800 <= product <= 899:
-            if   ccy == 'USD': amtusd = amount
-            elif ccy == 'HKD': amthkd = amount
-            elif ccy == 'AUD': amtaud = amount
-            elif ccy == 'SGD': amtsgd = amount
-            # NZD, EUR, GBP not in FISS KEEP list — not forwarded
-
-        if product not in FCY_PRODUCTS:
-            bnmcode = '95' + item + cust + fmt_remfmt(remmth_val) + '0000Y'
-            _append_note(output_rows, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-        if product in FCY_PRODUCTS:
-            bnmcode = '94' + item + cust + fmt_remfmt(remmth_val) + '0000Y'
-            _append_note(output_rows, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-
-        if days_calc > 89 or loanstat != 1 or imloan == 'Y':
-            remmth_val = 13
-        if product not in FCY_PRODUCTS:
-            bnmcode = '93' + item + cust + fmt_remfmt(remmth_val) + '0000Y'
-            _append_note(output_rows, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-        if product in FCY_PRODUCTS:
-            bnmcode = '96' + item + cust + fmt_remfmt(remmth_val) + '0000Y'
-            _append_note(output_rows, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-
-        # IF EIR_ADJ NE .
-        if eir_adj is not None and eir_adj != '' and not (isinstance(eir_adj, float) and math.isnan(eir_adj)):
-            amt_eir = float(eir_adj)
-            bnmcode = '95' + item + cust + '060000Y'
-            _append_note(output_rows, bnmcode, amt_eir, 0.0, 0.0, 0.0, 0.0)
-            bnmcode = '93' + item + cust + '060000Y'
-            _append_note(output_rows, bnmcode, amt_eir, 0.0, 0.0, 0.0, 0.0)
-
-    if not output_rows:
-        return _empty_bnm_df()
-    return pl.DataFrame(output_rows)
-
-def _append_note(rows: list, bnmcode: str, amount, amtusd, amtsgd, amthkd, amtaud):
-    rows.append({
-        'BNMCODE': bnmcode,
-        'AMOUNT':  float(amount or 0.0),
-        'AMTUSD':  float(amtusd or 0.0),
-        'AMTSGD':  float(amtsgd or 0.0),
-        'AMTHKD':  float(amthkd or 0.0),
-        'AMTAUD':  float(amtaud or 0.0),
-    })
-
-# ===========================================================================
-# FIXED DEPOSITS (FD)
-# DATA FD LCR.FD: SET FD.FD
-# ===========================================================================
-def process_fd(macro: dict) -> tuple:
-    """
-    Process Fixed Deposits.
-    BIC = PUT(INTPLAN, FDPROD.) — from PBBDPFMT.
-    Returns (FD summary df, LCR_FD df).
-    """
-    reptdate = macro['REPTDATE']
-    con = duckdb.connect()
-    fd_parquet = DATA_DIR / "FD.parquet"
-
-    fd_raw = con.execute(f"SELECT * FROM read_parquet('{fd_parquet}')").pl()
-    con.close()
-
-    output_fd  = []
-    output_lcr = []
-
-    for row in fd_raw.iter_rows(named=True):
-        accttype = row.get('ACCTTYPE') or 0
-        # IF ACCTTYPE ^= 397 (SAS: excludes 397 in EIBMRLFM — confirmed from SAS source)
-        if accttype == 397:
-            continue
-        curbal = row.get('CURBAL') or 0.0
-        if curbal <= 0:
-            continue
-
-        custcd = row.get('CUSTCD') or 0
-        if isinstance(custcd, str):
-            custcd_int = int(custcd.strip()) if custcd.strip().isdigit() else 0
-        else:
-            custcd_int = int(custcd)
-
-        cust = '08' if custcd_int in (77, 78, 95, 96) else '09'
-
-        # MATDT = INPUT(PUT(MATDATE,Z8.),YYMMDD8.)
-        matdate = row.get('MATDATE') or 0
-        matdt = None
-        try:
-            matdt_str = str(int(matdate)).zfill(8)
-            matdt = date(int(matdt_str[:4]), int(matdt_str[4:6]), int(matdt_str[6:8]))
-        except Exception:
-            matdt = None
-
-        openind = str(row.get('OPENIND') or '').strip()
-        amtusd  = amtsgd = amthkd = amtaud = 0.0
-
-        # IF OPENIND='D' OR MATDT-REPTDATE<8 THEN REMMTH=0.1
-        if openind == 'D' or (matdt and (matdt - reptdate).days < 8):
-            remmth_val = 0.1
-            rem30d_val = 0.0
-        elif matdt:
-            remmth_val, rem30d_val = calc_remmth(matdt, reptdate)
-        else:
-            remmth_val = 0.1
-            rem30d_val = 0.0
-
-        intplan = row.get('INTPLAN') or 0
-        curcode = str(row.get('CURCODE') or '').strip()
-        branch  = row.get('BRANCH')
-        acctno  = row.get('ACCTNO')
-        fdhold  = row.get('FDHOLD')
-        cdno    = row.get('CDNO')
-
-        # BIC = PUT(INTPLAN, FDPROD.) — from PBBDPFMT
-        bic = fdprod_format(intplan)
-
-        if bic == '42630':
-            # FCY FD
-            if   curcode == 'USD': amtusd = curbal
-            elif curcode == 'SGD': amtsgd = curbal
-            elif curcode == 'HKD': amthkd = curbal
-            elif curcode == 'AUD': amtaud = curbal
-            bnmcode = '96311' + cust + fmt_remfmt(remmth_val) + '0000Y'
-        elif bic == '42132':
-            bnmcode = '95315' + cust + fmt_remfmt(remmth_val) + '0000Y'
-        else:
-            bnmcode = '95311' + cust + fmt_remfmt(remmth_val) + '0000Y'
-
-        # IF ACCTTYPE IN (315,394) THEN BNMCODE = '95315'||...
-        # This is a post-BIC override applied regardless of BIC result
-        if accttype in (315, 394):
-            bnmcode = '95315' + cust + fmt_remfmt(remmth_val) + '0000Y'
-
-        output_fd.append({
-            'BNMCODE': bnmcode, 'AMOUNT': curbal,
-            'AMTUSD': amtusd, 'AMTSGD': amtsgd,
-            'AMTHKD': amthkd, 'AMTAUD': amtaud
-        })
-        output_lcr.append({
-            'BNMCODE': bnmcode, 'BRANCH': branch, 'ACCTNO': acctno,
-            'AMOUNT': curbal, 'CURCODE': curcode, 'CUSTCD': str(custcd_int),
-            'PRODUCT': accttype, 'REMMTH': remmth_val, 'REM30D': rem30d_val,
-            'FDHOLD': fdhold, 'CDNO': cdno, 'MATDT': matdt, 'INTPLAN': intplan
-        })
-
-    fd_df  = pl.DataFrame(output_fd)  if output_fd  else _empty_bnm_df()
-    lcr_df = pl.DataFrame(output_lcr) if output_lcr else pl.DataFrame()
-    return fd_df, lcr_df
-
-# ===========================================================================
-# SAVINGS (SA)
-# DATA SA LCR.SA: SET BNM.SAVG&REPTMON&NOWK
-# ===========================================================================
-def process_sa(macro: dict) -> tuple:
-    """Process Savings accounts."""
-    reptmon = macro['REPTMON']
-    nowk    = macro['NOWK']
-
-    sa_parquet = DATA_DIR / f"SAVG{reptmon}{nowk}.parquet"
-    con = duckdb.connect()
-    sa_raw = con.execute(f"SELECT * FROM read_parquet('{sa_parquet}')").pl()
-    con.close()
-
-    output_sa  = []
-    output_lcr = []
-
-    for row in sa_raw.iter_rows(named=True):
-        custcd  = str(row.get('CUSTCD') or '').strip()
-        curbal  = row.get('CURBAL') or 0.0
-        prodcd  = str(row.get('PRODCD') or '').strip()
-        curcode = str(row.get('CURCODE') or '').strip()
-        branch  = row.get('BRANCH')
-        acctno  = row.get('ACCTNO')
-        product = row.get('PRODUCT')
-
-        cust = '08' if custcd in ('77', '78', '95', '96') else '09'
-        # BNMCODE = '95312'||CUST||'01'||'0000Y'
-        bnmcode = '95312' + cust + '01' + '0000Y'
-
-        # IF PRODCD NE 'N' OR CURCODE='XAU' THEN OUTPUT LCR.SA
-        if prodcd != 'N' or curcode == 'XAU':
-            output_lcr.append({
-                'BNMCODE': bnmcode, 'BRANCH': branch, 'ACCTNO': acctno,
-                'AMOUNT': curbal, 'CURCODE': curcode, 'CUSTCD': custcd,
-                'PRODUCT': product, 'REMMTH': 0.1, 'REM30D': 0.0
-            })
-        # IF PRODCD NE 'N' THEN OUTPUT SA
-        if prodcd != 'N':
-            output_sa.append({
-                'BNMCODE': bnmcode, 'AMOUNT': curbal,
-                'AMTUSD': 0.0, 'AMTSGD': 0.0, 'AMTHKD': 0.0, 'AMTAUD': 0.0
-            })
-
-    sa_df  = pl.DataFrame(output_sa)  if output_sa  else _empty_bnm_df()
-    lcr_df = pl.DataFrame(output_lcr) if output_lcr else pl.DataFrame()
-    return sa_df, lcr_df
-
-# ===========================================================================
-# CURRENT ACCOUNTS (CA)
-# DATA CA LCR.CA: SET BNM.CURN&REPTMON&NOWK
-# DATA LCR.VOSTRO: SET BNM.CURN WHERE PRODUCT IN (104,105,147)
-# ===========================================================================
-def process_ca(macro: dict) -> tuple:
-    """Process Current accounts and Vostro side-output."""
-    reptmon = macro['REPTMON']
-    nowk    = macro['NOWK']
-
-    ca_parquet = DATA_DIR / f"CURN{reptmon}{nowk}.parquet"
-    con = duckdb.connect()
-    ca_raw = con.execute(f"SELECT * FROM read_parquet('{ca_parquet}')").pl()
-    con.close()
-
-    output_ca  = []
-    output_lcr = []
-
-    for row in ca_raw.iter_rows(named=True):
-        product = row.get('PRODUCT') or 0
-        glprox  = fmt_glprod(product)
-        # IF GLPROX NE 'C999'
-        if glprox == 'C999':
-            continue
-
-        # IF SUBSTR(PRODCD,1,3) IN ('421','423')
-        prodcd = str(row.get('PRODCD') or '').strip()
-        if prodcd[:3] not in ('421', '423'):
-            continue
-
-        custcd    = str(row.get('CUSTCD') or '').strip()
-        curbal    = row.get('CURBAL') or 0.0
-        curcode   = str(row.get('CURCODE') or '').strip()
-        branch    = row.get('BRANCH')
-        acctno    = row.get('ACCTNO')
-        intrate   = row.get('INTRATE')
-        billerind = row.get('BILLERIND')
-
-        cust = '08' if custcd in ('77', '78', '95', '96') else '09'
-        bnmcode = '95313' + cust + '01' + '0000Y'
-
-        output_ca.append({
-            'BNMCODE': bnmcode, 'AMOUNT': curbal,
-            'AMTUSD': 0.0, 'AMTSGD': 0.0, 'AMTHKD': 0.0, 'AMTAUD': 0.0
-        })
-        output_lcr.append({
-            'BNMCODE': bnmcode, 'BRANCH': branch, 'ACCTNO': acctno,
-            'AMOUNT': curbal, 'CURCODE': curcode, 'CUSTCD': custcd,
-            'PRODUCT': product, 'REMMTH': 0.1, 'REM30D': 0.0,
-            'INTRATE': intrate, 'BILLERIND': billerind
-        })
-
-    # DATA LCR.VOSTRO (KEEP=BRANCH ACCTNO AMOUNT CURCODE CUSTCD PRODUCT):
-    # SET BNM.CURN; WHERE PRODUCT IN (104,105,147);  *15-1410;
-    con2 = duckdb.connect()
-    vostro = con2.execute(
-        f"SELECT BRANCH, ACCTNO, CURBAL AS AMOUNT, CURCODE, CUSTCD, PRODUCT "
-        f"FROM read_parquet('{ca_parquet}') WHERE PRODUCT IN (104,105,147)"
-    ).pl()
-    con2.close()
-    if len(vostro) > 0:
-        vostro.write_parquet(str(LCR_VOSTRO_PARQUET))
-
-    ca_df  = pl.DataFrame(output_ca)  if output_ca  else _empty_bnm_df()
-    lcr_df = pl.DataFrame(output_lcr) if output_lcr else pl.DataFrame()
-    return ca_df, lcr_df
-
-# ===========================================================================
-# FCY CURRENT ACCOUNTS (FCYCA)
-# DATA FCYCA LCR.FCYCA: SET DEPOSIT.CURRENT
-# CUSTCD = PUT(CUSTCODE, DDCUSTCD.) — from PBBDPFMT
-# ===========================================================================
-def process_fcyca(macro: dict) -> tuple:
-    """
-    Process FCY Current accounts.
-    DDCUSTCD format from PBBDPFMT applied via ddcustcd_format().
-    """
-    current_parquet = DATA_DIR / "CURRENT.parquet"
-    con = duckdb.connect()
-
-    # IF (400<=PRODUCT<=444); IF PRODUCT=413 THEN DELETE
-    fcyca_raw = con.execute(
-        f"SELECT * FROM read_parquet('{current_parquet}') "
-        f"WHERE PRODUCT BETWEEN 400 AND 444 AND PRODUCT != 413"
-    ).pl()
-    con.close()
-
-    output_fcyca = []
-    output_lcr   = []
-
-    for row in fcyca_raw.iter_rows(named=True):
-        custcode  = row.get('CUSTCODE') or 0
-        # CUSTCD = PUT(CUSTCODE, DDCUSTCD.) — from PBBDPFMT
-        custcd    = ddcustcd_format(custcode)
-        curbal    = row.get('CURBAL') or 0.0
-        product   = row.get('PRODUCT') or 0
-        curcode   = str(row.get('CURCODE') or '').strip()
-        branch    = row.get('BRANCH')
-        acctno    = row.get('ACCTNO')
-        intrate   = row.get('INTRATE')
-        billerind = row.get('BILLERIND')
-
-        cust = '08' if custcd in ('77', '78', '95', '96') else '09'
-        bnmcode = '96313' + cust + '01' + '0000Y'
-
-        amtusd = amtsgd = amthkd = amtaud = 0.0
-        if product in (400, 420, 440): amtusd = curbal
-        if product in (403, 423):      amtsgd = curbal
-        if product in (406, 426):      amthkd = curbal
-        if product in (402, 422, 442): amtaud = curbal
-
-        output_fcyca.append({
-            'BNMCODE': bnmcode, 'AMOUNT': curbal,
-            'AMTUSD': amtusd, 'AMTSGD': amtsgd,
-            'AMTHKD': amthkd, 'AMTAUD': amtaud
-        })
-        output_lcr.append({
-            'BNMCODE': bnmcode, 'BRANCH': branch, 'ACCTNO': acctno,
-            'AMOUNT': curbal, 'CURCODE': curcode, 'CUSTCD': custcd,
-            'PRODUCT': product, 'REMMTH': 0.1, 'REM30D': 0.0,
-            'INTRATE': intrate, 'BILLERIND': billerind
-        })
-
-    fcyca_df = pl.DataFrame(output_fcyca) if output_fcyca else _empty_bnm_df()
-    lcr_df   = pl.DataFrame(output_lcr)   if output_lcr   else pl.DataFrame()
-    return fcyca_df, lcr_df
-
-# ===========================================================================
-# UNDRAWN PORTION (UNOTE)
-# MANIPULATION FOR RC — APPR / APPR1 / ULOAN logic
-# ===========================================================================
-def process_unote(macro: dict) -> pl.DataFrame:
-    """Process undrawn loan commitments."""
-    reptdate = macro['REPTDATE']
-    reptmon  = macro['REPTMON']
-    nowk     = macro['NOWK']
-
-    loan_parquet   = DATA_DIR / f"LOAN{reptmon}{nowk}.parquet"
-    uloan_parquet  = DATA_DIR / f"ULOAN{reptmon}{nowk}.parquet"
-    lncomm_parquet = DATA_DIR / "LNCOMM.parquet"
-
-    con = duckdb.connect()
-
-    # DATA ALW: SET BNM1.LOAN; IF PRODUCT IN(151,152,181) AND ACCTYPE='OD' -> DELETE;
-    #           IF PAIDIND NOT IN ('P','C');
-    alw = con.execute(
-        f"SELECT * FROM read_parquet('{loan_parquet}') "
-        f"WHERE NOT (PRODUCT IN (151,152,181) AND ACCTYPE='OD') "
-        f"AND PAIDIND NOT IN ('P','C')"
-    ).pl()
-
-    lncomm = con.execute(f"SELECT * FROM read_parquet('{lncomm_parquet}')").pl()
-    lncomm = lncomm.with_columns([
-        pl.col('EXPIREDT').cast(pl.Utf8).str.zfill(11)
-        .str.slice(0, 8)
-        .str.strptime(pl.Date, format='%m%d%Y', strict=False)
-        .alias('EXPRDATE')
-    ])
-
-    # PROC SORT ALWCOM WHERE COMMNO>0 BY ACCTNO COMMNO
-    alwcom   = alw.filter(pl.col('COMMNO') > 0).sort(['ACCTNO', 'COMMNO'])
-    # PROC SORT ALWNOCOM WHERE COMMNO<=0 BY ACCTNO COMMNO
-    alwnocom = alw.filter(pl.col('COMMNO') <= 0).sort(['ACCTNO', 'COMMNO'])
-
-    # DATA APPR: MERGE ALWCOM(IN=A) LNCOMM; BY ACCTNO COMMNO;
-    #   IF A & PRODCD IN ('34190','34690') THEN OUTPUT IF FIRST.ACCTNO OR FIRST.COMMNO;
-    #   ELSE IF A THEN OUTPUT;
-    lncomm_dict = {(r['ACCTNO'], r['COMMNO']): r
-                   for r in lncomm.iter_rows(named=True)}
-    appr_rows = []
-    seen_appr = {}
-    for r in alwcom.iter_rows(named=True):
-        key    = (r['ACCTNO'], r['COMMNO'])
-        lc     = lncomm_dict.get(key, {})
-        merged = {**r, **lc}
-        prodcd = str(r.get('PRODCD') or '').strip()
-        if prodcd in ('34190', '34690'):
-            if key not in seen_appr:
-                seen_appr[key] = True
-                appr_rows.append(merged)
-        else:
-            appr_rows.append(merged)
-    appr = pl.DataFrame(appr_rows) if appr_rows else pl.DataFrame()
-
-    # PROC SORT ALWNOCOM BY ACCTNO APPRLIM2
-    alwnocom_sorted = alwnocom.sort(['ACCTNO', 'APPRLIM2'])
-
-    # DATA APPR1 DUP: BY ACCTNO APPRLIM2;
-    #   IF PRODCD IN ('34190','34690') THEN
-    #     IF FIRST.ACCTNO OR FIRST.APPRLIM2 -> APPR1; ELSE DUPLI=1 -> DUP
-    appr1_first = {}
-    dup_rows    = []
-    for r in alwnocom_sorted.iter_rows(named=True):
-        prodcd = str(r.get('PRODCD') or '').strip()
-        if prodcd in ('34190', '34690'):
-            key = (r['ACCTNO'], r.get('APPRLIM2'))
-            if key not in appr1_first:
-                appr1_first[key] = r
-            else:
-                dup_rows.append({**r, 'DUPLI': 1})
-
-    # PROC SORT DUP OUT=DUPLI WHERE BALANCE>=APPRLIM2 BY ACCTNO APPRLIM2
-    dupli_set = {
-        (r['ACCTNO'], r.get('APPRLIM2'))
-        for r in dup_rows
-        if (r.get('BALANCE') or 0) >= (r.get('APPRLIM2') or 0)
-    }
-
-    # DATA APPR1: MERGE ALWNOCOM(IN=A) DUPLI(IN=B); BY ACCTNO APPRLIM2;
-    #   IF PRODCD IN ('34190','34690') THEN
-    #     IF DUPLI=1 AND BALANCE>=APPRLIM2 -> OUTPUT;
-    #     ELSE IF FIRST.ACCTNO OR FIRST.APPRLIM2 -> OUTPUT;
-    #   ELSE OUTPUT;
-    appr1_final = []
-    seen2 = {}
-    for r in alwnocom_sorted.iter_rows(named=True):
-        prodcd = str(r.get('PRODCD') or '').strip()
-        if prodcd in ('34190', '34690'):
-            key = (r['ACCTNO'], r.get('APPRLIM2'))
-            if key in dupli_set:
-                if (r.get('BALANCE') or 0) >= (r.get('APPRLIM2') or 0):
-                    appr1_final.append(r)
-            else:
-                if key not in seen2:
-                    seen2[key] = True
-                    appr1_final.append(r)
-        else:
-            appr1_final.append(r)
-    appr1 = pl.DataFrame(appr1_final) if appr1_final else pl.DataFrame()
-
-    # DATA ULOAN: SET BNM1.ULOAN; IF 3000..3999 AND PRODUCT IN(151,152,181) AND OD -> DELETE
-    uloan = con.execute(
-        f"SELECT * FROM read_parquet('{uloan_parquet}') "
-        f"WHERE NOT ((ACCTNO BETWEEN 3000000000 AND 3999999999) "
-        f"AND PRODUCT IN (151,152,181) AND ACCTYPE='OD')"
-    ).pl()
-    con.close()
-
-    # DATA LOAN: SET APPR APPR1;
-    # DATA UNOTE: SET LOAN ULOAN;
-    loan_combined = pl.concat([appr, appr1], how='diagonal') if (len(appr) > 0 or len(appr1) > 0) else pl.DataFrame()
-    all_unote     = pl.concat([loan_combined, uloan], how='diagonal') if len(loan_combined) > 0 else uloan
-
-    output_rows = []
-    for row in all_unote.iter_rows(named=True):
-        prodcd  = str(row.get('PRODCD') or '').strip()
-        product = row.get('PRODUCT') or 0
-
-        # IF SUBSTR(PRODCD,1,2)='34' OR PRODUCT IN (225,226)
-        if not (prodcd[:2] == '34' or product in (225, 226)):
-            continue
-
-        acctype  = str(row.get('ACCTYPE') or '').strip()
-        exprdate = row.get('EXPRDATE') or row.get('EXPIREDT')
-        apprdate = row.get('APPRDATE')
-        undrawn  = row.get('UNDRAWN') or 0.0
-        loanstat = row.get('LOANSTAT')
-        imloan   = str(row.get('IMLOAN') or '').strip()
-        bldate   = row.get('BLDATE')
-
-        # IF BLDATE > 0 THEN DAYS = REPTDATE - BLDATE
-        days_calc = (reptdate - bldate).days if isinstance(bldate, date) else (row.get('DAYS') or 0)
-
-        if acctype == 'LN':
-            matdt = exprdate
-            item  = '429'
-            if prodcd in ('34190', '34690'):
-                item = '424'
-        else:
-            # MATDT = APPRDATE + 365
-            matdt = (apprdate + timedelta(days=365)) if isinstance(apprdate, date) else None
-            item  = '423'
-
-        # IF PRODCD='34240' THEN ITEM='429'
-        if prodcd == '34240':
-            item = '429'
-
-        if matdt is None or (matdt - reptdate).days < 8:
-            remmth_val = 0.1
-        else:
-            remmth_val, _ = calc_remmth(matdt, reptdate)
-
-        if product not in FCY_PRODUCTS:
-            bnmcode = '95' + item + '00' + fmt_remfmt(remmth_val) + '0000Y'
-            _append_note(output_rows, bnmcode, undrawn, 0.0, 0.0, 0.0, 0.0)
-        elif product in FCY_PRODUCTS:
-            bnmcode = '94' + item + '00' + fmt_remfmt(remmth_val) + '0000Y'
-            _append_note(output_rows, bnmcode, undrawn, 0.0, 0.0, 0.0, 0.0)
-
-        # IF DAYS > 89 OR LOANSTAT ^= 1 OR IMLOAN = 'Y' THEN REMMTH = 13
-        if days_calc > 89 or loanstat != 1 or imloan == 'Y':
-            remmth_val = 13
-        if product not in FCY_PRODUCTS:
-            bnmcode = '93' + item + '00' + fmt_remfmt(remmth_val) + '0000Y'
-            _append_note(output_rows, bnmcode, undrawn, 0.0, 0.0, 0.0, 0.0)
-        elif product in FCY_PRODUCTS:
-            bnmcode = '96' + item + '00' + fmt_remfmt(remmth_val) + '0000Y'
-            _append_note(output_rows, bnmcode, undrawn, 0.0, 0.0, 0.0, 0.0)
-
-    return pl.DataFrame(output_rows) if output_rows else _empty_bnm_df()
-
-# ===========================================================================
-# DUAL CURRENCY INVESTMENT (DCI)  (ESMR 2013-1184)
-# DATA DCI LCR.DCI: SET DCIWH.DCI&REPTMON&NOWK
-# DATA DCIW: SET BNMK.DCIWTB&REPTMON&NOWK  (ESMR 2013-1446)
-# ===========================================================================
-def process_dci(macro: dict) -> tuple:
-    """Process DCI and DCIW records."""
-    reptdate = macro['REPTDATE']
-    reptmon  = macro['REPTMON']
-    nowk     = macro['NOWK']
-    tdate    = macro['TDATE']
-
-    dci_parquet       = DATA_DIR / f"DCI{reptmon}{nowk}.parquet"
-    dciw_parquet      = DATA_DIR / f"DCIWTB{reptmon}{nowk}.parquet"
-    forate_parquet    = DATA_DIR / "FORATE.parquet"
-    foratebkp_parquet = DATA_DIR / "FORATEBKP.parquet"
-
-    # %FORATE macro: check if FORATE.REPTDATE <= TDATE; use backup otherwise
-    con = duckdb.connect()
-    try:
-        fdate_row = con.execute(
-            f"SELECT REPTDATE FROM read_parquet('{forate_parquet}') LIMIT 1"
-        ).fetchone()
-        fdate = fdate_row[0] if fdate_row else tdate + timedelta(days=1)
-        if not isinstance(fdate, date):
-            import pandas as pd
-            fdate = pd.Timestamp(fdate).date()
-    except Exception:
-        fdate = tdate + timedelta(days=1)
-
-    if fdate <= tdate:
-        fcyrt_df = con.execute(
-            f"SELECT CURCODE, SPOTRATE FROM read_parquet('{forate_parquet}') "
-            f"ORDER BY CURCODE"
-        ).pl()
-    else:
-        # PROC SORT DATA=FORATE.FORATEBKP BY CURCODE DESCENDING REPTDATE
-        # WHERE REPTDATE<=&TDATE; PROC SORT NODUPKEY BY CURCODE;
-        fcyrt_df = con.execute(
-            f"SELECT CURCODE, SPOTRATE FROM read_parquet('{foratebkp_parquet}') "
-            f"WHERE REPTDATE <= DATE '{tdate}' "
-            f"QUALIFY ROW_NUMBER() OVER (PARTITION BY CURCODE ORDER BY REPTDATE DESC) = 1"
-        ).pl()
-
-    # Build FCYRT lookup dict: PROC FORMAT CNTLIN=FCFMT — $FCYRT. format
-    fcyrt = {r['CURCODE'].strip(): float(r['SPOTRATE'])
-             for r in fcyrt_df.iter_rows(named=True)}
-
-    # DCI records
-    dci_raw = con.execute(
-        f"SELECT * FROM read_parquet('{dci_parquet}')"
-    ).pl()
-    con.close()
-
-    output_dci = []
-    output_lcr = []
-
-    for row in dci_raw.iter_rows(named=True):
-        matdt   = row.get('MATDT')
-        startdt = row.get('STARTDT')
-        # IF MATDT > REPTDATE AND STARTDT <= REPTDATE
-        if matdt is None or startdt is None:
-            continue
-        if not (matdt > reptdate and startdt <= reptdate):
-            continue
-
-        if (matdt - reptdate).days < 8:
-            remmth_val = 0.1
-        else:
-            remmth_val, _ = calc_remmth(matdt, reptdate)
-
-        invcurr  = str(row.get('INVCURR') or '').strip()
-        invamt   = float(row.get('INVAMT') or 0.0)
-        custcode = row.get('CUSTCODE') or 0
-        custfiss = str(custcode).zfill(2)
-        product  = row.get('PRODUCT')
-        ticketno = row.get('TICKETNO')
-        custname = row.get('CUSTNAME')
-        newic    = row.get('NEWIC')
-
-        amtusd = amtsgd = amthkd = amtaud = 0.0
-        rem_str = fmt_remfmt(remmth_val)
-
-        if invcurr == 'MYR':
-            # SPOTRT = 1; AMOUNT = INVAMT
-            amount = invamt
-            for prefix in ('9332900', '9532900'):
-                bnmcode = prefix + rem_str + '0000Y'
-                _append_note(output_dci, bnmcode, amount, 0.0, 0.0, 0.0, 0.0)
-                output_lcr.append({
-                    'BNMCODE': bnmcode, 'AMOUNT': amount, 'CURCODE': invcurr,
-                    'CUSTFISS': custfiss, 'DEALTYPE': str(product or ''),
-                    'DEALREF': str(ticketno or ''),
-                    'REMMTH': remmth_val, 'REM30D': (matdt - reptdate).days / 30.0,
-                    'CUSTNAME': custname, 'NEWIC': newic
-                })
-        else:
-            # SPOTRT = PUT(INVCURR,$FCYRT.)
-            spotrt = fcyrt.get(invcurr, 1.0)
-            if invcurr == 'JPY':
-                invamt = round(invamt, 0)
-            else:
-                invamt = round(invamt, 2)
-            amount = invamt * spotrt
-            if invcurr == 'USD': amtusd = amount
-            if invcurr == 'SGD': amtsgd = amount
-            if invcurr == 'HKD': amthkd = amount
-            if invcurr == 'AUD': amtaud = amount
-            for prefix in ('9432900', '9632900'):
-                bnmcode = prefix + rem_str + '0000Y'
-                _append_note(output_dci, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-                output_lcr.append({
-                    'BNMCODE': bnmcode, 'AMOUNT': amount, 'CURCODE': invcurr,
-                    'CUSTFISS': custfiss, 'DEALTYPE': str(product or ''),
-                    'DEALREF': str(ticketno or ''),
-                    'REMMTH': remmth_val, 'REM30D': (matdt - reptdate).days / 30.0,
-                    'CUSTNAME': custname, 'NEWIC': newic
-                })
-
-    # DCIW (ESMR 2013-1446)
-    # DATA DCIW: SET BNMK.DCIWTB WHERE DCDLP='DCI' AND DCBSI='S' AND DCTRNT='I';
-    # RENAME DCMTYD=MATDT
-    con2 = duckdb.connect()
-    try:
-        dciw_raw = con2.execute(
-            f"SELECT * FROM read_parquet('{dciw_parquet}') "
-            f"WHERE DCDLP='DCI' AND DCBSI='S' AND DCTRNT='I'"
-        ).pl()
-        if 'DCMTYD' in dciw_raw.columns:
-            dciw_raw = dciw_raw.rename({'DCMTYD': 'MATDT'})
-    except Exception:
-        dciw_raw = pl.DataFrame()
-    con2.close()
-
-    for row in dciw_raw.iter_rows(named=True):
-        matdt = row.get('MATDT')
-        if matdt is None:
-            continue
-        if (matdt - reptdate).days < 8:
-            remmth_val = 0.1
-        else:
-            remmth_val, _ = calc_remmth(matdt, reptdate)
-
-        dcbccy = str(row.get('DCBCCY') or '').strip()
-        dcbamt = float(row.get('DCBAMT') or 0.0)
-        c8spt  = float(row.get('C8SPT') or 1.0)
-
-        amtusd = amtsgd = amthkd = amtaud = 0.0
-        rem_str = fmt_remfmt(remmth_val)
-
-        if dcbccy == 'MYR':
-            amount = dcbamt
-            for bnmcode in ('9392100' + rem_str + '0000Y',
-                            '9592100' + rem_str + '0000Y',
-                            '9472200' + rem_str + '0000Y',
-                            '9672200' + rem_str + '0000Y'):
-                _append_note(output_dci, bnmcode, amount, 0.0, 0.0, 0.0, 0.0)
-        else:
-            if dcbccy == 'JPY':
-                dcbamt = round(dcbamt, 0)
-            else:
-                dcbamt = round(dcbamt, 2)
-            amount = dcbamt * c8spt
-            if dcbccy == 'USD': amtusd = amount
-            if dcbccy == 'SGD': amtsgd = amount
-            if dcbccy == 'HKD': amthkd = amount
-            if dcbccy == 'AUD': amtaud = amount
-            for bnmcode in ('9492200' + rem_str + '0000Y',
-                            '9692200' + rem_str + '0000Y',
-                            '9372100' + rem_str + '0000Y',
-                            '9572100' + rem_str + '0000Y'):
-                _append_note(output_dci, bnmcode, amount, amtusd, amtsgd, amthkd, amtaud)
-
-    # DATA DCI: SET DCI DCIW;
-    dci_df  = pl.DataFrame(output_dci) if output_dci else _empty_bnm_df()
-    lcr_df  = pl.DataFrame(output_lcr) if output_lcr else pl.DataFrame()
-    return dci_df, lcr_df
-
-# ===========================================================================
-# NID (Negotiable Instruments of Deposit)
-# DATA NID LCR.NID: SET NID.RNID&REPTDAY WHERE NIDSTAT='N' AND CURBAL>0
-# ===========================================================================
-def process_nid(macro: dict) -> tuple:
-    """Process NID records."""
-    reptdate = macro['REPTDATE']
-    reptday  = macro['REPTDAY']
-
-    nid_parquet = DATA_DIR / f"RNID{reptday}.parquet"
-    con = duckdb.connect()
-
-    try:
-        nid_raw = con.execute(
-            f"SELECT * FROM read_parquet('{nid_parquet}') "
-            f"WHERE NIDSTAT='N' AND CURBAL>0"
-        ).pl()
-    except Exception:
-        nid_raw = pl.DataFrame()
-    con.close()
-
-    output_nid = []
-    output_lcr = []
-
-    for row in nid_raw.iter_rows(named=True):
-        matdt   = row.get('MATDT')
-        startdt = row.get('STARTDT')
-        # IF MATDT > REPTDATE AND STARTDT <= REPTDATE
-        if matdt is None or startdt is None:
-            continue
-        if not (matdt > reptdate and startdt <= reptdate):
-            continue
-
-        curbal     = float(row.get('CURBAL') or 0.0)
-        curcode    = str(row.get('CURCODE') or '').strip()
-        custcd     = row.get('CUSTCD')
-        product    = row.get('PRODUCT')
-        branch     = row.get('BRANCH')
-        nid_acctno = row.get('NID_ACCTNO')
-        nid_cdno   = row.get('NID_CDNO')
-
-        if (matdt - reptdate).days < 8:
-            remmth_val = 0.1
-        else:
-            remmth_val, _ = calc_remmth(matdt, reptdate)
-
-        rem30d_val = (matdt - reptdate).days / 30.0
-        rem_str    = fmt_remfmt(remmth_val)
-
-        # BNMCODE = '9384000'||PUT(REMMTH,REMFMT.)||'0000Y'; OUTPUT;
-        # BNMCODE = '9584000'||PUT(REMMTH,REMFMT.)||'0000Y'; OUTPUT;
-        for bnmcode in ('9384000' + rem_str + '0000Y',
-                        '9584000' + rem_str + '0000Y'):
-            _append_note(output_nid, bnmcode, curbal, 0.0, 0.0, 0.0, 0.0)
-            output_lcr.append({
-                'BNMCODE': bnmcode, 'BRANCH': branch,
-                'NID_ACCTNO': nid_acctno, 'NID_CDNO': nid_cdno,
-                'AMOUNT': curbal, 'CURCODE': curcode,
-                'CUSTCD': str(custcd or ''), 'PRODUCT': product,
-                'REMMTH': remmth_val, 'REM30D': rem30d_val
-            })
-
-    nid_df  = pl.DataFrame(output_nid) if output_nid else _empty_bnm_df()
-    lcr_df  = pl.DataFrame(output_lcr) if output_lcr else pl.DataFrame()
-    return nid_df, lcr_df
-
-# ===========================================================================
-# HELPER: empty BNM dataframe
-# ===========================================================================
-def _empty_bnm_df() -> pl.DataFrame:
-    return pl.DataFrame({
-        'BNMCODE': pl.Series([], dtype=pl.Utf8),
-        'AMOUNT':  pl.Series([], dtype=pl.Float64),
-        'AMTUSD':  pl.Series([], dtype=pl.Float64),
-        'AMTSGD':  pl.Series([], dtype=pl.Float64),
-        'AMTHKD':  pl.Series([], dtype=pl.Float64),
-        'AMTAUD':  pl.Series([], dtype=pl.Float64),
-    })
-
-# ===========================================================================
-# SUMMARISE (PROC SUMMARY NWAY by BNMCODE)
-# ===========================================================================
-def summarise_bnm(df: pl.DataFrame) -> pl.DataFrame:
-    if len(df) == 0:
-        return df
-    return (
-        df.group_by('BNMCODE')
-        .agg([
-            pl.col('AMOUNT').sum(),
-            pl.col('AMTUSD').sum(),
-            pl.col('AMTSGD').sum(),
-            pl.col('AMTHKD').sum(),
-            pl.col('AMTAUD').sum(),
-        ])
+    return _summarize(out)
+
+
+def _emit_pair(df: pl.DataFrame, amt: str, rem: str) -> list:
+    df = df.with_columns(
+        pl.col(rem).alias("REM_A"),
+        pl.when(pl.col("COND")).then(13.0).otherwise(pl.col(rem)).alias("REM_B"),
+    )
+    return [_emit_agg(df, "A", amt, "REM_A"), _emit_agg(df, "B", amt, "REM_B")]
+
+
+def _amortise(loop: pl.DataFrame, ctx: dict, parts: list) -> None:
+    """Instalment schedule for all loans at once (replaces the per-row while loop)."""
+    rept = pl.lit(ctx["reptdate"])
+    loop = loop.with_columns(
+        (pl.col("PAYFREQ").is_null() | pl.col("PAYFREQ").is_in(["5", "9", " "])
+         | pl.col("PRODUCT").is_in([350, 910, 925])).fill_null(False).alias("FSKIP")
+    ).with_columns(
+        (~pl.col("FSKIP") & (pl.col("BLDATE").is_null()
+                             | (pl.col("BLDATE") <= pl.lit(date(1900, 1, 1))))).fill_null(False).alias("ROLL")
+    ).with_columns(
+        pl.when(pl.col("FSKIP")).then(pl.col("EXPRDATE"))
+        .when(pl.col("ROLL")).then(pl.col("ISSDTE"))
+        .otherwise(pl.col("BLDATE")).alias("CUR")
     )
 
-# ===========================================================================
-# KAPITI ITEMS — %INC PGM(KALMLIQ) and %INC PGM(KALMLIFE)
-# These are separate programs included here; results loaded from their outputs.
-# ===========================================================================
-def load_kapiti_items(macro: dict) -> tuple:
-    """
-    Load KTBL and K1TBL results produced by KALMLIQ and KALMLIFE programs.
-    %INC PGM(KALMLIQ);
-    %INC PGM(KALMLIFE);
-    These programs produce KTBLALL and K1TBL outputs consumed here.
-    Dependency: KALMLIQ.py and KALMLIFE.py must be run first.
-    """
-    ktblall_path = DATA_DIR / "KTBLALL.parquet"
-    k1tbl_path   = DATA_DIR / "K1TBL.parquet"
+    # bldate = issdte, then roll forward until CUR > reptdate. Instead of
+    # stepping one period at a time (up to 320 iterations for old loans),
+    # jump most of the way with a vectorised month arithmetic expression,
+    # then finish with a short corrective step loop (≤ 10 rounds).
+    rolling = loop.filter(pl.col("ROLL"))
+    if not rolling.is_empty():
+        # Coarse jump: skip ~months_gap / step months, minus a safety margin.
+        iss = pl.col("ISSDTE")
+        iss_y = iss.dt.year().cast(pl.Int64)
+        iss_m = iss.dt.month().cast(pl.Int64)
+        iss_d = iss.dt.day().cast(pl.Int64)
+        step_m = pl.col("PAYFREQ").replace_strict(_PAYFREQ_MONTHS, default=1, return_dtype=pl.Int64)
+        months_gap = ((rept.dt.year().cast(pl.Int64) - iss_y) * 12
+                      + (rept.dt.month().cast(pl.Int64) - iss_m))
+        k_jump = pl.max_horizontal(pl.lit(0, dtype=pl.Int64),
+                                    (months_gap // step_m) - 3)
+        offset_m = k_jump * step_m
+        total_m = iss_y * 12 + (iss_m - 1) + offset_m
+        jy = total_m // 12
+        jm = (total_m % 12) + 1
+        jd = pl.min_horizontal(iss_d, _dim_expr(jy, jm))
+        rolling = rolling.with_columns(pl.date(jy, jm, jd).alias("CUR"))
 
-    ktbl_rows  = []
-    suppl_rows = []
-
-    con = duckdb.connect()
-
-    try:
-        # DATA LCR.K1TBL(RENAME=...) LCR.K3TBL(RENAME=...): SET KTBLALL;
-        # IF TBL='1' THEN OUTPUT LCR.K1TBL; ELSE IF TBL='3' THEN OUTPUT LCR.K3TBL;
-        ktblall   = con.execute(f"SELECT * FROM read_parquet('{ktblall_path}')").pl()
-        lcr_k1tbl = ktblall.filter(pl.col('TBL') == '1')
-        lcr_k3tbl = ktblall.filter(pl.col('TBL') == '3')
-
-        # RENAME per SAS DATA step
-        if 'GWCCY' in lcr_k1tbl.columns:
-            lcr_k1tbl = lcr_k1tbl.rename({
-                'GWCCY': 'CURCODE', 'GWDLP': 'DEALTYPE',
-                'GWDLR': 'DEALREF', 'GWC2R': 'CUSTFISS'
-            })
-        if 'UTCCY' in lcr_k3tbl.columns:
-            lcr_k3tbl = lcr_k3tbl.rename({
-                'UTCCY': 'CURCODE', 'UTSTY': 'DEALTYPE',
-                'UTDLR': 'DEALREF', 'UTCUS': 'CUSTNO'
-            })
-
-        # DROP D1-D12 RD1-RD12 MD1-MD12 RPYR RPMTH RPDAY MDYR MDMTH MDDAY REMY REMM REMD
-        drop_cols = ([c for c in lcr_k1tbl.columns
-                      if c.startswith(('D', 'RD', 'MD')) and c[1:].isdigit()] +
-                     ['RPYR', 'RPMTH', 'RPDAY', 'MDYR', 'MDMTH', 'MDDAY',
-                      'REMY', 'REMM', 'REMD'])
-        lcr_k1tbl = lcr_k1tbl.drop([c for c in drop_cols if c in lcr_k1tbl.columns])
-        lcr_k3tbl = lcr_k3tbl.drop([c for c in drop_cols if c in lcr_k3tbl.columns])
-
-        lcr_k1tbl.write_parquet(str(LCR_K1TBL_PARQUET))
-        lcr_k3tbl.write_parquet(str(LCR_K3TBL_PARQUET))
-
-        # DATA KTBL: SET KTBL; AMTAUD=0;
-        for row in ktblall.iter_rows(named=True):
-            bnmcode = str(row.get('BNMCODE') or '').strip()
-            amount  = float(row.get('AMOUNT') or 0.0)
-            amtusd  = float(row.get('AMTUSD') or 0.0)
-            amtsgd  = float(row.get('AMTSGD') or 0.0)
-            amthkd  = float(row.get('AMTHKD') or 0.0)
-            # AMTAUD=0 per DATA KTBL; SET KTBL; AMTAUD=0
-            ktbl_rows.append({
-                'BNMCODE': bnmcode, 'AMOUNT': amount,
-                'AMTUSD': amtusd, 'AMTSGD': amtsgd,
-                'AMTHKD': amthkd, 'AMTAUD': 0.0
-            })
-
-        # DATA SUPPL: SET K1TBL; WHERE ABS(AMOUNT) >= 5000000;
-        # /* PROC APPEND DATA=K1TBL BASE=SUPPL; SMR-A520 */
-        k1tbl = con.execute(f"SELECT * FROM read_parquet('{k1tbl_path}')").pl()
-        for row in k1tbl.iter_rows(named=True):
-            if abs(row.get('AMOUNT') or 0.0) >= 5000000:
-                suppl_rows.append(row)
-
-    except Exception as e:
-        print(f"Warning: Could not load KAPITI items: {e}", file=sys.stderr)
-
-    con.close()
-
-    ktbl_df  = pl.DataFrame(ktbl_rows)  if ktbl_rows  else _empty_bnm_df()
-    suppl_df = pl.DataFrame(suppl_rows) if suppl_rows else pl.DataFrame()
-    return ktbl_df, suppl_df
-
-# ===========================================================================
-# WRITE FISS / NSRS OUTPUT
-# DATA _NULL_; SET NOTE; FILE FISS/NSRS;
-# ===========================================================================
-def write_fiss(note_final: pl.DataFrame, macro: dict, outpath: Path,
-               divide_by_1000: bool = True):
-    """
-    Writes BNM FISS/NSRS format:
-      Header: RLFM + REPTDAY + REPTMON + REPTYEAR
-      Each row: BNMCODE $14. ';' AMOUNT ';' AMTUSD ';' AMTSGD ';' AMTHKD ';' AMTAUD
-    FISS:  AMOUNT = ABS(ROUND(AMOUNT/1000))
-    NSRS:  AMOUNT = ABS(ROUND(AMOUNT))
-    """
-    reptday  = macro['REPTDAY']
-    reptmon  = macro['REPTMON']
-    reptyear = macro['REPTYEAR']
-
-    with open(outpath, 'w') as f:
-        # IF _N_=1 THEN PUT @1 'RLFM' "&REPTDAY" "&REPTMON" "&REPTYEAR";
-        f.write(f"RLFM{reptday}{reptmon}{reptyear}\n")
-
-        for row in note_final.iter_rows(named=True):
-            bnmcode = str(row['BNMCODE'] or '').ljust(14)[:14]
-
-            def fmt_amt(v):
-                v = v or 0.0
-                if divide_by_1000:
-                    v = abs(round(v / 1000))
-                else:
-                    v = abs(round(v))
-                return str(int(v)) if v == int(v) else str(v)
-
-            amount = fmt_amt(row['AMOUNT'])
-            amtusd = fmt_amt(row['AMTUSD'] if row['AMTUSD'] is not None else 0.0)
-            amtsgd = fmt_amt(row['AMTSGD'] if row['AMTSGD'] is not None else 0.0)
-            amthkd = fmt_amt(row['AMTHKD'] if row['AMTHKD'] is not None else 0.0)
-            amtaud = fmt_amt(row['AMTAUD'] if row['AMTAUD'] is not None else 0.0)
-
-            # PUT @1 BNMCODE $14. ';' AMOUNT+(-1) ';' AMTUSD+(-1) ';'
-            #        AMTSGD+(-1) ';' AMTHKD+(-1) ';' AMTAUD;
-            f.write(f"{bnmcode};{amount};{amtusd};{amtsgd};{amthkd};{amtaud}\n")
-
-# ===========================================================================
-# REPORT: TOP 100 DEPOSITORS — %MACRO PRNREC / PROC PRINT / PROC PRINTTO
-# OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
-# TITLE1 'PUBLIC BANK BERHAD';
-# TITLE2 'NEW LIQUIDITY FRAMEWORK AS AT' &RDATE;
-# ===========================================================================
-PAGE_LENGTH = 60
-
-def write_top100_report(title: str, data_rows: list, outpath: Path):
-    """
-    Produces top 100 depositor report with ASA carriage control characters.
-    Mirrors PROC PRINT with FORMAT COMMA16.2 and LABEL assignments.
-    '1' = new page (ASA form-feed); ' ' = single space (advance 1 line).
-    Columns: DEPOSITOR (CUSTNAME), TOTAL BALANCE (CURBAL), FD BALANCE, CA BALANCE.
-    """
-    hdr_depositor = 'DEPOSITOR'
-    hdr_total     = 'TOTAL BALANCE'
-    hdr_fd        = 'FD BALANCE'
-    hdr_ca        = 'CA BALANCE'
-
-    col1_w = 30   # CUSTNAME display width
-    num_w  = 16   # numeric columns — COMMA16.2
-
-    header_label = (
-        f"{'NAME OF DEPOSITOR':<{col1_w}}  "
-        f"{hdr_depositor:<{col1_w}}  "
-        f"{hdr_total:>{num_w}}  "
-        f"{hdr_fd:>{num_w}}  "
-        f"{hdr_ca:>{num_w}}"
-    )
-    sep_line = '-' * (col1_w + 2 + col1_w + 2 + num_w + 2 + num_w + 2 + num_w)
-
-    def _page_header(f, title_line):
-        # ASA '1' = form-feed / new page
-        f.write('1' + title_line + '\n')
-        f.write(' ' + header_label + '\n')
-        f.write(' ' + sep_line + '\n')
-
-    def _fmt_num(v):
-        """COMMA16.2 equivalent."""
-        return f"{float(v or 0.0):>{num_w},.2f}"
-
-    with open(outpath, 'w') as f:
-        line_count = 0
-        _page_header(f, title)
-        line_count = 3
-
-        for row in data_rows:
-            if line_count >= PAGE_LENGTH - 2:
-                _page_header(f, title)
-                line_count = 3
-
-            custname = str(row.get('CUSTNAME') or '').ljust(col1_w)[:col1_w]
-            line = (
-                f"{custname}  "
-                f"{_fmt_num(row.get('CURBAL'))}  "
-                f"{_fmt_num(row.get('FDBAL'))}  "
-                f"{_fmt_num(row.get('CABAL'))}"
+        # Corrective steps: at most ~4-5 needed because the jump lands close.
+        for _ in range(10):
+            nxt = _nxt_date(rolling)
+            behind_mask = (pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
+                           & (nxt > pl.col("CUR")))
+            # Materialise the mask as a Series so .any() evaluates against data
+            behind_series = rolling.select(behind_mask.alias("B"))["B"]
+            if not behind_series.any():
+                break
+            rolling = rolling.with_columns(
+                pl.when(behind_mask).then(nxt).otherwise(pl.col("CUR")).alias("CUR")
             )
-            f.write(' ' + line + '\n')
-            line_count += 1
 
-        # SUM line
-        total_curbal = sum(float(r.get('CURBAL') or 0.0) for r in data_rows)
-        f.write(' ' + sep_line + '\n')
-        f.write(' ' + f"{'TOTAL':<{col1_w}}  {_fmt_num(total_curbal)}\n")
+        # Rows that still could not advance past reptdate -> null (matches old fallback).
+        rolling = rolling.with_columns(
+            pl.when(pl.col("CUR") > rept).then(pl.col("CUR"))
+            .otherwise(pl.lit(None, dtype=pl.Date)).alias("CUR")
+        )
 
-# ===========================================================================
-# PROCESS TOP 100 DEPOSITORS (SMR-A520)
-# ===========================================================================
-def process_top100(macro: dict, suppl_df: pl.DataFrame):
-    """
-    NEW SMR-A520: Top 100 FD+CA individual and corporate customers.
-    Produces FD11TEXT (individual) and FD12TEXT (corporate) via PROC PRINTTO.
-    """
-    rdate = macro['RDATE']
+    loop = pl.concat([loop.filter(~pl.col("ROLL")), rolling], how="vertical")
 
-    cisca_parquet   = DATA_DIR / "CISLN_DEPOSIT.parquet"
-    cisfd_parquet   = DATA_DIR / "CISDP_DEPOSIT.parquet"
-    current_parquet = DATA_DIR / "CURRENT.parquet"
-    fd_parquet_dep  = DATA_DIR / "FD_DEPOSIT.parquet"
+    loop = loop.with_columns(
+        pl.when(pl.col("PAYAMT") < 0).then(0.0).otherwise(pl.col("PAYAMT")).alias("PAYAMT")
+    ).with_columns(
+        pl.when(pl.col("CUR").is_null() | (pl.col("CUR") > pl.col("EXPRDATE"))
+                | (pl.col("BALANCE") <= pl.col("PAYAMT")))
+        .then(pl.col("EXPRDATE")).otherwise(pl.col("CUR")).alias("CUR"),
+        pl.col("BALANCE").alias("BAL"),
+    )
 
-    con = duckdb.connect()
+    active = loop
+    for _ in range(_MAX_ROUNDS):
+        if active.is_empty():
+            break
+        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
+        if "ACCTNO" in active.columns:
+            active = active.with_columns(
+                pl.col("ACCTNO").cast(pl.Utf8).alias("DIAG_ACCT"),
+                pl.col("CUR").cast(pl.Utf8).alias("DIAG_CUR"),
+                pl.col("REMM").cast(pl.Utf8).alias("DIAG_REMM"),
+            )
+        is_last = (pl.col("REMM") > 12) | (pl.col("CUR") == pl.col("EXPRDATE"))
 
-    # DATA CISCA: SET CISLN.DEPOSIT WHERE 3000000000<=ACCTNO<=3999999999;
-    #   IF NEWIC NE '' THEN ICNO=NEWIC; ELSE ICNO=OLDIC;
-    try:
-        cisca = con.execute(
-            f"SELECT CUSTNO, ACCTNO, CUSTNAME, NEWIC, OLDIC, INDORG, "
-            f"CASE WHEN NEWIC IS NOT NULL AND NEWIC != '' THEN NEWIC ELSE OLDIC END AS ICNO "
-            f"FROM read_parquet('{cisca_parquet}') "
-            f"WHERE ACCTNO BETWEEN 3000000000 AND 3999999999"
-        ).pl()
-    except Exception:
-        cisca = pl.DataFrame()
+        last = active.filter(is_last)                       # loop break -> residual balance
+        if not last.is_empty():
+            parts.extend(_emit_pair(last, "BAL", "REMM"))
 
-    # DATA CISFD: SET CISDP.DEPOSIT WHERE 1000000000..1999999999 OR 7000000000..7999999999;
-    #   IF NEWIC NE '' THEN ICNO=NEWIC; ELSE ICNO=OLDIC;
-    try:
-        cisfd = con.execute(
-            f"SELECT CUSTNO, ACCTNO, CUSTNAME, NEWIC, OLDIC, INDORG, "
-            f"CASE WHEN NEWIC IS NOT NULL AND NEWIC != '' THEN NEWIC ELSE OLDIC END AS ICNO "
-            f"FROM read_parquet('{cisfd_parquet}') "
-            f"WHERE (ACCTNO BETWEEN 1000000000 AND 1999999999) "
-            f"OR (ACCTNO BETWEEN 7000000000 AND 7999999999)"
-        ).pl()
-    except Exception:
-        cisfd = pl.DataFrame()
+        cont = active.filter(~is_last)
+        if cont.is_empty():
+            active = cont
+            break
+        cont = cont.with_columns(
+            pl.when((pl.col("REMM") > 0.1) & ((pl.col("CUR") - rept).dt.total_days() < 8))
+            .then(0.1).otherwise(pl.col("REMM")).alias("REM_I"))
+        parts.extend(_emit_pair(cont, "PAYAMT", "REM_I"))   # instalment amount
 
-    # DATA CA: SET DEPOSIT.CURRENT IF CURBAL>0;
-    try:
-        ca_data = con.execute(
-            f"SELECT ACCTNO, CURBAL, PRODUCT, PURPOSE, CUSTCODE "
-            f"FROM read_parquet('{current_parquet}') WHERE CURBAL > 0"
-        ).pl()
-    except Exception:
-        ca_data = pl.DataFrame()
+        cont = cont.with_columns((pl.col("BAL") - pl.col("PAYAMT")).alias("BAL"))
+        cont = cont.with_columns(_nxt_date(cont).alias("NXT"))
+        active = cont.with_columns(
+            pl.when((pl.col("NXT") > pl.col("EXPRDATE"))
+                    | (pl.col("BAL") <= pl.col("PAYAMT"))
+                    | (pl.col("NXT") <= pl.col("CUR")))             # date did not advance -> stop at EXPRDATE
+            .then(pl.col("EXPRDATE")).otherwise(pl.col("NXT")).alias("CUR")
+        ).drop("NXT")
+        print(f"  [amortise] round {_+1}: {active.height:,} loans still active")
 
-    # DATA FD: SET DEPOSIT.FD IF CURBAL>0;
-    try:
-        fd_data = con.execute(
-            f"SELECT ACCTNO, CURBAL, PRODUCT, PURPOSE "
-            f"FROM read_parquet('{fd_parquet_dep}') WHERE CURBAL > 0"
-        ).pl()
-    except Exception:
-        fd_data = pl.DataFrame()
+    if not active.is_empty():                               # safety net only
+        print(f"  [warn] {active.height:,} loans hit _MAX_ROUNDS; finalised at residual balance")
+        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
+        parts.extend(_emit_pair(active, "BAL", "REMM"))
 
+
+def _note_to_rows(note: pl.DataFrame, ctx: dict) -> pl.DataFrame:
+    rept = pl.lit(ctx["reptdate"])
+    ind = pl.col("CUSTCD").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
+    num = lambda c: pl.col(c).cast(pl.Float64, strict=False).fill_nan(None).fill_null(0.0)
+
+    df = note.select(["PRODUCT", "CUSTCD", "ACCTYPE", "BALANCE", "PAYAMT", "BLDATE", "ISSDTE",
+                      "EXPRDATE", "LOANSTAT", "IMLOAN", "PAYFREQ", "CCY", "EIR_ADJ"]).with_columns(
+        pl.col("PRODUCT").cast(pl.Int64, strict=False),
+        ind.alias("IS_IND"),
+        pl.when(ind).then(pl.lit("08")).otherwise(pl.lit("09")).alias("CUST"),
+        num("BALANCE").alias("BALANCE"),
+        num("PAYAMT").alias("PAYAMT"),
+        pl.col("PAYFREQ").cast(pl.Utf8),
+        pl.col("EIR_ADJ").cast(pl.Float64, strict=False).fill_nan(None).alias("EIR"),
+        (((rept - pl.col("BLDATE")).dt.total_days() > 89).fill_null(False)
+         | pl.col("LOANSTAT").ne_missing(1)
+         | (pl.col("IMLOAN") == "Y").fill_null(False)).alias("COND"),
+    ).with_columns(
+        pl.col("PRODUCT").is_in(sorted(FCY_PRODUCTS)).fill_null(False).alias("IS_FCY"),
+    )
+
+    parts = []
+
+    # ---- OD : 95213{cust}010000Y -------------------------------------------
+    od = df.filter(pl.col("ACCTYPE") == "OD")
+    parts.append(_summarize(od.select([
+        pl.concat_str([pl.lit("95213"), pl.col("CUST"), pl.lit("010000Y")]).alias("BNMCODE"),
+        pl.col("BALANCE").alias("AMOUNT"),
+        *[pl.lit(0.0).alias(f"AMT{c}") for c in _CCY_COLS],
+    ])))
+
+    # ---- LN -----------------------------------------------------------------
+    ln = df.filter(pl.col("ACCTYPE") == "LN")
+    prods = [p for p in ln["PRODUCT"].unique().to_list() if p is not None]
+    prod_map = pl.DataFrame({"PRODUCT": prods, "PROD": [format_liqpfmt(p) for p in prods]},
+                            schema={"PRODUCT": pl.Int64, "PROD": pl.Utf8})
+    ln = ln.join(prod_map, on="PRODUCT", how="left").with_columns(
+        pl.when(pl.col("IS_IND"))
+        .then(pl.when(pl.col("PROD") == "HL").then(pl.lit("214")).otherwise(pl.lit("219")))
+        .otherwise(pl.when(pl.col("PROD").is_in(["FL", "HL"])).then(pl.lit("211"))
+                   .when(pl.col("PROD") == "RC").then(pl.lit("212"))
+                   .otherwise(pl.lit("219"))).alias("ITEM")
+    )
+
+    # EIR adjustment rows (only when EIR_ADJ is present)
+    eir = ln.filter(pl.col("EIR").is_not_null())
+    for pfx in ("95", "93"):
+        parts.append(_summarize(eir.select([
+            pl.concat_str([pl.lit(pfx), pl.col("ITEM"), pl.col("CUST"), pl.lit("060000Y")]).alias("BNMCODE"),
+            pl.col("EIR").alias("AMOUNT"),
+            *[pl.lit(0.0).alias(f"AMT{c}") for c in _CCY_COLS],
+        ])))
+
+    # No schedule needed: no expiry date, or expiring in < 8 days -> remmth = 0.1
+    simple_mask = pl.col("EXPRDATE").is_null() | ((pl.col("EXPRDATE") - rept).dt.total_days() < 8)
+    simple = ln.filter(simple_mask).with_columns(pl.lit(0.1).alias("REM0"))
+    parts.extend(_emit_pair(simple, "BALANCE", "REM0"))
+
+    # Instalment schedule
+    _amortise(ln.filter(~simple_mask), ctx, parts)
+
+    return _summarize(pl.concat(parts, how="vertical"))
+
+
+def _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx) -> pl.DataFrame:
+    t0 = _t.time()
+    con = duckdb.connect(database=":memory:")
+    loan_all = con.execute(f"""
+        SELECT * REPLACE (
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CAST(NOTENO AS BIGINT) AS NOTENO,
+            CAST(COMMNO AS BIGINT) AS COMMNO,
+            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
+            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
+            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
+        )
+        FROM read_parquet('{bnm1_loan_cache.as_posix()}')
+        WHERE (COALESCE(CAST(PAIDIND AS VARCHAR),'') NOT IN ('P','C') OR EIR_ADJ IS NOT NULL)
+          AND (SUBSTR(CAST(PRODCD AS VARCHAR),1,2) = '34' OR PRODUCT IN (225, 226))
+          AND CAST(ACCTYPE AS VARCHAR) IN ('OD','LN')
+    """).pl()
+    print(f"[timing] loan read: {_t.time()-t0:.1f}s rows={loan_all.height:,}")
+
+    rcloan = loan_all.filter(pl.col("PRODCD").is_in(["34190", "34690"]))
+    lncomm = con.execute(f"""
+        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
+               CAST(COMMNO AS BIGINT) AS COMMNO,
+               TRY_STRPTIME(
+                   SUBSTR(LPAD(CAST(CAST(EXPIREDT AS BIGINT) AS VARCHAR), 11, '0'), 1, 8),
+                   '%m%d%Y'
+               )::DATE AS EXPRDATE
+        FROM read_parquet('{lncomm_cache.as_posix()}')
+    """).pl().unique(subset=["ACCTNO", "COMMNO"], keep="first", maintain_order=True).sort(["ACCTNO", "COMMNO"])
+
+    rcnote = (
+        lncomm.join(rcloan.select(["ACCTNO", "COMMNO", "NOTENO"]), on=["ACCTNO", "COMMNO"], how="inner")
+        .select(["ACCTNO", "NOTENO", "EXPRDATE"])
+        .unique(subset=["ACCTNO", "NOTENO"], keep="first", maintain_order=True)
+    )
+
+    # PROVSUB is a flat .txt file (FIRSTOBS=2, fixed columns)
+    provsub_rows = []
+    with open(provsub_txt_path, "r", encoding="latin1") as fh:
+        for line in fh.readlines()[1:]:
+            line = line.rstrip("\n")
+            acctno_s, noteno_s, imloan = line[0:10].strip(), line[11:16].strip(), line[17:18].strip()
+            if imloan == "Y" and acctno_s and noteno_s:
+                provsub_rows.append({"ACCTNO": int(acctno_s), "NOTENO": int(noteno_s), "IMLOAN": imloan})
+    provsub_schema = {"ACCTNO": pl.Int64, "NOTENO": pl.Int64, "IMLOAN": pl.Utf8}
+    provsub = (pl.DataFrame(provsub_rows, schema=provsub_schema) if provsub_rows
+               else pl.DataFrame(schema=provsub_schema)).unique(subset=["ACCTNO", "NOTENO"], keep="first")
+
+    note = (
+        loan_all
+        .join(rcnote, on=["ACCTNO", "NOTENO"], how="left", suffix="_rc")
+        .with_columns(pl.coalesce([pl.col("EXPRDATE_rc"), pl.col("EXPRDATE")]).alias("EXPRDATE"))
+        .drop("EXPRDATE_rc")
+        .join(provsub, on=["ACCTNO", "NOTENO"], how="left")
+    )
+
+    pay_raw = con.execute(f"""
+        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO, PAYAMT,
+               CASE WHEN EFFDATE IS NULL OR ISNAN(EFFDATE) THEN NULL
+                    ELSE DATE '1960-01-01' + CAST(FLOOR(EFFDATE) AS INTEGER) END AS EFFDATE
+        FROM read_parquet('{lnpay_cache.as_posix()}')
+    """).pl()
+    con.close()
+    tdate = ctx["reptdate"]
+    pay = pay_raw.with_columns([
+        pl.when(pl.col("EFFDATE") <= tdate).then(1).otherwise(0).alias("SORT_IND"),
+        pl.when(pl.col("EFFDATE") <= tdate).then(pl.col("EFFDATE").cast(pl.Int64))
+          .otherwise(-pl.col("EFFDATE").cast(pl.Int64)).alias("MANI_EFFDATE"),
+    ]).sort(
+        ["ACCTNO", "NOTENO", "PAYAMT", "SORT_IND", "MANI_EFFDATE"],
+        descending=[False, False, False, True, True],
+    ).unique(subset=["ACCTNO", "NOTENO", "PAYAMT"], keep="first").select(["ACCTNO", "NOTENO", "PAYAMT"])
+
+    note = note.join(pay, on=["ACCTNO", "NOTENO", "PAYAMT"], how="left")
+    if "FORATE" in note.columns:
+        note = note.with_columns(
+            pl.when(pl.col("PRODUCT").is_between(800, 899))
+            .then(pl.col("PAYAMT").cast(pl.Float64, strict=False) * pl.col("FORATE").cast(pl.Float64, strict=False))
+            .otherwise(pl.col("PAYAMT").cast(pl.Float64, strict=False))
+            .alias("PAYAMT")
+        )
+    print(f"[timing] prep joins: {_t.time()-t0:.1f}s")
+
+    result = _note_to_rows(note, ctx)
+    print(f"[timing] NOTE total: {_t.time()-t0:.1f}s  codes={result.height:,}")
+    return result
+
+
+# ============================================================================
+# FIXED DEPOSITS / SAVINGS / CURRENT / VOSTRO / FCY CURRENT
+# ============================================================================
+def _build_fd(fd_fd_cache, ctx) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    fd = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN MATDATE IS NULL OR ISNAN(MATDATE) THEN NULL
+                 ELSE STRPTIME(CAST(CAST(MATDATE AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE END AS MATDATE
+        )
+        FROM read_parquet('{fd_fd_cache.as_posix()}') WHERE ACCTTYPE <> 397 AND CURBAL > 0
+    """).pl()
+    con.close()
+    rows = []
+    for r in fd.iter_rows(named=True):
+        cust = "08" if r.get("CUSTCD") in (77, 78, 95, 96) else "09"
+        matdt, openind = r.get("MATDATE"), r.get("OPENIND")
+        if openind == "D" or (matdt is not None and (matdt - ctx["reptdate"]).days < 8):
+            remmth = 0.1
+        else:
+            remmth, _ = _remmth(ctx, matdt)
+        bic = fdprod_format(r.get("INTPLAN"))
+        curbal, curcode = r.get("CURBAL") or 0.0, r.get("CURCODE")
+        amtusd = amtsgd = amthkd = amtaud = 0.0
+        if bic == "42630":
+            if curcode == "USD":
+                amtusd = curbal
+            elif curcode == "SGD":
+                amtsgd = curbal
+            elif curcode == "HKD":
+                amthkd = curbal
+            elif curcode == "AUD":
+                amtaud = curbal
+            bnmcode = f"96311{cust}{_remfmt(remmth)}0000Y"
+        elif bic == "42132":
+            bnmcode = f"95315{cust}{_remfmt(remmth)}0000Y"
+        else:
+            bnmcode = f"95311{cust}{_remfmt(remmth)}0000Y"
+        if r.get("ACCTTYPE") in (315, 394):
+            bnmcode = f"95315{cust}{_remfmt(remmth)}0000Y"
+        rows.append({"BNMCODE": bnmcode, "AMOUNT": curbal, "AMTUSD": amtusd, "AMTSGD": amtsgd, "AMTHKD": amthkd, "AMTAUD": amtaud})
+    return pl.DataFrame(rows, schema=_BNMCODE_SCHEMA) if rows else pl.DataFrame(schema=_BNMCODE_SCHEMA)
+
+
+def _build_sa(bnm_savg_cache) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    sa = con.execute(f"SELECT * FROM read_parquet('{bnm_savg_cache.as_posix()}')").pl()
+    con.close()
+    return sa.with_columns(
+        pl.when(pl.col("CUSTCD").is_in(["77", "78", "95", "96"])).then(pl.lit("08")).otherwise(pl.lit("09")).alias("CUST")
+    ).select([
+        (pl.lit("95312") + pl.col("CUST") + pl.lit("010000Y")).alias("BNMCODE"),
+        pl.col("CURBAL").alias("AMOUNT"),
+        pl.lit(0.0).alias("AMTUSD"), pl.lit(0.0).alias("AMTSGD"),
+        pl.lit(0.0).alias("AMTHKD"), pl.lit(0.0).alias("AMTAUD"),
+    ])
+
+
+def _build_ca(bnm_curn_cache) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    ca_raw = con.execute(f"SELECT * FROM read_parquet('{bnm_curn_cache.as_posix()}')").pl()
+    con.close()
+    rows = []
+    for r in ca_raw.iter_rows(named=True):
+        if _glprod(r.get("PRODUCT")) == "C999":
+            continue
+        if str(r.get("PRODCD") or "")[:3] not in ("421", "423"):
+            continue
+        cust = "08" if r.get("CUSTCD") in ("77", "78", "95", "96") else "09"
+        rows.append({"BNMCODE": f"95313{cust}010000Y", "AMOUNT": r.get("CURBAL"),
+                     "AMTUSD": 0.0, "AMTSGD": 0.0, "AMTHKD": 0.0, "AMTAUD": 0.0})
+    return pl.DataFrame(rows, schema=_BNMCODE_SCHEMA) if rows else pl.DataFrame(schema=_BNMCODE_SCHEMA)
+
+
+def _build_vostro(deposit_current_cache) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    vostro = con.execute(f"""
+        SELECT BRANCH, ACCTNO, CURBAL AS AMOUNT, CURCODE, CUSTCD, PRODUCT
+        FROM read_parquet('{deposit_current_cache.as_posix()}') WHERE PRODUCT IN (104, 105, 147)
+    """).pl()
+    con.close()
+    return vostro
+
+
+def _build_fcyca(deposit_current_cache) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    raw = con.execute(f"""
+        SELECT * FROM read_parquet('{deposit_current_cache.as_posix()}')
+        WHERE PRODUCT BETWEEN 400 AND 444 AND PRODUCT <> 413
+    """).pl()
+    con.close()
+    rows = []
+    for r in raw.iter_rows(named=True):
+        custcd = ddcustcd_format(r.get("CUSTCODE"))
+        cust = "08" if custcd in ("77", "78", "95", "96") else "09"
+        product, curbal = r.get("PRODUCT"), r.get("CURBAL") or 0.0
+        rows.append({
+            "BNMCODE": f"96313{cust}010000Y", "AMOUNT": curbal,
+            "AMTUSD": curbal if product in (400, 420, 440) else 0.0,
+            "AMTSGD": curbal if product in (403, 423) else 0.0,
+            "AMTHKD": curbal if product in (406, 426) else 0.0,
+            "AMTAUD": curbal if product in (402, 422, 442) else 0.0,
+        })
+    return pl.DataFrame(rows, schema=_BNMCODE_SCHEMA) if rows else pl.DataFrame(schema=_BNMCODE_SCHEMA)
+
+
+# ============================================================================
+# UNDRAWN PORTION (RC facilities)
+# ============================================================================
+def _build_undrawn(bnm1_loan_cache, bnm1_uloan_cache, lncomm_cache, ctx) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    loan_all = con.execute(f"""
+        SELECT * REPLACE (
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CAST(NOTENO AS BIGINT) AS NOTENO,
+            CAST(COMMNO AS BIGINT) AS COMMNO,
+            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
+            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
+            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
+        )
+        FROM read_parquet('{bnm1_loan_cache.as_posix()}') WHERE PAIDIND NOT IN ('P','C')
+    """).pl()
+    lncomm = con.execute(f"""
+        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
+               CAST(COMMNO AS BIGINT) AS COMMNO
+        FROM read_parquet('{lncomm_cache.as_posix()}')
+    """).pl().sort(["ACCTNO", "COMMNO"])
+    uloan = con.execute(f"""
+        SELECT * REPLACE (
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
+            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
+            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
+        )
+        FROM read_parquet('{bnm1_uloan_cache.as_posix()}')
+        WHERE NOT (ACCTNO BETWEEN 3000000000 AND 3999999999 AND PRODUCT IN (151,152,181) AND ACCTYPE = 'OD')
+    """).pl().sort(["ACCTNO"])
     con.close()
 
-    # DATA CAIND CAORG: MERGE CA(IN=A) CISCA; BY ACCTNO;
-    #   IF A AND PURPOSE NE '2' AND PRODUCT NOT IN (400..410);
-    #   CABAL=CURBAL;
-    #   IF CUSTCODE IN (77,78,95,96) -> CAIND; ELSE IF INDORG='O' -> CAORG;
-    if len(ca_data) == 0 or len(cisca) == 0:
-        caind = pl.DataFrame()
-        caorg = pl.DataFrame()
+    alw = loan_all.filter(~((pl.col("PRODUCT").is_in([151, 152, 181])) & (pl.col("ACCTYPE") == "OD"))).sort(["ACCTNO", "NOTENO"])
+    alwcom = alw.filter(pl.col("COMMNO") > 0).sort(["ACCTNO", "COMMNO"])
+    rc_mask_com = pl.col("PRODCD").is_in(["34190", "34690"])
+    appr = pl.concat([
+        alwcom.filter(rc_mask_com).unique(subset=["ACCTNO", "COMMNO"], keep="first"),
+        alwcom.filter(~rc_mask_com),
+    ], how="diagonal_relaxed")
+
+    alwnocom = alw.filter(pl.col("COMMNO") <= 0).sort(["ACCTNO", "APPRLIM2"])
+    rc_mask = pl.col("PRODCD").is_in(["34190", "34690"])
+    alwnocom_rc, alwnocom_other = alwnocom.filter(rc_mask), alwnocom.filter(~rc_mask)
+    appr1_rc = alwnocom_rc.unique(subset=["ACCTNO", "APPRLIM2"], keep="first")
+    dup_keys = alwnocom_rc.join(appr1_rc.select(["ACCTNO", "APPRLIM2"]), on=["ACCTNO", "APPRLIM2"], how="anti")
+    dupli = dup_keys.filter(pl.col("BALANCE") >= pl.col("APPRLIM2"))
+    appr1_final = pl.concat([appr1_rc, dupli, alwnocom_other], how="diagonal_relaxed")
+
+    combined = pl.concat([appr, appr1_final], how="diagonal_relaxed").sort("ACCTNO")
+    combined = pl.concat([combined, uloan], how="diagonal_relaxed").sort("ACCTNO")
+
+    rows = []
+    for r in combined.iter_rows(named=True):
+        prodcd, product = str(r.get("PRODCD") or ""), r.get("PRODUCT")
+        if not (prodcd[:2] == "34" or product in (225, 226)):
+            continue
+        acctype, exprdate, apprdate = r.get("ACCTYPE"), r.get("EXPRDATE"), r.get("APPRDATE")
+        if acctype == "LN":
+            matdt, item = exprdate, ("424" if prodcd in ("34190", "34690") else "429")
+        else:
+            matdt, item = (apprdate + timedelta(days=365) if apprdate else None), "423"
+        if prodcd == "34240":
+            item = "429"
+        if matdt is not None and (matdt - ctx["reptdate"]).days < 8:
+            remmth = 0.1
+        elif matdt is not None:
+            remmth, _ = _remmth(ctx, matdt)
+        else:
+            remmth = 0.1
+        undrawn = r.get("UNDRAWN") or 0.0
+        is_fcy = product in FCY_PRODUCTS
+        rows.append({"BNMCODE": f"{'94' if is_fcy else '95'}{item}00{_remfmt(remmth)}0000Y", "AMOUNT": undrawn,
+                     "AMTUSD": 0.0, "AMTSGD": 0.0, "AMTHKD": 0.0, "AMTAUD": 0.0})
+        bldate, loanstat, imloan = r.get("BLDATE"), r.get("LOANSTAT"), r.get("IMLOAN")
+        # days = (ctx["reptdate"] - bldate).days if bldate else None
+        days = (ctx["reptdate"] - bldate).days if bldate is not None else None
+        remmth13 = 13 if (days is not None and days > 89) or loanstat != 1 or imloan == "Y" else remmth
+        rows.append({"BNMCODE": f"{'96' if is_fcy else '93'}{item}00{_remfmt(remmth13)}0000Y", "AMOUNT": undrawn,
+                     "AMTUSD": 0.0, "AMTSGD": 0.0, "AMTHKD": 0.0, "AMTAUD": 0.0})
+    return pl.DataFrame(rows, schema=_BNMCODE_SCHEMA) if rows else pl.DataFrame(schema=_BNMCODE_SCHEMA)
+
+
+# ============================================================================
+# DUAL CURRENCY INVESTMENT (DCI) / NID
+# ============================================================================
+def _build_dci(dciwh_dci_cache, forate_cache, foratebkp_cache, ctx) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    fdate_row = con.execute(f"""
+        SELECT DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER) AS REPTDATE
+        FROM read_parquet('{forate_cache.as_posix()}') LIMIT 1
+    """).pl()
+    fdate = fdate_row["REPTDATE"][0] if len(fdate_row) else None
+    if fdate is not None and fdate <= ctx["reptdate"]:
+        fcy = con.execute(f"SELECT * FROM read_parquet('{forate_cache.as_posix()}') ORDER BY CURCODE").pl()
     else:
-        ca_merged = ca_data.join(
-            cisca.select(['ACCTNO', 'CUSTNAME', 'ICNO', 'NEWIC', 'OLDIC',
-                          'INDORG', 'CUSTNO']),
-            on='ACCTNO', how='left'
+        fcy = con.execute(f"""
+            SELECT * REPLACE (
+                DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER) AS REPTDATE
+            )
+            FROM read_parquet('{foratebkp_cache.as_posix()}')
+            WHERE (DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER))
+                  <= DATE '{ctx["reptdate"].isoformat()}'
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY CURCODE
+                ORDER BY (DATE '1960-01-01' + CAST(FLOOR(REPTDATE) AS INTEGER)) DESC
+            ) = 1
+        """).pl()
+    dci_raw = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN MATDT IS NULL OR ISNAN(MATDT) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(MATDT) AS INTEGER) END AS MATDT,
+            CASE WHEN STARTDT IS NULL OR ISNAN(STARTDT) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(STARTDT) AS INTEGER) END AS STARTDT
         )
-        # PRODUCT NOT IN (400,401,402,403,404,405,406,407,408,409,410,411)
-        excl_products = set(range(400, 412))
-        ca_filtered = ca_merged.filter(
-            (pl.col('PURPOSE') != '2') &
-            (~pl.col('PRODUCT').is_in(list(excl_products)))
-        ).with_columns(pl.col('CURBAL').alias('CABAL'))
+        FROM read_parquet('{dciwh_dci_cache.as_posix()}') WHERE SPOTRT IS NULL OR TRUE
+    """).pl()
+    con.close()
+    fcy_rate = {r["CURCODE"]: r["SPOTRATE"] for r in fcy.iter_rows(named=True)}
 
-        caind = ca_filtered.filter(
-            pl.col('CUSTCODE').cast(pl.Int64, strict=False).is_in([77, 78, 95, 96])
-        )
-        caorg = ca_filtered.filter(
-            (~pl.col('CUSTCODE').cast(pl.Int64, strict=False).is_in([77, 78, 95, 96])) &
-            (pl.col('INDORG') == 'O')
-        )
+    rows = []
+    for r in dci_raw.iter_rows(named=True):
+        matdt, startdt = r.get("MATDT"), r.get("STARTDT")
+        if not (matdt is not None and startdt is not None and matdt > ctx["reptdate"] and startdt <= ctx["reptdate"]):
+            continue
+        if (matdt - ctx["reptdate"]).days < 8:
+            remmth = 0.1
+        else:
+            remmth, _ = _remmth(ctx, matdt)
+        invcurr, invamt = r.get("INVCURR"), r.get("INVAMT") or 0.0
+        if invcurr == "MYR":
+            amount = invamt
+            for code in ("9332900", "9532900"):
+                rows.append({"BNMCODE": f"{code}{_remfmt(remmth)}0000Y", "AMOUNT": amount,
+                             "AMTUSD": 0.0, "AMTSGD": 0.0, "AMTHKD": 0.0, "AMTAUD": 0.0})
+        else:
+            spotrt = fcy_rate.get(invcurr, 0.0)
+            invamt2 = round(invamt) if invcurr == "JPY" else round(invamt, 2)
+            amount = invamt2 * spotrt
+            amtusd, amtsgd = (amount if invcurr == "USD" else 0.0), (amount if invcurr == "SGD" else 0.0)
+            amthkd, amtaud = (amount if invcurr == "HKD" else 0.0), (amount if invcurr == "AUD" else 0.0)
+            for code in ("9432900", "9632900"):
+                rows.append({"BNMCODE": f"{code}{_remfmt(remmth)}0000Y", "AMOUNT": amount,
+                             "AMTUSD": amtusd, "AMTSGD": amtsgd, "AMTHKD": amthkd, "AMTAUD": amtaud})
+    return pl.DataFrame(rows, schema=_BNMCODE_SCHEMA) if rows else pl.DataFrame(schema=_BNMCODE_SCHEMA)
 
-    # DATA FDIND FDORG: MERGE CISFD FD(IN=A); BY ACCTNO;
-    #   IF A AND PURPOSE NE '2' AND PRODUCT NOT IN (350..357);
-    #   FDBAL=CURBAL;
-    #   IF CUSTCODE IN (77,78,95,96) -> FDIND; ELSE IF INDORG='O' -> FDORG;
-    if len(fd_data) == 0 or len(cisfd) == 0:
-        fdind = pl.DataFrame()
-        fdorg = pl.DataFrame()
+
+def _build_dciw(bnmk_dciwtb_cache, ctx) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    raw = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN DCMTYD IS NULL OR ISNAN(DCMTYD) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(DCMTYD) AS INTEGER) END AS DCMTYD
+        )
+        FROM read_parquet('{bnmk_dciwtb_cache.as_posix()}')
+        WHERE DCDLP = 'DCI' AND DCBSI = 'S' AND DCTRNT = 'I'
+    """).pl()
+    con.close()
+    rows = []
+    for r in raw.iter_rows(named=True):
+        matdt = r.get("DCMTYD")
+        if (matdt - ctx["reptdate"]).days < 8:
+            remmth = 0.1
+        else:
+            remmth, _ = _remmth(ctx, matdt)
+        dcbccy, dcbamt, c8spt = r.get("DCBCCY"), r.get("DCBAMT") or 0.0, r.get("C8SPT") or 0.0
+        if dcbccy == "MYR":
+            amount = dcbamt
+            for code in ("9392100", "9592100", "9472200", "9672200"):
+                rows.append({"BNMCODE": f"{code}{_remfmt(remmth)}0000Y", "AMOUNT": amount,
+                             "AMTUSD": 0.0, "AMTSGD": 0.0, "AMTHKD": 0.0, "AMTAUD": 0.0})
+        else:
+            dcbamt2 = round(dcbamt) if dcbccy == "JPY" else round(dcbamt, 2)
+            amount = dcbamt2 * c8spt
+            amtusd, amtsgd = (amount if dcbccy == "USD" else 0.0), (amount if dcbccy == "SGD" else 0.0)
+            amthkd, amtaud = (amount if dcbccy == "HKD" else 0.0), (amount if dcbccy == "AUD" else 0.0)
+            for code in ("9492200", "9692200", "9372100", "9572100"):
+                rows.append({"BNMCODE": f"{code}{_remfmt(remmth)}0000Y", "AMOUNT": amount,
+                             "AMTUSD": amtusd, "AMTSGD": amtsgd, "AMTHKD": amthkd, "AMTAUD": amtaud})
+    return pl.DataFrame(rows, schema=_BNMCODE_SCHEMA) if rows else pl.DataFrame(schema=_BNMCODE_SCHEMA)
+
+
+def _build_nid(nid_rnid_cache, ctx) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    raw = con.execute(f"""
+        SELECT * REPLACE (
+            CASE WHEN MATDT IS NULL OR ISNAN(MATDT) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(MATDT) AS INTEGER) END AS MATDT,
+            CASE WHEN STARTDT IS NULL OR ISNAN(STARTDT) THEN NULL
+                 ELSE DATE '1960-01-01' + CAST(FLOOR(STARTDT) AS INTEGER) END AS STARTDT
+        )
+        FROM read_parquet('{nid_rnid_cache.as_posix()}') WHERE NIDSTAT = 'N' AND CURBAL > 0
+    """).pl()
+    con.close()
+    rows = []
+    for r in raw.iter_rows(named=True):
+        matdt, startdt = r.get("MATDT"), r.get("STARTDT")
+        if not (matdt is not None and startdt is not None and matdt > ctx["reptdate"] and startdt <= ctx["reptdate"]):
+            continue
+        remmth = 0.1 if (matdt - ctx["reptdate"]).days < 8 else _remmth(ctx, matdt)[0]
+        amount = r.get("CURBAL") or 0.0
+        for code in ("9384000", "9584000"):
+            rows.append({"BNMCODE": f"{code}{_remfmt(remmth)}0000Y", "AMOUNT": amount,
+                         "AMTUSD": 0.0, "AMTSGD": 0.0, "AMTHKD": 0.0, "AMTAUD": 0.0})
+    return pl.DataFrame(rows, schema=_BNMCODE_SCHEMA) if rows else pl.DataFrame(schema=_BNMCODE_SCHEMA)
+
+
+# ============================================================================
+# FISS / NSRS TEXT OUTPUT
+# ============================================================================
+def _write_fiss_nsrs(note_final, ctx, fiss_path, nsrs_path):
+    def _emit(path, divisor):
+        with open(path, "w", encoding="latin1") as fh:
+            fh.write(f"RLFM{ctx['reptday']}{ctx['reptmon']}{ctx['reptyear']}\n")
+            for r in note_final.iter_rows(named=True):
+                def _p(v):
+                    v = 0.0 if v is None else v
+                    # SAS ROUND: half away from zero. Python round: banker's.
+                    return int(math.floor(abs(v) / divisor + 0.5))
+                fh.write(f"{r['BNMCODE']:<14};{_p(r['AMOUNT'])};{_p(r['AMTUSD'])};{_p(r['AMTSGD'])};{_p(r['AMTHKD'])};{_p(r['AMTAUD'])}\n")
+    _emit(fiss_path, 1000)
+    _emit(nsrs_path, 1)
+
+
+def _write_suppl_report(dist_summary, rdate, output_path):
+    if dist_summary.is_empty():
+        suppl = dist_summary
     else:
-        fd_merged = fd_data.join(
-            cisfd.select(['ACCTNO', 'CUSTNAME', 'ICNO', 'NEWIC', 'OLDIC',
-                          'INDORG', 'CUSTNO']),
-            on='ACCTNO', how='left'
+        suppl = dist_summary.filter(pl.col("AMOUNT").abs() >= 5_000_000).sort(["CAT", "NAME"])
+    lines = ["\f", "PUBLIC BANK BERHAD", f"NEW LIQUIDITY FRAMEWORK AS AT {rdate}", "",
+             "CUSTOMER DEPOSITS >= 1% OF TOTAL (PART 3)", ""]
+    grand_total, current_cat = 0.0, None
+    for r in suppl.iter_rows(named=True):
+        if r["CAT"] != current_cat:
+            current_cat = r["CAT"]
+            lines.append(current_cat)
+        amount = r["AMOUNT"] or 0.0
+        lines.append(f"  {str(r['NAME'])[:24]:<24}{amount:>20,.2f}")
+        grand_total += amount
+    lines.append(f"{'TOTAL':<26}{grand_total:>20,.2f}")
+    with open(output_path, "w", encoding="latin1") as fh:
+        fh.write("\n".join(lines) + "\n")
+
+
+# ============================================================================
+# TOP 100 FD+CA INDIVIDUAL/CORPORATE CUSTOMERS
+# ============================================================================
+def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache):
+    con = duckdb.connect(database=":memory:")
+    cisca = con.execute(f"""
+        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO),
+               COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
+        FROM read_parquet('{cisln_deposit_cache.as_posix()}')
+        WHERE ACCTNO BETWEEN 3000000000 AND 3999999999
+    """).pl().select(_CIS_KEEP)
+    cisfd = con.execute(f"""
+        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO),
+               COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
+        FROM read_parquet('{cisdp_deposit_cache.as_posix()}')
+        WHERE (ACCTNO BETWEEN 1000000000 AND 1999999999) OR (ACCTNO BETWEEN 7000000000 AND 7999999999)
+    """).pl().select(_CIS_KEEP)
+    ca = con.execute(f"""
+        SELECT * FROM read_parquet('{deposit_current_cache.as_posix()}') WHERE CURBAL > 0
+    """).pl().with_columns([
+        pl.col("ACCTNO").cast(pl.Int64),
+        pl.col("CURBAL").alias("CABAL"),
+    ])
+    fd = con.execute(f"""
+        SELECT * FROM read_parquet('{deposit_fd_cache.as_posix()}') WHERE CURBAL > 0
+    """).pl().with_columns([
+        pl.col("ACCTNO").cast(pl.Int64),
+        pl.col("CURBAL").alias("FDBAL"),
+    ])
+    con.close()
+
+    ca_excl = {400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411}
+    fd_excl = {350, 351, 352, 353, 354, 355, 356, 357}
+
+    # ca_j = ca.join(cisca, on="ACCTNO", how="inner").filter(
+    #     (pl.col("PURPOSE") != "2") & (~pl.col("PRODUCT").is_in(ca_excl))
+    # )
+    # fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter(
+    #     (pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_excl))
+    # )
+    # # Align FD-only column name to the CA-side name so PRODUCT survives the concat
+    # fd_j = fd_j.with_columns(
+    #     pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT")
+    # )
+
+    cis_cols = [c for c in _CIS_KEEP if c != "ACCTNO"]
+
+    # SAS: MERGE CA(IN=A) CISCA  -> keep every CA row; CIS (later dataset) wins on shared columns
+    ca_j = (
+        ca.drop([c for c in cis_cols if c in ca.columns])
+        .join(cisca, on="ACCTNO", how="left")
+        .filter(
+            pl.col("PURPOSE").ne_missing("2")
+            & ~pl.col("PRODUCT").is_in(ca_excl).fill_null(False)
         )
-        # PRODUCT NOT IN (350,351,352,353,354,355,356,357)
-        excl_fd = set(range(350, 358))
-        fd_filtered = fd_merged.filter(
-            (pl.col('PURPOSE') != '2') &
-            (~pl.col('PRODUCT').is_in(list(excl_fd)))
-        ).with_columns(pl.col('CURBAL').alias('FDBAL'))
-
-        # Note: FD source (CISDP.DEPOSIT) does not carry CUSTCODE directly;
-        # split is performed via INDORG since CISFD drives the join.
-        fdind = fd_filtered.filter(pl.col('INDORG').is_null() | (pl.col('INDORG') != 'O'))
-        fdorg = fd_filtered.filter(pl.col('INDORG') == 'O')
-
-    def build_top100(fd_part: pl.DataFrame, ca_part: pl.DataFrame,
-                     is_corporate: bool) -> list:
-        """
-        %MACRO PRNREC equivalent:
-          DATA DATA1: SET FDXXX CAXXX; IF ICNO='  ' THEN ICNO='XX';
-          PROC SORT DATA1 WHERE ICNO NE '' BY ICNO CUSTNAME;
-          PROC SUMMARY BY ICNO CUSTNAME; VAR CURBAL FDBAL CABAL; OUT=DATA2 SUM=;
-          PROC SORT DATA2 BY DESCENDING CURBAL;
-          DATA DATA2: SET DATA2(OBS=100);
-        """
-        rows_all = []
-
-        def safe_cols(df: pl.DataFrame, cols: list) -> pl.DataFrame:
-            avail = [c for c in cols if c in df.columns]
-            return df.select(avail) if len(df) > 0 else pl.DataFrame()
-
-        fd_cols = ['ACCTNO', 'ICNO', 'CUSTNAME', 'FDBAL', 'CURBAL', 'NEWIC', 'OLDIC', 'CUSTNO']
-        for r in safe_cols(fd_part, fd_cols).iter_rows(named=True):
-            icno = (r.get('ICNO') or '').strip()
-            if icno in ('', '  '):
-                icno = 'XX'
-            rows_all.append({**r, 'ICNO': icno, 'CABAL': 0.0,
-                              'FDBAL': r.get('FDBAL') or 0.0})
-
-        ca_cols = ['ACCTNO', 'ICNO', 'CUSTNAME', 'CABAL', 'CURBAL', 'NEWIC', 'OLDIC', 'CUSTNO']
-        for r in safe_cols(ca_part, ca_cols).iter_rows(named=True):
-            icno = (r.get('ICNO') or '').strip()
-            if icno in ('', '  '):
-                icno = 'XX'
-            rows_all.append({**r, 'ICNO': icno, 'FDBAL': 0.0,
-                              'CABAL': r.get('CABAL') or 0.0})
-
-        # Corporate: exclude specific ACCTNO ranges
-        if is_corporate:
-            rows_all = [
-                r for r in rows_all
-                if not (1590000000 <= (r.get('ACCTNO') or 0) <= 1599999999 or
-                        1689999999 <= (r.get('ACCTNO') or 0) <= 1699999999 or
-                        1789999999 <= (r.get('ACCTNO') or 0) <= 1799999999)
-            ]
-
-        # WHERE ICNO NE ''
-        rows_all = [r for r in rows_all if (r.get('ICNO') or '').strip() not in ('', '  ')]
-
-        if not rows_all:
-            return []
-
-        # PROC SUMMARY BY ICNO CUSTNAME; VAR CURBAL FDBAL CABAL; SUM=;
-        summary: dict = {}
-        for r in rows_all:
-            key = ((r.get('ICNO') or '').strip(), (r.get('CUSTNAME') or '').strip())
-            if key not in summary:
-                summary[key] = {
-                    'ICNO': r.get('ICNO'), 'CUSTNAME': r.get('CUSTNAME'),
-                    'CURBAL': 0.0, 'FDBAL': 0.0, 'CABAL': 0.0
-                }
-            summary[key]['CURBAL'] += float(r.get('CURBAL') or 0.0)
-            summary[key]['FDBAL']  += float(r.get('FDBAL')  or 0.0)
-            summary[key]['CABAL']  += float(r.get('CABAL')  or 0.0)
-
-        # PROC SORT BY DESCENDING CURBAL; DATA DATA2: SET DATA2(OBS=100);
-        sorted_rows = sorted(summary.values(), key=lambda x: x['CURBAL'], reverse=True)
-        return sorted_rows[:100]
-
-    # *** FD+CA INDIVIDUAL CUSTOMERS ***
-    # PROC PRINTTO PRINT=FD11TEXT NEW;
-    # TITLE 'TOP 100 LARGEST FD+CA INDIVIDUAL CUSTOMERS AS AT ' "&RDATE";
-    ind_top100 = build_top100(fdind, caind, is_corporate=False)
-    write_top100_report(
-        f"TOP 100 LARGEST FD+CA INDIVIDUAL CUSTOMERS AS AT {rdate}",
-        ind_top100,
-        FD11_OUTPUT
     )
 
-    # *** FD+CA CORPORATE CUSTOMERS ***
-    # PROC PRINTTO PRINT=FD12TEXT NEW;
-    # TITLE 'TOP 100 LARGEST FD+CA CORPORATE CUSTOMERS AS AT ' "&RDATE";
-    corp_top100 = build_top100(fdorg, caorg, is_corporate=True)
-    write_top100_report(
-        f"TOP 100 LARGEST FD+CA CORPORATE CUSTOMERS AS AT {rdate}",
-        corp_top100,
-        FD12_OUTPUT
+    # SAS: MERGE CISFD FD(IN=A)  -> keep every FD row; FD (later dataset) wins on shared columns
+    fd_j = (
+        fd.join(cisfd.drop([c for c in cis_cols if c in fd.columns]), on="ACCTNO", how="left")
+        .filter(
+            pl.col("PURPOSE").ne_missing("2")
+            & ~pl.col("ACCTTYPE").is_in(fd_excl).fill_null(False)
+        )
+        .with_columns(pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT"))
     )
 
-# ===========================================================================
-# MAIN
-# ===========================================================================
-def main():
-    # -----------------------------------------------------------------------
-    # GET REPTDATE macro variables
-    # -----------------------------------------------------------------------
-    macro = load_reptdate()
-    print(f"Report date: {macro['RDATE']} | NOWK={macro['NOWK']}")
+    # ca_ind = ca_j.filter(pl.col("CUSTCODE").is_in([77, 78, 95, 96]))
+    # ca_org = ca_j.filter((~pl.col("CUSTCODE").is_in([77, 78, 95, 96])) & (pl.col("INDORG") == "O"))
+    # fd_ind = fd_j.filter(pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0]))
+    # fd_org = fd_j.filter((~pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0])) & (pl.col("INDORG") == "O"))
 
-    # -----------------------------------------------------------------------
-    # BREAKDOWN BY MATURITY PROFILE (PART 1 & 2 - RM)
-    # -----------------------------------------------------------------------
-    print("Processing loans (NOTE)...")
-    note_df  = process_loans(macro)
-    note_sum = summarise_bnm(note_df)
+    # CA table uses CUSTCODE; FD table uses CUSTCD (the FD parquet has no CUSTCODE column)
+    ca_is_ind = pl.col("CUSTCODE").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
+    fd_is_ind = pl.col("CUSTCD").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
 
-    print("Processing fixed deposits (FD)...")
-    fd_df, lcr_fd = process_fd(macro)
-    fd_sum = summarise_bnm(fd_df)
-    if len(lcr_fd) > 0:
-        lcr_fd.write_parquet(str(LCR_FD_PARQUET))
+    ca_ind = ca_j.filter(ca_is_ind)
+    ca_org = ca_j.filter(~ca_is_ind & (pl.col("INDORG") == "O"))
+    fd_ind = fd_j.filter(fd_is_ind)
+    fd_org = fd_j.filter(~fd_is_ind & (pl.col("INDORG") == "O"))
 
-    print("Processing savings accounts (SA)...")
-    sa_df, lcr_sa = process_sa(macro)
-    sa_sum = summarise_bnm(sa_df)
-    if len(lcr_sa) > 0:
-        lcr_sa.write_parquet(str(LCR_SA_PARQUET))
+    # The exact columns the report needs, with the exact dtypes both sides must agree on.
+    _REPORT_COLS = [
+        ("BRANCH",   pl.Int64),
+        ("ACCTNO",   pl.Int64),
+        ("CUSTNAME", pl.Utf8),
+        ("CUSTNO",   pl.Int64),
+        ("NEWIC",    pl.Utf8),
+        ("OLDIC",    pl.Utf8),
+        ("CURBAL",   pl.Float64),
+        ("PRODUCT",  pl.Int64),
+        ("ICNO",     pl.Utf8),
+    ]
 
-    print("Processing current accounts (CA)...")
-    ca_df, lcr_ca = process_ca(macro)
-    ca_sum = summarise_bnm(ca_df)
-    if len(lcr_ca) > 0:
-        lcr_ca.write_parquet(str(LCR_CA_PARQUET))
+    def _shape(df: pl.DataFrame, is_fd: bool) -> pl.DataFrame:
+        """Project df to exactly _REPORT_COLS with matching dtypes, adding the
+        FDBAL / CABAL side that is missing on the other dataset. Ends with an
+        explicit select so both sides have the same column order."""
+        def col_or_null(src, name, dtype):
+            if src in df.columns:
+                return pl.col(src).cast(dtype, strict=False).alias(name)
+            return pl.lit(None, dtype=dtype).alias(name)
 
-    print("Processing FCY current accounts (FCYCA)...")
-    fcyca_df, lcr_fcyca = process_fcyca(macro)
-    fcyca_sum = summarise_bnm(fcyca_df)
-    if len(lcr_fcyca) > 0:
-        lcr_fcyca.write_parquet(str(LCR_FCYCA_PARQUET))
+        product_src = "ACCTTYPE" if is_fd else "PRODUCT"
 
-    print("Processing undrawn commitments (UNOTE)...")
-    unote_df  = process_unote(macro)
-    unote_sum = summarise_bnm(unote_df)
+        out = df.select([
+            col_or_null("BRANCH",    "BRANCH",   pl.Int64),
+            col_or_null("ACCTNO",    "ACCTNO",   pl.Int64),
+            col_or_null("CUSTNAME",  "CUSTNAME", pl.Utf8),
+            col_or_null("CUSTNO",    "CUSTNO",   pl.Int64),
+            col_or_null("NEWIC",     "NEWIC",    pl.Utf8),
+            col_or_null("OLDIC",     "OLDIC",    pl.Utf8),
+            col_or_null("CURBAL",    "CURBAL",   pl.Float64),
+            col_or_null(product_src, "PRODUCT",  pl.Int64),
+            col_or_null("ICNO",      "ICNO",     pl.Utf8),
+        ])
 
-    print("Processing DCI...")
-    dci_df, lcr_dci = process_dci(macro)
-    dci_sum = summarise_bnm(dci_df)
-    if len(lcr_dci) > 0:
-        lcr_dci.write_parquet(str(LCR_DCI_PARQUET))
+        # if is_fd:
+        #     out = out.with_columns(
+        #         pl.col("CURBAL").alias("FDBAL"),
+        #         pl.lit(0.0).alias("CABAL"),
+        #     )
+        # else:
+        #     out = out.with_columns(
+        #         pl.col("CURBAL").alias("FDBAL"),
+        #         pl.lit(0.0).alias("CABAL"),
+        #     )
 
-    print("Processing NID...")
-    nid_df, lcr_nid = process_nid(macro)
-    nid_sum = summarise_bnm(nid_df)
-    if len(lcr_nid) > 0:
-        lcr_nid.write_parquet(str(LCR_NID_PARQUET))
+        # # Force identical column order on both sides.
+        # return out.select([
+        #     "BRANCH", "ACCTNO", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC",
+        #     "CURBAL", "PRODUCT", "ICNO", "FDBAL", "CABAL",
+        # ])
 
-    # -----------------------------------------------------------------------
-    # DATA NOTE; SET NOTE FD SA CA UNOTE FCYCA DCI NID;
-    # -----------------------------------------------------------------------
-    all_parts = [df for df in [note_sum, fd_sum, sa_sum, ca_sum,
-                                unote_sum, fcyca_sum, dci_sum, nid_sum]
-                 if len(df) > 0]
-    note_combined = pl.concat(all_parts, how='diagonal') if all_parts else _empty_bnm_df()
+        out = out.with_columns(
+            (pl.col("CURBAL") if is_fd else pl.lit(0.0)).alias("FDBAL"),
+            (pl.lit(0.0) if is_fd else pl.col("CURBAL")).alias("CABAL"),
+            pl.lit(0 if is_fd else 1).cast(pl.Int8).alias("SRC"),   # FD first, then CA
+        )
+        return out.select([
+            "BRANCH", "ACCTNO", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC",
+            "CURBAL", "PRODUCT", "ICNO", "FDBAL", "CABAL", "SRC",
+        ])
+    
+    # def _top100(fd_part, ca_part, corp_excl=False):
+    #     fd_shaped = _shape(fd_part, is_fd=True)
+    #     ca_shaped = _shape(ca_part, is_fd=False)
+    #     data1 = pl.concat([fd_shaped, ca_shaped], how="vertical_relaxed").with_columns(
+    #         pl.when(pl.col("ICNO").is_null() | (pl.col("ICNO") == ""))
+    #         .then(pl.lit("XX"))
+    #         .otherwise(pl.col("ICNO")).alias("ICNO")
+    #     )
+    #     if corp_excl:
+    #         data1 = data1.filter(~(
+    #             pl.col("ACCTNO").is_between(1590000000, 1599999999)
+    #             | pl.col("ACCTNO").is_between(1689999999, 1699999999)
+    #             | pl.col("ACCTNO").is_between(1789999999, 1799999999)
+    #         ))
+    #     data1 = data1.filter(pl.col("ICNO") != "")
 
-    # -----------------------------------------------------------------------
-    # TO REPLACE BY NEW REPORT SMR-A520
-    # (PART 3 distribution profile — commented out in SAS, replaced by top 100 below)
-    #
-    # DATA SAVINGS (KEEP=CAT NAME CURBAL): SET BNM.SAVG; IF CURBAL > 4999999.99; CAT='SAVINGS';
-    # DATA CURRENT (KEEP=CAT NAME CURBAL): SET BNM.CURN; IF CURBAL > 4999999.99; CAT='CURRENT';
-    # PROC SORT DATA=FD.FD OUT=FD (KEEP=NAME CURBAL) WHERE CURBAL>0;
-    # DATA FD1(KEEP=NAME): accumulate totals, output if TOTAL > 4999999.99;
-    # DATA FD(KEEP=CAT NAME CURBAL): MERGE FD1 FD; CAT='FIXED DEPOSIT';
-    # DATA SUPPL: SET SAVINGS CURRENT FD; RENAME CURBAL=AMOUNT;
-    # PROC DATASETS LIB=WORK NOLIST; DELETE SAVINGS CURRENT FD UNOTE;
-    # PROC TABULATE DATA=SUPPL MISSING NOSEPS ... TITLE4 'CUSTOMER DEPOSITS >= 1% OF TOTAL (PART 3)';
-    # SMR-A520
-    # -----------------------------------------------------------------------
+    #     summary = (
+    #         data1.group_by(["ICNO", "CUSTNAME"])
+    #         .agg([pl.col("CURBAL").sum(), pl.col("FDBAL").sum(), pl.col("CABAL").sum()])
+    #         .sort("CURBAL", descending=True)
+    #         .head(100)
+    #     )
+    #     keys = summary.select(["ICNO", "CUSTNAME"])
+    #     detail = (
+    #         data1.join(keys, on=["ICNO", "CUSTNAME"], how="inner")
+    #         .sort(["ICNO", "CUSTNAME", "BRANCH", "ACCTNO"])
+    #     )
+    #     return summary, detail
 
-    # -----------------------------------------------------------------------
-    # KAPITI ITEMS FOR PART 2 & 3
-    # %LET INST = 'PBB';
-    # %INC PGM(KALMLIQ);
-    # %INC PGM(KALMLIFE);
-    # -----------------------------------------------------------------------
-    INST = 'PBB'  # noqa: F841  (passed to KALMLIQ/KALMLIFE as %LET INST)
-    print("Loading KAPITI items...")
-    ktbl_df, suppl_df = load_kapiti_items(macro)
+    def _ebcdic(col: str) -> pl.Expr:
+        return pl.col(col).map_elements(
+            lambda s: (s or "").ljust(60).encode("cp037").hex(), return_dtype=pl.Utf8)
 
-    # DATA KTBL; SET KTBL; AMTAUD=0; (already enforced in load_kapiti_items)
+    def _top100(fd_part, ca_part, corp_excl=False):
+        fd_shaped = _shape(fd_part, is_fd=True)
+        ca_shaped = _shape(ca_part, is_fd=False)
+        data1 = pl.concat([fd_shaped, ca_shaped], how="vertical_relaxed").with_columns(
+            pl.when(pl.col("ICNO").is_null() | (pl.col("ICNO") == ""))
+            .then(pl.lit("XX"))
+            .otherwise(pl.col("ICNO")).alias("ICNO")
+        )
+        if corp_excl:
+            data1 = data1.filter(~(
+                pl.col("ACCTNO").is_between(1590000000, 1599999999)
+                | pl.col("ACCTNO").is_between(1689999999, 1699999999)
+                | pl.col("ACCTNO").is_between(1789999999, 1799999999)
+            ))
+        data1 = data1.filter(pl.col("ICNO") != "")
 
-    # DATA NOTE; SET NOTE KTBL;
-    ktbl_parts = [note_combined]
-    if len(ktbl_df) > 0:
-        ktbl_parts.append(ktbl_df)
-    note_with_ktbl = pl.concat(ktbl_parts, how='diagonal')
+        # SAS shows one line per MNI NO per customer: sum the FD receipts of that account.
+        # ICNO + CUSTNAME are in the key so joint holders are NOT added together.
+        data1 = data1.group_by(["SRC", "ACCTNO", "ICNO", "CUSTNAME"], maintain_order=True).agg(
+            [pl.col(c).first() for c in ("BRANCH", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT")]
+            + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
+        )
 
-    # PROC SUMMARY DATA=NOTE NWAY; CLASS BNMCODE; VAR ...; OUTPUT OUT=NOTE SUM=;
-    note_final = summarise_bnm(note_with_ktbl)
+        # # one line per account (FD receipts are summed), as in the SAS report
+        # data1 = data1.group_by(["SRC", "ACCTNO"], maintain_order=True).agg(
+        #     [pl.col(c).first() for c in ("BRANCH", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT", "ICNO")]
+        #     + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
+        # )
 
-    # -----------------------------------------------------------------------
-    # OUTPUT DATA IN BNM FISS FORMAT
-    # -----------------------------------------------------------------------
-    print(f"Writing FISS output to {FISS_OUTPUT}...")
-    write_fiss(note_final, macro, FISS_OUTPUT, divide_by_1000=True)
+        summary = (
+            data1.group_by(["ICNO", "CUSTNAME"], maintain_order=True)
+            .agg([pl.col("CURBAL").sum(), pl.col("FDBAL").sum(), pl.col("CABAL").sum()])
+            # .sort("CURBAL", descending=True, maintain_order=True)
+            # .head(100)
+            .with_columns(_ebcdic("ICNO").alias("_K1"), _ebcdic("CUSTNAME").alias("_K2"))
+            .sort(["CURBAL", "_K1", "_K2"], descending=[True, False, False], maintain_order=True)
+            .drop(["_K1", "_K2"])
+            .head(100)
+        )
+        keys = summary.select(["ICNO", "CUSTNAME"])
+        detail = (
+            data1.join(keys, on=["ICNO", "CUSTNAME"], how="inner")
+            .with_columns(_ebcdic("ICNO").alias("_K1"), _ebcdic("CUSTNAME").alias("_K2"))
+            .sort(["_K1", "_K2", "SRC", "ACCTNO"], maintain_order=True)
+            .drop(["_K1", "_K2"])
+        )
+        return summary, detail
 
-    print(f"Writing NSRS output to {NSRS_OUTPUT}...")
-    write_fiss(note_final, macro, NSRS_OUTPUT, divide_by_1000=False)
+    ind_sum, ind_det = _top100(fd_ind, ca_ind)
+    org_sum, org_det = _top100(fd_org, ca_org, corp_excl=True)
+    return ind_sum, org_sum, ind_det, org_det
 
-    # -----------------------------------------------------------------------
-    # PRODUCE REPORTS
-    # OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
-    # TITLE1 'PUBLIC BANK BERHAD';
-    # TITLE2 'NEW LIQUIDITY FRAMEWORK AS AT' &RDATE;
-    # -----------------------------------------------------------------------
 
-    # -----------------------------------------------------------------------
-    # PRODUCE REPORTS TOP 100 DEPOSITOR  /* NEW SMR-A520 */
-    # -----------------------------------------------------------------------
-    print("Producing top 100 depositor reports...")
-    process_top100(macro, suppl_df)
+# def _write_top100_report(summary, detail, title, rdate, output_path):
+#     def _d(v):
+#         if v is None:
+#             return ""
+#         try:
+#             return f"{float(v):,.2f}"
+#         except Exception:
+#             return str(v)
 
-    print("Done.")
-    print(f"  FISS output : {FISS_OUTPUT}")
-    print(f"  NSRS output : {NSRS_OUTPUT}")
-    print(f"  FD11 report : {FD11_OUTPUT}")
-    print(f"  FD12 report : {FD12_OUTPUT}")
+#     def _int_str(v) -> str:
+#         if v is None:
+#             return ""
+#         try:
+#             return str(int(v))
+#         except Exception:
+#             return str(v)
 
-if __name__ == '__main__':
-    main()
+#     lines = []
+
+#     # ==================== SECTION 1: SUMMARY ====================
+#     lines.append(f"{title} AS AT {rdate}")
+#     lines.append("")
+#     lines.append(
+#         f"{'Obs':>4}   {'DEPOSITOR':<40}  "
+#         f"{'TOTAL BALANCE':>18}  {'FD BALANCE':>18}  {'CA BALANCE':>18}"
+#     )
+#     lines.append("")
+
+#     for i, r in enumerate(summary.iter_rows(named=True), start=1):
+#         lines.append(
+#             f"{i:>4}   {str(r.get('CUSTNAME') or '')[:40]:<40}  "
+#             f"{_d(r.get('CURBAL')):>18}  {_d(r.get('FDBAL')):>18}  {_d(r.get('CABAL')):>18}"
+#         )
+
+#     # ==================== SECTION 2: DETAIL ====================
+#     if detail is not None and detail.height > 0:
+#         lines.append("")
+#         lines.append(f"{title} AS AT {rdate}")
+
+#         obs_no = 0
+#         current_key = None
+#         group_total = 0.0
+
+#         def _close_group(gt: float) -> None:
+#             if gt == 0.0:
+#                 return
+#             lines.append("")
+#             lines.append(
+#                 f"{'--------':>4}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
+#                 f"{'':>14}  {'':>10}  {'----------------':>18}"
+#             )
+#             lines.append(
+#                 f"{'CUSTNAME':>8}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
+#                 f"{'':>14}  {'':>10}  {_d(gt):>18}"
+#             )
+#             lines.append(
+#                 f"{'    ICNO':>8}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
+#                 f"{'':>14}  {'':>10}  {_d(gt):>18}"
+#             )
+#             lines.append("")
+#             lines.append("")
+
+#         for r in detail.iter_rows(named=True):
+#             key = (r.get("ICNO"), r.get("CUSTNAME"))
+#             if key != current_key:
+#                 _close_group(group_total)
+#                 current_key = key
+#                 group_total = 0.0
+#                 lines.append("")
+#                 lines.append(f"ICNO={key[0]} DEPOSITOR={key[1]}")
+#                 lines.append("")
+#                 lines.append(
+#                     f"{'Obs':>4}   {'CODE':>6}  {'MNI NO':>13}  {'DEPOSITOR':<24}  "
+#                     f"{'CIS NO':>10}  {'NEW IC':>14}  {'OLD IC':>10}  "
+#                     f"{'CURRENT BALANCE':>18}  {'PRODUCT':>8}"
+#                 )
+#                 lines.append("")
+
+#             obs_no += 1
+#             curbal = r.get("CURBAL") or 0.0
+#             group_total += curbal
+#             lines.append(
+#                 f"{obs_no:>4}   {_int_str(r.get('BRANCH')):>6}  {_int_str(r.get('ACCTNO')):>13}  "
+#                 f"{str(r.get('CUSTNAME') or '')[:24]:<24}  {_int_str(r.get('CUSTNO')):>10}  "
+#                 f"{str(r.get('NEWIC') or ''):>14}  {str(r.get('OLDIC') or ''):>10}  "
+#                 f"{_d(curbal):>18}  {_int_str(r.get('PRODUCT')):>8}"
+#             )
+
+#         _close_group(group_total)
+
+#         # Grand total across the entire detail section
+#         detail_grand = float(detail.select(pl.col("CURBAL").sum()).item() or 0.0)
+#         lines.append("")
+#         lines.append(f"{'':>77}{'=' * 16}")
+#         lines.append(f"{'':>77}{_d(detail_grand):>18}")
+
+#     with open(output_path, "w", encoding="latin1") as fh:
+#         fh.write("\n".join(lines) + "\n")
+
+# ============================================================================
+# TOP 100 REPORT WRITER  (PROC PRINT look-alike, LRECL=320, PS=60, CRLF)
+# ============================================================================
+_T_LS, _T_PS, _T_OBSW, _T_MAXW = 320, 60, 8, 128   # linesize, pagesize, Obs col width, max row width
+_T_SEP = "-" * 16
+
+
+def _fnum(v) -> str:
+    """SAS COMMA16.2: keep the commas when the value fits in 16 characters, otherwise drop them."""
+    x = float(v or 0.0)
+    s = f"{x:,.2f}"
+    return s if len(s) <= 16 else f"{x:.2f}"
+
+
+def _ctr(s: str, w: int, up: bool = False) -> str:
+    pad = w - len(s)
+    left = (pad + 1) // 2 if up else pad // 2
+    return " " * left + s + " " * (pad - left)
+
+
+def _fctr(txt: str, w: int, m: int) -> str:
+    """Right-align inside a field of the widest value (m), field centred (round up) in column w."""
+    start = (w - m + 1) // 2
+    return " " * start + txt.rjust(m) + " " * (w - start - m)
+
+
+def _wrap(label: str, w: int) -> list:
+    lines, cur = [], ""
+    for wd in label.split():
+        if not cur:
+            cur = wd
+        elif len(cur) + 1 + len(wd) <= w:
+            cur += " " + wd
+        else:
+            lines.append(cur)
+            cur = wd
+    return lines + [cur]
+
+
+def _cols(rows: list) -> dict:
+    """Column widths of one BY group (empty list -> minimum widths)."""
+    mx = lambda k, lo: max([lo] + [len(str(r[k])) for r in rows])
+    w = {"b": mx("BRANCH", 6), "a": mx("ACCTNO", 10 if rows else 6), "n": mx("CUSTNAME", 9),
+         "c": mx("CUSTNO", 6), "i": mx("NEWIC", 6),
+         "o": max([len(r["OLDIC"]) for r in rows] + [0]) or 3, "m": 16, "p": 7,
+         "mb": max([len(str(r["BRANCH"])) for r in rows] + [3]),
+         "mc": max([len(str(r["CUSTNO"])) for r in rows] + [0 if rows else 6]),
+         "mp": max([len(str(r["PRODUCT"])) for r in rows] + [0 if rows else 3])}
+    tot = _T_OBSW + w["b"] + w["a"] + w["n"] + w["c"] + w["i"] + w["o"] + w["m"] + w["p"]
+    g = 4
+    while g > 1 and tot + 7 * g > _T_MAXW:
+        g -= 1
+    w["g"] = g
+    return w
+
+
+def _mcol(w: dict) -> int:
+    """Start offset of the CURBAL column."""
+    return _T_OBSW + 7 * w["g"] + w["b"] + w["a"] + w["n"] + w["c"] + w["i"] + w["o"]
+
+
+def _hdr(rows: list, w: dict, sums: bool) -> list:
+    dat_m = max([len(_fnum(r["CURBAL"])) for r in rows] + [0])
+    nal = "r" if sums else "cn"
+    spec = [("BRANCH CODE", "b", "cn"), ("MNI NO", "a", nal), ("DEPOSITOR", "n", "c"), ("CIS NO", "c", nal),
+            ("NEW IC", "i", "c"), ("OLD IC", "o", "c"), ("CURRENT BALANCE", "m", "r"), ("PRODUCT", "p", "cn")]
+    labs = [_wrap(lbl, max(max(len(x) for x in lbl.split()), dat_m if k == "m" else w[k])) for lbl, k, _ in spec]
+    nl = max(len(x) for x in labs)
+    out = []
+    for ln in range(nl):
+        s = "Obs".rjust(_T_OBSW) if ln == nl - 1 else " " * _T_OBSW
+        for (lbl, k, al), L in zip(spec, labs):
+            t = ([""] * (nl - len(L)) + L)[ln]
+            cell = t.rjust(w[k]) if al == "r" else _ctr(t, w[k], up=(al == "cn"))
+            s += " " * w["g"] + cell
+        out.append(s.rstrip())
+    return out
+
+
+def _row(obs: int, r: dict, w: dict) -> str:
+    g = " " * w["g"]
+    return (str(obs).rjust(_T_OBSW) + g + _fctr(str(r["BRANCH"]), w["b"], w["mb"]) + g
+            + str(r["ACCTNO"]).rjust(w["a"]) + g + _ctr(r["CUSTNAME"], w["n"]) + g
+            + _fctr(str(r["CUSTNO"]), w["c"], w["mc"]) + g + _ctr(r["NEWIC"], w["i"]) + g
+            + _ctr(r["OLDIC"], w["o"]) + g + _fnum(r["CURBAL"]).rjust(w["m"]) + g
+            + _fctr(str(r["PRODUCT"]), w["p"], w["mp"])).rstrip()
+
+
+def _sumln(label: str, val, mc: int) -> str:
+    return label.rjust(_T_OBSW) + " " * (mc - _T_OBSW) + _fnum(val).rjust(16)
+
+
+def _dash(mc: int) -> str:
+    return "--------".rjust(_T_OBSW) + " " * (mc - _T_OBSW) + _T_SEP
+
+
+def _summary_lines(summary: pl.DataFrame, title: str) -> list:
+    rows = summary.to_dicts()
+    out, cap = [], _T_PS - 4
+    zero = lambda v: "0  " if not v else _fnum(v)
+    for p0 in range(0, len(rows), cap):
+        page = rows[p0:p0 + cap]
+        wn = max([9] + [len(str(r["CUSTNAME"] or "")[:40]) for r in page])
+        out += [title, "", f"{'Obs':<3}    {'DEPOSITOR':<{wn}}    {'TOTAL BALANCE':>16}    {'FD BALANCE':>16}    {'CA BALANCE':>16}", ""]
+        for k, r in enumerate(page, start=p0 + 1):
+            out.append(f"{k:>3}    {str(r['CUSTNAME'] or '')[:40]:<{wn}}    {_fnum(r['CURBAL']):>16}"
+                       f"    {zero(r['FDBAL']):>16}    {zero(r['CABAL']):>16}")
+    return out
+
+
+def _detail_lines(detail: pl.DataFrame, title: str) -> list:
+    rows = []
+    for r in detail.to_dicts():
+        rows.append({"ICNO": r["ICNO"] or "", "CUSTNAME": r["CUSTNAME"] or "", "BRANCH": r["BRANCH"] or 0,
+                     "ACCTNO": r["ACCTNO"] or 0, "CUSTNO": r["CUSTNO"] or 0, "NEWIC": r["NEWIC"] or "",
+                     "OLDIC": r["OLDIC"] or "", "CURBAL": r["CURBAL"] or 0.0, "PRODUCT": r["PRODUCT"] or 0})
+    groups = []
+    for r in rows:
+        k = (r["ICNO"], r["CUSTNAME"])
+        if not groups or groups[-1][0] != k:
+            groups.append((k, []))
+        groups[-1][1].append(r)
+
+    out, st, obs = [], {"u": 0}, 0
+
+    def emit(lines):
+        out.extend(lines)
+        st["u"] += len(lines)
+
+    def newpage():
+        out.extend([title, ""])
+        st["u"] = 2
+
+    newpage()
+    for gi, (k, grp) in enumerate(groups):
+        n, w = len(grp), _cols(grp)
+        mc, tot = _mcol(w), sum(r["CURBAL"] for r in grp)
+        by = f"ICNO={k[0]} DEPOSITOR={k[1]}"
+
+        def head(cont, sums):
+            return [by] + (["(continued)"] if cont else []) + [""] + _hdr(grp, w, sums) + [""]
+
+        def minhead():
+            wm = _cols([])
+            return [by, "(continued)", ""] + _hdr([], wm, True) + [""], _mcol(wm)
+
+        gap = 0 if gi == 0 else 2
+        if gi and st["u"] + gap + len(head(False, False)) + 1 > _T_PS - 1:
+            newpage()
+            gap = 0
+        idx, cont = 0, False
+        while idx < n:
+            hl = len(head(cont, False))
+            space = _T_PS - 1 - st["u"] - gap - hl
+            if space < 1:
+                newpage()
+                gap, cont = 0, True
+                continue
+            take = min(space, n - idx)
+            sums = idx + take == n and n > 1 and st["u"] + gap + hl + take + 2 <= _T_PS
+            emit([""] * gap + head(cont, sums))
+            gap = 0
+            por = grp[idx:idx + take]
+            wp = dict(w, mb=max(len(str(r["BRANCH"])) for r in por), mp=max(len(str(r["PRODUCT"])) for r in por))
+            for r in por:
+                obs += 1
+                emit([_row(obs, r, wp)])
+            idx += take
+            if idx < n:
+                newpage()
+                cont = True
+        if n > 1:
+            mcur = mc
+            if st["u"] + 2 > _T_PS:
+                newpage()
+                hl_, mcur = minhead()
+                emit(hl_)
+            emit([_dash(mcur), _sumln("CUSTNAME", tot, mcur)])
+            if st["u"] + 2 > _T_PS:
+                full = st["u"] >= _T_PS
+                newpage()
+                if full:
+                    hl_, mcur = minhead()
+                    emit(hl_)
+                    emit([_dash(mcur)])
+                else:
+                    emit(head(True, True))
+                    mcur = mc
+            emit([_sumln("ICNO", tot, mcur)])
+    mc = _mcol(_cols(groups[-1][1]))
+    grand = sum(r["CURBAL"] for r in rows)
+    out += [" " * mc + "=" * 16, " " * mc + _fnum(grand).rjust(16)]
+    return out
+
+
+def _write_top100_report(summary, detail, title, rdate, output_path):
+    ttl = f"{title} AS AT {rdate}"
+    lines = _summary_lines(summary, ttl)
+    if detail is not None and detail.height > 0:
+        lines += _detail_lines(detail, ttl)
+    with open(output_path, "w", encoding="latin1", newline="") as fh:
+        fh.write("".join(f"{ln:<{_T_LS}}\r\n" for ln in lines))
+
+
+# ============================================================================
+# MAIN ENTRY POINT
+# ============================================================================
+def run_eibmrlfm(
+    bnm1_loan_cache: Path, bnm1_uloan_cache: Path, lncomm_cache: Path, provsub_txt_path: Path, lnpay_cache: Path,
+    fd_fd_cache: Path, bnm_savg_cache: Path, bnm_curn_cache: Path, deposit_current_cache: Path, deposit_fd_cache: Path,
+    forate_cache: Path, foratebkp_cache: Path, dciwh_dci_cache: Path, bnmk_dciwtb_cache: Path, nid_rnid_cache: Path,
+    k1tbl_cache: Path, k3tbl_cache: Path, cisln_deposit_cache: Path, cisdp_deposit_cache: Path,
+    ctx: dict, output_dir: Path,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    inst = "PBB"
+
+    print("  Building NOTE (loans)...")
+    note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ctx)
+    print("  Building FD / SA / CA / VOSTRO / FCYCA...")
+    fd = _build_fd(fd_fd_cache, ctx)
+    sa = _build_sa(bnm_savg_cache)
+    ca = _build_ca(bnm_curn_cache)
+    _vostro = _build_vostro(bnm_curn_cache)  # LCR.VOSTRO -- passive output, no BNMCODE role downstream
+    fcyca = _build_fcyca(deposit_current_cache)
+    print("  Building UNOTE (undrawn portion)...")
+    unote = _build_undrawn(bnm1_loan_cache, bnm1_uloan_cache, lncomm_cache, ctx)
+    print("  Building DCI / DCIW / NID...")
+    dci = pl.concat([_build_dci(dciwh_dci_cache, forate_cache, foratebkp_cache, ctx),
+                      _build_dciw(bnmk_dciwtb_cache, ctx)], how="diagonal_relaxed")
+    nid = _build_nid(nid_rnid_cache, ctx)
+
+    print("  Building KAPITI items (KALMLIQ + KALMLIFE)...")
+    ktbl, dist_summary = build_kalmliq(k1tbl_cache, k3tbl_cache, ctx["reptdate"], ctx["rpyr"], ctx["rpmth"], ctx["rpday"], ctx["rd_days"], inst=inst)
+    ktbl = ktbl.with_columns([pl.lit(0.0).alias("AMTHKD"), pl.lit(0.0).alias("AMTAUD")])
+    k3fei = build_k3fei(k3tbl_cache, ctx["reptmon"], ctx["reptyear"])
+    k3fei_norm = k3fei.rename({"ITCODE": "BNMCODE"}).with_columns([
+        pl.lit(0.0).alias("AMTUSD"), pl.lit(0.0).alias("AMTSGD"),
+        pl.lit(0.0).alias("AMTHKD"), pl.lit(0.0).alias("AMTAUD"),
+    ]).select(["BNMCODE", "AMOUNT", "AMTUSD", "AMTSGD", "AMTHKD", "AMTAUD"])
+
+    print("  Consolidating and summarising...")
+    combined = pl.concat([
+        _summarize(note), _summarize(fd), _summarize(sa), _summarize(ca),
+        _summarize(fcyca), _summarize(unote), _summarize(dci), _summarize(nid),
+        _summarize(ktbl), k3fei_norm,
+    ], how="diagonal_relaxed")
+    note_final = (
+        combined
+        .group_by("BNMCODE")
+        .agg([
+            pl.col("AMOUNT").sum(),pl.col("AMTUSD").sum(),pl.col("AMTSGD").sum(),
+            pl.col("AMTHKD").sum(),pl.col("AMTAUD").sum(),
+        ])
+        .sort("BNMCODE")
+    )
+
+    print("  Writing FISS / NSRS...")
+    fiss_path, nsrs_path = output_dir / "FISS.txt", output_dir / "NSRS.txt"
+    _write_fiss_nsrs(note_final, ctx, fiss_path, nsrs_path)
+
+    print("  Writing NLF distribution (SUPPL) report...")
+    suppl_path = output_dir / "NLF_SUPPL.txt"
+    _write_suppl_report(dist_summary, ctx["rdate"], suppl_path)
+
+    print("  Building TOP 100 individual/corporate reports...")
+    top_ind, top_org, det_ind, det_org = _build_top100(
+        cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache
+    )
+    fd11_path, fd12_path = output_dir / "INDTOP50.txt", output_dir / "CORTOP50.txt"
+    _write_top100_report(top_ind, det_ind, "TOP 100 LARGEST FD+CA INDIVIDUAL CUSTOMERS", ctx["rdate"], fd11_path)
+    _write_top100_report(top_org, det_org, "TOP 100 LARGEST FD+CA CORPORATE CUSTOMERS", ctx["rdate"], fd12_path)
+
+    print("EIBMRLFM complete. Outputs:")
+    for p in (fiss_path, nsrs_path, suppl_path, fd11_path, fd12_path):
+        print(f"  - {p}")
