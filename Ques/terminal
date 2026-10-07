@@ -1,15 +1,16 @@
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py
+Step 1: Deriving report date...
+  RDATE: 06/10/26
+
+Step 2: Caching input SAS datasets to Parquet...
+  [DEPO.CURRENT] Cache fresh - skipping conversion.
+  [IDEPO.CURRENT] Cache fresh - skipping conversion.
+  [CIS.DEPOSIT] Cache fresh - skipping conversion.
+
 Step 3: Building ALLCURRENT...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py", line 213, in <module>
-    _load_current(DEPO_CURRENT_CACHE, "PBB", "PBB", 3590000000, 3599999999),
-TypeError: _load_current() takes 4 positional arguments but 5 were given
+  ALLCURRENT rows: 0
 
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMRBDP/EIBMRB03.txt
+  Total lines    : 0
 
-
-
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII")
-
-INPUT_DEPO_CURRENT_FILE  = STG_DIR / "MNITB" / "PBB"        / "current.sas7bdat"   # DEPO.CURRENT
-INPUT_IDEPO_CURRENT_FILE = STG_DIR / "MNITB" / "PIBB"       / "current.sas7bdat"   # IDEPO.CURRENT
-INPUT_CIS_DEPOSIT_FILE   = STG_DIR / "CIS"   / "CISBEXT_DP" / "deposit.sas7bdat"   # CIS.DEPOSIT
+EIBMRB03 complete.
