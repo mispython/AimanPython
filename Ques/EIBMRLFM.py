@@ -158,6 +158,7 @@ def _summarize(df: pl.DataFrame) -> pl.DataFrame:
 # ============================================================================
 _MAX_ROUNDS = 500       # Before 5000
 _IND_CODES = [77.0, 78.0, 95.0, 96.0]
+_CIS_KEEP = ["CUSTNO", "ACCTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"]
 _PAYFREQ_MONTHS = {"1": 1, "2": 3, "3": 6, "4": 12}
 _CCY_COLS = ("USD", "SGD", "HKD", "AUD")
 
@@ -873,13 +874,13 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
                COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
         FROM read_parquet('{cisln_deposit_cache.as_posix()}')
         WHERE ACCTNO BETWEEN 3000000000 AND 3999999999
-    """).pl()
+    """).pl().select(_CIS_KEEP)
     cisfd = con.execute(f"""
         SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO),
                COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
         FROM read_parquet('{cisdp_deposit_cache.as_posix()}')
         WHERE (ACCTNO BETWEEN 1000000000 AND 1999999999) OR (ACCTNO BETWEEN 7000000000 AND 7999999999)
-    """).pl()
+    """).pl().select(_CIS_KEEP)
     ca = con.execute(f"""
         SELECT * FROM read_parquet('{deposit_current_cache.as_posix()}') WHERE CURBAL > 0
     """).pl().with_columns([
@@ -897,21 +898,52 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
     ca_excl = {400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411}
     fd_excl = {350, 351, 352, 353, 354, 355, 356, 357}
 
-    ca_j = ca.join(cisca, on="ACCTNO", how="inner").filter(
-        (pl.col("PURPOSE") != "2") & (~pl.col("PRODUCT").is_in(ca_excl))
-    )
-    fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter(
-        (pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_excl))
-    )
-    # Align FD-only column name to the CA-side name so PRODUCT survives the concat
-    fd_j = fd_j.with_columns(
-        pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT")
+    # ca_j = ca.join(cisca, on="ACCTNO", how="inner").filter(
+    #     (pl.col("PURPOSE") != "2") & (~pl.col("PRODUCT").is_in(ca_excl))
+    # )
+    # fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter(
+    #     (pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_excl))
+    # )
+    # # Align FD-only column name to the CA-side name so PRODUCT survives the concat
+    # fd_j = fd_j.with_columns(
+    #     pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT")
+    # )
+
+    cis_cols = [c for c in _CIS_KEEP if c != "ACCTNO"]
+
+    # SAS: MERGE CA(IN=A) CISCA  -> keep every CA row; CIS (later dataset) wins on shared columns
+    ca_j = (
+        ca.drop([c for c in cis_cols if c in ca.columns])
+        .join(cisca, on="ACCTNO", how="left")
+        .filter(
+            pl.col("PURPOSE").ne_missing("2")
+            & ~pl.col("PRODUCT").is_in(ca_excl).fill_null(False)
+        )
     )
 
-    ca_ind = ca_j.filter(pl.col("CUSTCODE").is_in([77, 78, 95, 96]))
-    ca_org = ca_j.filter((~pl.col("CUSTCODE").is_in([77, 78, 95, 96])) & (pl.col("INDORG") == "O"))
-    fd_ind = fd_j.filter(pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0]))
-    fd_org = fd_j.filter((~pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0])) & (pl.col("INDORG") == "O"))
+    # SAS: MERGE CISFD FD(IN=A)  -> keep every FD row; FD (later dataset) wins on shared columns
+    fd_j = (
+        fd.join(cisfd.drop([c for c in cis_cols if c in fd.columns]), on="ACCTNO", how="left")
+        .filter(
+            pl.col("PURPOSE").ne_missing("2")
+            & ~pl.col("ACCTTYPE").is_in(fd_excl).fill_null(False)
+        )
+        .with_columns(pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT"))
+    )
+
+    # ca_ind = ca_j.filter(pl.col("CUSTCODE").is_in([77, 78, 95, 96]))
+    # ca_org = ca_j.filter((~pl.col("CUSTCODE").is_in([77, 78, 95, 96])) & (pl.col("INDORG") == "O"))
+    # fd_ind = fd_j.filter(pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0]))
+    # fd_org = fd_j.filter((~pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0])) & (pl.col("INDORG") == "O"))
+
+    # CA table uses CUSTCODE; FD table uses CUSTCD (the FD parquet has no CUSTCODE column)
+    ca_is_ind = pl.col("CUSTCODE").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
+    fd_is_ind = pl.col("CUSTCD").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
+
+    ca_ind = ca_j.filter(ca_is_ind)
+    ca_org = ca_j.filter(~ca_is_ind & (pl.col("INDORG") == "O"))
+    fd_ind = fd_j.filter(fd_is_ind)
+    fd_org = fd_j.filter(~fd_is_ind & (pl.col("INDORG") == "O"))
 
     # The exact columns the report needs, with the exact dtypes both sides must agree on.
     _REPORT_COLS = [
@@ -1025,16 +1057,27 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
             ))
         data1 = data1.filter(pl.col("ICNO") != "")
 
-        # one line per account (FD receipts are summed), as in the SAS report
-        data1 = data1.group_by(["SRC", "ACCTNO"], maintain_order=True).agg(
-            [pl.col(c).first() for c in ("BRANCH", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT", "ICNO")]
+        # SAS shows one line per MNI NO per customer: sum the FD receipts of that account.
+        # ICNO + CUSTNAME are in the key so joint holders are NOT added together.
+        data1 = data1.group_by(["SRC", "ACCTNO", "ICNO", "CUSTNAME"], maintain_order=True).agg(
+            [pl.col(c).first() for c in ("BRANCH", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT")]
             + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
         )
+
+        # # one line per account (FD receipts are summed), as in the SAS report
+        # data1 = data1.group_by(["SRC", "ACCTNO"], maintain_order=True).agg(
+        #     [pl.col(c).first() for c in ("BRANCH", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT", "ICNO")]
+        #     + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
+        # )
 
         summary = (
             data1.group_by(["ICNO", "CUSTNAME"], maintain_order=True)
             .agg([pl.col("CURBAL").sum(), pl.col("FDBAL").sum(), pl.col("CABAL").sum()])
-            .sort("CURBAL", descending=True, maintain_order=True)
+            # .sort("CURBAL", descending=True, maintain_order=True)
+            # .head(100)
+            .with_columns(_ebcdic("ICNO").alias("_K1"), _ebcdic("CUSTNAME").alias("_K2"))
+            .sort(["CURBAL", "_K1", "_K2"], descending=[True, False, False], maintain_order=True)
+            .drop(["_K1", "_K2"])
             .head(100)
         )
         keys = summary.select(["ICNO", "CUSTNAME"])
@@ -1158,7 +1201,10 @@ _T_SEP = "-" * 16
 
 
 def _fnum(v) -> str:
-    return f"{float(v or 0.0):,.2f}"
+    """SAS COMMA16.2: keep the commas when the value fits in 16 characters, otherwise drop them."""
+    x = float(v or 0.0)
+    s = f"{x:,.2f}"
+    return s if len(s) <= 16 else f"{x:.2f}"
 
 
 def _ctr(s: str, w: int, up: bool = False) -> str:
