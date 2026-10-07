@@ -1,16 +1,12 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py
-Step 1: Deriving report date...
-  RDATE: 06/10/26
+Step 3: Building ALLFD...
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB04.py", line 203, in <module>
+    _load_fd(DEPO_FD_CACHE, "PBB", ""),
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB04.py", line 198, in _load_fd
+    return _read_pq(cache, _COLS, where).with_columns(pl.lit(entity).alias("SNAME"))
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB04.py", line 125, in _read_pq
+    return con.execute(
+_duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
+Candidate bindings: "INTYTD", "INTCYCODE", "STATCD", "OPENIND", "INTRSTPD"
 
-Step 2: Caching input SAS datasets to Parquet...
-  [DEPO.CURRENT] Cache fresh - skipping conversion.
-  [IDEPO.CURRENT] Cache fresh - skipping conversion.
-  [CIS.DEPOSIT] Cache fresh - skipping conversion.
-
-Step 3: Building ALLCURRENT...
-  ALLCURRENT rows: 0
-
-  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMRBDP/EIBMRB03.txt
-  Total lines    : 0
-
-EIBMRB03 complete.
+LINE 1: .../MIS/XMIS/input/cache/EIBMRBDP/DEPO_FD.parquet') WHERE TRIM(ENTITY_CD) = 'PBB'  AND COALESCE(CUSTCODE,-1) NOT IN (77...
