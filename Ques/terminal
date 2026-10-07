@@ -1,12 +1,27 @@
-Step 3: Building ALLFD...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB04.py", line 203, in <module>
-    _load_fd(DEPO_FD_CACHE, "PBB", ""),
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB04.py", line 198, in _load_fd
-    return _read_pq(cache, _COLS, where).with_columns(pl.lit(entity).alias("SNAME"))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB04.py", line 125, in _read_pq
-    return con.execute(
-_duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
-Candidate bindings: "INTYTD", "INTCYCODE", "STATCD", "OPENIND", "INTRSTPD"
-
-LINE 1: .../MIS/XMIS/input/cache/EIBMRBDP/DEPO_FD.parquet') WHERE TRIM(ENTITY_CD) = 'PBB'  AND COALESCE(CUSTCODE,-1) NOT IN (77...
+Rows: 225 | CUSTNAME null: 225 | CUSTNAME blank: 225
+shape: (5, 2)
+┌────────────┬──────────┐
+│ ACCTNO     ┆ CUSTNAME │
+│ ---        ┆ ---      │
+│ i64        ┆ str      │
+╞════════════╪══════════╡
+│ 1448729328 ┆ null     │
+│ 1450504619 ┆ null     │
+│ 1448737525 ┆ null     │
+│ 1446989424 ┆ null     │
+│ 1448881800 ┆ null     │
+└────────────┴──────────┘
+shape: (5, 2)
+┌────────────┬─────────────────────────┐
+│ ACCTNO     ┆ CUSTNAME                │
+│ ---        ┆ ---                     │
+│ i64        ┆ str                     │
+╞════════════╪═════════════════════════╡
+│ 3000000333 ┆ TEH HONG PIOW           │
+│ 3060000633 ┆ SURESH A/L MUNIANDY     │
+│ 3060000730 ┆ CHOOI WAI KUAN          │
+│ 3060001628 ┆ LONPAC INSURANCE BHD    │
+│ 3060002235 ┆ CREATIVE PILLAR SDN BHD │
+└────────────┴─────────────────────────┘
+CIS rows: 1139272 | ACCTNO range: 3000000333 - 6711615008
+FD  ACCTNO range: 1399698036 - 1995402112
