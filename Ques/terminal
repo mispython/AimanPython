@@ -1,13 +1,15 @@
 Step 3: Building ALLCURRENT...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py", line 206, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py", line 213, in <module>
     _load_current(DEPO_CURRENT_CACHE, "PBB", "PBB", 3590000000, 3599999999),
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py", line 201, in _load_current
-    return _read_pq(cache, _COLS, where).with_columns(pl.lit(sname).alias("SNAME"))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB03.py", line 125, in _read_pq
-    return con.execute(
-_duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
-Candidate bindings: "INTYTD", "INTCYCODE", "STATCD", "OPENIND", "INTRSTPD"
+TypeError: _load_current() takes 4 positional arguments but 5 were given
 
-LINE 1: .../XMIS/input/cache/EIBMRBDP/DEPO_CURRENT.parquet') WHERE TRIM(ENTITY_CD) = 'PBB' AND NOT (COALESCE(ACCTNO,0) BETWEEN 3590...
-                                                                        ^
+
+
+
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR = Path("/stgsrcsys/host/uat/AII")
+
+INPUT_DEPO_CURRENT_FILE  = STG_DIR / "MNITB" / "PBB"        / "current.sas7bdat"   # DEPO.CURRENT
+INPUT_IDEPO_CURRENT_FILE = STG_DIR / "MNITB" / "PIBB"       / "current.sas7bdat"   # IDEPO.CURRENT
+INPUT_CIS_DEPOSIT_FILE   = STG_DIR / "CIS"   / "CISBEXT_DP" / "deposit.sas7bdat"   # CIS.DEPOSIT
