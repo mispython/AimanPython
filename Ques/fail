@@ -3,3 +3,12 @@ def _fnum(v) -> str:
     x = float(v or 0.0)
     s = f"{x:,.2f}"
     return s if len(s) <= 16 else f"{x:.2f}"
+
+
+
+
+def _read_sas_kapiti(path) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    df = con.execute(f"SELECT * FROM read_parquet('{Path(path).as_posix()}')").pl()
+    con.close()
+    return df
