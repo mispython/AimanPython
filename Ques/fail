@@ -1,6 +1,24 @@
-print("Rows:", len(allfd), "| CUSTNAME null:", allfd["CUSTNAME"].null_count(),
-      "| CUSTNAME blank:", (allfd["CUSTNAME"].fill_null("").str.strip_chars() == "").sum())
-print(allfd.select("ACCTNO", "CUSTNAME").head(5))
-print(cisfd.select("ACCTNO", "CUSTNAME").head(5))
-print("CIS rows:", len(cisfd), "| ACCTNO range:", cisfd["ACCTNO"].min(), "-", cisfd["ACCTNO"].max())
-print("FD  ACCTNO range:", allfd["ACCTNO"].min(), "-", allfd["ACCTNO"].max())
+def _src_signature(sas_path: Path) -> str:
+    st = sas_path.stat()
+    return f"{sas_path.resolve()}|{st.st_size}|{st.st_mtime_ns}"
+
+
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    meta_path = cache_path.with_suffix(".src")
+    return (
+        cache_path.exists()
+        and meta_path.exists()
+        and meta_path.read_text() == _src_signature(sas_path)
+    )
+
+
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{tag.replace('.', '_')}.parquet"
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
+    else:
+        _sas_to_parquet(sas_path, cache_path, tag)
+        cache_path.with_suffix(".src").write_text(_src_signature(sas_path))
+    return cache_path
