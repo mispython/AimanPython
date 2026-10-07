@@ -32,6 +32,7 @@ import gc
 from datetime import date
 from pathlib import Path
 from typing import Optional
+from datetime import date, timedelta
 
 import pandas as pd
 import pyarrow as pa
@@ -158,15 +159,13 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # ============================================================================
 def _derive_reptdate_context() -> dict:
     """DATA BNM.REPTDATE; SET DEPOSIT.REPTDATE; SELECT(DAY(REPTDATE)) ...
-    No reptdate.parquet exists for this job family -- the date value is
-    sourced from REPTDATE.py, NOWK is derived locally with exact-day
-    matching (8/15/22/else->4), matching the SAS source exactly."""
-    values = get_reptdate_values(year_format="%Y")
-    reptdate = values.reptdate
+    No reptdate.parquet exists for this job family, so the report date is
+    derived here as the previous calendar day (batch runs the morning after).
+    NOWK uses exact-day matching (8/15/22/else->4), matching the SAS source."""
+    reptdate = date.today() - timedelta(days=1)    # report date rule
 
     # DEBUG - Need to remove for production run
-    from datetime import date as _date
-    reptdate = _date(2026, 9, 30)
+    reptdate = date(2026, 9, 30)
 
     day = reptdate.day
     nowk = "1" if day == 8 else "2" if day == 15 else "3" if day == 22 else "4"
