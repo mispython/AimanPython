@@ -7,8 +7,8 @@ Dependency:
     %INC PGM(PBBELF) -> from PBBELF import format_brchcd   (BRABBR=PUT(BRANCH,BRCHCD.))
 
 Physical inputs (each cached to Parquet independently):
-    DEPO.FD   (SAP.PBB.MNITB)      -> ENTITY_CD 'PBB'
-    IDEPO.FD  (SAP.PIBB.MNITB)     -> ENTITY_CD 'PIBB'
+    DEPO.FD   (SAP.PBB.MNITB)
+    IDEPO.FD  (SAP.PIBB.MNITB)
     CIS.DEPOSIT (SAP.PBB.CRM.CISBEXT)
     All file names are fixed (no date token), so input_date.py is not used.
 
@@ -37,9 +37,9 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_DEPO_FD_FILE = STG_DIR / "sasdata" / "intg_dp_acct_fd_d19.sas7bdat"           # DEPO.FD
-INPUT_IDEPO_FD_FILE = STG_DIR / "sasdata" / "intg_dp_acct_fd_d19.sas7bdat"          # IDEPO.FD
-INPUT_CIS_DEPOSIT_FILE = STG_DIR / "sasdata" / "crm_cisbext_deposit_d19.sas7bdat"   # CIS.DEPOSIT
+INPUT_DEPO_FD_FILE      = STG_DIR / "MNITB" / "PBB"        / "fd.sas7bdat"          # DEPO.FD
+INPUT_IDEPO_FD_FILE     = STG_DIR / "MNITB" / "PIBB"       / "fd.sas7bdat"          # IDEPO.FD
+INPUT_CIS_DEPOSIT_FILE  = STG_DIR / "CIS"   / "CISBEXT_DP" / "deposit.sas7bdat"     # CIS.DEPOSIT
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -111,7 +111,7 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    cache_path = CACHE_DIR / f"{tag.replace('.', '_')}.parquet"   # e.g. DEPO_SAVING.parquet / IDEPO_SAVING.parquet
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
