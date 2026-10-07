@@ -1,18 +1,122 @@
-def _load_source(cache: Path, label: str, extra: str, atype: int, btype: int) -> pl.DataFrame:
-    # label ("PBB"/"PIBB") is informational only; the entity is determined by which file is read
-    where = f"CURBAL > 0 AND {extra}"
-    return _read_pq(cache, _COLS, where).with_columns(
-        pl.lit(atype, dtype=pl.Int8).alias("ATYPE"),
-        pl.lit(btype, dtype=pl.Int8).alias("BTYPE"),
-    )
+import numpy as np
 
 
 
 
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{tag.replace('.', '_')}.parquet"   # e.g. DEPO_SAVING.parquet / IDEPO_SAVING.parquet
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
+LRECL = 133                 # //SASLIST LRECL=133
+MISSING_CHAR = "0"          # OPTIONS MISSING=0
+
+
+
+
+def _comma_text(value) -> str:
+    """COMMA16. with leading blanks trimmed (list-style PUT). Rounds the exact double, as SAS does."""
+    if value is None:
+        return MISSING_CHAR
+    return f"{Decimal(float(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP):,.0f}"
+
+
+def _put_wrapped(start_col: int, parts: list) -> list:
+    """List-style PUT @start_col: each ('var', text) is written followed by one blank;
+    each ('lit', text) is written as is. Anything that does not fit in LRECL starts a new line at column 1."""
+    lines = []
+    buf = " " * (start_col - 1)
+    for kind, text in parts:
+        if len(buf) + len(text) > LRECL:
+            lines.append(buf)
+            buf = ""
+        buf += text + (" " if kind == "var" else "")
+    lines.append(buf)
+    return lines
+
+
+
+
+# ============================================================================
+# STEP 4: PROC SUMMARY + TEMP (per-branch pivot) + TOTAL
+# ============================================================================
+print("\nStep 4: Summarising by branch...")
+
+
+def _abbr(branch: int) -> str:
+    """BRABBR=PUT(BRANCH,BRCHCD.): a branch with no mapping in the format prints as its own number (e.g. 998)."""
+    text = format_brchcd(branch)
+    text = str(text).strip() if text is not None else ""
+    return text or str(branch)
+
+
+# CLASS BRANCH: observations with a missing BRANCH are dropped.
+dep = deposit.filter(pl.col("BRANCH").is_not_null())
+branch_codes = np.sort(dep["BRANCH"].unique().to_numpy())
+branch_abbr = {int(b): _abbr(int(b)) for b in branch_codes}
+
+_PIVOT = {"SA": (1, 1), "ISA": (1, 2), "CA": (2, 1), "ICA": (2, 2), "FD": (3, 1), "IFD": (3, 2)}
+
+slot = np.searchsorted(branch_codes, dep["BRANCH"].to_numpy())
+curbal = dep["CURBAL"].to_numpy()
+atype = dep["ATYPE"].to_numpy()
+btype = dep["BTYPE"].to_numpy()
+
+pivot = {}
+for name, (a, b) in _PIVOT.items():
+    mask = (atype == a) & (btype == b)
+    acc = np.zeros(len(branch_codes), dtype=np.float64)
+    np.add.at(acc, slot[mask], curbal[mask])      # sequential accumulation in input order, like PROC SUMMARY
+    pivot[name] = acc
+
+temp = pl.DataFrame({"BRANCH": branch_codes, **pivot}).with_columns(
+    (pl.col("SA") + pl.col("ISA")).alias("TSA"),
+    (pl.col("CA") + pl.col("ICA")).alias("TCA"),
+    (pl.col("FD") + pl.col("IFD")).alias("TFD"),
+)
+
+
+
+
+# ============================================================================
+# STEP 5: WRITE REPORT
+# ============================================================================
+_VALUE_COLS = ["SA", "ISA", "TSA", "CA", "ICA", "TCA", "FD", "IFD", "TFD"]
+
+
+def _value_parts(rec: dict) -> list:
+    parts = []
+    for i, c in enumerate(_VALUE_COLS):
+        if i:
+            parts.append(("lit", ";"))
+        parts.append(("var", _comma_text(rec[c])))
+    return parts
+
+
+report_lines = []
+if not temp.is_empty():
+    report_lines += [
+        _put(1, "REPORT ID : EIBMRB02"),
+        _put(1, "MONTHLY SAVINGS/CURRENT/FIXED DEPOSIT ACCOUNT OUTSTANDING", " AMOUNT"),
+        _put(1, "AS AT ", CTX["rdate"]),
+        _put(1, " "),
+        _put(2, "BRANCH;BRANCH;;SAVING(RM) ;;;CURRENT(RM);;;FIXED DEPOSIT(RM)"),
+        _put(2, "CODE;ABBR;PBB;PIBB;TOTAL;PBB;PIBB;TOTAL;PBB;PIBB;TOTAL"),
+    ]
+    for rec in temp.iter_rows(named=True):
+        report_lines += _put_wrapped(
+            2,
+            [("var", _best(rec["BRANCH"])), ("lit", ";"), ("var", branch_abbr[int(rec["BRANCH"])]), ("lit", ";")]
+            + _value_parts(rec),
+        )
+    # TOTAL (PROC SUMMARY without NWAY: first observation is the grand total), summed sequentially
+    grand = {c: float(np.cumsum(temp[c].to_numpy())[-1]) for c in _VALUE_COLS}
+    report_lines += _put_wrapped(2, [("lit", "TOTAL;;")] + _value_parts(grand))
+
+with open(OUTPUT_FILE, "w", encoding="latin1", newline="\n") as fh:
+    for ln in report_lines:
+        fh.write(ln[:LRECL].ljust(LRECL) + "\n")        # RECFM=FB, LRECL=133
+
+print(f"\n  Output written : {OUTPUT_FILE}")
+print(f"  Total lines    : {len(report_lines):,}")
+print("\n".join(ln.rstrip() for ln in report_lines))
+print("\nEIBMRB02 complete.")
+
+
+
+
