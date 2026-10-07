@@ -7,8 +7,8 @@ Dependency:
     %INC PGM(PBBELF) -> from PBBELF import format_brchcd   (BRABBR=PUT(BRANCH,BRCHCD.))
 
 Physical inputs (each cached to Parquet independently):
-    DEPO.CURRENT  (SAP.PBB.MNITB)   -> ENTITY_CD 'PBB'
-    IDEPO.CURRENT (SAP.PIBB.MNITB)  -> ENTITY_CD 'PIBB'
+    DEPO.CURRENT  (SAP.PBB.MNITB)
+    IDEPO.CURRENT (SAP.PIBB.MNITB)
     CIS.DEPOSIT   (SAP.PBB.CISBEXT.DP)
     All file names are fixed (no date token), so input_date.py is not used.
 
@@ -57,7 +57,12 @@ MISSING_CHAR = "."          # default MISSING option
 # ============================================================================
 def derive_report_context() -> dict:
     """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # DEBUG - UAT override
+    reptdate = date(2026, 9, 30)
+
     return {
         "reptdate": reptdate,
         "reptyear": reptdate.strftime("%Y"),
