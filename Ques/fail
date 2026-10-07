@@ -1,16 +1,6 @@
-def _load_current(cache: Path, sname: str, acct_lo: int, acct_hi: int) -> pl.DataFrame:
-    """DATA CURRENT/ICURRENT (acct-range exclusion) + WHERE of DATA ALLCURRENT."""
+def _load_fd(cache: Path, entity: str, extra: str) -> pl.DataFrame:
+    """DATA FD/IFD + WHERE of DATA ALLFD. SNAME is PUT('PBB',4.) / PUT('PIBB',4.)."""
     where = (
-        f"NOT (COALESCE(ACCTNO,0) BETWEEN {acct_lo} AND {acct_hi}) "
-        "AND COALESCE(CUSTCODE,-1) NOT IN (77,78,95,96) AND TRIM(CURCODE) = 'MYR' "
-        f"AND COALESCE(PRODUCT,-1) NOT IN ({_PRODUCT_EXCL})"
+        f"COALESCE(CUSTCODE,-1) NOT IN (77,78,95,96) AND TRIM(CURCODE) = 'MYR' {extra}"
     )
-    return _read_pq(cache, _COLS, where).with_columns(pl.lit(sname).alias("SNAME"))
-
-
-allcurrent = pl.concat(
-    [
-        _load_current(DEPO_CURRENT_CACHE, "PBB", 3590000000, 3599999999),
-        _load_current(IDEPO_CURRENT_CACHE, "PIBB", 3790000000, 3799999999),
-    ]
-)
+    return _read_pq(cache, _COLS, where).with_columns(pl.lit(entity).alias("SNAME"))
