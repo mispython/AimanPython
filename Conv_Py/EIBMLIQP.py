@@ -30,8 +30,9 @@ from pathlib import Path
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from datetime import date, timedelta
 
-from REPTDATE import get_reptdate_values
+# from REPTDATE import get_reptdate_values
 from DALWPBBD import build_savg_curn_dept
 from EIBMRLFM import run_eibmrlfm
 from EIBMTOP5 import run_eibmtop5
@@ -196,17 +197,41 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
     return cache_path
 
 
+# def _derive_reptdate_context() -> dict:
+#     """DATA BNM.REPTDATE; SET DEPOSIT.REPTDATE; SELECT(DAY(REPTDATE)) ...
+#     No reptdate.parquet exists for this job family -- the date value is
+#     sourced from REPTDATE.py, NOWK is derived locally with exact-day
+#     matching (8/15/22/else->4), matching the SAS source exactly."""
+#     values = get_reptdate_values(year_format="%Y")
+#     reptdate = values.reptdate
+
+#     # DEBUG - Need to remove for production run
+#     from datetime import date as _date      
+#     reptdate = _date(2026, 9, 30)
+
+#     day = reptdate.day
+#     nowk = "1" if day == 8 else "2" if day == 15 else "3" if day == 22 else "4"
+#     rd_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+#     if reptdate.year % 4 == 0:
+#         rd_days[1] = 29
+#     return {
+#         "reptdate": reptdate, "tdate": reptdate, "nowk": nowk,
+#         "reptyear": reptdate.strftime("%Y"), "reptyea2": reptdate.strftime("%y"),
+#         "reptmon": reptdate.strftime("%m"), "reptday": reptdate.strftime("%d"),
+#         "rdate": reptdate.strftime("%d/%m/%y"),
+#         "rpyr": reptdate.year, "rpmth": reptdate.month, "rpday": reptdate.day,
+#         "rd_days": rd_days,
+#     }
+
 def _derive_reptdate_context() -> dict:
     """DATA BNM.REPTDATE; SET DEPOSIT.REPTDATE; SELECT(DAY(REPTDATE)) ...
-    No reptdate.parquet exists for this job family -- the date value is
-    sourced from REPTDATE.py, NOWK is derived locally with exact-day
-    matching (8/15/22/else->4), matching the SAS source exactly."""
-    values = get_reptdate_values(year_format="%Y")
-    reptdate = values.reptdate
+    No reptdate.parquet exists for this job family, so the report date is
+    derived here as the previous calendar day (batch runs the morning after).
+    NOWK uses exact-day matching (8/15/22/else->4), matching the SAS source."""
+    reptdate = date.today() - timedelta(days=1)    # report date rule
 
     # DEBUG - Need to remove for production run
-    from datetime import date as _date      
-    reptdate = _date(2026, 9, 30)
+    reptdate = date(2026, 9, 30)
 
     day = reptdate.day
     nowk = "1" if day == 8 else "2" if day == 15 else "3" if day == 22 else "4"
