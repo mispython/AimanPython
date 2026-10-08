@@ -1,13 +1,13 @@
-Step 3: Building FCY (FCY FD + FCY CA)...
+Step 3: Building FCYCA...
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB05.py", line 232, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB07.py", line 203, in <module>
     [
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB05.py", line 233, in <listcomp>
-    _read_pq(cache, f"{_COLS}, 2 AS FTYPE", f"TRIM(ENTITY_CD) = '{entity}' AND {_ca_where}")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB05.py", line 138, in _read_pq
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB07.py", line 204, in <listcomp>
+    _read_pq(cache, _COLS, f"TRIM(ENTITY_CD) = '{entity}' AND {_WHERE}")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB07.py", line 127, in _read_pq
     return con.execute(
 _duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
 Candidate bindings: "INTYTD", "INTCYCODE", "STATCD", "OPENIND", "INTRSTPD"
 
-LINE 1: .../XMIS/input/cache/EIBMRBDP/PBB_current.parquet') WHERE TRIM(ENTITY_CD) = 'PBB' AND COALESCE(TRIM(CURCODE), '') <> 'MYR...
+LINE 1: .../XMIS/input/cache/EIBMRBDP/PBB_current.parquet') WHERE TRIM(ENTITY_CD) = 'PBB' AND COALESCE(CUSTCODE,-1) NOT IN (77...
                                                                        ^
