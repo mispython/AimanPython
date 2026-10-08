@@ -1,44 +1,142 @@
-CHUNK_ROWS = 500_000
-MISSING_CHAR = "."          # default MISSING option
-LRECL = 133                 # //SASLIST DD LRECL=133 (records padded with blanks)
+LRECL = 500                 # //SASLIST DD LRECL=500, RECFM=FB -> every record padded to 500
 
 
 
 
-def _lst(*texts: str) -> str:
-    """List-style PUT of variables each followed by a literal ';': value, one blank, then ';'."""
-    return "".join(f"{t} ;" for t in texts)
+def _comma(value, decimals: int = 0) -> str:
+    """COMMA16. in list-mode PUT: left-aligned, no padding; missing -> MISSING=0 character."""
+    if value is None:
+        return MISSING_CHAR
+    quant = Decimal(1).scaleb(-decimals)
+    return f"{Decimal(repr(float(value))).quantize(quant, rounding=ROUND_HALF_UP):,.{decimals}f}"
+
+
+def _int3(value) -> str:
+    """Format 3. in list-mode PUT (round half away from zero, left-aligned); missing -> MISSING=0."""
+    if value is None:
+        return MISSING_CHAR
+    return str(int(Decimal(repr(float(value))).quantize(Decimal(1), rounding=ROUND_HALF_UP)))
+
+
+def _var(text: str) -> str:
+    """List-mode PUT of a variable: the value followed by one blank delimiter."""
+    return text + " "
+
+
+def _list_put(values) -> str:
+    """PUT v1 ';' v2 ';' ... vn  (literals ';' carry no blank, variables carry one)."""
+    return ";".join(_var(v) for v in values)
+
+
+def _seq_sum(values):
+    """Left-to-right accumulation (SAS SUM statement / PROC SUMMARY).
+    Python 3.12+ sum() uses compensated float summation, which can differ from SAS."""
+    total = 0
+    for v in values:
+        total += v
+    return total
+
+
+def _ebcdic_key(code: str, width: int) -> bytes:
+    """Sort key replicating PROC SORT BY RSONCODE under the EBCDIC collating sequence
+    (shorter values are padded with the EBCDIC blank, X'40')."""
+    try:
+        raw = code.encode("cp037")
+    except UnicodeEncodeError:
+        raw = code.encode("latin1", errors="replace")
+    return raw.ljust(width, b"\x40")
 
 
 
 
-def _measures(rec: dict) -> str:
-    """FD CFD NFD CA CCA NCA TA with FORMAT CFD NFD CCA NCA 10.; FD CA TA COMMA20.2;
-    List-style PUT: formatted value left-aligned, followed by a blank and ';'."""
-    return _lst(
-        _comma(rec["FD"], 20, 2).strip(), _int_w(rec["CFD"], 10).strip(), _int_w(rec["NFD"], 10).strip(),
-        _comma(rec["CA"], 20, 2).strip(), _int_w(rec["CCA"], 10).strip(), _int_w(rec["NCA"], 10).strip(),
-        _comma(rec["TA"], 20, 2).strip(),
-    )
+    "CAST(TRANAMT AS DOUBLE) AS TRANAMT, COALESCE(RTRIM(RSONCODE), '') AS RSONCODE, "
 
 
 
 
-    for rec in temp.iter_rows(named=True):
-        branch = int(rec["BRANCH"])
-        # PUT @2 BRANCH ';' BRABBR ';' FD ';' CFD ';' NFD ';' CA ';' CCA ';' NCA ';' TA ';'
-        report_lines.append(_put(2, _lst(str(branch), branch_abbr[branch].rstrip()), _measures(rec)))
-    # DATA _NULL_; SET TOTAL; IF _N_=1 -> grand total (PROC SUMMARY without NWAY, first observation)
-    # PUT @2 'TOTAL' ';' ';' FD ';' CFD ';' ... TA ';'
-    grand = {c: temp[c].sum() for c in ("FD", "CFD", "NFD", "CA", "CCA", "NCA", "TA")}
-    report_lines.append(_put(2, "TOTAL;;", _measures(grand)))
+def _build_fdraw(df: pl.DataFrame) -> list:
+    """DATA FDRAW&J: one row per RSONCODE, counters RETAINed across groups.
+    Amounts are accumulated row by row in file order (stable sort), codes are ordered EBCDIC-style."""
+    if df.is_empty():
+        return []
+
+    acc = {}                                   # RSONCODE -> ([C0..C9], [A0..A9])
+    for code, prodcd, tranamt in zip(
+        df["RSONCODE"].to_list(), df["PRODCD"].to_list(), df["TRANAMT"].to_list()
+    ):
+        slot = acc.get(code)
+        if slot is None:
+            slot = acc[code] = ([0] * 10, [0.0] * 10)
+        if code in _VALID_REASONS:
+            idx = _PROD_INDEX.get(prodcd)
+            if idx is not None:
+                slot[0][idx] += 1
+                if tranamt is not None:        # A0+TRANAMT ignores missing
+                    slot[1][idx] += tranamt
+
+    width = max(len(c) for c in acc)
+    cnt, amt, rows = [0] * 10, [0.0] * 10, []
+    for code in sorted(acc, key=lambda c: _ebcdic_key(c, width)):
+        if code in _VALID_REASONS:             # IF FIRST.RSONCODE THEN reset (valid codes only)
+            cnt, amt = acc[code]
+        rows.append({"code": code, "C": list(cnt), "A": list(amt),
+                     "TC": _seq_sum(cnt), "TA": _seq_sum(amt)})
+    return rows
 
 
 
 
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+def _build_total(rows: list) -> dict:
+    """PROC SUMMARY (grand total) + DATA TOTAL&J percentages."""
+    rc = [_seq_sum(r["C"][i] for r in rows) for i in range(10)]
+    ra = [_seq_sum(r["A"][i] for r in rows) for i in range(10)]
+    gtc = _seq_sum(r["TC"] for r in rows)
+    gta = _seq_sum(r["TA"] for r in rows)
+    pc = [_pct(rc[i], gtc) for i in range(10)]
+    pa_ = [_pct(ra[i], gta) for i in range(10)]
+    return {
+        "RC": rc, "RA": ra, "GTC": gtc, "GTA": gta, "PC": pc, "PA": pa_,
+        "PGTC": _seq_sum(v for v in pc if v is not None),
+        "PGTA": _seq_sum(v for v in pa_ if v is not None),
+    }
+
+
+
+
+def _row_line(row: dict) -> str:
+    cells = []
+    for i in _PRINT_ORDER:
+        cells += [_best(row["C"][i]), _comma(row["A"][i])]
+    cells += [_best(row["TC"]), _comma(row["TA"])]
+    # PUT @4 RSONCODE ';' C0 ';' A0 ... TC ';' TA
+    return _put(4, _var(row["code"]), ";", _list_put(cells))
+
+
+def _total_lines(t: dict) -> list:
+    rc, ra, pc, pa_ = t["RC"], t["RA"], t["PC"], t["PA"]
+    # Sequence exactly as coded in the SAS source (RA5 RC5 ... RA9 RC8 - swapped, RC8 repeated).
+    total_cells = [
+        _best(rc[0]), _comma(ra[0]), _best(rc[1]), _comma(ra[1]), _best(rc[3]), _comma(ra[3]),
+        _best(rc[2]), _comma(ra[2]), _best(rc[4]), _comma(ra[4]),
+        _comma(ra[5]), _best(rc[5]), _comma(ra[6]), _best(rc[6]), _comma(ra[7]),
+        _best(rc[7]), _comma(ra[8]), _best(rc[8]), _comma(ra[9]), _best(rc[8]),
+        _best(t["GTC"]), _comma(t["GTA"]),
+    ]
+    pct_cells = []
+    for i in _PRINT_ORDER:
+        pct_cells += [_int3(pc[i]), _int3(pa_[i])]
+    pct_cells += [_int3(t["PGTC"]), _int3(t["PGTA"])]
+    return [
+        _put(4, "TOTAL", ";", _list_put(total_cells)),
+        _put(4, "% COMPOSITION", ";", _list_put(pct_cells)),
+    ]
+
+
+
+
+with open(OUTPUT_FILE, "w", encoding="latin1", newline="\n") as fh:
     for ln in report_lines:
-        fh.write(ln.ljust(LRECL) + "\n")        # RECFM=FB, LRECL=133: pad with blanks, no ASA byte
+        fh.write(ln[:LRECL].ljust(LRECL) + "\n")      # RECFM=FB, LRECL=500; no ASA byte
 
 
 
