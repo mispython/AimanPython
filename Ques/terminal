@@ -1,13 +1,26 @@
-Step 3: Building FCYCA...
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB07.py", line 203, in <module>
-    [
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB07.py", line 204, in <listcomp>
-    _read_pq(cache, _COLS, f"TRIM(ENTITY_CD) = '{entity}' AND {_WHERE}")
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMRB07.py", line 127, in _read_pq
-    return con.execute(
-_duckdb.BinderException: Binder Error: Referenced column "ENTITY_CD" not found in FROM clause!
-Candidate bindings: "INTYTD", "INTCYCODE", "STATCD", "OPENIND", "INTRSTPD"
-
-LINE 1: .../XMIS/input/cache/EIBMRBDP/PBB_current.parquet') WHERE TRIM(ENTITY_CD) = 'PBB' AND COALESCE(CUSTCODE,-1) NOT IN (77...
-                                                                       ^
+  WDRAW rows (MYR, PRODCD not 393/394): 271,114
+  JUNK '\x0cM\x8a'          latin1-hex=0c4d8a     cp037-decoded='\x0c(«'
+  JUNK '\x14Mf'             latin1-hex=144d66     cp037-decoded='\x9d(Ã'
+  JUNK '\x14Mj'             latin1-hex=144d6a     cp037-decoded='\x9d(¦'
+  JUNK '\x14Mp'             latin1-hex=144d70     cp037-decoded='\x9d(ø'
+  JUNK '\x14M\x88'          latin1-hex=144d88     cp037-decoded='\x9d(h'
+  JUNK '\x14M\x89'          latin1-hex=144d89     cp037-decoded='\x9d(i'
+  JUNK '\x14M\x90'          latin1-hex=144d90     cp037-decoded='\x9d(°'
+  JUNK '\x14M\x99'          latin1-hex=144d99     cp037-decoded='\x9d(r'
+  JUNK '\x14MÈ'             latin1-hex=144dc8     cp037-decoded='\x9d(H'
+  JUNK '\x14MÊ'             latin1-hex=144dca     cp037-decoded='\x9d(\xad'
+  JUNK '\x14MÌ'             latin1-hex=144dcc     cp037-decoded='\x9d(ö'
+  JUNK '\x14Mï'             latin1-hex=144def     cp037-decoded='\x9d(Õ'
+  JUNK '\x1cM\x17'          latin1-hex=1c4d17     cp037-decoded='\x1c(\x87'
+  JUNK '\x1cMf'             latin1-hex=1c4d66     cp037-decoded='\x1c(Ã'
+  JUNK '\x1cMj'             latin1-hex=1c4d6a     cp037-decoded='\x1c(¦'
+  JUNK '\x1cMk'             latin1-hex=1c4d6b     cp037-decoded='\x1c(,'
+  JUNK '\x1cMm'             latin1-hex=1c4d6d     cp037-decoded='\x1c(_'
+  JUNK '\x1cM\x89'          latin1-hex=1c4d89     cp037-decoded='\x1c(i'
+  JUNK '\x1cM\x8a'          latin1-hex=1c4d8a     cp037-decoded='\x1c(«'
+  JUNK '\x1cM\x90'          latin1-hex=1c4d90     cp037-decoded='\x1c(°'
+  JUNK '\x1cMÌ'             latin1-hex=1c4dcc     cp037-decoded='\x1c(ö'
+  JUNK '%M\x17'             latin1-hex=254d17     cp037-decoded='\n(\x87'
+  JUNK '%Me'                latin1-hex=254d65     cp037-decoded='\n(Á'
+  JUNK '%Mf'                latin1-hex=254d66     cp037-decoded='\n(Ã'
+  JUNK '%Mg'                latin1-hex=254d67     cp037-decoded='\n(Å'
