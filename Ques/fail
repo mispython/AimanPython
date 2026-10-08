@@ -1,59 +1,10 @@
-def _put(col: int, *items: str) -> str:
-    return " " * (col - 1) + "".join(items)
-
-
-def _best(value) -> str:
-    """BEST12. (left-aligned); missing -> MISSING=0 character."""
-    if value is None:
-        return MISSING_CHAR
-    v = float(value)
-    return str(int(v)) if v == int(v) else format(v, ".12g")
-
-
-def _comma(value, decimals: int = 0) -> str:
-    """COMMA16. in list-mode PUT: left-aligned, no padding; missing -> MISSING=0 character."""
-    if value is None:
-        return MISSING_CHAR
-    quant = Decimal(1).scaleb(-decimals)
-    return f"{Decimal(repr(float(value))).quantize(quant, rounding=ROUND_HALF_UP):,.{decimals}f}"
-
-
-def _int3(value) -> str:
-    """Format 3. in list-mode PUT (round half away from zero, left-aligned); missing -> MISSING=0."""
-    if value is None:
-        return MISSING_CHAR
-    return str(int(Decimal(repr(float(value))).quantize(Decimal(1), rounding=ROUND_HALF_UP)))
-
-
-def _pct(part, whole):
-    """(RCi/GTC)*100; division by zero -> missing."""
-    return None if not whole else part / whole * 100
-
-
-def _var(text: str) -> str:
-    """List-mode PUT of a variable: the value followed by one blank delimiter."""
-    return text + " "
-
-
-def _list_put(values) -> str:
-    """PUT v1 ';' v2 ';' ... vn  (literals ';' carry no blank, variables carry one)."""
-    return ";".join(_var(v) for v in values)
-
-
-def _seq_sum(values):
-    """Left-to-right accumulation (SAS SUM statement / PROC SUMMARY).
-    Python 3.12+ sum() uses compensated float summation, which can differ from SAS."""
-    total = 0
-    for v in values:
-        total += v
-    return total
-
-
-def _ebcdic_key(code: str, width: int) -> bytes:
-    """Sort key replicating PROC SORT BY RSONCODE under the EBCDIC collating sequence
-    (shorter values are padded with the EBCDIC blank, X'40')."""
-    try:
-        raw = code.encode("cp037")
-    except UnicodeEncodeError:
-        raw = code.encode("latin1", errors="replace")
-    return raw.ljust(width, b"\x40")
+_junk = (
+    wdraw.select("RSONCODE")
+    .unique()
+    .filter(~pl.col("RSONCODE").is_in(sorted(_VALID_REASONS)))
+    .sort("RSONCODE")
+    .head(25)["RSONCODE"].to_list()
+)
+for _c in _junk:
+    print(f"  JUNK {_c!r:20} latin1-hex={_c.encode('latin1', errors='replace').hex():10} "
+          f"cp037-decoded={bytes(ord(ch) & 0xFF for ch in _c).decode('cp037')!r}")
