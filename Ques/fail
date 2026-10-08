@@ -1,39 +1,22 @@
-import re
-from itertools import zip_longest
-from pathlib import Path
-
-EXPECTED = Path(r"<path to the expected SAS output file>")
-ACTUAL = Path(r"/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMRBDP/EIBMRB09.txt")
-
-
-def junk_codes(path: Path, limit: int = 40) -> list:
-    data = path.read_bytes()
-    start = data.index(b"\n", data.index(b";NO.;RM")) + 1     # after group (A) header
-    end = data.index(b"   W01 ;")                             # first valid reason code
-    region = b"\n" + data[start:end]
-    return [m.group(1) for m in re.finditer(rb"\n   (.*?) ;0 ;0 ;0", region, re.DOTALL)][:limit]
-
-
-for i, (exp, act) in enumerate(zip_longest(junk_codes(EXPECTED), junk_codes(ACTUAL)), 1):
-    print(f"{i:02d} EXP={exp.hex(' ') if exp is not None else '-':<20} "
-          f"ACT={act.hex(' ') if act is not None else '-'}")
+def _fmt_comma15_2(val) -> str:
+    """COMMA15.2 with OPTIONS MISSING=0: a missing value prints as '0',
+    right-aligned in 13 columns followed by 2 blanks (SAS reserves the '.00' width)."""
+    missing = "0".rjust(13) + "  "
+    if val is None or val != val:
+        return missing
+    try:
+        return f"{float(val):>15,.2f}"
+    except (TypeError, ValueError):
+        return missing
 
 
 
 
-
-from pathlib import Path
-import re
-
-def real_lines(path):
-    data = Path(path).read_bytes().decode("latin1")
-    # keep everything except junk-code rows (they carry only ";0 ;0 ;0..." and a non-W code)
-    return [ln.rstrip() for ln in data.split("\n")
-            if not re.match(r"^   (?!W\d\d )(?!TOTAL)(?!% COMP)(?!TYPES)(?!;).*? ;0 ;0 ;0", ln)]
-
-exp = real_lines(r"<expected file>")
-act = real_lines(r"<your output file>")
-print("Same:", exp == act)
-for i, (e, a) in enumerate(zip(exp, act), 1):
-    if e != a:
-        print(i, "\nEXP:", e[:120], "\nACT:", a[:120])
+for _tag, _cache in [("DEPO_FD", DEPO_FD_CACHE), ("IDEPO_FD", IDEPO_FD_CACHE),
+                     ("DEPO_CURRENT", DEPO_CURRENT_CACHE), ("IDEPO_CURRENT", IDEPO_CURRENT_CACHE),
+                     ("DEPO_SAVING", DEPO_SAVING_CACHE), ("IDEPO_SAVING", IDEPO_SAVING_CACHE)]:
+    _d = pl.read_parquet(_cache).select(pl.col("ACCTNO").cast(pl.Int64))
+    print(f"DBG {_tag}: rows={_d.height:,} max_acctno={_d['ACCTNO'].max()} "
+          f"has_1595256021={_d.filter(pl.col('ACCTNO') == 1595256021).height} "
+          f"has_3591442711={_d.filter(pl.col('ACCTNO') == 3591442711).height} "
+          f"has_4346911001={_d.filter(pl.col('ACCTNO') == 4346911001).height}")
