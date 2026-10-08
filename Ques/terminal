@@ -4,3 +4,15 @@ DBG DEPO_CURRENT: rows=855,633 max_acctno=3999929908 has_1595256021=0 has_359144
 DBG IDEPO_CURRENT: rows=155,246 max_acctno=3999899918 has_1595256021=0 has_3591442711=0 has_4346911001=0
 DBG DEPO_SAVING: rows=4,283,748 max_acctno=6997222418 has_1595256021=0 has_3591442711=0 has_4346911001=1
 DBG IDEPO_SAVING: rows=2,235,001 max_acctno=6996999515 has_1595256021=0 has_3591442711=0 has_4346911001=0
+DBG DEPO_SAVING: raw_rows=4,283,748 cache_rows=4,283,748 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=1 cache=1
+DBG DEPO_CURRENT: raw_rows=855,633 cache_rows=855,633 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
+DBG DEPO_FD: raw_rows=1,205,423 cache_rows=1,205,423 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
+DBG IDEPO_SAVING: raw_rows=2,235,001 cache_rows=2,235,001 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
+DBG IDEPO_CURRENT: raw_rows=155,246 cache_rows=155,246 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
+DBG IDEPO_FD: raw_rows=223,128 cache_rows=223,128 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
+DBG PDEPO_SAVING: raw_rows=4,283,021 cache_rows=4,283,021 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=1 cache=1
+DBG PDEPO_CURRENT: raw_rows=855,524 cache_rows=855,524 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
+DBG PDEPO_FD: raw_rows=1,205,199 cache_rows=1,205,199 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
+DBG PIDEPO_SAVING: raw_rows=2,234,544 cache_rows=2,234,544 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
+DBG PIDEPO_CURRENT: raw_rows=155,207 cache_rows=155,207 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
+DBG PIDEPO_FD: raw_rows=223,095 cache_rows=223,095 1595256021: raw=0 cache=0 3591442711: raw=0 cache=0 4346911001: raw=0 cache=0
