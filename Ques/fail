@@ -1,13 +1,8 @@
-for _acct, _files in [
-    (1595256021, [DEPO_FD_CACHE, IDEPO_FD_CACHE]),
-    (3591442711, [DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE]),
-]:
-    _all = pl.concat([
-        pl.read_parquet(f).select(pl.col("ACCTNO").cast(pl.Int64), pl.col("CURBAL").cast(pl.Float64))
-        for f in _files
-    ])
-    _prev = _all.filter(pl.col("ACCTNO") <= _acct).sort("ACCTNO").tail(3)
-    print(f"DBG carry acct={_acct}: {_prev.to_dicts()}")
-print("DBG 4346911001:", pl.read_parquet(DEPO_SAVING_CACHE)
-      .select(pl.col("ACCTNO").cast(pl.Int64), "CURBAL")
-      .filter(pl.col("ACCTNO") == 4346911001).to_dicts())
+def _fmt_comma15_2(val) -> str:
+    """COMMA15.2 with OPTIONS MISSING=0: a missing value prints as '0'."""
+    if val is None or val != val:
+        return "0.00".rjust(15)
+    try:
+        return f"{float(val):>15,.2f}"
+    except (TypeError, ValueError):
+        return "0.00".rjust(15)
