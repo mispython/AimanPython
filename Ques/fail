@@ -1,10 +1,45 @@
-_ca_where = (
-    "COALESCE(TRIM(CURCODE), '') <> 'MYR' "
-    f"AND PRODUCT IN ({_int_list(_FCYCA_PRODUCTS)}) AND {_OPENIND_OK}"
-)
-fcyca = pl.concat(
-    [
-        _read_pq(cache, f"{_COLS}, 2 AS FTYPE", _ca_where)
-        for cache in (DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE)
-    ]
-)
+CHUNK_ROWS = 500_000
+MISSING_CHAR = "."          # default MISSING option
+LRECL = 133                 # //SASLIST DD LRECL=133 (records padded with blanks)
+
+
+
+
+def _lst(*texts: str) -> str:
+    """List-style PUT of variables each followed by a literal ';': value, one blank, then ';'."""
+    return "".join(f"{t} ;" for t in texts)
+
+
+
+
+def _measures(rec: dict) -> str:
+    """FD CFD NFD CA CCA NCA TA with FORMAT CFD NFD CCA NCA 10.; FD CA TA COMMA20.2;
+    List-style PUT: formatted value left-aligned, followed by a blank and ';'."""
+    return _lst(
+        _comma(rec["FD"], 20, 2).strip(), _int_w(rec["CFD"], 10).strip(), _int_w(rec["NFD"], 10).strip(),
+        _comma(rec["CA"], 20, 2).strip(), _int_w(rec["CCA"], 10).strip(), _int_w(rec["NCA"], 10).strip(),
+        _comma(rec["TA"], 20, 2).strip(),
+    )
+
+
+
+
+    for rec in temp.iter_rows(named=True):
+        branch = int(rec["BRANCH"])
+        # PUT @2 BRANCH ';' BRABBR ';' FD ';' CFD ';' NFD ';' CA ';' CCA ';' NCA ';' TA ';'
+        report_lines.append(_put(2, _lst(str(branch), branch_abbr[branch].rstrip()), _measures(rec)))
+    # DATA _NULL_; SET TOTAL; IF _N_=1 -> grand total (PROC SUMMARY without NWAY, first observation)
+    # PUT @2 'TOTAL' ';' ';' FD ';' CFD ';' ... TA ';'
+    grand = {c: temp[c].sum() for c in ("FD", "CFD", "NFD", "CA", "CCA", "NCA", "TA")}
+    report_lines.append(_put(2, "TOTAL;;", _measures(grand)))
+
+
+
+
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in report_lines:
+        fh.write(ln.ljust(LRECL) + "\n")        # RECFM=FB, LRECL=133: pad with blanks, no ASA byte
+
+
+
+
