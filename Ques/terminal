@@ -1,26 +1,40 @@
-  WDRAW rows (MYR, PRODCD not 393/394): 271,114
-  JUNK '\x0cM\x8a'          latin1-hex=0c4d8a     cp037-decoded='\x0c(«'
-  JUNK '\x14Mf'             latin1-hex=144d66     cp037-decoded='\x9d(Ã'
-  JUNK '\x14Mj'             latin1-hex=144d6a     cp037-decoded='\x9d(¦'
-  JUNK '\x14Mp'             latin1-hex=144d70     cp037-decoded='\x9d(ø'
-  JUNK '\x14M\x88'          latin1-hex=144d88     cp037-decoded='\x9d(h'
-  JUNK '\x14M\x89'          latin1-hex=144d89     cp037-decoded='\x9d(i'
-  JUNK '\x14M\x90'          latin1-hex=144d90     cp037-decoded='\x9d(°'
-  JUNK '\x14M\x99'          latin1-hex=144d99     cp037-decoded='\x9d(r'
-  JUNK '\x14MÈ'             latin1-hex=144dc8     cp037-decoded='\x9d(H'
-  JUNK '\x14MÊ'             latin1-hex=144dca     cp037-decoded='\x9d(\xad'
-  JUNK '\x14MÌ'             latin1-hex=144dcc     cp037-decoded='\x9d(ö'
-  JUNK '\x14Mï'             latin1-hex=144def     cp037-decoded='\x9d(Õ'
-  JUNK '\x1cM\x17'          latin1-hex=1c4d17     cp037-decoded='\x1c(\x87'
-  JUNK '\x1cMf'             latin1-hex=1c4d66     cp037-decoded='\x1c(Ã'
-  JUNK '\x1cMj'             latin1-hex=1c4d6a     cp037-decoded='\x1c(¦'
-  JUNK '\x1cMk'             latin1-hex=1c4d6b     cp037-decoded='\x1c(,'
-  JUNK '\x1cMm'             latin1-hex=1c4d6d     cp037-decoded='\x1c(_'
-  JUNK '\x1cM\x89'          latin1-hex=1c4d89     cp037-decoded='\x1c(i'
-  JUNK '\x1cM\x8a'          latin1-hex=1c4d8a     cp037-decoded='\x1c(«'
-  JUNK '\x1cM\x90'          latin1-hex=1c4d90     cp037-decoded='\x1c(°'
-  JUNK '\x1cMÌ'             latin1-hex=1c4dcc     cp037-decoded='\x1c(ö'
-  JUNK '%M\x17'             latin1-hex=254d17     cp037-decoded='\n(\x87'
-  JUNK '%Me'                latin1-hex=254d65     cp037-decoded='\n(Á'
-  JUNK '%Mf'                latin1-hex=254d66     cp037-decoded='\n(Ã'
-  JUNK '%Mg'                latin1-hex=254d67     cp037-decoded='\n(Å'
+01 EXP=0c 4d 1a             ACT=0c 4d 8a
+02 EXP=1a 4d 1a             ACT=1c 4d 17
+03 EXP=1a 4d 1a             ACT=1c 4d 89
+04 EXP=1a 4d 17             ACT=1c 4d 8a
+05 EXP=1a 4d 1a             ACT=1c 4d 90
+06 EXP=1a 4d 7b             ACT=1c 4d cc
+07 EXP=1a 4d 66             ACT=1c 4d 66
+08 EXP=1a 4d 6a             ACT=1c 4d 6a
+09 EXP=1a 4d 6b             ACT=1c 4d 6b
+10 EXP=1a 4d 6d             ACT=1c 4d 6d
+11 EXP=1a 4d 1a             ACT=93 4d 1b
+12 EXP=1a 4d 1a             ACT=93 4d 89
+13 EXP=1a 4d 1b             ACT=93 4d 8a
+14 EXP=1a 4d 1a             ACT=93 4d 90
+15 EXP=1a 4d 1a             ACT=93 4d 94
+16 EXP=1a 4d 1a             ACT=93 4d 95
+17 EXP=1a 4d 1a             ACT=93 4d 99
+18 EXP=1a 4d 1a             ACT=93 4d 9a
+19 EXP=1a 4d 10             ACT=93 4d e1
+20 EXP=1a 4d 0b             ACT=93 4d f1
+21 EXP=1a 4d 31             ACT=93 4d c8
+22 EXP=1a 4d 7b             ACT=93 4d cc
+23 EXP=1a 4d 60             ACT=93 4d 60
+24 EXP=1a 4d 66             ACT=93 4d 66
+25 EXP=1a 4d 6a             ACT=93 4d 6a
+26 EXP=1a 4d 6b             ACT=93 4d 6b
+27 EXP=1a 4d 6d             ACT=93 4d 6d
+28 EXP=1a 4d 70             ACT=93 4d 70
+29 EXP=1a 4d 71             ACT=93 4d 71
+30 EXP=14 4d 1a             ACT=14 4d 88
+31 EXP=14 4d 1a             ACT=14 4d 89
+32 EXP=14 4d 1a             ACT=14 4d 90
+33 EXP=14 4d 1a             ACT=14 4d 99
+34 EXP=14 4d 63             ACT=14 4d ef
+35 EXP=14 4d 14             ACT=14 4d ca
+36 EXP=14 4d 31             ACT=14 4d c8
+37 EXP=14 4d 7b             ACT=14 4d cc
+38 EXP=14 4d 66             ACT=14 4d 66
+39 EXP=14 4d 6a             ACT=14 4d 6a
+40 EXP=14 4d 70             ACT=14 4d 70
