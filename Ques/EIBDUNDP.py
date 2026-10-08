@@ -640,23 +640,129 @@ ca_cur, ca_pre = _both([DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE],
 fd_cur, fd_pre = _both([DEPO_FD_CACHE, IDEPO_FD_CACHE],
                        [PDEPO_FD_CACHE, PIDEPO_FD_CACHE])
 
-# DEBUG 
-dbg_acct = 1373840635
-print("CISFD row:",
-      cisfd_df.filter(pl.col("ACCTNO") == dbg_acct))
-print("FD balance row:",
-      fd_cur.filter(pl.col("ACCTNO") == dbg_acct))
-print("FD balance neighbours (previous 3 keys ≤ this account):",
-      fd_cur.filter(pl.col("ACCTNO") <= dbg_acct)
-            .sort("ACCTNO").tail(5))
+# # DEBUG 
+# dbg_acct = 1373840635
+# print("CISFD row:",
+#       cisfd_df.filter(pl.col("ACCTNO") == dbg_acct))
+# print("FD balance row:",
+#       fd_cur.filter(pl.col("ACCTNO") == dbg_acct))
+# print("FD balance neighbours (previous 3 keys ≤ this account):",
+#       fd_cur.filter(pl.col("ACCTNO") <= dbg_acct)
+#             .sort("ACCTNO").tail(5))
 
-# DEBUG
-print(
-    fd_cur.group_by("ACCTNO").len()
-          .filter(pl.col("len") > 1)
-          .sort("len", descending=True)
-          .head(20)
-)
+# # DEBUG v2
+# for _a in [1595256021, 1408177326, 1019416021, 1373840635, 1283166924]:
+#     _hits = fd_cur.filter(pl.col("ACCTNO") == _a)
+#     _near = (fd_cur.filter(pl.col("ACCTNO") <= _a)
+#                    .sort("ACCTNO")
+#                    .tail(3))
+#     print(f"  DBG FD acct={_a} exact_hits={_hits.height} vals={_hits['CURBAL'].to_list()}")
+#     print(f"           nearest<=acct={_near.select(['ACCTNO','CURBAL']).to_dicts()}")
+
+# # DEBUG
+# print(
+#     fd_cur.group_by("ACCTNO").len()
+#           .filter(pl.col("len") > 1)
+#           .sort("len", descending=True)
+#           .head(20)
+# )
+
+# # DEBUG v2
+# _TARGET = "1595256021"
+# for _tag, _p in [("DEPO_FD",   DEPO_FD_CACHE),
+#                  ("IDEPO_FD",  IDEPO_FD_CACHE),
+#                  ("PDEPO_FD",  PDEPO_FD_CACHE),
+#                  ("PIDEPO_FD", PIDEPO_FD_CACHE)]:
+#     _raw = pl.read_parquet(_p)
+#     _hit = _raw.filter(
+#         pl.col("ACCTNO").cast(pl.Utf8).str.strip_chars().str.contains(_TARGET)
+#     )
+#     print(f"  DBG {_tag}: schema={_raw.schema} rows={_raw.height} substring_hits={_hit.height}")
+#     if _hit.height:
+#         print("         hit rows:", _hit.to_dicts())
+
+# DEBUG v2
+_target_acct = "1595256021"
+_target_val  = 11630.87
+for _tag, _cache in [
+    ("DEPO_SAVING",    DEPO_SAVING_CACHE),
+    ("DEPO_CURRENT",   DEPO_CURRENT_CACHE),
+    ("DEPO_FD",        DEPO_FD_CACHE),
+    ("IDEPO_SAVING",   IDEPO_SAVING_CACHE),
+    ("IDEPO_CURRENT",  IDEPO_CURRENT_CACHE),
+    ("IDEPO_FD",       IDEPO_FD_CACHE),
+    ("PDEPO_SAVING",   PDEPO_SAVING_CACHE),
+    ("PDEPO_CURRENT",  PDEPO_CURRENT_CACHE),
+    ("PDEPO_FD",       PDEPO_FD_CACHE),
+    ("PIDEPO_SAVING",  PIDEPO_SAVING_CACHE),
+    ("PIDEPO_CURRENT", PIDEPO_CURRENT_CACHE),
+    ("PIDEPO_FD",      PIDEPO_FD_CACHE),
+]:
+    _raw = pl.read_parquet(_cache).select(["ACCTNO", "CURBAL"])
+    _acct_str = _raw.with_columns(
+        pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A")
+    )
+    _hit_a = _acct_str.filter(pl.col("A") == _target_acct)
+    _hit_v = _raw.filter(
+        (pl.col("CURBAL").is_not_null()) &
+        ((pl.col("CURBAL") - _target_val).abs() < 0.01)
+    )
+    if _hit_a.height or _hit_v.height:
+        print(f"  DBG {_tag}: acct_hits={_hit_a.select(['ACCTNO','CURBAL']).to_dicts()} "
+              f"val_hits={_hit_v.to_dicts()}")
+# Also look on the CIS side — is the account even present in the CIS extract?
+for _tag, _cache in [("CISDP", CISDP_CACHE), ("CISSAFD", CISSAFD_CACHE)]:
+    _raw = pl.read_parquet(_cache).select(["ACCTNO", "NEWIC"])
+    _acct_str = _raw.with_columns(
+        pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A")
+    )
+    _hit = _acct_str.filter(pl.col("A") == _target_acct)
+    print(f"  DBG {_tag}: rows={_raw.height} acct_hits={_hit.select(['ACCTNO','NEWIC']).to_dicts()}")
+
+# DEBUG v2
+print("DEBUG: reached, fd_cur height =", fd_cur.height)
+print("DEBUG: first 5 fd_cur rows:", fd_cur.head(5).to_dicts())
+print("DEBUG: sample ACCTNO dtype/values:",
+      fd_cur.select(pl.col("ACCTNO").head(3).cast(pl.Int64).cast(pl.Utf8)).to_series().to_list())
+for _tag, _cache in [
+    ("DEPO_FD",   DEPO_FD_CACHE),
+    ("IDEPO_FD",  IDEPO_FD_CACHE),
+    ("PDEPO_FD",  PDEPO_FD_CACHE),
+    ("PIDEPO_FD", PIDEPO_FD_CACHE),
+    ("DEPO_CURRENT",  DEPO_CURRENT_CACHE),
+    ("IDEPO_CURRENT", IDEPO_CURRENT_CACHE),
+]:
+    _raw = pl.read_parquet(_cache).select(["ACCTNO", "CURBAL"])
+    _as_int_str = _raw.with_columns(pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A"))
+    for _a in [1595256021, 3591442711, 3591444701, 3593201934]:
+        _hit = _as_int_str.filter(pl.col("A") == str(_a))
+        if _hit.height:
+            print(f"  DBG {_tag} acct={_a}: {_hit.select(['ACCTNO','CURBAL']).to_dicts()}")
+
+# DEBUG v2
+import os
+from datetime import datetime as _dt
+for _tag, _sas, _cache in [
+    ("DEPO_FD",  DEPO_FD_FILE,  DEPO_FD_CACHE),
+    ("IDEPO_FD", IDEPO_FD_FILE, IDEPO_FD_CACHE),
+    ("PDEPO_FD", PDEPO_FD_FILE, PDEPO_FD_CACHE),
+    ("PIDEPO_FD", PIDEPO_FD_FILE, PIDEPO_FD_CACHE),
+]:
+    print(f"  DBG {_tag}: "
+          f"src_mtime={_dt.fromtimestamp(os.path.getmtime(_sas))}  "
+          f"cache_mtime={_dt.fromtimestamp(os.path.getmtime(_cache))}")
+for _tag, _sas in [("DEPO_FD",  DEPO_FD_FILE),
+                   ("IDEPO_FD", IDEPO_FD_FILE),
+                   ("PDEPO_FD", PDEPO_FD_FILE),
+                   ("PIDEPO_FD", PIDEPO_FD_FILE)]:
+    _df = pd.read_sas(_sas, encoding="latin1")
+    _hit = _df[_df["ACCTNO"].astype("float").astype("int64") == 1595256021]
+    print(f"  DBG raw {_tag}: total={len(_df):,} "
+          f"hit_1595256021={_hit[['ACCTNO','CURBAL']].to_dict('records')}")
+_df = pd.read_sas(CISSAFD_FILE, encoding="latin1")
+_hit = _df[_df["ACCTNO"].astype("float").astype("int64") == 1595256021]
+print(f"  DBG raw CISSAFD hit_1595256021: "
+      f"{_hit[['ACCTNO','NEWIC']].to_dict('records')}")
 
 sa_df = _with_balances(cissa_df, sa_cur, sa_pre)
 ca_df = _with_balances(cisca_df, ca_cur, ca_pre)
@@ -683,12 +789,12 @@ depo_final = depo_final.with_columns(
 
 print(f"  DEPO rows : {len(depo_final):,}")
 
-# DEBUG
-print(
-    depo_final
-    .filter(pl.col("ACCTNO").is_in([1408177326, 1019416021, 1373840635, 1283166924]))
-    .select(["ACCTNO", "CURBAL", "PRE_CURBAL", "WITHDR"])
-)
+# # DEBUG
+# print(
+#     depo_final
+#     .filter(pl.col("ACCTNO").is_in([1408177326, 1019416021, 1373840635, 1283166924]))
+#     .select(["ACCTNO", "CURBAL", "PRE_CURBAL", "WITHDR"])
+# )
 
 # ============================================================================
 # STEP 8: PROC SUMMARY DATA=DEPO NWAY; CLASS NEWIC; VAR PRE_CURBAL CURBAL WITHDR;
