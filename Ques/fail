@@ -17,3 +17,23 @@ def junk_codes(path: Path, limit: int = 40) -> list:
 for i, (exp, act) in enumerate(zip_longest(junk_codes(EXPECTED), junk_codes(ACTUAL)), 1):
     print(f"{i:02d} EXP={exp.hex(' ') if exp is not None else '-':<20} "
           f"ACT={act.hex(' ') if act is not None else '-'}")
+
+
+
+
+
+from pathlib import Path
+import re
+
+def real_lines(path):
+    data = Path(path).read_bytes().decode("latin1")
+    # keep everything except junk-code rows (they carry only ";0 ;0 ;0..." and a non-W code)
+    return [ln.rstrip() for ln in data.split("\n")
+            if not re.match(r"^   (?!W\d\d )(?!TOTAL)(?!% COMP)(?!TYPES)(?!;).*? ;0 ;0 ;0", ln)]
+
+exp = real_lines(r"<expected file>")
+act = real_lines(r"<your output file>")
+print("Same:", exp == act)
+for i, (e, a) in enumerate(zip(exp, act), 1):
+    if e != a:
+        print(i, "\nEXP:", e[:120], "\nACT:", a[:120])
