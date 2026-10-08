@@ -1,9 +1,10 @@
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
-    # so datasets with the same file name in different subfolders never share a cache.
-    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
+_ca_where = (
+    "COALESCE(TRIM(CURCODE), '') <> 'MYR' "
+    f"AND PRODUCT IN ({_int_list(_FCYCA_PRODUCTS)}) AND {_OPENIND_OK}"
+)
+fcyca = pl.concat(
+    [
+        _read_pq(cache, f"{_COLS}, 2 AS FTYPE", _ca_where)
+        for cache in (DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE)
+    ]
+)
