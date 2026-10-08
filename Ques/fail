@@ -1,20 +1,13 @@
-_accts = [1595256021, 3591442711, 4346911001]
-for _tag, _sas, _cache in [
-    ("DEPO_SAVING",   DEPO_SAVING_FILE,   DEPO_SAVING_CACHE),
-    ("DEPO_CURRENT",  DEPO_CURRENT_FILE,  DEPO_CURRENT_CACHE),
-    ("DEPO_FD",       DEPO_FD_FILE,       DEPO_FD_CACHE),
-    ("IDEPO_SAVING",  IDEPO_SAVING_FILE,  IDEPO_SAVING_CACHE),
-    ("IDEPO_CURRENT", IDEPO_CURRENT_FILE, IDEPO_CURRENT_CACHE),
-    ("IDEPO_FD",      IDEPO_FD_FILE,      IDEPO_FD_CACHE),
-    ("PDEPO_SAVING",  PDEPO_SAVING_FILE,  PDEPO_SAVING_CACHE),
-    ("PDEPO_CURRENT", PDEPO_CURRENT_FILE, PDEPO_CURRENT_CACHE),
-    ("PDEPO_FD",      PDEPO_FD_FILE,      PDEPO_FD_CACHE),
-    ("PIDEPO_SAVING", PIDEPO_SAVING_FILE, PIDEPO_SAVING_CACHE),
-    ("PIDEPO_CURRENT",PIDEPO_CURRENT_FILE,PIDEPO_CURRENT_CACHE),
-    ("PIDEPO_FD",     PIDEPO_FD_FILE,     PIDEPO_FD_CACHE),
+for _acct, _files in [
+    (1595256021, [DEPO_FD_CACHE, IDEPO_FD_CACHE]),
+    (3591442711, [DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE]),
 ]:
-    _raw = pd.read_sas(_sas, encoding="latin1")
-    _rawn = _raw["ACCTNO"].astype("float").astype("int64")
-    _par = pl.read_parquet(_cache)["ACCTNO"].cast(pl.Int64)
-    print(f"DBG {_tag}: raw_rows={len(_raw):,} cache_rows={_par.len():,} "
-          + " ".join(f"{a}: raw={int((_rawn == a).sum())} cache={int((_par == a).sum())}" for a in _accts))
+    _all = pl.concat([
+        pl.read_parquet(f).select(pl.col("ACCTNO").cast(pl.Int64), pl.col("CURBAL").cast(pl.Float64))
+        for f in _files
+    ])
+    _prev = _all.filter(pl.col("ACCTNO") <= _acct).sort("ACCTNO").tail(3)
+    print(f"DBG carry acct={_acct}: {_prev.to_dicts()}")
+print("DBG 4346911001:", pl.read_parquet(DEPO_SAVING_CACHE)
+      .select(pl.col("ACCTNO").cast(pl.Int64), "CURBAL")
+      .filter(pl.col("ACCTNO") == 4346911001).to_dicts())
