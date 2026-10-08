@@ -20,3 +20,16 @@ for _tag, _cache in [("DEPO_FD", DEPO_FD_CACHE), ("IDEPO_FD", IDEPO_FD_CACHE),
           f"has_1595256021={_d.filter(pl.col('ACCTNO') == 1595256021).height} "
           f"has_3591442711={_d.filter(pl.col('ACCTNO') == 3591442711).height} "
           f"has_4346911001={_d.filter(pl.col('ACCTNO') == 4346911001).height}")
+
+
+
+
+
+for _tag, _cache in [("DEPO_FD", DEPO_FD_CACHE), ("IDEPO_FD", IDEPO_FD_CACHE),
+                     ("DEPO_CURRENT", DEPO_CURRENT_CACHE), ("IDEPO_CURRENT", IDEPO_CURRENT_CACHE),
+                     ("DEPO_SAVING", DEPO_SAVING_CACHE), ("IDEPO_SAVING", IDEPO_SAVING_CACHE)]:
+    _d = pl.read_parquet(_cache).select(pl.col("ACCTNO").cast(pl.Int64).alias("ACCTNO"))
+    print(f"DBG {_tag}: rows={_d.height:,} max_acctno={_d['ACCTNO'].max()} "
+          f"has_1595256021={_d.filter(pl.col('ACCTNO') == 1595256021).height} "
+          f"has_3591442711={_d.filter(pl.col('ACCTNO') == 3591442711).height} "
+          f"has_4346911001={_d.filter(pl.col('ACCTNO') == 4346911001).height}")
