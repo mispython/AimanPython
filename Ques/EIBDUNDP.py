@@ -9,24 +9,24 @@ Purpose : Deposit Activities for Credit Card Holders.
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
  1. //DEPO  DD DSN=SAP.PBB.MNITB.DAILY(0)   (PBB, current day)
-    DEPO.SAVING  -> mnitb_daily_pbb_saving_d0.sas7bdat   (ACCTNO, CURBAL)
-    DEPO.CURRENT -> mnitb_daily_pbb_current_d0.sas7bdat  (ACCTNO, CURBAL)
-    DEPO.FD      -> mnitb_daily_pbb_fd_d0.sas7bdat       (ACCTNO, CURBAL)
+    DEPO.SAVING  -> saving_d0.sas7bdat   (ACCTNO, CURBAL)
+    DEPO.CURRENT -> current_d0.sas7bdat  (ACCTNO, CURBAL)
+    DEPO.FD      -> fd_d0.sas7bdat       (ACCTNO, CURBAL)
 
  2. //IDEPO DD DSN=SAP.PIBB.MNITB.DAILY(0)  (PIBB, current day)
-    IDEPO.SAVING  -> mnitb_daily_pibb_saving_d0.sas7bdat
-    IDEPO.CURRENT -> mnitb_daily_pibb_current_d0.sas7bdat
-    IDEPO.FD      -> mnitb_daily_pibb_fd_d0.sas7bdat
+    IDEPO.SAVING  -> saving_d0.sas7bdat
+    IDEPO.CURRENT -> current_d0.sas7bdat
+    IDEPO.FD      -> fd_d0.sas7bdat
 
  3. //PDEPO DD DSN=SAP.PBB.MNITB.DAILY(-1)  (PBB, previous day)
-    PDEPO.SAVING  -> mnitb_daily_pbb_saving_d-1.sas7bdat
-    PDEPO.CURRENT -> mnitb_daily_pbb_current_d-1.sas7bdat
-    PDEPO.FD      -> mnitb_daily_pbb_fd_d-1.sas7bdat
+    PDEPO.SAVING  -> saving_d-1.sas7bdat
+    PDEPO.CURRENT -> current_d-1.sas7bdat
+    PDEPO.FD      -> mfd_d-1.sas7bdat
 
  4. //PIDEPO DD DSN=SAP.PIBB.MNITB.DAILY(-1) (PIBB, previous day)
-    PIDEPO.SAVING  -> mnitb_daily_pibb_saving_d-1.sas7bdat
-    PIDEPO.CURRENT -> mnitb_daily_pibb_current_d-1.sas7bdat
-    PIDEPO.FD      -> mnitb_daily_pibb_fd_d-1.sas7bdat
+    PIDEPO.SAVING  -> d-1.sas7bdat
+    PIDEPO.CURRENT -> current_d-1.sas7bdat
+    PIDEPO.FD      -> d-1.sas7bdat
 
  5. //CARD DD DSN=SAP.PBB.CRM.CARD, member UNICARD&REPTYEAR&REPTMON&NOWK
     File : unicard<REPTYEAR><REPTMON><NOWK>.sas7bdat
@@ -204,7 +204,7 @@ print(f"  CARD file: {CARD_FILE.name}")
 print(f"  Output   : {OUTPUT_FILE}")
 
 # ============================================================================
-# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIIMRM01.py pattern)
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
@@ -416,41 +416,7 @@ print(f"  CISFD rows : {len(cisfd_df):,}")
 # ============================================================================
 # HELPERS: SAS "MERGE X(IN=A) BAL(IN=B); BY ACCTNO; IF A;" WHERE BAL
 # CONTRIBUTES ONLY A VALUE COLUMN THAT DOESN'T EXIST IN X.
-#
-# A variable coming exclusively from the non-matching side of a BY-group
-# merge is NOT reset to missing when that side fails to match for the
-# current BY value -- per SAS's automatic-retain-across-iterations rule
-# for SET/MERGE-sourced variables, it keeps whatever value was last read
-# from BAL, i.e. it carries forward from the closest ACCTNO <= the
-# current one in ascending BY order. This is a well-known, if unintended,
-# SAS MERGE artifact, and it is reproduced exactly (not "fixed" to 0/
-# missing) via a backward as-of join on the sorted ACCTNO key.
 # ============================================================================
-# def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
-#     base_sorted = base_df.sort("ACCTNO")
-#     value_dedup = (
-#         value_df
-#         .sort("ACCTNO", maintain_order=True)
-#         .unique(subset=["ACCTNO"], keep="first")
-#     )
-#     joined = base_sorted.join(
-#         value_dedup.select(["ACCTNO", value_col]),
-#         on="ACCTNO", how="left",
-#     )
-#     return joined.with_columns(pl.col(value_col).fill_null(0.0))
-
-# def _asof_carry(base_df: pl.DataFrame, value_df: pl.DataFrame, value_col: str) -> pl.DataFrame:
-#     base_sorted = base_df.sort("ACCTNO", maintain_order=True)
-#     value_sorted = (
-#         value_df
-#         .sort("ACCTNO", maintain_order=True)
-#         .unique(subset=["ACCTNO"], keep="last", maintain_order=True)
-#         .select(["ACCTNO", value_col])
-#     )
-#     # Backward as-of: exact match, else last balance record below this ACCTNO.
-#     # Stays null (SAS missing) when no earlier balance record exists.
-#     return base_sorted.join_asof(value_sorted, on="ACCTNO", strategy="backward")
-
 def _asof_carry(base_df, value_df, value_col):
     """
     Emulate SAS:  MERGE base(IN=A) value(IN=B); BY ACCTNO; IF A;
@@ -472,42 +438,6 @@ def _asof_carry(base_df, value_df, value_col):
     return base_sorted.join(value_sorted, on="ACCTNO", how="left")
 
 
-# SHARED_CARD_COLS = ["NEWIC", "CARDNO", "MONITOR", "SOURCE", "CLOSECD", "OLDIC", "CUSTNAME", "APPRLIMT", "TYPE"]
-
-
-# def _merge_depo_pdepo(depo_df: pl.DataFrame, pdepo_df: pl.DataFrame) -> pl.DataFrame:
-#     """
-#     DATA DEPO; MERGE DEPO(IN=A) PDEPO(IN=B); BY ACCTNO; IF A;
-#     PRE_CURBAL exists only in PDEPO(B) -> backward as-of carry-forward
-#     (see _asof_carry). The remaining card-attribute columns exist on
-#     BOTH sides; SAS overwrites them with PDEPO's value only on an EXACT
-#     ACCTNO match (PDEPO is listed after DEPO in the MERGE statement); on
-#     a miss, PDEPO contributes nothing that iteration, so DEPO's own
-#     freshly-read value stands. That is a plain exact left join with a
-#     coalesce back to DEPO's own value on a miss.
-#     """
-#     depo_sorted  = depo_df.sort("ACCTNO")
-#     pdepo_sorted = (
-#         pdepo_df.sort("ACCTNO")
-#                  .unique(subset=["ACCTNO"], keep="first")
-#     )
-
-#     asof_pre = depo_sorted.select(["ACCTNO"]).join_asof(
-#         pdepo_sorted.select(["ACCTNO", "PRE_CURBAL"]), on="ACCTNO", strategy="backward"
-#     )
-
-#     exact = depo_sorted.join(
-#         pdepo_sorted.select(["ACCTNO"] + SHARED_CARD_COLS),
-#         on="ACCTNO", how="left", suffix="_pd",
-#     )
-#     for c in SHARED_CARD_COLS:
-#         exact = exact.with_columns(
-#             pl.coalesce([pl.col(f"{c}_pd"), pl.col(c)]).alias(c)
-#         ).drop(f"{c}_pd")
-
-#     return exact.with_columns(asof_pre["PRE_CURBAL"])
-
-
 def _read_acct_bal(cache: Path, value_col: str) -> pl.DataFrame:
     con2 = duckdb.connect(database=":memory:")
     df = con2.execute(f"""
@@ -517,96 +447,6 @@ def _read_acct_bal(cache: Path, value_col: str) -> pl.DataFrame:
     con2.close()
     return df
 
-
-# # ============================================================================
-# # STEP 5: BUILD PSA / PCA / PFD  (previous-period balances)
-# # PROC SORT DATA=PDEPO.SAVING  OUT=PSA (RENAME=(CURBAL=PRE_CURBAL));
-# # PROC SORT DATA=PIDEPO.SAVING OUT=PISA(RENAME=(CURBAL=PRE_CURBAL));
-# # DATA PSA; SET PSA PISA; RUN;  (same pattern for PCA / PFD)
-# # DATA PSA; MERGE CISSA(IN=A) PSA(IN=B); BY ACCTNO; IF A; RUN;
-# # ============================================================================
-# print("\nStep 5: Building PSA / PCA / PFD (previous-period balances)...")
-
-# psa_bal = pl.concat([_read_acct_bal(PDEPO_SAVING_CACHE,  "PRE_CURBAL"),
-#                       _read_acct_bal(PIDEPO_SAVING_CACHE, "PRE_CURBAL")])
-# pca_bal = pl.concat([_read_acct_bal(PDEPO_CURRENT_CACHE,  "PRE_CURBAL"),
-#                       _read_acct_bal(PIDEPO_CURRENT_CACHE, "PRE_CURBAL")])
-# pfd_bal = pl.concat([_read_acct_bal(PDEPO_FD_CACHE,  "PRE_CURBAL"),
-#                       _read_acct_bal(PIDEPO_FD_CACHE, "PRE_CURBAL")])
-
-# psa_df = _asof_carry(cissa_df, psa_bal, "PRE_CURBAL")
-# pca_df = _asof_carry(cisca_df, pca_bal, "PRE_CURBAL")
-# pfd_df = _asof_carry(cisfd_df, pfd_bal, "PRE_CURBAL")
-
-# del psa_bal, pca_bal, pfd_bal
-# gc.collect()
-
-# print(f"  PSA rows : {len(psa_df):,}   PCA rows : {len(pca_df):,}   PFD rows : {len(pfd_df):,}")
-
-# # ============================================================================
-# # STEP 6: BUILD SA / CA / FD  (current-period balances)
-# # PROC SORT DATA=DEPO.SAVING  OUT=SA(KEEP=ACCTNO CURBAL);
-# # PROC SORT DATA=IDEPO.SAVING OUT=ISA(KEEP=ACCTNO CURBAL);
-# # DATA SA; SET SA ISA; RUN;  (same pattern for CA / FD)
-# # DATA SA; MERGE CISSA(IN=A) SA(IN=B); BY ACCTNO; IF A; RUN;
-# # ============================================================================
-# print("\nStep 6: Building SA / CA / FD (current-period balances)...")
-
-# sa_bal = pl.concat([_read_acct_bal(DEPO_SAVING_CACHE,  "CURBAL"),
-#                      _read_acct_bal(IDEPO_SAVING_CACHE, "CURBAL")])
-# ca_bal = pl.concat([_read_acct_bal(DEPO_CURRENT_CACHE,  "CURBAL"),
-#                      _read_acct_bal(IDEPO_CURRENT_CACHE, "CURBAL")])
-# fd_bal = pl.concat([_read_acct_bal(DEPO_FD_CACHE,  "CURBAL"),
-#                      _read_acct_bal(IDEPO_FD_CACHE, "CURBAL")])
-
-# sa_df = _asof_carry(cissa_df, sa_bal, "CURBAL")
-# ca_df = _asof_carry(cisca_df, ca_bal, "CURBAL")
-# fd_df = _asof_carry(cisfd_df, fd_bal, "CURBAL")
-
-# del sa_bal, ca_bal, fd_bal
-# gc.collect()
-
-# print(f"  SA rows : {len(sa_df):,}   CA rows : {len(ca_df):,}   FD rows : {len(fd_df):,}")
-
-# # ============================================================================
-# # STEP 7: DATA DEPO; SET SA CA FD;  DATA PDEPO; SET PSA PCA PFD;
-# # PROC SORT DATA=DEPO;  BY ACCTNO;
-# # PROC SORT DATA=PDEPO; BY ACCTNO;
-# # DATA DEPO;
-# #   MERGE DEPO(IN=A) PDEPO(IN=B); BY ACCTNO; IF A;
-# #   WITHDR = PRE_CURBAL - CURBAL;
-# #   IF WITHDR < 0 THEN WITHDR = 0;
-# # (SAS: a missing WITHDR from a missing PRE_CURBAL sorts as < 0, so it
-# #  is also corrected to 0 by this same statement -- preserved below.)
-# # ============================================================================
-# print("\nStep 7: Combining DEPO / PDEPO and calculating withdrawals...")
-
-# depo_df  = pl.concat([sa_df, ca_df, fd_df])
-# pdepo_df = pl.concat([psa_df, pca_df, pfd_df])
-
-# depo_final = _merge_depo_pdepo(depo_df, pdepo_df)
-# # depo_final = depo_final.with_columns(
-# #     pl.when(pl.col("PRE_CURBAL").is_null() | ((pl.col("PRE_CURBAL") - pl.col("CURBAL")) < 0))
-# #     .then(0.0)
-# #     .otherwise(pl.col("PRE_CURBAL") - pl.col("CURBAL"))
-# #     .alias("WITHDR")
-# # )
-
-# depo_final = depo_final.with_columns(
-#     pl.when(
-#         pl.col("PRE_CURBAL").is_null()
-#         | pl.col("CURBAL").is_null()
-#         | ((pl.col("PRE_CURBAL") - pl.col("CURBAL")) < 0)
-#     )
-#     .then(0.0)
-#     .otherwise(pl.col("PRE_CURBAL") - pl.col("CURBAL"))
-#     .alias("WITHDR")
-# )
-
-# print(f"  DEPO rows : {len(depo_final):,}")
-
-# del pdepo_df
-# gc.collect()
 
 # ============================================================================
 # STEP 5-7: CURRENT (CURBAL) AND PREVIOUS (PRE_CURBAL) BALANCES, WITHDRAWALS
@@ -640,130 +480,6 @@ ca_cur, ca_pre = _both([DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE],
 fd_cur, fd_pre = _both([DEPO_FD_CACHE, IDEPO_FD_CACHE],
                        [PDEPO_FD_CACHE, PIDEPO_FD_CACHE])
 
-# # DEBUG 
-# dbg_acct = 1373840635
-# print("CISFD row:",
-#       cisfd_df.filter(pl.col("ACCTNO") == dbg_acct))
-# print("FD balance row:",
-#       fd_cur.filter(pl.col("ACCTNO") == dbg_acct))
-# print("FD balance neighbours (previous 3 keys ≤ this account):",
-#       fd_cur.filter(pl.col("ACCTNO") <= dbg_acct)
-#             .sort("ACCTNO").tail(5))
-
-# # DEBUG v2
-# for _a in [1595256021, 1408177326, 1019416021, 1373840635, 1283166924]:
-#     _hits = fd_cur.filter(pl.col("ACCTNO") == _a)
-#     _near = (fd_cur.filter(pl.col("ACCTNO") <= _a)
-#                    .sort("ACCTNO")
-#                    .tail(3))
-#     print(f"  DBG FD acct={_a} exact_hits={_hits.height} vals={_hits['CURBAL'].to_list()}")
-#     print(f"           nearest<=acct={_near.select(['ACCTNO','CURBAL']).to_dicts()}")
-
-# # DEBUG
-# print(
-#     fd_cur.group_by("ACCTNO").len()
-#           .filter(pl.col("len") > 1)
-#           .sort("len", descending=True)
-#           .head(20)
-# )
-
-# # DEBUG v2
-# _TARGET = "1595256021"
-# for _tag, _p in [("DEPO_FD",   DEPO_FD_CACHE),
-#                  ("IDEPO_FD",  IDEPO_FD_CACHE),
-#                  ("PDEPO_FD",  PDEPO_FD_CACHE),
-#                  ("PIDEPO_FD", PIDEPO_FD_CACHE)]:
-#     _raw = pl.read_parquet(_p)
-#     _hit = _raw.filter(
-#         pl.col("ACCTNO").cast(pl.Utf8).str.strip_chars().str.contains(_TARGET)
-#     )
-#     print(f"  DBG {_tag}: schema={_raw.schema} rows={_raw.height} substring_hits={_hit.height}")
-#     if _hit.height:
-#         print("         hit rows:", _hit.to_dicts())
-
-# DEBUG v2
-_target_acct = "1595256021"
-_target_val  = 11630.87
-for _tag, _cache in [
-    ("DEPO_SAVING",    DEPO_SAVING_CACHE),
-    ("DEPO_CURRENT",   DEPO_CURRENT_CACHE),
-    ("DEPO_FD",        DEPO_FD_CACHE),
-    ("IDEPO_SAVING",   IDEPO_SAVING_CACHE),
-    ("IDEPO_CURRENT",  IDEPO_CURRENT_CACHE),
-    ("IDEPO_FD",       IDEPO_FD_CACHE),
-    ("PDEPO_SAVING",   PDEPO_SAVING_CACHE),
-    ("PDEPO_CURRENT",  PDEPO_CURRENT_CACHE),
-    ("PDEPO_FD",       PDEPO_FD_CACHE),
-    ("PIDEPO_SAVING",  PIDEPO_SAVING_CACHE),
-    ("PIDEPO_CURRENT", PIDEPO_CURRENT_CACHE),
-    ("PIDEPO_FD",      PIDEPO_FD_CACHE),
-]:
-    _raw = pl.read_parquet(_cache).select(["ACCTNO", "CURBAL"])
-    _acct_str = _raw.with_columns(
-        pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A")
-    )
-    _hit_a = _acct_str.filter(pl.col("A") == _target_acct)
-    _hit_v = _raw.filter(
-        (pl.col("CURBAL").is_not_null()) &
-        ((pl.col("CURBAL") - _target_val).abs() < 0.01)
-    )
-    if _hit_a.height or _hit_v.height:
-        print(f"  DBG {_tag}: acct_hits={_hit_a.select(['ACCTNO','CURBAL']).to_dicts()} "
-              f"val_hits={_hit_v.to_dicts()}")
-# Also look on the CIS side — is the account even present in the CIS extract?
-for _tag, _cache in [("CISDP", CISDP_CACHE), ("CISSAFD", CISSAFD_CACHE)]:
-    _raw = pl.read_parquet(_cache).select(["ACCTNO", "NEWIC"])
-    _acct_str = _raw.with_columns(
-        pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A")
-    )
-    _hit = _acct_str.filter(pl.col("A") == _target_acct)
-    print(f"  DBG {_tag}: rows={_raw.height} acct_hits={_hit.select(['ACCTNO','NEWIC']).to_dicts()}")
-
-# DEBUG v2
-print("DEBUG: reached, fd_cur height =", fd_cur.height)
-print("DEBUG: first 5 fd_cur rows:", fd_cur.head(5).to_dicts())
-print("DEBUG: sample ACCTNO dtype/values:",
-      fd_cur.select(pl.col("ACCTNO").head(3).cast(pl.Int64).cast(pl.Utf8)).to_series().to_list())
-for _tag, _cache in [
-    ("DEPO_FD",   DEPO_FD_CACHE),
-    ("IDEPO_FD",  IDEPO_FD_CACHE),
-    ("PDEPO_FD",  PDEPO_FD_CACHE),
-    ("PIDEPO_FD", PIDEPO_FD_CACHE),
-    ("DEPO_CURRENT",  DEPO_CURRENT_CACHE),
-    ("IDEPO_CURRENT", IDEPO_CURRENT_CACHE),
-]:
-    _raw = pl.read_parquet(_cache).select(["ACCTNO", "CURBAL"])
-    _as_int_str = _raw.with_columns(pl.col("ACCTNO").cast(pl.Int64).cast(pl.Utf8).alias("A"))
-    for _a in [1595256021, 3591442711, 3591444701, 3593201934]:
-        _hit = _as_int_str.filter(pl.col("A") == str(_a))
-        if _hit.height:
-            print(f"  DBG {_tag} acct={_a}: {_hit.select(['ACCTNO','CURBAL']).to_dicts()}")
-
-# DEBUG v2
-import os
-from datetime import datetime as _dt
-for _tag, _sas, _cache in [
-    ("DEPO_FD",  DEPO_FD_FILE,  DEPO_FD_CACHE),
-    ("IDEPO_FD", IDEPO_FD_FILE, IDEPO_FD_CACHE),
-    ("PDEPO_FD", PDEPO_FD_FILE, PDEPO_FD_CACHE),
-    ("PIDEPO_FD", PIDEPO_FD_FILE, PIDEPO_FD_CACHE),
-]:
-    print(f"  DBG {_tag}: "
-          f"src_mtime={_dt.fromtimestamp(os.path.getmtime(_sas))}  "
-          f"cache_mtime={_dt.fromtimestamp(os.path.getmtime(_cache))}")
-for _tag, _sas in [("DEPO_FD",  DEPO_FD_FILE),
-                   ("IDEPO_FD", IDEPO_FD_FILE),
-                   ("PDEPO_FD", PDEPO_FD_FILE),
-                   ("PIDEPO_FD", PIDEPO_FD_FILE)]:
-    _df = pd.read_sas(_sas, encoding="latin1")
-    _hit = _df[_df["ACCTNO"].astype("float").astype("int64") == 1595256021]
-    print(f"  DBG raw {_tag}: total={len(_df):,} "
-          f"hit_1595256021={_hit[['ACCTNO','CURBAL']].to_dict('records')}")
-_df = pd.read_sas(CISSAFD_FILE, encoding="latin1")
-_hit = _df[_df["ACCTNO"].astype("float").astype("int64") == 1595256021]
-print(f"  DBG raw CISSAFD hit_1595256021: "
-      f"{_hit[['ACCTNO','NEWIC']].to_dict('records')}")
-
 sa_df = _with_balances(cissa_df, sa_cur, sa_pre)
 ca_df = _with_balances(cisca_df, ca_cur, ca_pre)
 fd_df = _with_balances(cisfd_df, fd_cur, fd_pre)
@@ -788,13 +504,6 @@ depo_final = depo_final.with_columns(
 )
 
 print(f"  DEPO rows : {len(depo_final):,}")
-
-# # DEBUG
-# print(
-#     depo_final
-#     .filter(pl.col("ACCTNO").is_in([1408177326, 1019416021, 1373840635, 1283166924]))
-#     .select(["ACCTNO", "CURBAL", "PRE_CURBAL", "WITHDR"])
-# )
 
 # ============================================================================
 # STEP 8: PROC SUMMARY DATA=DEPO NWAY; CLASS NEWIC; VAR PRE_CURBAL CURBAL WITHDR;
@@ -885,15 +594,8 @@ print(f"  TOT rows : {len(tot_df):,}")
 # ============================================================================
 print("\nStep 11: Building FINAL dataset...")
 
-# depo_acct_df = pl.concat([sa_df, ca_df, fd_df])
-# final_df = depo_acct_df.join(tot_df, on="NEWIC", how="inner").sort(["CUSTNAME", "ACCTNO"])
-
-# del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, depo_acct_df, tot_df, depo_final, depo_df
-# gc.collect()
-
 final_df = depo_final.join(tot_df, on="NEWIC", how="inner").sort(["CUSTNAME", "ACCTNO"], maintain_order=True)
 
-# del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, tot_df, depo_final, depo_df
 del sa_df, ca_df, fd_df, cisca_df, cissa_df, cisfd_df, tot_df, depo_final
 gc.collect()
 
@@ -964,14 +666,25 @@ def _fmt_acctno(val) -> str:
         return "0".rjust(13)
 
 
+# def _fmt_comma15_2(val) -> str:
+#     """COMMA15.2 with OPTIONS MISSING=0: a missing value prints as '0'."""
+#     if val is None or val != val:
+#         return "0.00".rjust(15)
+#     try:
+#         return f"{float(val):>15,.2f}"
+#     except (TypeError, ValueError):
+#         return "0.00".rjust(15)
+
 def _fmt_comma15_2(val) -> str:
-    """COMMA15.2 with OPTIONS MISSING=0: a missing value prints as '0'."""
+    """COMMA15.2 with OPTIONS MISSING=0: a missing value prints as '0',
+    right-aligned in 13 columns followed by 2 blanks (SAS reserves the '.00' width)."""
+    missing = "0".rjust(13) + "  "
     if val is None or val != val:
-        return "0.00".rjust(15)
+        return missing
     try:
         return f"{float(val):>15,.2f}"
     except (TypeError, ValueError):
-        return "0.00".rjust(15)
+        return missing
 
 
 def _fmt_apprlimt(val) -> str:
