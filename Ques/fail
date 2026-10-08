@@ -1,10 +1,19 @@
-_junk = (
-    wdraw.select("RSONCODE")
-    .unique()
-    .filter(~pl.col("RSONCODE").is_in(sorted(_VALID_REASONS)))
-    .sort("RSONCODE")
-    .head(25)["RSONCODE"].to_list()
-)
-for _c in _junk:
-    print(f"  JUNK {_c!r:20} latin1-hex={_c.encode('latin1', errors='replace').hex():10} "
-          f"cp037-decoded={bytes(ord(ch) & 0xFF for ch in _c).decode('cp037')!r}")
+import re
+from itertools import zip_longest
+from pathlib import Path
+
+EXPECTED = Path(r"<path to the expected SAS output file>")
+ACTUAL = Path(r"/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBMRBDP/EIBMRB09.txt")
+
+
+def junk_codes(path: Path, limit: int = 40) -> list:
+    data = path.read_bytes()
+    start = data.index(b"\n", data.index(b";NO.;RM")) + 1     # after group (A) header
+    end = data.index(b"   W01 ;")                             # first valid reason code
+    region = b"\n" + data[start:end]
+    return [m.group(1) for m in re.finditer(rb"\n   (.*?) ;0 ;0 ;0", region, re.DOTALL)][:limit]
+
+
+for i, (exp, act) in enumerate(zip_longest(junk_codes(EXPECTED), junk_codes(ACTUAL)), 1):
+    print(f"{i:02d} EXP={exp.hex(' ') if exp is not None else '-':<20} "
+          f"ACT={act.hex(' ') if act is not None else '-'}")
