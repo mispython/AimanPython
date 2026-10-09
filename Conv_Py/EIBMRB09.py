@@ -28,6 +28,7 @@ Preserved SAS behaviour:
 
 import calendar
 import gc
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
@@ -45,7 +46,7 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_MIS_DIR = STG_DIR / "sasdata" / "dp_sasdata"        # //MIS DD SAP.PBB.DP.SASDATA
+INPUT_MIS_DIR = STG_DIR / "EIBMRBDP"                      # //MIS DD SAP.PBB.DP.SASDATA
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -54,8 +55,9 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIBMRB09.txt"                 # //SASLIST DD SAP.PBB.EIBMRB09
 
-CHUNK_ROWS = 500_000
+CHUNK_ROWS   = 500_000
 MISSING_CHAR = "0"          # OPTIONS MISSING=0
+LRECL = 500                 # //SASLIST DD LRECL=500, RECFM=FB (records padded with blanks)
 
 
 # ============================================================================
@@ -63,7 +65,12 @@ MISSING_CHAR = "0"          # OPTIONS MISSING=0
 # ============================================================================
 def derive_report_context() -> dict:
     """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # DEBUG - UAT override
+    reptdate = date(2026, 9, 30)
+ 
     return {
         "reptdate": reptdate,
         "reptyear": reptdate.strftime("%Y"),
@@ -77,7 +84,8 @@ print("Step 1: Deriving report date...")
 CTX = derive_report_context()
 print(f"  RDATE: {CTX['rdate']}")
 
-INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw{CTX['reptmon']}.sas7bdat"      # MIS.FDWDRW&REPTMON
+# INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw{CTX['reptmon']}.sas7bdat"      # MIS.FDWDRW&REPTMON
+INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw09.sas7bdat"      # MIS.FDWDRW&REPTMON
 
 
 # ============================================================================
@@ -117,7 +125,9 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
+    # so datasets with the same file name in different subfolders never share a cache.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
@@ -140,30 +150,60 @@ def _put(col: int, *items: str) -> str:
 
 
 def _best(value) -> str:
+    """BEST12. (left-aligned); missing -> MISSING=0 character."""
     if value is None:
         return MISSING_CHAR
     v = float(value)
     return str(int(v)) if v == int(v) else format(v, ".12g")
 
 
-def _comma(value, width: int, decimals: int = 0) -> str:
+def _comma(value, decimals: int = 0) -> str:
+    """COMMA16. in list-mode PUT: left-aligned, no padding; missing -> MISSING=0 character."""
     if value is None:
-        return MISSING_CHAR.rjust(width)
+        return MISSING_CHAR
     quant = Decimal(1).scaleb(-decimals)
-    text = f"{Decimal(repr(float(value))).quantize(quant, rounding=ROUND_HALF_UP):,.{decimals}f}"
-    return text.rjust(width)
+    return f"{Decimal(repr(float(value))).quantize(quant, rounding=ROUND_HALF_UP):,.{decimals}f}"
 
 
 def _int3(value) -> str:
-    """Format 3. (round half away from zero, right-aligned); missing -> MISSING=0 character."""
+    """Format 3. in list-mode PUT (round half away from zero, left-aligned); missing -> MISSING=0."""
     if value is None:
-        return MISSING_CHAR.rjust(3)
-    return str(int(Decimal(repr(float(value))).quantize(Decimal(1), rounding=ROUND_HALF_UP))).rjust(3)
+        return MISSING_CHAR
+    return str(int(Decimal(repr(float(value))).quantize(Decimal(1), rounding=ROUND_HALF_UP)))
 
 
 def _pct(part, whole):
     """(RCi/GTC)*100; division by zero -> missing."""
     return None if not whole else part / whole * 100
+
+
+def _var(text: str) -> str:
+    """List-mode PUT of a variable: the value followed by one blank delimiter."""
+    return text + " "
+
+
+def _list_put(values) -> str:
+    """PUT v1 ';' v2 ';' ... vn  (literals ';' carry no blank, variables carry one)."""
+    return ";".join(_var(v) for v in values)
+
+
+def _seq_sum(values):
+    """Left-to-right accumulation (SAS SUM statement / PROC SUMMARY).
+    Python 3.12+ sum() uses compensated float summation, which can differ from SAS."""
+    total = 0
+    for v in values:
+        total += v
+    return total
+
+
+def _ebcdic_key(code: str, width: int) -> bytes:
+    """Sort key replicating PROC SORT BY RSONCODE under the EBCDIC collating sequence
+    (shorter values are padded with the EBCDIC blank, X'40')."""
+    try:
+        raw = code.encode("cp037")
+    except UnicodeEncodeError:
+        raw = code.encode("latin1", errors="replace")
+    return raw.ljust(width, b"\x40")
 
 
 # ============================================================================
@@ -175,7 +215,7 @@ FDWDRW_CACHE = _load_cached(INPUT_FDWDRW_FILE, "MIS.FDWDRW")
 print("\nStep 3: Loading WDRAW...")
 wdraw = _read_pq(
     FDWDRW_CACHE,
-    "CAST(TRANAMT AS DOUBLE) AS TRANAMT, COALESCE(TRIM(RSONCODE), '') AS RSONCODE, "
+    "CAST(TRANAMT AS DOUBLE) AS TRANAMT, COALESCE(RTRIM(RSONCODE), '') AS RSONCODE, "
     "CAST(PRODCD AS BIGINT) AS PRODCD, CAST(CUSTCODE AS BIGINT) AS CUSTCODE",
     "COALESCE(TRIM(CURCODE), '') = 'MYR' AND COALESCE(PRODCD, -1) NOT IN (394, 393)",
 )
@@ -192,41 +232,61 @@ _PROD_INDEX = {300: 0, 301: 1, 302: 2, 303: 3, 315: 4, 316: 5, 311: 6, 312: 7, 3
 _PRINT_ORDER = (0, 1, 3, 2, 4, 5, 6, 7, 8, 9)      # PLUS FD, FD LIFE, GOLDEN 50, MGIA-I, ISTISMAR, ...
 _VALID_REASONS = {f"W{i:02d}" for i in range(1, 17)}
 
+# # DEBUG - Symbols
+# _junk = (
+#     wdraw.select("RSONCODE")
+#     .unique()
+#     .filter(~pl.col("RSONCODE").is_in(sorted(_VALID_REASONS)))
+#     .sort("RSONCODE")
+#     .head(25)["RSONCODE"].to_list()
+# )
+# for _c in _junk:
+#     print(f"  JUNK {_c!r:20} latin1-hex={_c.encode('latin1', errors='replace').hex():10} "
+#           f"cp037-decoded={bytes(ord(ch) & 0xFF for ch in _c).decode('cp037')!r}")
+
 
 def _build_fdraw(df: pl.DataFrame) -> list:
-    """DATA FDRAW&J: one row per RSONCODE, counters RETAINed across groups."""
+    """DATA FDRAW&J: one row per RSONCODE, counters RETAINed across groups.
+    Amounts are accumulated row by row in file order (stable sort), codes are ordered EBCDIC-style."""
     if df.is_empty():
         return []
-    agg = df.group_by(["RSONCODE", "PRODCD"]).agg(pl.len().alias("N"), pl.col("TRANAMT").sum().alias("AMT"))
-    by_code = {}
-    for rec in agg.iter_rows(named=True):
-        by_code.setdefault(rec["RSONCODE"], []).append(rec)
 
+    acc = {}                                   # RSONCODE -> ([C0..C9], [A0..A9])
+    for code, prodcd, tranamt in zip(
+        df["RSONCODE"].to_list(), df["PRODCD"].to_list(), df["TRANAMT"].to_list()
+    ):
+        slot = acc.get(code)
+        if slot is None:
+            slot = acc[code] = ([0] * 10, [0.0] * 10)
+        if code in _VALID_REASONS:
+            idx = _PROD_INDEX.get(prodcd)
+            if idx is not None:
+                slot[0][idx] += 1
+                if tranamt is not None:        # A0+TRANAMT ignores missing
+                    slot[1][idx] += tranamt
+
+    width = max(len(c) for c in acc)
     cnt, amt, rows = [0] * 10, [0.0] * 10, []
-    for code in sorted(by_code):
-        if code in _VALID_REASONS:                       # IF FIRST.RSONCODE THEN reset (valid codes only)
-            cnt, amt = [0] * 10, [0.0] * 10
-            for rec in by_code[code]:
-                idx = _PROD_INDEX.get(rec["PRODCD"])
-                if idx is not None:
-                    cnt[idx] += rec["N"]
-                    amt[idx] += rec["AMT"] or 0.0
-        rows.append({"code": code, "C": list(cnt), "A": list(amt), "TC": sum(cnt), "TA": sum(amt)})
+    for code in sorted(acc, key=lambda c: _ebcdic_key(c, width)):
+        if code in _VALID_REASONS:             # IF FIRST.RSONCODE THEN reset (valid codes only)
+            cnt, amt = acc[code]
+        rows.append({"code": code, "C": list(cnt), "A": list(amt),
+                     "TC": _seq_sum(cnt), "TA": _seq_sum(amt)})
     return rows
 
 
 def _build_total(rows: list) -> dict:
     """PROC SUMMARY (grand total) + DATA TOTAL&J percentages."""
-    rc = [sum(r["C"][i] for r in rows) for i in range(10)]
-    ra = [sum(r["A"][i] for r in rows) for i in range(10)]
-    gtc = sum(r["TC"] for r in rows)
-    gta = sum(r["TA"] for r in rows)
+    rc = [_seq_sum(r["C"][i] for r in rows) for i in range(10)]
+    ra = [_seq_sum(r["A"][i] for r in rows) for i in range(10)]
+    gtc = _seq_sum(r["TC"] for r in rows)
+    gta = _seq_sum(r["TA"] for r in rows)
     pc = [_pct(rc[i], gtc) for i in range(10)]
     pa_ = [_pct(ra[i], gta) for i in range(10)]
     return {
         "RC": rc, "RA": ra, "GTC": gtc, "GTA": gta, "PC": pc, "PA": pa_,
-        "PGTC": sum(v for v in pc if v is not None),
-        "PGTA": sum(v for v in pa_ if v is not None),
+        "PGTC": _seq_sum(v for v in pc if v is not None),
+        "PGTA": _seq_sum(v for v in pa_ if v is not None),
     }
 
 
@@ -267,27 +327,29 @@ def _table_header() -> list:
 def _row_line(row: dict) -> str:
     cells = []
     for i in _PRINT_ORDER:
-        cells += [_best(row["C"][i]), _comma(row["A"][i], 16)]
-    return _put(4, row["code"], ";", ";".join(cells), ";", _best(row["TC"]), ";", _comma(row["TA"], 16))
+        cells += [_best(row["C"][i]), _comma(row["A"][i])]
+    cells += [_best(row["TC"]), _comma(row["TA"])]
+    # PUT @4 RSONCODE ';' C0 ';' A0 ... TC ';' TA
+    return _put(4, _var(row["code"]), ";", _list_put(cells))
 
 
 def _total_lines(t: dict) -> list:
     rc, ra, pc, pa_ = t["RC"], t["RA"], t["PC"], t["PA"]
     # Sequence exactly as coded in the SAS source (RA5 RC5 ... RA9 RC8 - swapped, RC8 repeated).
     total_cells = [
-        _best(rc[0]), _comma(ra[0], 16), _best(rc[1]), _comma(ra[1], 16), _best(rc[3]), _comma(ra[3], 16),
-        _best(rc[2]), _comma(ra[2], 16), _best(rc[4]), _comma(ra[4], 16),
-        _comma(ra[5], 16), _best(rc[5]), _comma(ra[6], 16), _best(rc[6]), _comma(ra[7], 16),
-        _best(rc[7]), _comma(ra[8], 16), _best(rc[8]), _comma(ra[9], 16), _best(rc[8]),
-        _best(t["GTC"]), _comma(t["GTA"], 16),
+        _best(rc[0]), _comma(ra[0]), _best(rc[1]), _comma(ra[1]), _best(rc[3]), _comma(ra[3]),
+        _best(rc[2]), _comma(ra[2]), _best(rc[4]), _comma(ra[4]),
+        _comma(ra[5]), _best(rc[5]), _comma(ra[6]), _best(rc[6]), _comma(ra[7]),
+        _best(rc[7]), _comma(ra[8]), _best(rc[8]), _comma(ra[9]), _best(rc[8]),
+        _best(t["GTC"]), _comma(t["GTA"]),
     ]
     pct_cells = []
     for i in _PRINT_ORDER:
         pct_cells += [_int3(pc[i]), _int3(pa_[i])]
     pct_cells += [_int3(t["PGTC"]), _int3(t["PGTA"])]
     return [
-        _put(4, "TOTAL", ";", ";".join(total_cells)),
-        _put(4, "% COMPOSITION", ";", ";".join(pct_cells)),
+        _put(4, "TOTAL", ";", _list_put(total_cells)),
+        _put(4, "% COMPOSITION", ";", _list_put(pct_cells)),
     ]
 
 
@@ -301,9 +363,9 @@ for j in (1, 2):
         report_lines += [_row_line(r) for r in fdraw]
         report_lines += _total_lines(_build_total(fdraw))
 
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+with open(OUTPUT_FILE, "w", encoding="latin1", newline="\n") as fh:
     for ln in report_lines:
-        fh.write(ln + "\n")
+        fh.write(ln[:LRECL].ljust(LRECL) + "\n")      # RECFM=FB, LRECL=500; no ASA byte
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
