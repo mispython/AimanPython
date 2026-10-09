@@ -47,10 +47,18 @@ INPUT_IDEPO_CURRENT_FILE = STG_DIR / "MNITB" / "PIBB" / "current.sas7bdat"      
 INPUT_DEPO_FD_FILE       = STG_DIR / "MNITB" / "PBB"  / "fd.sas7bdat"           # DEPO.FD
 INPUT_IDEPO_FD_FILE      = STG_DIR / "MNITB" / "PIBB" / "fd.sas7bdat"           # IDEPO.FD
 
+# INPUT_DEPO_SAVING_FILE   = STG_DIR / "from_dwh" / "sa09426.sas7bdat"        # DEPO.SAVING
+# INPUT_IDEPO_SAVING_FILE  = STG_DIR / "from_dwh" / "isa09426.sas7bdat"       # IDEPO.SAVING
+# INPUT_DEPO_CURRENT_FILE  = STG_DIR / "from_dwh" / "ca09426.sas7bdat"        # DEPO.CURRENT
+# INPUT_IDEPO_CURRENT_FILE = STG_DIR / "from_dwh" / "ica09426.sas7bdat"       # IDEPO.CURRENT
+# INPUT_DEPO_FD_FILE       = STG_DIR / "from_dwh" / "fd09426.sas7bdat"        # DEPO.FD
+# INPUT_IDEPO_FD_FILE      = STG_DIR / "from_dwh" / "ifd09426.sas7bdat"       # IDEPO.FD
+
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP_dwh"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIBMRB02.txt"                # //SASLIST DD SAP.PBB.EIBMRB02
 
@@ -64,7 +72,12 @@ MISSING_CHAR = "0"          # OPTIONS MISSING=0
 # ============================================================================
 def derive_report_context() -> dict:
     """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # DEBUG - UAT override
+    reptdate = date(2026, 9, 30)
+
     return {
         "reptdate": reptdate,
         "reptyear": reptdate.strftime("%Y"),
@@ -118,7 +131,9 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{tag.replace('.', '_')}.parquet"   # e.g. DEPO_SAVING.parquet / IDEPO_SAVING.parquet
+    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
+    # so datasets with the same file name in different subfolders never share a cache.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
