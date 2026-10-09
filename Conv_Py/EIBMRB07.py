@@ -7,8 +7,8 @@ Dependency:
     %INC PGM(PBBELF) -> from PBBELF import format_brchcd   (BRABBR=PUT(BRANCH,BRCHCD.))
 
 Physical inputs (each cached to Parquet independently):
-    DEPO.CURRENT  (SAP.PBB.MNITB)   -> ENTITY_CD 'PBB'
-    IDEPO.CURRENT (SAP.PIBB.MNITB)  -> ENTITY_CD 'PIBB'
+    DEPO.CURRENT  (SAP.PBB.MNITB)
+    IDEPO.CURRENT (SAP.PIBB.MNITB)
     CIS.DEPOSIT   (SAP.PBB.CISBEXT.DP)
     All file names are fixed (no date token), so input_date.py is not used.
 
@@ -37,19 +37,23 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_DEPO_CURRENT_FILE = STG_DIR / "sasdata" / "intg_dp_acct_current_d19.sas7bdat"   # DEPO.CURRENT
-INPUT_IDEPO_CURRENT_FILE = STG_DIR / "sasdata" / "intg_dp_acct_current_d19.sas7bdat"  # IDEPO.CURRENT
-INPUT_CIS_DEPOSIT_FILE = STG_DIR / "sasdata" / "cisbext_dp_deposit_d19.sas7bdat"      # CIS.DEPOSIT
+INPUT_DEPO_CURRENT_FILE  = STG_DIR / "MNITB" / "PBB"        / "current.sas7bdat"  # DEPO.CURRENT
+INPUT_IDEPO_CURRENT_FILE = STG_DIR / "MNITB" / "PIBB"       / "current.sas7bdat"  # IDEPO.CURRENT
+# INPUT_DEPO_CURRENT_FILE  = STG_DIR / "from_dwh" / "ca.sas7bdat"                         # DEPO.CURRENT
+# INPUT_IDEPO_CURRENT_FILE = STG_DIR / "from_dwh" / "ica.sas7bdat"                        # IDEPO.CURRENT
+INPUT_CIS_DEPOSIT_FILE   = STG_DIR / "CIS"      / "CISBEXT_DP" / "deposit.sas7bdat"     # CIS.DEPOSIT
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP_dwh"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIBMRB07.txt"                 # //SASLIST DD SAP.PBB.EIBMRB07
 
 CHUNK_ROWS = 500_000
 MISSING_CHAR = "."          # default MISSING option
+LRECL        = 155          # //SASLIST DD LRECL=155 (records padded with blanks)
 
 
 # ============================================================================
@@ -57,7 +61,12 @@ MISSING_CHAR = "."          # default MISSING option
 # ============================================================================
 def derive_report_context() -> dict:
     """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # DEBUG - UAT override
+    reptdate = date(2026, 9, 30)
+
     return {
         "reptdate": reptdate,
         "reptyear": reptdate.strftime("%Y"),
@@ -111,7 +120,9 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
+    # so datasets with the same file name in different subfolders never share a cache.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
@@ -199,8 +210,8 @@ _WHERE = (
 
 fcyca = pl.concat(
     [
-        _read_pq(cache, _COLS, f"TRIM(ENTITY_CD) = '{entity}' AND {_WHERE}")
-        for cache, entity in ((DEPO_CURRENT_CACHE, "PBB"), (IDEPO_CURRENT_CACHE, "PIBB"))
+        _read_pq(cache, _COLS, _WHERE)
+        for cache in (DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE)
     ]
 )
 
@@ -253,7 +264,7 @@ if not fcyca.is_empty():
 
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
-        fh.write(ln + "\n")
+        fh.write(ln.ljust(LRECL) + "\n")        # RECFM=FB, LRECL=155: pad with blanks, no ASA byte
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
