@@ -67,7 +67,12 @@ CONTINUED    = "(Continued)"
 # ============================================================================
 def derive_report_context() -> dict:
     """Macro-variable equivalents of the REPTDATE step (NOWK: exact day 8/15/22, else 4)."""
-    reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # DEBUG - UAT override
+    reptdate = date(2026, 9, 30)
+
     return {
         "reptdate": reptdate,
         "nowk": {8: "1", 15: "2", 22: "3"}.get(reptdate.day, "4"),
@@ -88,7 +93,7 @@ print(f"  RDATE: {CTX['rdate']}  NOWK: {CTX['nowk']}")
 # INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}.sas7bdat"
 # INPUT_MIS2FD_FILE = INPUT_MIS2FD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
 
-INPUT_MISFD_FILE  = INPUT_MISFD_DIR / f"fcyfd09.sas7bdat"
+INPUT_MISFD_FILE  = INPUT_MISFD_DIR  / f"fcyfd09.sas7bdat"
 INPUT_MIS2FD_FILE = INPUT_MIS2FD_DIR / f"fcyfd09426.sas7bdat"
 
 
@@ -129,7 +134,9 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
+    # so datasets with the same file name in different subfolders never share a cache.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
