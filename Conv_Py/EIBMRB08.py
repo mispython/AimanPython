@@ -44,18 +44,19 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_MIS_DIR = STG_DIR / "sasdata" / "dp_sasdata"        # //MIS DD SAP.PBB.DP.SASDATA
+INPUT_MIS_DIR = STG_DIR / "EIBMRBDP"                      # //MIS DD SAP.PBB.DP.SASDATA
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_RMWDRAW_FILE = OUTPUT_DIR / "EIBMRB8A.txt"         # //RMWDRAW  DD SAP.PBB.EIBMRB8A
+OUTPUT_RMWDRAW_FILE  = OUTPUT_DIR / "EIBMRB8A.txt"        # //RMWDRAW  DD SAP.PBB.EIBMRB8A
 OUTPUT_FCYWDRAW_FILE = OUTPUT_DIR / "EIBMRB8B.txt"        # //FCYWDRAW DD SAP.PBB.EIBMRB8B
 
-CHUNK_ROWS = 500_000
+CHUNK_ROWS   = 500_000
 MISSING_CHAR = "0"          # OPTIONS MISSING=0
+LRECL        = 500          # //SASLIST DD LRECL=500 (records padded with blanks)
 
 
 # ============================================================================
@@ -77,7 +78,8 @@ print("Step 1: Deriving report date...")
 CTX = derive_report_context()
 print(f"  RDATE: {CTX['rdate']}")
 
-INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw{CTX['reptmon']}.sas7bdat"      # MIS.FDWDRW&REPTMON
+# INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw{CTX['reptmon']}.sas7bdat"      # MIS.FDWDRW&REPTMON
+INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw09.sas7bdat"      # MIS.FDWDRW&REPTMON
 
 
 # ============================================================================
@@ -117,7 +119,9 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
+    # so datasets with the same file name in different subfolders never share a cache.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
@@ -298,7 +302,7 @@ fcy_lines = _section_lines("FCY FD RECEIPTS WITHDRAWALS", _split_groups(wdraw, r
 for out_file, lines in ((OUTPUT_RMWDRAW_FILE, rm_lines), (OUTPUT_FCYWDRAW_FILE, fcy_lines)):
     with open(out_file, "w", encoding="latin1") as fh:
         for ln in lines:
-            fh.write(ln + "\n")
+            fh.write(ln.ljust(LRECL) + "\n")        # RECFM=FB, LRECL=500: pad with blanks, no ASA byte
     print(f"  Output written : {out_file}  ({len(lines):,} lines)")
 
 print("\nEIBMRB08 complete.")
