@@ -14,8 +14,8 @@ Dependency:
 Physical inputs (each cached to Parquet independently):
     MISFD.FCYFD&REPTMON&NOWK&REPTYEAR2 (SAP.PBB.FCFD) - deterministic name from report-date tokens,
                                                         so input_date.get_latest_file() is not used
-    DEPO.CURRENT  (SAP.PBB.MNITB)   -> ENTITY_CD 'PBB'
-    IDEPO.CURRENT (SAP.PIBB.MNITB)  -> ENTITY_CD 'PIBB'
+    DEPO.CURRENT  (SAP.PBB.MNITB)
+    IDEPO.CURRENT (SAP.PIBB.MNITB)
 
 Output:
     //SASLIST DD SAP.PBB.EIBMRB05 (LRECL=133, RECFM=FB) -> plain text, no ASA byte.
@@ -33,7 +33,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from PBBDPFMT import ddcustcd_format, fdcustcd_format
+from PBBDPFMT_AII import ddcustcd_format, fdcustcd_format
 from PBBELF import format_brchcd
 from REPTDATE import get_reptdate_values
 
@@ -43,19 +43,23 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_MISFD_DIR = STG_DIR / "sasdata" / "pbb_fcfd"                                     # //MISFD DD SAP.PBB.FCFD
-INPUT_DEPO_CURRENT_FILE = STG_DIR / "sasdata" / "intg_dp_acct_current_d19.sas7bdat"    # DEPO.CURRENT
-INPUT_IDEPO_CURRENT_FILE = STG_DIR / "sasdata" / "intg_dp_acct_current_d19.sas7bdat"   # IDEPO.CURRENT
+INPUT_MISFD_DIR          = STG_DIR / "EIBMRBDP"                               # //MISFD DD SAP.PBB.FCFD
+INPUT_DEPO_CURRENT_FILE  = STG_DIR / "MNITB" / "PBB"  / "current.sas7bdat"    # DEPO.CURRENT
+INPUT_IDEPO_CURRENT_FILE = STG_DIR / "MNITB" / "PIBB" / "current.sas7bdat"    # IDEPO.CURRENT
+# INPUT_DEPO_CURRENT_FILE  = STG_DIR / "from_dwh" / "ca09426.sas7bdat"      # DEPO.CURRENT
+# INPUT_IDEPO_CURRENT_FILE = STG_DIR / "from_dwh" / "ica09426.sas7bdat"     # IDEPO.CURRENT
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP_dwh"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIBMRB05.txt"                 # //SASLIST DD SAP.PBB.EIBMRB05
 
 CHUNK_ROWS = 500_000
 MISSING_CHAR = "."          # default MISSING option
+LRECL = 133                 # //SASLIST DD LRECL=133 (records padded with blanks)
 
 
 # ============================================================================
@@ -63,7 +67,12 @@ MISSING_CHAR = "."          # default MISSING option
 # ============================================================================
 def derive_report_context() -> dict:
     """Macro-variable equivalents of the REPTDATE step (NOWK: exact day 8/15/22, else 4)."""
-    reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # DEBUG - UAT override
+    reptdate = date(2026, 9, 30)
+    
     return {
         "reptdate": reptdate,
         "nowk": {8: "1", 15: "2", 22: "3"}.get(reptdate.day, "4"),
@@ -81,7 +90,8 @@ REPTYEAR_I = int(CTX["reptyear"])
 REPTMON_I = int(CTX["reptmon"])
 print(f"  RDATE: {CTX['rdate']}  NOWK: {CTX['nowk']}")
 
-INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
+# INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
+INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd09426.sas7bdat"
 
 
 # ============================================================================
@@ -121,7 +131,9 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
+    # so datasets with the same file name in different subfolders never share a cache.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
@@ -179,6 +191,11 @@ def _int_w(value, width: int) -> str:
     return str(int(round(value or 0))).rjust(width)
 
 
+def _lst(*texts: str) -> str:
+    """List-style PUT of variables each followed by a literal ';': value, one blank, then ';'."""
+    return "".join(f"{t} ;" for t in texts)
+
+
 def _int_list(values) -> str:
     return ", ".join(str(v) for v in values)
 
@@ -227,8 +244,8 @@ _ca_where = (
 )
 fcyca = pl.concat(
     [
-        _read_pq(cache, f"{_COLS}, 2 AS FTYPE", f"TRIM(ENTITY_CD) = '{entity}' AND {_ca_where}")
-        for cache, entity in ((DEPO_CURRENT_CACHE, "PBB"), (IDEPO_CURRENT_CACHE, "PIBB"))
+        _read_pq(cache, f"{_COLS}, 2 AS FTYPE", _ca_where)
+        for cache in (DEPO_CURRENT_CACHE, IDEPO_CURRENT_CACHE)
     ]
 )
 fcyca = _drop_excluded_customers(fcyca, ddcustcd_format)
@@ -277,13 +294,12 @@ temp = (
 # STEP 5: WRITE REPORT
 # ============================================================================
 def _measures(rec: dict) -> str:
-    """FD CFD NFD CA CCA NCA TA with FORMAT CFD NFD CCA NCA 10.; FD CA TA COMMA20.2;"""
-    return ";".join(
-        [
-            _comma(rec["FD"], 20, 2), _int_w(rec["CFD"], 10), _int_w(rec["NFD"], 10),
-            _comma(rec["CA"], 20, 2), _int_w(rec["CCA"], 10), _int_w(rec["NCA"], 10),
-            _comma(rec["TA"], 20, 2),
-        ]
+    """FD CFD NFD CA CCA NCA TA with FORMAT CFD NFD CCA NCA 10.; FD CA TA COMMA20.2;
+    List-style PUT: formatted value left-aligned, followed by a blank and ';'."""
+    return _lst(
+        _comma(rec["FD"], 20, 2).strip(), _int_w(rec["CFD"], 10).strip(), _int_w(rec["NFD"], 10).strip(),
+        _comma(rec["CA"], 20, 2).strip(), _int_w(rec["CCA"], 10).strip(), _int_w(rec["NCA"], 10).strip(),
+        _comma(rec["TA"], 20, 2).strip(),
     )
 
 
@@ -299,16 +315,17 @@ if not temp.is_empty():
         _put(2, ";;CURRENT BALANCE;ACCOUNT;ACC OPENED;CURRENT BALANCE;ACCOUNT;ACC OPENED;TOT AMT O/S RM;"),
     ]
     for rec in temp.iter_rows(named=True):
-        report_lines.append(
-            _put(2, str(int(rec["BRANCH"])), ";", branch_abbr[int(rec["BRANCH"])], ";", _measures(rec), ";")
-        )
+        branch = int(rec["BRANCH"])
+        # PUT @2 BRANCH ';' BRABBR ';' FD ';' CFD ';' NFD ';' CA ';' CCA ';' NCA ';' TA ';'
+        report_lines.append(_put(2, _lst(str(branch), branch_abbr[branch].rstrip()), _measures(rec)))
     # DATA _NULL_; SET TOTAL; IF _N_=1 -> grand total (PROC SUMMARY without NWAY, first observation)
+    # PUT @2 'TOTAL' ';' ';' FD ';' CFD ';' ... TA ';'
     grand = {c: temp[c].sum() for c in ("FD", "CFD", "NFD", "CA", "CCA", "NCA", "TA")}
-    report_lines.append(_put(2, "TOTAL", ";", ";", _measures(grand), ";"))
+    report_lines.append(_put(2, "TOTAL;;", _measures(grand)))
 
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
-        fh.write(ln + "\n")
+        fh.write(ln.ljust(LRECL) + "\n")        # RECFM=FB, LRECL=133: pad with blanks, no ASA byte
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
