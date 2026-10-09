@@ -41,10 +41,15 @@ INPUT_DEPO_CURRENT_FILE  = STG_DIR / "MNITB" / "PBB"        / "current.sas7bdat"
 INPUT_IDEPO_CURRENT_FILE = STG_DIR / "MNITB" / "PIBB"       / "current.sas7bdat"   # IDEPO.CURRENT
 INPUT_CIS_DEPOSIT_FILE   = STG_DIR / "CIS"   / "CISBEXT_DP" / "deposit.sas7bdat"   # CIS.DEPOSIT
 
+# INPUT_DEPO_CURRENT_FILE  = STG_DIR / "from_dwh" / "ca09426.sas7bdat"                            # DEPO.CURRENT
+# INPUT_IDEPO_CURRENT_FILE = STG_DIR / "from_dwh" / "ica09426.sas7bdat"                           # IDEPO.CURRENT
+# INPUT_CIS_DEPOSIT_FILE   = STG_DIR / "CIS"      / "CISBEXT_DP"        / "deposit.sas7bdat"      # CIS.DEPOSIT
+
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP_dwh"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIBMRB03.txt"                 # //SASLIST DD SAP.PBB.EIBMRB03
 
@@ -116,7 +121,9 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{tag.replace('.', '_')}.parquet"   # e.g. DEPO_SAVING.parquet / IDEPO_SAVING.parquet
+    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
+    # so datasets with the same file name in different subfolders never share a cache.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
