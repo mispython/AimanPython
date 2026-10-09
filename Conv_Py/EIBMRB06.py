@@ -34,10 +34,10 @@ from REPTDATE import get_reptdate_values
 # PATH CONFIGURATION
 # ============================================================================
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_MISFD_DIR = STG_DIR / "sasdata" / "pbb_fcfd"                                     # //MISFD DD SAP.PBB.FCFD
-INPUT_CIS_DEPOSIT_FILE = STG_DIR / "sasdata" / "crm_cisbext_deposit_d19.sas7bdat"      # //CIS DD SAP.PBB.CRM.CISBEXT
+INPUT_MISFD_DIR        = STG_DIR / "EIBMRBDP"                                      # //MISFD DD SAP.PBB.FCFD
+INPUT_CIS_DEPOSIT_FILE = STG_DIR / "CIS" / "CRM_CISBEXT" / "deposit.sas7bdat"      # //CIS DD SAP.PBB.CRM.CISBEXT
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -46,8 +46,9 @@ OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIBMRB06.txt"                 # //SASLIST DD SAP.PBB.EIBMRB06
 
-CHUNK_ROWS = 500_000
+CHUNK_ROWS   = 500_000
 MISSING_CHAR = "."          # default MISSING option
+LRECL        = 155          # //SASLIST DD LRECL=155 (records padded with blanks)
 
 
 # ============================================================================
@@ -55,7 +56,12 @@ MISSING_CHAR = "."          # default MISSING option
 # ============================================================================
 def derive_report_context() -> dict:
     """Macro-variable equivalents of the REPTDATE step (NOWK: exact day 8/15/22, else 4)."""
-    reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # DEBUG - UAT override
+    reptdate = date(2026, 9, 30)
+    
     return {
         "reptdate": reptdate,
         "nowk": {8: "1", 15: "2", 22: "3"}.get(reptdate.day, "4"),
@@ -73,7 +79,8 @@ REPTYEAR_I = int(CTX["reptyear"])
 REPTMON_I = int(CTX["reptmon"])
 print(f"  RDATE: {CTX['rdate']}  NOWK: {CTX['nowk']}")
 
-INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
+# INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
+INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd09426.sas7bdat"
 
 
 # ============================================================================
@@ -113,7 +120,9 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
+    # so datasets with the same file name in different subfolders never share a cache.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
@@ -240,7 +249,7 @@ if not fcyfd.is_empty():
 
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
-        fh.write(ln + "\n")
+        fh.write(ln.ljust(LRECL) + "\n")        # RECFM=FB, LRECL=155: pad with blanks, no ASA byte
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
