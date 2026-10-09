@@ -37,14 +37,19 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_DEPO_FD_FILE      = STG_DIR / "MNITB" / "PBB"        / "fd.sas7bdat"          # DEPO.FD
-INPUT_IDEPO_FD_FILE     = STG_DIR / "MNITB" / "PIBB"       / "fd.sas7bdat"          # IDEPO.FD
-INPUT_CIS_DEPOSIT_FILE  = STG_DIR / "CIS"   / "CISBEXT_DP" / "deposit.sas7bdat"     # CIS.DEPOSIT
+INPUT_DEPO_FD_FILE      = STG_DIR / "MNITB" / "PBB"         / "fd.sas7bdat"          # DEPO.FD
+INPUT_IDEPO_FD_FILE     = STG_DIR / "MNITB" / "PIBB"        / "fd.sas7bdat"          # IDEPO.FD
+INPUT_CIS_DEPOSIT_FILE  = STG_DIR / "CIS"   / "CRM_CISBEXT" / "deposit.sas7bdat"     # CIS.DEPOSIT
+
+# INPUT_DEPO_FD_FILE      = STG_DIR / "from_dwh" / "fd09426.sas7bdat"                         # DEPO.FD
+# INPUT_IDEPO_FD_FILE     = STG_DIR / "from_dwh" / "ifd09426.sas7bdat"                        # IDEPO.FD
+# INPUT_CIS_DEPOSIT_FILE  = STG_DIR / "CIS"      / "CRM_CISBEXT"       / "deposit.sas7bdat"   # CIS.DEPOSIT
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP_dwh"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "EIBMRB04.txt"                 # //SASLIST DD SAP.PBB.EIBMRB04
 
@@ -57,7 +62,12 @@ MISSING_CHAR = "."          # default MISSING option
 # ============================================================================
 def derive_report_context() -> dict:
     """Macro-variable equivalents of the REPTDATE step (last observation of DEPO+IDEPO REPTDATE)."""
-    reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # reptdate = get_reptdate_values(year_format="%Y").reptdate
+
+    # DEBUG - UAT override
+    reptdate = date(2026, 9, 30)
+
     return {
         "reptdate": reptdate,
         "reptyear": reptdate.strftime("%Y"),
@@ -111,7 +121,9 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{tag.replace('.', '_')}.parquet"   # e.g. DEPO_SAVING.parquet / IDEPO_SAVING.parquet
+    # Cache name = immediate parent folder + file stem, e.g. CISBEXT_DP_deposit.parquet,
+    # so datasets with the same file name in different subfolders never share a cache.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
     if _cache_is_fresh(sas_path, cache_path):
         print(f"  [{tag}] Cache fresh - skipping conversion.")
     else:
@@ -192,8 +204,7 @@ _COLS = (
 def _load_fd(cache: Path, entity: str, extra: str) -> pl.DataFrame:
     """DATA FD/IFD + WHERE of DATA ALLFD. SNAME is PUT('PBB',4.) / PUT('PIBB',4.)."""
     where = (
-        f"TRIM(ENTITY_CD) = '{entity}' {extra} "
-        "AND COALESCE(CUSTCODE,-1) NOT IN (77,78,95,96) AND TRIM(CURCODE) = 'MYR'"
+        f"COALESCE(CUSTCODE,-1) NOT IN (77,78,95,96) AND TRIM(CURCODE) = 'MYR' {extra}"
     )
     return _read_pq(cache, _COLS, where).with_columns(pl.lit(entity).alias("SNAME"))
 
