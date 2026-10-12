@@ -1,0 +1,87 @@
+SFTP_ID	SFTP_PW	HOST_IP	HOST_DESC	HOST_KEY
+drrsftp	Password1	192.168.193.235	Data Report Repository (DRR)	
+edwsftp	Password1	192.168.56.10	PIVB File Server	
+sossftp	Password1	192.168.225.143	EAI Internal Server	
+sftpautho	Password1	mpnsvfil001	Menara File Server TB	
+sftpcrms	Password1	mpnsvfil001	Menara File Server CRMS	
+sftpaml3	Password1	mpnsvfil001	Menara File Server AML-CFT-QRF	
+ftpprod	Password1	192.168.5.48	Lotus Note Server	
+cmss	Password1	192.168.85.79	CRMA Server	
+edwpbcssftp	Password1	mpnsvfil001	Menara File Server PBCS	
+ftp-cup	Password1	192.168.7.26	Unisys SFTP Server	
+edwsftp	Password1	192.168.5.204	EMC COLDER	
+edwsftp	Password1	192.168.5.200	EMC e-Statement	
+sftpho	Password1	192.168.98.110	ELDS Server (svelds13.mpnoc.pbb.my)	
+sftpfdcam	Password1	mpnsvfil001	Menara File Server FD CAMP	
+		192.168.8.108	AIA PBB TIPS	
+ftpprod	Password1	192.168.68.150	Lotus Note Application Server	
+edwwmtbsftp	Password1	mpnsvfil001	Menara File Server (WMTB)	
+sftpnsrs	Password1	mpnsvfil001	Menara File Server (BNMRPT)	
+sftpcorp	Password1	mpnsvfil001	Menara File Server Corp Bank	
+sftpcprt	Password1	mpnsvfil001	Menara File Server Corp Pricing Detail	
+bbosftp	Password1	192.168.225.143	Menara File Server (BBO)	
+xColdHost	Password1	192.168.166.253	COLDER server	
+edwsftp	Password1	mpnsvfil001	Menara File Server Common	
+sftpedw	Password1	192.168.104.73	EDW DB Server	
+bscsftp	Password1	mpnsvfil001	Menara File Server BSC	
+sftpcbit	Password1	mpnsvfil001	Menara File Server (ITD Report)	
+sftppit	Password1	mpnsvfil001	Menara File Server (PIT)	
+sftpwmtb	Password1	mpnsvfil001	Menara File Server (WMTB2)	
+sftpfin	Password1	mpnsvfil001	Menara File Server (FIN)	
+cadsftp	Password1	mpnsvfil001	Menara File Server (CAD)	
+sftpcbrf	Password1	mpnsvfil001	Menara File Server (CBRF)	
+corsecsftp	Abcd1234	mpnsvfil001	Menara File Server (CORSEC)	
+mtrsftp	Password1	mpnsvfil001	Menara File Server (MTR)	
+sftpbbr	Password1	mpnsvfil001	Menara File Server (BBR)	
+sftpmis	Password1	mpnsvfil001	Menara File Server (MIS)	
+sftpfinma2	Password1	mpnsvfil001	Menara File Server (FINMA2)	
+sftpfund	Password1	mpnsvfil001	Menara File Server (FUND)	
+sftprmd	Password1	mpnsvfil001	Menara File Server (RMD)	
+sas2qaap	Password1	mpnsvfil001	Menara File Server (QAAP)	
+sas2pbcs	Password1	mpnsvfil001	Menara File Server (PBCS)	
+sftpibmbdc	Password1	mpnsvfil001	Menara File Server (IBMBDC)	
+sas2ibu	Password1	mpnsvfil001	Menara File Server (IBU)	
+atmcsftp	Password1	mpnsvfil001	Menara File Server (ATMC)	
+sas2utwm	Password1	mpnsvfil001	Menara File Server (UTWM)	
+sftphaniza	Password1	mpnsvfil001	Menara File Server (HANIZA)	
+masenrichsftp	Password1	192.168.88.68	External SFTP Server	
+sas2lcr	Password1	192.168.56.10	PIVB Admin File Server	
+edwsftp	Password1	192.168.88.68	External Shared SFTP Server	
+sas2finlcr	Password1	192.168.56.10	PIVB LCR File Server	
+fpxreconsftp	Password1	mpnsvfil001	Menara File Server FPX Reconciliation	
+sas2pmb	Password1	mpnsvfil001	Menara File Server PMB	
+itdopr	Itd12345	172.22.34.72	IAD File Server	
+edwsftp	Password1	192.168.7.56	STAR NOU Server	
+sftpimis	Password1	192.168.225.143	Internal SFTP Server (CRMA)	
+ftp-merchant	Password1	192.168.7.26	Unisys SFTP Server (MCH)	
+sftpdwh2	Password1	172.22.43.140	FM Production Server	
+ftpcris	abcd1234	192.168.7.46	eCCRIS Server (svccr001)	
+sftpedw	abcd1234	172.25.129.102	Fusion Kondor	
+pbbho	Password1	192.168.98.202	ELDS Server (BGNVMELD009)	
+sas2pmb2	Password1	mpnsvfil001	Menara File Server (PMB2)	
+sdwh2sbdb	Password1	172.27.50.14	StockBanking Server (SBAPP2022)	
+esisftp	Password1	mpnsvfil001	Menara File Server (EPF)	
+sftpaml	Th!nkx2025	172.22.51.82	Machine Learning Python	
+sftppbtsb	Password1	mpnsvfil001	Menara File Server (PBTSB)	
+esssftp	Password1	172.27.38.212	PBB ESS DSS	
+esssftp	Password1	172.27.38.211	PIBB ESS DSS	
+edwunipinsftp		pbbsvftp001	External UNIPIN SFTP Server	edwunipinsftp.ppk
+sftpuser	Password123456	192.168.8.88	CorpPC	
+edwsftp		192.168.166.155	eInvoice Reporting Server	edwunipinsftp.ppk
+pbbemyklfpxp01		172.27.38.182	SFTP Paynet FI PBe Server	pbbemyklfpxp.ppk
+pbbemyklfpxp02		172.27.38.182	SFTP Paynet FI PB enterprise Server	pbbemyklfpxp.ppk
+edwmpbsftp		mpnsvfil001	Menara File Server (Conflict_Zone)	edwmpbsftp.pem
+sftpalmd		mpnsvfil001	Menara File Server (RMD-ALMD)	mpnsvfil001.ppk
+sftpcru		mpnsvfil001	Menara File Server (CRU)	mpnsvfil001.ppk
+sftpvctp		mpnsvfil001	Menara File Server VCTP	mpnsvfil001.ppk
+pbbbnm	Password1	192.168.98.202	ELDS reportingFTP (ELDS09)	
+sftppmp		192.168.5.204	CMCM COLD1 Server	edwunipinsftp.ppk
+sftpgfta		mpnsvfil001	Menara File Server (DM-EAL-DP)	mpnsvfil001.ppk
+edwsftp		192.168.120.126	eInvoice Reporting DR Server	edwunipinsftp.ppk
+romssftp	Password1	172.22.34.71	Menara File Server (ROMS)	
+sftpedw		192.168.104.80	Python SVDWH101	sftpedw-prv.pem
+edwctpsftp		192.168.92.9	CTP External SFTP Server	edwctpsftp.ppk
+ftpuser	Password1	192.168.215.35	ECAI to SAS	
+sftpedw		192.168.104.72	SVDWH001	sftpedw-prv.ppk
+sas2ctcssftp	Password1	192.168.225.143	Internal SFTP Server (CTCS)	
+sftpimscc		mpnsvfil001	Menara File Server IMS	mpnsvfil001_ppk.ppk
