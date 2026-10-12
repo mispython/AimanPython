@@ -75,7 +75,7 @@ from REPTDATE import get_reptdate_values
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-INPUT_BTRAD_DIR = STG_DIR / "from_dwh"
+INPUT_BTRAD_DIR = STG_DIR / "BTRD"
 
 CACHE_DIR = BASE_DIR / "input" / "cache" / "BTRD"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -86,7 +86,8 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CHUNK_ROWS  = 500_000
 PAGE_SIZE   = 60      # lines per page (not specified in SAS -> default)
 LINE_SIZE   = 80      # matches LRECL=80 on the //SASLIST DD
-LABEL_WIDTH = 45      # RTS=45
+# LABEL_WIDTH = 45      # RTS=45
+LABEL_WIDTH = 43      # RTS=45 (the two border '|' chars account for the other 2)
 NUM_WIDTH   = 20      # COMMA20.2
 FF = "\f"
 
@@ -146,8 +147,8 @@ print(f"  Output file  : {OUTPUT_FILE.name}")
 # ============================================================================
 # INPUT FILE NAME  (deterministic, built directly from date tokens)
 # ============================================================================
-INPUT_BTRAD_FILE = INPUT_BTRAD_DIR / f"btrad{REPTMON}{NOWK}.sas7bdat"
-INPUT_BTRAD_FILE = INPUT_BTRAD_DIR / f"btrad08426.sas7bdat"
+# INPUT_BTRAD_FILE = INPUT_BTRAD_DIR / f"btrad{REPTMON}{NOWK}.sas7bdat"
+INPUT_BTRAD_FILE = INPUT_BTRAD_DIR / f"btrad084.sas7bdat"
 print(f"  Input BTRAD  : {INPUT_BTRAD_FILE}")
 
 # ============================================================================
@@ -548,6 +549,14 @@ def _dashes(width: int) -> str:
     return "-" * width
 
 
+def _pad80(s: str) -> str:
+    """LRECL=80 on //SASLIST: every physical line is exactly 80 chars —
+    longer lines are truncated, shorter lines are right-padded with
+    spaces. This is what produces the trailing whitespace you see on
+    SAS title lines and the mid-word cut-offs on wide crosstab rows."""
+    return s[:LINE_SIZE].ljust(LINE_SIZE)
+
+
 def _fmt_comma20(value) -> str:
     """F=COMMA20.2 with OPTIONS MISSING=0: a genuinely absent cell (no
     contributing rows -> None) renders as a bare '0', a real computed
@@ -575,23 +584,108 @@ def _title_block() -> list:
     ]
 
 
+# def _render_tabulate(rows: list, box_label: str) -> list:
+#     """
+#     Emulates: TABLE ITEM=' ',(REMMTH=' ' ALL='TOTAL')*
+#                      (SUM=' '*AMOUNT=' '*F=COMMA20.2)
+#               / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
+
+#     REMMTH is grouped here by its formatted REMFMT. bucket, matching how
+#     PROC TABULATE re-aggregates a CLASS variable under its display format
+#     even though the preceding PROC SUMMARY (NWAY) grouped by the raw,
+#     un-formatted REMMTH value.
+
+#     Horizontal pagination: LRECL=80 cannot fit RTS=45 plus even one full
+#     COMMA20.2 column group side by side without wrapping, so column
+#     groups are split into '(Continued)' chunks exactly as in the
+#     established PROC TABULATE renderer (EIIMRM01.py / EIWBTR1C.py).
+#     Vertical pagination: PAGE_SIZE (60, default) triggers a new page with
+#     repeated titles/headers.
+#     """
+#     col_keys = list(REMFMT_LABELS)
+
+#     cell = {}
+#     for r in rows:
+#         bucket = remfmt_format(r["REMMTH"])
+#         key = (r["ITEM"], bucket)
+#         cell[key] = (cell.get(key) or 0.0) + (r["AMOUNT"] or 0.0)
+
+#     row_vals = sorted({r["ITEM"] for r in rows})
+
+#     row_totals = {}
+#     for item in row_vals:
+#         tot = None
+#         for bucket in col_keys:
+#             v = cell.get((item, bucket))
+#             if v is not None:
+#                 tot = (tot or 0.0) + v
+#         row_totals[item] = tot
+
+#     all_cols = col_keys + ["TOTAL"]
+#     max_cols_per_chunk = max(1, (LINE_SIZE - (LABEL_WIDTH + 2)) // (NUM_WIDTH + 1))
+#     chunks = [
+#         all_cols[i:i + max_cols_per_chunk]
+#         for i in range(0, len(all_cols), max_cols_per_chunk)
+#     ]
+
+#     output: list = []
+
+#     for chunk_idx, cols in enumerate(chunks):
+#         n = len(cols)
+#         total_width = LABEL_WIDTH + 2 + n * (NUM_WIDTH + 1)
+#         state = {"lines_on_page": 0}
+
+#         def _emit_page(with_titles: bool):
+#             block = []
+#             if with_titles:
+#                 block.append(FF)
+#                 block.extend(_title_block())
+#             block.append(_dashes(total_width))
+#             header_cells = [_center(c, NUM_WIDTH) for c in cols]
+#             block.append("|" + " " * LABEL_WIDTH + "|" + "|".join(header_cells) + "|")
+#             block.append(
+#                 "|" + box_label.ljust(LABEL_WIDTH)[:LABEL_WIDTH] + "+"
+#                 + "+".join(_dashes(NUM_WIDTH) for _ in cols) + "|"
+#             )
+#             output.extend(block)
+#             state["lines_on_page"] = len(block)
+
+#         _emit_page(with_titles=(chunk_idx == 0))
+
+#         for item in row_vals:
+#             if state["lines_on_page"] >= PAGE_SIZE:
+#                 _emit_page(with_titles=True)
+
+#             label = itemf_format(item).ljust(LABEL_WIDTH)[:LABEL_WIDTH]
+#             row_cells = []
+#             for c in cols:
+#                 v = row_totals[item] if c == "TOTAL" else cell.get((item, c))
+#                 row_cells.append(_fmt_comma20(v))
+#             output.append("|" + label + "|" + "|".join(row_cells) + "|")
+#             state["lines_on_page"] += 1
+
+#         output.append(_dashes(total_width))
+
+#         if chunk_idx < len(chunks) - 1:
+#             output.append("")
+#             output.append("(Continued)")
+#             output.append("")
+
+#     return output
+
+
 def _render_tabulate(rows: list, box_label: str) -> list:
     """
     Emulates: TABLE ITEM=' ',(REMMTH=' ' ALL='TOTAL')*
                      (SUM=' '*AMOUNT=' '*F=COMMA20.2)
               / BOX='CORE (NON-TRADING) BANKING ACTIVITIES' RTS=45 CONDENSE;
 
-    REMMTH is grouped here by its formatted REMFMT. bucket, matching how
-    PROC TABULATE re-aggregates a CLASS variable under its display format
-    even though the preceding PROC SUMMARY (NWAY) grouped by the raw,
-    un-formatted REMMTH value.
-
-    Horizontal pagination: LRECL=80 cannot fit RTS=45 plus even one full
-    COMMA20.2 column group side by side without wrapping, so column
-    groups are split into '(Continued)' chunks exactly as in the
-    established PROC TABULATE renderer (EIIMRM01.py / EIWBTR1C.py).
-    Vertical pagination: PAGE_SIZE (60, default) triggers a new page with
-    repeated titles/headers.
+    SAS renders the full crosstab on a single logical line, then LRECL=80
+    truncates it. Columns beyond the 80-char boundary are lost from the
+    listing (matching SAS behaviour exactly). REMMTH is grouped here by
+    its formatted REMFMT. bucket, matching how PROC TABULATE re-aggregates
+    a CLASS variable under its display format even though the preceding
+    PROC SUMMARY (NWAY) grouped by the raw, un-formatted REMMTH value.
     """
     col_keys = list(REMFMT_LABELS)
 
@@ -612,56 +706,50 @@ def _render_tabulate(rows: list, box_label: str) -> list:
                 tot = (tot or 0.0) + v
         row_totals[item] = tot
 
-    all_cols = col_keys + ["TOTAL"]
-    max_cols_per_chunk = max(1, (LINE_SIZE - (LABEL_WIDTH + 2)) // (NUM_WIDTH + 1))
-    chunks = [
-        all_cols[i:i + max_cols_per_chunk]
-        for i in range(0, len(all_cols), max_cols_per_chunk)
-    ]
+    cols = col_keys + ["TOTAL"]
+
+    def _title_lines():
+        # SAS title lines are padded to LRECL=80 too.
+        return [_pad80(t) for t in _title_block()]
+
+    def _header_lines():
+        return [
+            _pad80(_dashes(LINE_SIZE)),
+            _pad80(
+                "|" + box_label.ljust(LABEL_WIDTH)[:LABEL_WIDTH] + "|"
+                + "|".join(_center(c, NUM_WIDTH) for c in cols) + "|"
+            ),
+            _pad80(
+                "|" + _dashes(LABEL_WIDTH) + "+"
+                + "+".join(_dashes(NUM_WIDTH) for _ in cols) + "+"
+            ),
+        ]
 
     output: list = []
+    titles = _title_lines()
+    header = _header_lines()
 
-    for chunk_idx, cols in enumerate(chunks):
-        n = len(cols)
-        total_width = LABEL_WIDTH + 2 + n * (NUM_WIDTH + 1)
-        state = {"lines_on_page": 0}
+    # First page: titles + header. No leading form-feed.
+    output.extend(titles)
+    output.extend(header)
+    lines_on_page = len(titles) + len(header)
 
-        def _emit_page(with_titles: bool):
-            block = []
-            if with_titles:
-                block.append(FF)
-                block.extend(_title_block())
-            block.append(_dashes(total_width))
-            header_cells = [_center(c, NUM_WIDTH) for c in cols]
-            block.append("|" + " " * LABEL_WIDTH + "|" + "|".join(header_cells) + "|")
-            block.append(
-                "|" + box_label.ljust(LABEL_WIDTH)[:LABEL_WIDTH] + "+"
-                + "+".join(_dashes(NUM_WIDTH) for _ in cols) + "|"
-            )
-            output.extend(block)
-            state["lines_on_page"] = len(block)
+    for item in row_vals:
+        if lines_on_page >= PAGE_SIZE:
+            output.append(FF)            # form feed before subsequent pages only
+            output.extend(titles)
+            output.extend(header)
+            lines_on_page = len(titles) + len(header)
 
-        _emit_page(with_titles=(chunk_idx == 0))
+        label = itemf_format(item).ljust(LABEL_WIDTH)[:LABEL_WIDTH]
+        row_cells = [
+            _fmt_comma20(row_totals[item] if c == "TOTAL" else cell.get((item, c)))
+            for c in cols
+        ]
+        output.append(_pad80("|" + label + "|" + "|".join(row_cells) + "|"))
+        lines_on_page += 1
 
-        for item in row_vals:
-            if state["lines_on_page"] >= PAGE_SIZE:
-                _emit_page(with_titles=True)
-
-            label = itemf_format(item).ljust(LABEL_WIDTH)[:LABEL_WIDTH]
-            row_cells = []
-            for c in cols:
-                v = row_totals[item] if c == "TOTAL" else cell.get((item, c))
-                row_cells.append(_fmt_comma20(v))
-            output.append("|" + label + "|" + "|".join(row_cells) + "|")
-            state["lines_on_page"] += 1
-
-        output.append(_dashes(total_width))
-
-        if chunk_idx < len(chunks) - 1:
-            output.append("")
-            output.append("(Continued)")
-            output.append("")
-
+    output.append(_pad80(_dashes(LINE_SIZE)))
     return output
 
 
@@ -670,9 +758,13 @@ report_lines = _render_tabulate(note_1rm, "CORE (NON-TRADING) BANKING ACTIVITIES
 # ============================================================================
 # STEP 7: WRITE OUTPUT
 # ============================================================================
+# with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+#     for ln in report_lines:
+#         fh.write(ln + "\n")
+
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
-        fh.write(ln + "\n")
+        fh.write(ln[:LINE_SIZE].ljust(LINE_SIZE) + "\n")
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
