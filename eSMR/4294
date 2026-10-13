@@ -1,0 +1,32 @@
+Functional Requirement
+Requirements:
+ 
+1) To enhance the Daily Bank's Total Deposit Report (Report ID : DMMISR1G) to EXCLUDE post-dated PMMD placement under the affected columns of PMMD & PQMMD (Conventional and Islamic).
+ 
+2) To ADD new columns on post-dated PMMD placements. 
+ 
+ No.	Report Name/ID	  Report Title 	                  Affected columns 	              Action by ITD-MIS   
+  1.	DMMISR1G	        DAILY BANK'S TOTAL DEPOSITS
+                        (RM '000)	                      i) PMMD & PQMMD (CONV)
+                                                        ii) PMMD (ISL)
+                                                        iii) TOTAL PMMD (CONV + ISL)	  i) To EXCLUDE Post-dated PMMD Placement under existing columns of PMMD & PQMMD (Conventional & Islamic)
+                                                                                        Extraction Criteria:
+                                                                                        To EXCLUDE PMMD/PQMMD placements with "Start Date"/"Value Date" later than the reporting date.
+                                                                                        Example:
+                                                                                        For reporting Position as at 31 August 2026, to exclude placements with Start Date of 1 September 2026 or later.
+                                                                                         
+                                                                                        ii) To ADD new columns on Post-dated PMMD Placements (Conventional & Islamic)
+3) Please refer to attachment under supporting document for enhance report format.
+4) Others reporting criteria and report location shall remain unchanged.
+
+==========
+
+Technical Approach
+
+i) To EXCLUDE Post-dated PMMD Placement under existing columns of PMMD & PQMMD (Conventional & Islamic)
+Extraction Criteria:
+To EXCLUDE PMMD/PQMMD placements with "Start Date"/"Value Date" later than the reporting date.
+Example:
+For reporting Position as at 31 August 2026, to exclude placements with Start Date of 1 September 2026 or later.
+ 
+ii) To ADD new columns on Post-dated PMMD Placements (Conventional & Islamic)
