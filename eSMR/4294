@@ -30,3 +30,10 @@ Example:
 For reporting Position as at 31 August 2026, to exclude placements with Start Date of 1 September 2026 or later.
  
 ii) To ADD new columns on Post-dated PMMD Placements (Conventional & Islamic)
+
+==========
+
+Verbally:
+
+1. Output to excel (1 straight table)
+2. 4th table no need to change. Only stated ones PMMD & PQMMD (CONV), PMMD (ISL), TOTAL PMMD (CONV + ISL)
