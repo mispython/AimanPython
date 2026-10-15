@@ -7,8 +7,6 @@ Purpose : FCY Fixed Deposit Maturity Report
           Produces two comma-delimited flat text files (RECFM=FB, LRECL=320).
 
 Dependencies : PBBELF   (format_brchcd)
-               REPTDATE (get_reptdate_values)
-               input_date (get_latest_file)
 """
 
 # ============================================================
@@ -28,19 +26,51 @@ import polars as pl
 # ============================================================
 # Internal dependencies
 # ============================================================
-from REPTDATE import get_reptdate_values
-from PBBELF   import format_brchcd
-from input_date import get_latest_file
+from PBBELF import format_brchcd
+# from REPTDATE import get_reptdate_values
+# from input_date import get_latest_file
+
+# ============================================================
+# CONTROL FILE CONFIGURATION
+# ============================================================
+# Control file : batch date per source system
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+# ============================================================
+# REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = DP)
+# OPTIONS YEARCUTOFF=1950 is applied in _parse_orgdate
+# ============================================================
+REPTDATE = get_batch_date(BATCH_SOURCE)      # date object (T)
+T1       = REPTDATE + timedelta(days=1)
+T2       = REPTDATE + timedelta(days=2)
+T3       = REPTDATE + timedelta(days=3)
+
+REPDD  = REPTDATE.strftime("%d")             # DD  (Z2.)
+REPMM  = REPTDATE.strftime("%m")             # MM  (Z2.)
+REPYY  = REPTDATE.strftime("%Y")             # YEAR4.
+REPDT  = REPTDATE.strftime("%d/%m/%Y")       # DDMMYY8. equivalent as used in the existing program
+REPYMD = REPTDATE.strftime("%Y%m%d")         # date token in input filename
 
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
 # Production Path
-INPUT_DIR   = Path("/sas/deposit/dwh")
-FD_CERT     = INPUT_DIR / "enrichment"  / f"enrh_dp_fd_cert_d{REPTDATE}.sas7bdat"
-FD_ACCT     = INPUT_DIR / "integration" / f"intg_dp_acct_fd_d{REPTDATE}.sas7bdat"
-
-OUTPUT_DIR  = Path("/host_pq/mis/deposit/output/report")
+INPUT_DIR = Path("/sas/deposit/dwh")
+FD_CERT   = INPUT_DIR / "enrichment" / f"enrh_dp_fd_cert_d{REPDD}.sas7bdat"
+# FD_ACCT     = INPUT_DIR / "integration" / f"intg_dp_acct_fd_d{REPTDATE}.sas7bdat"
+OUTPUT_DIR = Path("/host_pq/mis/deposit/output/report")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # # Testing Path
@@ -48,27 +78,10 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDRMFC"  # directory containing fd.sas7bdat
 # OUTPUT_DIR = BASE_DIR / "output" / "EIBDPTER"
 # OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
 # FD_SAS7BDAT = INPUT_DIR / "fd.sas7bdat"
 
 OUTPUT_FDTEXT = OUTPUT_DIR / "FCYFD_REP1.txt"   # SAP.PBB.FCYFD.REP1.TEXT
 OUTPUT_FDDETL = OUTPUT_DIR / "FCYFD_REP2.txt"   # SAP.PBB.FCYFD.REP2.TEXT
-
-# ============================================================
-# REPORT DATE  (replaces DATA REPTDATE / FD.REPTDATE)
-# OPTIONS YEARCUTOFF=1950 — handled inside REPTDATE.py
-# ============================================================
-reptdate_values = get_reptdate_values()
-
-REPTDATE = reptdate_values.reptdate          # date object  (T)
-T1       = REPTDATE + timedelta(days=1)
-T2       = REPTDATE + timedelta(days=2)
-T3       = REPTDATE + timedelta(days=3)
-
-REPDD  = reptdate_values.reptday             # DD  (Z2.)
-REPMM  = reptdate_values.reptmon             # MM  (Z2.)
-REPYY  = REPTDATE.strftime("%Y")             # 4-digit year (YEAR4.)
-REPDT  = REPTDATE.strftime("%d/%m/%Y")       # DDMMYY8. equivalent  (dd/mm/yyyy)
 
 # ============================================================
 # HELPER UTILITIES
@@ -134,10 +147,17 @@ def _fmt_date_ddmmyy8(d: Optional[date]) -> str:
 # STEP 1 : Read FD sas7bdat
 # ============================================================
 
+# def read_fd() -> pd.DataFrame:
+#     """Read the entire FD dataset from the SAS7BDAT file."""
+#     df = pd.read_sas(str(FD_SAS7BDAT), encoding="latin1")
+#     return df
+
 def read_fd() -> pd.DataFrame:
-    """Read the entire FD dataset from the SAS7BDAT file."""
-    df = pd.read_sas(str(FD_SAS7BDAT), encoding="latin1")
-    return df
+    """Read FD_CERT and keep PBB only (ENTITY_CD != 'PIBB')."""
+    df = pd.read_sas(str(FD_CERT), encoding="latin1")
+    # Null ENTITY_CD is kept, matching SAS where a missing value is != 'PIBB'
+    entity = df["ENTITY_CD"].fillna("").astype(str).str.strip()
+    return df[entity != "PIBB"].copy()
 
 
 # ============================================================
@@ -596,7 +616,7 @@ def main() -> None:
     print(f"[EIBDPTER] T3 = {T3}")
 
     # --- Read FD dataset -----------------------------------------------
-    print(f"[EIBDPTER] Reading {FD_SAS7BDAT} ...")
+    print(f"[EIBDPTER] Reading {FD_CERT} ...")
     fd_df = read_fd()
 
     # --- FCY maturity split --------------------------------------------
