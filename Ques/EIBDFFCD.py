@@ -1,212 +1,287 @@
+#!/usr/bin/env python3
 """
 Program : EIBDFFCD.py
-Purpose : Convert foreign currency fixed deposit balances to MYR and USD
-          equivalents using format-based exchange rates (FORATE).
+Purpose : Daily foreign currency (FCY) fixed deposit conversion.
+          Adds FORATE, FORBAL and CURBALUS columns to the daily FD certificate
+          enrichment dataset (enrh_dp_fd_cert_d{REPDD}.sas7bdat) and converts
+          CURBAL to MYR for non-MYR currencies. The existing dataset is
+          replaced in place. On month end the same output is also written as
+          enrh_dp_fd_cert_m{REPMM}.sas7bdat.
+
+          The calculation runs inside SAS through saspy (original DATA step),
+          so the dataset stays in native .sas7bdat format with its existing
+          attributes preserved.
+
+          SMR 2006-229. MNI3 / 10363.
 """
 
-import pandas as pd
-import polars as pl
+import sys
+from datetime import date, datetime, timedelta
 from pathlib import Path
-import re
-from typing import Optional
 
-from input_date import get_latest_file
+import pandas as pd
+import saspy
+
+# =============================================================================
+# SAS JCL / DATA STEP HEADER (kept as comments)
+# =============================================================================
+# //EIBDFFCD JOB MISEIS,EIBWFFCY,CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+# //         NOTIFY=&SYSUID,REGION=8M
+# //* SMR 2006-229. MNI3 / 10363.
+# //EIBDFFCD  EXEC SAS609
+# //FD        DD DSN=SAP.PBB.MNIFD.DAILY(0),DISP=OLD
+# //FCYFD     DD DSN=SAP.PBB.FCYFD,DISP=SHR
+# //PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+#
+# OPTIONS YEARCUTOFF=1950;
+# PROC FORMAT LIB=FCYFD CNTLOUT=FOFMT;RUN;
+# PROC FORMAT CNTLIN=FOFMT;RUN;
+# *;
+# PROC SORT DATA=FD.FD OUT=FD;
+#    BY ACCTNO CDNO;
+# *;
+# DATA FD.FD;
+#    SET FD;
+#    IF CURCODE NE 'MYR' THEN DO;
+#       FORATE = PUT(CURCODE,$FORATE.);
+#       FORBAL = CURBAL;
+#       CURBAL = ROUND(CURBAL * FORATE,.01);
+#    END;
+#    CURBALUS = CURBAL / PUT('USD',$FORATE.);
+# *;
+# RUN;
+# PROC PRINT;
+#   WHERE CURCODE NE 'MYR';
+
+# =============================================================================
+# DEPENDENCY NOTES
+# =============================================================================
+# REPTDATE.py     : not used. The report date follows ctl_dwh_batch_dttm
+#                   (source system DP), as required for this program.
+# input_date.py   : not used. The daily filename is fixed by the batch day
+#                   (d{REPDD}) and the FORATE file has no date token.
+# output_date.py  : not used. Output names are fixed by batch day / month
+#                   (d{REPDD} / m{REPMM}) and written by SAS.
+# GET_BATCH_DATE.py (get_batch_date_dwh): its signature was not provided, so the
+#                   control file is read directly in get_batch_date() below.
+# PBBDPFMT.py     : not used. The $FORATE. format is rebuilt in SAS from
+#                   forate.sas7bdat (PROC FORMAT CNTLIN).
 
 # =============================================================================
 # PATH CONFIGURATION
 # =============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDFFCD"
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDFFCD"
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Control file holding the batch date per source system
+CTL_BATCH_PATH = BASE_DIR / "input" / "ctl_dwh_batch_dttm.sas7bdat"
+BATCH_SOURCE_SYSTEM = "DP"
+
+# MNIFD input (daily FD certificate enrichment) - also the output location
+ENRICHMENT_DIR = Path("/sas/deposit/dwh/enrichment")
+
+# FCYFD exchange rate input ($FORATE. format source)
+FORATE_DIR = Path("/extdwh/host/forate")
+FORATE_PATH = FORATE_DIR / "forate.sas7bdat"
+FORATE_MEMBER = "forate"
+
+# saspy configuration name (sascfg_personal.py)
+SASPY_CFGNAME = "default"
 
 # =============================================================================
-# FILE RESOLUTION
-# fcyfdXXXXXX.sas7bdat  → yymmdd strictly (6-digit, rejects 5-digit mmwyy)
-# fcyXXXXXX.sas7bdat    → yymmdd strictly (6-digit, rejects 5-digit mmwyy)
-# fd is not used — the SAS FD libref points to fcyfd data, not the fd file.
+# CONSTANTS
 # =============================================================================
+NEW_COLUMNS = ("FORATE", "FORBAL", "CURBALUS")
+REQUIRED_COLUMNS = ("ACCTNO", "CDNO", "CURCODE", "CURBAL")
+SAS_EPOCH = datetime(1960, 1, 1)
 
-def get_latest_yymmdd(directory: Path, prefix: str) -> Path:
-    """
-    Resolves the latest file with the given prefix using strictly yymmdd
-    (6-digit) suffix. Rejects mmwyy (5-digit) variants sharing the same prefix.
-    """
-    pattern = re.compile(
-        rf"^{re.escape(prefix)}(\d{{2}})(\d{{2}})(\d{{2}})\.sas7bdat$",
-        re.IGNORECASE,
-    )
-    candidates = []
-    for f in directory.iterdir():
-        m = pattern.match(f.name)
-        if m:
-            yy, mm, dd = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            year = 2000 + yy if yy < 100 else yy
-            candidates.append(((year, mm, dd), f))
-    if not candidates:
-        raise FileNotFoundError(
-            f"No {prefix} yymmdd files found in {directory}"
+
+# =============================================================================
+# BATCH DATE (ctl_dwh_batch_dttm, SOURCE_SYSTEM_CD = DP)
+# =============================================================================
+def get_batch_date() -> date:
+    ctl = pd.read_sas(str(CTL_BATCH_PATH), encoding="latin1")
+    ctl.columns = [str(c).upper() for c in ctl.columns]
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    rows = ctl[ctl["SOURCE_SYSTEM_CD"] == BATCH_SOURCE_SYSTEM]
+    if rows.empty:
+        raise ValueError(
+            f"SOURCE_SYSTEM_CD '{BATCH_SOURCE_SYSTEM}' not found in {CTL_BATCH_PATH}"
         )
-    latest = max(candidates, key=lambda x: x[0])
-    print(f"[FILE_RESOLVER] Selected latest {prefix} (yymmdd): {latest[1].name}")
-    return latest[1]
+    value = rows.iloc[0]["BATCH_DTTM"]
+    if isinstance(value, (int, float)):  # raw SAS datetime (seconds since 1960)
+        return (SAS_EPOCH + timedelta(seconds=float(value))).date()
+    return pd.Timestamp(value).date()
 
 
-FCYFD_PATH = get_latest_yymmdd(INPUT_DIR, prefix="fcyfd")
-FCY_PATH   = get_latest_yymmdd(INPUT_DIR, prefix="fcy")
-
-# =============================================================================
-# $FORATE. exchange rate map
-# In SAS, PROC FORMAT LIB=FCYFD loads $FORATE. from the FCYFD format catalogue
-# (.sas7bcat) into session memory. This catalogue is separate from the FCYFD
-# .sas7bdat data file. The PUT(CURCODE,$FORATE.) call performs a rate lookup.
-# Since .sas7bcat files are not readable in Python, populate FORATE_MAP from
-# your external rate source (DB, config, etc.).
-# A missing currency code returns None — replicating SAS blank/missing, which
-# causes downstream arithmetic to produce missing (null), not a fake rate.
-# =============================================================================
-FORATE_MAP: dict[str, float] = {
-    # Populate from your external rate source (DB, config, etc.)
-    # "USD": 4.47,
-    # "SGD": 3.30,
-    # "GBP": 5.60,
-    # "EUR": 4.85,
-    # "JPY": 0.030,
-}
-
-
-def put_forate(curcode: str) -> Optional[float]:
-    """
-    Replicates SAS PUT(CURCODE, $FORATE.).
-    Returns float rate if found, None if not found.
-    SAS returns blank on missing format → arithmetic produces missing (null).
-    """
-    return FORATE_MAP.get(str(curcode).strip().upper(), None)
+def is_month_end(batch_date: date) -> bool:
+    return (batch_date + timedelta(days=1)).day == 1
 
 
 # =============================================================================
-# STEP 1: Read inputs
+# FRESHNESS CHECK
+# The daily filename has only the day (d{REPDD}), so last month's file with the
+# same day would match. A file is only accepted when its last-modified date is
+# on or after the batch date.
 # =============================================================================
-
-def read_sas(path: Path) -> pl.DataFrame:
-    pdf = pd.read_sas(str(path), encoding="latin1")
-    pdf.columns = [c.upper() for c in pdf.columns]
-    return pl.from_pandas(pdf)
-
-
-# =============================================================================
-# STEP 2: Attach CDNO from FCY into FCYFD via ACCTNO join
-# FCY is only used to supply CDNO — all other columns come from FCYFD.
-# PROC SORT DATA=FD.FD OUT=FD BY ACCTNO CDNO sorts the joined result.
-# =============================================================================
-
-def attach_cdno(fcyfd_df: pl.DataFrame, fcy_df: pl.DataFrame) -> pl.DataFrame:
-    cdno_df = fcy_df.select(["ACCTNO", "CDNO"])
-    joined = fcyfd_df.join(cdno_df, on="ACCTNO", how="left")
-    joined = joined.sort(["ACCTNO", "CDNO"])
-    return joined
+def assert_fresh(path: Path, batch_date: date, label: str) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"{label} not found: {path}")
+    modified = datetime.fromtimestamp(path.stat().st_mtime)
+    if modified.date() < batch_date:
+        raise RuntimeError(
+            f"{label} is not ready: {path.name} was last modified "
+            f"{modified:%Y-%m-%d %H:%M:%S}, earlier than batch date {batch_date}."
+        )
+    print(f"[FRESH] {label}: {path.name} modified {modified:%Y-%m-%d %H:%M:%S}")
 
 
 # =============================================================================
-# STEP 3: Apply foreign currency conversion
-# DATA FD.FD;
-#   SET FD;     ← FD here is the sorted FCYFD work dataset (with CDNO attached)
-#   IF CURCODE NE 'MYR' THEN DO;
-#     FORATE  = PUT(CURCODE, $FORATE.);
-#     FORBAL  = CURBAL;
-#     CURBAL  = ROUND(CURBAL * FORATE, .01);
-#   END;
-#   CURBALUS = CURBAL / PUT('USD', $FORATE.);
-# RUN;
+# HEADER INSPECTION (column names / types only, first row read)
 # =============================================================================
+def read_header(path: Path) -> pd.DataFrame:
+    reader = pd.read_sas(str(path), encoding="latin1", chunksize=1, iterator=True)
+    try:
+        return next(iter(reader))
+    except StopIteration as exc:
+        raise ValueError(f"{path} contains no rows") from exc
 
-def apply_fx_conversion(df: pl.DataFrame) -> pl.DataFrame:
-    usd_rate = put_forate("USD")
 
-    rows = df.to_dicts()
-    result = []
+def validate_fd_columns(fd_path: Path) -> None:
+    header = read_header(fd_path)
+    cols = {str(c).upper() for c in header.columns}
 
-    for row in rows:
-        curcode = str(row.get("CURCODE", "") or "").strip().upper()
+    missing = [c for c in REQUIRED_COLUMNS if c not in cols]
+    if missing:
+        raise ValueError(f"{fd_path.name} is missing required columns: {missing}")
 
-        if curcode != "MYR":
-            forate = put_forate(curcode)
-            row["FORATE"] = forate
-
-            curbal = row.get("CURBAL")
-            row["FORBAL"] = curbal
-
-            if curbal is not None and forate is not None:
-                row["CURBAL"] = round(float(curbal) * forate, 2)
-            else:
-                # SAS: CURBAL * missing → missing
-                row["CURBAL"] = None
-        else:
-            # MYR rows: FORATE and FORBAL not assigned in SAS DATA step
-            row.setdefault("FORATE", None)
-            row.setdefault("FORBAL", None)
-
-        curbal_myr = row.get("CURBAL")
-        if curbal_myr is not None and usd_rate is not None and usd_rate != 0:
-            row["CURBALUS"] = float(curbal_myr) / usd_rate
-        else:
-            # SAS: missing / missing → missing
-            row["CURBALUS"] = None
-
-        result.append(row)
-
-    return pl.from_dicts(result)
+    # Guard: converting twice would multiply CURBAL by the rate again.
+    already = [c for c in NEW_COLUMNS if c in cols]
+    if already:
+        raise RuntimeError(
+            f"{fd_path.name} already contains {already}; it has already been "
+            f"converted. Aborting to avoid applying the exchange rate twice."
+        )
 
 
 # =============================================================================
-# STEP 4: Write output dataset
-# DATA FD.FD overwrites the FD library member with FCY-converted records.
-# PROC PRINT WHERE CURCODE NE 'MYR' is a diagnostic listing to SAS output
-# window only — no external report file is produced by this program.
+# $FORATE. FORMAT BUILD  (PROC FORMAT ... CNTLOUT / CNTLIN equivalent)
+# forate.sas7bdat is loaded into the $FORATE. format. Both layouts supported:
+#   - format control layout : FMTNAME / START / LABEL   -> used as CNTLIN directly
+#   - plain rate table      : CURCODE + (FORATE | RATE) -> converted to CNTLIN
 # =============================================================================
+def build_format_code() -> str:
+    header = read_header(FORATE_PATH)
+    upper = {str(c).upper(): c for c in header.columns}
 
-def write_output(df: pl.DataFrame) -> Path:
-    out_path = OUTPUT_DIR / "FD.parquet"
-    df.write_parquet(str(out_path))
-    return out_path
+    if "START" in upper and "LABEL" in upper:
+        where = "(where=(upcase(strip(fmtname))='FORATE'))" if "FMTNAME" in upper else ""
+        return f"proc format cntlin=FCYFD.{FORATE_MEMBER}{where}; run;\n"
+
+    rate_key = "FORATE" if "FORATE" in upper else "RATE" if "RATE" in upper else None
+    if "CURCODE" in upper and rate_key:
+        rate_col = upper[rate_key]
+        is_char = header[rate_col].dtype == object
+        label_expr = f"strip({rate_col})" if is_char else f"strip(put({rate_col},best32.))"
+        return (
+            f"data work.fmt_forate;\n"
+            f"   set FCYFD.{FORATE_MEMBER}(keep={upper['CURCODE']} {rate_col});\n"
+            f"   retain fmtname 'FORATE' type 'C';\n"
+            f"   length start label $32;\n"
+            f"   start = strip({upper['CURCODE']});\n"
+            f"   label = {label_expr};\n"
+            f"   keep fmtname type start label;\n"
+            f"run;\n"
+            f"proc sort data=work.fmt_forate nodupkey; by start; run;\n"
+            f"proc format cntlin=work.fmt_forate; run;\n"
+        )
+
+    raise ValueError(f"Unrecognised forate layout, columns found: {sorted(upper)}")
+
+
+# =============================================================================
+# SAS PROGRAM (original logic, run inside SAS through saspy)
+# =============================================================================
+def build_sas_program(daily: str, monthly: str | None) -> str:
+    code = (
+        "options yearcutoff=1950;\n"
+        f'libname FD "{ENRICHMENT_DIR}";\n'
+        f'libname FCYFD "{FORATE_DIR}" access=readonly;\n'
+        f"{build_format_code()}"
+        "*;\n"
+        f"proc sort data=FD.{daily} out=FD;\n"
+        "   by ACCTNO CDNO;\n"
+        "run;\n"
+        "*;\n"
+        f"data FD.{daily};\n"
+        "   set FD;\n"
+        "   if CURCODE ne 'MYR' then do;\n"
+        "      FORATE = put(CURCODE,$FORATE.);\n"
+        "      FORBAL = CURBAL;\n"
+        "      CURBAL = round(CURBAL * FORATE,.01);\n"
+        "   end;\n"
+        "   CURBALUS = CURBAL / put('USD',$FORATE.);\n"
+        "*;\n"
+        "run;\n"
+    )
+    if monthly:
+        # Month end: same output as the daily dataset
+        code += f"data FD.{monthly};\n   set FD.{daily};\nrun;\n"
+    code += (
+        f"proc print data=FD.{daily};\n"
+        "   where CURCODE ne 'MYR';\n"
+        "run;\n"
+    )
+    return code
+
+
+def run_sas(program: str) -> None:
+    sas = saspy.SASsession(cfgname=SASPY_CFGNAME)
+    try:
+        sas.set_results("TEXT")
+        result = sas.submit(program)
+        log = result.get("LOG", "")
+        listing = result.get("LST", "")
+
+        errors = [ln for ln in log.splitlines() if ln.startswith("ERROR")]
+        if errors:
+            print(log)
+            raise RuntimeError("SAS reported errors:\n" + "\n".join(errors))
+
+        print(listing)
+    finally:
+        sas.endsas()
 
 
 # =============================================================================
 # MAIN
 # =============================================================================
+def main() -> None:
+    batch_date = get_batch_date()
+    repdd = f"{batch_date.day:02d}"
+    repmm = f"{batch_date.month:02d}"
+    month_end = is_month_end(batch_date)
+    print(f"Batch date ({BATCH_SOURCE_SYSTEM}) : {batch_date}  REPDD={repdd}  REPMM={repmm}")
+    print(f"Month end            : {month_end}")
+
+    daily = f"enrh_dp_fd_cert_d{repdd}"
+    monthly = f"enrh_dp_fd_cert_m{repmm}" if month_end else None
+    fd_path = ENRICHMENT_DIR / f"{daily}.sas7bdat"
+
+    assert_fresh(fd_path, batch_date, "MNIFD input")
+    assert_fresh(FORATE_PATH, batch_date, "FCYFD (FORATE) input")
+    validate_fd_columns(fd_path)
+
+    run_sas(build_sas_program(daily, monthly))
+
+    print(f"[OUTPUT] {fd_path}")
+    if monthly:
+        print(f"[OUTPUT] {ENRICHMENT_DIR / (monthly + '.sas7bdat')}")
+    print("Done.")
+
 
 if __name__ == "__main__":
-    print(f"FCYFD input : {FCYFD_PATH}")
-    print(f"FCY input   : {FCY_PATH}")
-
-    print("Reading FCYFD dataset...")
-    fcyfd_df = read_sas(FCYFD_PATH)
-    print(f"  FCYFD rows : {len(fcyfd_df)}")
-
-    print("Reading FCY dataset (for CDNO)...")
-    fcy_df = read_sas(FCY_PATH)
-    print(f"  FCY rows   : {len(fcy_df)}")
-
-    print("Attaching CDNO from FCY and sorting by ACCTNO, CDNO...")
-    fcyfd_with_cdno = attach_cdno(fcyfd_df, fcy_df)
-    print(f"  Rows after join : {len(fcyfd_with_cdno)}")
-
-    print("Applying FX conversion...")
-    fd_converted = apply_fx_conversion(fcyfd_with_cdno)
-
-    fcy_non_myr = fd_converted.filter(
-        pl.col("CURCODE").str.strip_chars().str.to_uppercase() != "MYR"
-    )
-    print(f"  FCY rows converted : {len(fcy_non_myr)}")
-    print(f"  MYR rows unchanged : {len(fd_converted) - len(fcy_non_myr)}")
-    print(fcy_non_myr.select([
-        c for c in ["ACCTNO", "CDNO", "CURCODE", "FORATE", "FORBAL", "CURBAL", "CURBALUS"]
-        if c in fcy_non_myr.columns
-    ]))
-
-    print("Writing output dataset...")
-    out_path = write_output(fd_converted)
-    print(f"Output written to   : {out_path}")
-
-    print("Done.")
+    try:
+        main()
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print(f"[EIBDFFCD] {exc}", file=sys.stderr)
+        sys.exit(1)
