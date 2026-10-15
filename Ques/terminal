@@ -1,47 +1,13 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py
 Batch date (DP) : 2026-10-14  REPDD=14  REPMM=10
 Month end            : False
-[FRESH] MNIFD input: enrh_dp_fd_cert_d14.sas7bdat modified 2026-10-15 05:21:50
+[FRESH] MNIFD input: enrh_dp_fd_cert_d14.sas7bdat modified 2026-10-15 18:05:00
 [FRESH] FCYFD (FORATE) input: forate.sas7bdat modified 2026-10-14 15:23:05
-SAS Connection established. Subprocess id is 1141884
-
-[SAS] setup
-[SAS] PROC FORMAT ($FORATE.)
-[SAS] PROC SORT
-[SAS] DATA step (FX conversion)
-/sas/python/virt_edw_dev/lib64/python3.9/site-packages/saspy/sasiostdio.py:1118: UserWarning: Noticed 'ERROR:' in LOG, you ought to take a look and see if there was a problem
-  warnings.warn("Noticed 'ERROR:' in LOG, you ought to take a look and see if there was a problem")
-
-87   
-88   %let syscc=0;
-89   data FD.enrh_dp_fd_cert_d14;
-90      set FD;
-91      if CURRENCY_CD ne 'MYR' then do;
-92         FORATE = put(CURRENCY_CD,$FORATE.);
-93         FORBAL = CURR_BAL;
-94         CURR_BAL = round(CURR_BAL * FORATE,.01);
-95      end;
-96      CURBALUS = CURR_BAL / put('USD',$FORATE.);
-97   run;
-NOTE: Character values have been converted to numeric values at the places given by: (Line):(Column).
-      94:35   96:26   
-ERROR: User does not have appropriate authorization level for file FD.ENRH_DP_FD_CERT_D14.DATA.
-NOTE: The SAS System stopped processing this step because of errors.
-NOTE: DATA statement used (Total process time):
-      real time           0.01 seconds
-      cpu time            0.00 seconds
-      
-98   
-99   
-SAS Connection terminated. Subprocess id was 1141884
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 338, in <module>
     main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 329, in main
-    run_sas(build_sas_steps(daily, monthly))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 302, in run_sas
-    _check_step(sas, label, result.get("LOG", ""))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 290, in _check_step
-    raise SASExecutionError(
-SASExecutionError: SAS step failed: DATA step (FX conversion) (SYSCC=1012)
-ERROR: User does not have appropriate authorization level for file FD.ENRH_DP_FD_CERT_D14.DATA.
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 327, in main
+    validate_fd_columns(fd_path)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 163, in validate_fd_columns
+    raise RuntimeError(
+RuntimeError: enrh_dp_fd_cert_d14.sas7bdat already contains ['FORATE', 'FORBAL', 'CURBALUS']; it has already been converted. Aborting to avoid applying the exchange rate twice.
