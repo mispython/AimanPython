@@ -1,5 +1,88 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 199, in <module>
-    def build_sas_program(daily: str, monthly: str | None) -> str:
-TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'
+class SASExecutionError(RuntimeError):
+    """Raised when a SAS step fails. Never caught inside this program."""
+
+
+def build_sas_steps(daily: str, monthly: str | None) -> list[tuple[str, str]]:
+    """Original SAS logic split into steps so each one can be checked."""
+    steps = [
+        (
+            "setup",
+            "options yearcutoff=1950;\n"
+            f'libname FD "{ENRICHMENT_DIR}";\n'
+            f'libname FCYFD "{FORATE_DIR}" access=readonly;\n',
+        ),
+        ("PROC FORMAT ($FORATE.)", build_format_code()),
+        (
+            "PROC SORT",
+            f"proc sort data=FD.{daily} out=FD;\n"
+            "   by ACCTNO CDNO;\n"
+            "run;\n",
+        ),
+        (
+            "DATA step (FX conversion)",
+            f"data FD.{daily};\n"
+            "   set FD;\n"
+            "   if CURCODE ne 'MYR' then do;\n"
+            "      FORATE = put(CURCODE,$FORATE.);\n"
+            "      FORBAL = CURBAL;\n"
+            "      CURBAL = round(CURBAL * FORATE,.01);\n"
+            "   end;\n"
+            "   CURBALUS = CURBAL / put('USD',$FORATE.);\n"
+            "run;\n",
+        ),
+    ]
+    if monthly:
+        # Month end: same output as the daily dataset
+        steps.append(
+            (
+                "DATA step (month-end copy)",
+                f"data FD.{monthly};\n   set FD.{daily};\nrun;\n",
+            )
+        )
+    steps.append(
+        (
+            "PROC PRINT",
+            f"proc print data=FD.{daily};\n"
+            "   where CURCODE ne 'MYR';\n"
+            "run;\n",
+        )
+    )
+    return steps
+
+
+def _check_step(sas: "saspy.SASsession", label: str, log: str) -> None:
+    """Raises SASExecutionError when the step produced a SAS error."""
+    log_errors = [ln for ln in log.splitlines() if ln.startswith("ERROR")]
+    syscc = int(sas.symget("SYSCC"))  # 0 = ok, 4 = warning, >4 = error
+    if log_errors or syscc > 4:
+        print(log, file=sys.stderr)
+        detail = "\n".join(log_errors) if log_errors else "(no ERROR line in log)"
+        raise SASExecutionError(
+            f"SAS step failed: {label} (SYSCC={syscc})\n{detail}"
+        )
+
+
+def run_sas(steps: list[tuple[str, str]]) -> None:
+    sas = saspy.SASsession(cfgname=SASPY_CFGNAME)
+    try:
+        sas.set_results("TEXT")
+        for label, code in steps:
+            print(f"[SAS] {label}")
+            result = sas.submit("%let syscc=0;\n" + code)
+            _check_step(sas, label, result.get("LOG", ""))
+            listing = result.get("LST", "")
+            if listing.strip():
+                print(listing)
+    finally:
+        sas.endsas()  # always close the SAS session; the exception still propagates
+
+
+
+
+    run_sas(build_sas_steps(daily, monthly))
+
+
+
+
+if __name__ == "__main__":
+    main()
