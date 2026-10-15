@@ -1,52 +1,58 @@
-def build_format_code() -> str:
-    header = read_header(FORATE_PATH)
-    upper = {str(c).upper(): c for c in header.columns}
+# MNIFD column names (original SAS name -> actual column in enrh_dp_fd_cert)
+COL_ACCTNO = "ACCT_NUM"       # ACCTNO
+COL_CDNO = "CERT_NUM"         # CDNO
+COL_CURCODE = "CURRENCY_CD"   # CURCODE
+COL_CURBAL = "CURR_BAL"       # CURBAL
+# CUSTCD = CUSTOMER_CD is not referenced by this program.
 
-    # Format control layout: FMTNAME / START / LABEL -> used as CNTLIN directly
-    if "START" in upper and "LABEL" in upper:
-        where = "(where=(upcase(strip(fmtname))='FORATE'))" if "FMTNAME" in upper else ""
-        return f"proc format cntlin=FCYFD.{FORATE_MEMBER}{where}; run;\n"
+REQUIRED_COLUMNS = (COL_ACCTNO, COL_CDNO, COL_CURCODE, COL_CURBAL)
 
-    # Rate table layout: CURCODE + SPOTRATE (or FORATE / RATE), optional REPTDATE
-    rate_key = next((k for k in ("SPOTRATE", "FORATE", "RATE") if k in upper), None)
-    if "CURCODE" in upper and rate_key:
-        cur = upper["CURCODE"]
-        rate = upper[rate_key]
-        is_char = header[rate].dtype == object
-        label_expr = f"strip({rate})" if is_char else f"strip(put({rate},best32.))"
 
-        if "REPTDATE" in upper:
-            rpt = upper["REPTDATE"]
-            # One rate per currency: the latest REPTDATE
-            prep = (
-                f"proc sort data=FCYFD.{FORATE_MEMBER}(keep={cur} {rpt} {rate}) "
-                f"out=work.forate_s;\n"
-                f"   by {cur} {rpt};\n"
-                f"run;\n"
+
+
+def build_sas_steps(daily: str, monthly: str | None) -> list[tuple[str, str]]:
+    """Original SAS logic split into steps so each one can be checked."""
+    steps = [
+        (
+            "setup",
+            "options yearcutoff=1950;\n"
+            f'libname FD "{ENRICHMENT_DIR}";\n'
+            f'libname FCYFD "{FORATE_DIR}" access=readonly;\n',
+        ),
+        ("PROC FORMAT ($FORATE.)", build_format_code()),
+        (
+            "PROC SORT",
+            f"proc sort data=FD.{daily} out=FD;\n"
+            f"   by {COL_ACCTNO} {COL_CDNO};\n"
+            "run;\n",
+        ),
+        (
+            "DATA step (FX conversion)",
+            f"data FD.{daily};\n"
+            "   set FD;\n"
+            f"   if {COL_CURCODE} ne 'MYR' then do;\n"
+            f"      FORATE = put({COL_CURCODE},$FORATE.);\n"
+            f"      FORBAL = {COL_CURBAL};\n"
+            f"      {COL_CURBAL} = round({COL_CURBAL} * FORATE,.01);\n"
+            "   end;\n"
+            f"   CURBALUS = {COL_CURBAL} / put('USD',$FORATE.);\n"
+            "run;\n",
+        ),
+    ]
+    if monthly:
+        # Month end: same output as the daily dataset
+        steps.append(
+            (
+                "DATA step (month-end copy)",
+                f"data FD.{monthly};\n   set FD.{daily};\nrun;\n",
             )
-            pick = f"   by {cur};\n   if last.{cur};\n"
-        else:
-            prep = (
-                f"proc sort data=FCYFD.{FORATE_MEMBER}(keep={cur} {rate}) "
-                f"out=work.forate_s;\n"
-                f"   by {cur};\n"
-                f"run;\n"
-            )
-            pick = f"   by {cur};\n   if last.{cur};\n"
-
-        return (
-            f"{prep}"
-            f"data work.fmt_forate;\n"
-            f"   set work.forate_s;\n"
-            f"{pick}"
-            f"   if missing({cur}) then delete;\n"
-            f"   retain fmtname 'FORATE' type 'C';\n"
-            f"   length start label $32;\n"
-            f"   start = strip({cur});\n"
-            f"   label = {label_expr};\n"
-            f"   keep fmtname type start label;\n"
-            f"run;\n"
-            f"proc format cntlin=work.fmt_forate; run;\n"
         )
-
-    raise ValueError(f"Unrecognised forate layout, columns found: {sorted(upper)}")
+    steps.append(
+        (
+            "PROC PRINT",
+            f"proc print data=FD.{daily};\n"
+            f"   where {COL_CURCODE} ne 'MYR';\n"
+            "run;\n",
+        )
+    )
+    return steps
