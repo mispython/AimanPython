@@ -1,88 +1,52 @@
-class SASExecutionError(RuntimeError):
-    """Raised when a SAS step fails. Never caught inside this program."""
+def build_format_code() -> str:
+    header = read_header(FORATE_PATH)
+    upper = {str(c).upper(): c for c in header.columns}
 
+    # Format control layout: FMTNAME / START / LABEL -> used as CNTLIN directly
+    if "START" in upper and "LABEL" in upper:
+        where = "(where=(upcase(strip(fmtname))='FORATE'))" if "FMTNAME" in upper else ""
+        return f"proc format cntlin=FCYFD.{FORATE_MEMBER}{where}; run;\n"
 
-def build_sas_steps(daily: str, monthly: str | None) -> list[tuple[str, str]]:
-    """Original SAS logic split into steps so each one can be checked."""
-    steps = [
-        (
-            "setup",
-            "options yearcutoff=1950;\n"
-            f'libname FD "{ENRICHMENT_DIR}";\n'
-            f'libname FCYFD "{FORATE_DIR}" access=readonly;\n',
-        ),
-        ("PROC FORMAT ($FORATE.)", build_format_code()),
-        (
-            "PROC SORT",
-            f"proc sort data=FD.{daily} out=FD;\n"
-            "   by ACCTNO CDNO;\n"
-            "run;\n",
-        ),
-        (
-            "DATA step (FX conversion)",
-            f"data FD.{daily};\n"
-            "   set FD;\n"
-            "   if CURCODE ne 'MYR' then do;\n"
-            "      FORATE = put(CURCODE,$FORATE.);\n"
-            "      FORBAL = CURBAL;\n"
-            "      CURBAL = round(CURBAL * FORATE,.01);\n"
-            "   end;\n"
-            "   CURBALUS = CURBAL / put('USD',$FORATE.);\n"
-            "run;\n",
-        ),
-    ]
-    if monthly:
-        # Month end: same output as the daily dataset
-        steps.append(
-            (
-                "DATA step (month-end copy)",
-                f"data FD.{monthly};\n   set FD.{daily};\nrun;\n",
+    # Rate table layout: CURCODE + SPOTRATE (or FORATE / RATE), optional REPTDATE
+    rate_key = next((k for k in ("SPOTRATE", "FORATE", "RATE") if k in upper), None)
+    if "CURCODE" in upper and rate_key:
+        cur = upper["CURCODE"]
+        rate = upper[rate_key]
+        is_char = header[rate].dtype == object
+        label_expr = f"strip({rate})" if is_char else f"strip(put({rate},best32.))"
+
+        if "REPTDATE" in upper:
+            rpt = upper["REPTDATE"]
+            # One rate per currency: the latest REPTDATE
+            prep = (
+                f"proc sort data=FCYFD.{FORATE_MEMBER}(keep={cur} {rpt} {rate}) "
+                f"out=work.forate_s;\n"
+                f"   by {cur} {rpt};\n"
+                f"run;\n"
             )
+            pick = f"   by {cur};\n   if last.{cur};\n"
+        else:
+            prep = (
+                f"proc sort data=FCYFD.{FORATE_MEMBER}(keep={cur} {rate}) "
+                f"out=work.forate_s;\n"
+                f"   by {cur};\n"
+                f"run;\n"
+            )
+            pick = f"   by {cur};\n   if last.{cur};\n"
+
+        return (
+            f"{prep}"
+            f"data work.fmt_forate;\n"
+            f"   set work.forate_s;\n"
+            f"{pick}"
+            f"   if missing({cur}) then delete;\n"
+            f"   retain fmtname 'FORATE' type 'C';\n"
+            f"   length start label $32;\n"
+            f"   start = strip({cur});\n"
+            f"   label = {label_expr};\n"
+            f"   keep fmtname type start label;\n"
+            f"run;\n"
+            f"proc format cntlin=work.fmt_forate; run;\n"
         )
-    steps.append(
-        (
-            "PROC PRINT",
-            f"proc print data=FD.{daily};\n"
-            "   where CURCODE ne 'MYR';\n"
-            "run;\n",
-        )
-    )
-    return steps
 
-
-def _check_step(sas: "saspy.SASsession", label: str, log: str) -> None:
-    """Raises SASExecutionError when the step produced a SAS error."""
-    log_errors = [ln for ln in log.splitlines() if ln.startswith("ERROR")]
-    syscc = int(sas.symget("SYSCC"))  # 0 = ok, 4 = warning, >4 = error
-    if log_errors or syscc > 4:
-        print(log, file=sys.stderr)
-        detail = "\n".join(log_errors) if log_errors else "(no ERROR line in log)"
-        raise SASExecutionError(
-            f"SAS step failed: {label} (SYSCC={syscc})\n{detail}"
-        )
-
-
-def run_sas(steps: list[tuple[str, str]]) -> None:
-    sas = saspy.SASsession(cfgname=SASPY_CFGNAME)
-    try:
-        sas.set_results("TEXT")
-        for label, code in steps:
-            print(f"[SAS] {label}")
-            result = sas.submit("%let syscc=0;\n" + code)
-            _check_step(sas, label, result.get("LOG", ""))
-            listing = result.get("LST", "")
-            if listing.strip():
-                print(listing)
-    finally:
-        sas.endsas()  # always close the SAS session; the exception still propagates
-
-
-
-
-    run_sas(build_sas_steps(daily, monthly))
-
-
-
-
-if __name__ == "__main__":
-    main()
+    raise ValueError(f"Unrecognised forate layout, columns found: {sorted(upper)}")
