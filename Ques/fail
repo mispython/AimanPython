@@ -1,4 +1,25 @@
 id
-ls -l  /sas/deposit/dwh/enrichment/enrh_dp_fd_cert_d14.sas7bdat
-ls -ld /sas/deposit/dwh/enrichment
-getfacl /sas/deposit/dwh/enrichment/enrh_dp_fd_cert_d14.sas7bdat
+ls -l  /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
+ls -ld /stgsrcsys/host/uat/AII/EIBDFFCD
+getfacl /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
+
+
+
+
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ id
+_fd_cert_d14.sas7bdat
+ls -ld /stgsrcsys/host/uat/Auid=1772496792(sas_edw_dev) gid=1772496782(sas_edw_dev_grp) groups=1772496782(sas_edw_dev_grp),1001(sas),1772400513(domain users),1772407578(his runtime users)
+II/EIBDFFCD
+getfacl /stgsrcsys/host/uat/AII/EIBDFF(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ ls -l  /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
+-rw-r--r-- 1 sftpedw sas 620036096 Oct 15 05:21 /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
+CD/enrh_dp_fd_cert_d14.sas7bdat
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ ls -ld /stgsrcsys/host/uat/AII/EIBDFFCD
+drwxrwxrwx 2 sftpedw sas 4096 Oct 15 17:38 /stgsrcsys/host/uat/AII/EIBDFFCD
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ getfacl /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
+getfacl: Removing leading '/' from absolute path names
+# file: stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
+# owner: sftpedw
+# group: sas
+user::rw-
+group::r--
+other::r--
