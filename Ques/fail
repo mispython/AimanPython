@@ -10,31 +10,44 @@ COLUMN_MAP = {
 }
 
 
+def read_fd() -> pd.DataFrame:
+    """
+    Convert FD_CERT to a temporary Parquet file, read it via DuckDB with the
+    PBB entity filter (ENTITY_CD != 'PIBB'), then delete the temp file.
+    Columns are renamed to the SAS names used in the rest of the program.
+    """
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        tmp_parquet = Path(tmp) / "fd_cert.parquet"
+        sas_to_parquet(FD_SAS7BDAT, tmp_parquet)
 
+        con = duckdb.connect()
+        try:
+            # COALESCE keeps null ENTITY_CD rows, matching SAS missing != 'PIBB'
+            df = con.execute(
+                f"""
+                SELECT *
+                FROM read_parquet('{tmp_parquet.as_posix()}')
+                WHERE TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) <> 'PIBB'
+                """
+            ).df()
+        finally:
+            con.close()
+    # temp folder and Parquet file are removed here
 
-    still_needed = ["ENTITY_CD", "FORATE"]
-    absent = [c for c in still_needed if c not in df.columns]
+    # Source columns must exist, targets must not already exist
+    missing = [c for c in COLUMN_MAP if c not in df.columns]
+    if missing:
+        raise KeyError(f"FD_CERT is missing expected columns: {missing}")
+    clash = [c for c in COLUMN_MAP.values() if c in df.columns]
+    if clash:
+        raise ValueError(f"FD_CERT already has columns named {clash}; rename would create duplicates")
+
+    df = df.rename(columns=COLUMN_MAP)
+
+    # Every SAS name used later must now exist (plus the columns used as-is)
+    required = list(COLUMN_MAP.values()) + ["ENTITY_CD", "FORATE"]
+    absent = [c for c in required if c not in df.columns]
     if absent:
-        raise KeyError(f"FD_CERT is missing expected columns: {absent}")
+        raise KeyError(f"After rename, FD_CERT is missing: {absent}. Columns: {list(df.columns)}")
+
     return df
-
-
-
-
-def _to_date(val) -> Optional[date]:
-    """MATURE_DT / ORIG_DT are real dates in the new dataset (NaT -> None)."""
-    if val is None or pd.isna(val):
-        return None
-    return pd.Timestamp(val).date()
-
-
-def _parse_matdate(matdate_val) -> Optional[date]:
-    return _to_date(matdate_val)
-
-
-def _parse_orgdate(orgdate_val) -> Optional[date]:
-    return _to_date(orgdate_val)
-
-
-
-
