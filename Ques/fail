@@ -1,25 +1,61 @@
-id
-ls -l  /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
-ls -ld /stgsrcsys/host/uat/AII/EIBDFFCD
-getfacl /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
 
+import pyreadstat
+import polars as pl
 
+# 1. Define the two SAS dataset paths
+file1 = r"C:\Users\aiman\Desktop\SAS_Python_Migration\DUMMY\dataset1.sas7bdat"
+file2 = r"C:\Users\aiman\Desktop\SAS_Python_Migration\DUMMY\dataset2.sas7bdat"
 
+# 2. Read both datasets
+df1, meta1 = pyreadstat.read_sas7bdat(file1)
+df2, meta2 = pyreadstat.read_sas7bdat(file2)
 
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ id
-_fd_cert_d14.sas7bdat
-ls -ld /stgsrcsys/host/uat/Auid=1772496792(sas_edw_dev) gid=1772496782(sas_edw_dev_grp) groups=1772496782(sas_edw_dev_grp),1001(sas),1772400513(domain users),1772407578(his runtime users)
-II/EIBDFFCD
-getfacl /stgsrcsys/host/uat/AII/EIBDFF(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ ls -l  /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
--rw-r--r-- 1 sftpedw sas 620036096 Oct 15 05:21 /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
-CD/enrh_dp_fd_cert_d14.sas7bdat
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ ls -ld /stgsrcsys/host/uat/AII/EIBDFFCD
-drwxrwxrwx 2 sftpedw sas 4096 Oct 15 17:38 /stgsrcsys/host/uat/AII/EIBDFFCD
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ getfacl /stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
-getfacl: Removing leading '/' from absolute path names
-# file: stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat
-# owner: sftpedw
-# group: sas
-user::rw-
-group::r--
-other::r--
+df1 = pl.from_pandas(df1)
+df2 = pl.from_pandas(df2)
+
+# 3. Compare row and column counts
+print("=== DATASET SUMMARY ===")
+print(f"Dataset 1: {df1.height:,} rows, {df1.width:,} columns")
+print(f"Dataset 2: {df2.height:,} rows, {df2.width:,} columns")
+
+# 4. Compare column names
+cols1 = set(df1.columns)
+cols2 = set(df2.columns)
+
+print("\n=== COLUMN DIFFERENCES ===")
+print("Only in Dataset 1:", sorted(cols1 - cols2))
+print("Only in Dataset 2:", sorted(cols2 - cols1))
+
+# 5. Compare data types for common columns
+common_cols = [c for c in df1.columns if c in cols2]
+
+print("\n=== DATA TYPE DIFFERENCES ===")
+for col in common_cols:
+    if df1.schema[col] != df2.schema[col]:
+        print(
+            f"{col}: Dataset 1 = {df1.schema[col]}, "
+            f"Dataset 2 = {df2.schema[col]}"
+        )
+
+# 6. Compare actual values if the schemas match
+if cols1 == cols2:
+    df2 = df2.select(df1.columns)
+
+    # Compare rows in their original order
+    if df1.height == df2.height:
+        differences = df1.with_row_index("_row").join(
+            df2.with_row_index("_row"),
+            on="_row",
+            suffix="_right"
+        ).filter(
+            pl.any_horizontal([
+                pl.col(c).ne_missing(pl.col(f"{c}_right"))
+                for c in df1.columns
+            ])
+        )
+
+        print("\n=== VALUE DIFFERENCES ===")
+        print(f"Rows with differences: {differences.height:,}")
+        print(differences.head(20))
+    else:
+        print("\nRow counts differ; positional comparison skipped.")
