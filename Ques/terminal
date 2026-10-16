@@ -63,3 +63,6 @@ SPECIAL_RT_DTTM object nan
 STATUS_DTTM object nan
 CURR_DEALER_NAME_ID object nan
 ENTITY_CD object nan
+FORATE object nan
+FORBAL float64 nan
+CURBALUS float64 337.42014441316854
