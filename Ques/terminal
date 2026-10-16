@@ -1,68 +1,23 @@
-COLUMN_MAP = {
-    "CUSTOMER_CD": "CUSTCD",
-    "CURRENCY_CD": "CURCODE",
-    "CURR_BAL": "CURBAL",
-}
+Traceback (most recent call last):
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3805, in get_loc
+    return self._engine.get_loc(casted_key)
+  File "index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7081, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7089, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'CUSTCD'
 
+The above exception was the direct cause of the following exception:
 
-
-
-    missing = [c for c in COLUMN_MAP if c not in df.columns]
-    if missing:
-        raise KeyError(f"FD_CERT is missing expected columns: {missing}")
-    clash = [c for c in COLUMN_MAP.values() if c in df.columns]
-    if clash:
-        raise ValueError(f"FD_CERT already has columns named {clash}; rename would create duplicates")
-    df = df.rename(columns=COLUMN_MAP)
-
-
-
-
-BANK_NO float64 33.0
-REPT_NO float64 4001.0
-FORMAT_CODE float64 1.0
-BRANCH_CD float64 2.0
-ACCT_NUM float64 1000001725.0
-PURPOSE_CD object '1'
-CUSTOMER_CD float64 78.0
-DEPOSIT_DT datetime64[ms] Timestamp('2026-09-25 00:00:00')
-CERT_NUM float64 50173.0
-OPEN_IND object 'O'
-CURR_BAL float64 1378.53
-ORIG_AMT float64 1000.0
-ORIG_DT datetime64[ms] Timestamp('2014-09-25 00:00:00')
-MATURE_DT datetime64[ms] Timestamp('2027-03-25 00:00:00')
-RT float64 1.75
-ACCOUNT_TYPE_CD float64 300.0
-TERM float64 6.0
-MATUREITY_TERM_CD object 'M'
-INT_PLAN float64 302.0
-PAYMENT_IND object 'A'
-RENEWAL_IND object 'N'
-INT_PAID_YTD float64 27.83
-INT_PAYABLE float64 1.3299999999999998
-INT_DT datetime64[ms] Timestamp('2026-09-24 00:00:00')
-LAST_ACTIVE_DT datetime64[ms] Timestamp('2014-09-25 00:00:00')
-INT_FREQ float64 6.0
-INT_FREQ_CD object 'M'
-PENDING_INT float64 0.0
-CURRENCY_CD object 'MYR'
-LAST_MATURE_DT datetime64[ms] Timestamp('2026-09-25 00:00:00')
-PRO_RATIO float64 0.0
-CERT_HOLD_IND object nan
-COST_CENTRE float64 2.0
-COLL_NUM float64 0.0
-INT_TRANSFER_ACCT_NUM float64 0.0
-NEW_RT float64 nan
-OLD_RT float64 nan
-EFFECTIVE_DT datetime64[ms] NaT
-DEALERS_NAME object nan
-USER_ID object nan
-STATUS object nan
-SPECIAL_RT_DTTM object nan
-STATUS_DTTM object nan
-CURR_DEALER_NAME_ID object nan
-ENTITY_CD object nan
-FORATE object nan
-FORBAL float64 nan
-CURBALUS float64 337.42014441316854
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 737, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 708, in main
+    fcyt1, fcyt2, fcyt3, fcyt4 = build_fcyt(fd_df)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py", line 271, in build_fcyt
+    df = df[~df["CUSTCD"].isin([77, 78, 95, 96])].copy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/frame.py", line 4102, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3812, in get_loc
+    raise KeyError(key) from err
+KeyError: 'CUSTCD'
