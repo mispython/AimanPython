@@ -1,61 +1,78 @@
 
 import pyreadstat
-import polars as pl
+import pandas as pd
 
-# 1. Define the two SAS dataset paths
-file1 = r"C:\Users\aiman\Desktop\SAS_Python_Migration\DUMMY\dataset1.sas7bdat"
-file2 = r"C:\Users\aiman\Desktop\SAS_Python_Migration\DUMMY\dataset2.sas7bdat"
+original_file = r"C:\path\original.sas7bdat"
+modified_file = r"C:\path\modified.sas7bdat"
 
-# 2. Read both datasets
-df1, meta1 = pyreadstat.read_sas7bdat(file1)
-df2, meta2 = pyreadstat.read_sas7bdat(file2)
+CHUNK_SIZE = 50_000
 
-df1 = pl.from_pandas(df1)
-df2 = pl.from_pandas(df2)
+original_reader = pyreadstat.read_file_in_chunks(
+    pyreadstat.read_sas7bdat,
+    original_file,
+    chunksize=CHUNK_SIZE,
+)
 
-# 3. Compare row and column counts
-print("=== DATASET SUMMARY ===")
-print(f"Dataset 1: {df1.height:,} rows, {df1.width:,} columns")
-print(f"Dataset 2: {df2.height:,} rows, {df2.width:,} columns")
+modified_reader = pyreadstat.read_file_in_chunks(
+    pyreadstat.read_sas7bdat,
+    modified_file,
+    chunksize=CHUNK_SIZE,
+)
 
-# 4. Compare column names
-cols1 = set(df1.columns)
-cols2 = set(df2.columns)
+total_rows = 0
+different_rows = 0
+different_cells = 0
 
-print("\n=== COLUMN DIFFERENCES ===")
-print("Only in Dataset 1:", sorted(cols1 - cols2))
-print("Only in Dataset 2:", sorted(cols2 - cols1))
-
-# 5. Compare data types for common columns
-common_cols = [c for c in df1.columns if c in cols2]
-
-print("\n=== DATA TYPE DIFFERENCES ===")
-for col in common_cols:
-    if df1.schema[col] != df2.schema[col]:
-        print(
-            f"{col}: Dataset 1 = {df1.schema[col]}, "
-            f"Dataset 2 = {df2.schema[col]}"
+for chunk_no, ((original_df, _), (modified_df, _)) in enumerate(
+    zip(original_reader, modified_reader), start=1
+):
+    # Verify row positions and row counts
+    if len(original_df) != len(modified_df):
+        raise ValueError(
+            f"Chunk {chunk_no}: row count differs: "
+            f"{len(original_df)} vs {len(modified_df)}"
         )
 
-# 6. Compare actual values if the schemas match
-if cols1 == cols2:
-    df2 = df2.select(df1.columns)
+    # Original columns must still exist in the modified dataset
+    missing = [
+        col for col in original_df.columns
+        if col not in modified_df.columns
+    ]
+    if missing:
+        raise ValueError(f"Missing original columns: {missing}")
 
-    # Compare rows in their original order
-    if df1.height == df2.height:
-        differences = df1.with_row_index("_row").join(
-            df2.with_row_index("_row"),
-            on="_row",
-            suffix="_right"
-        ).filter(
-            pl.any_horizontal([
-                pl.col(c).ne_missing(pl.col(f"{c}_right"))
-                for c in df1.columns
-            ])
+    # Compare only original columns, in original column order
+    modified_original = modified_df[original_df.columns]
+
+    # Compare values, treating missing values as equal
+    equal = (
+        original_df.reset_index(drop=True)
+        .eq(modified_original.reset_index(drop=True))
+        | (
+            original_df.reset_index(drop=True).isna()
+            & modified_original.reset_index(drop=True).isna()
         )
+    )
 
-        print("\n=== VALUE DIFFERENCES ===")
-        print(f"Rows with differences: {differences.height:,}")
-        print(differences.head(20))
-    else:
-        print("\nRow counts differ; positional comparison skipped.")
+    changed = ~equal
+
+    rows_changed = int(changed.any(axis=1).sum())
+    cells_changed = int(changed.sum().sum())
+
+    different_rows += rows_changed
+    different_cells += cells_changed
+    total_rows += len(original_df)
+
+    if cells_changed:
+        print(f"\nChunk {chunk_no}: {cells_changed} changed cells")
+        print(changed.stack()[lambda x: x].head(10))
+
+print("\n=== COMPARISON RESULT ===")
+print(f"Rows checked: {total_rows:,}")
+print(f"Rows with differences: {different_rows:,}")
+print(f"Changed cells: {different_cells:,}")
+
+if different_cells == 0:
+    print("PASS: All original column values are unchanged.")
+else:
+    print("FAIL: Differences found in original columns.")
