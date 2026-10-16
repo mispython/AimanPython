@@ -1,58 +1,133 @@
-1                                                          The SAS System                             11:28 Friday, October 16, 2026
+                                                       The COMPARE Procedure                                                        
+                               Comparison of SRC.ENRH_DP_FD_CERT_D14_ORI with SRC.ENRH_DP_FD_CERT_D14                               
+                                                   (Method=ABSOLUTE, Criterion=0)                                                   
+                                                                                                                                    
+                                                         Data Set Summary                                                           
+                                                                                                                                    
+                           Dataset                               Created          Modified  NVar    NObs                            
+                                                                                                                                    
+                           SRC.ENRH_DP_FD_CERT_D14_ORI  15OCT26:05:21:43  15OCT26:05:21:43    45 3288629                            
+                           SRC.ENRH_DP_FD_CERT_D14      15OCT26:18:04:57  15OCT26:18:04:57    48 3288629                            
+                                                                                                                                    
+                                                                                                                                    
+                                                         Variables Summary                                                          
+                                                                                                                                    
+                                               Number of Variables in Common: 45.                                                   
+                                               Number of Variables in SRC.ENRH_DP_FD_CERT_D14 but not in                            
+                                               SRC.ENRH_DP_FD_CERT_D14_ORI: 3.                                                      
 
-1          ;*';*";*/;quit;run;
-2          OPTIONS PAGENO=MIN;
-3          %LET _CLIENTTASKLABEL='Program';
-4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
-5          %LET _CLIENTPROJECTPATH='';
-6          %LET _CLIENTPROJECTPATHHOST='';
-7          %LET _CLIENTPROJECTNAME='';
-8          %LET _SASPROGRAMFILE='';
-9          %LET _SASPROGRAMFILEHOST='';
-10         
-11         ODS _ALL_ CLOSE;
-12         OPTIONS DEV=SVG;
-13         GOPTIONS XPIXELS=0 YPIXELS=0;
-14         %macro HTML5AccessibleGraphSupported;
-15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
-16         %mend;
-17         FILENAME EGHTML TEMP;
-18         ODS HTML5(ID=EGHTML) FILE=EGHTML
-19             OPTIONS(BITMAP_MODE='INLINE')
-20             %HTML5AccessibleGraphSupported
-21             ENCODING='utf-8'
-22             STYLE=HTMLBlue
-23             NOGTITLE
-24             NOGFOOTNOTE
-25             GPATH=&sasworklocation
-26         ;
-NOTE: Writing HTML5(EGHTML) Body file: EGHTML
-27         
-28         libname orig "/stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14_ori.sas7bdat";
-ERROR: Library ORIG is not in a valid format for access method RANDOM.
-ERROR: Error in the LIBNAME statement.
-29         libname mod "/stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat"
-30         
-31         proc compare
-32         	base=orig.original
-33         	compare=mod.modified
-34         	criterion=0
-35         	method=absolute;
-ERROR: Library MOD is not in a valid format for access method RANDOM.
-ERROR: Error in the LIBNAME statement.
-36         run;
-37         
-38         %LET _CLIENTTASKLABEL=;
-39         %LET _CLIENTPROCESSFLOWNAME=;
-40         %LET _CLIENTPROJECTPATH=;
-41         %LET _CLIENTPROJECTPATHHOST=;
-42         %LET _CLIENTPROJECTNAME=;
-43         %LET _SASPROGRAMFILE=;
-44         %LET _SASPROGRAMFILEHOST=;
-45         
-46         ;*';*";*/;quit;run;
-47         ODS _ALL_ CLOSE;
-48         
-49         
-50         QUIT; RUN;
-51         
+
+                                                                                                                                    
+                                                                                                                                    
+                                                        Observation Summary                                                         
+                                                                                                                                    
+                                                   Observation      Base  Compare                                                   
+                                                                                                                                    
+                                                   First Obs           1        1                                                   
+                                                   First Unequal 2703351  2703351                                                   
+                                                   Last  Unequal 2743715  2743715                                                   
+                                                   Last  Obs     3288629  3288629                                                   
+                                                                                                                                    
+                            Number of Observations in Common: 3288629.                                                              
+                            Total Number of Observations Read from SRC.ENRH_DP_FD_CERT_D14_ORI: 3288629.                            
+                            Total Number of Observations Read from SRC.ENRH_DP_FD_CERT_D14: 3288629.                                
+                                                                                                                                    
+                            Number of Observations with Some Compared Variables Unequal: 39352.                                     
+                            Number of Observations with All Compared Variables Equal: 3249277.                                      
+                                                                                                                                    
+                                                                                                                                    
+                                                     Values Comparison Summary                                                      
+                                                                                                                                    
+                                  Number of Variables Compared with All Observations Equal: 44.                                     
+                                  Number of Variables Compared with Some Observations Unequal: 1.                                   
+                                  Total Number of Values which Compare Unequal: 39352.                                              
+                                  Maximum Difference: 487077350.                                                                    
+                                                                                                                                    
+                                                                                                                                    
+                                                   Variables with Unequal Values                                                    
+                                                                                                                                    
+                                         Variable               Type  Len  Ndif   MaxDif                                            
+                                                                                                                                    
+                                         CURR_BAL               NUM     8 39352  4.871E8                                            
+                                                                                                                                    
+
+
+
+                                                       The COMPARE Procedure                                                        
+                               Comparison of SRC.ENRH_DP_FD_CERT_D14_ORI with SRC.ENRH_DP_FD_CERT_D14                               
+                                                   (Method=ABSOLUTE, Criterion=0)                                                   
+                                                                                                                                    
+                                               Value Comparison Results for Variables                                               
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||   CURR_BAL   CURR_BAL      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                       2703351  ||       2474      13376      10902   440.6956                                      
+                                       2703352  ||       9400      26769      17369   184.7798                                      
+                                       2703353  ||       9356      21422      12066   128.9718                                      
+                                       2703354  ||       8493      19446      10953   128.9718                                      
+                                       2703355  ||       3933      16068      12135   308.5499                                      
+                                       2703356  ||      16961      69295      52334   308.5500                                      
+                                       2703357  ||      13637      31225      17588   128.9719                                      
+                                       2703358  ||       6946      15905       8959   128.9719                                      
+                                       2703359  ||       6946      15905       8959   128.9719                                      
+                                       2703362  ||      10842      24825      13983   128.9718                                      
+                                       2703363  ||       9664      22127      12463   128.9718                                      
+                                       2703364  ||       7584      17365       9781   128.9719                                      
+                                       2703365  ||       7584      17365       9781   128.9719                                      
+                                       2703366  ||       7584      17365       9781   128.9719                                      
+                                       2703367  ||       7584      17365       9781   128.9719                                      
+                                       2703368  ||       7584      17365       9781   128.9719                                      
+                                       2703370  ||       5824      16586      10762   184.7799                                      
+                                       2703371  ||      41353     117765      76412   184.7798                                      
+                                       2703372  ||      53890     153467      99577   184.7798                                      
+                                       2703373  ||      46774     133202      86429   184.7798                                      
+                                       2703374  ||       7028      16092       9064   128.9719                                      
+                                       2703375  ||      18609      42610      24001   128.9719                                      
+                                       2703376  ||      15794      44979      29185   184.7798                                      
+                                       2703377  ||      15618      44476      28858   184.7798                                      
+                                       2703378  ||      12107      34478      22371   184.7798                                      
+                                       2703379  ||      16129      45932      29803   184.7798                                      
+                                       2703380  ||       9025      20666      11640   128.9719                                      
+                                       2703381  ||      18273      41840      23567   128.9719                                      
+                                       2703382  ||     155598     356275     200677   128.9719                                      
+                                       2703383  ||      96349     220612     124263   128.9719                                      
+                                       2703384  ||       3742      20234      16492   440.6954                                      
+                                       2703385  ||      11975      34102      22127   184.7798                                      
+                                       2703386  ||      16846      47973      31127   184.7798                                      
+                                       2703387  ||       6176      17588      11412   184.7797                                      
+                                       2703388  ||       6148      17507      11360   184.7798                                      
+                                       2703389  ||      13805      31611      17805   128.9718                                      
+                                       2703390  ||       6685      15308       8622   128.9719                                      
+                                       2703391  ||      26099      59759      33660   128.9719                                      
+                                       2703392  ||      29518      67587      38070   128.9719                                      
+                                       2703393  ||      20894      47842      26948   128.9719                                      
+                                       2703394  ||      21009      85833      64824   308.5500                                      
+                                       2703395  ||      21009      85833      64824   308.5500                                      
+                                       2703396  ||      20896      85371      64475   308.5500                                      
+                                       2703397  ||      20787      84924      64137   308.5500                                      
+                                       2703398  ||      20787      84924      64137   308.5500                                      
+
+
+                                                       The COMPARE Procedure                                                        
+                               Comparison of SRC.ENRH_DP_FD_CERT_D14_ORI with SRC.ENRH_DP_FD_CERT_D14                               
+                                                   (Method=ABSOLUTE, Criterion=0)                                                   
+                                                                                                                                    
+                                               Value Comparison Results for Variables                                               
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||   CURR_BAL   CURR_BAL      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                       2703399  ||      20787      84924      64137   308.5500                                      
+                                       2703400  ||      51980     148028      96048   184.7798                                      
+                                       2703401  ||       8253      23502      15249   184.7798                                      
+                                       2703402  ||       9101      25918      16817   184.7798                                      
+                                       2703403  ||       8412      23957      15545   184.7798                                      
+                                                                                                                                    
+NOTE: The MAXPRINT=50 printing limit has been reached for the variable CURR_BAL. No more values will be printed for this comparison.
+                                     __________________________________________________________                                     
+
