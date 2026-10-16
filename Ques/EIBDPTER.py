@@ -6,29 +6,33 @@ Purpose : FCY Fixed Deposit Maturity Report
           - FDDETL : FCY FD detail by customer (balance > FCY 1 million)
           Produces two comma-delimited flat text files (RECFM=FB, LRECL=320).
 
+Input:
+    //FD       DD DSN=SAP.PBB.MNIFD.DAILY(0),DISP=SHR
+        enrh_dp_fd_cert_d{REPDD}.sas7bdat
+
+Output:
+    //FDTEXT   DD DSN=SAP.PBB.FCYFD.REP1.TEXT
+    //FDDETL   DD DSN=SAP.PBB.FCYFD.REP2.TEXT
+
 Dependencies : PBBELF   (format_brchcd)
 """
 
-# ============================================================
-# Standard library
-# ============================================================
 from pathlib import Path
 from datetime import date, timedelta
 from typing import Optional
 import math
 
-# ============================================================
-# Third-party
-# ============================================================
 import pandas as pd
 import polars as pl
+import tempfile
+import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # ============================================================
 # Internal dependencies
 # ============================================================
 from PBBELF import format_brchcd
-# from REPTDATE import get_reptdate_values
-# from input_date import get_latest_file
 
 # ============================================================
 # CONTROL FILE CONFIGURATION
@@ -61,27 +65,31 @@ REPDD  = REPTDATE.strftime("%d")             # DD  (Z2.)
 REPMM  = REPTDATE.strftime("%m")             # MM  (Z2.)
 REPYY  = REPTDATE.strftime("%Y")             # YEAR4.
 REPDT  = REPTDATE.strftime("%d/%m/%Y")       # DDMMYY8. equivalent as used in the existing program
-REPYMD = REPTDATE.strftime("%Y%m%d")         # date token in input filename
+REPYMD = REPTDATE.strftime("%y%m%d")         # date token in input filename
 
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-# Production Path
-INPUT_DIR = Path("/sas/deposit/dwh")
-FD_CERT   = INPUT_DIR / "enrichment" / f"enrh_dp_fd_cert_d{REPDD}.sas7bdat"
-# FD_ACCT     = INPUT_DIR / "integration" / f"intg_dp_acct_fd_d{REPTDATE}.sas7bdat"
-OUTPUT_DIR = Path("/host_pq/mis/deposit/output/report")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# # Testing Path
-# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDRMFC"  # directory containing fd.sas7bdat
-# OUTPUT_DIR = BASE_DIR / "output" / "EIBDPTER"
+# # Production Path
+# INPUT_DIR = Path("/sas/deposit/dwh")
+# FD_CERT   = INPUT_DIR / "enrichment" / f"enrh_dp_fd_cert_d{REPDD}.sas7bdat"
+# OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report")
 # OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Testing Path
+BASE_DIR   = Path("/stgsrcsys/host/uat")
+# INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDRMFC"  # directory containing fd.sas7bdat
+INPUT_DIR  = BASE_DIR / "AII"                   # directory containing fd.sas7bdat
+OUTPUT_DIR = BASE_DIR / "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS" / "output" / "EIBDPTER"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # FD_SAS7BDAT = INPUT_DIR / "fd.sas7bdat"
+FD_SAS7BDAT = INPUT_DIR / f"enrh_dp_fd_cert_d14.sas7bdat"
 
 OUTPUT_FDTEXT = OUTPUT_DIR / "FCYFD_REP1.txt"   # SAP.PBB.FCYFD.REP1.TEXT
 OUTPUT_FDDETL = OUTPUT_DIR / "FCYFD_REP2.txt"   # SAP.PBB.FCYFD.REP2.TEXT
+
+CHUNK_ROWS = 500_000
+TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
 
 # ============================================================
 # HELPER UTILITIES
@@ -144,6 +152,28 @@ def _fmt_date_ddmmyy8(d: Optional[date]) -> str:
 
 
 # ============================================================
+# STEP 0 : Convert sas7bdat into parquet
+# ============================================================
+def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
+    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
+    writer, schema = None, None
+    try:
+        for chunk in pd.read_sas(str(src), encoding="latin1", chunksize=chunk_rows):
+            # Force text columns to string so an all-null first chunk doesn't lock a null type
+            for col in chunk.columns[chunk.dtypes == object]:
+                chunk[col] = chunk[col].astype("string")
+            table = pa.Table.from_pandas(chunk, preserve_index=False)
+            if writer is None:
+                schema = table.schema
+                writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
+            else:
+                table = table.cast(schema)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
+
+# ============================================================
 # STEP 1 : Read FD sas7bdat
 # ============================================================
 
@@ -152,12 +182,36 @@ def _fmt_date_ddmmyy8(d: Optional[date]) -> str:
 #     df = pd.read_sas(str(FD_SAS7BDAT), encoding="latin1")
 #     return df
 
+# def read_fd() -> pd.DataFrame:
+#     """Read FD_CERT and keep PBB only (ENTITY_CD != 'PIBB')."""
+#     df = pd.read_sas(str(FD_CERT), encoding="latin1")
+#     # Null ENTITY_CD is kept, matching SAS where a missing value is != 'PIBB'
+#     entity = df["ENTITY_CD"].fillna("").astype(str).str.strip()
+#     return df[entity != "PIBB"].copy()
+
 def read_fd() -> pd.DataFrame:
-    """Read FD_CERT and keep PBB only (ENTITY_CD != 'PIBB')."""
-    df = pd.read_sas(str(FD_CERT), encoding="latin1")
-    # Null ENTITY_CD is kept, matching SAS where a missing value is != 'PIBB'
-    entity = df["ENTITY_CD"].fillna("").astype(str).str.strip()
-    return df[entity != "PIBB"].copy()
+    """
+    Convert FD_CERT to a temporary Parquet file, read it via DuckDB with the
+    PBB entity filter (ENTITY_CD != 'PIBB'), then delete the temp file.
+    """
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        tmp_parquet = Path(tmp) / "fd_cert.parquet"
+        sas_to_parquet(FD_SAS7BDAT, tmp_parquet)
+
+        con = duckdb.connect()
+        try:
+            # COALESCE keeps null ENTITY_CD rows, matching SAS missing != 'PIBB'
+            df = con.execute(
+                f"""
+                SELECT *
+                FROM read_parquet('{tmp_parquet.as_posix()}')
+                WHERE TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) <> 'PIBB'
+                """
+            ).df()
+        finally:
+            con.close()
+    # temp folder and Parquet file are removed here
+    return df
 
 
 # ============================================================
@@ -616,7 +670,7 @@ def main() -> None:
     print(f"[EIBDPTER] T3 = {T3}")
 
     # --- Read FD dataset -----------------------------------------------
-    print(f"[EIBDPTER] Reading {FD_CERT} ...")
+    print(f"[EIBDPTER] Reading {FD_SAS7BDAT} ...")
     fd_df = read_fd()
 
     # --- FCY maturity split --------------------------------------------
