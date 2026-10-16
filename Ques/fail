@@ -1,53 +1,46 @@
-COLUMN_MAP = {
-    "CUSTOMER_CD": "CUSTCD",
-    "CURRENCY_CD": "CURCODE",
-    "CURR_BAL":    "CURBAL",
-    "MATURE_DT":   "MATDATE",
-    "ORIG_DT":     "ORGDATE",
-    "ORIG_AMT":    "ORIGAMT",
-    "RT":          "RATE",
-    "BRANCH_CD":   "BRANCH",
-}
+from pathlib import Path
+import polars as pl
+import pandas as pd
+
+# ============================================================
+# PATHS
+# ============================================================
+BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR   = BASE_DIR / "input" / "prod" / "EIBDRMFC"
+OUTPUT_DIR  = BASE_DIR / "output" / "EIBDOPBL"
+
+# Batch-date control table (SOURCE_SYSTEM_CD = 'DP')
+CTL_BATCH_FILE = BASE_DIR / "input" / "prod" / "ctl_dwh_batch_dttm.sas7bdat"
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# ============================================================
+# REPORT DATE  (from ctl_dwh_batch_dttm, SOURCE_SYSTEM_CD = 'DP')
+# replaces DATA REPTDATE / CALL SYMPUT
+# ============================================================
+def get_batch_date(ctl_file: Path, source_system_cd: str = "DP"):
+    ctl = pd.read_sas(ctl_file, format="sas7bdat", encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {ctl_file}")
+    return pd.Timestamp(hit.iloc[0]).date()
 
 
-def read_fd() -> pd.DataFrame:
-    """
-    Convert FD_CERT to a temporary Parquet file, read it via DuckDB with the
-    PBB entity filter (ENTITY_CD != 'PIBB'), then delete the temp file.
-    Columns are renamed to the SAS names used in the rest of the program.
-    """
-    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
-        tmp_parquet = Path(tmp) / "fd_cert.parquet"
-        sas_to_parquet(FD_SAS7BDAT, tmp_parquet)
+_reptdate = get_batch_date(CTL_BATCH_FILE, "DP")
 
-        con = duckdb.connect()
-        try:
-            # COALESCE keeps null ENTITY_CD rows, matching SAS missing != 'PIBB'
-            df = con.execute(
-                f"""
-                SELECT *
-                FROM read_parquet('{tmp_parquet.as_posix()}')
-                WHERE TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) <> 'PIBB'
-                """
-            ).df()
-        finally:
-            con.close()
-    # temp folder and Parquet file are removed here
+REPDD   = _reptdate.strftime("%d")      # Z2.  day
+REPMM   = _reptdate.strftime("%m")      # Z2.  month
+REPYY   = _reptdate.strftime("%Y")      # YEAR4.
+REPDT   = _reptdate.strftime("%d/%m/%y")  # DDMMYY8. (e.g. 24/08/26)
+REPYMD  = _reptdate.strftime("%y%m%d")  # yymmdd for input filenames
 
-    # Source columns must exist, targets must not already exist
-    missing = [c for c in COLUMN_MAP if c not in df.columns]
-    if missing:
-        raise KeyError(f"FD_CERT is missing expected columns: {missing}")
-    clash = [c for c in COLUMN_MAP.values() if c in df.columns]
-    if clash:
-        raise ValueError(f"FD_CERT already has columns named {clash}; rename would create duplicates")
+# ============================================================
+# INPUT FILES
+# ============================================================
+FISSD_FILE  = INPUT_DIR / "FISSD.txt"
+FISSID_FILE = INPUT_DIR / "FISSID.txt"
 
-    df = df.rename(columns=COLUMN_MAP)
 
-    # Every SAS name used later must now exist (plus the columns used as-is)
-    required = list(COLUMN_MAP.values()) + ["ENTITY_CD", "FORATE"]
-    absent = [c for c in required if c not in df.columns]
-    if absent:
-        raise KeyError(f"After rename, FD_CERT is missing: {absent}. Columns: {list(df.columns)}")
 
-    return df
+
