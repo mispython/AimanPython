@@ -1,13 +1,58 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py
-Batch date (DP) : 2026-10-14  REPDD=14  REPMM=10
-Month end            : False
-[FRESH] MNIFD input: enrh_dp_fd_cert_d14.sas7bdat modified 2026-10-15 18:05:00
-[FRESH] FCYFD (FORATE) input: forate.sas7bdat modified 2026-10-14 15:23:05
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 338, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 327, in main
-    validate_fd_columns(fd_path)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDFFCD_AII.py", line 163, in validate_fd_columns
-    raise RuntimeError(
-RuntimeError: enrh_dp_fd_cert_d14.sas7bdat already contains ['FORATE', 'FORBAL', 'CURBALUS']; it has already been converted. Aborting to avoid applying the exchange rate twice.
+1                                                          The SAS System                             11:28 Friday, October 16, 2026
+
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='Program';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='';
+9          %LET _SASPROGRAMFILEHOST='';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         libname orig "/stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14_ori.sas7bdat";
+ERROR: Library ORIG is not in a valid format for access method RANDOM.
+ERROR: Error in the LIBNAME statement.
+29         libname mod "/stgsrcsys/host/uat/AII/EIBDFFCD/enrh_dp_fd_cert_d14.sas7bdat"
+30         
+31         proc compare
+32         	base=orig.original
+33         	compare=mod.modified
+34         	criterion=0
+35         	method=absolute;
+ERROR: Library MOD is not in a valid format for access method RANDOM.
+ERROR: Error in the LIBNAME statement.
+36         run;
+37         
+38         %LET _CLIENTTASKLABEL=;
+39         %LET _CLIENTPROCESSFLOWNAME=;
+40         %LET _CLIENTPROJECTPATH=;
+41         %LET _CLIENTPROJECTPATHHOST=;
+42         %LET _CLIENTPROJECTNAME=;
+43         %LET _SASPROGRAMFILE=;
+44         %LET _SASPROGRAMFILEHOST=;
+45         
+46         ;*';*";*/;quit;run;
+47         ODS _ALL_ CLOSE;
+48         
+49         
+50         QUIT; RUN;
+51         
