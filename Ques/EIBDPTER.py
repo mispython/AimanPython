@@ -189,6 +189,12 @@ def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
 #     entity = df["ENTITY_CD"].fillna("").astype(str).str.strip()
 #     return df[entity != "PIBB"].copy()
 
+COLUMN_MAP = {
+    "CUSTOMER_CD": "CUSTCD",
+    "CURRENCY_CD": "CURCODE",
+    "CURR_BAL": "CURBAL",
+}
+
 def read_fd() -> pd.DataFrame:
     """
     Convert FD_CERT to a temporary Parquet file, read it via DuckDB with the
@@ -211,49 +217,58 @@ def read_fd() -> pd.DataFrame:
         finally:
             con.close()
     # temp folder and Parquet file are removed here
+
+    missing = [c for c in COLUMN_MAP if c not in df.columns]
+    if missing:
+        raise KeyError(f"FD_CERT is missing expected columns: {missing}")
+    clash = [c for c in COLUMN_MAP.values() if c in df.columns]
+    if clash:
+        raise ValueError(f"FD_CERT already has columns named {clash}; rename would create duplicates")
+    df = df.rename(columns=COLUMN_MAP)
+    
     return df
 
 
 # ============================================================
 # STEP 2 : DATA FCYT / FCYT1-4  — FCY maturity split
 #
-#   IF CUSTCD NOT IN (77,78,95,96);
-#   IF CURCODE = 'MYR' THEN DELETE;
+#   IF CUSTOMER_CD NOT IN (77,78,95,96);
+#   IF CURRENCY_CD = 'MYR' THEN DELETE;
 #   IF MATDATE = .    THEN DELETE;
-#   CURBAL = CURBAL / FORATE;
+#   CURR_BAL = CURR_BAL / FORATE;
 #   Split into FCYT1 (MATDT=T1), FCYT2 (=T2), FCYT3 (=T3), FCYT4 (>T3)
 # ============================================================
 
 def build_fcyt(df: pd.DataFrame):
     """
-    Apply FCY filters and convert CURBAL to MYR equivalent.
+    Apply FCY filters and convert CURR_BAL to MYR equivalent.
     Returns four sub-dataframes: fcyt1, fcyt2, fcyt3, fcyt4.
     """
     # Decode byte-string columns if necessary (pandas read_sas may return bytes)
-    for col in ["CURCODE"]:
+    for col in ["CURRENCY_CD"]:
         if col in df.columns and df[col].dtype == object:
             df[col] = df[col].apply(
                 lambda x: x.decode("latin1").strip() if isinstance(x, bytes) else str(x).strip()
             )
 
-    # Filter: exclude CUSTCD in (77,78,95,96)
-    df = df[~df["CUSTCD"].isin([77, 78, 95, 96])].copy()
+    # Filter: exclude CUSTOMER_CD in (77,78,95,96)
+    df = df[~df["CUSTOMER_CD"].isin([77, 78, 95, 96])].copy()
 
     # Filter: exclude MYR
-    df = df[df["CURCODE"] != "MYR"].copy()
+    df = df[df["CURRENCY_CD"] != "MYR"].copy()
 
     # Filter: MATDATE must not be missing
     df = df[df["MATDATE"].notna()].copy()
 
     # FORCE NUMERIC TYPES (FIX)
-    df["CURBAL"] = pd.to_numeric(df["CURBAL"], errors="coerce")
+    df["CURR_BAL"] = pd.to_numeric(df["CURR_BAL"], errors="coerce")
     df["FORATE"] = pd.to_numeric(df["FORATE"], errors="coerce")
 
     # REMOVE INVALID DATA
     df = df[df["FORATE"].notna() & (df["FORATE"] != 0)].copy()
 
     # SAFE DIVISION
-    df["CURBAL"] = df["CURBAL"] / df["FORATE"]
+    df["CURR_BAL"] = df["CURR_BAL"] / df["FORATE"]
 
     # Parse MATDATE -> Python date
     df["MATDT"] = df["MATDATE"].apply(_parse_matdate)
@@ -268,26 +283,26 @@ def build_fcyt(df: pd.DataFrame):
 
 
 # ============================================================
-# STEP 3 : PROC SUMMARY — summarise each FCYT bucket by CURCODE
+# STEP 3 : PROC SUMMARY — summarise each FCYT bucket by CURRENCY_CD
 #
-#   CLASS CURCODE; VAR CURBAL RATE;
-#   OUTPUT SUM=CURBAL<n> RATE<n>; RENAME _FREQ_=N<n>
+#   CLASS CURRENCY_CD; VAR CURR_BAL RATE;
+#   OUTPUT SUM=CURR_BAL<n> RATE<n>; RENAME _FREQ_=N<n>
 # ============================================================
 
 def summarise_bucket(df: pd.DataFrame, suffix: str) -> pd.DataFrame:
     """
-    Equivalent of PROC SUMMARY NWAY by CURCODE for one maturity bucket.
-    Returns a DataFrame with columns: CURCODE, CURBAL<n>, RATE<n>, N<n>.
+    Equivalent of PROC SUMMARY NWAY by CURRENCY_CD for one maturity bucket.
+    Returns a DataFrame with columns: CURRENCY_CD, CURR_BAL<n>, RATE<n>, N<n>.
     """
     if df.empty:
-        return pd.DataFrame(columns=["CURCODE",
-                                     f"CURBAL{suffix}",
+        return pd.DataFrame(columns=["CURRENCY_CD",
+                                     f"CURR_BAL{suffix}",
                                      f"RATE{suffix}",
                                      f"N{suffix}"])
-    grp = df.groupby("CURCODE", as_index=False).agg(
-        **{f"CURBAL{suffix}": ("CURBAL", "sum"),
+    grp = df.groupby("CURRENCY_CD", as_index=False).agg(
+        **{f"CURR_BAL{suffix}": ("CURR_BAL", "sum"),
            f"RATE{suffix}":   ("RATE",   "sum"),
-           f"N{suffix}":      ("CURBAL", "count")}
+           f"N{suffix}":      ("CURR_BAL", "count")}
     )
     return grp
 
@@ -295,11 +310,11 @@ def summarise_bucket(df: pd.DataFrame, suffix: str) -> pd.DataFrame:
 # ============================================================
 # STEP 4 : DATA FCYT — merge four buckets and compute averages
 #
-#   MERGE FCYT1 FCYT2 FCYT3 FCYT4; BY CURCODE;
+#   MERGE FCYT1 FCYT2 FCYT3 FCYT4; BY CURRENCY_CD;
 #   AVGRATE<n> = RATE<n> / N<n>;
 #   AVGFIN<n>  = (retained sum of AVGRATE<n>) / 10  — see note below
 #   AVGFIN     = SUM(AVGFIN1..4)
-#   TOTFD      = SUM(CURBAL1,CURBAL2,CURABL3,CURBAL4)  ← SAS typo: CURABL3 = 0
+#   TOTFD      = SUM(CURR_BAL1,CURR_BAL2,CURABL3,CURR_BAL4)  ← SAS typo: CURABL3 = 0
 #   TOTAVG     = SUM(AVGRATE1..4) / 4
 #
 # NOTE: AVGFIN variables are not printed in the DATA _NULL_ output; they are only
@@ -311,13 +326,13 @@ def summarise_bucket(df: pd.DataFrame, suffix: str) -> pd.DataFrame:
 def build_fcyt_summary(s1: pd.DataFrame, s2: pd.DataFrame,
                        s3: pd.DataFrame, s4: pd.DataFrame) -> pd.DataFrame:
     """Merge four summary buckets and compute derived columns."""
-    # Full outer merge by CURCODE (SAS MERGE semantics: last-dataset-wins for matching rows)
-    merged = s1.merge(s2, on="CURCODE", how="outer")
-    merged = merged.merge(s3, on="CURCODE", how="outer")
-    merged = merged.merge(s4, on="CURCODE", how="outer")
+    # Full outer merge by CURRENCY_CD (SAS MERGE semantics: last-dataset-wins for matching rows)
+    merged = s1.merge(s2, on="CURRENCY_CD", how="outer")
+    merged = merged.merge(s3, on="CURRENCY_CD", how="outer")
+    merged = merged.merge(s4, on="CURRENCY_CD", how="outer")
 
     # Fill missing numeric values with 0 (SAS OPTIONS MISSING=0)
-    num_cols = [c for c in merged.columns if c != "CURCODE"]
+    num_cols = [c for c in merged.columns if c != "CURRENCY_CD"]
     merged[num_cols] = merged[num_cols].fillna(0)
 
     # AVGRATE<n> = RATE<n> / N<n>  (guard against div-by-zero)
@@ -347,16 +362,16 @@ def build_fcyt_summary(s1: pd.DataFrame, s2: pd.DataFrame,
     merged["AVGFIN"] = (merged["AVGFIN1"] + merged["AVGFIN2"] +
                         merged["AVGFIN3"] + merged["AVGFIN4"])
 
-    # TOTFD: SAS typo CURABL3 treated as 0 (MISSING=0); CURBAL3 intentionally omitted
-    # to faithfully replicate: TOTFD = SUM(CURBAL1, CURBAL2, CURABL3, CURBAL4)
-    merged["TOTFD"] = merged["CURBAL1"] + merged["CURBAL2"] + 0 + merged["CURBAL4"]
+    # TOTFD: SAS typo CURABL3 treated as 0 (MISSING=0); CURR_BAL3 intentionally omitted
+    # to faithfully replicate: TOTFD = SUM(CURR_BAL1, CURR_BAL2, CURABL3, CURR_BAL4)
+    merged["TOTFD"] = merged["CURR_BAL1"] + merged["CURR_BAL2"] + 0 + merged["CURR_BAL4"]
 
     # TOTAVG = SUM(AVGRATE1,AVGRATE2,AVGRATE3,AVGRATE4) / 4
     merged["TOTAVG"] = (merged["AVGRATE1"] + merged["AVGRATE2"] +
                         merged["AVGRATE3"] + merged["AVGRATE4"]) / 4.0
 
-    # Sort ascending by CURCODE (SAS MERGE BY CURCODE implies sorted order)
-    merged = merged.sort_values("CURCODE").reset_index(drop=True)
+    # Sort ascending by CURRENCY_CD (SAS MERGE BY CURRENCY_CD implies sorted order)
+    merged = merged.sort_values("CURRENCY_CD").reset_index(drop=True)
 
     return merged
 
@@ -394,7 +409,7 @@ def write_fdtext(fcyt: pd.DataFrame, repdt: str) -> None:
       Header line 2: ',' at @001,@015,@030,@050,'MATURITY' at @050,',' at @074
       Header line 3: column sub-headers
       Header line 4: column labels
-      Data lines    : one per CURCODE
+      Data lines    : one per CURRENCY_CD
 
     All lines are padded to LRECL=320.
     """
@@ -468,35 +483,35 @@ def write_fdtext(fcyt: pd.DataFrame, repdt: str) -> None:
 
     # Data rows
     for _, row in fcyt.iterrows():
-        curcode  = str(row["CURCODE"]).strip()
-        curbal1  = float(row.get("CURBAL1",  0) or 0)
+        CURRENCY_CD  = str(row["CURRENCY_CD"]).strip()
+        CURR_BAL1  = float(row.get("CURR_BAL1",  0) or 0)
         avgrate1 = float(row.get("AVGRATE1", 0) or 0)
-        curbal2  = float(row.get("CURBAL2",  0) or 0)
+        CURR_BAL2  = float(row.get("CURR_BAL2",  0) or 0)
         avgrate2 = float(row.get("AVGRATE2", 0) or 0)
-        curbal3  = float(row.get("CURBAL3",  0) or 0)
+        CURR_BAL3  = float(row.get("CURR_BAL3",  0) or 0)
         avgrate3 = float(row.get("AVGRATE3", 0) or 0)
-        curbal4  = float(row.get("CURBAL4",  0) or 0)
+        CURR_BAL4  = float(row.get("CURR_BAL4",  0) or 0)
         avgrate4 = float(row.get("AVGRATE4", 0) or 0)
         totfd    = float(row.get("TOTFD",    0) or 0)
         totavg   = float(row.get("TOTAVG",   0) or 0)
 
         # SAS format 15.2 right-justified (total width 15, 2 decimals)
         data_line = build_line([
-            (1,   curcode),
+            (1,   CURRENCY_CD),
             (14,  ","),
-            (15,  _fmt_num(curbal1,  15, 2)),
+            (15,  _fmt_num(CURR_BAL1,  15, 2)),
             (29,  ","),
             (30,  _fmt_num(avgrate1, 15, 2)),
             (49,  ","),
-            (50,  _fmt_num(curbal2,  15, 2)),
+            (50,  _fmt_num(CURR_BAL2,  15, 2)),
             (74,  ","),
             (75,  _fmt_num(avgrate2, 15, 2)),
             (99,  ","),
-            (100, _fmt_num(curbal3,  15, 2)),
+            (100, _fmt_num(CURR_BAL3,  15, 2)),
             (124, ","),
             (125, _fmt_num(avgrate3, 15, 2)),
             (149, ","),
-            (150, _fmt_num(curbal4,  15, 2)),
+            (150, _fmt_num(CURR_BAL4,  15, 2)),
             (174, ","),
             (175, _fmt_num(avgrate4, 15, 2)),
             (199, ","),
@@ -520,35 +535,35 @@ def write_fdtext(fcyt: pd.DataFrame, repdt: str) -> None:
 # ============================================================
 # STEP 6 : DATA CUST — detail dataset for customers > FCY 1M
 #
-#   KEEP=ORIGAMT ORGDATE MATDATE NAME CURCODE RATE CURBAL CUSTCD BRANCH
-#   IF CUSTCD NOT IN (77,78,95,96);
-#   IF CURCODE = 'MYR' THEN DELETE;
-#   IF CURBAL > 1000000;
+#   KEEP=ORIGAMT ORGDATE MATDATE NAME CURRENCY_CD RATE CURR_BAL CUSTOMER_CD BRANCH
+#   IF CUSTOMER_CD NOT IN (77,78,95,96);
+#   IF CURRENCY_CD = 'MYR' THEN DELETE;
+#   IF CURR_BAL > 1000000;
 #   IF MATDATE = . THEN DELETE;
 #   BRCHCD = PUT(BRANCH,BRCHCD.);
-#   Sort by DESCENDING CURCODE DESCENDING CURBAL
+#   Sort by DESCENDING CURRENCY_CD DESCENDING CURR_BAL
 #   Derive MATURE (DDMMYY8.) and ORIGIN (DDMMYY8.)
 # ============================================================
 
 def build_cust(df: pd.DataFrame) -> pd.DataFrame:
     """Build the CUST detail dataset."""
     keep_cols = ["ORIGAMT", "ORGDATE", "MATDATE", "NAME",
-                 "CURCODE", "RATE", "CURBAL", "CUSTCD", "BRANCH"]
+                 "CURRENCY_CD", "RATE", "CURR_BAL", "CUSTOMER_CD", "BRANCH"]
     # Keep only columns that exist in the dataset
     available = [c for c in keep_cols if c in df.columns]
     cust = df[available].copy()
 
     # Decode bytes
-    for col in ["CURCODE", "NAME"]:
+    for col in ["CURRENCY_CD", "NAME"]:
         if col in cust.columns and cust[col].dtype == object:
             cust[col] = cust[col].apply(
                 lambda x: x.decode("latin1").strip() if isinstance(x, bytes) else str(x).strip()
             )
 
     # Filters
-    cust = cust[~cust["CUSTCD"].isin([77, 78, 95, 96])].copy()
-    cust = cust[cust["CURCODE"] != "MYR"].copy()
-    cust = cust[cust["CURBAL"] > 1_000_000].copy()
+    cust = cust[~cust["CUSTOMER_CD"].isin([77, 78, 95, 96])].copy()
+    cust = cust[cust["CURRENCY_CD"] != "MYR"].copy()
+    cust = cust[cust["CURR_BAL"] > 1_000_000].copy()
     cust = cust[cust["MATDATE"].notna()].copy()
 
     # BRCHCD format
@@ -564,8 +579,8 @@ def build_cust(df: pd.DataFrame) -> pd.DataFrame:
     cust["ORGDAT"] = cust["ORGDATE"].apply(_parse_orgdate)
     cust["ORIGIN"] = cust["ORGDAT"].apply(_fmt_date_ddmmyy8)
 
-    # Sort: DESCENDING CURCODE, DESCENDING CURBAL
-    cust = cust.sort_values(["CURCODE", "CURBAL"], ascending=[False, False]).reset_index(drop=True)
+    # Sort: DESCENDING CURRENCY_CD, DESCENDING CURR_BAL
+    cust = cust.sort_values(["CURRENCY_CD", "CURR_BAL"], ascending=[False, False]).reset_index(drop=True)
 
     return cust
 
@@ -626,7 +641,7 @@ def write_fddetl(cust: pd.DataFrame, repdt: str) -> None:
         name    = str(row.get("NAME",   "")).strip()
         origamt = float(row.get("ORIGAMT", 0) or 0)
         rate    = float(row.get("RATE",    0) or 0)
-        curcode = str(row.get("CURCODE", "")).strip()
+        CURRENCY_CD = str(row.get("CURRENCY_CD", "")).strip()
         origin  = str(row.get("ORIGIN",  "")).strip()
         mature  = str(row.get("MATURE",  "")).strip()
 
@@ -639,7 +654,7 @@ def write_fddetl(cust: pd.DataFrame, repdt: str) -> None:
             (84,  ","),
             (85,  _fmt_num(rate,    15, 2)),
             (109, ","),
-            (110, curcode[:24]),
+            (110, CURRENCY_CD[:24]),
             (134, ","),
             (135, origin[:24]),
             (159, ","),
