@@ -1,6 +1,40 @@
-import pandas as pd
-reader = pd.read_sas("/stgsrcsys/host/uat/AII/enrh_dp_fd_cert_d14.sas7bdat",
-                     encoding="latin1", chunksize=1)
-df = next(iter(reader))
-for c in df.columns:
-    print(c, df[c].dtype, repr(df[c].iloc[0]))
+COLUMN_MAP = {
+    "CUSTOMER_CD": "CUSTCD",
+    "CURRENCY_CD": "CURCODE",
+    "CURR_BAL":    "CURBAL",
+    "MATURE_DT":   "MATDATE",
+    "ORIG_DT":     "ORGDATE",
+    "ORIG_AMT":    "ORIGAMT",
+    "RT":          "RATE",
+    "BRANCH_CD":   "BRANCH",
+}
+
+
+
+
+    still_needed = ["ENTITY_CD", "FORATE"]
+    absent = [c for c in still_needed if c not in df.columns]
+    if absent:
+        raise KeyError(f"FD_CERT is missing expected columns: {absent}")
+    return df
+
+
+
+
+def _to_date(val) -> Optional[date]:
+    """MATURE_DT / ORIG_DT are real dates in the new dataset (NaT -> None)."""
+    if val is None or pd.isna(val):
+        return None
+    return pd.Timestamp(val).date()
+
+
+def _parse_matdate(matdate_val) -> Optional[date]:
+    return _to_date(matdate_val)
+
+
+def _parse_orgdate(orgdate_val) -> Optional[date]:
+    return _to_date(orgdate_val)
+
+
+
+
