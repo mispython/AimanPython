@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Program : EIBDOFCY.py
 Purpose : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv) —  FCY
@@ -14,15 +15,15 @@ from output_date import build_output_file
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-# # Testing Path
-# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# INPUT_DIR  = BASE_DIR  / "input/prod"
-# OUTPUT_DIR = BASE_DIR  / "output/EIBDOFCY"
+# Testing Path
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+INPUT_DIR  = BASE_DIR  / "input/prod"
+OUTPUT_DIR = BASE_DIR  / "output/EIBDOFCY"
 
-# Production Path
-INPUT_DIR  = Path("/dwh")
-OUTPUT_DIR = Path("/host/mis/output/report") / "EIBDOFCY"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# # Production Path
+# INPUT_DIR  = Path("/dwh")
+# OUTPUT_DIR = Path("/host/mis/output/report") / "EIBDOFCY"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # >>>>> Input file paths <<<
 """
@@ -31,12 +32,12 @@ FD_FCY_PATH : DP.FCY&REPTYEAR&REPTMON&REPTDAY — FCY deposit file (.sas7bdat);
               Same file also used for FCY CA data (filter: 3000000000 <= ACCTNO <= 3999999999).
               Same file also used for FCY Loan data (filter: 2000000000 <= ACCTNO <= 2999999999).
 """
-# FD_FCY_PATH     = INPUT_DIR / "fcyfd260609.sas7bdat"
-# CURR_FCY_PATH   = INPUT_DIR / "fcy260609.sas7bdat"
-# LN_PATH         = INPUT_DIR / "ln260609.sas7bdat"
-FD_FCY_PATH = get_latest_file(INPUT_DIR / "dp_fcy", "fcyfd")
-CURR_FCY_PATH = get_latest_file(INPUT_DIR / "dp_fcy", "fcy")            # DEPO.CURRENT (SET DEPO.CURRENT)
-LN_PATH       = get_latest_file(INPUT_DIR / "lnd_ln", "ln")             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
+FD_FCY_PATH     = INPUT_DIR / "fcyfd260609.sas7bdat"
+CURR_FCY_PATH   = INPUT_DIR / "fcy260609.sas7bdat"
+LN_PATH         = INPUT_DIR / "ln260609.sas7bdat"
+# FD_FCY_PATH   = get_latest_file(INPUT_DIR / "dp_fcy", "fcyfd")
+# CURR_FCY_PATH = get_latest_file(INPUT_DIR / "dp_fcy", "fcy")            # DEPO.CURRENT (SET DEPO.CURRENT)
+# LN_PATH       = get_latest_file(INPUT_DIR / "lnd_ln", "ln")             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
 
 # >>>>> Required column sets for early validation per input file <<<
 """
