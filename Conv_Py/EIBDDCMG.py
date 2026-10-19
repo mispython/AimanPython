@@ -77,7 +77,7 @@ print(f"  Report date : {RDATE_DDMMYY10}  (RPDATE={RPDATE})")
 print(f"  REPTMON={REPTMON}  REPTDAY={REPTDAY}  REPTYEAR={REPTYEAR}")
 
 # ============================================================================
-# HELPER: CACHE STAMP  (skip re-conversion if .sas7bdat hasn't changed)
+# HELPER: CACHE STAMP  (skip re-conversion if .sas7bdat hasn't changed) - parquet
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
@@ -87,7 +87,7 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     )
 
 # ============================================================================
-# HELPER: STREAM .sas7bdat -> PARQUET  (same chunked pattern as EIBDLN1M.py)
+# HELPER: STREAM .sas7bdat -> PARQUET
 # ============================================================================
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
@@ -665,7 +665,7 @@ REPORT_FILE = build_output_file(OUTPUT_DIR, "EIBDDCMG").with_suffix(".txt")
 # format_width + 2 (a fixed 2-character gutter folded into each column, not
 # a separate inter-column separator) -- see _slot_width().
 REPORT_COLUMNS = [
-    {"var": "REPTDATE", "header": ["DATE"],                                          "format_width": 10, "type": "date"},
+    {"var": "REPTDATE", "header": ["DATE"],                                           "format_width": 10, "type": "date"},
     {"var": "PROCEED",  "header": ["NID-C", "(NON-FI)", "(PROCEEDS)"],                "format_width": 15, "type": "comma"},
     {"var": "IPROCEED", "header": ["NID-I", "(NON-FI)", "(PROCEEDS)"],                "format_width": 15, "type": "comma"},
     {"var": "TOTPROCD", "header": ["TOTAL", "NIDS", "(CONV + ISL)"],                  "format_width": 15, "type": "comma"},
@@ -731,7 +731,7 @@ def _build_title_block() -> list[str]:
         "PUBLIC BANK BERHAD",
         "SALES ADMINISTRATION & SUPPORT",
         "BANK'S TOTAL DEPOSITS (RM '000)",
-        f"AS AT {RPDATE}",
+        f"AS AT  {RPDATE}",
     ]
 
 
@@ -794,12 +794,12 @@ for panel in REPORT_PANELS:
     for row in sorted_rows:
         if lines_on_page == 0 or lines_on_page >= PAGE_SIZE:
             page_header = _build_page_header(panel)
-            output_lines.append("1" + _pad_line(page_header[0]))   # '1' = new page
+            output_lines.append("" + _pad_line(page_header[0]))   # '1' = new page
             for hl in page_header[1:]:
-                output_lines.append(" " + _pad_line(hl))
+                output_lines.append("" + _pad_line(hl))
             lines_on_page = HEADER_LINES
 
-        output_lines.append(" " + _pad_line(_build_detail_line(panel, row)))  # ' ' = single space
+        output_lines.append("" + _pad_line(_build_detail_line(panel, row)))  # ' ' = single space
         lines_on_page += 1
 
 with open(REPORT_FILE, "w", encoding="latin1") as fh:
