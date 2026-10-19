@@ -1,29 +1,88 @@
-# ---- TEMPORARY DIAGNOSTIC: remove after use ----
-_con = duckdb.connect(database=":memory:")
+"""
+FD_PATH   : DEPO.FD      — FD dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
+CURR_PATH : DEPO.CURRENT — CA dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
+LN_NOTE_PATH : LOAN.LNNOTE — loan note dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
+"""
+FD_PATH      = INPUT_DIR / "<FD_FOLDER>"   / "<fd_file>.sas7bdat"
+CURR_PATH    = INPUT_DIR / "<CA_FOLDER>"   / "<ca_file>.sas7bdat"
+LN_NOTE_PATH = INPUT_DIR / "MNILN"         / "enrh_ln_note_d18.sas7bdat"
+# FD_PATH   = get_latest_file(INPUT_DIR / "<FD_FOLDER>", "<fd_prefix>")
+# CURR_PATH = get_latest_file(INPUT_DIR / "<CA_FOLDER>", "<ca_prefix>")
+# LN_NOTE_PATH = get_latest_file(INPUT_DIR / "lnd_ln", "ln")
 
-print("\n[CA] columns:", pq.read_schema(CURR_FCY_CACHE).names)
-print(_con.execute(f"""
-    SELECT FCY_TYPE,
-           SUBSTR(CAST(CAST(ACCTNO AS BIGINT) AS VARCHAR), 1, 1) AS LEAD_DIGIT,
-           CAST(ACCTNO AS BIGINT) BETWEEN 3000000000 AND 3999999999 AS IN_RANGE,
-           COUNT(*) AS N, SUM(CURBALRM) AS BAL
-    FROM read_parquet('{CURR_FCY_CACHE.as_posix()}')
-    WHERE TRIM(COALESCE(CURCODE, '')) <> 'MYR'
-    GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
-""").df().to_string())
 
-_ln_cols = pq.read_schema(LN_NOTE_CACHE).names
-print("\n[LOAN] columns:", _ln_cols)
-_ent = "COALESCE(TRIM(CAST(ENTITY_CD AS VARCHAR)), '')" if "ENTITY_CD" in _ln_cols else "'(no ENTITY_CD)'"
-print(_con.execute(f"""
-    SELECT {_ent} AS ENTITY,
-           SUBSTR(CAST(CAST(ACCTNO AS BIGINT) AS VARCHAR), 1, 1) AS LEAD_DIGIT,
-           COUNT(*) AS N, SUM(CURBAL) AS BAL,
-           SUM(CASE WHEN COALESCE(CURBAL, 0) = 0 THEN 1 ELSE 0 END) AS ZERO_BAL_ROWS
-    FROM read_parquet('{LN_NOTE_CACHE.as_posix()}')
-    WHERE TRIM(COALESCE(CURCODE, '')) <> 'MYR'
-      AND TRIM(COALESCE(CURCODE, '')) IN ('USD', 'GBP')
-    GROUP BY 1, 2 ORDER BY 1, 2
-""").df().to_string())
-_con.close()
-# ---- END DIAGNOSTIC ----
+
+
+REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
+REQUIRED_CURR_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
+REQUIRED_LN_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL", "ENTITY_CD"}
+
+
+
+FD_CACHE      = _load_cached(FD_PATH,      "FD")
+CURR_CACHE    = _load_cached(CURR_PATH,    "CURR")
+LN_NOTE_CACHE = _load_cached(LN_NOTE_PATH, "LN_NOTE")
+
+
+
+
+_fd_raw = _read_pq(FD_CACHE, REQUIRED_FD_COLUMNS, FD_PATH)
+
+fd_raw = (
+    _fd_raw
+    .with_columns(
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars()
+    )
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
+
+
+
+
+_curr_raw = _read_pq(CURR_CACHE, REQUIRED_CURR_COLUMNS, CURR_PATH)
+
+curr_raw = (
+    _curr_raw
+    .with_columns(
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars()
+    )
+    # .filter(
+    #     (pl.col("ACCTNO") >= 3_000_000_000) &
+    #     (pl.col("ACCTNO") <= 3_999_999_999)
+    #     # (pl.col("FCY_TYPE") == "FCYCA")
+    # )
+    # .rename({"CURBALRM": "CURBAL"})
+    .filter(pl.col("CURCODE") != "MYR")
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
+
+
+
+
+_loan_raw = _read_pq(LN_NOTE_CACHE, REQUIRED_LN_COLUMNS, LN_NOTE_PATH)
+
+loan_raw = (
+    _loan_raw
+    .with_columns(
+        pl.col("CUSTCODE")
+          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
+          .str.strip_chars()
+    )
+    # .filter(
+    #     (pl.col("ACCTNO") >= 2_000_000_000) &
+    #     (pl.col("ACCTNO") <= 2_999_999_999)
+    # )
+    # .rename({"CCY": "CURCODE"})
+    .filter(pl.col("CURCODE") != "MYR")
+    .filter(pl.col("ENTITY_CD").fill_null("").str.strip_chars() != "PIBB")   # PBB only, same rule as EIBDPTER
+    .select(["CUSTCODE", "CURCODE", "CURBAL"])
+)
+
+
+
+
