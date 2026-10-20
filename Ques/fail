@@ -1,88 +1,22 @@
-"""
-FD_PATH   : DEPO.FD      — FD dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
-CURR_PATH : DEPO.CURRENT — CA dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
-LN_NOTE_PATH : LOAN.LNNOTE — loan note dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
-"""
-FD_PATH      = INPUT_DIR / "<FD_FOLDER>"   / "<fd_file>.sas7bdat"
-CURR_PATH    = INPUT_DIR / "<CA_FOLDER>"   / "<ca_file>.sas7bdat"
-LN_NOTE_PATH = INPUT_DIR / "MNILN"         / "enrh_ln_note_d18.sas7bdat"
-# FD_PATH   = get_latest_file(INPUT_DIR / "<FD_FOLDER>", "<fd_prefix>")
-# CURR_PATH = get_latest_file(INPUT_DIR / "<CA_FOLDER>", "<ca_prefix>")
-# LN_NOTE_PATH = get_latest_file(INPUT_DIR / "lnd_ln", "ln")
+# ---- DEBUG: post-dated check (REMOVE after UAT) ------------------------------
+_dfi_sql = ",".join(f"'{x}'" for x in DFI_CODES)
+for _tag, _cache in (("UTFX", UTFX_CACHE), ("IUTFX", IUTFX_CACHE)):
+    _sd = _startdate_sql(_cache)
+    print(f"\n[DEBUG {_tag}] all deal types: rows and latest start date")
+    print(duckdb.sql(f"""
+        SELECT DEALTYPE, COUNT(*) AS N,
+               MIN({_sd}) AS MIN_START, MAX({_sd}) AS MAX_START
+        FROM read_parquet('{_cache.as_posix()}')
+        GROUP BY ALL ORDER BY ALL
+    """).df().to_string())
 
-
-
-
-REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
-REQUIRED_CURR_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL"}
-REQUIRED_LN_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL", "ENTITY_CD"}
-
-
-
-FD_CACHE      = _load_cached(FD_PATH,      "FD")
-CURR_CACHE    = _load_cached(CURR_PATH,    "CURR")
-LN_NOTE_CACHE = _load_cached(LN_NOTE_PATH, "LN_NOTE")
-
-
-
-
-_fd_raw = _read_pq(FD_CACHE, REQUIRED_FD_COLUMNS, FD_PATH)
-
-fd_raw = (
-    _fd_raw
-    .with_columns(
-        pl.col("CUSTCODE")
-          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
-          .str.strip_chars()
-    )
-    .filter(pl.col("CURCODE") != "MYR")
-    .select(["CUSTCODE", "CURCODE", "CURBAL"])
-)
-
-
-
-
-_curr_raw = _read_pq(CURR_CACHE, REQUIRED_CURR_COLUMNS, CURR_PATH)
-
-curr_raw = (
-    _curr_raw
-    .with_columns(
-        pl.col("CUSTCODE")
-          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
-          .str.strip_chars()
-    )
-    # .filter(
-    #     (pl.col("ACCTNO") >= 3_000_000_000) &
-    #     (pl.col("ACCTNO") <= 3_999_999_999)
-    #     # (pl.col("FCY_TYPE") == "FCYCA")
-    # )
-    # .rename({"CURBALRM": "CURBAL"})
-    .filter(pl.col("CURCODE") != "MYR")
-    .select(["CUSTCODE", "CURCODE", "CURBAL"])
-)
-
-
-
-
-_loan_raw = _read_pq(LN_NOTE_CACHE, REQUIRED_LN_COLUMNS, LN_NOTE_PATH)
-
-loan_raw = (
-    _loan_raw
-    .with_columns(
-        pl.col("CUSTCODE")
-          .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
-          .str.strip_chars()
-    )
-    # .filter(
-    #     (pl.col("ACCTNO") >= 2_000_000_000) &
-    #     (pl.col("ACCTNO") <= 2_999_999_999)
-    # )
-    # .rename({"CCY": "CURCODE"})
-    .filter(pl.col("CURCODE") != "MYR")
-    .filter(pl.col("ENTITY_CD").fill_null("").str.strip_chars() != "PIBB")   # PBB only, same rule as EIBDPTER
-    .select(["CUSTCODE", "CURCODE", "CURBAL"])
-)
-
-
-
-
+    print(f"[DEBUG {_tag}] rows with STRTDATE > {reptdate}:")
+    print(duckdb.sql(f"""
+        SELECT DEALTYPE,
+               CASE WHEN CUSTFISS IN ({_dfi_sql}) THEN 'DFI' ELSE 'NON-DFI' END AS GRP,
+               COUNT(*) AS N, SUM(CAST(AMTPAY AS DOUBLE)) AS AMT
+        FROM read_parquet('{_cache.as_posix()}')
+        WHERE {_sd} > DATE '{reptdate.isoformat()}'
+        GROUP BY ALL ORDER BY ALL
+    """).df().to_string())
+# ---- END DEBUG ---------------------------------------------------------------
