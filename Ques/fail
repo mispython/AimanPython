@@ -1,22 +1,23 @@
-# ---- DEBUG: post-dated check (REMOVE after UAT) ------------------------------
-_dfi_sql = ",".join(f"'{x}'" for x in DFI_CODES)
-for _tag, _cache in (("UTFX", UTFX_CACHE), ("IUTFX", IUTFX_CACHE)):
-    _sd = _startdate_sql(_cache)
-    print(f"\n[DEBUG {_tag}] all deal types: rows and latest start date")
-    print(duckdb.sql(f"""
-        SELECT DEALTYPE, COUNT(*) AS N,
-               MIN({_sd}) AS MIN_START, MAX({_sd}) AS MAX_START
-        FROM read_parquet('{_cache.as_posix()}')
-        GROUP BY ALL ORDER BY ALL
-    """).df().to_string())
+import duckdb
 
-    print(f"[DEBUG {_tag}] rows with STRTDATE > {reptdate}:")
-    print(duckdb.sql(f"""
-        SELECT DEALTYPE,
-               CASE WHEN CUSTFISS IN ({_dfi_sql}) THEN 'DFI' ELSE 'NON-DFI' END AS GRP,
-               COUNT(*) AS N, SUM(CAST(AMTPAY AS DOUBLE)) AS AMT
-        FROM read_parquet('{_cache.as_posix()}')
-        WHERE {_sd} > DATE '{reptdate.isoformat()}'
-        GROUP BY ALL ORDER BY ALL
-    """).df().to_string())
-# ---- END DEBUG ---------------------------------------------------------------
+CACHE = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2/input/cache/EIBDDCMG/EIBDDCMG_utfx261014.parquet"
+
+# 1) Null/blank CUSTFISS or amounts near RM100,000 among CONV PMMD deals
+print(duckdb.sql(f"""
+  SELECT DEALTYPE, CUSTFISS, STRTDATE, AMTPAY
+  FROM read_parquet('{CACHE}')
+  WHERE DEALTYPE IN ('BCD','BCQ')
+    AND (CUSTFISS IS NULL OR TRIM(CUSTFISS) = ''
+         OR AMTPAY BETWEEN 99000 AND 101000)
+""").df().to_string())
+
+# 2) Total of all BCD/BCQ deals vs what the program counted (non-DFI + DFI)
+print(duckdb.sql(f"""
+  SELECT SUM(AMTPAY) AS ALL_BCD_BCQ,
+         SUM(CASE WHEN CUSTFISS NOT IN ('02','03','07','10','12','81','82','83','84','01')
+                  THEN AMTPAY END) AS NON_DFI,
+         SUM(CASE WHEN CUSTFISS IN ('02','03','07','10','12','81','82','83','84','01')
+                  THEN AMTPAY END) AS DFI
+  FROM read_parquet('{CACHE}')
+  WHERE DEALTYPE IN ('BCD','BCQ')
+""").df().to_string())
