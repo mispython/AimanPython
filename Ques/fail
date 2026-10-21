@@ -1,11 +1,5 @@
-import duckdb
-for d, cache_date in (("2026-10-05", "261005"), ("2026-10-12", "261012")):
-    print(d)
-    print(duckdb.sql(f"""
-      SELECT DEALTYPE, CUSTFISS,
-             DATE '1960-01-01' + CAST(STRTDATE AS INTEGER) AS START_DT,
-             AMTPAY
-      FROM read_parquet('<CACHE_DIR>/EIBDDCMG_utfx{cache_date}.parquet')
-      WHERE DEALTYPE IN ('BCD','BCQ')
-        AND DATE '1960-01-01' + CAST(STRTDATE AS INTEGER) > DATE '{d}'
-    """).df().to_string())
+# RNID (TOTNIND line)
+CASE WHEN COALESCE(CUSTCODE, -1) NOT IN (77,78) THEN ABS(CAST(CURBAL AS DOUBLE)) END AS TOTNIND
+
+# IRNID (TOININD line)
+CASE WHEN COALESCE(CUSTCODE, -1) NOT IN (77,78) THEN ABS(CAST(CURBAL AS DOUBLE)) END AS TOININD
