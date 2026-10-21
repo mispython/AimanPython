@@ -12,7 +12,6 @@ eSMR 4294 : Exclude post-dated PMMD/PQMMD placements (STRTDATE > REPTDATE)
             DFI & FI columns (TOTCDFI / TOTIDFI / TOTNDFI) are UNCHANGED.
 
 Report date : BATCH_DTTM of SOURCE_SYSTEM_CD = 'DP' in ctl_dwh_batch_dttm.sas7bdat.
-              (No REPTDATE.py / input_date.py / output_date.py dependency.)
 
 UAT : Both options are produced in one run, each with its own master and its
       own output files. The production master (dcmg{MM}.parquet) is NOT written.
@@ -41,14 +40,14 @@ from openpyxl.utils import get_column_letter
 # ============================================================================
 # PATH CONFIGURATION  (folders)
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
-INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDDCMG"   # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
-HOST_DIR   = Path("/stgsrcsys/host/uat/AII")            # DPGIA, EQ, IEQ (.txt), control table
-EGOLD_DIR  = HOST_DIR / "SASDATA_EGOLD"                 # EFORATE + legacy DCMG master (.sas7bdat)
-CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIBDDCMG"  # Parquet cache for .sas7bdat sources
-STORE_DIR  = BASE_DIR / "store" / "EIBDDCMG"            # Monthly DCMG masters (parquet)
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"           # Report output
+INPUT_DIR  = BASE_DIR / "input"  / "prod"  / "EIBDDCMG"     # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
+HOST_DIR   = Path("/stgsrcsys/host/uat/AII/EIBDDCMG")       # DPGIA, EQ, IEQ (.txt), control table
+EGOLD_DIR  = HOST_DIR                                       # EFORATE + legacy DCMG master (.sas7bdat)
+CACHE_DIR  = BASE_DIR / "input"  / "cache" / "EIBDDCMG"     # Parquet cache for .sas7bdat sources
+STORE_DIR  = BASE_DIR / "store"  / "EIBDDCMG"               # Monthly DCMG masters (parquet)
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"               # Report output
 
 for _d in (CACHE_DIR, STORE_DIR, OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
@@ -56,7 +55,7 @@ for _d in (CACHE_DIR, STORE_DIR, OUTPUT_DIR):
 CHUNK_ROWS = 500_000
 
 # Control table that holds the report date  -- TODO: set the real folder
-INPUT_CTL_BATCH_FILE = HOST_DIR / "ctl_dwh_batch_dttm.sas7bdat"
+INPUT_CTL_BATCH_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
 
 # CUSTFISS codes treated as DFI & FI (unchanged from original)
 DFI_CODES = ('02', '03', '07', '10', '12', '81', '82', '83', '84', '01')
@@ -135,7 +134,8 @@ def _read_dp_batch_date() -> date:
         return datetime.strptime(v.strip()[:7].upper(), "%d%b%y").date()
     return (datetime(1960, 1, 1) + timedelta(seconds=float(v))).date()   # raw SAS datetime
 
-reptdate       = _read_dp_batch_date()
+# reptdate       = _read_dp_batch_date()
+reptdate       = date(2026, 10, 19)
 REPTYEAR       = reptdate.strftime("%y")           # 2-digit year
 REPTMON        = reptdate.strftime("%m")
 REPTDAY        = reptdate.strftime("%d")
@@ -149,27 +149,33 @@ print(f"  REPTMON={REPTMON}  REPTDAY={REPTDAY}  REPTYEAR={REPTYEAR}")
 # PHYSICAL INPUTS  (one line per file; change each path independently)
 # ============================================================================
 # --- text files, GDG (0) = latest generation, fixed name ---
-INPUT_EQ_FILE    = HOST_DIR / "PBB_EQNID.TXT"       # //EQ    DD SAP.PBB.EQNID.TXT(0)
-INPUT_IEQ_FILE   = HOST_DIR / "PIBB_EQNID.TXT"      # //IEQ   DD SAP.PIBB.EQNID.TXT(0)
-INPUT_DPGIA_FILE = HOST_DIR / "DPGIA.TXT"           # //DPGIA DD RBP2.B033.PBGIA.DLYPOS.RPT(0)
+INPUT_EQ_FILE    = HOST_DIR / "PBB_EQNID.txt"       # //EQ    DD SAP.PBB.EQNID.TXT(0)
+INPUT_IEQ_FILE   = HOST_DIR / "PIBB_EQNID.txt"      # //IEQ   DD SAP.PIBB.EQNID.TXT(0)
+INPUT_DPGIA_FILE = HOST_DIR / "DPGIA.txt"           # //DPGIA DD RBP2.B033.PBGIA.DLYPOS.RPT(0)
 
 # --- sas7bdat, file name carries the report date ---
-INPUT_UTFX_DIR   = INPUT_DIR                        # //DEQ   DD SAP.PBB.EQUT(0)
-INPUT_IUTFX_DIR  = INPUT_DIR                        # //IDEQ  DD SAP.PIBB.EQUT(0)
-INPUT_RNID_DIR   = INPUT_DIR                        # //RNID  DD SAP.PBB.RNID.SASDATA
-INPUT_IRNID_DIR  = INPUT_DIR                        # //IRNID DD SAP.PIBB.RNID.SASDATA
+INPUT_UTFX_DIR   = HOST_DIR                        # //DEQ   DD SAP.PBB.EQUT(0)
+INPUT_IUTFX_DIR  = HOST_DIR                        # //IDEQ  DD SAP.PIBB.EQUT(0)
+INPUT_RNID_DIR   = HOST_DIR                        # //RNID  DD SAP.PBB.RNID.SASDATA
+INPUT_IRNID_DIR  = HOST_DIR                        # //IRNID DD SAP.PIBB.RNID.SASDATA
 
-def _utfx_file(d: date)  -> Path: return INPUT_UTFX_DIR  / f"utfx{d:%y%m%d}.sas7bdat"
-def _iutfx_file(d: date) -> Path: return INPUT_IUTFX_DIR / f"iutfx{d:%y%m%d}.sas7bdat"
+def _utfx_file(d: date)  -> Path: return INPUT_UTFX_DIR  / "eq_d"  / f"utfx{d:%y%m%d}.sas7bdat"
+def _iutfx_file(d: date) -> Path: return INPUT_IUTFX_DIR / "ieq_d" / f"iutfx{d:%y%m%d}.sas7bdat"
+# def _utfx_file(d: date)  -> Path: return INPUT_UTFX_DIR  / f"utfx261019.sas7bdat"
+# def _iutfx_file(d: date) -> Path: return INPUT_IUTFX_DIR / f"iutfx261019.sas7bdat"
 
 INPUT_UTFX_FILE  = _utfx_file(reptdate)             # SAS: DEQ.UTFX&REPTYEAR&REPTMON&REPTDAY
 INPUT_IUTFX_FILE = _iutfx_file(reptdate)            # SAS: IDEQ.IUTFX&REPTYEAR&REPTMON&REPTDAY
 INPUT_RNID_FILE  = INPUT_RNID_DIR  / f"rnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"    # SAS: RNID.RNID&REPTDAY
 INPUT_IRNID_FILE = INPUT_IRNID_DIR / f"irnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"   # SAS: IRNID.RNID&REPTDAY
+# INPUT_RNID_FILE  = INPUT_RNID_DIR  / f"rnid261019.sas7bdat"    # SAS: RNID.RNID&REPTDAY
+# INPUT_IRNID_FILE = INPUT_IRNID_DIR / f"irnid261019.sas7bdat"   # SAS: IRNID.RNID&REPTDAY
 
 # --- sas7bdat, file name carries the report month ---
 INPUT_EFORATE_FILE     = EGOLD_DIR / f"eforate{REPTMON}.sas7bdat"   # MIS.EFORATE&REPTMON
 INPUT_DCMG_LEGACY_FILE = EGOLD_DIR / f"dcmg{REPTMON}.sas7bdat"      # MIS.DCMG&REPTMON (bootstrap only)
+# INPUT_EFORATE_FILE     = EGOLD_DIR / f"eforate10.sas7bdat"   # MIS.EFORATE&REPTMON
+# INPUT_DCMG_LEGACY_FILE = EGOLD_DIR / f"dcmg10.sas7bdat"      # MIS.DCMG&REPTMON (bootstrap only)
 
 # ============================================================================
 # PHYSICAL OUTPUTS  (original: DMMISR1G@%OMM.%OYY..TXT -> DMMISR1G@{MM}{YY}.TXT)
@@ -416,9 +422,9 @@ def _sum_deals(cache_path: Path, deal_types, rd: date,
                 WHERE DEALTYPE IN ({dt})
             )
             SELECT
-                SUM(CASE WHEN CUSTFISS NOT IN ({dfi}) AND NOT POSTDATED THEN AMTPAY END),
-                SUM(CASE WHEN CUSTFISS IN     ({dfi})                   THEN AMTPAY END),
-                SUM(CASE WHEN CUSTFISS NOT IN ({dfi}) AND POSTDATED     THEN AMTPAY END)
+                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND NOT POSTDATED THEN AMTPAY END),
+                SUM(CASE WHEN COALESCE(CUSTFISS,'') IN     ({dfi})                   THEN AMTPAY END),
+                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND POSTDATED     THEN AMTPAY END)
             FROM base
         """).fetchone()
     finally:
