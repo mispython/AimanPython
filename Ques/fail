@@ -1,23 +1,5 @@
-import duckdb
-
-CACHE = "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2/input/cache/EIBDDCMG/EIBDDCMG_utfx261014.parquet"
-
-# 1) Null/blank CUSTFISS or amounts near RM100,000 among CONV PMMD deals
-print(duckdb.sql(f"""
-  SELECT DEALTYPE, CUSTFISS, STRTDATE, AMTPAY
-  FROM read_parquet('{CACHE}')
-  WHERE DEALTYPE IN ('BCD','BCQ')
-    AND (CUSTFISS IS NULL OR TRIM(CUSTFISS) = ''
-         OR AMTPAY BETWEEN 99000 AND 101000)
-""").df().to_string())
-
-# 2) Total of all BCD/BCQ deals vs what the program counted (non-DFI + DFI)
-print(duckdb.sql(f"""
-  SELECT SUM(AMTPAY) AS ALL_BCD_BCQ,
-         SUM(CASE WHEN CUSTFISS NOT IN ('02','03','07','10','12','81','82','83','84','01')
-                  THEN AMTPAY END) AS NON_DFI,
-         SUM(CASE WHEN CUSTFISS IN ('02','03','07','10','12','81','82','83','84','01')
-                  THEN AMTPAY END) AS DFI
-  FROM read_parquet('{CACHE}')
-  WHERE DEALTYPE IN ('BCD','BCQ')
-""").df().to_string())
+            SELECT
+                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND NOT POSTDATED THEN AMTPAY END),
+                SUM(CASE WHEN COALESCE(CUSTFISS,'') IN     ({dfi})                   THEN AMTPAY END),
+                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND POSTDATED     THEN AMTPAY END)
+            FROM base
