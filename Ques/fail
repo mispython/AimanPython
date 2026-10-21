@@ -1,5 +1,11 @@
-            SELECT
-                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND NOT POSTDATED THEN AMTPAY END),
-                SUM(CASE WHEN COALESCE(CUSTFISS,'') IN     ({dfi})                   THEN AMTPAY END),
-                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND POSTDATED     THEN AMTPAY END)
-            FROM base
+import duckdb
+for d, cache_date in (("2026-10-05", "261005"), ("2026-10-12", "261012")):
+    print(d)
+    print(duckdb.sql(f"""
+      SELECT DEALTYPE, CUSTFISS,
+             DATE '1960-01-01' + CAST(STRTDATE AS INTEGER) AS START_DT,
+             AMTPAY
+      FROM read_parquet('<CACHE_DIR>/EIBDDCMG_utfx{cache_date}.parquet')
+      WHERE DEALTYPE IN ('BCD','BCQ')
+        AND DATE '1960-01-01' + CAST(STRTDATE AS INTEGER) > DATE '{d}'
+    """).df().to_string())
