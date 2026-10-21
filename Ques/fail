@@ -3,3 +3,6 @@ CASE WHEN COALESCE(CUSTCODE, -1) NOT IN (77,78) THEN ABS(CAST(CURBAL AS DOUBLE))
 
 # IRNID (TOININD line)
 CASE WHEN COALESCE(CUSTCODE, -1) NOT IN (77,78) THEN ABS(CAST(CURBAL AS DOUBLE)) END AS TOININD
+
+
+“Option A applies the change to the report date only and leaves earlier days as originally reported. Option B re-measures each day of the month from that day’s own file, so every day shows its post-dated amount, or 0 if none. Both match the original output in UAT, and the post-dated amounts (RM160 million on 05/10, RM100 million on 12/10) are real deals that started the next day.”
