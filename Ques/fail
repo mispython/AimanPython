@@ -1,3 +1,15 @@
+import PBBLNFMT as P
+assert P.DELQDES('') == 'NO LEGAL ACTION TAKEN'
+assert P.DELQDES('  ') == 'NO LEGAL ACTION TAKEN'
+assert P.DELQDES('12') == 'BANKRUPTCY'
+assert '\n' not in P.SECDES('1000') and '\n' not in P.SECDES('9000')
+assert P.LNPROD(225) == '34120' and P.LNPROD(226) == '34120'
+assert P.ARRCLASS(0) == '0'
+assert P.format_lnprod(120) == '34149'
+
+
+
+
 # RNID (TOTNIND line)
 CASE WHEN COALESCE(CUSTCODE, -1) NOT IN (77,78) THEN ABS(CAST(CURBAL AS DOUBLE)) END AS TOTNIND
 
