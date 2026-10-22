@@ -14,10 +14,52 @@ Run this file with --list, or FORMAT VALUE, for command-line lookups.
 Parity limits: overlapping ranges use first-listed match, without SAS FUZZ;
 character ranges use Unicode ordering. PICTURE padding/overflow and special
 numeric missing codes are not fully reproduced. Validate against production SAS.
+
+TAKE NOTE : ANY AMENDMENTS TO PRODUCTS MAPPING, THESE FORMATS
+ARE AFFECTED : LNDENOM, LNPROD, LNTYPE & LNRATE (LOANS)
+               ODPROD, ODDENOM & ODRATE
+2006-1199  NPH  EXT NEW LOAN PRODUCT 532.
+2008-1090  MAA  EXT NEW LOAN PRODUCT 533.
+2010-2715  AAB  EXT NEW LOAN PRODUCT 512.
+2011-2706  SKP  EXT NEW OD   PRODUCT 190.
+2011-3893  SKP  EXT WOF OD   PRODUCT 32 & 33.
+2011-3853  SKP  EXT WOF LOAN PRODUCT 650-679
+2012-1088  CWK  EXT NEW OD   PRODUCT 133,134
+2012-3170  MFM  EXT NEW LOAN PRODUCT 409 & 410
+2012-3494  MFM  EXT NEW LOAN PRODUCT 411,187 & 687
+2013-502   MFM  EXT NEW OD   PRODUCT 184
+2013-1098  MFM  EXT NEW LN   PRODUCT 639 & 912
+2013-758   CWK  EXT NEW LOAN PRODUCT 412-414
+2013-414   CWK  EXT NEW LOAN PRODUCT 102-108
+2013-1313  MFM  EXT NEW LOAN PRODUCT 461
+2013-2577  RST  EXT NEW LOAN PRODUCT 462 & 463
+2014-632   RST  EXT NEW LOAN PRODUCT 188,189,190,688,689
+2014-885   SKP      NEW LOAN PRODUCT 249,349
+2014-2252  TBC      NEW LOAN PRODUCT 191,417
+                    INACTIVE LOAN PRODUCT 690,670
+2015-606   TBC      NEW LOAN PRODUCT 307
+2015-1190  TBC      NEW OD PRODUCT 185,186
+2015-1043  SKP      NEW LOAN PRODUCT 144
+2015-1044  TBC      NEW LOAN PRODUCT 468
+2015-1368  TBC      EXCLUDE LOAN PRODUCT 698,699
+2015-2284  TBC      NEW LOAN PRODUCT 419,420,469,470
+                    INACTIVE LOAN PRODUCT 672,673,674,675
+2016-630   NSA      NEW LOAN PRODUCT 422
+2016-1409  TBC      EXCLUDE LOAN 973
+2016-1407  TBC      ExCLUDE LOAN 972
+2016-579   TBC      NEW OD PRODUCT
+2016-678   NSA      NEW LOAN PRODUCT 918
+2016-2771  CWK      NEW CA PRODUCT 92
+2016-2203  NFJ      NEW LOAN PRODUCT 429,430
+2017-65    CWK      NEW OD PRODUCT 77,78
+2016-4701  MFM      NEW LOAN PRODUCT 440,441,442,443
+2017-4244  TBC      UPDATE $SECTOR TO NEW SECTFISS
+2019-816   IFA      EXCLUDE LOAN PRODUCT 972 & 973
 """
 
 import argparse
 import math
+from functools import lru_cache
 from decimal import Decimal, ROUND_DOWN
 
 
@@ -41,6 +83,13 @@ def matches(value, lo, hi, exlo, exhi):
     return (lower or (value > lo if exlo else value >= lo)) and (upper or (value < hi if exhi else value <= hi))
 
 
+def best12(value):
+    """Approximate SAS BEST12. for numbers with no matching format rule."""
+    if float(value).is_integer() and abs(value) < 1e12:
+        return str(int(value))
+    return format(value, '.12g')
+
+
 def lookup(formats, name, value, macros=None):
     name = name.upper().rstrip('.')
     spec = formats[name]
@@ -54,6 +103,9 @@ def lookup(formats, name, value, macros=None):
     fallback = None
     for lo, hi, exlo, exhi, label, options in spec['rules']:
         lo, hi = resolve(lo, macros), resolve(hi, macros)
+        if name.startswith('$'):
+            lo = lo.rstrip() if isinstance(lo, str) else lo
+            hi = hi.rstrip() if isinstance(hi, str) else hi
         if isinstance(lo, dict) and lo.get('special') == 'OTHER':
             fallback = label
             continue
@@ -70,7 +122,8 @@ def lookup(formats, name, value, macros=None):
         return value
     if missing(value):
         return '.'
-    return str(value) if name.startswith('$') else format(value, 'g')
+    # return str(value) if name.startswith('$') else format(value, 'g')
+    return str(value) if name.startswith('$') else best12(value)
 
 
 def library_cli(formats, macros):
@@ -728,6 +781,8 @@ FORMATS = {
             *_map('34190', 925),
             *_map('34115', 950),
             *_map('34190', 951),
+            # 972 = 'N'  DUMMY CONVENTIONAL TERM LOAN  (excluded per 2016-1407 / 2019-816)
+            # 973 = 'N'  DUMMY ISLAMIC TERM FINANCING  (excluded per 2016-1409 / 2019-816)
             *_map('N', 981, 982, 983),
             *_map('M', 984, 985),
             *_map('N', 991, 992, 993),
@@ -1776,7 +1831,8 @@ FORMATS = {
             *_map('PERSONAL USES              ', '0410'),
             *_map('CREDIT CARD                ', '0420'),
             *_map('CONSUMER DURABLES          ', '0430'),
-            *_map('AGRICULTURE, HUNTING,\n               FORESTRY & FISHING         ', '1000'),
+            # *_map('AGRICULTURE, HUNTING,\n               FORESTRY & FISHING         ', '1000'),
+            *_map('AGRICULTURE, HUNTING,' + ' ' * 15 + 'FORESTRY & FISHING         ', '1000'),
             *_map('MINING & QUARRYING         ', '2000'),
             *_map('MANUFACTURING              ', '3000'),
             *_map('ELEC, GAS & WATER SUPPLY   ', '4000'),
@@ -1797,7 +1853,8 @@ FORMATS = {
             *_map('REAL ESTATE', '8310'),
             *_map('BUSINESS SERVICES', '8320'),
             *_map('EQUIPMENT RENTAL', '8330'),
-            *_map('COMMUNITY, SOCIAL &\n               PERSONAL SERVICES          ', '9000'),
+            # *_map('COMMUNITY, SOCIAL &\n               PERSONAL SERVICES          ', '9000'),
+            *_map('COMMUNITY, SOCIAL &' + ' ' * 15 + 'PERSONAL SERVICES          ', '9000'),
             *_map('SECTORS NEC                ', '9999'),
             *_map(' ', _OTHER),
         ],
@@ -3058,9 +3115,19 @@ FORMATS = {
 }
 
 
+# def format_value(name, value):
+#     """Apply an original SAS format name; accepts trailing dots and $ names."""
+#     return lookup(FORMATS, name.strip(), value, MACROS)
+
+
+@lru_cache(maxsize=None)
+def _cached_lookup(name, value):
+    return lookup(FORMATS, name, value, MACROS)
+
+
 def format_value(name, value):
     """Apply an original SAS format name; accepts trailing dots and $ names."""
-    return lookup(FORMATS, name.strip(), value, MACROS)
+    return _cached_lookup(name.strip(), value)
 
 
 def put(value, format_name):
@@ -3342,6 +3409,92 @@ def HPCC(value):
 def STATEPOST(value):
     """Apply the original SAS $STATEPOST format."""
     return format_value('$STATEPOST', value)
+
+
+# Aliases matching the naming used by the other PBBLNFMT conversion
+format_oddenom = ODDENOM
+format_odprod = ODPROD
+format_odrate = ODRATE
+format_odcustcd = ODCUSTCD
+format_locustcd = LOCUSTCD
+format_odfmt = ODFMT
+format_odlob = ODLOB
+format_lndenom = LNDENOM
+format_lnprod = LNPROD
+format_lnrate = LNRATE
+format_lncustcd = LNCUSTCD
+format_liqpfmt = LIQPFMT
+format_sltype = SLTYPE
+format_ln03fmt = LN03FMT
+format_lnfmt = LNFMT
+format_lnlob = LNLOB
+format_lnormt = LNORMT
+format_lnrmmt = LNRMMT
+format_btcustcd = BTCUSTCD
+format_statecd = STATECD
+format_statepost = STATEPOST
+format_apprlimt = APPRLIMT
+format_loansize = LOANSIZE
+format_mthpass = MTHPASS
+format_ndays = NDAYS
+format_collcd = COLLCD
+format_riskcd = RISKCD
+format_busind = BUSIND
+format_arrclass = ARRCLASS
+format_delqdes = DELQDES
+format_hpcc = HPCC
+format_btprod = BTPROD
+format_btprodi = BTPRODI
+format_btproda = BTPRODA
+format_btrate = BTRATE
+format_fisstype = FISSTYPE
+format_fissgroup = FISSGROUP
+format_sectcd = SECTCD
+format_secdes = SECDES
+format_secta = SECTA
+format_sectb = SECTB
+format_indsect = INDSECT
+format_criscd = CRISCD
+format_rvrsect = RVRSECT
+format_rvrcris = RVRCRIS
+format_rvrse = RVRSE
+format_fisspur = FISSPUR
+format_newsect = NEWSECT
+format_validse = VALIDSE
+
+# Macro-variable aliases matching the other conversion
+MOREPLAN_PRODUCTS = MOREPLAN
+MOREISLM_PRODUCTS = MOREISLM
+MORE_PLAN = MOREPLAN
+MORE_ISLAM = MOREISLM
+HP_ALL = HP
+HP_ACTIVE = HPD
+HOME_ISLAMIC = HOMEIS
+HOME_CONVENTIONAL = HOMECV
+SWIFT_ISLAMIC = SWIFTIS
+SWIFT_CONVENTIONAL = SWIFTCV
+FCY_PRODUCTS = FCY
+COUNTRY_CODES = COUNTRYCD
+
+
+def is_more_plan(product):
+    """Check if product is MORE PLAN"""
+    return product in MOREPLAN
+
+
+def is_hire_purchase(product):
+    """Check if product is Hire Purchase"""
+    return product in HP
+
+
+def is_islamic_product(product):
+    """Check if product is Islamic"""
+    return LNDENOM(product) == 'I'
+
+
+def is_fcy_product(product):
+    """Check if product is Foreign Currency"""
+    return product in FCY
 
 
 if __name__ == "__main__":
