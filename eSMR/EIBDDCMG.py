@@ -13,12 +13,13 @@ eSMR 4294 : Exclude post-dated PMMD/PQMMD placements (STRTDATE > REPTDATE)
 
 Report date : BATCH_DTTM of SOURCE_SYSTEM_CD = 'DP' in ctl_dwh_batch_dttm.sas7bdat.
 
-UAT : Both options are produced in one run, each with its own master and its
-      own output files. The production master (dcmg{MM}.parquet) is NOT written.
-        Option A = no backfill (earlier rows of the month kept as they are)
-        Option B = earlier rows of the month recomputed for the 6 PMMD columns,
-                   using each day's own UTFX / IUTFX file
-      Output per option: one-table Excel (.xlsx) + one-table text (.TXT)
+Monthly rows : each run stores the report-date row, then recomputes the 6 PMMD
+               columns (3 existing + 3 post-dated) of the earlier dates of the
+               month from each day's own UTFX / IUTFX file, so every row of the
+               month is on the same basis. If a daily file is missing, that
+               row is left as saved and a warning is printed.
+
+Output      : one-table Excel (.xlsx) and one-table text (.TXT)
 """
 
 import gc
@@ -40,14 +41,14 @@ from openpyxl.utils import get_column_letter
 # ============================================================================
 # PATH CONFIGURATION  (folders)
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
 
-INPUT_DIR  = BASE_DIR / "input"  / "prod"  / "EIBDDCMG"     # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
-HOST_DIR   = Path("/stgsrcsys/host/uat/AII/EIBDDCMG")       # DPGIA, EQ, IEQ (.txt), control table
-EGOLD_DIR  = HOST_DIR                                       # EFORATE + legacy DCMG master (.sas7bdat)
-CACHE_DIR  = BASE_DIR / "input"  / "cache" / "EIBDDCMG"     # Parquet cache for .sas7bdat sources
-STORE_DIR  = BASE_DIR / "store"  / "EIBDDCMG"               # Monthly DCMG masters (parquet)
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"               # Report output
+INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDDCMG"   # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
+HOST_DIR   = Path("/stgsrcsys/host/uat/AII")            # DPGIA, EQ, IEQ (.txt), control table
+EGOLD_DIR  = HOST_DIR / "SASDATA_EGOLD"                 # EFORATE + legacy DCMG master (.sas7bdat)
+CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIBDDCMG"  # Parquet cache for .sas7bdat sources
+STORE_DIR  = BASE_DIR / "store" / "EIBDDCMG"            # Monthly DCMG master (parquet)
+OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"           # Report output
 
 for _d in (CACHE_DIR, STORE_DIR, OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
@@ -55,7 +56,7 @@ for _d in (CACHE_DIR, STORE_DIR, OUTPUT_DIR):
 CHUNK_ROWS = 500_000
 
 # Control table that holds the report date  -- TODO: set the real folder
-INPUT_CTL_BATCH_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+INPUT_CTL_BATCH_FILE = HOST_DIR / "ctl_dwh_batch_dttm.sas7bdat"
 
 # CUSTFISS codes treated as DFI & FI (unchanged from original)
 DFI_CODES = ('02', '03', '07', '10', '12', '81', '82', '83', '84', '01')
@@ -134,8 +135,7 @@ def _read_dp_batch_date() -> date:
         return datetime.strptime(v.strip()[:7].upper(), "%d%b%y").date()
     return (datetime(1960, 1, 1) + timedelta(seconds=float(v))).date()   # raw SAS datetime
 
-# reptdate       = _read_dp_batch_date()
-reptdate       = date(2026, 10, 19)
+reptdate       = _read_dp_batch_date()
 REPTYEAR       = reptdate.strftime("%y")           # 2-digit year
 REPTMON        = reptdate.strftime("%m")
 REPTDAY        = reptdate.strftime("%d")
@@ -149,46 +149,34 @@ print(f"  REPTMON={REPTMON}  REPTDAY={REPTDAY}  REPTYEAR={REPTYEAR}")
 # PHYSICAL INPUTS  (one line per file; change each path independently)
 # ============================================================================
 # --- text files, GDG (0) = latest generation, fixed name ---
-INPUT_EQ_FILE    = HOST_DIR / "PBB_EQNID.txt"       # //EQ    DD SAP.PBB.EQNID.TXT(0)
-INPUT_IEQ_FILE   = HOST_DIR / "PIBB_EQNID.txt"      # //IEQ   DD SAP.PIBB.EQNID.TXT(0)
-INPUT_DPGIA_FILE = HOST_DIR / "DPGIA.txt"           # //DPGIA DD RBP2.B033.PBGIA.DLYPOS.RPT(0)
+INPUT_EQ_FILE    = HOST_DIR / "PBB_EQNID.TXT"       # //EQ    DD SAP.PBB.EQNID.TXT(0)
+INPUT_IEQ_FILE   = HOST_DIR / "PIBB_EQNID.TXT"      # //IEQ   DD SAP.PIBB.EQNID.TXT(0)
+INPUT_DPGIA_FILE = HOST_DIR / "DPGIA.TXT"           # //DPGIA DD RBP2.B033.PBGIA.DLYPOS.RPT(0)
 
 # --- sas7bdat, file name carries the report date ---
-INPUT_UTFX_DIR   = HOST_DIR                        # //DEQ   DD SAP.PBB.EQUT(0)
-INPUT_IUTFX_DIR  = HOST_DIR                        # //IDEQ  DD SAP.PIBB.EQUT(0)
-INPUT_RNID_DIR   = HOST_DIR                        # //RNID  DD SAP.PBB.RNID.SASDATA
-INPUT_IRNID_DIR  = HOST_DIR                        # //IRNID DD SAP.PIBB.RNID.SASDATA
+INPUT_UTFX_DIR   = INPUT_DIR                        # //DEQ   DD SAP.PBB.EQUT(0)
+INPUT_IUTFX_DIR  = INPUT_DIR                        # //IDEQ  DD SAP.PIBB.EQUT(0)
+INPUT_RNID_DIR   = INPUT_DIR                        # //RNID  DD SAP.PBB.RNID.SASDATA
+INPUT_IRNID_DIR  = INPUT_DIR                        # //IRNID DD SAP.PIBB.RNID.SASDATA
 
-def _utfx_file(d: date)  -> Path: return INPUT_UTFX_DIR  / "eq_d"  / f"utfx{d:%y%m%d}.sas7bdat"
-def _iutfx_file(d: date) -> Path: return INPUT_IUTFX_DIR / "ieq_d" / f"iutfx{d:%y%m%d}.sas7bdat"
-# def _utfx_file(d: date)  -> Path: return INPUT_UTFX_DIR  / f"utfx261019.sas7bdat"
-# def _iutfx_file(d: date) -> Path: return INPUT_IUTFX_DIR / f"iutfx261019.sas7bdat"
+def _utfx_file(d: date)  -> Path: return INPUT_UTFX_DIR  / f"utfx{d:%y%m%d}.sas7bdat"
+def _iutfx_file(d: date) -> Path: return INPUT_IUTFX_DIR / f"iutfx{d:%y%m%d}.sas7bdat"
 
 INPUT_UTFX_FILE  = _utfx_file(reptdate)             # SAS: DEQ.UTFX&REPTYEAR&REPTMON&REPTDAY
 INPUT_IUTFX_FILE = _iutfx_file(reptdate)            # SAS: IDEQ.IUTFX&REPTYEAR&REPTMON&REPTDAY
 INPUT_RNID_FILE  = INPUT_RNID_DIR  / f"rnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"    # SAS: RNID.RNID&REPTDAY
 INPUT_IRNID_FILE = INPUT_IRNID_DIR / f"irnid{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"   # SAS: IRNID.RNID&REPTDAY
-# INPUT_RNID_FILE  = INPUT_RNID_DIR  / f"rnid261019.sas7bdat"    # SAS: RNID.RNID&REPTDAY
-# INPUT_IRNID_FILE = INPUT_IRNID_DIR / f"irnid261019.sas7bdat"   # SAS: IRNID.RNID&REPTDAY
 
 # --- sas7bdat, file name carries the report month ---
 INPUT_EFORATE_FILE     = EGOLD_DIR / f"eforate{REPTMON}.sas7bdat"   # MIS.EFORATE&REPTMON
 INPUT_DCMG_LEGACY_FILE = EGOLD_DIR / f"dcmg{REPTMON}.sas7bdat"      # MIS.DCMG&REPTMON (bootstrap only)
-# INPUT_EFORATE_FILE     = EGOLD_DIR / f"eforate10.sas7bdat"   # MIS.EFORATE&REPTMON
-# INPUT_DCMG_LEGACY_FILE = EGOLD_DIR / f"dcmg10.sas7bdat"      # MIS.DCMG&REPTMON (bootstrap only)
 
 # ============================================================================
 # PHYSICAL OUTPUTS  (original: DMMISR1G@%OMM.%OYY..TXT -> DMMISR1G@{MM}{YY}.TXT)
-# UAT files carry _OPTA / _OPTB so the final name stays free for production.
 # ============================================================================
-OUTPUT_TXT_A   = OUTPUT_DIR / f"DMMISR1G@{REPTMON}{REPTYEAR}_OPTA.TXT"
-OUTPUT_TXT_B   = OUTPUT_DIR / f"DMMISR1G@{REPTMON}{REPTYEAR}_OPTB.TXT"
-OUTPUT_XLSX_A  = OUTPUT_DIR / f"DMMISR1G@{REPTMON}{REPTYEAR}_OPTA.xlsx"
-OUTPUT_XLSX_B  = OUTPUT_DIR / f"DMMISR1G@{REPTMON}{REPTYEAR}_OPTB.xlsx"
-
-STORE_DCMG_PROD  = STORE_DIR / f"dcmg{REPTMON}.parquet"             # production master (read only here)
-STORE_DCMG_OPT_A = STORE_DIR / f"dcmg{REPTMON}_optA.parquet"        # UAT master, Option A
-STORE_DCMG_OPT_B = STORE_DIR / f"dcmg{REPTMON}_optB.parquet"        # UAT master, Option B
+OUTPUT_TXT_FILE  = OUTPUT_DIR / f"DMMISR1G@{REPTMON}{REPTYEAR}.TXT"
+OUTPUT_XLSX_FILE = OUTPUT_DIR / f"DMMISR1G@{REPTMON}{REPTYEAR}.xlsx"
+STORE_DCMG_FILE  = STORE_DIR  / f"dcmg{REPTMON}.parquet"            # monthly master (read and written)
 
 # ============================================================================
 # HELPERS: NUMERIC PARSING / SAS FUNCTIONS
@@ -381,7 +369,8 @@ pbgia_today = pbgia.filter(pl.col("REPTDATE") == reptdate)
 # STEP 6: UTFX / IUTFX  -- eSMR 4294 CHANGE
 #   Existing PMMD columns : STRTDATE <= REPTDATE  (or STRTDATE missing)
 #   New post-dated columns: STRTDATE >  REPTDATE
-#   Both use the same non-DFI CUSTFISS rule.
+#   Both use the same non-DFI CUSTFISS rule (a missing CUSTFISS counts as
+#   non-DFI, as in SAS).
 #   DFI & FI columns unchanged (all deals, regardless of STRTDATE).
 # ============================================================================
 print("\nStep 6: Building UTFX / IUTFX (DEQ / IDEQ)...")
@@ -416,15 +405,15 @@ def _sum_deals(cache_path: Path, deal_types, rd: date,
             WITH base AS (
                 SELECT
                     CAST(AMTPAY AS DOUBLE) AS AMTPAY,
-                    CUSTFISS,
+                    COALESCE(CUSTFISS, '') AS CUSTFISS,
                     COALESCE({sd} > DATE '{rd.isoformat()}', FALSE) AS POSTDATED
                 FROM read_parquet('{cache_path.as_posix()}')
                 WHERE DEALTYPE IN ({dt})
             )
             SELECT
-                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND NOT POSTDATED THEN AMTPAY END),
-                SUM(CASE WHEN COALESCE(CUSTFISS,'') IN     ({dfi})                   THEN AMTPAY END),
-                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND POSTDATED     THEN AMTPAY END)
+                SUM(CASE WHEN CUSTFISS NOT IN ({dfi}) AND NOT POSTDATED THEN AMTPAY END),
+                SUM(CASE WHEN CUSTFISS IN     ({dfi})                   THEN AMTPAY END),
+                SUM(CASE WHEN CUSTFISS NOT IN ({dfi}) AND POSTDATED     THEN AMTPAY END)
             FROM base
         """).fetchone()
     finally:
@@ -546,7 +535,7 @@ print(f"  RNID : TOTINDV={rnid['TOTINDV'][0]}  TOTNIND={rnid['TOTNIND'][0]}")
 print(f"  IRNID: TOIINDV={irnid['TOIINDV'][0]}  TOININD={irnid['TOININD'][0]}")
 
 # ============================================================================
-# STEP 9: DCMG (today's row)
+# STEP 9: DCMG (report-date row)
 # ============================================================================
 print("\nStep 9: Building today's DCMG row...")
 
@@ -631,17 +620,16 @@ dcmg_today = pl.DataFrame([{
 print("  Today's DCMG row built.")
 
 # ============================================================================
-# STEP 10: MONTHLY MASTER  -- Option A / Option B (UAT)
-#   Source of earlier rows: own UAT master -> production parquet -> legacy .sas7bdat
-#   REPTDAY = '01' restarts the month (as in the SAS %APPEND macro).
+# STEP 10: MONTHLY MASTER
+#   Earlier rows come from the saved master (parquet), or from the legacy
+#   .sas7bdat on the first run. REPTDAY = '01' restarts the month
+#   (as in the SAS %APPEND macro).
 # ============================================================================
-print("\nStep 10: Defining monthly master logic (Option A / Option B)...")
+print("\nStep 10: Updating monthly DCMG master...")
 
-def _load_existing(opt_parquet: Path) -> pl.DataFrame:
-    if opt_parquet.exists():
-        return pl.read_parquet(opt_parquet)
-    if STORE_DCMG_PROD.exists():
-        return pl.read_parquet(STORE_DCMG_PROD)
+def _load_existing() -> pl.DataFrame:
+    if STORE_DCMG_FILE.exists():
+        return pl.read_parquet(STORE_DCMG_FILE)
     if INPUT_DCMG_LEGACY_FILE.exists():
         return _normalize_sas_reptdate(
             pl.read_parquet(_load_cached(INPUT_DCMG_LEGACY_FILE, "DCMG_LEGACY"))
@@ -649,11 +637,11 @@ def _load_existing(opt_parquet: Path) -> pl.DataFrame:
     return pl.DataFrame(schema=DCMG_SCHEMA)
 
 
-def _stack_month(opt_parquet: Path) -> pl.DataFrame:
+def _stack_month() -> pl.DataFrame:
     """Today's row first, then earlier rows; NODUPKEY BY REPTDATE keeps today's."""
     if REPTDAY == "01":
         return dcmg_today
-    existing = _load_existing(opt_parquet)
+    existing = _load_existing()
     combined = pl.concat([dcmg_today, existing], how="diagonal_relaxed")
     return (
         combined
@@ -663,7 +651,7 @@ def _stack_month(opt_parquet: Path) -> pl.DataFrame:
 
 
 def _recompute_pmmd_for(d: date) -> Optional[dict]:
-    """Option B: recompute the 6 changed columns from that day's own UTFX / IUTFX."""
+    """Recompute the 6 PMMD columns of date d from that day's own UTFX / IUTFX."""
     u_sas, i_sas = _utfx_file(d), _iutfx_file(d)
     if not (u_sas.exists() and i_sas.exists()):
         return None
@@ -672,7 +660,8 @@ def _recompute_pmmd_for(d: date) -> Optional[dict]:
     return _pmmd_thousands(_pmmd_raw(u_cache, i_cache, d))
 
 
-def _option_b(master: pl.DataFrame) -> pl.DataFrame:
+def _recompute_earlier_rows(master: pl.DataFrame) -> pl.DataFrame:
+    """Bring every earlier row of the month onto the same basis as the report-date row."""
     rows, missing = [], []
     for r in master.iter_rows(named=True):
         if r["REPTDATE"] < reptdate:
@@ -683,7 +672,7 @@ def _option_b(master: pl.DataFrame) -> pl.DataFrame:
                 r.update(fresh)
         rows.append(r)
     if missing:
-        print("  WARNING (Option B): UTFX/IUTFX file missing, row left on OLD basis for: "
+        print("  WARNING: UTFX/IUTFX file missing, row left as saved for: "
               + ", ".join(d.strftime("%d/%m/%Y") for d in missing))
     return pl.DataFrame(rows, schema=master.schema, strict=False)
 
@@ -774,19 +763,26 @@ def write_txt(df: pl.DataFrame, path: Path) -> None:
 
 
 def write_excel(df: pl.DataFrame, path: Path) -> None:
-    """Single sheet, one header row, real numeric cells, missing -> 0."""
+    """Title block, then one header row and one table; real numeric cells, missing -> 0."""
     wb = Workbook()
     ws = wb.active
     ws.title = "DMMISR1G"
 
+    # --- title block (rows 1-5), one blank row, then the column header ---
+    titles = _title_block()
+    for i, t in enumerate(titles, start=1):
+        ws.cell(row=i, column=1, value=t).font = Font(bold=True)
+    hdr_row   = len(titles) + 2          # row 7 (row 6 stays blank)
+    first_row = hdr_row + 1              # first data row = 8
+
     for j, col in enumerate(REPORT_COLUMNS, start=1):
-        c = ws.cell(row=1, column=j, value="\n".join(col["header"]))
+        c = ws.cell(row=hdr_row, column=j, value="\n".join(col["header"]))
         c.font = Font(bold=True)
         c.alignment = Alignment(horizontal="center", vertical="bottom", wrap_text=True)
         ws.column_dimensions[get_column_letter(j)].width = 16
-    ws.row_dimensions[1].height = 62
+    ws.row_dimensions[hdr_row].height = 62
 
-    for i, r in enumerate(df.sort("REPTDATE").iter_rows(named=True), start=2):
+    for i, r in enumerate(df.sort("REPTDATE").iter_rows(named=True), start=first_row):
         for j, col in enumerate(REPORT_COLUMNS, start=1):
             v = r.get(col["var"])
             if col["type"] == "date":
@@ -799,32 +795,26 @@ def write_excel(df: pl.DataFrame, path: Path) -> None:
                 cell = ws.cell(row=i, column=j, value=(v if v is not None else 0))
                 cell.number_format = "#,##0.00"
 
-    ws.freeze_panes = "B2"
+    ws.freeze_panes = f"B{first_row}"
     wb.save(path)
 
 # ============================================================================
-# RUN BOTH OPTIONS
+# BUILD MONTH, SAVE MASTER, WRITE OUTPUTS
 # ============================================================================
-RUNS = {
-    "A": {"master": STORE_DCMG_OPT_A, "txt": OUTPUT_TXT_A, "xlsx": OUTPUT_XLSX_A},
-    "B": {"master": STORE_DCMG_OPT_B, "txt": OUTPUT_TXT_B, "xlsx": OUTPUT_XLSX_B},
-}
+dcmg_monthly = _stack_month()
+dcmg_monthly = _recompute_earlier_rows(dcmg_monthly)
 
-for OPT, f in RUNS.items():
-    print(f"\n--- Option {OPT} ---")
-    monthly = _stack_month(f["master"])
-    if OPT == "B":
-        monthly = _option_b(monthly)
+dcmg_monthly.write_parquet(STORE_DCMG_FILE)
+write_txt(dcmg_monthly, OUTPUT_TXT_FILE)
+write_excel(dcmg_monthly, OUTPUT_XLSX_FILE)
 
-    monthly.write_parquet(f["master"])
-    write_txt(monthly, f["txt"])
-    write_excel(monthly, f["xlsx"])
-    print(f"  Master rows : {len(monthly):,}")
-    print(f"  Master      : {f['master']}")
-    print(f"  TXT         : {f['txt']}")
-    print(f"  Excel       : {f['xlsx']}")
-    del monthly
-    gc.collect()
+print(f"\n  Master rows : {len(dcmg_monthly):,}")
+print(f"  Master      : {STORE_DCMG_FILE}")
+print(f"  TXT         : {OUTPUT_TXT_FILE}")
+print(f"  Excel       : {OUTPUT_XLSX_FILE}")
+
+del dcmg_today, dcmg_monthly
+gc.collect()
 
 # ============================================================================
 # JCL/HOUSEKEEPING STEPS RETAINED AS COMMENTS (no Python equivalent needed)
