@@ -340,25 +340,25 @@ def main() -> None:
     print(f"[OUTPUT] XLS written to : {OUTPUT_XLS_FILE}")
 
     # ------------------------------------------------------------
-    # //RUNSFTP EXEC COZBATCH ... (FTP TO PIVSVFIL101 - PIVB FILE SERVER)
+    # //RUNSFTP EXEC COZBATCH ... (FTP TO PIVSVFIL101 - PIVB ADMIN FILE SERVER)
     # ------------------------------------------------------------
-    print("\nUploading reports to PIVSVFIL101 - PIVB File Server via SFTP...")
+    print("\nUploading reports to PIVSVFIL101 - PIVB Admin File Server via SFTP...")
     sftp_upload_to_pivb(OUTPUT_CSV_FILE, OUTPUT_XLS_FILE)
 
 # ============================================================
-# SFTP CONFIGURATION (PIVSVFIL101 - PIVB File Server)
+# SFTP CONFIGURATION (PIVSVFIL101 - PIVB Admin File Server)
 # ============================================================
 # NOTE: Original JCL connects directly to sas2lcr@192.168.56.10 via
 # cozsftp, using credentials from OPER.PBB.CONTROL(SAS#SFTP) - a
 # DIFFERENT control dataset than ctl_dwh_sftp_info.sas7bdat used
 # elsewhere in this project.
-PIVB_HOST_DESC = "PIVB File Server"
+PIVB_HOST_DESC = "PIVB Admin File Server"
 
-# Remote folder on the PIVB file server (from JCL: cd "...")
+# Remote folder on the PIVB Admin File Server (from JCL: cd "...")
 PIVB_REMOTE_DIR = "Financial Inclusion Data Collection Package"
 
 # ============================================================
-# SFTP UPLOAD TO PIVSVFIL101 - PIVB File Server
+# SFTP UPLOAD TO PIVSVFIL101 - PIVB Admin File Server
 # ============================================================
 def _pivb_remote_filenames() -> tuple[str, str]:
     """
@@ -380,7 +380,7 @@ def _pivb_remote_filenames() -> tuple[str, str]:
 
 def sftp_upload_to_pivb(csv_path: Path, xls_path: Path) -> None:
     """
-    Upload FIDCPR.csv / FIDCPR.xls to the PIVB file server.
+    Upload FIDCPR.csv / FIDCPR.xls to the PIVB Admin File Server.
 
     Equivalent of the JCL RUNSFTP step:
         //RUNSFTP  EXEC COZBATCH
