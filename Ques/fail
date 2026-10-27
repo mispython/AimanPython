@@ -1,150 +1,56 @@
-import atexit
-import shutil
-import sys
 import tempfile
-import paramiko
 
 
 
 
-CHUNK_ROWS = 500_000
+# Batch-date control file (SOURCE_SYSTEM_CD = 'SAS' drives the report date)
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "SAS"
 
-# Temporary parquet area: created per run, removed on exit (nothing is kept)
-TEMP_DIR  = None   # None = system temp; set a folder if the default temp area is too small
-CACHE_DIR = Path(tempfile.mkdtemp(prefix="EIBDDCMG_", dir=TEMP_DIR))
-atexit.register(shutil.rmtree, CACHE_DIR, ignore_errors=True)
+# Base folder for the temporary Parquet files (None = system temp).
+# Set a path here if the default temp area is too small.
+TEMP_BASE = None
 
 
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}"
+        )
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+
+
+reptdate = get_batch_date(BATCH_SOURCE)   # SOURCE_SYSTEM_CD = 'SAS'
+
+
+
+
+# Temporary folder holding the converted Parquet files. It is removed as soon
+# as all inputs are read into memory (see Change 6), or automatically at exit
+# if the program fails earlier.
+_TMP    = tempfile.TemporaryDirectory(prefix="EIWBTR1C_", dir=TEMP_BASE)
+TMP_DIR = Path(_TMP.name)
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    # Converts .sas7bdat -> temporary Parquet (parent folder + stem = unique name).
-    # The file lives only in this run's temp folder.
-    if not sas_path.exists():
-        raise FileNotFoundError(f"[{tag}] input not found: {sas_path}")
-    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
-    if cache_path.exists():                      # already converted earlier in this run
-        return cache_path
-    try:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    except BaseException:
-        cache_path.unlink(missing_ok=True)       # never leave a half-written parquet
-        raise
-    return cache_path
-
-
-def _discard(*paths) -> None:
-    """Delete temporary parquet file(s) as soon as they have been read."""
-    for p in paths:
-        Path(p).unlink(missing_ok=True)
+    """Convert .sas7bdat to a temporary Parquet file and return its path."""
+    tmp_path = TMP_DIR / f"{sas_path.stem}.parquet"
+    _sas_to_parquet(sas_path, tmp_path, tag)
+    return tmp_path
 
 
 
 
-def _recompute_pmmd_for(d: date) -> Optional[dict]:
-    """Recompute the 6 PMMD columns of date d from that day's own UTFX / IUTFX."""
-    u_sas, i_sas = _utfx_file(d), _iutfx_file(d)
-    if not (u_sas.exists() and i_sas.exists()):
-        return None
-    u_cache = _load_cached(u_sas, f"UTFX {d:%y%m%d}")
-    i_cache = _load_cached(i_sas, f"IUTFX {d:%y%m%d}")
-    try:
-        return _pmmd_thousands(_pmmd_raw(u_cache, i_cache, d))
-    finally:
-        _discard(u_cache, i_cache)           # one day at a time, never accumulates
-
-
-
-
-# ============================================================================
-# SFTP TO DRR  (JCL STEP01 + RUNSFTP)
-# ============================================================================
-SFTP_ENABLED      = True      # set False for UAT / reptdate override runs
-SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-DRR_HOST_DESC     = "Data Report Repository (DRR)"      # JCL: DRR#SFTP
-DRR_REMOTE_DIR    = "WMTB-SA&S/DEP - SAS/BANK TOTAL"    # JCL STEP01: cd "..."
-
-
-def get_sftp_info(host_desc: str):
-    """Read one SFTP configuration row from the DWH control file (same as EIWFRMCR.py)."""
-    if not SFTP_CONTROL_FILE.exists():
-        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
-
-    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-
-    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
-    missing_columns = sorted(required.difference(ctl.columns))
-    if missing_columns:
-        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
-
-    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
-    rows = ctl[descriptions.eq(host_desc)]
-    if len(rows) != 1:
-        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
-
-    row = rows.iloc[0]
-    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
-    sftp_id  = clean(row["SFTP_ID"])
-    sftp_pw  = clean(row["SFTP_PW"])
-    host_ip  = clean(row["HOST_IP"])
-    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
-
-    empty_values = [n for n, v in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)) if not v]
-    if empty_values:
-        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
-
-    return sftp_id, sftp_pw, host_ip, host_key
-
-
-def _drr_remote_filename() -> str:
-    # JCL: put //SAP.PBB.DMMISR1G.DAILY  DMMISR1G@%OMM.%OYY..TXT
-    return f"DMMISR1G@{REPTMON}{REPTYEAR}.TXT"
-
-
-def sftp_upload_to_drr(local_path: Path) -> None:
-    """
-    Equivalent of the JCL:
-        STEP01  : cd "WMTB-SA&S/DEP - SAS/BANK TOTAL"
-        RUNSFTP : put //SAP.PBB.DMMISR1G.DAILY  DMMISR1G@%OMM.%OYY..TXT
-    """
-    if not local_path.exists():
-        raise FileNotFoundError(f"Output file to SFTP not found: {local_path}")
-
-    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(DRR_HOST_DESC)
-
-    ssh = paramiko.SSHClient()
-    # HOST_KEY exists in the control file but its format is unconfirmed;
-    # AutoAddPolicy is used in the interim (same as EIWFRMCR.py).
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
-    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
-    sftp = ssh.open_sftp()
-    try:
-        try:
-            sftp.chdir(DRR_REMOTE_DIR)
-        except IOError:
-            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
-
-        remote_name = _drr_remote_filename()
-        print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
-        sftp.put(str(local_path), remote_name)
-
-        # confirm the file landed complete
-        if sftp.stat(remote_name).st_size != local_path.stat().st_size:
-            raise RuntimeError(f"Size mismatch after upload of {remote_name}")
-    finally:
-        sftp.close()
-        ssh.close()
-    print("  DRR upload complete.")
-
-
-
-
-if SFTP_ENABLED:
-    print("\nUploading report to DRR via SFTP...")
-    sftp_upload_to_drr(OUTPUT_TXT_FILE)
+_TMP.cleanup()
+print("  Temporary Parquet files removed.")
 
 
 
