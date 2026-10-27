@@ -87,22 +87,28 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# # Production Path
+# INPUT_DIR             = Path("/dwh")
+# INPUT_COLLATER_DIR    = Path("/sas/ln/mart/sas/ln/mart/enrichment")
+# INPUT_BTMAST_DIR      = INPUT_DIR / "btrade"
+# OUTPUT_DIR            = Path("/host_pq/mis/output/BTRADE/report")
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Each physical input gets its own directory/path variable, per project
-# convention, for clear traceability.
-INPUT_BTMAST_DIR   = STG_DIR / "from_dwh"
-INPUT_COLLATER_DIR = STG_DIR / "MNICOL"
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "BTRD"
+# Testing Path
+BASE_DIR            = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR             = Path("/stgsrcsys/host/uat/AII")
+INPUT_BTMAST_DIR    = STG_DIR / "from_dwh"
+INPUT_COLLATER_DIR  = STG_DIR / "MNICOL"
+CACHE_DIR           = BASE_DIR / "input" / "cache" / "UAT_BTRD"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR  = BASE_DIR / "output" / "UAT_BTRD"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
-PAGE_SIZE  = 65          # OPTIONS PS=65 (explicit in the SAS source)
-LINE_SIZE  = 150         # matches LRECL=150 on the //SASLIST DD
+PAGE_SIZE  = 65         # OPTIONS PS=65 (explicit in the SAS source)
+LINE_SIZE  = 150        # matches LRECL=150 on the //SASLIST DD
 FF = "\f"
-PAGE_NUM_COL  = 132         # page number right-edge on title line
+PAGE_NUM_COL  = 132     # page number right-edge on title line
 
 # Report 2 column layout (total = 44 chars)
 R2_ID_TOTAL   = 12          # RISK value right-justified in 6 + 6 trailing
@@ -120,7 +126,8 @@ R2_NUM_WIDTH  = 20          # BALANCE, right-justified
 print("Step 1: Deriving report date...")
 
 reptdate_values = get_reptdate_values(year_format="%Y")
-reptdate = reptdate_values.reptdate
+# reptdate = reptdate_values.reptdate
+reptdate = date(2026, 10, 22)   # DEBUG (UAT OVERRRIDE - Need to be removed before production)
 
 _day = reptdate.day
 # SELECT(DAY(REPTDATE)):
@@ -141,15 +148,15 @@ MM = reptdate.month
 # body (only &REPTMON and &NOWK drive the BTMAST filename/titles) -- MM1/
 # REPTMON1 is therefore dead code and is not computed further here.
 
-REPTMON  = f"{MM:02d}"                        # PUT(MONTH(REPTDATE),Z2.)
+REPTYEAR = reptdate.strftime("%y")            # PUT(REPTDATE,YEAR2.)
+REPTMON  = reptdate.strftime("%m")            # PUT(MONTH(REPTDATE),Z2.)
+REPTDAY  = reptdate.strftime("%d")            # PUT(DAY(REPTDATE),Z2.)
 RDATE    = reptdate.strftime("%d/%m/%y")      # PUT(REPTDATE,DDMMYY8.)
 
 # Generate time stamp
 report_date = date.today() - timedelta(days=1)
 ts = report_date.strftime("%y%m%d")
 
-OUTPUT_DIR  = BASE_DIR / "output" / "BTRD"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / f"EIMBTCOL_{ts}.txt"   # fixed-name catalogued dataset, no date token
 
 print(f"  RDATE        : {RDATE}")
@@ -159,11 +166,8 @@ print(f"  Output file  : {OUTPUT_FILE.name}")
 # ============================================================================
 # INPUT FILE NAMES
 # ============================================================================
-# INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast{REPTMON}{NOWK}.sas7bdat"
-# INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / "collater.sas7bdat"   # fixed name, no date token
-
-INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast08426.sas7bdat"
-INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / "collater.sas7bdat"   # fixed name, no date token
+INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / f"enrh_exdwh_ln_collater_d{REPTDAY}.sas7bdat"
 
 # INPUT_BTRAD_FILE = STG_DIR / "from_dwh" / f"btrad{REPTMON}{NOWK}.sas7bdat"
 # -- NOT loaded: see module docstring ("INPUTS DECLARED IN JCL BUT NOT
