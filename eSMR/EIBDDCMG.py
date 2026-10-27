@@ -4,7 +4,7 @@ Program : EIBDDCMG.py
 Purpose : Store Daily Position for EBANK/WALKER/DEPOSIT/EQUATION
           (Bank's Total Deposits - RM'000, gold GIA balance, NID/PMMD
           proceeds, and FX rates), appended into a running monthly
-          DCMG dataset and printed as a month-to-date listing (Report ID DMMISR1G).
+          DCMG dataset and printed as a month-to-date listing (Report ID: DMMISR1G).
 
 eSMR 4294 : Exclude post-dated PMMD/PQMMD placements (STRTDATE > REPTDATE)
             from TOTCPMMD / TOTIPMMD / TOTNPMMD, and show them in 3 new
@@ -41,22 +41,39 @@ from openpyxl.utils import get_column_letter
 # ============================================================================
 # PATH CONFIGURATION  (folders)
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS2")
+# Production Path
+INPUT_DIR   = Path("/dwh")
+RNID_DIR    = INPUT_DIR / "rnid"                            # RNID (.sas7bdat)
+IRNID_DIR   = INPUT_DIR / "irnid"                           # IRNID (.sas7bdat)
+DEQ_DIR     = INPUT_DIR / "eq_d"                            # UTFX (.sas7bdat)
+IDEQ_DIR    = INPUT_DIR / "ieq_d"                           # IUTFX (.sas7bdat)
 
-INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDDCMG"   # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
-HOST_DIR   = Path("/stgsrcsys/host/uat/AII")            # DPGIA, EQ, IEQ (.txt), control table
-EGOLD_DIR  = HOST_DIR / "SASDATA_EGOLD"                 # EFORATE + legacy DCMG master (.sas7bdat)
-CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIBDDCMG"  # Parquet cache for .sas7bdat sources
-STORE_DIR  = BASE_DIR / "store" / "EIBDDCMG"            # Monthly DCMG master (parquet)
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"           # Report output
+HOST_DIR    = Path("/host_pq/mis")
+TEXT_DIR    = HOST_DIR / "input/textfile"                   # DPGIA, EQ, IEQ (.txt)
+EGOLD_DIR   = Path("/extdwh/host")                                     # EFORATE + legacy DCMG master (.sas7bdat)
+STORE_DIR   = HOST_DIR / "parquet/EIBDDCMG"                 # Monthly DCMG masters (parquet)
+OUTPUT_DIR  = HOST_DIR / "output/deposit/report"            # Report output
 
-for _d in (CACHE_DIR, STORE_DIR, OUTPUT_DIR):
+for _d in (STORE_DIR, OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+# INPUT_DIR  = BASE_DIR / "input"  / "prod"  / "EIBDDCMG"     # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
+# HOST_DIR   = Path("/stgsrcsys/host/uat/AII/EIBDDCMG")       # DPGIA, EQ, IEQ (.txt)
+# EGOLD_DIR  = HOST_DIR                                       # EFORATE + legacy DCMG master (.sas7bdat)
+# CACHE_DIR  = BASE_DIR / "input"  / "cache" / "EIBDDCMG"     # Parquet cache for .sas7bdat sources
+# STORE_DIR  = BASE_DIR / "store"  / "EIBDDCMG"               # Monthly DCMG masters (parquet)
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"               # Report output
+
+# for _d in (CACHE_DIR, STORE_DIR, OUTPUT_DIR):
+#     _d.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 
 # Control table that holds the report date  -- TODO: set the real folder
-INPUT_CTL_BATCH_FILE = HOST_DIR / "ctl_dwh_batch_dttm.sas7bdat"
+INPUT_CTL_BATCH_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
 
 # CUSTFISS codes treated as DFI & FI (unchanged from original)
 DFI_CODES = ('02', '03', '07', '10', '12', '81', '82', '83', '84', '01')
@@ -136,6 +153,7 @@ def _read_dp_batch_date() -> date:
     return (datetime(1960, 1, 1) + timedelta(seconds=float(v))).date()   # raw SAS datetime
 
 reptdate       = _read_dp_batch_date()
+# reptdate       = date(2026, 10, 19)
 REPTYEAR       = reptdate.strftime("%y")           # 2-digit year
 REPTMON        = reptdate.strftime("%m")
 REPTDAY        = reptdate.strftime("%d")
@@ -149,15 +167,20 @@ print(f"  REPTMON={REPTMON}  REPTDAY={REPTDAY}  REPTYEAR={REPTYEAR}")
 # PHYSICAL INPUTS  (one line per file; change each path independently)
 # ============================================================================
 # --- text files, GDG (0) = latest generation, fixed name ---
-INPUT_EQ_FILE    = HOST_DIR / "PBB_EQNID.TXT"       # //EQ    DD SAP.PBB.EQNID.TXT(0)
-INPUT_IEQ_FILE   = HOST_DIR / "PIBB_EQNID.TXT"      # //IEQ   DD SAP.PIBB.EQNID.TXT(0)
-INPUT_DPGIA_FILE = HOST_DIR / "DPGIA.TXT"           # //DPGIA DD RBP2.B033.PBGIA.DLYPOS.RPT(0)
+INPUT_EQ_FILE    = TEXT_DIR / "PBB_EQNID.txt"       # //EQ    DD SAP.PBB.EQNID.TXT(0)
+INPUT_IEQ_FILE   = TEXT_DIR / "PIBB_EQNID.txt"      # //IEQ   DD SAP.PIBB.EQNID.TXT(0)
+INPUT_DPGIA_FILE = TEXT_DIR / "DPGIA.txt"           # //DPGIA DD RBP2.B033.PBGIA.DLYPOS.RPT(0)
+
+# # --- text files, GDG (0) = latest generation, fixed name ---
+# INPUT_EQ_FILE    = HOST_DIR / "PBB_EQNID.txt"       # //EQ    DD SAP.PBB.EQNID.TXT(0)
+# INPUT_IEQ_FILE   = HOST_DIR / "PIBB_EQNID.txt"      # //IEQ   DD SAP.PIBB.EQNID.TXT(0)
+# INPUT_DPGIA_FILE = HOST_DIR / "DPGIA.txt"           # //DPGIA DD RBP2.B033.PBGIA.DLYPOS.RPT(0)
 
 # --- sas7bdat, file name carries the report date ---
-INPUT_UTFX_DIR   = INPUT_DIR                        # //DEQ   DD SAP.PBB.EQUT(0)
-INPUT_IUTFX_DIR  = INPUT_DIR                        # //IDEQ  DD SAP.PIBB.EQUT(0)
-INPUT_RNID_DIR   = INPUT_DIR                        # //RNID  DD SAP.PBB.RNID.SASDATA
-INPUT_IRNID_DIR  = INPUT_DIR                        # //IRNID DD SAP.PIBB.RNID.SASDATA
+INPUT_UTFX_DIR   = UTFX_DIR                        # //DEQ   DD SAP.PBB.EQUT(0)
+INPUT_IUTFX_DIR  = IUTFX_DIR                       # //IDEQ  DD SAP.PIBB.EQUT(0)
+INPUT_RNID_DIR   = RNID_DIR                        # //RNID  DD SAP.PBB.RNID.SASDATA
+INPUT_IRNID_DIR  = IRNID_DIR                       # //IRNID DD SAP.PIBB.RNID.SASDATA
 
 def _utfx_file(d: date)  -> Path: return INPUT_UTFX_DIR  / f"utfx{d:%y%m%d}.sas7bdat"
 def _iutfx_file(d: date) -> Path: return INPUT_IUTFX_DIR / f"iutfx{d:%y%m%d}.sas7bdat"
@@ -369,8 +392,7 @@ pbgia_today = pbgia.filter(pl.col("REPTDATE") == reptdate)
 # STEP 6: UTFX / IUTFX  -- eSMR 4294 CHANGE
 #   Existing PMMD columns : STRTDATE <= REPTDATE  (or STRTDATE missing)
 #   New post-dated columns: STRTDATE >  REPTDATE
-#   Both use the same non-DFI CUSTFISS rule (a missing CUSTFISS counts as
-#   non-DFI, as in SAS).
+#   Both use the same non-DFI CUSTFISS rule.
 #   DFI & FI columns unchanged (all deals, regardless of STRTDATE).
 # ============================================================================
 print("\nStep 6: Building UTFX / IUTFX (DEQ / IDEQ)...")
@@ -405,15 +427,15 @@ def _sum_deals(cache_path: Path, deal_types, rd: date,
             WITH base AS (
                 SELECT
                     CAST(AMTPAY AS DOUBLE) AS AMTPAY,
-                    COALESCE(CUSTFISS, '') AS CUSTFISS,
+                    CUSTFISS,
                     COALESCE({sd} > DATE '{rd.isoformat()}', FALSE) AS POSTDATED
                 FROM read_parquet('{cache_path.as_posix()}')
                 WHERE DEALTYPE IN ({dt})
             )
             SELECT
-                SUM(CASE WHEN CUSTFISS NOT IN ({dfi}) AND NOT POSTDATED THEN AMTPAY END),
-                SUM(CASE WHEN CUSTFISS IN     ({dfi})                   THEN AMTPAY END),
-                SUM(CASE WHEN CUSTFISS NOT IN ({dfi}) AND POSTDATED     THEN AMTPAY END)
+                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND NOT POSTDATED THEN AMTPAY END),
+                SUM(CASE WHEN COALESCE(CUSTFISS,'') IN     ({dfi})                   THEN AMTPAY END),
+                SUM(CASE WHEN COALESCE(CUSTFISS,'') NOT IN ({dfi}) AND POSTDATED     THEN AMTPAY END)
             FROM base
         """).fetchone()
     finally:
@@ -676,6 +698,7 @@ def _recompute_earlier_rows(master: pl.DataFrame) -> pl.DataFrame:
               + ", ".join(d.strftime("%d/%m/%Y") for d in missing))
     return pl.DataFrame(rows, schema=master.schema, strict=False)
 
+
 # ============================================================================
 # STEP 11: REPORT DEFINITION  (one table; Excel + TXT)
 # ============================================================================
@@ -683,9 +706,9 @@ print("\nStep 11: Report definition...")
 
 # format_width = SAS format display width; on-page slot = format_width + 2 (TXT only)
 REPORT_COLUMNS = [
-    {"var": "REPTDATE", "header": ["DATE"],                                          "format_width": 10, "type": "date"},
-    {"var": "PROCEED",  "header": ["NID-C", "(NON-FI)", "(PROCEEDS)"],                "format_width": 15, "type": "comma"},
-    {"var": "IPROCEED", "header": ["NID-I", "(NON-FI)", "(PROCEEDS)"],                "format_width": 15, "type": "comma"},
+    {"var": "REPTDATE", "header": ["DATE"],                                           "format_width": 10, "type": "date"},
+    {"var": "PROCEED",  "header": ["NID", "(NON-FI)", "(PROCEEDS)", "(CONV)"],        "format_width": 15, "type": "comma"},
+    {"var": "IPROCEED", "header": ["NID", "(NON-FI)", "(PROCEEDS)", "(ISL)"],         "format_width": 15, "type": "comma"},
     {"var": "TOTPROCD", "header": ["TOTAL", "NIDS", "(CONV + ISL)"],                  "format_width": 15, "type": "comma"},
     {"var": "IPROCEFI", "header": ["NID-I(FI)", "(PBB ONLY)", "(PROCEEDS)"],          "format_width": 15, "type": "comma"},
     {"var": "TOTINDV",  "header": ["INDV", "RETAIL", "NID", "(CONV)"],                "format_width": 15, "type": "comma"},
