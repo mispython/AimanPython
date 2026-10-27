@@ -38,29 +38,22 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # OUTPUT_DIR = Path("/host/mis/output/report") / "EIBDOFCY"
 # OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# >>>>> Input file paths <<<
 """
-FD_FCY_PATH : DP.FCY&REPTYEAR&REPTMON&REPTDAY — FCY deposit file (.sas7bdat);
-              FCY FD data filtered by CURCODE != 'MYR'.
-              Same file also used for FCY CA data (filter: 3000000000 <= ACCTNO <= 3999999999).
+FD_PATH      : DEPO.FD      — FD dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
+CURR_PATH    : DEPO.CURRENT — CA dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
+LN_NOTE_PATH : LOAN.LNNOTE  — loan note dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
 """
-FD_FCY_PATH     = INPUT_DIR / "EIBDOFCY" / "fcyfd261018.sas7bdat"
-CURR_FCY_PATH   = INPUT_DIR / "EIBDOFCY" / "fcy261018.sas7bdat"
-LN_NOTE_PATH    = INPUT_DIR / "MNILN"    / "enrh_ln_note_d18.sas7bdat"
-# FD_FCY_PATH   = get_latest_file(INPUT_DIR / "dp_fcy", "fcyfd")
-# CURR_FCY_PATH = get_latest_file(INPUT_DIR / "dp_fcy", "fcy")            # DEPO.CURRENT (SET DEPO.CURRENT)
-# LN_NOTE_PATH       = get_latest_file(INPUT_DIR / "lnd_ln", "ln")             # LOAN.LNNOTE  (SET LOAN.LNNOTE)
+FD_PATH      = INPUT_DIR / "MNITB"  / "intg_dp_acct_fd_d18.sas7bdat"
+CURR_PATH    = INPUT_DIR / "MNITB"  / "intg_dp_acct_current_d18.sas7bdat"
+LN_NOTE_PATH = INPUT_DIR / "MNILN"  / "enrh_ln_note_d18.sas7bdat"
 
-# >>>>> Required column sets for early validation per input file <<<
-"""
-FD_FCY_PATH (FD)    : has CUSTCODE, CURCODE, CURBAL; balance column is already CURBAL
-CURR_FCY_PATH (CA)  : has ACCTNO, CURCODE, CUSTCODE, CURBALRM; CURBALRM renamed to CURBAL
-                      filter: 3000000000 <= ACCTNO <= 3999999999
-LN_NOTE_PATH  (Loan)     : has ACCTNO, CURCODE, CUSTCODE, CURBAL
-"""
-REQUIRED_FD_FCY_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
-REQUIRED_CURR_FCY_COLUMNS = {"ACCTNO", "FCY_TYPE", "CURCODE", "CUSTCODE", "CURBALRM"}
-REQUIRED_LN_COLUMNS       = {"ACCTNO", "CURCODE", "CUSTCODE", "CURBAL"}
+# REQUIRED_FD_FCY_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
+# REQUIRED_CURR_FCY_COLUMNS = {"ACCTNO", "FCY_TYPE", "CURCODE", "CUSTCODE", "CURBALRM"}
+# REQUIRED_LN_COLUMNS       = {"ACCTNO", "CURCODE", "CUSTCODE", "CURBAL", "ENTITY_CD"}
+
+REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL", "ENTITY_CD"}
+REQUIRED_CURR_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL", "ENTITY_CD"}
+REQUIRED_LN_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL", "ENTITY_CD"}
 
 
 # =============================================================================
@@ -204,28 +197,27 @@ RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 # CACHE INPUTS  (.sas7bdat -> Parquet, reused while the SAS file is unchanged)
 # =============================================================================
 print("Caching input SAS datasets to Parquet...")
-FD_FCY_CACHE   = _load_cached(FD_FCY_PATH,   "FD_FCY")
-CURR_FCY_CACHE = _load_cached(CURR_FCY_PATH, "CURR_FCY")
-LN_NOTE_CACHE  = _load_cached(LN_NOTE_PATH,       "LN_NOTE")
+
+FD_CACHE   = _load_cached(FD_PATH,   "FD_FCY")
+CURR_CACHE = _load_cached(CURR_PATH, "CURR_FCY")
+LN_NOTE_CACHE  = _load_cached(LN_NOTE_PATH,  "LN_NOTE")
 
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
 # Only FCY FD records are needed — sourced from FD_FCY_PATH.
 # DEPO.FD (MYR-only records) is excluded per WHERE CURCODE NE 'MYR'.
 # =============================================================================
-# _fd_fcy_raw = _read_sas7bdat(FD_FCY_PATH)
-# _require_columns(_fd_fcy_raw, REQUIRED_FD_FCY_COLUMNS, FD_FCY_PATH)
-# _fd_fcy_raw = _read_sas7bdat(FD_FCY_PATH, REQUIRED_FD_FCY_COLUMNS)
-_fd_fcy_raw   = _read_pq(FD_FCY_CACHE,   REQUIRED_FD_FCY_COLUMNS,   FD_FCY_PATH)
+_fd_raw = _read_pq(FD_CACHE, REQUIRED_FD_COLUMNS, FD_PATH)
 
 fd_raw = (
-    _fd_fcy_raw
+    _fd_raw
     .with_columns(
         pl.col("CUSTCODE")
           .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
           .str.strip_chars()
     )
     .filter(pl.col("CURCODE") != "MYR")
+    .filter(pl.col("ENTITY_CD").fill_null("").str.strip_chars() != "PIBB")   # PBB only
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
@@ -264,26 +256,23 @@ fd_summary = (
 # Filter: 3000000000 <= ACCTNO <= 3999999999  (CA account number range)
 # CURBALRM renamed to CURBAL; CURCODE already present.
 # =============================================================================
-# _curr_fcy_raw = _read_sas7bdat(CURR_FCY_PATH)
-# _require_columns(_curr_fcy_raw, REQUIRED_CURR_FCY_COLUMNS, CURR_FCY_PATH)
-# _curr_fcy_raw = _read_sas7bdat(CURR_FCY_PATH, REQUIRED_CURR_FCY_COLUMNS)
-_curr_fcy_raw = _read_pq(CURR_FCY_CACHE, REQUIRED_CURR_FCY_COLUMNS, CURR_FCY_PATH)
+_curr_raw = _read_pq(CURR_CACHE, REQUIRED_CURR_COLUMNS, CURR_PATH)
 
 curr_raw = (
-    _curr_fcy_raw
-    .with_columns([
+    _curr_raw
+    .with_columns(
         pl.col("CUSTCODE")
           .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
-          .str.strip_chars(),
-        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
-    ])
-    .filter(
-        (pl.col("ACCTNO") >= 3_000_000_000) &
-        (pl.col("ACCTNO") <= 3_999_999_999)
-        # (pl.col("FCY_TYPE") == "FCYCA")
+          .str.strip_chars()
     )
-    .rename({"CURBALRM": "CURBAL"})
+    # .filter(
+    #     (pl.col("ACCTNO") >= 3_000_000_000) &
+    #     (pl.col("ACCTNO") <= 3_999_999_999)
+    #     # (pl.col("FCY_TYPE") == "FCYCA")
+    # )
+    # .rename({"CURBALRM": "CURBAL"})
     .filter(pl.col("CURCODE") != "MYR")
+    .filter(pl.col("ENTITY_CD").fill_null("").str.strip_chars() != "PIBB")   # PBB only
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
@@ -324,25 +313,17 @@ curr_summary.write_csv(OUTPUT_DIR / "CURR.csv")
 # Source: LN_NOTE_PATH file.
 # Filter: 2000000000 <= ACCTNO <= 2999999999  (loan account number range)
 # =============================================================================
-# _loan_raw = _read_sas7bdat(LN_NOTE_PATH)
-# _require_columns(_loan_raw, REQUIRED_LN_COLUMNS, LN_NOTE_PATH)
-# _loan_raw = _read_sas7bdat(LN_NOTE_PATH, REQUIRED_LN_COLUMNS)
-_loan_raw     = _read_pq(LN_NOTE_CACHE,       REQUIRED_LN_COLUMNS,       LN_NOTE_PATH)
+_loan_raw = _read_pq(LN_NOTE_CACHE, REQUIRED_LN_COLUMNS, LN_NOTE_PATH)
 
 loan_raw = (
     _loan_raw
-    .with_columns([
+    .with_columns(
         pl.col("CUSTCODE")
           .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
-          .str.strip_chars(),
-        pl.col("ACCTNO").cast(pl.Float64).cast(pl.Int64),
-    ])
-    # .filter(
-    #     (pl.col("ACCTNO") >= 2_000_000_000) &
-    #     (pl.col("ACCTNO") <= 2_999_999_999)
-    # )
-    # .rename({"CCY": "CURCODE"})
+          .str.strip_chars()
+    )
     .filter(pl.col("CURCODE") != "MYR")
+    .filter(pl.col("ENTITY_CD").fill_null("").str.strip_chars() != "PIBB")   # PBB only
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
 )
 
@@ -558,7 +539,7 @@ with open(out_txt, "a", encoding="utf-8") as f:
         f"{totcln:>20,.2f}\n"
     )
 
-print(f"\n EIBDOFCY_MYR_FCY completed — report date {RDATE}, output: {out_txt} \n")
+print(f"\n EIBDOFCY completed — report date {RDATE}, output: {out_txt} \n")
 
 with open(out_txt, "rb") as f:
     content = f.read(1000)
