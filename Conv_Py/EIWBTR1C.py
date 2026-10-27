@@ -15,8 +15,6 @@ PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 1. btdtl<REPTYEAR><REPTMON><REPTDAY>.sas7bdat
    (JCL //BNMDAILY DD DSN=SAP.BT.SASDATA.DAILY(0))
    SAS ref  : BNMDAILY.BTDTL&REPTYEAR&REPTMON&REPTDAY
-   Filename is fully deterministic from the report-date tokens, so it is
-   built directly (input_date.get_latest_file() is not needed here).
    Cols used (resolved from how LOAN2's KEEP= list and DATA BTRADIX use
    them -- these fields are never sourced from BTMAST/COLLATER):
        ACCTNO, DIRCTIND, LIABCODE, OUTSTAND (renamed -> BALANCE), BRANCH,
@@ -30,17 +28,13 @@ PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 2. btmast<REPTMON><NOWK>.sas7bdat
    (JCL //BNM DD DSN=SAP.BT.SASDATA)
    SAS ref  : BNM.BTMAST&REPTMON&NOWK
-   Filename is deterministic from REPTMON + NOWK (exact-day NOWK -- see
-   Step 1; unlike EIIMRM01, NOWK is NOT dead here, it drives this
-   filename). Filtered to SUBACCT='OV', deduplicated by ACCTNO
+   Filtered to SUBACCT='OV', deduplicated by ACCTNO
    (PROC SORT ... OUT=BTRADM NODUPKEYS).
    Cols used: ACCTNO, SUBACCT, ICURBAL, DBALANCE.
 
 3. collater.sas7bdat
    (JCL //BTCOLL DD DSN=SAP.PBB.MNICOL(0))
    SAS ref  : BTCOLL.COLLATER
-   Fixed-name catalogued member (no date token in the name) -> static
-   physical filename, same pattern as EIIMRM01's SAVING/CURRENT inputs.
    Cols used: ACCTNO (SAS renames this to ACCTNO2 then reassigns it back
    to ACCTNO -- see note below), CCLASSC, CDOLARV.
 
@@ -98,22 +92,29 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
-from PBBLNFMT_AII import format_btproda
+from PBBLNFMT import format_btproda
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# # Production Path
+# INPUT_DIR             = Path("/dwh")
+# INPUT_COLLATER_DIR    = Path("/sas/ln/mart/sas/ln/mart/enrichment")
+# INPUT_BTDTL_DIR       = INPUT_DIR / "btrade_d"
+# INPUT_BTMAST_DIR      = INPUT_DIR / "btrade"
+# OUTPUT_DIR            = Path("/host_pq/mis/output/BTRADE/report")
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Each physical input gets its own directory/path variable, per project
-# convention, for clear traceability.
-INPUT_BTDTL_DIR    = STG_DIR / "from_dwh"
-INPUT_BTMAST_DIR   = STG_DIR / "from_dwh"
-INPUT_COLLATER_DIR = STG_DIR / "MNICOL"
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "BTRD"
+# Testing Path
+BASE_DIR            = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR             = Path("/stgsrcsys/host/uat/AII")
+INPUT_BTDTL_DIR     = STG_DIR / "from_dwh"
+INPUT_BTMAST_DIR    = STG_DIR / "from_dwh"
+INPUT_COLLATER_DIR  = STG_DIR / "MNICOL"
+CACHE_DIR           = BASE_DIR / "input" / "cache" / "UAT_BTRD"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR  = BASE_DIR / "output" / "UAT_BTRD"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS  = 500_000
 PAGE_SIZE   = 60          # lines per page (not specified in SAS -> default)
@@ -131,7 +132,7 @@ reptdate_values = get_reptdate_values(year_format="%Y")
 # reptdate = reptdate_values.reptdate
 
 # DEBUG (UAT OVERRRIDE - Need to be removed before production)
-reptdate = date(2026, 8, 31)
+reptdate = date(2026, 10, 22)
 
 REPTYEAR = reptdate.strftime("%y")            # PUT(REPTDATE,YEAR2.)
 REPTMON  = reptdate.strftime("%m")            # PUT(MONTH(REPTDATE),Z2.)
@@ -152,8 +153,6 @@ NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
 report_date = date.today() - timedelta(days=1)
 ts = report_date.strftime("%y%m%d")
 
-OUTPUT_DIR  = BASE_DIR / "output" / "BTRD"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / f"EIWBTR1C_{ts}.txt"
 
 print(f"  RDATE        : {RDATE}")
@@ -162,13 +161,10 @@ print(f"  REPTMON/DAY  : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}  NOWK: {NOWK}
 # ============================================================================
 # INPUT FILE NAMES (deterministic, built directly from date tokens)
 # ============================================================================
-# INPUT_BTDTL_FILE    = INPUT_BTDTL_DIR / f"btdtl{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-# INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast{REPTMON}{NOWK}.sas7bdat"
-# INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / "collater.sas7bdat"   # fixed name, no date token
+INPUT_BTDTL_FILE    = INPUT_BTDTL_DIR    / f"btdtl{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR   / f"btmast{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / f"enrh_exdwh_ln_collater_d{REPTDAY}.sas7bdat"
 
-INPUT_BTDTL_FILE    = INPUT_BTDTL_DIR / f"btdtl260831.sas7bdat"
-INPUT_BTMAST_FILE   = INPUT_BTMAST_DIR / f"btmast08426.sas7bdat"
-INPUT_COLLATER_FILE = INPUT_COLLATER_DIR / "collater.sas7bdat"   # fixed name, no date token
 
 print(f"  Input BTDTL     : {INPUT_BTDTL_FILE}")
 print(f"  Input BTMAST    : {INPUT_BTMAST_FILE}")
@@ -178,9 +174,7 @@ print(f"  Output file     : {OUTPUT_FILE.name}")
 # %DCLVAR's RD1-RD12 (RPDAYS) array -- days-per-month for the report year.
 # D1-D12 (LDAY) and MD1-MD12 (MDDAYS) are also RETAINed/declared by the
 # original DCLVAR macro but are never referenced anywhere in %REMMTH's
-# body (only RPDAYS(RPMTH) is used as both the day-cap and the
-# denominator) -- they are dead declarations, omitted here, same as the
-# equivalent dead arrays documented in EIIMRM01.py.
+# body (only RPDAYS(RPMTH) is used as both the day-cap and the denominator)
 RD_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 if RPYR % 4 == 0:
     RD_DAYS[1] = 29
@@ -302,8 +296,7 @@ def _sas_mul(a, b):
 
 
 # ============================================================================
-# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern,
-# same as used in EIIMRM01.py)
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
