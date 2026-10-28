@@ -1,10 +1,6 @@
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDRMFC_AII.py", line 83, in <module>
-    fd_pd = pd.read_sas(str(fd_path), format="sas7bdat", encoding="latin1")
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/sas/sasreader.py", line 164, in read_sas
-    reader = SAS7BDATReader(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 207, in __init__
-    self.handles = get_handle(
-  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/pandas/io/common.py", line 882, in get_handle
-    handle = open(handle, ioargs.mode)
-IsADirectoryError: [Errno 21] Is a directory: '/stgsrcsys/host/uat/AII/from_dwh'
+# Testing Path
+BASE_DIR   = Path("/stgsrcsys/host/uat")
+INPUT_DIR  = BASE_DIR / "AII"
+OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS") / "output/EIBDRMFC"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+fd_path = INPUT_DIR / "from_dwh"
