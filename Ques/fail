@@ -1,17 +1,14 @@
-import tempfile
+from datetime import date
 
 
 
 
-# Batch-date control file (SOURCE_SYSTEM_CD = 'SAS' drives the report date)
+# =============================================================================
+# REPORT DATE (batch control file, SOURCE_SYSTEM_CD = 'DP')
+# Replaces: DATA REPTDATE; SET DEPO.REPTDATE; CALL SYMPUT('RDATE', PUT(REPTDATE,DDMMYY10.));
+# =============================================================================
 CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-BATCH_SOURCE   = "SAS"
-
-# Base folder for the temporary Parquet files (None = system temp).
-# Set a path here if the default temp area is too small.
-TEMP_BASE = None
-
-
+BATCH_SOURCE   = "DP"
 
 
 def get_batch_date(source_system_cd: str) -> date:
@@ -20,37 +17,69 @@ def get_batch_date(source_system_cd: str) -> date:
     ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
     hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
     if hit.empty:
-        raise ValueError(
-            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}"
-        )
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
     return pd.Timestamp(hit.iloc[0]).date()
 
 
-
-
-reptdate = get_batch_date(BATCH_SOURCE)   # SOURCE_SYSTEM_CD = 'SAS'
-
-
-
-
-# Temporary folder holding the converted Parquet files. It is removed as soon
-# as all inputs are read into memory (see Change 6), or automatically at exit
-# if the program fails earlier.
-_TMP    = tempfile.TemporaryDirectory(prefix="EIWBTR1C_", dir=TEMP_BASE)
-TMP_DIR = Path(_TMP.name)
-
-
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    """Convert .sas7bdat to a temporary Parquet file and return its path."""
-    tmp_path = TMP_DIR / f"{sas_path.stem}.parquet"
-    _sas_to_parquet(sas_path, tmp_path, tag)
-    return tmp_path
+REPTDATE = get_batch_date(BATCH_SOURCE)
+REPTDAY  = REPTDATE.strftime("%d")          # DD, used in input file names
+RDATE    = REPTDATE.strftime("%d/%m/%Y")    # DDMMYY10.
 
 
 
 
-_TMP.cleanup()
-print("  Temporary Parquet files removed.")
+out_txt = OUTPUT_DIR / f"OutstandingFCY_{REPTDATE:%d%m%Y}.txt"
+
+
+
+
+def _read_sas_via_parquet(sas_path: Path, required: set[str], tag: str) -> pl.DataFrame:
+    """
+    .sas7bdat -> temporary Parquet (required columns only, chunked) -> DuckDB -> Polars.
+    The temporary Parquet is deleted as soon as the data is in memory.
+    """
+    if not sas_path.exists():
+        raise FileNotFoundError(f"Missing required input file: {sas_path}")
+
+    cols = sorted(required)
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        tmp_parquet = Path(tmp) / f"{tag}.parquet"
+        print(f"  [{tag}] Converting {sas_path.name} -> temporary Parquet ...")
+
+        writer, schema, total = None, None, 0
+        try:
+            for chunk in pd.read_sas(sas_path, format="sas7bdat",
+                                     encoding="latin1", chunksize=CHUNK_ROWS):
+                chunk.columns = [str(c).upper().strip() for c in chunk.columns]
+                if writer is None:
+                    _require_columns(list(chunk.columns), required, sas_path)
+                chunk = chunk[cols]                      # keep only what is needed
+                if writer is None:
+                    schema = pa.schema([pa.field(c, _sas_type_to_arrow(t))
+                                        for c, t in chunk.dtypes.items()])
+                    writer = pq.ParquetWriter(tmp_parquet, schema, compression="snappy")
+                writer.write_table(pa.Table.from_pandas(chunk, schema=schema, preserve_index=False))
+                total += len(chunk)
+                del chunk
+                gc.collect()
+        finally:
+            if writer is not None:
+                writer.close()
+
+        if writer is None:
+            raise ValueError(f"{sas_path} contains no rows")
+
+        con = duckdb.connect(database=":memory:")
+        try:
+            quoted = ", ".join(f'"{c}"' for c in cols)
+            df = con.execute(
+                f"SELECT {quoted} FROM read_parquet('{tmp_parquet.as_posix()}')"
+            ).pl()
+        finally:
+            con.close()
+        print(f"  [{tag}] Done - {total:,} rows read.")
+    # temp folder and Parquet file are removed here
+    return df
 
 
 
