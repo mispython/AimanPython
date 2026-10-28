@@ -6,16 +6,37 @@ Purpose : Outstanding FCY Loan, CA and FD (Indiv and Non-Indiv) —  FCY
 
 import polars as pl
 import pandas as pd                 # required for pd.read_sas()
+
 from pathlib import Path
+from datetime import date
+
 import tempfile
 import gc
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
-from output_date import build_output_file
+# =============================================================================
+# REPORT DATE (batch control file, SOURCE_SYSTEM_CD = 'DP')
+# Replaces: DATA REPTDATE; SET DEPO.REPTDATE; CALL SYMPUT('RDATE', PUT(REPTDATE,DDMMYY10.));
+# =============================================================================
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "DP"
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+REPTDATE = get_batch_date(BATCH_SOURCE)
+REPTDAY  = REPTDATE.strftime("%d")          # DD, used in input file names
+RDATE    = REPTDATE.strftime("%d/%m/%Y")    # DDMMYY10.
 
 # =============================================================================
 # CONFIGURATION
@@ -59,8 +80,8 @@ REQUIRED_LN_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL", "ENTITY_CD"}
 # =============================================================================
 # Helper — read one .sas7bdat and return a Polars DataFrame
 # =============================================================================
-def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
-    return cache_path.exists() and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+# def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+#     return cache_path.exists() and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
 
 
 def _sas_type_to_arrow(dtype) -> pa.DataType:
@@ -73,39 +94,39 @@ def _sas_type_to_arrow(dtype) -> pa.DataType:
     return pa.from_numpy_dtype(dtype)
 
 
-def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    tmp_path = cache_path.with_suffix(".parquet.tmp")   # written aside, swapped in when complete
-    writer = None
-    schema = None
-    total = 0
-    for chunk in pd.read_sas(sas_path, format="sas7bdat", encoding="latin1", chunksize=CHUNK_ROWS):
-        chunk.columns = [str(c).upper().strip() for c in chunk.columns]
-        if schema is None:
-            schema = pa.schema([pa.field(c, _sas_type_to_arrow(t)) for c, t in chunk.dtypes.items()])
-            writer = pq.ParquetWriter(tmp_path, schema, compression="snappy")
-        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-    if writer:
-        writer.close()
-    tmp_path.replace(cache_path)
-    print(f"  [{tag}] Done - {total:,} rows cached.")
+# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+#     tmp_path = cache_path.with_suffix(".parquet.tmp")   # written aside, swapped in when complete
+#     writer = None
+#     schema = None
+#     total = 0
+#     for chunk in pd.read_sas(sas_path, format="sas7bdat", encoding="latin1", chunksize=CHUNK_ROWS):
+#         chunk.columns = [str(c).upper().strip() for c in chunk.columns]
+#         if schema is None:
+#             schema = pa.schema([pa.field(c, _sas_type_to_arrow(t)) for c, t in chunk.dtypes.items()])
+#             writer = pq.ParquetWriter(tmp_path, schema, compression="snappy")
+#         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+#         writer.write_table(table)
+#         total += len(chunk)
+#         del chunk, table
+#         gc.collect()
+#     if writer:
+#         writer.close()
+#     tmp_path.replace(cache_path)
+#     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    if not sas_path.exists():
-        raise FileNotFoundError(f"Missing required input file: {sas_path}")
-    # Cache name = immediate parent folder + file stem, so same-named files in
-    # different subfolders never share a cache.
-    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
+# def _load_cached(sas_path: Path, tag: str) -> Path:
+#     if not sas_path.exists():
+#         raise FileNotFoundError(f"Missing required input file: {sas_path}")
+#     # Cache name = immediate parent folder + file stem, so same-named files in
+#     # different subfolders never share a cache.
+#     cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
+#     if _cache_is_fresh(sas_path, cache_path):
+#         print(f"  [{tag}] Cache fresh - skipping conversion.")
+#     else:
+#         _sas_to_parquet(sas_path, cache_path, tag)
+#     return cache_path
 
 
 def _require_columns(names: list[str], required: set[str], source: Path) -> None:
@@ -115,17 +136,66 @@ def _require_columns(names: list[str], required: set[str], source: Path) -> None
         raise ValueError(f"{source} is missing required column(s): {', '.join(missing)}")
 
 
-def _read_pq(cache_path: Path, required: set[str], source: Path) -> pl.DataFrame:
-    """Validate columns, then read only the required columns from the Parquet cache via DuckDB."""
-    _require_columns(pq.read_schema(cache_path).names, required, source)
-    cols = ", ".join(f'"{c}"' for c in sorted(required))
-    con = duckdb.connect(database=":memory:")
-    try:
-        return con.execute(
-            f"SELECT {cols} FROM read_parquet('{cache_path.as_posix()}')"
-        ).pl()
-    finally:
-        con.close()
+# def _read_pq(cache_path: Path, required: set[str], source: Path) -> pl.DataFrame:
+#     """Validate columns, then read only the required columns from the Parquet cache via DuckDB."""
+#     _require_columns(pq.read_schema(cache_path).names, required, source)
+#     cols = ", ".join(f'"{c}"' for c in sorted(required))
+#     con = duckdb.connect(database=":memory:")
+#     try:
+#         return con.execute(
+#             f"SELECT {cols} FROM read_parquet('{cache_path.as_posix()}')"
+#         ).pl()
+#     finally:
+#         con.close()
+
+
+def _read_sas_via_parquet(sas_path: Path, required: set[str], tag: str) -> pl.DataFrame:
+    """
+    .sas7bdat -> temporary Parquet (required columns only, chunked) -> DuckDB -> Polars.
+    The temporary Parquet is deleted as soon as the data is in memory.
+    """
+    if not sas_path.exists():
+        raise FileNotFoundError(f"Missing required input file: {sas_path}")
+
+    cols = sorted(required)
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        tmp_parquet = Path(tmp) / f"{tag}.parquet"
+        print(f"  [{tag}] Converting {sas_path.name} -> temporary Parquet ...")
+
+        writer, schema, total = None, None, 0
+        try:
+            for chunk in pd.read_sas(sas_path, format="sas7bdat",
+                                     encoding="latin1", chunksize=CHUNK_ROWS):
+                chunk.columns = [str(c).upper().strip() for c in chunk.columns]
+                if writer is None:
+                    _require_columns(list(chunk.columns), required, sas_path)
+                chunk = chunk[cols]                      # keep only what is needed
+                if writer is None:
+                    schema = pa.schema([pa.field(c, _sas_type_to_arrow(t))
+                                        for c, t in chunk.dtypes.items()])
+                    writer = pq.ParquetWriter(tmp_parquet, schema, compression="snappy")
+                writer.write_table(pa.Table.from_pandas(chunk, schema=schema, preserve_index=False))
+                total += len(chunk)
+                del chunk
+                gc.collect()
+        finally:
+            if writer is not None:
+                writer.close()
+
+        if writer is None:
+            raise ValueError(f"{sas_path} contains no rows")
+
+        con = duckdb.connect(database=":memory:")
+        try:
+            quoted = ", ".join(f'"{c}"' for c in cols)
+            df = con.execute(
+                f"SELECT {quoted} FROM read_parquet('{tmp_parquet.as_posix()}')"
+            ).pl()
+        finally:
+            con.close()
+        print(f"  [{tag}] Done - {total:,} rows read.")
+    # temp folder and Parquet file are removed here
+    return df
 
 
 # =============================================================================
@@ -142,21 +212,21 @@ REPTDAY  = reptdate_values.reptday
 NOWK     = reptdate_values.nowk
 RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 
-# =============================================================================
-# CACHE INPUTS  (.sas7bdat -> Parquet, reused while the SAS file is unchanged)
-# =============================================================================
-print("Caching input SAS datasets to Parquet...")
+# # =============================================================================
+# # CACHE INPUTS  (.sas7bdat -> Parquet, reused while the SAS file is unchanged)
+# # =============================================================================
+# print("Caching input SAS datasets to Parquet...")
 
-FD_CACHE        = _load_cached(FD_PATH,   "FD_FCY")
-CURR_CACHE      = _load_cached(CURR_PATH, "CURR_FCY")
-LN_NOTE_CACHE   = _load_cached(LN_NOTE_PATH,  "LN_NOTE")
+# FD_CACHE        = _load_cached(FD_PATH,   "FD_FCY")
+# CURR_CACHE      = _load_cached(CURR_PATH, "CURR_FCY")
+# LN_NOTE_CACHE   = _load_cached(LN_NOTE_PATH,  "LN_NOTE")
 
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
 # Only FCY FD records are needed — sourced from FD_FCY_PATH.
 # DEPO.FD (MYR-only records) is excluded per WHERE CURCODE NE 'MYR'.
 # =============================================================================
-_fd_raw = _read_pq(FD_CACHE, REQUIRED_FD_COLUMNS, FD_PATH)
+_fd_raw = _read_sas_via_parquet(FD_CACHE, REQUIRED_FD_COLUMNS, FD_PATH)
 
 fd_raw = (
     _fd_raw
@@ -202,7 +272,7 @@ fd_summary = (
 # =============================================================================
 # DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
 # =============================================================================
-_curr_raw = _read_pq(CURR_CACHE, REQUIRED_CURR_COLUMNS, CURR_PATH)
+_curr_raw = _read_sas_via_parquet(CURR_CACHE, REQUIRED_CURR_COLUMNS, CURR_PATH)
 
 curr_raw = (
     _curr_raw
@@ -251,7 +321,7 @@ curr_summary.write_csv(OUTPUT_DIR / "CURR.csv")
 # =============================================================================
 # DATA LOAN  (SET LOAN.LNNOTE; WHERE CURCODE NE 'MYR')
 # =============================================================================
-_loan_raw = _read_pq(LN_NOTE_CACHE, REQUIRED_LN_COLUMNS, LN_NOTE_PATH)
+_loan_raw = _read_sas_via_parquet(LN_NOTE_CACHE, REQUIRED_LN_COLUMNS, LN_NOTE_PATH)
 
 loan_raw = (
     _loan_raw
@@ -318,12 +388,7 @@ _IND_HEADERS = {
     "F": "NON INDIVIDUAL - FCY LOAN",
 }
 
-out_txt = build_output_file(
-    OUTPUT_DIR,
-    "OutstandingFCY",
-    date_format="ddmmYYYY"
-).with_suffix(".txt")
-# out_csv = OUTPUT_DIR / "OutstandingFCY.csv"
+out_txt = OUTPUT_DIR / f"OutstandingFCY_{REPTDATE:%d%m%Y}.txt"
 
 with open(out_txt, "w", encoding="utf-8") as f:
 
