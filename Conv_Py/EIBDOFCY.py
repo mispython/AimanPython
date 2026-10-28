@@ -23,93 +23,42 @@ from output_date import build_output_file
 CHUNK_ROWS = 500_000
 TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
 
-# Testing Path
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = Path("/stgsrcsys/host/uat/AII")
+# # Testing Path
+# BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR   = Path("/stgsrcsys/host/uat/AII")
+# CACHE_DIR   = BASE_DIR / "input" / "cache" / "EIBDOFCY"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDOFCY"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# FD_PATH      = INPUT_DIR / "MNITB"  / "intg_dp_acct_fd_d18.sas7bdat"
+# CURR_PATH    = INPUT_DIR / "MNITB"  / "intg_dp_acct_current_d18.sas7bdat"
+# LN_NOTE_PATH = INPUT_DIR / "MNILN"  / "enrh_ln_note_d18.sas7bdat"
 
-OUTPUT_DIR = BASE_DIR  / "output/EIBDOFCY"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# # Production Path
-# INPUT_DIR  = Path("/dwh")
-# OUTPUT_DIR = Path("/host/mis/output/report") / "EIBDOFCY"
+# OUTPUT_DIR  = BASE_DIR  / "output/EIBDOFCY"
 # OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Production Path
+INPUT_DIR     = Path("/sas")
+LN_NOTE_PATH  = INPUT_DIR / "ln" / "dwh" / "enrichment" / f"enrh_ln_note_d{REPTDAY}.sas7bdat"
+DEPOSIT_PATH  = INPUT_DIR / "deposit" / "dwh" / "integration"
+FD_PATH       = DEPOSIT_PATH / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+CURR_PATH     = DEPOSIT_PATH / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
+
+OUTPUT_DIR    = Path("/host_pq/mis/output/report") / "EIBDOFCY"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 """
 FD_PATH      : DEPO.FD      — FD dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
 CURR_PATH    : DEPO.CURRENT — CA dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
 LN_NOTE_PATH : LOAN.LNNOTE  — loan note dataset (.sas7bdat); WHERE CURCODE NE 'MYR'
 """
-FD_PATH      = INPUT_DIR / "MNITB"  / "intg_dp_acct_fd_d18.sas7bdat"
-CURR_PATH    = INPUT_DIR / "MNITB"  / "intg_dp_acct_current_d18.sas7bdat"
-LN_NOTE_PATH = INPUT_DIR / "MNILN"  / "enrh_ln_note_d18.sas7bdat"
-
-# REQUIRED_FD_FCY_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL"}
-# REQUIRED_CURR_FCY_COLUMNS = {"ACCTNO", "FCY_TYPE", "CURCODE", "CUSTCODE", "CURBALRM"}
-# REQUIRED_LN_COLUMNS       = {"ACCTNO", "CURCODE", "CUSTCODE", "CURBAL", "ENTITY_CD"}
 
 REQUIRED_FD_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL", "ENTITY_CD"}
 REQUIRED_CURR_COLUMNS = {"CUSTCODE", "CURCODE", "CURBAL", "ENTITY_CD"}
 REQUIRED_LN_COLUMNS   = {"CUSTCODE", "CURCODE", "CURBAL", "ENTITY_CD"}
 
-
 # =============================================================================
 # Helper — read one .sas7bdat and return a Polars DataFrame
 # =============================================================================
-# def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
-#     """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
-#     writer, schema = None, None
-#     try:
-#         # >>>>>>>>>> Uncomment this -> For production <<<<<<<<
-#         for chunk in pd.read_sas(str(src), format="sas7bdat", encoding="latin1", chunksize=chunk_rows):
-#         # # >>>>>>>>>> Uncomment this -> For testing purposes <<<<<<<<
-#         # for chunk in [next(pd.read_sas(str(src), format="sas7bdat", encoding="latin1", chunksize=1000))]:
-#             chunk.columns = [str(c).upper().strip() for c in chunk.columns]
-#             # Force text columns to string so an all-null first chunk doesn't lock a null type
-#             for col in chunk.columns[chunk.dtypes == object]:
-#                 chunk[col] = chunk[col].astype("string")
-#             table = pa.Table.from_pandas(chunk, preserve_index=False)
-#             if writer is None:
-#                 schema = table.schema
-#                 writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
-#             else:
-#                 table = table.cast(schema)
-#             writer.write_table(table)
-#     finally:
-#         if writer is not None:
-#             writer.close()
-
-
-# def _read_sas7bdat(path: Path, required: set[str]) -> pl.DataFrame:
-#     """
-#     Convert one .sas7bdat to a temporary Parquet file, validate the required
-#     columns, read only those columns via DuckDB, then delete the temp file.
-#     """
-#     if not path.exists():
-#         raise FileNotFoundError(f"Missing required input file: {path}")
-
-#     with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
-#         tmp_parquet = Path(tmp) / f"{path.stem}.parquet"
-#         sas_to_parquet(path, tmp_parquet)
-
-#         missing = sorted(required.difference(pq.read_schema(str(tmp_parquet)).names))
-#         if missing:
-#             raise ValueError(f"{path} is missing required column(s): {', '.join(missing)}")
-
-#         cols = ", ".join(f'"{c}"' for c in sorted(required))
-#         con = duckdb.connect()
-#         try:
-#             df = con.execute(
-#                 f"SELECT {cols} FROM read_parquet('{tmp_parquet.as_posix()}')"
-#             ).pl()
-#         finally:
-#             con.close()
-#     # temp folder and Parquet file are removed here
-#     return df
-
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return cache_path.exists() and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
 
@@ -198,9 +147,9 @@ RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 # =============================================================================
 print("Caching input SAS datasets to Parquet...")
 
-FD_CACHE   = _load_cached(FD_PATH,   "FD_FCY")
-CURR_CACHE = _load_cached(CURR_PATH, "CURR_FCY")
-LN_NOTE_CACHE  = _load_cached(LN_NOTE_PATH,  "LN_NOTE")
+FD_CACHE        = _load_cached(FD_PATH,   "FD_FCY")
+CURR_CACHE      = _load_cached(CURR_PATH, "CURR_FCY")
+LN_NOTE_CACHE   = _load_cached(LN_NOTE_PATH,  "LN_NOTE")
 
 # =============================================================================
 # DATA FD  (SET DEPO.FD; WHERE CURCODE NE 'MYR')
@@ -252,9 +201,6 @@ fd_summary = (
 
 # =============================================================================
 # DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
-# Source: CURR_FCY_PATH file.
-# Filter: 3000000000 <= ACCTNO <= 3999999999  (CA account number range)
-# CURBALRM renamed to CURBAL; CURCODE already present.
 # =============================================================================
 _curr_raw = _read_pq(CURR_CACHE, REQUIRED_CURR_COLUMNS, CURR_PATH)
 
@@ -265,12 +211,6 @@ curr_raw = (
           .cast(pl.Float64).cast(pl.Int64).cast(pl.Utf8)
           .str.strip_chars()
     )
-    # .filter(
-    #     (pl.col("ACCTNO") >= 3_000_000_000) &
-    #     (pl.col("ACCTNO") <= 3_999_999_999)
-    #     # (pl.col("FCY_TYPE") == "FCYCA")
-    # )
-    # .rename({"CURBALRM": "CURBAL"})
     .filter(pl.col("CURCODE") != "MYR")
     .filter(pl.col("ENTITY_CD").fill_null("").str.strip_chars() != "PIBB")   # PBB only
     .select(["CUSTCODE", "CURCODE", "CURBAL"])
@@ -310,8 +250,6 @@ curr_summary.write_csv(OUTPUT_DIR / "CURR.csv")
 
 # =============================================================================
 # DATA LOAN  (SET LOAN.LNNOTE; WHERE CURCODE NE 'MYR')
-# Source: LN_NOTE_PATH file.
-# Filter: 2000000000 <= ACCTNO <= 2999999999  (loan account number range)
 # =============================================================================
 _loan_raw = _read_pq(LN_NOTE_CACHE, REQUIRED_LN_COLUMNS, LN_NOTE_PATH)
 
