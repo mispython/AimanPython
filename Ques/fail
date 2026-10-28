@@ -1,52 +1,11 @@
-FCY_PATH = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
+_read_sas_via_parquet(FD_PATH, REQUIRED_FD_COLUMNS, "FD")
 
 
 
 
-COLUMN_MAP = {
-    "CURBALRM": "CURBAL",   # RM balance; build_fcyt then divides by FORATE to get FCY
-}
-
-SOURCE_COLUMNS = ["CUSTCD", "CURCODE", "CURBALRM", "MATDATE", "ORGDATE",
-                  "ORIGAMT", "RATE", "BRANCH", "FORATE"]
+_read_sas_via_parquet(CURR_PATH, REQUIRED_CURR_COLUMNS, "CURR")
 
 
 
 
-def read_fd() -> pd.DataFrame:
-    """
-    Convert FCY_PATH to a temporary Parquet file, read only the needed columns
-    via DuckDB, then delete the temp file. The dataset is PBB-only, so no
-    ENTITY_CD filter is applied.
-    """
-    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
-        tmp_parquet = Path(tmp) / "fcy.parquet"
-        sas_to_parquet(FCY_PATH, tmp_parquet)
-
-        missing = [c for c in SOURCE_COLUMNS if c not in pq.read_schema(str(tmp_parquet)).names]
-        if missing:
-            raise KeyError(f"{FCY_PATH.name} is missing expected columns: {missing}")
-
-        con = duckdb.connect()
-        try:
-            df = con.execute(
-                f"SELECT {', '.join(SOURCE_COLUMNS)} "
-                f"FROM read_parquet('{tmp_parquet.as_posix()}')"
-            ).df()
-        finally:
-            con.close()
-
-    clash = [c for c in COLUMN_MAP.values() if c in df.columns]
-    if clash:
-        raise ValueError(f"{FCY_PATH.name} already has columns named {clash}")
-    return df.rename(columns=COLUMN_MAP)
-
-
-
-
-def _to_date(val) -> Optional[date]:
-    if val is None or pd.isna(val):
-        return None
-    if isinstance(val, (int, float)):          # SAS date: days since 1960-01-01
-        return date(1960, 1, 1) + timedelta(days=int(val))
-    return pd.Timestamp(val).date()
+_read_sas_via_parquet(LN_NOTE_PATH, REQUIRED_LN_COLUMNS, "LN_NOTE")
