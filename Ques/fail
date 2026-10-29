@@ -4,3 +4,18 @@ print("rows (bal>0)  :", myr.filter(pl.col("CURBALRM") if "CURBALRM" in myr.colu
 print("CURBALRM sum  :", myr["CURBALRM" if "CURBALRM" in myr.columns else "CURBAL"].sum())
 print("SAS expected  : 156242125961.64")
 print("Your output   : 156242125967.62")
+
+
+
+
+
+def myr_sum(df, label):
+    if "CURCODE" in df.columns:
+        s = df.filter(pl.col("CURCODE") == "MYR")["CURBALRM"].sum()
+    else:
+        s = df["CURBALRM"].sum()
+    print(f"[{label}] MYR sum = {s}")
+
+myr_sum(fd, "after concat")
+myr_sum(fd, "after matdate parse")
+myr_sum(fd, "after same-day filter")
