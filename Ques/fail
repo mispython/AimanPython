@@ -1,7 +1,9 @@
+bal_name = "CURBALRM" if "CURBALRM" in myr.columns else "CURBAL"
+
 print("=== RAW fdcd file ===")
 print("rows          :", myr.height)
-print("rows (bal>0)  :", myr.filter(pl.col("CURBALRM") if "CURBALRM" in myr.columns else pl.col("CURBAL")) > 0).height)
-print("CURBALRM sum  :", myr["CURBALRM" if "CURBALRM" in myr.columns else "CURBAL"].sum())
+print("rows (bal>0)  :", myr.filter(pl.col(bal_name) > 0).height)
+print("CURBALRM sum  :", myr[bal_name].sum())
 print("SAS expected  : 156242125961.64")
 print("Your output   : 156242125967.62")
 
