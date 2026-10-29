@@ -15,12 +15,8 @@ import pyarrow.parquet as pq
 from pathlib import Path
 
 from REPTDATE import get_reptdate_values
-# from input_date import get_latest_file
 # NOTE: BODOM/BODRM filenames are deterministic on REPTMON (SAS: MISB.BODOM&REPTMON,
 # MISB.BODRM&REPTMON), not resolved by scanning a directory for the latest dated
-# file, so input_date.get_latest_file() is not used — the path is built directly
-# from REPTMON, matching the SAS macro-variable substitution.
-# from output_date import build_output_file
 # NOTE: The SASLIST output dataset (SAP.PBB.BOD.PAPERS, FTP'd out as BODPPR.TXT)
 # carries a fixed filename with no date component, so output_date.build_output_file()
 # is not used.
@@ -28,13 +24,15 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
+# Production Path
+
+
+# Testing Path
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 STG_DIR = Path("/stgsrcsys/host/uat/AII/MISB")
-
 # INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBMBODP"
 CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMBODP"
 OUTPUT_DIR = BASE_DIR / "output" / "EIBMBODP"
-
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -55,19 +53,13 @@ LRECL      = 80
 PAGE_SIZE  = 60   # SAS default lines-per-page (no PAGESIZE= specified)
 
 # ============================================================================
-# STEP 1: REPORT DATE  (no reptdate.parquet — derive from REPTDATE.py)
+# STEP 1: REPORT DATE
 # DATA REPTDATE; SET MNI.REPTDATE;
 #   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
 #   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE), Z2.));
 #   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
 # ============================================================================
 print("Step 1: Deriving report date...")
-
-# reptdate_values = get_reptdate_values()
-# reptdate = reptdate_values.reptdate
-# REPTMON  = reptdate_values.reptmon
-# REPTDAY  = reptdate_values.reptday
-# RDATE    = reptdate.strftime("%d/%m/%y")
 
 reptdate_values = get_reptdate_values()
 reptdate = reptdate_values.reptdate
