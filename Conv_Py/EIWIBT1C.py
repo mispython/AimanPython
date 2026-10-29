@@ -23,16 +23,51 @@ Schema:
                       SAS's last-dataset-wins MERGE semantics.)
 """
 
+import gc
+import tempfile
 from pathlib import Path
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
+
+import duckdb
+import pandas as pd
+import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 import pandas as pd
 import polars as pl
 
-from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
 from PBBLNFMT import format_btprod, format_btprodi
+
+# ============================================================
+# CONTROL FILE CONFIGURATION
+# ============================================================
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "SAS"          # SOURCE_SYSTEM_CD used for report date
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+# ============================================================
+# REPORT DATE DERIVATION (replaces DATA _NULL_ SET BNM.REPTDATE / CALL SYMPUT)
+# ============================================================
+REPTDATE  = get_batch_date(BATCH_SOURCE)
+REPTYEAR  = REPTDATE.strftime("%y")      # YEAR2.
+REPTMON   = REPTDATE.strftime("%m")      # Z2.
+REPTDAY   = REPTDATE.strftime("%d")      # Z2.
+RDATE     = REPTDATE.strftime("%d/%m/%y")  # DDMMYY8.
+
+# SAS: SELECT(DAY(REPTDATE)) WHEN 8 -> 1, 15 -> 2, 22 -> 3, OTHERWISE 4
+NOWK = {8: "1", 15: "2", 22: "3"}.get(REPTDATE.day, "4")
 
 # ============================================================
 # PATH CONFIGURATION
@@ -50,8 +85,12 @@ INPUT_DIR = BASE_DIR / "input" / "prod" / "btrade"
 OUTPUT_DIR = BASE_DIR / "output" / "EIWIBT1C"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-IBTMAST_PREFIX = "ibtmast"   # ibtmastXXXXX.sas7bdat -> MM W YY
-IBTDTL_PREFIX = "ibtdtl"     # ibtdtlXXXXXX.sas7bdat  -> YY MM DD
+# SAS: BNM.IBTMAST&REPTMON&NOWK  and  BNMDAILY.IBTDTL&REPTYEAR&REPTMON&REPTDAY
+IBTMAST_FILE = INPUT_DIR / f"ibtmast{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+IBTDTL_FILE  = INPUT_DIR / f"ibtdtl{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+
+CHUNK_ROWS = 500_000
+TEMP_DIR   = None            # None = system temp; set a path if default temp is too small
 
 PAGE_LENGTH = 60
 LRECL = 150
@@ -211,18 +250,57 @@ def compute_remaining_maturity(matdt: Optional[date], rptdate: date) -> float:
 
 
 # ============================================================
+# STEP 0 : sas7bdat -> temporary Parquet (chunked, not kept)
+# ============================================================
+def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
+    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
+    writer, schema = None, None
+    try:
+        for chunk in pd.read_sas(str(src), encoding="latin1", chunksize=chunk_rows):
+            # Force text columns to string so an all-null first chunk doesn't lock a null type
+            for col in chunk.columns[chunk.dtypes == object]:
+                chunk[col] = chunk[col].astype("string")
+            table = pa.Table.from_pandas(chunk, preserve_index=False)
+            if writer is None:
+                schema = table.schema
+                writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
+            else:
+                table = table.cast(schema)
+            writer.write_table(table)
+            del chunk, table
+            gc.collect()
+    finally:
+        if writer is not None:
+            writer.close()
+
+
+def read_sas_via_parquet(src: Path) -> pl.DataFrame:
+    """Convert src to a temporary Parquet, read it through DuckDB, then
+    delete the Parquet. Nothing is kept on disk after the read."""
+    if not src.exists():
+        raise FileNotFoundError(f"Input file not found: {src}")
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        tmp_parquet = Path(tmp) / f"{src.stem}.parquet"
+        sas_to_parquet(src, tmp_parquet)
+        con = duckdb.connect(database=":memory:")
+        try:
+            df = con.execute(
+                f"SELECT * FROM read_parquet('{tmp_parquet.as_posix()}')"
+            ).pl()
+        finally:
+            con.close()
+    return df
+
+
+# ============================================================
 # INPUT LOADERS
 # ============================================================
 def load_ibtdtl() -> pl.DataFrame:
-    latest_file = get_latest_file(INPUT_DIR, prefix=IBTDTL_PREFIX)
-    df = pd.read_sas(latest_file, encoding='latin1')
-    return pl.from_pandas(df)
+    return read_sas_via_parquet(IBTDTL_FILE)
 
 
 def load_ibtmast() -> pl.DataFrame:
-    latest_file = get_latest_file(INPUT_DIR, prefix=IBTMAST_PREFIX)
-    df = pd.read_sas(latest_file, encoding='latin1')
-    return pl.from_pandas(df)
+    return read_sas_via_parquet(IBTMAST_FILE)
 
 # ============================================================
 # DATA STEP EQUIVALENTS
@@ -578,29 +656,28 @@ def write_report(output_path: Path, all_lines: list[tuple[str, str]]) -> None:
 # MAIN
 # ============================================================
 def main() -> None:
-    reptdate_values = get_reptdate_values()
-    rptdate = reptdate_values.reptdate
-    rdate_str = rptdate.strftime('%d/%m/%y')
+    rptdate = REPTDATE
+    rdate_str = RDATE
 
     ibtdtl = load_ibtdtl()
     ibtmast = load_ibtmast()
 
-    print("\n===== IBTDTL Columns =====")
-    print(ibtdtl.columns)
+    # print("\n===== IBTDTL Columns =====")
+    # print(ibtdtl.columns)
 
-    print("\n===== IBTMAST Columns =====")
-    print(ibtmast.columns)
+    # print("\n===== IBTMAST Columns =====")
+    # print(ibtmast.columns)
     
     btradi = build_btradi(ibtdtl)
 
-    print("\n===== DATE DEBUG =====")
-    for row in btradi.head(10).iter_rows(named=True):
-        print(
-            row["ISSDTE"],
-            type(row["ISSDTE"]),
-            row["EXPRDATE"],
-            type(row["EXPRDATE"])
-        )
+    # print("\n===== DATE DEBUG =====")
+    # for row in btradi.head(10).iter_rows(named=True):
+    #     print(
+    #         row["ISSDTE"],
+    #         type(row["ISSDTE"]),
+    #         row["EXPRDATE"],
+    #         type(row["EXPRDATE"])
+    #     )
 
     btradia = build_btradia(btradi)
     btradm = build_btradm(ibtmast)
@@ -608,16 +685,16 @@ def main() -> None:
     loan = build_loan(btrade)
     loan2 = build_loan2(btradi, rptdate)
 
-    print("\n===== REMMTH DEBUG =====")
-    print(
-        loan2.select(
-            [
-                "BNMCODE",
-                "EXPRDATE",
-                "REMMTH"
-            ]
-        ).head(20)
-    )
+    # print("\n===== REMMTH DEBUG =====")
+    # print(
+    #     loan2.select(
+    #         [
+    #             "BNMCODE",
+    #             "EXPRDATE",
+    #             "REMMTH"
+    #         ]
+    #     ).head(20)
+    # )
 
     report1_lines, next_page = build_report1(loan, rdate_str, start_page=1)
     grand_total_lines, next_page = build_report1_grand_total(loan, rdate_str, next_page)
