@@ -10,6 +10,20 @@ print("Your output   : 156242125967.62")
 
 
 
+print("=== fdcd schema & numeric sums ===")
+TARGET = 156242125961.64
+for name, dtype in myr.schema.items():
+    if dtype in (pl.Float32, pl.Float64, pl.Int8, pl.Int16, pl.Int32, pl.Int64,
+                 pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64):
+        s = myr[name].sum()
+        delta = (s - TARGET) if isinstance(s, (int, float)) else None
+        flag  = "  <-- ≈ SAS" if delta is not None and abs(delta) < 1.0 else ""
+        print(f"  {name:20s}  sum = {s}{flag}")
+print("  (target from SAS)                    ", TARGET)
+
+
+
+
 
 def myr_sum(df, label):
     if "CURCODE" in df.columns:
