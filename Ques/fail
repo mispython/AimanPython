@@ -1,11 +1,6 @@
-allfd = con.execute("""
-    SELECT
-        CURCODE,
-        COUNT(*)                  AS NOACCT,
-        SUM(CAST(CURBALRM AS DECIMAL(38, 6)))   AS CURBALRM,
-        SUM(CAST(AMTENOR  AS DECIMAL(38, 6)))   AS AMTENOR,
-        SUM(CAST(AMTENORATE AS DECIMAL(38, 6))) AS AMTENORATE
-    FROM fd
-    GROUP BY CURCODE
-    ORDER BY CURCODE
-""").pl()
+print("=== RAW fdcd file ===")
+print("rows          :", myr.height)
+print("rows (bal>0)  :", myr.filter(pl.col("CURBALRM") if "CURBALRM" in myr.columns else pl.col("CURBAL")) > 0).height)
+print("CURBALRM sum  :", myr["CURBALRM" if "CURBALRM" in myr.columns else "CURBAL"].sum())
+print("SAS expected  : 156242125961.64")
+print("Your output   : 156242125967.62")
