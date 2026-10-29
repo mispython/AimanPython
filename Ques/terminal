@@ -1,6 +1,6 @@
-# Testing Path
-BASE_DIR   = Path("/stgsrcsys/host/uat")
-INPUT_DIR  = BASE_DIR / "AII"
-OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS") / "output/EIBDRMFC"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-fd_path = INPUT_DIR / "from_dwh"
+=== RAW fdcd file ===
+rows          : 2550876
+rows (bal>0)  : 2550876
+CURBALRM sum  : 156242125967.62
+SAS expected  : 156242125961.64
+Your output   : 156242125967.62
