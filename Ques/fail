@@ -1,11 +1,67 @@
-_read_sas_via_parquet(FD_PATH, REQUIRED_FD_COLUMNS, "FD")
+report_lines.append(pad(
+    f"{'CURRENCY CODE':<24}"
+    f",{'OUTSTANDING BALANCE':<24}"
+    f",{'AVERAGE TENOR (DAYS)':<24}"
+    f",{'AVERAGE RATE (%)':<24}"
+    f",{'NO OF O/S ACCOUNT':<17}"
+))
 
 
 
 
-_read_sas_via_parquet(CURR_PATH, REQUIRED_CURR_COLUMNS, "CURR")
+line = (
+    f"{curcode:<24}"
+    f",{CURBALRM:>20.2f}"
+    f"{' ' * 4},{avgtenor:>16.0f}"          # 16.  (0 decimals)
+    f"{' ' * 8},{avgrate:>16.2f}"           # 16.2
+    f"{' ' * 8},{noacct:>16}"               # 16.
+)
 
 
 
 
-_read_sas_via_parquet(LN_NOTE_PATH, REQUIRED_LN_COLUMNS, "LN_NOTE")
+print("MATDATE dtype :", fd["MATDATE"].dtype)
+print("MATDATE sample:", fd["MATDATE"].head(10).to_list())
+print("MATDATE min/max:", fd["MATDATE"].min(), fd["MATDATE"].max())
+print("MATDATE nulls :", fd["MATDATE"].null_count())
+
+
+
+
+fd = fd.with_columns(
+    pl.col("MATDATE").cast(pl.Utf8)
+      .str.strptime(pl.Date, format="%Y%m%d", strict=False)
+      .alias("MATDATE_DATE")
+).with_columns(
+    (pl.col("MATDATE_DATE") - pl.lit(REPTDATE))
+        .dt.total_days()
+        .alias("TENOR")
+)
+
+
+
+
+def parse_matdate_ordinal(val) -> int:
+    if val is None or val == 0:
+        return 0
+    try:
+        ival = int(val)
+        if ival > 10_000_000:                      # YYYYMMDD
+            s = f"{ival:08d}"
+            return date(int(s[0:4]), int(s[4:6]), int(s[6:8])).toordinal()
+        return date(1960, 1, 1).toordinal() + ival # SAS date
+    except Exception:
+        return 0
+
+
+
+
+print("CURCODE set:", fd["CURCODE"].unique().sort().to_list())
+print(fd.group_by("CURCODE").len().sort("CURCODE"))
+
+
+
+
+avgrate_display = avgrate if avgrate != 0 else 0.0
+...
+f"{' ' * 8},{avgrate_display:>16.2f}"
