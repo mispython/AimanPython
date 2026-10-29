@@ -1,20 +1,11 @@
-# ============================================================
-# READ INPUT: fdcd{yymmdd}.sas7bdat  — LOCAL (MYR) DEPOSITS
-#   Read AFTER the FCY-only conversion so MYR bypasses the
-#   FORATE division entirely. CURBALRM here is already in RM.
-# ============================================================
-myr_path = INPUT_DIR / f"fdcd{REPYMD}.sas7bdat"
-myr_pd   = pd.read_sas(str(myr_path), format="sas7bdat", encoding="latin1")
-myr      = pl.from_pandas(myr_pd)
-
-bal_col = "CURBALRM" if "CURBALRM" in myr.columns else "CURBAL"
-
-myr = myr.select([
-    pl.lit("MYR").alias("CURCODE"),
-    pl.col(bal_col).cast(pl.Float64).alias("CURBALRM"),
-    pl.lit(1.0).alias("FORATE"),         # unused downstream; kept for schema
-    pl.col("MATDATE").cast(pl.Int64),
-    pl.col("RATE").cast(pl.Float64),
-]).filter(pl.col("CURBALRM") > 0)
-
-fd = pl.concat([fd, myr], how="vertical")
+allfd = con.execute("""
+    SELECT
+        CURCODE,
+        COUNT(*)                  AS NOACCT,
+        SUM(CAST(CURBALRM AS DECIMAL(38, 6)))   AS CURBALRM,
+        SUM(CAST(AMTENOR  AS DECIMAL(38, 6)))   AS AMTENOR,
+        SUM(CAST(AMTENORATE AS DECIMAL(38, 6))) AS AMTENORATE
+    FROM fd
+    GROUP BY CURCODE
+    ORDER BY CURCODE
+""").pl()
