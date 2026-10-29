@@ -10,8 +10,6 @@ import pandas as pd
 import polars as pl
 import duckdb
 
-from REPTDATE import get_reptdate_values
-
 # ============================================================
 # CONTROL FILE CONFIGURATION
 # ============================================================
@@ -34,8 +32,8 @@ def get_batch_date(source_system_cd: str) -> date:
 # REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = DP)
 # OPTIONS YEARCUTOFF=1950 is applied in _parse_orgdate
 # ============================================================
-# REPTDATE = get_batch_date(BATCH_SOURCE)      # date object (T)
-REPTDATE = date(2026, 10, 27)         # UAT testing date
+REPTDATE = get_batch_date(BATCH_SOURCE)      # date object (T)
+# REPTDATE = date(2026, 10, 27)         # UAT testing date
 T1       = REPTDATE + timedelta(days=1)
 T2       = REPTDATE + timedelta(days=2)
 T3       = REPTDATE + timedelta(days=3)
@@ -49,41 +47,35 @@ REPYMD = REPTDATE.strftime("%y%m%d")         # date token in input filename
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-# # Production Path
-# # BASE_DIR    = Path("/sas/deposit/dwh/enrichment")
-# # INPUT_DIR   = BASE_DIR / f"enrh_dp_fd_cert_d{RDAY}.sas7bdat"
-# BASE_DIR    = Path("/dwh/dp_fcy")
-# INPUT_DIR   = BASE_DIR / f"fcy{REPYMD}.sas7bdat"
-# OUTPUT_DIR  = Path("/host_pq/mis/output/deposit/report")
-# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Testing Path
-BASE_DIR   = Path("/stgsrcsys/host/uat/AII")
-INPUT_DIR  = BASE_DIR / "from_dwh"
-OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS") / "output/EIBDRMFC"
+# Production Path
+BASE_DIR        = Path("/dwh")
+INPUT_FCY_DIR   = BASE_DIR / "dp_fcy"
+INPUT_FDCD_DIR  = BASE_DIR / "dpd_fdcd"
+OUTPUT_DIR      = Path("/host_pq/mis/output/deposit/report")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_FILE = OUTPUT_DIR / "FDRMFC_testfcy.txt"
+# # Testing Path
+# BASE_DIR   = Path("/stgsrcsys/host/uat/AII")
+# INPUT_DIR  = BASE_DIR / "from_dwh"
+# OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS") / "output/EIBDRMFC"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_FILE = OUTPUT_DIR / "FDRMFC.txt"
 
 # ============================================================
 # REPORT DATE DERIVATION  (replaces DATA REPTDATE / CALL SYMPUT)
 # ============================================================
-reptdate_values = get_reptdate_values()
-
-RDATE = reptdate_values.reptdate.strftime("%d/%m/%y")   # PUT(REPTDATE, DDMMYY8.)
-SDATE = reptdate_values.reptdt                          # PUT(REPTDATE, 8.)  → ordinal
+RDATE = REPTDATE.strftime("%d/%m/%y")       # PUT(REPTDATE, DDMMYY8.)
+SDATE = REPTDATE.toordinal()                # PUT(REPTDATE, 8.)  → ordinal
 
 # ============================================================
 # READ INPUT: MNIFD.FD  (.sas7bdat)
 # ============================================================
-# fd_path = get_latest_file(INPUT_DIR, prefix="fd")
 # fd_path = INPUT_DIR / "fd.sas7bdat"
-fd_path = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
+fd_path = INPUT_FCY_DIR / f"fcy{REPYMD}.sas7bdat"
 
 fd_pd = pd.read_sas(str(fd_path), format="sas7bdat", encoding="latin1")
 fd = pl.from_pandas(fd_pd)
-
-# print(fd.schema)      # Check columns' data type
 
 fd = fd.with_columns([
     pl.col("CURBALRM").cast(pl.Float64),
@@ -109,19 +101,60 @@ fd = fd.with_columns(
     .alias("CURBALRM")
 )
 
+# ============================================================
+# READ INPUT: fdcd{yymmdd}.sas7bdat  — LOCAL (MYR) DEPOSITS
+#   Read AFTER the FCY-only conversion so MYR bypasses the
+#   FORATE division entirely. CURBALRM here is already in RM.
+# ============================================================
+myr_path = INPUT_FDCD_DIR / f"fdcd{REPYMD}.sas7bdat"
+myr_pd   = pd.read_sas(str(myr_path), format="sas7bdat", encoding="latin1")
+myr      = pl.from_pandas(myr_pd)
+
+# # DEBUG
+# bal_name = "CURBALRM" if "CURBALRM" in myr.columns else "CURBAL"
+# print("=== RAW fdcd file ===")
+# print("rows          :", myr.height)
+# print("rows (bal>0)  :", myr.filter(pl.col(bal_name) > 0).height)
+# print("CURBALRM sum  :", myr[bal_name].sum())
+# print("SAS expected  : 156242125961.64")
+# print("Your output   : 156242125967.62")
+
+# # DEBUG
+# print("=== fdcd schema & numeric sums ===")
+# TARGET = 156242125961.64
+# for name, dtype in myr.schema.items():
+#     if dtype in (pl.Float32, pl.Float64, pl.Int8, pl.Int16, pl.Int32, pl.Int64,
+#                  pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64):
+#         s = myr[name].sum()
+#         delta = (s - TARGET) if isinstance(s, (int, float)) else None
+#         flag  = "  <-- ≈ SAS" if delta is not None and abs(delta) < 1.0 else ""
+#         print(f"  {name:20s}  sum = {s}{flag}")
+# print("  (target from SAS)                    ", TARGET)
+
+bal_col = "CURBALRM" if "CURBALRM" in myr.columns else "CURBAL"
+
+myr = myr.select([
+    pl.lit("MYR").alias("CURCODE"),
+    pl.col(bal_col).cast(pl.Float64).alias("CURBALRM"),
+    pl.lit(1.0).alias("FORATE"),         # unused downstream; kept for schema
+    pl.col("MATDATE").cast(pl.Int64),
+    pl.col("RATE").cast(pl.Float64),
+]).filter(pl.col("CURBALRM") > 0)
+
+fd = pl.concat([fd, myr], how="vertical")
+
 # Parse MATDATE (stored as numeric YYYYMMDD integer) → Python ordinal
 # SAS: DD=SUBSTR(PUT(MATDATE,Z8.),7,2); MM=...,5,2; YY=...,1,4
 # MATDATE NOT IN (0,.) → valid dates only
 def parse_matdate_ordinal(val) -> int:
-    """Convert numeric YYYYMMDD to Python date ordinal; 0 if invalid."""
     if val is None or val == 0:
         return 0
     try:
-        s = f"{int(val):08d}"
-        yy = int(s[0:4])
-        mm = int(s[4:6])
-        dd = int(s[6:8])
-        return date(yy, mm, dd).toordinal()
+        ival = int(val)
+        if ival > 10_000_000:                      # YYYYMMDD
+            s = f"{ival:08d}"
+            return date(int(s[0:4]), int(s[4:6]), int(s[6:8])).toordinal()
+        return date(1960, 1, 1).toordinal() + ival # SAS date
     except Exception:
         return 0
 
@@ -153,13 +186,24 @@ fd = fd.filter(pl.col("MATDATE_ORD") != pl.col("REPTDATE"))
 con = duckdb.connect(database=":memory:")
 con.register("fd", fd.to_arrow())
 
+# allfd = con.execute("""
+#     SELECT
+#         CURCODE,
+#         COUNT(*)           AS NOACCT,
+#         SUM(CURBALRM)      AS CURBALRM,
+#         SUM(AMTENOR)       AS AMTENOR,
+#         SUM(AMTENORATE)    AS AMTENORATE
+#     FROM fd
+#     GROUP BY CURCODE
+#     ORDER BY CURCODE
+# """).pl()
 allfd = con.execute("""
     SELECT
         CURCODE,
-        COUNT(*)           AS NOACCT,
-        SUM(CURBALRM)        AS CURBALRM,
-        SUM(AMTENOR)       AS AMTENOR,
-        SUM(AMTENORATE)    AS AMTENORATE
+        COUNT(*)                  AS NOACCT,
+        SUM(CAST(CURBALRM AS DECIMAL(38, 6)))   AS CURBALRM,
+        SUM(CAST(AMTENOR  AS DECIMAL(38, 6)))   AS AMTENOR,
+        SUM(CAST(AMTENORATE AS DECIMAL(38, 6))) AS AMTENORATE
     FROM fd
     GROUP BY CURCODE
     ORDER BY CURCODE
@@ -193,12 +237,19 @@ report_lines.append(pad(f"REPORT ID : EIBDRMFC"))
 report_lines.append(pad(f"OUTSTANDING CUSTOMERS FCY FIXED DEPOSIT PLACEMENTS"))
 report_lines.append(pad(f"(FOR INDIVIDUALS AND CORPORATES) AS AT {RDATE}"))
 report_lines.append(pad(""))
+# report_lines.append(pad(
+#     f"{'CURRENCY CODE':<24}"
+#     f",{'OUTSTANDING BALANCE':>20}"
+#     f"{' ' * 4},{'AVERAGE TENOR (DAYS)':>20}"
+#     f"{' ' * 4},{'AVERAGE RATE (%)':>16}"
+#     f"{' ' * 8},{'NO OF O/S ACCOUNT':>16}"
+# ))
 report_lines.append(pad(
     f"{'CURRENCY CODE':<24}"
-    f",{'OUTSTANDING BALANCE':>20}"
-    f"{' ' * 4},{'AVERAGE TENOR (DAYS)':>20}"
-    f"{' ' * 4},{'AVERAGE RATE (%)':>16}"
-    f"{' ' * 8},{'NO OF O/S ACCOUNT':>16}"
+    f",{'OUTSTANDING BALANCE':<24}"
+    f",{'AVERAGE TENOR (DAYS)':<24}"
+    f",{'AVERAGE RATE (%)':<24}"
+    f",{'NO OF O/S ACCOUNT':<17}"
 ))
 
 # Detail lines
@@ -211,12 +262,19 @@ for row in rows:
 
     # SAS column positions (1-based): @001, @025, @050, @075, @100
     # CURBALRM 20.2  AVGTENOR 16.  AVGRATE 16.2  NOACCT 16.
+    # line = (
+    #     f"{curcode:<24}"
+    #     f",{CURBALRM:>20.2f}"
+    #     f"{' ' * 4},{int(round(avgtenor)):>20}"
+    #     f"{' ' * 4},{avgrate:>16.2f}"
+    #     f"{' ' * 8},{noacct:>16}"
+    # )
     line = (
         f"{curcode:<24}"
         f",{CURBALRM:>20.2f}"
-        f"{' ' * 4},{int(round(avgtenor)):>20}"
-        f"{' ' * 4},{avgrate:>16.2f}"
-        f"{' ' * 8},{noacct:>16}"
+        f"{' ' * 4},{avgtenor:>16.0f}"          # 16.  (0 decimals)
+        f"{' ' * 8},{avgrate:>16.2f}"           # 16.2
+        f"{' ' * 8},{noacct:>16}"               # 16.
     )
     report_lines.append(pad(line))
 
