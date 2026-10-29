@@ -4,3 +4,27 @@ rows (bal>0)  : 2550876
 CURBALRM sum  : 156242125967.62
 SAS expected  : 156242125961.64
 Your output   : 156242125967.62
+
+=== fdcd schema & numeric sums ===
+  BRANCH                sum = 339956073.0
+  ACCTNO                sum = 3674493316360297.0
+  CUSTCD                sum = 198417849.0
+  CDNO                  sum = 318902257510034.0
+  CURBAL                sum = 156242125967.62
+  ORIGAMT               sum = 150230799357.67
+  ORGDATE               sum = 58612340631.0
+  MATDATE               sum = 62600199723.0
+  RATE                  sum = 6314645.989999999
+  PRODUCT               sum = 769391215.0
+  TERM                  sum = 20825409.0
+  INTPLAN               sum = 1290744221.0
+  INTPAY                sum = 1419569495.36
+  LASTACTV              sum = 58798683453.0
+  INTFREQ               sum = 19974811.0
+  PEND_INTPLAN          sum = 265065727.0
+  LMATDATE              sum = 38171929485.0
+  INTTFRACCT            sum = 3852196019473468.0
+  PRN_RENEW             sum = 0.0
+  PRN_TFR_ACCT          sum = 0.0
+  DEPDATE               sum = 61966743764.0
+  (target from SAS)                     156242125961.64
