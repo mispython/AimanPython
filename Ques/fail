@@ -1,184 +1,81 @@
-from datetime import date, timedelta   # timedelta is the new import
-
-batch_date = get_batch_date(BATCH_SOURCE)
-
-# SAS: TODAY()-DAY(TODAY()) -> last day of the previous month.
-# If DP batch date is already a month-end, use it; otherwise step back to the previous month-end.
-if (batch_date + timedelta(days=1)).day == 1:
-    reptdate = batch_date
-else:
-    reptdate = batch_date - timedelta(days=batch_date.day)
+LRECL = 2000
+DLM = "\t"   # SAS DLM='05'X is X'05' = TAB on EBCDIC; after the mainframe text transfer it is a tab
 
 
 
 
-
-from datetime import date, datetime, timedelta
-import pandas as pd
-from openpyxl import Workbook
-from openpyxl.styles import Font
-
+def _fmt_list_value(value: Optional[float]) -> str:
+    """List-output of a COMMA20.2 variable: formatted, leading blanks removed.
+    Missing (MISSING=' ') prints as a single blank."""
+    return " " if value is None else f"{value:,.2f}"
 
 
-
-# ============================================================================
-# CONTROL FILE CONFIGURATION
-# ============================================================================
-CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
-
-
-def get_batch_date(source_system_cd: str) -> date:
-    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
-    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
-    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
-    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
-    if hit.empty:
-        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
-    return pd.Timestamp(hit.iloc[0]).date()
-
-
-
-
-reptdate = get_batch_date(BATCH_SOURCE)          # DP batch date
-reptmon  = reptdate.strftime("%m")               # REPTMON: Z2.
-reptday  = reptdate.strftime("%d")               # REPTDAY: Z2.
-rdate    = reptdate.strftime("%d/%m/%y")         # RDATE:  DDMMYY8.
-rptdt    = reptdate.strftime("%Y%m%d")           # RPTDT:  YYMMDDN8.
-
-print(f"Report date (REPTDATE) : {reptdate}")
-
-
-
-
-reptdate = batch_date - timedelta(days=batch_date.day)
-
-
-
-
-def write_xlsx(template_rows: list[TemplateRow], totlcr: pl.DataFrame, output_path: Path) -> None:
-    """Write the NSFR report to .xlsx: title row, then one row per template item
-    (description + 3 maturity buckets as ABS numeric values, COMMA20.2 style)."""
+def build_report_lines(template_rows: list[TemplateRow], totlcr: pl.DataFrame) -> list[str]:
     totlcr_map = {
         row["item"]: (row["utnma1"], row["utnma2"], row["utnma3"])
         for row in totlcr.iter_rows(named=True)
     }
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "NSFR"
-
-    ws.append(["PUBLIC INVESTMENT BANK BERHAD"])
-    ws["A1"].font = Font(bold=True)
-
+    lines: list[str] = [ "PUBLIC INVESTMENT BANK BERHAD".ljust(LRECL) ]
     for trow in template_rows:
-        values = totlcr_map.get(trow.item, (None, None, None))
-        ws.append([trow.desc.rstrip()] + [abs(v) if v is not None else None for v in values])
-
-    for row in ws.iter_rows(min_row=2, min_col=2, max_col=4):
-        for cell in row:
-            cell.number_format = "#,##0.00"
-    ws.column_dimensions["A"].width = 80
-    for col in ("B", "C", "D"):
-        ws.column_dimensions[col].width = 22
-
-    wb.save(output_path)
-
-
-
-
-xlsx_path = OUTPUT_DIR / f"{output_filename}.xlsx"
-write_xlsx(template_rows, totlcr, xlsx_path)
+        utnma1, utnma2, utnma3 = (
+            None if v is None else abs(v)
+            for v in totlcr_map.get(trow.item, (None, None, None))
+        )
+        line = (
+            f"{trow.desc:<500}"
+            f"{DLM} {_fmt_list_value(utnma1)} "
+            f"{DLM} {_fmt_list_value(utnma2)} "
+            f"{DLM} {_fmt_list_value(utnma3)} "
+            f"{DLM} {DLM}"
+        )
+        lines.append(line.ljust(LRECL))
+    return lines
 
 
 
 
-print(f"Output XLSX written to   : {xlsx_path}")
+def _sas_sum(col: str) -> pl.Expr:
+    """SAS SUM semantics: ignore missing; all-missing group -> missing (Polars would give 0)."""
+    return (
+        pl.when(pl.col(col).count() > 0)        # count() = non-null values only
+        .then(pl.col(col).sum())
+        .otherwise(pl.lit(None, dtype=pl.Float64))
+        .alias(col)
+    )
+
+def summarize_totlcr(lcrall: pl.DataFrame) -> pl.DataFrame:
+    return (
+        lcrall.group_by("item")
+        .agg([_sas_sum(c) for c in ("utnma1", "utnma2", "utnma3", "utnttl")])
+        .sort("item")
+    )
 
 
 
 
-import paramiko
-
-
-
-
-# ============================================================================
-# SFTP CONFIGURATION  (replaces JCL steps SFTPFL / RUNSFTP - COZBATCH)
-# ============================================================================
-SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-LCR_HOST_DESC     = "PIVB LCR File Server"     # JCL: sas2finlcr@192.168.56.10
-REMOTE_EXT        = ".XLS"                     # original remote name: NSFR_&RPTDT._MTH.XLS
-
-
-def get_sftp_info(host_desc: str):
-    """Read one SFTP configuration row directly from the DWH control file."""
-    if not SFTP_CONTROL_FILE.exists():
-        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
-
-    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-
-    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
-    missing_columns = sorted(required.difference(ctl.columns))
-    if missing_columns:
-        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
-
-    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
-    rows = ctl[descriptions.eq(host_desc)]
-    if len(rows) != 1:
-        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
-
-    row = rows.iloc[0]
-    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
-    sftp_id = clean(row["SFTP_ID"])
-    sftp_pw = clean(row["SFTP_PW"])
-    host_ip = clean(row["HOST_IP"])
-    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
-
-    empty_values = [
-        name for name, value in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip))
-        if not value
-    ]
-    if empty_values:
-        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
-
-    return sftp_id, sftp_pw, host_ip, host_key
-
-
-
-
-def sftp_upload_to_pivb(local_path: Path, remote_name: str) -> None:
-    """
-    Equivalent of JCL RUNSFTP: put the report to the PIVB LCR file server
-    (home directory, no CD). Binary transfer, because the file is now a real .xlsx
-    (the original lzopts mode=text conversion applied to the old text extract).
-    """
-    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(LCR_HOST_DESC)
-
-    ssh = paramiko.SSHClient()
-    # HOST_KEY is blank for this row in ctl_dwh_sftp_info, so strict pinning is not possible.
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    print(f"  Connecting to {LCR_HOST_DESC} {host_ip} as {sftp_id} ...")
-    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
-    try:
-        sftp = ssh.open_sftp()
-        try:
-            print(f"  SFTP upload: {local_path.name} -> {remote_name}")
-            sftp.put(str(local_path), remote_name)
-        finally:
-            sftp.close()
-    finally:
-        ssh.close()
-    print("  PIVB upload complete.")
-
-
-
-
-remote_name = f"NSFR_{rptdt}_MTH{REMOTE_EXT}"
-print("\nUploading report to PIVB LCR File Server via SFTP...")
-sftp_upload_to_pivb(xlsx_path, remote_name)
+NSFRCD_FMT: dict[str, str] = {
+    "S-SHARE": "0006_3",
+    "S-OS SALES": "0074_1",
+    "S-SSTPAY": "0076_1", "S-PBS DLRS": "0076_1", "S-REMI CA": "0076_1",
+    "S-LEASE ROUA": "0076_3", "S-PROVTAX(C)": "0076_3", "S-PROVOTH": "0076_3",
+    "S-ALLW COMM": "0076_3", "S-PROVCLGFEE": "0076_3", "S-AFRECADV": "0076_3",
+    "S-ACCEXP": "0076_3", "S-SUNCRE KAP": "0076_3", "S-SUNCRE": "0076_3",
+    "S-LOANCONTRO": "0076_3", "S-PBS PAYB": "0076_3",
+    "S-PETTY CASH": "0084_1",
+    "S-STADEPBNM": "0085_3",
+    "S-BNMFL 1MTH": "0116_1", "S-PBB CUR": "0116_1", "S-PIBB CUR": "0116_1",
+    "S-PB CA OTH": "0116_1", "S-CB": "0116_1", "S-REMI FD": "0116_1",
+    "S-LBFD": "0116_1", "S-MBFL 1MTH": "0116_1", "S-LBFL 1MTH": "0116_1",
+    "S-DNBFI 1MTH": "0116_1", "S-LBFL": "0116_1",
+    "LCR-FIOPSDEP": "0140_1",
+    "S-BNM FIX": "0152_1", "S-BNM": "0152_1",
+    "S-MARGIN COL": "0245_3",
+    "S-DTAX": "0247_3", "S-IA": "0247_3",
+    "S-O/S PUR C": "0248_1", "S-CLIENT CTL": "0248_1",
+    "S-RCF": "0256_1", "S-SM F": "0256_1", "S-TLF": "0256_1",
+    "OBS00100100": "0260_1",
+}
 
 
 
