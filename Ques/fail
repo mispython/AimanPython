@@ -1,3 +1,18 @@
+from datetime import date, timedelta   # timedelta is the new import
+
+batch_date = get_batch_date(BATCH_SOURCE)
+
+# SAS: TODAY()-DAY(TODAY()) -> last day of the previous month.
+# If DP batch date is already a month-end, use it; otherwise step back to the previous month-end.
+if (batch_date + timedelta(days=1)).day == 1:
+    reptdate = batch_date
+else:
+    reptdate = batch_date - timedelta(days=batch_date.day)
+
+
+
+
+
 from datetime import date, datetime, timedelta
 import pandas as pd
 from openpyxl import Workbook
