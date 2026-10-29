@@ -3,27 +3,67 @@ Program : EIBDRMFC.py
 Purpose : GENERATE A DAILY REPORT SEGREGATED INTO RINGGIT AND
           FOREIGN CURRENCY DEPOSIT
 """
-# ============================================================
 
 from pathlib import Path
-from datetime import date
-import pandas as pd
+from datetime import date, timedelta
+import pandas as pd 
 import polars as pl
 import duckdb
 
 from REPTDATE import get_reptdate_values
-# from input_date import get_latest_file
+
+# ============================================================
+# CONTROL FILE CONFIGURATION
+# ============================================================
+# Control file : batch date per source system
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+# ============================================================
+# REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = DP)
+# OPTIONS YEARCUTOFF=1950 is applied in _parse_orgdate
+# ============================================================
+# REPTDATE = get_batch_date(BATCH_SOURCE)      # date object (T)
+REPTDATE = date(2026, 10, 27)         # UAT testing date
+T1       = REPTDATE + timedelta(days=1)
+T2       = REPTDATE + timedelta(days=2)
+T3       = REPTDATE + timedelta(days=3)
+
+REPDD  = REPTDATE.strftime("%d")             # DD  (Z2.)
+REPMM  = REPTDATE.strftime("%m")             # MM  (Z2.)
+REPYY  = REPTDATE.strftime("%Y")             # YEAR4.
+REPDT  = REPTDATE.strftime("%d/%m/%Y")       # DDMMYY8. equivalent as used in the existing program
+REPYMD = REPTDATE.strftime("%y%m%d")         # date token in input filename
 
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input/prod/EIBDRMFC"
-OUTPUT_DIR = BASE_DIR / "output/EIBDRMFC"
+# # Production Path
+# # BASE_DIR    = Path("/sas/deposit/dwh/enrichment")
+# # INPUT_DIR   = BASE_DIR / f"enrh_dp_fd_cert_d{RDAY}.sas7bdat"
+# BASE_DIR    = Path("/dwh/dp_fcy")
+# INPUT_DIR   = BASE_DIR / f"fcy{REPYMD}.sas7bdat"
+# OUTPUT_DIR  = Path("/host_pq/mis/output/deposit/report")
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Testing Path
+BASE_DIR   = Path("/stgsrcsys/host/uat/AII")
+INPUT_DIR  = BASE_DIR / "from_dwh"
+OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS") / "output/EIBDRMFC"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_FILE = OUTPUT_DIR / "FDRMFC.txt"
+OUTPUT_FILE = OUTPUT_DIR / "FDRMFC_testfcy.txt"
 
 # ============================================================
 # REPORT DATE DERIVATION  (replaces DATA REPTDATE / CALL SYMPUT)
@@ -37,7 +77,8 @@ SDATE = reptdate_values.reptdt                          # PUT(REPTDATE, 8.)  →
 # READ INPUT: MNIFD.FD  (.sas7bdat)
 # ============================================================
 # fd_path = get_latest_file(INPUT_DIR, prefix="fd")
-fd_path = INPUT_DIR / "fd.sas7bdat"
+# fd_path = INPUT_DIR / "fd.sas7bdat"
+fd_path = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
 
 fd_pd = pd.read_sas(str(fd_path), format="sas7bdat", encoding="latin1")
 fd = pl.from_pandas(fd_pd)
@@ -45,7 +86,7 @@ fd = pl.from_pandas(fd_pd)
 # print(fd.schema)      # Check columns' data type
 
 fd = fd.with_columns([
-    pl.col("CURBAL").cast(pl.Float64),
+    pl.col("CURBALRM").cast(pl.Float64),
     pl.col("FORATE").str.strip_chars().cast(pl.Float64),
     pl.col("RATE").cast(pl.Float64),
     pl.col("MATDATE").cast(pl.Int64),
@@ -53,19 +94,19 @@ fd = fd.with_columns([
 
 # ============================================================
 # DATA FD STEP
-#   KEEP  CURCODE CURBAL FORATE MATDATE RATE
-#   WHERE CURBAL GT 0
+#   KEEP  CURCODE CURBALRM FORATE MATDATE RATE
+#   WHERE CURBALRM GT 0
 # ============================================================
 fd = fd.select([
-    "CURCODE", "CURBAL", "FORATE", "MATDATE", "RATE",
-]).filter(pl.col("CURBAL") > 0)
+    "CURCODE", "CURBALRM", "FORATE", "MATDATE", "RATE",
+]).filter(pl.col("CURBALRM") > 0)
 
-# Convert CURBAL to MYR equivalent when CURCODE != 'MYR'
+# Convert CURBALRM to MYR equivalent when CURCODE != 'MYR'
 fd = fd.with_columns(
     pl.when(pl.col("CURCODE") != "MYR")
-    .then(pl.col("CURBAL") / pl.col("FORATE"))
-    .otherwise(pl.col("CURBAL"))
-    .alias("CURBAL")
+    .then(pl.col("CURBALRM") / pl.col("FORATE"))
+    .otherwise(pl.col("CURBALRM"))
+    .alias("CURBALRM")
 )
 
 # Parse MATDATE (stored as numeric YYYYMMDD integer) → Python ordinal
@@ -91,14 +132,14 @@ fd = fd.with_columns(
 
 # REPTDATE = &SDATE (report date ordinal)
 # TENOR = MATDATE - REPTDATE
-# AMTENOR = CURBAL * TENOR
+# AMTENOR = CURBALRM * TENOR
 # AMTENORATE = AMTENOR * RATE
 fd = fd.with_columns(
     pl.lit(SDATE).cast(pl.Int64).alias("REPTDATE"),
 ).with_columns(
     (pl.col("MATDATE_ORD") - pl.col("REPTDATE")).alias("TENOR"),
 ).with_columns(
-    (pl.col("CURBAL") * pl.col("TENOR")).alias("AMTENOR"),
+    (pl.col("CURBALRM") * pl.col("TENOR")).alias("AMTENOR"),
 ).with_columns(
     (pl.col("AMTENOR") * pl.col("RATE")).alias("AMTENORATE"),
 )
@@ -116,7 +157,7 @@ allfd = con.execute("""
     SELECT
         CURCODE,
         COUNT(*)           AS NOACCT,
-        SUM(CURBAL)        AS CURBAL,
+        SUM(CURBALRM)        AS CURBALRM,
         SUM(AMTENOR)       AS AMTENOR,
         SUM(AMTENORATE)    AS AMTENORATE
     FROM fd
@@ -126,7 +167,7 @@ allfd = con.execute("""
 
 # DATA FD: derive averages
 allfd = allfd.with_columns(
-    (pl.col("AMTENOR")    / pl.col("CURBAL"))   .alias("AVGTENOR"),
+    (pl.col("AMTENOR")    / pl.col("CURBALRM"))   .alias("AVGTENOR"),
     (pl.col("AMTENORATE") / pl.col("AMTENOR"))  .alias("AVGRATE"),
 )
 
@@ -163,16 +204,16 @@ report_lines.append(pad(
 # Detail lines
 for row in rows:
     curcode     = str(row["CURCODE"]).strip()
-    curbal      = row["CURBAL"]
+    CURBALRM      = row["CURBALRM"]
     avgtenor    = row["AVGTENOR"]
     avgrate     = row["AVGRATE"]
     noacct      = int(row["NOACCT"])
 
     # SAS column positions (1-based): @001, @025, @050, @075, @100
-    # CURBAL 20.2  AVGTENOR 16.  AVGRATE 16.2  NOACCT 16.
+    # CURBALRM 20.2  AVGTENOR 16.  AVGRATE 16.2  NOACCT 16.
     line = (
         f"{curcode:<24}"
-        f",{curbal:>20.2f}"
+        f",{CURBALRM:>20.2f}"
         f"{' ' * 4},{int(round(avgtenor)):>20}"
         f"{' ' * 4},{avgrate:>16.2f}"
         f"{' ' * 8},{noacct:>16}"
