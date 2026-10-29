@@ -36,25 +36,22 @@ from REPTDATE import get_monthly_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# INPUT_DIR = BASE_DIR / "input"
-# OUTPUT_DIR = BASE_DIR / "output"
+# Production Path
+BASE_DIR    = Path("/host_pq/mis")
+INPUT_DIR   = BASE_DIR / "input" / "pivb"
+OUTPUT_DIR  = BASE_DIR / "output" / "pivb" / "report"
 
-INPUT_DIR  = Path("/stgsrcsys/host/uat")
-OUTPUT_DIR = BASE_DIR / "output" / "EIVMNSFR"
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = Path("/stgsrcsys/host/uat/AII")
+# OUTPUT_DIR = BASE_DIR / "output" / "EIVMNSFR"
 
 # SAP.PIVB.NSFR.TEMPLATE -- static fixed-position item-code list, not a dated
 # input (analogous to BRHFILE/LKP_BRANCH convention).
-TEMPLATE_FILE = INPUT_DIR / "NSFR_TEMPLATE.txt"
-
-# Dated monthly feeds - resolved via input_date.get_latest_file() below.
-# EQUA_INPUT = "eqnsf"      # SAP.PIVB.EQNSF.MTHEND.TXT(0)
-# GLPIVB_PREFIX = "glpivb"   # SAP.APPL.PIVB.MTHEND.LCR(0)
-# MNL1_PREFIX = "mnlnsf"     # SAP.PIVB.MNL.NSFR.LCR(0)
-
-EQUA_DIR   = INPUT_DIR / "EQNSF_MTHEND.txt"
-GLPIVB_DIR = INPUT_DIR / "MTHEND_LCR.txt"
-MNL1_DIR   = INPUT_DIR / "MNL_NSFR_MTHEND.txt"
+TEMPLATE_FILE   = INPUT_DIR / "NSFR_TEMPLATE.txt"
+EQUA_DIR        = INPUT_DIR / "EQNSF_MTHEND.txt"
+GLPIVB_DIR      = INPUT_DIR / "MTHEND_LCR.txt"
+MNL1_DIR        = INPUT_DIR / "MNL_NSFR_MTHEND.txt"
 
 DLM = "\x05"  # SAS: DLM='05'X
 
