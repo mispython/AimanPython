@@ -2,25 +2,19 @@
 """
 Program  : EIWIBT1C.py
 Purpose  : Undrawn Trade Bills by Collaterals with Remaining Maturity (PIBB)
-Converted from SAS/JCL to Python.
 
 Source references (SAS DDs):
-  BNM       -> SAP.IBT.SASDATA            (unused directly; REPTDATE replaced by REPTDATE.py)
+  BNM       -> SAP.IBT.SASDATA             -> IBTMAST detail file (ibtmast*.sas7bdat)
   BNMDAILY  -> SAP.IBT.SASDATA.DAILY(0)    -> IBTDTL detail file (ibtdtl*.sas7bdat)
   BTCOLL    -> SAP.PIBB.MNICOL(0)          -> NOT referenced by any DATA/PROC step in the
-                                               original source; kept unused here as well
-                                               (FLAG-01: verify with business/data team
-                                               whether this DD was meant to be used).
-  PGM       -> SAP.BNM.PROGRAM             -> library housing the %INC'd PBBLNFMT member;
-                                               replaced by a direct Python import.
+                                               original source
   EIWIBT1C  -> SAP.PIBB.EIWIBT1C.TEXT      -> output text report (RECFM=FB, LRECL=150)
 
 Dependency: %INC PGM(PBBLNFMT)
   Only $BTPROD. and $BTPRODI. formats are referenced by this program
-  (format_btprod / format_btprodi). No other PBBLNFMT format/product-list
-  is used here, so only those two functions are imported.
+  (format_btprod / format_btprodi).
 
-Schema assumptions (FLAG-01, unverified - original copybook/DDL not provided):
+Schema:
   IBTDTL  (detail) : BRANCH, ACCTNO, TRANSREF, LIABCODE, DIRCTIND, OUTSTAND,
                       ISSDTE, EXPRDATE
   IBTMAST (master) : ACCTNO, SUBACCT, LIABCODE
@@ -43,6 +37,14 @@ from PBBLNFMT import format_btprod, format_btprodi
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
+# # Production Path
+# BASE_DIR    = Path("/dwh")
+# IBTMAST_INPUT   = BASE_DIR / "ibtrade"
+# IBTDL_INPUT     = BASE_DIR / "ibtrad_d"
+# OUTPUT_DIR  = Path("/host_pq/mis/output/BTRADE/report")
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Testing Path
 BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 INPUT_DIR = BASE_DIR / "input" / "prod" / "btrade"
 OUTPUT_DIR = BASE_DIR / "output" / "EIWIBT1C"
