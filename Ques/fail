@@ -1,3 +1,36 @@
+# ============================================================
+# READ INPUT: fdcd{yymmdd}.sas7bdat  — LOCAL (MYR) DEPOSITS
+#   * no CURCODE  → inject literal "MYR"
+#   * no FORATE   → inject 1.0 (branch is skipped for MYR)
+#   * CURBALRM    → already in RM, use as-is
+# ============================================================
+myr_path = INPUT_DIR / f"fdcd{REPYMD}.sas7bdat"
+myr_pd   = pd.read_sas(str(myr_path), format="sas7bdat", encoding="latin1")
+myr      = pl.from_pandas(myr_pd)
+
+print("MYR file columns:", myr.columns)      # one-time sanity check — remove later
+
+# Accept either 'CURBALRM' or 'CURBAL' as the balance column
+bal_col = "CURBALRM" if "CURBALRM" in myr.columns else "CURBAL"
+
+myr = myr.select([
+    pl.lit("MYR").alias("CURCODE"),
+    pl.col(bal_col).cast(pl.Float64).alias("CURBALRM"),
+    pl.lit(1.0).alias("FORATE"),
+    pl.col("MATDATE").cast(pl.Int64),
+    pl.col("RATE").cast(pl.Float64),
+]).filter(pl.col("CURBALRM") > 0)
+
+# ============================================================
+# COMBINE FCY + MYR — single frame feeds the rest of the job
+# ============================================================
+fd = pl.concat([fd, myr], how="vertical")
+
+print("CURCODE counts:", fd.group_by("CURCODE").len().sort("CURCODE"))
+
+
+
+
 report_lines.append(pad(
     f"{'CURRENCY CODE':<24}"
     f",{'OUTSTANDING BALANCE':<24}"
