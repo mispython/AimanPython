@@ -25,16 +25,18 @@ from REPTDATE import get_reptdate_values
 # PATH CONFIGURATION
 # ============================================================================
 # Production Path
-
-
-# Testing Path
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII/MISB")
-# INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBMBODP"
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMBODP"
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMBODP"
+BASE_DIR    = Path("PROGRAM/ADIB/EIBMFCFD/PRODUCE/OUTPUT")
+OUTPUT_PATH = Path("/host_pq/mis/output/textfile")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII/MISB")
+# # INPUT_DIR = BASE_DIR / "input" / "prod" / "EIBMBODP"
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMBODP"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMBODP"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Fixed output filename — no date component (SASLIST -> BODPPR.TXT via FTP)
 OUTPUT_FILE = OUTPUT_DIR / "BODPPR.TXT"
