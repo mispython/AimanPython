@@ -1,82 +1,228 @@
-LRECL = 2000
-DLM = "\t"   # SAS DLM='05'X is X'05' = TAB on EBCDIC; after the mainframe text transfer it is a tab
+import os
+import gc
+import tempfile
+from datetime import date
+from pathlib import Path
+
+import duckdb
+import pandas as pd
+import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 
 
 
-def _fmt_list_value(value: Optional[float]) -> str:
-    """List-output of a COMMA20.2 variable: formatted, leading blanks removed.
-    Missing (MISSING=' ') prints as a single blank."""
-    return " " if value is None else f"{value:,.2f}"
+# Control file : batch date per source system
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
 
-
-def build_report_lines(template_rows: list[TemplateRow], totlcr: pl.DataFrame) -> list[str]:
-    totlcr_map = {
-        row["item"]: (row["utnma1"], row["utnma2"], row["utnma3"])
-        for row in totlcr.iter_rows(named=True)
-    }
-
-    lines: list[str] = [ "PUBLIC INVESTMENT BANK BERHAD".ljust(LRECL) ]
-    for trow in template_rows:
-        utnma1, utnma2, utnma3 = (
-            None if v is None else abs(v)
-            for v in totlcr_map.get(trow.item, (None, None, None))
-        )
-        line = (
-            f"{trow.desc:<500}"
-            f"{DLM} {_fmt_list_value(utnma1)} "
-            f"{DLM} {_fmt_list_value(utnma2)} "
-            f"{DLM} {_fmt_list_value(utnma3)} "
-            f"{DLM} {DLM}"
-        )
-        lines.append(line.ljust(LRECL))
-    return lines
+TEMP_DIR = None   # None = system temp; set a path if the default temp area is too small
 
 
 
 
-def _sas_sum(col: str) -> pl.Expr:
-    """SAS SUM semantics: ignore missing; all-missing group -> missing (Polars would give 0)."""
-    return (
-        pl.when(pl.col(col).count() > 0)        # count() = non-null values only
-        .then(pl.col(col).sum())
-        .otherwise(pl.lit(None, dtype=pl.Float64))
-        .alias(col)
-    )
-
-def summarize_totlcr(lcrall: pl.DataFrame) -> pl.DataFrame:
-    return (
-        lcrall.group_by("item")
-        .agg([_sas_sum(c) for c in ("utnma1", "utnma2", "utnma3", "utnttl")])
-        .sort("item")
-    )
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
 
 
 
 
-NSFRCD_FMT: dict[str, str] = {
-    "S-SHARE": "0006_3",
-    "S-OS SALES": "0074_1",
-    "S-SSTPAY": "0076_1", "S-PBS DLRS": "0076_1", "S-REMI CA": "0076_1",
-    "S-LEASE ROUA": "0076_3", "S-PROVTAX(C)": "0076_3", "S-PROVOTH": "0076_3",
-    "S-ALLW COMM": "0076_3", "S-PROVCLGFEE": "0076_3", "S-AFRECADV": "0076_3",
-    "S-ACCEXP": "0076_3", "S-SUNCRE KAP": "0076_3", "S-SUNCRE": "0076_3",
-    "S-LOANCONTRO": "0076_3", "S-PBS PAYB": "0076_3",
-    "S-PETTY CASH": "0084_1",
-    "S-STADEPBNM": "0085_3",
-    "S-BNMFL 1MTH": "0116_1", "S-PBB CUR": "0116_1", "S-PIBB CUR": "0116_1",
-    "S-PB CA OTH": "0116_1", "S-CB": "0116_1", "S-REMI FD": "0116_1",
-    "S-LBFD": "0116_1", "S-MBFL 1MTH": "0116_1", "S-LBFL 1MTH": "0116_1",
-    "S-DNBFI 1MTH": "0116_1", "S-LBFL": "0116_1",
-    "LCR-FIOPSDEP": "0140_1",
-    "S-BNM FIX": "0152_1", "S-BNM": "0152_1",
-    "S-MARGIN COL": "0245_3",
-    "S-DTAX": "0247_3", "S-IA": "0247_3",
-    "S-O/S PUR C": "0248_1", "S-CLIENT CTL": "0248_1",
-    "S-RCF": "0256_1", "S-SM F": "0256_1", "S-TLF": "0256_1",
-    "OBS00100100": "0260_1",
-}
+print("Step 1: Deriving report date...")
+
+reptdate = get_batch_date(BATCH_SOURCE)
+
+# Compute previous month with wrap-around (BODOM/BODRM are keyed on previous month)
+prev_month = 12 if reptdate.month == 1 else reptdate.month - 1
+REPTMON = f"{prev_month:02d}"
+REPTDAY = f"{reptdate.day:02d}"
+RDATE   = reptdate.strftime("%d/%m/%y")
+
+print(f"  Report date : {RDATE}")
+print(f"  REPTMON     : {REPTMON}")
+print(f"  REPTDAY     : {REPTDAY}")
+print(f"  Output file : {OUTPUT_FILE.name}")
 
 
 
 
+def sas_to_parquet(sas_path: Path, dst_path: Path, tag: str) -> None:
+    """Convert a .sas7bdat to Parquet in streaming chunks (temporary file)."""
+    print(f"  [{tag}] Converting {sas_path.name} -> temporary parquet ...")
+    writer    = None
+    schema    = None
+    total     = 0
+    rows_read = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        if ROW_LIMIT and rows_read >= ROW_LIMIT:
+            break
+        if ROW_LIMIT:
+            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
+        rows_read += len(chunk)
+
+        # Force text columns to string so an all-null chunk never locks a null type
+        for col in chunk.columns[chunk.dtypes == object]:
+            chunk[col] = chunk[col].astype("string")
+
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        if writer is None:
+            schema = table.schema
+            writer = pq.ParquetWriter(dst_path, schema, compression="snappy")
+        else:
+            table = table.cast(schema, safe=False)
+
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done — {total:,} rows converted.")
+
+
+
+
+# ============================================================================
+# STEP 3: CONVERT TO TEMPORARY PARQUET AND READ  (temp files auto-deleted)
+# DATA BODOM; SET MISB.BODOM&REPTMON;   DATA BODRM; SET MISB.BODRM&REPTMON;
+# VAR OM AMOUNT / VAR RM AMOUNT keep only the printed columns (plus implicit OBS)
+# ============================================================================
+print("\nStep 3: Converting SAS files to temporary Parquet and reading...")
+
+with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+    bodom_tmp = Path(tmp) / f"{bodom_path.stem}.parquet"
+    bodrm_tmp = Path(tmp) / f"{bodrm_path.stem}.parquet"
+
+    sas_to_parquet(bodom_path, bodom_tmp, "BODOM")
+    sas_to_parquet(bodrm_path, bodrm_tmp, "BODRM")
+
+    con = duckdb.connect(database=":memory:")
+    try:
+        bodom = con.execute(f"""
+            SELECT
+                CAST(OM     AS VARCHAR) AS OM,
+                CAST(AMOUNT AS DOUBLE)  AS AMOUNT
+            FROM read_parquet('{bodom_tmp.as_posix()}')
+        """).pl()
+
+        bodrm = con.execute(f"""
+            SELECT
+                CAST(RM     AS VARCHAR) AS RM,
+                CAST(AMOUNT AS DOUBLE)  AS AMOUNT
+            FROM read_parquet('{bodrm_tmp.as_posix()}')
+        """).pl()
+    finally:
+        con.close()
+# temp folder and both Parquet files are removed here
+gc.collect()
+
+print(f"  BODOM rows: {len(bodom):,}")
+print(f"  BODRM rows: {len(bodrm):,}")
+
+
+
+
+import sys
+import paramiko
+
+
+
+
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+
+# DRR (Data Report Repository) SFTP target
+DRR_HOST_DESC   = "Data Report Repository (DRR)"   # HOST_DESC in ctl_dwh_sftp_info
+DRR_REMOTE_FILE = "BODPPR.TXT"                      # original: put SAP.PBB.BOD.PAPERS -> BODPPR.TXT
+DRR_REMOTE_DIR  = ""                                # "" = SFTP login directory (no CD in the original job note)
+
+
+
+
+# ============================================================================
+# SFTP CONFIGURATION READER  (reads ctl_dwh_sftp_info.sas7bdat directly)
+# ============================================================================
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row from the DWH SFTP control file."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
+
+    row = rows.iloc[0]
+
+    # SAS character values can contain fixed-width padding.
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id  = clean(row["SFTP_ID"])
+    sftp_pw  = clean(row["SFTP_PW"])
+    host_ip  = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
+
+    return sftp_id, sftp_pw, host_ip, host_key
+
+
+# ============================================================================
+# SFTP UPLOAD TO DRR
+# //RUNSFTP EXEC COZBATCH; put SAP.PBB.BOD.PAPERS -> BODPPR.TXT to DRR repository
+# ============================================================================
+def sftp_upload_to_drr(local_file: Path, remote_filename: str, remote_dir: str = "") -> None:
+    """Upload the report file to the DRR server as-is."""
+    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    # HOST_KEY from ctl_dwh_sftp_info is blank for the DRR row, so strict host-key
+    # pinning is not possible; unknown host keys are auto-accepted.
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+
+    try:
+        if remote_dir:
+            try:
+                sftp.chdir(remote_dir)
+            except IOError:
+                sys.exit(f"Aborting: Remote DRR folder '{remote_dir}' not found")
+
+        target = f"{remote_dir}/{remote_filename}" if remote_dir else remote_filename
+        print(f"  SFTP upload: {local_file.name} -> {target}")
+        sftp.put(str(local_file), remote_filename)
+    finally:
+        sftp.close()
+        ssh.close()
+
+    print("  DRR upload complete.")
+
+
+
+
+print("\nUploading report to DRR via SFTP...")
+sftp_upload_to_drr(OUTPUT_FILE, DRR_REMOTE_FILE, DRR_REMOTE_DIR)
