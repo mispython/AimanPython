@@ -1,228 +1,253 @@
-import os
-import gc
-import tempfile
-from datetime import date
+import atexit
+import sys
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
-import duckdb
 import pandas as pd
 import polars as pl
-import pyarrow as pa
-import pyarrow.parquet as pq
-
-
-
-
-# Control file : batch date per source system
-CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
-
-TEMP_DIR = None   # None = system temp; set a path if the default temp area is too small
-
-
-
-
-def get_batch_date(source_system_cd: str) -> date:
-    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
-    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
-    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
-    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
-    if hit.empty:
-        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
-    return pd.Timestamp(hit.iloc[0]).date()
-
-
-
-
-print("Step 1: Deriving report date...")
-
-reptdate = get_batch_date(BATCH_SOURCE)
-
-# Compute previous month with wrap-around (BODOM/BODRM are keyed on previous month)
-prev_month = 12 if reptdate.month == 1 else reptdate.month - 1
-REPTMON = f"{prev_month:02d}"
-REPTDAY = f"{reptdate.day:02d}"
-RDATE   = reptdate.strftime("%d/%m/%y")
-
-print(f"  Report date : {RDATE}")
-print(f"  REPTMON     : {REPTMON}")
-print(f"  REPTDAY     : {REPTDAY}")
-print(f"  Output file : {OUTPUT_FILE.name}")
-
-
-
-
-def sas_to_parquet(sas_path: Path, dst_path: Path, tag: str) -> None:
-    """Convert a .sas7bdat to Parquet in streaming chunks (temporary file)."""
-    print(f"  [{tag}] Converting {sas_path.name} -> temporary parquet ...")
-    writer    = None
-    schema    = None
-    total     = 0
-    rows_read = 0
-
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
-        if ROW_LIMIT and rows_read >= ROW_LIMIT:
-            break
-        if ROW_LIMIT:
-            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
-        rows_read += len(chunk)
-
-        # Force text columns to string so an all-null chunk never locks a null type
-        for col in chunk.columns[chunk.dtypes == object]:
-            chunk[col] = chunk[col].astype("string")
-
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
-        if writer is None:
-            schema = table.schema
-            writer = pq.ParquetWriter(dst_path, schema, compression="snappy")
-        else:
-            table = table.cast(schema, safe=False)
-
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-
-    if writer:
-        writer.close()
-    print(f"  [{tag}] Done — {total:,} rows converted.")
+import saspy
 
 
 
 
 # ============================================================================
-# STEP 3: CONVERT TO TEMPORARY PARQUET AND READ  (temp files auto-deleted)
-# DATA BODOM; SET MISB.BODOM&REPTMON;   DATA BODRM; SET MISB.BODRM&REPTMON;
-# VAR OM AMOUNT / VAR RM AMOUNT keep only the printed columns (plus implicit OBS)
+# PATH CONFIGURATION
 # ============================================================================
-print("\nStep 3: Converting SAS files to temporary Parquet and reading...")
+# # >>>>> Testing Path <<<<<
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input/prod"
+# OUTPUT_DIR = BASE_DIR / "output/EIBWCTCS"
 
-with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
-    bodom_tmp = Path(tmp) / f"{bodom_path.stem}.parquet"
-    bodrm_tmp = Path(tmp) / f"{bodrm_path.stem}.parquet"
+# Production Path
+INPUT_DIR  = Path("/dwh")
+OUTPUT_DIR = Path("/host/mis/output/report") / "EIBWCTCS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    sas_to_parquet(bodom_path, bodom_tmp, "BODOM")
-    sas_to_parquet(bodrm_path, bodrm_tmp, "BODRM")
+# SAP.PBB.EPCU.CTCS.TXT(0) -- the weekly flat-file input
+TXTFILE_PATH = INPUT_DIR / "EPCU_CTCS.TXT"
 
-    con = duckdb.connect(database=":memory:")
+# Control table holding the batch date per source system
+CTL_DIR             = INPUT_DIR
+CTL_BATCH_TABLE     = "ctl_dwh_batch_dttm"
+BATCH_SOURCE_SYSTEM = "DP"
+
+# SAS session / librefs (CTCS libref = location of CTCS.CTCS&REPTMON)
+SAS_CFGNAME  = "default"
+CTL_LIBREF   = "CTL"
+CTCS_LIBREF  = "CTCS"
+
+sas = saspy.SASsession(cfgname=SAS_CFGNAME)
+atexit.register(sas.endsas)          # session always closed, even on sys.exit(77) or an error
+sas.saslib(CTL_LIBREF,  path=str(CTL_DIR))
+sas.saslib(CTCS_LIBREF, path=str(OUTPUT_DIR))
+
+
+
+
+# ============================================================================
+# REPORT DATE FROM SOURCE_SYSTEM_CD = 'DP' BATCH DATE
+# Replaces LOAN.REPTDATE of the original SAS program.
+# ============================================================================
+SAS_EPOCH = date(1960, 1, 1)
+
+
+def sas_date_number(d: date) -> float:
+    """SAS date value (days since 01JAN1960), as stored by &RDATE / YYMMDD8."""
+    return float((d - SAS_EPOCH).days)
+
+
+def get_dp_batch_date(sas_session) -> date:
+    """Read BATCH_DTTM of the DP source system from ctl_dwh_batch_dttm."""
+    ds = sas_session.sasdata(
+        CTL_BATCH_TABLE,
+        CTL_LIBREF,
+        dsopts={"where": f"SOURCE_SYSTEM_CD='{BATCH_SOURCE_SYSTEM}'"},
+    )
+    df = ds.to_df()
+    df.columns = [str(c).upper() for c in df.columns]
+
+    if df.empty or pd.isna(df["BATCH_DTTM"].iloc[0]):
+        raise ValueError(
+            f"NO BATCH_DTTM FOUND FOR SOURCE_SYSTEM_CD='{BATCH_SOURCE_SYSTEM}' "
+            f"IN {CTL_BATCH_TABLE}"
+        )
+
+    value = df["BATCH_DTTM"].iloc[0]
+    if pd.api.types.is_number(value):    # raw SAS datetime (seconds since 1960)
+        return (datetime(1960, 1, 1) + timedelta(seconds=float(value))).date()
+    return pd.Timestamp(value).date()
+
+
+
+
+# ============================================================================
+# READ HEADER ROW OF TXTFILE TO DERIVE FILEDATE
+# ============================================================================
+with open(TXTFILE_PATH, "r") as _f:
+    _header = _f.readline()
+
+_yy = int(_header[2:6])
+_mm = int(_header[6:8])
+_dd = int(_header[8:10])
+_file_raw_date = date(_yy, _mm, _dd)
+_tdate = _file_raw_date - timedelta(days=1)
+
+FILEDAY    = f"{_tdate.day:02d}"
+FILEMON    = f"{_tdate.month:02d}"
+FILEYEAR   = str(_tdate.year)[-2:]
+FILEDATE   = _tdate.strftime("%d/%m/%y")        # DDMMYY8.
+
+# REPTDATE = DP batch date (original: LOAN.REPTDATE)
+_reptdate_val: date = get_dp_batch_date(sas)
+
+REPTDAY    = f"{_reptdate_val.day:02d}"
+REPTMON    = f"{_reptdate_val.month:02d}"
+REPTYEAR   = str(_reptdate_val.year)[-2:]
+RDATE_STR  = _reptdate_val.strftime("%d/%m/%y")  # &REPTDATE (DDMMYY8.)
+RDATE_NUM  = sas_date_number(_reptdate_val)      # &RDATE
+
+CTCS_TABLE = f"CTCS{REPTMON}"                    # CTCS.CTCS&REPTMON
+
+# Debug report date
+print("\n========== CHECKING REPORT DATE ==========\n")
+print("RAW HEADER: ", _header)
+print("PARSED DATE: ", _file_raw_date)
+print("TDATE: ", _tdate)
+print("REPTDATE (DP BATCH): ", _reptdate_val)
+
+# ============================================================================
+# DATA _NULL_ -- validation: FILEDATE must equal REPTDATE
+# ============================================================================
+if FILEDATE != RDATE_STR:
+    print(f"THE SAP.PBB.EPCU.CTCS IS NOT DATED {RDATE_STR}")
+    sys.exit(77)
+
+
+
+
+# ============================================================================
+# DATA CTCS -- parse transaction rows (skip header, skip TOTAL)
+# Numeric fields are stored as SAS numerics; TRANDT and REPTDATE are SAS date
+# numbers without a format, as in the original (INPUT YYMMDD8. / REPTDATE=&RDATE).
+# An unreadable field becomes missing but the row is kept (SAS MISSOVER).
+# ============================================================================
+CTCS_SCHEMA = {
+    "TRANDT":   pl.Float64,
+    "ACCTNO":   pl.Float64,
+    "NOTENO":   pl.Float64,
+    "CHEQNO":   pl.Float64,
+    "TRANAMT":  pl.Float64,
+    "IND":      pl.String,
+    "PRODIND":  pl.String,
+    "TRANCD":   pl.String,
+    "REPTDATE": pl.Float64,
+}
+
+
+def _num(text: str) -> Optional[float]:
+    text = text.strip()
+    if not text:
+        return None
     try:
-        bodom = con.execute(f"""
-            SELECT
-                CAST(OM     AS VARCHAR) AS OM,
-                CAST(AMOUNT AS DOUBLE)  AS AMOUNT
-            FROM read_parquet('{bodom_tmp.as_posix()}')
-        """).pl()
-
-        bodrm = con.execute(f"""
-            SELECT
-                CAST(RM     AS VARCHAR) AS RM,
-                CAST(AMOUNT AS DOUBLE)  AS AMOUNT
-            FROM read_parquet('{bodrm_tmp.as_posix()}')
-        """).pl()
-    finally:
-        con.close()
-# temp folder and both Parquet files are removed here
-gc.collect()
-
-print(f"  BODOM rows: {len(bodom):,}")
-print(f"  BODRM rows: {len(bodrm):,}")
+        return float(text)
+    except ValueError:
+        return None
 
 
-
-
-import sys
-import paramiko
-
-
-
-
-SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-
-# DRR (Data Report Repository) SFTP target
-DRR_HOST_DESC   = "Data Report Repository (DRR)"   # HOST_DESC in ctl_dwh_sftp_info
-DRR_REMOTE_FILE = "BODPPR.TXT"                      # original: put SAP.PBB.BOD.PAPERS -> BODPPR.TXT
-DRR_REMOTE_DIR  = ""                                # "" = SFTP login directory (no CD in the original job note)
-
-
-
-
-# ============================================================================
-# SFTP CONFIGURATION READER  (reads ctl_dwh_sftp_info.sas7bdat directly)
-# ============================================================================
-def get_sftp_info(host_desc: str):
-    """Read one SFTP configuration row from the DWH SFTP control file."""
-    if not SFTP_CONTROL_FILE.exists():
-        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
-
-    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-
-    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
-    missing_columns = sorted(required.difference(ctl.columns))
-    if missing_columns:
-        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
-
-    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
-    rows = ctl[descriptions.eq(host_desc)]
-    if len(rows) != 1:
-        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
-
-    row = rows.iloc[0]
-
-    # SAS character values can contain fixed-width padding.
-    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
-    sftp_id  = clean(row["SFTP_ID"])
-    sftp_pw  = clean(row["SFTP_PW"])
-    host_ip  = clean(row["HOST_IP"])
-    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
-
-    empty_values = [
-        name for name, value in (
-            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
-        ) if not value
-    ]
-    if empty_values:
-        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
-
-    return sftp_id, sftp_pw, host_ip, host_key
-
-
-# ============================================================================
-# SFTP UPLOAD TO DRR
-# //RUNSFTP EXEC COZBATCH; put SAP.PBB.BOD.PAPERS -> BODPPR.TXT to DRR repository
-# ============================================================================
-def sftp_upload_to_drr(local_file: Path, remote_filename: str, remote_dir: str = "") -> None:
-    """Upload the report file to the DRR server as-is."""
-    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(DRR_HOST_DESC)
-
-    ssh = paramiko.SSHClient()
-    # HOST_KEY from ctl_dwh_sftp_info is blank for the DRR row, so strict host-key
-    # pinning is not possible; unknown host keys are auto-accepted.
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
-    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
-    sftp = ssh.open_sftp()
-
+def _amount(text: str) -> Optional[float]:
+    """10.2 informat: implied 2 decimals unless the field has a decimal point."""
+    text = text.strip()
+    if not text:
+        return None
     try:
-        if remote_dir:
-            try:
-                sftp.chdir(remote_dir)
-            except IOError:
-                sys.exit(f"Aborting: Remote DRR folder '{remote_dir}' not found")
-
-        target = f"{remote_dir}/{remote_filename}" if remote_dir else remote_filename
-        print(f"  SFTP upload: {local_file.name} -> {target}")
-        sftp.put(str(local_file), remote_filename)
-    finally:
-        sftp.close()
-        ssh.close()
-
-    print("  DRR upload complete.")
+        value = float(text)
+    except ValueError:
+        return None
+    return value if "." in text else value / 100.0
 
 
+def _trandt(text: str) -> Optional[float]:
+    """YYMMDD8. informat (YYYYMMDD) -> SAS date number."""
+    text = text.strip()
+    if len(text) != 8:
+        return None
+    try:
+        return sas_date_number(date(int(text[0:4]), int(text[4:6]), int(text[6:8])))
+    except ValueError:
+        return None
 
 
-print("\nUploading report to DRR via SFTP...")
-sftp_upload_to_drr(OUTPUT_FILE, DRR_REMOTE_FILE, DRR_REMOTE_DIR)
+_records: list[dict] = []
+
+with open(TXTFILE_PATH, "r") as _f:
+    next(_f, None)                                   # FIRSTOBS=2
+    for _line in _f:
+        _line = _line.rstrip("\r\n")
+        if _line[0:5].strip() == "TOTAL":            # CHECK NE 'TOTAL'
+            continue
+        _records.append({
+            "TRANDT":   _trandt(_line[8:16]),        # @009  YYMMDD8.
+            "ACCTNO":   _num(_line[17:27]),          # @018  10.
+            "NOTENO":   _num(_line[28:33]),          # @029  5.
+            "CHEQNO":   _num(_line[34:40]),          # @035  6.
+            "TRANAMT":  _amount(_line[41:51]),       # @042  10.2
+            "IND":      _line[52:54].strip(),        # @053  $2.
+            "PRODIND":  _line[55:56].strip(),        # @056  $1.
+            "TRANCD":   _line[57:59].strip(),        # @058  $2.
+            "REPTDATE": RDATE_NUM,                   # REPTDATE=&RDATE
+        })
+
+ctcs_new = pl.DataFrame(_records, schema=CTCS_SCHEMA)
+
+
+
+
+# ============================================================================
+# %MACRO APPEND
+# ============================================================================
+def read_ctcs_accumulator() -> pl.DataFrame:
+    """SET CTCS.CTCS&REPTMON -- the original fails if the dataset does not exist."""
+    if not sas.exist(CTCS_TABLE, libref=CTCS_LIBREF):
+        raise FileNotFoundError(
+            f"DATASET {CTCS_LIBREF}.{CTCS_TABLE} DOES NOT EXIST IN {OUTPUT_DIR}"
+        )
+    pdf = sas.sasdata(CTCS_TABLE, CTCS_LIBREF).to_df()
+    pdf.columns = [str(c).upper() for c in pdf.columns]
+    return pl.from_pandas(pdf).select(list(CTCS_SCHEMA)).cast(CTCS_SCHEMA)
+
+
+def write_ctcs_accumulator(df: pl.DataFrame) -> None:
+    """DATA CTCS.CTCS&REPTMON; -- replaces the dataset as a .sas7bdat."""
+    sas.df2sd(
+        df.to_pandas(),
+        table=CTCS_TABLE,
+        libref=CTCS_LIBREF,
+        char_lengths={"IND": 2, "PRODIND": 1, "TRANCD": 2},
+    )
+
+
+if FILEDAY == "08":                                   # 1ST WEEK
+    ctcs_out = ctcs_new
+else:
+    # IF REPTDATE EQ &RDATE THEN DELETE (rows with missing REPTDATE are kept)
+    ctcs_existing = read_ctcs_accumulator().filter(
+        pl.col("REPTDATE").ne_missing(RDATE_NUM)
+    )
+    # SET CTCS CTCS.CTCS&REPTMON -> new rows first, then existing
+    ctcs_out = pl.concat([ctcs_new, ctcs_existing], how="vertical")
+
+write_ctcs_accumulator(ctcs_out)
+
+
+
+
+print(f"CTCS dataset written: {OUTPUT_DIR / (CTCS_TABLE.lower() + '.sas7bdat')}")
+print(f"  New rows this run : {ctcs_new.height}")
+print(f"  Total rows stored : {ctcs_out.height}")
+print(f"  Report date       : {RDATE_STR}")
+print(f"  File date         : {FILEDATE}")
+
+# TO SHOW DATA FOR TESTING PURPOSE ONLY
+print("\n ========== PREVIEW ========== \n")
+print(ctcs_out)
