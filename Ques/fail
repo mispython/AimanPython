@@ -1,3 +1,47 @@
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# # >>>>> Testing Path <<<<<
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = Path("/stgsrcsys/host/uat/AII")
+# OUTPUT_DIR = BASE_DIR / "output/EIBWCTCS"
+
+# Production Path
+INPUT_DIR  = Path("/host_pq/mis/input/textfile")
+OUTPUT_DIR = Path("/host_pq/mis/input/ctcs")
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # SAP.PBB.EPCU.CTCS.TXT(0) -- the weekly flat-file input
+# TXTFILE_PATH = INPUT_DIR / f"EPCU_CTCS.txt"
+
+# Control table holding the batch date per source system
+CTL_DIR             = Path("/sasdata/dwh/control")
+CTL_BATCH_TABLE     = "ctl_dwh_batch_dttm.sas7bdat"
+BATCH_SOURCE_SYSTEM = "LN"
+
+# SAS session / librefs (CTCS libref = location of CTCS.CTCS&REPTMON)
+SAS_CFGNAME  = "default"
+CTL_LIBREF   = "CTL"
+CTCS_LIBREF  = "CTCS"
+
+sas = saspy.SASsession(cfgname=SAS_CFGNAME)
+atexit.register(sas.endsas)          # session always closed, even on sys.exit(77) or an error
+sas.saslib(CTL_LIBREF,  path=str(CTL_DIR))
+sas.saslib(CTCS_LIBREF, path=str(OUTPUT_DIR))
+
+# ============================================================================
+# REPORT DATE FROM SOURCE_SYSTEM_CD = 'DP' BATCH DATE
+# Replaces LOAN.REPTDATE of the original SAS program.
+# ============================================================================
+SAS_EPOCH = date(1960, 1, 1)
+
+
+def sas_date_number(d: date) -> float:
+    """SAS date value (days since 01JAN1960), as stored by &RDATE / YYMMDD8."""
+    return float((d - SAS_EPOCH).days)
+
+
 def get_batch_date(source_system_cd: str) -> date:
     """Read BATCH_DTTM of the given source system from the control table."""
     ds = sas.sasdata(
@@ -18,3 +62,51 @@ def get_batch_date(source_system_cd: str) -> date:
     if pd.api.types.is_number(value):        # raw SAS datetime (seconds since 1960)
         return (datetime(1960, 1, 1) + timedelta(seconds=float(value))).date()
     return pd.Timestamp(value).date()
+
+
+# ============================================================================
+# READ HEADER ROW OF TXTFILE TO DERIVE FILEDATE
+# ============================================================================
+with open(TXTFILE_PATH, "r") as _f:
+    _header = _f.readline()
+
+_yy = int(_header[2:6])
+_mm = int(_header[6:8])
+_dd = int(_header[8:10])
+_file_raw_date = date(_yy, _mm, _dd)
+_tdate = _file_raw_date - timedelta(days=1)
+
+FILEDAY    = f"{_tdate.day:02d}"
+FILEMON    = f"{_tdate.month:02d}"
+FILEYEAR   = str(_tdate.year)[-2:]
+FILEDATE   = _tdate.strftime("%d/%m/%y")        # DDMMYY8.
+
+# REPTDATE = DP batch date (original: LOAN.REPTDATE)
+# _reptdate_val: date = get_batch_date(BATCH_SOURCE_SYSTEM)
+_reptdate_val: date = date(2026, 11, 8)         # UAT Testing
+
+REPTDAY    = f"{_reptdate_val.day:02d}"
+REPTMON    = f"{_reptdate_val.month:02d}"
+REPTYEAR   = str(_reptdate_val.year)[-2:]
+RDATE_STR  = _reptdate_val.strftime("%d/%m/%y")  # &REPTDATE (DDMMYY8.)
+RDATE_NUM  = sas_date_number(_reptdate_val)      # &RDATE
+REPTYMD    = _reptdate_val.strftime("%y%m%d")
+
+# SAP.PBB.EPCU.CTCS.TXT(0) -- the weekly flat-file input
+TXTFILE_PATH = INPUT_DIR / f"EPCU_CTCS_{REPTYMD}.txt"
+
+CTCS_TABLE = f"CTCS{REPTMON}"                    # CTCS.CTCS&REPTMON
+
+# Debug report date
+print("\n========== CHECKING REPORT DATE ==========\n")
+print("RAW HEADER: ", _header)
+print("PARSED DATE: ", _file_raw_date)
+print("TDATE: ", _tdate)
+print("REPTDATE (BATCH, SOURCE_SYSTEM_CD=" + BATCH_SOURCE_SYSTEM + "): ", _reptdate_val)
+
+# ============================================================================
+# DATA _NULL_ -- validation: FILEDATE must equal REPTDATE
+# ============================================================================
+if FILEDATE != RDATE_STR:
+    print(f"THE SAP.PBB.EPCU.CTCS IS NOT DATED {RDATE_STR}")
+    sys.exit(77)
