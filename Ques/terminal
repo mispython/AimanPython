@@ -1,30 +1,27 @@
-=== RAW fdcd file ===
-rows          : 2550876
-rows (bal>0)  : 2550876
-CURBALRM sum  : 156242125967.62
-SAS expected  : 156242125961.64
-Your output   : 156242125967.62
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py
+SAS Connection established. Subprocess id is 217097
 
-=== fdcd schema & numeric sums ===
-  BRANCH                sum = 339956073.0
-  ACCTNO                sum = 3674493316360297.0
-  CUSTCD                sum = 198417849.0
-  CDNO                  sum = 318902257510034.0
-  CURBAL                sum = 156242125967.62
-  ORIGAMT               sum = 150230799357.67
-  ORGDATE               sum = 58612340631.0
-  MATDATE               sum = 62600199723.0
-  RATE                  sum = 6314645.989999999
-  PRODUCT               sum = 769391215.0
-  TERM                  sum = 20825409.0
-  INTPLAN               sum = 1290744221.0
-  INTPAY                sum = 1419569495.36
-  LASTACTV              sum = 58798683453.0
-  INTFREQ               sum = 19974811.0
-  PEND_INTPLAN          sum = 265065727.0
-  LMATDATE              sum = 38171929485.0
-  INTTFRACCT            sum = 3852196019473468.0
-  PRN_RENEW             sum = 0.0
-  PRN_TFR_ACCT          sum = 0.0
-  DEPDATE               sum = 61966743764.0
-  (target from SAS)                     156242125961.64
+
+21   
+22   libname CTL    '/sasdata/dwh/control'  ;
+NOTE: Libref CTL was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: /sasdata/dwh/control
+23   
+
+25   
+26   libname CTCS    '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS'  ;
+NOTE: Libref CTCS was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS
+27   
+
+========== CHECKING REPORT DATE ==========
+
+RAW HEADER:  HD20261101                                                                                                                           
+
+PARSED DATE:  2026-11-01
+TDATE:  2026-10-31
+REPTDATE (BATCH, SOURCE_SYSTEM_CD=SAS):  2026-11-01
+THE SAP.PBB.EPCU.CTCS IS NOT DATED 01/11/26
+SAS Connection terminated. Subprocess id was 217097
