@@ -10,21 +10,19 @@ Purpose  : CHEQUES ISSUED BY THE BANK - PUBLIC ISLAMIC BANK BERHAD (PIBB)
 
 Notes
 -----
-* LOAN.REPTDATE no longer exists as a physical dataset/parquet file.
-  The report date is derived from REPTDATE.py instead.
-* This job runs on the 2nd calendar day of the month, and the DPLD member
-  suffix (&REPTMON) must resolve to the *previous completed month*
-  (e.g. running on 02-Jul must read idpld06.sas7bdat, not idpld07.sas7bdat).
-  get_monthly_reptdate_values() (last day of previous month) reproduces
-  this behaviour exactly, since REPTMON is taken directly from REPTDATE's
-  own month in the original SAS DATA REPTDATE step.
+* Report date comes from ctl_dwh_batch_dttm.sas7bdat (SOURCE_SYSTEM_CD = LN).
+  This job runs on the first day of Jan/Apr/Jul/Oct, so the batch date is the
+  last day of the previous month (e.g. 30-Sep) and the DPLD members read are
+  idpld09, idpld08 and idpld07 (REPTMON, PREPTMON, PPREPTMON).
+* DPLD (SAP.PIBB.EPCU.LOANDISB) is read from .sas7bdat via a temporary parquet
+  that is deleted after reading.
 * LNLD is a raw mainframe fixed-width flat file (RBP2.B033.LN.BNM.BNKCHEQ.RPT.QRTR),
-  shared between PBB and PIBB, read via byte-offset slicing, never via
-  read_parquet()/read_csv(). Only the COSTCTR filter differs from PBB:
+  shared between PBB and PIBB, named BNKCHEQ_RPT_QRTR_<mm>.txt, read via
+  byte-offset slicing in chunks. Only the COSTCTR filter differs from PBB:
     PIBB : (3000 < COSTCTR < 3999) OR COSTCTR IN (4043,4048)   -- strict/exclusive
     PBB  : (COSTCTR < 3000 OR COSTCTR > 3999) AND COSTCTR NOT IN (4043,4048)
-* DPLD input differs from PBB: SAP.PIBB.EPCU.LOANDISB -> idpld<mm>.sas7bdat
-  (PIBB prefix convention: PBB filename prepended with "i").
+* Outputs: BNM.DPLD / BNM.LNLD / BNM.TRANX (.sas7bdat via saspy) and the
+  text report (SAP.PIBB.EPCU.PART1).
 """
 
 # ============================================================================
@@ -40,17 +38,34 @@ from typing import Optional
 import pandas as pd
 import polars as pl
 
-from REPTDATE import get_monthly_reptdate_values
-from input_date import get_latest_file
-from output_date import build_output_file
+import tempfile
+import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
+import saspy
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR   = Path("/stgsrcsys/host/uat")
-OUTPUT_DIR  = BASE_DIR / "output" / "EIIQEPC1"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Production Path
+BASE_DIR    = Path("/host_pq/mis")
+INPUT_DIR   = BASE_DIR / "input" / "EPCU"
+OUTPUT_DIR  = BASE_DIR
+BNM_DIR     = OUTPUT_DIR / "input" / "EPCU" / "IEPCUWH"
+
+# # Testing Path
+# BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR   = Path("/stgsrcsys/host/uat")
+# OUTPUT_DIR  = BASE_DIR / "output" / "EIIQEPC1"
+# BNM_DIR     = OUTPUT_DIR / "EPCUWH"                     # SAP.PIBB.EPCUWH(+1) -> dpld / lnld / tranx .sas7bdat
+# # REPORT_FILE = OUTPUT_DIR / "PBB_EPCU_PART1.txt"         # SAP.PBB.EPCU.PART1(+1), no date in the name
+
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "LN"
+TEMP_DIR       = None   # None = system temp
+
+for _d in (OUTPUT_DIR, BNM_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
 
 # Chunked reading controls for the large LNLD flat file.
 CHUNK_SIZE = 500_000
@@ -61,10 +76,19 @@ PAGE_LENGTH = 60  # ASA report page length (not specified in JCL -> default 60)
 # ============================================================================
 # DATA REPTDATE STEP EQUIVALENT
 # (Original: SET LOAN.REPTDATE -> derive SREPTDATE/PRVRPTDATE/... )
-# No reptdate.parquet exists; base REPTDATE comes from REPTDATE.py.
+# Report date comes from ctl_dwh_batch_dttm (SOURCE_SYSTEM_CD = LN).
 # ============================================================================
-_reptdate_values = get_monthly_reptdate_values()
-REPTDATE_VAL: date = _reptdate_values.reptdate            # last day of prev month
+def get_batch_date(source_system_cd: str) -> date:
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+REPTDATE_VAL: date = get_batch_date(BATCH_SOURCE)
+# REPTDATE_VAL: date = date(2026, 10, 31)             # UAT testing date
 
 # SREPTDATE = MDY(MONTH(REPTDATE),1,YEAR(REPTDATE))
 _sreptdate = REPTDATE_VAL.replace(day=1)
@@ -75,11 +99,13 @@ _ssreptdate = _prvrptdate.replace(day=1)
 # PPRVRPTDATE = SSREPTDATE - 1
 _pprvrptdate = _ssreptdate - timedelta(days=1)
 
-REPTMON = f"{REPTDATE_VAL.month:02d}"              # CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE),Z2.))
-REPTYEAR = _reptdate_values.reptyear               # CALL SYMPUT('REPTYEAR', PUT(REPTDATE,YEAR2.))
-RDATE = _reptdate_values.ddmmyy8                   # CALL SYMPUT('RDATE', PUT(REPTDATE,DDMMYY8.))
-PREPTMON = f"{_prvrptdate.month:02d}"              # CALL SYMPUT('PREPTMON', PUT(MONTH(PRVRPTDATE),Z2.))
-PPREPTMON = f"{_pprvrptdate.month:02d}"            # CALL SYMPUT('PPREPTMON', PUT(MONTH(PPRVRPTDATE),Z2.))
+REPTMON     = f"{REPTDATE_VAL.month:02d}"           # CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE),Z2.))
+REPTYEAR    = REPTDATE_VAL.strftime("%y")           # CALL SYMPUT('REPTYEAR', PUT(REPTDATE,YEAR2.))
+RDATE       = REPTDATE_VAL.strftime("%d/%m/%y")     # CALL SYMPUT('RDATE', PUT(REPTDATE,DDMMYY8.))
+PREPTMON    = f"{_prvrptdate.month:02d}"            # CALL SYMPUT('PREPTMON', PUT(MONTH(PRVRPTDATE),Z2.))
+PPREPTMON   = f"{_pprvrptdate.month:02d}"           # CALL SYMPUT('PPREPTMON', PUT(MONTH(PPRVRPTDATE),Z2.))
+
+REPORT_FILE = OUTPUT_DIR / "output" / "EPCU" / "report" / f"PIBB_EPCU_PART1_{REPTMON}.txt"     # SAP.PIBB.EPCU.PART1(+1)
 
 # ============================================================================
 # FORMAT DICTIONARIES  (PROC FORMAT equivalents)
@@ -143,19 +169,17 @@ def _parse_implied_decimal(raw: str, decimals: int) -> Optional[float]:
 
 
 def _parse_ddmmyy8(raw: str) -> Optional[date]:
-    """DDMMYY8. informat with OPTIONS YEARCUTOFF=1930 (delimited or plain)."""
-    s = raw.strip()
-    if not s:
-        return None
-    digits = re.sub(r"\D", "", s)
-    if len(digits) != 6:
-        return None
-    dd, mm, yy = int(digits[0:2]), int(digits[2:4]), int(digits[4:6])
-    year = 1900 + yy if yy >= 30 else 2000 + yy
+    """DDMMYY8. informat with YEARCUTOFF=1930 (dd/mm/yy, ddmmyy or ddmmyyyy)."""
+    digits = re.sub(r"\D", "", raw.strip())
     try:
-        return date(year, mm, dd)
+        if len(digits) == 8:
+            return date(int(digits[4:8]), int(digits[2:4]), int(digits[0:2]))
+        if len(digits) == 6:
+            yy = int(digits[4:6])
+            return date(1900 + yy if yy >= 30 else 2000 + yy, int(digits[2:4]), int(digits[0:2]))
     except ValueError:
         return None
+    return None
 
 
 # ============================================================================
@@ -163,23 +187,57 @@ def _parse_ddmmyy8(raw: str) -> Optional[date]:
 # DPLD.DPLD&REPTMON / &PREPTMON / &PPREPTMON  ->  idpld<mm>.sas7bdat
 # (PIBB prefix "i" prepended to the PBB filename per project convention.)
 # ============================================================================
+def _sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_SIZE) -> None:
+    """Chunked .sas7bdat -> Parquet (schema locked on first chunk)."""
+    writer, schema = None, None
+    try:
+        for chunk in pd.read_sas(str(src), encoding="latin1", chunksize=chunk_rows):
+            for col in chunk.columns[chunk.dtypes == object]:
+                chunk[col] = chunk[col].astype("string")
+            table = pa.Table.from_pandas(chunk, preserve_index=False)
+            if writer is None:
+                schema = table.schema
+                writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
+            else:
+                table = table.cast(schema, safe=False)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
+
+
 def _load_dpld(mon: str) -> pl.DataFrame:
-    path = INPUT_DIR / f"idpld{mon}.sas7bdat"
-    pdf = pd.read_sas(path, encoding="latin1")
-    return pl.from_pandas(pdf)
+    src = INPUT_DIR / "LOANDISB" / f"idpld{mon}.sas7bdat"
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:      # parquet is removed on exit
+        tmp_pq = Path(tmp) / f"idpld{mon}.parquet"
+        _sas_to_parquet(src, tmp_pq)
+        con = duckdb.connect()
+        try:
+            df = con.execute(f"SELECT * FROM read_parquet('{tmp_pq.as_posix()}')").pl()
+        finally:
+            con.close()
+    df = df.rename({c: c.upper() for c in df.columns})
+
+    # TRANDT may arrive as datetime (SAS date format) or as raw SAS day-number
+    dt = df.schema["TRANDT"]
+    if dt == pl.Date:
+        trandt = pl.col("TRANDT")
+    elif isinstance(dt, pl.Datetime):
+        trandt = pl.col("TRANDT").dt.date()
+    else:
+        trandt = (pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64))).cast(pl.Date)
+
+    return df.with_columns(
+        trandt.alias("TRANDT"),
+        pl.col("ACCTNO").cast(pl.Int64),
+        pl.col("TRANAMT").cast(pl.Float64).round(2),
+    )
 
 
+# DATA BNM.DPLD; SET DPLD.DPLD&REPTMON DPLD.DPLD&PREPTMON DPLD.DPLD&PPREPTMON;
 dpld = pl.concat(
     [_load_dpld(REPTMON), _load_dpld(PREPTMON), _load_dpld(PPREPTMON)],
     how="diagonal_relaxed",
-)
-
-dpld = dpld.with_columns(
-    [
-        (pl.date(1960, 1, 1) + pl.duration(days=pl.col("TRANDT").cast(pl.Int64))).alias("TRANDT"),
-        pl.col("ACCTNO").cast(pl.Int64),
-        pl.col("TRANAMT").cast(pl.Float64).round(2),
-    ]
 )
 
 # ============================================================================
@@ -291,7 +349,7 @@ def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
 
 
 # LNLD (RBP2.B033.LN.BNM.BNKCHEQ.RPT.QRTR GDG) - shared raw fixed-width file
-lnld_path = INPUT_DIR / "BNKCHEQ_RPT_QRTR.txt"
+lnld_path = INPUT_DIR / f"BNKCHEQ_RPT_QRTR_{REPTMON}.txt"
 lnld      = _load_lnld_fixed_width(lnld_path)
 
 lnld = lnld.with_columns(
@@ -312,13 +370,50 @@ print("LNLD rows :", lnld.height)
 print(dpld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head())
 print(lnld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head())
 
-tranx_bnm = lnld.join(
-    dpld,
-    on=["ACCTNO", "TRANDT", "TRANAMT"],
-    how="inner",
-)
+# ============================================================================
+# PROC SORT + DATA BNM.TRANX
+# MERGE LNLD(IN=A) DPLD(IN=B); BY ACCTNO TRANDT TRANAMT; IF A & B;
+# SAS MERGE semantics: one-to-one pairing inside duplicate key groups, last row
+# reused when one side runs out; common columns take the DPLD value.
+# ============================================================================
+_KEYS = ["ACCTNO", "TRANDT", "TRANAMT"]
 
-print("TRANX rows :", tranx_bnm.height)
+
+def _sas_merge_ab(a_df: pl.DataFrame, b_df: pl.DataFrame, keys: list) -> pl.DataFrame:
+    """MERGE A(IN=A) B(IN=B); BY keys; IF A & B;  (row order inside a key group = input order)"""
+    a = a_df.with_columns(pl.int_range(pl.len()).over(keys).alias("_SA"),
+                          pl.len().over(keys).alias("_NA"))
+    b = b_df.with_columns(pl.int_range(pl.len()).over(keys).alias("_SB"),
+                          pl.len().over(keys).alias("_NB"))
+    j = a.join(b, on=keys, how="inner", suffix="_DPLD").filter(
+        (pl.col("_SA") == pl.col("_SB"))
+        | ((pl.col("_SA") == pl.col("_NA") - 1) & (pl.col("_SB") >= pl.col("_NA")))
+        | ((pl.col("_SB") == pl.col("_NB") - 1) & (pl.col("_SA") >= pl.col("_NB")))
+    )
+    dup = [c for c in b_df.columns if c in a_df.columns and c not in keys]   # later dataset wins
+    j = j.with_columns([pl.col(f"{c}_DPLD").alias(c) for c in dup])
+    return (j.drop([f"{c}_DPLD" for c in dup] + ["_NA", "_NB"])
+             .sort(keys + ["_SA", "_SB"])          # BNM.TRANX is saved sorted by the BY keys
+             .drop(["_SA", "_SB"]))
+
+
+tranx_bnm = _sas_merge_ab(lnld, dpld, _KEYS)
+
+
+def _write_bnm_datasets(datasets: dict) -> None:
+    """DATA BNM.DPLD / BNM.LNLD / BNM.TRANX -> .sas7bdat in BNM_DIR (SAP.PIBB.EPCUWH)."""
+    sas = saspy.SASsession()
+    try:
+        sas.saslib("BNM", path=str(BNM_DIR))
+        for name, df in datasets.items():
+            pdf = df.with_columns(pl.col("TRANDT").cast(pl.Datetime)).to_pandas()
+            sas.df2sd(pdf, table=name, libref="BNM", datetimes={"TRANDT": "date"})
+            print(f"[OUTPUT] BNM.{name}: {df.height:,} rows -> {BNM_DIR / (name.lower() + '.sas7bdat')}")
+    finally:
+        sas.endsas()
+
+
+_write_bnm_datasets({"DPLD": dpld, "LNLD": lnld, "TRANX": tranx_bnm})
 
 # ============================================================================
 # DATA TRANX -- FOR PIBB
@@ -403,7 +498,8 @@ def _render_report23_box(titles, rows):
 
 
 def _apply_asa(lines):
-    return [("1" if i == 0 else " ") + line for i, line in enumerate(lines)]
+    """ASA carriage control: '1' = new page (first line and every PAGE_LENGTH lines), ' ' = single space."""
+    return [("1" if i % PAGE_LENGTH == 0 else " ") + line for i, line in enumerate(lines)]
 
 
 # ============================================================================
@@ -428,7 +524,8 @@ _titles_1 = [
 _tran1_n = (
     tranx.group_by("TRNXDESC")
     .agg([pl.len().alias("UNIT"), pl.col("TRANAMT1").sum().alias("TRANAMT1")])
-    .sort("UNIT", descending=True)
+    .sort("TRNXDESC")
+    .sort("UNIT", descending=True, maintain_order=True)
     .with_row_index("COUNT", offset=1)
 )
 
@@ -455,7 +552,8 @@ _titles_2 = [
 _tran1_v = (
     tranx.group_by("TRNXDESC")
     .agg([pl.len().alias("UNIT"), pl.col("TRANAMT1").sum().alias("TRANAMT1")])
-    .sort("TRANAMT1", descending=True)
+    .sort("TRNXDESC")
+    .sort("TRANAMT1", descending=True, maintain_order=True)
     .with_row_index("COUNT", offset=1)
 )
 
@@ -477,20 +575,15 @@ _titles_3 = [
 
 report_lines: list[str] = []
 report_lines += _apply_asa(_render_report1_box(_titles_1, "CHEQUES ISSUED", _total_n, _total_sum))
-report_lines.append(" ")
 report_lines += _apply_asa(_render_report23_box(_titles_2, _tbl2.to_dicts()))
-report_lines.append(" ")
 report_lines += _apply_asa(_render_report23_box(_titles_3, _tbl3.to_dicts()))
 
 # ============================================================================
-# WRITE OUTPUT (output_date.py -> date-stamped filename, no extension)
+# WRITE OUTPUT
 # Output DSNs: SAP.PIBB.EPCUWH / SAP.PIBB.EPCU.PART1 (PIBB, differs from PBB)
 # ============================================================================
-output_path = build_output_file(OUTPUT_DIR, "EIIQEPC1", date_format="ddmmyy")
-report_file = output_path.with_suffix(".txt")
-
-with open(report_file, "w", encoding="latin1") as f:
+with open(REPORT_FILE, "w", encoding="latin1") as f:
     f.write("\n".join(report_lines) + "\n")
 
-print(f"[OUTPUT] Report written to: {report_file}")
+print(f"[OUTPUT] Report written to: {REPORT_FILE}")
 print("\n".join(report_lines))
