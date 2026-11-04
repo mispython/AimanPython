@@ -13,9 +13,9 @@ Notes
 * Report date comes from ctl_dwh_batch_dttm.sas7bdat (SOURCE_SYSTEM_CD = LN).
   This job runs on the first day of Jan/Apr/Jul/Oct, so the batch date is the
   last day of the previous month (e.g. 30-Sep) and the DPLD members read are
-  idpld09, idpld08 and idpld07 (REPTMON, PREPTMON, PPREPTMON).
-* DPLD (SAP.PIBB.EPCU.LOANDISB) is read from .sas7bdat via a temporary parquet
-  that is deleted after reading.
+  dpld09, dpld08 and dpld07 (REPTMON, PREPTMON, PPREPTMON).
+* DPLD (SAP.PBB.EPCU.LOANDISB, same input as PBB) is read from .sas7bdat via a
+  temporary parquet that is deleted after reading.
 * LNLD is a raw mainframe fixed-width flat file (RBP2.B033.LN.BNM.BNKCHEQ.RPT.QRTR),
   shared between PBB and PIBB, named BNKCHEQ_RPT_QRTR_<mm>.txt, read via
   byte-offset slicing in chunks. Only the COSTCTR filter differs from PBB:
@@ -106,6 +106,7 @@ PREPTMON    = f"{_prvrptdate.month:02d}"            # CALL SYMPUT('PREPTMON', PU
 PPREPTMON   = f"{_pprvrptdate.month:02d}"           # CALL SYMPUT('PPREPTMON', PUT(MONTH(PPRVRPTDATE),Z2.))
 
 REPORT_FILE = OUTPUT_DIR / "output" / "EPCU" / "report" / f"PIBB_EPCU_PART1_{REPTMON}.txt"     # SAP.PIBB.EPCU.PART1(+1)
+REPORT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # FORMAT DICTIONARIES  (PROC FORMAT equivalents)
@@ -183,9 +184,9 @@ def _parse_ddmmyy8(raw: str) -> Optional[date]:
 
 
 # ============================================================================
-# DATA BNM.DPLD  -- combine three months of DPLD (SAP.PIBB.EPCU.LOANDISB)
-# DPLD.DPLD&REPTMON / &PREPTMON / &PPREPTMON  ->  idpld<mm>.sas7bdat
-# (PIBB prefix "i" prepended to the PBB filename per project convention.)
+# DATA BNM.DPLD  -- combine three months of DPLD (SAP.PBB.EPCU.LOANDISB)
+# DPLD.DPLD&REPTMON / &PREPTMON / &PPREPTMON  ->  dpld<mm>.sas7bdat
+# (same DPLD input as PBB: the EIIQEPC1 JCL reads SAP.PBB.EPCU.LOANDISB)
 # ============================================================================
 def _sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_SIZE) -> None:
     """Chunked .sas7bdat -> Parquet (schema locked on first chunk)."""
@@ -207,9 +208,9 @@ def _sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_SIZE) -> None:
 
 
 def _load_dpld(mon: str) -> pl.DataFrame:
-    src = INPUT_DIR / "LOANDISB" / f"idpld{mon}.sas7bdat"
+    src = INPUT_DIR / "LOANDISB" / f"dpld{mon}.sas7bdat"
     with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:      # parquet is removed on exit
-        tmp_pq = Path(tmp) / f"idpld{mon}.parquet"
+        tmp_pq = Path(tmp) / f"dpld{mon}.parquet"
         _sas_to_parquet(src, tmp_pq)
         con = duckdb.connect()
         try:
@@ -349,7 +350,7 @@ def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
 
 
 # LNLD (RBP2.B033.LN.BNM.BNKCHEQ.RPT.QRTR GDG) - shared raw fixed-width file
-lnld_path = INPUT_DIR / f"BNKCHEQ_RPT_QRTR_{REPTMON}.txt"
+lnld_path = INPUT_DIR / "textfile" / f"BNKCHEQ_RPT_QRTR_{REPTMON}.txt"
 lnld      = _load_lnld_fixed_width(lnld_path)
 
 lnld = lnld.with_columns(
@@ -357,18 +358,6 @@ lnld = lnld.with_columns(
     pl.col("TRANDT").cast(pl.Date),
     pl.col("TRANAMT").cast(pl.Float64).round(2),
 )
-
-# ============================================================================
-# PROC SORT + DATA BNM.TRANX
-# MERGE LNLD(IN=A) DPLD(IN=B); BY ACCTNO TRANDT TRANAMT; IF A & B;
-# Equivalent to an inner join on the BY keys; PROC SORT is not required
-# since polars' join does not depend on pre-sorted inputs.
-# ============================================================================
-print("DPLD rows :", dpld.height)
-print("LNLD rows :", lnld.height)
-
-print(dpld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head())
-print(lnld.select(["ACCTNO", "TRANDT", "TRANAMT"]).head())
 
 # ============================================================================
 # PROC SORT + DATA BNM.TRANX
