@@ -1,27 +1,144 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCTCS.py
-SAS Connection established. Subprocess id is 217097
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDEPDP_AII.py
+[REPTDATE] REPTDATE=2026-06-30 REPTYEAR=26 REPTMON=06 REPTDAY=30 RDATE=24287
+[INPUT] DPLD=/stgsrcsys/host/uat/AII/DPLD.txt
+[INPUT] DPLP=/stgsrcsys/host/uat/AII/DPLP.txt
+[INPUT] DPCC=/stgsrcsys/host/uat/AII/DPCC.txt
+
+--- DPLD (first 10 records) ---
+shape: (10, 8)
+┌────────────┬───────────┬─────────┬─────────┬─────────┬────────┬──────────┬──────────┐
+│ ACCTNO     ┆ TRANAMT   ┆ TRANDT  ┆ TRANTME ┆ ONLTRAN ┆ CHEQNO ┆ CURRCODE ┆ REPTDATE │
+│ ---        ┆ ---       ┆ ---     ┆ ---     ┆ ---     ┆ ---    ┆ ---      ┆ ---      │
+│ i64        ┆ f64       ┆ f64     ┆ i64     ┆ i64     ┆ i64    ┆ str      ┆ f64      │
+╞════════════╪═══════════╪═════════╪═════════╪═════════╪════════╪══════════╪══════════╡
+│ 3988041818 ┆ 17980.0   ┆ 24287.0 ┆ 75402   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+│ 3203786606 ┆ 9305655.5 ┆ 24287.0 ┆ 75422   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+│ 3076821810 ┆ 7.518e6   ┆ 24287.0 ┆ 75441   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+│ 3076821810 ┆ 9.765e6   ┆ 24287.0 ┆ 75459   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+│ 3211394625 ┆ 37854.7   ┆ 24287.0 ┆ 75526   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+│ 3112853124 ┆ 86862.0   ┆ 24287.0 ┆ 75547   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+│ 3193645627 ┆ 31650.0   ┆ 24287.0 ┆ 75612   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+│ 3193729513 ┆ 16000.0   ┆ 24287.0 ┆ 75628   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+│ 3078862012 ┆ 25050.0   ┆ 24287.0 ┆ 75649   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+│ 3218782521 ┆ 113518.0  ┆ 24287.0 ┆ 80444   ┆ 1698    ┆ 0      ┆ MYR      ┆ 24287.0  │
+└────────────┴───────────┴─────────┴─────────┴─────────┴────────┴──────────┴──────────┘
+
+--- DPLP (first 10 records) ---
+shape: (10, 8)
+┌────────────┬─────────┬─────────┬─────────┬─────────┬────────┬──────────┬──────────┐
+│ ACCTNO     ┆ TRANAMT ┆ TRANDT  ┆ TRANTME ┆ ONLTRAN ┆ CHEQNO ┆ CURRCODE ┆ REPTDATE │
+│ ---        ┆ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---    ┆ ---      ┆ ---      │
+│ i64        ┆ f64     ┆ f64     ┆ i64     ┆ i64     ┆ i64    ┆ str      ┆ f64      │
+╞════════════╪═════════╪═════════╪═════════╪═════════╪════════╪══════════╪══════════╡
+│ 2000103002 ┆ 550.0   ┆ 24287.0 ┆ 111527  ┆ 5300    ┆ 0      ┆       ┆ 24287.0  │
+│ 2001722935 ┆ 190.0   ┆ 24287.0 ┆ 143020  ┆ 5300    ┆ 0      ┆       ┆ 24287.0  │
+│ 2002605835 ┆ 302.9   ┆ 24287.0 ┆ 151251  ┆ 5310    ┆ 0      ┆       ┆ 24287.0  │
+│ 2003060603 ┆ 1850.0  ┆ 24287.0 ┆ 115850  ┆ 5300    ┆ 0      ┆       ┆ 24287.0  │
+│ 2003656625 ┆ 975.3   ┆ 24287.0 ┆ 143557  ┆ 5310    ┆ 0      ┆       ┆ 24287.0  │
+│ 2004156436 ┆ 300.0   ┆ 24287.0 ┆ 140656  ┆ 5300    ┆ 0      ┆       ┆ 24287.0  │
+│ 2004866426 ┆ 650.0   ┆ 24287.0 ┆ 123140  ┆ 5300    ┆ 0      ┆       ┆ 24287.0  │
+│ 2004911826 ┆ 2800.0  ┆ 24287.0 ┆ 102711  ┆ 5300    ┆ 0      ┆       ┆ 24287.0  │
+│ 2005888001 ┆ 7486.0  ┆ 24287.0 ┆ 122820  ┆ 5300    ┆ 0      ┆       ┆ 24287.0  │
+│ 2005908822 ┆ 1817.0  ┆ 24287.0 ┆ 155841  ┆ 5300    ┆ 0      ┆       ┆ 24287.0  │
+└────────────┴─────────┴─────────┴─────────┴─────────┴────────┴──────────┴──────────┘
+
+--- DPCC (first 10 records) ---
+shape: (10, 8)
+┌────────┬─────────┬─────────┬─────────┬─────────┬────────┬──────────┬──────────┐
+│ ACCTNO ┆ TRANAMT ┆ TRANDT  ┆ TRANTME ┆ ONLTRAN ┆ CHEQNO ┆ CURRCODE ┆ REPTDATE │
+│ ---    ┆ ---     ┆ ---     ┆ ---     ┆ ---     ┆ ---    ┆ ---      ┆ ---      │
+│ i64    ┆ f64     ┆ f64     ┆ i64     ┆ i64     ┆ i64    ┆ str      ┆ f64      │
+╞════════╪═════════╪═════════╪═════════╪═════════╪════════╪══════════╪══════════╡
+│ 9844   ┆ -300.0  ┆ 24287.0 ┆ 150410  ┆ 2231    ┆ 0      ┆ null     ┆ 24287.0  │
+│ 2213   ┆ 0.3     ┆ 24287.0 ┆ 140247  ┆ 2230    ┆ 0      ┆ null     ┆ 24287.0  │
+│ 8257   ┆ 0.5     ┆ 24287.0 ┆ 145720  ┆ 2230    ┆ 0      ┆ null     ┆ 24287.0  │
+│ 9209   ┆ 1.1     ┆ 24287.0 ┆ 93415   ┆ 2230    ┆ 0      ┆ null     ┆ 24287.0  │
+│ 1477   ┆ 3.3     ┆ 24287.0 ┆ 131021  ┆ 2230    ┆ 0      ┆ null     ┆ 24287.0  │
+│ 384    ┆ 4.1     ┆ 24287.0 ┆ 155838  ┆ 2230    ┆ 0      ┆ null     ┆ 24287.0  │
+│ 6273   ┆ 10.0    ┆ 24287.0 ┆ 113625  ┆ 2230    ┆ 0      ┆ null     ┆ 24287.0  │
+│ 7033   ┆ 15.0    ┆ 24287.0 ┆ 133315  ┆ 2230    ┆ 0      ┆ null     ┆ 24287.0  │
+│ 817    ┆ 21.0    ┆ 24287.0 ┆ 145301  ┆ 2230    ┆ 0      ┆ null     ┆ 24287.0  │
+│ 5706   ┆ 22.7    ┆ 24287.0 ┆ 141933  ┆ 2230    ┆ 0      ┆ null     ┆ 24287.0  │
+└────────┴─────────┴─────────┴─────────┴─────────┴────────┴──────────┴──────────┘
+SAS Connection established. Subprocess id is 173165
 
 
 21   
-22   libname CTL    '/sasdata/dwh/control'  ;
-NOTE: Libref CTL was successfully assigned as follows: 
+22   libname BNMLD    '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMLD'  ;
+NOTE: Libref BNMLD was successfully assigned as follows: 
       Engine:        V9 
-      Physical Name: /sasdata/dwh/control
+      Physical Name: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMLD
 23   
 
-25   
-26   libname CTCS    '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS'  ;
-NOTE: Libref CTCS was successfully assigned as follows: 
+80   
+81   libname BNMLP    '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMLP'  ;
+NOTE: Libref BNMLP was successfully assigned as follows: 
       Engine:        V9 
-      Physical Name: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBWCTCS
-27   
+      Physical Name: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMLP
+82   
 
-========== CHECKING REPORT DATE ==========
+139  
+140  libname BNMCC    '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMCC'  ;
+NOTE: Libref BNMCC was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMCC
+141  
+SAS Connection terminated. Subprocess id was 173165
 
-RAW HEADER:  HD20261101                                                                                                                           
+[OUTPUT] BNMLD monthly file : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMLD/dpld06.sas7bdat
+shape: (10_776, 8)
+┌──────────┬───────────┬─────────┬──────────┬─────────┬────────┬──────────┬──────────┐
+│ ACCTNO   ┆ TRANAMT   ┆ TRANDT  ┆ TRANTME  ┆ ONLTRAN ┆ CHEQNO ┆ CURRCODE ┆ REPTDATE │
+│ ---      ┆ ---       ┆ ---     ┆ ---      ┆ ---     ┆ ---    ┆ ---      ┆ ---      │
+│ f64      ┆ f64       ┆ f64     ┆ f64      ┆ f64     ┆ f64    ┆ str      ┆ f64      │
+╞══════════╪═══════════╪═════════╪══════════╪═════════╪════════╪══════════╪══════════╡
+│ 3.9880e9 ┆ 17980.0   ┆ 24287.0 ┆ 75402.0  ┆ 1698.0  ┆ 0.0    ┆ MYR      ┆ 24287.0  │
+│ 3.2038e9 ┆ 9305655.5 ┆ 24287.0 ┆ 75422.0  ┆ 1698.0  ┆ 0.0    ┆ MYR      ┆ 24287.0  │
+│ 3.0768e9 ┆ 7.518e6   ┆ 24287.0 ┆ 75441.0  ┆ 1698.0  ┆ 0.0    ┆ MYR      ┆ 24287.0  │
+│ 3.0768e9 ┆ 9.765e6   ┆ 24287.0 ┆ 75459.0  ┆ 1698.0  ┆ 0.0    ┆ MYR      ┆ 24287.0  │
+│ 3.2114e9 ┆ 37854.7   ┆ 24287.0 ┆ 75526.0  ┆ 1698.0  ┆ 0.0    ┆ MYR      ┆ 24287.0  │
+│ …        ┆ …         ┆ …       ┆ …        ┆ …       ┆ …      ┆ …        ┆ …        │
+│ 3.9992e9 ┆ 83000.0   ┆ 24287.0 ┆ 221517.0 ┆ 1698.0  ┆ 0.0    ┆ MYR      ┆ 24287.0  │
+│ 741.0    ┆ 173000.0  ┆ 24287.0 ┆ 221633.0 ┆ 2472.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 3.9992e9 ┆ 173600.0  ┆ 24287.0 ┆ 221633.0 ┆ 1698.0  ┆ 0.0    ┆ MYR      ┆ 24287.0  │
+│ 3599.0   ┆ 43600.0   ┆ 24287.0 ┆ 221809.0 ┆ 2472.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 3.9992e9 ┆ 43600.0   ┆ 24287.0 ┆ 221809.0 ┆ 1698.0  ┆ 0.0    ┆ MYR      ┆ 24287.0  │
+└──────────┴───────────┴─────────┴──────────┴─────────┴────────┴──────────┴──────────┘
 
-PARSED DATE:  2026-11-01
-TDATE:  2026-10-31
-REPTDATE (BATCH, SOURCE_SYSTEM_CD=SAS):  2026-11-01
-THE SAP.PBB.EPCU.CTCS IS NOT DATED 01/11/26
-SAS Connection terminated. Subprocess id was 217097
+[OUTPUT] BNMLP monthly file : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMLP/dplp06.sas7bdat
+shape: (2_840, 8)
+┌──────────┬─────────┬─────────┬──────────┬─────────┬────────┬──────────┬──────────┐
+│ ACCTNO   ┆ TRANAMT ┆ TRANDT  ┆ TRANTME  ┆ ONLTRAN ┆ CHEQNO ┆ CURRCODE ┆ REPTDATE │
+│ ---      ┆ ---     ┆ ---     ┆ ---      ┆ ---     ┆ ---    ┆ ---      ┆ ---      │
+│ f64      ┆ f64     ┆ f64     ┆ f64      ┆ f64     ┆ f64    ┆ str      ┆ f64      │
+╞══════════╪═════════╪═════════╪══════════╪═════════╪════════╪══════════╪══════════╡
+│ 2.0001e9 ┆ 550.0   ┆ 24287.0 ┆ 111527.0 ┆ 5300.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 2.0017e9 ┆ 190.0   ┆ 24287.0 ┆ 143020.0 ┆ 5300.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 2.0026e9 ┆ 302.9   ┆ 24287.0 ┆ 151251.0 ┆ 5310.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 2.0031e9 ┆ 1850.0  ┆ 24287.0 ┆ 115850.0 ┆ 5300.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 2.0037e9 ┆ 975.3   ┆ 24287.0 ┆ 143557.0 ┆ 5310.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ …        ┆ …       ┆ …       ┆ …        ┆ …       ┆ …      ┆ …        ┆ …        │
+│ 8.9350e9 ┆ 500.0   ┆ 24287.0 ┆ 114931.0 ┆ 5300.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 8.9350e9 ┆ 610.0   ┆ 24287.0 ┆ 93422.0  ┆ 5300.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 8.9354e9 ┆ 440.0   ┆ 24287.0 ┆ 100944.0 ┆ 5300.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 8.9734e9 ┆ 300.0   ┆ 24287.0 ┆ 93904.0  ┆ 5300.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+│ 8.9948e9 ┆ 380.0   ┆ 24287.0 ┆ 150340.0 ┆ 5300.0  ┆ 0.0    ┆ null     ┆ 24287.0  │
+└──────────┴─────────┴─────────┴──────────┴─────────┴────────┴──────────┴──────────┘
+
+[OUTPUT] BNMCC monthly file : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDEPDP/BNMCC/dpcc06.sas7bdat
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDEPDP_AII.py", line 364, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDEPDP_AII.py", line 360, in main
+    print(read_sas_dataset(cc_file))
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDEPDP_AII.py", line 163, in read_sas_dataset
+    return df.with_columns(
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/dataframe/frame.py", line 10314, in with_columns
+    self.lazy()
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 328, in wrapper
+    return function(*args, **kwargs)
+  File "/sas/python/virt_edw_dev/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2429, in collect
+    return wrap_df(ldf.collect(engine, callback))
+polars.exceptions.SchemaError: invalid series dtype: expected `String`, got `null` for series with name `CURRCODE`
