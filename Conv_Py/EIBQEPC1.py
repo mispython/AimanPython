@@ -34,7 +34,6 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import saspy
-from datetime import datetime
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -79,7 +78,7 @@ def get_batch_date(source_system_cd: str) -> date:
 
 
 REPTDATE_VAL: date = get_batch_date(BATCH_SOURCE)
-REPTDATE_VAL: date = date(2026, 10, 31)             # UAT testing date
+# REPTDATE_VAL: date = date(2026, 10, 31)             # UAT testing date
 
 # SREPTDATE = MDY(MONTH(REPTDATE),1,YEAR(REPTDATE))
 _sreptdate = REPTDATE_VAL.replace(day=1)
@@ -98,6 +97,7 @@ PPREPTMON   = f"{_pprvrptdate.month:02d}"           # CALL SYMPUT('PPREPTMON', P
 
 # SAP.PBB.EPCU.PART1(+1), inc. date in the name
 REPORT_FILE = OUTPUT_DIR / "output" / "EPCU" / "report" / f"PBB_EPCU_PART1_{REPTMON}.txt"
+REPORT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # FORMAT DICTIONARIES  (PROC FORMAT equivalents)
@@ -230,8 +230,7 @@ dpld = pl.concat(
     [_load_dpld(REPTMON), _load_dpld(PREPTMON), _load_dpld(PPREPTMON)],
     how="diagonal_relaxed",
 )
-    
-    
+
 # ============================================================================
 # DATA BNM.LNLD
 # INFILE LNLD MISSOVER; fixed-width mainframe flat file (~8GB), read in
@@ -335,6 +334,7 @@ def _load_lnld_fixed_width(path: Path) -> pl.DataFrame:
         return pl.DataFrame(schema=_LNLD_SCHEMA)
 
     return pl.concat(chunks, how="diagonal_relaxed")
+
 
 # LNLD (BNM.BNKCHEQ.RPT.QRTR GDG) - large fixed-width flat file
 lnld_path = INPUT_DIR / "textfile" / f"BNKCHEQ_RPT_QRTR_{REPTMON}.txt"
