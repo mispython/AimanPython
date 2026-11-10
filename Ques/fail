@@ -1,6 +1,174 @@
-LNLD_DATE_FMT = "%y%m%d"    # date format in the LNLD file name (yymmdd); change here if different
-LNLD_PATH = LNLD_DIR / f"LN_BNM_BNKCHEQ_RPT_{REPTDATE_VAL.strftime(LNLD_DATE_FMT)}.TXT"
+import duckdb
+import polars as pl
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import re
+import tempfile
+from datetime import date
+from pathlib import Path
+
+# NOTE: Report date comes from the DP batch control file; output name is built locally.
 
 
 
 
+# ============================================================================
+# REPORT DATE (from batch control file, SOURCE_SYSTEM_CD = DP)
+# ============================================================================
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "SAS"
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+REPTDATE  = get_batch_date(BATCH_SOURCE)
+REPTYEAR  = REPTDATE.strftime("%y")     # PUT(REPTDATE,YEAR2.)
+REPTMON   = REPTDATE.strftime("%m")     # PUT(MONTH(REPTDATE),Z2.)
+REPTYEAR2 = REPTDATE.strftime("%Y")     # PUT(REPTDATE,YEAR4.)
+
+
+
+
+# Output report: outputname_{yymmdd}.txt
+OUTPUT_CITLIST = OUTPUT_DIR / f"EIBMCITR_CITLIST_{REPTDATE.strftime('%y%m%d')}.txt"
+
+CHUNK_ROWS = 500_000
+TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
+
+
+
+
+def _sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
+    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
+    writer, schema = None, None
+    try:
+        for chunk in pd.read_sas(str(src), format="sas7bdat", encoding="latin1",
+                                 chunksize=chunk_rows):
+            chunk.columns = [str(c).upper().strip() for c in chunk.columns]
+            # Force text columns to string so an all-null first chunk doesn't lock a null type
+            for col in chunk.columns[chunk.dtypes == object]:
+                chunk[col] = chunk[col].astype("string")
+            table = pa.Table.from_pandas(chunk, preserve_index=False)
+            if writer is None:
+                schema = table.schema
+                writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
+            else:
+                table = table.cast(schema)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
+    if writer is None:
+        raise ValueError(f"No rows found in {src}")
+
+
+def _load_tlbtran_all() -> pl.DataFrame:
+    """Convert the 4 weekly TLBTRAN files to TEMPORARY Parquet, read them via DuckDB
+    with the TRANCODE filter, then delete the temporary Parquet files.
+
+    SAS equivalent:
+        DATA ALL;
+          SET BNM.TLBTRAN&REPTYEAR&REPTMON&WK1 ... &WK4;
+          IF TRANCODE IN (2222, 2223);
+        (PROC SORT BY REPTDATE BRANCH is not needed: the later aggregation is
+         order-independent.)
+
+    Only REPTDATE, BRANCH and CASHOUT are kept, since nothing else is used downstream.
+    """
+    sources = (INPUT_TLBTRAN_WK1, INPUT_TLBTRAN_WK2, INPUT_TLBTRAN_WK3, INPUT_TLBTRAN_WK4)
+
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        parquet_files = []
+        for idx, src in enumerate(sources, start=1):
+            dst = Path(tmp) / f"tlbtran_wk{idx}.parquet"
+            _sas_to_parquet(src, dst)
+            parquet_files.append(dst.as_posix())
+
+        file_list = "[" + ", ".join(f"'{p}'" for p in parquet_files) + "]"
+        con_tmp = duckdb.connect()
+        try:
+            df = con_tmp.execute(f"""
+                SELECT REPTDATE, BRANCH, CASHOUT
+                FROM read_parquet({file_list}, union_by_name = true)
+                WHERE TRY_CAST(TRANCODE AS BIGINT) IN (2222, 2223)
+            """).pl()
+        finally:
+            con_tmp.close()
+    # temp folder and Parquet files are removed here
+    return df
+
+
+
+
+def _build_month_summary(df: pl.DataFrame, con: duckdb.DuckDBPyConnection, file_month: str) -> pl.DataFrame:
+    """Aggregate CASHOUT and NOACCT to branch level for the detected file month.
+
+    SAS equivalent:
+        DATA ALL; SET ALL; BY REPTDATE BRANCH;
+          IF FIRST.REPTDATE OR FIRST.BRANCH THEN NOACCT = 1;
+
+        PROC SUMMARY DATA=ALL NWAY;
+          CLASS REPTDATE BRANCH; VAR CASHOUT NOACCT;
+          OUTPUT OUT=CIT SUM=AMOUNT&REPTMON NOACCT&REPTMON;
+
+        DATA CIT; SET CIT; IF AMOUNT&REPTMON = 0 THEN DELETE;
+
+        PROC SUMMARY DATA=CIT NWAY;
+          CLASS BRANCH; VAR AMOUNT&REPTMON NOACCT&REPTMON;
+          OUTPUT OUT=FINAL SUM=;
+
+    NOACCT is 1 on the first row of each (REPTDATE, BRANCH) group, so after the
+    first summary it equals 1 per surviving (REPTDATE, BRANCH) group.
+    """
+    amt_col    = f"AMOUNT{file_month}"
+    noacct_col = f"NOACCT{file_month}"
+
+    con.register("all_tx", df.to_arrow())
+
+    return con.execute(f"""
+        WITH daily AS (
+            SELECT CAST(BRANCH AS BIGINT) AS BRANCH,
+                   SUM(CASHOUT)           AS AMT
+            FROM all_tx
+            GROUP BY REPTDATE, BRANCH
+            HAVING SUM(CASHOUT) <> 0
+        )
+        SELECT BRANCH,
+               SUM(AMT) AS {amt_col},
+               COUNT(*) AS {noacct_col}
+        FROM daily
+        GROUP BY BRANCH
+        ORDER BY BRANCH
+    """).pl()
+
+
+
+
+    # ── Step 2: Load and filter weekly TLBTRAN files (temp Parquet via DuckDB) ──
+    print("\nStep 2: Loading and filtering tlbtran weekly files...")
+    df_all = _load_tlbtran_all()
+    print(f"  Transactions after TRANCODE filter: {len(df_all):,}")
+
+    # ── Step 3: Detect month from filenames ────────────────────────────────
+    print("\nStep 3: Detecting report month from TLBTRAN filenames...")
+    file_month = _detect_month_from_files()
+    print(f"  Detected month from files: {file_month}")
+
+    # ── Step 3b: NOACCT flag + aggregate current month to branch level ─────
+    print(f"\nStep 3b: Aggregating month {file_month} CASHOUT and NOACCT by BRANCH...")
+    df_month = _build_month_summary(df_all, con, file_month)
+    print(f"  Branches with non-zero CASHOUT this month: {len(df_month):,}")
+
+
+
+
+        _place(title_buf, 1, f"1CASH-IN-TRANSIT REPORT{REPTYEAR2}")
