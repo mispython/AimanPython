@@ -35,35 +35,35 @@ REPTYEAR2        = _rv4.reptyear                  # 4-digit year  (PUT(REPTDATE,
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input"  / "prod" / "EIBMCITR"
-CIT_DIR    = BASE_DIR / "input"  / "prod" / "EIBMCITR"
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMCITR"
+# Production Path
+INPUT_DIR  = Path("/dwh/dp_tlr")
+CIT_DIR    = Path("/host_pq/mis/parquet/cit")
+OUTPUT_DIR = Path("/host_pq/mis/output/textfile")
 
-# # Production paths (uncomment for prod)
-# INPUT_DIR  = Path("/dwh")
-# CIT_DIR    = Path("/sas/cit")
-# OUTPUT_DIR = Path("/host/mis/output/report")
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input"  / "prod" / "EIBMCITR"
+# CIT_DIR    = BASE_DIR / "input"  / "prod" / "EIBMCITR"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMCITR"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CIT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Branch reference fixed-width flat file
-INPUT_BRHFILE = INPUT_DIR / "DBRANCH.TXT"
-# INPUT_BRHFILE = Path("/stgsrcsys/host/ftpfiles") / "DBRANCH.txt"
+INPUT_BRHFILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
 # 4 weekly TLBTRAN input files for the current report month
-# INPUT_TLBTRAN_WK1 = INPUT_DIR / f"tlbtran{REPTMON}1{REPTYEAR}.sas7bdat"
-# INPUT_TLBTRAN_WK2 = INPUT_DIR / f"tlbtran{REPTMON}2{REPTYEAR}.sas7bdat"
-# INPUT_TLBTRAN_WK3 = INPUT_DIR / f"tlbtran{REPTMON}3{REPTYEAR}.sas7bdat"
-# INPUT_TLBTRAN_WK4 = INPUT_DIR / f"tlbtran{REPTMON}4{REPTYEAR}.sas7bdat"
-INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran04126.sas7bdat"
-INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran04226.sas7bdat"
-INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran04326.sas7bdat"
-INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran04426.sas7bdat"
+INPUT_TLBTRAN_WK1 = INPUT_DIR / f"tlbtran{REPTMON}1{REPTYEAR}.sas7bdat"
+INPUT_TLBTRAN_WK2 = INPUT_DIR / f"tlbtran{REPTMON}2{REPTYEAR}.sas7bdat"
+INPUT_TLBTRAN_WK3 = INPUT_DIR / f"tlbtran{REPTMON}3{REPTYEAR}.sas7bdat"
+INPUT_TLBTRAN_WK4 = INPUT_DIR / f"tlbtran{REPTMON}4{REPTYEAR}.sas7bdat"
+# INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran01126.sas7bdat"
+# INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran01226.sas7bdat"
+# INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran01326.sas7bdat"
+# INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran01426.sas7bdat"
 
 # Persistent yearly CIT accumulation parquet — one file per year
-CIT_YEAR_FILE = CIT_DIR / f"CIT_{REPTYEAR2}.parquet"
+CIT_YEAR_FILE = CIT_DIR / f"CIT{REPTYEAR2}.parquet"
 
 # Output report
 OUTPUT_CITLIST = build_output_file(OUTPUT_DIR, "EIBMCITR_CITLIST").with_suffix(".txt")
