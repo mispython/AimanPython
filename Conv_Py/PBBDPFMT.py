@@ -1,106 +1,191 @@
 #!/usr/bin/env python3
 """
 Program : PBBDPFMT.py
-Function: Product mapping and format definitions for banking deposit products
-          and customer codes used across multiple SAS programs.
+Purpose : Python conversion of the SAS include PBBDPFMT (PROC FORMAT library
+          for deposit products, customer codes, branch/state codes and balance
+          / maturity buckets) used across multiple SAS programs.
 
-Amendment history:
-- 11/05/04 RHA-A497 : Add product 182 (STAFF AL-WADIAH CA), 166 (CASH LINE FACILITY)
-- 2006-2020         : Multiple SMR entries for branch mergers, new branches, and product updates
-- Formats affected  : SADENOM, SAPROD (Savings)
-                      FDDENOM, FDPROD (Fixed Deposits)
-                      CADENOM, CAPROD (Current Accounts)
-                      FDORGMT (Fixed Deposit Original Term in Months)
+Formats converted (SAS name -> function):
+    SADENOM -> sadenom_format      SAPROD   -> saprod_format
+    FDDENOM -> fddenom_format      FDPROD   -> fdprod_format
+    FDPRODD -> fdprodd_format      FDPRD    -> fdprd_format
+    FCYTERM -> fcyterm_format      CADENOM  -> cadenom_format
+    CAPROD  -> caprod_format       DPCUSTCD -> dpcustcd_format
+    SACUSTCD-> sacustcd_format     FDCUSTCD -> fdcustcd_format
+    IFDCUSCD-> ifdcuscd_format     DDCUSTCD -> ddcustcd_format
+    STATECD -> statecd_format      FDORGMT  -> fdorgmt_format
+    FDRMMT  -> fdrmmt_format       RMFDORGMT-> rmfdorgmt_format
+    SDRANGE / S1RANGE / S2RANGE / DDRANGE -> sdrange_format / s1range_format /
+                                              s2range_format / ddrange_format
+    $RACE   -> race_format         BRANCHCD -> branchcd_format
 
-IMPORTANT: Any amendments to product mappings affect the formats listed above.
+Two calling styles are supported by this one module (both are kept so that
+every program already converted against either earlier version keeps working):
 
-SMR Amendment History (from original SAS):
-- SMR 2006-411  MAA3 15-05-06 MERGER 212->165, 229->151
-- SMR 2006-866  MAA3 15-07-06 MERGER 223->024
-- SMR 2006-1145 NPH  08-09-06 MERGE BRANCH 246 -> 146
-- SMR 2010-3206 AAB  10-01-11 MERGE BRANCH 200 -> 122
-- SMR 2006-1296 TGX  16-10-06 UNIT TRUST FD(368-372)
-- SMR 2007-0989 RHA  27-07-07 NEW BRANCH (BBT -268)
-- SMR 2007-1535 RHA  24-12-07 NEW BRANCH (MKA -269)
-- SMR 2008-0820 MAA3 1-08-08  NEW BRANCH (BPI -270)
-- SMR 2009-0679 HHH   9-07-09 NEW BRANCH (LHA -273)
-- SMR 2009-0785 HHH  21-08-09 NEW BRANCH (JPI -278)
-- SMR 2010-1070 NRA  15-04-10 NEW BRANCH (PTJ -279)
-- SMR 2010-1462 AAB  12-08-10 NEW BRANCH (KDA -280)
-- SMR 2010-2450 AAB  07-01-11 NEW BRANCH (PLT -281)
-- SMR 2010-3952 AAB  11-02-11 NEW BRANCH (PSE -283)
-- SMR 2010-4187 AAB  14-03-11 NEW BRANCH (PTT -282)
-- SMR 2012-2172 AAB  18-09-12 NEW BRANCH (BSP -284)
-- SMR 2012-2172 CWK  05-10-12 NEW BRANCH (BMC -285)
-- SMR 2012-2172 CWK  09-11-12 NEW BRANCH (BMC -286)
-- SMR 2011-1889 SKP  21-10-11 NEW FCY PRODUCT 440-444
-- SMR 2011-3893 SKP           WOF PRODUCT 32,33
-- SMR 2012-1088 CWK           OD  PRODUCT 133,134
-- SMR 2012-3575 SKP           NEW RMFD PRODUCT 300,INTPLAN 399
-- SMR 2013-34   JKA  15-02-13 NEW BRANCH (SUA-287)
-- SMR 2013-1407 JKA  16-07-13 NEW BRANCH (SPT-288)
-- SMR 2013-1408 NFJ  29-08-13 NEW BRANCH (TEE-289)
-- SMR 2013-502  MFM  13-03-13 NEW OD PRODUCT 184
-- SMR 2013-2100 SKP           NEW BRANCH (IPJ-702)
-- SMR 2014-83   RST  22-01-14 NEW INTEREST PLAN 747, 748
-- SMR 2014-85   NFJ  29-01-14 REMOVE INTEREST PLAN 640-659
-- SMR 2014-40   NFJ  07-02-14 NEW BRANCH (TDY-290)
-- SMR 2014-367  RST  25-02-14 NEW INTEREST PLAN 749, 750
-- SMR 2014-1932 SKP           NEW INTEREST PLAN 778,779
-- SMR 2014-1973 SKP           NEW INTEREST PLAN 862,863
-- SMR 2014-2223 TBC  18-09-14 NEW INTEREST PLAN 860,861
-- SMR 2014-2587 NFJ  28-10-14 NEW INT PLAN 854,855,858,859
-- SMR 2015-1588 TBC  10-06-15 NEW INT PLAN 850,851,852,853
-- SMR 2015-1190 TBC  23-05-15 NEW OD PRODUCT 185,186
-- SMR 2015-1842 HHH  06-07-15 NEW INT PLAN 891,892,893,894
-- SMR 2015-2841 NNR  21-10-15 NEW INT PLAN 333,334,335,336
-- SMR 2015-2679 TBC  28-10-15 NEW OD PRODUCT 72 413
-- SMR 2015-2790 LAC  19-11-15 NEW INT PLAN 895,896,897,898
-- SMR 2016-579  TBC  12-05-16 NEW OD PRODUCT 73
-- SMR 2016-1134 TBC  01-08-16 NEW SA PRODUCT 210
-- SMR 2016-2765 IFA  15-08-16 NEW SA PRODUCT 218
-- SMR 2016-2771 CWK  15-08-16 NEW CA PRODUCT 92
-- SMR 2016-2905 NFJ  09-08-16 UPD INTPLAN 778,779,862,863,895,337,338,339
-- SMR 2016-4627 TBC  14-12-16 RM CA 20 AND FCYCA 420:431
-- SMR 2016-4623              RM CA 21 AND FCYCA 450:454
-- SMR 2016-3894 TBC  09-11-16 PB UNION PAY PRODUCT 216
-- SMR 2017-65   CWK  23-01-17 NEW CA PRODUCT 77,78
-- SMR 2016-1621 MFM  21-02-17 NEW CA PRODUCT 40
-- SMR 2017-2496 TBC  20-06-17 EXCLUDE PRODUCT 482
-- SMR 2017-2401 TBC  22-06-17 FD & TDI 985,986,987,988
-- SMR 2017-2150 TBC  22-06-17 STEPUP FD/FD-I 968:984
-- SMR 2017-4237 SAM  07-11-17 FD RUSH FD/FD-I 900,901,902,993
-- SMR 2017-1646/1645 IFA 22-11-17 NEW BRANCH 292,291
-- SMR 2018-0138 SAM  19-01-18 NEW CA PRODUCT 42,43
-- SMR 2018-0254 SAM  25-01-18 PLUS FD 895,337,904,905,994,995,996,997
-                               & TDI   338,339,599,659,229,230,231,232
-- SMR 2018-2875 TBC  24-07-18 UPDATE INTPLAN 438
-- SMR 2018-3988 TBC  27-09-18 INTPLAN 379,380,381,382
-- SMR 2018-40   TBC  07-11-18 FCYCA 432:434
-- SMR 2018-3434 IFA  14-12-18 NEW BRANCH (BJL -296)
-- SMR 2019-1150 TBC  21-03-19 INTPLAN 447,540,541,559,568
-- SMR 2019-1148 TBC  22-03-19 INTPLAN 475,481,542,543,555 & 557
-- SMR 2019-0098 IFA  22-07-19 CST(187) MERGE WITH MIRI(050)
-- SMR 2019-3347 IFA  03-09-19 INT PLAN 575 PB RCB CAMPAIGN
-- SMR 2019-3358 skp  26-09-19 INT PLAN 575 PB RCB CAMPAIGN
-- SMR 2017-4296 IFA  23-11-17 ISLAMIC NEW CA PRODUCT 45
-- SMR 2020-2060 IFA  23-06-20 INT PLAN 575 RCB CENTRE
+    Style 1 (function per format):
+        from PBBDPFMT import saprod_format, fdprod_format, statecd_format
+        saprod_format(200)                 # '42120'
+        apply_format('SAPROD', 200)        # '42120'
+
+    Style 2 (SAS-like, generic):
+        import PBBDPFMT
+        PBBDPFMT.SAPROD(200)               # '42120'
+        PBBDPFMT.put(200, 'SAPROD.')       # '42120'
+        PBBDPFMT.apply_format(values, 'SAPROD')   # list / pandas / polars Series
+        PBBDPFMT.available_formats()
+        PBBDPFMT.FORMATS, PBBDPFMT.MACROS, PBBDPFMT.get_rules('SAPROD')
+
+    Command line:
+        python PBBDPFMT.py --list
+        python PBBDPFMT.py SAPROD 200
+        python PBBDPFMT.py --selfcheck
+
+SAS behaviour that is reproduced:
+    * OTHER also catches missing values (None / NaN), e.g. SADENOM(.) = 'D'.
+    * LOW does not include missing values, so a missing value in a range format
+      without OTHER (FDORGMT, FDRMMT, RMFDORGMT) is displayed as '.'.
+    * A value that matches nothing in a VALUE format without OTHER is displayed
+      as the value itself (RMFDORGMT).
+    * An INVALUE with no match returns missing (None), e.g. FCYTERM.
+    * Overlapping ranges use the first listed match.
+    * Character labels are returned without trailing blanks.
+
+TAKE NOTE : ANY AMENDMENTS TO PRODUCTS MAPPING, THESE FORMATS
+ARE AFFECTED : SADENOM, SAPROD (SAVINGS DEPOSITS)
+               FDDENOM, FDPROD (FIXED DEPOSITS)
+               CDDENOM, CAPROD (CURRENT ACCOUNTS)
+
+AMENDMENT  : 11/05/04
+DONE BY    : RHA - A497
+REASON : TO ADD & REMAP PRODUCT 182(STAFF AL-WADIAH CA)
+         AND 166(CASH LINE FACILITY) IN FISS RDAL REPORT
+         PRODUCT 166 -REMAP FRM BNM BIC CODE '42110' TO
+                      '42310'
+SMR 2006-411 MAA3 15-05-06 MERGER 212->165, 229->151
+SMR 2006-866 MAA3 15-07-06 MERGER 223->024
+SMR 2006-1145 NPH 08-09-06 MERGE BRANCH 246 -> 146
+SMR 2010-3206 AAB 10-01-11 MERGE BRANCH 200 -> 122
+SMR 2006-1296 TGX 16-10-06 UNIT TRUST FD(368-372)
+SMR 2007-0989 RHA 27-07-07 NEW BRANCH (BBT -268)
+SMR 2007-1535 RHA 24-12-07 NEW BRANCH (MKA -269)
+SMR 2008-0820 MAA3 1-08-08 NEW BRANCH (BPI -270)
+SMR 2009-0679 HHH  9-07-09 NEW BRANCH (LHA -273)
+SMR 2009-0785 HHH 21-08-09 NEW BRANCH (JPI -278)
+SMR 2010-1070 NRA 15-04-10 NEW BRANCH (PTJ -279)
+SMR 2010-1462 AAB 12-08-10 NEW BRANCH (KDA -280)
+SMR 2010-2450 AAB 07-01-11 NEW BRANCH (PLT -281)
+SMR 2010-3952 AAB 11-02-11 NEW BRANCH (PSE -283)
+SMR 2010-4187 AAB 14-03-11 NEW BRANCH (PTT -282)
+SMR 2012-2172 AAB 18-09-12 NEW BRANCH (BSP -284)
+SMR 2012-2172 CWK 05-10-12 NEW BRANCH (BMC -285)
+SMR 2012-2172 CWK 09-11-12 NEW BRANCH (BMC -286)
+SMR 2011-1889 SKP 21-10-11 NEW FCY PRODUCT 440-444
+SMR 2011-3893 SKP          WOF PRODUCT 32,33
+SMR 2012-1088 CWK          OD  PRODUCT 133,134
+SMR 2012-3575 SKP          NEW RMFD PRODUCT 300,INTPLAN 399
+SMR 2013-34   JKA 15-02-13 NEW BRANCH (SUA-287)
+SMR 2013-1407 JKA 16-07-13 NEW BRANCH (SPT-288)
+SMR 2013-1408 NFJ 29-08-13 NEW BRANCH (TEE-289)
+SMR 2013-502  MFM 13-03-13 NEW OD  PRODUCT 184
+SMR 2013-2100 SKP          NEW BRANCH (IPJ-702)
+SMR 2014-83   RST 22-01-14 NEW INTEREST PLAN 747, 748
+SMR 2014-85   NFJ 29-01-14 REMOVE INTEREST PLAN 640-659
+SMR 2014-40   NFJ 07-02-14 NEW BRANCH (TDY-290)
+SMR 2014-367  RST 25-02-14 NEW INTEREST PLAN 749, 750
+SMR 2014-1932 SKP          NEW INTEREST PLAN 778,779
+SMR 2014-1973 SKP          NEW INTEREST PLAN 862,863
+SMR 2014-2223 TBC 18-09-14 NEW INTEREST PLAN 860,861
+SMR 2014-2587 NFJ 28-10-14 NEW INT PLAN 854,855,858,859
+SMR 2015-1588 TBC 10-06-15 NEW INT PLAN 850,851,852,853
+SMR 2015-1190 TBC 23-05-15 NEW OD PRODUCT 185,186
+SMR 2015-1842 HHH 06-07-15 NEW INT PLAN 891,892,893,894
+SMR 2015-2841 NNR 21-10-15 NEW INT PLAN 333,334,335,336
+SMR 2015-2679 TBC 28-10-15 NEW OD PRODUCT 72 413
+SMR 2015-2790 LAC 19-11-15 NEW INT PLAN 895,896,897,898
+SMR 2016-579  TBC 12-05-16 NEW OD PRODUCT 73
+SMR 2016-1134 TBC 01-08-16 NEW SA PRODUCT 210
+SMR 2016-2765 IFA 15-08-16 NEW SA PRODUCT 218
+SMR 2016-2771 CWK 15-08-16 NEW CA PRODUCT 92
+SMR 2016-2905 NFJ 09-08-16 UPD INTPLAN 778,779,862,863,
+                               895,337,338,339
+SMR 2016-4627 TBC 14-12-16 RM CA 20 AND FCYCA 420:431
+    2016-4623              RM CA 21 AND FCYCA 450:454
+SMR 2016-3894 TBC 09-11-16 PB UNION PAY PRODUCT 216
+SMR 2017-65   CWK 23-01-17 NEW CA PRODUCT 77,78
+SMR 2016-1621 MFM 21-02-17 NEW CA PRODUCT 40
+SMR 2017-2496 TBC 20-06-17 EXCLUDE PRODUCT 482
+SMR 2017-2401 TBC 22-06-17 FD & TDI 985,986,987,988
+SMR 2017-2150 TBC 22-06-17 STEPUP FD/FD-I 968:984
+SMR 2017-4237 SAM 07-11-17 FD RUSH FD/FD-I 900,901,902,993
+SMR 2017-1646/1645 IFA 22-11-17 NEW BRANCH 292,291
+SMR 2018-0138 SAM 19-01-18 NEW CA PRODUCT 42,43
+SMR 2018-0254 SAM 25-01-18 PLUS FD 895,337,904,905,
+                                   994,995,996,997
+                           & TDI   338,339,599,659,
+                                   229,230,231,232
+SMR 2018-2875 TBC 24-07-18 UPDATE INTPLAN 438
+SMR 2018-3988 TBC 27-09-18 INTPLAN 379,380,381,382
+SMR 2018-40   TBC 07-11-18 FCYCA 432:434
+SMR 2018-3434 IFA 14-12-18 NEW BRANCH (BJL -296)
+SMR 2019-1150 TBC 21-03-19 INTPLAN 447,540,541,559,568
+SMR 2019-1148 TBC 22-03-19 INTPLAN 475,481,542,543,555 &557
+SMR 2019-0098 IFA 22-07-19 CST(187) MERGE WITH MIRI(050)
+SMR 2019-3347 IFA 03-09-19 INT PLAN 575 PB RCB CAMPAIGN
+SMR 2019-3358 skp 26-09-19 INT PLAN 575 PB RCB CAMPAIGN
+SMR 2017-4296 IFA 23-11-17 ISLAMIC NEW CA PRODUCT 45
+SMR 2020-2060 IFA 23-06-20 INT PLAN 575 RCB CENTRE
 """
 
+import argparse
+import math
+import sys
+from bisect import bisect_left
+from copy import deepcopy
 from typing import Dict, List, Optional, Set, Tuple
+
+
+# ============================================================================
+# SMALL HELPERS (SAS missing-value and BEST12. emulation)
+# ============================================================================
+
+def missing(value) -> bool:
+    """True for None / NaN / pandas NA (SAS numeric or character missing)."""
+    if value is None:
+        return True
+    try:
+        return bool(value != value)
+    except (TypeError, ValueError):
+        return True
+
+
+def best12(value) -> str:
+    """Approximate SAS BEST12. for numbers that match no format rule."""
+    if float(value).is_integer() and abs(value) < 1e12:
+        return str(int(value))
+    return format(value, '.12g')
 
 
 # ============================================================================
 # MACRO VARIABLE EQUIVALENTS
 # ============================================================================
 
-# ACE PRODUCTS CODES
+# %LET ACE=(40,42,43,150,151,152,181);  /* ACE PRODUCTS CODES */
 ACE: Set[int] = {40, 42, 43, 150, 151, 152, 181}
 
-# FCY (Foreign Currency) products - EIBWFCWH
+# %LET FCY=(350,351,...,362); /*EIBWFCWH*/
 FCY: Set[int] = {350, 351, 352, 353, 354, 355, 356, 357, 358, 360, 361, 362}
 
-# Current Account Product Codes (CURX)
+# %LET CURX=(050,051,055,056,057,058,060,064,065,068,069,167,169,168,
+#            085,086,087,088,089,066,067,070,071,073,096,097,061,090,
+#            091,092,093,094,095,100,101,102,106,108,109,110,111,112,
+#            113,114,115,116,117,118,119,120,121,122,123,124,125,133,
+#            134,135,137,138,170,150,151,152,153,154,155,156,157,158,
+#            159,160,161,162,163,164,165,166,174,175,176,177,178,179,
+#            180,181,182,183,189,190,191,192,193,194,195,196,197,198,
+#            081,082,083,084,184,185,186,131,132,187,188,020,021,077,
+#            040,041,042,043,078,074,35,36,37,38,39,46,47,48,49,75,
+#            076,023,024,025,045,026,027,013,014,015,016,017,018,019,
+#            003,004,005,006,007,008,009,010,011,012,022,081);
 CURX: Set[int] = {
     3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
     20, 21, 22, 23, 24, 25, 26, 27, 35, 36, 37, 38, 39, 40, 41, 42, 43,
@@ -114,14 +199,14 @@ CURX: Set[int] = {
     189, 190, 191, 192, 193, 194, 195, 196, 197, 198,
 }
 
-# Aliases matching the existing converted file's class-based names
+# Aliases (names used by programs converted earlier)
 ACE_PRODUCTS: Set[int] = ACE
 FCY_PRODUCTS: Set[int] = FCY
 CURX_PRODUCTS: Set[int] = CURX
 
 
 # ============================================================================
-# FORMAT: SADENOM — Savings Account Denomination (Islamic or Domestic)
+# FORMAT: SADENOM - SA DENOMINATION OF ISLAMIC OR DOMESTIC
 # ============================================================================
 
 _SADENOM_ISLAMIC: Set[int] = {204, 207, 214, 215, 218, 220, 221, 222, 223}
@@ -129,22 +214,16 @@ _SADENOM_ISLAMIC: Set[int] = {204, 207, 214, 215, 218, 220, 221, 222, 223}
 
 def sadenom_format(product_code: Optional[int]) -> str:
     """
-    Apply SADENOM format to product code.
-    Maps savings product codes to Islamic (I) or Domestic (D) classification.
-
-    Args:
-        product_code: Savings product code.
-
-    Returns:
-        'I' for Islamic products, 'D' for Domestic, '' if None.
+    SADENOM: savings product code -> 'I' (Islamic) or 'D' (Domestic).
+    OTHER = 'D' also applies to missing values.
     """
-    if product_code is None:
-        return ''
+    if missing(product_code):
+        return 'D'
     return 'I' if product_code in _SADENOM_ISLAMIC else 'D'
 
 
 # ============================================================================
-# FORMAT: SAPROD — Savings Account Product Code
+# FORMAT: SAPROD - SAVINGS PRODUCT CODE -> BNM CODE
 # ============================================================================
 
 _SAPROD_MAPPINGS: Dict[int, str] = {
@@ -187,26 +266,18 @@ _SAPROD_MAPPINGS: Dict[int, str] = {
     483: 'N',      # EGOLD INVESTMENT ACCOUNT (NON-STAFF)
     484: 'N',      # EGOLD INVESTMENT ACCOUNT (STAFF)
 }
+_SAPROD_OTHER = '42120'  # ALL OTHER SAVING CODES
 
 
 def saprod_format(product_code: Optional[int]) -> str:
-    """
-    Apply SAPROD format to product code.
-    Maps savings product codes to BNM account codes.
-
-    Args:
-        product_code: Savings product code.
-
-    Returns:
-        BNM account code string, or default '42120' for all other savings codes.
-    """
-    if product_code is None:
-        return '42120'
-    return _SAPROD_MAPPINGS.get(product_code, '42120')
+    """SAPROD: savings product code -> BNM code (OTHER = '42120')."""
+    if missing(product_code):
+        return _SAPROD_OTHER
+    return _SAPROD_MAPPINGS.get(product_code, _SAPROD_OTHER)
 
 
 # ============================================================================
-# FORMAT: FDDENOM — Fixed Deposit Denomination (Islamic or Domestic)
+# FORMAT: FDDENOM - FD DENOMINATION OF ISLAMIC OR DOMESTIC
 # ============================================================================
 
 _FDDENOM_ISLAMIC_RANGES: List[Tuple[int, int]] = [
@@ -226,26 +297,20 @@ _FDDENOM_ISLAMIC_SINGLES: Set[int] = {
 
 def fddenom_format(product_code: Optional[int]) -> str:
     """
-    Apply FDDENOM format to product code.
-    Maps FD product codes to Islamic (I) or Domestic (D) classification.
-
-    Args:
-        product_code: FD product code.
-
-    Returns:
-        'I' for Islamic products, 'D' for Domestic, '' if None.
+    FDDENOM: FD product code -> 'I' (Islamic) or 'D' (Domestic).
+    OTHER = 'D' also applies to missing values.
     """
-    if product_code is None:
-        return ''
+    if missing(product_code):
+        return 'D'
     is_islamic = (
-        any(start <= product_code <= end for start, end in _FDDENOM_ISLAMIC_RANGES)
-        or product_code in _FDDENOM_ISLAMIC_SINGLES
+        product_code in _FDDENOM_ISLAMIC_SINGLES
+        or any(start <= product_code <= end for start, end in _FDDENOM_ISLAMIC_RANGES)
     )
     return 'I' if is_islamic else 'D'
 
 
 # ============================================================================
-# FORMAT: FDPROD — Fixed Deposit Product Code
+# FORMAT: FDPROD - FIXED DEPOSIT PRODUCT (INTEREST PLAN) -> BNM CODE
 # ============================================================================
 
 _FDPROD_MAPPINGS: Dict[int, str] = {
@@ -305,17 +370,17 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     282: '42133',  # FD SHORT-TERM TD-I - 301-330 DAYS
     283: '42133',  # FD SHORT-TERM TD-I - 331-366 DAYS
     284: '42130',  # PLUS FD - 30 DAYS
-    285: '42130',  # PLUS FD - 31-60 DAYS
-    286: '42130',  # PLUS FD - 61-90 DAYS
-    287: '42130',  # PLUS FD - 91-120 DAYS
-    288: '42130',  # PLUS FD - 121-150 DAYS
-    289: '42130',  # PLUS FD - 151-180 DAYS
-    290: '42130',  # PLUS FD - 181-210 DAYS
-    291: '42130',  # PLUS FD - 211-240 DAYS
-    292: '42130',  # PLUS FD - 241-270 DAYS
-    293: '42130',  # PLUS FD - 271-300 DAYS
-    294: '42130',  # PLUS FD - 301-330 DAYS
-    295: '42130',  # PLUS FD - 331-365/366 DAYS
+    285: '42130',  # PLUS FD - 31 - 60 DAYS
+    286: '42130',  # PLUS FD - 61 - 90 DAYS
+    287: '42130',  # PLUS FD - 91 - 120 DAYS
+    288: '42130',  # PLUS FD - 121 - 150 DAYS
+    289: '42130',  # PLUS FD - 151 - 180 DAYS
+    290: '42130',  # PLUS FD - 181 - 210 DAYS
+    291: '42130',  # PLUS FD - 211 - 240 DAYS
+    292: '42130',  # PLUS FD - 241 - 270 DAYS
+    293: '42130',  # PLUS FD - 271 - 300 DAYS
+    294: '42130',  # PLUS FD - 301 - 330 DAYS
+    295: '42130',  # PLUS FD - 331 - 365/366 DAYS
     300: '42130',  # NORMAL FD - 1 MONTH
     301: '42130',  # NORMAL FD - 3 MONTHS
     302: '42130',  # NORMAL FD - 6 MONTHS
@@ -354,8 +419,8 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     335: '42133',  # PB eTDi - 6 MONTHS
     336: '42133',  # PB eTDi - 9 MONTHS
     337: '42130',  # PLUS FD STAFF (6MTH)
-    338: '42133',  # TDI REWARD - 6 MONTHS (N-STAFF)
-    339: '42133',  # TDI REWARD - 6 MONTHS (STAFF)
+    338: '42133',  # TDI REWARD - 6 MONTHS(N-STAFF)
+    339: '42133',  # TDI REWARD - 6 MONTHS(STAFF)
     340: '42132',  # FD MUDH - 1 MONTH
     341: '42132',  # FD MUDH - 3 MONTHS
     342: '49999',  # TERM INVESTMENT ACCT-I (3 MTH)
@@ -383,12 +448,12 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     364: '42130',  # FD GOLDEN 50 - 36 MTH
     365: '42130',  # FD GOLDEN 50 - 48 MTH
     366: '42130',  # FD GOLDEN 50 - 60 MTH
-    368: '42130',  # PB RCB PREMIER - 6 MTH
+    368: '42130',  # PB RCB PREMIER -  6 MTH
     369: '42130',  # UNIT TRUST FD-3 MTH
     370: '42130',  # UNIT TRUST FD-6 MTH
     371: '42130',  # PB RCB PREMIER - 12 MTH
     372: '42130',  # UNIT TRUST FD-12 MTHS
-    373: '42130',  # PB RCB PREMIER - 6 MTH
+    373: '42130',  # PB RCB PREMIER -  6 MTH
     374: '42130',  # PB RCB PREMIER - 12 MTH
     375: '42130',  # PB FD / TD-I - 3-MONTHS NON-STAFF (INDV)
     376: '42130',  # PB FD / TD-I - 3-MONTHS STAFF
@@ -400,7 +465,7 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     382: '42133',  # PB RCB FD / TD-I - 8-MTHS NON-STAFF (INDV)
     383: '42130',  # PB 3-MONTH RCB FD/TD-I - 03 MONTHS
     384: '42130',  # PB RCB PREMIER FD - 12 MONTHS
-    385: '42130',  # PLUS FD - 15 MONTHS
+    385: '42130',  # PLUS FD  - 15 MONTHS
     386: '42133',  # PB 3-MONTH RCB FD/TD-I - 03 MONTHS
     387: '42133',  # PB RCB PREMIER TD-I - 12 MONTHS
     388: '42133',  # PB RCB PREMIER HY TD-I N-STAFF R5:1  6MTH
@@ -411,9 +476,9 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     393: '42133',  # TD-I - 06 MONTHS
     394: '42133',  # TD-I - 12 MONTHS
     395: '42130',  # TWIN HAPPINESS FD CAMPAIGN - 12 MTH
-    396: '42130',  # FD PB WONDER - 7 MONTHS
+    396: '42130',  # FD PB WONDER- 7 MONTHS
     397: '42130',  # TWIN HAPPINESS FD CAMPAIGN - 12 MTH-STAFF
-    398: '42130',  # FD PB WONDER - 7 MTHS-STAFF
+    398: '42130',  # FD PB WONDER- 7 MTHS-STAFF
     399: '42130',  # PB FORTUNE-6 MONTHS
     400: '42130',  # NORMAL FD - 1 MONTH (S)
     401: '42130',  # NORMAL FD - 3 MONTHS (S)
@@ -428,21 +493,21 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     410: '42130',  # NORMAL FD - 48 MONTHS (S)
     411: '42130',  # NORMAL FD - 60 MONTHS (S)
     412: '42130',  # NORMAL FD - 2 MONTHS (S)
-    413: '42130',  # FD BONUS - 4 MONTHS
+    413: '42130',  # FD  BONUS  - 4 MONTHS
     414: '42130',  # NORMAL FD - 5 MONTHS (S)
     415: '42130',  # NORMAL FD - 7 MONTHS (S)
     416: '42130',  # NORMAL FD - 8 MONTHS (S)
     417: '42130',  # NORMAL FD - 10 MONTHS (S)
     418: '42130',  # NORMAL FD - 11 MONTHS (S)
     419: '42130',  # NORMAL FD - 27 MONTHS (S)
-    420: '42130',  # FD LIFE - 1 MONTH (S)
-    421: '42630',  # CNY - 1 MTH CATEGORY I
+    420: '42130',  # FD LIFE  - 1 MONTH   (S)
+    421: '42630',  # CNY - 1 MTH  CATEGORY  I
     422: '42133',  # PB eTDi NORMAL - 3 MONTHS
-    423: '42630',  # CNY - 3 MTHS CATEGORY I
+    423: '42630',  # CNY - 3 MTHS CATEGORY  I
     424: '42133',  # PB eTDi NORMAL STAFF - 3 MONTHS
-    425: '42630',  # CNY - 6 MTHS CATEGORY I
+    425: '42630',  # CNY - 6 MTHS CATEGORY  I
     426: '42133',  # PB eTDi NORMAL - 6 MONTHS
-    427: '42630',  # CNY - 12 MTHS CATEGORY I
+    427: '42630',  # CNY -12 MTHS CATEGORY  I
     428: '42133',  # PB eTDi NORMAL STAFF - 6 MONTHS
     429: '42630',  # SWISS FRANC (CHF) 1MTH
     430: '42630',  # SWISS FRANC (CHF) 3MTH
@@ -454,37 +519,37 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     436: '42630',  # THAI BAHT (THB) 12MTH
     437: '42630',  # PB FCY FD POWER(CAD) 1MTH
     438: '42130',  # PB JOURNEY GOLDEN SAVERS2 - 50FD - 3-MTH
-    439: '42630',  # ZAR 1 MONTH CAT II
-    440: '42630',  # ZAR 3 MONTHS CAT I
-    441: '42630',  # ZAR 3 MONTHS CAT II
-    442: '42630',  # ZAR 6 MONTHS CAT I
-    443: '42630',  # ZAR 6 MONTHS CAT II
+    439: '42630',  # ZAR  1 MONTH CAT II
+    440: '42630',  # ZAR  3 MONTHS CAT I
+    441: '42630',  # ZAR  3 MONTHS CAT II
+    442: '42630',  # ZAR  6 MONTHS CAT I
+    443: '42630',  # ZAR  6 MONTHS CAT II
     444: '42630',  # ZAR 12 MONTHS CAT I
     445: '42130',  # PB FD BONANZA - 3 MONTH
     446: '42630',  # CAD 12 MONTHS CAT I
     447: '42130',  # PB PB RCB TOP RATE FD CAMPAIGN
-    448: '42130',  # PB EFD - 3 MONTH (S)
-    449: '42130',  # PB EFD - 6 MONTH (S)
-    450: '42130',  # PB EFD - 9 MONTH (S)
-    451: '42130',  # PB EFD - 12 MONTH (S)
-    452: '42130',  # PB EFD - 15 MONTH (S)
-    453: '42132',  # FD MUDH - 6 MONTH (S)
-    454: '42132',  # FD MUDH - 7 MONTH (S)
-    455: '42132',  # FD MUDH - 8 MONTH (S)
-    456: '42132',  # FD MUDH - 9 MONTH (S)
-    457: '42132',  # FD MUDH - 10 MONTH (S)
-    458: '42132',  # FD MUDH - 11 MONTH (S)
-    459: '42132',  # FD MUDH - 12 MONTH (S)
+    448: '42130',  # PB EFD  -  3 MONTH  (S)
+    449: '42130',  # PB EFD  -  6 MONTH  (S)
+    450: '42130',  # PB EFD  -  9 MONTH  (S)
+    451: '42130',  # PB EFD  -  12 MONTH  (S)
+    452: '42130',  # PB EFD  -  15 MONTH  (S)
+    453: '42132',  # FD MUDH  -  6 MONTH  (S)
+    454: '42132',  # FD MUDH  -  7 MONTH  (S)
+    455: '42132',  # FD MUDH  -  8 MONTH  (S)
+    456: '42132',  # FD MUDH  -  9 MONTH  (S)
+    457: '42132',  # FD MUDH  - 10 MONTH  (S)
+    458: '42132',  # FD MUDH  - 11 MONTH  (S)
+    459: '42132',  # FD MUDH  - 12 MONTH  (S)
     460: '42130',  # FD GOLDEN 50 - 15 MTH (S)
-    461: '42132',  # FD MUDH - 13 MONTH (S)
-    462: '42132',  # FD MUDH - 14 MONTH (S)
-    463: '42132',  # FD MUDH - 15 MONTH (S)
-    464: '42132',  # FD MUDH - 18 MONTH (S)
-    465: '42132',  # FD MUDH - 21 MONTH (S)
-    466: '42132',  # FD MUDH - 24 MONTH (S)
-    467: '42132',  # FD MUDH - 36 MONTH (S)
-    468: '42132',  # FD MUDH - 48 MONTH (S)
-    469: '42132',  # FD MUDH - 60 MONTH (S)
+    461: '42132',  # FD MUDH  - 13 MONTH  (S)
+    462: '42132',  # FD MUDH  - 14 MONTH  (S)
+    463: '42132',  # FD MUDH  - 15 MONTH  (S)
+    464: '42132',  # FD MUDH  - 18 MONTH  (S)
+    465: '42132',  # FD MUDH  - 21 MONTH  (S)
+    466: '42132',  # FD MUDH  - 24 MONTH  (S)
+    467: '42132',  # FD MUDH  - 36 MONTH  (S)
+    468: '42132',  # FD MUDH  - 48 MONTH  (S)
+    469: '42132',  # FD MUDH  - 60 MONTH  (S)
     470: '42630',  # FD FCY USD* - 1 MONTH(S)
     471: '42630',  # FD FCY USD  - 1 MONTH(S)
     472: '42630',  # FD FCY USD* - 3 MONTH(S)
@@ -574,43 +639,43 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     557: '42133',  # PB TOP RATE TD-I STAFF - 6 MONTH(S)
     558: '42630',  # FD FCY HKD* - 6 MONTH(S)
     559: '42130',  # PB JOURNEY GOLDEN SAVERS2 - 50FD - 9-MTH
-    560: '42630',  # FD FCY USD - 12 MONTH(S)
-    561: '42630',  # FD FCY GBP - 12 MONTH(S)
-    562: '42630',  # FD FCY AUD - 12 MONTH(S)
-    563: '42630',  # FD FCY SGD - 12 MONTH(S)
-    564: '42630',  # FD FCY JPY - 12 MONTH(S)
-    565: '42630',  # FD FCY EUR - 12 MONTH(S)
-    566: '42630',  # FD FCY HKD - 12 MONTH(S)
-    567: '42630',  # FD FCY NZG - 1 MONTH(S) CAT I
+    560: '42630',  # FD FCY USD  - 12 MONTH(S)
+    561: '42630',  # FD FCY GBP  - 12 MONTH(S)
+    562: '42630',  # FD FCY AUD  - 12 MONTH(S)
+    563: '42630',  # FD FCY SGD  - 12 MONTH(S)
+    564: '42630',  # FD FCY JPY  - 12 MONTH(S)
+    565: '42630',  # FD FCY EUR  - 12 MONTH(S)
+    566: '42630',  # FD FCY HKD  - 12 MONTH(S)
+    567: '42630',  # FD FCY NZG  - 1 MONTH(S) CAT I
     568: '42130',  # PB JJS 2(6 MTH)-NON STAFF(INDV)
-    569: '42630',  # FD FCY NZG - 3 MONTH(S) CAT I
+    569: '42630',  # FD FCY NZG  - 3 MONTH(S) CAT I
     570: '42130',  # PB EFD NORMAL - 9 MONTHS
-    571: '42630',  # FD FCY NZG - 6 MONTH(S) CAT I
+    571: '42630',  # FD FCY NZG  - 6 MONTH(S) CAT I
     572: '42130',  # PB EFD NORMAL STAFF - 9 MONTHS
-    573: '42630',  # FD FCY NZG - 12 MONTH(S)
-    574: '42630',  # CAD 1 MONTHS CAT I
+    573: '42630',  # FD FCY NZG  - 12 MONTH(S)
+    574: '42630',  # CAD  1 MONTHS CAT I
     575: '42133',  # PIBB 13-MTH TERM DEPOSIT-I CAMP N-STAFF
-    576: '42630',  # CAD 3 MONTHS CAT I
+    576: '42630',  # CAD  3 MONTHS CAT I
     577: '42130',  # PB ENTERPRISE FD 6 MONTHS
-    578: '42630',  # CAD 6 MONTHS CAT I
-    579: '42630',  # CAD 6 MONTHS CAT II
-    580: '42132',  # FD MUDH - 30 MONTHS
-    581: '42132',  # FD MUDH - 33 MONTHS
-    582: '42132',  # FD MUDH - 39 MONTHS
-    583: '42132',  # FD MUDH - 42 MONTHS
-    584: '42132',  # FD MUDH - 45 MONTHS
-    585: '42132',  # FD MUDH - 51 MONTHS
-    586: '42132',  # FD MUDH - 54 MONTHS
-    587: '42132',  # FD MUDH - 57 MONTHS
-    588: '42132',  # FD MUDH - 13 MONTHS
-    589: '42132',  # FD MUDH - 14 MONTHS
-    590: '42132',  # FD MUDH - 16 MONTHS
-    591: '42132',  # FD MUDH - 17 MONTHS
-    592: '42132',  # FD MUDH - 19 MONTHS
-    593: '42132',  # FD MUDH - 20 MONTHS
+    578: '42630',  # CAD  6 MONTHS CAT I
+    579: '42630',  # CAD  6 MONTHS CAT II
+    580: '42132',  # FD MUDH  - 30 MONTHS
+    581: '42132',  # FD MUDH  - 33 MONTHS
+    582: '42132',  # FD MUDH  - 39 MONTHS
+    583: '42132',  # FD MUDH  - 42 MONTHS
+    584: '42132',  # FD MUDH  - 45 MONTHS
+    585: '42132',  # FD MUDH  - 51 MONTHS
+    586: '42132',  # FD MUDH  - 54 MONTHS
+    587: '42132',  # FD MUDH  - 57 MONTHS
+    588: '42132',  # FD MUDH  - 13 MONTHS
+    589: '42132',  # FD MUDH  - 14 MONTHS
+    590: '42132',  # FD MUDH  - 16 MONTHS
+    591: '42132',  # FD MUDH  - 17 MONTHS
+    592: '42132',  # FD MUDH  - 19 MONTHS
+    593: '42132',  # FD MUDH  - 20 MONTHS
     594: '42130',  # PB JOURNEY GOLDEN SAVERS 3-50FD 3M
-    595: '42132',  # FD MUDH - 23 MONTHS
-    596: '42132',  # FD MUDH - 25 MONTHS
+    595: '42132',  # FD MUDH  - 23 MONTHS
+    596: '42132',  # FD MUDH  - 25 MONTHS
     597: '42133',  # TDI
     598: '42133',  # TDI
     599: '42133',  # TDI NONSTAFF (12MTH)
@@ -657,7 +722,7 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     640: '42133',  # FD STAFF TD-I 1 MONTH(S)
     641: '42133',  # FD STAFF TD-I 2 MONTH(S)
     642: '42133',  # FD STAFF TD-I 3 MONTH(S)
-    643: '42133',  # FDI BONUS - 4 MONTHS
+    643: '42133',  # FDI BONUS  - 4 MONTHS
     644: '42133',  # FD STAFF TD-I 5 MONTH(S)
     645: '42133',  # FD STAFF TD-I 6 MONTH(S)
     646: '42133',  # FD STAFF TD-I 7 MONTH(S)
@@ -674,66 +739,66 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     657: '42133',  # FD STAFF TD-I 48 MONTH(S)
     658: '42133',  # FD STAFF TD-I 60 MONTH(S)
     659: '42133',  # TDI STAFF (12MTH)
-    660: '42132',  # FD MUDH - 1     PFB 340
-    661: '42132',  # FD MUDH - 2         341
-    662: '42132',  # FD MUDH - 3         342
-    663: '42132',  # FD MUDH - 4         343
-    664: '42132',  # FD MUDH - 5         344
-    665: '42132',  # FD MUDH - 6         342
-    666: '42132',  # FD MUDH - 7         342
-    667: '42132',  # FD MUDH - 8         342
-    668: '42132',  # FD MUDH - 9         343
-    669: '42132',  # FD MUDH - 10        343
-    670: '42132',  # FD MUDH - 11        343
-    671: '42132',  # FD MUDH - 12        344
-    672: '42132',  # FD MUDH - 13        344
-    673: '42132',  # FD MUDH - 14        344
-    674: '42132',  # FD MUDH - 15        345
-    675: '42132',  # FD MUDH - 16        345
-    676: '42132',  # FD MUDH - 17        345
-    677: '42132',  # FD MUDH - 18        346
-    678: '42132',  # FD MUDH - 19        346
-    679: '42132',  # FD MUDH - 20        346
-    680: '42132',  # FD MUDH - 21        347
-    681: '42132',  # FD MUDH - 22        348
-    682: '42132',  # FD MUDH - 23        348
-    683: '42132',  # FD MUDH - 24        348
-    684: '42132',  # FD MUDH - 25        348
-    685: '42132',  # FD MUDH - 26        348
-    686: '42132',  # FD MUDH - 27        348
-    687: '42132',  # FD MUDH - 28        348
-    688: '42132',  # FD MUDH - 29        348
-    689: '42132',  # FD MUDH - 30        348
-    690: '42132',  # FD MUDH - 31        348
-    691: '42132',  # FD MUDH - 32        348
-    692: '42132',  # FD MUDH - 33        348
-    693: '42132',  # FD MUDH - 34        348
-    694: '42132',  # FD MUDH - 35        348
-    695: '42132',  # FD MUDH - 36        349
-    696: '42132',  # FD MUDH - 37        349
-    697: '42132',  # FD MUDH - 38        349
-    698: '42132',  # FD MUDH - 39        349
-    699: '42132',  # FD MUDH - 40        349
-    700: '42132',  # FD MUDH - 41        349
-    701: '42132',  # FD MUDH - 42        349
-    702: '42132',  # FD MUDH - 43        349
-    703: '42132',  # FD MUDH - 44        349
-    704: '42132',  # FD MUDH - 45        349
-    705: '42132',  # FD MUDH - 46        349
-    706: '42132',  # FD MUDH - 47        349
-    707: '42132',  # FD MUDH - 48        350
-    708: '42132',  # FD MUDH - 49        350
-    709: '42132',  # FD MUDH - 50        350
-    710: '42132',  # FD MUDH - 51        350
-    711: '42132',  # FD MUDH - 52        350
-    712: '42132',  # FD MUDH - 53        350
-    713: '42132',  # FD MUDH - 54        350
-    714: '42132',  # FD MUDH - 55        350
-    715: '42132',  # FD MUDH - 56        350
-    716: '42132',  # FD MUDH - 57        350
-    717: '42132',  # FD MUDH - 58        350
-    718: '42132',  # FD MUDH - 59        350
-    719: '42132',  # FD MUDH - 60        351
+    660: '42132',  # FD MUDH  - 1     PFB 340
+    661: '42132',  # FD MUDH  - 2         341
+    662: '42132',  # FD MUDH  - 3         342
+    663: '42132',  # FD MUDH  - 4         343
+    664: '42132',  # FD MUDH  - 5         344
+    665: '42132',  # FD MUDH  - 6         342
+    666: '42132',  # FD MUDH  - 7         342
+    667: '42132',  # FD MUDH  - 8         342
+    668: '42132',  # FD MUDH  - 9         343
+    669: '42132',  # FD MUDH  - 10        343
+    670: '42132',  # FD MUDH  - 11        343
+    671: '42132',  # FD MUDH  - 12        344
+    672: '42132',  # FD MUDH  - 13        344
+    673: '42132',  # FD MUDH  - 14        344
+    674: '42132',  # FD MUDH  - 15        345
+    675: '42132',  # FD MUDH  - 16        345
+    676: '42132',  # FD MUDH  - 17        345
+    677: '42132',  # FD MUDH  - 18        346
+    678: '42132',  # FD MUDH  - 19        346
+    679: '42132',  # FD MUDH  - 20        346
+    680: '42132',  # FD MUDH  - 21        347
+    681: '42132',  # FD MUDH  - 22        348
+    682: '42132',  # FD MUDH  - 23        348
+    683: '42132',  # FD MUDH  - 24        348
+    684: '42132',  # FD MUDH  - 25        348
+    685: '42132',  # FD MUDH  - 26        348
+    686: '42132',  # FD MUDH  - 27        348
+    687: '42132',  # FD MUDH  - 28        348
+    688: '42132',  # FD MUDH  - 29        348
+    689: '42132',  # FD MUDH  - 30        348
+    690: '42132',  # FD MUDH  - 31        348
+    691: '42132',  # FD MUDH  - 32        348
+    692: '42132',  # FD MUDH  - 33        348
+    693: '42132',  # FD MUDH  - 34        348
+    694: '42132',  # FD MUDH  - 35        348
+    695: '42132',  # FD MUDH  - 36        349
+    696: '42132',  # FD MUDH  - 37        349
+    697: '42132',  # FD MUDH  - 38        349
+    698: '42132',  # FD MUDH  - 39        349
+    699: '42132',  # FD MUDH  - 40        349
+    700: '42132',  # FD MUDH  - 41        349
+    701: '42132',  # FD MUDH  - 42        349
+    702: '42132',  # FD MUDH  - 43        349
+    703: '42132',  # FD MUDH  - 44        349
+    704: '42132',  # FD MUDH  - 45        349
+    705: '42132',  # FD MUDH  - 46        349
+    706: '42132',  # FD MUDH  - 47        349
+    707: '42132',  # FD MUDH  - 48        350
+    708: '42132',  # FD MUDH  - 49        350
+    709: '42132',  # FD MUDH  - 50        350
+    710: '42132',  # FD MUDH  - 51        350
+    711: '42132',  # FD MUDH  - 52        350
+    712: '42132',  # FD MUDH  - 53        350
+    713: '42132',  # FD MUDH  - 54        350
+    714: '42132',  # FD MUDH  - 55        350
+    715: '42132',  # FD MUDH  - 56        350
+    716: '42132',  # FD MUDH  - 57        350
+    717: '42132',  # FD MUDH  - 58        350
+    718: '42132',  # FD MUDH  - 59        350
+    719: '42132',  # FD MUDH  - 60        351
     720: '42130',  # POWERINVEST FD   CAMPAIGN R2:1  3MTH
     721: '42130',  # POWERINVEST FD   CAMPAIGN R2:1  6MTH
     722: '42130',  # POWERINVEST FD   CAMPAIGN R2:1 12MTH
@@ -755,14 +820,14 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     738: '42133',  # PB PREMIER HY TD-I N-STAFF R5:1  6MTH
     739: '42133',  # PB PREMIER HY TD-I N-STAFF R5:1 12MTH
     740: '42133',  # RCB ELITE - 12
-    741: '42130',  # PB PROSPERITY RATES - 3 MONTHS
-    742: '42130',  # PB PROSPERITY RATES - 6 MONTHS
-    743: '42130',  # PB PROSPERITY RATES - 9 MONTHS
+    741: '42130',  # PB PROSPERITY RATES -  3 MONTHS
+    742: '42130',  # PB PROSPERITY RATES -  6 MONTHS
+    743: '42130',  # PB PROSPERITY RATES -  9 MONTHS
     744: '42130',  # PB PROSPERITY RATES - 12 MONTHS
-    745: '42130',  # PB SUPER FD RATES (NON-STAFF) - 1 MONTH(S)
-    746: '42130',  # PB SUPER FD RATES (STAFF)     - 1 MONTH(S)
-    747: '42130',  # PB SUPER FD RATES (NON-STAFF) - 1 MONTH(S)
-    748: '42130',  # PB SUPER FD RATES (STAFF)     - 1 MONTH(S)
+    745: '42130',  # PB SUPER FD RATES (NON-STAFF)- 1 MONTH(S)
+    746: '42130',  # PB SUPER FD RATES (STAFF)    - 1 MONTH(S)
+    747: '42130',  # PB SUPER FD RATES (NON-STAFF)- 1 MONTH(S)
+    748: '42130',  # PB SUPER FD RATES (STAFF)    - 1 MONTH(S)
     749: '42130',  # PB RCB FD / TD-I - 3-MTHS NON-STAFF (INDV)
     750: '42130',  # PB RCB FD / TD-I - 8-MTHS NON-STAFF (INDV)
     751: '42630',  # FD FCY USD* -  1 MONTH(S)
@@ -797,7 +862,7 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     780: '42133',  # FD TD-I & TD-I FI - 1 MONTH(S)
     781: '42133',  # FD TD-I & TD-I FI - 2 MONTH(S)
     782: '42133',  # FD TD-I & TD-I FI - 3 MONTH(S)
-    783: '42133',  # FDI BONUS - 4 MONTHS
+    783: '42133',  # FDI BONUS  - 4 MONTHS
     784: '42133',  # FD TD-I & TD-I FI - 5 MONTH(S)
     785: '42133',  # FD TD-I & TD-I FI - 6 MONTH(S)
     786: '42133',  # FD TD-I & TD-I FI - 7 MONTH(S)
@@ -995,26 +1060,18 @@ _FDPROD_MAPPINGS: Dict[int, str] = {
     996: '42130',  # PB JOURNEY GOLDEN ASSIST-50FD-6MTH-NSTAFF
     997: '42130',  # PB JOURNEY GOLDEN ASSIST-50FD-9MTH-NSTAFF
 }
+_FDPROD_OTHER = '42130'  # ALL OTHER FD CODES
 
 
 def fdprod_format(product_code: Optional[int]) -> str:
-    """
-    Apply FDPROD format to product code.
-    Maps FD product codes to BNM account codes.
-
-    Args:
-        product_code: FD product code.
-
-    Returns:
-        BNM account code string, or default '42130' for all other FD codes.
-    """
-    if product_code is None:
-        return '42130'
-    return _FDPROD_MAPPINGS.get(product_code, '42130')
+    """FDPROD: FD product (interest plan) code -> BNM code (OTHER = '42130')."""
+    if missing(product_code):
+        return _FDPROD_OTHER
+    return _FDPROD_MAPPINGS.get(product_code, _FDPROD_OTHER)
 
 
 # ============================================================================
-# FORMAT: FDPRODD — Fixed Deposit Product Code (Simplified/Alternative)
+# FORMAT: FDPRODD - FD PRODUCT (SIMPLIFIED / ALTERNATIVE)
 # ============================================================================
 
 _FDPRODD_MAPPINGS: Dict[int, str] = {
@@ -1031,77 +1088,54 @@ _FDPRODD_MAPPINGS: Dict[int, str] = {
     393: '42133',  # FD TERM (TD-I FI)
     394: '42132',  # FD ISTISMAR
 }
+_FDPRODD_OTHER = '42130'  # OTHERS, IF ANY
 
 
 def fdprodd_format(product_code: Optional[int]) -> str:
-    """
-    Apply FDPRODD format to product code (simplified FD product mapping).
-
-    Args:
-        product_code: FD product code.
-
-    Returns:
-        BNM account code string, or default '42130' for others.
-    """
-    if product_code is None:
-        return '42130'
-    return _FDPRODD_MAPPINGS.get(product_code, '42130')
+    """FDPRODD: simplified FD product mapping (OTHER = '42130')."""
+    if missing(product_code):
+        return _FDPRODD_OTHER
+    return _FDPRODD_MAPPINGS.get(product_code, _FDPRODD_OTHER)
 
 
 # ============================================================================
-# FORMAT: FDPRD — Fixed Deposit Product Type Classification
-# Maps product ranges to type codes: 'N' (Normal), 'L' (Life), 'M' (MGIA/Mudharabah)
+# FORMAT: FDPRD - FD PRODUCT TYPE ('N' NORMAL, 'L' LIFE, 'M' MGIA/MUDHARABAH)
 # ============================================================================
+
+_FDPRD_NORMAL_RANGES: List[Tuple[int, int]] = [
+    (300, 319), (400, 419), (368, 394), (500, 539), (600, 639), (741, 744),
+]
+_FDPRD_NORMAL_SINGLES: Set[int] = {445}
+_FDPRD_LIFE_RANGES: List[Tuple[int, int]] = [(320, 339), (420, 428), (540, 547)]
+_FDPRD_MGIA_RANGES: List[Tuple[int, int]] = [
+    (340, 359), (453, 459), (461, 469), (580, 599), (660, 740),
+]
+
 
 def fdprd_format(product_code: Optional[int]) -> str:
     """
-    Apply FDPRD format to product code.
-    Classifies FD products into type codes.
-
-    Type codes:
-        'N' : FD NORMAL   (300-319, 400-419, 368-394, 500-539, 600-639, 741-744, 445)
+    FDPRD: classify FD products into type codes.
+        'N' : FD NORMAL   (300-319, 400-419, 368-394, 500-539, 600-639,
+                           741-744, 445)
         'L' : FD LIFE     (320-339, 420-428, 540-547)
-        'M' : FD MGIA     (340-359, 453-459, 461-469, 580-599, 660-740)
-        ' ' : Other
-
-    Args:
-        product_code: FD product code.
-
-    Returns:
-        Single character type code, or ' ' if not matched.
+        'M' : FD MGIA     (340-359, 453-459, 461-469, 580-599) and
+              FD MGIA-PFB (660-740)
+        ' ' : OTHER (also missing)
     """
-    if product_code is None:
+    if missing(product_code):
         return ' '
-
-    # FD NORMAL
-    if (300 <= product_code <= 319 or
-            400 <= product_code <= 419 or
-            368 <= product_code <= 394 or
-            500 <= product_code <= 539 or
-            600 <= product_code <= 639 or
-            741 <= product_code <= 744 or
-            product_code == 445):
+    if (product_code in _FDPRD_NORMAL_SINGLES
+            or any(a <= product_code <= b for a, b in _FDPRD_NORMAL_RANGES)):
         return 'N'
-
-    # FD LIFE
-    if (320 <= product_code <= 339 or
-            420 <= product_code <= 428 or
-            540 <= product_code <= 547):
+    if any(a <= product_code <= b for a, b in _FDPRD_LIFE_RANGES):
         return 'L'
-
-    # FD MGIA / FD MGIA-PFB
-    if (340 <= product_code <= 359 or
-            453 <= product_code <= 459 or
-            461 <= product_code <= 469 or
-            580 <= product_code <= 599 or
-            660 <= product_code <= 740):
+    if any(a <= product_code <= b for a, b in _FDPRD_MGIA_RANGES):
         return 'M'
-
     return ' '
 
 
 # ============================================================================
-# FORMAT: FCYTERM — Foreign Currency Term based on Interest Plan (INVALUE)
+# INVALUE: FCYTERM - FCY TERM (MONTHS) BASED ON INTEREST PLAN
 # ============================================================================
 
 _FCYTERM_1_MONTH: Set[int] = {
@@ -1130,16 +1164,10 @@ _FCYTERM_12_MONTHS: Set[int] = {
 
 def fcyterm_format(intplan_code: Optional[int]) -> Optional[int]:
     """
-    Apply FCYTERM invalue format to interest plan code.
-    Maps FCY interest plan codes to term lengths in months.
-
-    Args:
-        intplan_code: Interest plan code.
-
-    Returns:
-        Term in months (1, 3, 6, or 12), or None if not matched.
+    FCYTERM invalue: FCY interest plan code -> term in months (1, 3, 6, 12).
+    Returns None (SAS missing) when the code matches no rule.
     """
-    if intplan_code is None:
+    if missing(intplan_code):
         return None
     if intplan_code in _FCYTERM_1_MONTH:
         return 1
@@ -1153,7 +1181,7 @@ def fcyterm_format(intplan_code: Optional[int]) -> Optional[int]:
 
 
 # ============================================================================
-# FORMAT: CADENOM — Current Account Denomination (Islamic or Domestic)
+# FORMAT: CADENOM - CA DENOMINATION OF ISLAMIC OR DOMESTIC
 # ============================================================================
 
 _CADENOM_ISLAMIC: Set[int] = {
@@ -1166,22 +1194,16 @@ _CADENOM_ISLAMIC: Set[int] = {
 
 def cadenom_format(product_code: Optional[int]) -> str:
     """
-    Apply CADENOM format to product code.
-    Maps current account product codes to Islamic (I) or Domestic (D).
-
-    Args:
-        product_code: CA product code.
-
-    Returns:
-        'I' for Islamic products, 'D' for Domestic, '' if None.
+    CADENOM: current account product code -> 'I' (Islamic) or 'D' (Domestic).
+    OTHER = 'D' also applies to missing values.
     """
-    if product_code is None:
-        return ''
+    if missing(product_code):
+        return 'D'
     return 'I' if product_code in _CADENOM_ISLAMIC else 'D'
 
 
 # ============================================================================
-# FORMAT: CAPROD — Current Account Product Code
+# FORMAT: CAPROD - CURRENT ACCOUNT PRODUCT CODE -> BNM CODE
 # ============================================================================
 
 _CAPROD_MAPPINGS: Dict[int, str] = {
@@ -1402,8 +1424,8 @@ _CAPROD_MAPPINGS: Dict[int, str] = {
     429: '42610',  # NZD TRADE
     430: '42610',  # THB TRADE
     431: '42610',  # CAD TRADE
-    432: '42610',  # THB SUB SNA - TRADE
-    433: '42610',  # IDR SUB SNA - TRADE
+    432: '42610',  # THB SUB SNA -TRADE
+    433: '42610',  # IDR SUB SNA -TRADE
     434: '42610',  # THB SUB SNA - INVESTMENT
     440: '42610',  # USD QARDH CURRENT ACCOUNT-I
     441: '42610',  # GBP QARDH CURRENT ACCOUNT-I
@@ -1425,445 +1447,205 @@ _CAPROD_MAPPINGS: Dict[int, str] = {
     549: 'N',      # GENERAL MASTER COLLECTION
     550: 'N',      # MYR MASTER NOTE
 }
+_CAPROD_OTHER = '42110'
 
 
 def caprod_format(product_code: Optional[int]) -> str:
-    """
-    Apply CAPROD format to product code.
-    Maps current account product codes to BNM account codes.
-
-    Args:
-        product_code: CA product code.
-
-    Returns:
-        BNM account code string, or default '42110' for all other CA codes.
-    """
-    if product_code is None:
-        return '42110'
-    return _CAPROD_MAPPINGS.get(product_code, '42110')
+    """CAPROD: current account product code -> BNM code (OTHER = '42110')."""
+    if missing(product_code):
+        return _CAPROD_OTHER
+    return _CAPROD_MAPPINGS.get(product_code, _CAPROD_OTHER)
 
 
 # ============================================================================
-# FORMAT: DPCUSTCD — Deposit Customer Code (Current/FD general)
+# CUSTOMER CODE FORMATS: DPCUSTCD, SACUSTCD, FDCUSTCD, IFDCUSCD, DDCUSTCD
+# All five formats list the same customer-code keys. Each maps a key to a
+# 2-character BNM customer code; the tables below state, per format, which keys
+# map to something other than themselves (verified against the SAS VALUE
+# statements). Keys not listed fall to OTHER ('78' for DPCUSTCD, SACUSTCD,
+# FDCUSTCD, IFDCUSCD; '79' for DDCUSTCD).
 # ============================================================================
 
-_DPCUSTCD_MAPPINGS: Dict[int, str] = {
-    1:  '01',   # BANK NEGARA MALAYSIA
-    2:  '02',   # COMMERCIAL BANKS
-    3:  '03',   # ISLAMIC BANKS
-    4:  '04',   # SUBSIDIARY STOCKBROKING COMPANIES
-    5:  '05',   # ASSOCIATE STOCKBROKING COMPANIES
-    6:  '06',   # OTHER STOCKBROKING COMPANIES
-    10: '10',   # DOMESTIC BANKING INSTITUTIONS
-    11: '11',   # FINANCE COMPANIES
-    12: '12',   # MERCHANT BANKS
-    13: '13',   # DISCOUNT HOUSES
-    15: '15',   # DOMESTIC NON-BANK ENTITIES
-    17: '17',   # CAGAMAS BERHAD
-    20: '20',   # DOMESTIC NON-BANK FINANCIAL INSTITUTIONS
-    30: '30',   # DOMESTIC OTHER NBFI
-    31: '31',   # SAVINGS INSTITUTIONS
-    32: '32',   # CREDIT CARD COMPANIES
-    33: '33',   # DEVELOPMENT FINANCE INSTITUTIONS
-    34: '34',   # BUILDING SOCIETIES
-    35: '35',   # CO-OPERATIVE SOCIETIES
-    36: '36',   # STOCKBROKING COMPANIES
-    37: '37',   # COMMODITY BROKERS
-    38: '38',   # CREDIT & LEASING COMPANIES
-    39: '39',   # UNIT TRUST COMPANIES
-    40: '40',   # INSURANCE AND INSURANCE RELATED COMPANIES
-    41: '41',   # DBE - BUMI CONTROLLED SME - MICRO
-    42: '42',   # DBE - BUMI CONTROLLED SME - SMALL
-    43: '43',   # DBE - BUMI CONTROLLED SME - MEDIUM
-    44: '44',   # DBE - NON-BUMI CONTROLLED SME - MICRO
-    45: '45',   # REHABILITATION INSTITUTIONS
-    46: '46',   # DBE - NON-BUMI CONTROLLED SME - SMALL
-    47: '47',   # DBE - NON-BUMI CONTROLLED SME - MEDIUM
-    48: '48',   # DBE - NON-RESIDENT CONTROL SME - MICRO
-    49: '49',   # DBE - NON-RESIDENT CONTROL SME - SMALL
-    51: '51',   # DBE - NON-RESIDENT CONTROL SME - MEDIUM
-    52: '52',   # DBE - GOVERNMENT CONTROLLED SME - MICRO
-    53: '53',   # DBE - GOVERNMENT CONTROLLED SME - SMALL
-    54: '54',   # DBE - GOVERNMENT CONTROLLED SME - MEDIUM
-    50: '50',   # RESIDENTS/DOMESTIC ENTITIES
-    57: '57',   # PETRONAS
-    59: '59',   # OTHER GOVERNMENT CONTROLLED DBE NIE
-    60: '60',   # DOMESTIC BUSINESS ENTERPRISES (DBE)
-    61: '61',   # BUMIPUTRA CONTROLLED DBE
-    62: '62',   # NON-BUMIPUTRA CONTROLLED DBE
-    63: '63',   # NON-RESIDENT CONTROLLED DBE
-    64: '64',   # GOVERNMENT CONTROLLED DBE
-    65: '65',   # SMALL MEDIUM INDUSTRIES (SMI)
-    66: '66',   # BUMIPUTRA CONTROLLED SMI
-    67: '67',   # NON-BUMIPUTRA CONTROLLED SMI
-    68: '68',   # NON-RESIDENT CONTROLLED SMI
-    69: '69',   # GOVERNMENT CONTROLLED SMI
-    70: '70',   # GOVERNMENT
-    71: '71',   # FEDERAL GOVERNMENT
-    72: '72',   # STATE GOVERNMENT
-    73: '73',   # LOCAL GOVERNMENT
-    74: '74',   # STATUTORY AUTHORITIES
-    75: '75',   # NFPE
-    76: '76',   # INDIVIDUALS
-    77: '77',   # BUMIPUTRA
-    78: '78',   # NON-BUMIPUTRA
-    79: '79',   # DOMESTIC OTHER ENTITIES NIE
-    80: '80',   # NON-RESIDENTS/FOREIGN ENTITIES
-    81: '81',   # FOREIGN BANKING INSTITUTIONS
-    82: '82',   # AFFILIATES ABROAD
-    83: '83',   # G7 COUNTRIES
-    84: '84',   # FOREIGN BANKS IN OTHER COUNTRIES
-    85: '85',   # FOREIGN NON-BANK ENTITIES
-    86: '86',   # FOREIGN BUSINESS ENTERPRISES
-    87: '87',   # FOREIGN BUSINESS ENTERPRISES - MICRO
-    88: '88',   # FOREIGN BUSINESS ENTERPRISES - SMALL
-    89: '89',   # FOREIGN BUSINESS ENTERPRISES - MEDIUM
-    90: '90',   # FOREIGN GOVERNMENTS
-    91: '91',   # FOREIGN CENTRAL BANKS
-    92: '92',   # FRGN DIPLOMATIC REPRESENTATION IN M'SIA
-    95: '95',   # FOREIGN INDIVIDUALS
-    96: '96',   # FOREIGNERS EMPLOYED/STUDYING IN M'SIA
-    98: '98',   # FOREIGN NON-COMMERCIAL INTERNATIONAL ORGANIZATION IN M'SIA
-    99: '99',   # FOREIGN OTHER ENTITIES NIE
+_CUSTCD_DESC: Dict[int, str] = {
+    1: 'BANK NEGARA MALAYSIA',
+    2: 'COMMERCIAL BANKS',
+    3: 'ISLAMIC BANKS',
+    4: 'SUBSIDIARY STOCKBROKING COMPANIES',
+    5: 'ASSOCIATE STOCKBROKING COMPANIES',
+    6: 'OTHER STOCKBROKING COMPANIES',
+    10: 'DOMESTIC BANKING INSTITUTIONS',
+    11: 'FINANCE COMPANIES',
+    12: 'MERCHANT BANKS',
+    13: 'DISCOUNT HOUSES',
+    15: 'DOMESTIC NON-BANK ENTITIES',
+    17: 'CAGAMAS BERHAD',
+    20: 'DOMESTIC NON-BANK FINANCIAL INSTITUTIONS',
+    30: 'DOMESTIC OTHER NBFI',
+    31: 'SAVINGS INSTITUTIONS',
+    32: 'CREDIT CARD COMPANIES',
+    33: 'DEVELOPMENT FINANCE INSTITUTIONS',
+    34: 'BUILDING SOCIETIES',
+    35: 'CO-OPERATIVE SOCIETIES',
+    36: 'STOCKBROKING COMPANIES',
+    37: 'COMMODITY BROKERS',
+    38: 'CREDIT & LEASING COMPANIES',
+    39: 'UNIT TRUST COMPANIES',
+    40: 'INSURANCE AND INSURANCE RELATED COMPANIES',
+    41: 'DBE - BUMI CONTROLLED SME - MICRO',
+    42: 'DBE - BUMI CONTROLLED SME - SMALL',
+    43: 'DBE - BUMI CONTROLLED SME - MEDIUM',
+    44: 'DBE - NON-BUMI CONTROLLED SME - MICRO',
+    45: 'REHABILITATION INSTITUTIONS',
+    46: 'DBE - NON-BUMI CONTROLLED SME - SMALL',
+    47: 'DBE - NON-BUMI CONTROLLED SME - MEDIUM',
+    48: 'DBE - NON-RESIDENT CONTROL SME - MICRO',
+    49: 'DBE - NON-RESIDENT CONTROL SME - SMALL',
+    51: 'DBE - NON-RESIDENT CONTROL SME - MEDIUM',
+    52: 'DBE - GOVERNMENT CONTROLLED SME - MICRO',
+    53: 'DBE - GOVERNMENT CONTROLLED SME - SMALL',
+    54: 'DBE - GOVERNMENT CONTROLLED SME - MEDIUM',
+    50: 'RESIDENTS/DOMESTIC ENTITIES',
+    57: 'PETRONAS',
+    59: 'OTHER GOVERNMENT CONTROLLED DBE NIE',
+    60: 'DOMESTIC BUSINESS ENTERPRISES (DBE)',
+    61: 'BUMIPUTRA CONTROLLED DBE',
+    62: 'NON-BUMIPUTRA CONTROLLED DBE',
+    63: 'NON-RESIDENT CONTROLLED DBE',
+    64: 'GOVERNMENT CONTROLLED DBE',
+    65: 'SMALL MEDIUM INDUSTRIES (SMI)',
+    66: 'BUMIPUTRA CONTROLLED SMI',
+    67: 'NON-BUMIPUTRA CONTROLLED SMI',
+    68: 'NON-RESIDENT CONTROLLED SMI',
+    69: 'GOVERNMENT CONTROLLED SMI',
+    70: 'GOVERNMENT',
+    71: 'FEDERAL GOVERNMENT',
+    72: 'STATE GOVERNMENT',
+    73: 'LOCAL GOVERNMENT',
+    74: 'STATUTORY AUTHORITIES',
+    75: 'NFPE',
+    76: 'INDIVIDUALS',
+    77: 'BUMIPUTRA',
+    78: 'NON-BUMIPUTRA',
+    79: 'DOMESTIC OTHER ENTITIES NIE',
+    80: 'NON-RESIDENTS/FOREIGN ENTITIES',
+    81: 'FOREIGN BANKING INSTITUTIONS',
+    82: 'AFFILIATES ABROAD',
+    83: 'G7 COUNTRIES',
+    84: 'FOREIGN BANKS IN OTHER COUNTRIES',
+    85: 'FOREIGN NON-BANK ENTITIES',
+    86: 'FOREIGN BUSINESS ENTERPRISES',
+    87: 'FOREIGN BUSINESS ENTERPRISES - MICRO',
+    88: 'FOREIGN BUSINESS ENTERPRISES - SMALL',
+    89: 'FOREIGN BUSINESS ENTERPRISES - MEDIUM',
+    90: 'FOREIGN GOVERNMENTS',
+    91: 'FOREIGN CENTRAL BANKS',
+    92: "FRGN DIPLOMATIC REPRESENTATION IN M'SIA",
+    95: 'FOREIGN INDIVIDUALS',
+    96: "FOREIGNERS EMPLOYED/STUDYING IN M'SIA",
+    98: "FOREIGN NON-COMMERCIAL INTERNATIONAL ORGANIZATION IN M'SIA",
+    99: 'FOREIGN OTHER ENTITIES NIE',
 }
+
+_CUSTCD_KEYS: Tuple[int, ...] = tuple(_CUSTCD_DESC)
+
+
+def _custcd_table(overrides: Dict[int, str]) -> Dict[int, str]:
+    """Identity mapping ('01', '02', ...) for every key, with per-format overrides."""
+    table = {key: f'{key:02d}' for key in _CUSTCD_KEYS}
+    table.update(overrides)
+    return table
+
+
+# DPCUSTCD: every key maps to itself.
+_DPCUSTCD_MAPPINGS: Dict[int, str] = _custcd_table({})
+
+# SACUSTCD
+_SACUSTCD_MAPPINGS: Dict[int, str] = _custcd_table({
+    1: '30', 2: '30', 3: '30',            # BNM / COMMERCIAL / ISLAMIC BANKS
+    10: '30', 11: '30', 12: '30', 13: '30',
+    15: '78',
+    17: '30', 20: '30',
+    36: '06',                             # STOCKBROKING COMPANIES
+    50: '78',
+    57: '78', 59: '78',
+    60: '78', 61: '78', 62: '78', 63: '78', 64: '78', 65: '78', 66: '78',
+    67: '78', 68: '78', 69: '78', 70: '78', 71: '78', 72: '78', 73: '78',
+    74: '78', 75: '78', 76: '78',
+    80: '86', 81: '86', 82: '86', 83: '86', 84: '86', 85: '86', 86: '86',
+})
+
+# FDCUSTCD (IFDCUSCD is identical)
+_FDCUSTCD_MAPPINGS: Dict[int, str] = _custcd_table({
+    10: '02',
+    15: '62',
+    20: '30',
+    36: '06',
+    50: '78',
+    60: '62',
+    65: '67',
+    70: '71',
+    76: '78',
+    80: '86',
+    81: '84',
+    85: '86',
+})
+
+# DDCUSTCD
+_DDCUSTCD_MAPPINGS: Dict[int, str] = _custcd_table({
+    2: '30', 3: '30',
+    10: '30', 11: '30',
+    15: '62',
+    20: '30',
+    36: '06',
+    50: '78',
+    60: '62',
+    65: '44', 66: '41', 67: '44', 68: '48', 69: '52',
+    70: '71',
+    76: '78',
+    80: '86', 81: '86', 82: '86', 83: '86', 84: '86', 85: '86', 86: '86',
+})
+
+_DPCUSTCD_OTHER = '78'
+_SACUSTCD_OTHER = '78'
+_FDCUSTCD_OTHER = '78'
+_DDCUSTCD_OTHER = '79'
 
 
 def dpcustcd_format(cust_code: Optional[int]) -> str:
-    """
-    Apply DPCUSTCD format to customer code.
-
-    Args:
-        cust_code: Customer code.
-
-    Returns:
-        2-character BNM customer code string, or default '78'.
-    """
-    if cust_code is None:
-        return '78'
-    return _DPCUSTCD_MAPPINGS.get(cust_code, '78')
-
-
-# ============================================================================
-# FORMAT: SACUSTCD — Savings Account Customer Code
-# ============================================================================
-
-_SACUSTCD_MAPPINGS: Dict[int, str] = {
-    1:  '30',   # BANK NEGARA MALAYSIA
-    2:  '30',   # COMMERCIAL BANKS
-    3:  '30',   # ISLAMIC BANKS
-    4:  '04',   # SUBSIDIARY STOCKBROKING COMPANIES
-    5:  '05',   # ASSOCIATE STOCKBROKING COMPANIES
-    6:  '06',   # OTHER STOCKBROKING COMPANIES
-    10: '30',   # DOMESTIC BANKING INSTITUTIONS
-    11: '30',   # FINANCE COMPANIES
-    12: '30',   # MERCHANT BANKS
-    13: '30',   # DISCOUNT HOUSES
-    15: '78',   # DOMESTIC NON-BANK ENTITIES
-    17: '30',   # CAGAMAS BERHAD
-    20: '30',   # DOMESTIC NON-BANK FINANCIAL INSTITUTIONS
-    30: '30',   # DOMESTIC OTHER NBFI
-    31: '31',   # SAVINGS INSTITUTIONS
-    32: '32',   # CREDIT CARD COMPANIES
-    33: '33',   # DEVELOPMENT FINANCE INSTITUTIONS
-    34: '34',   # BUILDING SOCIETIES
-    35: '35',   # CO-OPERATIVE SOCIETIES
-    36: '06',   # STOCKBROKING COMPANIES
-    37: '37',   # COMMODITY BROKERS
-    38: '38',   # CREDIT & LEASING COMPANIES
-    39: '39',   # UNIT TRUST COMPANIES
-    40: '40',   # INSURANCE AND INSURANCE RELATED COMPANIES
-    41: '41',   # DBE - BUMI CONTROLLED SME - MICRO
-    42: '42',   # DBE - BUMI CONTROLLED SME - SMALL
-    43: '43',   # DBE - BUMI CONTROLLED SME - MEDIUM
-    44: '44',   # DBE - NON-BUMI CONTROLLED SME - MICRO
-    45: '45',   # REHABILITATION INSTITUTIONS
-    46: '46',   # DBE - NON-BUMI CONTROLLED SME - SMALL
-    47: '47',   # DBE - NON-BUMI CONTROLLED SME - MEDIUM
-    48: '48',   # DBE - NON-RESIDENT CONTROL SME - MICRO
-    49: '49',   # DBE - NON-RESIDENT CONTROL SME - SMALL
-    50: '78',   # RESIDENTS/DOMESTIC ENTITIES
-    51: '51',   # DBE - NON-RESIDENT CONTROL SME - MEDIUM
-    52: '52',   # DBE - GOVERNMENT CONTROLLED SME - MICRO
-    53: '53',   # DBE - GOVERNMENT CONTROLLED SME - SMALL
-    54: '54',   # DBE - GOVERNMENT CONTROLLED SME - MEDIUM
-    57: '78',   # PETRONAS
-    59: '78',   # OTHER GOVERNMENT CONTROLLED DBE NIE
-    60: '78',   # DOMESTIC BUSINESS ENTERPRISES (DBE)
-    61: '78',   # BUMIPUTRA CONTROLLED DBE
-    62: '78',   # NON-BUMIPUTRA CONTROLLED DBE
-    63: '78',   # NON-RESIDENT CONTROLLED DBE
-    64: '78',   # GOVERNMENT CONTROLLED DBE
-    65: '78',   # SMALL MEDIUM INDUSTRIES (SMI)
-    66: '78',   # BUMIPUTRA CONTROLLED SMI
-    67: '78',   # NON-BUMIPUTRA CONTROLLED SMI
-    68: '78',   # NON-RESIDENT CONTROLLED SMI
-    69: '78',   # GOVERNMENT CONTROLLED SMI
-    70: '78',   # GOVERNMENT
-    71: '78',   # FEDERAL GOVERNMENT
-    72: '78',   # STATE GOVERNMENT
-    73: '78',   # LOCAL GOVERNMENT
-    74: '78',   # STATUTORY AUTHORITIES
-    75: '78',   # NFPE
-    76: '78',   # INDIVIDUALS
-    77: '77',   # BUMIPUTRA
-    78: '78',   # NON-BUMIPUTRA
-    79: '79',   # DOMESTIC OTHER ENTITIES NIE
-    80: '86',   # NON-RESIDENTS/FOREIGN ENTITIES
-    81: '86',   # FOREIGN BANKING INSTITUTIONS
-    82: '86',   # AFFILIATES ABROAD
-    83: '86',   # G7 COUNTRIES
-    84: '86',   # FOREIGN BANKS IN OTHER COUNTRIES
-    85: '86',   # FOREIGN NON-BANK ENTITIES
-    86: '86',   # FOREIGN BUSINESS ENTERPRISES
-    87: '87',   # FOREIGN BUSINESS ENTERPRISES - MICRO
-    88: '88',   # FOREIGN BUSINESS ENTERPRISES - SMALL
-    89: '89',   # FOREIGN BUSINESS ENTERPRISES - MEDIUM
-    90: '90',   # FOREIGN GOVERNMENTS
-    91: '91',   # FOREIGN CENTRAL BANKS
-    92: '92',   # FRGN DIPLOMATIC REPRESENTATION IN M'SIA
-    95: '95',   # FOREIGN INDIVIDUALS
-    96: '96',   # FOREIGNERS EMPLOYED/STUDYING IN M'SIA
-    98: '98',   # FOREIGN NON-COMMERCIAL INTERNATIONAL ORGANIZATION IN M'SIA
-    99: '99',   # FOREIGN OTHER ENTITIES NIE
-}
+    """DPCUSTCD: customer code -> 2-character BNM code (OTHER = '78')."""
+    if missing(cust_code):
+        return _DPCUSTCD_OTHER
+    return _DPCUSTCD_MAPPINGS.get(cust_code, _DPCUSTCD_OTHER)
 
 
 def sacustcd_format(cust_code: Optional[int]) -> str:
-    """
-    Apply SACUSTCD format to customer code.
-
-    Args:
-        cust_code: Customer code.
-
-    Returns:
-        2-character BNM customer code string, or default '78'.
-    """
-    if cust_code is None:
-        return '78'
-    return _SACUSTCD_MAPPINGS.get(cust_code, '78')
-
-
-# ============================================================================
-# FORMAT: FDCUSTCD — Fixed Deposit Customer Code
-# ============================================================================
-
-_FDCUSTCD_MAPPINGS: Dict[int, str] = {
-    1:  '01',   # BANK NEGARA MALAYSIA
-    2:  '02',   # COMMERCIAL BANKS
-    3:  '03',   # ISLAMIC BANKS
-    4:  '04',   # SUBSIDIARY STOCKBROKING COMPANIES
-    5:  '05',   # ASSOCIATE STOCKBROKING COMPANIES
-    6:  '06',   # OTHER STOCKBROKING COMPANIES
-    10: '02',   # DOMESTIC BANKING INSTITUTIONS
-    11: '11',   # FINANCE COMPANIES
-    12: '12',   # MERCHANT BANKS
-    13: '13',   # DISCOUNT HOUSES
-    15: '62',   # DOMESTIC NON-BANK ENTITIES
-    17: '17',   # CAGAMAS BERHAD
-    20: '30',   # DOMESTIC NON-BANK FINANCIAL INSTITUTIONS
-    30: '30',   # DOMESTIC OTHER NBFI
-    31: '31',   # SAVINGS INSTITUTIONS
-    32: '32',   # CREDIT CARD COMPANIES
-    33: '33',   # DEVELOPMENT FINANCE INSTITUTIONS
-    34: '34',   # BUILDING SOCIETIES
-    35: '35',   # CO-OPERATIVE SOCIETIES
-    36: '06',   # STOCKBROKING COMPANIES
-    37: '37',   # COMMODITY BROKERS
-    38: '38',   # CREDIT & LEASING COMPANIES
-    39: '39',   # UNIT TRUST COMPANIES
-    40: '40',   # INSURANCE AND INSURANCE RELATED COMPANIES
-    41: '41',   # DBE - BUMI CONTROLLED SME - MICRO
-    42: '42',   # DBE - BUMI CONTROLLED SME - SMALL
-    43: '43',   # DBE - BUMI CONTROLLED SME - MEDIUM
-    44: '44',   # DBE - NON-BUMI CONTROLLED SME - MICRO
-    45: '45',   # REHABILITATION INSTITUTIONS
-    46: '46',   # DBE - NON-BUMI CONTROLLED SME - SMALL
-    47: '47',   # DBE - NON-BUMI CONTROLLED SME - MEDIUM
-    48: '48',   # DBE - NON-RESIDENT CONTROL SME - MICRO
-    49: '49',   # DBE - NON-RESIDENT CONTROL SME - SMALL
-    50: '78',   # RESIDENTS/DOMESTIC ENTITIES
-    51: '51',   # DBE - NON-RESIDENT CONTROL SME - MEDIUM
-    52: '52',   # DBE - GOVERNMENT CONTROLLED SME - MICRO
-    53: '53',   # DBE - GOVERNMENT CONTROLLED SME - SMALL
-    54: '54',   # DBE - GOVERNMENT CONTROLLED SME - MEDIUM
-    57: '57',   # PETRONAS
-    59: '59',   # OTHER GOVERNMENT CONTROLLED DBE NIE
-    60: '62',   # DOMESTIC BUSINESS ENTERPRISES (DBE)
-    61: '61',   # BUMIPUTRA CONTROLLED DBE
-    62: '62',   # NON-BUMIPUTRA CONTROLLED DBE
-    63: '63',   # NON-RESIDENT CONTROLLED DBE
-    64: '64',   # GOVERNMENT CONTROLLED DBE
-    65: '67',   # SMALL MEDIUM INDUSTRIES (SMI)
-    66: '66',   # BUMIPUTRA CONTROLLED SMI
-    67: '67',   # NON-BUMIPUTRA CONTROLLED SMI
-    68: '68',   # NON-RESIDENT CONTROLLED SMI
-    69: '69',   # GOVERNMENT CONTROLLED SMI
-    70: '71',   # GOVERNMENT
-    71: '71',   # FEDERAL GOVERNMENT
-    72: '72',   # STATE GOVERNMENT
-    73: '73',   # LOCAL GOVERNMENT
-    74: '74',   # STATUTORY AUTHORITIES
-    75: '75',   # NFPE
-    76: '78',   # INDIVIDUALS
-    77: '77',   # BUMIPUTRA
-    78: '78',   # NON-BUMIPUTRA
-    79: '79',   # DOMESTIC OTHER ENTITIES NIE
-    80: '86',   # NON-RESIDENTS/FOREIGN ENTITIES
-    81: '84',   # FOREIGN BANKING INSTITUTIONS
-    82: '82',   # AFFILIATES ABROAD
-    83: '83',   # G7 COUNTRIES
-    84: '84',   # FOREIGN BANKS IN OTHER COUNTRIES
-    85: '86',   # FOREIGN NON-BANK ENTITIES
-    86: '86',   # FOREIGN BUSINESS ENTERPRISES
-    87: '87',   # FOREIGN BUSINESS ENTERPRISES - MICRO
-    88: '88',   # FOREIGN BUSINESS ENTERPRISES - SMALL
-    89: '89',   # FOREIGN BUSINESS ENTERPRISES - MEDIUM
-    90: '90',   # FOREIGN GOVERNMENTS
-    91: '91',   # FOREIGN CENTRAL BANKS
-    92: '92',   # FRGN DIPLOMATIC REPRESENTATION IN M'SIA
-    95: '95',   # FOREIGN INDIVIDUALS
-    96: '96',   # FOREIGNERS EMPLOYED/STUDYING IN M'SIA
-    98: '98',   # FOREIGN NON-COMMERCIAL INTERNATIONAL ORGANIZATION IN M'SIA
-    99: '99',   # FOREIGN OTHER ENTITIES NIE
-}
+    """SACUSTCD: customer code -> 2-character BNM code (OTHER = '78')."""
+    if missing(cust_code):
+        return _SACUSTCD_OTHER
+    return _SACUSTCD_MAPPINGS.get(cust_code, _SACUSTCD_OTHER)
 
 
 def fdcustcd_format(cust_code: Optional[int]) -> str:
-    """
-    Apply FDCUSTCD format to customer code.
+    """FDCUSTCD: customer code -> 2-character BNM code (OTHER = '78')."""
+    if missing(cust_code):
+        return _FDCUSTCD_OTHER
+    return _FDCUSTCD_MAPPINGS.get(cust_code, _FDCUSTCD_OTHER)
 
-    Args:
-        cust_code: Customer code.
-
-    Returns:
-        2-character BNM customer code string, or default '78'.
-    """
-    if cust_code is None:
-        return '78'
-    return _FDCUSTCD_MAPPINGS.get(cust_code, '78')
-
-
-# ============================================================================
-# FORMAT: IFDCUSCD — Islamic Fixed Deposit Customer Code
-# (Same mapping as FDCUSTCD)
-# ============================================================================
 
 def ifdcuscd_format(cust_code: Optional[int]) -> str:
-    """
-    Apply IFDCUSCD format to customer code.
-    Same mappings as FDCUSTCD.
-
-    Args:
-        cust_code: Customer code.
-
-    Returns:
-        2-character BNM customer code string, or default '78'.
-    """
+    """IFDCUSCD: same mapping as FDCUSTCD (OTHER = '78')."""
     return fdcustcd_format(cust_code)
 
 
-# ============================================================================
-# FORMAT: DDCUSTCD — Demand Deposit Customer Code
-# ============================================================================
-
-_DDCUSTCD_MAPPINGS: Dict[int, str] = {
-    1:  '01',   # BANK NEGARA MALAYSIA
-    2:  '30',   # COMMERCIAL BANKS
-    3:  '30',   # ISLAMIC BANKS
-    4:  '04',   # SUBSIDIARY STOCKBROKING COMPANIES
-    5:  '05',   # ASSOCIATE STOCKBROKING COMPANIES
-    6:  '06',   # OTHER STOCKBROKING COMPANIES
-    10: '30',   # DOMESTIC BANKING INSTITUTIONS
-    11: '30',   # FINANCE COMPANIES
-    12: '12',   # MERCHANT BANKS
-    13: '13',   # DISCOUNT HOUSES
-    15: '62',   # DOMESTIC NON-BANK ENTITIES
-    17: '17',   # CAGAMAS BERHAD
-    20: '30',   # DOMESTIC NON-BANK FINANCIAL INSTITUTIONS
-    30: '30',   # DOMESTIC OTHER NBFI
-    31: '31',   # SAVINGS INSTITUTIONS
-    32: '32',   # CREDIT CARD COMPANIES
-    33: '33',   # DEVELOPMENT FINANCE INSTITUTIONS
-    34: '34',   # BUILDING SOCIETIES
-    35: '35',   # CO-OPERATIVE SOCIETIES
-    36: '06',   # STOCKBROKING COMPANIES
-    37: '37',   # COMMODITY BROKERS
-    38: '38',   # CREDIT & LEASING COMPANIES
-    39: '39',   # UNIT TRUST COMPANIES
-    40: '40',   # INSURANCE AND INSURANCE RELATED COMPANIES
-    41: '41',   # DBE - BUMI CONTROLLED SME - MICRO
-    42: '42',   # DBE - BUMI CONTROLLED SME - SMALL
-    43: '43',   # DBE - BUMI CONTROLLED SME - MEDIUM
-    44: '44',   # DBE - NON-BUMI CONTROLLED SME - MICRO
-    45: '45',   # REHABILITATION INSTITUTIONS
-    46: '46',   # DBE - NON-BUMI CONTROLLED SME - SMALL
-    47: '47',   # DBE - NON-BUMI CONTROLLED SME - MEDIUM
-    48: '48',   # DBE - NON-RESIDENT CONTROL SME - MICRO
-    49: '49',   # DBE - NON-RESIDENT CONTROL SME - SMALL
-    50: '78',   # RESIDENTS/DOMESTIC ENTITIES
-    51: '51',   # DBE - NON-RESIDENT CONTROL SME - MEDIUM
-    52: '52',   # DBE - GOVERNMENT CONTROLLED SME - MICRO
-    53: '53',   # DBE - GOVERNMENT CONTROLLED SME - SMALL
-    54: '54',   # DBE - GOVERNMENT CONTROLLED SME - MEDIUM
-    57: '57',   # PETRONAS
-    59: '59',   # OTHER GOVERNMENT CONTROLLED DBE NIE
-    60: '62',   # DOMESTIC BUSINESS ENTERPRISES (DBE)
-    61: '61',   # BUMIPUTRA CONTROLLED DBE
-    62: '62',   # NON-BUMIPUTRA CONTROLLED DBE
-    63: '63',   # NON-RESIDENT CONTROLLED DBE
-    64: '64',   # GOVERNMENT CONTROLLED DBE
-    65: '44',   # SMALL MEDIUM INDUSTRIES (SMI)
-    66: '41',   # BUMIPUTRA CONTROLLED SMI
-    67: '44',   # NON-BUMIPUTRA CONTROLLED SMI
-    68: '48',   # NON-RESIDENT CONTROLLED SMI
-    69: '52',   # GOVERNMENT CONTROLLED SMI
-    70: '71',   # GOVERNMENT
-    71: '71',   # FEDERAL GOVERNMENT
-    72: '72',   # STATE GOVERNMENT
-    73: '73',   # LOCAL GOVERNMENT
-    74: '74',   # STATUTORY AUTHORITIES
-    75: '75',   # NFPE
-    76: '78',   # INDIVIDUALS
-    77: '77',   # BUMIPUTRA
-    78: '78',   # NON-BUMIPUTRA
-    79: '79',   # DOMESTIC OTHER ENTITIES NIE
-    80: '86',   # NON-RESIDENTS/FOREIGN ENTITIES
-    81: '86',   # FOREIGN BANKING INSTITUTIONS
-    82: '86',   # AFFILIATES ABROAD
-    83: '86',   # G7 COUNTRIES
-    84: '86',   # FOREIGN BANK IN OTHER COUNTRIES
-    85: '86',   # FOREIGN NON-BANK ENTITIES
-    86: '86',   # FOREIGN BUSINESS ENTERPRISES
-    87: '87',   # FOREIGN BUSINESS ENTERPRISES - MICRO
-    88: '88',   # FOREIGN BUSINESS ENTERPRISES - SMALL
-    89: '89',   # FOREIGN BUSINESS ENTERPRISES - MEDIUM
-    90: '90',   # FOREIGN GOVERNMENTS
-    91: '91',   # FOREIGN CENTRAL BANKS
-    92: '92',   # FRGN DIPLOMATIC REPRESENTATION IN M'SIA
-    95: '95',   # FOREIGN INDIVIDUALS
-    96: '96',   # FOREIGNERS EMPLOYED/STUDYING IN M'SIA
-    98: '98',   # FOREIGN NON-COMMERCIAL INTERNATIONAL ORGANIZATION IN M'SIA
-    99: '99',   # FOREIGN OTHER ENTITIES NIE
-}
-
-
 def ddcustcd_format(cust_code: Optional[int]) -> str:
-    """
-    Apply DDCUSTCD format to customer code.
-
-    Args:
-        cust_code: Customer code.
-
-    Returns:
-        2-character BNM customer code string, or default '79'.
-    """
-    if cust_code is None:
-        return '79'
-    return _DDCUSTCD_MAPPINGS.get(cust_code, '79')
+    """DDCUSTCD: customer code -> 2-character BNM code (OTHER = '79')."""
+    if missing(cust_code):
+        return _DDCUSTCD_OTHER
+    return _DDCUSTCD_MAPPINGS.get(cust_code, _DDCUSTCD_OTHER)
 
 
 # ============================================================================
-# FORMAT: STATECD — Branch State Code Mapping
+# FORMAT: STATECD - BRANCH CODE -> STATE CODE
 # ============================================================================
 
 _STATECD_MAPPINGS: Dict[int, str] = {
@@ -1965,7 +1747,7 @@ _STATECD_MAPPINGS: Dict[int, str] = {
     96:  'B',  # SERI GOMBAK (SGK)
     97:  'W',  # JALAN TUN H S LEE (HSL)
     98:  'J',  # TMN CENTURY (TCY)
-    # 101  = 'W'  # KAMPUNG BARU (KBR) — commented out in original SAS
+    # 101   = 'W'         KAMPUNG BARU (KBR)   -- commented out in the SAS source
     102: 'J',  # PARIT RAJA (PRJ)
     103: 'W',  # JINJANG (JJG)
     104: 'K',  # KUALA KETIL (KKL)
@@ -2033,7 +1815,7 @@ _STATECD_MAPPINGS: Dict[int, str] = {
     167: 'B',  # BANDAR BUKIT BERUNTUNG (BBG)
     168: 'W',  # KUALA LUMPUR CITY MAIN (KLC)
     169: 'W',  # CHANGKAT THAMBI DOLLAH (CTD)
-    170: 'B',  # PANDAN JAYA (PJA)
+    170: 'B',  # PANDAN JAYA  (PJA)
     171: 'P',  # JALAN MACALLISTER (JMR)
     172: 'M',  # TAMAN MALIM JAYA (TMJ)
     173: 'B',  # SUNGAI CHUA (SCA)
@@ -2048,7 +1830,7 @@ _STATECD_MAPPINGS: Dict[int, str] = {
     184: 'Q',  # JALAN PENRISSEN, KUCHING (JPN)
     185: 'Q',  # JALAN TUN HJ OPENG, KUCHING (JTO)
     186: 'Q',  # JALAN TUN ZAIDI, KUCHING (JTZ)
-    # 187  = 'Q'  # CHINA STREET, MIRI (CST) — commented out in original SAS
+    # 187   = 'Q'         CHINA STREET, MIRI (CST)   -- commented out in the SAS source
     188: 'Q',  # PELITA, MIRI (PLT)
     189: 'Q',  # BATU NIAH (BNH)
     190: 'Q',  # BINTANGOR (BTR)
@@ -2061,7 +1843,7 @@ _STATECD_MAPPINGS: Dict[int, str] = {
     197: 'W',  # TIONG NAM BRANCH, KL (TNM)
     198: 'W',  # TAMAN DESA, JLN KELANG LAMA (TDA)
     199: 'B',  # JALAN TAPAH, KLANG (JTH)
-    # 200  = 'B'  # JALAN SK10/4, SERI KEMBANGAN (JSK) — commented out in original SAS
+    # 200   = 'B'         JALAN SK10/4, SERI KEMBANGAN (JSK)   -- commented out in the SAS source
     201: 'B',  # PANDAMARAN, KLANG (PDA)
     202: 'B',  # RAWANG (RWG)
     203: 'B',  # SUNGAI JAROM (SJM)
@@ -2077,13 +1859,13 @@ _STATECD_MAPPINGS: Dict[int, str] = {
     215: 'J',  # JALAN KUKUP, PONTIAN KECHIL (JKP)
     216: 'J',  # SKUDAI (SKI)
     217: 'J',  # T. MUNSHI IBRAHIM, TAMPOI (TMB)
-    220: 'C',  # GENTING HIGHLANDS BRANCH (GHS)
-    221: 'B',  # TAMAN SENTOSA, KLANG (TSK)
-    222: 'J',  # TAMAN DESA CEMERLANG (TDC), ULU TIRAM
+    220: 'C',  # GENTING HIGHLANDS BRANCH  (GHS)
+    221: 'B',  # TAMAN SENTOSA, KLANG(TSK)
+    222: 'J',  # TAMAN DESA CEMERLANG(TDC),ULU TIRAM
     224: 'J',  # JALAN ABDULLAH, MUAR
     225: 'B',  # TAMAN INDAH, SELANGOR
     226: 'W',  # JALAN PASAR, KUALA LUMPUR
-    227: 'B',  # KAMPONG BARU, SG. BULOH, SELANGOR
+    227: 'B',  # KAMPONG BARU, SG.BULOH, SELANGOR
     228: 'S',  # INANAM, KOTA KINABALU
     230: 'W',  # SALAK SOUTH, KUALA LUMPUR
     231: 'M',  # BATU BERENDAM, MELAKA
@@ -2091,7 +1873,7 @@ _STATECD_MAPPINGS: Dict[int, str] = {
     233: 'C',  # BENTONG, PAHANG
     234: 'J',  # SIMPANG RENGAM, JOHORE
     235: 'B',  # SABAK BERNAM, SELANGOR
-    237: 'C',  # KUALA LIPIS (KLS)
+    237: 'C',  # KUALA LIPIS  (KLS)
     238: 'K',  # JALAN KOTA, ALOR SETAR (JKT)
     239: 'C',  # KEMAYAN, PAHANG (KMY)
     240: 'B',  # KAPAR, SELANGOR (KAP)
@@ -2118,18 +1900,18 @@ _STATECD_MAPPINGS: Dict[int, str] = {
     262: 'W',  # TAMAN CONNAUGHT KUALA LUMPUR (TCT)
     263: 'C',  # BENTA PAHANG (BTA)
     264: 'C',  # JALAN BESERAH PAHANG (JBH)
-    265: 'P',  # JALAN AIR ITAM PENANG (JAI)
+    265: 'P',  # JALAN AIR ITAM PENANG(JAI)
     266: 'P',  # JALAN DATUK KERAMAT PENANG (JDK)
     267: 'W',  # TMN TUN DR ISMAIL WILAYAH (TDI)
     268: 'B',  # BANDAR BUKIT TINGGI (BBT)
     269: 'W',  # MONT KIARA (MKA)
     270: 'B',  # BANDAR PUTERI PUCHONG (BPI)
-    273: 'Q',  # LI HUA SARAWAK (LHA)
-    274: 'Q',  # STUTONG, SARAWAK (STG)
-    275: 'Q',  # MEDAN SENTRAL, SARAWAK (MSL)
-    276: 'S',  # JALAN APAS, SABAH (JAS)
+    273: 'Q',  # LI HUA SARAWAK(LHA)
     277: 'D',  # WAKAF SIKU (WSU)
-    278: 'S',  # JALAN PANTAI SABAH (JPI)
+    278: 'S',  # JALAN PANTAI SABAH(JPI)
+    274: 'Q',  # STUTONG, SARAWAK(STG)
+    275: 'Q',  # MEDAN SENTRAL, SARAWAK(MSL)
+    276: 'S',  # JALAN APAS, SABAH (JAS)
     279: 'W',  # PUTRAJAYA (PTJ)
     280: 'B',  # KOTA DAMANSARA (KDA)
     281: 'Q',  # PELITA (PLT)
@@ -2137,7 +1919,7 @@ _STATECD_MAPPINGS: Dict[int, str] = {
     283: 'S',  # PRIMA SQUARE (PSE)
     284: 'W',  # BANDAR SRI PERMAISURI (BSP)
     285: 'B',  # BANDAR MAHKOTA CHERAS (BMC)
-    286: 'J',  # BUKIT INDAH BRANCH (BIH)
+    286: 'J',  # BUKIT INDAH BRANCH    (BIH)
     287: 'J',  # SUTERA UTAMA BRANCH (SUA)
     288: 'W',  # STARPARC POINT BRANCH (SPT)
     289: 'B',  # TAMANEQUINE BRANCH (TEE)
@@ -2180,158 +1962,91 @@ _STATECD_MAPPINGS: Dict[int, str] = {
     826: 'P',
     827: 'D',
 }
+_STATECD_OTHER = 'B'
 
 
 def statecd_format(branch_code: Optional[int]) -> str:
-    """
-    Apply STATECD format to branch code.
-    Maps branch codes to single-character state codes.
-
-    Args:
-        branch_code: Branch numeric code.
-
-    Returns:
-        Single character state code, or default 'B'.
-    """
-    if branch_code is None:
-        return 'B'
-    return _STATECD_MAPPINGS.get(branch_code, 'B')
+    """STATECD: branch code -> single-character state code (OTHER = 'B')."""
+    if missing(branch_code):
+        return _STATECD_OTHER
+    return _STATECD_MAPPINGS.get(branch_code, _STATECD_OTHER)
 
 
 # ============================================================================
-# FORMAT: FDORGMT — Fixed Deposit Original Term in Months
-# Maps a maturity months value to a 2-character BNM bucket code.
-#
-# Note: This format in the SAS source uses different bucket codes
-# than the fdorgmt_format function from the partial conversion.
-# The SAS FDORGMT format maps:
-#   LOW-1    = '12'  ORG. MAT. <= 1 MTH
-#   1-2      = '13'  ORG. MAT. >1-2 MTHS
-#   2-3      = '14'  ORG. MAT. >2-3 MTHS
-#   3-6      = '15'  ORG. MAT. >3-6 MTHS
-#   6-9      = '16'  ORG. MAT. >6-9 MTHS
-#   9-12     = '17'  ORG. MAT. >9-12 MTHS
-#   12-15    = '21'  ORG. MAT. >12-15 MTHS
-#   15-18    = '22'  ORG. MAT. >15-18 MTHS
-#   18-24    = '23'  ORG. MAT. >18-24 MTHS
-#   24-36    = '24'  ORG. MAT. >24-36 MTHS
-#   36-48    = '25'  ORG. MAT. >36-48 MTHS
-#   48-60    = '26'  ORG. MAT. >48-60 MTHS
-#   60-HIGH  = '30'  ORG. MAT. > 60 MTHS
+# FORMAT: FDORGMT - FD ORIGINAL TERM (MONTHS) -> 2-CHARACTER BUCKET CODE
+#   LOW-1='12' 1-2='13' 2-3='14' 3-6='15' 6-9='16' 9-12='17' 12-15='21'
+#   15-18='22' 18-24='23' 24-36='24' 36-48='25' 48-60='26' 60-HIGH='30'
+# Both ends of each SAS range are inclusive; the first listed range wins, so a
+# value equal to a boundary belongs to the lower bucket (bisect_left).
+# LOW excludes missing values and there is no OTHER, so missing shows as '.'.
 # ============================================================================
+
+_FDORGMT_BOUNDS: Tuple[int, ...] = (1, 2, 3, 6, 9, 12, 15, 18, 24, 36, 48, 60)
+_FDORGMT_CODES: Tuple[str, ...] = (
+    '12',  # ORG. MAT. <= 1 MTH
+    '13',  # ORG. MAT. >1 - 2 MTHS
+    '14',  # ORG. MAT. >2 - 3 MTHS
+    '15',  # ORG. MAT. >3 - 6 MTHS
+    '16',  # ORG. MAT. >6 - 9 MTHS
+    '17',  # ORG. MAT. >9 - 12 MTHS
+    '21',  # ORG. MAT. >12 - 15 MTHS
+    '22',  # ORG. MAT. >15 - 18 MTHS
+    '23',  # ORG. MAT. >18 - 24 MTHS
+    '24',  # ORG. MAT. >24 - 36 MTHS
+    '25',  # ORG. MAT. >36 - 48 MTHS
+    '26',  # ORG. MAT. >48 - 60 MTHS
+)
+_FDORGMT_HIGH = '30'  # ORG. MAT. > 60 MTHS
+
 
 def fdorgmt_format(orgmth: Optional[float]) -> str:
-    """
-    Apply FDORGMT format to original maturity months value.
-
-    Maps the original term in months to a 2-character BNM bucket code
-    used for fixed deposit reporting.
-
-    Args:
-        orgmth: Original term in months (float).
-
-    Returns:
-        2-character string bucket code, or '' if orgmth is None.
-    """
-    if orgmth is None:
-        return ''
-
-    if orgmth <= 1:
-        return '12'   # ORG. MAT. <= 1 MTH
-    elif orgmth <= 2:
-        return '13'   # ORG. MAT. >1-2 MTHS
-    elif orgmth <= 3:
-        return '14'   # ORG. MAT. >2-3 MTHS
-    elif orgmth <= 6:
-        return '15'   # ORG. MAT. >3-6 MTHS
-    elif orgmth <= 9:
-        return '16'   # ORG. MAT. >6-9 MTHS
-    elif orgmth <= 12:
-        return '17'   # ORG. MAT. >9-12 MTHS
-    elif orgmth <= 15:
-        return '21'   # ORG. MAT. >12-15 MTHS
-    elif orgmth <= 18:
-        return '22'   # ORG. MAT. >15-18 MTHS
-    elif orgmth <= 24:
-        return '23'   # ORG. MAT. >18-24 MTHS
-    elif orgmth <= 36:
-        return '24'   # ORG. MAT. >24-36 MTHS
-    elif orgmth <= 48:
-        return '25'   # ORG. MAT. >36-48 MTHS
-    elif orgmth <= 60:
-        return '26'   # ORG. MAT. >48-60 MTHS
-    else:
-        return '30'   # ORG. MAT. > 60 MTHS
+    """FDORGMT: original term in months -> 2-character bucket code ('.' if missing)."""
+    if missing(orgmth):
+        return '.'
+    idx = bisect_left(_FDORGMT_BOUNDS, orgmth)
+    return _FDORGMT_CODES[idx] if idx < len(_FDORGMT_CODES) else _FDORGMT_HIGH
 
 
 # ============================================================================
-# FORMAT: FDRMMT — Fixed Deposit Remaining Maturity in Months
+# FORMAT: FDRMMT - FD REMAINING TERM (MONTHS) -> 2-CHARACTER BUCKET CODE
+#   LOW-0='51' 0-1='52' 1-2='53' 2-3='54' 3-6='55' 6-9='56' 9-12='57'
+#   12-24='61' 24-36='62' 36-48='63' 48-60='64' 60-HIGH='70'
 # ============================================================================
+
+_FDRMMT_BOUNDS: Tuple[int, ...] = (0, 1, 2, 3, 6, 9, 12, 24, 36, 48, 60)
+_FDRMMT_CODES: Tuple[str, ...] = (
+    '51',  # REM. MAT. OVERDUE
+    '52',  # REM. MAT. <= 1 MTH
+    '53',  # REM. MAT. > 1 - 2 MTHS
+    '54',  # REM. MAT. > 2 - 3 MTHS
+    '55',  # REM. MAT. > 3 - 6 MTHS
+    '56',  # REM. MAT. > 6 - 9 MTHS
+    '57',  # REM. MAT. > 9 - 12 MTHS
+    '61',  # REM. MAT. > 1 - 2 YEARS
+    '62',  # REM. MAT. > 2 - 3 YEARS
+    '63',  # REM. MAT. > 3 - 4 YEARS
+    '64',  # REM. MAT. > 4 - 5 YEARS
+)
+_FDRMMT_HIGH = '70'  # REM. MAT. > 5 YEARS
+
 
 def fdrmmt_format(remmth: Optional[float]) -> str:
-    """
-    Apply FDRMMT format to remaining maturity months value.
-
-    Maps remaining term in months to a 2-character BNM bucket code.
-
-    Bucket codes:
-        '51' : Overdue (< 0)
-        '52' : <= 1 month
-        '53' : > 1 to <= 2 months
-        '54' : > 2 to <= 3 months
-        '55' : > 3 to <= 6 months
-        '56' : > 6 to <= 9 months
-        '57' : > 9 to <= 12 months
-        '61' : > 12 to <= 24 months (1-2 years)
-        '62' : > 24 to <= 36 months (2-3 years)
-        '63' : > 36 to <= 48 months (3-4 years)
-        '64' : > 48 to <= 60 months (4-5 years)
-        '70' : > 60 months (> 5 years)
-
-    Args:
-        remmth: Remaining months to maturity (float).
-
-    Returns:
-        2-character string bucket code, or '' if remmth is None.
-    """
-    if remmth is None:
-        return ''
-
-    if remmth <= 0:
-        return '51'   # REM. MAT. OVERDUE
-    elif remmth <= 1:
-        return '52'   # REM. MAT. <= 1 MTH
-    elif remmth <= 2:
-        return '53'   # REM. MAT. > 1-2 MTHS
-    elif remmth <= 3:
-        return '54'   # REM. MAT. > 2-3 MTHS
-    elif remmth <= 6:
-        return '55'   # REM. MAT. > 3-6 MTHS
-    elif remmth <= 9:
-        return '56'   # REM. MAT. > 6-9 MTHS
-    elif remmth <= 12:
-        return '57'   # REM. MAT. > 9-12 MTHS
-    elif remmth <= 24:
-        return '61'   # REM. MAT. > 1-2 YEARS
-    elif remmth <= 36:
-        return '62'   # REM. MAT. > 2-3 YEARS
-    elif remmth <= 48:
-        return '63'   # REM. MAT. > 3-4 YEARS
-    elif remmth <= 60:
-        return '64'   # REM. MAT. > 4-5 YEARS
-    else:
-        return '70'   # REM. MAT. > 5 YEARS
+    """FDRMMT: remaining term in months -> 2-character bucket code ('.' if missing)."""
+    if missing(remmth):
+        return '.'
+    idx = bisect_left(_FDRMMT_BOUNDS, remmth)
+    return _FDRMMT_CODES[idx] if idx < len(_FDRMMT_CODES) else _FDRMMT_HIGH
 
 
 # ============================================================================
-# FORMAT: RMFDORGMT — RMFD Original Maturity bucket (by product code)
-# Maps RMFD product codes to their original maturity bucket code.
+# FORMAT: RMFDORGMT - RMFD PRODUCT CODE -> ORIGINAL MATURITY BUCKET CODE
+# No OTHER in SAS: an unmatched value is displayed as the value itself.
 # ============================================================================
 
 _RMFDORGMT_MAPPINGS: Dict[int, str] = {
-    272: '12', 284: '12',  # 30 DAYS
-    273: '13', 285: '13',  # 31-60 DAYS
-    274: '14', 286: '14',  # 61-90 DAYS
+    272: '12', 284: '12',                                              # 30 DAYS
+    273: '13', 285: '13',                                              # 31-60 DAYS
+    274: '14', 286: '14',                                              # 61-90 DAYS
     275: '15', 276: '15', 277: '15', 287: '15', 288: '15', 289: '15',  # 91-180 DAYS
     278: '16', 279: '16', 280: '16', 290: '16', 291: '16', 292: '16',  # 181-270 DAYS
     281: '17', 282: '17', 283: '17', 293: '17', 294: '17', 295: '17',  # 271-366 DAYS
@@ -2340,181 +2055,110 @@ _RMFDORGMT_MAPPINGS: Dict[int, str] = {
 
 def rmfdorgmt_format(product_code: Optional[int]) -> str:
     """
-    Apply RMFDORGMT format to RMFD product code.
-    Maps RMFD product codes to original maturity bucket codes.
-
-    Args:
-        product_code: RMFD product code.
-
-    Returns:
-        2-character bucket code string, or '' if not found.
+    RMFDORGMT: RMFD product code -> original maturity bucket code.
+    An unmatched value is returned as text (SAS shows the value itself);
+    a missing value is returned as '.'.
     """
-    if product_code is None:
-        return ''
-    return _RMFDORGMT_MAPPINGS.get(product_code, '')
+    if missing(product_code):
+        return '.'
+    code = _RMFDORGMT_MAPPINGS.get(product_code)
+    return code if code is not None else best12(product_code)
 
 
 # ============================================================================
-# INVALUE: SDRANGE — Savings Deposit Balance Range (upper-bound bucketing)
+# INVALUES: SDRANGE, S1RANGE, S2RANGE, DDRANGE - BALANCE RANGE (UPPER BOUND)
+# Each SAS range is "lower - upper = upper"; the first listed range wins, so a
+# balance equal to a boundary takes that boundary (bisect_left). LOW excludes
+# missing values, so a missing balance returns None (SAS missing).
 # ============================================================================
+
+_SDRANGE_BOUNDS: Tuple[int, ...] = (
+    5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
+    3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
+    15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
+    55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
+    95000, 100000, 150000, 200000, 300000, 500000,
+    1000000, 2000000, 3000000, 4000000, 5000000, 10000000,
+)
+_SDRANGE_HIGH = 10000001
+
+_S1RANGE_BOUNDS: Tuple[int, ...] = (
+    5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
+    3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
+    15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
+    55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
+    95000, 100000, 150000, 200000, 300000, 350000, 360000,
+    500000, 510000, 550000, 850000, 860000, 1000000,
+    2000000, 3000000, 4000000, 5000000, 10000000,
+)
+_S1RANGE_HIGH = 10000001
+
+# LOW-0 = 0 is the first range of S2RANGE, hence 0 is the first bound.
+_S2RANGE_BOUNDS: Tuple[int, ...] = (
+    0, 5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
+    3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
+    15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
+    55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
+    95000, 100000, 150000, 200000, 300000, 350000, 360000,
+    500000, 510000, 550000, 600000, 700000, 800000, 850000,
+    860000, 900000, 1000000, 1100000, 1200000, 1300000, 1400000,
+    1500000, 1600000, 1700000, 1800000, 1900000, 2000000,
+    3000000, 4000000, 5000000, 10000000,
+)
+_S2RANGE_HIGH = 10000001
+
+_DDRANGE_BOUNDS: Tuple[int, ...] = (
+    1000, 2000, 2500, 3000, 5000, 10000, 20000, 30000, 40000,
+    50000, 75000, 100000, 150000, 200000, 250000, 500000,
+    1000000, 2000000, 3000000, 4000000, 5000000,
+)
+_DDRANGE_HIGH = 5000001
+
+
+def _range_bucket(balance: Optional[float], bounds: Tuple[int, ...],
+                  high: int) -> Optional[float]:
+    """Upper-bound bucket of a balance; None when the balance is missing."""
+    if missing(balance):
+        return None
+    idx = bisect_left(bounds, balance)
+    return float(bounds[idx]) if idx < len(bounds) else float(high)
+
 
 def sdrange_format(balance: Optional[float]) -> Optional[float]:
-    """
-    Apply SDRANGE invalue format to a savings deposit balance.
-    Returns the upper-bound bucket value for the balance.
+    """SDRANGE invalue: savings deposit balance -> upper-bound bucket value."""
+    return _range_bucket(balance, _SDRANGE_BOUNDS, _SDRANGE_HIGH)
 
-    Args:
-        balance: Savings deposit balance.
-
-    Returns:
-        Upper-bound bucket value (float), or None if balance is None.
-    """
-    if balance is None:
-        return None
-
-    breakpoints = [
-        5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
-        3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
-        15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
-        55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
-        95000, 100000, 150000, 200000, 300000, 500000,
-        1000000, 2000000, 3000000, 4000000, 5000000, 10000000,
-    ]
-
-    for bp in breakpoints:
-        if balance <= bp:
-            return float(bp)
-    return 10000001.0
-
-
-# ============================================================================
-# INVALUE: S1RANGE — Savings Balance Range variant 1 (upper-bound bucketing)
-# ============================================================================
 
 def s1range_format(balance: Optional[float]) -> Optional[float]:
-    """
-    Apply S1RANGE invalue format to a balance value.
-    Returns the upper-bound bucket value for the balance.
+    """S1RANGE invalue: balance -> upper-bound bucket value (variant 1)."""
+    return _range_bucket(balance, _S1RANGE_BOUNDS, _S1RANGE_HIGH)
 
-    Args:
-        balance: Balance amount.
-
-    Returns:
-        Upper-bound bucket value (float), or None if balance is None.
-    """
-    if balance is None:
-        return None
-
-    breakpoints = [
-        5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
-        3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
-        15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
-        55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
-        95000, 100000, 150000, 200000, 300000, 350000, 360000,
-        500000, 510000, 550000, 850000, 860000, 1000000,
-        2000000, 3000000, 4000000, 5000000, 10000000,
-    ]
-
-    for bp in breakpoints:
-        if balance <= bp:
-            return float(bp)
-    return 10000001.0
-
-
-# ============================================================================
-# INVALUE: S2RANGE — Savings Balance Range variant 2 (upper-bound bucketing)
-# ============================================================================
 
 def s2range_format(balance: Optional[float]) -> Optional[float]:
-    """
-    Apply S2RANGE invalue format to a balance value.
-    Returns the upper-bound bucket value for the balance.
+    """S2RANGE invalue: balance -> upper-bound bucket value (variant 2, LOW-0 = 0)."""
+    return _range_bucket(balance, _S2RANGE_BOUNDS, _S2RANGE_HIGH)
 
-    Args:
-        balance: Balance amount.
-
-    Returns:
-        Upper-bound bucket value (float), or None if balance is None.
-    """
-    if balance is None:
-        return None
-
-    # Include 0 as the first breakpoint (LOW-0 = 0)
-    if balance <= 0:
-        return 0.0
-
-    breakpoints = [
-        5, 10, 50, 100, 500, 1000, 1500, 2000, 2500, 3000,
-        3500, 4000, 4500, 5000, 6000, 7000, 8000, 9000, 10000,
-        15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000,
-        55000, 60000, 65000, 70000, 75000, 80000, 85000, 90000,
-        95000, 100000, 150000, 200000, 300000, 350000, 360000,
-        500000, 510000, 550000, 600000, 700000, 800000, 850000,
-        860000, 900000, 1000000, 1100000, 1200000, 1300000, 1400000,
-        1500000, 1600000, 1700000, 1800000, 1900000, 2000000,
-        3000000, 4000000, 5000000, 10000000,
-    ]
-
-    for bp in breakpoints:
-        if balance <= bp:
-            return float(bp)
-    return 10000001.0
-
-
-# ============================================================================
-# INVALUE: DDRANGE — Demand Deposit Balance Range (upper-bound bucketing)
-# ============================================================================
 
 def ddrange_format(balance: Optional[float]) -> Optional[float]:
-    """
-    Apply DDRANGE invalue format to a demand deposit balance.
-    Returns the upper-bound bucket value for the balance.
-
-    Args:
-        balance: Demand deposit balance.
-
-    Returns:
-        Upper-bound bucket value (float), or None if balance is None.
-    """
-    if balance is None:
-        return None
-
-    breakpoints = [
-        1000, 2000, 2500, 3000, 5000, 10000, 20000, 30000, 40000,
-        50000, 75000, 100000, 150000, 200000, 250000, 500000,
-        1000000, 2000000, 3000000, 4000000, 5000000,
-    ]
-
-    for bp in breakpoints:
-        if balance <= bp:
-            return float(bp)
-    return 5000001.0
+    """DDRANGE invalue: demand deposit balance -> upper-bound bucket value."""
+    return _range_bucket(balance, _DDRANGE_BOUNDS, _DDRANGE_HIGH)
 
 
 # ============================================================================
-# FORMAT: $RACE — Race Code Passthrough
+# FORMAT: $RACE - RACE CODE ('0'-'3' pass through, OTHER = '0')
 # ============================================================================
 
 def race_format(race_code: Optional[str]) -> str:
-    """
-    Apply $RACE format to race code string.
-    Passes through valid codes '0'-'3'; all others return '0'.
-
-    Args:
-        race_code: Single character race code string.
-
-    Returns:
-        Race code '0', '1', '2', or '3'; default '0'.
-    """
-    if race_code is None:
+    """$RACE: passes '0', '1', '2', '3' through; everything else returns '0'."""
+    if missing(race_code):
         return '0'
-    if race_code in ('0', '1', '2', '3'):
-        return race_code
-    return '0'
+    code = str(race_code).rstrip()
+    return code if code in ('0', '1', '2', '3') else '0'
 
 
 # ============================================================================
-# FORMAT: BRANCHCD — Branch Code to Branch Name
+# FORMAT: BRANCHCD - BRANCH CODE -> BRANCH NAME
+# (labels are returned without the trailing blanks found in the SAS source)
 # ============================================================================
 
 _BRANCHCD_MAPPINGS: Dict[int, str] = {
@@ -2698,7 +2342,7 @@ _BRANCHCD_MAPPINGS: Dict[int, str] = {
     184: 'JLN PENRISSEN, KUCHING',
     185: 'KUCHING CITY (KCY)',
     186: 'JLN TUN ZAIDI, KUCHING',
-    # 187: 'CHINA STREET, MIRI'  — commented out in original SAS
+    # 187: 'CHINA STREET, MIRI'  -- commented out in the SAS source
     188: 'PELITA, MIRI',
     189: 'BATU NIAH',
     190: 'BINTANGOR',
@@ -2711,7 +2355,7 @@ _BRANCHCD_MAPPINGS: Dict[int, str] = {
     197: 'TIONG NAM, KL',
     198: 'TMN DESA,JLN KELANG LAMA',
     199: 'JLN TAPAH,KLANG',
-    # 200: 'JLN SK10/4,SERI KEMBANGAN'  — commented out in original SAS
+    # 200: 'JLN SK10/4,SERI KEMBANGAN'  -- commented out in the SAS source
     201: 'PANDAMARAN, KLANG',
     202: 'RAWANG',
     203: 'SG JAROM',
@@ -2773,11 +2417,11 @@ _BRANCHCD_MAPPINGS: Dict[int, str] = {
     269: 'MONT KIARA',
     270: 'BANDAR PUTERI PUCHONG',
     273: 'LI HUA SARAWAK',
+    277: 'WAKAF SIKU KELANTAN',
+    278: 'JALAN PANTAI SABAH',
     274: 'STUTONG SARAWAK',
     275: 'MEDAN SENTRAL SARAWAK',
     276: 'JALAN APAS SABAH',
-    277: 'WAKAF SIKU KELANTAN',
-    278: 'JALAN PANTAI SABAH',
     279: 'PUTRAJAYA',
     280: 'KOTA DAMANSARA',
     281: 'PELITA',
@@ -2800,28 +2444,19 @@ _BRANCHCD_MAPPINGS: Dict[int, str] = {
     703: 'ISLAMIC WAKAF SIKU',
     704: 'ISLAMIC JALAN KOTA',
 }
+_BRANCHCD_OTHER = 'OTHER'
 
 
 def branchcd_format(branch_code: Optional[int]) -> str:
-    """
-    Apply BRANCHCD format to branch code.
-    Maps branch numeric codes to branch name strings.
-
-    Args:
-        branch_code: Branch numeric code.
-
-    Returns:
-        Branch name string, or default 'OTHER'.
-    """
-    if branch_code is None:
-        return 'OTHER'
-    return _BRANCHCD_MAPPINGS.get(branch_code, 'OTHER')
+    """BRANCHCD: branch code -> branch name (OTHER = 'OTHER')."""
+    if missing(branch_code):
+        return _BRANCHCD_OTHER
+    return _BRANCHCD_MAPPINGS.get(branch_code, _BRANCHCD_OTHER)
 
 
 # ============================================================================
 # BACKWARD-COMPATIBLE CLASS WRAPPERS
-# (Retained to avoid breaking existing programs that use the class-based API
-#  from the partially converted file.)
+# (kept so that programs converted against the class-based API keep working)
 # ============================================================================
 
 class ProductLists:
@@ -2892,95 +2527,494 @@ class FCYTermFormat:
 
 
 # ============================================================================
-# UTILITY FUNCTIONS
+# GENERIC RULE ENGINE (SAS-style lookup over ordered rules)
+# FORMATS below is generated from the mapping tables above, so there is a
+# single source of truth. The fast per-format functions are used by put(),
+# format_value() and apply_format(); lookup() is the literal SAS-rule
+# interpreter and is used by selfcheck() to prove both agree.
 # ============================================================================
+
+_LOW = {'special': 'LOW'}
+_HIGH = {'special': 'HIGH'}
+_OTHER = {'special': 'OTHER'}
+
+
+def _span(start, end, *, exclude_start=False, exclude_end=False):
+    return start, end, exclude_start, exclude_end
+
+
+def _map(result, *selectors, options=None):
+    rules = []
+    for selector in selectors:
+        bounds = selector if isinstance(selector, tuple) else (selector, selector, False, False)
+        rules.append((*bounds, result, dict(options or {})))
+    return rules
+
+
+def resolve(value, macros):
+    if isinstance(value, dict) and 'macro' in value:
+        return macros[value['macro']]
+    return value
+
+
+def matches(value, lo, hi, exlo, exhi):
+    if isinstance(lo, dict) and 'missing' in lo:
+        return missing(value) if lo['missing'] == '.' else value == lo['missing']
+    if missing(value):
+        return False  # SAS LOW excludes numeric missing values.
+    lower = isinstance(lo, dict) and lo.get('special') == 'LOW'
+    upper = isinstance(hi, dict) and hi.get('special') == 'HIGH'
+    return ((lower or (value > lo if exlo else value >= lo))
+            and (upper or (value < hi if exhi else value <= hi)))
+
+
+def _format_key(formats, name):
+    """Normalise a format name ('sadenom.', 'RACE' -> '$RACE')."""
+    key = name.strip().upper().rstrip('.')
+    if key not in formats and '$' + key in formats:
+        key = '$' + key
+    return key
+
+
+def lookup(formats, name, value, macros=None):
+    """Apply one format by walking its ordered SAS rules (first match wins)."""
+    name = _format_key(formats, name)
+    spec = formats[name]
+    macros = macros or {}
+    if isinstance(value, bytes):
+        value = value.decode('utf-8')
+    if name.startswith('$'):
+        value = '' if missing(value) else str(value).rstrip()
+    elif not missing(value):
+        value = float(value)
+    fallback = None
+    for lo, hi, exlo, exhi, label, _options in spec['rules']:
+        lo, hi = resolve(lo, macros), resolve(hi, macros)
+        if isinstance(lo, dict) and lo.get('special') == 'OTHER':
+            fallback = label
+            continue
+        if matches(value, lo, hi, exlo, exhi):
+            return label
+    if fallback is not None:
+        return fallback
+    if spec['kind'] == 'INVALUE':
+        return None  # no match in an INVALUE gives SAS missing
+    if missing(value):
+        return '.'
+    return str(value) if name.startswith('$') else best12(value)
+
+
+def _rules_from_mapping(mapping, other=None):
+    rules = [(key, key, False, False, label, {}) for key, label in mapping.items()]
+    if other is not None:
+        rules.append((_OTHER, _OTHER, False, False, other, {}))
+    return rules
+
+
+def _rules_from_buckets(bounds, labels, high_label):
+    """Rules LOW-b0, b0-b1, ... , bN-HIGH (both ends inclusive, first match wins)."""
+    rules = []
+    for i, bound in enumerate(bounds):
+        lower = _LOW if i == 0 else bounds[i - 1]
+        rules.append((lower, bound, False, False, labels[i], {}))
+    rules.append((bounds[-1], _HIGH, False, False, high_label, {}))
+    return rules
+
+
+FORMATS = {
+    'SADENOM': {
+        'kind': 'VALUE',
+        'rules': [*_map('I', *sorted(_SADENOM_ISLAMIC)), *_map('D', _OTHER)],
+    },
+    'SAPROD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_SAPROD_MAPPINGS, _SAPROD_OTHER),
+    },
+    'FDDENOM': {
+        'kind': 'VALUE',
+        'rules': [
+            *_map('I', *[_span(a, b) for a, b in _FDDENOM_ISLAMIC_RANGES],
+                  *sorted(_FDDENOM_ISLAMIC_SINGLES)),
+            *_map('D', _OTHER),
+        ],
+    },
+    'FDPROD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_FDPROD_MAPPINGS, _FDPROD_OTHER),
+    },
+    'FDPRODD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_FDPRODD_MAPPINGS, _FDPRODD_OTHER),
+    },
+    'FDPRD': {
+        'kind': 'VALUE',
+        'rules': [
+            *_map('N', *[_span(a, b) for a, b in _FDPRD_NORMAL_RANGES],
+                  *sorted(_FDPRD_NORMAL_SINGLES)),
+            *_map('L', *[_span(a, b) for a, b in _FDPRD_LIFE_RANGES]),
+            *_map('M', *[_span(a, b) for a, b in _FDPRD_MGIA_RANGES]),
+            *_map(' ', _OTHER),
+        ],
+    },
+    'FCYTERM': {
+        'kind': 'INVALUE',
+        'rules': [
+            *_map(1, *sorted(_FCYTERM_1_MONTH)),
+            *_map(3, *sorted(_FCYTERM_3_MONTHS)),
+            *_map(6, *sorted(_FCYTERM_6_MONTHS)),
+            *_map(12, *sorted(_FCYTERM_12_MONTHS)),
+        ],
+    },
+    'CADENOM': {
+        'kind': 'VALUE',
+        'rules': [*_map('I', *sorted(_CADENOM_ISLAMIC)), *_map('D', _OTHER)],
+    },
+    'CAPROD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_CAPROD_MAPPINGS, _CAPROD_OTHER),
+    },
+    'DPCUSTCD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_DPCUSTCD_MAPPINGS, _DPCUSTCD_OTHER),
+    },
+    'SACUSTCD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_SACUSTCD_MAPPINGS, _SACUSTCD_OTHER),
+    },
+    'FDCUSTCD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_FDCUSTCD_MAPPINGS, _FDCUSTCD_OTHER),
+    },
+    'IFDCUSCD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_FDCUSTCD_MAPPINGS, _FDCUSTCD_OTHER),
+    },
+    'DDCUSTCD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_DDCUSTCD_MAPPINGS, _DDCUSTCD_OTHER),
+    },
+    'STATECD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_STATECD_MAPPINGS, _STATECD_OTHER),
+    },
+    'FDORGMT': {
+        'kind': 'VALUE',
+        'rules': _rules_from_buckets(_FDORGMT_BOUNDS, _FDORGMT_CODES, _FDORGMT_HIGH),
+    },
+    'FDRMMT': {
+        'kind': 'VALUE',
+        'rules': _rules_from_buckets(_FDRMMT_BOUNDS, _FDRMMT_CODES, _FDRMMT_HIGH),
+    },
+    'RMFDORGMT': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_RMFDORGMT_MAPPINGS),
+    },
+    'SDRANGE': {
+        'kind': 'INVALUE',
+        'rules': _rules_from_buckets(_SDRANGE_BOUNDS, _SDRANGE_BOUNDS, _SDRANGE_HIGH),
+    },
+    'S1RANGE': {
+        'kind': 'INVALUE',
+        'rules': _rules_from_buckets(_S1RANGE_BOUNDS, _S1RANGE_BOUNDS, _S1RANGE_HIGH),
+    },
+    'S2RANGE': {
+        'kind': 'INVALUE',
+        'rules': _rules_from_buckets(_S2RANGE_BOUNDS, _S2RANGE_BOUNDS, _S2RANGE_HIGH),
+    },
+    'DDRANGE': {
+        'kind': 'INVALUE',
+        'rules': _rules_from_buckets(_DDRANGE_BOUNDS, _DDRANGE_BOUNDS, _DDRANGE_HIGH),
+    },
+    '$RACE': {
+        'kind': 'VALUE',
+        'rules': [
+            *_map('0', '0'),
+            *_map('1', '1'),
+            *_map('2', '2'),
+            *_map('3', '3'),
+            *_map('0', _OTHER),
+        ],
+    },
+    'BRANCHCD': {
+        'kind': 'VALUE',
+        'rules': _rules_from_mapping(_BRANCHCD_MAPPINGS, _BRANCHCD_OTHER),
+    },
+}
+
+MACROS = {
+    'ACE': ACE,
+    'FCY': FCY,
+    'CURX': CURX,
+}
+
+
+# ============================================================================
+# FORMAT REGISTRY (name -> fast function)
+# ============================================================================
+
+_FORMAT_FUNCS = {
+    'SADENOM': sadenom_format,
+    'SAPROD': saprod_format,
+    'FDDENOM': fddenom_format,
+    'FDPROD': fdprod_format,
+    'FDPRODD': fdprodd_format,
+    'FDPRD': fdprd_format,
+    'FCYTERM': fcyterm_format,
+    'CADENOM': cadenom_format,
+    'CAPROD': caprod_format,
+    'DPCUSTCD': dpcustcd_format,
+    'SACUSTCD': sacustcd_format,
+    'FDCUSTCD': fdcustcd_format,
+    'IFDCUSCD': ifdcuscd_format,
+    'DDCUSTCD': ddcustcd_format,
+    'STATECD': statecd_format,
+    'FDORGMT': fdorgmt_format,
+    'FDRMMT': fdrmmt_format,
+    'RMFDORGMT': rmfdorgmt_format,
+    'SDRANGE': sdrange_format,
+    'S1RANGE': s1range_format,
+    'S2RANGE': s2range_format,
+    'DDRANGE': ddrange_format,
+    '$RACE': race_format,
+    'BRANCHCD': branchcd_format,
+}
+
+
+def _resolve_format_func(format_name):
+    """Return the function for a format name; raise KeyError if unknown."""
+    key = format_name.strip().upper().rstrip('.')
+    func = _FORMAT_FUNCS.get(key) or _FORMAT_FUNCS.get('$' + key)
+    if func is None:
+        raise KeyError(f'Unknown format: {format_name!r}')
+    return func
+
+
+def _is_format_name(candidate) -> bool:
+    if not isinstance(candidate, str):
+        return False
+    try:
+        _resolve_format_func(candidate)
+    except KeyError:
+        return False
+    return True
+
+
+# ============================================================================
+# PUBLIC API
+# ============================================================================
+
+def format_value(name, value):
+    """Apply an original SAS format name; accepts trailing dots and $ names."""
+    return _resolve_format_func(name)(value)
+
+
+def put(value, format_name):
+    """SAS-style argument order: put(value, 'SAPROD.')."""
+    return format_value(format_name, value)
+
+
+def informat(value, informat_name):
+    """Apply an INVALUE definition; reject VALUE definitions."""
+    key = _format_key(FORMATS, informat_name)
+    if FORMATS[key]['kind'] != 'INVALUE':
+        raise ValueError(f'{key} is not an INVALUE definition')
+    return format_value(key, value)
+
+
+def apply_format(first, second):
+    """
+    Apply a named format to a scalar or to a collection. Both argument orders
+    are accepted so that earlier programs keep working:
+
+        apply_format('SAPROD', 200)          # name first  -> '42120'
+        apply_format(200, 'SAPROD')          # value first -> '42120'
+        apply_format(values, 'SAPROD')       # list / numpy -> list
+                                             # pandas Series -> Series (index kept)
+                                             # polars Series -> Series
+
+    Raises KeyError when neither argument is a known format name.
+    """
+    if _is_format_name(first):
+        name, data = first, second
+    elif _is_format_name(second):
+        name, data = second, first
+    else:
+        raise KeyError(f'Unknown format: {first!r} / {second!r}')
+    func = _resolve_format_func(name)
+    if isinstance(data, (str, bytes)) or not hasattr(data, '__iter__'):
+        return func(data)
+    if type(data).__module__.startswith('polars'):
+        return type(data)(data.name, [func(v) for v in data.to_list()])
+    if hasattr(data, 'map') and hasattr(data, 'index'):
+        return data.map(func)
+    return [func(v) for v in data]
+
+
+def available_formats():
+    """List exact SAS format names, including character-format $ prefixes."""
+    return sorted(FORMATS)
+
+
+def get_rules(format_name):
+    """Return an independent copy of a format's kind and ordered mapping rules."""
+    return deepcopy(FORMATS[_format_key(FORMATS, format_name)])
+
+
+_LEGACY_FORMAT_CLASSES = {
+    'SADENOM': SADenomFormat,
+    'SAPROD': SAProductFormat,
+    'FDDENOM': FDDenomFormat,
+    'FDPROD': FDProductFormat,
+    'CADENOM': CADenomFormat,
+    'CAPROD': CAProductFormat,
+    'FCYTERM': FCYTermFormat,
+    'PRODUCTS': ProductLists,
+}
+
 
 def get_format(format_name: str):
     """
-    Get format function or class by name.
-
-    Args:
-        format_name: Name of format (e.g., 'SADENOM', 'SAPROD', 'FDDENOM', etc.)
-
-    Returns:
-        Format class or None if not found.
+    Get a format class (legacy 8 names) or format function by name.
+    Returns None when the name is unknown.
     """
-    formats = {
-        'SADENOM':   SADenomFormat,
-        'SAPROD':    SAProductFormat,
-        'FDDENOM':   FDDenomFormat,
-        'FDPROD':    FDProductFormat,
-        'CADENOM':   CADenomFormat,
-        'CAPROD':    CAProductFormat,
-        'FCYTERM':   FCYTermFormat,
-        'PRODUCTS':  ProductLists,
-    }
-    return formats.get(format_name.upper())
+    legacy = _LEGACY_FORMAT_CLASSES.get(format_name.upper())
+    if legacy is not None:
+        return legacy
+    try:
+        return _resolve_format_func(format_name)
+    except KeyError:
+        return None
 
 
-def apply_format(format_name: str, value: Optional[int]) -> str:
-    """
-    Apply a named format to a value.
-
-    Args:
-        format_name: Name of format to apply.
-        value: Value to format.
-
-    Returns:
-        Formatted value or empty string if value is None.
-    """
-    format_class = get_format(format_name)
-    if format_class is None:
-        return ''
-    if hasattr(format_class, 'format'):
-        return format_class.format(value)
-    return ''
+# SAS-name aliases (upper-case names used by programs that call the format by
+# its SAS name; every one is the same function as its *_format counterpart).
+SADENOM = sadenom_format
+SAPROD = saprod_format
+FDDENOM = fddenom_format
+FDPROD = fdprod_format
+FDPRODD = fdprodd_format
+FDPRD = fdprd_format
+FCYTERM = fcyterm_format
+CADENOM = cadenom_format
+CAPROD = caprod_format
+DPCUSTCD = dpcustcd_format
+SACUSTCD = sacustcd_format
+FDCUSTCD = fdcustcd_format
+IFDCUSCD = ifdcuscd_format
+DDCUSTCD = ddcustcd_format
+STATECD = statecd_format
+FDORGMT = fdorgmt_format
+FDRMMT = fdrmmt_format
+RMFDORGMT = rmfdorgmt_format
+SDRANGE = sdrange_format
+S1RANGE = s1range_format
+S2RANGE = s2range_format
+DDRANGE = ddrange_format
+RACE = race_format
+BRANCHCD = branchcd_format
 
 
 # ============================================================================
-# EXAMPLE USAGE
+# SELF-CHECK AND COMMAND LINE
 # ============================================================================
+
+def selfcheck():
+    """
+    Compare every fast format function with the literal SAS-rule interpreter
+    (lookup) on every rule boundary, values just around it, missing values and
+    unmatched values. Returns a list of mismatches (empty when all agree).
+    """
+    problems = []
+    for key, spec in FORMATS.items():
+        func = _FORMAT_FUNCS[key]
+        if key.startswith('$'):
+            probes = {'', 'ZZ', '9', '1', '2', '3', '0', None}
+        else:
+            probes = {None, float('nan'), -1, 0, 99999999, 0.5}
+            for lo, hi, *_ in spec['rules']:
+                for bound in (lo, hi):
+                    if isinstance(bound, (int, float)):
+                        probes.update({bound, bound - 1, bound + 1, bound + 0.5})
+        for probe in probes:
+            expected = lookup(FORMATS, key, probe, MACROS)
+            actual = func(probe)
+            if expected != actual:
+                problems.append((key, probe, expected, actual))
+    return problems
+
+
+def _cli_value(format_name, text):
+    key = _format_key(FORMATS, format_name)
+    if key.startswith('$'):
+        return text
+    try:
+        number = float(text)
+    except ValueError:
+        return text
+    return int(number) if number.is_integer() else number
+
+
+def library_cli(formats, macros):
+    parser = argparse.ArgumentParser(description='PBBDPFMT format lookup')
+    parser.add_argument('--list', action='store_true')
+    parser.add_argument('--selfcheck', action='store_true')
+    parser.add_argument('format', nargs='?')
+    parser.add_argument('value', nargs='?')
+    args = parser.parse_args()
+    if args.list:
+        print('\n'.join(formats))
+    elif args.selfcheck:
+        problems = selfcheck()
+        for problem in problems:
+            print('MISMATCH', problem)
+        print(f'{len(problems)} mismatch(es) across {len(formats)} formats')
+    elif args.format is not None and args.value is not None:
+        print(format_value(args.format, _cli_value(args.format, args.value)))
+    else:
+        parser.error('Use --list, --selfcheck or FORMAT VALUE')
+
+
+def _print_examples():
+    print("Format Examples:")
+    print(f"SADENOM(200) = {sadenom_format(200)}")      # D
+    print(f"SADENOM(204) = {sadenom_format(204)}")      # I
+    print(f"SAPROD(200)  = {saprod_format(200)}")       # 42120
+    print(f"SAPROD(204)  = {saprod_format(204)}")       # 42320
+    print(f"FDDENOM(229) = {fddenom_format(229)}")      # I
+    print(f"FDDENOM(233) = {fddenom_format(233)}")      # D
+    print(f"FDPROD(229)  = {fdprod_format(229)}")       # 42133
+    print(f"FDPRD(300)   = {fdprd_format(300)}")        # N
+    print(f"FDPRD(340)   = {fdprd_format(340)}")        # M
+    print(f"FDPRD(320)   = {fdprd_format(320)}")        # L
+    print(f"CAPROD(104)  = {caprod_format(104)}")       # 43110
+    print(f"CAPROD(166)  = {caprod_format(166)}")       # 42110
+    print(f"CADENOM(60)  = {cadenom_format(60)}")       # I
+    print(f"CADENOM(50)  = {cadenom_format(50)}")       # D
+    print(f"FCYTERM(470) = {fcyterm_format(470)}")      # 1
+    print(f"FCYTERM(472) = {fcyterm_format(472)}")      # 3
+    print(f"FDORGMT(0.5) = {fdorgmt_format(0.5)}")      # 12
+    print(f"FDORGMT(1.5) = {fdorgmt_format(1.5)}")      # 13
+    print(f"FDORGMT(61.0)= {fdorgmt_format(61.0)}")     # 30
+    print(f"FDRMMT(0.0)  = {fdrmmt_format(0.0)}")       # 51
+    print(f"FDRMMT(0.5)  = {fdrmmt_format(0.5)}")       # 52
+    print(f"FDRMMT(13.0) = {fdrmmt_format(13.0)}")      # 61
+    print(f"DPCUSTCD(77) = {dpcustcd_format(77)}")      # 77
+    print(f"SACUSTCD(77) = {sacustcd_format(77)}")      # 77
+    print(f"FDCUSTCD(70) = {fdcustcd_format(70)}")      # 71
+    print(f"DDCUSTCD(65) = {ddcustcd_format(65)}")      # 44
+    print(f"STATECD(5)   = {statecd_format(5)}")        # A
+    print(f"BRANCHCD(5)  = {branchcd_format(5)}")       # IPOH MAIN OFFICE
+    print(f"SDRANGE(750) = {sdrange_format(750)}")      # 1000.0
+    print(f"DDRANGE(1500)= {ddrange_format(1500)}")     # 2000.0
+    print(f"RACE('1')    = {race_format('1')}")         # 1
+    print(f"RACE('9')    = {race_format('9')}")         # 0
+    print(f"RMFDORGMT(272)= {rmfdorgmt_format(272)}")   # 12
+    print(f"ACE Products: {sorted(ACE)}")
+    print(f"FCY Products: {sorted(FCY)}")
+
 
 if __name__ == '__main__':
-    print("Format Examples:")
-    print(f"SADENOM(200) = {sadenom_format(200)}")    # D
-    print(f"SADENOM(204) = {sadenom_format(204)}")    # I
-    print(f"SAPROD(200)  = {saprod_format(200)}")     # 42120
-    print(f"SAPROD(204)  = {saprod_format(204)}")     # 42320
-    print(f"FDDENOM(229) = {fddenom_format(229)}")    # I
-    print(f"FDDENOM(233) = {fddenom_format(233)}")    # D
-    print(f"FDPROD(229)  = {fdprod_format(229)}")     # 42133
-    print(f"FDPRD(300)   = {fdprd_format(300)}")      # N
-    print(f"FDPRD(340)   = {fdprd_format(340)}")      # M
-    print(f"FDPRD(320)   = {fdprd_format(320)}")      # L
-    print(f"CAPROD(104)  = {caprod_format(104)}")     # 43110
-    print(f"CAPROD(166)  = {caprod_format(166)}")     # 42110
-    print(f"CADENOM(60)  = {cadenom_format(60)}")     # I
-    print(f"CADENOM(50)  = {cadenom_format(50)}")     # D
-    print(f"FCYTERM(470) = {fcyterm_format(470)}")    # 1
-    print(f"FCYTERM(472) = {fcyterm_format(472)}")    # 3
-    print(f"FDORGMT(0.5) = {fdorgmt_format(0.5)}")   # 12
-    print(f"FDORGMT(1.5) = {fdorgmt_format(1.5)}")   # 13
-    print(f"FDORGMT(2.5) = {fdorgmt_format(2.5)}")   # 14
-    print(f"FDORGMT(5.0) = {fdorgmt_format(5.0)}")   # 15
-    print(f"FDORGMT(8.0) = {fdorgmt_format(8.0)}")   # 16
-    print(f"FDORGMT(11.0)= {fdorgmt_format(11.0)}")  # 17
-    print(f"FDORGMT(13.0)= {fdorgmt_format(13.0)}")  # 21
-    print(f"FDORGMT(20.0)= {fdorgmt_format(20.0)}")  # 23
-    print(f"FDORGMT(61.0)= {fdorgmt_format(61.0)}")  # 30
-    print(f"FDRMMT(0.0)  = {fdrmmt_format(0.0)}")    # 51
-    print(f"FDRMMT(0.5)  = {fdrmmt_format(0.5)}")    # 52
-    print(f"FDRMMT(13.0) = {fdrmmt_format(13.0)}")   # 61
-    print(f"DPCUSTCD(77) = {dpcustcd_format(77)}")   # 77
-    print(f"SACUSTCD(77) = {sacustcd_format(77)}")   # 77
-    print(f"FDCUSTCD(70) = {fdcustcd_format(70)}")   # 71
-    print(f"DDCUSTCD(65) = {ddcustcd_format(65)}")   # 44
-    print(f"STATECD(5)   = {statecd_format(5)}")     # A
-    print(f"BRANCHCD(5)  = {branchcd_format(5)}")    # IPOH MAIN OFFICE
-    print(f"SDRANGE(750) = {sdrange_format(750)}")   # 1000.0
-    print(f"DDRANGE(1500)= {ddrange_format(1500)}")  # 2000.0
-    print(f"RACE('1')    = {race_format('1')}")      # 1
-    print(f"RACE('9')    = {race_format('9')}")      # 0
-    print(f"RMFDORGMT(272)= {rmfdorgmt_format(272)}") # 12
-    print(f"ACE Products: {ACE}")
-    print(f"FCY Products: {FCY}")
+    if len(sys.argv) > 1:
+        library_cli(FORMATS, MACROS)
+    else:
+        _print_examples()
