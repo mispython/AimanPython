@@ -14,7 +14,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
-from datetime import timedelta
+from datetime import timedelta, date
 
 from REPTDATE import get_reptdate_values
 from input_date import get_latest_file
@@ -24,29 +24,28 @@ from input_date import get_latest_file
 # PATH CONFIGURATION
 # ============================================================================
 # Input directories - Production
-# BASE_DIR    = Path("/dwh")
-
-# INPUT_LOAN_DIR    = BASE_DIR / "lnd_ln"
-# INPUT_CISLN_DIR   = Path("/stgsrcsys/host/uat") / "CISLN_loan.sas7bdat"
-# INPUT_CISDP_DIR   = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
-# INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
-
-# Input directories - Testing
-BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
-INPUT_LOAN_DIR    = BASE_DIR / "input" / "prod" / "EIBDLN1M"
-INPUT_CISLN_DIR   = Path("/stgsrcsys/host/uat") / "CISLN_loan.sas7bdat"
-INPUT_CISDP_DIR   = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
+BASE_DIR          = Path("/dwh")
+INPUT_LOAN_DIR    = BASE_DIR / "lnd_ln"
+INPUT_CISLN_DIR   = BASE_DIR / "rs_cis" / f"cisr1ln{REPTMON}{REPTWEEK}{REPTYEAR}"
+INPUT_CISDP_DIR   = BASE_DIR / "rs_cis" / f"cisr1ca{REPTMON}{REPTWEEK}{REPTYEAR}"
 INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
-# Parquet cache directory (temporary intermediates — cleared after use)
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBDLN1M"
-
-# Output
-OUTPUT_DIR  = BASE_DIR / "output" / "EIBDLN1M"
-
+OUTPUT_DIR  = Path("/host_pq/mis/output/ln/report")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Input directories - Testing
+# BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_LOAN_DIR    = BASE_DIR / "input" / "prod" / "EIBDLN1M"
+# INPUT_CISLN_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISLN_loan.sas7bdat"
+# INPUT_CISDP_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISDP_deposit.sas7bdat"
+# INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
+
+# OUTPUT_DIR  = BASE_DIR / "output" / "EIBDLN1M"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Parquet cache directory (temporary intermediates — cleared after use)
+# CACHE_DIR = BASE_DIR / "input" / "prod" / "EIBDLN1M"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
@@ -65,9 +64,13 @@ HEADER_LINES   = 10    # header block occupies 10 lines
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-reptdate_values = get_reptdate_values()
-reptdate  = reptdate_values.reptdate                     # yesterday
-reptpdat  = reptdate - timedelta(days=1)                 # day before yesterday
+# reptdate_values = get_reptdate_values()
+# reptdate  = reptdate_values.reptdate                     # yesterday
+# reptpdat  = reptdate - timedelta(days=1)                 # day before yesterday
+
+# reptdate_values = date(2026, 6, 26)
+# reptdate  = date(2026, 6, 25)                     # yesterday
+# reptpdat  = date(2026, 6, 24)                 # day before yesterday
 
 RDATE     = reptdate.strftime("%d/%m/%y")
 REPTDAY   = reptdate.strftime("%d")
