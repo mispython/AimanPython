@@ -24,35 +24,36 @@ from input_date import get_latest_file
 # PATH CONFIGURATION
 # ============================================================================
 # Input directories - Production
-# BASE_DIR    = Path("/dwh")
-
-# INPUT_LOAN_DIR    = BASE_DIR / "lnd_ln"
-# INPUT_CISLN_DIR   = Path("/stgsrcsys/host/uat") / "CISLN_loan.sas7bdat"
-# INPUT_CISDP_DIR   = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
-# INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
-
-# Input directories - Testing
-BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
-# LOAN.LOAN& / LOANX.LOAN& in the SAS source point to SAP.PIBB.SASDATA.DAILY
-# → PIBB naming convention: prefix "iln" (PBB "ln" prepended with "i")
-INPUT_LOAN_DIR    = BASE_DIR / "input" / "prod" / "EIIDLN1M"
-
-# CISLN / CISDP DD statements in the original JCL point to the SAME PBB
-# datasets (SAP.PBB.CISBEXT.LN / SAP.PBB.CISBEXT.DP) even in the PIBB
-# version of this program — these are NOT PIBB-prefixed.
-INPUT_CISLN_DIR   = Path("/stgsrcsys/host/uat") / "CISLN_loan.sas7bdat"
-INPUT_CISDP_DIR   = Path("/stgsrcsys/host/uat") / "CISDP_deposit.sas7bdat"
+BASE_DIR          = Path("/dwh")
+INPUT_LOAN_DIR    = BASE_DIR / "ilnd_ln"
+INPUT_CISLN_DIR   = BASE_DIR / "rs_cis" / f"cisr1ln{REPTMON}{REPTWEEK}{REPTYEAR}"
+INPUT_CISDP_DIR   = BASE_DIR / "rs_cis" / f"cisr1ca{REPTMON}{REPTWEEK}{REPTYEAR}"
 INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
-# Parquet cache directory (temporary intermediates — cleared after use)
-CACHE_DIR = BASE_DIR / "input" / "prod" / "EIIDLN1M"
-
-# Output
-OUTPUT_DIR  = BASE_DIR / "output" / "EIIDLN1M"
-
+OUTPUT_DIR  = Path("/host_pq/mis/output/iln/report")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Input directories - Testing
+# BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+# # LOAN.LOAN& / LOANX.LOAN& in the SAS source point to SAP.PIBB.SASDATA.DAILY
+# # → PIBB naming convention: prefix "iln" (PBB "ln" prepended with "i")
+# INPUT_LOAN_DIR    = BASE_DIR / "input" / "prod" / "loan"
+
+# # CISLN / CISDP DD statements in the original JCL point to the SAME PBB
+# # datasets (SAP.PBB.CISBEXT.LN / SAP.PBB.CISBEXT.DP) even in the PIBB
+# # version of this program — these are NOT PIBB-prefixed.
+# INPUT_CISLN_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISLN_loan.sas7bdat"
+# INPUT_CISDP_DIR   = BASE_DIR / "input" / "prod" / "cis" / "CISDP_deposit.sas7bdat"
+# INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
+
+# # Parquet cache directory (temporary intermediates — cleared after use)
+# CACHE_DIR = BASE_DIR / "input" / "prod" / "EIIDLN1M"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Output
+# OUTPUT_DIR  = BASE_DIR / "output" / "EIIDLN1M"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
