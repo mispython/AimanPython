@@ -1,259 +1,227 @@
-def build_savg_curn_dept(
-    saving_cache: Path,
-    current_cache: Path,
-    cisdp_cache: Path,
-) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    - RUNSFTP EXEC COZBATCH (SFTP01/SFTP02) is reproduced in Step 9: the
+      NSRS text files are uploaded to the DRR server via paramiko, using
+      the same remote folders and file names as the JCL PUT statements.
+    - The report date comes from the DP batch date (ctl_dwh_batch_dttm).
+      All parquet caches live in a temporary folder that is deleted
+      before the SFTP step.
 
 
 
 
-    SAVING_SAS_CACHE  = saving_cache
-    CURRENT_SAS_CACHE = current_cache
-    CISDP_SAS_CACHE = cisdp_cache
+import gc
+import sys
+import tempfile
+from pathlib import Path
+from datetime import date
+
+import duckdb
+import pandas as pd
+import polars as pl
+import paramiko
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from DALWPBBD import build_savg_curn_dept
+from EIBDRLFM import run_eibdrlfm
 
 
 
 
-    # BNM library is &&TEMP in the SAS job: nothing is persisted here.
-    print("  BNM_SAVG / BNM_CURN / BNM_DEPT built in memory.")
-    print("==================================================")
-    return BNM_SAVG, BNM_CURN, BNM_DEPT
+# ============================================================================
+# CONTROL FILES (batch date + SFTP) - DWH control library
+# ============================================================================
+CTL_BATCH_DTTM    = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE      = "DP"          # SOURCE_SYSTEM_CD used for the report date
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+
+# DRR (Data Report Repository) - folders from the JCL "CD" statements
+DRR_HOST_DESC       = "Data Report Repository (DRR)"
+DRR_REMOTE_DIR_PBB  = "FD-BNM REPORTING/PBB/BNM RPTG/BNM RPTG_SUB"
+DRR_REMOTE_DIR_PIBB = "FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"
 
 
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}"
+        )
+    return pd.Timestamp(hit.iloc[0]).date()
 
 
-    every physical input path is owned and supplied by the calling job
-    (e.g. EIBDLIQP.py), since this program is shared across several jobs
-    whose input file dates differ.
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row directly from the DWH control file
+    (same approach as EIWFRMCR.py)."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError(
+            "SFTP control file is missing columns: " + ", ".join(missing_columns)
+        )
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(
+            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
+        )
+
+    row = rows.iloc[0]
+
+    # SAS character values can contain fixed-width padding.
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(
+            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
+        )
+
+    return sftp_id, sftp_pw, host_ip, host_key
 
 
+def sftp_upload_to_drr(uploads: list) -> None:
+    """Upload files to the DRR server.
 
-
-    Returns (BNM_SAVG, BNM_CURN, BNM_DEPT) only. This program has no
-    physical output of its own (BNM is a temporary library in the SAS job);
-    any persistence is the caller's responsibility.
-
-
-
-
-def _to_frame(rows, schema: dict) -> pl.DataFrame:
-    """Convert a list of dicts into a typed DataFrame.
-
-    The schema is applied in BOTH paths:
-      - non-empty: build with infer_schema_length=None so Polars reads
-        every row before inferring, then cast each column to the declared
-        dtype (avoids failures on late-arriving values).
-      - empty: explicit zero-row frame with the declared dtypes, matching
-        SAS writing a zero-row output member.
+    uploads: list of (local_path: Path, remote_dir: str, remote_name: str).
+    Equivalent of the JCL RUNSFTP steps (CD <remote_dir> / PUT <dataset> <name>).
+    The remote folder is addressed by path (relative to the login directory,
+    exactly as the JCL CD), so no session-level chdir state is carried between
+    the PBB and PIBB uploads.
     """
-    if rows:
-        df = pl.DataFrame(rows, infer_schema_length=None)
-        return df.select([pl.col(k).cast(v) for k, v in schema.items()])
-    return pl.DataFrame({k: pl.Series([], dtype=v) for k, v in schema.items()})
+    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
 
+    ssh = paramiko.SSHClient()
+    # HOST_KEY is blank for the DRR row in the control file, so strict host-key
+    # pinning is not possible; AutoAddPolicy is used (same as EIWFRMCR.py).
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-
-
-    reptday: str, reptmon: str, reptyear: str,
-) -> Dict[str, object]:
-
-
-
-
-    Runs the EIBDRLFM report body. Has no physical output of its own.
-    Returns a dict for the calling job (EIBDLIQP.py) to persist:
-      "FISS" / "NSRS" : list of report lines
-      "LCR"           : {file stem: DataFrame} for FD/SA/CA/FCYCA&REPTDAY
-      "NLF"           : {file stem: DataFrame} for NOTE&REPTYEAR&REPTMON&REPTDAY
-
-
-
-
-    fiss_lines: List[str] = []
-    nsrs_lines: List[str] = []
-
-
-
-
-    lcr_fd = _to_frame(fd_lcr_rows, _LCR_FD_SCHEMA)
-    del fd_raw
-
-
-
-
-    lcr_sa = _to_frame(sa_lcr_rows, _LCR_SA_SCHEMA)
-
-
-
-
-    lcr_ca = _to_frame(ca_lcr_rows, _LCR_CA_SCHEMA)
-
-
-
-
-    lcr_fcyca = _to_frame(fcyca_lcr_rows, _LCR_FCYCA_SCHEMA)
-    del cur_raw
-
-
-
-
-    # DATA NLF.NOTE&REPTYEAR&REPTMON&REPTDAY; SET NOTE; -- returned to caller
-    nlf_note = _to_frame(note_rows, _NOTE_SCHEMA)
-
-
-
-
-    return {
-        "FISS": fiss_lines,
-        "NSRS": nsrs_lines,
-        "LCR": {
-            f"FD{reptday}": lcr_fd,
-            f"SA{reptday}": lcr_sa,
-            f"CA{reptday}": lcr_ca,
-            f"FCYCA{reptday}": lcr_fcyca,
-        },
-        "NLF": {f"NOTE{reptyear}{reptmon}{reptday}": nlf_note},
-    }
-
-
-
-
-    for r in _fd_raw_for_wkly(fd_cache).iter_rows(named=True):
-
-
-
-
-def _fd_raw_for_wkly(fd_cache: Path) -> pl.DataFrame:
-
-
-
-
-LCR.* and NLF.NOTE* : returned as DataFrames; the calling job (EIBDLIQP.py) persists them.
-
-
-
-
-
-# UAT report-date override. Set to None in production so the date comes
-# from REPTDATE.get_reptdate_values().
-UAT_REPTDATE_OVERRIDE = date(2026, 9, 16)
-
-
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+    try:
+        for local_path, remote_dir, remote_name in uploads:
+            try:
+                sftp.stat(remote_dir)
+            except IOError:
+                sys.exit(f"Aborting: Remote DRR folder '{remote_dir}' not found")
+            remote_path = f"{remote_dir}/{remote_name}"
+            print(f"  SFTP upload: {local_path.name} -> {remote_path}")
+            sftp.put(str(local_path), remote_path)
+    finally:
+        sftp.close()
+        ssh.close()
+    print("  DRR upload complete.")
 
 
 # ============================================================================
-# HELPER: persist DataFrames returned by EIBDRLFM (LCR / NLF DD equivalents)
+# REPORT DATE  (DP batch date from ctl_dwh_batch_dttm - no REPTDATE.py)
 # ============================================================================
-def _persist_frames(frames: dict, out_dir: Path) -> None:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for stem, df in frames.items():
-        df.write_parquet(out_dir / f"{stem}.parquet")
+print("Step 1: Deriving report date from DP batch date...")
+
+REPTDATE = get_batch_date(BATCH_SOURCE)
+
+_day = REPTDATE.day
+NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
+
+REPTYEAR = REPTDATE.strftime("%Y")
+REPTMON  = REPTDATE.strftime("%m")
+REPTDAY  = REPTDATE.strftime("%d")
+RDATE    = REPTDATE.strftime("%d/%m/%y")
+
+RPYR, RPMTH, RPDAY = REPTDATE.year, REPTDATE.month, REPTDATE.day
+
+RD_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+if RPYR % 4 == 0:
+    RD_DAYS[1] = 29
+
+print(f"  REPTDATE: {REPTDATE}")
+print(f"  RDATE   : {RDATE}")
+print(f"  REPTMON/DAY/YEAR : {REPTMON}/{REPTDAY}/{REPTYEAR}   NOWK: {NOWK}")
 
 
 
 
-REPTDATE = UAT_REPTDATE_OVERRIDE if UAT_REPTDATE_OVERRIDE else get_reptdate_values().reptdate
+INPUT_SAVING_FILE  = STG_DIR / "MNITB" / f"intg_dp_acct_saving_d{REPTDAY}.sas7bdat"
+INPUT_CURRENT_FILE = STG_DIR / "MNITB" / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
+
+# FD: cert-level (no ENTITY_CD) + account-level (has ACCTNO + ENTITY_CD).
+INPUT_FD_CERT_FILE = STG_DIR / "MNIFD" / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
+INPUT_FD_ACCT_FILE = STG_DIR / "MNITB" / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
 
 
 
 
-BNM_SAVG, BNM_CURN, BNM_DEPT = build_savg_curn_dept(
-    saving_cache=SAVING_PBB_CACHE,
-    current_cache=CURRENT_PBB_CACHE,
-    cisdp_cache=CISDP_CACHE,
-)
+# ---- Parquet caches (converted once, shared by DALWPBBD + EIBDRLFM) -------
+# Temporary folder: parquet is used only for fast reads during this run and is
+# deleted (see _TMP.cleanup() before Step 9). Nothing is kept between runs.
+TEMP_DIR = None   # None = system temp; set a path if the default temp area is too small
+_TMP = tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="EIBDLIQP_")
+CACHE_DIR = Path(_TMP.name)
 
 
 
 
-report_lines = run_eibdrlfm(
-    fd_cache=FD_PBB_CACHE,
-    current_cache=CURRENT_PBB_CACHE,
-    bnm_savg=BNM_SAVG,
-    bnm_curn=BNM_CURN,
-    forate_map=FORATE_MAP,
-    reptdate=REPTDATE,
-    rpyr=RPYR, rpmth=RPMTH, rpday=RPDAY,
-    rd_days=RD_DAYS,
-    reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
-)
-_persist_frames(report_lines["LCR"], LCR_OUTPUT_DIR)
-_persist_frames(report_lines["NLF"], NLF_OUTPUT_DIR)
+FISS_FILE      = OUTPUT_DIR / f"PBB_FISS_TEXT_DAILY_{REPTDAY}.txt"   # SAP.PBB.FISS.TEXT.DAILY
+NSRS_FILE      = OUTPUT_DIR / f"PBB_NSRS_TEXT_DAILY_{REPTDAY}.txt"   # SAP.PBB.NSRS.TEXT.DAILY
 
 
 
 
-BNM_SAVG_PIBB, BNM_CURN_PIBB, BNM_DEPT_PIBB = build_savg_curn_dept(
-    saving_cache=SAVING_PIBB_CACHE,
-    current_cache=CURRENT_PIBB_CACHE,
-    cisdp_cache=CISDP_CACHE,                       # shared PBB file
-)
+FISS_FILE_PIBB      = OUTPUT_DIR_PIBB / f"PIBB_FISS_TEXT_DAILY_{REPTDAY}.txt"
+NSRS_FILE_PIBB      = OUTPUT_DIR_PIBB / f"PIBB_NSRS_TEXT_DAILY_{REPTDAY}.txt"
 
 
 
 
-report_lines_pibb = run_eibdrlfm(
-    fd_cache=FD_PIBB_CACHE,
-    current_cache=CURRENT_PIBB_CACHE,
-    bnm_savg=BNM_SAVG_PIBB,
-    bnm_curn=BNM_CURN_PIBB,
-    forate_map=FORATE_MAP,                         # shared from PBB pass
-    reptdate=REPTDATE,
-    rpyr=RPYR, rpmth=RPMTH, rpday=RPDAY,
-    rd_days=RD_DAYS,
-    reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
-)
-_persist_frames(report_lines_pibb["LCR"], LCR_OUTPUT_DIR_PIBB)
-_persist_frames(report_lines_pibb["NLF"], NLF_OUTPUT_DIR_PIBB)
+# STEP 7 (SFTP01) is executed in Step 9 together with the PIBB upload.
+
+print("\nEIBDLIQP (PBB) complete.")
 
 
 
 
-            WHERE TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) = '{PIBB_VALUE}'
+print("\nEIIDLIQP (PIBB) complete.")
 
+# ============================================================================
+# CLEANUP: remove the temporary parquet caches (not kept between runs).
+# Done before the upload so they are deleted even if the SFTP step fails.
+# ============================================================================
+_TMP.cleanup()
+print("\nTemporary parquet caches removed.")
 
+# ============================================================================
+# STEP 9: SFTP NSRS FILES TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# Equivalent of the two JCL RUNSFTP (COZBATCH) steps:
+#   CD "FD-BNM REPORTING/PBB/BNM RPTG/BNM RPTG_SUB"
+#   PUT //SAP.PBB.NSRS.TEXT.DAILY  PBB_DAILY_NSRS_&REPTDAY..TXT
+#   CD "FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"
+#   PUT //SAP.PIBB.NSRS.TEXT.DAILY PIBB_DAILY_NSRS_&REPTDAY..TXT
+# ============================================================================
+print("\nStep 9: Uploading NSRS files to DRR via SFTP...")
+sftp_upload_to_drr([
+    (NSRS_FILE,      DRR_REMOTE_DIR_PBB,  f"PBB_DAILY_NSRS_{REPTDAY}.TXT"),
+    (NSRS_FILE_PIBB, DRR_REMOTE_DIR_PIBB, f"PIBB_DAILY_NSRS_{REPTDAY}.TXT"),
+])
 
-
-def _split_fd_by_entity(cert_cache: Path, acct_cache: Path,
-                        out_pbb: Path, out_pibb: Path):
-    """FD cert-level has no ENTITY_CD; join to FD account-level (by ACCTNO)
-    to obtain each account's entity, then split cert rows accordingly.
-    Uses DISTINCT account numbers from the account-level file so a
-    one-to-many relationship on the account side does not duplicate
-    cert-level rows. AMTIND is derived from the certificate currency:
-    'D' = MYR, 'I' = foreign currency."""
-    if _split_is_fresh(cert_cache, out_pbb, out_pibb) and \
-       _split_is_fresh(acct_cache, out_pbb, out_pibb):
-        print("  [FD] Split fresh - skipping.")
-        return
-    con = duckdb.connect(database=":memory:")
-    for filter_sql, out_path in [
-        (f"({ENTITY_COL} IS NULL OR "
-         f"TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) <> '{PIBB_VALUE}')", out_pbb),
-        (f"(TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) = '{PIBB_VALUE}')", out_pibb),
-    ]:
-        con.execute(f"""
-            COPY (
-                SELECT c.*,
-                       a.CUST_NAME,
-                       CASE WHEN UPPER(TRIM(CAST(c.CURRENCY_CD AS VARCHAR))) = 'MYR'
-                            THEN 'D' ELSE 'I' END AS AMTIND
-                FROM read_parquet('{cert_cache.as_posix()}') c
-                INNER JOIN (
-                    SELECT
-                        CAST(ACCTNO AS BIGINT) AS acct_key,
-                        ANY_VALUE(NAME)        AS CUST_NAME
-                    FROM read_parquet('{acct_cache.as_posix()}')
-                    WHERE {filter_sql}
-                    GROUP BY 1
-                ) a
-                    ON CAST(c.ACCT_NUM AS BIGINT) = a.acct_key
-            ) TO '{out_path.as_posix()}' (FORMAT PARQUET)
-        """)
-    n_pbb  = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_pbb.as_posix()}')").fetchone()[0]
-    n_pibb = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_pibb.as_posix()}')").fetchone()[0]
-    con.close()
-    print(f"  [FD] PBB rows: {n_pbb:,}   PIBB rows: {n_pibb:,}")
+print("\nEIBDLIQP / EIIDLIQP finished.")
 
 
 
