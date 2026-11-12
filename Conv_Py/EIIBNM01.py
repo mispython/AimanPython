@@ -14,14 +14,8 @@ Dependency:
                              PUT(SECTORCD,$FISSGROUP.) are actually called
                              anywhere in this program's body, so only
                              format_fisstype()/format_fissgroup() are
-                             imported from PBBLNFMT.py. No other PBBLNFMT
-                             format (LNPROD, LNDENOM, ODPROD, LNRATE, ...) is
-                             referenced anywhere in EIIBNM01, so they are
-                             intentionally NOT imported here.
-
-    //PGM DD DSN=SAP.BNM.PROGRAM is the SAS program library the %INC pulls
-    from -- it carries no data and has no physical Parquet input.
-
+                             imported from PBBLNFMT.py
+                             
 ============================================================================
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
@@ -71,17 +65,12 @@ RECFM=FB (NOT FBA) means this report carries NO ASA carriage-control byte
 exactly as established for EIIMRM01's //TEMP DD). Page breaks are marked
 with a form-feed character; PAGESIZE is not specified in the SAS source so
 the project default of 60 lines/page is used.
-The preceding //DELETE EXEC PGM=IEFBR14 step exists only to purge/recreate
-the catalogued dataset before the run -- opening OUTPUT_FILE in "w" mode
-achieves the same effect, so no separate delete step is coded.
 
 //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS, DISP=OLD is an existing SAS library
 that two data-extract "members" are written into:
    MFRS.MAST_BR (KEEP=ACCTNO PRODESC NOACCT)
    MFRS.ALM_CR  (KEEP=ACCTNO NOTENO PRODESC NOACCT)
-Neither member name carries a date token, so both are written as fixed-name
-Parquet files (not report text, since they are data extracts feeding other
-downstream programs, not print output).
+Neither member name carries a date token, so both are written as fixed-name.
 """
 
 import re
@@ -102,27 +91,41 @@ from PBBLNFMT_AII import format_fisstype, format_fissgroup
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+BASE_DIR         = Path("/dwh")
+INPUT_BTBNM_DIR  = BASE_DIR / "ibtrade"
+INPUT_DISPAY_DIR = BASE_DIR / "iln"
+INPUT_ISASD_DIR  = Path("/KENA/KONFEMKAN/DENGAN/NABILA/DULU")
+INPUT_BNM_DIR    = Path("/dwh/dwh_m/tempsource/ln")
+INPUT_LOAN_DIR   = Path("/sas/ln/dwh/enrichment") 
 
-INPUT_BTBNM_DIR  = STG_DIR / "from_dwh"   # //BTBNM  DD DSN=SAP.IBT.SASDATA
-INPUT_DISPAY_DIR = STG_DIR / "from_dwh"   # //DISPAY DD DSN=SAP.PIBB.DISPAY
-INPUT_ISASD_DIR  = STG_DIR / "mth_bnm"    # //ISASD  DD DSN=SAP.PIBB.STORE.SASDATA
-INPUT_BNM_DIR    = STG_DIR / "mth_bnm"    # //BNM    DD DSN=SAP.PIBB.SASDATA
-INPUT_LOAN_DIR   = STG_DIR / "MNILN"      # //LOAN   DD DSN=SAP.PIBB.MNILN(0)
+OUTPUT_DIR       = Path("/host_pq/mis")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE      = OUTPUT_DIR / "output" / "ln" / "report" / f"EIIBNM01_{REPTMON}.TXT"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIBNM01"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-# OUTPUT_DIR = BASE_DIR / "output" / "EIIBNM01"
-# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-# OUTPUT_FILE = OUTPUT_DIR / "EIIBNM01.txt"
-
-# OUTPUT_MFRS_DIR = BASE_DIR / "output" / "MFRS"     # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
-OUTPUT_MFRS_DIR = BASE_DIR / "input" / "cache" / "EIIBNM01" / "MFRS"     # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
+OUTPUT_MFRS_DIR = OUTPUT_DIR / "input" / "IMFRS"        # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
 OUTPUT_MFRS_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_MFRS_MAST_BR_FILE = OUTPUT_MFRS_DIR / "MFRS_MAST_BR.parquet"
-OUTPUT_MFRS_ALM_CR_FILE  = OUTPUT_MFRS_DIR / "MFRS_ALM_CR.parquet"
+OUTPUT_MFRS_MAST_BR_FILE = OUTPUT_MFRS_DIR / "MAST_BR.sas7bdat"
+OUTPUT_MFRS_ALM_CR_FILE  = OUTPUT_MFRS_DIR / "ALM_CR.sas7bdat"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_BTBNM_DIR  = STG_DIR / "from_dwh"   # //BTBNM  DD DSN=SAP.IBT.SASDATA
+# INPUT_DISPAY_DIR = STG_DIR / "from_dwh"   # //DISPAY DD DSN=SAP.PIBB.DISPAY
+# INPUT_ISASD_DIR  = STG_DIR / "mth_bnm"    # //ISASD  DD DSN=SAP.PIBB.STORE.SASDATA
+# INPUT_BNM_DIR    = STG_DIR / "mth_bnm"    # //BNM    DD DSN=SAP.PIBB.SASDATA
+# INPUT_LOAN_DIR   = STG_DIR / "MNILN"      # //LOAN   DD DSN=SAP.PIBB.MNILN(0)
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIBNM01"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # OUTPUT_MFRS_DIR = BASE_DIR / "output" / "MFRS"     # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
+# OUTPUT_MFRS_DIR = BASE_DIR / "input" / "cache" / "EIIBNM01" / "MFRS"     # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
+# OUTPUT_MFRS_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_MFRS_MAST_BR_FILE = OUTPUT_MFRS_DIR / "MFRS_MAST_BR.parquet"
+# OUTPUT_MFRS_ALM_CR_FILE  = OUTPUT_MFRS_DIR / "MFRS_ALM_CR.parquet"
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60          # lines per page -- not specified in SAS -> project default
@@ -201,30 +204,32 @@ print(f"  RDATE                 : {RDATE}")
 # DYNAMIC PHYSICAL INPUT FILES  (deterministic -- built directly from
 # REPTMON/REPTMON2/NOWK)
 # ============================================================================
-# INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR  / f"btbnm_ibtrad{REPTMON}{NOWK}.sas7bdat"
-# INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"dispay_idispaymth{REPTMON}.sas7bdat"
-# INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR  / f"isasd_loan{REPTMON}.sas7bdat"
-# INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR    / f"bnm_loan{REPTMON}{NOWK}.sas7bdat"
-# INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR    / f"bnm_loan{REPTMON2}{NOWK}.sas7bdat"
-# INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"bnm_lnwof{REPTMON}{NOWK}.sas7bdat"
-# INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"bnm_lnwod{REPTMON}{NOWK}.sas7bdat"
-# INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"bnm_lnwof{REPTMON2}{NOWK}.sas7bdat"
-# INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"bnm_lnwod{REPTMON2}{NOWK}.sas7bdat"
+# Production Path
+INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR  / f"ibtrad{REPTMON}{NOWK}.sas7bdat"
+INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"idispaymth{REPTMON}.sas7bdat"
+INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR  / f"loan{REPTMON}.sas7bdat"
+INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR    / f"loan{REPTMON}{NOWK}.sas7bdat"
+INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR    / f"loan{REPTMON2}{NOWK}.sas7bdat"
+INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"lnwof{REPTMON}{NOWK}.sas7bdat"
+INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"lnwod{REPTMON}{NOWK}.sas7bdat"
+INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"lnwof{REPTMON2}{NOWK}.sas7bdat"
+INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"lnwod{REPTMON2}{NOWK}.sas7bdat"
+INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR   / f"enrh_ln_comm_m{REPTMON}.sas7bdat"
+
+# # Testing Path
+# INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR  / f"ibtrad08426.sas7bdat"
+# INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"idispaymth0826.sas7bdat"
+# INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR  / f"loan08.sas7bdat"
+# INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR    / f"loan084.sas7bdat"
+# INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR    / f"loan074.sas7bdat"
+# INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"lnwof084.sas7bdat"
+# INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"lnwof074.sas7bdat"
+# INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"lnwod084.sas7bdat"
+# INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"lnwod074.sas7bdat"
 # INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR   / "ilncomm.sas7bdat"   # fixed -- no date token
 
-INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR  / f"ibtrad08426.sas7bdat"
-INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"idispaymth0826.sas7bdat"
-INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR  / f"loan08.sas7bdat"
-INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR    / f"loan084.sas7bdat"
-INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR    / f"loan074.sas7bdat"
-INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"lnwof084.sas7bdat"
-INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"lnwof074.sas7bdat"
-INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"lnwod084.sas7bdat"
-INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"lnwod074.sas7bdat"
-INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR   / "ilncomm.sas7bdat"   # fixed -- no date token
-
 # ============================================================================
-# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
