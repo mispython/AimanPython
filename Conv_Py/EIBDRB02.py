@@ -25,23 +25,24 @@ from PBBELF import format_brchcd, format_regnew
 
 # %INC PGM(PBBELF); in the SAS source only drives PUT(BRANCH,BRCHCD.) and
 # PUT(BRANCH,REGNEW.) — those are the only two PBBELF formats invoked in this
-# program's body, so only format_brchcd/format_regnew are imported. Other
-# PBBELF tables (CACBRCH, CTYPE, branch lists, etc.) are not referenced here.
+# program's body, so only format_brchcd/format_regnew are imported.
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
-# Input directories - Testing
-INPUT_DEPOSIT_DIR = Path("/stgsrcsys/host/uat/AII/SASDATA")   # MIS.FDWDRW&REPTMON
-CACHE_DIR         = BASE_DIR / "input" / "cache" / "EIBDRB02"
-
-# Output
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDRBDP"
-
+# Production Path
+BASE_DIR            = Path("/exdwh/host")
+INPUT_DEPOSIT_DIR   = BASE_DIR / "cdm"      # MIS.FDWDRW&REPTMON
+OUTPUT_DIR          = Path("/host_pq/mis/output/deposit/report/EIBDRBDP")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR            = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DEPOSIT_DIR   = Path("/stgsrcsys/host/uat/AII/SASDATA")   # MIS.FDWDRW&REPTMON
+# CACHE_DIR           = BASE_DIR / "input" / "cache" / "EIBDRB02"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBDRBDP"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # STEP 1: REPORT DATE  (no reptdate.parquet — derive from REPTDATE.py)
