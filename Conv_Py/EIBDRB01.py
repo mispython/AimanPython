@@ -38,18 +38,29 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# Production Path
+BASE_DIR        = Path ("/dwh")
+INPUT_DEPO_DIR  = BASE_DIR / "dp_fcy"
+INPUT_WALK_DIR  = BASE_DIR / "dwh_m" / "tempsource" / "walker"
+OUTPUT_PATH     = Path("/host_pq/mis")
+STORE_DIR       = OUTPUT_PATH / "parquet" / "EIBDRB01"
+OUTPUT_DIR      = OUTPUT_PATH / "output" / "deposit" / "report" / "EIBDRBDP"
 
-INPUT_DEPO_DIR = BASE_DIR / "input" / "prod" / "deposit_fcy_d"
-INPUT_WALK_DIR = BASE_DIR / "input" / "prod" / "walker"
-
-CACHE_DIR = BASE_DIR / "cache" / "EIBDRB01"
-STORE_DIR = BASE_DIR / "store" / "EIBDRB01"
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDRBDP"
-
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
 STORE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DEPO_DIR  = BASE_DIR / "input" / "prod" / "deposit_fcy_d"
+# INPUT_WALK_DIR  = BASE_DIR / "input" / "prod" / "walker"
+# CACHE_DIR       = BASE_DIR / "cache" / "EIBDRB01"
+# STORE_DIR       = BASE_DIR / "store" / "EIBDRB01"
+# OUTPUT_DIR      = BASE_DIR / "output" / "EIBDRBDP"
+
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# STORE_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # REPORT CONSTANTS
