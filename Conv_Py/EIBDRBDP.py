@@ -22,7 +22,11 @@ import EIBDRB02
 # DD02 -> SAP.PBB.EIBDRB2A  (EIBDRB02 RMWDRAW output)
 # DD03 -> SAP.PBB.EIBDRB2B  (EIBDRB02 FCYWDRAW output)
 # ============================================================================
-OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDRBDP")
+# Production Path
+OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report/EIBDRBDP")
+
+# # Testing Path
+# OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDRBDP")
 
 STALE_OUTPUTS = [
     OUTPUT_DIR / f"EIBDRB01_{__import__('EIBDRB01').REPTMON}.txt",   # DD01
