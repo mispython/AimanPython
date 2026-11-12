@@ -1,47 +1,24 @@
-import posixpath
 import tempfile
+from datetime import date
+from pathlib import Path
 
-import paramiko
+import duckdb
+import pandas as pd
+import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 
 
 
-# Control files
+# ============================================================================
+# CONTROL FILE CONFIGURATION
+# ============================================================================
+# Control file : batch date per source system
 CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-CTL_SFTP_INFO  = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for the report date
-
-# Temporary parquet conversion (deleted automatically after the read)
-CHUNK_ROWS = 500_000
-TEMP_DIR   = None              # None = system temp; set a path if the default is too small
-
-# SFTP target: DRR (OPER.PBB.PARMLIB(DRR#SFTP))
-SFTP_HOST_DESC      = "Data Report Repository (DRR)"
-SFTP_PORT           = 22
-SFTP_DIR_BANK_TOTAL = "WMTB-SA&S/DEP - SAS/BANK TOTAL"      # STEP01 cd (base folder)
-# cd "../MISC/FD & FCY FD WITHDRAWAL" is relative to the folder above
-SFTP_DIR_MISC       = posixpath.normpath(
-    posixpath.join(SFTP_DIR_BANK_TOTAL, "../MISC/FD & FCY FD WITHDRAWAL")
-)                                                           # WMTB-SA&S/DEP - SAS/MISC/FD & FCY FD WITHDRAWAL
-
-# //*----------------------------------------------
-# //* FTP HOST DATASETS TO CRM DATAWAREHOUSE SERVER   (commented out in the original JCL)
-# //*----------------------------------------------
-# //*RUNSFTP  EXEC COZBATCH
-# //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
-# //*cd TEXTFILE
-# //*cd RETAILBANK
-# //*PUT //SAP.PBB.EIBDRB01   EIBDRB01@%OMM.%OYY..TXT
-# //*PUT //SAP.PBB.EIBDRB2A   EIBDRB2A@%ODD.%OMM.%OYY..TXT
-# //*PUT //SAP.PBB.EIBDRB2B   EIBDRB2B@%ODD.%OMM.%OYY..TXT
-# //*EOB
+BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
 
 
-
-
-# ============================================================================
-# CONTROL-FILE HELPERS (batch date, SFTP credentials)
-# ============================================================================
 def get_batch_date(source_system_cd: str) -> date:
     """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
     ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
@@ -52,68 +29,81 @@ def get_batch_date(source_system_cd: str) -> date:
     return pd.Timestamp(hit.iloc[0]).date()
 
 
-def get_sftp_info(host_desc: str) -> dict:
-    """Read SFTP credentials for HOST_DESC from ctl_dwh_sftp_info."""
-    ctl = pd.read_sas(str(CTL_SFTP_INFO), encoding="latin1")
-    for col in ("SFTP_ID", "SFTP_PW", "HOST_IP", "HOST_DESC"):
-        ctl[col] = ctl[col].fillna("").astype(str).str.strip()
-    hit = ctl.loc[ctl["HOST_DESC"] == host_desc]
-    if hit.empty:
-        raise ValueError(f"HOST_DESC '{host_desc}' not found in {CTL_SFTP_INFO}")
-    row = hit.iloc[0]
-    return {"user": row["SFTP_ID"], "password": row["SFTP_PW"], "host": row["HOST_IP"]}
+# ============================================================================
+# REPORT DATE (from batch control file, SOURCE_SYSTEM_CD = DP)
+# ============================================================================
+REPTDATE    = get_batch_date(BATCH_SOURCE)
+REPTYEAR    = REPTDATE.strftime("%y")                            # YY   (YEAR2.)
+REPTMON     = REPTDATE.strftime("%m")                            # MM   (Z2.)
+REPTDAY     = REPTDATE.strftime("%d")                            # DD
+NOWK        = {8: "1", 15: "2", 22: "3"}.get(REPTDATE.day, "4")  # same week rule as SAS
+REPORT_DATE = REPTDATE.strftime("%d/%m/%y")                      # DDMMYY8. as used in titles
+REPYMD      = REPTDATE.strftime("%y%m%d")                        # yymmdd token for output names
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input" / "prod"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLM"
+
+# Production Path
+INPUT_DIR  = Path("/dwh")
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMODLM")
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+CHUNK_ROWS = 500_000
+TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
+
+# Input paths - Public Bank
+# INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR, "ca")
+# INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR, "lm")
+# INPUT_PBB_CURRENT  = get_latest_file(INPUT_DIR / "dp_ca", "ca")
+# INPUT_PBB_OVERDFT  = get_latest_file(INPUT_DIR / "dp_lm", "lm")
+INPUT_PBB_CURRENT  = INPUT_DIR / "dp_ca" / f"ca{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"    # e.g. ca05226.sas7bdat
+INPUT_PBB_OVERDFT  = INPUT_DIR / "dp_lm" / f"lm{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"    # e.g. lm05226.sas7bdat
+
+# Input paths - Islamic Bank
+# INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR, "ica")
+# INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR, "ilm")
+# INPUT_PIBB_CURRENT  = get_latest_file(INPUT_DIR / "idp_ca", "ica")
+# INPUT_PIBB_OVERDFT  = get_latest_file(INPUT_DIR / "idp_lm", "ilm")
+INPUT_PIBB_CURRENT  = INPUT_DIR / "idp_ca" / f"ica{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"  # e.g. ica05226.sas7bdat
+INPUT_PIBB_OVERDFT  = INPUT_DIR / "idp_lm" / f"ilm{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"  # e.g. ilm05226.sas7bdat
+
+# Shared customer name lookup file (ACCTNO -> NAME)
+# INPUT_CUSTNAME     = BASE_DIR / "input/uat" / "stg_dp_limit.sas7bdat"
+INPUT_CUSTNAME     = Path("/sas/deposit/dwh/staging") / "stg_dp_limit.sas7bdat"
+
+# Output paths (filename_yymmdd)
+# OUTPUT_PBB_REPORT  = build_output_file(OUTPUT_DIR, "PBB_ODLIMIT_REPORT").with_suffix(".txt")
+# OUTPUT_PIBB_REPORT = build_output_file(OUTPUT_DIR, "PIBB_ODLIMIT_REPORT").with_suffix(".txt")
+OUTPUT_PBB_REPORT  = OUTPUT_DIR / f"PBB_ODLIMIT_REPORT_{REPYMD}.txt"
+OUTPUT_PIBB_REPORT = OUTPUT_DIR / f"PIBB_ODLIMIT_REPORT_{REPYMD}.txt"
+# Output example: PBB_ODLIMIT_REPORT_260824.txt / PIBB_ODLIMIT_REPORT_260824.txt
+
+# Report configuration
+PAGE_SIZE = 50  # PS=50 in OPTIONS
+
+# The subtotal block is an indivisible group of 9 lines:
+#   \n (1) + dashes (1) + approved\n\n (2) + accounts\n\n (2)
+#   + operative\n (1) + dashes\n\n (2) = 9 lines total.
+# _write_report_file uses this to decide whether the subtotal fits inline on
+# the last data page, or needs a dedicated new page (title + headers only).
+SUBTOTAL_LINES = 9
 
 
-def sftp_put(local_path: Path, remote_dir: str) -> None:
-    """cd <remote_dir> then PUT local_path under the same file name (DRR, text file as-is)."""
-    info = get_sftp_info(SFTP_HOST_DESC)
-    transport = paramiko.Transport((info["host"], SFTP_PORT))
+
+
+def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
+    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
+    writer, schema = None, None
     try:
-        transport.connect(username=info["user"], password=info["password"])
-        sftp = paramiko.SFTPClient.from_transport(transport)
-        try:
-            sftp.chdir(remote_dir)
-            sftp.put(str(local_path), local_path.name)
-        finally:
-            sftp.close()
-    finally:
-        transport.close()
-    print(f"  SFTP {local_path.name} -> {SFTP_HOST_DESC}:{remote_dir}/{local_path.name}")
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = DP from ctl_dwh_batch_dttm)
-# ============================================================================
-print("Step 1: Deriving report date...")
-
-reptdate = get_batch_date(BATCH_SOURCE)
-
-REPTYEAR = reptdate.strftime("%Y")          # PUT(REPTDATE,YEAR4.)
-REPTMON  = reptdate.strftime("%m")          # PUT(MONTH(REPTDATE),Z2.)
-RDATE    = reptdate.strftime("%d/%m/%y")    # PUT(REPTDATE,DDMMYY8.)
-RPTDATE  = reptdate                         # WHERE REPTDATE EQ &RPTDATE
-
-# EIBDRB2A@%ODD.%OMM.%OYY..TXT / EIBDRB2B@%ODD.%OMM.%OYY..TXT
-DDMMYY     = reptdate.strftime("%d%m%y")
-OUTPUT_RM  = OUTPUT_DIR / f"EIBDRB2A@{DDMMYY}.TXT"   # DD: RMWDRAW
-OUTPUT_FCY = OUTPUT_DIR / f"EIBDRB2B@{DDMMYY}.TXT"   # DD: FCYWDRAW
-
-print(f"  Report year  : {REPTYEAR}")
-print(f"  Report month : {REPTMON}")
-print(f"  Report date  : {RDATE}")
-
-
-
-
-# ============================================================================
-# STEP 3: SAS -> TEMPORARY PARQUET (chunked), read via DuckDB, then deleted
-# ============================================================================
-def sas_to_parquet(src: Path, dst: Path, tag: str, chunk_rows: int = CHUNK_ROWS) -> int:
-    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk. Returns row count."""
-    print(f"  [{tag}] Converting {src.name} -> temporary parquet ...")
-    writer, schema, total = None, None, 0
-    try:
-        for chunk in pd.read_sas(str(src), encoding="latin1", chunksize=chunk_rows):
+        for chunk in pd.read_sas(str(src), format="sas7bdat", encoding="latin1", chunksize=chunk_rows):
+            chunk.columns = [str(col).upper().strip() for col in chunk.columns]
+            # Force text columns to string so an all-null first chunk doesn't lock a null type
             for col in chunk.columns[chunk.dtypes == object]:
                 chunk[col] = chunk[col].astype("string")
             table = pa.Table.from_pandas(chunk, preserve_index=False)
@@ -123,53 +113,36 @@ def sas_to_parquet(src: Path, dst: Path, tag: str, chunk_rows: int = CHUNK_ROWS)
             else:
                 table = table.cast(schema)
             writer.write_table(table)
-            total += len(chunk)
     finally:
         if writer is not None:
             writer.close()
-    print(f"  [{tag}] Done - {total:,} rows.")
-    return total
 
 
-def read_wdraw(sas_date: int) -> pl.DataFrame:
-    """MIS.FDWDRW&REPTMON where REPTDATE EQ &RPTDATE (temp parquet, removed afterwards)."""
+
+
+def _read_sas7bdat(path: Path) -> pl.DataFrame:
+    """Convert one .sas7bdat to a temporary Parquet, read it via DuckDB, then delete the Parquet.
+
+    Column names are upper-cased/stripped during conversion.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required input file: {path}")
+
     with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
-        tmp_parquet = Path(tmp) / "fdwdrw.parquet"
-        if sas_to_parquet(fdwdrw_path, tmp_parquet, "FDWDRW") == 0:
-            return pl.DataFrame(schema={"BRANCH": pl.Int32, "CURCODE": pl.Utf8,
-                                        "PRODCD": pl.Int32, "ACCTTYPE": pl.Utf8,
-                                        "CUSTCODE": pl.Int32, "RSONCODE": pl.Utf8,
-                                        "TRANAMT": pl.Float64})
-        con = duckdb.connect(database=":memory:")
+        tmp_parquet = Path(tmp) / f"{path.stem}.parquet"
+        sas_to_parquet(path, tmp_parquet)
+
+        con = duckdb.connect()
         try:
-            return con.execute(f"""
-                SELECT
-                    CAST(BRANCH             AS INTEGER) AS BRANCH,
-                    CAST(TRIM(CURCODE)      AS VARCHAR) AS CURCODE,
-                    CAST(PRODCD             AS INTEGER) AS PRODCD,
-                    CAST(TRIM(ACCTTYPE)     AS VARCHAR) AS ACCTTYPE,
-                    CAST(CUSTCODE           AS INTEGER) AS CUSTCODE,
-                    CAST(TRIM(RSONCODE)     AS VARCHAR) AS RSONCODE,
-                    CAST(TRANAMT            AS DOUBLE)  AS TRANAMT
-                FROM read_parquet('{tmp_parquet.as_posix()}')
-                WHERE REPTDATE = {sas_date}
-            """).pl()
+            df = con.execute(
+                f"SELECT * FROM read_parquet('{tmp_parquet.as_posix()}')"
+            ).pl()
         finally:
             con.close()
+    # temp folder and Parquet file are removed here
+
+    return df
 
 
 
 
-wdraw = read_wdraw(sas_date)
-
-
-
-
-write_group_report(wdraw_rm, RTITLE_RM, OUTPUT_RM)                    # DD: RMWDRAW
-sftp_put(OUTPUT_RM, SFTP_DIR_MISC)
-
-
-
-
-write_group_report(wdraw_fcy, RTITLE_FCY, OUTPUT_FCY)                 # DD: FCYWDRAW
-sftp_put(OUTPUT_FCY, SFTP_DIR_MISC)
