@@ -29,7 +29,7 @@ from output_date import build_output_file
 
 # Production Path
 INPUT_DIR  = Path("/dwh")
-OUTPUT_DIR = Path("/host/mis/output/report")
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMODLM")
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
