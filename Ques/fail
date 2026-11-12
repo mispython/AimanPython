@@ -84,11 +84,11 @@ def get_sftp_info(host_desc: str):
 # ============================================================================
 # Input directories - Production
 BASE_DIR          = Path("/dwh")
-INPUT_LOAN_DIR    = BASE_DIR / "lnd_ln"
-INPUT_CIS_DIR     = BASE_DIR / "rs_cis"
+INPUT_LOAN_DIR    = BASE_DIR / "ilnd_ln"
+INPUT_CIS_DIR     = BASE_DIR / "rs_cis"          # CISLN / CISDP are the shared PBB datasets
 INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
-OUTPUT_DIR  = Path("/host_pq/mis/output/ln/report")
+OUTPUT_DIR  = Path("/host_pq/mis/output/iln/report")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Scratch area for the temporary parquet files (None = system temp).
@@ -98,7 +98,14 @@ TEMP_DIR = None
 # Report date source and SFTP target (JCL step RUNSFTP -> DRR)
 SOURCE_SYSTEM_CD = "LN"
 DRR_HOST_DESC    = "Data Report Repository (DRR)"
-DRR_REMOTE_DIR   = "BBRS-BBR/LN1M"
+DRR_REMOTE_DIR   = "BBRS-BBR/ILN1M"
+
+
+
+
+PAGE_SIZE      = 60    # lines per page (SAS default)
+HEADER_LINES   = 10    # header block occupies 10 lines
+RECORD_LEN     = 133   # LRECL=133 (ASA byte + 132 print columns)
 
 
 
@@ -131,9 +138,9 @@ elif 16 <= reptdate.day <= 22:
 else:
     REPTWEEK = "4"
 
-# JCL: PUT //SAP.PBB.LN1M.DAILY(+1)  LN1M%ODD.%OMM..TXT  ->  LN1M<DD><MM>.TXT
-OUTPUT_FILE      = OUTPUT_DIR / f"LN1M{REPTDAY}{REPTMON}.txt"
-REMOTE_FILE_NAME = f"LN1M{REPTDAY}{REPTMON}.TXT"
+# JCL: PUT //SAP.PIBB.LN1M.DAILY(+1)  ILN1M%ODD.%OMM..TXT  ->  ILN1M<DD><MM>.TXT
+OUTPUT_FILE      = OUTPUT_DIR / f"ILN1M{REPTDAY}{REPTMON}.txt"
+REMOTE_FILE_NAME = f"ILN1M{REPTDAY}{REPTMON}.TXT"
 
 print(f"  Report date  : {RDATE}")
 print(f"  Current      : {REPTMON}/{REPTDAY}/{REPTYEAR}")
@@ -145,6 +152,7 @@ print(f"  Output file  : {OUTPUT_FILE.name}")
 
 # ============================================================================
 # STEP 2: RESOLVE INPUT FILES  (LOAN = report date, LOANX = report date - 1)
+# PIBB prefix convention: "iln"
 # ============================================================================
 print("\nStep 2: Resolving input files...")
 
@@ -157,8 +165,8 @@ def _find_input(directory: Path, stem: str) -> Path:
     return matches[0]
 
 
-loan_path  = _find_input(INPUT_LOAN_DIR, f"ln{REPTYEAR}{REPTMON}{REPTDAY}")
-loanx_path = _find_input(INPUT_LOAN_DIR, f"ln{REPTPYEA}{REPTPMON}{REPTPDAY}")
+loan_path  = _find_input(INPUT_LOAN_DIR, f"iln{REPTYEAR}{REPTMON}{REPTDAY}")
+loanx_path = _find_input(INPUT_LOAN_DIR, f"iln{REPTPYEA}{REPTPMON}{REPTPDAY}")
 cisln_path = _find_input(INPUT_CIS_DIR,  f"cisr1ln{REPTMON}{REPTWEEK}{REPTYEAR}")
 cisdp_path = _find_input(INPUT_CIS_DIR,  f"cisr1ca{REPTMON}{REPTWEEK}{REPTYEAR}")
 
@@ -381,9 +389,6 @@ print(f"  SASP rows: {len(sasp):,}")
 
 
 
-RECORD_LEN = 133
-
-
 def _put(*items) -> str:
     """Build one 133-byte record. items = (logical @column, text); ASA byte is index 0."""
     buf = [" "] * RECORD_LEN
@@ -408,8 +413,8 @@ def _fmt_comma(value, width: int, decimals: int = 0) -> str:
 def _build_header(category: str) -> list[str]:
     """SAS HEADER=NEWPAGE block (10 lines); '1' = ASA page eject."""
     return [
-        _put((0, "1"), (2, "PUBLIC BANK BERHAD - RETAIL BANKING DIVISION")),
-        _put((2, "REPORT TITLE : EIBDLN1M")),
+        _put((0, "1"), (2, "PUBLIC ISLAMIC BANK BERHAD - RETAIL BANKING DIVISION")),
+        _put((2, "REPORT TITLE : EIIDLN1M")),
         _put((2, f"DAILY MOVEMENT IN BANK'S LOANS/OD ACCOUNTS @ {RDATE}")),
         _put((2, "NET INCREASED/(DECREASED) OF RM1 MILLION & ABOVE PER CUSTOMER")),
         _put((2, "*")),
@@ -470,15 +475,15 @@ gc.collect()
 
 
 # ============================================================================
-# FTP REPORT TO DATAWAREHOUSE SERVER  (commented out in the original JCL)
+# FTP REPORTS TO DATAWAREHOUSE SERVER  (commented out in the original JCL)
 # ============================================================================
 # cd TEXTFILE
 # cd FIN
-# PUT //SAP.PBB.LN1M.DAILY(+1)  LN1M%ODD.%OMM..TXT
+# PUT //SAP.PIBB.LN1M.DAILY(+1) ILN1M%ODD.%OMM..TXT
 
 # ============================================================================
 # SFTP HOST DATASET TO DATA REPORT REPOSITORY SYSTEM (DRR)
-# JCL: cd BBRS-BBR/LN1M ; PUT //SAP.PBB.LN1M.DAILY(+1) LN1M%ODD.%OMM..TXT
+# JCL: cd BBRS-BBR/ILN1M ; PUT //SAP.PIBB.LN1M.DAILY(+1) ILN1M%ODD.%OMM..TXT
 # ============================================================================
 def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
     sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
@@ -505,6 +510,8 @@ def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
 
 print("\nUploading report to DRR via SFTP...")
 sftp_upload_to_drr(OUTPUT_FILE, REMOTE_FILE_NAME)
+
+print("\nEIIDLN1M complete.")
 
 
 
