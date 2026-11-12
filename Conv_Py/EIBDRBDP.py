@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Program : EIBDRBDP.py
 Purpose : Driver job for the RM/FCY FD daily reports. Mirrors the JCL job
@@ -11,10 +10,36 @@ Purpose : Driver job for the RM/FCY FD daily reports. Mirrors the JCL job
           only scheduled together under this driver.
 """
 
+from datetime import date
 from pathlib import Path
 
-import EIBDRB01
-import EIBDRB02
+import pandas as pd
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# Production Path
+OUTPUT_DIR     = Path("/host_pq/mis/output/deposit/report/EIBDRBDP")
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for the report date
+
+# # Testing Path
+# OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDRBDP")
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+REPTDATE = get_batch_date(BATCH_SOURCE)
+MMYY     = REPTDATE.strftime("%m%y")       # %OMM%OYY
+DDMMYY   = REPTDATE.strftime("%d%m%y")     # %ODD%OMM%OYY
 
 # ============================================================================
 # OUTPUT FILES CORRESPONDING TO THE ORIGINAL CATALOGUED DATASETS
@@ -22,16 +47,10 @@ import EIBDRB02
 # DD02 -> SAP.PBB.EIBDRB2A  (EIBDRB02 RMWDRAW output)
 # DD03 -> SAP.PBB.EIBDRB2B  (EIBDRB02 FCYWDRAW output)
 # ============================================================================
-# Production Path
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report/EIBDRBDP")
-
-# # Testing Path
-# OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDRBDP")
-
 STALE_OUTPUTS = [
-    OUTPUT_DIR / f"EIBDRB01_{__import__('EIBDRB01').REPTMON}.txt",   # DD01
-    OUTPUT_DIR / "EIBDRB2A.txt",                                     # DD02
-    OUTPUT_DIR / "EIBDRB2B.txt",                                     # DD03
+    OUTPUT_DIR / f"EIBDRB01@{MMYY}.TXT",     # DD01
+    OUTPUT_DIR / f"EIBDRB2A@{DDMMYY}.TXT",   # DD02
+    OUTPUT_DIR / f"EIBDRB2B@{DDMMYY}.TXT",   # DD03
 ]
 
 
@@ -49,16 +68,12 @@ def delete_stale_outputs() -> None:
 if __name__ == "__main__":
     delete_stale_outputs()
 
-    # ------------------------------------------------------------------
-    # STEP EIBDRB01: DAILY TOTAL OUTSTANDING BALANCE/ACCOUNT ON FCY FD
-    # (already executed on import above by EIBDRB01.py's module-level code)
-    # ------------------------------------------------------------------
+    # STEP EIBDRB01 - module-level code runs on import, AFTER the delete step
+    import EIBDRB01  # noqa: F401,E402
     print("\n>>> EIBDRB01 step complete.")
 
-    # ------------------------------------------------------------------
-    # STEP EIBDRB02: DAILY FD WITHDRAWALS OVER-THE-COUNTER BY BRANCH
-    # (already executed on import above by EIBDRB02.py's module-level code)
-    # ------------------------------------------------------------------
+    # STEP EIBDRB02 - module-level code runs on import
+    import EIBDRB02  # noqa: F401,E402
     print("\n>>> EIBDRB02 step complete.")
 
     print("\nEIBDRBDP job complete.")
