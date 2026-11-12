@@ -1,11 +1,9 @@
-import os
 import gc
-import sys
+import re
 import tempfile
-from contextlib import contextmanager
-from datetime import datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import date
 from pathlib import Path
+from typing import Optional
 
 import duckdb
 import pandas as pd
@@ -17,502 +15,253 @@ import pyarrow.parquet as pq
 
 
 
-# ============================================================================
-# DWH CONTROL FILES  (batch date + SFTP credentials)
-# ============================================================================
-BATCH_DATE_CTL_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-SFTP_CONTROL_FILE   = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+# Control files
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+CTL_SFTP_INFO  = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for the report date
 
+# Temporary parquet conversion (deleted automatically after each read)
+CHUNK_ROWS = 500_000
+TEMP_DIR   = None              # None = system temp; set a path if the default is too small
 
-def get_batch_date_dwh(source_system_cd: str) -> str:
-    """Return BATCH_DTTM ("YYYY-MM-DD HH:MM:SS") for the given SOURCE_SYSTEM_CD."""
-    if not BATCH_DATE_CTL_FILE.exists():
-        raise FileNotFoundError(f"Batch date control file not found: {BATCH_DATE_CTL_FILE}")
+# SFTP target: DRR (OPER.PBB.PARMLIB(DRR#SFTP))
+SFTP_HOST_DESC      = "Data Report Repository (DRR)"
+SFTP_PORT           = 22
+SFTP_DIR_BANK_TOTAL = "WMTB-SA&S/DEP - SAS/BANK TOTAL"      # STEP01: cd "WMTB-SA&S/DEP - SAS/BANK TOTAL"
 
-    ctl = pd.read_sas(BATCH_DATE_CTL_FILE, format="sas7bdat", encoding="utf-8")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-
-    rows = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd]
-    if rows.empty:
-        raise RuntimeError(
-            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {BATCH_DATE_CTL_FILE}"
-        )
-
-    batch_dttm = pd.to_datetime(rows.iloc[0]["BATCH_DTTM"])
-    return batch_dttm.strftime("%Y-%m-%d %H:%M:%S")
-
-
-def get_sftp_info(host_desc: str):
-    """Read one SFTP configuration row from the DWH control file."""
-    if not SFTP_CONTROL_FILE.exists():
-        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
-
-    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-
-    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
-    missing_columns = sorted(required.difference(ctl.columns))
-    if missing_columns:
-        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
-
-    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
-    rows = ctl[descriptions.eq(host_desc)]
-    if len(rows) != 1:
-        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
-
-    row = rows.iloc[0]
-    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
-    sftp_id = clean(row["SFTP_ID"])
-    sftp_pw = clean(row["SFTP_PW"])
-    host_ip = clean(row["HOST_IP"])
-    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
-
-    empty_values = [
-        name for name, value in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip))
-        if not value
-    ]
-    if empty_values:
-        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
-
-    return sftp_id, sftp_pw, host_ip, host_key
+# //*----------------------------------------------
+# //* FTP HOST DATASETS TO CRM DATAWAREHOUSE SERVER   (commented out in the original JCL)
+# //*----------------------------------------------
+# //*RUNSFTP  EXEC COZBATCH
+# //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+# //*cd TEXTFILE
+# //*cd RETAILBANK
+# //*PUT //SAP.PBB.EIBDRB01   EIBDRB01@%OMM.%OYY..TXT
+# //*PUT //SAP.PBB.EIBDRB2A   EIBDRB2A@%ODD.%OMM.%OYY..TXT
+# //*PUT //SAP.PBB.EIBDRB2B   EIBDRB2B@%ODD.%OMM.%OYY..TXT
+# //*EOB
 
 
 
 
 # ============================================================================
-# PATH CONFIGURATION
+# CONTROL-FILE HELPERS (batch date, SFTP credentials)
 # ============================================================================
-# Input directories - Production
-BASE_DIR          = Path("/dwh")
-INPUT_LOAN_DIR    = BASE_DIR / "ilnd_ln"
-INPUT_CIS_DIR     = BASE_DIR / "rs_cis"          # CISLN / CISDP are the shared PBB datasets
-INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
-
-OUTPUT_DIR  = Path("/host_pq/mis/output/iln/report")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Scratch area for the temporary parquet files (None = system temp).
-# CISLN is ~14 GB, so point this at a volume with enough free space.
-TEMP_DIR = None
-
-# Report date source and SFTP target (JCL step RUNSFTP -> DRR)
-SOURCE_SYSTEM_CD = "LN"
-DRR_HOST_DESC    = "Data Report Repository (DRR)"
-DRR_REMOTE_DIR   = "BBRS-BBR/ILN1M"
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
 
 
+def get_sftp_info(host_desc: str) -> dict:
+    """Read SFTP credentials for HOST_DESC from ctl_dwh_sftp_info."""
+    ctl = pd.read_sas(str(CTL_SFTP_INFO), encoding="latin1")
+    for col in ("SFTP_ID", "SFTP_PW", "HOST_IP", "HOST_DESC"):
+        ctl[col] = ctl[col].fillna("").astype(str).str.strip()
+    hit = ctl.loc[ctl["HOST_DESC"] == host_desc]
+    if hit.empty:
+        raise ValueError(f"HOST_DESC '{host_desc}' not found in {CTL_SFTP_INFO}")
+    row = hit.iloc[0]
+    return {"user": row["SFTP_ID"], "password": row["SFTP_PW"], "host": row["HOST_IP"]}
 
 
-PAGE_SIZE      = 60    # lines per page (SAS default)
-HEADER_LINES   = 10    # header block occupies 10 lines
-RECORD_LEN     = 133   # LRECL=133 (ASA byte + 132 print columns)
-
-
+def sftp_put(local_path: Path, remote_dir: str) -> None:
+    """cd <remote_dir> then PUT local_path under the same file name (DRR, text file as-is)."""
+    info = get_sftp_info(SFTP_HOST_DESC)
+    transport = paramiko.Transport((info["host"], SFTP_PORT))
+    try:
+        transport.connect(username=info["user"], password=info["password"])
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        try:
+            sftp.chdir(remote_dir)
+            sftp.put(str(local_path), local_path.name)
+        finally:
+            sftp.close()
+    finally:
+        transport.close()
+    print(f"  SFTP {local_path.name} -> {SFTP_HOST_DESC}:{remote_dir}/{local_path.name}")
 
 
 # ============================================================================
-# STEP 1: REPORT DATE  (LN batch date from ctl_dwh_batch_dttm)
-# SAS: REPTDATE = LOAN.REPTDATE ; REPTPDAT = REPTDATE-1
+# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = DP from ctl_dwh_batch_dttm)
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-batch_dt = datetime.strptime(get_batch_date_dwh(SOURCE_SYSTEM_CD), "%Y-%m-%d %H:%M:%S")
-reptdate = batch_dt.date()
-reptpdat = reptdate - timedelta(days=1)
+REPTDATE = get_batch_date(BATCH_SOURCE)        # date object
+REPTYEAR = REPTDATE.strftime("%Y")             # 4-digit year, e.g. "2026"
+REPTYY   = REPTDATE.strftime("%y")             # 2-digit year, e.g. "26"
+REPTMON  = REPTDATE.strftime("%m")             # zero-padded month
+REPTDAY  = REPTDATE.strftime("%d")             # zero-padded day
+RDATE    = REPTDATE.strftime("%d/%m/%y")       # DDMMYY8. equivalent
 
-RDATE     = reptdate.strftime("%d/%m/%y")      # DDMMYY8.
-REPTDAY   = reptdate.strftime("%d")
-REPTMON   = reptdate.strftime("%m")
-REPTYEAR  = reptdate.strftime("%y")
-REPTPDAY  = reptpdat.strftime("%d")
-REPTPMON  = reptpdat.strftime("%m")
-REPTPYEA  = reptpdat.strftime("%y")
+REPTYEAR_INT = REPTDATE.year
+REPTMON_INT  = REPTDATE.month
 
-# Week token used in the CIS dataset names (same day ranges as EIWFRMCR.py)
-if 1 <= reptdate.day <= 8:
-    REPTWEEK = "1"
-elif 9 <= reptdate.day <= 15:
-    REPTWEEK = "2"
-elif 16 <= reptdate.day <= 22:
-    REPTWEEK = "3"
-else:
-    REPTWEEK = "4"
+# EIBDRB01@%OMM.%OYY..TXT
+OUTPUT_FILE = OUTPUT_DIR / f"EIBDRB01@{REPTMON}{REPTYY}.TXT"
 
-# JCL: PUT //SAP.PIBB.LN1M.DAILY(+1)  ILN1M%ODD.%OMM..TXT  ->  ILN1M<DD><MM>.TXT
-OUTPUT_FILE      = OUTPUT_DIR / f"ILN1M{REPTDAY}{REPTMON}.txt"
-REMOTE_FILE_NAME = f"ILN1M{REPTDAY}{REPTMON}.TXT"
-
-print(f"  Report date  : {RDATE}")
-print(f"  Current      : {REPTMON}/{REPTDAY}/{REPTYEAR}")
-print(f"  Previous     : {REPTPMON}/{REPTPDAY}/{REPTPYEA}")
-print(f"  Output file  : {OUTPUT_FILE.name}")
+print(f"  Report date : {RDATE}")
+print(f"  Year/Mon/Day: {REPTYEAR}/{REPTMON}/{REPTDAY}")
 
 
 
 
 # ============================================================================
-# STEP 2: RESOLVE INPUT FILES  (LOAN = report date, LOANX = report date - 1)
-# PIBB prefix convention: "iln"
+# CONTROL-FILE HELPERS (batch date, SFTP credentials)
 # ============================================================================
-print("\nStep 2: Resolving input files...")
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
 
 
-def _find_input(directory: Path, stem: str) -> Path:
-    """Return the file in *directory* whose name starts with *stem*."""
-    matches = sorted(directory.glob(f"{stem}*"))
-    if not matches:
-        raise FileNotFoundError(f"Input file not found in {directory} (expected prefix '{stem}')")
-    return matches[0]
+def get_sftp_info(host_desc: str) -> dict:
+    """Read SFTP credentials for HOST_DESC from ctl_dwh_sftp_info."""
+    ctl = pd.read_sas(str(CTL_SFTP_INFO), encoding="latin1")
+    for col in ("SFTP_ID", "SFTP_PW", "HOST_IP", "HOST_DESC"):
+        ctl[col] = ctl[col].fillna("").astype(str).str.strip()
+    hit = ctl.loc[ctl["HOST_DESC"] == host_desc]
+    if hit.empty:
+        raise ValueError(f"HOST_DESC '{host_desc}' not found in {CTL_SFTP_INFO}")
+    row = hit.iloc[0]
+    return {"user": row["SFTP_ID"], "password": row["SFTP_PW"], "host": row["HOST_IP"]}
 
 
-loan_path  = _find_input(INPUT_LOAN_DIR, f"iln{REPTYEAR}{REPTMON}{REPTDAY}")
-loanx_path = _find_input(INPUT_LOAN_DIR, f"iln{REPTPYEA}{REPTPMON}{REPTPDAY}")
-cisln_path = _find_input(INPUT_CIS_DIR,  f"cisr1ln{REPTMON}{REPTWEEK}{REPTYEAR}")
-cisdp_path = _find_input(INPUT_CIS_DIR,  f"cisr1ca{REPTMON}{REPTWEEK}{REPTYEAR}")
-
-print(f"  LOAN  : {loan_path.name}")
-print(f"  LOANX : {loanx_path.name}")
-print(f"  CISLN : {cisln_path.name}")
-print(f"  CISDP : {cisdp_path.name}")
-
-
-
-
-# ============================================================================
-# HELPER: STREAM .sas7bdat -> TEMPORARY PARQUET  (deleted automatically)
-# ============================================================================
-def sas_to_parquet(sas_path: Path, parquet_path: Path, tag: str) -> None:
-    """Convert a large .sas7bdat to Parquet in streaming chunks."""
-    print(f"  [{tag}] Converting {sas_path.name} -> temporary parquet ...")
-    writer = None
-    schema = None
-    total = 0
-
+def sftp_put(local_path: Path, remote_dir: str) -> None:
+    """cd <remote_dir> then PUT local_path under the same file name (DRR, text file as-is)."""
+    info = get_sftp_info(SFTP_HOST_DESC)
+    transport = paramiko.Transport((info["host"], SFTP_PORT))
     try:
-        for chunk in pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS):
-            if ROW_LIMIT and total >= ROW_LIMIT:
-                break
-            if ROW_LIMIT:
-                chunk = chunk.iloc[: ROW_LIMIT - total]
+        transport.connect(username=info["user"], password=info["password"])
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        try:
+            sftp.chdir(remote_dir)
+            sftp.put(str(local_path), local_path.name)
+        finally:
+            sftp.close()
+    finally:
+        transport.close()
+    print(f"  SFTP {local_path.name} -> {SFTP_HOST_DESC}:{remote_dir}/{local_path.name}")
 
+
+# ============================================================================
+# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = DP from ctl_dwh_batch_dttm)
+# ============================================================================
+print("Step 1: Deriving report date...")
+
+REPTDATE = get_batch_date(BATCH_SOURCE)        # date object
+REPTYEAR = REPTDATE.strftime("%Y")             # 4-digit year, e.g. "2026"
+REPTYY   = REPTDATE.strftime("%y")             # 2-digit year, e.g. "26"
+REPTMON  = REPTDATE.strftime("%m")             # zero-padded month
+REPTDAY  = REPTDATE.strftime("%d")             # zero-padded day
+RDATE    = REPTDATE.strftime("%d/%m/%y")       # DDMMYY8. equivalent
+
+REPTYEAR_INT = REPTDATE.year
+REPTMON_INT  = REPTDATE.month
+
+# EIBDRB01@%OMM.%OYY..TXT
+OUTPUT_FILE = OUTPUT_DIR / f"EIBDRB01@{REPTMON}{REPTYY}.TXT"
+
+print(f"  Report date : {RDATE}")
+print(f"  Year/Mon/Day: {REPTYEAR}/{REPTMON}/{REPTDAY}")
+
+
+
+
+# ============================================================================
+# HELPER: SAS -> TEMPORARY PARQUET (chunked), read via DuckDB, then deleted
+# ============================================================================
+def sas_to_parquet(src: Path, dst: Path, tag: str, chunk_rows: int = CHUNK_ROWS) -> int:
+    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk. Returns row count."""
+    print(f"  [{tag}] Converting {src.name} -> temporary parquet ...")
+    writer, schema, total = None, None, 0
+    try:
+        for chunk in pd.read_sas(str(src), encoding="latin1", chunksize=chunk_rows):
+            for col in chunk.columns[chunk.dtypes == object]:
+                chunk[col] = chunk[col].astype("string")
             table = pa.Table.from_pandas(chunk, preserve_index=False)
-
-            if schema is None:
-                # Never lock a 'null' type from a chunk that was blank for a text column
-                fields = [
-                    pa.field(f.name, pa.string()) if pa.types.is_null(f.type) else f
-                    for f in table.schema
-                ]
-                schema = pa.schema(fields)
-                table = table.cast(schema, safe=False)
-                writer = pq.ParquetWriter(parquet_path, schema, compression="snappy")
+            if writer is None:
+                schema = table.schema
+                writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
             else:
-                arrays = []
-                for field in schema:
-                    col = table.column(field.name)
-                    if col.type != field.type:
-                        try:
-                            col = col.cast(field.type, safe=False)
-                        except Exception as exc:
-                            raise RuntimeError(
-                                f"[{tag}] Cannot cast '{field.name}' from {col.type} "
-                                f"to {field.type}: {exc}"
-                            ) from exc
-                    arrays.append(col)
-                table = pa.Table.from_arrays(arrays, schema=schema)
-
+                table = table.cast(schema)
             writer.write_table(table)
             total += len(chunk)
-            del chunk, table
-            gc.collect()
     finally:
         if writer is not None:
             writer.close()
-
     print(f"  [{tag}] Done - {total:,} rows.")
+    return total
 
 
-@contextmanager
-def temp_parquet(sas_path: Path, tag: str):
-    """Yield the path of a temporary Parquet copy of *sas_path*; removed on exit."""
+def read_fcy_raw() -> pl.DataFrame:
+    """DEPO.FD: WHERE CURCODE NE 'MYR' AND CURBAL GE 0 (temp parquet, removed afterwards)."""
     with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
-        parquet_path = Path(tmp) / f"{tag.lower()}.parquet"
-        sas_to_parquet(sas_path, parquet_path, tag)
-        yield parquet_path
-
-
-
-
-# ============================================================================
-# STEP 4: BUILD CISNM  (customer-name lookup)
-# SAS: SET CISDP.DEPOSIT CISLN.LOAN; PROC SORT BY ACCTNO SECCUST CUSTNAME;
-#      PROC SORT NODUPKEY BY ACCTNO  -> first row per ACCTNO
-# SAS sorts missing/blank first, so NULLS FIRST is required (DuckDB default is NULLS LAST).
-# ============================================================================
-def build_cisnm() -> pl.DataFrame:
-    with temp_parquet(cisdp_path, "CISDP") as cisdp_pq, \
-         temp_parquet(cisln_path, "CISLN") as cisln_pq:
+        tmp_parquet = Path(tmp) / "fcyfd.parquet"
+        if sas_to_parquet(FCY_FILE, tmp_parquet, "FCY") == 0:
+            return pl.DataFrame(schema={"CURCODE": pl.Utf8, "CURBAL": pl.Float64,
+                                        "OPENDT": pl.Float64, "CLOSEDT": pl.Float64,
+                                        "OPENIND": pl.Utf8})
         con = duckdb.connect(database=":memory:")
         try:
             return con.execute(f"""
-                WITH combined AS (
-                    SELECT CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-                           CAST(CUSTNAM1 AS VARCHAR) AS CUSTNAME,
-                           CAST(SECCUST  AS VARCHAR) AS SECCUST
-                    FROM read_parquet('{cisdp_pq.as_posix()}')
-                    UNION ALL
-                    SELECT CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-                           CAST(CUSTNAM1 AS VARCHAR) AS CUSTNAME,
-                           CAST(SECCUST  AS VARCHAR) AS SECCUST
-                    FROM read_parquet('{cisln_pq.as_posix()}')
-                ),
-                ranked AS (
-                    SELECT *,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY ACCTNO
-                               ORDER BY SECCUST NULLS FIRST, CUSTNAME NULLS FIRST
-                           ) AS rn
-                    FROM combined
-                )
-                SELECT ACCTNO, CUSTNAME, SECCUST FROM ranked WHERE rn = 1
-            """).pl()
-        finally:
-            con.close()
-
-
-# ============================================================================
-# STEP 5: BUILD SASC  (current-period loan summary, one row per BRANCH+ACCTNO)
-# [keep the FLAG-01 comment block here]
-# ============================================================================
-def build_sasc() -> pl.DataFrame:
-    with temp_parquet(loan_path, "LOAN") as loan_pq:
-        con = duckdb.connect(database=":memory:")
-        try:
-            return con.execute(f"""
-                WITH categorised AS (
-                    SELECT
-                        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-                        CAST(BRANCH   AS INTEGER) AS BRANCH,
-                        'C'                       AS TDI,
-                        CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-                        CAST(APPRLIM2 AS DOUBLE)  AS APPRLIM2,
-                        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-                        CASE
-                            WHEN LNTYPE = 'OD'
-                                 AND CAST(PRODUCT AS INTEGER) NOT IN (107,173) THEN 'OD'
-                            WHEN LNTYPE = 'HP'                             THEN 'HP'
-                            WHEN LNTYPE = 'RC'                             THEN 'RC'
-                            WHEN LNTYPE IN ('HL','FL','ST','FR','FT','FS') THEN 'TL'
-                            ELSE NULL
-                        END AS CATG
-                    FROM read_parquet('{loan_pq.as_posix()}')
-                )
                 SELECT
-                    ACCTNO, BRANCH, 'C' AS TDI,
-                    MAX(APPRLIMT)   AS APPRLIMT,
-                    MAX(APPRLIM2)   AS APPRLIM2,
-                    ANY_VALUE(CATG) AS CATG,
-                    SUM(BALANCE)    AS ACCBAL,
-                    SUM(APPRLIMT)   AS LIMTBAL
-                FROM categorised
-                WHERE CATG IS NOT NULL
-                GROUP BY ACCTNO, BRANCH
+                    CAST(CURCODE  AS VARCHAR) AS CURCODE,
+                    CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+                    CAST(OPENDT   AS DOUBLE)  AS OPENDT,
+                    CAST(CLOSEDT  AS DOUBLE)  AS CLOSEDT,
+                    CAST(OPENIND  AS VARCHAR) AS OPENIND
+                FROM read_parquet('{tmp_parquet.as_posix()}')
+                WHERE TRIM(CURCODE) != 'MYR' AND CURBAL >= 0
             """).pl()
         finally:
             con.close()
 
 
-# ============================================================================
-# STEP 6: BUILD SASP  (previous-period loan summary)
-# SAS: IF FIRST.BRANCH OR FIRST.ACCTNO THEN PACCBAL=0.00;   <-- PLIMBAL is NOT reset
-#      PACCBAL + BALANCE;  PLIMBAL + APPRLIMT;
-# PLIMBAL is a retained sum that is never reset, so at each BRANCH+ACCTNO output it
-# holds the RUNNING TOTAL of APPRLIMT over all SASP rows up to that account (sorted
-# BY BRANCH ACCTNO). This original SAS behaviour is preserved on purpose.
-# ============================================================================
-def build_sasp() -> pl.DataFrame:
-    with temp_parquet(loanx_path, "LOANX") as loanx_pq:
+def read_wk_raw() -> pl.DataFrame:
+    """WALK.WKDTL<yymmdd> (temp parquet, removed afterwards)."""
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        tmp_parquet = Path(tmp) / "wkdtl.parquet"
+        if sas_to_parquet(WK_FILE, tmp_parquet, "WK") == 0:
+            return pl.DataFrame(schema={"CURR": pl.Utf8, "CURBAL": pl.Float64})
         con = duckdb.connect(database=":memory:")
         try:
             return con.execute(f"""
-                WITH categorised AS (
-                    SELECT
-                        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-                        CAST(BRANCH   AS INTEGER) AS BRANCH,
-                        CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-                        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-                        CASE
-                            WHEN LNTYPE = 'OD'
-                                 AND CAST(PRODUCT AS INTEGER) NOT IN (107,173) THEN 'OD'
-                            WHEN LNTYPE = 'HP'                             THEN 'HP'
-                            WHEN LNTYPE = 'RC'                             THEN 'RC'
-                            WHEN LNTYPE IN ('HL','FL','ST','FR','FT','FS') THEN 'TL'
-                            ELSE NULL
-                        END AS CATG
-                    FROM read_parquet('{loanx_pq.as_posix()}')
-                ),
-                grouped AS (
-                    SELECT ACCTNO, BRANCH, 'P' AS TDI,
-                           ANY_VALUE(CATG)              AS CATG,
-                           SUM(BALANCE)                 AS PACCBAL,
-                           COALESCE(SUM(APPRLIMT), 0)   AS GRPLIM
-                    FROM categorised
-                    WHERE CATG IS NOT NULL
-                    GROUP BY ACCTNO, BRANCH
-                )
-                SELECT ACCTNO, BRANCH, TDI, CATG, PACCBAL,
-                       SUM(GRPLIM) OVER (
-                           ORDER BY BRANCH, ACCTNO
-                           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                       ) AS PLIMBAL
-                FROM grouped
+                SELECT
+                    CAST(CURR   AS VARCHAR) AS CURR,
+                    CAST(CURBAL AS DOUBLE)  AS CURBAL
+                FROM read_parquet('{tmp_parquet.as_posix()}')
             """).pl()
         finally:
             con.close()
 
 
-print("\nStep 4: Building CISNM (customer name lookup)...")
-cisnm = build_cisnm()
-gc.collect()
-print(f"  CISNM rows: {len(cisnm):,}")
 
-print("\nStep 5: Building SASC (current period)...")
-sasc = build_sasc()
-gc.collect()
-print(f"  SASC rows: {len(sasc):,}")
 
-print("\nStep 6: Building SASP (previous period)...")
-sasp = build_sasp()
-gc.collect()
-print(f"  SASP rows: {len(sasp):,}")
+fcy_raw = read_fcy_raw()
 
 
 
 
-def _put(*items) -> str:
-    """Build one 133-byte record. items = (logical @column, text); ASA byte is index 0."""
-    buf = [" "] * RECORD_LEN
-    for pos, text in items:
-        for i, ch in enumerate(text):
-            if pos + i < RECORD_LEN:
-                buf[pos + i] = ch
-    return "".join(buf)
+wk_raw = read_wk_raw()
 
 
-def _fmt_comma(value, width: int, decimals: int = 0) -> str:
-    """SAS COMMAw.d: round half away from zero, comma separators, right-justified."""
-    if value is None or value != value:
-        return ".".rjust(width)
-    quantum = Decimal(1).scaleb(-decimals)
-    dec = Decimal(repr(float(value))).quantize(quantum, rounding=ROUND_HALF_UP)
-    if dec == 0:
-        dec = abs(dec)
-    return f"{dec:,.{decimals}f}".rjust(width)
 
-
-def _build_header(category: str) -> list[str]:
-    """SAS HEADER=NEWPAGE block (10 lines); '1' = ASA page eject."""
-    return [
-        _put((0, "1"), (2, "PUBLIC ISLAMIC BANK BERHAD - RETAIL BANKING DIVISION")),
-        _put((2, "REPORT TITLE : EIIDLN1M")),
-        _put((2, f"DAILY MOVEMENT IN BANK'S LOANS/OD ACCOUNTS @ {RDATE}")),
-        _put((2, "NET INCREASED/(DECREASED) OF RM1 MILLION & ABOVE PER CUSTOMER")),
-        _put((2, "*")),
-        _put((2, f"{category:<16s}"[:16])),
-        _put((2, "-" * 131)),
-        _put((2, "BRH  BRH")),
-        _put((2, "CODE ABBR CUSTOMER NAME"),
-             (54, "ACCOUNT NO.   APPROVE LIMIT  CURRENT BALANCE"),
-             (103, "PREVIOUS BAL    NET (INC/DEC)")),
-        _put((2, "-" * 131)),
-    ]
-
-
-def _build_detail(row: dict) -> str:
-    return _put(
-        (2,   f"{int(row['BRANCH'] or 0):03d}"),                   # Z3.
-        (7,   (row.get("BRNAME") or "")[:3]),                      # $3.
-        (12,  (row.get("CUSTNAME") or "")[:40]),                   # $40.
-        (54,  f"{int(row['ACCTNO'] or 0):>10d}"),                  # 10.
-        (66,  _fmt_comma(row.get("LIMTBAL"), 15, 0)),              # COMMA15.0
-        (83,  _fmt_comma(row.get("ACCBAL"), 15, 2)),               # COMMA15.2
-        (100, _fmt_comma(row.get("PACCBAL"), 15, 2)),              # COMMA15.2
-        (117, _fmt_comma(row.get("MOVEAMTS"), 15, 2)),             # COMMA15.2
-    )
-
-
-print("\nStep 11: Generating report...")
-
-output_lines: list[str] = []
-current_cat = None
-lines_on_page = 0
-
-for row in final.iter_rows(named=True):
-    category = row["CATEGORY"] or ""
-    # IF FIRST.CATEGORY THEN PUT _PAGE_  /  page overflow -> new header
-    if category != current_cat or lines_on_page >= PAGE_SIZE:
-        header_block = _build_header(category)
-        output_lines.extend(header_block)
-        current_cat = category
-        lines_on_page = len(header_block)
-    output_lines.append(_build_detail(row))
-    lines_on_page += 1
-
-with open(OUTPUT_FILE, "w", encoding="latin1", newline="\n") as fh:
-    for ln in output_lines:
-        fh.write(ln + "\n")
 
 print(f"\n  Output written : {OUTPUT_FILE}")
 print(f"  Total lines    : {len(output_lines):,}")
-print("\n  --- Report Preview ---")
-for ln in output_lines:
-    print(ln)
+for line in output_lines:
+    print("".join(line).rstrip())
 
-del final
+sftp_put(OUTPUT_FILE, SFTP_DIR_BANK_TOTAL)
+
+del store_df
 gc.collect()
-
-
-
-
-# ============================================================================
-# FTP REPORTS TO DATAWAREHOUSE SERVER  (commented out in the original JCL)
-# ============================================================================
-# cd TEXTFILE
-# cd FIN
-# PUT //SAP.PIBB.LN1M.DAILY(+1) ILN1M%ODD.%OMM..TXT
-
-# ============================================================================
-# SFTP HOST DATASET TO DATA REPORT REPOSITORY SYSTEM (DRR)
-# JCL: cd BBRS-BBR/ILN1M ; PUT //SAP.PIBB.LN1M.DAILY(+1) ILN1M%ODD.%OMM..TXT
-# ============================================================================
-def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
-    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
-
-    ssh = paramiko.SSHClient()
-    # HOST_KEY pinning is not enabled (stored format unconfirmed) - same as EIWFRMCR.py
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
-    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
-    sftp = ssh.open_sftp()
-    try:
-        try:
-            sftp.chdir(DRR_REMOTE_DIR)
-        except IOError:
-            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
-        print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
-        sftp.put(str(local_path), remote_name)
-    finally:
-        sftp.close()
-        ssh.close()
-    print("  DRR upload complete.")
-
-
-print("\nUploading report to DRR via SFTP...")
-sftp_upload_to_drr(OUTPUT_FILE, REMOTE_FILE_NAME)
-
-print("\nEIIDLN1M complete.")
-
-
-
-
