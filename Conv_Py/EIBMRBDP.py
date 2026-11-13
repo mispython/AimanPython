@@ -23,9 +23,15 @@ Every input/output path is declared inside the respective program file.
 
 from pathlib import Path
 
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# Production Path
+BASE_DIR    = Path("/host_pq/mis")
+OUTPUT_DIR  = BASE_DIR / "output" / "deposit" / "EIBMRBDP"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # STEP DELETE (IEFBR14): DD01-DD10 delete the output datasets
