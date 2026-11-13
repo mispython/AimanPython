@@ -1,45 +1,109 @@
+#!/usr/bin/env python3
+"""
+Program : EIBMRB01.py
+Purpose : Daily total outstanding balance / number of accounts on FCY FD (Report ID EIBMRB01).
+
+Change log vs prior version:
+  * Input switched from monthly FCYFD<mm> + weekly FCYFD<mm><wk><yy> to daily FCYFD<yymmdd>.
+  * FCY merge dropped: daily files already carry OPENDT / CLOSEDAT / CURCODE / CURBAL.
+  * REPTDATE is derived from the daily filename (strict fcyfd<yymmdd> regex).
+  * Program loops over every day in the report month; a missing daily file is a hard error.
+  * One aggregated summary (REPTDATE x CURCODE -> sum, count) is emitted per day,
+    then concatenated before rendering. Peak RAM = one daily file's worth.
+
+Inputs:
+    //MISFD DD  <INPUT_DAILY_DIR>/fcyfd<yymmdd>.sas7bdat  (one file per day)
+
+Output:
+    //SASLIST DD <OUTPUT_FILE>  RECFM=FB, LRECL=133, no ASA byte, form-feed marks page start.
+"""
+
+import calendar
+import gc
 import re
-from datetime import date
 from calendar import monthrange
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
+
+import duckdb
+import pandas as pd
 import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
 
 # ============================================================================
-# STEP 1: REPORT CONTEXT
+# PATH CONFIGURATION
+# ============================================================================
+BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+INPUT_DAILY_DIR = STG_DIR / "EIBMRBDP"          # contains fcyfd<yymmdd>.sas7bdat
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / "EIBMRB01.txt"
+
+CHUNK_ROWS   = 500_000
+FF           = "\f"
+MISSING_CHAR = "0"                          # OPTIONS MISSING=0
+CELL         = 16                           # FORMAT=COMMA16. column width
+DATE_W       = 14                           # DATE (row title) column width
+LINESIZE     = 133                          # LRECL=133
+PAGESIZE     = 60
+PANEL_COLS   = (LINESIZE - DATE_W - 2) // (CELL + 1)   # 6 data cols per panel
+ROWS_CONT    = (PAGESIZE - 12 + 1) // 2                # 24 date rows before "(Continued)"
+ROWS_LAST    = (PAGESIZE - 10 + 1) // 2                # 25 date rows on the last page
+LABEL        = "OUTSTANDING AMOUNT (RM 000)"
+CONTINUED    = "(Continued)"
+
+
+# ============================================================================
+# STEP 1: REPORT DATE  (DATA REPTDATE in SAS)
 # ============================================================================
 def derive_report_context() -> dict:
     # reptdate = get_reptdate_values(year_format="%Y").reptdate
-    reptdate = date(2026, 9, 30)             # DEBUG override
+
+    # DEBUG - UAT override
+    reptdate = date(2026, 9, 30)
 
     return {
-        "reptdate":  reptdate,
-        "reptyear":  reptdate.strftime("%Y"),
-        "reptmon":   reptdate.strftime("%m"),
-        "reptyear2": reptdate.strftime("%y"),
-        "rdate":     reptdate.strftime("%d/%m/%y"),
-        "reptmth":   reptdate.strftime("%b").upper(),   # e.g. SEP
+        "reptdate": reptdate,
+        "reptyear": reptdate.strftime("%Y"),
+        "reptmon":  reptdate.strftime("%m"),
+        "reptmth":  calendar.month_name[reptdate.month].upper(),
+        "rdate":    reptdate.strftime("%d/%m/%y"),
     }
 
+
+print("Step 1: Deriving report date...")
 CTX = derive_report_context()
 REPTYEAR_I = int(CTX["reptyear"])
 REPTMON_I  = int(CTX["reptmon"])
-print(f"Report month: {CTX['reptmth']} {CTX['reptyear']}  (RDATE {CTX['rdate']})")
+print(f"  Report month : {CTX['reptmth']} {CTX['reptyear']}")
+print(f"  RDATE        : {CTX['rdate']}")
+
 
 # ============================================================================
-# STEP 2: BUILD THE EXPECTED FILE LIST FOR THE MONTH
+# STEP 2: BUILD DAILY FILE LIST  (every day in the report month)
 # ============================================================================
-# 1. Number of daily files depends on the month (28/29/30/31 days)
-days_in_month = monthrange(REPTYEAR_I, REPTMON_I)[1]
+days_in_month = monthrange(REPTYEAR_I, REPTMON_I)[1]          # 28/29/30/31
+expected_days = [date(REPTYEAR_I, REPTMON_I, dd) for dd in range(1, days_in_month + 1)]
+
 
 def _daily_file_for(d: date) -> Path:
-    """fcyfd{yymmdd}.sas7bdat  e.g. fcyfd260915.sas7bdat"""
-    return INPUT_MISFD_DIR / f"fcyfd{d.strftime('%y%m%d')}.sas7bdat"
+    """fcyfd<yymmdd>.sas7bdat"""
+    return INPUT_DAILY_DIR / f"fcyfd{d.strftime('%y%m%d')}.sas7bdat"
 
-expected_days = [date(REPTYEAR_I, REPTMON_I, dd) for dd in range(1, days_in_month + 1)]
-daily_files   = [_daily_file_for(d) for d in expected_days]
 
-# 2. Fail loudly if any expected file is missing — do NOT silently skip
+daily_files = [_daily_file_for(d) for d in expected_days]
+
+# Fail loudly if any expected day is missing - never silently skip a day.
 missing = [f.name for f in daily_files if not f.exists()]
 if missing:
     raise FileNotFoundError(
@@ -47,44 +111,153 @@ if missing:
         + "\n  ".join(missing)
     )
 
-# 3. Filename -> report date (guaranteed clean yymmdd per your confirmation)
 _NAME_RE = re.compile(r"^fcyfd(\d{2})(\d{2})(\d{2})$", re.IGNORECASE)
 
+
 def _reptdate_from_name(path: Path) -> date:
+    """fcyfd<yymmdd> -> date. Assumes 2000-2099 (matches YEARCUTOFF=1950)."""
     m = _NAME_RE.match(path.stem)
-    if not m:                                                    # shouldn't happen, but stay safe
-        raise ValueError(f"Filename does not match fcyfd<yymmdd>: {path.name}")
+    if not m:
+        raise ValueError(f"Daily file does not match fcyfd<yymmdd>: {path.name}")
     yy, mm, dd = (int(x) for x in m.groups())
-    # yymmdd pivot: assume 2000-2099 (matches your YEARCUTOFF=1950 conventions)
     return date(2000 + yy, mm, dd)
 
-# Sanity: every parsed date must be within the report month
-parsed = [_reptdate_from_name(f) for f in daily_files]
-assert parsed[0].month  == REPTMON_I and parsed[0].year  == REPTYEAR_I
-assert parsed[-1].month == REPTMON_I and parsed[-1].year == REPTYEAR_I
-assert parsed == expected_days, "File list does not cover every day of the month"
 
-print(f"  Found {len(daily_files)} daily files for {days_in_month}-day month.")
+# Verify the constructed file list is self-consistent.
+_parsed = [_reptdate_from_name(f) for f in daily_files]
+assert _parsed == expected_days, "Daily file list does not cover every day of the month"
+
+print(f"\nStep 2: Found {len(daily_files)} daily files ({days_in_month}-day month).")
+
 
 # ============================================================================
-# STEP 3: AGGREGATE ONE DAY
+# HELPERS: CACHE (.sas7bdat -> Parquet), DATES, FORMATTING
 # ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return cache_path.exists() and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+
+
+def _sas_type_to_arrow(dtype) -> pa.DataType:
+    if dtype == "object":
+        return pa.string()
+    if pd.api.types.is_integer_dtype(dtype):
+        return pa.int64()
+    if pd.api.types.is_float_dtype(dtype):
+        return pa.float64()
+    return pa.from_numpy_dtype(dtype)
+
+
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+    for chunk in pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS):
+        if schema is None:
+            schema = pa.schema(
+                [pa.field(c, _sas_type_to_arrow(t)) for c, t in chunk.dtypes.items()]
+            )
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
+    else:
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
+
+
+def _read_pq(cache_path: Path, columns: str, where: str) -> pl.DataFrame:
+    con = duckdb.connect(database=":memory:")
+    try:
+        return con.execute(
+            f"SELECT {columns} FROM read_parquet('{cache_path.as_posix()}') WHERE {where}"
+        ).pl()
+    finally:
+        con.close()
+
+
+def _sas_date(df: pl.DataFrame, col: str) -> pl.Expr:
+    """SAS date value (days since 1960-01-01, or already Date/Datetime) -> Date."""
+    dtype = df.schema[col]
+    if dtype == pl.Date:
+        return pl.col(col)
+    if isinstance(dtype, pl.Datetime):
+        return pl.col(col).dt.date()
+    days = pl.duration(days=pl.col(col).cast(pl.Float64).cast(pl.Int64))
+    return (pl.lit(date(1960, 1, 1)) + days).cast(pl.Date)
+
+
+def _in_report_month(col: str) -> pl.Expr:
+    return (pl.col(col).dt.year() == REPTYEAR_I) & (pl.col(col).dt.month() == REPTMON_I)
+
+
+def _comma(value, width: int, decimals: int = 0) -> str:
+    """COMMAw.d (round half away from zero)."""
+    if value is None:
+        return MISSING_CHAR.rjust(width)
+    quant = Decimal(1).scaleb(-decimals)
+    text = f"{Decimal(repr(float(value))).quantize(quant, rounding=ROUND_HALF_UP):,.{decimals}f}"
+    return text.rjust(width)
+
+
+def _center(text: str, width: int) -> str:
+    text = text[:width]
+    pad = width - len(text)
+    return " " * (pad // 2) + text + " " * (pad - pad // 2)
+
+
+# ============================================================================
+# STEP 3: AGGREGATE ONE DAY  (WHERE + IF filters, then group by CURCODE)
+# ============================================================================
+_EMPTY_SCHEMA = {
+    "REPTDATE": pl.Date,
+    "CURCODE":  pl.Utf8,
+    "CURBAL":   pl.Float64,
+    "N":        pl.UInt32,
+}
+
+
 def _aggregate_one_day(reptdate: date, sas_path: Path) -> pl.DataFrame:
-    """Read one daily SAS file, apply SAS WHERE + IF, return per-CURCODE summary."""
+    """Read one daily fcyfd<yymmdd>, apply SAS WHERE/IF, return per-CURCODE summary."""
     pq_path = _load_cached(sas_path, f"daily_{sas_path.stem}")
 
+    # Case-insensitive column map -> keeps original physical names for SQL quoting.
+    names = pq.read_schema(pq_path).names
+    have  = {c.upper(): c for c in names}
+
+    select_cols = ['TRIM(CURCODE) AS CURCODE', 'CAST(CURBAL AS DOUBLE) AS CURBAL']
+    if "OPENDT"   in have: select_cols.append(f'"{have["OPENDT"]}"   AS OPENDT')
+    if "CLOSEDAT" in have: select_cols.append(f'"{have["CLOSEDAT"]}" AS CLOSEDAT')
+
+    # SAS: WHERE CURCODE NE 'MYR' AND CURBAL GT 0
     df = _read_pq(
         pq_path,
-        "TRIM(CURCODE) AS CURCODE, CAST(CURBAL AS DOUBLE) AS CURBAL, OPENDT, CLOSEDAT",
+        ", ".join(select_cols),
         "COALESCE(TRIM(CURCODE), '') <> 'MYR' AND CURBAL > 0",
     )
-    # Convert SAS date numerics -> Date
-    df = df.with_columns(
-        _sas_date(df, "OPENDT").alias("OPENDT"),
-        _sas_date(df, "CLOSEDAT").alias("CLOSEDAT"),
-    )
 
-    # Same-year AND same-month closeout on accounts opened this report month
+    if "OPENDT" in df.columns:
+        df = df.with_columns(_sas_date(df, "OPENDT").alias("OPENDT"))
+    else:
+        df = df.with_columns(pl.lit(None, dtype=pl.Date).alias("OPENDT"))
+
+    if "CLOSEDAT" in df.columns:
+        df = df.with_columns(_sas_date(df, "CLOSEDAT").alias("CLOSEDAT"))
+    else:
+        df = df.with_columns(pl.lit(None, dtype=pl.Date).alias("CLOSEDAT"))
+
+    # SAS: IF opened in report month AND same-year&month(CLOSEDAT, OPENDT) THEN DELETE
     same_month_closed = (
         _in_report_month("OPENDT")
         & (pl.col("CLOSEDAT").dt.year()  == pl.col("OPENDT").dt.year())
@@ -92,37 +265,142 @@ def _aggregate_one_day(reptdate: date, sas_path: Path) -> pl.DataFrame:
     ).fill_null(False)
     df = df.filter(~same_month_closed)
 
-    # CURBAL /= 1000  (RM 000) and aggregate
+    if df.is_empty():
+        return pl.DataFrame(schema=_EMPTY_SCHEMA)
+
+    # SAS: CURBAL = CURBAL / 1000  (report in RM 000)
+    # CLASS CURCODE ; VAR CURBAL ; ALL N -> per-currency sum, per-date account count.
     return (
         df.with_columns((pl.col("CURBAL") / 1000).alias("CURBAL"))
           .group_by("CURCODE")
-          .agg(pl.col("CURBAL").sum(), pl.len().alias("N"))
+          .agg(
+              pl.col("CURBAL").sum().alias("CURBAL"),
+              pl.len().cast(pl.UInt32).alias("N"),
+          )
           .with_columns(pl.lit(reptdate).cast(pl.Date).alias("REPTDATE"))
           .select("REPTDATE", "CURCODE", "CURBAL", "N")
     )
 
+
 # ============================================================================
-# STEP 4: LOOP AND CONCAT
+# STEP 4: LOOP OVER EVERY DAY & CONCAT
 # ============================================================================
-print("\nAggregating daily files...")
+print("\nStep 3-4: Aggregating daily files...")
 summaries = []
 for d, f in zip(expected_days, daily_files):
     s = _aggregate_one_day(d, f)
     summaries.append(s)
-    print(f"  {d.isoformat()}  {len(s):3d} currencies  {int(s['N'].sum()):,} accounts")
+    n_acct = int(s["N"].sum()) if not s.is_empty() else 0
+    print(f"  {d.isoformat()}  {len(s):3d} currencies  {n_acct:>9,} accounts")
 
-summary = pl.concat(summaries)
-print(f"\nCombined: {len(summary):,} rows across {summary['REPTDATE'].n_unique()} dates "
-      f"and {summary['CURCODE'].n_unique()} currencies.")
+summary = pl.concat(summaries) if summaries else pl.DataFrame(schema=_EMPTY_SCHEMA)
+
+print(
+    f"\n  Combined: {len(summary):,} rows / "
+    f"{summary['REPTDATE'].n_unique() if len(summary) else 0} dates / "
+    f"{summary['CURCODE'].n_unique()  if len(summary) else 0} currencies"
+)
+
 
 # ============================================================================
-# STEP 5: RENDER
+# STEP 5: PROC TABULATE RENDER
 # ============================================================================
+def _pad(text: str) -> str:
+    return text.ljust(LINESIZE)
+
+
+def _rule(ncols: int) -> str:
+    return "|" + "-" * DATE_W + "+" + "+".join(["-" * CELL] * ncols) + "|"
+
+
+def _render_report(summ: pl.DataFrame) -> list:
+    """PROC TABULATE layout: panels of PANEL_COLS columns, paged by PAGESIZE, 133-wide."""
+    currencies = sorted(summ["CURCODE"].unique().to_list())
+    dates      = sorted(summ["REPTDATE"].unique().to_list())
+    ncur       = len(currencies)
+
+    bal = {(r, c): v for r, c, v in summ.select("REPTDATE", "CURCODE", "CURBAL").iter_rows()}
+    tot = {r: v for r, v in summ.group_by("REPTDATE").agg(pl.col("CURBAL").sum()).iter_rows()}
+    cnt = {r: v for r, v in summ.group_by("REPTDATE").agg(pl.col("N").sum()).iter_rows()}
+
+    headers = currencies + ["TOT AMT O/S RM", "NO OF ACCT"]
+    rows = {
+        d: [_comma(bal.get((d, c)), CELL) for c in currencies]
+        + [_comma(tot[d], CELL), str(int(cnt[d])).rjust(CELL)]
+        for d in dates
+    }
+
+    panels = [
+        range(s, min(s + PANEL_COLS, len(headers)))
+        for s in range(0, len(headers), PANEL_COLS)
+    ]
+    titles = [
+        "REPORT ID : EIBMRB01",
+        "DAILY TOTAL OUTSTANDING BALANCE/ACCOUNT ON FCY FD",
+        f"AS AT {CTX['rdate']}",
+    ]
+
+    lines = []
+    page_no = 0
+    for pi, cols in enumerate(panels):
+        last_panel = pi == len(panels) - 1
+        k = len(cols)
+        c_in = max(0, min(cols.stop, ncur) - cols.start)
+        span = c_in * CELL + c_in - 1
+        blanks       = "".join(" " * CELL + "|" for _ in range(k - c_in))
+        dash_blanks  = "".join(" " * CELL + "|" for _ in range(k - c_in))
+        width = 1 + DATE_W + 1 + k * CELL + (k - 1) + 1
+
+        pos = 0
+        while pos < len(dates):
+            remaining = len(dates) - pos
+            if last_panel and remaining <= ROWS_LAST:
+                take, continued = remaining, False
+            else:
+                take, continued = min(ROWS_CONT, remaining), True
+            chunk = dates[pos:pos + take]
+            pos += take
+
+            lines.append((FF if page_no else "") + _pad(titles[0]))
+            lines.append(_pad(titles[1]))
+            lines.append(_pad(titles[2]))
+            lines.append(_pad(""))
+            lines.append(_pad("-" * width))
+            lines.append(_pad(
+                "|" + "DATE".ljust(DATE_W) + "|"
+                + (_center(LABEL, span) + "|" if c_in else "") + blanks
+            ))
+            lines.append(_pad(
+                "|" + " " * DATE_W + "|"
+                + ("-" * span + "|" if c_in else "") + dash_blanks
+            ))
+            lines.append(_pad(
+                "|" + " " * DATE_W + "|"
+                + "|".join(_center(headers[i], CELL) for i in cols) + "|"
+            ))
+            lines.append(_pad(_rule(k)))
+            for n, d in enumerate(chunk):
+                if n:
+                    lines.append(_pad(_rule(k)))
+                lines.append(_pad(
+                    "|" + d.strftime("%d/%m/%y").ljust(DATE_W) + "|"
+                    + "|".join(rows[d][i] for i in cols) + "|"
+                ))
+            lines.append(_pad("-" * width))
+            if continued:
+                lines.append(_pad(""))
+                lines.append(_pad(CONTINUED))
+            page_no += 1
+    return lines
+
+
+print("\nStep 5: Rendering report...")
 report_lines = _render_report(summary) if not summary.is_empty() else []
 
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
         fh.write(ln + "\n")
 
-print(f"\nOutput : {OUTPUT_FILE}")
-print(f"Lines  : {len(report_lines):,}")
+print(f"\n  Output written : {OUTPUT_FILE}")
+print(f"  Total lines    : {len(report_lines):,}")
+print("\nEIBMRB01 complete.")
