@@ -1,320 +1,128 @@
 import re
-import gc
-import sys
-import tempfile
-from pathlib import Path
-from typing import Optional
-from datetime import date, datetime
-
-import saspy
-import duckdb
-import pandas as pd
-import paramiko
+from datetime import date
+from calendar import monthrange
 import polars as pl
-import pyarrow as pa
-import pyarrow.parquet as pq
 
-from PBBLNFMT_AII import format_fisstype, format_fissgroup
-
-
-
+from REPTDATE import get_reptdate_values
 
 # ============================================================================
-# CONTROL FILES  (batch date + SFTP credentials)
+# STEP 1: REPORT CONTEXT
 # ============================================================================
-BATCH_DATE_CTL_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-SFTP_CONTROL_FILE   = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+def derive_report_context() -> dict:
+    # reptdate = get_reptdate_values(year_format="%Y").reptdate
+    reptdate = date(2026, 9, 30)             # DEBUG override
 
-
-def get_batch_date_dwh(source_system_cd: str) -> date:
-    """Return BATCH_DTTM (as a date) for the given SOURCE_SYSTEM_CD."""
-    if not BATCH_DATE_CTL_FILE.exists():
-        raise FileNotFoundError(f"Batch date control file not found: {BATCH_DATE_CTL_FILE}")
-
-    ctl = pd.read_sas(BATCH_DATE_CTL_FILE, format="sas7bdat", encoding="utf-8")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-
-    rows = ctl.loc[ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip() == source_system_cd]
-    if rows.empty:
-        raise RuntimeError(
-            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {BATCH_DATE_CTL_FILE}"
-        )
-    return pd.to_datetime(rows.iloc[0]["BATCH_DTTM"]).date()
-
-
-def get_sftp_info(host_desc: str):
-    """Read one SFTP configuration row from the DWH control file."""
-    if not SFTP_CONTROL_FILE.exists():
-        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
-
-    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-
-    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
-    missing_columns = sorted(required.difference(ctl.columns))
-    if missing_columns:
-        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
-
-    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
-    rows = ctl[descriptions.eq(host_desc)]
-    if len(rows) != 1:
-        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
-
-    row = rows.iloc[0]
-    clean = lambda v: "".join(str(v).split()) if pd.notna(v) else ""
-    sftp_id, sftp_pw, host_ip = clean(row["SFTP_ID"]), clean(row["SFTP_PW"]), clean(row["HOST_IP"])
-    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
-
-    blanks = [n for n, v in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)) if not v]
-    if blanks:
-        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(blanks)}")
-    return sftp_id, sftp_pw, host_ip, host_key
-
-
-
-
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-BASE_DIR         = Path("/dwh")
-INPUT_BTBNM_DIR  = BASE_DIR / "ibtrade"
-INPUT_DISPAY_DIR = BASE_DIR / "iln"
-INPUT_ISASD_DIR  = Path("/KENA/KONFEMKAN/DENGAN/NABILA/DULU")   # <- set the real ISASD folder
-INPUT_BNM_DIR    = Path("/dwh/dwh_m/tempsource/ln")
-INPUT_LOAN_DIR   = Path("/sas/ln/dwh/enrichment")
-
-OUTPUT_DIR        = Path("/host_pq/mis")
-OUTPUT_REPORT_DIR = OUTPUT_DIR / "output" / "ln" / "report"
-OUTPUT_REPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_MFRS_DIR = OUTPUT_DIR / "input" / "IMFRS"        # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
-OUTPUT_MFRS_DIR.mkdir(parents=True, exist_ok=True)
-
-# saspy: configuration name defined in sascfg_personal.py (None = saspy default)
-SASPY_CFGNAME = None
-MFRS_LIBREF   = "MFRS"
-
-# Temporary parquet conversions are written here and deleted after each read
-# (None = system temp; set a path if the default temp area is too small).
-TEMP_DIR = None
-
-CHUNK_ROWS = 500_000
-PAGE_SIZE  = 60          # lines per page -- not specified in SAS -> project default
-
-# Report date source (batch control file)
-SOURCE_SYSTEM_CD = "LN"
-
-# SFTP -> Data Report Repository (DRR)   (ask.py: PIBB branch)
-DRR_HOST_DESC   = "Data Report Repository (DRR)"
-DRR_REMOTE_DIR  = "/FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"
-DRR_REMOTE_FILE = "EIIBNM01.TXT"                         # no date on the SFTP copy
-
-
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = LN)
-# ============================================================================
-print("Step 1: Deriving report date...")
-
-reptdate = get_batch_date_dwh(SOURCE_SYSTEM_CD)
-# If strictly "last day of previous month" is wanted instead, use:
-# reptdate = reptdate.replace(day=1) - timedelta(days=1)   (and re-import timedelta)
-
-_day = reptdate.day
-# SELECT(DAY(REPTDATE)): preserved verbatim from the SAS source.
-if _day == 8:
-    SDD, WK, WK1, WK2, WK3 = 1, "1", "4", None, None
-elif _day == 15:
-    SDD, WK, WK1, WK2, WK3 = 9, "2", "1", None, None
-elif _day == 22:
-    SDD, WK, WK1, WK2, WK3 = 16, "3", "2", None, None
-else:
-    SDD, WK, WK1, WK2, WK3 = 23, "4", "3", "2", "1"
-
-MM = reptdate.month
-if WK == "1":
-    MM1 = MM - 1 if MM - 1 != 0 else 12
-else:
-    MM1 = MM
-MM2 = MM - 1 if MM - 1 != 0 else 12
-SDATE = date(reptdate.year, MM, SDD)   # kept for parity (unused later)
-
-NOWK     = WK
-REPTMON  = f"{MM:02d}"
-REPTMON1 = f"{MM1:02d}"   # unused later
-REPTMON2 = f"{MM2:02d}"
-REPTYEAR = f"{reptdate.year:04d}"
-REPTDAY  = f"{reptdate.day:02d}"  # unused later
-RDATE    = reptdate.strftime("%d/%m/%y")
-
-# Own-copy outputs carry the month suffix (filename_mm)
-OUTPUT_FILE              = OUTPUT_REPORT_DIR / f"EIIBNM01_{REPTMON}.TXT"
-OUTPUT_MFRS_MAST_BR_MEMBER = f"mast_br"
-OUTPUT_MFRS_ALM_CR_MEMBER  = f"alm_cr"
-OUTPUT_MFRS_MAST_BR_FILE   = OUTPUT_MFRS_DIR / f"{OUTPUT_MFRS_MAST_BR_MEMBER}.sas7bdat"
-OUTPUT_MFRS_ALM_CR_FILE    = OUTPUT_MFRS_DIR / f"{OUTPUT_MFRS_ALM_CR_MEMBER}.sas7bdat"
-
-print(f"  Batch date ({SOURCE_SYSTEM_CD}) : {reptdate}")
-print(f"  REPTMON/REPTMON2/NOWK : {REPTMON}/{REPTMON2}/{NOWK}")
-print(f"  REPTYEAR              : {REPTYEAR}")
-print(f"  RDATE                 : {RDATE}")
-
-
-
-
-def _read_rows(parquet_path: Path, select_sql: str, where_sql: Optional[str] = None) -> list:
-    """Read a Parquet file through DuckDB with explicit CASTs and return a plain
-    list of dict rows. For any source column referenced by the SELECT but missing
-    from the parquet, substitute NULL of the CAST's target type -- mirroring SAS's
-    behaviour, where a KEEP/RENAME of a column the source does not carry simply
-    yields a missing value. `where_sql` (optional) is a filter on the source
-    columns, written against the alias `src`."""
-    con = duckdb.connect(database=":memory:")
-
-    src_cols = {
-        row[0]
-        for row in con.execute(
-            f"DESCRIBE SELECT * FROM read_parquet('{parquet_path.as_posix()}') AS src"
-        ).fetchall()
+    return {
+        "reptdate":  reptdate,
+        "reptyear":  reptdate.strftime("%Y"),
+        "reptmon":   reptdate.strftime("%m"),
+        "reptyear2": reptdate.strftime("%y"),
+        "rdate":     reptdate.strftime("%d/%m/%y"),
+        "reptmth":   reptdate.strftime("%b").upper(),   # e.g. SEP
     }
-    src_cols_upper = {c.upper() for c in src_cols}
 
-    def _fix(m):
-        col, typ, alias = m.group(1), m.group(2), m.group(3)
-        if col.upper() in src_cols_upper:
-            return m.group(0)
-        return f"CAST(NULL AS {typ}) AS {alias}"
+CTX = derive_report_context()
+REPTYEAR_I = int(CTX["reptyear"])
+REPTMON_I  = int(CTX["reptmon"])
+print(f"Report month: {CTX['reptmth']} {CTX['reptyear']}  (RDATE {CTX['rdate']})")
 
-    fixed_sql = re.sub(
-        r"CAST\(src\.(\w+) AS ([A-Z0-9]+(?:\([0-9,]+\))?)\)(?:\s+AS\s+(\w+))?",
-        _fix,
-        select_sql,
+# ============================================================================
+# STEP 2: BUILD THE EXPECTED FILE LIST FOR THE MONTH
+# ============================================================================
+# 1. Number of daily files depends on the month (28/29/30/31 days)
+days_in_month = monthrange(REPTYEAR_I, REPTMON_I)[1]
+
+def _daily_file_for(d: date) -> Path:
+    """fcyfd{yymmdd}.sas7bdat  e.g. fcyfd260915.sas7bdat"""
+    return INPUT_MISFD_DIR / f"fcyfd{d.strftime('%y%m%d')}.sas7bdat"
+
+expected_days = [date(REPTYEAR_I, REPTMON_I, dd) for dd in range(1, days_in_month + 1)]
+daily_files   = [_daily_file_for(d) for d in expected_days]
+
+# 2. Fail loudly if any expected file is missing — do NOT silently skip
+missing = [f.name for f in daily_files if not f.exists()]
+if missing:
+    raise FileNotFoundError(
+        f"Missing {len(missing)} daily file(s) for {CTX['reptmth']} {CTX['reptyear']}:\n  "
+        + "\n  ".join(missing)
     )
-    where_clause = f" WHERE {where_sql}" if where_sql else ""
 
-    df = con.execute(
-        f"SELECT {fixed_sql} FROM read_parquet('{parquet_path.as_posix()}') AS src{where_clause}"
-    ).pl()
-    con.close()
-    return df.to_dicts()
+# 3. Filename -> report date (guaranteed clean yymmdd per your confirmation)
+_NAME_RE = re.compile(r"^fcyfd(\d{2})(\d{2})(\d{2})$", re.IGNORECASE)
 
+def _reptdate_from_name(path: Path) -> date:
+    m = _NAME_RE.match(path.stem)
+    if not m:                                                    # shouldn't happen, but stay safe
+        raise ValueError(f"Filename does not match fcyfd<yymmdd>: {path.name}")
+    yy, mm, dd = (int(x) for x in m.groups())
+    # yymmdd pivot: assume 2000-2099 (matches your YEARCUTOFF=1950 conventions)
+    return date(2000 + yy, mm, dd)
 
+# Sanity: every parsed date must be within the report month
+parsed = [_reptdate_from_name(f) for f in daily_files]
+assert parsed[0].month  == REPTMON_I and parsed[0].year  == REPTYEAR_I
+assert parsed[-1].month == REPTMON_I and parsed[-1].year == REPTYEAR_I
+assert parsed == expected_days, "File list does not cover every day of the month"
 
-
-def _read_sas_rows(sas_path: Path, select_sql: str, tag: str,
-                   where_sql: Optional[str] = None) -> list:
-    """.sas7bdat -> temporary Parquet -> DuckDB rows. The Parquet lives only
-    inside this call and is removed on exit, so nothing is kept on disk."""
-    if not sas_path.exists():
-        raise FileNotFoundError(f"[{tag}] input not found: {sas_path}")
-    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
-        parquet_path = Path(tmp) / f"{sas_path.stem}.parquet"
-        _sas_to_parquet(sas_path, parquet_path, tag)
-        return _read_rows(parquet_path, select_sql, where_sql)
-
-
-
-
-print("\nStep 3: Converting (temporary Parquet) and loading inputs...")
-isasd_loan_rows     = _read_sas_rows(INPUT_ISASD_LOAN_FILE,     LOAN_SELECT,   "ISASD_LOAN")
-bnm_loan_cur_rows   = _read_sas_rows(INPUT_BNM_LOAN_CUR_FILE,   LOAN_SELECT,   "BNM_LOAN_CUR")
-bnm_loan_prev_rows  = _read_sas_rows(INPUT_BNM_LOAN_PREV_FILE,  LOAN_SELECT,   "BNM_LOAN_PREV")
-bnm_lnwof_cur_rows  = _read_sas_rows(INPUT_BNM_LNWOF_CUR_FILE,  LOAN_SELECT,   "BNM_LNWOF_CUR")
-bnm_lnwod_cur_rows  = _read_sas_rows(INPUT_BNM_LNWOD_CUR_FILE,  LOAN_SELECT,   "BNM_LNWOD_CUR")
-bnm_lnwof_prev_rows = _read_sas_rows(INPUT_BNM_LNWOF_PREV_FILE, LOAN_SELECT,   "BNM_LNWOF_PREV")
-bnm_lnwod_prev_rows = _read_sas_rows(INPUT_BNM_LNWOD_PREV_FILE, LOAN_SELECT,   "BNM_LNWOD_PREV")
-ibtrad_rows         = _read_sas_rows(INPUT_BTBNM_IBTRAD_FILE,   IBTRAD_SELECT, "BTBNM_IBTRAD")
-dispay_raw_rows     = _read_sas_rows(INPUT_DISPAY_FILE,         DISPAY_SELECT, "DISPAY")
-# PIBB program -> only ENTITY_CD = 'PIBB' commitment rows
-lncomm_rows         = _read_sas_rows(INPUT_LOAN_LNCOMM_FILE,    LNCOMM_SELECT, "LNCOMM",
-                                     where_sql="TRIM(CAST(src.ENTITY_CD AS VARCHAR)) = 'PIBB'")
-print(f"  ISASD LOAN rows: {len(isasd_loan_rows):,}   BNM LOAN(cur) rows: {len(bnm_loan_cur_rows):,}")
-print(f"  IBTRAD rows: {len(ibtrad_rows):,}   DISPAY rows: {len(dispay_raw_rows):,}   LNCOMM(PIBB) rows: {len(lncomm_rows):,}")
-
-
-
+print(f"  Found {len(daily_files)} daily files for {days_in_month}-day month.")
 
 # ============================================================================
-# STEP 13: WRITE OUTPUTS
+# STEP 3: AGGREGATE ONE DAY
 # ============================================================================
-print("\nStep 13: Writing outputs...")
+def _aggregate_one_day(reptdate: date, sas_path: Path) -> pl.DataFrame:
+    """Read one daily SAS file, apply SAS WHERE + IF, return per-CURCODE summary."""
+    pq_path = _load_cached(sas_path, f"daily_{sas_path.stem}")
+
+    df = _read_pq(
+        pq_path,
+        "TRIM(CURCODE) AS CURCODE, CAST(CURBAL AS DOUBLE) AS CURBAL, OPENDT, CLOSEDAT",
+        "COALESCE(TRIM(CURCODE), '') <> 'MYR' AND CURBAL > 0",
+    )
+    # Convert SAS date numerics -> Date
+    df = df.with_columns(
+        _sas_date(df, "OPENDT").alias("OPENDT"),
+        _sas_date(df, "CLOSEDAT").alias("CLOSEDAT"),
+    )
+
+    # Same-year AND same-month closeout on accounts opened this report month
+    same_month_closed = (
+        _in_report_month("OPENDT")
+        & (pl.col("CLOSEDAT").dt.year()  == pl.col("OPENDT").dt.year())
+        & (pl.col("CLOSEDAT").dt.month() == pl.col("OPENDT").dt.month())
+    ).fill_null(False)
+    df = df.filter(~same_month_closed)
+
+    # CURBAL /= 1000  (RM 000) and aggregate
+    return (
+        df.with_columns((pl.col("CURBAL") / 1000).alias("CURBAL"))
+          .group_by("CURCODE")
+          .agg(pl.col("CURBAL").sum(), pl.len().alias("N"))
+          .with_columns(pl.lit(reptdate).cast(pl.Date).alias("REPTDATE"))
+          .select("REPTDATE", "CURCODE", "CURBAL", "N")
+    )
+
+# ============================================================================
+# STEP 4: LOOP AND CONCAT
+# ============================================================================
+print("\nAggregating daily files...")
+summaries = []
+for d, f in zip(expected_days, daily_files):
+    s = _aggregate_one_day(d, f)
+    summaries.append(s)
+    print(f"  {d.isoformat()}  {len(s):3d} currencies  {int(s['N'].sum()):,} accounts")
+
+summary = pl.concat(summaries)
+print(f"\nCombined: {len(summary):,} rows across {summary['REPTDATE'].n_unique()} dates "
+      f"and {summary['CURCODE'].n_unique()} currencies.")
+
+# ============================================================================
+# STEP 5: RENDER
+# ============================================================================
+report_lines = _render_report(summary) if not summary.is_empty() else []
 
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
         fh.write(ln + "\n")
-print(f"  SASLIST report written : {OUTPUT_FILE}  ({len(report_lines):,} lines)")
 
-# ----------------------------------------------------------------------------
-# MFRS datasets -> real .sas7bdat via saspy
-# ----------------------------------------------------------------------------
-def write_mfrs_datasets(datasets: list) -> None:
-    """Write (member_name, polars_df, char_lengths) tuples into the MFRS SAS
-    library as .sas7bdat. One SAS session is used for all members."""
-    sas = saspy.SASsession(cfgname=SASPY_CFGNAME) if SASPY_CFGNAME else saspy.SASsession()
-    try:
-        sas.saslib(MFRS_LIBREF, path=str(OUTPUT_MFRS_DIR))
-        for member, df, char_lengths in datasets:
-            # SAS numerics are doubles; PRODESC is a character column
-            pdf = df.with_columns(
-                [pl.col(c).cast(pl.Float64) for c, t in df.schema.items() if t != pl.Utf8]
-            ).to_pandas()
-            sas.df2sd(pdf, table=member, libref=MFRS_LIBREF, char_lengths=char_lengths)
-    finally:
-        sas.endsas()
-
-
-mast_br_df = pl.DataFrame(
-    mfrs_mast_br_rows,
-    schema={"ACCTNO": pl.Int64, "PRODESC": pl.Utf8, "NOACCT": pl.Float64},
-)
-alm_cr_df = pl.DataFrame(
-    mfrs_alm_cr_rows,
-    schema={"ACCTNO": pl.Int64, "NOTENO": pl.Int64, "PRODESC": pl.Utf8, "NOACCT": pl.Float64},
-)
-
-write_mfrs_datasets([
-    (OUTPUT_MFRS_MAST_BR_MEMBER, mast_br_df, {"PRODESC": 35}),   # FORMAT PRODESC $35.
-    (OUTPUT_MFRS_ALM_CR_MEMBER,  alm_cr_df,  {"PRODESC": 35}),
-])
-print(f"  MFRS.MAST_BR written   : {OUTPUT_MFRS_MAST_BR_FILE}  ({len(mfrs_mast_br_rows):,} rows)")
-print(f"  MFRS.ALM_CR written    : {OUTPUT_MFRS_ALM_CR_FILE}  ({len(mfrs_alm_cr_rows):,} rows)")
-
-# ============================================================================
-# STEP 14: SFTP TO DATA REPORT REPOSITORY SYSTEM (DRR)
-# ============================================================================
-def sftp_upload_to_drr(local_file: Path, remote_name: str) -> None:
-    """Equivalent of the ask.py RUNSFTP step (PIBB branch):
-        cd "/FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"
-        PUT //SAP.PIBB.EIIBNM01.TEXT  EIIBNM01.TXT
-    """
-    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
-
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
-    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
-    sftp = ssh.open_sftp()
-    try:
-        try:
-            sftp.chdir(DRR_REMOTE_DIR)
-        except IOError:
-            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
-        print(f"  SFTP upload: {local_file.name} -> {DRR_REMOTE_DIR}/{remote_name}")
-        sftp.put(str(local_file), remote_name)
-    finally:
-        sftp.close()
-        ssh.close()
-    print("  DRR upload complete.")
-
-
-print("\nStep 14: Uploading report to DRR via SFTP...")
-sftp_upload_to_drr(OUTPUT_FILE, DRR_REMOTE_FILE)
-
-print("\nEIIBNM01 complete.")
-
-
-
-
+print(f"\nOutput : {OUTPUT_FILE}")
+print(f"Lines  : {len(report_lines):,}")
