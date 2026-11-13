@@ -40,16 +40,16 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+BASE_DIR = Path("/host_pq/mis")
 
 # Monthly cumulative dataset produced by EIBDDEPF.py
-MONTHLY_DIR = BASE_DIR / "output" / "EIBDDEPF"
+MONTHLY_DIR = BASE_DIR / "parquet" / "EIBDDEPF"
 
 # Report output
-OUTPUT_DIR = BASE_DIR / "output" / "DMMISR1F"
+OUTPUT_DIR = BASE_DIR / "output" / "deposit" / "report" / "EIBDDEPF"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_FILE = OUTPUT_DIR / "DMMISR1F_DAILY.txt"   # fixed name (DAILY dataset equivalent)
+OUTPUT_FILE = OUTPUT_DIR / f"DMMISR1F_{REPTMON}{REPTDAY}.txt"   # fixed name (DAILY dataset equivalent)
 
 # ============================================================================
 # REPORT DATE  (no reptdate.parquet — derive from REPTDATE.py)
@@ -65,7 +65,7 @@ XDATE    = reptdate.strftime("%d/%m/%Y")     # TITLE5 'AS AT ' &XDATE
 
 print(f"  Report date  : {XDATE}")
 
-MONTHLY_FILE = MONTHLY_DIR / REPTYEAR / f"DYFCY{REPTMON}.parquet"
+MONTHLY_FILE = MONTHLY_DIR / REPTYEAR / f"dyfcy{REPTMON}.parquet"
 
 # ============================================================================
 # REPORT LAYOUT CONFIGURATION
