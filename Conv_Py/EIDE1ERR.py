@@ -78,6 +78,8 @@ OUTPUT_DIR = BASE_DIR / "output/EIDE1ERR"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+TRIGGER_FILE = Path("/sasdata/dwh/trigger_file/TRIGGER_EIDE1ERR.txt")
+
 # ------------------------------------------------------------
 # Report-date derivation via inlined get_batch_date_dwh()
 # Follows SOURCE_SYSTEM_CD = 'DET_CC' batch date from
@@ -364,6 +366,13 @@ def main() -> None:
     print(f"[INFO] Matched rows        : {len(count)}")
 
     write_report(count, OUTPUT_PATH)
+
+    # Consume the trigger so tomorrow's run waits for tomorrow's file
+    try:
+        TRIGGER_FILE.unlink(missing_ok=True)
+        print(f"[INFO] Trigger file removed : {TRIGGER_FILE}")
+    except PermissionError:
+        print(f"[WARN] No permission to delete trigger file : {TRIGGER_FILE}")
 
 
 if __name__ == "__main__":
