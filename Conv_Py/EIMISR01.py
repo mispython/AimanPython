@@ -9,8 +9,7 @@ Notes on conversion:
     input_date.get_latest_file(INPUT_DIR, prefix="DYPOSXBR"), which picks
     the latest file whose embedded date matches the recognised filename
     patterns, rather than being built directly from REPTMON.
-  - DYPOSXBR is cached to Parquet once (chunked stream + freshness check,
-    same pattern as EIBDLN1M.py) and read from the cache via DuckDB
+  - DYPOSXBR is cached to Parquet once and read from the cache via DuckDB
     thereafter.
   - LIBNAME MIS "SAP.PBB.MIS.D&REPTYEAR" is not applicable: there is no
     separate MIS_DIR input in this environment; DYPOSXBR is read directly
@@ -44,20 +43,28 @@ from input_date import get_latest_file
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# Production Path
+BASE_DIR    = Path("/to be confirmed with SKP")
+INPUT_DIR   = BASE_DIR / "to be confirmed with SKP"     Kena tanya SKP
+BRHFILE     = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
-INPUT_DIR = BASE_DIR / "input" / "prod" / "deposit"
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIMISR01"
-OUTPUT_DIR = BASE_DIR / "output" / "EIMISR01"
-
+OUTPUT_DIR  = Path("/host_pq/mis/output/report/EIMISR01")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# BRHFILE: static-name flat file (no date component) -> direct path reference
-BRHFILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR = BASE_DIR / "input" / "prod" / "deposit"
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIMISR01"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIMISR01"
+
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # BRHFILE: static-name flat file (no date component) -> direct path reference
+# BRHFILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
 # //ISR01 DD DSN=SAP.PBB.EIMISR01.TEXT ... DCB=(LRECL=1000,RECFM=FB,...)
-ISR01_OUTPUT = OUTPUT_DIR / "SA_BAL&ACC.txt"
+ISR01_OUTPUT = OUTPUT_DIR / "SA_BAL&ACC.TXT"
 LRECL = 1000
 
 # Chunked .sas7bdat -> Parquet streaming
