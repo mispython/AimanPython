@@ -6,6 +6,8 @@ Purpose : Corporate Report by Branch. After EIBMRPTS.
           with Total Receipts > RM 1.0 M : Corporate.
           Generates report grouped by BRANCH, then by NAMEQ, then by ACCTNO,
           with subtotals after each ACCTNO group and each NAMEQ group.
+
+Input   : //FDC       DD DSN=SAP.PBB.FD1M.SASDATA,DISP=SHR
 """
 
 import pandas as pd
@@ -17,25 +19,21 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-# Testing Path
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBMFD"
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMFDS2"
-
-# # Production Path
-# INPUT_DIR  = Path("/dwh")
-# OUTPUT_DIR = Path("/host/mis/output/report")
-
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Input path - FDC.FD1MC (fixed deposits corporate master)
-# File name example: fd1mc.sas7bdat
-INPUT_FDC = INPUT_DIR / "fd1mc.sas7bdat"
-# INPUT_FDC = get_latest_file(INPUT_DIR / "fdc", "fd1mc")
-
-# Output path
-OUTPUT_REPORT = OUTPUT_DIR / "PBB_FDRATE3_REPORT.txt"
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBMFD"
+# INPUT_FDC  = INPUT_DIR / "fd1mc.sas7bdat"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMFDS2"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # OUTPUT_REPORT = build_output_file(OUTPUT_DIR, "PBB_FDRATE3_REPORT").with_suffix(".txt")
+
+# Production Path
+BASE_DIR  = Path("/host_pq")
+INPUT_FDC = BASE_DIR / "mano???" / "fd1mc.sas7bdat"     # FDC.FD1MC (fixed deposits corporate master)
+
+OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report/EIBMFDS2")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_REPORT = OUTPUT_DIR / "PBB_FDRATE3_REPORT.txt"
 # Output example: PBB_FDRATE3_REPORT_180526.txt
 
 # Report configuration
