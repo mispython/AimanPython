@@ -33,18 +33,27 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+CIS_DIR                 = Path("/sas/cis/dwh/enrichment")
+INPUT_CIS_DEPOSIT_FILE  = CIS_DIR / f"enrh_cis_cust_info.sas7bdat"      # CIS.DEPOSIT
+INPUT_MISFD_DIR         = Path("/dwh/dp_fcy")                           # //MISFD DD SAP.PBB.FCFD
 
-INPUT_MISFD_DIR        = STG_DIR / "EIBMRBDP"                                      # //MISFD DD SAP.PBB.FCFD
-INPUT_CIS_DEPOSIT_FILE = STG_DIR / "CIS" / "CRM_CISBEXT" / "deposit.sas7bdat"      # //CIS DD SAP.PBB.CRM.CISBEXT
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIBMRB06.txt"                 # //SASLIST DD SAP.PBB.EIBMRB06
+OUTPUT_FILE = OUTPUT_DIR / "EIBMRB06.txt"                # //SASLIST DD SAP.PBB.EIBMRB06
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_MISFD_DIR        = STG_DIR / "EIBMRBDP"                                      # //MISFD DD SAP.PBB.FCFD
+# INPUT_CIS_DEPOSIT_FILE = STG_DIR / "CIS" / "CRM_CISBEXT" / "deposit.sas7bdat"      # //CIS DD SAP.PBB.CRM.CISBEXT
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_FILE = OUTPUT_DIR / "EIBMRB06.txt"                 # //SASLIST DD SAP.PBB.EIBMRB06
 
 CHUNK_ROWS   = 500_000
 MISSING_CHAR = "."          # default MISSING option
@@ -79,8 +88,8 @@ REPTYEAR_I = int(CTX["reptyear"])
 REPTMON_I = int(CTX["reptmon"])
 print(f"  RDATE: {CTX['rdate']}  NOWK: {CTX['nowk']}")
 
-# INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
-INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd09426.sas7bdat"
+INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
+# INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd09426.sas7bdat"
 
 
 # ============================================================================
