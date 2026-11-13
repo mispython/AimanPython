@@ -1,7 +1,4 @@
-//FTPMRBDP JOB (0216,0000,90,OPER),'FTP DATAWAREHOUSE',                 
-//         CLASS=A,REGION=64M,NOTIFY=&SYSUID,                           
-//         MSGCLASS=X                                                   
-/*JOBPARM S=S1M1                                                        
+//FTPDMS1F JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     
 //*******************************************************               
 //**  SFTP TO DRR                                                       
 //*******************************************************               
@@ -12,14 +9,29 @@ cd "WMTB-SA&S/DEP - SAS/BANK TOTAL"
 //SYSUT2   DD DSN=&&FTPPUT,DISP=(NEW,PASS),                             
 //            SPACE=(TRK,(1)),UNIT=SYSDA,RECFM=FB,LRECL=80              
 //SYSIN    DD DUMMY                                                     
+//*------------------------------------------------                     
+//* FTP HOST DATASETS TO PBB DATAWAREHOUSE SERVER                       
+//* EJS A2016-27310: NO-OP FTPDMS1F                                     
+//* FTP MOVED TO RESPECTIVE JOBS PRODUCING THE                          
+//* REPORTS WEF 28/10/2016 EOD                                          
+//*------------------------------------------------                     
+//*%OPC SCAN                                                            
+//*%OPC SETVAR TODD=(ODD -15CD)                                         
+//*%OPC SETVAR TOMM=(OMM -15CD)                                         
+//*%OPC SETVAR TOYY=(OYY -15CD)                                         
+//*----------------------------------------------                       
+//*RUNSFTP  EXEC COZBATCH                                               
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)                
+//*           DD *                                                      
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text            
+//*lzopts linerule=$lr                                                  
+//*cd TEXTFILE                                                          
+//*cd RETAILBANK                                                        
+//*PUT //SAP.PBB.DMMISR1F.DAILY   DMMISR1F@%ODD.%OMM.%OYY..TXT          
+//*EOB                                                                  
 //*---------------------------------------------------------            
 //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)            
 //*---------------------------------------------------------            
-//*%OPC SCAN                                                            
-//*%OPC SETVAR TODD=(ODD - 1CD)                                         
-//*%OPC SETVAR TOMM=(OMM - 1CD)                                         
-//*%OPC SETVAR TOYY=(OYY - 1CD)                                         
-//*----------------------------------------------                       
 //RUNSFTP  EXEC COZBATCH                                                
 //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)                 
 //           DD *                                                       
@@ -27,17 +39,6 @@ lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
 lzopts linerule=$lr                                                     
 //           DD DISP=SHR,DSN=&&FTPPUT                                   
 //           DD *                                                       
-PUT //SAP.PBB.EIBMRB01   EIBMRB01@%TODD.%TOMM.%TOYY..TXT                
-PUT //SAP.PBB.EIBMRB02   EIBMRB02@%TODD.%TOMM.%TOYY..TXT                
-cd "../MISC/FD & FCY FD WITHDRAWAL"                                     
-PUT //SAP.PBB.EIBMRB09   EIBMRB09@%TODD.%TOMM.%TOYY..TXT                
-PUT //SAP.PBB.EIBMRB8A   EIBMRB8A@%TODD.%TOMM.%TOYY..TXT                
-PUT //SAP.PBB.EIBMRB8B   EIBMRB8B@%TODD.%TOMM.%TOYY..TXT                
-cd "../NEW ACT OPENED"                                                  
-PUT //SAP.PBB.EIBMRB03   EIBMRB03@%TODD.%TOMM.%TOYY..TXT                
-PUT //SAP.PBB.EIBMRB04   EIBMRB04@%TODD.%TOMM.%TOYY..TXT                
-PUT //SAP.PBB.EIBMRB06   EIBMRB06@%TODD.%TOMM.%TOYY..TXT                
-PUT //SAP.PBB.EIBMRB07   EIBMRB07@%TODD.%TOMM.%TOYY..TXT                
-cd "../../RM RPT/FCY & GIA/OS BALANCE"                                  
-PUT //SAP.PBB.EIBMRB05   EIBMRB05@%TODD.%TOMM.%TOYY..TXT                
+PUT //SAP.PBB.DMMISR1F.DAILY   DMMISR1F@%ODD.%OMM.%OYY..TXT             
 EOB                                                                     
+//*                                                                     
