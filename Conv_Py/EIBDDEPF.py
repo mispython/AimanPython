@@ -56,21 +56,34 @@ from PBBDPFMT import FCY, ddcustcd_format, fdcustcd_format
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# Production Path
+BASE_DIR            = Path("/sas/deposit/dwh/integration")
+INPUT_MNITB_DIR     = BASE_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
+INPUT_MNITBFD_DIR   = BASE_DIR / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+INPUT_IMNITB_DIR    = BASE_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
 
-INPUT_MNITB_DIR   = BASE_DIR / "input" / "prod" / "deposit_fcy"   # dp_fcy<date>.sas7bdat (CA)
-INPUT_MNITBFD_DIR = BASE_DIR / "input" / "prod" / "deposit_fcy"   # dp_fcyfd<date>.sas7bdat (FD)
-INPUT_IMNITB_DIR  = BASE_DIR / "input" / "prod" / "deposit_fcy"   # idp_fcy<date>.sas7bdat
-INPUT_WALK_DIR    = BASE_DIR / "input" / "prod" / "walker"        # wk<date>.sas7bdat
+BASE_WALK_DIR       = Path("/dwh/dwh_m/tempsource/walker")
+INPUT_WALK_DIR      = BASE_WALK_DIR / f"wk{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDDEPF"
-
-# Monthly cumulative dataset directory - equivalent of LIBNAME MIS
-# "SAP.PBB.MIS.D&REPTYEAR" holding dataset DYFCY&REPTMON.
-MONTHLY_DIR = BASE_DIR / "output" / "EIBDDEPF"
-
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+MONTHLY_DIR         = Path("/host_pq/mis/parquet/EIBDDEPF")
 MONTHLY_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+# INPUT_MNITB_DIR   = BASE_DIR / "input" / "prod" / "deposit_fcy"   # dp_fcy<date>.sas7bdat (CA)
+# INPUT_MNITBFD_DIR = BASE_DIR / "input" / "prod" / "deposit_fcy"   # dp_fcyfd<date>.sas7bdat (FD)
+# INPUT_IMNITB_DIR  = BASE_DIR / "input" / "prod" / "deposit_fcy"   # idp_fcy<date>.sas7bdat
+# INPUT_WALK_DIR    = BASE_DIR / "input" / "prod" / "walker"        # wk<date>.sas7bdat
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDDEPF"
+
+# # Monthly cumulative dataset directory - equivalent of LIBNAME MIS
+# # "SAP.PBB.MIS.D&REPTYEAR" holding dataset DYFCY&REPTMON.
+# MONTHLY_DIR = BASE_DIR / "output" / "EIBDDEPF"
+
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# MONTHLY_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # CUSTOMER-CODE / PRODUCT CLASSIFICATION CONSTANTS
@@ -120,7 +133,7 @@ print(f"  REPTMON/DAY  : {REPTMON}/{REPTDAY}   REPTYEAR: {REPTYEAR}")
 
 MONTHLY_YEAR_DIR = MONTHLY_DIR / REPTYEAR
 MONTHLY_YEAR_DIR.mkdir(parents=True, exist_ok=True)
-MONTHLY_FILE = MONTHLY_YEAR_DIR / f"DYFCY{REPTMON}.parquet"
+MONTHLY_FILE = MONTHLY_YEAR_DIR / f"dyfcy{REPTMON}.parquet"
 
 # ============================================================================
 # STEP 2: RESOLVE INPUT FILES
@@ -139,7 +152,6 @@ print(f"  WALK      (wk)    : {walk_path.name}")
 
 # ============================================================================
 # HELPERS: CACHE FRESHNESS + STREAMED SAS -> PARQUET CONVERSION
-# (pattern follows EIBDLN1M.py)
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
