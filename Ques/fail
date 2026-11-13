@@ -52,6 +52,7 @@ for report_id in OUTPUT_IDS:
 
 
 
+=============================== EIBMRB01
 
 from EIBMRBDP_COMMON import dated_output_name, get_batch_date, new_temp_cache, sftp_put
 
@@ -103,7 +104,7 @@ print(f"  RDATE        : {CTX['rdate']}")
 
 
 
-===============================
+=============================== EIBMRB02
 
 from EIBMRBDP_COMMON import (
     PBB_ENTITY_SQL, PIBB_ENTITY_SQL, dated_output_name, get_batch_date, new_temp_cache, sftp_put,
@@ -183,7 +184,7 @@ _SOURCES = [
 
 
 
-==========================
+========================== EIBMRB03
 
 from EIBMRBDP_COMMON import (
     PBB_ENTITY_SQL, PIBB_ENTITY_SQL, dated_output_name, get_batch_date, new_temp_cache, sftp_put,
@@ -262,7 +263,7 @@ allcurrent = pl.concat(
 
 
 
-================================
+================================ EIBMRB04
 
 CHUNK_ROWS = 500_000
 MISSING_CHAR = "."          # default MISSING option
@@ -323,7 +324,7 @@ allfd = pl.concat(
 
 
 
-======================================
+====================================== EIBMRB05
 
 CHUNK_ROWS = 500_000
 MISSING_CHAR = "."          # default MISSING option
@@ -387,7 +388,7 @@ fcyca = pl.concat(
 
 
 
-=====================================
+===================================== EIBMRB06
 
 from EIBMRBDP_COMMON import dated_output_name, get_batch_date, new_temp_cache, sftp_put
 
@@ -444,7 +445,7 @@ CACHE_DIR  = Path(_TMP_CACHE.name)
 
 
 
-====================================
+==================================== EIBMRB07
 
 CHUNK_ROWS   = 500_000
 MISSING_CHAR = "."          # default MISSING option
@@ -506,7 +507,7 @@ fcyca = pl.concat(
 
 
 
-=========================================
+========================================= EIBMRB08
 
 from EIBMRBDP_COMMON import dated_output_name, get_batch_date, new_temp_cache, sftp_put
 
@@ -566,7 +567,7 @@ print("\nEIBMRB08 complete.")
 
 
 
-=================================
+================================= EIBMRB09
 
 CHUNK_ROWS   = 500_000
 MISSING_CHAR = "0"          # OPTIONS MISSING=0
@@ -612,7 +613,7 @@ CACHE_DIR  = Path(_TMP_CACHE.name)
 
 
 
-============================
+============================ EIBMRB03 / EIBMRB07
 
         "reptyear2": reptdate.strftime("%y"),
 
