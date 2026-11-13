@@ -43,17 +43,23 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII")
-
-INPUT_MIS_DIR = STG_DIR / "EIBMRBDP"                      # //MIS DD SAP.PBB.DP.SASDATA
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# Production Path
+INPUT_MIS_DIR   = Path("/exdwh/host/cdm")
+OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIBMRB09.txt"                 # //SASLIST DD SAP.PBB.EIBMRB09
+OUTPUT_RMWDRAW_FILE  = OUTPUT_DIR / "EIBMRB09.txt"        # //SASLIST DD SAP.PBB.EIBMRB09
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII")
+# INPUT_MIS_DIR = STG_DIR / "EIBMRBDP"                      # //MIS DD SAP.PBB.DP.SASDATA
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_FILE = OUTPUT_DIR / "EIBMRB09.txt"                 # //SASLIST DD SAP.PBB.EIBMRB09
 
 CHUNK_ROWS   = 500_000
 MISSING_CHAR = "0"          # OPTIONS MISSING=0
@@ -84,8 +90,8 @@ print("Step 1: Deriving report date...")
 CTX = derive_report_context()
 print(f"  RDATE: {CTX['rdate']}")
 
-# INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw{CTX['reptmon']}.sas7bdat"      # MIS.FDWDRW&REPTMON
-INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw09.sas7bdat"      # MIS.FDWDRW&REPTMON
+INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw{CTX['reptmon']}.sas7bdat"      # MIS.FDWDRW&REPTMON
+# INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw09.sas7bdat"      # MIS.FDWDRW&REPTMON
 
 
 # ============================================================================
