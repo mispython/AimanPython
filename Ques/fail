@@ -1,620 +1,132 @@
-CHANGE C: the same in EIBMRB01–09
-In each program, delete _cache_is_fresh and replace _load_cached with:
+#!/usr/bin/env python3
+"""
+Program : EIBMFDS2.py
+Purpose : Corporate Report by Branch. After EIBMRPTS.
+          Monthly Interest Rates Exception Report by Branch for FD Accounts
+          with Total Receipts > RM 1.0 M : Corporate.
+          Generates report grouped by BRANCH, then by NAMEQ, then by ACCTNO,
+          with subtotals after each ACCTNO group and each NAMEQ group.
 
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    # CACHE_DIR is a temp folder (removed at the end of the run). A file read twice
-    # (e.g. PBB and PIBB from the same source) is converted only once per run.
-    cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
-    if cache_path.exists():
-        print(f"  [{tag}] Already converted in this run - reusing.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
+Input   : //FDC       DD DSN=SAP.PBB.FD1M.SASDATA,DISP=SHR
+Control : ctl_dwh_batch_dttm.sas7bdat (SOURCE_SYSTEM_CD = DP) -> report date
+"""
 
-
-
-
-==========================
-
-CHANGE D: the same last lines in EIBMRB01–07 and 09
-Replace the final print("\nEIBMRBxx complete.") with the following. Use the matching REPORT_ID; EIBMRB08 is shown in its own section.
-
-_TMP_CACHE.cleanup()
-sftp_put(OUTPUT_FILE, REPORT_ID, OUTPUT_FILE.name)
-print("\nEIBMRBxx complete.")
-
-
-
-
-======================================
-
+import tempfile
+from datetime import date
 from pathlib import Path
 
-from EIBMRBDP_COMMON import dated_output_name, get_batch_date
+import duckdb
+import pandas as pd
+import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-# Production Path
-BASE_DIR    = Path("/host_pq/mis")
-OUTPUT_DIR  = BASE_DIR / "output" / "deposit" / "EIBMRBDP"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
 
 # ============================================================================
-# STEP DELETE (IEFBR14): DD01-DD10 delete the output datasets (this run's dated names)
+# CONTROL FILE CONFIGURATION
 # ============================================================================
-REPTDATE_DP = get_batch_date()      # SOURCE_SYSTEM_CD = 'DP'
-OUTPUT_IDS = [
-    "EIBMRB01", "EIBMRB02", "EIBMRB03", "EIBMRB04", "EIBMRB05",
-    "EIBMRB06", "EIBMRB07", "EIBMRB8A", "EIBMRB8B", "EIBMRB09",
-]
-
-print("Step DELETE: removing previous output files...")
-for report_id in OUTPUT_IDS:
-    (OUTPUT_DIR / dated_output_name(report_id, REPTDATE_DP)).unlink(missing_ok=True)
+# Control file : batch date per source system
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
 
 
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
 
-=============================== EIBMRB01
 
-from EIBMRBDP_COMMON import dated_output_name, get_batch_date, new_temp_cache, sftp_put
+# ============================================================================
+# REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = DP)
+# ============================================================================
+REPTDATE = get_batch_date(BATCH_SOURCE)
 
+# SAS: PUT(REPTDATE, DDMMYY10.) -> DD/MM/YYYY
+REPTDT = REPTDATE.strftime("%d/%m/%Y")
 
+# Date token used in the output filename (DDMMYY, e.g. 180526)
+REPTDT_FILE = REPTDATE.strftime("%d%m%y")
 
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBMFD"
+# INPUT_FDC  = INPUT_DIR / "fd1mc.sas7bdat"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMFDS2"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_REPORT = build_output_file(OUTPUT_DIR, "PBB_FDRATE3_REPORT").with_suffix(".txt")
 
 # Production Path
-BASE_DIR         = Path("/dwh")
-INPUT_DAILY_DIR  = BASE_DIR / "dp_fcy"        # contains fcyfd<yymmdd>.sas7bdat
-# INPUT_MISFD_DIR  = BASE_DIR / "dp_fcy"       # //MISFD  DD SAP.PBB.FCYFD
-# INPUT_MIS2FD_DIR = BASE_DIR / "dp_fcy"       # //MIS2FD DD SAP.PBB.FCFD
+BASE_DIR  = Path("/host_pq")
+INPUT_FDC = BASE_DIR / "mano???" / "fd1mc.sas7bdat"     # FDC.FD1MC (fixed deposits corporate master)
 
-REPORT_ID   = "EIBMRB01"
-OUTPUT_DIR  = Path("/host_pq/mis/output/deposit/EIBMRBDP")
+OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report/EIBMFDS2")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-# OUTPUT_FILE (dated name) is set right after the report date is derived (Step 1)
+OUTPUT_REPORT = OUTPUT_DIR / f"PBB_FDRATE3_REPORT_{REPTDT_FILE}.txt"
+# Output example: PBB_FDRATE3_REPORT_180526.txt
 
-_TMP_CACHE = new_temp_cache()                  # temp Parquet area, removed at the end
-CACHE_DIR  = Path(_TMP_CACHE.name)
-
-
-
-
-def derive_report_context() -> dict:
-    reptdate = get_batch_date()          # SOURCE_SYSTEM_CD = 'DP'
-
-    return {
-        "reptdate": reptdate,
-        "reptyear": reptdate.strftime("%Y"),
-        "reptmon":  reptdate.strftime("%m"),
-        "reptmth":  calendar.month_name[reptdate.month].upper(),
-        "rdate":    reptdate.strftime("%d/%m/%y"),
-    }
-
-
-print("Step 1: Deriving report date...")
-CTX = derive_report_context()
-REPTYEAR_I = int(CTX["reptyear"])
-REPTMON_I  = int(CTX["reptmon"])
-OUTPUT_FILE = OUTPUT_DIR / dated_output_name(REPORT_ID, CTX["reptdate"])   # //SASLIST DD SAP.PBB.EIBMRB01
-print(f"  Report month : {CTX['reptmth']} {CTX['reptyear']}")
-print(f"  RDATE        : {CTX['rdate']}")
-
-
-
-
-    pq_path.unlink(missing_ok=True)      # daily Parquet no longer needed
-
-
-
-
-=============================== EIBMRB02
-
-from EIBMRBDP_COMMON import (
-    PBB_ENTITY_SQL, PIBB_ENTITY_SQL, dated_output_name, get_batch_date, new_temp_cache, sftp_put,
-)
-
-
-
-
+# Temporary parquet conversion (deleted after the read; nothing is kept)
 CHUNK_ROWS = 500_000
-LRECL = 133                 # //SASLIST LRECL=133
-MISSING_CHAR = "0"          # OPTIONS MISSING=0
+TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
 
+# Report configuration
+PAGE_SIZE = 60   # Default PS=60 (OPTIONS PS= not explicitly set in SAS source)
 
-# ============================================================================
-# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = 'DP')
-# ============================================================================
-def derive_report_context() -> dict:
-    """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_batch_date()
 
-    return {
-        "reptdate": reptdate,
-        "reptyear": reptdate.strftime("%Y"),
-        "reptmon": reptdate.strftime("%m"),
-        "rdate": reptdate.strftime("%d/%m/%y"),
-        "reptmth": calendar.month_name[reptdate.month].upper(),
-    }
 
 
-print("Step 1: Deriving report date...")
-CTX = derive_report_context()
-REPTYEAR_I = int(CTX["reptyear"])
-REPTMON_I = int(CTX["reptmon"])
-REPTMON = CTX["reptmon"]
-print(f"  RDATE: {CTX['rdate']}")
+def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
+    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
+    writer, schema = None, None
+    try:
+        for chunk in pd.read_sas(str(src), encoding="latin1", chunksize=chunk_rows):
+            # Force text columns to string so an all-null first chunk doesn't lock a null type
+            for col in chunk.columns[chunk.dtypes == object]:
+                chunk[col] = chunk[col].astype("string")
+            table = pa.Table.from_pandas(chunk, preserve_index=False)
+            if writer is None:
+                schema = table.schema
+                writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
+            else:
+                table = table.cast(schema)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
 
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-REPORT_ID = "EIBMRB02"
-BASE_DIR    = Path("/sas/deposit/dwh/integration")
-INPUT_DEPO_SAVING_FILE   = BASE_DIR / f"intg_dp_acct_saving_m{REPTMON}.sas7bdat"       # DEPO.SAVING  (ENTITY_CD != PIBB)
-INPUT_IDEPO_SAVING_FILE  = BASE_DIR / f"intg_dp_acct_saving_m{REPTMON}.sas7bdat"       # IDEPO.SAVING (ENTITY_CD = PIBB)
-INPUT_DEPO_CURRENT_FILE  = BASE_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"      # DEPO.CURRENT
-INPUT_IDEPO_CURRENT_FILE = BASE_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"      # IDEPO.CURRENT
-INPUT_DEPO_FD_FILE       = BASE_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"           # DEPO.FD
-INPUT_IDEPO_FD_FILE      = BASE_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"           # IDEPO.FD
 
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / dated_output_name(REPORT_ID, CTX["reptdate"])   # //SASLIST DD SAP.PBB.EIBMRB02
+def _read_sas7bdat(path: Path) -> pl.DataFrame:
+    """Read one .sas7bdat file via a temporary Parquet cache and return a Polars DataFrame.
 
-_TMP_CACHE = new_temp_cache()          # temp Parquet area, removed at the end
-CACHE_DIR  = Path(_TMP_CACHE.name)
+    The sas7bdat is converted to a temporary Parquet file, read through DuckDB,
+    and the temporary file is deleted when the read is done.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required input file: {path}")
 
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        tmp_parquet = Path(tmp) / f"{path.stem}.parquet"
+        sas_to_parquet(path, tmp_parquet)
 
+        con = duckdb.connect()
+        try:
+            df = con.execute(
+                f"SELECT * FROM read_parquet('{tmp_parquet.as_posix()}')"
+            ).pl()
+        finally:
+            con.close()
+    # temp folder and Parquet file are removed here
 
+    return df.rename({col: str(col).upper().strip() for col in df.columns})
 
-_SOURCES = [
-    (DEPO_CURRENT_CACHE, "PBB",
-     f"{PBB_ENTITY_SQL} AND TRIM(CURCODE) = 'MYR' AND COALESCE(PRODUCT,-1) NOT IN ({_PBB_CURRENT_EXCL}) "
-     "AND NOT (COALESCE(ACCTNO,0) BETWEEN 3590000000 AND 3599999999)", 2, 1),
-    (IDEPO_CURRENT_CACHE, "PIBB",
-     f"{PIBB_ENTITY_SQL} AND COALESCE(PRODUCT,-1) NOT IN (66,67,149,80) AND TRIM(CURCODE) = 'MYR' "
-     "AND NOT (COALESCE(ACCTNO,0) BETWEEN 3790000000 AND 3799999999)", 2, 2),
-    (DEPO_SAVING_CACHE, "PBB",
-     f"{PBB_ENTITY_SQL} AND COALESCE(PRODUCT,-1) NOT IN (297,298,480,481,482,150,151,152,177,181)", 1, 1),
-    (IDEPO_SAVING_CACHE, "PIBB",
-     f"{PIBB_ENTITY_SQL} AND COALESCE(PRODUCT,-1) NOT IN (298)", 1, 2),
-    (DEPO_FD_CACHE, "PBB",
-     f"{PBB_ENTITY_SQL} AND TRIM(CURCODE) = 'MYR' AND COALESCE(PRODUCT,-1) NOT IN (395)", 3, 1),
-    (IDEPO_FD_CACHE, "PIBB",
-     f"{PIBB_ENTITY_SQL} AND TRIM(CURCODE) = 'MYR' AND COALESCE(PRODUCT,-1) NOT IN (396)", 3, 2),
-]
 
 
 
-
-========================== EIBMRB03
-
-from EIBMRBDP_COMMON import (
-    PBB_ENTITY_SQL, PIBB_ENTITY_SQL, dated_output_name, get_batch_date, new_temp_cache, sftp_put,
-)
-
-
-
-
-CHUNK_ROWS = 500_000
-MISSING_CHAR = "."          # default MISSING option
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = 'DP')
-# ============================================================================
-def derive_report_context() -> dict:
-    """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_batch_date()
-
-    return {
-        "reptdate": reptdate,
-        "nowk": {8: "1", 15: "2", 22: "3"}.get(reptdate.day, "4"),
-        "reptyear": reptdate.strftime("%Y"),
-        "reptmon": reptdate.strftime("%m"),
-        "rdate": reptdate.strftime("%d/%m/%y"),
-        "reptmth": calendar.month_name[reptdate.month].upper(),
-    }
-
-
-print("Step 1: Deriving report date...")
-CTX = derive_report_context()
-REPTYEAR_I = int(CTX["reptyear"])
-REPTMON_I = int(CTX["reptmon"])
-REPTMON, REPTWEEK, REPTYEAR = CTX["reptmon"], CTX["nowk"], CTX["reptyear"]   # filename tokens
-print(f"  RDATE: {CTX['rdate']}")
-
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-REPORT_ID = "EIBMRB03"
-BASE_DIR    = Path("/sas/deposit/dwh/integration")
-INPUT_DEPO_CURRENT_FILE  = BASE_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"      # DEPO.CURRENT  (ENTITY_CD != PIBB)
-INPUT_IDEPO_CURRENT_FILE = BASE_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"      # IDEPO.CURRENT (ENTITY_CD = PIBB)
-
-CIS_DIR     = Path("/dwh/rs_cis")
-INPUT_CIS_DEPOSIT_FILE   = CIS_DIR / f"cisr1ca{REPTMON}{REPTWEEK}{REPTYEAR}.sas7bdat"   # CIS.DEPOSIT
-
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / dated_output_name(REPORT_ID, CTX["reptdate"])   # //SASLIST DD SAP.PBB.EIBMRB03
-
-_TMP_CACHE = new_temp_cache()          # temp Parquet area, removed at the end
-CACHE_DIR  = Path(_TMP_CACHE.name)
-
-
-
-
-def _load_current(cache: Path, sname: str, acct_lo: int, acct_hi: int, entity_sql: str) -> pl.DataFrame:
-    """DATA CURRENT/ICURRENT (acct-range exclusion) + WHERE of DATA ALLCURRENT."""
-    where = (
-        f"{entity_sql} AND NOT (COALESCE(ACCTNO,0) BETWEEN {acct_lo} AND {acct_hi}) "
-        "AND COALESCE(CUSTCODE,-1) NOT IN (77,78,95,96) AND TRIM(CURCODE) = 'MYR' "
-        f"AND COALESCE(PRODUCT,-1) NOT IN ({_PRODUCT_EXCL})"
-    )
-    return _read_pq(cache, _COLS, where).with_columns(pl.lit(sname).alias("SNAME"))
-
-
-allcurrent = pl.concat(
-    [
-        _load_current(DEPO_CURRENT_CACHE, "PBB", 3590000000, 3599999999, PBB_ENTITY_SQL),
-        _load_current(IDEPO_CURRENT_CACHE, "PIBB", 3790000000, 3799999999, PIBB_ENTITY_SQL),
-    ]
-)
-
-
-
-
-================================ EIBMRB04
-
-CHUNK_ROWS = 500_000
-MISSING_CHAR = "."          # default MISSING option
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = 'DP')
-# ============================================================================
-def derive_report_context() -> dict:
-    """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_batch_date()
-
-    return {
-        "reptdate": reptdate,
-        "reptyear": reptdate.strftime("%Y"),
-        "reptmon": reptdate.strftime("%m"),
-        "rdate": reptdate.strftime("%d/%m/%y"),
-        "reptmth": calendar.month_name[reptdate.month].upper(),
-    }
-
-
-print("Step 1: Deriving report date...")
-CTX = derive_report_context()
-REPTYEAR_I = int(CTX["reptyear"])
-REPTMON_I = int(CTX["reptmon"])
-REPTMON = CTX["reptmon"]
-print(f"  RDATE: {CTX['rdate']}")
-
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-REPORT_ID = "EIBMRB04"
-BASE_DIR            = Path("/sas/deposit/dwh/integration")
-INPUT_DEPO_FD_FILE  = BASE_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"           # DEPO.FD  (ENTITY_CD != PIBB)
-INPUT_IDEPO_FD_FILE = BASE_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"           # IDEPO.FD (ENTITY_CD = PIBB)
-
-CIS_DIR     = Path("/sas/cis/dwh/enrichment")
-INPUT_CIS_DEPOSIT_FILE   = CIS_DIR / f"enrh_cis_cust_info.sas7bdat"         # CIS.DEPOSIT
-
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / dated_output_name(REPORT_ID, CTX["reptdate"])   # //SASLIST DD SAP.PBB.EIBMRB04
-
-_TMP_CACHE = new_temp_cache()          # temp Parquet area, removed at the end
-CACHE_DIR  = Path(_TMP_CACHE.name)
-
-
-
-
-allfd = pl.concat(
-    [
-        _load_fd(DEPO_FD_CACHE, "PBB", f"AND {PBB_ENTITY_SQL}"),
-        _load_fd(IDEPO_FD_CACHE, "PIBB", f"AND {PIBB_ENTITY_SQL} AND COALESCE(PRODUCT,-1) <> 393"),   # IF PRODUCT NE 393;
-    ]
-)
-
-
-
-
-====================================== EIBMRB05
-
-CHUNK_ROWS = 500_000
-MISSING_CHAR = "."          # default MISSING option
-LRECL = 133                 # //SASLIST DD LRECL=133 (records padded with blanks)
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = 'DP')
-# ============================================================================
-def derive_report_context() -> dict:
-    """Macro-variable equivalents of the REPTDATE step (NOWK: exact day 8/15/22, else 4)."""
-    reptdate = get_batch_date()
-
-    return {
-        "reptdate": reptdate,
-        "nowk": {8: "1", 15: "2", 22: "3"}.get(reptdate.day, "4"),
-        "reptyear": reptdate.strftime("%Y"),
-        "reptyear2": reptdate.strftime("%y"),
-        "reptmon": reptdate.strftime("%m"),
-        "rdate": reptdate.strftime("%d/%m/%y"),
-        "reptmth": calendar.month_name[reptdate.month].upper(),
-    }
-
-
-print("Step 1: Deriving report date...")
-CTX = derive_report_context()
-REPTYEAR_I = int(CTX["reptyear"])
-REPTMON_I = int(CTX["reptmon"])
-REPTMON = CTX["reptmon"]
-print(f"  RDATE: {CTX['rdate']}  NOWK: {CTX['nowk']}")
-
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-REPORT_ID = "EIBMRB05"
-BASE_DIR    = Path("/sas/deposit/dwh/integration")
-INPUT_DEPO_CURRENT_FILE  = BASE_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"      # DEPO.CURRENT  (ENTITY_CD != PIBB)
-INPUT_IDEPO_CURRENT_FILE = BASE_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"      # IDEPO.CURRENT (ENTITY_CD = PIBB)
-INPUT_MISFD_DIR          = Path("/dwh/dp_fcy")                               # //MISFD DD SAP.PBB.FCFD
-INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
-# INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd09426.sas7bdat"
-
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / dated_output_name(REPORT_ID, CTX["reptdate"])   # //SASLIST DD SAP.PBB.EIBMRB05
-
-_TMP_CACHE = new_temp_cache()          # temp Parquet area, removed at the end
-CACHE_DIR  = Path(_TMP_CACHE.name)
-
-
-
-
-fcyca = pl.concat(
-    [
-        _read_pq(DEPO_CURRENT_CACHE, f"{_COLS}, 2 AS FTYPE", f"{PBB_ENTITY_SQL} AND ({_ca_where})"),
-        _read_pq(IDEPO_CURRENT_CACHE, f"{_COLS}, 2 AS FTYPE", f"{PIBB_ENTITY_SQL} AND ({_ca_where})"),
-    ]
-)
-
-
-
-
-===================================== EIBMRB06
-
-from EIBMRBDP_COMMON import dated_output_name, get_batch_date, new_temp_cache, sftp_put
-
-
-
-
-CHUNK_ROWS   = 500_000
-MISSING_CHAR = "."          # default MISSING option
-LRECL        = 155          # //SASLIST DD LRECL=155 (records padded with blanks)
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = 'DP')
-# ============================================================================
-def derive_report_context() -> dict:
-    """Macro-variable equivalents of the REPTDATE step (NOWK: exact day 8/15/22, else 4)."""
-    reptdate = get_batch_date()
-
-    return {
-        "reptdate": reptdate,
-        "nowk": {8: "1", 15: "2", 22: "3"}.get(reptdate.day, "4"),
-        "reptyear": reptdate.strftime("%Y"),
-        "reptyear2": reptdate.strftime("%y"),
-        "reptmon": reptdate.strftime("%m"),
-        "rdate": reptdate.strftime("%d/%m/%y"),
-        "reptmth": calendar.month_name[reptdate.month].upper(),
-    }
-
-
-print("Step 1: Deriving report date...")
-CTX = derive_report_context()
-REPTYEAR_I = int(CTX["reptyear"])
-REPTMON_I = int(CTX["reptmon"])
-print(f"  RDATE: {CTX['rdate']}  NOWK: {CTX['nowk']}")
-
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-REPORT_ID = "EIBMRB06"
-CIS_DIR                 = Path("/sas/cis/dwh/enrichment")
-INPUT_CIS_DEPOSIT_FILE  = CIS_DIR / f"enrh_cis_cust_info.sas7bdat"      # CIS.DEPOSIT
-INPUT_MISFD_DIR         = Path("/dwh/dp_fcy")                           # //MISFD DD SAP.PBB.FCFD
-INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd{CTX['reptmon']}{CTX['nowk']}{CTX['reptyear2']}.sas7bdat"
-# INPUT_MISFD_FILE = INPUT_MISFD_DIR / f"fcyfd09426.sas7bdat"
-
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / dated_output_name(REPORT_ID, CTX["reptdate"])   # //SASLIST DD SAP.PBB.EIBMRB06
-
-_TMP_CACHE = new_temp_cache()          # temp Parquet area, removed at the end
-CACHE_DIR  = Path(_TMP_CACHE.name)
-
-
-
-
-==================================== EIBMRB07
-
-CHUNK_ROWS   = 500_000
-MISSING_CHAR = "."          # default MISSING option
-LRECL        = 155          # //SASLIST DD LRECL=155 (records padded with blanks)
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = 'DP')
-# ============================================================================
-def derive_report_context() -> dict:
-    """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_batch_date()
-
-    return {
-        "reptdate": reptdate,
-        "nowk": {8: "1", 15: "2", 22: "3"}.get(reptdate.day, "4"),
-        "reptyear": reptdate.strftime("%Y"),
-        "reptmon": reptdate.strftime("%m"),
-        "rdate": reptdate.strftime("%d/%m/%y"),
-        "reptmth": calendar.month_name[reptdate.month].upper(),
-    }
-
-
-print("Step 1: Deriving report date...")
-CTX = derive_report_context()
-REPTYEAR_I = int(CTX["reptyear"])
-REPTMON_I = int(CTX["reptmon"])
-REPTMON, REPTWEEK, REPTYEAR = CTX["reptmon"], CTX["nowk"], CTX["reptyear"]   # filename tokens
-print(f"  RDATE: {CTX['rdate']}")
-
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-REPORT_ID = "EIBMRB07"
-BASE_DIR    = Path("/sas/deposit/dwh/integration")
-INPUT_DEPO_CURRENT_FILE  = BASE_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"      # DEPO.CURRENT  (ENTITY_CD != PIBB)
-INPUT_IDEPO_CURRENT_FILE = BASE_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"      # IDEPO.CURRENT (ENTITY_CD = PIBB)
-CIS_DIR     = Path("/dwh/rs_cis")
-INPUT_CIS_DEPOSIT_FILE   = CIS_DIR / f"cisr1ca{REPTMON}{REPTWEEK}{REPTYEAR}.sas7bdat"   # CIS.DEPOSIT
-
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / dated_output_name(REPORT_ID, CTX["reptdate"])   # //SASLIST DD SAP.PBB.EIBMRB07
-
-_TMP_CACHE = new_temp_cache()          # temp Parquet area, removed at the end
-CACHE_DIR  = Path(_TMP_CACHE.name)
-
-
-
-
-fcyca = pl.concat(
-    [
-        _read_pq(DEPO_CURRENT_CACHE, _COLS, f"{PBB_ENTITY_SQL} AND ({_WHERE})"),
-        _read_pq(IDEPO_CURRENT_CACHE, _COLS, f"{PIBB_ENTITY_SQL} AND ({_WHERE})"),
-    ]
-)
-
-
-
-
-========================================= EIBMRB08
-
-from EIBMRBDP_COMMON import dated_output_name, get_batch_date, new_temp_cache, sftp_put
-
-
-
-
-CHUNK_ROWS   = 500_000
-MISSING_CHAR = "0"          # OPTIONS MISSING=0
-LRECL        = 500          # //SASLIST DD LRECL=500 (records padded with blanks)
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = 'DP')
-# ============================================================================
-def derive_report_context() -> dict:
-    """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_batch_date()
-    return {
-        "reptdate": reptdate,
-        "reptyear": reptdate.strftime("%Y"),
-        "reptmon": reptdate.strftime("%m"),
-        "rdate": reptdate.strftime("%d/%m/%y"),
-        "reptmth": calendar.month_name[reptdate.month].upper(),
-    }
-
-
-print("Step 1: Deriving report date...")
-CTX = derive_report_context()
-print(f"  RDATE: {CTX['rdate']}")
-
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-RM_REPORT_ID  = "EIBMRB8A"
-FCY_REPORT_ID = "EIBMRB8B"
-INPUT_MIS_DIR   = Path("/exdwh/host/cdm")
-INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw{CTX['reptmon']}.sas7bdat"      # MIS.FDWDRW&REPTMON
-# INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw09.sas7bdat"      # MIS.FDWDRW&REPTMON
-
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_RMWDRAW_FILE  = OUTPUT_DIR / dated_output_name(RM_REPORT_ID, CTX["reptdate"])    # //RMWDRAW  DD SAP.PBB.EIBMRB8A
-OUTPUT_FCYWDRAW_FILE = OUTPUT_DIR / dated_output_name(FCY_REPORT_ID, CTX["reptdate"])   # //FCYWDRAW DD SAP.PBB.EIBMRB8B
-
-_TMP_CACHE = new_temp_cache()          # temp Parquet area, removed at the end
-CACHE_DIR  = Path(_TMP_CACHE.name)
-
-
-
-
-_TMP_CACHE.cleanup()
-sftp_put(OUTPUT_RMWDRAW_FILE, RM_REPORT_ID, OUTPUT_RMWDRAW_FILE.name)
-sftp_put(OUTPUT_FCYWDRAW_FILE, FCY_REPORT_ID, OUTPUT_FCYWDRAW_FILE.name)
-print("\nEIBMRB08 complete.")
-
-
-
-
-================================= EIBMRB09
-
-CHUNK_ROWS   = 500_000
-MISSING_CHAR = "0"          # OPTIONS MISSING=0
-LRECL = 500                 # //SASLIST DD LRECL=500, RECFM=FB (records padded with blanks)
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (SOURCE_SYSTEM_CD = 'DP')
-# ============================================================================
-def derive_report_context() -> dict:
-    """Macro-variable equivalents of the REPTDATE step."""
-    reptdate = get_batch_date()
-
-    return {
-        "reptdate": reptdate,
-        "reptyear": reptdate.strftime("%Y"),
-        "reptmon": reptdate.strftime("%m"),
-        "rdate": reptdate.strftime("%d/%m/%y"),
-        "reptmth": calendar.month_name[reptdate.month].upper(),
-    }
-
-
-print("Step 1: Deriving report date...")
-CTX = derive_report_context()
-print(f"  RDATE: {CTX['rdate']}")
-
-# ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-REPORT_ID = "EIBMRB09"
-INPUT_MIS_DIR   = Path("/exdwh/host/cdm")
-INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw{CTX['reptmon']}.sas7bdat"      # MIS.FDWDRW&REPTMON
-# INPUT_FDWDRW_FILE = INPUT_MIS_DIR / f"fdwdrw09.sas7bdat"      # MIS.FDWDRW&REPTMON
-
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / dated_output_name(REPORT_ID, CTX["reptdate"])   # //SASLIST DD SAP.PBB.EIBMRB09
-
-_TMP_CACHE = new_temp_cache()          # temp Parquet area, removed at the end
-CACHE_DIR  = Path(_TMP_CACHE.name)
-
-
-
-
-============================ EIBMRB03 / EIBMRB07
-
-        "reptyear2": reptdate.strftime("%y"),
-
-REPTMON, REPTWEEK, REPTYEAR = CTX["reptmon"], CTX["nowk"], CTX["reptyear2"]   # filename tokens (2-digit year)
