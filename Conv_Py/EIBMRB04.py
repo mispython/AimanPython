@@ -34,24 +34,31 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+BASE_DIR            = Path("/sas/deposit/dwh/integration")
+INPUT_DEPO_FD_FILE  = BASE_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"           # DEPO.FD
+INPUT_IDEPO_FD_FILE = BASE_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"           # IDEPO.FD
 
-INPUT_DEPO_FD_FILE      = STG_DIR / "MNITB" / "PBB"         / "fd.sas7bdat"          # DEPO.FD
-INPUT_IDEPO_FD_FILE     = STG_DIR / "MNITB" / "PIBB"        / "fd.sas7bdat"          # IDEPO.FD
-INPUT_CIS_DEPOSIT_FILE  = STG_DIR / "CIS"   / "CRM_CISBEXT" / "deposit.sas7bdat"     # CIS.DEPOSIT
+CIS_DIR     = Path("/sas/cis/dwh/enrichment")
+INPUT_CIS_DEPOSIT_FILE   = CIS_DIR / f"enrh_cis_cust_info.sas7bdat"         # CIS.DEPOSIT
 
-# INPUT_DEPO_FD_FILE      = STG_DIR / "from_dwh" / "fd09426.sas7bdat"                         # DEPO.FD
-# INPUT_IDEPO_FD_FILE     = STG_DIR / "from_dwh" / "ifd09426.sas7bdat"                        # IDEPO.FD
-# INPUT_CIS_DEPOSIT_FILE  = STG_DIR / "CIS"      / "CRM_CISBEXT"       / "deposit.sas7bdat"   # CIS.DEPOSIT
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
-# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP_dwh"
+OUTPUT_DIR = Path("/host_pq/mis/output/deposit/EIBMRBDP")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIBMRB04.txt"                 # //SASLIST DD SAP.PBB.EIBMRB04
+OUTPUT_FILE = OUTPUT_DIR / "EIBMRB04.txt"                # //SASLIST DD SAP.PBB.EIBMRB04
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII")
+# INPUT_DEPO_FD_FILE      = STG_DIR / "MNITB" / "PBB"         / "fd.sas7bdat"          # DEPO.FD
+# INPUT_IDEPO_FD_FILE     = STG_DIR / "MNITB" / "PIBB"        / "fd.sas7bdat"          # IDEPO.FD
+# INPUT_CIS_DEPOSIT_FILE  = STG_DIR / "CIS"   / "CRM_CISBEXT" / "deposit.sas7bdat"     # CIS.DEPOSIT
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMRBDP"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMRBDP"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_FILE = OUTPUT_DIR / "EIBMRB04.txt"                 # //SASLIST DD SAP.PBB.EIBMRB04
 
 CHUNK_ROWS = 500_000
 MISSING_CHAR = "."          # default MISSING option
