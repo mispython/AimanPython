@@ -3,62 +3,93 @@ import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
+import duckdb
 import pandas as pd
 import paramiko
 import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-# from REPTDATE import get_reptdate_values
-import RDALPBIF
-import RDLMPBIF
+from PIBELQ import build_elw1, prtel, prteli
 
 
 
 
 # ============================================================================
-# PATH CONFIGURATION
+# CONTROL FILE CONFIGURATION
+# ============================================================================
+CTL_DIR        = Path("/sasdata/dwh/control")
+CTL_BATCH_DTTM = CTL_DIR / "ctl_dwh_batch_dttm.sas7bdat"   # all dates
+CTL_SFTP_INFO  = CTL_DIR / "ctl_dwh_sftp_info.sas7bdat"    # all SFTP info
+BATCH_SOURCE   = "SAS"                                      # SOURCE_SYSTEM_CD used for report date
+
+# ============================================================================
+# PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
 # Production Path
-# --- Control files ---
-CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-CTL_SFTP_INFO  = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for the report date
+BASE_DIR    = Path("/dwh - KENA KONFEMKAN DULU KAT MANA")
+INPUT_BNMK_REP4X_DIR = BASE_DIR / "BNMK"                 # bnmk_rep4x
+INPUT_BNMK_REP2_DIR  = BASE_DIR / "BNMK"                 # bnmk_rep2
+INPUT_BNMK_TBL1_DIR  = BASE_DIR / "BNMK"                 # bnmk_tbl1   (used by PIBELQ)
+INPUT_BNMS_ELSCD_DIR = BASE_DIR / "BNMS"                 # bnms_elscd
+INPUT_BNM_ELW_DIR    = BASE_DIR / "BNM"                  # bnm_elw
+INPUT_BNMB_ELW_DIR   = BASE_DIR / "BNMB"                 # bnmb_elw    (used by PIBELQ)
 
-# --- Inputs ---
-BASE_DIR          = Path("/dwh")                  # EIBDPBIF | Refer Adli, kena konfemkan kat mana
-INPUT_CLIENT_DIR  = BASE_DIR / "path kat mana"    # CLIEN dataset folder (keep until confirmed)
-INPUT_MECHRG_DIR  = Path("/host_pq/mis/input/textfile")
-
-# --- Outputs ---
-OUTPUT_DIR = Path("/host_pq/mis/output/")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# --- SFTP target (//RUNSFTP : CD RMD-ALM/LIQ on DRR) ---
-SFTP_HOST_DESC  = "Data Report Repository (DRR)"
-SFTP_REMOTE_DIR = "RMD-ALM/LIQ"
-SFTP_PORT       = 22
-
-# --- Conversion settings ---
-CHUNK_ROWS = 500_000
-TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
-
-LRECL = 133   # DCB=(RECFM=FB,LRECL=133,BLKSIZE=0)
+OUTPUT_DIR      = Path("/host_pq/mis/output/report/EIIWKAPE")
+OUTPUT_NSRS_DIR = OUTPUT_DIR / "nsrs"
 
 # # Testing Path
-# BASE_DIR          = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# INPUT_CLIENT_DIR  = Path("/stgsrcsys/host/uat/AII/EIBMAPBL")
-# INPUT_MECHRG_DIR  = Path("/stgsrcsys/host/uat/AII/EIBMAPBL")
-# OUTPUT_DIR        = BASE_DIR / "output" / "EIBMAPBL"
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE/EII")
+
+# INPUT_BNMK_REP4X_DIR = STG_DIR / "BNMK"                 # bnmk_rep4x
+# INPUT_BNMK_REP2_DIR  = STG_DIR / "BNMK"                 # bnmk_rep2
+# INPUT_BNMK_TBL1_DIR  = STG_DIR / "BNMK"                 # bnmk_tbl1
+# INPUT_BNMS_ELSCD_DIR = STG_DIR / "BNMS"                 # bnms_elscd
+# INPUT_BNM_ELW_DIR    = STG_DIR / "BNM"                  # bnm_elw
+# INPUT_BNMB_ELW_DIR   = STG_DIR / "BNMB"                 # bnmb_elw
+
+# # INPUT_BNMK_REP4X_DIR = STG_DIR / "BNMK" / "rep4x2026081.sas7bdat"
+# # INPUT_BNMK_REP2_DIR  = STG_DIR / "BNMK" / "rep2081.sas7bdat"
+# # INPUT_BNMS_ELSCD_DIR = STG_DIR / "BNMS" / "elscd081.sas7bdat"
+# # INPUT_BNM_ELW_DIR    = STG_DIR / "BNM"  / "elw081.sas7bdat"
+
+# OUTPUT_DIR      = BASE_DIR / "output" / "EIIWKAPE"
+# OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIIWKAPE" / "nsrs"
+
+# Output file names (no date: the JCL names carry none)
+OUTPUT_FILE      = OUTPUT_DIR / "EIIWKAPD.txt"
+OUTPUT_NSRS_FILE = OUTPUT_NSRS_DIR / "EIIWKAPD.txt"
+
+# Temporary parquet area (deleted when the program ends; None = system temp)
+TEMP_DIR = None
+
+for _d in (OUTPUT_DIR, OUTPUT_NSRS_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
+
+# ============================================================================
+# SFTP CONFIGURATION (credentials come from ctl_dwh_sftp_info.sas7bdat)
+# ============================================================================
+SFTP_HOST_DESC  = "Data Report Repository (DRR)"      # HOST_DESC in the control file
+SFTP_REMOTE_DIR = "FD-BNM REPORTING/PIBB/BNM RPTG"
+
+# ============================================================================
+# GLOBAL CONFIGURATION
+# ============================================================================
+CHUNK_ROWS = 500_000
+PAGE_SIZE = 60
+
+_TMP    = tempfile.TemporaryDirectory(prefix="EIIWKAPE_", dir=TEMP_DIR)
+TMP_DIR = Path(_TMP.name)
 
 
 
 
 # ============================================================================
-# HELPER FUNCTIONS
+# HELPER: BATCH DATE FROM CONTROL FILE
 # ============================================================================
 def get_batch_date(source_system_cd: str) -> date:
-    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from ctl_dwh_batch_dttm."""
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
     ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
     ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
     hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
@@ -67,9 +98,44 @@ def get_batch_date(source_system_cd: str) -> date:
     return pd.Timestamp(hit.iloc[0]).date()
 
 
+# ============================================================================
+# HELPER: SFTP INFO FROM CONTROL FILE + UPLOAD
+# ============================================================================
+def get_sftp_info(host_desc: str) -> dict:
+    """Read SFTP_ID / SFTP_PW / HOST_IP for the given HOST_DESC from the control file."""
+    ctl = pd.read_sas(str(CTL_SFTP_INFO), encoding="latin1")
+    for col in ("SFTP_ID", "SFTP_PW", "HOST_IP", "HOST_DESC"):
+        ctl[col] = ctl[col].fillna("").astype(str).str.strip()
+    hit = ctl.loc[ctl["HOST_DESC"] == host_desc]
+    if hit.empty:
+        raise ValueError(f"HOST_DESC '{host_desc}' not found in {CTL_SFTP_INFO}")
+    row = hit.iloc[0]
+    return {"user": row["SFTP_ID"], "password": row["SFTP_PW"], "host": row["HOST_IP"]}
+
+
+def sftp_put(host_desc: str, remote_dir: str, local_path: Path,
+             remote_name: str, port: int = 22) -> None:
+    """Upload local_path to remote_dir/remote_name on the host identified by host_desc."""
+    info = get_sftp_info(host_desc)
+    transport = paramiko.Transport((info["host"], port))
+    try:
+        transport.connect(username=info["user"], password=info["password"])
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        try:
+            sftp.chdir(remote_dir)
+            sftp.put(str(local_path), remote_name)
+        finally:
+            sftp.close()
+    finally:
+        transport.close()
+
+
+# ============================================================================
+# HELPER: STREAM .sas7bdat -> TEMPORARY PARQUET (schema locked on first chunk)
+# ============================================================================
 def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
     """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
-    writer, schema, total = None, None, 0
+    writer, schema = None, None
     try:
         for chunk in pd.read_sas(str(src), encoding="latin1", chunksize=chunk_rows):
             # Force text columns to string so an all-null first chunk doesn't lock a null type
@@ -82,626 +148,523 @@ def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
             else:
                 table = table.cast(schema)
             writer.write_table(table)
-            total += len(chunk)
-            del chunk, table
-            gc.collect()
+        if writer is None:
+            # Source has no rows: still write the schema so read_parquet works
+            empty = pd.read_sas(str(src), encoding="latin1")
+            for col in empty.columns[empty.dtypes == object]:
+                empty[col] = empty[col].astype("string")
+            table = pa.Table.from_pandas(empty, preserve_index=False)
+            writer = pq.ParquetWriter(str(dst), table.schema, compression="snappy")
+            writer.write_table(table)
     finally:
         if writer is not None:
             writer.close()
-    print(f"  [CLIENT] Converted {src.name} -> temporary parquet ({total:,} rows).")
 
 
-def get_sftp_info(host_desc: str) -> dict:
-    """Look up SFTP credentials by HOST_DESC in ctl_dwh_sftp_info."""
-    ctl = pd.read_sas(str(CTL_SFTP_INFO), encoding="latin1")
-    for col in ("SFTP_ID", "SFTP_PW", "HOST_IP", "HOST_DESC", "HOST_KEY"):
-        ctl[col] = ctl[col].fillna("").astype(str).str.strip()
-    hit = ctl.loc[ctl["HOST_DESC"] == host_desc]
-    if hit.empty:
-        raise ValueError(f"HOST_DESC '{host_desc}' not found in {CTL_SFTP_INFO}")
-    row = hit.iloc[0]
-    return {"user": row["SFTP_ID"], "password": row["SFTP_PW"], "host": row["HOST_IP"]}
-
-
-def sftp_put(local_file: Path, remote_dir: str, remote_name: str,
-             info: dict, port: int = 22) -> None:
-    """Upload one file to remote_dir (relative to the SFTP login folder)."""
-    if not info["password"]:
-        raise ValueError(f"No SFTP_PW in control file for host {info['host']}")
-    transport = paramiko.Transport((info["host"], port))
-    try:
-        transport.connect(username=info["user"], password=info["password"])
-        sftp = paramiko.SFTPClient.from_transport(transport)
-        try:
-            sftp.chdir(remote_dir)
-            sftp.put(str(local_file), remote_name)
-        finally:
-            sftp.close()
-    finally:
-        transport.close()
+def convert_input(sas_path: Path, tag: str) -> Path:
+    """Convert one .sas7bdat input to a temporary parquet file and return its path."""
+    if not sas_path.exists():
+        raise FileNotFoundError(f"[{tag}] input not found: {sas_path}")
+    dst = TMP_DIR / f"{tag}.parquet"
+    print(f"  [{tag}] Converting {sas_path.name} -> temporary parquet ...")
+    sas_to_parquet(sas_path, dst)
+    return dst
 
 
 
 
 # ============================================================================
-# STEP 1: REPORT DATE  (batch date of SOURCE_SYSTEM_CD = DP, ctl_dwh_batch_dttm)
+# STEP 1: REPORT DATE  (LOAN.REPTDATE equivalent -> batch date, source SAS)
+# DATA REPTDAT1; SET LOAN.REPTDATE; SDESC='PUBLIC ISLAMIC BANK BERHAD'; ...
 # ============================================================================
-print("Step 1: Deriving report date...")
+print("Step 1: Deriving report date (REPTDAT1)...")
 
-reptdate = get_batch_date(BATCH_SOURCE)
-REPTYEAR = reptdate.strftime("%y")   # YEAR2.
-REPTMON  = reptdate.strftime("%m")   # Z2.
-REPTDAY  = reptdate.strftime("%d")   # Z2.
-REPTYR   = reptdate.year             # YEAR4.
+REPTDATE = get_batch_date(BATCH_SOURCE)
+SDESC   = "PUBLIC ISLAMIC BANK BERHAD"
+RDATE   = REPTDATE.strftime("%d/%m/%y")   # DDMMYY8.
+RYEAR   = REPTDATE.strftime("%Y")          # YEAR4.
+MTHNAM  = REPTDATE.strftime("%B").upper()  # MONNAME.  (see flag 2)
 
-# REPTQ='N'; IF DAY(REPTDATE+1)=1 THEN REPTQ='Y';
-next_day = reptdate + timedelta(days=1)
-REPTQ = 'Y' if next_day.day == 1 else 'N'
-
-# Date-dependent file names (defined here because they need the report date)
-INPUT_MECHRG_FILE = INPUT_MECHRG_DIR / f"MECHRG{REPTDAY}{REPTMON}{REPTYEAR}.txt"
-OUTPUT_FILE       = OUTPUT_DIR / f"PBIFLIQ@{REPTMON}{REPTYEAR}.TXT"   # PBIFLIQ@%OMM.%OYY..TXT
-
-print(f"  Source system : {BATCH_SOURCE}")
-print(f"  Report date : {reptdate.strftime('%d/%m/%y')}")
-print(f"  REPTYEAR/REPTMON/REPTDAY : {REPTYEAR}/{REPTMON}/{REPTDAY}")
-print(f"  REPTQ (month-end?) : {REPTQ}")
-
-
-
+print(f"  SDESC  : {SDESC}")
+print(f"  RDATE  : {RDATE}")
+print(f"  RYEAR  : {RYEAR}")
+print(f"  MTHNAM : {MTHNAM}")
 
 # ============================================================================
-# STEP 2: RESOLVE CLIENT DATASET  (exact report date, path built directly)
+# STEP 2: WEEK / MONTH DERIVATION  (BNMK.REPTDATE equivalent -> same batch date)
+# DATA REPTDATE; SET BNMK.REPTDATE; MM=MONTH(SXDATE);
+#   custom week buckets (1-8='4', 9-15='1', 16-22='2', else='3');
+#   IF WK='4' THEN roll back one month (and one year if January).
 # ============================================================================
-print("\nStep 2: Resolving CLIENT dataset...")
+print("\nStep 2: Deriving week/month bucket (REPTDATE)...")
 
-CLIENT_SAS_PATH = INPUT_CLIENT_DIR / f"clien{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+SXDATE = REPTDATE
+_day = SXDATE.day
+if 1 <= _day <= 8:
+    WK = "4"
+elif 9 <= _day <= 15:
+    WK = "1"
+elif 16 <= _day <= 22:
+    WK = "2"
+else:
+    WK = "3"
 
-if not CLIENT_SAS_PATH.exists():
-    raise FileNotFoundError(
-        f"Expected CLIENT file not found: {CLIENT_SAS_PATH}\n"
-        f"Derived from batch date {reptdate} with REPTQ={REPTQ}."
-    )
-print(f"  CLIENT source : {CLIENT_SAS_PATH.name}")
+MM = SXDATE.month
+if WK == "4":
+    MM1 = MM - 1
+    if MM1 == 0:
+        MM1 = 12
+    MM = MM1
+    if MM == 12:
+        # SXDATE = MDY(1,1,YEAR(SXDATE)) - 1  ->  31-Dec of prior year
+        SXDATE = date(SXDATE.year, 1, 1) - timedelta(days=1)
 
-# ============================================================================
-# STEP 3: %RDAL -- convert CLIENT to a temporary parquet, then select
-#         RDALPBIF or RDLMPBIF based on REPTQ. The parquet is deleted when
-#         the 'with' block exits.
-# ============================================================================
-print("\nStep 3: Building PBIF via RDALPBIF/RDLMPBIF...")
+NOWK     = WK                       # CALL SYMPUT('NOWK', WK) -- identical to WK
+REPTMON  = f"{MM:02d}"              # Z2.
+RPDATE   = SXDATE.strftime("%d/%m/%y")
+REPTYEAR = SXDATE.strftime("%Y")    # YEAR4.
 
-with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
-    client_parquet = Path(tmp) / "client.parquet"
-    sas_to_parquet(CLIENT_SAS_PATH, client_parquet)
-
-    if REPTQ != 'Y':
-        pbif = RDALPBIF.build_pbif(str(client_parquet), reptdate)
-    else:
-        pbif = RDLMPBIF.build_pbif(str(client_parquet), INPUT_MECHRG_FILE, reptdate)
-
-print(f"  PBIF rows after RDAL/RDLM step: {len(pbif):,}")
-
-
-
-
-# ============================================================================
-# STEP 13: SFTP TO DATA REPORT REPOSITORY (DRR)
-# CD RMD-ALM/LIQ ; PUT //SAP.PBB.ALM.PBIF.LIQP PBIFLIQ@%OMM.%OYY..TXT
-# ============================================================================
-print("\nStep 13: SFTP to DRR...")
-
-sftp_info = get_sftp_info(SFTP_HOST_DESC)
-sftp_put(OUTPUT_FILE, SFTP_REMOTE_DIR, OUTPUT_FILE.name, sftp_info, SFTP_PORT)
-print(f"  Uploaded {OUTPUT_FILE.name} -> {sftp_info['host']}:{SFTP_REMOTE_DIR}/")
+print(f"  WK / NOWK : {WK}")
+print(f"  REPTMON   : {REPTMON}")
+print(f"  REPTYEAR  : {REPTYEAR}")
+print(f"  RPDATE    : {RPDATE}")
 
 
 
 
------------------------------
+print("\nStep 5: Building REP4...")
 
-def _describe_type(con, parquet_path: str, column: str) -> str:
-    """DuckDB type name of one column of the parquet file."""
-    return str(con.execute(
-        f"DESCRIBE SELECT {column} FROM read_parquet('{parquet_path}')"
-    ).fetchone()[1]).upper()
+rep4_cache = convert_input(
+    INPUT_BNMK_REP4X_DIR / f"rep4x{REPTYEAR}{REPTMON}{WK}.sas7bdat", "bnmk_rep4x"
+)
+
+# con = duckdb.connect(database=":memory:")
+# rep4 = con.execute(f"""
+#     SELECT
+#         CASE WHEN BNMCODE = '3723000000000Y' THEN '3523000000000Y' ELSE BNMCODE END AS BNMCODE,
+#         CAST(UTSTY   AS VARCHAR) AS UTSTY,
+#         CAST(UTREF   AS VARCHAR) AS UTREF,
+#         CAST(ELDAY   AS VARCHAR) AS ELDAY,
+#         CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
+#         CAST(NETAMT  AS DOUBLE)  AS NETAMT,
+#         CAST(COSTDED AS DOUBLE)  AS COSTDED
+#     FROM read_parquet('{rep4_cache.as_posix()}')
+#     WHERE UTREF IN ('DLG','IDLG')
+#       AND UTSTY NOT IN ('BMN','CB1')
+# """).pl()
+# con.close()
+
+con = duckdb.connect(database=":memory:")
+rep4_raw = con.execute(f"""
+    SELECT
+        CASE WHEN BNMCODE = '3723000000000Y' THEN '3523000000000Y' ELSE BNMCODE END AS BNMCODE,
+        CAST(UTSTY   AS VARCHAR) AS UTSTY,
+        CAST(UTREF   AS VARCHAR) AS UTREF,
+        CAST(ELDAY   AS VARCHAR) AS ELDAY,
+        CAST(AMOUNT  AS DOUBLE)  AS AMOUNT
+    FROM read_parquet('{rep4_cache.as_posix()}')
+    WHERE UTREF IN ('DLG','IDLG')
+      AND UTSTY NOT IN ('BMN','CB1')
+""").pl()
+con.close()
+
+# Add missing columns that REP2_base has (NETAMT, COSTDED) with null/0.0
+rep4 = rep4_raw.with_columns([
+    pl.lit(None).cast(pl.Float64).alias("NETAMT"),   # or pl.lit(0.0)
+    pl.lit(None).cast(pl.Float64).alias("COSTDED"),
+])
+
+print(f"  REP4 rows: {len(rep4):,}")
 
 
-def _stdates_sql(con, parquet_path: str) -> str:
-    """SQL expression returning STDATES as DATE (SAS day-number or real date/timestamp)."""
-    if _describe_type(con, parquet_path, "STDATES").startswith(("DATE", "TIMESTAMP")):
-        return "CAST(STDATES AS DATE)"
-    return ("CAST(DATE '1960-01-01' + "
-            "(TRY_CAST(STDATES AS INTEGER) * INTERVAL '1' DAY) AS DATE)")
 
 
-def _custcd_sql(con, parquet_path: str) -> str:
-    """SQL expression returning CUSTCD as text without '.0' (numeric 77.0 -> '77')."""
-    if _describe_type(con, parquet_path, "CUSTCD").startswith(("VARCHAR", "CHAR", "STRING")):
-        return "CAST(CUSTCD AS VARCHAR)"
-    return "CAST(TRY_CAST(CUSTCD AS BIGINT) AS VARCHAR)"
+rep2_cache = convert_input(
+    INPUT_BNMK_REP2_DIR / f"rep2{REPTMON}{WK}.sas7bdat", "bnmk_rep2"
+)
 
 
 
 
-def build_pbif(client_cache_path: str, reptdate: date) -> pl.DataFrame:
-    """
-    Convert RDALPBIF into a callable producing the final PBIF dataset.
+elscd_cache = convert_input(
+    INPUT_BNMS_ELSCD_DIR / f"elscd{REPTMON}{WK}.sas7bdat", "bnms_elscd"
+)
 
-    Args:
-        client_cache_path: path to the (temporary) Parquet version of
-                            PBIF.CLIEN&REPTYEAR&REPTMON&REPTDAY (.sas7bdat).
-        reptdate: date object equivalent to REPTDATE.
+elw_cache = convert_input(
+    INPUT_BNM_ELW_DIR / f"elw{REPTMON}{WK}.sas7bdat", "bnm_elw"
+)
 
-    Returns:
-        Final PBIF Polars DataFrame, equivalent to
-        "PROC SORT DATA=PBIF OUT=PBIF NODUPKEY; BY CLIENTNO MATDTE;"
-    """
-    # ------------------------------------------------------------------
-    # DATA PBIF; SET PBIF.CLIEN...; IF ENTITY='PBBH';
-    # ------------------------------------------------------------------
-    con = duckdb.connect(database=":memory:")
-    stdates_sql = _stdates_sql(con, client_cache_path)
-    custcd_sql  = _custcd_sql(con, client_cache_path)
-    base = con.execute(f"""
-        SELECT
-            CAST(ENTITY   AS VARCHAR) AS ENTITY,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            CAST(CLIENTNO AS VARCHAR) AS CLIENTNO,
-            CAST(ACCTNO   AS VARCHAR) AS ACCTNO,
-            CAST(INLIMIT  AS DOUBLE)  AS INLIMIT,
-            CAST(FIU      AS DOUBLE)  AS FIU,
-            CAST(PRMTHFIU AS DOUBLE)  AS PRMTHFIU,
-            {custcd_sql}              AS CUSTCD,
-            CAST(SECTORCD AS VARCHAR) AS SECTORCD,
-            {stdates_sql}             AS STDATES
-        FROM read_parquet('{client_cache_path}')
-        WHERE ENTITY = 'PBBH'
-    """).pl()
-    con.close()
 
-    if base.is_empty():
-        return base
 
-    # IF FIU=0.00 AND PRMTHFIU=0.00 THEN DELETE;
-    # (SAS missing <> 0, so rows with a missing FIU/PRMTHFIU are kept -> eq_missing)
-    base = base.filter(
-        ~(pl.col("FIU").eq_missing(0.0) & pl.col("PRMTHFIU").eq_missing(0.0))
+
+print("\nStep 10: Rendering PIBELQ daily EL detail reports...")
+
+# Inputs owned by this program and handed to PIBELQ (%INC equivalent).
+# BNMK REP2 and BNM ELW are the same physical files as Steps 6 and 8
+# (NOWK == WK), so their temporary parquet files are reused.
+tbl1_cache = convert_input(
+    INPUT_BNMK_TBL1_DIR / f"tbl1{REPTMON}{NOWK}.sas7bdat", "bnmk_tbl1"
+)
+bnmb_elw_cache = convert_input(
+    INPUT_BNMB_ELW_DIR / f"elw{REPTMON}{NOWK}.sas7bdat", "bnmb_elw"
+)
+
+elw1 = build_elw1(SDESC, bnm_elw_pq=elw_cache, bnmb_elw_pq=bnmb_elw_cache)
+
+pibelq_lines: list[str] = []
+for day_code in ("DAYA", "DAYB", "DAYC", "DAYD", "DAYE", "DAYF", "DAYG", "DAYH"):
+    pibelq_lines.extend(
+        prtel(
+            day_code,
+            sdesc=SDESC, rdate=RDATE,
+            gold_df=gold_df, rep4_df=rep4, elw1=elw1,
+            rep2_pq=rep2_cache, tbl1_pq=tbl1_cache,
+        )
     )
 
-    # APPRLIMX=INLIMIT; PRODCD='30591'; FISSPURP='0470'; AMTIND='D';
-    base = base.with_columns([
-        pl.col("INLIMIT").alias("APPRLIMX"),
-        pl.lit("30591").alias("PRODCD"),
-        pl.lit("0470").alias("FISSPURP"),
-        pl.lit("D").alias("AMTIND"),
-    ])
-
-    # CUSTFISS=CUSTCD; recode chain; CUSTCX=CUSTFISS;
-    base = base.with_columns(
-        pl.col("CUSTCD").map_elements(_map_custfiss, return_dtype=pl.Utf8).alias("CUSTCX")
+pibelq_lines.extend(
+    prteli(
+        "DAYI",
+        nowk=NOWK, rdate=RDATE,
+        gold_df=gold_df, rep4_df=rep4, elw1=elw1,
+        rep2_pq=rep2_cache, tbl1_pq=tbl1_cache,
     )
+)
 
-    # BALANCE=SUM(FIU,PRMTHFIU); UNDRAWN=(INLIMIT-BALANCE);
-    base = base.with_columns(
-        (pl.col("FIU").fill_null(0.0) + pl.col("PRMTHFIU").fill_null(0.0)).alias("BALANCE")
-    ).with_columns(
-        (pl.col("INLIMIT") - pl.col("BALANCE")).alias("UNDRAWN")
-    )
-
-    # PROC SORT; BY CLIENTNO;  -- redundant: final PROC SORT NODUPKEY below
-    # re-sorts BY CLIENTNO MATDTE anyway, so the intermediate sort is skipped.
-
-    # PROC PRINT; VAR BRANCH CLIENTNO BALANCE CUSTCX FISSPURP INLIMIT
-    #             UNDRAWN SECTORCD ACCTNO; SUM BALANCE UNDRAWN;
-    print("\n[RDALPBIF] PBIF listing (equivalent PROC PRINT):")
-    print(base.select(["BRANCH", "CLIENTNO", "BALANCE", "CUSTCX", "FISSPURP",
-                        "INLIMIT", "UNDRAWN", "SECTORCD", "ACCTNO"]))
-    print(f"  SUM BALANCE = {base['BALANCE'].sum():,.2f}   "
-          f"SUM UNDRAWN = {base['UNDRAWN'].sum():,.2f}")
-
-    # ------------------------------------------------------------------
-    # DATA PBIF; DROP CUSTCD; %DCLVAR FORMAT CUSTCX $2.; SET PBIF;
-    # FREQ=6; IF INLIMIT<1000000 THEN FREQ=12;
-    # MATDTE=REPTDATE; IF STDATES>0 THEN DO MATDTE=STDATES;
-    #    DO WHILE (MATDTE<=REPTDATE); %NXTBLDT END; END;
-    # ------------------------------------------------------------------
-    rows = base.drop("CUSTCD").to_dicts()
-    out_rows = []
-    for row in rows:
-        freq = 12 if row["INLIMIT"] < 1_000_000.00 else 6
-        matdte = reptdate
-        # stdates = row.get("STDATES")
-        # if stdates is not None and stdates > date(1960, 1, 1):
-        #     matdte = stdates
-        #     while matdte <= reptdate:
-        #         matdte = _next_bldate(matdte, freq)
-        stdates = row.get("STDATES")
-        if stdates is not None:
-            # Convert to date if it's a datetime
-            if isinstance(stdates, datetime):
-                stdates = stdates.date()
-            if stdates > date(1960, 1, 1):
-                matdte = stdates
-                while matdte <= reptdate:
-                    matdte = _next_bldate(matdte, freq)
-        row["FREQ"] = freq
-        row["MATDTE"] = matdte
-        out_rows.append(row)
-
-    result = pl.DataFrame(out_rows)
-
-    # PROC SORT DATA=PBIF OUT=PBIF NODUPKEY; BY CLIENTNO MATDTE;
-    # maintain_order=True: SAS sort is stable and NODUPKEY keeps the FIRST record
-    result = result.sort(["CLIENTNO", "MATDTE"], maintain_order=True).unique(
-        subset=["CLIENTNO", "MATDTE"], keep="first", maintain_order=True
-    )
-    return result
+del elw1, gold_df, rep4, rep2, rep0, variance_df
+gc.collect()
 
 
 
 
-import re
-from datetime import date
+# ============================================================================
+# STEP 13: SFTP THE REPORT TO THE DATA REPORT REPOSITORY (DRR)
+# RUNSFTP step -- cd "FD-BNM REPORTING/PIBB/BNM RPTG"; PUT EIIWKAPD -> remote name
+# ============================================================================
+print("\nStep 13: Transferring output via SFTP...")
+
+sftp_put(SFTP_HOST_DESC, SFTP_REMOTE_DIR, OUTPUT_FILE, SFTP_REMOTE_NAME)
+
+print(f"  Host        : {SFTP_HOST_DESC}")
+print(f"  Remote dir  : {SFTP_REMOTE_DIR}")
+print(f"  Remote name : {SFTP_REMOTE_NAME}")
+
+# Remove temporary parquet files
+_TMP.cleanup()
+
+print("\nEIIWKAPE complete.")
+
+
+
+
+---------------------------------
+
+#!/usr/bin/env python3
+"""
+Program : PIBELQ.py
+Purpose : Macro-equivalent module converted from PIBELQ (split from PBBELP).
+          Builds and prints the detail daily Eligible Liabilities (EL)
+          items for DAY A - DAY H (prtel) and DAY I (prteli).
+
+Called by EIIWKAPE.py via:
+    from PIBELQ import build_elw1, prtel, prteli
+
+============================================================================
+INPUTS (all supplied by EIIWKAPE.py as temporary parquet paths, %INC style)
+============================================================================
+1. BNMK REP2 (rep2<REPTMON><NOWK>)  -> rep2_pq   (prtel / prteli)
+2. BNMK TBL1 (tbl1<REPTMON><NOWK>)  -> tbl1_pq   (prtel / prteli)
+3. BNM  ELW  (elw<REPTMON><NOWK>)   -> bnm_elw_pq  (build_elw1)
+4. BNMB ELW  (elw<REPTMON><NOWK>)   -> bnmb_elw_pq (build_elw1)
+
+------------------------------------------------------------------------
+NON-FILE INPUT: EL / ELI ITEM CATALOGUE
+------------------------------------------------------------------------
+DATA ELITEM in the original SAS is built from `PROC SORT DATA=EL` (in
+%PRTEL, days A-H) and `PROC SORT DATA=ELI` (in %PRTELI, day I). Their column
+layout (BNMCODE, SIGN, FMTNAME, TYPE, IDX, DESC) is exactly PBBELF's
+EL_DEFINITIONS / ELI_DEFINITIONS tables, so they are sourced from the PBBELF
+format-library module rather than from a file:
+    from PBBELF import EL_DEFINITIONS, ELI_DEFINITIONS
+
+Dependency note (format functions):
+    %INC PGM(PBBELF); loads the PBBELF format library into the SAS
+    session. Aside from the EL_DEFINITIONS/ELI_DEFINITIONS data used
+    above, no PUT(var, <PBBELF-format>.) call appears in this program body,
+    so the PBBELF format functions are NOT imported.
+"""
+
 from pathlib import Path
-from typing import Optional
 
 import duckdb
 import polars as pl
 
-
-
-
-def _parse_yymmdd8(text: str) -> Optional[date]:
-    """SAS YYMMDD8. informat with OPTIONS YEARCUTOFF=1950 (None when invalid/blank)."""
-    t = text.strip()
-    if not t:
-        return None
-    if t.isdigit():
-        if len(t) == 8:
-            y, m, d = t[0:4], t[4:6], t[6:8]
-        elif len(t) == 6:
-            y, m, d = t[0:2], t[2:4], t[4:6]
-        else:
-            return None
-    else:
-        parts = re.split(r"[^0-9]+", t)
-        if len(parts) != 3 or not all(parts):
-            return None
-        y, m, d = parts
-    year = int(y)
-    if len(y) <= 2:
-        year += 1900 if year >= 50 else 2000
-    try:
-        return date(year, int(m), int(d))
-    except ValueError:
-        return None
+from PBBELF import EL_DEFINITIONS, ELI_DEFINITIONS
 
 
 
 
-def _read_mechrg(mechrg_path: Path, reptdate: date) -> pl.DataFrame:
-    """
-    DATA MECHRG; INFILE MECHRG; INPUT ...; INTVAL=SUM(UVAL1,UVAL2,UVAL3);
-    IF PDATE=&MDATE;
-    PROC SUMMARY DATA=MECHRG NWAY; CLASS CLIENTNO; VAR INTVAL;
-    OUTPUT OUT=MECHRG(DROP=_FREQ_ _TYPE_) SUM=;
-    """
-    rows = []
-    with open(mechrg_path, "rb") as fh:
-        for raw in fh:
-            # FB record: pad (trailing blanks may be trimmed in the text file)
-            line = raw.rstrip(b"\r\n").decode("latin1").ljust(59)
+def build_elw1(sdesc: str, *, bnm_elw_pq: Path, bnmb_elw_pq: Path) -> pl.DataFrame:
+    print("  Loading BNM ELW / BNMB ELW (build_elw1)...")
 
-            pdate = _parse_yymmdd8(line[9:17])      # @010 PDATE YYMMDD8.
-            if pdate != reptdate:                   # IF PDATE=&MDATE;
-                continue
-
-            clientno = line[0:9].strip()
-            uval1 = _parse_implied_decimal(line[19:31], 2)
-            uval2 = _parse_implied_decimal(line[33:45], 2)
-            uval3 = _parse_implied_decimal(line[47:59], 2)
-            rows.append({"CLIENTNO": clientno, "INTVAL": uval1 + uval2 + uval3})
-
-    if not rows:
-        return pl.DataFrame({"CLIENTNO": [], "INTVAL": []},
-                             schema={"CLIENTNO": pl.Utf8, "INTVAL": pl.Float64})
-
-    # PROC SUMMARY NWAY CLASS CLIENTNO VAR INTVAL SUM=
-    return pl.DataFrame(rows).group_by("CLIENTNO").agg(pl.col("INTVAL").sum())
-
-
-
-
-def build_pbif(client_cache_path: str, mechrg_path: Path, reptdate: date) -> pl.DataFrame:
-    """
-    Convert RDLMPBIF into a callable producing the final PBIF dataset.
-
-    Args:
-        client_cache_path: path to the (temporary) Parquet version of
-                            PBIF.CLIEN&REPTYEAR&REPTMON&REPTDAY (.sas7bdat).
-        mechrg_path: path to the fixed-width MECHRG raw text file.
-        reptdate: date object equivalent to REPTDATE.
-
-    Returns:
-        Final PBIF Polars DataFrame, equivalent to
-        "PROC SORT DATA=PBIF OUT=PBIF NODUPKEY; BY CLIENTNO MATDTE;"
-    """
-    # ------------------------------------------------------------------
-    # DATA PBIF; FORMAT CUSTFISS $2.; SET PBIF.CLIEN...; IF ENTITY='PBBH';
-    # ------------------------------------------------------------------
     con = duckdb.connect(database=":memory:")
-    stdates_sql = _stdates_sql(con, client_cache_path)
-    custcd_sql  = _custcd_sql(con, client_cache_path)
-    base = con.execute(f"""
-        SELECT
-            CAST(ENTITY   AS VARCHAR) AS ENTITY,
-            CAST(BRANCH   AS INTEGER) AS BRANCH,
-            CAST(CLIENTNO AS VARCHAR) AS CLIENTNO,
-            CAST(ACCTNO   AS VARCHAR) AS ACCTNO,
-            CAST(INLIMIT  AS DOUBLE)  AS INLIMIT,
-            CAST(FIU      AS DOUBLE)  AS FIU,
-            CAST(PRMTHFIU AS DOUBLE)  AS PRMTHFIU,
-            {custcd_sql}              AS CUSTCD,
-            CAST(SECTORCD AS VARCHAR) AS SECTORCD,
-            {stdates_sql}             AS STDATES
-        FROM read_parquet('{client_cache_path}')
-        WHERE ENTITY = 'PBBH'
+    # elw2 = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+    #            CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{bnmb_elw_pq.as_posix()}')
+    #     WHERE BNMCODE = '4929980000000Y' AND BRANCH > 3000
+    # """).pl()
+    elw2 = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
+               CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{bnmb_elw_pq.as_posix()}')
+        WHERE BNMCODE = '4929980000000Y'
+    """).pl()
+
+    # elw1_raw = con.execute(f"""
+    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
+    #            CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+    #     FROM read_parquet('{bnm_elw_pq.as_posix()}')
+    # """).pl()
+    elw1_raw = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
+               CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{bnm_elw_pq.as_posix()}')
     """).pl()
     con.close()
 
-    if base.is_empty():
-        return base
+    elw1_raw = elw1_raw.with_columns(pl.col("AMOUNT").abs())
 
-    # Original input order (SAS keeps the first record of a duplicate key)
-    base = base.with_row_index("_ORD")
+    rows = []
+    for row in elw1_raw.iter_rows(named=True):
+        bnmcode = row["BNMCODE"]
+        amount = row["AMOUNT"]
 
-    # APPRLIMX=INLIMIT; PRODCD='30591'; FISSPURP='0470'; AMTIND='D';
-    base = base.with_columns([
-        pl.col("INLIMIT").alias("APPRLIMX"),
-        pl.lit("30591").alias("PRODCD"),
-        pl.lit("0470").alias("FISSPURP"),
-        pl.lit("D").alias("AMTIND"),
-    ])
+        # IF "&SDESC"='PUBLIC BANK BERHAD' THEN ... (only applies to PBB run)
+        if sdesc == "PUBLIC BANK BERHAD" and bnmcode == "4929980000000Y":
+            amount = 0.00
 
-    # CUSTFISS=CUSTCD; recode chain; CUSTCX=CUSTFISS;
-    base = base.with_columns(
-        pl.col("CUSTCD").map_elements(_map_custfiss, return_dtype=pl.Utf8).alias("CUSTCX")
+        if bnmcode in ("3219902000000Y", "3219903000000Y", "3219912000000Y"):
+            rows.append({**row, "BNMCODE": "3219910000000Y", "AMOUNT": amount})
+        elif bnmcode in (
+            "4411100000000Y", "4414000000000Y", "4411010000000Y",
+            "4411015000000Y", "4411080000000Y", "4411200000000Y",
+            "4411300000000Y", "4411900000000Y", "4412000000000Y",
+            "4413000000000Y", "4429900000000Y",
+        ):
+            rows.append({**row, "BNMCODE": bnmcode, "AMOUNT": amount})
+            rows.append({**row, "BNMCODE": "4410000000000Y", "AMOUNT": amount})
+        elif bnmcode == "4019000000000Y":
+            rows.append({**row, "BNMCODE": "4019100000000Y", "AMOUNT": amount})
+            rows.append({**row, "BNMCODE": "4019000000000Y", "AMOUNT": 0.00})
+        else:
+            rows.append({**row, "BNMCODE": bnmcode, "AMOUNT": amount})
+
+    elw1 = pl.DataFrame(rows, schema=elw1_raw.schema) if rows else elw1_raw.clear()
+    elw1 = pl.concat([elw1, elw2.select(elw1.columns)], how="vertical")
+    return elw1
+
+
+
+
+def prtel(day_code: str, *, sdesc: str, rdate: str,
+          gold_df: pl.DataFrame, rep4_df: pl.DataFrame, elw1: pl.DataFrame,
+          rep2_pq: Path, tbl1_pq: Path) -> list[str]:
+    print(f"  [PIBELQ] prtel({day_code})...")
+
+    # DATA ELG; SET ELG.GOLD&REPTMON&NOWK; IF ELDAY="&I";
+    # GOLD is a single-row work dataset built inline in EIIWKAPE.py — not a
+    # physical file — passed in as gold_df.
+    elg = gold_df.filter(pl.col("ELDAY") == day_code)
+
+    # DATA PMM; SET BNMK.TBL1&REPTMON&NOWK; IF ELDAY="&I";
+    # DATA REP6; SET BNMK.REP2&REPTMON&NOWK REP4; ... IF ELDAY="&I";
+    con = duckdb.connect(database=":memory:")
+    pmm = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{tbl1_pq.as_posix()}')
+        WHERE ELDAY = '{day_code}'
+    """).pl()
+
+    rep2_base = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(UTSTY AS VARCHAR) UTSTY,
+               CAST(UTREF AS VARCHAR) UTREF, CAST(ELDAY AS VARCHAR) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT, CAST(NETAMT AS DOUBLE) NETAMT,
+               CAST(COSTDED AS DOUBLE) COSTDED
+        FROM read_parquet('{rep2_pq.as_posix()}')
+    """).pl()
+    con.close()
+
+    rep6 = pl.concat([rep2_base, rep4_df.select(rep2_base.columns)], how="vertical")
+    rep6 = rep6.with_columns(
+        pl.when(pl.col("BNMCODE") == "3250000000000Y")
+        .then(pl.col("NETAMT"))
+        .otherwise(pl.col("AMOUNT"))
+        .alias("AMOUNT")
+    )
+    rep6 = rep6.with_columns(pl.lit("4017100000000Y").alias("BNMCODE"))
+    rep6 = rep6.filter(pl.col("ELDAY") == day_code).select(["BNMCODE", "AMOUNT"])
+
+    elw = _elw_for_day(elw1, day_code)
+
+    elw_stack = pl.concat(
+        [
+            elw.select(["BNMCODE", "AMOUNT"]),
+            rep6.select(["BNMCODE", "AMOUNT"]),
+            pmm.select(["BNMCODE", "AMOUNT"]),
+            elg.select(["BNMCODE", "AMOUNT"]),
+        ],
+        how="vertical",
     )
 
-    # ------------------------------------------------------------------
-    # DATA MECHRG; ... ; PROC SUMMARY -> MECHRG(CLIENTNO, INTVAL sum)
-    # ------------------------------------------------------------------
-    mechrg = _read_mechrg(mechrg_path, reptdate)
-    print(f"[RDLMPBIF] MECHRG rows matched to REPTDATE ({reptdate}): {len(mechrg):,}")
+    elitem = _el_catalogue(EL_DEFINITIONS)   # PROC SORT DATA=EL ...
+    elw_final = _finalize_elw(elw_stack, elitem, drop_4019=True)
+    elwt = _build_elwt(elw_final)
+    # combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
+    # combined = pl.concat([elwt, elw_final.drop("IDX")], how="vertical")
+    common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
+    elwt = elwt.select(common_cols)
+    elw_final = elw_final.select(common_cols)
+    combined = pl.concat([elwt, elw_final], how="vertical")
 
-    # ------------------------------------------------------------------
-    # DATA PBIF; MERGE PBIF(IN=A) MECHRG; BY CLIENTNO; IF A;
-    # IF FIU=0.00 AND PRMTHFIU=0.00 THEN DELETE;
-    # IF INTVAL=. THEN INTVAL=0.00;
-    # FIU=SUM(FIU,INTVAL,PRMTHFIU); BALANCE=FIU;
-    # UFIU=0; DISBURSE=0; REPAID=0; ROLLOVER=0;
-    # IF BALANCE<0 THEN BALANCE=0;
-    # IF FIU<0 THEN UFIU=FIU;
-    # IF PRMTHFIU<0 THEN PRMTHFIU=0;
-    # IF BALANCE>=0 THEN DO;
-    #    IF BALANCE>PRMTHFIU THEN DISBURSE=BALANCE-PRMTHFIU;
-    #                        ELSE REPAID=PRMTHFIU-BALANCE;
-    # END;
-    # UNDRAWN=(INLIMIT-BALANCE);
-    # IF FIU=0.00 THEN DELETE;
-    # ------------------------------------------------------------------
-    merged = base.join(mechrg, on="CLIENTNO", how="left")
+    # lines = _title_lines(
+    #     sdesc,
+    #     f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}",
+    #     f"REPORT DATE : {rdate}",
+    #     "",
+    # )
+    # lines.extend(_render_table_header())   # <-- add header here
+    # lines.extend(_render_report_rmel(combined))
+    # lines.extend(_render_report_rest(combined))
+    # return lines
 
-    # IF FIU=0.00 AND PRMTHFIU=0.00 THEN DELETE;  (pre-merge FIU/PRMTHFIU; missing <> 0)
-    merged = merged.filter(
-        ~(pl.col("FIU").eq_missing(0.0) & pl.col("PRMTHFIU").eq_missing(0.0))
-    )
+    # Build the full header (titles + column header + dashed line) for this day
+    full_header = _get_full_header(True, day_code, rdate, sdesc)
 
-    merged = merged.with_columns(
-        pl.col("INTVAL").fill_null(0.0)
-    ).with_columns(
-        (pl.col("FIU").fill_null(0.0) + pl.col("INTVAL") + pl.col("PRMTHFIU").fill_null(0.0)).alias("FIU")
-    ).with_columns([
-        pl.col("FIU").alias("BALANCE"),
-        pl.lit(0.0).alias("UFIU"),
-        pl.lit(0.0).alias("DISBURSE"),
-        pl.lit(0.0).alias("REPAID"),
-        pl.lit(0.0).alias("ROLLOVER"),
-    ])
+    # Render the A-RMEL and B-RMEA groups (includes subtotal lines)
+    rmel_lines = _render_report_rmel(combined)
 
-    merged = merged.with_columns(
-        pl.when(pl.col("BALANCE") < 0.0).then(0.0).otherwise(pl.col("BALANCE")).alias("BALANCE")
-    ).with_columns(
-        pl.when(pl.col("FIU") < 0.0).then(pl.col("FIU")).otherwise(pl.col("UFIU")).alias("UFIU")
-    ).with_columns(
-        pl.when(pl.col("PRMTHFIU") < 0.0).then(0.0).otherwise(pl.col("PRMTHFIU")).alias("PRMTHFIU")
-    )
+    # Render the remaining groups
+    rest_lines = _render_report_rest(combined)
 
-    merged = merged.with_columns([
-        pl.when((pl.col("BALANCE") >= 0.0) & (pl.col("BALANCE") > pl.col("PRMTHFIU")))
-          .then(pl.col("BALANCE") - pl.col("PRMTHFIU")).otherwise(pl.col("DISBURSE")).alias("DISBURSE"),
-        pl.when((pl.col("BALANCE") >= 0.0) & (pl.col("BALANCE") <= pl.col("PRMTHFIU")))
-          .then(pl.col("PRMTHFIU") - pl.col("BALANCE")).otherwise(pl.col("REPAID")).alias("REPAID"),
-    ]).with_columns(
-        (pl.col("INLIMIT") - pl.col("BALANCE")).alias("UNDRAWN")
-    )
-
-    # IF FIU=0.00 THEN DELETE;
-    merged = merged.filter(pl.col("FIU") != 0.0)
-
-    # PROC PRINT; VAR BRANCH CLIENTNO BALANCE CUSTCX FISSPURP INLIMIT UNDRAWN
-    #             SECTORCD DISBURSE REPAID FIU ACCTNO PRMTHFIU UFIU INTVAL;
-    # SUM BALANCE REPAID DISBURSE UNDRAWN FIU PRMTHFIU UFIU INTVAL;
-    print("\n[RDLMPBIF] PBIF listing (equivalent PROC PRINT):")
-    print_cols = ["BRANCH", "CLIENTNO", "BALANCE", "CUSTCX", "FISSPURP", "INLIMIT",
-                  "UNDRAWN", "SECTORCD", "DISBURSE", "REPAID", "FIU", "ACCTNO",
-                  "PRMTHFIU", "UFIU", "INTVAL"]
-    print(merged.select(print_cols))
-    for col in ["BALANCE", "REPAID", "DISBURSE", "UNDRAWN", "FIU", "PRMTHFIU", "UFIU", "INTVAL"]:
-        print(f"  SUM {col} = {merged[col].sum():,.2f}")
-
-    # ------------------------------------------------------------------
-    # DATA PBIF; DROP CUSTCD; %DCLVAR FORMAT CUSTCX $2.; SET PBIF;
-    # FREQ=6; IF INLIMIT<1000000 THEN FREQ=12;
-    # MATDTE=REPTDATE; IF STDATES>0 THEN DO MATDTE=STDATES;
-    #    DO WHILE (MATDTE<=REPTDATE); %NXTBLDT END; END;
-    # ------------------------------------------------------------------
-    rows = merged.drop("CUSTCD").to_dicts()
-    out_rows = []
-    for row in rows:
-        freq = 12 if row["INLIMIT"] < 1_000_000.00 else 6
-        matdte = reptdate
-        stdates = row.get("STDATES")
-        if stdates is not None and stdates > date(1960, 1, 1):
-            matdte = stdates
-            while matdte <= reptdate:
-                matdte = _next_bldate(matdte, freq)
-        row["FREQ"] = freq
-        row["MATDTE"] = matdte
-        out_rows.append(row)
-
-    result = pl.DataFrame(out_rows)
-
-    # PROC SORT DATA=PBIF OUT=PBIF NODUPKEY; BY CLIENTNO MATDTE;
-    # _ORD tie-break = stable SAS sort; NODUPKEY keeps the first record per key
-    result = (
-        result.sort(["CLIENTNO", "MATDTE", "_ORD"])
-              .unique(subset=["CLIENTNO", "MATDTE"], keep="first", maintain_order=True)
-              .drop("_ORD")
-    )
-    return result
-
-
-
-
-# ============================================================================
-# STEP 7: DATA PBIF2; SET PBIF; AMOUNT=(INLIMIT-BALANCE)*0.20;
-# IF AMOUNT<0 THEN AMOUNT=0; ITEM='A1.28'; PART='1-RM';
-# NOTE: in SAS, "SET PBIF" here reads the dataset PBIF created by the previous
-# DATA step, i.e. the EXPANDED rows (3 per record, from the explicit OUTPUTs),
-# so the source is pbif_stage1.
-# ============================================================================
-print("\nStep 7: Building PART=1-RM undrawn (20%) rows...")
-
-pbif2 = pbif_stage1.with_columns([
-    pl.when((pl.col("INLIMIT") - pl.col("BALANCE")) * 0.20 < 0.0)
-      .then(0.0).otherwise((pl.col("INLIMIT") - pl.col("BALANCE")) * 0.20).alias("AMOUNT"),
-    pl.lit("A1.28").alias("ITEM"),
-    pl.lit("1-RM").alias("PART"),
-]).select(select_cols)
-
-
-
-
-# ============================================================================
-# STEP 9: DATA PBIF2; SET PBIF; FORMAT REMMTH REMFMT.;
-# WHERE PART='2-RM' AND ITEM='A1.04';
-# ============================================================================
-print("\nStep 9: Filtering PART=2-RM / ITEM=A1.04 and bucketing REMMTH...")
-
-# REMFMT labels in ascending REMMTH order (SAS CLASS output is ordered by the
-# unformatted value, so buckets appear in this order)
-_REMFMT_LABELS = [
-    'UP TO 1 WK', '>1 WK - 1 MTH', '>1 MTH - 3 MTHS', '>3 - 6 MTHS',
-    '>6 MTHS - 1 YR', '>1 YR  - 3 YR', '>3 YR  - 5 YR', '>5 YR',
-]
-
-
-def _remfmt(remmth: float) -> str:
-    """PROC FORMAT VALUE REMFMT."""
-    if remmth <= 0.255:
-        return _REMFMT_LABELS[0]
-    elif remmth <= 1:
-        return _REMFMT_LABELS[1]
-    elif remmth <= 3:
-        return _REMFMT_LABELS[2]
-    elif remmth <= 6:
-        return _REMFMT_LABELS[3]
-    elif remmth <= 12:
-        return _REMFMT_LABELS[4]
-    elif remmth <= 36:
-        return _REMFMT_LABELS[5]
-    elif remmth <= 60:
-        return _REMFMT_LABELS[6]
+    # Assemble output
+    lines = full_header + rmel_lines
+    if rest_lines:
+        # Add only the title lines (no column header) before the rest groups
+        title_only = _get_day_title_lines(True, day_code, rdate, sdesc)
+        # Add a blank line between the subtotal and the repeated title? Actually the subtotal already has short dashes,
+        # and the original has a blank line after the subtotal and before the repeated title.
+        # We'll add an extra blank line.
+        lines += [""] + title_only + rest_lines
     else:
-        return _REMFMT_LABELS[7]
+        lines += rest_lines
+    return lines
 
 
-pbif2_filtered = pbif_summary.filter(
-    (pl.col("PART") == "2-RM") & (pl.col("ITEM") == "A1.04")
-).with_columns(
-    pl.col("REMMTH").map_elements(_remfmt, return_dtype=pl.Utf8).alias("REMMTH_BUCKET")
-)
 
-# ============================================================================
-# STEP 10: PROC SUMMARY DATA=PBIF2 NWAY; CLASS ITEM REMMTH; VAR AMOUNT;
-# OUTPUT OUT=PBIF3(DROP=_TYPE_ _FREQ_) SUM=;
-# CLASS REMMTH groups by the FORMATTED value; output is ordered by ITEM then
-# by the bucket's position in REMFMT (ascending REMMTH), not alphabetically.
-# ============================================================================
-print("\nStep 10: Final summary by ITEM / REMMTH bucket...")
 
-pbif3 = (
-    pbif2_filtered
-    .with_columns(
-        pl.col("REMMTH_BUCKET")
-          .map_elements(_REMFMT_LABELS.index, return_dtype=pl.Int64)
-          .alias("_RANK")
+def prteli(day_code: str, *, nowk: str, rdate: str,
+           gold_df: pl.DataFrame, rep4_df: pl.DataFrame, elw1: pl.DataFrame,
+           rep2_pq: Path, tbl1_pq: Path) -> list[str]:
+    print(f"  [PIBELQ] prteli({day_code})...")
+
+    con = duckdb.connect(database=":memory:")
+    rep2_base = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(UTSTY AS VARCHAR) UTSTY,
+               CAST(UTREF AS VARCHAR) UTREF, CAST(ELDAY AS VARCHAR) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT, CAST(NETAMT AS DOUBLE) NETAMT,
+               CAST(COSTDED AS DOUBLE) COSTDED
+        FROM read_parquet('{rep2_pq.as_posix()}')
+    """).pl()
+
+    pmm = con.execute(f"""
+        SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
+               CAST(AMOUNT AS DOUBLE) AMOUNT
+        FROM read_parquet('{tbl1_pq.as_posix()}')
+        WHERE ELDAY = '{day_code}'
+    """).pl()
+    con.close()
+
+    # DATA REP7; SET BNMK.REP2&REPTMON&NOWK REP4; ... IF ELDAY="&I";
+    rep7 = pl.concat([rep2_base, rep4_df.select(rep2_base.columns)], how="vertical")
+    rep7 = rep7.with_columns(
+        pl.when(pl.col("BNMCODE") == "3250000000000Y")
+        .then(pl.col("NETAMT"))
+        .otherwise(pl.col("AMOUNT"))
+        .alias("AMOUNT")
     )
-    .group_by(["ITEM", "REMMTH_BUCKET", "_RANK"])
-    .agg(pl.col("AMOUNT").sum().alias("AMOUNT"))
-    .sort(["ITEM", "_RANK"])
-    .drop("_RANK")
-)
+    rep7 = rep7.with_columns(pl.lit("4017100000000Y").alias("BNMCODE"))
+    rep7 = rep7.filter(pl.col("ELDAY") == day_code)
+    # PROC SUMMARY NWAY CLASS BNMCODE VAR AMOUNT
+    rep7 = rep7.group_by("BNMCODE").agg(pl.col("AMOUNT").sum().alias("AMOUNT"))
 
-print(pbif3)
+    elw = _elw_for_day(elw1, day_code)
+    elg = gold_df.filter(pl.col("ELDAY") == day_code)
+
+    elw_stack = pl.concat(
+        [
+            elw.select(["BNMCODE", "AMOUNT"]),
+            rep7.select(["BNMCODE", "AMOUNT"]),
+            elg.select(["BNMCODE", "AMOUNT"]),
+            pmm.select(["BNMCODE", "AMOUNT"]),
+        ],
+        how="vertical",
+    )
+
+    # WK='4' (literal); IF WK NE "&NOWK" THEN drop 4019000000000Y/4019100000000Y
+    drop_4019 = (nowk != "4")
+
+    elitem = _el_catalogue(ELI_DEFINITIONS)   # PROC SORT DATA=ELI ...
+    elw_final = _finalize_elw(elw_stack, elitem, drop_4019=drop_4019)
+    elwt = _build_elwt(elw_final)
+    # combined = pl.concat([elwt.select(elw_final.columns), elw_final], how="vertical")
+    common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
+    elwt = elwt.select(common_cols)
+    elw_final = elw_final.select(common_cols)
+    combined = pl.concat([elwt, elw_final], how="vertical")
+
+    # lines = _title_lines(
+    #     f"DETAIL TOTAL ELIGIBLE LIABILITIES ITEMS FOR : {day_code}",
+    #     f"REPORT DATE : {rdate}",
+    #     "",
+    # )
+    # lines.extend(_render_table_header())   # <-- add header here
+    # lines.extend(_render_report_rmel(combined))
+    # lines.extend(_render_report_rest(combined))
+    # return lines
+
+    # Build the full header for DAYI (no bank name)
+    full_header = _get_full_header(False, day_code, rdate)   # no bank name
+
+    rmel_lines = _render_report_rmel(combined)
+    rest_lines = _render_report_rest(combined)
+
+    lines = full_header + rmel_lines
+    if rest_lines:
+        title_only = _get_day_title_lines(False, day_code, rdate)
+        lines += [""] + title_only + rest_lines
+    else:
+        lines += rest_lines
+    return lines
 
 
 
 
-# ----------------------------------------------------------------------------
-# List-style PUT layout:  PUT @1 ITEM ';' REMMTH ';' AMOUNT +(-1) ';'
-#   ITEM   : $ITEMF. -> padded to the format's default width (longest label, max 40)
-#   REMMTH : REMFMT. -> padded to the format's default width (longest label = 15)
-#   one blank follows each list-output variable (AMOUNT's is removed by +(-1))
-#   AMOUNT : unformatted numeric -> BEST12., written without leading blanks
-# ----------------------------------------------------------------------------
-ITEMF_WIDTH  = 40
-REMFMT_WIDTH = 15
+-------------------------------------
 
-
-def _best12(value) -> str:
-    """SAS BEST12. as written by list output (no leading blanks)."""
-    if value is None or value != value:
-        return "."
-    if value == 0:
-        return "0"
-    sign = 1 if value < 0 else 0
-    int_digits = len(str(int(abs(value))))
-    if sign + int_digits <= 12:
-        decimals = max(0, 12 - sign - int_digits - 1)
-        text = f"{value:.{decimals}f}"
-        if len(text) > 12 and decimals > 0:      # rounding carried into a new digit
-            text = f"{value:.{decimals - 1}f}"
-        if "." in text:
-            text = text.rstrip("0").rstrip(".")
-        return text
-    mant, exp = f"{value:.5E}".split("E")       # too large for 12 chars -> E notation
-    return f"{mant.rstrip('0').rstrip('.')}E{int(exp)}"
-
-
-def _format_detail_line(item_code: str, remmth_label: str, amount) -> str:
-    item_txt   = _itemf(item_code)[:ITEMF_WIDTH].ljust(ITEMF_WIDTH)
-    remmth_txt = remmth_label[:REMFMT_WIDTH].ljust(REMFMT_WIDTH)
-    return f"{item_txt} ;{remmth_txt} ;{_best12(amount)};"
+BNM_ELW_ROOT    = BASE_DIR / "BNM"                       # bnm_elw  (SAP.PIBB.D%TOYYYY)
+BNMB_ELW_ROOT   = BASE_DIR / "BNMB"                      # bnmb_elw (SAP.PBB.D%TOYYYY)
+BNM_YEAR_FOLDER = "D{toyyyy}"                            # year sub-folder name pattern
 
 
 
 
-for row in pbif3.iter_rows(named=True):
-    line = _format_detail_line(row["ITEM"], row["REMMTH_BUCKET"], row["AMOUNT"])
-    output_lines.append(line.ljust(LRECL)[:LRECL])
+# OPC: %OPC SETVAR TOYYYY=(OYYYY -5CD)  -> year of (report date - 5 calendar days)
+TOYYYY = (REPTDATE - timedelta(days=5)).strftime("%Y")
+INPUT_BNM_ELW_DIR  = BNM_ELW_ROOT  / BNM_YEAR_FOLDER.format(toyyyy=TOYYYY)
+INPUT_BNMB_ELW_DIR = BNMB_ELW_ROOT / BNM_YEAR_FOLDER.format(toyyyy=TOYYYY)
+print(f"  TOYYYY    : {TOYYYY}")
 
 
 
