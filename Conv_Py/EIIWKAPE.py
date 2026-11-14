@@ -17,8 +17,7 @@ Dependency note (PBBELF):
     reference PBBELF directly, so it is not imported here.
 
 ============================================================================
-PHYSICAL INPUT DATASETS USED BY THIS PROGRAM  (all .sas7bdat, cached to
-Parquet on first read per EIBDLN1M.py's chunked-conversion pattern)
+PHYSICAL INPUT DATASETS USED BY THIS PROGRAM
 ============================================================================
 1. BNMK REP4X  (SAS libref BNMK -> SAP.PIBB.DKAPITI.SASDATA)
    File     : rep4x<REPTYEAR><REPTMON><WK>.sas7bdat
@@ -76,21 +75,34 @@ from PIBELQ import build_elw1, prtel, prteli
 # ============================================================================
 # PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_FIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
+# Production Path
+BASE_DIR    = Path("/dwh - KENA KONFEMKAN DULU KAT MANA")
+INPUT_BNMK_REP4X_DIR = BASE_DIR / "BNMK"                 # bnmk_rep4x
+INPUT_BNMK_REP2_DIR  = BASE_DIR / "BNMK"                 # bnmk_rep2
+INPUT_BNMS_ELSCD_DIR = BASE_DIR / "BNMS"                 # bnmk_elscd
+INPUT_BNM_ELW_DIR    = BASE_DIR / "BNM"                  # bnm_elw
 
-INPUT_BNMK_REP4X_DIR = STG_FIR / "BNMK"                 # bnmk_rep4x
-INPUT_BNMK_REP2_DIR  = STG_FIR / "BNMK"                 # bnmk_rep2
-INPUT_BNMS_ELSCD_DIR = STG_FIR / "BNMS"                 # bnmk_elscd
-INPUT_BNM_ELW_DIR    = STG_FIR / "BNM"                  # bnm_elw
+OUTPUT_DIR      = Path("/host_pq/mis/output/report/EIIWKAPE")
+OUTPUT_NSRS_DIR = OUTPUT_DIR / "nsrs"
+for _d in (OUTPUT_DIR, OUTPUT_NSRS_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
 
-# INPUT_BNMK_REP4X_DIR = STG_FIR / "BNMK" / "rep4x2026081.sas7bdat"
-# INPUT_BNMK_REP2_DIR  = STG_FIR / "BNMK" / "rep2081.sas7bdat"
-# INPUT_BNMS_ELSCD_DIR = STG_FIR / "BNMS" / "elscd081.sas7bdat"
-# INPUT_BNM_ELW_DIR    = STG_FIR / "BNM"  / "elw081.sas7bdat"
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE/EII")
 
-OUTPUT_DIR      = BASE_DIR / "output" / "EIIWKAPE"
-OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIIWKAPE" / "nsrs"
+# INPUT_BNMK_REP4X_DIR = STG_DIR / "BNMK"                 # bnmk_rep4x
+# INPUT_BNMK_REP2_DIR  = STG_DIR / "BNMK"                 # bnmk_rep2
+# INPUT_BNMS_ELSCD_DIR = STG_DIR / "BNMS"                 # bnmk_elscd
+# INPUT_BNM_ELW_DIR    = STG_DIR / "BNM"                  # bnm_elw
+
+# # INPUT_BNMK_REP4X_DIR = STG_DIR / "BNMK" / "rep4x2026081.sas7bdat"
+# # INPUT_BNMK_REP2_DIR  = STG_DIR / "BNMK" / "rep2081.sas7bdat"
+# # INPUT_BNMS_ELSCD_DIR = STG_DIR / "BNMS" / "elscd081.sas7bdat"
+# # INPUT_BNM_ELW_DIR    = STG_DIR / "BNM"  / "elw081.sas7bdat"
+
+# OUTPUT_DIR      = BASE_DIR / "output" / "EIIWKAPE"
+# OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIIWKAPE" / "nsrs"
 
 # Parquet cache directory — shared with PIBELQ.py (same BNMK REP2 dataset
 # is read by both programs for the same REPTMON/NOWK, so caching once
