@@ -9,8 +9,7 @@ Called by EIIWKAPE.py via:
     from PIBELQ import build_elw1, prtel, prteli
 
 ============================================================================
-PHYSICAL INPUT DATASETS USED BY THIS MODULE  (all .sas7bdat, cached to
-Parquet on first read per EIBDLN1M.py's chunked-conversion pattern)
+PHYSICAL INPUT DATASETS USED BY THIS MODULE
 ============================================================================
 1. BNMK REP2   (SAS libref BNMK -> SAP.PIBB.DKAPITI.SASDATA)
    File     : rep2<REPTMON><NOWK>.sas7bdat
@@ -69,18 +68,26 @@ from PBBELF import EL_DEFINITIONS, ELI_DEFINITIONS
 # ============================================================================
 # PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_FIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
+# Production Path
+BASE_DIR    = Path("/dwh - KENA KONFEMKAN DULU KAT MANA")
+INPUT_BNMK_REP2_DIR = STG_DIR / "BNMK"              # bnmk_rep2
+INPUT_BNMK_TBL1_DIR = STG_DIR / "BNMK"              # bnmk_tbl1
+INPUT_BNM_ELW_DIR   = STG_DIR / "BNM"               # bnm_elw
+INPUT_BNMB_ELW_DIR  = STG_DIR / "BNMB"              # bnms_elw
 
-INPUT_BNMK_REP2_DIR = STG_FIR / "BNMK"              # bnmk_rep2
-INPUT_BNMK_TBL1_DIR = STG_FIR / "BNMK"              # bnmk_tbl1
-INPUT_BNM_ELW_DIR   = STG_FIR / "BNM"               # bnm_elw
-INPUT_BNMB_ELW_DIR  = STG_FIR / "BNMB"              # bnms_elw
 
-# Parquet cache directory (shared with EIIWKAPE.py — same physical
-# BNMK REP2 dataset is read by both programs for the same REPTMON/NOWK)
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWKAPE"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE/EII")
+# INPUT_BNMK_REP2_DIR = STG_DIR / "BNMK"              # bnmk_rep2
+# INPUT_BNMK_TBL1_DIR = STG_DIR / "BNMK"              # bnmk_tbl1
+# INPUT_BNM_ELW_DIR   = STG_DIR / "BNM"               # bnm_elw
+# INPUT_BNMB_ELW_DIR  = STG_DIR / "BNMB"              # bnms_elw
+
+# # Parquet cache directory (shared with EIIWKAPE.py — same physical
+# # BNMK REP2 dataset is read by both programs for the same REPTMON/NOWK)
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWKAPE"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 
