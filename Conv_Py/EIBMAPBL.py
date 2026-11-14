@@ -20,26 +20,37 @@ Dependencies:
 
 import gc
 from pathlib import Path
+from datetime import datetime, timedelta
 
 import polars as pl
 
-from REPTDATE import get_reptdate_values
+# from REPTDATE import get_reptdate_values
+from GET_BATCH_DATE import get_batch_date_dwh
 import RDALPBIF
 import RDLMPBIF
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# Production Path
+BASE_DIR          = Path("/dwh") - EIBDPBIF | Refer Adli, kena konfemkan kat mana
+INPUT_CLIENT_DIR  = BASE_DIR / "path kat mana"
+CLIENT_SAS_PATH   = INPUT_CLIENT_DIR / f"clien{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+INPUT_MECHRG_FILE = Path("/host_pq/mis/input/textfile") / f"MECHRG{REPTDAY}{REPTMON}{REPTYEAR}.txt"
 
-INPUT_CLIENT_DIR  = Path("/stgsrcsys/host/uat/AII/EIBMAPBL")
-INPUT_MECHRG_FILE = Path("/stgsrcsys/host/uat/AII/EIBMAPBL") / "MECHRG.txt"
-
-CACHE_DIR  = BASE_DIR / "input" / "prod" / "EIBMAPBL"
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMAPBL"
-
+OUTPUT_DIR  = Path("/host_pq/mis/output/")
+OUTPUT_FILE = OUTPUT_DIR / f"PBIFLIQ{REPTMON}{REPTYEAR}.TXT"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR          = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_CLIENT_DIR  = Path("/stgsrcsys/host/uat/AII/EIBMAPBL")
+# INPUT_MECHRG_FILE = Path("/stgsrcsys/host/uat/AII/EIBMAPBL") / "MECHRG.txt"
+
+# CACHE_DIR  = BASE_DIR / "input" / "prod" / "EIBMAPBL"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMAPBL"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 LRECL = 133   # DCB=(RECFM=FB,LRECL=133,BLKSIZE=0)
 
@@ -48,15 +59,35 @@ LRECL = 133   # DCB=(RECFM=FB,LRECL=133,BLKSIZE=0)
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-reptdate_values = get_reptdate_values(year_format="%y")
-reptdate  = reptdate_values.reptdate
-REPTYEAR  = reptdate_values.reptyear   # 2-digit year (YEAR2.)
-REPTMON   = reptdate_values.reptmon    # Z2.
-REPTDAY   = reptdate_values.reptday    # Z2.
-REPTYR    = reptdate.year              # 4-digit year (YEAR4. equivalent)
+# reptdate_values = get_reptdate_values(year_format="%y")
+# reptdate  = reptdate_values.reptdate
+# REPTYEAR  = reptdate_values.reptyear   # 2-digit year (YEAR2.)
+# REPTMON   = reptdate_values.reptmon    # Z2.
+# REPTDAY   = reptdate_values.reptday    # Z2.
+# REPTYR    = reptdate.year              # 4-digit year (YEAR4. equivalent)
 
-# REPTQ='N'; IF DAY(REPTDATE+1)=1 THEN REPTQ='Y';
-next_day = reptdate.replace(day=reptdate.day) + __import__("datetime").timedelta(days=1)
+# # REPTQ='N'; IF DAY(REPTDATE+1)=1 THEN REPTQ='Y';
+# next_day = reptdate.replace(day=reptdate.day) + __import__("datetime").timedelta(days=1)
+# REPTQ = 'Y' if next_day.day == 1 else 'N'
+
+# Determining teh cirrect source system
+SOURCE_SYSTEM = 'PIVB_CIS'   # <-- CHANGE THIS to the correct code
+
+# Fetch batch date string (format: "YYYY-MM-DD HH:MM:SS")
+batch_date_str = get_batch_date_dwh(SOURCE_SYSTEM)
+
+# Parse to datetime
+batch_dt = datetime.strptime(batch_date_str, "%Y-%m-%d %H:%M:%S")
+
+# Derive report-date components (same as SAS)
+reptdate = batch_dt.date()
+REPTYEAR = batch_dt.strftime("%y")   # two-digit year
+REPTMON  = batch_dt.strftime("%m")   # zero-padded month
+REPTDAY  = batch_dt.strftime("%d")   # zero-padded day
+REPTYR   = batch_dt.year             # four-digit year
+
+# Compute REPTQ (month-end flag)
+next_day = reptdate + timedelta(days=1)
 REPTQ = 'Y' if next_day.day == 1 else 'N'
 
 print(f"  Report date : {reptdate.strftime('%d/%m/%y')}")
@@ -73,6 +104,14 @@ OUTPUT_FILE = OUTPUT_DIR / f"PBIFLIQ{REPTMON}{REPTYEAR}.dat"
 print("\nStep 2: Resolving CLIENT dataset...")
 
 CLIENT_SAS_PATH   = INPUT_CLIENT_DIR / f"clien{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+
+# DEBUG CHECKING
+if not CLIENT_SAS_PATH.exists():
+    raise FileNotFoundError(
+        f"Expected CLIENT file not found: {CLIENT_SAS_PATH}\n"
+        f"Derived from batch date {reptdate} with REPTQ={REPTQ}."
+    )
+
 CLIENT_CACHE_PATH = CACHE_DIR / f"clien{REPTYEAR}{REPTMON}{REPTDAY}.parquet"
 
 print(f"  CLIENT source : {CLIENT_SAS_PATH.name}")
