@@ -81,7 +81,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
-from PBBELQ_AII import prtel, prteli
+from PBBELQ import prtel, prteli
 
 # NOTE: %INC PGM stated in JCL, but PBB.PROGRAM library holds SAS source
 # code (compiled macros), not data - it has no python equivalent to import.
@@ -740,7 +740,7 @@ print("\nStep 6: Rendering PBBELQ daily EL detail reports...")
 
 elw1 = None  # loaded lazily inside PBBELQ on first call via build_elw1()
 
-from PBBELQ_AII import build_elw1 as _pbbelq_build_elw1
+from PBBELQ import build_elw1 as _pbbelq_build_elw1
 elw1 = _pbbelq_build_elw1(REPTMON, NOWK)
 
 pbbelq_lines: list[str] = []
