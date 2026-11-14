@@ -28,8 +28,7 @@ Structural note (vs. EIIWKAPE/PIBELQ):
     parameters instead of resolving their own REP2 path.
 
 ============================================================================
-PHYSICAL INPUT DATASETS USED BY THIS PROGRAM  (all .sas7bdat, cached to
-Parquet on first read per EIBDLN1M.py's chunked-conversion pattern)
+PHYSICAL INPUT DATASETS USED BY THIS PROGRAM
 ============================================================================
 1. BNMK REP2   (SAS libref BNMK -> SAP.PBB.DKAPITI.SASDATA)
    File     : rep2<REPTMON><WK>.sas7bdat
@@ -90,29 +89,46 @@ from PBBELQ_AII import prtel, prteli
 # ============================================================================
 # PATH CONFIGURATION (each physical input kept independent)
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
+# --- Production Path ---
+BASE_DIR            = Path("/dwh - KENA KONFEMKAN DULU KAT MANA")
+INPUT_BNMK_REP2_DIR = BASE_DIR / "EIB" / "BNMK"                  # bnmk_rep2
+INPUT_BNMK_REP4_DIR = BASE_DIR / "EIB" / "BNMK"                  # bnmk_rep4
+INPUT_BNM_ELW_DIR   = BASE_DIR / "EII" / "BNM"                   # bnm_elw
 
-# # PROD Input
-# INPUT_BNMK_REP2_DIR = STG_DIR / "EIB" / "BNMK"                  # bnmk_rep2
-# INPUT_BNMK_REP4_DIR = STG_DIR / "EIB" / "BNMK"                  # bnmk_rep4
-# INPUT_BNM_ELW_DIR   = STG_DIR / "EII" / "BNM"                   # bnm_elw
+rep2_sas = INPUT_BNMK_REP2_DIR / f"rep2{REPTMON}{WK}.sas7bdat"
+rep4_sas = INPUT_BNMK_REP4_DIR / f"rep4{REPTMON}{WK}.sas7bdat"
+elw_wk_sas = INPUT_BNM_ELW_DIR / f"elw{REPTMON}{WK}.sas7bdat"
 
-# UAT Input
-INPUT_BNMK_REP2_DIR = STG_DIR / "EIB/BNMK" / "rep2081.sas7bdat"
-INPUT_BNMK_REP4_DIR = STG_DIR / "EIB/BNMK" / "rep4081.sas7bdat"
-INPUT_BNM_ELW_DIR   = STG_DIR / "EII/BNMB"  / "elw081.sas7bdat"
-
-OUTPUT_DIR      = BASE_DIR / "output" / "EIBWKAPE"
-OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIBWKAPE" / "nsrs"
-
-# Parquet cache directory — shared with PBBELQ.py (same BNMK REP2 /
-# BNMK REP4 datasets are read/reused by both, so caching once here
-# avoids a duplicate conversion when PBBELQ.py runs in-process)
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBWKAPE"
-
-for _d in (OUTPUT_DIR, OUTPUT_NSRS_DIR, CACHE_DIR):
+OUTPUT_DIR      = Path("/host_pq/mis/output/report/EIBWKAPE")
+OUTPUT_NSRS_DIR = OUTPUT_DIR / "nsrs"
+for _d in (OUTPUT_DIR, OUTPUT_NSRS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
+
+# # --- Testing Path ---
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
+# INPUT_BNMK_REP2_DIR = STG_DIR / "EIB/BNMK" / "rep2081.sas7bdat"
+# INPUT_BNMK_REP4_DIR = STG_DIR / "EIB/BNMK" / "rep4081.sas7bdat"
+# INPUT_BNM_ELW_DIR   = STG_DIR / "EII/BNMB" / "elw081.sas7bdat"
+
+# rep2_sas = INPUT_BNMK_REP2_DIR
+# rep4_sas = INPUT_BNMK_REP4_DIR
+# elw_wk_sas = INPUT_BNM_ELW_DIR
+
+# rep4_cache = _load_cached(rep4_sas, "BNMK_REP4")
+# rep2_cache = _load_cached(rep2_sas, "BNMK_REP2")
+# elw_wk_cache = _load_cached(elw_wk_sas, "BNM_ELW_WK")
+
+# OUTPUT_DIR      = BASE_DIR / "output" / "EIBWKAPE"
+# OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIBWKAPE" / "nsrs"
+
+# # Parquet cache directory — shared with PBBELQ.py (same BNMK REP2 /
+# # BNMK REP4 datasets are read/reused by both, so caching once here
+# # avoids a duplicate conversion when PBBELQ.py runs in-process)
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBWKAPE"
+
+# for _d in (OUTPUT_DIR, OUTPUT_NSRS_DIR, CACHE_DIR):
+#     _d.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # GLOBAL CONFIGURATION
@@ -222,9 +238,9 @@ print("\nStep 2: Deriving week/month bucket (REPTDATE)...")
 SXDATE = _reptdat1.reptdate
 # SXDATE = date(2026, 8, 8)
 _day = SXDATE.day
-if 1 <= _day <= 8:
+if 1 <= _day <= 7:
     WK = "4"
-elif 9 <= _day <= 15:
+elif 8 <= _day <= 15:
     WK = "1"
 elif 16 <= _day <= 22:
     WK = "2"
@@ -631,13 +647,6 @@ def _paginate_with_groups(lines: list[str], page_size: int, header_lines: list[s
 # ============================================================================
 print("\nStep 4: Building REP2 (filtered)...")
 
-# # PROD Input
-# rep2_sas = INPUT_BNMK_REP2_DIR / f"rep2{REPTMON}{WK}.sas7bdat"
-
-# UAT Input
-rep2_sas = INPUT_BNMK_REP2_DIR
-rep2_cache = _load_cached(rep2_sas, "BNMK_REP2")
-
 con = duckdb.connect(database=":memory:")
 # rep2_filtered = con.execute(f"""
 #     SELECT
@@ -681,13 +690,6 @@ print(f"  REP2 (filtered) rows: {len(rep2_filtered):,}")
 #   END;
 # ============================================================================
 print("\nStep 5: Building REP4 (filtered)...")
-
-# # PROD Input
-# rep4_sas = INPUT_BNMK_REP4_DIR / f"rep4{REPTMON}{WK}.sas7bdat"
-
-# UAT Input
-rep4_sas = INPUT_BNMK_REP4_DIR
-rep4_cache = _load_cached(rep4_sas, "BNMK_REP4")
 
 con = duckdb.connect(database=":memory:")
 # rep4_raw = con.execute(f"""
@@ -876,12 +878,7 @@ print("\nStep 9: Building variance report (KAPITI vs WALKER)...")
 
 repov = rep2.group_by(["BNMCODE", "ELDAY"]).agg(pl.col("AMOUNT").sum().alias("AMOUNT"))
 
-# # PROD Input
-# elw_wk_sas = INPUT_BNM_ELW_DIR / f"elw{REPTMON}{WK}.sas7bdat"
 
-# UAT Input
-elw_wk_sas = INPUT_BNM_ELW_DIR
-elw_wk_cache = _load_cached(elw_wk_sas, "BNM_ELW_WK")
 
 con = duckdb.connect(database=":memory:")
 # elw_wk_raw = con.execute(f"""
