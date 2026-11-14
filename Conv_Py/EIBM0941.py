@@ -7,9 +7,6 @@ Purpose : Monthly GL Interface - Deposit Accounts (Savings, Current, Fixed
           ASA carriage control since the original DCB is RECFM=FB).
 
 Original JCL DD cross-reference:
-    DEP   -> SAP.PBB.MNITB(0)          : source of REPTDATE dataset
-                                          (superseded here by REPTDATE.py;
-                                          no reptdate.parquet exists)
     PGM   -> SAP.BNM.PROGRAM            : %INC PGM(PBBLNFMT) library
     MIS   -> SAP.PBB.OPCL.SASDATA       : PBB  SAVG/CURR/FD monthly data
     MISS  -> SAP.PIBB.OPCL.SASDATA      : PIBB SAVGF/CURRF/FDF monthly data
@@ -52,30 +49,25 @@ from REPTDATE import get_monthly_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-# Input directories - Production
-# BASE_DIR       = Path("/dwh")
-# INPUT_MIS_DIR  = BASE_DIR / "mis_opcl"      # MIS  DD -> PBB  SAVG/CURR/FD
-# INPUT_MISS_DIR = BASE_DIR / "miss_opcl"     # MISS DD -> PIBB SAVGF/CURRF/FDF
-# INPUT_DEPO_DIR = BASE_DIR / "depo_rnid"     # DEPO DD -> PBB  RNIDM
-# INPUT_IDEPO_DIR= BASE_DIR / "idepo_rnid"    # IDEPO DD -> PIBB RNIDM
+# Input directories - Production -> Kena konfemkan dengan Adli pasal path
+BASE_DIR       = Path("/dwh")
+INPUT_MIS_DIR  = BASE_DIR / "mis_opcl"      # MIS  DD -> PBB  SAVG/CURR/FD
+INPUT_MISS_DIR = BASE_DIR / "miss_opcl"     # MISS DD -> PIBB SAVGF/CURRF/FDF
+INPUT_DEPO_DIR = BASE_DIR / "depo_rnid"     # DEPO DD -> PBB  RNIDM
+INPUT_IDEPO_DIR= BASE_DIR / "idepo_rnid"    # IDEPO DD -> PIBB RNIDM
 
-# Input directories - Testing
-BASE_DIR        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR         = Path("/stgsrcsys/host/uat/AII/EIBM0941")
+# # Input directories - Testing
+# BASE_DIR        = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR         = Path("/stgsrcsys/host/uat/AII/EIBM0941")
+# INPUT_MIS_DIR   = STG_DIR / "MIS"
+# INPUT_MISS_DIR  = STG_DIR / "MISS"
+# INPUT_DEPO_DIR  = STG_DIR / "DEPO"
+# INPUT_IDEPO_DIR = STG_DIR / "IDEPO"
 
-INPUT_MIS_DIR   = STG_DIR / "MIS"
-INPUT_MISS_DIR  = STG_DIR / "MISS"
-INPUT_DEPO_DIR  = STG_DIR / "DEPO"
-INPUT_IDEPO_DIR = STG_DIR / "IDEPO"
-
-# Parquet cache directory
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBM0941"
-
-# Output
-OUTPUT_DIR = BASE_DIR / "output" / "EIBM0941"
-
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBM0941"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBM0941"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
