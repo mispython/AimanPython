@@ -82,9 +82,26 @@ from EDW_TRANSFORMATION import get_sftp_info
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-OUTPUT_DIR = BASE_DIR / "output" / "EIIWREXL"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Production Path
+BASE_DIR            = Path("/sas/deposit/dwh")
+
+# Saving / Current / Uma: single PBB-version files containing BOTH entities,
+# discriminated by ENTITY_CD.
+INPUT_SAVING_FILE   = BASE_DIR / "integration" / f"intg_dp_acct_saving_d{REPTDAY}.sas7bdat"
+INPUT_CURRENT_FILE  = BASE_DIR / "integration" / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
+INPUT_UMA_FILE      = BASE_DIR / "integration" / f"intg_dp_acct_uma_d{REPTDAY}.sas7bdat"
+
+# FD: cert-level (no ENTITY_CD) + account-level (has ACCTNO + ENTITY_CD).
+INPUT_FD_CERT_FILE  = BASE_DIR / "enrichment"  / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
+INPUT_FD_ACCT_FILE  = BASE_DIR / "integration" / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+
+# Shared PBB files (unchanged).
+INPUT_CISDP_FILE    = Path("/dwh/rs_cis") / f"cisr1ca{REPTMON}{REPTWEEK}{REPTYEAR}.sas7bdat"
+
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# OUTPUT_DIR = BASE_DIR / "output" / "EIIWREXL"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # SFTP target — mirrors JCL: cd "FD-BNM REPORTING/PIBB/BNM RPTG"
 SFTP_REMOTE_DIR = "FD-BNM REPORTING/PIBB/BNM RPTG"
