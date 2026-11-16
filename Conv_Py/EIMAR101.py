@@ -21,13 +21,6 @@ from datetime import date, datetime, timedelta
 
 from REPTDATE import get_monthly_reptdate_values
 from input_date import get_latest_file
-# from output_date import build_output_file
-# build_output_file() is NOT used verbatim here: it always derives its date
-# component internally from REPTDATE.get_reptdate_values() (the DAILY
-# variant). EIMAR101 is explicitly the month-end version of this report and
-# must use the monthly reptdate resolved below instead, so the yymmdd
-# filename suffix is built directly from reptdate_values (same ordering
-# build_output_file would have applied).
 
 # %INC PGM(PBBLNFMT);
 # PBBLNFMT is included at session level in the original SAS source, but no
@@ -45,17 +38,25 @@ HPD_PRODUCTS = (380, 381, 700, 705, 720, 725)
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat")
+# Production Path
+BASE_DIR          = Path("/exdwh/host/ln/ccdtemp")
+LOANTEMP_FILE     = BASE_DIR / "loantemp.sas7bdat"
+INPUT_BRANCH_DIR  = Path("/sasdata/rawdata/lookup")
+INPUT_BRANCH_FILE = INPUT_BRANCH_DIR / "LKP_BRANCH"     # BRHFILE - static flat file
 
-INPUT_BNM_DIR     = STG_DIR
-INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
-
-CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR101"
-OUTPUT_DIR = BASE_DIR / "output" / "EIMAR101"
-
+OUTPUT_DIR      = Path("/host_pq/mis/output/ln/report/EIMAR")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat")
+# INPUT_BNM_DIR     = STG_DIR
+# INPUT_BRANCH_FILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
+
+# CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR101"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIMAR101"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
