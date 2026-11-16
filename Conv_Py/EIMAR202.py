@@ -19,10 +19,6 @@ Original JCL notes (kept for traceability):
                                                 EIMAR201) -- CCDTXT3 is opened
                                                 DISP=MOD (append), not created
                                                 fresh.
-    //LOAN      DD DSN=SAP.PBB.MNILN(0)     -> NOT referenced anywhere in the
-                                                SAS program body; left as an
-                                                unused placeholder DD (same as
-                                                EIMAR201).
     //BRHFILE   DD DSN=RBP2.B033.PBB.BRANCH -> fixed-width flat file (BRHDATA)
     //BNM       DD DSN=SAP.PBB.CCDTEMP(0)   -> SAS library (GDG generation 0)
                                                 holding REPTDATE and LOANTEMP.
@@ -44,9 +40,6 @@ Original JCL notes (kept for traceability):
                                                 (inherits EIMAR201's DCB:
                                                 LRECL=133, RECFM=FBA -- ASA
                                                 carriage control).
-    //PGM       DD DSN=SAP.BNM.PROGRAM      -> NOT referenced anywhere in the
-                                                SAS program body; left as an
-                                                unused placeholder DD.
 """
 
 import gc
@@ -65,27 +58,35 @@ import pyarrow.parquet as pq
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat")
+# Production Path
+BASE_DIR          = Path("/exdwh/host/ln/ccdtemp")
+LOANTEMP_FILE     = BASE_DIR / "loantemp.sas7bdat"
+INPUT_BRANCH_DIR  = Path("/sasdata/rawdata/lookup")
+INPUT_BRANCH_FILE = INPUT_BRANCH_DIR / "LKP_BRANCH"     # BRHFILE - static flat file
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIMAR201"
+OUTPUT_DIR      = Path("/host_pq/mis/output/ln/report/EIMAR")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Input: EIMAR201's own output file. EIMAR202 (CCDTXT3 DD DISP=MOD on the
 # mainframe) appends onto whatever EIMAR201 already wrote, so it is treated
 # here as an explicit upstream input rather than a shared mutable file.
-EIMAR201_DIR  = BASE_DIR / "output" / "EIMAR201"
-# EIMAR201_FILE = EIMAR201_DIR / "EIMAR201.txt"
+EIMAR201_DIR  = OUTPUT_DIR
 
-# Output: EIMAR202's own file = EIMAR201's content + EIMAR202's report.
-OUTPUT_DIR  = BASE_DIR / "output" / "EIMAR202"
-# OUTPUT_FILE = OUTPUT_DIR / "EIMAR202.txt"
+# # Testing path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat")
 
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# EIMAR201_DIR  = BASE_DIR / "output" / "EIMAR201"
 
-LOANTEMP_FILE      = STG_DIR / "loantemp.sas7bdat"          # BNM.LOANTEMP GDG(0)
-INPUT_BRANCH_DIR   = Path("/sasdata/rawdata/lookup")
-INPUT_BRANCH_FILE  = INPUT_BRANCH_DIR / "LKP_BRANCH"         # BRHFILE - static flat file
+# # Output: EIMAR202's own file = EIMAR201's content + EIMAR202's report.
+# OUTPUT_DIR  = BASE_DIR / "output" / "EIMAR202"
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIMAR201"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# LOANTEMP_FILE      = STG_DIR / "loantemp.sas7bdat"          # BNM.LOANTEMP GDG(0)
+# INPUT_BRANCH_DIR   = Path("/sasdata/rawdata/lookup")
+# INPUT_BRANCH_FILE  = INPUT_BRANCH_DIR / "LKP_BRANCH"         # BRHFILE - static flat file
 
 CHUNK_ROWS = 500_000
 LRECL      = 133          # Inherited DCB from EIMAR201's SASLIST: LRECL=133,
