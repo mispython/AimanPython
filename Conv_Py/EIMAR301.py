@@ -8,12 +8,6 @@ Purpose : Details for NPL Accounts for CCD PFB (Monthly Report)
           - EIMAR301-D : Summary on accounts in arrear with 2 instalments paid only
 
 Original JCL notes (kept for traceability):
-    //DELETE   EXEC PGM=IEFBR14             -> old SASLIST output deleted;
-                                                equivalent handled by opening
-                                                the output file in "w" mode.
-    //LOAN     DD DSN=SAP.PBB.MNILN(0)      -> NOT referenced anywhere in the
-                                                SAS program body; left as an
-                                                unused placeholder DD.
     //BRHFILE  DD DSN=RBP2.B033.PBB.BRANCH  -> fixed-width flat file (BRHDATA)
     //BNM      DD DSN=SAP.PBB.CCDTEMP(0)    -> SAS library (GDG generation 0)
                                                 holding members REPTDATE and
@@ -21,9 +15,6 @@ Original JCL notes (kept for traceability):
                                                 by REPTDATE.py per project
                                                 convention; LOANTEMP is read as
                                                 a .sas7bdat and cached to Parquet.
-    //PGM      DD DSN=SAP.BNM.PROGRAM       -> NOT referenced anywhere in the
-                                                SAS program body; left as an
-                                                unused placeholder DD.
     %INC PGM(PBBLNFMT,PBBELF);              -> supplies ARRCLASS./CACBRCH. formats,
                                                 now imported directly from
                                                 PBBLNFMT.format_arrclass and
@@ -51,22 +42,30 @@ from PBBELF import format_cacbrch
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat")
-
-CACHE_DIR    = BASE_DIR / "input" / "cache" / "EIMAR301"
-OUTPUT_DIR   = BASE_DIR / "output" / "EIMAR301"
-
-LOANTEMP_FILE = STG_DIR / "loantemp.sas7bdat"
-INPUT_BRANCH_DIR= Path("/sasdata/rawdata/lookup")
+# Production Path
+BASE_DIR          = Path("/exdwh/host/ln/ccdtemp")
+LOANTEMP_FILE     = BASE_DIR / "loantemp.sas7bdat"
+INPUT_BRANCH_DIR  = Path("/sasdata/rawdata/lookup")
 INPUT_BRANCH_FILE = INPUT_BRANCH_DIR / "LKP_BRANCH"     # BRHFILE - static flat file
 
+OUTPUT_DIR      = Path("/host_pq/mis/output/ln/report/EIMAR")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat")
+# LOANTEMP_FILE = STG_DIR / "loantemp.sas7bdat"
+# INPUT_BRANCH_DIR= Path("/sasdata/rawdata/lookup")
+# INPUT_BRANCH_FILE = INPUT_BRANCH_DIR / "LKP_BRANCH"     # BRHFILE - static flat file
+
+# CACHE_DIR    = BASE_DIR / "input" / "cache" / "EIMAR301"
+# OUTPUT_DIR   = BASE_DIR / "output" / "EIMAR301"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 LRECL      = 256          # DCB LRECL=256 (RECFM=FB -> no ASA control byte)
-PAGE_LEN   = 60            # not directly used for row counting here (LINECNT drives it)
+PAGE_LEN   = 60           # not directly used for row counting here (LINECNT drives it)
 
 # ============================================================================
 # STEP 1: REPORT DATE  (DATA _NULL_; SET BNM.REPTDATE; ...)
