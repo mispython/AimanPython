@@ -1,6 +1,219 @@
+#!/usr/bin/env python3
+"""
+Program : FALWPBBD.py
+Function: Filter out invalid customer code & product code — builds
+          BNM.FDWKLY (fixed-deposit weekly extract) and BNM.UMA
+          (unclaimed moneys account) datasets.
+
+Original : FALWPBBD (invoked via %INC PGM(FALWPBBD), e.g. by EIIWREXL)
+
+Dependency (format library):
+    %INC PGM(PBBDPFMT);  -> already converted as PBBDPFMT_AII.py
+    from PBBDPFMT_AII import (fdprod_format, fddenom_format, statecd_format,
+                              fdcustcd_format, ifdcuscd_format)
+
+============================================================================
+INPUTS (supplied by the calling job, e.g. EIIWREXL.py — already converted to
+temporary Parquet and already filtered to ENTITY_CD = 'PIBB' by the caller)
+============================================================================
+1. FD.FD       -> fd_cache   (MNIFD cert-level, restricted by the caller to
+                              PIBB accounts through the account-level file)
+2. DEPOSIT.UMA -> uma_cache  (ENTITY_CD = 'PIBB' applied by the caller)
+
+This program has no physical output of its own (BNM is a temporary library
+in the SAS job); it returns BNM_FDWKLY and BNM_UMA to the caller.
+"""
+
 import gc
+from pathlib import Path
+
+import duckdb
+import polars as pl
+
+from PBBDPFMT_AII import (
+    fdprod_format,
+    fddenom_format,
+    statecd_format,
+    fdcustcd_format,
+    ifdcuscd_format,
+)
+
+
+def build_fdwkly_uma(
+    fd_cache: Path,
+    uma_cache: Path,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """
+    Builds BNM_FDWKLY / BNM_UMA (equivalent of BNM.FDWKLY and BNM.UMA) from
+    PRE-CACHED parquet files owned and supplied by the calling job.
+
+    Returns (BNM_FDWKLY, BNM_UMA) only.
+    """
+    FD_SAS_CACHE  = fd_cache
+    UMA_SAS_CACHE = uma_cache
+
+    # ========================================================================
+    # STEP 1: BUILD BNM.FDWKLY  (input: FD.FD)
+    # DATA BNM.FDWKLY(KEEP=BRANCH ACCTNO CUSTCODE NAME AMTIND ACCTTYPE OPENIND
+    #                      CURBAL BIC INTPAY STATE TERM INTPLAN MATDATE);
+    #   SET FD.FD;
+    #   BIC = PUT(INTPLAN, FDPROD.);   AMTIND = PUT(INTPLAN, FDDENOM.);
+    #   STATE = PUT(BRANCH, STATECD.);
+    #   IF BIC IN ('42130','42630') THEN CUSTCODE = PUT(CUSTCD, FDCUSTCD.);
+    #      ELSE CUSTCODE = PUT(CUSTCD, IFDCUSCD.);
+    #   IF BIC = '42630' THEN <adjust PURPOSE>;   -- PURPOSE is not in the KEEP
+    #      list, so this mutation has no effect on the final BNM.FDWKLY output;
+    #      replicated below only for behavioral fidelity.
+    #   IF ACCTTYPE IN (315,394) THEN BIC='42132'; ELSE
+    #   IF ACCTTYPE IN (397,398) THEN BIC='42199';
+    #   IF OPENIND = 'O' OR OPENIND = 'D' THEN OUTPUT;
+    # ========================================================================
+    print("\nStep 1: Building BNM_FDWKLY...")
+
+    con = duckdb.connect(database=":memory:")
+    _fd_raw = con.execute(f"""
+        SELECT
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(CUSTCD   AS INTEGER) AS CUSTCD,
+            CAST(NAME     AS VARCHAR) AS NAME,
+            CAST(ACCTTYPE AS INTEGER) AS ACCTTYPE,
+            CAST(OPENIND  AS VARCHAR) AS OPENIND,
+            CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+            CAST(INTPAY   AS DOUBLE)  AS INTPAY,
+            CAST(TERM     AS INTEGER) AS TERM,
+            CAST(INTPLAN  AS INTEGER) AS INTPLAN,
+            DATE '1960-01-01' + CAST(MATDATE AS INTEGER) AS MATDATE,
+            CAST(PURPOSE  AS VARCHAR) AS PURPOSE
+        FROM read_parquet('{FD_SAS_CACHE.as_posix()}')
+        WHERE OPENIND = 'O' OR OPENIND = 'D'
+    """).pl()
+    con.close()
+
+    _fd_raw = _fd_raw.with_columns([
+        pl.col("INTPLAN").map_elements(fdprod_format, return_dtype=pl.Utf8).alias("BIC"),
+        pl.col("INTPLAN").map_elements(fddenom_format, return_dtype=pl.Utf8).alias("AMTIND"),
+        pl.col("BRANCH").map_elements(statecd_format, return_dtype=pl.Utf8).alias("STATE"),
+    ])
+
+    _fd_raw = _fd_raw.with_columns(
+        pl.when(pl.col("BIC").is_in(["42130", "42630"]))
+          .then(pl.col("CUSTCD").map_elements(fdcustcd_format, return_dtype=pl.Utf8))
+          .otherwise(pl.col("CUSTCD").map_elements(ifdcuscd_format, return_dtype=pl.Utf8))
+          .alias("CUSTCODE")
+    )
+
+    # PURPOSE adjustment — dead code w.r.t. output (PURPOSE dropped by KEEP=),
+    # replicated only for behavioral fidelity; does not affect BNM_FDWKLY output.
+    _is_resident_purpose = pl.col("CUSTCODE").is_in(["77", "78", "95"])
+    _fd_raw = _fd_raw.with_columns(
+        pl.when(pl.col("BIC") == "42630")
+          .then(
+              pl.when(_is_resident_purpose & ~pl.col("PURPOSE").is_in(["1", "2", "3"]))
+                .then(pl.lit("1"))
+                .when(~_is_resident_purpose & ~pl.col("PURPOSE").is_in(["4", "5"]))
+                .then(pl.lit("4"))
+                .otherwise(pl.col("PURPOSE"))
+          )
+          .otherwise(pl.col("PURPOSE"))
+          .alias("PURPOSE")
+    )
+
+    _fd_raw = _fd_raw.with_columns(
+        pl.when(pl.col("ACCTTYPE").is_in([315, 394])).then(pl.lit("42132"))
+          .when(pl.col("ACCTTYPE").is_in([397, 398])).then(pl.lit("42199"))
+          .otherwise(pl.col("BIC"))
+          .alias("BIC")
+    )
+
+    BNM_FDWKLY = _fd_raw.select([
+        "BRANCH", "ACCTNO", "CUSTCODE", "NAME", "AMTIND", "ACCTTYPE", "OPENIND",
+        "CURBAL", "BIC", "INTPAY", "STATE", "TERM", "INTPLAN", "MATDATE",
+    ])
+
+    del _fd_raw
+    gc.collect()
+    print(f"  BNM_FDWKLY rows: {len(BNM_FDWKLY):,}")
+
+    # ========================================================================
+    # STEP 2: BUILD BNM.UMA  (input: DEPOSIT.UMA)
+    # DATA BNM.UMA(KEEP=BRANCH ACCTNO CUSTCODE NAME AMTIND OPENIND CURBAL BIC STATE);
+    #   SET DEPOSIT.UMA(RENAME=(CUSTCODE=CUSTCD));
+    #   IF PRODUCT = 297 THEN DO; CUSTCODE=PUT(CUSTCD,FDCUSTCD.); AMTIND='D'; END;
+    #   ELSE DO; CUSTCODE=PUT(CUSTCD,IFDCUSCD.); AMTIND='I'; END;
+    #   STATE = PUT(BRANCH, STATECD.);  BIC='42199';
+    #   IF OPENIND = 'O' OR OPENIND = 'D' THEN OUTPUT;
+    # ========================================================================
+    print("\nStep 2: Building BNM_UMA...")
+
+    con = duckdb.connect(database=":memory:")
+    _uma_raw = con.execute(f"""
+        SELECT
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(CUSTCODE AS INTEGER) AS CUSTCD,   -- RENAME=(CUSTCODE=CUSTCD)
+            CAST(NAME     AS VARCHAR) AS NAME,
+            CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+            CAST(OPENIND  AS VARCHAR) AS OPENIND,
+            CAST(CURBAL   AS DOUBLE)  AS CURBAL
+        FROM read_parquet('{UMA_SAS_CACHE.as_posix()}')
+        WHERE OPENIND = 'O' OR OPENIND = 'D'
+    """).pl()
+    con.close()
+
+    _uma_raw = _uma_raw.with_columns([
+        pl.when(pl.col("PRODUCT") == 297)
+          .then(pl.col("CUSTCD").map_elements(fdcustcd_format, return_dtype=pl.Utf8))
+          .otherwise(pl.col("CUSTCD").map_elements(ifdcuscd_format, return_dtype=pl.Utf8))
+          .alias("CUSTCODE"),
+        pl.when(pl.col("PRODUCT") == 297).then(pl.lit("D")).otherwise(pl.lit("I")).alias("AMTIND"),
+        pl.col("BRANCH").map_elements(statecd_format, return_dtype=pl.Utf8).alias("STATE"),
+        pl.lit("42199").alias("BIC"),
+    ])
+
+    BNM_UMA = _uma_raw.select([
+        "BRANCH", "ACCTNO", "CUSTCODE", "NAME", "AMTIND", "OPENIND", "CURBAL",
+        "BIC", "STATE",
+    ])
+
+    del _uma_raw
+    gc.collect()
+    print(f"  BNM_UMA rows: {len(BNM_UMA):,}")
+    print("==================================================")
+    return BNM_FDWKLY, BNM_UMA
+
+
+
+
+==============================
+
+#!/usr/bin/env python3
+"""
+Program : EIIWREXL.py
+Purpose : Extract detail transactions on other RM miscellaneous
+          liabilities to non-residents for BNM REXL report (PIBB).
+
+Original job : EIIWREXL
+  DELETE step (SAP.PIBB.REXL.TEXT DISP=(MOD,DELETE,DELETE))
+      -> handled by opening OUTPUT_FILE in 'w' mode (truncate/recreate)
+  %INC PGM(DALWPBBD) / %INC PGM(FALWPBBD)
+      -> build_savg_curn_dept() / build_fdwkly_uma() function calls; this
+         program owns every input, converts it to a temporary Parquet file
+         and passes the Parquet paths into the two %INC programs.
+  DATA _NULL_ extract step -> Steps 1-2 below
+  SFTP01 DD + RUNSFTP job step -> Step 3 below (paramiko upload to DRR)
+
+Inputs (all .sas7bdat, converted to temporary Parquet, deleted after use):
+  PIBB (ENTITY_CD = 'PIBB') : intg_dp_acct_saving, intg_dp_acct_current,
+                              intg_dp_acct_uma, enrh_dp_fd_cert (restricted
+                              to PIBB accounts via intg_dp_acct_fd)
+  No ENTITY_CD              : CISDP
+Report date : ctl_dwh_batch_dttm.sas7bdat, SOURCE_SYSTEM_CD = 'SAS'
+SFTP info   : ctl_dwh_sftp_info.sas7bdat
+"""
+
 import tempfile
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -10,78 +223,22 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from PBBELQ import prtel, prteli
-
-
-
+from DALWPBBD import build_savg_curn_dept
+from FALWPBBD import build_fdwkly_uma
 
 # ============================================================================
 # CONTROL FILE CONFIGURATION
 # ============================================================================
-CTL_DIR        = Path("/sasdata/dwh/control")
-CTL_BATCH_DTTM = CTL_DIR / "ctl_dwh_batch_dttm.sas7bdat"   # all dates
-CTL_SFTP_INFO  = CTL_DIR / "ctl_dwh_sftp_info.sas7bdat"    # all SFTP info
-BATCH_SOURCE   = "SAS"                                      # SOURCE_SYSTEM_CD used for report date
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+CTL_SFTP_INFO  = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+BATCH_SOURCE   = "SAS"      # SOURCE_SYSTEM_CD used for the report date
 
-# ============================================================================
-# PATH CONFIGURATION (each physical input kept independent)
-# ============================================================================
-# --- Production Path ---
-BASE_DIR            = Path("/dwh - KENA KONFEMKAN DULU KAT MANA")
-INPUT_BNMK_REP2_DIR = BASE_DIR / "EIB" / "BNMK"                  # bnmk_rep2
-INPUT_BNMK_REP4_DIR = BASE_DIR / "EIB" / "BNMK"                  # bnmk_rep4
-INPUT_BNMK_TBL1_DIR = BASE_DIR / "EIB" / "BNMK"                  # bnmk_tbl1  (used by PBBELQ)
-INPUT_BNMK_DCI_DIR  = BASE_DIR / "EIB" / "BNMK"                  # bnmk_dci   (used by PBBELQ)
-INPUT_BNM_ELW_DIR   = BASE_DIR / "EII" / "BNM"                   # bnm_elw
-INPUT_ELG_GOLD_DIR  = BASE_DIR / "EIB" / "ELG"                   # elg_gold   (used by PBBELQ)
-
-OUTPUT_DIR      = Path("/host_pq/mis/output/report/EIBWKAPE")
-OUTPUT_NSRS_DIR = OUTPUT_DIR / "nsrs"
-
-# # --- Testing Path ---
-# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
-# INPUT_BNMK_REP2_DIR = STG_DIR / "EIB/BNMK" / "rep2081.sas7bdat"
-# INPUT_BNMK_REP4_DIR = STG_DIR / "EIB/BNMK" / "rep4081.sas7bdat"
-# INPUT_BNMK_TBL1_DIR = STG_DIR / "EIB" / "BNMK" / "tbl1081.sas7bdat"
-# INPUT_BNMK_DCI_DIR  = STG_DIR / "EIB" / "BNMK" / "dci081.sas7bdat"
-# INPUT_BNM_ELW_DIR   = STG_DIR / "EII/BNMB" / "elw081.sas7bdat"
-# INPUT_ELG_GOLD_DIR  = STG_DIR / "EIB" / "ELG"  / "gold081.sas7bdat"
-
-# OUTPUT_DIR      = BASE_DIR / "output" / "EIBWKAPE"
-# OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIBWKAPE" / "nsrs"
-
-# Output file names (no date: the JCL names carry none)
-OUTPUT_FILE      = OUTPUT_DIR / "EIBWKAPD.txt"
-OUTPUT_NSRS_FILE = OUTPUT_NSRS_DIR / "EIBWKAPD.txt"
-
-# Temporary parquet area (deleted when the program ends; None = system temp)
-TEMP_DIR = None
-
-for _d in (OUTPUT_DIR, OUTPUT_NSRS_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
-
-# ============================================================================
-# SFTP CONFIGURATION (credentials come from ctl_dwh_sftp_info.sas7bdat)
-# ============================================================================
-SFTP_HOST_DESC  = "Data Report Repository (DRR)"      # HOST_DESC in the control file
-SFTP_REMOTE_DIR = "FD-BNM REPORTING/PBB/BNM RPTG"
-
-# ============================================================================
-# GLOBAL CONFIGURATION
-# ============================================================================
-CHUNK_ROWS = 500_000
-PAGE_SIZE = 60
-
-_TMP    = tempfile.TemporaryDirectory(prefix="EIBWKAPE_", dir=TEMP_DIR)
-TMP_DIR = Path(_TMP.name)
+# SFTP target — mirrors JCL: cd "FD-BNM REPORTING/PIBB/BNM RPTG"
+SFTP_HOST_DESC  = "Data Report Repository (DRR)"   # HOST_DESC in ctl_dwh_sftp_info
+SFTP_PORT       = 22
+SFTP_REMOTE_DIR = "FD-BNM REPORTING/PIBB/BNM RPTG"
 
 
-
-
-# ============================================================================
-# HELPER: BATCH DATE FROM CONTROL FILE
-# ============================================================================
 def get_batch_date(source_system_cd: str) -> date:
     """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
     ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
@@ -92,40 +249,93 @@ def get_batch_date(source_system_cd: str) -> date:
     return pd.Timestamp(hit.iloc[0]).date()
 
 
-# ============================================================================
-# HELPER: SFTP INFO FROM CONTROL FILE + UPLOAD
-# ============================================================================
 def get_sftp_info(host_desc: str) -> dict:
     """Read SFTP_ID / SFTP_PW / HOST_IP for the given HOST_DESC from the control file."""
     ctl = pd.read_sas(str(CTL_SFTP_INFO), encoding="latin1")
-    for col in ("SFTP_ID", "SFTP_PW", "HOST_IP", "HOST_DESC"):
-        ctl[col] = ctl[col].fillna("").astype(str).str.strip()
+    for col in ["SFTP_ID", "SFTP_PW", "HOST_IP", "HOST_DESC"]:
+        ctl[col] = ctl[col].astype(str).str.strip()
     hit = ctl.loc[ctl["HOST_DESC"] == host_desc]
     if hit.empty:
         raise ValueError(f"HOST_DESC '{host_desc}' not found in {CTL_SFTP_INFO}")
     row = hit.iloc[0]
-    return {"user": row["SFTP_ID"], "password": row["SFTP_PW"], "host": row["HOST_IP"]}
-
-
-def sftp_put(host_desc: str, remote_dir: str, local_path: Path,
-             remote_name: str, port: int = 22) -> None:
-    """Upload local_path to remote_dir/remote_name on the host identified by host_desc."""
-    info = get_sftp_info(host_desc)
-    transport = paramiko.Transport((info["host"], port))
-    try:
-        transport.connect(username=info["user"], password=info["password"])
-        sftp = paramiko.SFTPClient.from_transport(transport)
-        try:
-            sftp.chdir(remote_dir)
-            sftp.put(str(local_path), remote_name)
-        finally:
-            sftp.close()
-    finally:
-        transport.close()
+    return {"HOST": row["HOST_IP"], "USER": row["SFTP_ID"], "PASSWORD": row["SFTP_PW"]}
 
 
 # ============================================================================
-# HELPER: STREAM .sas7bdat -> TEMPORARY PARQUET (schema locked on first chunk)
+# REPORT DATE / WEEK NUMBER
+# DATA REPTDATE; SET DEPOSIT.REPTDATE; SELECT(DAY(REPTDATE)) ...
+# (REPTDATE now comes from the SAS batch date in the control file)
+# ============================================================================
+print("Step 0: Deriving report date / week number...")
+
+REPTDATE = get_batch_date(BATCH_SOURCE)
+
+_day = REPTDATE.day
+if _day == 8:
+    NOWK = "1"
+elif _day == 15:
+    NOWK = "2"
+elif _day == 22:
+    NOWK = "3"
+else:
+    NOWK = "4"
+
+REPTDAY  = f"{REPTDATE.day:02d}"           # DD token in input filenames
+REPTMON  = f"{REPTDATE.month:02d}"         # PUT(MONTH(REPTDATE),Z2.)
+REPTYEAR = REPTDATE.strftime("%y")         # PUT(REPTDATE,YEAR2.)
+REPTWEEK = NOWK
+REPTDT   = REPTDATE.strftime("%d%m%y")     # PUT(REPTDATE,DDMMYYN6.)
+
+print(f"  REPTDATE : {REPTDATE}")
+print(f"  REPTMON  : {REPTMON}")
+print(f"  NOWK     : {NOWK}")
+print(f"  REPTDT   : {REPTDT}")
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# Production Path
+BASE_DIR   = Path("/sas/deposit/dwh")
+OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Saving / Current / Uma: single PBB-version files containing BOTH entities,
+# discriminated by ENTITY_CD (PIBB filter applied below).
+INPUT_SAVING_FILE   = BASE_DIR / "integration" / f"intg_dp_acct_saving_d{REPTDAY}.sas7bdat"
+INPUT_CURRENT_FILE  = BASE_DIR / "integration" / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
+INPUT_UMA_FILE      = BASE_DIR / "integration" / f"intg_dp_acct_uma_d{REPTDAY}.sas7bdat"
+
+# FD: cert-level (no ENTITY_CD) + account-level (has ACCTNO + ENTITY_CD).
+INPUT_FD_CERT_FILE  = BASE_DIR / "enrichment"  / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
+INPUT_FD_ACCT_FILE  = BASE_DIR / "integration" / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+
+# Shared PBB file (no ENTITY_CD -> not filtered).
+INPUT_CISDP_FILE    = Path("/dwh/rs_cis") / f"cisr1ca{REPTMON}{REPTWEEK}{REPTYEAR}.sas7bdat"
+
+# Output: REXL_49299_ddmmyy.XLS (same name locally and on the DRR host)
+REMOTE_FILENAME = f"REXL_49299_{REPTDT}.XLS"
+OUTPUT_FILE     = OUTPUT_DIR / REMOTE_FILENAME
+
+CHUNK_ROWS = 500_000
+TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
+
+LRECL = 1000        # RECFM=FB, LRECL=1000 -> each output line padded to 1000 chars
+DLM   = chr(0x05)   # SAS '05'X delimiter
+
+CUSTCD_NON_RESIDENT = [
+    "80", "81", "82", "83", "84", "85", "86", "87", "88", "89",
+    "90", "91", "92", "95", "96", "98", "99",
+]
+PRODCD_ELIGIBLE = ["42132", "42199"]
+
+BNMCODE = "4929980000000Y"
+
+
+
+
+# ============================================================================
+# INPUT CONVERSION  (.sas7bdat -> temporary Parquet; temp folder is deleted
+# automatically, so no cache is kept)
 # ============================================================================
 def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
     """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
@@ -142,539 +352,157 @@ def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
             else:
                 table = table.cast(schema)
             writer.write_table(table)
-        if writer is None:
-            # Source has no rows: still write the schema so read_parquet works
-            empty = pd.read_sas(str(src), encoding="latin1")
-            for col in empty.columns[empty.dtypes == object]:
-                empty[col] = empty[col].astype("string")
-            table = pa.Table.from_pandas(empty, preserve_index=False)
-            writer = pq.ParquetWriter(str(dst), table.schema, compression="snappy")
-            writer.write_table(table)
     finally:
         if writer is not None:
             writer.close()
 
 
-def convert_input(sas_path: Path, tag: str) -> Path:
-    """Convert one .sas7bdat input to a temporary parquet file and return its path."""
-    if not sas_path.exists():
-        raise FileNotFoundError(f"[{tag}] input not found: {sas_path}")
-    dst = TMP_DIR / f"{tag}.parquet"
-    print(f"  [{tag}] Converting {sas_path.name} -> temporary parquet ...")
-    sas_to_parquet(sas_path, dst)
-    return dst
+def _filter_pibb(src_parquet: Path, dst_parquet: Path) -> None:
+    """Keep only ENTITY_CD = 'PIBB' rows (NULL ENTITY_CD is not PIBB)."""
+    con = duckdb.connect()
+    try:
+        con.execute(f"""
+            COPY (
+                SELECT *
+                FROM read_parquet('{src_parquet.as_posix()}')
+                WHERE TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) = 'PIBB'
+            ) TO '{dst_parquet.as_posix()}' (FORMAT PARQUET, COMPRESSION SNAPPY)
+        """)
+    finally:
+        con.close()
+
+
+def _filter_fd_cert_pibb(cert_parquet: Path, acct_parquet: Path, dst_parquet: Path) -> None:
+    """
+    Cert-level FD has no ENTITY_CD: keep only certs whose ACCTNO belongs to a
+    PIBB account in the account-level FD file (semi-join on ACCTNO, so no row
+    duplication if the account-level file holds several rows per ACCTNO).
+    """
+    con = duckdb.connect()
+    try:
+        con.execute(f"""
+            COPY (
+                SELECT c.*
+                FROM read_parquet('{cert_parquet.as_posix()}') AS c
+                WHERE CAST(c.ACCTNO AS BIGINT) IN (
+                    SELECT DISTINCT CAST(ACCTNO AS BIGINT)
+                    FROM read_parquet('{acct_parquet.as_posix()}')
+                    WHERE TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) = 'PIBB'
+                )
+            ) TO '{dst_parquet.as_posix()}' (FORMAT PARQUET, COMPRESSION SNAPPY)
+        """)
+    finally:
+        con.close()
+
+
+def _convert_pibb(src: Path, tmp: Path, tag: str) -> Path:
+    """sas7bdat -> temp Parquet -> ENTITY_CD = 'PIBB' Parquet (raw copy removed)."""
+    raw = tmp / f"{tag}_raw.parquet"
+    out = tmp / f"{tag}.parquet"
+    print(f"  [{tag}] Converting {src.name} ...")
+    sas_to_parquet(src, raw)
+    _filter_pibb(raw, out)
+    raw.unlink()
+    return out
+
+
+def load_bnm_frames() -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """
+    Converts every input to temporary Parquet, passes the Parquet paths into
+    DALWPBBD / FALWPBBD, and returns (BNM_SAVG, BNM_CURN, BNM_FDWKLY).
+    The temporary folder is removed on exit; the returned frames are in memory.
+    """
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp_dir:
+        tmp = Path(tmp_dir)
+
+        saving_pq  = _convert_pibb(INPUT_SAVING_FILE,  tmp, "saving")
+        current_pq = _convert_pibb(INPUT_CURRENT_FILE, tmp, "current")
+        uma_pq     = _convert_pibb(INPUT_UMA_FILE,     tmp, "uma")
+
+        # FD: cert-level restricted to PIBB accounts through the account-level file
+        print(f"  [fd] Converting {INPUT_FD_CERT_FILE.name} + {INPUT_FD_ACCT_FILE.name} ...")
+        fd_cert_raw = tmp / "fd_cert_raw.parquet"
+        fd_acct_raw = tmp / "fd_acct_raw.parquet"
+        fd_pq       = tmp / "fd.parquet"
+        sas_to_parquet(INPUT_FD_CERT_FILE, fd_cert_raw)
+        sas_to_parquet(INPUT_FD_ACCT_FILE, fd_acct_raw)
+        _filter_fd_cert_pibb(fd_cert_raw, fd_acct_raw, fd_pq)
+        fd_cert_raw.unlink()
+        fd_acct_raw.unlink()
+
+        # CISDP: no ENTITY_CD column -> not filtered
+        print(f"  [cisdp] Converting {INPUT_CISDP_FILE.name} ...")
+        cisdp_pq = tmp / "cisdp.parquet"
+        sas_to_parquet(INPUT_CISDP_FILE, cisdp_pq)
+
+        # %INC PGM(DALWPBBD) / %INC PGM(FALWPBBD)
+        bnm_savg, bnm_curn, _bnm_dept = build_savg_curn_dept(saving_pq, current_pq, cisdp_pq)
+        bnm_fdwkly, _bnm_uma          = build_fdwkly_uma(fd_pq, uma_pq)
+
+    return bnm_savg, bnm_curn, bnm_fdwkly
 
 
 
 
 # ============================================================================
-# STEP 1: REPORT DATE  (LOAN.REPTDATE equivalent -> batch date, source SAS)
-# DATA REPTDAT1; SET LOAN.REPTDATE; SDESC='PUBLIC BANK BERHAD'; ...
-#      CALL SYMPUT('MTHEND',PUT(DAY(REPTDATE),Z2.));
+# STEP 1: BUILD COMBINED SET
+# DATA _NULL_; SET BNM.SAVG&REPTMON&NOWK BNM.CURN&REPTMON&NOWK
+#     BNM.FDWKLY(RENAME=(INTPAY=INTPAYBL CUSTCODE=CUSTCD BIC=PRODCD
+#                        ACCTTYPE=PRODUCT)) END=LAST;
+# WHERE PRODCD IN ('42132','42199') & CUSTCD IN (...) & INTPAYBL NOT IN (.,0);
+# (inputs sourced from DALWPBBD / FALWPBBD, fed with PIBB-filtered Parquet)
 # ============================================================================
-print("Step 1: Deriving report date (REPTDAT1)...")
+print("\nStep 1: Combining SAVG / CURN / FDWKLY (renamed) and filtering...")
 
-# ---- FOR VALIDATION: force report date to 8 August 2026 ----
-# from datetime import date
-# FIXED_DATE = date(2026, 8, 9) - timedelta(days=1)
-# class Dummy:
-#     pass
-# _reptdat1 = Dummy()
-# _reptdat1.reptdate = FIXED_DATE
-# -----------------------------------------------------------
+BNM_SAVG, BNM_CURN, BNM_FDWKLY = load_bnm_frames()
 
-REPTDATE = get_batch_date(BATCH_SOURCE)
-SDESC   = "PUBLIC BANK BERHAD"
-RDATE   = REPTDATE.strftime("%d/%m/%y")    # DDMMYY8.
-RYEAR   = REPTDATE.strftime("%Y")          # YEAR4.
-MTHNAM  = REPTDATE.strftime("%B")          # MONNAME.
-MTHEND  = f"{REPTDATE.day:02d}"            # Z2.
-
-print(f"  SDESC  : {SDESC}")
-print(f"  RDATE  : {RDATE}")
-print(f"  RYEAR  : {RYEAR}")
-print(f"  MTHNAM : {MTHNAM}")
-print(f"  MTHEND : {MTHEND}")
-
-# ============================================================================
-# STEP 2: WEEK / MONTH DERIVATION  (BNMK.REPTDATE equivalent -> same batch date)
-# DATA REPTDATE; SET BNMK.REPTDATE; MM=MONTH(SXDATE);
-#   custom week buckets;
-#   IF WK='4' THEN roll back one month (and one year if January).
-# ============================================================================
-print("\nStep 2: Deriving week/month bucket (REPTDATE)...")
-
-SXDATE = REPTDATE
-# SXDATE = date(2026, 8, 8)
-_day = SXDATE.day
-if 1 <= _day <= 7:
-    WK = "4"
-elif 8 <= _day <= 15:
-    WK = "1"
-elif 16 <= _day <= 22:
-    WK = "2"
-else:
-    WK = "3"
-
-MM = SXDATE.month
-if WK == "4":
-    MM1 = MM - 1
-    if MM1 == 0:
-        MM1 = 12
-    MM = MM1
-    if MM == 12:
-        # SXDATE = MDY(1,1,YEAR(SXDATE)) - 1  ->  31-Dec of prior year
-        SXDATE = date(SXDATE.year, 1, 1) - timedelta(days=1)
-
-NOWK     = WK                       # CALL SYMPUT('NOWK', WK) -- identical to WK
-REPTMON  = f"{MM:02d}"              # Z2.
-RPDATE   = SXDATE.strftime("%d/%m/%y")
-REPTYEAR = SXDATE.strftime("%Y")    # YEAR4.
-
-print(f"  WK / NOWK : {WK}")
-print(f"  REPTMON   : {REPTMON}")
-print(f"  REPTYEAR  : {REPTYEAR}")
-print(f"  RPDATE    : {RPDATE}")
-
-# LIBNAME BNM "SAP.PBB.D&REPTYEAR" DISP=SHR;
-# Following EIIWKAPE.py's convention, INPUT_BNM_ELW_DIR is kept static
-# rather than re-derived per REPTYEAR (see module docstring).
-
-
-
-
-rep2_cache = convert_input(
-    INPUT_BNMK_REP2_DIR / f"rep2{REPTMON}{WK}.sas7bdat", "bnmk_rep2"
+_savg = BNM_SAVG.select(
+    ["BRANCH", "ACCTNO", "CUSTCD", "PRODCD", "NAME", "PRODUCT", "INTPAYBL"]
 )
-
-
-
-
-rep4_cache = convert_input(
-    INPUT_BNMK_REP4_DIR / f"rep4{REPTMON}{WK}.sas7bdat", "bnmk_rep4"
+_curn = BNM_CURN.select(
+    ["BRANCH", "ACCTNO", "CUSTCD", "PRODCD", "NAME", "PRODUCT", "INTPAYBL"]
 )
+# RENAME=(INTPAY=INTPAYBL CUSTCODE=CUSTCD BIC=PRODCD ACCTTYPE=PRODUCT)
+_fdwkly = BNM_FDWKLY.select([
+    "BRANCH", "ACCTNO",
+    pl.col("CUSTCODE").alias("CUSTCD"),
+    pl.col("BIC").alias("PRODCD"),
+    "NAME",
+    pl.col("ACCTTYPE").alias("PRODUCT"),
+    pl.col("INTPAY").alias("INTPAYBL"),
+])
 
-
-
-
-print("\nStep 6: Rendering PBBELQ daily EL detail reports...")
-
-# Inputs owned by this program and handed to PBBELQ (%INC equivalent).
-tbl1_cache = convert_input(
-    INPUT_BNMK_TBL1_DIR / f"tbl1{REPTMON}{NOWK}.sas7bdat", "bnmk_tbl1"
-)
-dci_cache = convert_input(
-    INPUT_BNMK_DCI_DIR / f"dci{REPTMON}{NOWK}.sas7bdat", "bnmk_dci"
-)
-gold_cache = convert_input(
-    INPUT_ELG_GOLD_DIR / f"gold{REPTMON}{NOWK}.sas7bdat", "elg_gold"
-)
-# BNM ELW: also reused by Step 9 (NOWK == WK, same physical file)
-elw_wk_cache = convert_input(
-    INPUT_BNM_ELW_DIR / f"elw{REPTMON}{WK}.sas7bdat", "bnm_elw"
-)
-
-from PBBELQ import build_elw1 as _pbbelq_build_elw1
-elw1 = _pbbelq_build_elw1(elw_wk_cache)
-
-pbbelq_lines: list[str] = []
-for day_code in ("DAYA", "DAYB", "DAYC", "DAYD", "DAYE", "DAYF", "DAYG", "DAYH"):
-    pbbelq_lines.extend(
-        prtel(
-            day_code,
-            sdesc=SDESC, rdate=RDATE,
-            rep2_df=rep2_filtered, rep4_df=rep4_filtered, elw1=elw1,
-            tbl1_pq=tbl1_cache, dci_pq=dci_cache, gold_pq=gold_cache,
-        )
-    )
-
-pbbelq_lines.extend(
-    prteli(
-        "DAYI",
-        nowk=NOWK, rdate=RDATE,
-        rep2_df=rep2_filtered, rep4_df=rep4_filtered, elw1=elw1,
-        tbl1_pq=tbl1_cache, dci_pq=dci_cache, gold_pq=gold_cache,
-    )
-)
-
-del elw1
-gc.collect()
+combined = pl.concat([_savg, _curn, _fdwkly])
 
 
 
 
 # ============================================================================
-# STEP 13: SFTP THE REPORT TO THE DATA REPORT REPOSITORY (DRR)
-# RUNSFTP step -- cd "FD-BNM REPORTING/PBB/BNM RPTG"; PUT EIBWKAPD -> remote name
+# STEP 3: SFTP UPLOAD
+# DATA _NULL_; FILE SFTP01; PUT @1 "PUT //SAP.PIBB.REXL.TEXT  REXL_49299_&REPTDT..XLS";
+# RUNSFTP job step: cd "FD-BNM REPORTING/PIBB/BNM RPTG"
 # ============================================================================
-print("\nStep 13: Transferring output via SFTP...")
-
-sftp_put(SFTP_HOST_DESC, SFTP_REMOTE_DIR, OUTPUT_FILE, SFTP_REMOTE_NAME)
-
-print(f"  Host        : {SFTP_HOST_DESC}")
-print(f"  Remote dir  : {SFTP_REMOTE_DIR}")
-print(f"  Remote name : {SFTP_REMOTE_NAME}")
-
-del rep2, rep2_filtered, rep4_filtered, rep0, variance_df, pbbelq_lines
-gc.collect()
-
-# Remove temporary parquet files
-_TMP.cleanup()
-
-print("\nEIBWKAPE complete.")
-
-
-
-
---------------------------
-
-#!/usr/bin/env python3
-"""
-Program : PBBELQ.py
-Purpose : Macro-equivalent module converted from PBBELQ (split from PBBELP).
-          Builds and prints the detail daily Eligible Liabilities (EL)
-          items for DAY A - DAY H (prtel) and DAY I (prteli), for Public
-          Bank Berhad (PBB).
-
-Called by EIBWKAPE.py via:
-    from PBBELQ import build_elw1, prtel, prteli
-
-Structural note (vs. PIBELQ):
-    PBBELQ's DATA REP6/REP7 steps ("SET REP2 REP4") reuse the REP2/REP4
-    datasets already built by the CALLING program (EIBWKAPE.py) at the
-    point %INC PGM(PBBELQ) fires -- they do NOT re-read BNMK.REP2 fresh
-    from disk. prtel()/prteli() therefore take rep2_df/rep4_df as parameters.
-
-============================================================================
-INPUTS (all supplied by EIBWKAPE.py as temporary parquet paths, %INC style)
-============================================================================
-1. BNMK TBL1 (tbl1<REPTMON><NOWK>)  -> tbl1_pq    (prtel / prteli)
-2. BNMK DCI  (dci<REPTMON><NOWK>, REPTDATS column not used) -> dci_pq (prtel / prteli)
-3. BNM  ELW  (elw<REPTMON><NOWK>)   -> bnm_elw_pq (build_elw1)
-4. ELG  GOLD (gold<REPTMON><NOWK>)  -> gold_pq    (prtel / prteli; physical
-   file in this program, no inline seed step unlike EIIWKAPE)
-
-------------------------------------------------------------------------
-NON-FILE INPUT: EL / ELI ITEM CATALOGUE
-------------------------------------------------------------------------
-DATA ELITEM in the original SAS is built from `PROC SORT DATA=EL` (in
-%PRTEL, days A-H) and `PROC SORT DATA=ELI` (in %PRTELI, day I). Their column
-layout (BNMCODE, SIGN, FMTNAME, TYPE, IDX, DESC) is exactly PBBELF's
-EL_DEFINITIONS / ELI_DEFINITIONS tables, so they are sourced from the PBBELF
-format-library module rather than from a file:
-    from PBBELF import EL_DEFINITIONS, ELI_DEFINITIONS
-
-Dependency note (format functions):
-    %INC PGM(PBBELF); loads the PBBELF format library into the SAS
-    session. Aside from the EL_DEFINITIONS/ELI_DEFINITIONS data used
-    above, no PUT(var, <PBBELF-format>.) call appears in this program body,
-    so the PBBELF format functions are NOT imported.
-"""
-
-from pathlib import Path
-
-import duckdb
-import polars as pl
-
-from PBBELF import EL_DEFINITIONS, ELI_DEFINITIONS
-
-
-
-
-def build_elw1(bnm_elw_pq: Path) -> pl.DataFrame:
-    print("  Loading BNM ELW (build_elw1)...")
-
-    con = duckdb.connect(database=":memory:")
-    # elw1_raw = con.execute(f"""
-    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(BRANCH AS INTEGER) BRANCH,
-    #            CAST(ELDAY AS VARCHAR) ELDAY, CAST(AMOUNT AS DOUBLE) AMOUNT
-    #     FROM read_parquet('{bnm_elw_pq.as_posix()}')
-    # """).pl()
-    # elw1_raw = con.execute(f"""
-    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE,
-    #            CAST(ELDAY AS VARCHAR) ELDAY,
-    #            CAST(AMOUNT AS DOUBLE) AMOUNT
-    #     FROM read_parquet('{bnm_elw_pq.as_posix()}')
-    # """).pl()
-
-    elw1_raw = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE,
-               TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{bnm_elw_pq.as_posix()}')
-    """).pl()
-    con.close()
-
-    elw1_raw = elw1_raw.with_columns(pl.col("AMOUNT").abs())
-
-    rows = []
-    for row in elw1_raw.iter_rows(named=True):
-        bnmcode = row["BNMCODE"]
-        # branch = row["BRANCH"]
-        amount = row["AMOUNT"]
-
-        # IF BNMCODE='4929980000000Y' AND BRANCH > 3000 THEN DELETE;
-        # if bnmcode == "4929980000000Y" and (branch or 0) > 3000:
-        if bnmcode == "4929980000000Y":
-            continue
-
-        if bnmcode in ("3219902000000Y", "3219903000000Y", "3219912000000Y"):
-            rows.append({**row, "BNMCODE": "3219910000000Y", "AMOUNT": amount})
-        elif bnmcode in ("4411100000000Y", "4414000000000Y", "4413000000000Y"):
-            # BNXCODE=BNMCODE;
-            # IF BNXCODE='4411100000000Y' THEN BNMCODE='4411100000000Y'; (no-op)
-            # IF BNXCODE='4414000000000Y' THEN BNMCODE='4414000000000Y'; (no-op)
-            # IF BNXCODE^='4413000000000Y' THEN OUTPUT;
-            # BNMCODE='4410000000000Y'; OUTPUT;
-            if bnmcode != "4413000000000Y":
-                rows.append({**row, "BNMCODE": bnmcode, "AMOUNT": amount})
-            rows.append({**row, "BNMCODE": "4410000000000Y", "AMOUNT": amount})
-        elif bnmcode == "4019000000000Y":
-            rows.append({**row, "BNMCODE": "4019100000000Y", "AMOUNT": amount})
-            rows.append({**row, "BNMCODE": "4019000000000Y", "AMOUNT": 0.00})
-        else:
-            rows.append({**row, "BNMCODE": bnmcode, "AMOUNT": amount})
-
-    elw1 = pl.DataFrame(rows, schema=elw1_raw.schema) if rows else elw1_raw.clear()
-    return elw1
-
-
-
-
-def _load_gold(gold_pq: Path, day_code: str) -> pl.DataFrame:
-    """DATA ELG; SET ELG.GOLD&REPTMON&NOWK; IF ELDAY="&I"; -- physical input."""
-
-    con = duckdb.connect(database=":memory:")
-    # gold = con.execute(f"""
-    #     SELECT CAST(BNMCODE AS VARCHAR) BNMCODE, CAST(ELDAY AS VARCHAR) ELDAY,
-    #            CAST(AMOUNT AS DOUBLE) AMOUNT
-    #     FROM read_parquet('{gold_pq.as_posix()}')
-    #     WHERE ELDAY = '{day_code}'
-    # """).pl()
-
-    gold = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{gold_pq.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-    con.close()
-    return gold
-
-
-
-
-def prtel(day_code: str, *, sdesc: str, rdate: str,
-          rep2_df: pl.DataFrame, rep4_df: pl.DataFrame, elw1: pl.DataFrame,
-          tbl1_pq: Path, dci_pq: Path, gold_pq: Path) -> list[str]:
-    print(f"  [PBBELQ] prtel({day_code})...")
-
-    # DATA ELG; SET ELG.GOLD&REPTMON&NOWK; IF ELDAY="&I";
-    elg = _load_gold(gold_pq, day_code)
-
-    # DATA PMM; SET BNMK.TBL1&REPTMON&NOWK BNMK.DCI&REPTMON&NOWK(DROP=REPTDATS);
-    #           IF ELDAY="&I";
-    con = duckdb.connect(database=":memory:")
-    tbl1_df = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{tbl1_pq.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-
-    # (DROP=REPTDATS) -- REPTDATS is simply not selected below
-    dci_df = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{dci_pq.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-    con.close()
-
-    pmm = pl.concat([tbl1_df, dci_df], how="vertical")   # TBL1 then DCI (matches PMM order)
-
-    # DATA REP6; SET REP2 REP4; IF BNMCODE='3250000000000Y' THEN AMOUNT=NETAMT;
-    # BNMCODE='4017100000000Y'; IF ELDAY="&I";
-    rep6 = pl.concat([rep2_df, rep4_df.select(rep2_df.columns)], how="vertical")
-    rep6 = rep6.with_columns(
-        pl.when(pl.col("BNMCODE") == "3250000000000Y")
-        .then(pl.col("NETAMT"))
-        .otherwise(pl.col("AMOUNT"))
-        .alias("AMOUNT")
-    )
-    rep6 = rep6.with_columns(pl.lit("4017100000000Y").alias("BNMCODE"))
-    rep6 = rep6.filter(pl.col("ELDAY") == day_code).select(["BNMCODE", "AMOUNT"])
-
-    elw = _elw_for_day(elw1, day_code)
-
-    # DATA ELW; SET ELW REP6 PMM ELG;
-    elw_stack = pl.concat(
-        [
-            elw.select(["BNMCODE", "AMOUNT"]),
-            rep6.select(["BNMCODE", "AMOUNT"]),
-            pmm.select(["BNMCODE", "AMOUNT"]),
-            elg.select(["BNMCODE", "AMOUNT"]),
-        ],
-        how="vertical",
-    )
-
-    elitem = _el_catalogue(EL_DEFINITIONS)   # PROC SORT DATA=EL ...
-    elw_final = _finalize_elw(elw_stack, elitem, drop_4019=True)
-    elwt = _build_elwt(elw_final)
-    common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
-    elwt = elwt.select(common_cols)
-    elw_final = elw_final.select(common_cols)
-    combined = pl.concat([elwt, elw_final], how="vertical")
-
-    # Build the full header (titles + column header + dashed line) for this day
-    full_header = _get_full_header(True, day_code, rdate, sdesc)
-
-    # Render the A-RMEL and B-RMEA groups (includes subtotal lines)
-    rmel_lines = _render_report_rmel(combined)
-
-    # Render the remaining groups
-    rest_lines = _render_report_rest(combined)
-
-    # Assemble output
-    lines = full_header + rmel_lines
-    if rest_lines:
-        # Add only the title lines (no column header) before the rest groups
-        title_only = _get_day_title_lines(True, day_code, rdate, sdesc)
-        # Add a blank line between the subtotal and the repeated title? Actually the subtotal already has short dashes,
-        # and the original has a blank line after the subtotal and before the repeated title.
-        # We'll add an extra blank line.
-        lines += title_only + ["", ""] + rest_lines
-    else:
-        lines += rest_lines
-    return lines
-
-
-
-
-def prteli(day_code: str, *, nowk: str, rdate: str,
-           rep2_df: pl.DataFrame, rep4_df: pl.DataFrame, elw1: pl.DataFrame,
-           tbl1_pq: Path, dci_pq: Path, gold_pq: Path) -> list[str]:
-    print(f"  [PBBELQ] prteli({day_code})...")
-
-    # DATA REP7; SET REP2 REP4; IF BNMCODE='3250000000000Y' THEN AMOUNT=NETAMT;
-    # BNMCODE='4017100000000Y'; IF ELDAY="&I";
-    rep7 = pl.concat([rep2_df, rep4_df.select(rep2_df.columns)], how="vertical")
-    rep7 = rep7.with_columns(
-        pl.when(pl.col("BNMCODE") == "3250000000000Y")
-        .then(pl.col("NETAMT"))
-        .otherwise(pl.col("AMOUNT"))
-        .alias("AMOUNT")
-    )
-    rep7 = rep7.with_columns(pl.lit("4017100000000Y").alias("BNMCODE"))
-    rep7 = rep7.filter(pl.col("ELDAY") == day_code)
-    # PROC SUMMARY NWAY CLASS BNMCODE VAR AMOUNT
-    rep7 = rep7.group_by("BNMCODE").agg(pl.col("AMOUNT").sum().alias("AMOUNT"))
-
-    elw = _elw_for_day(elw1, day_code)
-
-    # DATA PMM; SET BNMK.DCI&REPTMON&NOWK(DROP=REPTDATS) BNMK.TBL1&REPTMON&NOWK;
-    #           IF ELDAY="&I";  -- note DCI-then-TBL1 order (swapped vs prtel)
-    con = duckdb.connect(database=":memory:")
-    dci_df = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{dci_pq.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-
-    tbl1_df = con.execute(f"""
-        SELECT TRIM(CAST(BNMCODE AS VARCHAR)) BNMCODE, TRIM(CAST(ELDAY AS VARCHAR)) ELDAY,
-               CAST(AMOUNT AS DOUBLE) AMOUNT
-        FROM read_parquet('{tbl1_pq.as_posix()}')
-        WHERE ELDAY = '{day_code}'
-    """).pl()
-    con.close()
-
-    pmm = pl.concat([dci_df, tbl1_df], how="vertical")
-
-    # DATA ELG; SET ELG.GOLD&REPTMON&NOWK; IF ELDAY="&I";
-    elg = _load_gold(gold_pq, day_code)
-
-    # DATA ELW; SET ELW REP7 ELG PMM;
-    elw_stack = pl.concat(
-        [
-            elw.select(["BNMCODE", "AMOUNT"]),
-            rep7.select(["BNMCODE", "AMOUNT"]),
-            elg.select(["BNMCODE", "AMOUNT"]),
-            pmm.select(["BNMCODE", "AMOUNT"]),
-        ],
-        how="vertical",
-    )
-
-    # WK='4' (literal); IF WK NE "&NOWK" THEN drop 4019000000000Y/4019100000000Y
-    drop_4019 = (nowk != "4")
-
-    elitem = _el_catalogue(ELI_DEFINITIONS)   # PROC SORT DATA=ELI ...
-    elw_final = _finalize_elw(elw_stack, elitem, drop_4019=drop_4019)
-    elwt = _build_elwt(elw_final)
-    common_cols = ["BNMCODE", "FMTNAME", "DESC", "SIGN", "AMOUNT", "TOTAL", "AMOUNX", "TOTALX"]
-    elwt = elwt.select(common_cols)
-    elw_final = elw_final.select(common_cols)
-    combined = pl.concat([elwt, elw_final], how="vertical")
-
-    # Build the full header for DAYI (no bank name)
-    full_header = _get_full_header(False, day_code, rdate)   # no bank name
-
-    rmel_lines = _render_report_rmel(combined)
-    rest_lines = _render_report_rest(combined)
-
-    lines = full_header + rmel_lines
-    if rest_lines:
-        title_only = _get_day_title_lines(False, day_code, rdate)
-        lines += title_only + ["", ""] + rest_lines
-    else:
-        lines += rest_lines
-    return lines
-
-
-
-
--------------------------
-
-SXDATE = REPTDATE
-# SXDATE = date(2026, 8, 8)
-_day = SXDATE.day
-if 1 <= _day <= 8:
-    WK = "4"
-elif 9 <= _day <= 15:
-    WK = "1"
-elif 16 <= _day <= 22:
-    WK = "2"
-else:
-    WK = "3"
-
-
-
-
-# --- Production Path ---
-BASE_DIR            = Path("/dwh - KENA KONFEMKAN DULU KAT MANA")
-INPUT_BNMK_REP2_DIR = BASE_DIR / "BNMK"                          # bnmk_rep2
-INPUT_BNMK_REP4_DIR = BASE_DIR / "BNMK"                          # bnmk_rep4
-INPUT_BNMK_TBL1_DIR = BASE_DIR / "BNMK"                          # bnmk_tbl1  (used by PBBELQ)
-INPUT_BNMK_DCI_DIR  = BASE_DIR / "BNMK"                          # bnmk_dci   (used by PBBELQ)
-INPUT_BNM_ELW_DIR   = BASE_DIR / "BNM"                           # bnm_elw
-INPUT_ELG_GOLD_DIR  = BASE_DIR / "ELG"                           # elg_gold   (used by PBBELQ)
-
-OUTPUT_DIR      = Path("/host_pq/mis/output/report/EIBWKAPE")
-OUTPUT_NSRS_DIR = OUTPUT_DIR / "nsrs"
-
-# # --- Testing Path ---
-# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# STG_DIR  = Path("/stgsrcsys/host/uat/AII/KAPE")
-# INPUT_BNMK_REP2_DIR = STG_DIR / "BNMK" / "rep2081.sas7bdat"
-# INPUT_BNMK_REP4_DIR = STG_DIR / "BNMK" / "rep4081.sas7bdat"
-# INPUT_BNMK_TBL1_DIR = STG_DIR / "BNMK" / "tbl1081.sas7bdat"
-# INPUT_BNMK_DCI_DIR  = STG_DIR / "BNMK" / "dci081.sas7bdat"
-# INPUT_BNM_ELW_DIR   = STG_DIR / "BNMB" / "elw081.sas7bdat"
-# INPUT_ELG_GOLD_DIR  = STG_DIR / "ELG"  / "gold081.sas7bdat"
-
-# OUTPUT_DIR      = BASE_DIR / "output" / "EIBWKAPE"
-# OUTPUT_NSRS_DIR = BASE_DIR / "output" / "EIBWKAPE" / "nsrs"
+def sftp_upload(local_file: Path, remote_dir: str, remote_name: str) -> None:
+    """Upload local_file to remote_dir/remote_name on the DRR host (info from ctl_dwh_sftp_info)."""
+    info = get_sftp_info(SFTP_HOST_DESC)
+    transport = paramiko.Transport((info["HOST"], SFTP_PORT))
+    try:
+        transport.connect(username=info["USER"], password=info["PASSWORD"])
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        try:
+            sftp.chdir(remote_dir)                       # cd "FD-BNM REPORTING/PIBB/BNM RPTG"
+            sftp.put(str(local_file), remote_name)       # PUT ... REXL_49299_ddmmyy.XLS
+        finally:
+            sftp.close()
+    finally:
+        transport.close()
+
+
+print("\nStep 3: Uploading via SFTP...")
+sftp_upload(OUTPUT_FILE, SFTP_REMOTE_DIR, REMOTE_FILENAME)
+print(f"  Uploaded {OUTPUT_FILE.name} -> {SFTP_REMOTE_DIR}/{REMOTE_FILENAME}")
+
+print("\nEIIWREXL complete.")
 
 
 
