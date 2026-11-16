@@ -9,13 +9,6 @@ Purpose : Loans in Arrears Report for CCD PFB (Month-End Version)
             branch subtotals and CAT grand totals.
 
 Original JCL notes (kept for traceability):
-    //DELETE   EXEC PGM=IEFBR14             -> old SASLIST (SAP.PBB.CCDTXT3)
-                                                deleted; equivalent handled by
-                                                opening the output file in "w"
-                                                mode.
-    //LOAN     DD DSN=SAP.PBB.MNILN(0)      -> NOT referenced anywhere in the
-                                                SAS program body; left as an
-                                                unused placeholder DD.
     //BRHFILE  DD DSN=RBP2.B033.PBB.BRANCH  -> fixed-width flat file (BRHDATA)
     //BNM      DD DSN=SAP.PBB.CCDTEMP(0)    -> SAS library (GDG generation 0)
                                                 holding REPTDATE and LOANTEMP.
@@ -24,9 +17,6 @@ Original JCL notes (kept for traceability):
                                                 convention; LOANTEMP is read
                                                 as a .sas7bdat and cached to
                                                 Parquet (EIBDLN1M pattern).
-    //PGM      DD DSN=SAP.BNM.PROGRAM       -> NOT referenced anywhere in the
-                                                SAS program body; left as an
-                                                unused placeholder DD.
 """
 
 import gc
@@ -45,18 +35,26 @@ import pyarrow.parquet as pq
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat")
+# Production Path
+BASE_DIR          = Path("/exdwh/host/ln/ccdtemp")
+LOANTEMP_FILE     = BASE_DIR / "loantemp.sas7bdat"
+INPUT_BRANCH_DIR  = Path("/sasdata/rawdata/lookup")
+INPUT_BRANCH_FILE = INPUT_BRANCH_DIR / "LKP_BRANCH"     # BRHFILE - static flat file
 
-CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR201"
-OUTPUT_DIR = BASE_DIR / "output" / "EIMAR201"
-
-LOANTEMP_FILE      = STG_DIR / "loantemp.sas7bdat"          # BNM.LOANTEMP GDG(0)
-INPUT_BRANCH_DIR   = Path("/sasdata/rawdata/lookup")
-INPUT_BRANCH_FILE  = INPUT_BRANCH_DIR / "LKP_BRANCH"         # BRHFILE - static flat file
-
+OUTPUT_DIR      = Path("/host_pq/mis/output/ln/report/EIMAR")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat")
+# LOANTEMP_FILE      = STG_DIR / "loantemp.sas7bdat"          # BNM.LOANTEMP GDG(0)
+# INPUT_BRANCH_DIR   = Path("/sasdata/rawdata/lookup")
+# INPUT_BRANCH_FILE  = INPUT_BRANCH_DIR / "LKP_BRANCH"         # BRHFILE - static flat file
+
+# CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR201"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIMAR201"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 LRECL      = 133          # DCB LRECL=133, RECFM=FBA -> byte 0 is the ASA
