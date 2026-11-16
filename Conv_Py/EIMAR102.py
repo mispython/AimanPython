@@ -27,11 +27,6 @@ from datetime import date, datetime, timedelta
 
 from REPTDATE import get_monthly_reptdate_values
 from input_date import get_latest_file
-# from output_date import build_output_file
-# build_output_file() is NOT used: EIMAR102's own output filename must carry
-# the exact yymmdd suffix derived from the MONTHLY reptdate below (matching
-# EIMAR101's convention), which build_output_file() cannot produce since it
-# always derives its date component from the DAILY REPTDATE.get_reptdate_values().
 
 # %INC PGM(PBBLNFMT);
 # PBBLNFMT is included at session level in the original SAS source, but no
@@ -47,18 +42,28 @@ HPD_PRODUCTS = (380, 381, 700, 705, 720, 725)
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat")
+# Production Path
+BASE_DIR          = Path("/exdwh/host/ln/ccdtemp")
+LOANTEMP_FILE     = BASE_DIR / "loantemp.sas7bdat"
+INPUT_BRANCH_DIR  = Path("/sasdata/rawdata/lookup")
+INPUT_BRANCH_FILE = INPUT_BRANCH_DIR / "LKP_BRANCH"     # BRHFILE - static flat file
 
-INPUT_BNM_DIR       = STG_DIR
-INPUT_BRANCH_FILE   = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
-EIMAR101_OUTPUT_DIR = BASE_DIR / "output" / "EIMAR101"   # predecessor program's CCDTXT2
-
-CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR101"
-OUTPUT_DIR = BASE_DIR / "output" / "EIMAR102"
-
+OUTPUT_DIR      = Path("/host_pq/mis/output/ln/report/EIMAR")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+EIMAR101_OUTPUT_DIR = OUTPUT_DIR   # predecessor program's CCDTXT2
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat")
+# INPUT_BNM_DIR       = STG_DIR
+# INPUT_BRANCH_FILE   = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
+# EIMAR101_OUTPUT_DIR = BASE_DIR / "output" / "EIMAR101"   # predecessor program's CCDTXT2
+
+# CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIMAR101"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIMAR102"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
