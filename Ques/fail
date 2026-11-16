@@ -1,5 +1,45 @@
-25MAR2027:00:00:00
+def _filter_fd_cert_pibb(cert_parquet: Path, acct_parquet: Path, dst_parquet: Path) -> None:
+    """
+    Cert-level FD (enrh_dp_fd_cert) has no ENTITY_CD and no NAME. Join it to the
+    account-level FD file (intg_dp_acct_fd) on ACCTNO, keep only PIBB accounts
+    (ENTITY_CD = 'PIBB'), take NAME from the account level, and rename the cert-level
+    columns back to the SAS names FALWPBBD expects.
+
+    The account-level side is reduced to one row per ACCTNO first, so a certificate
+    can never be duplicated by repeated account-level rows.
+    """
+    con = duckdb.connect()
+    try:
+        con.execute(f"""
+            COPY (
+                SELECT
+                    c.BRANCH_CD        AS BRANCH,
+                    c.ACCT_NUM         AS ACCTNO,
+                    c.CUSTOMER_CD      AS CUSTCD,
+                    a.NAME             AS NAME,
+                    c.ACCOUNT_TYPE_CD  AS ACCTTYPE,
+                    c.OPEN_IND         AS OPENIND,
+                    c.CURR_BAL         AS CURBAL,
+                    c.INT_PAYABLE      AS INTPAY,
+                    c.TERM             AS TERM,
+                    c.INT_PLAN         AS INTPLAN,
+                    c.MATURE_DT        AS MATDATE,
+                    c.PURPOSE_CD       AS PURPOSE
+                FROM read_parquet('{cert_parquet.as_posix()}') AS c
+                INNER JOIN (
+                    SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
+                           MIN(CAST(NAME AS VARCHAR)) AS NAME
+                    FROM read_parquet('{acct_parquet.as_posix()}')
+                    WHERE TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) = 'PIBB'
+                    GROUP BY CAST(ACCTNO AS BIGINT)
+                ) AS a
+                  ON CAST(c.ACCT_NUM AS BIGINT) = a.ACCTNO
+            ) TO '{dst_parquet.as_posix()}' (FORMAT PARQUET, COMPRESSION SNAPPY)
+        """)
+    finally:
+        con.close()
 
 
 
 
+            CAST(MATDATE AS DATE) AS MATDATE,
