@@ -112,46 +112,6 @@ from REPTDATE import get_reptdate_values
 from PBBLNFMT_AII import format_lnprod, format_odprod
 
 # ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-BASE_DIR = Path("/sas")
-
-INPUT_OD_DIR     = BASE_DIR / "deposit/dwh/integration"
-INPUT_LNNOTE_DIR = BASE_DIR / "ln/dwh/enrichment"
-INPUT_LOAN_DIR   = Path("/dwh/dwh_m/tempsource/ln")
-INPUT_PEND_DIR   = Path("/dwh/ilnd_ln")
-
-INPUT_OD_FILE     = INPUT_OD_DIR     / f"intg_dp_acct_overdft_d{REPTDAY}.sas7bdat"
-INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / f"enrh_ln_note_d{REPTDAY}.sas7bdat"
-INPUT_LOAN_FILE   = INPUT_LOAN_DIR   / f"loan{REPTYEAR}{REPTWEEK}"
-INPUT_PEND_FILE   = INPUT_PEND_DIR   / f"ipend{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-
-OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / f"EIIMRM04_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
-
-# # Testing Path
-# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
-
-# INPUT_OD_DIR     = STG_DIR / "sasdata"
-# INPUT_LOAN_DIR   = STG_DIR / "sasdata"
-# INPUT_LNNOTE_DIR = STG_DIR / "sasdata"
-# INPUT_PEND_DIR   = STG_DIR / "sasdata"
-
-# INPUT_OD_FILE     = INPUT_OD_DIR / "intg_dp_acct_overdft_d23.sas7bdat"
-# INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"
-# INPUT_PEND_FILE   = INPUT_PEND_DIR / "pend.sas7bdat"
-# # INPUT_LOAN_FILE is resolved after REPTMON/NOWK are derived (Step 1 below).
-
-# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
-# CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-CHUNK_ROWS = 500_000
-PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
-
-# ============================================================================
 # STEP 1: REPORT DATE / WEEK-OF-MONTH DERIVATION
 # (DATA _NULL_; SET LNNOTE.REPTDATE; SELECT(DAY(REPTDATE)) ...)
 # This exact-day match (8/15/22/otherwise) is DIFFERENT from REPTDATE.py's
@@ -206,6 +166,46 @@ RPYR, RPMTH, RPDAY = reptdate.year, reptdate.month, reptdate.day
 print(f"  RDATE            : {RDATE}")
 print(f"  REPTMON/DAY      : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}")
 print(f"  Output file      : {OUTPUT_FILE.name}")
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# Production Path
+BASE_DIR = Path("/sas")
+
+INPUT_OD_DIR     = BASE_DIR / "deposit/dwh/integration"
+INPUT_LNNOTE_DIR = BASE_DIR / "ln/dwh/enrichment"
+INPUT_LOAN_DIR   = Path("/dwh/dwh_m/tempsource/ln")
+INPUT_PEND_DIR   = Path("/dwh/ilnd_ln")
+
+INPUT_OD_FILE     = INPUT_OD_DIR     / f"intg_dp_acct_overdft_d{REPTDAY}.sas7bdat"
+INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / f"enrh_ln_note_d{REPTDAY}.sas7bdat"
+INPUT_LOAN_FILE   = INPUT_LOAN_DIR   / f"loan{REPTYEAR}{REPTWEEK}"
+INPUT_PEND_FILE   = INPUT_PEND_DIR   / f"ipend{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / f"EIIMRM04_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_OD_DIR     = STG_DIR / "sasdata"
+# INPUT_LOAN_DIR   = STG_DIR / "sasdata"
+# INPUT_LNNOTE_DIR = STG_DIR / "sasdata"
+# INPUT_PEND_DIR   = STG_DIR / "sasdata"
+
+# INPUT_OD_FILE     = INPUT_OD_DIR / "intg_dp_acct_overdft_d23.sas7bdat"
+# INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"
+# INPUT_PEND_FILE   = INPUT_PEND_DIR / "pend.sas7bdat"
+# # INPUT_LOAN_FILE is resolved after REPTMON/NOWK are derived (Step 1 below).
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
 
 # ============================================================================
 # DAYS-IN-MONTH HELPER  (equivalent of the RETAIN D1-D12/RD1-RD12 arrays --
