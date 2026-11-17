@@ -48,8 +48,6 @@ EIIWSTAF.py itself and is not re-implemented in this driver.
 import sys
 from pathlib import Path
 
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
 # ============================================================================
 # JCL DELETE STEP (PGM=IEFBR14) equivalent
 # DD1-DD8 -> SAP.PIBB.EIIMRM01.TEXT / EIIMRM02.TEXT / EIIMRM03.TEXT /
@@ -58,16 +56,33 @@ BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 # independent (not imported) so cleanup can happen before any program
 # module is loaded.
 # ============================================================================
+# Production Path
+BASE_DIR = Path("/host_pq/mis/output/report")
+
 _DELETE_TARGETS = [
-    BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM01.txt",   # DD1 / CRT01
-    BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM02.txt",   # DD2 / CRT02
-    BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM03.txt",   # DD3 / CRT03
-    BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM04.txt",   # DD4 / CRT04
-    BASE_DIR / "output" / "EIIMRPTS" / "EIIWSTAF.txt",   # DD5 / CRT05 (GDG +1)
-    BASE_DIR / "output" / "EIIMRPTS" / "EIIMLN03.txt",   # DD6 / CRT06
-    BASE_DIR / "output" / "EIIMRPTS" / "M4LOAN.txt",     # DD7 / CRT07
-    BASE_DIR / "output" / "EIIMRPTS" / "EIFMLN03.txt",   # DD8 / CRT08
+    BASE_DIR / "EIIMRPTS" / "EIIMRM01.txt",   # DD1 / CRT01
+    BASE_DIR / "EIIMRPTS" / "EIIMRM02.txt",   # DD2 / CRT02
+    BASE_DIR / "EIIMRPTS" / "EIIMRM03.txt",   # DD3 / CRT03
+    BASE_DIR / "EIIMRPTS" / "EIIMRM04.txt",   # DD4 / CRT04
+    BASE_DIR / "EIIMRPTS" / "EIIWSTAF.txt",   # DD5 / CRT05 (GDG +1)
+    BASE_DIR / "EIIMRPTS" / "EIIMLN03.txt",   # DD6 / CRT06
+    BASE_DIR / "EIIMRPTS" / "M4LOAN.txt",     # DD7 / CRT07
+    BASE_DIR / "EIIMRPTS" / "EIFMLN03.txt",   # DD8 / CRT08
 ]
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+# _DELETE_TARGETS = [
+#     BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM01.txt",   # DD1 / CRT01
+#     BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM02.txt",   # DD2 / CRT02
+#     BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM03.txt",   # DD3 / CRT03
+#     BASE_DIR / "output" / "EIIMRPTS" / "EIIMRM04.txt",   # DD4 / CRT04
+#     BASE_DIR / "output" / "EIIMRPTS" / "EIIWSTAF.txt",   # DD5 / CRT05 (GDG +1)
+#     BASE_DIR / "output" / "EIIMRPTS" / "EIIMLN03.txt",   # DD6 / CRT06
+#     BASE_DIR / "output" / "EIIMRPTS" / "M4LOAN.txt",     # DD7 / CRT07
+#     BASE_DIR / "output" / "EIIMRPTS" / "EIFMLN03.txt",   # DD8 / CRT08
+# ]
 
 
 def _delete_step() -> None:
@@ -92,9 +107,15 @@ def _delete_step() -> None:
 # honours the equivalent fixed-width layout. This step therefore only
 # guarantees the output directories exist ahead of time.
 # ============================================================================
+# Production Path
 _CREATE_DIRS = [
-    BASE_DIR / "output" / "EIIMRPTS",
+    BASE_DIR / "EIIMRPTS",
 ]
+
+# # Testing Path
+# _CREATE_DIRS = [
+#     BASE_DIR / "output" / "EIIMRPTS",
+# ]
 
 
 def _create_step() -> None:
