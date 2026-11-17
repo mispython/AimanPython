@@ -1,117 +1,132 @@
 #!/usr/bin/env python3
 """
-Program : EIIMLN03.py
-Purpose : Weighted Average Lending Rate on Loan (RDIR II)
-
-Dependency:
-    %INC PGM(PBBLNFMT); -> from PBBLNFMT import format_ln03fmt
-    LN03FMT.   is used directly ("LOANTYP = PUT(PRODUCT,LN03FMT.);").
-    All other PBBLNFMT formats/macro lists (LNPROD., LNDENOM., LNRATE.,
-    product lists, etc.) have no traceable PUT()/direct call anywhere in
-    this program body, so they are intentionally NOT imported here.
+Program : EIIWSTAF.py
+Purpose : Weekly Listing For Staff New Loan And Paid Loan (PBB + PIBB
+           staff loan accounts, cost-centre based staff-loan population).
 
 ============================================================================
-PHYSICAL INPUT DATASETS (each cached to Parquet independently, using the
-same chunked sas7bdat -> Parquet -> cache pattern as EIBDLN1M.py /
-EIIMRM01.py)
+PHYSICAL INPUT DATASETS  (each cached to Parquet independently, using the
+same chunked sas7bdat -> Parquet -> cache pattern)
 ============================================================================
-1. BNM.SDESC          (JCL //BNM DD DSN=SAP.PIBB.SASDATA)
-   File : INPUT_SDESC_FILE -> sdesc.sas7bdat
-   Cols used : SDESC
-   Used : DATA DESC; SET BNM.SDESC; CALL SYMPUT('SDESC', PUT(SDESC,$26.));
-          No BY / no RUN before the next DATA step -- SAS loops over every
-          row of SDESC, overwriting the SDESC macro variable each time, so
-          the FINAL value is the LAST observation's SDESC value. Reproduced
-          here by taking the last row.
+1. MNILN.LNNOTE   (JCL //MNILN  DD DSN=SAP.PBB.MNILN(0))
+   File : INPUT_LNNOTE_PBB_FILE  -> mnln_lnnote_pbb.sas7bdat
+   Used : PROC SORT ... WHERE (LOANTYPE<=61 OR LOANTYPE IN(...)) AND
+          COSTCTR=8044 (PBB staff cost centre).
 
-2. ODGP3.GP3          (JCL //ODGP3 DD DSN=SAP.PIBB.MNILIMT(0))
-   File : INPUT_GP3_FILE -> gp3.sas7bdat
-   Cols used : ACCTNO, RISKCODE
-   Used : DATA GP3; SET ODGP3.GP3; RISKRTE=INPUT(RISKCODE,1.);
-          IF RISKRTE < 1 THEN LOANSTAT = 1; -- derives a per-account
-          LOANSTAT flag later merged (BY ACCTNO, KEEP=ACCTNO LOANSTAT)
-          into the main loan dataset.
+2. MNILN.LNCOMM   (same //MNILN DD, member LNCOMM)
+   File : INPUT_LNCOMM_PBB_FILE  -> mnln_lncomm_pbb.sas7bdat
+   Used : merged onto LNNOTE (PBB) by ACCTNO/COMMNO for APPRLIMT sourcing.
 
-3. BNM.LOAN&REPTMON&NOWK  (JCL //BNM DD DSN=SAP.PIBB.SASDATA)
-   File : INPUT_LOAN_FILE -> constructed directly as
-          loan{REPTMON}{NOWK}.sas7bdat (fully deterministic from REPTMON +
-          NOWK, so input_date.get_latest_file() is NOT used here, per
-          project convention for month/week-suffixed deterministic inputs).
-   Cols used : ACCTNO, PRODUCT, PRODCD, ACCTYPE, BRANCH, INTRATE, BALANCE,
-               SPREAD, CENSUS
+3. IMNILN.LNNOTE  (JCL //IMNILN DD DSN=SAP.PIBB.MNILN(0))
+   File : INPUT_LNNOTE_PIBB_FILE -> imnln_lnnote_pibb.sas7bdat
+   Used : same as (1) but COSTCTR BETWEEN 3000 AND 3999 (PIBB staff range).
 
-NOWK here is derived by EXACT-DAY matching (day=8/15/22, else 4) -- this is
-DIFFERENT from REPTDATE.py's range-based NOWK and is genuinely used (unlike
-in EIIMRM01.py where an identically-derived NOWK was dead code), because it
-drives the input dataset name. It is therefore computed locally here rather
-than sourced from REPTDATE.get_reptdate_values().nowk.
+4. IMNILN.LNCOMM  (same //IMNILN DD, member LNCOMM)
+   File : INPUT_LNCOMM_PIBB_FILE -> imnln_lncomm_pibb.sas7bdat
+
+5. PAY.LNPAY&NOWK   (JCL //PAY  DD DSN=SAP.PBB.LNPAYSCH.WEEK, member LNPAY<wk>)
+   File : INPUT_LNPAY_PBB_FILE  -> lnpay<NOWK>.sas7bdat
+   NOWK is fully deterministic from REPTDATE (exact-day match, see Step 1),
+   so the filename is constructed directly -- input_date.get_latest_file()
+   is intentionally NOT used here (per project convention for deterministic
+   filenames).
+
+6. IPAY.ILNPAY&NOWK (JCL //IPAY DD DSN=SAP.PIBB.LNPAYSCH.WEEK, member ILNPAY<wk>)
+   File : INPUT_LNPAY_PIBB_FILE -> ilnpay<NOWK>.sas7bdat
+
+7. LNHIST.ISBASE  (JCL LIBNAME LNHIST "SAP.PBB.SGM.SASDATA", DISP=OLD)
+   File : INPUT_ISBASE_FILE -> lnhist_isbase.sas7bdat
+   This is a PERSISTENT history table of already-reported released/migrated
+   loan notes (ACCTNO, NOTENO only). It is both READ (as HIST, to exclude
+   previously-reported accounts) and WRITTEN to (PROC APPEND DATA=LNRELS1
+   BASE=LNHIST.ISBASE) every run. In this Python conversion the persistent
+   store is modelled as the cached ISBASE Parquet file itself: new
+   ACCTNO/NOTENO keys are appended onto ISBASE_CACHE at the end of the run
+   so subsequent runs' HIST dedup will exclude them. The underlying
+   .sas7bdat source file is not rewritten by this program.
 
 ============================================================================
-OUTPUTS
+OUTPUT
 ============================================================================
-1. //SASLIST DD DSN=SAP.PIBB.EIIMLN03, DCB=(RECFM=FB,LRECL=133,BLKSIZE=0)
-   -> OUTPUT_REPORT_FILE (EIIMLN03.txt). Fixed catalogued (GDG-style) name,
-      no date token -> output_date.py NOT applicable (no date component in
-      the original dataset name). RECFM=FB (not FBA) => NO ASA carriage
-      control byte, per project convention.
+//SASLIST DD DSN=SAP.PIBB.EIIWSTAF(+1), DISP=(NEW,CATLG,DELETE),
+          DCB=(RECFM=FB,LRECL=133,BLKSIZE=0)
+This is a GDG-style catalogued listing dataset with NO date token in the
+generation name (the "+1" is a GDG generation number, not a calendar date)
 
-2. //M4LOAN  DD DSN=SAP.PIBB.M4LOAN,  DCB=(RECFM=FB,LRECL=50, BLKSIZE=0)
-   -> OUTPUT_M4LOAN_FILE (M4LOAN.txt). Fixed catalogued name, no date token
-      -> output_date.py NOT applicable. All fields are Z-format
-      zero-padded decimal digits (no packed-decimal / COMP-3 fields), so
-      this stays a plain .txt flat file, not a binary .dat file.
+RECFM=FB (NOT FBA) means -- per project convention -- this report carries
+NO ASA carriage-control byte, matching the precedent already established in
+EIIMRM01.py. Page breaks (PAGESIZE=60, explicitly set via
+`OPTIONS LS=132 PS=60 NOCENTER;` in the SAS source) are marked with a plain
+form-feed character rather than an ASA '1' byte. All four PROC REPORT steps
+in the SAS source (LNSETTLE / LNRPT1A / LNRPT1B / LNRPT1C) write to this
+same physical SASLIST listing destination, in sequence.
 """
 
 import gc
-import pyreadstat
 from pathlib import Path
-from datetime import date, datateime, timedelta
+from datetime import date, timedelta
 
 import duckdb
+import pyreadstat
 import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from REPTDATE import get_reptdate_values
-from PBBLNFMT_AII import format_ln03fmt
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 # Production Path
-INPUT_SDESC_DIR = Path("/dwh")                                              # No need. Hardcoded into program
-INPUT_GP3_DIR   = Path("/sas/deposit/dwh/enrichment")
-INPUT_LOAN_DIR  = Path("/dwh/dwh_m/tempsource/ln")  
+BASE_DIR              = Path("/sas/ln/dwh")
+INPUT_LNNOTE_DIR      = BASE_DIR / "enrichment"
+INPUT_LNCOMM_DIR      = BASE_DIR / "enrichment"
+INPUT_LNNOTE_FILE     = INPUT_LNNOTE_DIR  / f"enrh_ln_note_d{REPTDAY}.sas7bdat"     # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
+INPUT_LNCOMM_FILE     = INPUT_LNCOMM_DIR  / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"     # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
 
-INPUT_SDESC_FILE = INPUT_SDESC_DIR / "sdesc.sas7bdat"                       # No need. Hardcoded into program
-INPUT_GP3_FILE   = INPUT_GP3_DIR   / "enrh_dp_gp3.sas7bdat"
-INPUT_LOAN_FILE  = INPUT_LOAN_DIR  / f"loan{REPTMON}{REPTWEEK}.sas7bdat"    # Filter by ENTITY_CD = "PIBB"
+DWH_DIR               = Path("/dwh")
+INPUT_LNPAY_PBB_DIR   = DWH_DIR / "ln_ln"
+INPUT_LNPAY_PIBB_DIR  = DWH_DIR / "iln_ln"
+INPUT_LNPAY_PBB_FILE  = INPUT_LNPAY_PBB_DIR  / f"lnpay{NOWK}.sas7bdat"    # PAY.LNPAY&NOWK
+INPUT_LNPAY_PIBB_FILE = INPUT_LNPAY_PIBB_DIR / f"ilnpay{NOWK}.sas7bdat"   # IPAY.ILNPAY&NOWK
+
+INPUT_ISBASE_DIR      = Path("/exdwh/host/sgm")
+INPUT_ISBASE_FILE     = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
 
 OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_REPORT_FILE = OUTPUT_DIR / f"EIIMLN03_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
-OUTPUT_M4LOAN_FILE = OUTPUT_DIR / f"M4LOAN_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"EIIWSTAF_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
 
 # # Testing Path
 # BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 # STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-# INPUT_SDESC_DIR = STG_DIR / "sasdata"
-# INPUT_GP3_DIR   = STG_DIR / "sasdata"
-# INPUT_LOAN_DIR  = STG_DIR / "sasdata"
+# INPUT_LNNOTE_PBB_DIR  = STG_DIR / "MNILN"
+# INPUT_LNCOMM_PBB_DIR  = STG_DIR / "MNILN"
+# INPUT_LNNOTE_PIBB_DIR = STG_DIR / "MNILN"
+# INPUT_LNCOMM_PIBB_DIR = STG_DIR / "MNILN"
+# # INPUT_LNNOTE_DIR      = STG_DIR / "MNILN"
+# # INPUT_LNCOMM_DIR      = STG_DIR / "MNILN"
+# INPUT_LNPAY_PBB_DIR   = STG_DIR / "sasdata"
+# INPUT_LNPAY_PIBB_DIR  = STG_DIR / "sasdata"
+# INPUT_ISBASE_DIR      = STG_DIR / "sasdata"
 
-# INPUT_SDESC_FILE = INPUT_SDESC_DIR / "sdesc.sas7bdat"
-# INPUT_GP3_FILE   = INPUT_GP3_DIR / "gp3.sas7bdat"
-# # INPUT_LOAN_FILE is built below once REPTMON / NOWK are known.
+# INPUT_LNNOTE_PBB_FILE  = INPUT_LNNOTE_PBB_DIR  / "pbb_lnnote.sas7bdat"     # MNILN.LNNOTE
+# INPUT_LNCOMM_PBB_FILE  = INPUT_LNCOMM_PBB_DIR  / "pbb_lncomm.sas7bdat"     # MNILN.LNCOMM
+# INPUT_LNNOTE_PIBB_FILE = INPUT_LNNOTE_PIBB_DIR / "pibb_lnnote.sas7bdat"   # IMNILN.LNNOTE
+# INPUT_LNCOMM_PIBB_FILE = INPUT_LNCOMM_PIBB_DIR / "pibb_lncomm.sas7bdat"   # IMNILN.LNCOMM
+# # INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"         # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
+# # INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "enrh_ln_comm_d22.sas7bdat"         # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
+# INPUT_ISBASE_FILE = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
 
-# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMLN03"
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
 # CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
-PAGE_SIZE  = 60      # lines per page (not specified in SAS -> default)
-LINE_WIDTH = 133     # DCB LRECL for SASLIST
-M4LOAN_LRECL = 50    # DCB LRECL for M4LOAN
+PAGE_SIZE  = 60     # OPTIONS PS=60 (explicit in SAS source)
+LINE_SIZE  = 132    # OPTIONS LS=132 (explicit in SAS source)
+FF = "\f"
 
 # ============================================================================
 # STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
@@ -119,60 +134,52 @@ M4LOAN_LRECL = 50    # DCB LRECL for M4LOAN
 print("Step 1: Deriving report date...")
 
 reptdate_values = get_reptdate_values(year_format="%Y")
-reptdate = reptdate_values.reptdate
+reptdate = reptdate_values.reptdate     # SAS: SET MNILN.REPTDATE (this run's REPTDATE)
 
-# NOWK here uses EXACT-DAY matching (day=8/15/22 else 4), which differs from
-# REPTDATE.py's range-based NOWK. Unlike EIIMRM01.py (where an identical
-# derivation was dead code), this NOWK IS used to build the input dataset
-# name below, so it is computed locally to preserve the SAS source exactly.
+# NOWK/SDD/STRDAY in the original SAS SELECT(DAY(REPTDATE)) block use an
+# EXACT-day match (8/15/22/else 23), which differs from REPTDATE.py's
+# range-based NOWK -- re-derived locally, same pattern as EIIMRM01.py.
 _day = reptdate.day
-NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
+if _day == 8:
+    STRDAY, NOWK = 1, "01"
+elif _day == 15:
+    STRDAY, NOWK = 9, "02"
+elif _day == 22:
+    STRDAY, NOWK = 16, "03"
+else:
+    STRDAY, NOWK = 23, "04"
 
-REPTYEAR = reptdate.strftime("%Y")   # PUT(REPTDATE,YEAR4.)
-REPTMON  = reptdate.strftime("%m")   # PUT(MONTH(REPTDATE),Z2.)
-REPTDAY  = reptdate.strftime("%d")   # PUT(DAY(REPTDATE),Z2.)
-RDATE    = reptdate.strftime("%d/%m/%y")   # PUT(REPTDATE,DDMMYY8.)
+RPYR, RPMTH = reptdate.year, reptdate.month
+PDATE = date(RPYR, RPMTH, 1)                 # MDY(MMP,01,YYP)
+EDATE = reptdate                             # PUT(REPTDATE,Z5.) -- used only for date-range comparisons
 
-print(f"  REPTYEAR/MON/DAY : {REPTYEAR}/{REPTMON}/{REPTDAY}   NOWK: {NOWK}")
-print(f"  RDATE            : {RDATE}")
-print(f"  LOAN input file  : {INPUT_LOAN_FILE.name}")
+# SDATE = MDY(MMP,SDD,YYP) is SYMPUT'd in the original SAS but &SDATE is
+# never referenced anywhere else in the program body -- dead value, kept
+# only for documentation parity.
+SDATE = date(RPYR, RPMTH, STRDAY)  # noqa: F841 (intentionally unused, mirrors SAS dead code)
 
-# ============================================================================
-# LOCAL PROC FORMAT: $LNFMT  (local to this program, NOT part of PBBLNFMT)
-# ============================================================================
-_LNFMT_LABELS = {
-    "P1": "PRESCRIBED RATE (HOUSING LOANS)",
-    "P2": "PRESCRIBED RATE (BNM FUNDED LOANS)",
-    "P3": "NON-PRESCRIBED RATE (HOUSING LOANS)",
-    "P4": "NON-PRESCRIBED RATE (OTHER LOANS)",
-}
+# PREVDATE / REPTMM / REPTYY: the original SAS `IF WK='4' THEN ... ELSE ...`
+# branch compares the 2-character WK ('01'/'02'/'03'/'04') against the
+# 1-character literal '4', which never matches -- the ELSE branch therefore
+# ALWAYS fires regardless of the actual week, so REPTMM/REPTYY are always
+# derived from PREVDATE even in week 4. Both macro variables are, in turn,
+# never referenced anywhere else in the program -- this whole branch is
+# dead code, preserved here only for documentation parity with the SAS
+# source (same treatment EIIMRM01.py gives its own dead NOWK derivation).
+PREVDATE = PDATE - timedelta(days=1)
+REPTMM = f"{PREVDATE.month:02d}"   # noqa: F841 (dead, mirrors SAS)
+REPTYY = PREVDATE.strftime("%y")   # noqa: F841 (dead, mirrors SAS)
+REPTMON = f"{RPMTH:02d}"           # noqa: F841 (SYMPUT'd but never referenced again -- dead, mirrors SAS)
 
+REPTDAY = reptdate.day
+REPTMTH = RPMTH
+REPTYEAR = RPYR
+RDATE = reptdate.strftime("%d/%m/%Y")   # PUT(REPTDATE, DDMMYY10.)
 
-def _lnfmt_label(code):
-    return _LNFMT_LABELS.get(code, code if code is not None else "")
-
-
-def _sas_round(x: float) -> float:
-    """SAS ROUND() with no scale argument: round to nearest integer,
-    halves away from zero."""
-    if x >= 0:
-        return float(int(x + 0.5))
-    return float(-int(-x + 0.5))
-
-
-def _input_1_numeric(text):
-    """INPUT(RISKCODE,1.) -- reads only the FIRST character of RISKCODE
-    (informat width 1) and converts it to a number."""
-    if text is None:
-        return None
-    s = str(text)
-    if len(s) == 0:
-        return None
-    try:
-        return float(s[0])
-    except ValueError:
-        return None
-
+print(f"  RDATE        : {RDATE}")
+print(f"  NOWK (week)  : {NOWK}   STRDAY: {STRDAY}   REPTDAY: {REPTDAY}")
+print(f"  PDATE..EDATE : {PDATE} .. {EDATE}")
+print(f"  Output file  : {OUTPUT_FILE.name}")
 
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
@@ -186,62 +193,23 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
 
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-
-    # 1. Read first chunk to get schema and data
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    first_chunk = None
-    try:
-        first_chunk = next(reader)
-    except StopIteration:
-        # File is empty: read entire file to get column schema (zero rows)
-        empty_df = pd.read_sas(sas_path, encoding="latin1")
-        if len(empty_df.columns) == 0:
-            # Fallback: create a completely empty Parquet file
-            pq.write_table(pa.Table.from_pandas(pd.DataFrame()), cache_path)
-        else:
-            fields = []
-            for col, dtype in empty_df.dtypes.items():
-                if dtype == 'object':
-                    pa_type = pa.string()
-                elif pd.api.types.is_integer_dtype(dtype):
-                    pa_type = pa.int64()
-                elif pd.api.types.is_float_dtype(dtype):
-                    pa_type = pa.float64()
-                else:
-                    pa_type = pa.from_numpy_dtype(dtype)
-                fields.append(pa.field(col, pa_type))
-            schema = pa.schema(fields)
-            empty_table = pa.Table.from_pandas(empty_df, schema=schema, preserve_index=False)
-            pq.write_table(empty_table, cache_path)
-        print(f"  [{tag}] Done - 0 rows cached (empty file).")
-        return
-
-    # 2. File has at least one row – process chunks
     writer = None
-    schema = None
     total = 0
 
-    # Process the first chunk we already fetched
-    chunks = [first_chunk] + list(reader)
-
-    for chunk in chunks:
-        if schema is None:
-            # Build schema from this chunk's dtypes
-            fields = []
-            for col, dtype in chunk.dtypes.items():
-                if dtype == 'object':
-                    pa_type = pa.string()
-                elif pd.api.types.is_integer_dtype(dtype):
-                    pa_type = pa.int64()
-                elif pd.api.types.is_float_dtype(dtype):
-                    pa_type = pa.float64()
-                else:
-                    pa_type = pa.from_numpy_dtype(dtype)
-                fields.append(pa.field(col, pa_type))
-            schema = pa.schema(fields)
+    reader = pyreadstat.read_file_in_chunks(
+        pyreadstat.read_sas7bdat,
+        str(sas_path),
+        chunksize=CHUNK_ROWS,
+        encoding="latin1",
+        disable_datetime_conversion=True,   # keep SAS numerics as-is, no date objects
+    )
+    for chunk, _meta in reader:
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+        if writer is None:
+            schema = table.schema
             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-
-        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        else:
+            table = table.cast(schema)
         writer.write_table(table)
         total += len(chunk)
         del chunk, table
@@ -252,10 +220,13 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
+FORCE_RECONVERT = False   # set True to rebuild the Parquet cache from .sas7bdat
+
+
 def _load_cached(sas_path: Path, tag: str) -> Path:
     cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
+    if cache_path.exists() and not FORCE_RECONVERT:
+        print(f"  [{tag}] Existing Parquet found - skipping conversion.")
     else:
         _sas_to_parquet(sas_path, cache_path, tag)
     return cache_path
@@ -265,257 +236,264 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # STEP 2: CACHE INPUT SAS FILES TO PARQUET
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-SDESC_CACHE = _load_cached(INPUT_SDESC_FILE, "SDESC")
-GP3_CACHE   = _load_cached(INPUT_GP3_FILE, "GP3")
-LOAN_CACHE  = _load_cached(INPUT_LOAN_FILE, "LOAN")
+LNNOTE_PBB_CACHE  = _load_cached(INPUT_LNNOTE_PBB_FILE, "LNNOTE_PBB")
+LNCOMM_PBB_CACHE  = _load_cached(INPUT_LNCOMM_PBB_FILE, "LNCOMM_PBB")
+LNNOTE_PIBB_CACHE = _load_cached(INPUT_LNNOTE_PIBB_FILE, "LNNOTE_PIBB")
+LNCOMM_PIBB_CACHE = _load_cached(INPUT_LNCOMM_PIBB_FILE, "LNCOMM_PIBB")
+# LNNOTE_CACHE      = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
+# LNCOMM_CACHE      = _load_cached(INPUT_LNCOMM_FILE, "LNCOMM")
+LNPAY_PBB_CACHE   = _load_cached(INPUT_LNPAY_PBB_FILE, "LNPAY_PBB")
+LNPAY_PIBB_CACHE  = _load_cached(INPUT_LNPAY_PIBB_FILE, "LNPAY_PIBB")
+ISBASE_CACHE      = _load_cached(INPUT_ISBASE_FILE, "ISBASE")
 
 # ============================================================================
-# STEP 3: DATA DESC; SET BNM.SDESC; CALL SYMPUT('SDESC', PUT(SDESC,$26.));
+# GENERIC HELPER: SAS `MERGE a(IN=x) b(IN=y); BY <keys>;` EMULATION
 # ============================================================================
-print("\nStep 3: Deriving &SDESC (last observation of BNM.SDESC)...")
-
-con = duckdb.connect(database=":memory:")
-sdesc_df = con.execute(f"""
-    SELECT CAST(SDESC AS VARCHAR) AS SDESC
-    FROM read_parquet('{SDESC_CACHE.as_posix()}')
-""").pl()
-con.close()
-
-_sdesc_raw = sdesc_df["SDESC"][-1] if len(sdesc_df) > 0 else ""
-SDESC = (_sdesc_raw or "")[:26].ljust(26)
-print(f"  SDESC: '{SDESC}'")
-
-# ============================================================================
-# STEP 4: DATA GP3; SET ODGP3.GP3; RISKRTE=INPUT(RISKCODE,1.);
-#         IF RISKRTE < 1 THEN LOANSTAT = 1;
-# ============================================================================
-print("\nStep 4: Building GP3 (RISKRTE / LOANSTAT)...")
-
-con = duckdb.connect(database=":memory:")
-gp3_raw = con.execute(f"""
-    SELECT
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(RISKCODE AS VARCHAR) AS RISKCODE
-    FROM read_parquet('{GP3_CACHE.as_posix()}')
-""").pl()
-con.close()
-
-# Only ACCTNO/LOANSTAT survive the later MERGE (KEEP=ACCTNO LOANSTAT), so we
-# only need a dict of ACCTNO -> LOANSTAT (present only where LOANSTAT=1;
-# absent = missing, matching SAS's un-assigned/ELSE-less behaviour).
-gp3_loanstat = {}
-for r in gp3_raw.iter_rows(named=True):
-    riskrte = _input_1_numeric(r["RISKCODE"])
-    if riskrte is not None and riskrte < 1:
-        gp3_loanstat[r["ACCTNO"]] = 1
-
-print(f"  GP3 rows: {len(gp3_raw):,}   Accounts flagged LOANSTAT=1: {len(gp3_loanstat):,}")
-
-# ============================================================================
-# STEP 5: DATA LOAN; SET BNM.LOAN&REPTMON&NOWK;
-#         IF PRODUCT IN (124,145) AND PRODCD='54120' THEN DELETE;
-# ============================================================================
-print("\nStep 5: Loading base LOAN dataset...")
-
-con = duckdb.connect(database=":memory:")
-loan_raw = con.execute(f"""
-    SELECT
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(PRODUCT  AS INTEGER) AS PRODUCT,
-        CAST(PRODCD   AS VARCHAR) AS PRODCD,
-        CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
-        CAST(BRANCH   AS INTEGER) AS BRANCH,
-        CAST(INTRATE  AS DOUBLE)  AS INTRATE,
-        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-        CAST(SPREAD   AS DOUBLE)  AS SPREAD,
-        CAST(CENSUS   AS DOUBLE)  AS CENSUS
-    FROM read_parquet('{LOAN_CACHE.as_posix()}')
-    WHERE NOT (PRODUCT IN (124,145) AND PRODCD = '54120')
-      AND ENTITY_CD = 'PIBB'
-""").pl()
-con.close()
-
-print(f"  LOAN rows after initial filter: {len(loan_raw):,}")
-
-# ============================================================================
-# STEP 6: DATA LOAN (KEEP=LOANTYP PRODCD LOANSTAT INTRATE BALANCE BRHNO);
-#         MERGE LOAN(IN=A) GP3(KEEP=ACCTNO LOANSTAT); BY ACCTNO; IF A;
-#         (per-row business logic, dangling-RISKRTE quirk preserved)
-# ============================================================================
-print("\nStep 6: Applying per-row merge/branch logic...")
-
-_LN_DELETE_SINGLES = {668, 669, 670, 672, 673, 674, 675, 690, 671, 676, 677}
-_LN_DELETE_RANGE1  = set(range(691, 696))   # 691:695
-_LN_DELETE_RANGE2  = set(range(851, 861))   # 851:860
-_LN_DELETE_SET = _LN_DELETE_SINGLES | _LN_DELETE_RANGE1 | _LN_DELETE_RANGE2
-
-_OD_P3_PRODUCTS = {120, 137, 138, 154, 155, 192, 193, 194, 195}
-_OD_P2_PRODUCTS = {73, 187, 188, 47, 48, 49, 17, 14}
-_CENSUS_169_SET = {169.01, 169.02, 169.03, 169.04}
+def _group_consecutive(rows, key_fields):
+    """Group PRE-SORTED rows into consecutive equal-key chunks (SAS BY-group
+    processing requires both merge inputs to already be sorted by the BY
+    variables)."""
+    groups = []
+    cur_key = None
+    cur_chunk = []
+    for r in rows:
+        k = tuple(r.get(f) for f in key_fields)
+        if cur_chunk and k != cur_key:
+            groups.append((cur_key, cur_chunk))
+            cur_chunk = []
+        cur_key = k
+        cur_chunk.append(r)
+    if cur_chunk:
+        groups.append((cur_key, cur_chunk))
+    return groups
 
 
-def _process_loan_row(row: dict) -> dict:
-    acctno   = row["ACCTNO"]
-    product  = row["PRODUCT"]
-    prodcd   = row["PRODCD"]
-    accttype = row["ACCTYPE"]
-    branch   = row["BRANCH"]
-    intrate  = row["INTRATE"]
-    balance  = row["BALANCE"]
-    spread   = row.get("SPREAD")
-    census   = row.get("CENSUS")
-
-    loanstat = gp3_loanstat.get(acctno)   # from GP3 merge (None = missing)
-    brhno = branch
-
-    if prodcd == "34111":
-        return None  # IF PRODCD='34111' THEN DELETE;
-
-    if not (isinstance(prodcd, str) and prodcd[:2] == "34"):
-        return None  # IF SUBSTR(PRODCD,1,2) = '34';  (subsetting IF)
-
-    loantyp = None
-
-    if accttype == "OD":
-        loantyp = "P4"
-        if product in (93, 162):
-            return None  # IF PRODUCT IN (93,162) THEN DELETE;
-        if product == 119:
-            loantyp = "P1"
-        elif product in _OD_P3_PRODUCTS:
-            loantyp = "P3"
-        elif product in _OD_P2_PRODUCTS:
-            loantyp = "P2"
-        # RISKRTE quirk: GP3 is merged with KEEP=ACCTNO LOANSTAT only, so
-        # RISKRTE itself never enters this MERGE step's PDV -- it is an
-        # uninitialised (missing) variable here. In SAS a missing numeric
-        # value compares as less than any real number, so
-        # "IF RISKRTE < 1 THEN LOANSTAT = 1;" is UNCONDITIONALLY TRUE for
-        # every OD account, forcing LOANSTAT=1 regardless of what the GP3
-        # merge produced. This looks like an original SAS bug and is
-        # preserved verbatim.
-        loanstat = 1
-
-    if accttype == "LN":
-        if product in (225, 226):
-            if (intrate is not None and intrate <= 9) or (spread is not None and spread <= 1.75):
-                loantyp = "P1"
-            else:
-                loantyp = "P3"
-        else:
-            loantyp = format_ln03fmt(product)
-        if product in _LN_DELETE_SET:
-            return None
-        if product == 169 and census in _CENSUS_169_SET:
-            loantyp = "P2"
-
-    if loantyp == "SL":
-        return None  # IF LOANTYP ^= 'SL';  (subsetting IF)
-
-    return {
-        "LOANTYP": loantyp, "PRODCD": prodcd, "LOANSTAT": loanstat,
-        "INTRATE": intrate, "BALANCE": balance, "BRHNO": brhno,
-    }
-
-
-loan_final_rows = []
-for r in loan_raw.iter_rows(named=True):
-    out = _process_loan_row(r)
-    if out is not None:
-        loan_final_rows.append(out)
-
-del loan_raw, gp3_raw
-gc.collect()
-
-print(f"  LOAN (final) rows: {len(loan_final_rows):,}")
-
-
-# ============================================================================
-# STEP 7: PROC SUMMARY helper (NWAY, default MISSING-exclusion, SUM ignores
-# missing contributions, matching PROC SUMMARY's SUM statistic semantics)
-# ============================================================================
-def _class_summary(rows, class_fields, sum_fields):
-    filtered = [r for r in rows if all(r.get(f) is not None for f in class_fields)]
-    groups = {}
-    for r in filtered:
-        key = tuple(r[f] for f in class_fields)
-        g = groups.setdefault(key, {f: None for f in sum_fields})
-        for f in sum_fields:
-            v = r.get(f)
-            if v is not None:
-                g[f] = (g[f] or 0.0) + v
+def _sas_merge_retain(left_rows, right_rows, key_fields):
+    """
+    Emulates `MERGE left(IN=a) right(IN=b); BY <key_fields>;`, including
+    SAS's documented (and easily-overlooked) behaviour for BY-groups with
+    non-unique BY values on either side: within a shared BY-group, the two
+    datasets are stepped through in lock-step, one new source observation
+    per DATA-step iteration from whichever side still has unread rows for
+    the group; once a side's rows for the group are exhausted, its non-BY
+    columns are simply RETAINED (not reset to missing) for the rest of the
+    group -- and, since only an actual MERGE read can change a PDV column,
+    that retention persists globally across BY-groups where a side
+    contributes zero observations, not just within one group (project
+    convention: "SAS MERGE last-dataset-wins semantics ... replicate by
+    explicitly tracking which dataset's columns win").
+    BY-key columns themselves always come from the current group's key
+    (SAS handles BY variables specially; they never go stale).
+    Returns combined dict rows tagged with '_IN_LEFT' / '_IN_RIGHT'.
+    """
+    left_groups = _group_consecutive(left_rows, key_fields)
+    right_groups = _group_consecutive(right_rows, key_fields)
+    li = ri = 0
+    retained_left: dict = {}
+    retained_right: dict = {}
     out = []
-    for key, sums in groups.items():
-        rec = dict(zip(class_fields, key))
-        rec.update(sums)
-        out.append(rec)
+
+    while li < len(left_groups) or ri < len(right_groups):
+        lkey = left_groups[li][0] if li < len(left_groups) else None
+        rkey = right_groups[ri][0] if ri < len(right_groups) else None
+
+        if lkey is not None and (rkey is None or lkey < rkey):
+            key, lrows, rrows = lkey, left_groups[li][1], []
+            li += 1
+        elif rkey is not None and (lkey is None or rkey < lkey):
+            key, lrows, rrows = rkey, [], right_groups[ri][1]
+            ri += 1
+        else:
+            key, lrows, rrows = lkey, left_groups[li][1], right_groups[ri][1]
+            li += 1
+            ri += 1
+
+        n = max(len(lrows), len(rrows))
+        in_left = len(lrows) > 0
+        in_right = len(rrows) > 0
+        for j in range(n):
+            if j < len(lrows):
+                retained_left = lrows[j]
+            if j < len(rrows):
+                retained_right = rrows[j]
+            combined = {**retained_left, **retained_right}
+            for i, f in enumerate(key_fields):
+                combined[f] = key[i]
+            combined["_IN_LEFT"] = in_left
+            combined["_IN_RIGHT"] = in_right
+            out.append(combined)
     return out
 
 
 # ============================================================================
-# STEP 8: REPORT #1
-#   PROC SUMMARY DATA=LOAN NWAY; CLASS LOANTYP INTRATE; VAR BALANCE;
-#   OUTPUT OUT=ALM SUM=; WHERE LOANSTAT = 1;
-#   DATA ALM; SET ALM; PRODUCT = INTRATE*BALANCE;
+# STEP 3/4: BUILD LNNOTE (PBB) AND ILNNOTE (PIBB)
+# DATA LNNOTE; MERGE LNNOTE(IN=A) LNCOMM; BY ACCTNO COMMNO; IF A; ...
 # ============================================================================
-print("\nStep 8: Building report #1 (LOANSTAT=1 accounts)...")
+def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str) -> list:
+    con = duckdb.connect(database=":memory:")
+    out_rows = con.execute(f"""
+        SELECT
+            n.LOANTYPE, n.NTBRCH, n.ORGTYPE, n.ACCTNO, n.COMMNO, n.CURBAL,
+            n.NOTENO, n.NAME, n.ISSUEDT, n.PAIDIND, n.BLDATE, n.BILPAY,
+            n.PAYAMT, n.INTRATE, n.STAFFNO, n.PAYEFFDT, n.ORGBAL, n.LASTTRAN,
+            n.LSTTRNAM, n.LSTTRNCD, n.RESTIND, n.FLAG1, n.FRELEAS,
+            CASE
+                WHEN COALESCE(n.COMMNO, 0) > 0 AND c.REVOVLI = 'N' THEN c.CORGAMT
+                WHEN COALESCE(n.COMMNO, 0) > 0                     THEN c.CCURAMT
+                ELSE n.ORGBAL
+            END AS APPRLIMT
+        FROM read_parquet('{note_cache.as_posix()}') n
+        LEFT JOIN read_parquet('{comm_cache.as_posix()}') c
+               ON n.ACCTNO = c.ACCTNO AND n.COMMNO = c.COMMNO
+        WHERE (n.LOANTYPE IS NULL OR n.LOANTYPE <= 61
+               OR n.LOANTYPE IN (100,102,103,104,105))
+          AND {costctr_sql}
+    """).pl().to_dicts()
+    con.close()
+    print(f"  [{tag}] LNNOTE rows after merge with LNCOMM: {len(out_rows):,}")
+    return out_rows
 
-alm1_rows = _class_summary(
-    [r for r in loan_final_rows if r["LOANSTAT"] == 1],
-    ["LOANTYP", "INTRATE"], ["BALANCE"],
-)
-for r in alm1_rows:
-    r["PRODUCT"] = (
-        r["INTRATE"] * r["BALANCE"]
-        if r["INTRATE"] is not None and r["BALANCE"] is not None else None
-    )
+
+print("\nStep 3: Building LNNOTE (PBB, COSTCTR=8044)...")
+lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "n.COSTCTR = 8044")
+
+# print("\nStep 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...")
+# lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
+#                                  entity_sql="ENTITY_CD <> 'PIBB'",
+#                                  costctr_sql="COSTCTR = 8044")
+
+print("\nStep 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...")
+lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
+                                 "n.COSTCTR BETWEEN 3000 AND 3999")
+
+# print("\nStep 4: Building ILNNOTE (PIBB, ENTITY_CD = 'PIBB', 3000<=COSTCTR<=3999)...")
+# lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_CACHE, LNCOMM_CACHE,
+#                                   entity_sql="ENTITY_CD = 'PIBB'",
+#                                   costctr_sql="COSTCTR BETWEEN 3000 AND 3999")
 
 # ============================================================================
-# STEP 9: REPORT #2
-#   PROC SUMMARY DATA=LOAN NWAY; CLASS LOANTYP INTRATE; VAR BALANCE;
-#   OUTPUT OUT=ALM SUM=; WHERE LOANTYP IN ('P1','P2');
-#   DATA ALM; SET ALM; PRODUCT = INTRATE*BALANCE;
+# STEP 5: DATA LOAN &INTGRVAR;  SET LNNOTE ILNNOTE;  ...
 # ============================================================================
-print("Step 9: Building report #2 (prescribed rates P1/P2)...")
+print("\nStep 5: Building LOAN (date parsing, PAYEFF, FULRELDTE, NOOFAC)...")
 
-alm2_rows = _class_summary(
-    [r for r in loan_final_rows if r["LOANTYP"] in ("P1", "P2")],
-    ["LOANTYP", "INTRATE"], ["BALANCE"],
-)
-for r in alm2_rows:
-    r["PRODUCT"] = (
-        r["INTRATE"] * r["BALANCE"]
-        if r["INTRATE"] is not None and r["BALANCE"] is not None else None
-    )
+SAS_DATE_EPOCH = date(1960, 1, 1)
+
+
+def _sas_date_to_py(v):
+    """Convert a raw SAS date number (days since 1960-01-01) to a Python date.
+    Required because _sas_to_parquet uses disable_datetime_conversion=True."""
+    if v is None:
+        return None
+    return SAS_DATE_EPOCH + timedelta(days=int(v))
+
+
+def _decode_z11_mmddyyyy(raw):
+    """MDY(INPUT(SUBSTR(PUT(val,Z11.),1,2),2.), SUBSTR(...,3,2), SUBSTR(...,5,4))
+    -- the raw numeric value's first 8 (of 11 zero-padded) digits encode
+    MM(2) DD(2) YYYY(4); any trailing digits (positions 9-11) are unused by
+    this derivation, exactly as in the original SAS."""
+    if raw is None:
+        return None
+    s = f"{int(raw):011d}"
+    mm, dd, yyyy = int(s[0:2]), int(s[2:4]), int(s[4:8])
+    return date(yyyy, mm, dd)
+
+
+def _decode_payeff(payeffdt):
+    """PAYEFF = SUBSTR(Z11.,10,2)||'/'||SUBSTR(Z11.,8,2)||'/'||SUBSTR(Z11.,3,2)
+    -- built from fixed character positions of the Z11.-padded PAYEFFDT
+    value; positions are replicated verbatim without inferring a semantic
+    date meaning for them (INPUT(...,$2.) on an already-character SUBSTR
+    result is just a character read, i.e. a no-op)."""
+    if payeffdt is None:
+        return None
+    s = f"{int(payeffdt):011d}"
+    return f"{s[9:11]}/{s[7:9]}/{s[2:4]}"
+
+
+def _decode_fulreldte(freleas):
+    """IF FRELEAS NOT IN (.,0) THEN FULRELDTE = INPUT(SUBSTR(Z11.,1,8),MMDDYY8.);
+    MMDDYY8. reads an unpunctuated MM(2)DD(2)YYYY(4) 8-character field."""
+    if freleas is None or freleas == 0:
+        return None
+    s = f"{int(freleas):011d}"
+    mm, dd, yyyy = int(s[0:2]), int(s[2:4]), int(s[4:8])
+    return date(yyyy, mm, dd)
+
+
+loan_rows = []
+for r in (lnnote_pbb_rows + lnnote_pibb_rows):
+    # &INTGRVAR KEEP list (BLDATE appears twice in the original SAS macro
+    # variable -- harmless duplicate, KEEP= just lists variable names).
+    loan_rows.append({
+        "LOANTYPE": r.get("LOANTYPE"), "NTBRCH": r.get("NTBRCH"), "ORGTYPE": r.get("ORGTYPE"),
+        "ACCTNO": r.get("ACCTNO"), "CURBAL": r.get("CURBAL"), "NOTENO": r.get("NOTENO"),
+        "NAME": r.get("NAME"), "APPRLIMT": r.get("APPRLIMT"),
+        "ISSDTE": _decode_z11_mmddyyyy(r.get("ISSUEDT")),
+        "PAIDIND": r.get("PAIDIND"), "BLDATE": r.get("BLDATE"), "BILPAY": r.get("BILPAY"),
+        "PAYAMT": r.get("PAYAMT"), "INTRATE": r.get("INTRATE"), "STAFFNO": r.get("STAFFNO"),
+        "PAYEFF": _decode_payeff(r.get("PAYEFFDT")), "ORGBAL": r.get("ORGBAL"),
+        "LASTTRAN": _decode_z11_mmddyyyy(r.get("LASTTRAN")),
+        "LSTTRNAM": r.get("LSTTRNAM"), "LSTTRNCD": r.get("LSTTRNCD"), "NOOFAC": 1,
+        "RESTIND": r.get("RESTIND"), "FLAG1": r.get("FLAG1"),
+        "FULRELDTE": _decode_fulreldte(r.get("FRELEAS")),
+    })
+
+# PROC SORT DATA=LOAN OUT=LOAN; BY ACCTNO NOTENO;
+loan_rows.sort(key=lambda r: (r["ACCTNO"], r["NOTENO"]))
+print(f"  LOAN rows: {len(loan_rows):,}")
 
 # ============================================================================
-# STEP 10: REPORT #3
-#   PROC SUMMARY DATA=ALM NWAY; CLASS INTRATE; VAR BALANCE PRODUCT;
-#   OUTPUT OUT=ALM(DROP=_FREQ_ _TYPE_) SUM=;
+# STEP 6: LNSETTLE  -- RPT: SETTLED A/C FOR THE WEEK
 # ============================================================================
-print("Step 10: Building report #3 (collapsed by INTRATE)...")
+print("\nStep 6: Building LNSETTLE (settled accounts for the week)...")
 
-alm3_rows = _class_summary(alm2_rows, ["INTRATE"], ["BALANCE", "PRODUCT"])
+lnsettle_rows = []
+for r in loan_rows:
+    lasttran = r["LASTTRAN"]
+    if (r.get("PAIDIND") in ("P", "C") and lasttran is not None
+            and STRDAY <= lasttran.day <= REPTDAY
+            and lasttran.month == REPTMTH
+            and lasttran.year == REPTYEAR):
+        row = dict(r)
+        row["SETTDT"] = row.pop("LASTTRAN")
+        row["SETTAMT"] = row.pop("LSTTRNAM")
+        row["SETTCD"] = row.pop("LSTTRNCD")
+        row["LSTRNDSC"] = "LAST TRANCODE EQ 652" if r.get("LSTTRNCD") == 652 else "LAST TRANCODE NE 652"
+        lnsettle_rows.append(row)
+
+lnsettle_for_report = sorted(lnsettle_rows, key=lambda r: (r["LSTRNDSC"], r["LOANTYPE"], r["NTBRCH"]))
+print(f"  LNSETTLE rows: {len(lnsettle_for_report):,}")
 
 # ============================================================================
-# STEP 11: REPORT RENDERING  (PROC PRINT emulation)
+# REPORT RENDERING HELPERS  (shared column-buffer helpers, per project
+# convention: fixed-width ASA output uses _put_buf/_place/_line helpers)
 # ============================================================================
-print("\nStep 11: Rendering PROC PRINT reports...")
-
-FF = "\f"
-OBS_LABEL_MAXLEN = 3      # width of the literal "Obs" text
-INTRATE_WIDTH    = 11     # not covered by SUM -> never totalled/dashed
-AMT_COL_WIDTH    = 22     # full column width for a COMMA18.2 field
-AMT_FMT_WIDTH    = 18     # formatted-number width inside that column
+def _new_line(width):
+    return [" "] * width
 
 
-def _obs_width(by_field):
-    """Obs column widens to fit the BY-variable NAME itself, since the
-    SUMBY subtotal row prints that name (e.g. 'LOANTYP') in this column."""
-    return max(OBS_LABEL_MAXLEN, len(by_field)) if by_field else OBS_LABEL_MAXLEN
+def _place(buf, col, text):
+    for i, ch in enumerate(str(text)):
+        pos = col - 1 + i
+        if 0 <= pos < len(buf):
+            buf[pos] = ch
 
 
-def _fmt_comma(value, width=AMT_FMT_WIDTH, decimals=2):
+def _line_str(buf):
+    return "".join(buf)
+
+
+def _center(text, width):
+    text = str(text)[:width]
+    pad = width - len(text)
+    left = pad // 2
+    return " " * left + text + " " * (pad - left)
+
+
+def _fmt_num(value, width, decimals):
+    """COMMAw.d with comma-drop-on-overflow; a genuinely absent cell (no
+    contributing rows) renders as a bare '0'."""
     if value is None:
         return "0".rjust(width)
     v = float(value)
@@ -527,247 +505,528 @@ def _fmt_comma(value, width=AMT_FMT_WIDTH, decimals=2):
     return s.rjust(width)
 
 
-def _fmt_best(value, width=INTRATE_WIDTH):
+def _fmt_plain_int(value, width):
     if value is None:
-        return "0".rjust(width)
-    v = float(value)
-    s = str(int(v)) if v == int(v) else f"{v:.6g}"
-    if len(s) > width:
-        s = f"{v:.2f}"
-    if len(s) > width:
-        s = s[:width]
-    return s.rjust(width)
+        return "".rjust(width)
+    return str(int(value)).rjust(width)
 
 
-def _amount_cell(value):
-    """Right-justify a COMMA18.2 value inside its full 22-wide column."""
-    return _fmt_comma(value).rjust(AMT_COL_WIDTH)
+# ============================================================================
+# STEP 7: RENDER LNSETTLE REPORT
+# PROC REPORT DATA=LNSETTLE ...; COLUMN LSTRNDSC LOANTYPE NTBRCH ORGTYPE
+#   STAFFNO ACCTNO NOTENO NAME APPRLIMT SETTDT SETTAMT PAYAMT SETTCD NOOFAC;
+# Column start positions below are calibrated to the explicit @col anchors
+# given in the SAS source's LINE statements (@016, @028, @070, @096, @110)
+# using the declared column WIDTH/FORMAT widths with 2-space gaps between
+# columns (one gap of 4 immediately before APPRLIMT, matching the source's
+# @070 anchor exactly). Header/data-row positions are algorithmically
+# derived; break/total-line positions are taken verbatim from the source.
+# ============================================================================
+SETTLE_COLS = [
+    ("LOANTYPE", 1, 3), ("NTBRCH", 6, 3), ("ORGTYPE", 11, 3), ("STAFFNO", 16, 5),
+    ("ACCTNO", 23, 10), ("NOTENO", 35, 5), ("NAME", 42, 24), ("APPRLIMT", 70, 14),
+    ("SETTDT", 86, 8), ("SETTAMT", 96, 12), ("PAYAMT", 110, 12), ("SETTCD", 124, 3),
+]
+SETTLE_WIDTH = 128
+SETTLE_HEADER = {
+    "LOANTYPE": ["FAC"], "NTBRCH": ["BRH", "CDE"], "ORGTYPE": ["ORG", "TYP"],
+    "STAFFNO": ["STAFF", "NUM"], "ACCTNO": ["A/C NO"], "NOTENO": ["NOTE", "NO"],
+    "NAME": ["NAME"], "APPRLIMT": ["APPROVED", "LIMIT"], "SETTDT": ["PAID", "DATE"],
+    "SETTAMT": ["SETTLEMENT", "AMOUNT"], "PAYAMT": ["MONTHLY", "REPAYMENT"],
+    "SETTCD": ["LST", "TRN", "CDE"],
+}
 
 
-def _title_lines(titles):
-    return [t for t in titles if t]
+def _settle_title_lines():
+    return [
+        "REPORT ID : EIIWSTAF (PIBB)",
+        f"WEEKLY REPORT FOR STAFF PAID LOAN LIST AS AT {RDATE}",
+        "",
+    ]
 
 
-def _render_proc_print(rows, by_field, sum_fields, titles, lnfmt_label=None):
-    """
-    Emulates PROC PRINT with (optionally) BY/PAGEBY/SUMBY <by_field> and
-    SUM <sum_fields>, FORMAT LOANTYP $LNFMT. BALANCE PRODUCT COMMA18.2.
+def _render_settle_report(rows):
+    lines = []
+    if not rows:
+        return lines
 
-    Fixed-column layout, no extra separator -- the padding itself is the
-    gutter (Obs | INTRATE | each summed field @ 22 wide).
+    state = {"first_page": True, "lines_on_page": 0}
 
-    Structural rules reproduced from the SAS listing:
-      - Titles + blank + 'BY=value' line ('(continued)' directly under it,
-        NO blank line above, on PAGEBY continuation pages) + blank +
-        header + blank + data rows (no blank between data rows).
-      - End of each BY group: NO blank line, then a dash line ('-------'
-        under Obs, blank under INTRATE, 18 dashes per summed column),
-        then immediately the subtotal row with the BY-VARIABLE NAME
-        (e.g. 'LOANTYP') in the Obs column.
-      - After the LAST BY group only: one more block -- blank Obs/INTRATE,
-        '==================' per summed column, then the grand total
-        across ALL BY groups combined.
-      - When by_field is None (no BY statement): no BY line, no dash/
-        subtotal rows, just data rows followed directly by the single
-        '=' grand-total block.
-    """
-    obs_w = _obs_width(by_field)
-    header_line = (
-        "Obs".rjust(obs_w) + "INTRATE".rjust(INTRATE_WIDTH)
-        + "".join(f.rjust(AMT_COL_WIDTH) for f in sum_fields)
-    )
-    blank_lead = " " * (obs_w + INTRATE_WIDTH)
-
-    output: list = []
-    lines_on_page = [0]
-
-    def _new_page(by_label, continued):
+    def _emit_header(new_page):
         block = []
-        t = _title_lines(titles)
-        block.append(FF + (t[0] if t else ""))
-        block.extend(t[1:])
-        block.append("")
-        if by_label is not None:
-            block.append(by_label)
-            if continued:
-                block.append("(continued)")
-            block.append("")
-        block.append(header_line)
-        block.append("")
-        output.extend(block)
-        lines_on_page[0] = len(block)
+        if new_page:
+            if not state["first_page"]:
+                block.append(FF)
+            state["first_page"] = False
+            block.extend(_settle_title_lines())
+        header_h = max(len(v) for v in SETTLE_HEADER.values())
+        bufs = [_new_line(SETTLE_WIDTH) for _ in range(header_h)]
+        for col, start, width in SETTLE_COLS:
+            seg = SETTLE_HEADER[col]
+            for i in range(header_h):
+                _place(bufs[i], start, _center(seg[i] if i < len(seg) else "", width))
+        block.extend(_line_str(b) for b in bufs)
+        block.append(_line_str(_new_line(SETTLE_WIDTH)))  # HEADSKIP
+        lines.extend(block)
+        state["lines_on_page"] = 0
 
-    if by_field:
-        groups, seen = [], set()
-        for r in rows:
-            v = r.get(by_field)
-            if v not in seen:
-                seen.add(v)
-                groups.append(v)
+    _emit_header(new_page=True)
+
+    def _zero_acc():
+        return {"NOOFAC": 0, "APPRLIMT": 0.0, "SETTAMT": 0.0, "PAYAMT": 0.0}
+
+    acc_ntbrch, acc_loantype, acc_lstrndsc, acc_grand = (_zero_acc() for _ in range(4))
+
+    def _accum(acc, r):
+        acc["NOOFAC"] += r.get("NOOFAC") or 0
+        acc["APPRLIMT"] += r.get("APPRLIMT") or 0.0
+        acc["SETTAMT"] += r.get("SETTAMT") or 0.0
+        acc["PAYAMT"] += r.get("PAYAMT") or 0.0
+
+    def _emit_ntbrch_break():
+        buf = _new_line(SETTLE_WIDTH)
+        _place(buf, 8, "-" * 121)
+        lines.append(_line_str(buf))
+        buf = _new_line(SETTLE_WIDTH)
+        _place(buf, 16, "NO OF A/C :")
+        _place(buf, 28, _fmt_num(acc_ntbrch["NOOFAC"], 8, 0))
+        _place(buf, 70, _fmt_num(acc_ntbrch["APPRLIMT"], 14, 2))
+        _place(buf, 96, _fmt_num(acc_ntbrch["SETTAMT"], 12, 2))
+        _place(buf, 110, _fmt_num(acc_ntbrch["PAYAMT"], 12, 2))
+        lines.append(_line_str(buf))
+        lines.append(_line_str(_new_line(SETTLE_WIDTH)))
+
+    def _emit_loantype_break():
+        lines.append("-" * SETTLE_WIDTH)
+        buf = _new_line(SETTLE_WIDTH)
+        _place(buf, 1, "FAC TOTAL")
+        _place(buf, 16, "NO OF A/C :")
+        _place(buf, 28, _fmt_num(acc_loantype["NOOFAC"], 8, 0))
+        _place(buf, 70, _fmt_num(acc_loantype["APPRLIMT"], 14, 2))
+        _place(buf, 96, _fmt_num(acc_loantype["SETTAMT"], 12, 2))
+        _place(buf, 110, _fmt_num(acc_loantype["PAYAMT"], 12, 2))
+        lines.append(_line_str(buf))
+        lines.append("-" * SETTLE_WIDTH)
+        lines.append(_line_str(_new_line(SETTLE_WIDTH)))
+
+    def _emit_lstrndsc_break():
+        lines.append("=" * SETTLE_WIDTH)
+        buf = _new_line(SETTLE_WIDTH)
+        _place(buf, 1, "SUB TOTAL")
+        _place(buf, 16, "NO OF A/C :")
+        _place(buf, 28, _fmt_num(acc_lstrndsc["NOOFAC"], 8, 0))
+        _place(buf, 70, _fmt_num(acc_lstrndsc["APPRLIMT"], 14, 2))
+        _place(buf, 96, _fmt_num(acc_lstrndsc["SETTAMT"], 12, 2))
+        _place(buf, 110, _fmt_num(acc_lstrndsc["PAYAMT"], 12, 2))
+        lines.append(_line_str(buf))
+        lines.append("=" * SETTLE_WIDTH)
+        lines.append(_line_str(_new_line(SETTLE_WIDTH)))
+
+    prev_lstrndsc = prev_loantype = prev_ntbrch = None
+
+    for r in rows:
+        lstrndsc, loantype, ntbrch = r.get("LSTRNDSC"), r.get("LOANTYPE"), r.get("NTBRCH")
+
+        if prev_ntbrch is not None and (lstrndsc, loantype, ntbrch) != (prev_lstrndsc, prev_loantype, prev_ntbrch):
+            _emit_ntbrch_break()
+            acc_ntbrch = _zero_acc()
+        if prev_loantype is not None and (lstrndsc, loantype) != (prev_lstrndsc, prev_loantype):
+            _emit_loantype_break()
+            acc_loantype = _zero_acc()
+        if prev_lstrndsc is not None and lstrndsc != prev_lstrndsc:
+            _emit_lstrndsc_break()
+            acc_lstrndsc = _zero_acc()
+
+        if state["lines_on_page"] >= PAGE_SIZE:
+            _emit_header(new_page=True)
+            prev_lstrndsc = prev_loantype = prev_ntbrch = None
+
+        show_loantype = loantype != prev_loantype
+        show_ntbrch = show_loantype or (ntbrch != prev_ntbrch)
+
+        buf = _new_line(SETTLE_WIDTH)
+        if show_loantype:
+            _place(buf, 1, _fmt_plain_int(loantype, 3))
+        if show_ntbrch:
+            _place(buf, 6, _fmt_plain_int(ntbrch, 3))
+        _place(buf, 11, str(r.get("ORGTYPE") or "")[:3])
+        _place(buf, 16, _fmt_plain_int(r.get("STAFFNO"), 5))
+        _place(buf, 23, _fmt_plain_int(r.get("ACCTNO"), 10))
+        _place(buf, 35, _fmt_plain_int(r.get("NOTENO"), 5))
+        _place(buf, 42, str(r.get("NAME") or "")[:24])
+        _place(buf, 70, _fmt_num(r.get("APPRLIMT"), 14, 2))
+        settdt = r.get("SETTDT")
+        _place(buf, 86, settdt.strftime("%d/%m/%y") if settdt else "")
+        _place(buf, 96, _fmt_num(r.get("SETTAMT"), 12, 2))
+        _place(buf, 110, _fmt_num(r.get("PAYAMT"), 12, 2))
+        _place(buf, 124, _fmt_plain_int(r.get("SETTCD"), 3))
+        lines.append(_line_str(buf))
+        state["lines_on_page"] += 1
+
+        _accum(acc_ntbrch, r); _accum(acc_loantype, r); _accum(acc_lstrndsc, r); _accum(acc_grand, r)
+        prev_lstrndsc, prev_loantype, prev_ntbrch = lstrndsc, loantype, ntbrch
+
+    _emit_ntbrch_break()
+    _emit_loantype_break()
+    _emit_lstrndsc_break()
+
+    buf = _new_line(SETTLE_WIDTH)
+    _place(buf, 1, "GRAND TOTAL ")
+    _place(buf, 16, "NO OF A/C : ")
+    _place(buf, 28, _fmt_num(acc_grand["NOOFAC"], 8, 0))
+    _place(buf, 70, _fmt_num(acc_grand["APPRLIMT"], 14, 2))
+    _place(buf, 96, _fmt_num(acc_grand["SETTAMT"], 12, 2))
+    _place(buf, 110, _fmt_num(acc_grand["PAYAMT"], 12, 2))
+    lines.append(_line_str(buf))
+    lines.append("=" * SETTLE_WIDTH)
+    return lines
+
+
+print("\nStep 7: Rendering LNSETTLE (PAID LOAN LIST) report...")
+settle_report_lines = _render_settle_report(lnsettle_for_report)
+
+# ============================================================================
+# STEP 8: HIST (ISBASE dedup) + LNRELES / LNRELS1
+# ============================================================================
+print("\nStep 8: Building LNRELES / LNRELS1 (release/migration accounts)...")
+
+con = duckdb.connect(database=":memory:")
+isbase_pl = con.execute(f"SELECT * FROM read_parquet('{ISBASE_CACHE.as_posix()}')").pl()
+con.close()
+
+# PROC SORT DATA=LNHIST.ISBASE OUT=HIST NODUPKEY; BY ACCTNO NOTENO;
+hist_pl = isbase_pl.sort(["ACCTNO", "NOTENO"]).unique(subset=["ACCTNO", "NOTENO"], keep="first")
+hist_rows = hist_pl.to_dicts()
+print(f"  HIST (deduped ISBASE) rows: {len(hist_rows):,}")
+
+merged_hist = _sas_merge_retain(loan_rows, hist_rows, key_fields=("ACCTNO", "NOTENO"))
+
+lnreles_rows = []
+for r in merged_hist:
+    if not (r["_IN_LEFT"] and not r["_IN_RIGHT"]):
+        continue  # IF A AND NOT B;
+    nmn = None
+    issdte = r.get("ISSDTE")
+    fulreldte = r.get("FULRELDTE")
+    if (fulreldte is not None and PDATE <= fulreldte <= EDATE
+            and r.get("FLAG1") == "M" and r.get("RESTIND") == "M"):
+        nmn = "Y"
+        issdte = fulreldte
+    if not ((issdte is not None and PDATE <= issdte <= EDATE) or nmn == "Y"):
+        continue
+    # commented-out alternative filter in the original SAS (day/month/year
+    # range check on ISSDTE) preserved as dead code below:
+    # IF DAY(ISSDTE) GE &STRDAY AND DAY(ISSDTE) LE &REPTDAY
+    # IF     MONTH(ISSDTE) EQ &REPTMTH
+    #    AND YEAR(ISSDTE) EQ &REPTYEAR;
+    row = dict(r)
+    row["ISSDTE"] = issdte
+    row["NMN"] = nmn
+    row["NWI"] = "Y"
+    lnreles_rows.append(row)
+
+print(f"  LNRELES rows: {len(lnreles_rows):,}")
+
+# PROC APPEND DATA=LNRELS1 BASE=LNHIST.ISBASE;  (LNRELS1 KEEP=ACCTNO NOTENO)
+lnrels1_rows = [{"ACCTNO": r["ACCTNO"], "NOTENO": r["NOTENO"]} for r in lnreles_rows]
+
+
+def _append_isbase(cache_path: Path, existing_pl: pl.DataFrame, new_rows: list) -> None:
+    """Models PROC APPEND DATA=LNRELS1 BASE=LNHIST.ISBASE by appending the
+    newly-released ACCTNO/NOTENO keys onto the cached ISBASE Parquet, so
+    future runs' HIST dedup will exclude accounts already reported as
+    released. The underlying isbase.sas7bdat source is not itself
+    rewritten by this Python program."""
+    if not new_rows:
+        print("  PROC APPEND equivalent: no new LNRELS1 rows to append.")
+        return
+    existing = existing_pl.select(["ACCTNO", "NOTENO"]) if existing_pl.height else pl.DataFrame(
+        {"ACCTNO": [], "NOTENO": []}
+    )
+    combined = pl.concat([existing, pl.DataFrame(new_rows)])
+    combined.write_parquet(cache_path)
+    print(f"  PROC APPEND equivalent: appended {len(new_rows):,} rows to "
+          f"{cache_path.name} (total rows now {combined.height:,}).")
+
+
+_append_isbase(ISBASE_CACHE, isbase_pl, lnrels1_rows)
+
+# PROC SORT DATA=LNRELES OUT=LNRELES; BY ACCTNO; RUN;
+# PROC SORT DATA=LNSETTLE OUT=LNSETTLE; BY ACCTNO; RUN;
+lnreles_by_acct = sorted(lnreles_rows, key=lambda r: r["ACCTNO"])
+lnsettle_by_acct = sorted(lnsettle_rows, key=lambda r: r["ACCTNO"])
+
+# ============================================================================
+# STEP 9: DATA LNRPT1A LNRPT1B; MERGE LNSETTLE(IN=B) LNRELES(IN=A); BY ACCTNO;
+# ============================================================================
+print("\nStep 9: Splitting into LNRPT1A (new loan) / LNRPT1B (migration)...")
+
+merged_acct = _sas_merge_retain(lnsettle_by_acct, lnreles_by_acct, key_fields=("ACCTNO",))
+
+lnrpt1a_rows, lnrpt1b_rows = [], []
+for r in merged_acct:
+    in_b = r["_IN_LEFT"]   # LNSETTLE's IN=B
+    in_a = r["_IN_RIGHT"]  # LNRELES's IN=A
+
+    if in_a and not in_b:
+        if r.get("NMN") == "Y":
+            lnrpt1b_rows.append(dict(r))
+        else:
+            lnrpt1a_rows.append(dict(r))
+
+    if in_a and in_b:
+        orgbal, settamt = r.get("ORGBAL"), r.get("SETTAMT")
+        if (orgbal == settamt) or (r.get("NMN") == "Y"):
+            lnrpt1b_rows.append(dict(r))
+        if orgbal == settamt:
+            continue  # DELETE; -- skips the NWI/PAIDIND check below
+        if r.get("NWI") == "Y" and r.get("PAIDIND") != "P":
+            lnrpt1a_rows.append(dict(r))
+
+print(f"  LNRPT1A rows: {len(lnrpt1a_rows):,}   LNRPT1B rows: {len(lnrpt1b_rows):,}")
+
+# ============================================================================
+# STEP 10: DATA LNPAY; SET PAY.LNPAY&NOWK IPAY.ILNPAY&NOWK; WHERE PAYAMT NE 0;
+# ============================================================================
+print("\nStep 10: Building LNPAY (weekly payment schedule)...")
+
+con = duckdb.connect(database=":memory:")
+# WHERE PAYAMT NE 0 -- SAS missing PAYAMT is NOT EQUAL to 0, so missing
+# rows are KEPT; COALESCE guards this SAS missing-value semantic (project
+# convention).
+lnpay_pbb = con.execute(f"""
+    SELECT ACCTNO, NOTENO, EFFDATE, PAYAMT
+    FROM read_parquet('{LNPAY_PBB_CACHE.as_posix()}')
+    WHERE COALESCE(PAYAMT, -1) != 0
+""").pl().to_dicts()
+lnpay_pibb = con.execute(f"""
+    SELECT ACCTNO, NOTENO, EFFDATE, PAYAMT
+    FROM read_parquet('{LNPAY_PIBB_CACHE.as_posix()}')
+    WHERE COALESCE(PAYAMT, -1) != 0
+""").pl().to_dicts()
+con.close()
+
+lnpay_rows = []
+for r in (lnpay_pbb + lnpay_pibb):
+    effdate = _sas_date_to_py(r.get("EFFDATE"))
+    # PAYEFFDD is a constant 99; PAYEFF = LEFT(COMPBL(PAYEFFDD||'/'||PAYEFFMM||'/'||PAYEFFYY))
+    # -- with a constant 2-digit PAYEFFDD and no embedded blanks, LEFT/COMPBL
+    # reduce to a plain "99/MM/YY" string.
+    payeff = f"99/{effdate.month:02d}/{effdate.strftime('%y')}" if effdate else None
+    lnpay_rows.append({"ACCTNO": r.get("ACCTNO"), "NOTENO": r.get("NOTENO"),
+                        "PAYEFF": payeff, "PAYAMT": r.get("PAYAMT")})
+
+# PROC SORT DATA=LNPAY; BY ACCTNO NOTENO PAYEFF;
+# PROC SORT DATA=LNPAY NODUPKEY; BY ACCTNO NOTENO;
+lnpay_rows.sort(key=lambda r: (r["ACCTNO"], r["NOTENO"], r["PAYEFF"] or ""))
+seen_keys = set()
+lnpay_dedup = []
+for r in lnpay_rows:
+    k = (r["ACCTNO"], r["NOTENO"])
+    if k in seen_keys:
+        continue
+    seen_keys.add(k)
+    lnpay_dedup.append(r)
+print(f"  LNPAY rows (deduped): {len(lnpay_dedup):,}")
+
+# ============================================================================
+# STEP 11: DATA LNRPT1B LNRPT1C; MERGE LNRPT1B(IN=A) LNPAY; BY ACCTNO NOTENO; IF A;
+# PAYEFF/PAYAMT come from LNPAY when matched (listed second -> overwrites);
+# when unmatched they are RETAINED from whatever LNPAY row was last read
+# globally -- a genuine SAS MERGE quirk, preserved via _sas_merge_retain.
+# ============================================================================
+print("\nStep 11: Splitting LNRPT1B into LNRPT1B (migration) / LNRPT1C (full release)...")
+
+lnrpt1b_sorted = sorted(lnrpt1b_rows, key=lambda r: (r["ACCTNO"], r["NOTENO"]))
+merged_paysched = _sas_merge_retain(lnrpt1b_sorted, lnpay_dedup, key_fields=("ACCTNO", "NOTENO"))
+
+lnrpt1b_final, lnrpt1c_rows = [], []
+for r in merged_paysched:
+    if not r["_IN_LEFT"]:
+        continue  # IF A;
+    if r.get("NMN") == "Y":
+        lnrpt1c_rows.append(r)
     else:
-        groups = [None]
+        lnrpt1b_final.append(r)
 
-    grand_totals = {f: 0.0 for f in sum_fields}
-    obs = 0
+print(f"  LNRPT1B (final) rows: {len(lnrpt1b_final):,}   LNRPT1C rows: {len(lnrpt1c_rows):,}")
 
-    for gi, grp in enumerate(groups):
-        grp_rows = rows if by_field is None else [r for r in rows if r.get(by_field) == grp]
-        by_label = f"{by_field}={lnfmt_label(grp) if lnfmt_label else grp}" if by_field else None
-
-        _new_page(by_label, continued=False)
-
-        for r in grp_rows:
-            if lines_on_page[0] >= PAGE_SIZE:
-                _new_page(by_label, continued=True)
-            obs += 1
-            line = str(obs).rjust(obs_w) + _fmt_best(r.get("INTRATE"))
-            for f in sum_fields:
-                line += _amount_cell(r.get(f))
-            output.append(line)
-            lines_on_page[0] += 1
-
-        group_sum = {f: 0.0 for f in sum_fields}
-        for r in grp_rows:
-            for f in sum_fields:
-                v = r.get(f)
-                if v is not None:
-                    group_sum[f] += v
-                    grand_totals[f] += v
-
-        if by_field:
-            dash_line = (
-                ("-" * obs_w) + (" " * INTRATE_WIDTH)
-                + "".join((" " * (AMT_COL_WIDTH - AMT_FMT_WIDTH) + "-" * AMT_FMT_WIDTH) for _ in sum_fields)
-            )
-            sum_line = (
-                by_field.ljust(obs_w) + (" " * INTRATE_WIDTH)
-                + "".join(_amount_cell(group_sum[f]) for f in sum_fields)
-            )
-            output.append(dash_line)
-            output.append(sum_line)
-            lines_on_page[0] += 2
-
-        if gi == len(groups) - 1:
-            eq_line = blank_lead + "".join(
-                (" " * (AMT_COL_WIDTH - AMT_FMT_WIDTH) + "=" * AMT_FMT_WIDTH) for _ in sum_fields
-            )
-            total_line = blank_lead + "".join(_amount_cell(grand_totals[f]) for f in sum_fields)
-            output.append(eq_line)
-            output.append(total_line)
-
-    return output
-
-
-_TITLE1 = "REPORT ID : EIIMLN03"
-titles_report1 = [
-    _TITLE1, SDESC,
-    f"WEIGHTED AVERAGE LENDING RATE AS AT {RDATE}",
+# ============================================================================
+# STEP 12: RENDER LNRPT1A / LNRPT1B / LNRPT1C  (shared column layout)
+# COLUMN LOANTYPE NTBRCH ORGTYPE STAFFNO ACCTNO NOTENO NAME APPRLIMT ISSDTE
+#        PAYEFF PAYAMT INTRATE NOOFAC;
+# Column positions calibrated to the explicit @col anchors in the SAS
+# source (@014, @026, @073, @110) the same way as the LNSETTLE report.
+# ============================================================================
+NEWLOAN_COLS = [
+    ("LOANTYPE", 1, 3), ("NTBRCH", 6, 4), ("ORGTYPE", 12, 4), ("STAFFNO", 18, 6),
+    ("ACCTNO", 26, 10), ("NOTENO", 38, 5), ("NAME", 45, 24), ("APPRLIMT", 73, 14),
+    ("ISSDTE", 89, 8), ("PAYEFF", 99, 9), ("PAYAMT", 110, 14), ("INTRATE", 126, 5),
 ]
-titles_report23 = [
-    _TITLE1, SDESC,
-    f"WEIGHTED AVERAGE LENDING RATE (PRESCRIBED) AS AT {RDATE}",
-    "(INCLUDES ACCOUNTS WITH PENALTY RATES & UNDER LITIGATION)",
+NEWLOAN_WIDTH = 130
+NEWLOAN_HEADER = {
+    "LOANTYPE": ["FAC"], "NTBRCH": ["BR", "CODE"], "ORGTYPE": ["ORG.", "TYPE"],
+    "STAFFNO": ["EMP.NO"], "ACCTNO": ["A/C NO"], "NOTENO": ["NOTE", "NO"],
+    "NAME": ["NAME"], "APPRLIMT": ["APPROVED", "LIMIT"], "ISSDTE": ["ISSUE", "DATE"],
+    "PAYEFF": ["PAYMENT", "EFF. DATE"], "PAYAMT": ["PAYMENT", "AMOUNT"],
+    "INTRATE": ["INT.", "RATE"],
+}
+
+
+def _newloan_title_lines(title2_text):
+    return [
+        "REPORT ID : EIIWSTAF (PIBB)",
+        f"WEEKLY REPORT FOR STAFF {title2_text} LOAN LIST AS AT {RDATE}",
+        "",
+    ]
+
+
+def _render_newloan_report(rows, title2_text):
+    lines = []
+    if not rows:
+        return lines
+
+    state = {"first_page": True, "lines_on_page": 0}
+
+    def _emit_header(new_page):
+        block = []
+        if new_page:
+            if not state["first_page"]:
+                block.append(FF)
+            state["first_page"] = False
+            block.extend(_newloan_title_lines(title2_text))
+        header_h = max(len(v) for v in NEWLOAN_HEADER.values())
+        bufs = [_new_line(NEWLOAN_WIDTH) for _ in range(header_h)]
+        for col, start, width in NEWLOAN_COLS:
+            seg = NEWLOAN_HEADER[col]
+            for i in range(header_h):
+                _place(bufs[i], start, _center(seg[i] if i < len(seg) else "", width))
+        block.extend(_line_str(b) for b in bufs)
+        block.append(_line_str(_new_line(NEWLOAN_WIDTH)))  # HEADSKIP
+        lines.extend(block)
+        state["lines_on_page"] = 0
+
+    _emit_header(new_page=True)
+
+    def _zero_acc():
+        return {"NOOFAC": 0, "APPRLIMT": 0.0, "PAYAMT": 0.0}
+
+    acc_ntbrch, acc_loantype, acc_grand = (_zero_acc() for _ in range(3))
+
+    def _accum(acc, r):
+        acc["NOOFAC"] += r.get("NOOFAC") or 0
+        acc["APPRLIMT"] += r.get("APPRLIMT") or 0.0
+        acc["PAYAMT"] += r.get("PAYAMT") or 0.0
+
+    def _emit_ntbrch_break():
+        buf = _new_line(NEWLOAN_WIDTH)
+        _place(buf, 8, "-" * 123)
+        lines.append(_line_str(buf))
+        buf = _new_line(NEWLOAN_WIDTH)
+        _place(buf, 14, "NO OF A/C :")
+        _place(buf, 26, _fmt_num(acc_ntbrch["NOOFAC"], 8, 0))
+        _place(buf, 73, _fmt_num(acc_ntbrch["APPRLIMT"], 14, 2))
+        _place(buf, 110, _fmt_num(acc_ntbrch["PAYAMT"], 14, 2))
+        lines.append(_line_str(buf))
+
+    def _emit_loantype_break():
+        lines.append("-" * NEWLOAN_WIDTH)
+        buf = _new_line(NEWLOAN_WIDTH)
+        _place(buf, 1, "SUB TOTAL")
+        _place(buf, 14, "NO OF A/C :")
+        _place(buf, 26, _fmt_num(acc_loantype["NOOFAC"], 8, 0))
+        _place(buf, 73, _fmt_num(acc_loantype["APPRLIMT"], 14, 2))
+        _place(buf, 110, _fmt_num(acc_loantype["PAYAMT"], 14, 2))
+        lines.append(_line_str(buf))
+        lines.append("-" * NEWLOAN_WIDTH)
+
+    prev_loantype = prev_ntbrch = None
+
+    for r in rows:
+        loantype, ntbrch = r.get("LOANTYPE"), r.get("NTBRCH")
+
+        if prev_ntbrch is not None and (loantype, ntbrch) != (prev_loantype, prev_ntbrch):
+            _emit_ntbrch_break()
+            acc_ntbrch = _zero_acc()
+        if prev_loantype is not None and loantype != prev_loantype:
+            _emit_loantype_break()
+            acc_loantype = _zero_acc()
+
+        if state["lines_on_page"] >= PAGE_SIZE:
+            _emit_header(new_page=True)
+            prev_loantype = prev_ntbrch = None
+
+        show_loantype = loantype != prev_loantype
+        show_ntbrch = show_loantype or (ntbrch != prev_ntbrch)
+
+        buf = _new_line(NEWLOAN_WIDTH)
+        if show_loantype:
+            _place(buf, 1, _fmt_plain_int(loantype, 3))
+        if show_ntbrch:
+            _place(buf, 6, _fmt_plain_int(ntbrch, 3).rjust(4))
+        _place(buf, 12, str(r.get("ORGTYPE") or "")[:4])
+        _place(buf, 18, _fmt_plain_int(r.get("STAFFNO"), 6))
+        _place(buf, 26, _fmt_plain_int(r.get("ACCTNO"), 10))
+        _place(buf, 38, _fmt_plain_int(r.get("NOTENO"), 5))
+        _place(buf, 45, str(r.get("NAME") or "")[:24])
+        _place(buf, 73, _fmt_num(r.get("APPRLIMT"), 14, 2))
+        issdte = r.get("ISSDTE")
+        _place(buf, 89, issdte.strftime("%d/%m/%y") if issdte else "")
+        _place(buf, 99, str(r.get("PAYEFF") or "")[:9])
+        _place(buf, 110, _fmt_num(r.get("PAYAMT"), 14, 2))
+        intrate = r.get("INTRATE")
+        _place(buf, 126, f"{intrate:.2f}" if intrate is not None else "")
+        lines.append(_line_str(buf))
+        state["lines_on_page"] += 1
+
+        _accum(acc_ntbrch, r); _accum(acc_loantype, r); _accum(acc_grand, r)
+        prev_loantype, prev_ntbrch = loantype, ntbrch
+
+    _emit_ntbrch_break()
+    _emit_loantype_break()
+
+    lines.append("-" * NEWLOAN_WIDTH)
+    buf = _new_line(NEWLOAN_WIDTH)
+    _place(buf, 1, "GRAND TOTAL ")
+    _place(buf, 14, "NO OF A/C : ")
+    _place(buf, 26, _fmt_num(acc_grand["NOOFAC"], 8, 0))
+    _place(buf, 73, _fmt_num(acc_grand["APPRLIMT"], 14, 2))
+    _place(buf, 110, _fmt_num(acc_grand["PAYAMT"], 14, 2))
+    lines.append(_line_str(buf))
+    lines.append("-" * NEWLOAN_WIDTH)
+    return lines
+
+
+print("\nStep 12: Rendering LNRPT1A / LNRPT1B / LNRPT1C reports...")
+# PROC SORT ... BY LOANTYPE NTBRCH; for each of the three report sources
+lnrpt1a_sorted = sorted(lnrpt1a_rows, key=lambda r: (r["LOANTYPE"], r["NTBRCH"]))
+lnrpt1b_sorted_final = sorted(lnrpt1b_final, key=lambda r: (r["LOANTYPE"], r["NTBRCH"]))
+lnrpt1c_sorted = sorted(lnrpt1c_rows, key=lambda r: (r["LOANTYPE"], r["NTBRCH"]))
+
+newloan_reports = [
+    _render_newloan_report(lnrpt1a_sorted, "NEW"),
+    _render_newloan_report(lnrpt1b_sorted_final, "MIGRATION"),
+    _render_newloan_report(lnrpt1c_sorted, "FULL RELEASE"),
 ]
 
-report_lines = []
-report_lines += _render_proc_print(
-    alm1_rows, "LOANTYP", ["BALANCE", "PRODUCT"], titles_report1, lnfmt_label=_lnfmt_label,
-)
-report_lines += _render_proc_print(
-    alm2_rows, "LOANTYP", ["BALANCE", "PRODUCT"], titles_report23, lnfmt_label=_lnfmt_label,
-)
-report_lines += _render_proc_print(
-    alm3_rows, None, ["BALANCE", "PRODUCT"], titles_report23,
-)
+# ============================================================================
+# STEP 13: WRITE OUTPUT (all four reports feed the same SASLIST listing)
+# ============================================================================
+print("\nStep 13: Writing output...")
 
-with open(OUTPUT_REPORT_FILE, "w", encoding="latin1") as fh:
+report_lines = list(settle_report_lines)
+for rep in newloan_reports:
+    if rep:
+        report_lines.append(FF)
+        report_lines.extend(rep)
+
+# Write to the driver-expected fixed-name file
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
-        fh.write(ln.ljust(LINE_WIDTH) + "\n")
-
-# print(f"  Report written : {OUTPUT_REPORT_FILE}")
-# print(f"  Report lines   : {len(report_lines):,}")
-
-print(f"\n  Output written to :")
-print(f"    {OUTPUT_REPORT_FILE}")
-print(f"  Total lines    : {len(report_lines):,}")
-
-# ============================================================================
-# STEP 12: FLAT FILE M4LOAN
-#   ALM  (SRS TYPE 1): CLASS INTRATE; VAR BALANCE; WHERE LOANSTAT=1 &
-#                       LOANTYP IN ('P1','P2');
-#   ALM1 (SRS TYPE 4): CLASS INTRATE; VAR BALANCE; WHERE LOANSTAT=1 &
-#                       PRODCD NE '34111';
-#   LOAN (SRS TYPE 9): CLASS BRHNO INTRATE; VAR BALANCE; (no WHERE filter)
-#   DATA _NULL_; FILE M4LOAN; SET ALM(IN=A) ALM1(IN=B) LOAN END=EOF; ...
-# ============================================================================
-print("\nStep 12: Building M4LOAN flat file...")
-
-alm_srs1 = _class_summary(
-    [r for r in loan_final_rows if r["LOANSTAT"] == 1 and r["LOANTYP"] in ("P1", "P2")],
-    ["INTRATE"], ["BALANCE"],
-)
-# Sort by INTRATE ascending (matches SAS PROC SUMMARY default)
-alm_srs1.sort(key=lambda x: x["INTRATE"])
-
-alm1_srs4 = _class_summary(
-    [r for r in loan_final_rows if r["LOANSTAT"] == 1 and r["PRODCD"] != "34111"],
-    ["INTRATE"], ["BALANCE"],
-)
-# Sort by INTRATE ascending
-alm1_srs4.sort(key=lambda x: x["INTRATE"])
-
-loan_srs9 = _class_summary(
-    loan_final_rows, ["BRHNO", "INTRATE"], ["BALANCE"],
-)
-# Sort by BRHNO ascending, then INTRATE ascending
-loan_srs9.sort(key=lambda x: (x["BRHNO"], x["INTRATE"]))
-
-
-def _z_pad(value, width):
-    """Zw. format: zero-padded numeric, right-justified. OPTIONS MISSING=0
-    substitutes a single '0' character right-justified for a missing
-    numeric value instead of zero-padding the whole field."""
-    if value is None:
-        return "0".rjust(width)
-    return str(int(value)).rjust(width, "0")
-
-
-m4loan_lines = [f"{REPTYEAR}{REPTMON}{REPTDAY}".ljust(M4LOAN_LRECL)]
-
-combined = (
-    [("A", r) for r in alm_srs1]
-    + [("B", r) for r in alm1_srs4]
-    + [("C", r) for r in loan_srs9]
-)
-
-for idx, (tag, r) in enumerate(combined):
-    intrate_val = None if r["INTRATE"] is None else _sas_round(r["INTRATE"] * 100)
-    balance_val = None if r["BALANCE"] is None else _sas_round(r["BALANCE"] * 100)
-
-    if tag == "A":
-        body = "001" + "M4 0000" + "01" + _z_pad(intrate_val, 4) + _z_pad(balance_val, 15)
-    elif tag == "B":
-        body = "001" + "M4 0000" + "04" + _z_pad(intrate_val, 4) + _z_pad(balance_val, 15)
-    else:
-        body = (
-            _z_pad(r.get("BRHNO"), 3) + "M4 0000" + "09"
-            + _z_pad(intrate_val, 4) + _z_pad(balance_val, 15)
-        )
-
-    m4loan_lines.append(body.ljust(M4LOAN_LRECL))
-
-    if idx == len(combined) - 1:
-        m4loan_lines.append("EOF".ljust(M4LOAN_LRECL))
-
-with open(OUTPUT_M4LOAN_FILE, "w", encoding="latin1") as fh:
-    for ln in m4loan_lines:
         fh.write(ln + "\n")
 
-# print(f"  M4LOAN written : {OUTPUT_M4LOAN_FILE}")
-# print(f"  M4LOAN lines   : {len(m4loan_lines):,}")
-
 print(f"\n  Output written to :")
-print(f"    {OUTPUT_M4LOAN_FILE}")
-print(f"  Total lines    : {len(m4loan_lines):,}")
+print(f"    {OUTPUT_FILE}")
+print(f"  Total lines    : {len(report_lines):,}")
 
-print("\nEIIMLN03 complete.")
+print("\nEIIWSTAF complete.")
