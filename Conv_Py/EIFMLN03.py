@@ -65,6 +65,7 @@ OUTPUTS
 import gc
 import math
 from pathlib import Path
+from datetime import date, datetime, timedelta
 
 import duckdb
 import pandas as pd
@@ -77,17 +78,29 @@ from PBBELF import format_brchcd
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+INPUT_SDESC_DIR = Path("/dwh")                                              # No need. Hardcoded into program
+INPUT_LOAN_DIR  = Path("/dwh/dwh_m/tempsource/ln")      
 
-INPUT_SDESC_DIR = STG_DIR / "sasdata"
-INPUT_LOAN_DIR  = STG_DIR / "sasdata"
+INPUT_SDESC_FILE = INPUT_SDESC_DIR / "sdesc.sas7bdat"                       # No need. Hardcoded into program
+INPUT_LOAN_FILE  = INPUT_LOAN_DIR  / f"loan{REPTMON}{REPTWEEK}.sas7bdat"    # Filter by ENTITY_CD = "PIBB"
 
-INPUT_SDESC_FILE = INPUT_SDESC_DIR / "sdesc.sas7bdat"
-# INPUT_LOAN_FILE is built below once REPTMON / NOWK are known.
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / f"EIIWSTAF_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIFMLN03"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_SDESC_DIR = STG_DIR / "sasdata"
+# INPUT_LOAN_DIR  = STG_DIR / "sasdata"
+
+# INPUT_SDESC_FILE = INPUT_SDESC_DIR / "sdesc.sas7bdat"
+# # INPUT_LOAN_FILE is built below once REPTMON / NOWK are known.
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIFMLN03"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_DIR = BASE_DIR / "output" / "EIFMLN03"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -126,13 +139,9 @@ def _worddatx18(d) -> str:
 
 RDATE = _worddatx18(reptdate)
 
-# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
-INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"iloan083.sas7bdat"
-
 print(f"  REPTMON : {REPTMON}   NOWK : {NOWK}")
 print(f"  RDATE   : '{RDATE}'")
 print(f"  LOAN input file : {INPUT_LOAN_FILE.name}")
-
 
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
@@ -259,6 +268,7 @@ loan_raw = con.execute(f"""
         CAST(BRANCH   AS INTEGER) AS BRANCH
     FROM read_parquet('{LOAN_CACHE.as_posix()}')
     WHERE PRODCD = '34111' AND LOANSTAT = 1
+      AND ENTITY_CD = 'PIBB'
 """).pl()
 con.close()
 
@@ -540,11 +550,15 @@ def _render_report(rows, titles):
 
 report_lines = _render_report(loan1_rows, TITLES)
 
-with open(OUTPUT_REPORT_FILE, "w", encoding="latin1") as fh:
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
         fh.write(ln.ljust(LINE_WIDTH) + "\n")
 
-print(f"  Report written : {OUTPUT_REPORT_FILE}")
-print(f"  Report lines   : {len(report_lines):,}")
+# print(f"  Report written : {OUTPUT_FILE}")
+# print(f"  Report lines   : {len(report_lines):,}")
+
+print(f"\n  Output written to :")
+print(f"    {OUTPUT_FILE}")
+print(f"  Total lines    : {len(report_lines):,}")
 
 print("\nEIFMLN03 complete.")
