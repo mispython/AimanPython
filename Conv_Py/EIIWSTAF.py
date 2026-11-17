@@ -51,9 +51,7 @@ OUTPUT
 //SASLIST DD DSN=SAP.PIBB.EIIWSTAF(+1), DISP=(NEW,CATLG,DELETE),
           DCB=(RECFM=FB,LRECL=133,BLKSIZE=0)
 This is a GDG-style catalogued listing dataset with NO date token in the
-generation name (the "+1" is a GDG generation number, not a calendar date),
-so per project convention output_date.py / build_output_file() is NOT used
-here -- the Python output uses a fixed filename.
+generation name (the "+1" is a GDG generation number, not a calendar date)
 
 RECFM=FB (NOT FBA) means -- per project convention -- this report carries
 NO ASA carriage-control byte, matching the precedent already established in
@@ -80,33 +78,50 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+BASE_DIR              = Path("/sas/ln/dwh")
+INPUT_LNNOTE_DIR      = BASE_DIR / "enrichment"
+INPUT_LNCOMM_DIR      = BASE_DIR / "enrichment"
+INPUT_LNNOTE_FILE     = INPUT_LNNOTE_DIR  / f"enrh_ln_note_d{REPTDAY}.sas7bdat"     # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
+INPUT_LNCOMM_FILE     = INPUT_LNCOMM_DIR  / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"     # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
 
-INPUT_LNNOTE_PBB_DIR  = STG_DIR / "MNILN"
-INPUT_LNCOMM_PBB_DIR  = STG_DIR / "MNILN"
-INPUT_LNNOTE_PIBB_DIR = STG_DIR / "MNILN"
-INPUT_LNCOMM_PIBB_DIR = STG_DIR / "MNILN"
-# INPUT_LNNOTE_DIR      = STG_DIR / "MNILN"
-# INPUT_LNCOMM_DIR      = STG_DIR / "MNILN"
-INPUT_LNPAY_PBB_DIR   = STG_DIR / "sasdata"
-INPUT_LNPAY_PIBB_DIR  = STG_DIR / "sasdata"
-INPUT_ISBASE_DIR      = STG_DIR / "sasdata"
+DWH_DIR               = Path("/dwh")
+INPUT_LNPAY_PBB_DIR   = DWH_DIR / "ln_ln"
+INPUT_LNPAY_PIBB_DIR  = DWH_DIR / "iln_ln"
+INPUT_LNPAY_PBB_FILE  = INPUT_LNPAY_PBB_DIR  / f"lnpay{NOWK}.sas7bdat"    # PAY.LNPAY&NOWK
+INPUT_LNPAY_PIBB_FILE = INPUT_LNPAY_PIBB_DIR / f"ilnpay{NOWK}.sas7bdat"   # IPAY.ILNPAY&NOWK
 
-INPUT_LNNOTE_PBB_FILE  = INPUT_LNNOTE_PBB_DIR  / "pbb_lnnote.sas7bdat"     # MNILN.LNNOTE
-INPUT_LNCOMM_PBB_FILE  = INPUT_LNCOMM_PBB_DIR  / "pbb_lncomm.sas7bdat"     # MNILN.LNCOMM
-INPUT_LNNOTE_PIBB_FILE = INPUT_LNNOTE_PIBB_DIR / "pibb_lnnote.sas7bdat"   # IMNILN.LNNOTE
-INPUT_LNCOMM_PIBB_FILE = INPUT_LNCOMM_PIBB_DIR / "pibb_lncomm.sas7bdat"   # IMNILN.LNCOMM
-# INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"         # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
-# INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "enrh_ln_comm_d22.sas7bdat"         # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
-INPUT_ISBASE_FILE = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+INPUT_ISBASE_DIR      = Path("/exdwh/host/sgm")
+INPUT_ISBASE_FILE     = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
 
 OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIIWSTAF.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"EIIWSTAF_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_LNNOTE_PBB_DIR  = STG_DIR / "MNILN"
+# INPUT_LNCOMM_PBB_DIR  = STG_DIR / "MNILN"
+# INPUT_LNNOTE_PIBB_DIR = STG_DIR / "MNILN"
+# INPUT_LNCOMM_PIBB_DIR = STG_DIR / "MNILN"
+# # INPUT_LNNOTE_DIR      = STG_DIR / "MNILN"
+# # INPUT_LNCOMM_DIR      = STG_DIR / "MNILN"
+# INPUT_LNPAY_PBB_DIR   = STG_DIR / "sasdata"
+# INPUT_LNPAY_PIBB_DIR  = STG_DIR / "sasdata"
+# INPUT_ISBASE_DIR      = STG_DIR / "sasdata"
+
+# INPUT_LNNOTE_PBB_FILE  = INPUT_LNNOTE_PBB_DIR  / "pbb_lnnote.sas7bdat"     # MNILN.LNNOTE
+# INPUT_LNCOMM_PBB_FILE  = INPUT_LNCOMM_PBB_DIR  / "pbb_lncomm.sas7bdat"     # MNILN.LNCOMM
+# INPUT_LNNOTE_PIBB_FILE = INPUT_LNNOTE_PIBB_DIR / "pibb_lnnote.sas7bdat"   # IMNILN.LNNOTE
+# INPUT_LNCOMM_PIBB_FILE = INPUT_LNCOMM_PIBB_DIR / "pibb_lncomm.sas7bdat"   # IMNILN.LNCOMM
+# # INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"         # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
+# # INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "enrh_ln_comm_d22.sas7bdat"         # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
+# INPUT_ISBASE_FILE = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60     # OPTIONS PS=60 (explicit in SAS source)
@@ -161,31 +176,10 @@ REPTMTH = RPMTH
 REPTYEAR = RPYR
 RDATE = reptdate.strftime("%d/%m/%Y")   # PUT(REPTDATE, DDMMYY10.)
 
-# Define primary output path to EIIMRPTS folder
-PRIMARY_OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
-PRIMARY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-PRIMARY_OUTPUT_FILE = PRIMARY_OUTPUT_DIR / "EIIWSTAF.txt"
-
-# Force filename timestamp to yesterday's date (system date - 1 day)
-yes_date = date.today() - timedelta(days=1)
-ts       = yes_date.strftime("%y%m%d")
-
-# Define secondary output path to EIIWSTAF folder
-SECONDARY_OUTPUT_DIR = BASE_DIR / "output" / "EIIWSTAF"
-SECONDARY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-SECONDARY_OUTPUT_FILE = SECONDARY_OUTPUT_DIR / f"EIIWSTAF_{ts}.txt"
-
 print(f"  RDATE        : {RDATE}")
 print(f"  NOWK (week)  : {NOWK}   STRDAY: {STRDAY}   REPTDAY: {REPTDAY}")
 print(f"  PDATE..EDATE : {PDATE} .. {EDATE}")
 print(f"  Output file  : {OUTPUT_FILE.name}")
-
-# Weekly input filenames depend on NOWK, which is only known after Step 1 --
-# constructed directly (deterministic), per project convention.
-# INPUT_LNPAY_PBB_FILE  = INPUT_LNPAY_PBB_DIR  / f"lnpay{NOWK}.sas7bdat"    # PAY.LNPAY&NOWK
-# INPUT_LNPAY_PIBB_FILE = INPUT_LNPAY_PIBB_DIR / f"ilnpay{NOWK}.sas7bdat"   # IPAY.ILNPAY&NOWK
-INPUT_LNPAY_PBB_FILE  = INPUT_LNPAY_PBB_DIR  / f"lnpay03.sas7bdat"    # PAY.LNPAY&NOWK
-INPUT_LNPAY_PIBB_FILE = INPUT_LNPAY_PIBB_DIR / f"ilnpay03.sas7bdat"   # IPAY.ILNPAY&NOWK
 
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
@@ -195,66 +189,6 @@ def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
         cache_path.exists()
         and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
     )
-
-
-# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-#     writer = None
-#     schema = None
-#     total = 0
-
-#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-#     for chunk in reader:
-#         if schema is None:
-#             fields = []
-#             for col, dtype in chunk.dtypes.items():
-#                 if dtype == "object":
-#                     pa_type = pa.string()
-#                 elif pd.api.types.is_integer_dtype(dtype):
-#                     pa_type = pa.int64()
-#                 elif pd.api.types.is_float_dtype(dtype):
-#                     pa_type = pa.float64()
-#                 else:
-#                     pa_type = pa.from_numpy_dtype(dtype)
-#                 fields.append(pa.field(col, pa_type))
-#             schema = pa.schema(fields)
-#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-
-#         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
-#         writer.write_table(table)
-#         total += len(chunk)
-#         del chunk, table
-#         gc.collect()
-
-#     if writer:
-#         writer.close()
-#     print(f"  [{tag}] Done - {total:,} rows cached.")
-
-
-# def _sas_to_parquet(sas_path, cache_path, tag):
-#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    
-#     # Read the entire SAS file into a DataFrame (fast)
-#     df, meta = pyreadstat.read_sas7bdat(sas_path, encoding="latin1")
-#     total = len(df)
-#     print(f"  [{tag}] Read {total:,} rows. Writing to Parquet in chunks...")
-    
-#     writer = None
-#     for start in range(0, total, CHUNK_ROWS):
-#         chunk = df.iloc[start:start + CHUNK_ROWS]
-#         table = pa.Table.from_pandas(chunk, preserve_index=False)
-#         if writer is None:
-#             writer = pq.ParquetWriter(cache_path, table.schema, compression="snappy")
-#         writer.write_table(table)
-#         print(f"    [{tag}] chunk written: rows {start+1:,}–{min(start+CHUNK_ROWS, total):,} (total {total:,})")
-#         del chunk, table
-#         gc.collect()
-    
-#     if writer:
-#         writer.close()
-#     del df
-#     gc.collect()
-#     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
@@ -284,15 +218,6 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     if writer:
         writer.close()
     print(f"  [{tag}] Done - {total:,} rows cached.")
-
-
-# def _load_cached(sas_path: Path, tag: str) -> Path:
-#     cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-#     if _cache_is_fresh(sas_path, cache_path):
-#         print(f"  [{tag}] Cache fresh - skipping conversion.")
-#     else:
-#         _sas_to_parquet(sas_path, cache_path, tag)
-#     return cache_path
 
 
 FORCE_RECONVERT = False   # set True to rebuild the Parquet cache from .sas7bdat
@@ -404,74 +329,33 @@ def _sas_merge_retain(left_rows, right_rows, key_fields):
 # STEP 3/4: BUILD LNNOTE (PBB) AND ILNNOTE (PIBB)
 # DATA LNNOTE; MERGE LNNOTE(IN=A) LNCOMM; BY ACCTNO COMMNO; IF A; ...
 # ============================================================================
-# def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str) -> list:
-#     con = duckdb.connect(database=":memory:")
-#     note_pl = con.execute(f"""
-#         SELECT *
-#         FROM read_parquet('{note_cache.as_posix()}')
-#         WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
-#           AND {costctr_sql}
-#         ORDER BY ACCTNO, COMMNO
-#     """).pl()
-#     comm_pl = con.execute(f"""
-#         SELECT * FROM read_parquet('{comm_cache.as_posix()}')
-#         ORDER BY ACCTNO, COMMNO
-#     """).pl()
-#     con.close()
-
-# def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, entity_sql: str, costctr_sql: str) -> list:
-#     con = duckdb.connect(database=":memory:")
-#     note_pl = con.execute(f"""
-#         SELECT *
-#         FROM read_parquet('{note_cache.as_posix()}')
-#         WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
-#           AND {entity_sql}
-#           AND {costctr_sql}
-#         ORDER BY ACCTNO, COMMNO
-#     """).pl()
-#     comm_pl = con.execute(f"""
-#         SELECT * FROM read_parquet('{comm_cache.as_posix()}')
-#         WHERE {entity_sql}
-#         ORDER BY ACCTNO, COMMNO
-#     """).pl()
-#     con.close()
-
 def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str) -> list:
     con = duckdb.connect(database=":memory:")
-    note_pl = con.execute(f"""
-        SELECT *
-        FROM read_parquet('{note_cache.as_posix()}')
-        WHERE (LOANTYPE IS NULL OR LOANTYPE <= 61 OR LOANTYPE IN (100,102,103,104,105))
+    out_rows = con.execute(f"""
+        SELECT
+            n.LOANTYPE, n.NTBRCH, n.ORGTYPE, n.ACCTNO, n.COMMNO, n.CURBAL,
+            n.NOTENO, n.NAME, n.ISSUEDT, n.PAIDIND, n.BLDATE, n.BILPAY,
+            n.PAYAMT, n.INTRATE, n.STAFFNO, n.PAYEFFDT, n.ORGBAL, n.LASTTRAN,
+            n.LSTTRNAM, n.LSTTRNCD, n.RESTIND, n.FLAG1, n.FRELEAS,
+            CASE
+                WHEN COALESCE(n.COMMNO, 0) > 0 AND c.REVOVLI = 'N' THEN c.CORGAMT
+                WHEN COALESCE(n.COMMNO, 0) > 0                     THEN c.CCURAMT
+                ELSE n.ORGBAL
+            END AS APPRLIMT
+        FROM read_parquet('{note_cache.as_posix()}') n
+        LEFT JOIN read_parquet('{comm_cache.as_posix()}') c
+               ON n.ACCTNO = c.ACCTNO AND n.COMMNO = c.COMMNO
+        WHERE (n.LOANTYPE IS NULL OR n.LOANTYPE <= 61
+               OR n.LOANTYPE IN (100,102,103,104,105))
           AND {costctr_sql}
-        ORDER BY ACCTNO, COMMNO
-    """).pl()
-    comm_pl = con.execute(f"""
-        SELECT * FROM read_parquet('{comm_cache.as_posix()}')
-        ORDER BY ACCTNO, COMMNO
-    """).pl()
+    """).pl().to_dicts()
     con.close()
-
-    left = note_pl.to_dicts()
-    right = comm_pl.to_dicts()
-    merged = _sas_merge_retain(left, right, key_fields=("ACCTNO", "COMMNO"))
-
-    out_rows = []
-    for r in merged:
-        if not r["_IN_LEFT"]:
-            continue  # IF A;
-        commno = r.get("COMMNO") or 0
-        if commno > 0:
-            apprlimt = r.get("CORGAMT") if r.get("REVOVLI") == "N" else r.get("CCURAMT")
-        else:
-            apprlimt = r.get("ORGBAL")
-        r["APPRLIMT"] = apprlimt
-        out_rows.append(r)
     print(f"  [{tag}] LNNOTE rows after merge with LNCOMM: {len(out_rows):,}")
     return out_rows
 
 
 print("\nStep 3: Building LNNOTE (PBB, COSTCTR=8044)...")
-lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COSTCTR = 8044")
+lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "n.COSTCTR = 8044")
 
 # print("\nStep 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...")
 # lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
@@ -480,7 +364,7 @@ lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "COST
 
 print("\nStep 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...")
 lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
-                                  "COSTCTR BETWEEN 3000 AND 3999")
+                                 "n.COSTCTR BETWEEN 3000 AND 3999")
 
 # print("\nStep 4: Building ILNNOTE (PIBB, ENTITY_CD = 'PIBB', 3000<=COSTCTR<=3999)...")
 # lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_CACHE, LNCOMM_CACHE,
@@ -491,6 +375,16 @@ lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
 # STEP 5: DATA LOAN &INTGRVAR;  SET LNNOTE ILNNOTE;  ...
 # ============================================================================
 print("\nStep 5: Building LOAN (date parsing, PAYEFF, FULRELDTE, NOOFAC)...")
+
+SAS_DATE_EPOCH = date(1960, 1, 1)
+
+
+def _sas_date_to_py(v):
+    """Convert a raw SAS date number (days since 1960-01-01) to a Python date.
+    Required because _sas_to_parquet uses disable_datetime_conversion=True."""
+    if v is None:
+        return None
+    return SAS_DATE_EPOCH + timedelta(days=int(v))
 
 
 def _decode_z11_mmddyyyy(raw):
@@ -914,7 +808,7 @@ con.close()
 
 lnpay_rows = []
 for r in (lnpay_pbb + lnpay_pibb):
-    effdate = r.get("EFFDATE")
+    effdate = _sas_date_to_py(r.get("EFFDATE"))
     # PAYEFFDD is a constant 99; PAYEFF = LEFT(COMPBL(PAYEFFDD||'/'||PAYEFFMM||'/'||PAYEFFYY))
     # -- with a constant 2-digit PAYEFFDD and no embedded blanks, LEFT/COMPBL
     # reduce to a plain "99/MM/YY" string.
@@ -1127,18 +1021,12 @@ for rep in newloan_reports:
         report_lines.extend(rep)
 
 # Write to the driver-expected fixed-name file
-with open(PRIMARY_OUTPUT_FILE, "w", encoding="latin1") as fh:
-    for ln in report_lines:
-        fh.write(ln + "\n")
-
-# Write the same content to the secondary archive file
-with open(SECONDARY_OUTPUT_FILE, "w", encoding="latin1") as fh:
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
         fh.write(ln + "\n")
 
 print(f"\n  Output written to :")
-print(f"    {PRIMARY_OUTPUT_FILE}")
-print(f"    {SECONDARY_OUTPUT_FILE}")
+print(f"    {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
 
 print("\nEIIWSTAF complete.")
