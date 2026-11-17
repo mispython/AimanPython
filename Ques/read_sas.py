@@ -1,7 +1,16 @@
 # sas_peek.py
-import argparse
 from pathlib import Path
 import pandas as pd
+
+# ============================================================
+# HARDCODE YOUR FILE PATH HERE
+# ============================================================
+SAS_FILE = r"C:\Users\you\Downloads\mydata.sas7bdat"
+# ============================================================
+
+PREVIEW_ROWS = 10
+USE_PARQUET_CACHE = True
+OVERWRITE_CACHE = False
 
 
 def read_sas_file(path: Path):
@@ -19,19 +28,12 @@ def read_sas_file(path: Path):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Preview a SAS7BDAT file, cache as Parquet")
-    ap.add_argument("file", type=Path, help="Path to .sas7bdat file")
-    ap.add_argument("--rows", type=int, default=10, help="Rows to preview (default 10)")
-    ap.add_argument("--no-parquet", action="store_true", help="Disable Parquet cache")
-    ap.add_argument("--overwrite", action="store_true", help="Ignore existing Parquet cache")
-    args = ap.parse_args()
-
-    path: Path = args.file
+    path = Path(SAS_FILE)
     if not path.exists():
         raise SystemExit(f"File not found: {path}")
 
     parquet_path = path.with_suffix(".parquet")
-    use_cache = (not args.no_parquet) and parquet_path.exists() and not args.overwrite
+    use_cache = USE_PARQUET_CACHE and parquet_path.exists() and not OVERWRITE_CACHE
 
     meta = None
     if use_cache:
@@ -39,7 +41,7 @@ def main():
         df = pd.read_parquet(parquet_path)
     else:
         df, meta = read_sas_file(path)
-        if not args.no_parquet:
+        if USE_PARQUET_CACHE:
             try:
                 df.to_parquet(parquet_path, index=False)
                 print(f"Cached to Parquet: {parquet_path}")
@@ -63,13 +65,13 @@ def main():
     print(schema.to_string(index=False))
 
     # ---- Preview rows ----
-    print(f"\n=== First {args.rows} rows ===")
+    print(f"\n=== First {PREVIEW_ROWS} rows ===")
     with pd.option_context(
         "display.max_columns", None,
         "display.width", None,
         "display.max_colwidth", 40,
     ):
-        print(df.head(args.rows).to_string())
+        print(df.head(PREVIEW_ROWS).to_string())
 
 
 if __name__ == "__main__":
