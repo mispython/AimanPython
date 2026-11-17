@@ -1,26 +1,76 @@
+# sas_peek.py
+import argparse
+from pathlib import Path
 import pandas as pd
 
-# =========================
-# CONFIG
-# =========================
-FILE_PATH = "/stgsrcsys/host/uat/dpld06.sas7bdat"
-COLUMN_NAME = "CHEQNO"
 
-# condition (STRICT: only > 0)
-def filter_condition(df):
-    return df[df[COLUMN_NAME] > 0]
+def read_sas_file(path: Path):
+    """Read .sas7bdat, preferring pyreadstat (handles more encodings/compression)."""
+    try:
+        import pyreadstat
+        print(f"Reading with pyreadstat: {path}")
+        df, meta = pyreadstat.read_sas7bdat(str(path))
+        return df, meta
+    except ImportError:
+        print("pyreadstat not installed – using pandas.read_sas (slower, "
+              "may fail on some encodings/compressed files)")
+        df = pd.read_sas(path, format="sas7bdat", encoding="utf-8")
+        return df, None
 
-# =========================
-# LOAD + FILTER
-# =========================
-df = pd.read_sas(FILE_PATH, format="sas7bdat", encoding="utf-8")
 
-result = filter_condition(df)
+def main():
+    ap = argparse.ArgumentParser(description="Preview a SAS7BDAT file, cache as Parquet")
+    ap.add_argument("file", type=Path, help="Path to .sas7bdat file")
+    ap.add_argument("--rows", type=int, default=10, help="Rows to preview (default 10)")
+    ap.add_argument("--no-parquet", action="store_true", help="Disable Parquet cache")
+    ap.add_argument("--overwrite", action="store_true", help="Ignore existing Parquet cache")
+    args = ap.parse_args()
 
-# =========================
-# OUTPUT
-# =========================
-print(result)
+    path: Path = args.file
+    if not path.exists():
+        raise SystemExit(f"File not found: {path}")
 
-# optional save
-result.to_csv("filtered_output.csv", index=False)
+    parquet_path = path.with_suffix(".parquet")
+    use_cache = (not args.no_parquet) and parquet_path.exists() and not args.overwrite
+
+    meta = None
+    if use_cache:
+        print(f"Loading from Parquet cache: {parquet_path}")
+        df = pd.read_parquet(parquet_path)
+    else:
+        df, meta = read_sas_file(path)
+        if not args.no_parquet:
+            try:
+                df.to_parquet(parquet_path, index=False)
+                print(f"Cached to Parquet: {parquet_path}")
+            except Exception as e:
+                print(f"⚠ Could not write Parquet ({e}). "
+                      "Install pyarrow: pip install pyarrow")
+
+    print(f"\nRows: {len(df):,}   |   Columns: {df.shape[1]}")
+
+    # ---- Schema table ----
+    print("\n=== Schema ===")
+    schema = pd.DataFrame({
+        "column":   list(df.columns),
+        "dtype":    [str(t) for t in df.dtypes],
+        "non_null": df.notna().sum().to_numpy(),
+        "nulls":    df.isna().sum().to_numpy(),
+    })
+    if meta is not None:
+        schema["sas_label"] = [meta.column_names_to_labels.get(c, "") for c in df.columns]
+        schema["sas_type"]  = [meta.original_variable_types.get(c, "") for c in df.columns]
+    print(schema.to_string(index=False))
+
+    # ---- Preview rows ----
+    print(f"\n=== First {args.rows} rows ===")
+    with pd.option_context(
+        "display.max_columns", None,
+        "display.width", None,
+        "display.max_colwidth", 40,
+    ):
+        print(df.head(args.rows).to_string())
+
+
+if __name__ == "__main__":
+    main()
