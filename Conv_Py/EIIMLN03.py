@@ -77,6 +77,31 @@ from REPTDATE import get_reptdate_values
 from PBBLNFMT_AII import format_ln03fmt
 
 # ============================================================================
+# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
+# ============================================================================
+print("Step 1: Deriving report date...")
+
+reptdate_values = get_reptdate_values(year_format="%Y")
+reptdate = reptdate_values.reptdate
+
+# NOWK here uses EXACT-DAY matching (day=8/15/22 else 4), which differs from
+# REPTDATE.py's range-based NOWK. Unlike EIIMRM01.py (where an identical
+# derivation was dead code), this NOWK IS used to build the input dataset
+# name below, so it is computed locally to preserve the SAS source exactly.
+_day = reptdate.day
+NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
+
+REPTYEAR = reptdate.strftime("%Y")   # PUT(REPTDATE,YEAR4.)
+REPTYY   = reptdate.strftime("%y")   # PUT(REPTDATE,YEAR2.)
+REPTMON  = reptdate.strftime("%m")   # PUT(MONTH(REPTDATE),Z2.)
+REPTDAY  = reptdate.strftime("%d")   # PUT(DAY(REPTDATE),Z2.)
+RDATE    = reptdate.strftime("%d/%m/%y")   # PUT(REPTDATE,DDMMYY8.)
+
+print(f"  REPTYEAR/MON/DAY : {REPTYEAR}/{REPTMON}/{REPTDAY}   NOWK: {NOWK}")
+print(f"  RDATE            : {RDATE}")
+print(f"  LOAN input file  : {INPUT_LOAN_FILE.name}")
+
+# ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 # Production Path
@@ -90,8 +115,8 @@ INPUT_LOAN_FILE  = INPUT_LOAN_DIR  / f"loan{REPTMON}{REPTWEEK}.sas7bdat"    # Fi
 
 OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_REPORT_FILE = OUTPUT_DIR / f"EIIMLN03_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
-OUTPUT_M4LOAN_FILE = OUTPUT_DIR / f"M4LOAN_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+OUTPUT_REPORT_FILE = OUTPUT_DIR / f"EIIMLN03_{REPTDAY}{REPTMON}{REPTYY}.txt"
+OUTPUT_M4LOAN_FILE = OUTPUT_DIR / f"M4LOAN_{REPTDAY}{REPTMON}{REPTYY}.txt"
 
 # # Testing Path
 # BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
@@ -112,30 +137,6 @@ CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60      # lines per page (not specified in SAS -> default)
 LINE_WIDTH = 133     # DCB LRECL for SASLIST
 M4LOAN_LRECL = 50    # DCB LRECL for M4LOAN
-
-# ============================================================================
-# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
-# ============================================================================
-print("Step 1: Deriving report date...")
-
-reptdate_values = get_reptdate_values(year_format="%Y")
-reptdate = reptdate_values.reptdate
-
-# NOWK here uses EXACT-DAY matching (day=8/15/22 else 4), which differs from
-# REPTDATE.py's range-based NOWK. Unlike EIIMRM01.py (where an identical
-# derivation was dead code), this NOWK IS used to build the input dataset
-# name below, so it is computed locally to preserve the SAS source exactly.
-_day = reptdate.day
-NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
-
-REPTYEAR = reptdate.strftime("%Y")   # PUT(REPTDATE,YEAR4.)
-REPTMON  = reptdate.strftime("%m")   # PUT(MONTH(REPTDATE),Z2.)
-REPTDAY  = reptdate.strftime("%d")   # PUT(DAY(REPTDATE),Z2.)
-RDATE    = reptdate.strftime("%d/%m/%y")   # PUT(REPTDATE,DDMMYY8.)
-
-print(f"  REPTYEAR/MON/DAY : {REPTYEAR}/{REPTMON}/{REPTDAY}   NOWK: {NOWK}")
-print(f"  RDATE            : {RDATE}")
-print(f"  LOAN input file  : {INPUT_LOAN_FILE.name}")
 
 # ============================================================================
 # LOCAL PROC FORMAT: $LNFMT  (local to this program, NOT part of PBBLNFMT)
