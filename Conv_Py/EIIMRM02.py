@@ -20,8 +20,7 @@ PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
    File : INPUT_MAIN_FD_FILE   -> intg_dp_acct_fd_d19.sas7bdat
    Cols used : ACCTNO, ENTITY_CD
    Used to build the list of PIBB-only account numbers, since fd.sas7bdat
-   itself is a mixed PBB/PIBB dataset with no ENTITY_CD column (same
-   dependency as EIIMRM01.py).
+   itself is a mixed PBB/PIBB dataset with no ENTITY_CD column
 
 2. fd.sas7bdat        (JCL //FD  DD DSN=SAP.PIBB.MNIFD(0))
    File : INPUT_FD_FILE        -> enrh_dp_fd_cert_d19.sas7bdat
@@ -61,38 +60,6 @@ from REPTDATE import get_reptdate_values
 from PBBDPFMT import fdprod_format
 
 # ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-BASE_DIR = Path("/sas/deposit/dwh")
-
-INPUT_MAIN_FD_DIR = BASE_DIR / "integration"
-INPUT_FD_DIR      = BASE_DIR / "enrichment"
-
-INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
-INPUT_FD_FILE      = INPUT_FD_DIR      / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
-
-OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / f"EIIMRM02_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
-
-# # Testing Path
-# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
-
-# INPUT_MAIN_FD_DIR = STG_DIR / "sasdata"
-# INPUT_FD_DIR      = STG_DIR / "sasdata"
-
-# INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
-# INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
-
-# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
-# CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-CHUNK_ROWS = 500_000
-PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
-
-# ============================================================================
 # STEP 1: REPORT DATE
 # ============================================================================
 print("Step 1: Deriving report date...")
@@ -127,6 +94,38 @@ if RPYR % 4 == 0:
 print(f"  RDATE            : {RDATE}")
 print(f"  REPTMON/DAY      : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}")
 print(f"  Output file      : {OUTPUT_FILE.name}")
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# Production Path
+BASE_DIR = Path("/sas/deposit/dwh")
+
+INPUT_MAIN_FD_DIR = BASE_DIR / "integration"
+INPUT_FD_DIR      = BASE_DIR / "enrichment"
+
+INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+INPUT_FD_FILE      = INPUT_FD_DIR      / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
+
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / f"EIIMRM02_{REPTDAY}{REPTMON}{REPTYRS}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_MAIN_FD_DIR = STG_DIR / "sasdata"
+# INPUT_FD_DIR      = STG_DIR / "sasdata"
+
+# INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
+# INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
 
 # ============================================================================
 # PROC FORMAT EQUIVALENTS (local to this program)
