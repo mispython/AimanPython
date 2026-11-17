@@ -1,37 +1,44 @@
-//FTPBCCDR JOB (0216,0000,90,OPER),'FTP WAREHOURE',                     
-//         CLASS=A,REGION=4M,NOTIFY=&SYSUID,                            
-//         MSGCLASS=X                                                   
-/*JOBPARM S=S1M2                                                        
-//******************************************************************    
-//* FTP HOST DATASETS (CCD REPORTS)                                     
-//*ESMR 2015-2448 TO DISCONTINUE CCDTEXT3/ICCDTEXT3                     
-//******************************************************************    
+//FTPMRMRP JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     
+//*----------------------------------------------                       
+//* FTP HOST DATASETS TO PBB DATAWAREHOUSE SERVER                       
+//*----------------------------------------------                       
+//*%OPC SCAN                                                            
+//*%OPC SETVAR TODD=(ODD -15CD)                                         
+//*%OPC SETVAR TOMM=(OMM -15CD)                                         
+//*%OPC SETVAR TOYY=(OYY -15CD)                                         
+//*----------------------------------------------                       
 //*RUNSFTP  EXEC COZBATCH                                               
 //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)                
 //*           DD *                                                      
 //*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text            
 //*lzopts linerule=$lr                                                  
 //*cd TEXTFILE                                                          
-//*cd CCD                                                               
-//*PUT //SAP.PBB.CCDREPO  CCDREPO.TXT                                   
-//*PUT //SAP.PBB.CCDREPO1  CCDREPO1.TXT                                 
-//*PUT //SAP.PBB.CCDRVHP1  CCDRVHP1.TXT                                 
-//*PUT //SAP.PBB.CCDRVHP2  CCDRVHP2.TXT                                 
-//*PUT //SAP.PBB.CCDTXT2  CCDTEXT2.TXT                                  
-//*PUT //SAP.PBB.CCDTXT7A  CCDTXT7A.TXT                                 
+//*cd RETAILBANK                                                        
+//*PUT //SAP.PIBB.EIIMRM01.TEXT       EIIMRM01@%OMM.%OYY..TXT           
+//*PUT //SAP.PIBB.EIIMRM02.TEXT       EIIMRM02@%OMM.%OYY..TXT           
+//*PUT //SAP.PIBB.EIIMRM03.TEXT       EIIMRM03@%OMM.%OYY..TXT           
+//*PUT //SAP.PIBB.EIIMRM04.TEXT       EIIMRM04@%OMM.%OYY..TXT           
 //*EOB                                                                  
-//******************************************************************    
-//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)            
-//******************************************************************    
+
+
+
+
+//FTPWRPTS JOB MSGCLASS=X,REGION=4M,TIME=1440,USER=OPCC                 
+//*%OPC SCAN                                                            
+//**********************************************************************
+//* SMR Ref 2018-0050                                                   
+//* WEF DATE 16/01/2018                                                 
+//**********************************************************************
 //RUNSFTP  EXEC COZBATCH                                                
-//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)                 
-//           DD *                                                       
+//OUTPUT   DD SYSOUT=*                                                  
+//SYSPRINT DD SYSOUT=*                                                  
+//CMD.SYSUT1 DD *                                                       
+export PASSWD_DSN='OPER.PBB.CONTROL(MPHRSFTP)'                          
+$coz_bin/cozsftp  $ssh_opts -b- hrdloansftp@MPNSVFIL001.pbb.pbg.my <<EOB
 lzopts servercp=$servercp,notrim,overflow=trunc,mode=text               
 lzopts linerule=$lr                                                     
-cd "HPCC/LOANS IN ARREARS"                                              
-PUT //SAP.PBB.CCDTXT2   CCDTEXT2.TXT                                    
-PUT //SAP.PBB.CCDTXT7A  CCDTXT7A.TXT                                    
-cd "/HPCC/REPOSSESSION"                                                 
-PUT //SAP.PBB.CCDREPO   CCDREPO.TXT                                     
-PUT //SAP.PBB.CCDREPO1  CCDREPO1.TXT                                    
+cd WeeklyReport                                                         
+put //SAP.PBB.EIBWSTAF(0)        EIBWSTAF_%ODD.%OMM.%OYY..txt           
+put //SAP.PIBB.EIIWSTAF(0)       EIIWSTAF_%ODD.%OMM.%OYY..txt           
 EOB                                                                     
+/*                                                                                                                                           
