@@ -1,87 +1,89 @@
 SFTP_ID	SFTP_PW	HOST_IP	HOST_DESC	HOST_KEY
-drrsftp	pasaii778301	192.168.193.235	Data Report Repository (DRR)	
-edwsftp	pasaii778301	192.168.56.10	PIVB File Server	
-sossftp	pasaii778301	192.168.225.143	EAI Internal Server	
-sftpautho	pasaii778301	mpnsvfil001	Menara File Server TB	
-sftpcrms	pasaii778301	mpnsvfil001	Menara File Server CRMS	
-sftpaml3	pasaii778301	mpnsvfil001	Menara File Server AML-CFT-QRF	
-ftpprod	pasaii778301	192.168.5.48	Lotus Note Server	
-cmss	pasaii778301	192.168.85.79	CRMA Server	
-edwpbcssftp	pasaii778301	mpnsvfil001	Menara File Server PBCS	
-ftp-cup	pasaii778301	192.168.7.26	Unisys SFTP Server	
-edwsftp	pasaii778301	192.168.5.204	EMC COLDER	
-edwsftp	pasaii778301	192.168.5.200	EMC e-Statement	
-sftpho	pasaii778301	192.168.98.110	ELDS Server (svelds13.mpnoc.pbb.my)	
-sftpfdcam	pasaii778301	mpnsvfil001	Menara File Server FD CAMP	
+drrsftp	pasaii77830	192.168.193.235	Data Report Repository (DRR)	
+edwsftp	pasaii77830	192.168.56.10	PIVB File Server	
+sossftp	pasaii77830	192.168.225.143	EAI Internal Server	
+sftpautho	pasaii77830	mpnsvfil001	Menara File Server TB	
+sftpcrms	pasaii77830	mpnsvfil001	Menara File Server CRMS	
+sftpaml3	pasaii77830	mpnsvfil001	Menara File Server AML-CFT-QRF	
+ftpprod	pasaii77830	192.168.5.48	Lotus Note Server	
+cmss	pasaii77830	192.168.85.79	CRMA Server	
+edwpbcssftp	pasaii77830	mpnsvfil001	Menara File Server PBCS	
+ftp-cup	pasaii77830	192.168.7.26	Unisys SFTP Server	
+edwsftp	pasaii77830	192.168.5.204	EMC COLDER	
+edwsftp	pasaii77830	192.168.5.200	EMC e-Statement	
+sftpho	pasaii77830	192.168.98.110	ELDS Server (svelds13.mpnoc.pbb.my)	
+sftpfdcam	pasaii77830	mpnsvfil001	Menara File Server FD CAMP	
 		192.168.8.108	AIA PBB TIPS	
-ftpprod	pasaii778301	192.168.68.150	Lotus Note Application Server	
-edwwmtbsftp	pasaii778301	mpnsvfil001	Menara File Server (WMTB)	
-sftpnsrs	pasaii778301	mpnsvfil001	Menara File Server (BNMRPT)	
-sftpcorp	pasaii778301	mpnsvfil001	Menara File Server Corp Bank	
-sftpcprt	pasaii778301	mpnsvfil001	Menara File Server Corp Pricing Detail	
-bbosftp	pasaii778301	192.168.225.143	Menara File Server (BBO)	
-xColdHost	pasaii778301	192.168.166.253	COLDER server	
-edwsftp	pasaii778301	mpnsvfil001	Menara File Server Common	
-sftpedw	pasaii778301	192.168.104.73	EDW DB Server	
-bscsftp	pasaii778301	mpnsvfil001	Menara File Server BSC	
-sftpcbit	pasaii778301	mpnsvfil001	Menara File Server (ITD Report)	
-sftppit	pasaii778301	mpnsvfil001	Menara File Server (PIT)	
-sftpwmtb	pasaii778301	mpnsvfil001	Menara File Server (WMTB2)	
-sftpfin	pasaii778301	mpnsvfil001	Menara File Server (FIN)	
-cadsftp	pasaii778301	mpnsvfil001	Menara File Server (CAD)	
-sftpcbrf	pasaii778301	mpnsvfil001	Menara File Server (CBRF)	
-corsecsftp	pasaii77830	mpnsvfil001	Menara File Server (CORSEC)	
-mtrsftp	pasaii778301	mpnsvfil001	Menara File Server (MTR)	
-sftpbbr	pasaii778301	mpnsvfil001	Menara File Server (BBR)	
-sftpmis	pasaii778301	mpnsvfil001	Menara File Server (MIS)	
-sftpfinma2	pasaii778301	mpnsvfil001	Menara File Server (FINMA2)	
-sftpfund	pasaii778301	mpnsvfil001	Menara File Server (FUND)	
-sftprmd	pasaii778301	mpnsvfil001	Menara File Server (RMD)	
-sas2qaap	pasaii778301	mpnsvfil001	Menara File Server (QAAP)	
-sas2pbcs	pasaii778301	mpnsvfil001	Menara File Server (PBCS)	
-sftpibmbdc	pasaii778301	mpnsvfil001	Menara File Server (IBMBDC)	
-sas2ibu	pasaii778301	mpnsvfil001	Menara File Server (IBU)	
-atmcsftp	pasaii778301	mpnsvfil001	Menara File Server (ATMC)	
-sas2utwm	pasaii778301	mpnsvfil001	Menara File Server (UTWM)	
-sftphaniza	pasaii778301	mpnsvfil001	Menara File Server (HANIZA)	
-masenrichsftp	pasaii778301	192.168.88.68	External SFTP Server	
-sas2lcr	pasaii778301	192.168.56.10	PIVB Admin File Server	
-edwsftp	pasaii778301	192.168.88.68	External Shared SFTP Server	
-sas2finlcr	pasaii778301	192.168.56.10	PIVB LCR File Server	
-fpxreconsftp	pasaii778301	mpnsvfil001	Menara File Server FPX Reconciliation	
-sas2pmb	pasaii778301	mpnsvfil001	Menara File Server PMB	
+ftpprod	pasaii77830	192.168.68.150	Lotus Note Application Server	
+edwwmtbsftp	pasaii77830	mpnsvfil001	Menara File Server (WMTB)	
+sftpnsrs	pasaii77830	mpnsvfil001	Menara File Server (BNMRPT)	
+sftpcorp	pasaii77830	mpnsvfil001	Menara File Server Corp Bank	
+sftpcprt	pasaii77830	mpnsvfil001	Menara File Server Corp Pricing Detail	
+bbosftp	pasaii77830	192.168.225.143	Menara File Server (BBO)	
+xColdHost	pasaii77830	192.168.166.253	COLDER server	
+edwsftp	pasaii77830	mpnsvfil001	Menara File Server Common	
+sftpedw	pasaii77830	192.168.104.73	EDW DB Server	
+bscsftp	pasaii77830	mpnsvfil001	Menara File Server BSC	
+sftpcbit	pasaii77830	mpnsvfil001	Menara File Server (ITD Report)	
+sftppit	pasaii77830	mpnsvfil001	Menara File Server (PIT)	
+sftpwmtb	pasaii77830	mpnsvfil001	Menara File Server (WMTB2)	
+sftpfin	pasaii77830	mpnsvfil001	Menara File Server (FIN)	
+cadsftp	pasaii77830	mpnsvfil001	Menara File Server (CAD)	
+sftpcbrf	pasaii77830	mpnsvfil001	Menara File Server (CBRF)	
+corsecsftp	pasaii1235	mpnsvfil001	Menara File Server (CORSEC)	
+mtrsftp	pasaii77830	mpnsvfil001	Menara File Server (MTR)	
+sftpbbr	pasaii77830	mpnsvfil001	Menara File Server (BBR)	
+sftpmis	pasaii77830	mpnsvfil001	Menara File Server (MIS)	
+sftpfinma2	pasaii77830	mpnsvfil001	Menara File Server (FINMA2)	
+sftpfund	pasaii77830	mpnsvfil001	Menara File Server (FUND)	
+sftprmd	pasaii77830	mpnsvfil001	Menara File Server (RMD)	
+sas2qaap	pasaii77830	mpnsvfil001	Menara File Server (QAAP)	
+sas2pbcs	pasaii77830	mpnsvfil001	Menara File Server (PBCS)	
+sftpibmbdc	pasaii77830	mpnsvfil001	Menara File Server (IBMBDC)	
+sas2ibu	pasaii77830	mpnsvfil001	Menara File Server (IBU)	
+atmcsftp	pasaii77830	mpnsvfil001	Menara File Server (ATMC)	
+sas2utwm	pasaii77830	mpnsvfil001	Menara File Server (UTWM)	
+sftphaniza	pasaii77830	mpnsvfil001	Menara File Server (HANIZA)	
+masenrichsftp	pasaii77830	192.168.88.68	External SFTP Server	
+sas2lcr	pasaii77830	192.168.56.10	PIVB Admin File Server	
+edwsftp	pasaii77830	192.168.88.68	External Shared SFTP Server	
+sas2finlcr	pasaii77830	192.168.56.10	PIVB LCR File Server	common_ppk.ppk
+fpxreconsftp	pasaii77830	mpnsvfil001	Menara File Server FPX Reconciliation	
+sas2pmb	pasaii77830	mpnsvfil001	Menara File Server PMB	
 itdopr	pasaii77830	172.22.34.72	IAD File Server	
-edwsftp	pasaii778301	192.168.7.56	STAR NOU Server	
-sftpimis	pasaii778301	192.168.225.143	Internal SFTP Server (CRMA)	
-ftp-merchant	pasaii778301	192.168.7.26	Unisys SFTP Server (MCH)	
-sftpdwh2	pasaii778301	172.22.43.140	FM Production Server	
+edwsftp	pasaii77830	192.168.7.56	STAR NOU Server	
+sftpimis	pasaii77830	192.168.225.143	Internal SFTP Server (CRMA)	
+ftp-merchant	pasaii77830	192.168.7.26	Unisys SFTP Server (MCH)	
+sftpdwh2	pasaii77830	172.22.43.140	FM Production Server	
 ftpcris	pasaii77830	192.168.7.46	eCCRIS Server (svccr001)	
-sftpedw	pasaii77830	172.25.129.102	Fusion Kondor	
-pbbho	pasaii778301	192.168.98.202	ELDS Server (BGNVMELD009)	
-sas2pmb2	pasaii778301	mpnsvfil001	Menara File Server (PMB2)	
-sdwh2sbdb	pasaii778301	172.27.50.14	StockBanking Server (SBAPP2022)	
-esisftp	pasaii778301	mpnsvfil001	Menara File Server (EPF)	
-sftpaml	pasaii77830	172.22.51.82	Machine Learning Python	
-sftppbtsb	pasaii778301	mpnsvfil001	Menara File Server (PBTSB)	
-esssftp	pasaii778301	172.27.38.212	PBB ESS DSS	
-esssftp	pasaii778301	172.27.38.211	PIBB ESS DSS	
+sftpedw	pasaii77830	172.27.24.137	Fusion Kondor	
+pbbho	pasaii77830	192.168.98.202	ELDS Server (BGNVMELD009)	
+sas2pmb2	pasaii77830	mpnsvfil001	Menara File Server (PMB2)	
+sdwh2sbdb	pasaii77830	172.27.50.14	StockBanking Server (SBAPP2022)	
+esisftp	pasaii77830	mpnsvfil001	Menara File Server (EPF)	
+sftpaml	pasaii77831	172.22.51.82	Machine Learning Python	
+sftppbtsb	pasaii77830	mpnsvfil001	Menara File Server (PBTSB)	
+esssftp	pasaii77830	172.27.38.212	PBB ESS DSS	
+esssftp	pasaii77830	172.27.38.211	PIBB ESS DSS	
 edwunipinsftp		pbbsvftp001	External UNIPIN SFTP Server	edwunipinsftp.ppk
-sftpuser	pasaii77830123456	192.168.8.88	CorpPC	
-edwsftp		192.168.166.155	eInvoice Reporting Server	edwunipinsftp.ppk
+sftpuser	pasaii77830	192.168.8.88	CorpPC	
+edwsftp		gstreporting.pbb.my	eInvoice Reporting Server	edwunipinsftp.ppk
 pbbemyklfpxp01		172.27.38.182	SFTP Paynet FI PBe Server	pbbemyklfpxp.ppk
 pbbemyklfpxp02		172.27.38.182	SFTP Paynet FI PB enterprise Server	pbbemyklfpxp.ppk
 edwmpbsftp		mpnsvfil001	Menara File Server (Conflict_Zone)	edwmpbsftp.pem
 sftpalmd		mpnsvfil001	Menara File Server (RMD-ALMD)	mpnsvfil001.ppk
 sftpcru		mpnsvfil001	Menara File Server (CRU)	mpnsvfil001.ppk
 sftpvctp		mpnsvfil001	Menara File Server VCTP	mpnsvfil001.ppk
-pbbbnm	pasaii778301	192.168.98.202	ELDS reportingFTP (ELDS09)	
+pbbbnm	pasaii77830	192.168.98.202	ELDS reportingFTP (ELDS09)	
 sftppmp		192.168.5.204	CMCM COLD1 Server	edwunipinsftp.ppk
 sftpgfta		mpnsvfil001	Menara File Server (DM-EAL-DP)	mpnsvfil001.ppk
-edwsftp		192.168.120.126	eInvoice Reporting DR Server	edwunipinsftp.ppk
-romssftp	pasaii778301	172.22.34.71	Menara File Server (ROMS)	
+edwsftp		gstreporting.pbb.my	eInvoice Reporting DR Server	edwunipinsftp.ppk
+romssftp	pasaii77830	mpnsvfil001	Menara File Server (ROMS)	
 sftpedw		192.168.104.80	Python SVDWH101	sftpedw-prv.pem
-edwctpsftp		192.168.92.9	CTP External SFTP Server	edwctpsftp.ppk
-ftpuser	pasaii778301	192.168.215.35	ECAI to SAS	
-sftpedw		192.168.104.72	SVDWH001	sftpedw-prv.ppk
-sas2ctcssftp	pasaii778301	192.168.225.143	Internal SFTP Server (CTCS)	
+edwctpsftp		pbbsvftp001	CTP External SFTP Server	edwctpsftp.ppk
+sftpcmd		mpnsvfil001	Menara File Server (CMD)	edwmpbsftp.ppk
+sas2ctcssftp	pasaii77830	192.168.225.143	Internal SFTP Server (CTCS)	
 sftpimscc		mpnsvfil001	Menara File Server IMS	mpnsvfil001_ppk.ppk
+sftpcrms		svcrmsspd001	CRMS SPD Server	sftpcrms_id_rsa
+sftpcitr	pasaii77830	mpnsvfil001	Menara File Server (BRD)	
+edwlonpac		192.168.98.199	ELDS Server (BGNVMELD001)	edwlonpac.ppk
