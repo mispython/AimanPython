@@ -65,6 +65,7 @@ OUTPUTS
 import gc
 import pyreadstat
 from pathlib import Path
+from datetime import date, datateime, timedelta
 
 import duckdb
 import pandas as pd
@@ -78,24 +79,34 @@ from PBBLNFMT_AII import format_ln03fmt
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+INPUT_SDESC_DIR = Path("/dwh")                                              # No need. Hardcoded into program
+INPUT_GP3_DIR   = Path("/sas/deposit/dwh/enrichment")
+INPUT_LOAN_DIR  = Path("/dwh/dwh_m/tempsource/ln")  
 
-INPUT_SDESC_DIR = STG_DIR / "sasdata"
-INPUT_GP3_DIR   = STG_DIR / "sasdata"
-INPUT_LOAN_DIR  = STG_DIR / "sasdata"
+INPUT_SDESC_FILE = INPUT_SDESC_DIR / "sdesc.sas7bdat"                       # No need. Hardcoded into program
+INPUT_GP3_FILE   = INPUT_GP3_DIR   / "enrh_dp_gp3.sas7bdat"
+INPUT_LOAN_FILE  = INPUT_LOAN_DIR  / f"loan{REPTMON}{REPTWEEK}.sas7bdat"    # Filter by ENTITY_CD = "PIBB"
 
-INPUT_SDESC_FILE = INPUT_SDESC_DIR / "sdesc.sas7bdat"
-INPUT_GP3_FILE   = INPUT_GP3_DIR / "gp3.sas7bdat"
-# INPUT_LOAN_FILE is built below once REPTMON / NOWK are known.
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMLN03"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIIMLN03"
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_REPORT_FILE = OUTPUT_DIR / "EIIMLN03.txt"
-OUTPUT_M4LOAN_FILE = OUTPUT_DIR / "M4LOAN.txt"
+OUTPUT_REPORT_FILE = OUTPUT_DIR / f"EIIMLN03_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+OUTPUT_M4LOAN_FILE = OUTPUT_DIR / f"M4LOAN_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_SDESC_DIR = STG_DIR / "sasdata"
+# INPUT_GP3_DIR   = STG_DIR / "sasdata"
+# INPUT_LOAN_DIR  = STG_DIR / "sasdata"
+
+# INPUT_SDESC_FILE = INPUT_SDESC_DIR / "sdesc.sas7bdat"
+# INPUT_GP3_FILE   = INPUT_GP3_DIR / "gp3.sas7bdat"
+# # INPUT_LOAN_FILE is built below once REPTMON / NOWK are known.
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMLN03"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60      # lines per page (not specified in SAS -> default)
@@ -121,9 +132,6 @@ REPTYEAR = reptdate.strftime("%Y")   # PUT(REPTDATE,YEAR4.)
 REPTMON  = reptdate.strftime("%m")   # PUT(MONTH(REPTDATE),Z2.)
 REPTDAY  = reptdate.strftime("%d")   # PUT(DAY(REPTDATE),Z2.)
 RDATE    = reptdate.strftime("%d/%m/%y")   # PUT(REPTDATE,DDMMYY8.)
-
-# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
-INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"iloan083.sas7bdat"
 
 print(f"  REPTYEAR/MON/DAY : {REPTYEAR}/{REPTMON}/{REPTDAY}   NOWK: {NOWK}")
 print(f"  RDATE            : {RDATE}")
@@ -323,6 +331,7 @@ loan_raw = con.execute(f"""
         CAST(CENSUS   AS DOUBLE)  AS CENSUS
     FROM read_parquet('{LOAN_CACHE.as_posix()}')
     WHERE NOT (PRODUCT IN (124,145) AND PRODCD = '54120')
+      AND ENTITY_CD = 'PIBB'
 """).pl()
 con.close()
 
@@ -675,8 +684,12 @@ with open(OUTPUT_REPORT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
         fh.write(ln.ljust(LINE_WIDTH) + "\n")
 
-print(f"  Report written : {OUTPUT_REPORT_FILE}")
-print(f"  Report lines   : {len(report_lines):,}")
+# print(f"  Report written : {OUTPUT_REPORT_FILE}")
+# print(f"  Report lines   : {len(report_lines):,}")
+
+print(f"\n  Output written to :")
+print(f"    {OUTPUT_REPORT_FILE}")
+print(f"  Total lines    : {len(report_lines):,}")
 
 # ============================================================================
 # STEP 12: FLAT FILE M4LOAN
@@ -750,7 +763,11 @@ with open(OUTPUT_M4LOAN_FILE, "w", encoding="latin1") as fh:
     for ln in m4loan_lines:
         fh.write(ln + "\n")
 
-print(f"  M4LOAN written : {OUTPUT_M4LOAN_FILE}")
-print(f"  M4LOAN lines   : {len(m4loan_lines):,}")
+# print(f"  M4LOAN written : {OUTPUT_M4LOAN_FILE}")
+# print(f"  M4LOAN lines   : {len(m4loan_lines):,}")
+
+print(f"\n  Output written to :")
+print(f"    {OUTPUT_M4LOAN_FILE}")
+print(f"  Total lines    : {len(m4loan_lines):,}")
 
 print("\nEIIMLN03 complete.")
