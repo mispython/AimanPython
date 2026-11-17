@@ -76,6 +76,39 @@ from REPTDATE import get_reptdate_values
 from PBBELF import format_brchcd
 
 # ============================================================================
+# STEP 1: DATA REPTDATE; SET BNM.REPTDATE;
+#         CALL SYMPUT('NOWK',PUT('4',$1.));
+#         CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+#         CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
+# ============================================================================
+print("Step 1: Deriving report date...")
+
+reptdate_values = get_reptdate_values()
+reptdate = reptdate_values.reptdate
+
+# NOWK is a LITERAL constant in this program (not day-derived) -- preserved
+# verbatim from the SAS source.
+NOWK = "4"
+REPTMON = reptdate.strftime("%m")   # PUT(MONTH(REPTDATE),Z2.)
+
+
+def _worddatx18(d) -> str:
+    """WORDDATX18. -- 'DD MonthName YYYY' word-date, right-justified
+    within an 18-character field (SAS date/word formats are
+    right-justified, not left-justified)."""
+    text = f"{d.day:d} {d.strftime('%B')} {d.year:d}"   # %B alone = Title Case
+    if len(text) > 18:
+        text = text[:18]
+    return text.rjust(18)
+
+
+RDATE = _worddatx18(reptdate)
+
+print(f"  REPTMON : {REPTMON}   NOWK : {NOWK}")
+print(f"  RDATE   : '{RDATE}'")
+print(f"  LOAN input file : {INPUT_LOAN_FILE.name}")
+
+# ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 # Production Path
@@ -109,39 +142,6 @@ OUTPUT_REPORT_FILE = OUTPUT_DIR / "EIFMLN03.txt"
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60      # lines per page (not specified in SAS -> default)
 LINE_WIDTH = 133     # DCB LRECL for SASLIST
-
-# ============================================================================
-# STEP 1: DATA REPTDATE; SET BNM.REPTDATE;
-#         CALL SYMPUT('NOWK',PUT('4',$1.));
-#         CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-#         CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
-# ============================================================================
-print("Step 1: Deriving report date...")
-
-reptdate_values = get_reptdate_values()
-reptdate = reptdate_values.reptdate
-
-# NOWK is a LITERAL constant in this program (not day-derived) -- preserved
-# verbatim from the SAS source.
-NOWK = "4"
-REPTMON = reptdate.strftime("%m")   # PUT(MONTH(REPTDATE),Z2.)
-
-
-def _worddatx18(d) -> str:
-    """WORDDATX18. -- 'DD MonthName YYYY' word-date, right-justified
-    within an 18-character field (SAS date/word formats are
-    right-justified, not left-justified)."""
-    text = f"{d.day:d} {d.strftime('%B')} {d.year:d}"   # %B alone = Title Case
-    if len(text) > 18:
-        text = text[:18]
-    return text.rjust(18)
-
-
-RDATE = _worddatx18(reptdate)
-
-print(f"  REPTMON : {REPTMON}   NOWK : {NOWK}")
-print(f"  RDATE   : '{RDATE}'")
-print(f"  LOAN input file : {INPUT_LOAN_FILE.name}")
 
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
