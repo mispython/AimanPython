@@ -72,7 +72,7 @@ marked with a form-feed character instead of an ASA '1' byte.
 
 import gc
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import duckdb
 import pandas as pd
@@ -86,31 +86,37 @@ from PBBDPFMT import fdprod_format
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-# BASE_DIR = Path("/sas/deposit/dwh")
+# Production Path
+BASE_DIR = Path("/sas/deposit/dwh")
 
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+INPUT_MAIN_FD_DIR = BASE_DIR / "integration"
+INPUT_FD_DIR      = BASE_DIR / "enrichment"
 
-# INPUT_MAIN_FD_DIR = BASE_DIR / "input" / "prod" / "EIIMRM03" / "MAIN_FD"
-# INPUT_FD_DIR      = BASE_DIR / "enrichment"
-INPUT_MAIN_FD_DIR = STG_DIR / "sasdata"
-INPUT_FD_DIR      = STG_DIR / "sasdata"
-
-INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
-INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+INPUT_FD_FILE      = INPUT_FD_DIR      / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
 
 OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIIMRM03.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"EIIMRM03_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_MAIN_FD_DIR = STG_DIR / "sasdata"
+# INPUT_FD_DIR      = STG_DIR / "sasdata"
+
+# INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
+# INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
 
 # ============================================================================
-# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
+# STEP 1: REPORT DATE
 # ============================================================================
 print("Step 1: Deriving report date...")
 
@@ -136,15 +142,14 @@ RPYR, RPMTH, RPDAY = reptdate.year, reptdate.month, reptdate.day
 # DCLVAR macro's RD1-RD12 array (days-per-month for the report year), used
 # by %REMMTH. D1-D12 (LDAY) and MD1-MD12 (MDDAYS) are also RETAINed/declared
 # by the original DCLVAR macro but are never referenced anywhere else in the
-# program body -- they are dead declarations, omitted here (same as
-# EIIMRM01.py / EIIMRM02.py).
+# program body -- they are dead declarations, omitted here
 RD_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 if RPYR % 4 == 0:
     RD_DAYS[1] = 29
 
-print(f"  RDATE        : {RDATE}")
-print(f"  REPTMON/DAY  : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}")
-print(f"  Output file  : {OUTPUT_FILE.name}")
+print(f"  RDATE            : {RDATE}")
+print(f"  REPTMON/DAY      : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}")
+print(f"  Output file      : {OUTPUT_FILE.name}")
 
 # ============================================================================
 # PROC FORMAT EQUIVALENTS (local to this program)
@@ -993,16 +998,20 @@ def _render_tabulate(rows: list) -> list:
 report_lines = _render_tabulate(depfinal_all)
 
 # ============================================================================
-# STEP 11: WRITE OUTPUT
+# STEP 13: WRITE OUTPUT
 # ============================================================================
 with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
         fh.write(ln + "\n")
 
-print(f"\n  Output written : {OUTPUT_FILE}")
+# print(f"\n  Output written : {OUTPUT_FILE}")
+# print(f"  Total lines    : {len(report_lines):,}")
+# # print("\n--- Report preview (first 40 lines) ---")
+# # for ln in report_lines[:40]:
+# #     print(ln)
+
+print(f"\n  Output written to :")
+print(f"    {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
-# print("\n--- Report preview (first 40 lines) ---")
-# for ln in report_lines[:40]:
-#     print(ln)
 
 print("\nEIIMRM03 complete.")
