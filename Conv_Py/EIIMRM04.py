@@ -715,6 +715,7 @@ loan_raw = con.execute(f"""
         CAST(RISKRTE  AS INTEGER) AS RISKRTE
     FROM read_parquet('{LOAN_CACHE.as_posix()}')
     WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
+      AND ENTITY_CD = 'PIBB'
     ORDER BY ACCTNO, NOTENO
 """).pl()
 con.close()
