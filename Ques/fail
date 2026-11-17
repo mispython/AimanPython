@@ -1,17 +1,11 @@
-def _parse_reldte(reldte: str):
-    """Parse RELDTE as the first 8 digits = YYYYMMDD.
-
-    The SAS source (INPUT(SUBSTR(RELDTE,6,4)||SUBSTR(RELDTE,2,4),MMDDYY8.))
-    assumed a 1-char prefix layout like '?YYYYMMDD...'. Actual PEND.RELDTE
-    values are YYYYMMDD-prefixed (e.g. '20261206340' = 2026-12-06 + seq 340),
-    so the SUBSTR shuffle is dropped and the prefix is parsed directly.
-    """
-    if not reldte:
-        return None
-    s = str(reldte).strip()
-    if len(s) < 8:
-        return None
-    try:
-        return date(int(s[0:4]), int(s[4:6]), int(s[6:8]))
-    except ValueError:
-        return None
+con = duckdb.connect(database=":memory:")
+pend_raw = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(RATEOVER AS DOUBLE)  AS RATEOVER,
+        CAST(RELDTE   AS VARCHAR) AS RELDTE
+    FROM read_parquet('{PEND_CACHE.as_posix()}')
+    ORDER BY ACCTNO, NOTENO
+""").pl()
+con.close()
