@@ -73,15 +73,6 @@ same chunked sas7bdat -> Parquet -> cache pattern as EIIMRM01.py)
    Used  : pending rate-override records, processed into
            REALPEND/SECOND/THIRD/REPRPEND and UPDATE-chained into PENDFIN.
 
-No reptdate.parquet is read -- REPTDATE.py supplies the report date, and
-the SDD/WK/WK1/MM/MM1 week-of-month derivation (an exact-day match on
-8/15/22/otherwise, DIFFERENT from REPTDATE.py's day-range-based NOWK) is
-computed locally below because it feeds the LOAN input filename directly.
-
-output_date.py is NOT used: the output //TEMP DD (SAP.PIBB.EIIMRM04.TEXT)
-is a fixed GDG-style catalogued name carrying no date token, so the output
-file uses a static filename, per project convention.
-
 ============================================================================
 OUTPUT
 ============================================================================
@@ -109,7 +100,7 @@ This is preserved verbatim below (see REPORT_TITLES) rather than corrected.
 
 import gc
 from pathlib import Path
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import duckdb
 import pandas as pd
@@ -123,27 +114,39 @@ from PBBLNFMT_AII import format_lnprod, format_odprod
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-# BASE_DIR = Path("/sas/loan/dwh")
+# Production Path
+BASE_DIR = Path("/sas")
 
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+INPUT_OD_DIR     = BASE_DIR / "deposit/dwh/integration"
+INPUT_LNNOTE_DIR = BASE_DIR / "ln/dwh/enrichment"
+INPUT_LOAN_DIR   = Path("/dwh/dwh_m/tempsource/ln")
+INPUT_PEND_DIR   = Path("/dwh/ilnd_ln")
 
-INPUT_OD_DIR     = STG_DIR / "sasdata"
-INPUT_LOAN_DIR   = STG_DIR / "sasdata"
-INPUT_LNNOTE_DIR = STG_DIR / "sasdata"
-INPUT_PEND_DIR   = STG_DIR / "sasdata"
-
-INPUT_OD_FILE     = INPUT_OD_DIR / "intg_dp_acct_overdft_d23.sas7bdat"
-INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d23.sas7bdat"
-INPUT_PEND_FILE   = INPUT_PEND_DIR / "pend.sas7bdat"
-# INPUT_LOAN_FILE is resolved after REPTMON/NOWK are derived (Step 1 below).
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+INPUT_OD_FILE     = INPUT_OD_DIR     / f"intg_dp_acct_overdft_d{REPTDAY}.sas7bdat"
+INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / f"enrh_ln_note_d{REPTDAY}.sas7bdat"
+INPUT_LOAN_FILE   = INPUT_LOAN_DIR   / f"loan{REPTYEAR}{REPTWEEK}"
+INPUT_PEND_FILE   = INPUT_PEND_DIR   / f"ipend{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
 
 OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIIMRM04_260826_v2.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"EIIMRM04_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_OD_DIR     = STG_DIR / "sasdata"
+# INPUT_LOAN_DIR   = STG_DIR / "sasdata"
+# INPUT_LNNOTE_DIR = STG_DIR / "sasdata"
+# INPUT_PEND_DIR   = STG_DIR / "sasdata"
+
+# INPUT_OD_FILE     = INPUT_OD_DIR / "intg_dp_acct_overdft_d23.sas7bdat"
+# INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"
+# INPUT_PEND_FILE   = INPUT_PEND_DIR / "pend.sas7bdat"
+# # INPUT_LOAN_FILE is resolved after REPTMON/NOWK are derived (Step 1 below).
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
@@ -200,15 +203,9 @@ BTYPE = "PBB"
 
 RPYR, RPMTH, RPDAY = reptdate.year, reptdate.month, reptdate.day
 
-print(f"  RDATE            : {RDATE}   SDATE: {SDATE_STR}")
-print(f"  REPTMON/NOWK     : {REPTMON}/{NOWK}   REPTMON1/NOWK1: {REPTMON1}/{NOWK1}")
+print(f"  RDATE            : {RDATE}")
+print(f"  REPTMON/DAY      : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}")
 print(f"  Output file      : {OUTPUT_FILE.name}")
-
-# LOAN input filename is fully deterministic from REPTMON+NOWK -- built
-# directly, not resolved via input_date.get_latest_file().
-# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
-# INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"iln{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-INPUT_LOAN_FILE = INPUT_LOAN_DIR / f"iloan083.sas7bdat"
 
 # ============================================================================
 # DAYS-IN-MONTH HELPER  (equivalent of the RETAIN D1-D12/RD1-RD12 arrays --
@@ -729,37 +726,6 @@ loan_raw = loan_raw.with_columns(
 
 print(f"  LOAN rows: {len(loan_raw):,}")
 
-# con = duckdb.connect(database=":memory:")
-# loan_raw = con.execute(f"""
-#     SELECT
-#         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-#         CAST(NOTENO   AS BIGINT)  AS NOTENO,
-#         CAST(PRODUCT  AS INTEGER) AS PRODUCT,
-#         CAST(PRODCD   AS VARCHAR) AS PRODCD,
-#         CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
-#         CAST(AMTIND   AS VARCHAR) AS AMTIND,
-#         CAST(CURBAL   AS DOUBLE)  AS CURBAL,
-#         CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-#         CAST(INTRATE  AS DOUBLE)  AS INTRATE,
-#         CAST(FEEAMT   AS DOUBLE)  AS FEEAMT,
-#         CAST(NTINT    AS VARCHAR) AS NTINT,
-#         CAST(INTEARN  AS DOUBLE)  AS INTEARN,
-#         CAST(INTAMT   AS DOUBLE)  AS INTAMT,
-#         CAST(INTEARN2 AS DOUBLE)  AS INTEARN2,
-#         CAST(INTEARN3 AS DOUBLE)  AS INTEARN3,
-#         CAST(EXPRDATE AS DATE)    AS EXPRDATE,
-#         CAST(PAYFREQ  AS VARCHAR) AS PAYFREQ,
-#         CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
-#         CAST(ISSDTE   AS DATE)    AS ISSDTE,
-#         CAST(RISKRTE  AS INTEGER) AS RISKRTE
-#     FROM read_parquet('{LOAN_CACHE.as_posix()}')
-#     WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
-#       AND ENTITY_CD = 'PIBB'
-#     ORDER BY ACCTNO, NOTENO
-# """).pl()
-# con.close()
-# print(f"  LOAN rows: {len(loan_raw):,}")
-
 # DATA LOAN; MERGE LOAN(IN=A) OD(IN=B); BY ACCTNO; IF A;
 # Enrich each loan row with OD's limit-expiry/risk-code where a match
 # exists by ACCTNO; keep every LOAN row regardless of OD match (IF A).
@@ -815,32 +781,37 @@ pend_raw = con.execute(f"""
 """).pl()
 con.close()
 
-# con = duckdb.connect(database=":memory:")
-# pend_raw = con.execute(f"""
-#     SELECT
-#         CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-#         CAST(NOTENO   AS BIGINT)  AS NOTENO,
-#         CAST(RATEOVER AS DOUBLE)  AS RATEOVER,
-#         CAST(RELDTE   AS VARCHAR) AS RELDTE
-#     FROM read_parquet('{PEND_CACHE.as_posix()}')
-#     WHERE ENTITY_CD = 'PIBB'
-#     ORDER BY ACCTNO, NOTENO
-# """).pl()
-# con.close()
 
+# def _parse_reldte(reldte: str):
+#     """INPUT(SUBSTR(RELDTE,6,4)||SUBSTR(RELDTE,2,4),MMDDYY8.)
+#     RELDTE positions are 1-based in SAS; position 6 for 4 chars, then
+#     position 2 for 4 chars, concatenated and parsed as an 8-digit MMDDYYYY
+#     string (0-based Python slices: [5:9] then [1:5])."""
+#     if reldte is None:
+#         return None
+#     s = (reldte[5:9] + reldte[1:5])
+#     try:
+#         mm, dd, yyyy = int(s[0:2]), int(s[2:4]), int(s[4:8])
+#         return date(yyyy, mm, dd)
+#     except (ValueError, IndexError):
+#         return None
 
 def _parse_reldte(reldte: str):
-    """INPUT(SUBSTR(RELDTE,6,4)||SUBSTR(RELDTE,2,4),MMDDYY8.)
-    RELDTE positions are 1-based in SAS; position 6 for 4 chars, then
-    position 2 for 4 chars, concatenated and parsed as an 8-digit MMDDYYYY
-    string (0-based Python slices: [5:9] then [1:5])."""
-    if reldte is None:
+    """Parse RELDTE as the first 8 digits = YYYYMMDD.
+
+    The SAS source (INPUT(SUBSTR(RELDTE,6,4)||SUBSTR(RELDTE,2,4),MMDDYY8.))
+    assumed a 1-char prefix layout like '?YYYYMMDD...'. Actual PEND.RELDTE
+    values are YYYYMMDD-prefixed (e.g. '20261206340' = 2026-12-06 + seq 340),
+    so the SUBSTR shuffle is dropped and the prefix is parsed directly.
+    """
+    if not reldte:
         return None
-    s = (reldte[5:9] + reldte[1:5])
+    s = str(reldte).strip()
+    if len(s) < 8:
+        return None
     try:
-        mm, dd, yyyy = int(s[0:2]), int(s[2:4]), int(s[4:8])
-        return date(yyyy, mm, dd)
-    except (ValueError, IndexError):
+        return date(int(s[0:4]), int(s[4:6]), int(s[6:8]))
+    except ValueError:
         return None
 
 
@@ -1203,11 +1174,6 @@ def _run_start(rec: dict) -> list:
             bldate = exprdate
         else:
             bldate = issdte
-            # # DEBUG
-            # print(f"bldate type: {type(bldate)}, exprdate type: {type(exprdate)}, reptdate type: {type(reptdate)}")
-            # while bldate is not None and exprdate is not None and bldate <= reptdate:
-            #     bldate = _nxtbldt(bldate, payfreq, freq, issdte)
-
         if exprdate is not None and (bldate is None or bldate > exprdate or (curbal or 0.0) <= payamt):
             bldate = exprdate
 
@@ -1490,11 +1456,6 @@ def _title_block(program_title4: str) -> list:
     ]
 
 
-# def _remmth1_present_order(rows) -> list:
-#     present = sorted({r.get("REMMTH1") or "" for r in rows}, key=_remmth1_sort_key)
-#     return present
-
-
 def _remmth1_present_order(rows) -> list:
     # Plain lexicographic sort reproduces SAS's default unformatted CLASS
     # order for REMMTH1 (a character value, not a numeric with a format):
@@ -1502,65 +1463,6 @@ def _remmth1_present_order(rows) -> list:
     # bucket (0x3E), and the buckets themselves were padded so ASCII order
     # already matches numeric/chronological order.
     return sorted({r.get("REMMTH1") or "" for r in rows})
-
-
-# def _render_detail_tabulate(rows: list, title4: str, group_dims) -> list:
-#     """TABLE (PRODTYP)*(PRODUCT*NTINDEX*SUBTYP), (REMMTH1)*SUM*(AMOUNT WAYLD)
-#     / BOX='LOANS AND ADVANCES' RTS=40 CONDENSE;
-#     Row key = group_dims (PRODTYP,PRODUCT,NTINDEX,SUBTYP) or (PRODBIG,SUBTYP);
-#     each present REMMTH1 bucket becomes a repeating AMOUNT/WAYLD column."""
-#     if not rows:
-#         return []
-
-#     remmth1_cols = _remmth1_present_order(rows)
-#     cell = {}
-#     row_keys, seen = [], set()
-#     for r in rows:
-#         key = tuple(r.get(f) for f in group_dims)
-#         cell.setdefault(key, {})[r.get("REMMTH1") or ""] = r
-#         if key not in seen:
-#             seen.add(key)
-#             row_keys.append(key)
-#     row_keys.sort()
-
-#     output: list = []
-#     lines_on_page = 0
-
-#     def _emit_header(with_titles: bool):
-#         nonlocal lines_on_page
-#         block = []
-#         if with_titles:
-#             block.append(FF)
-#             block.extend(_title_block(title4))
-#         header1 = " " * LABEL_WIDTH
-#         header2 = " " * LABEL_WIDTH
-#         for col in remmth1_cols:
-#             header1 += col.strip().rjust(AMOUNT_WIDTH + WAYLD_WIDTH + 1)
-#             header2 += "BAL O/S (RM)".rjust(AMOUNT_WIDTH) + "YIELD".rjust(WAYLD_WIDTH) + " "
-#         block.append(header1)
-#         block.append(header2)
-#         output.extend(block)
-#         lines_on_page = len(block)
-
-#     _emit_header(with_titles=True)
-
-#     for key in row_keys:
-#         if lines_on_page >= PAGE_SIZE:
-#             _emit_header(with_titles=True)
-
-#         label_parts = [str(v) if v is not None else "" for v in key]
-#         label = " ".join(label_parts)[:LABEL_WIDTH].ljust(LABEL_WIDTH)
-
-#         line = label
-#         for col in remmth1_cols:
-#             rec = cell[key].get(col)
-#             amount = rec["AMOUNT"] if rec else None
-#             wayld = rec["WAYLD"] if rec else None
-#             line += _fmt_amount(amount) + _fmt_wayld(wayld) + " "
-#         output.append(line)
-#         lines_on_page += 1
-
-#     return output
 
 
 def _split_label(key, field_widths, field_fmt, last_shown):
@@ -1663,12 +1565,6 @@ def _render_detail_tabulate(rows: list, title4: str, group_dims,
     return output
 
 
-# report_lines = []
-# report_lines += _render_detail_tabulate(fix3, REPORT_TITLES[0], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"))
-# report_lines += _render_detail_tabulate(blr3, REPORT_TITLES[1], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"))
-# report_lines += _render_detail_tabulate(fix3_pb, REPORT_TITLES[2], ("PRODBIG", "SUBTYP"))
-# report_lines += _render_detail_tabulate(blr3_pb, REPORT_TITLES[3], ("PRODBIG", "SUBTYP"))
-
 report_lines = []
 report_lines += _render_detail_tabulate(
     fix3, REPORT_TITLES[0], ("PRODTYP", "PRODUCT", "NTINDEX", "SUBTYP"),
@@ -1686,18 +1582,18 @@ report_lines += _render_detail_tabulate(
 # ============================================================================
 # STEP 13: WRITE OUTPUT
 # ============================================================================
-# with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-#     for ln in report_lines:
-#         fh.write(ln + "\n")
-
-with open(OUTPUT_FILE, "w", encoding="latin1", newline="") as fh:
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
-        fh.write(ln[:256].ljust(256) + "\r\n")
+        fh.write(ln + "\n")
 
-print(f"\n  Output written : {OUTPUT_FILE}")
+# print(f"\n  Output written : {OUTPUT_FILE}")
+# print(f"  Total lines    : {len(report_lines):,}")
+# # print("\n--- Report preview (first 40 lines) ---")
+# # for ln in report_lines[:40]:
+# #     print(ln)
+
+print(f"\n  Output written to :")
+print(f"    {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
-# print("\n--- Report preview (first 40 lines) ---")
-# for ln in report_lines[:40]:
-#     print(ln)
 
 print("\nEIIMRM04 complete.")
