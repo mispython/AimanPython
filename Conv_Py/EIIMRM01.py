@@ -62,7 +62,7 @@ the SAS source) are marked with a form-feed character instead of an ASA
 
 import gc
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import duckdb
 import pandas as pd
@@ -76,38 +76,45 @@ from PBBDPFMT import fdprod_format, caprod_format
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-# BASE_DIR = Path("/sas/deposit/dwh")
+# Production Path
+BASE_DIR = Path("/sas/deposit/dwh")
 
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+INPUT_MAIN_FD_DIR = BASE_DIR / "integration"
+INPUT_FD_DIR      = BASE_DIR / "enrichment"
+INPUT_SAVING_DIR  = BASE_DIR / "integration"
+INPUT_CURRENT_DIR = BASE_DIR / "integration"
 
-# INPUT_MAIN_FD_DIR = BASE_DIR / "input" / "prod" / "EIIMRM01" / "MAIN_FD"
-# INPUT_FD_DIR      = BASE_DIR / "enrichment"
-# INPUT_SAVING_DIR  = BASE_DIR / "integration"
-# INPUT_CURRENT_DIR = BASE_DIR / "integration"
-
-INPUT_MAIN_FD_DIR = STG_DIR / "sasdata"
-INPUT_FD_DIR      = STG_DIR / "sasdata"
-INPUT_SAVING_DIR  = STG_DIR / "sasdata"
-INPUT_CURRENT_DIR = STG_DIR / "sasdata"
-
-INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
-INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
-INPUT_SAVING_FILE  = INPUT_SAVING_DIR / "intg_dp_acct_saving_d19.sas7bdat"
-INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "intg_dp_acct_current_d19.sas7bdat"
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+INPUT_FD_FILE      = INPUT_FD_DIR      / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
+INPUT_SAVING_FILE  = INPUT_SAVING_DIR  / f"intg_dp_acct_saving_d{REPTDAY}.sas7bdat"
+INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
 
 OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "EIIMRM01.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"EIIMRM01_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_MAIN_FD_DIR = STG_DIR / "sasdata"
+# INPUT_FD_DIR      = STG_DIR / "sasdata"
+# INPUT_SAVING_DIR  = STG_DIR / "sasdata"
+# INPUT_CURRENT_DIR = STG_DIR / "sasdata"
+
+# INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / "intg_dp_acct_fd_d19.sas7bdat"
+# INPUT_FD_FILE      = INPUT_FD_DIR / "enrh_dp_fd_cert_d19.sas7bdat"
+# INPUT_SAVING_FILE  = INPUT_SAVING_DIR / "intg_dp_acct_saving_d19.sas7bdat"
+# INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "intg_dp_acct_current_d19.sas7bdat"
+
+CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60          # lines per page (not specified in SAS -> default)
 
 # ============================================================================
-# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
+# STEP 1: REPORT DATE
 # ============================================================================
 print("Step 1: Deriving report date...")
 
@@ -138,9 +145,9 @@ RD_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 if RPYR % 4 == 0:
     RD_DAYS[1] = 29
 
-print(f"  RDATE        : {RDATE}")
-print(f"  REPTMON/DAY  : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}")
-print(f"  Output file  : {OUTPUT_FILE.name}")
+print(f"  RDATE            : {RDATE}")
+print(f"  REPTMON/DAY      : {REPTMON}/{REPTDAY}  REPTYEAR: {REPTYEAR}")
+print(f"  Output file      : {OUTPUT_FILE.name}")
 
 # ============================================================================
 # PROC FORMAT EQUIVALENTS (local to this program)
@@ -446,13 +453,6 @@ fd_raw = con.execute(f"""
     INNER JOIN main_fd_pibb m
         ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
 """).pl()
-
-# DEBUG
-print(f"  FD Parquet schema columns:", pq.read_schema(FD_CACHE).names)
-print(f"  FD raw columns: {fd_raw.columns}")
-print(f"  First 3 rows of fd_raw (sample):")
-print(fd_raw.head(3))
-
 con.close()
 
 print(f"  FD rows after PIBB account filter: {len(fd_raw):,}")
@@ -1130,10 +1130,14 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in report_lines:
         fh.write(ln + "\n")
 
-print(f"\n  Output written : {OUTPUT_FILE}")
+# print(f"\n  Output written : {OUTPUT_FILE}")
+# print(f"  Total lines    : {len(report_lines):,}")
+# # print("\n--- Report preview (first 40 lines) ---")
+# # for ln in report_lines[:40]:
+# #     print(ln)
+
+print(f"\n  Output written to :")
+print(f"    {OUTPUT_FILE}")
 print(f"  Total lines    : {len(report_lines):,}")
-# print("\n--- Report preview (first 40 lines) ---")
-# for ln in report_lines[:40]:
-#     print(ln)
 
 print("\nEIIMRM01 complete.")
