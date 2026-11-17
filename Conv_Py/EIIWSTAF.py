@@ -76,59 +76,6 @@ import pyarrow.parquet as pq
 from REPTDATE import get_reptdate_values
 
 # ============================================================================
-# PATH CONFIGURATION
-# ============================================================================
-# Production Path
-BASE_DIR              = Path("/sas/ln/dwh")
-INPUT_LNNOTE_DIR      = BASE_DIR / "enrichment"
-INPUT_LNCOMM_DIR      = BASE_DIR / "enrichment"
-INPUT_LNNOTE_FILE     = INPUT_LNNOTE_DIR  / f"enrh_ln_note_d{REPTDAY}.sas7bdat"     # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
-INPUT_LNCOMM_FILE     = INPUT_LNCOMM_DIR  / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"     # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
-
-DWH_DIR               = Path("/dwh")
-INPUT_LNPAY_PBB_DIR   = DWH_DIR / "ln_ln"
-INPUT_LNPAY_PIBB_DIR  = DWH_DIR / "iln_ln"
-INPUT_LNPAY_PBB_FILE  = INPUT_LNPAY_PBB_DIR  / f"lnpay{NOWK}.sas7bdat"    # PAY.LNPAY&NOWK
-INPUT_LNPAY_PIBB_FILE = INPUT_LNPAY_PIBB_DIR / f"ilnpay{NOWK}.sas7bdat"   # IPAY.ILNPAY&NOWK
-
-INPUT_ISBASE_DIR      = Path("/exdwh/host/sgm")
-INPUT_ISBASE_FILE     = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
-
-OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / f"EIIWSTAF_{REPTDAY}{REPTMON}{REPTYEAR}.txt"
-
-# # Testing Path
-# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
-
-# INPUT_LNNOTE_PBB_DIR  = STG_DIR / "MNILN"
-# INPUT_LNCOMM_PBB_DIR  = STG_DIR / "MNILN"
-# INPUT_LNNOTE_PIBB_DIR = STG_DIR / "MNILN"
-# INPUT_LNCOMM_PIBB_DIR = STG_DIR / "MNILN"
-# # INPUT_LNNOTE_DIR      = STG_DIR / "MNILN"
-# # INPUT_LNCOMM_DIR      = STG_DIR / "MNILN"
-# INPUT_LNPAY_PBB_DIR   = STG_DIR / "sasdata"
-# INPUT_LNPAY_PIBB_DIR  = STG_DIR / "sasdata"
-# INPUT_ISBASE_DIR      = STG_DIR / "sasdata"
-
-# INPUT_LNNOTE_PBB_FILE  = INPUT_LNNOTE_PBB_DIR  / "pbb_lnnote.sas7bdat"     # MNILN.LNNOTE
-# INPUT_LNCOMM_PBB_FILE  = INPUT_LNCOMM_PBB_DIR  / "pbb_lncomm.sas7bdat"     # MNILN.LNCOMM
-# INPUT_LNNOTE_PIBB_FILE = INPUT_LNNOTE_PIBB_DIR / "pibb_lnnote.sas7bdat"   # IMNILN.LNNOTE
-# INPUT_LNCOMM_PIBB_FILE = INPUT_LNCOMM_PIBB_DIR / "pibb_lncomm.sas7bdat"   # IMNILN.LNCOMM
-# # INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"         # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
-# # INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "enrh_ln_comm_d22.sas7bdat"         # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
-# INPUT_ISBASE_FILE = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
-
-# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
-# CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-CHUNK_ROWS = 500_000
-PAGE_SIZE  = 60     # OPTIONS PS=60 (explicit in SAS source)
-LINE_SIZE  = 132    # OPTIONS LS=132 (explicit in SAS source)
-FF = "\f"
-
-# ============================================================================
 # STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
 # ============================================================================
 print("Step 1: Deriving report date...")
@@ -180,6 +127,59 @@ print(f"  RDATE        : {RDATE}")
 print(f"  NOWK (week)  : {NOWK}   STRDAY: {STRDAY}   REPTDAY: {REPTDAY}")
 print(f"  PDATE..EDATE : {PDATE} .. {EDATE}")
 print(f"  Output file  : {OUTPUT_FILE.name}")
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# Production Path
+BASE_DIR              = Path("/sas/ln/dwh")
+INPUT_LNNOTE_DIR      = BASE_DIR / "enrichment"
+INPUT_LNCOMM_DIR      = BASE_DIR / "enrichment"
+INPUT_LNNOTE_FILE     = INPUT_LNNOTE_DIR  / f"enrh_ln_note_d{REPTDAY}.sas7bdat"     # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
+INPUT_LNCOMM_FILE     = INPUT_LNCOMM_DIR  / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"     # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
+
+DWH_DIR               = Path("/dwh")
+INPUT_LNPAY_PBB_DIR   = DWH_DIR / "ln_ln"
+INPUT_LNPAY_PIBB_DIR  = DWH_DIR / "iln_ln"
+INPUT_LNPAY_PBB_FILE  = INPUT_LNPAY_PBB_DIR  / f"lnpay{NOWK}.sas7bdat"    # PAY.LNPAY&NOWK
+INPUT_LNPAY_PIBB_FILE = INPUT_LNPAY_PIBB_DIR / f"ilnpay{NOWK}.sas7bdat"   # IPAY.ILNPAY&NOWK
+
+INPUT_ISBASE_DIR      = Path("/exdwh/host/sgm")
+INPUT_ISBASE_FILE     = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
+
+OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / f"EIIWSTAF_{REPTDAY}{REPTMTH}{REPTYEAR}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_LNNOTE_PBB_DIR  = STG_DIR / "MNILN"
+# INPUT_LNCOMM_PBB_DIR  = STG_DIR / "MNILN"
+# INPUT_LNNOTE_PIBB_DIR = STG_DIR / "MNILN"
+# INPUT_LNCOMM_PIBB_DIR = STG_DIR / "MNILN"
+# # INPUT_LNNOTE_DIR      = STG_DIR / "MNILN"
+# # INPUT_LNCOMM_DIR      = STG_DIR / "MNILN"
+# INPUT_LNPAY_PBB_DIR   = STG_DIR / "sasdata"
+# INPUT_LNPAY_PIBB_DIR  = STG_DIR / "sasdata"
+# INPUT_ISBASE_DIR      = STG_DIR / "sasdata"
+
+# INPUT_LNNOTE_PBB_FILE  = INPUT_LNNOTE_PBB_DIR  / "pbb_lnnote.sas7bdat"     # MNILN.LNNOTE
+# INPUT_LNCOMM_PBB_FILE  = INPUT_LNCOMM_PBB_DIR  / "pbb_lncomm.sas7bdat"     # MNILN.LNCOMM
+# INPUT_LNNOTE_PIBB_FILE = INPUT_LNNOTE_PIBB_DIR / "pibb_lnnote.sas7bdat"   # IMNILN.LNNOTE
+# INPUT_LNCOMM_PIBB_FILE = INPUT_LNCOMM_PIBB_DIR / "pibb_lncomm.sas7bdat"   # IMNILN.LNCOMM
+# # INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_d22.sas7bdat"         # MNILN.LNNOTE + IMNILN.LNNOTE (ENTITY_CD-split)
+# # INPUT_LNCOMM_FILE = INPUT_LNCOMM_DIR / "enrh_ln_comm_d22.sas7bdat"         # MNILN.LNCOMM + IMNILN.LNCOMM (ENTITY_CD-split)
+# INPUT_ISBASE_FILE = INPUT_ISBASE_DIR / "isbase.sas7bdat"                   # LNHIST.ISBASE
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMRPTS"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60     # OPTIONS PS=60 (explicit in SAS source)
+LINE_SIZE  = 132    # OPTIONS LS=132 (explicit in SAS source)
+FF = "\f"
 
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIBDLN1M.py pattern)
@@ -236,12 +236,12 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
 # STEP 2: CACHE INPUT SAS FILES TO PARQUET
 # ============================================================================
 print("\nStep 2: Caching input SAS datasets to Parquet...")
-LNNOTE_PBB_CACHE  = _load_cached(INPUT_LNNOTE_PBB_FILE, "LNNOTE_PBB")
-LNCOMM_PBB_CACHE  = _load_cached(INPUT_LNCOMM_PBB_FILE, "LNCOMM_PBB")
-LNNOTE_PIBB_CACHE = _load_cached(INPUT_LNNOTE_PIBB_FILE, "LNNOTE_PIBB")
-LNCOMM_PIBB_CACHE = _load_cached(INPUT_LNCOMM_PIBB_FILE, "LNCOMM_PIBB")
-# LNNOTE_CACHE      = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
-# LNCOMM_CACHE      = _load_cached(INPUT_LNCOMM_FILE, "LNCOMM")
+# LNNOTE_PBB_CACHE  = _load_cached(INPUT_LNNOTE_PBB_FILE, "LNNOTE_PBB")
+# LNCOMM_PBB_CACHE  = _load_cached(INPUT_LNCOMM_PBB_FILE, "LNCOMM_PBB")
+# LNNOTE_PIBB_CACHE = _load_cached(INPUT_LNNOTE_PIBB_FILE, "LNNOTE_PIBB")
+# LNCOMM_PIBB_CACHE = _load_cached(INPUT_LNCOMM_PIBB_FILE, "LNCOMM_PIBB")
+LNNOTE_CACHE      = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
+LNCOMM_CACHE      = _load_cached(INPUT_LNCOMM_FILE, "LNCOMM")
 LNPAY_PBB_CACHE   = _load_cached(INPUT_LNPAY_PBB_FILE, "LNPAY_PBB")
 LNPAY_PIBB_CACHE  = _load_cached(INPUT_LNPAY_PIBB_FILE, "LNPAY_PIBB")
 ISBASE_CACHE      = _load_cached(INPUT_ISBASE_FILE, "ISBASE")
@@ -354,22 +354,22 @@ def _build_lnnote(tag: str, note_cache: Path, comm_cache: Path, costctr_sql: str
     return out_rows
 
 
-print("\nStep 3: Building LNNOTE (PBB, COSTCTR=8044)...")
-lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "n.COSTCTR = 8044")
+# print("\nStep 3: Building LNNOTE (PBB, COSTCTR=8044)...")
+# lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_PBB_CACHE, LNCOMM_PBB_CACHE, "n.COSTCTR = 8044")
 
-# print("\nStep 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...")
-# lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
-#                                  entity_sql="ENTITY_CD <> 'PIBB'",
-#                                  costctr_sql="COSTCTR = 8044")
+print("\nStep 3: Building LNNOTE (PBB, ENTITY_CD != 'PIBB', COSTCTR=8044)...")
+lnnote_pbb_rows = _build_lnnote("PBB", LNNOTE_CACHE, LNCOMM_CACHE,
+                                 entity_sql="ENTITY_CD <> 'PIBB'",
+                                 costctr_sql="COSTCTR = 8044")
 
-print("\nStep 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...")
-lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
-                                 "n.COSTCTR BETWEEN 3000 AND 3999")
+# print("\nStep 4: Building ILNNOTE (PIBB, 3000<=COSTCTR<=3999)...")
+# lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_PIBB_CACHE, LNCOMM_PIBB_CACHE,
+#                                  "n.COSTCTR BETWEEN 3000 AND 3999")
 
-# print("\nStep 4: Building ILNNOTE (PIBB, ENTITY_CD = 'PIBB', 3000<=COSTCTR<=3999)...")
-# lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_CACHE, LNCOMM_CACHE,
-#                                   entity_sql="ENTITY_CD = 'PIBB'",
-#                                   costctr_sql="COSTCTR BETWEEN 3000 AND 3999")
+print("\nStep 4: Building ILNNOTE (PIBB, ENTITY_CD = 'PIBB', 3000<=COSTCTR<=3999)...")
+lnnote_pibb_rows = _build_lnnote("PIBB", LNNOTE_CACHE, LNCOMM_CACHE,
+                                  entity_sql="ENTITY_CD = 'PIBB'",
+                                  costctr_sql="COSTCTR BETWEEN 3000 AND 3999")
 
 # ============================================================================
 # STEP 5: DATA LOAN &INTGRVAR;  SET LNNOTE ILNNOTE;  ...
