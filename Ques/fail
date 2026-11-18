@@ -473,5 +473,10 @@ def _build_loan3(entity: str) -> list:
 
 ======================
 
+            (CASE WHEN BLDATE > 0 THEN DATE '1960-01-01' + CAST(BLDATE AS INTEGER) END) AS BLDATE,
+
+
+
+
             COALESCE(CAST(EXCESSDT AS BIGINT), 0) AS EXCESSDT,
             COALESCE(CAST(TODDATE  AS BIGINT), 0) AS TODDATE,
