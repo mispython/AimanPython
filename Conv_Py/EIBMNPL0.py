@@ -52,9 +52,15 @@ from pathlib import Path
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMNPL"
+# Production Path
+BASE_DIR    = Path("/host_pq/mis/output/report")
+OUTPUT_DIR  = BASE_DIR / "EIBMNPL0"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMNPL"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 ENTITIES = ("PBB", "PIBB")
 
