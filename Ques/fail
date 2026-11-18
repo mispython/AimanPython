@@ -1,25 +1,15 @@
-import atexit
 import gc
 import tempfile
 from pathlib import Path
-from datetime import date
-
-import duckdb
-import pandas as pd
-import polars as pl
-import pyarrow as pa
-import pyarrow.parquet as pq
-
-from PBBLNFMT import format_ln03fmt
 
 
 
 
 # ============================================================================
-# CONTROL FILE  (all dates from ctl_dwh_batch_dttm)
+# CONTROL FILE CONFIGURATION  (report date from batch control, SOURCE_SYSTEM_CD = DP)
 # ============================================================================
 CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for the report date
+BATCH_SOURCE   = "DP"
 
 
 def get_batch_date(source_system_cd: str) -> date:
@@ -36,206 +26,495 @@ def get_batch_date(source_system_cd: str) -> date:
 
 
 
-reptdate = get_batch_date(BATCH_SOURCE)   # DP batch date
-
-
-
-
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
-INPUT_GP3_DIR   = Path("/sas/deposit/dwh/enrichment")
-INPUT_LOAN_DIR  = Path("/dwh/dwh_m/tempsource/ln")
-
-INPUT_GP3_FILE   = INPUT_GP3_DIR   / "enrh_dp_gp3.sas7bdat"
-INPUT_LOAN_FILE  = INPUT_LOAN_DIR  / f"loan{REPTMON}{NOWK}.sas7bdat"    # Filter by ENTITY_CD = "PIBB"
-print(f"  LOAN input file  : {INPUT_LOAN_FILE.name}")
-
-OUTPUT_DIR  = BASE_DIR / "output" / "EIIMRPTS"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_REPORT_FILE = OUTPUT_DIR / "EIIMLN03.txt"      # SASLIST DSN has no date token
-OUTPUT_M4LOAN_FILE = OUTPUT_DIR / "M4LOAN.txt"        # M4LOAN DSN has no date token
-
-# --- Temporary Parquet cache (removed automatically when the program ends) ---
-TEMP_DIR = None   # None = system temp
-_CACHE_TMP = tempfile.TemporaryDirectory(dir=TEMP_DIR)
-atexit.register(_CACHE_TMP.cleanup)
-CACHE_DIR = Path(_CACHE_TMP.name)
+reptdate = get_batch_date(BATCH_SOURCE)
 
 
 
 
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    """Convert a .sas7bdat to a temporary Parquet file (deleted at program end)."""
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+    """Convert a .sas7bdat to a TEMPORARY Parquet file (removed by _TMP.cleanup()
+    once the last DuckDB read is done, so no cache is kept on disk)."""
+    if not sas_path.exists():
+        raise FileNotFoundError(f"[{tag}] Input file not found: {sas_path}")
+    cache_path = TEMP_PARQUET_DIR / f"{sas_path.stem}.parquet"
     _sas_to_parquet(sas_path, cache_path, tag)
     return cache_path
 
 
 
 
-print("\nStep 2: Caching input SAS datasets to Parquet (temporary)...")
-GP3_CACHE   = _load_cached(INPUT_GP3_FILE, "GP3")
-LOAN_CACHE  = _load_cached(INPUT_LOAN_FILE, "LOAN")
+_TMP.cleanup()
+print("  Temporary Parquet files removed.")
 
 
 
 
-# ============================================================================
-# STEP 3: &SDESC  (description only, hardcoded for PIBB; no SDESC input needed)
-# ============================================================================
-print("\nStep 3: Setting &SDESC (PIBB, hardcoded)...")
-SDESC = "PUBLIC ISLAMIC BANK BERHAD".ljust(26)    # PUT(SDESC,$26.)
-print(f"  SDESC: '{SDESC}'")
+======================== EIIMRM01
+
+# Production Path
+BASE_DIR = Path("/sas/deposit/dwh")
+
+INPUT_FD_DIR      = BASE_DIR / "enrichment"
+INPUT_SAVING_DIR  = BASE_DIR / "integration"
+INPUT_CURRENT_DIR = BASE_DIR / "integration"
+
+INPUT_FD_FILE      = INPUT_FD_DIR      / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
+INPUT_SAVING_FILE  = INPUT_SAVING_DIR  / f"intg_dp_acct_saving_d{REPTDAY}.sas7bdat"
+INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
+
+# Same folder the EIIMRPTS driver deletes / re-creates / SFTPs from.
+# Local file has NO date in its name (SFTP copy carries the date, see EIIMRPTS.py).
+OUTPUT_DIR  = Path("/host_pq/mis/output/report/EIIMRPTS")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / "EIIMRM01.txt"
+
+# Temporary Parquet folder (deleted by _TMP.cleanup() after the last read)
+TEMP_DIR         = None   # None = system temp; set a path if it is too small
+_TMP             = tempfile.TemporaryDirectory(prefix="EIIMRM01_", dir=TEMP_DIR)
+TEMP_PARQUET_DIR = Path(_TMP.name)
+
+print(f"  Output file      : {OUTPUT_FILE.name}")
 
 
 
 
-1. SDESC (JCL //BNM DD DSN=SAP.PIBB.SASDATA, member SDESC)
-   Not read. SDESC is a description only (one row), so it is hardcoded for
-   PIBB as 'PUBLIC ISLAMIC BANK BERHAD' (26 characters, as in PUT(SDESC,$26.)).
+print("\nStep 2: Converting input SAS datasets to temporary Parquet...")
+FD_CACHE      = _load_cached(INPUT_FD_FILE, "FD")
+SAVING_CACHE  = _load_cached(INPUT_SAVING_FILE, "SAVING")
+CURRENT_CACHE = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
 
 
 
+
+print("\nStep 3: Building FD / TD / FDN from FD.FD (PIBB only, ENTITY_CD filter)...")
 
 con = duckdb.connect(database=":memory:")
-loan_raw = con.execute(f"""
+fd_raw = con.execute(f"""
     SELECT
-        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-        CAST(PRODUCT  AS INTEGER) AS PRODUCT,
-        CAST(PRODCD   AS VARCHAR) AS PRODCD,
-        CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
-        CAST(BRANCH   AS INTEGER) AS BRANCH,
-        CAST(INTRATE  AS DOUBLE)  AS INTRATE,
-        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
-        CAST(SPREAD   AS DOUBLE)  AS SPREAD,
-        CAST(CENSUS   AS DOUBLE)  AS CENSUS
-    FROM read_parquet('{LOAN_CACHE.as_posix()}')
-    WHERE NOT (PRODUCT IN (124,145) AND PRODCD = '54120')
-      AND TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) = 'PIBB'
+        CAST(INT_PLAN     AS INTEGER) AS INTPLAN,
+        CAST(CURR_BAL     AS DOUBLE)  AS CURBAL,
+        CAST(RT           AS DOUBLE)  AS RATE,
+        CAST(MATURE_DT    AS DATE)    AS MATDATE,
+        CAST(OPEN_IND     AS VARCHAR) AS OPENIND
+    FROM read_parquet('{FD_CACHE.as_posix()}')
+    WHERE TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) = 'PIBB'
 """).pl()
 con.close()
 
 
 
 
-====================== EIFMLN03
+========================== EIIMRM02
 
-import atexit
-import gc
-import math
-import tempfile
-from pathlib import Path
-from datetime import date
+# Production Path
+BASE_DIR = Path("/sas/deposit/dwh")
 
-import duckdb
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+INPUT_FD_DIR  = BASE_DIR / "enrichment"
+INPUT_FD_FILE = INPUT_FD_DIR / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
 
-from PBBELF import format_brchcd
-
-
-
-
-reptdate = get_batch_date(BATCH_SOURCE)   # DP batch date
-
-
-
-
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
-INPUT_LOAN_DIR  = Path("/dwh/dwh_m/tempsource/ln")
-
-INPUT_LOAN_FILE  = INPUT_LOAN_DIR  / f"loan{REPTMON}{NOWK}.sas7bdat"    # Filter by ENTITY_CD = "PIBB"
-print(f"  LOAN input file : {INPUT_LOAN_FILE.name}")
-
-# --- Temporary Parquet cache (removed automatically when the program ends) ---
-TEMP_DIR = None   # None = system temp
-_CACHE_TMP = tempfile.TemporaryDirectory(dir=TEMP_DIR)
-atexit.register(_CACHE_TMP.cleanup)
-CACHE_DIR = Path(_CACHE_TMP.name)
-
-
-
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIFMLN03"
+OUTPUT_DIR  = Path("/host_pq/mis/output/report/EIIMRPTS")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_REPORT_FILE = OUTPUT_DIR / "EIFMLN03.txt"
+OUTPUT_FILE = OUTPUT_DIR / "EIIMRM02.txt"
+
+TEMP_DIR         = None
+_TMP             = tempfile.TemporaryDirectory(prefix="EIIMRM02_", dir=TEMP_DIR)
+TEMP_PARQUET_DIR = Path(_TMP.name)
+
+print(f"  Output file      : {OUTPUT_FILE.name}")
 
 
 
 
-print("\nStep 2: Caching input SAS datasets to Parquet (temporary)...")
-LOAN_CACHE  = _load_cached(INPUT_LOAN_FILE, "LOAN")
+print("\nStep 2: Converting input SAS dataset to temporary Parquet...")
+FD_CACHE = _load_cached(INPUT_FD_FILE, "FD")
+
+
+
+
+print("\nStep 3: Building FD / TD / FDN from FD.FD (PIBB only, ENTITY_CD filter)...")
+
+con = duckdb.connect(database=":memory:")
+fd_raw = con.execute(f"""
+    SELECT
+        CAST(INT_PLAN     AS INTEGER) AS INTPLAN,
+        CAST(CURR_BAL     AS DOUBLE)  AS CURBAL,
+        CAST(RT           AS DOUBLE)  AS RATE,
+        CAST(MATURE_DT    AS DATE)    AS MATDATE,
+        CAST(OPEN_IND     AS VARCHAR) AS OPENIND,
+        CAST(CUSTOMER_CD  AS INTEGER) AS CUSTCD
+    FROM read_parquet('{FD_CACHE.as_posix()}')
+    WHERE TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) = 'PIBB'
+""").pl()
+con.close()
+_TMP.cleanup()
+print("  Temporary Parquet files removed.")
+
+
+
+
+=========================== EIIMRM03
+
+OUTPUT_FILE = OUTPUT_DIR / "EIIMRM03.txt"
+_TMP        = tempfile.TemporaryDirectory(prefix="EIIMRM03_", dir=TEMP_DIR)
+
+
+
+
+======================= EIIMRM04
+
+INPUT_LOAN_FILE   = INPUT_LOAN_DIR   / f"loan{REPTMON}{NOWK}.sas7bdat"   # was loan{REPTYEAR}{REPTWEEK} (REPTWEEK undefined)
+
+OUTPUT_DIR  = Path("/host_pq/mis/output/report/EIIMRPTS")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_FILE = OUTPUT_DIR / "EIIMRM04.txt"
+
+TEMP_DIR         = None
+_TMP             = tempfile.TemporaryDirectory(prefix="EIIMRM04_", dir=TEMP_DIR)
+TEMP_PARQUET_DIR = Path(_TMP.name)
+
+print(f"  Output file      : {OUTPUT_FILE.name}")
+
+
+
+
+\nStep 2: Converting input SAS datasets to temporary Parquet...
+
+
+
+
+===================== EIIMRPTS
+
+import sys
+from datetime import date
+from pathlib import Path
+
+import pandas as pd
+import paramiko
 
 
 
 
 # ============================================================================
-# STEP 3: &SDESC  (description only, hardcoded for PIBB; no SDESC input needed)
+# CONTROL FILES  (dates: ctl_dwh_batch_dttm | SFTP info: ctl_dwh_sftp_info)
 # ============================================================================
-print("\nStep 3: Setting &SDESC (PIBB, hardcoded)...")
-SDESC = "PUBLIC ISLAMIC BANK BERHAD".ljust(26)    # PUT(SDESC,$26.)
-print(f"  SDESC: '{SDESC}'")
+CTL_BATCH_DTTM    = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+BATCH_SOURCE      = "DP"
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    if not CTL_BATCH_DTTM.exists():
+        raise FileNotFoundError(f"Batch date control file not found: {CTL_BATCH_DTTM}")
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row directly from the DWH control file."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
+
+    row = rows.iloc[0]
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
+
+    return sftp_id, sftp_pw, host_ip, host_key
 
 
 
 
-    WHERE PRODCD = '34111' AND LOANSTAT = 1
-      AND TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) = 'PIBB'
+# ============================================================================
+# SFTP STEP  (ask.py, job FTPMRMRP):
+#   cd TEXTFILE / cd RETAILBANK
+#   PUT //SAP.PIBB.EIIMRMnn.TEXT   EIIMRMnn@%OMM.%OYY..TXT
+# ============================================================================
+MRM_HOST_DESC   = "EDW DB Server"            # HOST_DESC row in ctl_dwh_sftp_info
+MRM_REMOTE_DIRS = ["TEXTFILE", "RETAILBANK"]
+_MRM_REPORTS    = ["EIIMRM01", "EIIMRM02", "EIIMRM03", "EIIMRM04"]
+
+
+def _sftp_step() -> None:
+    print("\nStep SFTP: uploading EIIMRM01-04 reports...")
+    stamp = get_batch_date(BATCH_SOURCE).strftime("%m%y")      # %OMM.%OYY
+
+    uploads = []
+    for name in _MRM_REPORTS:
+        local_path = _CREATE_DIRS[0] / f"{name}.txt"
+        if not local_path.exists():
+            raise FileNotFoundError(f"Report file not found for SFTP: {local_path}")
+        uploads.append((local_path, f"{name}@{stamp}.TXT"))
+
+    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(MRM_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    print(f"  Connecting to {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    try:
+        sftp = ssh.open_sftp()
+        try:
+            for remote_dir in MRM_REMOTE_DIRS:
+                try:
+                    sftp.chdir(remote_dir)
+                except IOError:
+                    raise RuntimeError(f"Remote folder '{remote_dir}' not found")
+            for local_path, remote_name in uploads:
+                print(f"  SFTP upload: {local_path.name} -> {'/'.join(MRM_REMOTE_DIRS)}/{remote_name}")
+                sftp.put(str(local_path), remote_name)
+        finally:
+            sftp.close()
+    finally:
+        ssh.close()
+    print("  SFTP upload complete.")
 
 
 
 
-with open(OUTPUT_REPORT_FILE, "w", encoding="latin1") as fh:
-    for ln in report_lines:
-        fh.write(ln.ljust(LINE_WIDTH) + "\n")
+def main() -> int:
+    # TYPRUN=SCAN on the original JOB card meant syntax-scan only, no steps
+    # actually executed -- documentation-only note; this driver always runs.
+    _delete_step()
+    _create_step()
+    rc = _run_steps()
+    if rc == 0:
+        try:
+            _sftp_step()
+        except Exception as exc:
+            rc = 8
+            print(f"=== SFTP FAILED (RC=8): {exc} ===", file=sys.stderr)
+    else:
+        print(f"Step SFTP SKIPPED (COND=(4,LT): prior RC={rc} > 4).")
+    print(f"\nEIIMRPTS job complete. Final RC={rc}")
+    return 0 if rc == 0 else 1
 
 
 
 
-print(f"    {OUTPUT_REPORT_FILE}")
+============================== Part E
+
+INPUT_MAIN_FD_DIR = BASE_DIR / "integration"
+INPUT_FD_DIR      = BASE_DIR / "enrichment"
+
+INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+INPUT_FD_FILE      = INPUT_FD_DIR      / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
 
 
 
 
-==================================
-
-gp3_loanstat = {}   # ACCTNO -> 1 or None; every account present in GP3 is listed
-for r in gp3_raw.iter_rows(named=True):
-    riskrte = _input_1_numeric(r["RISKCODE"])
-    gp3_loanstat[r["ACCTNO"]] = 1 if (riskrte is not None and riskrte < 1) else None
-
-
-
-
-        CAST(LOANSTAT AS DOUBLE)  AS LOANSTAT
+print("\nStep 2: Converting input SAS datasets to temporary Parquet...")
+MAIN_FD_CACHE = _load_cached(INPUT_MAIN_FD_FILE, "MAIN_FD")
+FD_CACHE      = _load_cached(INPUT_FD_FILE, "FD")
+SAVING_CACHE  = _load_cached(INPUT_SAVING_FILE, "SAVING")
+CURRENT_CACHE = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
 
 
 
 
-loanstat = gp3_loanstat[acctno] if acctno in gp3_loanstat else row.get("LOANSTAT")
+print("\nStep 2: Converting input SAS datasets to temporary Parquet...")
+MAIN_FD_CACHE = _load_cached(INPUT_MAIN_FD_FILE, "MAIN_FD")
+FD_CACHE      = _load_cached(INPUT_FD_FILE, "FD")
 
 
 
 
-alm1_rows.sort(key=lambda r: (r["LOANTYP"], r["INTRATE"]))
+print("\nStep 3: Building FD / TD / FDN from FD.FD (PIBB-only via main_fd)...")
 
 
 
 
-alm2_rows.sort(key=lambda r: (r["LOANTYP"], r["INTRATE"]))
+con = duckdb.connect(database=":memory:")
+fd_raw = con.execute(f"""
+    WITH main_fd_pibb AS (
+        SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS ACCTNO
+        FROM read_parquet('{MAIN_FD_CACHE.as_posix()}')
+        WHERE ENTITY_CD = 'PIBB'
+    )
+    SELECT
+        CAST(f.INT_PLAN     AS INTEGER) AS INTPLAN,
+        CAST(f.CURR_BAL     AS DOUBLE)  AS CURBAL,
+        CAST(f.RT           AS DOUBLE)  AS RATE,
+        CAST(f.MATURE_DT    AS DATE)    AS MATDATE,
+        CAST(f.OPEN_IND     AS VARCHAR) AS OPENIND
+    FROM read_parquet('{FD_CACHE.as_posix()}') f
+    INNER JOIN main_fd_pibb m
+        ON CAST(f.ACCT_NUM AS BIGINT) = m.ACCTNO
+""").pl()
+con.close()
 
 
 
 
-alm3_rows.sort(key=lambda r: r["INTRATE"])
+        CAST(f.OPEN_IND     AS VARCHAR) AS OPENIND,
+        CAST(f.CUSTOMER_CD  AS INTEGER) AS CUSTCD
 
 
 
 
-            if (intrate is None or intrate <= 9) or (spread is None or spread <= 1.75):
-                loantyp = "P1"       # SAS: a missing value compares as smaller than any number
+con.close()
+_TMP.cleanup()
+print("  Temporary Parquet files removed.")
+
+
+
+
+def main() -> int:
+    # TYPRUN=SCAN on the original JOB card meant syntax-scan only, no steps
+    # actually executed -- documentation-only note; this driver always runs.
+    _delete_step()
+    _create_step()
+    rc = _run_steps()
+    # --- SFTP ON HOLD: uncomment this block to re-enable ---------------------
+    # if rc == 0:
+    #     try:
+    #         _sftp_step()
+    #     except Exception as exc:
+    #         rc = 8
+    #         print(f"=== SFTP FAILED (RC=8): {exc} ===", file=sys.stderr)
+    # else:
+    #     print(f"Step SFTP SKIPPED (COND=(4,LT): prior RC={rc} > 4).")
+    # -------------------------------------------------------------------------
+    print(f"\nEIIMRPTS job complete. Final RC={rc}")
+    return 0 if rc == 0 else 1
+
+
+
+
+=========================== Flags
+
+con = duckdb.connect(database=":memory:")
+
+# BLDATE may or may not be physically present on the loan ledger (SAS only
+# tests "BLDATE = ."), so it is read only when the column exists.
+_loan_cols = {
+    r[0].upper() for r in con.execute(
+        f"DESCRIBE SELECT * FROM read_parquet('{LOAN_CACHE.as_posix()}')"
+    ).fetchall()
+}
+_bldate_sql = (
+    "CASE WHEN BLDATE IS NOT NULL THEN CAST(date_add(DATE '1960-01-01', "
+    "INTERVAL (CAST(BLDATE AS INTEGER)) DAY) AS DATE) ELSE NULL END"
+    if "BLDATE" in _loan_cols else "CAST(NULL AS DATE)"
+)
+
+loan_raw = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(PRODUCT  AS INTEGER) AS PRODUCT,
+        CAST(PRODCD   AS VARCHAR) AS PRODCD,
+        CAST(ACCTYPE  AS VARCHAR) AS ACCTYPE,
+        CAST(AMTIND   AS VARCHAR) AS AMTIND,
+        CAST(CURBAL   AS DOUBLE)  AS CURBAL,
+        CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+        CAST(INTRATE  AS DOUBLE)  AS INTRATE,
+        CAST(FEEAMT   AS DOUBLE)  AS FEEAMT,
+        CAST(NTINT    AS VARCHAR) AS NTINT,
+        CAST(INTEARN  AS DOUBLE)  AS INTEARN,
+        CAST(INTAMT   AS DOUBLE)  AS INTAMT,
+        CAST(INTEARN2 AS DOUBLE)  AS INTEARN2,
+        CAST(INTEARN3 AS DOUBLE)  AS INTEARN3,
+        CAST(COSTFUND AS DOUBLE)  AS COSTFUND,
+        CASE WHEN EXPRDATE IS NOT NULL 
+             THEN CAST(date_add(DATE '1960-01-01', INTERVAL (CAST(EXPRDATE AS INTEGER)) DAY) AS DATE)
+             ELSE NULL END AS EXPRDATE,
+        CAST(PAYFREQ  AS VARCHAR) AS PAYFREQ,
+        CAST(PAYAMT   AS DOUBLE)  AS PAYAMT,
+        CASE WHEN ISSDTE IS NOT NULL 
+             THEN CAST(date_add(DATE '1960-01-01', INTERVAL (CAST(ISSDTE AS INTEGER)) DAY) AS DATE)
+             ELSE NULL END AS ISSDTE,
+        {_bldate_sql} AS BLDATE,
+        CAST(RISKRTE  AS INTEGER) AS RISKRTE
+    FROM read_parquet('{LOAN_CACHE.as_posix()}')
+    WHERE PRODUCT NOT IN (700,705,380,381,128,130,500,520)
+      AND ENTITY_CD = 'PIBB'
+    ORDER BY ACCTNO, NOTENO
+""").pl()
+con.close()
+
+loan_raw = loan_raw.with_columns(
+    pl.col("EXPRDATE").cast(pl.Date),
+    pl.col("ISSDTE").cast(pl.Date),
+    pl.col("BLDATE").cast(pl.Date),
+)
+
+
+
+
+        if payfreq in ("5", "9", "", " ", None) or product in _FIX_PRODUCTS:
+            bldate = exprdate
+        else:
+            # SAS: ELSE IF BLDATE = . THEN DO; BLDATE = ISSDTE;
+            #      DO WHILE (BLDATE <= &REPTDATE); %NXTBLDT END; END;
+            bldate = rec.get("BLDATE")
+            if bldate is None:
+                bldate = issdte
+                while bldate is not None and bldate <= reptdate:
+                    nxt_bldate = _nxtbldt(bldate, payfreq, freq, issdte)
+                    if nxt_bldate <= bldate:   # safety: never loop forever on an unknown PAYFREQ
+                        break
+                    bldate = nxt_bldate
+        if exprdate is not None and (bldate is None or bldate > exprdate or (curbal or 0.0) <= payamt):
+            bldate = exprdate
+
+
+
+
+    if rec["PAYFREQ"] in ("5", "9", "", " ", None) or rec["PRODUCT"] in _FIX_PRODUCTS:
+
+
+
+
+lnnote_raw = con.execute(f"""
+    SELECT
+        CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+        CAST(NOTENO   AS BIGINT)  AS NOTENO,
+        CAST(NTINT    AS VARCHAR) AS NTINT,
+        CAST(PAYEFFDT AS DOUBLE)  AS PAYEFFDT,
+        CAST(NTINDEX  AS INTEGER) AS NTINDEX,
+        CAST(LOANTYPE AS INTEGER) AS LOANTYPE,
+        CAST(CENSUS   AS VARCHAR) AS CENSUS
+    FROM read_parquet('{LNNOTE_CACHE.as_posix()}')
+    WHERE LOANTYPE NOT IN (700,705,380,381,128,130,500,520)
+      AND ENTITY_CD = 'PIBB'
+""").pl()
+
+
+
+
+    rec = dict(row)
+    # SAS MERGE LOAN LNNOTE: NTINT is in LNNOTE's KEEP list, so a matched
+    # LNNOTE row overrides any NTINT already on the loan ledger.
+    rec["NTINT"] = note["NTINT"] if note else row.get("NTINT")
+    rec["INTTYPE"] = inttype
 
 
 
