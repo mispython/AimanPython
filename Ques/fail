@@ -1,24 +1,477 @@
+import gc
+import sys
+import tempfile
+from pathlib import Path
+from datetime import date, timedelta
+from typing import Optional
+
+import duckdb
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-od_path   = "/sas/deposit/dwh/integration/intg_dp_acct_overdft_d23.sas7bdat"   # use today's dNN
-loan_path = "/dwh/dwh_m/tempsource/ln/loan084.sas7bdat"                        # use the current loanMM4
-
-od = next(iter(pd.read_sas(od_path, encoding="latin1", chunksize=200_000)))
-print(od[["EXCESSDT", "TODDATE", "RISKCODE"]].dtypes)
-print(od[["EXCESSDT", "TODDATE", "RISKCODE"]].dropna().head(10))
-
-ln = next(iter(pd.read_sas(loan_path, encoding="latin1", chunksize=200_000)))
-print(ln[["BLDATE", "NOTENO", "ACCTYPE"]].dtypes)
-print(ln[["BLDATE"]].dropna().head(10))
+from PBBELF import format_brchcd
 
 
 
 
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# Production Path
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "LN"          # SOURCE_SYSTEM_CD used for the report date
+
+BASE_OVERDFT_DIR    = Path("/sas")
+INPUT_OVERDFT_DIR   = BASE_OVERDFT_DIR / "deposit/dwh/integration"
+
+BASE_LOAN_DIR       = Path("/dwh")
+INPUT_LOAN_DIR      = BASE_LOAN_DIR / "dwh_m/tempsource/ln"
+
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMNPL0")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Temporary Parquet cache: created per run, deleted at the end of main()
+# (or automatically at interpreter exit if the run fails).
+TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
+_TMP_CACHE = tempfile.TemporaryDirectory(prefix="EIBMNPL_", dir=TEMP_DIR)
+CACHE_DIR  = Path(_TMP_CACHE.name)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# INPUT_LOAN_PBB_DIR  = STG_DIR / "EIBMNPL"
+# INPUT_LOAN_PIBB_DIR = STG_DIR / "EIBMNPL"
+# INPUT_OVERDFT_DIR   = STG_DIR / "EIBMNPL"
+
+# INPUT_OVERDFT_FILE = INPUT_OVERDFT_DIR / "intg_dp_acct_overdft_d31.sas7bdat"
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMNPL"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMNPL"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60     # lines per page (not specified in SAS -> default)
+LINESIZE_TEMP     = 256
+LINESIZE_ODTLLIST = 132
+
+ENTITIES = ("PBB", "PIBB")
+
+
+# ============================================================================
+# BATCH DATE (ctl_dwh_batch_dttm.sas7bdat, SOURCE_SYSTEM_CD = LN)
+# ============================================================================
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}"
+        )
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+# ============================================================================
+# STEP 1: REPORT DATE
+# ============================================================================
+print("Step 1: Deriving report date...")
+
+REPTDATE = get_batch_date(BATCH_SOURCE)
+REPTMON  = REPTDATE.strftime("%m")           # PUT(MONTH(REPTDATE),Z2.)
+REPTDAY  = REPTDATE.strftime("%d")           # day token of the OVERDFT input file
+RDATE    = REPTDATE.strftime("%d/%m/%y")     # PUT(REPTDATE,DDMMYY8.)
+
+# NOWK is hard-coded in the original REPTDATE DATA step:
+#   CALL SYMPUT('NOWK',PUT('4',$1.));
+# i.e. NOWK is ALWAYS '4' regardless of the actual report date -- preserved
+# verbatim (not corrected to the range-based NOWK used elsewhere).
+NOWK = "4"
+
+INPUT_LOAN_FILE    = INPUT_LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"    # Split by ENTITY_CD
+INPUT_OVERDFT_FILE = INPUT_OVERDFT_DIR / f"intg_dp_acct_overdft_d{REPTDAY}.sas7bdat"
+
+print(f"  Batch source    : {BATCH_SOURCE}")
+print(f"  RDATE           : {RDATE}")
+print(f"  REPTMON/NOWK    : {REPTMON}/{NOWK}")
+print(f"  LOAN input      : {INPUT_LOAN_FILE.name}")
+print(f"  OVERDFT input   : {INPUT_OVERDFT_FILE.name}")
+
+
+
+
+print("\nStep 2: Caching input SAS datasets to temporary Parquet...")
+LOAN_CACHE    = _load_cached(INPUT_LOAN_FILE, "LOAN")
+OVERDFT_CACHE = _load_cached(INPUT_OVERDFT_FILE, "OVERDFT")
+
+
+def _loan_cache_for(entity: str) -> Path:
+    """Single physical LOAN parquet for both entities (rows split by ENTITY_CD
+    inside each query). Signature kept for EIBMNPL2's import."""
+    return LOAN_CACHE
+
+
+
+
+        WHERE ENTITY_CD = '{entity}'
+          AND NOTENO < 90000
+          AND ACCTYPE = 'LN'
+          AND BRANCH IS NOT NULL
+          AND BALANCE >= 1.00
+          AND PRODUCT NOT IN (517, 500)
+
+
+
+
+        WHERE ENTITY_CD = '{entity}'
+          AND ACCTYPE = 'OD'
+          AND (APPRLIMT >= 0 OR BALANCE < 0)
+          AND (ACCTNO <= 3900000000 OR ACCTNO > 3999999999)
+
+
+
+
+def main() -> None:
+    # Deferred import: EIBMNPL2 imports state (REPTDATE, RDATE, LOAN_CACHE,
+    # OVERDFT_CACHE, format_brchcd, parse_*, compute_bldate, AsaWriter, etc.)
+    # FROM this module, so this module's top-level code must have already
+    # finished executing before EIBMNPL2 is imported -- deferring the import
+    # to inside main() avoids any circular-import issue.
+    import EIBMNPL2
+
+    for entity in ENTITIES:
+        print(f"\n{'='*70}\nProcessing entity: {entity}\n{'='*70}")
+
+        loan1, loan2 = _build_loan1_loan2(entity)
+        loan1_p = _pad_all_riskrates(loan1)
+        loan2_p = _pad_all_riskrates(loan2)
+        loan3 = _build_loan3(entity)
+        loan3_p = _pad_all_riskrates(loan3)
+        loan4_p = loan1_p + loan2_p + loan3_p   # DATA LOAN4; SET LOAN1 LOAN2 LOAN3;
+
+        # _run_tbls(loan1_p, loan2_p, loan3_p, loan4_p)
+
+        with open(OUTPUT_DIR / f"{entity}_TBLS.log", "w") as f:
+            import sys
+            sys.stdout = f
+            _run_tbls(loan1_p, loan2_p, loan3_p, loan4_p)
+            sys.stdout = sys.__stdout__
+
+        temp_out = OUTPUT_DIR / f"{entity}_ODTLLIST_TEXT.txt"
+        _write_temp_output(loan4_p, temp_out)
+        print(f"  Output written : {temp_out}")
+
+        loan4_sorted = sorted(loan4_p, key=lambda x: x["BRANCH"])
+        asa = AsaWriter(page_size=PAGE_SIZE)
+        _render_ageing_table(asa, loan4_sorted)
+
+        # %INC PGM1(EIBMNPL2); -- continue building the SAME ODTLLIST.COLD
+        # output (append, no PRINTTO...NEW) with the loans/O-D detail prints.
+        EIBMNPL2.run(entity, asa)
+
+        cold_out = OUTPUT_DIR / f"{entity}_ODTLLIST_COLD.txt"
+        asa.write(cold_out)
+        print(f"  Output written : {cold_out}")
+        print(f"  Total lines    : {len(asa.lines):,}")
+
+        # print("\n--- Console preview (ageing + detail titles) ---")
+        # for ln in asa.lines[:20]:
+        #     print(ln)
+
+        del loan1, loan2, loan3, loan1_p, loan2_p, loan3_p, loan4_p, loan4_sorted
+        gc.collect()
+
+    # Temporary Parquet cache is not kept.
+    _TMP_CACHE.cleanup()
+
+    print("\nEIBMNPL1 / EIBMNPL2 complete.")
+
+
+
+
+=================== EIBMNPL2
+
+        WHERE ENTITY_CD = '{entity}'
+          AND ACCTYPE = 'LN'
+          AND BRANCH IS NOT NULL
+          AND BALANCE >= 1.00
+          AND PRODUCT NOT IN (517, 500)
+
+
+
+
+        WHERE ENTITY_CD = '{entity}'
+          AND ACCTYPE = 'OD'
+
+
+
+
+===================== EIBMNPL0
+
+import sys
+from pathlib import Path
 
 import pandas as pd
+import paramiko
 
-od_path = "/sas/deposit/dwh/integration/intg_dp_acct_overdft_d23.sas7bdat"   # use today's dNN
-n = 0
-for ch in pd.read_sas(od_path, encoding="latin1", chunksize=200_000):
-    n += int(((ch.EXCESSDT.isna() & (ch.TODDATE > 0)) | (ch.TODDATE.isna() & (ch.EXCESSDT > 0))).sum())
-print("One-sided null rows:", n)
+
+
+
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+SFTP_HOST_DESC    = "Data Report Repository (DRR)"   # HOST_DESC row in ctl_dwh_sftp_info
+SFTP_REMOTE_DIR   = ""                               # remote folder; "" = login directory
+
+
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row from ctl_dwh_sftp_info.sas7bdat."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError(
+            "SFTP control file is missing columns: " + ", ".join(missing_columns)
+        )
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(
+            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
+        )
+
+    row = rows.iloc[0]
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(
+            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
+        )
+
+    return sftp_id, sftp_pw, host_ip, host_key
+
+
+
+
+def _run_sas_step() -> None:
+    print("\nStep 3/4 [EIBMNPL0 EXEC SAS609]: Running EIBMNPL1 (PBB + PIBB)...")
+    try:
+        import EIBMNPL1
+        EIBMNPL1.main()
+    except Exception as exc:
+        print(f"\nEIBMNPL0 job FAILED (COND=(4,LT) equivalent): {exc}")
+        sys.exit(4)
+
+
+
+
+# ============================================================================
+# STEP 5: SFTP of the report outputs (4 files: COLD + TEXT for PBB and PIBB)
+# ============================================================================
+def _sftp_step() -> None:
+    print("\nStep 5 [SFTP]: Uploading ODTLLIST outputs...")
+    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(SFTP_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    print(f"  Connecting to {SFTP_HOST_DESC} ({host_ip}) as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+
+    try:
+        if SFTP_REMOTE_DIR:
+            try:
+                sftp.chdir(SFTP_REMOTE_DIR)
+            except IOError:
+                sys.exit(f"Aborting: Remote folder '{SFTP_REMOTE_DIR}' not found")
+
+        for local_path in COLD_FILES + TEXT_FILES:
+            print(f"  SFTP upload: {local_path.name} -> {SFTP_REMOTE_DIR or '.'}/{local_path.name}")
+            sftp.put(str(local_path), local_path.name)
+    finally:
+        sftp.close()
+        ssh.close()
+    print("  SFTP upload complete.")
+
+
+
+
+def main() -> None:
+    print("=" * 70)
+    print("EIBMNPL0 JOB START")
+    print("=" * 70)
+
+    _delete_step()
+    _create_step()
+    _run_sas_step()
+    # _sftp_step()        # Hold on the SFTP steps for now
+
+    print("\n" + "=" * 70)
+    print("EIBMNPL0 JOB END - RC=0")
+    print("=" * 70)
+
+
+
+
+==================== Flags 1
+
+def entity_filter(entity: str) -> str:
+    """SQL condition splitting the shared LOAN / OVERDFT datasets by ENTITY_CD:
+    PIBB -> ENTITY_CD = 'PIBB'; PBB -> ENTITY_CD <> 'PIBB' (null counts as PBB)."""
+    ent = "TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), ''))"
+    return f"{ent} = 'PIBB'" if entity == "PIBB" else f"{ent} <> 'PIBB'"
+
+
+
+
+        WHERE {entity_filter(entity)}
+          AND (NOTENO IS NULL OR NOTENO < 90000)
+          AND ACCTYPE = 'LN'
+          AND BRANCH IS NOT NULL
+          AND BALANCE >= 1.00
+          AND (PRODUCT IS NULL OR PRODUCT NOT IN (517, 500))
+
+
+
+
+from EIBMNPL1 import (
+    REPTDATE,
+    RDATE,
+    OVERDFT_CACHE,
+    _loan_cache_for,
+    entity_filter,
+    AsaWriter,
+    format_brchcd,
+    parse_excessdt,
+    parse_toddate,
+    compute_bldate,
+    comma,
+    PAGE_SIZE,
+    _num_nocomma,
+)
+
+
+
+
+        WHERE {entity_filter(entity)}
+          AND ACCTYPE = 'LN'
+          AND BRANCH IS NOT NULL
+          AND BALANCE >= 1.00
+          AND (PRODUCT IS NULL OR PRODUCT NOT IN (517, 500))
+
+
+
+
+        WHERE {entity_filter(entity)}
+          AND ACCTYPE = 'OD'
+
+
+
+
+        WHERE {entity_filter(entity)}
+          AND (EXCESSDT > 0 OR TODDATE > 0)
+
+
+
+
+================== Flags 2
+
+def _build_loan3(entity: str) -> list:
+    print(f"\nStep 4 [{entity}]: Building LOAN3 (O/D facilities)...")
+    con = duckdb.connect(database=":memory:")
+    od_base = con.execute(f"""
+        SELECT
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(BRANCH   AS INTEGER) AS BRANCH,
+            CAST(BALANCE  AS DOUBLE)  AS BALANCE,
+            CAST(PRODUCT  AS INTEGER) AS PRODUCT
+        FROM read_parquet('{_loan_cache_for(entity).as_posix()}')
+        WHERE {entity_filter(entity)}
+          AND ACCTYPE = 'OD'
+          AND (APPRLIMT >= 0 OR BALANCE IS NULL OR BALANCE < 0)
+          AND (ACCTNO <= 3900000000 OR ACCTNO > 3999999999)
+        ORDER BY ACCTNO
+    """).pl()
+
+    od_ref = con.execute(f"""
+        SELECT
+            CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
+            CAST(EXCESSDT AS BIGINT)  AS EXCESSDT,
+            CAST(TODDATE  AS BIGINT)  AS TODDATE,
+            CAST(RISKCODE AS VARCHAR) AS RISKCODE
+        FROM read_parquet('{OVERDFT_CACHE.as_posix()}')
+        WHERE {entity_filter(entity)}
+          AND (EXCESSDT > 0 OR TODDATE > 0)
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY ACCTNO) = 1
+    """).pl()
+    con.close()
+
+    od_ref_map = {r["ACCTNO"]: r for r in od_ref.iter_rows(named=True)}
+    no_od_record = {"EXCESSDT": None, "TODDATE": None, "RISKCODE": None}
+
+    loan3_rows = []
+    for r in od_base.iter_rows(named=True):
+        if r["BRANCH"] is None or r["PRODUCT"] in (517, 500):
+            continue
+        # MERGE LOAN3(IN=AA) OD; BY ACCTNO; IF AA -> every O/D account is kept;
+        # accounts without an OVERDFT record carry missing EXCESSDT/TODDATE/RISKCODE.
+        od = od_ref_map.get(r["ACCTNO"], no_od_record)
+
+        riskcode = od["RISKCODE"]
+        try:
+            riskrte = int(riskcode)
+        except (TypeError, ValueError):
+            riskrte = None
+        riskbal = r["BALANCE"] if riskcode in ("1", "2", "3", "4") else None
+
+        bldate = compute_bldate(od["EXCESSDT"], od["TODDATE"])
+        days = (REPTDATE - bldate).days + 1 if bldate is not None else None
+        riskrate = risk_rate_from_days(days)
+
+        loan3_rows.append({
+            "BRANCH": format_brchcd(r["BRANCH"]), "BALANCE": r["BALANCE"],
+            "RISKRATE": riskrate, "RISKRTE": riskrte, "RISKCODE": riskcode,
+            "RISKBAL": riskbal, "ACCTNO": r["ACCTNO"], "DAYS": days,
+        })
+
+    loan3_rows.sort(key=lambda x: (x["BRANCH"], x["RISKRATE"]))
+    print(f"  LOAN3 rows: {len(loan3_rows):,}")
+    return loan3_rows
+
+
+
+
+==================== Flags 3
+
+            (CASE WHEN BLDATE > 0 THEN DATE '1960-01-01' + CAST(BLDATE AS INTEGER) END) AS BLDATE,
+
+
+
+
+==================== Flags 5
+
+        # _run_tbls(loan1_p, loan2_p, loan3_p, loan4_p)   # console-only listing in SAS (not captured)
+
+
+
+
+======================
+
+            COALESCE(CAST(EXCESSDT AS BIGINT), 0) AS EXCESSDT,
+            COALESCE(CAST(TODDATE  AS BIGINT), 0) AS TODDATE,
