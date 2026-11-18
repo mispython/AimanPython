@@ -86,20 +86,32 @@ from PBBELF import format_brchcd
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+BASE_OVERDFT_DIR    = Path("/sas")
+INPUT_OVERDFT_DIR   = BASE_DIR / "deposit/dwh/integration"
 
-INPUT_LOAN_PBB_DIR  = STG_DIR / "EIBMNPL"
-INPUT_LOAN_PIBB_DIR = STG_DIR / "EIBMNPL"
-INPUT_OVERDFT_DIR   = STG_DIR / "EIBMNPL"
+BASE_LOAN_DIR       = Path("dwh")
+INPUT_LOAN_DIR      = BASE_DIR / "dwh_m/tempsource/ln"
 
-INPUT_OVERDFT_FILE = INPUT_OVERDFT_DIR / "intg_dp_acct_overdft_d31.sas7bdat"
+INPUT_OVERDFT_FILE  = INPUT_OVERDFT_DIR / f"intg_dp_acct_overdft_d{REPTDAY}.sas7bdat"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMNPL"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMNPL"
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMNPL0")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# INPUT_LOAN_PBB_DIR  = STG_DIR / "EIBMNPL"
+# INPUT_LOAN_PIBB_DIR = STG_DIR / "EIBMNPL"
+# INPUT_OVERDFT_DIR   = STG_DIR / "EIBMNPL"
+
+# INPUT_OVERDFT_FILE = INPUT_OVERDFT_DIR / "intg_dp_acct_overdft_d31.sas7bdat"
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMNPL"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMNPL"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 60     # lines per page (not specified in SAS -> default)
@@ -109,7 +121,7 @@ LINESIZE_ODTLLIST = 132
 ENTITIES = ("PBB", "PIBB")
 
 # ============================================================================
-# STEP 1: REPORT DATE (derive from REPTDATE.py -- no reptdate.parquet)
+# STEP 1: REPORT DATE
 # ============================================================================
 print("Step 1: Deriving report date...")
 
@@ -124,17 +136,21 @@ RDATE    = REPTDATE.strftime("%d/%m/%y")     # PUT(REPTDATE,DDMMYY8.)
 # verbatim (not corrected to the range-based NOWK used elsewhere).
 NOWK = "4"
 
-# INPUT_LOAN_PBB_FILE  = INPUT_LOAN_PBB_DIR  / f"loan{REPTMON}{NOWK}.sas7bdat"
-# INPUT_LOAN_PIBB_FILE = INPUT_LOAN_PIBB_DIR / f"iloan{REPTMON}{NOWK}.sas7bdat"
-
-INPUT_LOAN_PBB_FILE  = INPUT_LOAN_PBB_DIR  / f"loan084.sas7bdat"
-INPUT_LOAN_PIBB_FILE = INPUT_LOAN_PIBB_DIR / f"iloan084.sas7bdat"
+INPUT_LOAN_FILE  = INPUT_LOAN_DIR  / f"loan{REPTMON}{NOWK}.sas7bdat"    # Split by ENTIY_CD
 
 print(f"  RDATE           : {RDATE}")
 print(f"  REPTMON/NOWK    : {REPTMON}/{NOWK}")
-print(f"  PBB LOAN input  : {INPUT_LOAN_PBB_FILE.name}")
-print(f"  PIBB LOAN input : {INPUT_LOAN_PIBB_FILE.name}")
+print(f"  LOAN input      : {INPUT_LOAN_FILE.name}")
 print(f"  OVERDFT input   : {INPUT_OVERDFT_FILE.name}")
+
+# INPUT_LOAN_PBB_FILE  = INPUT_LOAN_PBB_DIR  / f"loan084.sas7bdat"
+# INPUT_LOAN_PIBB_FILE = INPUT_LOAN_PIBB_DIR / f"iloan084.sas7bdat"
+
+# print(f"  RDATE           : {RDATE}")
+# print(f"  REPTMON/NOWK    : {REPTMON}/{NOWK}")
+# print(f"  PBB LOAN input  : {INPUT_LOAN_PBB_FILE.name}")
+# print(f"  PIBB LOAN input : {INPUT_LOAN_PIBB_FILE.name}")
+# print(f"  OVERDFT input   : {INPUT_OVERDFT_FILE.name}")
 
 TBL_LABELS = {1: "(LOANS)", 2: "(HP)", 3: "(O/D)", 4: "(LOANS & O/D)"}
 
