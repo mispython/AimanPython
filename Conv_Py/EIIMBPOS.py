@@ -116,21 +116,40 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+BASE_DIR            = Path("/sas")
+INPUT_LNNOTE_DIR    = BASE_DIR / "ln/dwh/enrichment"
+INPUT_MAIN_FD_DIR   = BASE_DIR / "deposit/dwh/integration"      # Take ACCTNO, ENTITY_CD. Merge with INPUT_FD_DIR
+INPUT_FD_DIR        = BASE_DIR / "deposit/dwh/enrichment"       # Don't have ENTITY_CD. Merge with INPUT_MAIN_FD_DIR
+INPUT_SAVING_DIR    = BASE_DIR / "deposit/dwh/integration"      # Filter by ENTITY_CD = 'PIBB'
+INPUT_CURRENT_DIR   = BASE_DIR / "deposit/dwh/integration"      # Filter by ENTITY_CD = 'PIBB'
+INPUT_LOAN_DIR      = Path("/dwh/dwh_m/tempsource/ln")          # Filter by ENTITY_CD = 'PIBB'
+INPUT_KAPITI5_DIR   = Path("host_pq/mis/input/textfile/KAPITI5")
 
-INPUT_LNNOTE_DIR    = STG_DIR / "sasdata"
-INPUT_FD_DIR        = STG_DIR / "from_dwh"
-INPUT_SAVING_DIR    = STG_DIR / "from_dwh"
-INPUT_CURRENT_DIR   = STG_DIR / "from_dwh"
-INPUT_LOAN_DIR      = STG_DIR / "from_dwh"
-INPUT_KAPITI5_DIR   = STG_DIR / "EIIMBPOS"
+INPUT_LNNOTE_FILE  = INPUT_LNNOTE_DIR  / f"enrh_ln_comm_m{REPTMON}.sas7bdat"
+INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"
+INPUT_FD_FILE      = INPUT_FD_DIR      / f"enrh_dp_fd_cert_m{REPTMON}.sas7bdat"
+INPUT_SAVING_FILE  = INPUT_SAVING_DIR  / f"intg_dp_acct_saving_m{REPTMON}.sas7bdat"
+INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"
+INPUT_LOAN_FILE    = INPUT_LOAN_DIR    / f"loan{REPTMON}{NOWK}.sas7bdat"
+INPUT_KAPITI5_FILE = INPUT_KAPITI5_DIR / f"kapiti5_{REPTYEAR}{REPTMON}{REPTDAY}.txt"
 
-INPUT_LNNOTE_FILE  = INPUT_LNNOTE_DIR  / "enrh_ln_note_m08.sas7bdat"
-INPUT_KAPITI5_FILE = INPUT_KAPITI5_DIR / "KAPITI5_INPUT.TXT"
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMBPOS"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# INPUT_LNNOTE_DIR    = STG_DIR / "sasdata"
+# INPUT_FD_DIR        = STG_DIR / "from_dwh"
+# INPUT_SAVING_DIR    = STG_DIR / "from_dwh"
+# INPUT_CURRENT_DIR   = STG_DIR / "from_dwh"
+# INPUT_LOAN_DIR      = STG_DIR / "from_dwh"
+# INPUT_KAPITI5_DIR   = STG_DIR / "EIIMBPOS"
+
+# INPUT_LNNOTE_FILE  = INPUT_LNNOTE_DIR  / "enrh_ln_note_m08.sas7bdat"
+# INPUT_KAPITI5_FILE = INPUT_KAPITI5_DIR / "KAPITI5_INPUT.TXT"
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMBPOS"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE  = 65     # OPTIONS PS=65
@@ -172,13 +191,6 @@ RDATE    = reptdate.strftime("%d/%m/%y")     # PUT(REPTDATE,DDMMYY8.)
 reptdate = date.today() - timedelta(days=1)
 ts = reptdate.strftime("%y%m%d")
 
-# SASDATA.LOAN&REPTMON&NOWK: fully predictable filename built directly from
-# REPTMON/NOWK -- input_date.py's get_latest_file() is not used here since
-# there is nothing to search for (the member name is deterministic).
-# INPUT_LOAN_FILE    = INPUT_LOAN_DIR    / f"iln{REPTMON}{NOWK}{REPTYRS}.sas7bdat"
-# INPUT_SAVING_FILE  = INPUT_SAVING_DIR  / f"isa{REPTMON}{NOWK}{REPTYRS}.sas7bdat"
-# INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / f"ica{REPTMON}{NOWK}{REPTYRS}.sas7bdat"
-# INPUT_FD_FILE      = INPUT_FD_DIR      / f"ifdcd{REPTMON}{NOWK}{REPTYRS}.sas7bdat"
 INPUT_FD_FILE      = INPUT_FD_DIR      / "ifdcd08426.sas7bdat"
 INPUT_LOAN_FILE    = INPUT_LOAN_DIR    / "iln08426.sas7bdat"
 INPUT_SAVING_FILE  = INPUT_SAVING_DIR  / "isa08426.sas7bdat"
