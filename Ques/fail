@@ -10,3 +10,15 @@ print(od[["EXCESSDT", "TODDATE", "RISKCODE"]].dropna().head(10))
 ln = next(iter(pd.read_sas(loan_path, encoding="latin1", chunksize=200_000)))
 print(ln[["BLDATE", "NOTENO", "ACCTYPE"]].dtypes)
 print(ln[["BLDATE"]].dropna().head(10))
+
+
+
+
+
+import pandas as pd
+
+od_path = "/sas/deposit/dwh/integration/intg_dp_acct_overdft_d23.sas7bdat"   # use today's dNN
+n = 0
+for ch in pd.read_sas(od_path, encoding="latin1", chunksize=200_000):
+    n += int(((ch.EXCESSDT.isna() & (ch.TODDATE > 0)) | (ch.TODDATE.isna() & (ch.EXCESSDT > 0))).sum())
+print("One-sided null rows:", n)
