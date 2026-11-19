@@ -1,20 +1,472 @@
-print(f"  PDRDATA '3 HOUSING LOANS' rows: "
-      f"{sum(1 for r in pdrdata if r['ITEM'].strip() == '3 HOUSING LOANS'):,}")
+"""
+Program : EIBMRLFI.py
+Purpose : Islamic FISS - New Liquidity Framework report (BNM regulatory
+          liquidity BNMCODE detail + PROC PRINT listing + PROC TABULATE
+          customer-deposit-distribution report).
+
+Called by EIBMLIQI (%INC PGM(EIBMRLFI)). All inputs arrive as temporary Parquet
+files converted by EIBMLIQI (ENTITY_CD != 'PIBB' already applied where required),
+plus the in-memory BNM_SAVG / BNM_CURN built by DALWPBBD. The output file path is
+declared by EIBMLIQI. KALMLIQI is driven from here via KALMLIQI.main().
+
+Dependency:
+    PBBLNFMT_AII.py -> format_liqpfmt (LIQPFMT.)
+    PBBDPFMT.py     -> fddenom_format (FDDENOM.), fdprod_format (FDPROD.)
+    PBBELF.py       -> %INC PGM(PBBELF) is present in the original SYSIN, but no
+                       PUT(var,fmt.) call against any PBBELF format appears in this
+                       program body (boilerplate include only, not imported).
+    KALMLIQI.py     -> %INC PGM(KALMLIQI) equivalent, called via KALMLIQI.main().
+"""
+
+import gc
+from datetime import date, timedelta
+from pathlib import Path
+
+import duckdb
+import polars as pl
+
+from PBBLNFMT_AII import format_liqpfmt
+from PBBDPFMT import fddenom_format, fdprod_format
+# from PBBELF import ...   # %INC PGM(PBBELF) in SAS source, but no direct
+#                          # PUT(var,fmt.) call against any PBBELF format
+#                          # or lookup table exists in this program body --
+#                          # boilerplate include only, intentionally not a
+#                          # live import (per project convention).
+
+import KALMLIQI           # %INC PGM(KALMLIQI) equivalent -- driven via
+                          # KALMLIQI.main() below.
+
+PAGE_SIZE = 60      # PAGESIZE not specified in SAS source -> default
+LINE_WIDTH = 132    # LRECL=133 (RECFM=FB, no ASA byte -- 132 data cols)
+EPOCH_SENTINEL = date(1960, 1, 1)   # SAS date 0 -- "BLDATE not yet set"
 
 
 
 
-print(saving_raw["PRODUCT"].value_counts(sort=True).head(15))
-print(current_raw["PRODUCT"].value_counts(sort=True).head(15))
+def _render_note_print(note_df: pl.DataFrame, rdate: str) -> list:
+    lines = []
+    title1 = "PUBLIC BANK BERHAD"
+    title2 = f"NEW LIQUIDITY FRAMEWORK (ISLAMIC) AS AT {rdate}"
+    header = f"{'Obs':>5} {'BNMCODE':<14} {'AMOUNT':>17} {'AMTUSD':>17} {'AMTSGD':>17}"
+    # rule = "-" * len(header)
+
+    def _page_header():
+        lines.append(title1)
+        lines.append(title2)
+        lines.append("")
+        lines.append(header)
+        lines.append("")
+
+    _page_header()
+    lines_on_page = 5
+    for i, r in enumerate(note_df.iter_rows(named=True), start=1):
+        if lines_on_page >= PAGE_SIZE:
+            lines.append("\f")
+            _page_header()
+            lines_on_page = 5
+        amount = r["AMOUNT"] or 0.0    # OPTIONS MISSING=0
+        amtusd = r["AMTUSD"] or 0.0
+        amtsgd = r["AMTSGD"] or 0.0
+        lines.append(
+            f"{i:>5} {r['BNMCODE']:<14} {amount:>17.2f} {amtusd:>17.2f} {amtsgd:>17.2f}"
+        )
+        lines_on_page += 1
+    return lines
 
 
 
 
+def _render_suppl_tabulate(suppl_df: pl.DataFrame, rdate: str) -> list:
+    lines = []
+    title1 = "PUBLIC BANK BERHAD"
+    title2 = f"NEW LIQUIDITY FRAMEWORK (ISLAMIC) AS AT {rdate}"
+    title4 = "CUSTOMER DEPOSITS >= 1% OF TOTAL (PART 3)"
+    box_label = "NAME OF DEPOSITOR"
+    name_width = 20     # RTS=20
+    val_width = 20
 
-import pandas as pd
-lc = set(next(iter(pd.read_sas("<path to enrh_ln_comm_d{DD}.sas7bdat>", format="sas7bdat",
-                               encoding="latin1", chunksize=1))).columns)
-used = {"ACCTNO","NOTENO","AMTIND","PAIDIND","PRODCD","PRODUCT","CUSTCD","ACCTYPE","BALANCE",
-        "COMMNO","APPRLIM2","BLDATE","EXPRDATE","PAYFREQ","ISSDTE","PAYAMT","LOANSTAT",
-        "UNDRAWN","APPRDATE"}
-print(sorted((lc & used) - {"ACCTNO", "COMMNO"}))
+    lines.append(title1)
+    lines.append(title2)
+    lines.append("")   # TITLE3 never set -- blank title line
+    lines.append(title4)
+    lines.append("")
+
+    if suppl_df.is_empty():
+        lines.append(f"{box_label:<{name_width}}|{'':>{val_width}}")
+        return lines
+
+    for cat in suppl_df["CAT"].unique(maintain_order=True).to_list():
+        cat_rows = suppl_df.filter(pl.col("CAT") == cat).sort("NAME")
+        lines.append(f"{box_label:<{name_width}}|{'':>{val_width}}")
+        lines.append("-" * (name_width + 1 + val_width))
+        total = 0.0
+        for r in cat_rows.iter_rows(named=True):
+            name = r["NAME"] or ""
+            amount = r["AMOUNT"] or 0.0
+            total += amount
+            lines.append(f"{name:<{name_width}}|{amount:>{val_width}.2f}")
+        lines.append("-" * (name_width + 1 + val_width))
+        lines.append(f"{'TOTAL':<{name_width}}|{total:>{val_width}.2f}")
+        lines.append("")
+    return lines
+
+
+
+
+def main(reptdate: date, loan_cache: Path, fd_cache: Path, current_cache: Path,
+         lncomm_cache: Path, k1_cache: Path, k3_cache: Path,
+         bnm_savg: pl.DataFrame, bnm_curn: pl.DataFrame, output_file: Path) -> None:
+    # ------------------------------------------------------------------
+    # STEP 0: REPORT DATE COMPONENTS (reptdate supplied by EIBMLIQI from
+    # ctl_dwh_batch_dttm, SOURCE_SYSTEM_CD = 'SAS')
+    # ------------------------------------------------------------------
+    print("Step 0: Report date components...")
+    rdate = reptdate.strftime("%d/%m/%y")
+    rpyr, rpmth_, rpday = reptdate.year, reptdate.month, reptdate.day
+    rd_days = build_rd_days(rpyr)
+    print(f"  RDATE: {rdate}")
+
+    # ------------------------------------------------------------------
+    # STEP 1: INPUTS -- temporary Parquet files converted once by EIBMLIQI
+    # ------------------------------------------------------------------
+    print("\nStep 1: Using temporary Parquet inputs supplied by EIBMLIQI...")
+
+    # ------------------------------------------------------------------
+    # STEP 2: LOAD LOAN DATASET (common AMTIND/PAIDIND filter shared by
+    # NOTE, ALW/APPR/UNOTE; NOTE applies an ADDITIONAL PRODCD filter below)
+    # ------------------------------------------------------------------
+    print("\nStep 2: Loading BNM1.LOAN...")
+    con = duckdb.connect(":memory:")
+    loan_all = con.execute(f"""
+        SELECT
+            CAST(ACCTNO AS BIGINT) AS ACCTNO,
+            CAST(NOTENO AS INTEGER) AS NOTENO,
+            CAST(AMTIND AS VARCHAR) AS AMTIND,
+            CAST(PAIDIND AS VARCHAR) AS PAIDIND,
+            CAST(PRODCD AS VARCHAR) AS PRODCD,
+            CAST(PRODUCT AS INTEGER) AS PRODUCT,
+            CAST(CUSTCD AS VARCHAR) AS CUSTCD,
+            CAST(ACCTYPE AS VARCHAR) AS ACCTYPE,
+            CAST(BALANCE AS DOUBLE) AS BALANCE,
+            CAST(COMMNO AS INTEGER) AS COMMNO,
+            CAST(APPRLIM2 AS DOUBLE) AS APPRLIM2,
+            (DATE '1960-01-01' + CAST(BLDATE AS INTEGER)) AS BLDATE,
+            (DATE '1960-01-01' + CAST(EXPRDATE AS INTEGER)) AS EXPRDATE,
+            CAST(PAYFREQ AS VARCHAR) AS PAYFREQ,
+            (DATE '1960-01-01' + CAST(ISSDTE AS INTEGER)) AS ISSDTE,
+            CAST(PAYAMT AS DOUBLE) AS PAYAMT,
+            CAST(LOANSTAT AS INTEGER) AS LOANSTAT,
+            CAST(UNDRAWN AS DOUBLE) AS UNDRAWN,
+            (DATE '1960-01-01' + CAST(APPRDATE AS INTEGER)) AS APPRDATE
+        FROM read_parquet('{loan_cache.as_posix()}')
+        WHERE AMTIND = 'I' AND PAIDIND NOT IN ('P','C')
+    """).pl()
+    con.close()
+    print(f"  Loan rows (AMTIND='I', PAIDIND not P/C): {len(loan_all):,}")
+
+    loan_note = loan_all.filter(
+        (pl.col("PRODCD").str.slice(0, 2) == "34") | (pl.col("PRODUCT").is_in([225, 226]))
+    )
+    print(f"  Loan rows for NOTE (+ PRODCD/PRODUCT filter): {len(loan_note):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 3: NOTE -- loan liquidity BNMCODE detail
+    # ------------------------------------------------------------------
+    print("\nStep 3: Building NOTE (loan liquidity detail)...")
+    note_rows = build_note_rows(loan_note, reptdate, rpyr, rpmth_, rpday, rd_days)
+    note_df = pl.DataFrame(note_rows) if note_rows else pl.DataFrame(
+        schema={"BNMCODE": pl.Utf8, "AMOUNT": pl.Float64, "AMTUSD": pl.Float64, "AMTSGD": pl.Float64}
+    )
+    print(f"  NOTE rows: {len(note_df):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 4: FD -- fixed deposit BNMCODE detail (PBB rows only)
+    # ------------------------------------------------------------------
+    print("\nStep 4: Building FD...")
+    fd_rows = build_fd_rows(fd_cache, reptdate, rpyr, rpmth_, rpday, rd_days)
+    fd_df = pl.DataFrame(fd_rows) if fd_rows else pl.DataFrame(
+        schema={"BNMCODE": pl.Utf8, "AMOUNT": pl.Float64, "AMTUSD": pl.Float64, "AMTSGD": pl.Float64}
+    )
+    print(f"  FD rows: {len(fd_df):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 5: SA / CA -- from DALWPBBD BNM_SAVG / BNM_CURN
+    # ------------------------------------------------------------------
+    print("\nStep 5: Building SA / CA (from DALWPBBD)...")
+    sa_df = build_sa_rows(bnm_savg)
+    ca_df = build_ca_rows(bnm_curn)
+    print(f"  SA rows: {len(sa_df):,}   CA rows: {len(ca_df):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 6: FCYCA -- from DEPOSIT.CURRENT (physical file)
+    # ------------------------------------------------------------------
+    print("\nStep 6: Building FCYCA...")
+    fcyca_df = build_fcyca_rows(current_cache)
+    print(f"  FCYCA rows: {len(fcyca_df):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 7: Undrawn-portion (RC commitment) manipulation -> UNOTE
+    # ------------------------------------------------------------------
+    print("\nStep 7: Building UNOTE (undrawn commitment portion)...")
+    con = duckdb.connect(":memory:")
+    lncomm = con.execute(f"""
+        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(COMMNO AS INTEGER) AS COMMNO
+        FROM read_parquet('{lncomm_cache.as_posix()}')
+    """).pl()
+    con.close()
+    del lncomm   # LNCOMM only establishes the ACCTNO/COMMNO match boundary
+    gc.collect()
+
+    alwcom = loan_all.filter(pl.col("COMMNO") > 0)
+    alwnocom = loan_all.filter(pl.col("COMMNO") <= 0)
+
+    appr = build_appr(alwcom)
+    appr1_final = build_appr1(alwnocom)
+    loan_combined = pl.concat([appr, appr1_final], how="diagonal_relaxed").sort("ACCTNO")
+
+    unote_rows = build_unote_rows(loan_combined, reptdate, rpyr, rpmth_, rpday, rd_days)
+    unote_df = pl.DataFrame(unote_rows) if unote_rows else pl.DataFrame(
+        schema={"BNMCODE": pl.Utf8, "AMOUNT": pl.Float64, "AMTUSD": pl.Float64, "AMTSGD": pl.Float64}
+    )
+    print(f"  UNOTE rows: {len(unote_df):,}")
+
+    del loan_all, loan_note, alwcom, alwnocom, appr, appr1_final, loan_combined
+    gc.collect()
+
+    # ------------------------------------------------------------------
+    # STEP 8: SUMMARISE AND CONSOLIDATE (PROC SUMMARY NWAY per source)
+    # ------------------------------------------------------------------
+    print("\nStep 8: Summarising NOTE / FD / SA / CA / FCYCA / UNOTE...")
+    note_summary = _summarize(note_df)
+    fd_summary = _summarize(fd_df)
+    sa_summary = _summarize(sa_df)
+    ca_summary = _summarize(ca_df)
+    fcyca_summary = _summarize(fcyca_df)
+    unote_summary = _summarize(unote_df)
+
+    note_all = pl.concat(
+        [note_summary, fd_summary, sa_summary, ca_summary, unote_summary, fcyca_summary],
+        how="diagonal_relaxed",
+    )
+    print(f"  NOTE (combined) rows before KAPITI: {len(note_all):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 9: KAPITI items for PART 2 & 3 (%INC PGM(KALMLIQI) equivalent)
+    # ------------------------------------------------------------------
+    print("\nStep 9: Running KALMLIQI (KAPITI items)...")
+    inst = "PBB"
+    kalmliqi_result = KALMLIQI.main(
+        k1_cache=k1_cache, k3_cache=k3_cache,
+        reptdate=reptdate, rpyr=rpyr, rpmth=rpmth_, rpday=rpday, rd_days=rd_days,
+        inst=inst,
+    )
+    ktbl = kalmliqi_result["ktbl"]
+    k1tbl_summary = kalmliqi_result["k1tbl_summary"]
+
+    suppl = k1tbl_summary.filter(pl.col("AMOUNT").abs() >= 5_000_000)
+    note_all = pl.concat([note_all, ktbl], how="diagonal_relaxed")
+    print(f"  SUPPL rows (ABS(AMOUNT)>=5,000,000): {len(suppl):,}")
+    print(f"  NOTE (combined + KTBL) rows: {len(note_all):,}")
+
+    # ------------------------------------------------------------------
+    # STEP 10: FINAL PROC SUMMARY + PROC PRINT / PROC TABULATE RENDERING
+    # ------------------------------------------------------------------
+    print("\nStep 10: Final summary and report rendering...")
+    note_final = _summarize(note_all)
+
+    report_lines = []
+    report_lines += _render_note_print(note_final, rdate)
+    if not suppl.is_empty():
+        report_lines.append("\f")
+        report_lines += _render_suppl_tabulate(suppl, rdate)
+    # report_lines.append("\f")
+    # report_lines += _render_suppl_tabulate(suppl, rdate)
+
+    with open(output_file, "w", encoding="latin1") as fh:
+        for ln in report_lines:
+            fh.write(ln + "\n")
+
+    print(f"\nOutput written : {output_file}")
+    print(f"Total lines    : {len(report_lines):,}")
+    print("\n--- Report output ---")
+    for ln in report_lines:
+        print(ln)
+
+    print("\nEIBMRLFI complete.")
+
+
+if __name__ == "__main__":
+    print("EIBMRLFI is driven by EIBMLIQI.py (it needs the converted inputs and DALWPBBD output).")
+
+
+
+
+============================ KALMLIQI
+
+"""
+Program : KALMLIQI.py
+Purpose : KAPITI-sourced liquidity items for the BNM New Liquidity
+          Framework report (PART 1/2 BNMCODE detail + PART 3 customer-
+          deposit distribution-profile summary). Originally %INC'd by
+          EIBMRLFI after EIBMRLFI has derived REPTDATE/RPYR/RPMTH/RPDAY and
+          declared the REMFMT format plus the %DCLVAR / %REMMTH macros used
+          below. Called as KALMLIQI.main(...) with that context passed in; the
+          REMFMT/REMMTH logic is replicated locally.
+
+Inputs  : temporary Parquet files converted by EIBMLIQI (no ENTITY_CD filter,
+          BNMK KAPITI data):
+            k1_cache -> BNMK.K1TBL&REPTMON&NOWK (KAPITI treasury/GW deals)
+            k3_cache -> BNMK.K3TBL&REPTMON&NOWK (KAPITI money-market / NIDS)
+Outputs : in-memory only -- main() returns a dict:
+            'ktbl'          : BNMCODE / AMOUNT / AMTUSD / AMTSGD
+            'k1tbl_summary' : CAT / NAME / AMOUNT (PART 3 distribution profile)
+"""
+
+from datetime import date
+from pathlib import Path
+
+import duckdb
+import polars as pl
+
+
+
+
+def main(k1_cache: Path, k3_cache: Path, reptdate: date, rpyr: int, rpmth: int,
+         rpday: int, rd_days: list, inst: str = "PBB") -> dict:
+    print("KALMLIQI: Building K1TBL / K3TBL detail (PART 1/2)...")
+    k1_rows = _build_k1tbl_detail(k1_cache)
+    k3_rows = _build_k3tbl_detail(k3_cache, inst)
+    print(f"  K1TBL detail rows: {len(k1_rows):,}   K3TBL detail rows: {len(k3_rows):,}")
+
+    ktbl = build_ktbl(k1_rows, k3_rows, reptdate, rpyr, rpmth, rpday, rd_days)
+    print(f"  KTBL rows (incl. PART-substituted duplicates): {len(ktbl):,}")
+
+    print("KALMLIQI: Building distribution profile (PART 3)...")
+    k1tbl_summary = build_distribution_profile(k1_cache, k3_cache)
+    print(f"  K1TBL (distribution-profile) rows: {len(k1tbl_summary):,}")
+
+    return {"ktbl": ktbl, "k1tbl_summary": k1tbl_summary}
+
+
+
+
+============================= Flags
+
+def build_pbb_fd_parquet(main_fd_parquet: Path, fd_parquet: Path, out_parquet: Path) -> None:
+    """FD (fixed deposit certificate) has no ENTITY_CD, so ENTITY_CD is looked up
+    from MAIN_FD by ACCTNO. MAIN_FD is collapsed to one row per ACCTNO first so
+    the join can never multiply FD rows. Only FD rows whose ACCTNO is found in
+    MAIN_FD and is not a PIBB account are written."""
+    con = duckdb.connect(database=":memory:")
+    try:
+        con.execute(f"""
+            COPY (
+                SELECT f.*
+                FROM read_parquet('{fd_parquet.as_posix()}') AS f
+                INNER JOIN (
+                    SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
+                           MAX(CASE WHEN TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) = 'PIBB'
+                                    THEN 1 ELSE 0 END) AS IS_PIBB
+                    FROM read_parquet('{main_fd_parquet.as_posix()}')
+                    GROUP BY CAST(ACCTNO AS BIGINT)
+                ) AS m
+                  ON CAST(f.ACCTNO AS BIGINT) = m.ACCTNO
+                WHERE m.IS_PIBB = 0
+            ) TO '{out_parquet.as_posix()}' (FORMAT PARQUET)
+        """)
+    finally:
+        con.close()
+
+
+
+
+class _DclVars:
+    """%DCLVAR's RETAINed LDAY (D1-D12) array. D2 (Feb) starts at 31 as in the
+    SAS RETAIN statement and is reset to 29 (leap year) or 28 (otherwise) every
+    time %NXTBLDT meets February, exactly as the SAS IF/ELSE does."""
+
+    def __init__(self):
+        self.lday = [31, 31, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+
+def _nxtbldt(bldate: date, issdte: date, payfreq, freq, dcl: _DclVars) -> date:
+    """%NXTBLDT macro."""
+    if payfreq == "6":
+        dd = bldate.day + 14
+        mm = bldate.month
+        yy = bldate.year
+        if mm == 2:
+            dcl.lday[1] = 29 if yy % 4 == 0 else 28
+        if dd > dcl.lday[mm - 1]:
+            dd = dd - dcl.lday[mm - 1]
+            mm += 1
+            if mm > 12:
+                mm -= 12
+                yy += 1
+    else:
+        dd = issdte.day if issdte else bldate.day
+        mm = bldate.month + (freq or 0)
+        yy = bldate.year
+        if mm > 12:
+            mm -= 12
+            yy += 1
+
+    if mm == 2:
+        dcl.lday[1] = 29 if yy % 4 == 0 else 28
+    if dd > dcl.lday[mm - 1]:
+        dd = dcl.lday[mm - 1]
+
+    return date(yy, mm, dd)
+
+
+
+
+def build_fd_rows(fd_cache: Path, reptdate, rpyr, rpmth_, rpday, rd_days) -> list:
+    con = duckdb.connect(":memory:")
+    raw = con.execute(f"""
+        SELECT
+            CAST(INT_PLAN       AS INTEGER) AS INTPLAN,
+            CAST(CURR_BAL       AS DOUBLE) AS CURBAL,
+            CAST(CUSTOMER_CD    AS INTEGER) AS CUSTCD,
+            CAST(MATURE_DT      AS DATE) AS MATDATE,
+            CAST(OPEN_IND       AS VARCHAR) AS OPENIND
+        FROM read_parquet('{fd_cache.as_posix()}')
+    """).pl()
+    con.close()
+
+    rows = []
+    for r in raw.iter_rows(named=True):
+        intplan = r["INTPLAN"]
+        amtind = fddenom_format(intplan)
+        if amtind != "I":
+            continue
+        curbal = r["CURBAL"]
+        if curbal is None or curbal <= 0:
+            continue
+        custcd = r["CUSTCD"]
+        cust = "08" if custcd in (77, 78, 95, 96) else "09"
+        matdt = r["MATDATE"]    # MATURE_DT is a datetime (e.g. 25MAR2027:00:00:00)
+
+        if r["OPENIND"] == "D" or matdt is None or (matdt - reptdate).days < 8:
+            remmth_val = 0.1
+        else:
+            remmth_val = remmth(matdt, rpyr, rpmth_, rpday, rd_days)
+
+        bic = fdprod_format(intplan)
+        amtusd, amtsgd = 0.0, 0.0
+        if bic == "42630":
+            if intplan in (470, 471, 472, 473, 474, 475, 560):
+                amtusd = curbal
+            elif intplan in (488, 489, 490, 491, 492, 493, 563):
+                amtsgd = curbal
+            bnmcode = f"96311{cust}{remfmt_format(remmth_val)}0000Y"
+        else:
+            bnmcode = f"95311{cust}{remfmt_format(remmth_val)}0000Y"
+
+        rows.append({"BNMCODE": bnmcode, "AMOUNT": curbal, "AMTUSD": amtusd, "AMTSGD": amtsgd})
+
+    return rows
+
+
+
+
