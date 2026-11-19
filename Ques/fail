@@ -6,3 +6,15 @@ print(f"  PDRDATA '3 HOUSING LOANS' rows: "
 
 print(saving_raw["PRODUCT"].value_counts(sort=True).head(15))
 print(current_raw["PRODUCT"].value_counts(sort=True).head(15))
+
+
+
+
+
+import pandas as pd
+lc = set(next(iter(pd.read_sas("<path to enrh_ln_comm_d{DD}.sas7bdat>", format="sas7bdat",
+                               encoding="latin1", chunksize=1))).columns)
+used = {"ACCTNO","NOTENO","AMTIND","PAIDIND","PRODCD","PRODUCT","CUSTCD","ACCTYPE","BALANCE",
+        "COMMNO","APPRLIM2","BLDATE","EXPRDATE","PAYFREQ","ISSDTE","PAYAMT","LOANSTAT",
+        "UNDRAWN","APPRDATE"}
+print(sorted((lc & used) - {"ACCTNO", "COMMNO"}))
