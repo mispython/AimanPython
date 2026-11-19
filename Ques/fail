@@ -1,4 +1,2 @@
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMBPOS.py", line 293, in <module>
-    saving_raw = _query_sas({"SAVING": INPUT_SAVING_FILE}, """
-AttributeError: 'DataFrame' object has no attribute 'pl'
+print(f"  PDRDATA '3 HOUSING LOANS' rows: "
+      f"{sum(1 for r in pdrdata if r['ITEM'].strip() == '3 HOUSING LOANS'):,}")
