@@ -1,30 +1,149 @@
-EXCESSDT    float64
-TODDATE     float64
-RISKCODE     object
-dtype: object
-     EXCESSDT  TODDATE RISKCODE
-145   24322.0  24322.0        0
-232   20301.0  20605.0        4
-404   16223.0  16344.0        4
-525   17776.0  18140.0        4
-568   17136.0  17274.0        4
-721   16040.0  16222.0        4
-723   15614.0  15705.0        4
-754   17531.0  17531.0        4
-768   16617.0  16617.0        4
-837   15127.0  15127.0        4
-BLDATE     float64
-NOTENO     float64
-ACCTYPE     object
-dtype: object
-     BLDATE
-3   24686.0
-4   18131.0
-5   24586.0
-6   17433.0
-7   16404.0
-8   17246.0
-10  17556.0
-11  17740.0
-12  19510.0
-13  15672.0
+(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMBPOS.py
+Step 1: Deriving report date...
+  Batch source  : SAS
+  RDATE         : 09/08/26
+  REPTMON/NOWK  : 08/4
+  FD input      : enrh_dp_fd_cert_d12.sas7bdat  (+ intg_dp_acct_fd_d12.sas7bdat)
+  LOAN input    : loan104.sas7bdat
+  LNNOTE input  : enrh_ln_note_d18.sas7bdat
+  SAVING input  : intg_dp_acct_saving_d12.sas7bdat
+  CURRENT input : intg_dp_acct_current_d12.sas7bdat
+  KAPITI5 input : KAPITI5_INPUT.TXT
+  Output file   : EIIMBPOS_test.txt
+
+Step 2: Caching input SAS datasets to Parquet (temporary)...
+
+Step 3: Building SAVING / PBSAVE from DEPOSIT.SAVING (PIBB)...
+  [SAVING] Converting intg_dp_acct_saving_d12.sas7bdat -> SAVING.parquet ...
+  [SAVING] Done - 6,641,442 rows cached.
+  SAVING rows: 0   PBSAVE rows: 6,395
+
+Step 4: Building CURRENT / PBCURR from DEPOSIT.CURRENT (PIBB)...
+  [CURRENT] Converting intg_dp_acct_current_d12.sas7bdat -> CURRENT.parquet ...
+  [CURRENT] Done - 1,109,437 rows cached.
+  CURRENT rows: 0   PBCURR rows: 13
+
+Step 5: Building FD from FD.FD (PIBB-only via main_fd)...
+  [FD] Converting enrh_dp_fd_cert_d12.sas7bdat -> FD.parquet ...
+  [FD] Done - 3,192,755 rows cached.
+  [MAINFD] Converting intg_dp_acct_fd_d12.sas7bdat -> MAINFD.parquet ...
+  [MAINFD] Done - 1,854,849 rows cached.
+  FD (item-matched) rows: 3,210
+  FDSORT (per-account) rows: 1,087
+
+Step 6: Filtering LOAN.LNNOTE...
+  [LNNOTE] Converting enrh_ln_note_d18.sas7bdat -> LNNOTE.parquet ...
+  [LNNOTE] Done - 8,146,058 rows cached.
+100% ▕██████████████████████████████████████▏ (00:00:02.78 elapsed)     
+  LNNOTE (filtered, deduped) rows: 2,408
+
+Step 7: Filtering iln{REPTMON}{NOWK}...
+  [LOAN] Converting loan104.sas7bdat -> LOAN.parquet ...
+  [LOAN] Done - 2,678,954 rows cached.
+  SLOAN (filtered, deduped) rows: 151
+  [LNNOTE] Converting enrh_ln_note_d18.sas7bdat -> LNNOTE.parquet ...
+  [LNNOTE] Done - 8,146,058 rows cached.
+  [LOAN] Converting loan104.sas7bdat -> LOAN.parquet ...
+  [LOAN] Done - 2,678,954 rows cached.
+
+--- DIAG: ENTITY_CD values ---
+LNNOTE:
+ shape: (2, 2)
+┌───────────┬─────────┐
+│ ENTITY_CD ┆ n       │
+│ ---       ┆ ---     │
+│ str       ┆ i64     │
+╞═══════════╪═════════╡
+│ null      ┆ 6325109 │
+│ PIBB      ┆ 1820949 │
+└───────────┴─────────┘
+LOAN:
+ shape: (2, 2)
+┌───────────┬─────────┐
+│ ENTITY_CD ┆ n       │
+│ ---       ┆ ---     │
+│ str       ┆ i64     │
+╞═══════════╪═════════╡
+│ null      ┆ 2035518 │
+│ PIBB      ┆ 643436  │
+└───────────┴─────────┘
+
+--- DIAG: column types ---
+shape: (10, 2)
+┌─────────────┬─────────────┐
+│ column_name ┆ column_type │
+│ ---         ┆ ---         │
+│ str         ┆ str         │
+╞═════════════╪═════════════╡
+│ ACCTNO      ┆ DOUBLE      │
+│ ORGTYPE     ┆ VARCHAR     │
+│ CUSTCODE    ┆ DOUBLE      │
+│ NOTENO      ┆ DOUBLE      │
+│ REVERSED    ┆ VARCHAR     │
+│ LOANTYPE    ┆ DOUBLE      │
+│ PAIDIND     ┆ VARCHAR     │
+│ RISKRATE    ┆ VARCHAR     │
+│ FLAG1       ┆ VARCHAR     │
+│ ENTITY_CD   ┆ VARCHAR     │
+└─────────────┴─────────────┘
+shape: (7, 2)
+┌─────────────┬─────────────┐
+│ column_name ┆ column_type │
+│ ---         ┆ ---         │
+│ str         ┆ str         │
+╞═════════════╪═════════════╡
+│ ACCTNO      ┆ DOUBLE      │
+│ NOTENO      ┆ DOUBLE      │
+│ NETPROC     ┆ DOUBLE      │
+│ ENTITY_CD   ┆ VARCHAR     │
+│ APPRLIMT    ┆ DOUBLE      │
+│ PRODUCT     ┆ DOUBLE      │
+│ BRANCH      ┆ DOUBLE      │
+└─────────────┴─────────────┘
+
+--- DIAG: LNNOTE cumulative filter counts ---
+100% ▕██████████████████████████████████████▏ (00:00:02.90 elapsed)     
+shape: (1, 9)
+┌─────────┬─────────┬─────────┬────────┬───┬──────────┬──────┬──────┬──────┐
+│ total   ┆ entity  ┆ rev     ┆ paid   ┆ … ┆ loantype ┆ risk ┆ cust ┆ org  │
+│ ---     ┆ ---     ┆ ---     ┆ ---    ┆   ┆ ---      ┆ ---  ┆ ---  ┆ ---  │
+│ i64     ┆ i64     ┆ i64     ┆ i64    ┆   ┆ i64      ┆ i64  ┆ i64  ┆ i64  │
+╞═════════╪═════════╪═════════╪════════╪═══╪══════════╪══════╪══════╪══════╡
+│ 8146058 ┆ 1820949 ┆ 1820949 ┆ 663391 ┆ … ┆ 2483     ┆ 2417 ┆ 2417 ┆ 2408 │
+└─────────┴─────────┴─────────┴────────┴───┴──────────┴──────┴──────┴──────┘
+
+--- DIAG: LOAN cumulative filter counts ---
+shape: (1, 4)
+┌─────────┬────────┬─────────────────────┬────────────────────┐
+│ total   ┆ entity ┆ product_amount_only ┆ entity_and_product │
+│ ---     ┆ ---    ┆ ---                 ┆ ---                │
+│ i64     ┆ i64    ┆ i64                 ┆ i64                │
+╞═════════╪════════╪═════════════════════╪════════════════════╡
+│ 2678954 ┆ 643436 ┆ 1726                ┆ 151                │
+└─────────┴────────┴─────────────────────┴────────────────────┘
+
+Step 8-9: Building PBLOANS (inner join LNNOTE x SLOAN)...
+  ACCTNO overlap (LNNOTE x SLOAN): 129
+  PBLOANS rows: 129
+
+Step 10: Building PBPREM...
+  PBPREM rows: 6,537
+
+Step 11: Reading KAPITI5 flat file...
+  KAPITI5 (PBB, branch<500) rows: 50,910
+
+Step 12: Summarising SAVING / CURRENT / FD / PBPREM / KAPITI5...
+  SAVING summary: 0  CURRENT summary: 0
+  FD summary: 233  PBPREM summary: 340
+  TELEBANK summary: 234
+
+Step 13: Building and sorting PDRDATA...
+  Summary rows with missing BRANCH: 0
+  PDRDATA rows: 807
+
+Step 14: Rendering report...
+  Total report lines: 4,160
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMBPOS.py", line 986, in <module>
+    with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+PermissionError: [Errno 13] Permission denied: '/stgsrcsys/host/uat/AII/EIIMBPOS/EIIMBPOS_test.txt'
