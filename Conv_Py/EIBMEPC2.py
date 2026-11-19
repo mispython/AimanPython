@@ -73,71 +73,129 @@ print(f"  REPTDATE: {REPORTDT}   REPTYEAR/MON: {REPTYEAR}/{REPTMON}")
 # ============================================================================
 # PATH CONFIGURATION  (every physical input / output declared independently)
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII/EIBMEPC2")
-STG_DIR2 = Path("/stgsrcsys/host/uat/AII/MNILN")
-
 # --- Inputs (.sas7bdat) -----------------------------------------------------
+# Production Path
+EXDWH_DIR       = Path("/exdwh/host")
+
 # //DPLP DD  SAP.PBB.EPCU.LOANPYMT  -> member DPLP&REPTMON
-INPUT_DPLP_FILE = STG_DIR / "DPLP" / f"dplp{REPTMON}.sas7bdat"
+INPUT_DPLP_FILE = EPCU_DIR / "epcu" / "loanpymt" / f"dplp{REPTMON}.sas7bdat"
 
 # //DPCC DD  SAP.PBB.EPCU.CRDTPYMT  -> member DPCC&REPTMON
-INPUT_DPCC_FILE = STG_DIR / "DPCC" / f"dpcc{REPTMON}.sas7bdat"
+INPUT_DPCC_FILE = EPCU_DIR / "epcu" / "crdtpymt" / f"dpcc{REPTMON}.sas7bdat"
 
 # //LNLP1 DD SAP.PBB.CRM.LNTRNSAC(0) -> members LNTRAX&REPTYEAR&REPTMON1..4
 INPUT_LNLP_FILES = [
-    STG_DIR / "LNLP1" / f"lntrax{REPTYEAR}{tok}.sas7bdat"
+    EXDWH_DIR / "ln/crm" / f"lntrax{REPTYEAR}{tok}.sas7bdat"
     for tok in (REPTMON1, REPTMON2, REPTMON3, REPTMON4)
 ]
 
 # //DPTRN DD SAP.PBB.CRM.DPTRNSAC(0) -> members DPBTRAN&REPTYEAR&REPTMON1..4
 INPUT_DPTRN_FILES = [
-    STG_DIR / "DPTRN" / f"dpbtran{REPTYEAR}{tok}.sas7bdat"
+    EXDWH_DIR / "dp/crm" / f"dpbtran{REPTYEAR}{tok}.sas7bdat"
     for tok in (REPTMON1, REPTMON2, REPTMON3, REPTMON4)
 ]
 
 # //CTCS DD  SAP.PBB.EPCU.CTCS -> member CTCS&REPTMON
-INPUT_CTCS_FILE = STG_DIR / "CTCS" / f"ctcs{REPTMON}.sas7bdat"
+INPUT_CTCS_FILE = EXDWH_DIR / "epcu" / "ctcs" / f"ctcs{REPTMON}.sas7bdat"
 
-# //LOAN DD  SAP.PBB.MNILN(0)  -> LNNOTE   (REPTDATE member not needed)
-INPUT_LOAN_LNNOTE_FILE  = STG_DIR2 / "PBB"  / "lnnote.sas7bdat"
-
-# //ILOAN DD SAP.PIBB.MNILN(0) -> LNNOTE
-INPUT_ILOAN_LNNOTE_FILE = STG_DIR2 / "PIBB" / "ilnnote.sas7bdat"
+# //LOAN DD  SAP.PBB.MNILN(0)  -> LNNOTE & //ILOAN DD  SAP.PIBB.MNILN(0)  -> LNNOTE
+# PBB & PIBB share the same file. Distinguished by ENTITY_CD = 'PIBB' / =! 'PIBB'
+INPUT_LNNOTE_FILE = Path("/sas/ln/dwh/enrichment") / f"enrh_ln_note_m{REPTMON}.sas7bdat"
 
 # //BNMW1..4 DD SAP.PBB.EPCUWH.WEEKLY(-3..0)  -> RENCC, RENLN
-INPUT_BNMW1_RENCC_FILE = STG_DIR / "BNMW1" / "rencc.sas7bdat"
-INPUT_BNMW2_RENCC_FILE = STG_DIR / "BNMW2" / "rencc.sas7bdat"
-INPUT_BNMW3_RENCC_FILE = STG_DIR / "BNMW3" / "rencc.sas7bdat"
-INPUT_BNMW4_RENCC_FILE = STG_DIR / "BNMW4" / "rencc.sas7bdat"
+EPCUWH_WEEKLY_DIR      = EXDWH_DIR / "epcuwh" / "weekly"
+INPUT_BNMW1_RENCC_FILE = EPCUWH_WEEKLY_DIR / f"rencc{REPTMON}1{REPTYEAR}.sas7bdat"
+INPUT_BNMW2_RENCC_FILE = EPCUWH_WEEKLY_DIR / f"rencc{REPTMON}2{REPTYEAR}.sas7bdat"
+INPUT_BNMW3_RENCC_FILE = EPCUWH_WEEKLY_DIR / f"rencc{REPTMON}3{REPTYEAR}.sas7bdat"
+INPUT_BNMW4_RENCC_FILE = EPCUWH_WEEKLY_DIR / f"rencc{REPTMON}4{REPTYEAR}.sas7bdat"
 
-INPUT_BNMW1_RENLN_FILE = STG_DIR / "BNMW1" / "renln.sas7bdat"
-INPUT_BNMW2_RENLN_FILE = STG_DIR / "BNMW2" / "renln.sas7bdat"
-INPUT_BNMW3_RENLN_FILE = STG_DIR / "BNMW3" / "renln.sas7bdat"
-INPUT_BNMW4_RENLN_FILE = STG_DIR / "BNMW4" / "renln.sas7bdat"
+INPUT_BNMW1_RENLN_FILE = EPCUWH_WEEKLY_DIR / f"renln{REPTMON}1{REPTYEAR}.sas7bdat"
+INPUT_BNMW2_RENLN_FILE = EPCUWH_WEEKLY_DIR / f"renln{REPTMON}2{REPTYEAR}.sas7bdat"
+INPUT_BNMW3_RENLN_FILE = EPCUWH_WEEKLY_DIR / f"renln{REPTMON}3{REPTYEAR}.sas7bdat"
+INPUT_BNMW4_RENLN_FILE = EPCUWH_WEEKLY_DIR / f"renln{REPTMON}4{REPTYEAR}.sas7bdat"
 
 # //IBNMW1..4 DD SAP.PIBB.EPCUWH.WEEKLY(-3..0) -> RENLN
-INPUT_IBNMW1_RENLN_FILE = STG_DIR / "IBNMW1" / "renln.sas7bdat"
-INPUT_IBNMW2_RENLN_FILE = STG_DIR / "IBNMW2" / "renln.sas7bdat"
-INPUT_IBNMW3_RENLN_FILE = STG_DIR / "IBNMW3" / "renln.sas7bdat"
-INPUT_IBNMW4_RENLN_FILE = STG_DIR / "IBNMW4" / "renln.sas7bdat"
+INPUT_IBNMW1_RENLN_FILE = EPCUWH_WEEKLY_DIR / f"renln{REPTMON}1{REPTYEAR}.sas7bdat"
+INPUT_IBNMW2_RENLN_FILE = EPCUWH_WEEKLY_DIR / f"renln{REPTMON}2{REPTYEAR}.sas7bdat"
+INPUT_IBNMW3_RENLN_FILE = EPCUWH_WEEKLY_DIR / f"renln{REPTMON}3{REPTYEAR}.sas7bdat"
+INPUT_IBNMW4_RENLN_FILE = EPCUWH_WEEKLY_DIR / f"renln{REPTMON}4{REPTYEAR}.sas7bdat"
 
-# --- Parquet cache / work ---------------------------------------------------
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMEPC2"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-WORK_DIR = BASE_DIR / "input" / "work" / "EIBMEPC2"
-TMP_DIR  = WORK_DIR / "tmp"
-TMP_DIR.mkdir(parents=True, exist_ok=True)
-
-# --- Outputs (fixed dataset names, no date component) -----------------------
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMEPC2"
+# --- Outputs ----------------------------------------------------------------
+OUTPUT_DIR = Path("/host_pq/mis/output/report") / "EIBMEPC2"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_PBB_TRX_FILE  = OUTPUT_DIR / "EIBMEPC2_PBB_TRXLIST.txt"    # //TRX
-OUTPUT_PIBB_TRX_FILE = OUTPUT_DIR / "EIBMEPC2_PIBB_TRXLIST.txt"   # //ITRX
-OUTPUT_CDM_TRX_FILE  = OUTPUT_DIR / "EIBMEPC2_CDMLIST.txt"        # //CDM
-OUTPUT_PBB_SUM_FILE  = OUTPUT_DIR / "EIBMEPC2_PBB_SUM.txt"        # //SUM
-OUTPUT_PIBB_SUM_FILE = OUTPUT_DIR / "EIBMEPC2_PIBB_SUM.txt"       # //ISUM
-OUTPUT_CDM_SUM_FILE  = OUTPUT_DIR / "EIBMEPC2_CDMSUM.txt"         # //CDMSUM
+OUTPUT_PBB_TRX_FILE  = OUTPUT_DIR / f"EIBMEPC2_PBB_TRXLIST@{REPTMON}{REPTYEAR}.txt"    # //TRX
+OUTPUT_PIBB_TRX_FILE = OUTPUT_DIR / f"EIBMEPC2_PIBB_TRXLIST@{REPTMON}{REPTYEAR}.txt"   # //ITRX
+OUTPUT_CDM_TRX_FILE  = OUTPUT_DIR / f"EIBMEPC2_CDMLIST@{REPTMON}{REPTYEAR}.txt"        # //CDM
+OUTPUT_PBB_SUM_FILE  = OUTPUT_DIR / f"EIBMEPC2_PBB_SUM@{REPTMON}{REPTYEAR}.txt"        # //SUM
+OUTPUT_PIBB_SUM_FILE = OUTPUT_DIR / f"EIBMEPC2_PIBB_SUM@{REPTMON}{REPTYEAR}.txt"       # //ISUM
+OUTPUT_CDM_SUM_FILE  = OUTPUT_DIR / f"EIBMEPC2_CDMSUM@{REPTMON}{REPTYEAR}.txt"         # //CDMSUM
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII/EIBMEPC2")
+# STG_DIR2 = Path("/stgsrcsys/host/uat/AII/MNILN")
+
+# # --- Inputs (.sas7bdat) -----------------------------------------------------
+# # //DPLP DD  SAP.PBB.EPCU.LOANPYMT  -> member DPLP&REPTMON
+# INPUT_DPLP_FILE = STG_DIR / "DPLP" / f"dplp{REPTMON}.sas7bdat"
+
+# # //DPCC DD  SAP.PBB.EPCU.CRDTPYMT  -> member DPCC&REPTMON
+# INPUT_DPCC_FILE = STG_DIR / "DPCC" / f"dpcc{REPTMON}.sas7bdat"
+
+# # //LNLP1 DD SAP.PBB.CRM.LNTRNSAC(0) -> members LNTRAX&REPTYEAR&REPTMON1..4
+# INPUT_LNLP_FILES = [
+#     STG_DIR / "LNLP1" / f"lntrax{REPTYEAR}{tok}.sas7bdat"
+#     for tok in (REPTMON1, REPTMON2, REPTMON3, REPTMON4)
+# ]
+
+# # //DPTRN DD SAP.PBB.CRM.DPTRNSAC(0) -> members DPBTRAN&REPTYEAR&REPTMON1..4
+# INPUT_DPTRN_FILES = [
+#     STG_DIR / "DPTRN" / f"dpbtran{REPTYEAR}{tok}.sas7bdat"
+#     for tok in (REPTMON1, REPTMON2, REPTMON3, REPTMON4)
+# ]
+
+# # //CTCS DD  SAP.PBB.EPCU.CTCS -> member CTCS&REPTMON
+# INPUT_CTCS_FILE = STG_DIR / "CTCS" / f"ctcs{REPTMON}.sas7bdat"
+
+# # //LOAN DD  SAP.PBB.MNILN(0)  -> LNNOTE   (REPTDATE member not needed)
+# INPUT_LOAN_LNNOTE_FILE  = STG_DIR2 / "PBB"  / "lnnote.sas7bdat"
+
+# # //ILOAN DD SAP.PIBB.MNILN(0) -> LNNOTE
+# INPUT_ILOAN_LNNOTE_FILE = STG_DIR2 / "PIBB" / "ilnnote.sas7bdat"
+
+# # //BNMW1..4 DD SAP.PBB.EPCUWH.WEEKLY(-3..0)  -> RENCC, RENLN
+# INPUT_BNMW1_RENCC_FILE = STG_DIR / "BNMW1" / "rencc.sas7bdat"
+# INPUT_BNMW2_RENCC_FILE = STG_DIR / "BNMW2" / "rencc.sas7bdat"
+# INPUT_BNMW3_RENCC_FILE = STG_DIR / "BNMW3" / "rencc.sas7bdat"
+# INPUT_BNMW4_RENCC_FILE = STG_DIR / "BNMW4" / "rencc.sas7bdat"
+
+# INPUT_BNMW1_RENLN_FILE = STG_DIR / "BNMW1" / "renln.sas7bdat"
+# INPUT_BNMW2_RENLN_FILE = STG_DIR / "BNMW2" / "renln.sas7bdat"
+# INPUT_BNMW3_RENLN_FILE = STG_DIR / "BNMW3" / "renln.sas7bdat"
+# INPUT_BNMW4_RENLN_FILE = STG_DIR / "BNMW4" / "renln.sas7bdat"
+
+# # //IBNMW1..4 DD SAP.PIBB.EPCUWH.WEEKLY(-3..0) -> RENLN
+# INPUT_IBNMW1_RENLN_FILE = STG_DIR / "IBNMW1" / "renln.sas7bdat"
+# INPUT_IBNMW2_RENLN_FILE = STG_DIR / "IBNMW2" / "renln.sas7bdat"
+# INPUT_IBNMW3_RENLN_FILE = STG_DIR / "IBNMW3" / "renln.sas7bdat"
+# INPUT_IBNMW4_RENLN_FILE = STG_DIR / "IBNMW4" / "renln.sas7bdat"
+
+# # --- Parquet cache / work ---------------------------------------------------
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMEPC2"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# WORK_DIR = BASE_DIR / "input" / "work" / "EIBMEPC2"
+# TMP_DIR  = WORK_DIR / "tmp"
+# TMP_DIR.mkdir(parents=True, exist_ok=True)
+
+# # --- Outputs (fixed dataset names, no date component) -----------------------
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMEPC2"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_PBB_TRX_FILE  = OUTPUT_DIR / "EIBMEPC2_PBB_TRXLIST.txt"    # //TRX
+# OUTPUT_PIBB_TRX_FILE = OUTPUT_DIR / "EIBMEPC2_PIBB_TRXLIST.txt"   # //ITRX
+# OUTPUT_CDM_TRX_FILE  = OUTPUT_DIR / "EIBMEPC2_CDMLIST.txt"        # //CDM
+# OUTPUT_PBB_SUM_FILE  = OUTPUT_DIR / "EIBMEPC2_PBB_SUM.txt"        # //SUM
+# OUTPUT_PIBB_SUM_FILE = OUTPUT_DIR / "EIBMEPC2_PIBB_SUM.txt"       # //ISUM
+# OUTPUT_CDM_SUM_FILE  = OUTPUT_DIR / "EIBMEPC2_CDMSUM.txt"         # //CDMSUM
 
 CHUNK_ROWS  = 500_000
 LRECL       = 1000            # DCB=(LRECL=1000,RECFM=FB)
