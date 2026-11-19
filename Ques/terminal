@@ -16,11 +16,44 @@ Step 2: Caching input SAS datasets to Parquet (temporary)...
 Step 3: Building SAVING / PBSAVE from DEPOSIT.SAVING (PIBB)...
   [SAVING] Converting intg_dp_acct_saving_d12.sas7bdat -> SAVING.parquet ...
   [SAVING] Done - 6,641,442 rows cached.
+shape: (8, 2)
+┌─────────┬─────────┐
+│ PRODUCT ┆ count   │
+│ ---     ┆ ---     │
+│ i32     ┆ u32     │
+╞═════════╪═════════╡
+│ 220     ┆ 1824332 │
+│ 221     ┆ 379802  │
+│ 222     ┆ 57660   │
+│ 223     ┆ 12995   │
+│ 204     ┆ 6624    │
+│ 215     ┆ 4689    │
+│ 207     ┆ 188     │
+│ 214     ┆ 13      │
+└─────────┴─────────┘
   SAVING rows: 0   PBSAVE rows: 6,395
 
 Step 4: Building CURRENT / PBCURR from DEPOSIT.CURRENT (PIBB)...
   [CURRENT] Converting intg_dp_acct_current_d12.sas7bdat -> CURRENT.parquet ...
   [CURRENT] Done - 1,109,437 rows cached.
+shape: (15, 2)
+┌─────────┬────────┐
+│ PRODUCT ┆ count  │
+│ ---     ┆ ---    │
+│ i32     ┆ u32    │
+╞═════════╪════════╡
+│ 25      ┆ 141300 │
+│ 166     ┆ 4793   │
+│ 24      ┆ 4374   │
+│ 23      ┆ 3265   │
+│ 13      ┆ 2165   │
+│ …       ┆ …      │
+│ 160     ┆ 161    │
+│ 182     ┆ 158    │
+│ 162     ┆ 117    │
+│ 73      ┆ 101    │
+│ 450     ┆ 64     │
+└─────────┴────────┘
   CURRENT rows: 0   PBCURR rows: 13
 
 Step 5: Building FD from FD.FD (PIBB-only via main_fd)...
@@ -34,10 +67,10 @@ Step 5: Building FD from FD.FD (PIBB-only via main_fd)...
 Step 6: Filtering LOAN.LNNOTE...
   [LNNOTE] Converting enrh_ln_note_d18.sas7bdat -> LNNOTE.parquet ...
   [LNNOTE] Done - 8,146,058 rows cached.
-100% ▕██████████████████████████████████████▏ (00:00:02.78 elapsed)     
+100% ▕██████████████████████████████████████▏ (00:00:02.40 elapsed)     
   LNNOTE (filtered, deduped) rows: 2,408
 
-Step 7: Filtering iln{REPTMON}{NOWK}...
+Step 7: Filtering loan084...
   [LOAN] Converting loan104.sas7bdat -> LOAN.parquet ...
   [LOAN] Done - 2,678,954 rows cached.
   SLOAN (filtered, deduped) rows: 151
@@ -102,7 +135,7 @@ shape: (7, 2)
 └─────────────┴─────────────┘
 
 --- DIAG: LNNOTE cumulative filter counts ---
-100% ▕██████████████████████████████████████▏ (00:00:02.90 elapsed)     
+100% ▕██████████████████████████████████████▏ (00:00:14.00 elapsed)     
 shape: (1, 9)
 ┌─────────┬─────────┬─────────┬────────┬───┬──────────┬──────┬──────┬──────┐
 │ total   ┆ entity  ┆ rev     ┆ paid   ┆ … ┆ loantype ┆ risk ┆ cust ┆ org  │
@@ -113,6 +146,7 @@ shape: (1, 9)
 └─────────┴─────────┴─────────┴────────┴───┴──────────┴──────┴──────┴──────┘
 
 --- DIAG: LOAN cumulative filter counts ---
+100% ▕██████████████████████████████████████▏ (00:00:02.31 elapsed)     
 shape: (1, 4)
 ┌─────────┬────────┬─────────────────────┬────────────────────┐
 │ total   ┆ entity ┆ product_amount_only ┆ entity_and_product │
@@ -140,10 +174,12 @@ Step 12: Summarising SAVING / CURRENT / FD / PBPREM / KAPITI5...
 Step 13: Building and sorting PDRDATA...
   Summary rows with missing BRANCH: 0
   PDRDATA rows: 807
+  PDRDATA '3 HOUSING LOANS' rows: 85
 
 Step 14: Rendering report...
   Total report lines: 4,160
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMBPOS.py", line 986, in <module>
-    with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-PermissionError: [Errno 13] Permission denied: '/stgsrcsys/host/uat/AII/EIIMBPOS/EIIMBPOS_test.txt'
+
+  Output written : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIIMBPOS/EIIMBPOS_test.txt
+  Total lines    : 4,160
+
+EIIMBPOS complete.
