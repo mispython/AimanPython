@@ -70,14 +70,22 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+BASE_DIR         = Path("/exdwh/host")
+INPUT_K1TBL_DIR  = BASE_DIR / "kapiti"
+INPUT_K3TBL_DIR  = BASE_DIR / "kapiti"
+INPUT_K1TBL_FILE = INPUT_K1TBL_DIR / f"k1tbl{REPTMON}{NOWK}.sas7bdat"
+INPUT_K3TBL_FILE = INPUT_K3TBL_DIR / f"k3tbl{REPTMON}{NOWK}.sas7bdat"
 
-INPUT_K1TBL_DIR = STG_DIR / "sasdata"
-INPUT_K3TBL_DIR = STG_DIR / "sasdata"
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQI"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# INPUT_K1TBL_DIR = STG_DIR / "sasdata"
+# INPUT_K3TBL_DIR = STG_DIR / "sasdata"
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQI"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 
@@ -286,6 +294,20 @@ def _build_k1tbl_detail(k1_cache: Path) -> list:
 # ============================================================================
 def _build_k3tbl_detail(k3_cache: Path, inst: str) -> list:
     con = duckdb.connect(database=":memory:")
+    # raw = con.execute(f"""
+    #     SELECT
+    #         CAST(UTREF  AS VARCHAR) AS UTREF,
+    #         CAST(UTSTY  AS VARCHAR) AS UTSTY,
+    #         CAST(UTCCY  AS VARCHAR) AS UTCCY,
+    #         CAST(UTAMOC AS DOUBLE)  AS UTAMOC,
+    #         CAST(UTDPF  AS DOUBLE)  AS UTDPF,
+    #         CAST(UTDLP  AS VARCHAR) AS UTDLP,
+    #         CAST(UTAICT AS DOUBLE)  AS UTAICT,
+    #         CAST(UTCTP  AS VARCHAR) AS UTCTP,
+    #         CAST(UTCUS  AS VARCHAR) AS UTCUS,
+    #         CAST(UTCLC  AS VARCHAR) AS UTCLC
+    #     FROM read_parquet('{k3_cache.as_posix()}')
+    # """).pl()
     raw = con.execute(f"""
         SELECT
             CAST(UTREF  AS VARCHAR) AS UTREF,
@@ -297,7 +319,8 @@ def _build_k3tbl_detail(k3_cache: Path, inst: str) -> list:
             CAST(UTAICT AS DOUBLE)  AS UTAICT,
             CAST(UTCTP  AS VARCHAR) AS UTCTP,
             CAST(UTCUS  AS VARCHAR) AS UTCUS,
-            CAST(UTCLC  AS VARCHAR) AS UTCLC
+            CAST(UTCLC  AS VARCHAR) AS UTCLC,
+            CAST(MATDT  AS DATE) AS MATDT
         FROM read_parquet('{k3_cache.as_posix()}')
     """).pl()
     con.close()
@@ -322,12 +345,16 @@ def _build_k3tbl_detail(k3_cache: Path, inst: str) -> list:
         else:
             amtusd, amtsgd = 0.0, 0.0
 
+        # utdlp = r["UTDLP"]
+        # utaict = r["UTAICT"] or 0.0
+        # # MATDT is KEPT by the K3TBL DATA step but never assigned anywhere
+        # # in it -- it stays SAS-missing for every K3TBL row, which forces
+        # # REMMTH=0.1 for these rows downstream in build_ktbl(). Preserved.
+        # matdt = None
+
         utdlp = r["UTDLP"]
         utaict = r["UTAICT"] or 0.0
-        # MATDT is KEPT by the K3TBL DATA step but never assigned anywhere
-        # in it -- it stays SAS-missing for every K3TBL row, which forces
-        # REMMTH=0.1 for these rows downstream in build_ktbl(). Preserved.
-        matdt = None
+        matdt = r["MATDT"]
 
         def _emit(item, amt=amount):
             rows.append({"PART": part, "ITEM": item, "MATDT": matdt,
