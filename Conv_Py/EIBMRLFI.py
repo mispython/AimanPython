@@ -97,23 +97,41 @@ import KALMLIQI           # %INC PGM(KALMLIQI) equivalent -- driven via
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+BASE_DIR           = Path("/sas")
+INPUT_MAIN_FD_DIR  = BASE_DIR / "deposit/dwh/integration"
+INPUT_FD_DIR       = BASE_DIR / "deposit/dwh/enrichment"
+INPUT_CURRENT_DIR  = BASE_DIR / "deposit/dwh/integration"
+INPUT_LNCOMM_DIR   = BASE_DIR / "ln/dwh/enrichment"
+INPUT_LOAN_DIR     = Path("/dwh/dwh_m/tempsource/ln")
 
-INPUT_LOAN_DIR     = STG_DIR / "sasdata"
-INPUT_FD_DIR       = STG_DIR / "from_dwh"
-INPUT_CURRENT_DIR  = STG_DIR / "from_dwh"
-INPUT_LNCOMM_DIR   = STG_DIR / "sasdata"
+INPUT_MAIN_FD_FILE = INPUT_MAIN_FD_DIR / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"         # Carry ENTITY_CD =! 'PIBB' and ACCTNO
+INPUT_FD_FILE      = INPUT_FD_DIR      / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"         # Don't have ENTITY_CD. Merge with MAIN_FD
+INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"    # Filter by ENTIITY_CD =! 'PIBB'
+INPUT_LNCOMM_FILE  = INPUT_LNCOMM_DIR  / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"            # Filter by ENTIITY_CD =! 'PIBB'
+INPUT_LOAN_FILE    = INPUT_LOAN_DIR    / f"loan{REPTMON}{NOWK}.sas7bdat"                # Filter by ENTIITY_CD =! 'PIBB'
 
-INPUT_FD_FILE      = INPUT_FD_DIR      / "fdcd09126.sas7bdat"
-INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "ca09126.sas7bdat"
-INPUT_LNCOMM_FILE  = INPUT_LNCOMM_DIR  / "enrh_ln_comm_d08.sas7bdat"
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQI"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMLIQI"
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMLIQI")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_LOAN_DIR     = STG_DIR / "sasdata"
+# INPUT_FD_DIR       = STG_DIR / "from_dwh"
+# INPUT_CURRENT_DIR  = STG_DIR / "from_dwh"
+# INPUT_LNCOMM_DIR   = STG_DIR / "sasdata"
+
+# INPUT_FD_FILE      = INPUT_FD_DIR      / "fdcd09126.sas7bdat"
+# INPUT_CURRENT_FILE = INPUT_CURRENT_DIR / "ca09126.sas7bdat"
+# INPUT_LNCOMM_FILE  = INPUT_LNCOMM_DIR  / "enrh_ln_comm_d08.sas7bdat"
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQI"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMLIQI"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 PAGE_SIZE = 60      # PAGESIZE not specified in SAS source -> default
@@ -365,16 +383,17 @@ def build_note_rows(loan_df: pl.DataFrame, reptdate, rpyr, rpmth_, rpday, rd_day
 
 # ============================================================================
 # STEP: FD -- fixed deposit BNMCODE detail
+# (MATURE_DT example: 25MAR2027:00:00:00)
 # ============================================================================
 def build_fd_rows(fd_cache: Path, reptdate, rpyr, rpmth_, rpday, rd_days) -> list:
     con = duckdb.connect(":memory:")
     raw = con.execute(f"""
         SELECT
-            CAST(INTPLAN AS INTEGER) AS INTPLAN,
-            CAST(CURBAL AS DOUBLE) AS CURBAL,
-            CAST(CUSTCD AS INTEGER) AS CUSTCD,
-            CAST(MATDATE AS BIGINT) AS MATDATE,
-            CAST(OPENIND AS VARCHAR) AS OPENIND
+            CAST(INT_PLAN       AS INTEGER) AS INTPLAN,
+            CAST(CURR_BAL       AS DOUBLE) AS CURBAL,
+            CAST(CUSTOMER_CD    AS INTEGER) AS CUSTCD,
+            CAST(MATURE_DT      AS BIGINT) AS MATDATE,
+            CAST(OPEN_IND       AS VARCHAR) AS OPENIND
         FROM read_parquet('{fd_cache.as_posix()}')
     """).pl()
     con.close()
@@ -575,7 +594,7 @@ def _summarize(df: pl.DataFrame) -> pl.DataFrame:
         pl.col("AMOUNT").sum(),
         pl.col("AMTUSD").sum(),
         pl.col("AMTSGD").sum(),
-    ])
+    ]).sort("BNMCODE")
 
 
 # ============================================================================
@@ -827,8 +846,11 @@ def main() -> None:
 
     report_lines = []
     report_lines += _render_note_print(note_final, rdate)
-    report_lines.append("\f")
-    report_lines += _render_suppl_tabulate(suppl, rdate)
+    if not suppl.is_empty():
+        report_lines.append("\f")
+        report_lines += _render_suppl_tabulate(suppl, rdate)
+    # report_lines.append("\f")
+    # report_lines += _render_suppl_tabulate(suppl, rdate)
 
     output_path = build_output_file(OUTPUT_DIR, "EIBMRLFI_LIQP_ISLM", date_format="ddmmyy")
     output_file = output_path.with_suffix(".txt")
