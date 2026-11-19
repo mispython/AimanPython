@@ -1,2 +1,8 @@
 print(f"  PDRDATA '3 HOUSING LOANS' rows: "
       f"{sum(1 for r in pdrdata if r['ITEM'].strip() == '3 HOUSING LOANS'):,}")
+
+
+
+
+print(saving_raw["PRODUCT"].value_counts(sort=True).head(15))
+print(current_raw["PRODUCT"].value_counts(sort=True).head(15))
