@@ -19,7 +19,11 @@ Monthly rows : each run stores the report-date row, then recomputes the 6 PMMD
                month is on the same basis. If a daily file is missing, that
                row is left as saved and a warning is printed.
 
+Parquet     : each .sas7bdat input is converted to a TEMPORARY parquet (per-run
+               temp folder), read from it, then deleted. Nothing is kept.
+
 Output      : one-table Excel (.xlsx) and one-table text (.TXT)
+SFTP        : the .xlsx is sent to DRR (JCL STEP01 + RUNSFTP).
 """
 
 import gc
@@ -28,6 +32,12 @@ import math
 from pathlib import Path
 from datetime import date, datetime, timedelta
 from typing import Optional
+
+import atexit
+import shutil
+import sys
+import tempfile
+import paramiko
 
 import duckdb
 import pandas as pd
@@ -50,27 +60,32 @@ IDEQ_DIR    = INPUT_DIR / "ieq_d"                           # IUTFX (.sas7bdat)
 
 HOST_DIR    = Path("/host_pq/mis")
 TEXT_DIR    = HOST_DIR / "input/textfile"                   # DPGIA, EQ, IEQ (.txt)
-EGOLD_DIR   = Path("/extdwh/host")                                     # EFORATE + legacy DCMG master (.sas7bdat)
+
+EGOLD_DIR   = Path("/exdwh/host/ebnk")                      # EFORATE + legacy DCMG master (.sas7bdat)
+
 STORE_DIR   = HOST_DIR / "parquet/EIBDDCMG"                 # Monthly DCMG masters (parquet)
-OUTPUT_DIR  = HOST_DIR / "output/deposit/report"            # Report output
+OUTPUT_DIR  = HOST_DIR / "output/report/EIBDDCMG"           # Report output
 
 for _d in (STORE_DIR, OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 # # Testing Path
 # BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
 # INPUT_DIR  = BASE_DIR / "input"  / "prod"  / "EIBDDCMG"     # RNID, IRNID, UTFX, IUTFX (.sas7bdat)
 # HOST_DIR   = Path("/stgsrcsys/host/uat/AII/EIBDDCMG")       # DPGIA, EQ, IEQ (.txt)
 # EGOLD_DIR  = HOST_DIR                                       # EFORATE + legacy DCMG master (.sas7bdat)
 # CACHE_DIR  = BASE_DIR / "input"  / "cache" / "EIBDDCMG"     # Parquet cache for .sas7bdat sources
 # STORE_DIR  = BASE_DIR / "store"  / "EIBDDCMG"               # Monthly DCMG masters (parquet)
 # OUTPUT_DIR = BASE_DIR / "output" / "EIBDDCMG"               # Report output
-
 # for _d in (CACHE_DIR, STORE_DIR, OUTPUT_DIR):
 #     _d.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
+
+# Temporary parquet area: created per run, removed on exit (nothing is kept)
+TEMP_DIR  = None   # None = system temp; set a folder if the default temp area is too small
+CACHE_DIR = Path(tempfile.mkdtemp(prefix="EIBDDCMG_", dir=TEMP_DIR))
+atexit.register(shutil.rmtree, CACHE_DIR, ignore_errors=True)
 
 # Control table that holds the report date  -- TODO: set the real folder
 INPUT_CTL_BATCH_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
@@ -79,10 +94,10 @@ INPUT_CTL_BATCH_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
 DFI_CODES = ('02', '03', '07', '10', '12', '81', '82', '83', '84', '01')
 
 # ============================================================================
-# HELPERS: CACHE (.sas7bdat -> Parquet)   [same pattern as EIBMRB01.py]
+# HELPERS: CACHE
 # ============================================================================
-def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
-    return cache_path.exists() and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+# def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+#     return cache_path.exists() and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
 
 
 def _sas_type_to_arrow(dtype) -> pa.DataType:
@@ -114,17 +129,39 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
+# def _load_cached(sas_path: Path, tag: str) -> Path:
+#     # Cache name = parent folder + file stem, so same-named files in different
+#     # folders never share a cache.
+#     if not sas_path.exists():
+#         raise FileNotFoundError(f"[{tag}] input not found: {sas_path}")
+#     cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
+#     if _cache_is_fresh(sas_path, cache_path):
+#         print(f"  [{tag}] Cache fresh - skipping conversion.")
+#     else:
+#         _sas_to_parquet(sas_path, cache_path, tag)
+#     return cache_path
+
+
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    # Cache name = parent folder + file stem, so same-named files in different
-    # folders never share a cache.
+    # Converts .sas7bdat -> temporary Parquet (parent folder + stem = unique name).
+    # The file lives only in this run's temp folder.
     if not sas_path.exists():
         raise FileNotFoundError(f"[{tag}] input not found: {sas_path}")
     cache_path = CACHE_DIR / f"{sas_path.parent.name}_{sas_path.stem}.parquet"
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
-    else:
+    if cache_path.exists():                      # already converted earlier in this run
+        return cache_path
+    try:
         _sas_to_parquet(sas_path, cache_path, tag)
+    except BaseException:
+        cache_path.unlink(missing_ok=True)       # never leave a half-written parquet
+        raise
     return cache_path
+
+
+def _discard(*paths) -> None:
+    """Delete temporary parquet file(s) as soon as they have been read."""
+    for p in paths:
+        Path(p).unlink(missing_ok=True)
 
 # ============================================================================
 # STEP 1: REPORT DATE  (ctl_dwh_batch_dttm, SOURCE_SYSTEM_CD = 'DP')
@@ -177,8 +214,8 @@ INPUT_DPGIA_FILE = TEXT_DIR / "DPGIA.txt"           # //DPGIA DD RBP2.B033.PBGIA
 # INPUT_DPGIA_FILE = HOST_DIR / "DPGIA.txt"           # //DPGIA DD RBP2.B033.PBGIA.DLYPOS.RPT(0)
 
 # --- sas7bdat, file name carries the report date ---
-INPUT_UTFX_DIR   = UTFX_DIR                        # //DEQ   DD SAP.PBB.EQUT(0)
-INPUT_IUTFX_DIR  = IUTFX_DIR                       # //IDEQ  DD SAP.PIBB.EQUT(0)
+INPUT_UTFX_DIR   = DEQ_DIR                         # //DEQ   DD SAP.PBB.EQUT(0)
+INPUT_IUTFX_DIR  = IDEQ_DIR                        # //IDEQ  DD SAP.PIBB.EQUT(0)
 INPUT_RNID_DIR   = RNID_DIR                        # //RNID  DD SAP.PBB.RNID.SASDATA
 INPUT_IRNID_DIR  = IRNID_DIR                       # //IRNID DD SAP.PIBB.RNID.SASDATA
 
@@ -473,6 +510,8 @@ IUTFX_CACHE = _load_cached(INPUT_IUTFX_FILE, "IUTFX")
 
 _raw_today = _pmmd_raw(UTFX_CACHE, IUTFX_CACHE, reptdate)
 
+_discard(UTFX_CACHE, IUTFX_CACHE)                  # temporary parquet no longer needed
+
 utfx = pl.DataFrame(
     [{"REPTDATE": reptdate,
       "TOTCPMMD": _raw_today["TOTCPMMD"],
@@ -508,6 +547,9 @@ erate = con.execute(f"""
     FROM read_parquet('{EFORATE_CACHE.as_posix()}')
 """).pl()
 con.close()
+
+_discard(EFORATE_CACHE)                            # temporary parquet no longer needed
+
 print(f"  ERATE rows (whole month): {len(erate):,}")
 erate_today = erate.filter(pl.col("REPTDATE") == reptdate)
 
@@ -551,6 +593,9 @@ irnid = con.execute(f"""
     FROM tagged
 """).pl()
 con.close()
+
+_discard(RNID_CACHE, IRNID_CACHE)                  # temporary parquet no longer needed
+
 irnid = irnid.with_columns(pl.lit(reptdate).alias("REPTDATE"))
 
 print(f"  RNID : TOTINDV={rnid['TOTINDV'][0]}  TOTNIND={rnid['TOTNIND'][0]}")
@@ -672,6 +717,16 @@ def _stack_month() -> pl.DataFrame:
     )
 
 
+# def _recompute_pmmd_for(d: date) -> Optional[dict]:
+#     """Recompute the 6 PMMD columns of date d from that day's own UTFX / IUTFX."""
+#     u_sas, i_sas = _utfx_file(d), _iutfx_file(d)
+#     if not (u_sas.exists() and i_sas.exists()):
+#         return None
+#     u_cache = _load_cached(u_sas, f"UTFX {d:%y%m%d}")
+#     i_cache = _load_cached(i_sas, f"IUTFX {d:%y%m%d}")
+#     return _pmmd_thousands(_pmmd_raw(u_cache, i_cache, d))
+
+
 def _recompute_pmmd_for(d: date) -> Optional[dict]:
     """Recompute the 6 PMMD columns of date d from that day's own UTFX / IUTFX."""
     u_sas, i_sas = _utfx_file(d), _iutfx_file(d)
@@ -679,7 +734,10 @@ def _recompute_pmmd_for(d: date) -> Optional[dict]:
         return None
     u_cache = _load_cached(u_sas, f"UTFX {d:%y%m%d}")
     i_cache = _load_cached(i_sas, f"IUTFX {d:%y%m%d}")
-    return _pmmd_thousands(_pmmd_raw(u_cache, i_cache, d))
+    try:
+        return _pmmd_thousands(_pmmd_raw(u_cache, i_cache, d))
+    finally:
+        _discard(u_cache, i_cache)           # one day at a time, never accumulates
 
 
 def _recompute_earlier_rows(master: pl.DataFrame) -> pl.DataFrame:
@@ -840,9 +898,98 @@ del dcmg_today, dcmg_monthly
 gc.collect()
 
 # ============================================================================
-# JCL/HOUSEKEEPING STEPS RETAINED AS COMMENTS (no Python equivalent needed)
+# SFTP TO DRR  (JCL STEP01 + RUNSFTP)
+# ============================================================================
+SFTP_ENABLED      = True      # set False for UAT / reptdate override runs
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+DRR_HOST_DESC     = "Data Report Repository (DRR)"      # JCL: DRR#SFTP
+DRR_REMOTE_DIR    = "WMTB-SA&S/DEP - SAS/BANK TOTAL"    # JCL STEP01: cd "..."
+
+
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row from the DWH control file (same as EIWFRMCR.py)."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
+
+    row = rows.iloc[0]
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id  = clean(row["SFTP_ID"])
+    sftp_pw  = clean(row["SFTP_PW"])
+    host_ip  = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [n for n, v in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)) if not v]
+    if empty_values:
+        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
+
+    return sftp_id, sftp_pw, host_ip, host_key
+
+
+def _drr_remote_filename() -> str:
+    # JCL: put //SAP.PBB.DMMISR1G.DAILY  DMMISR1G@%OMM.%OYY..xlsx
+    return f"DMMISR1G@{REPTMON}{REPTYEAR}.xlsx"
+
+
+def sftp_upload_to_drr(local_path: Path) -> None:
+    """
+    Equivalent of the JCL:
+        STEP01  : cd "WMTB-SA&S/DEP - SAS/BANK TOTAL"
+        RUNSFTP : put //SAP.PBB.DMMISR1G.DAILY  DMMISR1G@%OMM.%OYY..xlsx
+    """
+    if not local_path.exists():
+        raise FileNotFoundError(f"Output file to SFTP not found: {local_path}")
+
+    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    # HOST_KEY exists in the control file but its format is unconfirmed;
+    # AutoAddPolicy is used in the interim (same as EIWFRMCR.py).
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+    try:
+        try:
+            sftp.chdir(DRR_REMOTE_DIR)
+        except IOError:
+            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
+
+        remote_name = _drr_remote_filename()
+        print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
+        sftp.put(str(local_path), remote_name)
+
+        # confirm the file landed complete
+        if sftp.stat(remote_name).st_size != local_path.stat().st_size:
+            raise RuntimeError(f"Size mismatch after upload of {remote_name}")
+    finally:
+        sftp.close()
+        ssh.close()
+    print("  DRR upload complete.")
+
+
+if SFTP_ENABLED:
+    print("\nUploading report to DRR via SFTP...")
+    sftp_upload_to_drr(OUTPUT_XLSX_FILE)
+
+# ============================================================================
+# JCL/HOUSEKEEPING STEPS
 # ============================================================================
 # //DELETE   EXEC PGM=IEFBR14  -> delete of SAP.PBB.DMMISR1G.DAILY (mainframe housekeeping)
 # //RUNSFTP  EXEC COZBATCH     -> SFTP of DMMISR1G@%OMM.%OYY..TXT to DRR (operational, out of scope)
+# //RUNSFTP  EXEC COZBATCH     -> NOW implemented above in sftp_upload_to_drr()
 
 print("\nEIBDDCMG complete.")
