@@ -1,5 +1,7 @@
 (virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/9_inspect_sas_column_datatype.py
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/9_inspect_sas_column_datatype.py", line 11, in <module>
-    SAS_FILE_PATH = Path("/stgsrcsys/host/uat/AII/MNIFD/enrh_dp_fd_cert_d12.sas7bdat")
-TypeError: 'module' object is not callable
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/9_inspect_sas_column_datatype.py", line 95, in <module>
+    read_sas_columns(SAS_FILE_PATH)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/9_inspect_sas_column_datatype.py", line 23, in read_sas_columns
+    if not file_path.lower().endswith(".sas7bdat"):
+AttributeError: 'PosixPath' object has no attribute 'lower'
