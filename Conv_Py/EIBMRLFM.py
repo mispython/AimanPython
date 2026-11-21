@@ -37,7 +37,7 @@ import polars as pl
 from PBBLNFMT import format_liqpfmt
 from PBBDPFMT import fdprod_format, ddcustcd_format
 from KALMLIQ import build_kalmliq
-from KALMLIFE import build_k3fei
+# from KALMLIFE import build_k3fei
 
 FCY_PRODUCTS = {800, 801, 802, 803, 804, 805, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817,
                 851, 852, 853, 854, 855, 856, 857, 858, 859, 860}
@@ -512,18 +512,15 @@ def _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, lnpay_cache, ct
 def _build_fd(fd_fd_cache, ctx) -> pl.DataFrame:
     con = duckdb.connect(database=":memory:")
     fd = con.execute(f"""
-        SELECT * REPLACE (
-            CASE WHEN MATDATE IS NULL OR ISNAN(MATDATE) THEN NULL
-                 ELSE STRPTIME(CAST(CAST(MATDATE AS BIGINT) AS VARCHAR), '%Y%m%d')::DATE END AS MATDATE
-        )
-        FROM read_parquet('{fd_fd_cache.as_posix()}') WHERE ACCTTYPE <> 397 AND CURBAL > 0
+        SELECT * FROM read_parquet('{fd_fd_cache.as_posix()}')
+        WHERE ACCTTYPE <> 397 AND CURBAL > 0
     """).pl()
     con.close()
     rows = []
     for r in fd.iter_rows(named=True):
         cust = "08" if r.get("CUSTCD") in (77, 78, 95, 96) else "09"
         matdt, openind = r.get("MATDATE"), r.get("OPENIND")
-        if openind == "D" or (matdt is not None and (matdt - ctx["reptdate"]).days < 8):
+        if openind == "D" or matdt is None or (matdt - ctx["reptdate"]).days < 8:
             remmth = 0.1
         else:
             remmth, _ = _remmth(ctx, matdt)
@@ -554,6 +551,7 @@ def _build_sa(bnm_savg_cache) -> pl.DataFrame:
     con = duckdb.connect(database=":memory:")
     sa = con.execute(f"SELECT * FROM read_parquet('{bnm_savg_cache.as_posix()}')").pl()
     con.close()
+    sa = sa.filter(pl.col("PRODCD").ne_missing("N"))      # IF PRODCD NE 'N'
     return sa.with_columns(
         pl.when(pl.col("CUSTCD").is_in(["77", "78", "95", "96"])).then(pl.lit("08")).otherwise(pl.lit("09")).alias("CUST")
     ).select([
@@ -898,17 +896,6 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
     ca_excl = {400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411}
     fd_excl = {350, 351, 352, 353, 354, 355, 356, 357}
 
-    # ca_j = ca.join(cisca, on="ACCTNO", how="inner").filter(
-    #     (pl.col("PURPOSE") != "2") & (~pl.col("PRODUCT").is_in(ca_excl))
-    # )
-    # fd_j = cisfd.join(fd, on="ACCTNO", how="inner").filter(
-    #     (pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_excl))
-    # )
-    # # Align FD-only column name to the CA-side name so PRODUCT survives the concat
-    # fd_j = fd_j.with_columns(
-    #     pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT")
-    # )
-
     cis_cols = [c for c in _CIS_KEEP if c != "ACCTNO"]
 
     # SAS: MERGE CA(IN=A) CISCA  -> keep every CA row; CIS (later dataset) wins on shared columns
@@ -922,23 +909,27 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
     )
 
     # SAS: MERGE CISFD FD(IN=A)  -> keep every FD row; FD (later dataset) wins on shared columns
+    # fd_j = (
+    #     fd.join(cisfd.drop([c for c in cis_cols if c in fd.columns]), on="ACCTNO", how="left")
+    #     .filter(
+    #         pl.col("PURPOSE").ne_missing("2")
+    #         & ~pl.col("ACCTTYPE").is_in(fd_excl).fill_null(False)
+    #     )
+    #     .with_columns(pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT"))
+    # )
+
     fd_j = (
         fd.join(cisfd.drop([c for c in cis_cols if c in fd.columns]), on="ACCTNO", how="left")
         .filter(
             pl.col("PURPOSE").ne_missing("2")
-            & ~pl.col("ACCTTYPE").is_in(fd_excl).fill_null(False)
+            & ~pl.col("PRODUCT").cast(pl.Int64, strict=False).is_in(fd_excl).fill_null(False)
         )
-        .with_columns(pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT"))
     )
-
-    # ca_ind = ca_j.filter(pl.col("CUSTCODE").is_in([77, 78, 95, 96]))
-    # ca_org = ca_j.filter((~pl.col("CUSTCODE").is_in([77, 78, 95, 96])) & (pl.col("INDORG") == "O"))
-    # fd_ind = fd_j.filter(pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0]))
-    # fd_org = fd_j.filter((~pl.col("CUSTCD").is_in([77.0, 78.0, 95.0, 96.0])) & (pl.col("INDORG") == "O"))
 
     # CA table uses CUSTCODE; FD table uses CUSTCD (the FD parquet has no CUSTCODE column)
     ca_is_ind = pl.col("CUSTCODE").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
-    fd_is_ind = pl.col("CUSTCD").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
+    # fd_is_ind = pl.col("CUSTCD").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
+    fd_is_ind = pl.col("CUSTCODE").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
 
     ca_ind = ca_j.filter(ca_is_ind)
     ca_org = ca_j.filter(~ca_is_ind & (pl.col("INDORG") == "O"))
@@ -967,7 +958,8 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
                 return pl.col(src).cast(dtype, strict=False).alias(name)
             return pl.lit(None, dtype=dtype).alias(name)
 
-        product_src = "ACCTTYPE" if is_fd else "PRODUCT"
+        # product_src = "ACCTTYPE" if is_fd else "PRODUCT"
+        product_src = "PRODUCT"
 
         out = df.select([
             col_or_null("BRANCH",    "BRANCH",   pl.Int64),
@@ -981,23 +973,6 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
             col_or_null("ICNO",      "ICNO",     pl.Utf8),
         ])
 
-        # if is_fd:
-        #     out = out.with_columns(
-        #         pl.col("CURBAL").alias("FDBAL"),
-        #         pl.lit(0.0).alias("CABAL"),
-        #     )
-        # else:
-        #     out = out.with_columns(
-        #         pl.col("CURBAL").alias("FDBAL"),
-        #         pl.lit(0.0).alias("CABAL"),
-        #     )
-
-        # # Force identical column order on both sides.
-        # return out.select([
-        #     "BRANCH", "ACCTNO", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC",
-        #     "CURBAL", "PRODUCT", "ICNO", "FDBAL", "CABAL",
-        # ])
-
         out = out.with_columns(
             (pl.col("CURBAL") if is_fd else pl.lit(0.0)).alias("FDBAL"),
             (pl.lit(0.0) if is_fd else pl.col("CURBAL")).alias("CABAL"),
@@ -1008,38 +983,11 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
             "CURBAL", "PRODUCT", "ICNO", "FDBAL", "CABAL", "SRC",
         ])
     
-    # def _top100(fd_part, ca_part, corp_excl=False):
-    #     fd_shaped = _shape(fd_part, is_fd=True)
-    #     ca_shaped = _shape(ca_part, is_fd=False)
-    #     data1 = pl.concat([fd_shaped, ca_shaped], how="vertical_relaxed").with_columns(
-    #         pl.when(pl.col("ICNO").is_null() | (pl.col("ICNO") == ""))
-    #         .then(pl.lit("XX"))
-    #         .otherwise(pl.col("ICNO")).alias("ICNO")
-    #     )
-    #     if corp_excl:
-    #         data1 = data1.filter(~(
-    #             pl.col("ACCTNO").is_between(1590000000, 1599999999)
-    #             | pl.col("ACCTNO").is_between(1689999999, 1699999999)
-    #             | pl.col("ACCTNO").is_between(1789999999, 1799999999)
-    #         ))
-    #     data1 = data1.filter(pl.col("ICNO") != "")
-
-    #     summary = (
-    #         data1.group_by(["ICNO", "CUSTNAME"])
-    #         .agg([pl.col("CURBAL").sum(), pl.col("FDBAL").sum(), pl.col("CABAL").sum()])
-    #         .sort("CURBAL", descending=True)
-    #         .head(100)
-    #     )
-    #     keys = summary.select(["ICNO", "CUSTNAME"])
-    #     detail = (
-    #         data1.join(keys, on=["ICNO", "CUSTNAME"], how="inner")
-    #         .sort(["ICNO", "CUSTNAME", "BRANCH", "ACCTNO"])
-    #     )
-    #     return summary, detail
 
     def _ebcdic(col: str) -> pl.Expr:
         return pl.col(col).map_elements(
             lambda s: (s or "").ljust(60).encode("cp037").hex(), return_dtype=pl.Utf8)
+
 
     def _top100(fd_part, ca_part, corp_excl=False):
         fd_shaped = _shape(fd_part, is_fd=True)
@@ -1064,12 +1012,6 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
             + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
         )
 
-        # # one line per account (FD receipts are summed), as in the SAS report
-        # data1 = data1.group_by(["SRC", "ACCTNO"], maintain_order=True).agg(
-        #     [pl.col(c).first() for c in ("BRANCH", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT", "ICNO")]
-        #     + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
-        # )
-
         summary = (
             data1.group_by(["ICNO", "CUSTNAME"], maintain_order=True)
             .agg([pl.col("CURBAL").sum(), pl.col("FDBAL").sum(), pl.col("CABAL").sum()])
@@ -1093,105 +1035,6 @@ def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cach
     org_sum, org_det = _top100(fd_org, ca_org, corp_excl=True)
     return ind_sum, org_sum, ind_det, org_det
 
-
-# def _write_top100_report(summary, detail, title, rdate, output_path):
-#     def _d(v):
-#         if v is None:
-#             return ""
-#         try:
-#             return f"{float(v):,.2f}"
-#         except Exception:
-#             return str(v)
-
-#     def _int_str(v) -> str:
-#         if v is None:
-#             return ""
-#         try:
-#             return str(int(v))
-#         except Exception:
-#             return str(v)
-
-#     lines = []
-
-#     # ==================== SECTION 1: SUMMARY ====================
-#     lines.append(f"{title} AS AT {rdate}")
-#     lines.append("")
-#     lines.append(
-#         f"{'Obs':>4}   {'DEPOSITOR':<40}  "
-#         f"{'TOTAL BALANCE':>18}  {'FD BALANCE':>18}  {'CA BALANCE':>18}"
-#     )
-#     lines.append("")
-
-#     for i, r in enumerate(summary.iter_rows(named=True), start=1):
-#         lines.append(
-#             f"{i:>4}   {str(r.get('CUSTNAME') or '')[:40]:<40}  "
-#             f"{_d(r.get('CURBAL')):>18}  {_d(r.get('FDBAL')):>18}  {_d(r.get('CABAL')):>18}"
-#         )
-
-#     # ==================== SECTION 2: DETAIL ====================
-#     if detail is not None and detail.height > 0:
-#         lines.append("")
-#         lines.append(f"{title} AS AT {rdate}")
-
-#         obs_no = 0
-#         current_key = None
-#         group_total = 0.0
-
-#         def _close_group(gt: float) -> None:
-#             if gt == 0.0:
-#                 return
-#             lines.append("")
-#             lines.append(
-#                 f"{'--------':>4}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
-#                 f"{'':>14}  {'':>10}  {'----------------':>18}"
-#             )
-#             lines.append(
-#                 f"{'CUSTNAME':>8}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
-#                 f"{'':>14}  {'':>10}  {_d(gt):>18}"
-#             )
-#             lines.append(
-#                 f"{'    ICNO':>8}   {'':>6}  {'':>13}  {'':>24}  {'':>10}  "
-#                 f"{'':>14}  {'':>10}  {_d(gt):>18}"
-#             )
-#             lines.append("")
-#             lines.append("")
-
-#         for r in detail.iter_rows(named=True):
-#             key = (r.get("ICNO"), r.get("CUSTNAME"))
-#             if key != current_key:
-#                 _close_group(group_total)
-#                 current_key = key
-#                 group_total = 0.0
-#                 lines.append("")
-#                 lines.append(f"ICNO={key[0]} DEPOSITOR={key[1]}")
-#                 lines.append("")
-#                 lines.append(
-#                     f"{'Obs':>4}   {'CODE':>6}  {'MNI NO':>13}  {'DEPOSITOR':<24}  "
-#                     f"{'CIS NO':>10}  {'NEW IC':>14}  {'OLD IC':>10}  "
-#                     f"{'CURRENT BALANCE':>18}  {'PRODUCT':>8}"
-#                 )
-#                 lines.append("")
-
-#             obs_no += 1
-#             curbal = r.get("CURBAL") or 0.0
-#             group_total += curbal
-#             lines.append(
-#                 f"{obs_no:>4}   {_int_str(r.get('BRANCH')):>6}  {_int_str(r.get('ACCTNO')):>13}  "
-#                 f"{str(r.get('CUSTNAME') or '')[:24]:<24}  {_int_str(r.get('CUSTNO')):>10}  "
-#                 f"{str(r.get('NEWIC') or ''):>14}  {str(r.get('OLDIC') or ''):>10}  "
-#                 f"{_d(curbal):>18}  {_int_str(r.get('PRODUCT')):>8}"
-#             )
-
-#         _close_group(group_total)
-
-#         # Grand total across the entire detail section
-#         detail_grand = float(detail.select(pl.col("CURBAL").sum()).item() or 0.0)
-#         lines.append("")
-#         lines.append(f"{'':>77}{'=' * 16}")
-#         lines.append(f"{'':>77}{_d(detail_grand):>18}")
-
-#     with open(output_path, "w", encoding="latin1") as fh:
-#         fh.write("\n".join(lines) + "\n")
 
 # ============================================================================
 # TOP 100 REPORT WRITER  (PROC PRINT look-alike, LRECL=320, PS=60, CRLF)
@@ -1428,17 +1271,18 @@ def run_eibmrlfm(
     print("  Building KAPITI items (KALMLIQ + KALMLIFE)...")
     ktbl, dist_summary = build_kalmliq(k1tbl_cache, k3tbl_cache, ctx["reptdate"], ctx["rpyr"], ctx["rpmth"], ctx["rpday"], ctx["rd_days"], inst=inst)
     ktbl = ktbl.with_columns([pl.lit(0.0).alias("AMTHKD"), pl.lit(0.0).alias("AMTAUD")])
-    k3fei = build_k3fei(k3tbl_cache, ctx["reptmon"], ctx["reptyear"])
-    k3fei_norm = k3fei.rename({"ITCODE": "BNMCODE"}).with_columns([
-        pl.lit(0.0).alias("AMTUSD"), pl.lit(0.0).alias("AMTSGD"),
-        pl.lit(0.0).alias("AMTHKD"), pl.lit(0.0).alias("AMTAUD"),
-    ]).select(["BNMCODE", "AMOUNT", "AMTUSD", "AMTSGD", "AMTHKD", "AMTAUD"])
+    # k3fei = build_k3fei(k3tbl_cache, ctx["reptmon"], ctx["reptyear"])
+    # k3fei_norm = k3fei.rename({"ITCODE": "BNMCODE"}).with_columns([
+    #     pl.lit(0.0).alias("AMTUSD"), pl.lit(0.0).alias("AMTSGD"),
+    #     pl.lit(0.0).alias("AMTHKD"), pl.lit(0.0).alias("AMTAUD"),
+    # ]).select(["BNMCODE", "AMOUNT", "AMTUSD", "AMTSGD", "AMTHKD", "AMTAUD"])
 
     print("  Consolidating and summarising...")
     combined = pl.concat([
         _summarize(note), _summarize(fd), _summarize(sa), _summarize(ca),
         _summarize(fcyca), _summarize(unote), _summarize(dci), _summarize(nid),
-        _summarize(ktbl), k3fei_norm,
+        _summarize(ktbl), 
+        # k3fei_norm,
     ], how="diagonal_relaxed")
     note_final = (
         combined
