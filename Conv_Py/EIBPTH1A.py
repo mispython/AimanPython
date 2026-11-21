@@ -147,28 +147,46 @@ print(f"  REPTMON  : {REPTMON}   NOWK : {NOWK}   REPTYEAR : {REPTYEAR}")
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII")
+# Production Path
 
-INPUT_LNNOTE_DIR  = STG_DIR / "sasdata"
-INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_m08.sas7bdat"
+INPUT_LNNOTE_DIR  = Path("/sas/ln/dwh/enrichment")
+INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / f"enrh_ln_note_m{REPTMON}.sas7bdat"      # Filter by ENTITY_CD != 'PIBB'
 
-INPUT_ALWKM_DIR  = STG_DIR / "EIBPTH1A"
-# INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / f"alwkm{REPTMON}{NOWK}.sas7bdat"
-INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / "alwkm084.sas7bdat"
+INPUT_ALWKM_DIR  = Path("/Kena konfemkan dengan Amin")
+INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / f"alwkm{REPTMON}{NOWK}.sas7bdat"
 
-INPUT_CCLW_DIR  = STG_DIR / "EIBPTH1A"
-# INPUT_CCLW_FILE = INPUT_CCLW_DIR / f"cclw{REPTMON}{NOWK}.sas7bdat"
-INPUT_CCLW_FILE = INPUT_CCLW_DIR / "cclw084.sas7bdat"
+INPUT_CCLW_DIR  = Path("/Kena konfemkan dengan Adli - minta move into EDW")
+INPUT_CCLW_FILE = INPUT_CCLW_DIR / f"cclw{REPTMON}{NOWK}.sas7bdat"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBPTH1A"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIBPTH1A"
+OUTPUT_DIR = Path("host_pq/mis/output/report/EIBPTH1A")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 RDALKM_FILE = OUTPUT_DIR / f"RDALKM_{ts}.txt"
 NSRSKM_FILE = OUTPUT_DIR / f"NSRSKM_{ts}.txt"
 SFTP01_FILE = OUTPUT_DIR / f"SFTP01_{ts}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_LNNOTE_DIR  = STG_DIR / "sasdata"
+# INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_m08.sas7bdat"
+
+# INPUT_ALWKM_DIR  = STG_DIR / "EIBPTH1A"
+# # INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / f"alwkm{REPTMON}{NOWK}.sas7bdat"
+# INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / "alwkm084.sas7bdat"
+
+# INPUT_CCLW_DIR  = STG_DIR / "EIBPTH1A"
+# # INPUT_CCLW_FILE = INPUT_CCLW_DIR / f"cclw{REPTMON}{NOWK}.sas7bdat"
+# INPUT_CCLW_FILE = INPUT_CCLW_DIR / "cclw084.sas7bdat"
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBPTH1A"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBPTH1A"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# RDALKM_FILE = OUTPUT_DIR / f"RDALKM_{ts}.txt"
+# NSRSKM_FILE = OUTPUT_DIR / f"NSRSKM_{ts}.txt"
+# SFTP01_FILE = OUTPUT_DIR / f"SFTP01_{ts}.txt"
 
 CHUNK_ROWS = 500_000
 LRECL = 80
