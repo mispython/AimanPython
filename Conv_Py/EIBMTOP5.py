@@ -35,19 +35,6 @@ def run_eibmtop5(
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "TOP50.txt"
 
-    # con = duckdb.connect(database=":memory:")
-    # cisca = con.execute(f"""
-    #     SELECT * FROM read_parquet('{cisln_deposit_cache.as_posix()}')
-    #     WHERE ACCTNO BETWEEN 3000000000 AND 3999999999
-    # """).pl()
-    # ca = con.execute(f"SELECT * FROM read_parquet('{deposit_current_cache.as_posix()}')").pl()
-    # cisfd = con.execute(f"""
-    #     SELECT * FROM read_parquet('{cisdp_deposit_cache.as_posix()}')
-    #     WHERE (ACCTNO BETWEEN 1000000000 AND 1999999999)
-    #        OR (ACCTNO BETWEEN 7000000000 AND 7999999999)
-    # """).pl()
-    # fd = con.execute(f"SELECT * FROM read_parquet('{deposit_fd_cache.as_posix()}')").pl()
-    # con.close()
     con = duckdb.connect(database=":memory:")
     cisca = con.execute(f"""
         SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO)
@@ -78,34 +65,27 @@ def run_eibmtop5(
     )
 
     # fd_prod_excl = {350, 351, 352, 353, 354, 355, 356, 357}
-    # # fdorg = (
-    # #     fd.with_columns(pl.col("CURBAL").alias("FDBAL"))
-    # #     .join(cisfd.sort("ACCTNO"), on="ACCTNO", how="inner")
-    # #     .filter((pl.col("PURPOSE") != "2") & (~pl.col("PRODUCT").is_in(fd_prod_excl)) & (pl.col("INDORG") == "O"))
-    # # )
     # fdorg = (
-    #     fd.with_columns(pl.col("CURBAL").alias("FDBAL"))
+    #     fd.with_columns([
+    #         pl.col("CURBAL").alias("FDBAL"),
+    #         # align FD source column names with the CA side so the concat keeps them
+    #         pl.col("CUSTCD").cast(pl.Int64, strict=False).alias("CUSTCODE"),
+    #         pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT"),
+    #     ])
     #     .join(cisfd.sort("ACCTNO"), on="ACCTNO", how="inner")
     #     .filter((pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_prod_excl)) & (pl.col("INDORG") == "O"))
     # )
     fd_prod_excl = {350, 351, 352, 353, 354, 355, 356, 357}
     fdorg = (
-        fd.with_columns([
-            pl.col("CURBAL").alias("FDBAL"),
-            # align FD source column names with the CA side so the concat keeps them
-            pl.col("CUSTCD").cast(pl.Int64, strict=False).alias("CUSTCODE"),
-            pl.col("ACCTTYPE").cast(pl.Int64, strict=False).alias("PRODUCT"),
-        ])
+        fd.with_columns(pl.col("CURBAL").alias("FDBAL"))
         .join(cisfd.sort("ACCTNO"), on="ACCTNO", how="inner")
-        .filter((pl.col("PURPOSE") != "2") & (~pl.col("ACCTTYPE").is_in(fd_prod_excl)) & (pl.col("INDORG") == "O"))
+        .filter(
+            (pl.col("PURPOSE") != "2")
+            & (~pl.col("PRODUCT").cast(pl.Int64, strict=False).is_in(fd_prod_excl))
+            & (pl.col("INDORG") == "O")
+        )
     )
 
-    # common_cols = [c for c in fdorg.columns if c in caorg.columns]
-    # data1 = (
-    #     pl.concat([fdorg.select(common_cols), caorg.select(common_cols)])
-    #     .filter(pl.col("CUSTNO").is_in(TOP50_CUSTNOS))
-    #     .sort(["CUSTNO", "ACCTNO"])
-    # )
     common_cols = [c for c in fdorg.columns if c in caorg.columns]
     # sanity: confirm the two columns we care about are present on both sides
     for need in ("CUSTCODE", "PRODUCT"):
@@ -118,31 +98,6 @@ def run_eibmtop5(
         .sort(["CUSTNO", "ACCTNO"])
     )
 
-    # lines = [
-    #     "PUBLIC BANK BERHAD      PROGRAM-ID: EIBMTOP5",
-    #     f"PB SUBSIDIARIES UNDER TOP 50 CORP DEPOSITORS @ {rdate}",
-    #     "",
-    # ]
-    # header = f"{'BRANCH':<8}{'MNI NO':<14}{'DEPOSITOR':<26}{'CIS NO':<10}{'CUSTCD':<8}{'CURRENT BALANCE':>18}  {'PRODUCT':<8}"
-    # total, current_custno = 0.0, None
-    # for r in data1.iter_rows(named=True):
-    #     if r["CUSTNO"] != current_custno:
-    #         if current_custno is not None:
-    #             lines.append(f"{'':<66}{total:>18,.2f}")
-    #             lines.append("")
-    #         current_custno, total = r["CUSTNO"], 0.0
-    #         lines.append(header)
-    #     curbal = r.get("CURBAL") or 0.0
-    #     total += curbal
-    #     lines.append(
-    #         f"{str(r.get('BRANCH', '')):<8}{str(r.get('ACCTNO', '')):<14}{str(r.get('CUSTNAME', '')):<26}"
-    #         f"{str(r.get('CUSTNO', '')):<10}{str(r.get('CUSTCODE', '')):<8}{curbal:>18,.2f}  {str(r.get('PRODUCT', '')):<8}"
-    #     )
-    # if current_custno is not None:
-    #     lines.append(f"{'':<66}{total:>18,.2f}")
-
-    # with open(output_file, "w", encoding="latin1") as fh:
-    #     fh.write("\n".join(lines) + "\n")
     def _int_str(v) -> str:
         if v is None:
             return ""
