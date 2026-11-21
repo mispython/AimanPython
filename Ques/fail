@@ -1,101 +1,185 @@
-================================= EIIMLIQP
+Dependencies (module-level execution, matching EIBDRBDP.py JCL pattern):
+    from PBBLNFMT_AII import format_lnprod, format_lndenom
+    from KALMLIFE import build_k3fei    -> K3FEI built by this program
+    from EIBMSAPC import KAPX           -> EIBMSAPC runs at import
+Report date : SOURCE_SYSTEM_CD 'SAS' in ctl_dwh_batch_dttm.sas7bdat
+              (replaces TODAY() in the SAS DATA REPTDATE step).
+SFTP info   : ctl_dwh_sftp_info.sas7bdat (HOST_DESC 'Data Report Repository (DRR)').
 
+
+
+
+- NSRSKM is SFTP'd to DRR as kapmni_EAB_PBCS_<FDATE>.txt (FDATE = DDMMYYYY of
+  REPTDATE), replacing the SFTP01 control file / RUNSFTP JCL step.
+
+
+
+
+import atexit
 import gc
 import sys
 import tempfile
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import duckdb
 import pandas as pd
 import paramiko
+import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from DALWPBBD import build_savg_curn_dept
-from EIIMRLFM import run_eiimrlfm
-from EIBMTOP5 import run_eibmtop5
+from PBBLNFMT_AII import format_lnprod, format_lndenom
+from KALMLIFE import build_k3fei
+from EIBMSAPC import KAPX
 
 
 
 
 # ============================================================================
-# CONTROL FILES (batch date + SFTP info)
+# CONTROL FILES: batch date (SOURCE_SYSTEM_CD = 'SAS') and SFTP info
 # ============================================================================
-CTL_BATCH_DTTM_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-CTL_SFTP_INFO_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-BATCH_SOURCE = "DP"          # SOURCE_SYSTEM_CD used for the report date
+BATCH_DATE_CTL_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+SOURCE_SYSTEM_CD = "SAS"
+
+DRR_HOST_DESC = "Data Report Repository (DRR)"
+DRR_REMOTE_DIR = "FD-BNM REPORTING/PBB/BNM RPTG/EAB_PBCS"
 
 
-def get_batch_date(source_system_cd: str) -> date:
-    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
-    if not CTL_BATCH_DTTM_FILE.exists():
-        raise FileNotFoundError(f"Batch date control file not found: {CTL_BATCH_DTTM_FILE}")
-    ctl = pd.read_sas(str(CTL_BATCH_DTTM_FILE), format="sas7bdat", encoding="latin1")
+def get_batch_date_dwh(source_system_cd: str) -> str:
+    """Return the batch date string ("YYYY-MM-DD HH:MM:SS") for the given
+    SOURCE_SYSTEM_CD, read directly from the DWH batch control file."""
+    if not BATCH_DATE_CTL_FILE.exists():
+        raise FileNotFoundError(
+            f"Batch date control file not found: {BATCH_DATE_CTL_FILE}"
+        )
+
+    ctl = pd.read_sas(BATCH_DATE_CTL_FILE, format="sas7bdat", encoding="utf-8")
     ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
-    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
-    if hit.empty:
-        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM_FILE}")
-    return pd.Timestamp(hit.iloc[0]).date()
+
+    rows = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd]
+    if rows.empty:
+        raise RuntimeError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {BATCH_DATE_CTL_FILE}"
+        )
+
+    batch_dttm = pd.to_datetime(rows.iloc[0]["BATCH_DTTM"])
+    return batch_dttm.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def get_sftp_info(host_desc: str):
-    """Read one SFTP configuration row from the DWH SFTP control file."""
-    if not CTL_SFTP_INFO_FILE.exists():
-        raise FileNotFoundError(f"SFTP control file not found: {CTL_SFTP_INFO_FILE}")
-    ctl = pd.read_sas(str(CTL_SFTP_INFO_FILE), format="sas7bdat", encoding="utf-8")
+    """Read one SFTP configuration row directly from the DWH control file."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(
+            f"SFTP control file not found: {SFTP_CONTROL_FILE}"
+        )
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
     ctl.columns = [str(c).upper().strip() for c in ctl.columns]
 
     required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
     missing_columns = sorted(required.difference(ctl.columns))
     if missing_columns:
-        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
+        raise RuntimeError(
+            "SFTP control file is missing columns: " + ", ".join(missing_columns)
+        )
 
     descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
     rows = ctl[descriptions.eq(host_desc)]
     if len(rows) != 1:
-        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
+        raise RuntimeError(
+            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
+        )
 
     row = rows.iloc[0]
+
+    # SAS character values can contain fixed-width padding.
     clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
-    sftp_id, sftp_pw, host_ip = clean(row["SFTP_ID"]), clean(row["SFTP_PW"]), clean(row["HOST_IP"])
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
     host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
 
-    blanks = [n for n, v in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)) if not v]
-    if blanks:
-        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(blanks)}")
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(
+            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
+        )
+
     return sftp_id, sftp_pw, host_ip, host_key
 
 
-# ============================================================================
-# REPORT DATE CONTEXT (DP batch date)
-# ============================================================================
-def _derive_reptdate_context() -> dict:
-    """DATA BNM.REPTDATE; SELECT(DAY(REPTDATE)) ... -- report date = DP batch date.
-    NOWK uses exact-day matching (8/15/22/else->4), matching the SAS source."""
-    reptdate = get_batch_date(BATCH_SOURCE)
-    day = reptdate.day
-    nowk = "1" if day == 8 else "2" if day == 15 else "3" if day == 22 else "4"
-    rd_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-    if reptdate.year % 4 == 0:
-        rd_days[1] = 29
+
+
+def _derive_context(batch_dt: datetime) -> dict:
+    # SAS: REPTDATE=INPUT('01'||PUT(MONTH(TODAY()),Z2.)||PUT(YEAR(TODAY()),4.),DDMMYY8.)-1;
+    # TODAY() is replaced by the SAS batch date; REPTDATE = last day of previous month.
+    reptdate = batch_dt.date().replace(day=1) - timedelta(days=1)
+
+    day_of_month = reptdate.day
+    # SELECT(DAY(REPTDATE)): REPTDATE is always a month-end date (28-31), so
+    # WHEN(8)/WHEN(15)/WHEN(22) never fire in practice -- OTHERWISE always
+    # applies. Dead branches preserved verbatim below.
+    if day_of_month == 8:
+        sdd, wk = 1, "1"
+    elif day_of_month == 15:
+        sdd, wk = 9, "2"
+    elif day_of_month == 22:
+        sdd, wk = 16, "3"
+    else:
+        sdd, wk = 23, "4"
+
+    mm = reptdate.month
+    if wk == "1":
+        mm1 = mm - 1 if mm - 1 != 0 else 12
+    else:
+        mm1 = mm
+    mm2 = mm - 1 if mm - 1 != 0 else 12
+
     return {
-        "reptdate": reptdate, "tdate": reptdate, "nowk": nowk,
-        "reptyear": reptdate.strftime("%Y"), "reptyea2": reptdate.strftime("%y"),
-        "reptmon": reptdate.strftime("%m"), "reptday": reptdate.strftime("%d"),
+        "reptdate": reptdate,
+        "reptyear": reptdate.strftime("%Y"),
+        "reptyr": reptdate.strftime("%y"),
+        "reptmon": reptdate.strftime("%m"),
+        "reptmon1": f"{mm1:02d}",
+        "reptmon2": f"{mm2:02d}",
+        "reptday": f"{day_of_month:02d}",
         "rdate": reptdate.strftime("%d/%m/%y"),
-        "rpyr": reptdate.year, "rpmth": reptdate.month, "rpday": reptdate.day,
-        "rd_days": rd_days,
+        "fdate": reptdate.strftime("%d%m%Y"),
+        "tdate": reptdate,
+        "sdate": date(reptdate.year, mm, sdd),
+        "sdesc": "PUBLIC BANK BERHAD",
+        "nowk": wk,
+        # BUG (preserved): the original SAS hardcodes NOWK1/2/3 to constants
+        # '1'/'2'/'3' regardless of the computed WK1/WK2/WK3 values --
+        # CALL SYMPUT('NOWK1',PUT('1',$1.)); etc. Neither NOWK1/2/3 nor
+        # WK1/WK2/WK3 are referenced anywhere else in the visible program,
+        # so this only affects dead macro-variable documentation, not output.
+        "nowk1": "1",
+        "nowk2": "2",
+        "nowk3": "3",
     }
 
 
-CTX = _derive_reptdate_context()
-REPTMON = CTX["reptmon"]
-NOWK = CTX["nowk"]
-REPTYEAR = CTX["reptyear"]
-REPTYEA2 = CTX["reptyea2"]
-REPTDAY = CTX["reptday"]
+BATCH_DT = datetime.strptime(get_batch_date_dwh(SOURCE_SYSTEM_CD), "%Y-%m-%d %H:%M:%S")
+_CTX = _derive_context(BATCH_DT)
+REPTDATE = _CTX["reptdate"]
+REPTYEAR = _CTX["reptyear"]
+REPTMON = _CTX["reptmon"]
+REPTDAY = _CTX["reptday"]
+NOWK = _CTX["nowk"]
+RDATE = _CTX["rdate"]
+FDATE = _CTX["fdate"]
+
+print("EIBPTH1A: Deriving report-date context...")
+print(f"  BATCH DATE (SAS) : {BATCH_DT:%Y-%m-%d}")
+print(f"  REPTDATE : {REPTDATE.isoformat()}   RDATE : {RDATE}   FDATE : {FDATE}")
+print(f"  REPTMON  : {REPTMON}   NOWK : {NOWK}   REPTYEAR : {REPTYEAR}")
 
 
 
@@ -104,1247 +188,224 @@ REPTDAY = CTX["reptday"]
 # PATH CONFIGURATION
 # ============================================================================
 # Production Path
-BASE_DIR = Path("/sas")
 
-# ---- Physical input datasets (per EIIMLIQP JCL DD statements) -------------
-# //DEPOSIT DD DSN=SAP.PIBB.MNITB(0) -- SAVING / CURRENT / FD (PBB+PIBB together -> ENTITY_CD = 'PIBB')
-MNTIB_DIR             = BASE_DIR / "deposit/dwh/integration"
-INPUT_SAVING_FILE     = MNTIB_DIR / f"intg_dp_acct_saving_m{REPTMON}.sas7bdat"
-INPUT_CURRENT_FILE    = MNTIB_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"
-INPUT_DEPOSIT_FD_FILE = MNTIB_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"         # DEPOSIT.FD
+INPUT_LNNOTE_DIR  = Path("/sas/ln/dwh/enrichment")
+INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / f"enrh_ln_note_m{REPTMON}.sas7bdat"      # Filter by ENTITY_CD != 'PIBB'
 
-# //FD DD DSN=SAP.PIBB.MNIFD(0) -- FD.FD (no ENTITY_CD -> limited to accounts in DEPOSIT.FD by ACCT_NUM)
-MNIFD_DIR        = BASE_DIR / "deposit/dwh/enrichment"
-INPUT_FD_FD_FILE = MNIFD_DIR / f"enrh_dp_fd_cert_m{REPTMON}.sas7bdat"              # FD.FD
+INPUT_ALWKM_DIR  = Path("/Kena konfemkan dengan Amin")
+INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / f"alwkm{REPTMON}{NOWK}.sas7bdat"
 
-# //LOAN DD DSN=SAP.PIBB.MNILN(0) -- LNCOMM (ENTITY_CD = 'PIBB')
-MNILN_DIR         = BASE_DIR / "ln/dwh/enrichment"
-INPUT_LNCOMM_FILE = MNILN_DIR / f"enrh_ln_comm_m{REPTMON}.sas7bdat"
+INPUT_CCLW_DIR  = Path("/Kena konfemkan dengan Adli - minta move into EDW")
+INPUT_CCLW_FILE = INPUT_CCLW_DIR / f"cclw{REPTMON}{NOWK}.sas7bdat"
 
-# //CISLN DD DSN=SAP.PBB.CISBEXT.DP
-INPUT_CISLN_DEPOSIT_FILE = Path("/dwh/rs_cis") / f"cisr1ca{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+# BNMK = SAP.PBB.KAPITI.SASDATA (consumed by KALMLIFE via build_k3fei)
+INPUT_K3TBL_DIR  = Path("/stgsrcsys/host/uat/AII/EIBPTH1A")
+INPUT_K3TBL_FILE = INPUT_K3TBL_DIR / f"k3tbl{REPTMON}{NOWK}.sas7bdat"
 
-# //CISDP DD DSN=SAP.PBB.CRM.CISBEXT
-INPUT_CISDP_DEPOSIT_FILE = BASE_DIR / "cis/mart/enrichment" / "enrh_exdwh_cisr1.sas7bdat"
-
-# //PROVSUB DD DSN=SAP.PIBB.CCRIS.PROVSUB(0) -- flat text file, kept as .txt
-INPUT_PROVSUB_FILE = Path("/host_pq/mis/input/textfile") / "PIBB_CCRIS_PROVSUB.txt"
-
-# //BNMK DD DSN=SAP.PIBB.KAPITI.SASDATA -- K1TBL / K3TBL members
-INPUT_BNMK_DIR = Path("/exdwh/host/kapiti/pibb")
-
-# //PAY DD DSN=SAP.PIBB.LNPAYSCH -- ILNPAY members - Need to confirm from Jay
-INPUT_PAY_DIR = Path("/")
-
-# //NID DD DSN=SAP.PIBB.RNID.SASDATA - Need to confirm from Adli
-INPUT_NID_DIR = Path("/")
-
-# //BNM1 DD DSN=SAP.PIBB.SASDATA -- LOAN / ULOAN members (ENTITY_CD = 'PIBB')
-INPUT_BNM1_DIR = Path("/dwh/dwh_m/tempsource/ln")
-
-OUTPUT_DIR = Path("/host_pq/mis/output/report/EIIMLIQP")
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBPTH1A")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# DSNs SAP.PBB.KAPMNI.RDAL.PBCS / SAP.PBB.NSRS.KAPMNI.RDAL.PBCS carry no date
+RDALKM_FILE = OUTPUT_DIR / "RDALKM.txt"
+NSRSKM_FILE = OUTPUT_DIR / "NSRSKM.txt"
 
-TEMP_DIR = None          # None = system temp; set a path if the default temp area is too small
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_LNNOTE_DIR  = STG_DIR / "sasdata"
+# INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / "enrh_ln_note_m08.sas7bdat"
+
+# INPUT_ALWKM_DIR  = STG_DIR / "EIBPTH1A"
+# # INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / f"alwkm{REPTMON}{NOWK}.sas7bdat"
+# INPUT_ALWKM_FILE = INPUT_ALWKM_DIR / "alwkm084.sas7bdat"
+
+# INPUT_CCLW_DIR  = STG_DIR / "EIBPTH1A"
+# # INPUT_CCLW_FILE = INPUT_CCLW_DIR / f"cclw{REPTMON}{NOWK}.sas7bdat"
+# INPUT_CCLW_FILE = INPUT_CCLW_DIR / "cclw084.sas7bdat"
+
+# INPUT_K3TBL_DIR  = STG_DIR / "EIBPTH1A"
+# # INPUT_K3TBL_FILE = INPUT_K3TBL_DIR / f"k3tbl{REPTMON}{NOWK}.sas7bdat"
+# INPUT_K3TBL_FILE = INPUT_K3TBL_DIR / "k3tbl084.sas7bdat"
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBPTH1A"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# RDALKM_FILE = OUTPUT_DIR / "RDALKM.txt"
+# NSRSKM_FILE = OUTPUT_DIR / "NSRSKM.txt"
+
 CHUNK_ROWS = 500_000
+LRECL = 80
 
-# ---- SFTP targets: (file in OUTPUT_DIR, HOST_DESC in ctl_dwh_sftp_info, remote dir, remote file name)
-# The EIIMLIQP JCL has no FTP/SFTP step (FISS / NSRS are only cataloged datasets
-# SAP.PIBB.FISS.TEXT / SAP.PIBB.NSRS.TEXT with no date in the DSN), so no target is defined.
-SFTP_TARGETS: list = []
-
-
-
-
-# ============================================================================
-# SAS7BDAT -> TEMPORARY PARQUET
-# ============================================================================
-_CONVERTED: dict = {}      # source path -> temp parquet path (each source is converted once per run)
+# Temporary Parquet area: created once, removed at the very end of the run
+# (and on any abnormal exit via atexit). Nothing is kept between runs.
+TEMP_DIR = None   # None = system temp; set a path if the default temp area is too small
+_TMP_HANDLE = tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="EIBPTH1A_")
+TMP_DIR = Path(_TMP_HANDLE.name)
+atexit.register(_TMP_HANDLE.cleanup)
+_PARQUET_REGISTRY: dict = {}   # sas7bdat path -> temp parquet path (convert once per input)
 
 
-def _lock_schema(table: pa.Table) -> pa.Schema:
-    """Never lock a 'null' type from a chunk that was blank for a text column."""
-    return pa.schema([
-        pa.field(f.name, pa.string()) if pa.types.is_null(f.type) else f
-        for f in table.schema
-    ])
 
 
-def _sas_to_parquet(sas_path: Path, dst: Path, tag: str, keep_pibb_only: bool = False) -> None:
-    """Chunked .sas7bdat -> Parquet. With keep_pibb_only, only rows where
-    ENTITY_CD = 'PIBB' are kept (blank/missing ENTITY_CD is dropped)."""
-    print(f"  [{tag}] Converting {sas_path.name} -> {dst.name} ...")
-    writer, schema, total, warned = None, None, 0, False
-
-    for chunk in pd.read_sas(str(sas_path), encoding="latin1", chunksize=CHUNK_ROWS):
-        for col in chunk.columns[chunk.dtypes == object]:
-            chunk[col] = chunk[col].astype("string")
-        if schema is None:
-            schema = _lock_schema(pa.Table.from_pandas(chunk, preserve_index=False))
-            writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
-        if keep_pibb_only:
-            if "ENTITY_CD" in chunk.columns:
-                chunk = chunk[chunk["ENTITY_CD"].fillna("").str.strip() == "PIBB"]
-            elif not warned:
-                print(f"  [{tag}] WARNING: ENTITY_CD column not found - no PIBB filter applied.")
-                warned = True
-        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-
-    if writer is not None:
-        writer.close()
-    else:
-        # 0-row source: chunked reader yielded nothing; write an empty parquet.
-        empty = pd.read_sas(str(sas_path), encoding="latin1")
-        for col in empty.columns[empty.dtypes == object]:
-            empty[col] = empty[col].astype("string")
-        tbl = pa.Table.from_pandas(empty, preserve_index=False)
-        pq.write_table(tbl.cast(_lock_schema(tbl), safe=False), str(dst))
-    print(f"  [{tag}] Done - {total:,} rows kept.")
-
-
-def _load_cached(sas_path: Path, tmp_dir: Path, tag: str, keep_pibb_only: bool = False) -> Path:
-    """Convert a source to a temp parquet once; reuse it on every later request."""
-    key = str(sas_path)
-    if key in _CONVERTED:
-        print(f"  [{tag}] Already converted this run - reusing.")
-        return _CONVERTED[key]
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    """Convert a .sas7bdat to a TEMPORARY Parquet file once per run and return
+    its path. A repeated request for the same input reuses the existing
+    temporary file instead of converting again."""
+    key = sas_path.resolve()
+    if key in _PARQUET_REGISTRY:
+        print(f"  [{tag}] Already converted - reusing temporary Parquet.")
+        return _PARQUET_REGISTRY[key]
     if not sas_path.exists():
-        raise FileNotFoundError(f"[{tag}] input not found: {sas_path}")
-    dst = tmp_dir / f"{sas_path.parent.name}__{sas_path.stem}.parquet"
-    _sas_to_parquet(sas_path, dst, tag, keep_pibb_only)
-    _CONVERTED[key] = dst
-    return dst
+        raise FileNotFoundError(f"[{tag}] Input not found: {sas_path}")
+    parquet_path = TMP_DIR / f"{sas_path.stem}.parquet"
+    _sas_to_parquet(sas_path, parquet_path, tag)
+    _PARQUET_REGISTRY[key] = parquet_path
+    return parquet_path
 
 
-def _date_expr(con, parquet: Path, col: str) -> str:
-    """DuckDB expression returning a DATE whether the column landed as TIMESTAMP/DATE,
-    a raw SAS datetime (seconds since 1960) or a raw SAS date (days since 1960)."""
-    col_type = con.execute(
-        f"DESCRIBE SELECT {col} FROM read_parquet('{parquet.as_posix()}')"
-    ).fetchone()[1].upper()
-    if col_type.startswith(("TIMESTAMP", "DATE")):
-        return f"CAST({col} AS DATE)"
-    num = f"CAST({col} AS DOUBLE)"
-    return (
-        f"CASE WHEN {col} IS NULL OR ISNAN({num}) THEN NULL "
-        f"WHEN {num} > 100000000 THEN CAST(TIMESTAMP '1960-01-01 00:00:00' "
-        f"+ to_seconds(CAST(ROUND({num}) AS BIGINT)) AS DATE) "
-        f"ELSE DATE '1960-01-01' + CAST(FLOOR({num}) AS INTEGER) END"
-    )
 
 
-def _build_fd_fd_parquet(fd_cert_raw: Path, deposit_fd_cache: Path, dst: Path) -> Path:
-    """FD.FD (MNIFD): keep only accounts present in DEPOSIT.FD (already PIBB-only) by
-    ACCT_NUM = ACCTNO, and rename MNIFD columns back to the names the program uses.
-    MATURE_DT is a real date, so MATDATE is output as DATE (not YYYYMMDD)."""
-    print("  [FD.FD] Limiting MNIFD to PIBB accounts and renaming columns ...")
-    con = duckdb.connect(database=":memory:")
+# ============================================================================
+# STEP 1: CONVERT LNNOTE / ALWKM / CCLW / K3TBL INPUTS TO TEMPORARY PARQUET
+#         AND BUILD K3FEI (%INC PGM(KALMLIFE))
+# ============================================================================
+print("\nStep 1: Converting input SAS datasets to temporary Parquet...")
+LNNOTE_CACHE = _load_cached(INPUT_LNNOTE_FILE, "LNNOTE")
+ALWKM_CACHE = _load_cached(INPUT_ALWKM_FILE, "ALWKM")
+CCLW_CACHE = _load_cached(INPUT_CCLW_FILE, "CCLW")
+K3TBL_CACHE = _load_cached(INPUT_K3TBL_FILE, "K3TBL")
+
+K3FEI = build_k3fei(K3TBL_CACHE, REPTMON, REPTYEAR)     # %INC PGM(KALMLIFE)
+
+
+
+
+con = duckdb.connect(database=":memory:")
+zip_list_sql = ",".join(str(z) for z in _CAG_ZIPCODES)
+# PBB only: exclude PIBB entity (null ENTITY_CD rows are kept, as in EIBDPTER.py)
+lnnote_raw = con.execute(f"""
+    SELECT CAST(LOANTYPE AS INTEGER) AS LOANTYPE,
+           CAST(BALANCE  AS DOUBLE)  AS BALANCE
+    FROM read_parquet('{LNNOTE_CACHE.as_posix()}')
+    WHERE CAST(PZIPCODE AS BIGINT) IN ({zip_list_sql})
+      AND TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) <> 'PIBB'
+""").pl()
+con.close()
+
+
+
+
+sp_1_combined = sp_1 + K3FEI.to_dicts() + KAPX.to_dicts()
+
+
+
+
+sp_2_combined = sp_2 + K3FEI.to_dicts() + KAPX.to_dicts()
+
+
+
+
+# ============================================================================
+# STEP 10: SFTP hand-off of NSRSKM to DRR (RUNSFTP / COZBATCH step)
+#   PUT //SAP.PBB.NSRS.KAPMNI.RDAL.PBCS  kapmni_EAB_PBCS_&FDATE..txt
+#   cd "FD-BNM REPORTING/PBB/BNM RPTG/EAB_PBCS"
+# ============================================================================
+
+
+def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
+    """Upload one output file to the DRR server (HOST_DESC from the SFTP
+    control file) into DRR_REMOTE_DIR."""
+    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    # NOTE: HOST_KEY from ctl_dwh_sftp_info.sas7bdat is available for strict
+    # host-key pinning, but its stored format is not confirmed;
+    # AutoAddPolicy is used in the interim.
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
     try:
-        mat_expr = _date_expr(con, fd_cert_raw, "MATURE_DT")
-        con.execute(f"""
-            COPY (
-                SELECT
-                    f.* EXCLUDE (BRANCH_CD, ACCT_NUM, PURPOSE_CD, CUSTOMER_CD, OPEN_IND,
-                                 CURR_BAL, MATURE_DT, ACCOUNT_TYPE_CD, INT_PLAN, CURRENCY_CD),
-                    CAST(f.BRANCH_CD       AS DOUBLE)  AS BRANCH,
-                    CAST(f.ACCT_NUM        AS BIGINT)  AS ACCTNO,
-                    CAST(f.PURPOSE_CD      AS VARCHAR) AS PURPOSE,
-                    CAST(f.CUSTOMER_CD     AS DOUBLE)  AS CUSTCD,
-                    CAST(f.OPEN_IND        AS VARCHAR) AS OPENIND,
-                    CAST(f.CURR_BAL        AS DOUBLE)  AS CURBAL,
-                    {mat_expr}                         AS MATDATE,
-                    CAST(f.ACCOUNT_TYPE_CD AS DOUBLE)  AS ACCTTYPE,
-                    CAST(f.INT_PLAN        AS DOUBLE)  AS INTPLAN,
-                    CAST(f.CURRENCY_CD     AS VARCHAR) AS CURCODE
-                FROM read_parquet('{fd_cert_raw.as_posix()}') f
-                WHERE CAST(f.ACCT_NUM AS BIGINT) IN (
-                    SELECT CAST(ACCTNO AS BIGINT) FROM read_parquet('{deposit_fd_cache.as_posix()}')
-                )
-            ) TO '{dst.as_posix()}' (FORMAT PARQUET, COMPRESSION SNAPPY)
-        """)
-        kept = con.execute(f"SELECT COUNT(*) FROM read_parquet('{dst.as_posix()}')").fetchone()[0]
-    finally:
-        con.close()
-    print(f"  [FD.FD] Done - {kept:,} rows kept.")
-    return dst
-
-
-# ============================================================================
-# SFTP OUTPUTS (host / credentials from ctl_dwh_sftp_info.sas7bdat)
-# ============================================================================
-def sftp_upload_outputs(targets: list) -> None:
-    """Upload (local file name, HOST_DESC, remote dir, remote name) targets, one connection per host."""
-    if not targets:
-        print("  No SFTP targets configured - skipping.")
-        return
-
-    grouped: dict = {}
-    for local_name, host_desc, remote_dir, remote_name in targets:
-        local_path = OUTPUT_DIR / local_name
-        if not local_path.exists():
-            raise FileNotFoundError(f"SFTP source file not found: {local_path}")
-        grouped.setdefault((host_desc, remote_dir), []).append((local_path, remote_name))
-
-    for (host_desc, remote_dir), files in grouped.items():
-        sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(host_desc)
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        print(f"  Connecting to {host_desc} {host_ip} as {sftp_id} ...")
-        ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
-        sftp = ssh.open_sftp()
         try:
-            try:
-                sftp.chdir(remote_dir)
-            except IOError:
-                sys.exit(f"Aborting: Remote folder '{remote_dir}' not found on {host_desc}")
-            for local_path, remote_name in files:
-                print(f"  SFTP upload: {local_path.name} -> {remote_dir}/{remote_name}")
-                sftp.put(str(local_path), remote_name)
-        finally:
-            sftp.close()
-            ssh.close()
-    print("  SFTP upload complete.")
+            sftp.chdir(DRR_REMOTE_DIR)
+        except IOError:
+            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
+        print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
+        sftp.put(str(local_path), remote_name)
+    finally:
+        sftp.close()
+        ssh.close()
+    print("  DRR upload complete.")
 
 
+print("\nStep 10: SFTP hand-off of NSRSKM to DRR...")
+sftp_upload_to_drr(NSRSKM_FILE, f"kapmni_EAB_PBCS_{FDATE}.txt")
 
+# Drop all temporary Parquet files now that every input has been used.
+_TMP_HANDLE.cleanup()
+print("  Temporary Parquet files removed.")
 
-def main() -> None:
-    ctx = CTX
-    print(f"REPTDATE: {ctx['reptdate']}  NOWK: {ctx['nowk']}  RDATE: {ctx['rdate']}")
-    reptmon, nowk, reptday, reptyea2 = ctx["reptmon"], ctx["nowk"], ctx["reptday"], ctx["reptyea2"]
+# //******************************************************************
+# //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# //******************************************************************
+# //RUNSFTP  EXEC COZBATCH
+# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+# //           DD *
+# lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# lzopts linerule=$lr
+# cd "FD-BNM REPORTING/PBB/BNM RPTG/EAB_PBCS"
+# //           DD DISP=SHR,DSN=&&FTPPUT
+# //           DD *
+# EOB
+# /*
 
-    with tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="EIIMLIQP_") as tmp:
-        tmp_dir = Path(tmp)
+print("\nEIBPTH1A complete.")
 
-        print("\nConverting physical inputs to temporary parquet...")
-        # PBB+PIBB sources -> keep ENTITY_CD = 'PIBB' only
-        saving_cache     = _load_cached(INPUT_SAVING_FILE, tmp_dir, "SAVING", keep_pibb_only=True)
-        current_cache    = _load_cached(INPUT_CURRENT_FILE, tmp_dir, "CURRENT", keep_pibb_only=True)
-        deposit_fd_cache = _load_cached(INPUT_DEPOSIT_FD_FILE, tmp_dir, "DEPOSIT.FD", keep_pibb_only=True)
-        lncomm_cache     = _load_cached(INPUT_LNCOMM_FILE, tmp_dir, "LNCOMM", keep_pibb_only=True)
-        bnm1_loan_cache  = _load_cached(INPUT_BNM1_DIR / f"loan{reptmon}{nowk}.sas7bdat", tmp_dir, "BNM1.LOAN", keep_pibb_only=True)
-        bnm1_uloan_cache = _load_cached(INPUT_BNM1_DIR / f"uloan{reptmon}{nowk}.sas7bdat", tmp_dir, "BNM1.ULOAN", keep_pibb_only=True)
 
-        # FD.FD (MNIFD): no ENTITY_CD -> limited to DEPOSIT.FD accounts, columns renamed
-        fd_cert_raw = _load_cached(INPUT_FD_FD_FILE, tmp_dir, "MNIFD raw")
-        fd_fd_cache = _build_fd_fd_parquet(fd_cert_raw, deposit_fd_cache, tmp_dir / "FD__FD.parquet")
-        fd_cert_raw.unlink(missing_ok=True)          # raw MNIFD is not needed after this point
 
-        # Sources with no PBB/PIBB split
-        cisln_deposit_cache = _load_cached(INPUT_CISLN_DEPOSIT_FILE, tmp_dir, "CISLN.DEPOSIT")
-        cisdp_deposit_cache = _load_cached(INPUT_CISDP_DEPOSIT_FILE, tmp_dir, "CISDP.DEPOSIT")
-        k1tbl_cache    = _load_cached(INPUT_BNMK_DIR / f"k1tbl{reptmon}{nowk}.sas7bdat", tmp_dir, "BNMK.K1TBL")
-        k3tbl_cache    = _load_cached(INPUT_BNMK_DIR / f"k3tbl{reptmon}{nowk}.sas7bdat", tmp_dir, "BNMK.K3TBL")
-        ilnpay_cache   = _load_cached(INPUT_PAY_DIR / f"ilnpay{reptmon}{nowk}{reptyea2}.sas7bdat", tmp_dir, "PAY.ILNPAY")
-        nid_rnid_cache = _load_cached(INPUT_NID_DIR / f"rnid{reptday}.sas7bdat", tmp_dir, "NID.RNID")
 
-        provsub_txt_path = INPUT_PROVSUB_FILE  # flat file, no parquet conversion
+=====================================
 
-        # ---- %INC PGM(DALWPBBD) -- build BNM_SAVG / BNM_CURN / BNM_DEPT ------
-        print("\nBuilding BNM_SAVG / BNM_CURN / BNM_DEPT via DALWPBBD...")
-        bnm_savg, bnm_curn, _bnm_dept = build_savg_curn_dept(
-            saving_cache=saving_cache, current_cache=current_cache, cisdp_cache=cisdp_deposit_cache,
-        )
-        bnm_savg_cache = tmp_dir / f"BNM__SAVG{reptmon}{nowk}.parquet"
-        bnm_curn_cache = tmp_dir / f"BNM__CURN{reptmon}{nowk}.parquet"
-        bnm_savg.write_parquet(bnm_savg_cache)
-        bnm_curn.write_parquet(bnm_curn_cache)
-        del bnm_savg, bnm_curn, _bnm_dept
-        gc.collect()
+from EIBMSAPC import build_kapx
 
-        # ---- %INC PGM(EIIMRLFM) ------------------------------------------------
-        print("\nRunning EIIMRLFM...")
-        run_eiimrlfm(
-            bnm1_loan_cache=bnm1_loan_cache, bnm1_uloan_cache=bnm1_uloan_cache, lncomm_cache=lncomm_cache,
-            provsub_txt_path=provsub_txt_path, ilnpay_cache=ilnpay_cache, fd_fd_cache=fd_fd_cache,
-            bnm_savg_cache=bnm_savg_cache, bnm_curn_cache=bnm_curn_cache,
-            deposit_current_cache=current_cache, deposit_fd_cache=deposit_fd_cache,
-            nid_rnid_cache=nid_rnid_cache, k1tbl_cache=k1tbl_cache, k3tbl_cache=k3tbl_cache,
-            cisln_deposit_cache=cisln_deposit_cache, cisdp_deposit_cache=cisdp_deposit_cache,
-            ctx=ctx, output_dir=OUTPUT_DIR,
-        )
 
-        # ---- %INC PGM(EIBMTOP5) -------------------------------------------------
-        print("\nRunning EIBMTOP5...")
-        run_eibmtop5(
-            cisln_deposit_cache=cisln_deposit_cache, deposit_current_cache=current_cache,
-            cisdp_deposit_cache=cisdp_deposit_cache, deposit_fd_cache=deposit_fd_cache,
-            rdate=ctx["rdate"], output_dir=OUTPUT_DIR,
-        )
-    # temp folder and every temporary parquet are removed here
-    _CONVERTED.clear()
 
-    print("\nUploading outputs via SFTP...")
-    sftp_upload_outputs(SFTP_TARGETS)
 
-    print("\nEIIMLIQP complete.")
+INPUT_BNMTBLX_DIR  = Path("/host_pq/mis/input/textfile")
+INPUT_BNMTBLX_FILE = INPUT_BNMTBLX_DIR / "BNMTBLX.txt"      # flat text file, read as-is (no Parquet)
 
 
-if __name__ == "__main__":
-    main()
 
 
+# INPUT_BNMTBLX_DIR  = STG_DIR / "EIBPTH1A"
+# INPUT_BNMTBLX_FILE = INPUT_BNMTBLX_DIR / "BNMTBLX_INPUT.TXT"
 
 
-================================ EIIMRLFM
 
-import math
-import time as _t
-from datetime import date, timedelta
-from pathlib import Path
 
-import duckdb
-import polars as pl
+KAPX = build_kapx(INPUT_BNMTBLX_FILE, REPTDATE)         # %INC PGM(EIBMSAPC)
 
-from PBBLNFMT_AII import format_liqpfmt
-from PBBDPFMT_AII import fdprod_format, ddcustcd_format
-from KALMLIQ import build_kalmliq
-# from KALMLIFE import build_k3fei
-from EIBMRLFM import _amortise, _emit_pair, _CCY_COLS, _IND_CODES, _CIS_KEEP, _write_top100_report
 
 
 
+    # ========================================================================
+    # STEP 5: DATA SALPUR; MERGE PURCODE SALCODE; BY BNMCODE;
+    # Purchase ('6...') and sale ('7...') codes never collide, so the MERGE is
+    # a union that KEEPS EVERY DEAL ROW (many rows per BNMCODE).
+    # ========================================================================
+    print("\nEIBMSAPC Step 5: Merging PURCODE + SALCODE by BNMCODE...")
 
-def _note_to_rows(note: pl.DataFrame, ctx: dict) -> pl.DataFrame:
-    rept = pl.lit(ctx["reptdate"])
-    ind = pl.col("CUSTCD").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
-    num = lambda c: pl.col(c).cast(pl.Float64, strict=False).fill_nan(None).fill_null(0.0)
+    salpur_rows = purcode_rows + salcode_rows
 
-    df = note.select(["PRODUCT", "CUSTCD", "ACCTYPE", "BALANCE", "PAYAMT", "BLDATE", "ISSDTE",
-                      "EXPRDATE", "LOANSTAT", "IMLOAN", "PAYFREQ", "CCY", "EIR_ADJ"]).with_columns(
-        pl.col("PRODUCT").cast(pl.Int64, strict=False),
-        ind.alias("IS_IND"),
-        pl.when(ind).then(pl.lit("08")).otherwise(pl.lit("09")).alias("CUST"),
-        num("BALANCE").alias("BALANCE"),
-        num("PAYAMT").alias("PAYAMT"),
-        pl.col("PAYFREQ").cast(pl.Utf8),
-        pl.col("EIR_ADJ").cast(pl.Float64, strict=False).fill_nan(None).alias("EIR"),
-        (((rept - pl.col("BLDATE")).dt.total_days() > 89).fill_null(False)
-         | pl.col("LOANSTAT").ne_missing(1)
-         | (pl.col("IMLOAN") == "Y").fill_null(False)).alias("COND"),
-    ).with_columns(
-        pl.col("PRODUCT").is_in(sorted(FCY_PRODUCTS)).fill_null(False).alias("IS_FCY"),
-    )
+    # ========================================================================
+    # STEP 6: DATA MERG; MERGE DUMMY SALPUR; BY BNMCODE; IF AMOUNT=. THEN 0.00;
+    # DUMMY contributes one 0.00 row per placeholder code; every SALPUR deal
+    # row is kept. Amounts are summed later by the PROC SUMMARY steps.
+    # ========================================================================
+    print("\nEIBMSAPC Step 6: Merging DUMMY + SALPUR...")
 
-    parts = []
-
-    # ---- OD : 95213{cust}010000Y -------------------------------------------
-    od = df.filter(pl.col("ACCTYPE") == "OD")
-    parts.append(_summarize(od.select([
-        pl.concat_str([pl.lit("95213"), pl.col("CUST"), pl.lit("010000Y")]).alias("BNMCODE"),
-        pl.col("BALANCE").alias("AMOUNT"),
-        *[pl.lit(0.0).alias(f"AMT{c}") for c in _CCY_COLS],
-    ])))
-
-    # ---- LN -----------------------------------------------------------------
-    ln = df.filter(pl.col("ACCTYPE") == "LN")
-    prods = [p for p in ln["PRODUCT"].unique().to_list() if p is not None]
-    prod_map = pl.DataFrame({"PRODUCT": prods, "PROD": [format_liqpfmt(p) for p in prods]},
-                            schema={"PRODUCT": pl.Int64, "PROD": pl.Utf8})
-    ln = ln.join(prod_map, on="PRODUCT", how="left").with_columns(
-        pl.when(pl.col("IS_IND"))
-        .then(pl.when(pl.col("PROD") == "HL").then(pl.lit("214")).otherwise(pl.lit("219")))
-        .otherwise(pl.when(pl.col("PROD").is_in(["FL", "HL"])).then(pl.lit("211"))
-                   .when(pl.col("PROD") == "RC").then(pl.lit("212"))
-                   .otherwise(pl.lit("219"))).alias("ITEM")
-    )
-
-    # EIR adjustment rows (only when EIR_ADJ is present)
-    eir = ln.filter(pl.col("EIR").is_not_null())
-    for pfx in ("95", "93"):
-        parts.append(_summarize(eir.select([
-            pl.concat_str([pl.lit(pfx), pl.col("ITEM"), pl.col("CUST"), pl.lit("060000Y")]).alias("BNMCODE"),
-            pl.col("EIR").alias("AMOUNT"),
-            *[pl.lit(0.0).alias(f"AMT{c}") for c in _CCY_COLS],
-        ])))
-
-    # No schedule needed: no expiry date, or expiring in < 8 days -> remmth = 0.1
-    simple_mask = pl.col("EXPRDATE").is_null() | ((pl.col("EXPRDATE") - rept).dt.total_days() < 8)
-    simple = ln.filter(simple_mask).with_columns(pl.lit(0.1).alias("REM0"))
-    parts.extend(_emit_pair(simple, "BALANCE", "REM0"))
-
-    # Instalment schedule
-    _amortise(ln.filter(~simple_mask), ctx, parts)
-
-    return _summarize(pl.concat(parts, how="vertical"))
-
-
-def _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, ilnpay_cache, ctx) -> pl.DataFrame:
-    t0 = _t.time()
-    con = duckdb.connect(database=":memory:")
-    loan_all = con.execute(f"""
-        SELECT * REPLACE (
-            CAST(ACCTNO AS BIGINT) AS ACCTNO,
-            CAST(NOTENO AS BIGINT) AS NOTENO,
-            CAST(COMMNO AS BIGINT) AS COMMNO,
-            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
-            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
-            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
-            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
-        )
-        FROM read_parquet('{bnm1_loan_cache.as_posix()}')
-        WHERE (COALESCE(CAST(PAIDIND AS VARCHAR),'') NOT IN ('P','C') OR EIR_ADJ IS NOT NULL)
-          AND (SUBSTR(CAST(PRODCD AS VARCHAR),1,2) = '34' OR PRODUCT IN (225, 226))
-          AND CAST(ACCTYPE AS VARCHAR) IN ('OD','LN')
-    """).pl()
-    print(f"[timing] loan read: {_t.time()-t0:.1f}s rows={loan_all.height:,}")
-
-    rcloan = loan_all.filter(pl.col("PRODCD").is_in(["34190", "34690"]))
-    lncomm = con.execute(f"""
-        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
-               CAST(COMMNO AS BIGINT) AS COMMNO,
-               TRY_STRPTIME(
-                   SUBSTR(LPAD(CAST(CAST(EXPIREDT AS BIGINT) AS VARCHAR), 11, '0'), 1, 8),
-                   '%m%d%Y'
-               )::DATE AS EXPRDATE
-        FROM read_parquet('{lncomm_cache.as_posix()}')
-    """).pl().unique(subset=["ACCTNO", "COMMNO"], keep="first", maintain_order=True).sort(["ACCTNO", "COMMNO"])
-
-    rcnote = (
-        lncomm.join(rcloan.select(["ACCTNO", "COMMNO", "NOTENO"]), on=["ACCTNO", "COMMNO"], how="inner")
-        .select(["ACCTNO", "NOTENO", "EXPRDATE"])
-        .unique(subset=["ACCTNO", "NOTENO"], keep="first", maintain_order=True)
-    )
-
-    # PROVSUB is a flat .txt file (FIRSTOBS=2, fixed columns)
-    provsub_rows = []
-    with open(provsub_txt_path, "r", encoding="latin1") as fh:
-        for line in fh.readlines()[1:]:
-            line = line.rstrip("\n")
-            acctno_s, noteno_s, imloan = line[0:10].strip(), line[11:16].strip(), line[17:18].strip()
-            if imloan == "Y" and acctno_s and noteno_s:
-                provsub_rows.append({"ACCTNO": int(acctno_s), "NOTENO": int(noteno_s), "IMLOAN": imloan})
-    provsub_schema = {"ACCTNO": pl.Int64, "NOTENO": pl.Int64, "IMLOAN": pl.Utf8}
-    provsub = (pl.DataFrame(provsub_rows, schema=provsub_schema) if provsub_rows
-               else pl.DataFrame(schema=provsub_schema)).unique(subset=["ACCTNO", "NOTENO"], keep="first")
-
-    note = (
-        loan_all
-        .join(rcnote, on=["ACCTNO", "NOTENO"], how="left", suffix="_rc")
-        .with_columns(pl.coalesce([pl.col("EXPRDATE_rc"), pl.col("EXPRDATE")]).alias("EXPRDATE"))
-        .drop("EXPRDATE_rc")
-        .join(provsub, on=["ACCTNO", "NOTENO"], how="left")
-    )
-
-    # PAY sourced from PAY.ILNPAY&REPTMON&NOWK&REPTYEA2
-    pay_raw = con.execute(f"""
-        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO, PAYAMT,
-               CASE WHEN EFFDATE IS NULL OR ISNAN(EFFDATE) THEN NULL
-                    ELSE DATE '1960-01-01' + CAST(FLOOR(EFFDATE) AS INTEGER) END AS EFFDATE
-        FROM read_parquet('{ilnpay_cache.as_posix()}')
-    """).pl()
-    con.close()
-    tdate = ctx["reptdate"]
-    pay = pay_raw.with_columns([
-        pl.when(pl.col("EFFDATE") <= tdate).then(1).otherwise(0).alias("SORT_IND"),
-        pl.when(pl.col("EFFDATE") <= tdate).then(pl.col("EFFDATE").cast(pl.Int64))
-          .otherwise(-pl.col("EFFDATE").cast(pl.Int64)).alias("MANI_EFFDATE"),
-    ]).sort(
-        ["ACCTNO", "NOTENO", "PAYAMT", "SORT_IND", "MANI_EFFDATE"],
-        descending=[False, False, False, True, True],
-    ).unique(subset=["ACCTNO", "NOTENO", "PAYAMT"], keep="first").select(["ACCTNO", "NOTENO", "PAYAMT"])
-
-    note = note.join(pay, on=["ACCTNO", "NOTENO", "PAYAMT"], how="left")
-    if "FORATE" in note.columns:
-        note = note.with_columns(
-            pl.when(pl.col("PRODUCT").is_between(800, 899))
-            .then(pl.col("PAYAMT").cast(pl.Float64, strict=False) * pl.col("FORATE").cast(pl.Float64, strict=False))
-            .otherwise(pl.col("PAYAMT").cast(pl.Float64, strict=False))
-            .alias("PAYAMT")
-        )
-    print(f"[timing] prep joins: {_t.time()-t0:.1f}s")
-
-    result = _note_to_rows(note, ctx)
-    print(f"[timing] NOTE total: {_t.time()-t0:.1f}s  codes={result.height:,}")
-    return result
-
-
-
-
-        if openind == "D" or matdt is None or (matdt - ctx["reptdate"]).days < 8:
-
-
-
-
-def _build_sa(bnm_savg_cache) -> pl.DataFrame:
-    con = duckdb.connect(database=":memory:")
-    sa = con.execute(f"SELECT * FROM read_parquet('{bnm_savg_cache.as_posix()}')").pl()
-    con.close()
-    sa = sa.filter(pl.col("PRODCD").ne_missing("N"))      # IF PRODCD NE 'N'
-    return sa.with_columns(
-        pl.when(pl.col("CUSTCD").is_in(["77", "78", "95", "96"])).then(pl.lit("08")).otherwise(pl.lit("09")).alias("CUST")
-    ).select([
-        (pl.lit("95312") + pl.col("CUST") + pl.lit("010000Y")).alias("BNMCODE"),
-        pl.col("CURBAL").alias("AMOUNT"),
-        pl.lit(0.0).alias("AMTUSD"), pl.lit(0.0).alias("AMTSGD"),
-        pl.lit(0.0).alias("AMTHKD"), pl.lit(0.0).alias("AMTAUD"),
-    ])
-
-
-
-
-def _build_undrawn(bnm1_loan_cache, bnm1_uloan_cache, lncomm_cache, ctx) -> pl.DataFrame:
-    con = duckdb.connect(database=":memory:")
-    loan_all = con.execute(f"""
-        SELECT * REPLACE (
-            CAST(ACCTNO AS BIGINT) AS ACCTNO,
-            CAST(NOTENO AS BIGINT) AS NOTENO,
-            CAST(COMMNO AS BIGINT) AS COMMNO,
-            CASE WHEN BLDATE   IS NULL OR ISNAN(BLDATE)   THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(BLDATE)   AS INTEGER) END AS BLDATE,
-            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
-            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
-            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
-        )
-        FROM read_parquet('{bnm1_loan_cache.as_posix()}') WHERE PAIDIND NOT IN ('P','C')
-    """).pl()
-    lncomm = con.execute(f"""
-        SELECT CAST(ACCTNO AS BIGINT) AS ACCTNO,
-               CAST(COMMNO AS BIGINT) AS COMMNO
-        FROM read_parquet('{lncomm_cache.as_posix()}')
-    """).pl().sort(["ACCTNO", "COMMNO"])
-    uloan = con.execute(f"""
-        SELECT * REPLACE (
-            CAST(ACCTNO AS BIGINT) AS ACCTNO,
-            CASE WHEN ISSDTE   IS NULL OR ISNAN(ISSDTE)   THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(ISSDTE)   AS INTEGER) END AS ISSDTE,
-            CASE WHEN EXPRDATE IS NULL OR ISNAN(EXPRDATE) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(EXPRDATE) AS INTEGER) END AS EXPRDATE,
-            CASE WHEN APPRDATE IS NULL OR ISNAN(APPRDATE) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(APPRDATE) AS INTEGER) END AS APPRDATE
-        )
-        FROM read_parquet('{bnm1_uloan_cache.as_posix()}')
-        WHERE NOT (ACCTNO BETWEEN 3000000000 AND 3999999999 AND PRODUCT IN (151,152,181) AND ACCTYPE = 'OD')
-    """).pl().sort(["ACCTNO"])
-    con.close()
-
-    alw = loan_all.filter(~((pl.col("PRODUCT").is_in([151, 152, 181])) & (pl.col("ACCTYPE") == "OD"))).sort(["ACCTNO", "NOTENO"])
-    alwcom = alw.filter(pl.col("COMMNO") > 0).sort(["ACCTNO", "COMMNO"])
-    rc_mask_com = pl.col("PRODCD").is_in(["34190", "34690"])
-    appr = pl.concat([
-        alwcom.filter(rc_mask_com).unique(subset=["ACCTNO", "COMMNO"], keep="first"),
-        alwcom.filter(~rc_mask_com),
-    ], how="diagonal_relaxed")
-
-    alwnocom = alw.filter(pl.col("COMMNO") <= 0).sort(["ACCTNO", "APPRLIM2"])
-    rc_mask = pl.col("PRODCD").is_in(["34190", "34690"])
-    alwnocom_rc, alwnocom_other = alwnocom.filter(rc_mask), alwnocom.filter(~rc_mask)
-    appr1_rc = alwnocom_rc.unique(subset=["ACCTNO", "APPRLIM2"], keep="first")
-    dup_keys = alwnocom_rc.join(appr1_rc.select(["ACCTNO", "APPRLIM2"]), on=["ACCTNO", "APPRLIM2"], how="anti")
-    dupli = dup_keys.filter(pl.col("BALANCE") >= pl.col("APPRLIM2"))
-    appr1_final = pl.concat([appr1_rc, dupli, alwnocom_other], how="diagonal_relaxed")
-
-    combined = pl.concat([appr, appr1_final], how="diagonal_relaxed").sort("ACCTNO")
-    combined = pl.concat([combined, uloan], how="diagonal_relaxed").sort("ACCTNO")
-
-    rows = []
-    for r in combined.iter_rows(named=True):
-        prodcd, product = str(r.get("PRODCD") or ""), r.get("PRODUCT")
-        if not (prodcd[:2] == "34" or product in (225, 226)):
-            continue
-        acctype, exprdate, apprdate = r.get("ACCTYPE"), r.get("EXPRDATE"), r.get("APPRDATE")
-        if acctype == "LN":
-            matdt, item = exprdate, ("424" if prodcd in ("34190", "34690") else "429")
-        else:
-            matdt, item = (apprdate + timedelta(days=365) if apprdate else None), "423"
-        if prodcd == "34240":
-            item = "429"
-        if matdt is not None and (matdt - ctx["reptdate"]).days < 8:
-            remmth = 0.1
-        elif matdt is not None:
-            remmth, _ = _remmth(ctx, matdt)
-        else:
-            remmth = 0.1
-        undrawn = r.get("UNDRAWN") or 0.0
-        is_fcy = product in FCY_PRODUCTS
-        rows.append({"BNMCODE": f"{'94' if is_fcy else '95'}{item}00{_remfmt(remmth)}0000Y", "AMOUNT": undrawn,
-                     "AMTUSD": 0.0, "AMTSGD": 0.0, "AMTHKD": 0.0, "AMTAUD": 0.0})
-        bldate, loanstat, imloan = r.get("BLDATE"), r.get("LOANSTAT"), r.get("IMLOAN")
-        days = (ctx["reptdate"] - bldate).days if bldate is not None else None
-        remmth13 = 13 if (days is not None and days > 89) or loanstat != 1 or imloan == "Y" else remmth
-        rows.append({"BNMCODE": f"{'96' if is_fcy else '93'}{item}00{_remfmt(remmth13)}0000Y", "AMOUNT": undrawn,
-                     "AMTUSD": 0.0, "AMTSGD": 0.0, "AMTHKD": 0.0, "AMTAUD": 0.0})
-    return pl.DataFrame(rows, schema=_BNMCODE_SCHEMA) if rows else pl.DataFrame(schema=_BNMCODE_SCHEMA)
-
-
-
-
-def _build_nid(nid_rnid_cache, ctx) -> pl.DataFrame:
-    con = duckdb.connect(database=":memory:")
-    raw = con.execute(f"""
-        SELECT * REPLACE (
-            CASE WHEN MATDT IS NULL OR ISNAN(MATDT) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(MATDT) AS INTEGER) END AS MATDT,
-            CASE WHEN STARTDT IS NULL OR ISNAN(STARTDT) THEN NULL
-                 ELSE DATE '1960-01-01' + CAST(FLOOR(STARTDT) AS INTEGER) END AS STARTDT
-        )
-        FROM read_parquet('{nid_rnid_cache.as_posix()}') WHERE NIDSTAT = 'N' AND CURBAL > 0
-    """).pl()
-    con.close()
-    rows = []
-    for r in raw.iter_rows(named=True):
-        matdt, startdt = r.get("MATDT"), r.get("STARTDT")
-        if not (matdt is not None and startdt is not None and matdt > ctx["reptdate"] and startdt <= ctx["reptdate"]):
-            continue
-        remmth = 0.1 if (matdt - ctx["reptdate"]).days < 8 else _remmth(ctx, matdt)[0]
-        amount = r.get("CURBAL") or 0.0
-        for code in ("9384000", "9584000"):
-            rows.append({"BNMCODE": f"{code}{_remfmt(remmth)}0000Y", "AMOUNT": amount,
-                         "AMTUSD": 0.0, "AMTSGD": 0.0, "AMTHKD": 0.0, "AMTAUD": 0.0})
-    return pl.DataFrame(rows, schema=_BNMCODE_SCHEMA) if rows else pl.DataFrame(schema=_BNMCODE_SCHEMA)
-
-
-
-
-def _write_fiss_nsrs(note_final, ctx, fiss_path, nsrs_path):
-    def _emit(path, divisor):
-        with open(path, "w", encoding="latin1") as fh:
-            fh.write(f"RLFM{ctx['reptday']}{ctx['reptmon']}{ctx['reptyear']}\n")
-            for r in note_final.iter_rows(named=True):
-                def _p(v):
-                    v = 0.0 if v is None else v
-                    # SAS ROUND: half away from zero. Python round: banker's.
-                    return int(math.floor(abs(v) / divisor + 0.5))
-                fh.write(f"{r['BNMCODE']:<14};{_p(r['AMOUNT'])};{_p(r['AMTUSD'])};{_p(r['AMTSGD'])};{_p(r['AMTHKD'])};{_p(r['AMTAUD'])}\n")
-    _emit(fiss_path, 1000)
-    _emit(nsrs_path, 1)
-
-
-
-
-    lines = ["\f", "PUBLIC BANK BERHAD", f"NEW LIQUIDITY FRAMEWORK AS AT {rdate}", "",
-
-
-
-
-def _build_top100(cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache):
-    con = duckdb.connect(database=":memory:")
-    cisca = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO),
-               COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
-        FROM read_parquet('{cisln_deposit_cache.as_posix()}')
-        WHERE ACCTNO BETWEEN 3000000000 AND 3999999999
-    """).pl().select(_CIS_KEEP)
-    cisfd = con.execute(f"""
-        SELECT * REPLACE (CAST(ACCTNO AS BIGINT) AS ACCTNO),
-               COALESCE(NULLIF(NEWIC,''), OLDIC) AS ICNO
-        FROM read_parquet('{cisdp_deposit_cache.as_posix()}')
-        WHERE (ACCTNO BETWEEN 1000000000 AND 1999999999) OR (ACCTNO BETWEEN 7000000000 AND 7999999999)
-    """).pl().select(_CIS_KEEP)
-    ca = con.execute(f"""
-        SELECT * FROM read_parquet('{deposit_current_cache.as_posix()}') WHERE CURBAL > 0
-    """).pl().with_columns([
-        pl.col("ACCTNO").cast(pl.Int64),
-        pl.col("CURBAL").alias("CABAL"),
-    ])
-    fd = con.execute(f"""
-        SELECT * FROM read_parquet('{deposit_fd_cache.as_posix()}') WHERE CURBAL > 0
-    """).pl().with_columns([
-        pl.col("ACCTNO").cast(pl.Int64),
-        pl.col("CURBAL").alias("FDBAL"),
-    ])
-    con.close()
-
-    ca_excl = {400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410}   # no 411 here (confirmed against source)
-    fd_excl = {350, 351, 352, 353, 354, 355, 356, 357}
-
-    cis_cols = [c for c in _CIS_KEEP if c != "ACCTNO"]
-
-    # SAS: MERGE CA(IN=A) CISCA  -> keep every CA row; CIS (later dataset) wins on shared columns
-    ca_j = (
-        ca.drop([c for c in cis_cols if c in ca.columns])
-        .join(cisca, on="ACCTNO", how="left")
-        .filter(
-            pl.col("PURPOSE").ne_missing("2")
-            & ~pl.col("PRODUCT").is_in(ca_excl).fill_null(False)
-        )
-    )
-
-    # SAS: MERGE CISFD FD(IN=A)  -> keep every FD row; FD (later dataset) wins on shared columns
-    fd_j = (
-        fd.join(cisfd.drop([c for c in cis_cols if c in fd.columns]), on="ACCTNO", how="left")
-        .filter(
-            pl.col("PURPOSE").ne_missing("2")
-            & ~pl.col("PRODUCT").cast(pl.Int64, strict=False).is_in(fd_excl).fill_null(False)
-        )
-    )
-
-    ca_is_ind = pl.col("CUSTCODE").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
-    fd_is_ind = pl.col("CUSTCODE").cast(pl.Float64, strict=False).is_in(_IND_CODES).fill_null(False)
-
-    ca_ind = ca_j.filter(ca_is_ind)
-    ca_org = ca_j.filter(~ca_is_ind & (pl.col("INDORG") == "O"))
-    fd_ind = fd_j.filter(fd_is_ind)
-    fd_org = fd_j.filter(~fd_is_ind & (pl.col("INDORG") == "O"))
-
-    def _shape(df: pl.DataFrame, is_fd: bool) -> pl.DataFrame:
-        """Project df to exactly the report columns with matching dtypes, adding the
-        FDBAL / CABAL side that is missing on the other dataset."""
-        def col_or_null(src, name, dtype):
-            if src in df.columns:
-                return pl.col(src).cast(dtype, strict=False).alias(name)
-            return pl.lit(None, dtype=dtype).alias(name)
-
-        out = df.select([
-            col_or_null("BRANCH",   "BRANCH",   pl.Int64),
-            col_or_null("ACCTNO",   "ACCTNO",   pl.Int64),
-            col_or_null("CUSTNAME", "CUSTNAME", pl.Utf8),
-            col_or_null("CUSTNO",   "CUSTNO",   pl.Int64),
-            col_or_null("NEWIC",    "NEWIC",    pl.Utf8),
-            col_or_null("OLDIC",    "OLDIC",    pl.Utf8),
-            col_or_null("CURBAL",   "CURBAL",   pl.Float64),
-            col_or_null("PRODUCT",  "PRODUCT",  pl.Int64),
-            col_or_null("ICNO",     "ICNO",     pl.Utf8),
-        ])
-        out = out.with_columns(
-            (pl.col("CURBAL") if is_fd else pl.lit(0.0)).alias("FDBAL"),
-            (pl.lit(0.0) if is_fd else pl.col("CURBAL")).alias("CABAL"),
-            pl.lit(0 if is_fd else 1).cast(pl.Int8).alias("SRC"),   # FD first, then CA
-        )
-        return out.select([
-            "BRANCH", "ACCTNO", "CUSTNAME", "CUSTNO", "NEWIC", "OLDIC",
-            "CURBAL", "PRODUCT", "ICNO", "FDBAL", "CABAL", "SRC",
-        ])
-
-    def _ebcdic(col: str) -> pl.Expr:
-        return pl.col(col).map_elements(
-            lambda s: (s or "").ljust(60).encode("cp037").hex(), return_dtype=pl.Utf8)
-
-    def _top100(fd_part, ca_part, corp_excl=False):
-        fd_shaped = _shape(fd_part, is_fd=True)
-        ca_shaped = _shape(ca_part, is_fd=False)
-        data1 = pl.concat([fd_shaped, ca_shaped], how="vertical_relaxed").with_columns(
-            pl.when(pl.col("ICNO").is_null() | (pl.col("ICNO") == ""))
-            .then(pl.lit("XX"))
-            .otherwise(pl.col("ICNO")).alias("ICNO")
-        )
-        if corp_excl:
-            data1 = data1.filter(~(
-                pl.col("ACCTNO").is_between(1590000000, 1599999999)
-                | pl.col("ACCTNO").is_between(1689999999, 1699999999)
-                | pl.col("ACCTNO").is_between(1789999999, 1799999999)
-            ))
-        data1 = data1.filter(pl.col("ICNO") != "")
-
-        # One line per MNI NO per customer; ICNO + CUSTNAME in the key so joint holders are not added together.
-        data1 = data1.group_by(["SRC", "ACCTNO", "ICNO", "CUSTNAME"], maintain_order=True).agg(
-            [pl.col(c).first() for c in ("BRANCH", "CUSTNO", "NEWIC", "OLDIC", "PRODUCT")]
-            + [pl.col(c).sum() for c in ("CURBAL", "FDBAL", "CABAL")]
-        )
-
-        summary = (
-            data1.group_by(["ICNO", "CUSTNAME"], maintain_order=True)
-            .agg([pl.col("CURBAL").sum(), pl.col("FDBAL").sum(), pl.col("CABAL").sum()])
-            .with_columns(_ebcdic("ICNO").alias("_K1"), _ebcdic("CUSTNAME").alias("_K2"))
-            .sort(["CURBAL", "_K1", "_K2"], descending=[True, False, False], maintain_order=True)
-            .drop(["_K1", "_K2"])
-            .head(100)
-        )
-        keys = summary.select(["ICNO", "CUSTNAME"])
-        detail = (
-            data1.join(keys, on=["ICNO", "CUSTNAME"], how="inner")
-            .with_columns(_ebcdic("ICNO").alias("_K1"), _ebcdic("CUSTNAME").alias("_K2"))
-            .sort(["_K1", "_K2", "SRC", "ACCTNO"], maintain_order=True)
-            .drop(["_K1", "_K2"])
-        )
-        return summary, detail
-
-    ind_sum, ind_det = _top100(fd_ind, ca_ind)
-    org_sum, org_det = _top100(fd_org, ca_org, corp_excl=True)
-    return ind_sum, org_sum, ind_det, org_det
-
-
-
-
-def run_eiimrlfm(
-    bnm1_loan_cache: Path, bnm1_uloan_cache: Path, lncomm_cache: Path, provsub_txt_path: Path, ilnpay_cache: Path,
-    fd_fd_cache: Path, bnm_savg_cache: Path, bnm_curn_cache: Path, deposit_current_cache: Path, deposit_fd_cache: Path,
-    nid_rnid_cache: Path, k1tbl_cache: Path, k3tbl_cache: Path,
-    cisln_deposit_cache: Path, cisdp_deposit_cache: Path,
-    ctx: dict, output_dir: Path,
-) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    # %LET INST = 'PBB';  -- literal in the SAS source even in this PIBB
-    # program; controls KALMLIQ's K3TBL AMTUSD/AMTSGD derivation only.
-    inst = "PBB"
-
-    print("  Building NOTE (loans)...")
-    note = _build_note(bnm1_loan_cache, lncomm_cache, provsub_txt_path, ilnpay_cache, ctx)
-    print("  Building FD / SA / CA / FCYCA...")
-    fd = _build_fd(fd_fd_cache, ctx)
-    sa = _build_sa(bnm_savg_cache)
-    ca = _build_ca(bnm_curn_cache)
-    fcyca = _build_fcyca(deposit_current_cache)
-    print("  Building UNOTE (undrawn portion)...")
-    unote = _build_undrawn(bnm1_loan_cache, bnm1_uloan_cache, lncomm_cache, ctx)
-    print("  Building NID...")
-    nid = _build_nid(nid_rnid_cache, ctx)
-
-    print("  Building KAPITI items (KALMLIQ + KALMLIFE)...")
-    ktbl, dist_summary = build_kalmliq(k1tbl_cache, k3tbl_cache, ctx["reptdate"], ctx["rpyr"], ctx["rpmth"], ctx["rpday"], ctx["rd_days"], inst=inst)
-    ktbl = ktbl.with_columns([pl.lit(0.0).alias("AMTHKD"), pl.lit(0.0).alias("AMTAUD")])
-    # k3fei = build_k3fei(k3tbl_cache, ctx["reptmon"], ctx["reptyear"])
-    # k3fei_norm = k3fei.rename({"ITCODE": "BNMCODE"}).with_columns([
-    #     pl.lit(0.0).alias("AMTUSD"), pl.lit(0.0).alias("AMTSGD"),
-    #     pl.lit(0.0).alias("AMTHKD"), pl.lit(0.0).alias("AMTAUD"),
-    # ]).select(["BNMCODE", "AMOUNT", "AMTUSD", "AMTSGD", "AMTHKD", "AMTAUD"])
-
-    print("  Consolidating and summarising...")
-    # SET NOTE FD SA CA UNOTE FCYCA NID; -- no DCI/DCIW in this program.
-    combined = pl.concat([
-        _summarize(note), _summarize(fd), _summarize(sa), _summarize(ca),
-        _summarize(unote), _summarize(fcyca), _summarize(nid),
-        _summarize(ktbl),
-        # k3fei_norm,
-    ], how="diagonal_relaxed")
-    note_final = (
-        combined
-        .group_by("BNMCODE")
-        .agg([
-            pl.col("AMOUNT").sum(), pl.col("AMTUSD").sum(), pl.col("AMTSGD").sum(),
-            pl.col("AMTHKD").sum(), pl.col("AMTAUD").sum(),
-        ])
-        .sort("BNMCODE")
-    )
-
-    print("  Writing FISS / NSRS...")
-    fiss_path, nsrs_path = output_dir / "FISS.txt", output_dir / "NSRS.txt"
-    _write_fiss_nsrs(note_final, ctx, fiss_path, nsrs_path)
-
-    print("  Writing NLF distribution (SUPPL) report...")
-    suppl_path = output_dir / "NLF_SUPPL.txt"
-    _write_suppl_report(dist_summary, ctx["rdate"], suppl_path)
-
-    print("  Building TOP 100 individual/corporate reports...")
-    # FD11TEXT/FD12TEXT DD's are scratch datasets (&&INDV/&&CORP,
-    # DISP=(NEW,DELETE,DELETE)) in the PIBB job -- persisted here as
-    # ordinary files for inspection since nothing downstream re-reads them.
-    top_ind, top_org, det_ind, det_org = _build_top100(
-        cisln_deposit_cache, cisdp_deposit_cache, deposit_current_cache, deposit_fd_cache
-    )
-    fd11_path, fd12_path = output_dir / "INDV.txt", output_dir / "CORP.txt"
-    _write_top100_report(top_ind, det_ind, "TOP 100 LARGEST FD+CA INDIVIDUAL CUSTOMERS", ctx["rdate"], fd11_path)
-    _write_top100_report(top_org, det_org, "TOP 100 LARGEST FD+CA CORPORATE CUSTOMERS", ctx["rdate"], fd12_path)
-
-    print("EIIMRLFM complete. Outputs:")
-    for p in (fiss_path, nsrs_path, suppl_path, fd11_path, fd12_path):
-        print(f"  - {p}")
-
-
-
-
-======================== Change
-
-import math
-import time as _t
-from datetime import date, timedelta
-from pathlib import Path
-
-import duckdb
-import polars as pl
-
-from PBBLNFMT import format_liqpfmt
-from PBBDPFMT import fdprod_format, ddcustcd_format
-from KALMLIQ import build_kalmliq
-# from KALMLIFE import build_k3fei
-
-
-
-
-# ============================================================================
-# NOTE (loans) helpers -- vectorised maturity schedule
-# ============================================================================
-_MAX_ROUNDS = 500
-_IND_CODES = [77.0, 78.0, 95.0, 96.0]
-_CIS_KEEP = ["CUSTNO", "ACCTNO", "CUSTNAME", "ICNO", "NEWIC", "OLDIC", "INDORG"]
-_PAYFREQ_MONTHS = {"1": 1, "2": 3, "3": 6, "4": 12}
-_CCY_COLS = ("USD", "SGD", "HKD", "AUD")
-
-
-def _remfmt_expr(rem: pl.Expr) -> pl.Expr:
-    return (pl.when(rem <= 0.1).then(pl.lit("01"))
-            .when(rem <= 1).then(pl.lit("02"))
-            .when(rem <= 3).then(pl.lit("03"))
-            .when(rem <= 6).then(pl.lit("04"))
-            .when(rem <= 12).then(pl.lit("05"))
-            .otherwise(pl.lit("06")))
-
-
-def _dim_expr(y: pl.Expr, m: pl.Expr) -> pl.Expr:
-    """Days in month (same leap rule as the SAS macro: year % 4 == 0)."""
-    return (pl.when(m == 2).then(pl.when(y % 4 == 0).then(29).otherwise(28))
-            .when(m.is_in([4, 6, 9, 11])).then(30)
-            .otherwise(31)).cast(pl.Int64)
-
-
-def _remmth_expr(ctx: dict, d: pl.Expr) -> pl.Expr:
-    """Vectorised %REMMTH (months part only)."""
-    dim = ctx["rd_days"][ctx["rpmth"] - 1]
-    mdday = pl.min_horizontal(d.dt.day().cast(pl.Int64), pl.lit(dim, dtype=pl.Int64))
-    return ((d.dt.year().cast(pl.Int64) - ctx["rpyr"]) * 12
-            + (d.dt.month().cast(pl.Int64) - ctx["rpmth"])
-            + (mdday - ctx["rpday"]) / dim)
-
-
-def _nxt_date(df: pl.DataFrame, cur: str = "CUR") -> pl.Series:
-    """Vectorised %NXTBLDT (PAYDAY is always missing in this program)."""
-    c = pl.col(cur)
-    cy = c.dt.year().cast(pl.Int64)
-    cm = c.dt.month().cast(pl.Int64)
-    cd = c.dt.day().cast(pl.Int64)
-    fortnight = pl.col("PAYFREQ") == "6"
-    step = pl.col("PAYFREQ").replace_strict(_PAYFREQ_MONTHS, default=0, return_dtype=pl.Int64)
-    f_d = cd + 14
-    f_roll = f_d > _dim_expr(cy, cm)
-    mm0 = (pl.when(fortnight)
-           .then(pl.when(f_roll).then(cm + 1).otherwise(cm))
-           .otherwise(cm + step))
-    yy = pl.when(mm0 > 12).then(cy + 1).otherwise(cy)
-    mm = pl.when(mm0 > 12).then(mm0 - 12).otherwise(mm0)
-    dd0 = (pl.when(fortnight)
-           .then(pl.when(f_roll).then(f_d - _dim_expr(cy, cm)).otherwise(f_d))
-           .otherwise(cd))
-    dd = pl.min_horizontal(dd0, _dim_expr(yy, mm))
-    return df.select(pl.date(yy, mm, dd).alias("NXT")).to_series()
-
-
-def _emit_agg(df: pl.DataFrame, kind: str, amt: str, rem: str) -> pl.DataFrame:
-    """kind 'A' -> 95 (LCY) / 94 (FCY);  kind 'B' -> 93 (LCY) / 96 (FCY)."""
-    lcy, fcy = ("95", "94") if kind == "A" else ("93", "96")
-    fc = pl.col("IS_FCY")
-    out = df.select([
-        pl.concat_str([
-            pl.when(fc).then(pl.lit(fcy)).otherwise(pl.lit(lcy)),
-            pl.col("ITEM"), pl.col("CUST"), _remfmt_expr(pl.col(rem)), pl.lit("0000Y"),
-        ]).alias("BNMCODE"),
-        pl.col(amt).alias("AMOUNT"),
-        *[pl.when(fc & (pl.col("CCY") == c)).then(pl.col(amt)).otherwise(0.0).alias(f"AMT{c}")
-          for c in _CCY_COLS],
-    ])
-    return _summarize(out)
-
-
-def _emit_pair(df: pl.DataFrame, amt: str, rem: str) -> list:
-    df = df.with_columns(
-        pl.col(rem).alias("REM_A"),
-        pl.when(pl.col("COND")).then(13.0).otherwise(pl.col(rem)).alias("REM_B"),
-    )
-    return [_emit_agg(df, "A", amt, "REM_A"), _emit_agg(df, "B", amt, "REM_B")]
-
-
-def _amortise(loop: pl.DataFrame, ctx: dict, parts: list) -> None:
-    """Instalment schedule for all loans at once (replaces the per-row while loop)."""
-    rept = pl.lit(ctx["reptdate"])
-    loop = loop.with_columns(
-        (pl.col("PAYFREQ").is_null() | pl.col("PAYFREQ").is_in(["5", "9", " "])
-         | pl.col("PRODUCT").is_in([350, 910, 925])).fill_null(False).alias("FSKIP")
-    ).with_columns(
-        (~pl.col("FSKIP") & (pl.col("BLDATE").is_null()
-                             | (pl.col("BLDATE") <= pl.lit(date(1900, 1, 1))))).fill_null(False).alias("ROLL")
-    ).with_columns(
-        pl.when(pl.col("FSKIP")).then(pl.col("EXPRDATE"))
-        .when(pl.col("ROLL")).then(pl.col("ISSDTE"))
-        .otherwise(pl.col("BLDATE")).alias("CUR")
-    )
-
-    # bldate = issdte, then roll forward until CUR > reptdate: coarse vectorised
-    # jump first, then a short corrective step loop.
-    rolling = loop.filter(pl.col("ROLL"))
-    if not rolling.is_empty():
-        iss = pl.col("ISSDTE")
-        iss_y = iss.dt.year().cast(pl.Int64)
-        iss_m = iss.dt.month().cast(pl.Int64)
-        iss_d = iss.dt.day().cast(pl.Int64)
-        step_m = pl.col("PAYFREQ").replace_strict(_PAYFREQ_MONTHS, default=1, return_dtype=pl.Int64)
-        months_gap = ((rept.dt.year().cast(pl.Int64) - iss_y) * 12
-                      + (rept.dt.month().cast(pl.Int64) - iss_m))
-        k_jump = pl.max_horizontal(pl.lit(0, dtype=pl.Int64),
-                                   (months_gap // step_m) - 3)
-        offset_m = k_jump * step_m
-        total_m = iss_y * 12 + (iss_m - 1) + offset_m
-        jy = total_m // 12
-        jm = (total_m % 12) + 1
-        jd = pl.min_horizontal(iss_d, _dim_expr(jy, jm))
-        rolling = rolling.with_columns(pl.date(jy, jm, jd).alias("CUR"))
-
-        for _ in range(10):
-            nxt = _nxt_date(rolling)
-            behind_mask = (pl.col("CUR").is_not_null() & (pl.col("CUR") <= rept)
-                           & (nxt > pl.col("CUR")))
-            behind_series = rolling.select(behind_mask.alias("B"))["B"]
-            if not behind_series.any():
-                break
-            rolling = rolling.with_columns(
-                pl.when(behind_mask).then(nxt).otherwise(pl.col("CUR")).alias("CUR")
-            )
-
-        rolling = rolling.with_columns(
-            pl.when(pl.col("CUR") > rept).then(pl.col("CUR"))
-            .otherwise(pl.lit(None, dtype=pl.Date)).alias("CUR")
-        )
-
-    loop = pl.concat([loop.filter(~pl.col("ROLL")), rolling], how="vertical")
-
-    loop = loop.with_columns(
-        pl.when(pl.col("PAYAMT") < 0).then(0.0).otherwise(pl.col("PAYAMT")).alias("PAYAMT")
-    ).with_columns(
-        pl.when(pl.col("CUR").is_null() | (pl.col("CUR") > pl.col("EXPRDATE"))
-                | (pl.col("BALANCE") <= pl.col("PAYAMT")))
-        .then(pl.col("EXPRDATE")).otherwise(pl.col("CUR")).alias("CUR"),
-        pl.col("BALANCE").alias("BAL"),
-    )
-
-    active = loop
-    for _ in range(_MAX_ROUNDS):
-        if active.is_empty():
-            break
-        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
-        is_last = (pl.col("REMM") > 12) | (pl.col("CUR") == pl.col("EXPRDATE"))
-
-        last = active.filter(is_last)                       # loop break -> residual balance
-        if not last.is_empty():
-            parts.extend(_emit_pair(last, "BAL", "REMM"))
-
-        cont = active.filter(~is_last)
-        if cont.is_empty():
-            active = cont
-            break
-        cont = cont.with_columns(
-            pl.when((pl.col("REMM") > 0.1) & ((pl.col("CUR") - rept).dt.total_days() < 8))
-            .then(0.1).otherwise(pl.col("REMM")).alias("REM_I"))
-        parts.extend(_emit_pair(cont, "PAYAMT", "REM_I"))   # instalment amount
-
-        cont = cont.with_columns((pl.col("BAL") - pl.col("PAYAMT")).alias("BAL"))
-        cont = cont.with_columns(_nxt_date(cont).alias("NXT"))
-        active = cont.with_columns(
-            pl.when((pl.col("NXT") > pl.col("EXPRDATE"))
-                    | (pl.col("BAL") <= pl.col("PAYAMT"))
-                    | (pl.col("NXT") <= pl.col("CUR")))             # date did not advance -> stop at EXPRDATE
-            .then(pl.col("EXPRDATE")).otherwise(pl.col("NXT")).alias("CUR")
-        ).drop("NXT")
-        print(f"  [amortise] round {_+1}: {active.height:,} loans still active")
-
-    if not active.is_empty():                               # safety net only
-        print(f"  [warn] {active.height:,} loans hit _MAX_ROUNDS; finalised at residual balance")
-        active = active.with_columns(_remmth_expr(ctx, pl.col("CUR")).alias("REMM"))
-        parts.extend(_emit_pair(active, "BAL", "REMM"))
-
-
-
-
-# ============================================================================
-# TOP 100 REPORT WRITER  (PROC PRINT look-alike, LRECL=320, PS=60, CRLF)
-# ============================================================================
-_T_LS, _T_PS, _T_OBSW, _T_MAXW = 320, 60, 8, 128   # linesize, pagesize, Obs col width, max row width
-_T_SEP = "-" * 16
-
-
-def _fnum(v) -> str:
-    """SAS COMMA16.2: keep the commas when the value fits in 16 characters, otherwise drop them."""
-    x = float(v or 0.0)
-    s = f"{x:,.2f}"
-    return s if len(s) <= 16 else f"{x:.2f}"
-
-
-def _ctr(s: str, w: int, up: bool = False) -> str:
-    pad = w - len(s)
-    left = (pad + 1) // 2 if up else pad // 2
-    return " " * left + s + " " * (pad - left)
-
-
-def _fctr(txt: str, w: int, m: int) -> str:
-    """Right-align inside a field of the widest value (m), field centred (round up) in column w."""
-    start = (w - m + 1) // 2
-    return " " * start + txt.rjust(m) + " " * (w - start - m)
-
-
-def _wrap(label: str, w: int) -> list:
-    lines, cur = [], ""
-    for wd in label.split():
-        if not cur:
-            cur = wd
-        elif len(cur) + 1 + len(wd) <= w:
-            cur += " " + wd
-        else:
-            lines.append(cur)
-            cur = wd
-    return lines + [cur]
-
-
-def _cols(rows: list) -> dict:
-    """Column widths of one BY group (empty list -> minimum widths)."""
-    mx = lambda k, lo: max([lo] + [len(str(r[k])) for r in rows])
-    w = {"b": mx("BRANCH", 6), "a": mx("ACCTNO", 10 if rows else 6), "n": mx("CUSTNAME", 9),
-         "c": mx("CUSTNO", 6), "i": mx("NEWIC", 6),
-         "o": max([len(r["OLDIC"]) for r in rows] + [0]) or 3, "m": 16, "p": 7,
-         "mb": max([len(str(r["BRANCH"])) for r in rows] + [3]),
-         "mc": max([len(str(r["CUSTNO"])) for r in rows] + [0 if rows else 6]),
-         "mp": max([len(str(r["PRODUCT"])) for r in rows] + [0 if rows else 3])}
-    tot = _T_OBSW + w["b"] + w["a"] + w["n"] + w["c"] + w["i"] + w["o"] + w["m"] + w["p"]
-    g = 4
-    while g > 1 and tot + 7 * g > _T_MAXW:
-        g -= 1
-    w["g"] = g
-    return w
-
-
-def _mcol(w: dict) -> int:
-    """Start offset of the CURBAL column."""
-    return _T_OBSW + 7 * w["g"] + w["b"] + w["a"] + w["n"] + w["c"] + w["i"] + w["o"]
-
-
-def _hdr(rows: list, w: dict, sums: bool) -> list:
-    dat_m = max([len(_fnum(r["CURBAL"])) for r in rows] + [0])
-    nal = "r" if sums else "cn"
-    spec = [("BRANCH CODE", "b", "cn"), ("MNI NO", "a", nal), ("DEPOSITOR", "n", "c"), ("CIS NO", "c", nal),
-            ("NEW IC", "i", "c"), ("OLD IC", "o", "c"), ("CURRENT BALANCE", "m", "r"), ("PRODUCT", "p", "cn")]
-    labs = [_wrap(lbl, max(max(len(x) for x in lbl.split()), dat_m if k == "m" else w[k])) for lbl, k, _ in spec]
-    nl = max(len(x) for x in labs)
-    out = []
-    for ln in range(nl):
-        s = "Obs".rjust(_T_OBSW) if ln == nl - 1 else " " * _T_OBSW
-        for (lbl, k, al), L in zip(spec, labs):
-            t = ([""] * (nl - len(L)) + L)[ln]
-            cell = t.rjust(w[k]) if al == "r" else _ctr(t, w[k], up=(al == "cn"))
-            s += " " * w["g"] + cell
-        out.append(s.rstrip())
-    return out
-
-
-def _row(obs: int, r: dict, w: dict) -> str:
-    g = " " * w["g"]
-    return (str(obs).rjust(_T_OBSW) + g + _fctr(str(r["BRANCH"]), w["b"], w["mb"]) + g
-            + str(r["ACCTNO"]).rjust(w["a"]) + g + _ctr(r["CUSTNAME"], w["n"]) + g
-            + _fctr(str(r["CUSTNO"]), w["c"], w["mc"]) + g + _ctr(r["NEWIC"], w["i"]) + g
-            + _ctr(r["OLDIC"], w["o"]) + g + _fnum(r["CURBAL"]).rjust(w["m"]) + g
-            + _fctr(str(r["PRODUCT"]), w["p"], w["mp"])).rstrip()
-
-
-def _sumln(label: str, val, mc: int) -> str:
-    return label.rjust(_T_OBSW) + " " * (mc - _T_OBSW) + _fnum(val).rjust(16)
-
-
-def _dash(mc: int) -> str:
-    return "--------".rjust(_T_OBSW) + " " * (mc - _T_OBSW) + _T_SEP
-
-
-def _summary_lines(summary: pl.DataFrame, title: str) -> list:
-    rows = summary.to_dicts()
-    out, cap = [], _T_PS - 4
-    zero = lambda v: "0  " if not v else _fnum(v)
-    for p0 in range(0, len(rows), cap):
-        page = rows[p0:p0 + cap]
-        wn = max([9] + [len(str(r["CUSTNAME"] or "")[:40]) for r in page])
-        out += [title, "", f"{'Obs':<3}    {'DEPOSITOR':<{wn}}    {'TOTAL BALANCE':>16}    {'FD BALANCE':>16}    {'CA BALANCE':>16}", ""]
-        for k, r in enumerate(page, start=p0 + 1):
-            out.append(f"{k:>3}    {str(r['CUSTNAME'] or '')[:40]:<{wn}}    {_fnum(r['CURBAL']):>16}"
-                       f"    {zero(r['FDBAL']):>16}    {zero(r['CABAL']):>16}")
-    return out
-
-
-def _detail_lines(detail: pl.DataFrame, title: str) -> list:
-    rows = []
-    for r in detail.to_dicts():
-        rows.append({"ICNO": r["ICNO"] or "", "CUSTNAME": r["CUSTNAME"] or "", "BRANCH": r["BRANCH"] or 0,
-                     "ACCTNO": r["ACCTNO"] or 0, "CUSTNO": r["CUSTNO"] or 0, "NEWIC": r["NEWIC"] or "",
-                     "OLDIC": r["OLDIC"] or "", "CURBAL": r["CURBAL"] or 0.0, "PRODUCT": r["PRODUCT"] or 0})
-    groups = []
-    for r in rows:
-        k = (r["ICNO"], r["CUSTNAME"])
-        if not groups or groups[-1][0] != k:
-            groups.append((k, []))
-        groups[-1][1].append(r)
-
-    out, st, obs = [], {"u": 0}, 0
-
-    def emit(lines):
-        out.extend(lines)
-        st["u"] += len(lines)
-
-    def newpage():
-        out.extend([title, ""])
-        st["u"] = 2
-
-    newpage()
-    for gi, (k, grp) in enumerate(groups):
-        n, w = len(grp), _cols(grp)
-        mc, tot = _mcol(w), sum(r["CURBAL"] for r in grp)
-        by = f"ICNO={k[0]} DEPOSITOR={k[1]}"
-
-        def head(cont, sums):
-            return [by] + (["(continued)"] if cont else []) + [""] + _hdr(grp, w, sums) + [""]
-
-        def minhead():
-            wm = _cols([])
-            return [by, "(continued)", ""] + _hdr([], wm, True) + [""], _mcol(wm)
-
-        gap = 0 if gi == 0 else 2
-        if gi and st["u"] + gap + len(head(False, False)) + 1 > _T_PS - 1:
-            newpage()
-            gap = 0
-        idx, cont = 0, False
-        while idx < n:
-            hl = len(head(cont, False))
-            space = _T_PS - 1 - st["u"] - gap - hl
-            if space < 1:
-                newpage()
-                gap, cont = 0, True
-                continue
-            take = min(space, n - idx)
-            sums = idx + take == n and n > 1 and st["u"] + gap + hl + take + 2 <= _T_PS
-            emit([""] * gap + head(cont, sums))
-            gap = 0
-            por = grp[idx:idx + take]
-            wp = dict(w, mb=max(len(str(r["BRANCH"])) for r in por), mp=max(len(str(r["PRODUCT"])) for r in por))
-            for r in por:
-                obs += 1
-                emit([_row(obs, r, wp)])
-            idx += take
-            if idx < n:
-                newpage()
-                cont = True
-        if n > 1:
-            mcur = mc
-            if st["u"] + 2 > _T_PS:
-                newpage()
-                hl_, mcur = minhead()
-                emit(hl_)
-            emit([_dash(mcur), _sumln("CUSTNAME", tot, mcur)])
-            if st["u"] + 2 > _T_PS:
-                full = st["u"] >= _T_PS
-                newpage()
-                if full:
-                    hl_, mcur = minhead()
-                    emit(hl_)
-                    emit([_dash(mcur)])
-                else:
-                    emit(head(True, True))
-                    mcur = mc
-            emit([_sumln("ICNO", tot, mcur)])
-    mc = _mcol(_cols(groups[-1][1]))
-    grand = sum(r["CURBAL"] for r in rows)
-    out += [" " * mc + "=" * 16, " " * mc + _fnum(grand).rjust(16)]
-    return out
-
-
-def _write_top100_report(summary, detail, title, rdate, output_path):
-    ttl = f"{title} AS AT {rdate}"
-    lines = _summary_lines(summary, ttl)
-    if detail is not None and detail.height > 0:
-        lines += _detail_lines(detail, ttl)
-    with open(output_path, "w", encoding="latin1", newline="") as fh:
-        fh.write("".join(f"{ln:<{_T_LS}}\r\n" for ln in lines))
+    merg_rows = [{"BNMCODE": code, "AMOUNT": 0.00} for code in dummy_codes]
+    merg_rows += [{"BNMCODE": r["BNMCODE"], "AMOUNT": r["AMOUNT"]} for r in salpur_rows]
 
 
 
