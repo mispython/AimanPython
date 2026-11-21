@@ -32,7 +32,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from datetime import date, timedelta
 
-# from REPTDATE import get_reptdate_values
 from DALWPBBD import build_savg_curn_dept
 from EIBMRLFM import run_eibmrlfm
 from EIBMTOP5 import run_eibmtop5
@@ -40,101 +39,115 @@ from EIBMTOP5 import run_eibmtop5
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+BASE_DIR    = Path("/sas")
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQP"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# ---- Physical input datasets (per EIBMLIQP JCL DD statements) -------------
+# //DEPOSIT DD DSN=SAP.PBB.MNITB(0) -- members SAVING / CURRENT / FD (All filter by ENTITY_CD != 'PIBB')
+MNTIB_DIR             = BASE_DIR  / "deposit/dwh/integration"
+INPUT_SAVING_FILE     = MNTIB_DIR / f"intg_dp_acct_saving_m{REPTMON}.sas7bdat"
+INPUT_CURRENT_FILE    = MNTIB_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"
+INPUT_DEPOSIT_FD_FILE = MNTIB_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"         # DEPOSIT.FD (distinct physical file from FD.FD)
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMLIQP"
+# //FD DD DSN=SAP.PBB.MNIFD(0) -- member FD
+# MNIFD has no ENTITY_CD. Merge with INPUT_DEPOSIT_FD_FILE (ACCTNO, ENTITY_CD != 'PIBB')
+MNIFD_DIR        = BASE_DIR  / "deposit/dwh/enrichment"
+INPUT_FD_FD_FILE = MNIFD_DIR / f"enrh_dp_fd_cert_m{REPTMON}.sas7bdat"               # FD.FD
+
+# //LOAN DD DSN=SAP.PBB.MNILN(0) -- member LNCOMM (Filter by ENTITY_CD = 'PIBB')
+MNILN_DIR         = BASE_DIR / "ln/dwh/enrichment"
+INPUT_LNCOMM_FILE = STG_DIR / f"enrh_ln_comm_m{REPTMON}.sas7bdat"
+
+# //CISLN DD DSN=SAP.PBB.CISBEXT.DP
+INPUT_CISLN_DEPOSIT_FILE = Path("/dwh/rs_cis") / f"cisr1ca{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+
+# //CISDP DD DSN=SAP.PBB.CRM.CISBEXT
+INPUT_CISDP_DEPOSIT_FILE = BASE_DIR / "cis/mart/enrichment" / "enrh_exdwh_cisr1.sas7bdat"
+
+# //FORATE DD DSN=SAP.PBB.FCYCA -- FORATE.FORATE / FORATE.FORATEBKP
+FORATE_DIR           = Path("/exdwh/host/forate")
+INPUT_FORATE_FILE    = FORATE_DIR / "forate.sas7bdat"
+INPUT_FORATEBKP_FILE = FORATE_DIR / "foratebkp.sas7bdat"
+
+# //DCIWH DD DSN=SAP.PBB.DCIWH - Need to confirm from Adli
+INPUT_DCIWH_DIR = Path("/")
+
+# //PROVSUB DD DSN=SAP.PBB.CCRIS.PROVSUB(0) -- flat text file, kept as .txt
+INPUT_PROVSUB_FILE = Path("host_pq/mis/input/textfile") / "PBB_CCRIS_PROVSUB.txt"
+
+# //BNMK DD DSN=SAP.PBB.KAPITI.SASDATA -- K1TBL / K3TBL / DCIWTB members
+INPUT_BNMK_DIR = Path("/exdwh/host/kapiti")
+
+# //PAY DD DSN=SAP.PBB.LNPAYSCH(0) - Need to confirm from Jay
+INPUT_PAY_DIR = Path("/")
+
+# //NID DD DSN=SAP.PBB.RNID.SASDATA - Need to confirm from Adli
+INPUT_NID_DIR = Path("/")
+
+# //BNM1 DD DSN=SAP.PBB.SASDATA -- LOAN / ULOAN members (All filter by ENTITY_CD != 'PIBB')
+INPUT_BNM1_DIR = Path("/dwh/dwh_m/tempsource/ln")
+
+OUTPUT_DIR  = Path("/host_pq/mis/output/report/EIBMLIQP")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 
-# ---- Physical input datasets (per EIBMLIQP JCL DD statements) -------------
-# //DEPOSIT DD DSN=SAP.PBB.MNITB(0) -- members SAVING / CURRENT / FD
-INPUT_SAVING_FILE     = STG_DIR / "EIBMLIQP" / "DEPOSIT" / "saving.sas7bdat"
-INPUT_CURRENT_FILE    = STG_DIR / "EIBMLIQP" / "DEPOSIT" / "current.sas7bdat"
-INPUT_DEPOSIT_FD_FILE = STG_DIR / "EIBMLIQP" / "DEPOSIT" / "fd.sas7bdat"           # DEPOSIT.FD (distinct physical file from FD.FD)
 
-# //FD DD DSN=SAP.PBB.MNIFD(0) -- member FD
-INPUT_FD_FD_FILE = STG_DIR / "EIBMLIQP" / "FD" / "fd.sas7bdat"                # FD.FD
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII")
 
-# //LOAN DD DSN=SAP.PBB.MNILN(0) -- member LNCOMM
-INPUT_LNCOMM_FILE = STG_DIR / "MNILN" / "PBB" / "lncomm.sas7bdat"
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQP"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# //CISLN DD DSN=SAP.PBB.CISBEXT.DP
-INPUT_CISLN_DEPOSIT_FILE = STG_DIR / "CIS" / "CISLN" / "deposit.sas7bdat"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMLIQP"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# //CISDP DD DSN=SAP.PBB.CRM.CISBEXT
-INPUT_CISDP_DEPOSIT_FILE = STG_DIR / "CIS" / "CISDP" / "deposit.sas7bdat"
+# CHUNK_ROWS = 500_000
 
-# //FORATE DD DSN=SAP.PBB.FCYCA -- FORATE.FORATE / FORATE.FORATEBKP
-INPUT_FORATE_FILE    = STG_DIR / "EIBMLIQP" / "FORATE" / "forate.sas7bdat"
-INPUT_FORATEBKP_FILE = STG_DIR / "EIBMLIQP" / "FORATE" / "foratebkp.sas7bdat"
+# # ---- Physical input datasets (per EIBMLIQP JCL DD statements) -------------
+# # //DEPOSIT DD DSN=SAP.PBB.MNITB(0) -- members SAVING / CURRENT / FD
+# INPUT_SAVING_FILE     = STG_DIR / "EIBMLIQP" / "DEPOSIT" / "saving.sas7bdat"
+# INPUT_CURRENT_FILE    = STG_DIR / "EIBMLIQP" / "DEPOSIT" / "current.sas7bdat"
+# INPUT_DEPOSIT_FD_FILE = STG_DIR / "EIBMLIQP" / "DEPOSIT" / "fd.sas7bdat"           # DEPOSIT.FD (distinct physical file from FD.FD)
 
-# //DCIWH DD DSN=SAP.PBB.DCIWH
-INPUT_DCIWH_DIR = STG_DIR / "EIBMLIQP" / "DCIWH"
+# # //FD DD DSN=SAP.PBB.MNIFD(0) -- member FD
+# INPUT_FD_FD_FILE = STG_DIR / "EIBMLIQP" / "FD" / "fd.sas7bdat"                # FD.FD
 
-# //BNMTBL1 //BNMTBL3 DD DSN=SAP.PBB.KAPITI1/KAPITI3 -- not referenced by
-# name anywhere in the SAS body (only BNMK. libref is used); no cache needed.
+# # //LOAN DD DSN=SAP.PBB.MNILN(0) -- member LNCOMM
+# INPUT_LNCOMM_FILE = STG_DIR / "MNILN" / "PBB" / "lncomm.sas7bdat"
 
-# //PROVSUB DD DSN=SAP.PBB.CCRIS.PROVSUB(0) -- flat text file, kept as .txt
-INPUT_PROVSUB_FILE = STG_DIR / "EIBMLIQP" / "PROVSUB_INPUT.TXT"
+# # //CISLN DD DSN=SAP.PBB.CISBEXT.DP
+# INPUT_CISLN_DEPOSIT_FILE = STG_DIR / "CIS" / "CISLN" / "deposit.sas7bdat"
 
-# //BNMK DD DSN=SAP.PBB.KAPITI.SASDATA -- K1TBL / K3TBL / DCIWTB members
-INPUT_BNMK_DIR = STG_DIR / "EIBMLIQP" / "BNMK"
+# # //CISDP DD DSN=SAP.PBB.CRM.CISBEXT
+# INPUT_CISDP_DEPOSIT_FILE = STG_DIR / "CIS" / "CISDP" / "deposit.sas7bdat"
 
-# //PAY DD DSN=SAP.PBB.LNPAYSCH(0)
-INPUT_PAY_DIR = STG_DIR / "EIBMLIQP" / "PAY"
+# # //FORATE DD DSN=SAP.PBB.FCYCA -- FORATE.FORATE / FORATE.FORATEBKP
+# INPUT_FORATE_FILE    = STG_DIR / "EIBMLIQP" / "FORATE" / "forate.sas7bdat"
+# INPUT_FORATEBKP_FILE = STG_DIR / "EIBMLIQP" / "FORATE" / "foratebkp.sas7bdat"
 
-# //NID DD DSN=SAP.PBB.RNID.SASDATA
-INPUT_NID_DIR = STG_DIR / "EIBMLIQP" / "NID"
+# # //DCIWH DD DSN=SAP.PBB.DCIWH
+# INPUT_DCIWH_DIR = STG_DIR / "EIBMLIQP" / "DCIWH"
 
-# //BNM1 DD DSN=SAP.PBB.SASDATA -- LOAN / ULOAN members
-INPUT_BNM1_DIR = STG_DIR / "EIBMLIQP" / "BNM1"
+# # //BNMTBL1 //BNMTBL3 DD DSN=SAP.PBB.KAPITI1/KAPITI3 -- not referenced by
+# # name anywhere in the SAS body (only BNMK. libref is used); no cache needed.
 
+# # //PROVSUB DD DSN=SAP.PBB.CCRIS.PROVSUB(0) -- flat text file, kept as .txt
+# INPUT_PROVSUB_FILE = STG_DIR / "EIBMLIQP" / "PROVSUB_INPUT.TXT"
 
-# def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
-#     return sas_path.exists() and cache_path.exists() and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+# # //BNMK DD DSN=SAP.PBB.KAPITI.SASDATA -- K1TBL / K3TBL / DCIWTB members
+# INPUT_BNMK_DIR = STG_DIR / "EIBMLIQP" / "BNMK"
 
+# # //PAY DD DSN=SAP.PBB.LNPAYSCH(0)
+# INPUT_PAY_DIR = STG_DIR / "EIBMLIQP" / "PAY"
 
-# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-#     writer, schema, total = None, None, 0
-#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-#     for chunk in reader:
-#         if schema is None:
-#             fields = []
-#             for col, dtype in chunk.dtypes.items():
-#                 if dtype == "object":
-#                     pa_type = pa.string()
-#                 elif pd.api.types.is_integer_dtype(dtype):
-#                     pa_type = pa.int64()
-#                 elif pd.api.types.is_float_dtype(dtype):
-#                     pa_type = pa.float64()
-#                 else:
-#                     pa_type = pa.from_numpy_dtype(dtype)
-#                 fields.append(pa.field(col, pa_type))
-#             schema = pa.schema(fields)
-#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-#         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
-#         writer.write_table(table)
-#         total += len(chunk)
-#         del chunk, table
-#         gc.collect()
-#     if writer:
-#         writer.close()
-#     print(f"  [{tag}] Done - {total:,} rows cached.")
+# # //NID DD DSN=SAP.PBB.RNID.SASDATA
+# INPUT_NID_DIR = STG_DIR / "EIBMLIQP" / "NID"
 
+# # //BNM1 DD DSN=SAP.PBB.SASDATA -- LOAN / ULOAN members
+# INPUT_BNM1_DIR = STG_DIR / "EIBMLIQP" / "BNM1"
 
-# def _load_cached(sas_path: Path, tag: str) -> Path:
-#     cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-#     if _cache_is_fresh(sas_path, cache_path):
-#         print(f"  [{tag}] Cache fresh - skipping conversion.")
-#     else:
-#         _sas_to_parquet(sas_path, cache_path, tag)
-#     return cache_path
 
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
@@ -197,32 +210,6 @@ def _load_cached(sas_path: Path, tag: str) -> Path:
     return cache_path
 
 
-# def _derive_reptdate_context() -> dict:
-#     """DATA BNM.REPTDATE; SET DEPOSIT.REPTDATE; SELECT(DAY(REPTDATE)) ...
-#     No reptdate.parquet exists for this job family -- the date value is
-#     sourced from REPTDATE.py, NOWK is derived locally with exact-day
-#     matching (8/15/22/else->4), matching the SAS source exactly."""
-#     values = get_reptdate_values(year_format="%Y")
-#     reptdate = values.reptdate
-
-#     # DEBUG - Need to remove for production run
-#     from datetime import date as _date      
-#     reptdate = _date(2026, 9, 30)
-
-#     day = reptdate.day
-#     nowk = "1" if day == 8 else "2" if day == 15 else "3" if day == 22 else "4"
-#     rd_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-#     if reptdate.year % 4 == 0:
-#         rd_days[1] = 29
-#     return {
-#         "reptdate": reptdate, "tdate": reptdate, "nowk": nowk,
-#         "reptyear": reptdate.strftime("%Y"), "reptyea2": reptdate.strftime("%y"),
-#         "reptmon": reptdate.strftime("%m"), "reptday": reptdate.strftime("%d"),
-#         "rdate": reptdate.strftime("%d/%m/%y"),
-#         "rpyr": reptdate.year, "rpmth": reptdate.month, "rpday": reptdate.day,
-#         "rd_days": rd_days,
-#     }
-
 def _derive_reptdate_context() -> dict:
     """DATA BNM.REPTDATE; SET DEPOSIT.REPTDATE; SELECT(DAY(REPTDATE)) ...
     No reptdate.parquet exists for this job family, so the report date is
@@ -264,23 +251,25 @@ def main() -> None:
     forate_cache        = _load_cached(INPUT_FORATE_FILE, "FORATE")
     foratebkp_cache     = _load_cached(INPUT_FORATEBKP_FILE, "FORATEBKP")
 
-    # dciwh_dci_cache     = _load_cached(INPUT_DCIWH_DIR / f"dci{reptmon}{nowk}.sas7bdat", "DCIWH.DCI")
-    # k1tbl_cache         = _load_cached(INPUT_BNMK_DIR / f"k1tbl{reptmon}{nowk}.sas7bdat", "BNMK.K1TBL")
-    # k3tbl_cache         = _load_cached(INPUT_BNMK_DIR / f"k3tbl{reptmon}{nowk}.sas7bdat", "BNMK.K3TBL")
-    # bnmk_dciwtb_cache   = _load_cached(INPUT_BNMK_DIR / f"dciwtb{reptmon}{nowk}.sas7bdat", "BNMK.DCIWTB")
-    # lnpay_cache         = _load_cached(INPUT_PAY_DIR / f"lnpay{reptmon}{nowk}{reptyea2}.sas7bdat", "PAY.LNPAY")
-    # nid_rnid_cache      = _load_cached(INPUT_NID_DIR / f"rnid{reptday}.sas7bdat", "NID.RNID")
-    # bnm1_loan_cache     = _load_cached(INPUT_BNM1_DIR / f"loan{reptmon}{nowk}.sas7bdat", "BNM1.LOAN")
-    # bnm1_uloan_cache    = _load_cached(INPUT_BNM1_DIR / f"uloan{reptmon}{nowk}.sas7bdat", "BNM1.ULOAN")
+    # Production Files
+    dciwh_dci_cache     = _load_cached(INPUT_DCIWH_DIR / f"dci{reptmon}{nowk}.sas7bdat", "DCIWH.DCI")
+    k1tbl_cache         = _load_cached(INPUT_BNMK_DIR / f"k1tbl{reptmon}{nowk}.sas7bdat", "BNMK.K1TBL")
+    k3tbl_cache         = _load_cached(INPUT_BNMK_DIR / f"k3tbl{reptmon}{nowk}.sas7bdat", "BNMK.K3TBL")
+    bnmk_dciwtb_cache   = _load_cached(INPUT_BNMK_DIR / f"dciwtb{reptmon}{nowk}.sas7bdat", "BNMK.DCIWTB")
+    lnpay_cache         = _load_cached(INPUT_PAY_DIR / f"lnpay{reptmon}{nowk}{reptyea2}.sas7bdat", "PAY.LNPAY")
+    nid_rnid_cache      = _load_cached(INPUT_NID_DIR / f"rnid{reptday}.sas7bdat", "NID.RNID")
+    bnm1_loan_cache     = _load_cached(INPUT_BNM1_DIR / f"loan{reptmon}{nowk}.sas7bdat", "BNM1.LOAN")
+    bnm1_uloan_cache    = _load_cached(INPUT_BNM1_DIR / f"uloan{reptmon}{nowk}.sas7bdat", "BNM1.ULOAN")
 
-    dciwh_dci_cache     = _load_cached(INPUT_DCIWH_DIR / f"dci094.sas7bdat", "DCIWH.DCI")
-    k1tbl_cache         = _load_cached(INPUT_BNMK_DIR / f"k1tbl094.sas7bdat", "BNMK.K1TBL")
-    k3tbl_cache         = _load_cached(INPUT_BNMK_DIR / f"k3tbl094.sas7bdat", "BNMK.K3TBL")
-    bnmk_dciwtb_cache   = _load_cached(INPUT_BNMK_DIR / f"dciwtb094.sas7bdat", "BNMK.DCIWTB")
-    lnpay_cache         = _load_cached(INPUT_PAY_DIR / f"lnpay09426.sas7bdat", "PAY.LNPAY")
-    nid_rnid_cache      = _load_cached(INPUT_NID_DIR / f"rnid30.sas7bdat", "NID.RNID")
-    bnm1_loan_cache     = _load_cached(INPUT_BNM1_DIR / f"loan094.sas7bdat", "BNM1.LOAN")
-    bnm1_uloan_cache    = _load_cached(INPUT_BNM1_DIR / f"uloan094.sas7bdat", "BNM1.ULOAN")
+    # # Testing Files
+    # dciwh_dci_cache     = _load_cached(INPUT_DCIWH_DIR / f"dci094.sas7bdat", "DCIWH.DCI")
+    # k1tbl_cache         = _load_cached(INPUT_BNMK_DIR / f"k1tbl094.sas7bdat", "BNMK.K1TBL")
+    # k3tbl_cache         = _load_cached(INPUT_BNMK_DIR / f"k3tbl094.sas7bdat", "BNMK.K3TBL")
+    # bnmk_dciwtb_cache   = _load_cached(INPUT_BNMK_DIR / f"dciwtb094.sas7bdat", "BNMK.DCIWTB")
+    # lnpay_cache         = _load_cached(INPUT_PAY_DIR / f"lnpay09426.sas7bdat", "PAY.LNPAY")
+    # nid_rnid_cache      = _load_cached(INPUT_NID_DIR / f"rnid30.sas7bdat", "NID.RNID")
+    # bnm1_loan_cache     = _load_cached(INPUT_BNM1_DIR / f"loan094.sas7bdat", "BNM1.LOAN")
+    # bnm1_uloan_cache    = _load_cached(INPUT_BNM1_DIR / f"uloan094.sas7bdat", "BNM1.ULOAN")
 
     provsub_txt_path = INPUT_PROVSUB_FILE  # flat file, no parquet conversion
 
