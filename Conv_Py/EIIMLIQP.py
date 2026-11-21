@@ -1,203 +1,286 @@
 #!/usr/bin/env python3
 """
-Program: EIIMLIQP
-Purpose: Python conversion of the SAS control program that derives reporting
-         macro variables, pre-deletes output files, and runs DALWPBBD,
-         EIIMRLFM, and EIBMTOP5.
+Program : EIIMLIQP.py
+Purpose : JCL orchestrator for the New Liquidity Framework (PIBB / Islamic)
+          batch (originally JOB EIIMLIQP, EXEC SAS609). Declares every
+          physical input dataset, converts each to Parquet (chunked,
+          cached), derives the report date once, and drives the child
+          programs in the same order as the original SYSIN:
+              %INC PGM(DALWPBBD);
+              %INC PGM(EIIMRLFM);
+              %INC PGM(EIBMTOP5);
+
+          Differences vs EIBMLIQP.py (PBB):
+            - Datasets come from the SAP.PIBB.* family (MNITB / MNIFD /
+              MNILN / KAPITI / PROVSUB / LNPAYSCH / RNID / SASDATA).
+            - No FORATE and no DCIWH DD in this JCL (the PIBB report has
+              no DCI section), so neither is declared or cached.
+            - PAY member is ILNPAY (not LNPAY).
+            - FD11TEXT / FD12TEXT / FD2TEXT are temporary datasets
+              (&&INDV / &&CORP / &&SUBS, DISP=DELETE at job end); the
+              converted programs still write them as text files.
+            - LIBNAME WALK "SAP.PIBB.D&REPTYEAR" is declared in the SAS
+              SYSIN but never referenced by any included program, so no
+              Python equivalent is needed.
+            - //BNMTBL1 //BNMTBL3 are not referenced by name in the SAS
+              body (only the BNMK libref is used); no cache needed.
+
+          Every physical dataset is declared and cached ONCE, here, and
+          handed down to the child programs as Parquet paths.
 """
-
-from __future__ import annotations
-
-import logging
-import os
-import sys
-from datetime import date, datetime
+import gc
+from datetime import date
 from pathlib import Path
-from typing import Dict
+from typing import Optional
+from datetime import date, timedelta
 
-import duckdb
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-CURRENT_DIR = Path(__file__).resolve().parent
-if str(CURRENT_DIR) not in sys.path:
-    sys.path.insert(0, str(CURRENT_DIR))
+from DALWPBBD import build_savg_curn_dept
+from EIIMRLFM import run_eiimrlfm
+from EIBMTOP5 import run_eibmtop5
 
-from DALWPBBD import main as run_dalwpbbd
-from EIIMRLFM import main as run_eiimrlfm
-from EIBMTOP5 import main as run_eibmtop5
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+# ---- Physical input datasets (per EIIMLIQP JCL DD statements) -------------
+# //DEPOSIT DD DSN=SAP.PIBB.MNITB(0) -- members SAVING / CURRENT / FD (All filter by ENTITY_CD = 'PIBB')
+MNTIB_DIR             = BASE_DIR  / "deposit/dwh/integration"
+INPUT_SAVING_FILE     = MNTIB_DIR / f"intg_dp_acct_saving_m{REPTMON}.sas7bdat"
+INPUT_CURRENT_FILE    = MNTIB_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"
+INPUT_DEPOSIT_FD_FILE = MNTIB_DIR / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"         # DEPOSIT.FD (distinct physical file from FD.FD)
 
-# //EIIMLIQP JOB MIS,MISEIS,COND=(4,LT),CLASS=A,MSGCLASS=X,
-# //         NOTIFY=&SYSUID,USER=OPCC
-# /*JOBPARM S=S1M2
-# //*
-# //* TOP5O ISLAMIC - REFER JOB EIBDMISA.
-# //*
-# //PRINT1   OUTPUT CLASS=R,
-# //         NAME='MS KOH JIAK WEI',
-# //         ROOM='26TH FLOOR BNM REPORTING',
-# //         BUILDING='MENARA PBB',
-# //         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
-# //         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
-# //         DEST=S1.RMT5
-# //*
-# //DELETE   EXEC PGM=IEFBR14
-# //DD1      DD DISP=(MOD,DELETE,DELETE),
-# //            SPACE=(TRK,(1,10)),
-# //            DSN=SAP.PIBB.FISS.TEXT
-# //DD2      DD DISP=(MOD,DELETE,DELETE),
-# //            SPACE=(TRK,(1,10)),
-# //            DSN=SAP.PIBB.NSRS.TEXT
-# //*
-# //EIBMRLFM EXEC SAS609,REGION=6M,WORK='120000,8000'
-# //PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-# //DEPOSIT  DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
-# //FD       DD DSN=SAP.PIBB.MNIFD(0),DISP=SHR
-# //LOAN     DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
-# //CISLN    DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
-# //CISDP    DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
-# //BNMTBL1  DD DSN=SAP.PIBB.KAPITI1(0),DISP=SHR
-# //BNMTBL3  DD DSN=SAP.PIBB.KAPITI3(0),DISP=SHR
-# //PROVSUB  DD DSN=SAP.PIBB.CCRIS.PROVSUB(0),DISP=SHR
-# //BNMK     DD DSN=SAP.PIBB.KAPITI.SASDATA,DISP=SHR
-# //PAY      DD DSN=SAP.PIBB.LNPAYSCH,DISP=SHR
-# //BNM      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
-# //            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
-# //            SPACE=(CYL,(600,300)),UNIT=(SYSDA,5)
-# //LCR      DD DSN=SAP.PIBB.LCR.SASDATA,DISP=OLD
-# //NID      DD DSN=SAP.PIBB.RNID.SASDATA,DISP=SHR
-# //BNM1     DD DSN=SAP.PIBB.SASDATA,DISP=SHR
-# //FISS     DD DSN=SAP.PIBB.FISS.TEXT,DISP=(NEW,CATLG,DELETE),
-# //            DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
-# //            SPACE=(TRK,(5,5)),UNIT=SYSDA
-# //NSRS     DD DSN=SAP.PIBB.NSRS.TEXT,DISP=(NEW,CATLG,DELETE),
-# //            DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
-# //            SPACE=(TRK,(5,5)),UNIT=SYSDA
-# //FD11TEXT DD DSN=&&INDV,DISP=(NEW,DELETE,DELETE),
-# //            DCB=(RECFM=FB,LRECL=320,BLKSIZE=0),
-# //            SPACE=(CYL,(50,50),RLSE),UNIT=(SYSDA,5)
-# //FD12TEXT DD DSN=&&CORP,DISP=(NEW,DELETE,DELETE),
-# //            DCB=(RECFM=FB,LRECL=320,BLKSIZE=0),
-# //            SPACE=(CYL,(50,50),RLSE),UNIT=(SYSDA,5)
-# //FD2TEXT  DD DSN=&&SUBS,DISP=(NEW,DELETE,DELETE),
-# //            DCB=(RECFM=FB,LRECL=320,BLKSIZE=0),
-# //            SPACE=(CYL,(50,50),RLSE),UNIT=(SYSDA,5)
-# //SASLIST  DD SYSOUT=*
-# //SYSIN     DD *
+# //FD DD DSN=SAP.PIBB.MNIFD(0) -- member FD
+# MNIFD has no ENTITY_CD. Merge with INPUT_DEPOSIT_FD_FILE (ACCTNO, ENTITY_CD = 'PIBB')
+MNIFD_DIR        = BASE_DIR  / "deposit/dwh/enrichment"
+INPUT_FD_FD_FILE = MNIFD_DIR / f"enrh_dp_fd_cert_m{REPTMON}.sas7bdat"               # FD.FD
 
-# OPTIONS SORTDEV=3390 YEARCUTOFF=1950;
+# //LOAN DD DSN=SAP.PIBB.MNILN(0) -- member LNCOMM (Filter by ENTITY_CD = 'PIBB')
+MNILN_DIR         = BASE_DIR / "ln/dwh/enrichment"
+INPUT_LNCOMM_FILE = STG_DIR / f"enrh_ln_comm_m{REPTMON}.sas7bdat"
 
-# =============================================================================
-# PATHS (defined early)
-# =============================================================================
-ROOT_PATH = Path(os.environ.get("AIMANPY_ROOT", Path.cwd()))
-DATA_PATH = ROOT_PATH / "data"
-DATA_INPUT_PATH = DATA_PATH / "input"
-OUTPUT_PATH = ROOT_PATH / "output"
+# //CISLN DD DSN=SAP.PBB.CISBEXT.DP
+INPUT_CISLN_DEPOSIT_FILE = Path("/dwh/rs_cis") / f"cisr1ca{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
 
-OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+# //CISDP DD DSN=SAP.PBB.CRM.CISBEXT
+INPUT_CISDP_DEPOSIT_FILE = BASE_DIR / "cis/mart/enrichment" / "enrh_exdwh_cisr1.sas7bdat"
 
-PREDELETE_OUTPUTS = (
-    OUTPUT_PATH / "FISS.txt",
-    OUTPUT_PATH / "NSRS.txt",
-)
+# //PROVSUB DD DSN=SAP.PIBB.CCRIS.PROVSUB(0) -- flat text file, kept as .txt
+INPUT_PROVSUB_FILE = Path("/host_pq/mis/input/textfile") / "PIBB_CCRIS_PROVSUB.txt"
 
-REPTDATE_CANDIDATES = (
-    DATA_INPUT_PATH / "DEPOSIT_REPTDATE.parquet",
-    DATA_INPUT_PATH / "REPTDATE.parquet",
-    DATA_PATH / "DEPOSIT_REPTDATE.parquet",
-    DATA_PATH / "REPTDATE.parquet",
-)
+# //BNMK DD DSN=SAP.PIBB.KAPITI.SASDATA -- K1TBL / K3TBL members
+INPUT_BNMK_DIR = Path("/exdwh/host/kapiti/pibb")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-LOGGER = logging.getLogger(__name__)
+# //PAY DD DSN=SAP.PIBB.LNPAYSCH -- ILNPAY members - Need to confirm from Jay
+INPUT_PAY_DIR = Path("/")
+
+# //NID DD DSN=SAP.PIBB.RNID.SASDATA - Need to confirm from Adli
+INPUT_NID_DIR = Path("/")
+
+# //BNM1 DD DSN=SAP.PIBB.SASDATA -- LOAN / ULOAN members (All filter by ENTITY_CD = 'PIBB')
+INPUT_BNM1_DIR = Path("/dwh/dwh_m/tempsource/ln")
+
+OUTPUT_DIR  = Path("/host_pq/mis/output/report/EIIMLIQP")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+CHUNK_ROWS = 500_000
 
 
-def _resolve_reptdate_file() -> Path:
-    for path in REPTDATE_CANDIDATES:
-        if path.exists():
-            return path
-    checked = ", ".join(str(p) for p in REPTDATE_CANDIDATES)
-    raise FileNotFoundError(f"Unable to locate REPTDATE parquet. Checked: {checked}")
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII")
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMLIQP"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIIMLIQP"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# CHUNK_ROWS = 500_000
+
+# # ---- Physical input datasets (per EIIMLIQP JCL DD statements) -------------
+# # //DEPOSIT DD DSN=SAP.PIBB.MNITB(0) -- members SAVING / CURRENT / FD
+# INPUT_SAVING_FILE     = STG_DIR / "EIIMLIQP" / "DEPOSIT" / "saving.sas7bdat"
+# INPUT_CURRENT_FILE    = STG_DIR / "EIIMLIQP" / "DEPOSIT" / "current.sas7bdat"
+# INPUT_DEPOSIT_FD_FILE = STG_DIR / "EIIMLIQP" / "DEPOSIT" / "fd.sas7bdat"      # DEPOSIT.FD
+
+# # //FD DD DSN=SAP.PIBB.MNIFD(0) -- member FD
+# INPUT_FD_FD_FILE = STG_DIR / "EIIMLIQP" / "FD" / "fd.sas7bdat"                # FD.FD
+
+# # //LOAN DD DSN=SAP.PIBB.MNILN(0) -- member LNCOMM
+# INPUT_LNCOMM_FILE = STG_DIR / "MNILN" / "PIBB" / "lncomm.sas7bdat"
+
+# # //CISLN DD DSN=SAP.PBB.CISBEXT.DP
+# INPUT_CISLN_DEPOSIT_FILE = STG_DIR / "CIS" / "CISLN" / "deposit.sas7bdat"
+
+# # //CISDP DD DSN=SAP.PBB.CRM.CISBEXT
+# INPUT_CISDP_DEPOSIT_FILE = STG_DIR / "CIS" / "CISDP" / "deposit.sas7bdat"
+
+# # //PROVSUB DD DSN=SAP.PIBB.CCRIS.PROVSUB(0) -- flat text file, kept as .txt
+# INPUT_PROVSUB_FILE = STG_DIR / "EIIMLIQP" / "PROVSUB_INPUT.TXT"
+
+# # //BNMK DD DSN=SAP.PIBB.KAPITI.SASDATA -- K1TBL / K3TBL members
+# INPUT_BNMK_DIR = STG_DIR / "EIIMLIQP" / "BNMK"
+
+# # //PAY DD DSN=SAP.PIBB.LNPAYSCH -- ILNPAY members
+# INPUT_PAY_DIR = STG_DIR / "EIIMLIQP" / "PAY"
+
+# # //NID DD DSN=SAP.PIBB.RNID.SASDATA
+# INPUT_NID_DIR = STG_DIR / "EIIMLIQP" / "NID"
+
+# # //BNM1 DD DSN=SAP.PIBB.SASDATA -- LOAN / ULOAN members
+# INPUT_BNM1_DIR = STG_DIR / "EIIMLIQP" / "BNM1"
 
 
-def _read_reptdate() -> date:
-    reptdate_parquet = _resolve_reptdate_file()
-    with duckdb.connect() as con:
-        row = con.execute(
-            "SELECT REPTDATE FROM read_parquet(?) LIMIT 1",
-            [str(reptdate_parquet)],
-        ).fetchone()
-
-    if not row or row[0] is None:
-        raise ValueError(f"REPTDATE missing in {reptdate_parquet}")
-
-    rept_val = row[0]
-    if isinstance(rept_val, datetime):
-        return rept_val.date()
-    if isinstance(rept_val, date):
-        return rept_val
-    return datetime.fromisoformat(str(rept_val)).date()
-
-
-def _derive_macro_vars(reptdate_value: date) -> Dict[str, str]:
-    if reptdate_value.day == 8:
-        nowk = "1"
-    elif reptdate_value.day == 15:
-        nowk = "2"
-    elif reptdate_value.day == 22:
-        nowk = "3"
-    else:
-        nowk = "4"
-
-    return {
-        "NOWK": nowk,
-        "REPTYEAR": f"{reptdate_value.year:04d}",
-        "REPTMON": f"{reptdate_value.month:02d}",
-        "REPTDAY": f"{reptdate_value.day:02d}",
-        "RDATE": reptdate_value.strftime("%d/%m/%y"),
-    }
-
-
-def _delete_prior_outputs() -> None:
-    for out_file in PREDELETE_OUTPUTS:
-        if out_file.exists():
-            out_file.unlink()
-            LOGGER.info("Deleted prior output %s", out_file)
-
-
-def main() -> None:
-    reptdate = _read_reptdate()
-    macros = _derive_macro_vars(reptdate)
-
-    # LIBNAME WALK  "SAP.PIBB.D&REPTYEAR" DISP=SHR;
-    walk_libref = f"SAP.PIBB.D{macros['REPTYEAR']}"
-
-    os.environ["REPTDATE"] = reptdate.isoformat()
-    os.environ["NOWK"] = macros["NOWK"]
-    os.environ["REPTYEAR"] = macros["REPTYEAR"]
-    os.environ["REPTMON"] = macros["REPTMON"]
-    os.environ["REPTDAY"] = macros["REPTDAY"]
-    os.environ["RDATE"] = macros["RDATE"]
-    os.environ["WALK_LIBREF"] = walk_libref
-
-    LOGGER.info(
-        "REPTDATE=%s NOWK=%s REPTYEAR=%s REPTMON=%s REPTDAY=%s RDATE=%s WALK_LIBREF=%s",
-        os.environ["REPTDATE"],
-        os.environ["NOWK"],
-        os.environ["REPTYEAR"],
-        os.environ["REPTMON"],
-        os.environ["REPTDAY"],
-        os.environ["RDATE"],
-        os.environ["WALK_LIBREF"],
+# ============================================================================
+# SAS7BDAT -> PARQUET CACHE
+# ============================================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
     )
 
-    _delete_prior_outputs()
 
-    reptmon_compound = f"{macros['REPTYEAR']}{macros['REPTMON']}"
-    dal_result = run_dalwpbbd(reptmon=reptmon_compound, nowk=macros["NOWK"])
-    LOGGER.info("DALWPBBD result: %s", dal_result)
+def _build_schema(df: "pd.DataFrame") -> pa.Schema:
+    fields = []
+    for col, dtype in df.dtypes.items():
+        if dtype == "object":
+            pa_type = pa.string()
+        elif pd.api.types.is_integer_dtype(dtype):
+            pa_type = pa.int64()
+        elif pd.api.types.is_float_dtype(dtype):
+            pa_type = pa.float64()
+        else:
+            pa_type = pa.from_numpy_dtype(dtype)
+        fields.append(pa.field(col, pa_type))
+    return pa.schema(fields)
 
-    run_eiimrlfm()
-    run_eibmtop5()
+
+def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
+
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        if schema is None:
+            schema = _build_schema(chunk)
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer is not None:
+        writer.close()
+    else:
+        # 0-row source: chunked reader yielded nothing; write an empty parquet.
+        empty = pd.read_sas(sas_path, encoding="latin1")
+        schema = _build_schema(empty)
+        pq.write_table(pa.Table.from_pandas(empty, schema=schema, preserve_index=False),
+                       cache_path)
+    print(f"  [{tag}] Done - {total:,} rows cached.")
+
+
+def _load_cached(sas_path: Path, tag: str) -> Path:
+    # Parent folder name is part of the cache name: several inputs share the
+    # same member name in different libraries.
+    cache_path = CACHE_DIR / f"{sas_path.parent.name}__{sas_path.stem}.parquet"
+    if _cache_is_fresh(sas_path, cache_path):
+        print(f"  [{tag}] Cache fresh - skipping conversion.")
+    else:
+        _sas_to_parquet(sas_path, cache_path, tag)
+    return cache_path
+
+
+# ============================================================================
+# REPORT DATE CONTEXT
+# ============================================================================
+def _derive_reptdate_context() -> dict:
+    """DATA BNM.REPTDATE; SET DEPOSIT.REPTDATE; SELECT(DAY(REPTDATE)) ...
+    No reptdate.parquet exists for this job family, so the report date is
+    derived here as the previous calendar day (batch runs the morning after).
+    NOWK uses exact-day matching (8/15/22/else->4), matching the SAS source."""
+    reptdate = date.today() - timedelta(days=1)    # report date rule
+
+    # DEBUG - Need to remove for production run
+    reptdate = date(2026, 9, 30)
+
+    day = reptdate.day
+    nowk = "1" if day == 8 else "2" if day == 15 else "3" if day == 22 else "4"
+    rd_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if reptdate.year % 4 == 0:
+        rd_days[1] = 29
+    return {
+        "reptdate": reptdate, "tdate": reptdate, "nowk": nowk,
+        "reptyear": reptdate.strftime("%Y"), "reptyea2": reptdate.strftime("%y"),
+        "reptmon": reptdate.strftime("%m"), "reptday": reptdate.strftime("%d"),
+        "rdate": reptdate.strftime("%d/%m/%y"),
+        "rpyr": reptdate.year, "rpmth": reptdate.month, "rpday": reptdate.day,
+        "rd_days": rd_days,
+    }
+          
+
+def main() -> None:
+    ctx = _derive_reptdate_context()
+    print(f"REPTDATE: {ctx['reptdate']}  NOWK: {ctx['nowk']}  RDATE: {ctx['rdate']}")
+    reptmon, nowk, reptday, reptyea2 = ctx["reptmon"], ctx["nowk"], ctx["reptday"], ctx["reptyea2"]
+
+    print("\nCaching physical inputs...")
+    saving_cache        = _load_cached(INPUT_SAVING_FILE, "SAVING")
+    current_cache       = _load_cached(INPUT_CURRENT_FILE, "CURRENT")
+    deposit_fd_cache    = _load_cached(INPUT_DEPOSIT_FD_FILE, "DEPOSIT.FD")
+    fd_fd_cache         = _load_cached(INPUT_FD_FD_FILE, "FD.FD")
+    lncomm_cache        = _load_cached(INPUT_LNCOMM_FILE, "LNCOMM")
+    cisln_deposit_cache = _load_cached(INPUT_CISLN_DEPOSIT_FILE, "CISLN.DEPOSIT")
+    cisdp_deposit_cache = _load_cached(INPUT_CISDP_DEPOSIT_FILE, "CISDP.DEPOSIT")
+
+    # Members whose names are fully derived from REPTMON / NOWK / REPTDAY / REPTYEA2
+    k1tbl_cache      = _load_cached(INPUT_BNMK_DIR / f"k1tbl{reptmon}{nowk}.sas7bdat", "BNMK.K1TBL")
+    k3tbl_cache      = _load_cached(INPUT_BNMK_DIR / f"k3tbl{reptmon}{nowk}.sas7bdat", "BNMK.K3TBL")
+    lnpay_cache      = _load_cached(INPUT_PAY_DIR / f"ilnpay{reptmon}{nowk}{reptyea2}.sas7bdat", "PAY.ILNPAY")
+    nid_rnid_cache   = _load_cached(INPUT_NID_DIR / f"rnid{reptday}.sas7bdat", "NID.RNID")
+    bnm1_loan_cache  = _load_cached(INPUT_BNM1_DIR / f"loan{reptmon}{nowk}.sas7bdat", "BNM1.LOAN")
+    bnm1_uloan_cache = _load_cached(INPUT_BNM1_DIR / f"uloan{reptmon}{nowk}.sas7bdat", "BNM1.ULOAN")
+
+    provsub_txt_path = INPUT_PROVSUB_FILE  # flat file, no parquet conversion
+
+    # ---- %INC PGM(DALWPBBD) -- build BNM_SAVG / BNM_CURN / BNM_DEPT ------
+    print("\nBuilding BNM_SAVG / BNM_CURN / BNM_DEPT via DALWPBBD...")
+    dalwpbbd_cache_dir = CACHE_DIR / "DALWPBBD"
+    build_savg_curn_dept(
+        saving_cache=saving_cache, current_cache=current_cache, cisdp_cache=cisdp_deposit_cache,
+        reptmon=reptmon, nowk=nowk, output_cache_dir=dalwpbbd_cache_dir,
+    )
+    bnm_savg_cache = dalwpbbd_cache_dir / f"SAVG{reptmon}{nowk}.parquet"
+    bnm_curn_cache = dalwpbbd_cache_dir / f"CURN{reptmon}{nowk}.parquet"
+
+    # ---- %INC PGM(EIIMRLFM) ------------------------------------------------
+    print("\nRunning EIIMRLFM...")
+    run_eiimrlfm(
+        bnm1_loan_cache=bnm1_loan_cache, bnm1_uloan_cache=bnm1_uloan_cache, lncomm_cache=lncomm_cache,
+        provsub_txt_path=provsub_txt_path, lnpay_cache=lnpay_cache, fd_fd_cache=fd_fd_cache,
+        bnm_savg_cache=bnm_savg_cache, bnm_curn_cache=bnm_curn_cache,
+        deposit_current_cache=current_cache, deposit_fd_cache=deposit_fd_cache,
+        nid_rnid_cache=nid_rnid_cache, k1tbl_cache=k1tbl_cache, k3tbl_cache=k3tbl_cache,
+        cisln_deposit_cache=cisln_deposit_cache, cisdp_deposit_cache=cisdp_deposit_cache,
+        ctx=ctx, output_dir=OUTPUT_DIR,
+    )
+
+    # ---- %INC PGM(EIBMTOP5) -------------------------------------------------
+    print("\nRunning EIBMTOP5...")
+    run_eibmtop5(
+        cisln_deposit_cache=cisln_deposit_cache, deposit_current_cache=current_cache,
+        cisdp_deposit_cache=cisdp_deposit_cache, deposit_fd_cache=deposit_fd_cache,
+        rdate=ctx["rdate"], output_dir=OUTPUT_DIR,
+    )
+
+    print("\nEIIMLIQP complete.")
 
 
 if __name__ == "__main__":
