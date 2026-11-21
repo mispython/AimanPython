@@ -14,17 +14,10 @@ from typing import Optional
 
 import duckdb
 import polars as pl
-import pyreadstat
-
 
 # ---------------------------------------------------------------------
 # SAS7BDAT READER (KAPITI: preserves uppercase column names)
 # ---------------------------------------------------------------------
-# def _read_sas_kapiti(path: Path) -> pl.DataFrame:
-#     df_pd, _ = pyreadstat.read_sas7bdat(str(path))
-#     return pl.from_pandas(df_pd)
-
-
 def _read_sas_kapiti(path) -> pl.DataFrame:
     con = duckdb.connect(database=":memory:")
     df = con.execute(f"SELECT * FROM read_parquet('{Path(path).as_posix()}')").pl()
@@ -253,8 +246,15 @@ def _build_k3tbl(k3tbl_path: Path, inst: str) -> pl.DataFrame:
             elif utsty in I_CB_SET:
                 item = "631"
                 if inst == "PBB": amt = amount + (r.get("UTAICT") or 0.0)
-            elif utsty in ("ISB","IDS","IBZ","ICN"):
-                pass
+            # elif utsty in ("ISB","IDS","IBZ","ICN"):
+            #     pass
+            elif utsty in ("ISB", "IDS", "IBZ", "ICN"):
+                utmm1 = (r.get("UTMM1") or "").strip() if isinstance(r.get("UTMM1"), str) else ""
+                if utmm1 == "GGB":
+                    item = "636"
+                elif utmm1 == "NGB":
+                    item = "635"
+                amt = amount + (r.get("UTAICT") or 0.0)
             elif utsty in ("DHB","KHA"): item = "636"
             elif utsty == "DBD": item = "634"
 
@@ -353,7 +353,7 @@ def build_kalmliq(
             bnmcode = f"{r['PART']}{r['ITEM']}00{_remfmt(remmth)}0000Y"
 
             base_row = {
-                "TBL":     "1" if src_label == "K1TBL" else "3",
+                "TBL":     "1" if src_label == "K1TBL" else "3" if src_label == "K3TBL" else None,
                 "PART":    r["PART"],
                 "ITEM":    r["ITEM"],
                 "MATDT":   r.get("MATDT"),
