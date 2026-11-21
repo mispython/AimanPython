@@ -34,8 +34,8 @@ import duckdb
 import time as _t
 import polars as pl
 
-from PBBLNFMT_AII import format_liqpfmt
-from PBBDPFMT_AII import fdprod_format, ddcustcd_format
+from PBBLNFMT import format_liqpfmt
+from PBBDPFMT import fdprod_format, ddcustcd_format
 from KALMLIQ import build_kalmliq
 from KALMLIFE import build_k3fei
 
