@@ -96,11 +96,16 @@ print(f"  REPTDATE : {REPTDATE.isoformat()}   RDATE : {_CTX['rdate']}")
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+INPUT_BNMTBLX_DIR  = Path("/host_pq/mis/input/textfile")
+INPUT_BNMTBLX_FILE = INPUT_BNMTBLX_DIR / "BNMTBLX.txt
 
-INPUT_BNMTBLX_DIR  = STG_DIR / "EIBPTH1A"
-INPUT_BNMTBLX_FILE = INPUT_BNMTBLX_DIR / "BNMTBLX_INPUT.TXT"
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_BNMTBLX_DIR  = STG_DIR / "EIBPTH1A"
+# INPUT_BNMTBLX_FILE = INPUT_BNMTBLX_DIR / "BNMTBLX_INPUT.TXT"
 
 # ============================================================================
 # PROC FORMAT VALUE ORGMT.  LOW-12='50'; 12-HIGH='60';
