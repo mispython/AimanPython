@@ -1,151 +1,153 @@
-==========================================================================================
+==================================================================================================================================
 SAS DATASET COLUMN INFORMATION
-==========================================================================================
-File       : enrh_dp_fd_cert_d{REPTDAY}.sas7bdat
-Full Path  : /stgsrcsys/host/uat/AII/MNIFD/enrh_dp_fd_cert_d{REPTDAY}.sas7bdat
-Total Columns: 45
-==========================================================================================
-NO.     COLUMN NAME                                  SAS DATATYPE        
-------------------------------------------------------------------------------------------
-1       BANK_NO                                      double              
-2       REPT_NO                                      double              
-3       FORMAT_CODE                                  double              
-4       BRANCH_CD                                    double              
-5       ACCT_NUM                                     double              
-6       PURPOSE_CD                                   string              
-7       CUSTOMER_CD                                  double              
-8       DEPOSIT_DT                                   double              
-9       CERT_NUM                                     double              
-10      OPEN_IND                                     string              
-11      CURR_BAL                                     double              
-12      ORIG_AMT                                     double              
-13      ORIG_DT                                      double              
-14      MATURE_DT                                    double              
-15      RT                                           double              
-16      ACCOUNT_TYPE_CD                              double              
-17      TERM                                         double              
-18      MATUREITY_TERM_CD                            string              
-19      INT_PLAN                                     double              
-20      PAYMENT_IND                                  string              
-21      RENEWAL_IND                                  string              
-22      INT_PAID_YTD                                 double              
-23      INT_PAYABLE                                  double              
-24      INT_DT                                       double              
-25      LAST_ACTIVE_DT                               double              
-26      INT_FREQ                                     double              
-27      INT_FREQ_CD                                  string              
-28      PENDING_INT                                  double              
-29      CURRENCY_CD                                  string              
-30      LAST_MATURE_DT                               double              
-31      PRO_RATIO                                    double              
-32      CERT_HOLD_IND                                string              
-33      COST_CENTRE                                  double              
-34      COLL_NUM                                     double              
-35      INT_TRANSFER_ACCT_NUM                        double              
-36      NEW_RT                                       double              
-37      OLD_RT                                       double              
-38      EFFECTIVE_DT                                 double              
-39      DEALERS_NAME                                 string              
-40      USER_ID                                      string              
-41      STATUS                                       string              
-42      SPECIAL_RT_DTTM                              string              
-43      STATUS_DTTM                                  string              
-44      CURR_DEALER_NAME_ID                          string              
-45      ENTITY_CD                                    string              
-------------------------------------------------------------------------------------------
+==================================================================================================================================
+File          : enrh_dp_fd_cert_d12.sas7bdat
+Full Path     : /stgsrcsys/host/uat/AII/MNIFD/enrh_dp_fd_cert_d12.sas7bdat
+Total Columns : 45
+Sample Rows   : 3
+==================================================================================================================================
+NO.   COLUMN NAME                             SAS DATATYPE        SAMPLE VALUES
+----------------------------------------------------------------------------------------------------------------------------------
+1     BANK_NO                                 double              33.0 | 33.0 | 33.0
+2     REPT_NO                                 double              4001.0 | 4001.0 | 4001.0
+3     FORMAT_CODE                             double              1.0 | 1.0 | 1.0
+4     BRANCH_CD                               double              2.0 | 2.0 | 2.0
+5     ACCT_NUM                                double              1000001725.0 | 1000001725.0 | 1000001725.0
+6     PURPOSE_CD                              string              1 | 1 | 1
+7     CUSTOMER_CD                             double              78.0 | 78.0 | 78.0
+8     DEPOSIT_DT                              double              2026-09-25 00:00:00 | 2026-08-11 00:00:00 | 2026-09-17 00:00:00
+9     CERT_NUM                                double              50173.0 | 141706.0 | 142169.0
+10    OPEN_IND                                string              O | O | O
+11    CURR_BAL                                double              1378.53 | 3587.2099999999996 | 1530.07
+12    ORIG_AMT                                double              1000.0 | 3000.0 | 1300.0
+13    ORIG_DT                                 double              2014-09-25 00:00:00 | 2019-02-11 00:00:00 | 2019-06-17 00:00:00
+14    MATURE_DT                               double              2027-03-25 00:00:00 | 2027-02-11 00:00:00 | 2026-12-17 00:00:00
+15    RT                                      double              1.75 | 1.7999999999999998 | 1.7
+16    ACCOUNT_TYPE_CD                         double              300.0 | 300.0 | 300.0
+17    TERM                                    double              6.0 | 6.0 | 3.0
+18    MATUREITY_TERM_CD                       string              M | M | M
+19    INT_PLAN                                double              302.0 | 302.0 | 301.0
+20    PAYMENT_IND                             string              A | A | A
+21    RENEWAL_IND                             string              N | N | N
+22    INT_PAID_YTD                            double              27.83 | 74.17999999999999 | 21.43
+23    INT_PAYABLE                             double              3.2399999999999998 | 16.63 | 4.06
+24    INT_DT                                  double              2026-09-24 00:00:00 | 2026-08-10 00:00:00 | 2026-09-16 00:00:00
+25    LAST_ACTIVE_DT                          double              2014-09-25 00:00:00 | 2019-02-11 00:00:00 | 2019-06-17 00:00:00
+26    INT_FREQ                                double              6.0 | 6.0 | 3.0
+27    INT_FREQ_CD                             string              M | M | M
+28    PENDING_INT                             double              0.0 | 0.0 | 0.0
+29    CURRENCY_CD                             string              MYR | MYR | MYR
+30    LAST_MATURE_DT                          double              2026-09-25 00:00:00 | 2026-08-11 00:00:00 | 2026-09-17 00:00:00
+31    PRO_RATIO                               double              0.0 | 0.0 | 0.0
+32    CERT_HOLD_IND                           string               |  | 
+33    COST_CENTRE                             double              2.0 | 2.0 | 2.0
+34    COLL_NUM                                double              0.0 | 0.0 | 0.0
+35    INT_TRANSFER_ACCT_NUM                   double              0.0 | 0.0 | 0.0
+36    NEW_RT                                  double              MISSING | MISSING | MISSING
+37    OLD_RT                                  double              MISSING | MISSING | MISSING
+38    EFFECTIVE_DT                            double              MISSING | MISSING | MISSING
+39    DEALERS_NAME                            string               |  | 
+40    USER_ID                                 string               |  | 
+41    STATUS                                  string               |  | 
+42    SPECIAL_RT_DTTM                         string               |  | 
+43    STATUS_DTTM                             string               |  | 
+44    CURR_DEALER_NAME_ID                     string               |  | 
+45    ENTITY_CD                               string               |  | 
+----------------------------------------------------------------------------------------------------------------------------------
 Total columns in metadata : 45
-Total columns listed      : 45
-VALIDATION STATUS         : PASSED
-==========================================================================================
+Total columns displayed   : 45
+COLUMN VALIDATION         : PASSED
+==================================================================================================================================
 
 
 
 
-
-==========================================================================================
+==================================================================================================================================
 SAS DATASET COLUMN INFORMATION
-==========================================================================================
-File       : intg_dp_acct_fd_d{REPTDAY}.sas7bdat
-Full Path  : /stgsrcsys/host/uat/AII/MNIFD/intg_dp_acct_fd_d{REPTDAY}.sas7bdat
-Total Columns: 73
-==========================================================================================
-NO.     COLUMN NAME                                  SAS DATATYPE        
-------------------------------------------------------------------------------------------
-1       BRANCH                                       double              
-2       ACCTNO                                       double              
-3       NAME                                         string              
-4       TAXNO                                        string              
-5       DEBIT                                        double              
-6       CREDIT                                       double              
-7       CLOSEDT                                      double              
-8       REOPENDT                                     double              
-9       CUSTCODE                                     double              
-10      ORGCODE                                      string              
-11      ORGTYPE                                      string              
-12      INTYTD                                       double              
-13      FEEPD                                        double              
-14      PURPOSE                                      string              
-15      SECTOR                                       double              
-16      USER2                                        string              
-17      USER3                                        string              
-18      RISKCODE                                     string              
-19      LEDGBAL                                      double              
-20      OPENIND                                      string              
-21      STATCD                                       string              
-22      LASTTRAN                                     double              
-23      AVGAMT                                       double              
-24      PRODUCT                                      double              
-25      RACE                                         string              
-26      DEPTYPE                                      string              
-27      INT1                                         double              
-28      INTPD                                        double              
-29      INTPLAN                                      double              
-30      CURBAL                                       double              
-31      STATE                                        string              
-32      INTCYCODE                                    string              
-33      CURCODE                                      string              
-34      INTRATE                                      double              
-35      YTDAVAMT                                     double              
-36      BDATE                                        double              
-37      INACTIVE                                     string              
-38      SECOND                                       double              
-39      ODXSAMT                                      double              
-40      BONUTYPE                                     double              
-41      SERVICE                                      double              
-42      BONUSANO                                     double              
-43      USER5                                        string              
-44      TRACKCD                                      string              
-45      PREVBRNO                                     double              
-46      AVGBAL                                       double              
-47      COSTCTR                                      double              
-48      POST_IND                                     string              
-49      INTRSTPD                                     double              
-50      MTDAVBAL                                     double              
-51      DTLSTCUST                                    double              
-52      INTPDPYR                                     double              
-53      OPENDT                                       double              
-54      MAILCODE                                     string              
-55      DSR                                          double              
-56      PSREASON                                     string              
-57      INSTRUCTIONS                                 string              
-58      NXT_STMT_CYCLE_DT                            double              
-59      DPMTDBAL                                     double              
-60      INTPAYBL                                     double              
-61      OPENMH                                       double              
-62      CLOSEMH                                      double              
-63      ACCYTD                                       double              
-64      DNBFISME                                     string              
-65      FORATE                                       string              
-66      FORBAL                                       double              
-67      CURBALUS                                     double              
-68      PRIN_ACCT                                    double              
-69      STMT_CYCLE                                   string              
-70      ENTITY_CD                                    string              
-71      E_INVOICE_IND                                string              
-72      POST_IND_MAINT_DT                            double              
-73      POST_IND_EXP_DT                              double              
-------------------------------------------------------------------------------------------
+==================================================================================================================================
+File          : intg_dp_acct_fd_d12.sas7bdat
+Full Path     : /stgsrcsys/host/uat/AII/MNITB/intg_dp_acct_fd_d12.sas7bdat
+Total Columns : 73
+Sample Rows   : 3
+==================================================================================================================================
+NO.   COLUMN NAME                             SAS DATATYPE        SAMPLE VALUES
+----------------------------------------------------------------------------------------------------------------------------------
+1     BRANCH                                  double              2.0 | 2.0 | 2.0
+2     ACCTNO                                  double              1000001725.0 | 1000002004.0 | 1000002720.0
+3     NAME                                    string              TAN AH CHOO | HO SOOK LAN&HO | LIM BOON BENG
+4     TAXNO                                   string              7654002 | 3832133 | 5087273
+5     DEBIT                                   double              0.0 | 0.0 | 0.0
+6     CREDIT                                  double              0.0 | 0.0 | 0.0
+7     CLOSEDT                                 double              MISSING | 24087.0 | MISSING
+8     REOPENDT                                double              MISSING | MISSING | MISSING
+9     CUSTCODE                                double              78.0 | 78.0 | 78.0
+10    ORGCODE                                 string              000 | 000 | 000
+11    ORGTYPE                                 string               |  | 
+12    INTYTD                                  double              0.0 | 0.0 | 0.0
+13    FEEPD                                   double              0.0 | 0.0 | 0.0
+14    PURPOSE                                 string              1 | 2 | 1
+15    SECTOR                                  double              9999.0 | 9999.0 | 0.0
+16    USER2                                   string               |  | 
+17    USER3                                   string               | S | 
+18    RISKCODE                                string               |  | 
+19    LEDGBAL                                 double              154799.28 | 0.0 | 361073.18
+20    OPENIND                                 string              O | Z | O
+21    STATCD                                  string              O********* | Z*****V*** | O*********
+22    LASTTRAN                                double              24301.0 | 24087.0 | 23940.0
+23    AVGAMT                                  double              153585.0 | 0.0 | 357192.0
+24    PRODUCT                                 double              300.0 | 300.0 | 300.0
+25    RACE                                    string              2 | 2 | 2
+26    DEPTYPE                                 string              C | C | C
+27    INT1                                    double              684.4899999999999 | 0.0 | 1296.59
+28    INTPD                                   double              2431.4199999999996 | 0.0 | 7431.74
+29    INTPLAN                                 double              304.0 | 304.0 | 304.0
+30    CURBAL                                  double              154799.28 | 0.0 | 361073.18
+31    STATE                                   string              14 | 14 | 14
+32    INTCYCODE                               string              182 | 182 | 182
+33    CURCODE                                 string              MYR | MYR | MYR
+34    INTRATE                                 double              1.7999999999999998 | 1.7999999999999998 | 1.7999999999999998
+35    YTDAVAMT                                double              0.0 | 0.0 | 0.0
+36    BDATE                                   double              -4586.0 | -3433.0 | -1099.0
+37    INACTIVE                                string               |  | 
+38    SECOND                                  double              0.0 | 0.0 | 0.0
+39    ODXSAMT                                 double              154799.28 | 0.0 | 361073.18
+40    BONUTYPE                                double              0.0 | 0.0 | 0.0
+41    SERVICE                                 double              210.0 | 210.0 | 210.0
+42    BONUSANO                                double              0.0 | 0.0 | 0.0
+43    USER5                                   string               |  | 
+44    TRACKCD                                 string              470612015550 |  | 561228105475
+45    PREVBRNO                                double              0.0 | 0.0 | 0.0
+46    AVGBAL                                  double              154799.28 | 104.80999999999999 | 361073.18
+47    COSTCTR                                 double              2.0 | 2.0 | 2.0
+48    POST_IND                                string               |  | 
+49    INTRSTPD                                double              0.0 | 0.0 | 0.0
+50    MTDAVBAL                                double              154772.44666666666 | 0.0 | 361073.17999999993
+51    DTLSTCUST                               double              24301.0 | 24087.0 | 23940.0
+52    INTPDPYR                                double              0.0 | 0.0 | 0.0
+53    OPENDT                                  double              13703.0 | 13703.0 | 13703.0
+54    MAILCODE                                string              0 | 0 | 0
+55    DSR                                     double              MISSING | MISSING | MISSING
+56    PSREASON                                string               |  | 
+57    INSTRUCTIONS                            string               |  | 
+58    NXT_STMT_CYCLE_DT                       double              24440.0 | 24422.0 | 24440.0
+59    DPMTDBAL                                double              1857269.3599999999 | 0.0 | 4332878.159999999
+60    INTPAYBL                                double              684.4899999999999 | 0.0 | 1296.59
+61    OPENMH                                  double              0.0 | 0.0 | 0.0
+62    CLOSEMH                                 double              0.0 | 0.0 | 0.0
+63    ACCYTD                                  double              0.0 | 0.0 | 0.0
+64    DNBFISME                                string              0 | 0 | 0
+65    FORATE                                  string               |  | 
+66    FORBAL                                  double              MISSING | MISSING | MISSING
+67    CURBALUS                                double              37936.35093738513 | 0.0 | 88487.4843769146
+68    PRIN_ACCT                               double              0.0 | 0.0 | 0.0
+69    STMT_CYCLE                              string              30 | 30 | 30
+70    ENTITY_CD                               string               |  | 
+71    E_INVOICE_IND                           string               |  | 
+72    POST_IND_MAINT_DT                       double              MISSING | MISSING | MISSING
+73    POST_IND_EXP_DT                         double              MISSING | MISSING | MISSING
+----------------------------------------------------------------------------------------------------------------------------------
 Total columns in metadata : 73
-Total columns listed      : 73
-VALIDATION STATUS         : PASSED
-==========================================================================================
+Total columns displayed   : 73
+COLUMN VALIDATION         : PASSED
+==================================================================================================================================
+
