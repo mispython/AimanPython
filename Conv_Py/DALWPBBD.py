@@ -59,35 +59,13 @@ none of these are physical mainframe inputs, they are built here:
   pipeline can read them via read_parquet() without re-running this module.
 """
 
-# import gc
-# from pathlib import Path
-
-# import duckdb
-# import pandas as pd
-# import polars as pl
-# import pyarrow as pa
-# import pyarrow.parquet as pq
-
-# from REPTDATE import get_reptdate_values
-# from input_date import get_latest_file
-# from PBBDPFMT import (
-#     statecd_format,
-#     saprod_format,
-#     sadenom_format,
-#     sacustcd_format,
-#     caprod_format,
-#     cadenom_format,
-#     ddcustcd_format,
-#     ACE_PRODUCTS,
-# )
-
 import gc
 from pathlib import Path
 
 import duckdb
 import polars as pl
 
-from PBBDPFMT_AII import (
+from PBBDPFMT import (
     statecd_format,
     saprod_format,
     sadenom_format,
@@ -98,169 +76,26 @@ from PBBDPFMT_AII import (
     ACE_PRODUCTS,
 )
 
-# # ============================================================================
-# # PATH CONFIGURATION (each physical input kept independent)
-# # ============================================================================
-# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
-
-# # INPUT_SAVING_DIR = BASE_DIR / "input" / "prod" / "deposit"   # deposit_saving
-# # SAVING_PREFIX    = "isa"
-
-# # INPUT_CURRENT_DIR = BASE_DIR / "input" / "prod" / "deposit"  # deposit_current
-# # CURRENT_PREFIX    = "ica"
-
-# INPUT_SAVING_DIR  = STG_DIR / "MNITB" / "saving.sas7bdat"
-# INPUT_CURRENT_DIR = STG_DIR / "MNITB" / "current.sas7bdat"
-# INPUT_CISDP_DIR   = STG_DIR / "CIS"   / "deposit.sas7bdat"  # cisdp_deposit
-
-# # # EIIWREXL job
-# # # Parquet cache directory for the .sas7bdat -> Parquet conversion step
-# # CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIWREXL"
-# # CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-# # EIBMLIQI job
-# # Parquet cache directory for the .sas7bdat -> Parquet conversion step
-# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMLIQI"
-# CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-# # Output cache directory — where BNM_SAVG/BNM_CURN/BNM_DEPT are persisted
-# # for downstream programs (e.g. EIIWREXL.py) to read via read_parquet()
-# # OUTPUT_CACHE_DIR = BASE_DIR / "work" / "BNM"
-# OUTPUT_CACHE_DIR = BASE_DIR / "input" / "cache" / "DALWPBBD"
-# OUTPUT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-# CHUNK_ROWS = 500_000
-
-# # ============================================================================
-# # STEP 0: REPORT DATE / WEEK NUMBER  (DATA REPTDATE; SET DEPOSIT.REPTDATE;
-# # SELECT(DAY(REPTDATE)) ...  — no physical file, see module docstring)
-# # ============================================================================
-# print("Step 0: Deriving report date / week number...")
-
-# _reptdate_values = get_reptdate_values()
-# REPTDATE = _reptdate_values.reptdate
-
-# _day = REPTDATE.day
-# if _day == 8:
-#     NOWK = "1"
-# elif _day == 15:
-#     NOWK = "2"
-# elif _day == 22:
-#     NOWK = "3"
-# else:
-#     NOWK = "4"
-
-# REPTMON = f"{REPTDATE.month:02d}"        # PUT(MONTH(REPTDATE),Z2.)
-
-# print(f"  REPTDATE : {REPTDATE}")
-# print(f"  REPTMON  : {REPTMON}")
-# print(f"  NOWK     : {NOWK}")
-
-# SAVG_CACHE = OUTPUT_CACHE_DIR / f"SAVG{REPTMON}{NOWK}.parquet"
-# CURN_CACHE = OUTPUT_CACHE_DIR / f"CURN{REPTMON}{NOWK}.parquet"
-# DEPT_CACHE = OUTPUT_CACHE_DIR / f"DEPT{REPTMON}{NOWK}.parquet"
-
-
-# # ============================================================================
-# # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
-# # (identical pattern to EIBDLN1M.py: freshness check via mtime, PyArrow
-# # ParquetWriter with schema locked on first chunk)
-# # ============================================================================
-# def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
-#     return (
-#         cache_path.exists()
-#         and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
-#     )
-
-
-# def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-#     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-#     writer = None
-#     schema = None
-#     total = 0
-
-#     reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-#     for chunk in reader:
-#         if schema is None:
-#             fields = []
-#             for col, dtype in chunk.dtypes.items():
-#                 if dtype == 'object':
-#                     pa_type = pa.string()
-#                 elif pd.api.types.is_integer_dtype(dtype):
-#                     pa_type = pa.int64()
-#                 elif pd.api.types.is_float_dtype(dtype):
-#                     pa_type = pa.float64()
-#                 else:
-#                     pa_type = pa.from_numpy_dtype(dtype)
-#                 fields.append(pa.field(col, pa_type))
-#             schema = pa.schema(fields)
-#             writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-
-#         table = pa.Table.from_pandas(chunk, schema=schema, preserve_index=False)
-#         writer.write_table(table)
-#         total += len(chunk)
-#         del chunk, table
-#         gc.collect()
-
-#     if writer:
-#         writer.close()
-#     print(f"  [{tag}] Done - {total:,} rows cached.")
-
-
-# def _load_cached(sas_path: Path, cache_path: Path, tag: str) -> Path:
-#     if _cache_is_fresh(sas_path, cache_path):
-#         print(f"  [{tag}] Cache fresh - skipping conversion.")
-#     else:
-#         _sas_to_parquet(sas_path, cache_path, tag)
-#     return cache_path
-
-
-# # ============================================================================
-# # STEP 1: RESOLVE & CACHE INPUT FILES  (see module docstring items 1-3)
-# # ============================================================================
-# print("\nStep 1: Resolving and caching input files...")
-
-# # saving_path  = get_latest_file(INPUT_SAVING_DIR, prefix=SAVING_PREFIX)
-# # current_path = get_latest_file(INPUT_CURRENT_DIR, prefix=CURRENT_PREFIX)
-
-# saving_path  = INPUT_SAVING_DIR
-# current_path = INPUT_CURRENT_DIR
-
-# SAVING_SAS_CACHE  = CACHE_DIR / f"{saving_path.stem}.parquet"
-# CURRENT_SAS_CACHE = CACHE_DIR / f"{current_path.stem}.parquet"
-# CISDP_SAS_CACHE   = CACHE_DIR / "cisdp.parquet"
-
-# _load_cached(saving_path, SAVING_SAS_CACHE, "SAVING")
-# _load_cached(current_path, CURRENT_SAS_CACHE, "CURRENT")
-# _load_cached(INPUT_CISDP_DIR, CISDP_SAS_CACHE, "CISDP")
-
-
+# ============================================================================
+# STEP 1: RESOLVE & CACHE INPUT FILES  (see module docstring items 1-3)
+# ============================================================================
 def build_savg_curn_dept(
     saving_cache: Path,
     current_cache: Path,
     cisdp_cache: Path,
-    reptmon: str,
-    nowk: str,
-    output_cache_dir: Path,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """
     Builds BNM_SAVG / BNM_CURN / BNM_DEPT (equivalent of BNM.SAVG&REPTMON&NOWK,
     BNM.CURN&REPTMON&NOWK, BNM.DEPT&REPTMON&NOWK) from PRE-CACHED parquet
     files. DALWPBBD no longer resolves, dates, or converts its own inputs —
-    every physical path and the REPTMON/NOWK values are owned and supplied
-    by the calling job (e.g. EIBDLIQP.py), since this program is shared
-    across several jobs whose input file dates differ.
+    every physical input path is owned and supplied by the calling job
+    (e.g. EIBDLIQP.py), since this program is shared across several jobs
+    whose input file dates differ.
 
-    Returns (BNM_SAVG, BNM_CURN, BNM_DEPT) and also persists them under
-    output_cache_dir for downstream re-use (e.g. EIIWREXL.py), same as
-    before.
+    Returns (BNM_SAVG, BNM_CURN, BNM_DEPT) only. This program has no
+    physical output of its own (BNM is a temporary library in the SAS job);
+    any persistence is the caller's responsibility.
     """
-    output_cache_dir.mkdir(parents=True, exist_ok=True)
-    SAVG_CACHE = output_cache_dir / f"SAVG{reptmon}{nowk}.parquet"
-    CURN_CACHE = output_cache_dir / f"CURN{reptmon}{nowk}.parquet"
-    DEPT_CACHE = output_cache_dir / f"DEPT{reptmon}{nowk}.parquet"
-
     SAVING_SAS_CACHE  = saving_cache
     CURRENT_SAS_CACHE = current_cache
     CISDP_SAS_CACHE   = cisdp_cache
@@ -294,26 +129,6 @@ def build_savg_curn_dept(
     con.close()
 
     con = duckdb.connect(database=":memory:")
-
-    # test = con.execute(f"SELECT * FROM read_parquet('{SAVING_SAS_CACHE.as_posix()}') LIMIT 1").pl()
-    # print("Columns in Parquet:", test.columns)
-
-    # _savg_raw = con.execute(f"""
-    #     SELECT
-    #         CAST("BRANCH"   AS INTEGER) AS "BRANCH",
-    #         CAST("PRODUCT"  AS INTEGER) AS "PRODUCT",
-    #         CAST("CUSTCODE" AS INTEGER) AS "CUSTCODE",
-    #         CAST("NAME"     AS VARCHAR) AS "NAME",
-    #         CAST("ACCTNO"   AS BIGINT)  AS "ACCTNO",
-    #         CAST("CURBAL"   AS DOUBLE)  AS "CURBAL",
-    #         CAST("INTPAYBL" AS DOUBLE)  AS "INTPAYBL",
-    #         CAST("COSTCTR"  AS VARCHAR) AS "COSTCTR",
-    #         CAST("DNBFISME" AS VARCHAR) AS "DNBFISME",
-    #         CAST("CURCODE"  AS VARCHAR) AS "CURCODE"
-    #     FROM read_parquet('{SAVING_SAS_CACHE.as_posix()}')
-    #     WHERE "OPENIND" NOT IN ('B','C','P') AND "CURBAL" >= 0
-    # """).pl()
-    # con.close()
 
     BNM_SAVG = _savg_raw.with_columns([
         pl.col("CUSTCODE").map_elements(sacustcd_format, return_dtype=pl.Utf8).alias("CUSTCD"),
@@ -418,7 +233,7 @@ def build_savg_curn_dept(
     # ----------------------------------------------------------------------------
     # PROC SORT DATA=CISDP.DEPOSIT OUT=CISDP(KEEP=ACCTNO CUSTNO); BY ACCTNO;
     # MERGE BNM.FCY(IN=A) CISDP; BY ACCTNO; IF A;   -- left join FCY -> CISDP
-    # PROC APPEND FCY(DROP=CUSTNO) BASE=CURN         -- append FCY rows to CURN
+    # PROC APPEND FCY(DROP=CUSTNO) BASE=CURN        -- append FCY rows to CURN
     # ----------------------------------------------------------------------------
     print("  Joining FCY with CISDP and appending onto CURN...")
 
@@ -430,7 +245,7 @@ def build_savg_curn_dept(
     con.close()
 
     BNM_FCY = BNM_FCY.join(cisdp, on="ACCTNO", how="left")  # IF A -> keep all FCY rows
-    BNM_FCY_FOR_APPEND = BNM_FCY.select(_curn_out_cols)      # DROP=CUSTNO
+    BNM_FCY_FOR_APPEND = BNM_FCY.select(_curn_out_cols)     # DROP=CUSTNO
 
     BNM_CURN = pl.concat([BNM_CURN_BASE, BNM_FCY_FOR_APPEND])
 
@@ -473,17 +288,7 @@ def build_savg_curn_dept(
     # and downstream programs' use — see module docstring "NON-FILE / DERIVED /
     # TEMPORARY OUTPUTS")
     # ============================================================================
-    # BNM_SAVG.write_parquet(SAVG_CACHE)
-    # BNM_CURN.write_parquet(CURN_CACHE)
-    # BNM_DEPT.write_parquet(DEPT_CACHE)
-
-    # print(f"\nDALWPBBD complete. Cached: {SAVG_CACHE.name}, {CURN_CACHE.name}, {DEPT_CACHE.name}\n")
-    # print("==================================================")
-
-    BNM_SAVG.write_parquet(SAVG_CACHE)
-    BNM_CURN.write_parquet(CURN_CACHE)
-    BNM_DEPT.write_parquet(DEPT_CACHE)
-
-    print(f"  Cached: {SAVG_CACHE.name}, {CURN_CACHE.name}, {DEPT_CACHE.name}")
+    # BNM library is &&TEMP in the SAS job: nothing is persisted here.
+    print("  BNM_SAVG / BNM_CURN / BNM_DEPT built in memory.")
     print("==================================================")
     return BNM_SAVG, BNM_CURN, BNM_DEPT
