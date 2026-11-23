@@ -46,7 +46,7 @@ for _d in (INPUT_NOTE_DIR, INPUT_GLRMFXP2_DIR, LIB_ROOT,
            BASE_LIB, FINAL_LIB, STORE_LIB, OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_FILE = OUTPUT_DIR / f"NLFBEHAVE_EIBMNLFE_{REPTDAY}{REPTMON}{REPTYY}.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"BEHAVE@{REPTDAY}{REPTMON}{REPTYY}.txt"
 
 # # Testing Path
 # BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
