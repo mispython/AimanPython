@@ -710,9 +710,15 @@ def _process(store_df: pl.DataFrame, weekstdt: date, weekend: date, lastdt: date
     if _LAST_MACRO == 0:
         pct = None   # SAS: division by zero gives a missing value, the row is still appended
     elif max_row["DATE"] > min_row["DATE"]:
-        pct = round(((max_row["BALANCE"] - min_row["BALANCE"]) / _LAST_MACRO) * 100, 2)
+        pct = _sas_round(
+            ((max_row["BALANCE"] - min_row["BALANCE"]) / _LAST_MACRO) * 100,
+            0.01
+        )
     else:
-        pct = round(((min_row["BALANCE"] - max_row["BALANCE"]) / _LAST_MACRO) * 100, 2)
+        pct = _sas_round(
+            ((min_row["BALANCE"] - max_row["BALANCE"]) / _LAST_MACRO) * 100,
+            0.01
+        )
 
     return {"STATUS": status, "MAX": max_row["BALANCE"], "DATEMAX": max_row["DATE"],
             "MIN": min_row["BALANCE"], "DATEMIN": min_row["DATE"],
@@ -1072,13 +1078,13 @@ def report(prod: str, store_df: pl.DataFrame):
         k: max(abs(lowest[k]), abs(highest[k])) for k in ("WEEK", "MONTH", "QTR", "HALFYR", "YEAR")
     }
 
-    week_amt   = round(maxmin_pct["WEEK"] * outstand / 100, 1)
-    month_amt  = round((maxmin_pct["MONTH"] * outstand / 100) - week_amt, 1)
-    qtr_amt    = round((maxmin_pct["QTR"] * outstand / 100) - (week_amt + month_amt))
-    halfyr_amt = round((maxmin_pct["HALFYR"] * outstand / 100) - (week_amt + month_amt + qtr_amt))
-    year_amt   = round((maxmin_pct["YEAR"] * outstand / 100) - (week_amt + month_amt + qtr_amt + halfyr_amt))
-    last_amt   = round(outstand - (week_amt + month_amt + qtr_amt + halfyr_amt + year_amt))
-    total_amt  = round(outstand)
+    week_amt   = _sas_round(maxmin_pct["WEEK"] * outstand / 100, 1.0)
+    month_amt  = _sas_round((maxmin_pct["MONTH"] * outstand / 100) - week_amt, 1.0)
+    qtr_amt    = _sas_round((maxmin_pct["QTR"] * outstand / 100) - (week_amt + month_amt), 1.0)
+    halfyr_amt = _sas_round((maxmin_pct["HALFYR"] * outstand / 100) - (week_amt + month_amt + qtr_amt), 1.0)
+    year_amt   = _sas_round((maxmin_pct["YEAR"] * outstand / 100) - (week_amt + month_amt + qtr_amt + halfyr_amt), 1.0)
+    last_amt   = _sas_round(outstand - (week_amt + month_amt + qtr_amt + halfyr_amt + year_amt), 1.0)
+    total_amt  = _sas_round(outstand, 1.0)
 
     week_amt   = max(week_amt, 0)
     month_amt  = max(month_amt, 0)
