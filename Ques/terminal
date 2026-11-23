@@ -1,7 +1,86 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/9_inspect_sas_column_datatype.py
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/9_inspect_sas_column_datatype.py", line 95, in <module>
-    read_sas_columns(SAS_FILE_PATH)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/9_inspect_sas_column_datatype.py", line 23, in read_sas_columns
-    if not file_path.lower().endswith(".sas7bdat"):
-AttributeError: 'PosixPath' object has no attribute 'lower'
+I had no real SAS listing to copy from, so this follows the standard PROC PRINT listing layout. The layout assumptions are listed below so you can check them against a real BEHAVE listing.
+
+Replace _print_table
+
+Delete the old _print_table and put this block in its place. report() stays as given in my previous message. Its columns tuples still carry a width, but the width is now ignored.
+
+python
+
+
+
+
+
+# PROC PRINT listing layout (OPTIONS NOCENTER)
+OBS_LABEL = "OBS"          # heading of the observation-number column
+COL_GAP = " " * 4          # blanks between PROC PRINT columns
+BLANK_AFTER_HEADER = True  # blank line between the column headings and the first observation
+
+
+def _print_table(title_lines, columns, rows, page_size=PAGE_SIZE):
+    """
+    PROC PRINT listing with ASA carriage control.
+    columns: list of (header, width, align) tuples; width is ignored because
+             PROC PRINT sizes each column to its widest heading/value.
+    rows: list of tuples of already formatted strings.
+    """
+    obs_width = max(len(OBS_LABEL), len(str(len(rows))))
+    widths = [
+        max([len(header)] + [len(row[i]) for row in rows])
+        for i, (header, _, _) in enumerate(columns)
+    ]
+
+    def _cell(text: str, width: int, align: str) -> str:
+        return text.ljust(width) if align == "left" else text.rjust(width)
+
+    header_line = COL_GAP.join(
+        [OBS_LABEL.rjust(obs_width)]
+        + [_cell(header, width, align)
+           for (header, _, align), width in zip(columns, widths)]
+    )
+
+    def _header_block():
+        block = [("1" if i == 0 else " ") + t for i, t in enumerate(title_lines)]
+        block.append(" ")                    # blank line between titles and headings
+        block.append(" " + header_line)
+        if BLANK_AFTER_HEADER:
+            block.append(" ")
+        return block
+
+    lines = []
+    header_block = _header_block()
+    lines.extend(header_block)
+    on_page = len(header_block)
+
+    for idx, row in enumerate(rows, start=1):
+        if on_page >= page_size:
+            header_block = _header_block()   # new page: ASA '1' + titles + headings repeat
+            lines.extend(header_block)
+            on_page = len(header_block)
+        lines.append(" " + COL_GAP.join(
+            [str(idx).rjust(obs_width)]
+            + [_cell(value, width, align)
+               for (_, _, align), width, value in zip(columns, widths, row)]
+        ))
+        on_page += 1
+
+    return lines
+
+
+
+
+
+What changed from the old layout
+No dashed line under the headings. PROC PRINT does not print one.
+Blank line after the title and another after the column headings.
+Column widths are the widest of the heading and the values in that table, not fixed 10 and 15.
+Alignment: numeric headings and values are right-aligned, and character ones are left-aligned. STATUS, FINALSTAT and DESC are the character columns.
+Separator: 4 blanks between columns, as in the standard PROC PRINT listing.
+OBS column: right-aligned, with the row number continuing across pages.
+Paging: each PROC PRINT starts a new page with 1. The title and headings repeat on every page, and a page holds PAGE_SIZE (60) lines.
+Assumptions to check against a real SAS listing
+Column gap of 4 blanks.
+Blank line after the headings, which is the BLANK_AFTER_HEADER constant.
+OBS in capitals, because the JCL runs SAS609. SAS 8 and later print Obs.
+No date or page number on the title line. The program only sets NOCENTER, so this assumes your site runs with NODATE NONUMBER.
+
+If a listing differs on any of these, only OBS_LABEL, COL_GAP, BLANK_AFTER_HEADER, or the title line in _header_block needs changing. Pasting about 12 lines of one product from SAP.PBB.NLF.BEHAVE.TEXT would settle all four. The values in each cell already follow SAS formatting: _best12 and . for missing, from the earlier report() change. Step 11 pads every line to 250 characters.
