@@ -957,3 +957,64 @@ def _best12(value) -> str:
 
 
 
+# ============================================================================
+# STEP 6: MERGE GLRMFXP2 INTO DEPFXP2  (BY ITEM, sum WEEK/LAST/BALANCE)
+# ============================================================================
+print("\nStep 6: Merging GLRMFXP2 into DEPFXP2 (by ITEM)...")
+
+# PROC SORT BY ITEM on the inputs is not needed for a join; the merged result is
+# ordered by ITEM afterwards (MERGE ... BY ITEM output order).
+con = duckdb.connect(database=":memory:")
+gl_pl = con.execute(f"""
+    SELECT
+        CAST("ITEM" AS VARCHAR)     AS "ITEM",
+        CAST("_TYPE_" AS DOUBLE)    AS "_TYPE_",
+        CAST("_FREQ_" AS DOUBLE)    AS "_FREQ_",
+        CAST("WEEK" AS DOUBLE)      AS "WEEK1",
+        CAST("MONTH" AS DOUBLE)     AS "MONTH_GL",
+        CAST("QTR" AS DOUBLE)       AS "QTR_GL",
+        CAST("HALFYR" AS DOUBLE)    AS "HALFYR_GL",
+        CAST("YEAR" AS DOUBLE)      AS "YEAR_GL",
+        CAST("LAST" AS DOUBLE)      AS "LAST1",
+        CAST("BALANCE" AS DOUBLE)   AS "BALANCE1"
+    FROM read_parquet('{GL_CACHE}')
+""").pl()
+con.close()
+gc.collect()
+
+depfxp2 = depfxp2.with_columns(pl.lit(True).alias("_IN_DEP"))
+depfxp2 = depfxp2.join(gl_pl, on="ITEM", how="full", coalesce=True)
+_in_dep = pl.col("_IN_DEP").is_not_null()
+depfxp2 = depfxp2.with_columns([
+    (pl.col("WEEK").fill_null(0.0) + pl.col("WEEK1").fill_null(0.0)).alias("WEEK"),
+    (pl.col("LAST").fill_null(0.0) + pl.col("LAST1").fill_null(0.0)).alias("LAST"),
+    (pl.col("BALANCE").fill_null(0.0) + pl.col("BALANCE1").fill_null(0.0)).alias("BALANCE"),
+    # SAS MERGE: matched ITEMs keep DEPFXP2's MONTH/QTR/HALFYR/YEAR, GL-only ITEMs keep the GL's
+    pl.when(_in_dep).then(pl.col("MONTH")).otherwise(pl.col("MONTH_GL")).alias("MONTH"),
+    pl.when(_in_dep).then(pl.col("QTR")).otherwise(pl.col("QTR_GL")).alias("QTR"),
+    pl.when(_in_dep).then(pl.col("HALFYR")).otherwise(pl.col("HALFYR_GL")).alias("HALFYR"),
+    pl.when(_in_dep).then(pl.col("YEAR")).otherwise(pl.col("YEAR_GL")).alias("YEAR"),
+]).drop(["WEEK1", "LAST1", "BALANCE1", "MONTH_GL", "QTR_GL", "HALFYR_GL", "YEAR_GL", "_IN_DEP"])
+
+depfxp2 = depfxp2.sort("ITEM")   # MERGE ... BY ITEM output is ordered by ITEM (missing first)
+
+print(f"  DEPFXP2 rows after GL merge: {len(depfxp2):,}")
+
+
+
+
+_gl_cols = ["_TYPE_", "_FREQ_"]
+
+base_deposit = pl.concat(
+    [
+        deprmp2.with_columns(
+            [pl.lit(None, dtype=pl.Float64).alias(c) for c in _gl_cols]
+        ).select(_common_cols + _gl_cols),
+        depfxp2.select(_common_cols + _gl_cols),
+    ],
+    how="vertical_relaxed",
+)
+
+
+
+
