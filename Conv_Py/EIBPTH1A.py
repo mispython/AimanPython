@@ -148,7 +148,6 @@ print(f"  REPTMON  : {REPTMON}   NOWK : {NOWK}   REPTYEAR : {REPTYEAR}")
 # PATH CONFIGURATION
 # ============================================================================
 # Production Path
-
 INPUT_LNNOTE_DIR  = Path("/sas/ln/dwh/enrichment")
 INPUT_LNNOTE_FILE = INPUT_LNNOTE_DIR / f"enrh_ln_note_m{REPTMON}.sas7bdat"      # Filter by ENTITY_CD != 'PIBB'
 
