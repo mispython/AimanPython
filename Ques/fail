@@ -1,3 +1,124 @@
+=========================== EIBMSAPC
+
+Dependency:
+    None for the report date -- REPTDATE is derived from the SAS batch date
+    (SOURCE_SYSTEM_CD 'SAS' in ctl_dwh_batch_dttm.sas7bdat), which replaces
+    TODAY() in the SAS DATA REPTDATE step. REPTDATE = last day of the
+    previous month.
+
+Physical input:
+    BNMTBLX  (JCL //BNMTBLX DD DSN=SAP.PBB.KAPITIX.TXT(0))
+        This is NOT a SAS dataset -- the ".TXT" DSN confirms a plain
+        fixed-width mainframe flat file, read here via byte-offset slicing
+        (never parquet/read_csv) from a fixed path.
+
+
+
+
+from pathlib import Path
+from datetime import date, datetime, timedelta
+
+import pandas as pd
+import polars as pl
+
+
+
+
+# ============================================================================
+# CONTROL FILE: batch date (SOURCE_SYSTEM_CD = 'SAS')
+# ============================================================================
+BATCH_DATE_CTL_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+SOURCE_SYSTEM_CD = "SAS"
+
+
+def get_batch_date_dwh(source_system_cd: str) -> str:
+    """Return the batch date string ("YYYY-MM-DD HH:MM:SS") for the given
+    SOURCE_SYSTEM_CD, read directly from the DWH batch control file."""
+    if not BATCH_DATE_CTL_FILE.exists():
+        raise FileNotFoundError(
+            f"Batch date control file not found: {BATCH_DATE_CTL_FILE}"
+        )
+
+    ctl = pd.read_sas(BATCH_DATE_CTL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    rows = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd]
+    if rows.empty:
+        raise RuntimeError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {BATCH_DATE_CTL_FILE}"
+        )
+
+    batch_dttm = pd.to_datetime(rows.iloc[0]["BATCH_DTTM"])
+    return batch_dttm.strftime("%Y-%m-%d %H:%M:%S")
+
+
+
+
+def _derive_context(batch_dt: datetime) -> dict:
+    # SAS: REPTDATE=INPUT('01'||PUT(MONTH(TODAY()),Z2.)||PUT(YEAR(TODAY()),4.),DDMMYY8.)-1;
+    # TODAY() is replaced by the SAS batch date; REPTDATE = last day of previous month.
+    reptdate = batch_dt.date().replace(day=1) - timedelta(days=1)
+
+    day_of_month = reptdate.day
+    # SELECT(DAY(REPTDATE)): REPTDATE is always a month-end date (28-31), so
+    # WHEN(8)/WHEN(15)/WHEN(22) never fire in practice -- OTHERWISE always
+    # applies. Preserved verbatim (dead branches kept, see below).
+    if day_of_month == 8:
+        sdd, wk, wk1, wk2, wk3 = 1, "1", "4", None, None
+    elif day_of_month == 15:
+        sdd, wk, wk1, wk2, wk3 = 9, "2", "1", None, None
+    elif day_of_month == 22:
+        sdd, wk, wk1, wk2, wk3 = 16, "3", "2", None, None
+    else:
+        sdd, wk, wk1, wk2, wk3 = 23, "4", "3", "2", "1"
+
+    mm = reptdate.month
+    if wk == "1":
+        mm1 = mm - 1 if mm - 1 != 0 else 12
+    else:
+        mm1 = mm
+    mm2 = mm - 1 if mm - 1 != 0 else 12
+
+    return {
+        "reptdate": reptdate,
+        "reptyear": reptdate.strftime("%Y"),
+        "reptmon": reptdate.strftime("%m"),
+        "reptmon1": f"{mm1:02d}",
+        "reptmon2": f"{mm2:02d}",
+        "reptday": f"{day_of_month:02d}",
+        "rdate": reptdate.strftime("%d/%m/%y"),
+        "sdate": date(reptdate.year, mm, sdd),
+        "sdesc": "PUBLIC BANK BERHAD",
+        # NOWK1/2/3 computed properly here (unlike EIBPTH1A's own copy of
+        # this step, which hardcodes them to '1'/'2'/'3' -- a SAS quirk).
+        # Neither this program nor EIBPTH1A references NOWK1/2/3 downstream,
+        # so this only affects documentation/macro-var parity, not output.
+        "nowk": wk,
+        "nowk1": wk1,
+        "nowk2": wk2,
+        "nowk3": wk3,
+    }
+
+
+BATCH_DT = datetime.strptime(get_batch_date_dwh(SOURCE_SYSTEM_CD), "%Y-%m-%d %H:%M:%S")
+_CTX = _derive_context(BATCH_DT)
+REPTDATE = _CTX["reptdate"]
+REPTYEAR = _CTX["reptyear"]
+REPTMON = _CTX["reptmon"]
+
+RPYR, RPMTH, RPDAY = REPTDATE.year, REPTDATE.month, REPTDATE.day
+
+
+
+
+INPUT_BNMTBLX_DIR  = Path("/host_pq/mis/input/textfile")
+INPUT_BNMTBLX_FILE = INPUT_BNMTBLX_DIR / "BNMTBLX.txt"
+
+
+
+
+============================ EIBPTH1A
+
 Dependencies (module-level execution, matching EIBDRBDP.py JCL pattern):
     from PBBLNFMT_AII import format_lnprod, format_lndenom
     from KALMLIFE import build_k3fei    -> K3FEI built by this program
@@ -29,7 +150,7 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from PBBLNFMT_AII import format_lnprod, format_lndenom
+from PBBLNFMT import format_lnprod, format_lndenom
 from KALMLIFE import build_k3fei
 from EIBMSAPC import KAPX
 
@@ -364,7 +485,7 @@ print("\nEIBPTH1A complete.")
 
 
 
-=====================================
+=========================== Changes
 
 from EIBMSAPC import build_kapx
 
@@ -387,6 +508,8 @@ KAPX = build_kapx(INPUT_BNMTBLX_FILE, REPTDATE)         # %INC PGM(EIBMSAPC)
 
 
 
+
+======================== Flags
 
     # ========================================================================
     # STEP 5: DATA SALPUR; MERGE PURCODE SALCODE; BY BNMCODE;
