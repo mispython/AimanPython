@@ -28,31 +28,49 @@ from input_date import get_latest_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-
-# INPUT_NOTE_DIR      = BASE_DIR / "input" / "prod" / "EIBMNLFE"          # note
-# INPUT_GLRMFXP2_DIR  = BASE_DIR / "input" / "prod" / "EIBMNLFE"          # glrmfxp2
-
-STG_DIR             = Path("/stgsrcsys/host/uat/AII/EIBMNLFE")
-INPUT_NOTE_DIR      = STG_DIR  / "STORE1"           # note
-INPUT_GLRMFXP2_DIR  = STG_DIR  / "STOREGL"          # glrmfxp2
-
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMNLFE"
+# Production Path
+BASE_DIR            = Path("/exdwh/host")
+INPUT_NOTE_DIR      = BASE_DIR / "d_nlf"
+INPUT_GLRMFXP2_DIR  = Path("/host_pq/mis/input/gl/nlf")
 
 # Persistent library replicating SAS permanent libraries (BASE/STORE/FINAL).
-LIB_ROOT   = BASE_DIR / "input" / "lib" / "EIBMNLFE"
-BASE_LIB   = LIB_ROOT / "base"     # BASE.<PROD> - true daily/milestone accumulator
-STORE_LIB  = LIB_ROOT / "store"    # STORE.* - snapshot of this run's working sets
-FINAL_LIB  = LIB_ROOT / "final"    # FINAL.* - snapshot of this run's report sets
+LIB_ROOT   = INPUT_NOTE_DIR
+BASE_LIB   = LIB_ROOT / "base"      # BASE.<PROD> - true daily/milestone accumulator
+FINAL_LIB  = LIB_ROOT / "sa"        # FINAL.* - snapshot of this run's report sets
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMNLFE"
+STORE_LIB  = BASE_DIR / "nlf"       # STORE.* - snapshot of this run's working sets
 
-for _d in (INPUT_NOTE_DIR, INPUT_GLRMFXP2_DIR, CACHE_DIR,
-           BASE_LIB, STORE_LIB, FINAL_LIB, OUTPUT_DIR):
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMNLFE")
+
+for _d in (INPUT_NOTE_DIR, INPUT_GLRMFXP2_DIR, LIB_ROOT,
+           BASE_LIB, FINAL_LIB, STORE_LIB, OUTPUT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
-# Output filename carries no date component (GDG "+1" generation) - fixed name.
-OUTPUT_FILE = OUTPUT_DIR / "NLFBEHAVE_EIBMNLFE.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"NLFBEHAVE_EIBMNLFE_{REPTYEAR}{REPTMON}{REPTDAY}.txt"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+# STG_DIR             = Path("/stgsrcsys/host/uat/AII/EIBMNLFE")
+# INPUT_NOTE_DIR      = STG_DIR  / "STORE1"           # note
+# INPUT_GLRMFXP2_DIR  = STG_DIR  / "STOREGL"          # glrmfxp2
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBMNLFE"
+
+# # Persistent library replicating SAS permanent libraries (BASE/STORE/FINAL).
+# LIB_ROOT   = BASE_DIR / "input" / "lib" / "EIBMNLFE"
+# BASE_LIB   = LIB_ROOT / "base"     # BASE.<PROD> - true daily/milestone accumulator
+# STORE_LIB  = LIB_ROOT / "store"    # STORE.* - snapshot of this run's working sets
+# FINAL_LIB  = LIB_ROOT / "final"    # FINAL.* - snapshot of this run's report sets
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMNLFE"
+
+# for _d in (INPUT_NOTE_DIR, INPUT_GLRMFXP2_DIR, CACHE_DIR,
+#            BASE_LIB, STORE_LIB, FINAL_LIB, OUTPUT_DIR):
+#     _d.mkdir(parents=True, exist_ok=True)
+
+# # Output filename carries no date component (GDG "+1" generation) - fixed name.
+# OUTPUT_FILE = OUTPUT_DIR / "NLFBEHAVE_EIBMNLFE.txt"
 
 # ============================================================================
 # REPORT PAGE CONFIGURATION
