@@ -26,29 +26,47 @@ from input_date import get_latest_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# Production Path
+BASE_DIR            = Path("/exdwh/host")
+INPUT_NOTE_DIR      = BASE_DIR / "d_nlf" / "pibb"
+
+# Persistent library replicating SAS permanent libraries (BASE/STORE/FINAL).
+LIB_ROOT   = INPUT_NOTE_DIR
+BASE_LIB   = LIB_ROOT / "base"          # BASE.<PROD> - true daily/milestone accumulator
+FINAL_LIB  = LIB_ROOT / "sa"            # FINAL.* - snapshot of this run's report sets
+
+STORE_LIB  = BASE_DIR / "nlf" / "pibb"          # STORE.* - snapshot of this run's working sets
+
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIIMNLFE")
+
+for _d in (INPUT_NOTE_DIR, LIB_ROOT, BASE_LIB,
+           FINAL_LIB, STORE_LIB, OUTPUT_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
 
 # STORE1 DD -> SAP.PIBB.NLF.DAILY ("i" prefix per PIBB naming convention)
 # INPUT_NOTE_DIR      = BASE_DIR / "input" / "prod" / "EIBMNLFE"          # note
 
-STG_DIR             = Path("/stgsrcsys/host/uat/AII/EIIMNLFE")
-INPUT_NOTE_DIR      = STG_DIR  / "STORE1"           # note
+# STG_DIR             = Path("/stgsrcsys/host/uat/AII/EIIMNLFE")
+# INPUT_NOTE_DIR      = STG_DIR  / "STORE1"           # note
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMNLFE"
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIIMNLFE"
 
-# Persistent library replicating SAS permanent libraries (BASE/STORE/FINAL).
-LIB_ROOT   = BASE_DIR / "input" / "lib" / "EIIMNLFE"
-BASE_LIB   = LIB_ROOT / "base"     # BASE.<PROD> - true daily/milestone accumulator
-STORE_LIB  = LIB_ROOT / "store"    # STORE.* - snapshot of this run's working sets
-FINAL_LIB  = LIB_ROOT / "final"    # FINAL.* - snapshot of this run's report sets
+# # Persistent library replicating SAS permanent libraries (BASE/STORE/FINAL).
+# LIB_ROOT   = BASE_DIR / "input" / "lib" / "EIIMNLFE"
+# BASE_LIB   = LIB_ROOT / "base"     # BASE.<PROD> - true daily/milestone accumulator
+# STORE_LIB  = LIB_ROOT / "store"    # STORE.* - snapshot of this run's working sets
+# FINAL_LIB  = LIB_ROOT / "final"    # FINAL.* - snapshot of this run's report sets
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIIMNLFE"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIIMNLFE"
 
-for _d in (INPUT_NOTE_DIR, CACHE_DIR, BASE_LIB, STORE_LIB, FINAL_LIB, OUTPUT_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
+# for _d in (INPUT_NOTE_DIR, CACHE_DIR, BASE_LIB, STORE_LIB, FINAL_LIB, OUTPUT_DIR):
+#     _d.mkdir(parents=True, exist_ok=True)
 
 # Output filename carries no date component (GDG "+1" generation) - fixed name.
-OUTPUT_FILE = OUTPUT_DIR / "NLFBEHAVE_EIIMNLFE.txt"
+OUTPUT_FILE = OUTPUT_DIR / f"IBEHAVE@{REPTDAY}{REPTMON}{REPTYY}.txt"
 
 # ============================================================================
 # REPORT PAGE CONFIGURATION
@@ -309,7 +327,7 @@ def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
 # ============================================================================
 print("\nStep 2: Resolving NOTE input file...")
 
-_note_prefix = f"inote{REPTYEAR}{REPTMON}{REPTDAY}"
+_note_prefix = f"note{REPTYEAR}{REPTMON}{REPTDAY}"
 
 note_path = get_latest_file(INPUT_NOTE_DIR, prefix=_note_prefix)
 print(f"  NOTE : {note_path.name}")
