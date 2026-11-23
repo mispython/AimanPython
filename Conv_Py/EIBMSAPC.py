@@ -98,7 +98,7 @@ print(f"  REPTDATE : {REPTDATE.isoformat()}   RDATE : {_CTX['rdate']}")
 # ============================================================================
 # Production Path
 INPUT_BNMTBLX_DIR  = Path("/host_pq/mis/input/textfile")
-INPUT_BNMTBLX_FILE = INPUT_BNMTBLX_DIR / "BNMTBLX.txt
+INPUT_BNMTBLX_FILE = INPUT_BNMTBLX_DIR / "BNMTBLX.txt"
 
 # # Testing Path
 # BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
