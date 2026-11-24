@@ -1,14 +1,13 @@
-//******************************************************************
-//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
-//******************************************************************
-//*%OPC SCAN
-//RUNSFTP  EXEC COZBATCH
-//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
-//           DD *
-lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-lzopts linerule=$lr
-cd TD/INTERBANK/NLF
-put //SAP.PBB.NLF.BEHAVE.TEXT(0)  BEHAVE@%ODD.%OMM.%OYY..TXT
-cd /TD/PIBB/NLF
-put //SAP.PIBB.NLF.BEHAVE.TEXT(0)  IBEHAVE@%ODD.%OMM.%OYY..TXT
-EOB
+//FTPELIST JOB MSGCLASS=X,MSGLEVEL=(2,1),NOTIFY=OPER,                   
+//         CLASS=A,TIME=1440                                            
+//FTP      EXEC PGM=FTP,REGION=4096K,                                   
+//      PARM=('192.168.7.46 (EXIT TIMEOUT 60')                          
+//NETRC    DD DSN=OPER.PBB.CONTROL(PASCRISP),DISP=SHR                   
+//INPUT    DD *                                                         
+PUT 'SAP.BANK.LOANLIST.TEXT'  LOANLIST                                  
+PUT 'SAP.BANK.ODLIST.TEXT'    ODLIST                                    
+PUT 'SAP.PIBB.LOANLIST.TEXT'  ILOANLIST                                 
+PUT 'SAP.PIBB.ODLIST.TEXT'    IODLIST                                   
+quit                                                                    
+//OUTPUT   DD SYSOUT=*                                                  
+//SYSPRINT DD SYSOUT=*  
