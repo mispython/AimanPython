@@ -30,35 +30,63 @@ from output_date import build_output_file
 from PBBDPFMT import caprod_format, saprod_format
 
 # ============================================================================
-# PATH CONFIGURATION
+# PATH CONFIGURATION        
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# Production Path
+INPUT_DEPOSIT_DIR   = Path("/sas/deposit/dwh/integration")
+CURRENT_FILE        = INPUT_DEPOSIT_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
+FD_FILE             = INPUT_DEPOSIT_DIR / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+SAVING_FILE         = INPUT_DEPOSIT_DIR / f"intg_dp_acct_saving_d{REPTDAY}.sas7bdat"
 
-# DEPOSIT DD -> dpd_ca / dpd_fd / dpd_sa (dated filenames, latest per run)
-INPUT_DEPOSIT_DIR = BASE_DIR / "input" / "prod" / "deposit_d"
-
-# CISDP DD / CISFD DD -> fixed filenames, no date component
-INPUT_CIS_DIR    = Path("/stgsrcsys/host/uat/AII/EIBDARTB")
-INPUT_CISDP_FILE = INPUT_CIS_DIR / "CISDP" / "CISDP_deposit.sas7bdat"
-INPUT_CISFD_FILE = INPUT_CIS_DIR / "CISFD" / "CISFD_deposit.sas7bdat"
+# CISDP DD DSN=SAP.PBB.CISBEXT.DP / CISFD DD DSN=SAP.PBB.CRM.CISBEXT
+CIS_DIR             = Path("/dwh/rsd_cis")
+INPUT_CISDP_FILE    = CIS_DIR / f"cisr1ca{REPTYY}{REPTMON}{REPTDAY}.sas7bdat"
+INPUT_CISFD_SA_FILE = CIS_DIR / f"cisr1sa{REPTYY}{REPTMON}{REPTDAY}.sas7bdat"
+INPUT_CISFD_FD_FILE = CIS_DIR / f"cisr1fd{REPTYY}{REPTMON}{REPTDAY}.sas7bdat"
+# INPUT_CISFD_FILE    = CIS_DIR / "enrh_exdwh_cisr1.sas7bdat"
 
 # LIST DD -> fixed filenames, no date component
-INPUT_LIST_DIR      = Path("/stgsrcsys/host/uat/AII/EIBDTP50")
+INPUT_LIST_DIR      = Path("/host_pq/mis/input/lcr/listdata")
 INPUT_MNI_LIST_FILE = INPUT_LIST_DIR / "cof_mni_depositor_list.sas7bdat" 
 INPUT_TOPDEP_FILE   = INPUT_LIST_DIR / "keep_top_dep_excl_pbb.sas7bdat" 
 
-# Parquet cache directory
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDTP50"
-
 # Output directory (fixed filenames -- see note above re: GDG generations)
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDTP5J"
-
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBDTP5J")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_FD11 = build_output_file(OUTPUT_DIR, "INDVTP50", date_format="ddmmyy").with_suffix(".txt")   # FD11TEXT (Individual)
-OUTPUT_FD12 = build_output_file(OUTPUT_DIR, "CORPTP50", date_format="ddmmyy").with_suffix(".txt")   # FD12TEXT (Corporate)
-OUTPUT_FD2  = build_output_file(OUTPUT_DIR, "SUBSTP50", date_format="ddmmyy").with_suffix(".txt")   # FD2TEXT  (Subsidiaries)
+OUTPUT_FD11 = OUTPUT_DIR / f"INDVTP50@{REPTDAY}{REPTMON}{REPTYY}.txt"       # FD11TEXT (Individual)
+OUTPUT_FD12 = OUTPUT_DIR / f"CORPTP50@{REPTDAY}{REPTMON}{REPTYY}.txt"       # FD12TEXT (Corporate)
+OUTPUT_FD2  = OUTPUT_DIR / f"SUBSTP50@{REPTDAY}{REPTMON}{REPTYY}.txt"       # FD2TEXT  (Subsidiaries)
+
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+# # DEPOSIT DD -> dpd_ca / dpd_fd / dpd_sa (dated filenames, latest per run)
+# INPUT_DEPOSIT_DIR = BASE_DIR / "input" / "prod" / "deposit_d"
+
+# # CISDP DD / CISFD DD -> fixed filenames, no date component
+# INPUT_CIS_DIR    = Path("/stgsrcsys/host/uat/AII/EIBDARTB")
+# INPUT_CISDP_FILE = INPUT_CIS_DIR / "CISDP" / "CISDP_deposit.sas7bdat"
+# INPUT_CISFD_FILE = INPUT_CIS_DIR / "CISFD" / "CISFD_deposit.sas7bdat"
+
+# # LIST DD -> fixed filenames, no date component
+# INPUT_LIST_DIR      = Path("/stgsrcsys/host/uat/AII/EIBDTP50")
+# INPUT_MNI_LIST_FILE = INPUT_LIST_DIR / "cof_mni_depositor_list.sas7bdat" 
+# INPUT_TOPDEP_FILE   = INPUT_LIST_DIR / "keep_top_dep_excl_pbb.sas7bdat" 
+
+# # Parquet cache directory
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDTP50"
+
+# # Output directory (fixed filenames -- see note above re: GDG generations)
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBDTP5J"
+
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# OUTPUT_FD11 = build_output_file(OUTPUT_DIR, "INDVTP50", date_format="ddmmyy").with_suffix(".txt")   # FD11TEXT (Individual)
+# OUTPUT_FD12 = build_output_file(OUTPUT_DIR, "CORPTP50", date_format="ddmmyy").with_suffix(".txt")   # FD12TEXT (Corporate)
+# OUTPUT_FD2  = build_output_file(OUTPUT_DIR, "SUBSTP50", date_format="ddmmyy").with_suffix(".txt")   # FD2TEXT  (Subsidiaries)
 
 # ============================================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
