@@ -1,229 +1,148 @@
-import os
-import gc
-import sys
-import math
+#!/usr/bin/env python3
+"""
+Program : EIIMTOP5.py
+Purpose : Generate Top 50 FD+CA Individual and Corporate depositors, and
+          PB Subsidiaries report for Public Islamic Bank Berhad (PIBB),
+          using .sas7bdat inputs and text report outputs with ASA
+          carriage-control characters.
+"""
+
+from __future__ import annotations
+
 import tempfile
+from datetime import date
+from pathlib import Path
+
 import duckdb
-import paramiko
-import saspy
-import polars as pl
 import pandas as pd
+import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
-from pathlib import Path
-from datetime import date, timedelta
 
-# from REPTDATE import get_reptdate_values   # not used - report date comes from the DP batch control file
-# from input_date import get_latest_file     # not used - input filename is built from the DP batch date
-# from output_date import build_output_file  # not used - output filename is built directly from the DP batch date
+# from REPTDATE import get_reptdate_values   # replaced by DP batch date below
+# from input_date import get_latest_file     # replaced by batch-date driven file names
 
-
-
-
-# ============================================================================
-# CONTROL FILES  (batch date + SFTP info, both from DWH control datasets)
-# ============================================================================
-BATCH_DATE_CTL_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
-SFTP_CONTROL_FILE   = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-BATCH_SOURCE        = "DP"          # SOURCE_SYSTEM_CD used for the report date
-
-# DRR target (from ask.py: cd /TD/PIBB/NLF)
-DRR_HOST_DESC  = "Data Report Repository (DRR)"
-DRR_REMOTE_DIR = "/TD/PIBB/NLF"
+# =============================================================================
+# CONTROL FILE CONFIGURATION
+# =============================================================================
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
 
 
 def get_batch_date(source_system_cd: str) -> date:
     """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
-    if not BATCH_DATE_CTL_FILE.exists():
-        raise FileNotFoundError(
-            f"Batch date control file not found: {BATCH_DATE_CTL_FILE}"
-        )
-    ctl = pd.read_sas(str(BATCH_DATE_CTL_FILE), encoding="latin1")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
     ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
     hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
     if hit.empty:
-        raise ValueError(
-            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {BATCH_DATE_CTL_FILE}"
-        )
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
     return pd.Timestamp(hit.iloc[0]).date()
 
 
-def get_sftp_info(host_desc: str):
-    """Read one SFTP configuration row directly from the DWH control file."""
-    if not SFTP_CONTROL_FILE.exists():
-        raise FileNotFoundError(
-            f"SFTP control file not found: {SFTP_CONTROL_FILE}"
-        )
+# =============================================================================
+# REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = DP)
+# =============================================================================
+# DATA BNM.REPTDATE; SET DEPOSIT.REPTDATE;
+# SELECT(DAY(REPTDATE)); WHEN (8) NOWK='1'; WHEN (15) '2'; WHEN (22) '3'; OTHERWISE '4';
+# CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE),Z2.));
+# CALL SYMPUT('RDATE',   PUT(REPTDATE,DDMMYY8.));
+REPTDATE = get_batch_date(BATCH_SOURCE)
+REPTMON  = REPTDATE.strftime("%m")                          # Z2. month
+REPTYY   = REPTDATE.strftime("%y")                          # 2-digit year (CIS file key)
+NOWK     = {8: "1", 15: "2", 22: "3"}.get(REPTDATE.day, "4")
+RDATE    = REPTDATE.strftime("%d/%m/%y")                    # DDMMYY8.
 
-    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+# =============================================================================
+# PATH SETUP
+# =============================================================================
+# Production Path
+BASE_DIR    = Path("/sas")
+INPUT_IFD   = BASE_DIR / "deposit/dwh/integration" / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"    # ENTITY_CD = 'PIBB'
+INPUT_ICA   = BASE_DIR / "deposit/dwh/integration" / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"         # ENTITY_CD = 'PIBB'
 
-    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
-    missing_columns = sorted(required.difference(ctl.columns))
-    if missing_columns:
-        raise RuntimeError(
-            "SFTP control file is missing columns: " + ", ".join(missing_columns)
-        )
+CIS_DIR         = Path("/dwh/rs_cis")
+INPUT_CISCA     = CIS_DIR / f"cisr1ca{REPTMON}{NOWK}{REPTYY}.sas7bdat"
+INPUT_CISFD_SA  = CIS_DIR / f"cisr1sa{REPTMON}{NOWK}{REPTYY}.sas7bdat"
+INPUT_CISFD_FD  = CIS_DIR / f"cisr1fd{REPTMON}{NOWK}{REPTYY}.sas7bdat"
+# INPUT_CISFD = BASE_DIR / "cis/mart/enrichment" / "enrh_exdwh_cisr1.sas7bdat"
 
-    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
-    rows = ctl[descriptions.eq(host_desc)]
-    if len(rows) != 1:
-        raise RuntimeError(
-            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
-        )
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIIMTOP5")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    row = rows.iloc[0]
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input/prod/EIIMTOP5"
+# OUTPUT_DIR = BASE_DIR / "output/EIIMTOP5"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # SAS character values can contain fixed-width padding.
-    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
-    sftp_id = clean(row["SFTP_ID"])
-    sftp_pw = clean(row["SFTP_PW"])
-    host_ip = clean(row["HOST_IP"])
-    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+# INPUT_IFD   = get_latest_file(INPUT_DIR, "ifd")
+# INPUT_ICA   = get_latest_file(INPUT_DIR, "ica")
+# INPUT_CISCA = get_latest_file(INPUT_DIR, "cisr1ca")
+# INPUT_CISFD = get_latest_file(INPUT_DIR, "cisr1fd")
 
-    empty_values = [
-        name for name, value in (
-            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
-        ) if not value
-    ]
-    if empty_values:
-        raise RuntimeError(
-            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
-        )
+# Output text files (ASA carriage-control, fixed LRECL=320)
+# SAS DSNs (SAP.PIBB.INDTOP50.TEXT etc.) carry no date, so filenames are static.
+FD11TEXT_OUT = OUTPUT_DIR / "INDTOP50.txt"   # Individual top 50
+FD12TEXT_OUT = OUTPUT_DIR / "CORTOP50.txt"   # Corporate top 50
+FDSTEXT_OUT  = OUTPUT_DIR / "SUBTOP50.txt"   # PB Subsidiaries
 
-    return sftp_id, sftp_pw, host_ip, host_key
-
-
-
-
-LRECL        = 250  # RECFM=FBA, LRECL=250
-
-
-
-
-# ============================================================================
-# STEP 1: REPORT DATE  (DP batch date from ctl_dwh_batch_dttm.sas7bdat)
-# ============================================================================
-print("Step 1: Deriving report date...")
-
-REPTDATE  = get_batch_date(BATCH_SOURCE)      # date used as "REPTDATE" macro var
-REPTYEAR  = REPTDATE.strftime("%Y")           # 4-digit year (YEAR4.)
-REPTYY    = REPTDATE.strftime("%y")           # 2-digit year (output filename)
-REPTMON   = REPTDATE.strftime("%m")           # Z2.
-REPTDAY   = REPTDATE.strftime("%d")           # Z2.
-
-# DATEX uses DDMMYY10. in this program (4-digit year), unlike EIBMNLFE's
-# DDMMYY8. - preserved exactly as coded in the original SAS.
-DATEX     = REPTDATE.strftime("%d/%m/%Y")     # DDMMYY10.
-RDATE     = REPTDATE.strftime("%d/%m/%y")     # DDMMYY8. (unchanged - used in titles)
-WKLYDATE  = REPTDATE
-
-# LAST = day-of-month of (last day of previous month), relative to TODAY(),
-# not REPTDATE - mirrors the original SAS logic exactly.
-_today = date.today()
-_first_of_month = _today.replace(day=1)
-_last_day_prev_month = _first_of_month - timedelta(days=1)
-LAST_DAY_STR = _last_day_prev_month.strftime("%d")
-
-if REPTDAY in ("08", "15", "22"):
-    INSERT = "Y"
-elif REPTDAY == LAST_DAY_STR and _today.day < 8:
-    INSERT = "Y"
-else:
-    # Original SAS carries INSERT over from DEPOSIT.REPTDATE when neither
-    # condition is met. No such upstream dataset is available, so INSERT
-    # defaults to blank (no milestone insert) per project convention.
-    INSERT = ""
-
-# SASLIST -> IBEHAVE@DDMMYY.txt (JCL: IBEHAVE@%ODD.%OMM.%OYY..TXT)
-OUTPUT_FILE = OUTPUT_DIR / f"IBEHAVE@{REPTDAY}{REPTMON}{REPTYY}.txt"
-
-print(f"  REPTDATE     : {REPTDATE}  (DATEX={DATEX} / RDATE={RDATE})")
-print(f"  REPTYEAR/MON/DAY : {REPTYEAR}/{REPTMON}/{REPTDAY}")
-print(f"  LAST (prev month end day) : {LAST_DAY_STR}")
-print(f"  INSERT flag  : '{INSERT}'")
+# Temporary Parquet conversion settings (temp folder is dropped after all inputs are read)
+TEMP_DIR       = None        # None = system temp; set a path if the default temp area is too small
+CHUNK_ROWS     = 500_000
+ENTITY_CD_PIBB = "PIBB"
 
 
 
 
-# ============================================================================
-# HELPERS: STREAM .sas7bdat -> TEMPORARY PARQUET (converted once, dropped at end)
-# ============================================================================
-TEMP_DIR = None   # None = system temp; set a path if the default temp area is too small
-
-_TEMP_DIR_OBJ = tempfile.TemporaryDirectory(dir=TEMP_DIR)
-_TEMP_PARQUET: dict = {}      # sas7bdat path -> temp parquet path (one conversion per input)
+# =============================================================================
+# UTILITY: SAS7BDAT -> TEMPORARY PARQUET -> POLARS
+# =============================================================================
+_PARQUET_CACHE: dict[Path, Path] = {}      # source .sas7bdat -> temp parquet (converted once per run)
 
 
-def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
-    """Convert a .sas7bdat to Parquet in streaming chunks (schema-locked)."""
-    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
-    writer = None
-    schema = None
-    total = 0
-    rows_read = 0
-
-    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
-    for chunk in reader:
-        if ROW_LIMIT and rows_read >= ROW_LIMIT:
-            break
-        if ROW_LIMIT:
-            chunk = chunk.iloc[: ROW_LIMIT - rows_read]
-        rows_read += len(chunk)
-
-        # Force text columns to string so an all-null first chunk doesn't lock a null type
-        for col in chunk.columns[chunk.dtypes == object]:
-            chunk[col] = chunk[col].astype("string")
-
-        table = pa.Table.from_pandas(chunk, preserve_index=False)
-
-        if schema is None:
-            schema = table.schema
-            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
-        else:
-            cast_arrays = []
-            for field in schema:
-                col = table.column(field.name)
-                if col.type != field.type:
-                    try:
-                        col = col.cast(field.type, safe=False)
-                    except Exception as e:
-                        print(f"  [{tag}] WARNING: cannot cast '{field.name}' "
-                              f"{col.type}->{field.type}: {e} - nulling")
-                        col = pa.nulls(len(col), type=field.type)
-                cast_arrays.append(col)
-            table = pa.Table.from_arrays(cast_arrays, schema=schema)
-
-        writer.write_table(table)
-        total += len(chunk)
-        del chunk, table
-        gc.collect()
-
-    if writer:
-        writer.close()
-    print(f"  [{tag}] Done - {total:,} rows converted.")
+def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
+    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
+    writer, schema = None, None
+    try:
+        for chunk in pd.read_sas(str(src), encoding="latin1", chunksize=chunk_rows):
+            chunk.columns = [str(c).upper() for c in chunk.columns]
+            # Force text columns to string so an all-null first chunk doesn't lock a null type
+            for col in chunk.columns[chunk.dtypes == object]:
+                chunk[col] = chunk[col].astype("string")
+            table = pa.Table.from_pandas(chunk, preserve_index=False)
+            if writer is None:
+                schema = table.schema
+                writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
+            else:
+                table = table.cast(schema)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
+    if writer is None:
+        raise ValueError(f"No rows found in {src}")
 
 
-def get_temp_parquet(sas_path: Path, tag: str) -> Path:
-    """Return the temp parquet for a .sas7bdat, converting it only the first time."""
-    key = str(sas_path)
-    if key not in _TEMP_PARQUET:
-        tmp_path = Path(_TEMP_DIR_OBJ.name) / f"{len(_TEMP_PARQUET)}_{sas_path.stem}.parquet"
-        sas_to_parquet(sas_path, tmp_path, tag)
-        _TEMP_PARQUET[key] = tmp_path
-    else:
-        print(f"  [{tag}] Temp parquet already converted - reusing.")
-    return _TEMP_PARQUET[key]
+def _read_sas(path: Path, tmp_dir: Path, entity_cd: str | None = None) -> pl.DataFrame:
+    """
+    Read a .sas7bdat via a temporary Parquet file (converted once per run,
+    reused if the same input is requested again) using DuckDB, optionally
+    keeping only rows of the given ENTITY_CD. Columns are upper-cased.
+    """
+    parquet = _PARQUET_CACHE.get(path)
+    if parquet is None:
+        parquet = tmp_dir / f"{len(_PARQUET_CACHE):02d}_{path.stem}.parquet"
+        sas_to_parquet(path, parquet)
+        _PARQUET_CACHE[path] = parquet
 
+    where = ""
+    if entity_cd is not None:
+        where = f"WHERE TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) = '{entity_cd}'"
 
-def read_sas_dataset(sas_path: Path, tag: str) -> pl.DataFrame:
-    """Read a .sas7bdat through its temp parquet (DuckDB) into a Polars DataFrame."""
-    parquet_path = get_temp_parquet(sas_path, tag)
-    con = duckdb.connect(database=":memory:")
+    con = duckdb.connect()
     try:
         return con.execute(
-            f"SELECT * FROM read_parquet('{parquet_path.as_posix()}')"
+            f"SELECT * FROM read_parquet('{parquet.as_posix()}') {where}"
         ).pl()
     finally:
         con.close()
@@ -231,766 +150,281 @@ def read_sas_dataset(sas_path: Path, tag: str) -> pl.DataFrame:
 
 
 
-# ============================================================================
-# HELPERS: WRITE DATASETS AS .sas7bdat (saspy) + READ BACK BASE HISTORY
-# ============================================================================
-_SAS_EPOCH = date(1960, 1, 1)
-_SAS_SESSION = None
-_SAS_LIBREFS: dict = {}
-
-
-def _get_sas_session():
-    global _SAS_SESSION
-    if _SAS_SESSION is None:
-        _SAS_SESSION = saspy.SASsession()
-    return _SAS_SESSION
-
-
-def _close_sas_session() -> None:
-    global _SAS_SESSION
-    if _SAS_SESSION is not None:
-        _SAS_SESSION.endsas()
-        _SAS_SESSION = None
-
-
-def _get_libref(lib_dir: Path) -> str:
-    key = str(lib_dir)
-    if key not in _SAS_LIBREFS:
-        libref = f"NLF{len(_SAS_LIBREFS) + 1}"
-        _get_sas_session().saslib(libref, path=key)
-        _SAS_LIBREFS[key] = libref
-    return _SAS_LIBREFS[key]
-
-
-def write_sas_dataset(df: pl.DataFrame, lib_dir: Path, member: str) -> Path:
-    """Write a Polars DataFrame as <lib_dir>/<member>.sas7bdat through saspy.
-
-    Dates are written as plain SAS date numbers (days since 01JAN1960, no format),
-    as in the original SAS DATE variable. Null text becomes blank; null numbers
-    become SAS missing.
+def build_cisca_cisfd(tmp_dir: Path) -> tuple[pl.DataFrame, pl.DataFrame]:
     """
-    date_cols = [c for c, dt in df.schema.items() if dt == pl.Date]
-    str_cols = [c for c, dt in df.schema.items() if dt == pl.Utf8]
-    df = df.with_columns(
-        [(pl.col(c) - pl.lit(_SAS_EPOCH)).dt.total_days().cast(pl.Float64).alias(c)
-         for c in date_cols]
-        + [pl.col(c).fill_null("") for c in str_cols]
-    )
-    char_lengths = {c: max(1, int(df[c].str.len_bytes().max() or 0)) for c in str_cols}
+    DATA CISCA CISFD;
+       SET CISCA.DEPOSIT CISFD.DEPOSIT;
+       IF NEWIC NE '' THEN ICNO = NEWIC; ELSE ICNO = OLDIC;
+       IF (3000000000<=ACCTNO<=3999999999) THEN OUTPUT CISCA;
+       IF (1000000000<=ACCTNO<=1999999999) THEN OUTPUT CISFD;
+       IF (7000000000<=ACCTNO<=7999999999) THEN OUTPUT CISFD;
 
-    libref = _get_libref(lib_dir)
-    _get_sas_session().df2sd(
-        df.to_pandas(),
-        table=member,
-        libref=libref,
-        char_lengths=char_lengths if char_lengths else None,
-    )
-    out_path = lib_dir / f"{member.lower()}.sas7bdat"
-    print(f"  [SAS] Wrote {out_path} ({df.height:,} rows)")
-    return out_path
-
-
-def _normalise_history(df: pl.DataFrame) -> pl.DataFrame:
-    """Shape a BASE.<PROD> history read from sas7bdat: DATEX (text), DATE (date), BALANCE."""
-    df = df.rename({c: c.upper() for c in df.columns})
-    dtype = df.schema["DATE"]
-    if dtype == pl.Date:
-        date_expr = pl.col("DATE")
-    elif dtype.base_type() == pl.Datetime:
-        date_expr = pl.col("DATE").dt.date()
-    else:   # unformatted SAS date number (days since 01JAN1960)
-        date_expr = (
-            pl.lit(_SAS_EPOCH)
-            + pl.duration(days=pl.col("DATE").cast(pl.Float64).round(0).cast(pl.Int64))
-        ).cast(pl.Date)
-    return df.select([
-        pl.col("DATEX").cast(pl.Utf8),
-        date_expr.alias("DATE"),
-        pl.col("BALANCE").cast(pl.Float64),
-    ])
-
-
-
-
-# ============================================================================
-# STEP 2: RESOLVE + CONVERT NOTE INPUT FILE  (exact date known; "i" PIBB prefix)
-# ============================================================================
-print("\nStep 2: Resolving NOTE input file...")
-
-# _note_prefix = f"note{REPTYEAR}{REPTMON}{REPTDAY}"
-# note_path = get_latest_file(INPUT_NOTE_DIR, prefix=_note_prefix)
-
-note_path = INPUT_NOTE_DIR / f"note{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
-if not note_path.exists():
-    raise FileNotFoundError(
-        f"Expected input file not found: {note_path} (derived from DP batch date {REPTDATE})"
-    )
-print(f"  NOTE : {note_path.name}")
-
-# Temporary parquet, converted once (used by both passes) and removed at the end.
-NOTE_CACHE = get_temp_parquet(note_path, "NOTE")
-
-
-
-
-con = duckdb.connect(database=":memory:")
-deposit_p1 = con.execute(f"""
-    WITH filtered AS (
-        SELECT
-            CAST(BNMCODE AS VARCHAR) AS BNMCODE,
-            CAST(AMOUNT  AS DOUBLE)  AS AMOUNT,
-            CAST(AMTUSD  AS DOUBLE)  AS AMTUSD,
-            CAST(AMTSGD  AS DOUBLE)  AS AMTSGD,
-            CAST(AMTHKD  AS DOUBLE)  AS AMTHKD,
-            CAST(AMTAUD  AS DOUBLE)  AS AMTAUD
-        FROM read_parquet('{NOTE_CACHE}')
-        WHERE SUBSTR(CAST(BNMCODE AS VARCHAR), 1, 7) NOT IN ('9532908', '9532909')
-    ),
-    summed AS (
-        -- PROC SUMMARY NWAY CLASS BNMCODE; VAR AMOUNT AMTUSD AMTSGD AMTHKD AMTAUD;
-        -- AMTUSD/AMTSGD/AMTHKD/AMTAUD are summed here for parity with the SAS
-        -- source but are not referenced further downstream (same as original).
-        SELECT
-            BNMCODE,
-            SUM(AMOUNT) AS AMOUNT,
-            SUM(AMTUSD) AS AMTUSD,
-            SUM(AMTSGD) AS AMTSGD,
-            SUM(AMTHKD) AS AMTHKD,
-            SUM(AMTAUD) AS AMTAUD
-        FROM filtered
-        GROUP BY BNMCODE
-    )
-    SELECT
-        SUBSTR(BNMCODE, 1, 7) AS PROD,
-        SUBSTR(BNMCODE, 6, 2) AS INDNON,
-        CASE SUBSTR(BNMCODE, 1, 7)
-{_case_when_p1}
-            ELSE NULL
-        END AS "DESC",
-        ROUND(AMOUNT / 1000.0, 0) AS AMOUNT
-    FROM summed
-    -- PROC SUMMARY output is sorted by BNMCODE; PROC SORT BY PROD DESC is stable
-    ORDER BY SUBSTR(BNMCODE, 1, 7), BNMCODE
-""").pl()
-con.close()
-gc.collect()
-
-
-
-
-grouped_p1 = (
-    deposit_p1
-    .group_by(["PROD", "DESC"], maintain_order=True)
-    .agg(pl.col("AMOUNT"))
-)
-
-
-
-
-write_sas_dataset(deprmp2, STORE_LIB, "deprmp2")
-write_sas_dataset(depfxp2, STORE_LIB, "depfxp2")
-
-
-
-
-deposit_p2 = con.execute(f"""
-    SELECT
-        SUBSTR(BNMCODE, 1, 7) AS PROD,
-        SUBSTR(BNMCODE, 6, 2) AS INDNON,
-        CASE SUBSTR(BNMCODE, 1, 7)
-{_case_when_p2}
-            ELSE NULL
-        END AS "DESC",
-        ROUND(AMOUNT / 1000.0, 0) AS AMOUNT
-    FROM normalised
-    -- PROC SUMMARY output is sorted by BNMCODE; PROC SORT BY PROD DESC is stable
-    ORDER BY SUBSTR(BNMCODE, 1, 7), BNMCODE
-""").pl()
-
-
-
-
-grouped_p2 = (
-    deposit_p2
-    .group_by(["PROD", "DESC"], maintain_order=True)
-    .agg(pl.col("AMOUNT"))
-)
-
-
-
-
-# include_desc: the SAS IF cascade also sets DESC (matters for the ISTIMA codes
-# that are not among the 12 rewrites and keep PROD 9532908/9532909)
-item_exprs_p2 = _item_expr(ITEM_MAP_PASS2, "PROD", include_desc=True)
-
-
-
-
-write_sas_dataset(base_deposit, BASE_LIB, "deposit")
-
-
-
-
-# ITEM assignment applied directly onto BASE.DEPOSIT (keyed by normalised
-# PROD). Pass 2 rewrites only the 12 listed ISTIMA BNMCODEs into RM-FD codes;
-# any other ISTIMA BNMCODE keeps PROD 9532908/9532909 and takes the DESC/ITEM
-# below, exactly as in the SAS IF cascade.
-ITEM_MAP_PASS2 = {
-    "9531508": ("INDRMFD", "A1.15", "- FIXED  "),
-    "9531509": ("NONRMFD", "A1.12", "- FIXED  "),
-    "9532908": ("INDRMFD", "A1.20", None),   # ISTIMA code not covered by the 12 rewrites
-    "9532909": ("NONRMFD", "A1.20", None),   # ISTIMA code not covered by the 12 rewrites
-
-
-
-
-def misappd(prod: str) -> pl.DataFrame:
+    CISFD (SAP.PBB.CRM.CISBEXT) is supplied as two datasets, CISFD_SA and
+    CISFD_FD; they are combined here into one CISFD source.
     """
-    Extract today's record for `prod` from BASE.DEPOSIT, then either append
-    it to the persistent BASE.<PROD> history file (milestone/INSERT day) or
-    build a transient STORE.<PROD> view without touching the persistent
-    history (non-milestone day). Returns STORE.<PROD> (full history up to
-    and including today).
+    cisca_raw    = _read_sas(INPUT_CISCA, tmp_dir)
+    cisfd_sa_raw = _read_sas(INPUT_CISFD_SA, tmp_dir)
+    cisfd_fd_raw = _read_sas(INPUT_CISFD_FD, tmp_dir)
+    cisfd_raw    = pl.concat([cisfd_sa_raw, cisfd_fd_raw], how="diagonal_relaxed")
+
+    # SET (union) both CIS sources, then split by ACCTNO range
+    combined = pl.concat([_build_cis(cisca_raw), _build_cis(cisfd_raw)], how="diagonal_relaxed")
+
+    acctno = pl.col("ACCTNO").cast(pl.Int64, strict=False)
+    cisca = combined.filter(acctno.is_between(*CA_RANGE))
+    cisfd = combined.filter(
+        acctno.is_between(*FD_RANGE_1) | acctno.is_between(*FD_RANGE_2)
+    )
+    return cisca, cisfd
+
+
+def build_ca_fd(tmp_dir: Path) -> tuple[pl.DataFrame, pl.DataFrame]:
     """
-    member = prod.lower()
-    base_path = BASE_LIB / f"{member}.sas7bdat"
+    DATA CA FD;
+       SET DEPOSIT.CURRENT DEPOSIT.FD;
+       IF CURBAL > 0;
+       IF (3000000000<=ACCTNO<=3999999999) THEN OUTPUT CA;
+       IF (1000000000<=ACCTNO<=1999999999) THEN OUTPUT FD;
+       IF (7000000000<=ACCTNO<=7999999999) THEN OUTPUT FD;
+    """
+    ica_df = _read_sas(INPUT_ICA, tmp_dir, ENTITY_CD_PIBB)   # DEPOSIT.CURRENT → ica
+    ifd_df = _read_sas(INPUT_IFD, tmp_dir, ENTITY_CD_PIBB)   # DEPOSIT.FD      → ifd
 
-    today_rec = (
-        base_deposit
-        .filter((pl.col("DATE") == REPTDATE) & (pl.col("DESC") == prod))
-        .select(["DATEX", "DATE", "BALANCE"])
-        .with_columns((-pl.col("BALANCE")).alias("BALANCE"))
+    combined = pl.concat([ica_df, ifd_df], how="diagonal_relaxed")
+    combined = combined.filter(pl.col("CURBAL").cast(pl.Float64, strict=False) > 0)
+
+    acctno = pl.col("ACCTNO").cast(pl.Int64, strict=False)
+    ca = combined.filter(acctno.is_between(*CA_RANGE))
+    fd = combined.filter(
+        acctno.is_between(*FD_RANGE_1) | acctno.is_between(*FD_RANGE_2)
     )
-
-    if base_path.exists():
-        base_hist = _normalise_history(read_sas_dataset(base_path, f"BASE.{prod}"))
-    else:
-        base_hist = pl.DataFrame(
-            schema={"DATEX": pl.Utf8, "DATE": pl.Date, "BALANCE": pl.Float64}
-        )
-
-    if INSERT == "Y":
-        # Idempotent re-run: drop any existing record for today, then append.
-        base_hist = base_hist.filter(pl.col("DATE") != REPTDATE).sort("DATE")
-        base_hist = pl.concat([base_hist, today_rec], how="vertical_relaxed")
-        write_sas_dataset(base_hist, BASE_LIB, member)
-        store_df = base_hist.filter(pl.col("DATE") <= REPTDATE)   # SAS: no re-sort after WHERE
-    else:
-        store_df = pl.concat([base_hist, today_rec], how="vertical_relaxed")
-        store_df = store_df.filter(pl.col("DATE") <= REPTDATE).sort("DATE")
-
-    write_sas_dataset(store_df, STORE_LIB, member)
-    return store_df
+    return ca, fd
 
 
 
 
-def _sas_round(value, unit: float = 1.0):
-    """SAS ROUND(value, unit): nearest multiple of unit, halves rounded away from zero."""
-    if value is None:
-        return None
-    scaled = abs(value) / unit
-    rounded = math.floor(scaled + 0.5 + 1e-9)
-    result = rounded * unit if unit >= 1 else rounded / round(1 / unit)
-    return -result if (value < 0 and result) else float(result)
+def write_subs_report(data_sub: pl.DataFrame, rdate: str, out_path: Path) -> None:
+    d = data_sub.filter(
+        pl.col("CUSTNO").cast(pl.Int64, strict=False).is_in(list(SUBS_CUSTNOS))
+    ).sort(["CUSTNO", "ACCTNO"])
 
-
-def _best12(value) -> str:
-    """SAS BEST12. (PROC PRINT default for unformatted numerics); '.' for missing."""
-    if value is None:
-        return "."
-    v = float(value)
-    if v != v:
-        return "."
-    if v == int(v) and abs(v) < 1e12:
-        return str(int(v))
-    for decimals in range(11, -1, -1):
-        text = f"{v:.{decimals}f}"
-        if len(text) <= 12:
-            return text.rstrip("0").rstrip(".") if "." in text else text
-    return f"{v:.6E}"
-
-
-def _status_frame(rows: list, pct_name: str) -> pl.DataFrame:
-    """FINAL.WEEKLY/MONTHLY/QTRLY/HALFYRLY/YEARLY<PROD> layout (STATUS MAX DATEMAX MIN DATEMIN <x>PCTAGE DATE)."""
-    schema = {"STATUS": pl.Utf8, "MAX": pl.Float64, "DATEMAX": pl.Date,
-              "MIN": pl.Float64, "DATEMIN": pl.Date, pct_name: pl.Float64, "DATE": pl.Date}
-    data = [{"STATUS": r["STATUS"], "MAX": r["MAX"], "DATEMAX": r["DATEMAX"],
-             "MIN": r["MIN"], "DATEMIN": r["DATEMIN"], pct_name: r["PCTAGE"],
-             "DATE": r["DATE"]} for r in rows]
-    return pl.DataFrame(data, schema=schema)
-
-
-
-
-_LAST_MACRO = None   # mirrors SAS macro variable &LAST (keeps its value between %PROCESS calls)
-
-
-def _process(store_df: pl.DataFrame, weekstdt: date, weekend: date, lastdt: date, status: str):
-    """Mirrors %PROCESS: MIN/MAX balance in window, % change vs &LAST; returns the TEMP row."""
-    global _LAST_MACRO
-
-    # DATA LAST: IF DATE = &LASTDT THEN CALL SYMPUT('LAST',BALANCE)
-    # (the macro keeps its previous value when no row matches)
-    last_rows = store_df.filter(pl.col("DATE") == lastdt)
-    if last_rows.height > 0:
-        _LAST_MACRO = last_rows["BALANCE"][-1]
-
-    window = store_df.filter(
-        (pl.col("DATE") >= weekstdt) & (pl.col("DATE") <= weekend)
-    )
-    if window.height == 0 or _LAST_MACRO is None:
-        return None
-
-    min_row = window.sort("BALANCE").row(0, named=True)
-    max_row = window.sort("BALANCE", descending=True).row(0, named=True)
-
-    if _LAST_MACRO == 0:
-        pct = None   # SAS: division by zero gives a missing value, the row is still appended
-    elif max_row["DATE"] > min_row["DATE"]:
-        pct = round(((max_row["BALANCE"] - min_row["BALANCE"]) / _LAST_MACRO) * 100, 2)
-    else:
-        pct = round(((min_row["BALANCE"] - max_row["BALANCE"]) / _LAST_MACRO) * 100, 2)
-
-    return {"STATUS": status, "MAX": max_row["BALANCE"], "DATEMAX": max_row["DATE"],
-            "MIN": min_row["BALANCE"], "DATEMIN": min_row["DATE"],
-            "PCTAGE": pct, "DATE": weekend}
-
-
-
-
-def report(prod: str, store_df: pl.DataFrame):
-    report_lines = []
-
-    if store_df.height == 0:
-        print(f"  [{prod}] No history available - skipping report.")
-        return report_lines, None
-
-    member = prod.lower()
-    count = store_df.height
-    acount  = count - 49
-    wklyday = WKLYDATE.day
-    if wklyday <= 8:
-        wcount = count - 45
-    elif wklyday <= 15:
-        wcount = count - 46
-    else:
-        wcount = count - 47
-    mcount = count - 44
-    qcount = count - 36
-    hcount = count - 24
-    ycount = count
-
-    qtr1 = _qtr_month(REPTDATE.month, 3)
-    qtr2 = _qtr_month(REPTDATE.month, 6)
-    qtr3 = _qtr_month(REPTDATE.month, 9)
-
-    # --- WEEKLY --------------------------------------------------------
-    weekly_rows = []
-    for i in range(max(1, wcount), count + 1):
-        row = _nth(store_df, i)
-        if row is None:
-            continue
-        d = row["DATE"]
-        if d.day <= 8:
-            weekstdt = d.replace(day=1) - timedelta(days=1)
-        elif d.day <= 15:
-            weekstdt = d.replace(day=8)
-        elif d.day <= 22:
-            weekstdt = d.replace(day=15)
-        else:
-            weekstdt = d.replace(day=22)
-        # NOTE: original SAS CALL SYMPUT('LASTDT',WEEKSTDT) overrides the
-        # separately-computed LASTDT variable with WEEKSTDT - replicated here
-        # verbatim (faithful to the source, including this quirk).
-        lastdt = weekstdt
-        res = _process(store_df, weekstdt, d, lastdt, "WEEKLY")
-        if res:
-            weekly_rows.append(res)
-
-    # --- MONTHLY ---------------------------------------------------------
-    monthly_rows = []
-    for i in range(max(1, mcount), count + 1):
-        row = _nth(store_df, i)
-        if row is None:
-            continue
-        d = row["DATE"]
-        weekstdt = d.replace(day=1)
-        lastdt = d.replace(day=1) - timedelta(days=1)
-        res = _process(store_df, weekstdt, d, lastdt, "MONTHLY")
-        if res:
-            monthly_rows.append(res)
-    if monthly_rows:
-        last_date = monthly_rows[-1]["DATE"]
-        monthly_rows = [
-            r for r in monthly_rows
-            if r["DATE"].day not in (8, 15, 22) or r["DATE"] == last_date
-        ]
-
-    # --- QTRLY -------------------------------------------------------------
-    qtrly_rows = []
-    for i in range(max(1, qcount), count + 1):
-        row = _nth(store_df, i)
-        if row is None:
-            continue
-        d = row["DATE"]
-        setmthx = d.month - 2
-        year = d.year
-        if setmthx <= 0:
-            setmth = 12 + setmthx
-            year -= 1
-        else:
-            setmth = setmthx
-        weekstdt = date(year, setmth, 1)
-        lastdt = weekstdt - timedelta(days=1)
-        res = _process(store_df, weekstdt, d, lastdt, "QTRLY")
-        if res:
-            qtrly_rows.append(res)
-    if qtrly_rows:
-        last_date = qtrly_rows[-1]["DATE"]
-        qtrly_rows = [
-            r for r in qtrly_rows
-            if r["DATE"] == last_date
-            or (r["DATE"].day not in (8, 15, 22) and r["DATE"].month in (qtr1, qtr2, qtr3))
-        ]
-
-    # --- HALFYRLY ------------------------------------------------------
-    halfyrly_rows = []
-    for i in range(max(1, hcount), count + 1):
-        row = _nth(store_df, i)
-        if row is None:
-            continue
-        d = row["DATE"]
-        setmthx = d.month - 5
-        year = d.year
-        if setmthx <= 0:
-            setmth = 12 + setmthx
-            year -= 1
-        else:
-            setmth = setmthx
-        weekstdt = date(year, setmth, 1)
-        lastdt = weekstdt - timedelta(days=1)
-        res = _process(store_df, weekstdt, d, lastdt, "HALFYRLY")
-        if res:
-            halfyrly_rows.append(res)
-    if halfyrly_rows:
-        last_date = halfyrly_rows[-1]["DATE"]
-        halfyrly_rows = [
-            r for r in halfyrly_rows
-            if r["DATE"] == last_date
-            or (r["DATE"].day not in (8, 15, 22) and r["DATE"].month == qtr2)
-        ]
-
-    # --- YEARLY --------------------------------------------------------
-    yearly_rows = []
-    for i in range(max(1, ycount), count + 1):
-        row = _nth(store_df, i)
-        if row is None:
-            continue
-        d = row["DATE"]
-        setmthx = d.month - 11
-        year = d.year
-        if setmthx <= 0:
-            setmth = 12 + setmthx
-            year -= 1
-        else:
-            setmth = setmthx
-        weekstdt = date(year, setmth, 1)
-        lastdt = weekstdt - timedelta(days=1)
-        res = _process(store_df, weekstdt, d, lastdt, "YEARLY")
-        if res:
-            yearly_rows.append(res)
-    if yearly_rows:
-        yearly_rows = yearly_rows[-1:]   # IF LAST.STATUS; -> keep only last
-
-    # --- FINAL.WEEKLY/MONTHLY/QTRLY/HALFYRLY/YEARLY<PROD> -------------------
-    write_sas_dataset(_status_frame(weekly_rows, "WPCTAGE"), FINAL_LIB, f"weekly{member}")
-    write_sas_dataset(_status_frame(monthly_rows, "MPCTAGE"), FINAL_LIB, f"monthly{member}")
-    write_sas_dataset(_status_frame(qtrly_rows, "QPCTAGE"), FINAL_LIB, f"qtrly{member}")
-    write_sas_dataset(_status_frame(halfyrly_rows, "HPCTAGE"), FINAL_LIB, f"halfyrly{member}")
-    write_sas_dataset(_status_frame(yearly_rows, "YPCTAGE"), FINAL_LIB, f"yearly{member}")
-
-    # --- BEHAVE base: tail window (rows with _N_ > ACOUNT) --------------
-    behave_base = store_df.tail(max(0, count - acount)) if acount >= 0 else store_df
-    # FINBAL = BALANCE; (commented ISTIMA adjustment in original SAS not
-    # applicable here - ISTIMA is folded into RM-FD amounts far upstream,
-    # in the pass-2 BASE.DEPOSIT build, not adjusted again at this point):
-    #   IF "&PROD" = "INDRMFD" THEN FINBAL = BALANCE + &INDISTI;
-    #   ELSE IF "&PROD" = "NONRMFD" THEN FINBAL = BALANCE + &NONISTI;
-    #   ELSE FINBAL = BALANCE;
-    outstand = float(store_df.row(-1, named=True)["BALANCE"] or 0.0)
-
-    def _series_dict(rows):
-        return {r["DATE"]: r["PCTAGE"] for r in rows} if rows else {}
-
-    w_map = _series_dict(weekly_rows)
-    m_map = _series_dict(monthly_rows)
-    q_map = _series_dict(qtrly_rows)
-    h_map = _series_dict(halfyrly_rows)
-    y_map = _series_dict(yearly_rows)
-
-    behave_rows = []
-    for r in behave_base.iter_rows(named=True):
-        d = r["DATE"]
-        behave_rows.append({
-            "BALANCE": r["BALANCE"],
-            "DATE": d,
-            "WPCTAGE": w_map.get(d),
-            "MPCTAGE": m_map.get(d),
-            "QPCTAGE": q_map.get(d),
-            "HPCTAGE": h_map.get(d),
-            "YPCTAGE": y_map.get(d),
-        })
-
-    # --- FINAL.BEHAVE<PROD> -------------------------------------------------
-    behave_df = pl.DataFrame(
-        behave_rows,
-        schema={"BALANCE": pl.Float64, "DATE": pl.Date, "WPCTAGE": pl.Float64,
-                "MPCTAGE": pl.Float64, "QPCTAGE": pl.Float64,
-                "HPCTAGE": pl.Float64, "YPCTAGE": pl.Float64},
-    )
-    write_sas_dataset(behave_df, FINAL_LIB, f"behave{member}")
-
-    # --- Print BEHAVIORAL TABLE ------------------------------------------
-    columns = [
-        ("BALANCE", 15, "right"), ("DATE", 10, "right"), ("WPCTAGE", 10, "right"),
-        ("MPCTAGE", 10, "right"), ("QPCTAGE", 10, "right"),
-        ("HPCTAGE", 10, "right"), ("YPCTAGE", 10, "right"),
+    title_lines = [
+        "PUBLIC ISLAMIC BANK BERHAD (EIIMBTOP5)",
+        f"PB SUBSIDIARIES UNDER TOP 50 CORP DEPOSITORS @ {rdate}",
     ]
-    rows_fmt = []
-    for r in behave_rows:
-        rows_fmt.append((
-            _best12(r["BALANCE"]),
-            r["DATE"].strftime("%d/%m/%y"),
-            _best12(r["WPCTAGE"]),
-            _best12(r["MPCTAGE"]),
-            _best12(r["QPCTAGE"]),
-            _best12(r["HPCTAGE"]),
-            _best12(r["YPCTAGE"]),
-        ))
-    report_lines += _print_table(
-        [f"{prod} BEHAVIORAL TABLE {RDATE}"], columns, rows_fmt
+    writer = AsaReportWriter(out_path)
+    writer.set_title_cache(title_lines)
+    writer.new_page()
+
+    _print_subs_detail(writer, d)
+    writer.save()
+
+
+
+
+def main() -> None:
+    rdate = RDATE
+    print(f"Report Date : {rdate}  (REPTMON={REPTMON}, NOWK={NOWK}, REPTYY={REPTYY})")
+
+    # --- Read all inputs via temporary Parquet (converted once, dropped after reading) ---
+    print("Reading CIS and deposit files ...")
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        tmp_dir = Path(tmp)
+        cisca, cisfd = build_cisca_cisfd(tmp_dir)
+        ca, fd = build_ca_fd(tmp_dir)
+    _PARQUET_CACHE.clear()      # temp Parquet folder is removed here
+
+    # --- Build split datasets ---
+    caind, caorg, fdind, fdorg = build_split_sets(ca, fd, cisca, cisfd)
+
+    # *** FD+CA INDIVIDUAL CUSTOMERS ***
+    # DATA DATA1; SET FDIND CAIND;
+    # IF ICNO='  ' THEN ICNO='XX';
+    data1_ind = pl.concat([fdind, caind], how="diagonal_relaxed").with_columns(
+        pl.when(pl.col("ICNO").cast(pl.Utf8, strict=False).str.strip_chars() == "")
+        .then(pl.lit("XX"))
+        .otherwise(pl.col("ICNO").cast(pl.Utf8, strict=False))
+        .alias("ICNO")
+    )
+    # PROC PRINTTO PRINT=FD11TEXT NEW;
+    # TITLE 'TOP 50 LARGEST FD+CA INDIVIDUAL CUSTOMERS AS AT ' &RDATE;
+    title_ind = f"TOP 50 LARGEST FD+CA INDIVIDUAL CUSTOMERS AS AT {rdate}"
+    print(f"\nGenerating: {FD11TEXT_OUT.name}")
+    prnrec(data1_ind, title_ind, rdate, FD11TEXT_OUT)
+
+    # *** FD+CA CORPORATE CUSTOMERS ***
+    # DATA DATA1; SET FDORG CAORG;
+    # IF ICNO='  ' THEN ICNO='XX';
+    data1_corp = pl.concat([fdorg, caorg], how="diagonal_relaxed").with_columns(
+        pl.when(pl.col("ICNO").cast(pl.Utf8, strict=False).str.strip_chars() == "")
+        .then(pl.lit("XX"))
+        .otherwise(pl.col("ICNO").cast(pl.Utf8, strict=False))
+        .alias("ICNO")
+    )
+    # PROC PRINTTO PRINT=FD12TEXT NEW;
+    # TITLE 'TOP 50 LARGEST FD+CA CORPORATE CUSTOMERS AS AT ' &RDATE;
+    title_corp = f"TOP 50 LARGEST FD+CA CORPORATE CUSTOMERS AS AT {rdate}"
+    print(f"Generating: {FD12TEXT_OUT.name}")
+    prnrec(data1_corp, title_corp, rdate, FD12TEXT_OUT)
+
+    # *** PB SUBSIDIARIES ***
+    # DATA DATA1; SET FDORG CAORG;
+    # IF CUSTNO IN (53227,169990,170108,3562038,3721354);
+    data_sub = pl.concat([fdorg, caorg], how="diagonal_relaxed")
+    print(f"Generating: {FDSTEXT_OUT.name}")
+    write_subs_report(data_sub, rdate, FDSTEXT_OUT)
+
+    # --- Summary results ---
+    print("\n=== Results Summary ===")
+    print(f"  INDIVIDUAL top-50 source rows : {data1_ind.height}")
+    print(f"  CORPORATE  top-50 source rows : {data1_corp.height}")
+    print(f"  SUBSIDIARIES filtered rows    : {data_sub.filter(pl.col('CUSTNO').cast(pl.Int64, strict=False).is_in(list(SUBS_CUSTNOS))).height}")
+    print(f"\nOutput directory: {OUTPUT_DIR}")
+    print(f"  {FD11TEXT_OUT}")
+    print(f"  {FD12TEXT_OUT}")
+    print(f"  {FDSTEXT_OUT}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+==================== Flags
+
+def build_split_sets(
+    ca: pl.DataFrame,
+    fd: pl.DataFrame,
+    cisca: pl.DataFrame,
+    cisfd: pl.DataFrame,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """
+    MERGE CA + CISCA → CAIND / CAORG
+    MERGE CISFD + FD → FDIND / FDORG
+
+    SAS MERGE last-dataset-wins applies; left join preserves IN=A semantics.
+    CABAL = CURBAL  /  FDBAL = CURBAL (aliases set after merge)
+    IF CUSTCODE IN (77,78,95,96) → IND; ELSE IF INDORG='O' → ORG
+    """
+    # --- CA branch ---
+    # PROC SORT DATA=CISCA; BY ACCTNO;
+    # PROC SORT DATA=CA; BY ACCTNO;
+    # MERGE CA(IN=A) CISCA; BY ACCTNO; IF A AND ...
+    caj = ca.join(cisca, on="ACCTNO", how="left")
+    caj = caj.filter(
+        (pl.col("PURPOSE").cast(pl.Utf8, strict=False) != "2")
+        & (~pl.col("PRODUCT").cast(pl.Int64, strict=False).is_in(list(CA_EXCL_PRODUCTS)))
+    ).with_columns(
+        pl.col("CURBAL").cast(pl.Float64, strict=False).alias("CABAL"),
+        pl.lit(None).cast(pl.Float64).alias("FDBAL"),   # not from CA branch
     )
 
-    # --- HIGHLOW (percentage, monotonic cascade + cap) -----------------
-    def _min_max(values):
-        vals = [v for v in values if v is not None]
-        if not vals:
-            return None, None
-        return min(vals), max(vals)
-
-    lowest, highest = {}, {}
-    for label, series in (("WEEK", w_map), ("MONTH", m_map), ("QTR", q_map),
-                           ("HALFYR", h_map), ("YEAR", y_map)):
-        lo, hi = _min_max(series.values())
-        lowest[label] = lo if lo is not None else 0.0
-        highest[label] = hi if hi is not None else 0.0
-
-    if highest["WEEK"] > highest["MONTH"]:
-        highest["MONTH"] = highest["WEEK"]
-    if highest["MONTH"] > highest["QTR"]:
-        highest["QTR"] = highest["MONTH"]
-    if highest["QTR"] > highest["HALFYR"]:
-        highest["HALFYR"] = highest["QTR"]
-    if highest["HALFYR"] > highest["YEAR"]:
-        highest["YEAR"] = highest["HALFYR"]
-    for k in highest:
-        if highest[k] > 100:
-            highest[k] = 100.0
-
-    if lowest["WEEK"] < lowest["MONTH"]:
-        lowest["MONTH"] = lowest["WEEK"]
-    if lowest["MONTH"] < lowest["QTR"]:
-        lowest["QTR"] = lowest["MONTH"]
-    if lowest["QTR"] < lowest["HALFYR"]:
-        lowest["HALFYR"] = lowest["QTR"]
-    if lowest["HALFYR"] < lowest["YEAR"]:
-        lowest["YEAR"] = lowest["HALFYR"]
-    for k in lowest:
-        if lowest[k] < -100:
-            lowest[k] = -100.0
-
-    # The percentage FINAL.HIGHLOW<PROD> is printed only: SAS overwrites that
-    # dataset with the monetary version below, so only the final one is stored.
-    highlow_columns = [
-        ("WEEK", 10, "right"), ("STATUS", 10, "left"), ("MONTH", 10, "right"),
-        ("QTR", 10, "right"), ("HALFYR", 10, "right"), ("YEAR", 10, "right"),
-    ]
-    highlow_rows = [
-        (_best12(highest["WEEK"]), "HIGHEST", _best12(highest["MONTH"]),
-         _best12(highest["QTR"]), _best12(highest["HALFYR"]), _best12(highest["YEAR"])),
-        (_best12(lowest["WEEK"]), "LOWEST", _best12(lowest["MONTH"]),
-         _best12(lowest["QTR"]), _best12(lowest["HALFYR"]), _best12(lowest["YEAR"])),
-    ]
-    report_lines += _print_table([f"{prod} BEHAVIORAL TABLE {RDATE}"], highlow_columns, highlow_rows)
-
-    # --- FINAL.HIGHLOWRATE<PROD> (abs-merged % figures, NOT printed) ----
-    abs_pct = {
-        k: max(abs(lowest[k]), abs(highest[k])) for k in ("WEEK", "MONTH", "QTR", "HALFYR", "YEAR")
-    }
-    highlowrate_df = pl.DataFrame({
-        "WEEK": [abs_pct["WEEK"]], "MONTH": [abs_pct["MONTH"]], "QTR": [abs_pct["QTR"]],
-        "HALFYR": [abs_pct["HALFYR"]], "YEAR": [abs_pct["YEAR"]],
-        "FINALSTAT": ["FINAL"],
-        "WEEK1": [lowest["WEEK"]], "MONTH1": [lowest["MONTH"]], "QTR1": [lowest["QTR"]],
-        "HALFYR1": [lowest["HALFYR"]], "YEAR1": [lowest["YEAR"]],
-        "DESC": [prod],
-    })
-    write_sas_dataset(highlowrate_df, FINAL_LIB, f"highlowrate{member}")
-
-    # --- FINAL.HIGHLOW<PROD> (monetary, printed as "BEHAVIORAL FIGURE") --
-    week_amt   = _sas_round(abs_pct["WEEK"] * outstand / 100)
-    month_amt  = _sas_round((abs_pct["MONTH"] * outstand / 100) - week_amt)
-    qtr_amt    = _sas_round((abs_pct["QTR"] * outstand / 100) - (week_amt + month_amt))
-    halfyr_amt = _sas_round((abs_pct["HALFYR"] * outstand / 100) - (week_amt + month_amt + qtr_amt))
-    year_amt   = _sas_round((abs_pct["YEAR"] * outstand / 100) - (week_amt + month_amt + qtr_amt + halfyr_amt))
-    last_amt   = _sas_round(outstand - (week_amt + month_amt + qtr_amt + halfyr_amt + year_amt))
-    total_amt  = _sas_round(outstand)
-
-    week_amt   = max(week_amt, 0)
-    month_amt  = max(month_amt, 0)
-    qtr_amt    = max(qtr_amt, 0)
-    halfyr_amt = max(halfyr_amt, 0)
-    year_amt   = max(year_amt, 0)
-
-    highlow_dict = {
-        "WEEK": week_amt, "MONTH": month_amt, "QTR": qtr_amt, "HALFYR": halfyr_amt,
-        "YEAR": year_amt, "FINALSTAT": "FINAL", "DESC": prod,
-        "LAST": last_amt, "TOTAL": total_amt,
-    }
-    write_sas_dataset(pl.DataFrame([highlow_dict]), FINAL_LIB, f"highlow{member}")
-
-    highlow_monetary_columns = [
-        ("WEEK", 15, "right"), ("MONTH", 15, "right"), ("QTR", 15, "right"),
-        ("HALFYR", 15, "right"), ("YEAR", 15, "right"), ("FINALSTAT", 10, "left"),
-        ("DESC", 10, "left"), ("LAST", 15, "right"), ("TOTAL", 15, "right"),
-    ]
-    highlow_monetary_row = (
-        _best12(week_amt), _best12(month_amt), _best12(qtr_amt), _best12(halfyr_amt),
-        _best12(year_amt), "FINAL", prod, _best12(last_amt), _best12(total_amt),
-    )
-    report_lines += _print_table(
-        [f"{prod} BEHAVIORAL FIGURE TO BE REPORTED {RDATE}"],
-        highlow_monetary_columns, [highlow_monetary_row]
+    custcode_ca = pl.col("CUSTCODE").cast(pl.Int64, strict=False)
+    caind = caj.filter(custcode_ca.is_in(list(IND_CUSTCODES)))
+    caorg = caj.filter(
+        ~custcode_ca.is_in(list(IND_CUSTCODES))
+        & (pl.col("INDORG").cast(pl.Utf8, strict=False) == "O")
     )
 
-    return report_lines, highlow_dict
+    # --- FD branch ---
+    # PROC SORT DATA=CISFD; BY ACCTNO;
+    # PROC SORT DATA=FD; BY ACCTNO;
+    # MERGE CISFD FD(IN=A); BY ACCTNO; IF A AND ...
+    fdj = fd.join(cisfd, on="ACCTNO", how="left")    # IN=A on FD side → keep all FD rows
+    fdj = fdj.filter(
+        (pl.col("PURPOSE").cast(pl.Utf8, strict=False) != "2")
+        & (~pl.col("PRODUCT").cast(pl.Int64, strict=False).is_in(list(FD_EXCL_PRODUCTS)))
+    ).with_columns(
+        pl.col("CURBAL").cast(pl.Float64, strict=False).alias("FDBAL"),
+        pl.lit(None).cast(pl.Float64).alias("CABAL"),   # not from FD branch
+    )
+
+    custcode_fd = pl.col("CUSTCODE").cast(pl.Int64, strict=False)
+    fdind = fdj.filter(custcode_fd.is_in(list(IND_CUSTCODES)))
+    fdorg = fdj.filter(
+        ~custcode_fd.is_in(list(IND_CUSTCODES))
+        & (pl.col("INDORG").cast(pl.Utf8, strict=False) == "O")
+    )
+
+    return caind, caorg, fdind, fdorg
 
 
 
 
-print("\nStep 6: Running MISAPPD + REPORT per product (RM products only)...")
-
-all_report_lines = []
-highlow_results = []
-
-for prod in PRODUCTS:
-    print(f"\n  Processing product: {prod}")
-    store_df = misappd(prod)
-    lines, highlow_dict = report(prod, store_df)
-    all_report_lines += lines
-    if highlow_dict:
-        highlow_results.append(highlow_dict)
+def _default_icno(df: pl.DataFrame) -> pl.DataFrame:
+    """IF ICNO='  ' THEN ICNO='XX';  (missing/null is blank in SAS)"""
+    icno = pl.col("ICNO").cast(pl.Utf8, strict=False).fill_null("")
+    return df.with_columns(
+        pl.when(icno.str.strip_chars() == "")
+        .then(pl.lit("XX"))
+        .otherwise(icno)
+        .alias("ICNO")
+    )
 
 
 
 
-print("\nStep 7: Building STORE.BEHAVENOTE / DEPRMP1 / DEPFXP1...")
-
-behavenote = pl.DataFrame(highlow_results) if highlow_results else pl.DataFrame(
-    schema={"WEEK": pl.Float64, "MONTH": pl.Float64, "QTR": pl.Float64,
-            "HALFYR": pl.Float64, "YEAR": pl.Float64, "FINALSTAT": pl.Utf8,
-            "DESC": pl.Utf8, "LAST": pl.Float64, "TOTAL": pl.Float64}
-)
-
-behavenote = behavenote.with_columns(
-    pl.col("DESC").replace_strict(DESC_TO_BNMCODE2, default=None).alias("PROD")
-)
-
-# NOTE (faithful SAS bug reproduction): the original SAS DATA step computes
-#   INDNON = SUBSTR(BNMCODE,6,2);  AMOUNT = ROUND(AMOUNT,1000.)/1000;
-# but neither BNMCODE nor AMOUNT exists in the input (the FINAL.HIGHLOW<PROD>
-# datasets only hold WEEK..TOTAL, FINALSTAT and DESC). SAS treats both as
-# missing, so INDNON is a null here and AMOUNT is a missing number.
-behavenote = behavenote.with_columns([
-    pl.lit(None, dtype=pl.Utf8).alias("INDNON"),
-    pl.lit(None, dtype=pl.Float64).alias("AMOUNT"),
-])
-
-# PROC SORT; BY PROD DESC;
-behavenote = behavenote.sort(["PROD", "DESC"])
-write_sas_dataset(behavenote, STORE_LIB, "behavenote")
+    data1_ind = _default_icno(pl.concat([fdind, caind], how="diagonal_relaxed"))
 
 
 
 
-    "9532908": ("A1.20", None),     # unreachable here; SAS sets ITEM (not ITEM4) and DESC='INDISIT'
-    "9532909": ("A1.20", None),
+    data1_corp = _default_icno(pl.concat([fdorg, caorg], how="diagonal_relaxed"))
 
 
 
 
-deprmp1 = deprmp1_source.filter(pl.col("PROD").str.slice(0, 2).is_in(["93", "95"])).sort(
-    "INDNON", descending=True, nulls_last=True, maintain_order=True)   # PROC SORT BY DESCENDING INDNON
-depfxp1 = deprmp1_source.filter(pl.col("PROD").str.slice(0, 2) == "94").sort(
-    "INDNON", descending=True, nulls_last=True, maintain_order=True)   # PROC SORT BY DESCENDING INDNON
+def prnrec(data1: pl.DataFrame, title: str, rdate: str, out_path: Path) -> None:
+    d1 = data1.filter(
+        pl.col("ICNO").is_not_null()
+        & (pl.col("ICNO").cast(pl.Utf8, strict=False).str.strip_chars() != "")
+    ).sort(["ICNO", "CUSTNAME"])
 
-write_sas_dataset(deprmp1, STORE_LIB, "deprmp1")
-write_sas_dataset(depfxp1, STORE_LIB, "depfxp1")
+    # PROC SUMMARY BY ICNO CUSTNAME → PROC SORT BY DESCENDING CURBAL → OBS=50
+    # (stable sort keeps ICNO/CUSTNAME order on ties, as PROC SORT does)
+    d2 = (
+        d1.group_by(["ICNO", "CUSTNAME"], maintain_order=True)
+        .agg([
+            pl.col("CURBAL").cast(pl.Float64, strict=False).sum().alias("CURBAL"),
+            pl.col("FDBAL").cast(pl.Float64, strict=False).sum().alias("FDBAL"),
+            pl.col("CABAL").cast(pl.Float64, strict=False).sum().alias("CABAL"),
+        ])
+        .sort("CURBAL", descending=True, maintain_order=True)
+        .head(50)
+    )
 
+    keys = d2.select(["ICNO", "CUSTNAME"])
+    d3   = d1.join(keys, on=["ICNO", "CUSTNAME"], how="inner").sort(["ICNO", "CUSTNAME"])
 
+    title_lines = _build_summary_header(title, rdate)
+    writer = AsaReportWriter(out_path)
+    writer.set_title_cache(title_lines)
+    writer.new_page()
 
+    _print_summary_table(writer, d2)
 
-write_sas_dataset(report_ds, STORE_LIB, "report")
+    # Reset header cache before detail section so page-breaks reprint detail headers
+    writer.set_header_cache([])
+    _print_detail_table(writer, d3)
 
-
-
-
-with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
-    for ln in all_report_lines:
-        fh.write(ln[:LRECL].ljust(LRECL) + "\n")   # RECFM=FBA, LRECL=250; JCL notrim keeps the blanks
-
-
-
-
-# ============================================================================
-# STEP 11: SFTP TO DATA REPORT REPOSITORY (DRR)
-# ============================================================================
-# From ask.py:  cd /TD/PIBB/NLF
-#               put SAP.PIBB.NLF.BEHAVE.TEXT(0)  IBEHAVE@%ODD.%OMM.%OYY..TXT
-# (The PBB put to TD/INTERBANK/NLF belongs to the PBB job, not this program.)
-def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
-    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(DRR_HOST_DESC)
-
-    ssh = paramiko.SSHClient()
-    # HOST_KEY is not used: same interim AutoAddPolicy as EIWFRMCR.py.
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
-    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
-    sftp = ssh.open_sftp()
-    try:
-        try:
-            sftp.chdir(DRR_REMOTE_DIR)
-        except IOError:
-            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
-        print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
-        sftp.put(str(local_path), remote_name)
-    finally:
-        sftp.close()
-        ssh.close()
-    print("  DRR upload complete.")
+    writer.save()
 
 
-print("\nUploading report to DRR via SFTP...")
-sftp_upload_to_drr(OUTPUT_FILE, f"IBEHAVE@{REPTDAY}{REPTMON}{REPTYY}.TXT")
 
-# Drop the temporary parquet files (all inputs are done) and close saspy.
-_TEMP_DIR_OBJ.cleanup()
-_close_sas_session()
 
-gc.collect()
-print("\nEIIMNLFE complete.")
+def _build_summary_header(title: str, rdate: str) -> list[str]:
+    # TITLE 'TOP 50 ...' is TITLE1 and cancels the earlier TITLE1/TITLE2 → one title line only
+    return [title]
+
+
+
+
+    title_lines = [
+        f"PB SUBSIDIARIES UNDER TOP 50 CORP DEPOSITORS @ {rdate}",
+    ]
+
+
 
 
 
