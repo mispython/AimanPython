@@ -38,49 +38,68 @@ from input_date import get_latest_file
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-# BASE_DIR = Path("/dwh")
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# Production Path
+MNITB_DIR       = Path("/sas/deposit/dwh/integration")
+DEPOSIT_FILE    = MNITB_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"       # Discriminate by ENTITY_CD
+LOAN_DIR        = Path("/dwh/dwh_m/tempsource/ln")
+LOAN_FILE       = LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"                    # Discriminate by ENTITY_CD
 
-# Each of the 4 source files (PBB deposit, PBB loan, PIBB deposit, PIBB loan)
-# comes from a distinct SAS dataset qualifier in the original JOB:
-#   DEPOSIT DD DSN=SAP.PBB.MNITB(0)   -> PBB  deposit
-#   LOAN    DD DSN=SAP.PBB.SASDATA    -> PBB  loan
-#   DEPOSIT DD DSN=SAP.PIBB.MNITB(0)  -> PIBB deposit
-#   LOAN    DD DSN=SAP.PIBB.SASDATA   -> PIBB loan
-INPUT_DIR_PBB_DEPOSIT  = BASE_DIR / "input" / "prod" / "EIBMODLT"
-INPUT_DIR_PBB_LOAN     = BASE_DIR / "input" / "prod" / "EIBMODLT"
-INPUT_DIR_PIBB_DEPOSIT = BASE_DIR / "input" / "prod" / "EIBMODLT"
-INPUT_DIR_PIBB_LOAN    = BASE_DIR / "input" / "prod" / "EIBMODLT"
-
-# Shared lookup file (ACCTNO -> NAME, COL1-5, DEPTYPE).
-# NAME and COL1-5 (collateral type codes) are NOT present on the
-# PBB/PIBB deposit (DEPOSIT.CURRENT) datasets themselves - both are
-# resolved from stg_dp_limit.sas7bdat by matching ACCTNO, restricted to
-# DEPTYPE IN ('N','D') so only deposit-type records are used as the
-# source of COL1-5 (mirrors the original ODRAFT filter's deposit scope).
-INPUT_STG_DP = BASE_DIR / "input" / "prod" / "EIBMODLT" / "stg_dp_dptrblgs.sas7bdat"          # /sas/deposit/dwh/staging/stg_dp_dptrblgs.sas7bdat
-
-# Parquet cache directory (shared by all four source files + the lookup file)
-CACHE_DIR     = BASE_DIR / "input" / "cache" / "EIBMODLT"
-CACHE_STG_DP  = CACHE_DIR / f"{INPUT_STG_DP.stem}.parquet"
-
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLT"
-
-for _d in (
-    INPUT_DIR_PBB_DEPOSIT, INPUT_DIR_PBB_LOAN,
-    INPUT_DIR_PIBB_DEPOSIT, INPUT_DIR_PIBB_LOAN,
-):
-    _d.mkdir(parents=True, exist_ok=True)
-INPUT_STG_DP.parent.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR      = Path("/host_pq/mis/output/report/EIBMODLT")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Output file names (fixed — no date component, mirrors the fixed cataloged
-# DSNs SAP.BANK.ODLIST.RPS / .TEXT and SAP.PIBB.ODLIST.RPS / .TEXT).
-PBB_RPS_REPORT   = OUTPUT_DIR / "ODLIST_RPS.txt"
-PBB_TEXT_REPORT  = OUTPUT_DIR / "ODLIST_TEXT.txt"
-PIBB_RPS_REPORT  = OUTPUT_DIR / "ODLISTI_RPS.txt"
-PIBB_TEXT_REPORT = OUTPUT_DIR / "ODLISTI_TEXT.txt"
+PBB_RPS_REPORT   = OUTPUT_DIR / f"ODLIST_RPS_{REPTYY}{REPTMON}{REPTDAY}.txt"
+PBB_TEXT_REPORT  = OUTPUT_DIR / f"ODLIST_TEXT_{REPTYY}{REPTMON}{REPTDAY}.txt"
+PIBB_RPS_REPORT  = OUTPUT_DIR / f"IODLIST_RPS_{REPTYY}{REPTMON}{REPTDAY}.txt"
+PIBB_TEXT_REPORT = OUTPUT_DIR / f"IODLIST_TEXT_{REPTYY}{REPTMON}{REPTDAY}.txt"
+
+PBB_TEXT_REPORT_FLAT  = OUTPUT_DIR / f"ODLIST"
+PIBB_TEXT_REPORT_FLAT = OUTPUT_DIR / f"IODLIST"
+
+
+# # Testing Path
+# # BASE_DIR = Path("/dwh")
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+
+# # Each of the 4 source files (PBB deposit, PBB loan, PIBB deposit, PIBB loan)
+# # comes from a distinct SAS dataset qualifier in the original JOB:
+# #   DEPOSIT DD DSN=SAP.PBB.MNITB(0)   -> PBB  deposit
+# #   LOAN    DD DSN=SAP.PBB.SASDATA    -> PBB  loan
+# #   DEPOSIT DD DSN=SAP.PIBB.MNITB(0)  -> PIBB deposit
+# #   LOAN    DD DSN=SAP.PIBB.SASDATA   -> PIBB loan
+# INPUT_DIR_PBB_DEPOSIT  = BASE_DIR / "input" / "prod" / "EIBMODLT"
+# INPUT_DIR_PBB_LOAN     = BASE_DIR / "input" / "prod" / "EIBMODLT"
+# INPUT_DIR_PIBB_DEPOSIT = BASE_DIR / "input" / "prod" / "EIBMODLT"
+# INPUT_DIR_PIBB_LOAN    = BASE_DIR / "input" / "prod" / "EIBMODLT"
+
+# # Shared lookup file (ACCTNO -> NAME, COL1-5, DEPTYPE).
+# # NAME and COL1-5 (collateral type codes) are NOT present on the
+# # PBB/PIBB deposit (DEPOSIT.CURRENT) datasets themselves - both are
+# # resolved from stg_dp_limit.sas7bdat by matching ACCTNO, restricted to
+# # DEPTYPE IN ('N','D') so only deposit-type records are used as the
+# # source of COL1-5 (mirrors the original ODRAFT filter's deposit scope).
+# INPUT_STG_DP = BASE_DIR / "input" / "prod" / "EIBMODLT" / "stg_dp_dptrblgs.sas7bdat"        # /sas/deposit/dwh/staging/stg_dp_dptrblgs.sas7bdat
+
+# # Parquet cache directory (shared by all four source files + the lookup file)
+# CACHE_DIR     = BASE_DIR / "input" / "cache" / "EIBMODLT"
+# CACHE_STG_DP  = CACHE_DIR / f"{INPUT_STG_DP.stem}.parquet"
+
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLT"
+
+# for _d in (
+#     INPUT_DIR_PBB_DEPOSIT, INPUT_DIR_PBB_LOAN,
+#     INPUT_DIR_PIBB_DEPOSIT, INPUT_DIR_PIBB_LOAN,
+# ):
+#     _d.mkdir(parents=True, exist_ok=True)
+# INPUT_STG_DP.parent.mkdir(parents=True, exist_ok=True)
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# # Output file names (fixed — no date component, mirrors the fixed cataloged
+# # DSNs SAP.BANK.ODLIST.RPS / .TEXT and SAP.PIBB.ODLIST.RPS / .TEXT).
+# PBB_RPS_REPORT   = OUTPUT_DIR / "ODLIST_RPS.txt"
+# PBB_TEXT_REPORT  = OUTPUT_DIR / "ODLIST_TEXT.txt"
+# PIBB_RPS_REPORT  = OUTPUT_DIR / "ODLISTI_RPS.txt"
+# PIBB_TEXT_REPORT = OUTPUT_DIR / "ODLISTI_TEXT.txt"
 
 # ============================================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
@@ -850,46 +869,6 @@ if all(results.values()):
     print("\nREPORT GENERATION COMPLETE")
 else:
     print("\nREPORT GENERATION COMPLETED WITH ERRORS — review output above.")
-
-# # >>>> DEBUGGING STARTS <<<<<
-
-# print("\n")
-# df = pd.read_sas(INPUT_STG_DP, encoding="latin1")
-# df.columns = [str(c).upper().strip() for c in df.columns]
-
-# print("Raw DEPTYPE unique values (repr to reveal whitespace):")
-# print(df["DEPTYPE"].apply(repr).value_counts().head(20))
-
-# print("\nACCTNO dtype:", df["ACCTNO"].dtype)
-# print("NAME dtype:", df["NAME"].dtype)
-
-# # Test with stripped comparison
-# stripped_match = df["DEPTYPE"].astype(str).str.strip().isin(["D", "N"])
-# print(f"\nRows matching DEPTYPE after strip: {stripped_match.sum():,} / {len(df):,}")
-
-# raw_match = df["DEPTYPE"].isin(["D", "N"])
-# print(f"Rows matching DEPTYPE without strip: {raw_match.sum():,} / {len(df):,}")
-
-# print("\n")
-# acct_deposit = duckdb.sql(f"SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS a FROM read_parquet('{deposit_cache}')").pl()
-# acct_lookup  = duckdb.sql(f"SELECT DISTINCT CAST(ACCTNO AS BIGINT) AS a FROM read_parquet('{stg_dp_cache}')").pl()
-# print("Deposit accounts:", len(acct_deposit))
-# print("Lookup accounts :", len(acct_lookup))
-# print("Overlap         :", len(acct_deposit.join(acct_lookup, on="a", how="inner")))
-
-# print(duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{loan_cache}')").df().to_string())
-
-# print("\n")
-# cols = duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{loan_cache}')").df()["column_name"].tolist()
-# from collections import Counter
-# dupes = {c: n for c, n in Counter([c.upper() for c in cols]).items() if n > 1}
-# print("Case-insensitive duplicates:", dupes)
-# print("All columns:", cols)
-
-
-# print(duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{deposit_cache}')").df().to_string())
-
-# # >>>> DEBUGGING ENDS <<<<<
 
 # ============================================================================
 # PLACEHOLDER: STEP02/STEP04 PGM=SPLIB136 (mainframe utility, source not
