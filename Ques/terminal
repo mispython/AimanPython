@@ -11,3 +11,15 @@ def _load_existing() -> pl.DataFrame:
 
 INPUT_DCMG_LEGACY_FILE = EGOLD_DIR / f"dcmg{REPTMON}.sas7bdat"      # MIS.DCMG&REPTMON (bootstrap only)
 STORE_DCMG_FILE  = STORE_DIR  / f"dcmg{REPTMON}.parquet"            # monthly master (read and written)
+
+
+
+
+def _load_existing() -> pl.DataFrame:
+    if INPUT_DCMG_LEGACY_FILE.exists():
+        return _normalize_sas_reptdate(
+            pl.read_parquet(_load_cached(INPUT_DCMG_LEGACY_FILE, "DCMG_LEGACY"))
+        )
+    if STORE_DCMG_FILE.exists():
+        return pl.read_parquet(STORE_DCMG_FILE)
+    return pl.DataFrame(schema=DCMG_SCHEMA)
