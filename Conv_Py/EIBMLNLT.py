@@ -35,11 +35,11 @@ from input_date import get_latest_file
 # =============================================================================
 # Production Path
 MNILN_DIR   = Path("/sas/ln/dwh/enrichment")
-LNCOMM_FILE = MNILN_DIR / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"
-LNNOTE_FILE = MNILN_DIR / f"enrh_ln_note_d{REPTDAY}.sas7bdat"
+LNCOMM_FILE = MNILN_DIR / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"       # Discriminate by ENTITY_CD
+LNNOTE_FILE = MNILN_DIR / f"enrh_ln_note_d{REPTDAY}.sas7bdat"       # Discriminate by ENTITY_CD
 
 LOAN_DIR    = Path("/dwh/dwh_m/tempsource/ln")
-LOAN_FILE   = LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+LOAN_FILE   = LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"            # Discriminate by ENTITY_CD
 
 OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMLNLT")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
