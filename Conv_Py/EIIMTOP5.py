@@ -22,29 +22,30 @@ from input_date import get_latest_file
 # =============================================================================
 # PATH SETUP
 # =============================================================================
-# # Production Path
-# BASE_DIR   = Path("/dwh")
-# OUTPUT_DIR = Path("/host/mis/output/report")
-# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Production Path
+BASE_DIR    = Path("/sas")
+INPUT_IFD   = BASE_DIR / "deposit/dwh/integration" / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"    # ENTITY_CD = 'PIBB'
+INPUT_ICA   = BASE_DIR / "deposit/dwh/integration" / f"intg_dp_acct_fd_m{REPTMON}.sas7bdat"         # ENTITY_CD = 'PIBB'
 
-# INPUT_IFD   = get_latest_file(INPUT_DIR / "idp_fd",     "ifd")
-# INPUT_ICA   = get_latest_file(INPUT_DIR / "idp_ca",     "ica")
-# INPUT_CISCA = get_latest_file(INPUT_DIR / "idp_cisr1ca",  "cisr1ca")
-# INPUT_CISFD = get_latest_file(INPUT_DIR / "idp_cisr1fd",  "cisr1fd")
+CIS_DIR         = Path("/dwh/rs_cis")
+INPUT_CISCA     = CIS_DIR / f"cisr1ca{REPTMON}{NOWK}{REPTYY}.sas7bdat"
+INPUT_CISFD_SA  = CIS_DIR / f"cisr1sa{REPTMON}{NOWK}{REPTYY}.sas7bdat"
+INPUT_CISFD_FD  = CIS_DIR / f"cisr1fd{REPTMON}{NOWK}{REPTYY}.sas7bdat"
+# INPUT_CISFD = BASE_DIR / "cis/mart/enrichment" / "enrh_exdwh_cisr1.sas7bdat"
 
-# Testing Path
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input/prod/EIIMTOP5"
-OUTPUT_DIR = BASE_DIR / "output/EIIMTOP5"
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIIMTOP5")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Input .sas7bdat files resolved at runtime via get_latest_file()
-# Filename pattern: prefix + MMWNN  (MM=month, W=week digit, NN=year, 5 chars total)
-# e.g. ifd06326, ica06326, cisr1ca06326, cisr1fd06326
-INPUT_IFD   = get_latest_file(INPUT_DIR, "ifd")
-INPUT_ICA   = get_latest_file(INPUT_DIR, "ica")
-INPUT_CISCA = get_latest_file(INPUT_DIR, "cisr1ca")
-INPUT_CISFD = get_latest_file(INPUT_DIR, "cisr1fd")
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input/prod/EIIMTOP5"
+# OUTPUT_DIR = BASE_DIR / "output/EIIMTOP5"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# INPUT_IFD   = get_latest_file(INPUT_DIR, "ifd")
+# INPUT_ICA   = get_latest_file(INPUT_DIR, "ica")
+# INPUT_CISCA = get_latest_file(INPUT_DIR, "cisr1ca")
+# INPUT_CISFD = get_latest_file(INPUT_DIR, "cisr1fd")
 
 # Output text files (ASA carriage-control, fixed LRECL=320)
 FD11TEXT_OUT = OUTPUT_DIR / "INDTOP50.txt"   # Individual top 50
