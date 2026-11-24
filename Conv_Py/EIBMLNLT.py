@@ -33,49 +33,64 @@ from input_date import get_latest_file
 # =============================================================================
 # PATH CONFIGURATION
 # =============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+MNILN_DIR   = Path("/sas/ln/dwh/enrichment")
+LNCOMM_FILE = MNILN_DIR / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"
+LNNOTE_FILE = MNILN_DIR / f"enrh_ln_note_d{REPTDAY}.sas7bdat"
 
-# ------------------------------------------------------------------
-# Input directories / files
-# ------------------------------------------------------------------
-# LOAN carries a date suffix in its fileNAME (format mmwyy, e.g. mm=month,
-# w=week digit derived from SAS SELECT(DAY(REPTDATE)), yy=2-digit year) ->
-# resolved via input_date.get_latest_file(). PIBB fileNAMEs use the "i"
-# prefix convention (ln -> iln).
-INPUT_DIR      = BASE_DIR / "input" / "prod"
-PBB_LOAN_DIR   = INPUT_DIR / "loan"
-PIBB_LOAN_DIR  = INPUT_DIR / "loan"
+LOAN_DIR    = Path("/dwh/dwh_m/tempsource/ln")
+LOAN_FILE   = LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
 
-# LNNOTE / LNCOMM carry no date component in their fileNAMEs -> static paths
-PBB_LNNOTE_FILE  = STG_DIR / "PBB_lnnote.sas7bdat"
-PBB_LNCOMM_FILE  = STG_DIR / "PBB_lncomm.sas7bdat"
-PIBB_LNNOTE_FILE = STG_DIR / "PIBB_lnnote.sas7bdat"
-PIBB_LNCOMM_FILE = STG_DIR / "PIBB_lncomm.sas7bdat"
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMLNLT")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ------------------------------------------------------------------
-# Parquet cache directories (chunked SAS -> Parquet, freshness-checked)
-# ------------------------------------------------------------------
-CACHE_DIR      = BASE_DIR / "input" / "cache" / "EIBMLNLT"
-PBB_CACHE_DIR  = CACHE_DIR / "PBB"
-PIBB_CACHE_DIR = CACHE_DIR / "PIBB"
+PBB_LNLISD_TXT = OUTPUT_DIR / "LOANLIST_TEXT.txt"   # SAP.BANK.LOANLIST.TEXT (80 char)
+PBB_LNLIST_TXT = OUTPUT_DIR / "LOANLIST_RPS.txt"    # SAP.BANK.LOANLIST.RPS  (136 char)
 
-# ------------------------------------------------------------------
-# Output directories / files (fixed fileNAMEs -- no date suffix)
-# ------------------------------------------------------------------
-OUTPUT_DIR      = BASE_DIR / "output" / "EIBMLNLT"
-PBB_OUTPUT_DIR  = OUTPUT_DIR / "PBB"
-PIBB_OUTPUT_DIR = OUTPUT_DIR / "PIBB"
+PIBB_LNLISX_TXT = OUTPUT_DIR / "ILOANLIST_TEXT.txt"   # SAP.PIBB.LOANLIST.TEXT (80 char)
+PIBB_LNLISR_TXT = OUTPUT_DIR / "ILOANLIST_RPS.txt"    # SAP.PIBB.LOANLIST.RPS  (136 char)
 
-for _d in (PBB_LOAN_DIR, PIBB_LOAN_DIR, PBB_CACHE_DIR, PIBB_CACHE_DIR,
-           PBB_OUTPUT_DIR, PIBB_OUTPUT_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
+PBB_LNLIST_TXT_FLAT  = OUTPUT_DIR / "LOANLIST"
+PIBB_LNLISR_TXT_FLAT = OUTPUT_DIR / "ILOANLIST"
 
-PBB_LNLISD_TXT = PBB_OUTPUT_DIR / "loanlist_text.txt"   # SAP.BANK.LOANLIST.TEXT (80 char)
-PBB_LNLIST_TXT = PBB_OUTPUT_DIR / "loanlist_rps.txt"    # SAP.BANK.LOANLIST.RPS  (136 char)
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
 
-PIBB_LNLISX_TXT = PIBB_OUTPUT_DIR / "loanlist_text.txt"   # SAP.PIBB.LOANLIST.TEXT (80 char)
-PIBB_LNLISR_TXT = PIBB_OUTPUT_DIR / "loanlist_rps.txt"    # SAP.PIBB.LOANLIST.RPS  (136 char)
+# # LOAN carries a date suffix in its fileNAME
+# INPUT_DIR      = BASE_DIR / "input" / "prod"
+# PBB_LOAN_DIR   = INPUT_DIR / "loan"
+# PIBB_LOAN_DIR  = INPUT_DIR / "loan"
+
+# # LNNOTE / LNCOMM carry no date component in their fileNAMEs -> static paths
+# PBB_LNNOTE_FILE  = STG_DIR / "PBB_lnnote.sas7bdat"
+# PBB_LNCOMM_FILE  = STG_DIR / "PBB_lncomm.sas7bdat"
+# PIBB_LNNOTE_FILE = STG_DIR / "PIBB_lnnote.sas7bdat"
+# PIBB_LNCOMM_FILE = STG_DIR / "PIBB_lncomm.sas7bdat"
+
+# # ------------------------------------------------------------------
+# # Parquet cache directories (chunked SAS -> Parquet, freshness-checked)
+# # ------------------------------------------------------------------
+# CACHE_DIR      = BASE_DIR / "input" / "cache" / "EIBMLNLT"
+# PBB_CACHE_DIR  = CACHE_DIR / "PBB"
+# PIBB_CACHE_DIR = CACHE_DIR / "PIBB"
+
+# # ------------------------------------------------------------------
+# # Output directories / files (fixed fileNAMEs -- no date suffix)
+# # ------------------------------------------------------------------
+# OUTPUT_DIR      = BASE_DIR / "output" / "EIBMLNLT"
+# PBB_OUTPUT_DIR  = OUTPUT_DIR / "PBB"
+# PIBB_OUTPUT_DIR = OUTPUT_DIR / "PIBB"
+
+# for _d in (PBB_LOAN_DIR, PIBB_LOAN_DIR, PBB_CACHE_DIR, PIBB_CACHE_DIR,
+#            PBB_OUTPUT_DIR, PIBB_OUTPUT_DIR):
+#     _d.mkdir(parents=True, exist_ok=True)
+
+# PBB_LNLISD_TXT = PBB_OUTPUT_DIR / "loanlist_text.txt"   # SAP.BANK.LOANLIST.TEXT (80 char)
+# PBB_LNLIST_TXT = PBB_OUTPUT_DIR / "loanlist_rps.txt"    # SAP.BANK.LOANLIST.RPS  (136 char)
+
+# PIBB_LNLISX_TXT = PIBB_OUTPUT_DIR / "loanlist_text.txt"   # SAP.PIBB.LOANLIST.TEXT (80 char)
+# PIBB_LNLISR_TXT = PIBB_OUTPUT_DIR / "loanlist_rps.txt"    # SAP.PIBB.LOANLIST.RPS  (136 char)
 
 # ============================================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
