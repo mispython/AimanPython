@@ -26,7 +26,8 @@ PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
                HPHONENO, CLOSECD, RECLASS
 
 2. CISR.DEPOSIT  (JCL //CISR DD DSN=SAP.PBB.CRM.CISBEXT)
-   File : INPUT_CISR_FILE -> crm_cisbext_deposit.sas7bdat
+   Files : INPUT_CISR_SA_FILE (cisr1sa) + INPUT_CISR_FD_FILE (cisr1fd),
+           combined (SA first, then FD) into one CISR.DEPOSIT source
    Cols used : ACCTNO, CUSTNO, NEWIC, OLDIC, PRIPHONE, SECPHONE, MOBIPHON,
                BUSSREG, NEWICIND
 
@@ -63,40 +64,52 @@ or page-break logic is produced; they are plain pipe-delimited / command
 text files.
 """
 
+import atexit
 import gc
 import itertools
+import shutil
+import sys
+import tempfile
 from math import ceil
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date
 
 import duckdb
 import pandas as pd
+import paramiko
 import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
-
-from REPTDATE import get_reptdate_values
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
 # Production Path
-INPUT_CARD_DIR      = Path("/")     # Kena konfemkan dulu dengan adli
-INPUT_CARD_FILE     = INPUT_CARD_DIR / f"unicard{REPTYEAR}{REPTMON}{WK}"
+BASE_DIR = Path("/host_pq/mis")
 
-CIS_DIR             = Path("/dwh/rs_cis")
-INPUT_CISD_FILE     = CIS_DIR / f"cisr1ca{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-INPUT_CISL_FILE     = CIS_DIR / f"cisr1ln{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-INPUT_CISR_SA_FILE  = CIS_DIR / f"cisr1sa{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-INPUT_CISR_FD_FILE  = CIS_DIR / f"cisr1fd{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+# DWH control files (report date + SFTP info)
+CTL_DIR          = Path("/sasdata/dwh/control")
+CTL_BATCH_DTTM   = CTL_DIR / "ctl_dwh_batch_dttm.sas7bdat"
+CTL_SFTP_INFO    = CTL_DIR / "ctl_dwh_sftp_info.sas7bdat"
+SOURCE_SYSTEM_CD = "SAS"
 
-MNICOL_DIR          = Path("/sas/ln/mart/enrichment")
-INPUT_COLL_FILE     = MNICOL_DIR / f"enrh_exdwh_ln_collater_d{REPTDAY}.sas7bdat"
-INPUT_ICOLL_FILE    = MNICOL_DIR / f"enrh_exdwh_ln_icollater_d{REPTDAY}.sas7bdat"
+INPUT_CARD_DIR = Path("/")     # Kena konfemkan dulu dengan adli
+CIS_DIR        = Path("/dwh/rs_cis")
+MNICOL_DIR     = Path("/sas/ln/mart/enrichment")
 
-CACHE_DIR           = Path("/host_pq/mis/output/report/EIBWDLPS")
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR = BASE_DIR / "output"  / "report" / "EIBWDLPS"
+WORK_DIR   = BASE_DIR / "parquet" / "EIBWDLPS"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+WORK_DIR.mkdir(parents=True, exist_ok=True)
 
+# No date in the SAS output DSNs (SAP.PBB.DLP.SFTP.TEXT / SAP.PBB.DLP.Cnnn.TEXT)
+# -> output filenames carry no date.
+SFTP_OUTPUT_FILE = OUTPUT_DIR / "EIBWDLPS_SFTP.txt"
+
+# Kena konfemkan dulu dengan adli
+# SFTP target (ask.py / COZ#DLP3): DLP server
+DLP_HOST_DESC  = "DLP Server"   # must equal the HOST_DESC row in ctl_dwh_sftp_info
+DLP_REMOTE_DIR = ""             # "" = remote login directory
 
 # # Testing Path
 # BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
@@ -122,50 +135,75 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CHUNK_ROWS = 500_000
 OBSNUM     = 5_000_000   # DATA DLP; OBSNUM = 5000000; (segment size)
 
+
 # ============================================================================
-# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
+# DWH CONTROL FILE: BATCH DATE
+# ============================================================================
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from ctl_dwh_batch_dttm."""
+    if not CTL_BATCH_DTTM.exists():
+        raise FileNotFoundError(f"Batch date control file not found: {CTL_BATCH_DTTM}")
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+# ============================================================================
+# STEP 1: REPORT DATE  (batch date of SOURCE_SYSTEM_CD = 'SAS')
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-reptdate_values = get_reptdate_values(year_format="%Y")
-reptdate = reptdate_values.reptdate
+reptdate = get_batch_date(SOURCE_SYSTEM_CD)
 
 # DATA DATES; SET BNM.REPTDATE; SELECT(DAY(REPTDATE)); ... WHEN(8/15/22)
-# OTHERWISE; -- exact-day matching, distinct from REPTDATE.py's own
-# range-based NOWK derivation. Implemented locally, matching the same
-# divergence already documented in EIIMRM01.py.
+# OTHERWISE; -- exact-day matching, same as the original SAS.
+# _day = reptdate.day
+# if _day == 8:
+#     SDD, WK, WK1 = 1, "01", "04"
+# elif _day == 15:
+#     SDD, WK, WK1 = 9, "02", "01"
+# elif _day == 22:
+#     SDD, WK, WK1 = 16, "03", "02"
+# else:
+#     SDD, WK, WK1 = 23, "04", "03"
 _day = reptdate.day
-if _day == 8:
+if 1 <= _day <= 8:
     SDD, WK, WK1 = 1, "01", "04"
-elif _day == 15:
+elif 9 <= _day <= 15:
     SDD, WK, WK1 = 9, "02", "01"
-elif _day == 22:
+elif 16 <= _day <= 22:
     SDD, WK, WK1 = 16, "03", "02"
 else:
     SDD, WK, WK1 = 23, "04", "03"
-# SDD and WK1 (CALL SYMPUT('NOWK1',...)) are computed and SYMPUT'd in the
-# original SAS but never referenced again anywhere else in the program --
-# both are dead and are kept here only for documentation parity.
+# SDD and WK1 (CALL SYMPUT('NOWK1',...)) are never referenced again in the
+# original SAS; kept for documentation parity only.
 
 REPTYEAR = reptdate.strftime("%y")   # CALL SYMPUT(...,PUT(REPTDATE,YEAR2.))
 REPTMON  = reptdate.strftime("%m")   # CALL SYMPUT(...,PUT(MONTH(REPTDATE),Z2.))
 REPTDAY  = reptdate.strftime("%d")   # CALL SYMPUT(...,PUT(DAY(REPTDATE),Z2.))
-# REPTDAY, like SDD/WK1 above, is SYMPUT'd but never referenced again in
-# the program body -- dead, kept for documentation parity only.
+NOWK     = str(int(WK))              # week digit used in the CIS file names
 
-# CARD_MEMBER = f"UNICARD{REPTYEAR}{REPTMON}{WK}"
-CARD_MEMBER = f"UNICARD260903"
+# ----------------------------------------------------------------------------
+# INPUT FILE PATHS
+# ----------------------------------------------------------------------------
+# CARD.UNICARD&REPTYEAR&REPTMON&NOWK
+CARD_MEMBER = f"UNICARD{REPTYEAR}{REPTMON}{WK}"
+# CARD_MEMBER = f"UNICARD260903"
 INPUT_CARD_FILE = INPUT_CARD_DIR / f"{CARD_MEMBER.lower()}.sas7bdat"
 
-# Generate time stamp
-report_date = date.today() - timedelta(days=1)
-ts = report_date.strftime("%y%m%d")
+INPUT_CISD_FILE    = CIS_DIR / f"cisr1ca{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_CISL_FILE    = CIS_DIR / f"cisr1ln{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_CISR_SA_FILE = CIS_DIR / f"cisr1sa{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_CISR_FD_FILE = CIS_DIR / f"cisr1fd{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIBWDLPS"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-SFTP_OUTPUT_FILE = OUTPUT_DIR / f"EIBWDLPS_SFTP_{ts}.txt"
+INPUT_COLL_FILE  = MNICOL_DIR / f"enrh_exdwh_ln_collater_d{REPTDAY}.sas7bdat"
+INPUT_ICOLL_FILE = MNICOL_DIR / f"enrh_exdwh_ln_icollater_d{REPTDAY}.sas7bdat"
 
-
+print(f"  REPTDATE     : {reptdate}")
 print(f"  REPTYEAR/MON : {REPTYEAR}/{REPTMON}   NOWK: {WK}")
 print(f"  CARD member  : {CARD_MEMBER}")
 
@@ -190,13 +228,6 @@ MASK = "###**###"
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
 # ============================================================================
-def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
-    return (
-        cache_path.exists()
-        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
-    )
-
-
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     writer = None
@@ -243,30 +274,105 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
+# Temporary Parquet area: every SAS dataset is converted ONCE per run, reused
+# by every step, and the whole folder is dropped when the program ends.
+TMP_PARQUET_DIR = Path(tempfile.mkdtemp(prefix="parquet_", dir=WORK_DIR))
+atexit.register(shutil.rmtree, TMP_PARQUET_DIR, ignore_errors=True)
+_TEMP_PARQUET: dict = {}
+
+
+def _load_temp(sas_path: Path, tag: str) -> Path:
+    key = str(sas_path)
+    if key not in _TEMP_PARQUET:
+        tmp_path = TMP_PARQUET_DIR / f"{sas_path.stem}.parquet"
+        _sas_to_parquet(sas_path, tmp_path, tag)
+        _TEMP_PARQUET[key] = tmp_path
+    return _TEMP_PARQUET[key]
 
 
 # ============================================================================
-# STEP 2: CACHE INPUT SAS FILES TO PARQUET
+# SFTP HELPERS  (ctl_dwh_sftp_info.sas7bdat)
 # ============================================================================
-print("\nStep 2: Caching input SAS datasets to Parquet...")
-CARD_CACHE  = _load_cached(INPUT_CARD_FILE, "CARD")
-CISR_CACHE  = _load_cached(INPUT_CISR_FILE, "CISR")
-CISD_CACHE  = _load_cached(INPUT_CISD_FILE, "CISD")
-CISL_CACHE  = _load_cached(INPUT_CISL_FILE, "CISL")
-COLL_CACHE  = _load_cached(INPUT_COLL_FILE, "COLL")
-ICOLL_CACHE = _load_cached(INPUT_ICOLL_FILE, "ICOLL")
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row from the DWH control file."""
+    if not CTL_SFTP_INFO.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {CTL_SFTP_INFO}")
+
+    ctl = pd.read_sas(str(CTL_SFTP_INFO), encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
+
+    row = rows.iloc[0]
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [n for n, v in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw),
+                                   ("HOST_IP", host_ip)) if not v]
+    if empty_values:
+        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
+    return sftp_id, sftp_pw, host_ip, host_key
+
+
+def sftp_upload_to_dlp(local_files: list) -> None:
+    """
+    Equivalent of the JCL RUNSFTP step (ask.py): PUT each SAP.PBB.DLP.Cnnn.TEXT
+    member as DLPnnn.CSV on the DLP server.
+    local_files: list of (local_path: Path, remote_filename: str)
+    """
+    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DLP_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to DLP host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+
+    if DLP_REMOTE_DIR:
+        try:
+            sftp.chdir(DLP_REMOTE_DIR)
+        except IOError:
+            sftp.close()
+            ssh.close()
+            sys.exit(f"Aborting: Remote DLP folder '{DLP_REMOTE_DIR}' not found")
+
+    for local_path, remote_name in local_files:
+        print(f"  SFTP upload: {local_path.name} -> {remote_name}")
+        sftp.put(str(local_path), remote_name)
+
+    sftp.close()
+    ssh.close()
+    print("  DLP upload complete.")
+
+
+# ============================================================================
+# STEP 2: CONVERT INPUT SAS FILES TO TEMPORARY PARQUET  (once per run)
+# ============================================================================
+print("\nStep 2: Converting input SAS datasets to temporary Parquet...")
+CARD_CACHE    = _load_temp(INPUT_CARD_FILE, "CARD")
+CISR_SA_CACHE = _load_temp(INPUT_CISR_SA_FILE, "CISR_SA")
+CISR_FD_CACHE = _load_temp(INPUT_CISR_FD_FILE, "CISR_FD")
+CISD_CACHE    = _load_temp(INPUT_CISD_FILE, "CISD")
+CISL_CACHE    = _load_temp(INPUT_CISL_FILE, "CISL")
+COLL_CACHE    = _load_temp(INPUT_COLL_FILE, "COLL")
+ICOLL_CACHE   = _load_temp(INPUT_ICOLL_FILE, "ICOLL")
+CISR_CACHES   = [CISR_SA_CACHE, CISR_FD_CACHE]   # CISR = cisr1sa + cisr1fd
 
 # ============================================================================
 # DUCKDB WORK DATABASE  (disk-backed, bounded memory)
 # ============================================================================
-WORK_DIR = BASE_DIR / "input" / "work" / "EIBWDLPS"
 TMP_DIR  = WORK_DIR / "tmp"
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 DB_FILE  = WORK_DIR / "eibwdlps.duckdb"
@@ -346,10 +452,11 @@ _CIS_COLS = ["ACCTNO", "CUSTNO", "NEWIC", "OLDIC", "PRIPHONE",
              "SECPHONE", "MOBIPHON", "BUSSREG", "NEWICIND"]
 
 
-def _cis_select(cache_path: Path) -> str:
+def _cis_select(cache_paths: list) -> str:
     cols = ", ".join(f"{_s(c)} AS {c}" for c in _CIS_COLS)
-    return (f"SELECT row_number() OVER () AS rid, {cols} "
-            f"FROM read_parquet('{cache_path.as_posix()}')")
+    parts = " UNION ALL ".join(
+        f"SELECT {cols} FROM read_parquet('{p.as_posix()}')" for p in cache_paths)
+    return f"SELECT row_number() OVER () AS rid, * FROM ({parts})"
 
 # ============================================================================
 # STEP 4: COLL  (DATA COLL; SET ICOLL.COLLATER COLL.COLLATER; PROC SORT)
@@ -437,13 +544,13 @@ def sas_merge_by_group(a_rows: list, b_rows: list, by_key: str,
 print("\nStep 5: Merging CISRM/CISDP/CISLN with COLL (IF A;)...")
 
 
-def _merge_coll_sql(cache_path: Path, src: int) -> str:
+def _merge_coll_sql(cache_paths: list, src: int) -> str:
     # MERGE CISx(IN=A) COLL; BY ACCTNO; IF A;
     # Rows are paired by position inside each ACCTNO. When COLL has fewer rows
     # than CISx, SAS keeps COLL's last value (LEAST(rn, nb)). If ACCTNO is not in
     # COLL, CCOLLNO is missing (NULL).
     return f"""
-        WITH s AS ({_cis_select(cache_path)}),
+        WITH s AS ({_cis_select(cache_paths)}),
              a AS (SELECT *, row_number() OVER (PARTITION BY ACCTNO ORDER BY rid) AS rn FROM s)
         SELECT {src} AS src, a.rid, a.ACCTNO, a.CUSTNO, a.NEWIC, a.OLDIC,
                a.PRIPHONE, a.SECPHONE, a.MOBIPHON, a.BUSSREG, a.NEWICIND, c.CCOLLNO
@@ -453,10 +560,10 @@ def _merge_coll_sql(cache_path: Path, src: int) -> str:
     """
 
 
-for _name, _cache, _src in (("cisrm", CISR_CACHE, 1),
-                            ("cisdp", CISD_CACHE, 2),
-                            ("cisln", CISL_CACHE, 3)):
-    con.execute(f"CREATE TABLE {_name} AS {_merge_coll_sql(_cache, _src)}")
+for _name, _caches, _src in (("cisrm", CISR_CACHES, 1),
+                             ("cisdp", [CISD_CACHE], 2),
+                             ("cisln", [CISL_CACHE], 3)):
+    con.execute(f"CREATE TABLE {_name} AS {_merge_coll_sql(_caches, _src)}")
     print(f"  {_name.upper()}: {con.execute(f'SELECT COUNT(*) FROM {_name}').fetchone()[0]:,}")
 con.execute("DROP TABLE coll")
 con.execute("DROP TABLE coll_cnt")
@@ -593,9 +700,9 @@ con.execute(f"""
         FROM ciscard),
     s2 AS (        -- REMOVE LEADING ZERO
         SELECT *,
-               COALESCE(CAST(TRY_CAST(PRIPHONE AS HUGEINT) AS VARCHAR),'.') AS PR1PH0N3,
-               COALESCE(CAST(TRY_CAST(SECPHONE AS HUGEINT) AS VARCHAR),'.') AS S3CPH0N3,
-               COALESCE(CAST(TRY_CAST(MOBIPHON AS HUGEINT) AS VARCHAR),'.') AS M0B1PH0N
+               COALESCE(substr(CAST(TRY_CAST(PRIPHONE AS HUGEINT) AS VARCHAR), 1, 10),'.') AS PR1PH0N3,
+               COALESCE(substr(CAST(TRY_CAST(SECPHONE AS HUGEINT) AS VARCHAR), 1, 10),'.') AS S3CPH0N3,
+               COALESCE(substr(CAST(TRY_CAST(MOBIPHON AS HUGEINT) AS VARCHAR), 1, 10),'.') AS M0B1PH0N
         FROM s1),
     s3 AS (        -- mask blanks
         SELECT * REPLACE ({_blank_mask('NEWIC')}, {_blank_mask('ACCTNO')},
@@ -635,7 +742,7 @@ con.execute(f"""
 con.execute("DROP TABLE ciscard")
 
 # ============================================================================
-# STEP 11: WRITE SPLIT CUSTOMER EXTRACT + SFTP COMMAND LIST
+# STEP 11: WRITE SPLIT CUSTOMER EXTRACT + SFTP COMMAND LIST + SFTP UPLOAD
 # ============================================================================
 print("\nStep 11: Writing split customer extract + SFTP file list...")
 NOBS = con.execute("SELECT COUNT(*) FROM custdata").fetchone()[0]
@@ -648,6 +755,7 @@ _FIELDS = ["NEWIC", "PRIPHONE", "SECPHONE", "MOBIPHON", "ACCTNO", "BUSSREG"] + C
 _LINE_SQL = "concat_ws('|', " + ", ".join(f"rtrim({c})" for c in _FIELDS) + ")"
 
 sftp_lines = []
+upload_files = []
 for i in range(1, NUMFILE + 1):
     no = f"{i:03d}"
     start, end = (i - 1) * OBSNUM + 1, min(i * OBSNUM, NOBS)
@@ -664,12 +772,23 @@ for i in range(1, NUMFILE + 1):
 
     files_str = f"//SAP.PBB.DLP.C{no}.TEXT  DLP{no}.CSV"
     sftp_lines.append(f"PUT {files_str}")
+    upload_files.append((out_path, f"DLP{no}.CSV"))
 
 with open(SFTP_OUTPUT_FILE, "w", encoding="latin1") as fh:
     for ln in sftp_lines:
         fh.write(ln + "\n")
 print(f"  Written {SFTP_OUTPUT_FILE.name} ({len(sftp_lines)} lines)")
+for ln in sftp_lines:
+    print(f"    {ln}")
 
 con.close()
 DB_FILE.unlink(missing_ok=True)
+
+# SFTP the DLP extract members to the DLP server (JCL SFTPDLPS / ask.py)
+if upload_files:
+    print("\nUploading extract files to DLP server via SFTP...")
+    sftp_upload_to_dlp(upload_files)
+
+# All inputs are done being used: drop the temporary Parquet files.
+shutil.rmtree(TMP_PARQUET_DIR, ignore_errors=True)
 print("\nEIBWDLPS complete.")
