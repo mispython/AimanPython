@@ -46,16 +46,16 @@ ISASD_DIR       = Path("/exdwh/host/ln/store_sasdata")      # DD ISASD    -> SAP
 OUTPUT_DIR      = Path("/hosr_pq/mis/output/report/EIIBNW01")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-BNM_LOAN_CUR_SAS = BNM_DIR      / f"loan{REPTMON}{NOWK}.sas7bdat"                   # 1. BNM.LOAN&REPTMON&NOWK
-BNM_LOAN_PRV_SAS = BNM_DIR      / f"loan{REPTMON1}{NOWK3}.sas7bdat"                 # 2. BNM.LOAN&REPTMON1&NOWK3
-BNM_LNWOF_SAS    = BNM_DIR      / f"lnwof{REPTMON}{NOWK}.sas7bdat"                  # 3. BNM.LNWOF&REPTMON&NOWK
-BNM_LNWOD_SAS    = BNM_DIR      / f"lnwod{REPTMON}{NOWK}.sas7bdat"                  # 4. BNM.LNWOD&REPTMON&NOWK
+BNM_LOAN_CUR_SAS = BNM_DIR      / f"loan{REPTMON}{NOWK}.sas7bdat"                   # 1. BNM.LOAN&REPTMON&NOWK          (Filter by ENTITY_CD = 'PIBB')
+BNM_LOAN_PRV_SAS = BNM_DIR      / f"loan{REPTMON1}{NOWK3}.sas7bdat"                 # 2. BNM.LOAN&REPTMON1&NOWK3        (Filter by ENTITY_CD = 'PIBB')
+BNM_LNWOF_SAS    = BNM_DIR      / f"lnwof{REPTMON}{NOWK}.sas7bdat"                  # 3. BNM.LNWOF&REPTMON&NOWK         (Filter by ENTITY_CD = 'PIBB')
+BNM_LNWOD_SAS    = BNM_DIR      / f"lnwod{REPTMON}{NOWK}.sas7bdat"                  # 4. BNM.LNWOD&REPTMON&NOWK         (Filter by ENTITY_CD = 'PIBB')
 BTBNM_CUR_SAS    = BTBNM_DIR    / f"ibtrad{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"       # 5. BTBNM.IBTRAD&REPTMON&NOWK
 BTBNM_PRV_SAS    = BTBNM_DIR    / f"ibtrad{REPTMON1}{NOWK3}{REPTYEAR}.sas7bdat"     # 6. BTBNM.IBTRAD&REPTMON1&NOWK3
 DISPAY_SAS       = DISPAY_DIR   / f"idispaymth{REPTMON}.sas7bdat"                   # 7. DISPAY.IDISPAYMTH&REPTMON
-LOAN_LNCOMM_SAS  = LOAN_DIR     / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"               # 8. LOAN.LNCOMM
-IDEPOSIT_CUR_SAS = IDEPOSIT_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"       # 9. IDEPOSIT.CURRENT (GDG -1, static logical name)
-ISASD_LOAN_SAS   = ISASD_DIR    / f"loan{REPTMON}.sas7bdat"                         # 10. ISASD.LOAN&REPTMON
+LOAN_LNCOMM_SAS  = LOAN_DIR     / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"               # 8. LOAN.LNCOMM                    (Filter by ENTITY_CD = 'PIBB')
+IDEPOSIT_CUR_SAS = IDEPOSIT_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"       # 9. IDEPOSIT.CURRENT               (Filter by ENTITY_CD = 'PIBB')
+ISASD_LOAN_SAS   = ISASD_DIR    / f"iloan{REPTMON}.sas7bdat"                        # 10. ISASD.LOAN&REPTMON
 
 # # Testing Path
 # BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
