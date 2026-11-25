@@ -1,13 +1,30 @@
-//FTPELIST JOB MSGCLASS=X,MSGLEVEL=(2,1),NOTIFY=OPER,                   
-//         CLASS=A,TIME=1440                                            
-//FTP      EXEC PGM=FTP,REGION=4096K,                                   
-//      PARM=('192.168.7.46 (EXIT TIMEOUT 60')                          
-//NETRC    DD DSN=OPER.PBB.CONTROL(PASCRISP),DISP=SHR                   
-//INPUT    DD *                                                         
-PUT 'SAP.BANK.LOANLIST.TEXT'  LOANLIST                                  
-PUT 'SAP.BANK.ODLIST.TEXT'    ODLIST                                    
-PUT 'SAP.PIBB.LOANLIST.TEXT'  ILOANLIST                                 
-PUT 'SAP.PIBB.ODLIST.TEXT'    IODLIST                                   
-quit                                                                    
-//OUTPUT   DD SYSOUT=*                                                  
-//SYSPRINT DD SYSOUT=*  
+//SFTPDLPS JOB MSGCLASS=X,REGION=4M,TIME=1440,USER=OPCC                 
+//*>OPC SCAN                                                            
+//*****************************************************************     
+//* SFTP EXTRACTION OF SAS DATA TO DLP SERVER                           
+//* SMR 2012-1555 (MFM)                                                 
+//*****************************************************************     
+//RUNSFTP  EXEC COZBATCH                                                
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(COZ#DLP3)                 
+//           DD *                                                       
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text               
+lzopts linerule="lf"                                                    
+//           DD DISP=SHR,DSN=SAP.PBB.DLP.SFTP.TEXT                      
+//           DD *                                                       
+EOB                                                                     
+/*                                                                      
+
+
+
+Example output of SAP.PBB.DLP.SFTP.TEXT:
+PUT //SAP.PBB.DLP.C001.TEXT  DLP001.CSV
+PUT //SAP.PBB.DLP.C002.TEXT  DLP002.CSV
+PUT //SAP.PBB.DLP.C003.TEXT  DLP003.CSV
+PUT //SAP.PBB.DLP.C004.TEXT  DLP004.CSV
+PUT //SAP.PBB.DLP.C005.TEXT  DLP005.CSV
+PUT //SAP.PBB.DLP.C006.TEXT  DLP006.CSV
+
+
+
+
+
