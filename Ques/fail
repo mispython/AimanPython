@@ -1,9 +1,10 @@
-import gc
 import os
+import gc
+import math
 import shutil
 import tempfile
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -14,48 +15,50 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 # NOTE ON REMOVED IMPORTS:
-#   from REPTDATE import get_reptdate_values   -> report date now comes from SOURCE_SYSTEM_CD='DP' in ctl_dwh_batch_dttm
-#   from input_date import get_latest_file      -> input filenames are fully derived from the report date (deterministic)
-#   from output_date import build_output_file   -> output date stamp (yymmdd) is built locally from the report date
-#   GET_BATCH_DATE / EDW_TRANSFORMATION         -> get_batch_date() / get_sftp_info() below read the control files directly
+#   from REPTDATE import get_reptdate_values   -> report date now comes from ctl_dwh_batch_dttm (BATCH_SOURCE below)
+#   from input_date import get_latest_file      -> LOAN / LNNOTE / LNCOMM filenames are fully derived from the report date
+# from output_date import build_output_file
+# NOTE: build_output_file() is NOT used in this program. The original SAS
+# DSNs (SAP.BANK.LOANLIST.TEXT/RPS, SAP.PIBB.LOANLIST.TEXT/RPS) carry no
+# date component in their fileNAMEs, so all output files here use fixed
+# static fileNAMEs instead.
 
-# ============================================================================
+# =============================================================================
 # PATH CONFIGURATION
-# ============================================================================
+# =============================================================================
 # Control files (batch date per source system / SFTP connection info)
 CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
 CTL_SFTP_INFO  = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-BATCH_SOURCE   = "DP"   # SOURCE_SYSTEM_CD used for the report date
+BATCH_SOURCE   = "LN"   # SOURCE_SYSTEM_CD used for the report date
 
 # Production Path
-MNITB_DIR  = Path("/sas/deposit/dwh/integration")
+MNILN_DIR  = Path("/sas/ln/dwh/enrichment")
 LOAN_DIR   = Path("/dwh/dwh_m/tempsource/ln")
-OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMODLT")
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMLNLT")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Temporary parquet location (None = system temp; set a path if the default temp area is too small)
 TEMP_DIR = None
 
 # # Testing Path
-# # BASE_DIR   = Path("/dwh")
 # BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-# MNITB_DIR  = BASE_DIR / "input" / "prod" / "EIBMODLT"
-# LOAN_DIR   = BASE_DIR / "input" / "prod" / "EIBMODLT"
-# OUTPUT_DIR = BASE_DIR / "output" / "EIBMODLT"
+# MNILN_DIR  = BASE_DIR / "input" / "prod" / "EIBMLNLT"
+# LOAN_DIR   = BASE_DIR / "input" / "prod" / "EIBMLNLT"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMLNLT"
 
-# SFTP target for the TEXT flat files (original JOB: FTPELIST step in ask.py -> 192.168.7.46)
+# SFTP target for the TEXT flat files (ask.py: FTPELIST step -> 192.168.7.46)
 ECCRIS_HOST_DESC = "eCCRIS Server (svccr001)"
 
-# ============================================================================
+# =============================================================================
 # CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
-# ============================================================================
+# =============================================================================
 CHUNK_ROWS = 500_000
 ROW_LIMIT  = int(os.environ.get("ROW_LIMIT", 0))   # 0 = no limit (test mode via env)
 
 
-# ============================================================================
+# =============================================================================
 # CONTROL FILE HELPERS  (batch date / SFTP info)
-# ============================================================================
+# =============================================================================
 def get_batch_date(source_system_cd: str) -> date:
     """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from ctl_dwh_batch_dttm."""
     if not CTL_BATCH_DTTM.exists():
@@ -112,49 +115,44 @@ def get_sftp_info(host_desc: str):
     return sftp_id, sftp_pw, host_ip, host_key
 
 
-# ============================================================================
-# REPORT DATE  (SOURCE_SYSTEM_CD = DP in ctl_dwh_batch_dttm)
-# ============================================================================
+# =============================================================================
+# REPORT DATE  (BATCH_SOURCE in ctl_dwh_batch_dttm)
+# =============================================================================
 REPTDATE = get_batch_date(BATCH_SOURCE)
-REPTYY   = REPTDATE.strftime("%y")
 REPTMON  = REPTDATE.strftime("%m")
 REPTDAY  = REPTDATE.strftime("%d")
 
 # NOWK: exact-day match exactly as the original SAS SELECT(DAY(REPTDATE)):
 #   WHEN (8) WK='1'; WHEN (15) WK='2'; WHEN (22) WK='3'; OTHERWISE WK='4'
-# (deliberately NOT the 1-8/9-15/16-22/23-31 banding, which differs on other days)
 NOWK = {8: "1", 15: "2", 22: "3"}.get(REPTDATE.day, "4")
 
 # NOTE: SDD and WK1 are computed in the original SAS WHEN block but are never
 # referenced anywhere else in the program, so they are not reproduced here.
+# REPTYEAR (SAS macro variable) is likewise never referenced, so it is not derived.
 
-RDATE       = REPTDATE.strftime("%d/%m/%y")   # PUT(REPTDATE, DDMMYY8.)
-REPORT_DATE = RDATE
+RDATE = REPTDATE.strftime("%d/%m/%y")   # PUT(REPTDATE, DDMMYY8.)
 
-# PROC FORMAT VALUE BANKFMT 33='PBB' 134='PFB'; -- defined in SAS but never
-# applied via PUT(var, BANKFMT.) anywhere in this program, so it is not reproduced.
+# PROC FORMAT VALUE BANKFMT 33='PBB' 134='PFB'  -> implemented as BANK_FMT / fmt_BANKNO() below.
 
-# ============================================================================
+# =============================================================================
 # INPUT / OUTPUT FILES  (derived from the report date)
-# ============================================================================
-# One deposit file and one loan file serve both banks; split by ENTITY_CD at read time.
-DEPOSIT_FILE = MNITB_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
-LOAN_FILE    = LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+# =============================================================================
+# One file each serves both banks; split by ENTITY_CD at read time.
+LOAN_FILE   = LOAN_DIR / f"loan{REPTMON}{NOWK}.sas7bdat"
+LNNOTE_FILE = MNILN_DIR / f"enrh_ln_note_d{REPTDAY}.sas7bdat"
+LNCOMM_FILE = MNILN_DIR / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"
 
-PBB_RPS_REPORT   = OUTPUT_DIR / f"ODLIST_RPS_{REPTYY}{REPTMON}{REPTDAY}.txt"
-PBB_TEXT_REPORT  = OUTPUT_DIR / f"ODLIST_TEXT_{REPTYY}{REPTMON}{REPTDAY}.txt"
-PIBB_RPS_REPORT  = OUTPUT_DIR / f"IODLIST_RPS_{REPTYY}{REPTMON}{REPTDAY}.txt"
-PIBB_TEXT_REPORT = OUTPUT_DIR / f"IODLIST_TEXT_{REPTYY}{REPTMON}{REPTDAY}.txt"
+PBB_LNLISD_TXT  = OUTPUT_DIR / "LOANLIST_TEXT.txt"    # SAP.BANK.LOANLIST.TEXT (80 char)
+PBB_LNLIST_TXT  = OUTPUT_DIR / "LOANLIST_RPS.txt"     # SAP.BANK.LOANLIST.RPS  (136 char)
+PIBB_LNLISX_TXT = OUTPUT_DIR / "ILOANLIST_TEXT.txt"   # SAP.PIBB.LOANLIST.TEXT (80 char)
+PIBB_LNLISR_TXT = OUTPUT_DIR / "ILOANLIST_RPS.txt"    # SAP.PIBB.LOANLIST.RPS  (136 char)
 
-# TEXT flat files: no date, no extension (original DSNs SAP.BANK.ODLIST.TEXT /
-# SAP.PIBB.ODLIST.TEXT carry none; remote names in ask.py are ODLIST / IODLIST)
-PBB_TEXT_REPORT_FLAT  = OUTPUT_DIR / "ODLIST"
-PIBB_TEXT_REPORT_FLAT = OUTPUT_DIR / "IODLIST"
+# Flat TEXT files: no date, no extension - these are the TEXT datasets sent by ask.py
+# as LOANLIST / ILOANLIST.
+PBB_LNLISD_TXT_FLAT  = OUTPUT_DIR / "LOANLIST"
+PIBB_LNLISX_TXT_FLAT = OUTPUT_DIR / "ILOANLIST"
 
-print("=" * 70)
-print("OD LISTING REPORT GENERATION")
-print("=" * 70)
-print(f"\nReport date  : {RDATE}")
+print(f"Report date  : {RDATE}")
 print(f"Report month : {REPTMON}  Week: {NOWK}")
 
 
@@ -220,227 +218,255 @@ def sas_to_parquet(sas_path: Path, parquet_path: Path, tag: str) -> None:
 
 
 def _prepare_inputs(tmp_dir: Path) -> tuple:
-    """Convert the DEPOSIT and LOAN .sas7bdat inputs to temporary Parquet (once each).
+    """Convert LOAN, LNNOTE and LNCOMM to temporary Parquet (once each).
 
-    Returns (loan_parquet, deposit_parquet).
+    Returns (loan_parquet, lnnote_parquet, lncomm_parquet).
     """
-    for label, path in (("DEPOSIT", DEPOSIT_FILE), ("LOAN", LOAN_FILE)):
+    for label, path in (("LOAN", LOAN_FILE), ("LNNOTE", LNNOTE_FILE), ("LNCOMM", LNCOMM_FILE)):
         if not path.exists():
             raise FileNotFoundError(
                 f"Expected {label} file not found: {path}\n"
                 f"Derived from batch date {REPTDATE} with NOWK={NOWK}."
             )
 
-    deposit_parquet = tmp_dir / f"{DEPOSIT_FILE.stem}.parquet"
-    loan_parquet    = tmp_dir / f"{LOAN_FILE.stem}.parquet"
+    loan_parquet   = tmp_dir / f"{LOAN_FILE.stem}.parquet"
+    lnnote_parquet = tmp_dir / f"{LNNOTE_FILE.stem}.parquet"
+    lncomm_parquet = tmp_dir / f"{LNCOMM_FILE.stem}.parquet"
 
-    sas_to_parquet(DEPOSIT_FILE, deposit_parquet, "DEPOSIT")
     sas_to_parquet(LOAN_FILE, loan_parquet, "LOAN")
-    return loan_parquet, deposit_parquet
+    sas_to_parquet(LNNOTE_FILE, lnnote_parquet, "LNNOTE")
+    sas_to_parquet(LNCOMM_FILE, lncomm_parquet, "LNCOMM")
+    return loan_parquet, lnnote_parquet, lncomm_parquet
 
 
 
 
+def build_lnnote_datasets(loan_parquet: Path, lnnote_parquet: Path,
+                          lncomm_parquet: Path, entity_op: str):
+    """
+    Read the temporary Parquet files (already filtered to one bank by ENTITY_CD) and replicate:
+      4. PROC SORT LNNOTE (KEEP=ACCTNO NOTENO BANKNO STATE) BY ACCTNO NOTENO
+      5. PROC SORT LOAN BY ACCTNO NOTENO
+      6. MERGE LOAN + LNNOTE by ACCTNO NOTENO, keep IF ACCTYPE='LN' -> LNOTE
+      7. PROC SORT LNOTE BY ACCTNO COMMNO
+      8. PROC SORT LNCOMM BY ACCTNO COMMNO
+      9. MERGE LNOTE + LNCOMM by ACCTNO COMMNO, keep if A -> NOTE1
+     10. NOTE2 = NOTE1 filtered by CUSTCD and SECTORCD rules
+     11. PROC SORT NOTE1 -> LNNOTE1 BY BRANCH FISSPURP CUSTCD ACCTNO
+     12. PROC SORT NOTE2 -> LNNOTE2 BY BRANCH SECTORCD CUSTCD ACCTNO
+
+    entity_op: '<>' for PBB (ENTITY_CD != 'PIBB'), '=' for PIBB (ENTITY_CD = 'PIBB').
+    Returns: lnnote1 (polars df), lnnote2 (polars df)
+    """
+    # null ENTITY_CD is treated as blank, so it stays with PBB
+    entity_cond = f"TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) {entity_op} 'PIBB'"
+
+    con = duckdb.connect()
+
+    # LNNOTE: KEEP=ACCTNO NOTENO BANKNO STATE, sorted BY ACCTNO NOTENO
+    lnnote_df = con.execute(f"""
+        SELECT ACCTNO, NOTENO, BANKNO, STATE, NAME, NTBRCH
+        FROM read_parquet('{lnnote_parquet.as_posix()}')
+        WHERE {entity_cond}
+        ORDER BY ACCTNO, NOTENO
+    """).pl()
+
+    # LOAN sorted BY ACCTNO NOTENO
+    loan_df = con.execute(f"""
+        SELECT *
+        FROM read_parquet('{loan_parquet.as_posix()}')
+        WHERE {entity_cond}
+        ORDER BY ACCTNO, NOTENO
+    """).pl()
+
+    con.close()
+
+    # MERGE LOAN + LNNOTE by ACCTNO NOTENO, IF ACCTYPE='LN'
+    merged = loan_df.join(lnnote_df, on=['ACCTNO', 'NOTENO'], how='left', suffix='_note')
+
+    if 'BANKNO_note' in merged.columns:
+        merged = merged.with_columns([
+            pl.when(pl.col('BANKNO_note').is_not_null()).then(pl.col('BANKNO_note')).otherwise(pl.col('BANKNO')).alias('BANKNO')
+        ]).drop('BANKNO_note')
+    if 'STATE_note' in merged.columns:
+        merged = merged.with_columns([
+            pl.when(pl.col('STATE_note').is_not_null()).then(pl.col('STATE_note')).otherwise(pl.col('STATE')).alias('STATE')
+        ]).drop('STATE_note')
+
+    # Handle NAME: if it came from LNNOTE (with suffix _note), rename/coalesce
+    if 'NAME_note' in merged.columns:
+        if 'NAME' in merged.columns:
+            # If LOAN also has NAME, use LNNOTE's if not null, else LOAN's
+            merged = merged.with_columns([
+                pl.when(pl.col('NAME_note').is_not_null())
+                .then(pl.col('NAME_note'))
+                .otherwise(pl.col('NAME'))
+                .alias('NAME')
+            ]).drop('NAME_note')
+        else:
+            # LOAN lacks NAME, so simply rename
+            merged = merged.rename({'NAME_note': 'NAME'})
+
+    # Rename SECTOR -> SECTORCD and CUSTCODE -> CUSTCD if they exist
+    if 'SECTOR' in merged.columns and 'SECTORCD' not in merged.columns:
+        merged = merged.rename({'SECTOR': 'SECTORCD'})
+    if 'CUSTCODE' in merged.columns and 'CUSTCD' not in merged.columns:
+        merged = merged.rename({'CUSTCODE': 'CUSTCD'})
+
+    # lnote = merged.filter(pl.col('ACCTYPE') == 'LN').select([
+    # lnote = merged.select([
+    #     'BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'BALANCE',
+    #     'SECTORCD', 'CUSTCD', 'INTRATE', 'NTBRCH', 'COMMNO', 'LIABCODE',
+    #     'APPRLIMT', 'FISSPURP', 'STATE'
+    # ]).sort(['ACCTNO', 'COMMNO'])
+
+    lnote = merged.select([
+        'BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'BALANCE',
+        'SECTORCD', 'CUSTCD', 'INTRATE', 'COMMNO', 'LIABCODE',
+        'APPRLIMT', 'FISSPURP', 'STATE'
+    ]).sort(['ACCTNO', 'COMMNO'])
+
+    del merged, loan_df, lnnote_df
+    gc.collect()
+
+    con2 = duckdb.connect()
+    lncomm = con2.execute(f"""
+        SELECT * FROM read_parquet('{lncomm_parquet.as_posix()}')
+        WHERE {entity_cond}
+        ORDER BY ACCTNO, COMMNO
+    """).pl()
+    con2.close()
+
+    note1 = lnote.join(lncomm, on=['ACCTNO', 'COMMNO'], how='left', suffix='_comm')
+
+    # for col in ['BANKNO', 'BRANCH', 'NOTENO', 'NAME', 'BALANCE', 'SECTORCD', 'CUSTCD',
+    #             'INTRATE', 'NTBRCH', 'LIABCODE', 'APPRLIMT', 'FISSPURP', 'STATE']:
+    for col in ['BANKNO', 'BRANCH', 'NOTENO', 'NAME', 'BALANCE', 'SECTORCD', 'CUSTCD',
+                'INTRATE', 'LIABCODE', 'APPRLIMT', 'FISSPURP', 'STATE']:
+        comm_col = f"{col}_comm"
+        if comm_col in note1.columns:
+            note1 = note1.with_columns(
+                pl.when(pl.col(comm_col).is_not_null()).then(pl.col(comm_col)).otherwise(pl.col(col)).alias(col)
+            ).drop(comm_col)
+
+    # note1_cols = ['BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'APPRLIMT', 'BALANCE',
+    #               'SECTORCD', 'CUSTCD', 'STATE', 'INTRATE', 'NTBRCH', 'COMMNO', 'LIABCODE',
+    #               'CCOLLTRL', 'FISSPURP']
+    note1_cols = ['BANKNO', 'BRANCH', 'ACCTNO', 'NOTENO', 'NAME', 'APPRLIMT', 'BALANCE',
+                  'SECTORCD', 'CUSTCD', 'STATE', 'INTRATE', 'COMMNO', 'LIABCODE',
+                  'CCOLLTRL', 'FISSPURP']
+    note1 = note1.select([c for c in note1_cols if c in note1.columns])
+
+    del lnote, lncomm
+    gc.collect()
+
+    note2 = note1.filter(
+        (~pl.col('CUSTCD').cast(pl.Utf8).is_in(['77', '78', '95', '96'])) &
+        (
+            pl.col('SECTORCD').cast(pl.Utf8).str.starts_with('5') |
+            (pl.col('SECTORCD').cast(pl.Utf8) == '8310')
+        )
+    )
+
+    lnnote1 = note1.sort(['BRANCH', 'FISSPURP', 'CUSTCD', 'ACCTNO'])
+    lnnote2 = note2.sort(['BRANCH', 'SECTORCD', 'CUSTCD', 'ACCTNO'])
+
+    del note1, note2
+    gc.collect()
+
+    return lnnote1, lnnote2
+
+
+
+
+# =============================================================================
+# BANK CONFIGURATION
+# =============================================================================
 @dataclass(frozen=True)
 class BankConfig:
     bank_code: str
     entity_op: str          # '<>' for PBB (ENTITY_CD != 'PIBB'), '=' for PIBB (ENTITY_CD = 'PIBB')
     bank_title: str
-    rps_output: Path
-    text_output: Path
-    text_flat_output: Path  # flat TEXT file, no date / no extension
-    text_remote_name: str   # remote filename on the eCCRIS server
+    lnlisd_txt: Path        # LNLISD / LNLISX  (80 char text data file)
+    lnlist_txt: Path        # LNLIST / LNLISR  (136 char RPS report)
+    lnlisd_flat: Path       # flat TEXT file, no date / no extension
+    remote_name: str        # remote filename on the eCCRIS server
 
 
 BANKS = [
     BankConfig(
-        bank_code        = "PBB",
-        entity_op        = "<>",
-        bank_title       = "P U B L I C   B A N K   B E R H A D",
-        rps_output       = PBB_RPS_REPORT,
-        text_output      = PBB_TEXT_REPORT,
-        text_flat_output = PBB_TEXT_REPORT_FLAT,
-        text_remote_name = "ODLIST",
+        bank_code   = "PBB",
+        entity_op   = "<>",
+        bank_title  = 'P U B L I C   B A N K   B E R H A D',
+        lnlisd_txt  = PBB_LNLISD_TXT,
+        lnlist_txt  = PBB_LNLIST_TXT,
+        lnlisd_flat = PBB_LNLISD_TXT_FLAT,
+        remote_name = "LOANLIST",
     ),
     BankConfig(
-        bank_code        = "PIBB",
-        entity_op        = "=",
-        bank_title       = "P U B L I C   I S L A M I C  B A N K   B E R H A D",
-        rps_output       = PIBB_RPS_REPORT,
-        text_output      = PIBB_TEXT_REPORT,
-        text_flat_output = PIBB_TEXT_REPORT_FLAT,
-        text_remote_name = "IODLIST",
+        bank_code   = "PIBB",
+        entity_op   = "=",
+        bank_title  = 'P U B L I C   I S L A M I C   B A N K   B E R H A D',
+        lnlisd_txt  = PIBB_LNLISX_TXT,
+        lnlist_txt  = PIBB_LNLISR_TXT,
+        lnlisd_flat = PIBB_LNLISX_TXT_FLAT,
+        remote_name = "ILOANLIST",
     ),
 ]
 
+# =============================================================================
+# MAIN: ONE BANK
+# =============================================================================
 
-
-
-def generate_od_listing_report(
-    cfg: BankConfig,
-    loan_parquet: Path,
-    deposit_parquet: Path,
-) -> bool:
+def run_bank(cfg: BankConfig, loan_parquet: Path, lnnote_parquet: Path,
+             lncomm_parquet: Path) -> bool:
     """
-    Generate the OD listing RPS report (by FISS purpose, then by sector) and
-    the accompanying fixed-width ODLD text file for one bank.
-
-    Returns:
-        True if the report was generated successfully, False otherwise.
+    Process one bank (PBB / PIBB). Inputs are the temporary Parquet files.
+    Returns True on success, False otherwise.
     """
-    print(f"\n{'=' * 70}")
-    print(f"Generating {'Islamic Bank' if cfg.bank_code == 'PIBB' else 'Public Bank'} OD Listing Report")
-    print(f"{'=' * 70}")
-    print(f"\nReport Date: {REPORT_DATE}")
-
-    # A fresh in-memory DuckDB connection is created for every report run
-    # so that registered views from a previous run cannot bleed through.
-    con = duckdb.connect(database=":memory:")
+    print(f"\nProcessing {cfg.bank_code} section...")
 
     try:
-        # PBB = ENTITY_CD != 'PIBB', PIBB = ENTITY_CD = 'PIBB'
-        # (null ENTITY_CD is treated as blank, so it stays with PBB)
-        entity_cond = f"TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) {cfg.entity_op} 'PIBB'"
-
-        print("\nStep 1: Building ODRAFT (deposit accounts with negative balance)...")
-        # DATA ODRAFT; SET DEPOSIT.CURRENT; IF CURBAL<0 AND CUSTCODE NE 81;
-        # BALANCE = (-1)*CURBAL;
-        odraft = con.execute(f"""
-            SELECT
-                CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-                CAST(BRANCH   AS INTEGER) AS BRANCH,
-                CAST(CUSTCODE AS INTEGER) AS CUSTCODE,
-                CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-                COALESCE(CAST(NAME AS VARCHAR), '') AS NAME,
-                CAST(LIMIT1   AS DOUBLE)  AS LIMIT1,
-                CAST(LIMIT2   AS DOUBLE)  AS LIMIT2,
-                CAST(LIMIT3   AS DOUBLE)  AS LIMIT3,
-                CAST(LIMIT4   AS DOUBLE)  AS LIMIT4,
-                CAST(LIMIT5   AS DOUBLE)  AS LIMIT5,
-                CAST(RATE1    AS DOUBLE)  AS RATE1,
-                CAST(RATE2    AS DOUBLE)  AS RATE2,
-                CAST(RATE3    AS DOUBLE)  AS RATE3,
-                CAST(RATE4    AS DOUBLE)  AS RATE4,
-                CAST(RATE5    AS DOUBLE)  AS RATE5,
-                CAST(COL1     AS VARCHAR) AS COL1,
-                CAST(COL2     AS VARCHAR) AS COL2,
-                CAST(COL3     AS VARCHAR) AS COL3,
-                CAST(COL4     AS VARCHAR) AS COL4,
-                CAST(COL5     AS VARCHAR) AS COL5,
-                CAST(STATE    AS VARCHAR) AS STATE,
-                CAST(FLATRATE AS DOUBLE)  AS FLATRATE,
-                (-1) * CAST(CURBAL AS DOUBLE) AS BALANCE
-            FROM read_parquet('{deposit_parquet.as_posix()}')
-            WHERE {entity_cond}
-              AND CAST(CURBAL AS DOUBLE) < 0
-              AND COALESCE(CAST(CUSTCODE AS INTEGER), -1) <> 81
-        """).pl()
-        print(f"ODRAFT records: {len(odraft):,}")
-
-        print("\nStep 2: Loading LOAN (ACCTNO, SECTORCD, FISSPURP)...")
-        # PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN(KEEP=ACCTNO SECTORCD FISSPURP);
-        # BY ACCTNO; -- sort is only needed here to prepare the merge key; the
-        # explicit join below achieves the same match-merge result, so the
-        # physical sort is not reproduced.
-        loan = con.execute(f"""
-            SELECT
-                CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-                CAST(SECTOR   AS VARCHAR) AS SECTORCD,
-                CAST(FISSPURP AS VARCHAR) AS FISSPURP
-            FROM read_parquet('{loan_parquet.as_posix()}')
-            WHERE {entity_cond}
-        """).pl()
-        print(f"LOAN records: {len(loan):,}")
-
-        print("\nStep 3: Merging ODRAFT with LOAN (inner match-merge)...")
-        # DATA ODRAFT1; MERGE ODRAFT(IN=A) LOAN(IN=B); BY ACCTNO; IF A AND B;
-        odraft1 = odraft.join(loan, on="ACCTNO", how="inner")
-        print(f"ODRAFT1 records: {len(odraft1):,}")
-
-        print("\nStep 4: Filtering ODRAFT2 (construction/real estate sectors)...")
-        # DATA ODRAFT2; SET ODRAFT1;
-        # IF CUSTCD NOT IN ('77','78','95','96') AND
-        #   (SUBSTR(SECTORCD,1,1)='5' OR SECTORCD='8310') THEN OUTPUT;
-        #
-        # NOTE: CUSTCD is never present in ODRAFT1 - the LOAN dataset was kept
-        # down to ACCTNO/SECTORCD/FISSPURP only, and ODRAFT (from DEPOSIT) has
-        # no CUSTCD field either (it has CUSTCODE, a different field). In the
-        # original SAS, referencing an undefined variable makes it missing for
-        # every observation, and a missing value is never IN a list of
-        # non-missing values, so "CUSTCD NOT IN (...)" is always TRUE and adds
-        # no real filtering. Only the SECTORCD condition actually filters rows,
-        # which is what is implemented below (preserves true program behaviour).
-        odraft2 = odraft1.filter(
-            (pl.col("SECTORCD").str.slice(0, 1) == "5") | (pl.col("SECTORCD") == "8310")
+        lnnote1, lnnote2 = build_lnnote_datasets(
+            loan_parquet, lnnote_parquet, lncomm_parquet, cfg.entity_op
         )
-        print(f"ODRAFT2 records: {len(odraft2):,}")
+        print(f"  LNNOTE1 records: {len(lnnote1):,}")
+        print(f"  LNNOTE2 records: {len(lnnote2):,}")
 
-        print("\nStep 5: Sorting BY-group keys...")
-        # PROC SORT DATA=ODRAFT1; BY BRANCH FISSPURP ACCTNO;
-        odraft1_sorted = odraft1.sort(["BRANCH", "FISSPURP", "ACCTNO"])
-        # PROC SORT DATA=ODRAFT2; BY BRANCH SECTORCD ACCTNO;
-        odraft2_sorted = odraft2.sort(["BRANCH", "SECTORCD", "ACCTNO"])
+        write_lnlisd(lnnote1, cfg.lnlisd_txt)
+        print(f"  Written: {cfg.lnlisd_txt}")
 
-        del odraft, loan, odraft1, odraft2
+        # Flat TEXT file (no date, no extension) = SAP.xxxx.LOANLIST.TEXT sent as LOANLIST / ILOANLIST
+        shutil.copyfile(cfg.lnlisd_txt, cfg.lnlisd_flat)
+        print(f"  Written flat file: {cfg.lnlisd_flat}")
+
+        write_lnlist_fiss(lnnote1, RDATE, cfg.lnlist_txt, cfg.bank_title, mode='w')
+        print(f"  Written FISS section: {cfg.lnlist_txt}")
+
+        write_lnlist_sector(lnnote2, RDATE, cfg.lnlist_txt, cfg.bank_title, mode='a')
+        print(f"  Appended Sector section: {cfg.lnlist_txt}")
+
+        del lnnote1, lnnote2
         gc.collect()
-
-        print("\nStep 6: Writing ODLD text file (dated) and flat TEXT file...")
-        # DATA ODLD; SET ODRAFT1; FILE ODLSD; PUT ...
-        with open(cfg.text_output, "w", encoding="latin1") as fh:
-            for row in odraft1_sorted.iter_rows(named=True):
-                _write_odld_line(fh, row)
-        print(f"Text file saved: {cfg.text_output}")
-
-        # Flat TEXT file (no date, no extension) = SAP.xxxx.ODLIST.TEXT sent as ODLIST / IODLIST
-        shutil.copyfile(cfg.text_output, cfg.text_flat_output)
-        print(f"Flat text file saved: {cfg.text_flat_output}")
-
-        print("\nStep 7: Writing RPS report file...")
-        # DATA _NULL_; SET ODRAFT1; BY BRANCH FISSPURP ACCTNO; FILE ODLST; ...
-        # DATA _NULL_; SET ODRAFT2; BY BRANCH SECTORCD ACCTNO; FILE ODLST MOD; ...
-        with open(cfg.rps_output, "w", encoding="latin1") as fh:
-            _process_group_report(
-                fh, odraft1_sorted.to_dicts(), "FISSPURP", "FISS PURPOSE",
-                _header_lines_fisspurp, cfg.bank_title,
-            )
-            _process_group_report(
-                fh, odraft2_sorted.to_dicts(), "SECTORCD", "SECTOR",
-                _header_lines_sector, cfg.bank_title,
-            )
-        print(f"RPS report saved: {cfg.rps_output}")
-
-        print("\nReport Statistics:")
-        print(f"  ODRAFT1 rows (all FISS purpose)                  : {len(odraft1_sorted):,}")
-        print(f"  ODRAFT2 rows (construction/real estate, non-indi): {len(odraft2_sorted):,}")
-
-        # print(f"\n========== PREVIEW: {cfg.rps_output.name} ==========\n")
-        # with open(cfg.rps_output, "r", encoding="latin1") as f:
-        #     print(f.read())
-        # print("========== END PREVIEW ==========\n")
-
+        print(f"{cfg.bank_code} section complete.")
         return True
 
     except Exception as e:
-        print(f"\n[ERROR] Report generation failed for {cfg.bank_code}: {type(e).__name__}: {e}")
+        print(f"\n[ERROR] {cfg.bank_code} failed: {type(e).__name__}: {e}")
         return False
 
-    finally:
-        con.close()
 
-
-
-
-# ============================================================================
+# =============================================================================
 # SFTP UPLOAD OF TEXT FLAT FILES  (ask.py: FTPELIST -> 192.168.7.46)
-# ============================================================================
+# =============================================================================
 def sftp_upload_text_files(local_files: list) -> None:
     """
     Upload the flat TEXT files to the eCCRIS server (ctl_dwh_sftp_info row
     ECCRIS_HOST_DESC).
 
     Equivalent of ask.py:
-        PUT 'SAP.BANK.ODLIST.TEXT'  ODLIST
-        PUT 'SAP.PIBB.ODLIST.TEXT'  IODLIST
+        PUT 'SAP.BANK.LOANLIST.TEXT'  LOANLIST
+        PUT 'SAP.PIBB.LOANLIST.TEXT'  ILOANLIST
     No remote CD in the original, so files land in the login directory.
 
     Parameters:
@@ -467,332 +493,206 @@ def sftp_upload_text_files(local_files: list) -> None:
     print("  eCCRIS upload complete.")
 
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
-results = {}
+# =============================================================================
+# ENTRY POINT
+# =============================================================================
 
-# Temporary parquet folder: removed in the finally block once both banks are done.
-_tmp = tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="EIBMODLT_")
-try:
-    print("\n" + "#" * 70)
-    print("PHASE 1: SAS -> TEMPORARY PARQUET (ONCE, SHARED BY PBB AND PIBB)")
-    print("#" * 70)
+# PLACEHOLDER: STEP01 PGM=IEFBR14 / STEP02 PGM=SPLIB136 (JCL)
+#   Original JCL deletes RBP2.B033.LOANLIS1-5.RPS / RBP2.B051.LOANLIS1-5.RPS and runs
+#   SPLIB136 (INFILE=SAP.BANK.LOANLIST.RPS / SAP.PIBB.LOANLIST.RPS, region files
+#   RMDS.OPC.BANKCODE(KLREGION/BGREGION/JBREGION/SBREGION/PPREGION/TTREGION)) to split the RPS report
+#   by region and insert RPS control characters (OUTFIL1-5, RECFM=FBA, LRECL=138).
+#   SPLIB136 is a mainframe load module (RMDS.OPC.LOADLIB) with no source provided, so the
+#   regional split is not reproduced here.
 
-    loan_parquet, deposit_parquet = _prepare_inputs(Path(_tmp.name))
+if __name__ == '__main__':
+    results = {}
 
-    print("\n" + "#" * 70)
-    print("PHASE 2: REPORT GENERATION (PBB, then PIBB)")
-    print("#" * 70)
-
-    # PART 1: PUBLIC BANK - OD LISTING
-    results["PBB"] = generate_od_listing_report(BANKS[0], loan_parquet, deposit_parquet)
-
-    # PART 2: PUBLIC ISLAMIC BANK - CLF-i LISTING
-    results["PIBB"] = generate_od_listing_report(BANKS[1], loan_parquet, deposit_parquet)
-finally:
-    _tmp.cleanup()
-    print("\nTemporary parquet files removed.")
-
-# ============================================================================
-# SUMMARY
-# ============================================================================
-print("\n" + "=" * 70)
-print("GENERATED REPORTS:")
-print("=" * 70)
-
-if results["PBB"]:
-    print(f"  1. Public Bank OD Listing     : {PBB_RPS_REPORT}")
-    print(f"                                  {PBB_TEXT_REPORT}")
-    print(f"                                  {PBB_TEXT_REPORT_FLAT}")
-else:
-    print("  1. Public Bank OD Listing     : [FAILED]")
-
-if results["PIBB"]:
-    print(f"  2. Islamic Bank CLF-i Listing : {PIBB_RPS_REPORT}")
-    print(f"                                  {PIBB_TEXT_REPORT}")
-    print(f"                                  {PIBB_TEXT_REPORT_FLAT}")
-else:
-    print("  2. Islamic Bank CLF-i Listing : [FAILED]")
-
-if all(results.values()):
-    print("\nREPORT GENERATION COMPLETE")
-else:
-    print("\nREPORT GENERATION COMPLETED WITH ERRORS — review output above.")
-
-# ============================================================================
-# SFTP FLAT TEXT FILES TO eCCRIS SERVER (only banks that succeeded)
-# ============================================================================
-upload_list = [
-    (cfg.text_flat_output, cfg.text_remote_name)
-    for cfg in BANKS if results[cfg.bank_code]
-]
-if upload_list:
-    print("\nUploading flat TEXT files to eCCRIS via SFTP...")
-    sftp_upload_text_files(upload_list)
-
-
-
-
-================ Flags
-
-def _comma(value, width: int, decimals: int = 2) -> str:
-    """COMMAw.d style: comma-separated, right-justified, sign if negative.
-    A missing value prints as '.' right-justified (SAS default)."""
-    if value is None:
-        return ".".rjust(width)
+    # Temporary parquet folder: removed in the finally block once both banks are done.
+    _tmp = tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="EIBMLNLT_")
     try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return ".".rjust(width)
-    if v != v:  # NaN
-        return ".".rjust(width)
-    return f"{v:,.{decimals}f}".rjust(width)
+        print("=== STAGE 1: Converting SAS inputs to temporary Parquet (once, shared by PBB and PIBB) ===")
+        loan_pq, lnnote_pq, lncomm_pq = _prepare_inputs(Path(_tmp.name))
 
-
-def _num(value, width: int) -> str:
-    """Plain numeric PUT (e.g. 3., 10., 12.) - right-justified, no commas.
-    A missing value prints as '.' right-justified (SAS default)."""
-    if value is None:
-        return ".".rjust(width)
-    try:
-        return f"{int(value)}".rjust(width)
-    except (TypeError, ValueError):
-        return ".".rjust(width)
-
-
-
-
-def _code_columns_sql(con, parquet_path: Path, columns: list) -> str:
-    """Build SELECT expressions that return code columns as clean text.
-
-    Character columns pass through unchanged. If a column is stored as a number,
-    integer-valued numbers are rendered without a trailing '.0' (1.0 -> '1').
-    Missing values stay NULL (printed as blanks by _char).
-    """
-    described = con.execute(
-        f"DESCRIBE SELECT {', '.join(columns)} FROM read_parquet('{parquet_path.as_posix()}')"
-    ).fetchall()
-    col_types = {row[0]: str(row[1]).upper() for row in described}
-
-    exprs = []
-    for col in columns:
-        if col_types[col] == "VARCHAR":
-            exprs.append(f"CAST({col} AS VARCHAR) AS {col}")
-        else:
-            exprs.append(
-                f"CASE WHEN {col} IS NULL THEN NULL "
-                f"WHEN CAST({col} AS DOUBLE) = FLOOR(CAST({col} AS DOUBLE)) "
-                f"THEN CAST(CAST({col} AS BIGINT) AS VARCHAR) "
-                f"ELSE CAST({col} AS VARCHAR) END AS {col}"
-            )
-    return ",\n                ".join(exprs)
-
-
-
-
-def generate_od_listing_report(
-    cfg: BankConfig,
-    loan_parquet: Path,
-    deposit_parquet: Path,
-) -> bool:
-    """
-    Generate the OD listing RPS report (by FISS purpose, then by sector) and
-    the accompanying fixed-width ODLD text file for one bank.
-
-    Returns:
-        True if the report was generated successfully, False otherwise.
-    """
-    print(f"\n{'=' * 70}")
-    print(f"Generating {'Islamic Bank' if cfg.bank_code == 'PIBB' else 'Public Bank'} OD Listing Report")
-    print(f"{'=' * 70}")
-    print(f"\nReport Date: {REPORT_DATE}")
-
-    # A fresh in-memory DuckDB connection is created for every report run
-    # so that registered views from a previous run cannot bleed through.
-    con = duckdb.connect(database=":memory:")
-
-    try:
-        # PBB = ENTITY_CD != 'PIBB', PIBB = ENTITY_CD = 'PIBB'
-        # (null ENTITY_CD is treated as blank, so it stays with PBB)
-        entity_cond = f"TRIM(COALESCE(CAST(ENTITY_CD AS VARCHAR), '')) {cfg.entity_op} 'PIBB'"
-        col_sql = _code_columns_sql(con, deposit_parquet, ["COL1", "COL2", "COL3", "COL4", "COL5"])
-
-        print("\nStep 1: Building ODRAFT (deposit accounts with negative balance)...")
-        # DATA ODRAFT; SET DEPOSIT.CURRENT; IF CURBAL<0 AND CUSTCODE NE 81;
-        # BALANCE = (-1)*CURBAL;
-        # SAS treats a missing CURBAL as smaller than any number, so CURBAL<0 is TRUE
-        # for missing: those rows are kept and BALANCE stays missing.
-        odraft = con.execute(f"""
-            SELECT
-                CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-                CAST(BRANCH   AS INTEGER) AS BRANCH,
-                CAST(CUSTCODE AS INTEGER) AS CUSTCODE,
-                CAST(APPRLIMT AS DOUBLE)  AS APPRLIMT,
-                COALESCE(CAST(NAME AS VARCHAR), '') AS NAME,
-                CAST(LIMIT1   AS DOUBLE)  AS LIMIT1,
-                CAST(LIMIT2   AS DOUBLE)  AS LIMIT2,
-                CAST(LIMIT3   AS DOUBLE)  AS LIMIT3,
-                CAST(LIMIT4   AS DOUBLE)  AS LIMIT4,
-                CAST(LIMIT5   AS DOUBLE)  AS LIMIT5,
-                CAST(RATE1    AS DOUBLE)  AS RATE1,
-                CAST(RATE2    AS DOUBLE)  AS RATE2,
-                CAST(RATE3    AS DOUBLE)  AS RATE3,
-                CAST(RATE4    AS DOUBLE)  AS RATE4,
-                CAST(RATE5    AS DOUBLE)  AS RATE5,
-                {col_sql},
-                CAST(STATE    AS VARCHAR) AS STATE,
-                CAST(FLATRATE AS DOUBLE)  AS FLATRATE,
-                (-1) * CAST(CURBAL AS DOUBLE) AS BALANCE
-            FROM read_parquet('{deposit_parquet.as_posix()}')
-            WHERE {entity_cond}
-              AND (CAST(CURBAL AS DOUBLE) IS NULL OR CAST(CURBAL AS DOUBLE) < 0)
-              AND COALESCE(CAST(CUSTCODE AS INTEGER), -1) <> 81
-        """).pl()
-        print(f"ODRAFT records: {len(odraft):,}")
-
-        print("\nStep 2: Loading LOAN (ACCTNO, SECTORCD, FISSPURP)...")
-        # PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN(KEEP=ACCTNO SECTORCD FISSPURP);
-        # BY ACCTNO; -- sort is only needed here to prepare the merge key; the
-        # explicit join below achieves the same match-merge result, so the
-        # physical sort is not reproduced.
-        loan = con.execute(f"""
-            SELECT
-                CAST(ACCTNO   AS BIGINT)  AS ACCTNO,
-                CAST(SECTORCD AS VARCHAR) AS SECTORCD,
-                CAST(FISSPURP AS VARCHAR) AS FISSPURP
-            FROM read_parquet('{loan_parquet.as_posix()}')
-            WHERE {entity_cond}
-        """).pl()
-        print(f"LOAN records: {len(loan):,}")
-
-        print("\nStep 3: Merging ODRAFT with LOAN (inner match-merge)...")
-        # DATA ODRAFT1; MERGE ODRAFT(IN=A) LOAN(IN=B); BY ACCTNO; IF A AND B;
-        odraft1 = odraft.join(loan, on="ACCTNO", how="inner")
-        print(f"ODRAFT1 records: {len(odraft1):,}")
-
-        print("\nStep 4: Filtering ODRAFT2 (construction/real estate sectors)...")
-        # DATA ODRAFT2; SET ODRAFT1;
-        # IF CUSTCD NOT IN ('77','78','95','96') AND
-        #   (SUBSTR(SECTORCD,1,1)='5' OR SECTORCD='8310') THEN OUTPUT;
-        #
-        # The customer code on the deposit dataset is named CUSTCODE (the SAS name
-        # CUSTCD is the same field), so the exclusion is applied on CUSTCODE.
-        # A missing CUSTCODE is never IN the list, so it is not excluded (as in SAS).
-        odraft2 = odraft1.filter(
-            ~pl.col("CUSTCODE").fill_null(-1).is_in([77, 78, 95, 96])
-            & (
-                (pl.col("SECTORCD").str.slice(0, 1) == "5")
-                | (pl.col("SECTORCD") == "8310")
-            )
-        )
-        print(f"ODRAFT2 records: {len(odraft2):,}")
-
-        print("\nStep 5: Sorting BY-group keys...")
-        # PROC SORT DATA=ODRAFT1; BY BRANCH FISSPURP ACCTNO;
-        odraft1_sorted = odraft1.sort(["BRANCH", "FISSPURP", "ACCTNO"])
-        # PROC SORT DATA=ODRAFT2; BY BRANCH SECTORCD ACCTNO;
-        odraft2_sorted = odraft2.sort(["BRANCH", "SECTORCD", "ACCTNO"])
-
-        del odraft, loan, odraft1, odraft2
-        gc.collect()
-
-        print("\nStep 6: Writing ODLD text file (dated) and flat TEXT file...")
-        # DATA ODLD; SET ODRAFT1; FILE ODLSD; PUT ...
-        with open(cfg.text_output, "w", encoding="latin1") as fh:
-            for row in odraft1_sorted.iter_rows(named=True):
-                _write_odld_line(fh, row)
-        print(f"Text file saved: {cfg.text_output}")
-
-        # Flat TEXT file (no date, no extension) = SAP.xxxx.ODLIST.TEXT sent as ODLIST / IODLIST
-        shutil.copyfile(cfg.text_output, cfg.text_flat_output)
-        print(f"Flat text file saved: {cfg.text_flat_output}")
-
-        print("\nStep 7: Writing RPS report file...")
-        # DATA _NULL_; SET ODRAFT1; BY BRANCH FISSPURP ACCTNO; FILE ODLST; ...
-        # DATA _NULL_; SET ODRAFT2; BY BRANCH SECTORCD ACCTNO; FILE ODLST MOD; ...
-        with open(cfg.rps_output, "w", encoding="latin1") as fh:
-            _process_group_report(
-                fh, odraft1_sorted.to_dicts(), "FISSPURP", "FISS PURPOSE",
-                _header_lines_fisspurp, cfg.bank_title,
-            )
-            _process_group_report(
-                fh, odraft2_sorted.to_dicts(), "SECTORCD", "SECTOR",
-                _header_lines_sector, cfg.bank_title,
-            )
-        print(f"RPS report saved: {cfg.rps_output}")
-
-        print("\nReport Statistics:")
-        print(f"  ODRAFT1 rows (all FISS purpose)                  : {len(odraft1_sorted):,}")
-        print(f"  ODRAFT2 rows (construction/real estate, non-indi): {len(odraft2_sorted):,}")
-
-        # print(f"\n========== PREVIEW: {cfg.rps_output.name} ==========\n")
-        # with open(cfg.rps_output, "r", encoding="latin1") as f:
-        #     print(f.read())
-        # print("========== END PREVIEW ==========\n")
-
-        return True
-
-    except Exception as e:
-        print(f"\n[ERROR] Report generation failed for {cfg.bank_code}: {type(e).__name__}: {e}")
-        return False
-
+        print("\n=== STAGE 2: Building reports from temporary Parquet ===")
+        for _cfg in BANKS:
+            results[_cfg.bank_code] = run_bank(_cfg, loan_pq, lnnote_pq, lncomm_pq)
     finally:
-        con.close()
+        _tmp.cleanup()
+        print("\nTemporary parquet files removed.")
+
+    print("\n" + "=" * 70)
+    print("GENERATED FILES:")
+    print("=" * 70)
+    for _cfg in BANKS:
+        if results.get(_cfg.bank_code):
+            print(f"  {_cfg.bank_code}: {_cfg.lnlisd_txt}")
+            print(f"        {_cfg.lnlisd_flat}")
+            print(f"        {_cfg.lnlist_txt}")
+        else:
+            print(f"  {_cfg.bank_code}: [FAILED]")
+
+    # SFTP flat TEXT files to eCCRIS (only banks that succeeded)
+    upload_list = [
+        (_cfg.lnlisd_flat, _cfg.remote_name)
+        for _cfg in BANKS if results.get(_cfg.bank_code)
+    ]
+    if upload_list:
+        print("\nUploading flat TEXT files to eCCRIS via SFTP...")
+        sftp_upload_text_files(upload_list)
 
 
 
 
-def _sas_match_merge(left: pl.DataFrame, right: pl.DataFrame, key: str) -> pl.DataFrame:
-    """MERGE left(IN=A) right(IN=B); BY key; IF A AND B;  (SAS match-merge semantics)
+=============================== Flags
 
-    One-to-many behaves like a normal inner join. When both sides have duplicate keys,
-    SAS pairs rows in order, giving max(m, k) rows per key, and the shorter side keeps
-    its last row; a plain join would give m * k rows.
+    # IF ACCTYPE = 'LN';
+    # If the ACCTYPE column is absent from the loan parquet, LN accounts are identified
+    # by the ACCTNO range (2000000000-2999999999; OD/CA accounts are 3000000000-3999999999).
+    if 'ACCTYPE' in merged.columns:
+        merged = merged.filter(pl.col('ACCTYPE').cast(pl.Utf8).str.strip_chars() == 'LN')
+    else:
+        merged = merged.filter(pl.col('ACCTNO').is_between(2000000000, 2999999999))
+
+
+
+
+    # IF CUSTCD NOT IN ('77','78','95','96') AND (SUBSTR(SECTORCD,1,1)='5' OR SECTORCD='8310')
+    # CUSTCD is numeric (Float64), so it is compared as a number; a missing CUSTCD is
+    # never IN the list, so it is kept (as in SAS).
+    note2 = note1.filter(
+        (~pl.col('CUSTCD').cast(pl.Float64, strict=False).fill_null(-1.0).is_in([77.0, 78.0, 95.0, 96.0])) &
+        (
+            pl.col('SECTORCD').cast(pl.Utf8).str.starts_with('5') |
+            (pl.col('SECTORCD').cast(pl.Utf8) == '8310')
+        )
+    )
+
+
+
+
+def _fmt_int(value, width: int) -> str:
+    """Numeric PUT with a w. format (e.g. 3., 10., 12.): right-justified.
+    A missing value prints as '.' right-justified (SAS default)."""
+    if value is None or is_nan_float(value):
+        return '.'.rjust(width)
+    return str(int(value)).rjust(width)[:width]
+
+
+def write_lnlisd(lnnote1: pl.DataFrame, output_path: Path, is_pbb: bool):
     """
-    left  = left.with_columns(pl.int_range(pl.len()).over(key).alias("_SEQ"))
-    right = right.with_columns(pl.int_range(pl.len()).over(key).alias("_SEQ"))
+    Write the text data file equivalent to FILE LNLISD (PBB) / LNLISX (PIBB).
+    PUT @001 BRANCH 3. @004 ACCTNO 10. @014 NOTENO 5.
+        @020 APPRLIMT COMMA15.2 @040 BALANCE COMMA15.2
+    Fixed record length 80.
 
-    sizes = (
-        left.group_by(key).agg(pl.len().cast(pl.Int64).alias("_NL"))
-        .join(
-            right.group_by(key).agg(pl.len().cast(pl.Int64).alias("_NR")),
-            on=key, how="inner",
+    PBB : IF BALANCE > 0 OR APPRLIMT > 0; missing BALANCE/APPRLIMT set to 0.
+    PIBB: every row is written; no filter and no missing-to-0 step in the original
+          (missing values print as '.').
+    """
+    data = lnnote1
+    if is_pbb:
+        data = lnnote1.filter(
+            (pl.col('BALANCE') > 0) | (pl.col('APPRLIMT') > 0)
+        ).with_columns(
+            pl.col('BALANCE').fill_null(0),
+            pl.col('APPRLIMT').fill_null(0),
         )
-        .with_columns(pl.max_horizontal("_NL", "_NR").alias("_N"))
-    )
-    pairs = (
-        sizes.with_columns(pl.int_ranges(0, pl.col("_N")).alias("_SEQ"))
-        .explode("_SEQ")
-        .with_columns(
-            pl.min_horizontal(pl.col("_SEQ"), pl.col("_NL") - 1).alias("_LSEQ"),
-            pl.min_horizontal(pl.col("_SEQ"), pl.col("_NR") - 1).alias("_RSEQ"),
-        )
-        .select(key, "_LSEQ", "_RSEQ")
-    )
-    return (
-        pairs
-        .join(left.rename({"_SEQ": "_LSEQ"}), on=[key, "_LSEQ"], how="left")
-        .join(right.rename({"_SEQ": "_RSEQ"}), on=[key, "_RSEQ"], how="left")
-        .drop("_LSEQ", "_RSEQ")
-    )
+
+    with open(output_path, 'w', encoding='ascii', errors='replace') as f:
+        for row in data.iter_rows(named=True):
+            line = make_line(80)
+            place_at(line, 1,  _fmt_int(row['BRANCH'], 3))
+            place_at(line, 4,  _fmt_int(row['ACCTNO'], 10))
+            place_at(line, 14, _fmt_int(row['NOTENO'], 5))
+            place_at(line, 20, fmt_comma15_2(row['APPRLIMT']))
+            place_at(line, 40, fmt_comma15_2(row['BALANCE']))
+            f.write(finalize_line(line, 80) + '\n')
 
 
 
 
-        print("\nStep 3: Merging ODRAFT with LOAN (inner match-merge)...")
-        # DATA ODRAFT1; MERGE ODRAFT(IN=A) LOAN(IN=B); BY ACCTNO; IF A AND B;
-        print(f"  Duplicate ACCTNO rows - ODRAFT: {odraft.height - odraft['ACCTNO'].n_unique():,}"
-              f" | LOAN: {loan.height - loan['ACCTNO'].n_unique():,}")
-        odraft1 = _sas_match_merge(odraft, loan, "ACCTNO")
-        print(f"ODRAFT1 records: {len(odraft1):,}")
+        write_lnlisd(lnnote1, cfg.lnlisd_txt, cfg.bank_code == "PBB")
 
 
 
 
-        odraft1_sorted = odraft1.sort(["BRANCH", "FISSPURP", "ACCTNO"], maintain_order=True)
-        odraft2_sorted = odraft2.sort(["BRANCH", "SECTORCD", "ACCTNO"], maintain_order=True)
+def _handle_BRANCH_close(f, pagecnt, linecnt, brchamt,
+                         BRANCH, BANKNO, rdate, pbb_title, line_width,
+                         newpage_writer):
+    """Emit the BRANCH grand total (4 lines).
+
+    The original SAS has no page-overflow check after the grand total
+    (RETURN follows immediately), so none is made here either.
+    """
+    write_grand_total(f, brchamt, line_width)
+    linecnt += 4
+    return pagecnt, linecnt
 
 
 
+
+        SELECT ACCTNO, NOTENO, BANKNO, STATE
+
+
+
+
+    lnnote1 = note1.sort(['BRANCH', 'FISSPURP', 'CUSTCD', 'ACCTNO', 'COMMNO', 'NOTENO'])
+    lnnote2 = note2.sort(['BRANCH', 'SECTORCD', 'CUSTCD', 'ACCTNO', 'COMMNO', 'NOTENO'])
+
+
+
+
+def fmt_comma15_2(val):
+    """COMMA15.2 right-justified in 15 chars; missing prints '.' (SAS default)"""
+    if val is None or is_nan_float(val):
+        return '.'.rjust(15)
+    return f"{val:,.2f}".rjust(15)
+
+def fmt_comma5_2(val):
+    """COMMA5.2 right-justified in 5 chars; missing prints '.' (SAS default)"""
+    if val is None or is_nan_float(val):
+        return '.'.rjust(5)
+    return f"{val:,.2f}".rjust(5)
+
+
+def _code_text(value) -> str:
+    """Default (unformatted) PUT of a code field: text as-is; an integer-valued
+    number prints without a trailing '.0' (1.0 -> '1'); missing prints blank."""
+    if value is None or is_nan_float(value):
+        return ''
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def write_data_row(f, row, line_width=136):
+    """Write a single data detail row to the RPS report file."""
+    line = make_line(line_width)
+    place_at(line, 1, REPORT_LINE_PREFIX)
+
+    NAME     = str(row['NAME'])[:26] if row['NAME'] is not None else ''
+    FISSPURP = str(row['FISSPURP'])[:4].rjust(4) if row['FISSPURP'] is not None else '    '
+    SECTORCD = str(row['SECTORCD'])[:4].rjust(4) if row['SECTORCD'] is not None else '    '
+    STATE    = str(row['STATE'])[:3].rjust(3)    if row['STATE']    is not None else '   '
+
+    place_at(line, 5, _fmt_int(row['ACCTNO'], 12))
+    place_at(line, 19, _fmt_int(row['NOTENO'], 8))
+    place_at(line, 29, NAME)
+    place_at(line, 55, fmt_comma15_2(row['APPRLIMT']))
+    place_at(line, 72, fmt_comma15_2(row['BALANCE']))
+    place_at(line, 90, FISSPURP)
+    place_at(line, 101, SECTORCD)
+    place_at(line, 108, _fmt_int(row['CUSTCD'], 4))
+    place_at(line, 114, STATE)
+    place_at(line, 120, fmt_comma5_2(row['INTRATE']))
+    place_at(line, 126, _code_text(row['LIABCODE']))
+    place_at(line, 131, _code_text(row['CCOLLTRL']))
+
+    f.write(finalize_line(line, line_width) + '\n')
+
+
+
+
+============================ 
 
