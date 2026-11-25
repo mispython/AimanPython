@@ -16,9 +16,6 @@ Dependency:
     no data-transformation content. It has no Python equivalent here; the
     output directory is simply (re)written fresh on each run.
 
-    BNM DD (DSN=SAP.PBB.MNITB(0)) is only ever used for `SET BNM.REPTDATE;`
-    to derive the report-date tokens.
-
 ============================================================================
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
 ============================================================================
@@ -83,25 +80,44 @@ from REPTDATE import get_reptdate_values
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+INPUT_CARD_DIR      = Path("/")     # Kena konfemkan dulu dengan adli
+INPUT_CARD_FILE     = INPUT_CARD_DIR / f"unicard{REPTYEAR}{REPTMON}{WK}"
 
-INPUT_CARD_DIR  = STG_DIR / "EIBWDLPS"
-INPUT_CISR_DIR  = STG_DIR / "EIBDUNDP"
-INPUT_CISD_DIR  = STG_DIR / "EIBDUNDP"
-INPUT_CISL_DIR  = STG_DIR / "EIBWDLPS"
-INPUT_COLL_DIR  = STG_DIR / "MNICOL"
-INPUT_ICOLL_DIR = STG_DIR / "MNICOL"
+CIS_DIR             = Path("/dwh/rs_cis")
+INPUT_CISD_FILE     = CIS_DIR / f"cisr1ca{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_CISL_FILE     = CIS_DIR / f"cisr1ln{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_CISR_SA_FILE  = CIS_DIR / f"cisr1sa{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+INPUT_CISR_FD_FILE  = CIS_DIR / f"cisr1fd{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
 
-INPUT_CISR_FILE  = INPUT_CISR_DIR  / "crm_cisbext_deposit.sas7bdat"
-INPUT_CISD_FILE  = INPUT_CISD_DIR  / "cisbext_dp_deposit.sas7bdat"
-INPUT_CISL_FILE  = INPUT_CISL_DIR  / "cisbext_ln_loan.sas7bdat"
-INPUT_COLL_FILE  = INPUT_COLL_DIR  / "collater.sas7bdat"
-INPUT_ICOLL_FILE = INPUT_ICOLL_DIR / "icollater.sas7bdat"
-# INPUT_CARD_FILE is built below once REPTYEAR/REPTMON/WK are known.
+MNICOL_DIR          = Path("/sas/ln/mart/enrichment")
+INPUT_COLL_FILE     = MNICOL_DIR / f"enrh_exdwh_ln_collater_d{REPTDAY}.sas7bdat"
+INPUT_ICOLL_FILE    = MNICOL_DIR / f"enrh_exdwh_ln_icollater_d{REPTDAY}.sas7bdat"
 
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBWDLPS"
+CACHE_DIR           = Path("/host_pq/mis/output/report/EIBWDLPS")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# # INPUT_CARD_DIR  = STG_DIR / "EIBWDLPS"
+# INPUT_CISR_DIR  = STG_DIR / "EIBDUNDP"
+# INPUT_CISD_DIR  = STG_DIR / "EIBDUNDP"
+# INPUT_CISL_DIR  = STG_DIR / "EIBWDLPS"
+# INPUT_COLL_DIR  = STG_DIR / "MNICOL"
+# INPUT_ICOLL_DIR = STG_DIR / "MNICOL"
+
+# INPUT_CISR_FILE  = INPUT_CISR_DIR  / "crm_cisbext_deposit.sas7bdat"
+# INPUT_CISD_FILE  = INPUT_CISD_DIR  / "cisbext_dp_deposit.sas7bdat"
+# INPUT_CISL_FILE  = INPUT_CISL_DIR  / "cisbext_ln_loan.sas7bdat"
+# INPUT_COLL_FILE  = INPUT_COLL_DIR  / "collater.sas7bdat"
+# INPUT_ICOLL_FILE = INPUT_ICOLL_DIR / "icollater.sas7bdat"
+# # INPUT_CARD_FILE is built below once REPTYEAR/REPTMON/WK are known.
+
+# CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBWDLPS"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 OBSNUM     = 5_000_000   # DATA DLP; OBSNUM = 5000000; (segment size)
@@ -172,7 +188,7 @@ FALSIC = (
 MASK = "###**###"
 
 # ============================================================================
-# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET  (EIIMRM01.py pattern)
+# HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
