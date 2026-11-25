@@ -1,0 +1,555 @@
+==================================================================================================================================
+SAS DATASET COLUMN INFORMATION
+==================================================================================================================================
+File          : enrh_ln_comm_d12.sas7bdat
+Full Path     : /stgsrcsys/host/uat/AII/MNILN/enrh_ln_comm_d12.sas7bdat
+Total Columns : 22
+Sample Rows   : 3
+==================================================================================================================================
+NO.   COLUMN NAME                             SAS DATATYPE        SAMPLE VALUES
+----------------------------------------------------------------------------------------------------------------------------------
+1     BANKNO                                  double              33.0 | 33.0 | 33.0
+2     ACCTNO                                  double              2000000125.0 | 2000000901.0 | 2000001605.0
+3     COMMNO                                  double              100.0 | 100.0 | 100.0
+4     CCOLLTRL                                string              50 | 50 | 50
+5     CPRODUCT                                string              120 | 100 | 100
+6     CORGAMT                                 double              22709.0 | 165235.0 | 116839.0
+7     CCURAMT                                 double              0.0 | 0.0 | 0.0
+8     CAVAIAMT                                double              0.0 | 0.0 | 0.0
+9     CUSEDAMT                                double              0.0 | 0.0 | 0.0
+10    CAPPDATE                                double              2181998049.0 | 8262003238.0 | 6191997170.0
+11    EXPIREDT                                double              2182001049.0 | 9302006273.0 | 6192000171.0
+12    REVOVLI                                 string              N | N | N
+13    ACTIND                                  string              Y | N | Y
+14    CMBRCH                                  double              2.0 | 2.0 | 2.0
+15    CORIGMT                                 double              36.0 | 38.0 | 36.0
+16    CSTATE                                  string               |  | 
+17    HSTNCDOR                                double              0.0 | 0.0 | 0.0
+18    HSTCADAD                                double              0.0 | 0.0 | 0.0
+19    CSECTOR                                 string              0311 | 0315 | 0314
+20    CMHSTADJ                                double              0.0 | 0.0 | 0.0
+21    UNUSEAMT                                double              0.0 | 0.0 | 0.0
+22    CMHSTAD3                                double              MISSING | MISSING | MISSING
+----------------------------------------------------------------------------------------------------------------------------------
+Total columns in metadata : 22
+Total columns displayed   : 22
+COLUMN VALIDATION         : PASSED
+==================================================================================================================================
+
+
+
+
+==================================================================================================================================
+SAS DATASET COLUMN INFORMATION
+==================================================================================================================================
+File          : enrh_ln_note_d18.sas7bdat
+Full Path     : /stgsrcsys/host/uat/AII/MNILN/enrh_ln_note_d18.sas7bdat
+Total Columns : 499
+Sample Rows   : 3
+==================================================================================================================================
+NO.   COLUMN NAME                             SAS DATATYPE        SAMPLE VALUES
+----------------------------------------------------------------------------------------------------------------------------------
+1     ACCTNO                                  double              2000000125.0 | 2000000319.0 | 2000000707.0
+2     NAME                                    string              ROSHASIDA BINTI ALIAS | ZAWIYAH BINTI OTHMAN | ROZLAN BIN TALIB
+3     TAXNO                                   string              A0937066 | 4196480 | 6811192
+4     ORGTYPE                                 string              N | N | N
+5     GUAREND                                 string              680102085968 | 511021105800 | 620703055567
+6     BANKNO                                  double              33.0 | 33.0 | 33.0
+7     APPCODE                                 string              L | L | L
+8     ACCBRCH                                 double              2.0 | 2.0 | 2.0
+9     CUSTCODE                                double              77.0 | 77.0 | 77.0
+10    PURPOSE                                 string              P | P | P
+11    FOREIGN                                 string               |  | 
+12    BKRPTIND                                string               |  | 
+13    NOTENO                                  double              20010.0 | 10.0 | 10.0
+14    REVERSED                                string              N | N | N
+15    LOANTYPE                                double              600.0 | 521.0 | 521.0
+16    NTBRCH                                  double              2.0 | 2.0 | 2.0
+17    PENDBRH                                 double              2.0 | 2.0 | 2.0
+18    ISSUEDT                                 double              14633.0 | 14435.0 | 14432.0
+19    NOTEMAT                                 double              18286.0 | 16262.0 | 16259.0
+20    ASSMDATE                                double              MISSING | MISSING | MISSING
+21    LASTTRAN                                double              23197.0 | 15883.0 | 16129.0
+22    LSTTRNCD                                double              658.0 | 662.0 | 619.0
+23    CURBAL                                  double              0.0 | 0.0 | 0.0
+24    INTAMT                                  double              0.0 | 0.0 | 0.0
+25    PRINBNP                                 double              0.0 | 0.0 | 0.0
+26    APPVALUE                                double              25000.0 | 0.0 | 0.0
+27    NOTETERM                                double              120.0 | 60.0 | 60.0
+28    COLLDESC                                string              NOBLE RIGHTS (FB1-13A) | TUK 1                      ... | CGC TUK 1                  ...
+29    FLAG3                                   string              0 | 0 | 0
+30    SYNDIND                                 string              0 | 0 | 0
+31    FLAG5                                   string              0 | 0 | 0
+32    COMMNO                                  double              0.0 | 0.0 | 0.0
+33    CORPCODE                                string              I | I | I
+34    COSTCTR                                 double              2.0 | 2.0 | 2.0
+35    PCOSTCTR                                double              2.0 | 2.0 | 2.0
+36    SECTOR                                  string              0311 | 6310 | 6120
+37    CENSUS                                  double              212.0 | 0.0 | 0.0
+38    BILLTYPE                                string              C | C | C
+39    GRANTDT                                 double              14633.0 | 14435.0 | 14432.0
+40    PAIDIND                                 string              P | P | P
+41    ORGBAL                                  double              22821.29 | 10000.0 | 8000.0
+42    NETPROC                                 double              22821.29 | 10000.0 | 8000.0
+43    FEEDUE                                  double              0.0 | 0.0 | 0.0
+44    INTRATE                                 double              0.0 | 0.0 | 6.0
+45    SPREAD                                  double              0.0 | 0.0 | 0.0
+46    NTINT                                   string              S | S | S
+47    INTMAINT                                double              15847.0 | MISSING | MISSING
+48    REBATE                                  double              0.0 | 0.0 | 0.0
+49    INTEARN                                 double              0.0 | 0.0 | 0.0
+50    ACCRUAL                                 double              0.0011136 | 0.0014741 | -0.0013422
+51    RISKRATE                                string              4 | 3 | 
+52    SECURE                                  string              S | S | S
+53    LIABCODE                                string              50 | 00 | 00
+54    FLAG1                                   string              F | F | F
+55    MORTGIND                                string               |  | 
+56    REFINANC                                string               |  | 
+57    SBA                                     string              N | N | N
+58    LOANSTAT                                double              3.0 | 3.0 | 1.0
+59    NONACCR                                 string              N | N | N
+60    DEALERNO                                double              0.0 | 0.0 | 0.0
+61    MATUREDT                                double              18286.0 | 16262.0 | 16259.0
+62    BORSTAT                                 string              W |  | 
+63    MARKETVL                                double              0.0 | 0.0 | 0.0
+64    COLLMAKE                                string               |  | 
+65    EARNTERM                                double              120.0 | 60.0 | 60.0
+66    USURYIDX                                double              1.0 | 11.0 | 11.0
+67    STATE                                   string              12 | 14 | 14
+68    INTEARN2                                double              0.0 | 0.0 | 0.0
+69    INTEARN3                                double              0.0 | 0.0 | 0.0
+70    INTEARN4                                double              0.0 | 0.0 | 0.0
+71    PAYAMT                                  double              288.0 | 99.0 | 79.0
+72    PAYFREQ                                 string              1 | 6 | 6
+73    FEETOTAL                                double              0.0 | 0.0 | 0.0
+74    FEETOT2                                 double              0.0 | 0.0 | 0.0
+75    FEEAMTO                                 double              0.0 | 0.0 | 0.0
+76    FEEAMT2                                 double              0.0 | 0.0 | 0.0
+77    FEEAMT3                                 double              0.0 | 0.0 | 0.0
+78    NXDUEDT                                 double              MISSING | MISSING | MISSING
+79    BILDUE                                  double              MISSING | MISSING | MISSING
+80    BILTOT                                  double              0.0 | 0.0 | 0.0
+81    BILPAY                                  double              0.0 | 0.0 | 0.0
+82    BILPRIN                                 double              0.0 | 0.0 | 0.0
+83    HSTOTAMT                                double              0.0 | 0.0 | 0.0
+84    PAYTYPE                                 string              B | B | B
+85    HSTOTPAY                                double              0.0 | 0.0 | 0.0
+86    DISPYIND                                double              0.0 | 0.0 | 0.0
+87    FEEAMT4                                 double              0.0 | 0.0 | 0.0
+88    REBIND                                  string              1 | 1 | 1
+89    APPRDATE                                double              MISSING | MISSING | MISSING
+90    POSTNTRN                                string               |  | 
+91    LSTTRNAM                                double              2.0 | 4056.35 | 6.0
+92    INTBNP                                  double              0.0 | 0.0 | 0.0
+93    NTAPR                                   double              0.0 | 0.0 | 0.0
+94    ORIGRATE                                double              8.3 | 6.0 | 6.0
+95    VINNO                                   string               | 002-000097-99-521 | 002-000096-99
+96    RESTIND                                 string              M | Y | Y
+97    TOTPDEOP                                double              0.0 | 0.0 | 0.0
+98    USER2                                   string              1 | 1 | 1
+99    USER3                                   string              1 | 1 | 1
+100   USER4                                   string              1 | 1 | 1
+101   POSTCODE                                double              68100.0 | 54000.0 | 43650.0
+102   INTPDYTD                                double              0.0 | 0.0 | 0.0
+103   ACCRUYTD                                double              0.0 | 0.0 | 0.0
+104   ACCRUEOP                                double              0.0 | 0.0 | 0.0
+105   BIRTHDT                                 double              2923.0 | -3267.0 | 914.0
+106   NTINDEX                                 double              0.0 | 0.0 | 11.0
+107   MTDINT                                  double              0.0 | 0.0 | 0.0
+108   SCORE1                                  string              II | HH | 
+109   REBATEI                                 double              0.0 | 0.0 | 0.0
+110   ACCTYIND                                double              100.0 | 100.0 | 100.0
+111   ACCOSTCT                                double              2.0 | 2.0 | 2.0
+112   INTINYTD                                double              0.0 | 0.0 | 0.0
+113   BILLCNT                                 double              0.0 | 0.0 | 0.0
+114   PREVBRNO                                double              0.0 | 0.0 | 0.0
+115   SCORE2                                  string               |  | 
+116   HSTPRIN                                 double              0.0 | 0.0 | 0.0
+117   CRISPURP                                string              2111 | 5300 | 5300
+118   USER1                                   string              3 | 3 | 3
+119   ACCTPBRH                                double              2.0 | 2.0 | 2.0
+120   HSTINT                                  double              0.0 | 0.0 | 0.0
+121   PAIDOFF                                 string               |  | 
+122   FEEDUEMS                                double              0.0 | 0.0 | 0.0
+123   NFEEAMT5                                double              0.0 | 0.0 | 0.0
+124   NFEEAMT6                                double              0.0 | 0.0 | 0.0
+125   NFEEAMT7                                double              0.0 | 0.0 | 0.0
+126   NOOFPAY                                 double              120.0 | 130.0 | 130.0
+127   NDHISSDT                                double              MISSING | MISSING | MISSING
+128   NDPAYIND                                string               |  | 
+129   NDHEXPDT                                double              MISSING | MISSING | MISSING
+130   ROPAYIND                                string               |  | 
+131   PAIDTODT                                double              38735.18 | 11481.35 | 9407.0
+132   FEEYTD                                  double              0.0 | 0.0 | 0.0
+133   FEEPDYTD                                double              0.0 | 0.0 | 0.0
+134   RSRVTERM                                double              0.0 | 0.0 | 0.0
+135   BILPDYTD                                double              0.0 | 0.0 | 0.0
+136   FEEYTDX                                 double              0.0 | 0.0 | 0.0
+137   FEPDYTDX                                double              0.0 | 0.0 | 0.0
+138   FEEAMT8                                 double              0.0 | 0.0 | 0.0
+139   FEEAMT9                                 double              0.0 | 0.0 | 0.0
+140   MINIFEE                                 double              0.0 | 0.0 | 0.0
+141   FEEAMT13                                double              0.0 | 0.0 | 0.0
+142   PZIPCODE                                double              0.0 | 0.0 | 0.0
+143   FEEAMT10                                double              0.0 | 0.0 | 0.0
+144   FEEAMT11                                double              0.0 | 0.0 | 0.0
+145   FEEAMT12                                double              0.0 | 0.0 | 0.0
+146   FEEAMT14                                double              0.0 | 0.0 | 0.0
+147   FEEAMT15                                double              0.0 | 0.0 | 0.0
+148   FEEAMT16                                double              0.0 | 0.0 | 0.0
+149   FEEEARN1                                double              0.0 | 0.0 | 0.0
+150   FEEEARN2                                double              0.0 | 0.0 | 0.0
+151   COLLYEAR                                double              0.0 | 0.0 | 0.0
+152   DISBIND1                                string              0 | 0 | 0
+153   PRINPAID                                double              0.0 | 0.0 | 0.0
+154   INTPAID                                 double              0.0 | 0.0 | 0.0
+155   HTOTAMT2                                double              0.0 | 0.0 | 0.0
+156   HTOTPAY2                                double              0.0 | 0.0 | 0.0
+157   PRINYTD                                 double              0.0 | 0.0 | 0.0
+158   OSTDAMT                                 double              0.0 | 0.0 | 0.0
+159   PAYNUM                                  double              120.0 | 130.0 | 130.0
+160   RSRVREBI                                string               |  | 
+161   TERMIDAT                                double              MISSING | MISSING | MISSING
+162   TMLATE15                                double              0.0 | 0.0 | 0.0
+163   TMLATE30                                double              0.0 | 0.0 | 0.0
+164   TMLATE60                                double              0.0 | 0.0 | 0.0
+165   TMLATE90                                double              0.0 | 0.0 | 0.0
+166   BONUSANO                                double              0.0 | 0.0 | 0.0
+167   DELQCD                                  string              11 |  | 
+168   FEEPLAN                                 string               |  | 
+169   FEERATE                                 double              0.0 | 0.0 | 0.0
+170   WORDTYP                                 string               |  | 
+171   HISPTDT                                 double              MISSING | MISSING | MISSING
+172   STAFFNO                                 double              0.0 | 0.0 | 0.0
+173   PAYEFFDT                                double              14664.0 | 14466.0 | 14463.0
+174   AANUMBR                                 string               | 002-000097-99-521 | 002-000096-99
+175   APPORMT                                 double              0.0 | 0.0 | 0.0
+176   ECSRRSRV                                double              0.0 | 0.0 | 0.0
+177   COSTFUND                                double              0.0 | 0.0 | 0.0
+178   POFFICER                                double              90002.0 | 90002.0 | 90002.0
+179   NPLCRR                                  string              J |  | 
+180   CUSTCDX                                 double              0.0 | 0.0 | 0.0
+181   FORM2                                   double              0.0 | 0.0 | 0.0
+182   FORM1                                   double              0.0 | 0.0 | 0.0
+183   STATUSDT                                double              15216.0 | 15613.0 | 14432.0
+184   INTBUYPD                                double              0.0 | 0.0 | 0.0
+185   MODELDES                                string               |  | 
+186   YTDEARNS                                double              0.0 | 0.0 | 0.0
+187   ESCRACCT                                double              0.0 | 0.0 | 0.0
+188   RESTBALC                                double              2.0 | 4551.35 | 318.97
+189   INTRATE2                                double              0.0 | 0.0 | 0.0
+190   RATELMT2                                double              0.0 | 0.0 | 0.0
+191   PRMOFFHP                                double              90002.0 | 90002.0 | 90002.0
+192   POINTAMT                                double              0.0 | 0.0 | 0.0
+193   CEILINGO                                double              9.0 | 999.999999 | 999.999999
+194   CEILINGU                                double              999.999999 | 999.999999 | 999.999999
+195   MAILCODE                                string              12 |  | 
+196   PAYIND                                  string              N | Y | Y
+197   SITYPE                                  string               | S | D
+198   SIACCTNO                                double              0.0 | 4980396418.0 | 3097680531.0
+199   OLDUNPAID                               double              MISSING | MISSING | MISSING
+200   VARSTDTE                                double              MISSING | MISSING | MISSING
+201   USER5                                   string              0 | 0 | 0
+202   SENDNBL                                 string              N | A | A
+203   FRELEAS                                 double              14633.0 | MISSING | MISSING
+204   USMARGIN                                double              1.75 | 0.0 | 0.0
+205   USEDIT                                  string              2 | 2 | 2
+206   FEECOMBIND                              string               |  | 
+207   CURCODE                                 string              MYR | MYR | MYR
+208   STOPDEBIT                               string              N | N | N
+209   TAXEQIND                                string              0 | 0 | 0
+210   SM_STATUS                               string              N | N | N
+211   CASHPRICE                               double              0.0 | 0.0 | 0.0
+212   REACCRUAL                               string              N | N | N
+213   LATENOTICE                              string              N | Y | Y
+214   GUARNOTICE                              string              N | Y | Y
+215   INTBASIS                                double              5.0 | 5.0 | 5.0
+216   MEMOACC                                 double              0.0 | 0.0 | 0.0
+217   EXCESSPAY                               double              0.0 | 0.0 | 0.0
+218   BILLEADDAY                              double              0.0 | 0.0 | 0.0
+219   DEATHDATE                               double              MISSING | MISSING | MISSING
+220   INTSTDTE                                double              14633.0 | 14435.0 | 14432.0
+221   AUTNACCR                                string              Y | N | N
+222   CFINDEX                                 double              0.0 | 0.0 | 0.0
+223   EXRATIO                                 double              0.0 | 0.0 | 0.0
+224   CONTRTYPE                               string               |  | 
+225   BILDUEMIG                               double              MISSING | MISSING | MISSING
+226   NPLCRRBPA                               string               |  | 
+227   FDACCTNO_                               string               |  | 
+228   FDCERTNO                                double              0.0 | 0.0 | 0.0
+229   FCLOSUREDT                              double              MISSING | MISSING | MISSING
+230   RRCYCLE                                 string               |  | 
+231   VB                                      string              0 | 0 | 0
+232   CPNSTDTE                                double              MISSING | MISSING | MISSING
+233   INSOLVENCY_IND                          string              0 | 0 | 0
+234   CURRILDTE                               double              MISSING | MISSING | MISSING
+235   FIRSILDTE                               double              15216.0 | MISSING | MISSING
+236   NUMCPNS                                 double              0.0 | 0.0 | 0.0
+237   RSN                                     string              0 | 0 | 0
+238   PTMNATE                                 string               |  | 
+239   ASCORE_PERM                             string               |  | 
+240   ASCORE_LTST                             string               |  | 
+241   OLDRR                                   string               |  | 
+242   EARLY_SETTLE_FEE_CHARGE_FLG             string               |  | 
+243   ACCTREVDT                               double              MISSING | MISSING | MISSING
+244   MNIAPLMT                                double              0.0 | 0.0 | 0.0
+245   ABM_HL                                  string               |  | 
+246   IA_LRU                                  string               |  | 
+247   COMMNO_OLD                              double              0.0 | 0.0 | 0.0
+248   TIMES_RENEWED                           double              0.0 | 0.0 | 0.0
+249   MARKED_PAYMENT_IND                      string               |  | 
+250   CCRIS_INSTLAMT                          double              0.0 | 0.0 | 0.0
+251   NURS_TAG                                string               |  | 
+252   NUR_STARTDT                             double              MISSING | MISSING | MISSING
+253   NURS_TAGDT                              double              MISSING | MISSING | MISSING
+254   NURS_ENDDT                              double              MISSING | MISSING | MISSING
+255   NURS_COUNTER                            double              0.0 | 0.0 | 0.0
+256   WRIOFF_DT                               double              MISSING | MISSING | MISSING
+257   WRIOFF_AMT                              double              0.0 | 0.0 | 0.0
+258   CUM_WRIOFF                              double              0.0 | 0.0 | 0.0
+259   RECOVER_COST                            double              0.0 | 0.0 | 0.0
+260   ASCORE_COMM                             string               |  | 
+261   REPOSDTE                                double              MISSING | MISSING | MISSING
+262   VALUEDTE                                double              MISSING | MISSING | MISSING
+263   DISPOSED_AMT                            double              0.0 | 0.0 | 0.0
+264   DSR                                     double              0.0 | 0.0 | 0.0
+265   REPAY_SOURCE                            double              0.0 | 0.0 | 0.0
+266   REPAY_TYPE_CD                           string              00 | 00 | 00
+267   MTD_REPAID_AMT                          double              0.0 | 0.0 | 0.0
+268   MTD_TAWIDH_AMT                          double              0.0 | 0.0 | 0.0
+269   MTD_GHARAMAH_AMT                        double              0.0 | 0.0 | 0.0
+270   INDUSTRIAL_SECTOR_CD                    string               |  | 
+271   PROMPT_PAY_TRACKER                      string               |  | 
+272   MAN_REV_RATE                            double              0.0 | 0.0 | 0.0
+273   MAN_REV_DATE                            double              MISSING | MISSING | MISSING
+274   SYS_REV_RATE                            double              0.0 | 0.0 | 0.0
+275   SYS_REV_DATE                            double              MISSING | MISSING | MISSING
+276   REFINANC_LN                             double              MISSING | MISSING | MISSING
+277   OLD_FI                                  string               |  | 
+278   OLD_MACC_NO                             string               |  | 
+279   OLD_SUBACC_NO                           string               |  | 
+280   TIA_TAG_DATE                            double              MISSING | MISSING | MISSING
+281   TIA_UTAG_DATE                           double              MISSING | MISSING | MISSING
+282   REPO_ORDER_ISSUE_DT                     double              MISSING | MISSING | MISSING
+283   NUM_REPO_ORDER_ISSUE                    double              0.0 | 0.0 | 0.0
+284   COURT_ORDER_APPLY_DT                    double              MISSING | MISSING | MISSING
+285   COURT_ORDER_OBTAIN_DT                   double              MISSING | MISSING | MISSING
+286   AUTO_REPRICE_DIFF_INSTL_AMT             double              0.0 | 0.0 | 0.0
+287   RISK_GRADE_CLASS                        string               |  | 
+288   REPAY_PROPOSAL_CD                       string               |  | 
+289   LTST_MGB_SCORE                          string               |  | 
+290   LMO_TAG                                 string               |  | 
+291   LMO_MAINT_DT                            double              MISSING | MISSING | MISSING
+292   AKPK_STATUS                             string               |  | 
+293   DIGITAL_RR_STATUS_CD                    string               |  | 
+294   TAKAFUL_AMT                             double              0.0 | 0.0 | 0.0
+295   TAKAFUL_OPERAT                          double              0.0 | 0.0 | 0.0
+296   TAKAFUL_COLLECT_ACCTNO                  double              0.0 | 0.0 | 0.0
+297   TFA_NURS_TAG                            string               |  | 
+298   TFA_NURS_TAG_DT                         double              MISSING | MISSING | MISSING
+299   TFA_NURS_START_DT                       double              MISSING | MISSING | MISSING
+300   TFA_NURS_END_DT                         double              MISSING | MISSING | MISSING
+301   TFA_NURS_COUNTER                        double              0.0 | 0.0 | 0.0
+302   TFA_DIG_STATUS_CD                       string               |  | 
+303   TFA_DIG_STATUS_DT                       double              MISSING | MISSING | MISSING
+304   REPAY_PROPOSAL_DT                       double              MISSING | MISSING | MISSING
+305   MANUAL_RR_TAG                           string               |  | 
+306   MANUAL_RR_DT                            double              MISSING | MISSING | MISSING
+307   AUTO_EXT_TAG                            string               |  | 
+308   AUTO_EXT_TAG_DT                         double              MISSING | MISSING | MISSING
+309   AUTO_REPRICE_INSTL_AMT                  double              0.0 | 0.0 | 0.0
+310   BULLET_REPAY_IND                        string               |  | 
+311   BALLOON_REPAY_IND                       string               |  | 
+312   PROP_DEVELOP_FIN_IND                    string               |  | 
+313   DIA_PAST01_MTH                          string              999 | 000 | 000
+314   DIA_PAST02_MTH                          string              999 | 000 | 000
+315   DIA_PAST03_MTH                          string              999 | 000 | 000
+316   DIA_PAST04_MTH                          string              999 | 000 | 000
+317   DIA_PAST05_MTH                          string              999 | 000 | 000
+318   DIA_PAST06_MTH                          string              999 | 000 | 000
+319   DIA_PAST07_MTH                          string              999 | 000 | 000
+320   DIA_PAST08_MTH                          string              999 | 000 | 000
+321   DIA_PAST09_MTH                          string              999 | 000 | 000
+322   DIA_PAST10_MTH                          string              999 | 000 | 000
+323   DIA_PAST11_MTH                          string              999 | 000 | 000
+324   DIA_PAST12_MTH                          string              999 | 000 | 000
+325   DIA_PAST13_MTH                          string              999 | 000 | 000
+326   DIA_PAST14_MTH                          string              999 | 000 | 000
+327   DIA_PAST15_MTH                          string              999 | 000 | 000
+328   DIA_PAST16_MTH                          string              999 | 000 | 000
+329   DIA_PAST17_MTH                          string              999 | 000 | 000
+330   DIA_PAST18_MTH                          string              999 | 000 | 000
+331   DIA_PAST19_MTH                          string              999 | 000 | 000
+332   DIA_PAST20_MTH                          string              999 | 000 | 000
+333   DIA_PAST21_MTH                          string              999 | 000 | 000
+334   DIA_PAST22_MTH                          string              999 | 000 | 000
+335   DIA_PAST23_MTH                          string              999 | 000 | 000
+336   DIA_PAST24_MTH                          string              999 | 000 | 000
+337   ORIG_RESTIND                            string               |  | 
+338   RESTIND_END_DT                          double              MISSING | MISSING | MISSING
+339   COM_FEE_NOTICE_IND                      string               |  | 
+340   NUM_MORA                                double              0.0 | 0.0 | 0.0
+341   AKPK_RA_TAG                             string               |  | 
+342   AKPK_RA_TAG_DT                          double              MISSING | MISSING | MISSING
+343   AKPK_RA_DIG_STATUS_CD                   string               |  | 
+344   AKPK_RA_DIG_STATUS_DT                   double              MISSING | MISSING | MISSING
+345   AKPK_RA_START_DT                        double              MISSING | MISSING | MISSING
+346   AKPK_RA_END_DT                          double              MISSING | MISSING | MISSING
+347   AKPK_RA_ORIG_SPREAD                     double              0.0 | 0.0 | 0.0
+348   TRA_EFF_DT                              double              MISSING | MISSING | MISSING
+349   DIGITAL_RR_STATUS_DT                    double              MISSING | MISSING | MISSING
+350   LMOENDDATE                              double              MISSING | MISSING | MISSING
+351   LMOSTDATE                               double              MISSING | MISSING | MISSING
+352   BANK_EQUITY_RATIO                       double              0.0 | 0.0 | 0.0
+353   FDACCTNO                                double              MISSING | MISSING | MISSING
+354   NACOSPADT                               double              MISSING | MISSING | MISSING
+355   LOCK_IN_END_DT                          double              MISSING | MISSING | MISSING
+356   FDB                                     string              N | N | N
+357   CP                                      string               |  | 
+358   SM_DATE                                 double              MISSING | MISSING | MISSING
+359   STAFF_FREE_INT_IND                      string               |  | 
+360   STAFF_FREE_INT_LOAN_AMT                 double              0.0 | 0.0 | 0.0
+361   OMNIBUS_FACILITY_IND                    string              0 | 0 | 0
+362   MARKED_PAYMENT_AMT                      double              0.0 | 0.0 | 0.0
+363   INTPYTD1                                double              0.0 | 0.0 | 0.0
+364   CUSTCDR                                 double              77.0 | 77.0 | 77.0
+365   DNBFISME                                string              0 | 0 | 0
+366   SYNRATIO                                double              0.0 | 0.0 | 0.0
+367   RESTRUCT                                string               |  | 
+368   FEEAMTA                                 double              MISSING | MISSING | MISSING
+369   FEEAMTB                                 double              MISSING | MISSING | MISSING
+370   FEEAMTC                                 double              MISSING | MISSING | MISSING
+371   CJFEE                                   double              MISSING | MISSING | MISSING
+372   DAYARR_MO                               double              MISSING | MISSING | MISSING
+373   MO_INSTL_ARR                            double              MISSING | MISSING | MISSING
+374   FEEAMT                                  double              MISSING | MISSING | MISSING
+375   MNIAPDTE                                double              MISSING | MISSING | MISSING
+376   NXTBIL                                  double              23215.0 | 15894.0 | 16143.0
+377   BLDATE                                  double              MISSING | MISSING | MISSING
+378   DLVDATE                                 double              MISSING | MISSING | MISSING
+379   BALANCE                                 double              0.0011136 | 0.0014741 | -0.0013422
+380   FEEAMT5                                 double              MISSING | MISSING | MISSING
+381   NFEEAMT8                                double              MISSING | MISSING | MISSING
+382   NFEEAM10                                double              MISSING | MISSING | MISSING
+383   NFEEAM11                                double              MISSING | MISSING | MISSING
+384   NFEEAM12                                double              MISSING | MISSING | MISSING
+385   CURRATE                                 double              6.47 | 6.0 | 6.0
+386   USLIMIT                                 double              8.219999999999999 | 6.0 | 6.0
+387   OLDNOTEAPPVALUE                         double              MISSING | MISSING | MISSING
+388   OLDNOTELASTTRAN                         double              MISSING | MISSING | MISSING
+389   OLDNOTEBLDATE                           double              MISSING | MISSING | MISSING
+390   OLDNOTEISSUEDT                          double              MISSING | MISSING | MISSING
+391   OLDNOTEDAYARR                           double              0.0 | 0.0 | 0.0
+392   MO_TAG                                  string               |  | 
+393   MOSTDTE                                 double              MISSING | MISSING | MISSING
+394   MOENDDTE                                double              MISSING | MISSING | MISSING
+395   MO_MAIN_DT                              double              MISSING | MISSING | MISSING
+396   SPOTRATE                                double              MISSING | MISSING | MISSING
+397   WRITE_DOWN_BAL                          double              0.0 | MISSING | MISSING
+398   ORICODE                                 double              MISSING | MISSING | MISSING
+399   AKPK_RA_DLY_INT_ACCRUAL                 double              0.0 | 0.0 | 0.0
+400   AKPK_RA_MTD_INT_ACCRUAL                 double              0.0 | 0.0 | 0.0
+401   AKPK_RA_MTH_INT_WAIVER_AMT              double              0.0 | 0.0 | 0.0
+402   AKPK_RA_CUMM_INT_WAIVER_AMT             double              0.0 | 0.0 | 0.0
+403   AKPK_RA_MTH_INT_CAP_AMT                 double              0.0 | 0.0 | 0.0
+404   AKPK_RA_CUMM_INT_CAP_AMT                double              0.0 | 0.0 | 0.0
+405   AKPK_RA_ORIG_CEILING_RT                 double              0.0 | 0.0 | 0.0
+406   NUM_PAY_BIL_INSTL                       double              0.0 | 103.0 | 121.0
+407   SCHBIL_INSTL_DT                         double              MISSING | 14466.0 | 14463.0
+408   SCHBIL_INT_DT                           double              MISSING | MISSING | MISSING
+409   NUM_PAY_BIL_INT                         double              0.0 | 0.0 | 0.0
+410   LASTBIL_INSTL_DT                        double              23185.0 | 15880.0 | 16129.0
+411   LASTBIL_INT_DT                          double              MISSING | MISSING | MISSING
+412   MORA_BENCHMARK_AMT                      double              0.0 | 0.0 | 0.0
+413   TRA_RR_IND                              double              0.0 | 0.0 | 0.0
+414   TRA_RR_ACCEPT_DT                        double              MISSING | 23707.0 | 23707.0
+415   MORDAYARR                               double              MISSING | MISSING | MISSING
+416   NUM_RR                                  double              0.0 | 0.0 | 0.0
+417   ENTITY_CD                               string               |  | 
+418   INFEE                                   double              MISSING | MISSING | MISSING
+419   DAYARR_MORA                             double              8166.0 | 0.0 | 0.0
+420   SPA_AMT                                 double              0.0 | 0.0 | 0.0
+421   HI_TAG                                  string               |  | 
+422   HI_TAG_DT                               double              MISSING | 23707.0 | 23707.0
+423   HI_DIG_STATUS_CD                        string               |  | 
+424   HI_DIG_STATUS_DT                        double              MISSING | 23707.0 | 23707.0
+425   REPO_ORDER_EXPIRY_DT                    double              MISSING | 23707.0 | 23707.0
+426   FLOOD_MO_TAG                            string               |  | 
+427   FLOOD_MO_DT                             double              MISSING | MISSING | MISSING
+428   IMPAIRED_HP_TAG                         string               |  | 
+429   REPAY_MODE                              string               |  | 
+430   RR_EREQUEST_NUM                         string               |  | 
+431   RR_TYPE                                 string               |  | 
+432   RR_APPR_DATE                            double              MISSING | MISSING | MISSING
+433   INDEX_PRICING                           string               |  | 
+434   SCH_REPAY_TERM                          double              0.0 | 0.0 | 0.0
+435   LEGAL_NOTICE_INSTRUCT_DT                double              MISSING | MISSING | MISSING
+436   LEGAL_NOTICE_ISSUE_DT                   double              MISSING | MISSING | MISSING
+437   PARAS_TAG                               string               |  | 
+438   PARAS_TAG_DT                            double              MISSING | 23707.0 | 23707.0
+439   JUDGE_AMT                               double              0.0 | 0.0 | 0.0
+440   JUDGE_DT                                double              MISSING | MISSING | MISSING
+441   JUDGE_MAINT_DT                          double              MISSING | MISSING | MISSING
+442   PRE_BKRUPT_NOTICE_DT                    double              MISSING | MISSING | MISSING
+443   PCT_INDEX_INTRATE                       double              100.0 | 100.0 | 100.0
+444   RR_APPL_DATE                            double              MISSING | MISSING | MISSING
+445   HP_STAGE_TRSF_IND                       string               |  | 
+446   CLIMATE_PRIN_TAXONOMY_CLASS             string              N | N | N
+447   CUMM_PAID_BILL_AMT                      double              0.0 | 0.0 | 0.0
+448   CUMM_PAID_BILL_PCT                      double              0.0 | 0.0 | 0.0
+449   AKPK_MATRIX_TYPE                        string               |  | 
+450   AKPK_MATRIX_DATE                        double              MISSING | MISSING | MISSING
+451   DEVIATION_CD                            string               |  | 
+452   COURT_ORDER_PERPETUAL_IND               string               |  | 
+453   FLOOD_MO_PACKAGE_CD                     string               |  | 
+454   E_INVOICE_IND                           string               |  | 
+455   INT_ADVICE_IND                          string               |  | 
+456   LEGAL_MATURITY_DT                       double              MISSING | MISSING | MISSING
+457   RR_IL_RECLASS_DT                        double              MISSING | MISSING | MISSING
+458   FDB_SCORING_DT                          double              MISSING | MISSING | MISSING
+459   FDB_TAG                                 string               |  | 
+460   FDB_TAG_DT                              double              MISSING | MISSING | MISSING
+461   CLIMATE_MITIGATE_GP1_FLG                string              0 | 0 | 0
+462   CLIMATE_ADAPT_GP2_FLG                   string              0 | 0 | 0
+463   CLIMATE_ENVIRONMT_GP3_FLG               string              0 | 0 | 0
+464   CLIMATE_TRANSITION_GP4_FLG              string              0 | 0 | 0
+465   CLIMATE_PROHIBIT_GP5_FLG                string              0 | 0 | 0
+466   WOS_RECEIVED_DT                         double              MISSING | MISSING | MISSING
+467   WOS_SETTLED_DT                          double              MISSING | MISSING | MISSING
+468   WOS_TAG                                 string               |  | 
+469   FRAUD_TAG                               string               |  | 
+470   FRAUD_TAG_DT                            double              MISSING | MISSING | MISSING
+471   REMAIN_TERM_MATURITY                    double              0.0 | 0.0 | 0.0
+472   COURT_ORDER_UPDATE_DT                   double              MISSING | MISSING | MISSING
+473   SOURCE_INCOME_CURRENCY_CD               string               |  | 
+474   VEHI_MAKE_CATEGORY                      string               |  | 
+475   INT_JAN_TO_JUN_AMT                      double              0.0 | 0.0 | 0.0
+476   INT_JUL_TO_DEC_AMT                      double              0.0 | 0.0 | 0.0
+477   WRIOFF_CLOSE_FILE_TAG                   string              Y | N | N
+478   WRIOFF_CLOSE_FILE_TAG_DT                double              18935.0 | MISSING | MISSING
+479   RR_UNTAG_DATE                           double              MISSING | MISSING | MISSING
+480   RR_UNTAG_REPAY_CNT                      double              0.0 | 0.0 | 0.0
+481   EARMARK_NOTICE_DT                       double              MISSING | MISSING | MISSING
+482   EARMARK_AMT                             double              0.0 | 0.0 | 0.0
+483   MAILING_ADD_IND                         string              1 | 1 | 1
+484   BILLING_ADD_IND                         string              1 | 1 | 1
+485   PROP_ADD_IND                            string              1 | 1 | 1
+486   FLOOR_RT_UNDER                          double              0.0 | 0.0 | 0.0
+487   FLOOR_RT_OVER                           double              0.0 | 0.0 | 0.0
+488   STMT_GEN_IND                            string              0 | 0 | 0
+489   MULTI_CURRENCY_TAG                      string               |  | 
+490   RRSTG1                                  string               |  | 
+491   AGING_FAST_TRACKER                      string               |  | 
+492   GOODWILL_IND                            string               |  | 
+493   GOODWILL_CURR_RATE                      double              0.0 | 0.0 | 0.0
+494   GOODWILL_CURR_AMT                       double              0.0 | 0.0 | 0.0
+495   PAYEFDTO                                string              24/02/00 | 10/08/99 | 07/08/99
+496   PAYEFFDT_ORI                            double              20000550224.0 | 19992220810.0 | 19992190807.0
+497   WRIOFF_DT_ORI                           string              00000000 | 00000000 | 00000000
+498   REFINANC_EVENT_TYPE                     string               |  | 
+499   EXTRA_GAIN_REFINANC_AMT                 double              0.0 | 0.0 | 0.0
+----------------------------------------------------------------------------------------------------------------------------------
+Total columns in metadata : 499
+Total columns displayed   : 499
+COLUMN VALIDATION         : PASSED
+==================================================================================================================================
