@@ -35,23 +35,46 @@ from PBBLNFMT import format_fisstype, format_fissgroup
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR    = Path("/stgsrcsys/host/uat/AII")
+# Production Path
+BNM_DIR         = Path("/dwh/dwh_m/tempsource/ln")          # DD BNM      -> SAP.PIBB.SASDATA
+BTBNM_DIR       = Path("/exdwh/host/ibtrade/bt_sasdata")    # DD BTBNM    -> SAP.IBT.SASDATA
+DISPAY_DIR      = Path("/exdwh/host/ln/idispay")            # DD DISPAY   -> SAP.PIBB.DISPAY.WK
+LOAN_DIR        = Path("/sas/ln/dwh/enrichment")            # DD LOAN     -> SAP.PIBB.MNILN(0)
+IDEPOSIT_DIR    = Path("/sas/deposit/dwh/integration")      # DD IDEPOSIT -> SAP.PIBB.MNITB(-1)
+ISASD_DIR       = Path("/exdwh/host/ln/store_sasdata")      # DD ISASD    -> SAP.PIBB.STORE.SASDATA
 
-INPUT_DIR  = BASE_DIR / "input" / "prod"
-CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIIBNW01"      # parquet cache co-located with sources
-OUTPUT_DIR = BASE_DIR / "output" / "EIIBNW01"
+OUTPUT_DIR      = Path("/hosr_pq/mis/output/report/EIIBNW01")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Library-equivalent subfolders (mirrors the JCL DD statements)
-ISASD_DIR    = STG_DIR / "EIIBNW01" / "ISASD"       # DD ISASD    -> SAP.PIBB.STORE.SASDATA
-BNM_DIR      = STG_DIR / "EIIBNW01" / "BNM"         # DD BNM      -> SAP.PIBB.SASDATA
-DISPAY_DIR   = STG_DIR / "EIIBNW01" / "DISPAY"      # DD DISPAY   -> SAP.PIBB.DISPAY.WK
-LOAN_DIR     = STG_DIR                              # DD LOAN     -> SAP.PIBB.MNILN(0)
-BTBNM_DIR    = INPUT_DIR / "btrade"                 # DD BTBNM    -> SAP.IBT.SASDATA         /dwh/ibtrade
-IDEPOSIT_DIR = INPUT_DIR / "deposit"                # DD IDEPOSIT -> SAP.PIBB.MNITB(-1)      /dwh/idp_ca
+BNM_LOAN_CUR_SAS = BNM_DIR      / f"loan{REPTMON}{NOWK}.sas7bdat"                   # 1. BNM.LOAN&REPTMON&NOWK
+BNM_LOAN_PRV_SAS = BNM_DIR      / f"loan{REPTMON1}{NOWK3}.sas7bdat"                 # 2. BNM.LOAN&REPTMON1&NOWK3
+BNM_LNWOF_SAS    = BNM_DIR      / f"lnwof{REPTMON}{NOWK}.sas7bdat"                  # 3. BNM.LNWOF&REPTMON&NOWK
+BNM_LNWOD_SAS    = BNM_DIR      / f"lnwod{REPTMON}{NOWK}.sas7bdat"                  # 4. BNM.LNWOD&REPTMON&NOWK
+BTBNM_CUR_SAS    = BTBNM_DIR    / f"ibtrad{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"       # 5. BTBNM.IBTRAD&REPTMON&NOWK
+BTBNM_PRV_SAS    = BTBNM_DIR    / f"ibtrad{REPTMON1}{NOWK3}{REPTYEAR}.sas7bdat"     # 6. BTBNM.IBTRAD&REPTMON1&NOWK3
+DISPAY_SAS       = DISPAY_DIR   / f"idispaymth{REPTMON}.sas7bdat"                   # 7. DISPAY.IDISPAYMTH&REPTMON
+LOAN_LNCOMM_SAS  = LOAN_DIR     / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"               # 8. LOAN.LNCOMM
+IDEPOSIT_CUR_SAS = IDEPOSIT_DIR / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"       # 9. IDEPOSIT.CURRENT (GDG -1, static logical name)
+ISASD_LOAN_SAS   = ISASD_DIR    / f"loan{REPTMON}.sas7bdat"                         # 10. ISASD.LOAN&REPTMON
 
-for _d in (ISASD_DIR, BNM_DIR, BTBNM_DIR, DISPAY_DIR, IDEPOSIT_DIR, LOAN_DIR, OUTPUT_DIR, CACHE_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR    = Path("/stgsrcsys/host/uat/AII")
+
+# INPUT_DIR  = BASE_DIR / "input" / "prod"
+# CACHE_DIR  = BASE_DIR / "input" / "cache" / "EIIBNW01"      # parquet cache co-located with sources
+# OUTPUT_DIR = BASE_DIR / "output" / "EIIBNW01"
+
+# # Library-equivalent subfolders (mirrors the JCL DD statements)
+# ISASD_DIR    = STG_DIR / "EIIBNW01" / "ISASD"       # DD ISASD    -> SAP.PIBB.STORE.SASDATA
+# BNM_DIR      = STG_DIR / "EIIBNW01" / "BNM"         # DD BNM      -> SAP.PIBB.SASDATA
+# DISPAY_DIR   = STG_DIR / "EIIBNW01" / "DISPAY"      # DD DISPAY   -> SAP.PIBB.DISPAY.WK
+# LOAN_DIR     = STG_DIR                              # DD LOAN     -> SAP.PIBB.MNILN(0)
+# BTBNM_DIR    = INPUT_DIR / "btrade"                 # DD BTBNM    -> SAP.IBT.SASDATA         /dwh/ibtrade
+# IDEPOSIT_DIR = INPUT_DIR / "deposit"                # DD IDEPOSIT -> SAP.PIBB.MNITB(-1)      /dwh/idp_ca
+
+# for _d in (ISASD_DIR, BNM_DIR, BTBNM_DIR, DISPAY_DIR, IDEPOSIT_DIR, LOAN_DIR, OUTPUT_DIR, CACHE_DIR):
+#     _d.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # STEP 1: REPORT DATE + WEEK DERIVATION (now from batch control)
@@ -142,27 +165,16 @@ PRODESC_ORDER = {
 # INPUT FILE PATHS  (10 physical .sas7bdat inputs; filenames are deterministic
 # from REPTMON/NOWK/REPTMON1/NOWK3 derived above)
 # ============================================================================
-# ISASD_LOAN_SAS   = ISASD_DIR    / f"loan{REPTMON}.sas7bdat"                         # 1. ISASD.LOAN&REPTMON
-# BNM_LOAN_CUR_SAS = BNM_DIR      / f"loan{REPTMON}{NOWK}.sas7bdat"                   # 2. BNM.LOAN&REPTMON&NOWK
-# BNM_LOAN_PRV_SAS = BNM_DIR      / f"loan{REPTMON1}{NOWK3}.sas7bdat"                 # 3. BNM.LOAN&REPTMON1&NOWK3
-# BNM_LNWOF_SAS    = BNM_DIR      / f"lnwof{REPTMON}{NOWK}.sas7bdat"                  # 4. BNM.LNWOF&REPTMON&NOWK
-# BNM_LNWOD_SAS    = BNM_DIR      / f"lnwod{REPTMON}{NOWK}.sas7bdat"                  # 5. BNM.LNWOD&REPTMON&NOWK
-# DISPAY_SAS       = DISPAY_DIR   / f"idispaymth{REPTMON}.sas7bdat"                   # 6. DISPAY.IDISPAYMTH&REPTMON
-# IDEPOSIT_CUR_SAS = IDEPOSIT_DIR / f"ica{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"          # 7. IDEPOSIT.CURRENT (GDG -1, static logical name)
-# LOAN_LNCOMM_SAS  = LOAN_DIR     / "PIBB_lncomm.sas7bdat"                            # 8. LOAN.LNCOMM (static)
-# BTBNM_CUR_SAS    = BTBNM_DIR    / f"ibtrad{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"       # 9. BTBNM.IBTRAD&REPTMON&NOWK
-# BTBNM_PRV_SAS    = BTBNM_DIR    / f"ibtrad{REPTMON1}{NOWK3}{REPTYEAR}.sas7bdat"     # 10. BTBNM.IBTRAD&REPTMON1&NOWK3
-
-ISASD_LOAN_SAS   = ISASD_DIR    / f"loan07.sas7bdat"                         # 1. ISASD.LOAN&REPTMON
-BNM_LOAN_CUR_SAS = BNM_DIR      / f"loan074.sas7bdat"                   # 2. BNM.LOAN&REPTMON&NOWK
-BNM_LOAN_PRV_SAS = BNM_DIR      / f"loan073.sas7bdat"                 # 3. BNM.LOAN&REPTMON1&NOWK3
-BNM_LNWOF_SAS    = BNM_DIR      / f"lnwof074.sas7bdat"                  # 4. BNM.LNWOF&REPTMON&NOWK
-BNM_LNWOD_SAS    = BNM_DIR      / f"lnwod074.sas7bdat"                  # 5. BNM.LNWOD&REPTMON&NOWK
-DISPAY_SAS       = DISPAY_DIR   / f"idispaymth07.sas7bdat"                   # 6. DISPAY.IDISPAYMTH&REPTMON
-IDEPOSIT_CUR_SAS = IDEPOSIT_DIR / f"ica07426.sas7bdat"          # 7. IDEPOSIT.CURRENT (GDG -1, static logical name)
-LOAN_LNCOMM_SAS  = LOAN_DIR     / "PIBB_lncomm.sas7bdat"                            # 8. LOAN.LNCOMM (static)
-BTBNM_CUR_SAS    = BTBNM_DIR    / f"ibtrad07426.sas7bdat"       # 9. BTBNM.IBTRAD&REPTMON&NOWK
-BTBNM_PRV_SAS    = BTBNM_DIR    / f"ibtrad07326.sas7bdat"     # 10. BTBNM.IBTRAD&REPTMON1&NOWK3
+# ISASD_LOAN_SAS   = ISASD_DIR    / f"loan07.sas7bdat"          # 1. ISASD.LOAN&REPTMON
+# BNM_LOAN_CUR_SAS = BNM_DIR      / f"loan074.sas7bdat"         # 2. BNM.LOAN&REPTMON&NOWK
+# BNM_LOAN_PRV_SAS = BNM_DIR      / f"loan073.sas7bdat"         # 3. BNM.LOAN&REPTMON1&NOWK3
+# BNM_LNWOF_SAS    = BNM_DIR      / f"lnwof074.sas7bdat"        # 4. BNM.LNWOF&REPTMON&NOWK
+# BNM_LNWOD_SAS    = BNM_DIR      / f"lnwod074.sas7bdat"        # 5. BNM.LNWOD&REPTMON&NOWK
+# DISPAY_SAS       = DISPAY_DIR   / f"idispaymth07.sas7bdat"    # 6. DISPAY.IDISPAYMTH&REPTMON
+# IDEPOSIT_CUR_SAS = IDEPOSIT_DIR / f"ica07426.sas7bdat"        # 7. IDEPOSIT.CURRENT (GDG -1, static logical name)
+# LOAN_LNCOMM_SAS  = LOAN_DIR     / "PIBB_lncomm.sas7bdat"      # 8. LOAN.LNCOMM (static)
+# BTBNM_CUR_SAS    = BTBNM_DIR    / f"ibtrad07426.sas7bdat"     # 9. BTBNM.IBTRAD&REPTMON&NOWK
+# BTBNM_PRV_SAS    = BTBNM_DIR    / f"ibtrad07326.sas7bdat"     # 10. BTBNM.IBTRAD&REPTMON1&NOWK3
 
 OUTPUT_FILE = OUTPUT_DIR / "EIIBNW01.txt"          # SAP.PIBB.EIIBNW01.TEXT (fixed name, no date suffix)
 SFTP_CTL_FILE = OUTPUT_DIR / f"EIIBNM01_WK{NOWK}.txt"  # renamed remote filename used at FTP step (transport only)
