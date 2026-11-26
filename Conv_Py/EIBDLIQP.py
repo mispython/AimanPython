@@ -47,6 +47,7 @@ import pandas as pd
 import polars as pl
 import paramiko
 import pyarrow as pa
+import saspy
 import pyarrow.parquet as pq
 
 from DALWPBBD import build_savg_curn_dept
@@ -248,8 +249,6 @@ FD_PIBB_CACHE      = CACHE_DIR / "fd_pibb.parquet"
 # Production Path
 BASE_OUTPUT_DIR = Path("host_pq/mis")
 OUTPUT_DIR      = BASE_OUTPUT_DIR / "output" / "report" / "EIBDLIQP"
-# LCR_OUTPUT_DIR  = BASE_OUTPUT_DIR / "input" / "d_lcr"                 # SAP.PBB.LCR.SASDATA.DAILY(+1)
-# NLF_OUTPUT_DIR  = BASE_OUTPUT_DIR / "input" / "d_nlf"                 # SAP.PBB.NLF.DAILY
 LCR_OUTPUT_DIR  = Path("/exdwh/host/lcr") / "d_sasdata"           # SAP.PBB.LCR.SASDATA.DAILY(+1)
 NLF_OUTPUT_DIR  = Path("/exdwh/host") / "d_nlf"                   # SAP.PBB.NLF.DAILY
 FISS_FILE       = OUTPUT_DIR / f"PBB_FISS_TEXT_DAILY_{REPTDAY}.txt"   # SAP.PBB.FISS.TEXT.DAILY
@@ -271,6 +270,9 @@ for d in (BASE_OUTPUT_DIR, OUTPUT_DIR, LCR_OUTPUT_DIR, NLF_OUTPUT_DIR):
 #     d.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
+# saspy configuration name (sascfg_personal.py). Leave None to use the default
+# configuration; set it to the same name you use in your other saspy programs.
+SASPY_CFGNAME = None
 
 # ============================================================================
 # PIBB (EIIDLIQP) PATH CONFIGURATION - second pass, same logic as PBB.
@@ -281,8 +283,6 @@ CHUNK_ROWS = 500_000
 # Production Path
 BASE_OUTPUT_DIR     = Path("host_pq/mis")
 OUTPUT_DIR_PIBB     = BASE_OUTPUT_DIR / "output" / "report" / "EIIDLIQP"
-# LCR_OUTPUT_DIR_PIBB = BASE_OUTPUT_DIR / "input" / "d_ilcr"    # SAP.PIBB.LCR.SASDATA.DAILY(+1)
-# NLF_OUTPUT_DIR_PIBB = BASE_OUTPUT_DIR / "input" / "d_inlf"    # SAP.PIBB.NLF.DAILY
 LCR_OUTPUT_DIR_PIBB  = Path("/exdwh/host/lcr") / "d_sasdata" / "pibb"       # SAP.PIBB.LCR.SASDATA.DAILY(+1)
 NLF_OUTPUT_DIR_PIBB  = Path("/exdwh/host") / "d_nlf" / "pibb"               # SAP.PIBB.NLF.DAILY
 FISS_FILE_PIBB      = OUTPUT_DIR / f"PIBB_FISS_TEXT_DAILY_{REPTDAY}.txt"    # SAP.PBB.FISS.TEXT.DAILY
@@ -303,16 +303,34 @@ for d in (BASE_OUTPUT_DIR, OUTPUT_DIR_PIBB, LCR_OUTPUT_DIR_PIBB, NLF_OUTPUT_DIR_
 #     d.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
-# HELPER: persist DataFrames returned by EIBDRLFM (LCR / NLF DD equivalents)
+# HELPER: persist DataFrames returned by EIBDRLFM as SAS datasets (.sas7bdat)
+# LCR / NLF DD equivalents: LIBNAME <libref> '<out_dir>'; DATA <libref>.<stem>;
 # ============================================================================
-def _persist_frames(frames: dict, out_dir: Path) -> None:
+def _persist_sas_datasets(frames: dict, out_dir: Path, libref: str) -> None:
+    """Write each DataFrame as <out_dir>/<stem>.sas7bdat through saspy.
+
+    One SAS session per call; it is always closed, even on failure.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
-    for stem, df in frames.items():
-        df.write_parquet(out_dir / f"{stem}.parquet")
+    sas = saspy.SASsession(**({"cfgname": SASPY_CFGNAME} if SASPY_CFGNAME else {}))
+    try:
+        sas.saslib(libref, path=str(out_dir))
+        for stem, df in frames.items():
+            # SAS character missing is blank, so null text is written as ''.
+            # Numeric nulls become NaN and are stored as SAS missing (.).
+            pdf = df.with_columns(pl.col(pl.Utf8).fill_null("")).to_pandas()
+            sas.df2sd(pdf, table=stem, libref=libref)
+            if not sas.exist(table=stem, libref=libref):
+                raise RuntimeError(
+                    f"Failed to write SAS dataset {libref}.{stem} in {out_dir}"
+                )
+            print(f"  SAS dataset written: {libref}.{stem} ({len(pdf):,} rows) -> {out_dir}")
+    finally:
+        sas.endsas()
 
 
 # ============================================================================
-# STEP 2: CACHE ALL .sas7bdat INPUTS TO PARQUET (EIIMRM01.py pattern)
+# STEP 2: CACHE ALL .sas7bdat INPUTS TO PARQUET
 # ============================================================================
 def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
     return (
@@ -516,8 +534,8 @@ report_lines = run_eibdrlfm(
     rd_days=RD_DAYS,
     reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
 )
-_persist_frames(report_lines["LCR"], LCR_OUTPUT_DIR)
-_persist_frames(report_lines["NLF"], NLF_OUTPUT_DIR)
+_persist_sas_datasets(report_lines["LCR"], LCR_OUTPUT_DIR, "LCR")
+_persist_sas_datasets(report_lines["NLF"], NLF_OUTPUT_DIR, "NLF")
 
 # ============================================================================
 # STEP 6: WRITE FISS / NSRS  (DD1-DD4 delete+recreate -> truncate here;
@@ -584,8 +602,8 @@ report_lines_pibb = run_eibdrlfm(
     rd_days=RD_DAYS,
     reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
 )
-_persist_frames(report_lines_pibb["LCR"], LCR_OUTPUT_DIR_PIBB)
-_persist_frames(report_lines_pibb["NLF"], NLF_OUTPUT_DIR_PIBB)
+_persist_sas_datasets(report_lines_pibb["LCR"], LCR_OUTPUT_DIR_PIBB, "LCR")
+_persist_sas_datasets(report_lines_pibb["NLF"], NLF_OUTPUT_DIR_PIBB, "NLF")
 
 # ----------------------------------------------------------------------------
 # Step 8e: Write PIBB FISS / NSRS
