@@ -38,16 +38,53 @@ SELLRATE	BUYRATE	REPTDATE
 
 
 
-print("\nDEBUG ERATE DATE MATCH:")
-print(f"Report date: {reptdate} ({type(reptdate)})")
+DEBUG EFORATE CACHE:
+Schema([('CURCODE', String), ('RECTYPE', String), ('BANKNO', String), ('SELLRATE', Float64), ('BUYRATE', Float64), ('WITHHOLD', Float64), ('REPTDATE', Float64)])
+shape: (12, 3)
+┌──────────┬──────────┬─────────┐
+│ REPTDATE ┆ SELLRATE ┆ BUYRATE │
+│ ---      ┆ ---      ┆ ---     │
+│ f64      ┆ f64      ┆ f64     │
+╞══════════╪══════════╪═════════╡
+│ 24412.0  ┆ 523.91   ┆ 503.84  │
+│ 24413.0  ┆ 524.71   ┆ 504.66  │
+│ 24414.0  ┆ 535.88   ┆ 515.39  │
+│ 24415.0  ┆ 550.38   ┆ 529.36  │
+│ 24416.0  ┆ 540.74   ┆ 520.08  │
+│ …        ┆ …        ┆ …       │
+│ 24422.0  ┆ 534.83   ┆ 514.4   │
+│ 24423.0  ┆ 525.92   ┆ 505.82  │
+│ 24426.0  ┆ 518.79   ┆ 498.77  │
+│ 24427.0  ┆ 520.44   ┆ 500.54  │
+│ 24428.0  ┆ 515.24   ┆ 495.54  │
+└──────────┴──────────┴─────────┘
 
-print(
-    erate.select("REPTDATE", "SELLRATE", "BUYRATE")
-         .with_columns(pl.col("REPTDATE").cast(pl.Utf8))
-)
-
-
-
-
-print(f"Matching rows: {len(erate_today)}")
-print(erate_today)
+DEBUG ERATE DATE MATCH:
+Report date: 2026-11-25 (<class 'datetime.date'>)
+shape: (12, 3)
+┌────────────┬──────────┬─────────┐
+│ REPTDATE   ┆ SELLRATE ┆ BUYRATE │
+│ ---        ┆ ---      ┆ ---     │
+│ str        ┆ f64      ┆ f64     │
+╞════════════╪══════════╪═════════╡
+│ 2026-11-02 ┆ 523.91   ┆ 503.84  │
+│ 2026-11-03 ┆ 524.71   ┆ 504.66  │
+│ 2026-11-04 ┆ 535.88   ┆ 515.39  │
+│ 2026-11-05 ┆ 550.38   ┆ 529.36  │
+│ 2026-11-06 ┆ 540.74   ┆ 520.08  │
+│ …          ┆ …        ┆ …       │
+│ 2026-11-12 ┆ 534.83   ┆ 514.4   │
+│ 2026-11-13 ┆ 525.92   ┆ 505.82  │
+│ 2026-11-16 ┆ 518.79   ┆ 498.77  │
+│ 2026-11-17 ┆ 520.44   ┆ 500.54  │
+│ 2026-11-18 ┆ 515.24   ┆ 495.54  │
+└────────────┴──────────┴─────────┘
+  ERATE rows (whole month): 12
+Matching rows: 0
+shape: (0, 3)
+┌──────────┬──────────┬─────────┐
+│ REPTDATE ┆ SELLRATE ┆ BUYRATE │
+│ ---      ┆ ---      ┆ ---     │
+│ date     ┆ f64      ┆ f64     │
+╞══════════╪══════════╪═════════╡
+└──────────┴──────────┴─────────┘
