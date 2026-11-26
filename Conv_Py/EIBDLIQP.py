@@ -21,10 +21,12 @@ JCL notes reproduced as comments (not executed):
       This is reproduced by truncating (mode 'w') FISS/NSRS at the start
       of this run and writing every subsequent line to the same in-memory
       list, matching the DISP=MOD append-within-run behaviour.
-    - RUNSFTP EXEC COZBATCH is an external SFTP utility step, not SAS
-      logic; only the FTP *command* file (SFTP01/&&FTPPUT) is built here.
-      Actual file transfer is out of scope for this conversion and is
-      left as a placeholder comment.
+    - RUNSFTP EXEC COZBATCH (SFTP01/SFTP02) is reproduced in Step 9: the
+      NSRS text files are uploaded to the DRR server via paramiko, using
+      the same remote folders and file names as the JCL PUT statements.
+    - The report date comes from the DP batch date (ctl_dwh_batch_dttm).
+      All parquet caches live in a temporary folder that is deleted
+      before the SFTP step.
     - The second job step (EIIDLIQP, the PIBB counterpart) is a real,
       active JCL step in the same job. The "/*" lines in the JCL are
       in-stream data terminators (end of "EOB" blocks for the COZBATCH
@@ -35,54 +37,193 @@ JCL notes reproduced as comments (not executed):
 """
 
 import gc
+import sys
+import tempfile
 from pathlib import Path
 from datetime import date
 
 import duckdb
 import pandas as pd
 import polars as pl
+import paramiko
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from REPTDATE import get_reptdate_values
 from DALWPBBD import build_savg_curn_dept
 from EIBDRLFM import run_eibdrlfm
 
 # ============================================================================
+# CONTROL FILES (batch date + SFTP) - DWH control library
+# ============================================================================
+CTL_BATCH_DTTM    = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE      = "DP"          # SOURCE_SYSTEM_CD used for the report date
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+
+# DRR (Data Report Repository) - folders from the JCL "CD" statements
+DRR_HOST_DESC       = "Data Report Repository (DRR)"
+DRR_REMOTE_DIR_PBB  = "FD-BNM REPORTING/PBB/BNM RPTG/BNM RPTG_SUB"
+DRR_REMOTE_DIR_PIBB = "FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}"
+        )
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row directly from the DWH control file
+    (same approach as EIWFRMCR.py)."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError(
+            "SFTP control file is missing columns: " + ", ".join(missing_columns)
+        )
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(
+            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
+        )
+
+    row = rows.iloc[0]
+
+    # SAS character values can contain fixed-width padding.
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(
+            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
+        )
+
+    return sftp_id, sftp_pw, host_ip, host_key
+
+
+def sftp_upload_to_drr(uploads: list) -> None:
+    """Upload files to the DRR server.
+
+    uploads: list of (local_path: Path, remote_dir: str, remote_name: str).
+    Equivalent of the JCL RUNSFTP steps (CD <remote_dir> / PUT <dataset> <name>).
+    The remote folder is addressed by path (relative to the login directory,
+    exactly as the JCL CD), so no session-level chdir state is carried between
+    the PBB and PIBB uploads.
+    """
+    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    # HOST_KEY is blank for the DRR row in the control file, so strict host-key
+    # pinning is not possible; AutoAddPolicy is used (same as EIWFRMCR.py).
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+    try:
+        for local_path, remote_dir, remote_name in uploads:
+            try:
+                sftp.stat(remote_dir)
+            except IOError:
+                sys.exit(f"Aborting: Remote DRR folder '{remote_dir}' not found")
+            remote_path = f"{remote_dir}/{remote_name}"
+            print(f"  SFTP upload: {local_path.name} -> {remote_path}")
+            sftp.put(str(local_path), remote_path)
+    finally:
+        sftp.close()
+        ssh.close()
+    print("  DRR upload complete.")
+
+
+# ============================================================================
+# STEP 1: REPORT DATE  (DP batch date from ctl_dwh_batch_dttm)
+# ============================================================================
+print("Step 1: Deriving report date from DP batch date...")
+
+REPTDATE = get_batch_date(BATCH_SOURCE)
+
+_day = REPTDATE.day
+NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
+
+REPTYEAR = REPTDATE.strftime("%Y")
+REPTMON  = REPTDATE.strftime("%m")
+REPTDAY  = REPTDATE.strftime("%d")
+RDATE    = REPTDATE.strftime("%d/%m/%y")
+
+RPYR, RPMTH, RPDAY = REPTDATE.year, REPTDATE.month, REPTDATE.day
+
+RD_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+if RPYR % 4 == 0:
+    RD_DAYS[1] = 29
+
+print(f"  REPTDATE: {REPTDATE}")
+print(f"  RDATE   : {RDATE}")
+print(f"  REPTMON/DAY/YEAR : {REPTMON}/{REPTDAY}/{REPTYEAR}   NOWK: {NOWK}")
+
+# ============================================================================
 # PATH CONFIGURATION - every physical input/output owned by THIS program
 # ============================================================================
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR  = Path("/stgsrcsys/host/uat/AII")
-
-# ---- Inputs (all .sas7bdat) ------------------------------------------------
-# INPUT_SAVING_FILE  = STG_DIR / "MNITB" / "saving.sas7bdat"    # DEPOSIT.SAVING
-# INPUT_CURRENT_FILE = STG_DIR / "MNITB" / "current.sas7bdat"   # DEPOSIT.CURRENT
-# INPUT_FD_FILE      = STG_DIR / "MNIFD" / "fd.sas7bdat"        # FD.FD
-# INPUT_CISDP_FILE   = STG_DIR / "CIS"   / "deposit.sas7bdat"   # CISDP.DEPOSIT
-# INPUT_FORATE_FILE  = STG_DIR / "FCYCA" / "foratebkp.sas7bdat" # FORATE.FORATEBKP
+# Production Path
+BASE_DIR            = Path("/sas/deposit/dwh")
 
 # Saving / Current: single PBB-version files containing BOTH entities,
 # discriminated by ENTITY_CD.
-INPUT_SAVING_FILE  = STG_DIR / "MNITB" / "intg_dp_acct_saving_d16.sas7bdat"
-INPUT_CURRENT_FILE = STG_DIR / "MNITB" / "intg_dp_acct_current_d16.sas7bdat"
+INPUT_SAVING_FILE   = BASE_DIR / "integration" / f"intg_dp_acct_saving_d{REPTDAY}.sas7bdat"
+INPUT_CURRENT_FILE  = BASE_DIR / "integration" / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
 
 # FD: cert-level (no ENTITY_CD) + account-level (has ACCTNO + ENTITY_CD).
-INPUT_FD_CERT_FILE = STG_DIR / "MNIFD" / "enrh_dp_fd_cert_d16.sas7bdat"
-INPUT_FD_ACCT_FILE = STG_DIR / "MNITB" / "intg_dp_acct_fd_d16.sas7bdat"
+INPUT_FD_CERT_FILE  = BASE_DIR / "enrichment"  / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
+INPUT_FD_ACCT_FILE  = BASE_DIR / "integration" / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
 
 # Shared PBB files (unchanged).
-INPUT_CISDP_FILE   = STG_DIR / "CIS"      / "deposit.sas7bdat"
-INPUT_FORATE_FILE  = STG_DIR / "EIBDLIQP" / "foratebkp.sas7bdat"
+INPUT_CISDP_FILE    = Path("/sas/cis/mart/enrichment") / "enrh_exdwh_cisr1.sas7bdat"
+INPUT_FORATE_FILE   = Path("/exdwh/host/forate") / "foratebkp.sas7bdat"
+
+# # Testing Path
+# BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR  = Path("/stgsrcsys/host/uat/AII")
+
+# # ---- Inputs (all .sas7bdat) ------------------------------------------------
+# # Saving / Current: single PBB-version files containing BOTH entities,
+# # discriminated by ENTITY_CD.
+# INPUT_SAVING_FILE  = STG_DIR / "MNITB" / f"intg_dp_acct_saving_d{REPTDAY}.sas7bdat"
+# INPUT_CURRENT_FILE = STG_DIR / "MNITB" / f"intg_dp_acct_current_d{REPTDAY}.sas7bdat"
+
+# # FD: cert-level (no ENTITY_CD) + account-level (has ACCTNO + ENTITY_CD).
+# INPUT_FD_CERT_FILE = STG_DIR / "MNIFD" / f"enrh_dp_fd_cert_d{REPTDAY}.sas7bdat"
+# INPUT_FD_ACCT_FILE = STG_DIR / "MNITB" / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
+
+# # Shared PBB files (unchanged).
+# INPUT_CISDP_FILE   = STG_DIR / "CIS"      / "deposit.sas7bdat"
+# INPUT_FORATE_FILE  = STG_DIR / "EIBDLIQP" / "foratebkp.sas7bdat"
 
 # ---- Parquet caches (converted once, shared by DALWPBBD + EIBDRLFM) -------
-CACHE_DIR = BASE_DIR / "input" / "cache" / "EIBDLIQP"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-# SAVING_CACHE  = CACHE_DIR / f"{INPUT_SAVING_FILE.stem}.parquet"
-# CURRENT_CACHE = CACHE_DIR / f"{INPUT_CURRENT_FILE.stem}.parquet"
-# FD_CACHE      = CACHE_DIR / f"{INPUT_FD_FILE.stem}.parquet"
-# CISDP_CACHE   = CACHE_DIR / f"{INPUT_CISDP_FILE.stem}.parquet"
-# FORATE_CACHE  = CACHE_DIR / f"{INPUT_FORATE_FILE.stem}.parquet"
+# Temporary folder: parquet is used only for fast reads during this run and is
+# deleted (see _TMP.cleanup() before Step 9). Nothing is kept between runs.
+TEMP_DIR = None   # None = system temp; set a path if the default temp area is too small
+_TMP = tempfile.TemporaryDirectory(dir=TEMP_DIR, prefix="EIBDLIQP_")
+CACHE_DIR = Path(_TMP.name)
 
 # Raw caches (one per physical file, cached once)
 SAVING_CACHE_FULL  = CACHE_DIR / "saving_full.parquet"
@@ -100,21 +241,31 @@ CURRENT_PIBB_CACHE = CACHE_DIR / "current_pibb.parquet"
 FD_PBB_CACHE       = CACHE_DIR / "fd_pbb.parquet"
 FD_PIBB_CACHE      = CACHE_DIR / "fd_pibb.parquet"
 
-# ---- Output cache dir for DALWPBBD's BNM_SAVG/BNM_CURN/BNM_DEPT parquet ----
-DALWPBBD_OUTPUT_CACHE_DIR = BASE_DIR / "input" / "cache" / "DALWPBBD_PBB"
-
 # ---- Outputs ----------------------------------------------------------------
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDLIQP"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Production Path
+BASE_OUTPUT_DIR = Path("host_pq/mis")
+OUTPUT_DIR      = BASE_OUTPUT_DIR / "output" / "report" / "EIBDLIQP"
+# LCR_OUTPUT_DIR  = BASE_OUTPUT_DIR / "input" / "d_lcr"                 # SAP.PBB.LCR.SASDATA.DAILY(+1)
+# NLF_OUTPUT_DIR  = BASE_OUTPUT_DIR / "input" / "d_nlf"                 # SAP.PBB.NLF.DAILY
+LCR_OUTPUT_DIR  = Path("/exdwh/host/lcr") / "d_sasdata"           # SAP.PBB.LCR.SASDATA.DAILY(+1)
+NLF_OUTPUT_DIR  = Path("/exdwh/host") / "d_nlf"                   # SAP.PBB.NLF.DAILY
+FISS_FILE       = OUTPUT_DIR / f"PBB_FISS_TEXT_DAILY_{REPTDAY}.txt"   # SAP.PBB.FISS.TEXT.DAILY
+NSRS_FILE       = OUTPUT_DIR / f"PBB_NSRS_TEXT_DAILY_{REPTDAY}.txt"   # SAP.PBB.NSRS.TEXT.DAILY
 
-LCR_OUTPUT_DIR = OUTPUT_DIR / "LCR"    # SAP.PBB.LCR.SASDATA.DAILY(+1)
-NLF_OUTPUT_DIR = OUTPUT_DIR / "NLF"    # SAP.PBB.NLF.DAILY
-FISS_FILE      = OUTPUT_DIR / "PBB_FISS_TEXT_DAILY.txt"   # SAP.PBB.FISS.TEXT.DAILY
-NSRS_FILE      = OUTPUT_DIR / "PBB_NSRS_TEXT_DAILY.txt"   # SAP.PBB.NSRS.TEXT.DAILY
-SFTP_CMD_FILE  = OUTPUT_DIR / "PBB_DAILY_NSRS_FTP.txt"    # &&FTPPUT (SFTP01)
-
-for d in (LCR_OUTPUT_DIR, NLF_OUTPUT_DIR):
+for d in (BASE_OUTPUT_DIR, OUTPUT_DIR, LCR_OUTPUT_DIR, NLF_OUTPUT_DIR):
     d.mkdir(parents=True, exist_ok=True)
+
+# # Testing Path
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBDLIQP"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# LCR_OUTPUT_DIR = OUTPUT_DIR / "LCR"    # SAP.PBB.LCR.SASDATA.DAILY(+1)
+# NLF_OUTPUT_DIR = OUTPUT_DIR / "NLF"    # SAP.PBB.NLF.DAILY
+# FISS_FILE      = OUTPUT_DIR / f"PBB_FISS_TEXT_DAILY_{REPTDAY}.txt"   # SAP.PBB.FISS.TEXT.DAILY
+# NSRS_FILE      = OUTPUT_DIR / f"PBB_NSRS_TEXT_DAILY_{REPTDAY}.txt"   # SAP.PBB.NSRS.TEXT.DAILY
+
+# for d in (LCR_OUTPUT_DIR, NLF_OUTPUT_DIR):
+#     d.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS = 500_000
 
@@ -124,57 +275,38 @@ CHUNK_ROWS = 500_000
 # so they are NOT redeclared here; the existing CISDP_CACHE / FORATE_CACHE
 # (and FORATE_MAP) are reused.
 # ============================================================================
-# INPUT_SAVING_FILE_PIBB  = STG_DIR / "MNITB" / "saving_pibb.sas7bdat"
-# INPUT_CURRENT_FILE_PIBB = STG_DIR / "MNITB" / "current_pibb.sas7bdat"
-# INPUT_FD_FILE_PIBB      = STG_DIR / "MNIFD" / "fd_pibb.sas7bdat"
+# Production Path
+BASE_OUTPUT_DIR     = Path("host_pq/mis")
+OUTPUT_DIR_PIBB     = BASE_OUTPUT_DIR / "output" / "report" / "EIIDLIQP"
+# LCR_OUTPUT_DIR_PIBB = BASE_OUTPUT_DIR / "input" / "d_ilcr"    # SAP.PIBB.LCR.SASDATA.DAILY(+1)
+# NLF_OUTPUT_DIR_PIBB = BASE_OUTPUT_DIR / "input" / "d_inlf"    # SAP.PIBB.NLF.DAILY
+LCR_OUTPUT_DIR_PIBB  = Path("/exdwh/host/lcr") / "d_sasdata" / "pibb"       # SAP.PIBB.LCR.SASDATA.DAILY(+1)
+NLF_OUTPUT_DIR_PIBB  = Path("/exdwh/host") / "d_nlf" / "pibb"               # SAP.PIBB.NLF.DAILY
+FISS_FILE_PIBB      = OUTPUT_DIR / f"PIBB_FISS_TEXT_DAILY_{REPTDAY}.txt"    # SAP.PBB.FISS.TEXT.DAILY
+NSRS_FILE_PIBB      = OUTPUT_DIR / f"PIBB_NSRS_TEXT_DAILY_{REPTDAY}.txt"    # SAP.PBB.NSRS.TEXT.DAILY
 
-# CACHE_DIR_PIBB = BASE_DIR / "input" / "cache" / "EIIDLIQP"
-# CACHE_DIR_PIBB.mkdir(parents=True, exist_ok=True)
-
-# SAVING_CACHE_PIBB  = CACHE_DIR_PIBB / f"{INPUT_SAVING_FILE_PIBB.stem}.parquet"
-# CURRENT_CACHE_PIBB = CACHE_DIR_PIBB / f"{INPUT_CURRENT_FILE_PIBB.stem}.parquet"
-# FD_CACHE_PIBB      = CACHE_DIR_PIBB / f"{INPUT_FD_FILE_PIBB.stem}.parquet"
-
-DALWPBBD_OUTPUT_CACHE_DIR_PIBB = BASE_DIR / "input" / "cache" / "DALWPBBD_PIBB"
-
-OUTPUT_DIR_PIBB     = BASE_DIR / "output" / "EIIDLIQP"
-OUTPUT_DIR_PIBB.mkdir(parents=True, exist_ok=True)
-LCR_OUTPUT_DIR_PIBB = OUTPUT_DIR_PIBB / "LCR"   # SAP.PIBB.LCR.SASDATA.DAILY(+1)
-NLF_OUTPUT_DIR_PIBB = OUTPUT_DIR_PIBB / "NLF"   # SAP.PIBB.NLF.DAILY
-FISS_FILE_PIBB      = OUTPUT_DIR_PIBB / "PIBB_FISS_TEXT_DAILY.txt"
-NSRS_FILE_PIBB      = OUTPUT_DIR_PIBB / "PIBB_NSRS_TEXT_DAILY.txt"
-SFTP_CMD_FILE_PIBB  = OUTPUT_DIR_PIBB / "PIBB_DAILY_NSRS_FTP.txt"  # &&FTPPUT2
-
-for d in (LCR_OUTPUT_DIR_PIBB, NLF_OUTPUT_DIR_PIBB):
+for d in (BASE_OUTPUT_DIR, OUTPUT_DIR_PIBB, LCR_OUTPUT_DIR_PIBB, NLF_OUTPUT_DIR_PIBB):
     d.mkdir(parents=True, exist_ok=True)
 
+# # Testing Path
+# OUTPUT_DIR_PIBB     = BASE_DIR / "output" / "EIIDLIQP"
+# OUTPUT_DIR_PIBB.mkdir(parents=True, exist_ok=True)
+# LCR_OUTPUT_DIR_PIBB = OUTPUT_DIR_PIBB / "LCR"   # SAP.PIBB.LCR.SASDATA.DAILY(+1)
+# NLF_OUTPUT_DIR_PIBB = OUTPUT_DIR_PIBB / "NLF"   # SAP.PIBB.NLF.DAILY
+# FISS_FILE_PIBB      = OUTPUT_DIR_PIBB / f"PIBB_FISS_TEXT_DAILY_{REPTDAY}.txt"
+# NSRS_FILE_PIBB      = OUTPUT_DIR_PIBB / f"PIBB_NSRS_TEXT_DAILY_{REPTDAY}.txt"
+
+# for d in (LCR_OUTPUT_DIR_PIBB, NLF_OUTPUT_DIR_PIBB):
+#     d.mkdir(parents=True, exist_ok=True)
+
 # ============================================================================
-# STEP 1: REPORT DATE  (no reptdate.parquet -- derive from REPTDATE.py)
+# HELPER: persist DataFrames returned by EIBDRLFM (LCR / NLF DD equivalents)
 # ============================================================================
-print("Step 1: Deriving report date...")
+def _persist_frames(frames: dict, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for stem, df in frames.items():
+        df.write_parquet(out_dir / f"{stem}.parquet")
 
-reptdate_values = get_reptdate_values()
-REPTDATE = reptdate_values.reptdate
-
-# DEBUG (UAT OVERRRIDE - Need to be removed before production)
-REPTDATE = date(2026, 9, 16)
-
-_day = REPTDATE.day
-NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
-
-REPTYEAR = REPTDATE.strftime("%Y")
-REPTMON  = REPTDATE.strftime("%m")
-REPTDAY  = REPTDATE.strftime("%d")
-RDATE    = REPTDATE.strftime("%d/%m/%y")
-
-RPYR, RPMTH, RPDAY = REPTDATE.year, REPTDATE.month, REPTDATE.day
-
-RD_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-if RPYR % 4 == 0:
-    RD_DAYS[1] = 29
-
-print(f"  RDATE   : {RDATE}")
-print(f"  REPTMON/DAY/YEAR : {REPTMON}/{REPTDAY}/{REPTYEAR}   NOWK: {NOWK}")
 
 # ============================================================================
 # STEP 2: CACHE ALL .sas7bdat INPUTS TO PARQUET (EIIMRM01.py pattern)
@@ -225,13 +357,6 @@ def _load_cached(sas_path: Path, cache_path: Path, tag: str) -> Path:
     return cache_path
 
 
-# print("\nStep 2: Caching input SAS datasets to Parquet...")
-# _load_cached(INPUT_SAVING_FILE, SAVING_CACHE, "SAVING")
-# _load_cached(INPUT_CURRENT_FILE, CURRENT_CACHE, "CURRENT")
-# _load_cached(INPUT_FD_FILE, FD_CACHE, "FD")
-# _load_cached(INPUT_CISDP_FILE, CISDP_CACHE, "CISDP")
-# _load_cached(INPUT_FORATE_FILE, FORATE_CACHE, "FORATE")
-
 print("\nStep 2: Caching input SAS datasets to Parquet...")
 _load_cached(INPUT_SAVING_FILE,  SAVING_CACHE_FULL,  "SAVING")
 _load_cached(INPUT_CURRENT_FILE, CURRENT_CACHE_FULL, "CURRENT")
@@ -275,7 +400,7 @@ def _split_by_entity(src_cache: Path, out_pbb: Path, out_pibb: Path, tag: str):
     con.execute(f"""
         COPY (
             SELECT * FROM read_parquet('{src_cache.as_posix()}')
-            WHERE CAST({ENTITY_COL} AS VARCHAR) = '{PIBB_VALUE}'
+            WHERE TRIM(UPPER(CAST({ENTITY_COL} AS VARCHAR))) = '{PIBB_VALUE}'
         ) TO '{out_pibb.as_posix()}' (FORMAT PARQUET)
     """)
     n_pbb  = con.execute(f"SELECT COUNT(*) FROM read_parquet('{out_pbb.as_posix()}')").fetchone()[0]
@@ -365,21 +490,10 @@ print(f"  Currencies in $FORATE: {len(FORATE_MAP)}")
 # ============================================================================
 print("\nStep 4: Running DALWPBBD (BNM_SAVG / BNM_CURN / BNM_DEPT)...")
 
-# BNM_SAVG, BNM_CURN, BNM_DEPT = build_savg_curn_dept(
-#     saving_cache=SAVING_CACHE,
-#     current_cache=CURRENT_CACHE,
-#     cisdp_cache=CISDP_CACHE,
-#     reptmon=REPTMON,
-#     nowk=NOWK,
-#     output_cache_dir=DALWPBBD_OUTPUT_CACHE_DIR,
-# )
 BNM_SAVG, BNM_CURN, BNM_DEPT = build_savg_curn_dept(
     saving_cache=SAVING_PBB_CACHE,
     current_cache=CURRENT_PBB_CACHE,
     cisdp_cache=CISDP_CACHE,
-    reptmon=REPTMON,
-    nowk=NOWK,
-    output_cache_dir=DALWPBBD_OUTPUT_CACHE_DIR,
 )
 print(f"  BNM_SAVG: {len(BNM_SAVG):,} rows   BNM_CURN: {len(BNM_CURN):,} rows")
 
@@ -387,20 +501,6 @@ print(f"  BNM_SAVG: {len(BNM_SAVG):,} rows   BNM_CURN: {len(BNM_CURN):,} rows")
 # STEP 5: EIBDRLFM -- FISS/NSRS report + LCR/NLF extracts
 # ============================================================================
 print("\nStep 5: Running EIBDRLFM (FISS / NSRS / LCR / NLF)...")
-
-# report_lines = run_eibdrlfm(
-#     fd_cache=FD_CACHE,
-#     current_cache=CURRENT_CACHE,
-#     bnm_savg=BNM_SAVG,
-#     bnm_curn=BNM_CURN,
-#     forate_map=FORATE_MAP,
-#     reptdate=REPTDATE,
-#     rpyr=RPYR, rpmth=RPMTH, rpday=RPDAY,
-#     rd_days=RD_DAYS,
-#     reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
-#     lcr_output_dir=LCR_OUTPUT_DIR,
-#     nlf_output_dir=NLF_OUTPUT_DIR,
-# )
 
 report_lines = run_eibdrlfm(
     fd_cache=FD_PBB_CACHE,
@@ -412,9 +512,9 @@ report_lines = run_eibdrlfm(
     rpyr=RPYR, rpmth=RPMTH, rpday=RPDAY,
     rd_days=RD_DAYS,
     reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
-    lcr_output_dir=LCR_OUTPUT_DIR,
-    nlf_output_dir=NLF_OUTPUT_DIR,
 )
+_persist_frames(report_lines["LCR"], LCR_OUTPUT_DIR)
+_persist_frames(report_lines["NLF"], NLF_OUTPUT_DIR)
 
 # ============================================================================
 # STEP 6: WRITE FISS / NSRS  (DD1-DD4 delete+recreate -> truncate here;
@@ -434,21 +534,8 @@ print(f"  FISS lines: {len(report_lines['FISS']):,}  -> {FISS_FILE}")
 print(f"  NSRS lines: {len(report_lines['NSRS']):,}  -> {NSRS_FILE}")
 
 # ============================================================================
-# STEP 7: SFTP01 command file  (the actual RUNSFTP/COZBATCH transfer step
-# is an external JCL utility, not SAS logic - only the FTP command text
-# is produced here; the transfer itself is out of scope for this
-# conversion)
+# STEP 7 (SFTP01) is executed in Step 9 together with the PIBB upload.
 # ============================================================================
-sftp_cmd = (
-    'CD "FD-BNM REPORTING/PBB/BNM RPTG/BNM RPTG_SUB"\n'
-    f"PUT {NSRS_FILE.as_posix()} PBB_DAILY_NSRS_{REPTDAY}.TXT\n"
-)
-with open(SFTP_CMD_FILE, "w", encoding="latin1") as fh:
-    fh.write(sftp_cmd)
-print(f"  SFTP command file -> {SFTP_CMD_FILE}")
-# Placeholder: actual SFTP transfer (RUNSFTP EXEC COZBATCH) is an external
-# job step and is not executed by this program.
-
 print("\nEIBDLIQP (PBB) complete.")
 
 # ============================================================================
@@ -461,16 +548,8 @@ print("\n" + "=" * 70)
 print("EIIDLIQP (PIBB) - starting")
 print("=" * 70)
 
-# print("\nStep 8a: Caching PIBB input SAS datasets to Parquet...")
-# _load_cached(INPUT_SAVING_FILE_PIBB,  SAVING_CACHE_PIBB,  "SAVING-PIBB")
-# _load_cached(INPUT_CURRENT_FILE_PIBB, CURRENT_CACHE_PIBB, "CURRENT-PIBB")
-# _load_cached(INPUT_FD_FILE_PIBB,      FD_CACHE_PIBB,      "FD-PIBB")
-
 print("\nStep 8a: Using PIBB entity-split caches (from Step 2b) ...")
 # in Step 2b; the PIBB pass below consumes them directly.
-# SAVING_CACHE_PIBB  = SAVING_PIBB_CACHE
-# CURRENT_CACHE_PIBB = CURRENT_PIBB_CACHE
-# FD_CACHE_PIBB      = FD_PIBB_CACHE
 
 # Step 8b: $FORATE is identical to PBB (same FORATE.FORATEBKP) -> reuse
 # FORATE_MAP built in Step 3. No re-query needed.
@@ -483,9 +562,6 @@ BNM_SAVG_PIBB, BNM_CURN_PIBB, BNM_DEPT_PIBB = build_savg_curn_dept(
     saving_cache=SAVING_PIBB_CACHE,
     current_cache=CURRENT_PIBB_CACHE,
     cisdp_cache=CISDP_CACHE,                       # shared PBB file
-    reptmon=REPTMON,
-    nowk=NOWK,
-    output_cache_dir=DALWPBBD_OUTPUT_CACHE_DIR_PIBB,
 )
 print(f"  PIBB BNM_SAVG: {len(BNM_SAVG_PIBB):,} rows   "
       f"PIBB BNM_CURN: {len(BNM_CURN_PIBB):,} rows")
@@ -504,9 +580,9 @@ report_lines_pibb = run_eibdrlfm(
     rpyr=RPYR, rpmth=RPMTH, rpday=RPDAY,
     rd_days=RD_DAYS,
     reptday=REPTDAY, reptmon=REPTMON, reptyear=REPTYEAR,
-    lcr_output_dir=LCR_OUTPUT_DIR_PIBB,
-    nlf_output_dir=NLF_OUTPUT_DIR_PIBB,
 )
+_persist_frames(report_lines_pibb["LCR"], LCR_OUTPUT_DIR_PIBB)
+_persist_frames(report_lines_pibb["NLF"], NLF_OUTPUT_DIR_PIBB)
 
 # ----------------------------------------------------------------------------
 # Step 8e: Write PIBB FISS / NSRS
@@ -523,15 +599,27 @@ with open(NSRS_FILE_PIBB, "w", encoding="latin1") as fh:
 print(f"  PIBB FISS lines: {len(report_lines_pibb['FISS']):,}  -> {FISS_FILE_PIBB}")
 print(f"  PIBB NSRS lines: {len(report_lines_pibb['NSRS']):,}  -> {NSRS_FILE_PIBB}")
 
-# ----------------------------------------------------------------------------
-# Step 8f: SFTP02 command file (actual COZBATCH RUNSFTP transfer out of scope)
-# ----------------------------------------------------------------------------
-sftp_cmd_pibb = (
-    'CD "FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"\n'
-    f"PUT {NSRS_FILE_PIBB.as_posix()} PIBB_DAILY_NSRS_{REPTDAY}.TXT\n"
-)
-with open(SFTP_CMD_FILE_PIBB, "w", encoding="latin1") as fh:
-    fh.write(sftp_cmd_pibb)
-print(f"  PIBB SFTP command file -> {SFTP_CMD_FILE_PIBB}")
-
 print("\nEIIDLIQP (PIBB) complete.")
+
+# ============================================================================
+# CLEANUP: remove the temporary parquet caches (not kept between runs).
+# Done before the upload so they are deleted even if the SFTP step fails.
+# ============================================================================
+_TMP.cleanup()
+print("\nTemporary parquet caches removed.")
+
+# ============================================================================
+# STEP 9: SFTP NSRS FILES TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# Equivalent of the two JCL RUNSFTP (COZBATCH) steps:
+#   CD "FD-BNM REPORTING/PBB/BNM RPTG/BNM RPTG_SUB"
+#   PUT //SAP.PBB.NSRS.TEXT.DAILY  PBB_DAILY_NSRS_&REPTDAY..TXT
+#   CD "FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"
+#   PUT //SAP.PIBB.NSRS.TEXT.DAILY PIBB_DAILY_NSRS_&REPTDAY..TXT
+# ============================================================================
+print("\nStep 9: Uploading NSRS files to DRR via SFTP...")
+sftp_upload_to_drr([
+    (NSRS_FILE,      DRR_REMOTE_DIR_PBB,  f"PBB_DAILY_NSRS_{REPTDAY}.TXT"),
+    (NSRS_FILE_PIBB, DRR_REMOTE_DIR_PIBB, f"PIBB_DAILY_NSRS_{REPTDAY}.TXT"),
+])
+
+print("\nEIBDLIQP / EIIDLIQP finished.")
