@@ -1,124 +1,80 @@
-import gc
-import sys
-from pathlib import Path
-from datetime import date
-
 import duckdb
-import paramiko
-import tempfile
 import polars as pl
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import saspy                      # <-- ADD
+import re
+import tempfile
 
 
 
 
-# SFTP control file and DRR target (ask.py FTPBTR1C)
-SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-DRR_HOST_DESC     = "Data Report Repository (DRR)"
-DRR_REMOTE_DIR    = "FD-BNM REPORTING/PBB/BNM RPTG"
-# Commented in ask.py (kept commented): cd TEXTFILE / cd FIN
-#   PUT //SAP.PBB.EIWBTR1C.TEXT  EIWBTR1C%ODD.%OMM..TXT
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+CIT_DIR.mkdir(parents=True, exist_ok=True)
+CIT_DIR_SAS.mkdir(parents=True, exist_ok=True)        # <-- ADD
 
 
 
 
-def get_sftp_info(host_desc: str):
-    """Read one SFTP configuration row from ctl_dwh_sftp_info.sas7bdat."""
-    if not SFTP_CONTROL_FILE.exists():
-        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+# Persistent yearly CIT accumulation parquet — one file per year
+CIT_YEAR_FILE = CIT_DIR / f"cit{REPTYEAR}.parquet"
 
-    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-
-    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
-    missing_columns = sorted(required.difference(ctl.columns))
-    if missing_columns:
-        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
-
-    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
-    rows = ctl[descriptions.eq(host_desc)]
-    if len(rows) != 1:
-        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
-
-    row = rows.iloc[0]
-    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
-    sftp_id = clean(row["SFTP_ID"])
-    sftp_pw = clean(row["SFTP_PW"])
-    host_ip = clean(row["HOST_IP"])
-    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
-
-    empty_values = [n for n, v in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw),
-                                   ("HOST_IP", host_ip)) if not v]
-    if empty_values:
-        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
-
-    return sftp_id, sftp_pw, host_ip, host_key
-
-
-
-
-# Local file: original DSN has no date -> static name.
-# Remote file (ask.py): EIWBTR1C%ODD.%OMM..TXT -> EIWBTR1C<DD><MM>.TXT,
-# using the batch date from ctl_dwh_batch_dttm.
-OUTPUT_FILE = OUTPUT_DIR / "EIWBTR1C.txt"
-REMOTE_FILE = f"EIWBTR1C{REPTDAY}{REPTMON}.TXT"
+# Yearly CIT SAS dataset (SAS: CIT.CIT&REPTYEAR -> cit{yy}.sas7bdat)   # <-- ADD (3 lines)
+CIT_SAS_LIBREF = "CITLIB"
+CIT_SAS_TABLE  = f"CIT{REPTYEAR}"
 
 
 
 
 # ============================================================================
-# STEP 13: SFTP TO DRR  (ask.py FTPBTR1C)
+# STEP 5b — WRITE YEARLY CIT AS .sas7bdat (saspy)
 # ============================================================================
-def sftp_upload_to_drr(local_file: Path, remote_name: str) -> None:
-    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
 
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
-    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+def _write_cit_sas7bdat(df_cit_year: pl.DataFrame) -> None:
+    """Write the accumulated yearly CIT data as a SAS dataset.
+
+    SAS equivalent: permanent dataset CIT.CIT&REPTYEAR (library CIT).
+    Columns: BRANCH, AMOUNT01, NOACCT01, ..., AMOUNT12, NOACCT12.
+    An existing dataset of the same name is replaced.
+    """
+    CIT_DIR_SAS.mkdir(parents=True, exist_ok=True)
+
+    sas = saspy.SASsession()
     try:
-        sftp = ssh.open_sftp()
-        try:
-            sftp.chdir(DRR_REMOTE_DIR)
-        except IOError:
-            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
-        print(f"  SFTP upload: {local_file.name} -> {DRR_REMOTE_DIR}/{remote_name}")
-        sftp.put(str(local_file), remote_name)
-        sftp.close()
+        sas.saslib(CIT_SAS_LIBREF, path=str(CIT_DIR_SAS))
+        sas_data = sas.df2sd(
+            df_cit_year.to_pandas(),
+            table=CIT_SAS_TABLE,
+            libref=CIT_SAS_LIBREF,
+        )
+        if sas_data is None:
+            raise RuntimeError(
+                f"saspy failed to write {CIT_SAS_LIBREF}.{CIT_SAS_TABLE} to {CIT_DIR_SAS}"
+            )
     finally:
-        ssh.close()
-    print("  DRR upload complete.")
+        sas.endsas()
 
-
-print("\nUploading report to DRR via SFTP...")
-sftp_upload_to_drr(OUTPUT_FILE, REMOTE_FILE)
-
-print("\nEIWBTR1C complete.")
+    print(f"  Written SAS dataset: {CIT_DIR_SAS / (CIT_SAS_TABLE.lower() + '.sas7bdat')}")
 
 
 
 
-SFTP: DRR, FD-BNM REPORTING/PBB/BNM RPTG, EIWBTR1C<DD><MM>.TXT
+    print(f"\nStep 5: Updating yearly CIT parquet [{CIT_YEAR_FILE.name}]...")
+    df_cit_year = _update_cit_year(df_month, file_month)
+    print(f"  Total branches in yearly parquet: {len(df_cit_year):,}")
+
+    # ── Step 5b: Write yearly CIT as .sas7bdat ─────────────────────────────   # <-- ADD (3 lines)
+    print(f"\nStep 5b: Writing yearly CIT SAS dataset [{CIT_SAS_TABLE.lower()}.sas7bdat]...")
+    _write_cit_sas7bdat(df_cit_year)
 
 
 
 
-======================== EIMBTCOL
-
-from datetime import date
-
-
-
-
-# Original DSN SAP.PBB.EIMBTCOL.TEXT has no date token -> static filename.
-OUTPUT_FILE = OUTPUT_DIR / "EIMBTCOL.txt"
-
-
-
-
-# SFTP (FTPBTCOL): every line of this job is commented out in the
-# original (cd TEXTFILE / cd FIN / PUT //SAP.PBB.EIMBTCOL.TEXT
-# EIMBTCOL%ODD.%OMM..TXT), so no transfer is performed.
+    print("\nGENERATED FILES:")
+    print(f"  Cash-In-Transit Report : {OUTPUT_CITLIST}")
+    print(f"  Yearly CIT Parquet     : {CIT_YEAR_FILE}")
+    print(f"  Yearly CIT SAS Dataset : {CIT_DIR_SAS / (CIT_SAS_TABLE.lower() + '.sas7bdat')}")   # <-- ADD
 
 
 
