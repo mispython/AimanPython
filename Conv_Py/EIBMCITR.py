@@ -5,111 +5,97 @@ Purpose : Monthly Accumulated Report for Cash-In-Transit
           Reads the 4 latest TLBTRAN .sas7bdat files (representing 4 weeks of
           the report month) and a DBRANCH.txt fixed-width branch reference file.
           Filters TRANCODE IN (2222, 2223), aggregates CASHOUT and account counts
-          per REPTDATE/BRANCH, accumulates monthly totals into CIT{year}.parquet,
-          then writes a formatted Cash-In-Transit report.
+          per REPTDATE/BRANCH for the current month, then accumulates into a
+          persistent yearly CIT parquet (CIT_{year}.parquet).
+          On each run, only the current month's columns are updated; all other
+          months already stored in the parquet are preserved untouched.
+          Finally writes a formatted Cash-In-Transit report (CITLIST .txt).
 """
 
 import duckdb
 import polars as pl
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+import re
+import tempfile
+from datetime import date
 from pathlib import Path
 
-from REPTDATE import get_reptdate_values
-from input_date import get_latest_file
-from output_date import build_output_file
+# NOTE: Report date comes from the DP batch control file; output name is built locally.
+
+# ============================================================================
+# REPORT DATE (from batch control file, SOURCE_SYSTEM_CD = SAS)
+# ============================================================================
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "SAS"
+
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
+REPTDATE  = get_batch_date(BATCH_SOURCE)
+REPTYEAR  = REPTDATE.strftime("%y")     # PUT(REPTDATE,YEAR2.)
+REPTMON   = REPTDATE.strftime("%m")     # PUT(MONTH(REPTDATE),Z2.)
+REPTYEAR2 = REPTDATE.strftime("%Y")     # PUT(REPTDATE,YEAR4.)
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input" / "prod"
-CIT_DIR    = BASE_DIR / "input" / "cit"
-OUTPUT_DIR = BASE_DIR / "output" / "EIBMCITR"
+# Production Path
+INPUT_DIR  = Path("/dwh/dp_tlr")
+# CIT_DIR    = Path("/host_pq/mis/parquet/EIBMCITR")
+CIT_DIR    = Path("/exdwh/host/teller/cit/sasdata")
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMCITR")
 
-# # Production Path
-# INPUT_DIR  = Path("/dwh")
-# CIT_DIR    = Path("/sas/cit")
-# OUTPUT_DIR = Path("/host/mis/output/report")
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR  = BASE_DIR / "input"  / "prod" / "EIBMCITR"
+# CIT_DIR    = BASE_DIR / "input"  / "prod" / "EIBMCITR"
+# OUTPUT_DIR = BASE_DIR / "output" / "EIBMCITR"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 CIT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Branch reference fixed-width flat file
-INPUT_BRHFILE = INPUT_DIR / "DBRANCH.txt"
-# INPUT_BRHFILE = Path("/sas/refdata") / "DBRANCH.txt"
+INPUT_BRHFILE = Path("/sasdata/rawdata/lookup") / "LKP_BRANCH"
 
-# ============================================================================
-# REPORT DATE (from REPTDATE module)
-# ============================================================================
-reptdate_values = get_reptdate_values()
-REPTDATE  = reptdate_values.reptdate
-REPTYEAR  = reptdate_values.reptyear       # 2-digit year
-REPTMON   = reptdate_values.reptmon        # zero-padded month
+# 4 weekly TLBTRAN input files for the current report month
+INPUT_TLBTRAN_WK1 = INPUT_DIR / f"tlbtran{REPTMON}1{REPTYEAR}.sas7bdat"
+INPUT_TLBTRAN_WK2 = INPUT_DIR / f"tlbtran{REPTMON}2{REPTYEAR}.sas7bdat"
+INPUT_TLBTRAN_WK3 = INPUT_DIR / f"tlbtran{REPTMON}3{REPTYEAR}.sas7bdat"
+INPUT_TLBTRAN_WK4 = INPUT_DIR / f"tlbtran{REPTMON}4{REPTYEAR}.sas7bdat"
+# INPUT_TLBTRAN_WK1 = INPUT_DIR / "tlbtran01126.sas7bdat"
+# INPUT_TLBTRAN_WK2 = INPUT_DIR / "tlbtran01226.sas7bdat"
+# INPUT_TLBTRAN_WK3 = INPUT_DIR / "tlbtran01326.sas7bdat"
+# INPUT_TLBTRAN_WK4 = INPUT_DIR / "tlbtran01426.sas7bdat"
 
-_rv4 = get_reptdate_values(year_format="%Y")
-REPTYEAR2 = _rv4.reptyear                  # 4-digit year (PUT(REPTDATE,YEAR4.))
+# Persistent yearly CIT accumulation parquet — one file per year
+CIT_YEAR_FILE = CIT_DIR / f"cit{REPTYEAR2}.parquet"
 
-WK1 = "01"
-WK2 = "02"
-WK3 = "03"
-WK4 = "04"
+# Output report: outputname_{yymmdd}.txt
+OUTPUT_CITLIST = OUTPUT_DIR / f"EIBMCITR_CITLIST_{REPTDATE.strftime('%y%m%d')}.txt"
 
-# ============================================================================
-# DERIVED INPUT PATHS
-# ============================================================================
-# Resolve the 4 latest TLBTRAN files available in INPUT_DIR.
-# The program runs on the last day of the month or the 1st of the following
-# month; either way, the 4 most-recently-dated TLBTRAN files represent the
-# 4 weeks of the report month.
-#
-# get_latest_file returns only the single most-recent file, so we collect
-# all TLBTRAN candidates and sort by parsed date to pick the top 4.
-
-from input_date import extract_key, SUPPORTED_EXTENSIONS
-
-def _get_latest_n_files(directory: Path, prefix: str, n: int) -> list:
-    """Return the n most-recently-dated files matching prefix in directory."""
-    files = [
-        f for f in directory.iterdir()
-        if f.is_file()
-        and f.suffix.lower() in SUPPORTED_EXTENSIONS
-        and f.name.upper().startswith(prefix.upper())
-        and extract_key(f.name) is not None
-    ]
-    if len(files) < n:
-        raise FileNotFoundError(
-            f"Expected at least {n} files with prefix '{prefix}' in {directory}, "
-            f"found {len(files)}."
-        )
-    files_sorted = sorted(files, key=lambda f: extract_key(f.name), reverse=True)
-    # Return in ascending date order (week 1 first)
-    return list(reversed(files_sorted[:n]))
-
-INPUT_TLBTRAN_FILES = _get_latest_n_files(INPUT_DIR, "TLBTRAN", 4)
-
-INPUT_TLBTRAN_WK1 = INPUT_TLBTRAN_FILES[0]
-INPUT_TLBTRAN_WK2 = INPUT_TLBTRAN_FILES[1]
-INPUT_TLBTRAN_WK3 = INPUT_TLBTRAN_FILES[2]
-INPUT_TLBTRAN_WK4 = INPUT_TLBTRAN_FILES[3]
-
-# Persistent yearly CIT accumulation parquet
-CIT_YEAR_FILE = CIT_DIR / f"CIT{REPTYEAR}.parquet"
-
-# Output paths
-OUTPUT_CITLIST = build_output_file(OUTPUT_DIR, "EIBMCITR_CITLIST").with_suffix(".txt")
-# Output example: EIBMCITR_CITLIST_310526.txt
+CHUNK_ROWS = 500_000
+TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
 
 # ============================================================================
 # INPUT FILE EXISTENCE CHECK — fail fast before any processing
 # ============================================================================
 _REQUIRED_INPUTS = {
-    "TLBTRAN Week 1" : INPUT_TLBTRAN_WK1,
-    "TLBTRAN Week 2" : INPUT_TLBTRAN_WK2,
-    "TLBTRAN Week 3" : INPUT_TLBTRAN_WK3,
-    "TLBTRAN Week 4" : INPUT_TLBTRAN_WK4,
-    "Branch File"    : INPUT_BRHFILE,
+    "TLBTRAN Week 1": INPUT_TLBTRAN_WK1,
+    "TLBTRAN Week 2": INPUT_TLBTRAN_WK2,
+    "TLBTRAN Week 3": INPUT_TLBTRAN_WK3,
+    "TLBTRAN Week 4": INPUT_TLBTRAN_WK4,
+    "Branch File"   : INPUT_BRHFILE,
 }
-
 _missing = [
     f"  [{label}] {path}"
     for label, path in _REQUIRED_INPUTS.items()
@@ -120,294 +106,369 @@ if _missing:
         "The following required input files are missing:\n" + "\n".join(_missing)
     )
 
-
 # ============================================================================
-# HELPER FUNCTIONS
+# SCHEMA HELPERS
 # ============================================================================
 
-def _read_sas7bdat(path: Path) -> pl.DataFrame:
-    """Read one .sas7bdat file and return a Polars DataFrame."""
-    if not path.exists():
-        raise FileNotFoundError(f"Missing required input file: {path}")
-
-    pandas_df = pd.read_sas(
-        path,
-        format="sas7bdat",
-        encoding="latin1",
-    )
-    pandas_df.columns = [
-        str(col).upper().strip()
-        for col in pandas_df.columns
+def _all_month_cols() -> list[str]:
+    """Return all 24 monthly column names in canonical order."""
+    return [
+        col
+        for m in range(1, 13)
+        for col in (f"AMOUNT{str(m).zfill(2)}", f"NOACCT{str(m).zfill(2)}")
     ]
-    return pl.from_pandas(pandas_df)
 
+def _canonical_col_order() -> list[str]:
+    return ["BRANCH"] + _all_month_cols()
+
+def _scaffold_all_months(df: pl.DataFrame) -> pl.DataFrame:
+    """Ensure every AMOUNT01–AMOUNT12 / NOACCT01–NOACCT12 column exists (fill 0)."""
+    for m in range(1, 13):
+        mm = str(m).zfill(2)
+        if f"AMOUNT{mm}" not in df.columns:
+            df = df.with_columns(pl.lit(0.0).cast(pl.Float64).alias(f"AMOUNT{mm}"))
+        if f"NOACCT{mm}" not in df.columns:
+            df = df.with_columns(pl.lit(0).cast(pl.Int64).alias(f"NOACCT{mm}"))
+    return df
+
+def _canonical_order(df: pl.DataFrame) -> pl.DataFrame:
+    """Reorder columns to: BRANCH, AMOUNT01, NOACCT01, ..., AMOUNT12, NOACCT12."""
+    return df.select(_canonical_col_order())
+
+# ============================================================================
+# STEP 1 — READ BRANCH REFERENCE FILE
+# ============================================================================
 
 def _read_branch_file(path: Path) -> pl.DataFrame:
     """Parse DBRANCH.txt fixed-width flat file.
 
     SAS equivalent:
-        DATA BRH (KEEP=D_TRX_BRANCH D_TRX_BRCHCODE);
-            INFILE BRHFILE;
-            INPUT @002 D_TRX_BRCHCODE   3.
-                  @006 D_TRX_BRANCH    $3.
-                  @050 STATUS   $1.
-                  ;
-            IF STATUS = 'O' AND D_TRX_BRCHCODE NOT IN (101, 187, 279);
-        PROC SORT DATA=BRH; BY D_TRX_BRANCH;
+        DATA BRANCH (KEEP=BRANCH BRABBR);
+          INFILE BRHFILE;
+          INPUT @002 BRANCH   3.
+                @006 BRABBR  $3.
+                @050 OPENIND $1.;
+          IF OPENIND NOT IN ('C',' ') AND BRANCH NE 279 OR BRANCH = 219;
+        PROC SORT DATA=BRANCH; BY BRANCH;
 
     Byte offsets are 1-based in SAS; converted to 0-based Python slices:
-        D_TRX_BRCHCODE : @002, width 3  -> [1:4]
-        D_TRX_BRANCH   : @006, width 3  -> [5:8]
-        STATUS         : @050, width 1  -> [49:50]
+        BRANCH  : @002, width 3 -> [1:4]
+        BRABBR  : @006, width 3 -> [5:8]
+        OPENIND : @050, width 1 -> [49:50]
     """
     records = []
     with open(path, "r", encoding="latin1") as fh:
         for raw_line in fh:
-            line = raw_line.rstrip("\n").rstrip("\r")
-            if len(line) < 50:
-                line = line.ljust(50)
+            line = raw_line.rstrip("\n").rstrip("\r").ljust(50)
 
-            brchcode_raw = line[1:4].strip()
-            branch_raw   = line[5:8].strip()
-            status       = line[49:50].strip()
+            branch_raw  = line[1:4].strip()
+            brabbr      = line[5:8].strip()
+            openind     = line[49:50].strip()
 
             try:
-                brchcode = int(brchcode_raw)
+                branch = int(branch_raw)
             except ValueError:
                 continue
 
-            # SAS: IF STATUS = 'O' AND D_TRX_BRCHCODE NOT IN (101,187,279)
-            if status != "O":
-                continue
-            if brchcode in (101, 187, 279):
+            # SAS: IF OPENIND NOT IN ('C',' ') AND BRANCH NE 279 OR BRANCH = 219
+            if not ((openind not in ("C", "") and branch != 279) or branch == 219):
                 continue
 
-            records.append({
-                "D_TRX_BRCHCODE": brchcode,
-                "D_TRX_BRANCH":   branch_raw,
-            })
+            records.append({"BRANCH": branch, "BRABBR": brabbr})
 
-    df = pl.DataFrame(
-        records,
-        schema={
-            "D_TRX_BRCHCODE": pl.Int64,
-            "D_TRX_BRANCH":   pl.Utf8,
-        },
-    ).sort("D_TRX_BRANCH")
+    return (
+        pl.DataFrame(
+            records,
+            schema={"BRANCH": pl.Int64, "BRABBR": pl.Utf8},
+        )
+        .sort("BRANCH")
+    )
 
+# ============================================================================
+# STEP 2 — LOAD AND FILTER TLBTRAN WEEKLY FILES
+# ============================================================================
+
+def _sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
+    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
+    writer, schema = None, None
+    try:
+        for chunk in pd.read_sas(str(src), format="sas7bdat", encoding="latin1",
+                                 chunksize=chunk_rows):
+            chunk.columns = [str(c).upper().strip() for c in chunk.columns]
+            # Force text columns to string so an all-null first chunk doesn't lock a null type
+            for col in chunk.columns[chunk.dtypes == object]:
+                chunk[col] = chunk[col].astype("string")
+            table = pa.Table.from_pandas(chunk, preserve_index=False)
+            if writer is None:
+                schema = table.schema
+                writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
+            else:
+                table = table.cast(schema)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
+    if writer is None:
+        raise ValueError(f"No rows found in {src}")
+
+
+def _load_tlbtran_all() -> pl.DataFrame:
+    """Convert the 4 weekly TLBTRAN files to TEMPORARY Parquet, read them via DuckDB
+    with the TRANCODE filter, then delete the temporary Parquet files.
+
+    SAS equivalent:
+        DATA ALL;
+          SET BNM.TLBTRAN&REPTYEAR&REPTMON&WK1 ... &WK4;
+          IF TRANCODE IN (2222, 2223);
+        (PROC SORT BY REPTDATE BRANCH is not needed: the later aggregation is
+         order-independent.)
+
+    Only REPTDATE, BRANCH and CASHOUT are kept, since nothing else is used downstream.
+    """
+    sources = (INPUT_TLBTRAN_WK1, INPUT_TLBTRAN_WK2, INPUT_TLBTRAN_WK3, INPUT_TLBTRAN_WK4)
+
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        parquet_files = []
+        for idx, src in enumerate(sources, start=1):
+            dst = Path(tmp) / f"tlbtran_wk{idx}.parquet"
+            _sas_to_parquet(src, dst)
+            parquet_files.append(dst.as_posix())
+
+        file_list = "[" + ", ".join(f"'{p}'" for p in parquet_files) + "]"
+        con_tmp = duckdb.connect()
+        try:
+            df = con_tmp.execute(f"""
+                SELECT REPTDATE, BRANCH, CASHOUT
+                FROM read_parquet({file_list}, union_by_name = true)
+                WHERE TRY_CAST(TRANCODE AS BIGINT) IN (2222, 2223)
+            """).pl()
+        finally:
+            con_tmp.close()
+    # temp folder and Parquet files are removed here
     return df
 
 
-def _load_tlbtran_all(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
-    """Load and concatenate all 4 weekly TLBTRAN files, filter TRANCODE IN (2222,2223).
+# # ============================================================================
+# # STEP 3 — DERIVE NOACCT FLAG
+# # ============================================================================
 
-    SAS equivalent:
-        DATA ALL;
-            SET BNM.TLBTRAN&REPTYEAR&REPTMON&WK1
-                BNM.TLBTRAN&REPTYEAR&REPTMON&WK2
-                BNM.TLBTRAN&REPTYEAR&REPTMON&WK3
-                BNM.TLBTRAN&REPTYEAR&REPTMON&WK4;
-            IF TRANCODE IN (2222, 2223);
-        PROC SORT DATA=ALL; BY REPTDATE BRANCH;
+# def _derive_noacct(df: pl.DataFrame) -> pl.DataFrame:
+#     """Assign NOACCT=1 on the first row of each (REPTDATE, BRANCH) group.
+
+#     SAS equivalent:
+#         DATA ALL; SET ALL; BY REPTDATE BRANCH;
+#           IF FIRST.REPTDATE OR FIRST.BRANCH THEN NOACCT = 1;
+
+#     Summing NOACCT per BRANCH yields the count of distinct
+#     (REPTDATE, BRANCH) combinations — matching SAS PROC SUMMARY behaviour.
+#     """
+#     df = df.with_columns([
+#         (
+#             (pl.col("REPTDATE") != pl.col("REPTDATE").shift(1)) |
+#             (pl.col("BRANCH")   != pl.col("BRANCH").shift(1))
+#         )
+#         .fill_null(True)
+#         .cast(pl.Int64)
+#         .alias("NOACCT")
+#     ])
+#     return df
+
+# ============================================================================
+# STEP 4 — AGGREGATE CURRENT MONTH (PROC SUMMARY)
+# ============================================================================
+
+def _detect_month_from_files() -> str:
+    """Detect the report month from the input TLBTRAN filenames.
+
+    Pattern: tlbtran{MM}{W}{YY}.sas7bdat
+        tlbtran02126 → MM="02", W="1", YY="26"
+        tlbtran03126 → MM="03", W="1", YY="26"
+
+    All 4 weekly files must agree on the same month.
     """
-    weekly_dfs = [
-        _read_sas7bdat(wk_path)
-        for wk_path in (
-            INPUT_TLBTRAN_WK1,
-            INPUT_TLBTRAN_WK2,
-            INPUT_TLBTRAN_WK3,
-            INPUT_TLBTRAN_WK4,
-        )
-    ]
+    pattern = re.compile(r"tlbtran(\d{2})\d{1}\d{2}\.sas7bdat", re.IGNORECASE)
 
-    df_all = pl.concat(weekly_dfs, how="diagonal")
-    df_all = df_all.filter(pl.col("TRANCODE").is_in([2222, 2223]))
-    df_all = df_all.sort(["REPTDATE", "BRANCH"])
+    detected = set()
+    for p in (INPUT_TLBTRAN_WK1, INPUT_TLBTRAN_WK2, INPUT_TLBTRAN_WK3, INPUT_TLBTRAN_WK4):
+        m = pattern.match(p.name)
+        if m:
+            detected.add(m.group(1))
 
-    con.register("tlbtran_all", df_all.to_pandas())
-    return df_all
+    if len(detected) == 0:
+        raise ValueError("Could not detect month from any TLBTRAN filename.")
+    if len(detected) > 1:
+        raise ValueError(f"Conflicting months detected across TLBTRAN files: {detected}")
+
+    return detected.pop()  # e.g. "02"
 
 
-def _derive_noacct(df_all: pl.DataFrame) -> pl.DataFrame:
-    """Assign NOACCT=1 on the first row of each (REPTDATE, BRANCH) group.
+def _build_month_summary(df: pl.DataFrame, con: duckdb.DuckDBPyConnection, file_month: str) -> pl.DataFrame:
+    """Aggregate CASHOUT and NOACCT to branch level for the detected file month.
 
     SAS equivalent:
-        DATA ALL;
-            SET ALL; BY REPTDATE BRANCH;
-            IF FIRST.REPTDATE OR FIRST.BRANCH THEN NOACCT = 1;
+        DATA ALL; SET ALL; BY REPTDATE BRANCH;
+          IF FIRST.REPTDATE OR FIRST.BRANCH THEN NOACCT = 1;
 
-    NOACCT=1 marks the first row per (REPTDATE, BRANCH) group; 0 elsewhere.
-    Summing NOACCT per BRANCH then yields the count of distinct
-    (REPTDATE, BRANCH) combinations — matching SAS PROC SUMMARY behaviour.
-    """
-    df_all = df_all.with_columns([
-        (
-            (pl.col("REPTDATE") != pl.col("REPTDATE").shift(1)) |
-            (pl.col("BRANCH")   != pl.col("BRANCH").shift(1))
-        ).fill_null(True).cast(pl.Int64).alias("NOACCT")
-    ])
-    return df_all
-
-
-def _aggregate_to_cit(
-    con: duckdb.DuckDBPyConnection,
-    df_all: pl.DataFrame,
-) -> pl.DataFrame:
-    """Aggregate CASHOUT and NOACCT by (REPTDATE, BRANCH), then roll up to BRANCH.
-
-    SAS equivalent:
         PROC SUMMARY DATA=ALL NWAY;
-            CLASS REPTDATE BRANCH;
-            VAR CASHOUT NOACCT;
-            OUTPUT OUT=CIT(DROP=_TYPE_ _FREQ_)
-                   SUM=AMOUNT&REPTMON NOACCT&REPTMON;
+          CLASS REPTDATE BRANCH; VAR CASHOUT NOACCT;
+          OUTPUT OUT=CIT SUM=AMOUNT&REPTMON NOACCT&REPTMON;
+
         DATA CIT; SET CIT; IF AMOUNT&REPTMON = 0 THEN DELETE;
 
         PROC SUMMARY DATA=CIT NWAY;
-            CLASS BRANCH;
-            VAR AMOUNT&REPTMON NOACCT&REPTMON;
-            OUTPUT OUT=FINAL(DROP=_TYPE_ _FREQ_)
-                   SUM=;
-    """
-    amount_col = f"AMOUNT{REPTMON}"
-    noacct_col = f"NOACCT{REPTMON}"
+          CLASS BRANCH; VAR AMOUNT&REPTMON NOACCT&REPTMON;
+          OUTPUT OUT=FINAL SUM=;
 
-    con.register("all_noacct", df_all.to_pandas())
-    final = con.execute(f"""
-        WITH cit AS (
-            SELECT
-                BRANCH,
-                SUM(CASHOUT) AS "{amount_col}",
-                SUM(NOACCT)  AS "{noacct_col}"
-            FROM all_noacct
+    NOACCT is 1 on the first row of each (REPTDATE, BRANCH) group, so after the
+    first summary it equals 1 per surviving (REPTDATE, BRANCH) group.
+    """
+    amt_col    = f"AMOUNT{file_month}"
+    noacct_col = f"NOACCT{file_month}"
+
+    con.register("all_tx", df.to_arrow())
+
+    return con.execute(f"""
+        WITH daily AS (
+            SELECT CAST(BRANCH AS BIGINT) AS BRANCH,
+                   SUM(CASHOUT)           AS AMT
+            FROM all_tx
             GROUP BY REPTDATE, BRANCH
             HAVING SUM(CASHOUT) <> 0
         )
-        SELECT
-            BRANCH,
-            SUM("{amount_col}") AS "{amount_col}",
-            SUM("{noacct_col}") AS "{noacct_col}"
-        FROM cit
+        SELECT BRANCH,
+               SUM(AMT) AS {amt_col},
+               COUNT(*) AS {noacct_col}
+        FROM daily
         GROUP BY BRANCH
-    """).df()
+        ORDER BY BRANCH
+    """).pl()
 
-    return pl.from_pandas(final)
+# ============================================================================
+# STEP 5 — ACCUMULATE INTO YEARLY CIT PARQUET
+# ============================================================================
 
+def _update_cit_year(df_month: pl.DataFrame, file_month: str) -> pl.DataFrame:
+    """Persist the current month's data into the yearly CIT parquet.
 
-def _append_to_cit_year(df_final: pl.DataFrame) -> pl.DataFrame:
-    """Replicate the %APPEND macro: initialise year file in January, merge otherwise.
-
-    SAS equivalent:
-        %MACRO APPEND;
-            %IF "&REPTMON" EQ "01" %THEN %DO;
-                DATA CIT.CIT&REPTYEAR;
-                    SET FINAL; OUTPUT;
-                    IF BRANCH NE . THEN DO;
-                        AMOUNT02=0; NOACCT02=0; ... AMOUNT12=0; NOACCT12=0;
-                    END;
-            %END;
-            %ELSE %DO;
-                PROC SORT DATA=FINAL; BY BRANCH;
-                DATA CIT.CIT&REPTYEAR;
-                    MERGE CIT.CIT&REPTYEAR FINAL; BY BRANCH;
-            %END;
-        %MEND APPEND;
+    Uses file_month (from filename) to determine which columns to update,
+    so re-running for an older month never corrupts other months' data.
     """
-    amount_col = f"AMOUNT{REPTMON}"
-    noacct_col = f"NOACCT{REPTMON}"
+    amt_col    = f"AMOUNT{file_month}"
+    noacct_col = f"NOACCT{file_month}"
 
-    if REPTMON == "01":
-        # January: initialise the yearly file; zero-fill stub columns for months 02-12
-        stub_exprs = []
-        for m in range(2, 13):
-            mm = str(m).zfill(2)
-            stub_exprs.append(pl.lit(0.0).cast(pl.Float64).alias(f"AMOUNT{mm}"))
-            stub_exprs.append(pl.lit(0).cast(pl.Int64).alias(f"NOACCT{mm}"))
-        df_cit_year = df_final.with_columns(stub_exprs)
-        df_cit_year.write_parquet(CIT_YEAR_FILE)
-    else:
-        # Other months: merge current month's data into the existing yearly file
-        df_existing = pl.read_parquet(CIT_YEAR_FILE)
-        # Drop the current-month columns from existing to allow clean replacement
-        for col in (amount_col, noacct_col):
-            if col in df_existing.columns:
-                df_existing = df_existing.drop(col)
+    df_month = df_month.with_columns(pl.col("BRANCH").cast(pl.Int64))
 
-        df_cit_year = df_existing.join(df_final, on="BRANCH", how="outer_coalesce")
-        df_cit_year.write_parquet(CIT_YEAR_FILE)
+    # ── FIRST RUN: no parquet exists yet ──────────────────────────────────
+    if not CIT_YEAR_FILE.exists():
+        df_out = _scaffold_all_months(df_month)
+        df_out = _canonical_order(df_out)
+        df_out.write_parquet(CIT_YEAR_FILE)
+        print(f"  Created new yearly CIT parquet: {CIT_YEAR_FILE.name}")
+        return df_out.sort("BRANCH")
 
-    return pl.read_parquet(CIT_YEAR_FILE).sort("BRANCH")
+    # ── SUBSEQUENT RUNS ────────────────────────────────────────────────────
+    df_existing = pl.read_parquet(CIT_YEAR_FILE)
+    df_existing = df_existing.with_columns(pl.col("BRANCH").cast(pl.Int64))
+    df_existing = _scaffold_all_months(df_existing)
 
+    # Drop only this file's month columns — all other months are untouched
+    cols_to_drop = [c for c in [amt_col, noacct_col] if c in df_existing.columns]
+    if cols_to_drop:
+        df_existing = df_existing.drop(cols_to_drop)
+
+    # Full outer join: preserves all branches from both sides
+    df_merged = df_existing.join(
+        df_month.select(["BRANCH", amt_col, noacct_col]),
+        on="BRANCH",
+        how="full",
+        coalesce=True,
+    )
+
+    df_merged = df_merged.with_columns([
+        pl.col(c).fill_null(0) for c in df_merged.columns if c != "BRANCH"
+    ])
+
+    df_merged = _scaffold_all_months(df_merged)
+    df_merged = _canonical_order(df_merged)
+
+    df_merged.write_parquet(CIT_YEAR_FILE)
+    print(f"  Updated yearly CIT parquet: {CIT_YEAR_FILE.name} (month {file_month} written)")
+    return df_merged.sort("BRANCH")
+
+# ============================================================================
+# STEP 6 — MERGE WITH BRANCH REFERENCE
+# ============================================================================
 
 def _merge_with_branch(
-    con: duckdb.DuckDBPyConnection,
     df_cit_year: pl.DataFrame,
     df_branch: pl.DataFrame,
+    con: duckdb.DuckDBPyConnection,
 ) -> pl.DataFrame:
     """Merge CIT year data with branch reference, compute SUMAMT/SUMACT, assign NO.
 
     SAS equivalent:
         DATA CIT;
-            MERGE CIT.CIT&REPTYEAR(IN=A) BRANCH(IN=B);
-            IF B;
-            RETAIN NO 0;
-            BY BRANCH;
-            SUMAMT = SUM(OF AMOUNT01-AMOUNT12);
-            SUMACT = SUM(OF NOACCT01-NOACCT12);
-            NO + 1;
-
-    SAS keeps rows where BRANCH exists in the BRANCH dataset (IF B).
-    BRANCH in CIT maps to D_TRX_BRCHCODE in the BRANCH file.
+          MERGE CIT.CIT&REPTYEAR(IN=A) BRANCH(IN=B);
+          IF B;
+          RETAIN NO 0; BY BRANCH;
+          SUMAMT = SUM(OF AMOUNT01-AMOUNT12);
+          SUMACT = SUM(OF NOACCT01-NOACCT12);
+          NO + 1;
     """
+    amount_cols = [f"AMOUNT{str(m).zfill(2)}" for m in range(1, 13)]
+    noacct_cols = [f"NOACCT{str(m).zfill(2)}" for m in range(1, 13)]
+
+    amount_select = ", ".join(
+        f'COALESCE(c."{col}", 0) AS "{col}"' for col in amount_cols
+    )
+    noacct_select = ", ".join(
+        f'COALESCE(c."{col}", 0) AS "{col}"' for col in noacct_cols
+    )
+
     con.register("cit_year",   df_cit_year.to_pandas())
     con.register("branch_ref", df_branch.to_pandas())
 
-    amount_select = ", ".join(
-        f'COALESCE(c."AMOUNT{str(m).zfill(2)}", 0) AS "AMOUNT{str(m).zfill(2)}"'
-        for m in range(1, 13)
-    )
-    noacct_select = ", ".join(
-        f'COALESCE(c."NOACCT{str(m).zfill(2)}", 0) AS "NOACCT{str(m).zfill(2)}"'
-        for m in range(1, 13)
-    )
-
-    merged = con.execute(f"""
+    df = con.execute(f"""
         SELECT
-            b.D_TRX_BRCHCODE AS BRANCH,
-            b.D_TRX_BRANCH   AS BRABBR,
+            b.BRANCH,
+            b.BRABBR,
             {amount_select},
             {noacct_select}
         FROM branch_ref b
-        LEFT JOIN cit_year c
-            ON c.BRANCH = b.D_TRX_BRCHCODE
-        ORDER BY b.D_TRX_BRANCH
-    """).df()
+        LEFT JOIN cit_year c ON c.BRANCH = b.BRANCH
+        ORDER BY b.BRANCH
+    """).pl()
 
-    df = pl.from_pandas(merged)
-
-    amount_col_names = [f"AMOUNT{str(m).zfill(2)}" for m in range(1, 13)]
-    noacct_col_names = [f"NOACCT{str(m).zfill(2)}" for m in range(1, 13)]
+    # Cast all amount/noacct columns to consistent dtypes before horizontal sum
+    # to avoid Polars internal panic from mixed i32/i64/f64 in sum_horizontal
+    df = df.with_columns(
+        [pl.col(c).cast(pl.Float64) for c in amount_cols] +
+        [pl.col(c).cast(pl.Int64)   for c in noacct_cols]
+    )
 
     df = df.with_columns([
-        pl.sum_horizontal([pl.col(c) for c in amount_col_names]).alias("SUMAMT"),
-        pl.sum_horizontal([pl.col(c) for c in noacct_col_names]).alias("SUMACT"),
+        pl.sum_horizontal([pl.col(c) for c in amount_cols]).alias("SUMAMT"),
+        pl.sum_horizontal([pl.col(c) for c in noacct_cols]).cast(pl.Int64).alias("SUMACT"),
     ])
 
-    # SAS: RETAIN NO 0; NO + 1;  -> sequential row number starting at 1
+    # SAS: RETAIN NO 0; NO + 1; → sequential row number starting at 1
     df = df.with_columns(
         pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias("NO")
     )
 
     return df
 
+# ============================================================================
+# STEP 7 — COMPUTE GRAND TOTALS
+# ============================================================================
 
-def _compute_totals(df_cit_report: pl.DataFrame) -> dict:
+def _compute_totals(df: pl.DataFrame) -> dict:
     """Replicate PROC SUMMARY NWAY (no CLASS) summing all AMOUNT/NOACCT/SUMAMT/SUMACT.
 
     SAS equivalent:
         PROC SUMMARY DATA=CIT NWAY;
-            VAR NOACCT01-NOACCT12 SUMACT AMOUNT01-AMOUNT12 SUMAMT;
-            OUTPUT OUT=TOTCIT SUM=;
+          VAR NOACCT01-NOACCT12 SUMACT AMOUNT01-AMOUNT12 SUMAMT;
+          OUTPUT OUT=TOTCIT SUM=;
     """
     sum_cols = (
         [f"NOACCT{str(m).zfill(2)}" for m in range(1, 13)]
@@ -416,34 +477,27 @@ def _compute_totals(df_cit_report: pl.DataFrame) -> dict:
         + ["SUMAMT"]
     )
     return {
-        col: (df_cit_report[col].fill_null(0).sum() if col in df_cit_report.columns else 0)
+        col: (df[col].fill_null(0).sum() if col in df.columns else 0)
         for col in sum_cols
     }
 
-
 # ============================================================================
-# REPORT FORMATTING
+# REPORT WRITING HELPERS
 # ============================================================================
 
 def _fmt_amount(val) -> str:
-    """Format AMOUNT columns with COMMA20. (no decimals, comma thousands separator)."""
-    if val is None:
-        return "0"
+    """Format with COMMA20. (no decimals, comma thousands separator)."""
     try:
-        return f"{int(val):,}"
+        return f"{int(val):,}" if val is not None else "0"
     except (ValueError, TypeError):
         return "0"
-
 
 def _fmt_noacct(val) -> str:
-    """Format NOACCT columns with COMMA20."""
-    if val is None:
-        return "0"
+    """Format with COMMA20."""
     try:
-        return f"{int(val):,}"
+        return f"{int(val):,}" if val is not None else "0"
     except (ValueError, TypeError):
         return "0"
-
 
 def _place(buf: list, pos: int, text: str) -> None:
     """Place text into buf (list of chars) at 1-based SAS @pos column."""
@@ -454,12 +508,14 @@ def _place(buf: list, pos: int, text: str) -> None:
             buf.extend([" "] * (dest - len(buf) + 1))
         buf[dest] = ch
 
-
 def _render(buf: list) -> str:
     return "".join(buf).rstrip()
 
+# ============================================================================
+# STEP 8 — WRITE REPORT
+# ============================================================================
 
-def _write_report(df_cit_report: pl.DataFrame, totals: dict, output_file: Path) -> None:
+def _write_report(df: pl.DataFrame, totals: dict, output_file: Path) -> None:
     """Write the Cash-In-Transit report replicating SAS DATA _NULL_ FILE CITLIST output.
 
     SAS equivalent (DATA _NULL_ SET CIT):
@@ -470,17 +526,16 @@ def _write_report(df_cit_report: pl.DataFrame, totals: dict, output_file: Path) 
             PUT <header line 2>;
         END;
         PUT @002 NO  @006 BRANCH  @013 BRABBR
-            @020 AMOUNT01  @038 NOACCT01 ...
+            @020 AMOUNT01  @038 NOACCT01  ...
             @344 SUMAMT    @362 SUMACT;
 
     Followed by DATA _NULL_ SET TOTCIT (FILE CITLIST MOD):
         PUT @013 'TOTAL' @020 AMOUNT01 ... @362 SUMACT;
 
     ASA carriage-control: '1' at column 1 signals a form feed (new page).
-    No page size (PS=) is specified in the original OPTIONS statement — the
-    report is a single continuous flat file with no pagination.
+    Page length defaults to 60 lines (not specified in OPTIONS, using standard default).
 
-    Column positions follow the SAS @col notation (1-based):
+    Column positions (1-based @col notation):
         NO=2, BRANCH=6, BRABBR=13
         AMOUNT01=20, NOACCT01=38
         AMOUNT02=47, NOACCT02=65
@@ -496,81 +551,70 @@ def _write_report(df_cit_report: pl.DataFrame, totals: dict, output_file: Path) 
         AMOUNT12=317, NOACCT12=335
         SUMAMT=344, SUMACT=362
     """
-    MONTH_LABELS = [
-        "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-        "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
-    ]
-
-    AMT_POSITIONS    = [20, 47, 74, 101, 128, 155, 182, 209, 236, 263, 290, 317]
-    NOACCT_POSITIONS = [38, 65, 92, 119, 146, 173, 200, 227, 254, 281, 308, 335]
+    MONTH_LABELS     = ["JAN","FEB","MAR","APR","MAY","JUN",
+                        "JUL","AUG","SEP","OCT","NOV","DEC"]
+    AMT_POSITIONS    = [20,  47,  74, 101, 128, 155, 182, 209, 236, 263, 290, 317]
+    NOACCT_POSITIONS = [38,  65,  92, 119, 146, 173, 200, 227, 254, 281, 308, 335]
     SUMAMT_POS       = 344
     SUMACT_POS       = 362
+    BUF_WIDTH        = 400
 
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_file, "w", encoding="utf-8") as f:
 
-        # ── PAGE TITLE ────────────────────────────────────────────────────
+        # ── PAGE TITLE ─────────────────────────────────────────────────────
         # SAS: PUT @1 '1CASH-IN-TRANSIT REPORT' "&REPTYEAR2";
-        # '1' at column 1 is the ASA form-feed carriage-control character.
-        title_buf = list(" " * 400)
-        _place(title_buf, 1, f"1CASH-IN-TRANSIT REPORT {REPTYEAR2}")
+        # '1' at column 1 = ASA form-feed carriage-control character.
+        title_buf = list(" " * BUF_WIDTH)
+        _place(title_buf, 1, f"1CASH-IN-TRANSIT REPORT{REPTYEAR2}")
         f.write(_render(title_buf) + "\n")
 
-        # ── HEADER LINE 1 ─────────────────────────────────────────────────
-        h1_buf = list(" " * 400)
-        _place(h1_buf, 2,  "NO")
-        _place(h1_buf, 6,  "BRANCH")
-        _place(h1_buf, 13, "BRANCH")
-        for amt_pos, noacct_pos, label in zip(
-            AMT_POSITIONS, NOACCT_POSITIONS, MONTH_LABELS
-        ):
-            _place(h1_buf, amt_pos,    label)
-            _place(h1_buf, noacct_pos, "NO OF")
-        _place(h1_buf, SUMAMT_POS, "TOTAL")
-        _place(h1_buf, SUMACT_POS, "TOTAL NO OF")
-        f.write(_render(h1_buf) + "\n")
+        # ── HEADER LINE 1 ──────────────────────────────────────────────────
+        h1 = list(" " * BUF_WIDTH)
+        _place(h1, 2,  "NO")
+        _place(h1, 6,  "BRANCH")
+        _place(h1, 13, "BRANCH")
+        for amt_pos, noacct_pos, label in zip(AMT_POSITIONS, NOACCT_POSITIONS, MONTH_LABELS):
+            _place(h1, amt_pos,    label)
+            _place(h1, noacct_pos, "NO OF")
+        _place(h1, SUMAMT_POS, "TOTAL")
+        _place(h1, SUMACT_POS, "TOTAL NO OF")
+        f.write(_render(h1) + "\n")
 
-        # ── HEADER LINE 2 ─────────────────────────────────────────────────
-        h2_buf = list(" " * 400)
-        _place(h2_buf, 6, "CODE")
+        # ── HEADER LINE 2 ──────────────────────────────────────────────────
+        h2 = list(" " * BUF_WIDTH)
+        _place(h2, 6, "CODE")
         for noacct_pos in NOACCT_POSITIONS:
-            _place(h2_buf, noacct_pos, "TRANSIT")
-        _place(h2_buf, SUMACT_POS, "TRANSIT")
-        f.write(_render(h2_buf) + "\n")
+            _place(h2, noacct_pos, "TRANSIT")
+        _place(h2, SUMACT_POS, "TRANSIT")
+        f.write(_render(h2) + "\n")
 
-        # ── DATA ROWS ─────────────────────────────────────────────────────
-        for row in df_cit_report.iter_rows(named=True):
-            row_buf = list(" " * 400)
-            _place(row_buf, 2,  str(int(row["NO"])))
-            _place(row_buf, 6,  str(int(row["BRANCH"])) if row["BRANCH"] is not None else "")
-            _place(row_buf, 13, str(row["BRABBR"] or ""))
-
-            for i, (amt_pos, noacct_pos) in enumerate(
-                zip(AMT_POSITIONS, NOACCT_POSITIONS)
-            ):
+        # ── DATA ROWS ──────────────────────────────────────────────────────
+        for row in df.iter_rows(named=True):
+            buf = list(" " * BUF_WIDTH)
+            _place(buf, 2,  str(int(row["NO"])))
+            _place(buf, 6,  str(int(row["BRANCH"])) if row["BRANCH"] is not None else "")
+            _place(buf, 13, str(row["BRABBR"] or ""))
+            for i, (amt_pos, noacct_pos) in enumerate(zip(AMT_POSITIONS, NOACCT_POSITIONS)):
                 mm = str(i + 1).zfill(2)
-                _place(row_buf, amt_pos,    _fmt_amount(row.get(f"AMOUNT{mm}", 0)))
-                _place(row_buf, noacct_pos, _fmt_noacct(row.get(f"NOACCT{mm}", 0)))
+                _place(buf, amt_pos,    _fmt_amount(row.get(f"AMOUNT{mm}", 0)))
+                _place(buf, noacct_pos, _fmt_noacct(row.get(f"NOACCT{mm}", 0)))
+            _place(buf, SUMAMT_POS, _fmt_amount(row.get("SUMAMT", 0)))
+            _place(buf, SUMACT_POS, _fmt_noacct(row.get("SUMACT", 0)))
+            f.write(_render(buf) + "\n")
 
-            _place(row_buf, SUMAMT_POS, _fmt_amount(row.get("SUMAMT", 0)))
-            _place(row_buf, SUMACT_POS, _fmt_noacct(row.get("SUMACT", 0)))
-            f.write(_render(row_buf) + "\n")
-
-        # ── TOTAL ROW (DATA _NULL_ SET TOTCIT — FILE CITLIST MOD) ─────────
+        # ── TOTAL ROW (DATA _NULL_ SET TOTCIT — FILE CITLIST MOD) ──────────
         # SAS: PUT @013 'TOTAL' @020 AMOUNT01 ... @362 SUMACT;
-        tot_buf = list(" " * 400)
-        _place(tot_buf, 13, "TOTAL")
-        for i, (amt_pos, noacct_pos) in enumerate(
-            zip(AMT_POSITIONS, NOACCT_POSITIONS)
-        ):
+        tot = list(" " * BUF_WIDTH)
+        _place(tot, 13, "TOTAL")
+        for i, (amt_pos, noacct_pos) in enumerate(zip(AMT_POSITIONS, NOACCT_POSITIONS)):
             mm = str(i + 1).zfill(2)
-            _place(tot_buf, amt_pos,    _fmt_amount(totals.get(f"AMOUNT{mm}", 0)))
-            _place(tot_buf, noacct_pos, _fmt_noacct(totals.get(f"NOACCT{mm}", 0)))
-        _place(tot_buf, SUMAMT_POS, _fmt_amount(totals.get("SUMAMT", 0)))
-        _place(tot_buf, SUMACT_POS, _fmt_noacct(totals.get("SUMACT", 0)))
-        f.write(_render(tot_buf) + "\n")
-
+            _place(tot, amt_pos,    _fmt_amount(totals.get(f"AMOUNT{mm}", 0)))
+            _place(tot, noacct_pos, _fmt_noacct(totals.get(f"NOACCT{mm}", 0)))
+        _place(tot, SUMAMT_POS, _fmt_amount(totals.get("SUMAMT", 0)))
+        _place(tot, SUMACT_POS, _fmt_noacct(totals.get("SUMACT", 0)))
+        f.write(_render(tot) + "\n")
 
 # ============================================================================
 # MAIN EXECUTION
@@ -579,55 +623,70 @@ def _write_report(df_cit_report: pl.DataFrame, totals: dict, output_file: Path) 
 print("=" * 70)
 print("CASH-IN-TRANSIT MONTHLY ACCUMULATED REPORT")
 print("=" * 70)
-print(f"\nReport Date   : {REPTDATE.strftime('%d/%m/%Y')}")
-print(f"Report Month  : {REPTMON}")
-print(f"Report Year   : {REPTYEAR2}")
-print(f"\nResolved TLBTRAN input files:")
-for i, p in enumerate(INPUT_TLBTRAN_FILES, 1):
-    print(f"  Week {i}: {p.name}")
+print(f"Report Date  : {REPTDATE.strftime('%d/%m/%Y')}")
+print(f"Report Month : {REPTMON}")
+print(f"Report Year  : {REPTYEAR2}")
+print(f"CIT Parquet  : {CIT_YEAR_FILE}")
+print()
 
 con = duckdb.connect(database=":memory:")
 
 try:
-    print("\nStep 1: Reading branch reference file (DBRANCH.txt)...")
+    # ── Step 1: Branch reference ───────────────────────────────────────────
+    print("Step 1: Reading branch reference file (DBRANCH.txt)...")
     df_branch = _read_branch_file(INPUT_BRHFILE)
-    print(f"Branches loaded: {len(df_branch):,}")
+    print(f"  Branches loaded: {len(df_branch):,}")
 
-    print("\nStep 2: Loading and filtering TLBTRAN weekly files...")
-    df_all = _load_tlbtran_all(con)
-    print(f"Transactions after TRANCODE filter: {len(df_all):,}")
+    # ── Step 2: Load and filter weekly TLBTRAN files (temp Parquet via DuckDB) ──
+    print("\nStep 2: Loading and filtering tlbtran weekly files...")
+    df_all = _load_tlbtran_all()
+    print(f"  Transactions after TRANCODE filter: {len(df_all):,}")
 
-    print("\nStep 3: Deriving NOACCT first-row flags per (REPTDATE, BRANCH)...")
-    df_all = _derive_noacct(df_all)
+    # ── Step 3: Detect month from filenames ────────────────────────────────
+    print("\nStep 3: Detecting report month from TLBTRAN filenames...")
+    file_month = _detect_month_from_files()
+    print(f"  Detected month from files: {file_month}")
 
-    print("\nStep 4: Aggregating CASHOUT and NOACCT to FINAL (by BRANCH)...")
-    df_final = _aggregate_to_cit(con, df_all)
-    print(f"Branches with non-zero CASHOUT: {len(df_final):,}")
+    # ── Step 3b: NOACCT flag + aggregate current month to branch level ─────
+    print(f"\nStep 3b: Aggregating month {file_month} CASHOUT and NOACCT by BRANCH...")
+    df_month = _build_month_summary(df_all, con, file_month)
+    print(f"  Branches with non-zero CASHOUT this month: {len(df_month):,}")
 
-    print(f"\nStep 5: Appending to yearly CIT file [{CIT_YEAR_FILE.name}]...")
-    df_cit_year = _append_to_cit_year(df_final)
-    print(f"Yearly CIT rows: {len(df_cit_year):,}")
+    # ── Step 4b: Aggregate current month to branch level ──────────────────
+    print(f"\nStep 4b: Aggregating month {file_month} CASHOUT and NOACCT by BRANCH...")
+    df_month = _build_month_summary(df_all, con, file_month)
+    print(f"  Branches with non-zero CASHOUT this month: {len(df_month):,}")
 
+    # ── Step 5: Accumulate into yearly CIT parquet ─────────────────────────
+    print(f"\nStep 5: Updating yearly CIT parquet [{CIT_YEAR_FILE.name}]...")
+    df_cit_year = _update_cit_year(df_month, file_month)
+    print(f"  Total branches in yearly parquet: {len(df_cit_year):,}")
+
+    # ── Step 6: Merge with branch reference ────────────────────────────────
     print("\nStep 6: Merging CIT year data with branch reference...")
-    df_cit_report = _merge_with_branch(con, df_cit_year, df_branch)
-    print(f"Report rows: {len(df_cit_report):,}")
+    df_report = _merge_with_branch(df_cit_year, df_branch, con)
+    print(f"  Report rows: {len(df_report):,}")
 
+    # ── Step 7: Grand totals ───────────────────────────────────────────────
     print("\nStep 7: Computing grand totals (TOTCIT)...")
-    totals = _compute_totals(df_cit_report)
+    totals = _compute_totals(df_report)
 
+    # ── Step 8: Write report ───────────────────────────────────────────────
     print("\nStep 8: Writing report...")
-    _write_report(df_cit_report, totals, OUTPUT_CITLIST)
-    print(f"Report saved: {OUTPUT_CITLIST}")
+    _write_report(df_report, totals, OUTPUT_CITLIST)
+    print(f"  Report saved: {OUTPUT_CITLIST}")
 
-    print(f"\n========== PREVIEW: {OUTPUT_CITLIST.name} ==========\n")
+    # ── Preview ────────────────────────────────────────────────────────────
+    print(f"\n{'=' * 70}")
+    print(f"PREVIEW: {OUTPUT_CITLIST.name}")
+    print("=" * 70)
     with open(OUTPUT_CITLIST, "r", encoding="utf-8") as f:
         print(f.read())
-    print(f"========== END PREVIEW ==========\n")
-
-    print("\n" + "=" * 70)
-    print("GENERATED REPORT:")
     print("=" * 70)
+
+    print("\nGENERATED FILES:")
     print(f"  Cash-In-Transit Report : {OUTPUT_CITLIST}")
+    print(f"  Yearly CIT Parquet     : {CIT_YEAR_FILE}")
     print("\nREPORT GENERATION COMPLETE")
 
 finally:
