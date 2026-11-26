@@ -1,25 +1,17 @@
-def _load_existing() -> pl.DataFrame:
-    if STORE_DCMG_FILE.exists():
-        return pl.read_parquet(STORE_DCMG_FILE)
-    if INPUT_DCMG_LEGACY_FILE.exists():
-        return _normalize_sas_reptdate(
-            pl.read_parquet(_load_cached(INPUT_DCMG_LEGACY_FILE, "DCMG_LEGACY"))
-        )
-    return pl.DataFrame(schema=DCMG_SCHEMA)
-
-
-
-INPUT_DCMG_LEGACY_FILE = EGOLD_DIR / f"dcmg{REPTMON}.sas7bdat"      # MIS.DCMG&REPTMON (bootstrap only)
-STORE_DCMG_FILE  = STORE_DIR  / f"dcmg{REPTMON}.parquet"            # monthly master (read and written)
+GIA             GIA
+CLSG PRICE      CLSG PRICE
+RM/G            RM/G
+(SELLING)       (BUYING)
+495.01          476.05
+479.64          461.22
 
 
 
 
-def _load_existing() -> pl.DataFrame:
-    if INPUT_DCMG_LEGACY_FILE.exists():
-        return _normalize_sas_reptdate(
-            pl.read_parquet(_load_cached(INPUT_DCMG_LEGACY_FILE, "DCMG_LEGACY"))
-        )
-    if STORE_DCMG_FILE.exists():
-        return pl.read_parquet(STORE_DCMG_FILE)
-    return pl.DataFrame(schema=DCMG_SCHEMA)
+
+GIA             GIA
+CLSG PRICE      CLSG PRICE
+RM/G            RM/G
+(SELLING)       (BUYING)
+0.00	        0.00
+0.00	        0.00
