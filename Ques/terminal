@@ -1,90 +1,56 @@
-DATE            GIA             GIA
-                CLSG PRICE      CLSG PRICE
-                RM/G            RM/G
-                (SELLING)       (BUYING)
-24/11/2026      495.01          476.05
-25/11/2026      479.64          461.22
+import paramiko
+import pyarrow as pa
+import saspy
 
 
 
 
 
-DATE            GIA             GIA
-                CLSG PRICE      CLSG PRICE
-                RM/G            RM/G
-                (SELLING)       (BUYING)
-24/11/2026      0.00	          0.00
-25/11/2026      0.00	          0.00
+# saspy configuration name (sascfg_personal.py). Leave None to use the default
+# configuration; set it to the same name you use in your other saspy programs.
+SASPY_CFGNAME = None
 
 
 
 
+# ============================================================================
+# HELPER: persist DataFrames returned by EIBDRLFM as SAS datasets (.sas7bdat)
+# LCR / NLF DD equivalents: LIBNAME <libref> '<out_dir>'; DATA <libref>.<stem>;
+# ============================================================================
+def _persist_sas_datasets(frames: dict, out_dir: Path, libref: str) -> None:
+    """Write each DataFrame as <out_dir>/<stem>.sas7bdat through saspy.
 
-SELLRATE	BUYRATE	REPTDATE
-523.91	503.84	24412
-524.71	504.66	24413
-535.88	515.39	24414
-550.38	529.36	24415
-540.74	520.08	24416
-549.74	528.67	24420
-542.6	521.84	24421
-534.83	514.4	24422
-525.92	505.82	24423
-518.79	498.77	24426
-520.44	500.54	24427
-515.24	495.54	24428
+    One SAS session per call; it is always closed, even on failure.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sas = saspy.SASsession(**({"cfgname": SASPY_CFGNAME} if SASPY_CFGNAME else {}))
+    try:
+        sas.saslib(libref, path=str(out_dir))
+        for stem, df in frames.items():
+            # SAS character missing is blank, so null text is written as ''.
+            # Numeric nulls become NaN and are stored as SAS missing (.).
+            pdf = df.with_columns(pl.col(pl.Utf8).fill_null("")).to_pandas()
+            sas.df2sd(pdf, table=stem, libref=libref)
+            if not sas.exist(table=stem, libref=libref):
+                raise RuntimeError(
+                    f"Failed to write SAS dataset {libref}.{stem} in {out_dir}"
+                )
+            print(f"  SAS dataset written: {libref}.{stem} ({len(pdf):,} rows) -> {out_dir}")
+    finally:
+        sas.endsas()
 
 
 
 
+_persist_sas_datasets(report_lines["LCR"], LCR_OUTPUT_DIR, "LCR")
+_persist_sas_datasets(report_lines["NLF"], NLF_OUTPUT_DIR, "NLF")
 
-DEBUG EFORATE CACHE:
-Schema([('CURCODE', String), ('RECTYPE', String), ('BANKNO', String), ('SELLRATE', Float64), ('BUYRATE', Float64), ('WITHHOLD', Float64), ('REPTDATE', Float64)])
-shape: (12, 3)
-┌──────────┬──────────┬─────────┐
-│ REPTDATE ┆ SELLRATE ┆ BUYRATE │
-│ ---      ┆ ---      ┆ ---     │
-│ f64      ┆ f64      ┆ f64     │
-╞══════════╪══════════╪═════════╡
-│ 24412.0  ┆ 523.91   ┆ 503.84  │
-│ 24413.0  ┆ 524.71   ┆ 504.66  │
-│ 24414.0  ┆ 535.88   ┆ 515.39  │
-│ 24415.0  ┆ 550.38   ┆ 529.36  │
-│ 24416.0  ┆ 540.74   ┆ 520.08  │
-│ …        ┆ …        ┆ …       │
-│ 24422.0  ┆ 534.83   ┆ 514.4   │
-│ 24423.0  ┆ 525.92   ┆ 505.82  │
-│ 24426.0  ┆ 518.79   ┆ 498.77  │
-│ 24427.0  ┆ 520.44   ┆ 500.54  │
-│ 24428.0  ┆ 515.24   ┆ 495.54  │
-└──────────┴──────────┴─────────┘
 
-DEBUG ERATE DATE MATCH:
-Report date: 2026-11-25 (<class 'datetime.date'>)
-shape: (12, 3)
-┌────────────┬──────────┬─────────┐
-│ REPTDATE   ┆ SELLRATE ┆ BUYRATE │
-│ ---        ┆ ---      ┆ ---     │
-│ str        ┆ f64      ┆ f64     │
-╞════════════╪══════════╪═════════╡
-│ 2026-11-02 ┆ 523.91   ┆ 503.84  │
-│ 2026-11-03 ┆ 524.71   ┆ 504.66  │
-│ 2026-11-04 ┆ 535.88   ┆ 515.39  │
-│ 2026-11-05 ┆ 550.38   ┆ 529.36  │
-│ 2026-11-06 ┆ 540.74   ┆ 520.08  │
-│ …          ┆ …        ┆ …       │
-│ 2026-11-12 ┆ 534.83   ┆ 514.4   │
-│ 2026-11-13 ┆ 525.92   ┆ 505.82  │
-│ 2026-11-16 ┆ 518.79   ┆ 498.77  │
-│ 2026-11-17 ┆ 520.44   ┆ 500.54  │
-│ 2026-11-18 ┆ 515.24   ┆ 495.54  │
-└────────────┴──────────┴─────────┘
-  ERATE rows (whole month): 12
-Matching rows: 0
-shape: (0, 3)
-┌──────────┬──────────┬─────────┐
-│ REPTDATE ┆ SELLRATE ┆ BUYRATE │
-│ ---      ┆ ---      ┆ ---     │
-│ date     ┆ f64      ┆ f64     │
-╞══════════╪══════════╪═════════╡
-└──────────┴──────────┴─────────┘
+
+
+_persist_sas_datasets(report_lines_pibb["LCR"], LCR_OUTPUT_DIR_PIBB, "LCR")
+_persist_sas_datasets(report_lines_pibb["NLF"], NLF_OUTPUT_DIR_PIBB, "NLF")
+
+
+
+
