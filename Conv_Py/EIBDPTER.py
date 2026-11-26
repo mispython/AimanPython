@@ -6,113 +6,110 @@ Purpose : FCY Fixed Deposit Maturity Report
           - FDDETL : FCY FD detail by customer (balance > FCY 1 million)
           Produces two comma-delimited flat text files (RECFM=FB, LRECL=320).
 
+Original Input:
+    //FD       DD DSN=SAP.PBB.MNIFD.DAILY(0),DISP=SHR
+        enrh_dp_fd_cert_d{REPDD}.sas7bdat
+    
+Used Input: dwh/dp_fcy/fcy{REPYMD}.sas7bdat
+
+Output:
+    //FDTEXT   DD DSN=SAP.PBB.FCYFD.REP1.TEXT
+    //FDDETL   DD DSN=SAP.PBB.FCYFD.REP2.TEXT
+
 Dependencies : PBBELF   (format_brchcd)
-               REPTDATE (get_reptdate_values)
-               input_date (get_latest_file)
 """
 
-# ============================================================
-# Standard library
-# ============================================================
 from pathlib import Path
 from datetime import date, timedelta
 from typing import Optional
 import math
 
-# ============================================================
-# Third-party
-# ============================================================
 import pandas as pd
 import polars as pl
+import tempfile
+import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 # ============================================================
 # Internal dependencies
 # ============================================================
-from REPTDATE import get_reptdate_values
-from PBBELF   import format_brchcd
-from input_date import get_latest_file
+from PBBELF import format_brchcd
 
 # ============================================================
-# PATH CONFIGURATION
+# CONTROL FILE CONFIGURATION
 # ============================================================
-BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR  = BASE_DIR / "input" / "prod" / "EIBDRMFC"  # directory containing fd.sas7bdat
-OUTPUT_DIR = BASE_DIR / "output" / "EIBDPTER"
+# Control file : batch date per source system
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-FD_SAS7BDAT = INPUT_DIR / "fd.sas7bdat"
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
+    return pd.Timestamp(hit.iloc[0]).date()
 
-OUTPUT_FDTEXT = OUTPUT_DIR / "FCYFD_REP1.txt"   # SAP.PBB.FCYFD.REP1.TEXT
-OUTPUT_FDDETL = OUTPUT_DIR / "FCYFD_REP2.txt"   # SAP.PBB.FCYFD.REP2.TEXT
 
 # ============================================================
-# REPORT DATE  (replaces DATA REPTDATE / FD.REPTDATE)
-# OPTIONS YEARCUTOFF=1950 — handled inside REPTDATE.py
+# REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = DP)
+# OPTIONS YEARCUTOFF=1950 is applied in _parse_orgdate
 # ============================================================
-reptdate_values = get_reptdate_values()
-
-REPTDATE = reptdate_values.reptdate          # date object  (T)
+# REPTDATE = get_batch_date(BATCH_SOURCE)      # date object (T)
+REPTDATE = date(2026, 10, 27)         # UAT testing date
 T1       = REPTDATE + timedelta(days=1)
 T2       = REPTDATE + timedelta(days=2)
 T3       = REPTDATE + timedelta(days=3)
 
-REPDD  = reptdate_values.reptday             # DD  (Z2.)
-REPMM  = reptdate_values.reptmon             # MM  (Z2.)
-REPYY  = REPTDATE.strftime("%Y")             # 4-digit year (YEAR4.)
-REPDT  = REPTDATE.strftime("%d/%m/%Y")       # DDMMYY8. equivalent  (dd/mm/yyyy)
+REPDD  = REPTDATE.strftime("%d")             # DD  (Z2.)
+REPMM  = REPTDATE.strftime("%m")             # MM  (Z2.)
+REPYY  = REPTDATE.strftime("%Y")             # YEAR4.
+REPDT  = REPTDATE.strftime("%d/%m/%Y")       # DDMMYY8. equivalent as used in the existing program
+REPYMD = REPTDATE.strftime("%y%m%d")         # date token in input filename
+
+# ============================================================
+# PATH CONFIGURATION
+# ============================================================
+# # Production Path
+# INPUT_DIR  = Path("/dwh/dp_fcy")
+# FCY_PATH   = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
+# OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report")
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Testing Path
+BASE_DIR   = Path("/stgsrcsys/host/uat/AII")
+INPUT_DIR  = BASE_DIR / "from_dwh"
+FCY_PATH   = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
+OUTPUT_DIR = BASE_DIR / "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS" / "output" / "EIBDPTER"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_FDTEXT = OUTPUT_DIR / "FCYFD_REP1_test.txt"   # SAP.PBB.FCYFD.REP1.TEXT
+OUTPUT_FDDETL = OUTPUT_DIR / "FCYFD_REP2_test.txt"   # SAP.PBB.FCYFD.REP2.TEXT
+
+CHUNK_ROWS = 500_000
+TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
 
 # ============================================================
 # HELPER UTILITIES
 # ============================================================
 
-def _parse_matdate(matdate_val) -> Optional[date]:
-    """
-    Replicate SAS:
-      MATDAT = INPUT(MATDATE,$20.);
-      YY = SUBSTR(MATDAT,1,4);
-      MM = SUBSTR(MATDAT,5,2);
-      DD = SUBSTR(MATDAT,7,2);
-      MATDT = MDY(MM,DD,YY);
+def _to_date(val) -> Optional[date]:
+    if val is None or pd.isna(val):
+        return None
+    if isinstance(val, (int, float)):          # SAS date: days since 1960-01-01
+        return date(1960, 1, 1) + timedelta(days=int(val))
+    return pd.Timestamp(val).date()
 
-    MATDATE is stored as a numeric in the SAS dataset (likely YYYYMMDD integer).
-    PUT(MATDATE,$20.) gives the string representation; the first 8 chars are YYYYMMDD.
-    """
-    if matdate_val is None or (isinstance(matdate_val, float) and math.isnan(matdate_val)):
-        return None
-    try:
-        s = str(int(matdate_val)).zfill(8)   # e.g. "20251231"
-        yy = int(s[0:4])
-        mm = int(s[4:6])
-        dd = int(s[6:8])
-        return date(yy, mm, dd)
-    except Exception:
-        return None
+
+def _parse_matdate(matdate_val) -> Optional[date]:
+    return _to_date(matdate_val)
 
 
 def _parse_orgdate(orgdate_val) -> Optional[date]:
-    """
-    Replicate SAS:
-      ORGDAT = INPUT(SUBSTR(PUT(ORGDATE, Z11.),1,8), MMDDYY10.);
-
-    PUT(ORGDATE, Z11.) -> 11-char zero-padded numeric string
-    SUBSTR(...,1,8)    -> first 8 characters   e.g. "01231998" (MMDDYYYY)
-    INPUT(...,MMDDYY10.) -> parse as MM DD YY (YEARCUTOFF=1950: yy<50 -> 2000+yy, else 1900+yy)
-    """
-    if orgdate_val is None or (isinstance(orgdate_val, float) and math.isnan(orgdate_val)):
-        return None
-    try:
-        s = str(int(orgdate_val)).zfill(11)[:8]   # first 8 chars of Z11. representation
-        mm = int(s[0:2])
-        dd = int(s[2:4])
-        yy = int(s[4:6])
-        # YEARCUTOFF=1950: two-digit years >= 50 -> 19xx, else 20xx
-        # Note: s[4:8] could be 4-digit if the numeric was large enough.
-        # MMDDYY10. reads only 2-digit year from position 5-6 of an 8-char string.
-        year = (1900 + yy) if yy >= 50 else (2000 + yy)
-        return date(year, mm, dd)
-    except Exception:
-        return None
+    return _to_date(orgdate_val)
 
 
 def _fmt_date_ddmmyy8(d: Optional[date]) -> str:
@@ -123,13 +120,66 @@ def _fmt_date_ddmmyy8(d: Optional[date]) -> str:
 
 
 # ============================================================
-# STEP 1 : Read FD sas7bdat
+# STEP 0 : Convert sas7bdat into parquet
 # ============================================================
 
+def sas_to_parquet(src: Path, dst: Path, chunk_rows: int = CHUNK_ROWS) -> None:
+    """Chunked .sas7bdat -> Parquet. Schema is locked on the first chunk."""
+    writer, schema = None, None
+    try:
+        for chunk in pd.read_sas(str(src), encoding="latin1", chunksize=chunk_rows):
+            # Force text columns to string so an all-null first chunk doesn't lock a null type
+            for col in chunk.columns[chunk.dtypes == object]:
+                chunk[col] = chunk[col].astype("string")
+            table = pa.Table.from_pandas(chunk, preserve_index=False)
+            if writer is None:
+                schema = table.schema
+                writer = pq.ParquetWriter(str(dst), schema, compression="snappy")
+            else:
+                table = table.cast(schema)
+            writer.write_table(table)
+    finally:
+        if writer is not None:
+            writer.close()
+
+# ============================================================
+# STEP 1 : Read FD sas7bdat
+# ============================================================
+COLUMN_MAP = {
+    "CURBALRM": "CURBAL",   # RM balance; build_fcyt then divides by FORATE to get FCY
+}
+
+SOURCE_COLUMNS = ["CUSTCD", "CURCODE", "CURBALRM", "MATDATE", "ORGDATE",
+                  "ORIGAMT", "RATE", "BRANCH", "FORATE"]
+
+
 def read_fd() -> pd.DataFrame:
-    """Read the entire FD dataset from the SAS7BDAT file."""
-    df = pd.read_sas(str(FD_SAS7BDAT), encoding="latin1")
-    return df
+    """
+    Convert FCY_PATH to a temporary Parquet file, read only the needed columns
+    via DuckDB, then delete the temp file. The dataset is PBB-only, so no
+    ENTITY_CD filter is applied.
+    """
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        tmp_parquet = Path(tmp) / "fcy.parquet"
+        sas_to_parquet(FCY_PATH, tmp_parquet)
+
+        missing = [c for c in SOURCE_COLUMNS if c not in pq.read_schema(str(tmp_parquet)).names]
+        if missing:
+            raise KeyError(f"{FCY_PATH.name} is missing expected columns: {missing}")
+
+        con = duckdb.connect()
+        try:
+            df = con.execute(
+                f"SELECT {', '.join(SOURCE_COLUMNS)} "
+                f"FROM read_parquet('{tmp_parquet.as_posix()}')"
+            ).df()
+        finally:
+            con.close()
+
+    clash = [c for c in COLUMN_MAP.values() if c in df.columns]
+    if clash:
+        raise ValueError(f"{FCY_PATH.name} already has columns named {clash}")
+    return df.rename(columns=COLUMN_MAP)
 
 
 # ============================================================
@@ -588,7 +638,7 @@ def main() -> None:
     print(f"[EIBDPTER] T3 = {T3}")
 
     # --- Read FD dataset -----------------------------------------------
-    print(f"[EIBDPTER] Reading {FD_SAS7BDAT} ...")
+    print(f"[EIBDPTER] Reading {FCY_PATH} ...")
     fd_df = read_fd()
 
     # --- FCY maturity split --------------------------------------------
@@ -605,15 +655,15 @@ def main() -> None:
     # --- Merge and derive averages ------------------------------------
     fcyt = build_fcyt_summary(s1, s2, s3, s4)
 
-    # --- Write FDTEXT (summary) ----------------------------------------
-    write_fdtext(fcyt, REPDT)
+    # # --- Write FDTEXT (summary) ----------------------------------------
+    # write_fdtext(fcyt, REPDT)
 
     # --- Build CUST detail dataset -------------------------------------
     cust = build_cust(fd_df)
     print(f"[EIBDPTER] Customers with FCY balance > 1M: {len(cust)}")
 
-    # --- Write FDDETL (detail) -----------------------------------------
-    write_fddetl(cust, REPDT)
+    # # --- Write FDDETL (detail) -----------------------------------------
+    # write_fddetl(cust, REPDT)
 
     print(f"[EIBDPTER] Output FDTEXT : {OUTPUT_FDTEXT}")
     print(f"[EIBDPTER] Output FDDETL : {OUTPUT_FDDETL}")
