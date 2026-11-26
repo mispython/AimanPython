@@ -10,19 +10,27 @@ Original Input:
     //FD       DD DSN=SAP.PBB.MNIFD.DAILY(0),DISP=SHR
         enrh_dp_fd_cert_d{REPDD}.sas7bdat
     
-Used Input: dwh/dp_fcy/fcy{REPYMD}.sas7bdat
+Used Input: 1. /dwh/dp_fcy/fcy{REPYMD}.sas7bdat
+            2. /sas/deposit/dwh/integration/intg_dp_acct_current_d{REPDD}.sas7bdat
+                NAME column are taken from here, merge with same ACCTNO from fcy{REPYMD}.sas7bdat
 
 Output:
     //FDTEXT   DD DSN=SAP.PBB.FCYFD.REP1.TEXT
     //FDDETL   DD DSN=SAP.PBB.FCYFD.REP2.TEXT
 
 Dependencies : PBBELF   (format_brchcd)
+
+SFTP:
+    //FDDETL (SAP.PBB.FCYFD.REP2.TEXT) -> DRR : TD/INTERBANK/FCYFD/FCYFDREP2_DDMMYY.CSV
 """
 
+import sys
 from pathlib import Path
 from datetime import date, timedelta
 from typing import Optional
 import math
+
+import paramiko
 
 import pandas as pd
 import polars as pl
@@ -42,6 +50,8 @@ from PBBELF import format_brchcd
 # Control file : batch date per source system
 CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
 BATCH_SOURCE   = "DP"          # SOURCE_SYSTEM_CD used for this program
+# Control file : SFTP connection details per host description
+CTL_SFTP_INFO = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
 
 
 def get_batch_date(source_system_cd: str) -> date:
@@ -52,6 +62,53 @@ def get_batch_date(source_system_cd: str) -> date:
     if hit.empty:
         raise ValueError(f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}")
     return pd.Timestamp(hit.iloc[0]).date()
+
+
+def get_sftp_info(host_desc: str):
+    """
+    Read one SFTP configuration row for the given HOST_DESC from the
+    SFTP control file. Returns (sftp_id, sftp_pw, host_ip, host_key).
+    """
+    if not CTL_SFTP_INFO.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {CTL_SFTP_INFO}")
+
+    ctl = pd.read_sas(str(CTL_SFTP_INFO), format="sas7bdat", encoding="latin1")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError(
+            "SFTP control file is missing columns: " + ", ".join(missing_columns)
+        )
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(
+            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
+        )
+
+    row = rows.iloc[0]
+
+    # SAS character values can contain fixed-width padding.
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(
+            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
+        )
+
+    return sftp_id, sftp_pw, host_ip, host_key
 
 
 # ============================================================
@@ -76,7 +133,11 @@ REPYMD = REPTDATE.strftime("%y%m%d")         # date token in input filename
 # Production Path
 INPUT_DIR  = Path("/dwh/dp_fcy")
 FCY_PATH   = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
-OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report")
+
+# For NAME column, merge with FCY_PATH using ACCTNO
+FD_PATH    = Path("/sas/deposit/dwh/integration") / f"intg_dp_acct_current_d{REPDD}.sas7bdat"
+
+OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBDPTER")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # # Testing Path
@@ -88,6 +149,16 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_FDTEXT = OUTPUT_DIR / "FCYFD_REP1.txt"   # SAP.PBB.FCYFD.REP1.TEXT
 OUTPUT_FDDETL = OUTPUT_DIR / "FCYFD_REP2.txt"   # SAP.PBB.FCYFD.REP2.TEXT
+
+# ------------------------------------------------------------
+# SFTP TO DATA REPORT REPOSITORY (DRR)  - from ask.py (FTPFDFCY)
+#   CD TD/INTERBANK/FCYFD
+#   PUT //SAP.PBB.FCYFD.REP2.TEXT  FCYFDREP2_%ODD.%OMM.%OYY..CSV
+#   (PUT //SAP.PBB.MNI.FDRMFC FDRMFC_... is produced by another program)
+# ------------------------------------------------------------
+DRR_HOST_DESC   = "Data Report Repository (DRR)"   # HOST_DESC in ctl_dwh_sftp_info
+DRR_REMOTE_DIR  = "TD/INTERBANK/FCYFD"
+DRR_REMOTE_NAME = f"FCYFDREP2_{REPTDATE:%d%m%y}.CSV"   # %ODD.%OMM.%OYY..CSV
 
 CHUNK_ROWS = 500_000
 TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
@@ -255,7 +326,8 @@ def summarise_bucket(df: pd.DataFrame, suffix: str) -> pd.DataFrame:
     grp = df.groupby("CURCODE", as_index=False).agg(
         **{f"CURBAL{suffix}": ("CURBAL", "sum"),
            f"RATE{suffix}":   ("RATE",   "sum"),
-           f"N{suffix}":      ("CURBAL", "count")}
+        #    f"N{suffix}":      ("CURBAL", "count")}
+           f"N{suffix}":      ("CURBAL", "size")}
     )
     return grp
 
@@ -627,6 +699,43 @@ def write_fddetl(cust: pd.DataFrame, repdt: str) -> None:
 
 
 # ============================================================
+# SFTP : send FDDETL (REP2) to DRR
+#
+#   //RUNSFTP  EXEC COZBATCH  (ask.py)
+#   lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+#   CD TD/INTERBANK/FCYFD
+#   PUT //SAP.PBB.FCYFD.REP2.TEXT  FCYFDREP2_%ODD.%OMM.%OYY..CSV
+#
+#   NOTRIM : the 320-byte padded records are sent as written.
+# ============================================================
+
+def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
+    """Upload one report file to DRR_REMOTE_DIR on the DRR server."""
+    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"[SFTP] Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+
+    try:
+        try:
+            sftp.chdir(DRR_REMOTE_DIR)
+        except IOError:
+            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
+
+        print(f"[SFTP] Upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
+        sftp.put(str(local_path), remote_name)
+    finally:
+        sftp.close()
+        ssh.close()
+
+    print("[SFTP] DRR upload complete.")
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
@@ -655,18 +764,23 @@ def main() -> None:
     # --- Merge and derive averages ------------------------------------
     fcyt = build_fcyt_summary(s1, s2, s3, s4)
 
-    # # --- Write FDTEXT (summary) ----------------------------------------
-    # write_fdtext(fcyt, REPDT)
+    # --- Write FDTEXT (summary) ----------------------------------------
+    write_fdtext(fcyt, REPDT)
 
     # --- Build CUST detail dataset -------------------------------------
     cust = build_cust(fd_df)
     print(f"[EIBDPTER] Customers with FCY balance > 1M: {len(cust)}")
 
-    # # --- Write FDDETL (detail) -----------------------------------------
-    # write_fddetl(cust, REPDT)
+    # --- Write FDDETL (detail) -----------------------------------------
+    write_fddetl(cust, REPDT)
 
     print(f"[EIBDPTER] Output FDTEXT : {OUTPUT_FDTEXT}")
     print(f"[EIBDPTER] Output FDDETL : {OUTPUT_FDDETL}")
+
+    # --- SFTP FDDETL (REP2) to DRR (FTPFDFCY) -------------------
+    sftp_upload_to_drr(OUTPUT_FDDETL, DRR_REMOTE_NAME)
+    print(f"[EIBDPTER] Remote FDDETL : {DRR_REMOTE_DIR}/{DRR_REMOTE_NAME}")
+
     print("[EIBDPTER] Done.")
 
 
