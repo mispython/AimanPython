@@ -355,3 +355,692 @@ print("\nEIIBNW01 complete.")
 
 ========================== Flags
 
+# ============================================================================
+# SAS-FIDELITY HELPERS
+# ============================================================================
+_SME_CODES  = {"41", "42", "43", "44", "46", "47", "48", "49", "51", "52", "53", "54"}
+_FBE_CODES  = {"87", "88", "89"}
+_DNBFI_VALS = {"1", "2", "3"}
+
+
+def _code_str(v) -> str:
+    """CUSTCD / DNBFISME as a comparable string: 41.0 -> '41', missing -> ''."""
+    if v is None or (not isinstance(v, str) and pd.isna(v)):
+        return ""
+    if isinstance(v, str):
+        return v.strip()
+    f = float(v)
+    return str(int(f)) if f.is_integer() else str(f)
+
+
+def _codes(s: pd.Series) -> pd.Series:
+    return s.map(_code_str)
+
+
+def _code_pl(df: pl.DataFrame, col: str) -> pl.Expr:
+    """Polars version of _code_str (numeric -> Int64 -> Utf8, text -> stripped)."""
+    if df.schema[col].is_numeric():
+        return pl.col(col).cast(pl.Int64, strict=False).cast(pl.Utf8).fill_null("")
+    return pl.col(col).cast(pl.Utf8).str.strip_chars().fill_null("")
+
+
+def pl_join(left: pl.DataFrame, right: pl.DataFrame, on, how: str, **kwargs) -> pl.DataFrame:
+    """Polars join where NULL keys match each other (SAS MERGE matches missing to missing)."""
+    try:
+        return left.join(right, on=on, how=how, nulls_equal=True, **kwargs)
+    except TypeError:                       # Polars < 1.24
+        return left.join(right, on=on, how=how, join_nulls=True, **kwargs)
+
+
+def _ssum(col: str) -> pl.Expr:
+    """PROC SUMMARY SUM=: missing (not 0) when every value in the group is missing."""
+    return (pl.when(pl.col(col).count() > 0).then(pl.col(col).sum()).otherwise(None)).alias(col)
+
+
+def _present(df: pl.DataFrame, cols: list) -> pl.Expr:
+    """True where every CLASS column is non-missing (PROC SUMMARY/TABULATE without MISSING drops the rest)."""
+    expr = pl.lit(True)
+    for c in cols:
+        if df.schema[c] == pl.Utf8:
+            expr = expr & pl.col(c).is_not_null() & (pl.col(c).str.strip_chars() != "")
+        else:
+            expr = expr & pl.col(c).is_not_null()
+    return expr
+
+
+def sas_merge(left: pl.DataFrame, right: pl.DataFrame, by: list) -> pl.DataFrame:
+    """SAS `MERGE left right; BY by;` including many-to-many BY groups.
+
+    Emulates the program data vector: rows are paired by position inside a BY group,
+    the shorter side keeps its last values, later-dataset values overwrite earlier ones
+    (even when missing), and everything is reset to missing at each new BY group.
+    Adds __A / __B (IN= flags: 1 when that input has the BY group).
+    """
+    left = left.with_columns([pl.col(c).cast(right.schema[c], strict=False)
+                              for c in left.columns if c in right.columns])
+    all_cols = list(left.columns) + [c for c in right.columns if c not in left.columns]
+    schema = {c: (right.schema[c] if c in right.columns else left.schema[c]) for c in all_cols}
+    schema["__A"], schema["__B"] = pl.Int8, pl.Int8
+
+    def _group(df: pl.DataFrame) -> dict:
+        groups: dict = {}
+        for row in df.iter_rows(named=True):
+            groups.setdefault(tuple(row[k] for k in by), []).append(row)
+        return groups
+
+    lg, rg = _group(left), _group(right)
+    out = []
+    for key in sorted(lg.keys() | rg.keys(), key=lambda k: tuple((v is not None, v) for v in k)):
+        lrows, rrows = lg.get(key, []), rg.get(key, [])
+        pdv = dict.fromkeys(all_cols)
+        for i in range(max(len(lrows), len(rrows))):
+            if i < len(lrows):
+                pdv.update(lrows[i])
+            if i < len(rrows):
+                pdv.update(rrows[i])
+            out.append({**pdv, "__A": int(bool(lrows)), "__B": int(bool(rrows))})
+    return pl.DataFrame(out, schema=schema)
+
+
+def _sme_splits(df: pl.DataFrame):
+    """Return (sme, dbe, dnbfi, fbe) subsets using the SAS CUSTCD / DNBFISME IN-lists."""
+    cols = [c for c in ("CUSTCD", "DNBFISME") if c in df.columns]
+    pdf = df.select(cols).to_pandas()
+    empty = pd.Series("", index=pdf.index, dtype=object)
+    cust  = _codes(pdf["CUSTCD"])   if "CUSTCD"   in pdf.columns else empty
+    dnbfi = _codes(pdf["DNBFISME"]) if "DNBFISME" in pdf.columns else empty
+    masks = (
+        cust.isin(_SME_CODES | _FBE_CODES) | dnbfi.isin(_DNBFI_VALS),
+        cust.isin(_SME_CODES),
+        dnbfi.isin(_DNBFI_VALS),
+        cust.isin(_FBE_CODES),
+    )
+    return tuple(df.filter(pl.Series(m.to_numpy())) for m in masks)
+
+
+
+
+# ============================================================================
+# STEP 9: DISPAY filter/keep for the ALM merge
+# ============================================================================
+print("\nStep 9: Filtering DISPAY(final) for ALM merge...")
+
+_prodcd_s = pl.col("PRODCD").cast(pl.Utf8)
+dispay_for_alm = dispay_final.filter(
+    (_prodcd_s.str.slice(0, 2) == "34").fill_null(False)
+    | (_prodcd_s == "54120").fill_null(False)
+    | pl.col("PRODUCT").cast(pl.Float64, strict=False).is_in([698.0, 699.0, 983.0]).fill_null(False)
+)
+print(f"  DISPAY(for ALM) rows: {len(dispay_for_alm):,}")
+
+# ============================================================================
+# STEP 10: DATA ALM; MERGE ALM(IN=B) DISPAY(IN=A); BY ACCTNO NOTENO;  (full outer merge)
+# Assumes one row per ACCTNO/NOTENO on each side, as the SAS merge does.
+# ============================================================================
+print("\nStep 10: Final ALM merge with DISPAY + OD adjustment...")
+
+_alm_cols = [c for c in alm.columns if c not in ("ACCTNO", "NOTENO")]
+_dsp_cols = [c for c in dispay_for_alm.columns if c not in ("ACCTNO", "NOTENO")]
+_sel = [
+    "COALESCE(m.ACCTNO, d.ACCTNO) AS ACCTNO",
+    "CASE WHEN m.ACCTNO IS NOT NULL THEN m.NOTENO ELSE d.NOTENO END AS NOTENO",
+]
+for c in _alm_cols:
+    if c in _dsp_cols:      # common variable: DISPAY (later dataset) overwrites when it has the row
+        _sel.append(f"CASE WHEN d.ACCTNO IS NOT NULL THEN d.{c} ELSE m.{c} END AS {c}")
+    else:
+        _sel.append(f"m.{c} AS {c}")
+_sel += [f"d.{c} AS {c}" for c in _dsp_cols if c not in _alm_cols]
+
+con = duckdb.connect(database=":memory:")
+con.register("alm", alm.to_arrow())
+con.register("dispay_for_alm", dispay_for_alm.to_arrow())
+alm2 = con.execute(f"""
+    SELECT {', '.join(_sel)}
+    FROM alm m
+    FULL OUTER JOIN dispay_for_alm d
+      ON m.ACCTNO = d.ACCTNO AND m.NOTENO IS NOT DISTINCT FROM d.NOTENO
+""").pl()
+con.close()
+
+alm2 = alm2.with_columns(
+    pl.col("DISBURSE").alias("DISBURSE_ORI"),
+    pl.col("REPAID").alias("REPAID_ORI"),
+)
+
+
+def _sas_sum_minus(a: str, b: str) -> pl.Expr:
+    """ROUND(SUM(a, -1*b), 0.01): missing only when both are missing."""
+    return (
+        pl.when(pl.col(a).is_null() & pl.col(b).is_null()).then(None)
+          .otherwise((pl.col(a).fill_null(0.0) - pl.col(b).fill_null(0.0)) * 100)
+    ).round(0) / 100
+
+
+_od = pl.col("ACCTYPE") == "OD"
+alm2 = alm2.with_columns(
+    pl.when(_od).then(_sas_sum_minus("REPAID", "PREREPAID")).otherwise(pl.col("REPAID")).alias("REPAID"),
+    pl.when(_od).then(_sas_sum_minus("DISBURSE", "PREDISBURSE")).otherwise(pl.col("DISBURSE")).alias("DISBURSE"),
+)
+alm2 = alm2.with_columns(
+    pl.when(pl.col("REPAID") > 0).then(1).otherwise(None).alias("REPAYNO"),
+    pl.when(pl.col("DISBURSE") > 0).then(1).otherwise(None).alias("DISBNO"),
+)
+# SAS: missing < 0 is TRUE, so missing becomes 0 here
+alm2 = alm2.with_columns(
+    pl.when(pl.col("REPAID").is_null() | (pl.col("REPAID") < 0)).then(0.0).otherwise(pl.col("REPAID")).alias("REPAID"),
+    pl.when(pl.col("DISBURSE").is_null() | (pl.col("DISBURSE") < 0)).then(0.0).otherwise(pl.col("DISBURSE")).alias("DISBURSE"),
+)
+del alm, dispay_for_alm
+gc.collect()
+print(f"  ALM (final, post-DISPAY) rows: {len(alm2):,}")
+
+
+
+
+    LEFT JOIN read_parquet('{BNM_LOAN_CUR_PQ}') m
+        ON d.ACCTNO = m.ACCTNO AND d.NOTENO IS NOT DISTINCT FROM m.NOTENO
+
+
+
+
+# Per column: the LAST dataset (in MERGE order) that has the BY group wins, even when its value is missing
+_sources = [("lnwod", lnwod_schema), ("lnwof", lnwof_schema), ("mloan", mloan_schema), ("prev", prev_schema)]
+case_parts = []
+for c in LOAN_FAMILY_COLS:
+    if c in ("ACCTNO", "NOTENO"):
+        continue
+    t = target_types[c]
+    if c == "ACCTYPE" and not any(c in s.names for _, s in _sources):
+        case_parts.append("CASE WHEN keys.ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 'OD' ELSE 'LN' END AS ACCTYPE")
+        continue
+    whens = [f"WHEN {src}.ACCTNO IS NOT NULL THEN CAST({src}.{c} AS {t})"
+             for src, s in _sources if c in s.names]
+    if c in loandm_schema:
+        whens.append(f"WHEN loandm.ACCTNO IS NOT NULL THEN CAST(loandm.{c} AS {t})")
+    case_parts.append(f"CASE {' '.join(whens)} END AS {c}")
+
+con = duckdb.connect(database=":memory:")
+con.register("loandm", loandm.to_arrow())
+
+loan_merged = con.execute(f"""
+    WITH keys AS (
+        SELECT ACCTNO, NOTENO FROM loandm
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LOAN_PRV_PQ}')
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LOAN_CUR_PQ}')
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LNWOF_PQ}')
+        UNION
+        SELECT ACCTNO, NOTENO FROM read_parquet('{BNM_LNWOD_PQ}')
+    )
+    SELECT keys.ACCTNO, keys.NOTENO, {', '.join(case_parts)}
+    FROM keys
+    LEFT JOIN loandm                            loandm ON keys.ACCTNO = loandm.ACCTNO AND keys.NOTENO IS NOT DISTINCT FROM loandm.NOTENO
+    LEFT JOIN read_parquet('{BNM_LOAN_PRV_PQ}') prev   ON keys.ACCTNO = prev.ACCTNO   AND keys.NOTENO IS NOT DISTINCT FROM prev.NOTENO
+    LEFT JOIN read_parquet('{BNM_LOAN_CUR_PQ}') mloan  ON keys.ACCTNO = mloan.ACCTNO  AND keys.NOTENO IS NOT DISTINCT FROM mloan.NOTENO
+    LEFT JOIN read_parquet('{BNM_LNWOF_PQ}')    lnwof  ON keys.ACCTNO = lnwof.ACCTNO  AND keys.NOTENO IS NOT DISTINCT FROM lnwof.NOTENO
+    LEFT JOIN read_parquet('{BNM_LNWOD_PQ}')    lnwod  ON keys.ACCTNO = lnwod.ACCTNO  AND keys.NOTENO IS NOT DISTINCT FROM lnwod.NOTENO
+""").pl()
+
+con.close()
+gc.collect()
+print(f"  loan_merged rows: {len(loan_merged):,}")
+
+
+
+
+con = duckdb.connect(database=":memory:")
+con.register("loan_merged", loan_merged.to_arrow())
+con.register("dispay_rounded", dispay_rounded.to_arrow())
+con.register("prevdispay", prevdispay.to_arrow())
+
+dispay_final = con.execute("""
+    SELECT
+        a.ACCTNO, a.NOTENO,
+        a.FISSPURP, a.PRODUCT, a.DNBFISME, a.PRODCD, a.CUSTCD, a.AMTIND,
+        a.SECTORCD, a.BRANCH, a.ACCTYPE,
+        b.DISBURSE, b.REPAID,
+        p.PREDISBURSE, p.PREREPAID
+    FROM loan_merged a
+    INNER JOIN dispay_rounded b ON a.ACCTNO = b.ACCTNO AND a.NOTENO IS NOT DISTINCT FROM b.NOTENO
+    LEFT JOIN prevdispay p      ON a.ACCTNO = p.ACCTNO AND a.NOTENO IS NOT DISTINCT FROM p.NOTENO
+""").pl()
+
+con.close()
+gc.collect()
+print(f"  DISPAY(final) rows: {len(dispay_final):,}")
+
+
+
+
+# ============================================================================
+# STEP 13: BANKERS-TRADE (BTBNM.IBTRAD) SECTION
+# ============================================================================
+print("\nStep 13: Building bankers-trade (BTRAD) section...")
+
+BT_COLS = [
+    "ACCTNO", "SUBACCT", "TRANSREF", "DIRCTIND", "CUSTCD", "RETAILID",
+    "SECTORCD", "DNBFISME", "APPRLIMT", "DISBURSE", "REPAID", "BALANCE",
+    "FISSPURP", "APPRLIM2", "PRODCD", "AMTIND",
+]
+_BT_KEYS1   = ["ACCTNO", "CUSTCD", "RETAILID", "SECTORCD", "DNBFISME"]
+_BT_KEYS2   = ["ACCTNO", "CUSTCD", "RETAILID", "SECTORCD"]
+_ALMBT_KEYS = ["ACCTNO", "TRANSREF", "CUSTCD", "FISSPURP", "SECTORCD"]
+
+con = duckdb.connect(database=":memory:")
+
+# PROC SORT DATA=BTBNM.IBTRAD&REPTMON&NOWK OUT=BTRAD; WHERE DIRCTIND='D' AND CUSTCD NE ' ';
+btrad = con.execute(f"""
+    SELECT {', '.join(BT_COLS)}
+    FROM read_parquet('{BTBNM_CUR_PQ}')
+    WHERE DIRCTIND = 'D' AND TRIM(CUSTCD) != ''
+""").pl()
+
+# PROC SUMMARY NWAY (no MISSING); CLASS ACCTNO CUSTCD RETAILID SECTORCD DNBFISME; VAR DISBURSE REPAID; -> BTRAD1
+btrad1 = (btrad.filter(_present(btrad, _BT_KEYS1))
+               .group_by(_BT_KEYS1)
+               .agg([_ssum("DISBURSE"), _ssum("REPAID")])
+               .sort(_BT_KEYS1))
+
+# PROC SUMMARY NWAY (no MISSING); WHERE APPRLIMT>0; CLASS ACCTNO CUSTCD RETAILID SECTORCD; VAR BALANCE; -> BTRAD
+btrad_bal = (btrad.filter(pl.col("APPRLIMT") > 0)
+                  .filter(_present(btrad, _BT_KEYS2))
+                  .group_by(_BT_KEYS2)
+                  .agg(_ssum("BALANCE"))
+                  .sort(_BT_KEYS2))
+
+# %BTWKLY -- week 1: OBS=0 (structure only), taken from the current IBTRAD layout
+_prv_src      = BTBNM_PRV_PQ if NOWK != '1' else BTBNM_CUR_PQ
+_prv_names    = set(pq.read_schema(_prv_src).names)
+_PRV_KEEP     = [c for c in ("ACCTNO", "CUSTCD", "RETAILID", "SECTORCD", "DNBFISME",
+                             "DISBURSE", "REPAID", "BALANCE", "NOACCT") if c in _prv_names]
+_prv_where    = "DIRCTIND = 'D' AND TRIM(CUSTCD) != ''" if NOWK != '1' else "FALSE"
+_prvalm_where = "SUBSTR(PRODCD, 1, 2) = '34'"           if NOWK != '1' else "FALSE"
+
+# PROC SORT DATA=PREVBTRAD; BY ACCTNO DESCENDING APPRLIMT;  (missing sorts last when descending)
+prevbtrad = (
+    con.execute(f"""
+        SELECT {', '.join(_PRV_KEEP)}, APPRLIMT
+        FROM read_parquet('{_prv_src}')
+        WHERE {_prv_where}
+    """).pl()
+    .sort(["ACCTNO", pl.col("APPRLIMT").is_null(), "APPRLIMT"],
+          descending=[False, False, True], maintain_order=True)
+    .drop("APPRLIMT")
+)
+
+# PROC SORT DATA=IBTRAD(prev) OUT=PREVALMBT (KEEP=ACCTNO TRANSREF DISBURSE REPAID RENAME=...) BY ACCTNO TRANSREF;
+prevalmbt = (
+    con.execute(f"""
+        SELECT ACCTNO, TRANSREF, DISBURSE AS PREDISBURSE, REPAID AS PREREPAID
+        FROM read_parquet('{_prv_src}')
+        WHERE {_prvalm_where}
+    """).pl()
+    .sort(["ACCTNO", "TRANSREF"], maintain_order=True)
+)
+
+# PROC SUMMARY DATA=PREVBTRAD ... OUTPUT OUT=PREVBTRAD1 SUM=PREDISBURSE PREREPAID;
+#   -> PREVBTRAD1 is never used afterwards in the SAS program (the merge below uses PREVBTRAD),
+#      so it is not computed here.
+
+# DATA BTRAD1; MERGE PREVBTRAD(IN=A) BTRAD1(IN=B); BY ACCTNO; IF B;
+btrad1 = (sas_merge(prevbtrad, btrad1, ["ACCTNO"])
+          .filter(pl.col("__B") == 1).drop(["__A", "__B"])
+          .sort(_BT_KEYS2, maintain_order=True))                 # PROC SORT DATA=BTRAD1; BY ACCTNO CUSTCD RETAILID SECTORCD;
+
+# DATA OVC(KEEP=ACCTNO RETAILID) MAST(...); MERGE BTRAD(IN=A) BTRAD1(IN=B); BY ...; IF B;
+#   PREDISBURSE / PREREPAID do not exist at this point in SAS (uninitialised -> missing),
+#   so DISBURSE / REPAID are only rounded.
+mast_base = sas_merge(btrad_bal, btrad1, _BT_KEYS2).filter(pl.col("__B") == 1)
+if "NOACCT" not in mast_base.columns:
+    mast_base = mast_base.with_columns(pl.lit(None, dtype=pl.Int64).alias("NOACCT"))
+mast_base = mast_base.with_columns(
+    pl.col("DISBURSE").round(2).alias("DISBURSE"),
+    pl.col("REPAID").round(2).alias("REPAID"),
+)
+mast_base = mast_base.with_columns(
+    pl.when(pl.col("DISBURSE") > 0).then(1).otherwise(None).alias("DISBNO"),
+    pl.when(pl.col("REPAID") > 0).then(1).otherwise(None).alias("REPAYNO"),
+)
+mast_base = mast_base.with_columns(
+    pl.when((pl.col("__A") == 1)
+            & pl.col("BALANCE").is_not_null() & (pl.col("BALANCE").round(2) != 0)
+            & (pl.col("NOACCT").is_null() | (pl.col("NOACCT") != 0)))
+      .then(1).otherwise(pl.col("NOACCT")).alias("NOACCT")
+)
+
+ovc  = mast_base.select(["ACCTNO", "RETAILID"]).sort("ACCTNO", maintain_order=True)   # PROC SORT DATA=OVC; BY ACCTNO;
+mast = mast_base.select(["ACCTNO", "CUSTCD", "BALANCE", "RETAILID", "DISBNO", "REPAYNO",
+                         "NOACCT", "SECTORCD", "DNBFISME"])
+
+# PROC SORT DATA=IBTRAD OUT=ALMBT(KEEP=...) BY ACCTNO SUBACCT TRANSREF CUSTCD FISSPURP SECTORCD; WHERE SUBSTR(PRODCD,1,2)='34';
+almbt_raw = con.execute(f"""
+    SELECT ACCTNO, SUBACCT, FISSPURP, BALANCE, APPRLIM2,
+           PRODCD, CUSTCD, AMTIND, TRANSREF, SECTORCD, DISBURSE, REPAID, DNBFISME
+    FROM read_parquet('{BTBNM_CUR_PQ}')
+    WHERE SUBSTR(PRODCD, 1, 2) = '34'
+""").pl().sort(["ACCTNO", "SUBACCT", "TRANSREF", "CUSTCD", "FISSPURP", "SECTORCD"], maintain_order=True)
+
+# DATA ALMBT; MERGE OVC ALMBT(IN=A); BY ACCTNO; IF A;
+almbt = (sas_merge(ovc, almbt_raw, ["ACCTNO"])
+         .filter(pl.col("__B") == 1).drop(["__A", "__B"]))
+
+# PROC SUMMARY NWAY MISSING; CLASS ACCTNO TRANSREF CUSTCD FISSPURP SECTORCD; VAR BALANCE; -> ALMBTX
+almbtx = almbt.group_by(_ALMBT_KEYS).agg(_ssum("BALANCE"))
+
+# PROC SORT DATA=ALMBT NODUPKEYS; BY ACCTNO TRANSREF CUSTCD FISSPURP SECTORCD;  (keeps the first row of each key)
+almbt = (almbt.sort(_ALMBT_KEYS, maintain_order=True)
+              .unique(subset=_ALMBT_KEYS, keep="first", maintain_order=True))
+
+# DATA ALMBT; MERGE ALMBT ALMBTX; BY ...;
+almbt = pl_join(almbt.drop("BALANCE"), almbtx, on=_ALMBT_KEYS, how="left")
+
+# DATA ALMBT; MERGE PREVALMBT ALMBT(IN=A); IF A; BY ACCTNO TRANSREF;
+almbt = (sas_merge(prevalmbt, almbt, ["ACCTNO", "TRANSREF"])
+         .filter(pl.col("__B") == 1).drop(["__A", "__B"]))
+almbt = almbt.with_columns(
+    (((pl.col("REPAID").fill_null(0.0) - pl.col("PREREPAID").fill_null(0.0)) * 100).round(0) / 100).alias("REPAID"),
+    (((pl.col("DISBURSE").fill_null(0.0) - pl.col("PREDISBURSE").fill_null(0.0)) * 100).round(0) / 100).alias("DISBURSE"),
+)
+almbt = almbt.with_columns(
+    pl.when(pl.col("REPAID") < 0).then(0.0).otherwise(pl.col("REPAID")).alias("REPAID"),
+    pl.when(pl.col("DISBURSE") < 0).then(0.0).otherwise(pl.col("DISBURSE")).alias("DISBURSE"),
+)
+
+# *** SUMMARY *** / *** NO OF A/C ***
+almbt = almbt.with_columns(
+    pl.when(pl.col("RETAILID") == "C").then(pl.lit("BILLS CORPORATE")).otherwise(pl.lit("BILLS RETAIL")).alias("PRODESC"),
+    pl.col("SECTORCD").map_elements(format_fisstype, return_dtype=pl.Utf8).alias("SECTTYPE"),
+    pl.col("SECTORCD").map_elements(format_fissgroup, return_dtype=pl.Utf8).alias("SECTGROUP"),
+)
+mast = mast.with_columns(
+    pl.when(pl.col("RETAILID") == "C").then(pl.lit("BILLS CORPORATE")).otherwise(pl.lit("BILLS RETAIL")).alias("PRODESC"),
+    pl.col("SECTORCD").map_elements(format_fisstype, return_dtype=pl.Utf8).alias("SECTTYPE"),
+    pl.col("SECTORCD").map_elements(format_fissgroup, return_dtype=pl.Utf8).alias("SECTGROUP"),
+)
+
+con.close()
+gc.collect()
+
+almbtrd  = summarize(almbt, ["PRODESC"], ["DISBURSE", "REPAID", "BALANCE"])
+mastloan = summarize(mast, ["PRODESC"], ["DISBNO", "REPAYNO", "NOACCT"])
+almbtrd  = pl_join(almbtrd, mastloan, on="PRODESC", how="full", coalesce=True)
+print(f"  ALMBTRD rows: {len(almbtrd):,}")
+
+
+
+
+_cur_cols = set(pq.read_schema(BNM_LOAN_CUR_PQ).names)
+_sel7 = [c for c in LOAN_FAMILY_COLS if c != "ACCTYPE"]
+_sel7.append("ACCTYPE" if "ACCTYPE" in _cur_cols else
+             "CASE WHEN ACCTNO BETWEEN 3000000000 AND 3999999999 THEN 'OD' ELSE 'LN' END AS ACCTYPE")
+_sel7.append("NOACCT" if "NOACCT" in _cur_cols else "CAST(NULL AS DOUBLE) AS NOACCT")
+
+loan_raw_current = con.execute(f"""
+    SELECT {', '.join(_sel7)}
+    FROM read_parquet('{BNM_LOAN_CUR_PQ}')
+""").pl()
+
+
+
+
+# ============================================================================
+# STEP 8: ALM / ALMBT split
+# ============================================================================
+print("\nStep 8: Building ALM / ALMBT (loan classification + NOACCT logic)...")
+
+con = duckdb.connect(database=":memory:")
+con.register("loan_raw_current", loan_raw_current.to_arrow())
+con.register("lncomm", lncomm.to_arrow())
+
+# SAS missing < any number, missing ^= 0: modelled with COALESCE(x, -1e300)
+alm_base = con.execute("""
+    WITH base AS (
+        SELECT
+            l.ACCTNO, l.NOTENO, l.FISSPURP, l.PRODUCT, l.NOTETERM, l.EARNTERM,
+            l.BALANCE AS ORIBAL, l.BAL_AFT_EIR AS BALANCE,
+            l.PAIDIND, l.APPRDATE, l.APPRLIM2, l.PRODCD, l.CUSTCD, l.AMTIND,
+            l.SECTORCD, l.ACCTYPE, l.BRANCH, l.DNBFISME, l.COMMNO,
+            l.EIR_ADJ, l.CJFEE, l.RLEASAMT, c.CUSEDAMT,
+            l.NOACCT AS NOACCT_SRC,
+            (COALESCE(l.PAIDIND, '') NOT IN ('P', 'C')) AS PNOTPC
+        FROM loan_raw_current l
+        LEFT JOIN lncomm c
+               ON l.ACCTNO = c.ACCTNO AND l.COMMNO IS NOT DISTINCT FROM c.COMMNO
+        WHERE COALESCE(l.PAIDIND, '') NOT IN ('P', 'C') OR l.EIR_ADJ IS NOT NULL
+    ),
+    kept AS (
+        SELECT * FROM base
+        WHERE (ORIBAL IS NULL OR ROUND(ORIBAL, 2) <> 0)                  -- IF ORIBAL=-.00 / BALX IN (0,-0) THEN DELETE
+          AND (SUBSTR(PRODCD, 1, 2) = '34' OR PRODCD = '54120')          -- IF SUBSTR(PRODCD,1,2)='34' OR PRODCD='54120';
+    ),
+    step1 AS (
+        SELECT *,
+            CASE WHEN ACCTYPE = 'LN' THEN
+                CASE WHEN (COALESCE(RLEASAMT, -1e300) <> 0 AND PNOTPC AND ORIBAL > 0
+                           AND COALESCE(CJFEE, -1e300) <> COALESCE(ORIBAL, -1e300))
+                       OR (COALESCE(RLEASAMT, -1e300) = 0 AND PNOTPC AND ORIBAL > 0
+                           AND PRODUCT BETWEEN 600 AND 699)
+                       OR (COALESCE(RLEASAMT, -1e300) = 0 AND PNOTPC AND ORIBAL > 0
+                           AND COALESCE(COMMNO, -1e300) > 0 AND COALESCE(CUSEDAMT, -1e300) > 0)
+                     THEN NOACCT_SRC ELSE 0 END
+                 ELSE NOACCT_SRC END AS N1
+        FROM kept
+    )
+    SELECT
+        ACCTNO, NOTENO, FISSPURP, PRODUCT, NOTETERM, EARNTERM, ORIBAL, BALANCE,
+        PAIDIND, APPRDATE, APPRLIM2, PRODCD, CUSTCD, AMTIND, SECTORCD, ACCTYPE,
+        BRANCH, DNBFISME, COMMNO, EIR_ADJ, CJFEE, RLEASAMT, CUSEDAMT,
+        CASE WHEN PNOTPC AND (N1 IS NULL OR N1 <> 0)
+                  AND ORIBAL IS NOT NULL AND ROUND(ORIBAL, 2) <> 0
+             THEN 1 ELSE N1 END AS NOACCT,
+        COALESCE((ACCTNO BETWEEN 2850000000 AND 2859999999 AND NOTENO BETWEEN 40000 AND 49999)
+                 OR PRODUCT = 444, FALSE) AS IS_ALMBT
+    FROM step1
+""").pl()
+
+con.close()
+
+# PROC SORT DATA=LOAN; BY ACCTNO COMMNO;  (stable; ties by NOTENO)
+alm_base = alm_base.with_columns(pl.col("NOACCT").cast(pl.Int64)).sort(
+    ["ACCTNO", "COMMNO", "NOTENO"], maintain_order=True)
+alm_split   = alm_base.filter(~pl.col("IS_ALMBT")).drop("IS_ALMBT")
+almbt_split = alm_base.filter(pl.col("IS_ALMBT")).drop("IS_ALMBT")
+
+# DATA ALM; SET ALM; BY ACCTNO COMMNO;
+#   IF FIRST.ACCTNO OR FIRST.COMMNO THEN UNQ=0;
+#   IF PRODCD IN ('34170','34190','34690') THEN DO; UNQ+NOACCT; IF UNQ>1 THEN NOACCT=0; END;
+_in_unq = pl.col("PRODCD").is_in(["34170", "34190", "34690"]).fill_null(False)
+alm_split = (
+    alm_split
+    .with_columns(
+        pl.when(_in_unq).then(pl.col("NOACCT").fill_null(0)).otherwise(0)
+          .cum_sum().over(["ACCTNO", "COMMNO"]).alias("_UNQ"))
+    .with_columns(
+        pl.when(_in_unq & (pl.col("_UNQ") > 1)).then(0).otherwise(pl.col("NOACCT")).alias("NOACCT"))
+    .drop("_UNQ")
+)
+
+# DATA ALMBT; SET ALMBT; BY ACCTNO; IF FIRST.ACCTNO THEN NOACCT=1; ELSE NOACCT=0;
+almbt_split = almbt_split.with_columns(
+    pl.col("ACCTNO").is_first_distinct().cast(pl.Int64).alias("NOACCT"))
+
+alm = pl.concat([alm_split, almbt_split])
+del alm_base, alm_split, almbt_split
+gc.collect()
+print(f"  ALM (combined) rows: {len(alm):,}")
+
+
+
+
+# ============================================================================
+# STEP 14: ALM2 / ALMBTCR / ALMLOAN2 / ALM2CRF  (retail commercial breakdown)
+# ============================================================================
+print("\nStep 14: Building retail commercial (ALM2/ALMBTCR) breakdown...")
+
+alm2_src = alm2.filter(pl.col("PRODESC").is_in(["OD RETAIL", "OTHERS RETAIL"]))
+
+# FISSPURP IN &ODFISS : numeric macro list, so '0311' compares as 311
+_is_odfiss = (pl.col("FISSPURP").cast(pl.Utf8).str.strip_chars()
+              .cast(pl.Float64, strict=False).cast(pl.Int64, strict=False).is_in(sorted(ODFISS)))
+_is_stfln  = (pl.col("PRODUCT").cast(pl.Float64, strict=False)
+              .cast(pl.Int64, strict=False).is_in(sorted(STFLN)))
+
+alm2_tbl = alm2_src.with_columns(
+    pl.when(pl.col("PRODESC") == "OD RETAIL")
+      .then(pl.when(_is_odfiss.fill_null(False))
+              .then(pl.lit("PURCHASE OF RESIDENTIAL PROPERTY"))
+              .otherwise(pl.lit("TOTAL COMMERCIAL RETAILS")))
+      .otherwise(pl.when(_is_stfln.fill_null(False))
+              .then(pl.lit("STAFF FINANCING"))
+              .otherwise(pl.lit("TOTAL COMMERCIAL RETAILS")))
+      .alias("_NEWDESC"),
+    pl.when(pl.col("PRODESC") == "OD RETAIL")
+      .then(pl.lit("CASH LINE FACILITY")).otherwise(pl.lit("FIXED FINANCING")).alias("TYPE"),
+    _code_pl(alm2_src, "CUSTCD").alias("CUSTCD"),
+).drop("PRODESC").rename({"_NEWDESC": "PRODESC"})
+
+almbtcr = almbtrd.filter(pl.col("PRODESC") == "BILLS RETAIL").with_columns([
+    pl.lit("TOTAL COMMERCIAL RETAILS").alias("PRODESC"),
+    pl.lit("BANK TRADE").alias("TYPE"),
+])
+
+almloan2_raw = pl.concat(
+    [alm2_tbl.select(["PRODESC", "TYPE", "CUSTCD"] + VAR_COLS),
+     almbtcr.select(["PRODESC", "TYPE"] + VAR_COLS).with_columns(pl.lit(None).cast(pl.Utf8).alias("CUSTCD"))],
+    how="diagonal_relaxed")
+
+alm2crf_raw = almloan2_raw.filter(pl.col("PRODESC") == "TOTAL COMMERCIAL RETAILS").with_columns(
+    pl.when(pl.col("CUSTCD").is_in(["77", "78", "95", "96"]))
+      .then(pl.lit("COMMERCIAL RETAIL - IND"))
+      .otherwise(pl.lit("COMMERCIAL RETAIL - NON IND"))
+      .alias("PRODESC")
+)
+
+almloan2 = summarize(almloan2_raw, ["PRODESC"], VAR_COLS)
+alm2crf  = summarize(alm2crf_raw, ["PRODESC"], VAR_COLS)
+
+
+
+
+# ============================================================================
+# STEP 15: SME / DBE / DNBFI / FBE breakdowns
+# ============================================================================
+print("\nStep 15: Building SME/DBE/DNBFI/FBE breakdowns...")
+
+# ALM-based (SET ALM)
+almsme, dbe, dnbfi, fbe = _sme_splits(alm2)
+almsme_sum = summarize(almsme, ["PRODESC"], VAR_COLS)
+dbe_sum    = summarize(dbe,    ["PRODESC"], VAR_COLS)
+dnbfi_sum  = summarize(dnbfi,  ["PRODESC"], VAR_COLS)
+fbe_sum    = summarize(fbe,    ["PRODESC"], VAR_COLS)
+
+# ALM2-based (SET ALM2) -- DNBFISME is carried in ALM2, so DNBFI2 is real
+almsme2, dbe2, dnbfi2, fbe2 = _sme_splits(alm2_tbl)
+dnbfi2_sum = summarize(dnbfi2, ["PRODESC"], VAR_COLS)
+fbe2_sum   = summarize(fbe2,   ["PRODESC"], VAR_COLS)
+
+# BT side: DATA ALMSMEBT; SET ALMBT; IF SME... / DATA MASTSME; SET MAST; IF SME...
+almsmebt = _sme_splits(almbt)[0]
+mastsme  = _sme_splits(mast)[0]
+
+almsmebt_sum = summarize(almsmebt, ["PRODESC", "CUSTCD", "DNBFISME"], ["DISBURSE", "REPAID", "BALANCE"])
+mastsme_sum  = summarize(mastsme,  ["PRODESC", "CUSTCD", "DNBFISME"], ["DISBNO", "REPAYNO", "NOACCT"])
+
+# DATA ALMSMEBT DBEBT DNBFIBT FBEBT; MERGE ALMSMEBT MASTSME; BY PRODESC CUSTCD DNBFISME;
+almsmebt_full = pl_join(almsmebt_sum, mastsme_sum, on=["PRODESC", "CUSTCD", "DNBFISME"],
+                        how="full", coalesce=True)
+_, dbebt, dnbfibt, fbebt = _sme_splits(almsmebt_full)
+
+almbtrd2    = summarize(almsmebt_full, ["PRODESC"], VAR_COLS)
+dbebt_sum   = summarize(dbebt,   ["PRODESC"], VAR_COLS)
+dnbfibt_sum = summarize(dnbfibt, ["PRODESC"], VAR_COLS)
+fbebt_sum   = summarize(fbebt,   ["PRODESC"], VAR_COLS)
+
+# DATA ALMBTCR2 DBEBT2; SET ALMSMEBT; WHERE PRODESC='BILLS RETAIL'; ...
+almbtcr2 = almsmebt_full.filter(pl.col("PRODESC") == "BILLS RETAIL").with_columns(
+    pl.lit("TOTAL COMMERCIAL RETAILS").alias("PRODESC"))
+dbebt2 = _sme_splits(almbtcr2)[1]
+
+almloan2_sme = summarize(pl.concat([almsme2, almbtcr2], how="diagonal_relaxed"), ["PRODESC"], VAR_COLS)
+almloan3     = summarize(pl.concat([dbe2, dbebt2],      how="diagonal_relaxed"), ["PRODESC"], VAR_COLS)
+
+print("  SME/DBE/DNBFI/FBE breakdowns complete.")
+
+
+
+
+with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
+    for ln in output_lines:
+        asa = "1" if ln.startswith(DEFAULT_TITLE1) else " "     # banner line = first line of a page
+        fh.write(f"{asa}{ln[:LRECL - 1]:<{LRECL - 1}}\n")        # 1 ASA byte + 132 data bytes = LRECL 133
+
+
+
+
+IDEPOSIT_DAY = f"{(_reptdate - timedelta(days=1)).day:02d}"      # MNITB(-1) = previous generation
+
+
+
+
+IDEPOSIT_CUR_SAS = IDEPOSIT_DIR / f"intg_dp_acct_current_d{IDEPOSIT_DAY}.sas7bdat"       # 9. IDEPOSIT.CURRENT (MNITB(-1))
+
+
+
+
+REPTYEAR1 = f"{(_reptdate.year - 1) % 100:02d}" if (NOWK == '1' and _mm == 1) else REPTYEAR
+
+
+
+
+BTBNM_PRV_SAS    = BTBNM_DIR    / f"ibtrad{REPTMON1}{NOWK3}{REPTYEAR1}.sas7bdat"     # 6. BTBNM.IBTRAD&REPTMON1&NOWK3
+
+
+
+
+def summarize(df: pl.DataFrame, class_cols: list[str], var_cols: list[str]) -> pl.DataFrame:
+    """PROC SUMMARY NWAY MISSING equivalent -- missing (not 0) when all values are missing."""
+    return df.group_by(class_cols, maintain_order=True).agg([_ssum(c) for c in var_cols])
+
+
+
+
+totals = {c: None for c, _, _ in NUM_SPECS}
+
+
+
+
+totals[c] = (totals[c] or 0.0) + v
+
+
+
+
+_SECT = ["SECTGROUP", "SECTTYPE"]
+
+mastsec = (mast.filter(_present(mast, _SECT))
+               .group_by(_SECT, maintain_order=True).agg(_ssum("NOACCT")))
+almbtsec_raw = (almbt.filter(_present(almbt, _SECT))
+                     .group_by(_SECT, maintain_order=True).agg(_ssum("BALANCE")))
+almbtsec = pl_join(mastsec, almbtsec_raw, on=_SECT, how="left").with_columns(
+    pl.lit("TOTAL COMMERCIAL RETAILS").alias("PRODESC"))
+
+almsec_src = pl.concat([
+    alm2_tbl.select(["PRODESC", "SECTGROUP", "SECTTYPE", "BALANCE", "NOACCT"]),
+    almbtsec.select(["PRODESC", "SECTGROUP", "SECTTYPE", "BALANCE", "NOACCT"]),
+], how="diagonal_relaxed")
+almsec_src = almsec_src.filter(
+    (pl.col("PRODESC") == "TOTAL COMMERCIAL RETAILS")
+    & pl.col("BALANCE").is_not_null() & (pl.col("BALANCE") != 0)
+).filter(_present(almsec_src, _SECT))                    # TABULATE drops missing CLASS values
+
+tabulate_sector = (
+    almsec_src.group_by(_SECT, maintain_order=True)
+              .agg([pl.col("BALANCE").sum(), pl.col("NOACCT").sum()])
+              .sort(_SECT)
+)
+
+
+
+
