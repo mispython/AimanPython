@@ -1,52 +1,93 @@
-CISDP_SA_CACHE     = CACHE_DIR / "cisdp_sa.parquet"        # raw cache: cisr1sa
-CISDP_FD_CACHE     = CACHE_DIR / "cisdp_fd.parquet"        # raw cache: cisr1fd
-CISDP_CACHE        = CACHE_DIR / "cisdp_deposit.parquet"   # combined SA + FD (passed to DALWPBBD)
+SOURCE_COLUMNS = ["ACCTNO", "CUSTCD", "CURCODE", "CURBALRM", "MATDATE", "ORGDATE",
+                  "ORIGAMT", "RATE", "BRANCH", "FORATE"]
+
+# Columns needed from intg_dp_acct_current_d{REPDD} (NAME is not in the fcy dataset)
+NAME_LOOKUP_COLUMNS = ["ACCTNO", "NAME"]
 
 
 
 
-def _build_cisdp_combined(sa_cache: Path, fd_cache: Path, out_cache: Path, tag: str) -> Path:
-    """Combine the CIS savings (cisr1sa) and FD (cisr1fd) extracts into the
-    single CISDP (ACCTNO, CUSTNO) dataset that DALWPBBD expects.
-
-    One row per ACCTNO is kept (SA takes priority over FD) so the later
-    DALWPBBD left join (BY ACCTNO; IF A) can never duplicate FCY rows.
-    The cache folder is temporary, so the combined file is rebuilt every run.
+def read_fd() -> pd.DataFrame:
     """
-    print(f"  [{tag}] Combining {sa_cache.name} + {fd_cache.name} -> {out_cache.name} ...")
-    con = duckdb.connect(database=":memory:")
-    try:
-        con.execute(f"""
-            COPY (
-                SELECT ACCTNO, CUSTNO
-                FROM (
-                    SELECT CAST(ACCTNO AS BIGINT)  AS ACCTNO,
-                           CAST(CUSTNO AS VARCHAR) AS CUSTNO,
-                           1 AS SRC
-                    FROM read_parquet('{sa_cache.as_posix()}')
-                    UNION ALL
-                    SELECT CAST(ACCTNO AS BIGINT)  AS ACCTNO,
-                           CAST(CUSTNO AS VARCHAR) AS CUSTNO,
-                           2 AS SRC
-                    FROM read_parquet('{fd_cache.as_posix()}')
+    Convert FCY_PATH and FD_PATH (intg_dp_acct_current) to temporary Parquet
+    files, then in DuckDB read the needed fcy columns and LEFT JOIN NAME from
+    the account dataset on ACCTNO. Temp files are deleted afterwards.
+
+    - LEFT JOIN: fcy rows with no matching ACCTNO are kept (NAME = blank),
+      so balances and counts in the summary report are unaffected.
+    - The NAME lookup is reduced to one row per ACCTNO first, so a duplicate
+      ACCTNO in the account dataset cannot multiply fcy rows.
+    - The dataset is PBB-only, so no ENTITY_CD filter is applied.
+    """
+    if not FD_PATH.exists():
+        raise FileNotFoundError(f"Account dataset not found: {FD_PATH}")
+
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        fcy_parquet  = Path(tmp) / "fcy.parquet"
+        acct_parquet = Path(tmp) / "acct_current.parquet"
+        sas_to_parquet(FCY_PATH, fcy_parquet)
+        sas_to_parquet(FD_PATH, acct_parquet)
+
+        fcy_names = pq.read_schema(str(fcy_parquet)).names
+        missing = [c for c in SOURCE_COLUMNS if c not in fcy_names]
+        if missing:
+            raise KeyError(f"{FCY_PATH.name} is missing expected columns: {missing}")
+
+        acct_names = pq.read_schema(str(acct_parquet)).names
+        acct_missing = [c for c in NAME_LOOKUP_COLUMNS if c not in acct_names]
+        if acct_missing:
+            raise KeyError(f"{FD_PATH.name} is missing expected columns: {acct_missing}")
+
+        fcy_sql  = fcy_parquet.as_posix()
+        acct_sql = acct_parquet.as_posix()
+        select_cols = ", ".join(f"f.{c}" for c in SOURCE_COLUMNS)
+
+        con = duckdb.connect()
+        try:
+            dup_accts = con.execute(
+                f"""
+                SELECT COUNT(*) FROM (
+                    SELECT TRY_CAST(ACCTNO AS BIGINT) AS ACCTNO
+                    FROM read_parquet('{acct_sql}')
+                    WHERE ACCTNO IS NOT NULL
+                    GROUP BY 1
+                    HAVING COUNT(*) > 1
                 )
-                QUALIFY ROW_NUMBER() OVER (PARTITION BY ACCTNO ORDER BY SRC) = 1
-            ) TO '{out_cache.as_posix()}' (FORMAT PARQUET)
-        """)
-        total = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{out_cache.as_posix()}')"
-        ).fetchone()[0]
-    finally:
-        con.close()
-    print(f"  [{tag}] Done - {total:,} combined rows.")
-    return out_cache
+                """
+            ).fetchone()[0]
+            if dup_accts:
+                print(f"[EIBDPTER] WARNING: {dup_accts:,} ACCTNO appear more than once in "
+                      f"{FD_PATH.name}; one NAME per ACCTNO is used (non-blank preferred)")
 
+            # MAX() prefers a real name over a blank one when an ACCTNO repeats
+            df = con.execute(
+                f"""
+                WITH acct AS (
+                    SELECT TRY_CAST(ACCTNO AS BIGINT) AS ACCTNO,
+                           MAX(TRIM(COALESCE(CAST(NAME AS VARCHAR), ''))) AS NAME
+                    FROM read_parquet('{acct_sql}')
+                    WHERE ACCTNO IS NOT NULL
+                    GROUP BY 1
+                )
+                SELECT {select_cols},
+                       COALESCE(a.NAME, '') AS NAME
+                FROM read_parquet('{fcy_sql}') f
+                LEFT JOIN acct a
+                       ON TRY_CAST(f.ACCTNO AS BIGINT) = a.ACCTNO
+                """
+            ).df()
+        finally:
+            con.close()
+    # temp folder and Parquet files are removed here
 
+    no_name = int((df["NAME"] == "").sum())
+    print(f"[EIBDPTER] NAME merged on ACCTNO: {len(df) - no_name:,} matched, "
+          f"{no_name:,} without a name")
 
-
-_load_cached(INPUT_CISDP_SA_FILE, CISDP_SA_CACHE,    "CISDP-SA")
-_load_cached(INPUT_CISDP_FD_FILE, CISDP_FD_CACHE,    "CISDP-FD")
-_build_cisdp_combined(CISDP_SA_CACHE, CISDP_FD_CACHE, CISDP_CACHE, "CISDP")
+    clash = [c for c in COLUMN_MAP.values() if c in df.columns]
+    if clash:
+        raise ValueError(f"{FCY_PATH.name} already has columns named {clash}")
+    return df.rename(columns=COLUMN_MAP)
 
 
 
