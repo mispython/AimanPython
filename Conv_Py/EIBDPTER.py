@@ -115,8 +115,8 @@ def get_sftp_info(host_desc: str):
 # REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = DP)
 # OPTIONS YEARCUTOFF=1950 is applied in _parse_orgdate
 # ============================================================
-REPTDATE = get_batch_date(BATCH_SOURCE)      # date object (T)
-# REPTDATE = date(2026, 10, 27)         # UAT testing date
+# REPTDATE = get_batch_date(BATCH_SOURCE)      # date object (T)
+REPTDATE = date(2026, 11, 12)         # UAT testing date
 T1       = REPTDATE + timedelta(days=1)
 T2       = REPTDATE + timedelta(days=2)
 T3       = REPTDATE + timedelta(days=3)
@@ -130,22 +130,23 @@ REPYMD = REPTDATE.strftime("%y%m%d")         # date token in input filename
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-# Production Path
-INPUT_DIR  = Path("/dwh/dp_fcy")
-FCY_PATH   = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
-
-# For NAME column, merge with FCY_PATH using ACCTNO
-FD_PATH    = Path("/sas/deposit/dwh/integration") / f"intg_dp_acct_current_d{REPDD}.sas7bdat"
-
-OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBDPTER")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# # Testing Path
-# BASE_DIR   = Path("/stgsrcsys/host/uat/AII")
-# INPUT_DIR  = BASE_DIR / "from_dwh"
+# # Production Path
+# INPUT_DIR  = Path("/dwh/dp_fcy")
 # FCY_PATH   = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
-# OUTPUT_DIR = BASE_DIR / "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS" / "output" / "EIBDPTER"
+
+# # For NAME column, merge with FCY_PATH using ACCTNO
+# FD_PATH    = Path("/sas/deposit/dwh/integration") / f"intg_dp_acct_current_d{REPDD}.sas7bdat"
+
+# OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBDPTER")
 # OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Testing Path
+BASE_DIR   = Path("/stgsrcsys/host/uat/AII")
+INPUT_DIR  = BASE_DIR / "EIBDPTER"
+FCY_PATH   = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
+FD_PATH    = INPUT_DIR / f"intg_dp_acct_current_d{REPDD}.sas7bdat"
+OUTPUT_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS") / "output" / "EIBDPTER" / "test"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_FDTEXT = OUTPUT_DIR / "FCYFD_REP1.txt"   # SAP.PBB.FCYFD.REP1.TEXT
 OUTPUT_FDDETL = OUTPUT_DIR / "FCYFD_REP2.txt"   # SAP.PBB.FCYFD.REP2.TEXT
@@ -220,32 +221,89 @@ COLUMN_MAP = {
     "CURBALRM": "CURBAL",   # RM balance; build_fcyt then divides by FORATE to get FCY
 }
 
-SOURCE_COLUMNS = ["CUSTCD", "CURCODE", "CURBALRM", "MATDATE", "ORGDATE",
+SOURCE_COLUMNS = ["ACCTNO", "CUSTCD", "CURCODE", "CURBALRM", "MATDATE", "ORGDATE",
                   "ORIGAMT", "RATE", "BRANCH", "FORATE"]
+
+# Columns needed from intg_dp_acct_current_d{REPDD} (NAME is not in the fcy dataset)
+NAME_LOOKUP_COLUMNS = ["ACCTNO", "NAME"]
 
 
 def read_fd() -> pd.DataFrame:
     """
-    Convert FCY_PATH to a temporary Parquet file, read only the needed columns
-    via DuckDB, then delete the temp file. The dataset is PBB-only, so no
-    ENTITY_CD filter is applied.
-    """
-    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
-        tmp_parquet = Path(tmp) / "fcy.parquet"
-        sas_to_parquet(FCY_PATH, tmp_parquet)
+    Convert FCY_PATH and FD_PATH (intg_dp_acct_current) to temporary Parquet
+    files, then in DuckDB read the needed fcy columns and LEFT JOIN NAME from
+    the account dataset on ACCTNO. Temp files are deleted afterwards.
 
-        missing = [c for c in SOURCE_COLUMNS if c not in pq.read_schema(str(tmp_parquet)).names]
+    - LEFT JOIN: fcy rows with no matching ACCTNO are kept (NAME = blank),
+      so balances and counts in the summary report are unaffected.
+    - The NAME lookup is reduced to one row per ACCTNO first, so a duplicate
+      ACCTNO in the account dataset cannot multiply fcy rows.
+    - The dataset is PBB-only, so no ENTITY_CD filter is applied.
+    """
+    if not FD_PATH.exists():
+        raise FileNotFoundError(f"Account dataset not found: {FD_PATH}")
+
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        fcy_parquet  = Path(tmp) / "fcy.parquet"
+        acct_parquet = Path(tmp) / "acct_current.parquet"
+        sas_to_parquet(FCY_PATH, fcy_parquet)
+        sas_to_parquet(FD_PATH, acct_parquet)
+
+        fcy_names = pq.read_schema(str(fcy_parquet)).names
+        missing = [c for c in SOURCE_COLUMNS if c not in fcy_names]
         if missing:
             raise KeyError(f"{FCY_PATH.name} is missing expected columns: {missing}")
 
+        acct_names = pq.read_schema(str(acct_parquet)).names
+        acct_missing = [c for c in NAME_LOOKUP_COLUMNS if c not in acct_names]
+        if acct_missing:
+            raise KeyError(f"{FD_PATH.name} is missing expected columns: {acct_missing}")
+
+        fcy_sql  = fcy_parquet.as_posix()
+        acct_sql = acct_parquet.as_posix()
+        select_cols = ", ".join(f"f.{c}" for c in SOURCE_COLUMNS)
+
         con = duckdb.connect()
         try:
+            dup_accts = con.execute(
+                f"""
+                SELECT COUNT(*) FROM (
+                    SELECT TRY_CAST(ACCTNO AS BIGINT) AS ACCTNO
+                    FROM read_parquet('{acct_sql}')
+                    WHERE ACCTNO IS NOT NULL
+                    GROUP BY 1
+                    HAVING COUNT(*) > 1
+                )
+                """
+            ).fetchone()[0]
+            if dup_accts:
+                print(f"[EIBDPTER] WARNING: {dup_accts:,} ACCTNO appear more than once in "
+                      f"{FD_PATH.name}; one NAME per ACCTNO is used (non-blank preferred)")
+
+            # MAX() prefers a real name over a blank one when an ACCTNO repeats
             df = con.execute(
-                f"SELECT {', '.join(SOURCE_COLUMNS)} "
-                f"FROM read_parquet('{tmp_parquet.as_posix()}')"
+                f"""
+                WITH acct AS (
+                    SELECT TRY_CAST(ACCTNO AS BIGINT) AS ACCTNO,
+                           MAX(TRIM(COALESCE(CAST(NAME AS VARCHAR), ''))) AS NAME
+                    FROM read_parquet('{acct_sql}')
+                    WHERE ACCTNO IS NOT NULL
+                    GROUP BY 1
+                )
+                SELECT {select_cols},
+                       COALESCE(a.NAME, '') AS NAME
+                FROM read_parquet('{fcy_sql}') f
+                LEFT JOIN acct a
+                       ON TRY_CAST(f.ACCTNO AS BIGINT) = a.ACCTNO
+                """
             ).df()
         finally:
             con.close()
+    # temp folder and Parquet files are removed here
+
+    no_name = int((df["NAME"] == "").sum())
+    print(f"[EIBDPTER] NAME merged on ACCTNO: {len(df) - no_name:,} matched, "
+          f"{no_name:,} without a name")
 
     clash = [c for c in COLUMN_MAP.values() if c in df.columns]
     if clash:
@@ -552,9 +610,9 @@ def write_fdtext(fcyt: pd.DataFrame, repdt: str) -> None:
             fh.write(line + "\n")
 
     print(f"[FDTEXT] Written {len(lines)} lines -> {OUTPUT_FDTEXT}")
-    # Print to terminal
-    for line in lines:
-        print(line)
+    # # Print to terminal
+    # for line in lines:
+    #     print(line)
 
 
 # ============================================================
@@ -693,9 +751,9 @@ def write_fddetl(cust: pd.DataFrame, repdt: str) -> None:
             fh.write(line + "\n")
 
     print(f"[FDDETL] Written {len(lines)} lines -> {OUTPUT_FDDETL}")
-    # Print to terminal
-    for line in lines:
-        print(line)
+    # # Print to terminal
+    # for line in lines:
+    #     print(line)
 
 
 # ============================================================
@@ -747,7 +805,7 @@ def main() -> None:
     print(f"[EIBDPTER] T3 = {T3}")
 
     # --- Read FD dataset -----------------------------------------------
-    print(f"[EIBDPTER] Reading {FCY_PATH} ...")
+    print(f"[EIBDPTER] Reading {FCY_PATH} + {FD_PATH} ...")
     fd_df = read_fd()
 
     # --- FCY maturity split --------------------------------------------
