@@ -50,10 +50,10 @@ REPTYEAR2 = REPTDATE.strftime("%Y")     # PUT(REPTDATE,YEAR4.)
 # PATH CONFIGURATION
 # ============================================================================
 # Production Path
-INPUT_DIR  = Path("/dwh/dp_tlr")
-# CIT_DIR    = Path("/host_pq/mis/parquet/EIBMCITR")
-CIT_DIR    = Path("/exdwh/host/teller/cit/sasdata")
-OUTPUT_DIR = Path("/host_pq/mis/output/report/EIBMCITR")
+INPUT_DIR   = Path("/dwh/dp_tlr")
+CIT_DIR     = Path("/host_pq/mis/parquet/EIBMCITR")
+CIT_DIR_SAS = Path("/exdwh/host/teller/cit/sasdata")
+OUTPUT_DIR  = Path("/host_pq/mis/output/report/EIBMCITR")
 
 # # Testing Path
 # BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
