@@ -630,7 +630,7 @@ def write_fdtext(fcyt: pd.DataFrame, repdt: str) -> None:
 
 def build_cust(df: pd.DataFrame) -> pd.DataFrame:
     """Build the CUST detail dataset."""
-    keep_cols = ["ORIGAMT", "ORGDATE", "MATDATE", "NAME",
+    keep_cols = ["ACCTNO", "ORIGAMT", "ORGDATE", "MATDATE", "NAME",
                  "CURCODE", "RATE", "CURBAL", "CUSTCD", "BRANCH"]
     # Keep only columns that exist in the dataset
     available = [c for c in keep_cols if c in df.columns]
@@ -827,6 +827,17 @@ def main() -> None:
 
     # --- Build CUST detail dataset -------------------------------------
     cust = build_cust(fd_df)
+
+    # DEBUG: Check customers with missing NAME
+    missing_name = cust[
+        cust["NAME"].isna() |
+        cust["NAME"].astype(str).str.strip().eq("")
+    ]
+
+    print(f"[DEBUG] FDDETL records with blank NAME: {len(missing_name)}")
+    print(missing_name[["ACCTNO", "CURCODE", "CURBAL"]].head(20).to_string(index=False))
+    # DEBUG ENDED
+
     print(f"[EIBDPTER] Customers with FCY balance > 1M: {len(cust)}")
 
     # --- Write FDDETL (detail) -----------------------------------------
