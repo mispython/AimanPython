@@ -58,8 +58,8 @@ def get_batch_date(source_system_cd: str) -> date:
 # REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = DP)
 # OPTIONS YEARCUTOFF=1950 is applied in _parse_orgdate
 # ============================================================
-# REPTDATE = get_batch_date(BATCH_SOURCE)      # date object (T)
-REPTDATE = date(2026, 10, 27)         # UAT testing date
+REPTDATE = get_batch_date(BATCH_SOURCE)      # date object (T)
+# REPTDATE = date(2026, 10, 27)         # UAT testing date
 T1       = REPTDATE + timedelta(days=1)
 T2       = REPTDATE + timedelta(days=2)
 T3       = REPTDATE + timedelta(days=3)
@@ -73,21 +73,21 @@ REPYMD = REPTDATE.strftime("%y%m%d")         # date token in input filename
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-# # Production Path
-# INPUT_DIR  = Path("/dwh/dp_fcy")
-# FCY_PATH   = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
-# OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report")
-# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Testing Path
-BASE_DIR   = Path("/stgsrcsys/host/uat/AII")
-INPUT_DIR  = BASE_DIR / "from_dwh"
+# Production Path
+INPUT_DIR  = Path("/dwh/dp_fcy")
 FCY_PATH   = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
-OUTPUT_DIR = BASE_DIR / "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS" / "output" / "EIBDPTER"
+OUTPUT_DIR = Path("/host_pq/mis/output/deposit/report")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_FDTEXT = OUTPUT_DIR / "FCYFD_REP1_test.txt"   # SAP.PBB.FCYFD.REP1.TEXT
-OUTPUT_FDDETL = OUTPUT_DIR / "FCYFD_REP2_test.txt"   # SAP.PBB.FCYFD.REP2.TEXT
+# # Testing Path
+# BASE_DIR   = Path("/stgsrcsys/host/uat/AII")
+# INPUT_DIR  = BASE_DIR / "from_dwh"
+# FCY_PATH   = INPUT_DIR / f"fcy{REPYMD}.sas7bdat"
+# OUTPUT_DIR = BASE_DIR / "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS" / "output" / "EIBDPTER"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+OUTPUT_FDTEXT = OUTPUT_DIR / "FCYFD_REP1.txt"   # SAP.PBB.FCYFD.REP1.TEXT
+OUTPUT_FDDETL = OUTPUT_DIR / "FCYFD_REP2.txt"   # SAP.PBB.FCYFD.REP2.TEXT
 
 CHUNK_ROWS = 500_000
 TEMP_DIR   = None   # None = system temp; set a path if the default temp area is too small
