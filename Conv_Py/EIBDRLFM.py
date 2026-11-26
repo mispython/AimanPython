@@ -45,16 +45,9 @@ CALLING program - this module never resolves or caches its own paths):
                                      DALWPBBD.build_savg_curn_dept)
 
 Outputs:
-    LCR.FD/SA/CA/FCYCA&REPTDAY : detail extracts -> persisted as parquet
-                                 (LCR DD is a catalogued GDG(+1) SAS
-                                 dataset library, not a text report;
-                                 generation management is not
-                                 reproduced, each run simply writes a
-                                 fresh file per REPTDAY, per project
-                                 convention for structured non-report
-                                 outputs, see DALWPBBD.py).
-    NLF.NOTE&REPTYEAR&REPTMON&REPTDAY : persisted as parquet (permanent
-                                 SAS dataset, not a report).
+    LCR.FD/SA/CA/FCYCA&REPTDAY & 
+    NLF.NOTE&REPTYEAR&REPTMON&REPTDAY : returned as DataFrames; the calling
+                                        job (EIBDLIQP.py) persists them.
     FISS / NSRS  : plain fixed-format ';'-delimited text, RECFM=FB (NOT
                    FBA) per JCL DCB -> NO ASA carriage control.
 """
@@ -66,39 +59,26 @@ from typing import Dict, List, Optional
 import duckdb
 import polars as pl
 
-from PBBDPFMT_AII import fdprod_format, ddcustcd_format, ifdcuscd_format
+from PBBDPFMT import fdprod_format, ddcustcd_format, ifdcuscd_format
 # PBBELF import intentionally omitted - see module docstring.
 
 # ============================================================================
 # PARQUET WRITE HELPER - tolerates empty row lists
 # ============================================================================
-def _safe_write_parquet(rows, path: Path, schema: Optional[dict] = None) -> None:
-    """Write a list of dicts to parquet.
+def _to_frame(rows, schema: dict) -> pl.DataFrame:
+    """Convert a list of dicts into a typed DataFrame.
 
     The schema is applied in BOTH paths:
       - non-empty: build with infer_schema_length=None so Polars reads
         every row before inferring, then cast each column to the declared
-        dtype. Without this, Polars infers types from the first 100 rows
-        only and can fail on a late-arriving value (e.g. a 'Y' in a string
-        column that looked all-blank in the sample).
-      - empty: fall back to an explicit zero-row frame so the file is
-        still a valid parquet, matching SAS PROC SUMMARY / DATA _NULL_
-        writing a zero-row output member.
+        dtype (avoids failures on late-arriving values).
+      - empty: explicit zero-row frame with the declared dtypes, matching
+        SAS writing a zero-row output member.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-
     if rows:
         df = pl.DataFrame(rows, infer_schema_length=None)
-        if schema is not None:
-            df = df.select([pl.col(k).cast(v) for k, v in schema.items()])
-        df.write_parquet(path)
-        return
-
-    if schema is not None:
-        empty = pl.DataFrame({k: pl.Series([], dtype=v) for k, v in schema.items()})
-    else:
-        empty = pl.DataFrame({"_empty": pl.Series([], dtype=pl.Boolean)})
-    empty.write_parquet(path)
+        return df.select([pl.col(k).cast(v) for k, v in schema.items()])
+    return pl.DataFrame({k: pl.Series([], dtype=v) for k, v in schema.items()})
 
 
 # ============================================================================
@@ -266,16 +246,14 @@ def run_eibdrlfm(
     rpyr: int, rpmth: int, rpday: int,
     rd_days: List[int],
     reptday: str, reptmon: str, reptyear: str,
-    lcr_output_dir: Path,
-    nlf_output_dir: Path,
-) -> Dict[str, List[str]]:
+) -> Dict[str, object]:
     """
-    Runs the EIBDRLFM report body. Returns {"FISS": [...], "NSRS": [...]}
-    lines to be written/appended by the calling job (EIBDLIQP.py), which
-    owns the FISS/NSRS physical output paths.
+    Runs the EIBDRLFM report body. Has no physical output of its own.
+    Returns a dict for the calling job (EIBDLIQP.py) to persist:
+      "FISS" / "NSRS" : list of report lines
+      "LCR"           : {file stem: DataFrame} for FD/SA/CA/FCYCA&REPTDAY
+      "NLF"           : {file stem: DataFrame} for NOTE&REPTYEAR&REPTMON&REPTDAY
     """
-    lcr_output_dir.mkdir(parents=True, exist_ok=True)
-    nlf_output_dir.mkdir(parents=True, exist_ok=True)
     fiss_lines: List[str] = []
     nsrs_lines: List[str] = []
 
@@ -311,24 +289,6 @@ def run_eibdrlfm(
     # ------------------------------------------------------------------
     # DATA FD ... SET FD.FD;
     # ------------------------------------------------------------------
-    # con = duckdb.connect(database=":memory:")
-    # fd_raw = con.execute(f"""
-    #     SELECT
-    #         CAST(ACCOUNT_TYPE_CD AS INTEGER) AS ACCTTYPE,
-    #         CAST(CURR_BAL        AS DOUBLE)  AS CURBAL,
-    #         CAST(CUSTOMER_CD     AS INTEGER) AS CUSTCD,
-    #         CAST(MATURE_DT       AS DATE)    AS MATDT,
-    #         CAST(OPEN_IND        AS VARCHAR) AS OPENIND,
-    #         CAST(INT_PLAN        AS INTEGER) AS INTPLAN,
-    #         CAST(BRANCH_CD       AS INTEGER) AS BRANCH,
-    #         CAST(ACCT_NUM        AS BIGINT)  AS ACCTNO,
-    #         CAST(CURRENCY_CD     AS VARCHAR) AS CURCODE,
-    #         CAST(CUST_NAME       AS VARCHAR) AS NAME,
-    #         CAST(CERT_HOLD_IND   AS VARCHAR) AS FDHOLD
-    #     FROM read_parquet('{fd_cache.as_posix()}')
-    # """).pl()
-    # con.close()
-
     con = duckdb.connect(database=":memory:")
     fd_raw = con.execute(f"""
         SELECT
@@ -372,34 +332,6 @@ def run_eibdrlfm(
         else:
             remmth = _remmth(matdt, reptdate, rpyr, rpmth, rpday, rd_days)
             remd30 = None if matdt is None else (matdt - reptdate).days / 30.0
-
-        # amtusd = amtsgd = amthkd = amtaud = 0.0
-        # bic = fdprod_format(r["INTPLAN"])
-        # myramount = None
-
-        # if bic == '42630':
-        #     if r["CURCODE"] == 'USD':
-        #         amtusd = curbal
-        #     elif r["CURCODE"] == 'SGD':
-        #         amtsgd = curbal
-        #     elif r["CURCODE"] == 'HKD':
-        #         amthkd = curbal
-        #     elif r["CURCODE"] == 'AUD':
-        #         amtaud = curbal
-        #     bnmcode = '96311' + cust + remfmt_format(remmth) + '0000Y'
-        #     if r["CURCODE"] != 'MYR':
-        #         rate = forate_format(r["CURCODE"], forate_map)
-        #         myramount = None if rate is None else curbal * rate
-        # elif bic == '42133' or r["ACCTTYPE"] in (302, 315, 394, 396):
-        #     bnmcode = '95317' + cust + remfmt_format(remmth) + '0000Y'
-        # elif bic == '42132':
-        #     bnmcode = '95315' + cust + remfmt_format(remmth) + '0000Y'
-        # elif bic == '49999':
-        #     bnmcode = '95999' + cust + remfmt_format(remmth) + '0000Y'
-        # else:
-        #     bnmcode = '95311' + cust + remfmt_format(remmth) + '0000Y'
-
-        # fd_sum_rows.append(_row(bnmcode, curbal, amtusd, amtsgd, amthkd, amtaud))
 
         amtusd = amtsgd = amthkd = amtaud = 0.0
         bic = fdprod_format(r["INTPLAN"])
@@ -457,7 +389,7 @@ def run_eibdrlfm(
                 "OPENIND": r["OPENIND"], "CURCODE": r["CURCODE"], "MYRAMOUNT": myramount,
             })
 
-    _safe_write_parquet(fd_lcr_rows, lcr_output_dir / f"FD{reptday}.parquet", _LCR_FD_SCHEMA)
+    lcr_fd = _to_frame(fd_lcr_rows, _LCR_FD_SCHEMA)
     del fd_raw
     print(f"  FD rows -> LCR: {len(fd_lcr_rows):,}  Closed FD (CLSFD): {len(clsfd_rows):,}")
 
@@ -478,7 +410,7 @@ def run_eibdrlfm(
         if r["PRODCD"] != 'N':
             sa_sum_rows.append(_row(bnmcode, r["CURBAL"], 0.0, 0.0, 0.0, 0.0))
 
-    _safe_write_parquet(sa_lcr_rows, lcr_output_dir / f"SA{reptday}.parquet", _LCR_SA_SCHEMA)
+    lcr_sa = _to_frame(sa_lcr_rows, _LCR_SA_SCHEMA)
     print(f"  SA rows -> LCR: {len(sa_lcr_rows):,}")
 
     # ------------------------------------------------------------------
@@ -498,7 +430,7 @@ def run_eibdrlfm(
         })
         ca_sum_rows.append(_row(bnmcode, r["CURBAL"], 0.0, 0.0, 0.0, 0.0))
 
-    _safe_write_parquet(ca_lcr_rows, lcr_output_dir / f"CA{reptday}.parquet", _LCR_CA_SCHEMA)
+    lcr_ca = _to_frame(ca_lcr_rows, _LCR_CA_SCHEMA)
     print(f"  CA rows -> LCR: {len(ca_lcr_rows):,}")
 
     # ------------------------------------------------------------------
@@ -554,7 +486,7 @@ def run_eibdrlfm(
                 "OPENIND": r["OPENIND"], "CURCODE": r["CURCODE"], "MYRAMOUNT": myramount,
             })
 
-    _safe_write_parquet(fcyca_lcr_rows, lcr_output_dir / f"FCYCA{reptday}.parquet", _LCR_FCYCA_SCHEMA)
+    lcr_fcyca = _to_frame(fcyca_lcr_rows, _LCR_FCYCA_SCHEMA)
     del cur_raw
     print(f"  FCYCA rows -> LCR: {len(fcyca_lcr_rows):,}  Closed FCYCA: {len(clsfcyca_rows):,}")
 
@@ -572,31 +504,6 @@ def run_eibdrlfm(
                 if v is not None:
                     g[f] += v
         return [{key: k, **v} for k, v in groups.items()]
-
-    # _SUM_FIELDS = ("AMOUNT", "AMTUSD", "AMTSGD", "AMTHKD", "AMTAUD")
-
-    # def _group_sum(rows: List[dict], key: str) -> List[dict]:
-    #     """Group-sum by `key`.
-
-    #     Accumulate in integer cents (amount * 100) rather than float, then
-    #     divide by 100 at the end. This matches SAS's higher-precision IBM
-    #     hexadecimal floating point on z/OS and eliminates the +/-1 drift
-    #     that float accumulation produces on large sums.
-    #     """
-    #     groups: Dict[str, Dict[str, int]] = {}
-    #     for r in rows:
-    #         g = groups.setdefault(r[key], {f: 0 for f in _SUM_FIELDS})
-    #         for f in _SUM_FIELDS:
-    #             v = r.get(f)
-    #             if v is not None:
-    #                 g[f] += int(round(v * 100))
-    #     out = []
-    #     for k, vs in groups.items():
-    #         row = {key: k}
-    #         for f in _SUM_FIELDS:
-    #             row[f] = vs[f] / 100.0
-    #         out.append(row)
-    #     return out
 
     all_rows = (
         _group_sum(fd_sum_rows, "BNMCODE") + _group_sum(sa_sum_rows, "BNMCODE")
@@ -642,12 +549,8 @@ def run_eibdrlfm(
             _fmt_amt_num(r["AMTAUD"], False),
         ))
 
-    # DATA NLF.NOTE&REPTYEAR&REPTMON&REPTDAY; SET NOTE; -- persist as parquet
-    _safe_write_parquet(
-        note_rows,
-        nlf_output_dir / f"NOTE{reptyear}{reptmon}{reptday}.parquet",
-        _NOTE_SCHEMA,
-    )
+    # DATA NLF.NOTE&REPTYEAR&REPTMON&REPTDAY; SET NOTE; -- returned to caller
+    nlf_note = _to_frame(note_rows, _NOTE_SCHEMA)
 
     for i, r in enumerate(note_rows):
         if i == 0:
@@ -676,7 +579,7 @@ def run_eibdrlfm(
     # DATA FDWKLY; SET FD.FD; ... PROC SUMMARY -> ALW -> ALWDEPT
     # ------------------------------------------------------------------
     alw_input = []
-    for r in fd_raw_for_wkly(fd_cache).iter_rows(named=True):
+    for r in _fd_raw_for_wkly(fd_cache).iter_rows(named=True):
         if r["OPENIND"] not in ('D', 'O'):
             continue
         bic = '42133' if r["ACCTTYPE"] in (302, 315, 394, 396) else None
@@ -731,10 +634,20 @@ def run_eibdrlfm(
                 str(r["CUSTCD"]), str(r["PRODUCT"]), str(r["OPENIND"]), "",
             ]))
 
-    return {"FISS": fiss_lines, "NSRS": nsrs_lines}
+    return {
+        "FISS": fiss_lines,
+        "NSRS": nsrs_lines,
+        "LCR": {
+            f"FD{reptday}": lcr_fd,
+            f"SA{reptday}": lcr_sa,
+            f"CA{reptday}": lcr_ca,
+            f"FCYCA{reptday}": lcr_fcyca,
+        },
+        "NLF": {f"note{reptyear}{reptmon}{reptday}": nlf_note},
+    }
 
 
-def fd_raw_for_wkly(fd_cache: Path) -> pl.DataFrame:
+def _fd_raw_for_wkly(fd_cache: Path) -> pl.DataFrame:
     """Re-reads FD.FD for the FDWKLY step (kept as a separate lightweight
     read - only the 4 columns FDWKLY needs - rather than re-using the
     fully-typed fd_raw frame from the FD step, matching the original SAS
