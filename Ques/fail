@@ -1,8 +1,27 @@
-# DEBUG: Check customers with missing NAME
-missing_name = cust[
-    cust["NAME"].isna() |
-    cust["NAME"].astype(str).str.strip().eq("")
+debug_acct = df.loc[
+    df["ACCTNO"].astype(str).str.replace(r"\.0$", "", regex=True).isin(
+        ["1599547012", "1693256707", "1691791712"]
+    ),
+    ["ACCTNO", "NAME"]
 ]
 
-print(f"[DEBUG] FDDETL records with blank NAME: {len(missing_name)}")
-print(missing_name[["ACCTNO", "CURCODE", "CURBAL"]].head(20).to_string(index=False))
+print("[DEBUG] Sample FCY account numbers and merged names:")
+print(debug_acct.drop_duplicates().to_string(index=False))
+
+
+
+
+debug_lookup = duckdb.query(f"""
+    SELECT
+        ACCTNO,
+        NAME
+    FROM read_parquet('{acct_sql}')
+    WHERE TRY_CAST(ACCTNO AS BIGINT) IN (
+        1599547012,
+        1693256707,
+        1691791712
+    )
+""").df()
+
+print("[DEBUG] Matching account numbers in lookup file:")
+print(debug_lookup.to_string(index=False))
