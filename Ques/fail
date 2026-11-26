@@ -1,27 +1,34 @@
-debug_acct = df.loc[
-    df["ACCTNO"].astype(str).str.replace(r"\.0$", "", regex=True).isin(
-        ["1599547012", "1693256707", "1691791712"]
-    ),
-    ["ACCTNO", "NAME"]
-]
+# ===== DEBUG BLOCK 3 : inspect ACCTNO shape in the lookup =====
+print("[DEBUG] Sample ACCTNOs as stored in lookup file (first 20):")
+print(
+    duckdb.query(f"""
+        SELECT ACCTNO,
+               TRY_CAST(ACCTNO AS BIGINT) AS ACCTNO_BIGINT,
+               LENGTH(CAST(ACCTNO AS VARCHAR)) AS LEN
+        FROM read_parquet('{acct_sql}')
+        WHERE ACCTNO IS NOT NULL
+        LIMIT 20
+    """).df().to_string(index=False)
+)
 
-print("[DEBUG] Sample FCY account numbers and merged names:")
-print(debug_acct.drop_duplicates().to_string(index=False))
+print("[DEBUG] ACCTNO length distribution in lookup file:")
+print(
+    duckdb.query(f"""
+        SELECT LENGTH(CAST(ACCTNO AS VARCHAR)) AS LEN, COUNT(*) AS CNT
+        FROM read_parquet('{acct_sql}')
+        WHERE ACCTNO IS NOT NULL
+        GROUP BY 1 ORDER BY 1
+    """).df().to_string(index=False)
+)
 
-
-
-
-debug_lookup = duckdb.query(f"""
-    SELECT
-        ACCTNO,
-        NAME
-    FROM read_parquet('{acct_sql}')
-    WHERE TRY_CAST(ACCTNO AS BIGINT) IN (
-        1599547012,
-        1693256707,
-        1691791712
-    )
-""").df()
-
-print("[DEBUG] Matching account numbers in lookup file:")
-print(debug_lookup.to_string(index=False))
+print("[DEBUG] Try substring / LIKE search for the 3 problem ACCTNOs:")
+print(
+    duckdb.query(f"""
+        SELECT ACCTNO, NAME
+        FROM read_parquet('{acct_sql}')
+        WHERE CAST(ACCTNO AS VARCHAR) LIKE '%1599547012%'
+           OR CAST(ACCTNO AS VARCHAR) LIKE '%1693256707%'
+           OR CAST(ACCTNO AS VARCHAR) LIKE '%1691791712%'
+    """).df().to_string(index=False)
+)
+# ===== END DEBUG BLOCK 3 =====
