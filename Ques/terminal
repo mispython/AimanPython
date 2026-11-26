@@ -38,34 +38,16 @@ SELLRATE	BUYRATE	REPTDATE
 
 
 
-print("\nDEBUG EFORATE CACHE:")
+print("\nDEBUG ERATE DATE MATCH:")
+print(f"Report date: {reptdate} ({type(reptdate)})")
 
-debug_eforate = pl.read_parquet(EFORATE_CACHE)
-
-print(debug_eforate.schema)
-print(debug_eforate.select(["REPTDATE", "SELLRATE", "BUYRATE"]).head(15))
-
-
+print(
+    erate.select("REPTDATE", "SELLRATE", "BUYRATE")
+         .with_columns(pl.col("REPTDATE").cast(pl.Utf8))
+)
 
 
-DEBUG EFORATE CACHE:
-Schema([('CURCODE', String), ('RECTYPE', String), ('BANKNO', String), ('SELLRATE', Float64), ('BUYRATE', Float64), ('WITHHOLD', Float64), ('REPTDATE', Float64)])
-shape: (12, 3)
-┌──────────┬──────────┬─────────┐
-│ REPTDATE ┆ SELLRATE ┆ BUYRATE │
-│ ---      ┆ ---      ┆ ---     │
-│ f64      ┆ f64      ┆ f64     │
-╞══════════╪══════════╪═════════╡
-│ 24412.0  ┆ 523.91   ┆ 503.84  │
-│ 24413.0  ┆ 524.71   ┆ 504.66  │
-│ 24414.0  ┆ 535.88   ┆ 515.39  │
-│ 24415.0  ┆ 550.38   ┆ 529.36  │
-│ 24416.0  ┆ 540.74   ┆ 520.08  │
-│ …        ┆ …        ┆ …       │
-│ 24422.0  ┆ 534.83   ┆ 514.4   │
-│ 24423.0  ┆ 525.92   ┆ 505.82  │
-│ 24426.0  ┆ 518.79   ┆ 498.77  │
-│ 24427.0  ┆ 520.44   ┆ 500.54  │
-│ 24428.0  ┆ 515.24   ┆ 495.54  │
-└──────────┴──────────┴─────────┘
-  ERATE rows (whole month): 12
+
+
+print(f"Matching rows: {len(erate_today)}")
+print(erate_today)
