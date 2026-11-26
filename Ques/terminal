@@ -1,173 +1,29 @@
-import sys
-from pathlib import Path
-from datetime import date, timedelta
-from typing import Optional
-import math
-
-import paramiko
-
-
-
-
-# Control file : SFTP connection details per host description
-CTL_SFTP_INFO = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-
-
-def get_sftp_info(host_desc: str):
-    """
-    Read one SFTP configuration row for the given HOST_DESC from the
-    SFTP control file. Returns (sftp_id, sftp_pw, host_ip, host_key).
-    """
-    if not CTL_SFTP_INFO.exists():
-        raise FileNotFoundError(f"SFTP control file not found: {CTL_SFTP_INFO}")
-
-    ctl = pd.read_sas(str(CTL_SFTP_INFO), format="sas7bdat", encoding="latin1")
-    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
-
-    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
-    missing_columns = sorted(required.difference(ctl.columns))
-    if missing_columns:
-        raise RuntimeError(
-            "SFTP control file is missing columns: " + ", ".join(missing_columns)
-        )
-
-    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
-    rows = ctl[descriptions.eq(host_desc)]
-    if len(rows) != 1:
-        raise RuntimeError(
-            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
-        )
-
-    row = rows.iloc[0]
-
-    # SAS character values can contain fixed-width padding.
-    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
-    sftp_id = clean(row["SFTP_ID"])
-    sftp_pw = clean(row["SFTP_PW"])
-    host_ip = clean(row["HOST_IP"])
-    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
-
-    empty_values = [
-        name for name, value in (
-            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
-        ) if not value
-    ]
-    if empty_values:
-        raise RuntimeError(
-            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
-        )
-
-    return sftp_id, sftp_pw, host_ip, host_key
+FCYFD DETAILS BY CUSTOMER(>FCY1MIL) AS AT 12/11/2026                                                                                                                                                                                                                                                                            
+BRANCH   ,CUSTOMER                                        ,SETTLEMENT AMT          ,AVG RATE                ,CURRENCY                ,SETTLEMENT DATE         ,MATURITY,                                                                                                                                                        
+KLC      ,                                                ,130000000.00            ,4.51                    ,USD                     ,21/09/26                ,24/11/26  ,                                                                                                                                                      
+KLC      ,                                                ,100000000.00            ,4.60                    ,USD                     ,14/09/26                ,17/02/27  ,                                                                                                                                                      
+KLC      ,                                                ,80000000.00             ,4.60                    ,USD                     ,28/09/26                ,30/11/26  ,                                                                                                                                                      
+KLC      ,                                                ,73200000.00             ,4.85                    ,USD                     ,03/11/26                ,13/04/27  ,                                                                                                                                                      
+KLC      ,                                                ,70000000.00             ,4.60                    ,USD                     ,09/10/26                ,08/12/26  ,                                                                                                                                                      
+KLC      ,                                                ,70000000.00             ,4.65                    ,USD                     ,07/10/26                ,04/12/26  ,                                                                                                                                                      
+KLC      ,                                                ,70000000.00             ,4.83                    ,USD                     ,03/11/26                ,22/02/27  ,                                                                                                                                                      
+KLC      ,                                                ,65000000.00             ,3.85                    ,USD                     ,11/03/26                ,16/11/26  ,                                                                                                                                                      
 
 
 
 
-# ------------------------------------------------------------
-# SFTP TO DATA REPORT REPOSITORY (DRR)  - from ask.py (FTPFDFCY)
-#   CD TD/INTERBANK/FCYFD
-#   PUT //SAP.PBB.FCYFD.REP2.TEXT  FCYFDREP2_%ODD.%OMM.%OYY..CSV
-#   (PUT //SAP.PBB.MNI.FDRMFC FDRMFC_... is produced by another program)
-# ------------------------------------------------------------
-DRR_HOST_DESC   = "Data Report Repository (DRR)"   # HOST_DESC in ctl_dwh_sftp_info
-DRR_REMOTE_DIR  = "TD/INTERBANK/FCYFD"
-DRR_REMOTE_NAME = f"FCYFDREP2_{REPTDATE:%d%m%y}.CSV"   # %ODD.%OMM.%OYY..CSV
 
-
-
-
-# ============================================================
-# SFTP : send FDDETL (REP2) to DRR
-#
-#   //RUNSFTP  EXEC COZBATCH  (ask.py)
-#   lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-#   CD TD/INTERBANK/FCYFD
-#   PUT //SAP.PBB.FCYFD.REP2.TEXT  FCYFDREP2_%ODD.%OMM.%OYY..CSV
-#
-#   NOTRIM : the 320-byte padded records are sent as written.
-# ============================================================
-
-def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
-    """Upload one report file to DRR_REMOTE_DIR on the DRR server."""
-    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
-
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    print(f"[SFTP] Connecting to DRR host {host_ip} as {sftp_id} ...")
-    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
-    sftp = ssh.open_sftp()
-
-    try:
-        try:
-            sftp.chdir(DRR_REMOTE_DIR)
-        except IOError:
-            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
-
-        print(f"[SFTP] Upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
-        sftp.put(str(local_path), remote_name)
-    finally:
-        sftp.close()
-        ssh.close()
-
-    print("[SFTP] DRR upload complete.")
-
-
-
-
-def main() -> None:
-    print(f"[EIBDPTER] Report date : {REPDT}")
-    print(f"[EIBDPTER] T  = {REPTDATE}")
-    print(f"[EIBDPTER] T1 = {T1}")
-    print(f"[EIBDPTER] T2 = {T2}")
-    print(f"[EIBDPTER] T3 = {T3}")
-
-    # --- Read FD dataset -----------------------------------------------
-    print(f"[EIBDPTER] Reading {FD_CERT} ...")
-    fd_df = read_fd()
-
-    # --- FCY maturity split --------------------------------------------
-    fcyt1, fcyt2, fcyt3, fcyt4 = build_fcyt(fd_df)
-    print(f"[EIBDPTER] Maturity split: T1={len(fcyt1)}, T2={len(fcyt2)}, "
-          f"T3={len(fcyt3)}, >T3={len(fcyt4)}")
-
-    # --- PROC SUMMARY per bucket ---------------------------------------
-    s1 = summarise_bucket(fcyt1, "1")
-    s2 = summarise_bucket(fcyt2, "2")
-    s3 = summarise_bucket(fcyt3, "3")
-    s4 = summarise_bucket(fcyt4, "4")
-
-    # --- Merge and derive averages ------------------------------------
-    fcyt = build_fcyt_summary(s1, s2, s3, s4)
-
-    # --- Write FDTEXT (summary) ----------------------------------------
-    write_fdtext(fcyt, REPDT)
-
-    # --- Build CUST detail dataset -------------------------------------
-    cust = build_cust(fd_df)
-    print(f"[EIBDPTER] Customers with FCY balance > 1M: {len(cust)}")
-
-    # --- Write FDDETL (detail) -----------------------------------------
-    write_fddetl(cust, REPDT)
-
-    print(f"[EIBDPTER] Output FDTEXT : {OUTPUT_FDTEXT}")
-    print(f"[EIBDPTER] Output FDDETL : {OUTPUT_FDDETL}")
-
-    # --- SFTP FDDETL (REP2) to DRR (ask.py: FTPFDFCY) -------------------
-    sftp_upload_to_drr(OUTPUT_FDDETL, DRR_REMOTE_NAME)
-    print(f"[EIBDPTER] Remote FDDETL : {DRR_REMOTE_DIR}/{DRR_REMOTE_NAME}")
-
-    print("[EIBDPTER] Done.")
-
-
-if __name__ == "__main__":
-    main()
-
-
-
-
-SFTP:
-    //FDDETL (SAP.PBB.FCYFD.REP2.TEXT) -> DRR : TD/INTERBANK/FCYFD/FCYFDREP2_DDMMYY.CSV
-
-
-
-
+virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py
+[EIBDPTER] Report date : 12/11/2026
+[EIBDPTER] T  = 2026-11-12
+[EIBDPTER] T1 = 2026-11-13
+[EIBDPTER] T2 = 2026-11-14
+[EIBDPTER] T3 = 2026-11-15
+[EIBDPTER] Reading /stgsrcsys/host/uat/AII/EIBDPTER/fcy261112.sas7bdat + /stgsrcsys/host/uat/AII/EIBDPTER/intg_dp_acct_current_d12.sas7bdat ...
+[EIBDPTER] NAME merged on ACCTNO: 74,047 matched, 39,351 without a name
+[EIBDPTER] Maturity split: T1=546, T2=477, T3=536, >T3=37792
+[FDTEXT] Written 16 lines -> /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDPTER/test/FCYFD_REP1.txt
+[EIBDPTER] Customers with FCY balance > 1M: 853
+[FDDETL] Written 855 lines -> /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDPTER/test/FCYFD_REP2.txt
+[EIBDPTER] Output FDTEXT : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDPTER/test/FCYFD_REP1.txt
+[EIBDPTER] Output FDDETL : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDPTER/test/FCYFD_REP2.txt
