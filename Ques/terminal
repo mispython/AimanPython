@@ -33,3 +33,14 @@ SELLRATE	BUYRATE	REPTDATE
 518.79	498.77	24426
 520.44	500.54	24427
 515.24	495.54	24428
+
+
+
+
+
+print("\nDEBUG EFORATE CACHE:")
+
+debug_eforate = pl.read_parquet(EFORATE_CACHE)
+
+print(debug_eforate.schema)
+print(debug_eforate.select(["REPTDATE", "SELLRATE", "BUYRATE"]).head(15))
