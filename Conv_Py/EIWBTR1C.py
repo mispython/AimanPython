@@ -5,9 +5,6 @@ Purpose : Undrawn Trade Bills By Collaterals With Remaining Maturity.
 
 Dependency:
     %INC PGM(PBBLNFMT); -> from PBBLNFMT import format_btproda
-    ($BTPRODA. format is applied to LIABCODE to derive PRODCD/BNMCODE
-    throughout this program. No other PBBLNFMT format/list is referenced
-    anywhere in the SAS source body, so nothing else is imported.)
 
 ============================================================================
 PHYSICAL INPUT DATASETS  (each cached to Parquet independently)
@@ -86,35 +83,43 @@ from pathlib import Path
 from datetime import date, timedelta
 
 import duckdb
+import tempfile
 import polars as pl
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from REPTDATE import get_reptdate_values
 from PBBLNFMT import format_btproda
 
 # ============================================================================
 # PATH CONFIGURATION
 # ============================================================================
-# # Production Path
-# INPUT_DIR             = Path("/dwh")
-# INPUT_COLLATER_DIR    = Path("/sas/ln/mart/sas/ln/mart/enrichment")
-# INPUT_BTDTL_DIR       = INPUT_DIR / "btrade_d"
-# INPUT_BTMAST_DIR      = INPUT_DIR / "btrade"
-# OUTPUT_DIR            = Path("/host_pq/mis/output/BTRADE/report")
-# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Testing Path
-BASE_DIR            = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-STG_DIR             = Path("/stgsrcsys/host/uat/AII")
-INPUT_BTDTL_DIR     = STG_DIR / "from_dwh"
-INPUT_BTMAST_DIR    = STG_DIR / "from_dwh"
-INPUT_COLLATER_DIR  = STG_DIR / "MNICOL"
-CACHE_DIR           = BASE_DIR / "input" / "cache" / "UAT_BTRD"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR  = BASE_DIR / "output" / "UAT_BTRD"
+# Production Path
+INPUT_DIR             = Path("/dwh")
+INPUT_COLLATER_DIR    = Path("/sas/ln/mart/sas/ln/mart/enrichment")
+INPUT_BTDTL_DIR       = INPUT_DIR / "btrade_d"
+INPUT_BTMAST_DIR      = INPUT_DIR / "btrade"
+OUTPUT_DIR            = Path("/host_pq/mis/output/report/EIWBTR1C")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Batch-date control file (SOURCE_SYSTEM_CD = 'SAS' drives the report date)
+CTL_BATCH_DTTM = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+BATCH_SOURCE   = "SAS"
+
+# Base folder for the temporary Parquet files (None = system temp).
+# Set a path here if the default temp area is too small.
+TEMP_BASE = None
+
+# # Testing Path
+# BASE_DIR            = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# STG_DIR             = Path("/stgsrcsys/host/uat/AII")
+# INPUT_BTDTL_DIR     = STG_DIR / "from_dwh"
+# INPUT_BTMAST_DIR    = STG_DIR / "from_dwh"
+# INPUT_COLLATER_DIR  = STG_DIR / "MNICOL"
+# CACHE_DIR           = BASE_DIR / "input" / "cache" / "UAT_BTRD"
+# CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_DIR  = BASE_DIR / "output" / "UAT_BTRD"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CHUNK_ROWS  = 500_000
 PAGE_SIZE   = 60          # lines per page (not specified in SAS -> default)
@@ -123,16 +128,25 @@ LABEL_WIDTH = 6           # RTS=8 (was 8)
 NUM_WIDTH   = 13          # FORMAT=13.2 (plain w.d, no thousands separator)
 FF = "\f"
 
+
+def get_batch_date(source_system_cd: str) -> date:
+    """Read BATCH_DTTM for the given SOURCE_SYSTEM_CD from the control file."""
+    ctl = pd.read_sas(str(CTL_BATCH_DTTM), encoding="latin1")
+    ctl["SOURCE_SYSTEM_CD"] = ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip()
+    hit = ctl.loc[ctl["SOURCE_SYSTEM_CD"] == source_system_cd, "BATCH_DTTM"]
+    if hit.empty:
+        raise ValueError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {CTL_BATCH_DTTM}"
+        )
+    return pd.Timestamp(hit.iloc[0]).date()
+
+
 # ============================================================================
 # STEP 1: REPORT DATE
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-reptdate_values = get_reptdate_values(year_format="%Y")
-# reptdate = reptdate_values.reptdate
-
-# DEBUG (UAT OVERRRIDE - Need to be removed before production)
-reptdate = date(2026, 10, 22)
+reptdate = get_batch_date(BATCH_SOURCE)       # SOURCE_SYSTEM_CD = 'SAS'
 
 REPTYEAR = reptdate.strftime("%y")            # PUT(REPTDATE,YEAR2.)
 REPTMON  = reptdate.strftime("%m")            # PUT(MONTH(REPTDATE),Z2.)
@@ -339,13 +353,26 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
+# def _load_cached(sas_path: Path, tag: str) -> Path:
+#     cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
+#     if _cache_is_fresh(sas_path, cache_path):
+#         print(f"  [{tag}] Cache fresh - skipping conversion.")
+#     else:
+#         _sas_to_parquet(sas_path, cache_path, tag)
+#     return cache_path
+
+# Temporary folder holding the converted Parquet files. It is removed as soon
+# as all inputs are read into memory (see Change 6), or automatically at exit
+# if the program fails earlier.
+_TMP    = tempfile.TemporaryDirectory(prefix="EIWBTR1C_", dir=TEMP_BASE)
+TMP_DIR = Path(_TMP.name)
+
+
 def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
+    """Convert .sas7bdat to a temporary Parquet file and return its path."""
+    tmp_path = TMP_DIR / f"{sas_path.stem}.parquet"
+    _sas_to_parquet(sas_path, tmp_path, tag)
+    return tmp_path
 
 
 # ============================================================================
@@ -444,6 +471,9 @@ con.close()
 
 btcoll = collater_raw.sort("ACCTNO").unique(subset=["ACCTNO"], keep="first")
 print(f"  BTCOLL rows (deduped): {len(btcoll):,}")
+
+_TMP.cleanup()
+print("  Temporary Parquet files removed.")
 
 # ============================================================================
 # STEP 8: DATA BTRCOL; MERGE BTRADE(IN=A)
