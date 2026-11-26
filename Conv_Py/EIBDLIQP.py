@@ -167,6 +167,7 @@ _day = REPTDATE.day
 NOWK = "1" if _day == 8 else "2" if _day == 15 else "3" if _day == 22 else "4"
 
 REPTYEAR = REPTDATE.strftime("%Y")
+REPTYY   = REPTDATE.strftime("%y")
 REPTMON  = REPTDATE.strftime("%m")
 REPTDAY  = REPTDATE.strftime("%d")
 RDATE    = REPTDATE.strftime("%d/%m/%y")
@@ -197,7 +198,9 @@ INPUT_FD_CERT_FILE  = BASE_DIR / "enrichment"  / f"enrh_dp_fd_cert_d{REPTDAY}.sa
 INPUT_FD_ACCT_FILE  = BASE_DIR / "integration" / f"intg_dp_acct_fd_d{REPTDAY}.sas7bdat"
 
 # Shared PBB files (unchanged).
-INPUT_CISDP_FILE    = Path("/sas/cis/mart/enrichment") / "enrh_exdwh_cisr1.sas7bdat"
+# INPUT_CISDP_FILE    = Path("/sas/cis/mart/enrichment") / "enrh_exdwh_cisr1.sas7bdat"
+INPUT_CISDP_SA_FILE = Path("/dwh/rsd_cis") / f"cisr1sa{REPTYY}{REPTMON}{REPTDAY}.sas7bdat"
+INPUT_CISDP_FD_FILE = Path("/dwh/rsd_cis") / f"cisr1fd{REPTYY}{REPTMON}{REPTDAY}.sas7bdat"
 INPUT_FORATE_FILE   = Path("/exdwh/host/forate") / "foratebkp.sas7bdat"
 
 # # Testing Path
