@@ -1,34 +1,125 @@
-# ===== DEBUG BLOCK 3 : inspect ACCTNO shape in the lookup =====
-print("[DEBUG] Sample ACCTNOs as stored in lookup file (first 20):")
-print(
-    duckdb.query(f"""
-        SELECT ACCTNO,
-               TRY_CAST(ACCTNO AS BIGINT) AS ACCTNO_BIGINT,
-               LENGTH(CAST(ACCTNO AS VARCHAR)) AS LEN
-        FROM read_parquet('{acct_sql}')
-        WHERE ACCTNO IS NOT NULL
-        LIMIT 20
-    """).df().to_string(index=False)
-)
+import gc
+import sys
+from pathlib import Path
+from datetime import date
 
-print("[DEBUG] ACCTNO length distribution in lookup file:")
-print(
-    duckdb.query(f"""
-        SELECT LENGTH(CAST(ACCTNO AS VARCHAR)) AS LEN, COUNT(*) AS CNT
-        FROM read_parquet('{acct_sql}')
-        WHERE ACCTNO IS NOT NULL
-        GROUP BY 1 ORDER BY 1
-    """).df().to_string(index=False)
-)
+import duckdb
+import paramiko
+import tempfile
+import polars as pl
+import pandas as pd
 
-print("[DEBUG] Try substring / LIKE search for the 3 problem ACCTNOs:")
-print(
-    duckdb.query(f"""
-        SELECT ACCTNO, NAME
-        FROM read_parquet('{acct_sql}')
-        WHERE CAST(ACCTNO AS VARCHAR) LIKE '%1599547012%'
-           OR CAST(ACCTNO AS VARCHAR) LIKE '%1693256707%'
-           OR CAST(ACCTNO AS VARCHAR) LIKE '%1691791712%'
-    """).df().to_string(index=False)
-)
-# ===== END DEBUG BLOCK 3 =====
+
+
+
+# SFTP control file and DRR target (ask.py FTPBTR1C)
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+DRR_HOST_DESC     = "Data Report Repository (DRR)"
+DRR_REMOTE_DIR    = "FD-BNM REPORTING/PBB/BNM RPTG"
+# Commented in ask.py (kept commented): cd TEXTFILE / cd FIN
+#   PUT //SAP.PBB.EIWBTR1C.TEXT  EIWBTR1C%ODD.%OMM..TXT
+
+
+
+
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row from ctl_dwh_sftp_info.sas7bdat."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
+
+    row = rows.iloc[0]
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [n for n, v in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw),
+                                   ("HOST_IP", host_ip)) if not v]
+    if empty_values:
+        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}")
+
+    return sftp_id, sftp_pw, host_ip, host_key
+
+
+
+
+# Local file: original DSN has no date -> static name.
+# Remote file (ask.py): EIWBTR1C%ODD.%OMM..TXT -> EIWBTR1C<DD><MM>.TXT,
+# using the batch date from ctl_dwh_batch_dttm.
+OUTPUT_FILE = OUTPUT_DIR / "EIWBTR1C.txt"
+REMOTE_FILE = f"EIWBTR1C{REPTDAY}{REPTMON}.TXT"
+
+
+
+
+# ============================================================================
+# STEP 13: SFTP TO DRR  (ask.py FTPBTR1C)
+# ============================================================================
+def sftp_upload_to_drr(local_file: Path, remote_name: str) -> None:
+    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    try:
+        sftp = ssh.open_sftp()
+        try:
+            sftp.chdir(DRR_REMOTE_DIR)
+        except IOError:
+            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
+        print(f"  SFTP upload: {local_file.name} -> {DRR_REMOTE_DIR}/{remote_name}")
+        sftp.put(str(local_file), remote_name)
+        sftp.close()
+    finally:
+        ssh.close()
+    print("  DRR upload complete.")
+
+
+print("\nUploading report to DRR via SFTP...")
+sftp_upload_to_drr(OUTPUT_FILE, REMOTE_FILE)
+
+print("\nEIWBTR1C complete.")
+
+
+
+
+SFTP: DRR, FD-BNM REPORTING/PBB/BNM RPTG, EIWBTR1C<DD><MM>.TXT
+
+
+
+
+======================== EIMBTCOL
+
+from datetime import date
+
+
+
+
+# Original DSN SAP.PBB.EIMBTCOL.TEXT has no date token -> static filename.
+OUTPUT_FILE = OUTPUT_DIR / "EIMBTCOL.txt"
+
+
+
+
+# SFTP (FTPBTCOL): every line of this job is commented out in the
+# original (cd TEXTFILE / cd FIN / PUT //SAP.PBB.EIMBTCOL.TEXT
+# EIMBTCOL%ODD.%OMM..TXT), so no transfer is performed.
+
+
+
+
