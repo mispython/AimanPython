@@ -1,58 +1,10 @@
-(virt_edw_dev) [sas_edw_dev@svdwh004 Data_Warehouse]$ /sas/python/virt_edw_dev/bin/python3 /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBDPTER.py
-[EIBDPTER] Report date : 12/11/2026
-[EIBDPTER] T  = 2026-11-12
-[EIBDPTER] T1 = 2026-11-13
-[EIBDPTER] T2 = 2026-11-14
-[EIBDPTER] T3 = 2026-11-15
-[EIBDPTER] Reading /stgsrcsys/host/uat/AII/EIBDPTER/fcy261112.sas7bdat + /stgsrcsys/host/uat/AII/EIBDPTER/intg_dp_acct_fd_d12.sas7bdat ...
-[DEBUG] Matching account numbers in lookup file:
-      ACCTNO            NAME
-1599547012.0 PETROLIAM NASIO
-1691791712.0 MAI HOLDINGS SD
-1693256707.0 PETROLIAM NASIO
-[DEBUG] Sample FCY account numbers and merged names:
-      ACCTNO            NAME
-1599547012.0 PETROLIAM NASIO
-1691791712.0 MAI HOLDINGS SD
-1693256707.0 PETROLIAM NASIO
-[DEBUG] Sample ACCTNOs as stored in lookup file (first 20):
-      ACCTNO  ACCTNO_BIGINT  LEN
-1000001725.0     1000001725   12
-1000002004.0     1000002004   12
-1000002720.0     1000002720   12
-1000003230.0     1000003230   12
-1000003521.0     1000003521   12
-1000006118.0     1000006118   12
-1000009431.0     1000009431   12
-1000012810.0     1000012810   12
-1000013611.0     1000013611   12
-1000014121.0     1000014121   12
-1000014218.0     1000014218   12
-1000014509.0     1000014509   12
-1000014703.0     1000014703   12
-1000017628.0     1000017628   12
-1000019230.0     1000019230   12
-1000023604.0     1000023604   12
-1000026626.0     1000026626   12
-1000026723.0     1000026723   12
-1000030321.0     1000030321   12
-1000036425.0     1000036425   12
-[DEBUG] ACCTNO length distribution in lookup file:
- LEN     CNT
-  12 1854849
-[DEBUG] Try substring / LIKE search for the 3 problem ACCTNOs:
-      ACCTNO            NAME
-1599547012.0 PETROLIAM NASIO
-1691791712.0 MAI HOLDINGS SD
-1693256707.0 PETROLIAM NASIO
-[EIBDPTER] NAME merged on ACCTNO: 39,351 matched, 74,047 without a name
-[EIBDPTER] Maturity split: T1=546, T2=477, T3=536, >T3=37792
-[FDTEXT] Written 16 lines -> /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDPTER/test/FCYFD_REP1.txt
-[DEBUG] FDDETL records with blank NAME: 0
-Empty DataFrame
-Columns: [ACCTNO, CURCODE, CURBAL]
-Index: []
-[EIBDPTER] Customers with FCY balance > 1M: 853
-[FDDETL] Written 855 lines -> /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDPTER/test/FCYFD_REP2.txt
-[EIBDPTER] Output FDTEXT : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDPTER/test/FCYFD_REP1.txt
-[EIBDPTER] Output FDDETL : /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/output/EIBDPTER/test/FCYFD_REP2.txt
+# EIBDRB01@%OMM.%OYY..TXT
+OUTPUT_FILE = OUTPUT_DIR / f"EIBDRB01@{REPTMON}{REPTYY}.TXT"
+
+
+
+
+# EIBDRB2A@%ODD.%OMM.%OYY..TXT / EIBDRB2B@%ODD.%OMM.%OYY..TXT
+DDMMYY     = reptdate.strftime("%d%m%y")
+OUTPUT_RM  = OUTPUT_DIR / f"EIBDRB2A@{DDMMYY}.TXT"   # DD: RMWDRAW
+OUTPUT_FCY = OUTPUT_DIR / f"EIBDRB2B@{DDMMYY}.TXT"   # DD: FCYWDRAW
