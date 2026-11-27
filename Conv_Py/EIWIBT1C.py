@@ -26,7 +26,7 @@ Schema:
 import gc
 import tempfile
 from pathlib import Path
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Optional
 
 import duckdb
@@ -34,9 +34,6 @@ import pandas as pd
 import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
-
-import pandas as pd
-import polars as pl
 
 from PBBLNFMT import format_btprod, format_btprodi
 
@@ -60,7 +57,8 @@ def get_batch_date(source_system_cd: str) -> date:
 # ============================================================
 # REPORT DATE DERIVATION (replaces DATA _NULL_ SET BNM.REPTDATE / CALL SYMPUT)
 # ============================================================
-REPTDATE  = get_batch_date(BATCH_SOURCE)
+# REPTDATE  = get_batch_date(BATCH_SOURCE)
+REPTDATE  = date(2026, 6, 30)
 REPTYEAR  = REPTDATE.strftime("%y")      # YEAR2.
 REPTMON   = REPTDATE.strftime("%m")      # Z2.
 REPTDAY   = REPTDATE.strftime("%d")      # Z2.
@@ -72,32 +70,32 @@ NOWK = {8: "1", 15: "2", 22: "3"}.get(REPTDATE.day, "4")
 # ============================================================
 # PATH CONFIGURATION
 # ============================================================
-# # Production Path
-# BASE_DIR    = Path("/dwh")
-# IBTMAST_INPUT   = BASE_DIR / "ibtrade"
-# IBTDL_INPUT     = BASE_DIR / "ibtrad_d"
-# OUTPUT_DIR  = Path("/host_pq/mis/output/BTRADE/report")
-# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Testing Path
-BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
-INPUT_DIR = BASE_DIR / "input" / "prod" / "btrade"
-OUTPUT_DIR = BASE_DIR / "output" / "EIWIBT1C"
+# Production Path
+BASE_DIR      = Path("/dwh")
+IBTMAST_INPUT = BASE_DIR / "ibtrade"
+IBTDL_INPUT   = BASE_DIR / "ibtrad_d"
+OUTPUT_DIR    = Path("/host_pq/mis/output/BTRADE/report")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# # Testing Path
+# BASE_DIR   = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# IBTMAST_INPUT  = Path("/stgsrcsys/host/uat/AII/from_dwh")
+# IBTDL_INPUT  = Path("/stgsrcsys/host/uat/AII/from_dwh")
+# OUTPUT_DIR = BASE_DIR / "output" / "EIWIBT1C"
+# OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 # SAS: BNM.IBTMAST&REPTMON&NOWK  and  BNMDAILY.IBTDTL&REPTYEAR&REPTMON&REPTDAY
-IBTMAST_FILE = INPUT_DIR / f"ibtmast{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-IBTDTL_FILE  = INPUT_DIR / f"ibtdtl{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
+IBTMAST_FILE = IBTMAST_INPUT / f"ibtmast{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+IBTDTL_FILE  = IBTDL_INPUT   / f"ibtdtl{REPTYEAR}{REPTMON}{REPTDAY}.sas7bdat"
 
 CHUNK_ROWS = 500_000
-TEMP_DIR   = None            # None = system temp; set a path if default temp is too small
+TEMP_DIR   = None      # None = system temp; set a path if default temp is too small
 
-PAGE_LENGTH = 60
-LRECL = 150
-ROW_WIDTH = 8          # RTS=8 (used for the collateral report's box width formula)
-VALUE_WIDTH = 13       # FORMAT=13.2
+PAGE_LENGTH    = 60
+LRECL          = 150
+ROW_WIDTH      = 8     # RTS=8 (used for the collateral report's box width formula)
+VALUE_WIDTH    = 13    # FORMAT=13.2
 CODE_COL_WIDTH = 6     # width of the BOX='BNMCODE' row-label column
-
 
 # ============================================================
 # LOCAL PROC FORMAT EQUIVALENTS (program-specific, not in PBBLNFMT)
@@ -712,9 +710,8 @@ def main() -> None:
 
     all_lines = report1_lines + grand_total_lines + report2_lines + report3_lines
 
-    # Static filename: original SAP.PIBB.EIWIBT1C.TEXT dataset name carries no
-    # date component, so output_date.py's date-suffix builder is not used here.
-    output_path = OUTPUT_DIR / "EIWIBT1C.txt"
+    # Static filename: original SAP.PIBB.EIWIBT1C.TEXT dataset name
+    output_path = OUTPUT_DIR / "EIWIBT1C_test.txt"
     write_report(output_path, all_lines)
 
     print(f"Output written to: {output_path}")
