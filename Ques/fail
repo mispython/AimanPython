@@ -1,80 +1,150 @@
-import duckdb
-import polars as pl
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
-import saspy                      # <-- ADD
-import re
-import tempfile
+import sys
+import paramiko
 
 
 
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-CIT_DIR.mkdir(parents=True, exist_ok=True)
-CIT_DIR_SAS.mkdir(parents=True, exist_ok=True)        # <-- ADD
+# SFTP (DRR - Data Report Repository System)
+SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+DRR_HOST_DESC     = "Data Report Repository (DRR)"
+DRR_REMOTE_DIR    = "TD/INTERBANK/CFTWG"
 
 
 
 
-# Persistent yearly CIT accumulation parquet — one file per year
-CIT_YEAR_FILE = CIT_DIR / f"cit{REPTYEAR}.parquet"
+# =============================================================================
+# SFTP HELPERS
+# =============================================================================
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row from ctl_dwh_sftp_info.sas7bdat."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
 
-# Yearly CIT SAS dataset (SAS: CIT.CIT&REPTYEAR -> cit{yy}.sas7bdat)   # <-- ADD (3 lines)
-CIT_SAS_LIBREF = "CITLIB"
-CIT_SAS_TABLE  = f"CIT{REPTYEAR}"
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
 
-
-
-
-# ============================================================================
-# STEP 5b — WRITE YEARLY CIT AS .sas7bdat (saspy)
-# ============================================================================
-
-def _write_cit_sas7bdat(df_cit_year: pl.DataFrame) -> None:
-    """Write the accumulated yearly CIT data as a SAS dataset.
-
-    SAS equivalent: permanent dataset CIT.CIT&REPTYEAR (library CIT).
-    Columns: BRANCH, AMOUNT01, NOACCT01, ..., AMOUNT12, NOACCT12.
-    An existing dataset of the same name is replaced.
-    """
-    CIT_DIR_SAS.mkdir(parents=True, exist_ok=True)
-
-    sas = saspy.SASsession()
-    try:
-        sas.saslib(CIT_SAS_LIBREF, path=str(CIT_DIR_SAS))
-        sas_data = sas.df2sd(
-            df_cit_year.to_pandas(),
-            table=CIT_SAS_TABLE,
-            libref=CIT_SAS_LIBREF,
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError(
+            "SFTP control file is missing columns: " + ", ".join(missing_columns)
         )
-        if sas_data is None:
-            raise RuntimeError(
-                f"saspy failed to write {CIT_SAS_LIBREF}.{CIT_SAS_TABLE} to {CIT_DIR_SAS}"
-            )
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(
+            f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}"
+        )
+
+    row = rows.iloc[0]
+
+    # SAS character values can contain fixed-width padding.
+    clean = lambda value: "".join(str(value).split()) if pd.notna(value) else ""
+    sftp_id = clean(row["SFTP_ID"])
+    sftp_pw = clean(row["SFTP_PW"])
+    host_ip = clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    empty_values = [
+        name for name, value in (
+            ("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)
+        ) if not value
+    ]
+    if empty_values:
+        raise RuntimeError(
+            f"SFTP row for '{host_desc}' has blank values: {', '.join(empty_values)}"
+        )
+
+    return sftp_id, sftp_pw, host_ip, host_key
+
+
+def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
+    """
+    Upload the report to DRR. Equivalent of the JCL RUNSFTP step:
+        //RUNSFTP  EXEC COZBATCH
+        //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+        lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+        lzopts linerule=$lr
+        cd TD/INTERBANK/CFTWG
+        put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+        EOB
+    """
+    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    # HOST_KEY is available but its stored format is not confirmed;
+    # AutoAddPolicy is used until strict host-key pinning is agreed with infra.
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    try:
+        sftp = ssh.open_sftp()
+        try:
+            try:
+                sftp.chdir(DRR_REMOTE_DIR)
+            except IOError:
+                sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
+            print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
+            sftp.put(str(local_path), remote_name)
+        finally:
+            sftp.close()
     finally:
-        sas.endsas()
-
-    print(f"  Written SAS dataset: {CIT_DIR_SAS / (CIT_SAS_TABLE.lower() + '.sas7bdat')}")
-
+        ssh.close()
+    print("  DRR upload complete.")
 
 
+# =============================================================================
+# FTP TO SAS DATAWAREHOUSE  (commented out in the original JCL)
+# =============================================================================
+# //*%OPC SCAN
+# //*%OPC SETVAR TODD=(ODD - 61CD)
+# //*%OPC SETVAR TOMM=(OMM - 61CD)
+# //*%OPC SETVAR TOYYYY=(OYYYY - 61CD)
+# //*RUNSFTP  EXEC COZBATCH
+# //*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+# //*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+# //*lzopts linerule=$lr
+# //*cd TextFile/TD/PBB/CFTWG
+# //*put //SAP.PBB.EIBDOFCY.DAILY  OutstandingFCY_%ODD.%OMM.%OYYYY..xls
+# //*- rm OutstandingFCY_%TODD.%TOMM.%TOYYYY..xls
 
-    print(f"\nStep 5: Updating yearly CIT parquet [{CIT_YEAR_FILE.name}]...")
-    df_cit_year = _update_cit_year(df_month, file_month)
-    print(f"  Total branches in yearly parquet: {len(df_cit_year):,}")
 
-    # ── Step 5b: Write yearly CIT as .sas7bdat ─────────────────────────────   # <-- ADD (3 lines)
-    print(f"\nStep 5b: Writing yearly CIT SAS dataset [{CIT_SAS_TABLE.lower()}.sas7bdat]...")
-    _write_cit_sas7bdat(df_cit_year)
+
+
+_fd_raw = _read_sas_via_parquet(FD_PATH, REQUIRED_FD_COLUMNS, "FD")
 
 
 
 
-    print("\nGENERATED FILES:")
-    print(f"  Cash-In-Transit Report : {OUTPUT_CITLIST}")
-    print(f"  Yearly CIT Parquet     : {CIT_YEAR_FILE}")
-    print(f"  Yearly CIT SAS Dataset : {CIT_DIR_SAS / (CIT_SAS_TABLE.lower() + '.sas7bdat')}")   # <-- ADD
+_curr_raw = _read_sas_via_parquet(CURR_PATH, REQUIRED_CURR_COLUMNS, "CURR")
+
+
+
+
+_loan_raw = _read_sas_via_parquet(LN_NOTE_PATH, REQUIRED_LN_COLUMNS, "LN_NOTE")
+
+
+
+
+# =============================================================================
+# SFTP REPORT TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# Remote name = OutstandingFCY_%ODD.%OMM.%OYYYY..xls  ->  OutstandingFCY_DDMMYYYY.xls
+# (date from the DP batch control file, same as the local file name)
+# =============================================================================
+print("\nUploading report to DRR via SFTP...")
+sftp_upload_to_drr(out_txt, f"OutstandingFCY_{REPTDATE:%d%m%Y}.xls")
+
+
+
+
+print(f"\n EIBDOFCY completed — report date {RDATE}, output: {out_txt} \n")
+
+
+
+
+If you want the local file to be .xls as well, change the out_txt = ... line to end in .xls. Nothing else needs to change.
 
 
 
