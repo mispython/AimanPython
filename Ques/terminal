@@ -17,3 +17,49 @@ sas_data = sas.df2sd(df, table="my_dataset", libref="outlib")
 
 # 5. Close the SAS session
 sas.endsas()
+
+
+
+
+
+from pathlib import Path
+import polars as pl
+from polars_readstat import scan_readstat
+
+# ==========================================
+# 1. SET YOUR FILE PATHS HERE
+# ==========================================
+# Windows example: Path(r"C:\Users\YourName\Documents\data.sas7bdat")
+# Mac/Linux example: Path("/Users/yourname/Documents/data.sas7bdat")
+
+INPUT_SAS_FILE = Path(r"C:\path\to\your\input_file.sas7bdat")
+OUTPUT_PARQUET_FILE = Path(r"C:\path\to\your\output_file.parquet")
+
+# ==========================================
+# 2. CONVERSION LOGIC
+# ==========================================
+def convert_sas_to_parquet(sas_path: Path, parquet_path: Path) -> None:
+    # Check if the input file exists
+    if not sas_path.exists():
+        raise FileNotFoundError(f"Input file not found: {sas_path}")
+
+    # Create the output folder automatically if it doesn't exist yet
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Reading: {sas_path}")
+    
+    # Stream the SAS file directly into Parquet (fast & low memory usage)
+    scan_readstat(str(sas_path)).sink_parquet(str(parquet_path))
+    
+    print(f"Saved:   {parquet_path}")
+
+    # Quick verification check
+    df_check = pl.scan_parquet(str(parquet_path))
+    row_count = df_check.select(pl.len()).collect().item()
+    col_names = df_check.collect_schema().names()
+    
+    print(f"\nSuccess! Converted {row_count:,} rows and {len(col_names)} columns.")
+    print(f"Columns: {col_names[:10]}{'...' if len(col_names) > 10 else ''}")
+
+if __name__ == "__main__":
+    convert_sas_to_parquet(INPUT_SAS_FILE, OUTPUT_PARQUET_FILE)
