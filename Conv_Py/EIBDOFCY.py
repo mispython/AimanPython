@@ -198,20 +198,6 @@ def _read_sas_via_parquet(sas_path: Path, required: set[str], tag: str) -> pl.Da
     return df
 
 
-# =============================================================================
-# REPORT DATE DERIVATION
-# (Replaces: DATA REPTDATE; SET DEPO.REPTDATE; CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY10.));)
-# REPTDATE is derived as TODAY() - 1; RDATE formatted as DD/MM/YYYY (DDMMYY10.)
-# =============================================================================
-reptdate_values = get_reptdate_values(year_format="%Y")
-
-REPTDATE = reptdate_values.reptdate
-REPTYEAR = reptdate_values.reptyear
-REPTMON  = reptdate_values.reptmon
-REPTDAY  = reptdate_values.reptday
-NOWK     = reptdate_values.nowk
-RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
-
 # # =============================================================================
 # # CACHE INPUTS  (.sas7bdat -> Parquet, reused while the SAS file is unchanged)
 # # =============================================================================
@@ -226,7 +212,7 @@ RDATE    = REPTDATE.strftime("%d/%m/%Y")   # DDMMYY10. → DD/MM/YYYY
 # Only FCY FD records are needed — sourced from FD_FCY_PATH.
 # DEPO.FD (MYR-only records) is excluded per WHERE CURCODE NE 'MYR'.
 # =============================================================================
-_fd_raw = _read_sas_via_parquet(FD_CACHE, REQUIRED_FD_COLUMNS, FD_PATH)
+_read_sas_via_parquet(FD_PATH, REQUIRED_FD_COLUMNS, "FD")
 
 fd_raw = (
     _fd_raw
@@ -272,7 +258,7 @@ fd_summary = (
 # =============================================================================
 # DATA CURR  (SET DEPO.CURRENT; WHERE CURCODE NE 'MYR')
 # =============================================================================
-_curr_raw = _read_sas_via_parquet(CURR_CACHE, REQUIRED_CURR_COLUMNS, CURR_PATH)
+_read_sas_via_parquet(CURR_PATH, REQUIRED_CURR_COLUMNS, "CURR")
 
 curr_raw = (
     _curr_raw
@@ -321,7 +307,7 @@ curr_summary.write_csv(OUTPUT_DIR / "CURR.csv")
 # =============================================================================
 # DATA LOAN  (SET LOAN.LNNOTE; WHERE CURCODE NE 'MYR')
 # =============================================================================
-_loan_raw = _read_sas_via_parquet(LN_NOTE_CACHE, REQUIRED_LN_COLUMNS, LN_NOTE_PATH)
+_read_sas_via_parquet(LN_NOTE_PATH, REQUIRED_LN_COLUMNS, "LN_NOTE")
 
 loan_raw = (
     _loan_raw
@@ -544,6 +530,6 @@ with open(out_txt, "a", encoding="utf-8") as f:
 
 print(f"\n EIBDOFCY completed — report date {RDATE}, output: {out_txt} \n")
 
-with open(out_txt, "rb") as f:
-    content = f.read(1000)
-    print(content)
+# with open(out_txt, "rb") as f:
+#     content = f.read(1000)
+#     print(content)
