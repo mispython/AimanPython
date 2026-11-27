@@ -1,10 +1,19 @@
-# EIBDRB01@%OMM.%OYY..TXT
-OUTPUT_FILE = OUTPUT_DIR / f"EIBDRB01@{REPTMON}{REPTYY}.TXT"
+import pandas as pd
+import saspy
 
+# 1. Read the Parquet file into a pandas DataFrame
+df = pd.read_parquet("path/to/your_data.parquet")
 
+# 2. Start a SAS session (ensure your sascfg_personal.py is configured)
+sas = saspy.SASsession()
 
+# 3. Assign a permanent SAS library pointing to your desired output folder
+# Note: This path must be accessible by the SAS server/environment
+sas.saslib(libref="outlib", path="/path/to/output/folder")
 
-# EIBDRB2A@%ODD.%OMM.%OYY..TXT / EIBDRB2B@%ODD.%OMM.%OYY..TXT
-DDMMYY     = reptdate.strftime("%d%m%y")
-OUTPUT_RM  = OUTPUT_DIR / f"EIBDRB2A@{DDMMYY}.TXT"   # DD: RMWDRAW
-OUTPUT_FCY = OUTPUT_DIR / f"EIBDRB2B@{DDMMYY}.TXT"   # DD: FCYWDRAW
+# 4. Convert the DataFrame directly into a permanent .sas7bdat dataset
+# This creates 'my_dataset.sas7bdat' in '/path/to/output/folder'
+sas_data = sas.df2sd(df, table="my_dataset", libref="outlib")
+
+# 5. Close the SAS session
+sas.endsas()
