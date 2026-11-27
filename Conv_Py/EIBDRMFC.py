@@ -51,7 +51,7 @@ REPYMD = REPTDATE.strftime("%y%m%d")         # date token in input filename
 BASE_DIR        = Path("/dwh")
 INPUT_FCY_DIR   = BASE_DIR / "dp_fcy"
 INPUT_FDCD_DIR  = BASE_DIR / "dpd_fdcd"
-OUTPUT_DIR      = Path("/host_pq/mis/output/deposit/report")
+OUTPUT_DIR      = Path("/host_pq/mis/output/report/EIBDRMFC")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # # Testing Path
