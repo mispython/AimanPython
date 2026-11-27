@@ -1,21 +1,27 @@
+import duckdb
+import pandas as pd
 import paramiko
+import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 
 
 
-# Control file : SFTP connection info per host description
 SFTP_CONTROL_FILE = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
 
 
-
-
 def get_sftp_info(host_desc: str):
-    """Read one SFTP configuration row from the DWH SFTP control file.
+    """
+    Read one SFTP configuration row directly from the DWH control file
+    (ctl_dwh_sftp_info.sas7bdat) for the given HOST_DESC.
 
     Returns (sftp_id, sftp_pw, host_ip, host_key).
     """
     if not SFTP_CONTROL_FILE.exists():
-        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+        raise FileNotFoundError(
+            f"SFTP control file not found: {SFTP_CONTROL_FILE}"
+        )
 
     ctl = pd.read_sas(str(SFTP_CONTROL_FILE), format="sas7bdat", encoding="latin1")
     ctl.columns = [str(c).upper().strip() for c in ctl.columns]
@@ -58,12 +64,27 @@ def get_sftp_info(host_desc: str):
 
 
 
-# DRR (Data Report Repository) SFTP target - from FTPFDFCY
-#   CD TD/INTERBANK/FCYFD
-#   PUT //SAP.PBB.MNI.FDRMFC  FDRMFC_%ODD.%OMM.%OYY..CSV
-DRR_HOST_DESC   = "Data Report Repository (DRR)"      # HOST_DESC in ctl_dwh_sftp_info
-DRR_REMOTE_DIR  = "TD/INTERBANK/FCYFD"
-DRR_REMOTE_FILE = f"FDRMFC_{REPTDATE:%d.%m.%y}.CSV"   # FDRMFC_DD.MM.YY.CSV
+REPTDATE  = get_batch_date(BATCH_SOURCE)
+
+
+
+
+# Static filename: original SAP.PIBB.EIWIBT1C.TEXT dataset name carries no date
+OUTPUT_FILE = OUTPUT_DIR / "EIWIBT1C.txt"
+
+# ------------------------------------------------------------
+# SFTP CONFIGURATION (DRR - Data Report Repository System)
+# From FTPIBT1C JCL (RUNSFTP step, DRR#SFTP):
+#   cd "FD-BNM REPORTING/PIBB/BNM RPTG"
+#   PUT //SAP.PIBB.EIWIBT1C.TEXT  EIWIBT1C%ODD.%OMM..TXT
+# ------------------------------------------------------------
+DRR_HOST_DESC  = "Data Report Repository (DRR)"      # HOST_DESC in ctl_dwh_sftp_info
+DRR_REMOTE_DIR = "FD-BNM REPORTING/PIBB/BNM RPTG"
+DRR_REMOTE_PREFIX = "EIWIBT1C"
+
+# Earlier FTP step (commented out in the original JCL): TEXTFILE\FIN directory
+# FIN_REMOTE_DIR = "TEXTFILE/FIN"
+# PUT //SAP.PIBB.EIWIBT1C.TEXT  EIWIBT1C%ODD.%OMM..TXT
 
 
 
@@ -71,17 +92,27 @@ DRR_REMOTE_FILE = f"FDRMFC_{REPTDATE:%d.%m.%y}.CSV"   # FDRMFC_DD.MM.YY.CSV
 # ============================================================
 # SFTP UPLOAD TO DRR
 # ============================================================
-def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
-    """Upload the report to the DRR server (equivalent of JCL RUNSFTP step).
+def drr_remote_filename() -> str:
+    """EIWIBT1C%ODD.%OMM..TXT -> EIWIBT1C + DD + MM + .TXT
+    (day and month taken from the SAS batch date, REPTDAY / REPTMON)."""
+    return f"{DRR_REMOTE_PREFIX}{REPTDAY}{REPTMON}.TXT"
 
-    Connection details come from ctl_dwh_sftp_info.sas7bdat. HOST_KEY is blank
-    for the DRR row, so no host-key pinning is applied (AutoAddPolicy).
-    The file is sent as-is: it is already fixed-length (LRECL=150), which
-    matches the JCL's 'notrim' option.
+
+def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
+    """Upload the report text file to the DRR server.
+
+    Equivalent of the JCL RUNSFTP step (lzopts notrim, mode=text): the file is
+    already written as fixed 150-byte records, so it is uploaded as-is and
+    trailing blanks are preserved.
     """
+    if not local_path.exists():
+        raise FileNotFoundError(f"Output file to upload not found: {local_path}")
+
     sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
 
     ssh = paramiko.SSHClient()
+    # HOST_KEY in ctl_dwh_sftp_info is blank for the DRR row, so host-key
+    # pinning is not possible; the missing-key policy is auto-add.
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
     print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
@@ -91,14 +122,21 @@ def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
         try:
             try:
                 sftp.chdir(DRR_REMOTE_DIR)
-            except IOError as exc:
-                raise FileNotFoundError(
+            except IOError:
+                raise RuntimeError(
                     f"Remote DRR folder '{DRR_REMOTE_DIR}' not found"
-                ) from exc
+                )
 
             print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
             sftp.put(str(local_path), remote_name)
-            print(f"  Uploaded {sftp.stat(remote_name).st_size:,} bytes.")
+
+            local_size = local_path.stat().st_size
+            remote_size = sftp.stat(remote_name).st_size
+            if remote_size != local_size:
+                raise RuntimeError(
+                    f"Upload size mismatch for {remote_name}: "
+                    f"local={local_size}, remote={remote_size}"
+                )
         finally:
             sftp.close()
     finally:
@@ -108,14 +146,22 @@ def sftp_upload_to_drr(local_path: Path, remote_name: str) -> None:
 
 
 
+    output_path = OUTPUT_FILE
+    write_report(output_path, all_lines)
 
-# ============================================================
-# SFTP REPORT TO DATA REPORT REPOSITORY SYSTEM (DRR)
-# ============================================================
-print("\nUploading report to DRR via SFTP...")
-sftp_upload_to_drr(OUTPUT_FILE, DRR_REMOTE_FILE)
+    print(f"Output written to: {output_path}")
+    # print()
+    # for ctrl, text in all_lines:
+    #     print(text)
 
-print("\nEIBDRMFC complete.")
+    # FTPIBT1C: send SAP.PIBB.EIWIBT1C.TEXT to DRR
+    print("\nUploading report to DRR via SFTP...")
+    sftp_upload_to_drr(output_path, drr_remote_filename())
+
+
+
+
+  SFTP      -> DRR "FD-BNM REPORTING/PIBB/BNM RPTG" as EIWIBT1C<DD><MM>.TXT (FTPIBT1C)
 
 
 
