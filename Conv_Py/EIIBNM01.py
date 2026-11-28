@@ -75,18 +75,73 @@ Neither member name carries a date token, so both are written as fixed-name.
 
 import re
 import gc
+import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
-from datetime import date, timedelta, datetime
+from datetime import date, datetime
 
+import saspy
 import duckdb
 import pandas as pd
+import paramiko
 import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from REPTDATE import get_monthly_reptdate_values
-from PBBLNFMT_AII import format_fisstype, format_fissgroup
+from PBBLNFMT import format_fisstype, format_fissgroup
+
+# ============================================================================
+# CONTROL FILES  (batch date + SFTP credentials)
+# ============================================================================
+BATCH_DATE_CTL_FILE = Path("/sasdata/dwh/control/ctl_dwh_batch_dttm.sas7bdat")
+SFTP_CONTROL_FILE   = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+
+
+def get_batch_date_dwh(source_system_cd: str) -> date:
+    """Return BATCH_DTTM (as a date) for the given SOURCE_SYSTEM_CD."""
+    if not BATCH_DATE_CTL_FILE.exists():
+        raise FileNotFoundError(f"Batch date control file not found: {BATCH_DATE_CTL_FILE}")
+
+    ctl = pd.read_sas(BATCH_DATE_CTL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    rows = ctl.loc[ctl["SOURCE_SYSTEM_CD"].astype(str).str.strip() == source_system_cd]
+    if rows.empty:
+        raise RuntimeError(
+            f"SOURCE_SYSTEM_CD '{source_system_cd}' not found in {BATCH_DATE_CTL_FILE}"
+        )
+    return pd.to_datetime(rows.iloc[0]["BATCH_DTTM"]).date()
+
+
+def get_sftp_info(host_desc: str):
+    """Read one SFTP configuration row from the DWH control file."""
+    if not SFTP_CONTROL_FILE.exists():
+        raise FileNotFoundError(f"SFTP control file not found: {SFTP_CONTROL_FILE}")
+
+    ctl = pd.read_sas(SFTP_CONTROL_FILE, format="sas7bdat", encoding="utf-8")
+    ctl.columns = [str(c).upper().strip() for c in ctl.columns]
+
+    required = {"HOST_DESC", "SFTP_ID", "SFTP_PW", "HOST_IP"}
+    missing_columns = sorted(required.difference(ctl.columns))
+    if missing_columns:
+        raise RuntimeError("SFTP control file is missing columns: " + ", ".join(missing_columns))
+
+    descriptions = ctl["HOST_DESC"].fillna("").astype(str).str.strip()
+    rows = ctl[descriptions.eq(host_desc)]
+    if len(rows) != 1:
+        raise RuntimeError(f"Expected exactly one SFTP row for '{host_desc}'; found {len(rows)}")
+
+    row = rows.iloc[0]
+    clean = lambda v: "".join(str(v).split()) if pd.notna(v) else ""
+    sftp_id, sftp_pw, host_ip = clean(row["SFTP_ID"]), clean(row["SFTP_PW"]), clean(row["HOST_IP"])
+    host_key = clean(row["HOST_KEY"]) if "HOST_KEY" in ctl.columns else ""
+
+    blanks = [n for n, v in (("SFTP_ID", sftp_id), ("SFTP_PW", sftp_pw), ("HOST_IP", host_ip)) if not v]
+    if blanks:
+        raise RuntimeError(f"SFTP row for '{host_desc}' has blank values: {', '.join(blanks)}")
+    return sftp_id, sftp_pw, host_ip, host_key
+
 
 # ============================================================================
 # PATH CONFIGURATION
@@ -95,18 +150,35 @@ from PBBLNFMT_AII import format_fisstype, format_fissgroup
 BASE_DIR         = Path("/dwh")
 INPUT_BTBNM_DIR  = BASE_DIR / "ibtrade"
 INPUT_DISPAY_DIR = BASE_DIR / "iln"
-INPUT_ISASD_DIR  = Path("/KENA/KONFEMKAN/DENGAN/NABILA/DULU")
+INPUT_ISASD_DIR  = Path("/exdwh/host/ln/store_sasdata")
 INPUT_BNM_DIR    = Path("/dwh/dwh_m/tempsource/ln")
-INPUT_LOAN_DIR   = Path("/sas/ln/dwh/enrichment") 
+INPUT_LOAN_DIR   = Path("/sas/ln/dwh/enrichment")
 
-OUTPUT_DIR       = Path("/host_pq/mis")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE      = OUTPUT_DIR / "output" / "ln" / "report" / f"EIIBNM01_{REPTMON}.TXT"
+OUTPUT_DIR        = Path("/host_pq/mis")
+OUTPUT_REPORT_DIR = OUTPUT_DIR / "output" / "report" / "EIIBNM01"
+OUTPUT_REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_MFRS_DIR = OUTPUT_DIR / "input" / "IMFRS"        # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
+OUTPUT_MFRS_DIR = OUTPUT_DIR / "mfrs_pibb" / "details"      # //MFRS DD DSN=SAP.PIBB.MFRS.DETAILS
 OUTPUT_MFRS_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_MFRS_MAST_BR_FILE = OUTPUT_MFRS_DIR / "MAST_BR.sas7bdat"
-OUTPUT_MFRS_ALM_CR_FILE  = OUTPUT_MFRS_DIR / "ALM_CR.sas7bdat"
+
+# saspy: configuration name defined in sascfg_personal.py (None = saspy default)
+SASPY_CFGNAME = None
+MFRS_LIBREF   = "MFRS"
+
+# Temporary parquet conversions are written here and deleted after each read
+# (None = system temp; set a path if the default temp area is too small).
+TEMP_DIR = None
+
+CHUNK_ROWS = 500_000
+PAGE_SIZE  = 60          # lines per page -- not specified in SAS -> project default
+
+# Report date source (batch control file)
+SOURCE_SYSTEM_CD = "LN"
+
+# SFTP -> Data Report Repository (DRR)   (ask.py: PIBB branch)
+DRR_HOST_DESC   = "Data Report Repository (DRR)"
+DRR_REMOTE_DIR  = "/FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"
+DRR_REMOTE_FILE = "EIIBNM01.TXT"                         # no date on the SFTP copy
 
 # # Testing Path
 # BASE_DIR = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
@@ -127,9 +199,6 @@ OUTPUT_MFRS_ALM_CR_FILE  = OUTPUT_MFRS_DIR / "ALM_CR.sas7bdat"
 # OUTPUT_MFRS_MAST_BR_FILE = OUTPUT_MFRS_DIR / "MFRS_MAST_BR.parquet"
 # OUTPUT_MFRS_ALM_CR_FILE  = OUTPUT_MFRS_DIR / "MFRS_ALM_CR.parquet"
 
-CHUNK_ROWS = 500_000
-PAGE_SIZE  = 60          # lines per page -- not specified in SAS -> project default
-
 # ============================================================================
 # MACRO VARIABLE LISTS  (equivalent to SAS %LET declarations)
 # ============================================================================
@@ -149,18 +218,16 @@ REWOF  = (425, 654, 655, 656, 657, 658, 659, 660, 661, 662, 663, 665, 666, 667,
 STFLN  = (102, 103, 104, 105, 106, 107, 108)
 
 # ============================================================================
-# STEP 1: REPORT DATE
+# STEP 1: REPORT DATE  (from batch control file, SOURCE_SYSTEM_CD = LN)
 # ============================================================================
 print("Step 1: Deriving report date...")
 
-reptdate_values = get_monthly_reptdate_values(year_format="%Y")
-reptdate = reptdate_values.reptdate     # last day of the previous month
+reptdate = get_batch_date_dwh(SOURCE_SYSTEM_CD)
+# If strictly "last day of previous month" is wanted instead, use:
+# reptdate = reptdate.replace(day=1) - timedelta(days=1)   (and re-import timedelta)
 
 _day = reptdate.day
-# SELECT(DAY(REPTDATE)): the WHEN(8)/WHEN(15)/WHEN(22) branches are
-# unreachable in practice, since REPTDATE is always the last day of the
-# previous month (day 28-31) -- OTHERWISE always fires. Preserved verbatim
-# for source fidelity.
+# SELECT(DAY(REPTDATE)): preserved verbatim from the SAS source.
 if _day == 8:
     SDD, WK, WK1, WK2, WK3 = 1, "1", "4", None, None
 elif _day == 15:
@@ -176,26 +243,24 @@ if WK == "1":
 else:
     MM1 = MM
 MM2 = MM - 1 if MM - 1 != 0 else 12
-SDATE = date(reptdate.year, MM, SDD)   # CALL SYMPUT('SDATE',...) -- never
-                                        # referenced again anywhere in the
-                                        # SAS body; kept only for parity.
+SDATE = date(reptdate.year, MM, SDD)   # kept for parity (unused later)
 
 NOWK     = WK
 REPTMON  = f"{MM:02d}"
-REPTMON1 = f"{MM1:02d}"   # CALL SYMPUT'd but never referenced again -- dead.
+REPTMON1 = f"{MM1:02d}"   # unused later
 REPTMON2 = f"{MM2:02d}"
 REPTYEAR = f"{reptdate.year:04d}"
-REPTDAY  = f"{reptdate.day:02d}"  # CALL SYMPUT'd but never referenced -- dead.
+REPTDAY  = f"{reptdate.day:02d}"  # unused later
 RDATE    = reptdate.strftime("%d/%m/%y")
 
-# Generate time stamp
-report_date = date.today() - timedelta(days=1)
-ts = report_date.strftime("%y%m%d")
+# Own-copy outputs carry the month suffix (filename_mm)
+OUTPUT_FILE                = OUTPUT_REPORT_DIR / f"EIIBNM01_{REPTMON}.TXT"
+OUTPUT_MFRS_MAST_BR_MEMBER = "mast_br"
+OUTPUT_MFRS_ALM_CR_MEMBER  = "alm_cr"
+OUTPUT_MFRS_MAST_BR_FILE   = OUTPUT_MFRS_DIR / f"{OUTPUT_MFRS_MAST_BR_MEMBER}.sas7bdat"
+OUTPUT_MFRS_ALM_CR_FILE    = OUTPUT_MFRS_DIR / f"{OUTPUT_MFRS_ALM_CR_MEMBER}.sas7bdat"
 
-OUTPUT_DIR = BASE_DIR / "output" / "EIIBNM01"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / f"EIIBNM01_{ts}.txt"
-
+print(f"  Batch date ({SOURCE_SYSTEM_CD}) : {reptdate}")
 print(f"  REPTMON/REPTMON2/NOWK : {REPTMON}/{REPTMON2}/{NOWK}")
 print(f"  REPTYEAR              : {REPTYEAR}")
 print(f"  RDATE                 : {RDATE}")
@@ -207,14 +272,14 @@ print(f"  RDATE                 : {RDATE}")
 # Production Path
 INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR  / f"ibtrad{REPTMON}{NOWK}.sas7bdat"
 INPUT_DISPAY_FILE         = INPUT_DISPAY_DIR / f"idispaymth{REPTMON}.sas7bdat"
-INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR  / f"loan{REPTMON}.sas7bdat"
-INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR    / f"loan{REPTMON}{NOWK}.sas7bdat"
-INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR    / f"loan{REPTMON2}{NOWK}.sas7bdat"
-INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"lnwof{REPTMON}{NOWK}.sas7bdat"
-INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"lnwod{REPTMON}{NOWK}.sas7bdat"
-INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"lnwof{REPTMON2}{NOWK}.sas7bdat"
-INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"lnwod{REPTMON2}{NOWK}.sas7bdat"
-INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR   / f"enrh_ln_comm_m{REPTMON}.sas7bdat"
+INPUT_ISASD_LOAN_FILE     = INPUT_ISASD_DIR  / f"iloan{REPTMON}.sas7bdat"
+INPUT_BNM_LOAN_CUR_FILE   = INPUT_BNM_DIR    / f"loan{REPTMON}{NOWK}.sas7bdat"          # Discriminate by ENTITY_CD = 'PIBB'
+INPUT_BNM_LOAN_PREV_FILE  = INPUT_BNM_DIR    / f"loan{REPTMON2}{NOWK}.sas7bdat"         # Discriminate by ENTITY_CD = 'PIBB'
+INPUT_BNM_LNWOF_CUR_FILE  = INPUT_BNM_DIR    / f"lnwof{REPTMON}{NOWK}.sas7bdat"         # Discriminate by ENTITY_CD = 'PIBB'
+INPUT_BNM_LNWOD_CUR_FILE  = INPUT_BNM_DIR    / f"lnwod{REPTMON}{NOWK}.sas7bdat"         # Discriminate by ENTITY_CD = 'PIBB'
+INPUT_BNM_LNWOF_PREV_FILE = INPUT_BNM_DIR    / f"lnwof{REPTMON2}{NOWK}.sas7bdat"        # Discriminate by ENTITY_CD = 'PIBB'
+INPUT_BNM_LNWOD_PREV_FILE = INPUT_BNM_DIR    / f"lnwod{REPTMON2}{NOWK}.sas7bdat"        # Discriminate by ENTITY_CD = 'PIBB'
+INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR   / f"enrh_ln_comm_d{REPTDAY}.sas7bdat"      # Discriminate by ENTITY_CD = 'PIBB'
 
 # # Testing Path
 # INPUT_BTBNM_IBTRAD_FILE   = INPUT_BTBNM_DIR  / f"ibtrad08426.sas7bdat"
@@ -231,13 +296,6 @@ INPUT_LOAN_LNCOMM_FILE    = INPUT_LOAN_DIR   / f"enrh_ln_comm_m{REPTMON}.sas7bda
 # ============================================================================
 # HELPER: CACHE STAMP + STREAM .sas7bdat -> PARQUET
 # ============================================================================
-def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
-    return (
-        cache_path.exists()
-        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
-    )
-
-
 def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
     writer = None
@@ -284,21 +342,13 @@ def _sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
     print(f"  [{tag}] Done - {total:,} rows cached.")
 
 
-def _load_cached(sas_path: Path, tag: str) -> Path:
-    cache_path = CACHE_DIR / f"{sas_path.stem}.parquet"
-    if _cache_is_fresh(sas_path, cache_path):
-        print(f"  [{tag}] Cache fresh - skipping conversion.")
-    else:
-        _sas_to_parquet(sas_path, cache_path, tag)
-    return cache_path
-
-
-def _read_rows(parquet_path: Path, select_sql: str) -> list:
-    """Read a Parquet cache through DuckDB with explicit CASTs and return
-    a plain list of dict rows. For any source column referenced by the
-    SELECT but missing from the parquet, substitute NULL of the CAST's
-    target type -- mirroring SAS's behaviour, where a KEEP/RENAME of a
-    column the source does not carry simply yields a missing value."""
+def _read_rows(parquet_path: Path, select_sql: str, where_sql: Optional[str] = None) -> list:
+    """Read a Parquet file through DuckDB with explicit CASTs and return a plain
+    list of dict rows. For any source column referenced by the SELECT but missing
+    from the parquet, substitute NULL of the CAST's target type -- mirroring SAS's
+    behaviour, where a KEEP/RENAME of a column the source does not carry simply
+    yields a missing value. `where_sql` (optional) is a filter on the source
+    columns, written against the alias `src`."""
     con = duckdb.connect(database=":memory:")
 
     src_cols = {
@@ -320,45 +370,32 @@ def _read_rows(parquet_path: Path, select_sql: str) -> list:
         _fix,
         select_sql,
     )
+    where_clause = f" WHERE {where_sql}" if where_sql else ""
 
     df = con.execute(
-        f"SELECT {fixed_sql} FROM read_parquet('{parquet_path.as_posix()}') AS src"
+        f"SELECT {fixed_sql} FROM read_parquet('{parquet_path.as_posix()}') AS src{where_clause}"
     ).pl()
     con.close()
     return df.to_dicts()
 
 
-# DEBUG
-raw = pd.read_sas(
-    "/stgsrcsys/host/uat/AII/mth_bnm/loan084.sas7bdat",
-    encoding="latin1",
-    chunksize=500_000,
-)
-first_chunk = next(raw)
-print("dtype:", first_chunk["ACCTYPE"].dtype)
-print("raw sample:", first_chunk["ACCTYPE"].head(10).tolist())
-print("all-null in first chunk?", first_chunk["ACCTYPE"].isna().all())
+def _read_sas_rows(sas_path: Path, select_sql: str, tag: str,
+                   where_sql: Optional[str] = None) -> list:
+    """.sas7bdat -> temporary Parquet -> DuckDB rows. The Parquet lives only
+    inside this call and is removed on exit, so nothing is kept on disk."""
+    if not sas_path.exists():
+        raise FileNotFoundError(f"[{tag}] input not found: {sas_path}")
+    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as tmp:
+        parquet_path = Path(tmp) / f"{sas_path.stem}.parquet"
+        _sas_to_parquet(sas_path, parquet_path, tag)
+        return _read_rows(parquet_path, select_sql, where_sql)
 
 
 # ============================================================================
-# STEP 2: CACHE INPUT SAS FILES TO PARQUET
+# STEP 2: COLUMN CASTS
 # ============================================================================
-print("\nStep 2: Caching input SAS datasets to Parquet...")
+print("\nStep 2: Casting columns...")
 
-ISASD_LOAN_CACHE      = _load_cached(INPUT_ISASD_LOAN_FILE, "ISASD_LOAN")
-BNM_LOAN_CUR_CACHE    = _load_cached(INPUT_BNM_LOAN_CUR_FILE, "BNM_LOAN_CUR")
-BNM_LOAN_PREV_CACHE   = _load_cached(INPUT_BNM_LOAN_PREV_FILE, "BNM_LOAN_PREV")
-BNM_LNWOF_CUR_CACHE   = _load_cached(INPUT_BNM_LNWOF_CUR_FILE, "BNM_LNWOF_CUR")
-BNM_LNWOD_CUR_CACHE   = _load_cached(INPUT_BNM_LNWOD_CUR_FILE, "BNM_LNWOD_CUR")
-BNM_LNWOF_PREV_CACHE  = _load_cached(INPUT_BNM_LNWOF_PREV_FILE, "BNM_LNWOF_PREV")
-BNM_LNWOD_PREV_CACHE  = _load_cached(INPUT_BNM_LNWOD_PREV_FILE, "BNM_LNWOD_PREV")
-BTBNM_IBTRAD_CACHE    = _load_cached(INPUT_BTBNM_IBTRAD_FILE, "BTBNM_IBTRAD")
-DISPAY_CACHE          = _load_cached(INPUT_DISPAY_FILE, "DISPAY")
-LNCOMM_CACHE          = _load_cached(INPUT_LOAN_LNCOMM_FILE, "LNCOMM")
-
-# ============================================================================
-# COLUMN CASTS
-# ============================================================================
 LOAN_SELECT = (
     "CAST(ACCTNO AS BIGINT) AS ACCTNO, CAST(NOTENO AS BIGINT) AS NOTENO, "
     "CAST(FISSPURP AS INTEGER) AS FISSPURP, CAST(PRODUCT AS INTEGER) AS PRODUCT, "
@@ -415,27 +452,21 @@ IBTRAD_SELECT = _qualify(IBTRAD_SELECT)
 DISPAY_SELECT = _qualify(DISPAY_SELECT)
 LNCOMM_SELECT = _qualify(LNCOMM_SELECT)
 
-print("\nStep 3: Loading cached inputs...")
-isasd_loan_rows     = _read_rows(ISASD_LOAN_CACHE, LOAN_SELECT)
-bnm_loan_cur_rows   = _read_rows(BNM_LOAN_CUR_CACHE, LOAN_SELECT)
-bnm_loan_prev_rows  = _read_rows(BNM_LOAN_PREV_CACHE, LOAN_SELECT)
-bnm_lnwof_cur_rows  = _read_rows(BNM_LNWOF_CUR_CACHE, LOAN_SELECT)
-bnm_lnwod_cur_rows  = _read_rows(BNM_LNWOD_CUR_CACHE, LOAN_SELECT)
-bnm_lnwof_prev_rows = _read_rows(BNM_LNWOF_PREV_CACHE, LOAN_SELECT)
-bnm_lnwod_prev_rows = _read_rows(BNM_LNWOD_PREV_CACHE, LOAN_SELECT)
-ibtrad_rows         = _read_rows(BTBNM_IBTRAD_CACHE, IBTRAD_SELECT)
-dispay_raw_rows     = _read_rows(DISPAY_CACHE, DISPAY_SELECT)
-lncomm_rows         = _read_rows(LNCOMM_CACHE, LNCOMM_SELECT)
+print("\nStep 3: Converting (temporary Parquet) and loading inputs...")
+isasd_loan_rows     = _read_sas_rows(INPUT_ISASD_LOAN_FILE,     LOAN_SELECT,   "ISASD_LOAN")
+bnm_loan_cur_rows   = _read_sas_rows(INPUT_BNM_LOAN_CUR_FILE,   LOAN_SELECT,   "BNM_LOAN_CUR")
+bnm_loan_prev_rows  = _read_sas_rows(INPUT_BNM_LOAN_PREV_FILE,  LOAN_SELECT,   "BNM_LOAN_PREV")
+bnm_lnwof_cur_rows  = _read_sas_rows(INPUT_BNM_LNWOF_CUR_FILE,  LOAN_SELECT,   "BNM_LNWOF_CUR")
+bnm_lnwod_cur_rows  = _read_sas_rows(INPUT_BNM_LNWOD_CUR_FILE,  LOAN_SELECT,   "BNM_LNWOD_CUR")
+bnm_lnwof_prev_rows = _read_sas_rows(INPUT_BNM_LNWOF_PREV_FILE, LOAN_SELECT,   "BNM_LNWOF_PREV")
+bnm_lnwod_prev_rows = _read_sas_rows(INPUT_BNM_LNWOD_PREV_FILE, LOAN_SELECT,   "BNM_LNWOD_PREV")
+ibtrad_rows         = _read_sas_rows(INPUT_BTBNM_IBTRAD_FILE,   IBTRAD_SELECT, "BTBNM_IBTRAD")
+dispay_raw_rows     = _read_sas_rows(INPUT_DISPAY_FILE,         DISPAY_SELECT, "DISPAY")
+# PIBB program -> only ENTITY_CD = 'PIBB' commitment rows
+lncomm_rows         = _read_sas_rows(INPUT_LOAN_LNCOMM_FILE,    LNCOMM_SELECT, "LNCOMM",
+                                     where_sql="TRIM(CAST(src.ENTITY_CD AS VARCHAR)) = 'PIBB'")
 print(f"  ISASD LOAN rows: {len(isasd_loan_rows):,}   BNM LOAN(cur) rows: {len(bnm_loan_cur_rows):,}")
-
-# DEBUG
-print("  DEBUG bnm_loan_cur ACCTYPE non-null:", sum(1 for r in bnm_loan_cur_rows if r.get("ACCTYPE") is not None))
-
-print(f"  IBTRAD rows: {len(ibtrad_rows):,}   DISPAY rows: {len(dispay_raw_rows):,}   LNCOMM rows: {len(lncomm_rows):,}")
-
-# DEBUG
-print(f"  DEBUG input sizes: ISASD={len(isasd_loan_rows)} BNM_CUR={len(bnm_loan_cur_rows)} BNM_PREV={len(bnm_loan_prev_rows)} LNWOF_CUR={len(bnm_lnwof_cur_rows)} LNWOD_CUR={len(bnm_lnwod_cur_rows)} LNWOF_PREV={len(bnm_lnwof_prev_rows)} LNWOD_PREV={len(bnm_lnwod_prev_rows)}")
-
+print(f"  IBTRAD rows: {len(ibtrad_rows):,}   DISPAY rows: {len(dispay_raw_rows):,}   LNCOMM(PIBB) rows: {len(lncomm_rows):,}")
 
 # ============================================================================
 # GENERIC SAS-STYLE HELPERS
@@ -1444,14 +1475,71 @@ with open(OUTPUT_FILE, "w", encoding="latin1") as fh:
         fh.write(ln + "\n")
 print(f"  SASLIST report written : {OUTPUT_FILE}  ({len(report_lines):,} lines)")
 
-pl.DataFrame(mfrs_mast_br_rows, schema={"ACCTNO": pl.Int64, "PRODESC": pl.Utf8, "NOACCT": pl.Float64}) \
-    .write_parquet(OUTPUT_MFRS_MAST_BR_FILE)
-print(f"  MFRS.MAST_BR written   : {OUTPUT_MFRS_MAST_BR_FILE}  ({len(mfrs_mast_br_rows):,} rows)")
+# ----------------------------------------------------------------------------
+# MFRS datasets -> real .sas7bdat via saspy
+# ----------------------------------------------------------------------------
+def write_mfrs_datasets(datasets: list) -> None:
+    """Write (member_name, polars_df, char_lengths) tuples into the MFRS SAS
+    library as .sas7bdat. One SAS session is used for all members."""
+    sas = saspy.SASsession(cfgname=SASPY_CFGNAME) if SASPY_CFGNAME else saspy.SASsession()
+    try:
+        sas.saslib(MFRS_LIBREF, path=str(OUTPUT_MFRS_DIR))
+        for member, df, char_lengths in datasets:
+            # SAS numerics are doubles; PRODESC is a character column
+            pdf = df.with_columns(
+                [pl.col(c).cast(pl.Float64) for c, t in df.schema.items() if t != pl.Utf8]
+            ).to_pandas()
+            sas.df2sd(pdf, table=member, libref=MFRS_LIBREF, char_lengths=char_lengths)
+    finally:
+        sas.endsas()
 
-pl.DataFrame(
+
+mast_br_df = pl.DataFrame(
+    mfrs_mast_br_rows,
+    schema={"ACCTNO": pl.Int64, "PRODESC": pl.Utf8, "NOACCT": pl.Float64},
+)
+alm_cr_df = pl.DataFrame(
     mfrs_alm_cr_rows,
     schema={"ACCTNO": pl.Int64, "NOTENO": pl.Int64, "PRODESC": pl.Utf8, "NOACCT": pl.Float64},
-).write_parquet(OUTPUT_MFRS_ALM_CR_FILE)
+)
+
+write_mfrs_datasets([
+    (OUTPUT_MFRS_MAST_BR_MEMBER, mast_br_df, {"PRODESC": 35}),   # FORMAT PRODESC $35.
+    (OUTPUT_MFRS_ALM_CR_MEMBER,  alm_cr_df,  {"PRODESC": 35}),
+])
+print(f"  MFRS.MAST_BR written   : {OUTPUT_MFRS_MAST_BR_FILE}  ({len(mfrs_mast_br_rows):,} rows)")
 print(f"  MFRS.ALM_CR written    : {OUTPUT_MFRS_ALM_CR_FILE}  ({len(mfrs_alm_cr_rows):,} rows)")
+
+# ============================================================================
+# STEP 14: SFTP TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# ============================================================================
+def sftp_upload_to_drr(local_file: Path, remote_name: str) -> None:
+    """Equivalent of the ask.py RUNSFTP step (PIBB branch):
+        cd "/FD-BNM REPORTING/PIBB/BNM RPTG/BNM RPTG_SUB"
+        PUT //SAP.PIBB.EIIBNM01.TEXT  EIIBNM01.TXT
+    """
+    sftp_id, sftp_pw, host_ip, _host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+    try:
+        try:
+            sftp.chdir(DRR_REMOTE_DIR)
+        except IOError:
+            sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
+        print(f"  SFTP upload: {local_file.name} -> {DRR_REMOTE_DIR}/{remote_name}")
+        sftp.put(str(local_file), remote_name)
+    finally:
+        sftp.close()
+        ssh.close()
+    print("  DRR upload complete.")
+
+
+print("\nStep 14: Uploading report to DRR via SFTP...")
+sftp_upload_to_drr(OUTPUT_FILE, DRR_REMOTE_FILE)
 
 print("\nEIIBNM01 complete.")
