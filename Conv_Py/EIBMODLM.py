@@ -70,14 +70,14 @@ TEMP_DIR   = None   # None = system temp; set a path if the default temp area is
 # Input paths - Public Bank
 # INPUT_PBB_CURRENT  = INPUT_DIR / "dp_ca" / f"ca{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
 # INPUT_PBB_OVERDFT  = INPUT_DIR / "dp_lm" / f"lm{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-INPUT_PIBB_CURRENT  = INPUT_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"
-INPUT_PIBB_OVERDFT  = INPUT_DIR / f"intg_dp_acct_overdft_m{REPTMON}.sas7bdat"
+INPUT_PIBB_CURRENT  = INPUT_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"   # Discriminate by ENTITY_CD != 'PIBB'
+INPUT_PIBB_OVERDFT  = INPUT_DIR / f"intg_dp_acct_overdft_m{REPTMON}.sas7bdat"   # Discriminate by ENTITY_CD != 'PIBB'
 
 # Input paths - Islamic Bank
 # INPUT_PIBB_CURRENT  = INPUT_DIR / "idp_ca" / f"ica{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
 # INPUT_PIBB_OVERDFT  = INPUT_DIR / "idp_lm" / f"ilm{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
-INPUT_PIBB_CURRENT  = INPUT_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"
-INPUT_PIBB_OVERDFT  = INPUT_DIR / f"intg_dp_acct_overdft_m{REPTMON}.sas7bdat"
+INPUT_PIBB_CURRENT  = INPUT_DIR / f"intg_dp_acct_current_m{REPTMON}.sas7bdat"   # Discriminate by ENTITY_CD = 'PIBB'
+INPUT_PIBB_OVERDFT  = INPUT_DIR / f"intg_dp_acct_overdft_m{REPTMON}.sas7bdat"   # Discriminate by ENTITY_CD = 'PIBB'
 
 # Shared customer name lookup file (ACCTNO -> NAME)
 # INPUT_CUSTNAME     = BASE_DIR / "input/uat" / "stg_dp_limit.sas7bdat"
